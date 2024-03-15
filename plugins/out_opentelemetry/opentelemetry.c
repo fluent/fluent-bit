@@ -978,6 +978,8 @@ static int append_v1_logs_metadata(struct opentelemetry_context *ctx,
 {
     struct flb_ra_value *ra_val;
 
+    flb_plg_info(ctx->ins, "Appending logs for metadata");
+
     if (ctx == NULL || event == NULL || log_record == NULL) {
         return -1;
     }
@@ -1098,8 +1100,16 @@ static int append_v1_logs_message(struct opentelemetry_context *ctx,
         flb_plg_info(ctx->ins, "pattern is %s\n", ctx->ra_span_id_message->pattern);
         ra_val = flb_ra_get_value_object(ctx->ra_span_id_message, *event->body);
         if(ra_val != NULL){
-            flb_plg_info(ctx->ins, "ra_val is null");
+            flb_plg_info(ctx->ins, "ra_val is not null");
         }
+        if(ra_val->o.type != MSGPACK_OBJECT_BIN){
+            flb_plg_info(ctx->ins, "ra_val is not MSGPACK_OBJECT_BIN");
+        }
+        if(ra_val->o.type != MSGPACK_OBJECT_STR){
+            flb_plg_info(ctx->ins, "ra_val is not MSGPACK_OBJECT_STR");
+        }
+        flb_plg_info(ctx->ins, "ra_val type is %d\n", (int)ra_val->o.type);
+        flb_plg_info(ctx->ins, "end");
         if (ra_val != NULL && ra_val->o.type == MSGPACK_OBJECT_BIN) {
             flb_plg_info(ctx->ins, "span id ra_val");
             log_record->span_id.data = flb_calloc(1, ra_val->o.via.bin.size);
