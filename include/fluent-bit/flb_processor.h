@@ -2,7 +2,7 @@
 
 /*  Fluent Bit
  *  ==========
- *  Copyright (C) 2015-2023 The Fluent Bit Authors
+ *  Copyright (C) 2015-2024 The Fluent Bit Authors
  *
  *  Licensed under the Apache License, Version 2.0 (the "License");
  *  you may not use this file except in compliance with the License.
@@ -138,13 +138,13 @@ struct flb_processor_plugin {
                     struct flb_config *);
 
     int (*cb_process_logs) (struct flb_processor_instance *,
-                            struct flb_log_event_encoder *,
-                            struct flb_log_event *,
+                            void *,       /* struct flb_mp_chunk_cobj_create */
                             const char *,
                             int);
 
     int (*cb_process_metrics) (struct flb_processor_instance *,
-                               struct cmt *,
+                               struct cmt *, /* in */
+                               struct cmt **, /* out */
                                const char *,
                                int);
 
@@ -161,6 +161,7 @@ struct flb_processor_plugin {
 struct flb_processor_instance {
     int id;                                /* instance id              */
     int log_level;                         /* instance log level       */
+    int event_type;                        /* event type               */
     char name[32];                         /* numbered name            */
     char *alias;                           /* alias name               */
     void *context;                         /* Instance local context   */
@@ -215,6 +216,7 @@ int flb_processors_load_from_config_format_group(struct flb_processor *proc, str
 
 struct flb_processor_instance *flb_processor_instance_create(
                                     struct flb_config *config,
+                                    int event_type,
                                     const char *name,
                                     void *data);
 

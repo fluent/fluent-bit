@@ -2,7 +2,7 @@
 
 /*  Fluent Bit
  *  ==========
- *  Copyright (C) 2015-2022 The Fluent Bit Authors
+ *  Copyright (C) 2015-2024 The Fluent Bit Authors
  *
  *  Licensed under the Apache License, Version 2.0 (the "License");
  *  you may not use this file except in compliance with the License.
@@ -1513,6 +1513,7 @@ static int pack_json_payload(int insert_id_extracted,
     {
         monitored_resource_key,
         local_resource_id_key,
+        ctx->project_id_key,
         ctx->labels_key,
         ctx->severity_key,
         ctx->trace_key,
@@ -1683,6 +1684,10 @@ static flb_sds_t stackdriver_format(struct flb_stackdriver *ctx,
     msgpack_packer mp_pck;
     flb_sds_t out_buf;
     struct flb_mp_map_header mh;
+
+    /* Parameters for project_id_key */
+    int project_id_extracted = FLB_FALSE;
+    flb_sds_t project_id_key;
 
     /* Parameters for severity */
     int severity_extracted = FLB_FALSE;
@@ -2072,7 +2077,7 @@ static flb_sds_t stackdriver_format(struct flb_stackdriver *ctx,
                 */
 
                 ret = process_local_resource_id(ctx, tag, tag_len, K8S_POD);
-                if (ret != 0) {
+                if (ret == -1) {
                     flb_plg_error(ctx->ins, "fail to process local_resource_id from "
                                 "log entry for k8s_pod");
                     msgpack_sbuffer_destroy(&mp_sbuf);
@@ -2126,6 +2131,45 @@ static flb_sds_t stackdriver_format(struct flb_stackdriver *ctx,
                     msgpack_pack_str(&mp_pck, flb_sds_len(ctx->pod_name));
                     msgpack_pack_str_body(&mp_pck,
                                         ctx->pod_name, flb_sds_len(ctx->pod_name));
+                }
+
+                flb_mp_map_header_end(&mh);
+            }
+            else if (strcmp(ctx->resource, K8S_CLUSTER) == 0) {
+                /* k8s_cluster resource has fields project_id, location, cluster_name
+                *
+                * There is no local_resource_id for k8s_cluster as we get all info
+                *      from plugin config
+                */
+
+                flb_mp_map_header_init(&mh, &mp_pck);
+
+                if (ctx->project_id) {
+                    flb_mp_map_header_append(&mh);
+                    msgpack_pack_str(&mp_pck, 10);
+                    msgpack_pack_str_body(&mp_pck, "project_id", 10);
+                    msgpack_pack_str(&mp_pck, flb_sds_len(ctx->project_id));
+                    msgpack_pack_str_body(&mp_pck,
+                                        ctx->project_id, flb_sds_len(ctx->project_id));
+                }
+
+                if (ctx->cluster_location) {
+                    flb_mp_map_header_append(&mh);
+                    msgpack_pack_str(&mp_pck, 8);
+                    msgpack_pack_str_body(&mp_pck, "location", 8);
+                    msgpack_pack_str(&mp_pck, flb_sds_len(ctx->cluster_location));
+                    msgpack_pack_str_body(&mp_pck,
+                                        ctx->cluster_location,
+                                        flb_sds_len(ctx->cluster_location));
+                }
+
+                if (ctx->cluster_name) {
+                    flb_mp_map_header_append(&mh);
+                    msgpack_pack_str(&mp_pck, 12);
+                    msgpack_pack_str_body(&mp_pck, "cluster_name", 12);
+                    msgpack_pack_str(&mp_pck, flb_sds_len(ctx->cluster_name));
+                    msgpack_pack_str_body(&mp_pck,
+                                        ctx->cluster_name, flb_sds_len(ctx->cluster_name));
                 }
 
                 flb_mp_map_header_end(&mh);
@@ -2206,6 +2250,13 @@ static flb_sds_t stackdriver_format(struct flb_stackdriver *ctx,
             && get_trace_sampled(&trace_sampled, obj, ctx->trace_sampled_key) == 0) {
             trace_sampled_extracted = FLB_TRUE;
             entry_size += 1;
+        }
+
+        /* Extract project id */
+        project_id_extracted = FLB_FALSE;
+        if (ctx->project_id_key
+            && get_string(&project_id_key, obj, ctx->project_id_key) == 0) {
+            project_id_extracted = FLB_TRUE;
         }
 
         /* Extract log name */
@@ -2413,10 +2464,16 @@ static flb_sds_t stackdriver_format(struct flb_stackdriver *ctx,
             new_log_name = log_name;
         }
 
-        /* logName */
-        len = snprintf(path, sizeof(path) - 1,
+        if (project_id_extracted == FLB_TRUE) {
+            len = snprintf(path, sizeof(path) - 1,
+                       "projects/%s/logs/%s", project_id_key, new_log_name);
+            flb_sds_destroy(project_id_key);
+        } else {
+            len = snprintf(path, sizeof(path) - 1,
                        "projects/%s/logs/%s", ctx->export_to_project_id, new_log_name);
+        }
 
+        /* logName */
         if (log_name_extracted == FLB_TRUE) {
             flb_sds_destroy(log_name);
         }
@@ -2885,15 +2942,18 @@ static void cb_stackdriver_flush(struct flb_event_chunk *event_chunk,
 #endif
           if (c->resp.status >= 400 && c->resp.status < 500) {
             ret_code = FLB_ERROR;
-            flb_plg_warn(ctx->ins, "error: %s", c->resp.payload);
+            flb_plg_warn(ctx->ins, "tag=%s error sending to Cloud Logging: %s", event_chunk->tag,
+                         c->resp.payload);
           }
           else {
             if (c->resp.payload_size > 0) {
               /* we got an error */
-              flb_plg_warn(ctx->ins, "error: %s", c->resp.payload);
+              flb_plg_warn(ctx->ins, "tag=%s error sending to Cloud Logging: %s", event_chunk->tag,
+                           c->resp.payload);
             }
             else {
-              flb_plg_debug(ctx->ins, "response: %s", c->resp.payload);
+              flb_plg_debug(ctx->ins, "tag=%s response from Cloud Logging: %s", event_chunk->tag,
+                            c->resp.payload);
             }
             ret_code = FLB_RETRY;
           }
@@ -2977,6 +3037,11 @@ static struct flb_config_map config_map[] = {
       FLB_CONFIG_MAP_STR, "export_to_project_id", (char *)NULL,
       0, FLB_TRUE, offsetof(struct flb_stackdriver, export_to_project_id),
       "Export to project id"
+    },
+    {
+      FLB_CONFIG_MAP_STR, "project_id_key", DEFAULT_PROJECT_ID_KEY,
+      0, FLB_TRUE, offsetof(struct flb_stackdriver, project_id_key),
+      "Set the gcp project id key"
     },
     {
       FLB_CONFIG_MAP_STR, "resource", FLB_SDS_RESOURCE_TYPE,

@@ -2,7 +2,7 @@
 
 /*  Fluent Bit
  *  ==========
- *  Copyright (C) 2015-2022 The Fluent Bit Authors
+ *  Copyright (C) 2015-2024 The Fluent Bit Authors
  *
  *  Licensed under the Apache License, Version 2.0 (the "License");
  *  you may not use this file except in compliance with the License.
@@ -165,6 +165,11 @@ static struct flb_config_map config_map[] = {
       FLB_CONFIG_MAP_STR, "buffer_size", (char *)NULL,
       0, FLB_TRUE, offsetof(struct flb_in_tcp_config, buffer_size_str),
       "Set the buffer size"
+    },
+    {
+      FLB_CONFIG_MAP_STR, "source_address_key", (char *) NULL,
+      0, FLB_TRUE, offsetof(struct flb_in_tcp_config, source_address_key),
+      "Key where the source address will be injected"
     },
     /* EOF */
     {0}

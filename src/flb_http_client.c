@@ -2,7 +2,7 @@
 
 /*  Fluent Bit
  *  ==========
- *  Copyright (C) 2015-2022 The Fluent Bit Authors
+ *  Copyright (C) 2015-2024 The Fluent Bit Authors
  *
  *  Licensed under the Apache License, Version 2.0 (the "License");
  *  you may not use this file except in compliance with the License.
@@ -270,8 +270,9 @@ static int process_chunked_data(struct flb_http_client *c)
     long val;
     char *p;
     char tmp[32];
-    struct flb_http_response *r = &c->resp;    
     int found_full_chunk = FLB_FALSE;
+    struct flb_http_client_response *r = &c->resp;
+
 
  chunk_start:
     p = strstr(r->chunk_processed_end, "\r\n");

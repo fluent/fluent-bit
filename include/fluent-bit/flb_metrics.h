@@ -2,7 +2,7 @@
 
 /*  Fluent Bit
  *  ==========
- *  Copyright (C) 2015-2022 The Fluent Bit Authors
+ *  Copyright (C) 2015-2024 The Fluent Bit Authors
  *
  *  Licensed under the Apache License, Version 2.0 (the "License");
  *  you may not use this file except in compliance with the License.
@@ -38,6 +38,8 @@
 #include <cmetrics/cmt_encode_prometheus_remote_write.h>
 #include <cmetrics/cmt_encode_msgpack.h>
 #include <cmetrics/cmt_encode_splunk_hec.h>
+#include <cmetrics/cmt_encode_cloudwatch_emf.h>
+#include <cmetrics/cmt_filter.h>
 
 /* Metrics IDs for general purpose (used by core and Plugins */
 #define FLB_METRIC_N_RECORDS   0

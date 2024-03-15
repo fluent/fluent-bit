@@ -2,7 +2,7 @@
 
 /*  Fluent Bit
  *  ==========
- *  Copyright (C) 2015-2022 The Fluent Bit Authors
+ *  Copyright (C) 2015-2024 The Fluent Bit Authors
  *
  *  Licensed under the Apache License, Version 2.0 (the "License");
  *  you may not use this file except in compliance with the License.
@@ -256,7 +256,6 @@ static int sb_append_chunk_to_segregated_backlog(struct cio_chunk    *target_chu
     struct sb_out_chunk *chunk;
 
     chunk = sb_allocate_chunk(target_chunk, stream, target_chunk_size);
-
     if (chunk == NULL) {
         flb_errno();
         return -1;
@@ -378,7 +377,16 @@ int sb_segregate_chunks(struct flb_config *config)
             if (ret) {
                 /*
                  * if the chunk could not be segregated, just remove it from the
-                 * queue and continue.
+                 * queue, delete it and continue.
+                 */
+
+                /* If the tag cannot be read it cannot be routed, let's remove it */
+                if (ret == -2) {
+                    cio_chunk_close(chunk, CIO_TRUE);
+                    continue;
+                }
+
+                /* 
                  *
                  * if content size is zero, it's safe to 'delete it'.
                  */

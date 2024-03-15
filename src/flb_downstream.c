@@ -2,7 +2,7 @@
 
 /*  Fluent Bit
  *  ==========
- *  Copyright (C) 2015-2022 The Fluent Bit Authors
+ *  Copyright (C) 2015-2024 The Fluent Bit Authors
  *
  *  Licensed under the Apache License, Version 2.0 (the "License");
  *  you may not use this file except in compliance with the License.
@@ -34,6 +34,12 @@
 
 /* Config map for Downstream networking setup */
 struct flb_config_map downstream_net[] = {
+    {
+     FLB_CONFIG_MAP_BOOL, "net.share_port", "false",
+     0, FLB_TRUE, offsetof(struct flb_net_setup, share_port),
+     "Allow multiple plugins to bind to the same port"
+    },
+
     {
      FLB_CONFIG_MAP_TIME, "net.io_timeout", "0s",
      0, FLB_TRUE, offsetof(struct flb_net_setup, io_timeout),
@@ -107,20 +113,22 @@ int flb_downstream_setup(struct flb_downstream *stream,
     snprintf(port_string, sizeof(port_string), "%u", port);
 
     if (transport == FLB_TRANSPORT_TCP) {
-        stream->server_fd = flb_net_server(port_string, host);
+        stream->server_fd = flb_net_server(port_string, host, net_setup->share_port);
     }
     else if (transport == FLB_TRANSPORT_UDP) {
-        stream->server_fd = flb_net_server_udp(port_string, host);
+        stream->server_fd = flb_net_server_udp(port_string, host, net_setup->share_port);
     }
     else if (transport == FLB_TRANSPORT_UNIX_STREAM) {
         stream->server_fd = flb_net_server_unix(host,
                                                 FLB_TRUE,
-                                                FLB_NETWORK_DEFAULT_BACKLOG_SIZE);
+                                                FLB_NETWORK_DEFAULT_BACKLOG_SIZE,
+                                                net_setup->share_port);
     }
     else if (transport == FLB_TRANSPORT_UNIX_DGRAM) {
         stream->server_fd = flb_net_server_unix(host,
                                                 FLB_FALSE,
-                                                FLB_NETWORK_DEFAULT_BACKLOG_SIZE);
+                                                FLB_NETWORK_DEFAULT_BACKLOG_SIZE,
+                                                net_setup->share_port);
     }
 
     if (stream->server_fd != -1) {

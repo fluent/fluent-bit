@@ -2,7 +2,7 @@
 
 /*  Fluent Bit
  *  ==========
- *  Copyright (C) 2015-2022 The Fluent Bit Authors
+ *  Copyright (C) 2015-2024 The Fluent Bit Authors
  *
  *  Licensed under the Apache License, Version 2.0 (the "License");
  *  you may not use this file except in compliance with the License.
@@ -62,7 +62,7 @@
 #define FLB_HTTP_HEADER_CONNECTION       "Connection"
 #define FLB_HTTP_HEADER_KA               "keep-alive"
 
-struct flb_http_response {
+struct flb_http_client_response {
     int status;                /* HTTP response status          */
     int content_length;        /* Content length set by headers */
     int chunked_encoding;      /* Chunked transfer encoding ?   */
@@ -130,7 +130,7 @@ struct flb_http_client {
     struct flb_http_proxy proxy;
 
     /* Response */
-    struct flb_http_response resp;
+    struct flb_http_client_response resp;
 
     /* Reference to Callback context */
     void *cb_ctx;

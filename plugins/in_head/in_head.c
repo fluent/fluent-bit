@@ -2,7 +2,7 @@
 
 /*  Fluent Bit
  *  ==========
- *  Copyright (C) 2015-2022 The Fluent Bit Authors
+ *  Copyright (C) 2015-2024 The Fluent Bit Authors
  *
  *  Licensed under the Apache License, Version 2.0 (the "License");
  *  you may not use this file except in compliance with the License.
@@ -223,7 +223,7 @@ static int split_lines_per_record(struct flb_input_instance *i_ins,
             ret = flb_log_event_encoder_append_body_values(
                     &ctx->log_encoder,
                     FLB_LOG_EVENT_CSTRING_VALUE(key_str),
-                    FLB_LOG_EVENT_STRING_VALUE(ctx->buf, ctx->buf_len));
+                    FLB_LOG_EVENT_STRING_VALUE(ctx->buf, str_len));
         }
     }
 

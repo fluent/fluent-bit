@@ -2,7 +2,7 @@
 
 /*  Fluent Bit
  *  ==========
- *  Copyright (C) 2015-2022 The Fluent Bit Authors
+ *  Copyright (C) 2015-2024 The Fluent Bit Authors
  *
  *  Licensed under the Apache License, Version 2.0 (the "License");
  *  you may not use this file except in compliance with the License.
@@ -124,6 +124,10 @@ struct flb_service_config service_configs[] = {
     {FLB_CONF_DNS_PREFER_IPV4,
      FLB_CONF_TYPE_BOOL,
      offsetof(struct flb_config, dns_prefer_ipv4)},
+
+    {FLB_CONF_DNS_PREFER_IPV6,
+     FLB_CONF_TYPE_BOOL,
+     offsetof(struct flb_config, dns_prefer_ipv6)},
 
     /* Storage */
     {FLB_CONF_STORAGE_PATH,
@@ -413,8 +417,7 @@ void flb_config_exit(struct flb_config *config)
 
     /* Pipe */
     if (config->ch_data[0]) {
-        mk_event_closesocket(config->ch_data[0]);
-        mk_event_closesocket(config->ch_data[1]);
+        flb_pipe_destroy(config->ch_data);
     }
 
     /* Channel manager */

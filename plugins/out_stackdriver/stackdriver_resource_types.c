@@ -2,7 +2,7 @@
 
 /*  Fluent Bit
  *  ==========
- *  Copyright (C) 2015-2022 The Fluent Bit Authors
+ *  Copyright (C) 2015-2024 The Fluent Bit Authors
  *
  *  Licensed under the Apache License, Version 2.0 (the "License");
  *  you may not use this file except in compliance with the License.
@@ -27,7 +27,7 @@
 static const struct resource_type resource_types[] = {
     { 
         .id = RESOURCE_TYPE_K8S,
-        .resources = {"k8s_container", "k8s_node", "k8s_pod"},
+        .resources = {"k8s_container", "k8s_node", "k8s_pod", "k8s_cluster"},
         .required_labels = {"cluster_name", "location"}
     },
     { 

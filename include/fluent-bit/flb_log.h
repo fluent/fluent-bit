@@ -2,7 +2,7 @@
 
 /*  Fluent Bit
  *  ==========
- *  Copyright (C) 2015-2022 The Fluent Bit Authors
+ *  Copyright (C) 2015-2024 The Fluent Bit Authors
  *
  *  Licensed under the Apache License, Version 2.0 (the "License");
  *  you may not use this file except in compliance with the License.
@@ -225,6 +225,7 @@ static inline int flb_log_suppress_check(int log_suppress_interval, const char *
 #endif
 
 int flb_log_worker_init(struct flb_worker *worker);
+int flb_log_worker_destroy(struct flb_worker *worker);
 int flb_errno_print(int errnum, const char *file, int line);
 
 #ifdef __FLB_FILENAME__

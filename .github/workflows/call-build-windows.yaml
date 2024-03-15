@@ -108,7 +108,7 @@ jobs:
 
       - name: Get dependencies
         run: |
-          Invoke-WebRequest -O winflexbison.zip $env:WINFLEXBISON
+          Invoke-WebRequest -OutFile winflexbison.zip $env:WINFLEXBISON
           Expand-Archive winflexbison.zip -Destination C:\WinFlexBison
           Copy-Item -Path C:\WinFlexBison/win_bison.exe C:\WinFlexBison/bison.exe
           Copy-Item -Path C:\WinFlexBison/win_flex.exe C:\WinFlexBison/flex.exe
@@ -136,7 +136,7 @@ jobs:
 
       - name: Restore cached packages of vcpkg
         id: cache-vcpkg-sources
-        uses: actions/cache/restore@v3
+        uses: actions/cache/restore@v4
         with:
           path: |
             C:\vcpkg\packages
@@ -157,7 +157,7 @@ jobs:
 
       - name: Save packages of vcpkg
         id: save-vcpkg-sources
-        uses: actions/cache/save@v3
+        uses: actions/cache/save@v4
         with:
           path: |
             C:\vcpkg\packages
