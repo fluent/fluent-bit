@@ -996,7 +996,7 @@ void flb_processor_instance_exit(struct flb_processor_instance *ins, struct flb_
     plugin = ins->p;
 
     if (plugin->cb_exit != NULL && ins->context != NULL) {
-        plugin->cb_exit(ins);
+        plugin->cb_exit(ins, ins->context);
     }
 }
 

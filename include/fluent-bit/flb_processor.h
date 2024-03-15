@@ -153,7 +153,7 @@ struct flb_processor_plugin {
                               const char *,
                               int);
 
-    int (*cb_exit) (struct flb_processor_instance *);
+    int (*cb_exit) (struct flb_processor_instance *, void *);
 
     struct mk_list _head;  /* Link to parent list (config->filters) */
 };
