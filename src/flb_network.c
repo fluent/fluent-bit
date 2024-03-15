@@ -1000,7 +1000,7 @@ static struct flb_dns_lookup_context *flb_net_dns_lookup_context_create(
      *                 the number of retries to 2
      */
 
-    optmask = ARES_OPT_FLAGS;
+    optmask = ARES_OPT_FLAGS | ARES_OPT_TRIES;
     opts.tries = 2;
 
     if (dns_mode == FLB_DNS_USE_TCP) {
