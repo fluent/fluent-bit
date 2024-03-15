@@ -20,6 +20,8 @@
 #ifndef FLB_IN_ELASTICSEARCH_BULK_PROT
 #define FLB_IN_ELASTICSEARCH_BULK_PROT
 
+#include "in_elasticsearch_bulk_conn.h"
+
 #define ES_VERSION_RESPONSE_TEMPLATE \
     "{\"version\":{\"number\":\"%s\",\"build_flavor\":\"Fluent Bit OSS\"},\"tagline\":\"Fluent Bit's Bulk API compatible endpoint\"}"
 
