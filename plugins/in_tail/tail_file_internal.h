@@ -2,7 +2,7 @@
 
 /*  Fluent Bit
  *  ==========
- *  Copyright (C) 2015-2024 The Fluent Bit Authors
+ *  Copyright (C) 2015-2022 The Fluent Bit Authors
  *
  *  Licensed under the Apache License, Version 2.0 (the "License");
  *  you may not use this file except in compliance with the License.
@@ -24,6 +24,8 @@
 #include <fluent-bit/flb_input.h>
 #include <fluent-bit/flb_sds.h>
 #include <fluent-bit/flb_time.h>
+#include <fluent-bit/flb_gzip.h>
+#include <fluent-bit/flb_compression.h>
 #include <fluent-bit/flb_log_event_encoder.h>
 
 #ifdef FLB_HAVE_PARSER
@@ -39,7 +41,8 @@ struct flb_tail_file {
     /* file lookup info */
     int fd;
     int64_t size;
-    int64_t offset;
+    int64_t offset;             /* this represents the raw file offset, not
+                                   the input data offset (see stream_offset) */
     int64_t last_line;
     uint64_t  dev_id;
     uint64_t  inode;
@@ -52,6 +55,9 @@ struct flb_tail_file {
     size_t orig_name_len;
     time_t rotated;
     int64_t pending_bytes;
+    size_t stream_offset;       /* this represents the logical data offset
+                                   which for compressed files could be higher
+                                   than the file size or offset */
 
     /* dynamic tag for this file */
     int tag_len;
@@ -84,6 +90,8 @@ struct flb_tail_file {
     size_t buf_len;
     size_t buf_size;
     char *buf_data;
+
+    struct flb_decompression_context *decompression_context;
 
     /*
      * This value represent the number of bytes procesed by process_content()

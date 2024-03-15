@@ -446,6 +446,8 @@ int flb_reload(flb_ctx_t *ctx, struct flb_cf *cf_opts)
     ctx->config->shutdown_by_hot_reloading = FLB_TRUE;
     /* Mark hot reloading */
     new_config->hot_reloading = FLB_TRUE;
+    /* Mark hot reloading for old ctx to prevent duplicated request via HTTP */
+    old_config->hot_reloading = FLB_TRUE;
 
 #ifdef FLB_HAVE_STREAM_PROCESSOR
     /* Inherit stream processor definitions from command line */

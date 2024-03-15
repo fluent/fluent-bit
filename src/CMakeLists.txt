@@ -62,6 +62,7 @@ set(src
   flb_gzip.c
   flb_snappy.c
   flb_compression.c
+  flb_http_common.c
   flb_http_client.c
   flb_callback.c
   flb_strptime.c
@@ -78,6 +79,7 @@ set(src
   flb_log_event_encoder_dynamic_field.c
   flb_processor.c
   flb_reload.c
+  flb_msgpack_append_message.c
   )
 
 # Config format
@@ -210,7 +212,7 @@ endif()
 
 if(FLB_REGEX)
   set(FLB_DEPS
-    ${FLB_DEPSS}
+    ${FLB_DEPS}
     onigmo-static)
   set(src
     ${src}
@@ -372,6 +374,7 @@ set(FLB_DEPS
   c-ares
   snappy-c
   lwrb
+  nghttp2_static
   )
 
 if(OPENSSL_FOUND)

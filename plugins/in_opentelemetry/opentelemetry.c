@@ -25,6 +25,7 @@
 
 #include "http_conn.h"
 #include "opentelemetry.h"
+#include "opentelemetry_prot.h"
 #include "opentelemetry_config.h"
 
 /*
@@ -89,25 +90,80 @@ static int in_opentelemetry_init(struct flb_input_instance *ins,
 
     port = (unsigned short int) strtoul(ctx->tcp_port, NULL, 10);
 
-    ctx->downstream = flb_downstream_create(FLB_TRANSPORT_TCP,
-                                            ins->flags,
-                                            ctx->listen,
-                                            port,
-                                            ins->tls,
-                                            config,
-                                            &ins->net_setup);
+    if (ctx->enable_http2) {
+        ret = flb_http_server_init(&ctx->http_server, 
+                                    HTTP_PROTOCOL_AUTODETECT,
+                                    FLB_HTTP_SERVER_FLAG_AUTO_INFLATE,
+                                    NULL,
+                                    ins->host.listen,
+                                    ins->host.port,
+                                    ins->tls,
+                                    ins->flags,
+                                    &ins->net_setup,
+                                    flb_input_event_loop_get(ins),
+                                    ins->config,
+                                    (void *) ctx);
 
-    if (ctx->downstream == NULL) {
-        flb_plg_error(ctx->ins,
-                      "could not initialize downstream on %s:%s. Aborting",
-                      ctx->listen, ctx->tcp_port);
+        if (ret != 0) {
+            flb_plg_error(ctx->ins,
+                          "could not initialize http server on %s:%u. Aborting",
+                          ins->host.listen, ins->host.port);
 
-        opentelemetry_config_destroy(ctx);
+            opentelemetry_config_destroy(ctx);
 
-        return -1;
+            return -1;
+        }
+
+        ret = flb_http_server_start(&ctx->http_server);
+
+        if (ret != 0) {
+            flb_plg_error(ctx->ins,
+                          "could not start http server on %s:%u. Aborting",
+                          ins->host.listen, ins->host.port);
+
+            opentelemetry_config_destroy(ctx);
+
+            return -1;
+        }
+
+        ctx->http_server.request_callback = opentelemetry_prot_handle_ng;
+
+        flb_input_downstream_set(ctx->http_server.downstream, ctx->ins);
     }
+    else {
+        ctx->downstream = flb_downstream_create(FLB_TRANSPORT_TCP,
+                                                ins->flags,
+                                                ctx->listen,
+                                                port,
+                                                ins->tls,
+                                                config,
+                                                &ins->net_setup);
 
-    flb_input_downstream_set(ctx->downstream, ctx->ins);
+        if (ctx->downstream == NULL) {
+            flb_plg_error(ctx->ins,
+                        "could not initialize downstream on %s:%s. Aborting",
+                        ctx->listen, ctx->tcp_port);
+
+            opentelemetry_config_destroy(ctx);
+
+            return -1;
+        }
+
+        flb_input_downstream_set(ctx->downstream, ctx->ins);
+
+        /* Collect upon data available on the standard input */
+        ret = flb_input_set_collector_socket(ins,
+                                            in_opentelemetry_collect,
+                                            ctx->downstream->server_fd,
+                                            config);
+        if (ret == -1) {
+            flb_plg_error(ctx->ins, "Could not set collector for IN_TCP input plugin");
+            opentelemetry_config_destroy(ctx);
+            return -1;
+        }
+
+        ctx->collector_id = ret;
+    }
 
     flb_plg_info(ctx->ins, "listening on %s:%s", ctx->listen, ctx->tcp_port);
 
@@ -118,19 +174,6 @@ static int in_opentelemetry_init(struct flb_input_instance *ins,
                       ctx->successful_response_code);
         ctx->successful_response_code = 201;
     }
-
-    /* Collect upon data available on the standard input */
-    ret = flb_input_set_collector_socket(ins,
-                                         in_opentelemetry_collect,
-                                         ctx->downstream->server_fd,
-                                         config);
-    if (ret == -1) {
-        flb_plg_error(ctx->ins, "Could not set collector for IN_TCP input plugin");
-        opentelemetry_config_destroy(ctx);
-        return -1;
-    }
-
-    ctx->collector_id = ret;
 
     return 0;
 }
@@ -152,6 +195,12 @@ static int in_opentelemetry_exit(void *data, struct flb_config *config)
 
 /* Configuration properties map */
 static struct flb_config_map config_map[] = {
+    {
+     FLB_CONFIG_MAP_BOOL, "http2", "true",
+     0, FLB_TRUE, offsetof(struct flb_opentelemetry, enable_http2),
+     NULL
+    },
+
     {
      FLB_CONFIG_MAP_SIZE, "buffer_max_size", HTTP_BUFFER_MAX_SIZE,
      0, FLB_TRUE, offsetof(struct flb_opentelemetry, buffer_max_size),
