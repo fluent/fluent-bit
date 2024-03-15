@@ -153,6 +153,6 @@ jobs:
 
       - name: Build unit-test for Fluent Bit packages (only for x86 and x64)
         run: |
-            ctest --build-run-dir $PWD --output-on-failure
+            ctest --build-run-dir "$PWD" --output-on-failure
         shell: pwsh
         working-directory: build
