@@ -25,46 +25,11 @@ on:
       token:
         description: The Github token or similar to authenticate with.
         required: true
-      bucket:
-        description: The name of the S3 (US-East) bucket to push packages into.
-        required: false
-      access_key_id:
-        description: The S3 access key id for the bucket.
-        required: false
-      secret_access_key:
-        description: The S3 secret access key for the bucket.
-        required: false
 
 jobs:
-  call-windows-unit-test-get-meta:
-    name: Determine build info
-    runs-on: ubuntu-latest
-    permissions:
-      contents: read
-    outputs:
-      armSupported: ${{ steps.armcheck.outputs.armSupported }}
-    steps:
-      - name: Checkout repository
-        uses: actions/checkout@v4
-        with:
-          ref: ${{ inputs.ref }}
-
-      - name: Determine if we are doing a build with ARM support
-        id: armcheck
-        # Check for new contents from https://github.com/fluent/fluent-bit/pull/6621
-        run: |
-          if grep -q "winarm64" CMakeLists.txt ; then
-            echo "armSupported=true" >> $GITHUB_OUTPUT
-          else
-            echo "armSupported=false" >> $GITHUB_OUTPUT
-          fi
-        shell: bash
-
   call-build-windows-unit-test:
     runs-on: windows-latest
     environment: ${{ inputs.environment }}
-    needs:
-      - call-windows-unit-test-get-meta
     strategy:
       fail-fast: false
       matrix:
@@ -148,7 +113,7 @@ jobs:
           key: ${{ steps.cache-unit-test-vcpkg-sources.outputs.cache-primary-key }}
           enableCrossOsArchive: false
 
-      - name: run unit-test for Fluent Bit packages (only for x86 and x64)
+      - name: Build unit-test for Fluent Bit packages (only for x86 and x64)
         run: |
           cmake -G "NMake Makefiles" `
             -D FLB_TESTS_INTERNAL=On `
@@ -175,6 +140,19 @@ jobs:
             -D FLB_WITHOUT_flb-it-input_chunk=On `
             ../
           cmake --build .
-          ctest --build-run-dir $PWD --output-on-failure
+        shell: pwsh
+        working-directory: build
+
+      - name: Upload unit test binaries
+        uses: actions/upload-artifact@v4
+        with:
+          name: windows-unit-tests-${{ matrix.config.arch }}
+          path: |
+            build/**/*.exe
+          if-no-files-found: error
+
+      - name: Build unit-test for Fluent Bit packages (only for x86 and x64)
+        run: |
+            ctest --build-run-dir $PWD --output-on-failure
         shell: pwsh
         working-directory: build
