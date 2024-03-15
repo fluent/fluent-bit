@@ -589,27 +589,40 @@ static int process_record(struct sql_ctx *ctx, struct sql_query *query, struct f
 
     }
 
-
     /*
      * iterate all the record keys and see if they are listed in the selected keys,
-     * if not, just remove them from the record
+     * otherwise check if a wildcard has been used so all the keys will match.
+     *
+     * if no matches exists, just remove the record.
      */
-
     kvlist = chunk_record->cobj_record->variant->data.as_kvlist;
+
+
     cfl_list_foreach_safe(head, tmp, &kvlist->list) {
         kvpair = cfl_list_entry(head, struct cfl_kvpair, _head);
 
         found = FLB_FALSE;
-        cfl_list_foreach_safe(head_var, tmp_var, &ctx->query->keys) {
-            key = cfl_list_entry(head_var, struct sql_key, _head);
 
-            if (cfl_sds_len(kvpair->key) != cfl_sds_len(key->name)) {
-                continue;
-            }
-
-            if (strcmp(kvpair->key, key->name) == 0) {
+        /* check if we have a wildcard */
+        if (cfl_list_size(&query->keys) > 0) {
+            key = cfl_list_entry_first(&query->keys, struct sql_key, _head);
+            if (key->name == NULL) {
                 found = FLB_TRUE;
-                break;
+            }
+        }
+
+        if (found == FLB_FALSE) {
+            cfl_list_foreach_safe(head_var, tmp_var, &ctx->query->keys) {
+                key = cfl_list_entry(head_var, struct sql_key, _head);
+
+                if (cfl_sds_len(kvpair->key) != cfl_sds_len(key->name)) {
+                    continue;
+                }
+
+                if (strcmp(kvpair->key, key->name) == 0) {
+                    found = FLB_TRUE;
+                    break;
+                }
             }
         }
 

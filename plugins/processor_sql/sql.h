@@ -67,33 +67,38 @@ typedef union {
 
 struct sql_expression {
     int type;
+    struct cfl_list _head;
+
     struct sql_expression *left;
     struct sql_expression *right;
-    struct cfl_list _head;
+
 };
 
 struct sql_expression_key {
     int type;
-    int func;
+    struct cfl_list _head;
+
     cfl_sds_t name;
     struct mk_list *subkeys;
-    struct cfl_list _head;
+    int func;
 };
 
 struct sql_expression_val {
     int type;
-    sql_val val;
     struct cfl_list _head;
+
+    sql_val val;
+
 };
 
 struct sql_expression_op {
     int type;
-    int operation;
+    struct cfl_list _head;
+
     struct sql_expression *left;
     struct sql_expression *right;
-    struct cfl_list _head;
+    int operation;
 };
-
 
 struct sql_key {
     cfl_sds_t name;

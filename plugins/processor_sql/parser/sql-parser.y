@@ -84,18 +84,16 @@ int yywrap(struct sql_query *query)
 select: SELECT keys FROM source where ';'
       {
       }
-      keys:
-           record_keys
-           |
-           '*'
-           {
-             printf("All keys\n");
-             //flb_sp_cmd_key_add(cmd, -1, NULL, NULL);
-           }
+      keys: record_keys
       record_keys: record_key
                    |
                    record_keys ',' record_key
-      record_key: IDENTIFIER
+      record_key: '*'
+                  {
+                    sql_parser_query_key_add(query, NULL, NULL);
+                  }
+                  |
+                  IDENTIFIER
                   {
                     sql_parser_query_key_add(query, $1, NULL);
                     flb_free($1);
