@@ -8,9 +8,6 @@
 #define TEXT_FILE    FLB_TESTS_DATA_PATH "/data/file/text_file.txt"
 #define EMPTY_FILE    FLB_TESTS_DATA_PATH "/data/file/empty_file.txt"
 
-#define NEWLINE "\n"
-#define CRNEWLINE "\r\n"
-
 static void check_equals(flb_sds_t result, const char *expected)
 {
     size_t expected_len = strlen(expected);
