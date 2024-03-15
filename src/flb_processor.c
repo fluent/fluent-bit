@@ -606,7 +606,6 @@ int flb_processor_run(struct flb_processor *proc,
                         /* encode chunk_cobj as msgpack */
                         ret = flb_mp_chunk_cobj_encode(chunk_cobj, (char **) &tmp_buf, &tmp_size);
                         if (ret != 0) {
-                            printf("failure\n");
                             flb_log_event_decoder_reset(p_ins->log_decoder, NULL, 0);
 
                             if (cur_buf != data) {
