@@ -1201,6 +1201,7 @@ int flb_mp_chunk_cobj_record_next(struct flb_mp_chunk_cobj *chunk_cobj,
 
          record = cfl_list_entry_next(&chunk_cobj->record_pos->_head, struct flb_mp_chunk_record,
                                       _head, &chunk_cobj->records);
+         ret = FLB_MP_CHUNK_RECORD_OK;
     }
     else {
         if (cfl_list_size(&chunk_cobj->records) == 0) {
