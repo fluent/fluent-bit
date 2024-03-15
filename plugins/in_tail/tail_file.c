@@ -870,6 +870,10 @@ static int set_file_position(struct flb_tail_config *ctx,
     }
     file->offset = ret;
 
+    if (file->decompression_context == NULL) {        
+        file->stream_offset = ret;
+    }
+
     return 0;
 }
 
