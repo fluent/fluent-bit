@@ -3,6 +3,11 @@ flex_target(lexer sql-parser.l "${CMAKE_CURRENT_BINARY_DIR}/processor-sql-parser
             )
 bison_target(parser sql-parser.y "${CMAKE_CURRENT_BINARY_DIR}/processor-sql_parser.c")
 
+if(CMAKE_SYSTEM_NAME MATCHES "Windows")
+  FLB_DEFINITION(YY_NO_UNISTD_H)
+  message(STATUS "Specifying YY_NO_UNISTD_H")
+endif()
+
 set(sources
   sql_parser.c
   sql_expression.c
