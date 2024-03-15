@@ -32,15 +32,10 @@
 
 struct template_ctx {
     char *action_str;
-    char *context_str;
-    char *key;
-    char *value;
-    char *pattern;
-    char *converted_type_str;
 };
 
 /* Processor initialization */
-static int cb_init(struct flb_processor_instance *processor_instance,
+static int cb_init(struct flb_processor_instance *ins,
                    void *source_plugin_instance,
                    int source_plugin_type,
                    struct flb_config *config)
@@ -49,23 +44,29 @@ static int cb_init(struct flb_processor_instance *processor_instance,
 }
 
 /* Processor exit */
-static int cb_exit(struct flb_processor_instance *processor_instance)
+static int cb_exit(struct flb_processor_instance *ins, void *data)
 {
     return FLB_PROCESSOR_SUCCESS;
 }
 
 /* Logs callback */
-static int cb_process_logs(struct flb_processor_instance *processor_instance,
-                           struct flb_log_event_encoder *a1,
-                           struct flb_log_event *le,
-                           const char *tag,
-                           int tag_len)
-{
+static int cb_process_logs(struct flb_processor_instance *ins,
+                           void *chunk_data, const char *tag, int tag_len)
+
+    struct flb_mp_chunk_record *record;{
+    struct flb_mp_chunk_cobj *chunk_cobj = (struct flb_mp_chunk_cobj *) chunk_data;
+
+    /* Iterate records */
+    while (flb_mp_chunk_cobj_record_next(chunk_cobj, &record) == FLB_MP_CHUNK_RECORD_OK) {
+
+    }
+
+
     return FLB_PROCESSOR_SUCCESS;
 
 }
 
-static int cb_process_metrics(struct flb_processor_instance *processor_instance,
+static int cb_process_metrics(struct flb_processor_instance *ins,
                               struct cmt *metrics_context,
                               const char *tag,
                               int tag_len)
@@ -85,13 +86,14 @@ static int cb_process_traces(struct flb_processor_instance *ins,
 static struct flb_config_map config_map[] = {
     {
         FLB_CONFIG_MAP_STR, "test", NULL,
-        0, FLB_TRUE, offsetof(struct content_modifier_ctx, action_str),
+        0, FLB_TRUE, offsetof(struct template_ctx, action_str),
         "Action to perform over the content: insert, upsert, delete, rename or hash."
     },
 
     /* EOF */
     {0}
 };
+
 struct flb_processor_plugin processor_template_plugin = {
     .name               = "template",
     .description        = "This is a processor template",
