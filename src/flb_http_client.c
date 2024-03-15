@@ -270,7 +270,7 @@ static int process_chunked_data(struct flb_http_client *c)
     long val;
     char *p;
     char tmp[32];
-    struct flb_http_response *r = &c->resp;
+    struct flb_http_client_response *r = &c->resp;
 
  chunk_start:
     p = strstr(r->chunk_processed_end, "\r\n");

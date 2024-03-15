@@ -145,6 +145,10 @@ int http_config_destroy(struct flb_http *ctx)
         flb_free(ctx->server);
     }
 
+    if (ctx->enable_http2) {
+        flb_http_server_destroy(&ctx->http_server);
+    }
+
     if (ctx->success_headers_str != NULL) {
         flb_sds_destroy(ctx->success_headers_str);
     }

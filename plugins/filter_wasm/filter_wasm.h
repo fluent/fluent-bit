@@ -29,11 +29,21 @@
 
 #include <msgpack.h>
 
+enum {
+    FLB_FILTER_WASM_FMT_JSON = 0,
+    FLB_FILTER_WASM_FMT_MSGPACK,
+    FLB_FILTER_WASM_FMT_ERROR,
+};
+
+#define FLB_FMT_STR_JSON    "json"
+#define FLB_FMT_STR_MSGPACK "msgpack"
+
 struct flb_filter_wasm {
     flb_sds_t wasm_path;
     struct mk_list *accessible_dir_list; /* list of directories to be
                                           * accesible from WASM */
     flb_sds_t wasm_function_name;
+    int event_format;
     struct flb_filter_instance *ins;
     struct flb_wasm *wasm;
 };

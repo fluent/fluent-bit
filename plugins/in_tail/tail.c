@@ -217,6 +217,11 @@ static int in_tail_collect_static(struct flb_input_instance *ins,
                 flb_plg_info(ctx->ins, "inode=%"PRIu64" file=%s ended, stop",
                              file->inode, file->name);
                 if (ctx->files_static_count == 1) {
+#ifdef FLB_HAVE_PARSER
+                    if (ctx->multiline) {
+                        flb_tail_mult_flush(file, ctx);
+                    }
+#endif
                     flb_engine_exit(config);
                 }
             }
