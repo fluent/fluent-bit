@@ -153,7 +153,8 @@ jobs:
 
       - name: Display dependencies w/ dumpbin
         run: |
-          dumpbin /dependents .build\bin\fluent-bit.exe
+          dumpbin /dependents .\bin\fluent-bit.exe
+        working-directory: build
 
       - name: Build unit-test for Fluent Bit packages (only for x86 and x64)
         run: |
