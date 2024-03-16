@@ -347,11 +347,10 @@ static int cb_selector_process_metrics(struct flb_processor_instance *processor_
     return FLB_PROCESSOR_SUCCESS;
 }
 
-static int cb_selector_exit(struct flb_processor_instance *processor_instance)
+static int cb_selector_exit(struct flb_processor_instance *processor_instance, void *data)
 {
-    if (processor_instance != NULL &&
-        processor_instance->context != NULL) {
-        destroy_context(processor_instance->context);
+    if (processor_instance != NULL && data != NULL) {
+        destroy_context(data);
     }
 
     return FLB_PROCESSOR_SUCCESS;
