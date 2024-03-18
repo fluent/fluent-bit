@@ -1110,10 +1110,16 @@ static int append_v1_logs_message(struct opentelemetry_context *ctx,
                 }
             }else if(ra_val->o.type == MSGPACK_OBJECT_STR){
                 flb_plg_info(ctx->ins, "span id ra_val string");
-                log_record->span_id.data = flb_calloc(1, ra_val->o.via.str.size+1);
+                printf("string size\n");
+                printf("%" PRIu32  "\n", ra_val->o.via.str.size);
+                log_record->span_id.data = flb_calloc(1, ra_val->o.via.str.size);
                 if (log_record->span_id.data) {
+                    printf("data\n");
+                    printf("%" PRIu8 "\n", log_record->span_id.data);
                     flb_plg_info(ctx->ins, "span id has data");
-                    memcpy(log_record->span_id.data, ra_val->o.via.str.ptr, ra_val->o.via.str.size+1);
+                    printf("ptr\n");
+                    printf("%s\n", ra_val->o.via.str.ptr);
+                    memcpy(log_record->span_id.data, ra_val->o.via.str.ptr, ra_val->o.via.str.size);
                     log_record->span_id.len = ra_val->o.via.str.size;
                 }
             }
@@ -1124,7 +1130,7 @@ static int append_v1_logs_message(struct opentelemetry_context *ctx,
     /* TraceId */
     if (ctx->ra_trace_id_message) {
         flb_plg_info(ctx->ins, "trace id message not null");
-        printf("This is a printf statement");
+        printf("This is a printf statement\n");
         ra_val = flb_ra_get_value_object(ctx->ra_trace_id_message, *event->body);
         if (ra_val != NULL && ra_val->o.type == MSGPACK_OBJECT_BIN) {
             log_record->trace_id.data = flb_calloc(1, ra_val->o.via.bin.size);

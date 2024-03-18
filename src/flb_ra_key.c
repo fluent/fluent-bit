@@ -88,7 +88,7 @@ static int ra_key_val_id(flb_sds_t ckey, msgpack_object map)
     }
 
     map_size = map.via.map.size;
-    printf("map size %d", map_size);
+
     for (i = map_size - 1; i >= 0; i--) {
         key = map.via.map.ptr[i].key;
 
