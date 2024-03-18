@@ -1121,7 +1121,7 @@ static int append_v1_logs_message(struct opentelemetry_context *ctx,
                 }
             }else if(ra_val->o.type == MSGPACK_OBJECT_STR){
                 flb_plg_info(ctx->ins, "span id ra_val string");
-                log_record->span_id.data = flb_calloc(1, ra_val->ra_val->o.via.str.size+1);
+                log_record->span_id.data = flb_calloc(1, ra_val->o.via.str.size+1);
                 if (log_record->span_id.data) {
                     flb_plg_info(ctx->ins, "span id has data");
                     memcpy(log_record->span_id.data, ra_val->o.via.str.ptr, ra_val->o.via.str.size);
