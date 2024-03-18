@@ -779,8 +779,6 @@ struct flb_ra_value *flb_ra_get_value_object(struct flb_record_accessor *ra,
         return NULL;
     }
 
-    flb_info("key name is %s\n", rp->key->name);
-
     return flb_ra_key_to_value(rp->key->name, map, rp->key->subkeys);
 }
 

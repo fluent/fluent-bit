@@ -217,11 +217,9 @@ struct flb_ra_value *flb_ra_key_to_value(flb_sds_t ckey,
     /* Get the key position in the map */
     i = ra_key_val_id(ckey, map);
     if (i == -1) {
-        printf("map does not contain key");
         return NULL;
     }
-
-    printf("getting val from map");
+    
     /* Reference entries */
     val = map.via.map.ptr[i].val;
 
