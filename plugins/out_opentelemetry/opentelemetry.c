@@ -1121,6 +1121,10 @@ static int append_v1_logs_message(struct opentelemetry_context *ctx,
                     printf("%s\n", ra_val->o.via.str.ptr);
                     memcpy(log_record->span_id.data, ra_val->o.via.str.ptr, ra_val->o.via.str.size);
                     log_record->span_id.len = ra_val->o.via.str.size;
+                    printf("data after mem copy\n");
+                    printf("%" PRIu8 "\n", log_record->span_id.data);
+                    printf("data of pointer");
+                    printf("%p\n", (void*)log_record->span_id.data);
                 }
             }
             flb_ra_key_value_destroy(ra_val);
