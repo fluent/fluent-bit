@@ -25,7 +25,10 @@ RUN apt-get update && \
     wget -q -O - https://apt.kitware.com/keys/kitware-archive-latest.asc 2>/dev/null | \
     gpg --dearmor - | tee /etc/apt/trusted.gpg.d/kitware.gpg >/dev/null && \
     apt-add-repository 'deb https://apt.kitware.com/ubuntu/ xenial main' && \
+    wget -q -O - https://apt.llvm.org/llvm-snapshot.gpg.key | apt-key add - && \
+    apt-add-repository "deb http://apt.llvm.org/xenial/ llvm-toolchain-xenial-10 main" && \
     apt-get update && \
+    apt-get install -y llvm-10 libclang-common-10-dev libedit-dev && \
     apt-get install -y --reinstall lsb-base lsb-release cmake
 
 # ubuntu/18.04 base image
@@ -39,7 +42,8 @@ RUN apt-get update && \
     cmake make bash wget unzip nano vim valgrind dh-make flex bison \
     libpq-dev postgresql-server-dev-all \
     libsasl2-2 libsasl2-dev openssl libssl-dev libssl1.1 \
-    software-properties-common libyaml-dev apt-transport-https pkg-config zlib1g-dev && \
+    software-properties-common libyaml-dev apt-transport-https pkg-config zlib1g-dev \
+    llvm-10 libclang-common-10-dev libedit-dev && \
     wget -q -O - https://apt.kitware.com/keys/kitware-archive-latest.asc 2>/dev/null | \
     gpg --dearmor - | tee /etc/apt/trusted.gpg.d/kitware.gpg >/dev/null && \
     apt-add-repository 'deb https://apt.kitware.com/ubuntu/ bionic main' && \
@@ -61,7 +65,8 @@ RUN apt-get update && \
     cmake make bash wget unzip nano vim valgrind dh-make flex bison \
     libpq-dev postgresql-server-dev-all \
     libsasl2-2 libsasl2-dev openssl libssl-dev libssl1.1 \
-    software-properties-common libyaml-dev apt-transport-https pkg-config zlib1g-dev && \
+    software-properties-common libyaml-dev apt-transport-https pkg-config zlib1g-dev \
+    llvm-10 libclang-common-10-dev libedit-dev && \
     wget -q -O - https://apt.kitware.com/keys/kitware-archive-latest.asc 2>/dev/null | \
     gpg --dearmor - | tee /etc/apt/trusted.gpg.d/kitware.gpg >/dev/null && \
     apt-add-repository 'deb https://apt.kitware.com/ubuntu/ bionic main' && \
@@ -79,7 +84,8 @@ RUN apt-get update && \
     apt-get install -y curl ca-certificates build-essential libsystemd-dev \
     cmake make bash wget unzip nano vim valgrind dh-make flex bison \
     libpq-dev postgresql-server-dev-all \
-    libsasl2-2 libsasl2-dev openssl libssl-dev libssl1.1 libyaml-dev pkg-config zlib1g-dev && \
+    libsasl2-2 libsasl2-dev openssl libssl-dev libssl1.1 libyaml-dev pkg-config zlib1g-dev \
+    llvm libclang-common-10-dev libedit-dev && \
     apt-get install -y --reinstall lsb-base lsb-release
 
 # ubuntu/20.04.arm64v8 base image
@@ -93,7 +99,8 @@ RUN apt-get update && \
     apt-get install -y curl ca-certificates build-essential libsystemd-dev \
     cmake make bash wget unzip nano vim valgrind dh-make flex bison \
     libpq-dev postgresql-server-dev-all \
-    libsasl2-2 libsasl2-dev openssl libssl-dev libssl1.1 libyaml-dev pkg-config zlib1g-dev && \
+    libsasl2-2 libsasl2-dev openssl libssl-dev libssl1.1 libyaml-dev pkg-config zlib1g-dev \
+    llvm libclang-common-10-dev libedit-dev && \
     apt-get install -y --reinstall lsb-base lsb-release
 
 # ubuntu/22.04 base image
@@ -105,7 +112,8 @@ RUN apt-get update && \
     apt-get install -y curl ca-certificates build-essential libsystemd-dev \
     cmake make bash wget unzip nano vim valgrind dh-make flex bison \
     libpq-dev postgresql-server-dev-all libpq5 \
-    libsasl2-2 libsasl2-dev openssl libssl-dev libssl3 libyaml-dev pkg-config zlib1g-dev && \
+    libsasl2-2 libsasl2-dev openssl libssl-dev libssl3 libyaml-dev pkg-config zlib1g-dev \
+    llvm libmlir-14-dev libedit-dev libpfm4-dev && \
     apt-get install -y --reinstall lsb-base lsb-release
 
 # ubuntu/22.04.arm64v8 base image
@@ -119,7 +127,8 @@ RUN apt-get update && \
     apt-get install -y curl ca-certificates build-essential libsystemd-dev \
     cmake make bash wget unzip nano vim valgrind dh-make flex bison \
     libpq-dev postgresql-server-dev-all libpq5 \
-    libsasl2-2 libsasl2-dev openssl libssl-dev libssl3 libyaml-dev pkg-config zlib1g-dev && \
+    libsasl2-2 libsasl2-dev openssl libssl-dev libssl3 libyaml-dev pkg-config zlib1g-dev \
+    llvm libmlir-14-dev libedit-dev libpfm4-dev && \
     apt-get install -y --reinstall lsb-base lsb-release
 
 # Common build for all distributions now
@@ -146,6 +155,7 @@ ARG FLB_OUT_KAFKA=On
 ARG FLB_OUT_PGSQL=On
 ARG FLB_JEMALLOC=On
 ARG FLB_CHUNK_TRACE=On
+ARG FLB_WAMRC=Off
 
 ENV CFLAGS=$CFLAGS
 RUN cmake -DCMAKE_INSTALL_PREFIX="$CMAKE_INSTALL_PREFIX" \
@@ -159,6 +169,7 @@ RUN cmake -DCMAKE_INSTALL_PREFIX="$CMAKE_INSTALL_PREFIX" \
     -DFLB_NIGHTLY_BUILD="$FLB_NIGHTLY_BUILD" \
     -DFLB_JEMALLOC="${FLB_JEMALLOC}" \
     -DFLB_CHUNK_TRACE="${FLB_CHUNK_TRACE}" \
+    -DFLB_WAMRC="${FLB_WAMRC}" \
     ../
 
 VOLUME [ "/output" ]
