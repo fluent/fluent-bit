@@ -198,9 +198,19 @@ static void helper_pack_string_add_prefix(struct flb_log_event_encoder *log_enco
         const char *str,
         int len)
 {
+    size_t new_size;
+
+    /*
+       An arg of FLB_LOG_EVENT_STRING_LENGTH_VALUE is a flb_log_event_encoder_size_t.
+       flb_log_event_encoder_size_t is size_t* on Windows.
+       It can cause pointer arithmetic and the output can be larger value.
+       We use 'new_size' to prevent pointer arithmetic.
+     */
+    new_size = ctx->prefix_len + len;
+
     flb_log_event_encoder_append_body_values(
         log_encoder,
-        FLB_LOG_EVENT_STRING_LENGTH_VALUE(ctx->prefix_len + len),
+        FLB_LOG_EVENT_STRING_LENGTH_VALUE(new_size),
         FLB_LOG_EVENT_STRING_BODY_VALUE(ctx->prefix, ctx->prefix_len),
         FLB_LOG_EVENT_STRING_BODY_VALUE(str, len));
 }

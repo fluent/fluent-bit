@@ -45,7 +45,7 @@ static int cb_init(struct flb_processor_instance *ins, void *source_plugin_insta
     return FLB_PROCESSOR_SUCCESS;
 }
 
-static int cb_exit(struct flb_processor_instance *ins)
+static int cb_exit(struct flb_processor_instance *ins, void *data)
 {
     struct content_modifier_ctx *ctx;
 
@@ -53,7 +53,7 @@ static int cb_exit(struct flb_processor_instance *ins)
         return FLB_PROCESSOR_SUCCESS;
     }
 
-    ctx = ins->context;
+    ctx = data;
     if (ctx) {
         cm_config_destroy(ctx);
     }
@@ -62,12 +62,13 @@ static int cb_exit(struct flb_processor_instance *ins)
 }
 
 static int cb_process_logs(struct flb_processor_instance *ins,
-                           struct flb_mp_chunk_cobj *chunk_cobj,
+                           void *chunk_data,
                            const char *tag,
                            int tag_len)
 {
     int ret;
     struct content_modifier_ctx *ctx;
+    struct flb_mp_chunk_cobj *chunk_cobj = (struct flb_mp_chunk_cobj *) chunk_data;
 
     if (!ins->context) {
         return FLB_PROCESSOR_FAILURE;

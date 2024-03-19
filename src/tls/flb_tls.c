@@ -222,6 +222,16 @@ int flb_tls_destroy(struct flb_tls *tls)
     return 0;
 }
 
+int flb_tls_set_alpn(struct flb_tls *tls, const char *alpn)
+{
+    if (tls->ctx) {
+        return tls->api->context_alpn_set(tls->ctx, alpn);
+    }
+
+    return 0;
+}
+
+
 int flb_tls_net_read(struct flb_tls_session *session, void *buf, size_t len)
 {
     time_t          timeout_timestamp;

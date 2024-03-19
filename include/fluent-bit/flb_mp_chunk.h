@@ -47,6 +47,9 @@ struct flb_mp_chunk_cobj {
 
 
 struct flb_mp_chunk_record *flb_mp_chunk_record_create(struct flb_mp_chunk_cobj *chunk_cobj);
+
+int flb_mp_chunk_cobj_record_destroy(struct flb_mp_chunk_cobj *chunk_cobj,
+                                     struct flb_mp_chunk_record *record);
 int flb_mp_chunk_cobj_record_next(struct flb_mp_chunk_cobj *chunk_cobj,
                                   struct flb_mp_chunk_record **out_record);
 
@@ -56,8 +59,7 @@ int flb_mp_chunk_cobj_destroy(struct flb_mp_chunk_cobj *chunk_cobj);
 
 int flb_mp_chunk_cobj_encode(struct flb_mp_chunk_cobj *chunk_cobj, char **out_buf, size_t *out_size);
 
-int flb_mp_chunk_cobj_record_next(struct flb_mp_chunk_cobj *chunk_cobj,
-                                  struct flb_mp_chunk_record **out_record);
+
 
 
 #endif

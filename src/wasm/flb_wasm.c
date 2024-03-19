@@ -28,6 +28,8 @@
 #include <fluent-bit/flb_slist.h>
 #include <fluent-bit/wasm/flb_wasm.h>
 
+#include <msgpack.h>
+
 #ifdef FLB_SYSTEM_WINDOWS
 #define STDIN_FILENO (_fileno( stdin ))
 #define STDOUT_FILENO (_fileno( stdout ))
@@ -222,6 +224,87 @@ char *flb_wasm_call_function_format_json(struct flb_wasm *fw, const char *functi
     uint32_t func_args[6] = {fw->tag_buffer, tag_len,
                              t.tm.tv_sec, t.tm.tv_nsec,
                              fw->record_buffer, record_len};
+    size_t args_size = sizeof(func_args) / sizeof(uint32_t);
+
+    if (!(func = wasm_runtime_lookup_function(fw->module_inst, function_name, NULL))) {
+        flb_error("The %s wasm function is not found.", function_name);
+        return NULL;
+    }
+
+    if (!wasm_runtime_call_wasm(fw->exec_env, func, args_size, func_args)) {
+        exception = wasm_runtime_get_exception(fw->module_inst);
+        flb_error("Got exception running wasm code: %s", exception);
+        wasm_runtime_clear_exception(fw->module_inst);
+        return NULL;
+    }
+
+    // The return value is stored in the first element of the function argument array.
+    // It's a WASM pointer to null-terminated c char string.
+    // WAMR allows us to map WASM pointers to native pointers.
+    if (!wasm_runtime_validate_app_str_addr(fw->module_inst, func_args[0])) {
+        flb_warn("[wasm] returned value is invalid");
+        return NULL;
+    }
+    func_result = wasm_runtime_addr_app_to_native(fw->module_inst, func_args[0]);
+
+    if (func_result == NULL) {
+        return NULL;
+    }
+
+    return (char *)flb_strdup(func_result);
+}
+
+/*
+ * Msgpack Format but for WASM
+ * ------------------------------
+ * This mode is used if the char (C string) is only permitted as UTF-8
+ * environment such as Rust.
+ *
+ *  {
+ *    RECORD/MAP
+ *  }
+ */
+int flb_wasm_format_msgpack_mode(const char *tag, int tag_len,
+                                 struct flb_log_event *log_event,
+                                 void **out_buf, size_t *out_size)
+{
+    msgpack_packer   mp_pck;
+    msgpack_sbuffer  mp_sbuf;
+    msgpack_unpacked result;
+
+    /*
+     * if the case, we need to compose a new outgoing buffer instead
+     * of use the original one.
+     */
+    msgpack_sbuffer_init(&mp_sbuf);
+    msgpack_packer_init(&mp_pck, &mp_sbuf, msgpack_sbuffer_write);
+    msgpack_unpacked_init(&result);
+
+    msgpack_pack_object(&mp_pck, *log_event->body);
+
+    *out_buf  = mp_sbuf.data;
+    *out_size = mp_sbuf.size;
+    msgpack_unpacked_destroy(&result);
+
+    return 0;
+}
+
+char *flb_wasm_call_function_format_msgpack(struct flb_wasm *fw, const char *function_name,
+                                            const char* tag_data, size_t tag_len,
+                                            struct flb_time t,
+                                            const char *records, size_t records_len)
+{
+    const char *exception;
+    uint8_t *func_result;
+    wasm_function_inst_t func = NULL;
+    /* We should pass the length that is null terminator included into
+     * WASM runtime. This is why we add +1 for tag_len and record_len.
+     */
+    fw->tag_buffer = wasm_runtime_module_dup_data(fw->module_inst, tag_data, tag_len+1);
+    fw->record_buffer = wasm_runtime_module_dup_data(fw->module_inst, records, records_len);
+    uint32_t func_args[6] = {fw->tag_buffer, tag_len,
+                             t.tm.tv_sec, t.tm.tv_nsec,
+                             fw->record_buffer, records_len};
     size_t args_size = sizeof(func_args) / sizeof(uint32_t);
 
     if (!(func = wasm_runtime_lookup_function(fw->module_inst, function_name, NULL))) {

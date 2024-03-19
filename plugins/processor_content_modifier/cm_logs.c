@@ -113,10 +113,8 @@ static int hash_transformer(void *context, struct cfl_variant *value)
     }
 
     encoded_hash = cfl_sds_create(converted_value->data.as_string);
-
+    cfl_variant_destroy(converted_value);
     if (encoded_hash == NULL) {
-        cfl_variant_destroy(converted_value);
-
         return FLB_FALSE;
     }
 

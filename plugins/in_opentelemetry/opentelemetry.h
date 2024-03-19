@@ -25,6 +25,7 @@
 #include <fluent-bit/flb_utils.h>
 
 #include <monkey/monkey.h>
+#include <fluent-bit/http_server/flb_http_server.h>
 
 #define HTTP_BUFFER_MAX_SIZE    "4M"
 #define HTTP_BUFFER_CHUNK_SIZE  "512K"
@@ -37,6 +38,13 @@ struct flb_opentelemetry {
     bool raw_traces;
     int  tag_from_uri;
 
+    struct flb_input_instance *ins;
+
+    /* New gen HTTP server */
+    int enable_http2;
+    struct flb_http_server http_server;
+
+    /* Legacy HTTP server */
     size_t buffer_max_size;            /* Maximum buffer size */
     size_t buffer_chunk_size;          /* Chunk allocation size */
 
@@ -45,7 +53,6 @@ struct flb_opentelemetry {
     struct mk_list connections;        /* linked list of connections */
 
     struct mk_server *server;
-    struct flb_input_instance *ins;
 };
 
 

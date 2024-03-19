@@ -130,6 +130,13 @@ if (FLB_CUSTOM_CALYPTIA)
   FLB_RT_TEST(FLB_CUSTOM_CALYPTIA "custom_calyptia_test.c")
 endif()
 
+if (FLB_PROCESSOR_METRICS_SELECTOR)
+  FLB_RT_TEST(FLB_PROCESSOR_METRICS_SELECTOR "processor_metrics_selector.c")
+endif()
+
+if (FLB_PROCESSOR_CONTENT_MODIFIER)
+  FLB_RT_TEST(FLB_PROCESSOR_CONTENT_MODIFIER "processor_content_modifier.c")
+endif()
 
 # HTTP Client Debug (requires -DFLB_HTTP_CLIENT_DEBUG=On)
 if(FLB_HTTP_CLIENT_DEBUG)

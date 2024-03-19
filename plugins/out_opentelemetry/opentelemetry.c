@@ -978,8 +978,6 @@ static int append_v1_logs_metadata(struct opentelemetry_context *ctx,
 {
     struct flb_ra_value *ra_val;
 
-    flb_plg_info(ctx->ins, "Appending logs for metadata");
-
     if (ctx == NULL || event == NULL || log_record == NULL) {
         return -1;
     }
@@ -1080,6 +1078,8 @@ static int append_v1_logs_metadata(struct opentelemetry_context *ctx,
     }
 
     return 0;
+}
+
 }
 
 static int append_v1_logs_message(struct opentelemetry_context *ctx,
