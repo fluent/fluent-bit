@@ -57,6 +57,13 @@ enum flb_time_eventtime_fmt {
     FLB_TIME_ETFMT_OTHER,
 };
 
+enum flb_time_precision {
+    FLB_TIME_PRECISION_SECONDS = 1,
+    FLB_TIME_PRECISION_MILLISECONDS,
+    FLB_TIME_PRECISION_MICROSECONDS,
+    FLB_TIME_PRECISION_NANOSECONDS,
+};
+
 static inline void flb_time_zero(struct flb_time *tm)
 {
     tm->tm.tv_sec = 0;

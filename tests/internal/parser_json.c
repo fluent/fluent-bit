@@ -171,7 +171,7 @@ void test_basic()
     }
 
     parser = flb_parser_create("json", "json", NULL, FLB_FALSE, NULL, NULL, NULL,
-                               FLB_FALSE, FLB_FALSE, FLB_FALSE,
+                               0, 0, FLB_FALSE, FLB_FALSE, FLB_FALSE,
                                NULL, 0, NULL, config);
     if (!TEST_CHECK(parser != NULL)) {
         TEST_MSG("flb_parser_create failed");
@@ -195,6 +195,152 @@ void test_basic()
     flb_free(out_buf);
     flb_parser_destroy(parser);
     flb_config_exit(config);
+}
+
+void test_time_type_with_precision(char* timestamp, int time_type, int time_precision, long expected_sec, long expected_nsec)
+{
+    struct flb_parser *parser = NULL;
+    struct flb_config *config = NULL;
+    int ret = 0;
+    char input[100];
+    sprintf(input, "{\"str\":\"text\", \"int\":100, \"double\":1.23, \"bool\":true, \"time\":%s}", timestamp);
+    void *out_buf = NULL;
+    size_t out_size = 0;
+    struct flb_time out_time;
+    char *expected_strs[] = {"str", "text", "int", "100", "double","1.23", "bool", "true"};
+    struct str_list expected = {
+                                .size = sizeof(expected_strs)/sizeof(char*),
+                                .lists = &expected_strs[0],
+    };
+
+    out_time.tm.tv_sec = 0;
+    out_time.tm.tv_nsec = 0;
+
+
+    config = flb_config_init();
+    if(!TEST_CHECK(config != NULL)) {
+        TEST_MSG("flb_config_init failed");
+        exit(1);
+    }
+
+    parser = flb_parser_create("json", "json", NULL, FLB_FALSE, NULL, "time", NULL,
+                               time_type, time_precision, FLB_FALSE, FLB_FALSE, FLB_FALSE,
+                               NULL, 0, NULL, config);
+    if (!TEST_CHECK(parser != NULL)) {
+        TEST_MSG("flb_parser_create failed");
+        flb_config_exit(config);
+        exit(1);
+    }
+
+    ret = flb_parser_do(parser, input, strlen(input), &out_buf, &out_size, &out_time);
+    if (!TEST_CHECK(ret != -1)) {
+        TEST_MSG("flb_parser_do failed");
+        flb_parser_destroy(parser);
+        flb_config_exit(config);
+        exit(1);
+    }
+
+    ret = compare_msgpack(out_buf, out_size, &expected);
+    if (!TEST_CHECK(ret == 0)) {
+        TEST_MSG("compare failed");
+        flb_free(out_buf);
+        flb_parser_destroy(parser);
+        flb_config_exit(config);
+        exit(1);
+    }
+
+    if (!TEST_CHECK(out_time.tm.tv_sec == expected_sec && out_time.tm.tv_nsec == expected_nsec)) {
+        TEST_MSG("timestamp error. sec  Got=%ld Expect=%ld", out_time.tm.tv_sec, expected_sec);
+        TEST_MSG("timestamp error. nsec Got=%ld Expect=%ld", out_time.tm.tv_nsec, expected_nsec);
+    }
+
+    flb_free(out_buf);
+    flb_parser_destroy(parser);
+    flb_config_exit(config);
+}
+
+void test_time_type_int_as_int_seconds()
+{
+    test_time_type_with_precision("1667217601", FLB_PARSER_TYPE_INT, FLB_TIME_PRECISION_SECONDS, 1667217601, 0);
+}
+
+void test_time_type_float_as_int_seconds()
+{
+    test_time_type_with_precision("1667217601.123", FLB_PARSER_TYPE_INT, FLB_TIME_PRECISION_SECONDS, 1667217601, 0);
+}
+
+void test_time_type_int_as_float_seconds()
+{
+    test_time_type_with_precision("1667217601", FLB_PARSER_TYPE_FLOAT, FLB_TIME_PRECISION_SECONDS, 1667217601, 0);
+}
+
+void test_time_type_float_as_float_seconds()
+{
+    /* floating point error expected */
+    test_time_type_with_precision("1667217601.123", FLB_PARSER_TYPE_FLOAT, FLB_TIME_PRECISION_SECONDS, 1667217601, 122999906);
+}
+
+void test_time_type_int_as_int_milliseconds()
+{
+    test_time_type_with_precision("1667217601123", FLB_PARSER_TYPE_INT, FLB_TIME_PRECISION_MILLISECONDS, 1667217601, 123000000);
+}
+
+void test_time_type_float_as_int_milliseconds()
+{
+    test_time_type_with_precision("1667217601.123", FLB_PARSER_TYPE_INT, FLB_TIME_PRECISION_MILLISECONDS, 1667217, 601000000);
+}
+
+void test_time_type_int_as_float_milliseconds()
+{
+    /* floating point error expected */
+    test_time_type_with_precision("1667217601123", FLB_PARSER_TYPE_FLOAT, FLB_TIME_PRECISION_MILLISECONDS, 1667217601, 122999906);
+}
+
+void test_time_type_float_as_float_milliseconds()
+{
+    /* floating point error expected */
+    test_time_type_with_precision("1667217601.123", FLB_PARSER_TYPE_FLOAT, FLB_TIME_PRECISION_MILLISECONDS, 1667217, 601122999);
+}
+
+void test_time_type_int_as_int_microseconds()
+{
+    test_time_type_with_precision("1667217601123456", FLB_PARSER_TYPE_INT, FLB_TIME_PRECISION_MICROSECONDS, 1667217601, 123456000);
+}
+
+void test_time_type_float_as_int_microseconds()
+{
+    test_time_type_with_precision("1667217601.123456", FLB_PARSER_TYPE_INT, FLB_TIME_PRECISION_MICROSECONDS, 1667, 217601000);
+}
+
+void test_time_type_int_as_float_microseconds()
+{
+    test_time_type_with_precision("1667217601123", FLB_PARSER_TYPE_FLOAT, FLB_TIME_PRECISION_MICROSECONDS, 1667217, 601123000);
+}
+
+void test_time_type_float_as_float_microseconds()
+{
+    test_time_type_with_precision("1667217601.123456", FLB_PARSER_TYPE_FLOAT, FLB_TIME_PRECISION_MICROSECONDS, 1667, 217601123);
+}
+
+void test_time_type_int_as_int_nanoseconds()
+{
+    test_time_type_with_precision("1667217601123456789", FLB_PARSER_TYPE_INT, FLB_TIME_PRECISION_NANOSECONDS, 1667217601, 123456789);
+}
+
+void test_time_type_float_as_int_nanoseconds()
+{
+    test_time_type_with_precision("1667217601.123456789", FLB_PARSER_TYPE_INT, FLB_TIME_PRECISION_NANOSECONDS, 1, 667217601);
+}
+
+void test_time_type_int_as_float_nanoseconds()
+{
+    /* floating point error expected */
+    test_time_type_with_precision("1667217601123456", FLB_PARSER_TYPE_FLOAT, FLB_TIME_PRECISION_NANOSECONDS, 1667217, 601123455);
+}
+
+void test_time_type_float_as_float_nanoseconds()
+{
+    test_time_type_with_precision("1667217601.123456", FLB_PARSER_TYPE_FLOAT, FLB_TIME_PRECISION_NANOSECONDS, 1, 667217601);
 }
 
 void test_time_key()
@@ -223,7 +369,7 @@ void test_time_key()
     }
 
     parser = flb_parser_create("json", "json", NULL, FLB_FALSE, "%Y-%m-%dT%H:%M:%S.%L", "time", NULL,
-                               FLB_FALSE, FLB_FALSE, FLB_FALSE,
+                               0, 0, FLB_FALSE, FLB_FALSE, FLB_FALSE,
                                NULL, 0, NULL, config);
     if (!TEST_CHECK(parser != NULL)) {
         TEST_MSG("flb_parser_create failed");
@@ -284,7 +430,7 @@ void test_time_keep()
     }
 
     parser = flb_parser_create("json", "json", NULL, FLB_FALSE, "%Y-%m-%dT%H:%M:%S.%L", "time", NULL,
-                               FLB_TRUE /*time_keep */, FLB_FALSE, FLB_FALSE,
+                               0, 0, FLB_TRUE /*time_keep */, FLB_FALSE, FLB_FALSE,
                                NULL, 0, NULL, config);
     if (!TEST_CHECK(parser != NULL)) {
         TEST_MSG("flb_parser_create failed");
@@ -365,7 +511,7 @@ void test_types_is_not_supported()
     types->type = FLB_PARSER_TYPE_HEX;
 
     parser = flb_parser_create("json", "json", NULL, FLB_FALSE, NULL, NULL, NULL,
-                               FLB_FALSE, FLB_FALSE, FLB_FALSE,
+                               0, 0, FLB_FALSE, FLB_FALSE, FLB_FALSE,
                                types, 1, NULL, config);
     if (!TEST_CHECK(parser != NULL)) {
         TEST_MSG("flb_parser_create failed");
@@ -450,7 +596,7 @@ void test_decode_field_json()
     }
 
     parser = flb_parser_create("json", "json", NULL, FLB_FALSE, NULL, NULL, NULL,
-                               FLB_FALSE, FLB_FALSE, FLB_FALSE,
+                               0, 0, FLB_FALSE, FLB_FALSE, FLB_FALSE,
                                NULL, 0, decoder, config);
     if (!TEST_CHECK(parser != NULL)) {
         TEST_MSG("flb_parser_create failed");
@@ -505,7 +651,7 @@ void test_time_key_kept_if_parse_fails()
     }
 
     parser = flb_parser_create("json", "json", NULL, FLB_FALSE, time_format, "time", NULL,
-                               FLB_FALSE, FLB_TRUE, FLB_FALSE,
+                               0, 0, FLB_FALSE, FLB_TRUE, FLB_FALSE,
                                NULL, 0, NULL, config);
     if (!TEST_CHECK(parser != NULL)) {
         TEST_MSG("flb_parser_create failed");
@@ -540,6 +686,22 @@ TEST_LIST = {
     { "basic", test_basic},
     { "time_key", test_time_key},
     { "time_keep", test_time_keep},
+    { "test_time_type_int_as_int_seconds", test_time_type_int_as_int_seconds},
+    { "test_time_type_int_as_float_seconds", test_time_type_int_as_float_seconds},
+    { "test_time_type_float_as_float_seconds", test_time_type_float_as_float_seconds},
+    { "test_time_type_float_as_int_seconds", test_time_type_float_as_int_seconds},
+    { "test_time_type_int_as_int_milliseconds", test_time_type_int_as_int_milliseconds},
+    { "test_time_type_int_as_float_milliseconds", test_time_type_int_as_float_milliseconds},
+    { "test_time_type_float_as_float_milliseconds", test_time_type_float_as_float_milliseconds},
+    { "test_time_type_float_as_int_milliseconds", test_time_type_float_as_int_milliseconds},
+    { "test_time_type_int_as_int_microseconds", test_time_type_int_as_int_microseconds},
+    { "test_time_type_int_as_float_microseconds", test_time_type_int_as_float_microseconds},
+    { "test_time_type_float_as_float_microseconds", test_time_type_float_as_float_microseconds},
+    { "test_time_type_float_as_int_microseconds", test_time_type_float_as_int_microseconds},
+    { "test_time_type_int_as_int_nanoseconds", test_time_type_int_as_int_nanoseconds},
+    { "test_time_type_int_as_float_nanoseconds", test_time_type_int_as_float_nanoseconds},
+    { "test_time_type_float_as_float_nanoseconds", test_time_type_float_as_float_nanoseconds},
+    { "test_time_type_float_as_int_nanoseconds", test_time_type_float_as_int_nanoseconds},
     { "types_is_not_supported", test_types_is_not_supported},
     { "decode_field_json", test_decode_field_json},
     { "time_key_kept_if_parse_fails", test_time_key_kept_if_parse_fails},
