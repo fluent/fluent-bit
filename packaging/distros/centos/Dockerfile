@@ -25,6 +25,9 @@ RUN yum -y update && \
 
 ARG FLB_OUT_PGSQL=On
 ENV FLB_OUT_PGSQL=$FLB_OUT_PGSQL
+# Fails on CentOS 7: https://github.com/fluent/fluent-bit/issues/8606
+ARG FLB_PROCESSOR_SQL=Off
+ENV FLB_PROCESSOR_SQL=$FLB_PROCESSOR_SQL
 
 # centos/7.arm64v8 base image
 FROM arm64v8/centos:7 as centos-7.arm64v8-base
@@ -45,6 +48,9 @@ RUN yum -y update && \
 # There are no postgresql libraries available for this target
 ARG FLB_OUT_PGSQL=Off
 ENV FLB_OUT_PGSQL=$FLB_OUT_PGSQL
+# Fails on CentOS 7: https://github.com/fluent/fluent-bit/issues/8606
+ARG FLB_PROCESSOR_SQL=Off
+ENV FLB_PROCESSOR_SQL=$FLB_PROCESSOR_SQL
 
 # Need larger page size
 ARG FLB_JEMALLOC_OPTIONS="--with-lg-page=16 --with-lg-quantum=3"
@@ -71,6 +77,8 @@ RUN yum -y update && \
 
 ARG FLB_OUT_PGSQL=On
 ENV FLB_OUT_PGSQL=$FLB_OUT_PGSQL
+ARG FLB_PROCESSOR_SQL=On
+ENV FLB_PROCESSOR_SQL=$FLB_PROCESSOR_SQL
 
 # centos/8.arm64v8 base image
 FROM arm64v8/centos:8 as centos-8.arm64v8-base
@@ -95,6 +103,8 @@ RUN yum -y update && \
 
 ARG FLB_OUT_PGSQL=On
 ENV FLB_OUT_PGSQL=$FLB_OUT_PGSQL
+ARG FLB_PROCESSOR_SQL=On
+ENV FLB_PROCESSOR_SQL=$FLB_PROCESSOR_SQL
 
 # Need larger page size
 ARG FLB_JEMALLOC_OPTIONS="--with-lg-page=16 --with-lg-quantum=3"
@@ -114,6 +124,8 @@ RUN dnf -y install 'dnf-command(config-manager)' && dnf -y config-manager --set-
 
 ARG FLB_OUT_PGSQL=On
 ENV FLB_OUT_PGSQL=$FLB_OUT_PGSQL
+ARG FLB_PROCESSOR_SQL=On
+ENV FLB_PROCESSOR_SQL=$FLB_PROCESSOR_SQL
 
 # hadolint ignore=DL3029
 FROM --platform=arm64 quay.io/centos/centos:stream9 as centos-9.arm64v8-base
@@ -132,6 +144,8 @@ RUN dnf -y install 'dnf-command(config-manager)' && dnf -y config-manager --set-
 
 ARG FLB_OUT_PGSQL=On
 ENV FLB_OUT_PGSQL=$FLB_OUT_PGSQL
+ARG FLB_PROCESSOR_SQL=On
+ENV FLB_PROCESSOR_SQL=$FLB_PROCESSOR_SQL
 
 # Need larger page size
 ARG FLB_JEMALLOC_OPTIONS="--with-lg-page=16 --with-lg-quantum=3"
@@ -175,6 +189,7 @@ RUN cmake3 -DCMAKE_INSTALL_PREFIX="$CMAKE_INSTALL_PREFIX" \
     -DFLB_JEMALLOC_OPTIONS="$FLB_JEMALLOC_OPTIONS" \
     -DFLB_JEMALLOC="${FLB_JEMALLOC}" \
     -DFLB_CHUNK_TRACE="${FLB_CHUNK_TRACE}" \
+    -DFLB_PROCESSOR_SQL="${FLB_PROCESSOR_SQL}" \
     ../
 
 VOLUME [ "/output" ]
