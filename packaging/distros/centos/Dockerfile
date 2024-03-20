@@ -77,7 +77,8 @@ RUN yum -y update && \
 
 ARG FLB_OUT_PGSQL=On
 ENV FLB_OUT_PGSQL=$FLB_OUT_PGSQL
-ARG FLB_PROCESSOR_SQL=On
+# Fails on CentOS 8: https://github.com/fluent/fluent-bit/issues/8606
+ARG FLB_PROCESSOR_SQL=Off
 ENV FLB_PROCESSOR_SQL=$FLB_PROCESSOR_SQL
 
 # centos/8.arm64v8 base image
@@ -103,7 +104,8 @@ RUN yum -y update && \
 
 ARG FLB_OUT_PGSQL=On
 ENV FLB_OUT_PGSQL=$FLB_OUT_PGSQL
-ARG FLB_PROCESSOR_SQL=On
+# Fails on CentOS 8: https://github.com/fluent/fluent-bit/issues/8606
+ARG FLB_PROCESSOR_SQL=Off
 ENV FLB_PROCESSOR_SQL=$FLB_PROCESSOR_SQL
 
 # Need larger page size
