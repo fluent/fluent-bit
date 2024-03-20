@@ -1080,8 +1080,6 @@ static int append_v1_logs_metadata(struct opentelemetry_context *ctx,
     return 0;
 }
 
-}
-
 static int append_v1_logs_message(struct opentelemetry_context *ctx,
                                    struct flb_log_event *event,
                                    Opentelemetry__Proto__Logs__V1__LogRecord  *log_record)
@@ -1098,13 +1096,11 @@ static int append_v1_logs_message(struct opentelemetry_context *ctx,
     if (ctx->ra_span_id_message) {
         flb_plg_info(ctx->ins, "pattern is %s\n", ctx->ra_span_id_message->pattern);
         ra_val = flb_ra_get_value_object(ctx->ra_span_id_message, *event->body);
-        flb_plg_info(ctx->ins, "ra_val type is %d\n", (int)ra_val->o.type);
         if (ra_val != NULL) {
             if(ra_val->o.type == MSGPACK_OBJECT_BIN){
                 flb_plg_info(ctx->ins, "span id ra_val bin");
                 log_record->span_id.data = flb_calloc(1, ra_val->o.via.bin.size);
                 if (log_record->span_id.data) {
-                    flb_plg_info(ctx->ins, "span id has data");
                     memcpy(log_record->span_id.data, ra_val->o.via.bin.ptr, ra_val->o.via.bin.size);
                     log_record->span_id.len = ra_val->o.via.bin.size;
                 }
@@ -1112,19 +1108,18 @@ static int append_v1_logs_message(struct opentelemetry_context *ctx,
                 flb_plg_info(ctx->ins, "span id ra_val string");
                 printf("string size\n");
                 printf("%" PRIu32  "\n", ra_val->o.via.str.size);
-                log_record->span_id.data = flb_calloc(1, ra_val->o.via.str.size);
+                log_record->span_id.data = flb_calloc(1, ra_val->o.via.str.size+1);
                 if (log_record->span_id.data) {
-                    printf("data\n");
-                    printf("%" PRIu8 "\n", log_record->span_id.data);
                     flb_plg_info(ctx->ins, "span id has data");
+                    printf("data\n");
+                    printf("%s\n", log_record->span_id.data);
                     printf("ptr\n");
-                    printf("%s\n", ra_val->o.via.str.ptr);
+                    printf("%s\n", *ra_val->o.via.str.ptr);
                     memcpy(log_record->span_id.data, ra_val->o.via.str.ptr, ra_val->o.via.str.size);
                     log_record->span_id.len = ra_val->o.via.str.size;
                     printf("data after mem copy\n");
-                    printf("%" PRIu8 "\n", log_record->span_id.data);
-                    printf("data of pointer");
-                    printf("%p\n", (void*)log_record->span_id.data);
+                    printf("%s\n", log_record->span_id.data);
+
                 }
             }
             flb_ra_key_value_destroy(ra_val);
