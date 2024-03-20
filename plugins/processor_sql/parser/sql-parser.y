@@ -26,11 +26,6 @@ void yyerror (struct sql_query *query, void *scanner, const char *str)
     fprintf(stderr, "error: %s\n", str);
 }
 
-int yywrap(struct sql_query *query)
-{
-    return 1;
-}
-
 %} /* EOF C code */
 
 
