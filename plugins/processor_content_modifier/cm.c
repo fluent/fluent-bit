@@ -105,6 +105,12 @@ static struct flb_config_map config_map[] = {
     },
 
     {
+        FLB_CONFIG_MAP_ARRAY, "actions", NULL,
+        0, FLB_TRUE, offsetof(struct content_modifier_ctx, actions_list),
+        "Actions to perform over the content: insert, upsert, delete, rename or hash."
+    },
+
+    {
         FLB_CONFIG_MAP_STR, "context", NULL,
         0, FLB_TRUE, offsetof(struct content_modifier_ctx, context_str),
         "Context to apply the action."

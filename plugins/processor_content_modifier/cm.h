@@ -61,39 +61,46 @@ enum {
 };
 
 struct cm_actions {
-    /*
-     * Based on the type, we either register a key/value pair or a
-     * single string value
-     */
-    union {
-        struct cfl_kv *kv;
-        cfl_sds_t str;
-    } value;
+    flb_sds_t key;
+    flb_sds_t value;
 
     /* Link to struct proc_attr_rules->rules */
     struct cfl_list _head;
 };
 
+struct content_modifier_action {
+    int type;
+    int context_type;
+    int converted_type;
+    flb_sds_t key;
+    flb_sds_t value;
+    struct flb_regex *pattern;
+
+    struct mk_list _head;
+};
+
 struct content_modifier_ctx {
     int telemetry_type;
 
-    /* Type of action (e.g. ..._ACTION_DELETE, ..._ACTION_INSERT )*/
-    int action_type;
+    // /* Type of action (e.g. ..._ACTION_DELETE, ..._ACTION_INSERT )*/
+    // int action_type;
 
-    /* Context where the action is applied */
-    int context_type;
+    // /* Context where the action is applied */
+    // int context_type;
 
-    /* CFL_VARIANT numerical type representation of converted_type_str */
-    int converted_type;
+    // /* CFL_VARIANT numerical type representation of converted_type_str */
+    // int converted_type;
 
     /* public configuration properties */
-    flb_sds_t action_str;          /* converted to action_type  */
-    flb_sds_t context_str;         /* converted to context_type */
-    flb_sds_t pattern;             /* pattern to create 'regex' context */
-    flb_sds_t converted_type_str;  /* converted_type */
-    flb_sds_t key;                 /* target key */
-    flb_sds_t value;               /* used for any value */
-    struct flb_regex *regex;       /* regular expression context created from 'pattern' */
+    struct cfl_array *actions_list;    /* list of several actions */
+    flb_sds_t action_str;            /* converted to action_type  */
+    struct mk_list actions;
+    flb_sds_t key;                   /* target key */
+    flb_sds_t value;                 /* used for any value */
+    flb_sds_t context_str;           /* converted to context_type */
+    flb_sds_t pattern;               /* pattern to create 'regex' context */
+    flb_sds_t converted_type_str;    /* converted_type */
+    // struct flb_regex *regex;         /* regular expression context created from 'pattern' */
 
     /* processor instance reference */
     struct flb_processor_instance *ins;

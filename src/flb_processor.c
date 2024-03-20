@@ -300,7 +300,7 @@ int flb_processor_unit_set_property(struct flb_processor_unit *pu, const char *k
 
     return flb_processor_instance_set_property(
             (struct flb_processor_instance *) pu->ctx,
-            k, v->data.as_string);
+            k, v);
 }
 
 void flb_processor_unit_destroy(struct flb_processor_unit *pu)
@@ -840,13 +840,6 @@ int flb_processors_load_from_config_format_group(struct flb_processor *proc, str
     return 0;
 }
 
-
-
-
-
-
-
-
 static inline int prop_key_check(const char *key, const char *kv, int k_len)
 {
     int len;
@@ -861,18 +854,18 @@ static inline int prop_key_check(const char *key, const char *kv, int k_len)
 }
 
 int flb_processor_instance_set_property(struct flb_processor_instance *ins,
-                                        const char *k, const char *v)
+                                        const char *k, struct cfl_variant *v)
 {
     int len;
     int ret;
-    flb_sds_t tmp;
-    struct flb_kv *kv;
+    flb_sds_t tmp = NULL;
 
     len = strlen(k);
-    tmp = flb_env_var_translate(ins->config->env, v);
-
-    if (!tmp) {
-        return -1;
+    if (v->type == CFL_VARIANT_STRING) {
+        tmp = flb_env_var_translate(ins->config->env, v->data.as_string);
+        if (!tmp) {
+            return -1;
+        }
     }
 
     if (prop_key_check("alias", k, len) == 0 && tmp) {
@@ -888,30 +881,37 @@ int flb_processor_instance_set_property(struct flb_processor_instance *ins,
         ins->log_level = ret;
     }
     else {
-        /*
-         * Create the property, we don't pass the value since we will
-         * map it directly to avoid an extra memory allocation.
-         */
-        kv = flb_kv_item_create(&ins->properties, (char *) k, NULL);
-
-        if (!kv) {
-
-            if (tmp) {
-                flb_sds_destroy(tmp);
-            }
-            return -1;
+        if (v->type == CFL_VARIANT_STRING) {
+            cfl_kvlist_insert_string(ins->properties, k, tmp);
         }
-        kv->val = tmp;
+        else {
+            cfl_kvlist_insert(ins->properties, k, v);
+        }
     }
 
     return 0;
+}
+
+int flb_processor_instance_set_property_variant(struct flb_processor_instance *ins,
+                                                struct cfl_kvpair *pair)
+{
+    return cfl_kvlist_insert(ins->properties, pair->key, pair->val);
 }
 
 const char *flb_processor_instance_get_property(
                 const char *key,
                 struct flb_processor_instance *ins)
 {
-    return flb_kv_get_key_value(key, &ins->properties);
+    struct cfl_variant *var;
+
+    var = cfl_kvlist_fetch(ins->properties, key);
+    if (var == NULL) {
+        return NULL;
+    }
+    if (var->type == CFL_VARIANT_STRING) {
+        return var->data.as_string;
+    }
+    return NULL;
 }
 
 struct flb_processor_instance *flb_processor_instance_create(struct flb_config *config,
@@ -961,7 +961,7 @@ struct flb_processor_instance *flb_processor_instance_create(struct flb_config *
     instance->data  = data;
     instance->log_level = -1;
 
-    mk_list_init(&instance->properties);
+    instance->properties = cfl_kvlist_create();
 
     instance->log_encoder = flb_log_event_encoder_create(FLB_LOG_EVENT_FORMAT_DEFAULT);
     if (instance->log_encoder == NULL) {
@@ -1005,7 +1005,6 @@ int flb_processor_instance_check_properties(
         struct flb_processor_instance *ins,
         struct flb_config *config)
 {
-    int ret = 0;
     struct mk_list *config_map;
     struct flb_processor_plugin *p = ins->p;
 
@@ -1024,18 +1023,18 @@ int flb_processor_instance_check_properties(
         ins->config_map = config_map;
 
         /* Validate incoming properties against config map */
-        ret = flb_config_map_properties_check(ins->p->name,
-                                              &ins->properties,
-                                              ins->config_map);
+        // ret = flb_config_map_properties_check_kvlist(ins->p->name,
+        //                                              ins->properties,
+        //                                              ins->config_map);
 
-        if (ret == -1) {
+        // if (ret == -1) {
 
-            if (config->program_name) {
-                flb_helper("try the command: %s -F %s -h\n",
-                           config->program_name, ins->p->name);
-            }
-            return -1;
-        }
+        //     if (config->program_name) {
+        //         flb_helper("try the command: %s -F %s -h\n",
+        //                    config->program_name, ins->p->name);
+        //     }
+        //     return -1;
+        // }
     }
 
     return 0;
@@ -1113,7 +1112,7 @@ void flb_processor_instance_destroy(struct flb_processor_instance *ins)
     }
 
     /* release properties */
-    flb_kv_release(&ins->properties);
+    cfl_kvlist_destroy(ins->properties);
 
     /* Remove metrics */
 #ifdef FLB_HAVE_METRICS

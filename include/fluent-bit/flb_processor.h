@@ -166,7 +166,7 @@ struct flb_processor_instance {
     void *context;                         /* Instance local context   */
     void *data;
     struct flb_processor_plugin *p;        /* original plugin          */
-    struct mk_list properties;             /* config properties        */
+    struct cfl_kvlist *properties;             /* config properties        */
     struct mk_list *config_map;            /* configuration map        */
 
     struct flb_log_event_decoder *log_decoder;
@@ -242,7 +242,10 @@ int flb_processor_instance_check_properties(
 
 int flb_processor_instance_set_property(
         struct flb_processor_instance *ins,
-        const char *k, const char *v);
+        const char *k, struct cfl_variant *v);
+
+int flb_processor_instance_set_property_variant(struct flb_processor_instance *ins,
+                                                struct cfl_kvpair *pair);
 
 const char *flb_processor_instance_get_property(
                 const char *key,
@@ -255,7 +258,7 @@ static inline int flb_processor_instance_config_map_set(
                     struct flb_processor_instance *ins,
                     void *context)
 {
-    return flb_config_map_set(&ins->properties, ins->config_map, context);
+    return flb_config_map_set_from_kvlist(ins->properties, ins->config_map, context);
 }
 
 #endif
