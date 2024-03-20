@@ -123,110 +123,6 @@ int flb_http2_response_set_body(struct flb_http_response *response,
     return 0;
 }
 
-/*
-int flb_http2_response_commit(struct flb_http_response *response)
-{
-    char                             status_as_text[16];
-    struct mk_list                  *header_iterator;
-    struct flb_http_server_session  *parent_session;
-    nghttp2_data_provider            data_provider;
-    size_t                           header_count;
-    size_t                           header_index;
-    struct flb_hash_table_entry     *header_entry;
-    nghttp2_nv                      *headers;
-    struct flb_http2_server_session *session;
-    struct flb_http_stream          *stream;
-    int                              result;
-
-    FLB_HTTP_STREAM_GET_SESSION(response->stream, &parent_session);
-
-    if (parent_session == NULL) {
-        return -1;
-    }
-
-    session = &parent_session->http2;
-
-    if (session == NULL) {
-        return -1;
-    }
-
-    stream  = (struct flb_http_stream *) response->stream;
-
-    if (stream == NULL) {
-        return -2;
-    }
-
-    header_count = response->headers->total_count + 1;
-
-    headers = flb_calloc(header_count, sizeof(nghttp2_nv));
-
-    if (headers == NULL) {
-        return -3;
-    }
-
-    snprintf(status_as_text, 
-             sizeof(status_as_text) - 1, 
-             "%d", 
-             response->status);
-
-    headers[0].name = (uint8_t *) ":status";
-    headers[0].namelen = strlen(":status");
-    headers[0].value = (uint8_t *) status_as_text;
-    headers[0].valuelen = strlen(status_as_text);
-
-    header_index = 1;
-
-    mk_list_foreach(header_iterator, &response->headers->entries) {
-        header_entry = mk_list_entry(header_iterator, 
-                                     struct flb_hash_table_entry, 
-                                     _head_parent);
-
-        if (header_entry == NULL) {
-            return -4;
-        }
-
-        headers[header_index].name = (uint8_t *) header_entry->key;
-        headers[header_index].namelen = header_entry->key_len;
-        headers[header_index].value = (uint8_t *) header_entry->val;
-        headers[header_index].valuelen = header_entry->val_size;
-
-        header_index++;
-    }
-
-    data_provider.source.fd = 0;
-    data_provider.read_callback = http2_data_source_read_callback;
-
-    stream->status = HTTP_STREAM_STATUS_PROCESSING;
-
-    result = nghttp2_submit_response(session->inner_session, 
-                                     stream->id, 
-                                     headers, 
-                                     header_count, 
-                                     &data_provider);
-
-    flb_free(headers);
-
-    if (result != 0) {
-        stream->status = HTTP_STREAM_STATUS_ERROR;
-
-        return -5;
-    }
-
-    result = nghttp2_session_send(session->inner_session);
-
-    if (result != 0) {
-        stream->status = HTTP_STREAM_STATUS_ERROR;
-
-        return -6;
-    }
-
-    stream->status = HTTP_STREAM_STATUS_RECEIVING_HEADERS;
-
-    flb_http_response_destroy(&stream->response);
-
-    return 0;
-}
-*/
 int flb_http2_response_commit(struct flb_http_response *response)
 {
     size_t                           trailer_header_count;
@@ -482,6 +378,12 @@ int flb_http2_server_session_ingest(struct flb_http2_server_session *session,
     ssize_t result;
 
     result = nghttp2_session_mem_recv(session->inner_session, buffer, length);
+
+    if (result < 0) {
+        return HTTP_SERVER_PROVIDER_ERROR;
+    }
+    
+    result = nghttp2_session_send(session->inner_session);
 
     if (result < 0) {
         return HTTP_SERVER_PROVIDER_ERROR;
