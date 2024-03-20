@@ -474,17 +474,28 @@ int azure_kusto_load_ingestion_resources(struct flb_azure_kusto *ctx,
                                 parse_ingestion_identity_token(ctx, response);
 
                             if (identity_token) {
-                                ctx->resources->blob_ha = blob_ha;
-                                ctx->resources->queue_ha = queue_ha;
-                                ctx->resources->identity_token = identity_token;
-                                ctx->resources->load_time = now;
-                                ret = 0;
+                                ret = flb_azure_kusto_resources_clear(ctx->resources);
+
+                                if (ret != -1) {
+                                    ctx->resources->blob_ha = blob_ha;
+                                    ctx->resources->queue_ha = queue_ha;
+                                    ctx->resources->identity_token = identity_token;
+                                    ctx->resources->load_time = now;
+
+                                    ret = 0;
+                                }
+                                else {
+                                    flb_plg_error(
+                                            ctx->ins,
+                                            "error destroying previous ingestion resources");
+                                }
                             }
                             else {
                                 flb_plg_error(ctx->ins,
                                               "error parsing ingestion identity token");
                                 ret = -1;
                             }
+                            
                             if (pthread_mutex_unlock(&ctx->resources_mutex)) {
                                 flb_plg_error(ctx->ins, "error unlocking resources mutex");
                                 return -1;
