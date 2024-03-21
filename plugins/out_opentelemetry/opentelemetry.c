@@ -1119,6 +1119,8 @@ static int append_v1_logs_message(struct opentelemetry_context *ctx,
                     log_record->span_id.len = ra_val->o.via.str.size;
                     printf("data after mem copy\n");
                     printf("%s\n", log_record->span_id.data);
+                    printf("size after mem copy\n");
+                    printf("%" PRIu32  "\n", strlen(log_record->span_id.data));
 
                 }
             }
