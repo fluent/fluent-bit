@@ -745,6 +745,7 @@ static int read_config(struct flb_cf *cf, struct local_ctx *ctx,
         ctx->level--;
         goto error;
     }
+
     flb_free(buf);
     file->path = flb_sds_create(cfg_file);
     mk_list_add(&file->_head, &ctx->includes);
