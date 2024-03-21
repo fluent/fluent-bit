@@ -376,6 +376,24 @@ static void test_flb_get_s3_key_mixed_timestamp()
     flb_sds_destroy(s3_key_format);
 }
 
+/*
+ * https://github.com/fluent/fluent-bit/issues/7538
+ */
+static void test_flb_aws_strftime_precision_leading_zeros()
+{
+    char *out_buf;
+    struct flb_time tms;
+    char *time_format = "ms=%3N, ns=%9N, ns=%L";
+    tms.tm.tv_sec = 1698784683;
+    tms.tm.tv_nsec = 1000009;
+
+    out_buf = flb_malloc(1024);
+    TEST_CHECK(out_buf != NULL);
+    flb_aws_strftime_precision(&out_buf, time_format, &tms);
+
+    TEST_CHECK(strcmp(out_buf, "ms=001, ns=001000009, ns=001000009") == 0);
+}
+
 TEST_LIST = {
     { "parse_api_error" , test_flb_aws_error},
     { "flb_aws_endpoint" , test_flb_aws_endpoint},
@@ -391,5 +409,6 @@ TEST_LIST = {
     {"flb_get_s3_key_increment_index", test_flb_get_s3_key_increment_index},
     {"flb_get_s3_key_index_overflow", test_flb_get_s3_key_index_overflow},
     {"flb_get_s3_key_mixed_timestamp", test_flb_get_s3_key_mixed_timestamp},
+    {"test_flb_aws_strftime_precision_leading_zeros", test_flb_aws_strftime_precision_leading_zeros},
     { 0 }
 };
