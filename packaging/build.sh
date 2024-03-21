@@ -77,7 +77,7 @@ echo "CMAKE_INSTALL_PREFIX  => $CMAKE_INSTALL_PREFIX"
 echo "FLB_NIGHTLY_BUILD     => $FLB_NIGHTLY_BUILD"
 echo "FLB_JEMALLOC          => $FLB_JEMALLOC"
 
-if [ ${DOCKER} = "docker" ]; then
+if [ "${DOCKER}" = "docker" ]; then
     export DOCKER_BUILDKIT=1
 else
     export DOCKER_BUILDKIT=0
