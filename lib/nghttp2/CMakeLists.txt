@@ -60,7 +60,8 @@ set(OPENSSL_MSVC_STATIC_RT  ON)
 find_package(Python3 COMPONENTS Interpreter)
 
 # Auto-detection of features that can be toggled
-find_package(OpenSSL 1.0.1)
+## This auto detection causes weird linker errors. So, it's disabled for now.
+# find_package(OpenSSL 1.0.1)
 find_package(Libev 4.11)
 find_package(Libcares 1.7.5)
 find_package(ZLIB 1.2.3)
