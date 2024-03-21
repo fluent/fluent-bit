@@ -1114,7 +1114,7 @@ static int append_v1_logs_message(struct opentelemetry_context *ctx,
                     printf("data\n");
                     printf("%s\n", log_record->span_id.data);
                     printf("ptr\n");
-                    printf("%s\n", *ra_val->o.via.str.ptr);
+                    printf("%s\n", ra_val->o.via.str.ptr);
                     memcpy(log_record->span_id.data, ra_val->o.via.str.ptr, ra_val->o.via.str.size);
                     log_record->span_id.len = ra_val->o.via.str.size;
                     printf("data after mem copy\n");
