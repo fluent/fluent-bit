@@ -331,6 +331,10 @@ int flb_task_running_print(struct flb_config *config)
     return 0;
 }
 
+int flb_task_map_get_task_id(struct flb_config *config) {
+    return map_get_task_id(config);
+}
+
 /* Create an engine task to handle the output plugin flushing work */
 struct flb_task *flb_task_create(uint64_t ref_id,
                                  const char *buf,
