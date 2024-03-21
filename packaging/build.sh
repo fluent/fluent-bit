@@ -10,6 +10,7 @@ FLB_DISTRO=${FLB_DISTRO:-}
 FLB_OUT_DIR=${FLB_OUT_DIR:-}
 FLB_NIGHTLY_BUILD=${FLB_NIGHTLY_BUILD:-}
 FLB_JEMALLOC=${FLB_JEMALLOC:-On}
+DOCKER=${FLB_DOCKER_CLI:-docker}
 
 # Use this to pass special arguments to docker build
 FLB_ARG=${FLB_ARG:-}
@@ -76,11 +77,15 @@ echo "CMAKE_INSTALL_PREFIX  => $CMAKE_INSTALL_PREFIX"
 echo "FLB_NIGHTLY_BUILD     => $FLB_NIGHTLY_BUILD"
 echo "FLB_JEMALLOC          => $FLB_JEMALLOC"
 
-export DOCKER_BUILDKIT=1
+if [ "${DOCKER}" = "docker" ]; then
+    export DOCKER_BUILDKIT=1
+else
+    export DOCKER_BUILDKIT=0
+fi
 
 # Build the main image - we do want word splitting
 # shellcheck disable=SC2086
-if ! docker build \
+if ! ${DOCKER} build \
     --build-arg CMAKE_INSTALL_PREFIX="$CMAKE_INSTALL_PREFIX" \
     --build-arg FLB_NIGHTLY_BUILD="$FLB_NIGHTLY_BUILD" \
     --build-arg FLB_JEMALLOC="$FLB_JEMALLOC" \
@@ -95,7 +100,7 @@ then
 fi
 
 # Compile and package
-if ! docker run \
+if ! ${DOCKER} run \
     -v "$volume":/output \
     "$MAIN_IMAGE"
 then
