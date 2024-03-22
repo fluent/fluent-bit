@@ -132,7 +132,7 @@ static void cb_exit_flush(struct flb_event_chunk *event_chunk,
 
         if (ctx->flush_count == 0 ||
             ctx->record_count == 0 ||
-            (ctx->time_count && flb_time_to_millisec(&run) > (ctx->time_count*1000))) {
+            (ctx->time_count > 0 && flb_time_to_millisec(&run) > (ctx->time_count*1000))) {
             flb_engine_exit(config);
             ctx->is_running = FLB_FALSE;
         }
