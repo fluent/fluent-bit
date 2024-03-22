@@ -64,7 +64,7 @@ include_directories(
 check_c_source_compiles("
   #include <time.h>
   int main() {
-     struct tm tm;
+     struct timespec tm;
      return timespec_get(&tm, TIME_UTC);
   }" CTR_HAVE_TIMESPEC_GET)
 if(CTR_HAVE_TIMESPEC_GET)
