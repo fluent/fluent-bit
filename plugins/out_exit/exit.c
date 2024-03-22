@@ -67,9 +67,8 @@ static int cb_exit_init(struct flb_output_instance *ins, struct flb_config *conf
     if (ctx->flush_count == -1 &&
         ctx->record_count == -1 &&
         ctx->time_count == -1) {
-        flb_plg_error(ctx->ins, "no count set for flush, record or time, set at least one");
-        flb_free(ctx);
-        return -1;
+        // emulate legacy behaviour by setting to a single flush.
+        ctx->flush_count = 1;
     }
 
     flb_output_set_context(ins, ctx);
