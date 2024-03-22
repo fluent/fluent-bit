@@ -1107,16 +1107,16 @@ static int append_v1_logs_message(struct opentelemetry_context *ctx,
             }else if(ra_val->o.type == MSGPACK_OBJECT_STR){
                 flb_plg_info(ctx->ins, "span id ra_val string");
                 printf("string size\n");
-                printf("%" PRIu32  "\n", ra_val->o.via.str.size);
-                log_record->span_id.data = flb_calloc(1, ra_val->o.via.str.size+1);
+                printf("%" PRIu32  "\n", ra_val->o.via.str.size/2);
+                log_record->span_id.data = flb_calloc(1, (ra_val->o.via.str.size/2)+1);
                 if (log_record->span_id.data) {
                     flb_plg_info(ctx->ins, "span id has data");
                     printf("data\n");
                     printf("%s\n", log_record->span_id.data);
                     printf("ptr\n");
                     printf("%s\n", ra_val->o.via.str.ptr);
-                    memcpy(log_record->span_id.data, ra_val->o.via.str.ptr, ra_val->o.via.str.size);
-                    log_record->span_id.len = ra_val->o.via.str.size;
+                    memcpy(log_record->span_id.data, ra_val->o.via.str.ptr, ra_val->o.via.str.size/2);
+                    log_record->span_id.len = ra_val->o.via.str.size/2;
                     printf("data after mem copy\n");
                     printf("%s\n", log_record->span_id.data);
                     printf("size after mem copy\n");
