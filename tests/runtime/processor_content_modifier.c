@@ -941,6 +941,490 @@ static void flb_logs_action_convert_from_string_to_boolean()
     processor_test_destroy(ctx);
 }
 
+static void flb_logs_action_convert_from_int_to_boolean()
+{
+    struct processor_test *ctx;
+    struct flb_lib_out_cb cb_data;
+    int ret;
+    char *p;
+    int bytes;
+    size_t len;
+    struct expect_str expect[] = {
+      {"\"i_key\":true", FLB_TRUE},
+      {"\"k\":\"sample\"", FLB_TRUE},
+      {NULL, FLB_TRUE}
+    };
+
+    struct cfl_variant action = {
+        .type = CFL_VARIANT_STRING,
+        .data.as_string = "convert",
+    };
+    struct cfl_variant context = {
+        .type = CFL_VARIANT_STRING,
+        .data.as_string = "message",
+    };
+    struct cfl_variant key = {
+        .type = CFL_VARIANT_STRING,
+        .data.as_string = "i_key",
+    };
+    struct cfl_variant converted_type = {
+        .type = CFL_VARIANT_STRING,
+        .data.as_string = "boolean",
+    };
+
+    /* Prepare output callback with expected result */
+    cb_data.cb = cb_check_result;
+    cb_data.data = &expect;
+
+    ctx = processor_test_create(FLB_PROCESSOR_LOGS, &cb_data);
+    if (!TEST_CHECK(ctx != NULL)) {
+        TEST_MSG("failed to create ctx");
+        return;
+    }
+
+    ret = flb_output_set(ctx->flb, ctx->o_ffd,
+                         "format", "json",
+                         NULL);
+    TEST_CHECK(ret == 0);
+
+    ret = flb_processor_unit_set_property(ctx->pu, "action", &action);
+    TEST_CHECK(ret == 0);
+    ret = flb_processor_unit_set_property(ctx->pu, "context", &context);
+    TEST_CHECK(ret == 0);
+    ret = flb_processor_unit_set_property(ctx->pu, "key", &key);
+    TEST_CHECK(ret == 0);
+    ret = flb_processor_unit_set_property(ctx->pu, "converted_type", &converted_type);
+    TEST_CHECK(ret == 0);
+
+    ret = flb_start(ctx->flb);
+    if (!TEST_CHECK(ret == 0)) {
+        TEST_MSG("flb_start failed");
+        return;
+    }
+
+    p = "[0, {\"k\":\"sample\", \"i_key\":-100}]";
+    len = strlen(p);
+    bytes = flb_lib_push(ctx->flb, ctx->i_ffd, p, len);
+    TEST_CHECK(bytes == len);
+
+    processor_test_destroy(ctx);
+}
+
+static void flb_logs_action_convert_from_int_to_double()
+{
+    struct processor_test *ctx;
+    struct flb_lib_out_cb cb_data;
+    int ret;
+    char *p;
+    int bytes;
+    size_t len;
+    struct expect_str expect[] = {
+      {"\"i_key\":-100.0", FLB_TRUE},
+      {"\"k\":\"sample\"", FLB_TRUE},
+      {NULL, FLB_TRUE}
+    };
+
+    struct cfl_variant action = {
+        .type = CFL_VARIANT_STRING,
+        .data.as_string = "convert",
+    };
+    struct cfl_variant context = {
+        .type = CFL_VARIANT_STRING,
+        .data.as_string = "message",
+    };
+    struct cfl_variant key = {
+        .type = CFL_VARIANT_STRING,
+        .data.as_string = "i_key",
+    };
+    struct cfl_variant converted_type = {
+        .type = CFL_VARIANT_STRING,
+        .data.as_string = "double",
+    };
+
+    /* Prepare output callback with expected result */
+    cb_data.cb = cb_check_result;
+    cb_data.data = &expect;
+
+    ctx = processor_test_create(FLB_PROCESSOR_LOGS, &cb_data);
+    if (!TEST_CHECK(ctx != NULL)) {
+        TEST_MSG("failed to create ctx");
+        return;
+    }
+
+    ret = flb_output_set(ctx->flb, ctx->o_ffd,
+                         "format", "json",
+                         NULL);
+    TEST_CHECK(ret == 0);
+
+    ret = flb_processor_unit_set_property(ctx->pu, "action", &action);
+    TEST_CHECK(ret == 0);
+    ret = flb_processor_unit_set_property(ctx->pu, "context", &context);
+    TEST_CHECK(ret == 0);
+    ret = flb_processor_unit_set_property(ctx->pu, "key", &key);
+    TEST_CHECK(ret == 0);
+    ret = flb_processor_unit_set_property(ctx->pu, "converted_type", &converted_type);
+    TEST_CHECK(ret == 0);
+
+    ret = flb_start(ctx->flb);
+    if (!TEST_CHECK(ret == 0)) {
+        TEST_MSG("flb_start failed");
+        return;
+    }
+
+    p = "[0, {\"k\":\"sample\", \"i_key\":-100}]";
+    len = strlen(p);
+    bytes = flb_lib_push(ctx->flb, ctx->i_ffd, p, len);
+    TEST_CHECK(bytes == len);
+
+    processor_test_destroy(ctx);
+}
+
+static void flb_logs_action_convert_from_double_to_int()
+{
+    struct processor_test *ctx;
+    struct flb_lib_out_cb cb_data;
+    int ret;
+    char *p;
+    int bytes;
+    size_t len;
+    struct expect_str expect[] = {
+      {"\"d_key\":123", FLB_TRUE},
+      {"\"d_key\":123.", FLB_FALSE},
+      {"\"k\":\"sample\"", FLB_TRUE},
+      {NULL, FLB_TRUE}
+    };
+
+    struct cfl_variant action = {
+        .type = CFL_VARIANT_STRING,
+        .data.as_string = "convert",
+    };
+    struct cfl_variant context = {
+        .type = CFL_VARIANT_STRING,
+        .data.as_string = "message",
+    };
+    struct cfl_variant key = {
+        .type = CFL_VARIANT_STRING,
+        .data.as_string = "d_key",
+    };
+    struct cfl_variant converted_type = {
+        .type = CFL_VARIANT_STRING,
+        .data.as_string = "int",
+    };
+
+    /* Prepare output callback with expected result */
+    cb_data.cb = cb_check_result;
+    cb_data.data = &expect;
+
+    ctx = processor_test_create(FLB_PROCESSOR_LOGS, &cb_data);
+    if (!TEST_CHECK(ctx != NULL)) {
+        TEST_MSG("failed to create ctx");
+        return;
+    }
+
+    ret = flb_output_set(ctx->flb, ctx->o_ffd,
+                         "format", "json",
+                         NULL);
+    TEST_CHECK(ret == 0);
+
+    ret = flb_processor_unit_set_property(ctx->pu, "action", &action);
+    TEST_CHECK(ret == 0);
+    ret = flb_processor_unit_set_property(ctx->pu, "context", &context);
+    TEST_CHECK(ret == 0);
+    ret = flb_processor_unit_set_property(ctx->pu, "key", &key);
+    TEST_CHECK(ret == 0);
+    ret = flb_processor_unit_set_property(ctx->pu, "converted_type", &converted_type);
+    TEST_CHECK(ret == 0);
+
+    ret = flb_start(ctx->flb);
+    if (!TEST_CHECK(ret == 0)) {
+        TEST_MSG("flb_start failed");
+        return;
+    }
+
+    p = "[0, {\"k\":\"sample\", \"d_key\":123.456}]";
+    len = strlen(p);
+    bytes = flb_lib_push(ctx->flb, ctx->i_ffd, p, len);
+    TEST_CHECK(bytes == len);
+
+    processor_test_destroy(ctx);
+}
+
+static void flb_logs_action_convert_from_double_to_boolean()
+{
+    struct processor_test *ctx;
+    struct flb_lib_out_cb cb_data;
+    int ret;
+    char *p;
+    int bytes;
+    size_t len;
+    struct expect_str expect[] = {
+      {"\"d_key\":true", FLB_TRUE},
+      {"\"k\":\"sample\"", FLB_TRUE},
+      {NULL, FLB_TRUE}
+    };
+
+    struct cfl_variant action = {
+        .type = CFL_VARIANT_STRING,
+        .data.as_string = "convert",
+    };
+    struct cfl_variant context = {
+        .type = CFL_VARIANT_STRING,
+        .data.as_string = "message",
+    };
+    struct cfl_variant key = {
+        .type = CFL_VARIANT_STRING,
+        .data.as_string = "d_key",
+    };
+    struct cfl_variant converted_type = {
+        .type = CFL_VARIANT_STRING,
+        .data.as_string = "boolean",
+    };
+
+    /* Prepare output callback with expected result */
+    cb_data.cb = cb_check_result;
+    cb_data.data = &expect;
+
+    ctx = processor_test_create(FLB_PROCESSOR_LOGS, &cb_data);
+    if (!TEST_CHECK(ctx != NULL)) {
+        TEST_MSG("failed to create ctx");
+        return;
+    }
+
+    ret = flb_output_set(ctx->flb, ctx->o_ffd,
+                         "format", "json",
+                         NULL);
+    TEST_CHECK(ret == 0);
+
+    ret = flb_processor_unit_set_property(ctx->pu, "action", &action);
+    TEST_CHECK(ret == 0);
+    ret = flb_processor_unit_set_property(ctx->pu, "context", &context);
+    TEST_CHECK(ret == 0);
+    ret = flb_processor_unit_set_property(ctx->pu, "key", &key);
+    TEST_CHECK(ret == 0);
+    ret = flb_processor_unit_set_property(ctx->pu, "converted_type", &converted_type);
+    TEST_CHECK(ret == 0);
+
+    ret = flb_start(ctx->flb);
+    if (!TEST_CHECK(ret == 0)) {
+        TEST_MSG("flb_start failed");
+        return;
+    }
+
+    p = "[0, {\"k\":\"sample\", \"d_key\":123.456}]";
+    len = strlen(p);
+    bytes = flb_lib_push(ctx->flb, ctx->i_ffd, p, len);
+    TEST_CHECK(bytes == len);
+
+    processor_test_destroy(ctx);
+}
+
+static void flb_logs_action_convert_from_null_to_string()
+{
+    struct processor_test *ctx;
+    struct flb_lib_out_cb cb_data;
+    int ret;
+    char *p;
+    int bytes;
+    size_t len;
+    struct expect_str expect[] = {
+      {"\"n_key\":\"null\"", FLB_TRUE},
+      {"\"k\":\"sample\"", FLB_TRUE},
+      {NULL, FLB_TRUE}
+    };
+
+    struct cfl_variant action = {
+        .type = CFL_VARIANT_STRING,
+        .data.as_string = "convert",
+    };
+    struct cfl_variant context = {
+        .type = CFL_VARIANT_STRING,
+        .data.as_string = "message",
+    };
+    struct cfl_variant key = {
+        .type = CFL_VARIANT_STRING,
+        .data.as_string = "n_key",
+    };
+    struct cfl_variant converted_type = {
+        .type = CFL_VARIANT_STRING,
+        .data.as_string = "string",
+    };
+
+    /* Prepare output callback with expected result */
+    cb_data.cb = cb_check_result;
+    cb_data.data = &expect;
+
+    ctx = processor_test_create(FLB_PROCESSOR_LOGS, &cb_data);
+    if (!TEST_CHECK(ctx != NULL)) {
+        TEST_MSG("failed to create ctx");
+        return;
+    }
+
+    ret = flb_output_set(ctx->flb, ctx->o_ffd,
+                         "format", "json",
+                         NULL);
+    TEST_CHECK(ret == 0);
+
+    ret = flb_processor_unit_set_property(ctx->pu, "action", &action);
+    TEST_CHECK(ret == 0);
+    ret = flb_processor_unit_set_property(ctx->pu, "context", &context);
+    TEST_CHECK(ret == 0);
+    ret = flb_processor_unit_set_property(ctx->pu, "key", &key);
+    TEST_CHECK(ret == 0);
+    ret = flb_processor_unit_set_property(ctx->pu, "converted_type", &converted_type);
+    TEST_CHECK(ret == 0);
+
+    ret = flb_start(ctx->flb);
+    if (!TEST_CHECK(ret == 0)) {
+        TEST_MSG("flb_start failed");
+        return;
+    }
+
+    p = "[0, {\"k\":\"sample\", \"n_key\":null}]";
+    len = strlen(p);
+    bytes = flb_lib_push(ctx->flb, ctx->i_ffd, p, len);
+    TEST_CHECK(bytes == len);
+
+    processor_test_destroy(ctx);
+}
+
+static void flb_logs_action_convert_from_null_to_int()
+{
+    struct processor_test *ctx;
+    struct flb_lib_out_cb cb_data;
+    int ret;
+    char *p;
+    int bytes;
+    size_t len;
+    struct expect_str expect[] = {
+      {"\"n_key\":0", FLB_TRUE},
+      {"\"k\":\"sample\"", FLB_TRUE},
+      {NULL, FLB_TRUE}
+    };
+
+    struct cfl_variant action = {
+        .type = CFL_VARIANT_STRING,
+        .data.as_string = "convert",
+    };
+    struct cfl_variant context = {
+        .type = CFL_VARIANT_STRING,
+        .data.as_string = "message",
+    };
+    struct cfl_variant key = {
+        .type = CFL_VARIANT_STRING,
+        .data.as_string = "n_key",
+    };
+    struct cfl_variant converted_type = {
+        .type = CFL_VARIANT_STRING,
+        .data.as_string = "int",
+    };
+
+    /* Prepare output callback with expected result */
+    cb_data.cb = cb_check_result;
+    cb_data.data = &expect;
+
+    ctx = processor_test_create(FLB_PROCESSOR_LOGS, &cb_data);
+    if (!TEST_CHECK(ctx != NULL)) {
+        TEST_MSG("failed to create ctx");
+        return;
+    }
+
+    ret = flb_output_set(ctx->flb, ctx->o_ffd,
+                         "format", "json",
+                         NULL);
+    TEST_CHECK(ret == 0);
+
+    ret = flb_processor_unit_set_property(ctx->pu, "action", &action);
+    TEST_CHECK(ret == 0);
+    ret = flb_processor_unit_set_property(ctx->pu, "context", &context);
+    TEST_CHECK(ret == 0);
+    ret = flb_processor_unit_set_property(ctx->pu, "key", &key);
+    TEST_CHECK(ret == 0);
+    ret = flb_processor_unit_set_property(ctx->pu, "converted_type", &converted_type);
+    TEST_CHECK(ret == 0);
+
+    ret = flb_start(ctx->flb);
+    if (!TEST_CHECK(ret == 0)) {
+        TEST_MSG("flb_start failed");
+        return;
+    }
+
+    p = "[0, {\"k\":\"sample\", \"n_key\":null}]";
+    len = strlen(p);
+    bytes = flb_lib_push(ctx->flb, ctx->i_ffd, p, len);
+    TEST_CHECK(bytes == len);
+
+    processor_test_destroy(ctx);
+}
+
+static void flb_logs_action_convert_from_null_to_double()
+{
+    struct processor_test *ctx;
+    struct flb_lib_out_cb cb_data;
+    int ret;
+    char *p;
+    int bytes;
+    size_t len;
+    struct expect_str expect[] = {
+      {"\"n_key\":0.0", FLB_TRUE},
+      {"\"k\":\"sample\"", FLB_TRUE},
+      {NULL, FLB_TRUE}
+    };
+
+    struct cfl_variant action = {
+        .type = CFL_VARIANT_STRING,
+        .data.as_string = "convert",
+    };
+    struct cfl_variant context = {
+        .type = CFL_VARIANT_STRING,
+        .data.as_string = "message",
+    };
+    struct cfl_variant key = {
+        .type = CFL_VARIANT_STRING,
+        .data.as_string = "n_key",
+    };
+    struct cfl_variant converted_type = {
+        .type = CFL_VARIANT_STRING,
+        .data.as_string = "double",
+    };
+
+    /* Prepare output callback with expected result */
+    cb_data.cb = cb_check_result;
+    cb_data.data = &expect;
+
+    ctx = processor_test_create(FLB_PROCESSOR_LOGS, &cb_data);
+    if (!TEST_CHECK(ctx != NULL)) {
+        TEST_MSG("failed to create ctx");
+        return;
+    }
+
+    ret = flb_output_set(ctx->flb, ctx->o_ffd,
+                         "format", "json",
+                         NULL);
+    TEST_CHECK(ret == 0);
+
+    ret = flb_processor_unit_set_property(ctx->pu, "action", &action);
+    TEST_CHECK(ret == 0);
+    ret = flb_processor_unit_set_property(ctx->pu, "context", &context);
+    TEST_CHECK(ret == 0);
+    ret = flb_processor_unit_set_property(ctx->pu, "key", &key);
+    TEST_CHECK(ret == 0);
+    ret = flb_processor_unit_set_property(ctx->pu, "converted_type", &converted_type);
+    TEST_CHECK(ret == 0);
+
+    ret = flb_start(ctx->flb);
+    if (!TEST_CHECK(ret == 0)) {
+        TEST_MSG("flb_start failed");
+        return;
+    }
+
+    p = "[0, {\"k\":\"sample\", \"n_key\":null}]";
+    len = strlen(p);
+    bytes = flb_lib_push(ctx->flb, ctx->i_ffd, p, len);
+    TEST_CHECK(bytes == len);
+
+    processor_test_destroy(ctx);
+}
+
 TEST_LIST = {
     {"logs.action.insert"           , flb_logs_action_insert },
     {"logs.action.delete"           , flb_logs_action_delete },
@@ -953,5 +1437,12 @@ TEST_LIST = {
     {"logs.action.convert_from_string_to_double" , flb_logs_action_convert_from_string_to_double },
     {"logs.action.convert_from_double_to_string" , flb_logs_action_convert_from_double_to_string },
     {"logs.action.convert_from_string_to_boolean" , flb_logs_action_convert_from_string_to_boolean },
+    {"logs.action.convert_from_int_to_boolean" , flb_logs_action_convert_from_int_to_boolean },
+    {"logs.action.convert_from_int_to_double" , flb_logs_action_convert_from_int_to_double },
+    {"logs.action.convert_from_double_to_int" , flb_logs_action_convert_from_double_to_int },
+    {"logs.action.convert_from_double_to_boolean" , flb_logs_action_convert_from_double_to_boolean },
+    {"logs.action.convert_from_null_to_string" , flb_logs_action_convert_from_null_to_string },
+    {"logs.action.convert_from_null_to_int" , flb_logs_action_convert_from_null_to_int },
+    {"logs.action.convert_from_null_to_double" , flb_logs_action_convert_from_null_to_double },
     {NULL, NULL}
 };
