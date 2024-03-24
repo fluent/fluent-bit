@@ -121,6 +121,7 @@ static int load_oci_credentials(struct flb_oci_logan *ctx)
                 goto iterate;
             }
             mk_mem_free(profile);
+            profile = NULL;
         }
         if(found_profile) {
             if(line[0] == '[') {
@@ -209,6 +210,7 @@ static int global_metadata_fields_create(struct flb_oci_logan *ctx)
         }
         f->val = flb_sds_create(val->str);
         if (!f->val) {
+            flb_sds_destroy(f->key);
             flb_free(f);
             return -1;
         }
@@ -249,6 +251,7 @@ static int log_event_metadata_create(struct flb_oci_logan *ctx)
         }
         f->val = flb_sds_create(val->str);
         if (!f->val) {
+            flb_sds_destroy(f->key);
             flb_free(f);
             return -1;
         }
@@ -277,6 +280,8 @@ struct flb_oci_logan *flb_oci_logan_conf_create(struct flb_output_instance *ins,
         flb_errno();
         return NULL;
     }
+    mk_list_init(&ctx->global_metadata_fields);
+    mk_list_init(&ctx->log_event_metadata_fields);
 
     ctx->ins = ins;
 
@@ -290,15 +295,14 @@ struct flb_oci_logan *flb_oci_logan_conf_create(struct flb_output_instance *ins,
     if (ctx->oci_config_in_record == FLB_FALSE) {
         if (ctx->oci_la_log_source_name == NULL ||
             ctx->oci_la_log_group_id == NULL) {
-            flb_errno();
             flb_plg_error(ctx->ins,
                           "log source name and log group id are required");
             flb_oci_logan_conf_destroy(ctx);
             return NULL;
         }
     }
+
     if (ctx->oci_la_global_metadata != NULL) {
-        mk_list_init(&ctx->global_metadata_fields);
         ret = global_metadata_fields_create(ctx);
         if (ret != 0) {
             flb_errno();
@@ -308,7 +312,6 @@ struct flb_oci_logan *flb_oci_logan_conf_create(struct flb_output_instance *ins,
     }
 
     if (ctx->oci_la_metadata != NULL) {
-        mk_list_init(&ctx->log_event_metadata_fields);
         ret = log_event_metadata_create(ctx);
         if (ret != 0) {
             flb_errno();
@@ -318,7 +321,6 @@ struct flb_oci_logan *flb_oci_logan_conf_create(struct flb_output_instance *ins,
     }
 
     if (!ctx->config_file_location) {
-        flb_errno();
         flb_plg_error(ctx->ins, "config file location is required");
         flb_oci_logan_conf_destroy(ctx);
         return NULL;
@@ -336,7 +338,6 @@ struct flb_oci_logan *flb_oci_logan_conf_create(struct flb_output_instance *ins,
     }
     else {
         if (!ctx->region) {
-            flb_errno();
             flb_plg_error(ctx->ins, "Region is required");
             flb_oci_logan_conf_destroy(ctx);
             return NULL;
@@ -347,7 +348,6 @@ struct flb_oci_logan *flb_oci_logan_conf_create(struct flb_output_instance *ins,
 
     if (!ctx->uri) {
         if (!ctx->namespace) {
-            flb_errno();
             flb_plg_error(ctx->ins, "Namespace is required");
             flb_oci_logan_conf_destroy(ctx);
             return NULL;
@@ -437,16 +437,24 @@ static void metadata_fields_destroy(struct flb_oci_logan *ctx)
 
     mk_list_foreach_safe(head, tmp, &ctx->global_metadata_fields) {
         f = mk_list_entry(head, struct metadata_obj, _head);
-        flb_sds_destroy(f->key);
-        flb_sds_destroy(f->val);
+        if (f->key) {
+            flb_sds_destroy(f->key);
+        }
+        if (f->val) {
+            flb_sds_destroy(f->val);
+        }
         mk_list_del(&f->_head);
         flb_free(f);
     }
 
     mk_list_foreach_safe(head, tmp, &ctx->log_event_metadata_fields) {
         f = mk_list_entry(head, struct metadata_obj, _head);
-        flb_sds_destroy(f->key);
-        flb_sds_destroy(f->val);
+        if (f->key) {
+            flb_sds_destroy(f->key);
+        }
+        if (f->val) {
+            flb_sds_destroy(f->val);
+        }
         mk_list_del(&f->_head);
         flb_free(f);
     }
