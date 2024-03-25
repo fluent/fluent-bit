@@ -161,13 +161,14 @@ select: SELECT keys FROM source where ';'
             //        {
             //          flb_free($1);
             //        }
-      value: INTEGER
+      value:   INTEGER
                {
                  $$ = sql_expression_condition_integer(query, $1);
                }
                |
                FLOATING
                {
+
                  $$ = sql_expression_condition_float(query, $1);
                }
                |
@@ -213,7 +214,6 @@ select: SELECT keys FROM source where ';'
                   |
                   record_func '=' value
                   {
-                    printf("record_func '=' value\n");
                     $$ = sql_expression_comparison(query, $1, $3, SQL_EXP_EQ);
                   }
                   |

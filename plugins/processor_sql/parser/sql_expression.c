@@ -129,7 +129,7 @@ struct sql_expression *sql_expression_condition_float(struct sql_query *query,
     }
 
     val->type = SQL_EXP_FLOAT;
-    val->val.i64 = fval;
+    val->val.f64 = fval;
     cfl_list_add(&val->_head, &query->cond_list);
 
     return (struct sql_expression *) val;
@@ -148,6 +148,12 @@ struct sql_expression *sql_expression_condition_string(struct sql_query *query,
 
     val->type = SQL_EXP_STRING;
     val->val.string = cfl_sds_create(string);
+    if (!val->val.string) {
+        flb_errno();
+        flb_free(val);
+        return NULL;
+    }
+
     cfl_list_add(&val->_head, &query->cond_list);
 
     return (struct sql_expression *) val;
