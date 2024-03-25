@@ -1123,12 +1123,12 @@ static int append_v1_logs_message(struct opentelemetry_context *ctx,
                  //   printf("%" PRIu32  "\n", strlen(log_record->span_id.data));
 
                     uint8_t val[8];
-                    uint8_t *hexstring = flb_calloc(1, ra_val->o.via.str.size+1);
-                    memcpy(hexstring, ra_val->o.via.str.ptr, ra_val->o.via.str.size);
+                 //   uint8_t *hexstring = flb_calloc(1, ra_val->o.via.str.size+1);
+                 //   memcpy(hexstring, ra_val->o.via.str.ptr, ra_val->o.via.str.size);
 
                     for(size_t count = 0; count < sizeof val/sizeof *val; count++ ){
-                        sscanf(hexstring, "%2hhx", &val[count]);
-                        hexstring+=2;
+                        sscanf(ra_val->o.via.str.ptr, "%2hhx", &val[count]);
+                        ra_val->o.via.str.ptr+=2;
                     }
 
                     memcpy(log_record->span_id.data, val, sizeof(val));
@@ -1136,12 +1136,11 @@ static int append_v1_logs_message(struct opentelemetry_context *ctx,
                     log_record->span_id.len = sizeof(val);
 
                     printf("%" PRIu8 "\n", log_record->span_id.data[0]); //as deciemal
-                    printf("%c\n", log_record->span_id.data[0]); // as char
-                    printf("%p\n", (char *)log_record->span_id.data[0]); // as hex
+                    printf("%" PRIu8 "\n", log_record->span_id.data[1]); //as deciemal
+                    printf("%c\n", log_record->span_id.data[1]); // as char
+                    printf("%p\n", (char *)log_record->span_id.data[1]); // as hex
 
                     printf("Done \n"); 
-
-                    flb_free(hexstring);
 
                 }
             }
