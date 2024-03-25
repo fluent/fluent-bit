@@ -1108,19 +1108,40 @@ static int append_v1_logs_message(struct opentelemetry_context *ctx,
                 flb_plg_info(ctx->ins, "span id ra_val string");
                 printf("string size\n");
                 printf("%" PRIu32  "\n", ra_val->o.via.str.size/2);
-                log_record->span_id.data = flb_calloc(1, (ra_val->o.via.str.size/2)+1);
+                log_record->span_id.data = flb_calloc(8, sizeof(uint8_t));
                 if (log_record->span_id.data) {
                     flb_plg_info(ctx->ins, "span id has data");
-                    printf("data\n");
-                    printf("%s\n", log_record->span_id.data);
+                 //   printf("data\n");
+                  //  printf("%s\n", log_record->span_id.data);
                     printf("ptr\n");
                     printf("%s\n", ra_val->o.via.str.ptr);
-                    memcpy(log_record->span_id.data, ra_val->o.via.str.ptr, ra_val->o.via.str.size/2);
-                    log_record->span_id.len = ra_val->o.via.str.size/2;
-                    printf("data after mem copy\n");
-                    printf("%s\n", log_record->span_id.data);
-                    printf("size after mem copy\n");
-                    printf("%" PRIu32  "\n", strlen(log_record->span_id.data));
+                 //   memcpy(log_record->span_id.data, ra_val->o.via.str.ptr, ra_val->o.via.str.size/2);
+                  //  log_record->span_id.len = ra_val->o.via.str.size/2;
+                  //  printf("data after mem copy\n");
+                  //  printf("%s\n", log_record->span_id.data);
+                 //   printf("size after mem copy\n");
+                 //   printf("%" PRIu32  "\n", strlen(log_record->span_id.data));
+
+                    uint8_t val[8];
+                    uint8_t *hexstring = flb_calloc(1, ra_val->o.via.str.size+1);
+                    memcpy(hexstring, ra_val->o.via.str.ptr, ra_val->o.via.str.size);
+
+                    for(size_t c = 0; count < sizeof val/sizeof *val; count++ ){
+                        sscanf(hexstring, "%2hhx", &val[count])
+                        hexstring+=2
+                    }
+
+                    memcpy(log_record->span_id.data, val, sizeof(val));
+
+                    log_record->span_id.len = sizeof(val);
+
+                    printf("%" PRIu8 "\n", log_record->span_id.data[0]); //as deciemal
+                    printf("%c\n", log_record->span_id.data[0]); // as char
+                    printf("%p\n", (char *)log_record->span_id.data[0]); // as hex
+
+                    printf("Done \n"); 
+
+                    flb_free(hexstring);
 
                 }
             }
