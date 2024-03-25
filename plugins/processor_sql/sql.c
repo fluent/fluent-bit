@@ -433,6 +433,16 @@ static int sql_key_to_value(char *name, struct flb_mp_chunk_record *record, stru
         val->type = SQL_EXP_INT;
         val->val.i64 = kvpair->val->data.as_int64;
     }
+    else if (var->type == CFL_VARIANT_UINT) {
+        /*
+         * Note on uint64 handling: our parsing rules in sql-parser.l handles the strings
+         * that represents integers through an atol() conversion. If we get a case of a
+         * long unsigned value, we can adjust it here by extending the sql_val union.
+         *
+         */
+        val->type = SQL_EXP_INT;
+        val->val.i64 = kvpair->val->data.as_uint64;
+    }
     else if (var->type == CFL_VARIANT_DOUBLE) {
         val->type = SQL_EXP_FLOAT;
         val->val.f64 = kvpair->val->data.as_double;
