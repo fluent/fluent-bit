@@ -1126,7 +1126,7 @@ static int append_v1_logs_message(struct opentelemetry_context *ctx,
                     uint8_t *hexstring = flb_calloc(1, ra_val->o.via.str.size+1);
                     memcpy(hexstring, ra_val->o.via.str.ptr, ra_val->o.via.str.size);
 
-                    for(size_t c = 0; count < sizeof val/sizeof *val; count++ ){
+                    for(size_t count = 0; count < sizeof val/sizeof *val; count++ ){
                         sscanf(hexstring, "%2hhx", &val[count]);
                         hexstring+=2;
                     }
