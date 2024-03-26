@@ -921,7 +921,7 @@ static int get_ec2_metadata(struct flb_filter_aws *ctx)
         metadata_fetched = FLB_FALSE;
     }
 
-    if (metadata_fetched) {
+    if (metadata_fetched == FLB_TRUE) {
         ctx->metadata_retrieved = FLB_TRUE;
     }
 
