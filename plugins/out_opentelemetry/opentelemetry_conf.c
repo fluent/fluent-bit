@@ -493,6 +493,12 @@ void flb_opentelemetry_context_destroy(struct opentelemetry_context *ctx)
     if (ctx->ra_trace_id_message) {
         flb_ra_destroy(ctx->ra_trace_id_message);
     }
+    if (ctx->ra_severity_text_message) {
+        flb_ra_destroy(ctx->ra_severity_text_message);
+    }
+    if (ctx->ra_severity_number_message) {
+        flb_ra_destroy(ctx->ra_severity_number_message);
+    }
 
     flb_free(ctx->proxy_host);
     flb_free(ctx);

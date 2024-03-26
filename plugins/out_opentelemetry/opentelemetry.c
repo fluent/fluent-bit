@@ -1700,6 +1700,16 @@ static struct flb_config_map config_map[] = {
      0, FLB_TRUE, offsetof(struct opentelemetry_context, logs_trace_id_message_key),
      "Specify a TraceId key"
     },
+    {
+     FLB_CONFIG_MAP_STR, "logs_severity_text_message_key", "$SeverityText",
+     0, FLB_TRUE, offsetof(struct opentelemetry_context, logs_severity_text_message_key),
+     "Specify a Severity Text key"
+    },
+    {
+     FLB_CONFIG_MAP_STR, "logs_severity_number_message_key", "$SeverityNumber",
+     0, FLB_TRUE, offsetof(struct opentelemetry_context, logs_severity_number_message_key),
+     "Specify a Severity Number key"
+    },
 
     /* EOF */
     {0}
