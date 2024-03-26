@@ -431,6 +431,16 @@ struct opentelemetry_context *flb_opentelemetry_context_create(struct flb_output
     if (ctx->ra_trace_id_message == NULL) {
         flb_plg_error(ins, "failed to create ra for message trace id");
     }
+    ctx->ra_severity_text_message = flb_ra_create((char*)ctx->logs_severity_text_message_key,
+                                              FLB_FALSE);
+    if (ctx->ra_severity_text_message == NULL) {
+        flb_plg_error(ins, "failed to create ra for message severity text");
+    }
+    ctx->ra_severity_number_message = flb_ra_create((char*)ctx->logs_severity_number_message_key,
+                                              FLB_FALSE);
+    if (ctx->ra_severity_number_message == NULL) {
+        flb_plg_error(ins, "failed to create ra for message severity number");
+    }
 
     return ctx;
 }
