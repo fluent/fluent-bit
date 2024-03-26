@@ -668,6 +668,55 @@ void flb_http_server_session_destroy(struct flb_http_server_session *session)
     }
 }
 
+static void check_and_reassign_ptr(char **ptr, const char *old, char *new)
+{
+    if (ptr == NULL) {
+        return;
+    }
+
+    if (*ptr == NULL) {
+        return;
+    }
+
+    *ptr = new + (*ptr - old);
+}
+
+static int request_mk_recalculate(struct mk_http_request *req,
+                                  struct mk_http_parser *parser,
+                                  const char *oldbuf,
+                                  char *newbuf)
+{
+    int idx;
+    struct mk_http_header *header;
+
+
+    check_and_reassign_ptr(&req->method_p.data, oldbuf, newbuf);
+    check_and_reassign_ptr(&req->uri.data, oldbuf, newbuf);
+    check_and_reassign_ptr(&req->uri_processed.data, oldbuf, newbuf);
+    check_and_reassign_ptr(&req->protocol_p.data, oldbuf, newbuf);
+    check_and_reassign_ptr(&req->body.data, oldbuf, newbuf);
+    check_and_reassign_ptr(&req->_content_length.data, oldbuf, newbuf);
+    check_and_reassign_ptr(&req->content_type.data, oldbuf, newbuf);
+    check_and_reassign_ptr(&req->connection.data, oldbuf, newbuf);
+    check_and_reassign_ptr(&req->host.data, oldbuf, newbuf);
+    check_and_reassign_ptr(&req->host_port.data, oldbuf, newbuf);
+    check_and_reassign_ptr(&req->if_modified_since.data, oldbuf, newbuf);
+    check_and_reassign_ptr(&req->last_modified_since.data, oldbuf, newbuf);
+    check_and_reassign_ptr(&req->range.data, oldbuf, newbuf);
+    check_and_reassign_ptr(&req->data.data, oldbuf, newbuf);
+    check_and_reassign_ptr(&req->real_path.data, oldbuf, newbuf);
+    check_and_reassign_ptr(&req->query_string.data, oldbuf, newbuf);
+
+    for (idx = parser->header_min; idx <= parser->header_max && idx >= 0; idx++) {
+        header = &parser->headers[idx];
+
+        check_and_reassign_ptr(&header->key.data, oldbuf, newbuf);
+        check_and_reassign_ptr(&header->val.data, oldbuf, newbuf);
+    }
+
+    return 0;
+}
+
 int flb_http_server_session_ingest(struct flb_http_server_session *session, 
                             unsigned char *buffer, 
                             size_t length)
@@ -683,6 +732,13 @@ int flb_http_server_session_ingest(struct flb_http_server_session *session,
 
         if (resized_buffer == NULL) {
             return HTTP_SERVER_ALLOCATION_ERROR;
+        }
+
+        if (session->version == HTTP_PROTOCOL_HTTP1) {
+            request_mk_recalculate(&session->http1.inner_request, 
+                            &session->http1.inner_parser,
+                            session->incoming_data,
+                            resized_buffer);
         }
 
         session->incoming_data = resized_buffer;
