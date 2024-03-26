@@ -1121,7 +1121,7 @@ static int append_v1_logs_message(struct opentelemetry_context *ctx,
             log_record->severity_number = ra_val->o.via.u64;
             flb_ra_key_value_destroy(ra_val);
         }
-    }else if{ctx->ra_severity_text_message}{
+    }else if(ctx->ra_severity_text_message){
         //TODO get sev number based off text
     }
 
