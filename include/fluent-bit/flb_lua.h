@@ -100,5 +100,5 @@ void flb_lua_tompack(lua_State *l,
                      struct flb_lua_l2c_config *l2cc);
 void flb_lua_dump_stack(FILE *out, lua_State *l);
 int flb_lua_enable_flb_null(lua_State *l);
-
+void flb_lua_bulk_process(lua_State *l, struct flb_time *t, msgpack_object *o, int table_index);
 #endif
