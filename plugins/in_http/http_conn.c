@@ -57,22 +57,22 @@ static int http_conn_realloc(struct flb_http *ctx,
     flb_plg_trace(ctx->ins, "buffer realloc %i -> %zu",
                     conn->buf_size, size);
 
-    check_and_reassign_ptr(&conn->method_p.data, conn->buf_data tmp);
-    check_and_reassign_ptr(&conn->uri.data, conn->buf_data tmp);
-    check_and_reassign_ptr(&conn->uri_processed.data, conn->buf_data tmp);
-    check_and_reassign_ptr(&conn->protocol_p.data, conn->buf_data tmp);
-    check_and_reassign_ptr(&conn->body.data, conn->buf_data tmp);
-    check_and_reassign_ptr(&conn->_content_length.data, conn->buf_data tmp);
-    check_and_reassign_ptr(&conn->content_type.data, conn->buf_data tmp);
-    check_and_reassign_ptr(&conn->connection.data, conn->buf_data tmp);
-    check_and_reassign_ptr(&conn->host.data, conn->buf_data tmp);
-    check_and_reassign_ptr(&conn->host_port.data, conn->buf_data tmp);
-    check_and_reassign_ptr(&conn->if_modified_since.data, conn->buf_data tmp);
-    check_and_reassign_ptr(&conn->last_modified_since.data, conn->buf_data tmp);
-    check_and_reassign_ptr(&conn->range.data, conn->buf_data tmp);
-    check_and_reassign_ptr(&conn->data.data, conn->buf_data tmp);
-    check_and_reassign_ptr(&conn->real_path.data, conn->buf_data tmp);
-    check_and_reassign_ptr(&conn->query_string.data, conn->buf_data tmp);
+    check_and_reassign_ptr(&conn->request.method_p.data, conn->buf_data, tmp);
+    check_and_reassign_ptr(&conn->request.uri.data, conn->buf_data, tmp);
+    check_and_reassign_ptr(&conn->request.uri_processed.data, conn->buf_data, tmp);
+    check_and_reassign_ptr(&conn->request.protocol_p.data, conn->buf_data, tmp);
+    check_and_reassign_ptr(&conn->request.body.data, conn->buf_data, tmp);
+    check_and_reassign_ptr(&conn->request._content_length.data, conn->buf_data, tmp);
+    check_and_reassign_ptr(&conn->request.content_type.data, conn->buf_data, tmp);
+    check_and_reassign_ptr(&conn->request.connection.data, conn->buf_data, tmp);
+    check_and_reassign_ptr(&conn->request.host.data, conn->buf_data, tmp);
+    check_and_reassign_ptr(&conn->request.host_port.data, conn->buf_data, tmp);
+    check_and_reassign_ptr(&conn->request.if_modified_since.data, conn->buf_data, tmp);
+    check_and_reassign_ptr(&conn->request.last_modified_since.data, conn->buf_data, tmp);
+    check_and_reassign_ptr(&conn->request.range.data, conn->buf_data, tmp);
+    check_and_reassign_ptr(&conn->request.data.data, conn->buf_data, tmp);
+    check_and_reassign_ptr(&conn->request.real_path.data, conn->buf_data, tmp);
+    check_and_reassign_ptr(&conn->request.query_string.data, conn->buf_data, tmp);
 
     for (idx = conn->session.parser.header_min; idx <= conn->session.parser.header_max && idx >= 0; idx++) {
         header = &conn->session.parser.headers[idx];
