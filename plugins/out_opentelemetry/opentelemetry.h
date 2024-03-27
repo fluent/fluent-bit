@@ -87,6 +87,19 @@ struct opentelemetry_context {
     flb_sds_t logs_instrumentation_scope_metadata_key;
     flb_sds_t logs_resource_metadata_key;
 
+    /* otel body keys */
+    flb_sds_t logs_span_id_message_key;
+    struct flb_record_accessor *ra_span_id_message;
+
+    flb_sds_t logs_trace_id_message_key;
+    struct flb_record_accessor *ra_trace_id_message;
+
+    flb_sds_t logs_severity_text_message_key;
+    struct flb_record_accessor *ra_severity_text_message;
+
+    flb_sds_t logs_severity_number_message_key;
+    struct flb_record_accessor *ra_severity_number_message;
+
     /* Number of logs to flush at a time */
     int batch_size;
 
