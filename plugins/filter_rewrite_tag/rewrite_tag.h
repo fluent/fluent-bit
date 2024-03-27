@@ -38,8 +38,16 @@ struct rewrite_rule {
     struct mk_list _head;                  /* link to flb_rewrite_tag->rules */
 };
 
+enum recursion_action {
+    REWRITE_ACTION_NONE = 0,
+    REWRITE_ACTION_DROP,
+    REWRITE_ACTION_DROP_AND_LOG,
+    REWRITE_ACTION_EXIT,
+};
+
 /* Plugin context */
 struct flb_rewrite_tag {
+    int recursion_action;                   /* action when recursion occurs */
     flb_sds_t emitter_name;                 /* emitter input plugin name */
     flb_sds_t emitter_storage_type;         /* emitter storage type */
     size_t emitter_mem_buf_limit;           /* Emitter buffer limit */
