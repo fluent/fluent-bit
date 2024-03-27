@@ -88,7 +88,6 @@ static int ra_key_val_id(flb_sds_t ckey, msgpack_object map)
     }
 
     map_size = map.via.map.size;
-
     for (i = map_size - 1; i >= 0; i--) {
         key = map.via.map.ptr[i].key;
 
@@ -219,7 +218,7 @@ struct flb_ra_value *flb_ra_key_to_value(flb_sds_t ckey,
     if (i == -1) {
         return NULL;
     }
-    
+
     /* Reference entries */
     val = map.via.map.ptr[i].val;
 

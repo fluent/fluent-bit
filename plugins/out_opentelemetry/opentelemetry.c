@@ -882,6 +882,7 @@ static int log_record_set_attributes(struct opentelemetry_context *ctx,
         /* iterate the map and reference each elemento as an OTLP value */
         for (i = 0; i < result.data.via.map.size; i++) {
             kv = &result.data.via.map.ptr[i];
+            kv->key
             buf[attr_count] = msgpack_kv_to_otlp_any_value(kv);
             attr_count++;
         }
@@ -1086,8 +1087,6 @@ static int append_v1_logs_message(struct opentelemetry_context *ctx,
 {
     struct flb_ra_value *ra_val;
 
-    flb_plg_info(ctx->ins, "Appending logs for message");
-
     if (ctx == NULL || event == NULL || log_record == NULL) {
         return -1;
     }
@@ -1122,12 +1121,11 @@ static int append_v1_logs_message(struct opentelemetry_context *ctx,
             flb_ra_key_value_destroy(ra_val);
         }
     }else if(ctx->ra_severity_text_message){
-        //TODO get sev number based off text
+        //TODO get sev number based off sev text
     }
 
     /* SpanId */
     if (ctx->ra_span_id_message) {
-        flb_plg_info(ctx->ins, "pattern is %s\n", ctx->ra_span_id_message->pattern);
         ra_val = flb_ra_get_value_object(ctx->ra_span_id_message, *event->body);
         if (ra_val != NULL) {
             if(ra_val->o.type == MSGPACK_OBJECT_BIN){
@@ -1137,33 +1135,16 @@ static int append_v1_logs_message(struct opentelemetry_context *ctx,
                     log_record->span_id.len = ra_val->o.via.bin.size;
                 }
             }else if(ra_val->o.type == MSGPACK_OBJECT_STR){
-                flb_plg_info(ctx->ins, "span id ra_val string");
-                printf("span string size\n");
-                printf("%" PRIu32  "\n", ra_val->o.via.str.size/2);
                 log_record->span_id.data = flb_calloc(8, sizeof(uint8_t));
                 if (log_record->span_id.data) {
-                    flb_plg_info(ctx->ins, "span id has data");
-
-                    printf("ptr\n");
-                    printf("%s\n", ra_val->o.via.str.ptr);
-
-                    uint8_t val[8];
                     // Convert to a byte array
+                    uint8_t val[8];
                     for(size_t count = 0; count < sizeof val/sizeof *val; count++ ){
                         sscanf(ra_val->o.via.str.ptr, "%2hhx", &val[count]);
                         ra_val->o.via.str.ptr+=2;
                     }
-
                     memcpy(log_record->span_id.data, val, sizeof(val));
-
                     log_record->span_id.len = sizeof(val);
-
-                    printf("%" PRIu8 "\n", log_record->span_id.data[0]); //as deciemal
-                    printf("%" PRIu8 "\n", log_record->span_id.data[1]); //as deciemal
-                    printf("%p\n", (char *)log_record->span_id.data[1]); // as hex
-
-                    printf("Done \n"); 
-
                 }
             }else{
                 flb_plg_warn(ctx->ins, "Unable to process %s. Unsupported data type.\n", ctx->ra_span_id_message->pattern);
@@ -1174,7 +1155,6 @@ static int append_v1_logs_message(struct opentelemetry_context *ctx,
 
     /* TraceId */
     if (ctx->ra_trace_id_message) {
-        flb_plg_info(ctx->ins, "trace id message not null");
         ra_val = flb_ra_get_value_object(ctx->ra_trace_id_message, *event->body);
         if (ra_val != NULL) {
             if(ra_val->o.type == MSGPACK_OBJECT_BIN){
@@ -1184,33 +1164,16 @@ static int append_v1_logs_message(struct opentelemetry_context *ctx,
                     log_record->trace_id.len = ra_val->o.via.bin.size;
                 }
             }else if(ra_val->o.type == MSGPACK_OBJECT_STR){
-                flb_plg_info(ctx->ins, "trace id ra_val string");
-                printf("trace string size\n");
-                printf("%" PRIu32  "\n", ra_val->o.via.str.size/2);
                 log_record->trace_id.data = flb_calloc(16, sizeof(uint8_t));
                 if (log_record->trace_id.data) {
-                    flb_plg_info(ctx->ins, "trace id has data");
-
-                    printf("trace ptr\n");
-                    printf("%s\n", ra_val->o.via.str.ptr);
-
+                    // Convert from hexdec string to a 16 byte array
                     uint8_t val[16];
-
                     for(size_t count = 0; count < sizeof val/sizeof *val; count++ ){
                         sscanf(ra_val->o.via.str.ptr, "%2hhx", &val[count]);
                         ra_val->o.via.str.ptr+=2;
                     }
-
                     memcpy(log_record->trace_id.data, val, sizeof(val));
-
                     log_record->trace_id.len = sizeof(val);
-
-                    printf("%" PRIu8 "\n", log_record->trace_id.data[0]); //as deciemal
-                    printf("%" PRIu8 "\n", log_record->trace_id.data[1]); //as deciemal
-                    printf("%p\n", (char *)log_record->trace_id.data[1]); // as hex
-
-                    printf("trace Done \n"); 
-
                 }
             }else{
                 flb_plg_warn(ctx->ins, "Unable to process %s. Unsupported data type.\n", ctx->ra_trace_id_message->pattern);
@@ -1238,8 +1201,6 @@ static int process_logs(struct flb_event_chunk *event_chunk,
     struct flb_record_accessor *ra_match;
 
     ctx = (struct opentelemetry_context *) out_context;
-
-    flb_plg_info(ctx->ins, "Process Logs");
 
     log_record_list = (Opentelemetry__Proto__Logs__V1__LogRecord **)
         flb_calloc(ctx->batch_size, sizeof(Opentelemetry__Proto__Logs__V1__LogRecord *));
