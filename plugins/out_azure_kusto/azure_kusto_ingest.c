@@ -92,6 +92,14 @@ static flb_sds_t azure_kusto_create_blob_uri(struct flb_azure_kusto *ctx,
     size_t blob_uri_size;
     char *blob_sas;
     size_t blob_sas_size;
+    const char *extension;
+
+    if (ctx->compression_enabled) {
+        extension = ".multijson.gz";
+    }
+    else {
+        extension = ".multijson";
+    }
 
     ret = flb_hash_table_get(u_node->ht, AZURE_KUSTO_RESOURCE_UPSTREAM_URI, 3,
                        (void **)&blob_uri, &blob_uri_size);
@@ -109,11 +117,11 @@ static flb_sds_t azure_kusto_create_blob_uri(struct flb_azure_kusto *ctx,
 
     /* uri will be https://<blob_host>/<container_uri>/<blob_id>.multijson?<sas_token> */
     uri = flb_sds_create_size(flb_sds_len(u_node->host) + blob_uri_size + blob_sas_size +
-                              flb_sds_len(blob_id) + 21);
+                              flb_sds_len(blob_id) + 11 + strlen(extension));
 
     if (uri) {
-        flb_sds_snprintf(&uri, flb_sds_alloc(uri), "https://%s%s/%s.multijson?%s",
-                         u_node->host, blob_uri, blob_id, blob_sas);
+        flb_sds_snprintf(&uri, flb_sds_alloc(uri), "https://%s%s/%s%s?%s",
+                         u_node->host, blob_uri, blob_id, extension ,blob_sas);
         flb_plg_debug(ctx->ins, "created blob uri %s", uri);
     }
     else {
