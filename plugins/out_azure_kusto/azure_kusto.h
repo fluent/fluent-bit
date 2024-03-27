@@ -51,6 +51,8 @@
 
 #define FLB_AZURE_KUSTO_RESOURCES_LOAD_INTERVAL_SEC 3600
 
+#define FLB_AZURE_KUSTO_INGEST_ENDPOINT_CONNECTION_TIMEOUT "60"
+
 struct flb_azure_kusto_resources {
     struct flb_upstream_ha *blob_ha;
     struct flb_upstream_ha *queue_ha;
@@ -69,6 +71,9 @@ struct flb_azure_kusto {
     flb_sds_t database_name;
     flb_sds_t table_name;
     flb_sds_t ingestion_mapping_reference;
+
+    /* connection configuration */
+    int kusto_endpoint_connection_timeout;
 
     /* records configuration */
     flb_sds_t log_key;

@@ -126,6 +126,9 @@ flb_sds_t execute_ingest_csl_command(struct flb_azure_kusto *ctx, const char *cs
     struct flb_http_client *c;
     flb_sds_t resp = NULL;
 
+    /* setting default connection timeout to kusto ingest endpoint */
+    ctx->u->base.net.connect_timeout = ctx->kusto_endpoint_connection_timeout;
+
     /* Get upstream connection */
     u_conn = flb_upstream_conn_get(ctx->u);
 
@@ -462,6 +465,9 @@ static struct flb_config_map config_map[] = {
      offsetof(struct flb_azure_kusto, time_key),
      "The key name of the time. If 'include_time_key' is false, "
      "This property is ignored"},
+    {FLB_CONFIG_MAP_TIME, "kusto_endpoint_connection_timeout", FLB_AZURE_KUSTO_INGEST_ENDPOINT_CONNECTION_TIMEOUT, 0, FLB_TRUE,
+     offsetof(struct flb_azure_kusto, kusto_endpoint_connection_timeout),
+             "Set the connection timeout of various kusto endpoints (kusto ingest endpoint, kusto ingestion blob endpoint, kusto ingestion blob endpoint) in seconds"},
     /* EOF */
     {0}};
 
