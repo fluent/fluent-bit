@@ -176,7 +176,7 @@ static int flush_callback(struct flb_ml_parser *parser,
         /* Emit record with original tag */
         flb_plg_trace(ctx->ins, "emitting from %s to %s", stream->input_name, stream->tag);
         ret = in_emitter_add_record(stream->tag, flb_sds_len(stream->tag), buf_data, buf_size,
-                                    ctx->ins_emitter);
+                                    ctx->ins_emitter, ctx->i_ins);
 
         return ret;
     }
@@ -526,7 +526,8 @@ static void partial_timer_cb(struct flb_config *config, void *data)
             ret = in_emitter_add_record(packer->tag, flb_sds_len(packer->tag),
                                         packer->log_encoder.output_buffer,
                                         packer->log_encoder.output_length,
-                                        ctx->ins_emitter);
+                                        ctx->ins_emitter,
+                                        ctx->i_ins);
             if (ret < 0) {
                 /* this shouldn't happen in normal execution */
                 flb_plg_warn(ctx->ins,
@@ -739,6 +740,15 @@ static int cb_ml_filter(const void *data, size_t bytes,
     if (i_ins == ctx->ins_emitter) {
         flb_plg_trace(ctx->ins, "not processing records from the emitter");
         return FLB_FILTER_NOTOUCH;
+    }
+
+    if (ctx->i_ins == NULL){
+        ctx->i_ins = i_ins;
+    }
+    if (ctx->i_ins != i_ins) {
+        flb_plg_trace(ctx->ins, "input instance changed from %s to %s",
+                     ctx->i_ins->name, i_ins->name);
+        ctx->i_ins = i_ins;
     }
 
     /* 'partial_message' mode */

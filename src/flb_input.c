@@ -1729,6 +1729,7 @@ int flb_input_resume(struct flb_input_instance *ins)
             flb_input_thread_instance_resume(ins);
         }
         else {
+            flb_info("[input] resume %s", flb_input_name(ins));
             ins->p->cb_resume(ins->context, ins->config);
         }
     }
