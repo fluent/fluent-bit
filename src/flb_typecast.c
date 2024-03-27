@@ -76,6 +76,7 @@ static int flb_typecast_conv_str(const char *input, int input_len,
 {
     flb_sds_t tmp_str;
     int ret = 0;
+    char *endp = NULL;
 
     if(input == NULL || rule == NULL || output == NULL) {
         return -1;
@@ -97,8 +98,8 @@ static int flb_typecast_conv_str(const char *input, int input_len,
 
     switch(rule->to_type) {
     case FLB_TYPECAST_TYPE_INT:
-      output->val.i_num = strtoimax(tmp_str, NULL, 10);
-      if (output->val.i_num == 0) {
+      output->val.i_num = strtoimax(tmp_str, &endp, 10);
+      if (output->val.i_num == 0 && (tmp_str == endp)) {
           flb_error("%s: convert error. input=%s", __FUNCTION__, tmp_str);
           ret = -1;
           goto typecast_conv_str_end;
@@ -108,8 +109,8 @@ static int flb_typecast_conv_str(const char *input, int input_len,
       }
       break;
     case FLB_TYPECAST_TYPE_UINT:
-      output->val.ui_num = strtoumax(tmp_str, NULL, 10);
-      if (output->val.ui_num == 0) {
+      output->val.ui_num = strtoumax(tmp_str, &endp, 10);
+      if (output->val.ui_num == 0 && (tmp_str == endp)) {
           flb_error("%s: convert error. input=%s", __FUNCTION__, tmp_str);
           ret = -1;
           goto typecast_conv_str_end;
