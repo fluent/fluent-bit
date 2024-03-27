@@ -420,6 +420,26 @@ struct opentelemetry_context *flb_opentelemetry_context_create(struct flb_output
     if (ctx->ra_attributes_metadata == NULL) {
         flb_plg_error(ins, "failed to create ra for attributes");
     }
+    ctx->ra_span_id_message = flb_ra_create((char*)ctx->logs_span_id_message_key,
+                                             FLB_FALSE);
+    if (ctx->ra_span_id_message == NULL) {
+        flb_plg_error(ins, "failed to create ra for message span id");
+    }
+    ctx->ra_trace_id_message = flb_ra_create((char*)ctx->logs_trace_id_message_key,
+                                              FLB_FALSE);
+    if (ctx->ra_trace_id_message == NULL) {
+        flb_plg_error(ins, "failed to create ra for message trace id");
+    }
+    ctx->ra_severity_text_message = flb_ra_create((char*)ctx->logs_severity_text_message_key,
+                                              FLB_FALSE);
+    if (ctx->ra_severity_text_message == NULL) {
+        flb_plg_error(ins, "failed to create ra for message severity text");
+    }
+    ctx->ra_severity_number_message = flb_ra_create((char*)ctx->logs_severity_number_message_key,
+                                              FLB_FALSE);
+    if (ctx->ra_severity_number_message == NULL) {
+        flb_plg_error(ins, "failed to create ra for message severity number");
+    }
 
     return ctx;
 }
@@ -465,6 +485,18 @@ void flb_opentelemetry_context_destroy(struct opentelemetry_context *ctx)
     }
     if (ctx->ra_attributes_metadata) {
         flb_ra_destroy(ctx->ra_attributes_metadata);
+    }
+    if (ctx->ra_span_id_message) {
+        flb_ra_destroy(ctx->ra_span_id_message);
+    }
+    if (ctx->ra_trace_id_message) {
+        flb_ra_destroy(ctx->ra_trace_id_message);
+    }
+    if (ctx->ra_severity_text_message) {
+        flb_ra_destroy(ctx->ra_severity_text_message);
+    }
+    if (ctx->ra_severity_number_message) {
+        flb_ra_destroy(ctx->ra_severity_number_message);
     }
 
     flb_free(ctx->proxy_host);
