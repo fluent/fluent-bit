@@ -882,7 +882,6 @@ static int log_record_set_attributes(struct opentelemetry_context *ctx,
         /* iterate the map and reference each elemento as an OTLP value */
         for (i = 0; i < result.data.via.map.size; i++) {
             kv = &result.data.via.map.ptr[i];
-            kv->key
             buf[attr_count] = msgpack_kv_to_otlp_any_value(kv);
             attr_count++;
         }
