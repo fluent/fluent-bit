@@ -43,6 +43,10 @@ static int flb_ws_handshake(struct flb_connection *u_conn,
     int ret;
     size_t bytes_sent;
     struct flb_http_client *c;
+    struct mk_list *head;
+    struct flb_config_map_val *mv;
+    struct flb_slist_entry *key = NULL;
+    struct flb_slist_entry *val = NULL;
 
     if (!u_conn) {
         flb_error("[output_ws] upstream connection error");
@@ -62,6 +66,16 @@ static int flb_ws_handshake(struct flb_connection *u_conn,
     flb_http_add_header(c, "Connection", 10, "Upgrade", 7);
     flb_http_add_header(c, "Sec-WebSocket-Key", 17, "dGhlIHNhbXBsZSBub25jZQ==", 24);
     flb_http_add_header(c, "Sec-WebSocket-Version", 21, "13", 2);
+
+    /* Append additional headers from configuration */
+    flb_config_map_foreach(head, mv, ctx->headers) {
+        key = mk_list_entry_first(mv->val.list, struct flb_slist_entry, _head);
+        val = mk_list_entry_last(mv->val.list, struct flb_slist_entry, _head);
+
+        flb_http_add_header(c,
+                            key->str, flb_sds_len(key->str),
+                            val->str, flb_sds_len(val->str));
+    }
 
     /* Perform request*/
     ret = flb_http_do(c, &bytes_sent);
@@ -314,6 +328,11 @@ static struct flb_config_map config_map[] = {
      FLB_CONFIG_MAP_STR, "json_date_key", "date",
      0, FLB_TRUE, offsetof(struct flb_out_ws, json_date_key),
      "Specify the name of the date field in output"
+    },
+    {
+     FLB_CONFIG_MAP_SLIST_1, "header", NULL,
+     FLB_CONFIG_MAP_MULT, FLB_TRUE, offsetof(struct flb_out_ws, headers),
+     "Add a HTTP header key/value pair to the initial HTTP request. Multiple headers can be set"
     },
     /* EOF */
     {0}

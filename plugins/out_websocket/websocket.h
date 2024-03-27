@@ -47,6 +47,9 @@ struct flb_out_ws {
     time_t last_input_timestamp;
     int idle_interval;
 
+    /* Arbitrary HTTP headers */
+    struct mk_list *headers;
+
     /* Plugin instance */
     struct flb_output_instance *ins;
 };
