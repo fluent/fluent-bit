@@ -828,7 +828,7 @@ int flb_output_set_property(struct flb_output_instance *ins,
             ins->retry_limit = 1;
         }
     }
-    else if (strncasecmp("net.", k, 4) == 0 && tmp) {
+    else if (strncasecmp("net.", k, 4) == 0) {
         kv = flb_kv_item_create(&ins->net_properties, (char *) k, NULL);
         if (!kv) {
             if (tmp) {
