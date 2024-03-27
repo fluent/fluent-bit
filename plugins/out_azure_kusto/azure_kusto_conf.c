@@ -160,8 +160,7 @@ static int parse_storage_resources(struct flb_azure_kusto *ctx, struct flb_confi
 {
     jsmn_parser parser;
     jsmntok_t *t;
-    jsmntok_t *tokens;
-    int tok_size = 100;
+    jsmntok_t *tokens = NULL;
     int ret = -1;
     int i;
     int blob_count = 0;
@@ -172,6 +171,7 @@ static int parse_storage_resources(struct flb_azure_kusto *ctx, struct flb_confi
     struct flb_upstream_node *node;
     struct flb_upstream_ha *ha;
     flb_sds_t resource_uri;
+    int token_size = flb_sds_len(response);
 
     /* Response is a json in the form of
      * {
@@ -199,10 +199,12 @@ static int parse_storage_resources(struct flb_azure_kusto *ctx, struct flb_confi
     }
 
     jsmn_init(&parser);
-    tokens = flb_calloc(1, sizeof(jsmntok_t) * tok_size);
+
+    /* Dynamically allocate memory for tokens based on response length */
+    tokens = flb_calloc(1, sizeof(jsmntok_t) * token_size);
 
     if (tokens) {
-        ret = jsmn_parse(&parser, response, flb_sds_len(response), tokens, tok_size);
+        ret = jsmn_parse(&parser, response, flb_sds_len(response), tokens, token_size);
 
         if (ret > 0) {
             /* skip all tokens until we reach "Rows" */
