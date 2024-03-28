@@ -462,6 +462,10 @@ static struct flb_config_map config_map[] = {
      offsetof(struct flb_azure_kusto, time_key),
      "The key name of the time. If 'include_time_key' is false, "
      "This property is ignored"},
+    {FLB_CONFIG_MAP_TIME, "ingestion_resources_refresh_interval", FLB_AZURE_KUSTO_RESOURCES_LOAD_INTERVAL_SEC,0, FLB_TRUE,
+          offsetof(struct flb_azure_kusto, ingestion_resources_refresh_interval),
+          "Set the azure kusto ingestion resources refresh interval"
+    },
     /* EOF */
     {0}};
 
