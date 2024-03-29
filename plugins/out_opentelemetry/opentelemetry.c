@@ -1138,7 +1138,8 @@ static int append_v1_logs_message(struct opentelemetry_context *ctx,
                 if (log_record->span_id.data) {
                     // Convert to a byte array
                     uint8_t val[8];
-                    for(size_t count = 0; count < sizeof val/sizeof *val; count++ ){
+                    size_t count;
+                    for(count = 0; count < sizeof val/sizeof *val; count++ ){
                         sscanf(ra_val->o.via.str.ptr, "%2hhx", &val[count]);
                         ra_val->o.via.str.ptr+=2;
                     }
@@ -1167,7 +1168,8 @@ static int append_v1_logs_message(struct opentelemetry_context *ctx,
                 if (log_record->trace_id.data) {
                     // Convert from hexdec string to a 16 byte array
                     uint8_t val[16];
-                    for(size_t count = 0; count < sizeof val/sizeof *val; count++ ){
+                    size_t count;
+                    for(count = 0; count < sizeof val/sizeof *val; count++ ){
                         sscanf(ra_val->o.via.str.ptr, "%2hhx", &val[count]);
                         ra_val->o.via.str.ptr+=2;
                     }
