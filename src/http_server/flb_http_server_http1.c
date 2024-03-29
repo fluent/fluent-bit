@@ -48,6 +48,10 @@ static void dummy_mk_http_session_init(struct mk_http_session *session,
 static void dummy_mk_http_request_init(struct mk_http_session *session,
                                        struct mk_http_request *request)
 {
+    if (request->stream.channel != NULL) {
+        mk_stream_release(&request->stream);
+    }
+
     memset(request, 0, sizeof(struct mk_http_request));
 
     mk_http_request_init(session, request, session->server);
@@ -494,6 +498,10 @@ int flb_http1_server_session_ingest(struct flb_http1_server_session *session,
 
         http1_evict_request(session);
     }
+
+    dummy_mk_http_request_init(&session->inner_session, &session->inner_request);
+
+    mk_http_parser_init(&session->inner_parser);
 
     return HTTP_SERVER_SUCCESS;   
 }
