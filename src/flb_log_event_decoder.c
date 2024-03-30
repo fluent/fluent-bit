@@ -153,24 +153,12 @@ void flb_log_event_decoder_destroy(struct flb_log_event_decoder *context)
 int flb_log_event_decoder_decode_timestamp(msgpack_object *input,
                                            struct flb_time *output)
 {
+    int ret;
+
     flb_time_zero(output);
 
-    if (input->type == MSGPACK_OBJECT_POSITIVE_INTEGER) {
-        output->tm.tv_sec  = input->via.u64;
-    }
-    else if(input->type == MSGPACK_OBJECT_FLOAT) {
-        output->tm.tv_sec  = input->via.f64;
-        output->tm.tv_nsec = ((input->via.f64 - output->tm.tv_sec) * 1000000000);
-    }
-    else if(input->type == MSGPACK_OBJECT_EXT) {
-        if (input->via.ext.type != 0 || input->via.ext.size != 8) {
-            return FLB_EVENT_DECODER_ERROR_WRONG_TIMESTAMP_TYPE;
-        }
-
-        output->tm.tv_sec  = FLB_BSWAP_32(*((uint32_t *) &input->via.ext.ptr[0]));
-        output->tm.tv_nsec = FLB_BSWAP_32(*((uint32_t *) &input->via.ext.ptr[4]));
-    }
-    else {
+    ret = flb_time_msgpack_to_time(output, input);
+    if (ret == -1) {
         return FLB_EVENT_DECODER_ERROR_WRONG_TIMESTAMP_TYPE;
     }
 
