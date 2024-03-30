@@ -27,9 +27,12 @@
 #include "flb_tests_internal.h"
 
 #define SEC_32BIT  1647061992 /* 0x622c2be8 */
+#define SEC_64BIT  5745960239831286817 /* 0x4FBDC0650CA98421 */
 #define NSEC_32BIT 123000000  /* 123ms 0x0754d4c0 */
 #define D_SEC 1647061992.123;
 const char eventtime[8] = {0x62, 0x2c, 0x2b, 0xe8, 0x07, 0x54, 0xd4, 0xc0 };
+const char msgpack_timestamp_ext[] = {0x07, 0x54, 0xd4, 0xc0, /* nsec */
+                                      0x4f, 0xbd, 0xc0, 0x65, 0x0C, 0xa9, 0x84, 0x21 /* sec*/};
 
 void test_to_nanosec()
 {
@@ -279,6 +282,50 @@ void test_msgpack_to_time_invalid()
     msgpack_unpacked_destroy(&result);
 }
 
+void test_msgpack_to_time_msgpack_extension_time()
+{
+    struct flb_time tm;
+    int64_t expect_sec = SEC_64BIT;
+    int64_t expect_nsec = NSEC_32BIT;
+    char ext_data[12] = {0};
+    int ret;
+
+    msgpack_packer mp_pck;
+    msgpack_sbuffer mp_sbuf;
+    msgpack_unpacked result;
+
+    msgpack_object tm_obj;
+    msgpack_timestamp msgpack_time;
+
+    memcpy(&ext_data[0], &eventtime[0], 8);
+
+    /* create int object*/
+    msgpack_sbuffer_init(&mp_sbuf);
+    msgpack_packer_init(&mp_pck, &mp_sbuf, msgpack_sbuffer_write);
+
+    msgpack_time.tv_sec = SEC_64BIT;
+    msgpack_time.tv_nsec = NSEC_32BIT;
+    msgpack_pack_timestamp(&mp_pck, &msgpack_time);
+
+    msgpack_unpacked_init(&result);
+    msgpack_unpack_next(&result, mp_sbuf.data, mp_sbuf.size, NULL);
+
+    tm_obj = result.data;
+    ret = flb_time_msgpack_to_time(&tm, &tm_obj);
+    if(!TEST_CHECK(ret == 0)) {
+        TEST_MSG("flb_time_msgpack_to_time failed");
+        exit(EXIT_FAILURE);
+    }
+
+    if (!TEST_CHECK(tm.tm.tv_sec == expect_sec &&
+                    llabs(tm.tm.tv_nsec - expect_nsec ) < 10000 /* 10us*/)) {
+        TEST_MSG("got %ld.%ld, expect %ld.%ld", tm.tm.tv_sec, tm.tm.tv_nsec, expect_sec, expect_nsec);
+    }
+
+    msgpack_sbuffer_destroy(&mp_sbuf);
+    msgpack_unpacked_destroy(&result);
+}
+
 void test_append_to_msgpack_eventtime()
 {
     struct flb_time tm;
@@ -323,6 +370,49 @@ void test_append_to_msgpack_eventtime()
     msgpack_unpacked_destroy(&result);
 }
 
+void test_append_to_msgpack_timestamp_extension()
+{
+    struct flb_time tm;
+    int ret;
+    char expect_data[12] = {0};
+
+    msgpack_packer mp_pck;
+    msgpack_sbuffer mp_sbuf;
+    msgpack_unpacked result;
+
+    msgpack_object tm_obj;
+
+    memcpy(&expect_data[0], &msgpack_timestamp_ext[0], sizeof(msgpack_timestamp_ext));
+
+    tm.tm.tv_sec  = SEC_64BIT;
+    tm.tm.tv_nsec = NSEC_32BIT;
+
+    /* create int object*/
+    msgpack_sbuffer_init(&mp_sbuf);
+    msgpack_packer_init(&mp_pck, &mp_sbuf, msgpack_sbuffer_write);
+
+    ret = flb_time_append_to_msgpack(&tm, &mp_pck, FLB_TIME_ETFMT_MSGPACK_TIME_EXT);
+    if(!TEST_CHECK(ret == 0)) {
+        TEST_MSG("flb_time_append_to_msgpack failed");
+        exit(EXIT_FAILURE);
+    }
+    msgpack_unpacked_init(&result);
+    msgpack_unpack_next(&result, mp_sbuf.data, mp_sbuf.size, NULL);
+
+    tm_obj = result.data;
+
+    /* Check if Eventtime */
+    TEST_CHECK(tm_obj.type == MSGPACK_OBJECT_EXT);
+    TEST_CHECK(tm_obj.via.ext.type == -1);
+
+    if (!TEST_CHECK(memcmp(&expect_data[0], tm_obj.via.ext.ptr, 12) == 0) ) {
+        TEST_MSG("got 0x%x, expect 0x%x", *(uint32_t*)tm_obj.via.ext.ptr, *((uint32_t*)&expect_data[0]));
+    }
+
+    msgpack_sbuffer_destroy(&mp_sbuf);
+    msgpack_unpacked_destroy(&result);
+}
+
 TEST_LIST = {
     { "flb_time_to_nanosec"           , test_to_nanosec},
     { "flb_time_append_to_mpack_v1"   , test_append_to_mpack_v1},
@@ -330,6 +420,8 @@ TEST_LIST = {
     { "msgpack_to_time_double"        , test_msgpack_to_time_double},
     { "msgpack_to_time_eventtime"     , test_msgpack_to_time_eventtime},
     { "msgpack_to_time_invalid"       , test_msgpack_to_time_invalid},
+    { "msgpack_to_time_eventtime"     , test_msgpack_to_time_msgpack_extension_time},
     { "append_to_msgpack_eventtime"   , test_append_to_msgpack_eventtime},
+    { "append_to_msgpack_extension_time", test_append_to_msgpack_timestamp_extension},
     { NULL, NULL }
 };
