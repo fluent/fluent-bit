@@ -206,6 +206,7 @@ int flb_time_append_to_msgpack(struct flb_time *tm, msgpack_packer *pk, int fmt)
     struct flb_time l_time;
     char ext_data[8];
     uint32_t tmp;
+    msgpack_timestamp msgpack_time;
 
     if (!is_valid_format(fmt)) {
 #ifdef FLB_TIME_FORCE_FMT_INT
@@ -244,6 +245,11 @@ int flb_time_append_to_msgpack(struct flb_time *tm, msgpack_packer *pk, int fmt)
         msgpack_pack_ext_body(pk, ext_data, sizeof(ext_data));
 
         break;
+    case FLB_TIME_ETFMT_MSGPACK_TIME_EXT:
+        msgpack_time.tv_sec = tm->tm.tv_sec;
+        msgpack_time.tv_nsec = tm->tm.tv_nsec;
+        msgpack_pack_timestamp(pk, &msgpack_time);
+        break;
 
     default:
         ret = -1;
@@ -263,6 +269,8 @@ static inline int is_eventtime(msgpack_object *obj)
 int flb_time_msgpack_to_time(struct flb_time *time, msgpack_object *obj)
 {
     uint32_t tmp;
+    msgpack_timestamp msgpack_time;
+    bool ok;
 
     switch(obj->type) {
     case MSGPACK_OBJECT_POSITIVE_INTEGER:
@@ -275,9 +283,16 @@ int flb_time_msgpack_to_time(struct flb_time *time, msgpack_object *obj)
         break;
     case MSGPACK_OBJECT_EXT:
         if (is_eventtime(obj) != FLB_TRUE) {
-            flb_warn("[time] unknown ext type. type=%d size=%d",
-                     obj->via.ext.type, obj->via.ext.size);
-            return -1;
+            /* check if msgpack timestamp ext type */
+            ok = msgpack_object_to_timestamp(obj, &msgpack_time);
+            if (!ok) {
+                flb_warn("[time] unknown ext type. type=%d size=%d",
+                         obj->via.ext.type, obj->via.ext.size);
+                return -1;
+            }
+            time->tm.tv_sec = msgpack_time.tv_sec;
+            time->tm.tv_nsec = msgpack_time.tv_nsec;
+            return 0;
         }
         memcpy(&tmp, &obj->via.ext.ptr[0], 4);
         time->tm.tv_sec = (uint32_t) ntohl(tmp);
