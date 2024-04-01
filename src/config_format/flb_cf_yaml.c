@@ -122,6 +122,8 @@ enum state {
     STATE_PLUGIN_KEY,
     STATE_PLUGIN_VAL,
     STATE_PLUGIN_VAL_LIST,
+    STATE_PLUGIN_VAL_LIST_MAP_KEY,
+    STATE_PLUGIN_VAL_LIST_MAP_VAL,
 
     STATE_GROUP_KEY,
     STATE_GROUP_VAL,
@@ -181,6 +183,7 @@ static struct parser_state *state_push_key(struct local_ctx *, enum state,
                                            const char *key);
 static int state_create_section(struct flb_cf *, struct parser_state *, char *);
 static int state_create_group(struct flb_cf *, struct parser_state *, char *);
+static struct cfl_kvlist *state_grab_keyvals(struct parser_state *state);
 static struct parser_state *state_pop(struct local_ctx *ctx);
 static struct parser_state *state_create(struct file_state *parent, struct file_state *file);
 static void state_destroy(struct parser_state *s);
@@ -228,6 +231,10 @@ static char *state_str(enum state val)
         return "plugin-value";
     case STATE_PLUGIN_VAL_LIST:
         return "plugin-values";
+    case STATE_PLUGIN_VAL_LIST_MAP_KEY:
+        return "plugin-values-map-key";
+    case STATE_PLUGIN_VAL_LIST_MAP_VAL:
+        return "plugin-values-map-val";
     case STATE_GROUP_KEY:
         return "group-key";
     case STATE_GROUP_VAL:
@@ -597,7 +604,6 @@ static enum status state_copy_into_config_group(struct parser_state *state, stru
     struct cfl_array *arr;
     struct cfl_array *carr;
     struct cfl_kvlist *copy;
-    int idx;
 
     if (cf_group == NULL) {
         flb_error("no group for processor properties");
@@ -654,31 +660,24 @@ static enum status state_copy_into_config_group(struct parser_state *state, stru
                 return YAML_FAILURE;
             }
 
-            for (idx = 0; idx < kvp->val->data.as_array->entry_count; idx++) {
-                var = cfl_array_fetch_by_index(kvp->val->data.as_array, idx);
+            while(kvp->val->data.as_array->entry_count > 0) {
+                var = cfl_array_fetch_by_index(kvp->val->data.as_array, 0);
 
                 if (var == NULL) {
                     cfl_array_destroy(arr);
                     flb_error("unable to fetch from array by index");
                     return YAML_FAILURE;
                 }
-                switch (var->type) {
-                case CFL_VARIANT_STRING:
 
-                    if (cfl_array_append_string(carr, var->data.as_string) < 0) {
-                        flb_error("unable to append string");
-                        cfl_kvlist_destroy(copy);
-                        cfl_array_destroy(carr);
-                        return YAML_FAILURE;
-                    }
-                    break;
-                default:
-                    cfl_array_destroy(arr);
-                    flb_error("unable to copy value for property");
-                    cfl_kvlist_destroy(copy);
-                    cfl_array_destroy(carr);
+                if (cfl_array_append(arr, var) < 0) {
+                    flb_error("unable to append value to array");
                     return YAML_FAILURE;
                 }
+
+                // NULLify the entry since there is no way to otherwise
+                // takeover the memory from the cfl_array.
+                kvp->val->data.as_array->entries[0] = NULL;
+                cfl_array_remove_by_index(kvp->val->data.as_array, 0);
             }
 
             if (cfl_kvlist_insert_array(copy, kvp->key, carr) < 0) {
@@ -708,18 +707,17 @@ static enum status state_copy_into_properties(struct parser_state *state, struct
     struct cfl_kvpair *kvp;
     struct cfl_variant *var;
     struct cfl_array *arr;
-    int idx;
 
     cfl_list_foreach(head, &state->keyvals->list) {
         kvp = cfl_list_entry(head, struct cfl_kvpair, _head);
         switch (kvp->val->type) {
         case CFL_VARIANT_STRING:
             var = flb_cf_section_property_add(conf,
-                                            properties,
-                                            kvp->key,
-                                            cfl_sds_len(kvp->key),
-                                            kvp->val->data.as_string,
-                                            cfl_sds_len(kvp->val->data.as_string));
+                                              properties,
+                                              kvp->key,
+                                              cfl_sds_len(kvp->key),
+                                              kvp->val->data.as_string,
+                                              cfl_sds_len(kvp->val->data.as_string));
 
             if (var == NULL) {
                 flb_error("unable to add variant value property");
@@ -734,25 +732,24 @@ static enum status state_copy_into_properties(struct parser_state *state, struct
                 flb_error("unable to add property list");
                 return YAML_FAILURE;
             }
-            for (idx = 0; idx < kvp->val->data.as_array->entry_count; idx++) {
-                var = cfl_array_fetch_by_index(kvp->val->data.as_array, idx);
+
+            while(kvp->val->data.as_array->entry_count > 0) {
+                var = cfl_array_fetch_by_index(kvp->val->data.as_array, 0);
 
                 if (var == NULL) {
-                    flb_error("unable to retrieve from array by index");
+                    cfl_array_destroy(arr);
+                    flb_error("unable to fetch from array by index");
                     return YAML_FAILURE;
                 }
-                switch (var->type) {
-                case CFL_VARIANT_STRING:
-
-                    if (cfl_array_append_string(arr, var->data.as_string) < 0) {
-                        flb_error("unable to append string to array");
-                        return YAML_FAILURE;
-                    }
-                    break;
-                default:
-                    flb_error("unable to copy value for property");
+                
+                if (cfl_array_append(arr, var) < 0) {
+                    flb_error("unable to append value to array");
                     return YAML_FAILURE;
                 }
+                // NULLify the entry since there is no way to otherwise
+                // takeover the memory from the cfl_array.
+                kvp->val->data.as_array->entries[0] = NULL;
+                cfl_array_remove_by_index(kvp->val->data.as_array, 0);
             }
             break;
         default:
@@ -771,6 +768,7 @@ static int consume_event(struct flb_cf *conf, struct local_ctx *ctx,
     int ret;
     char *value;
     struct flb_kv *keyval;
+    struct cfl_kvlist *kvlist;
     char *last_included;
 
     last_included = state_get_last(ctx);
@@ -1509,6 +1507,89 @@ static int consume_event(struct flb_cf *conf, struct local_ctx *ctx,
                 return YAML_FAILURE;
             }
             break;
+        case YAML_MAPPING_START_EVENT:
+            state = state_push_withvals(ctx, state, STATE_PLUGIN_VAL_LIST_MAP_KEY);
+
+            if (state == NULL) {
+                flb_error("unable to allocate state");
+                return YAML_FAILURE;
+            }
+            break;
+        default:
+            yaml_error_event(ctx, state, event);
+            return YAML_FAILURE;
+        }
+        break;
+
+    case STATE_PLUGIN_VAL_LIST_MAP_KEY:
+        switch(event->type) {
+        case YAML_MAPPING_END_EVENT:
+            kvlist = state_grab_keyvals(state);
+
+            if (kvlist == NULL) {
+                flb_error("no map values");
+                return YAML_FAILURE;
+            }
+
+            state = state_pop(ctx);
+
+            if (cfl_array_append_kvlist(state->values, kvlist) < 0) {
+                flb_error("unable to add list to values");
+                return YAML_FAILURE;
+            }
+
+            flb_debug("[keyval] stuff %p into %p", kvlist, state->values);
+
+            if (state == NULL) {
+                flb_error("no state left");
+                return YAML_FAILURE;
+            }
+            break;
+        case YAML_SCALAR_EVENT:
+            if (state->keyvals == NULL) {
+                flb_error("unable to add key to list map");
+                return YAML_FAILURE;
+            }
+
+            state = state_push_key(ctx, STATE_PLUGIN_VAL_LIST_MAP_VAL,
+                                   (char *)event->data.scalar.value);
+
+            if (state == NULL) {
+                flb_error("unable to allocate state");
+                return YAML_FAILURE;
+            }
+            break;
+
+        default:
+            yaml_error_event(ctx, state, event);
+            return YAML_FAILURE;
+        }
+        break;
+
+    case STATE_PLUGIN_VAL_LIST_MAP_VAL:
+        switch(event->type) {
+        case YAML_SCALAR_EVENT:
+            if (state->keyvals == NULL) {
+                flb_error("unable to add value to list map");
+                return YAML_FAILURE;
+            }
+
+            /* register key/value pair as a property */
+            ret =  cfl_kvlist_insert_string(state->keyvals, state->key, 
+                                            (char *)event->data.scalar.value);
+            if (ret < 0) {
+                flb_error("unable to insert string");
+                return YAML_FAILURE;
+            }
+
+            state = state_pop(ctx);
+
+            if (state == NULL) {
+                flb_error("unable to allocate state");
+                return YAML_FAILURE;
+            }
+            break;
+
         default:
             yaml_error_event(ctx, state, event);
             return YAML_FAILURE;
@@ -1790,6 +1871,7 @@ static struct parser_state *state_push_withvals(struct local_ctx *ctx,
     state->keyvals = kvlist;
     state->allocation_flags |= HAS_KEYVALS;
 
+    flb_debug("[keyval] new: %p", state->keyvals);
     return state;
 }
 
@@ -1845,6 +1927,22 @@ static int state_create_group(struct flb_cf *conf, struct parser_state *state, c
     return YAML_SUCCESS;
 }
 
+static struct cfl_kvlist *state_grab_keyvals(struct parser_state *state)
+{
+    struct cfl_kvlist *kvlist;
+
+    if (state->allocation_flags & HAS_KEYVALS) {
+        flb_debug("[keyval] grab: %p", state->keyvals);
+        kvlist = state->keyvals;
+        state->allocation_flags &= ~HAS_KEYVALS;
+        state->keyvals = NULL;
+
+        return kvlist;
+    }
+
+    return NULL;
+}
+
 static struct parser_state *state_pop(struct local_ctx *ctx)
 {
     struct parser_state *last;
@@ -1864,7 +1962,8 @@ static struct parser_state *state_pop(struct local_ctx *ctx)
         flb_sds_destroy(last->key);
     }
 
-    if (last->allocation_flags & HAS_KEYVALS) {
+    if (last->keyvals && last->allocation_flags & HAS_KEYVALS) {
+        flb_debug("[keyval] free: %p", last->keyvals);
         cfl_kvlist_destroy(last->keyvals);
     }
 
@@ -2049,7 +2148,7 @@ done:
 
     /* free all remaining states */
     if (code == -1) {
-        while (state = state_pop(ctx));
+        while ((state = state_pop(ctx)));
     }
     else {
         state = state_pop(ctx);
