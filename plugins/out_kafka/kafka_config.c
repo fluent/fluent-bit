@@ -239,10 +239,6 @@ int flb_out_kafka_destroy(struct flb_out_kafka *ctx)
         flb_free(ctx->topic_key);
     }
 
-    if (ctx->message_key) {
-        flb_free(ctx->message_key);
-    }
-
     if (ctx->message_key_field) {
         flb_free(ctx->message_key_field);
     }
