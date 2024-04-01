@@ -669,7 +669,8 @@ static enum status state_copy_into_config_group(struct parser_state *state, stru
                     return YAML_FAILURE;
                 }
 
-                if (cfl_array_append(arr, var) < 0) {
+                if (cfl_array_append(carr, var) < 0) {
+                    cfl_array_destroy(arr);
                     flb_error("unable to append value to array");
                     return YAML_FAILURE;
                 }
