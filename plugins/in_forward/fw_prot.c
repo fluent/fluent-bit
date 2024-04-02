@@ -1544,11 +1544,11 @@ int fw_prot_process(struct flb_input_instance *ins, struct fw_conn *conn)
                         const size_t original_len = len;
 
                         gzip_payloads_count = gzip_concatenated_count(data, len);
-                        flb_plg_info(ctx->ins, "concatenated gzip payload count is %zd",
+                        flb_plg_debug(ctx->ins, "concatenated gzip payload count is %zd",
                                      gzip_payloads_count);
                         if (gzip_payloads_count > 0) {
                             if (gzip_concatenated_borders(data, len, &gzip_borders, gzip_payloads_count) < 0) {
-                                flb_plg_info(ctx->ins,
+                                flb_plg_error(ctx->ins,
                                              "failed to traverse boundaries of concatenated gzip payloads");
                                 return -1;
                             }
@@ -1566,13 +1566,7 @@ int fw_prot_process(struct flb_input_instance *ins, struct fw_conn *conn)
                                 len = gzip_borders[loop] - gzip_borders[loop - 1];
                             }
                         }
-                        if (gzip_payloads_count > 0) {
-                            for (int i = 0; i <= gzip_payloads_count; i++) {
-                                flb_plg_debug(ctx->ins,
-                                              "gzip_borders[%d] = %zd", i, gzip_borders[i]);
-                            }
-                        }
-                        flb_plg_debug(ctx->ins,
+                        flb_plg_trace(ctx->ins,
                                       "[gzip decompression] loop = %zd, len = %zd, original_len = %zd",
                                       loop, len, original_len);
 
