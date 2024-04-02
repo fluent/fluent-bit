@@ -1208,10 +1208,10 @@ static size_t gzip_concatenated_count(const char *data, size_t len)
 
     p = (const uint8_t *) data;
 
-    /* search other gzip starting bits. */
+    /* search other gzip starting bits and method. */
     for (i = 2; i < len &&
-                 i + 1 <= len; i++) {
-        if (p[i] == 0x1F && p[i+1] == 0x8B) {
+                 i + 2 <= len; i++) {
+        if (p[i] == 0x1F && p[i+1] == 0x8B && p[i+2] == 8) {
             count++;
         }
     }
@@ -1233,10 +1233,10 @@ static size_t gzip_concatenated_borders(const char *data, size_t len, size_t **o
         return -1;
     }
 
-    /* search other gzip starting bits. */
+    /* search other gzip starting bits and method. */
     for (i = 2; i < len &&
-                 i + 1 <= len; i++) {
-        if (p[i] == 0x1F && p[i+1] == 0x8B) {
+                 i + 2 <= len; i++) {
+        if (p[i] == 0x1F && p[i+1] == 0x8B && p[i+2] == 8) {
             borders[count] = i;
             count++;
         }
@@ -1631,9 +1631,9 @@ int fw_prot_process(struct flb_input_instance *ins, struct fw_conn *conn)
                                 loop++;
                                 goto retry_uncompress;
                             }
-                            else if ((original_len - gzip_borders[loop]) > 18) {
+                            else {
                                 flb_plg_debug(ctx->ins, "left unconsumed %zd byte(s)",
-                                              len - (original_len - gzip_borders[loop]));
+                                              original_len - gzip_borders[loop]);
                             }
                             if (loop == gzip_payloads_count) {
                                 if (gzip_borders != NULL) {
