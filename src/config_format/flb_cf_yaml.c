@@ -708,6 +708,7 @@ static enum status state_copy_into_properties(struct parser_state *state, struct
     struct cfl_kvpair *kvp;
     struct cfl_variant *var;
     struct cfl_array *arr;
+    int idx;
 
     cfl_list_foreach(head, &state->keyvals->list) {
         kvp = cfl_list_entry(head, struct cfl_kvpair, _head);
@@ -735,7 +736,8 @@ static enum status state_copy_into_properties(struct parser_state *state, struct
             }
 
             while(kvp->val->data.as_array->entry_count > 0) {
-                var = cfl_array_fetch_by_index(kvp->val->data.as_array, 0);
+                idx = kvp->val->data.as_array->entry_count-1;
+                var = cfl_array_fetch_by_index(kvp->val->data.as_array, idx);
 
                 if (var == NULL) {
                     cfl_array_destroy(arr);
@@ -749,8 +751,8 @@ static enum status state_copy_into_properties(struct parser_state *state, struct
                 }
                 // NULLify the entry since there is no way to otherwise
                 // takeover the memory from the cfl_array.
-                kvp->val->data.as_array->entries[0] = NULL;
-                cfl_array_remove_by_index(kvp->val->data.as_array, 0);
+                kvp->val->data.as_array->entries[idx] = NULL;
+                cfl_array_remove_by_index(kvp->val->data.as_array, idx);
             }
             break;
         default:
