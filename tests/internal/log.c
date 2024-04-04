@@ -81,14 +81,17 @@ static void cache_basic_timeout()
     cache = flb_log_cache_create(timeout, 4);
     TEST_CHECK(cache != NULL);
 
+    clock1 = time(NULL);
     ret_1 = flb_log_cache_check_suppress(cache, TEST_RECORD_01, TEST_RECORD_01_SIZE);
+
+    clock2 = time(NULL);
     ret_2 = flb_log_cache_check_suppress(cache, TEST_RECORD_02, TEST_RECORD_02_SIZE);
+
     TEST_CHECK(ret_1 == FLB_FALSE);
     TEST_CHECK(ret_2 == FLB_FALSE);
+
     sleep(1);
 
-    clock1 = time(NULL);
-    clock2 = time(NULL);
 
     for (i = 1, start = time(NULL); i < 10 && start+(timeout*20) >  time(NULL); i++) {
         ret_1 = flb_log_cache_check_suppress(cache, TEST_RECORD_01, TEST_RECORD_01_SIZE);
