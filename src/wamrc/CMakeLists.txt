@@ -118,7 +118,7 @@ if (NOT MSVC)
 endif ()
 
 # Searching homebrewed LLVM automatically on macOS.
-if(FLB_SYSTEM_MACOS)
+if(FLB_SYSTEM_MACOS AND NOT DEFINED ENV{LLVM_DIR})
   execute_process(
     COMMAND brew --prefix llvm
     RESULT_VARIABLE HOMEBREW_LLVM
