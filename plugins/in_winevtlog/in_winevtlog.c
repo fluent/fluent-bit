@@ -37,6 +37,7 @@ static int in_winevtlog_init(struct flb_input_instance *in,
                              struct flb_config *config, void *data)
 {
     int ret;
+    int64_t threshold_size;
     const char *tmp;
     int read_existing_events = FLB_FALSE;
     struct mk_list *head;
@@ -70,6 +71,16 @@ static int in_winevtlog_init(struct flb_input_instance *in,
 
     /* Set up total reading size threshold */
     ctx->total_size_threshold = DEFAULT_THRESHOLD_SIZE;
+    tmp = flb_input_get_property("threshold_size", in);
+    if (tmp != NULL) {
+        threshold_size = flb_utils_size_to_bytes(tmp);
+        if (threshold_size > DEFAULT_THRESHOLD_SIZE) {
+            ctx->total_size_threshold = (unsigned int) threshold_size;
+            flb_plg_debug(ctx->ins,
+                          "threshold size is changed to %" PRId64 "KB",
+                          threshold_size / 1000);
+        }
+    }
 
     /* Open channels */
     tmp = flb_input_get_property("channels", in);
@@ -260,6 +271,11 @@ static struct flb_config_map config_map[] = {
       FLB_CONFIG_MAP_STR, "event_query", "*",
       0, FLB_TRUE, offsetof(struct winevtlog_config, event_query),
       "Specify XML query for filtering events"
+    },
+    {
+      FLB_CONFIG_MAP_STR, "threshold_size", NULL,
+      0, FLB_TRUE, 0,
+      "Specify threshold size for collecting Windows EventLog per a cycle"
     },
     /* EOF */
     {0}
