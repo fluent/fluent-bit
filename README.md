@@ -53,7 +53,7 @@ Fluent Bit runs on x86_64, x86, arm32v7, and arm64v8 architectures.
 > If your company uses Fluent Bit and is not listed, feel free to open a GitHub issue and we will add the logo.
 
 ![users](documentation/fluentbit_users.png)
-![users](documentation/kakao.svg)
+<img src="documentation/kakao.svg" alt="Kakao Logo" width="200"/>
 
 
 ## [Documentation](https://docs.fluentbit.io)
