@@ -689,6 +689,7 @@ int http_prot_handle(struct flb_http *ctx, struct http_conn *conn,
     return ret;
 }
 
+
 /*
  * Handle an incoming request which has resulted in an http parser error.
  */
@@ -698,4 +699,456 @@ int http_prot_handle_error(struct flb_http *ctx, struct http_conn *conn,
 {
     send_response(conn, 400, "error: invalid request\n");
     return -1;
+}
+
+/* New gen HTTP server */
+
+static int send_response_ng(struct flb_http_response *response, 
+                            int http_status, 
+                            char *message)
+{
+    struct mk_list            *header_iterator;
+    struct flb_slist_entry    *header_value;
+    struct flb_slist_entry    *header_name;
+    struct flb_config_map_val *header_pair;
+    struct flb_http           *context;
+
+    context = (struct flb_http *) response->stream->user_data;
+
+    flb_http_response_set_status(response, http_status);
+
+    if (http_status == 201) {
+        flb_http_response_set_message(response, "Created");
+    }
+    else if (http_status == 200) {
+        flb_http_response_set_message(response, "OK");
+    }
+    else if (http_status == 204) {
+        flb_http_response_set_message(response, "No Content");
+    }
+    else if (http_status == 400) {
+        flb_http_response_set_message(response, "Forbidden");
+    }
+
+    if (http_status == 200 || 
+        http_status == 201 ||
+        http_status == 204) {
+
+        flb_config_map_foreach(header_iterator, 
+                               header_pair, 
+                               context->success_headers) {
+            header_name = mk_list_entry_first(header_pair->val.list,
+                                            struct flb_slist_entry,
+                                            _head);
+
+            header_value = mk_list_entry_last(header_pair->val.list,
+                                            struct flb_slist_entry,
+                                            _head);
+
+            flb_http_response_set_header(response, 
+                                        header_name->str, 0, 
+                                        header_value->str, 0);
+        }
+    }
+
+    if (message != NULL) {
+        flb_http_response_set_body(response, 
+                                   (unsigned char *) message, 
+                                   strlen(message));
+    }
+
+    flb_http_response_commit(response);
+
+    return 0;
+}
+
+static int process_pack_ng(struct flb_http *ctx, flb_sds_t tag, char *buf, size_t size)
+{
+    int ret;
+    size_t off = 0;
+    msgpack_unpacked result;
+    struct flb_time tm;
+    int i = 0;
+    msgpack_object *obj;
+    msgpack_object record;
+    flb_sds_t tag_from_record = NULL;
+
+    flb_time_get(&tm);
+
+    msgpack_unpacked_init(&result);
+    while (msgpack_unpack_next(&result, buf, size, &off) == MSGPACK_UNPACK_SUCCESS) {
+        if (result.data.type == MSGPACK_OBJECT_MAP) {
+            tag_from_record = NULL;
+            if (ctx->tag_key) {
+                obj = &result.data;
+                tag_from_record = tag_key(ctx, obj);
+            }
+
+            ret = flb_log_event_encoder_begin_record(&ctx->log_encoder);
+
+            if (ret == FLB_EVENT_ENCODER_SUCCESS) {
+                ret = flb_log_event_encoder_set_timestamp(
+                        &ctx->log_encoder,
+                        &tm);
+            }
+
+            if (ret == FLB_EVENT_ENCODER_SUCCESS) {
+                ret = flb_log_event_encoder_set_body_from_msgpack_object(
+                        &ctx->log_encoder,
+                        &result.data);
+            }
+
+            if (ret == FLB_EVENT_ENCODER_SUCCESS) {
+                ret = flb_log_event_encoder_commit_record(&ctx->log_encoder);
+            }
+
+            if (ret == FLB_EVENT_ENCODER_SUCCESS) {
+                if (tag_from_record) {
+                    flb_input_log_append(ctx->ins,
+                                         tag_from_record,
+                                         flb_sds_len(tag_from_record),
+                                         ctx->log_encoder.output_buffer,
+                                         ctx->log_encoder.output_length);
+
+                    flb_sds_destroy(tag_from_record);
+                }
+                else if (tag) {
+                    flb_input_log_append(ctx->ins, tag, flb_sds_len(tag),
+                                         ctx->log_encoder.output_buffer,
+                                         ctx->log_encoder.output_length);
+                }
+                else {
+                    /* use default plugin Tag (it internal name, e.g: http.0 */
+                    flb_input_log_append(ctx->ins, NULL, 0,
+                                         ctx->log_encoder.output_buffer,
+                                         ctx->log_encoder.output_length);
+                }
+            }
+            else {
+                flb_plg_error(ctx->ins, "Error encoding record : %d", ret);
+            }
+
+            flb_log_event_encoder_reset(&ctx->log_encoder);
+        } 
+        else if (result.data.type == MSGPACK_OBJECT_ARRAY) {
+            obj = &result.data;
+            for (i = 0; i < obj->via.array.size; i++)
+            {
+                record = obj->via.array.ptr[i];
+
+                tag_from_record = NULL;
+                if (ctx->tag_key) {
+                    tag_from_record = tag_key(ctx, &record);
+                }
+
+                ret = flb_log_event_encoder_begin_record(&ctx->log_encoder);
+
+                if (ret == FLB_EVENT_ENCODER_SUCCESS) {
+                    ret = flb_log_event_encoder_set_timestamp(
+                            &ctx->log_encoder,
+                            &tm);
+                }
+
+                if (ret == FLB_EVENT_ENCODER_SUCCESS) {
+                    ret = flb_log_event_encoder_set_body_from_msgpack_object(
+                            &ctx->log_encoder,
+                            &record);
+                }
+
+                if (ret == FLB_EVENT_ENCODER_SUCCESS) {
+                    ret = flb_log_event_encoder_commit_record(&ctx->log_encoder);
+                }
+
+                if (ret == FLB_EVENT_ENCODER_SUCCESS) {
+                    if (tag_from_record) {
+                        flb_input_log_append(ctx->ins,
+                                             tag_from_record,
+                                             flb_sds_len(tag_from_record),
+                                             ctx->log_encoder.output_buffer,
+                                             ctx->log_encoder.output_length);
+
+                        flb_sds_destroy(tag_from_record);
+                    }
+                    else if (tag) {
+                        flb_input_log_append(ctx->ins, tag, flb_sds_len(tag),
+                                             ctx->log_encoder.output_buffer,
+                                             ctx->log_encoder.output_length);
+                    }
+                    else {
+                        /* use default plugin Tag (it internal name, e.g: http.0 */
+                        flb_input_log_append(ctx->ins, NULL, 0,
+                                             ctx->log_encoder.output_buffer,
+                                             ctx->log_encoder.output_length);
+                    }
+                }
+                else {
+                    flb_plg_error(ctx->ins, "Error encoding record : %d", ret);
+                }
+
+                /* TODO : Optimize this
+                 *
+                 * This is wasteful, considering that we are emitting a series
+                 * of records we should start and commit each one and then
+                 * emit them all at once after the loop.
+                 */
+
+                flb_log_event_encoder_reset(&ctx->log_encoder);
+            }
+
+            break;
+        } 
+        else {
+            flb_plg_error(ctx->ins, "skip record from invalid type: %i",
+                         result.data.type);
+
+            msgpack_unpacked_destroy(&result);
+
+            return -1;
+        }
+    }
+
+    msgpack_unpacked_destroy(&result);
+
+    return 0;
+}
+
+static ssize_t parse_payload_json_ng(flb_sds_t tag,
+                                     struct flb_http_request *request)
+{
+    int ret;
+    int out_size;
+    char *pack;
+    struct flb_pack_state pack_state;
+    struct flb_http *ctx;
+    char *payload;
+    size_t size;
+
+    ctx = (struct flb_http *) request->stream->user_data;
+    payload = (char *) request->body;
+    size = cfl_sds_len(request->body);
+
+    /* Initialize packer */
+    flb_pack_state_init(&pack_state);
+
+    /* Pack JSON as msgpack */
+    ret = flb_pack_json_state(payload, size,
+                              &pack, &out_size, &pack_state);
+    flb_pack_state_reset(&pack_state);
+
+    /* Handle exceptions */
+    if (ret == FLB_ERR_JSON_PART) {
+        flb_plg_warn(ctx->ins, "JSON data is incomplete, skipping");
+        return -1;
+    }
+    else if (ret == FLB_ERR_JSON_INVAL) {
+        flb_plg_warn(ctx->ins, "invalid JSON message, skipping");
+        return -1;
+    }
+    else if (ret == -1) {
+        return -1;
+    }
+
+    /* Process the packaged JSON and return the last byte used */
+    process_pack_ng(ctx, tag, pack, out_size);
+    flb_free(pack);
+
+    return 0;
+}
+
+static ssize_t parse_payload_urlencoded_ng(flb_sds_t tag,
+                                           struct flb_http_request *request)
+{
+    struct mk_list *kvs;
+    struct mk_list *head = NULL;
+    struct flb_split_entry *cur = NULL;
+    char **keys = NULL;
+    char **vals = NULL;
+    char *sep;
+    char *start;
+    int idx = 0;
+    int ret = -1;
+    msgpack_packer pck;
+    msgpack_sbuffer sbuf;
+    struct flb_http *ctx;
+    char *payload;
+
+    ctx = (struct flb_http *) request->stream->user_data;
+    payload = (char *) request->body;
+
+    /* initialize buffers */
+    msgpack_sbuffer_init(&sbuf);
+    msgpack_packer_init(&pck, &sbuf, msgpack_sbuffer_write);
+
+    kvs = flb_utils_split(payload, '&', -1 );
+    if (kvs == NULL) {
+        goto split_error;
+    }
+
+    keys = flb_calloc(mk_list_size(kvs), sizeof(char *));
+    if (keys == NULL) {
+        goto keys_calloc_error;
+    }
+
+    vals = flb_calloc(mk_list_size(kvs), sizeof(char *));
+    if (vals == NULL) {
+        goto vals_calloc_error;
+    }
+
+    mk_list_foreach(head, kvs) {
+        cur = mk_list_entry(head, struct flb_split_entry, _head);
+        if (cur->value[0] == '\n') {
+            start = &cur->value[1];
+        } else {
+            start = cur->value;
+        }
+        sep = strchr(start, '=');
+        if (sep == NULL) {
+            vals[idx] = NULL;
+            continue;
+        }
+        *sep++ = '\0';
+
+        keys[idx] = flb_sds_create_len(start, strlen(start));
+        vals[idx] = flb_sds_create_len(sep, strlen(sep));
+
+        flb_sds_trim(keys[idx]);
+        flb_sds_trim(vals[idx]);
+        idx++;
+    }
+
+    msgpack_pack_map(&pck, mk_list_size(kvs));
+    for (idx = 0; idx < mk_list_size(kvs); idx++) {
+        msgpack_pack_str(&pck, flb_sds_len(keys[idx]));
+        msgpack_pack_str_body(&pck, keys[idx], flb_sds_len(keys[idx]));
+
+        if (sds_uri_decode(vals[idx]) != 0) {
+            goto decode_error;
+        } else {
+            msgpack_pack_str(&pck, flb_sds_len(vals[idx]));
+            msgpack_pack_str_body(&pck, vals[idx], strlen(vals[idx]));            
+        }
+    }
+
+    ret = process_pack(ctx, tag, sbuf.data, sbuf.size);
+
+decode_error:
+    for (idx = 0; idx < mk_list_size(kvs); idx++) {
+        if (keys[idx]) {
+            flb_sds_destroy(keys[idx]);
+        }
+        if (vals[idx]) {
+            flb_sds_destroy(vals[idx]);
+        }
+    }
+    flb_free(vals);
+vals_calloc_error:
+    flb_free(keys);
+keys_calloc_error:
+    flb_utils_split_free(kvs);
+split_error:
+    msgpack_sbuffer_destroy(&sbuf);
+    return ret;
+}
+
+static int process_payload_ng(flb_sds_t tag,
+                           struct flb_http_request *request,
+                           struct flb_http_response *response)
+{
+    int type;
+
+    type = -1;
+    
+    if (request->content_type == NULL) {
+        send_response_ng(response, 400, "error: header 'Content-Type' is not set\n");
+        return -1;
+    }
+
+    if (strcasecmp(request->content_type, "application/json") == 0) {
+        type = HTTP_CONTENT_JSON;
+    }
+
+    if (strcasecmp(request->content_type, "application/x-www-form-urlencoded") == 0) {
+        type = HTTP_CONTENT_URLENCODED;
+    }
+
+    if (type == -1) {
+        send_response_ng(response, 400, "error: invalid 'Content-Type'\n");
+        return -1;
+    }
+
+    if (request->body == NULL || 
+        cfl_sds_len(request->body) == 0) {
+        send_response_ng(response, 400, "error: no payload found\n");
+        return -1;
+    }
+
+    if (type == HTTP_CONTENT_JSON) {
+        parse_payload_json_ng(tag, request);
+    } else if (type == HTTP_CONTENT_URLENCODED) {
+        parse_payload_urlencoded_ng(tag, request);
+    }
+
+    return 0;
+}
+
+int http_prot_handle_ng(struct flb_http_request *request,
+                        struct flb_http_response *response)
+{
+    int                             i;
+    int                             ret;
+    int                             len;
+    flb_sds_t                       tag;
+    struct flb_http                *context;
+
+    context = (struct flb_http *) response->stream->user_data;
+
+    if (request->path[0] != '/') {
+        send_response_ng(response, 400, "error: invalid request\n");
+        return -1;
+    }
+
+    /* Compose the query string using the URI */
+    len = cfl_sds_len(request->path);
+
+    if (len == 1) {
+        tag = NULL; /* use default tag */
+    }
+    else {
+        tag = flb_sds_create(&request->path[1]);
+
+        if (tag == NULL) {
+            return -1;
+        }
+
+        /* Sanitize, only allow alphanum chars */
+        for (i = 0; i < flb_sds_len(tag); i++) {
+            if (!isalnum(tag[i]) && tag[i] != '_' && tag[i] != '.') {
+                tag[i] = '_';
+            }
+        }
+    }
+
+    /* ToDo: Fix me */
+    /* HTTP/1.1 needs Host header */
+    if (request->protocol_version == HTTP_PROTOCOL_HTTP1 && 
+        request->host == NULL) {
+        flb_sds_destroy(tag);
+
+        return -1;
+    }
+
+    if (request->method != HTTP_METHOD_POST) {
+        send_response_ng(response, 400, "error: invalid HTTP method\n");
+        flb_sds_destroy(tag);
+
+        return -1;
+    }
+
+    ret = process_payload_ng(tag, request, response);
+
+    flb_sds_destroy(tag);
+
+    send_response_ng(response, context->successful_response_code, NULL);
+
+    return ret;
 }

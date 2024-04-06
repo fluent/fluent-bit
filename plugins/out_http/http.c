@@ -186,7 +186,7 @@ static int http_post(struct flb_out_http *ctx,
                             FLB_HTTP_MIME_JSON,
                             sizeof(FLB_HTTP_MIME_JSON) - 1);
     }
-    else {
+    else if ((ctx->out_format == FLB_HTTP_OUT_MSGPACK)) {
         flb_http_add_header(c,
                             FLB_HTTP_CONTENT_TYPE,
                             sizeof(FLB_HTTP_CONTENT_TYPE) - 1,
@@ -665,8 +665,8 @@ static struct flb_config_map config_map[] = {
      "Set a HTTP header which value is the Tag"
     },
     {
-     FLB_CONFIG_MAP_STR, "format", NULL,
-     0, FLB_FALSE, 0,
+     FLB_CONFIG_MAP_STR, "format", "json",
+     0, FLB_TRUE, offsetof(struct flb_out_http, format),
      "Set desired payload format: json, json_stream, json_lines, gelf or msgpack"
     },
     {

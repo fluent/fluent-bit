@@ -312,7 +312,7 @@ static int cb_statsd_init(struct flb_input_instance *ins,
     flb_input_set_context(ins, ctx);
 
     /* Accepts metrics from UDP connections. */
-    ctx->server_fd = flb_net_server_udp(ctx->port, ctx->listen);
+    ctx->server_fd = flb_net_server_udp(ctx->port, ctx->listen, ins->net_setup.share_port);
     if (ctx->server_fd == -1) {
         flb_plg_error(ctx->ins, "can't bind to %s:%s", ctx->listen, ctx->port);
         flb_log_event_encoder_destroy(ctx->log_encoder);

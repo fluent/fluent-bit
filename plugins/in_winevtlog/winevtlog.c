@@ -56,7 +56,7 @@ struct winevtlog_channel *winevtlog_subscribe(const char *channel, int read_exis
     }
     ch->query = NULL;
 
-    signal_event = CreateEvent(NULL, FALSE, FALSE, NULL);
+    signal_event = CreateEvent(NULL, TRUE, TRUE, NULL);
 
     // channel : To wide char
     len = MultiByteToWideChar(CP_UTF8, 0, channel, -1, NULL, 0);
@@ -492,6 +492,7 @@ static int winevtlog_next(struct winevtlog_channel *ch, int hit_threshold)
     DWORD status = ERROR_SUCCESS;
     BOOL has_next = FALSE;
     int i;
+    DWORD wait = 0;
 
     /* If subscription handle is NULL, it should return false. */
     if (!ch->subscription) {
@@ -500,6 +501,15 @@ static int winevtlog_next(struct winevtlog_channel *ch, int hit_threshold)
     }
 
     if (hit_threshold) {
+        return FLB_FALSE;
+    }
+
+    wait = WaitForSingleObject(ch->signal_event, 0);
+    if (wait == WAIT_FAILED) {
+        flb_error("subscription is invalid. err code = %d", GetLastError());
+        return FLB_FALSE;
+    }
+    else if (wait != WAIT_OBJECT_0) {
         return FLB_FALSE;
     }
 
@@ -514,6 +524,8 @@ static int winevtlog_next(struct winevtlog_channel *ch, int hit_threshold)
         if (ERROR_NO_MORE_ITEMS != status) {
             return FLB_FALSE;
         }
+
+        ResetEvent(ch->signal_event);
     }
 
     if (status == ERROR_SUCCESS) {

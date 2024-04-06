@@ -72,6 +72,9 @@ struct flb_tls_backend {
     /* destroy backend context */
     void (*context_destroy) (void *);
 
+    /* Additional settings */
+    int (*context_alpn_set) (void *, const char *);
+
     /* Session management */
     void *(*session_create) (struct flb_tls *, int);
     int (*session_destroy) (void *);
@@ -106,6 +109,9 @@ struct flb_tls *flb_tls_create(int mode,
                                const char *key_file, const char *key_passwd);
 
 int flb_tls_destroy(struct flb_tls *tls);
+
+int flb_tls_set_alpn(struct flb_tls *tls, const char *alpn);
+
 int flb_tls_load_system_certificates(struct flb_tls *tls);
 
 struct mk_list *flb_tls_get_config_map(struct flb_config *config);

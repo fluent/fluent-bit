@@ -2077,7 +2077,7 @@ static flb_sds_t stackdriver_format(struct flb_stackdriver *ctx,
                 */
 
                 ret = process_local_resource_id(ctx, tag, tag_len, K8S_POD);
-                if (ret != 0) {
+                if (ret == -1) {
                     flb_plg_error(ctx->ins, "fail to process local_resource_id from "
                                 "log entry for k8s_pod");
                     msgpack_sbuffer_destroy(&mp_sbuf);
@@ -2942,15 +2942,18 @@ static void cb_stackdriver_flush(struct flb_event_chunk *event_chunk,
 #endif
           if (c->resp.status >= 400 && c->resp.status < 500) {
             ret_code = FLB_ERROR;
-            flb_plg_warn(ctx->ins, "error: %s", c->resp.payload);
+            flb_plg_warn(ctx->ins, "tag=%s error sending to Cloud Logging: %s", event_chunk->tag,
+                         c->resp.payload);
           }
           else {
             if (c->resp.payload_size > 0) {
               /* we got an error */
-              flb_plg_warn(ctx->ins, "error: %s", c->resp.payload);
+              flb_plg_warn(ctx->ins, "tag=%s error sending to Cloud Logging: %s", event_chunk->tag,
+                           c->resp.payload);
             }
             else {
-              flb_plg_debug(ctx->ins, "response: %s", c->resp.payload);
+              flb_plg_debug(ctx->ins, "tag=%s response from Cloud Logging: %s", event_chunk->tag,
+                            c->resp.payload);
             }
             ret_code = FLB_RETRY;
           }

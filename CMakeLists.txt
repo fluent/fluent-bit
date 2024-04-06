@@ -8,7 +8,7 @@ set(CMAKE_POLICY_DEFAULT_CMP0069 NEW)
 # Fluent Bit Version
 set(FLB_VERSION_MAJOR  3)
 set(FLB_VERSION_MINOR  0)
-set(FLB_VERSION_PATCH  0)
+set(FLB_VERSION_PATCH  1)
 set(FLB_VERSION_STR "${FLB_VERSION_MAJOR}.${FLB_VERSION_MINOR}.${FLB_VERSION_PATCH}")
 
 set(CMAKE_POSITION_INDEPENDENT_CODE ON)
@@ -282,8 +282,12 @@ option(FLB_FILTER_TENSORFLOW           "Enable tensorflow filter"               
 option(FLB_FILTER_GEOIP2               "Enable geoip2 filter"                         Yes)
 option(FLB_FILTER_NIGHTFALL            "Enable Nightfall filter"                      Yes)
 option(FLB_FILTER_WASM                 "Enable WASM filter"                           Yes)
+
+# Processors
+option(FLB_PROCESSOR_CONTENT_MODIFIER  "Enable content modifier processor"            Yes)
 option(FLB_PROCESSOR_LABELS            "Enable metrics label manipulation processor"  Yes)
-option(FLB_PROCESSOR_ATTRIBUTES        "Enable atributes manipulation processor"      Yes)
+option(FLB_PROCESSOR_METRICS_SELECTOR  "Enable metrics selector processor"            Yes)
+option(FLB_PROCESSOR_SQL               "Enable SQL processor"                         Yes)
 
 if(DEFINED FLB_NIGHTLY_BUILD AND NOT "${FLB_NIGHTLY_BUILD}" STREQUAL "")
   FLB_DEFINITION_VAL(FLB_NIGHTLY_BUILD ${FLB_NIGHTLY_BUILD})
@@ -561,6 +565,15 @@ add_subdirectory(${FLB_PATH_LIB_CMETRICS} EXCLUDE_FROM_ALL)
 
 # CTraces
 add_subdirectory(${FLB_PATH_LIB_CTRACES} EXCLUDE_FROM_ALL)
+
+# Nghttp2 options
+FLB_OPTION(ENABLE_LIB_ONLY   ON)
+FLB_OPTION(ENABLE_STATIC_LIB ON)
+FLB_OPTION(ENABLE_SHARED_LIB OFF)
+
+FLB_DEFINITION(NGHTTP2_STATICLIB)
+
+add_subdirectory(${FLB_PATH_LIB_NGHTTP2} EXCLUDE_FROM_ALL)
 
 # C-Ares (DNS library)
 FLB_OPTION(CARES_STATIC      ON)

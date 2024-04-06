@@ -49,8 +49,24 @@ int fw_conn_event(void *data)
 
     event = &connection->event;
 
-
     if (event->mask & MK_EVENT_READ) {
+        if (conn->handshake_status == FW_HANDSHAKE_PINGPONG) {
+            flb_plg_trace(ctx->ins, "handshake status = %d", conn->handshake_status);
+
+            ret = fw_prot_secure_forward_handshake(ctx->ins, conn);
+            if (ret == -1) {
+                flb_plg_trace(ctx->ins, "fd=%i closed connection", event->fd);
+                fw_conn_del(conn);
+
+                return -1;
+            }
+
+            conn->handshake_status = FW_HANDSHAKE_ESTABLISHED;
+            return 0;
+        }
+
+        flb_plg_trace(ctx->ins, "handshake status = %d", conn->handshake_status);
+
         available = (conn->buf_size - conn->buf_len);
         if (available < 1) {
             if (conn->buf_size >= ctx->buffer_max_size) {
@@ -116,6 +132,7 @@ struct fw_conn *fw_conn_add(struct flb_connection *connection, struct flb_in_fw_
 {
     struct fw_conn *conn;
     int             ret;
+    struct flb_in_fw_helo *helo = NULL;
 
     conn = flb_malloc(sizeof(struct fw_conn));
     if (!conn) {
@@ -124,7 +141,25 @@ struct fw_conn *fw_conn_add(struct flb_connection *connection, struct flb_in_fw_
         return NULL;
     }
 
+    conn->handshake_status = FW_HANDSHAKE_ESTABLISHED;
+    if (ctx->shared_key != NULL) {
+        conn->handshake_status = FW_HANDSHAKE_HELO;
+        helo = flb_malloc(sizeof(struct flb_in_fw_helo));
+        if (!helo) {
+            flb_errno();
+
+            return NULL;
+        }
+        ret = fw_prot_secure_forward_handshake_start(ctx->ins, connection, helo);
+        if (ret != 0) {
+            return NULL;
+        }
+
+        conn->handshake_status = FW_HANDSHAKE_PINGPONG;
+    }
+
     conn->connection = connection;
+    conn->helo       = helo;
 
     /* Set data for the event-loop */
     connection->user_data     = conn;
@@ -178,6 +213,15 @@ int fw_conn_del(struct fw_conn *conn)
     /* Release resources */
     mk_list_del(&conn->_head);
 
+    if (conn->helo != NULL) {
+        if (conn->helo->nonce != NULL) {
+            flb_sds_destroy(conn->helo->nonce);
+        }
+        if (conn->helo->salt != NULL) {
+            flb_sds_destroy(conn->helo->salt);
+        }
+        flb_free(conn->helo);
+    }
     flb_free(conn->buf);
     flb_free(conn);
 

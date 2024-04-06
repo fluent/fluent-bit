@@ -52,6 +52,7 @@
 #define FLB_HTTP_MORE             0
 #define FLB_HTTP_OK               1
 #define FLB_HTTP_NOT_FOUND        2 /* header not found */
+#define FLB_HTTP_CHUNK_AVAILABLE  3 /* means chunk is available, but there is more data. end of all chunks returns FLB_HTTP_OK */
 
 /* Useful headers */
 #define FLB_HTTP_HEADER_AUTH             "Authorization"
@@ -61,13 +62,11 @@
 #define FLB_HTTP_HEADER_CONNECTION       "Connection"
 #define FLB_HTTP_HEADER_KA               "keep-alive"
 
-struct flb_http_response {
+struct flb_http_client_response {
     int status;                /* HTTP response status          */
     int content_length;        /* Content length set by headers */
     int chunked_encoding;      /* Chunked transfer encoding ?   */
     int connection_close;      /* connection: close ?           */
-    long chunked_cur_size;
-    long chunked_exp_size;     /* expected chunked size         */
     char *chunk_processed_end; /* Position to mark last chunk   */
     char *headers_end;         /* Headers end (\r\n\r\n)        */
 
@@ -131,7 +130,7 @@ struct flb_http_client {
     struct flb_http_proxy proxy;
 
     /* Response */
-    struct flb_http_response resp;
+    struct flb_http_client_response resp;
 
     /* Reference to Callback context */
     void *cb_ctx;
@@ -162,6 +161,8 @@ int flb_http_set_content_encoding_gzip(struct flb_http_client *c);
 int flb_http_set_callback_context(struct flb_http_client *c,
                                   struct flb_callback *cb_ctx);
 
+int flb_http_get_response_data(struct flb_http_client *c, size_t bytes_consumed);
+int flb_http_do_request(struct flb_http_client *c, size_t *bytes);
 int flb_http_do(struct flb_http_client *c, size_t *bytes);
 int flb_http_client_proxy_connect(struct flb_connection *u_conn);
 void flb_http_client_destroy(struct flb_http_client *c);

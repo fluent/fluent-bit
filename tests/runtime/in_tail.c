@@ -1144,6 +1144,75 @@ void flb_test_skip_empty_lines()
     test_tail_ctx_destroy(ctx);
 }
 
+void flb_test_skip_empty_lines_crlf()
+{
+    struct flb_lib_out_cb cb_data;
+    struct test_tail_ctx *ctx;
+    char *file[] = {"skip_empty_lines_crlf.log"};
+    char *empty_lines[] = {"\r\n", "\r\n"};
+    char *msg = "lalala";
+    int ret;
+    int num;
+    int i;
+
+    char *expected_strs[] = {msg};
+    struct str_list expected = {
+                                .size = sizeof(expected_strs)/sizeof(char*),
+                                .lists = &expected_strs[0],
+    };
+
+    clear_output_num();
+
+    cb_data.cb = cb_check_json_str_list;
+    cb_data.data = &expected;
+
+    ctx = test_tail_ctx_create(&cb_data, &file[0], sizeof(file)/sizeof(char *), FLB_TRUE);
+    if (!TEST_CHECK(ctx != NULL)) {
+        TEST_MSG("test_ctx_create failed");
+        exit(EXIT_FAILURE);
+    }
+
+    ret = flb_input_set(ctx->flb, ctx->o_ffd,
+                        "path", file[0],
+                        "skip_empty_lines", "true",
+                        "Read_From_Head", "true",
+                        NULL);
+    TEST_CHECK(ret == 0);
+
+    ret = flb_output_set(ctx->flb, ctx->o_ffd,
+                         "format", "json",
+                         NULL);
+    TEST_CHECK(ret == 0);
+
+    ret = write_msg(ctx, msg, strlen(msg));
+    if (!TEST_CHECK(ret > 0)) {
+        test_tail_ctx_destroy(ctx);
+        exit(EXIT_FAILURE);
+    }
+
+    for (i=0; i<sizeof(empty_lines)/sizeof(char*); i++) {
+        ret = write_msg(ctx, empty_lines[i], strlen(empty_lines[i]));
+        if (!TEST_CHECK(ret > 0)) {
+            test_tail_ctx_destroy(ctx);
+            exit(EXIT_FAILURE);
+        }
+    }
+
+    /* Start the engine */
+    ret = flb_start(ctx->flb);
+    TEST_CHECK(ret == 0);
+
+    /* waiting to flush */
+    flb_time_msleep(500);
+
+    num = get_output_num();
+    if (!TEST_CHECK(num == 1))  {
+        TEST_MSG("output error: expect=1 got=%d", num);
+    }
+
+    test_tail_ctx_destroy(ctx);
+}
+
 static int ignore_older(int expected, char *ignore_older)
 {
     struct flb_lib_out_cb cb_data;
@@ -1557,6 +1626,7 @@ TEST_LIST = {
     {"exclude_path", flb_test_exclude_path},
     {"offset_key", flb_test_offset_key},
     {"skip_empty_lines", flb_test_skip_empty_lines},
+    {"skip_empty_lines_crlf", flb_test_skip_empty_lines_crlf},
     {"ignore_older", flb_test_ignore_older},
 #ifdef FLB_HAVE_INOTIFY
     {"inotify_watcher_false", flb_test_inotify_watcher_false},
