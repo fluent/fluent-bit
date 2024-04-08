@@ -363,7 +363,7 @@ static flb_sds_t pack_labels(struct flb_loki *ctx,
             ra_val = flb_ra_translate(kv->ra_key, tag, tag_len, *(map), NULL);
             if (!ra_val || flb_sds_len(ra_val) == 0) {
                 /* if no value is retruned or if it's empty, just skip it */
-                flb_plg_warn(ctx->ins,
+                flb_plg_debug(ctx->ins,
                              "empty record accessor key translation for pattern: %s",
                              kv->ra_key->pattern);
             }
