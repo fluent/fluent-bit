@@ -88,9 +88,9 @@ int cfl_array_remove_by_index(struct cfl_array *array,
     cfl_variant_destroy(array->entries[position]);
 
     if (position != array->entry_count - 1) {
-        memcpy(&array->entries[position],
-               &array->entries[position + 1],
-               sizeof(void *) * (array->entry_count - (position + 1)));
+        memmove(&array->entries[position],
+                &array->entries[position + 1],
+                sizeof(void *) * (array->entry_count - (position + 1)));
     }
     else {
         array->entries[position] = NULL;
