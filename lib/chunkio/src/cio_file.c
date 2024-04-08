@@ -80,13 +80,15 @@ void cio_file_calculate_checksum(struct cio_file *cf, crc_t *out)
 
     content_length = cio_file_st_get_content_len(cf->map,
                                                  cf->fs_size,
-                                                 cf->page_size);
+                                                 cf->page_size,
+                                                 cf->taint_flag);
 
     if (content_length > 0) {
         len += content_length;
     }
 
     in_data = (unsigned char *) cf->map + CIO_FILE_CONTENT_OFFSET;
+
     val = cio_crc32_update(cf->crc_cur, in_data, len);
     *out = val;
 }
@@ -236,7 +238,8 @@ static int cio_file_format_check(struct cio_chunk *ch,
         /* Expected / logical file size verification */
         content_length = cio_file_st_get_content_len(cf->map,
                                                      cf->fs_size,
-                                                     cf->page_size);
+                                                     cf->page_size,
+                                                     cf->taint_flag);
 
         if (content_length == -1) {
             cio_log_debug(ch->ctx, "[cio file] truncated header (%zu / %zu) %s",
@@ -349,6 +352,8 @@ static int mmap_file(struct cio_ctx *ctx, struct cio_chunk *ch, size_t size)
         return CIO_OK;
     }
 
+    cf->taint_flag = CIO_FALSE;
+
     /*
      * 'size' value represents the value of a previous fstat(2) set by a previous
      * caller. If the value is greater than zero, just use it, otherwise do a new
@@ -420,7 +425,8 @@ static int mmap_file(struct cio_ctx *ctx, struct cio_chunk *ch, size_t size)
     if (fs_size > 0) {
         content_size = cio_file_st_get_content_len(cf->map,
                                                    fs_size,
-                                                   cf->page_size);
+                                                   cf->page_size,
+                                                   cf->taint_flag);
 
         if (content_size == -1) {
             cio_error_set(ch, CIO_ERR_BAD_FILE_SIZE);
@@ -653,6 +659,7 @@ struct cio_file *cio_file_open(struct cio_ctx *ctx,
         cf->realloc_size = CIO_REALLOC_HINT_MIN;
     }
 
+    cf->taint_flag = CIO_FALSE;
     cf->st_content = NULL;
     cf->crc_cur = cio_crc32_init();
     cf->path = path;
@@ -1027,6 +1034,8 @@ int cio_file_write(struct cio_chunk *ch, const void *buf, size_t count)
     cf->synced = CIO_FALSE;
 
     cio_file_st_set_content_len(cf->map, cf->data_size);
+
+    cf->taint_flag = CIO_TRUE;
 
     return 0;
 }
