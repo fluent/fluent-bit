@@ -76,6 +76,7 @@ struct flb_kube {
     int annotations;
     int namespace_labels;
     int namespace_annotations;
+    int namespace_metadata_only;
     int dummy_meta;
     int tls_debug;
     int tls_verify;

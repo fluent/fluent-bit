@@ -914,6 +914,12 @@ static struct flb_config_map config_map[] = {
      0, FLB_TRUE, offsetof(struct flb_kube, namespace_annotations),
      "include Kubernetes namespace annotations on every record"
     },
+    /* Ignore pod metadata entirely, useful for fetching only namespace meta */
+    {
+     FLB_CONFIG_MAP_BOOL, "namespace_metadata_only", "false",
+     0, FLB_TRUE, offsetof(struct flb_kube, namespace_metadata_only),
+     "ignore pod metadata entirely and only fetch namespace metadata"
+    },
 
     /*
      * The Application may 'propose' special configuration keys

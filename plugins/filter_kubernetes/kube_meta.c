@@ -2053,7 +2053,7 @@ int flb_kube_meta_get(struct flb_kube *ctx,
                         data_size, namespace_out_buf, namespace_out_size, namespace_meta);
     }
 
-    if(ctx->labels == FLB_TRUE || ctx->annotations == FLB_TRUE) {
+    if(ctx->namespace_metadata_only == FLB_FALSE) {
         ret_pod_meta = flb_kube_pod_meta_get(ctx, tag, tag_len, data, data_size,
                                              out_buf, out_size, meta, props);
     }
