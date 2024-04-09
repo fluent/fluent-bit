@@ -160,8 +160,14 @@ struct flb_task_retry *flb_task_retry_create(struct flb_task *task,
      * we need to determinate if the source input plugin have some memory
      * restrictions and if the Storage type is 'filesystem' we need to put
      * the file content down.
+     *
+     * Note that we can only put the chunk down if there are no more active users
+     * otherwise it can lead to a corruption (https://github.com/fluent/fluent-bit/issues/8691)
      */
-    flb_input_chunk_set_up_down(task->ic);
+
+    if (task->users <= 1) {
+        flb_input_chunk_set_up_down(task->ic);
+    }
 
     /*
      * Besides limits adjusted above, a retry that's going to only one place
