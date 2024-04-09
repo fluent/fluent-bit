@@ -29,6 +29,8 @@
 #define DEFAULT_INTERVAL_SEC  1
 #define DEFAULT_INTERVAL_NSEC 0
 #define DEFAULT_THRESHOLD_SIZE 0x7ffff /* Default reading buffer size (512kb) */
+#define MINIMUM_THRESHOLD_SIZE 0x0400   /* 1024 bytes */
+#define MAXIMUM_THRESHOLD_SIZE 0x1ccccd /* 1887437 bytes (about 1.8 MiB) */
 
 static int in_winevtlog_collect(struct flb_input_instance *ins,
                                 struct flb_config *config, void *in_context);
@@ -71,14 +73,21 @@ static int in_winevtlog_init(struct flb_input_instance *in,
 
     /* Set up total reading size threshold */
     ctx->total_size_threshold = DEFAULT_THRESHOLD_SIZE;
-    tmp = flb_input_get_property("threshold_size", in);
+    tmp = flb_input_get_property("read_limit_per_cycle", in);
     if (tmp != NULL) {
         threshold_size = flb_utils_size_to_bytes(tmp);
-        if (threshold_size > DEFAULT_THRESHOLD_SIZE) {
+        if (threshold_size >= MINIMUM_THRESHOLD_SIZE &&
+            threshold_size < MAXIMUM_THRESHOLD_SIZE) {
             ctx->total_size_threshold = (unsigned int) threshold_size;
             flb_plg_debug(ctx->ins,
-                          "threshold size is changed to %" PRId64 "KB",
+                          "read limit per cycle is changed to %" PRId64 "KB",
                           threshold_size / 1000);
+        }
+        else if (threshold_size >= MAXIMUM_THRESHOLD_SIZE) {
+            flb_plg_warn(ctx->ins,
+                         "read limit per cycle cannot exceed 1.8MiB. Set up to %d",
+                         MAXIMUM_THRESHOLD_SIZE);
+            ctx->total_size_threshold = (unsigned int) MAXIMUM_THRESHOLD_SIZE;
         }
     }
 
@@ -273,9 +282,9 @@ static struct flb_config_map config_map[] = {
       "Specify XML query for filtering events"
     },
     {
-      FLB_CONFIG_MAP_STR, "threshold_size", NULL,
+      FLB_CONFIG_MAP_STR, "read_limit_per_cycle", NULL,
       0, FLB_TRUE, 0,
-      "Specify threshold size for collecting Windows EventLog per a cycle"
+      "Specify reading limit for collecting Windows EventLog per a cycle"
     },
     /* EOF */
     {0}
