@@ -64,14 +64,16 @@ static int input_metrics_append(struct flb_input_instance *ins,
     if (out_context != NULL) {
         /* Convert metrics to msgpack */
         ret = cmt_encode_msgpack_create(out_context, &mt_buf, &mt_size);
+
+        if (out_context != cmt) {
+            cmt_destroy(out_context);
+        }
+
         if (ret != 0) {
             flb_plg_error(ins, "could not encode metrics");
-            cmt_destroy(out_context);
 
             return -1;
         }
-
-        cmt_destroy(out_context);
     }
     else {
         /* Convert metrics to msgpack */
