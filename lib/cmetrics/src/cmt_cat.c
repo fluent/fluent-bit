@@ -107,6 +107,7 @@ static int copy_map(struct cmt_opts *opts, struct cmt_map *dst, struct cmt_map *
     struct cfl_list *head;
     struct cmt_metric *metric_dst;
     struct cmt_metric *metric_src;
+    struct cmt_histogram *histogram;
 
     /* Handle static metric (no labels case) */
     if (src->metric_static_set) {
@@ -115,6 +116,37 @@ static int copy_map(struct cmt_opts *opts, struct cmt_map *dst, struct cmt_map *
         /* destination and source metric */
         metric_dst = &dst->metric;
         metric_src = &src->metric;
+
+        if (src->type == CMT_HISTOGRAM) {
+            histogram = (struct cmt_histogram *) src->parent;
+
+            if (!metric_dst->hist_buckets) {
+                metric_dst->hist_buckets = calloc(1, sizeof(uint64_t) * (histogram->buckets->count + 1));
+                if (!metric_dst->hist_buckets) {
+                    return -1;
+                }
+            }
+            for (i = 0; i < histogram->buckets->count; i++) {
+                metric_dst->hist_buckets[i] = metric_src->hist_buckets[i];
+            }
+            metric_dst->hist_count = metric_src->hist_count;
+            metric_dst->hist_sum = metric_src->hist_sum;
+        }
+        else if (src->type == CMT_SUMMARY) {
+            metric_dst->sum_quantiles_count = metric_src->sum_quantiles_count;
+            metric_dst->sum_quantiles_set = metric_src->sum_quantiles_set;
+            if (!metric_dst->sum_quantiles) {
+                metric_dst->sum_quantiles = calloc(1, sizeof(uint64_t) * (metric_src->sum_quantiles_count));
+                if (!metric_dst->sum_quantiles) {
+                    return -1;
+                }
+            }
+            for (i = 0; i < metric_src->sum_quantiles_count; i++) {
+                metric_dst->sum_quantiles[i] = metric_src->sum_quantiles[i];
+            }
+            metric_dst->sum_count = metric_src->sum_count;
+            metric_dst->sum_sum = metric_src->sum_sum;
+        }
 
         ts  = cmt_metric_get_timestamp(metric_src);
         val = cmt_metric_get_value(metric_src);
@@ -140,13 +172,16 @@ static int copy_map(struct cmt_opts *opts, struct cmt_map *dst, struct cmt_map *
         }
 
         if (src->type == CMT_HISTOGRAM) {
+            histogram = (struct cmt_histogram *) src->parent;
+
             if (!metric_dst->hist_buckets) {
-                metric_dst->hist_buckets = calloc(1, sizeof(uint64_t) * (metric_src->hist_count + 1));
+                metric_dst->hist_buckets = calloc(1, sizeof(uint64_t) * (histogram->buckets->count + 1));
                 if (!metric_dst->hist_buckets) {
                     return -1;
                 }
             }
-            for (i = 0; i < metric_src->hist_count; i++) {
+
+            for (i = 0; i < histogram->buckets->count; i++) {
                 metric_dst->hist_buckets[i] = metric_src->hist_buckets[i];
             }
             metric_dst->hist_count = metric_src->hist_count;
@@ -313,15 +348,11 @@ int cmt_cat_histogram(struct cmt *cmt, struct cmt_histogram *histogram)
                                 opts->name, opts->description,
                                 buckets,
                                 map->label_count, labels);
+    free(labels);
+
     if (!hist) {
         return -1;
     }
-
-    for (i = 0; i < buckets_count; i++) {
-        val = histogram->buckets->upper_bounds[i];
-        cmt_histogram_observe(hist, timestamp, val, map->label_count, labels);
-    }
-    free(labels);
 
     ret = copy_map(&hist->opts, hist->map, map);
     if (ret == -1) {
