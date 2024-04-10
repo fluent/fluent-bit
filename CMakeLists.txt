@@ -437,10 +437,10 @@ endif()
 # Enable Debug symbols if specified
 if(MSVC)
   set(CMAKE_BUILD_TYPE None)  # Avoid flag conflicts (See CMakeList.txt:L18)
-elseif(FLB_DEBUG)
-  set(CMAKE_BUILD_TYPE "Debug")
 elseif(FLB_RELEASE)
   set(CMAKE_BUILD_TYPE "RelWithDebInfo")
+elseif(FLB_DEBUG)
+  set(CMAKE_BUILD_TYPE "Debug")
 endif()
 
 if(FLB_IPO STREQUAL "On" OR (FLB_IPO STREQUAL "ReleaseOnly" AND FLB_RELEASE))
