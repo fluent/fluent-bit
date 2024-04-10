@@ -181,8 +181,7 @@ if(NOT MK_PTHREAD_TLS)
   check_c_source_compiles("
      __thread int a;
      int main() {
-         __tls_get_addr(0);
-         return 0;
+          return a;
      }" HAVE_C_TLS)
 
   if(HAVE_C_TLS)
