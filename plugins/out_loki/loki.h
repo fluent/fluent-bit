@@ -98,6 +98,10 @@ struct flb_loki {
 
     /* Arbitrary HTTP headers */
     struct mk_list *headers;
+
+    /* Response buffer size */
+    size_t http_buffer_max_size;
+
 };
 
 #endif

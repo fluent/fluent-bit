@@ -1595,6 +1595,9 @@ static void cb_loki_flush(struct flb_event_chunk *event_chunk,
         FLB_OUTPUT_RETURN(FLB_RETRY);
     }
 
+    /* Set response buffer size */
+    flb_http_buffer_size(c, ctx->http_buffer_max_size);
+
     /* Set callback context to the HTTP client context */
     flb_http_set_callback_context(c, ctx->ins->callback);
 
@@ -1667,6 +1670,29 @@ static void cb_loki_flush(struct flb_event_chunk *event_chunk,
                           c->resp.payload);
             out_ret = FLB_ERROR;
         }
+        else if (c->resp.status >= 500 && c->resp.status <= 599) {
+            if (c->resp.payload) {
+                flb_plg_error(ctx->ins, "could not flush records to %s:%i"
+                            " HTTP status=%i",
+                            ctx->tcp_host, ctx->tcp_port, c->resp.status);
+                flb_plg_trace(ctx->ins, "Response was:\n%s",
+                            c->resp.payload);
+            }
+            else {
+                flb_plg_error(ctx->ins, "could not flush records to %s:%i"
+                            " HTTP status=%i",
+                            ctx->tcp_host, ctx->tcp_port, c->resp.status);
+            }
+            /* 
+             * Server-side error occured, do not reuse this connection for retry.
+             * This could be an issue of Loki gateway.
+             * Rather initiate new connection.
+             */
+            flb_plg_trace(ctx->ins, "Destroying connection for %s:%i",
+                          ctx->tcp_host, ctx->tcp_port);
+            flb_upstream_conn_recycle(u_conn, FLB_FALSE);
+            out_ret = FLB_RETRY;
+        }   
         else if (c->resp.status < 200 || c->resp.status > 205) {
             if (c->resp.payload) {
                 flb_plg_error(ctx->ins, "%s:%i, HTTP status=%i\n%s",
@@ -1818,6 +1844,12 @@ static struct flb_config_map config_map[] = {
      FLB_CONFIG_MAP_STR, "http_passwd", "",
      0, FLB_TRUE, offsetof(struct flb_loki, http_passwd),
      "Set HTTP auth password"
+    },
+
+    {
+     FLB_CONFIG_MAP_SIZE, "buffer_size", "512KB",
+     0, FLB_TRUE, offsetof(struct flb_loki, http_buffer_max_size),
+     "Maximum HTTP response buffer size in bytes"
     },
 
     {
