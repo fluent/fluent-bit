@@ -26,6 +26,11 @@
 #include <fluent-bit/flb_sqldb.h>
 #include "winevtlog.h"
 
+#ifndef STR
+#define STR_HELPER(s) #s
+#define STR(s)        STR_HELPER(s)
+#endif
+
 #define DEFAULT_INTERVAL_SEC  1
 #define DEFAULT_INTERVAL_NSEC 0
 #define DEFAULT_THRESHOLD_SIZE 0x7ffff /* Default reading buffer size (512kb) */
@@ -39,7 +44,6 @@ static int in_winevtlog_init(struct flb_input_instance *in,
                              struct flb_config *config, void *data)
 {
     int ret;
-    int64_t threshold_size;
     const char *tmp;
     int read_existing_events = FLB_FALSE;
     struct mk_list *head;
@@ -72,23 +76,17 @@ static int in_winevtlog_init(struct flb_input_instance *in,
     }
 
     /* Set up total reading size threshold */
-    ctx->total_size_threshold = DEFAULT_THRESHOLD_SIZE;
-    tmp = flb_input_get_property("read_limit_per_cycle", in);
-    if (tmp != NULL) {
-        threshold_size = flb_utils_size_to_bytes(tmp);
-        if (threshold_size >= MINIMUM_THRESHOLD_SIZE &&
-            threshold_size < MAXIMUM_THRESHOLD_SIZE) {
-            ctx->total_size_threshold = (unsigned int) threshold_size;
-            flb_plg_debug(ctx->ins,
-                          "read limit per cycle is changed to %" PRId64 "KB",
-                          threshold_size / 1000);
-        }
-        else if (threshold_size >= MAXIMUM_THRESHOLD_SIZE) {
-            flb_plg_warn(ctx->ins,
-                         "read limit per cycle cannot exceed 1.8MiB. Set up to %d",
-                         MAXIMUM_THRESHOLD_SIZE);
-            ctx->total_size_threshold = (unsigned int) MAXIMUM_THRESHOLD_SIZE;
-        }
+    if (ctx->total_size_threshold >= MINIMUM_THRESHOLD_SIZE &&
+        ctx->total_size_threshold < MAXIMUM_THRESHOLD_SIZE) {
+        flb_plg_debug(ctx->ins,
+                      "read limit per cycle is changed to %uKB",
+                      ctx->total_size_threshold / 1000);
+    }
+    else if (ctx->total_size_threshold >= MAXIMUM_THRESHOLD_SIZE) {
+        flb_plg_warn(ctx->ins,
+                     "read limit per cycle cannot exceed 1.8MiB. Set up to %d",
+                     MAXIMUM_THRESHOLD_SIZE);
+        ctx->total_size_threshold = (unsigned int) MAXIMUM_THRESHOLD_SIZE;
     }
 
     /* Open channels */
@@ -282,8 +280,8 @@ static struct flb_config_map config_map[] = {
       "Specify XML query for filtering events"
     },
     {
-      FLB_CONFIG_MAP_STR, "read_limit_per_cycle", NULL,
-      0, FLB_TRUE, 0,
+      FLB_CONFIG_MAP_SIZE, "read_limit_per_cycle", STR(DEFAULT_THRESHOLD_SIZE),
+      0, FLB_TRUE, offsetof(struct winevtlog_config, total_size_threshold),
       "Specify reading limit for collecting Windows EventLog per a cycle"
     },
     /* EOF */
