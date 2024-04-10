@@ -2152,7 +2152,11 @@ int opentelemetry_prot_handle_ng(struct flb_http_request *request,
     }
     else if(strcmp(request->path, "/opentelemetry.proto.collector.metrics.v1.MetricsService/Export") == 0 ||
             strcmp(request->path, "/opentelemetry.proto.collector.traces.v1.TracesService/Export") == 0 ||
-            strcmp(request->path, "/opentelemetry.proto.collector.logs.v1.LogsService/Export") == 0) {
+            strcmp(request->path, "/opentelemetry.proto.collector.logs.v1.LogsService/Export") == 0 ||
+            strcmp(request->path, "/opentelemetry.proto.collector.metric.v1.MetricService/Export") == 0 ||
+            strcmp(request->path, "/opentelemetry.proto.collector.trace.v1.TraceService/Export") == 0 ||
+            strcmp(request->path, "/opentelemetry.proto.collector.log.v1.LogService/Export") == 0) {
+
         grpc_request = FLB_TRUE;
     }
     else {
@@ -2176,16 +2180,19 @@ int opentelemetry_prot_handle_ng(struct flb_http_request *request,
     }
 
     if (strcmp(request->path, "/v1/metrics") == 0 ||
+        strcmp(request->path, "/opentelemetry.proto.collector.metric.v1.MetricService/Export") == 0 ||
         strcmp(request->path, "/opentelemetry.proto.collector.metrics.v1.MetricsService/Export") == 0) {
         payload_type = 'M';
         result = process_payload_metrics_ng(context, context->ins->tag, request, response);
     }
     else if (strcmp(request->path, "/v1/traces") == 0 || 
+             strcmp(request->path, "/opentelemetry.proto.collector.trace.v1.TraceService/Export") == 0 ||
              strcmp(request->path, "/opentelemetry.proto.collector.traces.v1.TracesService/Export") == 0) {
         payload_type = 'T';
         result = process_payload_traces_ng(context, context->ins->tag, request, response);
     }
     else if (strcmp(request->path, "/v1/logs") == 0 ||
+             strcmp(request->path, "/opentelemetry.proto.collector.log.v1.LogService/Export") == 0 ||
              strcmp(request->path, "/opentelemetry.proto.collector.logs.v1.LogsService/Export") == 0) {
         payload_type = 'L';
         result = process_payload_logs_ng(context, context->ins->tag, request, response);
