@@ -97,6 +97,13 @@ static struct flb_aws_header storage_class_header = {
     .val_len = 0,
 };
 
+static struct flb_aws_header goog_project_id_header = {
+    .key = "x-amz-project-id",
+    .key_len = 16,
+    .val = "",
+    .val_len = 0,
+};
+
 static char *mock_error_response(char *error_env_var)
 {
     char *err_val = NULL;
@@ -152,6 +159,9 @@ int create_headers(struct flb_s3 *ctx, char *body_md5,
     if (ctx->storage_class != NULL) {
         headers_len++;
     }
+    if (ctx->goog_project_id != NULL) {
+        headers_len++;
+    }
     if (headers_len == 0) {
         *num_headers = headers_len;
         *headers = s3_headers;
@@ -190,7 +200,14 @@ int create_headers(struct flb_s3 *ctx, char *body_md5,
         s3_headers[n] = storage_class_header;
         s3_headers[n].val = ctx->storage_class;
         s3_headers[n].val_len = strlen(ctx->storage_class);
+        n++;
     }
+    if (ctx->goog_project_id != NULL) {
+        s3_headers[n] = goog_project_id_header;
+        s3_headers[n].val = ctx->goog_project_id;
+        s3_headers[n].val_len = strlen(ctx->goog_project_id);
+    }
+
 
     *num_headers = headers_len;
     *headers = s3_headers;
@@ -766,6 +783,11 @@ static int cb_s3_init(struct flb_output_instance *ins,
     tmp = flb_output_get_property("storage_class", ins);
     if (tmp) {
         ctx->storage_class = (char *) tmp;
+    }
+
+    tmp = flb_output_get_property("goog_project_id", ins);
+    if (tmp) {
+        ctx->goog_project_id = (char *) tmp;
     }
 
     if (ctx->insecure == FLB_FALSE) {
@@ -2459,6 +2481,12 @@ static struct flb_config_map config_map[] = {
      0, FLB_FALSE, 0,
      "Specify the storage class for S3 objects. If this option is not specified, objects "
      "will be stored with the default 'STANDARD' storage class."
+    },
+
+    {
+     FLB_CONFIG_MAP_STR, "goog_project_id", NULL,
+     0, FLB_FALSE, 0,
+     "If using google gcs without default project, speficy project id here."
     },
 
     /* EOF */
