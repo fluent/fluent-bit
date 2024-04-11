@@ -95,7 +95,7 @@ static int in_winevtlog_init(struct flb_input_instance *in,
         flb_utils_bytes_to_human_readable_size((size_t) MINIMUM_THRESHOLD_SIZE,
                                                human_readable_size,
                                                sizeof(human_readable_size) - 1);
-        flb_plg_error(ctx->ins,
+        flb_plg_warn(ctx->ins,
                      "read limit per cycle cannot under 1KiB. Set up to %s",
                      human_readable_size);
         ctx->total_size_threshold = (unsigned int) MINIMUM_THRESHOLD_SIZE;
