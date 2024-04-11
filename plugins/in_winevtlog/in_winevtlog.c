@@ -28,7 +28,10 @@
 
 #define DEFAULT_INTERVAL_SEC  1
 #define DEFAULT_INTERVAL_NSEC 0
-#define DEFAULT_THRESHOLD_SIZE 0x7ffff /* Default reading buffer size (512kb) */
+#define DEFAULT_THRESHOLD_SIZE 0x7ffff /* Default reading buffer size */
+                                       /* (512kib = 524287bytes) */
+#define MINIMUM_THRESHOLD_SIZE 0x0400   /* 1024 bytes */
+#define MAXIMUM_THRESHOLD_SIZE (FLB_INPUT_CHUNK_FS_MAX_SIZE - (1024 * 200))
 
 static int in_winevtlog_collect(struct flb_input_instance *ins,
                                 struct flb_config *config, void *in_context);
@@ -38,6 +41,7 @@ static int in_winevtlog_init(struct flb_input_instance *in,
 {
     int ret;
     const char *tmp;
+    char human_readable_size[32];
     int read_existing_events = FLB_FALSE;
     struct mk_list *head;
     struct winevtlog_channel *ch;
@@ -69,7 +73,33 @@ static int in_winevtlog_init(struct flb_input_instance *in,
     }
 
     /* Set up total reading size threshold */
-    ctx->total_size_threshold = DEFAULT_THRESHOLD_SIZE;
+    if (ctx->total_size_threshold >= MINIMUM_THRESHOLD_SIZE &&
+        ctx->total_size_threshold < MAXIMUM_THRESHOLD_SIZE) {
+        flb_utils_bytes_to_human_readable_size((size_t) ctx->total_size_threshold,
+                                               human_readable_size,
+                                               sizeof(human_readable_size) - 1);
+        flb_plg_debug(ctx->ins,
+                      "read limit per cycle is set up as %s",
+                      human_readable_size);
+    }
+    else if (ctx->total_size_threshold >= MAXIMUM_THRESHOLD_SIZE) {
+        flb_utils_bytes_to_human_readable_size((size_t) MAXIMUM_THRESHOLD_SIZE,
+                                               human_readable_size,
+                                               sizeof(human_readable_size) - 1);
+        flb_plg_warn(ctx->ins,
+                     "read limit per cycle cannot exceed %s. Set up to %s",
+                     human_readable_size, human_readable_size);
+        ctx->total_size_threshold = (unsigned int) MAXIMUM_THRESHOLD_SIZE;
+    }
+    else if (ctx->total_size_threshold < MINIMUM_THRESHOLD_SIZE){
+        flb_utils_bytes_to_human_readable_size((size_t) MINIMUM_THRESHOLD_SIZE,
+                                               human_readable_size,
+                                               sizeof(human_readable_size) - 1);
+        flb_plg_warn(ctx->ins,
+                     "read limit per cycle cannot under 1KiB. Set up to %s",
+                     human_readable_size);
+        ctx->total_size_threshold = (unsigned int) MINIMUM_THRESHOLD_SIZE;
+    }
 
     /* Open channels */
     tmp = flb_input_get_property("channels", in);
@@ -260,6 +290,11 @@ static struct flb_config_map config_map[] = {
       FLB_CONFIG_MAP_STR, "event_query", "*",
       0, FLB_TRUE, offsetof(struct winevtlog_config, event_query),
       "Specify XML query for filtering events"
+    },
+    {
+      FLB_CONFIG_MAP_SIZE, "read_limit_per_cycle", "524287",
+      0, FLB_TRUE, offsetof(struct winevtlog_config, total_size_threshold),
+      "Specify reading limit for collecting Windows EventLog per a cycle"
     },
     /* EOF */
     {0}
