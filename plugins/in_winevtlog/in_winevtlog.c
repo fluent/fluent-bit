@@ -31,7 +31,7 @@
 #define DEFAULT_THRESHOLD_SIZE 0x7ffff /* Default reading buffer size */
                                        /* (512kib = 524287bytes) */
 #define MINIMUM_THRESHOLD_SIZE 0x0400   /* 1024 bytes */
-#define MAXIMUM_THRESHOLD_SIZE 0x1ccccd /* 1887437 bytes (about 1.8 MiB) */
+#define MAXIMUM_THRESHOLD_SIZE (FLB_INPUT_CHUNK_FS_MAX_SIZE - (1024 * 200))
 
 static int in_winevtlog_collect(struct flb_input_instance *ins,
                                 struct flb_config *config, void *in_context);
