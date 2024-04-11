@@ -71,6 +71,9 @@ struct flb_in_fw_config {
 
     struct flb_log_event_decoder *log_decoder;
     struct flb_log_event_encoder *log_encoder;
+
+    /* Plugin is paused */
+    int is_paused;
 };
 
 #endif
