@@ -87,8 +87,8 @@ static int in_winevtlog_init(struct flb_input_instance *in,
                                                human_readable_size,
                                                sizeof(human_readable_size) - 1);
         flb_plg_warn(ctx->ins,
-                     "read limit per cycle cannot exceed 1.8MiB. Set up to %s",
-                     human_readable_size);
+                     "read limit per cycle cannot exceed %s. Set up to %s",
+                     human_readable_size, human_readable_size);
         ctx->total_size_threshold = (unsigned int) MAXIMUM_THRESHOLD_SIZE;
     }
     else if (ctx->total_size_threshold < MINIMUM_THRESHOLD_SIZE){
