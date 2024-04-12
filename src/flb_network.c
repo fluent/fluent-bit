@@ -996,12 +996,9 @@ static struct flb_dns_lookup_context *flb_net_dns_lookup_context_create(
         return NULL;
     }
 
-    /* c-ares options: Set the transport layer to the desired protocol and
-     *                 the number of retries to 2
-     */
+    /* c-ares options: Set the transport layer to the desired protocol */
 
-    optmask = ARES_OPT_FLAGS | ARES_OPT_TRIES;
-    opts.tries = 2;
+    optmask = ARES_OPT_FLAGS;
 
     if (dns_mode == FLB_DNS_USE_TCP) {
         opts.flags = ARES_FLAG_USEVC;
