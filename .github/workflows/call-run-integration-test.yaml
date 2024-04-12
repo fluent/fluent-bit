@@ -203,7 +203,7 @@ jobs:
           version: v3.8.1
 
       - name: Set up Kubectl
-        uses: azure/setup-kubectl@v3.2
+        uses: azure/setup-kubectl@v4
 
       - name: Run tests
         timeout-minutes: 60
@@ -260,7 +260,7 @@ jobs:
           version: v3.8.1
 
       - name: Set up Kubectl
-        uses: azure/setup-kubectl@v3.2
+        uses: azure/setup-kubectl@v4
 
       - name: Get the GKE Kubeconfig
         if: matrix.cloud == 'gke'
