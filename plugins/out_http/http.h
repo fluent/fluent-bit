@@ -26,6 +26,7 @@
 #define FLB_HTTP_CONTENT_TYPE   "Content-Type"
 #define FLB_HTTP_MIME_MSGPACK   "application/msgpack"
 #define FLB_HTTP_MIME_JSON      "application/json"
+#define FLB_HTTP_MIME_NDJSON    "application/x-ndjson"
 
 #ifdef FLB_HAVE_SIGNV4
 #ifdef FLB_HAVE_AWS

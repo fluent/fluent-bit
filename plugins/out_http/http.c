@@ -178,13 +178,19 @@ static int http_post(struct flb_out_http *ctx,
     }
     else if ((ctx->out_format == FLB_PACK_JSON_FORMAT_JSON) ||
         (ctx->out_format == FLB_PACK_JSON_FORMAT_STREAM) ||
-        (ctx->out_format == FLB_PACK_JSON_FORMAT_LINES) ||
         (ctx->out_format == FLB_HTTP_OUT_GELF)) {
         flb_http_add_header(c,
                             FLB_HTTP_CONTENT_TYPE,
                             sizeof(FLB_HTTP_CONTENT_TYPE) - 1,
                             FLB_HTTP_MIME_JSON,
                             sizeof(FLB_HTTP_MIME_JSON) - 1);
+    }
+    else if ((ctx->out_format == FLB_PACK_JSON_FORMAT_LINES)) {
+        flb_http_add_header(c,
+                            FLB_HTTP_CONTENT_TYPE,
+                            sizeof(FLB_HTTP_CONTENT_TYPE) - 1,
+                            FLB_HTTP_MIME_NDJSON,
+                            sizeof(FLB_HTTP_MIME_NDJSON) - 1);
     }
     else if ((ctx->out_format == FLB_HTTP_OUT_MSGPACK)) {
         flb_http_add_header(c,
