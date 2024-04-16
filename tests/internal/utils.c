@@ -608,14 +608,31 @@ void test_flb_utils_split_quoted_errors()
 void test_flb_utils_get_machine_id()
 {
     int ret;
+    int idx;
     char *id = NULL;
     size_t size;
+    char *id2 = NULL;
+    size_t size2;
 
     ret = flb_utils_get_machine_id(&id, &size);
     TEST_CHECK(size != 0);
     TEST_CHECK(id != NULL);
 
+    for (idx = 0; idx < size; idx++) {
+        TEST_CHECK(id[idx] != 0);
+    }
+
+    ret = flb_utils_get_machine_id(&id2, &size2);
+    TEST_CHECK(size2 != 0);
+    TEST_CHECK(id2 != NULL);
+    TEST_CHECK(size2 == size);
+
+    for (idx = 0; idx < size; idx++) {
+        TEST_CHECK(id[idx] == id2[idx]);
+    }
+
     flb_free(id);
+    flb_free(id2);
 }
 
 struct size_to_bytes_check {
