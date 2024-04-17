@@ -615,20 +615,27 @@ void test_flb_utils_get_machine_id()
     size_t size2;
 
     ret = flb_utils_get_machine_id(&id, &size);
+    TEST_CHECK(ret == 0);
     TEST_CHECK(size != 0);
     TEST_CHECK(id != NULL);
 
     for (idx = 0; idx < size; idx++) {
-        TEST_CHECK(id[idx] != 0);
+        if (!TEST_CHECK(id[idx] != 0)) {
+            fprintf(stderr, "zero in ID: id[%d] = 0x%02x\n", idx, id[idx]);
+        }
     }
 
     ret = flb_utils_get_machine_id(&id2, &size2);
+    TEST_CHECK(ret == 0);
     TEST_CHECK(size2 != 0);
     TEST_CHECK(id2 != NULL);
     TEST_CHECK(size2 == size);
 
     for (idx = 0; idx < size; idx++) {
-        TEST_CHECK(id[idx] == id2[idx]);
+        if (!TEST_CHECK(id[idx] == id2[idx])) {
+            fprintf(stderr, "bad byte in id v2 id2: id[%d] = 0x%02x, id2[%d] = 0x%02x\n",
+                    idx, id[idx], idx, id2[idx]);
+        }
     }
 
     flb_free(id);
