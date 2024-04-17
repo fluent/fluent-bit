@@ -51,6 +51,7 @@ struct flb_splunk *splunk_config_create(struct flb_input_instance *ins)
     }
 
     ctx->auth_header = NULL;
+    ctx->ingested_auth_header = NULL;
     tmp = flb_input_get_property("splunk_token", ins);
     if (tmp) {
         ctx->auth_header = flb_sds_create("Splunk ");

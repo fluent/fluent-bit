@@ -233,6 +233,15 @@ static int process_raw_payload_pack(struct flb_splunk *ctx, flb_sds_t tag, char 
                 FLB_LOG_EVENT_STRING_VALUE(buf, size));
     }
 
+    if (ctx->ingested_auth_header != NULL) {
+        if (ret == FLB_EVENT_ENCODER_SUCCESS) {
+            ret = flb_log_event_encoder_append_metadata_values(
+                &ctx->log_encoder,
+                FLB_LOG_EVENT_CSTRING_VALUE("hec_token"),
+                FLB_LOG_EVENT_CSTRING_VALUE(ctx->ingested_auth_header));
+        }
+    }
+
     if (ret == FLB_EVENT_ENCODER_SUCCESS) {
         ret = flb_log_event_encoder_commit_record(&ctx->log_encoder);
     }
@@ -279,6 +288,15 @@ static void process_flb_log_append(struct flb_splunk *ctx, msgpack_object *recor
         ret = flb_log_event_encoder_set_body_from_msgpack_object(
                 &ctx->log_encoder,
                 record);
+    }
+
+    if (ctx->ingested_auth_header != NULL) {
+        if (ret == FLB_EVENT_ENCODER_SUCCESS) {
+            ret = flb_log_event_encoder_append_metadata_values(
+                &ctx->log_encoder,
+                FLB_LOG_EVENT_CSTRING_VALUE("hec_token"),
+                FLB_LOG_EVENT_CSTRING_VALUE(ctx->ingested_auth_header));
+        }
     }
 
     if (ret == FLB_EVENT_ENCODER_SUCCESS) {
@@ -477,6 +495,7 @@ static int process_hec_payload(struct flb_splunk *ctx, struct splunk_conn *conn,
     int ret = 0;
     int type = -1;
     struct mk_http_header *header;
+    struct mk_http_header *header_auth;
     int extra_size = -1;
     struct mk_http_header *headers_extra;
     int gzip_compressed = FLB_FALSE;
@@ -506,6 +525,13 @@ static int process_hec_payload(struct flb_splunk *ctx, struct splunk_conn *conn,
     if (request->data.len <= 0) {
         send_response(conn, 400, "error: no payload found\n");
         return -1;
+    }
+
+    header_auth = &session->parser.headers[MK_HEADER_AUTHORIZATION];
+    if (header_auth->key.data != NULL) {
+        if (strncasecmp(header_auth->val.data, "Splunk ", 7) == 0) {
+            ctx->ingested_auth_header = header_auth->val.data;
+        }
     }
 
     extra_size = session->parser.headers_extra_count;
@@ -548,6 +574,7 @@ static int process_hec_raw_payload(struct flb_splunk *ctx, struct splunk_conn *c
 {
     int ret = -1;
     struct mk_http_header *header;
+    struct mk_http_header *header_auth;
 
     header = &session->parser.headers[MK_HEADER_CONTENT_TYPE];
     if (header->key.data == NULL) {
@@ -563,6 +590,13 @@ static int process_hec_raw_payload(struct flb_splunk *ctx, struct splunk_conn *c
     if (request->data.len <= 0) {
         send_response(conn, 400, "error: no payload found\n");
         return -1;
+    }
+
+    header_auth = &session->parser.headers[MK_HEADER_AUTHORIZATION];
+    if (header_auth->key.data != NULL) {
+        if (strncasecmp(header_auth->val.data, "Splunk ", 7) == 0) {
+            ctx->ingested_auth_header = header_auth->val.data;
+        }
     }
 
     /* Always handle as raw type of payloads here */
@@ -889,6 +923,9 @@ static int process_hec_payload_ng(struct flb_http_request *request,
                                   struct flb_splunk *ctx)
 {
     int type = -1;
+    int ret = 0;
+    size_t size = 0;
+    char *auth_header;
 
     type = HTTP_CONTENT_UNKNOWN;
 
@@ -903,6 +940,11 @@ static int process_hec_payload_ng(struct flb_http_request *request,
             /* Not neccesary to specify content-type for Splunk HEC. */
             flb_plg_debug(ctx->ins, "Mark as unknown type for ingested payloads");
         }
+    }
+
+    ret = flb_hash_table_get(request->headers, "authorization", 13, (void **)&auth_header, &size);
+    if (ret != 0) {
+        ctx->ingested_auth_header = auth_header;
     }
 
     if (request->body == NULL || cfl_sds_len(request->body) <= 0) {
