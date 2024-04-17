@@ -345,6 +345,72 @@ static inline int splunk_metrics_format(struct flb_output_instance *ins,
 }
 #endif
 
+
+/* implements functionality to get auth_header from msgpack map (metadata) */
+static flb_sds_t extract_hec_token(struct flb_splunk *ctx, msgpack_object *map)
+{
+    size_t map_size = map->via.map.size;
+    msgpack_object_kv *kv;
+    msgpack_object  key;
+    msgpack_object  val;
+    char *key_str = NULL;
+    char *val_str = NULL;
+    size_t key_str_size = 0;
+    size_t val_str_size = 0;
+    int j;
+    int check = FLB_FALSE;
+    int found = FLB_FALSE;
+    flb_sds_t hec_token;
+
+    kv = map->via.map.ptr;
+
+    for(j=0; j < map_size; j++) {
+        check = FLB_FALSE;
+        found = FLB_FALSE;
+        key = (kv+j)->key;
+        if (key.type == MSGPACK_OBJECT_BIN) {
+            key_str  = (char *) key.via.bin.ptr;
+            key_str_size = key.via.bin.size;
+            check = FLB_TRUE;
+        }
+        if (key.type == MSGPACK_OBJECT_STR) {
+            key_str  = (char *) key.via.str.ptr;
+            key_str_size = key.via.str.size;
+            check = FLB_TRUE;
+        }
+
+        if (check == FLB_TRUE) {
+            if (strncmp("hec_token", key_str, key_str_size) == 0) {
+                val = (kv+j)->val;
+                if (val.type == MSGPACK_OBJECT_BIN) {
+                    val_str  = (char *) val.via.bin.ptr;
+                    val_str_size = val.via.str.size;
+                    found = FLB_TRUE;
+                    break;
+                }
+                if (val.type == MSGPACK_OBJECT_STR) {
+                    val_str  = (char *) val.via.str.ptr;
+                    val_str_size = val.via.str.size;
+                    found = FLB_TRUE;
+                    break;
+                }
+            }
+        }
+    }
+
+    if (found == FLB_TRUE) {
+        hec_token = flb_sds_create_len(val_str, val_str_size);
+        if (!hec_token) {
+            return NULL;
+        }
+        return hec_token;
+    }
+
+
+    flb_plg_debug(ctx->ins, "Could not find hec_token in metadata");
+    return NULL;
+}
+
 static inline int splunk_format(const void *in_buf, size_t in_bytes,
                                 char *tag, int tag_len,
                                 char **out_buf, size_t *out_size,
@@ -352,12 +418,14 @@ static inline int splunk_format(const void *in_buf, size_t in_bytes,
 {
     int ret;
     msgpack_object map;
+    msgpack_object metadata;
     msgpack_sbuffer mp_sbuf;
     msgpack_packer mp_pck;
     char *err;
     flb_sds_t tmp;
     flb_sds_t record;
     flb_sds_t json_out;
+    flb_sds_t metadata_hec_token = NULL;
     struct flb_log_event_decoder log_decoder;
     struct flb_log_event log_event;
 
@@ -378,6 +446,8 @@ static inline int splunk_format(const void *in_buf, size_t in_bytes,
         return -1;
     }
 
+    ctx->metadata_auth_header = NULL;
+
     while ((ret = flb_log_event_decoder_next(
                     &log_decoder,
                     &log_event)) == FLB_EVENT_DECODER_SUCCESS) {
@@ -387,6 +457,19 @@ static inline int splunk_format(const void *in_buf, size_t in_bytes,
         msgpack_packer_init(&mp_pck, &mp_sbuf, msgpack_sbuffer_write);
 
         map = *log_event.body;
+        metadata = *log_event.metadata;
+        metadata_hec_token = extract_hec_token(ctx, &metadata);
+
+        if (metadata_hec_token != NULL) {
+            /* Currently, in_splunk implementation permits to
+             * specify only one splunk token per one instance.
+             * So, it should be valid if storing only last value of
+             * splunk token per one chunk. */
+            if (ctx->metadata_auth_header != NULL) {
+                cfl_sds_destroy(ctx->metadata_auth_header);
+            }
+            ctx->metadata_auth_header = metadata_hec_token;
+        }
 
         if (ctx->event_key) {
             /* Pack the value of a event key */
@@ -644,6 +727,10 @@ static void cb_splunk_flush(struct flb_event_chunk *event_chunk,
     if (ctx->http_user && ctx->http_passwd) {
         flb_http_basic_auth(c, ctx->http_user, ctx->http_passwd);
     }
+    else if (ctx->metadata_auth_header) {
+        flb_http_add_header(c, "Authorization", 13,
+                            ctx->metadata_auth_header, flb_sds_len(ctx->metadata_auth_header));
+    }
     else if (ctx->auth_header) {
         flb_http_add_header(c, "Authorization", 13,
                             ctx->auth_header, flb_sds_len(ctx->auth_header));
@@ -711,6 +798,9 @@ static void cb_splunk_flush(struct flb_event_chunk *event_chunk,
     }
 
     /* Cleanup */
+    if (ctx->metadata_auth_header != NULL) {
+        cfl_sds_destroy(ctx->metadata_auth_header);
+    }
     flb_http_client_destroy(c);
     flb_upstream_conn_release(u_conn);
     FLB_OUTPUT_RETURN(ret);
@@ -817,7 +907,8 @@ static struct flb_config_map config_map[] = {
     {
      FLB_CONFIG_MAP_STR, "splunk_token", NULL,
      0, FLB_FALSE, 0,
-     "Specify the Authentication Token for the HTTP Event Collector interface."
+     "Specify the Authentication Token for the HTTP Event Collector interface. "
+     "If event metadata contains a splunk_token, it will be prioritized to use instead of this token."
     },
 
     {
