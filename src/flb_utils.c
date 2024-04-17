@@ -1421,7 +1421,9 @@ int flb_utils_get_machine_id(char **out_id, size_t *out_size)
             return -1;
         }
 
-        *out_size = dwBufSize;
+        /* RegQueryValueEx sets dwBufSize to strlen()+1 for the NULL 
+         * terminator, but we only need strlen(). */
+        *out_size = dwBufSize-1;
         return 0;
     }
 #elif defined (FLB_SYSTEM_MACOS)
