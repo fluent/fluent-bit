@@ -42,6 +42,7 @@ struct flb_splunk {
 
     /* Token Auth */
     flb_sds_t auth_header;
+    flb_sds_t ingested_auth_header;
 
     struct flb_log_event_encoder log_encoder;
 
