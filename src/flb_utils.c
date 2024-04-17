@@ -1426,6 +1426,9 @@ int flb_utils_get_machine_id(char **out_id, size_t *out_size)
         *out_size = dwBufSize-1;
         return 0;
     }
+    else {
+        flb_error("unable to retrieve MachineGUID, error code: %d", status);
+    }
 #elif defined (FLB_SYSTEM_MACOS)
     bool bret;
     CFStringRef serialNumber;
