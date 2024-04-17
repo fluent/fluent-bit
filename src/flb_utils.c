@@ -1467,6 +1467,8 @@ int flb_utils_get_machine_id(char **out_id, size_t *out_size)
     }
 #endif
 
+    flb_warn("falling back on random machine UUID");
+
     /* generate a random uuid */
     uuid = flb_malloc(38);
     if (!uuid) {
