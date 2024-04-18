@@ -238,7 +238,7 @@ static void insert_bytes()
         return;
     }
 
-    ret = cfl_kvlist_insert_bytes(list, "key", "value", 5);
+    ret = cfl_kvlist_insert_bytes(list, "key", "value", 5, CFL_TRUE);
     if (!TEST_CHECK(ret == 0)) {
         TEST_MSG("cfl_kvlist_insert_bytes failed");
         cfl_kvlist_destroy(list);
@@ -629,7 +629,7 @@ static void insert_string_s()
         return;
     }
 
-    ret = cfl_kvlist_insert_string_s(list, "key!!!!!", 3, "value", 5);
+    ret = cfl_kvlist_insert_string_s(list, "key!!!!!", 3, "value", 5, CFL_TRUE);
     if (!TEST_CHECK(ret == 0)) {
         TEST_MSG("cfl_kvlist_insert_string_s failed");
         cfl_kvlist_destroy(list);
@@ -671,7 +671,7 @@ static void insert_bytes_s()
         return;
     }
 
-    ret = cfl_kvlist_insert_bytes_s(list, "key!!!!!", 3, "value", 5);
+    ret = cfl_kvlist_insert_bytes_s(list, "key!!!!!", 3, "value", 5, CFL_FALSE);
     if (!TEST_CHECK(ret == 0)) {
         TEST_MSG("cfl_kvlist_insert_bytes_s failed");
         cfl_kvlist_destroy(list);
@@ -1065,7 +1065,7 @@ static void test_basics()
     ret = cfl_kvlist_insert_string(list, "key1", "value1");
     TEST_CHECK(ret == 0);
 
-    ret = cfl_kvlist_insert_bytes(list, "key2", "value2", 6);
+    ret = cfl_kvlist_insert_bytes(list, "key2", "value2", 6, CFL_TRUE);
     TEST_CHECK(ret == 0);
 
     ret = cfl_kvlist_insert_reference(list, "key3", (void *) 0xdeadbeef);
