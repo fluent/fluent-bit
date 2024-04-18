@@ -757,7 +757,7 @@ static int mp_object_to_cfl(void **ptr, msgpack_object *o)
         break;
     case MSGPACK_OBJECT_STR:
         var = cfl_variant_create_from_string_s((char *) o->via.str.ptr,
-                                               o->via.str.size);
+                                               o->via.str.size, CFL_TRUE);
         if (!var) {
             return -1;
         }
@@ -766,7 +766,7 @@ static int mp_object_to_cfl(void **ptr, msgpack_object *o)
         break;
     case MSGPACK_OBJECT_BIN:
         var = cfl_variant_create_from_bytes((char *) o->via.str.ptr,
-                                            o->via.str.size);
+                                            o->via.str.size, CFL_TRUE);
         if (!var) {
             return -1;
         }
@@ -945,17 +945,17 @@ static int mp_cfl_to_msgpack(struct cfl_variant *var,
             /* we don't save references */
             break;
         case CFL_VARIANT_STRING:
-            msgpack_pack_str(mp_pck, cfl_sds_len(var->data.as_string));
+            msgpack_pack_str(mp_pck, cfl_variant_size_get(var));
             msgpack_pack_str_body(mp_pck,
-                                  var->data.as_string, cfl_sds_len(var->data.as_string));
+                                  var->data.as_string, cfl_variant_size_get(var));
             break;
         case CFL_VARIANT_BYTES:
-            msgpack_pack_bin(mp_pck, cfl_sds_len(var->data.as_bytes));
+            msgpack_pack_bin(mp_pck, cfl_variant_size_get(var));
             msgpack_pack_bin_body(mp_pck,
-                                  var->data.as_bytes, cfl_sds_len(var->data.as_bytes));
+                                  var->data.as_bytes, cfl_variant_size_get(var));
             break;
         case CFL_VARIANT_ARRAY:
-            msgpack_pack_array(mp_pck, var->data.as_array->entry_count);
+        msgpack_pack_array(mp_pck, var->data.as_array->entry_count);
             for (i = 0; i < var->data.as_array->entry_count; i++) {
                 variant = var->data.as_array->entries[i];
                 ret = mp_cfl_to_msgpack(variant, mp_sbuf, mp_pck);
