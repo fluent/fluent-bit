@@ -1403,7 +1403,7 @@ int flb_utils_get_machine_id(char **out_id, size_t *out_size)
     status = RegOpenKeyEx(HKEY_LOCAL_MACHINE,
                           TEXT("SOFTWARE\\Microsoft\\Cryptography"),
                           0,
-                          KEY_QUERY_VALUE,
+                          KEY_QUERY_VALUE|KEY_WOW64_64KEY,
                           &hKey);
 
     if (status != ERROR_SUCCESS) {
