@@ -133,6 +133,8 @@ static int hash_transformer(void *context, struct cfl_variant *value)
 
     value->type = CFL_VARIANT_STRING;
     value->data.as_string = encoded_hash;
+    value->referenced = CFL_FALSE;
+
     cfl_variant_size_set(value, cfl_sds_len(encoded_hash));
 
     return FLB_TRUE;
@@ -164,12 +166,13 @@ int cfl_variant_convert(struct cfl_variant *input_value,
                         int output_type)
 {
     int ret;
+    int errno_backup;
     int64_t as_int;
-    char buf[64];
     double as_double;
-    char              *converstion_canary;
+    char buf[64];
+    char *str = NULL;
+    char *converstion_canary = NULL;
     struct cfl_variant *tmp = NULL;
-    int                errno_backup;
 
     errno_backup = errno;
 
@@ -190,10 +193,12 @@ int cfl_variant_convert(struct cfl_variant *input_value,
         else if (output_type == CFL_VARIANT_BOOL) {
             as_int = CFL_FALSE;
 
-            if (strcasecmp(input_value->data.as_string, "true") == 0) {
+            if (cfl_variant_size_get(input_value) == 4 &&
+                strncasecmp(input_value->data.as_string, "true", 4) == 0) {
                 as_int = CFL_TRUE;
             }
-            else if (strcasecmp(input_value->data.as_string, "false") == 0) {
+            else if (cfl_variant_size_get(input_value) == 5 &&
+                strncasecmp(input_value->data.as_string, "false", 5) == 0) {
                 as_int = CFL_FALSE;
             }
 
@@ -201,10 +206,31 @@ int cfl_variant_convert(struct cfl_variant *input_value,
         }
         else if (output_type == CFL_VARIANT_INT) {
             errno = 0;
-            as_int = strtoimax(input_value->data.as_string, &converstion_canary, 10);
+
+            if (input_value->referenced) {
+                tmp = cfl_variant_create_from_string_s(input_value->data.as_string,
+                                                       cfl_variant_size_get(input_value),
+                                                       CFL_FALSE);
+                if (!tmp) {
+                    return CFL_FALSE;
+                }
+                str = tmp->data.as_string;
+            }
+            else {
+                str = input_value->data.as_string;
+            }
+
+            as_int = strtoimax(str, &converstion_canary, 10);
             if (errno == ERANGE || errno == EINVAL) {
                 errno = errno_backup;
+                if (tmp) {
+                    cfl_variant_destroy(tmp);
+                }
                 return CFL_FALSE;
+            }
+
+            if (tmp) {
+                cfl_variant_destroy(tmp);
             }
 
             tmp = cfl_variant_create_from_int64(as_int);
@@ -212,10 +238,31 @@ int cfl_variant_convert(struct cfl_variant *input_value,
         else if (output_type == CFL_VARIANT_DOUBLE) {
             errno = 0;
             converstion_canary = NULL;
-            as_double = strtod(input_value->data.as_string, &converstion_canary);
+
+            if (input_value->referenced) {
+                tmp = cfl_variant_create_from_string_s(input_value->data.as_string,
+                                                       cfl_variant_size_get(input_value),
+                                                       CFL_FALSE);
+                if (!tmp) {
+                    return CFL_FALSE;
+                }
+                str = tmp->data.as_string;
+            }
+            else {
+                str = input_value->data.as_string;
+            }
+
+            as_double = strtod(str, &converstion_canary);
             if (errno == ERANGE) {
                 errno = errno_backup;
+                if (tmp) {
+                    cfl_variant_destroy(tmp);
+                }
                 return CFL_FALSE;
+            }
+
+            if (tmp) {
+                cfl_variant_destroy(tmp);
             }
 
             if (as_double == 0 && converstion_canary == input_value->data.as_string) {
