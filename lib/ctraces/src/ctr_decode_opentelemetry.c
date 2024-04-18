@@ -278,13 +278,12 @@ static int convert_bytes_value(struct opentelemetry_decode_value *ctr_val,
             break;
 
         case CTR_OPENTELEMETRY_TYPE_ARRAY:
-            result = cfl_array_append_bytes(ctr_val->cfl_arr, buf, len);
+            result = cfl_array_append_bytes(ctr_val->cfl_arr, buf, len, CFL_FALSE);
             break;
 
         case CTR_OPENTELEMETRY_TYPE_KVLIST:
-            result = cfl_kvlist_insert_bytes(ctr_val->cfl_kvlist, key, buf, len);
+            result = cfl_kvlist_insert_bytes(ctr_val->cfl_kvlist, key, buf, len, CFL_FALSE);
             break;
-
     }
 
     if (result == -2) {
