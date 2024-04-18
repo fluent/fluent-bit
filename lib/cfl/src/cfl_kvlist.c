@@ -60,52 +60,15 @@ void cfl_kvlist_destroy(struct cfl_kvlist *list)
     free(list);
 }
 
-/*
-int cfl_kvlist_insert(struct cfl_kvlist *list,
-                      char *key, void *value,
-                      size_t value_length,
-                      int value_type)
-{
-    struct cfl_kvpair *pair;
-
-    pair = malloc(sizeof(struct cfl_kvpair));
-
-    if (pair == NULL) {
-        cfl_errno();
-
-        return -1;
-    }
-
-    pair->key = cfl_sds_create(key);
-
-    if (pair->key == NULL) {
-        free(pair);
-
-        return -2;
-    }
-
-    pair->val = cfl_variant_create(value, value_length, value_type);
-
-    if (pair->val == NULL) {
-        cfl_sds_destroy(pair->key);
-        free(pair);
-
-        return -3;
-    }
-
-    cfl_list_add(&pair->_head, &list->list);
-
-    return 0;
-}
-*/
-
 int cfl_kvlist_insert_string_s(struct cfl_kvlist *list,
-                               char *key, size_t key_size, char *value, size_t value_size)
+                               char *key, size_t key_size,
+                               char *value, size_t value_size,
+                               int referenced)
 {
     struct cfl_variant *value_instance;
     int                 result;
 
-    value_instance = cfl_variant_create_from_string_s(value, value_size);
+    value_instance = cfl_variant_create_from_string_s(value, value_size, referenced);
     if (value_instance == NULL) {
         return -1;
     }
@@ -123,13 +86,12 @@ int cfl_kvlist_insert_string_s(struct cfl_kvlist *list,
 int cfl_kvlist_insert_bytes_s(struct cfl_kvlist *list,
                               char *key, size_t key_size,
                               char *value,
-                              size_t length)
+                              size_t length, int referenced)
 {
     struct cfl_variant *value_instance;
     int                 result;
 
-    value_instance = cfl_variant_create_from_bytes(value, length);
-
+    value_instance = cfl_variant_create_from_bytes(value, length, referenced);
     if (value_instance == NULL) {
         return -1;
     }
@@ -138,7 +100,6 @@ int cfl_kvlist_insert_bytes_s(struct cfl_kvlist *list,
 
     if (result) {
         cfl_variant_destroy(value_instance);
-
         return -2;
     }
 
@@ -390,14 +351,14 @@ int cfl_kvlist_insert_string(struct cfl_kvlist *list,
     key_len = strlen(key);
     val_len = strlen(value);
 
-    return cfl_kvlist_insert_string_s(list, key, key_len, value, val_len);
+    return cfl_kvlist_insert_string_s(list, key, key_len, value, val_len, CFL_FALSE);
 }
 
 int cfl_kvlist_insert_bytes(struct cfl_kvlist *list,
-                             char *key, char *value,
-                             size_t length)
+                            char *key, char *value,
+                            size_t length, int referenced)
 {
-    return cfl_kvlist_insert_bytes_s(list, key, strlen(key), value, length);
+    return cfl_kvlist_insert_bytes_s(list, key, strlen(key), value, length, referenced);
 }
 
 int cfl_kvlist_insert_reference(struct cfl_kvlist *list,
