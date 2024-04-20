@@ -1,0 +1,175 @@
+# Copyright (C) 2019 Intel Corporation.  All rights reserved.
+# SPDX-License-Identifier: Apache-2.0 WITH LLVM-exception
+
+name: spec test on nuttx
+
+on:
+  pull_request:
+    types:
+      - opened
+      - synchronize
+    paths:
+      - ".github/workflows/spec_test_on_nuttx.yml"
+
+  schedule:
+    - cron:  '0 0 * * *'
+
+  workflow_dispatch:
+
+env:
+  LLVM_CACHE_SUFFIX: "build-llvm_libraries_ex"
+  WASI_SDK_PATH: "/opt/wasi-sdk"
+  WAMR_COMMON_OPTION:
+    "CONFIG_INTERPRETERS_WAMR=y\\nCONFIG_INTERPRETERS_WAMR_STACKSIZE=32768\\nCONFIG_INTERPRETERS_WAMR_LOG=y\\nCONFIG_INTERPRETERS_WAMR_LIBC_BUILTIN=y\\nCONFIG_INTERPRETERS_WAMR_REF_TYPES=y\\nCONFIG_INTERPRETERS_WAMR_ENABLE_SPEC_TEST=y\\nCONFIG_INTERPRETERS_WAMR_SHARED_MEMORY=y\\nCONFIG_INTERPRETERS_WAMR_BULK_MEMORY=y\\nCONFIG_EOL_IS_LF=y\\nCONFIG_ARM_SEMIHOSTING_HOSTFS=y\\nCONFIG_ARM_SEMIHOSTING_HOSTFS_CACHE_COHERENCE=y\\nCONFIG_RISCV_SEMIHOSTING_HOSTFS=y\\nCONFIG_FS_HOSTFS=y\\nCONFIG_LIBC_FLOATINGPOINT=y\\n"
+
+jobs:
+  build_llvm_libraries:
+    uses: ./.github/workflows/build_llvm_libraries.yml
+    with:
+      os: "ubuntu-22.04"
+      arch: "ARM RISCV AArch64"
+      container_image: ghcr.io/apache/nuttx/apache-nuttx-ci-linux@sha256:d9261eacf6c6ebe656c571757751c803e8f04c3ae9b820320a5ea5dd57b7205a
+
+  spec_test_on_qemu:
+    runs-on: ubuntu-latest
+    needs: [build_llvm_libraries]
+    container:
+      image: ghcr.io/apache/nuttx/apache-nuttx-ci-linux@sha256:d9261eacf6c6ebe656c571757751c803e8f04c3ae9b820320a5ea5dd57b7205a
+    strategy:
+      matrix:
+        target_config: [
+          # {
+          #   config: "boards/arm64/qemu/qemu-armv8a/configs/nsh",
+          #   target: "aarch64_vfp",
+          #   fpu_type: "fp"
+          # },
+          # {
+          #   config: "boards/arm/imx6/sabre-6quad/configs/nsh",
+          #   target: "thumbv7",
+          #   fpu_type: "none"
+          # },
+          {
+            config: "boards/arm/imx6/sabre-6quad/configs/nsh",
+            target: "thumbv7_vfp",
+            fpu_type: "dp"
+          },
+          {
+            config: "boards/risc-v/qemu-rv/rv-virt/configs/nsh",
+            target: "riscv32",
+            fpu_type: "none"
+          },
+          # {
+          #   config: "boards/risc-v/qemu-rv/rv-virt/configs/nsh",
+          #   target: "riscv32_ilp32d",
+          #   fpu_type: "dp"
+          # },
+          {
+            config: "boards/risc-v/qemu-rv/rv-virt/configs/nsh64",
+            target: "riscv64",
+            fpu_type: "none"
+          },
+        ]
+
+        wamr_test_option: [
+          {
+            mode: "-t aot",
+            option: "CONFIG_INTERPRETERS_WAMR_AOT=y\\n"
+          },
+          {
+            mode: "-t aot -X",
+            option: "CONFIG_INTERPRETERS_WAMR_AOT=y\\n"
+          },
+          {
+            mode: "-t classic-interp",
+            option: "CONFIG_INTERPRETERS_WAMR_CLASSIC=y\\n"
+          },
+          {
+            mode: "-t fast-interp",
+            option: "CONFIG_INTERPRETERS_WAMR_FAST=y\\n"
+          },
+        ]
+
+        exclude:
+          # XIP is not fully supported yet on RISCV64, some relocations can not be resolved
+          - target_config: { config: "boards/risc-v/qemu-rv/rv-virt/configs/nsh64" }
+            wamr_test_option: { mode: "-t aot -X" }
+
+    steps:
+      - name: Checkout NuttX
+        uses: actions/checkout@v4
+        with:
+          repository: apache/incubator-nuttx
+          ref: releases/12.4
+          path: nuttx
+
+      - name: Checkout NuttX Apps
+        uses: actions/checkout@v4
+        with:
+          repository: apache/incubator-nuttx-apps
+          ref: releases/12.4
+          path: apps
+
+      - name: Checkout WAMR
+        uses: actions/checkout@v4
+        with:
+          repository: ${{ github.repository }}
+          path: apps/interpreters/wamr/wamr
+
+      - name: Get LLVM libraries
+        if: contains(matrix.wamr_test_option.mode, 'aot')
+        id: retrieve_llvm_libs
+        uses: actions/cache@v4
+        with:
+          path: |
+            ./core/deps/llvm/build/bin
+            ./core/deps/llvm/build/include
+            ./core/deps/llvm/build/lib
+            ./core/deps/llvm/build/libexec
+            ./core/deps/llvm/build/share
+          key: ${{ needs.build_llvm_libraries.outputs.cache_key }}
+
+      - name: Quit if cache miss
+        if: contains(matrix.wamr_test_option.mode, 'aot') && steps.retrieve_llvm_libs.outputs.cache-hit != 'true'
+        run: echo "::error::can not get prebuilt llvm libraries" && exit 1
+
+      - name: Copy LLVM
+        if: contains(matrix.wamr_test_option.mode, 'aot')
+        run: cp -r core/deps/llvm apps/interpreters/wamr/wamr/core/deps/llvm
+
+      - name: Enable WAMR for NuttX
+        run: |
+          find nuttx/boards -name defconfig | xargs sed -i '$a\${{ env.WAMR_COMMON_OPTION }}'
+      
+      - name: Enable WAMR Interpreter for NuttX
+        run: |
+          find nuttx/boards -name defconfig | xargs sed -i '$a\${{ matrix.wamr_test_option.option }}'
+
+      - name: Disable FPU for NuttX
+        if: matrix.target_config.fpu_type == 'none'
+        run: |
+          find nuttx/boards -name defconfig | xargs sed -i '$a\# CONFIG_ARCH_FPU is not set\n'
+
+      - name: Disable DPFPU for NuttX
+        if: matrix.target_config.fpu_type == 'fp'
+        run: |
+          find nuttx/boards -name defconfig | xargs sed -i '$a\# CONFIG_ARCH_DPFPU is not set\n'
+
+      - name: Build wamrc
+        if: contains(matrix.wamr_test_option.mode, 'aot')
+        working-directory: apps/interpreters/wamr/wamr/wamr-compiler
+        run: |
+          cmake -Bbuild .
+          cmake --build build
+
+      - name: Build
+        id: build_firmware
+        run: |
+          cd nuttx
+          tools/configure.sh ${{ matrix.target_config.config }}
+          make -j$(nproc)
+          echo "firmware=$PWD/nuttx" >> $GITHUB_OUTPUT
+      
+      - name: Test
+        run: |
+          cd apps/interpreters/wamr/wamr/tests/wamr-test-suites
+          ./test_wamr.sh -s spec ${{ matrix.wamr_test_option.mode }} -m ${{ matrix.target_config.target }} -b -Q -P -F ${{ steps.build_firmware.outputs.firmware }}
