@@ -262,6 +262,21 @@ struct flb_splunk *flb_splunk_conf_create(struct flb_output_instance *ins,
         }
     }
 
+    /* Currently, Splunk HEC token is stored in a fixed key, hec_token. */
+    ctx->metadata_auth_key = "hec_token";
+    if (ctx->metadata_auth_key) {
+        ctx->ra_metadata_auth_key = flb_ra_create(ctx->metadata_auth_key, FLB_TRUE);
+        if (!ctx->ra_metadata_auth_key) {
+            flb_plg_error(ctx->ins,
+                          "cannot create record accessor for "
+                          "metadata_auth_key pattern: '%s'",
+                          ctx->event_host);
+            flb_splunk_conf_destroy(ctx);
+            return NULL;
+        }
+    }
+
+
     /* channel */
     if (ctx->channel != NULL) {
         ctx->channel_len = flb_sds_len(ctx->channel);
@@ -304,6 +319,10 @@ int flb_splunk_conf_destroy(struct flb_splunk *ctx)
 
     if (ctx->ra_event_index_key) {
         flb_ra_destroy(ctx->ra_event_index_key);
+    }
+
+    if (ctx->ra_metadata_auth_key) {
+        flb_ra_destroy(ctx->ra_metadata_auth_key);
     }
 
     event_fields_destroy(ctx);

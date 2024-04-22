@@ -347,67 +347,24 @@ static inline int splunk_metrics_format(struct flb_output_instance *ins,
 
 
 /* implements functionality to get auth_header from msgpack map (metadata) */
-static flb_sds_t extract_hec_token(struct flb_splunk *ctx, msgpack_object *map)
+static flb_sds_t extract_hec_token(struct flb_splunk *ctx, msgpack_object map,
+                                   char *tag, int tag_len)
 {
-    size_t map_size = map->via.map.size;
-    msgpack_object_kv *kv;
-    msgpack_object  key;
-    msgpack_object  val;
-    char *key_str = NULL;
-    char *val_str = NULL;
-    size_t key_str_size = 0;
-    size_t val_str_size = 0;
-    int j;
-    int check = FLB_FALSE;
-    int found = FLB_FALSE;
     flb_sds_t hec_token;
 
-    kv = map->via.map.ptr;
-
-    for(j=0; j < map_size; j++) {
-        check = FLB_FALSE;
-        found = FLB_FALSE;
-        key = (kv+j)->key;
-        if (key.type == MSGPACK_OBJECT_BIN) {
-            key_str  = (char *) key.via.bin.ptr;
-            key_str_size = key.via.bin.size;
-            check = FLB_TRUE;
-        }
-        if (key.type == MSGPACK_OBJECT_STR) {
-            key_str  = (char *) key.via.str.ptr;
-            key_str_size = key.via.str.size;
-            check = FLB_TRUE;
+    /* Extract HEC token (map which is from metadata lookup) */
+    if (ctx->event_sourcetype_key) {
+        hec_token = flb_ra_translate(ctx->ra_metadata_auth_key, tag, tag_len,
+                                     map, NULL);
+        if (hec_token) {
+            return hec_token;
         }
 
-        if (check == FLB_TRUE) {
-            if (strncmp("hec_token", key_str, key_str_size) == 0) {
-                val = (kv+j)->val;
-                if (val.type == MSGPACK_OBJECT_BIN) {
-                    val_str  = (char *) val.via.bin.ptr;
-                    val_str_size = val.via.str.size;
-                    found = FLB_TRUE;
-                    break;
-                }
-                if (val.type == MSGPACK_OBJECT_STR) {
-                    val_str  = (char *) val.via.str.ptr;
-                    val_str_size = val.via.str.size;
-                    found = FLB_TRUE;
-                    break;
-                }
-            }
-        }
+        flb_plg_debug(ctx->ins, "Could not find hec_token in metadata");
+        return NULL;
     }
 
-    if (found == FLB_TRUE) {
-        hec_token = flb_sds_create_len(val_str, val_str_size);
-        if (!hec_token) {
-            return NULL;
-        }
-        return hec_token;
-    }
-
-
-    flb_plg_debug(ctx->ins, "Could not find hec_token in metadata");
+    flb_plg_debug(ctx->ins, "Could not find a record accessor definition of hec_token");
     return NULL;
 }
 
@@ -458,7 +415,7 @@ static inline int splunk_format(const void *in_buf, size_t in_bytes,
 
         map = *log_event.body;
         metadata = *log_event.metadata;
-        metadata_hec_token = extract_hec_token(ctx, &metadata);
+        metadata_hec_token = extract_hec_token(ctx, metadata, tag, tag_len);
 
         if (metadata_hec_token != NULL) {
             /* Currently, in_splunk implementation permits to
