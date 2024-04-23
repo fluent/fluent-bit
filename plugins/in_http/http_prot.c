@@ -397,7 +397,7 @@ static ssize_t parse_payload_json(struct flb_http *ctx, flb_sds_t tag,
 }
 
 static ssize_t parse_payload_urlencoded(struct flb_http *ctx, flb_sds_t tag,
-                                  char *payload, size_t size)
+                                        char *payload, size_t size)
 {
     int i;
     int idx = 0;
@@ -703,8 +703,8 @@ int http_prot_handle_error(struct flb_http *ctx, struct http_conn *conn,
 
 /* New gen HTTP server */
 
-static int send_response_ng(struct flb_http_response *response, 
-                            int http_status, 
+static int send_response_ng(struct flb_http_response *response,
+                            int http_status,
                             char *message)
 {
     struct mk_list            *header_iterator;
@@ -730,12 +730,12 @@ static int send_response_ng(struct flb_http_response *response,
         flb_http_response_set_message(response, "Forbidden");
     }
 
-    if (http_status == 200 || 
+    if (http_status == 200 ||
         http_status == 201 ||
         http_status == 204) {
 
-        flb_config_map_foreach(header_iterator, 
-                               header_pair, 
+        flb_config_map_foreach(header_iterator,
+                               header_pair,
                                context->success_headers) {
             header_name = mk_list_entry_first(header_pair->val.list,
                                             struct flb_slist_entry,
@@ -745,15 +745,15 @@ static int send_response_ng(struct flb_http_response *response,
                                             struct flb_slist_entry,
                                             _head);
 
-            flb_http_response_set_header(response, 
-                                        header_name->str, 0, 
+            flb_http_response_set_header(response,
+                                        header_name->str, 0,
                                         header_value->str, 0);
         }
     }
 
     if (message != NULL) {
-        flb_http_response_set_body(response, 
-                                   (unsigned char *) message, 
+        flb_http_response_set_body(response,
+                                   (unsigned char *) message,
                                    strlen(message));
     }
 
@@ -829,7 +829,7 @@ static int process_pack_ng(struct flb_http *ctx, flb_sds_t tag, char *buf, size_
             }
 
             flb_log_event_encoder_reset(&ctx->log_encoder);
-        } 
+        }
         else if (result.data.type == MSGPACK_OBJECT_ARRAY) {
             obj = &result.data;
             for (i = 0; i < obj->via.array.size; i++)
@@ -896,7 +896,7 @@ static int process_pack_ng(struct flb_http *ctx, flb_sds_t tag, char *buf, size_
             }
 
             break;
-        } 
+        }
         else {
             flb_plg_error(ctx->ins, "skip record from invalid type: %i",
                          result.data.type);
@@ -955,109 +955,14 @@ static ssize_t parse_payload_json_ng(flb_sds_t tag,
     return 0;
 }
 
-static ssize_t parse_payload_urlencoded_ng(flb_sds_t tag,
-                                           struct flb_http_request *request)
-{
-    struct mk_list *kvs;
-    struct mk_list *head = NULL;
-    struct flb_split_entry *cur = NULL;
-    char **keys = NULL;
-    char **vals = NULL;
-    char *sep;
-    char *start;
-    int idx = 0;
-    int ret = -1;
-    msgpack_packer pck;
-    msgpack_sbuffer sbuf;
-    struct flb_http *ctx;
-    char *payload;
-
-    ctx = (struct flb_http *) request->stream->user_data;
-    payload = (char *) request->body;
-
-    /* initialize buffers */
-    msgpack_sbuffer_init(&sbuf);
-    msgpack_packer_init(&pck, &sbuf, msgpack_sbuffer_write);
-
-    kvs = flb_utils_split(payload, '&', -1 );
-    if (kvs == NULL) {
-        goto split_error;
-    }
-
-    keys = flb_calloc(mk_list_size(kvs), sizeof(char *));
-    if (keys == NULL) {
-        goto keys_calloc_error;
-    }
-
-    vals = flb_calloc(mk_list_size(kvs), sizeof(char *));
-    if (vals == NULL) {
-        goto vals_calloc_error;
-    }
-
-    mk_list_foreach(head, kvs) {
-        cur = mk_list_entry(head, struct flb_split_entry, _head);
-        if (cur->value[0] == '\n') {
-            start = &cur->value[1];
-        } else {
-            start = cur->value;
-        }
-        sep = strchr(start, '=');
-        if (sep == NULL) {
-            vals[idx] = NULL;
-            continue;
-        }
-        *sep++ = '\0';
-
-        keys[idx] = flb_sds_create_len(start, strlen(start));
-        vals[idx] = flb_sds_create_len(sep, strlen(sep));
-
-        flb_sds_trim(keys[idx]);
-        flb_sds_trim(vals[idx]);
-        idx++;
-    }
-
-    msgpack_pack_map(&pck, mk_list_size(kvs));
-    for (idx = 0; idx < mk_list_size(kvs); idx++) {
-        msgpack_pack_str(&pck, flb_sds_len(keys[idx]));
-        msgpack_pack_str_body(&pck, keys[idx], flb_sds_len(keys[idx]));
-
-        if (sds_uri_decode(vals[idx]) != 0) {
-            goto decode_error;
-        } else {
-            msgpack_pack_str(&pck, flb_sds_len(vals[idx]));
-            msgpack_pack_str_body(&pck, vals[idx], strlen(vals[idx]));            
-        }
-    }
-
-    ret = process_pack(ctx, tag, sbuf.data, sbuf.size);
-
-decode_error:
-    for (idx = 0; idx < mk_list_size(kvs); idx++) {
-        if (keys[idx]) {
-            flb_sds_destroy(keys[idx]);
-        }
-        if (vals[idx]) {
-            flb_sds_destroy(vals[idx]);
-        }
-    }
-    flb_free(vals);
-vals_calloc_error:
-    flb_free(keys);
-keys_calloc_error:
-    flb_utils_split_free(kvs);
-split_error:
-    msgpack_sbuffer_destroy(&sbuf);
-    return ret;
-}
-
 static int process_payload_ng(flb_sds_t tag,
-                           struct flb_http_request *request,
-                           struct flb_http_response *response)
+                              struct flb_http_request *request,
+                              struct flb_http_response *response)
 {
-    int type;
+    int type = -1;
+    cfl_sds_t payload;
+    struct flb_http *ctx;
 
-    type = -1;
-    
     if (request->content_type == NULL) {
         send_response_ng(response, 400, "error: header 'Content-Type' is not set\n");
         return -1;
@@ -1076,7 +981,7 @@ static int process_payload_ng(flb_sds_t tag,
         return -1;
     }
 
-    if (request->body == NULL || 
+    if (request->body == NULL ||
         cfl_sds_len(request->body) == 0) {
         send_response_ng(response, 400, "error: no payload found\n");
         return -1;
@@ -1084,8 +989,13 @@ static int process_payload_ng(flb_sds_t tag,
 
     if (type == HTTP_CONTENT_JSON) {
         parse_payload_json_ng(tag, request);
-    } else if (type == HTTP_CONTENT_URLENCODED) {
-        parse_payload_urlencoded_ng(tag, request);
+    }
+    else if (type == HTTP_CONTENT_URLENCODED) {
+        ctx = (struct flb_http *) request->stream->user_data;
+        payload = (char *) request->body;
+        if (payload) {
+            parse_payload_urlencoded(ctx, tag, payload, cfl_sds_len(payload));
+        }
     }
 
     return 0;
@@ -1098,10 +1008,9 @@ int http_prot_handle_ng(struct flb_http_request *request,
     int                             ret;
     int                             len;
     flb_sds_t                       tag;
-    struct flb_http                *context;
+    struct flb_http                *ctx;
 
-    context = (struct flb_http *) response->stream->user_data;
-
+    ctx = (struct flb_http *) response->stream->user_data;
     if (request->path[0] != '/') {
         send_response_ng(response, 400, "error: invalid request\n");
         return -1;
@@ -1130,7 +1039,7 @@ int http_prot_handle_ng(struct flb_http_request *request,
 
     /* ToDo: Fix me */
     /* HTTP/1.1 needs Host header */
-    if (request->protocol_version == HTTP_PROTOCOL_HTTP1 && 
+    if (request->protocol_version == HTTP_PROTOCOL_HTTP1 &&
         request->host == NULL) {
         flb_sds_destroy(tag);
 
@@ -1145,10 +1054,9 @@ int http_prot_handle_ng(struct flb_http_request *request,
     }
 
     ret = process_payload_ng(tag, request, response);
-
     flb_sds_destroy(tag);
 
-    send_response_ng(response, context->successful_response_code, NULL);
+    send_response_ng(response, ctx->successful_response_code, NULL);
 
     return ret;
 }
