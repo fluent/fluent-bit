@@ -137,7 +137,8 @@ static int unpack_instrumentation_scope_attributes(mpack_reader_t *reader, size_
 
 static int unpack_scope_span_instrumentation_scope(mpack_reader_t *reader, size_t index, void *ctx)
 {
-    int result;
+    mpack_type_t                          tag_type;
+    int                                   result;
     struct ctrace_instrumentation_scope  *instrumentation_scope;
     struct ctr_msgpack_decode_context    *context = ctx;
     struct ctr_mpack_map_entry_callback_t callbacks[] = \
@@ -149,6 +150,12 @@ static int unpack_scope_span_instrumentation_scope(mpack_reader_t *reader, size_
             {NULL,                       NULL}
         };
 
+    tag_type = ctr_mpack_peek_type(reader);
+
+    if (tag_type == mpack_type_nil) {
+        return ctr_mpack_consume_nil_tag(reader);
+    }
+
     instrumentation_scope = ctr_instrumentation_scope_create(NULL, NULL, 0, NULL);
 
     if (instrumentation_scope == NULL) {
@@ -158,10 +165,12 @@ static int unpack_scope_span_instrumentation_scope(mpack_reader_t *reader, size_
     ctr_scope_span_set_instrumentation_scope(context->scope_span, instrumentation_scope);
 
     result = ctr_mpack_unpack_map(reader, callbacks, ctx);
+
     if (result != CTR_DECODE_MSGPACK_SUCCESS) {
         ctr_instrumentation_scope_destroy(context->scope_span->instrumentation_scope);
         context->scope_span->instrumentation_scope = NULL;
     }
+
     return result;
 }
 
