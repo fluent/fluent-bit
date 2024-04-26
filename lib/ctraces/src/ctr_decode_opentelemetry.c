@@ -552,7 +552,10 @@ int ctr_decode_opentelemetry_create(struct ctrace **out_ctr,
 
             scope_span = ctr_scope_span_create(resource_span);
             ctr_scope_span_set_schema_url(scope_span, otel_scope_span->schema_url);
-            ctr_scope_span_set_scope(scope_span, otel_scope_span->scope);
+
+            if (otel_scope_span->scope != NULL) {
+                ctr_scope_span_set_scope(scope_span, otel_scope_span->scope);
+            }
 
             for (span_index = 0; span_index < otel_scope_span->n_spans; span_index++) {
                 otel_span = otel_scope_span->spans[span_index];
