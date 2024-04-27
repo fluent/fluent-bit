@@ -452,7 +452,7 @@ static int decode_numerical_data_point(struct cmt *cmt,
                 value = 0;
             }
             else {
-                value = cmt_math_uint64_to_d64((uint64_t) data_point->as_int);
+                value = data_point->as_int;
             }
         }
         else if (data_point->value_case == OPENTELEMETRY__PROTO__METRICS__V1__NUMBER_DATA_POINT__VALUE_AS_DOUBLE) {
