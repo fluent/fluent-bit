@@ -18,6 +18,9 @@ PROTOBUF_C__BEGIN_DECLS
 
 typedef struct _Prometheus__MetricMetadata Prometheus__MetricMetadata;
 typedef struct _Prometheus__Sample Prometheus__Sample;
+typedef struct _Prometheus__Exemplar Prometheus__Exemplar;
+typedef struct _Prometheus__Histogram Prometheus__Histogram;
+typedef struct _Prometheus__BucketSpan Prometheus__BucketSpan;
 typedef struct _Prometheus__TimeSeries Prometheus__TimeSeries;
 typedef struct _Prometheus__Label Prometheus__Label;
 typedef struct _Prometheus__Labels Prometheus__Labels;
@@ -40,6 +43,25 @@ typedef enum _Prometheus__MetricMetadata__MetricType {
   PROMETHEUS__METRIC_METADATA__METRIC_TYPE__STATESET = 7
     PROTOBUF_C__FORCE_ENUM_TO_BE_INT_SIZE(PROMETHEUS__METRIC_METADATA__METRIC_TYPE)
 } Prometheus__MetricMetadata__MetricType;
+typedef enum _Prometheus__Histogram__ResetHint {
+  /*
+   * Need to test for a counter reset explicitly.
+   */
+  PROMETHEUS__HISTOGRAM__RESET_HINT__UNKNOWN = 0,
+  /*
+   * This is the 1st histogram after a counter reset.
+   */
+  PROMETHEUS__HISTOGRAM__RESET_HINT__YES = 1,
+  /*
+   * There was no counter reset between this and the previous Histogram.
+   */
+  PROMETHEUS__HISTOGRAM__RESET_HINT__NO = 2,
+  /*
+   * This is a gauge histogram where counter resets don't happen.
+   */
+  PROMETHEUS__HISTOGRAM__RESET_HINT__GAUGE = 3
+    PROTOBUF_C__FORCE_ENUM_TO_BE_INT_SIZE(PROMETHEUS__HISTOGRAM__RESET_HINT)
+} Prometheus__Histogram__ResetHint;
 typedef enum _Prometheus__LabelMatcher__Type {
   PROMETHEUS__LABEL_MATCHER__TYPE__EQ = 0,
   PROMETHEUS__LABEL_MATCHER__TYPE__NEQ = 1,
@@ -52,7 +74,9 @@ typedef enum _Prometheus__LabelMatcher__Type {
  */
 typedef enum _Prometheus__Chunk__Encoding {
   PROMETHEUS__CHUNK__ENCODING__UNKNOWN = 0,
-  PROMETHEUS__CHUNK__ENCODING__XOR = 1
+  PROMETHEUS__CHUNK__ENCODING__XOR = 1,
+  PROMETHEUS__CHUNK__ENCODING__HISTOGRAM = 2,
+  PROMETHEUS__CHUNK__ENCODING__FLOAT_HISTOGRAM = 3
     PROTOBUF_C__FORCE_ENUM_TO_BE_INT_SIZE(PROMETHEUS__CHUNK__ENCODING)
 } Prometheus__Chunk__Encoding;
 
@@ -63,7 +87,7 @@ struct  _Prometheus__MetricMetadata
   ProtobufCMessage base;
   /*
    * Represents the metric type, these match the set from Prometheus.
-   * Refer to pkg/textparse/interface.go for details.
+   * Refer to github.com/prometheus/common/model/metadata.go for details.
    */
   Prometheus__MetricMetadata__MetricType type;
   char *metric_family_name;
@@ -79,10 +103,163 @@ struct  _Prometheus__Sample
 {
   ProtobufCMessage base;
   double value;
+  /*
+   * timestamp is in ms format, see model/timestamp/timestamp.go for
+   * conversion from time.Time to Prometheus timestamp.
+   */
   int64_t timestamp;
 };
 #define PROMETHEUS__SAMPLE__INIT \
  { PROTOBUF_C_MESSAGE_INIT (&prometheus__sample__descriptor) \
+    , 0, 0 }
+
+
+struct  _Prometheus__Exemplar
+{
+  ProtobufCMessage base;
+  /*
+   * Optional, can be empty.
+   */
+  size_t n_labels;
+  Prometheus__Label **labels;
+  double value;
+  /*
+   * timestamp is in ms format, see model/timestamp/timestamp.go for
+   * conversion from time.Time to Prometheus timestamp.
+   */
+  int64_t timestamp;
+};
+#define PROMETHEUS__EXEMPLAR__INIT \
+ { PROTOBUF_C_MESSAGE_INIT (&prometheus__exemplar__descriptor) \
+    , 0,NULL, 0, 0 }
+
+
+typedef enum {
+  PROMETHEUS__HISTOGRAM__COUNT__NOT_SET = 0,
+  PROMETHEUS__HISTOGRAM__COUNT_COUNT_INT = 1,
+  PROMETHEUS__HISTOGRAM__COUNT_COUNT_FLOAT = 2
+    PROTOBUF_C__FORCE_ENUM_TO_BE_INT_SIZE(PROMETHEUS__HISTOGRAM__COUNT)
+} Prometheus__Histogram__CountCase;
+
+typedef enum {
+  PROMETHEUS__HISTOGRAM__ZERO_COUNT__NOT_SET = 0,
+  PROMETHEUS__HISTOGRAM__ZERO_COUNT_ZERO_COUNT_INT = 6,
+  PROMETHEUS__HISTOGRAM__ZERO_COUNT_ZERO_COUNT_FLOAT = 7
+    PROTOBUF_C__FORCE_ENUM_TO_BE_INT_SIZE(PROMETHEUS__HISTOGRAM__ZERO_COUNT)
+} Prometheus__Histogram__ZeroCountCase;
+
+/*
+ * A native histogram, also known as a sparse histogram.
+ * Original design doc:
+ * https://docs.google.com/document/d/1cLNv3aufPZb3fNfaJgdaRBZsInZKKIHo9E6HinJVbpM/edit
+ * The appendix of this design doc also explains the concept of float
+ * histograms. This Histogram message can represent both, the usual
+ * integer histogram as well as a float histogram.
+ */
+struct  _Prometheus__Histogram
+{
+  ProtobufCMessage base;
+  /*
+   * Sum of observations in the histogram.
+   */
+  double sum;
+  /*
+   * The schema defines the bucket schema. Currently, valid numbers
+   * are -4 <= n <= 8. They are all for base-2 bucket schemas, where 1
+   * is a bucket boundary in each case, and then each power of two is
+   * divided into 2^n logarithmic buckets. Or in other words, each
+   * bucket boundary is the previous boundary times 2^(2^-n). In the
+   * future, more bucket schemas may be added using numbers < -4 or >
+   * 8.
+   */
+  int32_t schema;
+  /*
+   * Breadth of the zero bucket.
+   */
+  double zero_threshold;
+  /*
+   * Negative Buckets.
+   */
+  size_t n_negative_spans;
+  Prometheus__BucketSpan **negative_spans;
+  /*
+   * Use either "negative_deltas" or "negative_counts", the former for
+   * regular histograms with integer counts, the latter for float
+   * histograms.
+   */
+  /*
+   * Count delta of each bucket compared to previous one (or to zero for 1st bucket).
+   */
+  size_t n_negative_deltas;
+  int64_t *negative_deltas;
+  /*
+   * Absolute count of each bucket.
+   */
+  size_t n_negative_counts;
+  double *negative_counts;
+  /*
+   * Positive Buckets.
+   */
+  size_t n_positive_spans;
+  Prometheus__BucketSpan **positive_spans;
+  /*
+   * Use either "positive_deltas" or "positive_counts", the former for
+   * regular histograms with integer counts, the latter for float
+   * histograms.
+   */
+  /*
+   * Count delta of each bucket compared to previous one (or to zero for 1st bucket).
+   */
+  size_t n_positive_deltas;
+  int64_t *positive_deltas;
+  /*
+   * Absolute count of each bucket.
+   */
+  size_t n_positive_counts;
+  double *positive_counts;
+  Prometheus__Histogram__ResetHint reset_hint;
+  /*
+   * timestamp is in ms format, see model/timestamp/timestamp.go for
+   * conversion from time.Time to Prometheus timestamp.
+   */
+  int64_t timestamp;
+  Prometheus__Histogram__CountCase count_case;
+  union {
+    uint64_t count_int;
+    double count_float;
+  };
+  Prometheus__Histogram__ZeroCountCase zero_count_case;
+  union {
+    uint64_t zero_count_int;
+    double zero_count_float;
+  };
+};
+#define PROMETHEUS__HISTOGRAM__INIT \
+ { PROTOBUF_C_MESSAGE_INIT (&prometheus__histogram__descriptor) \
+    , 0, 0, 0, 0,NULL, 0,NULL, 0,NULL, 0,NULL, 0,NULL, 0,NULL, PROMETHEUS__HISTOGRAM__RESET_HINT__UNKNOWN, 0, PROMETHEUS__HISTOGRAM__COUNT__NOT_SET, {0}, PROMETHEUS__HISTOGRAM__ZERO_COUNT__NOT_SET, {0} }
+
+
+/*
+ * A BucketSpan defines a number of consecutive buckets with their
+ * offset. Logically, it would be more straightforward to include the
+ * bucket counts in the Span. However, the protobuf representation is
+ * more compact in the way the data is structured here (with all the
+ * buckets in a single array separate from the Spans).
+ */
+struct  _Prometheus__BucketSpan
+{
+  ProtobufCMessage base;
+  /*
+   * Gap to previous span, or starting point for 1st span (which can be negative).
+   */
+  int32_t offset;
+  /*
+   * Length of consecutive buckets.
+   */
+  uint32_t length;
+};
+#define PROMETHEUS__BUCKET_SPAN__INIT \
+ { PROTOBUF_C_MESSAGE_INIT (&prometheus__bucket_span__descriptor) \
     , 0, 0 }
 
 
@@ -92,14 +269,22 @@ struct  _Prometheus__Sample
 struct  _Prometheus__TimeSeries
 {
   ProtobufCMessage base;
+  /*
+   * For a timeseries to be valid, and for the samples and exemplars
+   * to be ingested by the remote system properly, the labels field is required.
+   */
   size_t n_labels;
   Prometheus__Label **labels;
   size_t n_samples;
   Prometheus__Sample **samples;
+  size_t n_exemplars;
+  Prometheus__Exemplar **exemplars;
+  size_t n_histograms;
+  Prometheus__Histogram **histograms;
 };
 #define PROMETHEUS__TIME_SERIES__INIT \
  { PROTOBUF_C_MESSAGE_INIT (&prometheus__time_series__descriptor) \
-    , 0,NULL, 0,NULL }
+    , 0,NULL, 0,NULL, 0,NULL, 0,NULL }
 
 
 struct  _Prometheus__Label
@@ -254,6 +439,63 @@ Prometheus__Sample *
 void   prometheus__sample__free_unpacked
                      (Prometheus__Sample *message,
                       ProtobufCAllocator *allocator);
+/* Prometheus__Exemplar methods */
+void   prometheus__exemplar__init
+                     (Prometheus__Exemplar         *message);
+size_t prometheus__exemplar__get_packed_size
+                     (const Prometheus__Exemplar   *message);
+size_t prometheus__exemplar__pack
+                     (const Prometheus__Exemplar   *message,
+                      uint8_t             *out);
+size_t prometheus__exemplar__pack_to_buffer
+                     (const Prometheus__Exemplar   *message,
+                      ProtobufCBuffer     *buffer);
+Prometheus__Exemplar *
+       prometheus__exemplar__unpack
+                     (ProtobufCAllocator  *allocator,
+                      size_t               len,
+                      const uint8_t       *data);
+void   prometheus__exemplar__free_unpacked
+                     (Prometheus__Exemplar *message,
+                      ProtobufCAllocator *allocator);
+/* Prometheus__Histogram methods */
+void   prometheus__histogram__init
+                     (Prometheus__Histogram         *message);
+size_t prometheus__histogram__get_packed_size
+                     (const Prometheus__Histogram   *message);
+size_t prometheus__histogram__pack
+                     (const Prometheus__Histogram   *message,
+                      uint8_t             *out);
+size_t prometheus__histogram__pack_to_buffer
+                     (const Prometheus__Histogram   *message,
+                      ProtobufCBuffer     *buffer);
+Prometheus__Histogram *
+       prometheus__histogram__unpack
+                     (ProtobufCAllocator  *allocator,
+                      size_t               len,
+                      const uint8_t       *data);
+void   prometheus__histogram__free_unpacked
+                     (Prometheus__Histogram *message,
+                      ProtobufCAllocator *allocator);
+/* Prometheus__BucketSpan methods */
+void   prometheus__bucket_span__init
+                     (Prometheus__BucketSpan         *message);
+size_t prometheus__bucket_span__get_packed_size
+                     (const Prometheus__BucketSpan   *message);
+size_t prometheus__bucket_span__pack
+                     (const Prometheus__BucketSpan   *message,
+                      uint8_t             *out);
+size_t prometheus__bucket_span__pack_to_buffer
+                     (const Prometheus__BucketSpan   *message,
+                      ProtobufCBuffer     *buffer);
+Prometheus__BucketSpan *
+       prometheus__bucket_span__unpack
+                     (ProtobufCAllocator  *allocator,
+                      size_t               len,
+                      const uint8_t       *data);
+void   prometheus__bucket_span__free_unpacked
+                     (Prometheus__BucketSpan *message,
+                      ProtobufCAllocator *allocator);
 /* Prometheus__TimeSeries methods */
 void   prometheus__time_series__init
                      (Prometheus__TimeSeries         *message);
@@ -395,6 +637,15 @@ typedef void (*Prometheus__MetricMetadata_Closure)
 typedef void (*Prometheus__Sample_Closure)
                  (const Prometheus__Sample *message,
                   void *closure_data);
+typedef void (*Prometheus__Exemplar_Closure)
+                 (const Prometheus__Exemplar *message,
+                  void *closure_data);
+typedef void (*Prometheus__Histogram_Closure)
+                 (const Prometheus__Histogram *message,
+                  void *closure_data);
+typedef void (*Prometheus__BucketSpan_Closure)
+                 (const Prometheus__BucketSpan *message,
+                  void *closure_data);
 typedef void (*Prometheus__TimeSeries_Closure)
                  (const Prometheus__TimeSeries *message,
                   void *closure_data);
@@ -425,6 +676,10 @@ typedef void (*Prometheus__ChunkedSeries_Closure)
 extern const ProtobufCMessageDescriptor prometheus__metric_metadata__descriptor;
 extern const ProtobufCEnumDescriptor    prometheus__metric_metadata__metric_type__descriptor;
 extern const ProtobufCMessageDescriptor prometheus__sample__descriptor;
+extern const ProtobufCMessageDescriptor prometheus__exemplar__descriptor;
+extern const ProtobufCMessageDescriptor prometheus__histogram__descriptor;
+extern const ProtobufCEnumDescriptor    prometheus__histogram__reset_hint__descriptor;
+extern const ProtobufCMessageDescriptor prometheus__bucket_span__descriptor;
 extern const ProtobufCMessageDescriptor prometheus__time_series__descriptor;
 extern const ProtobufCMessageDescriptor prometheus__label__descriptor;
 extern const ProtobufCMessageDescriptor prometheus__labels__descriptor;
