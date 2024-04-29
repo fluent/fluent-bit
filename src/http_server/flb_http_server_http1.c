@@ -138,6 +138,14 @@ static int http1_session_process_request(struct flb_http1_server_session *sessio
     struct mk_http_header  *header;
     int                     result;
 
+    result = flb_http_request_init(&session->stream.request);
+
+    if (result != 0) {
+      return -1;
+    }
+
+    session->stream.request.stream = &session->stream;
+
     if (session->inner_request.uri_processed.data != NULL) {
         session->stream.request.path = \
             cfl_sds_create_len(session->inner_request.uri_processed.data, 
@@ -432,6 +440,15 @@ int flb_http1_response_set_body(struct flb_http_response *response,
 int flb_http1_server_session_init(struct flb_http1_server_session *session, 
                        struct flb_http_server_session *parent)
 {
+    void *user_data;
+    int   result;
+
+    if (parent != NULL && parent->parent != NULL) {
+        user_data = parent->parent->user_data;
+    } else {
+        user_data = NULL;
+    }
+
     session->initialized = FLB_TRUE;
 
     dummy_mk_http_session_init(&session->inner_session, &session->inner_server);
@@ -439,6 +456,13 @@ int flb_http1_server_session_init(struct flb_http1_server_session *session,
     dummy_mk_http_request_init(&session->inner_session, &session->inner_request);
 
     mk_http_parser_init(&session->inner_parser);
+
+    result = flb_http_stream_init(&session->stream, parent, 0, HTTP_STREAM_ROLE_SERVER,
+                                  user_data);
+
+    if (result != 0) {
+        return -1;
+    }
 
     session->parent = parent;
 
@@ -454,6 +478,8 @@ void flb_http1_server_session_destroy(struct flb_http1_server_session *session)
             session->inner_session.channel = NULL;
         }
 
+        flb_http_stream_destroy(&session->stream);
+
         session->initialized = FLB_FALSE;
     }
 }
@@ -462,22 +488,7 @@ int flb_http1_server_session_ingest(struct flb_http1_server_session *session,
                          unsigned char *buffer, 
                          size_t length)
 {
-    void *user_data;
-    int   result;
-
-    if (session->parent != NULL && session->parent->parent != NULL) {
-        user_data = session->parent->parent->user_data;
-    }
-    else {
-        user_data = NULL;
-    }
-
-    result = flb_http_stream_init(&session->stream, session->parent, 0, HTTP_STREAM_ROLE_SERVER,
-                                  user_data);
-
-    if (result != 0) {
-        return HTTP_SERVER_PROVIDER_ERROR;
-    }
+    int result;
 
     result = mk_http_parser(&session->inner_request, 
                             &session->inner_parser, 
