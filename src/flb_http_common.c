@@ -437,6 +437,11 @@ void flb_http_stream_destroy(struct flb_http_stream *stream)
             cfl_list_del(&stream->_head);
         }
 
-        flb_free(stream);
+        flb_http_request_destroy(&stream->request);
+        flb_http_response_destroy(&stream->response);
+
+        if (stream->releasable) {
+          flb_free(stream);
+        }
     }
 }
