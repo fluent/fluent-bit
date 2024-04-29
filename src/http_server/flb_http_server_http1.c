@@ -445,7 +445,8 @@ int flb_http1_server_session_init(struct flb_http1_server_session *session,
 
     if (parent != NULL && parent->parent != NULL) {
         user_data = parent->parent->user_data;
-    } else {
+    }
+    else {
         user_data = NULL;
     }
 
