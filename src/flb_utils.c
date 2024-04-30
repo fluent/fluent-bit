@@ -522,7 +522,7 @@ int64_t flb_utils_size_to_bytes(const char *size)
     int i;
     int len;
     int plen = 0;
-    double_t val;
+    double val;
     char c;
     char tmp[3] = {0};
     int64_t KB = 1000;
