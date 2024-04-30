@@ -82,6 +82,9 @@ struct k8s_events {
     struct flb_upstream *upstream;
     struct flb_input_instance *ins;
 
+    struct flb_connection *current_connection;
+    struct flb_http_client *streaming_client;
+
     /* limit for event queries */
     int limit_request;
     /* last highest seen resource_version */
