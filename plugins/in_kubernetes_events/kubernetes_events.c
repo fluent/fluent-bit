@@ -586,7 +586,6 @@ json_error:
 }
 
 static struct flb_http_client *make_event_watch_api_request(struct k8s_events *ctx,
-                                                      struct flb_connection *u_conn,
                                                       uint64_t max_resource_version)
 {
     flb_sds_t url;
@@ -603,21 +602,20 @@ static struct flb_http_client *make_event_watch_api_request(struct k8s_events *c
 
     flb_sds_printf(&url, "?watch=1&resourceVersion=%llu", max_resource_version);
     flb_plg_info(ctx->ins, "Requesting %s", url);
-    c = flb_http_client(u_conn, FLB_HTTP_GET, url,
+    c = flb_http_client(ctx->current_connection, FLB_HTTP_GET, url,
                         NULL, 0, ctx->api_host, ctx->api_port, NULL, 0);
     flb_sds_destroy(url);
     return c;
  }
 
 static struct flb_http_client *make_event_list_api_request(struct k8s_events *ctx,
-                                                      struct flb_connection *u_conn,
                                                       flb_sds_t continue_token)
 {
     flb_sds_t url;
     struct flb_http_client *c;
 
     if (continue_token == NULL && ctx->limit_request == 0 && ctx->namespace == NULL) {
-        return flb_http_client(u_conn, FLB_HTTP_GET, K8S_EVENTS_KUBE_API_URI,
+        return flb_http_client(ctx->current_connection, FLB_HTTP_GET, K8S_EVENTS_KUBE_API_URI,
                             NULL, 0, ctx->api_host, ctx->api_port, NULL, 0);
     }
 
@@ -637,7 +635,7 @@ static struct flb_http_client *make_event_list_api_request(struct k8s_events *ct
         }
         flb_sds_printf(&url, "limit=%d", ctx->limit_request);
     }
-    c = flb_http_client(u_conn, FLB_HTTP_GET, url,
+    c = flb_http_client(ctx->current_connection, FLB_HTTP_GET, url,
                         NULL, 0, ctx->api_host, ctx->api_port, NULL, 0);
     flb_sds_destroy(url);
     return c;
@@ -788,50 +786,50 @@ static void initialize_http_client(struct flb_http_client* c, struct k8s_events*
     }
 }
 
-static int k8s_events_collect(struct flb_input_instance *ins,
-                              struct flb_config *config, void *in_context)
+static int check_and_init_stream(struct k8s_events *ctx)
 {
-    int ret;
-    size_t b_sent;
-    struct flb_connection *u_conn = NULL;
-    struct flb_http_client *c = NULL;
-    struct k8s_events *ctx = in_context;
+    /* Returns FLB_TRUE if stream has been initialized */
     flb_sds_t continue_token = NULL;
     uint64_t max_resource_version = 0;
-    size_t bytes_consumed;
-    int chunk_proc_ret;
+    size_t b_sent;
+    int ret;
+    struct flb_http_client *c = NULL;
 
-    if (pthread_mutex_trylock(&ctx->lock) != 0) {
-        FLB_INPUT_RETURN(0);
+    /* if the streaming client is already active, just return it */
+    if(ctx->streaming_client) {
+        return FLB_TRUE;
     }
 
-    u_conn = flb_upstream_conn_get(ctx->upstream);
-    if (!u_conn) {
-        flb_plg_error(ins, "upstream connection initialization error");
-        goto exit;
-    }
+    /* setup connection if one does not exist */
+    if(!ctx->current_connection) {
+        ctx->current_connection = flb_upstream_conn_get(ctx->upstream);
+        if (!ctx->current_connection) {
+            flb_plg_error(ctx->ins, "upstream connection initialization error");
+            goto failure;
+        }
 
-    ret = refresh_token_if_needed(ctx);
-    if (ret == -1) {
-        flb_plg_error(ctx->ins, "failed to refresh token");
-        goto exit;
+        ret = refresh_token_if_needed(ctx);
+        if (ret == -1) {
+            flb_plg_error(ctx->ins, "failed to refresh token");
+            goto failure;
+        }
     }
 
     do {
-        c = make_event_list_api_request(ctx, u_conn, continue_token);
+        c = make_event_list_api_request(ctx, continue_token);
         if (continue_token != NULL) {
             flb_sds_destroy(continue_token);
             continue_token = NULL;
         }
         if (!c) {
-            flb_plg_error(ins, "unable to create http client");
-            goto exit;
+            flb_plg_error(ctx->ins, "unable to create http client");
+            goto failure;
         }
         initialize_http_client(c, ctx);
         ret = flb_http_do(c, &b_sent);
         if (ret != 0) {
-            flb_plg_error(ins, "http do error");
-            goto exit;
+            flb_plg_error(ctx->ins, "http do error");
+            goto failure;
         }
 
         if (c->resp.status == 200 && c->resp.payload_size > 0) {
@@ -846,7 +844,7 @@ static int k8s_events_collect(struct flb_input_instance *ins,
             else {
                 flb_plg_error(ctx->ins, "http_status=%i", c->resp.status);
             }
-            goto exit;
+            goto failure;
         }
         flb_http_client_destroy(c);
         c = NULL;
@@ -860,48 +858,81 @@ static int k8s_events_collect(struct flb_input_instance *ins,
     /* Now that we've done a full list, we can use the resource version and do a watch
      * to stream updates efficiently
      */
-    c = make_event_watch_api_request(ctx, u_conn, max_resource_version);
-    if (!c) {
-        flb_plg_error(ins, "unable to create http client");
-        goto exit;
+    ctx->streaming_client = make_event_watch_api_request(ctx, max_resource_version);
+    if (!ctx->streaming_client) {
+        flb_plg_error(ctx->ins, "unable to create http client");
+        goto failure;
     }
-    initialize_http_client(c, ctx);
+    initialize_http_client(ctx->streaming_client, ctx);
 
     /* Watch will stream chunked json data, so we only send
      * the http request, then use flb_http_get_response_data
      * to attempt processing on available streamed data
      */
     b_sent = 0;
-    ret = flb_http_do_request(c, &b_sent);
+    ret = flb_http_do_request(ctx->streaming_client, &b_sent);
     if (ret != 0) {
-        flb_plg_error(ins, "http do request error");
-        goto exit;
+        flb_plg_error(ctx->ins, "http do request error");
+        goto failure;
+    }
+
+    return FLB_TRUE;
+
+failure:
+    if (c) {
+        flb_http_client_destroy(c);
+    }
+    if (ctx->streaming_client) {
+        flb_http_client_destroy(ctx->streaming_client);
+        ctx->streaming_client = NULL;
+    }
+    if (ctx->current_connection) {
+        flb_upstream_conn_release(ctx->current_connection);
+        ctx->current_connection = NULL;
+    }
+    return FLB_FALSE;
+}
+
+static int k8s_events_collect(struct flb_input_instance *ins,
+                              struct flb_config *config, void *in_context)
+{
+    int ret;
+    struct k8s_events *ctx = in_context;
+    size_t bytes_consumed;
+    int chunk_proc_ret;
+
+    if (pthread_mutex_trylock(&ctx->lock) != 0) {
+        FLB_INPUT_RETURN(0);
+    }
+
+    if (check_and_init_stream(ctx) == FLB_FALSE) {
+        FLB_INPUT_RETURN(0);
     }
 
     ret = FLB_HTTP_MORE;
     bytes_consumed = 0;
     chunk_proc_ret = 0;
     while ((ret == FLB_HTTP_MORE || ret == FLB_HTTP_CHUNK_AVAILABLE) && chunk_proc_ret == 0) {
-        ret = flb_http_get_response_data(c, bytes_consumed);
+        ret = flb_http_get_response_data(ctx->streaming_client, bytes_consumed);
         bytes_consumed = 0;
-        if( c->resp.status == 200 && ret == FLB_HTTP_CHUNK_AVAILABLE ) {
-            chunk_proc_ret = process_http_chunk(ctx, c, &bytes_consumed);
+        if(ctx->streaming_client->resp.status == 200 && ret == FLB_HTTP_CHUNK_AVAILABLE ) {
+            chunk_proc_ret = process_http_chunk(ctx, ctx->streaming_client, &bytes_consumed);
         }
     }
     /* NOTE: skipping any processing after streaming socket closes */
 
-    if (c->resp.status != 200) {
-        flb_plg_warn(ins, "events watch failure, http_status=%d payload=%s", c->resp.status, c->resp.payload);
+    if (ctx->streaming_client->resp.status != 200) {
+        flb_plg_warn(ins, "events watch failure, http_status=%d payload=%s", 
+                     ctx->streaming_client->resp.status, ctx->streaming_client->resp.payload);
+
+        flb_http_client_destroy(ctx->streaming_client);
+        flb_upstream_conn_release(ctx->current_connection);
+        ctx->streaming_client = NULL;
+        ctx->current_connection = NULL;
     }
 
 exit:
     pthread_mutex_unlock(&ctx->lock);
-    if (c) {
-        flb_http_client_destroy(c);
-    }
-    if (u_conn) {
-        flb_upstream_conn_release(u_conn);
-    }
     FLB_INPUT_RETURN(0);
 }
 

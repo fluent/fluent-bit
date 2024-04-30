@@ -94,6 +94,8 @@ static int network_init(struct k8s_events *ctx, struct flb_config *config)
     int io_type = FLB_IO_TCP;
 
     ctx->upstream = NULL;
+    ctx->current_connection = NULL;
+    ctx->streaming_client = NULL;
 
     if (ctx->api_https == FLB_TRUE) {
         if (!ctx->tls_ca_path && !ctx->tls_ca_file) {
@@ -278,6 +280,14 @@ void k8s_events_conf_destroy(struct k8s_events *ctx)
 
     if (ctx->ra_resource_version) {
         flb_ra_destroy(ctx->ra_resource_version);
+    }
+
+    if(ctx->streaming_client) {
+        flb_http_client_destroy(ctx->streaming_client);
+    }
+
+    if(ctx->current_connection) {
+        flb_upstream_conn_release(ctx->current_connection);
     }
 
     if (ctx->upstream) {
