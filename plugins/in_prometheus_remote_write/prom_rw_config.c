@@ -20,19 +20,19 @@
 #include <fluent-bit/flb_input_plugin.h>
 #include <fluent-bit/flb_downstream.h>
 
-#include "in_prometheus_remote_write.h"
-#include "in_prometheus_remote_write_conn.h"
+#include "prom_rw.h"
+#include "prom_rw_conn.h"
 
 /* default HTTP port for prometheus remote write */
-#define PROMETHEUS_REMOTE_WRITE_HTTP_PORT    80
+#define PROMETHEUS_REMOTE_WRITE_HTTP_PORT    8080
 
-struct flb_in_prometheus_remote_write *in_prometheus_remote_write_config_create(struct flb_input_instance *ins)
+struct flb_prom_remote_write *prom_rw_config_create(struct flb_input_instance *ins)
 {
     int ret;
     char port[8];
-    struct flb_in_prometheus_remote_write *ctx;
+    struct flb_prom_remote_write *ctx;
 
-    ctx = flb_calloc(1, sizeof(struct flb_in_prometheus_remote_write));
+    ctx = flb_calloc(1, sizeof(struct flb_prom_remote_write));
     if (!ctx) {
         flb_errno();
         return NULL;
@@ -65,10 +65,10 @@ struct flb_in_prometheus_remote_write *in_prometheus_remote_write_config_create(
     return ctx;
 }
 
-int in_prometheus_remote_write_config_destroy(struct flb_in_prometheus_remote_write *ctx)
+int prom_rw_config_destroy(struct flb_prom_remote_write *ctx)
 {
     /* release all connections */
-    in_prometheus_remote_write_conn_release_all(ctx);
+    prom_rw_conn_release_all(ctx);
 
     if (ctx->collector_id != -1) {
         flb_input_collector_delete(ctx->collector_id, ctx->ins);

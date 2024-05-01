@@ -17,13 +17,23 @@
  *  limitations under the License.
  */
 
-#ifndef FLB_IN_PROMETHEUS_REMOTE_WRITE_CONFIG_H
-#define FLB_IN_PROMETHEUS_REMOTE_WRITE_CONFIG_H
+#ifndef FLB_IN_PROM_RW_PROT
+#define FLB_IN_PROM_RW_PROT
 
-#include <fluent-bit/flb_input_plugin.h>
-#include "in_prometheus_remote_write.h"
+#include <fluent-bit/flb_http_common.h>
 
-struct flb_in_prometheus_remote_write *in_prometheus_remote_write_config_create(struct flb_input_instance *ins);
-int in_prometheus_remote_write_config_destroy(struct flb_in_prometheus_remote_write *ctx);
+int prom_rw_prot_handle(struct flb_prom_remote_write *ctx,
+                        struct prom_remote_write_conn *conn,
+                        struct mk_http_session *session,
+                        struct mk_http_request *request);
+
+int prom_rw_prot_handle_error(struct flb_prom_remote_write *ctx,
+                              struct prom_remote_write_conn *conn,
+                              struct mk_http_session *session,
+                              struct mk_http_request *request);
+
+
+int prom_rw_prot_handle_ng(struct flb_http_request *request,
+                           struct flb_http_response *response);
 
 #endif

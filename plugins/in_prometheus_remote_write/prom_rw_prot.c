@@ -31,10 +31,10 @@
 #include <monkey/mk_core.h>
 #include <cmetrics/cmt_decode_prometheus_remote_write.h>
 
-#include "in_prometheus_remote_write.h"
-#include "in_prometheus_remote_write_conn.h"
+#include "prom_rw.h"
+#include "prom_rw_conn.h"
 
-static int send_response(struct in_prometheus_remote_write_conn *conn,
+static int send_response(struct prom_remote_write_conn *conn,
                          int http_status, char *message)
 {
     int len;
@@ -94,8 +94,8 @@ static int send_response(struct in_prometheus_remote_write_conn *conn,
     return 0;
 }
 
-static int process_payload_metrics(struct flb_in_prometheus_remote_write *ctx,
-                                   struct in_prometheus_remote_write_conn *conn,
+static int process_payload_metrics(struct flb_prom_remote_write *ctx,
+                                   struct prom_remote_write_conn *conn,
                                    flb_sds_t tag,
                                    struct mk_http_session *session,
                                    struct mk_http_request *request)
@@ -183,10 +183,10 @@ int uncompress_gzip(char **output_buffer,
     return 1;
 }
 
-int in_prometheus_remote_write_prot_uncompress(struct mk_http_session *session,
-                                               struct mk_http_request *request,
-                                               char **output_buffer,
-                                               size_t *output_size)
+int prom_rw_prot_uncompress(struct mk_http_session *session,
+                            struct mk_http_request *request,
+                            char **output_buffer,
+                            size_t *output_size)
 {
     struct mk_http_header *header;
     size_t                 index;
@@ -226,10 +226,10 @@ int in_prometheus_remote_write_prot_uncompress(struct mk_http_session *session,
  * Handle an incoming request. It perform extra checks over the request, if
  * everything is OK, it enqueue the incoming payload.
  */
-int in_prometheus_remote_write_prot_handle(struct flb_in_prometheus_remote_write *ctx,
-                                           struct in_prometheus_remote_write_conn *conn,
-                                           struct mk_http_session *session,
-                                           struct mk_http_request *request)
+int prom_rw_prot_handle(struct flb_prom_remote_write *ctx,
+                        struct prom_remote_write_conn *conn,
+                        struct mk_http_session *session,
+                        struct mk_http_request *request)
 {
     int i;
     int ret = -1;
@@ -338,9 +338,9 @@ int in_prometheus_remote_write_prot_handle(struct flb_in_prometheus_remote_write
     original_data = request->data.data;
     original_data_size = request->data.len;
 
-    ret = in_prometheus_remote_write_prot_uncompress(session, request,
-                                                     &uncompressed_data,
-                                                     &uncompressed_data_size);
+    ret = prom_rw_prot_uncompress(session, request,
+                                  &uncompressed_data,
+                                  &uncompressed_data_size);
 
     if (ret > 0) {
         request->data.data = uncompressed_data;
@@ -372,9 +372,9 @@ int in_prometheus_remote_write_prot_handle(struct flb_in_prometheus_remote_write
 /*
  * Handle an incoming request which has resulted in an http parser error.
  */
-int in_prometheus_remote_write_prot_handle_error(
-        struct flb_in_prometheus_remote_write *ctx,
-        struct in_prometheus_remote_write_conn *conn,
+int prom_rw_prot_handle_error(
+        struct flb_prom_remote_write *ctx,
+        struct prom_remote_write_conn *conn,
         struct mk_http_session *session,
         struct mk_http_request *request)
 {
@@ -414,7 +414,7 @@ static int send_response_ng(struct flb_http_response *response,
     return 0;
 }
 
-static int process_payload_metrics_ng(struct flb_in_prometheus_remote_write *ctx,
+static int process_payload_metrics_ng(struct flb_prom_remote_write *ctx,
                                       flb_sds_t tag,
                                       struct flb_http_request *request,
                                       struct flb_http_response *response)
@@ -439,13 +439,13 @@ static int process_payload_metrics_ng(struct flb_in_prometheus_remote_write *ctx
     return 0;
 }
 
-int in_prometheus_remote_write_prot_handle_ng(struct flb_http_request *request,
-                                              struct flb_http_response *response)
+int prom_rw_prot_handle_ng(struct flb_http_request *request,
+                           struct flb_http_response *response)
 {
-    struct flb_in_prometheus_remote_write *context;
-    int                                    result;
+    struct flb_prom_remote_write *context;
+    int                           result;
 
-    context = (struct flb_in_prometheus_remote_write *) response->stream->user_data;
+    context = (struct flb_prom_remote_write *) response->stream->user_data;
 
     if (request->path[0] != '/') {
         send_response_ng(response, 400, "error: invalid request\n");

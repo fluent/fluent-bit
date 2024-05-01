@@ -17,17 +17,17 @@
  *  limitations under the License.
  */
 
-#ifndef FLB_IN_PROMETHEUS_REMOTE_WRITE_CONN_H
-#define FLB_IN_PROMETHEUS_REMOTE_WRITE_CONN_H
+#ifndef FLB_IN_PROM_RW_CONN_H
+#define FLB_IN_PROM_RW_CONN_H
 
 #include <fluent-bit/flb_input_plugin.h>
 #include <monkey/mk_http.h>
 #include <monkey/mk_http_parser.h>
 #include <monkey/mk_utils.h>
 
-#include "in_prometheus_remote_write_conn.h"
+#include "prom_rw_conn.h"
 
-struct in_prometheus_remote_write_conn {
+struct prom_remote_write_conn {
     struct mk_event event;      /* Built-in event data for mk_events */
 
     /* Buffer */
@@ -48,10 +48,10 @@ struct in_prometheus_remote_write_conn {
     struct mk_list _head;       /* link to flb_opentelemetry->connections     */
 };
 
-struct in_prometheus_remote_write_conn *in_prometheus_remote_write_conn_add(struct flb_connection *connection,
-                                                                            struct flb_in_prometheus_remote_write *ctx);
-int in_prometheus_remote_write_conn_del(struct in_prometheus_remote_write_conn *conn);
-void in_prometheus_remote_write_conn_release_all(struct flb_in_prometheus_remote_write *ctx);
+struct prom_remote_write_conn *prom_rw_conn_add(struct flb_connection *connection,
+                                                struct flb_prom_remote_write *ctx);
+int prom_rw_conn_del(struct prom_remote_write_conn *conn);
+void prom_rw_conn_release_all(struct flb_prom_remote_write *ctx);
 
 
 #endif

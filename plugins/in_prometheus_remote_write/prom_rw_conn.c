@@ -21,14 +21,14 @@
 #include <fluent-bit/flb_engine.h>
 #include <fluent-bit/flb_downstream.h>
 
-#include "in_prometheus_remote_write.h"
-#include "in_prometheus_remote_write_conn.h"
-#include "in_prometheus_remote_write_prot.h"
+#include "prom_rw.h"
+#include "prom_rw_conn.h"
+#include "prom_rw_prot.h"
 
-static void in_prometheus_remote_write_conn_request_init(struct mk_http_session *session,
-                                                         struct mk_http_request *request);
+static void prom_rw_conn_request_init(struct mk_http_session *session,
+                                      struct mk_http_request *request);
 
-static int in_prometheus_remote_write_conn_event(void *data)
+static int prom_rw_conn_event(void *data)
 {
     int status;
     size_t size;
@@ -37,9 +37,9 @@ static int in_prometheus_remote_write_conn_event(void *data)
     char *tmp;
     char *request_end;
     size_t request_len;
-    struct in_prometheus_remote_write_conn *conn;
+    struct prom_remote_write_conn *conn;
     struct mk_event *event;
-    struct flb_in_prometheus_remote_write *ctx;
+    struct flb_prom_remote_write *ctx;
     struct flb_connection *connection;
 
     connection = (struct flb_connection *) data;
@@ -57,7 +57,7 @@ static int in_prometheus_remote_write_conn_event(void *data)
                 flb_plg_trace(ctx->ins,
                               "fd=%i incoming data exceed limit (%zu KB)",
                               event->fd, (ctx->buffer_max_size / 1024));
-                in_prometheus_remote_write_conn_del(conn);
+                prom_rw_conn_del(conn);
                 return -1;
             }
 
@@ -82,7 +82,7 @@ static int in_prometheus_remote_write_conn_event(void *data)
 
         if (bytes <= 0) {
             flb_plg_trace(ctx->ins, "fd=%i closed connection", event->fd);
-            in_prometheus_remote_write_conn_del(conn);
+            prom_rw_conn_del(conn);
             return -1;
         }
 
@@ -96,7 +96,7 @@ static int in_prometheus_remote_write_conn_event(void *data)
 
         if (status == MK_HTTP_PARSER_OK) {
             /* Do more logic parsing and checks for this request */
-            in_prometheus_remote_write_prot_handle(ctx, conn, &conn->session, &conn->request);
+            prom_rw_prot_handle(ctx, conn, &conn->session, &conn->request);
 
             /* Evict the processed request from the connection buffer and reinitialize
              * the HTTP parser.
@@ -137,11 +137,11 @@ static int in_prometheus_remote_write_conn_event(void *data)
                  */
                 memset(&conn->session.parser, 0, sizeof(struct mk_http_parser));
                 mk_http_parser_init(&conn->session.parser);
-                in_prometheus_remote_write_conn_request_init(&conn->session, &conn->request);
+                prom_rw_conn_request_init(&conn->session, &conn->request);
             }
         }
         else if (status == MK_HTTP_PARSER_ERROR) {
-            in_prometheus_remote_write_prot_handle_error(ctx, conn, &conn->session, &conn->request);
+            prom_rw_prot_handle_error(ctx, conn, &conn->session, &conn->request);
 
             /* Reinitialize the parser so the next request is properly
              * handled, the additional memset intends to wipe any left over data
@@ -149,7 +149,7 @@ static int in_prometheus_remote_write_conn_event(void *data)
              */
             memset(&conn->session.parser, 0, sizeof(struct mk_http_parser));
             mk_http_parser_init(&conn->session.parser);
-            in_prometheus_remote_write_conn_request_init(&conn->session, &conn->request);
+            prom_rw_conn_request_init(&conn->session, &conn->request);
         }
 
         /* FIXME: add Protocol handler here */
@@ -158,7 +158,7 @@ static int in_prometheus_remote_write_conn_event(void *data)
 
     if (event->mask & MK_EVENT_CLOSE) {
         flb_plg_trace(ctx->ins, "fd=%i hangup", event->fd);
-        in_prometheus_remote_write_conn_del(conn);
+        prom_rw_conn_del(conn);
         return -1;
     }
 
@@ -166,9 +166,9 @@ static int in_prometheus_remote_write_conn_event(void *data)
 
 }
 
-static void in_prometheus_remote_write_conn_session_init(struct mk_http_session *session,
-                                                         struct mk_server *server,
-                                                         int client_fd)
+static void prom_rw_conn_session_init(struct mk_http_session *session,
+                                      struct mk_server *server,
+                                      int client_fd)
 {
     /* Alloc memory for node */
     session->_sched_init = MK_TRUE;
@@ -192,8 +192,8 @@ static void in_prometheus_remote_write_conn_session_init(struct mk_http_session 
     mk_http_parser_init(&session->parser);
 }
 
-static void in_prometheus_remote_write_conn_request_init(struct mk_http_session *session,
-                                                         struct mk_http_request *request)
+static void prom_rw_conn_request_init(struct mk_http_session *session,
+                                      struct mk_http_request *request)
 {
     memset(request, 0, sizeof(struct mk_http_request));
 
@@ -210,13 +210,13 @@ static void in_prometheus_remote_write_conn_request_init(struct mk_http_session 
     request->session = session;
 }
 
-struct in_prometheus_remote_write_conn *in_prometheus_remote_write_conn_add(struct flb_connection *connection,
-                                                                            struct flb_in_prometheus_remote_write *ctx)
+struct prom_remote_write_conn *prom_rw_conn_add(struct flb_connection *connection,
+                                                struct flb_prom_remote_write *ctx)
 {
-    struct in_prometheus_remote_write_conn *conn;
-    int               ret;
+    struct prom_remote_write_conn *conn;
+    int                            ret;
 
-    conn = flb_calloc(1, sizeof(struct in_prometheus_remote_write_conn));
+    conn = flb_calloc(1, sizeof(struct prom_remote_write_conn));
     if (!conn) {
         flb_errno();
         return NULL;
@@ -228,7 +228,7 @@ struct in_prometheus_remote_write_conn *in_prometheus_remote_write_conn_add(stru
 
     connection->user_data     = conn;
     connection->event.type    = FLB_ENGINE_EV_CUSTOM;
-    connection->event.handler = in_prometheus_remote_write_conn_event;
+    connection->event.handler = prom_rw_conn_event;
 
     /* Connection info */
     conn->ctx     = ctx;
@@ -257,19 +257,19 @@ struct in_prometheus_remote_write_conn *in_prometheus_remote_write_conn_add(stru
     }
 
     /* Initialize HTTP Session: this is a custom context for Monkey HTTP */
-    in_prometheus_remote_write_conn_session_init(&conn->session, ctx->server, connection->fd);
+    prom_rw_conn_session_init(&conn->session, ctx->server, connection->fd);
 
     /* Initialize HTTP Request: this is the initial request and it will be reinitialized
      * automatically after the request is handled so it can be used for the next one.
      */
-    in_prometheus_remote_write_conn_request_init(&conn->session, &conn->request);
+    prom_rw_conn_request_init(&conn->session, &conn->request);
 
     /* Link connection node to parent context list */
     mk_list_add(&conn->_head, &ctx->connections);
     return conn;
 }
 
-int in_prometheus_remote_write_conn_del(struct in_prometheus_remote_write_conn *conn)
+int prom_rw_conn_del(struct prom_remote_write_conn *conn)
 {
     if (conn->session.channel != NULL) {
         mk_channel_release(conn->session.channel);
@@ -288,14 +288,14 @@ int in_prometheus_remote_write_conn_del(struct in_prometheus_remote_write_conn *
     return 0;
 }
 
-void in_prometheus_remote_write_conn_release_all(struct flb_in_prometheus_remote_write *ctx)
+void prom_rw_conn_release_all(struct flb_prom_remote_write *ctx)
 {
     struct mk_list *tmp;
     struct mk_list *head;
-    struct in_prometheus_remote_write_conn *conn;
+    struct prom_remote_write_conn *conn;
 
     mk_list_foreach_safe(head, tmp, &ctx->connections) {
-        conn = mk_list_entry(head, struct in_prometheus_remote_write_conn, _head);
-        in_prometheus_remote_write_conn_del(conn);
+        conn = mk_list_entry(head, struct prom_remote_write_conn, _head);
+        prom_rw_conn_del(conn);
     }
 }

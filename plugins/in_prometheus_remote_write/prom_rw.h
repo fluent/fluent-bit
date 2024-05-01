@@ -17,8 +17,8 @@
  *  limitations under the License.
  */
 
-#ifndef FLB_IN_PROMETHEUS_REMOTE_WRITE_H
-#define FLB_IN_PROMETHEUS_REMOTE_WRITE_H
+#ifndef FLB_IN_PROM_RW_H
+#define FLB_IN_PROM_RW_H
 
 #include <fluent-bit/flb_config.h>
 #include <fluent-bit/flb_input.h>
@@ -30,7 +30,7 @@
 #define HTTP_BUFFER_MAX_SIZE    "4M"
 #define HTTP_BUFFER_CHUNK_SIZE  "512K"
 
-struct flb_in_prometheus_remote_write {
+struct flb_prom_remote_write {
     int successful_response_code;
     flb_sds_t listen;
     flb_sds_t tcp_port;
