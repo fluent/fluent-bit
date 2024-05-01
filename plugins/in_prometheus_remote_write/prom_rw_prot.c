@@ -139,11 +139,10 @@ static inline int mk_http_point_header(mk_ptr_t *h,
     return -1;
 }
 
-static \
-int uncompress_snappy(char **output_buffer,
-                      size_t *output_size,
-                      char *input_buffer,
-                      size_t input_size)
+static int uncompress_snappy(char **output_buffer,
+                             size_t *output_size,
+                             char *input_buffer,
+                             size_t input_size)
 {
     int ret;
 
@@ -161,11 +160,10 @@ int uncompress_snappy(char **output_buffer,
     return 1;
 }
 
-static \
-int uncompress_gzip(char **output_buffer,
-                    size_t *output_size,
-                    char *input_buffer,
-                    size_t input_size)
+static int uncompress_gzip(char **output_buffer,
+                           size_t *output_size,
+                           char *input_buffer,
+                           size_t input_size)
 {
     int ret;
 
