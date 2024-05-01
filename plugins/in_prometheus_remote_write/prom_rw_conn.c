@@ -152,7 +152,6 @@ static int prom_rw_conn_event(void *data)
             prom_rw_conn_request_init(&conn->session, &conn->request);
         }
 
-        /* FIXME: add Protocol handler here */
         return bytes;
     }
 
