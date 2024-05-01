@@ -21,6 +21,7 @@
 #include <fluent-bit/flb_downstream.h>
 
 #include "prom_rw.h"
+#include "prom_rw_config.h"
 #include "prom_rw_conn.h"
 
 /* default HTTP port for prometheus remote write */
@@ -56,6 +57,11 @@ struct flb_prom_remote_write *prom_rw_config_create(struct flb_input_instance *i
 
     /* HTTP Server specifics */
     ctx->server = flb_calloc(1, sizeof(struct mk_server));
+    if (ctx->server == NULL) {
+        flb_plg_error(ctx->ins, "error on mk_server allocation");
+        prom_rw_config_destroy(ctx);
+        return NULL;
+    }
     ctx->server->keep_alive = MK_TRUE;
 
     /* monkey detects server->workers == 0 as the server not being initialized at the
