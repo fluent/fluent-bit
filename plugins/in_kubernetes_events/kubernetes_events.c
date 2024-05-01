@@ -302,8 +302,8 @@ static bool check_event_is_filtered(struct k8s_events *ctx, msgpack_object *obj,
     flb_sds_t uid;
     uint64_t resource_version;
 
-    now = (time_t)(cfl_time_now() / 1000000000);
-    if (event_time->tm.tv_sec < (now - ctx->retention_time)) {
+    outdated = cfl_time_now() - (ctx->retention_time * 1000000000L);
+    if (flb_time_to_nanosec(event_time) < outdated) {
         flb_plg_debug(ctx->ins, "Item is older than retention_time: %ld < %ld",
                       flb_time_to_nanosec(event_time),  outdated);
         return FLB_TRUE;
@@ -370,8 +370,8 @@ static bool check_event_is_filtered(struct k8s_events *ctx, msgpack_object *obj,
 }
 
 
-static int process_event_object(struct k8s_events* ctx, flb_sds_t action,
-                         msgpack_object* item)
+static int process_event_object(struct k8s_events *ctx, flb_sds_t action,
+                         msgpack_object *item)
 {
     int ret = -1;
     struct flb_time ts;
@@ -921,9 +921,14 @@ static int k8s_events_collect(struct flb_input_instance *ins,
     }
     /* NOTE: skipping any processing after streaming socket closes */
 
-    if (ctx->streaming_client->resp.status != 200) {
-        flb_plg_warn(ins, "events watch failure, http_status=%d payload=%s", 
-                     ctx->streaming_client->resp.status, ctx->streaming_client->resp.payload);
+    if (ctx->streaming_client->resp.status != 200 || ret == FLB_HTTP_ERROR) {
+        if (ret == FLB_HTTP_ERROR) {
+            flb_plg_warn(ins, "kubernetes chunked stream error.");
+        }
+        else {
+            flb_plg_warn(ins, "events watch failure, http_status=%d payload=%s",
+                         ctx->streaming_client->resp.status, ctx->streaming_client->resp.payload);
+        }
 
         flb_http_client_destroy(ctx->streaming_client);
         flb_upstream_conn_release(ctx->current_connection);
@@ -931,7 +936,6 @@ static int k8s_events_collect(struct flb_input_instance *ins,
         ctx->current_connection = NULL;
     }
 
-exit:
     pthread_mutex_unlock(&ctx->lock);
     FLB_INPUT_RETURN(0);
 }
