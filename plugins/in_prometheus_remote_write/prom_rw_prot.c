@@ -34,12 +34,15 @@
 #include "prom_rw.h"
 #include "prom_rw_conn.h"
 
-static int send_response(struct prom_remote_write_conn *conn,
+static int send_response(struct flb_input_instance *in,
+                         struct prom_remote_write_conn *conn,
                          int http_status, char *message)
 {
     int len;
     flb_sds_t out;
     size_t sent;
+    ssize_t bytes;
+    int result;
 
     out = flb_sds_create_size(256);
     if (!out) {
@@ -84,14 +87,23 @@ static int send_response(struct prom_remote_write_conn *conn,
     }
 
     /* We should check the outcome of this operation */
-    flb_io_net_write(conn->connection,
-                     (void *) out,
-                     flb_sds_len(out),
-                     &sent);
+    bytes = flb_io_net_write(conn->connection,
+                             (void *) out,
+                             flb_sds_len(out),
+                             &sent);
+
+    if (bytes == -1) {
+        flb_plg_error(in, "cannot send response");
+
+        result = -1;
+    }
+    else {
+        result = 0;
+    }
 
     flb_sds_destroy(out);
 
-    return 0;
+    return result;
 }
 
 static int process_payload_metrics(struct flb_prom_remote_write *ctx,
@@ -243,7 +255,7 @@ int prom_rw_prot_handle(struct flb_prom_remote_write *ctx,
     size_t uncompressed_data_size;
 
     if (request->uri.data[0] != '/') {
-        send_response(conn, 400, "error: invalid request\n");
+        send_response(ctx->ins, conn, 400, "error: invalid request\n");
         return -1;
     }
 
@@ -259,7 +271,7 @@ int prom_rw_prot_handle(struct flb_prom_remote_write *ctx,
     }
 
     if (ctx->uri != NULL && strcmp(uri, ctx->uri) != 0) {
-        send_response(conn, 400, "error: invalid endpoint\n");
+        send_response(ctx->ins, conn, 400, "error: invalid endpoint\n");
         mk_mem_free(uri);
 
         return -1;
@@ -329,7 +341,7 @@ int prom_rw_prot_handle(struct flb_prom_remote_write *ctx,
     if (request->method != MK_METHOD_POST) {
         flb_sds_destroy(tag);
         mk_mem_free(uri);
-        send_response(conn, 400, "error: invalid HTTP method\n");
+        send_response(ctx->ins, conn, 400, "error: invalid HTTP method\n");
         return -1;
     }
 
@@ -362,7 +374,7 @@ int prom_rw_prot_handle(struct flb_prom_remote_write *ctx,
     mk_mem_free(uri);
     flb_sds_destroy(tag);
 
-    send_response(conn, ctx->successful_response_code, NULL);
+    send_response(ctx->ins, conn, ctx->successful_response_code, NULL);
 
     return ret;
 }
@@ -376,7 +388,7 @@ int prom_rw_prot_handle_error(
         struct mk_http_session *session,
         struct mk_http_request *request)
 {
-    send_response(conn, 400, "error: invalid request\n");
+    send_response(ctx->ins, conn, 400, "error: invalid request\n");
     return -1;
 }
 
