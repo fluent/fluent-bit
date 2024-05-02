@@ -18,7 +18,7 @@ RUN yum -y update && \
     wget unzip systemd-devel wget flex bison \
     cyrus-sasl-lib cyrus-sasl-devel openssl openss-libs openssl-devel \
     postgresql-devel postgresql-libs \
-    cmake3 libyaml-devel zlib-devel && \
+    cmake3 libyaml-devel libsnmp-devel zlib-devel && \
     yum clean all
 
 # amazonlinux/2.arm64v8 base image
@@ -32,7 +32,7 @@ RUN yum -y update && \
     wget unzip systemd-devel wget flex bison \
     cyrus-sasl-lib cyrus-sasl-devel openssl openss-libs openssl-devel \
     postgresql-devel postgresql-libs \
-    cmake3 libyaml-devel zlib-devel && \
+    cmake3 libyaml-devel libsnmp-devel zlib-devel && \
     yum clean all
 
 FROM amazonlinux:2023 as amazonlinux-2023-base
@@ -43,7 +43,7 @@ RUN yum -y update && \
     wget unzip systemd-devel wget flex bison \
     cyrus-sasl-lib cyrus-sasl-devel openssl openssl-libs openssl-devel \
     postgresql-devel postgresql-libs \
-    cmake3 libyaml-devel zlib-devel && \
+    cmake3 libyaml-devel libsnmp-devel zlib-devel && \
     yum clean all
 
 # hadolint ignore=DL3029
@@ -57,7 +57,7 @@ RUN yum -y update && \
     wget unzip systemd-devel wget flex bison \
     cyrus-sasl-lib cyrus-sasl-devel openssl openssl-libs openssl-devel \
     postgresql-devel postgresql-libs \
-    cmake3 libyaml-devel zlib-devel && \
+    cmake3 libyaml-devel libsnmp-devel zlib-devel && \
     yum clean all
 
 # Common build for all distributions now

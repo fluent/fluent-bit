@@ -19,7 +19,7 @@ RUN apt-get -qq update && \
     cmake make bash sudo wget unzip dh-make \
     libsystemd-dev zlib1g-dev flex bison \
     libssl1.1 libssl-dev libpq-dev postgresql-server-dev-all \
-    libsasl2-2 libsasl2-dev libyaml-dev pkg-config && \
+    libsasl2-2 libsasl2-dev libyaml-dev libsnmp-dev pkg-config && \
     apt-get install -y --reinstall lsb-base lsb-release
 
 # debian/buster.arm64v8 base image
@@ -34,7 +34,7 @@ RUN apt-get -qq update && \
     cmake make bash sudo wget unzip dh-make \
     libsystemd-dev zlib1g-dev flex bison \
     libssl1.1 libssl-dev libpq-dev postgresql-server-dev-all \
-    libsasl2-2 libsasl2-dev libyaml-dev pkg-config && \
+    libsasl2-2 libsasl2-dev libyaml-dev libsnmp-dev pkg-config && \
     apt-get install -y --reinstall lsb-base lsb-release
 
 # debian/bullseye base image
@@ -47,7 +47,7 @@ RUN apt-get -qq update && \
     cmake make bash sudo wget unzip dh-make \
     libsystemd-dev zlib1g-dev flex bison \
     libssl1.1 libssl-dev libpq-dev postgresql-server-dev-all \
-    libsasl2-2 libsasl2-dev libyaml-dev pkg-config && \
+    libsasl2-2 libsasl2-dev libyaml-dev libsnmp-dev pkg-config && \
     apt-get install -y --reinstall lsb-base lsb-release
 
 # debian/bullseye.arm64v8 base image
@@ -62,7 +62,7 @@ RUN apt-get -qq update && \
     cmake make bash sudo wget unzip dh-make \
     libsystemd-dev zlib1g-dev flex bison \
     libssl1.1 libssl-dev libpq-dev postgresql-server-dev-all \
-    libsasl2-2 libsasl2-dev libyaml-dev pkg-config && \
+    libsasl2-2 libsasl2-dev libyaml-dev libsnmp-dev pkg-config && \
     apt-get install -y --reinstall lsb-base lsb-release
 
 # debian/bookworm base image
@@ -75,7 +75,7 @@ RUN apt-get -qq update && \
     cmake make bash sudo wget unzip dh-make \
     libsystemd-dev zlib1g-dev flex bison \
     libssl3 libssl-dev libpq-dev postgresql-server-dev-all \
-    libsasl2-2 libsasl2-dev libyaml-dev pkg-config && \
+    libsasl2-2 libsasl2-dev libyaml-dev libsnmp-dev pkg-config && \
     apt-get install -y --reinstall lsb-base lsb-release
 
 # debian/bookworm.arm64v8 base image
@@ -90,7 +90,7 @@ RUN apt-get -qq update && \
     cmake make bash sudo wget unzip dh-make \
     libsystemd-dev zlib1g-dev flex bison \
     libssl3 libssl-dev libpq-dev postgresql-server-dev-all \
-    libsasl2-2 libsasl2-dev libyaml-dev pkg-config && \
+    libsasl2-2 libsasl2-dev libyaml-dev libsnmp-dev pkg-config && \
     apt-get install -y --reinstall lsb-base lsb-release
 
 # Common build for all distributions now
