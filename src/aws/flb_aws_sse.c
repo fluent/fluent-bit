@@ -61,6 +61,6 @@ int flb_aws_sse_get_type(const char *sse_keyword)
         ++o;
     }
 
-    flb_error("[aws_compress] unknown sse type: %s", sse_keyword);
+    flb_error("[aws] unknown sse type: %s", sse_keyword);
     return -1;
 }
