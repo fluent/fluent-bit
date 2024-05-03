@@ -168,7 +168,7 @@ static int check_chunked_encoding(struct flb_http_client *c)
     int len;
     const char *header = NULL;
 
-    ret = header_lookup(c, "Transfer-Encoding: ", 19,
+    ret = header_lookup(c, "\r\nTransfer-Encoding: ", 21,
                         &header, &len);
     if (ret == FLB_HTTP_NOT_FOUND) {
         /* If the header is missing, this is fine */
@@ -199,7 +199,7 @@ static int check_content_length(struct flb_http_client *c)
         return FLB_HTTP_OK;
     }
 
-    ret = header_lookup(c, "Content-Length: ", 16,
+    ret = header_lookup(c, "\r\nContent-Length: ", 18,
                         &header, &len);
     if (ret == FLB_HTTP_MORE) {
         return FLB_HTTP_MORE;
@@ -229,7 +229,7 @@ static int check_connection(struct flb_http_client *c)
     const char *header;
     char *buf;
 
-    ret = header_lookup(c, "Connection: ", 12,
+    ret = header_lookup(c, "\r\nConnection: ", 14,
                         &header, &len);
     if (ret == FLB_HTTP_NOT_FOUND) {
         return FLB_HTTP_NOT_FOUND;
