@@ -29,6 +29,7 @@ ARG FLB_CHUNK_TRACE=On
 ENV FLB_CHUNK_TRACE=${FLB_CHUNK_TRACE}
 
 RUN mkdir -p /fluent-bit/bin /fluent-bit/etc /fluent-bit/log
+RUN mkdir -p /usr/lib/debug/fluent-bit/bin
 
 ENV DEBIAN_FRONTEND noninteractive
 
@@ -80,6 +81,10 @@ RUN cmake -DFLB_RELEASE=On \
 
 RUN make -j "$(getconf _NPROCESSORS_ONLN)"
 RUN install bin/fluent-bit /fluent-bit/bin/
+
+RUN objcopy --only-keep-debug /fluent-bit/bin/fluent-bit /usr/lib/debug/fluent-bit/bin/fluent-bit.debug
+RUN objcopy --strip-debug /fluent-bit/bin/fluent-bit
+RUN objcopy --add-gnu-debuglink=/usr/lib/debug/fluent-bit/bin/fluent-bit.debug /fluent-bit/bin/fluent-bit
 
 # Configuration files
 COPY conf/fluent-bit.conf \
@@ -231,6 +236,7 @@ RUN echo "deb http://deb.debian.org/debian bullseye-backports main" >> /etc/apt/
 
 RUN rm -f /usr/bin/qemu-*-static
 COPY --from=builder /fluent-bit /fluent-bit
+COPY --from=builder /usr/lib/debug/fluent-bit /usr/lib/debug/fluent-bit
 
 EXPOSE 2020
 
