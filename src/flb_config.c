@@ -777,7 +777,7 @@ static int configure_plugins_type(struct flb_config *config, struct flb_cf *cf, 
         /* validate the instance creation */
         if (!ins) {
             flb_error("[config] section '%s' tried to instance a plugin name "
-                      "that don't exists", name);
+                      "that doesn't exist", name);
             flb_sds_destroy(name);
             return -1;
         }
