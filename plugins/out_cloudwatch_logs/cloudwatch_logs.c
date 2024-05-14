@@ -50,6 +50,33 @@ static struct flb_aws_header content_type_header = {
     .val_len = 26,
 };
 
+static int validate_log_group_class(struct flb_cloudwatch *ctx)
+{   
+    if (ctx->create_group == FLB_FALSE) {
+        flb_plg_error(ctx->ins, "Configuring log_group_class requires `auto_create_group On`.");
+        return -1;
+    }
+
+    if (ctx->log_group_class == NULL || strlen(ctx->log_group_class) == 0) {
+        ctx->log_group_class_type = LOG_CLASS_DEFAULT_TYPE;
+        ctx->log_group_class = LOG_CLASS_STANDARD;
+        return 0;
+    } else if (strncmp(ctx->log_group_class, LOG_CLASS_STANDARD, LOG_CLASS_STANDARD_LEN) == 0) {
+        flb_plg_debug(ctx->ins, "Using explicitly configured `log_group_class %s`, which is the default log class.", ctx->log_group_class);
+        ctx->log_group_class_type = LOG_CLASS_STANDARD_TYPE;
+        return 0;
+    } else if (strncmp(ctx->log_group_class, LOG_CLASS_INFREQUENT_ACCESS, LOG_CLASS_INFREQUENT_ACCESS_LEN) == 0) {
+        flb_plg_warn(ctx->ins, "Configured `log_group_class %s` will only apply to log groups created by Fluent Bit. "
+                     "Look for the `Created log group` info level message emitted when a group does not already exist and is created.", ctx->log_group_class);
+        ctx->log_group_class_type = LOG_CLASS_INFREQUENT_ACCESS_TYPE;
+        return 0;
+    }
+
+    flb_plg_error(ctx->ins, "The valid values for log_group_class are {%s, %s}. Invalid input was %s", LOG_CLASS_STANDARD, LOG_CLASS_INFREQUENT_ACCESS, ctx->log_group_class);
+
+    return -1;
+}
+
 static int cb_cloudwatch_init(struct flb_output_instance *ins,
                               struct flb_config *config, void *data)
 {
@@ -209,6 +236,11 @@ static int cb_cloudwatch_init(struct flb_output_instance *ins,
     tmp = flb_output_get_property("sts_endpoint", ins);
     if (tmp) {
         ctx->sts_endpoint = (char *) tmp;
+    }
+
+    ret = validate_log_group_class(ctx);
+    if (ret < 0) {
+        goto error;
     }
 
     /* one tls instance for provider, one for cw client */
@@ -650,6 +682,12 @@ static struct flb_config_map config_map[] = {
      0, FLB_TRUE, offsetof(struct flb_cloudwatch, profile),
      "AWS Profile name. AWS Profiles can be configured with AWS CLI and are usually stored in "
      "$HOME/.aws/ directory."
+    },
+
+    {
+     FLB_CONFIG_MAP_STR, "log_group_class", "",
+     0, FLB_TRUE, offsetof(struct flb_cloudwatch, log_group_class),
+     "Specify the log storage class. Valid values are STANDARD (default) and INFREQUENT_ACCESS."
     },
 
     /* EOF */
