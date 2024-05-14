@@ -1285,7 +1285,7 @@ int create_log_group(struct flb_cloudwatch *ctx, struct log_stream *stream)
 
     flb_plg_info(ctx->ins, "Creating log group %s", stream->group);
 
-    body = flb_sds_create_size(25 + strlen(stream->group));
+    body = flb_sds_create_size(37 + strlen(stream->group) + strlen(ctx->log_group_class));
     if (!body) {
         flb_sds_destroy(body);
         flb_errno();
@@ -1293,13 +1293,24 @@ int create_log_group(struct flb_cloudwatch *ctx, struct log_stream *stream)
     }
 
     /* construct CreateLogGroup request body */
-    tmp = flb_sds_printf(&body, "{\"logGroupName\":\"%s\"}", stream->group);
-    if (!tmp) {
-        flb_sds_destroy(body);
-        flb_errno();
-        return -1;
+    if (ctx->log_group_class_type == LOG_CLASS_DEFAULT) {
+        tmp = flb_sds_printf(&body, "{\"logGroupName\":\"%s\"}", stream->group);
+        if (!tmp) {
+            flb_sds_destroy(body);
+            flb_errno();
+            return -1;
+        }
+        body = tmp;
+    } else {
+        tmp = flb_sds_printf(&body, "{\"logGroupName\":\"%s\", \"logGroupClass\":\"%s\"}", 
+                             stream->group, ctx->log_group_class);
+        if (!tmp) {
+            flb_sds_destroy(body);
+            flb_errno();
+            return -1;
+        }
+        body = tmp;
     }
-    body = tmp;
 
     if (plugin_under_test() == FLB_TRUE) {
         c = mock_http_call("TEST_CREATE_LOG_GROUP_ERROR", "CreateLogGroup");
@@ -1328,8 +1339,16 @@ int create_log_group(struct flb_cloudwatch *ctx, struct log_stream *stream)
             error = flb_aws_error(c->resp.payload, c->resp.payload_size);
             if (error != NULL) {
                 if (strcmp(error, ERR_CODE_ALREADY_EXISTS) == 0) {
-                    flb_plg_info(ctx->ins, "Log Group %s already exists",
-                                 stream->group);
+                    if (ctx->log_group_class_type == LOG_CLASS_INFREQUENT_ACCESS_TYPE) {
+                        flb_plg_warn(ctx->ins, "Log Group %s already exists; "
+                                     "Fluent Bit did not create this group in this execution. "
+                                     "Fluent Bit therefore was unable verify or set %s storage. "
+                                     "Check CloudWatch Console or API for the groups storage class status.",
+                                     stream->group, LOG_CLASS_INFREQUENT_ACCESS);
+                    } else {
+                        flb_plg_info(ctx->ins, "Log Group %s already exists",
+                                     stream->group);
+                    }
                     flb_sds_destroy(body);
                     flb_sds_destroy(error);
                     flb_http_client_destroy(c);
@@ -1480,7 +1499,6 @@ int put_log_events(struct flb_cloudwatch *ctx, struct cw_flush *buf,
 
     struct flb_http_client *c = NULL;
     struct flb_aws_client *cw_client;
-    flb_sds_t tmp;
     int num_headers = 1;
     int retry = FLB_TRUE;
 
@@ -1510,7 +1528,7 @@ retry_request:
         flb_plg_debug(ctx->ins, "PutLogEvents http status=%d", c->resp.status);
 
         if (c->resp.status == 200) {
-            if (c->resp.data == NULL || c->resp.data_len == 0 || strstr(c->resp.data, AMZN_REQUEST_ID_HEADER) == NULL) {
+            if (c->resp.data == NULL || c->resp.data_len == 0 || strcasestr(c->resp.data, AMZN_REQUEST_ID_HEADER) == NULL) {
                 /* code was 200, but response is invalid, treat as failure */
                 if (c->resp.data != NULL) {
                     flb_plg_debug(ctx->ins, "Invalid response: full data: `%.*s`", c->resp.data_len, c->resp.data);
