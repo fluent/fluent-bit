@@ -147,13 +147,13 @@ static int header_lookup(struct flb_http_client *c,
         return FLB_HTTP_NOT_FOUND;
     }
 
+    p += header_len;
+
     /* Lookup CRLF (end of line \r\n) */
     crlf = strstr(p, "\r\n");
     if (!crlf) {
         return FLB_HTTP_MORE;
     }
-
-    p += header_len;
 
     *out_val = p;
     *out_len = (crlf - p);
