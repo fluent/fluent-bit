@@ -495,19 +495,24 @@ static struct flb_config_map config_map[] = {
     {
      FLB_CONFIG_MAP_STR, "dd_service", NULL,
      0, FLB_TRUE, offsetof(struct flb_out_datadog, dd_service),
-     "The human readable name for your service generating the logs "
-     "- the name of your application or database."
+     "The human readable name for your service generating the logs  "
+     "(e.g. the name of your application or database). If unset, Datadog "
+     "will look for the service using Service Remapper in Log Management "
+     "(by default it will look at the `service` and `syslog.appname` attributes)."
+     ""
     },
     {
      FLB_CONFIG_MAP_STR, "dd_source", NULL,
      0, FLB_TRUE, offsetof(struct flb_out_datadog, dd_source),
-     "A human readable name for the underlying technology of your service. "
-     "For example, 'postgres' or 'nginx'."
+     "A human readable name for the underlying technology of your service "
+     "(e.g. 'postgres' or 'nginx'). If unset, Datadog will expect the source "
+     "to be set as the `ddsource` attribute."
     },
     {
      FLB_CONFIG_MAP_STR, "dd_tags", NULL,
      0, FLB_TRUE, offsetof(struct flb_out_datadog, dd_tags),
-     "The tags you want to assign to your logs in Datadog."
+     "The tags you want to assign to your logs in Datadog. If unset, Datadog "
+     "will expect the tags in the `ddtags` attribute."
     },
 
     {
