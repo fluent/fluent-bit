@@ -263,7 +263,7 @@ struct flb_splunk *flb_splunk_conf_create(struct flb_output_instance *ins,
     }
 
     /* Currently, Splunk HEC token is stored in a fixed key, hec_token. */
-    ctx->metadata_auth_key = "hec_token";
+    ctx->metadata_auth_key = "$hec_token";
     if (ctx->metadata_auth_key) {
         ctx->ra_metadata_auth_key = flb_ra_create(ctx->metadata_auth_key, FLB_TRUE);
         if (!ctx->ra_metadata_auth_key) {
