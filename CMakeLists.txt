@@ -7,8 +7,8 @@ set(CMAKE_POLICY_DEFAULT_CMP0069 NEW)
 
 # Fluent Bit Version
 set(FLB_VERSION_MAJOR  3)
-set(FLB_VERSION_MINOR  0)
-set(FLB_VERSION_PATCH  4)
+set(FLB_VERSION_MINOR  1)
+set(FLB_VERSION_PATCH  0)
 set(FLB_VERSION_STR "${FLB_VERSION_MAJOR}.${FLB_VERSION_MINOR}.${FLB_VERSION_PATCH}")
 
 set(CMAKE_POSITION_INDEPENDENT_CODE ON)
@@ -159,6 +159,7 @@ option(FLB_CUSTOM_CALYPTIA     "Enable Calyptia Support"      Yes)
 # Config formats
 option(FLB_CONFIG_YAML         "Enable YAML config format"    Yes)
 
+<<<<<<< Updated upstream
 # Built-in Plugins
 option(FLB_IN_CPU                      "Enable CPU input plugin"                      Yes)
 option(FLB_IN_THERMAL                  "Enable Thermal plugin"                        Yes)
@@ -244,6 +245,7 @@ option(FLB_OUT_NULL                    "Enable dev null output plugin"          
 option(FLB_OUT_FLOWCOUNTER             "Enable flowcount output plugin"               Yes)
 option(FLB_OUT_LOGDNA                  "Enable LogDNA output plugin"                  Yes)
 option(FLB_OUT_LOKI                    "Enable Loki output plugin"                    Yes)
+option(FLB_OUT_SCALEWAY                "Enable Scaleway output plugin"                Yes)
 option(FLB_OUT_KAFKA                   "Enable Kafka output plugin"                   Yes)
 option(FLB_OUT_KAFKA_REST              "Enable Kafka Rest output plugin"              Yes)
 option(FLB_OUT_CLOUDWATCH_LOGS         "Enable AWS CloudWatch output plugin"          Yes)
@@ -288,6 +290,10 @@ option(FLB_PROCESSOR_CONTENT_MODIFIER  "Enable content modifier processor"      
 option(FLB_PROCESSOR_LABELS            "Enable metrics label manipulation processor"  Yes)
 option(FLB_PROCESSOR_METRICS_SELECTOR  "Enable metrics selector processor"            Yes)
 option(FLB_PROCESSOR_SQL               "Enable SQL processor"                         Yes)
+=======
+# List of plugins available and defaults for each option
+include(cmake/plugins_options.cmake)
+>>>>>>> Stashed changes
 
 if(DEFINED FLB_NIGHTLY_BUILD AND NOT "${FLB_NIGHTLY_BUILD}" STREQUAL "")
   FLB_DEFINITION_VAL(FLB_NIGHTLY_BUILD ${FLB_NIGHTLY_BUILD})
@@ -937,6 +943,16 @@ else()
     set(AUTOCONF_HOST_OPT "--host=${GNU_HOST}")
 endif()
 
+if(CMAKE_GENERATOR MATCHES "Ninja")
+  if(FLB_SYSTEM_WINDOWS)
+    MESSAGE(FATAL_ERROR "Building with Ninja is not supported on Windows")
+  else()
+    set(EXTERNAL_BUILD_TOOL "make")
+  endif()
+else()
+  set(EXTERNAL_BUILD_TOOL "$(MAKE)")
+endif()
+
 # Memory Allocator
 # ================
 if(FLB_JEMALLOC AND ${CMAKE_SYSTEM_NAME} MATCHES "Linux")
@@ -952,15 +968,17 @@ if(FLB_JEMALLOC AND ${CMAKE_SYSTEM_NAME} MATCHES "Linux")
   message(STATUS "jemalloc configure: ${FLB_JEMALLOC_OPTIONS_LIST}")
 
   # Link to Jemalloc as an external dependency
+  set(FLB_LIBJEMALLOC_PATH "${CMAKE_CURRENT_BINARY_DIR}/lib/libjemalloc_pic.a")
   ExternalProject_Add(jemalloc
     SOURCE_DIR ${CMAKE_CURRENT_SOURCE_DIR}/lib/jemalloc-5.3.0
     CONFIGURE_COMMAND ${CMAKE_CURRENT_SOURCE_DIR}/lib/jemalloc-5.3.0/configure ${AUTOCONF_HOST_OPT} "${FLB_JEMALLOC_OPTIONS_LIST}" --prefix=<INSTALL_DIR>
     CFLAGS=-std=gnu99\ -Wall\ -pipe\ -g3\ -O3\ -funroll-loops
-    BUILD_COMMAND $(MAKE)
+    BUILD_COMMAND ${EXTERNAL_BUILD_TOOL}
+    BUILD_BYPRODUCTS ${FLB_LIBJEMALLOC_PATH}
     INSTALL_DIR ${CMAKE_CURRENT_BINARY_DIR}/
-    INSTALL_COMMAND $(MAKE) install_lib_static install_include)
+    INSTALL_COMMAND ${EXTERNAL_BUILD_TOOL} install_lib_static install_include)
   add_library(libjemalloc STATIC IMPORTED GLOBAL)
-  set_target_properties(libjemalloc PROPERTIES IMPORTED_LOCATION "${CMAKE_CURRENT_BINARY_DIR}/lib/libjemalloc_pic.a")
+  set_target_properties(libjemalloc PROPERTIES IMPORTED_LOCATION ${FLB_LIBJEMALLOC_PATH})
   add_dependencies(libjemalloc jemalloc)
   include_directories("${CMAKE_BINARY_DIR}/include/")
 else()
@@ -978,14 +996,16 @@ if(FLB_BACKTRACE)
   else()
     set(DEPS_C_COMPILER "${CMAKE_C_COMPILER}")
   endif()
+  set(FLB_LIBBACKTRACE_PATH "${CMAKE_CURRENT_BINARY_DIR}/backtrace-prefix/lib/libbacktrace.a")
   ExternalProject_Add(backtrace
     SOURCE_DIR ${CMAKE_CURRENT_SOURCE_DIR}/lib/libbacktrace-8602fda/
     CONFIGURE_COMMAND ${CMAKE_CURRENT_SOURCE_DIR}/lib/libbacktrace-8602fda/configure ${AUTOCONF_HOST_OPT} --prefix=<INSTALL_DIR> --enable-shared=no --enable-static=yes
-    BUILD_COMMAND $(MAKE)
-    INSTALL_COMMAND $(MAKE) DESTDIR= install
+    BUILD_COMMAND ${EXTERNAL_BUILD_TOOL}
+    BUILD_BYPRODUCTS ${FLB_LIBBACKTRACE_PATH}
+    INSTALL_COMMAND ${EXTERNAL_BUILD_TOOL} DESTDIR= install
     )
   add_library(libbacktrace STATIC IMPORTED GLOBAL)
-  set_target_properties(libbacktrace PROPERTIES IMPORTED_LOCATION "${CMAKE_CURRENT_BINARY_DIR}/backtrace-prefix/lib/libbacktrace.a")
+  set_target_properties(libbacktrace PROPERTIES IMPORTED_LOCATION ${FLB_LIBBACKTRACE_PATH})
   add_dependencies(libbacktrace backtrace)
   include_directories("${CMAKE_CURRENT_BINARY_DIR}/backtrace-prefix/include/")
 endif()
