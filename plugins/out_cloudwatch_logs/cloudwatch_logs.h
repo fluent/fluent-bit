@@ -31,9 +31,11 @@
 #include <fluent-bit/record_accessor/flb_ra_parser.h>
 
 #define LOG_CLASS_STANDARD                  "STANDARD"
+#define LOG_CLASS_STANDARD_LEN              8
 #define LOG_CLASS_INFREQUENT_ACCESS         "INFREQUENT_ACCESS"
+#define LOG_CLASS_INFREQUENT_ACCESS_LEN     17
 /* log_group_class not configured; do not send the logGroupClass field in request */
-#define LOG_CLASS_DEFAULT                   0
+#define LOG_CLASS_DEFAULT_TYPE              0
 /* send configured & validated string in request */
 #define LOG_CLASS_STANDARD_TYPE             1
 #define LOG_CLASS_INFREQUENT_ACCESS_TYPE    2

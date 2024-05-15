@@ -1293,7 +1293,7 @@ int create_log_group(struct flb_cloudwatch *ctx, struct log_stream *stream)
     }
 
     /* construct CreateLogGroup request body */
-    if (ctx->log_group_class_type == LOG_CLASS_DEFAULT) {
+    if (ctx->log_group_class_type == LOG_CLASS_DEFAULT_TYPE) {
         tmp = flb_sds_printf(&body, "{\"logGroupName\":\"%s\"}", stream->group);
         if (!tmp) {
             flb_sds_destroy(body);
@@ -1327,7 +1327,8 @@ int create_log_group(struct flb_cloudwatch *ctx, struct log_stream *stream)
 
         if (c->resp.status == 200) {
             /* success */
-            flb_plg_info(ctx->ins, "Created log group %s", stream->group);
+            flb_plg_info(ctx->ins, "Created log group %s with storage class %s", 
+                         stream->group, ctx->log_group_class);
             flb_sds_destroy(body);
             flb_http_client_destroy(c);
             ret = set_log_group_retention(ctx, stream);

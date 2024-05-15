@@ -58,17 +58,21 @@ static int validate_log_group_class(struct flb_cloudwatch *ctx)
     }
 
     if (ctx->log_group_class == NULL || strlen(ctx->log_group_class) == 0) {
-        ctx->log_group_class_type = LOG_CLASS_DEFAULT;
-    } else if (strcmp(ctx->log_group_class, LOG_CLASS_STANDARD) == 0) {
+        ctx->log_group_class_type = LOG_CLASS_DEFAULT_TYPE;
+        ctx->log_group_class = LOG_CLASS_STANDARD;
+        return 0;
+    } else if (strncmp(ctx->log_group_class, LOG_CLASS_STANDARD, LOG_CLASS_STANDARD_LEN) == 0) {
         flb_plg_debug(ctx->ins, "Using explicitly configured `log_group_class %s`, which is the default log class.", ctx->log_group_class);
         ctx->log_group_class_type = LOG_CLASS_STANDARD_TYPE;
         return 0;
-    } else if (strcmp(ctx->log_group_class, LOG_CLASS_INFREQUENT_ACCESS) == 0) {
+    } else if (strncmp(ctx->log_group_class, LOG_CLASS_INFREQUENT_ACCESS, LOG_CLASS_INFREQUENT_ACCESS_LEN) == 0) {
         flb_plg_warn(ctx->ins, "Configured `log_group_class %s` will only apply to log groups created by Fluent Bit. "
                      "Look for the `Created log group` info level message emitted when a group does not already exist and is created.", ctx->log_group_class);
         ctx->log_group_class_type = LOG_CLASS_INFREQUENT_ACCESS_TYPE;
         return 0;
     }
+
+    flb_plg_error(ctx->ins, "The valid values for log_group_class are {%s, %s}. Invalid input was %s", LOG_CLASS_STANDARD, LOG_CLASS_INFREQUENT_ACCESS, ctx->log_group_class);
 
     return -1;
 }
