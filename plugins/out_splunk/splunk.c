@@ -353,9 +353,9 @@ static flb_sds_t extract_hec_token(struct flb_splunk *ctx, msgpack_object map,
     flb_sds_t hec_token;
 
     /* Extract HEC token (map which is from metadata lookup) */
-    if (ctx->event_sourcetype_key) {
-        hec_token = flb_ra_translate(ctx->ra_metadata_auth_key, tag, tag_len,
-                                     map, NULL);
+    if (ctx->metadata_auth_key) {
+        hec_token = flb_ra_translate_check(ctx->ra_metadata_auth_key, tag, tag_len,
+                                     map, NULL, FLB_TRUE);
         if (hec_token) {
             return hec_token;
         }
