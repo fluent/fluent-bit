@@ -1014,7 +1014,7 @@ int flb_utils_write_str_buf(const char *str, size_t str_len, char **out, size_t 
     return 0;
 }
 
-char *flb_copy_host(const char *string, int pos_init, int pos_end)
+static char *flb_copy_host(const char *string, int pos_init, int pos_end)
 {
     if (string[pos_init] == '[') {            /* IPv6 */
         if (string[pos_end-1] != ']') {
@@ -1027,7 +1027,7 @@ char *flb_copy_host(const char *string, int pos_init, int pos_end)
     }
 }
 
-char *flb_copy_host_sds(const char *string, int pos_init, int pos_end)
+char *flb_utils_copy_host_sds(const char *string, int pos_init, int pos_end)
 {
     if (string[pos_init] == '[') {            /* IPv6 */
         if (string[pos_end-1] != ']') {
@@ -1176,7 +1176,7 @@ int flb_utils_url_split_sds(const flb_sds_t in_url, flb_sds_t *out_protocol,
     }
 
     if (tmp) {
-        host = flb_copy_host_sds(p, 0, tmp - p);
+        host = flb_utils_copy_host_sds(p, 0, tmp - p);
         if (!host) {
             flb_errno();
             goto error;
@@ -1197,11 +1197,11 @@ int flb_utils_url_split_sds(const flb_sds_t in_url, flb_sds_t *out_protocol,
     else {
         tmp = strchr(p, '/');
         if (tmp) {
-            host = flb_copy_host_sds(p, 0, tmp - p);
+            host = flb_utils_copy_host_sds(p, 0, tmp - p);
             uri = flb_sds_create(tmp);
         }
         else {
-            host = flb_copy_host_sds(p, 0, strlen(p));
+            host = flb_utils_copy_host_sds(p, 0, strlen(p));
             uri = flb_sds_create("/");
         }
     }
