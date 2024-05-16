@@ -229,6 +229,7 @@ REGISTER_IN_PLUGIN("in_opentelemetry")
 REGISTER_IN_PLUGIN("in_elasticsearch")
 REGISTER_IN_PLUGIN("in_calyptia_fleet")
 REGISTER_IN_PLUGIN("in_splunk")
+REGISTER_IN_PLUGIN("in_prometheus_remote_write")
 
 # Test the event loop messaging when used in threaded mode
 REGISTER_IN_PLUGIN("in_event_test")
