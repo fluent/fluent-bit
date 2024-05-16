@@ -594,6 +594,13 @@ static void flb_signal_handler(int signal)
 
     switch(signal) {
     case SIGSEGV:
+    case SIGABRT:  // Handle SIGABRT
+#ifdef FLB_HAVE_LIBBACKTRACE
+        /* To preserve stacktrace */
+        flb_stacktrace_print(&flb_st);
+#endif
+        printf("SIGABRT received. Exiting gracefully.\n");
+        exit(EXIT_FAILURE);  // Exit gracefully
     case SIGFPE:
 #ifdef FLB_HAVE_LIBBACKTRACE
         /* To preserve stacktrace */
