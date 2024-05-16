@@ -1190,7 +1190,7 @@ int flb_utils_url_split_sds(const flb_sds_t in_url, flb_sds_t *out_protocol,
             uri = flb_sds_create(tmp);
         }
         else {
-            port = flb_sds_create_len(p, tmp - p);
+            port = flb_sds_create_len(p, strlen(p));
             uri = flb_sds_create("/");
         }
     }
