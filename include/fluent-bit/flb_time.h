@@ -54,6 +54,7 @@ enum flb_time_eventtime_fmt {
     FLB_TIME_ETFMT_V0,        /* EventTime (v0) */
     FLB_TIME_ETFMT_V1_EXT,    /* EventTime (v1 ext) */
     FLB_TIME_ETFMT_V1_FIXEXT, /* EventTime (v1 fixext) */
+    FLB_TIME_ETFMT_MSGPACK_TIME_EXT, /* Msgpack Timestamp extension type */
     FLB_TIME_ETFMT_OTHER,
 };
 
