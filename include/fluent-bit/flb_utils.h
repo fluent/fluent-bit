@@ -75,5 +75,7 @@ void flb_utils_set_plugin_string_property(const char *name,
                                           flb_sds_t *field_storage,
                                           flb_sds_t  new_value);
 int flb_utils_mkdir(const char *dir, int perms);
+int flb_utils_url_split_sds(const flb_sds_t in_url, flb_sds_t *out_protocol,
+                            flb_sds_t *out_host, flb_sds_t *out_port, flb_sds_t *out_uri);
 
 #endif

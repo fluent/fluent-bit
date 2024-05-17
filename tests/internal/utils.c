@@ -38,6 +38,88 @@ struct url_check url_checks[] = {
     {-1, "://", NULL, NULL, NULL, NULL},
 };
 
+void test_url_split_sds()
+{
+    int i;
+    int ret;
+    int size;
+    flb_sds_t protocol;
+    flb_sds_t host;
+    flb_sds_t port;
+    flb_sds_t uri;
+    struct url_check *u;
+
+    size = sizeof(url_checks) / sizeof(struct url_check);
+    for (i = 0; i < size; i ++) {
+        u = &url_checks[i];
+
+        protocol = NULL;
+        host = NULL;
+        port = NULL;
+        uri = NULL;
+
+        ret = flb_utils_url_split_sds(u->url, &protocol, &host, &port, &uri);
+        TEST_CHECK(ret == u->ret);
+        if (ret == -1) {
+            continue;
+        }
+
+        /* protocol */
+        if (u->prot) {
+            TEST_CHECK(protocol != NULL);
+
+            ret = strcmp(u->prot, protocol);
+            TEST_CHECK(ret == 0);
+        }
+        else {
+            TEST_CHECK(protocol == NULL);
+        }
+
+        /* host */
+        if (u->host) {
+            TEST_CHECK(host != NULL);
+            ret = strcmp(u->host, host);
+            TEST_CHECK(ret == 0);
+        }
+        else {
+            TEST_CHECK(host == NULL);
+        }
+
+        /* port */
+        if (u->port) {
+            TEST_CHECK(port != NULL);
+            ret = strcmp(u->port, port);
+            TEST_CHECK(ret == 0);
+        }
+        else {
+            TEST_CHECK(port == NULL);
+        }
+
+        /* uri */
+        if (u->uri) {
+            TEST_CHECK(uri != NULL);
+            ret = strcmp(u->uri, uri);
+            TEST_CHECK(ret == 0);
+        }
+        else {
+            TEST_CHECK(uri == NULL);
+        }
+
+        if (protocol) {
+            flb_sds_destroy(protocol);
+        }
+        if (host) {
+            flb_sds_destroy(host);
+        }
+        if (port) {
+            flb_sds_destroy(port);
+        }
+        if (uri) {
+            flb_sds_destroy(uri);
+        }
+    }
+}
+
 void test_url_split()
 {
     int i;
@@ -711,6 +793,7 @@ void test_size_to_bytes()
 TEST_LIST = {
     /* JSON maps iteration */
     { "url_split", test_url_split },
+    { "url_split_sds", test_url_split_sds },
     { "write_str", test_write_str },
     { "write_str_special_bytes", test_write_str_special_bytes },
     { "test_write_str_invalid_trailing_bytes", test_write_str_invalid_trailing_bytes },
