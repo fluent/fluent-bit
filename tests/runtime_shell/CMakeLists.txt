@@ -20,10 +20,15 @@ foreach(script ${UNIT_TESTS_SH})
     COMMAND ${CMAKE_CURRENT_SOURCE_DIR}/${script}
     )
 
-  set_tests_properties(${script} PROPERTIES ENVIRONMENT
-    "FLB_ROOT=${PROJECT_SOURCE_DIR};\
+  set_tests_properties(${script} PROPERTIES
+    ENVIRONMENT "FLB_ROOT=${PROJECT_SOURCE_DIR};\
 FLB_RUNTIME_SHELL_PATH=${CMAKE_CURRENT_SOURCE_DIR};\
 FLB_RUNTIME_SHELL_CONF=${CMAKE_CURRENT_SOURCE_DIR}/conf;\
 FLB_BIN=${CMAKE_BINARY_DIR}/bin/fluent-bit"
+    # Most tests rely on FluentBit exiting as a success case by logs
+    # coming in and hitting the 'exit' output plugin type. Failure
+    # in these scenarios results in FluentBit running forever, so keep
+    # a short timeout for each test by default
+    TIMEOUT 10
     )
 endforeach()
