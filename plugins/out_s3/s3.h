@@ -47,6 +47,13 @@
 
 #define DEFAULT_UPLOAD_TIMEOUT 3600
 
+#define DEFAULT_PARQUET_COMPRESSION_FORMAT         "snappy"
+#define DEFAULT_PARQUET_COMPRESSION_FORMAT_UPCASES "SNAPPY"
+#define DEFAULT_PARQUET_RECORD_TYPE                "jsonl"
+#define DEFAULT_PARQUET_SCHEMA_TYPE                "avro"
+#define DEFAULT_PARQUET_COMMAND                    "columnify"
+#define DEFAULT_PARQUET_COMMAND_EXISTENCE          "columnify -h"
+
 /*
  * If we see repeated errors on an upload/chunk, we will discard it
  * This saves us from scenarios where something goes wrong and an upload can
@@ -146,6 +153,14 @@ struct flb_s3 {
     struct flb_fstore_stream *stream_active;  /* default active stream */
     struct flb_fstore_stream *stream_upload;  /* multipart upload stream */
     struct flb_fstore_stream *stream_metadata; /* s3 metadata stream */
+
+    /* Parquet */
+    flb_sds_t parquet_compression;
+    size_t parquet_page_size;
+    size_t parquet_row_group_size;
+    flb_sds_t parquet_record_type;
+    flb_sds_t parquet_schema_type;
+    flb_sds_t parquet_schema_file;
 
     /*
      * used to track that unset buffers were found on startup that have not
