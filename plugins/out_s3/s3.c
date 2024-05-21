@@ -1344,7 +1344,6 @@ static int s3_compress_parquet(struct flb_s3 *ctx,
         flb_plg_error(ctx->ins, "command %s failed", DEFAULT_PARQUET_COMMAND_EXISTENCE);
         return -1;
     }
-
     fclose(write_ptr);
     flb_pclose(cmdp);
 
@@ -1354,7 +1353,18 @@ static int s3_compress_parquet(struct flb_s3 *ctx,
     }
     parquet_size = stbuf.st_size;
     parquet_buf = flb_sds_create_size(parquet_size);
+
     fread(parquet_buf, parquet_size, 1, read_ptr);
+
+    /* Tweardown for temporary files */
+    if (unlink(infile) != 0) {
+        ret = -6;
+        flb_plg_warn(ctx->ins, "unlink %s is failed", infile);
+    }
+    if (unlink(outfile) != 0) {
+        ret = -6;
+        flb_plg_warn(ctx->ins, "unlink %s is failed", outfile);
+    }
     fclose(read_ptr);
 
     *payload_buf = parquet_buf;
