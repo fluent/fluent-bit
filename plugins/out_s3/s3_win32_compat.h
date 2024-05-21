@@ -72,6 +72,8 @@ static inline int flb_mkstemp(char *template) {
     return 0;
 }
 
+#define fileno _fileno
+
 #endif
 
 #endif /* FLB_S3_WIN32_COMPAT_H */

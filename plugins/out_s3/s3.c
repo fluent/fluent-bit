@@ -1320,7 +1320,7 @@ static int s3_compress_parquet(struct flb_s3 *ctx,
         goto error;
     }
 
-    fdout = open(outfile, O_RDONLY);
+    fdout = fileno(read_ptr);
     if (fdout == -1) {
         ret = -3;
         goto error;
@@ -1365,9 +1365,6 @@ static int s3_compress_parquet(struct flb_s3 *ctx,
         flb_plg_warn(ctx->ins, "unlink %s is failed", outfile);
     }
     fclose(read_ptr);
-    if (fdout != -1) {
-        close(fdout);
-    }
 
     *payload_buf = parquet_buf;
     *payload_size = parquet_size;
@@ -1382,9 +1379,6 @@ error:
     }
     if (read_ptr != NULL) {
         fclose(read_ptr);
-    }
-    if (fdout != -1) {
-        close(fdout);
     }
     if (parquet_cmd != NULL) {
         flb_sds_destroy(parquet_cmd);
