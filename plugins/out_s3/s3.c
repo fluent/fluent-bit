@@ -736,8 +736,7 @@ static int cb_s3_init(struct flb_output_instance *ins,
             flb_plg_info(ctx->ins, "parquet.record_type format is %s",
                          DEFAULT_PARQUET_RECORD_TYPE);
             ctx->parquet_record_type = \
-                    flb_sds_create_len(DEFAULT_PARQUET_RECORD_TYPE,
-                                       strlen(DEFAULT_PARQUET_RECORD_TYPE));
+                    flb_sds_create(DEFAULT_PARQUET_RECORD_TYPE);
         }
         else {
             if (strncasecmp(tmp, "json", 4) == 0) {
@@ -760,8 +759,7 @@ static int cb_s3_init(struct flb_output_instance *ins,
             flb_plg_info(ctx->ins, "parquet.schema_type format is %s",
                          DEFAULT_PARQUET_SCHEMA_TYPE);
             ctx->parquet_schema_type = \
-                    flb_sds_create_len(DEFAULT_PARQUET_SCHEMA_TYPE,
-                                       strlen(DEFAULT_PARQUET_SCHEMA_TYPE));
+                    flb_sds_create(DEFAULT_PARQUET_SCHEMA_TYPE);
         }
         else {
             if (strncasecmp(tmp, "avro", 4) == 0 ||
