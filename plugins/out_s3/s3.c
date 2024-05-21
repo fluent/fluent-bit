@@ -704,8 +704,7 @@ static int cb_s3_init(struct flb_output_instance *ins,
         tmp = flb_output_get_property("parquet.compression", ins);
         if (!tmp) {
             ctx->parquet_compression = \
-                    flb_sds_create_len(DEFAULT_PARQUET_COMPRESSION_FORMAT_UPCASES,
-                                       strlen(DEFAULT_PARQUET_COMPRESSION_FORMAT_UPCASES));
+                    flb_sds_create(DEFAULT_PARQUET_COMPRESSION_FORMAT_UPCASES);
             flb_plg_debug(ctx->ins, "parquet.compression format is %s",
                           DEFAULT_PARQUET_COMPRESSION_FORMAT_UPCASES);
         }
