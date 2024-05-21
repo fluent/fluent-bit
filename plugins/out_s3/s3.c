@@ -1269,7 +1269,134 @@ error:
     return ret;
 }
 
+#if defined(FLB_SYSTEM_WINDOWS)
+static int s3_compress_parquet(struct flb_s3 *ctx,
+                               char *body, size_t body_size,
+                               void **payload_buf, size_t *payload_size)
+{
+    int ret = 0;
+    char *template_in = "out_s3-body-XXXXXX";
+    char *template_out = "out_s3-parquet-XXXXXX";
+    char infile[32];
+    char outfile[32];
+    HANDLE wh = NULL;
+    HANDLE rh = NULL;
+    BOOL result = FALSE;
+    flb_sds_t parquet_cmd = NULL;
+    DWORD bytes;
+    FILE *cmdp = NULL;
+    size_t parquet_size = 0;
+    struct stat stbuf;
+    int fdout = -1;
+    flb_sds_t parquet_buf;
+    LPVOID lpBuffer;
 
+    parquet_cmd = flb_sds_create_size(256);
+    if (parquet_cmd == NULL) {
+        goto error;
+    }
+
+    strncpy(infile, template_in, 32);
+    if (_mktemp_s(infile, sizeof(infile)) != 0) {
+        flb_errno();
+        ret = -2;
+        goto error;
+    }
+
+    strncpy(outfile, template_out, 32);
+    if (_mktemp_s(outfile, sizeof(outfile)) != 0) {
+        flb_errno();
+        ret = -2;
+        goto error;
+    }
+
+    wh = CreateFileA(infile,
+                     GENERIC_WRITE,
+                     FILE_SHARE_READ | FILE_SHARE_WRITE | FILE_SHARE_DELETE,
+                     NULL,
+                     CREATE_ALWAYS,
+                     0,
+                     NULL);
+    if (wh == INVALID_HANDLE_VALUE) {
+        ret = -3;
+        goto error;
+    }
+
+    rh = CreateFileA(outfile,
+                     GENERIC_READ,
+                     FILE_SHARE_READ | FILE_SHARE_WRITE | FILE_SHARE_DELETE,
+                     NULL,
+                     CREATE_ALWAYS,
+                     0,
+                     NULL);
+    if (rh == INVALID_HANDLE_VALUE) {
+        ret = -4;
+        goto error;
+    }
+
+    fdout = _open_osfhandle((intptr_t) rh, _O_RDONLY);
+    if (fdout == -1) {
+        ret = -3;
+        goto error;
+    }
+
+    result = WriteFile(wh, body, body_size, &bytes, NULL);
+    if (!result) {
+        ret = -5;
+        goto error;
+    }
+    CloseHandle(wh);
+
+    ret = build_columnify_command(ctx, infile, outfile, &parquet_cmd);
+    if (ret != 0) {
+        ret = -1;
+        goto error;
+    }
+
+    cmdp = _popen(parquet_cmd, "r");
+    if (cmdp == NULL) {
+        flb_plg_error(ctx->ins, "command %s failed", DEFAULT_PARQUET_COMMAND_EXISTENCE);
+        return -1;
+    }
+    _pclose(cmdp);
+
+    if (fstat(fdout, &stbuf) == -1) {
+        ret = -6;
+        goto error;
+    }
+    parquet_size = stbuf.st_size;
+    parquet_buf = flb_sds_create_size(parquet_size);
+
+    result = ReadFile(rh, parquet_buf, parquet_size, &bytes, NULL);
+    if (!result) {
+        ret = -5;
+        goto error;
+    }
+
+    CloseHandle(rh);
+
+    *payload_buf = parquet_buf;
+    *payload_size = parquet_size;
+
+    flb_sds_destroy(parquet_cmd);
+
+    return 0;
+
+error:
+    if (wh != NULL) {
+        CloseHandle(wh);
+    }
+    if (rh != NULL) {
+        CloseHandle(rh);
+    }
+    if (parquet_cmd != NULL) {
+        flb_sds_destroy(parquet_cmd);
+    }
+
+    return ret;
+}
+
+#else
 static int s3_compress_parquet(struct flb_s3 *ctx,
                                char *body, size_t body_size,
                                void **payload_buf, size_t *payload_size)
@@ -1384,6 +1511,7 @@ error:
 
     return ret;
 }
+#endif
 
 /*
  * return value is one of FLB_OK, FLB_RETRY, FLB_ERROR
