@@ -765,12 +765,12 @@ static int cb_s3_init(struct flb_output_instance *ins,
                                        strlen(DEFAULT_PARQUET_SCHEMA_TYPE));
         }
         else {
-            if (strncasecmp(tmp, "msgpack", 7) == 0 ||
-                strncasecmp(tmp, "json", 4) == 0) {
-                flb_plg_info(ctx->ins, "parquet.record_type format is %s", tmp);
+            if (strncasecmp(tmp, "avro", 4) == 0 ||
+                strncasecmp(tmp, "bigquery", 8) == 0) {
+                flb_plg_info(ctx->ins, "parquet.schema_type format is %s", tmp);
             }
             else {
-                flb_plg_error(ctx->ins, "unknown parquet.record_type format %s", tmp);
+                flb_plg_error(ctx->ins, "unknown parquet.schema_type format %s", tmp);
                 return -1;
             }
             ctx->parquet_schema_type = flb_sds_create_len(tmp, strlen(tmp));
