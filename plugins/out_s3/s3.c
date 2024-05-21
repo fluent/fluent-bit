@@ -1375,6 +1375,15 @@ static int s3_compress_parquet(struct flb_s3 *ctx,
 
     CloseHandle(rh);
 
+    if (!DeleteFileA(infile)) {
+        ret = -6;
+        flb_plg_error(ctx->ins, "DeleteFileA for %s failed", infile);
+    }
+    if (!DeleteFileA(outfile)) {
+        ret = -6;
+        flb_plg_error(ctx->ins, "DeleteFileA for %s failed", outfile);
+    }
+
     *payload_buf = parquet_buf;
     *payload_size = parquet_size;
 
