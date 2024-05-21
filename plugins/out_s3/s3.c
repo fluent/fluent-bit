@@ -1365,6 +1365,9 @@ static int s3_compress_parquet(struct flb_s3 *ctx,
         flb_plg_warn(ctx->ins, "unlink %s is failed", outfile);
     }
     fclose(read_ptr);
+    if (fdout != -1) {
+        close(fdout);
+    }
 
     *payload_buf = parquet_buf;
     *payload_size = parquet_size;
@@ -1380,7 +1383,7 @@ error:
     if (read_ptr != NULL) {
         fclose(read_ptr);
     }
-    if (fdout == -1) {
+    if (fdout != -1) {
         close(fdout);
     }
     if (parquet_cmd != NULL) {
