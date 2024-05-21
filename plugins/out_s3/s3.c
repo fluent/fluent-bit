@@ -1099,33 +1099,16 @@ static int cb_s3_init(struct flb_output_instance *ins,
     return 0;
 }
 
-static int s3_compress_parquet(struct flb_s3 *ctx,
-                               char *body, size_t body_size,
-                               void **payload_buf, size_t *payload_size)
+static int build_columnify_command(struct flb_s3 *ctx,
+                                   char *infile,
+                                   char *outfile,
+                                   flb_sds_t *cmd_buf)
 {
-    int ret = 0;
-    int result = 0;
-    char *template_in = "out_s3-body-XXXXXX";
-    char *template_out = "out_s3-parquet-XXXXXX";
-    char infile[32];
-    char outfile[32];
-    FILE *write_ptr = NULL;
-    FILE *read_ptr = NULL;
-    flb_sds_t parquet_cmd = NULL;
-    size_t bytes;
-    flb_sds_t tmp;
+    int ret = -1;
+    int result;
+    flb_sds_t tmp = NULL;
     flb_sds_t amount_page = NULL;
     flb_sds_t amount_row_group = NULL;
-    FILE *cmdp = NULL;
-    size_t parquet_size = 0;
-    struct stat stbuf;
-    int fdout = -1;
-    flb_sds_t parquet_buf;
-
-    parquet_cmd = flb_sds_create_size(384);
-    if (parquet_cmd == NULL) {
-        goto error;
-    }
 
     amount_page = flb_sds_create_size(16);
     if (amount_page == NULL) {
@@ -1134,6 +1117,183 @@ static int s3_compress_parquet(struct flb_s3 *ctx,
 
     amount_row_group = flb_sds_create_size(16);
     if (amount_row_group == NULL) {
+        goto error;
+    }
+
+    result = flb_sds_cat_safe(cmd_buf,
+                              DEFAULT_PARQUET_COMMAND, strlen(DEFAULT_PARQUET_COMMAND));
+    if (result < 0) {
+        ret = -1;
+        goto error;
+    }
+
+    result = flb_sds_cat_safe(cmd_buf,
+                              " -parquetCompressionCodec ", 26);
+    if (result < 0) {
+        ret = -1;
+        goto error;
+    }
+
+    result = flb_sds_cat_safe(cmd_buf,
+                              ctx->parquet_compression,
+                              flb_sds_len(ctx->parquet_compression));
+    if (result < 0) {
+        ret = -1;
+        goto error;
+    }
+
+
+    result = flb_sds_cat_safe(cmd_buf,
+                              " -parquetPageSize ", 18);
+    if (result < 0) {
+        ret = -1;
+        goto error;
+    }
+
+    tmp = flb_sds_printf(&amount_page, "%zu", ctx->parquet_page_size);
+    if (!tmp) {
+        flb_errno();
+        ret = -1;
+        goto error;
+    }
+
+    result = flb_sds_cat_safe(cmd_buf,
+                              amount_page, strlen(amount_page));
+    if (result < 0) {
+        ret = -1;
+        goto error;
+    }
+
+    result = flb_sds_cat_safe(cmd_buf,
+                              " -parquetRowGroupSize ", 22);
+    if (result < 0) {
+        ret = -1;
+        goto error;
+    }
+
+    tmp = flb_sds_printf(&amount_row_group, "%zu", ctx->parquet_row_group_size);
+    if (!tmp) {
+        flb_errno();
+        ret = -1;
+        goto error;
+    }
+
+    result = flb_sds_cat_safe(cmd_buf,
+                              amount_row_group, strlen(amount_row_group));
+    if (result < 0) {
+        ret = -1;
+        goto error;
+    }
+
+    result = flb_sds_cat_safe(cmd_buf,
+                              " -recordType ", 13);
+    if (result < 0) {
+        ret = -1;
+        goto error;
+    }
+
+    result = flb_sds_cat_safe(cmd_buf,
+                              ctx->parquet_record_type,
+                              flb_sds_len(ctx->parquet_record_type));
+    if (result < 0) {
+        ret = -1;
+        goto error;
+    }
+
+    result = flb_sds_cat_safe(cmd_buf,
+                              " -schemaType ", 13);
+    if (result < 0) {
+        ret = -1;
+        goto error;
+    }
+
+    result = flb_sds_cat_safe(cmd_buf,
+                              ctx->parquet_schema_type,
+                              flb_sds_len(ctx->parquet_schema_type));
+    if (result < 0) {
+        ret = -1;
+        goto error;
+    }
+
+    result = flb_sds_cat_safe(cmd_buf,
+                              " -schemaFile ", 13);
+    if (result < 0) {
+        ret = -1;
+        goto error;
+    }
+
+    result = flb_sds_cat_safe(cmd_buf,
+                              ctx->parquet_schema_file,
+                              flb_sds_len(ctx->parquet_schema_file));
+    if (result < 0) {
+        ret = -1;
+        goto error;
+    }
+
+    result = flb_sds_cat_safe(cmd_buf,
+                              " -output ", 9);
+    if (result < 0) {
+        ret = -1;
+        goto error;
+    }
+
+    result = flb_sds_cat_safe(cmd_buf,
+                              outfile, strlen(outfile));
+    if (result < 0) {
+        ret = -1;
+        goto error;
+    }
+
+    result = flb_sds_cat_safe(cmd_buf, " ", 1);
+    if (result < 0) {
+        ret = -1;
+        goto error;
+    }
+
+    result = flb_sds_cat_safe(cmd_buf, infile, strlen(infile));
+    if (result < 0) {
+        ret = -1;
+        goto error;
+    }
+
+    flb_sds_destroy(amount_page);
+    flb_sds_destroy(amount_row_group);
+
+    return 0;
+
+error:
+    if (amount_page != NULL) {
+        flb_sds_destroy(amount_page);
+    }
+    if (amount_row_group != NULL) {
+        flb_sds_destroy(amount_row_group);
+    }
+
+    return ret;
+}
+
+
+static int s3_compress_parquet(struct flb_s3 *ctx,
+                               char *body, size_t body_size,
+                               void **payload_buf, size_t *payload_size)
+{
+    int ret = 0;
+    char *template_in = "out_s3-body-XXXXXX";
+    char *template_out = "out_s3-parquet-XXXXXX";
+    char infile[32];
+    char outfile[32];
+    FILE *write_ptr = NULL;
+    FILE *read_ptr = NULL;
+    flb_sds_t parquet_cmd = NULL;
+    size_t bytes;
+    FILE *cmdp = NULL;
+    size_t parquet_size = 0;
+    struct stat stbuf;
+    int fdout = -1;
+    flb_sds_t parquet_buf;
+
+    parquet_cmd = flb_sds_create_size(384);
+    if (parquet_cmd == NULL) {
         goto error;
     }
 
@@ -1173,138 +1333,8 @@ static int s3_compress_parquet(struct flb_s3 *ctx,
         goto error;
     }
 
-    result = flb_sds_cat_safe(&parquet_cmd,
-                              DEFAULT_PARQUET_COMMAND, strlen(DEFAULT_PARQUET_COMMAND));
-    if (result < 0) {
-        ret = -1;
-        goto error;
-    }
-
-    result = flb_sds_cat_safe(&parquet_cmd,
-                              " -parquetCompressionCodec ", 26);
-    if (result < 0) {
-        ret = -1;
-        goto error;
-    }
-
-    result = flb_sds_cat_safe(&parquet_cmd,
-                              ctx->parquet_compression,
-                              flb_sds_len(ctx->parquet_compression));
-    if (result < 0) {
-        ret = -1;
-        goto error;
-    }
-
-
-    result = flb_sds_cat_safe(&parquet_cmd,
-                              " -parquetPageSize ", 18);
-    if (result < 0) {
-        ret = -1;
-        goto error;
-    }
-
-    tmp = flb_sds_printf(&amount_page, "%zu", ctx->parquet_page_size);
-    if (!tmp) {
-        flb_errno();
-        ret = -1;
-        goto error;
-    }
-
-    result = flb_sds_cat_safe(&parquet_cmd,
-                              amount_page, strlen(amount_page));
-    if (result < 0) {
-        ret = -1;
-        goto error;
-    }
-
-    result = flb_sds_cat_safe(&parquet_cmd,
-                              " -parquetRowGroupSize ", 22);
-    if (result < 0) {
-        ret = -1;
-        goto error;
-    }
-
-    tmp = flb_sds_printf(&amount_row_group, "%zu", ctx->parquet_row_group_size);
-    if (!tmp) {
-        flb_errno();
-        ret = -1;
-        goto error;
-    }
-
-    result = flb_sds_cat_safe(&parquet_cmd,
-                              amount_row_group, strlen(amount_row_group));
-    if (result < 0) {
-        ret = -1;
-        goto error;
-    }
-
-    result = flb_sds_cat_safe(&parquet_cmd,
-                              " -recordType ", 13);
-    if (result < 0) {
-        ret = -1;
-        goto error;
-    }
-
-    result = flb_sds_cat_safe(&parquet_cmd,
-                              ctx->parquet_record_type,
-                              flb_sds_len(ctx->parquet_record_type));
-    if (result < 0) {
-        ret = -1;
-        goto error;
-    }
-
-    result = flb_sds_cat_safe(&parquet_cmd,
-                              " -schemaType ", 13);
-    if (result < 0) {
-        ret = -1;
-        goto error;
-    }
-
-    result = flb_sds_cat_safe(&parquet_cmd,
-                              ctx->parquet_schema_type,
-                              flb_sds_len(ctx->parquet_schema_type));
-    if (result < 0) {
-        ret = -1;
-        goto error;
-    }
-
-    result = flb_sds_cat_safe(&parquet_cmd,
-                              " -schemaFile ", 13);
-    if (result < 0) {
-        ret = -1;
-        goto error;
-    }
-
-    result = flb_sds_cat_safe(&parquet_cmd,
-                              ctx->parquet_schema_file,
-                              flb_sds_len(ctx->parquet_schema_file));
-    if (result < 0) {
-        ret = -1;
-        goto error;
-    }
-
-    result = flb_sds_cat_safe(&parquet_cmd,
-                              " -output ", 9);
-    if (result < 0) {
-        ret = -1;
-        goto error;
-    }
-
-    result = flb_sds_cat_safe(&parquet_cmd,
-                              outfile, strlen(outfile));
-    if (result < 0) {
-        ret = -1;
-        goto error;
-    }
-
-    result = flb_sds_cat_safe(&parquet_cmd, " ", 1);
-    if (result < 0) {
-        ret = -1;
-        goto error;
-    }
-
-    result = flb_sds_cat_safe(&parquet_cmd, infile, strlen(infile));
-    if (result < 0) {
+    ret = build_columnify_command(ctx, infile, outfile, &parquet_cmd);
+    if (ret != 0) {
         ret = -1;
         goto error;
     }
@@ -1331,8 +1361,6 @@ static int s3_compress_parquet(struct flb_s3 *ctx,
     *payload_size = parquet_size;
 
     flb_sds_destroy(parquet_cmd);
-    flb_sds_destroy(amount_page);
-    flb_sds_destroy(amount_row_group);
 
     return 0;
 
@@ -1348,12 +1376,6 @@ error:
     }
     if (parquet_cmd != NULL) {
         flb_sds_destroy(parquet_cmd);
-    }
-    if (amount_page != NULL) {
-        flb_sds_destroy(amount_page);
-    }
-    if (amount_row_group != NULL) {
-        flb_sds_destroy(amount_row_group);
     }
 
     return ret;
