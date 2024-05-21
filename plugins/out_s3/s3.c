@@ -1297,13 +1297,13 @@ static int s3_compress_parquet(struct flb_s3 *ctx,
     }
 
     strncpy(infile, template_in, 32);
-    if (!mkstemp(infile)) {
+    if (!flb_mkstemp(infile)) {
         ret = -2;
         goto error;
     }
 
     strncpy(outfile, template_out, 32);
-    if (!mkstemp(outfile)) {
+    if (!flb_mkstemp(outfile)) {
         ret = -2;
         goto error;
     }

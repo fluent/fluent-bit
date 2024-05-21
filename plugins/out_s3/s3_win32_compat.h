@@ -36,6 +36,10 @@ static inline FILE* flb_popen(const char *command, const char *type) {
 static inline int flb_pclose(FILE *stream) {
     return pclose(stream);
 }
+static inline int flb_mkstemp(char *template) {
+    return mkstemp(template);
+}
+
 #define FLB_PCLOSE pclose
 #else
 static inline FILE* flb_popen(const char *command, const char *type) {
@@ -59,6 +63,11 @@ static inline FILE* flb_popen(const char *command, const char *type) {
 static inline int flb_pclose(FILE *stream) {
     return _pclose(stream);
 }
+
+static inline int flb_mkstemp(char *template) {
+    return _mktemp_s(template, strlen(template));
+}
+
 #endif
 
 #endif /* FLB_S3_WIN32_COMPAT_H */
