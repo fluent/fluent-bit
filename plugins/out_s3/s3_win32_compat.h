@@ -36,12 +36,10 @@ static inline FILE* flb_popen(const char *command, const char *type) {
 static inline int flb_pclose(FILE *stream) {
     return pclose(stream);
 }
-static inline int flb_mkstemp(char *template) {
-    return mkstemp(template);
-}
 
 #define FLB_PCLOSE pclose
 #else
+
 static inline FILE* flb_popen(const char *command, const char *type) {
     return _popen(command, type);
 }
@@ -63,16 +61,6 @@ static inline FILE* flb_popen(const char *command, const char *type) {
 static inline int flb_pclose(FILE *stream) {
     return _pclose(stream);
 }
-
-static inline int flb_mkstemp(char *template) {
-    if (_mktemp_s(template, strlen(template) + 1) != 0) {
-        return -1;
-    }
-
-    return 0;
-}
-
-#define fileno _fileno
 
 #endif
 
