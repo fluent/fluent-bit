@@ -1489,7 +1489,11 @@ static int s3_compress_parquet(struct flb_s3 *ctx,
     parquet_size = stbuf.st_size;
     parquet_buf = flb_sds_create_size(parquet_size);
 
-    fread(parquet_buf, parquet_size, 1, read_ptr);
+    bytes = fread(parquet_buf, parquet_size, 1, read_ptr);
+    if (bytes == -1) {
+        ret = -5;
+        goto error;
+    }
 
     /* Tweardown for temporary files */
     if (unlink(infile) != 0) {
