@@ -291,7 +291,7 @@ static int item_get_timestamp(msgpack_object *obj, struct flb_time *event_time)
 }
 
 static bool check_event_is_filtered(struct k8s_events *ctx, msgpack_object *obj,
-                                    time_t* event_time)
+                                    struct flb_time *event_time)
 {
     int ret;
     time_t now;
@@ -300,7 +300,7 @@ static bool check_event_is_filtered(struct k8s_events *ctx, msgpack_object *obj,
     uint64_t resource_version;
 
     now = (time_t)(cfl_time_now() / 1000000000);
-    if (*event_time < (now - ctx->retention_time)) {
+    if (event_time->tm.tv_sec < (now - ctx->retention_time)) {
         flb_plg_debug(ctx->ins, "Item is older than retention_time: %ld < %ld",
                       *event_time,  (now - ctx->retention_time));
         return FLB_TRUE;
