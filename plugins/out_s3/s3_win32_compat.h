@@ -65,7 +65,11 @@ static inline int flb_pclose(FILE *stream) {
 }
 
 static inline int flb_mkstemp(char *template) {
-    return _mktemp_s(template, strlen(template));
+    if (_mktemp_s(template, strlen(template) + 1) != 0) {
+        return -1;
+    }
+
+    return 0;
 }
 
 #endif
