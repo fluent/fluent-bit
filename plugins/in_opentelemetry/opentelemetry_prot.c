@@ -2205,6 +2205,9 @@ static int process_payload_metrics_ng(struct flb_opentelemetry *ctx,
 
         cmt_decode_opentelemetry_destroy(&decoded_contexts);
     }
+    else {
+        flb_plg_warn(ctx->ins, "non-success cmetrics opentelemetry decode result %d", result);
+    }
 
     return 0;
 }
@@ -2241,6 +2244,9 @@ static int process_payload_traces_proto_ng(struct flb_opentelemetry *ctx,
     if (result == 0) {
         result = flb_input_trace_append(ctx->ins, NULL, 0, decoded_context);
         ctr_decode_opentelemetry_destroy(decoded_context);
+    }
+    else {
+        flb_plg_warn(ctx->ins, "non-success ctraces opentelemetry decode result %d", result);
     }
 
     return result;
