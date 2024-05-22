@@ -2207,6 +2207,7 @@ static int process_payload_metrics_ng(struct flb_opentelemetry *ctx,
     }
     else {
         flb_plg_warn(ctx->ins, "non-success cmetrics opentelemetry decode result %d", result);
+        return -1;
     }
 
     return 0;
