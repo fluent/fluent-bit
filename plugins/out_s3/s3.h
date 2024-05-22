@@ -52,7 +52,11 @@
 #define DEFAULT_PARQUET_RECORD_TYPE                "jsonl"
 #define DEFAULT_PARQUET_SCHEMA_TYPE                "avro"
 #define DEFAULT_PARQUET_COMMAND                    "columnify"
+#if defined(FLB_SYSTEM_WINDOWS)
+#define DEFAULT_PARQUET_COMMAND_EXISTENCE          "where columnify"
+#else
 #define DEFAULT_PARQUET_COMMAND_EXISTENCE          "columnify -h"
+#endif
 
 /*
  * If we see repeated errors on an upload/chunk, we will discard it
