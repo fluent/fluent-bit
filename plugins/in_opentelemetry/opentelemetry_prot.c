@@ -2423,6 +2423,7 @@ int opentelemetry_prot_handle_ng(struct flb_http_request *request,
     int                             grpc_request;
     struct flb_opentelemetry       *context;
     int                             result = -1;
+    flb_sds_t                       tag;
 
     context = (struct flb_opentelemetry *) response->stream->user_data;
 
@@ -2466,19 +2467,37 @@ int opentelemetry_prot_handle_ng(struct flb_http_request *request,
         strcmp(request->path, "/opentelemetry.proto.collector.metric.v1.MetricService/Export") == 0 ||
         strcmp(request->path, "/opentelemetry.proto.collector.metrics.v1.MetricsService/Export") == 0) {
         payload_type = 'M';
-        result = process_payload_metrics_ng(context, context->ins->tag, request, response);
+        if (context->tag_from_uri == FLB_TRUE) {
+            tag = flb_sds_create("v1_metrics");
+        }
+        else {
+            tag = flb_sds_create(context->ins->tag);
+        }
+        result = process_payload_metrics_ng(context, tag, request, response);
     }
     else if (strcmp(request->path, "/v1/traces") == 0 ||
              strcmp(request->path, "/opentelemetry.proto.collector.trace.v1.TraceService/Export") == 0 ||
              strcmp(request->path, "/opentelemetry.proto.collector.traces.v1.TracesService/Export") == 0) {
         payload_type = 'T';
-        result = process_payload_traces_ng(context, context->ins->tag, request, response);
+        if (context->tag_from_uri == FLB_TRUE) {
+            tag = flb_sds_create("v1_traces");
+        }
+        else {
+            tag = flb_sds_create(context->ins->tag);
+        }
+        result = process_payload_traces_ng(context, tag, request, response);
     }
     else if (strcmp(request->path, "/v1/logs") == 0 ||
              strcmp(request->path, "/opentelemetry.proto.collector.log.v1.LogService/Export") == 0 ||
              strcmp(request->path, "/opentelemetry.proto.collector.logs.v1.LogsService/Export") == 0) {
         payload_type = 'L';
-        result = process_payload_logs_ng(context, context->ins->tag, request, response);
+        if (context->tag_from_uri == FLB_TRUE) {
+            tag = flb_sds_create("v1_logs");
+        }
+        else {
+            tag = flb_sds_create(context->ins->tag);
+        }
+        result = process_payload_logs_ng(context, tag, request, response);
     }
 
     if (grpc_request) {
@@ -2492,6 +2511,8 @@ int opentelemetry_prot_handle_ng(struct flb_http_request *request,
             send_response_ng(response, 400, "invalid request: deserialisation error\n");
         }
     }
+
+    flb_sds_destroy(tag);
 
     return result;
 }
