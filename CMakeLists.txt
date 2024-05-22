@@ -30,6 +30,10 @@ endif()
 if(CMAKE_SYSTEM_NAME MATCHES "Linux")
   set(FLB_SYSTEM_LINUX On)
   add_definitions(-DFLB_SYSTEM_LINUX)
+  if (CMAKE_SYSTEM_PROCESSOR MATCHES "^(arm64|aarch64)")
+    set(FLB_LINUX_ON_ARM On)
+    add_definitions(-DFLB_LINUX_ON_ARM)
+  endif()
 endif()
 
 # Update CFLAGS
@@ -146,6 +150,9 @@ option(FLB_WINDOWS_DEFAULTS    "Build with predefined Windows settings"     Yes)
 option(FLB_WASM                "Build with WASM runtime support"            Yes)
 option(FLB_WAMRC               "Build with WASM AOT compiler executable"    No)
 option(FLB_WASM_STACK_PROTECT  "Build with WASM runtime with strong stack protector flags" No)
+if (FLB_LINUX_ON_ARM)
+  option(FLB_PREFER_SIGNED_CHAR  "Build with signed char (Linux on ARM only)"     No)
+endif()
 
 # Native Metrics Support (cmetrics)
 option(FLB_METRICS             "Enable metrics support"       Yes)
@@ -404,6 +411,14 @@ endif()
 if (FLB_SYSTEM_LINUX)
   include(cmake/s390x.cmake)
 endif ()
+
+# Enable signed char support on Linux ARM if specified
+if (FLB_LINUX_ON_ARM)
+  if (FLB_PREFER_SIGNED_CHAR)
+    set (CMAKE_C_FLAGS "${CMAKE_C_FLAGS} -fsigned-char")
+    message(STATUS "Enabling signed char")
+  endif()
+endif()
 
 # Extract Git commit information for debug output.
 # Note that this is only set when cmake is run, the intent here is to use in CI for verification of releases so is acceptable.
