@@ -793,6 +793,7 @@ jobs:
           name: "Fluent Bit ${{ inputs.version }}"
           tag_name: v${{ inputs.version }}
           target_commitish: '2.0'
+          make_latest: false
 
       - name: Release 2.1 - not latest
         uses: softprops/action-gh-release@v2
@@ -804,6 +805,7 @@ jobs:
           name: "Fluent Bit ${{ inputs.version }}"
           tag_name: v${{ inputs.version }}
           target_commitish: '2.1'
+          make_latest: false
 
       - name: Release 2.2 - not latest
         uses: softprops/action-gh-release@v2
@@ -815,6 +817,7 @@ jobs:
           name: "Fluent Bit ${{ inputs.version }}"
           tag_name: v${{ inputs.version }}
           target_commitish: '2.2'
+          make_latest: false
 
       - name: Release 3.0 and latest
         uses: softprops/action-gh-release@v2
@@ -825,6 +828,7 @@ jobs:
           generate_release_notes: true
           name: "Fluent Bit ${{ inputs.version }}"
           tag_name: v${{ inputs.version }}
+          make_latest: true
 
   staging-release-windows-checksums:
     name: Get Windows checksums for new release
