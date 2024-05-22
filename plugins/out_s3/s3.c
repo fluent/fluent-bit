@@ -1406,15 +1406,80 @@ error:
 }
 
 #else
+static const char *get_tmpdir()
+{
+    const char* tmp;
+#ifdef __ANDROID__
+        tmp = "/data/local/tmp";
+#else
+        tmp = "/tmp";
+#endif
+    return tmp;
+}
+
+static int create_tmpfile(char *file_path, char *template, size_t template_len)
+{
+    int ret;
+    int result;
+    flb_sds_t path_buf;
+    const char *tmpdir;
+    size_t tmpdir_len;
+
+    path_buf = flb_sds_create_size(PATH_MAX);
+    if (path_buf == NULL) {
+        goto error;
+    }
+
+    tmpdir = get_tmpdir();
+    tmpdir_len = strlen(tmpdir);
+
+    result = flb_sds_cat_safe(&path_buf, tmpdir, tmpdir_len);
+    if (result < 0) {
+        ret = -1;
+        goto error;
+    }
+
+    result = flb_sds_cat_safe(&path_buf, "/", 1);
+    if (result < 0) {
+        ret = -1;
+        goto error;
+    }
+
+    result = flb_sds_cat_safe(&path_buf, template, template_len);
+    if (result < 0) {
+        ret = -1;
+        goto error;
+    }
+
+    strncpy(file_path, path_buf, flb_sds_len(path_buf));
+    if (mkstemp(file_path) == -1) {
+        flb_errno();
+        ret = -2;
+        goto error;
+    }
+
+    flb_sds_destroy(path_buf);
+
+    return 0;
+
+error:
+    if (path_buf != NULL) {
+        flb_sds_destroy(path_buf);
+    }
+
+    return ret;
+}
+
 static int s3_compress_parquet(struct flb_s3 *ctx,
                                char *body, size_t body_size,
                                void **payload_buf, size_t *payload_size)
 {
     int ret = 0;
-    char *template_in = "out_s3-body-XXXXXX";
-    char *template_out = "out_s3-parquet-XXXXXX";
-    char infile[32];
-    char outfile[32];
+    int result;
+    char *template_in_suffix = "out_s3-body-XXXXXX";
+    char *template_out_suffix = "out_s3-parquet-XXXXXX";
+    char infile[PATH_MAX] = {0};
+    char outfile[PATH_MAX] = {0};
     FILE *write_ptr = NULL;
     FILE *read_ptr = NULL;
     flb_sds_t parquet_cmd = NULL;
@@ -1430,17 +1495,15 @@ static int s3_compress_parquet(struct flb_s3 *ctx,
         goto error;
     }
 
-    strncpy(infile, template_in, 32);
-    if (mkstemp(infile) == -1) {
-        flb_errno();
-        ret = -2;
+    result = create_tmpfile(infile, template_in_suffix, strlen(template_in_suffix));
+    if (result < 0) {
+        ret = -1;
         goto error;
     }
 
-    strncpy(outfile, template_out, 32);
-    if (mkstemp(outfile) == -1) {
-        flb_errno();
-        ret = -2;
+    result = create_tmpfile(outfile, template_out_suffix, strlen(template_out_suffix));
+    if (result < 0) {
+        ret = -1;
         goto error;
     }
 
@@ -1495,7 +1558,7 @@ static int s3_compress_parquet(struct flb_s3 *ctx,
         goto error;
     }
 
-    /* Tweardown for temporary files */
+    /* Teardown for temporary files */
     if (unlink(infile) != 0) {
         ret = -6;
         flb_plg_warn(ctx->ins, "unlink %s is failed", infile);
