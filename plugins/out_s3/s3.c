@@ -1275,10 +1275,8 @@ static int s3_compress_parquet(struct flb_s3 *ctx,
                                void **payload_buf, size_t *payload_size)
 {
     int ret = 0;
-    char *template_in = "out_s3-body-XXXXXX";
-    char *template_out = "out_s3-parquet-XXXXXX";
-    char infile[32];
-    char outfile[32];
+    char *template_in_prefix = "body";
+    char *template_out_prefix = "parquet";
     HANDLE wh = NULL;
     HANDLE rh = NULL;
     BOOL result = FALSE;
@@ -1289,28 +1287,44 @@ static int s3_compress_parquet(struct flb_s3 *ctx,
     struct stat stbuf;
     int fdout = -1;
     flb_sds_t parquet_buf;
-    LPVOID lpBuffer;
+    TCHAR tmp_path[MAX_PATH];
+    TCHAR in_temp_file[MAX_PATH];
+    TCHAR out_temp_file[MAX_PATH];
 
     parquet_cmd = flb_sds_create_size(256);
     if (parquet_cmd == NULL) {
         goto error;
     }
 
-    strncpy(infile, template_in, 32);
-    if (_mktemp_s(infile, sizeof(infile)) != 0) {
-        flb_errno();
-        ret = -2;
+    bytes = GetTempPathA(MAX_PATH,
+                         tmp_path);
+    if (bytes > MAX_PATH || bytes == 0) {
+        flb_plg_error(ctx->ins, "GetTempPath failed");
+        ret = GetLastError();
         goto error;
     }
 
-    strncpy(outfile, template_out, 32);
-    if (_mktemp_s(outfile, sizeof(outfile)) != 0) {
-        flb_errno();
-        ret = -2;
+    bytes = GetTempFileNameA(tmp_path,
+                             TEXT(template_in_prefix),
+                             0, /* create unique name only */
+                             in_temp_file);
+    if (bytes == 0) {
+        flb_plg_error(ctx->ins, "GetFileName failed");
+        ret = GetLastError();
         goto error;
     }
 
-    wh = CreateFileA(infile,
+    bytes = GetTempFileNameA(tmp_path,
+                             TEXT(template_out_prefix),
+                             0, /* create unique name only */
+                             out_temp_file);
+    if (bytes == 0) {
+        flb_plg_error(ctx->ins, "GetFileName failed");
+        ret = GetLastError();
+        goto error;
+    }
+
+    wh = CreateFileA((LPTSTR)in_temp_file,
                      GENERIC_WRITE,
                      FILE_SHARE_READ | FILE_SHARE_WRITE | FILE_SHARE_DELETE,
                      NULL,
@@ -1322,7 +1336,7 @@ static int s3_compress_parquet(struct flb_s3 *ctx,
         goto error;
     }
 
-    rh = CreateFileA(outfile,
+    rh = CreateFileA((LPTSTR)out_temp_file,
                      GENERIC_READ,
                      FILE_SHARE_READ | FILE_SHARE_WRITE | FILE_SHARE_DELETE,
                      NULL,
@@ -1347,7 +1361,7 @@ static int s3_compress_parquet(struct flb_s3 *ctx,
     }
     CloseHandle(wh);
 
-    ret = build_columnify_command(ctx, infile, outfile, &parquet_cmd);
+    ret = build_columnify_command(ctx, in_temp_file, out_temp_file, &parquet_cmd);
     if (ret != 0) {
         ret = -1;
         goto error;
@@ -1375,13 +1389,13 @@ static int s3_compress_parquet(struct flb_s3 *ctx,
 
     CloseHandle(rh);
 
-    if (!DeleteFileA(infile)) {
+    if (!DeleteFileA((LPTSTR)in_temp_file)) {
         ret = -6;
-        flb_plg_error(ctx->ins, "DeleteFileA for %s failed", infile);
+        flb_plg_error(ctx->ins, "DeleteFileA for %s failed", (LPTSTR)in_temp_file);
     }
-    if (!DeleteFileA(outfile)) {
+      if (!DeleteFileA((LPTSTR)out_temp_file)) {
         ret = -6;
-        flb_plg_error(ctx->ins, "DeleteFileA for %s failed", outfile);
+        flb_plg_error(ctx->ins, "DeleteFileA for %s failed", (LPTSTR)out_temp_file);
     }
 
     *payload_buf = parquet_buf;
