@@ -2461,7 +2461,12 @@ int opentelemetry_prot_handle_ng(struct flb_http_request *request,
         send_export_service_response_ng(response, result, payload_type);
     }
     else {
-        send_response_ng(response, context->successful_response_code, NULL);
+        if (result == 0) {
+            send_response_ng(response, context->successful_response_code, NULL);
+        }
+        else {
+            send_response_ng(response, 400, "invalid request: deserialisation error\n");
+        }
     }
 
     return result;
