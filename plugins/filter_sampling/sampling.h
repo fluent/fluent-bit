@@ -23,6 +23,7 @@
 #include <fluent-bit/flb_info.h>
 #include <fluent-bit/flb_filter.h>
 #include <fluent-bit/flb_pthread.h>
+#include <fluent-bit/flb_random.h>
 
 /* actions */
 #define SAMPLE_RET_KEEP  0
@@ -35,7 +36,6 @@
 struct flb_filter_sampling_ctx {
     double rate;
     unsigned int random_enabled;
-    unsigned seed;
     unsigned int comb_curband;
     unsigned int comb_curstep;
     unsigned int comb_bands;

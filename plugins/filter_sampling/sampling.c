@@ -177,7 +177,7 @@ static int cb_sampling_filter(const void *data, size_t bytes,
                           ctx->comb_curband, ctx->comb_curstep, ctx->comb_bands, ctx->comb_steps);
         }
         else {
-            rnum = rand_r(&ctx->seed);
+            flb_random_bytes((unsigned char *)&rnum, sizeof(rnum));
             rperc = ((double)abs(rnum)) / ((double)INT_MAX);
             ret = (rperc <= ctx->rate) ? SAMPLE_RET_KEEP : SAMPLE_RET_DROP;
             flb_plg_debug(ctx->ins, "random: ret=%s rnum=%d/rperc=%f (rate=%f)",
