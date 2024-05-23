@@ -1392,7 +1392,7 @@ static int s3_compress_parquet(struct flb_s3 *ctx,
         ret = -6;
         flb_plg_error(ctx->ins, "DeleteFileA for %s failed", (LPTSTR)in_temp_file);
     }
-      if (!DeleteFileA((LPTSTR)out_temp_file)) {
+    if (!DeleteFileA((LPTSTR)out_temp_file)) {
         ret = -6;
         flb_plg_error(ctx->ins, "DeleteFileA for %s failed", (LPTSTR)out_temp_file);
     }
