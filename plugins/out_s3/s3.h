@@ -55,7 +55,7 @@
 #if defined(FLB_SYSTEM_WINDOWS)
 #define DEFAULT_PARQUET_COMMAND_EXISTENCE          "where columnify"
 #else
-#define DEFAULT_PARQUET_COMMAND_EXISTENCE          "columnify -h"
+#define DEFAULT_PARQUET_COMMAND_EXISTENCE          "columnify -h > /dev/null  2>&1"
 #endif
 
 /*
