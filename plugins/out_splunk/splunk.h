@@ -120,6 +120,8 @@ struct flb_splunk {
 
     /* Plugin instance */
     struct flb_output_instance *ins;
+
+    pthread_mutex_t mutex_hec_token;
 };
 
 #endif
