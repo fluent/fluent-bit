@@ -41,7 +41,6 @@
 
 #include "s3.h"
 #include "s3_store.h"
-#include "s3_win32_compat.h"
 
 #define DEFAULT_S3_PORT 443
 #define DEFAULT_S3_INSECURE_PORT 80
