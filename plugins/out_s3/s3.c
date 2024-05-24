@@ -79,6 +79,13 @@ static struct flb_aws_header content_type_header = {
     .val_len = 0,
 };
 
+static struct flb_aws_header octetstream_type_header = {
+    .key = "Content-Type",
+    .key_len = 12,
+    .val = "application/octet-stream",
+    .val_len = 24,
+};
+
 static struct flb_aws_header canned_acl_header = {
     .key = "x-amz-acl",
     .key_len = 9,
@@ -167,7 +174,11 @@ int create_headers(struct flb_s3 *ctx, char *body_md5,
         return -1;
     }
 
-    if (ctx->content_type != NULL) {
+    if (ctx->compression == FLB_AWS_COMPRESS_PARQUET) {
+        s3_headers[n] = octetstream_type_header;
+        n++;
+    }
+    else if (ctx->content_type != NULL) {
         s3_headers[n] = content_type_header;
         s3_headers[n].val = ctx->content_type;
         s3_headers[n].val_len = strlen(ctx->content_type);
@@ -536,7 +547,7 @@ static int cb_s3_init(struct flb_output_instance *ins,
     flb_sds_t tmp_sds;
     char *role_arn = NULL;
     char *session_name;
-    const char *tmp;
+    const char *tmp = NULL;
     struct flb_s3 *ctx = NULL;
     struct flb_aws_client_generator *generator;
     (void) config;
@@ -546,7 +557,7 @@ static int cb_s3_init(struct flb_output_instance *ins,
     struct mk_list *split;
     int list_size;
     FILE *cmdp = NULL;
-    char buf[32];
+    char buf[32] = {0};
 
     ctx = flb_calloc(1, sizeof(struct flb_s3));
     if (!ctx) {
@@ -701,13 +712,7 @@ static int cb_s3_init(struct flb_output_instance *ins,
         flb_pclose(cmdp);
 
         tmp = flb_output_get_property("parquet.compression", ins);
-        if (!tmp) {
-            ctx->parquet_compression = \
-                    flb_sds_create(DEFAULT_PARQUET_COMPRESSION_FORMAT_UPCASES);
-            flb_plg_debug(ctx->ins, "parquet.compression format is %s",
-                          DEFAULT_PARQUET_COMPRESSION_FORMAT_UPCASES);
-        }
-        else {
+        if (tmp != NULL) {
             if (strncasecmp(tmp, "uncompressed", 12) == 0 ||
                 strncasecmp(tmp, "snappy", 6) == 0 ||
                 strncasecmp(tmp, "gzip", 4) == 0 ||
@@ -723,11 +728,17 @@ static int cb_s3_init(struct flb_output_instance *ins,
                 flb_plg_error(ctx->ins, "unknown parquet.compression format %s", tmp);
                 return -1;
             }
-            for (i = 0; i < strlen(tmp) || i < sizeof(buf); i++) {
+            for (i = 0; i < strlen(tmp); i++) {
                 buf[i] = toupper(tmp[i]);
             }
 
             ctx->parquet_compression = flb_sds_create_len(buf, strlen(buf));
+        }
+        else {
+            ctx->parquet_compression = \
+                    flb_sds_create(DEFAULT_PARQUET_COMPRESSION_FORMAT_UPCASES);
+            flb_plg_debug(ctx->ins, "parquet.compression format is %s",
+                          DEFAULT_PARQUET_COMPRESSION_FORMAT_UPCASES);
         }
 
         tmp = flb_output_get_property("parquet.record_type", ins);
@@ -783,9 +794,6 @@ static int cb_s3_init(struct flb_output_instance *ins,
     tmp = flb_output_get_property("content_type", ins);
     if (tmp) {
         ctx->content_type = (char *) tmp;
-    }
-    if (ctx->compression == FLB_AWS_COMPRESS_PARQUET) {
-        ctx->content_type = (char *) "application/octet-stream";
     }
     if (ctx->use_put_object == FLB_FALSE) {
         /* upload_chunk_size */
@@ -3044,7 +3052,7 @@ static struct flb_config_map config_map[] = {
     "'parquet' is only an available if columify command is installed on a system. "
     "Defaults to no compression. "
     "If 'gzip' is selected, the Content-Encoding HTTP Header will be set to 'gzip'."
-    "If 'parquet' is selected, the Content-Encoding HTTP Header will be set to 'octet-stream'."
+    "If 'parquet' is selected, the Content-Type HTTP Header will be set to 'application/octet-stream'."
     },
     {
      FLB_CONFIG_MAP_STR, "parquet.compression", "snappy",
@@ -3070,7 +3078,7 @@ static struct flb_config_map config_map[] = {
      FLB_CONFIG_MAP_STR, "parquet.record_type", "json",
      0, FLB_FALSE, 0,
     "Record type for parquet objects. 'json' and 'msgpack' are the supported values. "
-    "Defaults to msgpack. "
+    "Defaults to json. "
     },
     {
      FLB_CONFIG_MAP_STR, "parquet.schema_type", "avro",
