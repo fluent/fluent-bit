@@ -675,7 +675,7 @@ static int elasticsearch_error_check(struct flb_elasticsearch *ctx,
         }
 
         /* Lookup error field */
-        if (strstr(c->resp.payload, "\"errors\":false,\"items\":[")) {
+        if (strstr(c->resp.payload, "\"errors\":false")) {
             return FLB_FALSE;
         }
 
