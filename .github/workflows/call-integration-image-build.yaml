@@ -39,15 +39,15 @@ jobs:
       contents: read
       packages: write
     steps:
-      - uses: actions/checkout@v3
+      - uses: actions/checkout@v4
         with:
           ref: ${{ inputs.ref }}
 
       - name: Set up Docker Buildx
-        uses: docker/setup-buildx-action@v2
+        uses: docker/setup-buildx-action@v3
 
       - name: Log in to the Container registry
-        uses: docker/login-action@v2
+        uses: docker/login-action@v3
         with:
           registry: ${{ inputs.registry }}
           username: ${{ inputs.username }}
@@ -55,14 +55,14 @@ jobs:
 
       - name: Extract metadata from Github
         id: meta
-        uses: docker/metadata-action@v4
+        uses: docker/metadata-action@v5
         with:
           images: ${{ inputs.registry }}/${{ inputs.image }}
           tags: |
             raw,${{ inputs.image-tag }}
 
       - name: Build the AMD64 image
-        uses: docker/build-push-action@v4
+        uses: docker/build-push-action@v5
         with:
           file: ./dockerfiles/Dockerfile
           context: .
@@ -70,39 +70,26 @@ jobs:
           labels: ${{ steps.meta.outputs.labels }}
           platforms: linux/amd64
           target: production
+          provenance: false
           push: true
           load: false
 
-      - name: Upload the image just in case as an artefact
-        run: |
-          docker pull $IMAGE
-          docker save --output /tmp/pr-image.tar $IMAGE
-        env:
-          IMAGE: ${{ steps.meta.outputs.tags }}
-        shell: bash
-
-      - name: Upload artifact
-        uses: actions/upload-artifact@v3
-        with:
-          name: pr-${{ github.event.pull_request.number }}-image
-          path: /tmp/pr-image.tar
-          if-no-files-found: error
-
       - name: Extract metadata from Github
         id: meta-debug
-        uses: docker/metadata-action@v4
+        uses: docker/metadata-action@v5
         with:
           images: ${{ inputs.registry }}/${{ inputs.image }}
           tags: |
             raw,${{ inputs.image-tag }}-debug
 
       - name: Build the AMD64 debug image
-        uses: docker/build-push-action@v4
+        uses: docker/build-push-action@v5
         with:
           file: ./dockerfiles/Dockerfile
           context: .
           tags: ${{ steps.meta-debug.outputs.tags }}
           labels: ${{ steps.meta-debug.outputs.labels }}
+          provenance: false
           target: debug
           platforms: linux/amd64
           push: true
@@ -118,12 +105,12 @@ jobs:
       packages: read
     steps:
       - name: Checkout repository
-        uses: actions/checkout@v3
+        uses: actions/checkout@v4
         with:
           ref: ${{ inputs.ref }}
 
       - name: Log in to the Container registry
-        uses: docker/login-action@v2
+        uses: docker/login-action@v3
         with:
           registry: ${{ inputs.registry }}
           username: ${{ inputs.username }}

@@ -329,7 +329,7 @@ int mk_utils_register_pid(char *path)
 {
     int fd;
     int ret;
-    char pidstr[MK_MAX_PID_LEN];
+    char pidstr[MK_MAX_PID_LEN + 1];
     struct flock lock;
     struct stat sb;
 

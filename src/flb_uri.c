@@ -2,7 +2,7 @@
 
 /*  Fluent Bit
  *  ==========
- *  Copyright (C) 2015-2022 The Fluent Bit Authors
+ *  Copyright (C) 2015-2024 The Fluent Bit Authors
  *
  *  Licensed under the Apache License, Version 2.0 (the "License");
  *  you may not use this file except in compliance with the License.
@@ -71,6 +71,11 @@ flb_sds_t flb_uri_encode(const char *uri, size_t len)
 /* Retrieve a given field based on it expected position in the URI */
 struct flb_uri_field *flb_uri_get(struct flb_uri *uri, int pos)
 {
+    if (pos < 0) {
+        flb_trace("[uri] negative pos");
+        return NULL;
+    }
+
     if (pos >= FLB_URI_MAX || pos > uri->count) {
         flb_trace("[uri] requested position > FLB_URI_MAX");
         return NULL;

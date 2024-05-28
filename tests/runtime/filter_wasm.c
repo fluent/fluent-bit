@@ -458,11 +458,73 @@ void flb_test_drop_all_records(void)
 }
 
 
+void flb_test_append_kv_on_msgpack(void)
+{
+    int ret;
+    flb_ctx_t *ctx;
+    int in_ffd;
+    int out_ffd;
+    int filter_ffd;
+    char *output = NULL;
+    char *input = "[0, {\"key\":\"val\"}]";
+    char *result;
+    struct flb_lib_out_cb cb_data;
+
+    /* clear previous output */
+    clear_output();
+
+    /* Create context, flush every second (some checks omitted here) */
+    ctx = flb_create();
+    flb_service_set(ctx, "flush", FLUSH_INTERVAL, "grace", "1", NULL);
+
+    /* Prepare output callback context*/
+    cb_data.cb = callback_test;
+    cb_data.data = NULL;
+
+    /* Filter */
+    filter_ffd = flb_filter(ctx, (char *) "wasm", NULL);
+    TEST_CHECK(filter_ffd >= 0);
+    ret = flb_filter_set(ctx, filter_ffd,
+                         "Match", "*",
+                         "event_format", "msgpack",
+                         "wasm_path", DPATH_WASM "/msgpack/filter_rust_mp.wasm",
+                         "function_name", "rust_filter_mp",
+                         NULL);
+
+    /* Input */
+    in_ffd = flb_input(ctx, (char *) "lib", NULL);
+    flb_input_set(ctx, in_ffd, "tag", "test.wasm.mp", NULL);
+    TEST_CHECK(in_ffd >= 0);
+
+    /* Lib output */
+    out_ffd = flb_output(ctx, (char *) "lib", (void *)&cb_data);
+    TEST_CHECK(out_ffd >= 0);
+    flb_output_set(ctx, out_ffd,
+                   "match", "test.wasm.mp",
+                   "format", "json",
+                   NULL);
+
+    ret = flb_start(ctx);
+    TEST_CHECK(ret==0);
+
+    flb_lib_push(ctx, in_ffd, input, strlen(input));
+    wait_with_timeout(2000, &output);
+    result = strstr(output, "\"platform\":\"wasm\"");
+    TEST_CHECK(result != NULL);
+
+    /* clean up */
+    flb_lib_free(output);
+
+    flb_stop(ctx);
+    flb_destroy(ctx);
+}
+
 TEST_LIST = {
     {"hello_world", flb_test_helloworld},
     {"append_tag", flb_test_append_tag},
     {"numeric_records", flb_test_numerics_records},
     {"array_contains_null", flb_test_array_contains_null},
     {"drop_all_records", flb_test_drop_all_records},
+    {"append_kv_on_msgpack_format", flb_test_append_kv_on_msgpack},
     {NULL, NULL}
 };

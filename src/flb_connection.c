@@ -24,6 +24,8 @@ int flb_connection_setup(struct flb_connection *connection,
     connection->tls_session             = NULL;
     connection->ts_created              = time(NULL);
     connection->ts_assigned             = time(NULL);
+    connection->busy_flag               = FLB_FALSE;
+    connection->shutdown_flag           = FLB_FALSE;
 
     connection->net = &connection->stream->net;
 

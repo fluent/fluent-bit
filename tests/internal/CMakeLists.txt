@@ -38,7 +38,11 @@ set(UNIT_TESTS_FILES
   parser_logfmt.c
   env.c
   log.c
+  log_event_decoder.c
+  log_event_encoder.c
   processor.c
+  uri.c
+  msgpack_append_message.c
   )
 
 # Config format

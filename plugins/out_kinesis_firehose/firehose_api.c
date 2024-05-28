@@ -2,7 +2,7 @@
 
 /*  Fluent Bit
  *  ==========
- *  Copyright (C) 2015-2022 The Fluent Bit Authors
+ *  Copyright (C) 2015-2024 The Fluent Bit Authors
  *
  *  Licensed under the Apache License, Version 2.0 (the "License");
  *  you may not use this file except in compliance with the License.
@@ -741,7 +741,7 @@ static int process_api_response(struct flb_firehose *ctx,
                             (strncmp(response_val.via.str.ptr,
                                     ERR_CODE_SERVICE_UNAVAILABLE, 27) == 0)) {
                                         throughput_exceeded = FLB_TRUE;
-                                        flb_plg_error(ctx->ins, "Thoughput limits may have been exceeded, %s",
+                                        flb_plg_error(ctx->ins, "Throughput limits may have been exceeded, %s",
                                                       ctx->delivery_stream);
                         }
                         flb_plg_debug(ctx->ins, "Record %i failed with err_code=%.*s",

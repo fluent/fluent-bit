@@ -273,7 +273,7 @@ struct mk_plugin {
 
     /* Init Levels */
     int  (*master_init) (struct mk_server *);
-    void (*worker_init) ();
+    void (*worker_init) (struct mk_server *);
 
     /* Callback references for plugin type */
     struct mk_plugin_network *network;        /* MK_NETWORK_LAYER   */
@@ -328,7 +328,7 @@ int mk_plugin_stage_run(unsigned int stage,
                         struct mk_http_session *cs, struct mk_http_request *sr);
 
 void mk_plugin_core_process(struct mk_server *server);
-void mk_plugin_core_thread();
+void mk_plugin_core_thread(struct mk_server *server);
 
 void mk_plugin_preworker_calls(struct mk_server *server);
 

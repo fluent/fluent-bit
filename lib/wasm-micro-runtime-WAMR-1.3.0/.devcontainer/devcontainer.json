@@ -1,0 +1,50 @@
+// Copyright (C) 2019 Intel Corporation.  All rights reserved.
+// SPDX-License-Identifier: Apache-2.0 WITH LLVM-exception
+// For format details, see https://aka.ms/vscode-remote/devcontainer.json or this file's README at:
+// https://github.com/microsoft/vscode-dev-containers/tree/v0.245.2/containers/cpp
+{
+  "name": "WAMR-Dev",
+  "build": {
+    "dockerfile": "Dockerfile",
+    // Update 'VARIANT' to pick an Debian / Ubuntu OS version: debian-12, debian-11, debian-10, debian-9, ubuntu-21.04, ubuntu-20.04, ubuntu-18.04
+    // Use Debian 12, Debian 11, Debian 9, Ubuntu 18.04 or Ubuntu 21.04 on local arm64/Apple Silicon
+    "args": {
+      "BINARYEN_VER": "114",
+      "BAZELISK_VER": "1.17.0",
+      "CMAKE_VER": "3.27.0",
+      "EMSDK_VER": "3.1.43",
+      "GH_CLI_VER": "2.32.0",
+      "LLVM_VER": "16",
+      "VARIANT": "debian-12",
+      "WASI_SDK_VER": "20",
+      "WABT_VER": "1.0.33"
+    }
+  },
+  "runArgs": [
+    "--cap-add=SYS_PTRACE",
+    "--security-opt",
+    "seccomp=unconfined"
+  ],
+  // Configure tool-specific properties.
+  "customizations": {
+    // Configure properties specific to VS Code.
+    "vscode": {
+      // Set *default* container specific settings.json values on container create.
+      "settings": {},
+      // Add the IDs of extensions you want installed when the container is created.
+      "extensions": [
+        "dtsvet.vscode-wasm",
+        "llvm-vs-code-extensions.vscode-clangd",
+        "ms-python.python",
+        "ms-python.vscode-pylance",
+        "ms-vscode.cmake-tools"
+      ]
+    }
+  },
+  // Use 'forwardPorts' to make a list of ports inside the container available locally.
+  // "forwardPorts": [],
+  // Use 'postCreateCommand' to run commands after the container is created.
+  "postCreateCommand": "curl https://sh.rustup.rs -sSf | bash -s -- -y",
+  // Comment out this line to run as root instead.
+  "remoteUser": "vscode"
+}

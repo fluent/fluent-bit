@@ -2,7 +2,7 @@
 
 /*  Fluent Bit
  *  ==========
- *  Copyright (C) 2015-2022 The Fluent Bit Authors
+ *  Copyright (C) 2015-2024 The Fluent Bit Authors
  *
  *  Licensed under the Apache License, Version 2.0 (the "License");
  *  you may not use this file except in compliance with the License.
@@ -51,6 +51,7 @@ struct flb_splunk *splunk_config_create(struct flb_input_instance *ins)
     }
 
     ctx->auth_header = NULL;
+    ctx->ingested_auth_header = NULL;
     tmp = flb_input_get_property("splunk_token", ins);
     if (tmp) {
         ctx->auth_header = flb_sds_create("Splunk ");
@@ -166,6 +167,10 @@ int splunk_config_destroy(struct flb_splunk *ctx)
 
     if (ctx->downstream != NULL) {
         flb_downstream_destroy(ctx->downstream);
+    }
+
+    if (ctx->enable_http2) {
+        flb_http_server_destroy(&ctx->http_server);
     }
 
     if (ctx->server) {

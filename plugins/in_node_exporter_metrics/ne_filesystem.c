@@ -2,7 +2,7 @@
 
 /*  Fluent Bit
  *  ==========
- *  Copyright (C) 2015-2022 The Fluent Bit Authors
+ *  Copyright (C) 2015-2024 The Fluent Bit Authors
  *
  *  Licensed under the Apache License, Version 2.0 (the "License");
  *  you may not use this file except in compliance with the License.
@@ -21,19 +21,13 @@
 #include "ne_filesystem_linux.c"
 #else
 
-int ne_filesystem_init(struct flb_ne *ctx)
-{
-    return 0;
-}
+#include "ne.h"
 
-int ne_filesystem_update(struct flb_ne *ctx)
-{
-    return 0;
-}
-
-int ne_filesystem_exit(struct flb_ne *ctx)
-{
-    return 0;
-}
+struct flb_ne_collector filesystem_collector = {
+    .name = "filesystem",
+    .cb_init = NULL,
+    .cb_update = NULL,
+    .cb_exit = NULL
+};
 
 #endif

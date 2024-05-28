@@ -2,7 +2,7 @@
 
 /*  Fluent Bit
  *  ==========
- *  Copyright (C) 2015-2022 The Fluent Bit Authors
+ *  Copyright (C) 2015-2024 The Fluent Bit Authors
  *
  *  Licensed under the Apache License, Version 2.0 (the "License");
  *  you may not use this file except in compliance with the License.
@@ -680,12 +680,6 @@ static inline bool kv_key_matches_str(msgpack_object_kv * kv,
                                       char *str, int len)
 {
     return helper_msgpack_object_matches_str(&kv->key, str, len);
-}
-
-static inline bool kv_val_matches_str(msgpack_object_kv * kv,
-                                      char *str, int len)
-{
-    return helper_msgpack_object_matches_str(&kv->val, str, len);
 }
 
 static inline bool kv_key_matches_str_rule_key(msgpack_object_kv * kv,

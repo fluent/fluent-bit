@@ -81,7 +81,7 @@ static int generate_dummy_array_attribute_set(struct cfl_array **out_array, size
     }
 
     cfl_array_append_string(array, "string value");
-    cfl_array_append_bytes(array, "\xFF\xEE\xFF\xEE\xCA\xFE", 6);
+    cfl_array_append_bytes(array, "\xFF\xEE\xFF\xEE\xCA\xFE", 6, CFL_FALSE);
     cfl_array_append_bool(array, CTR_TRUE);
     cfl_array_append_int64(array, 303456);
     cfl_array_append_double(array, 1.23456);
@@ -164,7 +164,7 @@ static int generate_dummy_kvlist_attribute_set(struct cfl_kvlist **out_kvlist, s
         return -3;
     }
 
-    result = cfl_kvlist_insert_bytes(kvlist, "bytes value", "\xFE\xEE\xFF\xEE\xCA\xFE", 6);
+    result = cfl_kvlist_insert_bytes(kvlist, "bytes value", "\xFE\xEE\xFF\xEE\xCA\xFE", 6, CFL_FALSE);
 
     if (result != 0) {
         return -3;
@@ -581,7 +581,7 @@ void test_simple_to_msgpack_and_back()
     ctr_span_event_set_attribute_string(event, "syscall 3", "write()");
 
     /* add a key/value pair list */
-    kv = cfl_kvlist_create(1);
+    kv = cfl_kvlist_create();
     TEST_ASSERT(kv != NULL);
     cfl_kvlist_insert_string(kv, "language", "c");
 

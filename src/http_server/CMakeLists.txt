@@ -7,6 +7,9 @@ set(src
   flb_hs.c
   flb_hs_endpoints.c
   flb_hs_utils.c
+  flb_http_server.c
+  flb_http_server_http1.c
+  flb_http_server_http2.c
   )
 
 # api/v1

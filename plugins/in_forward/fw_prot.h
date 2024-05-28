@@ -2,7 +2,7 @@
 
 /*  Fluent Bit
  *  ==========
- *  Copyright (C) 2015-2022 The Fluent Bit Authors
+ *  Copyright (C) 2015-2024 The Fluent Bit Authors
  *
  *  Licensed under the Apache License, Version 2.0 (the "License");
  *  you may not use this file except in compliance with the License.
@@ -22,7 +22,16 @@
 
 #include "fw_conn.h"
 
+struct flb_in_fw_helo;
+
 int fw_prot_parser(struct fw_conn *conn);
 int fw_prot_process(struct flb_input_instance *ins, struct fw_conn *conn);
-
+int flb_secure_forward_set_helo(struct flb_input_instance *ins,
+                                struct flb_in_fw_helo *helo,
+                                unsigned char *nonce, unsigned char *salt);
+int fw_prot_secure_forward_handshake_start(struct flb_input_instance *ins,
+                                           struct flb_connection *connection,
+                                           struct flb_in_fw_helo *helo);
+int fw_prot_secure_forward_handshake(struct flb_input_instance *ins,
+                                     struct fw_conn *conn);
 #endif

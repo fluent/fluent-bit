@@ -20,11 +20,14 @@
 #include <cmetrics/cmetrics.h>
 #include <cmetrics/cmt_gauge.h>
 #include <cmetrics/cmt_counter.h>
+#include <cmetrics/cmt_untyped.h>
 #include <cmetrics/cmt_summary.h>
 #include <cmetrics/cmt_histogram.h>
 #include <cmetrics/cmt_encode_prometheus.h>
 #include <cmetrics/cmt_decode_opentelemetry.h>
 #include <cmetrics/cmt_encode_opentelemetry.h>
+#include <cmetrics/cmt_decode_prometheus_remote_write.h>
+#include <cmetrics/cmt_encode_prometheus_remote_write.h>
 
 #include "cmt_tests.h"
 
@@ -178,7 +181,25 @@ void test_opentelemetry()
     cmt_destroy(cmt);
 }
 
+void test_prometheus_remote_write()
+{
+    int ret;
+    struct cmt *decoded_context;
+    cfl_sds_t payload = read_file(CMT_TESTS_DATA_PATH "/remote_write_dump_originally_from_node_exporter.bin");
+
+    cmt_initialize();
+
+    ret = cmt_decode_prometheus_remote_write_create(&decoded_context, payload, cfl_sds_len(payload));
+    TEST_CHECK(ret == CMT_DECODE_PROMETHEUS_REMOTE_WRITE_SUCCESS);
+
+    cmt_decode_prometheus_remote_write_destroy(decoded_context);
+
+    cfl_sds_destroy(payload);
+}
+
+
 TEST_LIST = {
     {"opentelemetry", test_opentelemetry},
+    {"prometheus_remote_write", test_prometheus_remote_write},
     { 0 }
 };

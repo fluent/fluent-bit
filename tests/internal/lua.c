@@ -204,6 +204,113 @@ static void test_tompack()
     lua_close(l);
 }
 
+
+static void test_lua_arraylength()
+{
+    lua_State *l;
+    int i;
+    int len;
+    int size = 10;
+
+    l = luaL_newstate();
+    if (!TEST_CHECK(l != NULL)) {
+        TEST_MSG("luaL_newstate faild");
+        return;
+    }
+    luaL_openlibs(l);
+
+    /* create array. */
+    lua_createtable(l, size, 0);
+
+    for (i=1; i<=size; i++) {
+        lua_pushinteger(l, i); /* set an index of array */
+        lua_pushinteger(l, 3+i); /* set a value */
+        lua_settable(l, -3); /* points created table */
+    }
+
+    len = flb_lua_arraylength(l, -1);
+    if (!TEST_CHECK(len == size)) {
+        TEST_MSG("size error. got=%d expect=%d", len, size);
+    }
+    lua_pop(l, 1);
+
+    lua_close(l);
+}
+
+static void test_lua_arraylength_with_index()
+{
+    lua_State *l;
+    int i;
+    int len;
+    int size = 10;
+
+    l = luaL_newstate();
+    if (!TEST_CHECK(l != NULL)) {
+        TEST_MSG("luaL_newstate faild");
+        return;
+    }
+    luaL_openlibs(l);
+
+    /* create array. */
+    lua_createtable(l, size, 0);
+
+    for (i=1; i<=size; i++) {
+        lua_pushinteger(l, i); /* set an index of array */
+        lua_pushinteger(l, 3+i); /* set a value */
+        lua_settable(l, -3); /* points created table */
+    }
+
+    /* push 2 values */
+    lua_pushinteger(l, 100);
+    lua_pushinteger(l, 101);
+
+    len = flb_lua_arraylength(l, -3); /* points array. -1 points 101, -2 points 100 */
+    if (!TEST_CHECK(len == size)) {
+        TEST_MSG("size error. got=%d expect=%d", len, size);
+    }
+    lua_pop(l, 1);
+
+    lua_close(l);
+}
+
+static void test_lua_arraylength_for_array_contains_nil()
+{
+    lua_State *l;
+    int i;
+    int len;
+    int size = 10;
+
+    l = luaL_newstate();
+    if (!TEST_CHECK(l != NULL)) {
+        TEST_MSG("luaL_newstate faild");
+        return;
+    }
+    luaL_openlibs(l);
+
+    /* create array. */
+    lua_createtable(l, size, 0);
+
+    for (i=1; i<=size; i++) {
+        lua_pushinteger(l, i); /* set an index of array */
+        if (i == 7) {
+            lua_pushnil(l);
+        }
+        else {
+            lua_pushinteger(l, 3+i); /* set a value */
+        }
+        lua_settable(l, -3); /* points created table */
+    }
+
+    len = flb_lua_arraylength(l, -1);
+    if (!TEST_CHECK(len == size)) {
+        TEST_MSG("size error. got=%d expect=%d", len, size);
+    }
+    lua_pop(l, 1);
+
+    lua_close(l);
+}
+
+
 TEST_LIST = {
     { "lua_is_valid_func" , test_is_valid_func},
     { "lua_pushtimetable" , test_pushtimetable},
@@ -211,5 +318,8 @@ TEST_LIST = {
     { "lua_pushmpack" , test_pushmpack },
     { "lua_tomsgpack" , test_tomsgpack },
     { "lua_tompack" , test_tompack },
+    { "lua_arraylength" , test_lua_arraylength },
+    { "lua_arraylength_with_index" , test_lua_arraylength_with_index },
+    { "lua_arraylength_for_array_contains_nil", test_lua_arraylength_for_array_contains_nil},
     { 0 }
 };

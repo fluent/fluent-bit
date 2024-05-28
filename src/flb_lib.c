@@ -2,7 +2,7 @@
 
 /*  Fluent Bit Demo
  *  ===============
- *  Copyright (C) 2015-2022 The Fluent Bit Authors
+ *  Copyright (C) 2015-2024 The Fluent Bit Authors
  *
  *  Licensed under the Apache License, Version 2.0 (the "License");
  *  you may not use this file except in compliance with the License.
@@ -329,6 +329,24 @@ int flb_input_set(flb_ctx_t *ctx, int ffd, ...)
     return 0;
 }
 
+int flb_input_set_processor(flb_ctx_t *ctx, int ffd, struct flb_processor *proc)
+{
+    struct flb_input_instance *i_ins;
+
+    i_ins = in_instance_get(ctx, ffd);
+    if (!i_ins) {
+        return -1;
+    }
+
+    if (i_ins->processor) {
+        flb_processor_destroy(i_ins->processor);
+    }
+
+    i_ins->processor = proc;
+
+    return 0;
+}
+
 static inline int flb_config_map_property_check(char *plugin_name, struct mk_list *config_map, char *key, char *val)
 {
     struct flb_kv *kv;
@@ -462,6 +480,24 @@ int flb_output_set(flb_ctx_t *ctx, int ffd, ...)
     }
 
     va_end(va);
+    return 0;
+}
+
+int flb_output_set_processor(flb_ctx_t *ctx, int ffd, struct flb_processor *proc)
+{
+    struct flb_output_instance *o_ins;
+
+    o_ins = out_instance_get(ctx, ffd);
+    if (!o_ins) {
+        return -1;
+    }
+
+    if (o_ins->processor) {
+        flb_processor_destroy(o_ins->processor);
+    }
+
+    o_ins->processor = proc;
+
     return 0;
 }
 
@@ -653,8 +689,7 @@ double flb_time_now()
     return flb_time_to_double(&t);
 }
 
-/* Start the engine */
-int flb_start(flb_ctx_t *ctx)
+int static do_start(flb_ctx_t *ctx)
 {
     int fd;
     int bytes;
@@ -669,7 +704,6 @@ int flb_start(flb_ctx_t *ctx)
     flb_debug("[lib] context set: %p", ctx);
 
     /* set context as the last active one */
-    flb_context_set(ctx);
 
     /* spawn worker thread */
     config = ctx->config;
@@ -699,7 +733,7 @@ int flb_start(flb_ctx_t *ctx)
             break;
         }
         else if (val == FLB_ENGINE_FAILED) {
-            flb_error("[lib] backend failed");
+            flb_debug("[lib] backend failed");
 #if defined(FLB_SYSTEM_MACOS)
             pthread_cancel(tid);
 #endif
@@ -713,6 +747,26 @@ int flb_start(flb_ctx_t *ctx)
     }
 
     return 0;
+}
+
+/* Start the engine */
+int flb_start(flb_ctx_t *ctx)
+{
+    int ret;
+
+    ret = do_start(ctx);
+    if (ret == 0) {
+        /* set context as the last active one */
+        flb_context_set(ctx);
+    }
+
+    return ret;
+}
+
+/* Start the engine without setting the global context */
+int flb_start_trace(flb_ctx_t *ctx)
+{
+    return do_start(ctx);
 }
 
 int flb_loop(flb_ctx_t *ctx)

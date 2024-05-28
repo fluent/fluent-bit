@@ -2,7 +2,7 @@
 
 /*  Fluent Bit
  *  ==========
- *  Copyright (C) 2015-2022 The Fluent Bit Authors
+ *  Copyright (C) 2015-2024 The Fluent Bit Authors
  *
  *  Licensed under the Apache License, Version 2.0 (the "License");
  *  you may not use this file except in compliance with the License.
@@ -214,7 +214,8 @@ static int cb_kube_init(struct flb_filter_instance *f_ins,
 static int pack_map_content(struct flb_log_event_encoder *log_encoder,
                             msgpack_object source_map,
                             const char *kube_buf, size_t kube_size,
-                            struct flb_kube_meta *meta,
+                            const char *namespace_kube_buf, 
+                            size_t namespace_kube_size,
                             struct flb_time *time_lookup,
                             struct flb_parser *parser,
                             struct flb_kube *ctx)
@@ -225,7 +226,6 @@ static int pack_map_content(struct flb_log_event_encoder *log_encoder,
     int i;
     int map_size = 0;
     int merge_status = -1;
-    int new_map_size = 0;
     int log_index = -1;
     int log_buf_entries = 0;
     size_t off = 0;
@@ -295,9 +295,6 @@ static int pack_map_content(struct flb_log_event_encoder *log_encoder,
         return -1;
     }
 
-    /* Determinate the size of the new map */
-    new_map_size = map_size;
-
     /* If a merged status exists, check the number of entries to merge */
     if (log_index != -1) {
         if (merge_status == MERGE_PARSED) {
@@ -316,23 +313,8 @@ static int pack_map_content(struct flb_log_event_encoder *log_encoder,
         }
     }
 
-    /* Kubernetes metadata */
-    if (kube_buf && kube_size > 0) {
-        new_map_size++;
-    }
-
-    if (log_buf_entries > 0) {
-        if (ctx->merge_log_key != NULL) {
-            new_map_size++;
-        }
-        else {
-            new_map_size += log_buf_entries;
-        }
-    }
-
     if ((merge_status == MERGE_PARSED || merge_status == MERGE_MAP) &&
         ctx->keep_log == FLB_FALSE) {
-        new_map_size--;
     }
 
     /* Original map */
@@ -531,6 +513,29 @@ static int pack_map_content(struct flb_log_event_encoder *log_encoder,
         return -8;
     }
 
+    /* Kubernetes Namespace */
+    if (namespace_kube_buf && namespace_kube_size > 0) {
+        ret = flb_log_event_encoder_append_body_cstring(
+                log_encoder,
+                "kubernetes_namespace");
+        
+        off = 0;
+        msgpack_unpacked_init(&result);
+        msgpack_unpack_next(&result, namespace_kube_buf, 
+                            namespace_kube_size, &off);
+
+        if (ret == FLB_EVENT_ENCODER_SUCCESS) {
+            ret = flb_log_event_encoder_append_body_raw_msgpack(log_encoder,
+                    (char *) namespace_kube_buf, off);
+        }
+
+        msgpack_unpacked_destroy(&result);
+    }
+
+    if (ret != FLB_EVENT_ENCODER_SUCCESS) {
+        return -8;
+    }
+
     return 0;
 }
 
@@ -548,11 +553,14 @@ static int cb_kube_filter(const void *data, size_t bytes,
     char *dummy_cache_buf = NULL;
     const char *cache_buf = NULL;
     size_t cache_size = 0;
+    const char *namespace_cache_buf = NULL;
+    size_t namespace_cache_size = 0;
     msgpack_object map;
     struct flb_parser *parser = NULL;
     struct flb_kube *ctx = filter_context;
     struct flb_kube_meta meta = {0};
     struct flb_kube_props props = {0};
+    struct flb_kube_meta namespace_meta = {0};
     struct flb_log_event_encoder log_encoder;
     struct flb_log_event_decoder log_decoder;
     struct flb_log_event log_event;
@@ -571,7 +579,10 @@ static int cb_kube_filter(const void *data, size_t bytes,
             ret = flb_kube_meta_get(ctx,
                                     tag, tag_len,
                                     data, bytes,
-                                    &cache_buf, &cache_size, &meta, &props);
+                                    &cache_buf, &cache_size,
+                                    &namespace_cache_buf, &namespace_cache_size,
+                                    &meta, &props,
+                                    &namespace_meta);
         }
         if (ret == -1) {
             return FLB_FILTER_NOTOUCH;
@@ -586,6 +597,7 @@ static int cb_kube_filter(const void *data, size_t bytes,
 
         flb_kube_meta_release(&meta);
         flb_kube_prop_destroy(&props);
+        flb_kube_meta_release(&namespace_meta);
 
         return FLB_FILTER_NOTOUCH;
     }
@@ -600,6 +612,7 @@ static int cb_kube_filter(const void *data, size_t bytes,
         flb_log_event_decoder_destroy(&log_decoder);
         flb_kube_meta_release(&meta);
         flb_kube_prop_destroy(&props);
+        flb_kube_meta_release(&namespace_meta);
 
         return FLB_FILTER_NOTOUCH;
     }
@@ -619,7 +632,10 @@ static int cb_kube_filter(const void *data, size_t bytes,
             ret = flb_kube_meta_get(ctx,
                                     tag, tag_len,
                                     (char *) data + pre, off - pre,
-                                    &cache_buf, &cache_size, &meta, &props);
+                                    &cache_buf, &cache_size,
+                                    &namespace_cache_buf, &namespace_cache_size,
+                                    &meta, &props,
+                                    &namespace_meta);
             if (ret == -1) {
                 continue;
             }
@@ -637,6 +653,7 @@ static int cb_kube_filter(const void *data, size_t bytes,
                     if (ctx->use_journal == FLB_TRUE) {
                         flb_kube_meta_release(&meta);
                         flb_kube_prop_destroy(&props);
+                        flb_kube_meta_release(&namespace_meta);
                     }
                     continue;
                 }
@@ -652,6 +669,7 @@ static int cb_kube_filter(const void *data, size_t bytes,
                     if (ctx->use_journal == FLB_TRUE) {
                         flb_kube_meta_release(&meta);
                         flb_kube_prop_destroy(&props);
+                        flb_kube_meta_release(&namespace_meta);
                     }
                     continue;
                 }
@@ -686,7 +704,8 @@ static int cb_kube_filter(const void *data, size_t bytes,
         ret = pack_map_content(&log_encoder,
                                map,
                                cache_buf, cache_size,
-                               &meta, &log_event.timestamp, parser, ctx);
+                               namespace_cache_buf, namespace_cache_size,
+                               &log_event.timestamp, parser, ctx);
         if (ret != 0) {
             flb_log_event_decoder_destroy(&log_decoder);
             flb_log_event_encoder_destroy(&log_encoder);
@@ -697,6 +716,7 @@ static int cb_kube_filter(const void *data, size_t bytes,
 
             flb_kube_meta_release(&meta);
             flb_kube_prop_destroy(&props);
+            flb_kube_meta_release(&namespace_meta);
 
             return FLB_FILTER_NOTOUCH;
         }
@@ -712,6 +732,7 @@ static int cb_kube_filter(const void *data, size_t bytes,
         if (ctx->use_journal == FLB_TRUE) {
             flb_kube_meta_release(&meta);
             flb_kube_prop_destroy(&props);
+            flb_kube_meta_release(&namespace_meta);
         }
     }
 
@@ -719,6 +740,7 @@ static int cb_kube_filter(const void *data, size_t bytes,
     if (ctx->use_journal == FLB_FALSE) {
         flb_kube_meta_release(&meta);
         flb_kube_prop_destroy(&props);
+        flb_kube_meta_release(&namespace_meta);
     }
 
     if (ctx->dummy_meta == FLB_TRUE) {
@@ -880,6 +902,25 @@ static struct flb_config_map config_map[] = {
      "include Kubernetes annotations on every record"
     },
 
+    /* Include Kubernetes Namespace Labels in the final record ? */
+    {
+     FLB_CONFIG_MAP_BOOL, "namespace_labels", "false",
+     0, FLB_TRUE, offsetof(struct flb_kube, namespace_labels),
+     "include Kubernetes namespace labels on every record"
+    },
+    /* Include Kubernetes Namespace Annotations in the final record ? */
+    {
+     FLB_CONFIG_MAP_BOOL, "namespace_annotations", "false",
+     0, FLB_TRUE, offsetof(struct flb_kube, namespace_annotations),
+     "include Kubernetes namespace annotations on every record"
+    },
+    /* Ignore pod metadata entirely, useful for fetching only namespace meta */
+    {
+     FLB_CONFIG_MAP_BOOL, "namespace_metadata_only", "false",
+     0, FLB_TRUE, offsetof(struct flb_kube, namespace_metadata_only),
+     "ignore pod metadata entirely and only fetch namespace metadata"
+    },
+
     /*
      * The Application may 'propose' special configuration keys
      * to the logging agent (Fluent Bit) through the annotations
@@ -1003,6 +1044,14 @@ static struct flb_config_map config_map[] = {
      "In order to enable this option, you should set the number to a time interval. " 
      "For example, set this value to 60 or 60s and cache entries " 
      "which have been created more than 60s will be evicted"
+    },
+    {
+     FLB_CONFIG_MAP_TIME, "kube_meta_namespace_cache_ttl", "15m",
+     0, FLB_TRUE, offsetof(struct flb_kube, kube_meta_namespace_cache_ttl),
+     "configurable TTL for K8s cached namespace metadata. " 
+     "By default, it is set to 15m and cached entries will be evicted after 15m."
+     "Setting this to 0 will disable the cache TTL and "
+     "will evict entries once the cache reaches capacity."
     },
     /* EOF */
     {0}

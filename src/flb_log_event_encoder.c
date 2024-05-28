@@ -2,7 +2,7 @@
 
 /*  Fluent Bit
  *  ==========
- *  Copyright (C) 2015-2022 The Fluent Bit Authors
+ *  Copyright (C) 2015-2024 The Fluent Bit Authors
  *
  *  Licensed under the Apache License, Version 2.0 (the "License");
  *  you may not use this file except in compliance with the License.
@@ -376,7 +376,7 @@ const char *flb_log_event_encoder_get_error_description(int error_code)
         break;
 
     case FLB_EVENT_ENCODER_ERROR_SERIALIZATION_FAILURE:
-        ret = "Serializatoin failure";
+        ret = "Serialization failure";
         break;
 
     case FLB_EVENT_ENCODER_ERROR_INVALID_VALUE_TYPE:

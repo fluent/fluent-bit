@@ -107,6 +107,7 @@ void do_test_records_trace(void (*records_cb)(struct callback_records *))
     records_cb(records);
     
     flb_stop(ctx);
+    sleep(5);
 
     for (i = 0; i < records->num_records; i++) {
         flb_lib_free(records->records[i].data);

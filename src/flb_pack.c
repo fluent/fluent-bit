@@ -2,7 +2,7 @@
 
 /*  Fluent Bit
  *  ==========
- *  Copyright (C) 2015-2022 The Fluent Bit Authors
+ *  Copyright (C) 2015-2024 The Fluent Bit Authors
  *
  *  Licensed under the Apache License, Version 2.0 (the "License");
  *  you may not use this file except in compliance with the License.
@@ -807,10 +807,11 @@ flb_sds_t flb_msgpack_raw_to_json_sds(const void *in_buf, size_t in_size)
     while (1) {
         ret = flb_msgpack_to_json(out_buf, out_size, root);
         if (ret <= 0) {
+            realloc_size *= 2;
             tmp_buf = flb_sds_increase(out_buf, realloc_size);
             if (tmp_buf) {
                 out_buf = tmp_buf;
-                out_size += realloc_size;
+                out_size *= realloc_size;
             }
             else {
                 flb_errno();
@@ -1168,7 +1169,7 @@ char *flb_msgpack_to_json_str(size_t size, const msgpack_object *obj)
         ret = flb_msgpack_to_json(buf, size, obj);
         if (ret <= 0) {
             /* buffer is small. retry.*/
-            size += 128;
+            size *= 2;
             tmp = flb_realloc(buf, size);
             if (tmp) {
                 buf = tmp;

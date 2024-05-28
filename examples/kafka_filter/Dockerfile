@@ -1,7 +1,7 @@
 FROM debian:bullseye-slim as builder
 ENV DEBIAN_FRONTEND noninteractive
-ENV KAFKA_URL https://downloads.apache.org/kafka/3.4.0/kafka_2.13-3.4.0.tgz
-ENV KAFKA_SHA256 67025feb03eb963a8852d4adc5b2810744f493a672c5992728955e38bed43da8
+ENV KAFKA_URL https://downloads.apache.org/kafka/3.4.1/kafka_2.13-3.4.1.tgz
+ENV KAFKA_SHA256 a76f17a52b8f2cd31de11571ff366a714820b6e4e02893b0159d09db0edaf998
 
 # hadolint ignore=DL3008
 RUN apt-get update && \

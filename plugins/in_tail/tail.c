@@ -2,7 +2,7 @@
 
 /*  Fluent Bit
  *  ==========
- *  Copyright (C) 2015-2022 The Fluent Bit Authors
+ *  Copyright (C) 2015-2024 The Fluent Bit Authors
  *
  *  Licensed under the Apache License, Version 2.0 (the "License");
  *  you may not use this file except in compliance with the License.
@@ -75,7 +75,8 @@ static int in_tail_collect_pending(struct flb_input_instance *ins,
     mk_list_foreach_safe(head, tmp, &ctx->files_event) {
         file = mk_list_entry(head, struct flb_tail_file, _head);
 
-        if (file->watch_fd == -1) {
+        if (file->watch_fd == -1 ||
+            (file->offset >= file->size)) {
             /* Gather current file size */
             ret = fstat(file->fd, &st);
             if (ret == -1) {
@@ -91,7 +92,10 @@ static int in_tail_collect_pending(struct flb_input_instance *ins,
         }
 
         if (file->pending_bytes <= 0) {
-            continue;
+            if(file->decompression_context == NULL ||
+               file->decompression_context->input_buffer_length == 0) {
+                continue;
+            }
         }
 
         if (ctx->event_batch_size > 0 &&
@@ -120,13 +124,18 @@ static int in_tail_collect_pending(struct flb_input_instance *ins,
              * Adjust counter to verify if we need a further read(2) later.
              * For more details refer to tail_fs_inotify.c:96.
              */
-            if (file->offset < st.st_size) {
-                file->pending_bytes = (st.st_size - file->offset);
+            if (file->offset < file->size) {
+                file->pending_bytes = (file->size - file->offset);
+                active++;
+            }
+            else if(file->decompression_context != NULL &&
+                    file->decompression_context->input_buffer_length > 0) {
                 active++;
             }
             else {
                 file->pending_bytes = 0;
             }
+
             break;
         }
     }
@@ -185,14 +194,14 @@ static int in_tail_collect_static(struct flb_input_instance *ins,
         }
 
         /* get initial offset to calculate the number of processed bytes later */
-        pre = file->offset;
+        pre = file->stream_offset;
 
         /* Process the file */
         ret = flb_tail_file_chunk(file);
 
         /* Update the total number of bytes processed */
-        if (file->offset > pre) {
-            total_processed += (file->offset - pre);
+        if (file->stream_offset > pre) {
+            total_processed += (file->stream_offset - pre);
         }
 
         switch (ret) {
@@ -207,10 +216,22 @@ static int in_tail_collect_static(struct flb_input_instance *ins,
             active++;
             break;
         case FLB_TAIL_WAIT:
+            if(file->decompression_context != NULL &&
+               file->decompression_context->input_buffer_length > 0) {
+                active++;
+
+                break;
+            }
+
             if (file->config->exit_on_eof) {
                 flb_plg_info(ctx->ins, "inode=%"PRIu64" file=%s ended, stop",
                              file->inode, file->name);
                 if (ctx->files_static_count == 1) {
+#ifdef FLB_HAVE_PARSER
+                    if (ctx->multiline) {
+                        flb_tail_mult_flush(file, ctx);
+                    }
+#endif
                     flb_engine_exit(config);
                 }
             }
@@ -365,6 +386,15 @@ static int in_tail_init(struct flb_input_instance *in,
 
     /* Scan path */
     flb_tail_scan(ctx->path_list, ctx);
+
+#ifdef FLB_HAVE_SQLDB
+    /* Delete stale files that are not monitored from the database */
+    ret = flb_tail_db_stale_file_delete(in, config, ctx);
+    if (ret == -1) {
+        flb_tail_config_destroy(ctx);
+        return -1;
+    }
+#endif
 
     /*
      * After the first scan (on start time), all new files discovered needs to be
@@ -720,6 +750,14 @@ static struct flb_config_map config_map[] = {
      "Option to provide WAL configuration for Work Ahead Logging mechanism (WAL). Enabling WAL "
      "provides higher performance. Note that WAL is not compatible with "
      "shared network file systems."
+    },
+    {
+     FLB_CONFIG_MAP_BOOL, "db.compare_filename", "false",
+     0, FLB_TRUE, offsetof(struct flb_tail_config, compare_filename),
+     "This option determines whether to check both the inode and the filename "
+     "when retrieving file information from the db."
+     "'true' verifies both the inode and filename, while 'false' checks only "
+     "the inode (default)."
     },
 #endif
 

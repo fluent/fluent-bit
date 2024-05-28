@@ -2,7 +2,7 @@
 
 /*  Fluent Bit
  *  ==========
- *  Copyright (C) 2015-2022 The Fluent Bit Authors
+ *  Copyright (C) 2015-2024 The Fluent Bit Authors
  *
  *  Licensed under the Apache License, Version 2.0 (the "License");
  *  you may not use this file except in compliance with the License.
@@ -109,7 +109,9 @@ static int cb_collector_time(struct flb_input_instance *ins,
 
     now = time(NULL);
     diff = now - config->init_time;
-    if (diff > CALLBACK_TIME) {
+    /* For macOS, we sometimes get the +1 longer time elapse.
+     * To handle this, we simply add +1 as a delta for checking interval. */
+    if (diff > (CALLBACK_TIME + 1)) {
         flb_plg_error(ins, "cb_collector_time difference failed: %i seconds", diff);
         set_unit_test_status(ctx, 0, STATUS_ERROR);
         flb_engine_exit(config);
@@ -285,7 +287,7 @@ static int cb_event_test_init(struct flb_input_instance *ins,
     ut->coll_id = ret;
 
     /* unit test 2: collector_socket */
-    fd = flb_net_server(SERVER_PORT, SERVER_IFACE);
+    fd = flb_net_server(SERVER_PORT, SERVER_IFACE, FLB_FALSE);
     if (fd < 0) {
         flb_errno();
         config_destroy(ctx);

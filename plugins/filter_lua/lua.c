@@ -2,7 +2,7 @@
 
 /*  Fluent Bit
  *  ==========
- *  Copyright (C) 2015-2022 The Fluent Bit Authors
+ *  Copyright (C) 2015-2024 The Fluent Bit Authors
  *
  *  Licensed under the Apache License, Version 2.0 (the "License");
  *  you may not use this file except in compliance with the License.
@@ -36,11 +36,9 @@
 #include "lua_config.h"
 #include "mpack/mpack.h"
 
-static int cb_lua_init(struct flb_filter_instance *f_ins,
-                       struct flb_config *config,
-                       void *data)
+static int cb_lua_pre_run(struct flb_filter_instance *f_ins,
+                          struct flb_config *config, void *data)
 {
-    int err;
     int ret;
     (void) data;
     struct lua_filter *ctx;
@@ -72,7 +70,54 @@ static int cb_lua_init(struct flb_filter_instance *f_ins,
         ret = flb_luajit_load_script(ctx->lua, ctx->script);
     }
 
+    flb_luajit_destroy(ctx->lua);
+    lua_config_destroy(ctx);
+
+    return ret;
+}
+
+static int cb_lua_init(struct flb_filter_instance *f_ins,
+                       struct flb_config *config,
+                       void *data)
+{
+    int err;
+    int ret;
+    (void) data;
+    struct lua_filter *ctx;
+    struct flb_luajit *lj;
+
+    /* Create context */
+    ctx = lua_config_create(f_ins, config);
+    if (!ctx) {
+        flb_error("[filter_lua] filter cannot be loaded");
+        return -1;
+    }
+
+    /* Create LuaJIT state/vm */
+    lj = flb_luajit_create(config);
+    if (!lj) {
+        lua_config_destroy(ctx);
+        return -1;
+    }
+    ctx->lua = lj;
+
+    if (ctx->enable_flb_null) {
+        flb_lua_enable_flb_null(lj->state);
+    }
+
+    /* Lua script source code */
+    if (ctx->code) {
+        ret = flb_luajit_load_buffer(ctx->lua,
+                                     ctx->code, flb_sds_len(ctx->code),
+                                     "fluentbit.lua");
+    }
+    else {
+        /* Load Script / file path*/
+        ret = flb_luajit_load_script(ctx->lua, ctx->script);
+    }
+
     if (ret == -1) {
+        flb_luajit_destroy(ctx->lua);
         lua_config_destroy(ctx);
         return -1;
     }
@@ -128,7 +173,7 @@ static void pack_result_mpack(lua_State *l,
         return;
     }
 
-    len = flb_lua_arraylength(l);
+    len = flb_lua_arraylength(l, -1);
     if (len > 0) {
         /* record split */
         for (i = 1; i <= len; i++) {
@@ -683,6 +728,13 @@ static struct flb_config_map config_map[] = {
      "If enabled, Fluent-bit will pass the timestamp as a Lua table "
      "with keys \"sec\" for seconds since epoch and \"nsec\" for nanoseconds."
     },
+    {
+     FLB_CONFIG_MAP_BOOL, "enable_flb_null", "false",
+     0, FLB_TRUE, offsetof(struct lua_filter, enable_flb_null),
+     "If enabled, null will be converted to flb_null in Lua. "
+     "It is useful to prevent removing key/value "
+     "since nil is a special value to remove key value from map in Lua."
+    },
 
     {0}
 };
@@ -690,6 +742,7 @@ static struct flb_config_map config_map[] = {
 struct flb_filter_plugin filter_lua_plugin = {
     .name         = "lua",
     .description  = "Lua Scripting Filter",
+    .cb_pre_run   = cb_lua_pre_run,
     .cb_init      = cb_lua_init,
 #ifdef FLB_FILTER_LUA_USE_MPACK
     .cb_filter    = cb_lua_filter_mpack,

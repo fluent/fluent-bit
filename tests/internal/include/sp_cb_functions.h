@@ -535,6 +535,20 @@ static void cb_select_groupby(int id, struct task_check *check,
     ret = mp_count_rows(buf, size);
     TEST_CHECK(ret == 2);
 
+    /* bool is 1 for record 0 (bool=true) */
+    ret = mp_record_key_cmp(buf, size,
+                            0, "bool",
+                            MSGPACK_OBJECT_POSITIVE_INTEGER,
+                            NULL, 1, 0);
+    TEST_CHECK(ret == FLB_TRUE);
+
+    /* bool is 0 for record 1 (bool=false) */
+    ret = mp_record_key_cmp(buf, size,
+                            1, "bool",
+                            MSGPACK_OBJECT_POSITIVE_INTEGER,
+                            NULL, 0, 0);
+    TEST_CHECK(ret == FLB_TRUE);
+
     /* MIN(id) is 0 for record 0 (bool=true) */
     ret = mp_record_key_cmp(buf, size,
                             0, "MIN(id)",
@@ -556,7 +570,7 @@ static void cb_select_groupby(int id, struct task_check *check,
                             NULL, 8, 0);
     TEST_CHECK(ret == FLB_TRUE);
 
-    /* MAX(id) is i9 for record 1 (bool=false)  */
+    /* MAX(id) is 9 for record 1 (bool=false)  */
     ret = mp_record_key_cmp(buf, size,
                             1, "MAX(id)",
                             MSGPACK_OBJECT_POSITIVE_INTEGER,

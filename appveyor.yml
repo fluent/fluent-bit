@@ -1,5 +1,15 @@
 version: v1-winbuild-{build}
 
+#
+# If you change dependencies etc here, please also check and update
+# the other Windows build resources:
+#
+# - DEVELOPER_GUIDE.md "Windows" section
+# - appveyor.yml
+# - .github/workflows/call-build-windows.yaml
+# - dockerfiles/Dockerfile.windows
+#
+
 image: Visual Studio 2019
 
 platform:

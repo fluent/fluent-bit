@@ -78,6 +78,11 @@ static inline int handle_input_event(flb_pipefd_t fd, struct flb_input_instance 
                 ins->p->cb_pause(ins->context, ins->config);
             }
         }
+        else if (operation == FLB_INPUT_THREAD_RESUME) {
+            if (ins->p->cb_resume) {
+                ins->p->cb_resume(ins->context, ins->config);
+            }
+        }
         else if (operation == FLB_INPUT_THREAD_EXIT) {
             return FLB_INPUT_THREAD_EXIT;
         }
@@ -472,6 +477,31 @@ int flb_input_thread_instance_pause(struct flb_input_instance *ins)
     /* compose message to pause the thread */
     val = FLB_BITS_U64_SET(FLB_INPUT_THREAD_TO_THREAD,
                            FLB_INPUT_THREAD_PAUSE);
+
+    ret = flb_pipe_w(thi->ch_parent_events[1], &val, sizeof(val));
+    if (ret <= 0) {
+        flb_errno();
+        return -1;
+    }
+
+    return 0;
+}
+
+/*
+ * Signal the thread event loop to resume the running plugin instance. This function
+ * must be called only from the main thread/pipeline.
+ */
+int flb_input_thread_instance_resume(struct flb_input_instance *ins)
+{
+    int ret;
+    uint64_t val;
+    struct flb_input_thread_instance *thi = ins->thi;
+
+    flb_plg_debug(ins, "thread resume instance");
+
+    /* compose message to resume the thread */
+    val = FLB_BITS_U64_SET(FLB_INPUT_THREAD_TO_THREAD,
+                           FLB_INPUT_THREAD_RESUME);
 
     ret = flb_pipe_w(thi->ch_parent_events[1], &val, sizeof(val));
     if (ret <= 0) {

@@ -2,7 +2,7 @@
 
 /*  Fluent Bit
  *  ==========
- *  Copyright (C) 2015-2022 The Fluent Bit Authors
+ *  Copyright (C) 2015-2024 The Fluent Bit Authors
  *
  *  Licensed under the Apache License, Version 2.0 (the "License");
  *  you may not use this file except in compliance with the License.
@@ -78,6 +78,10 @@ int opentelemetry_config_destroy(struct flb_opentelemetry *ctx)
 
     if (ctx->downstream != NULL) {
         flb_downstream_destroy(ctx->downstream);
+    }
+
+    if (ctx->enable_http2) {
+        flb_http_server_destroy(&ctx->http_server);
     }
 
     if (ctx->server) {

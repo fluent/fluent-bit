@@ -1,0 +1,370 @@
+version: v1.0
+name: 'librdkafka build and release artifact pipeline'
+agent:
+  machine:
+    type: s1-prod-macos-arm64
+execution_time_limit:
+  hours: 3
+global_job_config:
+  prologue:
+    commands:
+      - checkout
+      - mkdir artifacts
+      - mkdir dest
+blocks:
+  - name: 'OSX arm64/m1'
+    dependencies: []
+    task:
+      agent:
+        machine:
+          type: s1-prod-macos-arm64
+      env_vars:
+        - name: ARTIFACT_KEY
+          value: p-librdkafka__plat-osx__arch-arm64__lnk-all
+      epilogue:
+        commands:
+          - '[[ -z $SEMAPHORE_GIT_TAG_NAME ]] || artifact push workflow artifacts/ --destination artifacts/${ARTIFACT_KEY}/'
+      jobs:
+        - name: 'Build'
+          commands:
+            - ./configure --install-deps --source-deps-only --enable-static --disable-lz4-ext --enable-strip
+            - make -j all examples check
+            - examples/rdkafka_example -X builtin.features
+            - otool -L src/librdkafka.dylib
+            - otool -L src-cpp/librdkafka++.dylib
+            - make -j -C tests build
+            - make -C tests run_local_quick
+            - DESTDIR="$PWD/dest" make install
+            - (cd dest && tar cvzf ../artifacts/librdkafka.tgz .)
+
+
+  - name: 'OSX x64'
+    dependencies: []
+    task:
+      agent:
+        machine:
+          type: s1-prod-macos
+      env_vars:
+        - name: ARTIFACT_KEY
+          value: p-librdkafka__plat-osx__arch-x64__lnk-all
+      epilogue:
+        commands:
+          - '[[ -z $SEMAPHORE_GIT_TAG_NAME ]] || artifact push workflow artifacts/ --destination artifacts/${ARTIFACT_KEY}/'
+      jobs:
+        - name: 'Build'
+          commands:
+            - ./configure --install-deps --source-deps-only --enable-static --disable-lz4-ext --enable-strip
+            - make -j all examples check
+            - examples/rdkafka_example -X builtin.features
+            - otool -L src/librdkafka.dylib
+            - otool -L src-cpp/librdkafka++.dylib
+            - make -j -C tests build
+            - make -C tests run_local_quick
+            - DESTDIR="$PWD/dest" make install
+            - (cd dest && tar cvzf ../artifacts/librdkafka.tgz .)
+
+
+  - name: 'Style check'
+    dependencies: []
+    skip:
+      # Skip for release tags, we don't want style checks
+      # to fail the release build.
+      when: "tag =~ '^v[0-9]\\.'"
+    task:
+      agent:
+        machine:
+          type: s1-prod-ubuntu20-04-amd64-2
+      jobs:
+        - name: 'Style check'
+          commands:
+            - sudo apt install -y clang-format-10 python3 python3-pip python3-setuptools
+            - python3 -m pip install -r packaging/tools/requirements.txt
+            - CLANG_FORMAT=clang-format-10 make style-check
+
+
+  - name: 'Build documentation'
+    dependencies: []
+    task:
+      agent:
+        machine:
+          type: s1-prod-ubuntu20-04-amd64-2
+      jobs:
+        - name: 'Generate documentation'
+          commands:
+            - sudo apt install -y doxygen graphviz
+            - make docs
+            - (cd staging-docs && tar cvzf ../artifacts/librdkafka-docs.tgz .)
+            - '[[ -z $SEMAPHORE_GIT_TAG_NAME ]] || artifact push workflow artifacts/librdkafka-docs.tgz --destination artifacts/librdkafka-docs.tgz'
+
+
+  - name: 'Linux Ubuntu x64: source build'
+    dependencies: []
+    skip:
+      # Skip for release tags, we don't want flaky CI tests
+      # to fail the release build.
+      when: "tag =~ '^v[0-9]\\.'"
+    task:
+      agent:
+        machine:
+          type: s1-prod-ubuntu20-04-amd64-2
+      env_vars:
+        - name: CFLAGS
+          value: -std=gnu90 # Test minimum C standard, default in CentOS 7
+      prologue:
+        commands:
+          - docker login --username $DOCKERHUB_USER --password $DOCKERHUB_APIKEY
+      jobs:
+        - name: 'Build and integration tests'
+          commands:
+            - wget -O rapidjson-dev.deb https://launchpad.net/ubuntu/+archive/primary/+files/rapidjson-dev_1.1.0+dfsg2-3_all.deb
+            - sudo dpkg -i rapidjson-dev.deb
+            - python3 -m pip install -U pip
+            - python3 -m pip -V
+            - python3 -m pip install -r tests/requirements.txt
+            - ./configure --install-deps
+            # split these up
+            - ./packaging/tools/rdutcoverage.sh
+            - make copyright-check
+            - make -j all examples check
+            - echo "Verifying that CONFIGURATION.md does not have manual changes"
+            - git diff --exit-code CONFIGURATION.md
+            - examples/rdkafka_example -X builtin.features
+            - ldd src/librdkafka.so.1
+            - ldd src-cpp/librdkafka++.so.1
+            - make -j -C tests build
+            - make -C tests run_local_quick
+            - DESTDIR="$PWD/dest" make install
+            - (cd tests && python3 -m trivup.clusters.KafkaCluster --version 3.4.0 --cmd 'make quick')
+
+
+  - name: 'Linux x64: release artifact docker builds'
+    dependencies: []
+    run:
+      when: "tag =~ '^v[0-9]\\.'"
+    task:
+      agent:
+        machine:
+          type: s1-prod-ubuntu20-04-amd64-2
+      prologue:
+        commands:
+          - docker login --username $DOCKERHUB_USER --password $DOCKERHUB_APIKEY
+      epilogue:
+        commands:
+          - '[[ -z $SEMAPHORE_GIT_TAG_NAME ]] || artifact push workflow artifacts/ --destination artifacts/${ARTIFACT_KEY}/'
+      jobs:
+        - name: 'Build: centos6 glibc +gssapi'
+          env_vars:
+            - name: ARTIFACT_KEY
+              value: p-librdkafka__plat-linux__dist-centos6__arch-x64__lnk-std__extra-gssapi
+          commands:
+            - packaging/tools/build-release-artifacts.sh quay.io/pypa/manylinux2010_x86_64 artifacts/librdkafka.tgz
+
+        - name: 'Build: centos6 glibc'
+          env_vars:
+            - name: ARTIFACT_KEY
+              value: p-librdkafka__plat-linux__dist-centos6__arch-x64__lnk-all
+          commands:
+            - packaging/tools/build-release-artifacts.sh --disable-gssapi quay.io/pypa/manylinux2010_x86_64 artifacts/librdkafka.tgz
+
+        - name: 'Build: centos7 glibc +gssapi'
+          env_vars:
+            - name: ARTIFACT_KEY
+              value: p-librdkafka__plat-linux__dist-centos7__arch-x64__lnk-std__extra-gssapi
+          commands:
+            - packaging/tools/build-release-artifacts.sh quay.io/pypa/manylinux2014_x86_64 artifacts/librdkafka.tgz
+
+        - name: 'Build: centos7 glibc'
+          env_vars:
+            - name: ARTIFACT_KEY
+              value: p-librdkafka__plat-linux__dist-centos7__arch-x64__lnk-all
+          commands:
+            - packaging/tools/build-release-artifacts.sh --disable-gssapi quay.io/pypa/manylinux2014_x86_64 artifacts/librdkafka.tgz
+
+        - name: 'Build: alpine musl +gssapi'
+          env_vars:
+            - name: ARTIFACT_KEY
+              value: p-librdkafka__plat-linux__dist-alpine__arch-x64__lnk-std__extra-gssapi
+          commands:
+            - packaging/tools/build-release-artifacts.sh alpine:3.16 artifacts/librdkafka.tgz
+
+        - name: 'Build: alpine musl'
+          env_vars:
+            - name: ARTIFACT_KEY
+              value: p-librdkafka__plat-linux__dist-alpine__arch-x64__lnk-all
+          commands:
+            - packaging/tools/build-release-artifacts.sh --disable-gssapi alpine:3.16 artifacts/librdkafka.tgz
+
+
+  - name: 'Linux arm64: release artifact docker builds'
+    dependencies: []
+    task:
+      agent:
+        machine:
+          type: s1-prod-ubuntu20-04-arm64-1
+      prologue:
+        commands:
+          - docker login --username $DOCKERHUB_USER --password $DOCKERHUB_APIKEY
+      epilogue:
+        commands:
+          - '[[ -z $SEMAPHORE_GIT_TAG_NAME ]] || artifact push workflow artifacts/ --destination artifacts/${ARTIFACT_KEY}/'
+      jobs:
+        - name: 'Build: centos7 glibc +gssapi'
+          env_vars:
+            - name: ARTIFACT_KEY
+              value: p-librdkafka__plat-linux__dist-centos7__arch-arm64__lnk-std__extra-gssapi
+          commands:
+            - packaging/tools/build-release-artifacts.sh quay.io/pypa/manylinux2014_aarch64 artifacts/librdkafka.tgz
+
+        - name: 'Build: centos7 glibc'
+          env_vars:
+            - name: ARTIFACT_KEY
+              value: p-librdkafka__plat-linux__dist-centos7__arch-arm64__lnk-all
+          commands:
+            - packaging/tools/build-release-artifacts.sh --disable-gssapi quay.io/pypa/manylinux2014_aarch64 artifacts/librdkafka.tgz
+
+        - name: 'Build: alpine musl +gssapi'
+          env_vars:
+            - name: ARTIFACT_KEY
+              value: p-librdkafka__plat-linux__dist-alpine__arch-arm64__lnk-all__extra-gssapi
+          commands:
+            - packaging/tools/build-release-artifacts.sh alpine:3.16 artifacts/librdkafka.tgz
+
+        - name: 'Build: alpine musl'
+          env_vars:
+            - name: ARTIFACT_KEY
+              value: p-librdkafka__plat-linux__dist-alpine__arch-arm64__lnk-all
+          commands:
+            - packaging/tools/build-release-artifacts.sh --disable-gssapi alpine:3.16 artifacts/librdkafka.tgz
+
+
+  - name: 'Windows x64: MinGW-w64'
+    dependencies: []
+    task:
+      agent:
+        machine:
+          type: s1-prod-windows
+      env_vars:
+        - name: CHERE_INVOKING
+          value: 'yes'
+        - name: MSYSTEM
+          value: UCRT64
+      prologue:
+        commands:
+          # Set up msys2
+          - "& .\\win32\\setup-msys2.ps1"
+      epilogue:
+        commands:
+          - if ($env:SEMAPHORE_GIT_TAG_NAME -ne "") { artifact push workflow artifacts/ --destination artifacts/$Env:ARTIFACT_KEY/ }
+      jobs:
+        - name: 'Build: MinGW-w64 Dynamic'
+          env_vars:
+            - name: ARTIFACT_KEY
+              value: p-librdkafka__plat-windows__dist-mingw__arch-x64__lnk-std
+          commands:
+            - C:\msys64\usr\bin\bash -lc './packaging/mingw-w64/semaphoreci-build.sh ./artifacts/librdkafka.tgz'
+
+        - name: 'Build: MinGW-w64 Static'
+          env_vars:
+            - name: ARTIFACT_KEY
+              value: p-librdkafka__plat-windows__dist-mingw__arch-x64__lnk-static
+          commands:
+            - C:\msys64\usr\bin\bash -lc './packaging/mingw-w64/semaphoreci-build.sh --static ./artifacts/librdkafka.tgz'
+
+  - name: 'Windows x64: Windows SDK 10.0 / MSVC v142 / VS 2019'
+    dependencies: []
+    task:
+      agent:
+        machine:
+          type: s1-prod-windows
+      env_vars:
+        # Disable vcpkg telemetry
+        - name: VCPKG_DISABLE_METRICS
+          value: 'yes'
+      prologue:
+        commands:
+          # install vcpkg in the parent directory.
+          - pwd
+          - cd ..
+          # Setup vcpkg
+          - "& .\\librdkafka\\win32\\setup-vcpkg.ps1"
+          - cd librdkafka
+          - ..\vcpkg\vcpkg integrate install
+          # Install required packages.
+          - ..\vcpkg\vcpkg --feature-flags=versions install --triplet $Env:triplet
+          - cd ..
+          - pwd
+          - ls vcpkg/
+          - echo $Env:VCPKG_ROOT
+          - pwd
+          - cd librdkafka
+      epilogue:
+        commands:
+          - Get-ChildItem . -include *.dll -recurse
+          - Get-ChildItem . -include *.lib -recurse
+          - if ($env:SEMAPHORE_GIT_TAG_NAME -ne "") { artifact push workflow artifacts/ --destination artifacts/$Env:ARTIFACT_KEY/ }
+      jobs:
+        - name: 'Build: MSVC x64'
+          env_vars:
+            - name: triplet
+              value: x64-windows
+            - name: ARTIFACT_KEY
+              value: p-librdkafka__plat-windows__dist-msvc__arch-x64__lnk-std
+          commands:
+            - "& .\\win32\\msbuild.ps1 -platform x64"
+            - "& .\\win32\\package-zip.ps1 -platform x64"
+        - name: 'Build: MSVC x86'
+          env_vars:
+            - name: triplet
+              value: x86-windows
+            - name: ARTIFACT_KEY
+              value: p-librdkafka__plat-windows__dist-msvc__arch-x86__lnk-std
+          commands:
+            - "& .\\win32\\msbuild.ps1 -platform Win32"
+            - "& .\\win32\\package-zip.ps1 -platform Win32"
+
+  - name: 'Packaging'
+    dependencies:
+      - 'Build documentation'
+      - 'OSX arm64/m1'
+      - 'OSX x64'
+      - 'Linux x64: release artifact docker builds'
+      - 'Linux arm64: release artifact docker builds'
+      - 'Windows x64: MinGW-w64'
+      - 'Windows x64: Windows SDK 10.0 / MSVC v142 / VS 2019'
+    run:
+      when: "tag =~ '^v[0-9]\\.'"
+    task:
+      agent:
+        machine:
+          type: s1-prod-ubuntu20-04-amd64-2
+      jobs:
+        - name: 'Build NuGet and static packages'
+          commands:
+            # Get all artifacts from previous jobs in this workflow/pipeline.
+            - artifact pull workflow artifacts
+            - mkdir -p packages
+            # Prepare packaging tools
+            - cd packaging/nuget
+            - python3 -m pip install -U -r requirements.txt
+            # Create NuGet package
+            # We need --ignore-tag since the jobs don't add the tag to
+            # the artifact path, and they don't need to since these artifacts
+            # are part of the same workflow.
+            - ./release.py --directory ../../artifacts --ignore-tag --class NugetPackage ${SEMAPHORE_GIT_TAG_NAME}
+            - cp -v librdkafka.redist.*.nupkg ../../packages
+            # Create static package
+            - ./release.py --directory ../../artifacts --ignore-tag --class StaticPackage ${SEMAPHORE_GIT_TAG_NAME}
+            - cp -v librdkafka-static-bundle*.tgz ../../packages
+            - cd ../../
+            # Copy generated docs to packages for inclusion in the tar ball
+            - cp -v artifacts/librdkafka-docs.tgz packages/
+            # Maker super tar ball of all packages
+            - cd packages
+            - tar cvf librdkafka-packages-${SEMAPHORE_GIT_TAG_NAME}-${SEMAPHORE_WORKFLOW_ID}.tar .
+            # Provide some extra details
+            - ls -la
+            - sha256sum *
+            - cd ..
+            # Upload all packages to project artifact store
+            - artifact push project packages --destination librdkafka-packages-${SEMAPHORE_GIT_TAG_NAME}-${SEMAPHORE_WORKFLOW_ID}
+            - echo Thank you

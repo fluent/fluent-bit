@@ -6,6 +6,7 @@
 |-------------------|--------------------|
 | Unit Tests (master) | [![CI/Unit Tests](https://github.com/fluent/fluent-bit/actions/workflows/unit-tests.yaml/badge.svg?branch=master)](https://github.com/fluent/fluent-bit/actions/workflows/unit-tests.yaml) |
 | Integration Tests (master) | [![CI/Integration Tests](https://github.com/fluent/fluent-bit/actions/workflows/master-integration-test.yaml/badge.svg)](https://github.com/fluent/fluent-bit/actions/workflows/master-integration-test.yaml)|
+| Arm builds         | <a href="https://actuated.dev/"><img alt="Arm CI sponsored by Actuated" src="https://docs.actuated.dev/images/actuated-badge.png" width="120px"></img></a> |
 | Latest release |  [![CI/Build](https://github.com/fluent/fluent-bit/actions/workflows/staging-release.yaml/badge.svg)](https://github.com/fluent/fluent-bit/actions/workflows/staging-release.yaml)|
 
 ## About
@@ -100,6 +101,10 @@ tags [here](https://docs.fluentbit.io/manual/installation/docker).
 #### Windows Packages
 
 Fluent Bit is fully supported on Windows environments, get started with [these instructions](https://docs.fluentbit.io/manual/installation/windows).
+
+#### Running on s390x
+
+Fluent Bit is supported on Linux on IBM Z(s390x), but the WASM and LUA filter plugins are not.
 
 ### Plugins: Inputs, Filters and Outputs
 

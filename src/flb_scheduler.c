@@ -2,7 +2,7 @@
 
 /*  Fluent Bit
  *  ==========
- *  Copyright (C) 2015-2022 The Fluent Bit Authors
+ *  Copyright (C) 2015-2024 The Fluent Bit Authors
  *
  *  Licensed under the Apache License, Version 2.0 (the "License");
  *  you may not use this file except in compliance with the License.
@@ -523,7 +523,7 @@ struct flb_sched *flb_sched_create(struct flb_config *config,
     struct flb_sched *sched;
     struct flb_sched_timer *timer;
 
-    sched = flb_malloc(sizeof(struct flb_sched));
+    sched = flb_calloc(1, sizeof(struct flb_sched));
     if (!sched) {
         flb_errno();
         return NULL;
@@ -603,6 +603,7 @@ int flb_sched_destroy(struct flb_sched *sched)
     /* Delete timers */
     mk_list_foreach_safe(head, tmp, &sched->timers) {
         timer = mk_list_entry(head, struct flb_sched_timer, _head);
+        mk_event_timeout_destroy(sched->evl, &timer->event);
         flb_sched_timer_destroy(timer);
         c++;
     }

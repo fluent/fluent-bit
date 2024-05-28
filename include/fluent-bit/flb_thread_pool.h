@@ -2,7 +2,7 @@
 
 /*  Fluent Bit
  *  ==========
- *  Copyright (C) 2015-2022 The Fluent Bit Authors
+ *  Copyright (C) 2015-2024 The Fluent Bit Authors
  *
  *  Licensed under the Apache License, Version 2.0 (the "License");
  *  you may not use this file except in compliance with the License.
@@ -64,7 +64,7 @@ struct flb_tp_thread *flb_tp_thread_get_rr(struct flb_tp *tp);
 int flb_tp_thread_start(struct flb_tp *tp, struct flb_tp_thread *th);
 int flb_tp_thread_start_id(struct flb_tp *tp, int id);
 int flb_tp_thread_start_all(struct flb_tp *tp);
-int flb_tp_thread_stop();
+int flb_tp_thread_stop(struct flb_tp *tp, struct flb_tp_thread *th);
 int flb_tp_thread_stop_all(struct flb_tp *tp);
 int flb_tp_thread_destroy();
 

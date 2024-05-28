@@ -2,7 +2,7 @@
 
 /*  Fluent Bit
  *  ==========
- *  Copyright (C) 2015-2022 The Fluent Bit Authors
+ *  Copyright (C) 2015-2024 The Fluent Bit Authors
  *
  *  Licensed under the Apache License, Version 2.0 (the "License");
  *  you may not use this file except in compliance with the License.
@@ -44,6 +44,10 @@ struct flb_event_chunk *flb_event_chunk_create(int type,
         flb_free(evc);
         return NULL;
     }
+
+#ifdef FLB_HAVE_CHUNK_TRACE
+    evc->trace = NULL;
+#endif
 
     evc->type = type;
     evc->data = buf_data;

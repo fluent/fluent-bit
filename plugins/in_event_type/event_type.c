@@ -2,7 +2,7 @@
 
 /*  Fluent Bit
  *  ==========
- *  Copyright (C) 2015-2022 The Fluent Bit Authors
+ *  Copyright (C) 2015-2024 The Fluent Bit Authors
  *
  *  Licensed under the Apache License, Version 2.0 (the "License");
  *  you may not use this file except in compliance with the License.
@@ -313,7 +313,7 @@ static int send_traces(struct flb_input_instance *ins)
     ctr_span_event_set_attribute_string(event, "syscall 3", "write()");
 
     /* add a key/value pair list */
-    kv = cfl_kvlist_create(1);
+    kv = cfl_kvlist_create();
     cfl_kvlist_insert_string(kv, "language", "c");
 
     ctr_span_set_attribute_kvlist(span_root, "my-list", kv);

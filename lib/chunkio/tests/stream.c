@@ -54,7 +54,7 @@ static void test_stream_delete()
 
     cio_utils_recursive_delete("tmp");
 
-    memset(&cio_opts, 0, sizeof(cio_opts));
+    cio_options_init(&cio_opts);
 
     cio_opts.root_path = "tmp";
     cio_opts.log_cb = log_cb;

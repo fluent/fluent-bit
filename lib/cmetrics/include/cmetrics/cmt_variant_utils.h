@@ -22,6 +22,10 @@
 
 #include <mpack/mpack.h>
 
+#define CFL_VARIANT_UTILS_MAXIMUM_FIXED_ARRAY_SIZE    100
+#define CFL_VARIANT_UTILS_INITIAL_ARRAY_SIZE          100
+#define CFL_VARIANT_UTILS_SERIALIZED_ARRAY_SIZE_LIMIT 100000
+
 /* These are the only functions meant for general use,
  * the reason why the kvlist packing and unpacking
  * functions are exposed is the internal and external
@@ -226,10 +230,23 @@ static inline int unpack_cfl_array(mpack_reader_t *reader,
 
     entry_count = mpack_tag_array_count(&tag);
 
-    internal_array = cfl_array_create(entry_count);
+    if (entry_count >= CFL_VARIANT_UTILS_SERIALIZED_ARRAY_SIZE_LIMIT) {
+        return -2;
+    }
+
+    if (entry_count >= CFL_VARIANT_UTILS_MAXIMUM_FIXED_ARRAY_SIZE) {
+        internal_array = cfl_array_create(CFL_VARIANT_UTILS_INITIAL_ARRAY_SIZE);
+    }
+    else {
+        internal_array = cfl_array_create(entry_count);
+    }
 
     if (internal_array == NULL) {
         return -3;
+    }
+
+    if (entry_count >= CFL_VARIANT_UTILS_MAXIMUM_FIXED_ARRAY_SIZE) {
+        cfl_array_resizable(internal_array, CFL_TRUE);
     }
 
     for (index = 0 ; index < entry_count ; index++) {
@@ -595,7 +612,7 @@ static inline int unpack_cfl_variant(mpack_reader_t *reader,
     if (value_type == mpack_type_str) {
         result = unpack_cfl_variant_string(reader, value);
     }
-    else if (value_type == mpack_type_str) {
+    else if (value_type == mpack_type_bool) {
         result = unpack_cfl_variant_boolean(reader, value);
     }
     else if (value_type == mpack_type_int) {

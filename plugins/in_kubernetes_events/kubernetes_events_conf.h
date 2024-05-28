@@ -2,7 +2,7 @@
 
 /*  Fluent Bit
  *  ==========
- *  Copyright (C) 2015-2023 The Fluent Bit Authors
+ *  Copyright (C) 2015-2024 The Fluent Bit Authors
  *
  *  Licensed under the Apache License, Version 2.0 (the "License");
  *  you may not use this file except in compliance with the License.
@@ -38,7 +38,6 @@
 #define K8S_EVENTS_KUBE_TOKEN          "/var/run/secrets/kubernetes.io/serviceaccount/token"
 #define K8S_EVENTS_KUBE_CA             "/var/run/secrets/kubernetes.io/serviceaccount/ca.crt"
 
-#define K8S_EVENTS_RA_TIMESTAMP        "$metadata['creationTimestamp']"
 #define K8S_EVENTS_RA_RESOURCE_VERSION "$metadata['resourceVersion']"
 
 struct k8s_events *k8s_events_conf_create(struct flb_input_instance *ins);

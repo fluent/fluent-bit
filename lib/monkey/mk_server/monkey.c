@@ -199,7 +199,6 @@ int mk_server_setup(struct mk_server *server)
     /* Clock init that must happen before starting threads */
     mk_clock_sequential_init(server);
 
-printf("MK SERVER SETUP CALLED\n");
     /* Load plugins */
     mk_plugin_api_init(server);
     mk_plugin_load_all(server);

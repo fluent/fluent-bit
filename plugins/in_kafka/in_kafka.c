@@ -19,7 +19,6 @@
  */
 
 #include <fluent-bit/flb_input_plugin.h>
-#include <fluent-bit/flb_config.h>
 #include <fluent-bit/flb_pack.h>
 #include <fluent-bit/flb_engine.h>
 #include <fluent-bit/flb_time.h>
@@ -51,14 +50,15 @@ static int try_json(struct flb_log_event_encoder *log_encoder,
         }
         return ret;
     }
-    flb_log_event_encoder_append_body_binary_body(log_encoder, buf, bufsize);
+    flb_log_event_encoder_append_body_raw_msgpack(log_encoder, buf, bufsize);
     flb_free(buf);
     return 0;
 }
 
-static int process_message(struct flb_log_event_encoder *log_encoder,
+static int process_message(struct flb_in_kafka_config *ctx,
                            rd_kafka_message_t *rkm)
 {
+    struct flb_log_event_encoder *log_encoder = ctx->log_encoder;
     int ret;
 
     ret = flb_log_event_encoder_begin_record(log_encoder);
@@ -128,7 +128,8 @@ static int process_message(struct flb_log_event_encoder *log_encoder,
 
     if (ret == FLB_EVENT_ENCODER_SUCCESS) {
         if (rkm->payload) {
-            if (try_json(log_encoder, rkm)) {
+            if (ctx->format != FLB_IN_KAFKA_FORMAT_JSON ||
+                    try_json(log_encoder, rkm)) {
                 ret = flb_log_event_encoder_append_body_string(log_encoder,
                                                                rkm->payload,
                                                                rkm->len);
@@ -166,20 +167,35 @@ static int in_kafka_collect(struct flb_input_instance *ins,
             break;
         }
 
+        if (rkm->err) {
+            flb_plg_warn(ins, "consumer error: %s\n",
+                         rd_kafka_message_errstr(rkm));
+            rd_kafka_message_destroy(rkm);
+            continue;
+        }
+
         flb_plg_debug(ins, "kafka message received");
 
-        ret = process_message(ctx->log_encoder, rkm);
+        ret = process_message(ctx, rkm);
 
         rd_kafka_message_destroy(rkm);
 
         /* TO-DO: commit the record based on `ret` */
         rd_kafka_commit(ctx->kafka.rk, NULL, 0);
+
+        /* Break from the loop when reaching the limit of polling if available */
+        if (ctx->polling_threshold != FLB_IN_KAFKA_UNLIMITED &&
+            ctx->log_encoder->output_length > ctx->polling_threshold + 512) {
+            break;
+        }
     }
 
     if (ret == FLB_EVENT_ENCODER_SUCCESS) {
-        flb_input_log_append(ins, NULL, 0,
-                             ctx->log_encoder->output_buffer,
-                             ctx->log_encoder->output_length);
+        if (ctx->log_encoder->output_length > 0) {
+            flb_input_log_append(ins, NULL, 0,
+                                 ctx->log_encoder->output_buffer,
+                                 ctx->log_encoder->output_length);
+        }
         ret = 0;
     }
     else {
@@ -202,8 +218,10 @@ static int in_kafka_init(struct flb_input_instance *ins,
     rd_kafka_conf_t *kafka_conf = NULL;
     rd_kafka_topic_partition_list_t *kafka_topics = NULL;
     rd_kafka_resp_err_t err;
+    rd_kafka_conf_res_t res;
     char errstr[512];
     (void) data;
+    char conf_val[16];
 
     /* Allocate space for the configuration context */
     ctx = flb_malloc(sizeof(struct flb_in_kafka_config));
@@ -225,6 +243,31 @@ static int in_kafka_init(struct flb_input_instance *ins,
         goto init_error;
     }
 
+    if (ctx->buffer_max_size > 0) {
+        ctx->polling_threshold = ctx->buffer_max_size;
+
+        snprintf(conf_val, sizeof(conf_val), "%zu", ctx->polling_threshold - 512);
+        res = rd_kafka_conf_set(kafka_conf, "fetch.max.bytes", conf_val,
+                                errstr, sizeof(errstr));
+        if (res != RD_KAFKA_CONF_OK) {
+            flb_plg_error(ins, "Failed to set up fetch.max.bytes: %s, val = %s",
+                          rd_kafka_err2str(err), conf_val);
+            goto init_error;
+        }
+
+        snprintf(conf_val, sizeof(conf_val), "%zu", ctx->polling_threshold);
+        res = rd_kafka_conf_set(kafka_conf, "receive.message.max.bytes", conf_val,
+                                errstr, sizeof(errstr));
+        if (res != RD_KAFKA_CONF_OK) {
+            flb_plg_error(ins, "Failed to set up receive.message.max.bytes: %s, val = %s",
+                          rd_kafka_err2str(err), conf_val);
+            goto init_error;
+        }
+    }
+    else {
+        ctx->polling_threshold = FLB_IN_KAFKA_UNLIMITED;
+    }
+
     ctx->kafka.rk = rd_kafka_new(RD_KAFKA_CONSUMER, kafka_conf, errstr,
             sizeof(errstr));
 
@@ -243,6 +286,17 @@ static int in_kafka_init(struct flb_input_instance *ins,
     kafka_topics = flb_kafka_parse_topics(conf);
     if (!kafka_topics) {
         flb_plg_error(ins, "Failed to parse topic list");
+        goto init_error;
+    }
+
+    if (strcasecmp(ctx->format_str, "none") == 0) {
+        ctx->format = FLB_IN_KAFKA_FORMAT_NONE;
+    }
+    else if (strcasecmp(ctx->format_str, "json") == 0) {
+        ctx->format = FLB_IN_KAFKA_FORMAT_JSON;
+    }
+    else {
+        flb_plg_error(ins, "config: invalid format \"%s\"", ctx->format_str);
         goto init_error;
     }
 
@@ -269,6 +323,8 @@ static int in_kafka_init(struct flb_input_instance *ins,
         goto init_error;
     }
 
+    ctx->coll_fd = ret;
+
     ctx->log_encoder = flb_log_event_encoder_create(FLB_LOG_EVENT_FORMAT_DEFAULT);
 
     if (ctx->log_encoder == NULL) {
@@ -292,6 +348,20 @@ init_error:
     flb_free(ctx);
 
     return -1;
+}
+
+static void in_kafka_pause(void *data, struct flb_config *config)
+{
+    struct flb_in_kafka_config *ctx = data;
+
+    flb_input_collector_pause(ctx->coll_fd, ctx->ins);
+}
+
+static void in_kafka_resume(void *data, struct flb_config *config)
+{
+    struct flb_in_kafka_config *ctx = data;
+
+    flb_input_collector_resume(ctx->coll_fd, ctx->ins);
 }
 
 /* Cleanup serial input */
@@ -328,6 +398,11 @@ static struct flb_config_map config_map[] = {
     "Set the kafka topics, delimited by commas."
    },
    {
+    FLB_CONFIG_MAP_STR, "format", FLB_IN_KAFKA_DEFAULT_FORMAT,
+    0, FLB_TRUE, offsetof(struct flb_in_kafka_config, format_str),
+    "Set the data format which will be used for parsing records."
+   },
+   {
     FLB_CONFIG_MAP_STR, "brokers", (char *)NULL,
     0, FLB_FALSE, 0,
     "Set the kafka brokers, delimited by commas."
@@ -348,6 +423,11 @@ static struct flb_config_map config_map[] = {
     0,  FLB_FALSE, 0,
     "Set the librdkafka options"
    },
+   {
+    FLB_CONFIG_MAP_SIZE, "buffer_max_size", FLB_IN_KAFKA_BUFFER_MAX_SIZE,
+    0, FLB_TRUE, offsetof(struct flb_in_kafka_config, buffer_max_size),
+    "Set the maximum size of chunk"
+   },
    /* EOF */
    {0}
 };
@@ -360,6 +440,8 @@ struct flb_input_plugin in_kafka_plugin = {
     .cb_pre_run   = NULL,
     .cb_collect   = in_kafka_collect,
     .cb_flush_buf = NULL,
+    .cb_pause     = in_kafka_pause,
+    .cb_resume    = in_kafka_resume,
     .cb_exit      = in_kafka_exit,
     .config_map   = config_map
 };

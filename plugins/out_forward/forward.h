@@ -2,7 +2,7 @@
 
 /*  Fluent Bit
  *  ==========
- *  Copyright (C) 2015-2022 The Fluent Bit Authors
+ *  Copyright (C) 2015-2024 The Fluent Bit Authors
  *
  *  Licensed under the Apache License, Version 2.0 (the "License");
  *  you may not use this file except in compliance with the License.
@@ -73,6 +73,10 @@ struct flb_forward_config {
     int time_as_integer;      /* Use backward compatible timestamp ? */
     int fluentd_compat;       /* Use Fluentd compatible payload for
                                * metrics and ctraces */
+
+    /* add extra options to the Forward payload (advanced) */
+    struct mk_list *extra_options;
+
     int fwd_retain_metadata;  /* Do not drop metadata in forward mode */
 
     /* config */

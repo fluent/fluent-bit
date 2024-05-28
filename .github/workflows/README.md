@@ -184,13 +184,13 @@ Take the checksums from the release process above, the AppVeyor stage provides t
 ## Unstable/nightly builds
 
 These happen every 24 hours and [reuse the same workflow](./cron-unstable-build.yaml) as the staging build so are identical except they skip the upload to S3 step.
-This means all targets are built nightly for `master` and `2.0` branches including container images and Linux, macOS and Windows packages.
+This means all targets are built nightly for `master` and `2.1` branches including container images and Linux, macOS and Windows packages.
 
 The container images are available here (the tag refers to the branch):
 
-* [ghcr.io/fluent/fluent-bit/unstable:2.0](ghcr.io/fluent/fluent-bit/unstable:2.0)
+* [ghcr.io/fluent/fluent-bit/unstable:2.1](ghcr.io/fluent/fluent-bit/unstable:2.1)
 * [ghcr.io/fluent/fluent-bit/unstable:master](ghcr.io/fluent/fluent-bit/unstable:master)
-* [ghcr.io/fluent/fluent-bit/unstable:windows-2019-2.0](ghcr.io/fluent/fluent-bit/unstable:windows-2019-2.0)
+* [ghcr.io/fluent/fluent-bit/unstable:windows-2019-2.1](ghcr.io/fluent/fluent-bit/unstable:windows-2019-2.1)
 * [ghcr.io/fluent/fluent-bit/unstable:windows-2019-master](ghcr.io/fluent/fluent-bit/unstable:windows-2019-master)
 
 The Linux, macOS and Windows packages are available to download from the specific workflow run.

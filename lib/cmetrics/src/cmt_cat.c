@@ -107,6 +107,7 @@ static int copy_map(struct cmt_opts *opts, struct cmt_map *dst, struct cmt_map *
     struct cfl_list *head;
     struct cmt_metric *metric_dst;
     struct cmt_metric *metric_src;
+    struct cmt_histogram *histogram;
 
     /* Handle static metric (no labels case) */
     if (src->metric_static_set) {
@@ -115,6 +116,37 @@ static int copy_map(struct cmt_opts *opts, struct cmt_map *dst, struct cmt_map *
         /* destination and source metric */
         metric_dst = &dst->metric;
         metric_src = &src->metric;
+
+        if (src->type == CMT_HISTOGRAM) {
+            histogram = (struct cmt_histogram *) src->parent;
+
+            if (!metric_dst->hist_buckets) {
+                metric_dst->hist_buckets = calloc(1, sizeof(uint64_t) * (histogram->buckets->count + 1));
+                if (!metric_dst->hist_buckets) {
+                    return -1;
+                }
+            }
+            for (i = 0; i < histogram->buckets->count; i++) {
+                metric_dst->hist_buckets[i] = metric_src->hist_buckets[i];
+            }
+            metric_dst->hist_count = metric_src->hist_count;
+            metric_dst->hist_sum = metric_src->hist_sum;
+        }
+        else if (src->type == CMT_SUMMARY) {
+            metric_dst->sum_quantiles_count = metric_src->sum_quantiles_count;
+            metric_dst->sum_quantiles_set = metric_src->sum_quantiles_set;
+            if (!metric_dst->sum_quantiles) {
+                metric_dst->sum_quantiles = calloc(1, sizeof(uint64_t) * (metric_src->sum_quantiles_count));
+                if (!metric_dst->sum_quantiles) {
+                    return -1;
+                }
+            }
+            for (i = 0; i < metric_src->sum_quantiles_count; i++) {
+                metric_dst->sum_quantiles[i] = metric_src->sum_quantiles[i];
+            }
+            metric_dst->sum_count = metric_src->sum_count;
+            metric_dst->sum_sum = metric_src->sum_sum;
+        }
 
         ts  = cmt_metric_get_timestamp(metric_src);
         val = cmt_metric_get_value(metric_src);
@@ -140,13 +172,16 @@ static int copy_map(struct cmt_opts *opts, struct cmt_map *dst, struct cmt_map *
         }
 
         if (src->type == CMT_HISTOGRAM) {
+            histogram = (struct cmt_histogram *) src->parent;
+
             if (!metric_dst->hist_buckets) {
-                metric_dst->hist_buckets = calloc(1, sizeof(uint64_t) * (metric_src->hist_count + 1));
+                metric_dst->hist_buckets = calloc(1, sizeof(uint64_t) * (histogram->buckets->count + 1));
                 if (!metric_dst->hist_buckets) {
                     return -1;
                 }
             }
-            for (i = 0; i < metric_src->hist_count; i++) {
+
+            for (i = 0; i < histogram->buckets->count; i++) {
                 metric_dst->hist_buckets[i] = metric_src->hist_buckets[i];
             }
             metric_dst->hist_count = metric_src->hist_count;
@@ -178,7 +213,7 @@ static int copy_map(struct cmt_opts *opts, struct cmt_map *dst, struct cmt_map *
 
 }
 
-static int copy_counter(struct cmt *cmt, struct cmt_counter *counter)
+int cmt_cat_counter(struct cmt *cmt, struct cmt_counter *counter)
 {
     int ret;
     char **labels = NULL;
@@ -213,7 +248,7 @@ static int copy_counter(struct cmt *cmt, struct cmt_counter *counter)
     return 0;
 }
 
-static int copy_gauge(struct cmt *cmt, struct cmt_gauge *gauge)
+int cmt_cat_gauge(struct cmt *cmt, struct cmt_gauge *gauge)
 {
     int ret;
     char **labels = NULL;
@@ -247,7 +282,7 @@ static int copy_gauge(struct cmt *cmt, struct cmt_gauge *gauge)
     return 0;
 }
 
-static int copy_untyped(struct cmt *cmt, struct cmt_untyped *untyped)
+int cmt_cat_untyped(struct cmt *cmt, struct cmt_untyped *untyped)
 {
     int ret;
     char **labels = NULL;
@@ -281,7 +316,7 @@ static int copy_untyped(struct cmt *cmt, struct cmt_untyped *untyped)
     return 0;
 }
 
-static int copy_histogram(struct cmt *cmt, struct cmt_histogram *histogram)
+int cmt_cat_histogram(struct cmt *cmt, struct cmt_histogram *histogram)
 {
     int i;
     double val;
@@ -313,15 +348,11 @@ static int copy_histogram(struct cmt *cmt, struct cmt_histogram *histogram)
                                 opts->name, opts->description,
                                 buckets,
                                 map->label_count, labels);
+    free(labels);
+
     if (!hist) {
         return -1;
     }
-
-    for (i = 0; i < buckets_count; i++) {
-        val = histogram->buckets->upper_bounds[i];
-        cmt_histogram_observe(hist, timestamp, val, map->label_count, labels);
-    }
-    free(labels);
 
     ret = copy_map(&hist->opts, hist->map, map);
     if (ret == -1) {
@@ -331,7 +362,7 @@ static int copy_histogram(struct cmt *cmt, struct cmt_histogram *histogram)
     return 0;
 }
 
-static int copy_summary(struct cmt *cmt, struct cmt_summary *summary)
+int cmt_cat_summary(struct cmt *cmt, struct cmt_summary *summary)
 {
     int i;
     int ret;
@@ -395,7 +426,7 @@ static int append_context(struct cmt *dst, struct cmt *src)
      /* Counters */
     cfl_list_foreach(head, &src->counters) {
         counter = cfl_list_entry(head, struct cmt_counter, _head);
-        ret = copy_counter(dst, counter);
+        ret = cmt_cat_counter(dst, counter);
         if (ret == -1) {
             return -1;
         }
@@ -404,7 +435,7 @@ static int append_context(struct cmt *dst, struct cmt *src)
     /* Gauges */
     cfl_list_foreach(head, &src->gauges) {
         gauge = cfl_list_entry(head, struct cmt_gauge, _head);
-        ret = copy_gauge(dst, gauge);
+        ret = cmt_cat_gauge(dst, gauge);
         if (ret == -1) {
             return -1;
         }
@@ -413,7 +444,7 @@ static int append_context(struct cmt *dst, struct cmt *src)
     /* Untyped */
     cfl_list_foreach(head, &src->untypeds) {
         untyped = cfl_list_entry(head, struct cmt_untyped, _head);
-        ret = copy_untyped(dst, untyped);
+        ret = cmt_cat_untyped(dst, untyped);
         if (ret == -1) {
             return -1;
         }
@@ -422,7 +453,7 @@ static int append_context(struct cmt *dst, struct cmt *src)
     /* Histogram */
     cfl_list_foreach(head, &src->histograms) {
         histogram = cfl_list_entry(head, struct cmt_histogram, _head);
-        ret = copy_histogram(dst, histogram);
+        ret = cmt_cat_histogram(dst, histogram);
         if (ret == -1) {
             return -1;
         }
@@ -431,7 +462,7 @@ static int append_context(struct cmt *dst, struct cmt *src)
     /* Summary */
     cfl_list_foreach(head, &src->summaries) {
         summary = cfl_list_entry(head, struct cmt_summary, _head);
-        ret = copy_summary(dst, summary);
+        ret = cmt_cat_summary(dst, summary);
         if (ret == -1) {
             return -1;
         }

@@ -2,7 +2,7 @@
 
 /*  Fluent Bit
  *  ==========
- *  Copyright (C) 2015-2022 The Fluent Bit Authors
+ *  Copyright (C) 2015-2024 The Fluent Bit Authors
  *
  *  Licensed under the Apache License, Version 2.0 (the "License");
  *  you may not use this file except in compliance with the License.
@@ -25,6 +25,8 @@
 #define SPLUNK_AUTH_MISSING_CRED -1
 #define SPLUNK_AUTH_UNAUTHORIZED -2
 
+#include <fluent-bit/flb_http_common.h>
+
 int splunk_prot_handle(struct flb_splunk *ctx, struct splunk_conn *conn,
                        struct mk_http_session *session,
                        struct mk_http_request *request);
@@ -32,5 +34,8 @@ int splunk_prot_handle(struct flb_splunk *ctx, struct splunk_conn *conn,
 int splunk_prot_handle_error(struct flb_splunk *ctx, struct splunk_conn *conn,
                              struct mk_http_session *session,
                              struct mk_http_request *request);
+
+int splunk_prot_handle_ng(struct flb_http_request *request,
+                          struct flb_http_response *response);
 
 #endif

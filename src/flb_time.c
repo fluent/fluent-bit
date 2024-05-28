@@ -2,7 +2,7 @@
 
 /*  Fluent Bit
  *  ==========
- *  Copyright (C) 2015-2022 The Fluent Bit Authors
+ *  Copyright (C) 2015-2024 The Fluent Bit Authors
  *
  *  Licensed under the Apache License, Version 2.0 (the "License");
  *  you may not use this file except in compliance with the License.
@@ -368,7 +368,7 @@ int flb_time_pop_from_mpack(struct flb_time *time, mpack_reader_t *reader)
         case mpack_type_ext:
             ext_len = mpack_tag_ext_length(&tag);
             if (ext_len != 8) {
-                flb_warn("expecting ext_len is 8, got %" PRId64, ext_len);
+                flb_warn("expecting ext_len is 8, got %ld", ext_len);
                 return -1;
             }
             mpack_read_bytes(reader, extbuf, ext_len);

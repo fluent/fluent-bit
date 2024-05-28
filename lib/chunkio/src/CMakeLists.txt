@@ -42,7 +42,7 @@ endif()
 
 if (CIO_LIB_SHARED)
   add_library(chunkio-shared SHARED ${src})
-  target_link_libraries(chunkio-static ${libs})
+  target_link_libraries(chunkio-shared ${libs})
   if(CIO_SANITIZE_ADDRESS)
     add_sanitizers(chunkio-shared)
   endif()

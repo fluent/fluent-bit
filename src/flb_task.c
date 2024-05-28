@@ -2,7 +2,7 @@
 
 /*  Fluent Bit
  *  ==========
- *  Copyright (C) 2015-2022 The Fluent Bit Authors
+ *  Copyright (C) 2015-2024 The Fluent Bit Authors
  *
  *  Licensed under the Apache License, Version 2.0 (the "License");
  *  you may not use this file except in compliance with the License.
@@ -160,8 +160,14 @@ struct flb_task_retry *flb_task_retry_create(struct flb_task *task,
      * we need to determinate if the source input plugin have some memory
      * restrictions and if the Storage type is 'filesystem' we need to put
      * the file content down.
+     *
+     * Note that we can only put the chunk down if there are no more active users
+     * otherwise it can lead to a corruption (https://github.com/fluent/fluent-bit/issues/8691)
      */
-    flb_input_chunk_set_up_down(task->ic);
+
+    if (task->users <= 1) {
+        flb_input_chunk_set_up_down(task->ic);
+    }
 
     /*
      * Besides limits adjusted above, a retry that's going to only one place
@@ -256,6 +262,8 @@ static struct flb_task *task_alloc(struct flb_config *config)
     mk_list_init(&task->routes);
     mk_list_init(&task->retries);
 
+    pthread_mutex_init(&task->lock, NULL);
+
     return task;
 }
 
@@ -329,6 +337,10 @@ int flb_task_running_print(struct flb_config *config)
     return 0;
 }
 
+int flb_task_map_get_task_id(struct flb_config *config) {
+    return map_get_task_id(config);
+}
+
 /* Create an engine task to handle the output plugin flushing work */
 struct flb_task *flb_task_create(uint64_t ref_id,
                                  const char *buf,
@@ -360,9 +372,7 @@ struct flb_task *flb_task_create(uint64_t ref_id,
         return NULL;
     }
 
-#ifdef FLB_HAVE_METRICS
     total_events = ((struct flb_input_chunk *) ic)->total_records;
-#endif
 
     /* event chunk */
     evc = flb_event_chunk_create(ic->event_type,
@@ -374,6 +384,14 @@ struct flb_task *flb_task_create(uint64_t ref_id,
         *err = FLB_TRUE;
         return NULL;
     }
+
+#ifdef FLB_HAVE_CHUNK_TRACE
+    if (ic->trace) {
+        flb_debug("add trace to task");
+        evc->trace = ic->trace;
+    }
+#endif
+
     task->event_chunk = evc;
     task_ic = (struct flb_input_chunk *) ic;
     task_ic->task = task;
@@ -420,12 +438,13 @@ struct flb_task *flb_task_create(uint64_t ref_id,
         }
 
         if (flb_routes_mask_get_bit(task_ic->routes_mask, o_ins->id) != 0) {
-            route = flb_malloc(sizeof(struct flb_task_route));
+            route = flb_calloc(1, sizeof(struct flb_task_route));
             if (!route) {
                 flb_errno();
                 continue;
             }
 
+            route->status = FLB_TASK_ROUTE_INACTIVE;
             route->out = o_ins;
             mk_list_add(&route->_head, &task->routes);
             count++;

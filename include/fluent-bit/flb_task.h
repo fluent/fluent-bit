@@ -2,7 +2,7 @@
 
 /*  Fluent Bit
  *  ==========
- *  Copyright (C) 2015-2022 The Fluent Bit Authors
+ *  Copyright (C) 2015-2024 The Fluent Bit Authors
  *
  *  Licensed under the Apache License, Version 2.0 (the "License");
  *  you may not use this file except in compliance with the License.
@@ -50,7 +50,13 @@
 #define FLB_TASK_SET(ret, task_id, out_id)              \
     (uint32_t) ((ret << 28) | (task_id << 14) | out_id)
 
+/* Route status */
+#define FLB_TASK_ROUTE_INACTIVE 0
+#define FLB_TASK_ROUTE_ACTIVE   1
+#define FLB_TASK_ROUTE_DROPPED  2
+
 struct flb_task_route {
+    int status;
     struct flb_output_instance *out;
     struct mk_list _head;
 };
@@ -86,6 +92,7 @@ struct flb_task {
     struct mk_list _head;                /* link to input_instance        */
     struct flb_input_instance *i_ins;    /* input instance                */
     struct flb_config *config;           /* parent flb config             */
+    pthread_mutex_t lock;
 };
 
 /*
@@ -118,6 +125,7 @@ struct flb_task_enqueued {
 
 int flb_task_running_count(struct flb_config *config);
 int flb_task_running_print(struct flb_config *config);
+int flb_task_map_get_task_id(struct flb_config *config);
 
 struct flb_task *flb_task_create(uint64_t ref_id,
                                  const char *buf,
@@ -177,5 +185,96 @@ static inline void flb_task_users_dec(struct flb_task *task, int release_check)
     }
 }
 
+static inline void flb_task_acquire_lock(struct flb_task *task)
+{
+    pthread_mutex_lock(&task->lock);
+}
+
+static inline void flb_task_release_lock(struct flb_task *task)
+{
+    pthread_mutex_unlock(&task->lock);
+}
+
+static FLB_INLINE int flb_task_get_active_route_count(
+                        struct flb_task *task)
+{
+    struct mk_list        *iterator;
+    int                    result;
+    struct flb_task_route *route;
+
+    result = 0;
+
+    mk_list_foreach(iterator, &task->routes) {
+        route = mk_list_entry(iterator, struct flb_task_route, _head);
+
+        if (route->status == FLB_TASK_ROUTE_ACTIVE) {
+            result++;
+        }
+    }
+
+    return result;
+}
+
+static FLB_INLINE size_t flb_task_get_route_status(
+                            struct flb_task *task,
+                            struct flb_output_instance *o_ins)
+{
+    struct mk_list        *iterator;
+    size_t                 result;
+    struct flb_task_route *route;
+
+    result = FLB_TASK_ROUTE_INACTIVE;
+
+    mk_list_foreach(iterator, &task->routes) {
+        route = mk_list_entry(iterator, struct flb_task_route, _head);
+
+        if (route->out == o_ins) {
+            result = route->status;
+            break;
+        }
+    }
+
+    return result;
+}
+
+static FLB_INLINE void flb_task_set_route_status(
+                        struct flb_task *task,
+                        struct flb_output_instance *o_ins,
+                        int new_status)
+{
+    struct mk_list        *iterator;
+    struct flb_task_route *route;
+
+    mk_list_foreach(iterator, &task->routes) {
+        route = mk_list_entry(iterator, struct flb_task_route, _head);
+
+        if (route->out == o_ins) {
+            route->status = new_status;
+            break;
+        }
+    }
+}
+
+
+static FLB_INLINE void flb_task_activate_route(
+                        struct flb_task *task,
+                        struct flb_output_instance *o_ins)
+{
+    flb_task_set_route_status(task, o_ins, FLB_TASK_ROUTE_ACTIVE);
+}
+
+static FLB_INLINE void flb_task_deactivate_route(
+                        struct flb_task *task,
+                        struct flb_output_instance *o_ins)
+{
+    flb_task_set_route_status(task, o_ins, FLB_TASK_ROUTE_INACTIVE);
+}
+
+static FLB_INLINE void flb_task_drop_route(
+                        struct flb_task *task,
+                        struct flb_output_instance *o_ins)
+{
+    flb_task_set_route_status(task, o_ins, FLB_TASK_ROUTE_DROPPED);
+}
 
 #endif

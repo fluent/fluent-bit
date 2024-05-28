@@ -605,6 +605,19 @@ void test_flb_utils_split_quoted_errors()
     TEST_CHECK(split == NULL);
 }
 
+void test_flb_utils_get_machine_id()
+{
+    int ret;
+    char *id = NULL;
+    size_t size;
+
+    ret = flb_utils_get_machine_id(&id, &size);
+    TEST_CHECK(size != 0);
+    TEST_CHECK(id != NULL);
+
+    flb_free(id);
+}
+
 TEST_LIST = {
     /* JSON maps iteration */
     { "url_split", test_url_split },
@@ -618,5 +631,6 @@ TEST_LIST = {
     { "test_flb_utils_split", test_flb_utils_split },
     { "test_flb_utils_split_quoted", test_flb_utils_split_quoted},
     { "test_flb_utils_split_quoted_errors", test_flb_utils_split_quoted_errors},
+    { "test_flb_utils_get_machine_id", test_flb_utils_get_machine_id },
     { 0 }
 };

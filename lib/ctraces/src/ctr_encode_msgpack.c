@@ -136,6 +136,12 @@ static void pack_attributes(mpack_writer_t *writer, struct ctrace_attributes *at
 
 static void pack_instrumentation_scope(mpack_writer_t *writer, struct ctrace_instrumentation_scope *ins_scope)
 {
+    if (ins_scope == NULL) {
+        mpack_write_nil(writer);
+        
+        return;
+    }
+
     mpack_start_map(writer, 4);
 
     /* name */

@@ -2,7 +2,7 @@
 
 /*  Fluent Bit
  *  ==========
- *  Copyright (C) 2015-2022 The Fluent Bit Authors
+ *  Copyright (C) 2015-2024 The Fluent Bit Authors
  *
  *  Licensed under the Apache License, Version 2.0 (the "License");
  *  you may not use this file except in compliance with the License.
@@ -143,7 +143,6 @@ static void metrics_append_input(msgpack_packer *mp_pck,
     int up;
     int down;
     int busy;
-    int busy_size_err;
     char *name;
     ssize_t busy_size;
     struct mk_list *head;
@@ -274,7 +273,6 @@ static void metrics_append_input(msgpack_packer *mp_pck,
          */
         busy = 0;
         busy_size = 0;
-        busy_size_err = 0;
 
         /* up/down */
         up = 0;
@@ -288,9 +286,6 @@ static void metrics_append_input(msgpack_packer *mp_pck,
                 size = cio_chunk_get_content_size(ic->chunk);
                 if (size >= 0) {
                     busy_size += size;
-                }
-                else {
-                    busy_size_err++;
                 }
             }
 
@@ -537,6 +532,22 @@ int flb_storage_input_create(struct cio_ctx *cio,
             return -1;
         }
     }
+    else if (stream->type != cio_storage_type) {
+        flb_debug("[storage] storage type mismatch. input type=%s",
+                  flb_storage_get_type(in->storage_type));
+        if (stream->type == FLB_STORAGE_FS) {
+            flb_warn("[storage] Need to remove '%s/%s' if it is empty", cio->options.root_path, in->name);
+        }
+
+        cio_stream_destroy(stream);
+        stream = cio_stream_create(cio, in->name, cio_storage_type);
+        if (!stream) {
+            flb_error("[storage] cannot create stream for instance %s",
+                      in->name);
+            return -1;
+        }
+        flb_info("[storage] re-create stream type=%s", flb_storage_get_type(in->storage_type));
+    }
 
     /* allocate storage context for the input instance */
     si = flb_malloc(sizeof(struct flb_storage_input));
@@ -627,7 +638,14 @@ int flb_storage_create(struct flb_config *ctx)
         flags |= CIO_CHECKSUM;
     }
 
+    /* file trimming */
+    if (ctx->storage_trim_files == FLB_TRUE) {
+        flags |= CIO_TRIM_FILES;
+    }
+
     /* chunkio options */
+    cio_options_init(&opts);
+
     opts.root_path = ctx->storage_path;
     opts.flags = flags;
     opts.log_cb = log_cb;

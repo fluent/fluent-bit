@@ -2,7 +2,7 @@
 
 /*  Fluent Bit
  *  ==========
- *  Copyright (C) 2015-2022 The Fluent Bit Authors
+ *  Copyright (C) 2015-2024 The Fluent Bit Authors
  *
  *  Licensed under the Apache License, Version 2.0 (the "License");
  *  you may not use this file except in compliance with the License.
@@ -20,9 +20,14 @@
 #ifndef FLB_IN_HTTP_PROT
 #define FLB_IN_HTTP_PROT
 
+#include <fluent-bit/flb_http_common.h>
+
 int http_prot_handle(struct flb_http *ctx, struct http_conn *conn,
                      struct mk_http_session *session,
                      struct mk_http_request *request);
+
+int http_prot_handle_ng(struct flb_http_request *request,
+                        struct flb_http_response *response);
 
 int http_prot_handle_error(struct flb_http *ctx, struct http_conn *conn,
                            struct mk_http_session *session,

@@ -2,7 +2,7 @@
 
 /*  Fluent Bit
  *  ==========
- *  Copyright (C) 2015-2022 The Fluent Bit Authors
+ *  Copyright (C) 2015-2024 The Fluent Bit Authors
  *
  *  Licensed under the Apache License, Version 2.0 (the "License");
  *  you may not use this file except in compliance with the License.
@@ -97,6 +97,8 @@ static int emitter_create(struct ml_ctx *ctx)
     if (ret == -1) {
         flb_plg_error(ctx->ins, "cannot initialize storage for stream '%s'",
                       ctx->emitter_name);
+        flb_input_instance_exit(ins, ctx->config);
+        flb_input_instance_destroy(ins);
         return -1;
     }
     ctx->ins_emitter = ins;
@@ -174,7 +176,7 @@ static int flush_callback(struct flb_ml_parser *parser,
         /* Emit record with original tag */
         flb_plg_trace(ctx->ins, "emitting from %s to %s", stream->input_name, stream->tag);
         ret = in_emitter_add_record(stream->tag, flb_sds_len(stream->tag), buf_data, buf_size,
-                                    ctx->ins_emitter);
+                                    ctx->ins_emitter, ctx->i_ins);
 
         return ret;
     }
@@ -524,7 +526,8 @@ static void partial_timer_cb(struct flb_config *config, void *data)
             ret = in_emitter_add_record(packer->tag, flb_sds_len(packer->tag),
                                         packer->log_encoder.output_buffer,
                                         packer->log_encoder.output_length,
-                                        ctx->ins_emitter);
+                                        ctx->ins_emitter,
+                                        ctx->i_ins);
             if (ret < 0) {
                 /* this shouldn't happen in normal execution */
                 flb_plg_warn(ctx->ins,
@@ -551,7 +554,6 @@ static int ml_filter_partial(const void *data, size_t bytes,
     msgpack_sbuffer tmp_sbuf;
     msgpack_packer tmp_pck;
     int partial_records = 0;
-    int total_records = 0;
     int return_records = 0;
     int partial = FLB_FALSE;
     int is_last_partial = FLB_FALSE;
@@ -619,8 +621,6 @@ static int ml_filter_partial(const void *data, size_t bytes,
     while ((ret = flb_log_event_decoder_next(
                     &log_decoder,
                     &log_event)) == FLB_EVENT_DECODER_SUCCESS) {
-        total_records++;
-
         partial = ml_is_partial(log_event.body);
         if (partial == FLB_TRUE) {
             partial_records++;
@@ -740,6 +740,15 @@ static int cb_ml_filter(const void *data, size_t bytes,
     if (i_ins == ctx->ins_emitter) {
         flb_plg_trace(ctx->ins, "not processing records from the emitter");
         return FLB_FILTER_NOTOUCH;
+    }
+
+    if (ctx->i_ins == NULL){
+        ctx->i_ins = i_ins;
+    }
+    if (ctx->i_ins != i_ins) {
+        flb_plg_trace(ctx->ins, "input instance changed from %s to %s",
+                     ctx->i_ins->name, i_ins->name);
+        ctx->i_ins = i_ins;
     }
 
     /* 'partial_message' mode */

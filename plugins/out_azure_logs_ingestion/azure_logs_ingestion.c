@@ -2,7 +2,7 @@
 
 /*  Fluent Bit
  *  ==========
- *  Copyright (C) 2015-2022 The Fluent Bit Authors
+ *  Copyright (C) 2015-2024 The Fluent Bit Authors
  *
  *  Licensed under the Apache License, Version 2.0 (the "License");
  *  you may not use this file except in compliance with the License.
@@ -43,7 +43,7 @@ static int cb_azure_logs_ingestion_init(struct flb_output_instance *ins,
     /* Allocate and initialize a context from configuration */
     ctx = flb_az_li_ctx_create(ins, config);
     if (!ctx) {
-        flb_plg_error(ctx->ins, "configuration failed");
+        flb_plg_error(ins, "configuration failed");
         return -1;
     }
 
@@ -251,7 +251,7 @@ static void cb_azure_logs_ingestion_flush(struct flb_event_chunk *event_chunk,
     size_t final_payload_size;
     flb_sds_t token;
     struct flb_connection *u_conn;
-    struct flb_http_client *c;
+    struct flb_http_client *c = NULL;
     int is_compressed = FLB_FALSE;
     flb_sds_t json_payload = NULL;
     struct flb_az_li *ctx = out_context;

@@ -1,5 +1,16 @@
 # escape=`
 
+# This Dockerfile will only build on Docker for Windows.
+#
+# If you change dependencies etc here, please also check and update
+# the other Windows build resources:
+#
+# - DEVELOPER_GUIDE.md "Windows" section
+# - appveyor.yml
+# - .github/workflows/call-build-windows.yaml
+# - dockerfiles/Dockerfile.windows
+#
+
 ARG WINDOWS_VERSION=ltsc2019
 
 # Builder Image - Windows Server Core
@@ -49,7 +60,7 @@ RUN iex ((new-object net.webclient).DownloadString('https://chocolatey.org/insta
 WORKDIR /src/build
 COPY . /src/
 
-RUN cmake -G "'Visual Studio 16 2019'" -DOPENSSL_ROOT_DIR='C:\Program Files\OpenSSL-Win64' -DCMAKE_BUILD_TYPE=Release ../;`
+RUN cmake -G "'Visual Studio 16 2019'" -DOPENSSL_ROOT_DIR='C:\Program Files\OpenSSL-Win64\lib\VC\x64\MT' -DOPENSSL_INCLUDE_DIR='C:\Program Files\OpenSSL-Win64\include' -DCMAKE_BUILD_TYPE=Release ../;`
     cmake --build . --config Release;
 
 # Set up config files and binaries in single /fluent-bit hierarchy for easy copy in later stage

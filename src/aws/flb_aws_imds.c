@@ -2,7 +2,7 @@
 
 /*  Fluent Bit
  *  ==========
- *  Copyright (C) 2015-2022 The Fluent Bit Authors
+ *  Copyright (C) 2015-2024 The Fluent Bit Authors
  *
  *  Licensed under the Apache License, Version 2.0 (the "License");
  *  you may not use this file except in compliance with the License.
@@ -70,6 +70,7 @@ struct flb_aws_imds *flb_aws_imds_create(const struct flb_aws_imds_config *imds_
      */
     ctx->imds_version = imds_config->use_imds_version;
     ctx->imds_v2_token = flb_sds_create_len("INVALID_TOKEN", 13);
+    ctx->imds_v2_token_len = 13;
 
     /* Detect IMDS support */
     if (!ec2_imds_client->upstream) {

@@ -2,7 +2,7 @@
 
 /*  Fluent Bit
  *  ==========
- *  Copyright (C) 2015-2022 The Fluent Bit Authors
+ *  Copyright (C) 2015-2024 The Fluent Bit Authors
  *
  *  Licensed under the Apache License, Version 2.0 (the "License");
  *  you may not use this file except in compliance with the License.
@@ -135,24 +135,26 @@ static void print_traces_text(struct flb_output_instance *ins,
     size_t off = 0;
     cfl_sds_t text;
     struct ctrace *ctr = NULL;
+    int ok = CTR_DECODE_MSGPACK_SUCCESS;
 
-    /* get cmetrics context */
-    ret = ctr_decode_msgpack_create(&ctr, (char *) data, bytes, &off);
-    if (ret != 0) {
-        flb_plg_error(ins, "could not process traces payload (ret=%i)", ret);
-        return;
+    /* Decode each ctrace context */
+    while ((ret = ctr_decode_msgpack_create(&ctr,
+                                            (char *) data,
+                                            bytes, &off)) == ok) {
+        /* convert to text representation */
+        text = ctr_encode_text_create(ctr);
+
+        /* destroy ctr context */
+        ctr_destroy(ctr);
+
+        printf("%s", text);
+        fflush(stdout);
+
+        ctr_encode_text_destroy(text);
     }
-
-    /* convert to text representation */
-    text = ctr_encode_text_create(ctr);
-
-    /* destroy cmt context */
-    ctr_destroy(ctr);
-
-    printf("%s", text);
-    fflush(stdout);
-
-    ctr_encode_text_destroy(text);
+    if (ret != ok) {
+        flb_plg_debug(ins, "ctr decode msgpack returned : %d", ret);
+    }
 }
 
 static void cb_stdout_flush(struct flb_event_chunk *event_chunk,

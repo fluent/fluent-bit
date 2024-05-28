@@ -34,3 +34,24 @@ foreach(source_file ${UNIT_TESTS_FILES})
 
   add_test(${source_file_we} ${CMAKE_RUNTIME_OUTPUT_DIRECTORY}/${source_file_we})
 endforeach()
+
+# Perf tests for dev purposes: note these tests are not registered, they need to 
+# be executed manually
+set(UNIT_PERF_TESTS
+  fs_perf.c
+  fs_fragmentation.c
+  )
+foreach(source_file ${UNIT_PERF_TESTS})
+  get_filename_component(source_file_we ${source_file} NAME_WE)
+  set(source_file_we cio-${source_file_we})
+  add_executable(
+    ${source_file_we}
+    ${source_file}
+    )
+  target_link_libraries(${source_file_we} chunkio-static)
+
+  if (CIO_SANITIZE_ADDRESS)
+    add_sanitizers(${source_file_we})
+  endif()
+  #add_test(${source_file_we} ${CMAKE_RUNTIME_OUTPUT_DIRECTORY}/${source_file_we})
+endforeach()

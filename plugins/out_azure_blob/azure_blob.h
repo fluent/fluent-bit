@@ -2,7 +2,7 @@
 
 /*  Fluent Bit
  *  ==========
- *  Copyright (C) 2015-2022 The Fluent Bit Authors
+ *  Copyright (C) 2015-2024 The Fluent Bit Authors
  *
  *  Licensed under the Apache License, Version 2.0 (the "License");
  *  you may not use this file except in compliance with the License.
@@ -41,6 +41,9 @@
 #define AZURE_BLOB_APPENDBLOB 0
 #define AZURE_BLOB_BLOCKBLOB  1
 
+#define AZURE_BLOB_AUTH_KEY 0
+#define AZURE_BLOB_AUTH_SAS 1
+
 struct flb_azure_blob {
     int auto_create_container;
     int emulator_mode;
@@ -53,11 +56,14 @@ struct flb_azure_blob {
     flb_sds_t endpoint;
     flb_sds_t path;
     flb_sds_t date_key;
+    flb_sds_t auth_type;
+    flb_sds_t sas_token;
 
     /*
      * Internal use
      */
     int  btype;                  /* blob type */
+    int  atype;                  /* auth type */
     flb_sds_t real_endpoint;
     flb_sds_t base_uri;
     flb_sds_t shared_key_prefix;

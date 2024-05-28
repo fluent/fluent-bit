@@ -69,7 +69,7 @@ static void test_client_server(int is_ipv6)
     }
     TEST_CHECK(fd_client != -1);
 
-    fd_server = flb_net_server(TEST_PORT, host);
+    fd_server = flb_net_server(TEST_PORT, host, FLB_FALSE);
     TEST_CHECK(fd_server != -1);
 
     /* Create Event loop */

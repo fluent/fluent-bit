@@ -1,0 +1,12 @@
+prefix=@CMAKE_INSTALL_PREFIX@
+exec_prefix=${prefix}
+includedir=${prefix}/include
+libdir=${prefix}/lib
+
+Name: @PKG_CONFIG_NAME@
+Description: @PKG_CONFIG_DESCRIPTION@
+Version: @PKG_CONFIG_VERSION@
+Requires.private: @PKG_CONFIG_REQUIRES_PRIVATE@
+Cflags: @PKG_CONFIG_CFLAGS@
+Libs: @PKG_CONFIG_LIBS@
+Libs.private: @PKG_CONFIG_LIBS_PRIVATE@

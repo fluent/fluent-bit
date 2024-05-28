@@ -2,7 +2,7 @@
 
 /*  Fluent Bit
  *  ==========
- *  Copyright (C) 2015-2022 The Fluent Bit Authors
+ *  Copyright (C) 2015-2024 The Fluent Bit Authors
  *
  *  Licensed under the Apache License, Version 2.0 (the "License");
  *  you may not use this file except in compliance with the License.
@@ -25,8 +25,12 @@
 #include <fluent-bit/flb_config.h>
 #include <fluent-bit/flb_config_format.h>
 
-#define FLB_RELOAD_IDLE 0
-#define FLB_RELOAD_IN_PROGRESS 1
+#define FLB_RELOAD_IDLE             0
+#define FLB_RELOAD_IN_PROGRESS      1
+#define FLB_RELOAD_ABORTED         -1
+#define FLB_RELOAD_HALTED          -2
+#define FLB_RELOAD_NOT_ENABLED     -3
+#define FLB_RELOAD_INVALID_CONTEXT -4
 
 int flb_reload_property_check_all(struct flb_config *config);
 int flb_reload_reconstruct_cf(struct flb_cf *src_cf, struct flb_cf *dest_cf);

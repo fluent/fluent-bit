@@ -2,7 +2,7 @@
 
 /*  Fluent Bit
  *  ==========
- *  Copyright (C) 2015-2022 The Fluent Bit Authors
+ *  Copyright (C) 2015-2024 The Fluent Bit Authors
  *
  *  Licensed under the Apache License, Version 2.0 (the "License");
  *  you may not use this file except in compliance with the License.
@@ -43,6 +43,7 @@ struct flb_in_udp_config {
     char *port;                        /* Port                        */
     flb_sds_t raw_separator;           /* Unescaped string delimiterr */
     flb_sds_t separator;               /* String delimiter            */
+    flb_sds_t source_address_key;      /* Source IP address           */
     int collector_id;                  /* Listener collector id       */
     struct flb_downstream *downstream; /* Client manager              */
     struct udp_conn *dummy_conn;       /* Datagram dummy connection   */

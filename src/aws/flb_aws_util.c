@@ -2,7 +2,7 @@
 
 /*  Fluent Bit
  *  ==========
- *  Copyright (C) 2015-2022 The Fluent Bit Authors
+ *  Copyright (C) 2015-2024 The Fluent Bit Authors
  *
  *  Licensed under the Apache License, Version 2.0 (the "License");
  *  you may not use this file except in compliance with the License.
@@ -581,6 +581,8 @@ void flb_aws_print_error(char *response, size_t response_len,
 
     error = flb_json_get_val(response, response_len, "__type");
     if (!error) {
+        /* error can not be parsed, print raw response */
+        flb_plg_warn(ins, "%s: Raw response: %s", api, response);
         return;
     }
 
@@ -908,8 +910,8 @@ flb_sds_t flb_get_s3_key(const char *format, time_t time, const char *tag,
     flb_sds_destroy(tmp);
     tmp = NULL;
 
-    /* A string no longer than S3_KEY_SIZE is created to store the formatted timestamp. */
-    key = flb_calloc(1, S3_KEY_SIZE * sizeof(char));
+    /* A string no longer than S3_KEY_SIZE + 1 is created to store the formatted timestamp. */
+    key = flb_calloc(1, (S3_KEY_SIZE + 1) * sizeof(char));
     if (!key) {
         goto error;
     }
