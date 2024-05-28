@@ -961,6 +961,10 @@ static int process_hec_raw_payload_ng(struct flb_http_request *request,
                                       flb_sds_t tag,
                                       struct flb_splunk *ctx)
 {
+    int ret = 0;
+    size_t size = 0;
+    char *auth_header;
+
     if (request->content_type == NULL) {
         send_response_ng(response, 400, "error: header 'Content-Type' is not set\n");
 
@@ -969,6 +973,11 @@ static int process_hec_raw_payload_ng(struct flb_http_request *request,
     else if (strcasecmp(request->content_type, "text/plain") != 0) {
         /* Not neccesary to specify content-type for Splunk HEC. */
         flb_plg_debug(ctx->ins, "Mark as unknown type for ingested payloads");
+    }
+
+    ret = flb_hash_table_get(request->headers, "authorization", 13, (void **)&auth_header, &size);
+    if (ret != 0) {
+        ctx->ingested_auth_header = auth_header;
     }
 
     if (request->body == NULL || cfl_sds_len(request->body) == 0) {
