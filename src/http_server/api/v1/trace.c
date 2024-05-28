@@ -59,14 +59,11 @@ static struct flb_input_instance *find_input(struct flb_hs *hs, const char *name
 
     mk_list_foreach(head, &hs->config->inputs) {
         in = mk_list_entry(head, struct flb_input_instance, _head);
-        if (strlen(in->name) != nlen) {
-            continue;
-        }
-        if (strncmp(name, in->name, nlen) == 0) {
+        if ((strlen(in->name) == nlen) && (strncmp(name, in->name, nlen) == 0)) {
             return in;
         }
         if (in->alias) {
-            if (strcmp(name, in->alias) == 0) {
+            if ((strlen(in->alias) == nlen) && (strncmp(name, in->alias, nlen) == 0)) {
                 return in;
             }
         }
@@ -113,7 +110,7 @@ static int disable_trace_input(struct flb_hs *hs, const char *name, size_t nlen)
 
 static flb_sds_t get_input_name(mk_request_t *request)
 {
-    const char *base = "/api/v1/trace/";
+    const char base[] = "/api/v1/trace/";
 
 
     if (request->real_path.data == NULL) {
@@ -124,7 +121,7 @@ static flb_sds_t get_input_name(mk_request_t *request)
     }
 
     return flb_sds_create_len(&request->real_path.data[sizeof(base)-1],
-                              request->real_path.len - sizeof(base)-1);
+                              request->real_path.len - (sizeof(base)-1));
 }
 
 static int http_disable_trace(mk_request_t *request, void *data,
