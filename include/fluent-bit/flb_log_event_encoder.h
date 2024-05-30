@@ -307,6 +307,11 @@ const char *flb_log_event_encoder_get_error_description(int error_code);
                         __VA_ARGS__, \
                         FLB_LOG_EVENT_VALUE_LIST_TERMINATOR());
 
+/* Groups handling */
+int flb_log_event_encoder_group_init(struct flb_log_event_encoder *context);
+int flb_log_event_encoder_group_header_end(struct flb_log_event_encoder *context);
+int flb_log_event_encoder_group_end(struct flb_log_event_encoder *context);
+
 #include <fluent-bit/flb_log_event_encoder_primitives.h>
 #include <fluent-bit/flb_log_event_encoder_root_macros.h>
 #include <fluent-bit/flb_log_event_encoder_metadata_macros.h>
