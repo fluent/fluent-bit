@@ -481,9 +481,12 @@ static ssize_t parse_hec_payload_json(struct flb_splunk *ctx, flb_sds_t tag,
 
 static int validate_auth_header(struct flb_splunk *ctx, struct mk_http_request *request)
 {
+    struct mk_list *tmp;
+    struct mk_list *head;
     struct mk_http_header *auth_header = NULL;
+    struct flb_splunk_tokens *splunk_token;
 
-    if (ctx->auth_header == NULL) {
+    if (mk_list_size(&ctx->auth_tokens) == 0) {
         return SPLUNK_AUTH_UNAUTH;
     }
 
@@ -494,14 +497,16 @@ static int validate_auth_header(struct flb_splunk *ctx, struct mk_http_request *
     }
 
     if (auth_header != NULL && auth_header->val.len > 0) {
-        if (strncmp(ctx->auth_header,
-                    auth_header->val.data,
-                    strlen(ctx->auth_header)) == 0) {
-            return SPLUNK_AUTH_SUCCESS;
+        mk_list_foreach_safe(head, tmp, &ctx->auth_tokens) {
+            splunk_token = mk_list_entry(head, struct flb_splunk_tokens, _head);
+            if (strncmp(splunk_token->header,
+                        auth_header->val.data,
+                        strlen(splunk_token->header)) == 0) {
+                return SPLUNK_AUTH_SUCCESS;
+            }
         }
-        else {
-            return SPLUNK_AUTH_UNAUTHORIZED;
-        }
+
+        return SPLUNK_AUTH_UNAUTHORIZED;
     }
     else {
         return SPLUNK_AUTH_MISSING_CRED;
@@ -935,12 +940,15 @@ static int send_json_message_response_ng(struct flb_http_response *response,
 
 static int validate_auth_header_ng(struct flb_splunk *ctx, struct flb_http_request *request)
 {
+    struct mk_list *tmp;
+    struct mk_list *head;
     char *auth_header;
+    struct flb_splunk_tokens *splunk_token;
 
-    if (ctx->auth_header == NULL) {
+    if (mk_list_size(&ctx->auth_tokens) == 0) {
         return SPLUNK_AUTH_UNAUTH;
     }
-    
+
     auth_header = flb_http_request_get_header(request, "authorization");
 
     if (auth_header == NULL) {
@@ -948,14 +956,16 @@ static int validate_auth_header_ng(struct flb_splunk *ctx, struct flb_http_reque
     }
 
     if (auth_header != NULL && strlen(auth_header) > 0) {
-        if (strncmp(ctx->auth_header,
-                    auth_header,
-                    strlen(ctx->auth_header)) == 0) {
-            return SPLUNK_AUTH_SUCCESS;
+        mk_list_foreach_safe(head, tmp, &ctx->auth_tokens) {
+            splunk_token = mk_list_entry(head, struct flb_splunk_tokens, _head);
+            if (strncmp(splunk_token->header,
+                        auth_header,
+                        strlen(splunk_token->header)) == 0) {
+                return SPLUNK_AUTH_SUCCESS;
+            }
         }
-        else {
-            return SPLUNK_AUTH_UNAUTHORIZED;
-        }
+
+        return SPLUNK_AUTH_UNAUTHORIZED;
     }
     else {
         return SPLUNK_AUTH_MISSING_CRED;
