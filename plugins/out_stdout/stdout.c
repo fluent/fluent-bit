@@ -228,9 +228,8 @@ static void cb_stdout_flush(struct flb_event_chunk *event_chunk,
                                            &log_event) == FLB_EVENT_DECODER_SUCCESS) {
             printf("[%zd] %s: [[", cnt++, event_chunk->tag);
 
-            printf("%"PRIu32".%09lu, ",
-                   (uint32_t)log_event.timestamp.tm.tv_sec,
-                   log_event.timestamp.tm.tv_nsec);
+            printf("%"PRId32".%09lu, ", (int32_t) log_event.timestamp.tm.tv_sec,
+                    log_event.timestamp.tm.tv_nsec);
 
             msgpack_object_print(stdout, *log_event.metadata);
 
