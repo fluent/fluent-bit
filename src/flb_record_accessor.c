@@ -321,18 +321,11 @@ struct flb_record_accessor *flb_ra_create(char *str, int translate_env)
         if (buf) {
             flb_sds_destroy(buf);
         }
-        return NULL;
-    }
-    ra->pattern = tmp_str;
-    if (!ra->pattern) {
-        flb_error("[record accessor] could not allocate pattern");
-        flb_free(ra);
-        if (buf) {
-            flb_sds_destroy(buf);
-        }
+        flb_sds_destroy(tmp_str);
         return NULL;
     }
 
+    ra->pattern = tmp_str;
     mk_list_init(&ra->list);
 
     /*
