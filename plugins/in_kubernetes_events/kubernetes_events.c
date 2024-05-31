@@ -487,7 +487,7 @@ static int process_events(struct k8s_events *ctx, char *in_data, size_t in_size,
             goto msg_error;
         }
 
-        if (check_event_is_filtered(ctx, item, &ts) == FLB_TRUE) {
+        if (check_event_is_filtered(ctx, item, (time_t *) &ts) == FLB_TRUE) {
             continue;
         }
 
