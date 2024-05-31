@@ -710,6 +710,16 @@ int flb_storage_create(struct flb_config *ctx)
     return 0;
 }
 
+void flb_storage_chunk_count(struct flb_config *ctx, int *mem_chunks, int *fs_chunks)
+{
+    struct cio_stats storage_st;
+
+    cio_stats_get(ctx->cio, &storage_st);
+
+    *mem_chunks = storage_st.chunks_mem;
+    *fs_chunks = storage_st.chunks_fs;
+}
+
 void flb_storage_destroy(struct flb_config *ctx)
 {
     struct cio_ctx *cio;

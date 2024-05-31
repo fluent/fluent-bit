@@ -246,6 +246,7 @@ struct flb_config *flb_config_init()
     config->verbose      = 3;
     config->grace        = 5;
     config->grace_count  = 0;
+    config->grace_input  = config->grace / 2;
     config->exit_status_code = 0;
 
     /* json */
