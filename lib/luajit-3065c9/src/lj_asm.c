@@ -1662,6 +1662,8 @@ static void asm_loop(ASMState *as)
 #include "lj_asm_ppc.h"
 #elif LJ_TARGET_MIPS
 #include "lj_asm_mips.h"
+#elif LJ_TARGET_S390X
+#include "lj_asm_s390x.h"
 #else
 #error "Missing assembler for target CPU"
 #endif
