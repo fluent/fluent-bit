@@ -58,6 +58,12 @@
 #define DEFAULT_PARQUET_COMMAND_CHECK              "columnify -h > /dev/null  2>&1"
 #endif
 
+#ifdef __ANDROID__
+#define DEFAULT_PARQUET_PROCESS_DIR "/data/local/tmp"
+#else
+#define DEFAULT_PARQUET_PROCESS_DIR "/tmp"
+#endif
+
 /*
  * If we see repeated errors on an upload/chunk, we will discard it
  * This saves us from scenarios where something goes wrong and an upload can
@@ -165,6 +171,7 @@ struct flb_s3 {
     flb_sds_t parquet_record_type;
     flb_sds_t parquet_schema_type;
     flb_sds_t parquet_schema_file;
+    flb_sds_t parquet_process_dir;
 
     /*
      * used to track that unset buffers were found on startup that have not

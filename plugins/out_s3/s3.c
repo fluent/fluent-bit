@@ -1462,34 +1462,23 @@ error:
 }
 
 #else
-static const char *get_tmpdir()
-{
-    const char* tmp;
-#ifdef __ANDROID__
-        tmp = "/data/local/tmp";
-#else
-        tmp = "/tmp";
-#endif
-    return tmp;
-}
-
-static int create_tmpfile(char *file_path, char *template, size_t template_len)
+static int create_tmpfile(struct flb_s3 *ctx, char *file_path, char *template, size_t template_len)
 {
     int ret;
     int result;
     flb_sds_t path_buf;
-    const char *tmpdir;
-    size_t tmpdir_len;
+    const char *process_dir;
+    size_t process_dir_len;
 
     path_buf = flb_sds_create_size(PATH_MAX);
     if (path_buf == NULL) {
         goto error;
     }
 
-    tmpdir = get_tmpdir();
-    tmpdir_len = strlen(tmpdir);
+    process_dir = ctx->parquet_process_dir;
+    process_dir_len = flb_sds_len(ctx->parquet_process_dir);
 
-    result = flb_sds_cat_safe(&path_buf, tmpdir, tmpdir_len);
+    result = flb_sds_cat_safe(&path_buf, process_dir, process_dir_len);
     if (result < 0) {
         ret = -1;
         goto error;
@@ -1551,13 +1540,13 @@ static int s3_compress_parquet(struct flb_s3 *ctx,
         goto error;
     }
 
-    result = create_tmpfile(infile, template_in_suffix, strlen(template_in_suffix));
+    result = create_tmpfile(ctx, infile, template_in_suffix, strlen(template_in_suffix));
     if (result < 0) {
         ret = -1;
         goto error;
     }
 
-    result = create_tmpfile(outfile, template_out_suffix, strlen(template_out_suffix));
+    result = create_tmpfile(ctx, outfile, template_out_suffix, strlen(template_out_suffix));
     if (result < 0) {
         ret = -1;
         goto error;
@@ -3125,6 +3114,12 @@ static struct flb_config_map config_map[] = {
      FLB_CONFIG_MAP_STR, "parquet.schema_file", NULL,
      0, FLB_FALSE, 0,
     "Schema file for parquet objects. "
+    },
+    {
+     FLB_CONFIG_MAP_STR, "parquet.process_dir", DEFAULT_PARQUET_PROCESS_DIR,
+     0, FLB_TRUE, offsetof(struct flb_s3, parquet_process_dir),
+    "Specify a temporary directory for processing parquet objects. "
+    "This paramater is effective for non Windows platforms. "
     },
     {
      FLB_CONFIG_MAP_STR, "content_type", NULL,
