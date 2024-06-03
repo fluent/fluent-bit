@@ -733,10 +733,20 @@ static int cb_s3_init(struct flb_output_instance *ins,
             }
 
             ctx->parquet_compression = flb_sds_create_len(buf, strlen(buf));
+            if (ctx->parquet_compression == NULL) {
+                flb_plg_error(ctx->ins, "Failed to create parquet compression type");
+                flb_errno();
+                return -1;
+            }
         }
         else {
             ctx->parquet_compression = \
                     flb_sds_create(DEFAULT_PARQUET_COMPRESSION_FORMAT_UPCASES);
+            if (ctx->parquet_compression == NULL) {
+                flb_plg_error(ctx->ins, "Failed to create parquet compression type");
+                flb_errno();
+                return -1;
+            }
             flb_plg_debug(ctx->ins, "parquet.compression format is %s",
                           DEFAULT_PARQUET_COMPRESSION_FORMAT_UPCASES);
         }
@@ -747,6 +757,11 @@ static int cb_s3_init(struct flb_output_instance *ins,
                          DEFAULT_PARQUET_RECORD_TYPE);
             ctx->parquet_record_type = \
                     flb_sds_create(DEFAULT_PARQUET_RECORD_TYPE);
+            if (ctx->parquet_record_type == NULL) {
+                flb_plg_error(ctx->ins, "Failed to create parquet record type");
+                flb_errno();
+                return -1;
+            }
         }
         else {
             if (strncasecmp(tmp, "json", 4) == 0) {
@@ -762,6 +777,11 @@ static int cb_s3_init(struct flb_output_instance *ins,
                 return -1;
             }
             ctx->parquet_record_type = flb_sds_create_len(tmp, strlen(tmp));
+            if (ctx->parquet_record_type == NULL) {
+                flb_plg_error(ctx->ins, "Failed to create parquet record type");
+                flb_errno();
+                return -1;
+            }
         }
 
         tmp = flb_output_get_property("parquet.schema_type", ins);
@@ -770,6 +790,11 @@ static int cb_s3_init(struct flb_output_instance *ins,
                          DEFAULT_PARQUET_SCHEMA_TYPE);
             ctx->parquet_schema_type = \
                     flb_sds_create(DEFAULT_PARQUET_SCHEMA_TYPE);
+            if (ctx->parquet_schema_type == NULL) {
+                flb_plg_error(ctx->ins, "Failed to create parquet schema type");
+                flb_errno();
+                return -1;
+            }
         }
         else {
             if (strncasecmp(tmp, "avro", 4) == 0 ||
@@ -781,6 +806,11 @@ static int cb_s3_init(struct flb_output_instance *ins,
                 return -1;
             }
             ctx->parquet_schema_type = flb_sds_create_len(tmp, strlen(tmp));
+            if (ctx->parquet_schema_type == NULL) {
+                flb_plg_error(ctx->ins, "Failed to create parquet schema type");
+                flb_errno();
+                return -1;
+            }
         }
 
         tmp = flb_output_get_property("parquet.schema_file", ins);
@@ -789,6 +819,11 @@ static int cb_s3_init(struct flb_output_instance *ins,
             return -1;
         }
         ctx->parquet_schema_file = flb_sds_create_len(tmp, strlen(tmp));
+        if (ctx->parquet_schema_file == NULL) {
+            flb_plg_error(ctx->ins, "Failed to create parquet schema file");
+            flb_errno();
+            return -1;
+        }
     }
 
     tmp = flb_output_get_property("content_type", ins);
