@@ -53,9 +53,9 @@
 #define DEFAULT_PARQUET_SCHEMA_TYPE                "avro"
 #define DEFAULT_PARQUET_COMMAND                    "columnify"
 #if defined(FLB_SYSTEM_WINDOWS)
-#define DEFAULT_PARQUET_COMMAND_EXISTENCE          "where columnify"
+#define DEFAULT_PARQUET_COMMAND_CHECK              "where columnify"
 #else
-#define DEFAULT_PARQUET_COMMAND_EXISTENCE          "columnify -h > /dev/null  2>&1"
+#define DEFAULT_PARQUET_COMMAND_CHECK              "columnify -h > /dev/null  2>&1"
 #endif
 
 /*

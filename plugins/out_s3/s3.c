@@ -704,9 +704,9 @@ static int cb_s3_init(struct flb_output_instance *ins,
     ctx->parquet_schema_file = NULL;
 
     if (ctx->compression == FLB_AWS_COMPRESS_PARQUET) {
-        cmdp = flb_popen(DEFAULT_PARQUET_COMMAND_EXISTENCE, "r");
+        cmdp = flb_popen(DEFAULT_PARQUET_COMMAND_CHECK, "r");
         if (cmdp == NULL) {
-            flb_plg_error(ctx->ins, "command %s failed", DEFAULT_PARQUET_COMMAND_EXISTENCE);
+            flb_plg_error(ctx->ins, "command %s failed", DEFAULT_PARQUET_COMMAND_CHECK);
             return -1;
         }
         flb_pclose(cmdp);
@@ -1411,7 +1411,7 @@ static int s3_compress_parquet(struct flb_s3 *ctx,
 
     cmdp = _popen(parquet_cmd, "r");
     if (cmdp == NULL) {
-        flb_plg_error(ctx->ins, "command %s failed", DEFAULT_PARQUET_COMMAND_EXISTENCE);
+        flb_plg_error(ctx->ins, "command %s failed", DEFAULT_PARQUET_COMMAND_CHECK);
         return -1;
     }
     _pclose(cmdp);
@@ -1596,7 +1596,7 @@ static int s3_compress_parquet(struct flb_s3 *ctx,
 
     cmdp = flb_popen(parquet_cmd, "r");
     if (cmdp == NULL) {
-        flb_plg_error(ctx->ins, "command %s failed", DEFAULT_PARQUET_COMMAND_EXISTENCE);
+        flb_plg_error(ctx->ins, "command %s failed", DEFAULT_PARQUET_COMMAND_CHECK);
         return -1;
     }
     flb_pclose(cmdp);
