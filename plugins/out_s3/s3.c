@@ -39,6 +39,10 @@
 
 #include <msgpack.h>
 
+#ifdef FLB_SYSTEM_WINDOWS
+#include <Shlobj.h>
+#endif
+
 #include "s3.h"
 #include "s3_store.h"
 
