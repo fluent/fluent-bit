@@ -61,7 +61,12 @@
 #ifdef __ANDROID__
 #define DEFAULT_PARQUET_PROCESS_DIR "/data/local/tmp/parquet/s3"
 #else
+#if defined(FLB_SYSTEM_WINDOWS)
+/* The prefix of process dir will be obtained by GetTempPathA */
+#define DEFAULT_PARQUET_PROCESS_DIR "parquet\\s3"
+#else
 #define DEFAULT_PARQUET_PROCESS_DIR "/tmp/parquet/s3"
+#endif /* FLB_SYSTEM_WINDOWS */
 #endif
 
 /*
