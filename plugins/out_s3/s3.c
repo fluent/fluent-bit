@@ -1344,6 +1344,9 @@ static int s3_mkdir(struct flb_s3 *ctx, const char *dir, mode_t mode)
 {
     struct stat st;
     char *dup_dir = NULL;
+#ifdef FLB_SYSTEM_WINDOWS
+    char path[PATH_MAX];
+#endif
 #ifdef FLB_SYSTEM_MACOS
     char *parent_dir = NULL;
 #endif
@@ -1354,7 +1357,19 @@ static int s3_mkdir(struct flb_s3 *ctx, const char *dir, mode_t mode)
         return 0;
     }
 
-#if FLB_SYSTEM_MACOS
+#ifdef FLB_SYSTEM_WINDOWS
+    (void) mode;
+
+    if (_fullpath(path, dir, MAX_PATH) == NULL) {
+        return -1;
+    }
+
+    if (SHCreateDirectoryExA(NULL, path, NULL) != ERROR_SUCCESS) {
+        return -1;
+    }
+
+    return 0;
+#elif FLB_SYSTEM_MACOS
     dup_dir = strdup(dir);
     if (!dup_dir) {
         return -1;
@@ -1437,13 +1452,10 @@ static flb_sds_t create_parquest_processing_dir(struct flb_s3 *ctx)
 
     ret = s3_is_dir(path_buf);
     if (ret == -1) {
-        if (_fullpath(work_dir, path_buf, MAX_PATH) == NULL) {
-            ret = -1;
-            goto error;
-        }
-
-        if (SHCreateDirectoryExA(NULL, work_dir, NULL) != ERROR_SUCCESS) {
-            ret = -1;
+        flb_plg_debug(ctx->ins, "creating process dir %s.", ctx->parquet_process_dir);
+        if (s3_mkdir(ctx, ctx->parquet_process_dir, 0755) == -1) {
+            flb_plg_error(ctx->ins, "ensuring existence of process dir %s is failed.",
+                          ctx->parquet_process_dir);
             goto error;
         }
     }
@@ -1629,7 +1641,9 @@ static int create_tmpfile(struct flb_s3 *ctx, char *file_path, char *template, s
     if (ret == -1) {
         flb_plg_debug(ctx->ins, "creating process dir %s.", ctx->parquet_process_dir);
         if (s3_mkdir(ctx, ctx->parquet_process_dir, 0755) == -1) {
-            flb_plg_error(ctx->ins, "ensuring existence of process dir %s is failed.", ctx->parquet_process_dir);
+            flb_plg_error(ctx->ins, "ensuring existence of process dir %s is failed.",
+                          ctx->parquet_process_dir);
+            goto error;
         }
     }
 
