@@ -59,9 +59,9 @@
 #endif
 
 #ifdef __ANDROID__
-#define DEFAULT_PARQUET_PROCESS_DIR "/data/local/tmp"
+#define DEFAULT_PARQUET_PROCESS_DIR "/data/local/tmp/parquet/s3"
 #else
-#define DEFAULT_PARQUET_PROCESS_DIR "/tmp"
+#define DEFAULT_PARQUET_PROCESS_DIR "/tmp/parquet/s3"
 #endif
 
 /*
