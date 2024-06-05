@@ -1,0 +1,6 @@
+if(CMAKE_SYSTEM_PROCESSOR MATCHES "^(SystemZ|s390x)")
+  message(STATUS "Forcing characters to be signed, as on x86_64.")
+  set(CMAKE_C_FLAGS "${CMAKE_C_FLAGS} -fsigned-char")
+  message(STATUS "Cannot build WAMR on this platform, so WASM support is disabled.")
+  set(FLB_WASM OFF)
+endif ()
