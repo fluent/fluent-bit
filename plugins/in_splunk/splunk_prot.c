@@ -226,7 +226,7 @@ static int process_raw_payload_pack(struct flb_splunk *ctx, flb_sds_t tag, char 
         ret = flb_log_event_encoder_set_current_timestamp(&ctx->log_encoder);
     }
 
-    if (ctx->store_token_to_metadata == FLB_TRUE) {
+    if (ctx->store_token_in_metadata == FLB_TRUE) {
         if (ret == FLB_EVENT_ENCODER_SUCCESS) {
             ret = flb_log_event_encoder_append_body_values(
                     &ctx->log_encoder,
@@ -235,7 +235,7 @@ static int process_raw_payload_pack(struct flb_splunk *ctx, flb_sds_t tag, char 
         }
     }
 
-    if (ctx->store_token_to_metadata == FLB_TRUE) {
+    if (ctx->store_token_in_metadata == FLB_TRUE) {
         if (ctx->ingested_auth_header != NULL) {
             if (ret == FLB_EVENT_ENCODER_SUCCESS) {
                 ret = flb_log_event_encoder_append_metadata_values(
@@ -303,7 +303,7 @@ static void process_flb_log_append(struct flb_splunk *ctx, msgpack_object *recor
                 &tm);
     }
 
-    if (ctx->store_token_to_metadata == FLB_TRUE) {
+    if (ctx->store_token_in_metadata == FLB_TRUE) {
         if (ret == FLB_EVENT_ENCODER_SUCCESS) {
             ret = flb_log_event_encoder_set_body_from_msgpack_object(
                     &ctx->log_encoder,
