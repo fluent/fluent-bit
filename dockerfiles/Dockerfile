@@ -137,7 +137,9 @@ RUN echo "deb http://deb.debian.org/debian bookworm-backports main" >> /etc/apt/
     libgmp10 \
     libffi8 \
     liblzma5 \
-    libyaml-0-2 && \
+    libyaml-0-2 \
+    libcap2 \
+    && \
     mkdir -p /dpkg/var/lib/dpkg/status.d/ && \
     for deb in *.deb; do \
     package_name=$(dpkg-deb -I "${deb}" | awk '/^ Package: .*$/ {print $2}'); \
