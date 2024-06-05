@@ -120,7 +120,7 @@ RUN echo "deb http://deb.debian.org/debian bookworm-backports main" >> /etc/apt/
     libzstd1 \
     liblz4-1 \
     libgssapi-krb5-2 \
-    libldap-2.4 \
+    libldap-2.5 \
     libgpg-error0 \
     libkrb5-3 \
     libk5crypto3 \
