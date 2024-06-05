@@ -120,7 +120,7 @@ RUN echo "deb http://deb.debian.org/debian bookworm-backports main" >> /etc/apt/
     libzstd1 \
     liblz4-1 \
     libgssapi-krb5-2 \
-    libldap-2.4-2 \
+    libldap-2.4 \
     libgpg-error0 \
     libkrb5-3 \
     libk5crypto3 \
@@ -135,7 +135,7 @@ RUN echo "deb http://deb.debian.org/debian bookworm-backports main" >> /etc/apt/
     libnettle8 \
     libhogweed6 \
     libgmp10 \
-    libffi7 \
+    libffi8 \
     liblzma5 \
     libyaml-0-2 && \
     mkdir -p /dpkg/var/lib/dpkg/status.d/ && \
