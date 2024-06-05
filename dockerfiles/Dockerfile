@@ -108,7 +108,7 @@ SHELL ["/bin/bash", "-o", "pipefail", "-c"]
 RUN echo "deb http://deb.debian.org/debian bookworm-backports main" >> /etc/apt/sources.list && \
     apt-get update && \
     apt-get download \
-    libssl1.1 \
+    libssl3 \
     libsasl2-2 \
     pkg-config \
     libpq5 \
@@ -207,7 +207,7 @@ ENV DEBIAN_FRONTEND noninteractive
 RUN echo "deb http://deb.debian.org/debian bookworm-backports main" >> /etc/apt/sources.list && \
     apt-get update && \
     apt-get install -y --no-install-recommends \
-    libssl1.1 \
+    libssl3 \
     libsasl2-2 \
     pkg-config \
     libpq5 \
