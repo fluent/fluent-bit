@@ -34,7 +34,7 @@ static void delete_hec_tokens(struct flb_splunk *ctx)
         splunk_token = mk_list_entry(head, struct flb_splunk_tokens, _head);
         flb_sds_destroy(splunk_token->header);
         mk_list_del(&splunk_token->_head);
-        flb_free(&splunk_token);
+        flb_free(splunk_token);
     }
 }
 
