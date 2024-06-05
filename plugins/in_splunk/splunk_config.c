@@ -41,47 +41,62 @@ static void delete_hec_tokens(struct flb_splunk *ctx)
 static int setup_hec_tokens(struct flb_splunk *ctx)
 {
     int         ret;
-    const char *tmp;
-    char       *tmp_tokens;
-    char       *token;
+    const char *raw_token;
+    struct mk_list *head = NULL;
+    struct mk_list *kvs = NULL;
+    struct flb_split_entry *cur = NULL;
     flb_sds_t   auth_header;
     struct flb_splunk_tokens *splunk_token;
 
-    tmp = flb_input_get_property("splunk_token", ctx->ins);
-    if (tmp) {
-        tmp_tokens = flb_strdup(tmp);
+    raw_token = flb_input_get_property("splunk_token", ctx->ins);
+    if (raw_token) {
+        kvs = flb_utils_split(raw_token, ',', -1 );
+        if (kvs == NULL) {
+            goto split_error;
+        }
 
-        token = strtok(tmp_tokens, ",");
-        while (token) {
+        mk_list_foreach(head, kvs) {
+            cur = mk_list_entry(head, struct flb_split_entry, _head);
+
             auth_header = flb_sds_create("Splunk ");
             if (auth_header == NULL) {
                 flb_plg_error(ctx->ins, "error on prefix of auth_header generation");
-                return -1;
+                goto error;
             }
 
-            ret = flb_sds_cat_safe(&auth_header, tmp, strlen(tmp));
+            ret = flb_sds_cat_safe(&auth_header, cur->value, strlen(cur->value));
             if (ret < 0) {
                 flb_plg_error(ctx->ins, "error on token generation");
-                return -1;
+                goto error;
             }
 
             /* Create a new token */
             splunk_token = flb_malloc(sizeof(struct flb_splunk_tokens));
             if (!splunk_token) {
                 flb_errno();
-                return -1;
+                goto error;
             }
 
             splunk_token->header = auth_header;
 
             /* Link to parent list */
             mk_list_add(&splunk_token->_head, &ctx->auth_tokens);
-
-            token = strtok(NULL, ",");
         }
     }
 
+    if (kvs != NULL) {
+        flb_utils_split_free(kvs);
+    }
+
     return 0;
+
+split_error:
+    return -1;
+error:
+    if (kvs != NULL) {
+        flb_utils_split_free(kvs);
+    }
+    return -1;
 }
 
 struct flb_splunk *splunk_config_create(struct flb_input_instance *ins)
