@@ -846,7 +846,7 @@ void flb_test_splunk_auth_header(int port, char *endpoint)
                         NULL);
     TEST_CHECK(ret == 0);
     ret = flb_input_set(ctx->flb, ctx->i_ffd,
-                        "store_token_to_metadata", "false",
+                        "store_token_in_metadata", "false",
                         NULL);
     TEST_CHECK(ret == 0);
 
