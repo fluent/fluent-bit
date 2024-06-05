@@ -94,4 +94,4 @@ jobs:
       run: ./build.sh
       env:
         FLB_DISTRO: ubuntu/20.04
-        FLB_ARG: --build-arg=FLB_STATIC_CONF=yes
+        FLB_ARG: --build-arg=FLB_STATIC_CONF=/tmp

@@ -10,6 +10,7 @@ FLB_DISTRO=${FLB_DISTRO:-}
 FLB_OUT_DIR=${FLB_OUT_DIR:-}
 FLB_NIGHTLY_BUILD=${FLB_NIGHTLY_BUILD:-}
 FLB_JEMALLOC=${FLB_JEMALLOC:-On}
+FLB_STATIC_CONF=${FLB_STATIC_CONF:-}
 DOCKER=${FLB_DOCKER_CLI:-docker}
 
 # Use this to pass special arguments to docker build
@@ -90,6 +91,7 @@ if ! ${DOCKER} build \
     --build-arg FLB_NIGHTLY_BUILD="$FLB_NIGHTLY_BUILD" \
     --build-arg FLB_JEMALLOC="$FLB_JEMALLOC" \
     --build-arg FLB_TD="$FLB_TD" \
+    --build-arg FLB_STATIC_CONF="$FLB_STATIC_CONF" \
     $FLB_ARG \
     -t "$MAIN_IMAGE" \
     -f "$IMAGE_CONTEXT_DIR/Dockerfile" \
