@@ -938,6 +938,16 @@ else()
     set(AUTOCONF_HOST_OPT "--host=${GNU_HOST}")
 endif()
 
+if(CMAKE_GENERATOR MATCHES "Ninja")
+  if(FLB_SYSTEM_WINDOWS)
+    MESSAGE(FATAL_ERROR "Building with Ninja is not supported on Windows")
+  else()
+    set(EXTERNAL_BUILD_TOOL "make")
+  endif()
+else()
+  set(EXTERNAL_BUILD_TOOL "$(MAKE)")
+endif()
+
 # Memory Allocator
 # ================
 if(FLB_JEMALLOC AND ${CMAKE_SYSTEM_NAME} MATCHES "Linux")
@@ -953,15 +963,17 @@ if(FLB_JEMALLOC AND ${CMAKE_SYSTEM_NAME} MATCHES "Linux")
   message(STATUS "jemalloc configure: ${FLB_JEMALLOC_OPTIONS_LIST}")
 
   # Link to Jemalloc as an external dependency
+  set(FLB_LIBJEMALLOC_PATH "${CMAKE_CURRENT_BINARY_DIR}/lib/libjemalloc_pic.a")
   ExternalProject_Add(jemalloc
     SOURCE_DIR ${CMAKE_CURRENT_SOURCE_DIR}/lib/jemalloc-5.3.0
     CONFIGURE_COMMAND ${CMAKE_CURRENT_SOURCE_DIR}/lib/jemalloc-5.3.0/configure ${AUTOCONF_HOST_OPT} "${FLB_JEMALLOC_OPTIONS_LIST}" --prefix=<INSTALL_DIR>
     CFLAGS=-std=gnu99\ -Wall\ -pipe\ -g3\ -O3\ -funroll-loops
-    BUILD_COMMAND $(MAKE)
+    BUILD_COMMAND ${EXTERNAL_BUILD_TOOL}
+    BUILD_BYPRODUCTS ${FLB_LIBJEMALLOC_PATH}
     INSTALL_DIR ${CMAKE_CURRENT_BINARY_DIR}/
-    INSTALL_COMMAND $(MAKE) install_lib_static install_include)
+    INSTALL_COMMAND ${EXTERNAL_BUILD_TOOL} install_lib_static install_include)
   add_library(libjemalloc STATIC IMPORTED GLOBAL)
-  set_target_properties(libjemalloc PROPERTIES IMPORTED_LOCATION "${CMAKE_CURRENT_BINARY_DIR}/lib/libjemalloc_pic.a")
+  set_target_properties(libjemalloc PROPERTIES IMPORTED_LOCATION ${FLB_LIBJEMALLOC_PATH})
   add_dependencies(libjemalloc jemalloc)
   include_directories("${CMAKE_BINARY_DIR}/include/")
 else()
@@ -979,14 +991,16 @@ if(FLB_BACKTRACE)
   else()
     set(DEPS_C_COMPILER "${CMAKE_C_COMPILER}")
   endif()
+  set(FLB_LIBBACKTRACE_PATH "${CMAKE_CURRENT_BINARY_DIR}/backtrace-prefix/lib/libbacktrace.a")
   ExternalProject_Add(backtrace
     SOURCE_DIR ${CMAKE_CURRENT_SOURCE_DIR}/lib/libbacktrace-8602fda/
     CONFIGURE_COMMAND ${CMAKE_CURRENT_SOURCE_DIR}/lib/libbacktrace-8602fda/configure ${AUTOCONF_HOST_OPT} --prefix=<INSTALL_DIR> --enable-shared=no --enable-static=yes
-    BUILD_COMMAND $(MAKE)
-    INSTALL_COMMAND $(MAKE) DESTDIR= install
+    BUILD_COMMAND ${EXTERNAL_BUILD_TOOL}
+    BUILD_BYPRODUCTS ${FLB_LIBBACKTRACE_PATH}
+    INSTALL_COMMAND ${EXTERNAL_BUILD_TOOL} DESTDIR= install
     )
   add_library(libbacktrace STATIC IMPORTED GLOBAL)
-  set_target_properties(libbacktrace PROPERTIES IMPORTED_LOCATION "${CMAKE_CURRENT_BINARY_DIR}/backtrace-prefix/lib/libbacktrace.a")
+  set_target_properties(libbacktrace PROPERTIES IMPORTED_LOCATION ${FLB_LIBBACKTRACE_PATH})
   add_dependencies(libbacktrace backtrace)
   include_directories("${CMAKE_CURRENT_BINARY_DIR}/backtrace-prefix/include/")
 endif()
