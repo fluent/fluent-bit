@@ -474,6 +474,10 @@ if(FLB_JEMALLOC)
   target_link_libraries(fluent-bit-static libjemalloc)
 endif()
 
+if(FLB_OUT_MONGO)
+  target_link_libraries(fluent-bit-static mongoc_static)
+endif()
+
 # Binary / Executable
 if(FLB_BINARY)
   find_package (Threads)
