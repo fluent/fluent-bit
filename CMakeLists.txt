@@ -204,6 +204,7 @@ option(FLB_RUN_LDCONFIG "Enable execution of ldconfig after installation" No)
 # Prefer system libraries if available
 option(FLB_PREFER_SYSTEM_LIBS             "Prefer system libraries"                   No)
 option(FLB_PREFER_SYSTEM_LIB_BACKTRACE    "Prefer the libbacktrace system library"    ${FLB_PREFER_SYSTEM_LIBS})
+option(FLB_PREFER_SYSTEM_LIB_JEMALLOC     "Prefer the libjemalloc system library"     ${FLB_PREFER_SYSTEM_LIBS})
 option(FLB_PREFER_SYSTEM_LIB_LUAJIT       "Prefer the libluajit system library"       ${FLB_PREFER_SYSTEM_LIBS})
 option(FLB_PREFER_SYSTEM_LIB_NGHTTP2      "Prefer the libnghttp2 system library"      ${FLB_PREFER_SYSTEM_LIBS})
 
@@ -912,31 +913,41 @@ endif()
 # Memory Allocator
 # ================
 if(FLB_JEMALLOC AND ${CMAKE_SYSTEM_NAME} MATCHES "Linux")
-  FLB_DEFINITION(FLB_HAVE_JEMALLOC)
-  FLB_DEFINITION(JEMALLOC_MANGLE)
-
-  # Add support for options like page size, if empty we default it
-  if(NOT DEFINED FLB_JEMALLOC_OPTIONS OR "${FLB_JEMALLOC_OPTIONS}" STREQUAL "")
-    set(FLB_JEMALLOC_OPTIONS "--with-lg-quantum=3")
+  if(FLB_PREFER_SYSTEM_LIB_JEMALLOC)
+    find_package(PkgConfig)
+    pkg_check_modules(JEMALLOC jemalloc>=5.0.0)
   endif()
-  # Split into a list so CMake handles it correctly when passing to configure command
-  separate_arguments(FLB_JEMALLOC_OPTIONS_LIST UNIX_COMMAND ${FLB_JEMALLOC_OPTIONS})
-  message(STATUS "jemalloc configure: ${FLB_JEMALLOC_OPTIONS_LIST}")
+  if(JEMALLOC_FOUND)
+    include_directories(${JEMALLOC_INCLUDE_DIRS})
+    link_directories(${JEMALLOC_LIBRARY_DIRS})
+  else()
+    FLB_DEFINITION(JEMALLOC_MANGLE)
 
-  # Link to Jemalloc as an external dependency
-  set(FLB_LIBJEMALLOC_PATH "${CMAKE_CURRENT_BINARY_DIR}/lib/libjemalloc_pic.a")
-  ExternalProject_Add(jemalloc
-    SOURCE_DIR ${CMAKE_CURRENT_SOURCE_DIR}/lib/jemalloc-5.3.0
-    CONFIGURE_COMMAND ${CMAKE_CURRENT_SOURCE_DIR}/lib/jemalloc-5.3.0/configure ${AUTOCONF_HOST_OPT} "${FLB_JEMALLOC_OPTIONS_LIST}" --prefix=<INSTALL_DIR>
-    CFLAGS=-std=gnu99\ -Wall\ -pipe\ -g3\ -O3\ -funroll-loops
-    BUILD_COMMAND ${EXTERNAL_BUILD_TOOL}
-    BUILD_BYPRODUCTS ${FLB_LIBJEMALLOC_PATH}
-    INSTALL_DIR ${CMAKE_CURRENT_BINARY_DIR}/
-    INSTALL_COMMAND ${EXTERNAL_BUILD_TOOL} install_lib_static install_include)
-  add_library(libjemalloc STATIC IMPORTED GLOBAL)
-  set_target_properties(libjemalloc PROPERTIES IMPORTED_LOCATION ${FLB_LIBJEMALLOC_PATH})
-  add_dependencies(libjemalloc jemalloc)
-  include_directories("${CMAKE_BINARY_DIR}/include/")
+    # Add support for options like page size, if empty we default it
+    if(NOT DEFINED FLB_JEMALLOC_OPTIONS OR "${FLB_JEMALLOC_OPTIONS}" STREQUAL "")
+      set(FLB_JEMALLOC_OPTIONS "--with-lg-quantum=3")
+    endif()
+    # Split into a list so CMake handles it correctly when passing to configure command
+    separate_arguments(FLB_JEMALLOC_OPTIONS_LIST UNIX_COMMAND ${FLB_JEMALLOC_OPTIONS})
+    message(STATUS "jemalloc configure: ${FLB_JEMALLOC_OPTIONS_LIST}")
+
+    # Link to Jemalloc as an external dependency
+    set(FLB_LIBJEMALLOC_PATH "${CMAKE_CURRENT_BINARY_DIR}/lib/libjemalloc_pic.a")
+    ExternalProject_Add(jemalloc
+      SOURCE_DIR ${CMAKE_CURRENT_SOURCE_DIR}/lib/jemalloc-5.3.0
+      CONFIGURE_COMMAND ${CMAKE_CURRENT_SOURCE_DIR}/lib/jemalloc-5.3.0/configure ${AUTOCONF_HOST_OPT} "${FLB_JEMALLOC_OPTIONS_LIST}" --prefix=<INSTALL_DIR>
+      CFLAGS=-std=gnu99\ -Wall\ -pipe\ -g3\ -O3\ -funroll-loops
+      BUILD_COMMAND ${EXTERNAL_BUILD_TOOL}
+      BUILD_BYPRODUCTS ${FLB_LIBJEMALLOC_PATH}
+      INSTALL_DIR ${CMAKE_CURRENT_BINARY_DIR}/
+      INSTALL_COMMAND ${EXTERNAL_BUILD_TOOL} install_lib_static install_include)
+    add_library(libjemalloc STATIC IMPORTED GLOBAL)
+    set_target_properties(libjemalloc PROPERTIES IMPORTED_LOCATION ${FLB_LIBJEMALLOC_PATH})
+    add_dependencies(libjemalloc jemalloc)
+    include_directories("${CMAKE_BINARY_DIR}/include/")
+    set(JEMALLOC_LIBRARIES "libjemalloc")
+  endif()
+  FLB_DEFINITION(FLB_HAVE_JEMALLOC)
 else()
   FLB_OPTION(FLB_JEMALLOC OFF)
 endif()
