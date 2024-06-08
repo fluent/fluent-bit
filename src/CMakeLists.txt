@@ -207,7 +207,7 @@ set(extra_libs
 if(FLB_JEMALLOC)
   set(extra_libs
     ${extra_libs}
-    "libjemalloc")
+    ${JEMALLOC_LIBRARIES})
 endif()
 
 if(FLB_REGEX)
@@ -478,7 +478,7 @@ else()
 endif(MSVC)
 
 if(FLB_JEMALLOC)
-  target_link_libraries(fluent-bit-static libjemalloc)
+  target_link_libraries(fluent-bit-static ${JEMALLOC_LIBRARIES})
 endif()
 
 # Binary / Executable
@@ -501,7 +501,7 @@ if(FLB_BINARY)
   endif()
 
   if(FLB_JEMALLOC)
-    target_link_libraries(fluent-bit-bin libjemalloc)
+    target_link_libraries(fluent-bit-bin ${JEMALLOC_LIBRARIES})
   endif()
 
   if(FLB_BACKTRACE)
