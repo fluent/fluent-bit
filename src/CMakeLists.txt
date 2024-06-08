@@ -506,7 +506,7 @@ if(FLB_BINARY)
 
   if(FLB_BACKTRACE)
     add_definitions(-DFLB_DUMP_STACKTRACE=1)
-    target_link_libraries(fluent-bit-bin libbacktrace)
+    target_link_libraries(fluent-bit-bin ${LIBBACKTRACE_LIBRARIES})
   endif()
 
   target_link_libraries(fluent-bit-bin fluent-bit-static ${CMAKE_THREAD_LIBS_INIT})

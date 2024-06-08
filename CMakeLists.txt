@@ -198,6 +198,7 @@ option(FLB_RUN_LDCONFIG "Enable execution of ldconfig after installation" No)
 
 # Prefer system libraries if available
 option(FLB_PREFER_SYSTEM_LIBS             "Prefer system libraries"                   No)
+option(FLB_PREFER_SYSTEM_LIB_BACKTRACE    "Prefer the libbacktrace system library"    ${FLB_PREFER_SYSTEM_LIBS})
 option(FLB_PREFER_SYSTEM_LIB_LUAJIT       "Prefer the libluajit system library"       ${FLB_PREFER_SYSTEM_LIBS})
 option(FLB_PREFER_SYSTEM_LIB_NGHTTP2      "Prefer the libnghttp2 system library"      ${FLB_PREFER_SYSTEM_LIBS})
 
@@ -938,26 +939,38 @@ endif()
 # LibBacktrace (friendly stacktrace support)
 # =========================================
 if(FLB_BACKTRACE)
-  FLB_DEFINITION(FLB_HAVE_LIBBACKTRACE)
-  if (CMAKE_OSX_SYSROOT)
-    # From macOS Mojave, /usr/include does not store C SDK headers.
-    # For libbacktrace building on macOS, we have to tell C headers where they are located.
-    set(DEPS_C_COMPILER "${CMAKE_C_COMPILER} -isysroot ${CMAKE_OSX_SYSROOT}")
-  else()
-    set(DEPS_C_COMPILER "${CMAKE_C_COMPILER}")
+  if(FLB_PREFER_SYSTEM_LIB_BACKTRACE)
+    find_path(LIBBACKTRACE_INCLUDE_DIRS NAMES backtrace.h)
+    find_library(LIBBACKTRACE_LIBRARIES NAMES backtrace)
   endif()
-  set(FLB_LIBBACKTRACE_PATH "${CMAKE_CURRENT_BINARY_DIR}/backtrace-prefix/lib/libbacktrace.a")
-  ExternalProject_Add(backtrace
-    SOURCE_DIR ${CMAKE_CURRENT_SOURCE_DIR}/lib/libbacktrace-8602fda/
-    CONFIGURE_COMMAND ${CMAKE_CURRENT_SOURCE_DIR}/lib/libbacktrace-8602fda/configure ${AUTOCONF_HOST_OPT} --prefix=<INSTALL_DIR> --enable-shared=no --enable-static=yes
-    BUILD_COMMAND ${EXTERNAL_BUILD_TOOL}
-    BUILD_BYPRODUCTS ${FLB_LIBBACKTRACE_PATH}
-    INSTALL_COMMAND ${EXTERNAL_BUILD_TOOL} DESTDIR= install
-    )
-  add_library(libbacktrace STATIC IMPORTED GLOBAL)
-  set_target_properties(libbacktrace PROPERTIES IMPORTED_LOCATION ${FLB_LIBBACKTRACE_PATH})
-  add_dependencies(libbacktrace backtrace)
-  include_directories("${CMAKE_CURRENT_BINARY_DIR}/backtrace-prefix/include/")
+  if(LIBBACKTRACE_INCLUDE_DIRS AND LIBBACKTRACE_LIBRARIES)
+    message(STATUS "libbacktrace found (${LIBBACKTRACE_LIBRARIES})")
+    include_directories(${LIBBACKTRACE_INCLUDE_DIRS})
+    link_directories(${LIBBACKTRACE_LIBRARY_DIRS})
+  else()
+    message(STATUS "libbacktrace not found, building ourselves")
+    if (CMAKE_OSX_SYSROOT)
+      # From macOS Mojave, /usr/include does not store C SDK headers.
+      # For libbacktrace building on macOS, we have to tell C headers where they are located.
+      set(DEPS_C_COMPILER "${CMAKE_C_COMPILER} -isysroot ${CMAKE_OSX_SYSROOT}")
+    else()
+      set(DEPS_C_COMPILER "${CMAKE_C_COMPILER}")
+    endif()
+    set(FLB_LIBBACKTRACE_PATH "${CMAKE_CURRENT_BINARY_DIR}/backtrace-prefix/lib/libbacktrace.a")
+    ExternalProject_Add(backtrace
+      SOURCE_DIR ${CMAKE_CURRENT_SOURCE_DIR}/lib/libbacktrace-8602fda/
+      CONFIGURE_COMMAND ${CMAKE_CURRENT_SOURCE_DIR}/lib/libbacktrace-8602fda/configure ${AUTOCONF_HOST_OPT} --prefix=<INSTALL_DIR> --enable-shared=no --enable-static=yes
+      BUILD_COMMAND ${EXTERNAL_BUILD_TOOL}
+      BUILD_BYPRODUCTS ${FLB_LIBBACKTRACE_PATH}
+      INSTALL_COMMAND ${EXTERNAL_BUILD_TOOL} DESTDIR= install
+      )
+    add_library(libbacktrace STATIC IMPORTED GLOBAL)
+    set_target_properties(libbacktrace PROPERTIES IMPORTED_LOCATION ${FLB_LIBBACKTRACE_PATH})
+    add_dependencies(libbacktrace backtrace)
+    include_directories("${CMAKE_CURRENT_BINARY_DIR}/backtrace-prefix/include/")
+    set(LIBBACKTRACE_LIBRARIES "libbacktrace")
+  endif()
+  FLB_DEFINITION(FLB_HAVE_LIBBACKTRACE)
 endif()
 
 if(FLB_IN_KAFKA OR FLB_OUT_KAFKA)
