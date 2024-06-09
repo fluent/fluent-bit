@@ -740,6 +740,8 @@ int otel_process_logs(struct flb_event_chunk *event_chunk,
     int log_record_count;
     int max_scopes;
     int max_resources;
+    int64_t prev_group_resource_id = -1;
+    int64_t prev_group_scope_id = -1;
     int64_t resource_id = -1;
     int64_t scope_id = -1;
     int64_t tmp_resource_id = -1;
@@ -805,9 +807,14 @@ int otel_process_logs(struct flb_event_chunk *event_chunk,
                 continue;
             }
 
+            if (resource_id == -1 && prev_group_resource_id >= 0 && prev_group_resource_id == tmp_resource_id) {
+                /* continue with the previous resource */
+                resource_id = prev_group_resource_id;
+                scope_id = prev_group_scope_id;
+            }
+
             /* if we have a new resource_id, start a new resource context */
             if (resource_id != tmp_resource_id) {
-
                 if (export_logs.n_resource_logs >= max_resources) {
                     flb_plg_error(ctx->ins, "max resources limit reached");
                     ret = FLB_ERROR;
@@ -847,15 +854,17 @@ start_resource:
                 set_resource_schema_url(ctx->ra_resource_schema_url, event.body, resource_log);
 
                 /* prepare the scopes */
-                scope_logs = flb_calloc(100, sizeof(Opentelemetry__Proto__Logs__V1__ScopeLogs *));
-                if (!scope_logs) {
-                    flb_errno();
-                    ret = FLB_RETRY;
-                    break;
-                }
+                if (!resource_log->scope_logs) {
+                    scope_logs = flb_calloc(100, sizeof(Opentelemetry__Proto__Logs__V1__ScopeLogs *));
+                    if (!scope_logs) {
+                        flb_errno();
+                        ret = FLB_RETRY;
+                        break;
+                    }
 
-                resource_log->scope_logs = scope_logs;
-                resource_log->n_scope_logs = 0;
+                    resource_log->scope_logs = scope_logs;
+                    resource_log->n_scope_logs = 0;
+                }
 
                 /* update the current resource_id */
                 resource_id = tmp_resource_id;
@@ -893,11 +902,11 @@ start_resource:
                     flb_errno();
                     return -2;
                 }
+                log_record_count = 0;
 
                 scope_log->log_records = log_records;
-                scope_logs[resource_log->n_scope_logs] = scope_log;
+                resource_log->scope_logs[resource_log->n_scope_logs] = scope_log;
                 resource_log->n_scope_logs++;
-
 
                 /* group body: $scope['name'] */
                 set_scope_name(ctx->ra_scope_name, event.body, scope_log->scope);
@@ -911,13 +920,14 @@ start_resource:
 
             ret = FLB_OK;
 
-            if (record_type == FLB_LOG_EVENT_GROUP_START) {
-                continue;
-            }
+            /* since we are starting a new group, just continue with the next record */
+            continue;
         }
         else if (record_type == FLB_LOG_EVENT_GROUP_END) {
             /* do nothing */
             ret = FLB_OK;
+            prev_group_resource_id = resource_id;
+            prev_group_scope_id = scope_id;
             resource_id = -1;
             scope_id = -1;
             continue;
@@ -944,6 +954,7 @@ start_resource:
             ret = FLB_RETRY;
             break;
         }
+
         log_records[log_record_count] = log_record;
         opentelemetry__proto__logs__v1__log_record__init(log_record);
 
