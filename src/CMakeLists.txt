@@ -378,7 +378,7 @@ set(FLB_DEPS
   ${FLB_PLUGINS}
   ${FLB_PROXY_PLUGINS}
   ${extra_libs}
-  c-ares
+  ${LIBCARES_LIBRARIES}
   snappy-c
   lwrb
   ${NGHTTP2_LIBRARIES}
