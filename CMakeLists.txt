@@ -199,6 +199,7 @@ option(FLB_RUN_LDCONFIG "Enable execution of ldconfig after installation" No)
 # Prefer system libraries if available
 option(FLB_PREFER_SYSTEM_LIBS             "Prefer system libraries"                   No)
 option(FLB_PREFER_SYSTEM_LIB_LUAJIT       "Prefer the libluajit system library"       ${FLB_PREFER_SYSTEM_LIBS})
+option(FLB_PREFER_SYSTEM_LIB_NGHTTP2      "Prefer the libnghttp2 system library"      ${FLB_PREFER_SYSTEM_LIBS})
 
 # Enable all features
 if(FLB_ALL)
@@ -484,13 +485,16 @@ add_subdirectory(${FLB_PATH_LIB_CMETRICS} EXCLUDE_FROM_ALL)
 add_subdirectory(${FLB_PATH_LIB_CTRACES} EXCLUDE_FROM_ALL)
 
 # Nghttp2 options
-FLB_OPTION(ENABLE_LIB_ONLY   ON)
-FLB_OPTION(ENABLE_STATIC_LIB ON)
-FLB_OPTION(ENABLE_SHARED_LIB OFF)
-
-FLB_DEFINITION(NGHTTP2_STATICLIB)
-
-add_subdirectory(${FLB_PATH_LIB_NGHTTP2} EXCLUDE_FROM_ALL)
+if(FLB_PREFER_SYSTEM_LIB_NGHTTP2)
+  find_package(PkgConfig)
+  pkg_check_modules(NGHTTP2 libnghttp2>=1.0.0)
+endif()
+if(NGHTTP2_FOUND)
+  include_directories(${NGHTTP2_INCLUDE_DIRS})
+  link_directories(${NGHTTP2_LIBRARY_DIRS})
+else()
+  include(cmake/nghttp2.cmake)
+endif()
 
 # C-Ares (DNS library)
 FLB_OPTION(CARES_STATIC      ON)
