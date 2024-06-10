@@ -388,7 +388,7 @@ set(FLB_DEPS
   c-ares
   snappy-c
   lwrb
-  nghttp2_static
+  ${NGHTTP2_LIBRARIES}
   )
 
 if(OPENSSL_FOUND)
