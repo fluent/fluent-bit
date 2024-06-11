@@ -667,6 +667,7 @@ static int tls_net_handshake(struct flb_tls *tls,
     char err_buf[256];
     struct tls_session *session = ptr_session;
     struct tls_context *ctx;
+    X509_VERIFY_PARAM *param;
 
     ctx = session->parent;
     pthread_mutex_lock(&ctx->mutex);
@@ -684,11 +685,22 @@ static int tls_net_handshake(struct flb_tls *tls,
             return -1;
         }
 
-        if (vhost != NULL) {
-            SSL_set_tlsext_host_name(session->ssl, vhost);
-        }
-        else if (tls->vhost) {
+        if (tls->vhost != NULL) {
             SSL_set_tlsext_host_name(session->ssl, tls->vhost);
+            /* set host name validation only if vhost is configured
+             * explicitely */
+            if (tls->verify == FLB_TRUE) {
+                param = SSL_get0_param(session->ssl);
+                if (param) {
+                    ret = X509_VERIFY_PARAM_set1_host(param, tls->vhost, 0);
+                    if (ret != 1) {
+                        flb_error("[tls] error: vhost parameter validation "
+                                    "failed for: %s", (vhost)?vhost:tls->vhost);
+                        pthread_mutex_unlock(&ctx->mutex);
+                        return -1;
+                    }
+                }
+            }
         }
     }
 
