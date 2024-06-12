@@ -97,7 +97,7 @@ static int cb_prom_init(struct flb_output_instance *ins,
     }
 
     /* Hash table for metrics */
-    ctx->ht_metrics = flb_hash_table_create(FLB_HASH_TABLE_EVICT_NONE, 32, 0);
+    ctx->ht_metrics = flb_hash_table_create_with_ttl(ctx->ttl, FLB_HASH_TABLE_EVICT_NONE, 32, 0);
     if (!ctx->ht_metrics) {
         flb_plg_error(ctx->ins, "could not initialize hash table for metrics");
         return -1;
@@ -179,6 +179,9 @@ static void cb_prom_flush(struct flb_event_chunk *event_chunk,
     struct cmt *cmt;
     struct prom_exporter *ctx = out_context;
 
+    /* Clear old metrics */
+    flb_hash_table_clear(ctx->ht_metrics);
+
     /*
      * A new set of metrics has arrived, perform decoding, apply labels,
      * convert to Prometheus text format and store the output in the
@@ -229,6 +232,7 @@ static void cb_prom_flush(struct flb_event_chunk *event_chunk,
 
     /* retrieve a full copy of all metrics */
     metrics = hash_format_metrics(ctx);
+
     if (!metrics) {
         flb_plg_error(ctx->ins, "could not retrieve metrics");
         FLB_OUTPUT_RETURN(FLB_ERROR);
@@ -279,6 +283,12 @@ static struct flb_config_map config_map[] = {
      FLB_CONFIG_MAP_SLIST_1, "add_label", NULL,
      FLB_CONFIG_MAP_MULT, FLB_TRUE, offsetof(struct prom_exporter, add_labels),
      "TCP port for listening for HTTP connections."
+    },
+
+    {
+     FLB_CONFIG_MAP_TIME, "ttl", "0s",
+     0, FLB_TRUE, offsetof(struct prom_exporter, ttl),
+     "Expiring time for metrics"
     },
 
     /* EOF */
