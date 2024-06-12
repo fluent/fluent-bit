@@ -20,10 +20,15 @@ foreach(script ${UNIT_TESTS_SH})
     COMMAND ${CMAKE_CURRENT_SOURCE_DIR}/${script}
     )
 
-  set_tests_properties(${script} PROPERTIES ENVIRONMENT
-    "FLB_ROOT=${PROJECT_SOURCE_DIR};\
-FLB_RUNTIME_SHELL_PATH=${CMAKE_CURRENT_SOURCE_DIR};\
-FLB_RUNTIME_SHELL_CONF=${CMAKE_CURRENT_SOURCE_DIR}/conf;\
-FLB_BIN=${CMAKE_BINARY_DIR}/bin/fluent-bit"
-    )
+  list(APPEND env_vars "FLB_ROOT=${PROJECT_SOURCE_DIR}")
+  list(APPEND env_vars "FLB_RUNTIME_SHELL_PATH=${CMAKE_CURRENT_SOURCE_DIR}")
+  list(APPEND env_vars "FLB_RUNTIME_SHELL_CONF=${CMAKE_CURRENT_SOURCE_DIR}/conf")
+  list(APPEND env_vars "FLB_BIN=${CMAKE_BINARY_DIR}/bin/fluent-bit")
+
+  if("llvm" STREQUAL FLB_COVERAGE_TYPE)
+    list(APPEND env_vars "LLVM_PROFILE_FILE=${CMAKE_CURRENT_BINARY_DIR}/${script}.profraw")
+  endif()
+
+  set_tests_properties(${script} PROPERTIES ENVIRONMENT "${env_vars}")
+  unset(env_vars)
 endforeach()
