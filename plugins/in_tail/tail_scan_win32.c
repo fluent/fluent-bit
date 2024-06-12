@@ -71,7 +71,7 @@ static int tail_register_file(const char *target, struct flb_tail_config *ctx,
         return -1;
     }
 
-    if (stat(path, &st) != 0 || !S_ISREG(st.st_mode)) {
+    if (stat(path, &st) != 0 || !(S_ISREG(st.st_mode) && S_ISFIFO(st.st_mode))) {
         return -1;
     }
 
