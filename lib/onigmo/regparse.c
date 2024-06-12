@@ -2506,7 +2506,7 @@ get_name_end_code_point(OnigCodePoint start)
 }
 
 #ifdef USE_NAMED_GROUP
-# ifdef RUBY
+# if defined(RUBY) || defined(RUBY_CODE_NAME)
 #  define ONIGENC_IS_CODE_NAME(enc, c)  TRUE
 # else
 #  define ONIGENC_IS_CODE_NAME(enc, c)  ONIGENC_IS_CODE_WORD(enc, c)
