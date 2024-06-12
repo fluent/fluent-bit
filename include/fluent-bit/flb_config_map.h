@@ -23,6 +23,9 @@
 #include <fluent-bit/flb_info.h>
 #include <fluent-bit/flb_slist.h>
 #include <fluent-bit/flb_sds.h>
+#include <cfl/cfl.h>
+#include <cfl/cfl_kvlist.h>
+#include <cfl/cfl_variant.h>
 #include <monkey/mk_core.h>
 
 /* Configuration types */
@@ -47,6 +50,9 @@
 #define FLB_CONFIG_MAP_SLIST_3   43   /* split up to 3 nodes + remaining data */
 #define FLB_CONFIG_MAP_SLIST_4   44   /* split up to 4 nodes + remaining data */
 
+#define FLB_CONFIG_MAP_KVLIST    50   /* key/value list */
+#define FLB_CONFIG_MAP_ARRAY     51   /* array */
+
 #define FLB_CONFIG_MAP_MULT       1
 
 struct flb_config_map_val {
@@ -57,7 +63,10 @@ struct flb_config_map_val {
         size_t s_num;                 /* FLB_CONFIG_MAP_SIZE */
         flb_sds_t str;                /* FLB_CONFIG_MAP_STR */
         struct mk_list *list;         /* FLB_CONFIG_MAP_CLIST and FLB_CONFIG_MAP_SLIST */
+        struct cfl_array *array;      /* FLB_CONFIG_MAP_ARRAY */
+        struct cfl_kvlist *kvlist;    /* FLB_CONFIG_MAP_KVLIST */
     } val;
+    int type;
     struct mk_list *mult;
     struct mk_list _head;             /* Link to list if this entry is a 'multiple' entry */
 };
@@ -105,5 +114,6 @@ struct mk_list *flb_config_map_create(struct flb_config *config,
 void flb_config_map_destroy(struct mk_list *list);
 int flb_config_map_expected_values(int type);
 int flb_config_map_set(struct mk_list *properties, struct mk_list *map, void *context);
+int flb_config_map_set_from_kvlist(struct cfl_kvlist *properties, struct mk_list *map, void *context);
 
 #endif
