@@ -591,7 +591,15 @@ int flb_input_set_property(struct flb_input_instance *ins,
             flb_sds_destroy(tmp);
             return -1;
         }
+
+        if (ins->storage_type != FLB_STORAGE_FS && 
+            ins->storage_pause_on_chunks_overlimit == FLB_TRUE) {
+                flb_debug("[input] storage.pause_on_chunks_overlimit will be "
+                            "reset because storage.type is not filesystem");
+                ins->storage_pause_on_chunks_overlimit = FLB_FALSE;
+        }
         flb_sds_destroy(tmp);
+
     }
     else if (prop_key_check("threaded", k, len) == 0 && tmp) {
         enabled = flb_utils_bool(tmp);
@@ -604,14 +612,12 @@ int flb_input_set_property(struct flb_input_instance *ins,
         ins->is_threaded = enabled;
     }
     else if (prop_key_check("storage.pause_on_chunks_overlimit", k, len) == 0 && tmp) {
-        if (ins->storage_type == FLB_STORAGE_FS) {
-            ret = flb_utils_bool(tmp);
-            flb_sds_destroy(tmp);
-            if (ret == -1) {
-                return -1;
-            }
-            ins->storage_pause_on_chunks_overlimit = ret;
+        ret = flb_utils_bool(tmp);
+        flb_sds_destroy(tmp);
+        if (ret == -1) {
+            return -1;
         }
+        ins->storage_pause_on_chunks_overlimit = ret;
     }
     else {
         /*
