@@ -67,14 +67,6 @@ jobs:
     - name: Checkout repository
       uses: actions/checkout@v4
 
-    # Check we can download the AppVeyor build which confirms it matches the version to release as well as being a successful build
-    - name: Get Appveyor binaries
-      run: |
-        ./packaging/appveyor-download.sh
-      shell: bash
-      env:
-        TAG: v${{ github.event.inputs.version }}
-
   staging-release-generate-package-matrix:
     name: Get package matrix
     runs-on: ubuntu-latest
@@ -355,14 +347,6 @@ jobs:
         AWS_SECRET_ACCESS_KEY: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
         AWS_REGION: "us-east-1"
       shell: bash
-
-    - name: Get Appveyor binaries
-      run: |
-        ./packaging/appveyor-download.sh
-      shell: bash
-      env:
-        TAG: v${{ github.event.inputs.version }}
-        OUTPUT_DIR: appveyor
 
     - name: Move components from staging and setup
       run: |
