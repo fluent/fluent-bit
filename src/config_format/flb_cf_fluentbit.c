@@ -502,7 +502,7 @@ static int read_config(struct flb_cf *cf, struct local_ctx *ctx,
      * workaround to retrieve the lines.
      */
     size_t off = 0;
-    while (static_fgets(buf, FLB_CF_BUF_SIZE, in_data, &off)) {
+    while (static_fgets(buf, FLB_DEFAULT_CF_BUF_SIZE, in_data, &off)) {
 #else
     /* normal mode, read lines into a buffer */
     /* note that we use "fgets_ptr" so we can continue reading after realloc */
