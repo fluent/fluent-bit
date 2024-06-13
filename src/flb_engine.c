@@ -707,6 +707,7 @@ int flb_engine_start(struct flb_config *config)
     struct flb_sched *sched;
     struct flb_net_dns dns_ctx;
     struct flb_notification *notification;
+    int exiting = FLB_FALSE;
 
     /* Initialize the networking layer */
     flb_net_lib_init();
@@ -1062,13 +1063,21 @@ int flb_engine_start(struct flb_config *config)
                             flb_task_running_print(config);
                         }
                         if ((mem_chunks + fs_chunks) > 0) {
-                            flb_info("[engine] Pending chunk count: memory=%d, filesystem=%d",
-                                     mem_chunks, fs_chunks);
+                            flb_info("[engine] pending chunk count: memory=%d, filesystem=%d; grace_timer=%d",
+                                     mem_chunks, fs_chunks, config->grace_count);
                         }
+
+                        /* Create new tasks for pending chunks */
+                        flb_engine_flush(config, NULL);
                         if (config->grace_count < config->grace_input) {
-                            flb_engine_exit(config);
+                            if (exiting == FLB_FALSE) {
+                                flb_engine_exit(config);
+                                exiting = FLB_TRUE;
+                            }
                         } else {
-                            flb_engine_stop_ingestion(config);
+                            if (config->is_ingestion_active == FLB_TRUE) {
+                                flb_engine_stop_ingestion(config);
+                            }
                         }
                     }
                     else {
@@ -1076,8 +1085,8 @@ int flb_engine_start(struct flb_config *config)
                             flb_task_running_print(config);
                         }
                         if ((mem_chunks + fs_chunks) > 0) {
-                            flb_info("[engine] Pending chunk count: memory=%d, filesystem=%d",
-                                     mem_chunks, fs_chunks);
+                            flb_info("[engine] pending chunk count: memory=%d, filesystem=%d; grace_timer=%d",
+                                     mem_chunks, fs_chunks, config->grace_count);
                         }
                         flb_info("[engine] service has stopped (%i pending tasks)",
                                  tasks);
