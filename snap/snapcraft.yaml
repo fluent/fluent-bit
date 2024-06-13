@@ -7,6 +7,7 @@ description: |
   It provides a flexible pluggable architecture to collect, enrich and deliver
   logs or metrics to multiple databases or cloud providers.
 license: 'Apache-2.0'
+icon: ./fluent-bit.svg
 confinement: 'strict'
 grade: 'stable'
 
