@@ -1,5 +1,5 @@
 name: fluent-bit
-base: core18
+base: core22
 version: '3.0.7'
 summary: High performance logs and stream processor
 description: |
@@ -7,7 +7,6 @@ description: |
   It provides a flexible pluggable architecture to collect, enrich and deliver
   logs or metrics to multiple databases or cloud providers.
 license: 'Apache-2.0'
-icon: ./fluent-bit.svg
 confinement: 'strict'
 grade: 'stable'
 
@@ -15,18 +14,18 @@ plugs:
     read-config:
         interface: system-files
         read:
-        - $SNAP/etc/fluent-bit
+        - usr/local/etc/fluent-bit
 
 apps:
   service:
-    command: fluent-bit -c $SNAP/etc/fluent-bit/fluent-bit.conf
+    command: usr/local/bin/fluent-bit -c usr/local/etc/fluent-bit/fluent-bit.conf
     daemon: simple
     plugs:
       - network
       - network-bind
       - read-config
   fluent-bit:
-    command: fluent-bit
+    command: usr/local/bin/fluent-bit
     plugs:
       - network
       - network-bind
@@ -38,7 +37,7 @@ parts:
     plugin: cmake
     stage-packages:
         - libsasl2-2
-        - libssl1.1
+        - libssl3
         - libpq5
     build-packages:
         - g++
@@ -51,14 +50,11 @@ parts:
         - libssl-dev
         - libpq5
         - postgresql-server-dev-all
-    configflags:
+    cmake-parameters:
         - -DFLB_DEBUG=On
         - -DFLB_OUT_KAFKA=On
         - -DFLB_JEMALLOC=On
         - -DFLB_EXAMPLES=OFF
         - -DFLB_SHARED_LIB=Off
         - -DFLB_OUT_PGSQL=On
-
-layout:
-  /etc/fluent-bit:
-    bind: $SNAP/etc/fluent-bit
+        - -DFLB_CONFIG_YAML=Off
