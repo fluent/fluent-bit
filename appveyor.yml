@@ -16,6 +16,14 @@ platform:
   - Win32
   - x64
 
+# branches to build
+branches:
+  only:
+    - nonexistent
+
+# Do not build feature branch with open Pull Requests
+skip_branch_with_pr: true
+
 environment:
   vspath: 'C:\Program Files (x86)\Microsoft Visual Studio\2019\Community'
   winflexbison: https://github.com/lexxmark/winflexbison/releases/download/v2.5.22/win_flex_bison-2.5.22.zip
