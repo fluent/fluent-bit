@@ -692,7 +692,8 @@ static int tls_net_handshake(struct flb_tls *tls,
         }
     }
 
-    if (tls->verify == FLB_TRUE) {
+    if (tls->verify == FLB_TRUE &&
+        tls->verify_hostname == FLB_TRUE) {
         if (vhost != NULL) {
             ret = setup_hostname_validation(session, vhost);
         }

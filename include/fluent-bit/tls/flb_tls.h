@@ -92,6 +92,7 @@ struct flb_tls {
     int debug;                        /* Debug level               */
     char *vhost;                      /* Virtual hostname for SNI  */
     int mode;                         /* Client or Server          */
+    int verify_hostname;              /* Verify hostname           */
 
     /* Bakend library for TLS */
     void *ctx;                        /* TLS context created */
@@ -111,6 +112,8 @@ struct flb_tls *flb_tls_create(int mode,
 int flb_tls_destroy(struct flb_tls *tls);
 
 int flb_tls_set_alpn(struct flb_tls *tls, const char *alpn);
+
+int flb_tls_set_verify_hostname(struct flb_tls *tls, int verify_hostname);
 
 int flb_tls_load_system_certificates(struct flb_tls *tls);
 
