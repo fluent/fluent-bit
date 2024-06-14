@@ -74,6 +74,12 @@ struct flb_config_map tls_configmap[] = {
      "Hostname to be used for TLS SNI extension"
     },
 
+    {
+     FLB_CONFIG_MAP_BOOL, "tls.verify_hostname", "off",
+     0, FLB_FALSE, 0,
+     "Enable or disable to verify hostname"
+    },
+
     /* EOF */
     {0}
 };
@@ -191,6 +197,7 @@ struct flb_tls *flb_tls_create(int mode,
     tls->verify = verify;
     tls->debug = debug;
     tls->mode = mode;
+    tls->verify_hostname = FLB_FALSE;
 
     if (vhost != NULL) {
         tls->vhost = flb_strdup(vhost);
@@ -231,6 +238,16 @@ int flb_tls_set_alpn(struct flb_tls *tls, const char *alpn)
     return 0;
 }
 
+int flb_tls_set_verify_hostname(struct flb_tls *tls, int verify_hostname)
+{
+    if (!tls) {
+        return -1;
+    }
+
+    tls->verify_hostname = !!verify_hostname;
+
+    return 0;
+}
 
 int flb_tls_net_read(struct flb_tls_session *session, void *buf, size_t len)
 {
