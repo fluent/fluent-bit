@@ -1681,6 +1681,7 @@ static int wait_for_dns(struct flb_kube *ctx)
 
 static int flb_kubelet_network_init(struct flb_kube *ctx, struct flb_config *config)
 {
+    int ret;
     int io_type = FLB_IO_TCP;
     int api_https = FLB_TRUE;
     ctx->kubelet_upstream = NULL;    
@@ -1709,6 +1710,14 @@ static int flb_kubelet_network_init(struct flb_kube *ctx, struct flb_config *con
             return -1;
         }
 
+        if (ctx->tls_verify_hostname == FLB_TRUE) {
+            ret = flb_tls_set_verify_hostname(ctx->kubelet_tls, ctx->tls_verify_hostname);
+            if (ret == -1) {
+                flb_plg_debug(ctx->ins, "kubelet network tls set up failed for hostname verification");
+                return -1;
+            }
+        }
+
         io_type = FLB_IO_TLS;
     }
 
@@ -1726,12 +1735,13 @@ static int flb_kubelet_network_init(struct flb_kube *ctx, struct flb_config *con
 
     /* Remove async flag from upstream */
     flb_stream_disable_async_mode(&ctx->kubelet_upstream->base);
-    
+
     return 0;
 }
 
 static int flb_kube_network_init(struct flb_kube *ctx, struct flb_config *config)
 {
+    int ret;
     int io_type = FLB_IO_TCP;
     int kubelet_network_init_ret = 0;
 
@@ -1751,6 +1761,14 @@ static int flb_kube_network_init(struct flb_kube *ctx, struct flb_config *config
                                   NULL, NULL, NULL);
         if (!ctx->tls) {
             return -1;
+        }
+
+        if (ctx->tls_verify_hostname == FLB_TRUE) {
+            ret = flb_tls_set_verify_hostname(ctx->tls, ctx->tls_verify_hostname);
+            if (ret == -1) {
+                flb_plg_debug(ctx->ins, "network tls set up failed for hostname verification");
+                return -1;
+            }
         }
 
         io_type = FLB_IO_TLS;
