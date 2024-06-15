@@ -24,10 +24,12 @@
 #include <fluent-bit/flb_time.h>
 #include <fluent-bit/flb_pack.h>
 #include <fluent-bit/flb_http_client.h>
+#include <fluent-bit/flb_log_event_encoder.h>
 #include <monkey/mk_core.h>
 #include "flb_tests_runtime.h"
 
 #define JSON_CONTENT_TYPE "application/json"
+#define MSGPACK_CONTENT_TYPE "application/msgpack"
 
 struct http_client_ctx {
     struct flb_upstream      *u;
@@ -277,6 +279,156 @@ void flb_test_http()
     flb_upstream_conn_release(ctx->httpc->u_conn);
     test_ctx_destroy(ctx);
 }
+
+void flb_test_msgpack_legacy()
+{
+    struct flb_lib_out_cb cb_data;
+    struct test_ctx *ctx;
+    struct flb_http_client *c;
+    int ret;
+    int num;
+    size_t b_sent;
+    char buf[] = "\xdd\x00\x00\x00\x02\xdd\x00\x00"
+                 "\x00\x02\xd7\x00\x65\xd3\x9c\x63"
+                 "\x19\x36\xb8\xd5\x80\x81\xa7\x6d"
+                 "\x65\x73\x73\x61\x67\x65\xa5\x64"
+                 "\x75\x6d\x6d\x79\xbe";
+
+
+    clear_output_num();
+
+    cb_data.cb = cb_check_result_json;
+    cb_data.data = "\"message\":\"dummy\"";
+
+    ctx = test_ctx_create(&cb_data);
+    if (!TEST_CHECK(ctx != NULL)) {
+        TEST_MSG("test_ctx_create failed");
+        exit(EXIT_FAILURE);
+    }
+
+    ret = flb_output_set(ctx->flb, ctx->o_ffd,
+                         "match", "*",
+                         "format", "json",
+                         NULL);
+    TEST_CHECK(ret == 0);
+
+    ret = flb_input_set(ctx->flb, ctx->i_ffd,
+                        "http2", "off",
+                        NULL);
+    TEST_CHECK(ret == 0);
+
+    /* Start the engine */
+    ret = flb_start(ctx->flb);
+    TEST_CHECK(ret == 0);
+
+    ctx->httpc = http_client_ctx_create();
+    TEST_CHECK(ctx->httpc != NULL);
+
+    c = flb_http_client(ctx->httpc->u_conn, FLB_HTTP_POST, "/", buf, sizeof(buf),
+                        "127.0.0.1", 9880, NULL, 0);
+    ret = flb_http_add_header(c, FLB_HTTP_HEADER_CONTENT_TYPE, strlen(FLB_HTTP_HEADER_CONTENT_TYPE),
+                              MSGPACK_CONTENT_TYPE, strlen(MSGPACK_CONTENT_TYPE));
+    TEST_CHECK(ret == 0);
+    if (!TEST_CHECK(c != NULL)) {
+        TEST_MSG("http_client failed");
+        exit(EXIT_FAILURE);
+    }
+
+    ret = flb_http_do(c, &b_sent);
+    if (!TEST_CHECK(ret == 0)) {
+        TEST_MSG("ret error. ret=%d\n", ret);
+    }
+    else if (!TEST_CHECK(b_sent > 0)){
+        TEST_MSG("b_sent size error. b_sent = %lu\n", b_sent);
+    }
+    else if (!TEST_CHECK(c->resp.status == 201)) {
+        TEST_MSG("http response code error. expect: 201, got: %d\n", c->resp.status);
+    }
+
+    /* waiting to flush */
+    flb_time_msleep(1500);
+
+    num = get_output_num();
+    if (!TEST_CHECK(num > 0))  {
+        TEST_MSG("no outputs");
+    }
+    flb_http_client_destroy(c);
+    flb_upstream_conn_release(ctx->httpc->u_conn);
+    test_ctx_destroy(ctx);
+}
+
+void flb_test_msgpack()
+{
+    struct flb_lib_out_cb cb_data;
+    struct test_ctx *ctx;
+    struct flb_http_client *c;
+    int ret;
+    int num;
+    size_t b_sent;
+    char buf[] = "\xdd\x00\x00\x00\x02\xdd\x00\x00"
+                 "\x00\x02\xd7\x00\x65\xd3\x9c\x63"
+                 "\x19\x36\xb8\xd5\x80\x81\xa7\x6d"
+                 "\x65\x73\x73\x61\x67\x65\xa5\x64"
+                 "\x75\x6d\x6d\x79\xbe";
+
+
+    clear_output_num();
+
+    cb_data.cb = cb_check_result_json;
+    cb_data.data = "\"message\":\"dummy\"";
+
+    ctx = test_ctx_create(&cb_data);
+    if (!TEST_CHECK(ctx != NULL)) {
+        TEST_MSG("test_ctx_create failed");
+        exit(EXIT_FAILURE);
+    }
+
+    ret = flb_output_set(ctx->flb, ctx->o_ffd,
+                         "match", "*",
+                         "format", "json",
+                         NULL);
+    TEST_CHECK(ret == 0);
+
+    /* Start the engine */
+    ret = flb_start(ctx->flb);
+    TEST_CHECK(ret == 0);
+
+    ctx->httpc = http_client_ctx_create();
+    TEST_CHECK(ctx->httpc != NULL);
+
+    c = flb_http_client(ctx->httpc->u_conn, FLB_HTTP_POST, "/", buf, sizeof(buf),
+                        "127.0.0.1", 9880, NULL, 0);
+    ret = flb_http_add_header(c, FLB_HTTP_HEADER_CONTENT_TYPE, strlen(FLB_HTTP_HEADER_CONTENT_TYPE),
+                              MSGPACK_CONTENT_TYPE, strlen(MSGPACK_CONTENT_TYPE));
+    TEST_CHECK(ret == 0);
+    if (!TEST_CHECK(c != NULL)) {
+        TEST_MSG("http_client failed");
+        exit(EXIT_FAILURE);
+    }
+
+    ret = flb_http_do(c, &b_sent);
+    if (!TEST_CHECK(ret == 0)) {
+        TEST_MSG("ret error. ret=%d\n", ret);
+    }
+    else if (!TEST_CHECK(b_sent > 0)){
+        TEST_MSG("b_sent size error. b_sent = %lu\n", b_sent);
+    }
+    else if (!TEST_CHECK(c->resp.status == 201)) {
+        TEST_MSG("http response code error. expect: 201, got: %d\n", c->resp.status);
+    }
+
+    /* waiting to flush */
+    flb_time_msleep(1500);
+
+    num = get_output_num();
+    if (!TEST_CHECK(num > 0))  {
+        TEST_MSG("no outputs");
+    }
+    flb_http_client_destroy(c);
+    flb_upstream_conn_release(ctx->httpc->u_conn);
+    test_ctx_destroy(ctx);
+}
+
 void flb_test_http_successful_response_code(char *response_code)
 {
     struct flb_lib_out_cb cb_data;
@@ -430,6 +582,10 @@ void flb_test_http_failure_400_bad_disk_write()
     struct flb_lib_out_cb cb_data;
     struct test_ctx *ctx;
     struct flb_http_client *c;
+    const char *tmpdir;
+    const char *storage_name = "http-input-test-404-bad-write";
+    flb_sds_t storage_path;
+    flb_sds_t storage_path_http_0;
     int ret;
     size_t b_sent;
 
@@ -446,8 +602,35 @@ void flb_test_http_failure_400_bad_disk_write()
         exit(EXIT_FAILURE);
     }
 
+    tmpdir = getenv("TMPDIR");
+    if (tmpdir == NULL || strlen(tmpdir) == 0) {
+        tmpdir = "/tmp/";
+    }
+
+    storage_path = flb_sds_create_size(strlen(tmpdir) + strlen(storage_name));
+    if (!TEST_CHECK(storage_path != NULL)) {
+        exit(EXIT_FAILURE);
+    }
+    if (!TEST_CHECK(flb_sds_cat_safe(&storage_path, tmpdir, strlen(tmpdir)) == 0)) {
+        exit(EXIT_FAILURE);
+    }
+    if (!TEST_CHECK(flb_sds_cat_safe(&storage_path, storage_name, strlen(storage_name)) == 0)) {
+        exit(EXIT_FAILURE);
+    }
+
+    storage_path_http_0 = flb_sds_create_size(strlen(storage_path) + strlen("/http.0"));
+    if (!TEST_CHECK(storage_path_http_0 != NULL)) {
+        exit(EXIT_FAILURE);
+    }
+    if (!TEST_CHECK(flb_sds_cat_safe(&storage_path_http_0, storage_path, strlen(storage_path)) == 0)) {
+        exit(EXIT_FAILURE);
+    }
+    if (!TEST_CHECK(flb_sds_cat_safe(&storage_path_http_0, "/http.0", strlen("/http.0")) == 0)) {
+        exit(EXIT_FAILURE);
+    }
+
     ret = flb_service_set(ctx->flb,
-                          "storage.path", "/tmp/http-input-test-404-bad-write",
+                          "storage.path", storage_path,
                           NULL);
     TEST_CHECK(ret == 0);
 
@@ -468,7 +651,7 @@ void flb_test_http_failure_400_bad_disk_write()
 
     flb_time_msleep(5000);
 
-    ret = chmod("/tmp/http-input-test-404-bad-write", 000);
+    ret = chmod(storage_path, 000);
     TEST_CHECK(ret == 0);
 
     ctx->httpc = http_client_ctx_create();
@@ -495,11 +678,10 @@ void flb_test_http_failure_400_bad_disk_write()
         TEST_MSG("http response code error. expect: %d, got: %d\n", 400, c->resp.status);
     }
 
-    chmod("/tmp/http-input-test-404-bad-write/http.0", 0700);
-    rmdir("/tmp/http-input-test-404-bad-write/http.0");
-
-    chmod("/tmp/http-input-test-404-bad-write", 0700);
-    rmdir("/tmp/http-input-test-404-bad-write");
+    chmod(storage_path, 0700);
+    chmod(storage_path_http_0, 0700);
+    rmdir(storage_path_http_0);
+    rmdir(storage_path);
 
     /* waiting to flush */
     flb_time_msleep(1500);
@@ -507,6 +689,8 @@ void flb_test_http_failure_400_bad_disk_write()
     flb_http_client_destroy(c);
     flb_upstream_conn_release(ctx->httpc->u_conn);
     test_ctx_destroy(ctx);
+    flb_sds_destroy(storage_path);
+    flb_sds_destroy(storage_path_http_0);
 }
 
 void flb_test_http_tag_key()
@@ -584,6 +768,8 @@ void flb_test_http_tag_key()
 
 TEST_LIST = {
     {"http", flb_test_http},
+    {"msgpack_legacy", flb_test_msgpack_legacy},
+    {"msgpack", flb_test_msgpack},
     {"successful_response_code_200", flb_test_http_successful_response_code_200},
     {"successful_response_code_204", flb_test_http_successful_response_code_204},
     {"failure_response_code_400_bad_json", flb_test_http_failure_400_bad_json},
