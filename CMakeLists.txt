@@ -206,6 +206,7 @@ option(FLB_PREFER_SYSTEM_LIBS             "Prefer system libraries"             
 option(FLB_PREFER_SYSTEM_LIB_BACKTRACE    "Prefer the libbacktrace system library"    ${FLB_PREFER_SYSTEM_LIBS})
 option(FLB_PREFER_SYSTEM_LIB_CARES        "Prefer the libcares system library"        ${FLB_PREFER_SYSTEM_LIBS})
 option(FLB_PREFER_SYSTEM_LIB_JEMALLOC     "Prefer the libjemalloc system library"     ${FLB_PREFER_SYSTEM_LIBS})
+option(FLB_PREFER_SYSTEM_LIB_KAFKA        "Prefer the libkafka system library"        ${FLB_PREFER_SYSTEM_LIBS})
 option(FLB_PREFER_SYSTEM_LIB_LUAJIT       "Prefer the libluajit system library"       ${FLB_PREFER_SYSTEM_LIBS})
 option(FLB_PREFER_SYSTEM_LIB_NGHTTP2      "Prefer the libnghttp2 system library"      ${FLB_PREFER_SYSTEM_LIBS})
 
@@ -992,17 +993,16 @@ if(FLB_BACKTRACE)
 endif()
 
 if(FLB_IN_KAFKA OR FLB_OUT_KAFKA)
-    FLB_OPTION(RDKAFKA_BUILD_STATIC    On)
-    FLB_OPTION(RDKAFKA_BUILD_EXAMPLES Off)
-    FLB_OPTION(RDKAFKA_BUILD_TESTS    Off)
-    FLB_OPTION(ENABLE_LZ4_EXT         Off)
-
-    # disable Curl
-    if (FLB_SYSTEM_MACOS)
-      FLB_OPTION(WITH_CURL  Off)
-    endif()
-
-    add_subdirectory(${FLB_PATH_LIB_RDKAFKA} EXCLUDE_FROM_ALL)
+  if(FLB_PREFER_SYSTEM_LIB_KAFKA)
+    find_package(PkgConfig)
+    pkg_check_modules(KAFKA rdkafka>=2.3.0)
+  endif()
+  if(KAFKA_FOUND)
+    include_directories(${KAFKA_INCLUDE_DIRS})
+    link_directories(${KAFKA_LIBRARY_DIRS})
+  else()
+    include(cmake/kafka.cmake)
+  endif()
 endif()
 
 # Onigmo (Regex Engine) options
