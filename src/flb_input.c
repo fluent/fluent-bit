@@ -308,6 +308,7 @@ struct flb_input_instance *flb_input_new(struct flb_config *config,
         instance->tls                   = NULL;
         instance->tls_debug             = -1;
         instance->tls_verify            = FLB_TRUE;
+        instance->tls_verify_hostname   = FLB_FALSE;
         instance->tls_vhost             = NULL;
         instance->tls_ca_path           = NULL;
         instance->tls_ca_file           = NULL;
@@ -551,6 +552,10 @@ int flb_input_set_property(struct flb_input_instance *ins,
     }
     else if (prop_key_check("tls.verify", k, len) == 0 && tmp) {
         ins->tls_verify = flb_utils_bool(tmp);
+        flb_sds_destroy(tmp);
+    }
+    else if (prop_key_check("tls.verify_hostname", k, len) == 0 && tmp) {
+        ins->tls_verify_hostname = flb_utils_bool(tmp);
         flb_sds_destroy(tmp);
     }
     else if (prop_key_check("tls.debug", k, len) == 0 && tmp) {
@@ -1120,6 +1125,16 @@ int flb_input_instance_init(struct flb_input_instance *ins,
                       ins->name);
 
             return -1;
+        }
+
+        if (ins->tls_verify_hostname == FLB_TRUE) {
+            ret = flb_tls_set_verify_hostname(ins->tls, ins->tls_verify_hostname);
+            if (ret == -1) {
+                flb_error("[input %s] error set up to verify hostname in TLS context",
+                          ins->name);
+
+                return -1;
+            }
         }
     }
 
