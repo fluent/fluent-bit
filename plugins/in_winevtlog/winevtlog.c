@@ -415,15 +415,14 @@ PWSTR get_description(EVT_HANDLE handle, LANGID langID, unsigned int *message_si
     }
     values = (PEVT_VARIANT)buffer;
 
+    /* Metadata can be NULL because forwarded events do not have an
+     * associated publisher metadata. */
     metadata = EvtOpenPublisherMetadata(
             NULL, // TODO: Remote handle
             values[0].StringVal,
             NULL,
             MAKELCID(langID, SORT_DEFAULT),
             0);
-    if (metadata == NULL) {
-        goto cleanup;
-    }
 
     message = get_message(metadata, handle, message_size);
 
