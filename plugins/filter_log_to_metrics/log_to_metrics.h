@@ -48,6 +48,8 @@
 #define MAX_METRIC_LENGTH 253
 #define MAX_LABEL_COUNT 32
 
+#define FLB_MEM_BUF_LIMIT_DEFAULT  "10M"
+
 
 struct log_to_metrics_ctx
 {
@@ -70,6 +72,8 @@ struct log_to_metrics_ctx
     flb_sds_t tag;
     int *bucket_counter;
     double *buckets;
+    flb_sds_t emitter_name;
+    size_t emitter_mem_buf_limit;
 };
 
 struct grep_rule
