@@ -80,6 +80,7 @@ struct flb_metrics *flb_metrics_create(const char *title)
     struct flb_metrics *metrics;
     size_t title_len = 0;
     char *allocated_title = NULL;
+    size_t threshold = FLB_METRIC_LENGTH_LIMIT;
 
     /* Create a metrics parent context */
     metrics = flb_malloc(sizeof(struct flb_metrics));
@@ -90,6 +91,12 @@ struct flb_metrics *flb_metrics_create(const char *title)
     metrics->count = 0;
 
     title_len = snprintf(NULL, 0, "%s", title);
+
+    if (title_len > threshold) {
+        title_len = threshold;
+        flb_warn("[%s] title '%s' was truncated", __FUNCTION__, title);
+    }
+
     allocated_title = flb_calloc(title_len + 1, sizeof(char));
     if (allocated_title == NULL) {
         flb_free(metrics);
@@ -120,9 +127,7 @@ int flb_metrics_title(const char *title, struct flb_metrics *metrics)
         flb_errno();
         return -1;
     }
-    else if (ret > size) {
-        flb_warn("[%s] title '%s' was truncated", __FUNCTION__, title);
-    }
+
     metrics->title_len = strlen(metrics->title);
     return 0;
 }
