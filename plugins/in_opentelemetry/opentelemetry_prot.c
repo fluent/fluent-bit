@@ -103,7 +103,7 @@ static int send_response(struct http_conn *conn, int http_status, char *message)
     }
     else if (http_status == 400) {
         flb_sds_printf(&out,
-                       "HTTP/1.1 400 Forbidden\r\n"
+                       "HTTP/1.1 400 Bad Request\r\n"
                        "Server: Fluent Bit v%s\r\n"
                        "Content-Length: %i\r\n\r\n%s",
                        FLB_VERSION_STR,
@@ -1773,7 +1773,7 @@ int opentelemetry_prot_uncompress(struct mk_http_session *session,
 
 
 /*
- * Handle an incoming request. It perform extra checks over the request, if
+ * Handle an incoming request. It performs extra checks over the request, if
  * everything is OK, it enqueue the incoming payload.
  */
 int opentelemetry_prot_handle(struct flb_opentelemetry *ctx, struct http_conn *conn,
@@ -1820,7 +1820,7 @@ int opentelemetry_prot_handle(struct flb_opentelemetry *ctx, struct http_conn *c
         return -1;
     }
 
-    /* Try to match a query string so we can remove it */
+    /* Try to match a query string, so we can remove it */
     qs = strchr(uri, '?');
     if (qs) {
         /* remove the query string part */
@@ -1963,7 +1963,7 @@ static int send_response_ng(struct flb_http_response *response,
         flb_http_response_set_message(response, "No Content");
     }
     else if (http_status == 400) {
-        flb_http_response_set_message(response, "Forbidden");
+        flb_http_response_set_message(response, "Bad Request");
     }
 
     if (message != NULL) {
