@@ -289,12 +289,20 @@ cleanup:
 PWSTR get_message(EVT_HANDLE metadata, EVT_HANDLE handle, unsigned int *message_size)
 {
     WCHAR* buffer = NULL;
+    WCHAR* previous_buffer = NULL;
     DWORD status = ERROR_SUCCESS;
-    DWORD buffer_size = 0;
+    DWORD buffer_size = 512;
     DWORD buffer_used = 0;
     LPVOID format_message_buffer;
     WCHAR* message = NULL;
     char *error_message = NULL;
+
+    buffer = flb_malloc(sizeof(WCHAR) * buffer_size);
+    if (!buffer) {
+        flb_error("failed to premalloc message buffer");
+
+        goto cleanup;
+    }
 
     // Get the size of the buffer
     if (!EvtFormatMessage(metadata, handle, 0, 0, NULL,
@@ -302,12 +310,15 @@ PWSTR get_message(EVT_HANDLE metadata, EVT_HANDLE handle, unsigned int *message_
         status = GetLastError();
         if (ERROR_INSUFFICIENT_BUFFER == status) {
             buffer_size = buffer_used;
-            buffer = flb_malloc(sizeof(WCHAR) * buffer_size);
+            previous_buffer = buffer;
+            buffer = flb_realloc(previous_buffer, sizeof(WCHAR) * buffer_size);
             if (!buffer) {
                 flb_error("failed to malloc message buffer");
+                flb_free(previous_buffer);
 
                 goto cleanup;
             }
+
             if (!EvtFormatMessage(metadata,
                                   handle,
                                   0xffffffff,
