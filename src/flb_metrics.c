@@ -89,14 +89,13 @@ struct flb_metrics *flb_metrics_create(const char *title)
     }
     metrics->count = 0;
 
-    title_len = snprintf(NULL, 0, "%s\n", title);
-    allocated_title = flb_calloc(title_len, sizeof(char));
+    title_len = snprintf(NULL, 0, "%s", title);
+    allocated_title = flb_calloc(title_len + 1, sizeof(char));
     if (allocated_title == NULL) {
         flb_free(metrics);
         return NULL;
     }
     metrics->title = allocated_title;
-    metrics->title[title_len] = '\0';
 
     /* Set metrics title */
     ret = flb_metrics_title(title, metrics);
@@ -114,7 +113,7 @@ struct flb_metrics *flb_metrics_create(const char *title)
 int flb_metrics_title(const char *title, struct flb_metrics *metrics)
 {
     int ret;
-    size_t size = sizeof(metrics->title);
+    size_t size = snprintf(NULL, 0, "%s", title);
 
     ret = snprintf(metrics->title, size, "%s", title);
     if (ret == -1) {
