@@ -41,6 +41,9 @@ int flb_parser_json_do(struct flb_parser *parser,
     char *time_key;
     char *tmp_out_buf = NULL;
     char tmp[255];
+    char time_str[255] = {0};
+    const char *time_str_p;
+    size_t time_str_len;
     size_t tmp_out_size = 0;
     size_t off = 0;
     size_t map_size;
@@ -185,21 +188,34 @@ int flb_parser_json_do(struct flb_parser *parser,
     }
 
     /* Ensure we have an accurate type */
-    if (v->type != MSGPACK_OBJECT_STR) {
+    if (v->type == MSGPACK_OBJECT_POSITIVE_INTEGER) {
+        ret = snprintf(&time_str[0], sizeof(time_str), "%"PRId64 , v->via.i64);
+        if (ret >= sizeof(time_str)) {
+            msgpack_unpacked_destroy(&result);
+            return (int) consumed;
+        }
+        time_str_p = &time_str[0];
+        time_str_len = strlen(time_str);
+    }
+    else if (v->type == MSGPACK_OBJECT_STR) {
+        time_str_p = v->via.str.ptr;
+        time_str_len = v->via.str.size;
+    }
+    else {
         msgpack_unpacked_destroy(&result);
 
         return (int) consumed;
     }
 
     /* Lookup time */
-    ret = flb_parser_time_lookup(v->via.str.ptr, v->via.str.size,
+    ret = flb_parser_time_lookup(time_str_p, time_str_len,
                                  0, parser, &tm, &tmfrac);
     if (ret == -1) {
-        len = v->via.str.size;
+        len = time_str_len;
         if (len > sizeof(tmp) - 1) {
             len = sizeof(tmp) - 1;
         }
-        memcpy(tmp, v->via.str.ptr, len);
+        memcpy(tmp, time_str_p, len);
         tmp[len] = '\0';
         flb_warn("[parser:%s] invalid time format %s for '%s'",
                  parser->name, parser->time_fmt_full, tmp);
@@ -208,7 +224,7 @@ int flb_parser_json_do(struct flb_parser *parser,
     }
     else {
         time_lookup = flb_parser_tm2time(&tm);
-    }
+     }
 
     /* Compose a new map without the time_key field */
     msgpack_sbuffer_init(&mp_sbuf);
