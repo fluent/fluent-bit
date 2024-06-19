@@ -43,31 +43,9 @@
 #define MAX_FILE_SIZE_STR     "50,000,000,000"
 
 /* Allowed max file size 1 GB for publishing to S3 */
-#define MAX_FILE_SIZE_PUT_OBJECT        1000000000 
+#define MAX_FILE_SIZE_PUT_OBJECT        1000000000
 
 #define DEFAULT_UPLOAD_TIMEOUT 3600
-
-#define DEFAULT_PARQUET_COMPRESSION_FORMAT         "snappy"
-#define DEFAULT_PARQUET_COMPRESSION_FORMAT_UPCASES "SNAPPY"
-#define DEFAULT_PARQUET_RECORD_TYPE                "jsonl"
-#define DEFAULT_PARQUET_SCHEMA_TYPE                "avro"
-#define DEFAULT_PARQUET_COMMAND                    "columnify"
-#if defined(FLB_SYSTEM_WINDOWS)
-#define DEFAULT_PARQUET_COMMAND_CHECK              "where columnify"
-#else
-#define DEFAULT_PARQUET_COMMAND_CHECK              "columnify -h > /dev/null  2>&1"
-#endif
-
-#ifdef __ANDROID__
-#define DEFAULT_PARQUET_PROCESS_DIR "/data/local/tmp/parquet/s3"
-#else
-#if defined(FLB_SYSTEM_WINDOWS)
-/* The prefix of process dir will be obtained by GetTempPathA */
-#define DEFAULT_PARQUET_PROCESS_DIR "parquet\\s3"
-#else
-#define DEFAULT_PARQUET_PROCESS_DIR "/tmp/parquet/s3"
-#endif /* FLB_SYSTEM_WINDOWS */
-#endif
 
 /*
  * If we see repeated errors on an upload/chunk, we will discard it
