@@ -777,8 +777,11 @@ static int elasticsearch_error_check(struct flb_elasticsearch *ctx,
                             check = FLB_TRUE;
                             goto done;
                         }
-                        /* Check for errors other than version conflict (document already exists) */
-                        if (item_val.via.i64 != 409) {
+                        /* 
+                         * Check for errors other than version conflict (document already exists)
+                         * and ignore the created documents.
+                         */
+                        if (item_val.via.i64 != 409 && item_val.via.i64 != 201) {
                             check = FLB_TRUE;
                             goto done;
                         }
