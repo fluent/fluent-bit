@@ -2191,11 +2191,17 @@ static int process_payload_metrics_ng(struct flb_opentelemetry *ctx,
                                                  cfl_sds_len(request->body) - 5,
                                                  &offset);
     }
-    else {
+    else if (strcasecmp(request->content_type, "application/x-protobuf") == 0 ||
+             strcasecmp(request->content_type, "application/json") == 0) {
         result = cmt_decode_opentelemetry_create(&decoded_contexts,
                                                 request->body,
                                                 cfl_sds_len(request->body),
                                                 &offset);
+    }
+    else {
+        flb_plg_error(ctx->ins, "Unsupported content type %s", request->content_type);
+
+        return -1;
     }
 
     if (result == CMT_DECODE_OPENTELEMETRY_SUCCESS) {
@@ -2243,11 +2249,17 @@ static int process_payload_traces_proto_ng(struct flb_opentelemetry *ctx,
                                                  cfl_sds_len(request->body) - 5,
                                                  &offset);
     }
-    else {
+    else if (strcasecmp(request->content_type, "application/x-protobuf") == 0 ||
+             strcasecmp(request->content_type, "application/json") == 0) {
         result = ctr_decode_opentelemetry_create(&decoded_context,
                                                 request->body,
                                                 cfl_sds_len(request->body),
                                                 &offset);
+    }
+    else {
+        flb_plg_error(ctx->ins, "Unsupported content type %s", request->content_type);
+
+        return -1;
     }
 
     if (result == 0) {
