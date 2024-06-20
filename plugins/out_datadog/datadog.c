@@ -247,6 +247,14 @@ static int datadog_format(struct flb_config *config,
                                           ctx->dd_service, flb_sds_len(ctx->dd_service));
         }
 
+        /* dd_hostname */
+        if (ctx->dd_hostname != NULL) {
+            dd_msgpack_pack_key_value_str(&mp_pck,
+                                          FLB_DATADOG_DD_HOSTNAME_KEY,
+                                          sizeof(FLB_DATADOG_DD_HOSTNAME_KEY) -1,
+                                          ctx->dd_hostname, flb_sds_len(ctx->dd_hostname));
+        }
+
         /* Append initial object k/v */
         ind = 0;
         for (i = 0; i < map_size; i++) {
@@ -513,6 +521,14 @@ static struct flb_config_map config_map[] = {
      0, FLB_TRUE, offsetof(struct flb_out_datadog, dd_tags),
      "The tags you want to assign to your logs in Datadog. If unset, Datadog "
      "will expect the tags in the `ddtags` attribute."
+    },
+    {
+     FLB_CONFIG_MAP_STR, "dd_hostname", NULL,
+     0, FLB_TRUE, offsetof(struct flb_out_datadog, dd_hostname),
+     "The host that emitted logs should be associated with. If unset, Datadog "
+     "will expect the host to be set as `host`, `hostname`, or `syslog.hostname` "
+     "attributes. See Datadog Logs preprocessor documentation for up-to-date "
+     "of recognized attributes."
     },
 
     {
