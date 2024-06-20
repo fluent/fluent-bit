@@ -112,6 +112,92 @@ static int set_context(struct content_modifier_ctx *ctx)
                  strcasecmp(ctx->context_str, "record") == 0) {
             context = CM_CONTEXT_LOG_BODY;
         }
+        /*
+         * OpenTelemetry contexts
+         * ----------------------
+         */
+        else if (strcasecmp(ctx->context_str, "otel_resource_attributes") == 0) {
+            context = CM_CONTEXT_OTEL_RESOURCE_ATTR;
+        }
+        else if (strcasecmp(ctx->context_str, "otel_scope_name") == 0) {
+            /*
+             * scope name is restricted to specific actions, make sure the user
+             * cannot messed it up
+             *
+             *   action              allowed ?
+             *   -----------------------------
+             *   CM_ACTION_INSERT       Yes
+             *   CM_ACTION_UPSERT       Yes
+             *   CM_ACTION_DELETE       Yes
+             *   CM_ACTION_RENAME        No
+             *   CM_ACTION_HASH         Yes
+             *   CM_ACTION_EXTRACT       No
+             *   CM_ACTION_CONVERT       No
+             */
+
+            if (ctx->action_type == CM_ACTION_RENAME ||
+                ctx->action_type == CM_ACTION_EXTRACT ||
+                ctx->action_type == CM_ACTION_CONVERT) {
+                flb_plg_error(ctx->ins, "action '%s' is not allowed for context '%s'",
+                              ctx->action_str, ctx->context_str);
+                return -1;
+            }
+
+            /* check that 'name' is the key set */
+            if (!ctx->key) {
+                ctx->key = flb_sds_create("name");
+            }
+            else if (strcasecmp(ctx->key, "name") != 0) {
+                flb_plg_error(ctx->ins, "context '%s' requires the name of the key to be 'name', no '%s'",
+                              ctx->context_str, ctx->key);
+                return -1;
+            }
+
+            context = CM_CONTEXT_OTEL_SCOPE_NAME;
+        }
+        else if (strcasecmp(ctx->context_str, "otel_scope_version") == 0) {
+            /*
+             * scope version, same as the name, it's restricted to specific actions, make sure the user
+             * cannot messed it up
+             *
+             *   action              allowed ?
+             *   -----------------------------
+             *   CM_ACTION_INSERT       Yes
+             *   CM_ACTION_UPSERT       Yes
+             *   CM_ACTION_DELETE       Yes
+             *   CM_ACTION_RENAME        No
+             *   CM_ACTION_HASH         Yes
+             *   CM_ACTION_EXTRACT       No
+             *   CM_ACTION_CONVERT       No
+             */
+
+            if (ctx->action_type == CM_ACTION_RENAME ||
+                ctx->action_type == CM_ACTION_EXTRACT ||
+                ctx->action_type == CM_ACTION_CONVERT) {
+                flb_plg_error(ctx->ins, "action '%s' is not allowed for context '%s'",
+                              ctx->action_str, ctx->context_str);
+                return -1;
+            }
+
+            /* check that 'version' is the key set */
+            if (!ctx->key) {
+                ctx->key = flb_sds_create("version");
+            }
+            else if (strcasecmp(ctx->key, "version") != 0) {
+                flb_plg_error(ctx->ins, "context '%s' requires the name of the key to be 'version', no '%s'",
+                              ctx->context_str, ctx->key);
+                return -1;
+            }
+            context = CM_CONTEXT_OTEL_SCOPE_VERSION;
+        }
+        else if (strcasecmp(ctx->context_str, "otel_scope_attributes") == 0) {
+            context = CM_CONTEXT_OTEL_SCOPE_ATTR;
+        }
+        else if (strcasecmp(ctx->context_str, "otel_scope_name") == 0) {
+        }
+        else if (strcasecmp(ctx->context_str, "otel_scope_version") == 0) {
+            context = CM_CONTEXT_OTEL_SCOPE_VERSION;
+        }
         else {
             flb_plg_error(ctx->ins, "unknown logs context '%s'", ctx->context_str);
             return -1;
@@ -177,7 +263,7 @@ static int check_action_requirements(struct content_modifier_ctx *ctx)
         /* these only requires a key, already validated (useless code) */
     }
     else if (ctx->action_type == CM_ACTION_INSERT || ctx->action_type == CM_ACTION_UPSERT ||
-        ctx->action_type == CM_ACTION_RENAME) {
+             ctx->action_type == CM_ACTION_RENAME) {
 
         if (!ctx->value) {
             flb_plg_error(ctx->ins, "value is required for action '%s'", ctx->action_str);
