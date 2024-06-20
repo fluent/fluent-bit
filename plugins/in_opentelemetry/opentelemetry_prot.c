@@ -2175,6 +2175,12 @@ static int process_payload_metrics_ng(struct flb_opentelemetry *ctx,
 
     offset = 0;
 
+    if (request->content_type == NULL) {
+        flb_error("[otel] content type missing");
+
+        return -1;
+    }
+
     if (strcasecmp(request->content_type, "application/grpc") == 0) {
         if (cfl_sds_len(request->body) < 5) {
             return -1;
@@ -2220,6 +2226,12 @@ static int process_payload_traces_proto_ng(struct flb_opentelemetry *ctx,
     int            result;
 
     offset = 0;
+
+    if (request->content_type == NULL) {
+        flb_error("[otel] content type missing");
+
+        return -1;
+    }
 
     if (strcasecmp(request->content_type, "application/grpc") == 0) {
         if (cfl_sds_len(request->body) < 5) {
