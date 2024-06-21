@@ -84,7 +84,7 @@ static int send_response(struct splunk_conn *conn, int http_status, char *messag
     }
     else if (http_status == 400) {
         flb_sds_printf(&out,
-                       "HTTP/1.1 400 Forbidden\r\n"
+                       "HTTP/1.1 400 Bad Request\r\n"
                        "Server: Fluent Bit v%s\r\n"
                        "Content-Length: %i\r\n\r\n%s",
                        FLB_VERSION_STR,
@@ -568,7 +568,7 @@ static int process_hec_payload(struct flb_splunk *ctx, struct splunk_conn *conn,
         type = HTTP_CONTENT_TEXT;
     }
     else {
-        /* Not neccesary to specify content-type for Splunk HEC. */
+        /* Not necessary to specify content-type for Splunk HEC. */
         flb_plg_debug(ctx->ins, "Mark as unknown type for ingested payloads");
         type = HTTP_CONTENT_UNKNOWN;
     }
@@ -634,7 +634,7 @@ static int process_hec_raw_payload(struct flb_splunk *ctx, struct splunk_conn *c
     }
     else if (header->val.len != 10 ||
              strncasecmp(header->val.data, "text/plain", 10) != 0) {
-        /* Not neccesary to specify content-type for Splunk HEC. */
+        /* Not necessary to specify content-type for Splunk HEC. */
         flb_plg_debug(ctx->ins, "Mark as unknown type for ingested payloads");
     }
 
@@ -776,7 +776,7 @@ int splunk_prot_handle(struct flb_splunk *ctx, struct splunk_conn *conn,
     }
 
     if (request->method == MK_METHOD_GET) {
-        /* Handle health minotoring of splunk hec endpoint for load balancers */
+        /* Handle health monitoring of splunk hec endpoint for load balancers */
         if (strcasecmp(uri, "/services/collector/health") == 0) {
             send_json_message_response(conn, 200, "{\"text\":\"Success\",\"code\":200}");
         }
@@ -794,7 +794,7 @@ int splunk_prot_handle(struct flb_splunk *ctx, struct splunk_conn *conn,
      * authentication if provided splunk_token */
     ret = validate_auth_header(ctx, request);
     if (ret < 0){
-        send_response(conn, 401, "error: unauthroized\n");
+        send_response(conn, 401, "error: unauthorized\n");
         if (ret == SPLUNK_AUTH_MISSING_CRED) {
             flb_plg_warn(ctx->ins, "missing credentials in request headers");
         }
@@ -889,7 +889,7 @@ static int send_response_ng(struct flb_http_response *response,
         flb_http_response_set_message(response, "No Content");
     }
     else if (http_status == 400) {
-        flb_http_response_set_message(response, "Forbidden");
+        flb_http_response_set_message(response, "Bad Request");
     }
 
     if (message != NULL) {
@@ -919,7 +919,7 @@ static int send_json_message_response_ng(struct flb_http_response *response,
         flb_http_response_set_message(response, "No Content");
     }
     else if (http_status == 400) {
-        flb_http_response_set_message(response, "Forbidden");
+        flb_http_response_set_message(response, "Bad Request");
     }
 
     flb_http_response_set_header(response, 
@@ -993,7 +993,7 @@ static int process_hec_payload_ng(struct flb_http_request *request,
             type = HTTP_CONTENT_TEXT;
         }
         else {
-            /* Not neccesary to specify content-type for Splunk HEC. */
+            /* Not necessary to specify content-type for Splunk HEC. */
             flb_plg_debug(ctx->ins, "Mark as unknown type for ingested payloads");
         }
     }
@@ -1029,7 +1029,7 @@ static int process_hec_raw_payload_ng(struct flb_http_request *request,
         return -1;
     }
     else if (strcasecmp(request->content_type, "text/plain") != 0) {
-        /* Not neccesary to specify content-type for Splunk HEC. */
+        /* Not necessary to specify content-type for Splunk HEC. */
         flb_plg_debug(ctx->ins, "Mark as unknown type for ingested payloads");
     }
 
@@ -1072,7 +1072,7 @@ int splunk_prot_handle_ng(struct flb_http_request *request,
     }
 
     if (request->method == HTTP_METHOD_GET) {
-        /* Handle health minotoring of splunk hec endpoint for load balancers */
+        /* Handle health monitoring of splunk hec endpoint for load balancers */
         if (strcasecmp(request->path, "/services/collector/health") == 0) {
             send_json_message_response_ng(response, 200, "{\"text\":\"Success\",\"code\":200}");
         }
