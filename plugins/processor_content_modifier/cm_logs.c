@@ -404,7 +404,7 @@ static int run_action_insert(struct content_modifier_ctx *ctx,
     ret = cfl_kvlist_insert_string_s(kvlist, key, cfl_sds_len(key), value, cfl_sds_len(value),
                                      CFL_FALSE);
     if (ret != 0) {
-        printf("Failed to insert key: %s\n", key);
+        flb_plg_debug(ctx->ins, "[action: insert] failed to insert key: %s", key);
         return -1;
     }
     return 0;
@@ -451,7 +451,10 @@ static int run_action_delete(struct content_modifier_ctx *ctx,
         return 0;
     }
 
-    return -1;
+    flb_plg_debug(ctx->ins, "[action: delete] key '%s' not found", key);
+
+    /* if the kvpair was not found, it's ok, we return zero */
+    return 0;
 }
 
 static int run_action_rename(struct content_modifier_ctx *ctx,
@@ -465,7 +468,8 @@ static int run_action_rename(struct content_modifier_ctx *ctx,
     /* if the kv pair already exists, remove it from the list */
     kvpair = cfl_object_kvpair_get(obj, key);
     if (!kvpair) {
-        return -1;
+        flb_plg_debug(ctx->ins, "[action: rename] key '%s' not found", key);
+        return 0;
     }
 
     tmp = kvpair->key;
