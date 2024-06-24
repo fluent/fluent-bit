@@ -528,8 +528,8 @@ static void free_resource_logs(Opentelemetry__Proto__Logs__V1__ResourceLogs **re
 
         if (resource_log->resource->attributes != NULL) {
             otlp_kvarray_destroy(resource_log->resource->attributes, resource_log->resource->n_attributes);
-            flb_free(resource_log->resource);
         }
+        flb_free(resource_log->resource);
 
         /* iterate scoipe logs */
         if (resource_log->n_scope_logs > 0) {
