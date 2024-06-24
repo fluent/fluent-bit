@@ -143,7 +143,7 @@ int LLVMFuzzerInitialize(int *argc, char ***argv) {
 
     parser = flb_parser_create("timestamp", "regex", "^(?<time>.*)$", FLB_TRUE,
                                 "%s.%L", "time", NULL, MK_FALSE, 0, FLB_FALSE,
-                               NULL, 0, NULL, ctx->config);
+                               FLB_FALSE, NULL, 0, NULL, ctx->config);
     filter_ffd = flb_filter(ctx, (char *) "parser", NULL);
     int ret;
     ret = flb_filter_set(ctx, filter_ffd, "Match", "test",
