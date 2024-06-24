@@ -47,6 +47,8 @@ struct flb_parser {
     char *time_fmt;       /* time format */
     char *time_fmt_full;  /* original given time format */
     char *time_key;       /* field name that contains the time */
+    int time_type;        /* time field type cast */
+    int time_precision;   /* time precision for number types */
     int time_offset;      /* fixed UTC offset */
     int time_keep;        /* keep time field */
     int time_strict;      /* parse time field strictly */
@@ -90,6 +92,8 @@ struct flb_parser *flb_parser_create(const char *name, const char *format,
                                      int skip_empty,
                                      const char *time_fmt, const char *time_key,
                                      const char *time_offset,
+                                     int time_type,
+                                     int time_precision,
                                      int time_keep,
                                      int time_strict,
                                      int logfmt_no_bare_keys,
