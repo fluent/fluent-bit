@@ -227,7 +227,7 @@ static int record_get_field_time(msgpack_object *obj, const char *fieldname, str
         return -2;
     }
 
-    val->tm.tv_sec = flb_parser_tm2time(&tm);
+    val->tm.tv_sec = flb_parser_tm2time(&tm, FLB_FALSE);
     val->tm.tv_nsec = 0;
 
     return 0;
