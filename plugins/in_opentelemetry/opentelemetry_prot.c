@@ -2217,6 +2217,10 @@ static int process_payload_metrics_ng(struct flb_opentelemetry *ctx,
 
         cmt_decode_opentelemetry_destroy(&decoded_contexts);
     }
+    else {
+        flb_plg_warn(ctx->ins, "non-success cmetrics opentelemetry decode result %d", result);
+        return -1;
+    }
 
     return 0;
 }
@@ -2265,6 +2269,9 @@ static int process_payload_traces_proto_ng(struct flb_opentelemetry *ctx,
     if (result == 0) {
         result = flb_input_trace_append(ctx->ins, NULL, 0, decoded_context);
         ctr_decode_opentelemetry_destroy(decoded_context);
+    }
+    else {
+        flb_plg_warn(ctx->ins, "non-success ctraces opentelemetry decode result %d", result);
     }
 
     return result;
@@ -2478,7 +2485,12 @@ int opentelemetry_prot_handle_ng(struct flb_http_request *request,
         send_export_service_response_ng(response, result, payload_type);
     }
     else {
-        send_response_ng(response, context->successful_response_code, NULL);
+        if (result == 0) {
+            send_response_ng(response, context->successful_response_code, NULL);
+        }
+        else {
+            send_response_ng(response, 400, "invalid request: deserialisation error\n");
+        }
     }
 
     return result;
