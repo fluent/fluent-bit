@@ -22,8 +22,7 @@
 
 #define FLB_SPLUNK_DEFAULT_HOST          "127.0.0.1"
 #define FLB_SPLUNK_DEFAULT_PORT          8088
-#define FLB_SPLUNK_DEFAULT_URI_RAW       "/services/collector/raw"
-#define FLB_SPLUNK_DEFAULT_URI_EVENT     "/services/collector/event"
+#define FLB_SPLUNK_DEFAULT_ENDPOINT      "/services/collector/event"
 #define FLB_SPLUNK_DEFAULT_TIME          "time"
 #define FLB_SPLUNK_DEFAULT_EVENT_HOST    "host"
 #define FLB_SPLUNK_DEFAULT_EVENT_SOURCE  "source"
