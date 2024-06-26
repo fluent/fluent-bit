@@ -276,7 +276,15 @@ static int http_post(struct flb_out_http *ctx,
                 flb_plg_error(ctx->ins, "%s:%i, HTTP status=%i",
                               ctx->host, ctx->port, c->resp.status);
             }
-            out_ret = FLB_RETRY;
+            if (c->resp.status >= 400 && c->resp.status < 500 && c->resp.status != 429) {
+                flb_plg_warn(ctx->ins, "could not flush records to %s:%i (http_do=%i), "
+                                "chunk will not be retried",
+                                ctx->host, ctx->port, ret);
+                out_ret = FLB_ERROR;
+            }
+            else {
+                out_ret = FLB_RETRY;
+            }
         }
         else {
             if (ctx->log_response_payload &&
