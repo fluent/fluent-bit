@@ -257,18 +257,28 @@ struct flb_aws_provider *flb_aws_env_provider_create();
  * used by host and path.
  */
 struct flb_aws_provider *flb_http_provider_create(struct flb_config *config,
-                                                  flb_sds_t host,
+                                                  flb_sds_t endpoint,
                                                   flb_sds_t path,
+                                                  flb_sds_t auth_token,
                                                   struct
                                                   flb_aws_client_generator
                                                   *generator);
 
+struct flb_aws_provider *flb_local_http_provider_create(struct flb_config *config,
+                                                        flb_sds_t endpoint,
+                                                        flb_sds_t auth_token,
+                                                        struct
+                                                        flb_aws_client_generator
+                                                        *generator);
+
+
+
 /*
- * ECS Provider
- * The ECS Provider is just a wrapper around the HTTP Provider
- * with the ECS credentials endpoint.
+ * Container Provider
+ * The Container Provider is just a wrapper around the HTTP Provider
+ * with the ECS/EKS credentials endpoint.
  */
-struct flb_aws_provider *flb_ecs_provider_create(struct flb_config *config,
+struct flb_aws_provider *flb_container_provider_create(struct flb_config *config,
                                                  struct
                                                  flb_aws_client_generator
                                                  *generator);

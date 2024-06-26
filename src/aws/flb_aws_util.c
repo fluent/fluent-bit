@@ -343,6 +343,12 @@ struct flb_http_client *request_do(struct flb_aws_client *aws_client,
         goto error;
     }
 
+    /* Remove port from host header, EKS Pod Identities breaks without this */
+    ret = flb_http_strip_port_from_host(c);
+    if (ret != 0) {
+        flb_warn("[aws_http_client] failed to remove port from Host header");
+    }
+
     /* Increase the maximum HTTP response buffer size to fit large responses from AWS services */
     ret = flb_http_buffer_size(c, FLB_MAX_AWS_RESP_BUFFER_SIZE);
     if (ret != 0) {

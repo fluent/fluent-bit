@@ -16,6 +16,10 @@
 #define SECRET_KEY_HTTP "http_skid"
 #define TOKEN_HTTP      "http_token"
 
+#define TOKEN_FILE_ENV_VAR "AWS_CONTAINER_AUTHORIZATION_TOKEN_FILE"
+#define HTTP_TOKEN_FILE FLB_TESTS_DATA_PATH "/data/aws_credentials/\
+http_token_file.txt"
+
 #define HTTP_CREDENTIALS_RESPONSE "{\n\
     \"AccessKeyId\": \"http_akid\",\n\
     \"Expiration\": \"2025-10-24T23:00:23Z\",\n\
@@ -52,6 +56,38 @@ struct flb_http_client *request_happy_case(struct flb_aws_client *aws_client,
     TEST_CHECK(method == FLB_HTTP_GET);
 
     TEST_CHECK(strstr(uri, "happy-case") != NULL);
+
+    /* create an http client so that we can set the response */
+    c = flb_calloc(1, sizeof(struct flb_http_client));
+    if (!c) {
+        flb_errno();
+        return NULL;
+    }
+    mk_list_init(&c->headers);
+
+    c->resp.status = 200;
+    c->resp.payload = HTTP_CREDENTIALS_RESPONSE;
+    c->resp.payload_size = strlen(HTTP_CREDENTIALS_RESPONSE);
+
+    return c;
+}
+
+struct flb_http_client *request_auth_token_case(struct flb_aws_client *aws_client,
+                                                int method, const char *uri,
+                                                struct flb_aws_header *dynamic_headers,
+                                                size_t dynamic_headers_len)
+{
+    struct flb_http_client *c = NULL;
+
+    TEST_CHECK(method == FLB_HTTP_GET);
+
+    TEST_CHECK(strstr(uri, "auth-token") != NULL);
+
+    TEST_CHECK(dynamic_headers_len == 1);
+
+    TEST_CHECK(strstr(dynamic_headers[0].key, "Authorization") != NULL);
+
+    TEST_CHECK(strstr(dynamic_headers[0].val, "this-is-a-fake-http-jwt") != NULL);
 
     /* create an http client so that we can set the response */
     c = flb_calloc(1, sizeof(struct flb_http_client));
@@ -130,6 +166,10 @@ struct flb_http_client *test_http_client_request(struct flb_aws_client *aws_clie
      */
     if (strstr(uri, "happy-case") != NULL) {
         return request_happy_case(aws_client, method, uri);
+    } else if (strstr(uri, "auth-token") != NULL) {
+        return request_auth_token_case(aws_client, method, uri,
+                                       dynamic_headers,
+                                       dynamic_headers_len);
     } else if (strstr(uri, "error-case") != NULL) {
         return request_error_case(aws_client, method, uri);
     } else if (strstr(uri, "malformed") != NULL) {
@@ -169,14 +209,14 @@ struct flb_aws_client_generator *generator_in_test()
     return &test_generator;
 }
 
-/* http and ecs providers */
+/* http and container providers */
 static void test_http_provider()
 {
     struct flb_aws_provider *provider;
     struct flb_aws_credentials *creds;
     int ret;
     struct flb_config *config;
-    flb_sds_t host;
+    flb_sds_t endpoint;
     flb_sds_t path;
 
     g_request_count = 0;
@@ -187,8 +227,8 @@ static void test_http_provider()
         return;
     }
 
-    host = flb_sds_create("127.0.0.1");
-    if (!host) {
+    endpoint = flb_sds_create("http://127.0.0.1");
+    if (!endpoint) {
         flb_errno();
         flb_config_exit(config);
         return;
@@ -200,7 +240,7 @@ static void test_http_provider()
         return;
     }
 
-    provider = flb_http_provider_create(config, host, path,
+    provider = flb_http_provider_create(config, endpoint, path, NULL,
                                  generator_in_test());
 
     if (!provider) {
@@ -249,13 +289,181 @@ static void test_http_provider()
     flb_config_exit(config);
 }
 
+static void test_http_provider_auth_token()
+{
+    struct flb_aws_provider *provider;
+    struct flb_aws_credentials *creds;
+    int ret;
+    struct flb_config *config;
+    flb_sds_t endpoint;
+    flb_sds_t path;
+    flb_sds_t auth_token;
+
+    g_request_count = 0;
+
+    config = flb_config_init();
+
+    if (config == NULL) {
+        return;
+    }
+
+    endpoint = flb_sds_create("http://127.0.0.1");
+    if (!endpoint) {
+        flb_errno();
+        flb_config_exit(config);
+        return;
+    }
+    path = flb_sds_create("/auth-token");
+    if (!path) {
+        flb_errno();
+        flb_config_exit(config);
+        return;
+    }
+    auth_token = flb_sds_create("this-is-a-fake-http-jwt");
+    if (!auth_token) {
+        flb_errno();
+        flb_config_exit(config);
+        return;
+    }
+
+    provider = flb_http_provider_create(config, endpoint, path, auth_token,
+                                 generator_in_test());
+
+    if (!provider) {
+        flb_errno();
+        flb_config_exit(config);
+        return;
+    }
+
+    /* repeated calls to get credentials should return the same set */
+    creds = provider->provider_vtable->get_credentials(provider);
+    if (!creds) {
+        flb_errno();
+        flb_config_exit(config);
+        return;
+    }
+    TEST_CHECK(strcmp(ACCESS_KEY_HTTP, creds->access_key_id) == 0);
+    TEST_CHECK(strcmp(SECRET_KEY_HTTP, creds->secret_access_key) == 0);
+    TEST_CHECK(strcmp(TOKEN_HTTP, creds->session_token) == 0);
+
+    flb_aws_credentials_destroy(creds);
+
+    creds = provider->provider_vtable->get_credentials(provider);
+    if (!creds) {
+        flb_errno();
+        flb_config_exit(config);
+        return;
+    }
+    TEST_CHECK(strcmp(ACCESS_KEY_HTTP, creds->access_key_id) == 0);
+    TEST_CHECK(strcmp(SECRET_KEY_HTTP, creds->secret_access_key) == 0);
+    TEST_CHECK(strcmp(TOKEN_HTTP, creds->session_token) == 0);
+
+    flb_aws_credentials_destroy(creds);
+
+    /* refresh should return 0 (success) */
+    ret = provider->provider_vtable->refresh(provider);
+    TEST_CHECK(ret == 0);
+
+    /*
+     * Request count should be 2:
+     * - One for the first call to get_credentials (2nd should hit cred cache)
+     * - One for the call to refresh
+     */
+    TEST_CHECK(g_request_count == 2);
+
+    flb_aws_provider_destroy(provider);
+    flb_config_exit(config);
+}
+
+static void test_local_http_provider()
+{
+    struct flb_aws_provider *provider;
+    struct flb_aws_credentials *creds;
+    int ret;
+    struct flb_config *config;
+    flb_sds_t endpoint;
+    flb_sds_t auth_token;
+
+    g_request_count = 0;
+
+    config = flb_config_init();
+
+    if (config == NULL) {
+        return;
+    }
+
+    endpoint = flb_sds_create("http://127.0.0.1/auth-token");
+    if (!endpoint) {
+        flb_errno();
+        flb_config_exit(config);
+        return;
+    }
+    /* tests that the token file takes precedence */
+    auth_token = flb_sds_create("this-is-the-wrong-jwt");
+    if (!auth_token) {
+        flb_errno();
+        flb_config_exit(config);
+        return;
+    }
+    setenv(TOKEN_FILE_ENV_VAR, HTTP_TOKEN_FILE, 1);
+
+    provider = flb_local_http_provider_create(config, endpoint, auth_token,
+                                 generator_in_test());
+
+    if (!provider) {
+        flb_errno();
+        flb_config_exit(config);
+        return;
+    }
+
+    /* repeated calls to get credentials should return the same set */
+    creds = provider->provider_vtable->get_credentials(provider);
+    if (!creds) {
+        flb_errno();
+        flb_config_exit(config);
+        return;
+    }
+    TEST_CHECK(strcmp(ACCESS_KEY_HTTP, creds->access_key_id) == 0);
+    TEST_CHECK(strcmp(SECRET_KEY_HTTP, creds->secret_access_key) == 0);
+    TEST_CHECK(strcmp(TOKEN_HTTP, creds->session_token) == 0);
+
+    flb_aws_credentials_destroy(creds);
+
+    creds = provider->provider_vtable->get_credentials(provider);
+    if (!creds) {
+        flb_errno();
+        flb_config_exit(config);
+        return;
+    }
+    TEST_CHECK(strcmp(ACCESS_KEY_HTTP, creds->access_key_id) == 0);
+    TEST_CHECK(strcmp(SECRET_KEY_HTTP, creds->secret_access_key) == 0);
+    TEST_CHECK(strcmp(TOKEN_HTTP, creds->session_token) == 0);
+
+    flb_aws_credentials_destroy(creds);
+
+    /* refresh should return 0 (success) */
+    ret = provider->provider_vtable->refresh(provider);
+    TEST_CHECK(ret == 0);
+
+    /*
+     * Request count should be 2:
+     * - One for the first call to get_credentials (2nd should hit cred cache)
+     * - One for the call to refresh
+     */
+    TEST_CHECK(g_request_count == 2);
+
+    unsetenv(TOKEN_FILE_ENV_VAR);
+    flb_aws_provider_destroy(provider);
+    flb_config_exit(config);
+}
+
 static void test_http_provider_error_case()
 {
     struct flb_aws_provider *provider;
     struct flb_aws_credentials *creds;
     int ret;
     struct flb_config *config;
-    flb_sds_t host;
+    flb_sds_t endpoint;
     flb_sds_t path;
 
     g_request_count = 0;
@@ -266,8 +474,8 @@ static void test_http_provider_error_case()
         return;
     }
 
-    host = flb_sds_create("127.0.0.1");
-    if (!host) {
+    endpoint = flb_sds_create("http://127.0.0.1");
+    if (!endpoint) {
         flb_errno();
         flb_config_exit(config);
         return;
@@ -276,10 +484,12 @@ static void test_http_provider_error_case()
     if (!path) {
         flb_errno();
         flb_config_exit(config);
-        return;
+        return;    if (path) {
+        flb_sds_destroy(path);
+    }
     }
 
-    provider = flb_http_provider_create(config, host, path,
+    provider = flb_http_provider_create(config, endpoint, path, NULL,
                                         generator_in_test());
 
     if (!provider) {
@@ -316,7 +526,7 @@ static void test_http_provider_malformed_response()
     struct flb_aws_credentials *creds;
     int ret;
     struct flb_config *config;
-    flb_sds_t host;
+    flb_sds_t endpoint;
     flb_sds_t path;
 
     g_request_count = 0;
@@ -329,8 +539,8 @@ static void test_http_provider_malformed_response()
 
     mk_list_init(&config->upstreams);
 
-    host = flb_sds_create("127.0.0.1");
-    if (!host) {
+    endpoint = flb_sds_create("http://127.0.0.1");
+    if (!endpoint) {
         flb_errno();
         flb_config_exit(config);
         return;
@@ -342,7 +552,7 @@ static void test_http_provider_malformed_response()
         return;
     }
 
-    provider = flb_http_provider_create(config, host, path,
+    provider = flb_http_provider_create(config, endpoint, path, NULL,
                                  generator_in_test());
 
     if (!provider) {
@@ -375,6 +585,8 @@ static void test_http_provider_malformed_response()
 
 TEST_LIST = {
     { "test_http_provider" , test_http_provider},
+    { "test_http_provider_auth_token" , test_http_provider_auth_token},
+    { "test_local_http_provider" , test_local_http_provider},
     { "test_http_provider_error_case" , test_http_provider_error_case},
     { "test_http_provider_malformed_response" ,
     test_http_provider_malformed_response},
