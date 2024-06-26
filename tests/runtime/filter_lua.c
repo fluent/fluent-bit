@@ -968,6 +968,313 @@ void flb_test_invalid_metatable(void)
     flb_destroy(ctx);
 }
 
+void flb_test_chunk_processing(void){
+    int ret;
+    flb_ctx_t *ctx;
+    int in_ffd;
+    int out_ffd;
+    int filter_ffd;
+    flb_sds_t outbuf = flb_sds_create("");
+    char *input = "[0, {\"key\":\"value\"}]";
+    struct flb_lib_out_cb cb_data;
+
+    const char *expected = "[0.000000,{\"key\":\"mytest\"}]";
+
+    char *script_body = ""
+      "function lua_main(tag, records)\n"
+      "    local results = {}\n"
+      "    for i, log_event in ipairs(records) do\n"
+      "         local ts = log_event.timestamp\n"
+      "         local modified_record = log_event.record\n"
+      "         modified_record[\"key\"] = \"mytest\"\n"
+      "         local result = {timestamp = ts, record = modified_record}"
+      "         table.insert(results, result)\n"
+      "    end\n"
+      "    return results\n"
+      "end\n";
+
+    clear_output_num();
+
+    /* Create context, flush every second (some checks omitted here) */
+    ctx = flb_create();
+    flb_service_set(ctx, "flush", FLUSH_INTERVAL, "grace", "1", NULL);
+
+    /* Prepare output callback context*/
+    cb_data.cb = callback_cat;
+    cb_data.data = &outbuf;
+
+    ret = create_script(script_body, strlen(script_body));
+    TEST_CHECK(ret == 0);
+    /* Filter */
+    filter_ffd = flb_filter(ctx, (char *) "lua", NULL);
+    TEST_CHECK(filter_ffd >= 0);
+    ret = flb_filter_set(ctx, filter_ffd,
+                         "Match", "*",
+                         "call", "lua_main",
+                         "script", TMP_LUA_PATH,
+                         "chunk_mode", "on",
+                         "time_as_table", "on",
+                         NULL);
+
+    /* Input */
+    in_ffd = flb_input(ctx, (char *) "lib", NULL);
+    flb_input_set(ctx, in_ffd, "tag", "test", NULL);
+    TEST_CHECK(in_ffd >= 0);
+
+    /* Lib output */
+    out_ffd = flb_output(ctx, (char *) "lib", (void *)&cb_data);
+    TEST_CHECK(out_ffd >= 0);
+    flb_output_set(ctx, out_ffd,
+                   "match", "test",
+                   "format", "json",
+                   NULL);
+
+    ret = flb_start(ctx);
+    TEST_CHECK(ret==0);
+
+    flb_lib_push(ctx, in_ffd, input, strlen(input));
+    wait_with_timeout(2000, &output);
+    if (!TEST_CHECK(!strcmp(outbuf, expected))) {
+        TEST_MSG("expected:\n%s\ngot:\n%s\n", expected, outbuf);
+    }
+
+    /* clean up */
+    flb_lib_free(output);
+    delete_script();
+
+    flb_stop(ctx);
+    flb_destroy(ctx);
+    flb_sds_destroy(outbuf);
+}
+
+void flb_test_empty_array_chunk(void)
+{
+    int ret;
+    flb_ctx_t *ctx;
+    int in_ffd;
+    int out_ffd;
+    int filter_ffd;
+    flb_sds_t outbuf = flb_sds_create("");
+    char *input = "[0, {\"key\":[]}]";
+    struct flb_lib_out_cb cb_data;
+
+    const char *expected = "";
+
+    char *script_body = ""
+      "function lua_main(tag, records)\n"
+      "    local results = {}\n"
+      "    return results\n"
+      "end\n";
+
+    clear_output_num();
+
+    /* Create context, flush every second (some checks omitted here) */
+    ctx = flb_create();
+    flb_service_set(ctx, "flush", FLUSH_INTERVAL, "grace", "1", NULL);
+
+    /* Prepare output callback context*/
+    cb_data.cb = callback_cat;
+    cb_data.data = &outbuf;
+
+    ret = create_script(script_body, strlen(script_body));
+    TEST_CHECK(ret == 0);
+    /* Filter */
+    filter_ffd = flb_filter(ctx, (char *) "lua", NULL);
+    TEST_CHECK(filter_ffd >= 0);
+    ret = flb_filter_set(ctx, filter_ffd,
+                         "Match", "*",
+                         "call", "lua_main",
+                         "script", TMP_LUA_PATH,
+                         "chunk_mode", "on",
+                         "time_as_table", "on",
+                         NULL);
+
+    /* Input */
+    in_ffd = flb_input(ctx, (char *) "lib", NULL);
+    flb_input_set(ctx, in_ffd, "tag", "test", NULL);
+    TEST_CHECK(in_ffd >= 0);
+
+    /* Lib output */
+    out_ffd = flb_output(ctx, (char *) "lib", (void *)&cb_data);
+    TEST_CHECK(out_ffd >= 0);
+    flb_output_set(ctx, out_ffd,
+                   "match", "test",
+                   "format", "json",
+                   NULL);
+
+    ret = flb_start(ctx);
+    TEST_CHECK(ret==0);
+
+    flb_lib_push(ctx, in_ffd, input, strlen(input));
+    wait_with_timeout(2000, &output);
+    if (!TEST_CHECK(!strcmp(outbuf, expected))) {
+        TEST_MSG("expected:\n%s\ngot:\n%s\n", expected, outbuf);
+    }
+
+    /* clean up */
+    flb_lib_free(output);
+    delete_script();
+
+    flb_stop(ctx);
+    flb_destroy(ctx);
+    flb_sds_destroy(outbuf);
+}
+
+void flb_test_empty_record_chunk(void){
+    int ret;
+    flb_ctx_t *ctx;
+    int in_ffd;
+    int out_ffd;
+    int filter_ffd;
+    flb_sds_t outbuf = flb_sds_create("");
+    char *input = "[0, {\"key\":[]}]";
+    struct flb_lib_out_cb cb_data;
+
+    /* This test should return with FLB_FILTER_NOTOUCH */
+    const char *expected = "[0.000000,{\"key\":[]}]";
+
+    char *script_body = ""
+      "function lua_main(tag, records)\n"
+      "    local results = {}\n"
+      "    local timestamp = 5\n"
+      "    local record = nil\n"
+      "    table.insert(results, {timestamp, record})\n"
+      "    return results\n"
+      "end\n";
+
+    clear_output_num();
+
+    /* Create context, flush every second (some checks omitted here) */
+    ctx = flb_create();
+    flb_service_set(ctx, "flush", FLUSH_INTERVAL, "grace", "1", NULL);
+
+    /* Prepare output callback context*/
+    cb_data.cb = callback_cat;
+    cb_data.data = &outbuf;
+
+    ret = create_script(script_body, strlen(script_body));
+    TEST_CHECK(ret == 0);
+    /* Filter */
+    filter_ffd = flb_filter(ctx, (char *) "lua", NULL);
+    TEST_CHECK(filter_ffd >= 0);
+    ret = flb_filter_set(ctx, filter_ffd,
+                         "Match", "*",
+                         "call", "lua_main",
+                         "script", TMP_LUA_PATH,
+                         "chunk_mode", "on",
+                         "time_as_table", "on",
+                         NULL);
+
+    /* Input */
+    in_ffd = flb_input(ctx, (char *) "lib", NULL);
+    flb_input_set(ctx, in_ffd, "tag", "test", NULL);
+    TEST_CHECK(in_ffd >= 0);
+
+    /* Lib output */
+    out_ffd = flb_output(ctx, (char *) "lib", (void *)&cb_data);
+    TEST_CHECK(out_ffd >= 0);
+    flb_output_set(ctx, out_ffd,
+                   "match", "test",
+                   "format", "json",
+                   NULL);
+
+    ret = flb_start(ctx);
+    TEST_CHECK(ret==0);
+
+    flb_lib_push(ctx, in_ffd, input, strlen(input));
+    wait_with_timeout(2000, &output);
+    if (!TEST_CHECK(!strcmp(outbuf, expected))) {
+        TEST_MSG("expected:\n%s\ngot:\n%s\n", expected, outbuf);
+    }
+
+    /* clean up */
+    flb_lib_free(output);
+    delete_script();
+
+    flb_stop(ctx);
+    flb_destroy(ctx);
+    flb_sds_destroy(outbuf);
+}
+
+void flb_test_empty_timestamp_chunk(void){
+    int ret;
+    flb_ctx_t *ctx;
+    int in_ffd;
+    int out_ffd;
+    int filter_ffd;
+    flb_sds_t outbuf = flb_sds_create("");
+    char *input = "[0, {\"key\":[]}]";
+    struct flb_lib_out_cb cb_data;
+
+    /* This test should return with FLB_FILTER_NOTOUCH */
+    const char *expected = "[0.000000,{\"key\":[]}]";
+
+    char *script_body = ""
+      "function lua_main(tag, records)\n"
+      "    local results = {}\n"
+      "    for i, log_event in ipairs(records) do\n"
+      "         local timestamp = nil\n"
+      "         local record = log_event.record\n"
+      "         table.insert(results, {timestamp, record})\n"
+      "    end\n"
+      "    return results\n"
+      "end\n";
+
+    clear_output_num();
+
+    /* Create context, flush every second (some checks omitted here) */
+    ctx = flb_create();
+    flb_service_set(ctx, "flush", FLUSH_INTERVAL, "grace", "1", NULL);
+
+    /* Prepare output callback context*/
+    cb_data.cb = callback_cat;
+    cb_data.data = &outbuf;
+
+    ret = create_script(script_body, strlen(script_body));
+    TEST_CHECK(ret == 0);
+    /* Filter */
+    filter_ffd = flb_filter(ctx, (char *) "lua", NULL);
+    TEST_CHECK(filter_ffd >= 0);
+    ret = flb_filter_set(ctx, filter_ffd,
+                         "Match", "*",
+                         "call", "lua_main",
+                         "script", TMP_LUA_PATH,
+                         "chunk_mode", "on",
+                         "time_as_table", "on",
+                         NULL);
+
+    /* Input */
+    in_ffd = flb_input(ctx, (char *) "lib", NULL);
+    flb_input_set(ctx, in_ffd, "tag", "test", NULL);
+    TEST_CHECK(in_ffd >= 0);
+
+    /* Lib output */
+    out_ffd = flb_output(ctx, (char *) "lib", (void *)&cb_data);
+    TEST_CHECK(out_ffd >= 0);
+    flb_output_set(ctx, out_ffd,
+                   "match", "test",
+                   "format", "json",
+                   NULL);
+
+    ret = flb_start(ctx);
+    TEST_CHECK(ret==0);
+
+    flb_lib_push(ctx, in_ffd, input, strlen(input));
+    wait_with_timeout(2000, &output);
+    if (!TEST_CHECK(!strcmp(outbuf, expected))) {
+        TEST_MSG("expected:\n%s\ngot:\n%s\n", expected, outbuf);
+    }
+
+    /* clean up */
+    flb_lib_free(output);
+    delete_script();
+
+    flb_stop(ctx);
+    flb_destroy(ctx);
+    flb_sds_destroy(outbuf);
+}
+
+
 TEST_LIST = {
     {"hello_world",  flb_test_helloworld},
     {"append_tag",   flb_test_append_tag},
@@ -980,5 +1287,9 @@ TEST_LIST = {
     {"split_record", flb_test_split_record},
     {"empty_array", flb_test_empty_array},
     {"invalid_metatable", flb_test_invalid_metatable},
+    {"chunk_processing", flb_test_chunk_processing},
+    {"chunk_processing_empty_array", flb_test_empty_array_chunk},
+    {"chunk_processing_empty_record", flb_test_empty_record_chunk},
+    {"chunk_processing_empty_timestamp", flb_test_empty_timestamp_chunk},
     {NULL, NULL}
 };
