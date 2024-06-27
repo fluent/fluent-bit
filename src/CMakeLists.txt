@@ -207,7 +207,7 @@ set(extra_libs
 if(FLB_JEMALLOC)
   set(extra_libs
     ${extra_libs}
-    "libjemalloc")
+    ${JEMALLOC_LIBRARIES})
 endif()
 
 if(FLB_REGEX)
@@ -223,7 +223,7 @@ endif()
 if(FLB_LUAJIT)
   set(extra_libs
     ${extra_libs}
-    "libluajit")
+    ${LUAJIT_LIBRARIES})
 endif()
 
 if(FLB_SQLDB)
@@ -378,10 +378,10 @@ set(FLB_DEPS
   ${FLB_PLUGINS}
   ${FLB_PROXY_PLUGINS}
   ${extra_libs}
-  c-ares
+  ${LIBCARES_LIBRARIES}
   snappy-c
   lwrb
-  nghttp2_static
+  ${NGHTTP2_LIBRARIES}
   )
 
 if(OPENSSL_FOUND)
@@ -478,7 +478,7 @@ else()
 endif(MSVC)
 
 if(FLB_JEMALLOC)
-  target_link_libraries(fluent-bit-static libjemalloc)
+  target_link_libraries(fluent-bit-static ${JEMALLOC_LIBRARIES})
 endif()
 
 # Binary / Executable
@@ -501,12 +501,12 @@ if(FLB_BINARY)
   endif()
 
   if(FLB_JEMALLOC)
-    target_link_libraries(fluent-bit-bin libjemalloc)
+    target_link_libraries(fluent-bit-bin ${JEMALLOC_LIBRARIES})
   endif()
 
   if(FLB_BACKTRACE)
     add_definitions(-DFLB_DUMP_STACKTRACE=1)
-    target_link_libraries(fluent-bit-bin libbacktrace)
+    target_link_libraries(fluent-bit-bin ${LIBBACKTRACE_LIBRARIES})
   endif()
 
   target_link_libraries(fluent-bit-bin fluent-bit-static ${CMAKE_THREAD_LIBS_INIT})
