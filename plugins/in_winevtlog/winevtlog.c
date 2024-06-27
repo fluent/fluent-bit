@@ -301,7 +301,7 @@ PWSTR get_message(EVT_HANDLE metadata, EVT_HANDLE handle, unsigned int *message_
     if (!buffer) {
         flb_error("failed to premalloc message buffer");
 
-        goto cleanup;
+        goto buffer_error;
     }
 
     // Get the size of the buffer
@@ -316,7 +316,7 @@ PWSTR get_message(EVT_HANDLE metadata, EVT_HANDLE handle, unsigned int *message_
                 flb_error("failed to malloc message buffer");
                 flb_free(previous_buffer);
 
-                goto cleanup;
+                goto buffer_error;
             }
 
             if (!EvtFormatMessage(metadata,
@@ -385,6 +385,8 @@ cleanup:
     if (buffer) {
         flb_free(buffer);
     }
+
+buffer_error:
 
     return message;
 }
