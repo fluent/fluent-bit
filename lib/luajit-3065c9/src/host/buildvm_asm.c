@@ -87,6 +87,54 @@ err:
   }
   fprintf(ctx->fp, "\t%s %s\n", opname, sym);
 }
+#elif LJ_TARGET_S390X
+/* Emit halfwords piecewise as assembler text. */
+static void emit_asm_halfwords(BuildCtx *ctx, uint8_t *p, int n)
+{
+  uint16_t *cp = (uint16_t*)p;
+  n /= 2;
+  int i;
+  for (i = 0; i < n; i++) {
+    if ((i & 7) == 0)
+      fprintf(ctx->fp, "\t.hword 0x%hx", cp[i]);
+    else
+      fprintf(ctx->fp, ",0x%hx", cp[i]);
+    if ((i & 7) == 7) putc('\n', ctx->fp);
+  }
+  if ((n & 7) != 0) putc('\n', ctx->fp);
+}
+
+/* Emit s390x text relocations. */
+static void emit_asm_reloc_text(BuildCtx *ctx, uint8_t *cp, int n,
+				const char *sym)
+{
+  if (n & 1 || n < 2) {
+    fprintf(stderr, "Error: instruction stream length invalid: %d.\n", n);
+    exit(1);
+  }
+  n -= 2;
+  const char *opname = NULL;
+  const char *argt = ""; /* Inserted before argument. */
+  int opcode = *(uint16_t*)(&cp[n]);
+  int arg = (opcode>>4) & 0xf;
+  switch (opcode & 0xff0f) {
+  case 0xa705: opname = "bras"; argt = "%r"; break;
+  case 0xc005: opname = "brasl"; argt = "%r"; break;
+  case 0xa704: opname = "brc"; break;
+  case 0xc004: opname = "brcl"; break;
+  default:
+    fprintf(stderr, "Error: unsupported opcode for %s symbol relocation.\n",
+	    sym);
+    exit(1);
+  }
+  emit_asm_halfwords(ctx, cp, n);
+  if (strncmp(sym+(*sym == '_'), LABEL_PREFIX, sizeof(LABEL_PREFIX)-1)) {
+    /* Various fixups for external symbols outside of our binary. */
+    fprintf(ctx->fp, "\t%s %s%d, %s@PLT\n", opname, argt, arg, sym);
+    return;
+  }
+  fprintf(ctx->fp, "\t%s %s%d, %s\n", opname, argt, arg, sym);
+}
 #else
 /* Emit words piecewise as assembler text. */
 static void emit_asm_words(BuildCtx *ctx, uint8_t *p, int n)
@@ -299,6 +347,9 @@ void emit_asm(BuildCtx *ctx)
 	emit_asm_reloc(ctx, r->type, ctx->relocsym[r->sym]);
       }
       ofs += n+4;
+#elif LJ_TARGET_S390X
+      emit_asm_reloc_text(ctx, ctx->code+ofs, n, ctx->relocsym[r->sym]);
+      ofs += n+4;
 #else
       emit_asm_wordreloc(ctx, ctx->code+ofs, n, ctx->relocsym[r->sym]);
       ofs += n;
@@ -307,6 +358,8 @@ void emit_asm(BuildCtx *ctx)
     }
 #if LJ_TARGET_X86ORX64
     emit_asm_bytes(ctx, ctx->code+ofs, next-ofs);
+#elif LJ_TARGET_S390X
+    emit_asm_halfwords(ctx, ctx->code+ofs, next-ofs);
 #else
     emit_asm_words(ctx, ctx->code+ofs, next-ofs);
 #endif
