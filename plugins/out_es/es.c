@@ -75,6 +75,27 @@ static flb_sds_t add_aws_auth(struct flb_http_client *c,
 }
 #endif /* FLB_HAVE_AWS */
 
+static int es_http_add_cloud_apikey(struct flb_http_client *c,
+                                    const char *apikey)
+{
+    flb_sds_t header;
+    int ret = 0;
+
+    if (apikey == NULL) {
+        return -1;
+    }
+
+    header = flb_sds_create_size(256 + 7);
+    header = flb_sds_printf(&header, "%s %s", "ApiKey", apikey);
+
+    ret = flb_http_add_header(c, "Authorization", 13,
+                                 header, flb_sds_len(header));
+
+    flb_sds_destroy(header);
+
+    return ret;
+}
+
 static int es_pack_map_content(msgpack_packer *tmp_pck,
                                msgpack_object map,
                                struct flb_elasticsearch *ctx)
@@ -868,10 +889,16 @@ static void cb_es_flush(struct flb_event_chunk *event_chunk,
     flb_http_add_header(c, "Content-Type", 12, "application/x-ndjson", 20);
 
     if (ctx->http_user && ctx->http_passwd) {
+        flb_plg_debug(ctx->ins, "using http basic auth");
         flb_http_basic_auth(c, ctx->http_user, ctx->http_passwd);
     }
     else if (ctx->cloud_user && ctx->cloud_passwd) {
+        flb_plg_debug(ctx->ins, "using elastic cloud auth");
         flb_http_basic_auth(c, ctx->cloud_user, ctx->cloud_passwd);
+    }
+    else if (ctx->cloud_apikey) {
+        flb_plg_debug(ctx->ins, "using elastic cloud apikey");
+        es_http_add_cloud_apikey(c, ctx->cloud_apikey);
     }
 
 #ifdef FLB_HAVE_AWS
@@ -926,7 +953,7 @@ static void cb_es_flush(struct flb_event_chunk *event_chunk,
                     /*
                      * If trace_error is set, trace the actual
                      * response from Elasticsearch explaining the problem.
-                     * Trace_Output can be used to see the request. 
+                     * Trace_Output can be used to see the request.
                      */
                     if (pack_size < 4000) {
                         flb_plg_debug(ctx->ins, "error caused by: Input\n%.*s\n",
@@ -1023,7 +1050,7 @@ static struct flb_config_map config_map[] = {
      "Set payload compression mechanism. Option available is 'gzip'"
     },
 
-    /* Cloud Authentication */
+    /* Elastic Cloud Authentication */
     {
      FLB_CONFIG_MAP_STR, "cloud_id", NULL,
      0, FLB_FALSE, 0,
@@ -1033,6 +1060,11 @@ static struct flb_config_map config_map[] = {
      FLB_CONFIG_MAP_STR, "cloud_auth", NULL,
      0, FLB_FALSE, 0,
      "Elastic cloud authentication credentials"
+    },
+    {
+     FLB_CONFIG_MAP_STR, "cloud_apikey", NULL,
+     0, FLB_FALSE, 0,
+     "Elastic cloud apikey credentials"
     },
 
     /* AWS Authentication */
