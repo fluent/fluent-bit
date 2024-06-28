@@ -176,6 +176,10 @@ option(FLB_HTTP_CLIENT_DEBUG  "Enable HTTP Client debug callbacks"   No)
 # Run ldconfig on package post-install
 option(FLB_RUN_LDCONFIG "Enable execution of ldconfig after installation" No)
 
+# Prefer system libraries if available
+option(FLB_PREFER_SYSTEM_LIBS             "Prefer system libraries"                   No)
+option(FLB_PREFER_SYSTEM_LIB_LUAJIT       "Prefer the libluajit system library"       ${FLB_PREFER_SYSTEM_LIBS})
+
 # Enable all features
 if(FLB_ALL)
   # Global
@@ -923,7 +927,16 @@ endif()
 # LuaJIT (Scripting Support)
 # ==========================
 if(FLB_LUAJIT)
-  include(cmake/luajit.cmake)
+  if(FLB_PREFER_SYSTEM_LIB_LUAJIT)
+    find_package(PkgConfig)
+    pkg_check_modules(LUAJIT luajit>=2.1.0)
+  endif()
+  if(LUAJIT_FOUND)
+    include_directories(${LUAJIT_INCLUDE_DIRS})
+    link_directories(${LUAJIT_LIBRARY_DIRS})
+  else()
+    include(cmake/luajit.cmake)
+  endif()
   FLB_DEFINITION(FLB_HAVE_LUAJIT)
 endif()
 

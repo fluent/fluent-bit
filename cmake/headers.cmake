@@ -22,10 +22,6 @@ include_directories(
   ${FLB_PATH_ROOT_SOURCE}/${FLB_PATH_LIB_CHUNKIO}/include
   ${CMAKE_CURRENT_BINARY_DIR}/lib/chunkio/include
 
-  # LuaJIT
-  ${FLB_PATH_ROOT_SOURCE}/${FLB_PATH_LIB_LUAJIT}/src
-  ${CMAKE_CURRENT_BINARY_DIR}/lib/luajit-cmake
-
   ${FLB_PATH_ROOT_SOURCE}/${FLB_PATH_LIB_MONKEY}/include
   ${FLB_PATH_ROOT_SOURCE}/${FLB_PATH_LIB_MONKEY}/include/monkey
   ${FLB_PATH_ROOT_SOURCE}/${FLB_PATH_LIB_MBEDTLS}/include
