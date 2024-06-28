@@ -39,6 +39,7 @@
 
 #include "s3.h"
 #include "s3_store.h"
+#include "s3_parquet.h"
 
 #define DEFAULT_S3_PORT 443
 #define DEFAULT_S3_INSECURE_PORT 80
@@ -75,6 +76,13 @@ static struct flb_aws_header content_type_header = {
     .key_len = 12,
     .val = "",
     .val_len = 0,
+};
+
+static struct flb_aws_header octetstream_type_header = {
+    .key = "Content-Type",
+    .key_len = 12,
+    .val = "application/octet-stream",
+    .val_len = 24,
 };
 
 static struct flb_aws_header canned_acl_header = {
@@ -165,7 +173,11 @@ int create_headers(struct flb_s3 *ctx, char *body_md5,
         return -1;
     }
 
-    if (ctx->content_type != NULL) {
+    if (ctx->compression == FLB_AWS_COMPRESS_PARQUET) {
+        s3_headers[n] = octetstream_type_header;
+        n++;
+    }
+    else if (ctx->content_type != NULL) {
         s3_headers[n] = content_type_header;
         s3_headers[n].val = ctx->content_type;
         s3_headers[n].val_len = strlen(ctx->content_type);
@@ -488,6 +500,22 @@ static void s3_context_destroy(struct flb_s3 *ctx)
         flb_sds_destroy(ctx->seq_index_file);
     }
 
+    if (ctx->parquet_compression) {
+        flb_sds_destroy(ctx->parquet_compression);
+    }
+
+    if (ctx->parquet_record_type) {
+        flb_sds_destroy(ctx->parquet_record_type);
+    }
+
+    if (ctx->parquet_schema_type) {
+        flb_sds_destroy(ctx->parquet_schema_type);
+    }
+
+    if (ctx->parquet_schema_file) {
+        flb_sds_destroy(ctx->parquet_schema_file);
+    }
+
     /* Remove uploads */
     mk_list_foreach_safe(head, tmp, &ctx->uploads) {
         m_upload = mk_list_entry(head, struct multipart_upload, _head);
@@ -509,10 +537,11 @@ static int cb_s3_init(struct flb_output_instance *ins,
                       struct flb_config *config, void *data)
 {
     int ret;
+    int i;
     flb_sds_t tmp_sds;
     char *role_arn = NULL;
     char *session_name;
-    const char *tmp;
+    const char *tmp = NULL;
     struct flb_s3 *ctx = NULL;
     struct flb_aws_client_generator *generator;
     (void) config;
@@ -521,6 +550,8 @@ static int cb_s3_init(struct flb_output_instance *ins,
     struct flb_split_entry *tok;
     struct mk_list *split;
     int list_size;
+    FILE *cmdp = NULL;
+    char buf[32] = {0};
 
     ctx = flb_calloc(1, sizeof(struct flb_s3));
     if (!ctx) {
@@ -652,7 +683,141 @@ static int cb_s3_init(struct flb_output_instance *ins,
                           "use_put_object must be enabled when Apache Arrow is enabled");
             return -1;
         }
+        if (ctx->use_put_object == FLB_FALSE && ctx->compression == FLB_AWS_COMPRESS_PARQUET) {
+            flb_plg_error(ctx->ins,
+                          "use_put_object must be enabled when parquet is enabled");
+            return -1;
+        }
         ctx->compression = ret;
+    }
+
+    /* Parquet */
+    ctx->parquet_compression = NULL;
+    ctx->parquet_record_type = NULL;
+    ctx->parquet_schema_type = NULL;
+    ctx->parquet_schema_file = NULL;
+
+    if (ctx->compression == FLB_AWS_COMPRESS_PARQUET) {
+        cmdp = flb_popen(DEFAULT_PARQUET_COMMAND_CHECK, "r");
+        if (cmdp == NULL) {
+            flb_plg_error(ctx->ins, "command %s failed", DEFAULT_PARQUET_COMMAND_CHECK);
+            return -1;
+        }
+        flb_pclose(cmdp);
+
+        tmp = flb_output_get_property("parquet.compression", ins);
+        if (tmp != NULL) {
+            if (strncasecmp(tmp, "uncompressed", 12) == 0 ||
+                strncasecmp(tmp, "snappy", 6) == 0 ||
+                strncasecmp(tmp, "gzip", 4) == 0 ||
+                strncasecmp(tmp, "zstd", 4) == 0) {
+                flb_plg_info(ctx->ins, "parquet.compression format is %s", tmp);
+            }
+            else if (strncasecmp(tmp, "lzo", 3) == 0 ||
+                strncasecmp(tmp, "brotli", 6) == 0 ||
+                strncasecmp(tmp, "lz4", 3) == 0) {
+                flb_plg_info(ctx->ins, "unsupported parquet.compression format %s", tmp);
+            }
+            else {
+                flb_plg_error(ctx->ins, "unknown parquet.compression format %s", tmp);
+                return -1;
+            }
+            for (i = 0; i < strlen(tmp); i++) {
+                buf[i] = toupper(tmp[i]);
+            }
+
+            ctx->parquet_compression = flb_sds_create_len(buf, strlen(buf));
+            if (ctx->parquet_compression == NULL) {
+                flb_plg_error(ctx->ins, "Failed to create parquet compression type");
+                flb_errno();
+                return -1;
+            }
+        }
+        else {
+            ctx->parquet_compression = \
+                    flb_sds_create(DEFAULT_PARQUET_COMPRESSION_FORMAT_UPCASES);
+            if (ctx->parquet_compression == NULL) {
+                flb_plg_error(ctx->ins, "Failed to create parquet compression type");
+                flb_errno();
+                return -1;
+            }
+            flb_plg_debug(ctx->ins, "parquet.compression format is %s",
+                          DEFAULT_PARQUET_COMPRESSION_FORMAT_UPCASES);
+        }
+
+        tmp = flb_output_get_property("parquet.record_type", ins);
+        if (!tmp) {
+            flb_plg_info(ctx->ins, "parquet.record_type format is %s",
+                         DEFAULT_PARQUET_RECORD_TYPE);
+            ctx->parquet_record_type = \
+                    flb_sds_create(DEFAULT_PARQUET_RECORD_TYPE);
+            if (ctx->parquet_record_type == NULL) {
+                flb_plg_error(ctx->ins, "Failed to create parquet record type");
+                flb_errno();
+                return -1;
+            }
+        }
+        else {
+            if (strncasecmp(tmp, "json", 4) == 0) {
+                tmp = "jsonl"; /* json should be interpreted as jsonl */
+                flb_plg_info(ctx->ins, "parquet.record_type format is %s", tmp);
+            }
+            else if (strncasecmp(tmp, "msgpack", 7) == 0 ||
+                strncasecmp(tmp, "jsonl", 5) == 0) {
+                flb_plg_info(ctx->ins, "parquet.record_type format is %s", tmp);
+            }
+            else {
+                flb_plg_error(ctx->ins, "unknown parquet.record_type format %s", tmp);
+                return -1;
+            }
+            ctx->parquet_record_type = flb_sds_create_len(tmp, strlen(tmp));
+            if (ctx->parquet_record_type == NULL) {
+                flb_plg_error(ctx->ins, "Failed to create parquet record type");
+                flb_errno();
+                return -1;
+            }
+        }
+
+        tmp = flb_output_get_property("parquet.schema_type", ins);
+        if (!tmp) {
+            flb_plg_info(ctx->ins, "parquet.schema_type format is %s",
+                         DEFAULT_PARQUET_SCHEMA_TYPE);
+            ctx->parquet_schema_type = \
+                    flb_sds_create(DEFAULT_PARQUET_SCHEMA_TYPE);
+            if (ctx->parquet_schema_type == NULL) {
+                flb_plg_error(ctx->ins, "Failed to create parquet schema type");
+                flb_errno();
+                return -1;
+            }
+        }
+        else {
+            if (strncasecmp(tmp, "avro", 4) == 0 ||
+                strncasecmp(tmp, "bigquery", 8) == 0) {
+                flb_plg_info(ctx->ins, "parquet.schema_type format is %s", tmp);
+            }
+            else {
+                flb_plg_error(ctx->ins, "unknown parquet.schema_type format %s", tmp);
+                return -1;
+            }
+            ctx->parquet_schema_type = flb_sds_create_len(tmp, strlen(tmp));
+            if (ctx->parquet_schema_type == NULL) {
+                flb_plg_error(ctx->ins, "Failed to create parquet schema type");
+                flb_errno();
+                return -1;
+            }
+        }
+
+        tmp = flb_output_get_property("parquet.schema_file", ins);
+        if (!tmp) {
+            flb_plg_error(ctx->ins, "parquet.schema_file is missing");
+            return -1;
+        }
+        ctx->parquet_schema_file = flb_sds_create_len(tmp, strlen(tmp));
+        if (ctx->parquet_schema_file == NULL) {
+            flb_plg_error(ctx->ins, "Failed to create parquet schema file");
+            flb_errno();
+            return -1;
+        }
     }
 
     tmp = flb_output_get_property("content_type", ins);
@@ -921,11 +1086,11 @@ static int cb_s3_init(struct flb_output_instance *ins,
         ctx->timer_ms = UPLOAD_TIMER_MIN_WAIT;
     }
 
-    /* 
-     * S3 must ALWAYS use sync mode 
+    /*
+     * S3 must ALWAYS use sync mode
      * In the timer thread we do a mk_list_foreach_safe on the queue of uplaods and chunks
      * Iterating over those lists is not concurrent safe. If a flush call ran at the same time
-     * And deleted an item from the list, this could cause a crash/corruption. 
+     * And deleted an item from the list, this could cause a crash/corruption.
      */
     flb_stream_disable_async_mode(&ctx->s3_client->upstream->base);
 
@@ -998,7 +1163,19 @@ static int upload_data(struct flb_s3 *ctx, struct s3_file *chunk,
         file_first_log_time = chunk->first_log_time;
     }
 
-    if (ctx->compression == FLB_AWS_COMPRESS_GZIP) {
+    if (ctx->compression == FLB_AWS_COMPRESS_PARQUET) {
+        ret = flb_s3_parquet_compress(ctx, body, body_size, &payload_buf, &payload_size);
+        if (ret == -1) {
+            flb_plg_error(ctx->ins, "Failed to compress data with %s", DEFAULT_PARQUET_COMMAND);
+            return FLB_RETRY;
+        }
+        else {
+            preCompress_size = body_size;
+            body = (void *) payload_buf;
+            body_size = payload_size;
+        }
+    }
+    else if (ctx->compression == FLB_AWS_COMPRESS_GZIP) {
         /* Map payload */
         ret = flb_aws_compression_compress(ctx->compression, body, body_size, &payload_buf, &payload_size);
         if (ret == -1) {
@@ -1065,6 +1242,9 @@ put_object:
     ret = s3_put_object(ctx, tag, file_first_log_time, body, body_size);
     if (ctx->compression == FLB_AWS_COMPRESS_GZIP) {
         flb_free(payload_buf);
+    }
+    else if (ctx->compression == FLB_AWS_COMPRESS_PARQUET) {
+        flb_sds_destroy(payload_buf);
     }
     if (ret < 0) {
         /* re-add chunk to list */
@@ -1220,7 +1400,21 @@ static int put_all_chunks(struct flb_s3 *ctx)
                 return -1;
             }
 
-            if (ctx->compression != FLB_AWS_COMPRESS_NONE) {
+            if (ctx->compression == FLB_AWS_COMPRESS_PARQUET) {
+                ret = flb_s3_parquet_compress(ctx, buffer, buffer_size, &payload_buf, &payload_size);
+                if (ret == -1) {
+                    flb_plg_error(ctx->ins, "Failed to compress data with %s", DEFAULT_PARQUET_COMMAND);
+                    return FLB_RETRY;
+                }
+                else {
+                    flb_plg_info(ctx->ins, "Pre-compression chunk size is %zu, After compression, chunk is %zu bytes", buffer_size, payload_size);
+                    flb_free(buffer);
+
+                    buffer = (void *) payload_buf;
+                    buffer_size = payload_size;
+                }
+            }
+            else if (ctx->compression != FLB_AWS_COMPRESS_NONE) {
                 /* Map payload */
                 ret = flb_aws_compression_compress(ctx->compression, buffer, buffer_size, &payload_buf, &payload_size);
                 if (ret == -1) {
@@ -1235,7 +1429,12 @@ static int put_all_chunks(struct flb_s3 *ctx)
             ret = s3_put_object(ctx, (const char *)
                                 fsf->meta_buf,
                                 chunk->create_time, buffer, buffer_size);
-            flb_free(buffer);
+            if (ctx->compression == FLB_AWS_COMPRESS_PARQUET) {
+                flb_sds_destroy(buffer);
+            }
+            else {
+                flb_free(buffer);
+            }
             if (ret < 0) {
                 s3_store_file_unlock(chunk);
                 chunk->failures += 1;
@@ -2365,10 +2564,56 @@ static struct flb_config_map config_map[] = {
     {
      FLB_CONFIG_MAP_STR, "compression", NULL,
      0, FLB_FALSE, 0,
-    "Compression type for S3 objects. 'gzip' and 'arrow' are the supported values. "
+    "Compression type for S3 objects. 'gzip', 'arrow', and 'parquet' "
+    "are the supported values. "
     "'arrow' is only an available if Apache Arrow was enabled at compile time. "
+    "'parquet' is only an available if columify command is installed on a system. "
     "Defaults to no compression. "
     "If 'gzip' is selected, the Content-Encoding HTTP Header will be set to 'gzip'."
+    "If 'parquet' is selected, the Content-Type HTTP Header will be set to 'application/octet-stream'."
+    },
+    {
+     FLB_CONFIG_MAP_STR, "parquet.compression", "snappy",
+     0, FLB_TRUE, offsetof(struct flb_s3, parquet_compression),
+    "Compression type for Parquet format. 'uncompressed', 'snappy', 'gzip', "
+    "'zstd' are the supported values. "
+    "'lzo', 'brotli', 'lz4' are not supported for now. "
+    "Defaults to snappy. "
+    },
+    {
+     FLB_CONFIG_MAP_SIZE, "parquet.page_size", "8192",
+     0, FLB_TRUE, offsetof(struct flb_s3, parquet_page_size),
+    "Page size of parquet"
+    "Defaults to 8192. "
+    },
+    {
+     FLB_CONFIG_MAP_SIZE, "parquet.row_group_size", "134217728", /* 128 * 1024 * 1024 */
+     0, FLB_TRUE, offsetof(struct flb_s3, parquet_row_group_size),
+    "File row group size of parquet"
+    "Defaults to 134217728 (= 128 * 1024 * 1024). "
+    },
+    {
+     FLB_CONFIG_MAP_STR, "parquet.record_type", "json",
+     0, FLB_FALSE, 0,
+    "Record type for parquet objects. 'json' and 'msgpack' are the supported values. "
+    "Defaults to json. "
+    },
+    {
+     FLB_CONFIG_MAP_STR, "parquet.schema_type", "avro",
+     0, FLB_FALSE, 0,
+    "Record type for parquet objects. 'avro' and 'bigquery' are the supported values. "
+    "Defaults to avro. "
+    },
+    {
+     FLB_CONFIG_MAP_STR, "parquet.schema_file", NULL,
+     0, FLB_FALSE, 0,
+    "Schema file for parquet objects. "
+    },
+    {
+     FLB_CONFIG_MAP_STR, "parquet.process_dir", DEFAULT_PARQUET_PROCESS_DIR,
+     0, FLB_TRUE, offsetof(struct flb_s3, parquet_process_dir),
+    "Specify a temporary directory for processing parquet objects. "
+    "This paramater is effective for non Windows platforms. "
     },
     {
      FLB_CONFIG_MAP_STR, "content_type", NULL,
