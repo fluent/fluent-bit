@@ -126,11 +126,22 @@ flb_sds_t execute_ingest_csl_command(struct flb_azure_kusto *ctx, const char *cs
     struct flb_http_client *c;
     flb_sds_t resp = NULL;
 
+    flb_plg_debug(ctx->ins, "before getting upstream connection");
+
+    flb_plg_debug(ctx->ins, "Logging attributes of flb_azure_kusto_resources:");
+    flb_plg_debug(ctx->ins, "blob_ha: %p", ctx->resources->blob_ha);
+    flb_plg_debug(ctx->ins, "queue_ha: %p", ctx->resources->queue_ha);
+    flb_plg_debug(ctx->ins, "identity_token: %s", ctx->resources->identity_token);
+    flb_plg_debug(ctx->ins, "load_time: %lu", ctx->resources->load_time);
+
+    ctx->u->base.net.connect_timeout = ctx->ingestion_endpoint_connect_timeout ;
+
     /* Get upstream connection */
     u_conn = flb_upstream_conn_get(ctx->u);
 
     if (u_conn) {
         token = get_azure_kusto_token(ctx);
+	    flb_plg_debug(ctx->ins, "after get azure kusto token");
 
         if (token) {
             /* Compose request body */
@@ -152,6 +163,9 @@ flb_sds_t execute_ingest_csl_command(struct flb_azure_kusto *ctx, const char *cs
                     flb_http_add_header(c, "Accept", 6, "application/json", 16);
                     flb_http_add_header(c, "Authorization", 13, token,
                                         flb_sds_len(token));
+                    flb_http_add_header(c, "x-ms-client-version", 19, "Kusto.Fluent-Bit:1.0.0", 22);
+                    flb_http_add_header(c, "x-ms-app", 8, "Kusto.Fluent-Bit", 16);
+                    flb_http_add_header(c, "x-ms-user", 9, "Kusto.Fluent-Bit", 16);
                     flb_http_buffer_size(c, FLB_HTTP_DATA_SIZE_MAX * 10);
 
                     /* Send HTTP request */
@@ -212,6 +226,8 @@ static int cb_azure_kusto_init(struct flb_output_instance *ins, struct flb_confi
     int io_flags = FLB_IO_TLS;
     struct flb_azure_kusto *ctx;
 
+    flb_plg_debug(ins, "inside azure kusto init");
+
     /* Create config context */
     ctx = flb_azure_kusto_conf_create(ins, config);
     if (!ctx) {
@@ -231,6 +247,7 @@ static int cb_azure_kusto_init(struct flb_output_instance *ins, struct flb_confi
      */
     pthread_mutex_init(&ctx->token_mutex, NULL);
     pthread_mutex_init(&ctx->resources_mutex, NULL);
+    pthread_mutex_init(&ctx->blob_mutex, NULL);
 
     /*
      * Create upstream context for Kusto Ingestion endpoint
@@ -249,6 +266,8 @@ static int cb_azure_kusto_init(struct flb_output_instance *ins, struct flb_confi
         return -1;
     }
     flb_output_upstream_set(ctx->u, ins);
+
+    flb_plg_debug(ctx->ins, "azure kusto init completed");
 
     return 0;
 }
@@ -367,9 +386,13 @@ static void cb_azure_kusto_flush(struct flb_event_chunk *event_chunk,
     size_t json_size;
     size_t tag_len;
     struct flb_azure_kusto *ctx = out_context;
+    int is_compressed = FLB_FALSE;
 
     (void)i_ins;
     (void)config;
+
+    void *final_payload = NULL;
+    size_t final_payload_size = 0;
 
     flb_plg_trace(ctx->ins, "flushing bytes %zu", event_chunk->size);
 
@@ -377,6 +400,7 @@ static void cb_azure_kusto_flush(struct flb_event_chunk *event_chunk,
 
     /* Load or refresh ingestion resources */
     ret = azure_kusto_load_ingestion_resources(ctx, config);
+    flb_plg_trace(ctx->ins, "after flushing bytes xxxx  %d", ret);
     if (ret != 0) {
         flb_plg_error(ctx->ins, "cannot load ingestion resources");
         FLB_OUTPUT_RETURN(FLB_RETRY);
@@ -385,12 +409,34 @@ static void cb_azure_kusto_flush(struct flb_event_chunk *event_chunk,
     /* Reformat msgpack to JSON payload */
     ret = azure_kusto_format(ctx, event_chunk->tag, tag_len, event_chunk->data,
                              event_chunk->size, (void **)&json, &json_size);
+    flb_plg_trace(ctx->ins, "after kusto format xxxx %d", ret);
     if (ret != 0) {
         flb_plg_error(ctx->ins, "cannot reformat data into json");
         FLB_OUTPUT_RETURN(FLB_RETRY);
     }
 
-    ret = azure_kusto_queued_ingestion(ctx, event_chunk->tag, tag_len, json, json_size);
+    flb_plg_trace(ctx->ins, "payload size before compression %d", json_size);
+    /* Map buffer */
+    final_payload = json;
+    final_payload_size = json_size;
+    if (ctx->compression_enabled == FLB_TRUE) {
+        ret = flb_gzip_compress((void *) json, json_size,
+                            &final_payload, &final_payload_size);
+        if (ret != 0) {
+            flb_plg_error(ctx->ins,
+                        "cannot gzip payload");
+            flb_sds_destroy(json);
+            FLB_OUTPUT_RETURN(FLB_RETRY);
+        }
+        else {
+            is_compressed = FLB_TRUE;
+            flb_plg_debug(ctx->ins, "enabled payload gzip compression");
+            /* JSON buffer will be cleared at cleanup: */
+        }
+    }
+    flb_plg_trace(ctx->ins, "payload size after compression %d", final_payload_size);
+    ret = azure_kusto_queued_ingestion(ctx, event_chunk->tag, tag_len, final_payload, final_payload_size);
+    flb_plg_trace(ctx->ins, "after kusto queued ingestion %d", ret);
     if (ret != 0) {
         flb_plg_error(ctx->ins, "cannot perform queued ingestion");
         flb_sds_destroy(json);
@@ -400,6 +446,10 @@ static void cb_azure_kusto_flush(struct flb_event_chunk *event_chunk,
     /* Cleanup */
     flb_sds_destroy(json);
 
+    /* release compressed payload */
+    if (is_compressed == FLB_TRUE) {
+        flb_free(final_payload);
+    }
     /* Done */
     FLB_OUTPUT_RETURN(FLB_OK);
 }
@@ -416,6 +466,10 @@ static int cb_azure_kusto_exit(void *data, struct flb_config *config)
         flb_upstream_destroy(ctx->u);
         ctx->u = NULL;
     }
+
+    pthread_mutex_destroy(&ctx->resources_mutex);
+    pthread_mutex_destroy(&ctx->token_mutex);
+    pthread_mutex_destroy(&ctx->blob_mutex);
 
     flb_azure_kusto_conf_destroy(ctx);
 
@@ -462,6 +516,16 @@ static struct flb_config_map config_map[] = {
      offsetof(struct flb_azure_kusto, time_key),
      "The key name of the time. If 'include_time_key' is false, "
      "This property is ignored"},
+    {FLB_CONFIG_MAP_TIME, "ingestion_endpoint_connect_timeout", FLB_AZURE_KUSTO_INGEST_ENDPOINT_CONNECTION_TIMEOUT, 0, FLB_TRUE,
+	         offsetof(struct flb_azure_kusto, ingestion_endpoint_connect_timeout),
+		              "Set the ingestion endpoint connection timeout in seconds"},
+    {FLB_CONFIG_MAP_BOOL, "compression_enabled", "true", 0, FLB_TRUE,
+            offsetof(struct flb_azure_kusto, compression_enabled), "Enable HTTP payload compression (gzip)."
+    },
+    {FLB_CONFIG_MAP_TIME, "ingestion_resources_refresh_interval", FLB_AZURE_KUSTO_RESOURCES_LOAD_INTERVAL_SEC,0, FLB_TRUE,
+          offsetof(struct flb_azure_kusto, ingestion_resources_refresh_interval),
+          "Set the azure kusto ingestion resources refresh interval"
+    },
     /* EOF */
     {0}};
 
