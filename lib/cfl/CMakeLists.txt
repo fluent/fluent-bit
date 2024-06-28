@@ -5,7 +5,7 @@ set(CMAKE_EXPORT_COMPILE_COMMANDS ON)
 
 # C Floppy Version
 set(CFL_VERSION_MAJOR  0)
-set(CFL_VERSION_MINOR  3)
+set(CFL_VERSION_MINOR  5)
 set(CFL_VERSION_PATCH  0)
 set(CFL_VERSION_STR    "${CFL_VERSION_MAJOR}.${CFL_VERSION_MINOR}.${CFL_VERSION_PATCH}")
 
@@ -42,7 +42,7 @@ endif()
 
 # Define __FILENAME__ consistently across Operating Systems
 if(NOT ${CMAKE_SYSTEM_NAME} MATCHES "Windows")
-  set(CMAKE_C_FLAGS "${CMAKE_C_FLAGS} -D__FILENAME__='\"$(subst ${CMAKE_SOURCE_DIR}/,,$(abspath $<))\"'")
+  set(CMAKE_C_FLAGS "${CMAKE_C_FLAGS} -D__FILENAME__='\"$$(subst ${CMAKE_SOURCE_DIR}/,,$$(abspath $$<))\"'")
 else()
   set(CMAKE_C_FLAGS "${CMAKE_C_FLAGS} -D__FILENAME__=__FILE__")
 endif()

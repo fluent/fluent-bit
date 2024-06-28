@@ -58,11 +58,15 @@ struct flb_log_event_decoder {
     size_t            offset;
     size_t            length;
     int               last_result;
+    int               read_groups;
 };
 
 void flb_log_event_decoder_reset(struct flb_log_event_decoder *context,
                                  char *input_buffer,
                                  size_t input_length);
+
+int flb_log_event_decoder_read_groups(struct flb_log_event_decoder *context,
+                                      int read_groups);
 
 int flb_log_event_decoder_init(struct flb_log_event_decoder *context,
                                char *input_buffer,
@@ -84,5 +88,7 @@ int flb_log_event_decoder_next(struct flb_log_event_decoder *context,
                                struct flb_log_event *record);
 
 const char *flb_log_event_decoder_get_error_description(int error_code);
+
+int flb_log_event_decoder_get_record_type(struct flb_log_event *event, int32_t *type);
 
 #endif

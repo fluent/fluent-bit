@@ -476,8 +476,7 @@ static int pack_print_fluent_record(size_t cnt, msgpack_unpacked result)
     flb_time_pop_from_msgpack(&tms, &result, &obj);
     flb_metadata_pop_from_msgpack(&metadata, &result, &obj);
 
-    fprintf(stdout, "[%zd] [%"PRIu32".%09lu, ", cnt,
-            (uint32_t) tms.tm.tv_sec, tms.tm.tv_nsec);
+    fprintf(stdout, "[%zd] [%"PRId32".%09lu, ", cnt, (int32_t) tms.tm.tv_sec, tms.tm.tv_nsec);
 
     msgpack_object_print(stdout, *metadata);
 
@@ -807,10 +806,11 @@ flb_sds_t flb_msgpack_raw_to_json_sds(const void *in_buf, size_t in_size)
     while (1) {
         ret = flb_msgpack_to_json(out_buf, out_size, root);
         if (ret <= 0) {
+            realloc_size *= 2;
             tmp_buf = flb_sds_increase(out_buf, realloc_size);
             if (tmp_buf) {
                 out_buf = tmp_buf;
-                out_size += realloc_size;
+                out_size *= realloc_size;
             }
             else {
                 flb_errno();
@@ -1168,7 +1168,7 @@ char *flb_msgpack_to_json_str(size_t size, const msgpack_object *obj)
         ret = flb_msgpack_to_json(buf, size, obj);
         if (ret <= 0) {
             /* buffer is small. retry.*/
-            size += 128;
+            size *= 2;
             tmp = flb_realloc(buf, size);
             if (tmp) {
                 buf = tmp;

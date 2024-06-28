@@ -61,6 +61,7 @@ if(FLB_WINDOWS_DEFAULTS)
   set(FLB_IN_PODMAN_METRICS      No)
   set(FLB_IN_ELASTICSEARCH      Yes)
   set(FLB_IN_SPLUNK             Yes)
+  set(FLB_IN_PROMETHEUS_REMOTE_WRITE Yes)
 
   # OUTPUT plugins
   # ==============

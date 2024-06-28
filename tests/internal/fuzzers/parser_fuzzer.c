@@ -154,7 +154,7 @@ int LLVMFuzzerTestOneInput(const uint8_t *data, size_t size)
     /* now call into the parser */
     fuzz_parser = flb_parser_create("fuzzer", format, pregex, FLB_TRUE,
             time_fmt, time_key, time_offset, time_keep, 0, FLB_FALSE,
-            types, types_len, list, fuzz_config);
+            FLB_FALSE, types, types_len, list, fuzz_config);
 
     /* Second step is to use the random parser to parse random input */
     if (fuzz_parser != NULL) {

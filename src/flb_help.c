@@ -201,9 +201,15 @@ int flb_help_input(struct flb_input_instance *ins, void **out_buf, size_t *out_s
     struct mk_list *tls_config;
     struct flb_config_map m_input_net_listen = {
         .type =      FLB_CONFIG_MAP_STR,
-        .name =      "host",
+        .name =      "listen",
         .def_value = "0.0.0.0",
         .desc =      "Listen Address",
+    };
+    struct flb_config_map m_input_net_host = {
+        .type =      FLB_CONFIG_MAP_STR,
+        .name =      "host",
+        .def_value = "localhost",
+        .desc =      "Hostname",
     };
     struct flb_config_map m_input_net_port = {
         .type =      FLB_CONFIG_MAP_INT,
@@ -243,7 +249,7 @@ int flb_help_input(struct flb_input_instance *ins, void **out_buf, size_t *out_s
         options_size = mk_list_size(config_map);
 
         if ((ins->flags & (FLB_INPUT_NET | FLB_INPUT_NET_SERVER)) != 0) {
-            options_size += 2;
+            options_size += 3;
         }
         if (ins->flags & FLB_IO_OPT_TLS) {
             tls_config = flb_tls_get_config_map(ins->config);
@@ -254,6 +260,7 @@ int flb_help_input(struct flb_input_instance *ins, void **out_buf, size_t *out_s
 
         if ((ins->flags & (FLB_INPUT_NET | FLB_INPUT_NET_SERVER)) != 0) {
             pack_config_map_entry(&mp_pck, &m_input_net_listen);
+            pack_config_map_entry(&mp_pck, &m_input_net_host);
             pack_config_map_entry(&mp_pck, &m_input_net_port);
         }
         if (ins->flags & FLB_IO_OPT_TLS) {

@@ -77,14 +77,13 @@ static int in_tail_collect_pending(struct flb_input_instance *ins,
 
         if (file->watch_fd == -1 ||
             (file->offset >= file->size)) {
+            /* Gather current file size */
             ret = fstat(file->fd, &st);
-
             if (ret == -1) {
                 flb_errno();
                 flb_tail_file_remove(file);
                 continue;
             }
-
             file->size = st.st_size;
             file->pending_bytes = (file->size - file->offset);
         }
@@ -93,11 +92,10 @@ static int in_tail_collect_pending(struct flb_input_instance *ins,
         }
 
         if (file->pending_bytes <= 0) {
-            file->pending_bytes = (file->size - file->offset);
-        }
-
-        if (file->pending_bytes <= 0) {
-            continue;
+            if(file->decompression_context == NULL ||
+               file->decompression_context->input_buffer_length == 0) {
+                continue;
+            }
         }
 
         if (ctx->event_batch_size > 0 &&
@@ -130,9 +128,14 @@ static int in_tail_collect_pending(struct flb_input_instance *ins,
                 file->pending_bytes = (file->size - file->offset);
                 active++;
             }
+            else if(file->decompression_context != NULL &&
+                    file->decompression_context->input_buffer_length > 0) {
+                active++;
+            }
             else {
                 file->pending_bytes = 0;
             }
+
             break;
         }
     }
@@ -191,14 +194,14 @@ static int in_tail_collect_static(struct flb_input_instance *ins,
         }
 
         /* get initial offset to calculate the number of processed bytes later */
-        pre = file->offset;
+        pre = file->stream_offset;
 
         /* Process the file */
         ret = flb_tail_file_chunk(file);
 
         /* Update the total number of bytes processed */
-        if (file->offset > pre) {
-            total_processed += (file->offset - pre);
+        if (file->stream_offset > pre) {
+            total_processed += (file->stream_offset - pre);
         }
 
         switch (ret) {
@@ -213,10 +216,22 @@ static int in_tail_collect_static(struct flb_input_instance *ins,
             active++;
             break;
         case FLB_TAIL_WAIT:
+            if(file->decompression_context != NULL &&
+               file->decompression_context->input_buffer_length > 0) {
+                active++;
+
+                break;
+            }
+
             if (file->config->exit_on_eof) {
                 flb_plg_info(ctx->ins, "inode=%"PRIu64" file=%s ended, stop",
                              file->inode, file->name);
                 if (ctx->files_static_count == 1) {
+#ifdef FLB_HAVE_PARSER
+                    if (ctx->multiline) {
+                        flb_tail_mult_flush(file, ctx);
+                    }
+#endif
                     flb_engine_exit(config);
                 }
             }
@@ -371,6 +386,15 @@ static int in_tail_init(struct flb_input_instance *in,
 
     /* Scan path */
     flb_tail_scan(ctx->path_list, ctx);
+
+#ifdef FLB_HAVE_SQLDB
+    /* Delete stale files that are not monitored from the database */
+    ret = flb_tail_db_stale_file_delete(in, config, ctx);
+    if (ret == -1) {
+        flb_tail_config_destroy(ctx);
+        return -1;
+    }
+#endif
 
     /*
      * After the first scan (on start time), all new files discovered needs to be
@@ -626,8 +650,10 @@ static struct flb_config_map config_map[] = {
     {
      FLB_CONFIG_MAP_TIME, "ignore_older", "0",
      0, FLB_TRUE, offsetof(struct flb_tail_config, ignore_older),
-     "ignore files older than 'ignore_older'. Supports m,h,d (minutes, "
-     "hours, days) syntax. Default behavior is to read all the files."
+     "ignore records older than 'ignore_older'. Supports m,h,d (minutes, "
+     "hours, days) syntax. Default behavior is to read all records. Option "
+     "only available when a Parser is specified and it can parse the time "
+     "of a record."
     },
     {
      FLB_CONFIG_MAP_SIZE, "buffer_chunk_size", FLB_TAIL_CHUNK,
@@ -724,6 +750,14 @@ static struct flb_config_map config_map[] = {
      "Option to provide WAL configuration for Work Ahead Logging mechanism (WAL). Enabling WAL "
      "provides higher performance. Note that WAL is not compatible with "
      "shared network file systems."
+    },
+    {
+     FLB_CONFIG_MAP_BOOL, "db.compare_filename", "false",
+     0, FLB_TRUE, offsetof(struct flb_tail_config, compare_filename),
+     "This option determines whether to check both the inode and the filename "
+     "when retrieving file information from the db."
+     "'true' verifies both the inode and filename, while 'false' checks only "
+     "the inode (default)."
     },
 #endif
 

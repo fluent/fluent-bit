@@ -118,8 +118,8 @@ static ssize_t get_input_chunk_record_count(struct flb_input_chunk *input_chunk)
         set_down = FLB_TRUE;
     }
 
-    ret = cio_chunk_get_content(input_chunk->chunk, 
-                                &chunk_buffer, 
+    ret = cio_chunk_get_content(input_chunk->chunk,
+                                &chunk_buffer,
                                 &chunk_size);
 
     if (ret == CIO_OK) {
@@ -205,13 +205,13 @@ static int flb_input_chunk_release_space(
                           old_input_chunk->in->name);
             }
             else {
-                cmt_counter_add(output_plugin->cmt_dropped_records, 
-                                cfl_time_now(), 
+                cmt_counter_add(output_plugin->cmt_dropped_records,
+                                cfl_time_now(),
                                 dropped_record_count,
                                 1, (char *[]) {(char *) flb_output_name(output_plugin)});
 
-                flb_metrics_sum(FLB_METRIC_OUT_DROPPED_RECORDS, 
-                                dropped_record_count, 
+                flb_metrics_sum(FLB_METRIC_OUT_DROPPED_RECORDS,
+                                dropped_record_count,
                                 output_plugin->metrics);
             }
         }
@@ -553,7 +553,7 @@ int flb_input_chunk_has_overlimit_routes(struct flb_input_chunk *ic,
         }
 
         FS_CHUNK_SIZE_DEBUG(o_ins);
-        flb_debug("[input chunk] chunk %s required %ld bytes and %ld bytes left "
+        flb_trace("[input chunk] chunk %s required %ld bytes and %ld bytes left "
                   "in plugin %s", flb_input_chunk_get_name(ic), chunk_size,
                   o_ins->total_limit_size -
                   o_ins->fs_backlog_chunks_size -
@@ -1739,7 +1739,7 @@ static int input_chunk_append_raw(struct flb_input_instance *in,
     real_size = flb_input_chunk_get_real_size(ic);
     real_diff = real_size - pre_real_size;
     if (real_diff != 0) {
-        flb_debug("[input chunk] update output instances with new chunk size diff=%zd, records=%zu, input=%s",
+        flb_trace("[input chunk] update output instances with new chunk size diff=%zd, records=%zu, input=%s",
                   real_diff, n_records, flb_input_name(in));
         flb_input_chunk_update_output_instances(ic, real_diff);
     }
@@ -2112,7 +2112,7 @@ void flb_input_chunk_update_output_instances(struct flb_input_chunk *ic,
             o_ins->fs_chunks_size += chunk_size;
             ic->fs_counted = FLB_TRUE;
 
-            flb_debug("[input chunk] chunk %s update plugin %s fs_chunks_size by %ld bytes, "
+            flb_trace("[input chunk] chunk %s update plugin %s fs_chunks_size by %ld bytes, "
                       "the current fs_chunks_size is %ld bytes", flb_input_chunk_get_name(ic),
                       o_ins->name, chunk_size, o_ins->fs_chunks_size);
         }

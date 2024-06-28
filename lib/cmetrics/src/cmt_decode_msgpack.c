@@ -226,8 +226,10 @@ static int unpack_opts(mpack_reader_t *reader, struct cmt_opts *opts)
             return CMT_DECODE_MSGPACK_ALLOCATION_ERROR;
         }
 
-        cfl_sds_cat(opts->fqname, opts->ns, cfl_sds_len(opts->ns));
-        cfl_sds_cat(opts->fqname, "_", 1);
+        if (cfl_sds_len(opts->ns) > 0) {
+            cfl_sds_cat(opts->fqname, opts->ns, cfl_sds_len(opts->ns));
+            cfl_sds_cat(opts->fqname, "_", 1);
+        }
 
         if (cfl_sds_len(opts->subsystem) > 0) {
             cfl_sds_cat(opts->fqname, opts->subsystem, cfl_sds_len(opts->subsystem));

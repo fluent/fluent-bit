@@ -44,6 +44,7 @@ struct cio_file {
     HANDLE backing_file;
     HANDLE backing_mapping;
 #endif
+    int taint_flag;           /* content modification flag */
     /* cached addr */
     char *st_content;
     crc_t crc_cur;            /* crc: current value calculated */

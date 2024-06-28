@@ -26,6 +26,7 @@
 #define FLB_HTTP_CONTENT_TYPE   "Content-Type"
 #define FLB_HTTP_MIME_MSGPACK   "application/msgpack"
 #define FLB_HTTP_MIME_JSON      "application/json"
+#define FLB_HTTP_MIME_NDJSON    "application/x-ndjson"
 
 #ifdef FLB_HAVE_SIGNV4
 #ifdef FLB_HAVE_AWS
@@ -55,6 +56,7 @@ struct flb_out_http {
 
     /* Output format */
     int out_format;
+    flb_sds_t format;
 
     int json_date_format;
     flb_sds_t json_date_key;

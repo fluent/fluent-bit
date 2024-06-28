@@ -11,6 +11,7 @@ set(UNIT_TESTS_FILES
   cat.c
   issues.c
   null_label.c
+  filter.c
   )
 
 if (CMT_BUILD_PROMETHEUS_DECODER)

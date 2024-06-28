@@ -74,11 +74,14 @@ struct flb_net_setup {
     /* dns resolver : LEGACY or ASYNC */
     char *dns_resolver;
 
-    /* prioritize ipv4 results when trying to establish a connection*/
+    /* prioritize ipv4 results when trying to establish a connection */
     int   dns_prefer_ipv4;
 
-    /* prioritize ipv6 results when trying to establish a connection*/
+    /* prioritize ipv6 results when trying to establish a connection */
     int   dns_prefer_ipv6;
+
+    /* allow this port to be shared */
+    int   share_port;
 
     /* maximum number of allowed active TCP connections */
     int max_worker_connections;
@@ -165,10 +168,10 @@ flb_sockfd_t flb_net_udp_connect(const char *host, unsigned long port,
                                  char *source_addr);
 
 int flb_net_tcp_fd_connect(flb_sockfd_t fd, const char *host, unsigned long port);
-flb_sockfd_t flb_net_server(const char *port, const char *listen_addr);
-flb_sockfd_t flb_net_server_udp(const char *port, const char *listen_addr);
+flb_sockfd_t flb_net_server(const char *port, const char *listen_addr, int share_port);
+flb_sockfd_t flb_net_server_udp(const char *port, const char *listen_addr, int share_port);
 flb_sockfd_t flb_net_server_unix(const char *listen_path, int stream_mode,
-                                 int backlog);
+                                 int backlog, int share_port);
 int flb_net_bind(flb_sockfd_t fd, const struct sockaddr *addr,
                  socklen_t addrlen, int backlog);
 int flb_net_bind_udp(flb_sockfd_t fd, const struct sockaddr *addr,

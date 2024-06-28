@@ -11,8 +11,6 @@ EVAL1(EXPAND_CLIENT_RESPONSE_PARAMETER(status,                STATUS,           
 EVAL1(EXPAND_CLIENT_RESPONSE_PARAMETER(content_length,        CONTENT_LENGTH,         T_INT))          /* Content length set by headers */
 EVAL1(EXPAND_CLIENT_RESPONSE_PARAMETER(chunked_encoding,      CHUNKED_ENCODEING,      T_INT))          /* Chunked transfer encoding ?   */
 EVAL1(EXPAND_CLIENT_RESPONSE_PARAMETER(connection_close,      CONNECTION_CLOSE,       T_INT))          /* connection: close ?           */
-EVAL1(EXPAND_CLIENT_RESPONSE_PARAMETER(chunked_cur_size,      CHUNKED_CUR_SIZE,       T_LONG))
-EVAL1(EXPAND_CLIENT_RESPONSE_PARAMETER(chunked_exp_size,      CHUNKED_EXP_SIZE,       T_LONG))         /* expected chunked size         */
 EVAL1(EXPAND_CLIENT_RESPONSE_PARAMETER(chunk_processed_end,   CHUNK_PROCESSED_END,    T_CHAR_STAR))    /* Position to mark last chunk   */
 EVAL1(EXPAND_CLIENT_RESPONSE_PARAMETER(headers_end,           HEADERS_END,            T_CHAR_STAR))    /* Headers end (\r\n\r\n)        */
 

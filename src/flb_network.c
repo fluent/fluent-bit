@@ -49,6 +49,14 @@
 #include <monkey/mk_core.h>
 #include <ares.h>
 
+#ifdef FLB_SYSTEM_MACOS
+#ifdef _GNU_SOURCE
+#undef _GNU_SOURCE
+#endif
+/* Use POSIX version of strerror_r forcibly on macOS. */
+#include <string.h>
+#endif
+
 #ifndef SOL_TCP
 #define SOL_TCP IPPROTO_TCP
 #endif
@@ -177,6 +185,25 @@ int flb_net_socket_reset(flb_sockfd_t fd)
     int status = 1;
 
     if (setsockopt(fd, SOL_SOCKET, SO_REUSEADDR, &status, sizeof(int)) == -1) {
+        flb_errno();
+        return -1;
+    }
+
+    return 0;
+}
+
+int flb_net_socket_share_port(flb_sockfd_t fd)
+{
+    int on = 1;
+    int ret;
+
+#ifdef SO_REUSEPORT
+    ret = setsockopt(fd, SOL_SOCKET, SO_REUSEPORT, &on, sizeof(on));
+#else
+    ret = -1;
+#endif
+
+    if (ret == -1) {
         flb_errno();
         return -1;
     }
@@ -524,7 +551,20 @@ static int net_connect_async(int fd,
             }
 
             /* Connection is broken, not much to do here */
+#if ((defined(_POSIX_C_SOURCE) && _POSIX_C_SOURCE >= 200112L) ||    \
+     (defined(_XOPEN_SOURCE) || _XOPEN_SOURCE - 0L >= 600L)) &&     \
+  (!defined(_GNU_SOURCE))
+            ret = strerror_r(error, so_error_buf, sizeof(so_error_buf));
+            if (ret == 0) {
+                str = so_error_buf;
+            }
+            else {
+                flb_errno();
+                return -1;
+            }
+#else
             str = strerror_r(error, so_error_buf, sizeof(so_error_buf));
+#endif
             flb_error("[net] TCP connection failed: %s:%i (%s)",
                       u->tcp_host, u->tcp_port, str);
             return -1;
@@ -1513,7 +1553,7 @@ int flb_net_tcp_fd_connect(flb_sockfd_t fd, const char *host, unsigned long port
     return ret;
 }
 
-flb_sockfd_t flb_net_server(const char *port, const char *listen_addr)
+flb_sockfd_t flb_net_server(const char *port, const char *listen_addr, int share_port)
 {
     flb_sockfd_t fd = -1;
     int ret;
@@ -1539,6 +1579,10 @@ flb_sockfd_t flb_net_server(const char *port, const char *listen_addr)
             continue;
         }
 
+        if (share_port) {
+            flb_net_socket_share_port(fd);
+        }
+
         flb_net_socket_tcp_nodelay(fd);
         flb_net_socket_reset(fd);
 
@@ -1559,7 +1603,7 @@ flb_sockfd_t flb_net_server(const char *port, const char *listen_addr)
     return fd;
 }
 
-flb_sockfd_t flb_net_server_udp(const char *port, const char *listen_addr)
+flb_sockfd_t flb_net_server_udp(const char *port, const char *listen_addr, int share_port)
 {
     flb_sockfd_t fd = -1;
     int ret;
@@ -1585,6 +1629,10 @@ flb_sockfd_t flb_net_server_udp(const char *port, const char *listen_addr)
             continue;
         }
 
+        if (share_port) {
+            flb_net_socket_share_port(fd);
+        }
+
         ret = flb_net_bind_udp(fd, rp->ai_addr, rp->ai_addrlen);
         if(ret == -1) {
             flb_warn("Cannot listen on %s port %s", listen_addr, port);
@@ -1605,7 +1653,8 @@ flb_sockfd_t flb_net_server_udp(const char *port, const char *listen_addr)
 #ifdef FLB_HAVE_UNIX_SOCKET
 flb_sockfd_t flb_net_server_unix(const char *listen_path,
                                  int stream_mode,
-                                 int backlog)
+                                 int backlog,
+                                 int share_port)
 {
     size_t             address_length;
     size_t             path_length;
@@ -1632,6 +1681,10 @@ flb_sockfd_t flb_net_server_unix(const char *listen_path,
         address.sun_family = AF_UNIX;
 
         strncpy(address.sun_path, listen_path, sizeof(address.sun_path));
+
+        if (share_port) {
+            flb_net_socket_share_port(fd);
+        }
 
         if (stream_mode) {
             ret = flb_net_bind(fd,

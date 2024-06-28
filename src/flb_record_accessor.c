@@ -274,12 +274,20 @@ struct flb_record_accessor *flb_ra_create(char *str, int translate_env)
     size_t hint = 0;
     char *p;
     flb_sds_t buf = NULL;
+    flb_sds_t tmp_str;
     struct flb_env *env;
     struct mk_list *head;
     struct flb_ra_parser *rp;
     struct flb_record_accessor *ra;
 
-    p = str;
+    /* temporary copy of 'str' to workaround potential issues literal parsing */
+    tmp_str = flb_sds_create(str);
+    if (!tmp_str) {
+        flb_error("[record accessor] cannot allocate temporary buffer");
+        return NULL;
+    }
+
+    p = tmp_str;
     if (translate_env == FLB_TRUE) {
         /*
          * Check if some environment variable has been created as part of the
@@ -289,6 +297,7 @@ struct flb_record_accessor *flb_ra_create(char *str, int translate_env)
         env = flb_env_create();
         if (!env) {
             flb_error("[record accessor] cannot create environment context");
+            flb_sds_destroy(tmp_str);
             return NULL;
         }
 
@@ -297,6 +306,7 @@ struct flb_record_accessor *flb_ra_create(char *str, int translate_env)
         if (!buf) {
             flb_error("[record accessor] cannot translate string");
             flb_env_destroy(env);
+            flb_sds_destroy(tmp_str);
             return NULL;
         }
         flb_env_destroy(env);
@@ -311,18 +321,11 @@ struct flb_record_accessor *flb_ra_create(char *str, int translate_env)
         if (buf) {
             flb_sds_destroy(buf);
         }
-        return NULL;
-    }
-    ra->pattern = flb_sds_create(str);
-    if (!ra->pattern) {
-        flb_error("[record accessor] could not allocate pattern");
-        flb_free(ra);
-        if (buf) {
-            flb_sds_destroy(buf);
-        }
+        flb_sds_destroy(tmp_str);
         return NULL;
     }
 
+    ra->pattern = tmp_str;
     mk_list_init(&ra->list);
 
     /*
@@ -607,7 +610,7 @@ flb_sds_t flb_ra_translate(struct flb_record_accessor *ra,
  *
  * For safety, the function returns a newly created string that needs
  * to be destroyed by the caller.
- * 
+ *
  * Returns NULL if `check` is FLB_TRUE and any key lookup in the record failed
  */
 flb_sds_t flb_ra_translate_check(struct flb_record_accessor *ra,

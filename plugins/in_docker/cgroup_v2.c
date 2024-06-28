@@ -422,6 +422,7 @@ static uint64_t get_docker_mem_limit(struct flb_docker *ctx, char *id)
             if (c != 1) {
                 flb_plg_error(ctx->ins, "error scanning used mem_limit from %s",
                               limit_file);
+                flb_free(line);
                 flb_free(limit_file);
                 fclose(f);
                 return 0;

@@ -27,6 +27,7 @@
 #include <fluent-bit/flb_log_event_encoder.h>
 
 #include <monkey/monkey.h>
+#include <fluent-bit/http_server/flb_http_server.h>
 
 #define HTTP_BUFFER_MAX_SIZE    "4M"
 #define HTTP_BUFFER_CHUNK_SIZE  "512K"
@@ -37,21 +38,29 @@ struct flb_http {
     flb_sds_t tcp_port;
     const char *tag_key;
 
-    int collector_id;
-
     /* Success HTTP headers */
     struct mk_list *success_headers;
+
+    struct flb_log_event_encoder log_encoder;
+
+    struct flb_input_instance *ins;
+
+    /* New gen HTTP server */
+    int enable_http2;
+    struct flb_http_server http_server;
+
+    /* Legacy HTTP server */
+    struct flb_downstream *downstream; /* Client manager */
+    struct mk_list connections;        /* linked list of connections */
+
     flb_sds_t success_headers_str;
 
     size_t buffer_max_size;            /* Maximum buffer size */
     size_t buffer_chunk_size;          /* Chunk allocation size */
 
-    struct flb_log_event_encoder log_encoder;
-    struct flb_downstream *downstream; /* Client manager */
-    struct mk_list connections;        /* linked list of connections */
-
     struct mk_server *server;
-    struct flb_input_instance *ins;
+
+    int collector_id;
 };
 
 

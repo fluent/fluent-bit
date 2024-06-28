@@ -92,6 +92,10 @@ int in_elasticsearch_config_destroy(struct flb_in_elasticsearch *ctx)
         flb_downstream_destroy(ctx->downstream);
     }
 
+    if (ctx->enable_http2) {
+        flb_http_server_destroy(&ctx->http_server);
+    }
+
     if (ctx->server) {
         flb_free(ctx->server);
     }

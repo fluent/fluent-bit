@@ -20,9 +20,9 @@
 #ifndef FLB_LOG_EVENT_H
 #define FLB_LOG_EVENT_H
 
+#include <fluent-bit/flb_info.h>
 #include <fluent-bit/flb_time.h>
 #include <fluent-bit/flb_sds.h>
-#include <fluent-bit/flb_mp.h>
 
 #include <msgpack.h>
 
@@ -32,6 +32,10 @@
 #define FLB_LOG_EVENT_FORMAT_FORWARD        2
 #define FLB_LOG_EVENT_FORMAT_FLUENT_BIT_V1  FLB_LOG_EVENT_FORMAT_FORWARD
 #define FLB_LOG_EVENT_FORMAT_FLUENT_BIT_V2  4
+
+#define FLB_LOG_EVENT_NORMAL              (int32_t)  0
+#define FLB_LOG_EVENT_GROUP_START         (int32_t) -1
+#define FLB_LOG_EVENT_GROUP_END           (int32_t) -2
 
 struct flb_log_event {
     msgpack_object  *raw_timestamp;

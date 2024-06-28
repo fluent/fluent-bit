@@ -38,3 +38,14 @@ jobs:
       environment: pr
     secrets:
       token: ${{ secrets.GITHUB_TOKEN }}
+
+  run-windows-unit-tests:
+    needs:
+      - pr-windows-build
+    uses: ./.github/workflows/call-windows-unit-tests.yaml
+    with:
+      version: ${{ github.sha }}
+      ref: ${{ github.sha }}
+      environment: pr
+    secrets:
+      token: ${{ secrets.GITHUB_TOKEN }}

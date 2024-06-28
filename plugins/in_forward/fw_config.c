@@ -84,6 +84,24 @@ struct flb_in_fw_config *fw_config_init(struct flb_input_instance *i_ins)
         flb_debug("[in_fw] Listen='%s' TCP_Port=%s",
                   config->listen, config->tcp_port);
     }
+
+    /* Shared Key */
+    p = flb_input_get_property("shared_key", i_ins);
+    if (p) {
+        config->shared_key = flb_sds_create(p);
+    }
+    else {
+        config->shared_key = NULL;
+    }
+
+    /* Self Hostname */
+    p = flb_input_get_property("self_hostname", i_ins);
+    if (p) {
+        config->self_hostname = flb_sds_create(p);
+    }
+    else {
+        config->self_hostname = flb_sds_create("localhost");
+    }
     return config;
 }
 
@@ -113,6 +131,9 @@ int fw_config_destroy(struct flb_in_fw_config *config)
     else {
         flb_free(config->tcp_port);
     }
+
+    flb_sds_destroy(config->shared_key);
+    flb_sds_destroy(config->self_hostname);
 
     flb_free(config);
 

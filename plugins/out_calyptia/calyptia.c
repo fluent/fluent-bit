@@ -779,7 +779,7 @@ static void debug_payload(struct flb_calyptia *ctx, void *data, size_t bytes)
     }
 
     out = cmt_encode_text_create(cmt);
-    flb_plg_info(ctx->ins, "debug payload:\n%s", out);
+    flb_plg_debug(ctx->ins, "debug payload:\n%s", out);
     cmt_encode_text_destroy(out);
     cmt_destroy(cmt);
 }

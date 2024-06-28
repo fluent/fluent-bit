@@ -57,7 +57,8 @@ struct flb_rewrite_tag {
 /* Register external function to emit records, check 'plugins/in_emitter' */
 int in_emitter_add_record(const char *tag, int tag_len,
                           const char *buf_data, size_t buf_size,
-                          struct flb_input_instance *in);
+                          struct flb_input_instance *in,
+                          struct flb_input_instance *i_ins);
 int in_emitter_get_collector_id(struct flb_input_instance *in);
 
 

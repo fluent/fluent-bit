@@ -74,7 +74,7 @@ jobs:
           submodules: true
 
       - name: Build on ${{ matrix.os }} with ${{ matrix.compiler }}
-        uses: uraimo/run-on-arch-action@v2.3.0
+        uses: uraimo/run-on-arch-action@v2.5.0
         with:
           arch: aarch64
           distro: ubuntu20.04

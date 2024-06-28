@@ -27,6 +27,7 @@
 #include <fluent-bit/flb_log_event_encoder.h>
 
 #include <monkey/monkey.h>
+#include <fluent-bit/http_server/flb_http_server.h>
 
 #define HTTP_BUFFER_MAX_SIZE    "4M"
 #define HTTP_BUFFER_CHUNK_SIZE  "512K"
@@ -41,6 +42,15 @@ struct flb_in_elasticsearch {
     char cluster_name[16];
     char node_name[12];
 
+    struct flb_log_event_encoder log_encoder;
+
+    struct flb_input_instance *ins;
+
+    /* New gen HTTP server */
+    int enable_http2;
+    struct flb_http_server http_server;
+
+    /* Legacy HTTP server */
     int collector_id;
 
     size_t buffer_max_size;            /* Maximum buffer size */
@@ -49,10 +59,7 @@ struct flb_in_elasticsearch {
     struct flb_downstream *downstream; /* Client manager */
     struct mk_list connections;        /* linked list of connections */
 
-    struct flb_log_event_encoder log_encoder;
-
     struct mk_server *server;
-    struct flb_input_instance *ins;
 };
 
 

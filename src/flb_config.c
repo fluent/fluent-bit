@@ -390,12 +390,12 @@ void flb_config_exit(struct flb_config *config)
     struct mk_list *head;
     struct flb_cf *cf;
 
-    if (config->log_file) {
-        flb_free(config->log_file);
-    }
-
     if (config->log) {
         flb_log_destroy(config->log, config);
+    }
+
+    if (config->log_file) {
+        flb_free(config->log_file);
     }
 
     if (config->parsers_file) {
@@ -777,7 +777,7 @@ static int configure_plugins_type(struct flb_config *config, struct flb_cf *cf, 
         /* validate the instance creation */
         if (!ins) {
             flb_error("[config] section '%s' tried to instance a plugin name "
-                      "that don't exists", name);
+                      "that doesn't exist", name);
             flb_sds_destroy(name);
             return -1;
         }

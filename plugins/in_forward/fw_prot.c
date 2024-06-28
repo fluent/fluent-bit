@@ -24,6 +24,9 @@
 #include <fluent-bit/flb_pack.h>
 #include <fluent-bit/flb_utils.h>
 #include <fluent-bit/flb_gzip.h>
+#include <fluent-bit/flb_random.h>
+#include <fluent-bit/flb_hash.h>
+#include <fluent-bit/flb_crypto.h>
 
 #include <fluent-bit/flb_input_metric.h>
 #include <fluent-bit/flb_input_trace.h>
@@ -131,6 +134,648 @@ static int is_gzip_compressed(msgpack_object options)
     }
 
     return FLB_FALSE;
+}
+
+static inline void print_msgpack_error_code(struct flb_input_instance *in,
+                                            int ret, char *context)
+{
+    switch (ret) {
+    case MSGPACK_UNPACK_EXTRA_BYTES:
+        flb_plg_error(in, "%s MSGPACK_UNPACK_EXTRA_BYTES", context);
+        break;
+    case MSGPACK_UNPACK_CONTINUE:
+        flb_plg_trace(in, "%s MSGPACK_UNPACK_CONTINUE", context);
+        break;
+    case MSGPACK_UNPACK_PARSE_ERROR:
+        flb_plg_error(in, "%s MSGPACK_UNPACK_PARSE_ERROR", context);
+        break;
+    case MSGPACK_UNPACK_NOMEM_ERROR:
+        flb_plg_error(in, "%s MSGPACK_UNPACK_NOMEM_ERROR", context);
+        break;
+    }
+}
+
+/* Read a secure forward msgpack message for handshake */
+static int secure_forward_read(struct flb_input_instance *in,
+                               struct flb_connection *connection,
+                               char *buf, size_t size, size_t *out_len)
+{
+    int ret;
+    size_t off;
+    size_t avail;
+    size_t buf_off = 0;
+    msgpack_unpacked result;
+
+    msgpack_unpacked_init(&result);
+    while (1) {
+        avail = size - buf_off;
+        if (avail < 1) {
+            goto error;
+        }
+
+        /* Read the message */
+        ret = flb_io_net_read(connection, buf + buf_off, size - buf_off);
+        if (ret <= 0) {
+            flb_plg_debug(in, "read %d byte(s)", ret);
+            goto error;
+        }
+        buf_off += ret;
+
+        /* Validate */
+        off = 0;
+        ret = msgpack_unpack_next(&result, buf, buf_off, &off);
+        switch (ret) {
+        case MSGPACK_UNPACK_SUCCESS:
+            msgpack_unpacked_destroy(&result);
+            *out_len = buf_off;
+            return 0;
+        default:
+            print_msgpack_error_code(in, ret, "handshake");
+            goto error;
+        };
+    }
+
+ error:
+    msgpack_unpacked_destroy(&result);
+    return -1;
+}
+
+int flb_secure_forward_set_helo(struct flb_input_instance *in,
+                                struct flb_in_fw_helo *helo,
+                                unsigned char *nonce, unsigned char *salt)
+{
+    int ret;
+    msgpack_packer mp_pck;
+    msgpack_sbuffer mp_sbuf;
+    msgpack_unpacked result;
+    msgpack_object root;
+    msgpack_object o;
+    size_t off = 0;
+    flb_sds_t tmp;
+
+    memset(helo, 0, sizeof(struct flb_in_fw_helo));
+
+    msgpack_sbuffer_init(&mp_sbuf);
+    msgpack_packer_init(&mp_pck, &mp_sbuf, msgpack_sbuffer_write);
+
+    msgpack_pack_array(&mp_pck, 2);
+    msgpack_pack_str(&mp_pck, FLB_IN_FW_NONCE_SIZE);
+    msgpack_pack_str_body(&mp_pck, nonce, FLB_IN_FW_NONCE_SIZE);
+    msgpack_pack_str(&mp_pck, FLB_IN_FW_SALT_SIZE);
+    msgpack_pack_str_body(&mp_pck, salt, FLB_IN_FW_SALT_SIZE);
+
+    msgpack_unpacked_init(&result);
+    ret = msgpack_unpack_next(&result, mp_sbuf.data, mp_sbuf.size, &off);
+    if (ret != MSGPACK_UNPACK_SUCCESS) {
+        msgpack_sbuffer_destroy(&mp_sbuf);
+        msgpack_unpacked_destroy(&result);
+
+        return -1;
+    }
+
+    root = result.data;
+    o = root.via.array.ptr[0];
+
+    tmp = flb_sds_create_len(o.via.str.ptr, o.via.str.size);
+    if (tmp == NULL) {
+        flb_plg_warn(in, "cannot create nonce string");
+        msgpack_sbuffer_destroy(&mp_sbuf);
+        msgpack_unpacked_destroy(&result);
+
+        return -1;
+    }
+    helo->nonce = tmp;
+    helo->nonce_len = FLB_IN_FW_NONCE_SIZE;
+    o = root.via.array.ptr[1];
+
+    tmp = flb_sds_create_len(o.via.str.ptr, o.via.str.size);
+    if (tmp == NULL) {
+        flb_plg_warn(in, "cannot create salt string");
+        msgpack_sbuffer_destroy(&mp_sbuf);
+        msgpack_unpacked_destroy(&result);
+
+        return -1;
+    }
+    helo->salt = tmp;
+    helo->salt_len = FLB_IN_FW_SALT_SIZE;
+
+    msgpack_unpacked_destroy(&result);
+    msgpack_sbuffer_destroy(&mp_sbuf);
+
+    return 0;
+}
+
+/* Don't include this function for secure_forward_handshake. This
+ * should be needed to send HELO packet at first before the handler
+ * for reading is registered. */
+static int send_helo(struct flb_input_instance *in, struct flb_connection *connection,
+                     struct flb_in_fw_helo *helo)
+{
+    int result;
+    size_t sent;
+    ssize_t bytes;
+    msgpack_packer mp_pck;
+    msgpack_sbuffer mp_sbuf;
+    unsigned char nonce[FLB_IN_FW_NONCE_SIZE] = {0};
+    unsigned char user_auth_salt[FLB_IN_FW_SALT_SIZE] = {0};
+
+    /* Generate nonce */
+    if (flb_random_bytes(nonce, FLB_IN_FW_NONCE_SIZE)) {
+        flb_plg_error(in, "cannot generate nonce");
+        return -1;
+    }
+
+    /* Generate the shared key salt */
+    if (flb_random_bytes(user_auth_salt, FLB_IN_FW_SALT_SIZE)) {
+        flb_plg_error(in, "cannot generate shared key salt");
+        return -1;
+    }
+
+    msgpack_sbuffer_init(&mp_sbuf);
+    msgpack_packer_init(&mp_pck, &mp_sbuf, msgpack_sbuffer_write);
+
+    msgpack_pack_array(&mp_pck, 2);
+    msgpack_pack_str(&mp_pck, 4);
+    msgpack_pack_str_body(&mp_pck, "HELO", 4);
+    /* option: {nonce, auth} */
+    msgpack_pack_map(&mp_pck, 2);
+    /* nonce */
+    msgpack_pack_str(&mp_pck, 5);
+    msgpack_pack_str_body(&mp_pck, "nonce", 5);
+    msgpack_pack_str(&mp_pck, FLB_IN_FW_NONCE_SIZE);
+    msgpack_pack_str_body(&mp_pck, nonce, FLB_IN_FW_NONCE_SIZE);
+    /* auth */
+    msgpack_pack_str(&mp_pck, 4);
+    msgpack_pack_str_body(&mp_pck, "auth", 4);
+    msgpack_pack_str(&mp_pck, FLB_IN_FW_SALT_SIZE);
+    msgpack_pack_str_body(&mp_pck, user_auth_salt, FLB_IN_FW_SALT_SIZE);
+
+    bytes = flb_io_net_write(connection,
+                             (void *) mp_sbuf.data,
+                             mp_sbuf.size,
+                             &sent);
+
+    msgpack_sbuffer_destroy(&mp_sbuf);
+
+    if (bytes == -1) {
+        flb_plg_error(in, "cannot send HELO");
+
+        result = -1;
+    }
+    else {
+        result = 0;
+    }
+
+    result = flb_secure_forward_set_helo(in, helo, nonce, user_auth_salt);
+
+    return result;
+}
+
+static void flb_secure_forward_format_bin_to_hex(uint8_t *buf, size_t len, char *out)
+{
+    int i;
+    static char map[] = "0123456789abcdef";
+
+    for (i = 0; i < len; i++) {
+        out[i * 2]     = map[buf[i] >> 4];
+        out[i * 2 + 1] = map[buf[i] & 0x0f];
+    }
+}
+
+static int flb_secure_forward_hash_shared_key(struct flb_input_instance *ins,
+                                              struct fw_conn *conn,
+                                              flb_sds_t shared_key_salt,
+                                              flb_sds_t hostname,
+                                              int hostname_len,
+                                              char *buf, int buflen)
+{
+    int ret;
+    size_t length_entries[4];
+    unsigned char *data_entries[4];
+    uint8_t hash[64];
+    struct flb_in_fw_config *ctx = conn->ctx;
+
+    if (buflen < 128) {
+        return -1;
+    }
+
+    /* NOTE: shared_key_salt is handled as string type. We should
+     * calculate the length of it with strlen here instead of using
+     * fixed 16 bytes. */
+    data_entries[0]   = (unsigned char *) shared_key_salt;
+    length_entries[0] = flb_sds_len(shared_key_salt);
+
+    data_entries[1]   = (unsigned char *) hostname;
+    length_entries[1] = hostname_len;
+
+    data_entries[2]   = (unsigned char *) conn->helo->nonce;
+    length_entries[2] = FLB_IN_FW_NONCE_SIZE; /* always 16 bytes. */
+
+    data_entries[3]   = (unsigned char *) ctx->shared_key;
+    length_entries[3] = strlen(ctx->shared_key);
+
+    ret = flb_hash_simple_batch(FLB_HASH_SHA512,
+                                4,
+                                data_entries,
+                                length_entries,
+                                hash,
+                                sizeof(hash));
+
+    if (ret != FLB_CRYPTO_SUCCESS) {
+        return -1;
+    }
+
+    flb_secure_forward_format_bin_to_hex(hash, 64, buf);
+
+    return 0;
+}
+
+static int flb_secure_forward_hash_digest(struct flb_input_instance *ins,
+                                          struct fw_conn *conn,
+                                          flb_sds_t shared_key_salt,
+                                          char *buf, int buflen)
+{
+    int result;
+    size_t length_entries[4];
+    unsigned char *data_entries[4];
+    uint8_t hash[64];
+    struct flb_in_fw_config *ctx = conn->ctx;
+
+    if (buflen < 128) {
+        return -1;
+    }
+
+    /* NOTE: shared_key_salt is handled as string type. We should
+     * calculate the length of it with strlen here instead of using
+     * fixed 16 bytes. */
+    data_entries[0]   = (unsigned char *) shared_key_salt;
+    length_entries[0] = flb_sds_len(shared_key_salt);
+
+    data_entries[1]   = (unsigned char *) ctx->self_hostname;
+    length_entries[1] = strlen(ctx->self_hostname);
+
+    data_entries[2]   = (unsigned char *) conn->helo->nonce;
+    length_entries[2] = FLB_IN_FW_NONCE_SIZE; /* always 16 bytes. */
+
+    data_entries[3]   = (unsigned char *) ctx->shared_key;
+    length_entries[3] = strlen(ctx->shared_key);
+
+    result = flb_hash_simple_batch(FLB_HASH_SHA512,
+                                   4,
+                                   data_entries,
+                                   length_entries,
+                                   hash,
+                                   sizeof(hash));
+
+    if (result != FLB_CRYPTO_SUCCESS) {
+        return -1;
+    }
+
+    flb_secure_forward_format_bin_to_hex(hash, 64, buf);
+
+    return 0;
+}
+
+static int flb_secure_forward_password_digest(struct flb_input_instance *ins,
+                                              struct fw_conn *conn,
+                                              flb_sds_t username,
+                                              flb_sds_t password,
+                                              char *buf, int buflen)
+{
+    int result;
+    size_t length_entries[3];
+    unsigned char *data_entries[3];
+    uint8_t hash[64];
+
+    if (buflen < 128) {
+        return -1;
+    }
+
+    data_entries[0]   = (unsigned char *) conn->helo->salt;
+    length_entries[0] = FLB_IN_FW_SALT_SIZE; /* always 16 bytes. */
+
+    data_entries[1]   = (unsigned char *) username;
+    length_entries[1] = flb_sds_len(username);
+
+    data_entries[2]   = (unsigned char *) password;
+    length_entries[2] = flb_sds_len(password);
+
+    result = flb_hash_simple_batch(FLB_HASH_SHA512,
+                                   3,
+                                   data_entries,
+                                   length_entries,
+                                   hash,
+                                   sizeof(hash));
+
+    if (result != FLB_CRYPTO_SUCCESS) {
+        return -1;
+    }
+
+    flb_secure_forward_format_bin_to_hex(hash, 64, buf);
+
+    return 0;
+}
+
+static int user_authentication(struct flb_input_instance *ins,
+                               struct fw_conn *conn,
+                               flb_sds_t username,
+                               flb_sds_t password_digest,
+                               size_t password_digest_len)
+{
+    int user_found = FLB_FALSE;
+    char *userauth_digest = NULL;
+    struct mk_list *tmp;
+    struct mk_list *head;
+    struct flb_in_fw_user *user;
+    struct flb_in_fw_config *ctx = conn->ctx;
+
+    mk_list_foreach_safe(head, tmp, &ctx->users) {
+        user = mk_list_entry(head, struct flb_in_fw_user, _head);
+        if (strncmp(user->name, username, strlen(user->name)) != 0) {
+            continue;
+        }
+
+        userauth_digest = flb_calloc(128, sizeof(char));
+
+        if (flb_secure_forward_password_digest(ins, conn,
+                                               username, user->password,
+                                               userauth_digest, 128) == 0) {
+            if (strncmp(userauth_digest,
+                        password_digest, password_digest_len) == 0) {
+                flb_free(userauth_digest);
+                user_found = FLB_TRUE;
+                break;
+            }
+        }
+
+        flb_free(userauth_digest);
+    }
+
+    return user_found;
+}
+
+static int check_ping(struct flb_input_instance *ins,
+                      struct fw_conn *conn,
+                      flb_sds_t *out_shared_key_salt)
+{
+    int ret;
+    char buf[1024];
+    size_t out_len;
+    size_t off;
+    msgpack_unpacked result;
+    msgpack_object root;
+    msgpack_object o;
+    flb_sds_t hostname = NULL;
+    flb_sds_t shared_key_salt = NULL;
+    flb_sds_t shared_key_digest = NULL;
+    flb_sds_t username = NULL;
+    flb_sds_t password_digest = NULL;
+    size_t hostname_len = 0;
+    size_t shared_key_digest_len = 0;
+    size_t password_digest_len = 0;
+    char *serverside = NULL;
+    size_t user_count = 0;
+    int user_found = FLB_FALSE;
+    struct flb_in_fw_config *ctx = conn->ctx;
+
+    serverside = flb_calloc(128, sizeof(char));
+
+    /* Wait for client PING */
+    ret = secure_forward_read(ins, conn->connection, buf, sizeof(buf) - 1, &out_len);
+    if (ret == -1) {
+        flb_free(serverside);
+        flb_plg_error(ins, "handshake error expecting PING");
+        return -1;
+    }
+
+    /* Unpack message and validate */
+    off = 0;
+    msgpack_unpacked_init(&result);
+    ret = msgpack_unpack_next(&result, buf, out_len, &off);
+    if (ret != MSGPACK_UNPACK_SUCCESS) {
+        flb_free(serverside);
+        print_msgpack_error_code(ins, ret, "PING");
+        return -1;
+    }
+
+    /* Parse PING message */
+    root = result.data;
+    if (root.via.array.size != 6) {
+        flb_plg_error(ins, "Invalid PING message");
+        flb_free(serverside);
+        msgpack_unpacked_destroy(&result);
+        return -1;
+    }
+
+    o = root.via.array.ptr[0];
+    if (o.type != MSGPACK_OBJECT_STR) {
+        flb_plg_error(ins, "Invalid PING type message");
+        flb_free(serverside);
+        msgpack_unpacked_destroy(&result);
+        return -1;
+    }
+
+    if (strncmp(o.via.str.ptr, "PING", 4) != 0 || o.via.str.size != 4) {
+        flb_free(serverside);
+        msgpack_unpacked_destroy(&result);
+        return -1;
+    }
+
+    flb_plg_debug(ins, "protocol: received PING");
+
+    /* hostname */
+    o = root.via.array.ptr[1];
+    if (o.type != MSGPACK_OBJECT_STR) {
+        flb_plg_error(ins, "Invalid hostname type message");
+        flb_free(serverside);
+        msgpack_unpacked_destroy(&result);
+        return -1;
+    }
+    hostname = flb_sds_create_len(o.via.str.ptr, o.via.str.size);
+    hostname_len = o.via.str.size;
+
+    /* shared_key_salt */
+    o = root.via.array.ptr[2];
+    if (o.type != MSGPACK_OBJECT_STR) {
+        flb_plg_error(ins, "Invalid shared_key_salt type message");
+        flb_free(serverside);
+        msgpack_unpacked_destroy(&result);
+        return -1;
+    }
+    shared_key_salt = flb_sds_create_len(o.via.str.ptr, o.via.str.size);
+
+    /* shared_key_digest */
+    o = root.via.array.ptr[3];
+    if (o.type != MSGPACK_OBJECT_STR) {
+        flb_plg_error(ins, "Invalid shared_key_digest type message");
+        flb_free(serverside);
+        msgpack_unpacked_destroy(&result);
+        return -1;
+    }
+    shared_key_digest = flb_sds_create_len(o.via.str.ptr, o.via.str.size);
+    shared_key_digest_len = o.via.str.size;
+
+    /* username */
+    o = root.via.array.ptr[4];
+    if (o.type != MSGPACK_OBJECT_STR) {
+        flb_plg_error(ins, "Invalid username type message");
+        flb_free(serverside);
+        msgpack_unpacked_destroy(&result);
+        return -1;
+    }
+    username = flb_sds_create_len(o.via.str.ptr, o.via.str.size);
+
+    /* password_digest */
+    o = root.via.array.ptr[5];
+    if (o.type != MSGPACK_OBJECT_STR) {
+        flb_plg_error(ins, "Invalid password_digest type message");
+        flb_free(serverside);
+        msgpack_unpacked_destroy(&result);
+        return -1;
+    }
+    password_digest = flb_sds_create_len(o.via.str.ptr, o.via.str.size);
+    password_digest_len = o.via.str.size;
+
+    msgpack_unpacked_destroy(&result);
+
+    if (flb_secure_forward_hash_shared_key(ins, conn,
+                                           shared_key_salt, hostname, hostname_len,
+                                           serverside, 128)) {
+        flb_free(serverside);
+        flb_plg_error(ctx->ins, "failed to hash shard_key");
+        return -1;
+    }
+
+    if (strncmp(serverside, shared_key_digest, shared_key_digest_len) != 0) {
+        flb_plg_error(ins, "shared_key mismatch");
+        flb_free(serverside);
+
+        goto error;
+    }
+
+    user_count = mk_list_size(&ctx->users);
+    if (user_count > 0) {
+        user_found = user_authentication(ins, conn, username,
+                                         password_digest, password_digest_len);
+
+        if (user_found != FLB_TRUE) {
+            goto failed_userauth;
+        }
+    }
+
+    flb_sds_destroy(hostname);
+    flb_sds_destroy(shared_key_digest);
+    flb_sds_destroy(username);
+    flb_sds_destroy(password_digest);
+    flb_free(serverside);
+
+    *out_shared_key_salt = shared_key_salt;
+
+    return 0;
+
+error:
+    flb_sds_destroy(hostname);
+    flb_sds_destroy(shared_key_salt);
+    flb_sds_destroy(shared_key_digest);
+    flb_sds_destroy(username);
+    flb_sds_destroy(password_digest);
+
+    return -1;
+
+failed_userauth:
+
+    flb_sds_destroy(hostname);
+    flb_sds_destroy(shared_key_digest);
+    flb_sds_destroy(username);
+    flb_sds_destroy(password_digest);
+    flb_free(serverside);
+
+    /* Even if user authentication is failed, salt of shared key is
+     * still needed to return the refusal result. */
+    *out_shared_key_salt = shared_key_salt;
+
+    return -2;
+}
+
+static int send_pong(struct flb_input_instance *in,
+                     struct fw_conn *conn,
+                     flb_sds_t shared_key_salt,
+                     int userauth, char *failed_reason)
+{
+    int result;
+    size_t sent;
+    ssize_t bytes;
+    msgpack_packer mp_pck;
+    msgpack_sbuffer mp_sbuf;
+    size_t hostname_len;
+    size_t reason_len;
+    char shared_key_digest_hex[128];
+    struct flb_in_fw_config *ctx = conn->ctx;
+
+    if (flb_secure_forward_hash_digest(in, conn,
+                                       shared_key_salt,
+                                       shared_key_digest_hex, 128)) {
+        return -1;
+    }
+
+    /* hostname len */
+    hostname_len = strlen(ctx->self_hostname);
+
+    msgpack_sbuffer_init(&mp_sbuf);
+    msgpack_packer_init(&mp_pck, &mp_sbuf, msgpack_sbuffer_write);
+
+    msgpack_pack_array(&mp_pck, 5);
+    msgpack_pack_str(&mp_pck, 4);
+    msgpack_pack_str_body(&mp_pck, "PONG", 4);
+    /* auth result */
+    if (userauth == FLB_TRUE) {
+        msgpack_pack_true(&mp_pck);
+        /* reason or salt */
+        msgpack_pack_str(&mp_pck, 0);
+        msgpack_pack_str_body(&mp_pck, "", 0);
+        /* hostname */
+        msgpack_pack_str(&mp_pck, hostname_len);
+        msgpack_pack_str_body(&mp_pck, ctx->self_hostname, hostname_len);
+        /* shared_key_digest */
+        msgpack_pack_str(&mp_pck, 128);
+        msgpack_pack_str_body(&mp_pck, shared_key_digest_hex, 128);
+    }
+    else {
+        msgpack_pack_false(&mp_pck);
+        /* reason or salt */
+        reason_len = strlen(failed_reason);
+        msgpack_pack_str(&mp_pck, reason_len);
+        msgpack_pack_str_body(&mp_pck, failed_reason, reason_len);
+        /* hostname */
+        msgpack_pack_str(&mp_pck, 0);
+        msgpack_pack_str_body(&mp_pck, "", 0);
+        /* shared_key_digest */
+        msgpack_pack_str(&mp_pck, 0);
+        msgpack_pack_str_body(&mp_pck, "", 0);
+    }
+
+    bytes = flb_io_net_write(conn->connection,
+                             (void *) mp_sbuf.data,
+                             mp_sbuf.size,
+                             &sent);
+
+    msgpack_sbuffer_destroy(&mp_sbuf);
+
+    if (bytes == -1) {
+        flb_plg_error(in, "cannot send PONG");
+
+        result = -1;
+    }
+    else if (userauth == FLB_FALSE)  {
+        flb_plg_error(in, "cannot send PONG");
+
+        result = -1;
+    }
+    else {
+        result = 0;
+    }
+
+    return result;
 }
 
 static int send_ack(struct flb_input_instance *in, struct fw_conn *conn,
@@ -492,6 +1137,117 @@ static int append_log(struct flb_input_instance *ins, struct fw_conn *conn,
     return 0;
 }
 
+int fw_prot_secure_forward_handshake_start(struct flb_input_instance *ins,
+                                           struct flb_connection *connection,
+                                           struct flb_in_fw_helo *helo)
+{
+    int ret;
+
+    /* When using secure connection, we need to try communitating
+     * with HELO first. */
+    flb_plg_debug(ins, "protocol: sending HELO");
+    ret = send_helo(ins, connection, helo);
+    if (ret == -1) {
+        return -1;
+    }
+
+    return 0;
+}
+
+int fw_prot_secure_forward_handshake(struct flb_input_instance *ins,
+                                     struct fw_conn *conn)
+{
+    int ret;
+    char *shared_key_salt = NULL;
+    int userauth = FLB_TRUE;
+    flb_sds_t reason = NULL;
+
+    reason = flb_sds_create_size(32);
+    flb_plg_debug(ins, "protocol: checking PING");
+    ret = check_ping(ins, conn, &shared_key_salt);
+    if (ret == -1) {
+        flb_plg_error(ins, "handshake error checking PING");
+
+        goto error;
+    }
+    else if (ret == -2) {
+        flb_plg_warn(ins, "user authentication is failed");
+        userauth = FLB_FALSE;
+        reason = flb_sds_cat(reason, "username/password mismatch", 26);
+    }
+
+    flb_plg_debug(ins, "protocol: sending PONG");
+    ret = send_pong(ins, conn, shared_key_salt, userauth, reason);
+    if (ret == -1) {
+        flb_plg_error(ins, "handshake error sending PONG");
+
+        goto error;
+    }
+
+    flb_sds_destroy(shared_key_salt);
+    flb_sds_destroy(reason);
+
+    return 0;
+
+error:
+    if (shared_key_salt != NULL) {
+        flb_sds_destroy(shared_key_salt);
+    }
+    if (reason != NULL) {
+        flb_sds_destroy(reason);
+    }
+
+    return -1;
+}
+
+static size_t gzip_concatenated_count(const char *data, size_t len)
+{
+    int i;
+    size_t count = 0;
+    const uint8_t *p;
+
+    p = (const uint8_t *) data;
+
+    /* search other gzip starting bits and method. */
+    for (i = 2; i < len &&
+                 i + 2 <= len; i++) {
+        if (p[i] == 0x1F && p[i+1] == 0x8B && p[i+2] == 8) {
+            count++;
+        }
+    }
+
+    return count;
+}
+
+static size_t gzip_concatenated_borders(const char *data, size_t len, size_t **out_borders, size_t border_count)
+{
+    int i;
+    size_t count = 0;
+    const uint8_t *p;
+    size_t *borders = NULL;
+
+    p = (const uint8_t *) data;
+    borders = (size_t *) flb_calloc(1, sizeof(size_t) * (border_count + 1));
+    if (borders == NULL) {
+        flb_errno();
+        return -1;
+    }
+
+    /* search other gzip starting bits and method. */
+    for (i = 2; i < len &&
+                 i + 2 <= len; i++) {
+        if (p[i] == 0x1F && p[i+1] == 0x8B && p[i+2] == 8) {
+            borders[count] = i;
+            count++;
+        }
+    }
+    /* The length of the last border refers to the original length. */
+    borders[border_count] = len;
+
+    *out_borders = borders;
+
+    return count;
+}
 
 int fw_prot_process(struct flb_input_instance *ins, struct fw_conn *conn)
 {
@@ -781,13 +1537,49 @@ int fw_prot_process(struct flb_input_instance *ins, struct fw_conn *conn)
                     }
 
                     if (ret == FLB_TRUE) {
-                        ret = flb_gzip_uncompress((void *) data, len,
+                        size_t prev_pos = 0;
+                        size_t gzip_payloads_count = 0;
+                        size_t loop = 0;
+                        size_t *gzip_borders = NULL;
+                        const size_t original_len = len;
+
+                        gzip_payloads_count = gzip_concatenated_count(data, len);
+                        flb_plg_debug(ctx->ins, "concatenated gzip payload count is %zd",
+                                     gzip_payloads_count);
+                        if (gzip_payloads_count > 0) {
+                            if (gzip_concatenated_borders(data, len, &gzip_borders, gzip_payloads_count) < 0) {
+                                flb_plg_error(ctx->ins,
+                                             "failed to traverse boundaries of concatenated gzip payloads");
+                                return -1;
+                            }
+                        }
+
+                    retry_uncompress:
+                        if (gzip_payloads_count > 0) {
+                            if (loop == 0) {
+                                len = gzip_borders[loop];
+                            }
+                            else if (gzip_borders[loop] == original_len) {
+                                len = original_len - gzip_borders[loop - 1];
+                            }
+                            else if (loop >= 1) {
+                                len = gzip_borders[loop] - gzip_borders[loop - 1];
+                            }
+                        }
+                        flb_plg_trace(ctx->ins,
+                                      "[gzip decompression] loop = %zd, len = %zd, original_len = %zd",
+                                      loop, len, original_len);
+
+                        ret = flb_gzip_uncompress((void *) (data + prev_pos), len,
                                                   &gz_data, &gz_size);
                         if (ret == -1) {
                             flb_plg_error(ctx->ins, "gzip uncompress failure");
                             msgpack_unpacked_destroy(&result);
                             msgpack_unpacker_free(unp);
                             flb_sds_destroy(out_tag);
+                            if (gzip_borders != NULL) {
+                                flb_free(gzip_borders);
+                            }
                             return -1;
                         }
 
@@ -799,6 +1591,9 @@ int fw_prot_process(struct flb_input_instance *ins, struct fw_conn *conn)
                                 msgpack_unpacker_free(unp);
                                 flb_sds_destroy(out_tag);
                                 flb_free(gz_data);
+                                if (gzip_borders != NULL) {
+                                    flb_free(gzip_borders);
+                                }
                                 return -1;
                             }
                             event_type = ret;
@@ -812,9 +1607,34 @@ int fw_prot_process(struct flb_input_instance *ins, struct fw_conn *conn)
                             msgpack_unpacker_free(unp);
                             flb_sds_destroy(out_tag);
                             flb_free(gz_data);
+                            if (gzip_borders != NULL) {
+                                flb_free(gzip_borders);
+                            }
+
                             return -1;
                         }
                         flb_free(gz_data);
+
+                        /* a valid payload of gzip is larger than 18 bytes. */
+                        if (gzip_payloads_count > 0) {
+                            if ((gzip_payloads_count - loop) > 0 &&
+                                (original_len - gzip_borders[loop]) > 18) {
+                                len = original_len - gzip_borders[loop];
+                                flb_plg_debug(ctx->ins, "left unconsumed %zd byte(s)", len);
+                                prev_pos = gzip_borders[loop];
+                                loop++;
+                                goto retry_uncompress;
+                            }
+                            else {
+                                flb_plg_debug(ctx->ins, "left unconsumed %zd byte(s)",
+                                              original_len - gzip_borders[loop]);
+                            }
+                            if (loop == gzip_payloads_count) {
+                                if (gzip_borders != NULL) {
+                                    flb_free(gzip_borders);
+                                }
+                            }
+                        }
                     }
                     else {
                         event_type = FLB_EVENT_TYPE_LOGS;

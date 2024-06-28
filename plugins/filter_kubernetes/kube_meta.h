@@ -52,7 +52,8 @@ struct flb_kube_meta {
 #define FLB_KUBE_CA "/var/run/secrets/kubernetes.io/serviceaccount/ca.crt"
 #define FLB_KUBE_API_HOST "kubernetes.default.svc"
 #define FLB_KUBE_API_PORT 443
-#define FLB_KUBE_API_FMT "/api/v1/namespaces/%s/pods/%s"
+#define FLB_KUBE_API_POD_FMT "/api/v1/namespaces/%s/pods/%s"
+#define FLB_KUBE_API_NAMESPACE_FMT "/api/v1/namespaces/%s"
 #define FLB_KUBELET_PODS "/pods"
 
 int flb_kube_meta_init(struct flb_kube *ctx, struct flb_config *config);
@@ -62,8 +63,11 @@ int flb_kube_meta_get(struct flb_kube *ctx,
                       const char *tag, int tag_len,
                       const char *data, size_t data_size,
                       const char **out_buf, size_t *out_size,
+                      const char **namespace_out_buf, 
+                      size_t *namespace_out_size,
                       struct flb_kube_meta *meta,
-                      struct flb_kube_props *props);
+                      struct flb_kube_props *props,
+                      struct flb_kube_meta *namespace_meta);
 int flb_kube_meta_release(struct flb_kube_meta *meta);
 
 #endif

@@ -278,6 +278,12 @@ static int build_headers(struct flb_http_client *c, struct flb_oci_logan *ctx,
         goto error_label;
     }
 
+    tmp_sds = flb_sds_create_size(512);
+    if (!tmp_sds) {
+        flb_errno();
+        goto error_label;
+    }
+
     flb_base64_encode((unsigned char*) tmp_sds, flb_sds_len(tmp_sds) - 1,
                       &tmp_len, sha256_buf, sizeof(sha256_buf));
 

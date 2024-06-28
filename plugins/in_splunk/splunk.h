@@ -27,33 +27,46 @@
 #include <fluent-bit/flb_log_event_encoder.h>
 
 #include <monkey/monkey.h>
+#include <fluent-bit/http_server/flb_http_server.h>
 
 #define HTTP_BUFFER_MAX_SIZE    "4M"
 #define HTTP_BUFFER_CHUNK_SIZE  "512K"
+
+struct flb_splunk_tokens {
+    flb_sds_t header;
+    struct mk_list _head;
+};
 
 struct flb_splunk {
     flb_sds_t listen;
     flb_sds_t tcp_port;
     const char *tag_key;
 
-    int collector_id;
-
     /* Success HTTP headers */
     struct mk_list *success_headers;
-    flb_sds_t success_headers_str;
-
-    size_t buffer_max_size;            /* Maximum buffer size */
-    size_t buffer_chunk_size;          /* Chunk allocation size */
 
     /* Token Auth */
-    flb_sds_t auth_header;
+    struct mk_list auth_tokens;
+    flb_sds_t ingested_auth_header;
+    int store_token_in_metadata;
+    flb_sds_t store_token_key;
 
     struct flb_log_event_encoder log_encoder;
+
+    struct flb_input_instance *ins;
+
+    /* New gen HTTP server */
+    int enable_http2;
+    struct flb_http_server http_server;
+
+    /* Legacy HTTP server */
+    flb_sds_t success_headers_str;
+    int collector_id;
+    size_t buffer_max_size;            /* Maximum buffer size */
+    size_t buffer_chunk_size;          /* Chunk allocation size */
     struct flb_downstream *downstream; /* Client manager */
     struct mk_list connections;        /* linked list of connections */
-
     struct mk_server *server;
-    struct flb_input_instance *ins;
 };
 
 

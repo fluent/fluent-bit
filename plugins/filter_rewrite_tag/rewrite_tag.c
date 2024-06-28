@@ -355,7 +355,8 @@ static int ingest_inline(struct flb_rewrite_tag *ctx,
  */
 static int process_record(const char *tag, int tag_len, msgpack_object map,
                           const void *buf, size_t buf_size, int *keep,
-                          struct flb_rewrite_tag *ctx, int *matched)
+                          struct flb_rewrite_tag *ctx, int *matched,
+                          struct flb_input_instance *i_ins)
 {
     int ret;
     flb_sds_t out_tag;
@@ -404,7 +405,7 @@ static int process_record(const char *tag, int tag_len, msgpack_object map,
     if (!ret) {
         /* Emit record with new tag */
         ret = in_emitter_add_record(out_tag, flb_sds_len(out_tag), buf, buf_size,
-                                    ctx->ins_emitter);
+                                    ctx->ins_emitter, i_ins);
     }
     else {
         ret = 0;
@@ -489,7 +490,7 @@ static int cb_rewrite_tag_filter(const void *data, size_t bytes,
          * If a record was emitted, the variable 'keep' will define if the record must
          * be preserved or not.
          */
-        is_emitted = process_record(tag, tag_len, map, (char *) data + pre, off - pre, &keep, ctx, &is_matched);
+        is_emitted = process_record(tag, tag_len, map, (char *) data + pre, off - pre, &keep, ctx, &is_matched, i_ins);
         if (is_emitted == FLB_TRUE) {
             /* A record with the new tag was emitted */
             emitted_num++;

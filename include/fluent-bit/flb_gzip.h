@@ -21,7 +21,8 @@
 #define FLB_GZIP_H
 
 #include <fluent-bit/flb_info.h>
-#include <stdio.h>
+#include <fluent-bit/flb_macros.h>
+#include <monkey/mk_http.h>
 
 struct flb_decompression_context;
 
@@ -35,5 +36,7 @@ void flb_gzip_decompression_context_destroy(void *context);
 
 int flb_gzip_decompressor_dispatch(struct flb_decompression_context *context,
                                    void *out_data, size_t *out_size);
+
+int flb_is_http_session_gzip_compressed(struct mk_http_session *session);
 
 #endif

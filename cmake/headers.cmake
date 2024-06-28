@@ -46,6 +46,10 @@ include_directories(
 
   ${CMAKE_CURRENT_BINARY_DIR}/lib/monkey/include/
   ${CMAKE_CURRENT_BINARY_DIR}/lib/monkey/include/monkey/
+
+  ${CMAKE_CURRENT_BINARY_DIR}/lib/nghttp2
+  ${CMAKE_CURRENT_BINARY_DIR}/lib/nghttp2/lib/includes/
+  ${FLB_PATH_ROOT_SOURCE}/${FLB_PATH_LIB_NGHTTP2}/lib/includes/
   )
 
 if(FLB_IN_KAFKA OR FLB_OUT_KAFKA)

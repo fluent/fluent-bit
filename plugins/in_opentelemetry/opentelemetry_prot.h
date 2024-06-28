@@ -20,6 +20,8 @@
 #ifndef FLB_IN_OPENTELEMETRY_PROT
 #define FLB_IN_OPENTELEMETRY_PROT
 
+#include <fluent-bit/flb_http_common.h>
+
 int opentelemetry_prot_handle(struct flb_opentelemetry *ctx, struct http_conn *conn,
                               struct mk_http_session *session,
                               struct mk_http_request *request);
@@ -27,5 +29,9 @@ int opentelemetry_prot_handle(struct flb_opentelemetry *ctx, struct http_conn *c
 int opentelemetry_prot_handle_error(struct flb_opentelemetry *ctx, struct http_conn *conn,
                                     struct mk_http_session *session,
                                     struct mk_http_request *request);
+
+
+int opentelemetry_prot_handle_ng(struct flb_http_request *request,
+                                 struct flb_http_response *response);
 
 #endif

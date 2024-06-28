@@ -22,7 +22,16 @@
 
 #include "fw_conn.h"
 
+struct flb_in_fw_helo;
+
 int fw_prot_parser(struct fw_conn *conn);
 int fw_prot_process(struct flb_input_instance *ins, struct fw_conn *conn);
-
+int flb_secure_forward_set_helo(struct flb_input_instance *ins,
+                                struct flb_in_fw_helo *helo,
+                                unsigned char *nonce, unsigned char *salt);
+int fw_prot_secure_forward_handshake_start(struct flb_input_instance *ins,
+                                           struct flb_connection *connection,
+                                           struct flb_in_fw_helo *helo);
+int fw_prot_secure_forward_handshake(struct flb_input_instance *ins,
+                                     struct fw_conn *conn);
 #endif

@@ -23,6 +23,7 @@
 #include <fluent-bit/flb_network.h>
 #include <fluent-bit/flb_pack.h>
 #include <fluent-bit/flb_error.h>
+#include <fluent-bit/flb_msgpack_append_message.h>
 
 #include "tcp.h"
 #include "tcp_conn.h"
@@ -37,9 +38,13 @@ static inline int process_pack(struct tcp_conn *conn,
 {
     int ret;
     size_t off = 0;
+    size_t prev_off = 0;
     msgpack_unpacked result;
     msgpack_object entry;
     struct flb_in_tcp_config *ctx;
+    char   *appended_address_buffer;
+    size_t  appended_address_size;
+    char   *source_address;
 
     ctx = conn->ctx;
 
@@ -50,22 +55,60 @@ static inline int process_pack(struct tcp_conn *conn,
     while (msgpack_unpack_next(&result, pack, size, &off) == MSGPACK_UNPACK_SUCCESS) {
         entry = result.data;
 
+        appended_address_buffer = NULL;
+        source_address = NULL;
+
         ret = flb_log_event_encoder_begin_record(ctx->log_encoder);
 
         if (ret == FLB_EVENT_ENCODER_SUCCESS) {
             ret = flb_log_event_encoder_set_current_timestamp(ctx->log_encoder);
         }
 
+        if (ctx->source_address_key != NULL) {
+            source_address = flb_connection_get_remote_address(conn->connection);
+        }
+
         if (ret == FLB_EVENT_ENCODER_SUCCESS) {
             if (entry.type == MSGPACK_OBJECT_MAP) {
-                ret = flb_log_event_encoder_set_body_from_msgpack_object(
-                        ctx->log_encoder, &entry);
+                if (ctx->source_address_key != NULL && source_address != NULL) {
+                    ret = flb_msgpack_append_message_to_record(&appended_address_buffer,
+                                                               &appended_address_size,
+                                                               ctx->source_address_key,
+                                                               pack + prev_off,
+                                                               size,
+                                                               source_address,
+                                                               strlen(source_address),
+                                                               MSGPACK_OBJECT_STR);
+                }
+
+                if (ret == FLB_MAP_EXPANSION_ERROR) {
+                    flb_plg_debug(ctx->ins, "error expanding source_address : %d", ret);
+                }
+
+                if (appended_address_buffer != NULL) {
+                    ret = flb_log_event_encoder_set_body_from_raw_msgpack(
+                            ctx->log_encoder, appended_address_buffer, appended_address_size);
+                }
+                else {
+                    ret = flb_log_event_encoder_set_body_from_msgpack_object(
+                            ctx->log_encoder, &entry);
+                }
             }
             else if (entry.type == MSGPACK_OBJECT_ARRAY) {
-                ret = flb_log_event_encoder_append_body_values(
+                if (ctx->source_address_key != NULL && source_address != NULL) {
+                    ret = flb_log_event_encoder_append_body_values(
+                        ctx->log_encoder,
+                        FLB_LOG_EVENT_CSTRING_VALUE("msg"),
+                        FLB_LOG_EVENT_MSGPACK_OBJECT_VALUE(&entry),
+                        FLB_LOG_EVENT_CSTRING_VALUE(ctx->source_address_key),
+                        FLB_LOG_EVENT_CSTRING_VALUE(source_address));
+                }
+                else {
+                    ret = flb_log_event_encoder_append_body_values(
                         ctx->log_encoder,
                         FLB_LOG_EVENT_CSTRING_VALUE("msg"),
                         FLB_LOG_EVENT_MSGPACK_OBJECT_VALUE(&entry));
+                }
             }
             else {
                 ret = FLB_EVENT_ENCODER_ERROR_INVALID_VALUE_TYPE;
@@ -75,10 +118,15 @@ static inline int process_pack(struct tcp_conn *conn,
                 ret = flb_log_event_encoder_commit_record(ctx->log_encoder);
             }
 
+            if (appended_address_buffer != NULL) {
+                flb_free(appended_address_buffer);
+            }
+
             if (ret != FLB_EVENT_ENCODER_SUCCESS) {
                 break;
             }
         }
+        prev_off = off;
     }
 
     msgpack_unpacked_destroy(&result);

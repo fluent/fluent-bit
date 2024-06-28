@@ -23,6 +23,7 @@
 #include <fluent-bit/flb_gzip.h>
 #include <fluent-bit/flb_compression.h>
 #include <miniz/miniz.h>
+#include <stdbool.h>
 
 #define FLB_GZIP_HEADER_OFFSET 10
 #define FLB_GZIP_HEADER_SIZE   FLB_GZIP_HEADER_OFFSET
@@ -744,4 +745,30 @@ void flb_gzip_decompression_context_destroy(void *context)
     if (context != NULL) {
         flb_free(context);
     }
+}
+
+int flb_is_http_session_gzip_compressed(struct mk_http_session *session)
+{
+    int gzip_compressed = FLB_FALSE;
+
+    int i = 0;
+    int extra_size = -1;
+    struct mk_http_header *headers_extra;
+
+    extra_size = session->parser.headers_extra_count;
+    if (extra_size > 0) {
+        for (i = 0; i < extra_size; i++) {
+            headers_extra = &session->parser.headers_extra[i];
+            if (headers_extra->key.len == 16 &&
+                strncasecmp(headers_extra->key.data, "Content-Encoding", 16) == 0) {
+                if (headers_extra->val.len == 4 &&
+                    strncasecmp(headers_extra->val.data, "gzip", 4) == 0) {
+                    flb_debug("body is gzipped");
+                    gzip_compressed = FLB_TRUE;
+                }
+            }
+        }
+    }
+
+    return gzip_compressed;
 }

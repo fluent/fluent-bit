@@ -40,6 +40,24 @@
 #define FLB_FILTER_AWS_HOSTNAME_KEY                       "hostname"
 #define FLB_FILTER_AWS_HOSTNAME_KEY_LEN                   8
 
+/* defines returned value for cases when configuration is invalid and program should exit */
+#define FLB_FILTER_AWS_CONFIGURATION_ERROR -100
+
+struct flb_filter_aws_metadata_group {
+    /* defines if fetch function for the information group was already done successfully
+     * if set to FLB_FALSE after first attempt, then most likely another retry will be
+     * required
+     * done set to FLB_TRUE does not mean that information was retrieved, as it might
+     * be disabled */
+    int done;
+    /* defines if information was already exposed in the filter for envs */
+    int exposed;
+
+    /* defines a timestamp of last execution of fetch method related to the group */
+    /* unit: timestamp in seconds */
+    time_t last_fetch_attempt;
+};
+
 struct flb_filter_aws {
     struct flb_filter_aws_init_options *options;
 
@@ -112,9 +130,21 @@ struct flb_filter_aws {
     /* e.g.: if tag_is_enabled[0] = FALSE, then filter aws should not inject first tag */
     int *tag_is_enabled;
 
-    /* number of new keys added by this plugin */
-    int new_keys;
-
+    /* metadata group contains information for potential retries and
+     * if group was already fetched successfully */
+    struct flb_filter_aws_metadata_group group_az;
+    struct flb_filter_aws_metadata_group group_instance_id;
+    struct flb_filter_aws_metadata_group group_instance_type;
+    struct flb_filter_aws_metadata_group group_private_ip;
+    struct flb_filter_aws_metadata_group group_vpc_id;
+    struct flb_filter_aws_metadata_group group_ami_id;
+    struct flb_filter_aws_metadata_group group_account_id;
+    struct flb_filter_aws_metadata_group group_hostname;
+    struct flb_filter_aws_metadata_group group_tag;
+    /* defines a minimal interval before consecutive retries */
+    /* unit: seconds */
+    time_t retry_required_interval;
+    /* defines if all metadata groups were fetched successfully */
     int metadata_retrieved;
 
     /* Plugin can use EC2 metadata v1 or v2; default is v2 */

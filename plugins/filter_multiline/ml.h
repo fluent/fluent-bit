@@ -73,6 +73,7 @@ struct ml_ctx {
     size_t emitter_mem_buf_limit;           /* Emitter buffer limit */
     struct flb_input_instance *ins_emitter; /* emitter input plugin instance */
     struct flb_config *config;              /* Fluent Bit context */
+    struct flb_input_instance *i_ins;       /* Fluent Bit input instance (last used)*/
 
 #ifdef FLB_HAVE_METRICS
     struct cmt_counter *cmt_emitted;
@@ -82,6 +83,7 @@ struct ml_ctx {
 /* Register external function to emit records, check 'plugins/in_emitter' */
 int in_emitter_add_record(const char *tag, int tag_len,
                           const char *buf_data, size_t buf_size,
-                          struct flb_input_instance *in);
+                          struct flb_input_instance *in,
+                          struct flb_input_instance *i_ins);
 
 #endif

@@ -240,6 +240,8 @@ struct flb_splunk *flb_splunk_conf_create(struct flb_output_instance *ins,
         return NULL;
     }
 
+    ctx->metadata_auth_header = NULL;
+
     /* No http_user is set, fallback to splunk_token, if splunk_token is unset, fail. */
     if (!ctx->http_user) {
         /* Splunk Auth Token */
@@ -260,6 +262,23 @@ struct flb_splunk *flb_splunk_conf_create(struct flb_output_instance *ins,
             return NULL;
         }
     }
+
+    pthread_mutex_init(&ctx->mutex_hec_token, NULL);
+
+    /* Currently, Splunk HEC token is stored in a fixed key, hec_token. */
+    ctx->metadata_auth_key = "$hec_token";
+    if (ctx->metadata_auth_key) {
+        ctx->ra_metadata_auth_key = flb_ra_create(ctx->metadata_auth_key, FLB_TRUE);
+        if (!ctx->ra_metadata_auth_key) {
+            flb_plg_error(ctx->ins,
+                          "cannot create record accessor for "
+                          "metadata_auth_key pattern: '%s'",
+                          ctx->event_host);
+            flb_splunk_conf_destroy(ctx);
+            return NULL;
+        }
+    }
+
 
     /* channel */
     if (ctx->channel != NULL) {
@@ -303,6 +322,14 @@ int flb_splunk_conf_destroy(struct flb_splunk *ctx)
 
     if (ctx->ra_event_index_key) {
         flb_ra_destroy(ctx->ra_event_index_key);
+    }
+
+    if (ctx->ra_metadata_auth_key) {
+        flb_ra_destroy(ctx->ra_metadata_auth_key);
+    }
+
+    if (ctx->metadata_auth_header) {
+        flb_sds_destroy(ctx->metadata_auth_header);
     }
 
     event_fields_destroy(ctx);

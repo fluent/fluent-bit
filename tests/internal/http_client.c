@@ -82,7 +82,7 @@ void test_http_buffer_increase()
     size_t s;
     struct test_ctx *ctx;
     struct flb_http_client *c;
-    struct flb_http_response *resp;
+    struct flb_http_client_response *resp;
 
     ctx = test_ctx_create();
     if (!TEST_CHECK(ctx != NULL)) {

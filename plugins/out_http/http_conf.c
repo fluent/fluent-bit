@@ -208,13 +208,15 @@ struct flb_out_http *flb_http_conf_create(struct flb_output_instance *ins,
 
     /* Output format */
     ctx->out_format = FLB_PACK_JSON_FORMAT_NONE;
-    tmp = flb_output_get_property("format", ins);
-    if (tmp) {
-        if (strcasecmp(tmp, "gelf") == 0) {
+    if (ctx->format) {
+        if (strcasecmp(ctx->format, "gelf") == 0) {
             ctx->out_format = FLB_HTTP_OUT_GELF;
         }
+        else if (strcasecmp(ctx->format, "msgpack") == 0) {
+            ctx->out_format = FLB_HTTP_OUT_MSGPACK;
+        }
         else {
-            ret = flb_pack_to_json_format_type(tmp);
+            ret = flb_pack_to_json_format_type(ctx->format);
             if (ret == -1) {
                 flb_plg_error(ctx->ins, "unrecognized 'format' option. "
                               "Using 'msgpack'");

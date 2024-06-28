@@ -1040,6 +1040,105 @@ void flb_test_json_date_format_java_sql_timestamp()
     test_ctx_destroy(ctx);
 }
 
+int callback_test(void* data, size_t size, void* cb_data)
+{
+    int num;
+
+    if (size > 0) {
+        num = get_output_num();
+        set_output_num(num+1);
+    }
+    return 0;
+}
+
+/* test to make sure out_http is always able to work with in_http by default. */
+void flb_test_in_http()
+{
+    struct test_ctx *ctx;
+    int ret;
+    int num;
+    int i_ffd;
+    int o_ffd;
+    int trys;
+    struct flb_lib_out_cb cb;
+    char *buf = "[1, {\"msg\":\"hello world\"}]";
+    size_t size = strlen(buf);
+
+    cb.cb   = callback_test;
+    cb.data = NULL;
+    clear_output_num();
+
+
+    ctx = test_ctx_create();
+    if (!TEST_CHECK(ctx != NULL)) {
+        TEST_MSG("test_ctx_create failed");
+        exit(EXIT_FAILURE);
+    }
+
+    ret = flb_input_set(ctx->flb,
+                        ctx->i_ffd,
+                        "tag", "lib",
+                        NULL);
+    TEST_CHECK(ret == 0);
+
+    /* Input */
+    i_ffd = flb_input(ctx->flb, (char *) "http", NULL);
+    TEST_CHECK(i_ffd >= 0);
+
+    ret = flb_input_set(ctx->flb,
+                        i_ffd,
+                        "port", "8888",
+                        "tag", "http",
+                        "host", "127.0.0.1",
+                        NULL);
+    TEST_CHECK(ret == 0);
+
+    /* Output */
+    o_ffd = flb_output(ctx->flb, (char *) "lib", &cb);
+    TEST_CHECK(o_ffd >= 0);
+    ret = flb_output_set(ctx->flb,
+                         o_ffd,
+                         "match", "http",
+                         NULL);
+    TEST_CHECK(ret == 0);
+
+    /* explicitly do not set anything beyond match, port and localhost
+     * to be sure the default options work with in_http.
+     */
+    ret = flb_output_set(ctx->flb,
+                         ctx->o_ffd,
+                         "match", "lib",
+                         "host", "127.0.0.1",
+                         "port", "8888",
+                         NULL);
+    TEST_CHECK(ret == 0);
+
+    /* Start the engines */
+    ret = flb_start(ctx->flb);
+    TEST_CHECK(ret == 0);
+
+    /* Ingest data sample */
+    ret = flb_lib_push(ctx->flb,
+                       ctx->i_ffd,
+                       (char *) buf,
+                       size);
+    TEST_CHECK(ret >= 0);
+
+    /* try several times to detect the record being flushed. */
+    for (trys = 0, num = 0; trys < 20 && num <= 0; trys++) {
+        num = get_output_num();
+        if (num <= 0) {
+            flb_time_msleep(500);
+        }
+    }
+
+    if (!TEST_CHECK(num > 0))  {
+        TEST_MSG("no outputs");
+    }
+
+    test_ctx_destroy(ctx);
+}
+
 /* Test list */
 TEST_LIST = {
     {"format_msgpack" , flb_test_format_msgpack},
@@ -1056,5 +1155,6 @@ TEST_LIST = {
     {"json_date_format_epoch" , flb_test_json_date_format_epoch},
     {"json_date_format_iso8601" , flb_test_json_date_format_iso8601},
     {"json_date_format_java_sql_timestamp" , flb_test_json_date_format_java_sql_timestamp},
+    {"in_http", flb_test_in_http},
     {NULL, NULL}
 };

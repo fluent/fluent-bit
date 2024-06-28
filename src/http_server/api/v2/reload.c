@@ -40,6 +40,7 @@ static void handle_reload_request(mk_request_t *request, struct flb_config *conf
     size_t out_size;
     msgpack_packer mp_pck;
     msgpack_sbuffer mp_sbuf;
+    int http_status = 200;
 
     /* initialize buffers */
     msgpack_sbuffer_init(&mp_sbuf);
@@ -56,6 +57,14 @@ static void handle_reload_request(mk_request_t *request, struct flb_config *conf
         msgpack_pack_str(&mp_pck, 6);
         msgpack_pack_str_body(&mp_pck, "status", 6);
         msgpack_pack_int64(&mp_pck, -1);
+    }
+    else if (config->hot_reloading == FLB_TRUE) {
+        msgpack_pack_str(&mp_pck, 11);
+        msgpack_pack_str_body(&mp_pck, "in progress", 11);
+        msgpack_pack_str(&mp_pck, 6);
+        msgpack_pack_str_body(&mp_pck, "status", 6);
+        msgpack_pack_int64(&mp_pck, -2);
+        http_status =  400;
     }
     else {
         ret = GenerateConsoleCtrlEvent(1 /* CTRL_BREAK_EVENT_1 */, 0);
@@ -78,6 +87,14 @@ static void handle_reload_request(mk_request_t *request, struct flb_config *conf
         msgpack_pack_str(&mp_pck, 6);
         msgpack_pack_str_body(&mp_pck, "status", 6);
         msgpack_pack_int64(&mp_pck, -1);
+    }
+    else if (config->hot_reloading == FLB_TRUE) {
+        msgpack_pack_str(&mp_pck, 11);
+        msgpack_pack_str_body(&mp_pck, "in progress", 11);
+        msgpack_pack_str(&mp_pck, 6);
+        msgpack_pack_str_body(&mp_pck, "status", 6);
+        msgpack_pack_int64(&mp_pck, -2);
+        http_status =  400;
     }
     else {
         ret = kill(getpid(), SIGHUP);
@@ -106,7 +123,7 @@ static void handle_reload_request(mk_request_t *request, struct flb_config *conf
     }
     out_size = flb_sds_len(out_buf);
 
-    mk_http_status(request, 200);
+    mk_http_status(request, http_status);
     flb_hs_add_content_type_to_req(request, FLB_HS_CONTENT_TYPE_JSON);
     mk_http_send(request, out_buf, out_size, NULL);
     mk_http_done(request);

@@ -287,7 +287,7 @@ static int cb_event_test_init(struct flb_input_instance *ins,
     ut->coll_id = ret;
 
     /* unit test 2: collector_socket */
-    fd = flb_net_server(SERVER_PORT, SERVER_IFACE);
+    fd = flb_net_server(SERVER_PORT, SERVER_IFACE, FLB_FALSE);
     if (fd < 0) {
         flb_errno();
         config_destroy(ctx);

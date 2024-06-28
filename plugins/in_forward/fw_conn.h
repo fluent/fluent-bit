@@ -22,6 +22,8 @@
 
 #define FLB_IN_FW_CHUNK_SIZE      "1024000" /* 1MB */
 #define FLB_IN_FW_CHUNK_MAX_SIZE  "6144000" /* =FLB_IN_FW_CHUNK_SIZE * 6.  6MB */
+#define FLB_IN_FW_NONCE_SIZE      16
+#define FLB_IN_FW_SALT_SIZE       16
 
 enum {
     FW_NEW        = 1,  /* it's a new connection                */
@@ -33,15 +35,20 @@ struct fw_conn_stream {
     size_t tag_len;
 };
 
+struct flb_in_fw_helo;
+
 /* Respresents a connection */
 struct fw_conn {
     int status;                      /* Connection status                 */
+    int handshake_status;            /* handshake status                 */
 
     /* Buffer */
     char *buf;                       /* Buffer data                       */
     int  buf_len;                    /* Data length                       */
     int  buf_size;                   /* Buffer size                       */
     size_t rest;                     /* Unpacking offset                  */
+
+    struct flb_in_fw_helo *helo;     /* secure forward HELO phase */
 
     struct flb_input_instance *in;   /* Parent plugin instance            */
     struct flb_in_fw_config *ctx;    /* Plugin configuration context      */

@@ -208,6 +208,9 @@ struct flb_stackdriver {
     /* upstream context for metadata end-point */
     struct flb_upstream *metadata_u;
 
+    /* the key to extract unstructured text payload from */
+    flb_sds_t text_payload_key;
+
 #ifdef FLB_HAVE_METRICS
     /* metrics */
     struct cmt_counter *cmt_successful_requests;
