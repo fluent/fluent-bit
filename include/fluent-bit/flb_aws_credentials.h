@@ -359,6 +359,27 @@ int try_lock_provider(struct flb_aws_provider *provider);
 
 void unlock_provider(struct flb_aws_provider *provider);
 
+/*
+ * HTTP Credentials Provider - retrieve credentials from a local http server
+ * Used to implement the Container Credentials provider.
+ * Equivalent to:
+ * https://github.com/aws/aws-sdk-go/tree/master/aws/credentials/endpointcreds
+ */
+
+struct flb_aws_provider_http {
+    struct flb_aws_credentials *creds;
+    time_t next_refresh;
+
+    struct flb_aws_client *client;
+
+    /* Endpoint to request credentials */
+    flb_sds_t endpoint;
+    flb_sds_t path;
+
+    /* Auth token */
+    flb_sds_t auth_token;
+    flb_sds_t auth_token_file;
+};
 
 #endif
 #endif /* FLB_HAVE_AWS */
