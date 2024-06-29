@@ -108,7 +108,8 @@ static struct cfl_variant *clone_variant(Opentelemetry__Proto__Common__V1__AnyVa
         }
     }
     else if (source->value_case == OPENTELEMETRY__PROTO__COMMON__V1__ANY_VALUE__VALUE_BYTES_VALUE) {
-        result_instance = cfl_variant_create_from_bytes((char *) source->bytes_value.data, source->bytes_value.len);
+        result_instance = cfl_variant_create_from_bytes((char *) source->bytes_value.data, source->bytes_value.len,
+                                                        CFL_FALSE);
     }
 
     return result_instance;
@@ -451,7 +452,7 @@ static int decode_numerical_data_point(struct cmt *cmt,
                 value = 0;
             }
             else {
-                value = cmt_math_uint64_to_d64((uint64_t) data_point->as_int);
+                value = data_point->as_int;
             }
         }
         else if (data_point->value_case == OPENTELEMETRY__PROTO__METRICS__V1__NUMBER_DATA_POINT__VALUE_AS_DOUBLE) {
@@ -1265,7 +1266,7 @@ int cmt_decode_opentelemetry_create(struct cfl_list *result_context_list,
 
     cfl_list_init(result_context_list);
 
-    service_request = opentelemetry__proto__collector__metrics__v1__export_metrics_service_request__unpack(NULL, in_size - *offset, 
+    service_request = opentelemetry__proto__collector__metrics__v1__export_metrics_service_request__unpack(NULL, in_size - *offset,
                                                                                                            (unsigned char *) &in_buf[*offset]);
 
     if (service_request != NULL) {

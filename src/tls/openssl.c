@@ -25,6 +25,7 @@
 #include <openssl/ssl.h>
 #include <openssl/err.h>
 #include <openssl/opensslv.h>
+#include <openssl/x509v3.h>
 
 #ifdef FLB_SYSTEM_WINDOWS
     #define strtok_r(str, delimiter, context) \
@@ -217,7 +218,7 @@ static int tls_context_server_alpn_select_callback(SSL *ssl,
     result = SSL_TLSEXT_ERR_NOACK;
 
     if (ctx->alpn != NULL) {
-        result = SSL_select_next_proto(out, 
+        result = SSL_select_next_proto((unsigned char **) out,
                                        outlen,
                                        &ctx->alpn[1], 
                                        (unsigned int) ctx->alpn[0], 
@@ -636,11 +637,33 @@ static int tls_net_write(struct flb_tls_session *session,
     return ret;
 }
 
+int setup_hostname_validation(struct tls_session *session, const char *hostname)
+{
+    X509_VERIFY_PARAM *param;
+
+    param = SSL_get0_param(session->ssl);
+
+    if (!param) {
+        flb_error("[tls] error: ssl context is invalid");
+        return -1;
+    }
+
+    X509_VERIFY_PARAM_set_hostflags(param, X509_CHECK_FLAG_NO_PARTIAL_WILDCARDS);
+    if (!X509_VERIFY_PARAM_set1_host(param, hostname, 0)) {
+        flb_error("[tls] error: hostname parameter vailidation is failed : %s",
+                  hostname);
+        return -1;
+    }
+
+    return 0;
+}
+
 static int tls_net_handshake(struct flb_tls *tls,
                              char *vhost,
                              void *ptr_session)
 {
     int ret = 0;
+    long ssl_code = 0;
     char err_buf[256];
     struct tls_session *session = ptr_session;
     struct tls_context *ctx;
@@ -669,6 +692,21 @@ static int tls_net_handshake(struct flb_tls *tls,
         }
     }
 
+    if (tls->verify == FLB_TRUE &&
+        tls->verify_hostname == FLB_TRUE) {
+        if (vhost != NULL) {
+            ret = setup_hostname_validation(session, vhost);
+        }
+        else if (tls->vhost) {
+            ret = setup_hostname_validation(session, tls->vhost);
+        }
+
+        if (ret != 0) {
+            pthread_mutex_unlock(&ctx->mutex);
+            return -1;
+        }
+    }
+
     ERR_clear_error();
 
     if (tls->mode == FLB_TLS_CLIENT_MODE) {
@@ -686,7 +724,14 @@ static int tls_net_handshake(struct flb_tls *tls,
             // The SSL_ERROR_SYSCALL with errno value of 0 indicates unexpected
             //  EOF from the peer. This is fixed in OpenSSL 3.0.
             if (ret == 0) {
-            	flb_error("[tls] error: unexpected EOF");
+                ssl_code = SSL_get_verify_result(session->ssl);
+                if (ssl_code != X509_V_OK) {
+                    flb_error("[tls] error: unexpected EOF with reason: %s",
+                              ERR_reason_error_string(ERR_get_error()));
+                }
+                else {
+                    flb_error("[tls] error: unexpected EOF");
+                }
             } else {
                 ERR_error_string_n(ret, err_buf, sizeof(err_buf)-1);
                 flb_error("[tls] error: %s", err_buf);

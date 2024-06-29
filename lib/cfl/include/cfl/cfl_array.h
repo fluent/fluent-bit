@@ -43,12 +43,10 @@ static inline struct cfl_variant *cfl_array_fetch_by_index(struct cfl_array *arr
     return array->entries[position];
 }
 
-int cfl_array_resizable(struct cfl_array *array, int v);
-int cfl_array_remove_by_index(struct cfl_array *array, size_t position);
-int cfl_array_remove_by_reference(struct cfl_array *array, struct cfl_variant *value);
 int cfl_array_append(struct cfl_array *array, struct cfl_variant *value);
 int cfl_array_append_string(struct cfl_array *array, char *value);
-int cfl_array_append_bytes(struct cfl_array *array, char *value, size_t length);
+int cfl_array_append_string_s(struct cfl_array *array, char *str, size_t str_len, int referenced);
+int cfl_array_append_bytes(struct cfl_array *array, char *value, size_t length, int referenced);
 int cfl_array_append_reference(struct cfl_array *array, void *value);
 int cfl_array_append_bool(struct cfl_array *array, int value);
 int cfl_array_append_int64(struct cfl_array *array, int64_t value);
@@ -58,6 +56,11 @@ int cfl_array_append_null(struct cfl_array *array);
 int cfl_array_append_array(struct cfl_array *array, struct cfl_array *value);
 int cfl_array_append_new_array(struct cfl_array *array, size_t size);
 int cfl_array_append_kvlist(struct cfl_array *array, struct cfl_kvlist *value);
+
+int cfl_array_resizable(struct cfl_array *array, int v);
+int cfl_array_remove_by_index(struct cfl_array *array, size_t position);
+int cfl_array_remove_by_reference(struct cfl_array *array, struct cfl_variant *value);
+
 int cfl_array_print(FILE *fp, struct cfl_array *array);
 
 #endif

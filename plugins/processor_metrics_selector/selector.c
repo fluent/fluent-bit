@@ -48,71 +48,34 @@ static void destroy_context(struct selector_ctx *context)
 {
     if (context != NULL) {
         delete_metrics_rules(context);
-        flb_free(context->selector_pattern);
+        if (context->selector_pattern != NULL) {
+            flb_free(context->selector_pattern);
+        }
+        if (context->label_key != NULL) {
+            flb_sds_destroy(context->label_key);
+        }
+        if (context->label_value != NULL) {
+            flb_sds_destroy(context->label_value);
+        }
         flb_free(context);
     }
 }
 
 static int set_metrics_rules(struct selector_ctx *ctx, struct flb_processor_instance *p_ins)
 {
+    flb_sds_t tmp;
     const char *action;
     const char *metric_name;
     const char *op_type;
     const char *context;
+    const char *label;
     size_t name_len = 0;
+    struct mk_list *split;
+    struct flb_split_entry *sentry;
 
-    action = flb_processor_instance_get_property("action", p_ins);
-    if (action == NULL) {
-        ctx->action_type = SELECTOR_INCLUDE;
-    }
-    else if (strncasecmp(action, "include", 7) == 0) {
-        flb_plg_debug(ctx->ins, "action type INCLUDE");
-        ctx->action_type = SELECTOR_INCLUDE;
-    }
-    else if (strncasecmp(action, "exclude", 7) == 0) {
-        flb_plg_debug(ctx->ins, "action type EXCLUDE");
-        ctx->action_type = SELECTOR_EXCLUDE;
-    }
-    else {
-        flb_plg_error(ctx->ins, "unknown action type '%s'", action);
-        return -1;
-    }
-
-    metric_name = flb_processor_instance_get_property("metric_name", p_ins);
-    if (metric_name == NULL) {
-        flb_plg_error(ctx->ins, "metric_name is needed for selector");
-        return -1;
-    }
-    ctx->selector_pattern = flb_strdup(metric_name);
-    name_len = strlen(metric_name);
-
-    op_type = flb_processor_instance_get_property("operation_type", p_ins);
-    if (op_type == NULL) {
-        ctx->op_type = SELECTOR_OPERATION_PREFIX;
-    }
-    else if (strncasecmp(op_type, "prefix", 6) == 0) {
-        flb_plg_debug(ctx->ins, "operation type PREFIX");
-        ctx->op_type = SELECTOR_OPERATION_PREFIX;
-    }
-    else if (strncasecmp(op_type, "substring", 9) == 0) {
-        flb_plg_debug(ctx->ins, "operation type SUBSTRING");
-        ctx->op_type = SELECTOR_OPERATION_SUBSTRING;
-    }
-    else {
-        flb_plg_error(ctx->ins, "unknown action type '%s'", op_type);
-        return -1;
-    }
-
-    if (ctx->selector_pattern[0] == '/' && ctx->selector_pattern[name_len-1] == '/') {
-        /* Convert string to regex pattern for metrics */
-        ctx->name_regex = flb_regex_create(ctx->selector_pattern);
-        if (!ctx->name_regex) {
-            flb_plg_error(ctx->ins, "could not compile regex pattern '%s'",
-                          ctx->selector_pattern);
-            return -1;
-        }
-        ctx->op_type = SELECTOR_OPERATION_REGEX;
-    }
+    ctx->selector_pattern = NULL;
+    ctx->label_key = NULL;
+    ctx->label_value = NULL;
 
     context = flb_processor_instance_get_property("context", p_ins);
     if (context == NULL) {
@@ -121,10 +84,102 @@ static int set_metrics_rules(struct selector_ctx *ctx, struct flb_processor_inst
     else if (strncasecmp(context, "metric_name", 11) == 0) {
         ctx->context_type = SELECTOR_CONTEXT_FQNAME;
     }
+    else if (strncasecmp(context, "delete_label_value", 18) == 0) {
+        ctx->context_type = SELECTOR_CONTEXT_DELETE_LABEL_VALUE;
+    }
     else {
         flb_plg_error(ctx->ins, "unknown context '%s'", context);
         delete_metrics_rules(ctx);
         return -1;
+    }
+
+    if (ctx->context_type == SELECTOR_CONTEXT_FQNAME) {
+        action = flb_processor_instance_get_property("action", p_ins);
+        if (action == NULL) {
+            ctx->action_type = SELECTOR_INCLUDE;
+        }
+        else if (strncasecmp(action, "include", 7) == 0) {
+            flb_plg_debug(ctx->ins, "action type INCLUDE");
+            ctx->action_type = SELECTOR_INCLUDE;
+        }
+        else if (strncasecmp(action, "exclude", 7) == 0) {
+            flb_plg_debug(ctx->ins, "action type EXCLUDE");
+            ctx->action_type = SELECTOR_EXCLUDE;
+        }
+        else {
+            flb_plg_error(ctx->ins, "unknown action type '%s'", action);
+            return -1;
+        }
+
+        metric_name = flb_processor_instance_get_property("metric_name", p_ins);
+        if (metric_name == NULL) {
+            flb_plg_error(ctx->ins, "metric_name is needed for selector");
+            return -1;
+        }
+        ctx->selector_pattern = flb_strdup(metric_name);
+        name_len = strlen(metric_name);
+
+        op_type = flb_processor_instance_get_property("operation_type", p_ins);
+        if (op_type == NULL) {
+            ctx->op_type = SELECTOR_OPERATION_PREFIX;
+        }
+        else if (strncasecmp(op_type, "prefix", 6) == 0) {
+            flb_plg_debug(ctx->ins, "operation type PREFIX");
+            ctx->op_type = SELECTOR_OPERATION_PREFIX;
+        }
+        else if (strncasecmp(op_type, "substring", 9) == 0) {
+            flb_plg_debug(ctx->ins, "operation type SUBSTRING");
+            ctx->op_type = SELECTOR_OPERATION_SUBSTRING;
+        }
+        else {
+            flb_plg_error(ctx->ins, "unknown action type '%s'", op_type);
+            return -1;
+        }
+
+        if (ctx->selector_pattern[0] == '/' && ctx->selector_pattern[name_len-1] == '/') {
+            /* Convert string to regex pattern for metrics */
+            ctx->name_regex = flb_regex_create(ctx->selector_pattern);
+            if (!ctx->name_regex) {
+                flb_plg_error(ctx->ins, "could not compile regex pattern '%s'",
+                              ctx->selector_pattern);
+                return -1;
+            }
+            ctx->op_type = SELECTOR_OPERATION_REGEX;
+        }
+    }
+    else if (ctx->context_type == SELECTOR_CONTEXT_DELETE_LABEL_VALUE) {
+        label = flb_processor_instance_get_property("label", p_ins);
+        if (label != NULL) {
+            split = flb_utils_split(label, ' ', 1);
+            if (mk_list_size(split) != 2) {
+                flb_plg_error(ctx->ins, "invalid value, expected key and value");
+                flb_utils_split_free(split);
+                return -1;
+            }
+
+            /* Get first value (label's key) */
+            sentry = mk_list_entry_first(split, struct flb_split_entry, _head);
+            tmp = flb_sds_create_len(sentry->value, sentry->len);
+            if (tmp == NULL) {
+                flb_plg_error(ctx->ins, "allocation failed for label key");
+                flb_utils_split_free(split);
+                return -1;
+            }
+            ctx->label_key = tmp;
+
+            /* Get last value (label's value) */
+            sentry = mk_list_entry_last(split, struct flb_split_entry, _head);
+            tmp = flb_sds_create_len(sentry->value, sentry->len);
+            if (tmp == NULL) {
+                flb_plg_error(ctx->ins, "allocation failed for label value");
+                flb_utils_split_free(split);
+                return -1;
+            }
+            ctx->label_value = tmp;
+            ctx->op_type = SELECTOR_CONTEXT_DELETE_LABEL_VALUE;
+
+            flb_utils_split_free(split);
+        }
     }
 
     return 0;
@@ -279,12 +334,47 @@ static inline int selector_metrics_process_fqname(struct cmt *cmt, struct cmt *o
     return found ? SELECTOR_RET_EXCLUDE : SELECTOR_RET_KEEP;
 }
 
+static inline int selector_metrics_process_delete_label_value(struct cmt *cmt, struct cmt *out_cmt,
+                                                              struct selector_ctx *ctx)
+{
+    int ret;
+    int removed = FLB_FALSE;
+    struct cmt *filtered = NULL;
+
+    /* On processor_selector, we only process one rule in each of contexts */
+
+    filtered = cmt_create();
+    if (filtered == NULL) {
+        flb_plg_error(ctx->ins, "could not create filtered context");
+
+        return SELECTOR_FAILURE;
+    }
+
+    ret = cmt_filter_with_label_pair(filtered, cmt, ctx->label_key, ctx->label_value);
+
+    if (ret == 0) {
+        removed = FLB_TRUE;
+    }
+    else if (ret != 0) {
+        flb_plg_debug(ctx->ins, "not matched for a key-value pair: \"%s\",\"%s\"",
+                      ctx->label_key, ctx->label_value);
+    }
+
+    cmt_cat(out_cmt, filtered);
+    cmt_destroy(filtered);
+
+    return removed ? SELECTOR_RET_EXCLUDE : SELECTOR_RET_KEEP;
+}
+
 /* Given a metrics context, do some select action based on the defined rules */
 static inline int selector_metrics(struct cmt *cmt, struct cmt *out_cmt,
                                    struct selector_ctx *ctx)
 {
     if (ctx->context_type == SELECTOR_CONTEXT_FQNAME) {
         return selector_metrics_process_fqname(cmt, out_cmt, ctx);
+    }
+    else if (ctx->context_type == SELECTOR_CONTEXT_DELETE_LABEL_VALUE) {
+        return selector_metrics_process_delete_label_value(cmt, out_cmt, ctx);
     }
 
     return 0;
@@ -365,12 +455,17 @@ static struct flb_config_map config_map[] = {
     {
      FLB_CONFIG_MAP_STR, "context", NULL,
      FLB_CONFIG_MAP_MULT, FLB_FALSE, 0,
-     "Specify matching context. Currently, metric_name is only supported."
+     "Specify matching context. Currently, metric_name and delete_label_value are only supported."
     },
     {
      FLB_CONFIG_MAP_STR, "action", NULL,
      0, FLB_FALSE, 0,
      "Specify the action for specified metrics. INCLUDE and EXCLUDE are allowed."
+    },
+    {
+     FLB_CONFIG_MAP_STR, "label", NULL,
+     0, FLB_FALSE, 0,
+     "Specify a label key and value pair."
     },
     {
      FLB_CONFIG_MAP_STR, "operation_type", NULL,

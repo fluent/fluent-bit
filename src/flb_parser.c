@@ -152,6 +152,7 @@ struct flb_parser *flb_parser_create(const char *name, const char *format,
                                      const char *time_offset,
                                      int time_keep,
                                      int time_strict,
+                                     int time_system_timezone,
                                      int logfmt_no_bare_keys,
                                      struct flb_parser_types *types,
                                      int types_len,
@@ -312,8 +313,17 @@ struct flb_parser *flb_parser_create(const char *name, const char *format,
             p->time_frac_secs = (tmp + 2);
         }
 
-        /* Optional fixed timezone offset */
-        if (time_offset) {
+        /* 
+         * Fall back to the system timezone 
+         * if there is no zone parsed from the log.  
+         */
+        p->time_system_timezone = time_system_timezone;
+
+        /* 
+         * Optional fixed timezone offset, only applied if 
+         * not falling back to system timezone. 
+         */
+        if (!p->time_system_timezone && time_offset) {
             diff = 0;
             len = strlen(time_offset);
             ret = flb_parser_tzone_offset(time_offset, len, &diff);
@@ -487,6 +497,7 @@ static int parser_conf_file(const char *cfg, struct flb_cf *cf,
     int skip_empty;
     int time_keep;
     int time_strict;
+    int time_system_timezone;
     int logfmt_no_bare_keys;
     int types_len;
     struct mk_list *head;
@@ -561,6 +572,13 @@ static int parser_conf_file(const char *cfg, struct flb_cf *cf,
             flb_sds_destroy(tmp_str);
         }
 
+        time_system_timezone = FLB_FALSE;
+        tmp_str = get_parser_key(config, cf, s, "time_system_timezone");
+        if (tmp_str) {
+            time_system_timezone = flb_utils_bool(tmp_str);
+            flb_sds_destroy(tmp_str);
+        }
+
         /* time_offset (UTC offset) */
         time_offset = get_parser_key(config, cf, s, "time_offset");
 
@@ -587,7 +605,8 @@ static int parser_conf_file(const char *cfg, struct flb_cf *cf,
         /* Create the parser context */
         if (!flb_parser_create(name, format, regex, skip_empty,
                                time_fmt, time_key, time_offset, time_keep, time_strict,
-                               logfmt_no_bare_keys, types, types_len, decoders, config)) {
+                               time_system_timezone, logfmt_no_bare_keys, types, types_len, 
+                               decoders, config)) {
             goto fconf_error;
         }
 

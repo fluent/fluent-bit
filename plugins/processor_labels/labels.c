@@ -1524,26 +1524,27 @@ static int insert_labels(struct cmt *metrics_context,
                                                         pair->key);
 
         if (result == FLB_TRUE) {
-            result = metrics_context_insert_dynamic_label(metrics_context,
-                                                          pair->key,
-                                                          pair->val);
+            continue;
+        }
+
+        result = metrics_context_insert_dynamic_label(metrics_context,
+                                                      pair->key,
+                                                      pair->val);
+
+        if (result == FLB_FALSE) {
+            return FLB_FALSE;
+        }
+
+        result = metrics_context_contains_static_label(metrics_context,
+                                                       pair->key);
+
+        if (result == FLB_TRUE) {
+            result = metrics_context_insert_static_label(metrics_context,
+                                                         pair->key,
+                                                         pair->val);
 
             if (result == FLB_FALSE) {
                 return FLB_FALSE;
-            }
-        }
-        else {
-            result = metrics_context_contains_static_label(metrics_context,
-                                                           pair->key);
-
-            if (result == FLB_FALSE) {
-                result = metrics_context_insert_static_label(metrics_context,
-                                                             pair->key,
-                                                             pair->val);
-
-                if (result == FLB_FALSE) {
-                    return FLB_FALSE;
-                }
             }
         }
     }

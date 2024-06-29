@@ -387,6 +387,15 @@ static int in_tail_init(struct flb_input_instance *in,
     /* Scan path */
     flb_tail_scan(ctx->path_list, ctx);
 
+#ifdef FLB_HAVE_SQLDB
+    /* Delete stale files that are not monitored from the database */
+    ret = flb_tail_db_stale_file_delete(in, config, ctx);
+    if (ret == -1) {
+        flb_tail_config_destroy(ctx);
+        return -1;
+    }
+#endif
+
     /*
      * After the first scan (on start time), all new files discovered needs to be
      * read from head, so we switch the 'read_from_head' flag to true so any
@@ -741,6 +750,14 @@ static struct flb_config_map config_map[] = {
      "Option to provide WAL configuration for Work Ahead Logging mechanism (WAL). Enabling WAL "
      "provides higher performance. Note that WAL is not compatible with "
      "shared network file systems."
+    },
+    {
+     FLB_CONFIG_MAP_BOOL, "db.compare_filename", "false",
+     0, FLB_TRUE, offsetof(struct flb_tail_config, compare_filename),
+     "This option determines whether to check both the inode and the filename "
+     "when retrieving file information from the db."
+     "'true' verifies both the inode and filename, while 'false' checks only "
+     "the inode (default)."
     },
 #endif
 

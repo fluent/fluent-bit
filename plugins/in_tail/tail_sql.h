@@ -53,6 +53,28 @@
 #define SQL_DELETE_FILE                                                 \
     "DELETE FROM in_tail_files WHERE id=@id;"
 
+#define SQL_STMT_START_PARAM "(?"
+#define SQL_STMT_START_PARAM_LEN (sizeof(SQL_STMT_START_PARAM) - 1)
+
+#define SQL_STMT_ADD_PARAM ",?"
+#define SQL_STMT_ADD_PARAM_LEN (sizeof(SQL_STMT_ADD_PARAM) - 1)
+
+#define SQL_STMT_PARAM_END ")"
+#define SQL_STMT_PARAM_END_LEN (sizeof(SQL_STMT_PARAM_END) - 1)
+
+#define SQL_STMT_END ";"
+#define SQL_STMT_END_LEN (sizeof(SQL_STMT_END) - 1)
+
+#define SQL_DELETE_STALE_FILE_START                                     \
+    "DELETE FROM in_tail_files "
+#define SQL_DELETE_STALE_FILE_START_LEN                                 \
+    (sizeof(SQL_DELETE_STALE_FILE_START) - 1)
+
+#define SQL_DELETE_STALE_FILE_WHERE                                     \
+    "WHERE inode NOT IN "
+#define SQL_DELETE_STALE_FILE_WHERE_LEN                                 \
+    (sizeof(SQL_DELETE_STALE_FILE_WHERE) - 1)
+
 #define SQL_PRAGMA_SYNC                         \
     "PRAGMA synchronous=%i;"
 

@@ -604,8 +604,8 @@ static void flb_signal_handler(int signal)
     case SIGCONT:
         flb_dump(ctx->config);
         break;
-    case SIGHUP:
 #ifndef FLB_HAVE_STATIC_CONF
+    case SIGHUP:
         if (flb_bin_restarting == FLB_RELOAD_IDLE) {
             flb_bin_restarting = FLB_RELOAD_IN_PROGRESS;
         }
@@ -1344,6 +1344,7 @@ int flb_main(int argc, char **argv)
 
     if (config->dry_run == FLB_TRUE) {
         fprintf(stderr, "configuration test is successful\n");
+        flb_init_env();
         flb_cf_destroy(cf_opts);
         flb_destroy(ctx);
         exit(EXIT_SUCCESS);

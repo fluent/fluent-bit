@@ -17,6 +17,7 @@
  *  limitations under the License.
  */
 
+#include <cmetrics/cmt_decode_msgpack.h>
 #include <cmetrics/cmt_decode_opentelemetry.h>
 #include <cmetrics/cmt_decode_prometheus.h>
 

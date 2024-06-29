@@ -757,7 +757,7 @@ static int mp_object_to_cfl(void **ptr, msgpack_object *o)
         break;
     case MSGPACK_OBJECT_STR:
         var = cfl_variant_create_from_string_s((char *) o->via.str.ptr,
-                                               o->via.str.size);
+                                               o->via.str.size, CFL_TRUE);
         if (!var) {
             return -1;
         }
@@ -766,7 +766,7 @@ static int mp_object_to_cfl(void **ptr, msgpack_object *o)
         break;
     case MSGPACK_OBJECT_BIN:
         var = cfl_variant_create_from_bytes((char *) o->via.str.ptr,
-                                            o->via.str.size);
+                                            o->via.str.size, CFL_TRUE);
         if (!var) {
             return -1;
         }
@@ -945,17 +945,17 @@ static int mp_cfl_to_msgpack(struct cfl_variant *var,
             /* we don't save references */
             break;
         case CFL_VARIANT_STRING:
-            msgpack_pack_str(mp_pck, cfl_sds_len(var->data.as_string));
+            msgpack_pack_str(mp_pck, cfl_variant_size_get(var));
             msgpack_pack_str_body(mp_pck,
-                                  var->data.as_string, cfl_sds_len(var->data.as_string));
+                                  var->data.as_string, cfl_variant_size_get(var));
             break;
         case CFL_VARIANT_BYTES:
-            msgpack_pack_bin(mp_pck, cfl_sds_len(var->data.as_bytes));
+            msgpack_pack_bin(mp_pck, cfl_variant_size_get(var));
             msgpack_pack_bin_body(mp_pck,
-                                  var->data.as_bytes, cfl_sds_len(var->data.as_bytes));
+                                  var->data.as_bytes, cfl_variant_size_get(var));
             break;
         case CFL_VARIANT_ARRAY:
-            msgpack_pack_array(mp_pck, var->data.as_array->entry_count);
+        msgpack_pack_array(mp_pck, var->data.as_array->entry_count);
             for (i = 0; i < var->data.as_array->entry_count; i++) {
                 variant = var->data.as_array->entries[i];
                 ret = mp_cfl_to_msgpack(variant, mp_sbuf, mp_pck);
@@ -1055,6 +1055,23 @@ struct flb_mp_chunk_cobj *flb_mp_chunk_cobj_create(struct flb_log_event_encoder 
     return chunk_cobj;
 }
 
+static int generate_empty_msgpack_map(char **out_buf, size_t *out_size)
+{
+    msgpack_sbuffer mp_sbuf;
+    msgpack_packer mp_pck;
+
+    /* initialize msgpack buffer */
+    msgpack_sbuffer_init(&mp_sbuf);
+    msgpack_packer_init(&mp_pck, &mp_sbuf, msgpack_sbuffer_write);
+
+    msgpack_pack_map(&mp_pck, 0);
+
+    *out_buf = mp_sbuf.data;
+    *out_size = mp_sbuf.size;
+
+    return 0;
+}
+
 int flb_mp_chunk_cobj_encode(struct flb_mp_chunk_cobj *chunk_cobj, char **out_buf, size_t *out_size)
 {
     int ret;
@@ -1070,9 +1087,6 @@ int flb_mp_chunk_cobj_encode(struct flb_mp_chunk_cobj *chunk_cobj, char **out_bu
     /* Iterate all records */
     cfl_list_foreach(head, &chunk_cobj->records) {
         record = cfl_list_entry(head, struct flb_mp_chunk_record, _head);
-        if (record->modified == FLB_TRUE) {
-            continue;
-        }
 
         ret = flb_log_event_encoder_begin_record(chunk_cobj->log_encoder);
         if (ret == -1) {
@@ -1089,18 +1103,32 @@ int flb_mp_chunk_cobj_encode(struct flb_mp_chunk_cobj *chunk_cobj, char **out_bu
             if (ret == -1) {
                 return -1;
             }
-
-            ret = flb_log_event_encoder_set_metadata_from_raw_msgpack(chunk_cobj->log_encoder, mp_buf, mp_size);
-            if (ret != FLB_EVENT_ENCODER_SUCCESS) {
-                flb_free(mp_buf);
+        }
+        else {
+            ret = generate_empty_msgpack_map(&mp_buf, &mp_size);
+            if (ret == -1) {
                 return -1;
             }
-            flb_free(mp_buf);
         }
 
-        ret = flb_mp_cfl_to_msgpack(record->cobj_record, &mp_buf, &mp_size);
-        if (ret == -1) {
+        ret = flb_log_event_encoder_set_metadata_from_raw_msgpack(chunk_cobj->log_encoder, mp_buf, mp_size);
+        if (ret != FLB_EVENT_ENCODER_SUCCESS) {
+            flb_free(mp_buf);
             return -1;
+        }
+        flb_free(mp_buf);
+
+        if (record->cobj_record) {
+            ret = flb_mp_cfl_to_msgpack(record->cobj_record, &mp_buf, &mp_size);
+            if (ret == -1) {
+                return -1;
+            }
+        }
+        else {
+            ret = generate_empty_msgpack_map(&mp_buf, &mp_size);
+            if (ret == -1) {
+                return -1;
+            }
         }
 
         ret = flb_log_event_encoder_set_body_from_raw_msgpack(chunk_cobj->log_encoder, mp_buf, mp_size);
@@ -1229,8 +1257,7 @@ int flb_mp_chunk_cobj_record_destroy(struct flb_mp_chunk_cobj *chunk_cobj,
         return -1;
     }
 
-
-    if (chunk_cobj->record_pos) {
+    if (chunk_cobj && chunk_cobj->record_pos) {
         first = cfl_list_entry_first(&chunk_cobj->records, struct flb_mp_chunk_record, _head);
         last = cfl_list_entry_last(&chunk_cobj->records, struct flb_mp_chunk_record, _head);
 

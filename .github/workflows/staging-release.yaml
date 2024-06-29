@@ -67,14 +67,6 @@ jobs:
     - name: Checkout repository
       uses: actions/checkout@v4
 
-    # Check we can download the AppVeyor build which confirms it matches the version to release as well as being a successful build
-    - name: Get Appveyor binaries
-      run: |
-        ./packaging/appveyor-download.sh
-      shell: bash
-      env:
-        TAG: v${{ github.event.inputs.version }}
-
   staging-release-generate-package-matrix:
     name: Get package matrix
     runs-on: ubuntu-latest
@@ -356,14 +348,6 @@ jobs:
         AWS_REGION: "us-east-1"
       shell: bash
 
-    - name: Get Appveyor binaries
-      run: |
-        ./packaging/appveyor-download.sh
-      shell: bash
-      env:
-        TAG: v${{ github.event.inputs.version }}
-        OUTPUT_DIR: appveyor
-
     - name: Move components from staging and setup
       run: |
         ./packaging/update-source-packages.sh
@@ -518,8 +502,8 @@ jobs:
           TAG: ${{ steps.get-tag.outputs.tag }}
 
   staging-release-images-latest-tags:
-    # Only update latest tags for 3.0 releases
-    if: startsWith(github.event.inputs.version, '3.0')
+    # Only update latest tags for 3.1 releases
+    if: startsWith(github.event.inputs.version, '3.1')
     name: Release latest Linux container images
     runs-on: ubuntu-latest
     needs:
@@ -793,6 +777,7 @@ jobs:
           name: "Fluent Bit ${{ inputs.version }}"
           tag_name: v${{ inputs.version }}
           target_commitish: '2.0'
+          make_latest: false
 
       - name: Release 2.1 - not latest
         uses: softprops/action-gh-release@v2
@@ -804,19 +789,9 @@ jobs:
           name: "Fluent Bit ${{ inputs.version }}"
           tag_name: v${{ inputs.version }}
           target_commitish: '2.1'
+          make_latest: false
 
-      - name: Release 2.2 - not latest
-        uses: softprops/action-gh-release@v2
-        if: startsWith(inputs.version, '2.2')
-        with:
-          body: "https://fluentbit.io/announcements/v${{ inputs.version }}/"
-          draft: false
-          generate_release_notes: true
-          name: "Fluent Bit ${{ inputs.version }}"
-          tag_name: v${{ inputs.version }}
-          target_commitish: '2.2'
-
-      - name: Release 3.0 and latest
+      - name: Release 3.0 - not latest
         uses: softprops/action-gh-release@v2
         if: startsWith(inputs.version, '3.0')
         with:
@@ -825,6 +800,19 @@ jobs:
           generate_release_notes: true
           name: "Fluent Bit ${{ inputs.version }}"
           tag_name: v${{ inputs.version }}
+          target_commitish: '3.0'
+          make_latest: false
+
+      - name: Release 3.1 and latest
+        uses: softprops/action-gh-release@v2
+        if: startsWith(inputs.version, '3.1')
+        with:
+          body: "https://fluentbit.io/announcements/v${{ inputs.version }}/"
+          draft: false
+          generate_release_notes: true
+          name: "Fluent Bit ${{ inputs.version }}"
+          tag_name: v${{ inputs.version }}
+          make_latest: true
 
   staging-release-windows-checksums:
     name: Get Windows checksums for new release
@@ -910,8 +898,15 @@ jobs:
           ref: 2.2
           token: ${{ secrets.GH_PA_TOKEN }}
 
-      - name: Release 3.0 and latest
+      - name: Release 3.0 - not latest
         if: startsWith(inputs.version, '3.0')
+        uses: actions/checkout@v4
+        with:
+          repository: fluent/fluent-bit-docs
+          token: ${{ secrets.GH_PA_TOKEN }}
+
+      - name: Release 3.1 and latest
+        if: startsWith(inputs.version, '3.1')
         uses: actions/checkout@v4
         with:
           repository: fluent/fluent-bit-docs
@@ -989,8 +984,14 @@ jobs:
         with:
           ref: 2.2
 
-      - name: Release 3.0 and latest
+      - name: Release 3.0 not latest
         if: startsWith(inputs.version, '3.0')
+        uses: actions/checkout@v4
+        with:
+          ref: 3.0
+
+      - name: Release 3.1 latest
+        if: startsWith(inputs.version, '3.1')
         uses: actions/checkout@v4
 
       # Get the new version to use

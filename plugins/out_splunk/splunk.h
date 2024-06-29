@@ -95,6 +95,12 @@ struct flb_splunk {
 
     /* Token Auth */
     flb_sds_t auth_header;
+    /* Token Auth (via metadata) */
+    flb_sds_t metadata_auth_header;
+
+    /* Metadata of Splunk Authentication */
+    flb_sds_t metadata_auth_key;
+    struct flb_record_accessor *ra_metadata_auth_key;
 
     /* Channel identifier */
     flb_sds_t channel;
@@ -114,6 +120,8 @@ struct flb_splunk {
 
     /* Plugin instance */
     struct flb_output_instance *ins;
+
+    pthread_mutex_t mutex_hec_token;
 };
 
 #endif

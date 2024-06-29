@@ -55,6 +55,7 @@ struct cmt_metric *cmt_map_metric_get(struct cmt_opts *opts, struct cmt_map *map
 int cmt_map_metric_get_val(struct cmt_opts *opts, struct cmt_map *map,
                            int labels_count, char **labels_val,
                            double *out_val);
+void cmt_map_metric_destroy(struct cmt_metric *metric);
 
 void destroy_label_list(struct cfl_list *label_list);
 

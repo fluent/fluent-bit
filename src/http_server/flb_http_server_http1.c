@@ -138,6 +138,14 @@ static int http1_session_process_request(struct flb_http1_server_session *sessio
     struct mk_http_header  *header;
     int                     result;
 
+    result = flb_http_request_init(&session->stream.request);
+
+    if (result != 0) {
+      return -1;
+    }
+
+    session->stream.request.stream = &session->stream;
+
     if (session->inner_request.uri_processed.data != NULL) {
         session->stream.request.path = \
             cfl_sds_create_len(session->inner_request.uri_processed.data, 
@@ -450,7 +458,7 @@ int flb_http1_server_session_init(struct flb_http1_server_session *session,
 
     mk_http_parser_init(&session->inner_parser);
 
-    result = flb_http_stream_init(&session->stream, parent, 0, HTTP_STREAM_ROLE_SERVER, 
+    result = flb_http_stream_init(&session->stream, parent, 0, HTTP_STREAM_ROLE_SERVER,
                                   user_data);
 
     if (result != 0) {
@@ -471,11 +479,13 @@ void flb_http1_server_session_destroy(struct flb_http1_server_session *session)
             session->inner_session.channel = NULL;
         }
 
+        flb_http_stream_destroy(&session->stream);
+
         session->initialized = FLB_FALSE;
     }
 }
 
-int flb_http1_server_session_ingest(struct flb_http1_server_session *session, 
+int flb_http1_server_session_ingest(struct flb_http1_server_session *session,
                          unsigned char *buffer, 
                          size_t length)
 {

@@ -84,7 +84,7 @@ static int send_response(struct splunk_conn *conn, int http_status, char *messag
     }
     else if (http_status == 400) {
         flb_sds_printf(&out,
-                       "HTTP/1.1 400 Forbidden\r\n"
+                       "HTTP/1.1 400 Bad Request\r\n"
                        "Server: Fluent Bit v%s\r\n"
                        "Content-Length: %i\r\n\r\n%s",
                        FLB_VERSION_STR,
@@ -226,11 +226,37 @@ static int process_raw_payload_pack(struct flb_splunk *ctx, flb_sds_t tag, char 
         ret = flb_log_event_encoder_set_current_timestamp(&ctx->log_encoder);
     }
 
-    if (ret == FLB_EVENT_ENCODER_SUCCESS) {
-        ret = flb_log_event_encoder_append_body_values(
-                &ctx->log_encoder,
-                FLB_LOG_EVENT_CSTRING_VALUE("log"),
-                FLB_LOG_EVENT_STRING_VALUE(buf, size));
+    if (ctx->store_token_in_metadata == FLB_TRUE) {
+        if (ret == FLB_EVENT_ENCODER_SUCCESS) {
+            ret = flb_log_event_encoder_append_body_values(
+                    &ctx->log_encoder,
+                    FLB_LOG_EVENT_CSTRING_VALUE("log"),
+                    FLB_LOG_EVENT_STRING_VALUE(buf, size));
+        }
+    }
+
+    if (ctx->store_token_in_metadata == FLB_TRUE) {
+        if (ctx->ingested_auth_header != NULL) {
+            if (ret == FLB_EVENT_ENCODER_SUCCESS) {
+                ret = flb_log_event_encoder_append_metadata_values(
+                    &ctx->log_encoder,
+                    FLB_LOG_EVENT_CSTRING_VALUE("hec_token"),
+                    FLB_LOG_EVENT_CSTRING_VALUE(ctx->ingested_auth_header));
+            }
+        }
+    }
+    else {
+        if (ctx->ingested_auth_header != NULL) {
+            if (ret == FLB_EVENT_ENCODER_SUCCESS) {
+                ret = flb_log_event_encoder_append_body_values(
+                    &ctx->log_encoder,
+                    FLB_LOG_EVENT_CSTRING_VALUE(ctx->store_token_key),
+                    FLB_LOG_EVENT_CSTRING_VALUE(ctx->ingested_auth_header),
+                    FLB_LOG_EVENT_CSTRING_VALUE("log"),
+                    FLB_LOG_EVENT_STRING_VALUE(buf, size));
+
+            }
+        }
     }
 
     if (ret == FLB_EVENT_ENCODER_SUCCESS) {
@@ -266,6 +292,8 @@ static void process_flb_log_append(struct flb_splunk *ctx, msgpack_object *recor
                                    flb_sds_t tag, flb_sds_t tag_from_record,
                                    struct flb_time tm) {
     int ret;
+    int i;
+    msgpack_object_kv *kv;
 
     ret = flb_log_event_encoder_begin_record(&ctx->log_encoder);
 
@@ -275,10 +303,47 @@ static void process_flb_log_append(struct flb_splunk *ctx, msgpack_object *recor
                 &tm);
     }
 
-    if (ret == FLB_EVENT_ENCODER_SUCCESS) {
-        ret = flb_log_event_encoder_set_body_from_msgpack_object(
-                &ctx->log_encoder,
-                record);
+    if (ctx->store_token_in_metadata == FLB_TRUE) {
+        if (ret == FLB_EVENT_ENCODER_SUCCESS) {
+            ret = flb_log_event_encoder_set_body_from_msgpack_object(
+                    &ctx->log_encoder,
+                    record);
+        }
+
+        if (ctx->ingested_auth_header != NULL) {
+            if (ret == FLB_EVENT_ENCODER_SUCCESS) {
+                ret = flb_log_event_encoder_append_metadata_values(
+                    &ctx->log_encoder,
+                    FLB_LOG_EVENT_CSTRING_VALUE("hec_token"),
+                    FLB_LOG_EVENT_CSTRING_VALUE(ctx->ingested_auth_header));
+            }
+        }
+    }
+    else {
+        if (ctx->ingested_auth_header != NULL) {
+            /* iterate through the old record map to create the appendable new buffer */
+            kv = record->via.map.ptr;
+            for(i = 0; i < record->via.map.size && ret == FLB_EVENT_ENCODER_SUCCESS; i++) {
+                ret = flb_log_event_encoder_append_body_values(
+                        &ctx->log_encoder,
+                        FLB_LOG_EVENT_MSGPACK_OBJECT_VALUE(&kv[i].key),
+                        FLB_LOG_EVENT_MSGPACK_OBJECT_VALUE(&kv[i].val));
+            }
+
+            if (ret == FLB_EVENT_ENCODER_SUCCESS) {
+                ret = flb_log_event_encoder_append_body_values(
+                    &ctx->log_encoder,
+                    FLB_LOG_EVENT_CSTRING_VALUE(ctx->store_token_key),
+                    FLB_LOG_EVENT_CSTRING_VALUE(ctx->ingested_auth_header));
+            }
+        }
+        else {
+            if (ret == FLB_EVENT_ENCODER_SUCCESS) {
+                ret = flb_log_event_encoder_set_body_from_msgpack_object(
+                        &ctx->log_encoder,
+                        record);
+            }
+        }
     }
 
     if (ret == FLB_EVENT_ENCODER_SUCCESS) {
@@ -416,9 +481,11 @@ static ssize_t parse_hec_payload_json(struct flb_splunk *ctx, flb_sds_t tag,
 
 static int validate_auth_header(struct flb_splunk *ctx, struct mk_http_request *request)
 {
+    struct mk_list *head;
     struct mk_http_header *auth_header = NULL;
+    struct flb_splunk_tokens *splunk_token;
 
-    if (ctx->auth_header == NULL) {
+    if (mk_list_size(&ctx->auth_tokens) == 0) {
         return SPLUNK_AUTH_UNAUTH;
     }
 
@@ -429,14 +496,16 @@ static int validate_auth_header(struct flb_splunk *ctx, struct mk_http_request *
     }
 
     if (auth_header != NULL && auth_header->val.len > 0) {
-        if (strncmp(ctx->auth_header,
-                    auth_header->val.data,
-                    strlen(ctx->auth_header)) == 0) {
-            return SPLUNK_AUTH_SUCCESS;
+        mk_list_foreach(head, &ctx->auth_tokens) {
+            splunk_token = mk_list_entry(head, struct flb_splunk_tokens, _head);
+            if (strncmp(splunk_token->header,
+                        auth_header->val.data,
+                        strlen(splunk_token->header)) == 0) {
+                return SPLUNK_AUTH_SUCCESS;
+            }
         }
-        else {
-            return SPLUNK_AUTH_UNAUTHORIZED;
-        }
+
+        return SPLUNK_AUTH_UNAUTHORIZED;
     }
     else {
         return SPLUNK_AUTH_MISSING_CRED;
@@ -477,6 +546,7 @@ static int process_hec_payload(struct flb_splunk *ctx, struct splunk_conn *conn,
     int ret = 0;
     int type = -1;
     struct mk_http_header *header;
+    struct mk_http_header *header_auth;
     int extra_size = -1;
     struct mk_http_header *headers_extra;
     int gzip_compressed = FLB_FALSE;
@@ -498,7 +568,7 @@ static int process_hec_payload(struct flb_splunk *ctx, struct splunk_conn *conn,
         type = HTTP_CONTENT_TEXT;
     }
     else {
-        /* Not neccesary to specify content-type for Splunk HEC. */
+        /* Not necessary to specify content-type for Splunk HEC. */
         flb_plg_debug(ctx->ins, "Mark as unknown type for ingested payloads");
         type = HTTP_CONTENT_UNKNOWN;
     }
@@ -506,6 +576,13 @@ static int process_hec_payload(struct flb_splunk *ctx, struct splunk_conn *conn,
     if (request->data.len <= 0) {
         send_response(conn, 400, "error: no payload found\n");
         return -1;
+    }
+
+    header_auth = &session->parser.headers[MK_HEADER_AUTHORIZATION];
+    if (header_auth->key.data != NULL) {
+        if (strncasecmp(header_auth->val.data, "Splunk ", 7) == 0) {
+            ctx->ingested_auth_header = header_auth->val.data;
+        }
     }
 
     extra_size = session->parser.headers_extra_count;
@@ -548,6 +625,7 @@ static int process_hec_raw_payload(struct flb_splunk *ctx, struct splunk_conn *c
 {
     int ret = -1;
     struct mk_http_header *header;
+    struct mk_http_header *header_auth;
 
     header = &session->parser.headers[MK_HEADER_CONTENT_TYPE];
     if (header->key.data == NULL) {
@@ -556,13 +634,20 @@ static int process_hec_raw_payload(struct flb_splunk *ctx, struct splunk_conn *c
     }
     else if (header->val.len != 10 ||
              strncasecmp(header->val.data, "text/plain", 10) != 0) {
-        /* Not neccesary to specify content-type for Splunk HEC. */
+        /* Not necessary to specify content-type for Splunk HEC. */
         flb_plg_debug(ctx->ins, "Mark as unknown type for ingested payloads");
     }
 
     if (request->data.len <= 0) {
         send_response(conn, 400, "error: no payload found\n");
         return -1;
+    }
+
+    header_auth = &session->parser.headers[MK_HEADER_AUTHORIZATION];
+    if (header_auth->key.data != NULL) {
+        if (strncasecmp(header_auth->val.data, "Splunk ", 7) == 0) {
+            ctx->ingested_auth_header = header_auth->val.data;
+        }
     }
 
     /* Always handle as raw type of payloads here */
@@ -691,7 +776,7 @@ int splunk_prot_handle(struct flb_splunk *ctx, struct splunk_conn *conn,
     }
 
     if (request->method == MK_METHOD_GET) {
-        /* Handle health minotoring of splunk hec endpoint for load balancers */
+        /* Handle health monitoring of splunk hec endpoint for load balancers */
         if (strcasecmp(uri, "/services/collector/health") == 0) {
             send_json_message_response(conn, 200, "{\"text\":\"Success\",\"code\":200}");
         }
@@ -709,7 +794,7 @@ int splunk_prot_handle(struct flb_splunk *ctx, struct splunk_conn *conn,
      * authentication if provided splunk_token */
     ret = validate_auth_header(ctx, request);
     if (ret < 0){
-        send_response(conn, 401, "error: unauthroized\n");
+        send_response(conn, 401, "error: unauthorized\n");
         if (ret == SPLUNK_AUTH_MISSING_CRED) {
             flb_plg_warn(ctx->ins, "missing credentials in request headers");
         }
@@ -804,7 +889,7 @@ static int send_response_ng(struct flb_http_response *response,
         flb_http_response_set_message(response, "No Content");
     }
     else if (http_status == 400) {
-        flb_http_response_set_message(response, "Forbidden");
+        flb_http_response_set_message(response, "Bad Request");
     }
 
     if (message != NULL) {
@@ -834,7 +919,7 @@ static int send_json_message_response_ng(struct flb_http_response *response,
         flb_http_response_set_message(response, "No Content");
     }
     else if (http_status == 400) {
-        flb_http_response_set_message(response, "Forbidden");
+        flb_http_response_set_message(response, "Bad Request");
     }
 
     flb_http_response_set_header(response, 
@@ -854,12 +939,15 @@ static int send_json_message_response_ng(struct flb_http_response *response,
 
 static int validate_auth_header_ng(struct flb_splunk *ctx, struct flb_http_request *request)
 {
+    struct mk_list *tmp;
+    struct mk_list *head;
     char *auth_header;
+    struct flb_splunk_tokens *splunk_token;
 
-    if (ctx->auth_header == NULL) {
+    if (mk_list_size(&ctx->auth_tokens) == 0) {
         return SPLUNK_AUTH_UNAUTH;
     }
-    
+
     auth_header = flb_http_request_get_header(request, "authorization");
 
     if (auth_header == NULL) {
@@ -867,14 +955,16 @@ static int validate_auth_header_ng(struct flb_splunk *ctx, struct flb_http_reque
     }
 
     if (auth_header != NULL && strlen(auth_header) > 0) {
-        if (strncmp(ctx->auth_header,
-                    auth_header,
-                    strlen(ctx->auth_header)) == 0) {
-            return SPLUNK_AUTH_SUCCESS;
+        mk_list_foreach_safe(head, tmp, &ctx->auth_tokens) {
+            splunk_token = mk_list_entry(head, struct flb_splunk_tokens, _head);
+            if (strncmp(splunk_token->header,
+                        auth_header,
+                        strlen(splunk_token->header)) == 0) {
+                return SPLUNK_AUTH_SUCCESS;
+            }
         }
-        else {
-            return SPLUNK_AUTH_UNAUTHORIZED;
-        }
+
+        return SPLUNK_AUTH_UNAUTHORIZED;
     }
     else {
         return SPLUNK_AUTH_MISSING_CRED;
@@ -889,6 +979,9 @@ static int process_hec_payload_ng(struct flb_http_request *request,
                                   struct flb_splunk *ctx)
 {
     int type = -1;
+    int ret = 0;
+    size_t size = 0;
+    char *auth_header;
 
     type = HTTP_CONTENT_UNKNOWN;
 
@@ -900,8 +993,15 @@ static int process_hec_payload_ng(struct flb_http_request *request,
             type = HTTP_CONTENT_TEXT;
         }
         else {
-            /* Not neccesary to specify content-type for Splunk HEC. */
+            /* Not necessary to specify content-type for Splunk HEC. */
             flb_plg_debug(ctx->ins, "Mark as unknown type for ingested payloads");
+        }
+    }
+
+    ret = flb_hash_table_get(request->headers, "authorization", 13, (void **)&auth_header, &size);
+    if (ret != 0 && size > 0) {
+        if (strncasecmp(auth_header, "Splunk ", 7) == 0) {
+            ctx->ingested_auth_header = auth_header;
         }
     }
 
@@ -919,14 +1019,25 @@ static int process_hec_raw_payload_ng(struct flb_http_request *request,
                                       flb_sds_t tag,
                                       struct flb_splunk *ctx)
 {
+    int ret = 0;
+    size_t size = 0;
+    char *auth_header;
+
     if (request->content_type == NULL) {
         send_response_ng(response, 400, "error: header 'Content-Type' is not set\n");
 
         return -1;
     }
     else if (strcasecmp(request->content_type, "text/plain") != 0) {
-        /* Not neccesary to specify content-type for Splunk HEC. */
+        /* Not necessary to specify content-type for Splunk HEC. */
         flb_plg_debug(ctx->ins, "Mark as unknown type for ingested payloads");
+    }
+
+    ret = flb_hash_table_get(request->headers, "authorization", 13, (void **)&auth_header, &size);
+    if (ret != 0 && size > 0) {
+        if (strncasecmp(auth_header, "Splunk ", 7) == 0) {
+            ctx->ingested_auth_header = auth_header;
+        }
     }
 
     if (request->body == NULL || cfl_sds_len(request->body) == 0) {
@@ -961,7 +1072,7 @@ int splunk_prot_handle_ng(struct flb_http_request *request,
     }
 
     if (request->method == HTTP_METHOD_GET) {
-        /* Handle health minotoring of splunk hec endpoint for load balancers */
+        /* Handle health monitoring of splunk hec endpoint for load balancers */
         if (strcasecmp(request->path, "/services/collector/health") == 0) {
             send_json_message_response_ng(response, 200, "{\"text\":\"Success\",\"code\":200}");
         }
