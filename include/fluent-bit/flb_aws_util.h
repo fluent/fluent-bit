@@ -144,12 +144,20 @@ flb_sds_t flb_aws_xml_error(char *response, size_t response_len);
 flb_sds_t flb_aws_error(char *response, size_t response_len);
 
 /*
- * Similar to 'flb_aws_error', except it prints the JSON error type and message
- * to the user in a error log.
+ * Similar to 'flb_aws_error', except it prints the JSON error __type and message
+ * field values to the user in a error log.
  * 'api' is the name of the API that was called; this is used in the error log.
  */
 void flb_aws_print_error(char *response, size_t response_len,
                          char *api, struct flb_output_instance *ins);
+
+/*
+ * Similar to 'flb_aws_error', except it prints the JSON error Code and Message
+ * field values to the user in a error log.
+ * 'api' is the name of the API that was called; this is used in the error log.
+ */
+void flb_aws_print_error_code(char *response, size_t response_len,
+                              char *api);
 
 /* Similar to 'flb_aws_print_error', but for APIs that return XML */
 void flb_aws_print_xml_error(char *response, size_t response_len,

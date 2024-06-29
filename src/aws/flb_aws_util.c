@@ -579,6 +579,10 @@ flb_sds_t flb_aws_xml_get_val(char *response, size_t response_len, char *tag, ch
     return val;
 }
 
+/*
+ * Error parsing for json APIs that respond with an
+ * __type and message fields for error responses.
+ */
 void flb_aws_print_error(char *response, size_t response_len,
                               char *api, struct flb_output_instance *ins)
 {
@@ -599,6 +603,37 @@ void flb_aws_print_error(char *response, size_t response_len,
     }
     else {
         flb_plg_error(ins, "%s API responded with error='%s', message='%s'",
+                      api, error, message);
+        flb_sds_destroy(message);
+    }
+
+    flb_sds_destroy(error);
+}
+
+/*
+ * Error parsing for json APIs that respond with a
+ * Code and Message fields for error responses.
+ */
+void flb_aws_print_error_code(char *response, size_t response_len,
+                              char *api)
+{
+    flb_sds_t error;
+    flb_sds_t message;
+
+    error = flb_json_get_val(response, response_len, "Code");
+    if (!error) {
+        /* error can not be parsed, print raw response */
+        flb_warn("%s: Raw response: %s", api, response);
+        return;
+    }
+
+    message = flb_json_get_val(response, response_len, "Message");
+    if (!message) {
+        /* just print the error */
+        flb_error("%s API responded with code='%s'", api, error);
+    }
+    else {
+        flb_error("%s API responded with code='%s', message='%s'",
                       api, error, message);
         flb_sds_destroy(message);
     }
