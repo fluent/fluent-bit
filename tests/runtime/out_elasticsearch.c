@@ -167,6 +167,19 @@ static void cb_check_id_key(void *ctx, int ffd,
     flb_free(res_data);
 }
 
+static void cb_check_index_ra(void *ctx, int ffd,
+                                  int res_ret, void *res_data, size_t res_size,
+                                  void *data)
+{
+    char *p;
+    char *out_js = res_data;
+    char *index_line = "{\"create\":{\"_index\":\"aaa-JSON_END\",\"_type\":\"_doc\"}";
+
+    p = strstr(out_js, index_line);
+    TEST_CHECK(p != NULL);
+    flb_free(res_data);
+}
+
 void flb_test_write_operation_index()
 {
     int ret;
@@ -799,6 +812,50 @@ void flb_test_logstash_prefix_separator()
     flb_destroy(ctx);
 }
 
+void flb_test_index_ra()
+{
+    int ret;
+    int size = sizeof(JSON_ES) - 1;
+    flb_ctx_t *ctx;
+    int in_ffd;
+    int out_ffd;
+
+    /* Create context, flush every second (some checks omitted here) */
+    ctx = flb_create();
+    flb_service_set(ctx, "flush", "1", "grace", "1", NULL);
+
+    /* Lib input mode */
+    in_ffd = flb_input(ctx, (char *) "lib", NULL);
+    flb_input_set(ctx, in_ffd, "tag", "test", NULL);
+
+    /* Elasticsearch output */
+    out_ffd = flb_output(ctx, (char *) "es", NULL);
+    flb_output_set(ctx, out_ffd,
+                   "match", "test",
+                   NULL);
+
+    /* Override defaults of index and type */
+    flb_output_set(ctx, out_ffd,
+                   "index", "aaa-$END_KEY",
+                   NULL);
+
+    /* Enable test mode */
+    ret = flb_output_set_test(ctx, out_ffd, "formatter",
+                              cb_check_index_ra,
+                              NULL, NULL);
+
+    /* Start */
+    ret = flb_start(ctx);
+    TEST_CHECK(ret == 0);
+
+    /* Ingest data sample */
+    flb_lib_push(ctx, in_ffd, (char *) JSON_ES, size);
+
+    sleep(2);
+    flb_stop(ctx);
+    flb_destroy(ctx);
+}
+
 /* Test list */
 TEST_LIST = {
     {"long_index"            , flb_test_long_index },
@@ -808,6 +865,7 @@ TEST_LIST = {
     {"write_operation_update", flb_test_write_operation_update },
     {"write_operation_upsert", flb_test_write_operation_upsert },
     {"index_type"            , flb_test_index_type },
+    {"index_ra"              , flb_test_index_ra},
     {"logstash_format"       , flb_test_logstash_format },
     {"logstash_format_nanos" , flb_test_logstash_format_nanos },
     {"tag_key"               , flb_test_tag_key },
