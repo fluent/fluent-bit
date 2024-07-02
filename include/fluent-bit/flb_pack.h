@@ -107,6 +107,7 @@ int flb_msgpack_expand_map(char *map_data, size_t map_size,
                            char** out_buf, int* out_size);
 
 struct flb_gelf_fields {
+    flb_sds_t tag_key;
     flb_sds_t timestamp_key;
     flb_sds_t host_key;
     flb_sds_t short_message_key;

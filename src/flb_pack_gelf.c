@@ -412,18 +412,21 @@ flb_sds_t flb_msgpack_to_gelf(flb_sds_t *s, msgpack_object *o,
     int loop;
     flb_sds_t tmp;
 
+    int tag_key_found = FLB_FALSE;
     int host_key_found = FLB_FALSE;
     int timestamp_key_found = FLB_FALSE;
     int level_key_found = FLB_FALSE;
     int short_message_key_found = FLB_FALSE;
     int full_message_key_found = FLB_FALSE;
 
+    char *tag_key = NULL;
     char *host_key = NULL;
     char *timestamp_key = NULL;
     char *level_key = NULL;
     char *short_message_key = NULL;
     char *full_message_key = NULL;
 
+    int tag_key_len = 0;
     int host_key_len = 0;
     int timestamp_key_len = false;
     int level_key_len = 0;
@@ -437,6 +440,15 @@ flb_sds_t flb_msgpack_to_gelf(flb_sds_t *s, msgpack_object *o,
     /* Make sure the incoming object is a map */
     if (o->type != MSGPACK_OBJECT_MAP) {
         return NULL;
+    }
+
+    if (fields != NULL && fields->tag_key != NULL) {
+        tag_key = fields->tag_key;
+        tag_key_len = flb_sds_len(fields->host_key);
+    }
+    else {
+        tag_key = "tag";
+        tag_key_len = 3;
     }
 
     if (fields != NULL && fields->host_key != NULL) {
@@ -603,6 +615,15 @@ flb_sds_t flb_msgpack_to_gelf(flb_sds_t *s, msgpack_object *o,
                 full_message_key_found = FLB_TRUE;
                 key = "full_message";
                 key_len = 12;
+            }
+            else if ((key_len == tag_key_len) &&
+                !strncmp(key, tag_key, tag_key_len)) {
+                if (tag_key_found == FLB_TRUE) {
+                    continue;
+                }
+                tag_key_found = FLB_TRUE;
+                key = "tag";
+                key_len = 3;
             }
             else if ((key_len == 2)  && !strncmp(key, "id", 2)) {
                 /* _id key not allowed */
