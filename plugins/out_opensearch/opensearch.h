@@ -24,6 +24,7 @@
 #define FLB_OS_DEFAULT_HOST       "127.0.0.1"
 #define FLB_OS_DEFAULT_PORT       92000
 #define FLB_OS_DEFAULT_INDEX      "fluent-bit"
+#define FLB_OS_DEFAULT_TEMPLATE   "fluent-bit_template"
 #define FLB_OS_DEFAULT_TYPE       "_doc"
 #define FLB_OS_DEFAULT_PREFIX     "logstash"
 #define FLB_OS_DEFAULT_TIME_FMT   "%Y.%m.%d"
@@ -35,6 +36,9 @@
 #define FLB_OS_WRITE_OP_CREATE    "create"
 #define FLB_OS_WRITE_OP_UPDATE    "update"
 #define FLB_OS_WRITE_OP_UPSERT    "upsert"
+#define FLB_OS_RETRY               -1
+#define FLB_OS_SUCCESS             0
+#define FLB_OS_NOT_FOUND           1
 
 /* macros */
 #define FLB_OS_HEADER_SIZE        1024
@@ -94,6 +98,16 @@ struct flb_opensearch {
     int trace_error;
 
     /*
+     * OpenSearch data stream options
+     */
+    int data_stream_mode;
+    char *data_stream_name;
+    char *data_stream_template_name;
+    char *template_file;
+    int template_overwrite;
+    struct flb_record_accessor *ra_data_stream;
+
+    /*
      * Logstash compatibility options
      * ==============================
      */
@@ -138,6 +152,8 @@ struct flb_opensearch {
 
     /* HTTP API */
     char uri[1024];
+    char template_uri[1024];
+    char ds_uri[1024];
 
     struct flb_record_accessor *ra_prefix_key;
 
