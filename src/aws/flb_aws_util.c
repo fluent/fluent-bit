@@ -57,8 +57,8 @@
 #define FLB_AWS_BASE_USER_AGENT_LEN    21
 #endif
 
-#define FLB_AWS_MILLISECOND_FORMATTER_LENGTH 3
-#define FLB_AWS_NANOSECOND_FORMATTER_LENGTH 9
+#define FLB_AWS_MILLISECOND_LENGTH 3
+#define FLB_AWS_NANOSECOND_LENGTH 9
 #define FLB_AWS_MILLISECOND_FORMATTER "%3N"
 #define FLB_AWS_NANOSECOND_FORMATTER_N "%9N"
 #define FLB_AWS_NANOSECOND_FORMATTER_L "%L"
@@ -957,6 +957,20 @@ flb_sds_t flb_get_s3_key(const char *format, time_t time, const char *tag,
         return NULL;
 }
 
+
+static void decimal_with_leading_zeros(char *dst, char *src, int expected_len)
+{
+    int src_len = strlen(src);
+    int zero_len = expected_len - src_len;
+    int i;
+
+    for (i = 0; i < zero_len; i++) {
+        dst[i] = '0';
+    }
+
+    strncat(dst + zero_len, src, src_len);
+}
+
 /*
  * This function is an extension to strftime which can support milliseconds with %3N,
  * support nanoseconds with %9N or %L. The return value is the length of formatted
@@ -965,8 +979,8 @@ flb_sds_t flb_get_s3_key(const char *format, time_t time, const char *tag,
 size_t flb_aws_strftime_precision(char **out_buf, const char *time_format,
                                   struct flb_time *tms)
 {
-    char millisecond_str[FLB_AWS_MILLISECOND_FORMATTER_LENGTH+1];
-    char nanosecond_str[FLB_AWS_NANOSECOND_FORMATTER_LENGTH+1];
+    char millisecond_str[FLB_AWS_MILLISECOND_LENGTH+1];
+    char nanosecond_str[FLB_AWS_NANOSECOND_LENGTH+1];
     char *tmp_parsed_time_str;
     char *buf;
     size_t out_size;
@@ -975,6 +989,7 @@ size_t flb_aws_strftime_precision(char **out_buf, const char *time_format,
     struct tm timestamp;
     struct tm *tmp;
     int i;
+    int j;
 
     /*
      * Guess the max length needed for tmp_parsed_time_str and tmp_out_buf. The
@@ -1002,28 +1017,34 @@ size_t flb_aws_strftime_precision(char **out_buf, const char *time_format,
     }
 
     /* Replace %3N to millisecond, %9N and %L to nanosecond in time_format. */
-    snprintf(millisecond_str, FLB_AWS_MILLISECOND_FORMATTER_LENGTH+1,
+    snprintf(millisecond_str, FLB_AWS_MILLISECOND_LENGTH+1,
              "%" PRIu64, (uint64_t) tms->tm.tv_nsec / 1000000);
-    snprintf(nanosecond_str, FLB_AWS_NANOSECOND_FORMATTER_LENGTH+1,
+    snprintf(nanosecond_str, FLB_AWS_NANOSECOND_LENGTH+1,
              "%" PRIu64, (uint64_t) tms->tm.tv_nsec);
+
+    j = 0;
     for (i = 0; i < time_format_len; i++) {
         if (strncmp(time_format+i, FLB_AWS_MILLISECOND_FORMATTER, 3) == 0) {
-            strncat(tmp_parsed_time_str, millisecond_str,
-                    FLB_AWS_MILLISECOND_FORMATTER_LENGTH+1);
+            decimal_with_leading_zeros(tmp_parsed_time_str + j, millisecond_str,
+                                       FLB_AWS_MILLISECOND_LENGTH);
             i += 2;
+            j += FLB_AWS_MILLISECOND_LENGTH;
         }
         else if (strncmp(time_format+i, FLB_AWS_NANOSECOND_FORMATTER_N, 3) == 0) {
-            strncat(tmp_parsed_time_str, nanosecond_str,
-                    FLB_AWS_NANOSECOND_FORMATTER_LENGTH+1);
+            decimal_with_leading_zeros(tmp_parsed_time_str + j, nanosecond_str,
+                                       FLB_AWS_NANOSECOND_LENGTH);
             i += 2;
+            j += FLB_AWS_NANOSECOND_LENGTH;
         }
         else if (strncmp(time_format+i, FLB_AWS_NANOSECOND_FORMATTER_L, 2) == 0) {
-            strncat(tmp_parsed_time_str, nanosecond_str,
-                    FLB_AWS_NANOSECOND_FORMATTER_LENGTH+1);
+            decimal_with_leading_zeros(tmp_parsed_time_str + j, nanosecond_str,
+                                       FLB_AWS_NANOSECOND_LENGTH);
             i += 1;
+            j += FLB_AWS_NANOSECOND_LENGTH;
         }
         else {
-            strncat(tmp_parsed_time_str,time_format+i,1);
+            strncat(tmp_parsed_time_str + j, time_format+i, 1);
+            j += 1;
         }
     }
 
