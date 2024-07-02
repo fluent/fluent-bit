@@ -711,6 +711,18 @@ int flb_http_server_session_ingest(struct flb_http_server_session *session,
             if (result != 0) {
                 return -1;
             }
+
+            /* FIXME: Auto disabling keepalive due to not return responses
+             * when failed to HTTP2 upgrade. This should be harmful
+             * for splunk input case. This is because Splunk HEC
+             * requests are expected to return response code response
+             * with JSON representation. Meanwhile, we need to
+             * disable keepalive automatically in this code path. */
+            if (session->version == HTTP_PROTOCOL_HTTP1) {
+                if (session->parent->flags & FLB_HTTP_SERVER_FLAG_KEEPALIVE) {
+                    session->parent->flags &= ~FLB_HTTP_SERVER_FLAG_KEEPALIVE;
+                }
+            }
         }
         else if (session->version == HTTP_PROTOCOL_HTTP2) {
             result = flb_http2_server_session_init(&session->http2, session);
