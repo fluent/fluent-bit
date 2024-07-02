@@ -169,8 +169,6 @@ struct flb_syslog *syslog_conf_create(struct flb_input_instance *ins,
     }
 
     if (!ctx->parser) {
-        flb_log_event_encoder_destroy(ctx->log_encoder);
-
         flb_error("[in_syslog] parser not set");
         syslog_conf_destroy(ctx);
         return NULL;
