@@ -40,16 +40,6 @@
 #include <msgpack.h>
 
 #include "encrypt.h"
-#include "hashmap/hashmap.h"
-#include "encryption_libs/ip_encryption.h"
-#include "encryption_libs/cmac.h"
-#include "encryption_libs/aes_deterministic.h"
-#include "utils/utils.h"
-#include "encryption_libs/hmac.h"
-#include "encryption_libs/aes_gcm.h"
-#include "encryption_libs/aes_gcm_hmac_deterministic.h"
-#include "utils/ip_utils.h"
-#include "utils/crypto_utils.h"
 #include "openssl/bio.h"
 
 #include <fluent-bit/flb_info.h>
@@ -74,23 +64,22 @@ static flb_sds_t make_http_request(struct flb_config *config,
                                    const char* HOST,
                                    const int PORT,
                                    const char* URI_PATH,
-                                   const char* header_key,
-                                   const char* header_value)
+                                   const char** headers,
+                                   size_t num_headers)
 {
-    struct flb_upstream *upstream;
-    struct flb_http_client *client;
-    struct flb_tls *tls;
-    int flb_upstream_flag = FLB_IO_TLS; //using HTTPS (TLS)
+    struct flb_upstream *upstream = NULL;
+    struct flb_http_client *client = NULL;
+    struct flb_tls *tls = NULL;
+    int flb_upstream_flag = FLB_IO_TLS; // using HTTPS (TLS)
     size_t b_sent;
     int ret;
-    struct flb_upstream_conn *u_conn;
-    flb_sds_t resp;
+    struct flb_connection *u_conn = NULL;
+    flb_sds_t resp = NULL;
 
-    if(PORT == 443) {
-
+    if (PORT == 443) {
         /* Create TLS context */
         tls = flb_tls_create(FLB_TLS_CLIENT_MODE, /* mode */
-                            FLB_TRUE,  /* verify */
+                             FLB_FALSE,  /* verify */
                              -1,        /* debug */
                              NULL,      /* vhost */
                              NULL,      /* ca_path */
@@ -100,27 +89,28 @@ static flb_sds_t make_http_request(struct flb_config *config,
                              NULL);     /* key_passwd */
         if (!tls) {
             flb_error("[filter_encrypt] error initializing TLS context");
-            goto error;
+            goto cleanup;
         }
     } else {
         // using HTTP (no HTTPS/TLS)
         flb_upstream_flag = FLB_IO_TCP;
     }
+
     /* Create an 'upstream' context */
     upstream = flb_upstream_create(config, HOST, PORT, flb_upstream_flag, tls);
-
     if (!upstream) {
         flb_error("[filter_encrypt] connection initialization error");
-        return -1;
+        goto cleanup;
     }
     upstream->base.net.keepalive = FLB_FALSE;
-//    upstream->thread_safe = FLB_TRUE;
+
+    flb_stream_disable_async_mode(&upstream->base);
+
     /* Retrieve a TCP connection from the 'upstream' context */
     u_conn = flb_upstream_conn_get(upstream);
     if (!u_conn) {
         flb_error("[filter_encrypt] connection initialization error");
-        flb_upstream_destroy(upstream);
-        return -1;
+        goto cleanup;
     }
 
     /* Create HTTP Client request/context */
@@ -130,14 +120,14 @@ static flb_sds_t make_http_request(struct flb_config *config,
                              HOST, PORT,
                              NULL, 0);
 
-    flb_http_add_header(client, "User-Agent", 10, "Fluent-Bit", 10);
-    flb_http_add_header(client, header_key, strlen(header_key), header_value, strlen(header_value));
-
     if (!client) {
-        flb_error("[filter_encrypt] count not create http client");
-        flb_upstream_conn_release(u_conn);
-        flb_upstream_destroy(upstream);
-        return -1;
+        flb_error("[filter_encrypt] could not create http client");
+        goto cleanup;
+    }
+
+    /* Add headers */
+    for (size_t i = 0; i < num_headers; i += 2) {
+        flb_http_add_header(client, headers[i], strlen(headers[i]), headers[i + 1], strlen(headers[i + 1]));
     }
 
     /* Perform the HTTP request */
@@ -149,27 +139,34 @@ static flb_sds_t make_http_request(struct flb_config *config,
             flb_trace("[filter_encrypt] Request failed and returned: \n%s",
                       client->resp.payload);
         }
-        flb_http_client_destroy(client);
-        flb_upstream_conn_release(u_conn);
-        flb_upstream_destroy(upstream);
-        return -1;
+        goto cleanup;
     }
 
     resp = flb_sds_create_len(client->resp.payload, client->resp.payload_size);
     flb_debug("\nresp: %s\n", resp);
 
-    error:
-    flb_http_client_destroy(client);
-    flb_upstream_conn_release(u_conn);
-    flb_upstream_destroy(upstream);
+    cleanup:
+    if (client) {
+        flb_http_client_destroy(client);
+    }
+    if (u_conn) {
+        flb_upstream_conn_release(u_conn);
+    }
+    if (upstream) {
+        flb_upstream_destroy(upstream);
+    }
 
     return resp;
 }
 
+flb_sds_t api_retrieve_encryption_keys(struct flb_config* config, bool is_startup) {
+    struct HashMapEntry* organization_key_kv = get(FLB_FILTER_ENCRYPT_ORGANIZATION_KEY);
+    const char *organization_key = organization_key_kv->data;
+    struct HashMapEntry* api_access_kv = get(FLB_FILTER_ENCRYPT_API_ACCESS_KEY);
+    const char *api_access_key = api_access_kv->data;
+    struct HashMapEntry* api_secret_key_kv = get(FLB_FILTER_ENCRYPT_API_SECRET_KEY);
+    const char *api_secret_key = api_secret_key_kv->data;
 
-flb_sds_t api_retrieve_encryption_keys(struct flb_config* config, bool is_startup){
-    struct HashMapEntry* auth_token_kv = get(FLB_FILTER_ENCRYPT_AUTH_TOKEN);
-    const char *auth_token = auth_token_kv->data;
     struct HashMapEntry* item_backend_host = get(FLB_FILTER_ENCRYPT_HOST);
     const char *backend_server_host_value = item_backend_host->data;
     struct HashMapEntry* item_backend_path = get(FLB_FILTER_ENCRYPT_URI_ENC_KEYS);
@@ -181,29 +178,33 @@ flb_sds_t api_retrieve_encryption_keys(struct flb_config* config, bool is_startu
 
     const uintmax_t backend_server_port_numeric = strtoumax(backend_server_port_value, NULL, 10);
 
-    char* backend_header_value = flb_malloc(1000);
-    snprintf(backend_header_value,
-             strlen(auth_token) + strlen(FLB_FILTER_ENCRYPT_HEADER_TOKEN) + 1,
-             "%s%s",
-             FLB_FILTER_ENCRYPT_HEADER_TOKEN,
-             auth_token);
-
-    flb_debug("%s: %s\n", FLB_FILTER_ENCRYPT_AUTH_TOKEN, auth_token);
+    const char* headers[] = {
+            "User-Agent", "Fluent-Bit",
+            FLB_FILTER_ENCRYPT_HEADER_X_ORGANIZATION_KEY, organization_key,
+            FLB_FILTER_ENCRYPT_HEADER_X_ACCESS_KEY, api_access_key,
+            FLB_FILTER_ENCRYPT_HEADER_X_SECRET_KEY, api_secret_key
+    };
 
     flb_sds_t resp = make_http_request(config, backend_server_host_value, backend_server_port_numeric,
-                                       backend_server_path_value, FLB_FILTER_ENCRYPT_HEADER_AUTHORIZATION, backend_header_value);
-    if(resp == -1) {
-        flb_error("[filter_encrypt] Unable to connect to the key serverr: http(s)://%s:%d", backend_server_host_value, backend_server_port_numeric);
+                                       backend_server_path_value, headers, sizeof(headers) / sizeof(headers[0]));
+    if(resp == (char *)-1) {
+        flb_error("[filter_encrypt] Unable to connect to the key server: http(s)://%s:%d", backend_server_host_value, backend_server_port_numeric);
         if(is_startup) {
-            exit(resp);
+            exit(EXIT_FAILURE);
         }
     }
     return resp;
 }
 
-flb_sds_t api_retrieve_pii_fields(struct flb_config* config, bool is_startup){
-    struct HashMapEntry* auth_token_kv = get(FLB_FILTER_ENCRYPT_AUTH_TOKEN);
-    const char *auth_token = auth_token_kv->data;
+
+flb_sds_t api_retrieve_pii_fields(struct flb_config* config, bool is_startup) {
+    struct HashMapEntry* organization_key_kv = get(FLB_FILTER_ENCRYPT_ORGANIZATION_KEY);
+    const char *organization_key = organization_key_kv->data;
+    struct HashMapEntry* api_access_kv = get(FLB_FILTER_ENCRYPT_API_ACCESS_KEY);
+    const char *api_access_key = api_access_kv->data;
+    struct HashMapEntry* api_secret_key_kv = get(FLB_FILTER_ENCRYPT_API_SECRET_KEY);
+    const char *api_secret_key = api_secret_key_kv->data;
+
     struct HashMapEntry* item_backend_host = get(FLB_FILTER_ENCRYPT_HOST);
     const char *backend_server_host_value = item_backend_host->data;
     struct HashMapEntry* item_backend_path = get(FLB_FILTER_ENCRYPT_URI_PII_FIELDS);
@@ -213,30 +214,28 @@ flb_sds_t api_retrieve_pii_fields(struct flb_config* config, bool is_startup){
 
     const uintmax_t backend_server_port_numeric = strtoumax(backend_server_port_value, NULL, 10);
 
-    char* backend_header_value = flb_malloc(1000);
-    snprintf(backend_header_value,
-             strlen(auth_token) + strlen(FLB_FILTER_ENCRYPT_HEADER_TOKEN) + 1,
-             "%s%s",
-             FLB_FILTER_ENCRYPT_HEADER_TOKEN,
-             auth_token);
-    flb_debug("%s: %s\n", FLB_FILTER_ENCRYPT_AUTH_TOKEN, auth_token);
+    const char* headers[] = {
+            "User-Agent", "Fluent-Bit",
+            FLB_FILTER_ENCRYPT_HEADER_X_ORGANIZATION_KEY, organization_key,
+            FLB_FILTER_ENCRYPT_HEADER_X_ACCESS_KEY, api_access_key,
+            FLB_FILTER_ENCRYPT_HEADER_X_SECRET_KEY, api_secret_key
+    };
 
     flb_sds_t resp = make_http_request(config,
                                        backend_server_host_value,
                                        backend_server_port_numeric,
                                        backend_server_path_value,
-                                       FLB_FILTER_ENCRYPT_HEADER_AUTHORIZATION,
-                                       backend_header_value);
-    flb_debug("resp = %d", resp);
-    if(resp == (char *)-1) {
+                                       headers,
+                                       sizeof(headers) / sizeof(headers[0]));
+
+    if (resp == (char *)-1) {
         flb_error("[filter_encrypt] Unable to connect to the backend server: http(s)://%s:%d", backend_server_host_value, backend_server_port_numeric);
-        if(is_startup) {
-            exit(resp);
+        if (is_startup) {
+            exit(EXIT_FAILURE);
         }
     }
     return resp;
 }
-
 
 /**
  * Populates http json response in a linked-list structure.
@@ -294,24 +293,20 @@ void populate_pii_fields(flb_sds_t response_json) {
  * @param ctx
  * @param properties
  */
-void populate_configurations_in_hashmap(struct flb_filter_encrypt* ctx, struct mk_list* properties) {
-
+int populate_configurations_in_hashmap(struct flb_filter_encrypt* ctx, struct mk_list* properties) {
     struct mk_list* head;
     struct mk_list* split;
     struct flb_kv* kv;
     int list_size;
 
-    mk_list_foreach(head, properties)
-    {
-        kv = mk_list_entry(head,
-        struct flb_kv, _head);
+    mk_list_foreach(head, properties) {
+        kv = mk_list_entry(head, struct flb_kv, _head);
 
         split = flb_utils_split(kv->val, ' ', 3);
         list_size = mk_list_size(split);
 
-        if (list_size==0 || list_size > 3) {
+        if (list_size == 0 || list_size > 3) {
             flb_plg_error(ctx->f_ins, "Invalid config for %s", kv->key);
-            //teardown(ctx);
             flb_utils_split_free(split);
             return -1;
         }
@@ -321,40 +316,43 @@ void populate_configurations_in_hashmap(struct flb_filter_encrypt* ctx, struct m
         struct HashMapEntry* item = get(kv->key);
         if (item == NULL) {
             flb_error("key %s not found!?", kv->key);
-            exit(1);
+            flb_utils_split_free(split);
+            return -1;
         }
-    }
-}
 
+        flb_utils_split_free(split);
+    }
+    return 0;
+}
 
 
 /**
  * Populates http json response in a linked-list structure.
  * @param resp http response (json)
  */
-void populate_encryption_keys(flb_sds_t response_json) {
+int populate_encryption_keys(flb_sds_t response_json) {
     struct mk_list* tmp;
     struct dek_kv *an_item;
     int i, status = 0;
 
     flb_debug("parsing %s\n", response_json);
     status = json_read_object(response_json, dek_fields_json_attrs_items, NULL);
-    if (status != 0)
-        puts(json_error_string(status));
+    if (status != 0) {
+        flb_error("json_read_object error: %s", json_error_string(status));
+        return -1;
+    }
 
     flb_debug("Loaded [%d] encryption key(s)\n", dek_obj_count);
 
     mk_list_init(&items_dek);
 
     for (i = 0; i < dek_obj_count; i++) {
-        flb_debug("id = %d, created_on = %s, encryption_key = %s, encryption_key_time_start = %s, purpose = %s\n",
+        flb_debug("id = %d, created_on = %s, encryption_key = %s, encryption_key_time_start = %s\n",
                   dek_records_array[i].id,
                   dek_records_array[i].created_on,
                   dek_records_array[i].encryption_key,
-                  dek_records_array[i].encryption_key_time_start,
-                  dek_records_array[i].purpose);
+                  dek_records_array[i].encryption_key_time_start);
 
-        // populating items - need to free this memory
         an_item = flb_malloc(sizeof(struct dek_kv));
         if (!an_item) {
             flb_errno();
@@ -372,20 +370,17 @@ void populate_encryption_keys(flb_sds_t response_json) {
         an_item->created_on_len = strlen(dek_records_array[i].created_on);
         snprintf(an_item->created_on, an_item->created_on_len + 1, "%s", dek_records_array[i].created_on);
 
-        an_item->purpose_len = strlen(dek_records_array[i].purpose);
-        snprintf(an_item->purpose, an_item->purpose_len + 1, "%s", dek_records_array[i].purpose);
-
         mk_list_add(&an_item->_head, &items_dek);
     }
 
-
-    /* iterate through the list */
     flb_debug("Iterating through list");
     mk_list_foreach_safe(head_dek, tmp, &items_dek) {
         an_item = mk_list_entry(head_dek, struct dek_kv, _head);
         flb_info("encryption_key=%s,encryption_key_time_start=%s", an_item->encryption_key, an_item->encryption_key_time_start);
     }
+    return 0;
 }
+
 
 
 /**
@@ -406,129 +401,128 @@ void set_encryption_keys(char *aes_det_key_ptr, char *ip_encryption_key_ptr) {
     bool found_ddk = false;
     mk_list_foreach_safe(head_dek, tmp, &items_dek) {
         an_item = mk_list_entry(head_dek, struct dek_kv, _head);
-        flb_info("encryption_key=%s,length=%d,encryption_key_time_start=%s,is_default=%d,purpose=%s",
+        flb_info("encryption_key=%s,length=%d,encryption_key_time_start=%s",
                  an_item->encryption_key,
                  strlen(an_item->encryption_key),
-                 an_item->encryption_key_time_start,
-                 an_item->is_default,
-                 an_item->purpose);
+                 an_item->encryption_key_time_start);
 
         int size = strlen(an_item->encryption_key);
         flb_info("key length:%d ", size);
 
-        if(strcmp(an_item->purpose, "DEFAULT") == 0) {
+        int decoded_size = 0;
+        char *salt_iv_tag_ciphertext_hex = base64decode(an_item->encryption_key,
+                                                        strlen(an_item->encryption_key));
 
-            int decoded_size = 0;
-            char *salt_iv_tag_ciphertext_hex = base64decode(an_item->encryption_key,
-                                                            strlen(an_item->encryption_key),
-                                                            &decoded_size);
+        flb_info("decoded_size: %d", decoded_size);
+        BIO_dump_fp(stdout, (const char *)salt_iv_tag_ciphertext_hex, decoded_size);
 
-    //        flb_info("decoded_size: %d", decoded_size);
-    //        BIO_dump_fp (stdout, (const char *)salt_iv_tag_ciphertext_hex, decoded_size);
+        flb_info("DEK: %s", salt_iv_tag_ciphertext_hex);
+        flb_info("DEK length: %d", decoded_size);
 
-    //        print_bytes( salt_iv_tag_ciphertext_hex, decoded_size);
+        /* plaintext */
+        char key_out[128] = {0x00};
 
-    //        flb_info("DEK: %s", salt_iv_tag_ciphertext_hex);
-            flb_info("DEK length: %d", decoded_size);
+        /* Additional data */
+        unsigned char *additional = (unsigned char *)"";
 
-            /* plaintext */
-            char key_out[128] = {0x00};
+        /* Buffer for the decrypted text */
+        unsigned char data_encryption_key[128] = {0x00};
 
-            /* Additional data */
-            unsigned char *additional = (unsigned char *)"";
+        /* Desired key length generated by pbkdf2 */
+        int key_length = 32;
 
-            /* Buffer for the decrypted text */
-            unsigned char data_encryption_key[128] = {0x00};
+        int salt_len = 64;
+        int iv_len = 16;
+        int tag_len = 16;
+        int tag_position = salt_len + iv_len;
+        int encrypted_position = tag_position + tag_len;
 
-            /* Desired key length generated by pbkdf2 */
-            int key_length = 32;
+        char *extracted_salt = substring(salt_iv_tag_ciphertext_hex, 0, salt_len);
+        char *extracted_iv = substring(salt_iv_tag_ciphertext_hex, salt_len, tag_position);
+        char *extracted_tag = substring(salt_iv_tag_ciphertext_hex, tag_position, encrypted_position);
+        char *extracted_ciphertext = substring(salt_iv_tag_ciphertext_hex, encrypted_position, strlen(salt_iv_tag_ciphertext_hex) - encrypted_position);
 
+        generate_key_from_pbkdf2(key_master_key_value, extracted_salt, key_out, 100000, key_length);
 
-            int salt_len = 64;
-            int iv_len = 16;
-            int tag_len = 16;
-            int tag_position = salt_len + iv_len;
-            int encrypted_position = tag_position + tag_len;
+        int decryptedtext_len = aes_gcm_256_decrypt(extracted_ciphertext, strlen(extracted_ciphertext),
+                                                    additional, strlen((char *)additional),
+                                                    extracted_tag,
+                                                    key_out, extracted_iv, iv_len,
+                                                    data_encryption_key);
 
-            char *extracted_salt = substring(salt_iv_tag_ciphertext_hex, 0, salt_len);
-            char *extracted_iv = substring(salt_iv_tag_ciphertext_hex, salt_len, tag_position);
-            char *extracted_tag = substring(salt_iv_tag_ciphertext_hex, tag_position, encrypted_position);
-            char *extracted_ciphertext = substring(salt_iv_tag_ciphertext_hex, encrypted_position, decoded_size - (encrypted_position) );
+        if (decryptedtext_len >= 0) {
+            data_encryption_key[decryptedtext_len] = '\0';
 
-            generate_key_from_pbkdf2(key_master_key_value, extracted_salt, &key_out, 100000, key_length);
+            strncpy(aes_det_key_ptr, (char *)data_encryption_key, decryptedtext_len);
+            flb_debug("\nkey: %s\n", aes_det_key_ptr);
+            strncpy(ip_encryption_key_ptr, (char *)data_encryption_key, decryptedtext_len);
+            flb_debug("\nkey: %s\n", ip_encryption_key_ptr);
 
-
-            int decryptedtext_len = aes_gcm_256_decrypt(extracted_ciphertext, strlen(extracted_ciphertext),
-                                                        additional, strlen ((char *)additional),
-                                                        extracted_tag,
-                                                        &key_out, extracted_iv, iv_len,
-                                                        data_encryption_key);
-
-            if (decryptedtext_len >= 0) {
-
-                /* Add a NULL terminator. We are expecting printable text */
-                data_encryption_key[decryptedtext_len] = '\0';
-                /* Show the decrypted text */
-
-                strncpy(aes_det_key_ptr, data_encryption_key, decryptedtext_len);
-                flb_debug("\nkey: %s\n", aes_det_key_ptr);
-                strncpy(ip_encryption_key_ptr, data_encryption_key, decryptedtext_len);
-                flb_debug("\nkey: %s\n", ip_encryption_key_ptr);
-
-                set_encryption_key(ip_encryption_key_ptr);
-                found_ddk = true;
-                break;
-            } else {
-                    flb_debug("Decryption failed\n");
-                    exit(0);
-            }
+            set_encryption_key(ip_encryption_key_ptr);
+            found_ddk = true;
+            break;
         } else {
-            flb_debug("Invalid data encryption key.\n");
+            flb_debug("Decryption failed\n");
+            exit(0);
         }
     }
-    if(found_ddk == false) {
+    if (!found_ddk) {
         flb_debug("No default data decryption key found.\n");
         exit(0);
     }
 }
 
 
-static int setup(struct filter_modify_ctx* ctx, struct flb_filter_instance* f_ins, struct flb_config* config) {
-    // following variables are used to populate rules in the filter (ctx)
+static int setup(struct flb_filter_encrypt* ctx, struct flb_filter_instance* f_ins, struct flb_config* config) {
     struct mk_list* head;
     struct mk_list* split;
     struct flb_kv* kv;
     struct modify_rule* rule = NULL;
     struct flb_split_entry* sentry;
     int list_size;
-
-    // used for http request API responses.
     flb_sds_t response_json;
+    int status;
 
     flb_debug("loading configurations from backend server.\n");
 
-    // populate delimiters for string tokenization of the events fields-values (need during parsing of json events)
     populate_key_value_delimiters(value_delimiters);
 
-    // populate configuration key-values in hashmap structure. It contains configuration settings for HTTP API requests
-    populate_configurations_in_hashmap(&ctx, &f_ins->properties);
+    if (populate_configurations_in_hashmap(ctx, &f_ins->properties) < 0) {
+        flb_error("[filter_encrypt] Failed to populate configurations in hashmap");
+        return -1;
+    }
 
-    // HTTP GET to backend configuration server to retrieve tuples of pii and masking functions.
     response_json = api_retrieve_pii_fields(config, true);
-    int status = json_read_object(response_json, pii_fields_json_attrs_items, NULL);
+    if (!response_json) {
+        flb_error("[filter_encrypt] Failed to retrieve PII fields");
+        return -1;
+    }
+
+    status = json_read_object(response_json, pii_fields_json_attrs_items, NULL);
     if (status != 0) {
-        puts(json_error_string(status));
-        exit(0);
+        flb_error("[filter_encrypt] Failed to read PII fields: %s", json_error_string(status));
+        flb_sds_destroy(response_json);
+        return -1;
     }
 
     populate_pii_fields(response_json);
+    flb_sds_destroy(response_json);
 
-    // HTTP GET to backend key-server to retrieve encryption keys
     response_json = api_retrieve_encryption_keys(config, true);
+    if (!response_json) {
+        flb_error("[filter_encrypt] Failed to retrieve encryption keys");
+        return -1;
+    }
 
-    populate_encryption_keys(response_json);
+    if (populate_encryption_keys(response_json) < 0) {
+        flb_error("[filter_encrypt] Failed to populate encryption keys");
+        flb_sds_destroy(response_json);
+        return -1;
+    }
 
-    set_encryption_keys(&aes_det_key, &ip_encryption_key);
+    flb_sds_destroy(response_json);
+
+    set_encryption_keys(aes_det_key, ip_encryption_key);
     return 0;
 }
 
@@ -563,7 +557,7 @@ static int cb_encrypt_init(struct flb_filter_instance *f_ins,
                                         FLB_IO_TCP,
                                         NULL);
 
-    if (setup(ctx, f_ins, config)<0) {
+    if (setup(ctx, f_ins, config) < 0) {
         flb_free(ctx);
         return -1;
     }
@@ -575,41 +569,41 @@ static int cb_encrypt_init(struct flb_filter_instance *f_ins,
 }
 
 static inline bool helper_msgpack_object_matches_str(msgpack_object *obj, char* str, int len) {
-    const char* key;
-    int klen;
+const char* key;
+int klen;
 
-    if (obj->type == MSGPACK_OBJECT_BIN) {
-        key = obj->via.bin.ptr;
-        klen = obj->via.bin.size;
-    } else if (obj->type == MSGPACK_OBJECT_STR) {
-        key = obj->via.str.ptr;
-        klen = obj->via.str.size;
-    } else {
-        return false;
-    }
-    bool compare = ((len == klen) && (strncmp(str, key, klen) == 0));
-    return compare;
+if (obj->type == MSGPACK_OBJECT_BIN) {
+key = obj->via.bin.ptr;
+klen = obj->via.bin.size;
+} else if (obj->type == MSGPACK_OBJECT_STR) {
+key = obj->via.str.ptr;
+klen = obj->via.str.size;
+} else {
+return false;
+}
+bool compare = ((len == klen) && (strncmp(str, key, klen) == 0));
+return compare;
 }
 
 static inline bool kv_key_matches_str(msgpack_object_kv *kv, char* str, int len)
 {
-    return helper_msgpack_object_matches_str(&kv->key, str, len);
+return helper_msgpack_object_matches_str(&kv->key, str, len);
 }
 
 static inline bool kv_val_matches_str(msgpack_object_kv *kv, char* str, int len)
 {
-    return helper_msgpack_object_matches_str(&kv->val, str, len);
+return helper_msgpack_object_matches_str(&kv->val, str, len);
 }
 
 
 static inline bool kv_key_matches_str_field_name_key(msgpack_object_kv* kv,struct pii_kv* entry)
 {
-    return kv_key_matches_str(kv, entry->key, entry->key_len);
+return kv_key_matches_str(kv, entry->key, entry->key_len);
 }
 
 static inline bool kv_key_does_not_match_str_field_name_key(msgpack_object_kv* kv, struct pii_kv* entry)
 {
-    return !kv_key_matches_str_field_name_key(kv, entry);
+return !kv_key_matches_str_field_name_key(kv, entry);
 }
 
 static inline int map_count_keys_matching_str(msgpack_object* map, char* str, int len)
@@ -643,14 +637,14 @@ static inline void map_pack_each(msgpack_packer* packer, msgpack_object* map) {
 
 static inline void map_pack_each_fn(msgpack_packer* packer, msgpack_object* map, struct modify_rule* rule, bool(* f)(
                                     msgpack_object_kv* kv, struct modify_rule* rule)) {
-    int i;
+int i;
 
-    for (i = 0; i < map->via.map.size; i++) {
-        if ((*f) (&map->via.map.ptr[i], rule)) {
-            msgpack_pack_object(packer, map->via.map.ptr[i].key);
-            msgpack_pack_object(packer, map->via.map.ptr[i].val);
-        }
-    }
+for (i = 0; i < map->via.map.size; i++) {
+if ((*f) (&map->via.map.ptr[i], rule)) {
+msgpack_pack_object(packer, map->via.map.ptr[i].key);
+msgpack_pack_object(packer, map->via.map.ptr[i].val);
+}
+}
 }
 
 static inline void map_pack_each_fn_kv(msgpack_packer *packer,
@@ -658,14 +652,14 @@ static inline void map_pack_each_fn_kv(msgpack_packer *packer,
                                        struct pii_kv *field_kv,
                                        bool(* f)(msgpack_object_kv *kv,
                                        struct pii_kv *field_kv)) {
-    int i;
+int i;
 
-    for (i = 0; i < map->via.map.size; i++) {
-        if ((*f) (&map->via.map.ptr[i], field_kv)) {
-            msgpack_pack_object(packer, map->via.map.ptr[i].key);
-            msgpack_pack_object(packer, map->via.map.ptr[i].val);
-        }
-    }
+for (i = 0; i < map->via.map.size; i++) {
+if ((*f) (&map->via.map.ptr[i], field_kv)) {
+msgpack_pack_object(packer, map->via.map.ptr[i].key);
+msgpack_pack_object(packer, map->via.map.ptr[i].val);
+}
+}
 }
 
 
@@ -747,7 +741,7 @@ static inline int apply_rule_ENCRYPT(struct flb_filter_encrypt* ctx, msgpack_pac
                 } else if (strncmp(an_item->val, "aes_gcm", an_item->val_len) == 0) {
                     // encrypt with aes-gcm mode
                     pseudonymized_value =
-                        aes_128_gcm_encrypt(tmp_extracted_value, strlen(tmp_extracted_value), aes_det_key);
+                            aes_128_gcm_encrypt(tmp_extracted_value, strlen(tmp_extracted_value), aes_det_key);
                     flb_debug("Encrypted with aes-gcm mode: %s\n", pseudonymized_value);
                 } else if (strncmp(an_item->val, "aes_gcm_det", an_item->val_len) == 0) {
                     // encrypt with aes-gcm mode deterministic
@@ -866,7 +860,7 @@ static inline int apply_modifying_rules(msgpack_packer* packer, msgpack_object* 
             if (msgpack_unpacker_buffer_capacity(&unpacker) < new_buffer_size) {
                 if (!msgpack_unpacker_reserve_buffer(&unpacker, new_buffer_size)) {
                     flb_plg_error(ctx->f_ins, "Unable to re-allocate memory for "
-                                            "unpacker, aborting");
+                                              "unpacker, aborting");
                     return -1;
                 }
             }
@@ -880,7 +874,7 @@ static inline int apply_modifying_rules(msgpack_packer* packer, msgpack_object* 
                 map = unpacked.data;
             } else {
                 flb_plg_error(ctx->f_ins, "Expected MSGPACK_MAP, this is not a "
-                                        "valid return value, skipping");
+                                          "valid return value, skipping");
             }
         }
 
@@ -909,12 +903,12 @@ static inline int apply_modifying_rules(msgpack_packer* packer, msgpack_object* 
 }
 
 static int cb_encrypt_filter(const void *data, size_t bytes,
-                         const char *tag, int tag_len,
-                         void **out_buf, size_t *out_size,
-                         struct flb_filter_instance *f_ins,
-                         struct flb_input_instance *i_ins,
-                         void *context,
-                         struct flb_config *config)
+                             const char *tag, int tag_len,
+                             void **out_buf, size_t *out_size,
+                             struct flb_filter_instance *f_ins,
+                             struct flb_input_instance *i_ins,
+                             void *context,
+                             struct flb_config *config)
 {
 
     flb_debug("cb_encrypt_filter");
@@ -1034,58 +1028,68 @@ static int cb_encrypt_exit(void *data, struct flb_config *config)
 
 /* Configuration properties map */
 static struct flb_config_map config_map[] = {
-    {
-        FLB_CONFIG_MAP_STR, "host", NULL,
-        0, FLB_TRUE, offsetof(struct flb_filter_encrypt, host),
-    "The host of the server where to get the PII fields."
-    },
-    {
-        FLB_CONFIG_MAP_INT, "port", 0,
-        0, FLB_TRUE, offsetof(struct flb_filter_encrypt, port),
-    "The port on the server where to get the PII fields."
-    },
-    {
-        FLB_CONFIG_MAP_STR, "uri_pii_fields", NULL,
-        0, FLB_TRUE, offsetof(struct flb_filter_encrypt, uri_pii_fields),
-    "The URI on the server where to get the PII fields."
-    },
-    {
-        FLB_CONFIG_MAP_STR, "auth_token", NULL,
-        0, FLB_TRUE, offsetof(struct flb_filter_encrypt, auth_token),
-    "The URI on the server where to get the PII fields."
-    },
-    {
-        FLB_CONFIG_MAP_STR, "tenant_id", NULL,
-        0, FLB_TRUE, offsetof(struct flb_filter_encrypt, tenant_id),
-    "The URI on the server where to get the PII fields."
-    },
-    {
-        FLB_CONFIG_MAP_INT, "agent_id", 0,
-        0, FLB_TRUE, offsetof(struct flb_filter_encrypt, agent_id),
-    "The URI on the server where to get the PII fields."
-    },
-    {
-        FLB_CONFIG_MAP_STR, "uri_enc_keys", 0,
-        0, FLB_TRUE, offsetof(struct flb_filter_encrypt, uri_enc_keys),
-    "The URI on the server where to get the PII fields."
-    },
-    {
-        FLB_CONFIG_MAP_STR, "master_enc_key", 0,
-        0, FLB_TRUE, offsetof(struct flb_filter_encrypt, master_enc_key),
-    "The URI on the server where to get the PII fields."
-    },
+        {
+                FLB_CONFIG_MAP_STR, "host", NULL,
+                0, FLB_TRUE, offsetof(struct flb_filter_encrypt, host),
+        "The host of the server where to get the PII fields."
+        },
+        {
+                FLB_CONFIG_MAP_INT, "port", 0,
+                0, FLB_TRUE, offsetof(struct flb_filter_encrypt, port),
+        "The port on the server where to get the PII fields."
+        },
+        {
+                FLB_CONFIG_MAP_STR, "uri_pii_fields", NULL,
+                0, FLB_TRUE, offsetof(struct flb_filter_encrypt, uri_pii_fields),
+        "The URI on the server where to get the PII fields."
+        },
+        {
+                FLB_CONFIG_MAP_STR, "organization_key", NULL,
+                0, FLB_TRUE, offsetof(struct flb_filter_encrypt, organization_key),
+        "The Organization Key part of the API Key."
+        },
+        {
+                FLB_CONFIG_MAP_STR, "api_access_key", NULL,
+                0, FLB_TRUE, offsetof(struct flb_filter_encrypt, api_access_key),
+        "The API Access Key."
+        },
+        {
+                FLB_CONFIG_MAP_STR, "api_secret_key", NULL,
+                0, FLB_TRUE, offsetof(struct flb_filter_encrypt, api_secret_key),
+        "The API Secret Key."
+        },
+        {
+                FLB_CONFIG_MAP_STR, "tenant_id", NULL,
+                0, FLB_TRUE, offsetof(struct flb_filter_encrypt, tenant_id),
+        "The URI on the server where to get the PII fields."
+        },
+        {
+                FLB_CONFIG_MAP_INT, "agent_id", 0,
+                0, FLB_TRUE, offsetof(struct flb_filter_encrypt, agent_id),
+        "The URI on the server where to get the PII fields."
+        },
+        {
+                FLB_CONFIG_MAP_STR, "uri_enc_keys", 0,
+                0, FLB_TRUE, offsetof(struct flb_filter_encrypt, uri_enc_keys),
+        "The URI on the server where to get the PII fields."
+        },
+        {
+                FLB_CONFIG_MAP_STR, "master_enc_key", 0,
+                0, FLB_TRUE, offsetof(struct flb_filter_encrypt, master_enc_key),
+        "The URI on the server where to get the PII fields."
+        },
 
-    /* EOF */
-    {0}
+        /* EOF */
+        {0}
 };
 
 struct flb_filter_plugin filter_encrypt_plugin = {
-    .name         = "encrypt",
-    .description  = "Encrypts PII values by applying based on matching keys."
-                   "It takes 2 inputs: the field name and the masking function.",
-    .cb_init      = cb_encrypt_init,
-    .cb_filter    = cb_encrypt_filter,
-    .cb_exit      = cb_encrypt_exit,
-    .config_map   = config_map,
-    .flags        = 0
+        .name         = "encrypt",
+        .description  = "Encrypts PII values by applying based on matching keys."
+                        "It takes 2 inputs: the field name and the masking function.",
+        .cb_init      = cb_encrypt_init,
+        .cb_filter    = cb_encrypt_filter,
+        .cb_exit      = cb_encrypt_exit,
+        .config_map   = config_map,
+        .flags        = 0
 };

@@ -33,7 +33,7 @@ void print_bytes(unsigned char* buf, const size_t len)
 
 void block_xor(unsigned char* dst, unsigned char* a, unsigned char* b)
 {
-    for (auto j = 0; j < 16; j++) {
+    for (int j = 0; j < 16; j++) {
         dst[j] = a[j] ^ b[j];
     }
 }
@@ -41,7 +41,7 @@ void block_xor(unsigned char* dst, unsigned char* a, unsigned char* b)
 void block_leftshift(unsigned char* dst, unsigned char* src)
 {
     unsigned char ovf = 0x00;
-    for (auto i = 15; i >= 0; i--) {
+    for (int i = 15; i >= 0; i--) {
         dst[i] = src[i] << 1;
         dst[i] |= ovf;
         ovf = (src[i] & 0x80) ? 1 : 0;
@@ -93,7 +93,7 @@ char *base64encode (const void *b64_encode_this, int encode_this_many_bytes){
     return (*mem_bio_mem_ptr).data; //Returns base-64 encoded data. (See: "buf_mem_st" struct).
 }
 
-char *base64decode (const void *b64_decode_this, int decode_this_many_bytes, int *out_len){
+char *base64decode (const void *b64_decode_this, int decode_this_many_bytes){
     BIO *b64_bio, *mem_bio;      //Declares two OpenSSL BIOs: a base64 filter and a memory BIO.
     char *base64_decoded = calloc( (decode_this_many_bytes*3)/4+1, sizeof(char) ); //+1 = null.
     b64_bio = BIO_new(BIO_f_base64());                      //Initialize our base64 filter BIO.
@@ -105,7 +105,6 @@ char *base64decode (const void *b64_decode_this, int decode_this_many_bytes, int
     while ( 0 < BIO_read(b64_bio, base64_decoded+decoded_byte_index, 1) ){ //Read byte-by-byte.
         decoded_byte_index++; //Increment the index until read of BIO decoded data is complete.
     } //Once we're done reading decoded data, BIO_read returns -1 even though there's no error.
-    *out_len = decoded_byte_index; //Returns the number of bytes written to base64_decoded.
     BIO_free_all(b64_bio);  //Destroys all BIOs in chain, starting with b64 (i.e. the 1st one).
     return base64_decoded;        //Returns base-64 decoded data with trailing null terminator.
 }

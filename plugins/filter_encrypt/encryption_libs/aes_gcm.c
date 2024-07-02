@@ -7,6 +7,7 @@
 #include <stdlib.h>
 
 #include "../utils/utils.h"
+#include "aes_gcm.h"
 
 #define BILLION  1000000000L
 #define TO_HEX(i) (i <= 9 ? '0' + i : 'A' - 10 + i)
@@ -29,12 +30,12 @@ void handleErrorsAesGcm(void)
 
 
 char* aes_128_gcm_encrypt(unsigned char *plaintext,
-                        int plaintext_len,
-                        unsigned char *key)
+                          int plaintext_len,
+                          unsigned char *key)
 {
 
     /* A 128 bit IV */
-    const IV_LEN = 16;
+    const int IV_LEN = 16;
     unsigned char iv_buf[IV_LEN];
     long int ns;
     uint64_t all;
@@ -61,7 +62,7 @@ char* aes_128_gcm_encrypt(unsigned char *plaintext,
 
     /* Additional data */
     unsigned char *additional =
-        (unsigned char *)"";
+            (unsigned char *)"";
 
     /* Needs to be large enough - reserved the double the size of plaintext */
     const int ciphertext_size = strlen(plaintext)*2;
@@ -69,7 +70,7 @@ char* aes_128_gcm_encrypt(unsigned char *plaintext,
     memset(ciphertext, 0, sizeof ciphertext);
 
     /* Buffer for the tag */
-    const TAG_LEN = 16;
+    const int TAG_LEN = 16;
     unsigned char tag[17] = {0};
 
     int ciphertext_len;
@@ -103,7 +104,7 @@ int aes_gcm_encrypt(unsigned char *plaintext,
                     unsigned char *ciphertext,
                     unsigned char *tag)
 {
-    const TAG_LEN = 16;
+    const int TAG_LEN = 16;
 
     EVP_CIPHER_CTX *ctx;
 
@@ -164,13 +165,13 @@ int aes_gcm_encrypt(unsigned char *plaintext,
 
 
 int aes_gcm_decrypt(unsigned char *ciphertext, int ciphertext_len,
-                unsigned char *aad, int aad_len,
-                unsigned char *tag,
-                unsigned char *key,
-                unsigned char *iv, int iv_len,
-                unsigned char *plaintext)
+                    unsigned char *aad, int aad_len,
+                    unsigned char *tag,
+                    unsigned char *key,
+                    unsigned char *iv, int iv_len,
+                    unsigned char *plaintext)
 {
-    const TAG_LEN = 16;
+    const int TAG_LEN = 16;
 
     EVP_CIPHER_CTX *ctx;
     int len;
@@ -233,14 +234,14 @@ int aes_gcm_decrypt(unsigned char *ciphertext, int ciphertext_len,
 
 
 int aes_gcm_256_encrypt(unsigned char *plaintext,
-                    int plaintext_len,
-                    unsigned char *aad, int aad_len,
-                    unsigned char *key,
-                    unsigned char *iv, int iv_len,
-                    unsigned char *ciphertext,
-                    unsigned char *tag)
+                        int plaintext_len,
+                        unsigned char *aad, int aad_len,
+                        unsigned char *key,
+                        unsigned char *iv, int iv_len,
+                        unsigned char *ciphertext,
+                        unsigned char *tag)
 {
-    const TAG_LEN = 16;
+    const int TAG_LEN = 16;
 
     EVP_CIPHER_CTX *ctx;
 
@@ -300,13 +301,13 @@ int aes_gcm_256_encrypt(unsigned char *plaintext,
 }
 
 int aes_gcm_256_decrypt(unsigned char *ciphertext, int ciphertext_len,
-                    unsigned char *aad, int aad_len,
-                    unsigned char *tag,
-                    unsigned char *key,
-                    unsigned char *iv, int iv_len,
-                    unsigned char *plaintext)
+                        unsigned char *aad, int aad_len,
+                        unsigned char *tag,
+                        unsigned char *key,
+                        unsigned char *iv, int iv_len,
+                        unsigned char *plaintext)
 {
-    const TAG_LEN = 16;
+    const int TAG_LEN = 16;
 
     EVP_CIPHER_CTX *ctx;
     int len;

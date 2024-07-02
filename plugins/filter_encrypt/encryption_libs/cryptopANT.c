@@ -416,8 +416,8 @@ convert_to_ipv6_format(const char *ipv6_pad, char *new_pad) {
 }
 
 void set_encrypt_key(const char *enckey) {
-    char *ipv6_pad[MAX_BLK_LENGTH] = {0};
-    char *new_pad_formatted[IPV6_PADDING] = {0};
+    char ipv6_pad[MAX_BLK_LENGTH] = {0};
+    char new_pad_formatted[IPV6_PADDING] = {0};
 
     //extract_ipv6pad(enckey, ipv6_pad);
     //convert_to_ipv6_format(ipv6_pad, new_pad_formatted);
@@ -634,8 +634,8 @@ scramble_ip4(uint32_t input, int pass_bits) {
                 unsigned char *result = NULL;
                 unsigned int resultlen = -1;
 
-                int **pb4_in = &b4_in;
-                unsigned int *anotherInteger = (unsigned int) (&b4_in.ip4);
+                ipv4_hash_blk_t *pb4_in = &b4_in;
+                unsigned int anotherInteger = b4_in.ip4;
 
                 unsigned char bytes[4];
                 bytes[3] = (b4_in.ip4 >> 24) & 0xFF;
@@ -647,7 +647,7 @@ scramble_ip4(uint32_t input, int pass_bits) {
                 if (DO_DEBUG > 0) printf("ckey:\n");
                 if (DO_DEBUG > 0) print_bytes(ckey,strlen(ckey));
                 result = HMAC(EVP_sha256(), ckey, strlen(ckey), bytes, sizeof(bytes),
-                                     result, &resultlen);
+                              result, &resultlen);
 
                 char *resultBuf = malloc(resultlen*2);
 
@@ -719,16 +719,14 @@ scramble_ip4(uint32_t input, int pass_bits) {
 
 
 /* scramble ipv6 address in place, in network byte order */
-struct in6_addr
-scramble_ip6(struct in6_addr *input, int pass_bits) {
+struct in6_addr scramble_ip6(struct in6_addr *input, int pass_bits) {
     struct in6_addr output;
     int i, w;
     int pbits = pass_bits;
 
     char ipv6_to_str[128];
-    ipv6_to_str_unexpanded(ipv6_to_str, &input);
+    ipv6_to_str_unexpanded(ipv6_to_str, input);
     if (flb_log_check(FLB_LOG_TRACE)) printf("ipv6_to_str = %s\n", ipv6_to_str);
-    //if (flb_log_check(FLB_LOG_TRACE)) printf("pass_bitz = %d\n", pass_bits);
 
     b6_in.ip6.s6_addr32[0] = ip6pad[0]; /* XXX this one not needed */
     b6_in.ip6.s6_addr32[1] = ip6pad[1];
@@ -753,16 +751,16 @@ scramble_ip6(struct in6_addr *input, int pass_bits) {
             if (DO_DEBUG > 0) printf("b6in[%d]:%d\n", w, b6_in.ip6.s6_addr32[w]);
 
             if (DO_DEBUG > 0) printf("before encryption b6_in[0]=%d, [1]=%d, [2]=%d, [3]=%d\n",
-                   b6_in.ip6.s6_addr32[0],
-                   b6_in.ip6.s6_addr32[1],
-                   b6_in.ip6.s6_addr32[2],
-                   b6_in.ip6.s6_addr32[3]);
+                                     b6_in.ip6.s6_addr32[0],
+                                     b6_in.ip6.s6_addr32[1],
+                                     b6_in.ip6.s6_addr32[2],
+                                     b6_in.ip6.s6_addr32[3]);
 
             if (DO_DEBUG > 0) printf("before encryption b6out[0]=%d, [1]=%d, [2]=%d, [3]=%d\n",
-                   b6_out.ip6.s6_addr32[0],
-                   b6_out.ip6.s6_addr32[1],
-                   b6_out.ip6.s6_addr32[2],
-                   b6_out.ip6.s6_addr32[3]);
+                                     b6_out.ip6.s6_addr32[0],
+                                     b6_out.ip6.s6_addr32[1],
+                                     b6_out.ip6.s6_addr32[2],
+                                     b6_out.ip6.s6_addr32[3]);
 
             /* hashing proper */
             unsigned char *result = NULL;
@@ -789,9 +787,12 @@ scramble_ip6(struct in6_addr *input, int pass_bits) {
                     break;
                 case SCRAMBLE_HMAC_SHA256:
                     if (DO_DEBUG > 0) printf("ckey:\n");
-                    if (DO_DEBUG > 0) print_bytes(ckey,strlen(ckey));
-                    result = HMAC(EVP_sha256(), ckey, strlen(ckey), &b6_in, sizeof(struct in6_addr),
-                                         &b6_out.ip6, &resultlen);
+                    if (DO_DEBUG > 0) print_bytes(ckey, strlen(ckey));
+                    unsigned char *result = NULL;
+                    unsigned int resultlen = -1;
+
+                    result = HMAC(EVP_sha256(), ckey, strlen(ckey), (const unsigned char *)&b6_in.ip6, sizeof(struct in6_addr),
+                                  (unsigned char *)&b6_out.ip6, &resultlen);
                     break;
                 default:
                     abort();
@@ -803,10 +804,10 @@ scramble_ip6(struct in6_addr *input, int pass_bits) {
                     << (31 - i));
 
             if (DO_DEBUG > 0) printf(" after encryption b6out[0]=%d, [1]=%d, [2]=%d, [3]=%d\n",
-                   b6_out.ip6.s6_addr32[0],
-                   b6_out.ip6.s6_addr32[1],
-                   b6_out.ip6.s6_addr32[2],
-                   b6_out.ip6.s6_addr32[3]);
+                                     b6_out.ip6.s6_addr32[0],
+                                     b6_out.ip6.s6_addr32[1],
+                                     b6_out.ip6.s6_addr32[2],
+                                     b6_out.ip6.s6_addr32[3]);
 
             if (DO_DEBUG > 0) printf("output[w] |= ..:%d\n", output.s6_addr32[w]);
 
@@ -864,15 +865,14 @@ unscramble_ip6(struct in6_addr *input, int pass_bits) {
     for (i = 0; i < 4; ++i) {
         for (;;) {
             res = guess;
-            scramble_ip6(&res, pass_bits);
+            res = scramble_ip6(&res, pass_bits);
             r = res.s6_addr32[i] ^ input->s6_addr32[i];
 
             if (r == 0) break;
 
             guess.s6_addr32[i] ^= r;
         }
-
     }
     *input = guess;
-    return;
+    return guess;  // Return the unscrambled address
 }

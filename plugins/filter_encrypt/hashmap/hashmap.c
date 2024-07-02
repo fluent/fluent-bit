@@ -76,8 +76,7 @@ void insert(char *key, void* data) {
 }
 
 struct HashMapEntry* delete(struct HashMapEntry* item) {
-    int key = item->key;
-
+    char *key = item->key;
     //get the hash
     int hashIndex = hash(key);
 

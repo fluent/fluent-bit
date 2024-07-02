@@ -1,18 +1,16 @@
 #include <openssl/conf.h>
 #include <openssl/evp.h>
 #include <openssl/err.h>
-
 #include <string.h>
 #include <stdio.h>
 #include <stdlib.h>
-
 #include "hmac.h"
 #include "../utils/utils.h"
+#include "aes_gcm_hmac_deterministic.h"
 
 #define DO_DEBUG 0
 #define BILLION  1000000000L
 #define TO_HEX(i) (i <= 9 ? '0' + i : 'A' - 10 + i)
-
 
 void handleErrorsAesGcmHmac(void)
 {
@@ -21,13 +19,11 @@ void handleErrorsAesGcmHmac(void)
 }
 
 char* aes_128_gcm_encrypt_deterministic(unsigned char *plaintext,
-                          int plaintext_len,
-                          unsigned char *key)
+                                        int plaintext_len,
+                                        unsigned char *key)
 {
-
-
     /* A 128 bit IV */
-    const IV_LEN = 16;
+    const int IV_LEN = 16;
     unsigned char iv[IV_LEN];
 
     unsigned char *result_len = NULL;
@@ -35,9 +31,9 @@ char* aes_128_gcm_encrypt_deterministic(unsigned char *plaintext,
     unsigned char *result = NULL;
     unsigned int resultlen = -1;
 
-    if (DO_DEBUG > 0) printf("key:%s(%d)\n",key, strlen(key));
-    if (DO_DEBUG > 0) printf("plaintext:%s(%d)\n",plaintext, strlen(plaintext));
-    hash_result = mx_hmac_sha256((const void *)key, strlen(key), plaintext, strlen(plaintext), result, &resultlen);
+    if (DO_DEBUG > 0) printf("key:%s(%d)\n", key, strlen((char *)key));
+    if (DO_DEBUG > 0) printf("plaintext:%s(%d)\n", plaintext, strlen((char *)plaintext));
+    hash_result = mx_hmac_sha256((const void *)key, strlen((char *)key), plaintext, strlen((char *)plaintext), result, &resultlen);
     int i;
     for (i = 0; i < IV_LEN; i++) {
         iv[i] = hash_result[i];
@@ -46,27 +42,26 @@ char* aes_128_gcm_encrypt_deterministic(unsigned char *plaintext,
     size_t iv_len = IV_LEN;
 
     /* Additional data */
-    unsigned char *additional =
-        (unsigned char *)"";
+    unsigned char *additional = (unsigned char *)"";
 
-    /* Needs to be large enough - reserved the double the size of plaintext */
-    const int ciphertext_size = strlen(plaintext)*2;
+    /* Needs to be large enough - reserved double the size of plaintext */
+    const int ciphertext_size = strlen((char *)plaintext) * 2;
     unsigned char ciphertext[ciphertext_size];
-    memset(ciphertext, 0, sizeof ciphertext);
+    memset(ciphertext, 0, sizeof(ciphertext));
 
     /* Buffer for the tag */
     unsigned char tag[17] = {0};
 
     /* A 128 bit TAG */
-    const TAG_LEN = 16;
+    const int TAG_LEN = 16;
 
     int ciphertext_len;
 
-    ciphertext_len = aes_gcm_deterministic_encrypt(plaintext, strlen(plaintext),
-                                     additional, strlen ((char *)additional),
-                                     key,
-                                     iv, IV_LEN,
-                                     ciphertext, tag);
+    ciphertext_len = aes_gcm_encrypt_deterministic(plaintext, strlen((char *)plaintext),
+                                                   additional, strlen((char *)additional),
+                                                   key,
+                                                   iv, IV_LEN,
+                                                   ciphertext, tag);
 
     char *ciphertext_tag = concaten(ciphertext, ciphertext_len, tag, TAG_LEN);
 
@@ -85,21 +80,18 @@ char* aes_128_gcm_encrypt_deterministic(unsigned char *plaintext,
     return iv_ciphertext_tag_b64;
 }
 
-int aes_gcm_deterministic_encrypt(unsigned char *plaintext, int plaintext_len,
-                unsigned char *aad, int aad_len,
-                unsigned char *key,
-                unsigned char *iv, int iv_len,
-                unsigned char *ciphertext,
-                unsigned char *tag)
-{
+int aes_gcm_encrypt_deterministic(unsigned char *plaintext, int plaintext_len,
+                                  unsigned char *aad, int aad_len,
+                                  unsigned char *key,
+                                  unsigned char *iv, int iv_len,
+                                  unsigned char *ciphertext,
+                                  unsigned char *tag) {
     EVP_CIPHER_CTX *ctx;
-
     int len;
-
     int ciphertext_len;
 
     /* A 128 bit TAG */
-    const TAG_LEN = 16;
+    const int TAG_LEN = 16;
 
     /* Create and initialise the context */
     if(!(ctx = EVP_CIPHER_CTX_new()))
@@ -152,17 +144,15 @@ int aes_gcm_deterministic_encrypt(unsigned char *plaintext, int plaintext_len,
     return ciphertext_len;
 }
 
-
 int aes_gcm_decrypt_deterministic(unsigned char *ciphertext, int ciphertext_len,
-                unsigned char *aad, int aad_len,
-                unsigned char *tag,
-                unsigned char *key,
-                unsigned char *iv, int iv_len,
-                unsigned char *plaintext)
+                                  unsigned char *aad, int aad_len,
+                                  unsigned char *tag,
+                                  unsigned char *key,
+                                  unsigned char *iv, int iv_len,
+                                  unsigned char *plaintext)
 {
-
     /* A 128 bit TAG */
-    const TAG_LEN = 16;
+    const int TAG_LEN = 16;
 
     EVP_CIPHER_CTX *ctx;
     int len;

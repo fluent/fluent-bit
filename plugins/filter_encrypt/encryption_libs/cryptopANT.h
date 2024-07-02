@@ -39,28 +39,28 @@ extern "C" {
 
 #define SCRAMBLE_ETHER_VLAN(v)	((v) ^= scramble_ether_vlan);
 
-#define SCRAMBLE_RANDOM_DEV	"/dev/urandom" 
+#define SCRAMBLE_RANDOM_DEV	"/dev/urandom"
 
 typedef enum {
-	SCRAMBLE_NONE		= 0x00,
-	SCRAMBLE_MD5 		= 0x01,
-	SCRAMBLE_BLOWFISH 	= 0x02,
-	SCRAMBLE_AES 		= 0x03,
-	SCRAMBLE_SHA1		= 0x04,
-	SCRAMBLE_HMAC_SHA256= 0x05
+    SCRAMBLE_NONE		= 0x00,
+    SCRAMBLE_MD5 		= 0x01,
+    SCRAMBLE_BLOWFISH 	= 0x02,
+    SCRAMBLE_AES 		= 0x03,
+    SCRAMBLE_SHA1		= 0x04,
+    SCRAMBLE_HMAC_SHA256= 0x05
 } scramble_crypt_t;
 
 typedef struct {
-	scramble_crypt_t	c4;
-	scramble_crypt_t	c6;
-	u_char			*key;
-	int			klen;
-	u_char			*pad;
-	int			plen;
-	u_char			*mac;
-	int			mlen;
-	u_char			*iv;
-	int			ivlen;	
+    scramble_crypt_t	c4;
+    scramble_crypt_t	c6;
+    u_char			*key;
+    int			klen;
+    u_char			*pad;
+    int			plen;
+    u_char			*mac;
+    int			mlen;
+    u_char			*iv;
+    int			ivlen;
 } scramble_state_t;
 
 /* external vars exported by mac scrambling macros */

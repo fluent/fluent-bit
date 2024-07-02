@@ -72,7 +72,7 @@ PERMISSIONS
 #include <errno.h>
 #include <time.h>
 #include <math.h>    /* for HUGE_VAL */
-#include <fluent-bit/flb_log.h>
+
 
 #include "mjson.h"
 
@@ -123,8 +123,8 @@ static char *json_target_address(const struct json_attr_t *cursor,
         targetaddr =
                 parent->arr.objects.base + (offset * parent->arr.objects.stride) +
                 cursor->addr.offset;
-    flb_trace("[JSON] Target address for %s (offset %d) is %p\n",
-              cursor->attribute, offset, targetaddr);
+//    flb_plg_trace(ctx->ins, "[JSON] Target address for %s (offset %d) is %p\n",
+//              cursor->attribute, offset, targetaddr);
     return targetaddr;
 }
 
@@ -219,12 +219,12 @@ static int json_internal_read_object(const char *cp,
                 }
         }
 
-    flb_debug("JSON parse of '%s' begins.\n", cp);
+    //flb_plg_debug(ctx->ins, "JSON parse of '%s' begins.\n", cp);
 
     /* parse input JSON */
     for (; *cp != '\0'; cp++) {
-        flb_trace("State %-14s, looking at '%c' (%p)\n",
-                  statenames[state], *cp, cp);
+//        flb_plg_trace(ctx->ins, "State %-14s, looking at '%c' (%p)\n",
+//                  statenames[state], *cp, cp);
         switch (state) {
             case init:
                 if (isspace((unsigned char) *cp))
@@ -232,7 +232,7 @@ static int json_internal_read_object(const char *cp,
                 else if (*cp == '{')
                     state = await_attr;
                 else {
-                    flb_debug("Non-WS when expecting object start.\n");
+//                    flb_plg_debug(ctx->ins, "Non-WS when expecting object start.\n");
                     if (end != NULL)
                         *end = cp;
                     return JSON_ERR_OBSTART;
@@ -251,7 +251,7 @@ static int json_internal_read_object(const char *cp,
                 else {
                     if (end != NULL)
                         *end = cp;
-                    flb_debug("Non-WS when expecting attribute.\n");
+//                    flb_plg_debug("Non-WS when expecting attribute.\n");
                     return JSON_ERR_ATTRSTART;
                 }
                 break;
@@ -261,11 +261,11 @@ static int json_internal_read_object(const char *cp,
                     return JSON_ERR_NULLPTR;
                 if (*cp == '"') {
                     *pattr++ = '\0';
-                    flb_trace("Collected attribute name %s\n",
-                              attrbuf);
+//                    flb_plg_trace("Collected attribute name %s\n",
+//                              attrbuf);
                     for (cursor = attrs; cursor->attribute != NULL; cursor++) {
-                        flb_trace("Checking against %s\n",
-                                  cursor->attribute);
+//                        flb_plg_trace("Checking against %s\n",
+//                                  cursor->attribute);
                         if (strcmp(cursor->attribute, attrbuf) == 0)
                             break;
                         if (strcmp(cursor->attribute, "") == 0 &&
@@ -274,9 +274,9 @@ static int json_internal_read_object(const char *cp,
                         }
                     }
                     if (cursor->attribute == NULL) {
-                        flb_debug("Unknown attribute name '%s'"
-                                  " (attributes begin with '%s').\n",
-                                  attrbuf, attrs->attribute);
+//                        flb_plg_debug("Unknown attribute name '%s'"
+//                                  " (attributes begin with '%s').\n",
+//                                  attrbuf, attrs->attribute);
                         /* don't update end here, leave at attribute start */
                         return JSON_ERR_BADATTR;
                     }
@@ -292,7 +292,7 @@ static int json_internal_read_object(const char *cp,
                     pval = valbuf;
                 } else if (pattr >= attrbuf + JSON_ATTR_MAX - 1) {
                     /* don't update end here, leave at attribute start */
-                    flb_debug("Attribute name too long.\n");
+//                    flb_plg_debug("Attribute name too long.\n");
                     return JSON_ERR_ATTRLEN;
                 } else
                     *pattr++ = *cp;
@@ -302,7 +302,7 @@ static int json_internal_read_object(const char *cp,
                     continue;
                 else if (*cp == '[') {
                     if (cursor->type != t_array) {
-                        flb_debug("Saw [ when not expecting array.\n");
+//                        flb_plg_debug("Saw [ when not expecting array.\n");
                         if (end != NULL)
                             *end = cp;
                         return JSON_ERR_NOARRAY;
@@ -312,13 +312,13 @@ static int json_internal_read_object(const char *cp,
                         return substatus;
                     state = post_element;
                 } else if (cursor->type == t_array) {
-                    flb_debug("Array element was specified, but no [.\n");
+//                    flb_plg_debug("Array element was specified, but no [.\n");
                     if (end != NULL)
                         *end = cp;
                     return JSON_ERR_NOBRAK;
                 } else if (*cp == '{') {
                     if (cursor->type != t_object) {
-                        flb_debug("Saw { when not expecting object.\n");
+//                        flb_plg_debug("Saw { when not expecting object.\n");
                         if (end != NULL)
                             *end = cp;
                         return JSON_ERR_NOARRAY;
@@ -329,7 +329,7 @@ static int json_internal_read_object(const char *cp,
                     --cp;    // last } will be re-consumed by cp++ at end of loop
                     state = post_element;
                 } else if (cursor->type == t_object) {
-                    flb_debug("Object element was specified, but no {.\n");
+//                    flb_plg_debug("Object element was specified, but no {.\n");
                     if (end != NULL)
                         *end = cp;
                     return JSON_ERR_NOCURLY;
@@ -352,11 +352,11 @@ static int json_internal_read_object(const char *cp,
                     state = in_escape;
                 else if (*cp == '"') {
                     *pval++ = '\0';
-                    flb_debug("Collected string value %s\n", valbuf);
+//                    flb_plg_debug("Collected string value %s\n", valbuf);
                     state = post_val;
                 } else if (pval > valbuf + JSON_VAL_MAX - 1
                            || pval > valbuf + maxlen) {
-                    flb_debug("String value too long.\n");
+//                    flb_plg_debug("String value too long.\n");
                     /* don't update end here, leave at value start */
                     return JSON_ERR_STRLONG;    /*  */
                 } else
@@ -368,7 +368,7 @@ static int json_internal_read_object(const char *cp,
                     return JSON_ERR_NULLPTR;
                 else if (pval > valbuf + JSON_VAL_MAX - 1
                          || pval > valbuf + maxlen) {
-                    flb_debug("String value too long.\n");
+//                    flb_plg_debug("String value too long.\n");
                     /* don't update end here, leave at value start */
                     return JSON_ERR_STRLONG;    /*  */
                 }
@@ -412,12 +412,12 @@ static int json_internal_read_object(const char *cp,
                     return JSON_ERR_NULLPTR;
                 if (isspace((unsigned char) *cp) || *cp == ',' || *cp == '}') {
                     *pval = '\0';
-                    flb_debug("Collected token value %s.\n", valbuf);
+//                    flb_plg_debug("Collected token value %s.\n", valbuf);
                     state = post_val;
                     if (*cp == '}' || *cp == ',')
                         --cp;
                 } else if (pval > valbuf + JSON_VAL_MAX - 1) {
-                    flb_debug("Token value too long.\n");
+//                    flb_plg_debug("Token value too long.\n");
                     /* don't update end here, leave at value start */
                     return JSON_ERR_TOKLONG;
                 } else
@@ -429,7 +429,7 @@ static int json_internal_read_object(const char *cp,
                     while (*cp != '\0' && isspace((unsigned char) *cp)) {
                         ++cp;
                     }
-                    flb_debug("Skipped trailing whitespace: value \"%s\"\n", valbuf);
+//                    flb_plg_debug("Skipped trailing whitespace: value \"%s\"\n", valbuf);
                 }
                 /*
                  * We know that cursor points at the first spec matching
@@ -466,13 +466,13 @@ static int json_internal_read_object(const char *cp,
                     && (cursor->type != t_string && cursor->type != t_character
                         && cursor->type != t_check && cursor->type != t_time
                         && cursor->type != t_ignore && cursor->map == 0)) {
-                    flb_debug("Saw quoted value when expecting non-string.\n");
+//                    flb_plg_debug("Saw quoted value when expecting non-string.\n");
                     return JSON_ERR_QNONSTRING;
                 }
                 if (!value_quoted
                     && (cursor->type == t_string || cursor->type == t_check
                         || cursor->type == t_time || cursor->map != 0)) {
-                    flb_debug("Didn't see quoted value when expecting string\n");
+//                    flb_plg_debug("Didn't see quoted value when expecting string\n");
                     return JSON_ERR_NONQSTRING;
                 }
                 if (cursor->map != 0) {
@@ -480,8 +480,7 @@ static int json_internal_read_object(const char *cp,
                         if (strcmp(mp->name, valbuf) == 0) {
                             goto foundit;
                         }
-                    flb_debug("Invalid enumerated value string \"%s\".\n",
-                              valbuf);
+//                    flb_plg_debug("Invalid enumerated value string \"%s\".\n",  valbuf);
                     return JSON_ERR_BADENUM;
                     foundit:
                     (void) snprintf(valbuf, sizeof(valbuf), "%d", mp->value);
@@ -556,8 +555,8 @@ static int json_internal_read_object(const char *cp,
                             break;
                         case t_check:
                             if (strcmp(cursor->dflt.check, valbuf) != 0) {
-                                flb_trace("Required attribute value %s not present.\n",
-                                          cursor->dflt.check);
+//                                flb_plg_trace("Required attribute value %s not present.\n",
+//                                          cursor->dflt.check);
                                 /* don't update end here, leave at start of attribute */
                                 return JSON_ERR_CHECKFAIL;
                             }
@@ -574,7 +573,7 @@ static int json_internal_read_object(const char *cp,
                     goto good_parse;
                 } else {
 
-                    flb_trace("Garbage while expecting comma or }\n");
+//                    flb_plg_trace("Garbage while expecting comma or }\n");
                     if (end != NULL)
                         *end = cp;
                     return JSON_ERR_BADTRAIL;
@@ -583,7 +582,7 @@ static int json_internal_read_object(const char *cp,
         }
     }
     if (state == init) {
-        flb_trace("Input was empty or white-space only\n");
+//        flb_plg_trace("Input was empty or white-space only\n");
         return JSON_ERR_EMPTY;
     }
 
@@ -593,7 +592,7 @@ static int json_internal_read_object(const char *cp,
         ++cp;
     if (end != NULL)
         *end = cp;
-    flb_trace("JSON parse ends.\n");
+//    flb_plg_trace("JSON parse ends.\n");
     return 0;
 }
 
@@ -605,12 +604,12 @@ int json_read_array(const char *cp, const struct json_array_t *arr,
     if (end != NULL)
         *end = NULL;    /* give it a well-defined value on parse failure */
 
-    flb_trace("Entered json_read_array()\n");
+//    flb_plg_trace("Entered json_read_array()\n");
 
     while (*cp != '\0' && isspace((unsigned char) *cp))
         cp++;
     if (*cp != '[') {
-        flb_trace("Didn't find expected array start\n");
+//        flb_plg_trace("Didn't find expected array start\n");
         return JSON_ERR_ARRAYSTART;
     } else
         cp++;
@@ -626,7 +625,7 @@ int json_read_array(const char *cp, const struct json_array_t *arr,
 
     for (offset = 0; offset < arr->maxlen; offset++) {
         char *ep = NULL;
-        flb_trace("Looking at %s\n", cp);
+//        flb_plg_trace("Looking at %s\n", cp);
         switch (arr->element_type) {
             case t_string:
                 while (*cp != '\0' && isspace((unsigned char) *cp))
@@ -643,12 +642,12 @@ int json_read_array(const char *cp, const struct json_array_t *arr,
                         *tp++ = '\0';
                         goto stringend;
                     } else if (*cp == '\0') {
-                        flb_trace("Bad string syntax in string list.\n");
+//                        flb_plg_trace("Bad string syntax in string list.\n");
                         return JSON_ERR_BADSTRING;
                     } else {
                         *tp = *cp++;
                     }
-                flb_trace("Bad string syntax in string list.\n");
+//                flb_plg_trace("Bad string syntax in string list.\n");
                 return JSON_ERR_BADSTRING;
             stringend:
                 break;
@@ -737,23 +736,23 @@ int json_read_array(const char *cp, const struct json_array_t *arr,
             case t_array:
             case t_check:
             case t_ignore:
-                flb_trace("Invalid array subtype.\n");
+//                flb_plg_trace("Invalid array subtype.\n");
                 return JSON_ERR_SUBTYPE;
         }
         arrcount++;
         while (*cp != '\0' && isspace((unsigned char) *cp))
             cp++;
         if (*cp == ']') {
-            flb_trace("End of array found.\n");
+//            flb_plg_trace("End of array found.\n");
             goto breakout;
         } else if (*cp == ',')
             cp++;
         else {
-            flb_trace("Bad trailing syntax on array.\n");
+//            flb_plg_trace("Bad trailing syntax on array.\n");
             return JSON_ERR_BADSUBTRAIL;
         }
     }
-    flb_trace("Too many elements in array.\n");
+//    flb_plg_trace("Too many elements in array.\n");
     if (end != NULL)
         *end = cp;
     return JSON_ERR_SUBTOOLONG;
@@ -762,8 +761,8 @@ int json_read_array(const char *cp, const struct json_array_t *arr,
         *(arr->count) = arrcount;
     if (end != NULL)
         *end = cp;
-    flb_trace("leaving json_read_array() with %d elements\n",
-              arrcount);
+//    flb_plg_trace("leaving json_read_array() with %d elements\n",
+//              arrcount);
     return 0;
 }
 
@@ -771,7 +770,7 @@ int json_read_object(const char *cp, const struct json_attr_t *attrs,
                      const char **end) {
     int st;
 
-    flb_trace((1, "json_read_object() sees '%s'\n", cp));
+//    flb_plg_trace((1, "json_read_object() sees '%s'\n", cp));
     st = json_internal_read_object(cp, attrs, NULL, 0, end);
     return st;
 }

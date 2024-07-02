@@ -10,17 +10,16 @@ char* aes_128_gcm_encrypt_deterministic(unsigned char *plaintext,
                                         int plaintext_len,
                                         unsigned char *key);
 int aes_gcm_encrypt_deterministic(unsigned char *plaintext, int plaintext_len,
-                unsigned char *aad, int aad_len,
-                unsigned char *key,
-                unsigned char *iv, int iv_len,
-                unsigned char *ciphertext,
-                unsigned char *tag);
+                                  unsigned char *aad, int aad_len,
+                                  unsigned char *key,
+                                  unsigned char *iv, int iv_len,
+                                  unsigned char *ciphertext,
+                                  unsigned char *tag);
 int aes_gcm_decrypt_deterministic(unsigned char *ciphertext, int ciphertext_len,
-                unsigned char *aad, int aad_len,
-                unsigned char *tag,
-                unsigned char *key,
-                unsigned char *iv, int iv_len,
-                unsigned char *plaintext);
+                                  unsigned char *aad, int aad_len,
+                                  unsigned char *tag,
+                                  unsigned char *key,
+                                  unsigned char *iv, int iv_len,
+                                  unsigned char *plaintext);
 
-
-#endif //AES_GCM_HMAC_DET_H_
+#endif // AES_GCM_HMAC_DET_H_

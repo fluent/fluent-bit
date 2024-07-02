@@ -29,6 +29,6 @@ char *concat(char *str1, const int str1_len, const char *str2, const int str2_le
 char* concaten(const char* str1, const int str1_len, const char* str2, const int str2_len);
 char *substring(char *input, int start, int length);
 char *base64encode (const void *b64_encode_this, int encode_this_many_bytes);
-char *base64decode (const void *b64_decode_this, int decode_this_many_bytes, int *out_len);
+char *base64decode (const void *b64_decode_this, int decode_this_many_bytes);
 void populate_key_value_delimiters(char *value_delimiters);
 #endif //STRINGMANIPULATIONS__UTILS_H_

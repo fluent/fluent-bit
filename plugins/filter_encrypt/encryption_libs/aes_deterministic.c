@@ -22,10 +22,10 @@ const unsigned char *iv = (unsigned char *) "0";
 const char SALT[] = {0x4B, 0x73, 0x00};
 
 /* encryption salt */
-const unsigned char ENCRYPTION_SALT[] = {0x31,0x32,0x33,0x34,0x00};
+const unsigned char ENCRYPTION_SALT[5] = {0x31,0x32,0x33,0x34,0x00};
 
 
-void generate_key_from_pbkdf2(char *passphrase, char *pbkdf2_salt, unsigned char *out, int iters, int key_length){
+void generate_key_from_pbkdf2(char *passphrase, const unsigned char *pbkdf2_salt, unsigned char *out, int iters, int key_length){
     size_t i;
 
     size_t len = strlen(pbkdf2_salt);
@@ -52,7 +52,7 @@ void generate_key_from_pbkdf2(char *passphrase, char *pbkdf2_salt, unsigned char
     }
     else
     {
-        printf(stderr, "PKCS5_PBKDF2_HMAC_SHA1 failed\n");
+        fprintf(stderr, "PKCS5_PBKDF2_HMAC_SHA1 failed\n");
     }
 
 }
@@ -63,7 +63,7 @@ void handleErrors(void) {
 }
 
 int encrypt_aes_128_ctr(unsigned char *plaintext, int plaintext_len, unsigned char *key,
-            unsigned char *iv, unsigned char *ciphertext) {
+                        unsigned char *iv, unsigned char *ciphertext) {
     EVP_CIPHER_CTX *ctx;
 
     int len;
@@ -107,7 +107,7 @@ int encrypt_aes_128_ctr(unsigned char *plaintext, int plaintext_len, unsigned ch
 }
 
 int decrypt_aes_128_ctr(unsigned char *ciphertext, int ciphertext_len, unsigned char *key,
-            unsigned char *iv, unsigned char *plaintext) {
+                        unsigned char *iv, unsigned char *plaintext) {
     EVP_CIPHER_CTX *ctx;
 
     int len;
@@ -289,7 +289,7 @@ aes_det(const char* plaintext, const char* KEY128, const char* MASTER_KEY_SALT) 
 
     unsigned char encryption_key[KEY_LEN + 1] = {0x00};
 
-    generate_key_from_pbkdf2(derived_key_base64_encoded, &ENCRYPTION_SALT, encryption_key, PBKD2_ENCRYPTION_ITERATIONS, PBKD2_ENCRYPTION_KEY_LEN);
+    generate_key_from_pbkdf2(derived_key_base64_encoded, ENCRYPTION_SALT, encryption_key, PBKD2_ENCRYPTION_ITERATIONS, PBKD2_ENCRYPTION_KEY_LEN);
 
     if (flb_log_check(FLB_LOG_TRACE)) {
         flb_debug("encryption_key in hex:\n");
@@ -301,7 +301,7 @@ aes_det(const char* plaintext, const char* KEY128, const char* MASTER_KEY_SALT) 
 
     /* Encrypt the plaintext */
     ciphertext_len = encrypt_aes_128_ctr(plaintext, strlen((char *) plaintext), encryption_key, encryption_iv,
-                             ciphertext);
+                                         ciphertext);
 
     /* Do something useful with the ciphertext here */
     if (flb_log_check(FLB_LOG_TRACE)) flb_debug("Ciphertext is:\n");
@@ -324,7 +324,7 @@ aes_det(const char* plaintext, const char* KEY128, const char* MASTER_KEY_SALT) 
 
     /* Decrypt the ciphertext */
     decryptedtext_len = decrypt_aes_128_ctr(ciphertext, ciphertext_len, encryption_key, encryption_iv,
-                                decryptedtext);
+                                            decryptedtext);
 
     /* Add a NULL terminator. We are expecting printable text */
     decryptedtext[decryptedtext_len] = '\0';
