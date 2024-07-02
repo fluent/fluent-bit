@@ -27,6 +27,7 @@
 #include <fluent-bit/flb_random.h>
 #include <fluent-bit/flb_config_map.h>
 #include <fluent-bit/flb_log_event_decoder.h>
+#include <fluent-bit/flb_msgpack_append_message.h>
 #include <msgpack.h>
 
 #include <stdio.h>
@@ -246,6 +247,8 @@ static void cb_gelf_flush(struct flb_event_chunk *event_chunk,
     struct flb_out_gelf_config *ctx = out_context;
     struct flb_log_event_decoder log_decoder;
     struct flb_log_event log_event;
+    char   *appended_buffer = NULL;
+    size_t  appended_size;
 
     if (ctx->mode != FLB_GELF_UDP) {
         u_conn = flb_upstream_conn_get(ctx->u);
@@ -286,8 +289,27 @@ static void cb_gelf_flush(struct flb_event_chunk *event_chunk,
             FLB_OUTPUT_RETURN(FLB_ERROR);
         }
 
-        tmp = flb_msgpack_to_gelf(&s, &map, &log_event.timestamp,
-                                  &(ctx->fields));
+        ret = flb_msgpack_append_message_to_record(&appended_buffer,
+                                                   &appended_size,
+                                                   ctx->fields.tag_key,
+                                                   (char *) event_chunk->data + off,
+                                                   event_chunk->size,
+                                                   event_chunk->tag,
+                                                   strlen(event_chunk->tag),
+                                                   MSGPACK_OBJECT_STR);
+
+        if (ret == FLB_MAP_EXPANSION_ERROR) {
+            flb_plg_debug(ctx->ins, "error expanding with tag : %d", ret);
+        }
+
+        if (appended_buffer != NULL) {
+            tmp = flb_msgpack_raw_to_gelf(appended_buffer, appended_size, &log_event.timestamp,
+                                          &(ctx->fields));
+        }
+        else {
+            tmp = flb_msgpack_to_gelf(&s, &map, &log_event.timestamp,
+                                      &(ctx->fields));
+        }
         if (tmp != NULL) {
             s = tmp;
             if (ctx->mode == FLB_GELF_UDP) {
@@ -386,6 +408,12 @@ static int cb_gelf_init(struct flb_output_instance *ins, struct flb_config *conf
         ctx->mode = FLB_GELF_UDP;
     }
 
+    /* Config Gelf_Tag_Key */
+    tmp = flb_output_get_property("gelf_tag_key", ins);
+    if (tmp) {
+        ctx->fields.tag_key = flb_sds_create(tmp);
+    }
+
     /* Config Gelf_Timestamp_Key */
     tmp = flb_output_get_property("gelf_timestamp_key", ins);
     if (tmp) {
@@ -479,6 +507,7 @@ static int cb_gelf_exit(void *data, struct flb_config *config)
         close(ctx->fd);
     }
 
+    flb_sds_destroy(ctx->fields.tag_key);
     flb_sds_destroy(ctx->fields.timestamp_key);
     flb_sds_destroy(ctx->fields.host_key);
     flb_sds_destroy(ctx->fields.short_message_key);
@@ -497,6 +526,11 @@ static struct flb_config_map config_map[] = {
      FLB_CONFIG_MAP_STR, "mode", "udp",
      0, FLB_FALSE, 0,
      "The protocol to use. 'tls', 'tcp' or 'udp'"
+    },
+    {
+     FLB_CONFIG_MAP_STR, "gelf_tag_key", "tag",
+     0, FLB_FALSE, 0,
+     "tag key name (MUST be set in GELF)"
     },
     {
      FLB_CONFIG_MAP_STR, "gelf_short_message_key", NULL,
