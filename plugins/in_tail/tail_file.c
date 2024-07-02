@@ -939,7 +939,7 @@ int flb_tail_file_append(char *path, struct stat *st, int mode,
     struct stat lst;
     flb_sds_t inode_str;
 
-    if (!S_ISREG(st->st_mode)) {
+    if (!S_ISREG(st->st_mode) && !S_ISFIFO(st->st_mode)) {
         return -1;
     }
 
@@ -947,7 +947,15 @@ int flb_tail_file_append(char *path, struct stat *st, int mode,
         return -1;
     }
 
+#ifdef FLB_SYSTEM_WINDOWS
     fd = open(path, O_RDONLY);
+#else
+    if(S_ISREG(st->st_mode)) {
+        fd = open(path, O_RDONLY);
+    } else {
+        fd = open(path, O_RDONLY | O_NONBLOCK);
+    }
+#endif
     if (fd == -1) {
         flb_errno();
         flb_plg_error(ctx->ins, "cannot open %s", path);
@@ -1164,10 +1172,12 @@ int flb_tail_file_append(char *path, struct stat *st, int mode,
     }
 
     /* Set the file position (database offset, head or tail) */
-    ret = set_file_position(ctx, file);
-    if (ret == -1) {
-        flb_tail_file_remove(file);
-        goto error;
+    if (!S_ISFIFO(st->st_mode)) {
+        ret = set_file_position(ctx, file);
+        if (ret == -1) {
+            flb_tail_file_remove(file);
+            goto error;
+        }
     }
 
     /* Remaining bytes to read */
@@ -1334,7 +1344,7 @@ static int adjust_counters(struct flb_tail_config *ctx, struct flb_tail_file *fi
     }
 
     /* Check if the file was truncated */
-    if (file->offset > st.st_size) {
+    if (!S_ISFIFO(st.st_mode) && file->offset > st.st_size) {
         offset = lseek(file->fd, 0, SEEK_SET);
         if (offset == -1) {
             flb_errno();
@@ -1572,6 +1582,10 @@ int flb_tail_file_chunk(struct flb_tail_file *file)
         }
     }
     else {
+        /* This is a fifo, and it's empty */
+        if (errno == EAGAIN) {
+            return FLB_TAIL_WAIT;
+        }
         /* error */
         flb_errno();
         flb_plg_error(ctx->ins, "error reading %s", file->name);
