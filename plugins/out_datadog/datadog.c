@@ -528,7 +528,7 @@ static struct flb_config_map config_map[] = {
      "The host that emitted logs should be associated with. If unset, Datadog "
      "will expect the host to be set as `host`, `hostname`, or `syslog.hostname` "
      "attributes. See Datadog Logs preprocessor documentation for up-to-date "
-     "of recognized attributes."
+     "recognized attributes."
     },
 
     {
