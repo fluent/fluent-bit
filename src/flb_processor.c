@@ -430,9 +430,9 @@ int flb_processor_run(struct flb_processor *proc,
 {
     int ret;
     int finalize;
-    void *cur_buf;
+    void *cur_buf = NULL;
     size_t cur_size;
-    void *tmp_buf;
+    void *tmp_buf = NULL;
     size_t tmp_size;
     struct mk_list *head;
     struct mk_list *list = NULL;
@@ -606,7 +606,6 @@ int flb_processor_run(struct flb_processor *proc,
                         /* encode chunk_cobj as msgpack */
                         ret = flb_mp_chunk_cobj_encode(chunk_cobj, (char **) &tmp_buf, &tmp_size);
                         if (ret != 0) {
-                            printf("failure\n");
                             flb_log_event_decoder_reset(p_ins->log_decoder, NULL, 0);
 
                             if (cur_buf != data) {
@@ -640,6 +639,7 @@ int flb_processor_run(struct flb_processor *proc,
                 if (p_ins->p->cb_process_metrics != NULL) {
                     ret = p_ins->p->cb_process_metrics(p_ins,
                                                        (struct cmt *) cur_buf,
+                                                       (struct cmt **) &tmp_buf,
                                                        tag,
                                                        tag_len);
 
@@ -648,8 +648,16 @@ int flb_processor_run(struct flb_processor *proc,
                                      FLB_PROCESSOR_LOCK_RETRY_LIMIT,
                                      FLB_PROCESSOR_LOCK_RETRY_DELAY);
 
+                        out_buf = NULL;
+
                         return -1;
                     }
+
+                    if (cur_buf != data) {
+                        cmt_destroy(cur_buf);
+                    }
+
+                    cur_buf = (void *)tmp_buf;
                 }
             }
             else if (type == FLB_PROCESSOR_TRACES) {
@@ -988,7 +996,7 @@ void flb_processor_instance_exit(struct flb_processor_instance *ins, struct flb_
     plugin = ins->p;
 
     if (plugin->cb_exit != NULL && ins->context != NULL) {
-        plugin->cb_exit(ins);
+        plugin->cb_exit(ins, ins->context);
     }
 }
 

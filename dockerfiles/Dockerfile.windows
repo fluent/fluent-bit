@@ -16,7 +16,7 @@ ARG WINDOWS_VERSION=ltsc2019
 # Builder Image - Windows Server Core
 FROM mcr.microsoft.com/windows/servercore:$WINDOWS_VERSION as builder
 
-RUN setx /M PATH "%PATH%;C:\BuildTools\Common7\IDE\CommonExtensions\Microsoft\CMake\CMake\bin;C:\WinFlexBison"
+RUN setx /M PATH "%PATH%;C:\BuildTools\Common7\IDE\CommonExtensions\Microsoft\CMake\CMake\bin;C:\WinFlexBison;C:\dev\vcpkg"
 
 SHELL ["powershell", "-Command", "$ErrorActionPreference = 'Stop'; $ProgressPreference = 'SilentlyContinue';"]
 WORKDIR /local
@@ -49,18 +49,27 @@ RUN Start-Process /local/vc_redist.x64.exe -ArgumentList '/install', '/quiet', '
     Copy-Item -Path /Windows/System32/vccorlib140.dll -Destination /fluent-bit/bin/; `
     Copy-Item -Path /Windows/System32/vcruntime140.dll -Destination /fluent-bit/bin/;
 
-# Install Chocolatey and OpenSSL: https://github.com/StefanScherer/dockerfiles-windows/blob/main/openssl/Dockerfile
-ENV chocolateyUseWindowsCompression false
-ENV chocolateyVersion '1.4.0'
-RUN iex ((new-object net.webclient).DownloadString('https://chocolatey.org/install.ps1')); `
-    choco feature disable --name showDownloadProgress ; `
-    choco install -y openssl;
+ENV VCPKG_VERSION=2024.05.24
+# https://github.com/microsoft/vcpkg/blob/2024.05.24/scripts/bootstrap.ps1
+ENV VCPKG_ROOT=/dev/vcpkg
+
+WORKDIR /dev
+
+RUN `
+    Invoke-WebRequest -OutFile /dev/vcpkg.zip https://github.com/microsoft/vcpkg/archive/refs/tags/${ENV:VCPKG_VERSION}.zip; `
+    Expand-Archive /dev/vcpkg.zip -Destination /dev; `
+    Remove-Item -Force /dev/vcpkg.zip; `
+    Rename-Item -Path /dev/vcpkg-${ENV:VCPKG_VERSION} -NewName vcpkg; `
+    /dev/vcpkg/bootstrap-vcpkg.bat;
+
+RUN vcpkg install --recurse openssl --triplet x64-windows-static; `
+    vcpkg install --recurse libyaml --triplet x64-windows-static;
 
 # Build Fluent Bit from source - context must be the root of the Git repo
 WORKDIR /src/build
 COPY . /src/
 
-RUN cmake -G "'Visual Studio 16 2019'" -DOPENSSL_ROOT_DIR='C:\Program Files\OpenSSL-Win64\lib\VC\x64\MT' -DOPENSSL_INCLUDE_DIR='C:\Program Files\OpenSSL-Win64\include' -DCMAKE_BUILD_TYPE=Release ../;`
+RUN cmake -G "'Visual Studio 16 2019'" -DOPENSSL_ROOT_DIR='C:\dev\vcpkg\packages\openssl_x64-windows-static' -DFLB_LIBYAML_DIR='C:\dev\vcpkg\packages\libyaml_x64-windows-static' -DCMAKE_BUILD_TYPE=Release ../;`
     cmake --build . --config Release;
 
 # Set up config files and binaries in single /fluent-bit hierarchy for easy copy in later stage

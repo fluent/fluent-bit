@@ -84,9 +84,8 @@ static int hash_transformer(void *context, struct cfl_variant *value)
         return FLB_FALSE;
     }
 
-    if (cfl_sds_len(converted_value->data.as_string) == 0) {
+    if (cfl_variant_size_get(converted_value) == 0) {
         cfl_variant_destroy(converted_value);
-
         return FLB_TRUE;
     }
 
@@ -113,16 +112,17 @@ static int hash_transformer(void *context, struct cfl_variant *value)
     }
 
     encoded_hash = cfl_sds_create(converted_value->data.as_string);
-
+    cfl_variant_destroy(converted_value);
     if (encoded_hash == NULL) {
-        cfl_variant_destroy(converted_value);
-
         return FLB_FALSE;
     }
 
+    /* NOTE: this part does a manual modification of the variant content */
     if (value->type == CFL_VARIANT_STRING ||
         value->type == CFL_VARIANT_BYTES) {
-        cfl_sds_destroy(value->data.as_string);
+        if (value->referenced == CFL_FALSE) {
+            cfl_sds_destroy(value->data.as_string);
+        }
     }
     else if (value->type == CFL_VARIANT_ARRAY) {
         cfl_array_destroy(value->data.as_array);
@@ -133,6 +133,9 @@ static int hash_transformer(void *context, struct cfl_variant *value)
 
     value->type = CFL_VARIANT_STRING;
     value->data.as_string = encoded_hash;
+    value->referenced = CFL_FALSE;
+
+    cfl_variant_size_set(value, cfl_sds_len(encoded_hash));
 
     return FLB_TRUE;
 }
@@ -163,12 +166,13 @@ int cfl_variant_convert(struct cfl_variant *input_value,
                         int output_type)
 {
     int ret;
+    int errno_backup;
     int64_t as_int;
-    char buf[64];
     double as_double;
-    char              *converstion_canary;
+    char buf[64];
+    char *str = NULL;
+    char *converstion_canary = NULL;
     struct cfl_variant *tmp = NULL;
-    int                errno_backup;
 
     errno_backup = errno;
 
@@ -180,7 +184,8 @@ int cfl_variant_convert(struct cfl_variant *input_value,
             output_type == CFL_VARIANT_BYTES) {
 
             tmp = cfl_variant_create_from_string_s(input_value->data.as_string,
-                                                   cfl_sds_len(input_value->data.as_string));
+                                                   cfl_variant_size_get(input_value),
+                                                   CFL_FALSE);
             if (!tmp) {
                 return CFL_FALSE;
             }
@@ -188,10 +193,12 @@ int cfl_variant_convert(struct cfl_variant *input_value,
         else if (output_type == CFL_VARIANT_BOOL) {
             as_int = CFL_FALSE;
 
-            if (strcasecmp(input_value->data.as_string, "true") == 0) {
+            if (cfl_variant_size_get(input_value) == 4 &&
+                strncasecmp(input_value->data.as_string, "true", 4) == 0) {
                 as_int = CFL_TRUE;
             }
-            else if (strcasecmp(input_value->data.as_string, "false") == 0) {
+            else if (cfl_variant_size_get(input_value) == 5 &&
+                strncasecmp(input_value->data.as_string, "false", 5) == 0) {
                 as_int = CFL_FALSE;
             }
 
@@ -199,10 +206,31 @@ int cfl_variant_convert(struct cfl_variant *input_value,
         }
         else if (output_type == CFL_VARIANT_INT) {
             errno = 0;
-            as_int = strtoimax(input_value->data.as_string, &converstion_canary, 10);
+
+            if (input_value->referenced) {
+                tmp = cfl_variant_create_from_string_s(input_value->data.as_string,
+                                                       cfl_variant_size_get(input_value),
+                                                       CFL_FALSE);
+                if (!tmp) {
+                    return CFL_FALSE;
+                }
+                str = tmp->data.as_string;
+            }
+            else {
+                str = input_value->data.as_string;
+            }
+
+            as_int = strtoimax(str, &converstion_canary, 10);
             if (errno == ERANGE || errno == EINVAL) {
                 errno = errno_backup;
+                if (tmp) {
+                    cfl_variant_destroy(tmp);
+                }
                 return CFL_FALSE;
+            }
+
+            if (tmp) {
+                cfl_variant_destroy(tmp);
             }
 
             tmp = cfl_variant_create_from_int64(as_int);
@@ -210,10 +238,31 @@ int cfl_variant_convert(struct cfl_variant *input_value,
         else if (output_type == CFL_VARIANT_DOUBLE) {
             errno = 0;
             converstion_canary = NULL;
-            as_double = strtod(input_value->data.as_string, &converstion_canary);
+
+            if (input_value->referenced) {
+                tmp = cfl_variant_create_from_string_s(input_value->data.as_string,
+                                                       cfl_variant_size_get(input_value),
+                                                       CFL_FALSE);
+                if (!tmp) {
+                    return CFL_FALSE;
+                }
+                str = tmp->data.as_string;
+            }
+            else {
+                str = input_value->data.as_string;
+            }
+
+            as_double = strtod(str, &converstion_canary);
             if (errno == ERANGE) {
                 errno = errno_backup;
+                if (tmp) {
+                    cfl_variant_destroy(tmp);
+                }
                 return CFL_FALSE;
+            }
+
+            if (tmp) {
+                cfl_variant_destroy(tmp);
             }
 
             if (as_double == 0 && converstion_canary == input_value->data.as_string) {
@@ -234,7 +283,7 @@ int cfl_variant_convert(struct cfl_variant *input_value,
             if (ret < 0 || ret >= sizeof(buf)) {
                 return CFL_FALSE;
             }
-            tmp = cfl_variant_create_from_string_s(buf, ret);
+            tmp = cfl_variant_create_from_string_s(buf, ret, CFL_FALSE);
         }
         else if (output_type == CFL_VARIANT_BOOL) {
             as_int = CFL_FALSE;
@@ -263,7 +312,7 @@ int cfl_variant_convert(struct cfl_variant *input_value,
             if (ret < 0 || ret >= sizeof(buf)) {
                 return CFL_FALSE;
             }
-            tmp = cfl_variant_create_from_string_s(buf, ret);
+            tmp = cfl_variant_create_from_string_s(buf, ret, CFL_FALSE);
         }
         else if (output_type == CFL_VARIANT_BOOL) {
             as_int = CFL_FALSE;
@@ -290,7 +339,7 @@ int cfl_variant_convert(struct cfl_variant *input_value,
         if (output_type == CFL_VARIANT_STRING ||
             output_type == CFL_VARIANT_BYTES) {
 
-            tmp = cfl_variant_create_from_string_s("null", 4);
+            tmp = cfl_variant_create_from_string_s("null", 4, CFL_FALSE);
         }
         else if (output_type == CFL_VARIANT_BOOL) {
             tmp = cfl_variant_create_from_bool(CFL_FALSE);
@@ -352,9 +401,10 @@ static int run_action_insert(struct content_modifier_ctx *ctx,
 
     /* insert the new value */
     kvlist = obj->variant->data.as_kvlist;
-    ret = cfl_kvlist_insert_string_s(kvlist, key, cfl_sds_len(key), value, cfl_sds_len(value));
+    ret = cfl_kvlist_insert_string_s(kvlist, key, cfl_sds_len(key), value, cfl_sds_len(value),
+                                     CFL_FALSE);
     if (ret != 0) {
-        printf("Failed to insert key: %s\n", key);
+        flb_plg_debug(ctx->ins, "[action: insert] failed to insert key: %s", key);
         return -1;
     }
     return 0;
@@ -378,7 +428,8 @@ static int run_action_upsert(struct content_modifier_ctx *ctx,
     }
 
     /* insert the key with the updated value */
-    ret = cfl_kvlist_insert_string_s(kvlist, key, cfl_sds_len(key), value, cfl_sds_len(value));
+    ret = cfl_kvlist_insert_string_s(kvlist, key, cfl_sds_len(key), value, cfl_sds_len(value),
+                                     CFL_FALSE);
     if (ret != 0) {
         return -1;
     }
@@ -400,7 +451,10 @@ static int run_action_delete(struct content_modifier_ctx *ctx,
         return 0;
     }
 
-    return -1;
+    flb_plg_debug(ctx->ins, "[action: delete] key '%s' not found", key);
+
+    /* if the kvpair was not found, it's ok, we return zero */
+    return 0;
 }
 
 static int run_action_rename(struct content_modifier_ctx *ctx,
@@ -414,7 +468,8 @@ static int run_action_rename(struct content_modifier_ctx *ctx,
     /* if the kv pair already exists, remove it from the list */
     kvpair = cfl_object_kvpair_get(obj, key);
     if (!kvpair) {
-        return -1;
+        flb_plg_debug(ctx->ins, "[action: rename] key '%s' not found", key);
+        return 0;
     }
 
     tmp = kvpair->key;
@@ -463,7 +518,8 @@ static void cb_extract_regex(const char *name, const char *value, size_t value_l
         cfl_kvlist_remove(kvlist, (char *) name);
     }
 
-    cfl_kvlist_insert_string_s(kvlist, (char *) name, strlen(name), (char *) value, value_length);
+    cfl_kvlist_insert_string_s(kvlist, (char *) name, strlen(name), (char *) value, value_length,
+                               CFL_FALSE);
 }
 
 int run_action_extract(struct content_modifier_ctx *ctx,
@@ -491,7 +547,9 @@ int run_action_extract(struct content_modifier_ctx *ctx,
         return -1;
     }
 
-    match_count = flb_regex_do(regex, v->data.as_string, cfl_sds_len(v->data.as_string), &match_list);
+    match_count = flb_regex_do(regex,
+                               v->data.as_string,
+                               cfl_variant_size_get(v), &match_list);
     if (match_count <= 0) {
         return -1;
     }
@@ -541,6 +599,134 @@ static int run_action_convert(struct content_modifier_ctx *ctx,
     return 0;
 }
 
+static struct cfl_variant *otel_get_or_create_attributes(struct cfl_kvlist *kvlist)
+{
+    int ret;
+    struct cfl_list *head;
+    struct cfl_list *tmp;
+    struct cfl_kvpair *kvpair;
+    struct cfl_variant *val;
+    struct cfl_kvlist *kvlist_tmp;
+
+    /* iterate resource to find the attributes field */
+    cfl_list_foreach_safe(head, tmp, &kvlist->list) {
+        kvpair = cfl_list_entry(head, struct cfl_kvpair, _head);
+        if (cfl_sds_len(kvpair->key) != 10) {
+            continue;
+        }
+
+        if (strncmp(kvpair->key, "attributes", 10) == 0) {
+            val = kvpair->val;
+            if (val->type != CFL_VARIANT_KVLIST) {
+                return NULL;
+            }
+
+            return val;
+        }
+    }
+
+    /* create an empty kvlist as the value of attributes */
+    kvlist_tmp = cfl_kvlist_create();
+    if (!kvlist_tmp) {
+        return NULL;
+    }
+
+    /* create the attributes kvpair */
+    ret = cfl_kvlist_insert_kvlist_s(kvlist, "attributes", 10, kvlist_tmp);
+    if (ret != 0) {
+        cfl_kvlist_destroy(kvlist_tmp);
+        return NULL;
+    }
+
+    /* get the last kvpair from the list */
+    kvpair = cfl_list_entry_last(&kvlist->list, struct cfl_kvpair, _head);
+    if (!kvpair) {
+        return NULL;
+    }
+
+    return kvpair->val;
+}
+
+
+static struct cfl_variant *otel_get_attributes(int context, struct flb_mp_chunk_record *record)
+{
+    int key_len;
+    const char *key_buf;
+    struct cfl_list *head;
+    struct cfl_object *obj = NULL;
+    struct cfl_variant *val;
+    struct cfl_kvlist *kvlist;
+    struct cfl_kvpair *kvpair;
+    struct cfl_variant *var_attr;
+
+    if (context == CM_CONTEXT_OTEL_RESOURCE_ATTR) {
+        key_buf = "resource";
+        key_len = 8;
+    }
+    else if (context == CM_CONTEXT_OTEL_SCOPE_ATTR) {
+        key_buf = "scope";
+        key_len = 5;
+    }
+    else {
+        return NULL;
+    }
+
+    obj = record->cobj_record;
+    kvlist = obj->variant->data.as_kvlist;
+    cfl_list_foreach(head, &kvlist->list) {
+        kvpair = cfl_list_entry(head, struct cfl_kvpair, _head);
+
+        if (cfl_sds_len(kvpair->key) != key_len) {
+            continue;
+        }
+
+        if (strncmp(kvpair->key, key_buf, key_len) == 0) {
+            val = kvpair->val;
+            if (val->type != CFL_VARIANT_KVLIST) {
+                return NULL;
+            }
+
+            var_attr = otel_get_or_create_attributes(val->data.as_kvlist);
+            if (!var_attr) {
+                return NULL;
+            }
+
+            return var_attr;
+        }
+    }
+
+    return NULL;
+}
+
+static struct cfl_variant *otel_get_scope(struct flb_mp_chunk_record *record)
+{
+    struct cfl_list *head;
+    struct cfl_object *obj;
+    struct cfl_variant *val;
+    struct cfl_kvlist *kvlist;
+    struct cfl_kvpair *kvpair;
+
+    obj = record->cobj_record;
+    kvlist = obj->variant->data.as_kvlist;
+    cfl_list_foreach(head, &kvlist->list) {
+        kvpair = cfl_list_entry(head, struct cfl_kvpair, _head);
+
+        if (cfl_sds_len(kvpair->key) != 5) {
+            continue;
+        }
+
+        if (strncmp(kvpair->key, "scope", 5) == 0) {
+            val = kvpair->val;
+            if (val->type != CFL_VARIANT_KVLIST) {
+                return NULL;
+            }
+
+            return val;
+        }
+    }
+
+    return NULL;
+}
 int cm_logs_process(struct flb_processor_instance *ins,
                     struct content_modifier_ctx *ctx,
                     struct flb_mp_chunk_cobj *chunk_cobj,
@@ -548,17 +734,64 @@ int cm_logs_process(struct flb_processor_instance *ins,
                     int tag_len)
 {
     int ret = -1;
+    int record_type;
     struct flb_mp_chunk_record *record;
     struct cfl_object *obj = NULL;
+    struct cfl_object obj_static;
+    struct cfl_variant *var;
 
     /* Iterate records */
     while ((ret = flb_mp_chunk_cobj_record_next(chunk_cobj, &record)) == FLB_MP_CHUNK_RECORD_OK) {
+        obj = NULL;
+
+        /* Retrieve information about the record type */
+        ret = flb_log_event_decoder_get_record_type(&record->event, &record_type);
+        if (ret != 0) {
+            flb_plg_error(ctx->ins, "record has invalid event type");
+            continue;
+        }
+
         /* retrieve the target cfl object */
         if (ctx->context_type == CM_CONTEXT_LOG_METADATA) {
             obj = record->cobj_metadata;
         }
         else if (ctx->context_type == CM_CONTEXT_LOG_BODY) {
             obj = record->cobj_record;
+        }
+        else if (ctx->context_type == CM_CONTEXT_OTEL_RESOURCE_ATTR &&
+                 record_type == FLB_LOG_EVENT_GROUP_START) {
+            var = otel_get_attributes(CM_CONTEXT_OTEL_RESOURCE_ATTR, record);
+            if (!var) {
+                continue;
+            }
+
+            obj_static.type = CFL_VARIANT_KVLIST;
+            obj_static.variant = var;
+            obj = &obj_static;
+        }
+        else if (ctx->context_type == CM_CONTEXT_OTEL_SCOPE_ATTR &&
+                 record_type == FLB_LOG_EVENT_GROUP_START) {
+
+            var = otel_get_attributes(CM_CONTEXT_OTEL_SCOPE_ATTR, record);
+            if (!var) {
+                continue;
+            }
+
+            obj_static.type = CFL_VARIANT_KVLIST;
+            obj_static.variant = var;
+            obj = &obj_static;
+        }
+        else if ((ctx->context_type == CM_CONTEXT_OTEL_SCOPE_NAME || ctx->context_type == CM_CONTEXT_OTEL_SCOPE_VERSION) &&
+                 record_type == FLB_LOG_EVENT_GROUP_START) {
+
+            var = otel_get_scope(record);
+            obj_static.type = CFL_VARIANT_KVLIST;
+            obj_static.variant = var;
+            obj = &obj_static;
+        }
+
+        if (!obj) {
+            continue;
         }
 
         /* the operation on top of the data type is unsupported */

@@ -56,7 +56,7 @@ struct winevtlog_channel *winevtlog_subscribe(const char *channel, int read_exis
     }
     ch->query = NULL;
 
-    signal_event = CreateEvent(NULL, FALSE, FALSE, NULL);
+    signal_event = CreateEvent(NULL, TRUE, TRUE, NULL);
 
     // channel : To wide char
     len = MultiByteToWideChar(CP_UTF8, 0, channel, -1, NULL, 0);
@@ -289,12 +289,20 @@ cleanup:
 PWSTR get_message(EVT_HANDLE metadata, EVT_HANDLE handle, unsigned int *message_size)
 {
     WCHAR* buffer = NULL;
+    WCHAR* previous_buffer = NULL;
     DWORD status = ERROR_SUCCESS;
-    DWORD buffer_size = 0;
+    DWORD buffer_size = 512;
     DWORD buffer_used = 0;
     LPVOID format_message_buffer;
     WCHAR* message = NULL;
     char *error_message = NULL;
+
+    buffer = flb_malloc(sizeof(WCHAR) * buffer_size);
+    if (!buffer) {
+        flb_error("failed to premalloc message buffer");
+
+        goto buffer_error;
+    }
 
     // Get the size of the buffer
     if (!EvtFormatMessage(metadata, handle, 0, 0, NULL,
@@ -302,12 +310,15 @@ PWSTR get_message(EVT_HANDLE metadata, EVT_HANDLE handle, unsigned int *message_
         status = GetLastError();
         if (ERROR_INSUFFICIENT_BUFFER == status) {
             buffer_size = buffer_used;
-            buffer = flb_malloc(sizeof(WCHAR) * buffer_size);
+            previous_buffer = buffer;
+            buffer = flb_realloc(previous_buffer, sizeof(WCHAR) * buffer_size);
             if (!buffer) {
                 flb_error("failed to malloc message buffer");
+                flb_free(previous_buffer);
 
-                goto cleanup;
+                goto buffer_error;
             }
+
             if (!EvtFormatMessage(metadata,
                                   handle,
                                   0xffffffff,
@@ -375,6 +386,8 @@ cleanup:
         flb_free(buffer);
     }
 
+buffer_error:
+
     return message;
 }
 
@@ -415,15 +428,14 @@ PWSTR get_description(EVT_HANDLE handle, LANGID langID, unsigned int *message_si
     }
     values = (PEVT_VARIANT)buffer;
 
+    /* Metadata can be NULL because forwarded events do not have an
+     * associated publisher metadata. */
     metadata = EvtOpenPublisherMetadata(
             NULL, // TODO: Remote handle
             values[0].StringVal,
             NULL,
             MAKELCID(langID, SORT_DEFAULT),
             0);
-    if (metadata == NULL) {
-        goto cleanup;
-    }
 
     message = get_message(metadata, handle, message_size);
 
@@ -492,6 +504,7 @@ static int winevtlog_next(struct winevtlog_channel *ch, int hit_threshold)
     DWORD status = ERROR_SUCCESS;
     BOOL has_next = FALSE;
     int i;
+    DWORD wait = 0;
 
     /* If subscription handle is NULL, it should return false. */
     if (!ch->subscription) {
@@ -500,6 +513,15 @@ static int winevtlog_next(struct winevtlog_channel *ch, int hit_threshold)
     }
 
     if (hit_threshold) {
+        return FLB_FALSE;
+    }
+
+    wait = WaitForSingleObject(ch->signal_event, 0);
+    if (wait == WAIT_FAILED) {
+        flb_error("subscription is invalid. err code = %d", GetLastError());
+        return FLB_FALSE;
+    }
+    else if (wait != WAIT_OBJECT_0) {
         return FLB_FALSE;
     }
 
@@ -514,6 +536,8 @@ static int winevtlog_next(struct winevtlog_channel *ch, int hit_threshold)
         if (ERROR_NO_MORE_ITEMS != status) {
             return FLB_FALSE;
         }
+
+        ResetEvent(ch->signal_event);
     }
 
     if (status == ERROR_SUCCESS) {

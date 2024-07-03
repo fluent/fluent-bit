@@ -43,7 +43,8 @@ int cfl_kvlist_insert_string(struct cfl_kvlist *list,
 
 int cfl_kvlist_insert_bytes(struct cfl_kvlist *list,
                              char *key, char *value,
-                             size_t value_length);
+                             size_t value_length,
+                             int referenced);
 
 int cfl_kvlist_insert_reference(struct cfl_kvlist *list,
                                 char *key, void *value);
@@ -78,12 +79,14 @@ int cfl_kvlist_print(FILE *fp, struct cfl_kvlist *list);
 
 int cfl_kvlist_insert_string_s(struct cfl_kvlist *list,
                                char *key, size_t key_size,
-                               char *value, size_t value_size);
+                               char *value, size_t value_size,
+                               int referenced);
 
 int cfl_kvlist_insert_bytes_s(struct cfl_kvlist *list,
                               char *key, size_t key_size,
                               char *value,
-                              size_t value_length);
+                              size_t value_length,
+                              int referenced);
 
 int cfl_kvlist_insert_reference_s(struct cfl_kvlist *list,
                                   char *key, size_t key_size,

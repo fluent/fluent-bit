@@ -1144,6 +1144,75 @@ void flb_test_skip_empty_lines()
     test_tail_ctx_destroy(ctx);
 }
 
+void flb_test_skip_empty_lines_crlf()
+{
+    struct flb_lib_out_cb cb_data;
+    struct test_tail_ctx *ctx;
+    char *file[] = {"skip_empty_lines_crlf.log"};
+    char *empty_lines[] = {"\r\n", "\r\n"};
+    char *msg = "lalala";
+    int ret;
+    int num;
+    int i;
+
+    char *expected_strs[] = {msg};
+    struct str_list expected = {
+                                .size = sizeof(expected_strs)/sizeof(char*),
+                                .lists = &expected_strs[0],
+    };
+
+    clear_output_num();
+
+    cb_data.cb = cb_check_json_str_list;
+    cb_data.data = &expected;
+
+    ctx = test_tail_ctx_create(&cb_data, &file[0], sizeof(file)/sizeof(char *), FLB_TRUE);
+    if (!TEST_CHECK(ctx != NULL)) {
+        TEST_MSG("test_ctx_create failed");
+        exit(EXIT_FAILURE);
+    }
+
+    ret = flb_input_set(ctx->flb, ctx->o_ffd,
+                        "path", file[0],
+                        "skip_empty_lines", "true",
+                        "Read_From_Head", "true",
+                        NULL);
+    TEST_CHECK(ret == 0);
+
+    ret = flb_output_set(ctx->flb, ctx->o_ffd,
+                         "format", "json",
+                         NULL);
+    TEST_CHECK(ret == 0);
+
+    ret = write_msg(ctx, msg, strlen(msg));
+    if (!TEST_CHECK(ret > 0)) {
+        test_tail_ctx_destroy(ctx);
+        exit(EXIT_FAILURE);
+    }
+
+    for (i=0; i<sizeof(empty_lines)/sizeof(char*); i++) {
+        ret = write_msg(ctx, empty_lines[i], strlen(empty_lines[i]));
+        if (!TEST_CHECK(ret > 0)) {
+            test_tail_ctx_destroy(ctx);
+            exit(EXIT_FAILURE);
+        }
+    }
+
+    /* Start the engine */
+    ret = flb_start(ctx->flb);
+    TEST_CHECK(ret == 0);
+
+    /* waiting to flush */
+    flb_time_msleep(500);
+
+    num = get_output_num();
+    if (!TEST_CHECK(num == 1))  {
+        TEST_MSG("output error: expect=1 got=%d", num);
+    }
+
+    test_tail_ctx_destroy(ctx);
+}
+
 static int ignore_older(int expected, char *ignore_older)
 {
     struct flb_lib_out_cb cb_data;
@@ -1545,6 +1614,341 @@ void flb_test_db()
     test_tail_ctx_destroy(ctx);
     unlink(db);
 }
+
+void flb_test_db_delete_stale_file()
+{
+    struct flb_lib_out_cb cb_data;
+    struct test_tail_ctx *ctx;
+    char *org_file[] = {"test_db.log", "test_db_stale.log"};
+    char *tmp_file[] = {"test_db.log"};
+    char *path = "test_db.log, test_db_stale.log";
+    char *move_file[] = {"test_db_stale.log", "test_db_stale_new.log"};
+    char *new_file[] = {"test_db.log", "test_db_stale_new.log"};
+    char *new_path = "test_db.log, test_db_stale_new.log";
+    char *db = "test_db.db";
+    char *msg_init = "hello world";
+    char *msg_end = "hello db end";
+    int i;
+    int ret;
+    int num;
+    int unused;
+
+    unlink(db);
+
+    clear_output_num();
+
+    cb_data.cb = cb_count_msgpack;
+    cb_data.data = &unused;
+
+    ctx = test_tail_ctx_create(&cb_data,
+                               &org_file[0],
+                               sizeof(org_file)/sizeof(char *),
+                               FLB_FALSE);
+    if (!TEST_CHECK(ctx != NULL)) {
+        TEST_MSG("test_ctx_create failed");
+        exit(EXIT_FAILURE);
+    }
+
+    ret = flb_input_set(ctx->flb, ctx->o_ffd,
+                        "path", path,
+                        "read_from_head", "true",
+                        "db", db,
+                        "db.sync", "full",
+                        NULL);
+    TEST_CHECK(ret == 0);
+
+    ret = flb_output_set(ctx->flb, ctx->o_ffd,
+                         NULL);
+    TEST_CHECK(ret == 0);
+
+    /* Start the engine */
+    ret = flb_start(ctx->flb);
+    TEST_CHECK(ret == 0);
+
+    ret = write_msg(ctx, msg_init, strlen(msg_init));
+    if (!TEST_CHECK(ret > 0)) {
+        test_tail_ctx_destroy(ctx);
+        unlink(db);
+        exit(EXIT_FAILURE);
+    }
+
+    /* waiting to flush */
+    flb_time_msleep(500);
+
+    num = get_output_num();
+    if (!TEST_CHECK(num > 0))  {
+        TEST_MSG("no output");
+    }
+
+    if (ctx->fds != NULL) {
+        for (i=0; i<ctx->fd_num; i++) {
+            close(ctx->fds[i]);
+        }
+        flb_free(ctx->fds);
+    }
+    flb_stop(ctx->flb);
+    flb_destroy(ctx->flb);
+    flb_free(ctx);
+
+    /* re-init to use db */
+    clear_output_num();
+
+    /*
+     * Changing the file name from 'test_db_stale.log' to
+     * 'test_db_stale_new.log.' In this scenario, it is assumed that the 
+     * file was deleted after the FluentBit was terminated. However, since
+     * the FluentBit was shutdown, the inode remains in the database.
+     * The reason for renaming is to preserve the existing file for later use.
+     */
+    ret = rename(move_file[0], move_file[1]);
+    TEST_CHECK(ret == 0);
+
+    cb_data.cb = cb_count_msgpack;
+    cb_data.data = &unused;
+
+    ctx = test_tail_ctx_create(&cb_data,
+                               &tmp_file[0],
+                               sizeof(tmp_file)/sizeof(char *),
+                               FLB_FALSE);
+    if (!TEST_CHECK(ctx != NULL)) {
+        TEST_MSG("test_ctx_create failed");
+        unlink(db);
+        exit(EXIT_FAILURE);
+    }
+
+    ret = flb_input_set(ctx->flb, ctx->o_ffd,
+                        "path", path,
+                        "read_from_head", "true",
+                        "db", db,
+                        "db.sync", "full",
+                        NULL);
+    TEST_CHECK(ret == 0);
+
+    /*
+     * Start the engine
+     * FluentBit will delete stale inodes.
+     */
+    ret = flb_start(ctx->flb);
+    TEST_CHECK(ret == 0);
+
+    /* waiting to flush */
+    flb_time_msleep(500);
+
+    if (ctx->fds != NULL) {
+        for (i=0; i<ctx->fd_num; i++) {
+            close(ctx->fds[i]);
+        }
+        flb_free(ctx->fds);
+    }
+    flb_stop(ctx->flb);
+    flb_destroy(ctx->flb);
+    flb_free(ctx);
+
+    /* re-init to use db */
+    clear_output_num();
+
+    cb_data.cb = cb_count_msgpack;
+    cb_data.data = &unused;
+
+    ctx = test_tail_ctx_create(&cb_data,
+                               &new_file[0],
+                               sizeof(new_file)/sizeof(char *),
+                               FLB_FALSE);
+    if (!TEST_CHECK(ctx != NULL)) {
+        TEST_MSG("test_ctx_create failed");
+        unlink(db);
+        exit(EXIT_FAILURE);
+    }
+
+    ret = flb_input_set(ctx->flb, ctx->o_ffd,
+                        "path", new_path,
+                        "read_from_head", "true",
+                        "db", db,
+                        "db.sync", "full",
+                        NULL);
+    TEST_CHECK(ret == 0);
+
+    /*
+     * Start the engine
+     * 'test_db_stale_new.log.' is a new file.
+     * The inode of 'test_db_stale.log' was deleted previously.
+     * So, it reads from the beginning of the file.
+     */
+    ret = flb_start(ctx->flb);
+    TEST_CHECK(ret == 0);
+
+    /* waiting to flush */
+    flb_time_msleep(500);
+
+    ret = write_msg(ctx, msg_end, strlen(msg_end));
+    if (!TEST_CHECK(ret > 0)) {
+        test_tail_ctx_destroy(ctx);
+        unlink(db);
+        exit(EXIT_FAILURE);
+    }
+
+    /* waiting to flush */
+    flb_time_msleep(500);
+
+    num = get_output_num();
+    if (!TEST_CHECK(num == 3))  {
+        /* 3 = 
+         * test_db.log : "hello db end"
+         * test_db_stale.log : "msg_init" + "hello db end"
+         */
+        TEST_MSG("num error. expect=3 got=%d", num);
+    }
+
+    test_tail_ctx_destroy(ctx);
+    unlink(db);
+}
+
+void flb_test_db_compare_filename()
+{
+    struct flb_lib_out_cb cb_data;
+    struct test_tail_ctx *ctx;
+    char *org_file[] = {"test_db.log"};
+    char *moved_file[] = {"test_db_moved.log"};
+    char *db = "test_db.db";
+    char *msg_init = "hello world";
+    char *msg_moved = "hello world moved";
+    char *msg_end = "hello db end";
+    int i;
+    int ret;
+    int num;
+    int unused;
+
+    unlink(db);
+
+    clear_output_num();
+
+    cb_data.cb = cb_count_msgpack;
+    cb_data.data = &unused;
+
+    ctx = test_tail_ctx_create(&cb_data,
+                               &org_file[0],
+                               sizeof(org_file)/sizeof(char *),
+                               FLB_FALSE);
+    if (!TEST_CHECK(ctx != NULL)) {
+        TEST_MSG("test_ctx_create failed");
+        exit(EXIT_FAILURE);
+    }
+
+    ret = flb_input_set(ctx->flb, ctx->o_ffd,
+                        "path", org_file[0],
+                        "read_from_head", "true",
+                        "db", db,
+                        "db.sync", "full",
+                        "db.compare_filename", "true",
+                        NULL);
+    TEST_CHECK(ret == 0);
+
+    ret = flb_output_set(ctx->flb, ctx->o_ffd,
+                         NULL);
+    TEST_CHECK(ret == 0);
+
+    /* Start the engine */
+    ret = flb_start(ctx->flb);
+    TEST_CHECK(ret == 0);
+
+    ret = write_msg(ctx, msg_init, strlen(msg_init));
+    if (!TEST_CHECK(ret > 0)) {
+        test_tail_ctx_destroy(ctx);
+        unlink(db);
+        exit(EXIT_FAILURE);
+    }
+
+    /* waiting to flush */
+    flb_time_msleep(500);
+
+    num = get_output_num();
+    if (!TEST_CHECK(num > 0))  {
+        TEST_MSG("no output");
+    }
+
+    if (ctx->fds != NULL) {
+        for (i=0; i<ctx->fd_num; i++) {
+            close(ctx->fds[i]);
+        }
+        flb_free(ctx->fds);
+    }
+    flb_stop(ctx->flb);
+    flb_destroy(ctx->flb);
+    flb_free(ctx);
+
+    /* re-init to use db */
+    clear_output_num();
+
+    /*
+     * Changing the file name from 'test_db.log' to 'test_db_moved.log.'
+     * In this scenario, it is assumed that the FluentBit has been terminated,
+     * and the file has been recreated with the same inode, with offsets equal
+     * to or greater than the previous file.
+     */
+    ret = rename(org_file[0], moved_file[0]);
+    TEST_CHECK(ret == 0);
+
+    cb_data.cb = cb_count_msgpack;
+    cb_data.data = &unused;
+
+    ctx = test_tail_ctx_create(&cb_data,
+                               &moved_file[0],
+                               sizeof(moved_file)/sizeof(char *),
+                               FLB_FALSE);
+    if (!TEST_CHECK(ctx != NULL)) {
+        TEST_MSG("test_ctx_create failed");
+        unlink(db);
+        exit(EXIT_FAILURE);
+    }
+
+    ret = flb_input_set(ctx->flb, ctx->o_ffd,
+                        "path", moved_file[0],
+                        "read_from_head", "true",
+                        "db", db,
+                        "db.sync", "full",
+                        "db.compare_filename", "true",
+                        NULL);
+    TEST_CHECK(ret == 0);
+
+    /*
+     * Start the engine
+     * The file has been newly created, and due to the 'db.compare_filename'
+     * option being set to true, it compares filenames to consider it a new
+     * file even if the inode is the same. If the option is set to false,
+     * it can be assumed to be the same file as before.
+     */
+    ret = flb_start(ctx->flb);
+    TEST_CHECK(ret == 0);
+
+    /* waiting to flush */
+    flb_time_msleep(500);
+
+    ret = write_msg(ctx, msg_moved, strlen(msg_moved));
+    if (!TEST_CHECK(ret > 0)) {
+        test_tail_ctx_destroy(ctx);
+        unlink(db);
+        exit(EXIT_FAILURE);
+    }
+
+    ret = write_msg(ctx, msg_end, strlen(msg_end));
+    if (!TEST_CHECK(ret > 0)) {
+        test_tail_ctx_destroy(ctx);
+        unlink(db);
+        exit(EXIT_FAILURE);
+    }
+
+    /* waiting to flush */
+    flb_time_msleep(500);
+
+    num = get_output_num();
+    if (!TEST_CHECK(num == 3))  {
+        /* 3 = msg_init + msg_moved + msg_end */
+        TEST_MSG("num error. expect=3 got=%d", num);
+    }
+
+    test_tail_ctx_destroy(ctx);
+    unlink(db);
+}
 #endif /* FLB_HAVE_SQLDB */
 
 /* Test list */
@@ -1557,6 +1961,7 @@ TEST_LIST = {
     {"exclude_path", flb_test_exclude_path},
     {"offset_key", flb_test_offset_key},
     {"skip_empty_lines", flb_test_skip_empty_lines},
+    {"skip_empty_lines_crlf", flb_test_skip_empty_lines_crlf},
     {"ignore_older", flb_test_ignore_older},
 #ifdef FLB_HAVE_INOTIFY
     {"inotify_watcher_false", flb_test_inotify_watcher_false},
@@ -1569,6 +1974,8 @@ TEST_LIST = {
 
 #ifdef FLB_HAVE_SQLDB
     {"db", flb_test_db},
+    {"db_delete_stale_file", flb_test_db_delete_stale_file},
+    {"db_compare_filename", flb_test_db_compare_filename},
 #endif
 
 #ifdef in_tail

@@ -62,6 +62,7 @@ set(src
   flb_gzip.c
   flb_snappy.c
   flb_compression.c
+  flb_http_common.c
   flb_http_client.c
   flb_callback.c
   flb_strptime.c
@@ -78,6 +79,7 @@ set(src
   flb_log_event_encoder_dynamic_field.c
   flb_processor.c
   flb_reload.c
+  flb_msgpack_append_message.c
   )
 
 # Config format
@@ -210,7 +212,7 @@ endif()
 
 if(FLB_REGEX)
   set(FLB_DEPS
-    ${FLB_DEPSS}
+    ${FLB_DEPS}
     onigmo-static)
   set(src
     ${src}
@@ -275,6 +277,13 @@ if(CMAKE_SYSTEM_NAME MATCHES "Linux")
     )
 endif()
 
+if(FLB_SYSTEM_MACOS)
+  set(FLB_DEPS
+    ${FLB_DEPS}
+    "-framework Foundation"
+    "-framework IOKit"
+    )
+endif()
 
 # Record Accessor
 # ---------------
@@ -372,6 +381,7 @@ set(FLB_DEPS
   c-ares
   snappy-c
   lwrb
+  nghttp2_static
   )
 
 if(OPENSSL_FOUND)
@@ -521,7 +531,7 @@ if(FLB_BINARY)
   if(NOT SYSTEMD_UNITDIR AND IS_DIRECTORY /lib/systemd/system)
     set(SYSTEMD_UNITDIR  /lib/systemd/system)
   endif()
-  
+
   if(SYSTEMD_UNITDIR)
     set(FLB_SYSTEMD_SCRIPT "${PROJECT_SOURCE_DIR}/init/${FLB_OUT_NAME}.service")
     configure_file(

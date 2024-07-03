@@ -25,6 +25,12 @@
 #include <openssl/ssl.h>
 #include <openssl/err.h>
 #include <openssl/opensslv.h>
+#include <openssl/x509v3.h>
+
+#ifdef FLB_SYSTEM_WINDOWS
+    #define strtok_r(str, delimiter, context) \
+            strtok_s(str, delimiter, context)
+#endif
 
 /*
  * OPENSSL_VERSION_NUMBER has the following semantics
@@ -39,6 +45,7 @@ struct tls_context {
     int debug_level;
     SSL_CTX *ctx;
     int mode;
+    char *alpn;
     pthread_mutex_t mutex;
 };
 
@@ -122,11 +129,113 @@ static void tls_context_destroy(void *ctx_backend)
 
     pthread_mutex_lock(&ctx->mutex);
     SSL_CTX_free(ctx->ctx);
+    if (ctx->alpn != NULL) {
+        flb_free(ctx->alpn);
+    }
     pthread_mutex_unlock(&ctx->mutex);
 
     flb_free(ctx);
 }
 
+int tls_context_alpn_set(void *ctx_backend, const char *alpn)
+{
+    size_t              wire_format_alpn_index;
+    char               *alpn_token_context;
+    char               *alpn_working_copy;
+    char               *wire_format_alpn;
+    char               *alpn_token;
+    int                 result;
+    struct tls_context *ctx;
+
+    ctx = (struct tls_context *) ctx_backend;
+
+    result = 0;
+
+    if (alpn != NULL) {
+        wire_format_alpn = flb_calloc(strlen(alpn), 
+                                      sizeof(char) + 1);
+
+        if (wire_format_alpn == NULL) {
+            return -1;
+        }
+
+        alpn_working_copy = strdup(alpn);
+
+        if (alpn_working_copy == NULL) {
+            flb_free(wire_format_alpn);
+            
+            return -1;
+        }
+
+        wire_format_alpn_index = 1;
+        alpn_token_context = NULL;
+
+        alpn_token = strtok_r(alpn_working_copy, 
+                              ",", 
+                              &alpn_token_context);
+
+        while (alpn_token != NULL) {
+            wire_format_alpn[wire_format_alpn_index] = \
+                (char) strlen(alpn_token);
+
+            strcpy(&wire_format_alpn[wire_format_alpn_index + 1],
+                   alpn_token);
+
+            wire_format_alpn_index += strlen(alpn_token) + 1;
+
+            alpn_token = strtok_r(NULL, 
+                                  ",", 
+                                  &alpn_token_context);
+        }
+
+        if (wire_format_alpn_index > 1) {
+            wire_format_alpn[0] = (char) wire_format_alpn_index - 1;
+            ctx->alpn = wire_format_alpn;
+        }
+
+        free(alpn_working_copy);
+    }
+
+    if (result != 0) {
+        result = -1;
+    }
+
+    return result;
+}
+
+static int tls_context_server_alpn_select_callback(SSL *ssl,
+                                                   const unsigned char **out,
+                                                   unsigned char *outlen,
+                                                   const unsigned char *in,
+                                                   unsigned int inlen,
+                                                   void *arg)
+{
+    int                 result;
+    struct tls_context *ctx;
+
+    ctx = (struct tls_context *) arg;
+
+    result = SSL_TLSEXT_ERR_NOACK;
+
+    if (ctx->alpn != NULL) {
+        result = SSL_select_next_proto((unsigned char **) out,
+                                       outlen,
+                                       &ctx->alpn[1], 
+                                       (unsigned int) ctx->alpn[0], 
+                                       in,
+                                       inlen);
+
+        if (result == OPENSSL_NPN_NEGOTIATED) {
+            result = SSL_TLSEXT_ERR_OK;
+        }
+        else if (result == OPENSSL_NPN_NO_OVERLAP) {
+            result = SSL_TLSEXT_ERR_ALERT_FATAL;
+        }
+    }
+
+    return result;
+}
+      
 #ifdef _MSC_VER
 static int windows_load_system_certificates(struct tls_context *ctx)
 {
@@ -196,7 +305,7 @@ static int load_system_certificates(struct tls_context *ctx)
     }
     return 0;
 }
-
+  
 static void *tls_context_create(int verify,
                                 int debug,
                                 int mode,
@@ -242,6 +351,7 @@ static void *tls_context_create(int verify,
         ssl_ctx = SSL_CTX_new(TLS_client_method());
     }
 #endif
+
     if (!ssl_ctx) {
         flb_error("[openssl] could not create context");
         return NULL;
@@ -254,8 +364,15 @@ static void *tls_context_create(int verify,
     }
     ctx->ctx = ssl_ctx;
     ctx->mode = mode;
+    ctx->alpn = NULL;
     ctx->debug_level = debug;
     pthread_mutex_init(&ctx->mutex, NULL);
+
+    if (mode == FLB_TLS_SERVER_MODE) {
+        SSL_CTX_set_alpn_select_cb(ssl_ctx, 
+                                   tls_context_server_alpn_select_callback, 
+                                   ctx);
+    }
 
     /* Verify peer: by default OpenSSL always verify peer */
     if (verify == FLB_FALSE) {
@@ -388,6 +505,7 @@ static int tls_session_destroy(void *session)
     if (flb_socket_error(ptr->fd) == 0) {
         SSL_shutdown(ptr->ssl);
     }
+
     SSL_free(ptr->ssl);
     flb_free(ptr);
 
@@ -519,11 +637,33 @@ static int tls_net_write(struct flb_tls_session *session,
     return ret;
 }
 
+int setup_hostname_validation(struct tls_session *session, const char *hostname)
+{
+    X509_VERIFY_PARAM *param;
+
+    param = SSL_get0_param(session->ssl);
+
+    if (!param) {
+        flb_error("[tls] error: ssl context is invalid");
+        return -1;
+    }
+
+    X509_VERIFY_PARAM_set_hostflags(param, X509_CHECK_FLAG_NO_PARTIAL_WILDCARDS);
+    if (!X509_VERIFY_PARAM_set1_host(param, hostname, 0)) {
+        flb_error("[tls] error: hostname parameter vailidation is failed : %s",
+                  hostname);
+        return -1;
+    }
+
+    return 0;
+}
+
 static int tls_net_handshake(struct flb_tls *tls,
                              char *vhost,
                              void *ptr_session)
 {
     int ret = 0;
+    long ssl_code = 0;
     char err_buf[256];
     struct tls_session *session = ptr_session;
     struct tls_context *ctx;
@@ -552,6 +692,21 @@ static int tls_net_handshake(struct flb_tls *tls,
         }
     }
 
+    if (tls->verify == FLB_TRUE &&
+        tls->verify_hostname == FLB_TRUE) {
+        if (vhost != NULL) {
+            ret = setup_hostname_validation(session, vhost);
+        }
+        else if (tls->vhost) {
+            ret = setup_hostname_validation(session, tls->vhost);
+        }
+
+        if (ret != 0) {
+            pthread_mutex_unlock(&ctx->mutex);
+            return -1;
+        }
+    }
+
     ERR_clear_error();
 
     if (tls->mode == FLB_TLS_CLIENT_MODE) {
@@ -569,7 +724,14 @@ static int tls_net_handshake(struct flb_tls *tls,
             // The SSL_ERROR_SYSCALL with errno value of 0 indicates unexpected
             //  EOF from the peer. This is fixed in OpenSSL 3.0.
             if (ret == 0) {
-            	flb_error("[tls] error: unexpected EOF");
+                ssl_code = SSL_get_verify_result(session->ssl);
+                if (ssl_code != X509_V_OK) {
+                    flb_error("[tls] error: unexpected EOF with reason: %s",
+                              ERR_reason_error_string(ERR_get_error()));
+                }
+                else {
+                    flb_error("[tls] error: unexpected EOF");
+                }
             } else {
                 ERR_error_string_n(ret, err_buf, sizeof(err_buf)-1);
                 flb_error("[tls] error: %s", err_buf);
@@ -608,6 +770,7 @@ static struct flb_tls_backend tls_openssl = {
     .name                 = "openssl",
     .context_create       = tls_context_create,
     .context_destroy      = tls_context_destroy,
+    .context_alpn_set     = tls_context_alpn_set,
     .session_create       = tls_session_create,
     .session_destroy      = tls_session_destroy,
     .net_read             = tls_net_read,

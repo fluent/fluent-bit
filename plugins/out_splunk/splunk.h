@@ -22,8 +22,7 @@
 
 #define FLB_SPLUNK_DEFAULT_HOST          "127.0.0.1"
 #define FLB_SPLUNK_DEFAULT_PORT          8088
-#define FLB_SPLUNK_DEFAULT_URI_RAW       "/services/collector/raw"
-#define FLB_SPLUNK_DEFAULT_URI_EVENT     "/services/collector/event"
+#define FLB_SPLUNK_DEFAULT_ENDPOINT      "/services/collector/event"
 #define FLB_SPLUNK_DEFAULT_TIME          "time"
 #define FLB_SPLUNK_DEFAULT_EVENT_HOST    "host"
 #define FLB_SPLUNK_DEFAULT_EVENT_SOURCE  "source"
@@ -95,6 +94,12 @@ struct flb_splunk {
 
     /* Token Auth */
     flb_sds_t auth_header;
+    /* Token Auth (via metadata) */
+    flb_sds_t metadata_auth_header;
+
+    /* Metadata of Splunk Authentication */
+    flb_sds_t metadata_auth_key;
+    struct flb_record_accessor *ra_metadata_auth_key;
 
     /* Channel identifier */
     flb_sds_t channel;
@@ -114,6 +119,8 @@ struct flb_splunk {
 
     /* Plugin instance */
     struct flb_output_instance *ins;
+
+    pthread_mutex_t mutex_hec_token;
 };
 
 #endif

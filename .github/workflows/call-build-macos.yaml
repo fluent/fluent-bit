@@ -64,12 +64,21 @@ jobs:
 
   call-build-macos-package:
     if: needs.call-build-macos-legacy-check.outputs.build-type == 'modern'
-    runs-on: macos-latest
+    runs-on: ${{ matrix.config.runner }}
     environment: ${{ inputs.environment }}
     needs:
       - call-build-macos-legacy-check
     permissions:
       contents: read
+    strategy:
+      fail-fast: false
+      matrix:
+        config:
+          - name: "Normal macOS-latest runner (Intel)"
+            runner: macos-12
+          - name: "Apple Silicon macOS runner"
+            runner: macos-14
+
     steps:
       - name: Checkout repository
         uses: actions/checkout@v4
@@ -92,7 +101,7 @@ jobs:
       - name: Upload build packages
         uses: actions/upload-artifact@v4
         with:
-          name: macos-packages
+          name: macos-packages on ${{ matrix.config.runner }}
           path: |
             build/fluent-bit-*-apple*
             build/fluent-bit-*-intel*
@@ -108,6 +117,15 @@ jobs:
       - call-build-macos-package
     permissions:
       contents: read
+    strategy:
+      fail-fast: false
+      matrix:
+        config:
+          - name: "Normal macOS-latest package (Intel)"
+            os: macos-12
+          - name: "Apple Silicon macOS package"
+            os: macos-14
+
     steps:
       - name: Checkout repository
         uses: actions/checkout@v4
@@ -118,7 +136,7 @@ jobs:
         continue-on-error: true
         uses: actions/download-artifact@v4
         with:
-          name: macos-packages
+          name: macos-packages on ${{ matrix.config.os }}
           path: artifacts/
 
       - name: Push MacOS packages to S3

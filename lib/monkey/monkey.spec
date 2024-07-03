@@ -3,7 +3,7 @@ Version: 1.4.0
 Release: 1%{?dist}
 Summary: A fast and lightweight web server for Linux
 Group: System Environment/Daemons
-License: GPLv2+
+License: Apache v2
 URL: http://www.monkey-project.com
 Source: http://www.monkey-project.com/releases/1.4/%{name}-%{version}.tar.gz
 BuildRoot: %{_tmppath}/%{name}-%{version}-%{release}-root-%(%{__id_u} -n)

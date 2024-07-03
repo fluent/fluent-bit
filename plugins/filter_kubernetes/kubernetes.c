@@ -800,6 +800,13 @@ static struct flb_config_map config_map[] = {
      "set optional TLS virtual host"
     },
 
+    /* TLS: set tls.hostame_verification feature */
+    {
+     FLB_CONFIG_MAP_BOOL, "tls.verify_hostname", "off",
+     0, FLB_TRUE, offsetof(struct flb_kube, tls_verify_hostname),
+     "enable or disable to verify hostname"
+    },
+
     /* Merge structured record as independent keys */
     {
      FLB_CONFIG_MAP_BOOL, "merge_log", "false",
@@ -913,6 +920,12 @@ static struct flb_config_map config_map[] = {
      FLB_CONFIG_MAP_BOOL, "namespace_annotations", "false",
      0, FLB_TRUE, offsetof(struct flb_kube, namespace_annotations),
      "include Kubernetes namespace annotations on every record"
+    },
+    /* Ignore pod metadata entirely, useful for fetching only namespace meta */
+    {
+     FLB_CONFIG_MAP_BOOL, "namespace_metadata_only", "false",
+     0, FLB_TRUE, offsetof(struct flb_kube, namespace_metadata_only),
+     "ignore pod metadata entirely and only fetch namespace metadata"
     },
 
     /*

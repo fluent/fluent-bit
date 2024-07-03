@@ -189,7 +189,7 @@ static int record_append_custom_keys(struct flb_tail_file *file,
             if (ret == FLB_EVENT_ENCODER_SUCCESS) {
                 ret = flb_log_event_encoder_append_body_uint64(
                         &encoder,
-                        file->offset +
+                        file->stream_offset +
                         file->last_processed_bytes);
             }
         }
@@ -311,7 +311,8 @@ int flb_tail_pack_line_map(struct flb_time *time, char **data,
             result = flb_log_event_encoder_append_body_values(
                         file->sl_log_event_encoder,
                         FLB_LOG_EVENT_CSTRING_VALUE(file->config->offset_key),
-                        FLB_LOG_EVENT_UINT64_VALUE(file->offset + processed_bytes));
+                        FLB_LOG_EVENT_UINT64_VALUE(file->stream_offset +
+                                                   processed_bytes));
         }
     }
 
@@ -360,7 +361,8 @@ int flb_tail_file_pack_line(struct flb_time *time, char *data, size_t data_size,
             result = flb_log_event_encoder_append_body_values(
                         file->sl_log_event_encoder,
                         FLB_LOG_EVENT_CSTRING_VALUE(file->config->offset_key),
-                        FLB_LOG_EVENT_UINT64_VALUE(file->offset + processed_bytes));
+                        FLB_LOG_EVENT_UINT64_VALUE(file->stream_offset +
+                                                   processed_bytes));
         }
     }
 
@@ -477,11 +479,17 @@ static int process_content(struct flb_tail_file *file, size_t *bytes)
          * property to revert this behavior if some user is affected by
          * this change.
          */
-
-        if (len == 0 && ctx->skip_empty_lines) {
-            data++;
-            processed_bytes++;
-            continue;
+        if (ctx->skip_empty_lines) {
+            if (len == 0) { /* LF */
+                data++;
+                processed_bytes++;
+                continue;
+            }
+            else if (len == 1 && data[0] == '\r')  { /* CR LF */
+                data += 2;
+                processed_bytes += 2;
+                continue;
+            }
         }
 
         /* Process '\r\n' */
@@ -868,6 +876,10 @@ static int set_file_position(struct flb_tail_config *ctx,
     }
     file->offset = ret;
 
+    if (file->decompression_context == NULL) {        
+        file->stream_offset = ret;
+    }
+
     return 0;
 }
 
@@ -988,10 +1000,22 @@ int flb_tail_file_append(char *path, struct stat *st, int mode,
     file->tag_buf   = NULL;
     file->rotated   = 0;
     file->pending_bytes = 0;
+    file->stream_offset = 0;
     file->mult_firstline = FLB_FALSE;
     file->mult_keys = 0;
     file->mult_flush_timeout = 0;
     file->mult_skipping = FLB_FALSE;
+
+    if (strlen(path) >= 3 &&
+        strcasecmp(&path[strlen(path) - 3], ".gz") == 0) {
+        file->decompression_context =
+            flb_decompression_context_create(FLB_COMPRESSION_ALGORITHM_GZIP,
+                                             ctx->buf_max_size);
+
+        if (file->decompression_context == NULL) {
+            goto error;
+        }
+    }
 
     /*
      * Duplicate string into 'file' structure, the called function
@@ -1207,6 +1231,18 @@ void flb_tail_file_remove(struct flb_tail_file *file)
     flb_plg_debug(ctx->ins, "inode=%"PRIu64" removing file name %s",
                   file->inode, file->name);
 
+    if (file->decompression_context != NULL) {
+        flb_decompression_context_destroy(file->decompression_context);
+    }
+
+    if (file->sl_log_event_encoder != NULL) {
+        flb_log_event_encoder_destroy(file->sl_log_event_encoder);
+    }
+
+    if (file->ml_log_event_encoder != NULL) {
+        flb_log_event_encoder_destroy(file->ml_log_event_encoder);
+    }
+
     /* remove the multiline.core stream */
     if (ctx->ml_ctx && file->ml_stream_id > 0) {
         /* destroy ml stream */
@@ -1227,14 +1263,6 @@ void flb_tail_file_remove(struct flb_tail_file *file)
     }
 
     msgpack_sbuffer_destroy(&file->mult_sbuf);
-
-    if (file->sl_log_event_encoder != NULL) {
-        flb_log_event_encoder_destroy(file->sl_log_event_encoder);
-    }
-
-    if (file->ml_log_event_encoder != NULL) {
-        flb_log_event_encoder_destroy(file->ml_log_event_encoder);
-    }
 
     flb_sds_destroy(file->dmode_buf);
     flb_sds_destroy(file->dmode_lastline);
@@ -1335,22 +1363,30 @@ static int adjust_counters(struct flb_tail_config *ctx, struct flb_tail_file *fi
 
 int flb_tail_file_chunk(struct flb_tail_file *file)
 {
-    int ret;
-    char *tmp;
-    size_t size;
-    size_t capacity;
-    size_t processed_bytes;
-    ssize_t bytes;
+    size_t                  decompression_buffer_capacity;
+    size_t                  decompressed_data_length;
+    size_t                  file_buffer_capacity;
+    size_t                  stream_data_length;
+    ssize_t                 raw_data_length;
+    size_t                  processed_bytes;
+    uint8_t                *read_buffer;
+    size_t                  read_size;
+    size_t                  size;
+    char                   *tmp;
+    int                     ret;
     struct flb_tail_config *ctx;
 
     /* Check if we the engine issued a pause */
     ctx = file->config;
+
     if (flb_input_buf_paused(ctx->ins) == FLB_TRUE) {
         return FLB_TAIL_BUSY;
     }
 
-    capacity = (file->buf_size - file->buf_len) - 1;
-    if (capacity < 1) {
+    file_buffer_capacity = (file->buf_size - file->buf_len) - 1;
+    stream_data_length = 0;
+
+    if (file_buffer_capacity < 1) {
         /*
          * If there is no more room for more data, try to increase the
          * buffer under the limit of buffer_max_size.
@@ -1370,7 +1406,6 @@ int flb_tail_file_chunk(struct flb_tail_file *file)
             }
 
             /* Do buffer adjustments */
-            file->offset += file->buf_len;
             file->buf_len = 0;
             file->skip_next = FLB_TRUE;
         }
@@ -1396,13 +1431,102 @@ int flb_tail_file_chunk(struct flb_tail_file *file)
                 return FLB_TAIL_ERROR;
             }
         }
-        capacity = (file->buf_size - file->buf_len) - 1;
+
+        file_buffer_capacity = (file->buf_size - file->buf_len) - 1;
     }
 
-    bytes = read(file->fd, file->buf_data + file->buf_len, capacity);
-    if (bytes > 0) {
+    read_size = file_buffer_capacity;
+
+    if (file->decompression_context != NULL) {
+        /* This call looks useless but is not, we
+         * will remove this as soon as this fork
+         * is updated with the latest code from master
+         * which makes flb_decompression_context_get_available_space
+         * perform the internal buffer rewind as needed.
+         */
+        flb_decompression_context_get_append_buffer(
+            file->decompression_context);
+
+        decompression_buffer_capacity =
+            flb_decompression_context_get_available_space(
+                file->decompression_context);
+
+        if (decompression_buffer_capacity == 0) {
+            if (file->decompression_context->input_buffer_size <
+                ctx->buf_max_size) {
+                decompression_buffer_capacity += ctx->buf_chunk_size;
+
+                if (decompression_buffer_capacity > ctx->buf_max_size) {
+                    decompression_buffer_capacity = ctx->buf_max_size;
+                }
+
+                ret = flb_decompression_context_resize_buffer(
+                        file->decompression_context,
+                        decompression_buffer_capacity);
+
+                if (ret != FLB_DECOMPRESSOR_SUCCESS) {
+                    flb_plg_error(ctx->ins,
+                                  "decompression buffer resize failed for %s.",
+                                  file->name);
+
+                    return FLB_TAIL_ERROR;
+                }
+
+                decompression_buffer_capacity = \
+                    flb_decompression_context_get_available_space(
+                        file->decompression_context);
+            }
+        }
+
+        if (decompression_buffer_capacity > 0) {
+            if (read_size > decompression_buffer_capacity) {
+                read_size = decompression_buffer_capacity;
+            }
+
+            read_buffer = flb_decompression_context_get_append_buffer(
+                            file->decompression_context);
+
+            raw_data_length = read(file->fd, read_buffer, read_size);
+        }
+        else {
+            raw_data_length = 0;
+        }
+
+        if (raw_data_length >= 0) {
+            file->decompression_context->input_buffer_length += \
+                (size_t) raw_data_length;
+
+            if (file->decompression_context->input_buffer_length > 0) {
+                decompressed_data_length = file_buffer_capacity;
+
+                ret = flb_decompress(file->decompression_context,
+                                     &file->buf_data[file->buf_len],
+                                     &decompressed_data_length);
+
+                if (ret != 0) {
+                    flb_plg_error(ctx->ins,
+                                  "decompression failed for %s.",
+                                  file->name);
+
+                    return FLB_TAIL_ERROR;
+                }
+
+                stream_data_length = decompressed_data_length;
+            }
+        }
+    }
+    else {
+        raw_data_length = read(file->fd,
+                               &file->buf_data[file->buf_len],
+                               read_size);
+
+        stream_data_length = (size_t) raw_data_length;
+    }
+
+    if (stream_data_length > 0 || raw_data_length > 0) {
         /* we read some data, let the content processor take care of it */
-        file->buf_len += bytes;
+        file->offset += raw_data_length;
+        file->buf_len += stream_data_length;
         file->buf_data[file->buf_len] = '\0';
 
         /* Now that we have some data in the buffer, call the data processor
@@ -1420,7 +1544,7 @@ int flb_tail_file_chunk(struct flb_tail_file *file)
         }
 
         /* Adjust the file offset and buffer */
-        file->offset += processed_bytes;
+        file->stream_offset += processed_bytes;
         consume_bytes(file->buf_data, processed_bytes, file->buf_len);
         file->buf_len -= processed_bytes;
         file->buf_data[file->buf_len] = '\0';
@@ -1437,7 +1561,7 @@ int flb_tail_file_chunk(struct flb_tail_file *file)
         /* Data was consumed but likely some bytes still remain */
         return ret;
     }
-    else if (bytes == 0) {
+    else if (raw_data_length == 0) {
         /* We reached the end of file, let's wait for some incoming data */
         ret = adjust_counters(ctx, file);
         if (ret == FLB_TAIL_OK) {

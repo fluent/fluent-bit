@@ -27,13 +27,72 @@
 static void http_conn_request_init(struct mk_http_session *session,
                                    struct mk_http_request *request);
 
+static void check_and_reassign_ptr(char **ptr, const char *old, char *new)
+{
+    if (ptr == NULL) {
+        return;
+    }
+
+    if (*ptr == NULL) {
+        return;
+    }
+
+    *ptr = new + (*ptr - old);
+}
+
+static int http_conn_realloc(struct flb_http *ctx,
+                               struct http_conn *conn,
+                               size_t size)
+{
+    char *tmp;
+    int idx;
+    struct mk_http_header *header;
+
+
+    tmp = flb_realloc(conn->buf_data, size);
+    if (!tmp) {
+        flb_errno();
+        return -1;
+    }
+    flb_plg_trace(ctx->ins, "buffer realloc %i -> %zu",
+                    conn->buf_size, size);
+
+    check_and_reassign_ptr(&conn->request.method_p.data, conn->buf_data, tmp);
+    check_and_reassign_ptr(&conn->request.uri.data, conn->buf_data, tmp);
+    check_and_reassign_ptr(&conn->request.uri_processed.data, conn->buf_data, tmp);
+    check_and_reassign_ptr(&conn->request.protocol_p.data, conn->buf_data, tmp);
+    check_and_reassign_ptr(&conn->request.body.data, conn->buf_data, tmp);
+    check_and_reassign_ptr(&conn->request._content_length.data, conn->buf_data, tmp);
+    check_and_reassign_ptr(&conn->request.content_type.data, conn->buf_data, tmp);
+    check_and_reassign_ptr(&conn->request.connection.data, conn->buf_data, tmp);
+    check_and_reassign_ptr(&conn->request.host.data, conn->buf_data, tmp);
+    check_and_reassign_ptr(&conn->request.host_port.data, conn->buf_data, tmp);
+    check_and_reassign_ptr(&conn->request.if_modified_since.data, conn->buf_data, tmp);
+    check_and_reassign_ptr(&conn->request.last_modified_since.data, conn->buf_data, tmp);
+    check_and_reassign_ptr(&conn->request.range.data, conn->buf_data, tmp);
+    check_and_reassign_ptr(&conn->request.data.data, conn->buf_data, tmp);
+    check_and_reassign_ptr(&conn->request.real_path.data, conn->buf_data, tmp);
+    check_and_reassign_ptr(&conn->request.query_string.data, conn->buf_data, tmp);
+
+    for (idx = conn->session.parser.header_min; idx <= conn->session.parser.header_max && idx >= 0; idx++) {
+        header = &conn->session.parser.headers[idx];
+
+        check_and_reassign_ptr(&header->key.data, conn->buf_data, tmp);
+        check_and_reassign_ptr(&header->val.data, conn->buf_data, tmp);
+    }
+
+    conn->buf_data = tmp;
+    conn->buf_size = size;
+
+    return 0;
+}
+
 static int http_conn_event(void *data)
 {
     int status;
     size_t size;
     ssize_t available;
     ssize_t bytes;
-    char *tmp;
     char *request_end;
     size_t request_len;
     struct flb_connection *connection;
@@ -61,16 +120,13 @@ static int http_conn_event(void *data)
             }
 
             size = conn->buf_size + ctx->buffer_chunk_size;
-            tmp = flb_realloc(conn->buf_data, size);
-            if (!tmp) {
+            if (http_conn_realloc(ctx, conn, size) == -1) {
                 flb_errno();
                 return -1;
             }
             flb_plg_trace(ctx->ins, "fd=%i buffer realloc %i -> %zu",
                           event->fd, conn->buf_size, size);
 
-            conn->buf_data = tmp;
-            conn->buf_size = size;
             available = (conn->buf_size - conn->buf_len) - 1;
         }
 

@@ -920,3 +920,257 @@ int in_elasticsearch_bulk_prot_handle_error(struct flb_in_elasticsearch *ctx,
     send_response(conn, 400, "error: invalid request\n");
     return -1;
 }
+
+
+
+
+/* New gen HTTP server */
+static int send_response_ng(struct flb_http_response *response, 
+                            int http_status, 
+                            char *content_type,
+                            char *message)
+{
+    flb_http_response_set_status(response, http_status);
+
+    if (http_status == 201) {
+        flb_http_response_set_message(response, "Created");
+    }
+    else if (http_status == 200) {
+        flb_http_response_set_message(response, "OK");
+    }
+    else if (http_status == 204) {
+        flb_http_response_set_message(response, "No Content");
+    }
+    else if (http_status == 400) {
+        flb_http_response_set_message(response, "Forbidden");
+    }
+
+    if (content_type != NULL) {
+        flb_http_response_set_header(response, 
+                                     "content-type", 0,
+                                     content_type, 0);
+    }
+
+    if (message != NULL) {
+        flb_http_response_set_body(response, 
+                                   (unsigned char *) message, 
+                                   strlen(message));
+    }
+
+    flb_http_response_commit(response);
+
+    return 0;
+}
+
+static int send_json_response_ng(struct flb_http_response *response, 
+                                 int http_status,
+                                 char *message)
+{
+    return send_response_ng(response, http_status, "application/json", message); 
+}
+
+static int send_version_message_response_ng(struct flb_http_response *response, 
+                                            struct flb_in_elasticsearch *ctx,
+                                            int http_status)
+{
+    flb_sds_t message;
+
+    if (http_status != 200) {
+        return 0;
+    }
+
+    message = flb_sds_create_size(384);
+
+    if (message == NULL) {
+        return -1;
+    }
+
+    flb_sds_printf(&message,
+                   ES_VERSION_RESPONSE_TEMPLATE,
+                   ctx->es_version);
+
+    send_json_response_ng(response, http_status, message); 
+
+    cfl_sds_destroy(message);
+
+    return 0;
+}
+
+static int send_dummy_sniffer_response_ng(struct flb_http_response *response, 
+                                          struct flb_in_elasticsearch *ctx,
+                                          int http_status)
+{
+    flb_sds_t hostname;
+    flb_sds_t resp;
+
+    if (http_status != 200) {
+        return 0;
+    }
+
+    if (ctx->hostname != NULL) {
+        hostname = ctx->hostname;
+    }
+    else {
+        hostname = "localhost";
+    }
+
+    resp = flb_sds_create_size(384);
+    if (!resp) {
+        return -1;
+    }
+
+    flb_sds_printf(&resp,
+                   ES_NODES_TEMPLATE,
+                   ctx->cluster_name, ctx->node_name,
+                   hostname, ctx->tcp_port, ctx->buffer_max_size);
+
+    send_json_response_ng(response, http_status, resp); 
+
+    flb_sds_destroy(resp);
+
+    return 0;
+}
+
+static int process_payload_ng(struct flb_http_request *request,
+                              struct flb_http_response *response,
+                              struct flb_in_elasticsearch *context,
+                              flb_sds_t tag,
+                              flb_sds_t bulk_statuses)
+{
+    if (request->content_type == NULL) {
+        send_response_ng(response, 400, NULL, "error: header 'Content-Type' is not set\n");
+
+        return -1;
+    }
+
+    if (strncasecmp(request->content_type, "application/x-ndjson", 20) != 0 &&
+        strncasecmp(request->content_type, "application/json", 16) != 0) {
+        send_response_ng(response, 400, NULL, "error: invalid 'Content-Type'\n");
+
+        return -1;
+    }
+
+    if (request->body == NULL || cfl_sds_len(request->body) == 0) {
+        send_response_ng(response, 400, NULL, "error: no payload found\n");
+        return -1;
+    }
+
+    parse_payload_ndjson(context, tag, request->body, cfl_sds_len(request->body), bulk_statuses);
+
+    return 0;
+}
+
+int in_elasticsearch_bulk_prot_handle_ng(struct flb_http_request *request,
+                                         struct flb_http_response *response)
+{
+    flb_sds_t                    bulk_statuses;
+    flb_sds_t                    bulk_response;
+    const char                  *error_str;
+    struct flb_in_elasticsearch *context;
+    flb_sds_t                    tag;
+    size_t                       len;
+
+    bulk_statuses = NULL;
+    bulk_response = NULL;
+
+    context = (struct flb_in_elasticsearch *) response->stream->user_data;
+
+    if (request->path[0] != '/') {
+        send_response_ng(response, 400, NULL, "error: invalid request\n");
+        return -1;
+    }
+
+    /* HTTP/1.1 needs Host header */
+    if (request->protocol_version == HTTP_PROTOCOL_HTTP1 && 
+        request->host == NULL) {
+
+        return -1;
+    }
+
+    if (request->method == HTTP_METHOD_HEAD) {
+        send_response_ng(response, 200, NULL, NULL);
+
+        return -1;
+    }
+    else if (request->method == HTTP_METHOD_PUT) {
+        send_json_response_ng(response, 200, "{}");
+
+        return -1;
+    }
+    else if (request->method == HTTP_METHOD_GET) {
+        if (strncmp(request->path, "/_nodes/http", 12) == 0) {
+            send_dummy_sniffer_response_ng(response, context, 200);
+        }
+        else if (strcmp(request->path, "/") == 0) {
+            send_version_message_response_ng(response, context, 200);
+        }
+        else {
+            send_json_response_ng(response, 200, "{}");
+        }
+
+        return 0;
+    }
+    else if (request->method == HTTP_METHOD_POST) {
+        if (strcmp(request->path, "/_bulk") == 0) {
+            bulk_statuses = flb_sds_create_size(context->buffer_max_size);
+            
+            if (bulk_statuses == NULL) {
+                return -1;
+            }
+
+            bulk_response = flb_sds_create_size(context->buffer_max_size);
+
+            if (bulk_response == NULL) {
+                flb_sds_destroy(bulk_statuses);
+                return -1;
+            }
+
+            tag = flb_sds_create(context->ins->tag);
+
+            if (tag == NULL) {
+                flb_sds_destroy(bulk_statuses);
+                flb_sds_destroy(bulk_response);
+                return -1;
+            }
+
+            process_payload_ng(request, response, context, tag, bulk_statuses);
+
+            flb_sds_destroy(tag);
+
+            len = flb_sds_len(bulk_statuses);
+
+            if (flb_sds_alloc(bulk_response) < len + 27) {
+                bulk_response = flb_sds_increase(bulk_response, len + 27 - flb_sds_alloc(bulk_response));
+            }
+
+            error_str = strstr(bulk_statuses, "\"status\":40");
+
+            if (error_str){
+                flb_sds_cat(bulk_response, "{\"errors\":true,\"items\":[", 24);
+            }
+            else {
+                flb_sds_cat(bulk_response, "{\"errors\":false,\"items\":[", 25);
+            }
+
+            flb_sds_cat(bulk_response, bulk_statuses, flb_sds_len(bulk_statuses));
+            flb_sds_cat(bulk_response, "]}", 2);
+
+            send_json_response_ng(response, 200, bulk_response);
+
+            flb_sds_destroy(bulk_statuses);
+            flb_sds_destroy(bulk_response);
+                        
+        } else {
+            send_response_ng(response, 400, NULL, "error: invalid HTTP endpoint\n");
+
+            return -1;
+        }
+    }
+    else {
+        send_response_ng(response, 400, NULL, "error: invalid HTTP method\n");
+
+        return -1;
+    }
+    
+    return 0;
+}

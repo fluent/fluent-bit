@@ -30,6 +30,16 @@
 #include <fluent-bit/flb_record_accessor.h>
 #include <fluent-bit/record_accessor/flb_ra_parser.h>
 
+#define LOG_CLASS_STANDARD                  "STANDARD"
+#define LOG_CLASS_STANDARD_LEN              8
+#define LOG_CLASS_INFREQUENT_ACCESS         "INFREQUENT_ACCESS"
+#define LOG_CLASS_INFREQUENT_ACCESS_LEN     17
+/* log_group_class not configured; do not send the logGroupClass field in request */
+#define LOG_CLASS_DEFAULT_TYPE              0
+/* send configured & validated string in request */
+#define LOG_CLASS_STANDARD_TYPE             1
+#define LOG_CLASS_INFREQUENT_ACCESS_TYPE    2
+
 /* buffers used for each flush */
 struct cw_flush {
     /* temporary buffer for storing the serialized event messages */
@@ -113,6 +123,8 @@ struct flb_cloudwatch {
     const char *extra_user_agent;
     const char *external_id;
     const char *profile;
+    const char *log_group_class;
+    int log_group_class_type;
     int custom_endpoint;
     /* Should the plugin create the log group */
     int create_group;
