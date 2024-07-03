@@ -432,6 +432,153 @@ static void flb_test_ecs_filter_task_error()
     filter_test_destroy(ctx);
 }
 
+static void flb_test_ecs_filter_containerid_field()
+{
+    int len;
+    int ret;
+    int bytes;
+    char *p;
+    struct flb_lib_out_cb cb_data;
+    struct filter_test *ctx;
+    struct filter_test_result expected = { 0 };
+
+    /* mocks calls- signals that we are in test mode */
+    setenv("FLB_ECS_PLUGIN_UNDER_TEST", "true", 1);
+
+    /* Create test context */
+    ctx = filter_test_create((void *) &cb_data, "randomtag");
+    if (!ctx) {
+        exit(EXIT_FAILURE);
+    }
+
+    /* Configure filter */
+    ret = flb_filter_set(ctx->flb, ctx->f_ffd,
+                         "container_id_field_name", "container_id",
+                         "ADD", "resource $ClusterName.$TaskID.$ECSContainerName",
+                         NULL);
+    TEST_CHECK(ret == 0);
+
+    /* Prepare output callback with expected result */
+    expected.expected_records = 1; /* 1 record with metadata added */
+    expected.expected_pattern = "cluster_name.e01d58a8-151b-40e8-bc01-22647b9ecfec.nginx";
+    expected.expected_pattern_index = 0;
+    cb_data.cb = cb_check_result;
+    cb_data.data = (void *) &expected;
+
+    /* Start the engine */
+    ret = flb_start(ctx->flb);
+    TEST_CHECK(ret == 0);
+
+    /* Ingest data samples */
+    p = "[0, {\"log\":\"error: my error\",\"container_id\":\"79c796ed2a7f864f485c76f83f3165488097279d296a7c05bd5201a1c69b2920\"}]";
+    len = strlen(p);
+    bytes = flb_lib_push(ctx->flb, ctx->i_ffd, p, len);
+    TEST_CHECK(bytes == len);
+
+    /* check number of outputted records */
+    sleep(2);
+    TEST_CHECK(expected.actual_records == expected.expected_records);
+    filter_test_destroy(ctx);
+}
+
+static void flb_test_ecs_filter_containerid_field_error_missing()
+{
+    int len;
+    int ret;
+    int bytes;
+    char *p;
+    struct flb_lib_out_cb cb_data;
+    struct filter_test *ctx;
+    struct filter_test_result expected = { 0 };
+
+    /* mocks calls- signals that we are in test mode */
+    setenv("FLB_ECS_PLUGIN_UNDER_TEST", "true", 1);
+
+    /* Create test context */
+    ctx = filter_test_create((void *) &cb_data, "randomtag");
+    if (!ctx) {
+        exit(EXIT_FAILURE);
+    }
+
+    /* Configure filter */
+    ret = flb_filter_set(ctx->flb, ctx->f_ffd,
+                         "container_id_field_name", "missing_field",
+                         "ADD", "resource $ClusterName.$TaskID.$ECSContainerName",
+                         NULL);
+    TEST_CHECK(ret == 0);
+
+    /* Prepare output callback with expected result */
+    expected.expected_records = 1; /* 1 record with metadata added */
+    expected.expected_pattern = "cluster_name..";
+    expected.expected_pattern_index = 0;
+    cb_data.cb = cb_check_result;
+    cb_data.data = (void *) &expected;
+
+    /* Start the engine */
+    ret = flb_start(ctx->flb);
+    TEST_CHECK(ret == 0);
+
+    /* Ingest data samples */
+    p = "[0, {\"log\":\"error: my error\",\"container_id\":\"79c796ed2a7f864f485c76f83f3165488097279d296a7c05bd5201a1c69b2920\"}]";
+    len = strlen(p);
+    bytes = flb_lib_push(ctx->flb, ctx->i_ffd, p, len);
+    TEST_CHECK(bytes == len);
+
+    /* check number of outputted records */
+    sleep(2);
+    TEST_CHECK(expected.actual_records == expected.expected_records);
+    filter_test_destroy(ctx);
+}
+
+static void flb_test_ecs_filter_containerid_field_error_invalid()
+{
+    int len;
+    int ret;
+    int bytes;
+    char *p;
+    struct flb_lib_out_cb cb_data;
+    struct filter_test *ctx;
+    struct filter_test_result expected = { 0 };
+
+    /* mocks calls- signals that we are in test mode */
+    setenv("FLB_ECS_PLUGIN_UNDER_TEST", "true", 1);
+
+    /* Create test context */
+    ctx = filter_test_create((void *) &cb_data, "randomtag");
+    if (!ctx) {
+        exit(EXIT_FAILURE);
+    }
+
+    /* Configure filter */
+    ret = flb_filter_set(ctx->flb, ctx->f_ffd,
+                         "container_id_field_name", "container_id",
+                         "ADD", "resource $ClusterName.$TaskID.$ECSContainerName",
+                         NULL);
+    TEST_CHECK(ret == 0);
+
+    /* Prepare output callback with expected result */
+    expected.expected_records = 1; /* 1 record with metadata added */
+    expected.expected_pattern = "cluster_name..";
+    expected.expected_pattern_index = 0;
+    cb_data.cb = cb_check_result;
+    cb_data.data = (void *) &expected;
+
+    /* Start the engine */
+    ret = flb_start(ctx->flb);
+    TEST_CHECK(ret == 0);
+
+    /* Ingest data samples */
+    p = "[0, {\"log\":\"error: my error\",\"container_id\":\"random\"}]";
+    len = strlen(p);
+    bytes = flb_lib_push(ctx->flb, ctx->i_ffd, p, len);
+    TEST_CHECK(bytes == len);
+
+    /* check number of outputted records */
+    sleep(2);
+    TEST_CHECK(expected.actual_records == expected.expected_records);
+    filter_test_destroy(ctx);
+}
+
 TEST_LIST = {
 
     {"flb_test_ecs_filter_mark_tag_failed"  , flb_test_ecs_filter_mark_tag_failed },
@@ -440,6 +587,9 @@ TEST_LIST = {
     {"flb_test_ecs_filter_cluster_metadata_only"  , flb_test_ecs_filter_cluster_metadata_only },
     {"flb_test_ecs_filter_cluster_error"  , flb_test_ecs_filter_cluster_error },
     {"flb_test_ecs_filter_task_error"  , flb_test_ecs_filter_task_error },
+    {"flb_test_ecs_filter_containerid_field"  , flb_test_ecs_filter_containerid_field },
+    {"flb_test_ecs_filter_containerid_field_error_missing"  , flb_test_ecs_filter_containerid_field_error_missing },
+    {"flb_test_ecs_filter_containerid_field_error_invalid"  , flb_test_ecs_filter_containerid_field_error_invalid },
 
     {NULL, NULL}
 };
