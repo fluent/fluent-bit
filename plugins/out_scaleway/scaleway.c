@@ -1265,7 +1265,7 @@ static struct flb_scaleway *loki_config_create(struct flb_output_instance *ins,
      /* Initialize project_id */
         project_id = flb_output_get_property("project_id", ins);
         if (project_id) {
-            ctx->project_id = strdup(project_id);
+            ctx->project_id = project_id;
             if (!ctx->project_id) {
                         flb_plg_error(ins, "Failed to duplicate project_id");
                         flb_free(ctx);
