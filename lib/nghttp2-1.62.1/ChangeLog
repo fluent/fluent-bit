@@ -1,0 +1,23 @@
+commit d13a5758373931064636c1641db6277db45552dc
+Author:     Tatsuhiro Tsujikawa <tatsuhiro.t@gmail.com>
+AuthorDate: 2024-05-19
+Commit:     Tatsuhiro Tsujikawa <tatsuhiro.t@gmail.com>
+CommitDate: 2024-05-19
+
+    Update manual pages
+
+commit 001833c5a4bd9c719e3805e52325d36260d170a6
+Author:     Tatsuhiro Tsujikawa <tatsuhiro.t@gmail.com>
+AuthorDate: 2024-05-19
+Commit:     Tatsuhiro Tsujikawa <tatsuhiro.t@gmail.com>
+CommitDate: 2024-05-19
+
+    Bump package version
+
+commit 38fb5c2b3fb9030e56804e6f1a2dd1225bf78dd0
+Author:     Tatsuhiro Tsujikawa <tatsuhiro.t@gmail.com>
+AuthorDate: 2024-05-19
+Commit:     Tatsuhiro Tsujikawa <tatsuhiro.t@gmail.com>
+CommitDate: 2024-05-19
+
+    nghttpx: Fix batch UDP QUIC packet dropped on GRO read
