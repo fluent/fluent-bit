@@ -237,7 +237,6 @@ static int inject_tag(msgpack_object *map,
     int i;
     int len;
     size_t map_num;
-    char *ret_buf;
     msgpack_sbuffer sbuf;
     msgpack_packer  pck;
 
@@ -260,16 +259,8 @@ static int inject_tag(msgpack_object *map,
         msgpack_pack_str_body(&pck, event_chunk->tag, flb_sds_len(event_chunk->tag));
     }
 
+    *out_buf = sbuf.data;
     *out_size = sbuf.size;
-    ret_buf  = flb_malloc(sbuf.size);
-    *out_buf = ret_buf;
-    if (*out_buf == NULL) {
-        flb_errno();
-        msgpack_sbuffer_destroy(&sbuf);
-        return -1;
-    }
-    memcpy(*out_buf, sbuf.data, sbuf.size);
-    msgpack_sbuffer_destroy(&sbuf);
 
     return 0;
 }
