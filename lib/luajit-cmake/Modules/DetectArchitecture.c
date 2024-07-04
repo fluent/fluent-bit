@@ -1,4 +1,4 @@
-#if defined(__aarch64__) || defined(__arm64__) || defined(_M_ARM64)
+#if defined(__aarch64__) || defined(__arm64__)
 const char *str = "ARCHITECTURE IS AArch64";
 #elif defined(__arm__) || defined(__arm) || defined(__ARM__) || defined(__ARM)
 const char *str = "ARCHITECTURE IS ARM";
@@ -6,6 +6,8 @@ const char *str = "ARCHITECTURE IS ARM";
 const char *str = "ARCHITECTURE IS Alpha";
 #elif defined(__mips64__) || defined(__mips64) || defined(__MIPS64__) || defined(__MIPS64)
 const char *str = "ARCHITECTURE IS Mips64";
+#elif defined(__loongarch64)
+const char *str = "ARCHITECTURE IS Loongarch64";
 #elif defined(__mips__) || defined(__mips) || defined(__MIPS__) || defined(__MIPS)
 const char *str = "ARCHITECTURE IS Mips";
 #elif defined(__ppc__) || defined(__ppc) || defined(__PPC__) || defined(__PPC) || defined(__powerpc__) || defined(__powerpc) || defined(__POWERPC__) || defined(__POWERPC) || defined(_M_PPC)
