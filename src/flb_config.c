@@ -801,40 +801,56 @@ static int configure_plugins_type(struct flb_config *config, struct flb_cf *cf, 
             if (type == FLB_CF_CUSTOM) {
                 if (kv->val->type == CFL_VARIANT_STRING) {
                     ret = flb_custom_set_property(ins, kv->key, kv->val->data.as_string);
-                } else if (kv->val->type == CFL_VARIANT_ARRAY) {
+                }
+                else if (kv->val->type == CFL_VARIANT_ARRAY) {
                     for (i = 0; i < kv->val->data.as_array->entry_count; i++) {
                         val = kv->val->data.as_array->entries[i];
-                        ret = flb_custom_set_property(ins, kv->key, val->data.as_string);
+
+                        if (val->type == CFL_VARIANT_STRING) {
+                            ret = flb_custom_set_property(ins, kv->key, val->data.as_string);
+                        }
                     }
                 }
             }
             else if (type == FLB_CF_INPUT) {
                  if (kv->val->type == CFL_VARIANT_STRING) {
                     ret = flb_input_set_property(ins, kv->key, kv->val->data.as_string);
-                } else if (kv->val->type == CFL_VARIANT_ARRAY) {
+                }
+                else if (kv->val->type == CFL_VARIANT_ARRAY) {
                     for (i = 0; i < kv->val->data.as_array->entry_count; i++) {
                         val = kv->val->data.as_array->entries[i];
-                        ret = flb_input_set_property(ins, kv->key, val->data.as_string);
+
+                        if (val->type == CFL_VARIANT_STRING) {
+                            ret = flb_input_set_property(ins, kv->key, val->data.as_string);
+                        }
                     }
                 }
             }
             else if (type == FLB_CF_FILTER) {
                  if (kv->val->type == CFL_VARIANT_STRING) {
                     ret = flb_filter_set_property(ins, kv->key, kv->val->data.as_string);
-                } else if (kv->val->type == CFL_VARIANT_ARRAY) {
+                }
+                else if (kv->val->type == CFL_VARIANT_ARRAY) {
                     for (i = 0; i < kv->val->data.as_array->entry_count; i++) {
                         val = kv->val->data.as_array->entries[i];
-                        ret = flb_filter_set_property(ins, kv->key, val->data.as_string);
+
+                        if (val->type == CFL_VARIANT_STRING) {
+                            ret = flb_filter_set_property(ins, kv->key, val->data.as_string);
+                        }
                     }
                 }
             }
             else if (type == FLB_CF_OUTPUT) {
                  if (kv->val->type == CFL_VARIANT_STRING) {
                     ret = flb_output_set_property(ins, kv->key, kv->val->data.as_string);
-                } else if (kv->val->type == CFL_VARIANT_ARRAY) {
+                }
+                else if (kv->val->type == CFL_VARIANT_ARRAY) {
                     for (i = 0; i < kv->val->data.as_array->entry_count; i++) {
                         val = kv->val->data.as_array->entries[i];
-                        ret = flb_output_set_property(ins, kv->key, val->data.as_string);
+
+                        if (val->type == CFL_VARIANT_STRING) {
+                            ret = flb_output_set_property(ins, kv->key, val->data.as_string);
+                        }
                     }
                 }
             }
