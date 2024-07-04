@@ -293,6 +293,7 @@ int create_push_url(struct flb_output_instance *ins, const char *url, char **pus
     snprintf(*push_url, needed_size, "%s", modified_url);
 
     flb_plg_info(ins, "Push URL created successfully: %s", *push_url);
+    free(*push_url);
     return 0;
 }
 
@@ -1225,8 +1226,14 @@ static void loki_config_destroy(struct flb_scaleway *ctx)
     flb_slist_destroy(&ctx->remove_keys_derived);
 
     flb_scaleway_kv_exit(ctx);
+
+    if (ctx->project_id) {
+        free(ctx->project_id);
+    }
+
     flb_free(ctx);
 }
+
 
 static struct flb_scaleway *loki_config_create(struct flb_output_instance *ins,
                                                struct flb_config *config)
