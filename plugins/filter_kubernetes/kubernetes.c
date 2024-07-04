@@ -800,6 +800,13 @@ static struct flb_config_map config_map[] = {
      "set optional TLS virtual host"
     },
 
+    /* TLS: set tls.hostame_verification feature */
+    {
+     FLB_CONFIG_MAP_BOOL, "tls.verify_hostname", "off",
+     0, FLB_TRUE, offsetof(struct flb_kube, tls_verify_hostname),
+     "enable or disable to verify hostname"
+    },
+
     /* Merge structured record as independent keys */
     {
      FLB_CONFIG_MAP_BOOL, "merge_log", "false",

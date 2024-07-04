@@ -1,6 +1,7 @@
 #include <fluent-bit/flb_sds.h>
 #include <fluent-bit/flb_mem.h>
 #include <fluent-bit/flb_log.h>
+#include <fluent-bit/flb_time.h>
 
 #include "flb_tests_internal.h"
 
@@ -11,20 +12,28 @@
 #define TEST_RECORD_02      "other type of message"
 #define TEST_RECORD_02_SIZE sizeof(TEST_RECORD_02) - 1
 
-static int check_clock(int timeout, time_t start)
+static int check_clock(uint64_t timeout, struct flb_time *tm_start)
 {
-    time_t now = time(NULL);
+	struct flb_time tm_now;
+	uint64_t diff;
+	uint64_t now;
+	uint64_t start;
 
-    if (!(TEST_CHECK((start + timeout) >= now))) {
-        TEST_MSG("clock error, unsuppresed log: now=%ld, timeout=%ld, diff=%ld", 
-	         now, start+timeout, now-(start+timeout));
+    flb_time_get(&tm_now);
+    now = flb_time_to_millisec(&tm_now);
+    start = flb_time_to_millisec(tm_start);
+    diff = now - start;
+
+    if (!(TEST_CHECK(diff < timeout))) {
+        TEST_MSG("clock error, unsuppresed log: now=%llu, start=%llu timeout=%llu(%llu), diff=%llu",
+	         now, start, start+timeout, timeout, diff);
         return -1;
     }
 
     return 0;
 }
 
-static int update_and_check_clock(int timeout, int ret, time_t *clock)
+static int update_and_check_clock(uint64_t timeout, int ret, struct flb_time *clock)
 {
     int ret_val;
 
@@ -33,8 +42,8 @@ static int update_and_check_clock(int timeout, int ret, time_t *clock)
     }
 
     /* false means timeout. check interval. */
-    ret_val = check_clock(timeout, *clock);
-    *clock = time(NULL); /* reset clock */
+    ret_val = check_clock(timeout, clock);
+    flb_time_get(clock); /* reset clock */
 
     return ret_val;
 }
@@ -45,10 +54,10 @@ static void cache_basic_timeout()
     int ret;
     int ret_1;
     int ret_2;
-    int timeout = 5;
-    time_t clock1;
-    time_t clock2;
-    time_t start;
+    uint64_t timeout = 5000;
+    struct flb_time clock1;
+    struct flb_time clock2;
+    struct flb_time start;
     struct flb_log_cache *cache;
     struct flb_log_cache_entry *entry;
 
@@ -81,10 +90,10 @@ static void cache_basic_timeout()
     cache = flb_log_cache_create(timeout, 4);
     TEST_CHECK(cache != NULL);
 
-    clock1 = time(NULL);
+    flb_time_get(&clock1);
     ret_1 = flb_log_cache_check_suppress(cache, TEST_RECORD_01, TEST_RECORD_01_SIZE);
 
-    clock2 = time(NULL);
+    flb_time_get(&clock2);
     ret_2 = flb_log_cache_check_suppress(cache, TEST_RECORD_02, TEST_RECORD_02_SIZE);
 
     TEST_CHECK(ret_1 == FLB_FALSE);
@@ -93,7 +102,7 @@ static void cache_basic_timeout()
     sleep(1);
 
 
-    for (i = 1, start = time(NULL); i < 10 && start+(timeout*20) >  time(NULL); i++) {
+    for (i = 1, flb_time_get(&start); i < 10 && flb_time_to_millisec(&start)+(timeout*20) > time(NULL)*1000; i++) {
         ret_1 = flb_log_cache_check_suppress(cache, TEST_RECORD_01, TEST_RECORD_01_SIZE);
         ret = update_and_check_clock(timeout, ret_1, &clock1);
         if (!TEST_CHECK(ret == 0)) {

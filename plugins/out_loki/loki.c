@@ -903,10 +903,12 @@ static struct flb_loki *loki_config_create(struct flb_output_instance *ins,
                                            struct flb_config *config)
 {
     int ret;
+    int tmp;
     int io_flags = 0;
     struct flb_loki *ctx;
     struct flb_upstream *upstream;
     char *compress;
+    char *drop_single_key;
 
     /* Create context */
     ctx = flb_calloc(1, sizeof(struct flb_loki));
@@ -959,6 +961,29 @@ static struct flb_loki *loki_config_create(struct flb_output_instance *ins,
     if (compress) {
         if (strcasecmp(compress, "gzip") == 0) {
             ctx->compress_gzip = FLB_TRUE;
+        }
+    }
+
+    /* Drop Single Key */
+    drop_single_key = flb_output_get_property("drop_single_key", ins);
+    ctx->out_drop_single_key = FLB_LOKI_DROP_SINGLE_KEY_OFF;
+    if (drop_single_key) {
+        if (strcasecmp(drop_single_key, "raw") == 0) {
+            ctx->out_drop_single_key = FLB_LOKI_DROP_SINGLE_KEY_ON | FLB_LOKI_DROP_SINGLE_KEY_RAW;
+        }
+        else {
+            tmp = flb_utils_bool(drop_single_key);
+            if (tmp == FLB_TRUE) {
+                ctx->out_drop_single_key = FLB_LOKI_DROP_SINGLE_KEY_ON;
+            }
+            else if (tmp == FLB_FALSE) {
+                ctx->out_drop_single_key = FLB_LOKI_DROP_SINGLE_KEY_OFF;
+            }
+            else {
+                flb_plg_error(ctx->ins, "invalid 'drop_single_key' value: %s",
+                              ctx->drop_single_key);
+                return NULL;
+            }
         }
     }
 
@@ -1206,12 +1231,28 @@ static int pack_record(struct flb_loki *ctx,
     }
 
     /* Drop single key */
-    if (ctx->drop_single_key == FLB_TRUE && rec->type == MSGPACK_OBJECT_MAP && rec->via.map.size == 1) {
-        if (ctx->out_line_format == FLB_LOKI_FMT_JSON) {
-            rec = &rec->via.map.ptr[0].val;
-        } else if (ctx->out_line_format == FLB_LOKI_FMT_KV) {
-            val = rec->via.map.ptr[0].val;
+    if (ctx->out_drop_single_key & FLB_LOKI_DROP_SINGLE_KEY_ON &&
+        rec->type == MSGPACK_OBJECT_MAP && rec->via.map.size == 1) {
+        val = rec->via.map.ptr[0].val;
 
+        if (ctx->out_line_format == FLB_LOKI_FMT_JSON) {
+            if (val.type == MSGPACK_OBJECT_STR &&
+                ctx->out_drop_single_key & FLB_LOKI_DROP_SINGLE_KEY_RAW) {
+                msgpack_pack_str(mp_pck, val.via.str.size);
+                msgpack_pack_str_body(mp_pck, val.via.str.ptr, val.via.str.size);
+
+                msgpack_unpacked_destroy(&mp_buffer);
+                if (tmp_sbuf_data) {
+                    flb_free(tmp_sbuf_data);
+                }
+
+                return 0;
+            }
+            else {
+                rec = &val;
+            }
+        }
+        else if (ctx->out_line_format == FLB_LOKI_FMT_KV) {
             if (val.type == MSGPACK_OBJECT_STR) {
                 msgpack_pack_str(mp_pck, val.via.str.size);
                 msgpack_pack_str_body(mp_pck, val.via.str.ptr, val.via.str.size);
@@ -1774,10 +1815,11 @@ static struct flb_config_map config_map[] = {
     },
 
     {
-     FLB_CONFIG_MAP_BOOL, "drop_single_key", "false",
+     FLB_CONFIG_MAP_STR, "drop_single_key", NULL,
      0, FLB_TRUE, offsetof(struct flb_loki, drop_single_key),
      "If set to true and only a single key remains, the log line sent to Loki "
-     "will be the value of that key.",
+     "will be the value of that key. If set to 'raw' and the log line is "
+     "a string, the log line will be sent unquoted.",
     },
 
     {

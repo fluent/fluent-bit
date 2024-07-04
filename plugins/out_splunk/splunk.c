@@ -354,10 +354,25 @@ static flb_sds_t extract_hec_token(struct flb_splunk *ctx, msgpack_object map,
 
     /* Extract HEC token (map which is from metadata lookup) */
     if (ctx->metadata_auth_key) {
-        hec_token = flb_ra_translate_check(ctx->ra_metadata_auth_key, tag, tag_len,
-                                     map, NULL, FLB_TRUE);
-        if (hec_token) {
+        hec_token = flb_ra_translate(ctx->ra_metadata_auth_key, tag, tag_len,
+                                     map, NULL);
+        /*
+         * record accessor translation can return an empty string buffer if the
+         * translation was not successfull or the value was not found. We consider
+         * a valid token any string which length is greater than 0.
+         *
+         * note: flb_ra_translate_check() is not used here because it will print
+         * an error message if the translation fails:
+         *
+         * ref: https://github.com/fluent/fluent-bit/issues/8859
+         */
+        if (hec_token && flb_sds_len(hec_token) > 0) {
             return hec_token;
+        }
+
+        /* destroy empty string */
+        if (hec_token) {
+            flb_sds_destroy(hec_token);
         }
 
         flb_plg_debug(ctx->ins, "Could not find hec_token in metadata");
@@ -368,21 +383,49 @@ static flb_sds_t extract_hec_token(struct flb_splunk *ctx, msgpack_object map,
     return NULL;
 }
 
+static void set_metadata_auth_header(struct flb_splunk *ctx, flb_sds_t hec_token)
+{
+    pthread_mutex_lock(&ctx->mutex_hec_token);
+
+    if (ctx->metadata_auth_header != NULL) {
+        flb_sds_destroy(ctx->metadata_auth_header);
+    }
+    ctx->metadata_auth_header = hec_token;
+
+    pthread_mutex_unlock(&ctx->mutex_hec_token);
+}
+
+static flb_sds_t get_metadata_auth_header(struct flb_splunk *ctx)
+{
+    flb_sds_t auth_header = NULL;
+
+    pthread_mutex_lock(&ctx->mutex_hec_token);
+
+    if (ctx->metadata_auth_header) {
+        auth_header = flb_sds_create(ctx->metadata_auth_header);
+    }
+
+    pthread_mutex_unlock(&ctx->mutex_hec_token);
+
+    return auth_header;
+}
+
 static inline int splunk_format(const void *in_buf, size_t in_bytes,
                                 char *tag, int tag_len,
                                 char **out_buf, size_t *out_size,
                                 struct flb_splunk *ctx)
 {
     int ret;
+    char *err;
     msgpack_object map;
     msgpack_object metadata;
     msgpack_sbuffer mp_sbuf;
     msgpack_packer mp_pck;
-    char *err;
     flb_sds_t tmp;
     flb_sds_t record;
     flb_sds_t json_out;
     flb_sds_t metadata_hec_token = NULL;
+
     struct flb_log_event_decoder log_decoder;
     struct flb_log_event log_event;
 
@@ -403,8 +446,6 @@ static inline int splunk_format(const void *in_buf, size_t in_bytes,
         return -1;
     }
 
-    ctx->metadata_auth_header = NULL;
-
     while ((ret = flb_log_event_decoder_next(
                     &log_decoder,
                     &log_event)) == FLB_EVENT_DECODER_SUCCESS) {
@@ -422,10 +463,7 @@ static inline int splunk_format(const void *in_buf, size_t in_bytes,
              * specify only one splunk token per one instance.
              * So, it should be valid if storing only last value of
              * splunk token per one chunk. */
-            if (ctx->metadata_auth_header != NULL) {
-                cfl_sds_destroy(ctx->metadata_auth_header);
-            }
-            ctx->metadata_auth_header = metadata_hec_token;
+            set_metadata_auth_header(ctx, metadata_hec_token);
         }
 
         if (ctx->event_key) {
@@ -590,7 +628,6 @@ static void cb_splunk_flush(struct flb_event_chunk *event_chunk,
     flb_sds_t buf_data;
     size_t resp_size;
     size_t buf_size;
-    char *endpoint;
     struct flb_splunk *ctx = out_context;
     struct flb_connection *u_conn;
     struct flb_http_client *c;
@@ -598,6 +635,7 @@ static void cb_splunk_flush(struct flb_event_chunk *event_chunk,
     size_t payload_size;
     (void) i_ins;
     (void) config;
+    flb_sds_t metadata_auth_header = NULL;
 
     /* Get upstream connection */
     u_conn = flb_upstream_conn_get(ctx->u);
@@ -648,16 +686,8 @@ static void cb_splunk_flush(struct flb_event_chunk *event_chunk,
         }
     }
 
-    /* Splunk URI endpoint */
-    if (ctx->splunk_send_raw) {
-        endpoint = FLB_SPLUNK_DEFAULT_URI_RAW;
-    }
-    else {
-        endpoint = FLB_SPLUNK_DEFAULT_URI_EVENT;
-    }
-
     /* Compose HTTP Client request */
-    c = flb_http_client(u_conn, FLB_HTTP_POST, endpoint,
+    c = flb_http_client(u_conn, FLB_HTTP_POST, FLB_SPLUNK_DEFAULT_ENDPOINT,
                         payload_buf, payload_size, NULL, 0, NULL, 0);
 
     /* HTTP Response buffer size, honor value set by the user */
@@ -677,16 +707,25 @@ static void cb_splunk_flush(struct flb_event_chunk *event_chunk,
         flb_http_buffer_size(c, resp_size);
     }
 
+    metadata_auth_header = get_metadata_auth_header(ctx);
+
     /* HTTP Client */
     flb_http_add_header(c, "User-Agent", 10, "Fluent-Bit", 10);
 
-    /* Try to use http_user and http_passwd if not, fallback to auth_header */
+    /*
+     * Authentication mechanism & order:
+     *
+     * 1. use the configure `http_user` and `http_passwd`
+     * 2. use metadata 'hec_token', if the records are generated by Splunk input plugin, this will be set.
+     * 3. use the configured `splunk_token` (if set).
+     */
     if (ctx->http_user && ctx->http_passwd) {
         flb_http_basic_auth(c, ctx->http_user, ctx->http_passwd);
     }
-    else if (ctx->metadata_auth_header) {
+    else if (metadata_auth_header) {
         flb_http_add_header(c, "Authorization", 13,
-                            ctx->metadata_auth_header, flb_sds_len(ctx->metadata_auth_header));
+                            metadata_auth_header,
+                            flb_sds_len(metadata_auth_header));
     }
     else if (ctx->auth_header) {
         flb_http_add_header(c, "Authorization", 13,
@@ -754,10 +793,10 @@ static void cb_splunk_flush(struct flb_event_chunk *event_chunk,
         flb_sds_destroy(buf_data);
     }
 
-    /* Cleanup */
-    if (ctx->metadata_auth_header != NULL) {
-        cfl_sds_destroy(ctx->metadata_auth_header);
+    if (metadata_auth_header) {
+        flb_sds_destroy(metadata_auth_header);
     }
+
     flb_http_client_destroy(c);
     flb_upstream_conn_release(u_conn);
     FLB_OUTPUT_RETURN(ret);

@@ -38,4 +38,8 @@ int cmt_filter(struct cmt *dst, struct cmt *src,
                void *compare_ctx, int (*compare)(void *compare_ctx, const char *str, size_t slen),
                int flags);
 
+int cmt_filter_with_label_pair(struct cmt *dst, struct cmt *src,
+                               const char *label_key,
+                               const char *label_value);
+
 #endif

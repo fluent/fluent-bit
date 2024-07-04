@@ -522,7 +522,7 @@ int64_t flb_utils_size_to_bytes(const char *size)
     int i;
     int len;
     int plen = 0;
-    int64_t val;
+    double val;
     char c;
     char tmp[3] = {0};
     int64_t KB = 1000;
@@ -538,7 +538,7 @@ int64_t flb_utils_size_to_bytes(const char *size)
     }
 
     len = strlen(size);
-    val = atoll(size);
+    val = atof(size);
 
     if (len == 0) {
         return -1;
@@ -554,7 +554,7 @@ int64_t flb_utils_size_to_bytes(const char *size)
     }
 
     if (plen == 0) {
-        return val;
+        return (int64_t)val;
     }
     else if (plen > 2) {
         return -1;
@@ -577,27 +577,27 @@ int64_t flb_utils_size_to_bytes(const char *size)
         {
             return -1;
         }
-        return (val * KB);
+        return (int64_t)(val * KB);
     }
     else if (tmp[0] == 'M') {
         /* set upper bound (2**64/MB)/2 to avoid overflows */
         if (val >= 9223372036854 || val <= -9223372036853) {
             return -1;
         }
-        return (val * MB);
+        return (int64_t)(val * MB);
     }
     else if (tmp[0] == 'G') {
         /* set upper bound (2**64/GB)/2 to avoid overflows */
         if (val >= 9223372036 || val <= -9223372035) {
             return -1;
         }
-        return (val * GB);
+        return (int64_t)(val * GB);
     }
     else {
         return -1;
     }
 
-    return val;
+    return (int64_t)val;
 }
 
 int64_t flb_utils_hex2int(char *hex, int len)

@@ -172,7 +172,7 @@ void test_basic()
     }
 
     parser = flb_parser_create("regex", "regex", regex, FLB_FALSE, NULL, NULL, NULL,
-                               FLB_FALSE, FLB_FALSE, FLB_FALSE,
+                               FLB_FALSE, FLB_FALSE, FLB_FALSE, FLB_FALSE,
                                NULL, 0, NULL, config);
     if (!TEST_CHECK(parser != NULL)) {
         TEST_MSG("flb_parser_create failed");
@@ -225,7 +225,7 @@ void test_time_key()
     }
 
     parser = flb_parser_create("regex", "regex", regex, FLB_FALSE, "%Y-%m-%dT%H:%M:%S.%L", "time", NULL,
-                               FLB_FALSE, FLB_FALSE, FLB_FALSE,
+                               FLB_FALSE, FLB_FALSE, FLB_FALSE, FLB_FALSE,
                                NULL, 0, NULL, config);
     if (!TEST_CHECK(parser != NULL)) {
         TEST_MSG("flb_parser_create failed");
@@ -287,7 +287,7 @@ void test_time_keep()
     }
 
     parser = flb_parser_create("regex", "regex", regex, FLB_FALSE, "%Y-%m-%dT%H:%M:%S.%L", "time", NULL,
-                               FLB_TRUE /*time_keep */, FLB_FALSE, FLB_FALSE,
+                               FLB_TRUE /*time_keep */, FLB_FALSE, FLB_FALSE, FLB_FALSE,
                                NULL, 0, NULL, config);
     if (!TEST_CHECK(parser != NULL)) {
         TEST_MSG("flb_parser_create failed");
@@ -365,7 +365,7 @@ void test_types()
     types->type = FLB_PARSER_TYPE_HEX;
 
     parser = flb_parser_create("regex", "regex", regex, FLB_FALSE, NULL, NULL, NULL,
-                               FLB_FALSE, FLB_FALSE, FLB_FALSE,
+                               FLB_FALSE, FLB_FALSE, FLB_FALSE, FLB_FALSE,
                                types, 1, NULL, config);
     if (!TEST_CHECK(parser != NULL)) {
         TEST_MSG("flb_parser_create failed");
@@ -451,7 +451,7 @@ void test_decode_field_json()
     }
 
     parser = flb_parser_create("regex", "regex", regex, FLB_FALSE, NULL, NULL, NULL,
-                               FLB_FALSE, FLB_FALSE, FLB_FALSE,
+                               FLB_FALSE, FLB_FALSE, FLB_FALSE, FLB_FALSE,
                                NULL, 0, decoder, config);
     if (!TEST_CHECK(parser != NULL)) {
         TEST_MSG("flb_parser_create failed");

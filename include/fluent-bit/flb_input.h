@@ -34,6 +34,7 @@
 #include <fluent-bit/flb_mp.h>
 #include <fluent-bit/flb_hash_table.h>
 
+#include <fluent-bit/flb_input_event.h>
 #include <fluent-bit/flb_input_chunk.h>
 #include <fluent-bit/flb_input_log.h>
 #include <fluent-bit/flb_input_metric.h>
@@ -71,11 +72,6 @@
 /* Input status */
 #define FLB_INPUT_RUNNING     1
 #define FLB_INPUT_PAUSED      0
-
-/* Input plugin event type */
-#define FLB_INPUT_LOGS        0
-#define FLB_INPUT_METRICS     1
-#define FLB_INPUT_TRACES      2
 
 struct flb_input_instance;
 
@@ -363,6 +359,7 @@ struct flb_input_instance {
     /* TLS settings */
     int use_tls;                         /* bool, try to use TLS for I/O */
     int tls_verify;                      /* Verify certs (default: true) */
+    int tls_verify_hostname;             /* Verify hostname (default: false) */
     int tls_debug;                       /* mbedtls debug level          */
     char *tls_vhost;                     /* Virtual hostname for SNI     */
     char *tls_ca_path;                   /* Path to certificates         */

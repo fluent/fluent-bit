@@ -24,6 +24,81 @@
 #include "splunk_conn.h"
 #include "splunk_config.h"
 
+static void delete_hec_tokens(struct flb_splunk *ctx)
+{
+    struct mk_list *tmp;
+    struct mk_list *head;
+    struct flb_splunk_tokens *splunk_token;
+
+    mk_list_foreach_safe(head, tmp, &ctx->auth_tokens) {
+        splunk_token = mk_list_entry(head, struct flb_splunk_tokens, _head);
+        flb_sds_destroy(splunk_token->header);
+        mk_list_del(&splunk_token->_head);
+        flb_free(splunk_token);
+    }
+}
+
+static int setup_hec_tokens(struct flb_splunk *ctx)
+{
+    int         ret;
+    const char *raw_token;
+    struct mk_list *head = NULL;
+    struct mk_list *kvs = NULL;
+    struct flb_split_entry *cur = NULL;
+    flb_sds_t   auth_header;
+    struct flb_splunk_tokens *splunk_token;
+
+    raw_token = flb_input_get_property("splunk_token", ctx->ins);
+    if (raw_token) {
+        kvs = flb_utils_split(raw_token, ',', -1 );
+        if (kvs == NULL) {
+            goto split_error;
+        }
+
+        mk_list_foreach(head, kvs) {
+            cur = mk_list_entry(head, struct flb_split_entry, _head);
+
+            auth_header = flb_sds_create("Splunk ");
+            if (auth_header == NULL) {
+                flb_plg_error(ctx->ins, "error on prefix of auth_header generation");
+                goto error;
+            }
+
+            ret = flb_sds_cat_safe(&auth_header, cur->value, strlen(cur->value));
+            if (ret < 0) {
+                flb_plg_error(ctx->ins, "error on token generation");
+                goto error;
+            }
+
+            /* Create a new token */
+            splunk_token = flb_malloc(sizeof(struct flb_splunk_tokens));
+            if (!splunk_token) {
+                flb_errno();
+                goto error;
+            }
+
+            splunk_token->header = auth_header;
+
+            /* Link to parent list */
+            mk_list_add(&splunk_token->_head, &ctx->auth_tokens);
+        }
+    }
+
+    if (kvs != NULL) {
+        flb_utils_split_free(kvs);
+    }
+
+    return 0;
+
+split_error:
+    return -1;
+error:
+    if (kvs != NULL) {
+        flb_utils_split_free(kvs);
+    }
+    return -1;
+}
+
 struct flb_splunk *splunk_config_create(struct flb_input_instance *ins)
 {
     struct mk_list            *header_iterator;
@@ -33,7 +108,6 @@ struct flb_splunk *splunk_config_create(struct flb_input_instance *ins)
     char                       port[8];
     int                        ret;
     struct flb_splunk         *ctx;
-    const char                *tmp;
 
     ctx = flb_calloc(1, sizeof(struct flb_splunk));
     if (!ctx) {
@@ -42,6 +116,7 @@ struct flb_splunk *splunk_config_create(struct flb_input_instance *ins)
     }
     ctx->ins = ins;
     mk_list_init(&ctx->connections);
+    mk_list_init(&ctx->auth_tokens);
 
     /* Load the config map */
     ret = flb_input_config_map_set(ins, (void *) ctx);
@@ -50,22 +125,12 @@ struct flb_splunk *splunk_config_create(struct flb_input_instance *ins)
         return NULL;
     }
 
-    ctx->auth_header = NULL;
     ctx->ingested_auth_header = NULL;
-    tmp = flb_input_get_property("splunk_token", ins);
-    if (tmp) {
-        ctx->auth_header = flb_sds_create("Splunk ");
-        if (ctx->auth_header == NULL) {
-            flb_plg_error(ctx->ins, "error on prefix of auth_header generation");
-            splunk_config_destroy(ctx);
-            return NULL;
-        }
-        ret = flb_sds_cat_safe(&ctx->auth_header, tmp, strlen(tmp));
-        if (ret < 0) {
-            flb_plg_error(ctx->ins, "error on token generation");
-            splunk_config_destroy(ctx);
-            return NULL;
-        }
+
+    ret = setup_hec_tokens(ctx);
+    if (ret != 0) {
+        splunk_config_destroy(ctx);
+        return NULL;
     }
 
     /* Listen interface (if not set, defaults to 0.0.0.0:8088) */
@@ -161,10 +226,6 @@ int splunk_config_destroy(struct flb_splunk *ctx)
         ctx->collector_id = -1;
     }
 
-    if (ctx->auth_header != NULL) {
-        flb_sds_destroy(ctx->auth_header);
-    }
-
     if (ctx->downstream != NULL) {
         flb_downstream_destroy(ctx->downstream);
     }
@@ -181,6 +242,7 @@ int splunk_config_destroy(struct flb_splunk *ctx)
         flb_sds_destroy(ctx->success_headers_str);
     }
 
+    delete_hec_tokens(ctx);
 
     flb_free(ctx->listen);
     flb_free(ctx->tcp_port);

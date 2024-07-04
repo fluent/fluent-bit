@@ -1055,6 +1055,23 @@ struct flb_mp_chunk_cobj *flb_mp_chunk_cobj_create(struct flb_log_event_encoder 
     return chunk_cobj;
 }
 
+static int generate_empty_msgpack_map(char **out_buf, size_t *out_size)
+{
+    msgpack_sbuffer mp_sbuf;
+    msgpack_packer mp_pck;
+
+    /* initialize msgpack buffer */
+    msgpack_sbuffer_init(&mp_sbuf);
+    msgpack_packer_init(&mp_pck, &mp_sbuf, msgpack_sbuffer_write);
+
+    msgpack_pack_map(&mp_pck, 0);
+
+    *out_buf = mp_sbuf.data;
+    *out_size = mp_sbuf.size;
+
+    return 0;
+}
+
 int flb_mp_chunk_cobj_encode(struct flb_mp_chunk_cobj *chunk_cobj, char **out_buf, size_t *out_size)
 {
     int ret;
@@ -1070,9 +1087,6 @@ int flb_mp_chunk_cobj_encode(struct flb_mp_chunk_cobj *chunk_cobj, char **out_bu
     /* Iterate all records */
     cfl_list_foreach(head, &chunk_cobj->records) {
         record = cfl_list_entry(head, struct flb_mp_chunk_record, _head);
-        if (record->modified == FLB_TRUE) {
-            continue;
-        }
 
         ret = flb_log_event_encoder_begin_record(chunk_cobj->log_encoder);
         if (ret == -1) {
@@ -1089,18 +1103,32 @@ int flb_mp_chunk_cobj_encode(struct flb_mp_chunk_cobj *chunk_cobj, char **out_bu
             if (ret == -1) {
                 return -1;
             }
-
-            ret = flb_log_event_encoder_set_metadata_from_raw_msgpack(chunk_cobj->log_encoder, mp_buf, mp_size);
-            if (ret != FLB_EVENT_ENCODER_SUCCESS) {
-                flb_free(mp_buf);
+        }
+        else {
+            ret = generate_empty_msgpack_map(&mp_buf, &mp_size);
+            if (ret == -1) {
                 return -1;
             }
-            flb_free(mp_buf);
         }
 
-        ret = flb_mp_cfl_to_msgpack(record->cobj_record, &mp_buf, &mp_size);
-        if (ret == -1) {
+        ret = flb_log_event_encoder_set_metadata_from_raw_msgpack(chunk_cobj->log_encoder, mp_buf, mp_size);
+        if (ret != FLB_EVENT_ENCODER_SUCCESS) {
+            flb_free(mp_buf);
             return -1;
+        }
+        flb_free(mp_buf);
+
+        if (record->cobj_record) {
+            ret = flb_mp_cfl_to_msgpack(record->cobj_record, &mp_buf, &mp_size);
+            if (ret == -1) {
+                return -1;
+            }
+        }
+        else {
+            ret = generate_empty_msgpack_map(&mp_buf, &mp_size);
+            if (ret == -1) {
+                return -1;
+            }
         }
 
         ret = flb_log_event_encoder_set_body_from_raw_msgpack(chunk_cobj->log_encoder, mp_buf, mp_size);
@@ -1229,8 +1257,7 @@ int flb_mp_chunk_cobj_record_destroy(struct flb_mp_chunk_cobj *chunk_cobj,
         return -1;
     }
 
-
-    if (chunk_cobj->record_pos) {
+    if (chunk_cobj && chunk_cobj->record_pos) {
         first = cfl_list_entry_first(&chunk_cobj->records, struct flb_mp_chunk_record, _head);
         last = cfl_list_entry_last(&chunk_cobj->records, struct flb_mp_chunk_record, _head);
 

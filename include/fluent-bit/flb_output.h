@@ -284,6 +284,7 @@ struct flb_output_instance {
 
 #ifdef FLB_HAVE_TLS
     int tls_verify;                      /* Verify certs (default: true) */
+    int tls_verify_hostname;             /* Verify hostname (default: false) */
     int tls_debug;                       /* mbedtls debug level          */
     char *tls_vhost;                     /* Virtual hostname for SNI     */
     char *tls_ca_path;                   /* Path to certificates         */
@@ -627,6 +628,7 @@ struct flb_output_flush *flb_output_flush_create(struct flb_task *task,
     struct cmt *metrics_context;
     struct ctrace *trace_context;
     size_t chunk_offset;
+    struct cmt *cmt_out_context = NULL;
 
     /* Custom output coroutine info */
     out_flush = (struct flb_output_flush *) flb_calloc(1, sizeof(struct flb_output_flush));
@@ -715,13 +717,25 @@ struct flb_output_flush *flb_output_flush_create(struct flb_task *task,
                                         flb_sds_len(evc->tag),
                                         (char *) metrics_context,
                                         0,
-                                        NULL,
+                                        (void **)&cmt_out_context,
                                         NULL);
 
                 if (ret == 0) {
-                    ret = cmt_encode_msgpack_create(metrics_context,
-                                                    &serialized_context_buffer,
-                                                    &serialized_context_size);
+                    if (cmt_out_context != NULL) {
+                        ret = cmt_encode_msgpack_create(cmt_out_context,
+                                                        &serialized_context_buffer,
+                                                        &serialized_context_size);
+
+                        if (cmt_out_context != metrics_context) {
+                            cmt_destroy(cmt_out_context);
+                        }
+
+                    }
+                    else {
+                        ret = cmt_encode_msgpack_create(metrics_context,
+                                                        &serialized_context_buffer,
+                                                        &serialized_context_size);
+                    }
 
                     cmt_destroy(metrics_context);
 

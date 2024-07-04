@@ -78,6 +78,9 @@ struct flb_metrics *flb_metrics_create(const char *title)
 {
     int ret;
     struct flb_metrics *metrics;
+    size_t title_len = 0;
+    char *allocated_title = NULL;
+    size_t threshold = FLB_METRIC_LENGTH_LIMIT;
 
     /* Create a metrics parent context */
     metrics = flb_malloc(sizeof(struct flb_metrics));
@@ -87,9 +90,24 @@ struct flb_metrics *flb_metrics_create(const char *title)
     }
     metrics->count = 0;
 
+    title_len = snprintf(NULL, 0, "%s", title);
+
+    if (title_len > threshold) {
+        title_len = threshold;
+        flb_warn("[%s] title '%s' was truncated", __FUNCTION__, title);
+    }
+
+    allocated_title = flb_calloc(title_len + 1, sizeof(char));
+    if (allocated_title == NULL) {
+        flb_free(metrics);
+        return NULL;
+    }
+    metrics->title = allocated_title;
+
     /* Set metrics title */
     ret = flb_metrics_title(title, metrics);
     if (ret == -1) {
+        flb_free(metrics->title);
         flb_free(metrics);
         return NULL;
     }
@@ -102,16 +120,14 @@ struct flb_metrics *flb_metrics_create(const char *title)
 int flb_metrics_title(const char *title, struct flb_metrics *metrics)
 {
     int ret;
-    size_t size = sizeof(metrics->title) - 1;
+    size_t size = snprintf(NULL, 0, "%s", title);
 
     ret = snprintf(metrics->title, size, "%s", title);
     if (ret == -1) {
         flb_errno();
         return -1;
     }
-    else if (ret >= size){
-        flb_warn("[%s] title '%s' was truncated", __FUNCTION__, title);
-    }
+
     metrics->title_len = strlen(metrics->title);
     return 0;
 }
@@ -121,6 +137,7 @@ int flb_metrics_add(int id, const char *title, struct flb_metrics *metrics)
     int ret;
     struct flb_metric *m;
     size_t size;
+    size_t threshold = FLB_METRIC_LENGTH_LIMIT;
 
     /* Create context */
     m = flb_malloc(sizeof(struct flb_metric));
@@ -129,19 +146,27 @@ int flb_metrics_add(int id, const char *title, struct flb_metrics *metrics)
         return -1;
     }
     m->val = 0;
-    size = sizeof(m->title) - 1;
+    size = strlen(title);
+
+    if (size > threshold) {
+        size = threshold;
+        flb_warn("[%s] title '%s' was truncated", __FUNCTION__, title);
+    }
+
+    m->title = flb_calloc(size + 1, sizeof(char));
+    if (m->title == NULL) {
+        flb_free(m);
+        return -1;
+    }
 
     /* Write title */
     ret = snprintf(m->title, size, "%s", title);
     if (ret == -1) {
         flb_errno();
+        flb_free(m->title);
         flb_free(m);
         return -1;
     }
-    else if (ret >= size) {
-        flb_warn("[%s] title '%s' was truncated", __FUNCTION__, title);
-    }
-
     m->title_len = strlen(m->title);
 
     /* Assign an ID */
@@ -150,6 +175,7 @@ int flb_metrics_add(int id, const char *title, struct flb_metrics *metrics)
         if (id_exists(id, metrics) == FLB_TRUE) {
             flb_error("[metrics] id=%i already exists for metric '%s'",
                       id, metrics->title);
+            flb_free(m->title);
             flb_free(m);
             return -1;
         }
@@ -189,10 +215,12 @@ int flb_metrics_destroy(struct flb_metrics *metrics)
     mk_list_foreach_safe(head, tmp, &metrics->list) {
         m = mk_list_entry(head, struct flb_metric, _head);
         mk_list_del(&m->_head);
+        flb_free(m->title);
         flb_free(m);
         count++;
     }
 
+    flb_free(metrics->title);
     flb_free(metrics);
     return count;
 }
