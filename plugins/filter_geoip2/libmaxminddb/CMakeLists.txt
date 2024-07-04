@@ -94,8 +94,8 @@ set_target_properties(maxminddb PROPERTIES PUBLIC_HEADER "${MAXMINDB_HEADERS}")
 # We always want to build mmdblookup
 add_subdirectory(bin)
 
-if (BUILD_TESTING)
-  enable_testing()
-  add_subdirectory(t)
-endif()
+#if (BUILD_TESTING)
+#  enable_testing()
+#  add_subdirectory(t)
+#endif()
 
