@@ -72,9 +72,9 @@ int extract_field_from_json(struct flb_output_instance *ins, const char *json_pa
     size_t consumed;
     msgpack_object root;
 
+
     /* Convert JSON to MsgPack */
     if (flb_pack_json(json_payload, payload_size, &msgpack_data, &msgpack_size, &root_type, &consumed) != 0) {
-        flb_plg_error(ins, "Failed to pack JSON to MsgPack");
         return -1;
     }
 
@@ -82,7 +82,6 @@ int extract_field_from_json(struct flb_output_instance *ins, const char *json_pa
     msgpack_unpacked result;
     msgpack_unpacked_init(&result);
     if (!msgpack_unpack_next(&result, msgpack_data, msgpack_size, NULL)) {
-        flb_plg_error(ins, "Failed to unpack MsgPack data");
         msgpack_unpacked_destroy(&result);
         flb_free(msgpack_data);
         return -1;
@@ -91,7 +90,6 @@ int extract_field_from_json(struct flb_output_instance *ins, const char *json_pa
     root = result.data;
 
     if (root.type != MSGPACK_OBJECT_MAP) {
-        flb_plg_error(ins, "Root object is not a map");
         msgpack_unpacked_destroy(&result);
         flb_free(msgpack_data);
         return -1;
@@ -104,7 +102,6 @@ int extract_field_from_json(struct flb_output_instance *ins, const char *json_pa
                 *field_value = strndup(kv[i].val.via.str.ptr, kv[i].val.via.str.size);
                 msgpack_unpacked_destroy(&result);
                 flb_free(msgpack_data);
-                flb_plg_info(ins, "Successfully extracted field '%s'", field_name);
                 return 0; /* Successfully extracted field */
             }
         }
@@ -112,22 +109,22 @@ int extract_field_from_json(struct flb_output_instance *ins, const char *json_pa
 
     msgpack_unpacked_destroy(&result);
     flb_free(msgpack_data);
-    flb_plg_error(ins, "Field '%s' not found in JSON payload", field_name);
     return -1; /* Field not found */
 }
 
-int setup_http_client(struct flb_http_client **client, struct flb_upstream_conn **u_conn, struct flb_config *config, struct flb_output_instance *ins, const char *uri, const char *auth_token, const char *method, const flb_sds_t payload)
+
+int setup_http_client(struct flb_http_client **client, struct flb_upstream **upstream, struct flb_upstream_conn **u_conn, struct flb_config *config, struct flb_output_instance *ins, const char *uri, const char *auth_token, const char *method, const flb_sds_t payload)
 {
-    struct flb_upstream *upstream = flb_upstream_create(config, FLB_SCALEWAY_HOST, FLB_SCALEWAY_PORT, FLB_IO_TLS, ins->tls);
-    if (!upstream) {
+    *upstream = flb_upstream_create(config, FLB_SCALEWAY_HOST, FLB_SCALEWAY_PORT, FLB_IO_TLS, ins->tls);
+    if (!*upstream) {
         flb_plg_error(ins, "Failed to create upstream");
         return -1;
     }
 
-    *u_conn = flb_upstream_conn_get(upstream);
+    *u_conn = flb_upstream_conn_get(*upstream);
     if (!*u_conn) {
         flb_plg_error(ins, "Failed to get upstream connection");
-        flb_upstream_destroy(upstream);
+        flb_upstream_destroy(*upstream);  // Libère la mémoire de l'upstream en cas d'erreur
         return -1;
     }
 
@@ -135,7 +132,7 @@ int setup_http_client(struct flb_http_client **client, struct flb_upstream_conn 
     if (!*client) {
         flb_plg_error(ins, "Failed to create HTTP client");
         flb_upstream_conn_release(*u_conn);
-        flb_upstream_destroy(upstream);
+        flb_upstream_destroy(*upstream);  // Libère la mémoire de l'upstream en cas d'erreur
         return -1;
     }
 
@@ -146,9 +143,10 @@ int setup_http_client(struct flb_http_client **client, struct flb_upstream_conn 
     return 0;
 }
 
+
 int create_data_source(struct flb_output_instance *ins, const char *uri, const char *auth_token, const char *project_id, const char *name, const char *type, char **created_id)
 {
-    flb_plg_info(ins, "Creating data source: name=%s, project_id=%s, type=%s", name, project_id, type);
+    flb_plg_info(ins, "Creating data source : name=%s, project_id=%s, type=%s", name, project_id, type);
     struct flb_config *config = flb_config_init();
     if (!config) {
         flb_plg_error(ins, "Failed to initialize Fluent Bit configuration");
@@ -175,10 +173,15 @@ int create_data_source(struct flb_output_instance *ins, const char *uri, const c
 
     struct flb_http_client *client = NULL;
     struct flb_upstream_conn *u_conn = NULL;
-    if (setup_http_client(&client, &u_conn, config, ins, uri, auth_token, "POST", json_payload) != 0) {
+    struct flb_upstream *upstream = NULL;
+
+    if (setup_http_client(&client, &upstream, &u_conn, config, ins, uri, auth_token, "POST", json_payload) != 0) {
         flb_plg_error(ins, "Failed to setup HTTP client for data source creation");
         flb_sds_destroy(json_payload);
         msgpack_sbuffer_destroy(&sbuf);
+        if (upstream) {
+            flb_upstream_destroy(upstream);
+        }
         flb_config_exit(config);
         return -1;
     }
@@ -192,6 +195,7 @@ int create_data_source(struct flb_output_instance *ins, const char *uri, const c
         flb_upstream_conn_release(u_conn);
         flb_sds_destroy(json_payload);
         msgpack_sbuffer_destroy(&sbuf);
+        flb_upstream_destroy(upstream);
         flb_config_exit(config);
         return -1;
     }
@@ -207,10 +211,12 @@ int create_data_source(struct flb_output_instance *ins, const char *uri, const c
     flb_upstream_conn_release(u_conn);
     flb_sds_destroy(json_payload);
     msgpack_sbuffer_destroy(&sbuf);
+    flb_upstream_destroy(upstream);
     flb_config_exit(config);
 
     return ret;
 }
+
 
 int fetch_data(struct flb_output_instance *ins, const char *base_url, const char *data_source_id, const char *auth_token, char **extracted_url)
 {
@@ -231,8 +237,9 @@ int fetch_data(struct flb_output_instance *ins, const char *base_url, const char
 
     struct flb_http_client *client = NULL;
     struct flb_upstream_conn *u_conn = NULL;
+    struct flb_upstream *upstream = NULL;
 
-    if (setup_http_client(&client, &u_conn, config, ins, full_url, auth_token, "GET", NULL) != 0) {
+    if (setup_http_client(&client, &upstream, &u_conn, config, ins, full_url, auth_token, "GET", NULL) != 0) {
         flb_plg_error(ins, "Failed to setup HTTP client for data fetch");
         free(full_url);
         flb_config_exit(config);
@@ -260,6 +267,7 @@ int fetch_data(struct flb_output_instance *ins, const char *base_url, const char
     /* Cleanup */
     flb_http_client_destroy(client);
     flb_upstream_conn_release(u_conn);
+    flb_upstream_destroy(upstream);
     free(full_url);
     flb_config_exit(config);
 
@@ -283,7 +291,7 @@ int create_push_url(struct flb_output_instance *ins, const char *url, char **pus
     needed_size = strlen(modified_url) + 1;  /* +1 for null-terminator */
 
     /* Allocate memory for push_url */
-    *push_url = malloc(needed_size);
+    *push_url = flb_malloc(needed_size);
     if (*push_url == NULL) {
         flb_plg_error(ins, "Failed to allocate memory for push_url");
         return -1;
@@ -293,7 +301,6 @@ int create_push_url(struct flb_output_instance *ins, const char *url, char **pus
     snprintf(*push_url, needed_size, "%s", modified_url);
 
     flb_plg_info(ins, "Push URL created successfully: %s", *push_url);
-    free(*push_url);
     return 0;
 }
 
@@ -1223,14 +1230,12 @@ static void loki_config_destroy(struct flb_scaleway *ctx)
     if (ctx->remove_mpa) {
         flb_mp_accessor_destroy(ctx->remove_mpa);
     }
-    flb_slist_destroy(&ctx->remove_keys_derived);
-
-    flb_scaleway_kv_exit(ctx);
 
     if (ctx->project_id) {
-        free(ctx->project_id);
+        flb_free(ctx->project_id);
     }
-
+    flb_slist_destroy(&ctx->remove_keys_derived);
+    flb_scaleway_kv_exit(ctx);
     flb_free(ctx);
 }
 
@@ -1264,17 +1269,10 @@ static struct flb_scaleway *loki_config_create(struct flb_output_instance *ins,
 
      /* Initialize project_id */
         project_id = flb_output_get_property("project_id", ins);
-        if (project_id) {
-            ctx->project_id = project_id;
-            if (!ctx->project_id) {
-                        flb_plg_error(ins, "Failed to duplicate project_id");
-                        flb_free(ctx);
-                        return NULL;
-                    }
-        } else {
-            flb_plg_error(ins, "Project ID is not set");
-            flb_free(ctx);
-            return NULL;
+        if (!project_id) {
+              flb_plg_error(ins, "Failed to alloc project_id");
+              flb_free(ctx);
+              return NULL;
         }
 
         flb_plg_info(ins, "Project ID set to: %s", ctx->project_id);
@@ -1286,23 +1284,25 @@ static struct flb_scaleway *loki_config_create(struct flb_output_instance *ins,
 
        if (ins->host.name == NULL || strlen(ins->host.name) == 0) {
            // Call setup_data_source to get the log URL
-           char **push_url = malloc(sizeof(char*));
+           char **push_url = flb_malloc(sizeof(char*));
              if (!push_url) {
                  flb_plg_error(ctx->ins, "Failed to allocate memory for push_url");
                  return NULL;
              }
 
             *push_url = NULL;
-           ret = setup_data_source(ins, FLB_SCALEWAY_CREATE_URI, ctx->project_id, "logs", push_url, create_data_source, fetch_and_create_push_url);
+           ret = setup_data_source(ins, FLB_SCALEWAY_CREATE_URI, project_id, "logs", push_url, create_data_source, fetch_and_create_push_url);
            if (ret == 0 && push_url) {
-               ins->host.name = strdup(*push_url);
+               ins->host.name = flb_sds_create(*push_url);
                flb_plg_info(ins, "Log URL set to: %s", ins->host.name);
            } else {
                flb_plg_error(ctx->ins, "Failed to set up data source and obtain logs URL");
-               free(push_url);
+               flb_free(*push_url);
+               flb_free(push_url);
                return NULL;
            }
-           free(push_url);
+           flb_free(*push_url);
+           flb_free(push_url);
         }
 
     /* Set networking defaults */
@@ -1403,7 +1403,6 @@ static struct flb_scaleway *loki_config_create(struct flb_output_instance *ins,
     flb_output_upstream_set(ctx->u, ins);
     ctx->tcp_port = ins->host.port;
     ctx->tcp_host = ins->host.name;
-
     flb_plg_info(ins, "Upstream connection context created successfully: %s:%d", ctx->tcp_host, ctx->tcp_port);
 
     return ctx;
