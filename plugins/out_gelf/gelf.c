@@ -252,12 +252,10 @@ static int inject_tag(msgpack_object *map,
         msgpack_pack_object(&pck, map->via.map.ptr[i].val);
     }
 
-    for (i = 0; i < 1; i++){
-        msgpack_pack_str(&pck, strlen(ctx->tag_key));
-        msgpack_pack_str_body(&pck, ctx->tag_key, strlen(ctx->tag_key));
-        msgpack_pack_str(&pck, flb_sds_len(event_chunk->tag));
-        msgpack_pack_str_body(&pck, event_chunk->tag, flb_sds_len(event_chunk->tag));
-    }
+    msgpack_pack_str(&pck, strlen(ctx->tag_key));
+    msgpack_pack_str_body(&pck, ctx->tag_key, strlen(ctx->tag_key));
+    msgpack_pack_str(&pck, flb_sds_len(event_chunk->tag));
+    msgpack_pack_str_body(&pck, event_chunk->tag, flb_sds_len(event_chunk->tag));
 
     *out_buf = sbuf.data;
     *out_size = sbuf.size;
