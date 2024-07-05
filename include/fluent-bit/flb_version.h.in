@@ -2,7 +2,7 @@
 
 /*  Fluent Bit
  *  ==========
- *  Copyright (C) 2015-2023 The Fluent Bit Authors
+ *  Copyright (C) 2015-2024 The Fluent Bit Authors
  *
  *  Licensed under the Apache License, Version 2.0 (the "License");
  *  you may not use this file except in compliance with the License.
@@ -21,6 +21,7 @@
 #define FLB_VERSION_H
 
 #include <fluent-bit/flb_info.h>
+#include <fluent-bit/flb_motd.h>
 #include <monkey/mk_core.h>
 
 #include <stdio.h>
@@ -80,11 +81,16 @@ static inline void flb_version_banner()
     fprintf(stderr,
             "%sFluent Bit v%s%s\n", bold_color, FLB_VERSION_STR, reset_color);
 #endif
-    fprintf(stderr, "* %sCopyright (C) 2015-2023 The Fluent Bit Authors%s\n",
+    fprintf(stderr, "* %sCopyright (C) 2015-2024 The Fluent Bit Authors%s\n",
             copyright_color, reset_color);
     fprintf(stderr, "* Fluent Bit is a CNCF sub-project under the "
             "umbrella of Fluentd\n");
     fprintf(stderr, "* https://fluentbit.io\n\n");
+
+#ifdef FLB_MOTD_H
+    fprintf(stderr, "%s", flb_motd_text);
+#endif
+
 }
 
 #endif

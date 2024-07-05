@@ -30,6 +30,8 @@
 
 #define FLB_IN_KAFKA_DEFAULT_POLL_MS       "500"
 #define FLB_IN_KAFKA_DEFAULT_FORMAT        "none"
+#define FLB_IN_KAFKA_UNLIMITED             (size_t)-1
+#define FLB_IN_KAFKA_BUFFER_MAX_SIZE       "4M"
 
 enum {
     FLB_IN_KAFKA_FORMAT_NONE,
@@ -43,6 +45,9 @@ struct flb_in_kafka_config {
     int poll_ms;
     int format;
     char *format_str;
+    int coll_fd;
+    size_t buffer_max_size;          /* Maximum size of chunk allocation */
+    size_t polling_threshold;
 };
 
 #endif

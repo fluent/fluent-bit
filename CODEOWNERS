@@ -16,7 +16,7 @@
 /CMakeLists.txt          @fujimotos @niedbalski @patrick-stephens @celalettin1286
 /cmake/                  @fujimotos @niedbalski @patrick-stephens @celalettin1286
 
-# CI 
+# CI
 # -------------------------
 /.github/                @niedbalski @patrick-stephens @celalettin1286
 /appveyor.yml            @niedbalski @patrick-stephens @celalettin1286
@@ -65,7 +65,7 @@
 /plugins/out_pgsql       @sxd
 /plugins/out_stackdriver @braydonk @igorpeshansky @qingling128
 
-# AWS Plugins 
+# AWS Plugins
 /plugins/out_s3               @pettitwesley
 /plugins/out_cloudwatch_logs  @pettitwesley
 /plugins/out_kinesis_firehose @pettitwesley
@@ -86,6 +86,7 @@
 # Google test code
 # --------------
 /tests/runtime/out_stackdriver.c @braydonk @igorpeshansky @qingling128
+/tests/runtime/data/stackdriver  @braydonk @igorpeshansky @qingling128
 
 # Devcontainer
 /.devcontainer                  @patrick-stephens @niedbalski @edsiper

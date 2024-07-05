@@ -2,7 +2,7 @@
 
 /*  Fluent Bit
  *  ==========
- *  Copyright (C) 2015-2022 The Fluent Bit Authors
+ *  Copyright (C) 2015-2024 The Fluent Bit Authors
  *
  *  Licensed under the Apache License, Version 2.0 (the "License");
  *  you may not use this file except in compliance with the License.
@@ -43,6 +43,7 @@
 #include "ne_systemd.h"
 #include "ne_processes.h"
 #include "ne_nvme.h"
+#include "ne_thermalzone.h"
 
 /*
  * Update the metrics, this function is invoked every time 'scrape_interval'
@@ -155,6 +156,10 @@ static int activate_collector(struct flb_ne *ctx, struct flb_config *config,
     }
     coll->activated = FLB_TRUE;
 
+    if (coll->cb_update) {
+        coll->cb_update(ctx->ins, config, ctx);
+    }
+
     return 0;
 }
 
@@ -192,6 +197,7 @@ static int in_ne_init(struct flb_input_instance *in,
     mk_list_add(&systemd_collector._head, &ctx->collectors);
     mk_list_add(&processes_collector._head, &ctx->collectors);
     mk_list_add(&nvme_collector._head, &ctx->collectors);
+    mk_list_add(&thermalzone_collector._head, &ctx->collectors);
 
     mk_list_foreach(head, &ctx->collectors) {
         coll = mk_list_entry(head, struct flb_ne_collector, _head);
@@ -203,18 +209,6 @@ static int in_ne_init(struct flb_input_instance *in,
 
     /* Associate context with the instance */
     flb_input_set_context(in, ctx);
-
-    /* Create the collector */
-    ret = flb_input_set_collector_time(in,
-                                       cb_ne_collect,
-                                       ctx->scrape_interval, 0,
-                                       config);
-    if (ret == -1) {
-        flb_plg_error(ctx->ins,
-                      "could not set collector for Node Exporter Metrics plugin");
-        return -1;
-    }
-    ctx->coll_fd = ret;
 
     /* Check and initialize enabled metrics */
     if (ctx->metrics) {
@@ -244,6 +238,18 @@ static int in_ne_init(struct flb_input_instance *in,
 
         return -1;
     }
+
+    /* Create the collector */
+    ret = flb_input_set_collector_time(in,
+                                       cb_ne_collect,
+                                       ctx->scrape_interval, 0,
+                                       config);
+    if (ret == -1) {
+        flb_plg_error(ctx->ins,
+                      "could not set collector for Node Exporter Metrics plugin");
+        return -1;
+    }
+    ctx->coll_fd = ret;
 
     return 0;
 }
@@ -401,6 +407,11 @@ static struct flb_config_map config_map[] = {
      FLB_CONFIG_MAP_TIME, "collector.processes.scrape_interval", "0",
      0, FLB_FALSE, 0,
      "scrape interval to collect processes metrics from the node."
+    },
+    {
+     FLB_CONFIG_MAP_TIME, "collector.thermalzone.scrape_interval", "0",
+     0, FLB_FALSE, 0,
+     "scrape interval to collect thermal zone metrics from the node."
     },
 
     {

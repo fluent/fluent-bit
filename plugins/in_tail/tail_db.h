@@ -2,7 +2,7 @@
 
 /*  Fluent Bit
  *  ==========
- *  Copyright (C) 2015-2022 The Fluent Bit Authors
+ *  Copyright (C) 2015-2024 The Fluent Bit Authors
  *
  *  Licensed under the Apache License, Version 2.0 (the "License");
  *  you may not use this file except in compliance with the License.
@@ -40,4 +40,7 @@ int flb_tail_db_file_rotate(const char *new_name,
                             struct flb_tail_config *ctx);
 int flb_tail_db_file_delete(struct flb_tail_file *file,
                             struct flb_tail_config *ctx);
+int flb_tail_db_stale_file_delete(struct flb_input_instance *ins,
+                                  struct flb_config *config,
+                                  struct flb_tail_config *ctx);
 #endif

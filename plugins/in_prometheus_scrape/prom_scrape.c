@@ -2,7 +2,7 @@
 
 /*  Fluent Bit
  *  ==========
- *  Copyright (C) 2015-2022 The Fluent Bit Authors
+ *  Copyright (C) 2015-2024 The Fluent Bit Authors
  *
  *  Licensed under the Apache License, Version 2.0 (the "License");
  *  you may not use this file except in compliance with the License.
@@ -106,6 +106,9 @@ static int collect_metrics(struct prom_scrape *ctx)
     } else if (ctx->bearer_token) { /* Bearer token */
         flb_http_bearer_auth(c, ctx->bearer_token);
     }
+
+    /* Add User-Agent */
+    flb_http_add_header(c, "User-Agent", 10, "Fluent-Bit", 10);
 
     ret = flb_http_do(c, &b_sent);
     if (ret != 0) {

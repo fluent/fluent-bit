@@ -2,7 +2,7 @@
 
 /*  Fluent Bit
  *  ==========
- *  Copyright (C) 2015-2023 The Fluent Bit Authors
+ *  Copyright (C) 2015-2024 The Fluent Bit Authors
  *
  *  Licensed under the Apache License, Version 2.0 (the "License");
  *  you may not use this file except in compliance with the License.
@@ -275,6 +275,12 @@ static int build_headers(struct flb_http_client *c, struct flb_oci_logan *ctx,
 
     if (ret != FLB_CRYPTO_SUCCESS) {
         flb_plg_error(ctx->ins, "error forming hash buffer for x-content-sha256 Header");
+        goto error_label;
+    }
+
+    tmp_sds = flb_sds_create_size(512);
+    if (!tmp_sds) {
+        flb_errno();
         goto error_label;
     }
 

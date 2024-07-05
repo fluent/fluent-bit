@@ -2,7 +2,7 @@
 
 /*  Fluent Bit
  *  ==========
- *  Copyright (C) 2015-2022 The Fluent Bit Authors
+ *  Copyright (C) 2015-2024 The Fluent Bit Authors
  *
  *  Licensed under the Apache License, Version 2.0 (the "License");
  *  you may not use this file except in compliance with the License.
@@ -306,6 +306,11 @@ const char *flb_log_event_encoder_get_error_description(int error_code);
                         context, \
                         __VA_ARGS__, \
                         FLB_LOG_EVENT_VALUE_LIST_TERMINATOR());
+
+/* Groups handling */
+int flb_log_event_encoder_group_init(struct flb_log_event_encoder *context);
+int flb_log_event_encoder_group_header_end(struct flb_log_event_encoder *context);
+int flb_log_event_encoder_group_end(struct flb_log_event_encoder *context);
 
 #include <fluent-bit/flb_log_event_encoder_primitives.h>
 #include <fluent-bit/flb_log_event_encoder_root_macros.h>

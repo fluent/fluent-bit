@@ -2,7 +2,7 @@
 
 /*  Fluent Bit
  *  ==========
- *  Copyright (C) 2015-2022 The Fluent Bit Authors
+ *  Copyright (C) 2015-2024 The Fluent Bit Authors
  *
  *  Licensed under the Apache License, Version 2.0 (the "License");
  *  you may not use this file except in compliance with the License.
@@ -531,6 +531,22 @@ int flb_storage_input_create(struct cio_ctx *cio,
                       in->name);
             return -1;
         }
+    }
+    else if (stream->type != cio_storage_type) {
+        flb_debug("[storage] storage type mismatch. input type=%s",
+                  flb_storage_get_type(in->storage_type));
+        if (stream->type == FLB_STORAGE_FS) {
+            flb_warn("[storage] Need to remove '%s/%s' if it is empty", cio->options.root_path, in->name);
+        }
+
+        cio_stream_destroy(stream);
+        stream = cio_stream_create(cio, in->name, cio_storage_type);
+        if (!stream) {
+            flb_error("[storage] cannot create stream for instance %s",
+                      in->name);
+            return -1;
+        }
+        flb_info("[storage] re-create stream type=%s", flb_storage_get_type(in->storage_type));
     }
 
     /* allocate storage context for the input instance */

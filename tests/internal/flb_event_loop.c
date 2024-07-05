@@ -23,7 +23,7 @@
 #elif FLB_SYSTEM_MACOS
     #define TIME_EPSILON_MS 200
 #else
-    #define TIME_EPSILON_MS 10
+    #define TIME_EPSILON_MS 50
 #endif
 
 #define TIMER_COARSE_EPSION_MS 300

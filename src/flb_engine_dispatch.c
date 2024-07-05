@@ -2,7 +2,7 @@
 
 /*  Fluent Bit
  *  ==========
- *  Copyright (C) 2015-2022 The Fluent Bit Authors
+ *  Copyright (C) 2015-2024 The Fluent Bit Authors
  *
  *  Licensed under the Apache License, Version 2.0 (the "License");
  *  you may not use this file except in compliance with the License.
@@ -29,6 +29,7 @@
 #include <fluent-bit/flb_engine.h>
 #include <fluent-bit/flb_task.h>
 #include <fluent-bit/flb_event.h>
+#include <chunkio/chunkio.h>
 
 
 /* It creates a new output thread using a 'Retry' context */
@@ -270,6 +271,14 @@ int flb_engine_dispatch(uint64_t id, struct flb_input_instance *in,
             continue;
         }
 
+        if (flb_task_map_get_task_id(config) == -1) {
+            /*
+             * There isn't a task available, no more chunks can have a task
+             * assigned.
+             */
+            break;
+        }
+
         /* There is a match, get the buffer */
         buf_data = flb_input_chunk_flush(ic, &buf_size);
         if (buf_size == 0) {
@@ -312,6 +321,12 @@ int flb_engine_dispatch(uint64_t id, struct flb_input_instance *in,
              */
             if (t_err == FLB_TRUE) {
                 flb_input_chunk_release_lock(ic);
+
+                /*
+                 * If the Storage type is 'filesystem' we need to put
+                 * the file content down.
+                 */
+                flb_input_chunk_down(ic);
             }
             continue;
         }

@@ -136,7 +136,7 @@ static struct cmt_metric *map_metric_create(uint64_t hash,
     return NULL;
 }
 
-static void map_metric_destroy(struct cmt_metric *metric)
+void cmt_map_metric_destroy(struct cmt_metric *metric)
 {
     struct cfl_list *tmp;
     struct cfl_list *head;
@@ -270,7 +270,7 @@ void cmt_map_destroy(struct cmt_map *map)
 
     cfl_list_foreach_safe(head, tmp, &map->metrics) {
         metric = cfl_list_entry(head, struct cmt_metric, _head);
-        map_metric_destroy(metric);
+        cmt_map_metric_destroy(metric);
     }
 
     /* histogram and quantile allocation for static metric */

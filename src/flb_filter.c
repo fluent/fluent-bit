@@ -2,7 +2,7 @@
 
 /*  Fluent Bit
  *  ==========
- *  Copyright (C) 2015-2022 The Fluent Bit Authors
+ *  Copyright (C) 2015-2024 The Fluent Bit Authors
  *
  *  Licensed under the Apache License, Version 2.0 (the "License");
  *  you may not use this file except in compliance with the License.
@@ -123,11 +123,11 @@ void flb_filter_do(struct flb_input_chunk *ic,
 #ifdef FLB_HAVE_METRICS
     /* timestamp */
     ts = cfl_time_now();
+#endif
 
     /* Count number of incoming records */
     in_records = ic->added_records;
     pre_records = ic->total_records - in_records;
-#endif
 
     /* Iterate filters */
     mk_list_foreach(head, &config->filters) {
@@ -201,10 +201,9 @@ void flb_filter_do(struct flb_input_chunk *ic,
                     }
 #endif /* FLB_HAVE_CHUNK_TRACE */
 
-
-#ifdef FLB_HAVE_METRICS
                     ic->total_records = pre_records;
 
+#ifdef FLB_HAVE_METRICS
                     /* cmetrics */
                     cmt_counter_add(f_ins->cmt_drop_records, ts, in_records,
                                     1, (char *[]) {name});
@@ -216,8 +215,9 @@ void flb_filter_do(struct flb_input_chunk *ic,
                     break;
                 }
                 else {
-#ifdef FLB_HAVE_METRICS
                     out_records = flb_mp_count(out_buf, out_size);
+
+#ifdef FLB_HAVE_METRICS
                     if (out_records > in_records) {
                         diff = (out_records - in_records);
 
@@ -240,11 +240,11 @@ void flb_filter_do(struct flb_input_chunk *ic,
                         flb_metrics_sum(FLB_METRIC_N_DROPPED,
                                         diff, f_ins->metrics);
                     }
+#endif
 
                     /* set number of records in new chunk */
                     in_records = out_records;
                     ic->total_records = pre_records + in_records;
-#endif
                 }
 
 #ifdef FLB_HAVE_CHUNK_TRACE

@@ -2,7 +2,7 @@
 
 /*  Fluent Bit
  *  ==========
- *  Copyright (C) 2015-2022 The Fluent Bit Authors
+ *  Copyright (C) 2015-2024 The Fluent Bit Authors
  *
  *  Licensed under the Apache License, Version 2.0 (the "License");
  *  you may not use this file except in compliance with the License.
@@ -24,6 +24,7 @@
 
 #include "splunk.h"
 #include "splunk_conn.h"
+#include "splunk_prot.h"
 #include "splunk_config.h"
 
 /*
@@ -92,39 +93,82 @@ static int in_splunk_init(struct flb_input_instance *ins,
 
     port = (unsigned short int) strtoul(ctx->tcp_port, NULL, 10);
 
-    ctx->downstream = flb_downstream_create(FLB_TRANSPORT_TCP,
-                                            ins->flags,
-                                            ctx->listen,
-                                            port,
-                                            ins->tls,
-                                            config,
-                                            &ins->net_setup);
 
-    if (ctx->downstream == NULL) {
-        flb_plg_error(ctx->ins,
-                      "could not initialize downstream on %s:%s. Aborting",
-                      ctx->listen, ctx->tcp_port);
+    if (ctx->enable_http2) {
+        ret = flb_http_server_init(&ctx->http_server, 
+                                    HTTP_PROTOCOL_AUTODETECT,
+                                    (FLB_HTTP_SERVER_FLAG_KEEPALIVE | FLB_HTTP_SERVER_FLAG_AUTO_INFLATE),
+                                    NULL,
+                                    ins->host.listen,
+                                    ins->host.port,
+                                    ins->tls,
+                                    ins->flags,
+                                    &ins->net_setup,
+                                    flb_input_event_loop_get(ins),
+                                    ins->config,
+                                    (void *) ctx);
 
-        splunk_config_destroy(ctx);
+        if (ret != 0) {
+            flb_plg_error(ctx->ins,
+                          "could not initialize http server on %s:%u. Aborting",
+                          ins->host.listen, ins->host.port);
 
-        return -1;
+            splunk_config_destroy(ctx);
+
+            return -1;
+        }
+
+        ret = flb_http_server_start(&ctx->http_server);
+
+        if (ret != 0) {
+            flb_plg_error(ctx->ins,
+                          "could not start http server on %s:%u. Aborting",
+                          ins->host.listen, ins->host.port);
+
+            splunk_config_destroy(ctx);
+
+            return -1;
+        }
+
+        ctx->http_server.request_callback = splunk_prot_handle_ng;
+
+        flb_input_downstream_set(ctx->http_server.downstream, ctx->ins);
     }
+    else {
+        ctx->downstream = flb_downstream_create(FLB_TRANSPORT_TCP,
+                                                ins->flags,
+                                                ctx->listen,
+                                                port,
+                                                ins->tls,
+                                                config,
+                                                &ins->net_setup);
 
-    flb_input_downstream_set(ctx->downstream, ctx->ins);
+        if (ctx->downstream == NULL) {
+            flb_plg_error(ctx->ins,
+                        "could not initialize downstream on %s:%s. Aborting",
+                        ctx->listen, ctx->tcp_port);
 
-    /* Collect upon data available on the standard input */
-    ret = flb_input_set_collector_socket(ins,
-                                         in_splunk_collect,
-                                         ctx->downstream->server_fd,
-                                         config);
-    if (ret == -1) {
-        flb_plg_error(ctx->ins, "Could not set collector for IN_TCP input plugin");
-        splunk_config_destroy(ctx);
+            splunk_config_destroy(ctx);
 
-        return -1;
+            return -1;
+        }
+
+        flb_input_downstream_set(ctx->downstream, ctx->ins);
+
+        /* Collect upon data available on the standard input */
+        ret = flb_input_set_collector_socket(ins,
+                                            in_splunk_collect,
+                                            ctx->downstream->server_fd,
+                                            config);
+        if (ret == -1) {
+            flb_plg_error(ctx->ins, "Could not set collector for IN_TCP input plugin");
+            splunk_config_destroy(ctx);
+
+            return -1;
+        }
+
+        ctx->collector_id = ret;
     }
-
-    ctx->collector_id = ret;
 
     return 0;
 }
@@ -163,6 +207,12 @@ static void in_splunk_resume(void *data, struct flb_config *config)
 /* Configuration properties map */
 static struct flb_config_map config_map[] = {
     {
+     FLB_CONFIG_MAP_BOOL, "http2", "true",
+     0, FLB_TRUE, offsetof(struct flb_splunk, enable_http2),
+     NULL
+    },
+
+    {
      FLB_CONFIG_MAP_SIZE, "buffer_max_size", HTTP_BUFFER_MAX_SIZE,
      0, FLB_TRUE, offsetof(struct flb_splunk, buffer_max_size),
      ""
@@ -184,6 +234,18 @@ static struct flb_config_map config_map[] = {
      FLB_CONFIG_MAP_STR, "splunk_token", NULL,
      0, FLB_FALSE, 0,
      "Set valid Splunk HEC tokens for the requests"
+    },
+
+    {
+     FLB_CONFIG_MAP_BOOL, "store_token_in_metadata", "true",
+     0, FLB_TRUE, offsetof(struct flb_splunk, store_token_in_metadata),
+     "Store Splunk HEC tokens in matadata. If set as false, they will be stored into records."
+    },
+
+    {
+     FLB_CONFIG_MAP_STR, "splunk_token_key", "@splunk_token",
+     0, FLB_TRUE, offsetof(struct flb_splunk, store_token_key),
+     "Set a record key for storing Splunk HEC token for the request"
     },
 
     {

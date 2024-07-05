@@ -2,7 +2,7 @@
 
 /*  Fluent Bit
  *  ==========
- *  Copyright (C) 2015-2022 The Fluent Bit Authors
+ *  Copyright (C) 2015-2024 The Fluent Bit Authors
  *
  *  Licensed under the Apache License, Version 2.0 (the "License");
  *  you may not use this file except in compliance with the License.
@@ -405,11 +405,10 @@ static int cb_init(struct flb_processor_instance *processor_instance,
 }
 
 
-static int cb_exit(struct flb_processor_instance *processor_instance)
+static int cb_exit(struct flb_processor_instance *processor_instance, void *data)
 {
-    if (processor_instance != NULL &&
-        processor_instance->context != NULL) {
-        destroy_context(processor_instance->context);
+    if (processor_instance != NULL && data != NULL) {
+        destroy_context(data);
     }
 
     return FLB_PROCESSOR_SUCCESS;
@@ -1525,26 +1524,27 @@ static int insert_labels(struct cmt *metrics_context,
                                                         pair->key);
 
         if (result == FLB_TRUE) {
-            result = metrics_context_insert_dynamic_label(metrics_context,
-                                                          pair->key,
-                                                          pair->val);
+            continue;
+        }
+
+        result = metrics_context_insert_dynamic_label(metrics_context,
+                                                      pair->key,
+                                                      pair->val);
+
+        if (result == FLB_FALSE) {
+            return FLB_FALSE;
+        }
+
+        result = metrics_context_contains_static_label(metrics_context,
+                                                       pair->key);
+
+        if (result == FLB_TRUE) {
+            result = metrics_context_insert_static_label(metrics_context,
+                                                         pair->key,
+                                                         pair->val);
 
             if (result == FLB_FALSE) {
                 return FLB_FALSE;
-            }
-        }
-        else {
-            result = metrics_context_contains_static_label(metrics_context,
-                                                           pair->key);
-
-            if (result == FLB_FALSE) {
-                result = metrics_context_insert_static_label(metrics_context,
-                                                             pair->key,
-                                                             pair->val);
-
-                if (result == FLB_FALSE) {
-                    return FLB_FALSE;
-                }
             }
         }
     }
@@ -1696,14 +1696,22 @@ static int hash_labels(struct cmt *metrics_context,
 
 static int cb_process_metrics(struct flb_processor_instance *processor_instance,
                               struct cmt *metrics_context,
+                              struct cmt **out_context,
                               const char *tag,
                               int tag_len)
 {
+    struct cmt                        *out_cmt;
     struct internal_processor_context *processor_context;
     int                                result;
 
     processor_context =
         (struct internal_processor_context *) processor_instance->context;
+
+    out_cmt = cmt_create();
+    if (out_cmt == NULL) {
+        flb_plg_error(processor_instance, "could not create out_cmt context");
+        return FLB_PROCESSOR_FAILURE;
+    }
 
     result = delete_labels(metrics_context,
                            &processor_context->delete_labels);
@@ -1726,6 +1734,17 @@ static int cb_process_metrics(struct flb_processor_instance *processor_instance,
     if (result == FLB_PROCESSOR_SUCCESS) {
         result = hash_labels(metrics_context,
                              &processor_context->hash_labels);
+    }
+
+    if (result == FLB_PROCESSOR_SUCCESS) {
+        result = cmt_cat(out_cmt, metrics_context);
+        if (result != 0) {
+            cmt_destroy(out_cmt);
+
+            return FLB_PROCESSOR_FAILURE;
+        }
+
+        *out_context = out_cmt;
     }
 
     if (result != FLB_PROCESSOR_SUCCESS) {

@@ -21,6 +21,7 @@
 #include <string.h>
 #include <cfl/cfl.h>
 #include <cfl/cfl_variant.h>
+#include <cfl/cfl_compat.h>
 
 #include "cfl_tests_internal.h"
 
@@ -44,6 +45,7 @@ static int compare(FILE *fp, char *expect, int ignore_len)
             return -1;
         }
     }
+
     if (ignore_len) {
         if (!TEST_CHECK(strstr(&buf[0], expect) != NULL)) {
             TEST_MSG("compare error. got=%s expect=%s", &buf[0], expect);
@@ -105,6 +107,43 @@ static void test_variant_print_bool()
     }
 }
 
+static void test_variant_print_null()
+{
+    int ret;
+    char expects[] = "null";
+
+    FILE *fp = NULL;
+    struct cfl_variant *val = NULL;
+
+    fp = tmpfile();
+    if (!TEST_CHECK(fp != NULL)) {
+        TEST_MSG("fp is NULL");
+    }
+
+    val = cfl_variant_create_from_null();
+    if (!TEST_CHECK(val != NULL)) {
+        TEST_MSG("cfl_variant_create_from_null failed");
+        fclose(fp);
+    }
+
+    ret = cfl_variant_print(fp, val);
+
+    /* Check whether EOF or not. Not checking for positive
+     * number here. */
+    if (!TEST_CHECK(ret != EOF)) {
+        TEST_MSG("cfl_variant_print failed");
+        cfl_variant_destroy(val);
+        fclose(fp);
+    }
+
+    ret = compare(fp, expects, 0);
+    if (!TEST_CHECK(ret == 0)) {
+        TEST_MSG("compare failed");
+    }
+    cfl_variant_destroy(val);
+    fclose(fp);
+}
+
 static void test_variant_print_int64()
 {
     int ret;
@@ -124,6 +163,45 @@ static void test_variant_print_int64()
         val = cfl_variant_create_from_int64(inputs[i]);
         if (!TEST_CHECK(val != NULL)) {
             TEST_MSG("%d: cfl_variant_create_from_int64 failed", i);
+            fclose(fp);
+            continue;
+        }
+
+        ret = cfl_variant_print(fp, val);
+        if (!TEST_CHECK(ret > 0)) {
+            TEST_MSG("%d:cfl_variant_print failed", i);
+            cfl_variant_destroy(val);
+            fclose(fp);
+            continue;
+        }
+        ret = compare(fp, expects[i], 0);
+        if (!TEST_CHECK(ret == 0)) {
+            TEST_MSG("%d:compare failed", i);
+        }
+        cfl_variant_destroy(val);
+        fclose(fp);
+    }
+}
+
+static void test_variant_print_uint64()
+{
+    int ret;
+    int i;
+    uint64_t inputs[] = {1, 0, 18446744073709551615ULL};
+    char *expects[] = {"1", "0", "18446744073709551615" /*UINT64_MAX*/};
+
+    FILE *fp = NULL;
+    struct cfl_variant *val = NULL;
+
+    for (i=0; i<sizeof(inputs)/sizeof(uint64_t); i++) {
+        fp = tmpfile();
+        if (!TEST_CHECK(fp != NULL)) {
+            TEST_MSG("%d: fp is NULL", i);
+            continue;
+        }
+        val = cfl_variant_create_from_uint64(inputs[i]);
+        if (!TEST_CHECK(val != NULL)) {
+            TEST_MSG("%d: cfl_variant_create_from_uint64 failed", i);
             fclose(fp);
             continue;
         }
@@ -215,7 +293,7 @@ static void test_variant_print_kvlist()
     struct cfl_variant *val = NULL;
 
     if (!TEST_CHECK(sizeof(key_inputs)/sizeof(char*) == sizeof(val_inputs)/sizeof(int64_t))) {
-        TEST_MSG("key val array size mismatch. key_len=%d val_len=%d", 
+        TEST_MSG("key val array size mismatch. key_len=%d val_len=%d",
                  sizeof(key_inputs)/sizeof(char*),
                  sizeof(val_inputs)/sizeof(int64_t));
         exit(1);
@@ -345,6 +423,55 @@ static void test_variant_print_string()
     }
 }
 
+struct str_and_len {
+    char *str;
+    size_t str_size;
+};
+
+static void test_variant_print_string_s()
+{
+    int ret;
+    int i;
+    struct str_and_len inputs[] = {
+        {.str = "hoge", .str_size = 4},
+        {.str = "aaa", .str_size = 3},
+    };
+
+    char *expects[] = {"\"hoge\"", "\"aaa\""};
+
+    FILE *fp = NULL;
+    struct cfl_variant *val = NULL;
+
+    for (i=0; i<sizeof(inputs)/sizeof(struct str_and_len); i++) {
+        fp = tmpfile();
+        if (!TEST_CHECK(fp != NULL)) {
+            TEST_MSG("%d: fp is NULL", i);
+            continue;
+        }
+
+        val = cfl_variant_create_from_string_s(inputs[i].str, inputs[i].str_size, CFL_TRUE);
+        if (!TEST_CHECK(val != NULL)) {
+            TEST_MSG("%d: cfl_variant_create_from_string failed", i);
+            fclose(fp);
+            continue;
+        }
+
+        ret = cfl_variant_print(fp, val);
+        if (!TEST_CHECK(ret > 0)) {
+            TEST_MSG("%d:cfl_variant_print failed", i);
+            cfl_variant_destroy(val);
+            fclose(fp);
+            continue;
+        }
+        ret = compare(fp, expects[i], 0);
+        if (!TEST_CHECK(ret == 0)) {
+            TEST_MSG("%d:compare failed", i);
+        }
+        cfl_variant_destroy(val);
+        fclose(fp);
+    }
+}
+
 static void test_variant_print_bytes()
 {
     int ret;
@@ -360,7 +487,7 @@ static void test_variant_print_bytes()
         exit(1);
     }
 
-    val = cfl_variant_create_from_bytes(input, 4);
+    val = cfl_variant_create_from_bytes(input, 4, CFL_FALSE);
     if (!TEST_CHECK(val != NULL)) {
         TEST_MSG("cfl_variant_create_from_bytes failed");
         fclose(fp);
@@ -458,9 +585,12 @@ static void test_variant_print_unknown()
 
 TEST_LIST = {
     {"variant_print_bool", test_variant_print_bool},
+    {"variant_print_null", test_variant_print_null},
     {"variant_print_int64", test_variant_print_int64},
+    {"variant_print_uint64", test_variant_print_uint64},
     {"variant_print_double", test_variant_print_double},
     {"variant_print_string", test_variant_print_string},
+    {"variant_print_string_s", test_variant_print_string_s},
     {"variant_print_bytes", test_variant_print_bytes},
     {"variant_print_array", test_variant_print_array},
     {"variant_print_kvlist", test_variant_print_kvlist},

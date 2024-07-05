@@ -2,7 +2,7 @@
 
 /*  Fluent Bit
  *  ==========
- *  Copyright (C) 2015-2022 The Fluent Bit Authors
+ *  Copyright (C) 2015-2024 The Fluent Bit Authors
  *
  *  Licensed under the Apache License, Version 2.0 (the "License");
  *  you may not use this file except in compliance with the License.
@@ -21,6 +21,8 @@
 #define FLB_OUT_OPENTELEMETRY_H
 
 #include <fluent-bit/flb_output_plugin.h>
+#include <fluent-bit/flb_record_accessor.h>
+#include <fluent-bit/flb_ra_key.h>
 
 #define FLB_OPENTELEMETRY_CONTENT_TYPE_HEADER_NAME "Content-Type"
 #define FLB_OPENTELEMETRY_MIME_PROTOBUF_LITERAL    "application/x-protobuf"
@@ -32,6 +34,12 @@
  * including the ones that succeeded. This is not ideal.
  */
 #define DEFAULT_LOG_RECORD_BATCH_SIZE "1000"
+
+struct opentelemetry_body_key {
+    flb_sds_t key;
+    struct flb_record_accessor *ra;
+    struct mk_list _head;
+};
 
 /* Plugin context */
 struct opentelemetry_context {
@@ -51,6 +59,50 @@ struct opentelemetry_context {
     char *host;
     int port;
 
+    /* record metadata parsing */
+    flb_sds_t logs_metadata_key;
+
+    /* metadata keys */
+    flb_sds_t logs_observed_timestamp_metadata_key;
+    struct flb_record_accessor *ra_observed_timestamp_metadata;
+
+    flb_sds_t logs_timestamp_metadata_key;
+    struct flb_record_accessor *ra_timestamp_metadata;
+
+    flb_sds_t logs_severity_text_metadata_key;
+    struct flb_record_accessor *ra_severity_text_metadata;
+
+    flb_sds_t logs_severity_number_metadata_key;
+    struct flb_record_accessor *ra_severity_number_metadata;
+
+    flb_sds_t logs_trace_flags_metadata_key;
+    struct flb_record_accessor *ra_trace_flags_metadata;
+
+    flb_sds_t logs_span_id_metadata_key;
+    struct flb_record_accessor *ra_span_id_metadata;
+
+    flb_sds_t logs_trace_id_metadata_key;
+    struct flb_record_accessor *ra_trace_id_metadata;
+
+    flb_sds_t logs_attributes_metadata_key;
+    struct flb_record_accessor *ra_attributes_metadata;
+
+    flb_sds_t logs_instrumentation_scope_metadata_key;
+    flb_sds_t logs_resource_metadata_key;
+
+    /* otel body keys */
+    flb_sds_t logs_span_id_message_key;
+    struct flb_record_accessor *ra_span_id_message;
+
+    flb_sds_t logs_trace_id_message_key;
+    struct flb_record_accessor *ra_trace_id_message;
+
+    flb_sds_t logs_severity_text_message_key;
+    struct flb_record_accessor *ra_severity_text_message;
+
+    flb_sds_t logs_severity_number_message_key;
+    struct flb_record_accessor *ra_severity_number_message;
+
     /* Number of logs to flush at a time */
     int batch_size;
 
@@ -60,8 +112,23 @@ struct opentelemetry_context {
     /* config reader for 'add_label' */
     struct mk_list *add_labels;
 
+    /*
+     * list of linked list body keys given at configuration: note this list is just a slist,
+     * of strings, once is parsed, it populate the final list in 'log_body_key_list'
+     */
+    struct mk_list *log_body_key_list_str;
+
+    /* head of linked list body keys populated once log_body_key_list_str is parsed */
+    struct mk_list log_body_key_list;
+
+    /* boolean that defines if remaining keys of logs_body_key are set as attributes */
+    int logs_body_key_attributes;
+
     /* internal labels ready to append */
     struct mk_list kv_labels;
+
+    /* special accessor with list of patterns used to populate log metadata */
+    struct flb_mp_accessor *mp_accessor;
 
     /* Upstream connection to the backend server */
     struct flb_upstream *u;
@@ -75,6 +142,31 @@ struct opentelemetry_context {
 
     /* Compression mode (gzip) */
     int compress_gzip;
+
+    /* FLB/OTLP Record accessor patterns */
+    struct flb_record_accessor *ra_meta_schema;
+    struct flb_record_accessor *ra_meta_resource_id;
+    struct flb_record_accessor *ra_meta_scope_id;
+    struct flb_record_accessor *ra_resource_attr;
+    struct flb_record_accessor *ra_resource_schema_url;
+
+    struct flb_record_accessor *ra_scope_name;
+    struct flb_record_accessor *ra_scope_version;
+    struct flb_record_accessor *ra_scope_attr;
+
+    /* log: metadata components coming from OTLP */
+    struct flb_record_accessor *ra_log_meta_otlp_observed_ts;
+    struct flb_record_accessor *ra_log_meta_otlp_timestamp;
+    struct flb_record_accessor *ra_log_meta_otlp_severity_number;
+    struct flb_record_accessor *ra_log_meta_otlp_severity_text;
+    struct flb_record_accessor *ra_log_meta_otlp_attr;
+    struct flb_record_accessor *ra_log_meta_otlp_trace_id;
+    struct flb_record_accessor *ra_log_meta_otlp_span_id;
+    struct flb_record_accessor *ra_log_meta_otlp_trace_flags;
 };
 
+int opentelemetry_http_post(struct opentelemetry_context *ctx,
+                            const void *body, size_t body_len,
+                            const char *tag, int tag_len,
+                            const char *uri);
 #endif

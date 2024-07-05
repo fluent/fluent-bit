@@ -2,7 +2,7 @@
 
 /*  Fluent Bit
  *  ==========
- *  Copyright (C) 2015-2022 The Fluent Bit Authors
+ *  Copyright (C) 2015-2024 The Fluent Bit Authors
  *
  *  Licensed under the Apache License, Version 2.0 (the "License");
  *  you may not use this file except in compliance with the License.
@@ -125,6 +125,7 @@ struct flb_task_enqueued {
 
 int flb_task_running_count(struct flb_config *config);
 int flb_task_running_print(struct flb_config *config);
+int flb_task_map_get_task_id(struct flb_config *config);
 
 struct flb_task *flb_task_create(uint64_t ref_id,
                                  const char *buf,

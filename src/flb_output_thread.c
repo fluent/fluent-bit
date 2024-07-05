@@ -2,7 +2,7 @@
 
 /*  Fluent Bit
  *  ==========
- *  Copyright (C) 2015-2022 The Fluent Bit Authors
+ *  Copyright (C) 2015-2024 The Fluent Bit Authors
  *
  *  Licensed under the Apache License, Version 2.0 (the "License");
  *  you may not use this file except in compliance with the License.
@@ -344,6 +344,10 @@ static void output_thread(void *data)
         }
     }
 
+    mk_event_channel_destroy(th_ins->evl,
+                             th_ins->ch_thread_events[0],
+                             th_ins->ch_thread_events[1],
+                             &event_local);
     /*
      * Final cleanup, destroy all resources associated with:
      *
@@ -363,6 +367,12 @@ static void output_thread(void *data)
     if (params) {
         flb_free(params);
     }
+
+    mk_event_channel_destroy(th_ins->evl,
+                             th_ins->ch_parent_events[0],
+                             th_ins->ch_parent_events[1],
+                             th_ins);
+
     mk_event_loop_destroy(th_ins->evl);
     flb_bucket_queue_destroy(th_ins->evl_bktq);
 

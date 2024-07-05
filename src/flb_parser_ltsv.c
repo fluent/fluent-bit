@@ -2,7 +2,7 @@
 
 /*  Fluent Bit
  *  ==========
- *  Copyright (C) 2015-2022 The Fluent Bit Authors
+ *  Copyright (C) 2015-2024 The Fluent Bit Authors
  *
  *  Licensed under the Apache License, Version 2.0 (the "License");
  *  you may not use this file except in compliance with the License.
@@ -139,7 +139,7 @@ static int ltsv_parser(struct flb_parser *parser,
                                  parser->name, parser->time_fmt_full);
                        return -1;
                     }
-                    *time_lookup = flb_parser_tm2time(&tm);
+                    *time_lookup = flb_parser_tm2time(&tm, parser->time_system_timezone);
                 }
                 time_found = FLB_TRUE;
             }

@@ -112,16 +112,35 @@ static inline ssize_t cio_file_st_infer_content_len(char *map, size_t size)
     return content_length;
 }
 
-/* Get content length */
-static inline ssize_t cio_file_st_get_content_len(char *map, size_t size,
-                                                  size_t page_size)
+/* Set content length */
+static inline void cio_file_st_set_content_len(char *map, uint32_t len)
 {
     uint8_t *content_length_buffer;
+
+    content_length_buffer = (uint8_t *) &map[CIO_FILE_CONTENT_LENGTH_OFFSET];
+
+    content_length_buffer[0] = (uint8_t) ((len & 0xFF000000) >> 24);
+    content_length_buffer[1] = (uint8_t) ((len & 0x00FF0000) >> 16);
+    content_length_buffer[2] = (uint8_t) ((len & 0x0000FF00) >>  8);
+    content_length_buffer[3] = (uint8_t) ((len & 0x000000FF) >>  0);
+}
+
+/* Get content length */
+static inline ssize_t cio_file_st_get_content_len(char *map, 
+                                                  size_t size,
+                                                  size_t page_size,
+                                                  int tainted_data_flag)
+{
+    uint8_t *content_length_buffer;
+    uint8_t *content_buffer;
     ssize_t  content_length;
+    ssize_t  content_offset;
 
     if (size < CIO_FILE_HEADER_MIN) {
         return -1;
     }
+
+    content_offset = CIO_FILE_CONTENT_OFFSET + 2 + cio_file_st_get_meta_len(map);
 
     content_length_buffer = (uint8_t *) &map[CIO_FILE_CONTENT_LENGTH_OFFSET];
 
@@ -134,37 +153,29 @@ static inline ssize_t cio_file_st_get_content_len(char *map, size_t size,
      * previous versions of chunkio that didn't include the content length
      * as part of the headers.
      *
-     * The reason why we need to ensure that the file size is larger than 4096
-     * is that this is the minimal expected page size which is the unit used
-     * to initialize chunk files when they are created.
+     * tainted_data_flag is used to differentiate non trimmed files being 
+     * loaded from files whoses chunk data is grown over the threshold and 
+     * shrinked by the filter stack.
      *
-     * In doing so, we effectively avoid returning bogus results when loading
-     * newly created, non trimmed files while at the same time retaining the
-     * capability of loading legacy files (that don't have a content size)
-     * that are larger than 4096 bytes.
-     *
-     * The only caveat is that trimmed files
+     * Because even when the content size is set to zero the data is not 
+     * zeroed out (nor is the file shrinked) we can compare the first 
+     * byte of the content section against zero to ensure that it's a 
+     * valid msgpack serialized payload.
      */
-    if (content_length == 0 &&
-        size > 0 &&
-        size != page_size) {
-        content_length = cio_file_st_infer_content_len(map, size);
+
+    if (!tainted_data_flag &&
+        content_length == 0 &&
+        size > content_offset) {
+        content_buffer = (uint8_t *) &map[content_offset];
+
+        if (content_buffer[0] != 0x00) {
+            content_length = cio_file_st_infer_content_len(map, size);
+
+            cio_file_st_set_content_len(map, content_length);
+        }
     }
 
     return content_length;
-}
-
-/* Set content length */
-static inline void cio_file_st_set_content_len(char *map, uint32_t len)
-{
-    uint8_t *content_length_buffer;
-
-    content_length_buffer = (uint8_t *) &map[CIO_FILE_CONTENT_LENGTH_OFFSET];
-
-    content_length_buffer[0] = (uint8_t) ((len & 0xFF000000) >> 24);
-    content_length_buffer[1] = (uint8_t) ((len & 0x00FF0000) >> 16);
-    content_length_buffer[2] = (uint8_t) ((len & 0x0000FF00) >>  8);
-    content_length_buffer[3] = (uint8_t) ((len & 0x000000FF) >>  0);
 }
 
 #endif

@@ -2,7 +2,7 @@
 
 /*  Fluent Bit
  *  ==========
- *  Copyright (C) 2015-2022 The Fluent Bit Authors
+ *  Copyright (C) 2015-2024 The Fluent Bit Authors
  *
  *  Licensed under the Apache License, Version 2.0 (the "License");
  *  you may not use this file except in compliance with the License.
@@ -51,6 +51,12 @@ struct flb_config_map upstream_net[] = {
      FLB_CONFIG_MAP_BOOL, "net.dns.prefer_ipv4", "false",
      0, FLB_TRUE, offsetof(struct flb_net_setup, dns_prefer_ipv4),
      "Prioritize IPv4 DNS results when trying to establish a connection"
+    },
+
+    {
+     FLB_CONFIG_MAP_BOOL, "net.dns.prefer_ipv6", "false",
+     0, FLB_TRUE, offsetof(struct flb_net_setup, dns_prefer_ipv6),
+     "Prioritize IPv6 DNS results when trying to establish a connection"
     },
 
     {
@@ -162,6 +168,12 @@ struct mk_list *flb_upstream_get_config_map(struct flb_config *config)
         if (config->dns_prefer_ipv4) {
             if (strcmp(upstream_net[config_index].name,
                        "net.dns.prefer_ipv4") == 0) {
+                upstream_net[config_index].def_value = "true";
+            }
+        }
+        if (config->dns_prefer_ipv6) {
+            if (strcmp(upstream_net[config_index].name,
+                       "net.dns.prefer_ipv6") == 0) {
                 upstream_net[config_index].def_value = "true";
             }
         }

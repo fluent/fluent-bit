@@ -27,7 +27,7 @@
 struct winevtlog_config {
     unsigned int interval_sec;
     unsigned int interval_nsec;
-    unsigned int total_size_threshold;
+    size_t total_size_threshold;
     int string_inserts;
     int read_existing_events;
     int render_event_as_xml;

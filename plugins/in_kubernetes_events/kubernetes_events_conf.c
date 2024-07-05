@@ -2,7 +2,7 @@
 
 /*  Fluent Bit
  *  ==========
- *  Copyright (C) 2015-2023 The Fluent Bit Authors
+ *  Copyright (C) 2015-2024 The Fluent Bit Authors
  *
  *  Licensed under the Apache License, Version 2.0 (the "License");
  *  you may not use this file except in compliance with the License.
@@ -94,6 +94,8 @@ static int network_init(struct k8s_events *ctx, struct flb_config *config)
     int io_type = FLB_IO_TCP;
 
     ctx->upstream = NULL;
+    ctx->current_connection = NULL;
+    ctx->streaming_client = NULL;
 
     if (ctx->api_https == FLB_TRUE) {
         if (!ctx->tls_ca_path && !ctx->tls_ca_file) {
@@ -160,15 +162,6 @@ struct k8s_events *k8s_events_conf_create(struct flb_input_instance *ins)
     ctx->encoder = flb_log_event_encoder_create(FLB_LOG_EVENT_FORMAT_DEFAULT);
     if (!ctx->encoder) {
         flb_plg_error(ins, "could not initialize event encoder");
-        k8s_events_conf_destroy(ctx);
-        return NULL;
-    }
-
-    /* Record accessor pattern */
-    ctx->ra_timestamp = flb_ra_create(K8S_EVENTS_RA_TIMESTAMP, FLB_TRUE);
-    if (!ctx->ra_timestamp) {
-        flb_plg_error(ctx->ins,
-                      "could not create record accessor for metadata items");
         k8s_events_conf_destroy(ctx);
         return NULL;
     }
@@ -284,12 +277,17 @@ struct k8s_events *k8s_events_conf_create(struct flb_input_instance *ins)
 
 void k8s_events_conf_destroy(struct k8s_events *ctx)
 {
-    if (ctx->ra_timestamp) {
-        flb_ra_destroy(ctx->ra_timestamp);
-    }
 
     if (ctx->ra_resource_version) {
         flb_ra_destroy(ctx->ra_resource_version);
+    }
+
+    if(ctx->streaming_client) {
+        flb_http_client_destroy(ctx->streaming_client);
+    }
+
+    if(ctx->current_connection) {
+        flb_upstream_conn_release(ctx->current_connection);
     }
 
     if (ctx->upstream) {

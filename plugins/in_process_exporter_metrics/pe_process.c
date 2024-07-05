@@ -309,6 +309,7 @@ static int get_name(const char *entry, char **out_name, char *id_entry)
     tmp = strdup(entry);
     tmp_name = strtok(tmp, ")");
     if (tmp_name == NULL) {
+        flb_free(tmp);
         return -1;
     }
 
@@ -538,12 +539,14 @@ static int process_thread_update(struct flb_pe *ctx, uint64_t ts, flb_sds_t pid,
              * The entry of processes stat will start after that. */
             tmp = strstr(entry->str, ")");
             if (tmp == NULL) {
+                flb_free(thread_name);
                 continue;
             }
 
             mk_list_init(&split_list);
             ret = flb_slist_split_string(&split_list, tmp+2, ' ', -1);
             if (ret == -1) {
+                flb_free(thread_name);
                 continue;
             }
 

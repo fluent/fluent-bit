@@ -2,7 +2,7 @@
 
 /*  Fluent Bit
  *  ==========
- *  Copyright (C) 2015-2022 The Fluent Bit Authors
+ *  Copyright (C) 2015-2024 The Fluent Bit Authors
  *
  *  Licensed under the Apache License, Version 2.0 (the "License");
  *  you may not use this file except in compliance with the License.
@@ -303,6 +303,12 @@ int flb_log_cache_check_suppress(struct flb_log_cache *cache, char *msg_buf, siz
     return FLB_TRUE;
 }
 
+int flb_log_worker_destroy(struct flb_worker *worker)
+{
+    flb_pipe_destroy(worker->log);
+    return 0;
+}
+
 int flb_log_worker_init(struct flb_worker *worker)
 {
     int ret;
@@ -321,16 +327,14 @@ int flb_log_worker_init(struct flb_worker *worker)
     ret = mk_event_add(log->evl, worker->log[0],
                        FLB_LOG_EVENT, MK_EVENT_READ, &worker->event);
     if (ret == -1) {
-        close(worker->log[0]);
-        close(worker->log[1]);
+        flb_pipe_destroy(worker->log);
         return -1;
     }
 
     /* Log cache to reduce noise */
     cache = flb_log_cache_create(10, FLB_LOG_CACHE_ENTRIES);
     if (!cache) {
-        close(worker->log[0]);
-        close(worker->log[1]);
+        flb_pipe_destroy(worker->log);
         return -1;
     }
     worker->log_cache = cache;
@@ -688,7 +692,9 @@ int flb_log_destroy(struct flb_log *log, struct flb_config *config)
     flb_pipe_destroy(log->ch_mng);
     if (log->worker->log_cache) {
         flb_log_cache_destroy(log->worker->log_cache);
+        log->worker->log_cache = NULL;
     }
+    flb_log_worker_destroy(log->worker);
     flb_free(log->worker);
     flb_free(log);
 

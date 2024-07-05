@@ -2,7 +2,7 @@
 
 /*  Fluent Bit
  *  ==========
- *  Copyright (C) 2015-2022 The Fluent Bit Authors
+ *  Copyright (C) 2015-2024 The Fluent Bit Authors
  *
  *  Licensed under the Apache License, Version 2.0 (the "License");
  *  you may not use this file except in compliance with the License.
@@ -49,6 +49,33 @@ static struct flb_aws_header content_type_header = {
     .val = "application/x-amz-json-1.1",
     .val_len = 26,
 };
+
+static int validate_log_group_class(struct flb_cloudwatch *ctx)
+{   
+    if (ctx->create_group == FLB_FALSE) {
+        flb_plg_error(ctx->ins, "Configuring log_group_class requires `auto_create_group On`.");
+        return -1;
+    }
+
+    if (ctx->log_group_class == NULL || strlen(ctx->log_group_class) == 0) {
+        ctx->log_group_class_type = LOG_CLASS_DEFAULT_TYPE;
+        ctx->log_group_class = LOG_CLASS_STANDARD;
+        return 0;
+    } else if (strncmp(ctx->log_group_class, LOG_CLASS_STANDARD, LOG_CLASS_STANDARD_LEN) == 0) {
+        flb_plg_debug(ctx->ins, "Using explicitly configured `log_group_class %s`, which is the default log class.", ctx->log_group_class);
+        ctx->log_group_class_type = LOG_CLASS_STANDARD_TYPE;
+        return 0;
+    } else if (strncmp(ctx->log_group_class, LOG_CLASS_INFREQUENT_ACCESS, LOG_CLASS_INFREQUENT_ACCESS_LEN) == 0) {
+        flb_plg_warn(ctx->ins, "Configured `log_group_class %s` will only apply to log groups created by Fluent Bit. "
+                     "Look for the `Created log group` info level message emitted when a group does not already exist and is created.", ctx->log_group_class);
+        ctx->log_group_class_type = LOG_CLASS_INFREQUENT_ACCESS_TYPE;
+        return 0;
+    }
+
+    flb_plg_error(ctx->ins, "The valid values for log_group_class are {%s, %s}. Invalid input was %s", LOG_CLASS_STANDARD, LOG_CLASS_INFREQUENT_ACCESS, ctx->log_group_class);
+
+    return -1;
+}
 
 static int cb_cloudwatch_init(struct flb_output_instance *ins,
                               struct flb_config *config, void *data)
@@ -209,6 +236,11 @@ static int cb_cloudwatch_init(struct flb_output_instance *ins,
     tmp = flb_output_get_property("sts_endpoint", ins);
     if (tmp) {
         ctx->sts_endpoint = (char *) tmp;
+    }
+
+    ret = validate_log_group_class(ctx);
+    if (ret < 0) {
+        goto error;
     }
 
     /* one tls instance for provider, one for cw client */
@@ -414,7 +446,8 @@ static void cb_cloudwatch_flush(struct flb_event_chunk *event_chunk,
         FLB_OUTPUT_RETURN(FLB_RETRY);
     }
 
-    event_count = process_and_send(ctx, i_ins->p->name, buf, event_chunk->tag, event_chunk->data, event_chunk->size);
+    event_count = process_and_send(ctx, i_ins->p->name, buf, event_chunk->tag, event_chunk->data, event_chunk->size,
+                                   event_chunk->type);
     if (event_count < 0) {
         flb_plg_error(ctx->ins, "Failed to send events");
         cw_flush_destroy(buf);
@@ -475,6 +508,10 @@ void flb_cloudwatch_ctx_destroy(struct flb_cloudwatch *ctx)
 
         if (ctx->stream_name) {
             flb_sds_destroy(ctx->stream_name);
+        }
+
+        if (ctx->metric_namespace) {
+            flb_sds_destroy(ctx->metric_namespace);
         }
 
         mk_list_foreach_safe(head, tmp, &ctx->streams) {
@@ -647,6 +684,12 @@ static struct flb_config_map config_map[] = {
      "$HOME/.aws/ directory."
     },
 
+    {
+     FLB_CONFIG_MAP_STR, "log_group_class", "",
+     0, FLB_TRUE, offsetof(struct flb_cloudwatch, log_group_class),
+     "Specify the log storage class. Valid values are STANDARD (default) and INFREQUENT_ACCESS."
+    },
+
     /* EOF */
     {0}
 };
@@ -660,6 +703,7 @@ struct flb_output_plugin out_cloudwatch_logs_plugin = {
     .cb_exit      = cb_cloudwatch_exit,
     .flags        = 0,
     .workers      = 1,
+    .event_type   = FLB_OUTPUT_LOGS | FLB_OUTPUT_METRICS,
 
     /* Configuration */
     .config_map     = config_map,

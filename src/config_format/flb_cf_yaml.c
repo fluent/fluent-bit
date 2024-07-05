@@ -2,7 +2,7 @@
 
 /*  Fluent Bit
  *  ==========
- *  Copyright (C) 2015-2022 The Fluent Bit Authors
+ *  Copyright (C) 2015-2024 The Fluent Bit Authors
  *
  *  Licensed under the Apache License, Version 2.0 (the "License");
  *  you may not use this file except in compliance with the License.
@@ -1934,10 +1934,16 @@ static int read_config(struct flb_cf *conf, struct local_ctx *ctx,
             return -1;
         }
 
-        if (flb_sds_printf(&include_dir, "%s/%s", parent->path, cfg_file) == NULL) {
+#ifdef _WIN32
+#define PATH_CONCAT_TEMPLATE "%s\\%s"
+#else
+#define PATH_CONCAT_TEMPLATE "%s/%s"
+#endif
+        if (flb_sds_printf(&include_dir, PATH_CONCAT_TEMPLATE, parent->path, cfg_file) == NULL) {
             flb_error("unable to create full filename");
             return -1;
         }
+#undef PATH_CONCAT_TEMPLATE
 
     }
     else {

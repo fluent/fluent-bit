@@ -2,7 +2,7 @@
 
 /*  Fluent Bit
  *  ==========
- *  Copyright (C) 2015-2022 The Fluent Bit Authors
+ *  Copyright (C) 2015-2024 The Fluent Bit Authors
  *
  *  Licensed under the Apache License, Version 2.0 (the "License");
  *  you may not use this file except in compliance with the License.
@@ -779,7 +779,7 @@ static void debug_payload(struct flb_calyptia *ctx, void *data, size_t bytes)
     }
 
     out = cmt_encode_text_create(cmt);
-    flb_plg_info(ctx->ins, "debug payload:\n%s", out);
+    flb_plg_debug(ctx->ins, "debug payload:\n%s", out);
     cmt_encode_text_destroy(out);
     cmt_destroy(cmt);
 }

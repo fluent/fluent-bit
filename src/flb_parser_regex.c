@@ -2,7 +2,7 @@
 
 /*  Fluent Bit
  *  ==========
- *  Copyright (C) 2015-2022 The Fluent Bit Authors
+ *  Copyright (C) 2015-2024 The Fluent Bit Authors
  *
  *  Licensed under the Apache License, Version 2.0 (the "License");
  *  you may not use this file except in compliance with the License.
@@ -87,7 +87,7 @@ static void cb_results(const char *name, const char *value,
             }
 
             pcb->time_frac = frac;
-            pcb->time_lookup = flb_parser_tm2time(&tm);
+            pcb->time_lookup = flb_parser_tm2time(&tm, parser->time_system_timezone);
 
             if (parser->time_keep == FLB_FALSE) {
                 pcb->num_skipped++;

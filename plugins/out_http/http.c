@@ -2,7 +2,7 @@
 
 /*  Fluent Bit
  *  ==========
- *  Copyright (C) 2015-2022 The Fluent Bit Authors
+ *  Copyright (C) 2015-2024 The Fluent Bit Authors
  *
  *  Licensed under the Apache License, Version 2.0 (the "License");
  *  you may not use this file except in compliance with the License.
@@ -178,7 +178,6 @@ static int http_post(struct flb_out_http *ctx,
     }
     else if ((ctx->out_format == FLB_PACK_JSON_FORMAT_JSON) ||
         (ctx->out_format == FLB_PACK_JSON_FORMAT_STREAM) ||
-        (ctx->out_format == FLB_PACK_JSON_FORMAT_LINES) ||
         (ctx->out_format == FLB_HTTP_OUT_GELF)) {
         flb_http_add_header(c,
                             FLB_HTTP_CONTENT_TYPE,
@@ -186,7 +185,14 @@ static int http_post(struct flb_out_http *ctx,
                             FLB_HTTP_MIME_JSON,
                             sizeof(FLB_HTTP_MIME_JSON) - 1);
     }
-    else {
+    else if ((ctx->out_format == FLB_PACK_JSON_FORMAT_LINES)) {
+        flb_http_add_header(c,
+                            FLB_HTTP_CONTENT_TYPE,
+                            sizeof(FLB_HTTP_CONTENT_TYPE) - 1,
+                            FLB_HTTP_MIME_NDJSON,
+                            sizeof(FLB_HTTP_MIME_NDJSON) - 1);
+    }
+    else if ((ctx->out_format == FLB_HTTP_OUT_MSGPACK)) {
         flb_http_add_header(c,
                             FLB_HTTP_CONTENT_TYPE,
                             sizeof(FLB_HTTP_CONTENT_TYPE) - 1,
@@ -665,8 +671,8 @@ static struct flb_config_map config_map[] = {
      "Set a HTTP header which value is the Tag"
     },
     {
-     FLB_CONFIG_MAP_STR, "format", NULL,
-     0, FLB_FALSE, 0,
+     FLB_CONFIG_MAP_STR, "format", "json",
+     0, FLB_TRUE, offsetof(struct flb_out_http, format),
      "Set desired payload format: json, json_stream, json_lines, gelf or msgpack"
     },
     {

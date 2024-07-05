@@ -2,7 +2,7 @@
 
 /*  Fluent Bit
  *  ==========
- *  Copyright (C) 2015-2022 The Fluent Bit Authors
+ *  Copyright (C) 2015-2024 The Fluent Bit Authors
  *
  *  Licensed under the Apache License, Version 2.0 (the "License");
  *  you may not use this file except in compliance with the License.
@@ -110,7 +110,8 @@ static int in_collectd_init(struct flb_input_instance *in,
     /* Set the context */
     flb_input_set_context(in, ctx);
 
-    ctx->server_fd = flb_net_server_udp(ctx->port, ctx->listen);
+    ctx->server_fd = flb_net_server_udp(ctx->port, ctx->listen, 
+                                        in->net_setup.share_port);
     if (ctx->server_fd < 0) {
         flb_plg_error(ctx->ins, "failed to bind to %s:%s", ctx->listen,
                       ctx->port);

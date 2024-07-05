@@ -2,7 +2,7 @@
 
 /*  Fluent Bit
  *  ==========
- *  Copyright (C) 2015-2022 The Fluent Bit Authors
+ *  Copyright (C) 2015-2024 The Fluent Bit Authors
  *
  *  Licensed under the Apache License, Version 2.0 (the "License");
  *  you may not use this file except in compliance with the License.
@@ -207,6 +207,18 @@ static inline int handle_input_event(flb_pipefd_t fd, uint64_t ts,
     return 0;
 }
 
+static inline double calculate_chunk_capacity_percent(struct flb_output_instance *ins)
+{
+    /* Currently, total_limit_size 0(K|M)B will be translated as no
+     * limit. So, we need to handle this situation to be unlimited. */
+    if (ins->total_limit_size <= 0) {
+        return 100.0;
+    }
+
+    return 100 * (1.0 - (ins->fs_backlog_chunks_size + ins->fs_chunks_size)/
+                  ((double)ins->total_limit_size));
+}
+
 static inline int handle_output_event(uint64_t ts,
                                       struct flb_config *config,
                                       uint64_t val)
@@ -312,6 +324,10 @@ static inline int handle_output_event(uint64_t ts,
                      flb_output_name(ins), out_id);
         }
 
+        cmt_gauge_set(ins->cmt_chunk_available_capacity_percent, ts,
+                      calculate_chunk_capacity_percent(ins),
+                      1, (char *[]) {name});
+
         flb_task_retry_clean(task, ins);
         flb_task_users_dec(task, FLB_TRUE);
     }
@@ -320,6 +336,10 @@ static inline int handle_output_event(uint64_t ts,
             /* cmetrics: output_dropped_records_total */
             cmt_counter_add(ins->cmt_dropped_records, ts, task->records,
                             1, (char *[]) {name});
+
+            cmt_gauge_set(ins->cmt_chunk_available_capacity_percent, ts,
+                          calculate_chunk_capacity_percent(ins),
+                          1, (char *[]) {name});
 
             /* OLD metrics API */
 #ifdef FLB_HAVE_METRICS
@@ -352,6 +372,10 @@ static inline int handle_output_event(uint64_t ts,
             cmt_counter_inc(ins->cmt_retries_failed, ts, 1, (char *[]) {name});
             cmt_counter_add(ins->cmt_dropped_records, ts, task->records,
                             1, (char *[]) {name});
+
+            cmt_gauge_set(ins->cmt_chunk_available_capacity_percent, ts,
+                          calculate_chunk_capacity_percent(ins),
+                          1, (char *[]) {name});
 
             /* OLD metrics API */
 #ifdef FLB_HAVE_METRICS
@@ -409,6 +433,10 @@ static inline int handle_output_event(uint64_t ts,
             cmt_counter_add(ins->cmt_retried_records, ts, task->records,
                             1, (char *[]) {name});
 
+            cmt_gauge_set(ins->cmt_chunk_available_capacity_percent, ts,
+                          calculate_chunk_capacity_percent(ins),
+                          1, (char *[]) {name});
+
             /* OLD metrics API: update the metrics since a new retry is coming */
 #ifdef FLB_HAVE_METRICS
             flb_metrics_sum(FLB_METRIC_OUT_RETRY, 1, ins->metrics);
@@ -421,6 +449,10 @@ static inline int handle_output_event(uint64_t ts,
         cmt_counter_inc(ins->cmt_errors, ts, 1, (char *[]) {name});
         cmt_counter_add(ins->cmt_dropped_records, ts, task->records,
                         1, (char *[]) {name});
+
+        cmt_gauge_set(ins->cmt_chunk_available_capacity_percent, ts,
+                      calculate_chunk_capacity_percent(ins),
+                      1, (char *[]) {name});
 
         /* OLD API */
 #ifdef FLB_HAVE_METRICS
@@ -694,9 +726,9 @@ int flb_engine_start(struct flb_config *config)
      * to the local event loop 'evl'.
      */
     ret = mk_event_channel_create(config->evl,
-                                    &config->ch_self_events[0],
-                                    &config->ch_self_events[1],
-                                    &config->event_thread_init);
+                                  &config->ch_self_events[0],
+                                  &config->ch_self_events[1],
+                                  &config->event_thread_init);
     if (ret == -1) {
         flb_error("[engine] could not create engine thread channel");
         return -1;
@@ -1103,6 +1135,12 @@ int flb_engine_shutdown(struct flb_config *config)
         flb_hs_destroy(config->http_ctx);
     }
 #endif
+    if (config->evl) {
+        mk_event_channel_destroy(config->evl,
+                                 config->ch_self_events[0],
+                                 config->ch_self_events[1],
+                                 &config->event_thread_init);
+    }
 
     return 0;
 }

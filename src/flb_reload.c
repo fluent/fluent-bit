@@ -2,7 +2,7 @@
 
 /*  Fluent Bit
  *  ==========
- *  Copyright (C) 2015-2023 The Fluent Bit Authors
+ *  Copyright (C) 2015-2024 The Fluent Bit Authors
  *
  *  Licensed under the Apache License, Version 2.0 (the "License");
  *  you may not use this file except in compliance with the License.
@@ -446,6 +446,8 @@ int flb_reload(flb_ctx_t *ctx, struct flb_cf *cf_opts)
     ctx->config->shutdown_by_hot_reloading = FLB_TRUE;
     /* Mark hot reloading */
     new_config->hot_reloading = FLB_TRUE;
+    /* Mark hot reloading for old ctx to prevent duplicated request via HTTP */
+    old_config->hot_reloading = FLB_TRUE;
 
 #ifdef FLB_HAVE_STREAM_PROCESSOR
     /* Inherit stream processor definitions from command line */

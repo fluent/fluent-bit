@@ -2,7 +2,7 @@
 
 /*  Fluent Bit
  *  ==========
- *  Copyright (C) 2015-2022 The Fluent Bit Authors
+ *  Copyright (C) 2015-2024 The Fluent Bit Authors
  *
  *  Licensed under the Apache License, Version 2.0 (the "License");
  *  you may not use this file except in compliance with the License.
@@ -678,6 +678,7 @@ struct flb_output_instance *flb_output_new(struct flb_config *config,
     instance->tls                   = NULL;
     instance->tls_debug             = -1;
     instance->tls_verify            = FLB_TRUE;
+    instance->tls_verify_hostname   = FLB_FALSE;
     instance->tls_vhost             = NULL;
     instance->tls_ca_path           = NULL;
     instance->tls_ca_file           = NULL;
@@ -870,6 +871,10 @@ int flb_output_set_property(struct flb_output_instance *ins,
     }
     else if (prop_key_check("tls.verify", k, len) == 0 && tmp) {
         ins->tls_verify = flb_utils_bool(tmp);
+        flb_sds_destroy(tmp);
+    }
+    else if (prop_key_check("tls.verify_hostname", k, len) == 0 && tmp) {
+        ins->tls_verify_hostname = flb_utils_bool(tmp);
         flb_sds_destroy(tmp);
     }
     else if (prop_key_check("tls.debug", k, len) == 0 && tmp) {
@@ -1200,6 +1205,18 @@ int flb_output_init_all(struct flb_config *config)
                       0,
                       1, (char *[]) {name});
 
+        /* output_chunk_available_capacity_percent */
+        ins->cmt_chunk_available_capacity_percent = cmt_gauge_create(ins->cmt,
+                                                        "fluentbit",
+                                                        "output",
+                                                        "chunk_available_capacity_percent",
+                                                        "Available chunk capacity (percent)",
+                                                        1, (char *[]) {"name"});
+        cmt_gauge_set(ins->cmt_chunk_available_capacity_percent,
+                      ts,
+                      100.0,
+                      1, (char *[]) {name});
+
         /* old API */
         ins->metrics = flb_metrics_create(name);
         if (ins->metrics) {
@@ -1236,6 +1253,16 @@ int flb_output_init_all(struct flb_config *config)
                           ins->name);
                 flb_output_instance_destroy(ins);
                 return -1;
+            }
+
+            if (ins->tls_verify_hostname == FLB_TRUE) {
+                ret = flb_tls_set_verify_hostname(ins->tls, ins->tls_verify_hostname);
+                if (ret == -1) {
+                    flb_error("[output %s] error set up to verify hostname in TLS context",
+                              ins->name);
+
+                    return -1;
+                }
             }
         }
 #endif

@@ -2,7 +2,7 @@
 
 /*  Fluent Bit
  *  ==========
- *  Copyright (C) 2015-2022 The Fluent Bit Authors
+ *  Copyright (C) 2015-2024 The Fluent Bit Authors
  *
  *  Licensed under the Apache License, Version 2.0 (the "License");
  *  you may not use this file except in compliance with the License.
@@ -38,6 +38,8 @@
 #include <cmetrics/cmt_encode_prometheus_remote_write.h>
 #include <cmetrics/cmt_encode_msgpack.h>
 #include <cmetrics/cmt_encode_splunk_hec.h>
+#include <cmetrics/cmt_encode_cloudwatch_emf.h>
+#include <cmetrics/cmt_filter.h>
 
 /* Metrics IDs for general purpose (used by core and Plugins */
 #define FLB_METRIC_N_RECORDS   0
@@ -54,17 +56,20 @@
 #define FLB_METRIC_OUT_DROPPED_RECORDS 15       /* dropped_records_total */
 #define FLB_METRIC_OUT_RETRIED_RECORDS 16       /* retried_records_total */
 
+/* The limitation of title name length */
+#define FLB_METRIC_LENGTH_LIMIT 1024
+
 struct flb_metric {
     int id;
     int title_len;
-    char title[64];
+    char *title;
     size_t val;
     struct mk_list _head;
 };
 
 struct flb_metrics {
     int title_len;         /* Title string length */
-    char title[64];        /* Title or id for this metrics context */
+    char *title;           /* Title or id for this metrics context */
     int count;             /* Total count of metrics registered */
     struct mk_list list;   /* Head of metrics list */
 };
