@@ -351,8 +351,9 @@ void flb_test_http_successful_response_code(char *response_code)
     test_ctx_destroy(ctx);
 }
 
-void flb_test_http_json_charset_header_successful_response_code(char *response_code)
+void flb_test_http_json_charset_header(char *response_code)
 {
+    char *response_code = "200";
     struct flb_lib_out_cb cb_data;
     struct test_ctx *ctx;
     struct flb_http_client *c;
@@ -360,7 +361,7 @@ void flb_test_http_json_charset_header_successful_response_code(char *response_c
     int num;
     size_t b_sent;
 
-    char *buf = "{\"test\":\"msg\"}";
+    char *buf = "[{\"test\":\"msg\"}]";
 
     clear_output_num();
 
@@ -374,6 +375,7 @@ void flb_test_http_json_charset_header_successful_response_code(char *response_c
     }
 
     ret = flb_input_set(ctx->flb, ctx->i_ffd,
+                        "http2", "off",
                         "successful_response_code", response_code,
                          NULL);
     TEST_CHECK(ret == 0);
@@ -390,6 +392,8 @@ void flb_test_http_json_charset_header_successful_response_code(char *response_c
 
     ctx->httpc = http_client_ctx_create();
     TEST_CHECK(ctx->httpc != NULL);
+
+    flb_time_msleep(1500);
 
     c = flb_http_client(ctx->httpc->u_conn, FLB_HTTP_POST, "/", buf, strlen(buf),
                         "127.0.0.1", 9880, NULL, 0);
@@ -662,6 +666,7 @@ TEST_LIST = {
     {"successful_response_code_204", flb_test_http_successful_response_code_204},
     {"failure_response_code_400_bad_json", flb_test_http_failure_400_bad_json},
     {"failure_response_code_400_bad_disk_write", flb_test_http_failure_400_bad_disk_write},
+    {"json_charset_header", flb_test_http_json_charset_header},
     {"tag_key", flb_test_http_tag_key},
     {NULL, NULL}
 };
