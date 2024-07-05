@@ -27,7 +27,6 @@
 #include <fluent-bit/flb_random.h>
 #include <fluent-bit/flb_config_map.h>
 #include <fluent-bit/flb_log_event_decoder.h>
-#include <fluent-bit/flb_msgpack_append_message.h>
 #include <msgpack.h>
 
 #include <stdio.h>
