@@ -557,7 +557,7 @@ static void flb_test_ecs_filter_containerid_field_error_invalid()
     TEST_CHECK(ret == 0);
 
     /* Prepare output callback with expected result */
-    expected.expected_records = 1; /* 1 record with metadata added */
+    expected.expected_records = 2; /* 2 record with metadata added */
     expected.expected_pattern = "cluster_name..";
     expected.expected_pattern_index = 0;
     cb_data.cb = cb_check_result;
@@ -569,6 +569,12 @@ static void flb_test_ecs_filter_containerid_field_error_invalid()
 
     /* Ingest data samples */
     p = "[0, {\"log\":\"error: my error\",\"container_id\":\"random\"}]";
+    len = strlen(p);
+    bytes = flb_lib_push(ctx->flb, ctx->i_ffd, p, len);
+    TEST_CHECK(bytes == len);
+    sleep(1);
+
+    p = "[0, {\"log\":\"error: my error\",\"container_id\":123456789012}]";
     len = strlen(p);
     bytes = flb_lib_push(ctx->flb, ctx->i_ffd, p, len);
     TEST_CHECK(bytes == len);

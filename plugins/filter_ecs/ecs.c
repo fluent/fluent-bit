@@ -1347,6 +1347,14 @@ static int deduce_short_container_id_from_record(struct flb_filter_ecs *ctx,
         return -1;
     }
     flb_ra_destroy(ra_key);
+    if (rval->type != FLB_RA_STRING || rval->o.via.str.size < 12) {
+        flb_plg_debug(ctx->ins, "Container field \"%s\" needs to represent a container "
+                      "ID a string of at least 12 characters "
+                      "representing the container ID",
+                      ctx->container_id_field_name);
+        flb_ra_key_value_destroy(rval);
+        return -1;
+    }
     *container_short_id = flb_sds_create_len(rval->val.string, 12);
     if (!*container_short_id) {
         flb_errno();
@@ -1374,12 +1382,13 @@ static int get_metadata_by_id(struct flb_filter_ecs *ctx,
         ret = get_task_metadata(ctx, container_short_id);
         if (ret < 0) {
             if (*ctx->container_id_field_name) {
-                flb_plg_info(ctx->ins, "Requesting metadata from ECS Agent introspection endpoint failed for "
-                            "container ID %s",
-                            container_short_id);
+                flb_plg_info(ctx->ins, "Requesting metadata from ECS Agent "
+                             "introspection endpoint failed for container ID %s",
+                             container_short_id);
             } else {
-                flb_plg_info(ctx->ins, "Requesting metadata from ECS Agent introspection endpoint failed for tag %s",
-                            tag);
+                flb_plg_info(ctx->ins, "Requesting metadata from ECS Agent "
+                             "introspection endpoint failed for tag %s",
+                             tag);
             }
             return -1;
         }
