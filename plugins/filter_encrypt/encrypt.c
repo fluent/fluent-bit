@@ -27,7 +27,6 @@
 #include <fluent-bit/flb_upstream.h>
 #include <fluent-bit/flb_io.h>
 #include <fluent-bit/flb_kv.h>
-#include <fluent-bit/flb_tls.h>
 
 #include <monkey/mk_core/mk_list.h>
 #include <fluent-bit/flb_filter.h>
