@@ -430,12 +430,14 @@ void flb_test_http_json_charset_header(char *response_code)
 
 void flb_test_http_successful_response_code_200()
 {
-    flb_test_http_successful_response_code("200");    
+    flb_test_http_successful_response_code("200");  
+    flb_test_http_json_charset_header("200");    
 }
 
 void flb_test_http_successful_response_code_204()
 {
-    flb_test_http_successful_response_code("204");    
+    flb_test_http_successful_response_code("204");  
+    flb_test_http_json_charset_header("204");    
 }
 
 void flb_test_http_failure_400_bad_json() {
