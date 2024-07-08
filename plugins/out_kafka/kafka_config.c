@@ -114,6 +114,16 @@ struct flb_out_kafka *flb_out_kafka_create(struct flb_output_instance *ins,
         ctx->message_key_field_len = 0;
     }
 
+    /* Config: Header_Key */
+    if (ctx->header_key) {
+        ctx->header_key_len = strlen(ctx->header_key);
+    }
+
+    /* Config: Header_Value */
+    if (ctx->header_value) {
+        ctx->header_value_len = strlen(ctx->header_value);
+    }
+
     /* Config: Timestamp_Key */
     if (ctx->timestamp_key) {
         ctx->timestamp_key_len = strlen(ctx->timestamp_key);
