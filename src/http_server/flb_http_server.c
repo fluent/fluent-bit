@@ -292,7 +292,7 @@ static int flb_http_server_should_connection_be_closed(
      * HTTP/2   keep-alive is "mandatory"
      */
 
-    if (request->protocol_version < HTTP_PROTOCOL_VERSION_20) {
+    if (request->protocol_version >= HTTP_PROTOCOL_VERSION_20) {
         /* HTTP/2 always keeps the connection open */
         return FLB_FALSE;
     }
