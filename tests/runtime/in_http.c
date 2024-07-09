@@ -440,6 +440,11 @@ void flb_test_http_successful_response_code_204()
     flb_test_http_json_charset_header("204");    
 }
 
+void flb_test_http_json_charset_header_200()
+{
+    flb_test_http_json_charset_header("200");    
+}
+
 void flb_test_http_failure_400_bad_json() {
     struct flb_lib_out_cb cb_data;
     struct test_ctx *ctx;
@@ -668,7 +673,7 @@ TEST_LIST = {
     {"successful_response_code_204", flb_test_http_successful_response_code_204},
     {"failure_response_code_400_bad_json", flb_test_http_failure_400_bad_json},
     {"failure_response_code_400_bad_disk_write", flb_test_http_failure_400_bad_disk_write},
-    {"json_charset_header", flb_test_http_json_charset_header},
+    {"json_charset_header", flb_test_http_json_charset_header_200},
     {"tag_key", flb_test_http_tag_key},
     {NULL, NULL}
 };
