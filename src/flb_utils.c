@@ -1426,7 +1426,7 @@ int flb_utils_get_machine_id(char **out_id, size_t *out_size)
 #elif defined (FLB_SYSTEM_MACOS)
     bool bret;
     CFStringRef serialNumber;
-    io_service_t platformExpert = IOServiceGetMatchingService(kIOMainPortDefault,
+    io_service_t platformExpert = IOServiceGetMatchingService(kIOMasterPortDefault,
         IOServiceMatching("IOPlatformExpertDevice"));
 
     if (platformExpert) {
