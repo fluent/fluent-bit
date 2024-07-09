@@ -233,6 +233,10 @@ if(FLB_TRACE)
   add_definitions(-DFLB_TRACE=1)
 endif()
 
+# Debug messages to check the values of options
+message(STATUS "FLB_RECORD_ACCESSOR: ${FLB_RECORD_ACCESSOR}")
+message(STATUS "FLB_REGEX: ${FLB_REGEX}")
+
 if(FLB_CHUNK_TRACE)
   FLB_DEFINITION(FLB_HAVE_CHUNK_TRACE)
 endif()

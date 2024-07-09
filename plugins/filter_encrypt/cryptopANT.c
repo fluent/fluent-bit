@@ -102,7 +102,7 @@ static int readhexstring(FILE *, u_char *, int *);
 
 static uint32_t ip4cache[1 << CACHE_BITS];
 static uint32_t ip4pad;            /* first 4 bytes of pad */
-static uint32_t ip6pad[4];
+static unsigned char ip6pad[16] = {0};
 static u_char scramble_mac_buf[MAX_BLK_LENGTH];
 
 typedef unsigned char uchar;
@@ -358,7 +358,7 @@ scramble_savestate(const char *fn, const scramble_state_t *s) {
     fprintf(f, ":");
     for (i = 0; i < s->ivlen; ++i) {
         if (fprintf(f, "%02x", s->iv[i]) < 0) {
-            perror("scramble_savestate(): error saving lv");
+            perror("scramble_savestate(): error saving iv");
             fclose(f);
             return -1;
         }
@@ -369,26 +369,39 @@ scramble_savestate(const char *fn, const scramble_state_t *s) {
 }
 
 void ipv6_to_str_unexpanded(char *str, const struct in6_addr *addr) {
-    sprintf(str, "%02x%02x:%02x%02x:%02x%02x:%02x%02x:%02x%02x:%02x%02x:%02x%02x:%02x%02x",
-            (int)addr->s6_addr[0], (int)addr->s6_addr[1],
-            (int)addr->s6_addr[2], (int)addr->s6_addr[3],
-            (int)addr->s6_addr[4], (int)addr->s6_addr[5],
-            (int)addr->s6_addr[6], (int)addr->s6_addr[7],
-            (int)addr->s6_addr[8], (int)addr->s6_addr[9],
-            (int)addr->s6_addr[10], (int)addr->s6_addr[11],
-            (int)addr->s6_addr[12], (int)addr->s6_addr[13],
-            (int)addr->s6_addr[14], (int)addr->s6_addr[15]);
+    snprintf(str, 40, "%02x%02x:%02x%02x:%02x%02x:%02x%02x:%02x%02x:%02x%02x:%02x%02x:%02x%02x",
+             (int)addr->s6_addr[0], (int)addr->s6_addr[1],
+             (int)addr->s6_addr[2], (int)addr->s6_addr[3],
+             (int)addr->s6_addr[4], (int)addr->s6_addr[5],
+             (int)addr->s6_addr[6], (int)addr->s6_addr[7],
+             (int)addr->s6_addr[8], (int)addr->s6_addr[9],
+             (int)addr->s6_addr[10], (int)addr->s6_addr[11],
+             (int)addr->s6_addr[12], (int)addr->s6_addr[13],
+             (int)addr->s6_addr[14], (int)addr->s6_addr[15]);
 }
 
 
 char *
-extract_ipv6pad(const char *ckey, char * ipv6pad){
-    char *startPad = strchr(ckey, ':') + 1;
-    int len = startPad - ckey;
+extract_ipv6pad(const char *ckey, char *ipv6pad) {
+    // Find the first occurrence of ':'
+    char *startPad = strchr(ckey, ':');
+    if (startPad == NULL) {
+        // If ':' is not found, handle the error (e.g., log it and return an error code)
+        fprintf(stderr, "Error: ':' not found in the encryption key\n");
+        return NULL;
+    }
 
-    strncpy(ipv6pad, startPad, MAX_BLK_LENGTH);
+    // Move the pointer past the ':'
+    startPad += 1;
+
+    int len = strlen(startPad);
+    if (len > MAX_BLK_LENGTH - 1) {
+        len = MAX_BLK_LENGTH - 1;  // Ensure we don't overflow the buffer
+    }
+
+    strncpy(ipv6pad, startPad, len);
     ipv6pad[len] = '\0';
-    //printf("dst = %s\n", ipv6pad);
+
     return ipv6pad;
 }
 
@@ -418,27 +431,23 @@ convert_to_ipv6_format(const char *ipv6_pad, char *new_pad) {
 void set_encrypt_key(const char *enckey) {
     char ipv6_pad[MAX_BLK_LENGTH] = {0};
     char new_pad_formatted[IPV6_PADDING] = {0};
+    char ipv6_to_str[40] = {0};
 
-    //extract_ipv6pad(enckey, ipv6_pad);
-    //convert_to_ipv6_format(ipv6_pad, new_pad_formatted);
+    extract_ipv6pad(enckey, ipv6_pad);
+    convert_to_ipv6_format(ipv6_pad, new_pad_formatted);
 
     scramble_crypto4 = SCRAMBLE_HMAC_SHA256;
     scramble_crypto6 = SCRAMBLE_HMAC_SHA256;
 
     ipv6_to_str_unexpanded(ipv6_to_str, &b6_in.ip6);
 
-    if (inet_pton(AF_INET6, new_pad_formatted, &b6_in.ip6) >0) {
+    if (inet_pton(AF_INET6, new_pad_formatted, &b6_in.ip6) > 0) {
         ipv6_to_str_unexpanded(ipv6_to_str, &b6_in.ip6);
-        ip6pad[0] = b6_in.ip6.s6_addr32[0];
-        ip6pad[1] = b6_in.ip6.s6_addr32[1];
-        ip6pad[2] = b6_in.ip6.s6_addr32[2];
-        ip6pad[3] = b6_in.ip6.s6_addr32[3];
+        memcpy(ip6pad, b6_in.ip6.s6_addr, sizeof(ip6pad));
     }
 
-    //printf("set_encrypt_key key: %s\n", ckey);
-
-    snprintf(ckey, 16+1, "%s", enckey);
-    AES_set_encrypt_key(ckey, 256, &scramble_key.aeskey);
+    snprintf((char *)ckey, sizeof(ckey), "%s", enckey);
+    AES_set_encrypt_key((unsigned char *)ckey, 256, &scramble_key.aeskey);
 }
 
 int
@@ -454,10 +463,7 @@ scramble_init(const scramble_state_t *s) {
     scramble_crypto6 = s->c6;
 
     memcpy(&b6_in, s->pad, s->plen);
-    ip6pad[0] = b6_in.ip6.s6_addr32[0];
-    ip6pad[1] = b6_in.ip6.s6_addr32[1];
-    ip6pad[2] = b6_in.ip6.s6_addr32[2];
-    ip6pad[3] = b6_in.ip6.s6_addr32[3];
+    memcpy(ip6pad, b6_in.ip6.s6_addr, sizeof(ip6pad));
 
     if (s->c4 == SCRAMBLE_BLOWFISH || s->c6 == SCRAMBLE_BLOWFISH) {
         BF_set_key(&scramble_key.bfkey, s->klen, s->key);
@@ -647,7 +653,7 @@ scramble_ip4(uint32_t input, int pass_bits) {
                 if (DO_DEBUG > 0) printf("ckey:\n");
                 if (DO_DEBUG > 0) print_bytes(ckey,strlen(ckey));
                 result = HMAC(EVP_sha256(), ckey, strlen(ckey), bytes, sizeof(bytes),
-                                     result, &resultlen);
+                              result, &resultlen);
 
                 char *resultBuf = malloc(resultlen*2);
 
@@ -728,17 +734,17 @@ struct in6_addr scramble_ip6(struct in6_addr *input, int pass_bits) {
     ipv6_to_str_unexpanded(ipv6_to_str, input);  // Corrected to pass a single pointer
     if (flb_log_check(FLB_LOG_TRACE)) printf("ipv6_to_str = %s\n", ipv6_to_str);
 
-    b6_in.ip6.s6_addr32[0] = ip6pad[0]; /* XXX this one not needed */
-    b6_in.ip6.s6_addr32[1] = ip6pad[1];
-    b6_in.ip6.s6_addr32[2] = ip6pad[2];
-    b6_in.ip6.s6_addr32[3] = ip6pad[3];
+    memcpy(&b6_in.ip6.s6_addr[0], &ip6pad[0], 4);  /* copying first 4 bytes */
+    memcpy(&b6_in.ip6.s6_addr[4], &ip6pad[4], 4);  /* copying next 4 bytes */
+    memcpy(&b6_in.ip6.s6_addr[8], &ip6pad[8], 4);  /* copying next 4 bytes */
+    memcpy(&b6_in.ip6.s6_addr[12], &ip6pad[12], 4); /* copying last 4 bytes */
 
     ++ipv6_anon_calls;
-    for (w = 0; w < 4; ++w) {
+    for (w = 0; w < 16; w += 4) {
         uint32_t m = 0xffffffff << 1;
-        uint32_t x = ntohl(input->s6_addr32[w]);
-        uint32_t hpad = ntohl(ip6pad[w]);
-        output.s6_addr32[w] = 0;
+        uint32_t x = ntohl(*(uint32_t *)(&input->s6_addr[w]));
+        uint32_t hpad = ntohl(*(uint32_t *)(&ip6pad[w]));
+        *(uint32_t *)(&output.s6_addr[w]) = 0;
         /* anonymize x, using hpad */
         for (i = 31; i > pbits - 1; --i) {
             /* pass through 'i' highest bits of the word */
@@ -746,21 +752,21 @@ struct in6_addr scramble_ip6(struct in6_addr *input, int pass_bits) {
             /* the following could be:
              *   x |= (hpad & ~m); */
             x |= (hpad >> i);
-            b6_in.ip6.s6_addr32[w] = htonl(x);
+            *(uint32_t *)(&b6_in.ip6.s6_addr[w]) = htonl(x);
 
-            if (DO_DEBUG > 0) printf("b6in[%d]:%d\n", w, b6_in.ip6.s6_addr32[w]);
+            if (DO_DEBUG > 0) printf("b6in[%d]:%d\n", w, *(uint32_t *)(&b6_in.ip6.s6_addr[w]));
 
             if (DO_DEBUG > 0) printf("before encryption b6_in[0]=%d, [1]=%d, [2]=%d, [3]=%d\n",
-                   b6_in.ip6.s6_addr32[0],
-                   b6_in.ip6.s6_addr32[1],
-                   b6_in.ip6.s6_addr32[2],
-                   b6_in.ip6.s6_addr32[3]);
+                                     *(uint32_t *)(&b6_in.ip6.s6_addr[0]),
+                                     *(uint32_t *)(&b6_in.ip6.s6_addr[4]),
+                                     *(uint32_t *)(&b6_in.ip6.s6_addr[8]),
+                                     *(uint32_t *)(&b6_in.ip6.s6_addr[12]));
 
             if (DO_DEBUG > 0) printf("before encryption b6out[0]=%d, [1]=%d, [2]=%d, [3]=%d\n",
-                   b6_out.ip6.s6_addr32[0],
-                   b6_out.ip6.s6_addr32[1],
-                   b6_out.ip6.s6_addr32[2],
-                   b6_out.ip6.s6_addr32[3]);
+                                     *(uint32_t *)(&b6_out.ip6.s6_addr[0]),
+                                     *(uint32_t *)(&b6_out.ip6.s6_addr[4]),
+                                     *(uint32_t *)(&b6_out.ip6.s6_addr[8]),
+                                     *(uint32_t *)(&b6_out.ip6.s6_addr[12]));
 
             /* hashing proper */
             unsigned char *result = NULL;
@@ -800,16 +806,16 @@ struct in6_addr scramble_ip6(struct in6_addr *input, int pass_bits) {
             ipv6_to_str_unexpanded(ipv6_to_str, &b6_out.ip6);
             if (DO_DEBUG > 0) printf("output:%s\n", ipv6_to_str);
 
-            output.s6_addr32[w] |= ((ntohl(b6_out.ip6.s6_addr32[3]) & 1)
+            *(uint32_t *)(&output.s6_addr[w]) |= ((ntohl(*(uint32_t *)(&b6_out.ip6.s6_addr[3])) & 1)
                     << (31 - i));
 
             if (DO_DEBUG > 0) printf(" after encryption b6out[0]=%d, [1]=%d, [2]=%d, [3]=%d\n",
-                   b6_out.ip6.s6_addr32[0],
-                   b6_out.ip6.s6_addr32[1],
-                   b6_out.ip6.s6_addr32[2],
-                   b6_out.ip6.s6_addr32[3]);
+                                     *(uint32_t *)(&b6_out.ip6.s6_addr[0]),
+                                     *(uint32_t *)(&b6_out.ip6.s6_addr[4]),
+                                     *(uint32_t *)(&b6_out.ip6.s6_addr[8]),
+                                     *(uint32_t *)(&b6_out.ip6.s6_addr[12]));
 
-            if (DO_DEBUG > 0) printf("output[w] |= ..:%d\n", output.s6_addr32[w]);
+            if (DO_DEBUG > 0) printf("output[w] |= ..:%d\n", *(uint32_t *)(&output.s6_addr[w]));
 
             ipv6_to_str_unexpanded(ipv6_to_str, &b6_in.ip6);
             if (DO_DEBUG > 0) printf("output:%s\n", ipv6_to_str);
@@ -819,10 +825,10 @@ struct in6_addr scramble_ip6(struct in6_addr *input, int pass_bits) {
         pbits = (pbits >= 32) ? pbits - 32 : 0;
         /* pbits >= 32 this means the above for-loop wasn't executed */
 
-        output.s6_addr32[w] = htonl(output.s6_addr32[w]) ^ input->s6_addr32[w];
+        *(uint32_t *)(&output.s6_addr[w]) = htonl(*(uint32_t *)(&output.s6_addr[w])) ^ *(uint32_t *)(&input->s6_addr[w]);
 
         /* restore the word */
-        b6_in.ip6.s6_addr32[w] = input->s6_addr32[w];
+        *(uint32_t *)(&b6_in.ip6.s6_addr[w]) = *(uint32_t *)(&input->s6_addr[w]);
     }
     return output;
 }
@@ -862,15 +868,15 @@ unscramble_ip6(struct in6_addr *input, int pass_bits) {
     int i;
 
     guess = *input;
-    for (i = 0; i < 4; ++i) {
+    for (i = 0; i < 16; i += 4) {
         for (;;) {
             res = guess;
             res = scramble_ip6(&res, pass_bits);
-            r = res.s6_addr32[i] ^ input->s6_addr32[i];
+            r = *(uint32_t *)(&res.s6_addr[i]) ^ *(uint32_t *)(&input->s6_addr[i]);
 
             if (r == 0) break;
 
-            guess.s6_addr32[i] ^= r;
+            *(uint32_t *)(&guess.s6_addr[i]) ^= r;
         }
     }
     *input = guess;
