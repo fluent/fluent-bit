@@ -426,10 +426,17 @@ execute_process(
   OUTPUT_STRIP_TRAILING_WHITESPACE
 )
 
-if (GIT_EXISTENCE EQUAL 0)
+execute_process(
+  COMMAND git rev-parse --is-inside-work-tree
+  RESULT_VARIABLE GIT_IN_REPOSITORY
+  OUTPUT_VARIABLE GIT_IS_IN_REPOSITORY
+  OUTPUT_STRIP_TRAILING_WHITESPACE
+)
+
+if ((GIT_EXISTENCE EQUAL 0) AND (GIT_IN_REPOSITORY EQUAL 0))
   message(STATUS "Using Git: ${GIT_VERSION}")
   add_custom_command(OUTPUT ${CMAKE_CURRENT_BINARY_DIR}/luajit_relver.txt
-    COMMAND git show -s --format=${GIT_FORMAT} > ${CMAKE_CURRENT_BINARY_DIR}/luajit_relver.txt
+    COMMAND git -c log.showSignature=false show -s --format=${GIT_FORMAT} > ${CMAKE_CURRENT_BINARY_DIR}/luajit_relver.txt
     WORKING_DIRECTORY ${LUAJIT_DIR}
   )
 else()
