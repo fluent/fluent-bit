@@ -353,7 +353,6 @@ void flb_test_http_successful_response_code(char *response_code)
 
 void flb_test_http_json_charset_header(char *response_code)
 {
-    char *response_code = "200";
     struct flb_lib_out_cb cb_data;
     struct test_ctx *ctx;
     struct flb_http_client *c;
