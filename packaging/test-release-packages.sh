@@ -55,7 +55,6 @@ do
     LOG_FILE=$(mktemp)
 
     VAULT=0
-    SCRIPT=""
     # Fix to use Vault on CentOS 7
     case ${IMAGE} in
         centos:7)
