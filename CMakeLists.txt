@@ -285,7 +285,7 @@ endif ()
 find_package(Git)
 # If we do not have Git or this is not a Git repo or another error this just is ignored and we have no output at runtime.
 execute_process(COMMAND
-  "${GIT_EXECUTABLE}" log -1 --format=%H
+  "${GIT_EXECUTABLE}" -c log.showSignature=false log -1 --format=%H
   WORKING_DIRECTORY "${FLB_ROOT}"
   OUTPUT_VARIABLE FLB_GIT_HASH
   ERROR_QUIET OUTPUT_STRIP_TRAILING_WHITESPACE)
