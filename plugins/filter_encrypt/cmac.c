@@ -1,12 +1,10 @@
 #include "cmac.h"
-#include "aes.h"
 #include "utils.h"
 
 // Implementation in C from https://github.com/megrxu/AES-CMAC/blob/master/src/cmac.c
 // Calculate the CAMC
-unsigned char* aes_cmac(unsigned char* in, unsigned int length, unsigned char* out, unsigned char* key)
+unsigned char* compute_aes_cmac(unsigned char* in, unsigned int length, unsigned char* out, unsigned char* key)
 {
-
     unsigned char* K1;
     unsigned char* K2;
     K1 = (unsigned char*)malloc(32);
@@ -25,7 +23,11 @@ unsigned char* aes_cmac(unsigned char* in, unsigned int length, unsigned char* o
         flag = true;
     }
 
-    unsigned char M[n][const_Bsize];
+    unsigned char** M = (unsigned char**)malloc(n * sizeof(unsigned char*));
+    for (int i = 0; i < n; i++) {
+        M[i] = (unsigned char*)malloc(const_Bsize * sizeof(unsigned char));
+    }
+
     memset(M[0], 0, n * const_Bsize);
     memcpy(M[0], in, length);
     if (!flag) {
@@ -38,21 +40,27 @@ unsigned char* aes_cmac(unsigned char* in, unsigned int length, unsigned char* o
     }
 
     unsigned char X[] = {
-        0x00, 0x00, 0x00, 0x00,
-        0x00, 0x00, 0x00, 0x00,
-        0x00, 0x00, 0x00, 0x00,
-        0x00, 0x00, 0x00, 0x00
+            0x00, 0x00, 0x00, 0x00,
+            0x00, 0x00, 0x00, 0x00,
+            0x00, 0x00, 0x00, 0x00,
+            0x00, 0x00, 0x00, 0x00
     };
     unsigned char Y[const_Bsize];
 
-    for (auto i = 0; i < n - 1; i++) {
+    for (int i = 0; i < n - 1; i++) {
         block_xor(Y, M[i], X);
         aes_128_encrypt(Y, X, key);
     }
     block_xor(Y, M[n - 1], X);
     aes_128_encrypt(Y, out, key);
+
+    for (int i = 0; i < n; i++) {
+        free(M[i]);
+    }
+    free(M);
     free(K1);
     free(K2);
+
     return out;
 }
 
@@ -61,8 +69,8 @@ bool verify_mac(unsigned char* in, unsigned int length, unsigned char* out, unsi
 {
     bool flag = true;
     unsigned char result[32];
-    aes_cmac(in, length, (unsigned char*)result, key);
-    for (auto i = 0; i < const_Bsize; i++) {
+    compute_aes_cmac(in, length, (unsigned char*)result, key);
+    for (int i = 0; i < const_Bsize; i++) {
         if (!(result[i] ^ out[i])) {
             flag = false;
             break;
@@ -75,17 +83,17 @@ bool verify_mac(unsigned char* in, unsigned int length, unsigned char* out, unsi
 void GenerateSubkey(unsigned char* key, unsigned char* K1, unsigned char* K2)
 {
     unsigned char const_Zero[] = {
-        0x00, 0x00, 0x00, 0x00,
-        0x00, 0x00, 0x00, 0x00,
-        0x00, 0x00, 0x00, 0x00,
-        0x00, 0x00, 0x00, 0x00
+            0x00, 0x00, 0x00, 0x00,
+            0x00, 0x00, 0x00, 0x00,
+            0x00, 0x00, 0x00, 0x00,
+            0x00, 0x00, 0x00, 0x00
     };
 
     unsigned char const_Rb[] = {
-        0x00, 0x00, 0x00, 0x00,
-        0x00, 0x00, 0x00, 0x00,
-        0x00, 0x00, 0x00, 0x00,
-        0x00, 0x00, 0x00, 0x87
+            0x00, 0x00, 0x00, 0x00,
+            0x00, 0x00, 0x00, 0x00,
+            0x00, 0x00, 0x00, 0x00,
+            0x00, 0x00, 0x00, 0x87
     };
 
     unsigned char L[32];

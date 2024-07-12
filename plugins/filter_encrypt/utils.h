@@ -19,8 +19,8 @@
 #include <stdio.h>
 #include <string.h>
 
-#ifndef STRINGMANIPULATIONS__UTILS_H_
-#define STRINGMANIPULATIONS__UTILS_H_
+#ifndef UTILS_H_
+#define UTILS_H_
 
 void print_bytes(unsigned char* buf, const size_t len);
 void block_xor(unsigned char* dst, unsigned char* a, unsigned char* b);
@@ -31,4 +31,4 @@ char *substring(char *input, int start, int length);
 char *base64encode (const void *b64_encode_this, int encode_this_many_bytes);
 char *base64decode (const void *b64_decode_this, int decode_this_many_bytes);
 void populate_key_value_delimiters(char *value_delimiters);
-#endif //STRINGMANIPULATIONS__UTILS_H_
+#endif //UTILS_H_

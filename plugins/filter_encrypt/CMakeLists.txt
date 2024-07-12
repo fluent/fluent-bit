@@ -6,6 +6,8 @@ set(src
         ip_utils.c
         ip_encryption.c
         cryptopANT.c
+        aes.c
+        cmac.c
         aes_deterministic.c
         aes_gcm_hmac_deterministic.c
         aes_gcm.c

@@ -324,7 +324,7 @@ int populate_configurations_in_hashmap(struct flb_filter_encrypt* ctx, struct mk
         insert(kv->key, kv->val);
         struct HashMapEntry* item = get(kv->key);
         if (item == NULL) {
-            flb_error("key %s not found!?", kv->key);
+            flb_debug("Error: key %s not found!?", kv->key);
             flb_utils_split_free(split);
             return -1;
         }
@@ -553,6 +553,9 @@ static int cb_encrypt_init(struct flb_filter_instance *f_ins,
     }
     ctx->f_ins = f_ins;
 
+    // Initialize hashmap
+    initHashMap();
+
     /* Read in config values */
     ret = flb_filter_config_map_set(f_ins, (void *) ctx);
     if (ret == -1) {
@@ -645,7 +648,7 @@ static inline void map_pack_each(msgpack_packer* packer, msgpack_object* map) {
 }
 
 static inline void map_pack_each_fn(msgpack_packer* packer, msgpack_object* map, struct modify_rule* rule, bool(* f)(
-                                    msgpack_object_kv* kv, struct modify_rule* rule)) {
+        msgpack_object_kv* kv, struct modify_rule* rule)) {
     int i;
 
     for (i = 0; i < map->via.map.size; i++) {
@@ -660,7 +663,7 @@ static inline void map_pack_each_fn_kv(msgpack_packer *packer,
                                        msgpack_object *map,
                                        struct pii_kv *field_kv,
                                        bool(* f)(msgpack_object_kv *kv,
-                                       struct pii_kv *field_kv)) {
+                                                 struct pii_kv *field_kv)) {
     int i;
 
     for (i = 0; i < map->via.map.size; i++) {
@@ -750,7 +753,7 @@ static inline int apply_rule_ENCRYPT(struct flb_filter_encrypt* ctx, msgpack_pac
                 } else if (strncmp(an_item->val, "aes_gcm", an_item->val_len) == 0) {
                     // encrypt with aes-gcm mode
                     pseudonymized_value =
-                        aes_128_gcm_encrypt(tmp_extracted_value, strlen(tmp_extracted_value), aes_det_key);
+                            aes_128_gcm_encrypt(tmp_extracted_value, strlen(tmp_extracted_value), aes_det_key);
                     flb_debug("Encrypted with aes-gcm mode: %s\n", pseudonymized_value);
                 } else if (strncmp(an_item->val, "aes_gcm_det", an_item->val_len) == 0) {
                     // encrypt with aes-gcm mode deterministic
@@ -869,7 +872,7 @@ static inline int apply_modifying_rules(msgpack_packer* packer, msgpack_object* 
             if (msgpack_unpacker_buffer_capacity(&unpacker) < new_buffer_size) {
                 if (!msgpack_unpacker_reserve_buffer(&unpacker, new_buffer_size)) {
                     flb_plg_error(ctx->f_ins, "Unable to re-allocate memory for "
-                                            "unpacker, aborting");
+                                              "unpacker, aborting");
                     return -1;
                 }
             }
@@ -883,7 +886,7 @@ static inline int apply_modifying_rules(msgpack_packer* packer, msgpack_object* 
                 map = unpacked.data;
             } else {
                 flb_plg_error(ctx->f_ins, "Expected MSGPACK_MAP, this is not a "
-                                        "valid return value, skipping");
+                                          "valid return value, skipping");
             }
         }
 
@@ -912,12 +915,12 @@ static inline int apply_modifying_rules(msgpack_packer* packer, msgpack_object* 
 }
 
 static int cb_encrypt_filter(const void *data, size_t bytes,
-                         const char *tag, int tag_len,
-                         void **out_buf, size_t *out_size,
-                         struct flb_filter_instance *f_ins,
-                         struct flb_input_instance *i_ins,
-                         void *context,
-                         struct flb_config *config)
+                             const char *tag, int tag_len,
+                             void **out_buf, size_t *out_size,
+                             struct flb_filter_instance *f_ins,
+                             struct flb_input_instance *i_ins,
+                             void *context,
+                             struct flb_config *config)
 {
 
     flb_debug("cb_encrypt_filter");
@@ -1027,6 +1030,9 @@ static void flb_filter_encrypt_destroy(struct flb_filter_encrypt *ctx)
 static int cb_encrypt_exit(void *data, struct flb_config *config)
 {
     struct flb_filter_encrypt *ctx = data;
+
+    // Free the hashmap
+    freeHashMap();
 
     if (ctx != NULL) {
         flb_filter_encrypt_destroy(ctx);

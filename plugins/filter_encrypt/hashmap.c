@@ -1,113 +1,116 @@
 #include "hashmap.h"
 
-#include <fluent-bit/flb_log.h>
+//#include <fluent-bit/flb_log.h>
 #include <fluent-bit/flb_mem.h>
 
-struct HashMapEntry* hashTable[SIZE];
-struct HashMapEntry* anItem;
-struct HashMapEntry* element;
+#define INITIAL_SIZE 512
 
-struct HashMapEntry *get(char *key) {
-    //get the hash
+static struct HashMapEntry** hashTable;
+static size_t currentSize;
+
+static unsigned char hash(const char *key) {
+    unsigned int hash = 0;
+    while (*key) {
+        hash = (hash * 31) ^ (unsigned char) *key++;
+    }
+    return hash % currentSize;
+}
+
+static void resize_if_needed() {
+    // Add logic to resize and rehash the table if necessary
+    // This can include conditions for load factor thresholds
+}
+
+struct HashMapEntry *get(const char *key) {
     int hashIndex = hash(key);
-    //printf("searching key=%s, hashIndex = %d\n", key, hashIndex);
 
-    //move in array until an empty
-    while(hashTable[hashIndex] != NULL) {
-
-        //printf("comparing %s with %s\n", hashTable[hashIndex]->key, key);
-        if(strcmp(hashTable[hashIndex]->key, key) == 0) {
-            //printf("Item found!\n");
+    while (hashTable[hashIndex] != NULL) {
+        if (strcmp(hashTable[hashIndex]->key, key) == 0) {
             return hashTable[hashIndex];
         }
-
-        //go to next cell
-        ++hashIndex;
-
-        //wrap around the table
-        hashIndex %= SIZE;
+        hashIndex = (hashIndex + 1) % currentSize;
     }
 
-    //printf("Item not found!\n");
     return NULL;
 }
 
-unsigned char hash(const char *key) {
-    unsigned int hash = -1;
-    while (*key) {
-        hash *= 31;
-        hash ^= (unsigned char) *key;
-        key += 1;
-    }
-    return hash;
-}
+void insert(const char *key, const void *data) {
+    resize_if_needed();
 
-/**
- * Inserts key-value in the hash-table.
- * Note: Max length for key/value is defined in MAX_KV_SIZE
- * @param key key of the new entry
- * @param data value of the new entry
- */
-void insert(char *key, void* data) {
     struct HashMapEntry *item = flb_malloc(sizeof(struct HashMapEntry));
-    if( !item ) {
-        flb_debug("Could not allocate memory for HashMapEntry struct. \n");
-        flb_error("Could not allocate memory for HashMapEntry struct. Exiting program.\n");
-        exit( 1 );
+    if (!item) {
+        flb_debug("Could not allocate memory for HashMapEntry struct. Exiting program.\n");
+        exit(1);
     }
+
     item->data = flb_malloc(MAX_KV_SIZE);
-    memset(item->data,0,MAX_KV_SIZE);
-    memcpy(item->data, data, strlen(data));
+    if (!item->data) {
+        flb_debug("Could not allocate memory for data. Exiting program.\n");
+        exit(1);
+    }
+    strncpy(item->data, data, MAX_KV_SIZE - 1);
+    item->data[MAX_KV_SIZE - 1] = '\0';
 
     item->key = flb_malloc(MAX_KV_SIZE);
-    memset(item->key,0,MAX_KV_SIZE);
-    memcpy(item->key, key, strlen(key));
-    //get the hash
-    int hashIndex = hash(key);
-    //move in array until an empty or deleted cell
-    while(hashTable[hashIndex] != NULL && hashTable[hashIndex]->key != -1) {
-        //go to next cell
-        ++hashIndex;
+    if (!item->key) {
+        flb_debug("Could not allocate memory for key. Exiting program.\n");
+        exit(1);
+    }
+    strncpy(item->key, key, MAX_KV_SIZE - 1);
+    item->key[MAX_KV_SIZE - 1] = '\0';
 
-        //wrap around the table
-        hashIndex %= SIZE;
+    int hashIndex = hash(key);
+    while (hashTable[hashIndex] != NULL && hashTable[hashIndex]->key != (char *)-1) {
+        hashIndex = (hashIndex + 1) % currentSize;
     }
     hashTable[hashIndex] = item;
 }
 
-struct HashMapEntry* delete(struct HashMapEntry* item) {
-    char *key = item->key;
-    //get the hash
+struct HashMapEntry* delete(const char *key) {
     int hashIndex = hash(key);
 
-    //move in array until an empty
-    while(hashTable[hashIndex] != NULL) {
-
-        if(hashTable[hashIndex]->key == key) {
+    while (hashTable[hashIndex] != NULL) {
+        if (strcmp(hashTable[hashIndex]->key, key) == 0) {
             struct HashMapEntry* temp = hashTable[hashIndex];
-
-            //assign a dummy item at deleted position
-            hashTable[hashIndex] = anItem;
+            hashTable[hashIndex] = (struct HashMapEntry *)-1;
             return temp;
         }
-
-        //go to next cell
-        ++hashIndex;
-
-        //wrap around the table
-        hashIndex %= SIZE;
+        hashIndex = (hashIndex + 1) % currentSize;
     }
 
     return NULL;
 }
 
 void dumpHashMap() {
-    int i = 0;
-    for(i = 0; i<SIZE; i++) {
-        if(hashTable[i] != NULL)
-            printf("[%d] (%s,%s)\n",i, hashTable[i]->key,hashTable[i]->data);
+    for (size_t i = 0; i < currentSize; i++) {
+        if (hashTable[i] != NULL && hashTable[i] != (struct HashMapEntry *)-1)
+            printf("[%zu] (%s, %s)\n", i, hashTable[i]->key, hashTable[i]->data);
         else
-            printf("[%d] (Empty, Empty)\n");
+            printf("[%zu] (Empty, Empty)\n", i);
     }
     printf("\n");
+}
+
+void initHashMap() {
+    currentSize = INITIAL_SIZE;
+    hashTable = flb_malloc(currentSize * sizeof(struct HashMapEntry *));
+    if (!hashTable) {
+        //flb_error("Could not allocate memory for hash table. Exiting program.\n");
+        printf("Error: Could not allocate memory for hash table. Exiting program.\n");
+        exit(1);
+    }
+    for (size_t i = 0; i < currentSize; i++) {
+        hashTable[i] = NULL;
+    }
+}
+
+void freeHashMap() {
+    for (size_t i = 0; i < currentSize; i++) {
+        if (hashTable[i] != NULL && hashTable[i] != (struct HashMapEntry *)-1) {
+            flb_free(hashTable[i]->data);
+            flb_free(hashTable[i]->key);
+            flb_free(hashTable[i]);
+        }
+    }
+    flb_free(hashTable);
 }

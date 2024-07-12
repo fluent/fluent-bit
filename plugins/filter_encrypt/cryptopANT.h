@@ -18,7 +18,6 @@
  *
  */
 
-
 #ifndef _SCRAMBLE_CRYPT_H
 #define _SCRAMBLE_CRYPT_H
 
@@ -26,11 +25,19 @@
 extern "C" {
 #endif
 
+#include <stdint.h>
+#ifdef _WIN32
+#include <winsock2.h>
+#include <ws2tcpip.h>
+#else
+#include <arpa/inet.h>
+#endif
+
 #define ETHER_ADDR_LEN		6
 #define ETHER_VLAN_LEN		2
 
-#define _XOR16(a, b, i)         (((uint16_t *)(a))[i] ^= ((uint16_t *)(b))[i])
-#define _XOR32(a, b, i)         (((uint32_t *)(a))[i] ^= ((uint32_t *)(b))[i])
+#define _XOR16(a, b, i)         (((unsigned short *)(a))[i] ^= ((unsigned short *)(b))[i])
+#define _XOR32(a, b, i)         (((unsigned int *)(a))[i] ^= ((unsigned int *)(b))[i])
 
 #define SCRAMBLE_ETHER_ADDR(a)  if (1) {     \
         _XOR32(a, scramble_ether_addr, 0);              \
@@ -39,28 +46,28 @@ extern "C" {
 
 #define SCRAMBLE_ETHER_VLAN(v)	((v) ^= scramble_ether_vlan);
 
-#define SCRAMBLE_RANDOM_DEV	"/dev/urandom" 
+#define SCRAMBLE_RANDOM_DEV	"/dev/urandom"
 
 typedef enum {
-	SCRAMBLE_NONE		= 0x00,
-	SCRAMBLE_MD5 		= 0x01,
-	SCRAMBLE_BLOWFISH 	= 0x02,
-	SCRAMBLE_AES 		= 0x03,
-	SCRAMBLE_SHA1		= 0x04,
-	SCRAMBLE_HMAC_SHA256= 0x05
+    SCRAMBLE_NONE		= 0x00,
+    SCRAMBLE_MD5 		= 0x01,
+    SCRAMBLE_BLOWFISH 	= 0x02,
+    SCRAMBLE_AES 		= 0x03,
+    SCRAMBLE_SHA1		= 0x04,
+    SCRAMBLE_HMAC_SHA256= 0x05
 } scramble_crypt_t;
 
 typedef struct {
-	scramble_crypt_t	c4;
-	scramble_crypt_t	c6;
-	u_char			*key;
-	int			klen;
-	u_char			*pad;
-	int			plen;
-	u_char			*mac;
-	int			mlen;
-	u_char			*iv;
-	int			ivlen;	
+    scramble_crypt_t	c4;
+    scramble_crypt_t	c6;
+    unsigned char		*key;
+    int			klen;
+    unsigned char		*pad;
+    int			plen;
+    unsigned char		*mac;
+    int			mlen;
+    unsigned char		*iv;
+    int			ivlen;
 } scramble_state_t;
 
 /* external vars exported by mac scrambling macros */
@@ -69,23 +76,23 @@ extern uint16_t			scramble_ether_vlan;
 extern int		    	scramble_mac;		/* 0/1 */
 
 /* public functions */
-extern scramble_crypt_t scramble_crypto_ip4	(void);
-extern scramble_crypt_t scramble_crypto_ip6	(void);
-extern scramble_crypt_t	scramble_name2type	(const char *);
-extern const char*	scramble_type2name	(scramble_crypt_t);
-extern int		scramble_newkey		(u_char *, int);
-extern int		scramble_newpad		(u_char *, int);
-extern int		scramble_newmac		(u_char *, int);
-extern int		scramble_readstate	(const char *, scramble_state_t *);
-extern int		scramble_savestate	(const char *, const scramble_state_t *);
-extern int		scramble_init		(const scramble_state_t *s);
-extern int		scramble_init_from_file	(const char *, scramble_crypt_t, scramble_crypt_t, int *);
-extern void     set_encrypt_key     (const char *ckey);
-extern uint32_t 	scramble_ip4		(uint32_t, int);
-extern uint32_t 	unscramble_ip4		(uint32_t, int);
-extern struct in6_addr   scramble_ip6		(struct in6_addr *, int);
-extern struct in6_addr	 unscramble_ip6		(struct in6_addr *, int);
-void   ipv6_to_str_unexpanded               (char *str, const struct in6_addr *addr);
+extern scramble_crypt_t scramble_crypto_ip4(void);
+extern scramble_crypt_t scramble_crypto_ip6(void);
+extern scramble_crypt_t scramble_name2type(const char *);
+extern const char* scramble_type2name(scramble_crypt_t);
+extern int scramble_newkey(unsigned char *, int);
+extern int scramble_newpad(unsigned char *, int);
+extern int scramble_newmac(unsigned char *, int);
+extern int scramble_readstate(const char *, scramble_state_t *);
+extern int scramble_savestate(const char *, const scramble_state_t *);
+extern int scramble_init(const scramble_state_t *s);
+extern int scramble_init_from_file(const char *, scramble_crypt_t, scramble_crypt_t, int *);
+extern void set_encrypt_key(const char *ckey);
+extern uint32_t scramble_ip4(uint32_t, int);
+extern uint32_t unscramble_ip4(uint32_t, int);
+extern struct in6_addr scramble_ip6(struct in6_addr *, int);
+extern struct in6_addr unscramble_ip6(struct in6_addr *, int);
+void ipv6_to_str_unexpanded(char *str, const struct in6_addr *addr);
 
 #ifdef __cplusplus
 }

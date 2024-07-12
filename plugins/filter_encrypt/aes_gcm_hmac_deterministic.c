@@ -22,9 +22,12 @@ char* aes_128_gcm_encrypt_deterministic(unsigned char *plaintext,
                                         int plaintext_len,
                                         unsigned char *key)
 {
-    /* A 128 bit IV */
     const int IV_LEN = 16;
-    unsigned char iv[IV_LEN];
+    unsigned char *iv = (unsigned char *)malloc(IV_LEN * sizeof(unsigned char));
+    if (!iv) {
+        perror("Failed to allocate memory for IV");
+        return NULL;
+    }
 
     unsigned char *result_len = NULL;
     unsigned char *hash_result = NULL;
@@ -41,18 +44,20 @@ char* aes_128_gcm_encrypt_deterministic(unsigned char *plaintext,
 
     size_t iv_len = IV_LEN;
 
-    /* Additional data */
     unsigned char *additional = (unsigned char *)"";
 
-    /* Needs to be large enough - reserved double the size of plaintext */
     const int ciphertext_size = strlen((char *)plaintext) * 2;
-    unsigned char ciphertext[ciphertext_size];
-    memset(ciphertext, 0, sizeof(ciphertext));
+    unsigned char *ciphertext = (unsigned char *)malloc(ciphertext_size * sizeof(unsigned char));
+    if (!ciphertext) {
+        perror("Failed to allocate memory for ciphertext");
+        free(iv);
+        free(hash_result);
+        return NULL;
+    }
+    memset(ciphertext, 0, ciphertext_size);
 
-    /* Buffer for the tag */
     unsigned char tag[17] = {0};
 
-    /* A 128 bit TAG */
     const int TAG_LEN = 16;
 
     int ciphertext_len;
@@ -64,18 +69,33 @@ char* aes_128_gcm_encrypt_deterministic(unsigned char *plaintext,
                                                    ciphertext, tag);
 
     char *ciphertext_tag = concaten(ciphertext, ciphertext_len, tag, TAG_LEN);
+    free(ciphertext);
+
+    if (ciphertext_tag == NULL) {
+        free(iv);
+        free(hash_result);
+        return NULL;
+    }
 
     char *iv_ciphertext_tag = concaten(iv, IV_LEN, ciphertext_tag, ciphertext_len + TAG_LEN);
+    free(ciphertext_tag);
+    free(iv);
+
+    if (iv_ciphertext_tag == NULL) {
+        free(hash_result);
+        return NULL;
+    }
 
     int iv_ciphertext_tag_len = IV_LEN + ciphertext_len + TAG_LEN;
 
-    if (DO_DEBUG > 0) printf("inputs:\n");
-    if (DO_DEBUG > 0) print_bytes(iv_ciphertext_tag, strlen(iv_ciphertext_tag));
+    if (DO_DEBUG > 0) {
+        printf("inputs:\n");
+        print_bytes(iv_ciphertext_tag, strlen(iv_ciphertext_tag));
+    }
 
     char *iv_ciphertext_tag_b64 = base64encode(iv_ciphertext_tag, iv_ciphertext_tag_len);
-
-    free(ciphertext_tag);
     free(iv_ciphertext_tag);
+    free(hash_result);
 
     return iv_ciphertext_tag_b64;
 }
@@ -89,56 +109,49 @@ int aes_gcm_encrypt_deterministic(unsigned char *plaintext, int plaintext_len,
     EVP_CIPHER_CTX *ctx;
     int len;
     int ciphertext_len;
-
-    /* A 128 bit TAG */
     const int TAG_LEN = 16;
 
-    /* Create and initialise the context */
-    if(!(ctx = EVP_CIPHER_CTX_new()))
+    if (!(ctx = EVP_CIPHER_CTX_new())) {
         handleErrorsAesGcmHmac();
+    }
 
-    /* Initialise the encryption operation. */
-    if(1 != EVP_EncryptInit_ex(ctx, EVP_aes_128_gcm(), NULL, NULL, NULL))
+    if (1 != EVP_EncryptInit_ex(ctx, EVP_aes_128_gcm(), NULL, NULL, NULL)) {
+        EVP_CIPHER_CTX_free(ctx);
         handleErrorsAesGcmHmac();
+    }
 
-    /*
-     * Set IV length if default 12 bytes (96 bits) is not appropriate
-     */
-    if(1 != EVP_CIPHER_CTX_ctrl(ctx, EVP_CTRL_GCM_SET_IVLEN, iv_len, NULL))
+    if (1 != EVP_CIPHER_CTX_ctrl(ctx, EVP_CTRL_GCM_SET_IVLEN, iv_len, NULL)) {
+        EVP_CIPHER_CTX_free(ctx);
         handleErrorsAesGcmHmac();
+    }
 
-    /* Initialise key and IV */
-    if(1 != EVP_EncryptInit_ex(ctx, NULL, NULL, key, iv))
+    if (1 != EVP_EncryptInit_ex(ctx, NULL, NULL, key, iv)) {
+        EVP_CIPHER_CTX_free(ctx);
         handleErrorsAesGcmHmac();
+    }
 
-    /*
-     * Provide any AAD data. This can be called zero or more times as
-     * required
-     */
-    if(1 != EVP_EncryptUpdate(ctx, NULL, &len, aad, aad_len))
+    if (1 != EVP_EncryptUpdate(ctx, NULL, &len, aad, aad_len)) {
+        EVP_CIPHER_CTX_free(ctx);
         handleErrorsAesGcmHmac();
+    }
 
-    /*
-     * Provide the message to be encrypted, and obtain the encrypted output.
-     * EVP_EncryptUpdate can be called multiple times if necessary
-     */
-    if(1 != EVP_EncryptUpdate(ctx, ciphertext, &len, plaintext, plaintext_len))
+    if (1 != EVP_EncryptUpdate(ctx, ciphertext, &len, plaintext, plaintext_len)) {
+        EVP_CIPHER_CTX_free(ctx);
         handleErrorsAesGcmHmac();
+    }
     ciphertext_len = len;
 
-    /*
-     * Finalise the encryption. Normally ciphertext bytes may be written at
-     * this stage, but this does not occur in GCM mode
-     */
-    if(1 != EVP_EncryptFinal_ex(ctx, ciphertext + len, &len))
+    if (1 != EVP_EncryptFinal_ex(ctx, ciphertext + len, &len)) {
+        EVP_CIPHER_CTX_free(ctx);
         handleErrorsAesGcmHmac();
+    }
     ciphertext_len += len;
 
-    /* Get the tag */
-    if(1 != EVP_CIPHER_CTX_ctrl(ctx, EVP_CTRL_GCM_GET_TAG, TAG_LEN, tag))
+    if (1 != EVP_CIPHER_CTX_ctrl(ctx, EVP_CTRL_GCM_GET_TAG, TAG_LEN, tag)) {
+        EVP_CIPHER_CTX_free(ctx);
         handleErrorsAesGcmHmac();
+    }
 
-    /* Clean up */
     EVP_CIPHER_CTX_free(ctx);
 
     return ciphertext_len;
@@ -151,64 +164,55 @@ int aes_gcm_decrypt_deterministic(unsigned char *ciphertext, int ciphertext_len,
                                   unsigned char *iv, int iv_len,
                                   unsigned char *plaintext)
 {
-    /* A 128 bit TAG */
     const int TAG_LEN = 16;
-
     EVP_CIPHER_CTX *ctx;
     int len;
     int plaintext_len;
     int ret;
 
-    /* Create and initialise the context */
-    if(!(ctx = EVP_CIPHER_CTX_new()))
+    if (!(ctx = EVP_CIPHER_CTX_new())) {
         handleErrorsAesGcmHmac();
+    }
 
-    /* Initialise the decryption operation. */
-    if(!EVP_DecryptInit_ex(ctx, EVP_aes_128_gcm(), NULL, NULL, NULL))
+    if (!EVP_DecryptInit_ex(ctx, EVP_aes_128_gcm(), NULL, NULL, NULL)) {
+        EVP_CIPHER_CTX_free(ctx);
         handleErrorsAesGcmHmac();
+    }
 
-    /* Set IV length. Not necessary if this is 12 bytes (96 bits) */
-    if(!EVP_CIPHER_CTX_ctrl(ctx, EVP_CTRL_GCM_SET_IVLEN, iv_len, NULL))
+    if (!EVP_CIPHER_CTX_ctrl(ctx, EVP_CTRL_GCM_SET_IVLEN, iv_len, NULL)) {
+        EVP_CIPHER_CTX_free(ctx);
         handleErrorsAesGcmHmac();
+    }
 
-    /* Initialise key and IV */
-    if(!EVP_DecryptInit_ex(ctx, NULL, NULL, key, iv))
+    if (!EVP_DecryptInit_ex(ctx, NULL, NULL, key, iv)) {
+        EVP_CIPHER_CTX_free(ctx);
         handleErrorsAesGcmHmac();
+    }
 
-    /*
-     * Provide any AAD data. This can be called zero or more times as
-     * required
-     */
-    if(!EVP_DecryptUpdate(ctx, NULL, &len, aad, aad_len))
+    if (!EVP_DecryptUpdate(ctx, NULL, &len, aad, aad_len)) {
+        EVP_CIPHER_CTX_free(ctx);
         handleErrorsAesGcmHmac();
+    }
 
-    /*
-     * Provide the message to be decrypted, and obtain the plaintext output.
-     * EVP_DecryptUpdate can be called multiple times if necessary
-     */
-    if(!EVP_DecryptUpdate(ctx, plaintext, &len, ciphertext, ciphertext_len))
+    if (!EVP_DecryptUpdate(ctx, plaintext, &len, ciphertext, ciphertext_len)) {
+        EVP_CIPHER_CTX_free(ctx);
         handleErrorsAesGcmHmac();
+    }
     plaintext_len = len;
 
-    /* Set expected tag value. Works in OpenSSL 1.0.1d and later */
-    if(!EVP_CIPHER_CTX_ctrl(ctx, EVP_CTRL_GCM_SET_TAG, TAG_LEN, tag))
+    if (!EVP_CIPHER_CTX_ctrl(ctx, EVP_CTRL_GCM_SET_TAG, TAG_LEN, tag)) {
+        EVP_CIPHER_CTX_free(ctx);
         handleErrorsAesGcmHmac();
+    }
 
-    /*
-     * Finalise the decryption. A positive return value indicates success,
-     * anything else is a failure - the plaintext is not trustworthy.
-     */
     ret = EVP_DecryptFinal_ex(ctx, plaintext + len, &len);
 
-    /* Clean up */
     EVP_CIPHER_CTX_free(ctx);
 
-    if(ret > 0) {
-        /* Success */
+    if (ret > 0) {
         plaintext_len += len;
         return plaintext_len;
     } else {
-        /* Verify failed */
         return -1;
     }
 }

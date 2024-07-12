@@ -1,7 +1,3 @@
-//
-// Created by alisrasic on 10/11/22.
-//
-
 #ifndef AES_GCM_HMAC_DET_H_
 #define AES_GCM_HMAC_DET_H_
 

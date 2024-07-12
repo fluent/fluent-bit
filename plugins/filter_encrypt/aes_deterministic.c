@@ -6,7 +6,6 @@
 #include <openssl/evp.h>
 #include <openssl/err.h>
 #include "utils.h"
-#include "cmac.h"
 
 #define KEY_LEN      32
 #define KEK_KEY_LEN  128
@@ -63,7 +62,7 @@ void handleErrors(void) {
 }
 
 int encrypt_aes_128_ctr(unsigned char *plaintext, int plaintext_len, unsigned char *key,
-            unsigned char *iv, unsigned char *ciphertext) {
+                        unsigned char *iv, unsigned char *ciphertext) {
     EVP_CIPHER_CTX *ctx;
 
     int len;
@@ -107,7 +106,7 @@ int encrypt_aes_128_ctr(unsigned char *plaintext, int plaintext_len, unsigned ch
 }
 
 int decrypt_aes_128_ctr(unsigned char *ciphertext, int ciphertext_len, unsigned char *key,
-            unsigned char *iv, unsigned char *plaintext) {
+                        unsigned char *iv, unsigned char *plaintext) {
     EVP_CIPHER_CTX *ctx;
 
     int len;
@@ -182,7 +181,7 @@ void generate_derived_key(const unsigned char * master_key, unsigned char* deriv
         flb_debug("Key (key)\n");
         BIO_dump_fp(stdout, (const char *) key, KEY_LEN + 1);
     }
-    aes_cmac((unsigned char*)(salt_copy), strlen(salt_copy) , (unsigned char*)derived_key, master_key);
+    compute_aes_cmac((unsigned char*)(salt_copy), strlen(salt_copy) , (unsigned char*)derived_key, master_key);
 
     if (flb_log_check(FLB_LOG_TRACE)) {
         flb_debug("AES-128-CMAC Result (derived_key)\n");
@@ -194,7 +193,7 @@ void generate_encryption_iv(unsigned char* derived_key, unsigned char* encryptio
     unsigned char message[16] = {0x00};
     char msg[] = "0";
     memcpy(message, msg, strlen(msg));
-    aes_cmac((unsigned char*)(msg), strlen(msg) , (unsigned char*)encryption_iv, derived_key);
+    compute_aes_cmac((unsigned char*)(msg), strlen(msg) , (unsigned char*)encryption_iv, derived_key);
     if (flb_log_check(FLB_LOG_TRACE)) {
         flb_debug("AES-128-CMAC Result (encryption_iv)\n");
         BIO_dump_fp(stdout, (const char *) encryption_iv, strlen(encryption_iv));
@@ -301,7 +300,7 @@ aes_det(const char* plaintext, const char* KEY128, const char* MASTER_KEY_SALT) 
 
     /* Encrypt the plaintext */
     ciphertext_len = encrypt_aes_128_ctr(plaintext, strlen((char *) plaintext), encryption_key, encryption_iv,
-                             ciphertext);
+                                         ciphertext);
 
     /* Do something useful with the ciphertext here */
     if (flb_log_check(FLB_LOG_TRACE)) flb_debug("Ciphertext is:\n");
