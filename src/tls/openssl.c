@@ -152,7 +152,7 @@ int tls_context_alpn_set(void *ctx_backend, const char *alpn)
     result = 0;
 
     if (alpn != NULL) {
-        wire_format_alpn = flb_calloc(strlen(alpn), 
+        wire_format_alpn = flb_calloc(strlen(alpn),
                                       sizeof(char) + 1);
 
         if (wire_format_alpn == NULL) {
@@ -163,15 +163,15 @@ int tls_context_alpn_set(void *ctx_backend, const char *alpn)
 
         if (alpn_working_copy == NULL) {
             flb_free(wire_format_alpn);
-            
+
             return -1;
         }
 
         wire_format_alpn_index = 1;
         alpn_token_context = NULL;
 
-        alpn_token = strtok_r(alpn_working_copy, 
-                              ",", 
+        alpn_token = strtok_r(alpn_working_copy,
+                              ",",
                               &alpn_token_context);
 
         while (alpn_token != NULL) {
@@ -183,8 +183,8 @@ int tls_context_alpn_set(void *ctx_backend, const char *alpn)
 
             wire_format_alpn_index += strlen(alpn_token) + 1;
 
-            alpn_token = strtok_r(NULL, 
-                                  ",", 
+            alpn_token = strtok_r(NULL,
+                                  ",",
                                   &alpn_token_context);
         }
 
@@ -220,8 +220,8 @@ static int tls_context_server_alpn_select_callback(SSL *ssl,
     if (ctx->alpn != NULL) {
         result = SSL_select_next_proto((unsigned char **) out,
                                        outlen,
-                                       &ctx->alpn[1], 
-                                       (unsigned int) ctx->alpn[0], 
+                                       &ctx->alpn[1],
+                                       (unsigned int) ctx->alpn[0],
                                        in,
                                        inlen);
 
@@ -235,7 +235,7 @@ static int tls_context_server_alpn_select_callback(SSL *ssl,
 
     return result;
 }
-      
+
 #ifdef _MSC_VER
 static int windows_load_system_certificates(struct tls_context *ctx)
 {
@@ -305,7 +305,7 @@ static int load_system_certificates(struct tls_context *ctx)
     }
     return 0;
 }
-  
+
 static void *tls_context_create(int verify,
                                 int debug,
                                 int mode,
@@ -369,8 +369,8 @@ static void *tls_context_create(int verify,
     pthread_mutex_init(&ctx->mutex, NULL);
 
     if (mode == FLB_TLS_SERVER_MODE) {
-        SSL_CTX_set_alpn_select_cb(ssl_ctx, 
-                                   tls_context_server_alpn_select_callback, 
+        SSL_CTX_set_alpn_select_cb(ssl_ctx,
+                                   tls_context_server_alpn_select_callback,
                                    ctx);
     }
 
@@ -578,6 +578,8 @@ static int tls_net_write(struct flb_tls_session *session,
                          const void *data, size_t len)
 {
     int ret;
+    int ssl_ret;
+    int err_code;
     char err_buf[256];
     size_t total = 0;
     struct tls_context *ctx;
@@ -601,18 +603,28 @@ static int tls_net_write(struct flb_tls_session *session,
                     len - total);
 
     if (ret <= 0) {
-        ret = SSL_get_error(backend_session->ssl, ret);
+        ssl_ret = SSL_get_error(backend_session->ssl, ret);
 
-        if (ret == SSL_ERROR_WANT_WRITE) {
+        if (ssl_ret == SSL_ERROR_WANT_WRITE) {
             ret = FLB_TLS_WANT_WRITE;
         }
-        else if (ret == SSL_ERROR_WANT_READ) {
+        else if (ssl_ret == SSL_ERROR_WANT_READ) {
             ret = FLB_TLS_WANT_READ;
         }
-        else if (ret == SSL_ERROR_SYSCALL) {
-            flb_errno();
-            ERR_error_string_n(ret, err_buf, sizeof(err_buf)-1);
-            flb_error("[tls] syscall error: %s", err_buf);
+        else if (ssl_ret == SSL_ERROR_SYSCALL) {
+            if (ERR_get_error() == 0) {
+                if (ret == 0) {
+                    flb_debug("[tls] connection closed");
+                }
+                else {
+                    flb_error("[tls] syscall error: %s", strerror(errno));
+                }
+            }
+            else {
+                err_code = ERR_get_error();
+                ERR_error_string_n(err_code, err_buf, sizeof(err_buf) - 1);
+                flb_error("[tls] syscall error: %s", err_buf);
+            }
 
             /* According to the documentation these are non-recoverable
              * errors so we don't need to screen them before saving them
@@ -624,9 +636,14 @@ static int tls_net_write(struct flb_tls_session *session,
             ret = -1;
         }
         else {
-            ERR_error_string_n(ret, err_buf, sizeof(err_buf)-1);
-            flb_error("[tls] error: %s", err_buf);
-
+            err_code = ERR_get_error();
+            if (err_code == 0) {
+                flb_error("[tls] unknown error");
+            }
+            else {
+                ERR_error_string_n(err_code, err_buf, sizeof(err_buf) - 1);
+                flb_error("[tls] error: %s", err_buf);
+            }
             ret = -1;
         }
     }

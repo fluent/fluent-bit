@@ -628,7 +628,6 @@ static void cb_splunk_flush(struct flb_event_chunk *event_chunk,
     flb_sds_t buf_data;
     size_t resp_size;
     size_t buf_size;
-    char *endpoint;
     struct flb_splunk *ctx = out_context;
     struct flb_connection *u_conn;
     struct flb_http_client *c;
@@ -687,16 +686,8 @@ static void cb_splunk_flush(struct flb_event_chunk *event_chunk,
         }
     }
 
-    /* Splunk URI endpoint */
-    if (ctx->splunk_send_raw) {
-        endpoint = FLB_SPLUNK_DEFAULT_URI_RAW;
-    }
-    else {
-        endpoint = FLB_SPLUNK_DEFAULT_URI_EVENT;
-    }
-
     /* Compose HTTP Client request */
-    c = flb_http_client(u_conn, FLB_HTTP_POST, endpoint,
+    c = flb_http_client(u_conn, FLB_HTTP_POST, FLB_SPLUNK_DEFAULT_ENDPOINT,
                         payload_buf, payload_size, NULL, 0, NULL, 0);
 
     /* HTTP Response buffer size, honor value set by the user */

@@ -1,10 +1,10 @@
 #ifndef LUA_LJDIR
 #if defined(__ANDROID__)
-  #if __ANDROID_API__==19
+  #if __ANDROID_API__ < 21
      #if defined(lua_getlocaledecpoint)
      #undef lua_getlocaledecpoint
      #endif
-  
+
      #define lua_getlocaledecpoint()        ('.')
   #endif
   #if __ANDROID_API__ < 25
