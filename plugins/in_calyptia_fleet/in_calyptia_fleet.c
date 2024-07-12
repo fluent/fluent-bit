@@ -68,6 +68,34 @@
 #define PATH_SEPARATOR "\\"
 #endif
 
+#ifdef _WIN32
+#include <windows.h>
+#include <fileapi.h>
+#include <stringapiset.h>
+
+static ssize_t readlink_windows(const char *path, char *buf, size_t bufsize)
+{
+    HANDLE hFile = CreateFile(path, GENERIC_READ, FILE_SHARE_READ, NULL, OPEN_EXISTING, FILE_FLAG_BACKUP_SEMANTICS, NULL);
+    if (hFile == INVALID_HANDLE_VALUE) {
+        return -1;
+    }
+
+    char tempBuf[4096];
+    DWORD size = GetFinalPathNameByHandle(hFile, tempBuf, sizeof(tempBuf) - 1, FILE_NAME_NORMALIZED);
+    CloseHandle(hFile);
+
+    if (size >= bufsize || size == 0) {
+        return -1;
+    }
+
+    strncpy(buf, tempBuf, bufsize - 1);
+    buf[bufsize - 1] = '\0';
+    return size;
+}
+#else
+#include <unistd.h>
+#endif
+
 struct flb_in_calyptia_fleet_config {
     /* Time interval check */
     int interval_sec;
@@ -549,19 +577,22 @@ static int parse_config_name_timestamp(struct flb_in_calyptia_fleet_config *ctx,
     }
 
     switch (is_link(cfgpath)) {
-    case FLB_TRUE:
-        len = readlink(cfgpath, realname, sizeof(realname));
-
-        if (len > sizeof(realname)) {
+        case FLB_TRUE:
+#ifdef _WIN32
+            len = readlink_windows(cfgpath, realname, sizeof(realname));
+#else
+            len = readlink(cfgpath, realname, sizeof(realname));
+#endif
+            if (len < 0 || len > sizeof(realname)) {
+                return FLB_FALSE;
+            }
+            break;
+        case FLB_FALSE:
+            strncpy(realname, cfgpath, sizeof(realname) - 1);
+            break;
+        default:
+            flb_errno();
             return FLB_FALSE;
-        }
-        break;
-    case FLB_FALSE:
-        strncpy(realname, cfgpath, sizeof(realname)-1);
-        break;
-    default:
-        flb_errno();
-        return FLB_FALSE;
     }
 
     fname = basename(realname);
