@@ -516,6 +516,15 @@ void lj_ccallback_mcode_free(CTState *cts)
   if (ctype_isfp(ctr->info) && ctr->size == sizeof(float)) \
     ((float *)dp)[1] = *(float *)dp;
 
+#elif LJ_TARGET_S390X
+
+#define CALLBACK_HANDLE_REGARG \
+  if (isfp) { \
+    if (nfpr < CCALL_NARG_FPR) { sp = &cts->cb.fpr[nfpr++]; goto done; } \
+  } else { \
+    if (ngpr < maxgpr) { sp = &cts->cb.gpr[ngpr++]; goto done; } \
+  }
+
 #else
 #error "Missing calling convention definitions for this architecture"
 #endif
