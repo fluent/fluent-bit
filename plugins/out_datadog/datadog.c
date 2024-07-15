@@ -276,8 +276,7 @@ static int datadog_format(struct flb_config *config,
             }
 
             /* Mapping between input keys to specific datadog keys */
-            if (ctx->dd_message_key != NULL &&
-                dd_compare_msgpack_obj_key_with_str(k, ctx->dd_message_key,
+            if (dd_compare_msgpack_obj_key_with_str(k, ctx->dd_message_key,
                                                     flb_sds_len(ctx->dd_message_key)) == FLB_TRUE) {
                 msgpack_pack_str(&mp_pck, sizeof(FLB_DATADOG_DD_MESSAGE_KEY)-1);
                 msgpack_pack_str_body(&mp_pck, FLB_DATADOG_DD_MESSAGE_KEY,
@@ -550,7 +549,7 @@ static struct flb_config_map config_map[] = {
      "This property is ignored"
     },
     {
-     FLB_CONFIG_MAP_STR, "dd_message_key", NULL,
+     FLB_CONFIG_MAP_STR, "dd_message_key", FLB_DATADOG_DEFAULT_LOG_KEY,
      0, FLB_TRUE, offsetof(struct flb_out_datadog, dd_message_key),
      "By default, the plugin searches for the key 'log' "
      "and remap the value to the key 'message'. "
