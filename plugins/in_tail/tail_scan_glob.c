@@ -254,13 +254,13 @@ static int tail_scan_path(const char *path, struct flb_tail_config *ctx)
             ret = flb_tail_file_append(globbuf.gl_pathv[i], &st,
                                        FLB_TAIL_STATIC, ctx);
             if (ret == 0) {
-                flb_plg_debug(ctx->ins, "scan_glob add(): %s, inode %li",
-                              globbuf.gl_pathv[i], st.st_ino);
+                flb_plg_debug(ctx->ins, "scan_glob add(): %s, inode %" PRIu64,
+                              globbuf.gl_pathv[i], (uint64_t) st.st_ino);
                 count++;
             }
             else {
-                flb_plg_debug(ctx->ins, "scan_blog add(): dismissed: %s, inode %li",
-                              globbuf.gl_pathv[i], st.st_ino);
+                flb_plg_debug(ctx->ins, "scan_blog add(): dismissed: %s, inode %" PRIu64,
+                              globbuf.gl_pathv[i], (uint64_t) st.st_ino);
             }
         }
         else {
