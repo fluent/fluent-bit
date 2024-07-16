@@ -1,4 +1,3 @@
-
 #include "aes.h"
 
 // Main Functions
@@ -147,8 +146,9 @@ void KeyExpansion(unsigned char* key, unsigned char* w, unsigned char Nk, unsign
         } else if (Nk > 6 && (i % (Nk * 4)) == 16) {
             SubWord(tmp);
         }
-        for (int j = 0; j < 4; j++)
-        w[i + j] = w[i - Nk * 4 + j] ^ tmp[j];
+        for (int j = 0; j < 4; j++) {
+            w[i + j] = w[i - Nk * 4 + j] ^ tmp[j];
+        }
     }
 }
 
