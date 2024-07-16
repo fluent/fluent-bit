@@ -23,39 +23,6 @@ const char SALT[] = {0x4B, 0x73, 0x00};
 /* encryption salt */
 const unsigned char ENCRYPTION_SALT[5] = {0x31,0x32,0x33,0x34,0x00};
 
-
-void generate_key_from_pbkdf2(char *passphrase, const unsigned char *pbkdf2_salt, unsigned char *out, int iters, int key_length){
-    size_t i;
-
-    size_t len = strlen(pbkdf2_salt);
-
-    if (flb_log_check(FLB_LOG_TRACE)) {
-        flb_debug("pass: %s\n", passphrase);
-        flb_debug("ITERATION: %u\n", iters);
-        flb_debug("salt: ");
-        for (i = 0; i < len; i++) { printf("%02x", pbkdf2_salt[i]); }
-        printf("\n");
-
-        flb_debug("strlen(pbkdf2_salt): %u\n", len);
-    }
-
-    if( PKCS5_PBKDF2_HMAC_SHA1(passphrase, strlen(passphrase), pbkdf2_salt, len, iters, key_length, out) != 0 )
-    {
-        if (flb_log_check(FLB_LOG_TRACE)) {
-            flb_debug("out in hex: ");
-            for (i = 0; i < key_length; i++) {
-                printf("%02x", out[i]);
-            }
-            printf("\n");
-        }
-    }
-    else
-    {
-        fprintf(stderr, "PKCS5_PBKDF2_HMAC_SHA1 failed\n");
-    }
-
-}
-
 void handleErrors(void) {
     ERR_print_errors_fp(stderr);
     abort();
@@ -204,6 +171,9 @@ void generate_encryption_iv(unsigned char* derived_key, unsigned char* encryptio
 char *
 aes_det(const char* plaintext, const char* KEY128, const char* MASTER_KEY_SALT) {
 
+    printf("invoking aes_det\n");
+    flb_debug("invoking aes_det\n");
+
     if (flb_log_check(FLB_LOG_TRACE)) {
         flb_debug("KEY128 in hex:\n");
         print_bytes(KEY128, 32);
@@ -255,7 +225,7 @@ aes_det(const char* plaintext, const char* KEY128, const char* MASTER_KEY_SALT) 
         flb_debug("executing generate_key_from_pbkdf2\n");
     }
 
-    generate_key_from_pbkdf2(KEY128, MASTER_KEY_SALT, master_key, ITERATION, KEY_LEN);
+    crypto_utils_generate_key_from_pbkdf2(KEY128, MASTER_KEY_SALT, master_key, ITERATION, KEY_LEN);
 
     if (flb_log_check(FLB_LOG_TRACE)) flb_debug("printing master_key once again\n");
     if (flb_log_check(FLB_LOG_TRACE)) print_bytes(master_key, KEY_LEN + 1);
@@ -288,7 +258,7 @@ aes_det(const char* plaintext, const char* KEY128, const char* MASTER_KEY_SALT) 
 
     unsigned char encryption_key[KEY_LEN + 1] = {0x00};
 
-    generate_key_from_pbkdf2(derived_key_base64_encoded, ENCRYPTION_SALT, encryption_key, PBKD2_ENCRYPTION_ITERATIONS, PBKD2_ENCRYPTION_KEY_LEN);
+    crypto_utils_generate_key_from_pbkdf2(derived_key_base64_encoded, ENCRYPTION_SALT, encryption_key, PBKD2_ENCRYPTION_ITERATIONS, PBKD2_ENCRYPTION_KEY_LEN);
 
     if (flb_log_check(FLB_LOG_TRACE)) {
         flb_debug("encryption_key in hex:\n");
