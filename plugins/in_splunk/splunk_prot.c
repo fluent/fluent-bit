@@ -241,7 +241,8 @@ static int process_raw_payload_pack(struct flb_splunk *ctx, flb_sds_t tag, char 
                 ret = flb_log_event_encoder_append_metadata_values(
                     &ctx->log_encoder,
                     FLB_LOG_EVENT_CSTRING_VALUE("hec_token"),
-                    FLB_LOG_EVENT_CSTRING_VALUE(ctx->ingested_auth_header));
+                    FLB_LOG_EVENT_STRING_VALUE(ctx->ingested_auth_header,
+                                               ctx->ingested_auth_header_len));
             }
         }
     }
@@ -251,7 +252,8 @@ static int process_raw_payload_pack(struct flb_splunk *ctx, flb_sds_t tag, char 
                 ret = flb_log_event_encoder_append_body_values(
                     &ctx->log_encoder,
                     FLB_LOG_EVENT_CSTRING_VALUE(ctx->store_token_key),
-                    FLB_LOG_EVENT_CSTRING_VALUE(ctx->ingested_auth_header),
+                    FLB_LOG_EVENT_STRING_VALUE(ctx->ingested_auth_header,
+                                               ctx->ingested_auth_header_len),
                     FLB_LOG_EVENT_CSTRING_VALUE("log"),
                     FLB_LOG_EVENT_STRING_VALUE(buf, size));
 
@@ -315,7 +317,8 @@ static void process_flb_log_append(struct flb_splunk *ctx, msgpack_object *recor
                 ret = flb_log_event_encoder_append_metadata_values(
                     &ctx->log_encoder,
                     FLB_LOG_EVENT_CSTRING_VALUE("hec_token"),
-                    FLB_LOG_EVENT_CSTRING_VALUE(ctx->ingested_auth_header));
+                    FLB_LOG_EVENT_STRING_VALUE(ctx->ingested_auth_header,
+                                               ctx->ingested_auth_header_len));
             }
         }
     }
@@ -334,7 +337,8 @@ static void process_flb_log_append(struct flb_splunk *ctx, msgpack_object *recor
                 ret = flb_log_event_encoder_append_body_values(
                     &ctx->log_encoder,
                     FLB_LOG_EVENT_CSTRING_VALUE(ctx->store_token_key),
-                    FLB_LOG_EVENT_CSTRING_VALUE(ctx->ingested_auth_header));
+                    FLB_LOG_EVENT_STRING_VALUE(ctx->ingested_auth_header,
+                                               ctx->ingested_auth_header_len));
             }
         }
         else {
@@ -598,6 +602,7 @@ static int process_hec_payload(struct flb_splunk *ctx, struct splunk_conn *conn,
     if (header_auth->key.data != NULL) {
         if (strncasecmp(header_auth->val.data, "Splunk ", 7) == 0) {
             ctx->ingested_auth_header = header_auth->val.data;
+            ctx->ingested_auth_header_len = header_auth->val.len;
         }
     }
 
@@ -663,6 +668,7 @@ static int process_hec_raw_payload(struct flb_splunk *ctx, struct splunk_conn *c
     if (header_auth->key.data != NULL) {
         if (strncasecmp(header_auth->val.data, "Splunk ", 7) == 0) {
             ctx->ingested_auth_header = header_auth->val.data;
+            ctx->ingested_auth_header_len = header_auth->val.len;
         }
     }
 
@@ -1022,6 +1028,7 @@ static int process_hec_payload_ng(struct flb_http_request *request,
     if (ret != 0 && size > 0) {
         if (strncasecmp(auth_header, "Splunk ", 7) == 0) {
             ctx->ingested_auth_header = auth_header;
+            ctx->ingested_auth_header_len = strlen(auth_header);
         }
     }
 
@@ -1057,6 +1064,7 @@ static int process_hec_raw_payload_ng(struct flb_http_request *request,
     if (ret != 0 && size > 0) {
         if (strncasecmp(auth_header, "Splunk ", 7) == 0) {
             ctx->ingested_auth_header = auth_header;
+            ctx->ingested_auth_header_len = strlen(auth_header);
         }
     }
 
