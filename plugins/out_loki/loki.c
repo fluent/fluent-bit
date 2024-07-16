@@ -1018,7 +1018,7 @@ static struct flb_loki *loki_config_create(struct flb_output_instance *ins,
     }
 
     /* Drop Single Key */
-    drop_single_key = flb_output_get_property("drop_single_key", ins);
+    drop_single_key = (char *) flb_output_get_property("drop_single_key", ins);
     ctx->out_drop_single_key = FLB_LOKI_DROP_SINGLE_KEY_OFF;
     if (drop_single_key) {
         if (strcasecmp(drop_single_key, "raw") == 0) {
@@ -1790,7 +1790,7 @@ static void cb_loki_flush(struct flb_event_chunk *event_chunk,
                             " HTTP status=%i",
                             ctx->tcp_host, ctx->tcp_port, c->resp.status);
             }
-            /* 
+            /*
              * Server-side error occured, do not reuse this connection for retry.
              * This could be an issue of Loki gateway.
              * Rather initiate new connection.
@@ -1799,7 +1799,7 @@ static void cb_loki_flush(struct flb_event_chunk *event_chunk,
                           ctx->tcp_host, ctx->tcp_port);
             flb_upstream_conn_recycle(u_conn, FLB_FALSE);
             out_ret = FLB_RETRY;
-        }   
+        }
         else if (c->resp.status < 200 || c->resp.status > 205) {
             if (c->resp.payload) {
                 flb_plg_error(ctx->ins, "%s:%i, HTTP status=%i\n%s",
