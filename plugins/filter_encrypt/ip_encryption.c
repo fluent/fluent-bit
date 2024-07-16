@@ -24,7 +24,6 @@ struct in6_addr ip6, ip6s;
 #define IP4MAXLEN       15      // strlen("xxx.xxx.xxx.xxx")
 #define IP6MAXLEN       39      // strlen("xxxx:xxxx:xxxx:xxxx:xxxx:xxxx:xxxx:xxxx")
 #define CBUF_SZ         (IP6MAXLEN*2)
-static char cbuf[CBUF_SZ];
 
 void set_encryption_key(const char *encryption_key) {
     flb_debug("setting encryption_key: %s\n", encryption_key);
@@ -34,6 +33,7 @@ void set_encryption_key(const char *encryption_key) {
 char *encrypt_ip(const char* input) {
     int af;
     if (flb_log_check(FLB_LOG_TRACE)) flb_debug("input value: %s\n", input);
+    static char cbuf[CBUF_SZ];
     char ipv6_to_str[128];
 
     // invalid inputs will return 0.0.0.0
