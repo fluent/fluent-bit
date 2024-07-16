@@ -597,7 +597,7 @@ int flb_input_set_property(struct flb_input_instance *ins,
             return -1;
         }
 
-        if (ins->storage_type != FLB_STORAGE_FS && 
+        if (ins->storage_type != FLB_STORAGE_FS &&
             ins->storage_pause_on_chunks_overlimit == FLB_TRUE) {
                 flb_debug("[input] storage.pause_on_chunks_overlimit will be "
                             "reset because storage.type is not filesystem");
@@ -1705,7 +1705,7 @@ static void flb_input_ingestion_paused(struct flb_input_instance *ins)
     if (ins->cmt_ingestion_paused != NULL) {
         /* cmetrics */
         cmt_gauge_set(ins->cmt_ingestion_paused, cfl_time_now(), 1,
-                      1, (char *[]) {flb_input_name(ins)});
+                      1, (char *[]) { (char *) flb_input_name(ins)});
     }
 }
 
@@ -1714,7 +1714,7 @@ static void flb_input_ingestion_resumed(struct flb_input_instance *ins)
     if (ins->cmt_ingestion_paused != NULL) {
         /* cmetrics */
         cmt_gauge_set(ins->cmt_ingestion_paused, cfl_time_now(), 0,
-                      1, (char *[]) {flb_input_name(ins)});
+                      1, (char *[]) {(char *) flb_input_name(ins)});
     }
 }
 
