@@ -215,6 +215,8 @@ void test_delete_all()
 
     TEST_CHECK(count == 0);
     flb_hash_table_destroy(ht);
+
+    fprintf(stderr, "[hash table] total=%i not_found=%i\n", total, not_found);
 }
 
 void test_random_eviction()
