@@ -78,6 +78,7 @@ static int setup_hec_tokens(struct flb_splunk *ctx)
             }
 
             splunk_token->header = auth_header;
+            splunk_token->length = flb_sds_len(auth_header);
 
             /* Link to parent list */
             mk_list_add(&splunk_token->_head, &ctx->auth_tokens);
