@@ -1,29 +1,4 @@
-#include <openssl/conf.h>
-#include <openssl/evp.h>
-#include <openssl/err.h>
-
-#include <string.h>
-#include <stdio.h>
-#include <stdlib.h>
-
-#include "utils.h"
 #include "aes_gcm.h"
-
-#define BILLION  1000000000L
-#define TO_HEX(i) (i <= 9 ? '0' + i : 'A' - 10 + i)
-
-#define IV_LEN 16
-#define TAG_LEN 16
-
-#ifdef _WIN32
-#include <windows.h>
-#include <time.h>
-#define srandom srand
-#define random rand
-#else
-#include <sys/time.h>
-#include <unistd.h>
-#endif
 
 void handleErrorsAesGcm(void)
 {
