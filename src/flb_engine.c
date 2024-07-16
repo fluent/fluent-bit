@@ -546,7 +546,7 @@ static inline int flb_engine_manager(flb_pipefd_t fd, struct flb_config *config)
 static FLB_INLINE int flb_engine_handle_event(flb_pipefd_t fd, int mask,
                                               struct flb_config *config)
 {
-    int ret;
+    int64_t ret;
 
     /* flb_engine_shutdown was already initiated */
     if (config->is_running == FLB_FALSE) {

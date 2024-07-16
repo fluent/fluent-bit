@@ -34,6 +34,7 @@
 
 struct flb_splunk_tokens {
     flb_sds_t header;
+    size_t    length;
     struct mk_list _head;
 };
 
@@ -48,6 +49,7 @@ struct flb_splunk {
     /* Token Auth */
     struct mk_list auth_tokens;
     flb_sds_t ingested_auth_header;
+    size_t ingested_auth_header_len;
     int store_token_in_metadata;
     flb_sds_t store_token_key;
 

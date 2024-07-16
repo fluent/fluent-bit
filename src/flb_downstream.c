@@ -60,6 +60,12 @@ struct flb_config_map downstream_net[] = {
      "disabled, the timeout is logged as a debug message"
     },
 
+    {
+     FLB_CONFIG_MAP_BOOL, "net.keepalive", "true",
+     0, FLB_TRUE, offsetof(struct flb_net_setup, keepalive),
+     "Enable or disable Keepalive support"
+    },
+
     /* EOF */
     {0}
 };
@@ -106,6 +112,9 @@ int flb_downstream_setup(struct flb_downstream *stream,
     if (stream->host == NULL) {
         return -1;
     }
+
+    /* map the net_setup config map coming from the caller */
+    stream->net_setup = net_setup;
 
     mk_list_init(&stream->busy_queue);
     mk_list_init(&stream->destroy_queue);
