@@ -575,8 +575,7 @@ static int process_hec_payload(struct flb_splunk *ctx, struct splunk_conn *conn,
 
     header = &session->parser.headers[MK_HEADER_CONTENT_TYPE];
     if (header->key.data == NULL) {
-        send_response(conn, 400, "error: header 'Content-Type' is not set\n");
-        return -2;
+        flb_plg_debug(ctx->ins, "header 'Content-Type' is not set");
     }
 
     if (header->val.len == 16 &&
