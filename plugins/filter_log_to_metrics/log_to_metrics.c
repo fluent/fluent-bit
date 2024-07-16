@@ -624,9 +624,9 @@ static int cb_log_to_metrics_init(struct flb_filter_instance *f_ins,
     }
 
     tmp = (char *) flb_filter_get_property("emitter_name", f_ins);
-    // If emitter_name is not set, use the default name
+    /* If emitter_name is not set, use the default name */
     if (tmp == NULL) {
-        tmp = flb_filter_name(f_ins);
+        tmp = (char *) flb_filter_name(f_ins);
         ctx->emitter_name = flb_sds_create_size(64);
         ctx->emitter_name = flb_sds_printf(&ctx->emitter_name, "emitter_for_%s", tmp);
     }
