@@ -23,11 +23,58 @@
 #ifndef FLUENT_BIT_V2_0_8_PLUGINS_FILTER_ENCRYPT_ENCRYPT_H_
 #define FLUENT_BIT_V2_0_8_PLUGINS_FILTER_ENCRYPT_ENCRYPT_H_
 
-#include "mjson.h"
+#include <string.h>
+#include <stdio.h>
+#include <time.h>
+#include <stddef.h>
+#include <msgpack.h>
+
+#include <fluent-bit/flb_output_plugin.h>
+#include <fluent-bit/flb_utils.h>
+#include <fluent-bit/flb_slist.h>
+#include <fluent-bit/flb_time.h>
+#include <fluent-bit/flb_pack.h>
+#include <fluent-bit/flb_config_map.h>
+#include <fluent-bit/flb_metrics.h>
+#include <fluent-bit/flb_sds.h>
+#include <fluent-bit/flb_upstream.h>
+#include <fluent-bit/flb_io.h>
+#include <fluent-bit/flb_kv.h>
+
+#include <monkey/mk_core/mk_list.h>
+#include <fluent-bit/flb_filter.h>
+#include <fluent-bit/flb_filter_plugin.h>
+#include <fluent-bit/flb_mem.h>
+#include <fluent-bit/flb_str.h>
+#include <fluent-bit/flb_utils.h>
+#include <fluent-bit/flb_regex.h>
+#include <fluent-bit/flb_record_accessor.h>
 #include <fluent-bit/flb_info.h>
 #include <fluent-bit/flb_filter.h>
 #include <fluent-bit/flb_record_accessor.h>
 #include <fluent-bit/flb_sds.h>
+#include <fluent-bit/flb_http_client.h>
+#include <fluent-bit/flb_config.h>
+
+#include "mjson.h"
+#include "hashmap.h"
+#include "ip_encryption.h"
+#include "cmac.h"
+#include "aes_deterministic.h"
+#include "utils.h"
+#include "hmac.h"
+#include "aes_gcm.h"
+#include "aes_gcm_hmac_deterministic.h"
+#include "ip_utils.h"
+#include "crypto_utils.h"
+
+#include "openssl/bio.h"
+
+#ifdef _WIN32
+#include "openssl/applink.c"
+#endif
+
+#define PSEUDONYMIZED_VALUE_MAX_SIZE 256
 
 #define FLB_FILTER_ENCRYPT_HOST             "host"
 #define FLB_FILTER_ENCRYPT_PORT             "port"

@@ -451,7 +451,7 @@ void set_encryption_keys(char *aes_det_key_ptr, char *ip_encryption_key_ptr) {
         char *extracted_tag = substring(salt_iv_tag_ciphertext_hex, tag_position, encrypted_position);
         char *extracted_ciphertext = substring(salt_iv_tag_ciphertext_hex, encrypted_position, strlen(salt_iv_tag_ciphertext_hex) - encrypted_position);
 
-        generate_key_from_pbkdf2(key_master_key_value, extracted_salt, key_out, 100000, key_length);
+        crypto_utils_generate_key_from_pbkdf2(key_master_key_value, extracted_salt, key_out, 100000, key_length);
 
         int decryptedtext_len = aes_gcm_256_decrypt(extracted_ciphertext, strlen(extracted_ciphertext),
                                                     additional, strlen((char *)additional),
@@ -463,9 +463,7 @@ void set_encryption_keys(char *aes_det_key_ptr, char *ip_encryption_key_ptr) {
             data_encryption_key[decryptedtext_len] = '\0';
 
             strncpy(aes_det_key_ptr, (char *)data_encryption_key, decryptedtext_len);
-            flb_debug("\nkey: %s\n", aes_det_key_ptr);
             strncpy(ip_encryption_key_ptr, (char *)data_encryption_key, decryptedtext_len);
-            flb_debug("\nkey: %s\n", ip_encryption_key_ptr);
 
             set_encryption_key(ip_encryption_key_ptr);
             found_ddk = true;
@@ -775,14 +773,16 @@ static inline int apply_rule_ENCRYPT(struct flb_filter_encrypt* ctx, msgpack_pac
                                   pseudonymized_value,
                                   is_private);
 
-                        char new_field_value[14] = {0};
+                        char new_field_value[128]; // ensure this is large enough to hold the new field value
+                        snprintf(new_field_value, sizeof(new_field_value), "#private=%s", (is_private==1 ? "true" : "false"));
 
-                        sprintf(new_field_value, "#private=%s", (is_private==1 ? "true" : "false"));
-
-                        strncat(pseudonymized_value, new_field_value, strlen(new_field_value));
+                        if (strlen(pseudonymized_value) + strlen(new_field_value) < PSEUDONYMIZED_VALUE_MAX_SIZE) {
+                            strncat(pseudonymized_value, new_field_value, sizeof(pseudonymized_value) - strlen(pseudonymized_value) - 1);
+                        } else {
+                            fprintf(stderr, "Buffer overflow prevented: pseudonymized_value is too large to append new_field_value\n");
+                        }
 
                         if (DO_DEBUG > 0) printf("pseudonymized_value:%s\n", pseudonymized_value);
-
                     }
 
                 } else {
@@ -1043,68 +1043,68 @@ static int cb_encrypt_exit(void *data, struct flb_config *config)
 
 /* Configuration properties map */
 static struct flb_config_map config_map[] = {
-    {
-        FLB_CONFIG_MAP_STR, "host", NULL,
-        0, FLB_TRUE, offsetof(struct flb_filter_encrypt, host),
-    "The host of the server where to get the PII fields."
-    },
-    {
-        FLB_CONFIG_MAP_INT, "port", 0,
-        0, FLB_TRUE, offsetof(struct flb_filter_encrypt, port),
-    "The port on the server where to get the PII fields."
-    },
-    {
-        FLB_CONFIG_MAP_STR, "uri_pii_fields", NULL,
-        0, FLB_TRUE, offsetof(struct flb_filter_encrypt, uri_pii_fields),
-    "The URI on the server where to get the PII fields."
-    },
-    {
-        FLB_CONFIG_MAP_STR, "organization_key", NULL,
-        0, FLB_TRUE, offsetof(struct flb_filter_encrypt, organization_key),
-    "The Organization Key part of the API Key."
-    },
-    {
-    FLB_CONFIG_MAP_STR, "api_access_key", NULL,
-            0, FLB_TRUE, offsetof(struct flb_filter_encrypt, api_access_key),
-    "The API Access Key."
-    },
-    {
-    FLB_CONFIG_MAP_STR, "api_secret_key", NULL,
-            0, FLB_TRUE, offsetof(struct flb_filter_encrypt, api_secret_key),
-    "The API Secret Key."
-    },
-    {
-        FLB_CONFIG_MAP_STR, "tenant_id", NULL,
-        0, FLB_TRUE, offsetof(struct flb_filter_encrypt, tenant_id),
-    "The URI on the server where to get the PII fields."
-    },
-    {
-        FLB_CONFIG_MAP_INT, "agent_id", 0,
-        0, FLB_TRUE, offsetof(struct flb_filter_encrypt, agent_id),
-    "The URI on the server where to get the PII fields."
-    },
-    {
-        FLB_CONFIG_MAP_STR, "uri_enc_keys", 0,
-        0, FLB_TRUE, offsetof(struct flb_filter_encrypt, uri_enc_keys),
-    "The URI on the server where to get the PII fields."
-    },
-    {
-        FLB_CONFIG_MAP_STR, "master_enc_key", 0,
-        0, FLB_TRUE, offsetof(struct flb_filter_encrypt, master_enc_key),
-    "The URI on the server where to get the PII fields."
-    },
+        {
+                FLB_CONFIG_MAP_STR, "host", NULL,
+                0, FLB_TRUE, offsetof(struct flb_filter_encrypt, host),
+                "The host of the server where to get the PII fields."
+        },
+        {
+                FLB_CONFIG_MAP_INT, "port", 0,
+                0, FLB_TRUE, offsetof(struct flb_filter_encrypt, port),
+                "The port on the server where to get the PII fields."
+        },
+        {
+                FLB_CONFIG_MAP_STR, "uri_pii_fields", NULL,
+                0, FLB_TRUE, offsetof(struct flb_filter_encrypt, uri_pii_fields),
+                "The URI on the server where to get the PII fields."
+        },
+        {
+                FLB_CONFIG_MAP_STR, "organization_key", NULL,
+                0, FLB_TRUE, offsetof(struct flb_filter_encrypt, organization_key),
+                "The Organization Key part of the API Key."
+        },
+        {
+                FLB_CONFIG_MAP_STR, "api_access_key", NULL,
+                0, FLB_TRUE, offsetof(struct flb_filter_encrypt, api_access_key),
+                "The API Access Key."
+        },
+        {
+                FLB_CONFIG_MAP_STR, "api_secret_key", NULL,
+                0, FLB_TRUE, offsetof(struct flb_filter_encrypt, api_secret_key),
+                "The API Secret Key."
+        },
+        {
+                FLB_CONFIG_MAP_STR, "tenant_id", NULL,
+                0, FLB_TRUE, offsetof(struct flb_filter_encrypt, tenant_id),
+                "The URI on the server where to get the PII fields."
+        },
+        {
+                FLB_CONFIG_MAP_INT, "agent_id", 0,
+                0, FLB_TRUE, offsetof(struct flb_filter_encrypt, agent_id),
+                "The URI on the server where to get the PII fields."
+        },
+        {
+                FLB_CONFIG_MAP_STR, "uri_enc_keys", 0,
+                0, FLB_TRUE, offsetof(struct flb_filter_encrypt, uri_enc_keys),
+                "The URI on the server where to get the PII fields."
+        },
+        {
+                FLB_CONFIG_MAP_STR, "master_enc_key", 0,
+                0, FLB_TRUE, offsetof(struct flb_filter_encrypt, master_enc_key),
+                "The URI on the server where to get the PII fields."
+        },
 
-    /* EOF */
-    {0}
+        /* EOF */
+        {0}
 };
 
 struct flb_filter_plugin filter_encrypt_plugin = {
-    .name         = "encrypt",
-    .description  = "Encrypts PII values by applying based on matching keys."
-                   "It takes 2 inputs: the field name and the masking function.",
-    .cb_init      = cb_encrypt_init,
-    .cb_filter    = cb_encrypt_filter,
-    .cb_exit      = cb_encrypt_exit,
-    .config_map   = config_map,
-    .flags        = 0
+        .name         = "encrypt",
+        .description  = "Encrypts PII values by applying based on matching keys."
+                        "It takes 2 inputs: the field name and the masking function.",
+        .cb_init      = cb_encrypt_init,
+        .cb_filter    = cb_encrypt_filter,
+        .cb_exit      = cb_encrypt_exit,
+        .config_map   = config_map,
+        .flags        = 0
 };

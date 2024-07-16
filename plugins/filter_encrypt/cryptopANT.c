@@ -440,15 +440,17 @@ char *convert_to_ipv6_format(const char *ipv6_pad, char *new_pad) {
     int group_of = 4;
     for (i = 0; i < length; i++) {
         new_pad[i + appended_chars] = ipv6_pad[head];
-        if (i % group_of == group_of - 1) {
+        if (i % group_of == group_of - 1 && i + appended_chars + 1 < IPV6_PADDING) {
             appended_chars++;
-            if (i + appended_chars < IPV6_PADDING - 1) {
-                new_pad[i + appended_chars] = ':';
-            }
+            new_pad[i + appended_chars] = ':';
         }
         head++;
     }
-    new_pad[i + appended_chars - 1] = '\0';
+    if (i + appended_chars < IPV6_PADDING) {
+        new_pad[i + appended_chars] = '\0';
+    } else {
+        new_pad[IPV6_PADDING - 1] = '\0';
+    }
     return new_pad;
 }
 
