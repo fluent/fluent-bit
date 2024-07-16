@@ -556,7 +556,7 @@ static int process_hec_payload(struct flb_splunk *ctx, struct splunk_conn *conn,
     header = &session->parser.headers[MK_HEADER_CONTENT_TYPE];
     if (header->key.data == NULL) {
         send_response(conn, 400, "error: header 'Content-Type' is not set\n");
-        return -1;
+        return -2;
     }
 
     if (header->val.len == 16 &&
@@ -575,7 +575,7 @@ static int process_hec_payload(struct flb_splunk *ctx, struct splunk_conn *conn,
 
     if (request->data.len <= 0) {
         send_response(conn, 400, "error: no payload found\n");
-        return -1;
+        return -2;
     }
 
     header_auth = &session->parser.headers[MK_HEADER_AUTHORIZATION];
@@ -823,6 +823,13 @@ int splunk_prot_handle(struct flb_splunk *ctx, struct splunk_conn *conn,
         else if (strcasecmp(uri, "/services/collector/event") == 0 ||
                  strcasecmp(uri, "/services/collector") == 0) {
             ret = process_hec_payload(ctx, conn, tag, session, request);
+
+            if (ret == -2) {
+                flb_sds_destroy(tag);
+                mk_mem_free(uri);
+
+                return -1;
+            }
 
             if (!ret) {
                 send_json_message_response(conn, 400, "{\"text\":\"Invalid data format\",\"code\":6}");
@@ -1134,6 +1141,8 @@ int splunk_prot_handle_ng(struct flb_http_request *request,
 
         if (ret != 0) {
             send_json_message_response_ng(response, 400, "{\"text\":\"Invalid data format\",\"code\":6}");
+
+            ret = -1;
         }
         else {
             send_json_message_response_ng(response, 200, "{\"text\":\"Success\",\"code\":0}");
