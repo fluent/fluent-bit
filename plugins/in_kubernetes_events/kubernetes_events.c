@@ -304,8 +304,8 @@ static bool check_event_is_filtered(struct k8s_events *ctx, msgpack_object *obj,
 
     outdated = cfl_time_now() - (ctx->retention_time * 1000000000L);
     if (flb_time_to_nanosec(event_time) < outdated) {
-        flb_plg_debug(ctx->ins, "Item is older than retention_time: %ld < %ld",
-                      flb_time_to_nanosec(event_time),  outdated);
+        flb_plg_debug(ctx->ins, "Item is older than retention_time: %" PRIu64 " < %" PRIu64,
+                      flb_time_to_nanosec(event_time), outdated);
         return FLB_TRUE;
     }
 
@@ -459,7 +459,7 @@ static int process_watched_event(struct k8s_events *ctx, char *buf_data, size_t 
     root = result.data;
     if (root.type != MSGPACK_OBJECT_MAP) {
         return -1;
-    }    
+    }
 
     ret = record_get_field_sds(&root, "type", &event_type);
     if (ret == -1) {

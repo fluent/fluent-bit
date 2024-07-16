@@ -88,7 +88,7 @@ char *flb_http_request_get_header(struct flb_http_request *request,
     }
 
     result = flb_hash_table_get(request->headers,
-                                lowercase_name, 
+                                lowercase_name,
                                 strlen(lowercase_name),
                                 &value, &value_length);
 
@@ -103,7 +103,7 @@ char *flb_http_request_get_header(struct flb_http_request *request,
 
 int flb_http_request_set_header(struct flb_http_request *request,
                                 char *name, size_t name_length,
-                                char *value, size_t value_length) 
+                                char *value, size_t value_length)
 {
     char  *lowercase_name;
     int    result;
@@ -121,17 +121,17 @@ int flb_http_request_set_header(struct flb_http_request *request,
 
     if (value_length == 0) {
         if (value[0] == '\0') {
-            value_length = 1; 
+            value_length = 1;
         }
         else {
             value_length = strlen(value);
         }
     }
 
-    result = flb_hash_table_add(request->headers, 
-                                (const char *) lowercase_name, 
+    result = flb_hash_table_add(request->headers,
+                                (const char *) lowercase_name,
                                 name_length,
-                                (void *) value, 
+                                (void *) value,
                                 value_length);
 
     flb_free(lowercase_name);
@@ -156,7 +156,7 @@ int flb_http_request_unset_header(struct flb_http_request *request,
         return -1;
     }
 
-    result = flb_hash_table_del(request->headers, 
+    result = flb_hash_table_del(request->headers,
                                 (const char *) lowercase_name);
 
     flb_free(lowercase_name);
@@ -213,7 +213,7 @@ void flb_http_response_destroy(struct flb_http_response *response)
 }
 
 struct flb_http_response *flb_http_response_begin(
-                                struct flb_http_server_session *session, 
+                                struct flb_http_server_session *session,
                                 void *stream)
 {
     if (session->version == HTTP_PROTOCOL_HTTP2) {
@@ -226,17 +226,29 @@ struct flb_http_response *flb_http_response_begin(
 
 int flb_http_response_commit(struct flb_http_response *response)
 {
+    int len;
+    char tmp[64];
     struct flb_http_server_session *session;
 
+    session = (struct flb_http_server_session *) response->stream->parent;
+
     if (response->body == NULL) {
-        flb_http_response_set_header(response, 
-                                     "content-length", 
+        flb_http_response_set_header(response,
+                                     "content-length",
                                      strlen("content-length"),
-                                     "0", 
+                                     "0",
                                      1);
     }
-
-    session = (struct flb_http_server_session *) response->stream->parent;
+    else {
+        /* if the session is HTTP/1.x, always set the content-length header */
+        if (session->version < HTTP_PROTOCOL_HTTP2) {
+            len = snprintf(tmp, sizeof(tmp) - 1, "%zu", cfl_sds_len(response->body));
+            flb_http_response_set_header(response,
+                                         "content-length",
+                                         strlen("content-length"),
+                                         tmp, len);
+        }
+    }
 
     if (session->version == HTTP_PROTOCOL_HTTP2) {
         return flb_http2_response_commit(response);
@@ -245,7 +257,7 @@ int flb_http_response_commit(struct flb_http_response *response)
     return flb_http1_response_commit(response);
 }
 
-int flb_http_response_set_header(struct flb_http_response *response, 
+int flb_http_response_set_header(struct flb_http_response *response,
                              char *name, size_t name_length,
                              char *value, size_t value_length)
 {
@@ -257,7 +269,7 @@ int flb_http_response_set_header(struct flb_http_response *response,
 
     if (value_length == 0) {
         if (value[0] == '\0') {
-            value_length = 1; 
+            value_length = 1;
         }
         else {
             value_length = strlen(value);
@@ -267,18 +279,18 @@ int flb_http_response_set_header(struct flb_http_response *response,
     session = (struct flb_http_server_session *) response->stream->parent;
 
     if (session->version == HTTP_PROTOCOL_HTTP2) {
-        return flb_http2_response_set_header(response, 
-                                         name, name_length, 
+        return flb_http2_response_set_header(response,
+                                         name, name_length,
                                          value, value_length);
     }
     else {
-        return flb_http1_response_set_header(response, 
-                                         name, name_length, 
+        return flb_http1_response_set_header(response,
+                                         name, name_length,
                                          value, value_length);
     }
 }
 
-int flb_http_response_set_trailer_header(struct flb_http_response *response, 
+int flb_http_response_set_trailer_header(struct flb_http_response *response,
                                          char *name, size_t name_length,
                                          char *value, size_t value_length)
 {
@@ -291,7 +303,7 @@ int flb_http_response_set_trailer_header(struct flb_http_response *response,
 
     if (value_length == 0) {
         if (value[0] == '\0') {
-            value_length = 1; 
+            value_length = 1;
         }
         else {
             value_length = strlen(value);
@@ -305,10 +317,10 @@ int flb_http_response_set_trailer_header(struct flb_http_response *response,
         return -1;
     }
 
-    result = flb_hash_table_add(response->trailer_headers, 
-                                (const char *) lowercase_name, 
+    result = flb_hash_table_add(response->trailer_headers,
+                                (const char *) lowercase_name,
                                 name_length,
-                                (void *) value, 
+                                (void *) value,
                                 value_length);
 
     flb_free(lowercase_name);
@@ -320,7 +332,7 @@ int flb_http_response_set_trailer_header(struct flb_http_response *response,
     return 0;
 }
 
-int flb_http_response_set_status(struct flb_http_response *response, 
+int flb_http_response_set_status(struct flb_http_response *response,
                              int status)
 {
     struct flb_http_server_session *session;
@@ -336,7 +348,7 @@ int flb_http_response_set_status(struct flb_http_response *response,
     return flb_http1_response_set_status(response, status);
 }
 
-int flb_http_response_set_message(struct flb_http_response *response, 
+int flb_http_response_set_message(struct flb_http_response *response,
                                      char *message)
 {
     if (response->message != NULL) {
@@ -346,7 +358,7 @@ int flb_http_response_set_message(struct flb_http_response *response,
     }
 
     response->message = cfl_sds_create((const char *) message);
-    
+
     if (response->message == NULL) {
         return -1;
     }
@@ -354,7 +366,7 @@ int flb_http_response_set_message(struct flb_http_response *response,
     return 0;
 }
 
-int flb_http_response_set_body(struct flb_http_response *response, 
+int flb_http_response_set_body(struct flb_http_response *response,
                            unsigned char *body, size_t body_length)
 {
     struct flb_http_server_session *session;
@@ -362,7 +374,7 @@ int flb_http_response_set_body(struct flb_http_response *response,
     session = (struct flb_http_server_session *) response->stream->parent;
 
     response->body = cfl_sds_create_len((const char *) body, body_length);
-    
+
     if (session->version == HTTP_PROTOCOL_HTTP2) {
         return flb_http2_response_set_body(response, body, body_length);
     }
@@ -373,7 +385,7 @@ int flb_http_response_set_body(struct flb_http_response *response,
 /* HTTP STREAM */
 
 int flb_http_stream_init(struct flb_http_stream *stream,
-                     void *parent, 
+                     void *parent,
                      int32_t stream_id,
                      int role,
                      void *user_data)
@@ -405,7 +417,7 @@ int flb_http_stream_init(struct flb_http_stream *stream,
     return 0;
 }
 
-struct flb_http_stream *flb_http_stream_create(void *parent, 
+struct flb_http_stream *flb_http_stream_create(void *parent,
                                            int32_t stream_id,
                                            int role,
                                            void *user_data)

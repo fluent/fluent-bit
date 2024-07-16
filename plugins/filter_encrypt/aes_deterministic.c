@@ -293,7 +293,7 @@ aes_det(const char* plaintext, const char* KEY128, const char* MASTER_KEY_SALT) 
 
     /* Decrypt the ciphertext */
     decryptedtext_len = decrypt_aes_128_ctr(ciphertext, ciphertext_len, encryption_key, encryption_iv,
-                                decryptedtext);
+                                            decryptedtext);
 
     /* Add a NULL terminator. We are expecting printable text */
     decryptedtext[decryptedtext_len] = '\0';

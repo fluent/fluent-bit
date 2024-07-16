@@ -576,7 +576,7 @@ static void cb_file_flush(struct flb_event_chunk *event_chunk,
             if (buf) {
                 fprintf(fp, "%s: [%"PRIu64".%09lu, %s]" NEWLINE,
                         event_chunk->tag,
-                        log_event.timestamp.tm.tv_sec, log_event.timestamp.tm.tv_nsec,
+                        (uint64_t) log_event.timestamp.tm.tv_sec, log_event.timestamp.tm.tv_nsec,
                         buf);
                 flb_free(buf);
             }

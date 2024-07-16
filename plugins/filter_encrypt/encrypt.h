@@ -23,7 +23,6 @@
 #ifndef FLUENT_BIT_V2_0_8_PLUGINS_FILTER_ENCRYPT_ENCRYPT_H_
 #define FLUENT_BIT_V2_0_8_PLUGINS_FILTER_ENCRYPT_ENCRYPT_H_
 
-
 #include <string.h>
 #include <stdio.h>
 #include <time.h>

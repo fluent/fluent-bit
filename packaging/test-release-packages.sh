@@ -54,6 +54,19 @@ do
     echo "Testing $IMAGE"
     LOG_FILE=$(mktemp)
 
+    VAULT=0
+    # Fix to use Vault on CentOS 7
+    case ${IMAGE} in
+        centos:7)
+            VAULT=1
+            REPO_SCRIPT=$SCRIPT_DIR/centos7-repo.sh
+            REPO_SCRIPT_PATH=$(realpath "$REPO_SCRIPT")
+            EXTRA_MOUNTS="-v $REPO_SCRIPT_PATH:/centos7-repo.sh:ro $EXTRA_MOUNTS"
+            ;;
+        *)
+            ;;
+    esac
+
     # We do want word splitting for EXTRA_MOUNTS
     # shellcheck disable=SC2086
     $CONTAINER_RUNTIME run --rm -t \
@@ -65,7 +78,7 @@ do
         -e FLUENT_BIT_INSTALL_YUM_PARAMETERS="${FLUENT_BIT_INSTALL_YUM_PARAMETERS:-}" \
         $EXTRA_MOUNTS \
         "$IMAGE" \
-        sh -c "$INSTALL_CMD && /opt/fluent-bit/bin/fluent-bit --version" | tee "$LOG_FILE"
+        sh -c "[ $VAULT -eq 1 ] && sh /centos7-repo.sh || true && $INSTALL_CMD && /opt/fluent-bit/bin/fluent-bit --version" | tee "$LOG_FILE"
     check_version "$LOG_FILE"
     rm -f "$LOG_FILE"
 done

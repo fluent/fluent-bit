@@ -1043,68 +1043,68 @@ static int cb_encrypt_exit(void *data, struct flb_config *config)
 
 /* Configuration properties map */
 static struct flb_config_map config_map[] = {
-    {
-        FLB_CONFIG_MAP_STR, "host", NULL,
-        0, FLB_TRUE, offsetof(struct flb_filter_encrypt, host),
-    "The host of the server where to get the PII fields."
-    },
-    {
-        FLB_CONFIG_MAP_INT, "port", 0,
-        0, FLB_TRUE, offsetof(struct flb_filter_encrypt, port),
-    "The port on the server where to get the PII fields."
-    },
-    {
-        FLB_CONFIG_MAP_STR, "uri_pii_fields", NULL,
-        0, FLB_TRUE, offsetof(struct flb_filter_encrypt, uri_pii_fields),
-    "The URI on the server where to get the PII fields."
-    },
-    {
-        FLB_CONFIG_MAP_STR, "organization_key", NULL,
-        0, FLB_TRUE, offsetof(struct flb_filter_encrypt, organization_key),
-    "The Organization Key part of the API Key."
-    },
-    {
-    FLB_CONFIG_MAP_STR, "api_access_key", NULL,
-            0, FLB_TRUE, offsetof(struct flb_filter_encrypt, api_access_key),
-    "The API Access Key."
-    },
-    {
-    FLB_CONFIG_MAP_STR, "api_secret_key", NULL,
-            0, FLB_TRUE, offsetof(struct flb_filter_encrypt, api_secret_key),
-    "The API Secret Key."
-    },
-    {
-        FLB_CONFIG_MAP_STR, "tenant_id", NULL,
-        0, FLB_TRUE, offsetof(struct flb_filter_encrypt, tenant_id),
-    "The URI on the server where to get the PII fields."
-    },
-    {
-        FLB_CONFIG_MAP_INT, "agent_id", 0,
-        0, FLB_TRUE, offsetof(struct flb_filter_encrypt, agent_id),
-    "The URI on the server where to get the PII fields."
-    },
-    {
-        FLB_CONFIG_MAP_STR, "uri_enc_keys", 0,
-        0, FLB_TRUE, offsetof(struct flb_filter_encrypt, uri_enc_keys),
-    "The URI on the server where to get the PII fields."
-    },
-    {
-        FLB_CONFIG_MAP_STR, "master_enc_key", 0,
-        0, FLB_TRUE, offsetof(struct flb_filter_encrypt, master_enc_key),
-    "The URI on the server where to get the PII fields."
-    },
+        {
+                FLB_CONFIG_MAP_STR, "host", NULL,
+                0, FLB_TRUE, offsetof(struct flb_filter_encrypt, host),
+                "The host of the server where to get the PII fields."
+        },
+        {
+                FLB_CONFIG_MAP_INT, "port", 0,
+                0, FLB_TRUE, offsetof(struct flb_filter_encrypt, port),
+                "The port on the server where to get the PII fields."
+        },
+        {
+                FLB_CONFIG_MAP_STR, "uri_pii_fields", NULL,
+                0, FLB_TRUE, offsetof(struct flb_filter_encrypt, uri_pii_fields),
+                "The URI on the server where to get the PII fields."
+        },
+        {
+                FLB_CONFIG_MAP_STR, "organization_key", NULL,
+                0, FLB_TRUE, offsetof(struct flb_filter_encrypt, organization_key),
+                "The Organization Key part of the API Key."
+        },
+        {
+                FLB_CONFIG_MAP_STR, "api_access_key", NULL,
+                0, FLB_TRUE, offsetof(struct flb_filter_encrypt, api_access_key),
+                "The API Access Key."
+        },
+        {
+                FLB_CONFIG_MAP_STR, "api_secret_key", NULL,
+                0, FLB_TRUE, offsetof(struct flb_filter_encrypt, api_secret_key),
+                "The API Secret Key."
+        },
+        {
+                FLB_CONFIG_MAP_STR, "tenant_id", NULL,
+                0, FLB_TRUE, offsetof(struct flb_filter_encrypt, tenant_id),
+                "The URI on the server where to get the PII fields."
+        },
+        {
+                FLB_CONFIG_MAP_INT, "agent_id", 0,
+                0, FLB_TRUE, offsetof(struct flb_filter_encrypt, agent_id),
+                "The URI on the server where to get the PII fields."
+        },
+        {
+                FLB_CONFIG_MAP_STR, "uri_enc_keys", 0,
+                0, FLB_TRUE, offsetof(struct flb_filter_encrypt, uri_enc_keys),
+                "The URI on the server where to get the PII fields."
+        },
+        {
+                FLB_CONFIG_MAP_STR, "master_enc_key", 0,
+                0, FLB_TRUE, offsetof(struct flb_filter_encrypt, master_enc_key),
+                "The URI on the server where to get the PII fields."
+        },
 
-    /* EOF */
-    {0}
+        /* EOF */
+        {0}
 };
 
 struct flb_filter_plugin filter_encrypt_plugin = {
-    .name         = "encrypt",
-    .description  = "Encrypts PII values by applying based on matching keys."
-                   "It takes 2 inputs: the field name and the masking function.",
-    .cb_init      = cb_encrypt_init,
-    .cb_filter    = cb_encrypt_filter,
-    .cb_exit      = cb_encrypt_exit,
-    .config_map   = config_map,
-    .flags        = 0
+        .name         = "encrypt",
+        .description  = "Encrypts PII values by applying based on matching keys."
+                        "It takes 2 inputs: the field name and the masking function.",
+        .cb_init      = cb_encrypt_init,
+        .cb_filter    = cb_encrypt_filter,
+        .cb_exit      = cb_encrypt_exit,
+        .config_map   = config_map,
+        .flags        = 0
 };

@@ -8,7 +8,7 @@ set(CMAKE_POLICY_DEFAULT_CMP0069 NEW)
 # Fluent Bit Version
 set(FLB_VERSION_MAJOR  3)
 set(FLB_VERSION_MINOR  1)
-set(FLB_VERSION_PATCH  0)
+set(FLB_VERSION_PATCH  3)
 set(FLB_VERSION_STR "${FLB_VERSION_MAJOR}.${FLB_VERSION_MINOR}.${FLB_VERSION_PATCH}")
 
 set(CMAKE_POSITION_INDEPENDENT_CODE ON)
@@ -110,6 +110,8 @@ option(FLB_RELEASE             "Build with release mode (-O2 -g -DNDEBUG)"   No)
 set(FLB_IPO "ReleaseOnly" CACHE STRING "Build with interprocedural optimization")
 set_property(CACHE FLB_IPO PROPERTY STRINGS "On;Off;ReleaseOnly")
 option(FLB_SMALL               "Optimise for small size"       No)
+set(FLB_SECURITY "ReleaseOnly" CACHE STRING "Build with security optimizations")
+set_property(CACHE FLB_SECURITY PROPERTY STRINGS "On;Off;ReleaseOnly")
 option(FLB_COVERAGE            "Build with code-coverage"      No)
 option(FLB_JEMALLOC            "Build with Jemalloc support"   No)
 option(FLB_REGEX               "Build with Regex support"     Yes)
@@ -287,7 +289,7 @@ endif ()
 find_package(Git)
 # If we do not have Git or this is not a Git repo or another error this just is ignored and we have no output at runtime.
 execute_process(COMMAND
-  "${GIT_EXECUTABLE}" log -1 --format=%H
+  "${GIT_EXECUTABLE}" -c log.showSignature=false log -1 --format=%H
   WORKING_DIRECTORY "${FLB_ROOT}"
   OUTPUT_VARIABLE FLB_GIT_HASH
   ERROR_QUIET OUTPUT_STRIP_TRAILING_WHITESPACE)
@@ -333,6 +335,21 @@ if(FLB_IPO STREQUAL "On" OR (FLB_IPO STREQUAL "ReleaseOnly" AND FLB_RELEASE))
     set(CMAKE_INTERPROCEDURAL_OPTIMIZATION TRUE)
   else()
     message(Warning "IPO is not supported on this platform")
+  endif()
+endif()
+
+# Harden release binary against security vulnerabilities
+if(FLB_SECURITY STREQUAL "On" OR (FLB_SECURITY STREQUAL "ReleaseOnly" AND FLB_RELEASE))
+  if (NOT MSVC)
+    set(CMAKE_C_FLAGS "${CMAKE_C_FLAGS} -Wl,-z,relro,-z,now")
+    set(CMAKE_C_FLAGS "${CMAKE_C_FLAGS} -Wl,-z,noexecstack")
+    if(NOT FLB_SMALL)
+      set(CMAKE_C_FLAGS "${CMAKE_C_FLAGS} -fstack-protector")
+      # Fortify requires optimization
+      if(CMAKE_BUILD_TYPE STREQUAL "Release" OR CMAKE_BUILD_TYPE STREQUAL "RelWithDebInfo")
+        set(CMAKE_C_FLAGS "${CMAKE_C_FLAGS} -D_FORTIFY_SOURCE=1")
+      endif()
+    endif()
   endif()
 endif()
 

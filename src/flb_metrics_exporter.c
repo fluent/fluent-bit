@@ -63,8 +63,8 @@ static int collect_inputs(msgpack_sbuffer *mp_sbuf, msgpack_packer *mp_pck,
         }
 
         flb_metrics_dump_values(&buf, &s, i->metrics);
-        msgpack_pack_str(mp_pck, i->metrics->title_len);
-        msgpack_pack_str_body(mp_pck, i->metrics->title, i->metrics->title_len);
+        msgpack_pack_str(mp_pck, flb_sds_len(i->metrics->title));
+        msgpack_pack_str_body(mp_pck, i->metrics->title, flb_sds_len(i->metrics->title));
         msgpack_sbuffer_write(mp_sbuf, buf, s);
         flb_free(buf);
     }
@@ -100,8 +100,8 @@ static int collect_filters(msgpack_sbuffer *mp_sbuf, msgpack_packer *mp_pck,
         }
 
         flb_metrics_dump_values(&buf, &s, i->metrics);
-        msgpack_pack_str(mp_pck, i->metrics->title_len);
-        msgpack_pack_str_body(mp_pck, i->metrics->title, i->metrics->title_len);
+        msgpack_pack_str(mp_pck, flb_sds_len(i->metrics->title));
+        msgpack_pack_str_body(mp_pck, i->metrics->title, flb_sds_len(i->metrics->title));
         msgpack_sbuffer_write(mp_sbuf, buf, s);
         flb_free(buf);
     }
@@ -137,8 +137,8 @@ static int collect_outputs(msgpack_sbuffer *mp_sbuf, msgpack_packer *mp_pck,
         }
 
         flb_metrics_dump_values(&buf, &s, i->metrics);
-        msgpack_pack_str(mp_pck, i->metrics->title_len);
-        msgpack_pack_str_body(mp_pck, i->metrics->title, i->metrics->title_len);
+        msgpack_pack_str(mp_pck, flb_sds_len(i->metrics->title));
+        msgpack_pack_str_body(mp_pck, i->metrics->title, flb_sds_len(i->metrics->title));
         msgpack_sbuffer_write(mp_sbuf, buf, s);
         flb_free(buf);
     }
