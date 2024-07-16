@@ -481,31 +481,47 @@ static ssize_t parse_hec_payload_json(struct flb_splunk *ctx, flb_sds_t tag,
 
 static int validate_auth_header(struct flb_splunk *ctx, struct mk_http_request *request)
 {
+    int ret = 0;
     struct mk_list *head;
     struct mk_http_header *auth_header = NULL;
     struct flb_splunk_tokens *splunk_token;
+    flb_sds_t authorization = NULL;
 
     if (mk_list_size(&ctx->auth_tokens) == 0) {
         return SPLUNK_AUTH_UNAUTH;
     }
 
     auth_header = mk_http_header_get(MK_HEADER_AUTHORIZATION, request, NULL, 0);
-
     if (auth_header == NULL) {
         return SPLUNK_AUTH_MISSING_CRED;
     }
 
-    if (auth_header != NULL && auth_header->val.len > 0) {
+    authorization = flb_sds_create_len(auth_header->val.data, auth_header->val.len);
+    if (authorization == NULL) {
+        return SPLUNK_AUTH_MISSING_CRED;
+    }
+
+    if (authorization != NULL && auth_header->val.len > 0) {
         mk_list_foreach(head, &ctx->auth_tokens) {
             splunk_token = mk_list_entry(head, struct flb_splunk_tokens, _head);
+            if (flb_sds_len(authorization) != splunk_token->length) {
+                ret = SPLUNK_AUTH_UNAUTHORIZED;
+                continue;
+            }
+
             if (strncmp(splunk_token->header,
-                        auth_header->val.data,
-                        strlen(splunk_token->header)) == 0) {
+                        authorization,
+                        splunk_token->length) == 0) {
+                flb_sds_destroy(authorization);
+
                 return SPLUNK_AUTH_SUCCESS;
             }
         }
 
-        return SPLUNK_AUTH_UNAUTHORIZED;
+        ret = SPLUNK_AUTH_UNAUTHORIZED;
+        flb_sds_destroy(authorization);
+
+        return ret;
     }
     else {
         return SPLUNK_AUTH_MISSING_CRED;
@@ -957,9 +973,13 @@ static int validate_auth_header_ng(struct flb_splunk *ctx, struct flb_http_reque
     if (auth_header != NULL && strlen(auth_header) > 0) {
         mk_list_foreach_safe(head, tmp, &ctx->auth_tokens) {
             splunk_token = mk_list_entry(head, struct flb_splunk_tokens, _head);
+            if (strlen(auth_header) != splunk_token->length) {
+                return SPLUNK_AUTH_UNAUTHORIZED;
+            }
+
             if (strncmp(splunk_token->header,
                         auth_header,
-                        strlen(splunk_token->header)) == 0) {
+                        splunk_token->length) == 0) {
                 return SPLUNK_AUTH_SUCCESS;
             }
         }

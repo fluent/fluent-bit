@@ -34,6 +34,7 @@
 
 struct flb_splunk_tokens {
     flb_sds_t header;
+    size_t    length;
     struct mk_list _head;
 };
 
