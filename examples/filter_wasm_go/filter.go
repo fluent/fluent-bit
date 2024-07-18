@@ -31,8 +31,8 @@ func go_filter(tag *uint8, tag_len uint, time_sec uint, time_nsec uint, record *
 	obj.Set("time", arena.NewString(now.String()))
 	obj.Set("tag", arena.NewString(string(btag)))
 	obj.Set("original", arena.NewString(br))
-	s := obj.String()
-	s += string(rune(0)) // Note: explicit null terminator.
+	
+	s := obj.String() + string(rune(0)) 
 	rv := []byte(s)
 
 	return &rv[0]
