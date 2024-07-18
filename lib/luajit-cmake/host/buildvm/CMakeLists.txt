@@ -12,7 +12,7 @@ else()
 endif()
 
 include(CheckTypeSize)
-if("${EXTRA_COMPILER_FLAGS}" MATCHES "LUAJIT_ARCH_.*64")
+if("${EXTRA_COMPILER_FLAGS}" MATCHES "LUAJIT_ARCH_.*(64|s390x)")
   set(TARGET_SIZE_OF_P 8)
 else()
   set(TARGET_SIZE_OF_P 4)
