@@ -53,8 +53,7 @@ static struct flb_aws_header content_type_header = {
 static int validate_log_group_class(struct flb_cloudwatch *ctx)
 {
     if (ctx->create_group == FLB_FALSE) {
-        flb_plg_error(ctx->ins, "Configuring log_group_class requires `auto_create_group On`.");
-        return -1;
+        return 0;
     }
 
     if (ctx->log_group_class == NULL || strlen(ctx->log_group_class) == 0) {
