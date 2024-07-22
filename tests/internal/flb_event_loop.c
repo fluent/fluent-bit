@@ -125,7 +125,7 @@ void evl_context_destroy(struct test_evl_context *ctx)
 }
 
 void test_simple_timeout_1000ms()
-{   
+{
     struct test_evl_context *ctx;
 
     struct flb_time start_time;
@@ -171,7 +171,7 @@ void test_simple_timeout_1000ms()
  * Blocking wait with 2.1s timeout: 2.1s, no event
  */
 void test_non_blocking_and_blocking_timeout()
-{   
+{
     struct test_evl_context *ctx;
 
     struct mk_event event = {0};
@@ -278,7 +278,7 @@ void test_non_blocking_and_blocking_timeout()
  * Remove timer
  */
 void test_infinite_wait()
-{   
+{
     struct test_evl_context *ctx;
 
     struct mk_event event = {0};
@@ -335,8 +335,8 @@ void synchronize_tests()
  * verify timers are processed by order of priority and order of activation. Delete also
  * checked by deleting events in several cases and confirming deleted events are not
  * processed.
- * 
- * Method: 
+ *
+ * Method:
  * Add n_timers / 2 non-delayed timers
  * delete 1/4th of the non-delayed timers
  * Wait for non_delayed timers to activate
@@ -352,7 +352,7 @@ void synchronize_tests()
  *      Check that deleted events are not processed
  *      Check that non-delayed timers which are tracked first are processed before
  *          non-delayed events.
- * 
+ *
  * Summary:
  * Track priorities and confirm that all added events were processed
  * Verify non-delayed timers are triggered before delayed timers
@@ -374,7 +374,7 @@ void event_loop_stress_priority_add_delete()
 
     int immediate_timers_triggered[EVENT_LOOP_TEST_PRIORITIES] = {0};
     int delayed_timers_triggered[EVENT_LOOP_TEST_PRIORITIES] = {0};
-    
+
     int priority;
     int n_events;
     int target;
@@ -414,13 +414,13 @@ void event_loop_stress_priority_add_delete()
     TEST_CHECK(n_events == n_timers / 2 - n_timers / 8);
     TEST_MSG("Expected %i ready events from the no delay timers. Recieved %i",
             n_timers / 2 - n_timers / 8, ret);
-    
+
     /* Remove the first n/8 events */
     for (i = n_timers / 8; i < n_timers / 4; ++i) {
         test_timeout_destroy(ctx->evl, &events[i]);
         --immediate_timers[(int) events[i].priority];
     }
-    
+
     i = 0;
     do { /* variable closure */
     flb_event_priority_live_foreach(event, ctx->bktq, ctx->evl, n_timers) {
@@ -428,7 +428,7 @@ void event_loop_stress_priority_add_delete()
         TEST_CHECK(event->priority >= priority_cronology);
         TEST_MSG("Priority event loop processed events out of order.");
         priority_cronology = event->priority;
-        
+
         /* check none of the deleted records appear */
         TEST_CHECK(event >= &events[n_timers / 4]);
         TEST_MSG("Deleted event appeared in priority event loop.");
@@ -497,7 +497,7 @@ void event_loop_stress_priority_add_delete()
 
         /* first round, delete half of all 0delay timers */
         if (j == 0) {
-            
+
             /* this tests propper removal from bucket queue */
             for (i = 0; i < n_timers/4; ++i) {
                 if (&events[i] == event) {
