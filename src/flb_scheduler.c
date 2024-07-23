@@ -63,8 +63,9 @@ static inline int consume_byte(flb_pipefd_t fd)
 
     /* We need to consume the byte */
     ret = flb_pipe_r(fd, &val, sizeof(val));
-#if defined(FLB_EVENT_LOOP_KQUEUE) || defined(MK_EVENT_LOOP_KQUEUE)
-//#if defined(__APPLE__) || __FreeBSD__ >= 12
+
+    /* ref: https://github.com/fluent/fluent-bit/pull/2463 */
+#if defined(__APPLE__) || __FreeBSD__ >= 12
     if (ret < 0) {
 #else
     if (ret <= 0) {
@@ -413,8 +414,8 @@ int flb_sched_event_handler(struct flb_config *config, struct mk_event *event)
     else if (timer->type == FLB_SCHED_TIMER_FRAME) {
         sched = timer->data;
 
-#if defined(FLB_EVENT_LOOP_KQUEUE) || defined(MK_EVENT_LOOP_KQUEUE)
-        //#ifndef __APPLE__
+#if defined(FLB_EVENT_LOOP_KQUEUE) || defined(MK_EVENT_LOOP_KQUEUE) || \
+    defined(FLB_EVENT_LOOP_POLL) || defined(MK_EVENT_LOOP_POLL)
         consume_byte(sched->frame_fd);
 #endif
         schedule_request_promote(sched);
