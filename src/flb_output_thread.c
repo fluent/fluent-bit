@@ -249,7 +249,8 @@ static void output_thread(void *data)
     while (running) {
         mk_event_wait(th_ins->evl);
         flb_event_priority_live_foreach(event, th_ins->evl_bktq, th_ins->evl,
-                                      FLB_ENGINE_LOOP_MAX_ITER) {
+                                         FLB_ENGINE_LOOP_MAX_ITER) {
+
             /*
              * FIXME
              * -----
@@ -274,7 +275,6 @@ static void output_thread(void *data)
                     flb_errno();
                     continue;
                 }
-
                 /*
                  * If the address receives 0xdeadbeef, means the thread must
                  * be terminated.
@@ -285,16 +285,17 @@ static void output_thread(void *data)
                                  thread_id);
                     continue;
                 }
-
-                /* Start the co-routine with the flush callback */
-                out_flush = flb_output_flush_create(task,
-                                                    task->i_ins,
-                                                    th_ins->ins,
-                                                    th_ins->config);
-                if (!out_flush) {
-                    continue;
+                else {
+                    /* Start the co-routine with the flush callback */
+                    out_flush = flb_output_flush_create(task,
+                                                        task->i_ins,
+                                                        th_ins->ins,
+                                                        th_ins->config);
+                    if (!out_flush) {
+                        continue;
+                    }
+                    flb_coro_resume(out_flush->coro);
                 }
-                flb_coro_resume(out_flush->coro);
             }
             else if (event->type == FLB_ENGINE_EV_CUSTOM) {
                 event->handler(event);
@@ -330,6 +331,7 @@ static void output_thread(void *data)
 
         /* Destroy upstream connections from the 'pending destroy list' */
         flb_upstream_conn_pending_destroy_list(&th_ins->upstreams);
+
         flb_sched_timer_cleanup(sched);
 
         /* Check if we should stop the event loop */
