@@ -21,13 +21,10 @@
 #include <mk_core/mk_event.h>
 #include <time.h>
 
-/* Structure for the fd_timer */
 struct fd_timer {
-    int fd;
-    int run;
+    int    fd;
     time_t sec;
-    long nsec;
-    pthread_t tid;
+    long   nsec;
 };
 
 static inline int _mk_event_init()
@@ -59,6 +56,15 @@ static inline void *_mk_event_loop_create(int size)
         mk_mem_free(ctx);
         return NULL;
     }
+
+    ctx->pfds = mk_mem_alloc_z(sizeof(struct pollfd) * size);
+    if (!ctx->pfds) {
+        mk_mem_free(ctx->events);
+        mk_mem_free(ctx->fired);
+        mk_mem_free(ctx);
+        return NULL;
+    }
+
     ctx->queue_size = size;
 
     return ctx;
@@ -67,8 +73,9 @@ static inline void *_mk_event_loop_create(int size)
 /* Close handlers and memory */
 static inline void _mk_event_loop_destroy(struct mk_event_ctx *ctx)
 {
-    mk_mem_free(ctx->events);
     mk_mem_free(ctx->fired);
+    mk_mem_free(ctx->events);
+    mk_mem_free(ctx->pfds);
     mk_mem_free(ctx);
 }
 
@@ -95,9 +102,18 @@ static inline int _mk_event_add(struct mk_event_ctx *ctx, int fd,
 
     event = (struct mk_event *) data;
     ctx->events[i] = event;
-    event->fd = fd;
+    if (event->mask == MK_EVENT_EMPTY) {
+        event->fd = fd;
+        event->type = type;
+        event->status = MK_EVENT_REGISTERED;
+    }
+    else {
+        if (type != MK_EVENT_REGISTERED) {
+            event->type = type;
+        }
+    }
+
     event->mask = events;
-    event->status = MK_EVENT_REGISTERED;
     event->priority = MK_EVENT_PRIORITY_DEFAULT;
 
     /* Remove from priority queue */
@@ -131,18 +147,22 @@ static inline int _mk_event_del(struct mk_event_ctx *ctx, struct mk_event *event
         }
     }
 
+    /* check that event was found */
+    if (i == ctx->queue_size) {
+        return -1;
+    }
+
     /* Remove from priority queue */
     if (!mk_list_entry_is_orphan(&event->_priority_head)) {
         mk_list_del(&event->_priority_head);
     }
 
     MK_EVENT_NEW(event);
-
     return 0;
 }
 
 /*
- * Timeout worker, it writes a byte every certain amount of seconds, it finishes
+ * Timeout worker, it writes a byte every certain amount of seconds, it finish
  * once the other end of the pipe closes the fd[0].
  */
 void _timeout_worker(void *arg)
@@ -152,30 +172,38 @@ void _timeout_worker(void *arg)
     struct fd_timer *timer;
     struct timespec t_spec;
 
-    printf("timeout worker\n");
-
     timer = (struct fd_timer *) arg;
-    t_spec.tv_sec = timer->sec;
+    t_spec.tv_sec  = timer->sec;
     t_spec.tv_nsec = timer->nsec;
 
-    while (timer->run == MK_TRUE) {
+    while (1) {
         /* sleep for a while */
         nanosleep(&t_spec, NULL);
 
         /* send notification */
         ret = write(timer->fd, &val, sizeof(uint64_t));
         if (ret == -1) {
-            perror("write");
+            if (errno == EPIPE) {
+                break;
+            }
+            else {
+                mk_libc_error("write");
+                break;
+            }
             break;
         }
     }
 
-    pthread_exit(NULL);
+    close(timer->fd);
+    mk_mem_free(timer);
+
+    pthread_exit(0);
 }
 
 /*
- * This routine creates a timer, since timerfd_create(2) is not available on all
- * systems, we implement a similar function through a thread and a pipe(2).
+ * This routine creates a timer, since timerfd_create(2) is not available (as
+ * Monkey could be be compiled in a very old Linux system), we implement a similar
+ * function through a thread and a pipe(2).
  */
 static inline int _mk_event_timeout_create(struct mk_event_ctx *ctx,
                                            time_t sec, long nsec, void *data)
@@ -184,6 +212,9 @@ static inline int _mk_event_timeout_create(struct mk_event_ctx *ctx,
     int fd[2];
     struct mk_event *event;
     struct fd_timer *timer;
+    pthread_t tid;
+
+    mk_bug(data == NULL);
 
     timer = mk_mem_alloc(sizeof(struct fd_timer));
     if (!timer) {
@@ -192,8 +223,8 @@ static inline int _mk_event_timeout_create(struct mk_event_ctx *ctx,
 
     ret = pipe(fd);
     if (ret < 0) {
-        mk_mem_free(timer);
         mk_libc_error("pipe");
+        mk_mem_free(timer);
         return ret;
     }
 
@@ -201,60 +232,42 @@ static inline int _mk_event_timeout_create(struct mk_event_ctx *ctx,
     event->fd = fd[0];
     event->type = MK_EVENT_NOTIFICATION;
     event->mask = MK_EVENT_EMPTY;
+    mk_list_entry_init(&event->_priority_head);
 
     _mk_event_add(ctx, fd[0], MK_EVENT_NOTIFICATION, MK_EVENT_READ, data);
     event->mask = MK_EVENT_READ;
 
     /* Compose the timer context, this is released inside the worker thread */
-    timer->fd = fd[1];
-    timer->sec = sec;
+    timer->fd   = fd[1];
+    timer->sec  = sec;
     timer->nsec = nsec;
-    timer->run = MK_TRUE;
-
-    event->data = timer;
 
     /* Now the dirty workaround, create a thread */
-    ret = mk_utils_worker_spawn(_timeout_worker, timer, &timer->tid);
+    ret = mk_utils_worker_spawn(_timeout_worker, timer, &tid);
     if (ret < 0) {
         close(fd[0]);
         close(fd[1]);
         mk_mem_free(timer);
-        event->data = NULL;
         return -1;
     }
 
     return fd[0];
 }
 
+
 static inline int _mk_event_timeout_destroy(struct mk_event_ctx *ctx, void *data)
 {
-    int fd;
     struct mk_event *event;
-    struct fd_timer *timer;
 
-    printf("timeout destroy\n");
-
-    event = (struct mk_event *) data;
-    if (event->data == NULL) {
+    if (data == NULL) {
         return 0;
     }
 
-    fd = event->fd;
+    event = (struct mk_event *) data;
     _mk_event_del(ctx, event);
 
-    timer = event->data;
-    timer->run = MK_FALSE;
-
-    /* Wait for the background worker to finish */
-    pthread_join(timer->tid, NULL);
-
-    /* Cleanup */
-    close(timer->fd);
-    close(fd);
-    mk_mem_free(timer);
-
-    event->data = NULL;
-
+    /* trigger an EPIPE */
+    close(event->fd);
     return 0;
 }
 
@@ -285,7 +298,6 @@ static inline int _mk_event_channel_create(struct mk_event_ctx *ctx,
         close(fd[1]);
         return ret;
     }
-    event->mask = MK_EVENT_READ;
 
     *r_fd = fd[0];
     *w_fd = fd[1];
@@ -323,12 +335,11 @@ static inline int _mk_event_inject(struct mk_event_loop *loop,
     int i;
     struct mk_event_ctx *ctx;
 
-    printf("inject event on fd=%i\n", event->fd);
     ctx = loop->data;
 
     if (prevent_duplication) {
         for (i = 0; i < loop->n_events; i++) {
-            if (ctx->fired[i].fd == event->fd) {
+            if (ctx->fired[i].data == event) {
                 return 0;
             }
         }
@@ -336,67 +347,35 @@ static inline int _mk_event_inject(struct mk_event_loop *loop,
 
     event->mask = mask;
 
-    for (i = 0; i < loop->n_events; i++) {
-        if (ctx->fired[i].fd == -1) {
-            ctx->fired[i] = *event;
-            return 0;
-        }
+    /* fired events are stored in order, so the last entry must be available */
+    if (loop->n_events < ctx->queue_size) {
+        ctx->fired[loop->n_events].data = event;
+        loop->n_events++;
     }
-
-    ctx->fired[loop->n_events] = *event;
-    loop->n_events++;
 
     return 0;
 }
 
-//     int i;
-//     struct mk_event_ctx *ctx;
-
-//     ctx = loop->data;
-//
-//     if (prevent_duplication) {
-//         for (i = 0; i < loop->n_events; i++) {
-//             if (ctx->fired[i].fd == event->fd) {
-//                 return 0;
-//             }
-//         }
-//     }
-
-//     event->mask = mask;
-
-//     for (i = 0; i < ctx->queue_size; i++) {
-//         if (ctx->fired[i].fd == -1) {
-//             ctx->fired[i] = *event;
-//             break;
-//         }
-//     }
-
-//     loop->n_events++;
-
-//     return 0;
-// }
-
 static inline int _mk_event_wait_2(struct mk_event_loop *loop, int timeout)
 {
-
     int i;
-    int n;
+    int j;
+    int n = 0;
     int ret;
     struct pollfd *pfds;
-    struct mk_event *fired;
     struct mk_event_ctx *ctx = loop->data;
 
-    pfds = mk_mem_alloc_z(sizeof(struct pollfd) * ctx->queue_size);
-    if (!pfds) {
-        return -1;
-    }
+    pfds = ctx->pfds;
 
-    for (i = 0, n = 0; i < ctx->queue_size; i++) {
+    /* Copy registered events into pollfd array */
+    for (i = 0; i < ctx->queue_size; i++) {
         if (ctx->events[i] == NULL) {
             continue;
         }
+
         pfds[n].fd = ctx->events[i]->fd;
         pfds[n].events = 0;
+
         if (ctx->events[i]->mask & MK_EVENT_READ) {
             pfds[n].events |= POLLIN;
         }
@@ -406,52 +385,36 @@ static inline int _mk_event_wait_2(struct mk_event_loop *loop, int timeout)
         n++;
     }
 
+    /* wait for events */
     ret = poll(pfds, n, timeout);
     if (ret <= 0) {
-        mk_mem_free(pfds);
         loop->n_events = 0;
-        return ret;
+        return ret;  // Timeout or error
     }
 
     loop->n_events = 0;
+
+    /* for each event found, map the fired list data with the proper event */
     for (i = 0; i < n; i++) {
         if (pfds[i].revents == 0) {
             continue;
         }
 
-        fired = &ctx->fired[loop->n_events];
-        fired->fd = pfds[i].fd;
-        fired->mask = 0;
+        /* lookup the corresponding event */
+        for (j = 0; j < ctx->queue_size; j++) {
+            if (ctx->events[j] == NULL) {
+                continue;
+            }
 
-        if (pfds[i].revents & POLLIN) {
-            fired->mask |= MK_EVENT_READ;
-            printf("POLLIN event on fd=%i\n", pfds[i].fd);
+            /* match, reference the .data */
+            if (ctx->events[j]->fd == pfds[i].fd) {
+                ctx->fired[loop->n_events].data = ctx->events[j];
+                loop->n_events++;
+                break;
+            }
         }
-        if (pfds[i].revents & POLLOUT) {
-            fired->mask |= MK_EVENT_WRITE;
-            printf("POLLOUT event on fd=%i\n", pfds[i].fd);
-        }
-
-        if (pfds[i].revents & POLLERR) {
-            fired->mask |= MK_EVENT_CLOSE;
-            printf("POLLERR event on fd=%i\n", pfds[i].fd);
-        }
-
-        if (pfds[i].revents & POLLHUP) {
-            fired->mask |= MK_EVENT_CLOSE;
-            printf("POLLHUP event on fd=%i\n", pfds[i].fd);
-        }
-
-        if (pfds[i].revents & POLLNVAL) {
-            fired->mask |= MK_EVENT_CLOSE;
-            printf("POLLNVAL event on fd=%i\n", pfds[i].fd);
-        }
-
-        fired->data = ctx->events[i];
-        loop->n_events++;
     }
 
-    mk_mem_free(pfds);
     return loop->n_events;
 }
 
