@@ -107,24 +107,32 @@ static void print_metrics_text(struct flb_output_instance *ins,
     size_t off = 0;
     cfl_sds_t text;
     struct cmt *cmt = NULL;
+    int ok = CMT_DECODE_MSGPACK_SUCCESS;
 
     /* get cmetrics context */
-    ret = cmt_decode_msgpack_create(&cmt, (char *) data, bytes, &off);
-    if (ret != 0) {
-        flb_plg_error(ins, "could not process metrics payload");
-        return;
+    while((ret = cmt_decode_msgpack_create(&cmt,
+                                           (char *) data,
+                                           bytes, &off)) == ok) {
+        if (ret != 0) {
+            flb_plg_error(ins, "could not process metrics payload");
+            return;
+        }
+
+        /* convert to text representation */
+        text = cmt_encode_text_create(cmt);
+
+        /* destroy cmt context */
+        cmt_destroy(cmt);
+
+        printf("%s", text);
+        fflush(stdout);
+
+        cmt_encode_text_destroy(text);
     }
 
-    /* convert to text representation */
-    text = cmt_encode_text_create(cmt);
-
-    /* destroy cmt context */
-    cmt_destroy(cmt);
-
-    printf("%s", text);
-    fflush(stdout);
-
-    cmt_encode_text_destroy(text);
+    if (ret != ok) {
+        flb_plg_debug(ins, "cmt decode msgpack returned : %d", ret);
+    }
 }
 #endif
 
