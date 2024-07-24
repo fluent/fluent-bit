@@ -87,7 +87,7 @@ static void cb_results(const char *name, const char *value,
             }
 
             pcb->time_frac = frac;
-            pcb->time_lookup = flb_parser_tm2time(&tm);
+            pcb->time_lookup = flb_parser_tm2time(&tm, parser->time_system_timezone);
 
             if (parser->time_keep == FLB_FALSE) {
                 pcb->num_skipped++;

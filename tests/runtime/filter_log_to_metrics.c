@@ -684,7 +684,7 @@ void flb_test_log_to_metrics_label(void)
     for (i = 0; i < 2; i++){
         flb_lib_push(ctx, in_ffd, input, strlen(input));
     }
-    wait_with_timeout(500, finalString);
+    wait_with_timeout(2000, finalString);
     result = strstr(finalString, expected_label_name);
     if (!TEST_CHECK(result != NULL)) {
         TEST_MSG("expected substring:\n%s\ngot:\n%s\n", expected_label_name, finalString);
@@ -694,5 +694,4 @@ void flb_test_log_to_metrics_label(void)
         TEST_MSG("expected substring:\n%s\ngot:\n%s\n", expected_label_value, finalString);
     }
     filter_test_destroy(ctx);
-
 }

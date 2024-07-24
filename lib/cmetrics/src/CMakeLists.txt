@@ -28,6 +28,7 @@ set(src
   cmt_decode_opentelemetry.c
   cmt_encode_prometheus.c
   cmt_encode_prometheus_remote_write.c
+  cmt_decode_prometheus_remote_write.c
   cmt_encode_splunk_hec.c
   cmt_encode_cloudwatch_emf.c
   cmt_encode_text.c

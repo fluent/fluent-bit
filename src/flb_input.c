@@ -308,6 +308,7 @@ struct flb_input_instance *flb_input_new(struct flb_config *config,
         instance->tls                   = NULL;
         instance->tls_debug             = -1;
         instance->tls_verify            = FLB_TRUE;
+        instance->tls_verify_hostname   = FLB_FALSE;
         instance->tls_vhost             = NULL;
         instance->tls_ca_path           = NULL;
         instance->tls_ca_file           = NULL;
@@ -553,6 +554,10 @@ int flb_input_set_property(struct flb_input_instance *ins,
         ins->tls_verify = flb_utils_bool(tmp);
         flb_sds_destroy(tmp);
     }
+    else if (prop_key_check("tls.verify_hostname", k, len) == 0 && tmp) {
+        ins->tls_verify_hostname = flb_utils_bool(tmp);
+        flb_sds_destroy(tmp);
+    }
     else if (prop_key_check("tls.debug", k, len) == 0 && tmp) {
         ins->tls_debug = atoi(tmp);
         flb_sds_destroy(tmp);
@@ -591,7 +596,15 @@ int flb_input_set_property(struct flb_input_instance *ins,
             flb_sds_destroy(tmp);
             return -1;
         }
+
+        if (ins->storage_type != FLB_STORAGE_FS &&
+            ins->storage_pause_on_chunks_overlimit == FLB_TRUE) {
+                flb_debug("[input] storage.pause_on_chunks_overlimit will be "
+                            "reset because storage.type is not filesystem");
+                ins->storage_pause_on_chunks_overlimit = FLB_FALSE;
+        }
         flb_sds_destroy(tmp);
+
     }
     else if (prop_key_check("threaded", k, len) == 0 && tmp) {
         enabled = flb_utils_bool(tmp);
@@ -604,14 +617,12 @@ int flb_input_set_property(struct flb_input_instance *ins,
         ins->is_threaded = enabled;
     }
     else if (prop_key_check("storage.pause_on_chunks_overlimit", k, len) == 0 && tmp) {
-        if (ins->storage_type == FLB_STORAGE_FS) {
-            ret = flb_utils_bool(tmp);
-            flb_sds_destroy(tmp);
-            if (ret == -1) {
-                return -1;
-            }
-            ins->storage_pause_on_chunks_overlimit = ret;
+        ret = flb_utils_bool(tmp);
+        flb_sds_destroy(tmp);
+        if (ret == -1) {
+            return -1;
         }
+        ins->storage_pause_on_chunks_overlimit = ret;
     }
     else {
         /*
@@ -1120,6 +1131,16 @@ int flb_input_instance_init(struct flb_input_instance *ins,
                       ins->name);
 
             return -1;
+        }
+
+        if (ins->tls_verify_hostname == FLB_TRUE) {
+            ret = flb_tls_set_verify_hostname(ins->tls, ins->tls_verify_hostname);
+            if (ret == -1) {
+                flb_error("[input %s] error set up to verify hostname in TLS context",
+                          ins->name);
+
+                return -1;
+            }
         }
     }
 
@@ -1684,7 +1705,7 @@ static void flb_input_ingestion_paused(struct flb_input_instance *ins)
     if (ins->cmt_ingestion_paused != NULL) {
         /* cmetrics */
         cmt_gauge_set(ins->cmt_ingestion_paused, cfl_time_now(), 1,
-                      1, (char *[]) {flb_input_name(ins)});
+                      1, (char *[]) { (char *) flb_input_name(ins)});
     }
 }
 
@@ -1693,7 +1714,7 @@ static void flb_input_ingestion_resumed(struct flb_input_instance *ins)
     if (ins->cmt_ingestion_paused != NULL) {
         /* cmetrics */
         cmt_gauge_set(ins->cmt_ingestion_paused, cfl_time_now(), 0,
-                      1, (char *[]) {flb_input_name(ins)});
+                      1, (char *[]) {(char *) flb_input_name(ins)});
     }
 }
 

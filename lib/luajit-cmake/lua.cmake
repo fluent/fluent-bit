@@ -7,14 +7,18 @@
 # MIT license.
 # Debugged and (now seriously) modIFied by Ronan Collobert, for Torch7
 
-cmake_minimum_required(VERSION 3.0)
+cmake_minimum_required(VERSION 3.5)
 
 PROJECT(lua C)
 
 IF(NOT LUA_DIR)
   MESSAGE(FATAL_ERROR "Must set LUA_DIR to build lua with CMake")
 ENDIF()
+if (NOT WIN32)
+  include(GNUInstallDirs)
+endif ()
 
+set(LUA_BUILD_EXE ON CACHE BOOL "Enable lua exe build")
 FILE(COPY ${CMAKE_CURRENT_LIST_DIR}/luauser.h DESTINATION ${CMAKE_BINARY_DIR})
 
 SET(CMAKE_REQUIRED_INCLUDES
@@ -37,7 +41,7 @@ IF(CMAKE_SIZEOF_VOID_P EQUAL 8)
 ENDIF()
 
 IF(NOT WIN32)
-  FIND_LIBRARY(DL_LIBRARY "dl")
+  FIND_LIBRARY(DL_LIBRARY NAMES "dl")
   IF(DL_LIBRARY)
     SET(CMAKE_REQUIRED_LIBRARIES ${DL_LIBRARY})
     LIST(APPEND LIBS ${DL_LIBRARY})
@@ -56,7 +60,7 @@ IF( LUA_USE_LIBM )
   LIST( APPEND LIBS m )
 ENDIF()
 
-if($ENV{LUA_TARGET_SHARED})
+if(LUA_TARGET_SHARED)
   add_definitions(-fPIC)
 endif()
 
@@ -101,48 +105,48 @@ SET(SRC_LUACORE
 )
 
 ## GENERATE
-IF(WITH_SHARED_LUA)
+IF(BUILD_SHARED_LIBS)
   IF(IOS OR ANDROID)
     SET(LIBTYPE STATIC)
   ELSE()
     SET(LIBTYPE SHARED)
   ENDIF()
+  IF(WIN32)
+    LIST(APPEND LUA_COMPILE_DEFINITIONS "LUA_BUILD_AS_DLL")
+  ENDIF()
 ELSE()
   SET(LIBTYPE STATIC)
 ENDIF()
-ADD_LIBRARY(lualib ${LIBTYPE} ${SRC_LUACORE})
+ADD_LIBRARY(liblua ${LIBTYPE} ${SRC_LUACORE})
 SET(LUA_COMPILE_DEFINITIONS)
 IF(ANDROID OR IOS)
   LIST(APPEND LUA_COMPILE_DEFINITIONS LUA_USER_H="luauser.h")
   INCLUDE_DIRECTORIES(${CMAKE_BINARY_DIR})
-ENDIF()
-IF(NOT WIN32)
+ELSEIF(NOT WIN32)
   LIST(APPEND LUA_COMPILE_DEFINITIONS "LUA_USE_POSIX")
 ENDIF()
 
-SET_TARGET_PROPERTIES(lualib PROPERTIES
+SET_TARGET_PROPERTIES(liblua PROPERTIES
   PREFIX "lib"
   IMPORT_PREFIX "lib"
   COMPILE_DEFINITIONS "${LUA_COMPILE_DEFINITIONS}"
 )
 IF(LUA_COMPILE_FLAGS)
-  SET_TARGET_PROPERTIES(lualib PROPERTIES
+  SET_TARGET_PROPERTIES(liblua PROPERTIES
     COMPILE_FLAGS ${LUA_COMPILE_FLAGS})
 ENDIF()
 
-TARGET_LINK_LIBRARIES(lualib ${LIBS})
-SET_TARGET_PROPERTIES(lualib PROPERTIES OUTPUT_NAME "lua54")
-if(IOS)
-  set_xcode_property(lualib IPHONEOS_DEPLOYMENT_TARGET "9.0" "all")
-endif()
-LIST(APPEND LIB_LIST lualib)
-
-ADD_EXECUTABLE(lua ${LUA_DIR}/lua.c)
-IF(WIN32)
-  TARGET_LINK_LIBRARIES(lua lualib)
-ELSE()
-  TARGET_LINK_LIBRARIES(lua lualib ${LIBS})
+IF(ANDROID OR ${CMAKE_SYSTEM_NAME} STREQUAL iOS)
+  TARGET_COMPILE_DEFINITIONS(liblua PRIVATE LUA_USE_IOS)
 ENDIF()
+
+TARGET_LINK_LIBRARIES(liblua ${LIBS})
+SET_TARGET_PROPERTIES(liblua PROPERTIES OUTPUT_NAME "lua54")
+if(IOS)
+  set_xcode_property(liblua IPHONEOS_DEPLOYMENT_TARGET "9.0" "all")
+endif()
+LIST(APPEND LIB_LIST liblua)
+
 
 SET(lua_headers
   ${LUA_DIR}/lauxlib.h
@@ -150,26 +154,32 @@ SET(lua_headers
   ${LUA_DIR}/luaconf.h
   ${LUA_DIR}/lualib.h)
 
+INSTALL(FILES ${lua_headers} DESTINATION ${CMAKE_INSTALL_INCLUDEDIR}/lua)
+INSTALL(TARGETS liblua DESTINATION ${CMAKE_INSTALL_LIBDIR})
 
-## FIXME:
+if(LUA_BUILD_EXE)
+  if(NOT BUILD_SHARED_LIBS)
+    ADD_EXECUTABLE(lua ${LUA_DIR}/onelua.c)
+  IF(ANDROID OR ${CMAKE_SYSTEM_NAME} STREQUAL iOS)
+    TARGET_COMPILE_DEFINITIONS(lua PRIVATE LUA_USE_IOS)
+  ENDIF()
+  else()
+    ADD_EXECUTABLE(lua ${LUA_DIR}/lua.c)
+    TARGET_LINK_LIBRARIES(lua PRIVATE liblua)
+  endif()
+  TARGET_LINK_LIBRARIES(lua ${LIBS})
 
-## USE_64BITS= cmake -H. -BLinux -G"Unix Makefiles" -DCMAKE_BUILD_TYPE=MinSizeRel
-## CMake Error at /Users/zhaozg/work/lua-forge/cmake/lua.cmake:154 (INSTALL):
-##   INSTALL TARGETS given no ARCHIVE DESTINATION for static library target
-##   "lualib".
-## Call Stack (most recent call first):
-##   /Users/zhaozg/work/lua-forge/CMakeLists.txt:88 (include)
-##
-##
-## CMake Error at /Users/zhaozg/work/lua-forge/cmake/lua.cmake:159 (INSTALL):
-##   INSTALL TARGETS given no RUNTIME DESTINATION for executable target "lua".
-## Call Stack (most recent call first):
-##   /Users/zhaozg/work/lua-forge/CMakeLists.txt:88 (include)
+  if(APPLE AND ${CMAKE_C_COMPILER_ID} STREQUAL "zig")
+    target_link_libraries(lua c pthread)
+    set_target_properties(lua PROPERTIES
+      LINK_FLAGS "-mmacosx-version-min=${CMAKE_OSX_DEPLOYMENT_TARGET}")
+  endif()
+  INSTALL(TARGETS lua DESTINATION "${CMAKE_INSTALL_BINDIR}")
+endif()
 
+add_library(lua-header INTERFACE)
+target_include_directories(lua-header INTERFACE ${LUA_DIR})
 
-# INSTALL(FILES ${lua_headers} DESTINATION ${CMAKE_INSTALL_INCLUDEDIR}/lua)
-# INSTALL(TARGETS lualib DESTINATION ${CMAKE_INSTALL_LIBDIR})
-#
-# IF(NOT IOS)
-#   INSTALL(TARGETS lua DESTINATION ${CMAKE_INSTALL_BINDIR})
-# ENDIF()
+add_library(lua::lib ALIAS liblua)
+add_library(lua::header ALIAS lua-header)
+add_executable(lua::lua ALIAS lua)

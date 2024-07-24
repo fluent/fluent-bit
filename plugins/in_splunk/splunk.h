@@ -32,6 +32,12 @@
 #define HTTP_BUFFER_MAX_SIZE    "4M"
 #define HTTP_BUFFER_CHUNK_SIZE  "512K"
 
+struct flb_splunk_tokens {
+    flb_sds_t header;
+    size_t    length;
+    struct mk_list _head;
+};
+
 struct flb_splunk {
     flb_sds_t listen;
     flb_sds_t tcp_port;
@@ -41,7 +47,11 @@ struct flb_splunk {
     struct mk_list *success_headers;
 
     /* Token Auth */
-    flb_sds_t auth_header;
+    struct mk_list auth_tokens;
+    flb_sds_t ingested_auth_header;
+    size_t ingested_auth_header_len;
+    int store_token_in_metadata;
+    flb_sds_t store_token_key;
 
     struct flb_log_event_encoder log_encoder;
 

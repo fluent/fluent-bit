@@ -1,20 +1,14 @@
-#!/usr/bin/env python
-
-# Copyright (C) 2010, Eduardo Silva <edsiper@gmail.com>
+#  Licensed under the Apache License, Version 2.0 (the "License");
+#  you may not use this file except in compliance with the License.
+#  You may obtain a copy of the License at
 #
-# This program is free software; you can redistribute it and/or modify
-# it under the terms of the GNU General Public License as published by
-# the Free Software Foundation; either version 2 of the License, or
-# (at your option) any later version.
+#      http://www.apache.org/licenses/LICENSE-2.0
 #
-# This program is distributed in the hope that it will be useful,
-# but WITHOUT ANY WARRANTY; without even the implied warranty of
-# MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
-# GNU General Public License for more details.
-#
-# You should have received a copy of the GNU General Public License
-# along with this program; if not, write to the Free Software
-# Foundation, Inc., 51 Franklin St, Fifth Floor, Boston, MA  02110-1301  USA
+#  Unless required by applicable law or agreed to in writing, software
+#  distributed under the License is distributed on an "AS IS" BASIS,
+#  WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+#  See the License for the specific language governing permissions and
+#  limitations under the License.
 
 import os
 import sys
@@ -27,7 +21,7 @@ ACCESS_FILE = '../logs/access.log'
 ERROR_FILE = '../logs/error.log'
 
 class AccessRule:
-    def __init__(self, 
+    def __init__(self,
                  ip = None, time = None,
                  method = None, uri = None,
                  protocol = None, status = None,
@@ -46,7 +40,7 @@ class AccessRule:
             if size.isdigit():
                 self.size = size
             else:
-                if size[:8] == 'FILESIZE':                
+                if size[:8] == 'FILESIZE':
                     target = size[8:].strip()
                     self.size = os.path.getsize(target)
                 else:
@@ -100,7 +94,7 @@ class Config(ConfigParser.ConfigParser):
                 message = self._get_value(section, 'message')
 
                 rule = ErrorRule(ip, time, error, message)
-                
+
             # Add rule to list
             rules.append(rule)
 
@@ -155,7 +149,7 @@ class Logfile:
         print "  -h             Show this help"
         print
         exit(1)
-        
+
     def get_last_file_line(self, file):
         f = open(file, 'r')
         lines = f.readlines()
@@ -206,11 +200,11 @@ class Logfile:
                 self.check_field(r.protocol, data['protocol'])
                 self.check_field(r.status, data['status'])
                 self.check_field(r.size, data['size'])
-                                 
+
             elif r.type == 'error':
                 line = self.get_last_file_line(ERROR_FILE)
                 fields = error_re.split(line)
-                
+
                 # We always expect at least 4 fields
                 if len(fields) < 4:
                     if self.silent_mode is False:
@@ -233,7 +227,7 @@ class Logfile:
 
         if self.silent_mode is False:
             print "Check passed :)"
-            
+
 if __name__ == '__main__':
     Logfile()
 

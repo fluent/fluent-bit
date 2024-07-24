@@ -231,7 +231,7 @@ void test_parser_time_lookup()
             continue;
         }
 
-        epoch = flb_parser_tm2time(&tm);
+        epoch = flb_parser_tm2time(&tm, FLB_FALSE);
         epoch -= year_diff;
         TEST_CHECK(t->epoch == epoch);
         TEST_CHECK(t->frac_seconds == ns);

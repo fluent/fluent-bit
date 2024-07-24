@@ -289,12 +289,20 @@ cleanup:
 PWSTR get_message(EVT_HANDLE metadata, EVT_HANDLE handle, unsigned int *message_size)
 {
     WCHAR* buffer = NULL;
+    WCHAR* previous_buffer = NULL;
     DWORD status = ERROR_SUCCESS;
-    DWORD buffer_size = 0;
+    DWORD buffer_size = 512;
     DWORD buffer_used = 0;
     LPVOID format_message_buffer;
     WCHAR* message = NULL;
     char *error_message = NULL;
+
+    buffer = flb_malloc(sizeof(WCHAR) * buffer_size);
+    if (!buffer) {
+        flb_error("failed to premalloc message buffer");
+
+        goto buffer_error;
+    }
 
     // Get the size of the buffer
     if (!EvtFormatMessage(metadata, handle, 0, 0, NULL,
@@ -302,12 +310,15 @@ PWSTR get_message(EVT_HANDLE metadata, EVT_HANDLE handle, unsigned int *message_
         status = GetLastError();
         if (ERROR_INSUFFICIENT_BUFFER == status) {
             buffer_size = buffer_used;
-            buffer = flb_malloc(sizeof(WCHAR) * buffer_size);
+            previous_buffer = buffer;
+            buffer = flb_realloc(previous_buffer, sizeof(WCHAR) * buffer_size);
             if (!buffer) {
                 flb_error("failed to malloc message buffer");
+                flb_free(previous_buffer);
 
-                goto cleanup;
+                goto buffer_error;
             }
+
             if (!EvtFormatMessage(metadata,
                                   handle,
                                   0xffffffff,
@@ -375,33 +386,40 @@ cleanup:
         flb_free(buffer);
     }
 
+buffer_error:
+
     return message;
 }
 
 PWSTR get_description(EVT_HANDLE handle, LANGID langID, unsigned int *message_size)
 {
-    WCHAR *buffer[EVENT_PROVIDER_NAME_LENGTH];
     PEVT_VARIANT values = NULL;
-    DWORD buffer_used = 0;
+    DWORD buffer_size = 0;
+    DWORD buffer_size_used = 0;
     DWORD status = ERROR_SUCCESS;
     DWORD count = 0;
     WCHAR *message = NULL;
     EVT_HANDLE metadata = NULL;
 
-    PCWSTR properties[] = { L"Event/System/Provider/@Name" };
+    PCWSTR properties[] = { L"Event/System/Provider/@Name", L"Event/RenderingInfo/Message" };
     EVT_HANDLE context =
-            EvtCreateRenderContext(1, properties, EvtRenderContextValues);
+            EvtCreateRenderContext(_countof(properties), properties,
+                                   EvtRenderContextValues);
     if (context == NULL) {
         flb_error("Failed to create renderContext");
         goto cleanup;
     }
 
+    // Get the size of the buffer
+    EvtRender(context, handle, EvtRenderEventValues, 0, NULL, &buffer_size, &count);
+    values = (PEVT_VARIANT)flb_malloc(buffer_size);
+
     if (EvtRender(context,
                   handle,
                   EvtRenderEventValues,
-                  EVENT_PROVIDER_NAME_LENGTH,
-                  buffer,
-                  &buffer_used,
+                  buffer_size,
+                  values,
+                  &buffer_size_used,
                   &count) != FALSE){
         status = ERROR_SUCCESS;
     }
@@ -413,19 +431,25 @@ PWSTR get_description(EVT_HANDLE handle, LANGID langID, unsigned int *message_si
         flb_error("failed to query RenderContextValues");
         goto cleanup;
     }
-    values = (PEVT_VARIANT)buffer;
 
-    metadata = EvtOpenPublisherMetadata(
-            NULL, // TODO: Remote handle
-            values[0].StringVal,
-            NULL,
-            MAKELCID(langID, SORT_DEFAULT),
-            0);
-    if (metadata == NULL) {
-        goto cleanup;
+    /* For non forwarded events, we need to determine the
+     * corresponding metadata. */
+    if ((values[1].Type & EVT_VARIANT_TYPE_MASK) == EvtVarTypeNull) {
+        /* Metadata can be NULL because some of the events do not have an
+         * associated publisher metadata. */
+        metadata = EvtOpenPublisherMetadata(
+                NULL, // TODO: Remote handle
+                values[0].StringVal,
+                NULL,
+                MAKELCID(langID, SORT_DEFAULT),
+                0);
+
+        message = get_message(metadata, handle, message_size);
     }
-
-    message = get_message(metadata, handle, message_size);
+    else if ((values[1].Type & EVT_VARIANT_TYPE_MASK) == EvtVarTypeString) {
+        /* Forwarded events contain RenderingInfo element */
+        message = _wcsdup(values[1].StringVal);
+    }
 
 cleanup:
     if (context) {
@@ -434,6 +458,10 @@ cleanup:
 
     if (metadata) {
         EvtClose(metadata);
+    }
+
+    if (values) {
+        flb_free(values);
     }
 
     return message;

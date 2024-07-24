@@ -38,6 +38,7 @@ struct flb_out_gelf_config {
     char *pckt_buf;
     int compress;
     unsigned int seed;
+    flb_sds_t tag_key;
 
     int mode;
 

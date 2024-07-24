@@ -307,9 +307,9 @@ static void flb_proxy_input_cb_destroy(struct flb_input_plugin *plugin)
 static int flb_proxy_input_cb_pre_run(struct flb_input_instance *ins,
                                       struct flb_config *config, void *data)
 {
+    int ret = -1;
     struct flb_plugin_proxy_context *pc;
     struct flb_plugin_proxy *proxy;
-    int ret;
 
     pc = (struct flb_plugin_proxy_context *)(ins->context);
     proxy = pc->proxy;
@@ -327,9 +327,9 @@ static int flb_proxy_input_cb_pre_run(struct flb_input_instance *ins,
 
 static int flb_proxy_output_cb_pre_run(void *out_context, struct flb_config *config)
 {
+    int ret = -1;
     struct flb_plugin_proxy_context *ctx = out_context;
     struct flb_plugin_proxy *proxy = (ctx->proxy);
-    int ret;
 
     if (!out_context) {
         return 0;

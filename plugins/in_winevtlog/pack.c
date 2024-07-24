@@ -261,20 +261,91 @@ static int pack_filetime(struct winevtlog_config *ctx, ULONGLONG filetime)
     return 0;
 }
 
-static int pack_sid(struct winevtlog_config *ctx, PSID sid)
+static int pack_sid(struct winevtlog_config *ctx, PSID sid, int extract_sid)
 {
+#define MAX_NAME 256
     size_t size;
     LPWSTR wide_sid = NULL;
+    DWORD len = MAX_NAME, err = ERROR_SUCCESS;
     int ret = -1;
+    SID_NAME_USE sid_type = SidTypeUnknown;
+    char account[MAX_NAME];
+    char domain[MAX_NAME];
+    PSID pSID = NULL;
+    DWORD result_len = 0;
+    flb_sds_t formatted = NULL;
 
     if (ConvertSidToStringSidW(sid, &wide_sid)) {
+        if (extract_sid == FLB_TRUE) {
+            if (!LookupAccountSidA(NULL, sid,
+                                   account, &len, domain,
+                                   &len, &sid_type)) {
+                err = GetLastError();
+                if (err == ERROR_NONE_MAPPED) {
+                    flb_plg_debug(ctx->ins, "AccountSid is not mapped. code: %u", err);
+
+                    goto not_mapped_error;
+                }
+                else {
+                    flb_plg_warn(ctx->ins, "LookupAccountSid Error %u", err);
+                }
+
+                goto error;
+            }
+
+            result_len = strlen(domain) + 1 + strlen(account) + 1;
+            formatted = flb_sds_create_size(result_len);
+            if (formatted == NULL) {
+                flb_plg_warn(ctx->ins, "create result buffer failed");
+
+                ret = -1;
+
+                goto error;
+            }
+
+            _snprintf_s(formatted, result_len, _TRUNCATE, "%s\\%s", domain, account);
+
+            if (size > 0) {
+                flb_log_event_encoder_append_body_cstring(ctx->log_encoder, formatted);
+
+                ret = 0;
+            }
+            else {
+                flb_plg_warn(ctx->ins, "format domain\\account failed");
+                flb_sds_destroy(formatted);
+
+                ret = -1;
+
+                goto error;
+            }
+
+            LocalFree(wide_sid);
+            flb_sds_destroy(formatted);
+
+            return ret;
+        }
+        else {
+            ret = pack_wstr(ctx, wide_sid);
+            LocalFree(wide_sid);
+
+            return ret;
+        }
+
+    not_mapped_error:
         ret = pack_wstr(ctx, wide_sid);
 
         LocalFree(wide_sid);
+
+        return ret;
+
+    error:
+        LocalFree(wide_sid);
+
         return ret;
     }
 
     return ret;
+#undef MAX_NAME
 }
 
 static void pack_string_inserts(struct winevtlog_config *ctx, PEVT_VARIANT values, DWORD count)
@@ -355,7 +426,7 @@ static void pack_string_inserts(struct winevtlog_config *ctx, PEVT_VARIANT value
             }
             break;
         case EvtVarTypeSid:
-            if (pack_sid(ctx, values[i].SidVal)) {
+            if (pack_sid(ctx, values[i].SidVal, FLB_FALSE)) {
                 pack_nullstr(ctx);
             }
             break;
@@ -601,7 +672,7 @@ void winevtlog_pack_event(PEVT_VARIANT system, WCHAR *message,
     /* UserID */
     ret = flb_log_event_encoder_append_body_cstring(ctx->log_encoder, "UserID");
 
-    if (pack_sid(ctx, system[EvtSystemUserID].SidVal)) {
+    if (pack_sid(ctx, system[EvtSystemUserID].SidVal, FLB_TRUE)) {
         pack_nullstr(ctx);
     }
 

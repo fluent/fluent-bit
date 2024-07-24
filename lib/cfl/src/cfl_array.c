@@ -129,6 +129,15 @@ int cfl_array_append(struct cfl_array *array,
          * it controls the input data.
          */
         if (array->resizable) {
+
+            /*
+             * if the array size is zero (created as an array of 0 slots),
+             * change the size to 1 so the resize can work properly
+             */
+            if (array->slot_count == 0) {
+                array->slot_count = 1;
+            }
+
             /* set new number of slots and total size */
             new_slot_count = (array->slot_count * 2);
             new_size = (new_slot_count * sizeof(void *));
@@ -145,13 +154,17 @@ int cfl_array_append(struct cfl_array *array,
             return -1;
         }
     }
-    array->entries[array->entry_count++] = value;
 
+    /* this is just a double check to make sure the slot is really available */
+    if (array->entry_count >= array->slot_count) {
+        return -1;
+    }
+
+    array->entries[array->entry_count++] = value;
     return 0;
 }
 
-int cfl_array_append_string(struct cfl_array *array,
-                            char *value)
+int cfl_array_append_string(struct cfl_array *array, char *value)
 {
     struct cfl_variant *value_instance;
     int                 result;
@@ -165,7 +178,25 @@ int cfl_array_append_string(struct cfl_array *array,
     result = cfl_array_append(array, value_instance);
     if (result) {
         cfl_variant_destroy(value_instance);
+        return -2;
+    }
 
+    return 0;
+}
+
+int cfl_array_append_string_s(struct cfl_array *array, char *str, size_t str_len, int referenced)
+{
+    struct cfl_variant *value_instance;
+    int                 result;
+
+    value_instance = cfl_variant_create_from_string_s(str, str_len, referenced);
+    if (value_instance == NULL) {
+        return -1;
+    }
+
+    result = cfl_array_append(array, value_instance);
+    if (result) {
+        cfl_variant_destroy(value_instance);
         return -2;
     }
 
@@ -174,13 +205,13 @@ int cfl_array_append_string(struct cfl_array *array,
 
 int cfl_array_append_bytes(struct cfl_array *array,
                            char *value,
-                           size_t length)
+                           size_t length,
+                           int referenced)
 {
     struct cfl_variant *value_instance;
     int                 result;
 
-    value_instance = cfl_variant_create_from_bytes(value, length);
-
+    value_instance = cfl_variant_create_from_bytes(value, length, referenced);
     if (value_instance == NULL) {
         return -1;
     }

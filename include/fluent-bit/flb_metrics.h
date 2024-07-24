@@ -56,18 +56,19 @@
 #define FLB_METRIC_OUT_DROPPED_RECORDS 15       /* dropped_records_total */
 #define FLB_METRIC_OUT_RETRIED_RECORDS 16       /* retried_records_total */
 
+/* The limitation of title name length */
+#define FLB_METRIC_LENGTH_LIMIT 1024
+
 struct flb_metric {
     int id;
-    int title_len;
-    char title[64];
+    flb_sds_t title;
     size_t val;
     struct mk_list _head;
 };
 
 struct flb_metrics {
-    int title_len;         /* Title string length */
-    char title[64];        /* Title or id for this metrics context */
     int count;             /* Total count of metrics registered */
+    flb_sds_t title;
     struct mk_list list;   /* Head of metrics list */
 };
 

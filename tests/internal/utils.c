@@ -618,6 +618,42 @@ void test_flb_utils_get_machine_id()
     flb_free(id);
 }
 
+struct size_to_bytes_check {
+    char *size;      /* size in string    */
+    int64_t ret;     /* expected size     */
+};
+
+struct size_to_bytes_check size_to_bytes_checks[] = {
+    {"922337.63", 922337},
+    {"2K",2000},
+    {"5.7263K", 5726},
+    {"9223372036854775.23K", -1},
+    {"1M", 1000000},
+    {"1.1M", 1100000},
+    {"3.592M", 3592000},
+    {"52.752383M", 52752383},
+    {"9223372036854.42M", -1},
+    {"492.364G",492364000000},
+    {"1.2973G", 1297300000},
+    {"9223372036.78G", -1},
+};
+
+void test_size_to_bytes() 
+{
+    int i;
+    int size;
+    int64_t ret;
+    struct size_to_bytes_check *u;
+
+    size = sizeof(size_to_bytes_checks) / sizeof(struct size_to_bytes_check);
+    for (i = 0; i < size; i++) {
+        u = &size_to_bytes_checks[i];
+
+        ret = flb_utils_size_to_bytes(u->size);
+        TEST_CHECK(ret == u->ret);
+    }
+}
+
 TEST_LIST = {
     /* JSON maps iteration */
     { "url_split", test_url_split },
@@ -632,5 +668,6 @@ TEST_LIST = {
     { "test_flb_utils_split_quoted", test_flb_utils_split_quoted},
     { "test_flb_utils_split_quoted_errors", test_flb_utils_split_quoted_errors},
     { "test_flb_utils_get_machine_id", test_flb_utils_get_machine_id },
+    { "test_size_to_bytes", test_size_to_bytes },
     { 0 }
 };

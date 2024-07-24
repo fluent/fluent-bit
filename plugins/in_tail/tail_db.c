@@ -205,7 +205,7 @@ static int db_file_insert(struct flb_tail_file *file, struct flb_tail_config *ct
     if (ret != SQLITE_DONE) {
         sqlite3_clear_bindings(ctx->stmt_insert_file);
         sqlite3_reset(ctx->stmt_insert_file);
-        flb_plg_error(ctx->ins, "cannot execute insert file %s inode=%lu",
+        flb_plg_error(ctx->ins, "cannot execute insert file %s inode=%" PRIu64,
                       file->name, file->inode);
         return -1;
     }
@@ -241,7 +241,7 @@ static int stmt_add_param_concat(struct flb_tail_config *ctx,
 
         *stmt_sql = sds_tmp;
     }
-        
+
     sds_tmp = flb_sds_cat(*stmt_sql, SQL_STMT_PARAM_END,
                           SQL_STMT_PARAM_END_LEN);
     if (sds_tmp == NULL) {
@@ -264,7 +264,7 @@ int flb_tail_db_file_set(struct flb_tail_file *file,
     /* Check if the file exists */
     ret = db_file_exists(file, ctx, &id, &inode, &offset);
     if (ret == -1) {
-        flb_plg_error(ctx->ins, "cannot execute query to check inode: %lu",
+        flb_plg_error(ctx->ins, "cannot execute query to check inode: %" PRIu64,
                       file->inode);
         return -1;
     }
@@ -463,7 +463,7 @@ int flb_tail_db_stale_file_delete(struct flb_input_instance *ins,
         ret = sqlite3_bind_int64(stmt_delete_inodes, idx, file->inode);
         if (ret != SQLITE_OK) {
             flb_plg_error(ctx->ins, "error binding to stmt_delete_inodes:"
-                          " inode=%lu, ret=%d", file->inode, ret);
+                          " inode=%" PRIu64 ", ret=%d", file->inode, ret);
             sqlite3_finalize(stmt_delete_inodes);
             flb_sds_destroy(stale_delete_sql);
             return -1;

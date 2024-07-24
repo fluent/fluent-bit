@@ -449,7 +449,7 @@ static void test_variant_print_string_s()
             continue;
         }
 
-        val = cfl_variant_create_from_string_s(inputs[i].str, inputs[i].str_size);
+        val = cfl_variant_create_from_string_s(inputs[i].str, inputs[i].str_size, CFL_TRUE);
         if (!TEST_CHECK(val != NULL)) {
             TEST_MSG("%d: cfl_variant_create_from_string failed", i);
             fclose(fp);
@@ -487,7 +487,7 @@ static void test_variant_print_bytes()
         exit(1);
     }
 
-    val = cfl_variant_create_from_bytes(input, 4);
+    val = cfl_variant_create_from_bytes(input, 4, CFL_FALSE);
     if (!TEST_CHECK(val != NULL)) {
         TEST_MSG("cfl_variant_create_from_bytes failed");
         fclose(fp);

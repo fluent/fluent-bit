@@ -37,6 +37,7 @@ struct flb_opentelemetry {
     const char *tag_key;
     bool raw_traces;
     int  tag_from_uri;
+    flb_sds_t logs_metadata_key;
 
     struct flb_input_instance *ins;
 

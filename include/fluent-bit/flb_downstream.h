@@ -42,6 +42,9 @@ struct flb_downstream {
 
     struct mk_list         busy_queue;
     struct mk_list         destroy_queue;
+
+    /* this is a config map reference coming from the plugin net_setup field */
+    struct flb_net_setup  *net_setup;
 };
 
 static inline int flb_downstream_is_shutting_down(struct flb_downstream *downstream)

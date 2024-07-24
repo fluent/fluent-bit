@@ -91,9 +91,9 @@ static int in_opentelemetry_init(struct flb_input_instance *ins,
     port = (unsigned short int) strtoul(ctx->tcp_port, NULL, 10);
 
     if (ctx->enable_http2) {
-        ret = flb_http_server_init(&ctx->http_server, 
+        ret = flb_http_server_init(&ctx->http_server,
                                     HTTP_PROTOCOL_AUTODETECT,
-                                    FLB_HTTP_SERVER_FLAG_AUTO_INFLATE,
+                                    (FLB_HTTP_SERVER_FLAG_KEEPALIVE | FLB_HTTP_SERVER_FLAG_AUTO_INFLATE),
                                     NULL,
                                     ins->host.listen,
                                     ins->host.port,
@@ -232,6 +232,11 @@ static struct flb_config_map config_map[] = {
      FLB_CONFIG_MAP_BOOL, "raw_traces", "false",
      0, FLB_TRUE, offsetof(struct flb_opentelemetry, raw_traces),
      "Forward traces without processing"
+    },
+
+    {
+     FLB_CONFIG_MAP_STR, "logs_metadata_key", "otlp",
+     0, FLB_TRUE, offsetof(struct flb_opentelemetry, logs_metadata_key),
     },
 
     /* EOF */

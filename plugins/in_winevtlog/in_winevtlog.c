@@ -74,7 +74,7 @@ static int in_winevtlog_init(struct flb_input_instance *in,
 
     /* Set up total reading size threshold */
     if (ctx->total_size_threshold >= MINIMUM_THRESHOLD_SIZE &&
-        ctx->total_size_threshold < MAXIMUM_THRESHOLD_SIZE) {
+        ctx->total_size_threshold <= MAXIMUM_THRESHOLD_SIZE) {
         flb_utils_bytes_to_human_readable_size((size_t) ctx->total_size_threshold,
                                                human_readable_size,
                                                sizeof(human_readable_size) - 1);
@@ -82,7 +82,7 @@ static int in_winevtlog_init(struct flb_input_instance *in,
                       "read limit per cycle is set up as %s",
                       human_readable_size);
     }
-    else if (ctx->total_size_threshold >= MAXIMUM_THRESHOLD_SIZE) {
+    else if (ctx->total_size_threshold > MAXIMUM_THRESHOLD_SIZE) {
         flb_utils_bytes_to_human_readable_size((size_t) MAXIMUM_THRESHOLD_SIZE,
                                                human_readable_size,
                                                sizeof(human_readable_size) - 1);

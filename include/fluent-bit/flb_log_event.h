@@ -33,6 +33,10 @@
 #define FLB_LOG_EVENT_FORMAT_FLUENT_BIT_V1  FLB_LOG_EVENT_FORMAT_FORWARD
 #define FLB_LOG_EVENT_FORMAT_FLUENT_BIT_V2  4
 
+#define FLB_LOG_EVENT_NORMAL              (int32_t)  0
+#define FLB_LOG_EVENT_GROUP_START         (int32_t) -1
+#define FLB_LOG_EVENT_GROUP_END           (int32_t) -2
+
 struct flb_log_event {
     msgpack_object  *raw_timestamp;
     struct flb_time  timestamp;

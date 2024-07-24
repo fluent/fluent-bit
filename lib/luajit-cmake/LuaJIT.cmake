@@ -1,4 +1,4 @@
-cmake_minimum_required(VERSION 3.0)
+cmake_minimum_required(VERSION 3.5)
 
 project(luajit C)
 set(can_use_assembler TRUE)
@@ -26,6 +26,7 @@ set(LUA_MULTILIB "lib" CACHE PATH "The name of lib directory.")
 set(LUAJIT_DISABLE_FFI OFF CACHE BOOL "Permanently disable the FFI extension")
 set(LUAJIT_DISABLE_JIT OFF CACHE BOOL "Disable the JIT compiler")
 set(LUAJIT_NO_UNWIND OFF CACHE BOOL "Disable the UNWIND")
+set(LUAJIT_ENABLE_LUA52COMPAT ON CACHE BOOL "Enable LuaJIT2.1 compat with Lua5.2")
 set(LUAJIT_NUMMODE 0 CACHE STRING
 "Specify the number mode to use. Possible values:
   0 - Default mode
@@ -49,21 +50,30 @@ if(CMAKE_CROSSCOMPILING)
   message(STATUS "HOST_64 is ${HOST_64}")
   message(STATUS "TARGET_64 is ${TARGET_64}")
 
-  if(HOST_64 AND NOT TARGET_64)
+  if(HOST_64)
     if(${CMAKE_HOST_SYSTEM_NAME} STREQUAL Darwin)
-      if(${CMAKE_SYSTEM_NAME} STREQUAL Windows)
-        set(HOST_WINE wine)
-        set(TOOLCHAIN "-DCMAKE_TOOLCHAIN_FILE=${CMAKE_TOOLCHAIN_FILE}")
+      if(NOT TARGET_64)
         if(TARGET_SYS)
           set(TARGET_SYS "-DTARGET_SYS=${TARGET_SYS}")
         endif()
-        include(${CMAKE_CURRENT_LIST_DIR}/Utils/Darwin.wine.cmake)
-      else()
-        include(${CMAKE_CURRENT_LIST_DIR}/Utils/Darwin.wine.cmake)
+        set(USE_64BITS OFF)
+        set(WINE true)
+        set(HOST_WINE wine)
+        set(TOOLCHAIN "-DCMAKE_TOOLCHAIN_FILE=${CMAKE_CURRENT_LIST_DIR}/Utils/windows.toolchain.cmake")
       endif()
-    else()
-      message(FATAL_ERROR
-        "NYI build ${CMAKE_SYSTEM_NAME} for on ${CMAKE_HOST_SYSTEM_NAME}")
+    elseif(${CMAKE_HOST_SYSTEM_NAME} STREQUAL ${CMAKE_SYSTEM_NAME})
+      if(TARGET_64)
+        set(TOOLCHAIN "-UCMAKE_TOOLCHAIN_FILE")
+        if(DEFINED ENV{CMAKE_TOOLCHAIN_FILE})
+          message(STATUS "Check CMAKE_TOOLCHAIN_FILE in environment variable, found")
+          unset(ENV{CMAKE_TOOLCHAIN_FILE})
+          message(WARNING "unset Environment Variables CMAKE_TOOLCHAIN_FILE")
+        else()
+          message(STATUS "Check CMAKE_TOOLCHAIN_FILE in environment variable, not found")
+        endif()
+          endif()
+        else()
+      message(WARNING "build ${CMAKE_SYSTEM_NAME} for on ${CMAKE_HOST_SYSTEM_NAME}")
     endif()
   else()
     set(TOOLCHAIN "-UCMAKE_TOOLCHAIN_FILE")
@@ -77,12 +87,6 @@ if(CMAKE_CROSSCOMPILING)
   endif()
 endif()
 
-set(MINILUA_EXE minilua)
-if(HOST_WINE)
-  set(MINILUA_EXE minilua.exe)
-endif()
-set(MINILUA_PATH ${CMAKE_CURRENT_BINARY_DIR}/minilua/${MINILUA_EXE})
-
 include(CheckTypeSize)
 include(TestBigEndian)
 test_big_endian(LJ_BIG_ENDIAN)
@@ -94,10 +98,12 @@ include(${CMAKE_CURRENT_LIST_DIR}/Modules/DetectFPUApi.cmake)
 detect_fpu_mode(LJ_DETECTED_FPU_MODE)
 detect_fpu_abi(LJ_DETECTED_FPU_ABI)
 
-find_library(LIBM_LIBRARIES NAMES m)
-find_library(LIBDL_LIBRARIES NAMES dl)
+if(NOT ${CMAKE_SYSTEM_NAME} STREQUAL Darwin)
+  find_library(LIBM_LIBRARIES NAMES m)
+  find_library(LIBDL_LIBRARIES NAMES dl)
+endif()
 
-if($ENV{LUA_TARGET_SHARED})
+if(LUA_TARGET_SHARED)
   add_definitions(-fPIC)
 endif()
 
@@ -121,6 +127,9 @@ elseif("${LJ_DETECTED_ARCH}" STREQUAL "Mips64")
   if(NOT LJ_BIG_ENDIAN)
     set(TARGET_ARCH -D__MIPSEL__=1)
   endif()
+elseif("${LJ_DETECTED_ARCH}" STREQUAL "Loongarch64")
+  set(LJ_TARGET_ARCH "loongarch64")
+  set(TARGET_ARCH -DLJ_ARCH_ENDIAN=LUAJIT_LE)
 elseif("${LJ_DETECTED_ARCH}" STREQUAL "Mips")
   set(LJ_TARGET_ARCH "mips")
   if(NOT LJ_BIG_ENDIAN)
@@ -165,12 +174,25 @@ if(WIN32 OR MINGW)
   set(DASM_FLAGS ${DASM_FLAGS} -D WIN)
 endif()
 
+set(ARM64_MSVC 0)
+if (MSVC)
+  if ("${LJ_DETECTED_ARCH}" STREQUAL "AArch64" AND
+  "${CMAKE_SYSTEM_PROCESSOR}" STREQUAL ARM64)
+    set(ARM64_MSVC 1)
+    message(STATUS "Compiling for ARM64 with MSVC: ${ARM64_MSVC}")
+  endif()
+endif()
+
 include(${CMAKE_CURRENT_LIST_DIR}/Modules/FindUnwind.cmake)
 if (NOT unwind_FOUND)
-  set(LUAJIT_NO_UNWIND ON)
-  if(CMAKE_SYSTEM_PROCESSOR STREQUAL mips64 OR
-     CMAKE_SYSTEM_PROCESSOR STREQUAL aarch64 OR
-     CMAKE_SYSTEM_NAME STREQUAL Windows)
+  if(${CMAKE_SYSTEM_NAME} STREQUAL Darwin)
+    set(LUAJIT_NO_UNWIND OFF)
+  else()
+    set(LUAJIT_NO_UNWIND ON)
+  endif()
+  if("${CMAKE_SYSTEM_PROCESSOR}" STREQUAL mips64 OR
+     "${CMAKE_SYSTEM_PROCESSOR}" STREQUAL aarch64 OR
+     "${CMAKE_SYSTEM_NAME}" STREQUAL Windows)
     if(NOT IOS)
       set(LUAJIT_NO_UNWIND IGNORE)
     endif()
@@ -179,7 +201,7 @@ endif()
 
 message(STATUS "#### CMAKE_SYSTEM_NAME is ${CMAKE_SYSTEM_NAME}")
 message(STATUS "#### CMAKE_SYSTEM_PROCESSOR is ${CMAKE_SYSTEM_PROCESSOR}")
-message(STATUS "#### ARCH is ${ARCH}")
+message(STATUS "#### TARGET_ARCH is ${TARGET_ARCH}")
 message(STATUS "#### unwind_FOUND is ${unwind_FOUND}")
 message(STATUS "#### HAVE_UNWIND_H is ${HAVE_UNWIND_H}")
 message(STATUS "#### HAVE_UNWIND_LIB is ${HAVE_UNWIND_LIB}")
@@ -188,7 +210,7 @@ message(STATUS "#### UNWIND_LIBRARY is ${UNWIND_LIBRARY}")
 message(STATUS "#### LUAJIT_NO_UNWIND is ${LUAJIT_NO_UNWIND}")
 
 set(LJ_DEFINITIONS "")
-if(LUAJIT_NO_UNWIND STREQUAL ON)
+if(${LUAJIT_NO_UNWIND} STREQUAL ON)
   # LUAJIT_NO_UNWIND is ON
   set(DASM_FLAGS ${DASM_FLAGS} -D NO_UNWIND)
   set(TARGET_ARCH ${TARGET_ARCH} -DLUAJIT_NO_UNWIND)
@@ -318,21 +340,21 @@ set(DASM_FLAGS ${DASM_FLAGS} -D VER=)
 
 set(TARGET_OS_FLAGS "")
 if(${CMAKE_SYSTEM_NAME} STREQUAL Android)
-  set(TARGET_OS_FLAGS ${TARGET_OS_FLAGS} -DLUAJIT_OS=LUAJIT_OS_LINUX)
+  set(TARGET_OS_FLAGS ${TARGET_OS_FLAGS} -DLUAJIT_OS=LUAJIT_OS_LINUX -DTARGET_OS_IPHONE=0)
 elseif(${CMAKE_SYSTEM_NAME} STREQUAL Windows)
-  set(TARGET_OS_FLAGS ${TARGET_OS_FLAGS} -DLUAJIT_OS=LUAJIT_OS_WINDOWS)
+  set(TARGET_OS_FLAGS ${TARGET_OS_FLAGS} -DLUAJIT_OS=LUAJIT_OS_WINDOWS -DTARGET_OS_IPHONE=0)
 elseif(${CMAKE_SYSTEM_NAME} STREQUAL Darwin)
-  set(TARGET_OS_FLAGS ${TARGET_OS_FLAGS} -DLUAJIT_OS=LUAJIT_OS_OSX)
+  set(TARGET_OS_FLAGS ${TARGET_OS_FLAGS} -DLUAJIT_OS=LUAJIT_OS_OSX -DTARGET_OS_IPHONE=0)
 elseif(${CMAKE_SYSTEM_NAME} STREQUAL Linux)
-  set(TARGET_OS_FLAGS ${TARGET_OS_FLAGS} -DLUAJIT_OS=LUAJIT_OS_LINUX)
+  set(TARGET_OS_FLAGS ${TARGET_OS_FLAGS} -DLUAJIT_OS=LUAJIT_OS_LINUX -DTARGET_OS_IPHONE=0)
 elseif(${CMAKE_SYSTEM_NAME} STREQUAL Haiku)
-  set(TARGET_OS_FLAGS ${TARGET_OS_FLAGS} -DLUAJIT_OS=LUAJIT_OS_POSIX)
+  set(TARGET_OS_FLAGS ${TARGET_OS_FLAGS} -DLUAJIT_OS=LUAJIT_OS_POSIX -DTARGET_OS_IPHONE=0)
 elseif(${CMAKE_SYSTEM_NAME} MATCHES "(Open|Free|Net)BSD")
-  set(TARGET_OS_FLAGS ${TARGET_OS_FLAGS} -DLUAJIT_OS=LUAJIT_OS_BSD)
+  set(TARGET_OS_FLAGS ${TARGET_OS_FLAGS} -DLUAJIT_OS=LUAJIT_OS_BSD -DTARGET_OS_IPHONE=0)
 elseif(${CMAKE_SYSTEM_NAME} STREQUAL iOS)
   set(TARGET_OS_FLAGS ${TARGET_OS_FLAGS} -DLUAJIT_OS=LUAJIT_OS_OSX -DTARGET_OS_IPHONE=1)
 else()
-  set(TARGET_OS_FLAGS ${TARGET_OS_FLAGS} -DLUAJIT_OS=LUAJIT_OS_OTHER)
+  set(TARGET_OS_FLAGS ${TARGET_OS_FLAGS} -DLUAJIT_OS=LUAJIT_OS_OTHER -DTARGET_OS_IPHONE=0)
 endif()
 
 if(LUAJIT_DISABLE_GC64)
@@ -371,6 +393,13 @@ if(NOT CMAKE_CROSSCOMPILING)
   set(MINILUA_PATH $<TARGET_FILE:minilua>)
 else()
   make_directory(${CMAKE_CURRENT_BINARY_DIR}/minilua)
+  if (HOST_WINE)
+    set(MINILUA_PATH ${CMAKE_CURRENT_BINARY_DIR}/minilua/minilua.exe)
+  elseif(ARM64_MSVC)
+    set(MINILUA_PATH ${CMAKE_CURRENT_BINARY_DIR}/minilua/Debug/minilua)
+  else()
+    set(MINILUA_PATH ${CMAKE_CURRENT_BINARY_DIR}/minilua/minilua)
+  endif()
 
   add_custom_command(OUTPUT ${MINILUA_PATH}
     COMMAND ${CMAKE_COMMAND} ${TOOLCHAIN} ${TARGET_SYS} -DLUAJIT_DIR=${LUAJIT_DIR}
@@ -384,11 +413,55 @@ else()
   )
 endif()
 
+# Generate luajit.h
+set(GIT_FORMAT %ct)
+if (CMAKE_HOST_SYSTEM_NAME STREQUAL "Windows")
+  set(GIT_FORMAT %%ct)
+endif()
+
+execute_process(
+  COMMAND git --version
+  RESULT_VARIABLE GIT_EXISTENCE
+  OUTPUT_VARIABLE GIT_VERSION
+  OUTPUT_STRIP_TRAILING_WHITESPACE
+)
+
+execute_process(
+  COMMAND git rev-parse --is-inside-work-tree
+  RESULT_VARIABLE GIT_IN_REPOSITORY
+  OUTPUT_VARIABLE GIT_IS_IN_REPOSITORY
+  OUTPUT_STRIP_TRAILING_WHITESPACE
+)
+
+if ((GIT_EXISTENCE EQUAL 0) AND (GIT_IN_REPOSITORY EQUAL 0))
+  message(STATUS "Using Git: ${GIT_VERSION}")
+  add_custom_command(OUTPUT ${CMAKE_CURRENT_BINARY_DIR}/luajit_relver.txt
+    COMMAND git -c log.showSignature=false show -s --format=${GIT_FORMAT} > ${CMAKE_CURRENT_BINARY_DIR}/luajit_relver.txt
+    WORKING_DIRECTORY ${LUAJIT_DIR}
+  )
+else()
+  string(TIMESTAMP current_epoch "%s")
+  message(STATUS "Using current epoch: ${current_epoch}")
+  add_custom_command(OUTPUT ${CMAKE_CURRENT_BINARY_DIR}/luajit_relver.txt
+    COMMAND echo "${current_epoch}" > ${CMAKE_CURRENT_BINARY_DIR}/luajit_relver.txt
+    WORKING_DIRECTORY ${LUAJIT_DIR}
+   )
+endif()
+
+add_custom_command(OUTPUT ${CMAKE_CURRENT_BINARY_DIR}/luajit.h
+  COMMAND ${HOST_WINE} ${MINILUA_PATH} ${LUAJIT_DIR}/src/host/genversion.lua
+  ARGS ${LUAJIT_DIR}/src/luajit_rolling.h
+       ${CMAKE_CURRENT_BINARY_DIR}/luajit_relver.txt
+       ${CMAKE_CURRENT_BINARY_DIR}/luajit.h
+  DEPENDS ${LUAJIT_DIR}/src/luajit_rolling.h
+  DEPENDS ${CMAKE_CURRENT_BINARY_DIR}/luajit_relver.txt
+)
+
 # Generate buildvm_arch.h
 add_custom_command(OUTPUT ${BUILDVM_ARCH_H}
   COMMAND ${HOST_WINE} ${MINILUA_PATH} ${DASM_PATH} ${DASM_FLAGS}
           -o ${BUILDVM_ARCH_H} ${VM_DASC_PATH}
-  DEPENDS minilua)
+  DEPENDS minilua ${DASM_PATH} ${CMAKE_CURRENT_BINARY_DIR}/luajit.h)
 add_custom_target(buildvm_arch_h ALL
   DEPENDS ${BUILDVM_ARCH_H}
 )
@@ -410,7 +483,11 @@ if(NOT CMAKE_CROSSCOMPILING)
   set(BUILDVM_PATH $<TARGET_FILE:buildvm>)
   add_dependencies(buildvm buildvm_arch_h)
 else()
-  set(BUILDVM_PATH ${CMAKE_CURRENT_BINARY_DIR}/buildvm/${BUILDVM_EXE})
+  if (NOT ARM64_MSVC)
+    set(BUILDVM_PATH ${CMAKE_CURRENT_BINARY_DIR}/buildvm/${BUILDVM_EXE})
+  else()
+    set(BUILDVM_PATH ${CMAKE_CURRENT_BINARY_DIR}/buildvm/Debug/${BUILDVM_EXE})
+  endif()
 
   make_directory(${CMAKE_CURRENT_BINARY_DIR}/buildvm)
 
@@ -516,7 +593,11 @@ endif()
 
 # Build the luajit static library
 add_library(libluajit ${luajit_sources})
-set_target_properties(libluajit PROPERTIES OUTPUT_NAME luajit)
+if(MSVC)
+  set_target_properties(libluajit PROPERTIES OUTPUT_NAME libluajit)
+else()
+  set_target_properties(libluajit PROPERTIES OUTPUT_NAME luajit)
+endif()
 add_dependencies(libluajit
   buildvm_arch_h
   buildvm
@@ -525,8 +606,10 @@ add_dependencies(libluajit
 target_include_directories(libluajit PRIVATE
   ${CMAKE_CURRENT_BINARY_DIR}
   ${CMAKE_CURRENT_SOURCE_DIR})
+target_include_directories(libluajit PUBLIC
+  ${LJ_DIR})
 if(BUILD_SHARED_LIBS)
-  if(WIN32 OR MINGW)
+  if(WIN32)
     set(LJ_DEFINITIONS ${LJ_DEFINITIONS}
       -DLUA_BUILD_AS_DLL -DWIN32_LEAN_AND_MEAN -D_CRT_SECURE_NO_WARNINGS)
   endif()
@@ -540,6 +623,10 @@ if(LIBDL_LIBRARIES)
   target_link_libraries(libluajit ${LIBDL_LIBRARIES})
 endif()
 
+if(LUAJIT_ENABLE_LUA52COMPAT)
+  set(LJ_DEFINITIONS ${LJ_DEFINITIONS} -DLUAJIT_ENABLE_LUA52COMPAT)
+endif()
+
 set(LJ_DEFINITIONS ${LJ_DEFINITIONS} -DLUA_MULTILIB="${LUA_MULTILIB}")
 target_compile_definitions(libluajit PRIVATE ${LJ_DEFINITIONS})
 if(IOS)
@@ -550,6 +637,9 @@ if("${LJ_TARGET_ARCH}" STREQUAL "x86")
   if(CMAKE_COMPILER_IS_CLANGXX OR CMAKE_COMPILER_IS_GNUCXX)
     target_compile_options(libluajit PRIVATE
       -march=i686 -msse -msse2 -mfpmath=sse)
+  endif()
+  if(MSVC)
+    target_compile_options(libluajit PRIVATE "/arch:SSE2")
   endif()
 endif()
 
@@ -562,13 +652,21 @@ if(IOS AND ("${LJ_TARGET_ARCH}" STREQUAL "arm64"))
 endif()
 
 target_compile_options(libluajit PRIVATE ${LJ_COMPILE_OPTIONS})
+if(MSVC)
+  target_compile_options(libluajit PRIVATE "/D_CRT_STDIO_INLINE=__declspec(dllexport)__inline")
+endif()
+
+if("${LJ_DETECTED_ARCH}" STREQUAL "Loongarch64")
+  set(LJ_TARGET_ARCH "loongarch64")
+  target_compile_options(libluajit PRIVATE "-fwrapv")
+endif()
 
 set(luajit_headers
   ${LJ_DIR}/lauxlib.h
   ${LJ_DIR}/lua.h
   ${LJ_DIR}/luaconf.h
-  ${LJ_DIR}/luajit.h
-  ${LJ_DIR}/lualib.h)
+  ${LJ_DIR}/lualib.h
+  ${CMAKE_CURRENT_BINARY_DIR}/luajit.h)
 install(FILES ${luajit_headers} DESTINATION ${CMAKE_INSTALL_INCLUDEDIR}/luajit)
 install(TARGETS libluajit
     LIBRARY DESTINATION ${CMAKE_INSTALL_LIBDIR}
@@ -578,10 +676,17 @@ install(TARGETS libluajit
 if (LUAJIT_BUILD_EXE)
   add_executable(luajit ${LJ_DIR}/luajit.c)
   target_link_libraries(luajit libluajit)
+  target_include_directories(luajit PRIVATE
+    ${CMAKE_CURRENT_BINARY_DIR}
+    ${LJ_DIR}
+  )
   if(APPLE AND ${CMAKE_C_COMPILER_ID} STREQUAL "zig")
     target_link_libraries(luajit c pthread)
-    set_target_properties(minilua PROPERTIES
+    set_target_properties(luajit PROPERTIES
       LINK_FLAGS "-mmacosx-version-min=${CMAKE_OSX_DEPLOYMENT_TARGET}")
+  endif()
+  if(WIN32)
+    target_compile_definitions(libluajit PRIVATE _CRT_SECURE_NO_WARNINGS)
   endif()
   if(HAVE_UNWIND_LIB AND (NOT LUAJIT_NO_UNWIND STREQUAL ON))
     target_link_libraries(luajit ${UNWIND_LIBRARY})
@@ -593,3 +698,9 @@ if (LUAJIT_BUILD_EXE)
   install(TARGETS luajit DESTINATION "${CMAKE_INSTALL_BINDIR}")
 endif()
 
+add_library(luajit-header INTERFACE)
+target_include_directories(luajit-header INTERFACE ${LJ_DIR})
+
+add_library(luajit::lib ALIAS libluajit)
+add_library(luajit::header ALIAS luajit-header)
+add_executable(luajit::lua ALIAS luajit)

@@ -496,6 +496,7 @@ static int session_new(nghttp2_session **session_ptr,
   (*session_ptr)->max_send_header_block_length = NGHTTP2_MAX_HEADERSLEN;
   (*session_ptr)->max_outbound_ack = NGHTTP2_DEFAULT_MAX_OBQ_FLOOD_ITEM;
   (*session_ptr)->max_settings = NGHTTP2_DEFAULT_MAX_SETTINGS;
+  (*session_ptr)->max_continuations = NGHTTP2_DEFAULT_MAX_CONTINUATIONS;
 
   if (option) {
     if ((option->opt_set_mask & NGHTTP2_OPT_NO_AUTO_WINDOW_UPDATE) &&
@@ -6778,6 +6779,8 @@ ssize_t nghttp2_session_mem_recv(nghttp2_session *session, const uint8_t *in,
           }
         }
         session_inbound_frame_reset(session);
+
+        session->num_continuations = 0;
       }
       break;
     }
@@ -6898,6 +6901,10 @@ ssize_t nghttp2_session_mem_recv(nghttp2_session *session, const uint8_t *in,
         fprintf(stderr, "recv: [IB_IGN_CONTINUATION]\n");
       }
 #endif /* DEBUGBUILD */
+
+      if (++session->num_continuations > session->max_continuations) {
+        return NGHTTP2_ERR_TOO_MANY_CONTINUATIONS;
+      }
 
       readlen = inbound_frame_buf_read(iframe, in, last);
       in += readlen;

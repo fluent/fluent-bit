@@ -20,8 +20,4 @@ set(src
   ne.c
   )
 
-if (APPLE)
-  FLB_PLUGIN(in_node_exporter_metrics "${src}" "-framework Foundation -framework IOKit")
-else()
-  FLB_PLUGIN(in_node_exporter_metrics "${src}" "")
-endif()
+FLB_PLUGIN(in_node_exporter_metrics "${src}" "")

@@ -443,7 +443,7 @@ static flb_sds_t azure_kusto_create_blob_id(struct flb_azure_kusto *ctx, flb_sds
         blob_id = flb_sds_create_size(flb_sds_len(ctx->database_name) +
                                       flb_sds_len(ctx->table_name) + b64_len + 24);
         if (blob_id) {
-            flb_sds_snprintf(&blob_id, flb_sds_alloc(blob_id), "flb__%s__%s__%s__%lu",
+            flb_sds_snprintf(&blob_id, flb_sds_alloc(blob_id), "flb__%s__%s__%s__%" PRIu64,
                              ctx->database_name, ctx->table_name, b64tag, ms);
         }
         else {

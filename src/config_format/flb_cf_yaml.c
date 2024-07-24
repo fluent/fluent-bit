@@ -122,6 +122,7 @@ enum state {
     STATE_PLUGIN_KEY,
     STATE_PLUGIN_VAL,
     STATE_PLUGIN_VAL_LIST,
+    STATE_PLUGIN_VARIANT,
 
     STATE_GROUP_KEY,
     STATE_GROUP_VAL,
@@ -160,6 +161,10 @@ struct parser_state {
     struct cfl_kvlist *keyvals;
     /* pointer to current values in a list. */
     struct cfl_array *values;
+    /* pointer to current variant */
+    struct cfl_variant *variant;
+    /* if the current variant is reading the key of a kvlist */
+    cfl_sds_t variant_kvlist_key;
     /* are we the owner of the values? */
     int allocation_flags;
 
@@ -169,6 +174,9 @@ struct parser_state {
 };
 
 static struct parser_state *state_push(struct local_ctx *, enum state);
+static struct parser_state *state_push_variant(struct local_ctx *,
+                                               struct parser_state *,
+                                               int);
 static struct parser_state *state_push_withvals(struct local_ctx *,
                                                 struct parser_state *,
                                                 enum state);
@@ -181,6 +189,10 @@ static struct parser_state *state_push_key(struct local_ctx *, enum state,
                                            const char *key);
 static int state_create_section(struct flb_cf *, struct parser_state *, char *);
 static int state_create_group(struct flb_cf *, struct parser_state *, char *);
+static struct cfl_variant * state_variant_parse_scalar(yaml_event_t *event);
+static int state_variant_set_child(struct local_ctx *,
+                                   struct parser_state *,
+                                   struct cfl_variant *);
 static struct parser_state *state_pop(struct local_ctx *ctx);
 static struct parser_state *state_create(struct file_state *parent, struct file_state *file);
 static void state_destroy(struct parser_state *s);
@@ -228,6 +240,8 @@ static char *state_str(enum state val)
         return "plugin-value";
     case STATE_PLUGIN_VAL_LIST:
         return "plugin-values";
+    case STATE_PLUGIN_VARIANT:
+        return "plugin-variant";
     case STATE_GROUP_KEY:
         return "group-key";
     case STATE_GROUP_VAL:
@@ -588,16 +602,14 @@ static struct parser_state *get_current_state(struct local_ctx *ctx)
     return state;
 }
 
-static enum status state_copy_into_config_group(struct parser_state *state, struct flb_cf_group *cf_group)
+static enum status state_move_into_config_group(struct parser_state *state, struct flb_cf_group *cf_group)
 {
     struct cfl_list *head;
+    struct cfl_list *tmp;
     struct cfl_kvpair *kvp;
-    struct cfl_variant *var;
     struct cfl_variant *varr;
     struct cfl_array *arr;
-    struct cfl_array *carr;
     struct cfl_kvlist *copy;
-    int idx;
 
     if (cf_group == NULL) {
         flb_error("no group for processor properties");
@@ -634,64 +646,18 @@ static enum status state_copy_into_config_group(struct parser_state *state, stru
         return YAML_FAILURE;
     }
 
-    cfl_list_foreach(head, &state->keyvals->list) {
+    cfl_list_foreach_safe(head, tmp, &state->keyvals->list) {
         kvp = cfl_list_entry(head, struct cfl_kvpair, _head);
-        switch (kvp->val->type) {
-        case CFL_VARIANT_STRING:
 
-            if (cfl_kvlist_insert_string(copy, kvp->key, kvp->val->data.as_string) < 0) {
-                flb_error("unable to allocate kvlist");
-                cfl_kvlist_destroy(copy);
-                return YAML_FAILURE;
-            }
-            break;
-        case CFL_VARIANT_ARRAY:
-            carr = cfl_array_create(kvp->val->data.as_array->entry_count);
-
-            if (carr == NULL) {
-                flb_error("unable to allocate array");
-                cfl_kvlist_destroy(copy);
-                return YAML_FAILURE;
-            }
-
-            for (idx = 0; idx < kvp->val->data.as_array->entry_count; idx++) {
-                var = cfl_array_fetch_by_index(kvp->val->data.as_array, idx);
-
-                if (var == NULL) {
-                    cfl_array_destroy(arr);
-                    flb_error("unable to fetch from array by index");
-                    return YAML_FAILURE;
-                }
-                switch (var->type) {
-                case CFL_VARIANT_STRING:
-
-                    if (cfl_array_append_string(carr, var->data.as_string) < 0) {
-                        flb_error("unable to append string");
-                        cfl_kvlist_destroy(copy);
-                        cfl_array_destroy(carr);
-                        return YAML_FAILURE;
-                    }
-                    break;
-                default:
-                    cfl_array_destroy(arr);
-                    flb_error("unable to copy value for property");
-                    cfl_kvlist_destroy(copy);
-                    cfl_array_destroy(carr);
-                    return YAML_FAILURE;
-                }
-            }
-
-            if (cfl_kvlist_insert_array(copy, kvp->key, carr) < 0) {
-                cfl_array_destroy(arr);
-                flb_error("unabelt to insert into array");
-                flb_error("unable to insert array into kvlist");
-            }
-            break;
-        default:
-            flb_error("unknown value type for properties: %d", kvp->val->type);
+        if (cfl_kvlist_insert(copy, kvp->key, kvp->val) < 0) {
+            flb_error("unable to insert to kvlist");
             cfl_kvlist_destroy(copy);
             return YAML_FAILURE;
         }
+
+        /* ownership moved to the config group */
+        kvp->val = NULL;
+        cfl_kvpair_destroy(kvp);
     }
 
     if (cfl_array_append_kvlist(arr, copy) < 0) {
@@ -766,6 +732,7 @@ static enum status state_copy_into_properties(struct parser_state *state, struct
 static int consume_event(struct flb_cf *conf, struct local_ctx *ctx,
                          yaml_event_t *event)
 {
+    struct cfl_variant *variant;
     struct parser_state *state;
     enum status status;
     int ret;
@@ -1263,7 +1230,7 @@ static int consume_event(struct flb_cf *conf, struct local_ctx *ctx,
             print_current_properties(state);
 
             if (state->section == SECTION_PROCESSOR) {
-                status = state_copy_into_config_group(state, state->cf_group);
+                status = state_move_into_config_group(state, state->cf_group);
 
                 if (status != YAML_SUCCESS) {
                     return status;
@@ -1388,7 +1355,12 @@ static int consume_event(struct flb_cf *conf, struct local_ctx *ctx,
             }
             break;
         case YAML_SEQUENCE_START_EVENT: /* start a new group */
-            state = state_push_witharr(ctx, state, STATE_PLUGIN_VAL_LIST);
+            if (state->section == SECTION_PROCESSOR) {
+                state = state_push_variant(ctx, state, 0);
+            }
+            else {
+                state = state_push_witharr(ctx, state, STATE_PLUGIN_VAL_LIST);
+            }
 
             if (state == NULL) {
                 flb_error("unable to allocate state");
@@ -1396,6 +1368,18 @@ static int consume_event(struct flb_cf *conf, struct local_ctx *ctx,
             }
             break;
         case YAML_MAPPING_START_EVENT:
+
+            if (state->section == SECTION_PROCESSOR) {
+                /* when in a processor section, we allow plugins to have nested
+                 * properties which are returned as a cfl_variant */
+                state = state_push_variant(ctx, state, 1);
+
+                if (state == NULL) {
+                    flb_error("unable to allocate state");
+                    return YAML_FAILURE;
+                }
+                break;
+            }
 
             if (strcmp(state->key, "processors") == 0) {
                 state = state_push(ctx, STATE_INPUT_PROCESSORS);
@@ -1509,6 +1493,78 @@ static int consume_event(struct flb_cf *conf, struct local_ctx *ctx,
                 return YAML_FAILURE;
             }
             break;
+
+        default:
+            yaml_error_event(ctx, state, event);
+            return YAML_FAILURE;
+        }
+        break;
+
+
+    case STATE_PLUGIN_VARIANT:
+        switch(event->type) {
+        case YAML_MAPPING_START_EVENT:
+        case YAML_SEQUENCE_START_EVENT:  /* nested map or array */
+            state = state_push_variant(ctx, state, event->type == YAML_MAPPING_START_EVENT);
+
+            if (state == NULL) {
+                flb_error("unable to allocate state");
+                return YAML_FAILURE;
+            }
+            break;
+
+        case YAML_SCALAR_EVENT:
+            if (state->variant->type == CFL_VARIANT_KVLIST && state->variant_kvlist_key == NULL) {
+                /* save the key for later */
+                state->variant_kvlist_key = cfl_sds_create((const char *)event->data.scalar.value);
+                break;
+            }
+
+            /* set the value */
+            variant = state_variant_parse_scalar(event);
+
+            if (variant == NULL) {
+                flb_error("unable to allocate memory for variant");
+                return YAML_FAILURE;
+            }
+
+            if (state_variant_set_child(ctx, state, variant)) {
+                flb_error("unable to add key to list map");
+                return YAML_FAILURE;
+            }
+
+            break;
+
+        case YAML_MAPPING_END_EVENT:
+        case YAML_SEQUENCE_END_EVENT:
+            variant = state->variant;
+
+            state = state_pop(ctx);
+
+            if (state->state == STATE_PLUGIN_VAL) {
+                /* set variant to the parent state keyvals */
+                if (cfl_kvlist_insert(state->keyvals, state->key, variant) < 0) {
+                    flb_error("unable to insert variant");
+                    return YAML_FAILURE;
+                }
+
+                state = state_pop(ctx);
+
+                break;
+            }
+
+            if (state->variant->type == CFL_VARIANT_KVLIST && state->variant_kvlist_key == NULL) {
+                flb_error("invalid state, should have a variant key");
+                return YAML_FAILURE;
+            }
+
+            if (state_variant_set_child(ctx, state, variant)) {
+                flb_error("unable to add key to list map");
+                return YAML_FAILURE;
+            }
+
+            break;
+
         default:
             yaml_error_event(ctx, state, event);
             return YAML_FAILURE;
@@ -1764,6 +1820,165 @@ static struct parser_state *state_push_key(struct local_ctx *ctx,
 
     state->key = skey;
     state->allocation_flags |= HAS_KEY;
+    return state;
+}
+
+static int parse_uint64(const char *in, uint64_t *out)
+{
+    char *end;
+    uint64_t val;
+
+    errno = 0;
+    val = strtoull(in, &end, 10);
+    if (end == in || *end != 0 || errno)  {
+        return -1;
+    }
+
+    *out = val;
+    return 0;
+}
+
+static int parse_int64(const char *in, int64_t *out)
+{
+    char *end;
+    int64_t val;
+
+    errno = 0;
+    val = strtoll(in, &end, 10);
+    if (end == in || *end != 0 || errno)  {
+        return -1;
+    }
+
+    *out = val;
+    return 0;
+}
+
+static int parse_double(const char *in, double *out)
+{
+    char *end;
+    double val;
+    errno = 0;
+    val = strtod(in, &end);
+    if (end == in || *end != 0 || errno) {
+        return -1;
+    }
+    *out = val;
+    return 0;
+}
+
+static struct cfl_variant * state_variant_parse_scalar(yaml_event_t *event)
+{
+    int64_t i64;
+    uint64_t u64;
+    double d;
+    char *value = (char *)event->data.scalar.value;
+
+    if (event->data.scalar.style != YAML_PLAIN_SCALAR_STYLE) {
+        /* return a string */
+        return cfl_variant_create_from_string(value);
+    }
+
+    if (!strcmp(value, "null")) {
+        return cfl_variant_create_from_null();
+    }
+    else if (!strcmp(value, "false")) {
+        return cfl_variant_create_from_bool(0);
+    }
+    else if (!strcmp(value, "true")) {
+        return cfl_variant_create_from_bool(1);
+    }
+
+    if (value[0] != '-' && parse_uint64(value, &u64) == 0) {
+        return cfl_variant_create_from_uint64(u64);
+    }
+    else if (parse_int64(value, &i64) == 0) {
+        return cfl_variant_create_from_int64(i64);
+    }
+    else if (parse_double(value, &d) == 0) {
+        return cfl_variant_create_from_double(d);
+    }
+
+    /* treat as a string */
+    return cfl_variant_create_from_string(value);
+}
+
+static int state_variant_set_child(struct local_ctx *ctx,
+                                   struct parser_state *state,
+                                   struct cfl_variant *variant)
+{
+    if (state->variant->type == CFL_VARIANT_ARRAY) {
+        return cfl_array_append(state->variant->data.as_array, variant);
+    }
+
+    if (state->variant_kvlist_key == NULL) {
+        return -1;
+    }
+    else {
+
+        if (cfl_kvlist_insert(state->variant->data.as_kvlist,
+                              state->variant_kvlist_key,
+                              variant) < 0) {
+            return -1;
+        }
+        cfl_sds_destroy(state->variant_kvlist_key);
+        state->variant_kvlist_key = NULL;
+
+    }
+
+    return 0;
+}
+
+static struct parser_state *state_push_variant(struct local_ctx *ctx,
+                                               struct parser_state *parent,
+                                               int is_kvlist)
+{
+    struct parser_state *state;
+    struct cfl_variant *variant;
+    struct cfl_kvlist *kvlist;
+    struct cfl_array *array;
+
+    if (is_kvlist) {
+
+      kvlist = cfl_kvlist_create();
+
+      if (kvlist == NULL) {
+          return NULL;
+      }
+
+      variant = cfl_variant_create_from_kvlist(kvlist);
+
+      if (variant == NULL) {
+        cfl_kvlist_destroy(kvlist);
+        return NULL;
+      }
+
+    }
+    else {
+
+      array = cfl_array_create(10);
+
+      if (array == NULL) {
+          return NULL;
+      }
+
+      variant = cfl_variant_create_from_array(array);
+
+      if (variant == NULL) {
+        cfl_array_destroy(array);
+        return NULL;
+      }
+    }
+
+    state = state_push(ctx, STATE_PLUGIN_VARIANT);
+
+    if (state == NULL) {
+        cfl_variant_destroy(variant);
+        return NULL;
+    }
+
+    state->variant = variant;
+    state->variant_kvlist_key = NULL;
+
     return state;
 }
 
@@ -2049,7 +2264,7 @@ done:
 
     /* free all remaining states */
     if (code == -1) {
-        while (state = state_pop(ctx));
+        while ((state = state_pop(ctx)));
     }
     else {
         state = state_pop(ctx);

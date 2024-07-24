@@ -100,15 +100,15 @@ static int cb_process_traces(struct flb_processor_instance *ins,
 
 static struct flb_config_map config_map[] = {
     {
-        FLB_CONFIG_MAP_STR, "action", NULL,
-        0, FLB_TRUE, offsetof(struct content_modifier_ctx, action_str),
-        "Action to perform over the content: insert, upsert, delete, rename or hash."
+        FLB_CONFIG_MAP_STR, "context", NULL,
+        0, FLB_TRUE, offsetof(struct content_modifier_ctx, context_str),
+        "Context where the action will be applied."
     },
 
     {
-        FLB_CONFIG_MAP_STR, "context", NULL,
-        0, FLB_TRUE, offsetof(struct content_modifier_ctx, context_str),
-        "Context to apply the action."
+        FLB_CONFIG_MAP_STR, "action", NULL,
+        0, FLB_TRUE, offsetof(struct content_modifier_ctx, action_str),
+        "Action to perform over the content: insert, upsert, delete, rename or hash."
     },
 
     {

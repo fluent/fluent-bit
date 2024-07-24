@@ -277,6 +277,13 @@ if(CMAKE_SYSTEM_NAME MATCHES "Linux")
     )
 endif()
 
+if(FLB_SYSTEM_MACOS)
+  set(FLB_DEPS
+    ${FLB_DEPS}
+    "-framework Foundation"
+    "-framework IOKit"
+    )
+endif()
 
 # Record Accessor
 # ---------------
@@ -524,7 +531,7 @@ if(FLB_BINARY)
   if(NOT SYSTEMD_UNITDIR AND IS_DIRECTORY /lib/systemd/system)
     set(SYSTEMD_UNITDIR  /lib/systemd/system)
   endif()
-  
+
   if(SYSTEMD_UNITDIR)
     set(FLB_SYSTEMD_SCRIPT "${PROJECT_SOURCE_DIR}/init/${FLB_OUT_NAME}.service")
     configure_file(

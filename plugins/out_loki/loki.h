@@ -41,6 +41,11 @@
 #define FLB_LOKI_FMT_JSON  0
 #define FLB_LOKI_FMT_KV    1
 
+/* Drop single key */
+#define FLB_LOKI_DROP_SINGLE_KEY_OFF (((uint64_t) 1) << 0)
+#define FLB_LOKI_DROP_SINGLE_KEY_ON  (((uint64_t) 1) << 1)
+#define FLB_LOKI_DROP_SINGLE_KEY_RAW (((uint64_t) 1) << 2)
+
 struct flb_loki_kv {
     int val_type;                       /* FLB_LOKI_KV_STR or FLB_LOKI_KV_RA */
     flb_sds_t key;                      /* string key */
@@ -54,8 +59,8 @@ struct flb_loki_kv {
 struct flb_loki {
     /* Public configuration properties */
     int auto_kubernetes_labels;
-    int drop_single_key;
 
+    flb_sds_t drop_single_key;
     flb_sds_t uri;
     flb_sds_t line_format;
     flb_sds_t tenant_id;
@@ -72,6 +77,7 @@ struct flb_loki {
     /* Labels */
     struct mk_list *labels;
     struct mk_list *label_keys;
+    struct mk_list *structured_metadata;
     struct mk_list *remove_keys;
 
     flb_sds_t label_map_path;
@@ -80,11 +86,13 @@ struct flb_loki {
     int tcp_port;
     char *tcp_host;
     int out_line_format;
-    int ra_used;                        /* number of record accessor label keys */
-    struct flb_record_accessor *ra_k8s; /* kubernetes record accessor */
-    struct mk_list labels_list;         /* list of flb_loki_kv nodes */
-    struct mk_list remove_keys_derived; /* remove_keys with label RAs */
-    struct flb_mp_accessor *remove_mpa; /* remove_keys multi-pattern accessor */
+    int out_drop_single_key;
+    int ra_used;                             /* number of record accessor label keys */
+    struct flb_record_accessor *ra_k8s;      /* kubernetes record accessor */
+    struct mk_list labels_list;              /* list of flb_loki_kv nodes */
+    struct mk_list structured_metadata_list; /* list of flb_loki_kv nodes */
+    struct mk_list remove_keys_derived;      /* remove_keys with label RAs */
+    struct flb_mp_accessor *remove_mpa;      /* remove_keys multi-pattern accessor */
     struct flb_record_accessor *ra_tenant_id_key; /* dynamic tenant id key */
 
     struct cfl_list dynamic_tenant_list;
@@ -98,6 +106,10 @@ struct flb_loki {
 
     /* Arbitrary HTTP headers */
     struct mk_list *headers;
+
+    /* Response buffer size */
+    size_t http_buffer_max_size;
+
 };
 
 #endif

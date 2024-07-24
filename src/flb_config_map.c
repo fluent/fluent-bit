@@ -26,6 +26,7 @@
 #include <fluent-bit/flb_slist.h>
 #include <fluent-bit/flb_macros.h>
 #include <fluent-bit/flb_config_map.h>
+#include <cfl/cfl.h>
 
 static int check_list_size(struct mk_list *list, int type)
 {
@@ -587,6 +588,7 @@ int flb_config_map_set(struct mk_list *properties, struct mk_list *map, void *co
     double *m_d_num;
     size_t *m_s_num;
     flb_sds_t *m_str;
+    struct cfl_variant **m_variant;
     struct flb_kv *kv;
     struct mk_list *head;
     struct mk_list *m_head;
@@ -668,6 +670,7 @@ int flb_config_map_set(struct mk_list *properties, struct mk_list *map, void *co
      */
     mk_list_foreach(head, properties) {
         kv = mk_list_entry(head, struct flb_kv, _head);
+
         if (kv->val == NULL) {
             continue;
         }
@@ -792,6 +795,13 @@ int flb_config_map_set(struct mk_list *properties, struct mk_list *map, void *co
             else if (m->type == FLB_CONFIG_MAP_TIME) {
                 m_i_num = (int *) (base + m->offset);
                 *m_i_num = flb_utils_time_to_seconds(kv->val);
+            }
+            else if (m->type == FLB_CONFIG_MAP_VARIANT) {
+                m_variant = (struct cfl_variant **) (base + m->offset);
+                *m_variant = (struct cfl_variant *)kv->val;
+                /* Ownership of the object belongs to the config section, set it
+                 * to NULL to prevent flb_kv_item_destroy to attempt freeing it */
+                kv->val = NULL;
             }
             else if (m->type >= FLB_CONFIG_MAP_CLIST ||
                      m->type <= FLB_CONFIG_MAP_SLIST_4) {

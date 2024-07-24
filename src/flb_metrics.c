@@ -78,9 +78,12 @@ struct flb_metrics *flb_metrics_create(const char *title)
 {
     int ret;
     struct flb_metrics *metrics;
+    size_t title_len = 0;
+    char *allocated_title = NULL;
+    size_t threshold = FLB_METRIC_LENGTH_LIMIT;
 
     /* Create a metrics parent context */
-    metrics = flb_malloc(sizeof(struct flb_metrics));
+    metrics = flb_calloc(1, sizeof(struct flb_metrics));
     if (!metrics) {
         flb_errno();
         return NULL;
@@ -102,25 +105,33 @@ struct flb_metrics *flb_metrics_create(const char *title)
 int flb_metrics_title(const char *title, struct flb_metrics *metrics)
 {
     int ret;
-    size_t size = sizeof(metrics->title) - 1;
+    int len;
 
-    ret = snprintf(metrics->title, size, "%s", title);
-    if (ret == -1) {
+    len  = strlen(title);
+    if (len > FLB_METRIC_LENGTH_LIMIT) {
+        flb_warn("[%s] title '%s' was truncated", __FUNCTION__, title);
+        len = FLB_METRIC_LENGTH_LIMIT;
+    }
+
+    if (metrics->title) {
+        flb_sds_destroy(metrics->title);
+    }
+
+    metrics->title = flb_sds_create_len(title, len);
+    if (!metrics->title) {
         flb_errno();
         return -1;
     }
-    else if (ret >= size){
-        flb_warn("[%s] title '%s' was truncated", __FUNCTION__, title);
-    }
-    metrics->title_len = strlen(metrics->title);
+
     return 0;
 }
 
 int flb_metrics_add(int id, const char *title, struct flb_metrics *metrics)
 {
     int ret;
+    int len;
     struct flb_metric *m;
-    size_t size;
+    size_t threshold = FLB_METRIC_LENGTH_LIMIT;
 
     /* Create context */
     m = flb_malloc(sizeof(struct flb_metric));
@@ -129,20 +140,19 @@ int flb_metrics_add(int id, const char *title, struct flb_metrics *metrics)
         return -1;
     }
     m->val = 0;
-    size = sizeof(m->title) - 1;
+    len = strlen(title);
 
-    /* Write title */
-    ret = snprintf(m->title, size, "%s", title);
-    if (ret == -1) {
+    if (len > threshold) {
+        len = threshold;
+        flb_warn("[%s] title '%s' was truncated", __FUNCTION__, title);
+    }
+
+    m->title = flb_sds_create_len(title, len);
+    if (!m->title) {
         flb_errno();
         flb_free(m);
         return -1;
     }
-    else if (ret >= size) {
-        flb_warn("[%s] title '%s' was truncated", __FUNCTION__, title);
-    }
-
-    m->title_len = strlen(m->title);
 
     /* Assign an ID */
     if (id >= 0) {
@@ -150,6 +160,7 @@ int flb_metrics_add(int id, const char *title, struct flb_metrics *metrics)
         if (id_exists(id, metrics) == FLB_TRUE) {
             flb_error("[metrics] id=%i already exists for metric '%s'",
                       id, metrics->title);
+            flb_sds_destroy(m->title);
             flb_free(m);
             return -1;
         }
@@ -189,10 +200,12 @@ int flb_metrics_destroy(struct flb_metrics *metrics)
     mk_list_foreach_safe(head, tmp, &metrics->list) {
         m = mk_list_entry(head, struct flb_metric, _head);
         mk_list_del(&m->_head);
+        flb_sds_destroy(m->title);
         flb_free(m);
         count++;
     }
 
+    flb_sds_destroy(metrics->title);
     flb_free(metrics);
     return count;
 }
@@ -230,8 +243,8 @@ int flb_metrics_dump_values(char **out_buf, size_t *out_size,
 
     mk_list_foreach(head, &me->list) {
         m = mk_list_entry(head, struct flb_metric, _head);
-        msgpack_pack_str(&mp_pck, m->title_len);
-        msgpack_pack_str_body(&mp_pck, m->title, m->title_len);
+        msgpack_pack_str(&mp_pck, flb_sds_len(m->title));
+        msgpack_pack_str_body(&mp_pck, m->title, flb_sds_len(m->title));
         msgpack_pack_uint64(&mp_pck, m->val);
     }
 

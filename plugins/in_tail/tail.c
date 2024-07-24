@@ -705,7 +705,13 @@ static struct flb_config_map config_map[] = {
      0, FLB_TRUE, offsetof(struct flb_tail_config, skip_empty_lines),
      "Allows to skip empty lines."
     },
-
+#ifdef __linux__
+    {
+     FLB_CONFIG_MAP_BOOL, "file_cache_advise", "true",
+     0, FLB_TRUE, offsetof(struct flb_tail_config, file_cache_advise),
+     "Use posix_fadvise for file access. Advise not to use kernel file cache."
+    },
+#endif
 #ifdef FLB_HAVE_INOTIFY
     {
      FLB_CONFIG_MAP_BOOL, "inotify_watcher", "true",

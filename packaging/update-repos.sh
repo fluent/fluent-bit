@@ -54,6 +54,7 @@ DEB_REPO_PATHS=( "debian/bookworm"
                  "ubuntu/bionic"
                  "ubuntu/focal"
                  "ubuntu/jammy"
+                 "ubuntu/noble"
                  "raspbian/buster"
                  "raspbian/bullseye" )
 

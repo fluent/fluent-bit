@@ -212,6 +212,7 @@ struct flb_systemd_config *flb_systemd_config_create(struct flb_input_instance *
 
     if (ctx->read_from_tail == FLB_TRUE) {
         sd_journal_seek_tail(ctx->j);
+        sd_journal_previous(ctx->j);
         /*
         * Skip up to 350 records until the end of journal is found.
         * Workaround for bug https://github.com/systemd/systemd/issues/9934

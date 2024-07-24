@@ -243,7 +243,7 @@ int flb_processor_instance_check_properties(
 
 int flb_processor_instance_set_property(
         struct flb_processor_instance *ins,
-        const char *k, const char *v);
+        const char *k, struct cfl_variant *v);
 
 const char *flb_processor_instance_get_property(
                 const char *key,

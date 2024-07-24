@@ -97,7 +97,7 @@ static int in_splunk_init(struct flb_input_instance *ins,
     if (ctx->enable_http2) {
         ret = flb_http_server_init(&ctx->http_server, 
                                     HTTP_PROTOCOL_AUTODETECT,
-                                    FLB_HTTP_SERVER_FLAG_AUTO_INFLATE,
+                                    (FLB_HTTP_SERVER_FLAG_KEEPALIVE | FLB_HTTP_SERVER_FLAG_AUTO_INFLATE),
                                     NULL,
                                     ins->host.listen,
                                     ins->host.port,
@@ -234,6 +234,18 @@ static struct flb_config_map config_map[] = {
      FLB_CONFIG_MAP_STR, "splunk_token", NULL,
      0, FLB_FALSE, 0,
      "Set valid Splunk HEC tokens for the requests"
+    },
+
+    {
+     FLB_CONFIG_MAP_BOOL, "store_token_in_metadata", "true",
+     0, FLB_TRUE, offsetof(struct flb_splunk, store_token_in_metadata),
+     "Store Splunk HEC tokens in matadata. If set as false, they will be stored into records."
+    },
+
+    {
+     FLB_CONFIG_MAP_STR, "splunk_token_key", "@splunk_token",
+     0, FLB_TRUE, offsetof(struct flb_splunk, store_token_key),
+     "Set a record key for storing Splunk HEC token for the request"
     },
 
     {

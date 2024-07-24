@@ -74,7 +74,20 @@ void flb_log_event_decoder_reset(struct flb_log_event_decoder *context,
 
     msgpack_unpacked_destroy(&context->unpacked_event);
     msgpack_unpacked_init(&context->unpacked_event);
+}
 
+int flb_log_event_decoder_read_groups(struct flb_log_event_decoder *context,
+                                      int read_groups)
+{
+    if (context == NULL) {
+        return -1;
+    }
+
+    if (read_groups != FLB_TRUE && read_groups != FLB_FALSE) {
+        return -1;
+    }
+    context->read_groups = read_groups;
+    return 0;
 }
 
 int flb_log_event_decoder_init(struct flb_log_event_decoder *context,
@@ -89,6 +102,7 @@ int flb_log_event_decoder_init(struct flb_log_event_decoder *context,
 
     context->dynamically_allocated = FLB_FALSE;
     context->initialized = FLB_TRUE;
+    context->read_groups = FLB_TRUE;
 
     flb_log_event_decoder_reset(context, input_buffer, input_length);
 
@@ -111,10 +125,8 @@ struct flb_log_event_decoder *flb_log_event_decoder_create(
 
     if (context != NULL) {
         context->dynamically_allocated = FLB_TRUE;
-
         if (result != FLB_EVENT_DECODER_SUCCESS) {
             flb_log_event_decoder_destroy(context);
-
             context = NULL;
         }
     }
@@ -167,8 +179,8 @@ int flb_log_event_decoder_decode_timestamp(msgpack_object *input,
             return FLB_EVENT_DECODER_ERROR_WRONG_TIMESTAMP_TYPE;
         }
 
-        output->tm.tv_sec  = FLB_BSWAP_32(*((uint32_t *) &input->via.ext.ptr[0]));
-        output->tm.tv_nsec = FLB_BSWAP_32(*((uint32_t *) &input->via.ext.ptr[4]));
+        output->tm.tv_sec  = (int32_t) FLB_BSWAP_32(*((uint32_t *) &input->via.ext.ptr[0]));
+        output->tm.tv_nsec = (int32_t) FLB_BSWAP_32(*((uint32_t *) &input->via.ext.ptr[4]));
     }
     else {
         return FLB_EVENT_DECODER_ERROR_WRONG_TIMESTAMP_TYPE;
@@ -275,8 +287,10 @@ int flb_log_event_decoder_get_last_result(struct flb_log_event_decoder *context)
 int flb_log_event_decoder_next(struct flb_log_event_decoder *context,
                                struct flb_log_event *event)
 {
+    int ret;
+    int result;
+    int record_type;
     size_t previous_offset;
-    int    result;
 
     if (context == NULL) {
         return FLB_EVENT_DECODER_ERROR_INVALID_CONTEXT;
@@ -313,7 +327,47 @@ int flb_log_event_decoder_next(struct flb_log_event_decoder *context,
     context->last_result = flb_event_decoder_decode_object(context,
                                                            event,
                                                            &context->unpacked_event.data);
+
+    if (context->last_result == FLB_EVENT_DECODER_SUCCESS) {
+        /* get log event type */
+        ret = flb_log_event_decoder_get_record_type(event, &record_type);
+        if (ret != 0) {
+            context->last_result = FLB_EVENT_DECODER_ERROR_DESERIALIZATION_FAILURE;
+            return context->last_result;
+        }
+
+        /*
+         * if we hava a group type record and the caller don't want groups, just
+         * skip this record and move to the next one.
+         */
+        if (record_type != FLB_LOG_EVENT_NORMAL && !context->read_groups) {
+            return flb_log_event_decoder_next(context, event);
+        }
+    }
+
     return context->last_result;
+}
+
+int flb_log_event_decoder_get_record_type(struct flb_log_event *event, int32_t *type)
+{
+    int32_t s;
+
+    s = (int32_t) event->timestamp.tm.tv_sec;
+
+    if (s >= 0) {
+        *type = FLB_LOG_EVENT_NORMAL;
+        return 0;
+    }
+    else if (s == FLB_LOG_EVENT_GROUP_START) {
+        *type = FLB_LOG_EVENT_GROUP_START;
+        return 0;
+    }
+    else if (s == FLB_LOG_EVENT_GROUP_END) {
+        *type = FLB_LOG_EVENT_GROUP_END;
+        return 0;
+    }
+
+    return -1;
 }
 
 const char *flb_log_event_decoder_get_error_description(int error_code)

@@ -356,11 +356,11 @@ retry:
 
 #ifdef FLB_HAVE_TRACE
     if (bytes > 0) {
-        flb_trace("[io coro=%p] [fd %i] write_async(2)=%d (%lu/%lu)",
+        flb_trace("[io coro=%p] [fd %i] write_async(2)=%zd (%lu/%lu)",
                   co, connection->fd, bytes, total + bytes, len);
     }
     else {
-        flb_trace("[io coro=%p] [fd %i] write_async(2)=%d (%lu/%lu)",
+        flb_trace("[io coro=%p] [fd %i] write_async(2)=%zd (%lu/%lu)",
                   co, connection->fd, bytes, total, len);
     }
 #endif

@@ -29,6 +29,7 @@
 #include <fluent-bit/flb_mp_chunk.h>
 #include <fluent-bit/flb_log_event_decoder.h>
 #include <fluent-bit/flb_log_event_encoder.h>
+#include <cfl/cfl.h>
 
 static int acquire_lock(pthread_mutex_t *lock,
                         size_t retry_limit,
@@ -300,7 +301,7 @@ int flb_processor_unit_set_property(struct flb_processor_unit *pu, const char *k
 
     return flb_processor_instance_set_property(
             (struct flb_processor_instance *) pu->ctx,
-            k, v->data.as_string);
+            k, v);
 }
 
 void flb_processor_unit_destroy(struct flb_processor_unit *pu)
@@ -733,6 +734,7 @@ static int load_from_config_format_group(struct flb_processor *proc, int type, s
     struct cfl_kvlist *kvlist;
     struct cfl_kvpair *pair = NULL;
     struct cfl_list *head;
+    struct cfl_list *tmp2;
     struct flb_processor_unit *pu;
     struct flb_filter_instance *f_ins;
 
@@ -769,7 +771,7 @@ static int load_from_config_format_group(struct flb_processor *proc, int type, s
         }
 
         /* iterate list of properties and set each one (skip name) */
-        cfl_list_foreach(head, &kvlist->list) {
+        cfl_list_foreach_safe(head, tmp2, &kvlist->list) {
             pair = cfl_list_entry(head, struct cfl_kvpair, _head);
 
             if (strcmp(pair->key, "name") == 0) {
@@ -869,18 +871,20 @@ static inline int prop_key_check(const char *key, const char *kv, int k_len)
 }
 
 int flb_processor_instance_set_property(struct flb_processor_instance *ins,
-                                        const char *k, const char *v)
+                                        const char *k, struct cfl_variant *v)
 {
     int len;
     int ret;
-    flb_sds_t tmp;
     struct flb_kv *kv;
+    cfl_sds_t tmp = NULL;
 
     len = strlen(k);
-    tmp = flb_env_var_translate(ins->config->env, v);
+    if (v->type == CFL_VARIANT_STRING) {
+        tmp = flb_env_var_translate(ins->config->env, v->data.as_string);
 
-    if (!tmp) {
-        return -1;
+        if (!tmp) {
+            return -1;
+        }
     }
 
     if (prop_key_check("alias", k, len) == 0 && tmp) {
@@ -903,13 +907,22 @@ int flb_processor_instance_set_property(struct flb_processor_instance *ins,
         kv = flb_kv_item_create(&ins->properties, (char *) k, NULL);
 
         if (!kv) {
-
             if (tmp) {
                 flb_sds_destroy(tmp);
             }
             return -1;
         }
-        kv->val = tmp;
+
+
+        if (v->type == CFL_VARIANT_STRING) {
+            kv->val = tmp;
+        }
+        else {
+            /* Hacky workaround: We store the variant address in a char * just to pass
+             * the variant reference to the plugin. After this happens,
+             * kv->val must be set to NULL (done in flb_config_map.c) */
+            kv->val = (void *)v;
+        }
     }
 
     return 0;

@@ -247,6 +247,14 @@ static int datadog_format(struct flb_config *config,
                                           ctx->dd_service, flb_sds_len(ctx->dd_service));
         }
 
+        /* dd_hostname */
+        if (ctx->dd_hostname != NULL) {
+            dd_msgpack_pack_key_value_str(&mp_pck,
+                                          FLB_DATADOG_DD_HOSTNAME_KEY,
+                                          sizeof(FLB_DATADOG_DD_HOSTNAME_KEY) -1,
+                                          ctx->dd_hostname, flb_sds_len(ctx->dd_hostname));
+        }
+
         /* Append initial object k/v */
         ind = 0;
         for (i = 0; i < map_size; i++) {
@@ -268,8 +276,7 @@ static int datadog_format(struct flb_config *config,
             }
 
             /* Mapping between input keys to specific datadog keys */
-            if (ctx->dd_message_key != NULL &&
-                dd_compare_msgpack_obj_key_with_str(k, ctx->dd_message_key,
+            if (dd_compare_msgpack_obj_key_with_str(k, ctx->dd_message_key,
                                                     flb_sds_len(ctx->dd_message_key)) == FLB_TRUE) {
                 msgpack_pack_str(&mp_pck, sizeof(FLB_DATADOG_DD_MESSAGE_KEY)-1);
                 msgpack_pack_str_body(&mp_pck, FLB_DATADOG_DD_MESSAGE_KEY,
@@ -495,19 +502,32 @@ static struct flb_config_map config_map[] = {
     {
      FLB_CONFIG_MAP_STR, "dd_service", NULL,
      0, FLB_TRUE, offsetof(struct flb_out_datadog, dd_service),
-     "The human readable name for your service generating the logs "
-     "- the name of your application or database."
+     "The human readable name for your service generating the logs  "
+     "(e.g. the name of your application or database). If unset, Datadog "
+     "will look for the service using Service Remapper in Log Management "
+     "(by default it will look at the `service` and `syslog.appname` attributes)."
+     ""
     },
     {
      FLB_CONFIG_MAP_STR, "dd_source", NULL,
      0, FLB_TRUE, offsetof(struct flb_out_datadog, dd_source),
-     "A human readable name for the underlying technology of your service. "
-     "For example, 'postgres' or 'nginx'."
+     "A human readable name for the underlying technology of your service "
+     "(e.g. 'postgres' or 'nginx'). If unset, Datadog will expect the source "
+     "to be set as the `ddsource` attribute."
     },
     {
      FLB_CONFIG_MAP_STR, "dd_tags", NULL,
      0, FLB_TRUE, offsetof(struct flb_out_datadog, dd_tags),
-     "The tags you want to assign to your logs in Datadog."
+     "The tags you want to assign to your logs in Datadog. If unset, Datadog "
+     "will expect the tags in the `ddtags` attribute."
+    },
+    {
+     FLB_CONFIG_MAP_STR, "dd_hostname", NULL,
+     0, FLB_TRUE, offsetof(struct flb_out_datadog, dd_hostname),
+     "The host that emitted logs should be associated with. If unset, Datadog "
+     "will expect the host to be set as `host`, `hostname`, or `syslog.hostname` "
+     "attributes. See Datadog Logs preprocessor documentation for up-to-date "
+     "recognized attributes."
     },
 
     {
@@ -529,7 +549,7 @@ static struct flb_config_map config_map[] = {
      "This property is ignored"
     },
     {
-     FLB_CONFIG_MAP_STR, "dd_message_key", NULL,
+     FLB_CONFIG_MAP_STR, "dd_message_key", FLB_DATADOG_DEFAULT_LOG_KEY,
      0, FLB_TRUE, offsetof(struct flb_out_datadog, dd_message_key),
      "By default, the plugin searches for the key 'log' "
      "and remap the value to the key 'message'. "

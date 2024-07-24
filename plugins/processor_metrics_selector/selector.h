@@ -39,14 +39,16 @@
 #define SELECTOR_NOTOUCH   1
 #define SELECTOR_FAILURE   2
 
-#define SELECTOR_OPERATION_REGEX     0
-#define SELECTOR_OPERATION_PREFIX    1
-#define SELECTOR_OPERATION_SUBSTRING 2
+#define SELECTOR_OPERATION_REGEX          0
+#define SELECTOR_OPERATION_PREFIX         1
+#define SELECTOR_OPERATION_SUBSTRING      2
+#define SELECTOR_OPERATION_LABEL_DELETION 3
 
 /* context */
-#define SELECTOR_CONTEXT_FQNAME 0
-#define SELECTOR_CONTEXT_LABELS 1
-#define SELECTOR_CONTEXT_DESC   2
+#define SELECTOR_CONTEXT_FQNAME             0
+#define SELECTOR_CONTEXT_LABELS             1
+#define SELECTOR_CONTEXT_DESC               2
+#define SELECTOR_CONTEXT_DELETE_LABEL_VALUE 3
 
 struct selector_ctx {
     struct mk_list metrics_rules;
@@ -55,6 +57,8 @@ struct selector_ctx {
     int op_type;
     int context_type;
     char *selector_pattern;
+    flb_sds_t label_key;
+    flb_sds_t label_value;
     struct flb_regex *name_regex;
     struct flb_processor_instance *ins;
     struct flb_config *config;

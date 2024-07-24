@@ -780,7 +780,7 @@ static void print_lua_value(FILE *out, lua_State *l, int index, int depth)
     case LUA_TNUMBER:
         val_i = lua_tointeger(l, index);
         val_d = lua_tonumber(l, index);
-        fprintf(out, " d=%lf i=%ld\n", val_d, val_i);
+        fprintf(out, " d=%lf i=%" PRId64 "\n", val_d, val_i);
         break;
     case LUA_TTABLE:
         len_t = flb_lua_arraylength(l, index);

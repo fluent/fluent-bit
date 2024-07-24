@@ -227,9 +227,9 @@ int produce_message(struct flb_time *tm, msgpack_object *map,
                             flb_warn("',' not allowed in dynamic_kafka topic names");
                             continue;
                         }
-                        if (val.via.str.size > 64) {
-                            /* Don't allow length of dynamic kafka topics > 64 */
-                            flb_warn(" dynamic kafka topic length > 64 not allowed");
+                        if (val.via.str.size > 249) {
+                            /* Don't allow length of dynamic kafka topics > 249 */
+                            flb_warn(" dynamic kafka topic length > 249 not allowed");
                             continue;
                         }
                         dynamic_topic = flb_malloc(val.via.str.size + 1);

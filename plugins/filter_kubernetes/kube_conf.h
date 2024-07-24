@@ -80,6 +80,7 @@ struct flb_kube {
     int dummy_meta;
     int tls_debug;
     int tls_verify;
+    int tls_verify_hostname;
     int kube_token_ttl;
     flb_sds_t meta_preload_cache_dir;
 

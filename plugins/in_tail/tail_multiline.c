@@ -341,7 +341,6 @@ static int flb_tail_mult_pack_line_body(
     msgpack_object          entry_value;
     msgpack_object          entry_key;
     msgpack_object_map     *data_map;
-    int                     map_size;
     size_t                  offset;
     struct flb_tail_config *config;
     int                     result;
@@ -349,12 +348,7 @@ static int flb_tail_mult_pack_line_body(
     result = FLB_EVENT_ENCODER_SUCCESS;
     config = (struct flb_tail_config *) file->config;
 
-    /* New Map size */
-    map_size = file->mult_keys;
-
     if (file->config->path_key != NULL) {
-        map_size++;
-
         result = flb_log_event_encoder_append_body_values(
                     context,
                     FLB_LOG_EVENT_CSTRING_VALUE(config->path_key),
