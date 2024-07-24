@@ -453,6 +453,8 @@ static int cb_log_to_metrics_init(struct flb_filter_instance *f_ins,
     flb_sds_t tmp;
     char metric_description[MAX_METRIC_LENGTH];
     char metric_name[MAX_METRIC_LENGTH];
+    char metric_namespace[MAX_METRIC_LENGTH];
+    char metric_subsystem[MAX_METRIC_LENGTH];
     char value_field[MAX_METRIC_LENGTH];
     struct flb_input_instance *input_ins;
     int label_count;
@@ -556,6 +558,17 @@ static int cb_log_to_metrics_init(struct flb_filter_instance *f_ins,
         return -1;
     }
     snprintf(metric_name, sizeof(metric_name) - 1, "%s", ctx->metric_name);
+    snprintf(metric_namespace, sizeof(metric_namespace) - 1, "%s", ctx->metric_namespace);
+
+    /* Check property subsystem name */
+    if (ctx->metric_subsystem == NULL || strlen(ctx->metric_subsystem) == 0) {
+        snprintf(metric_subsystem, sizeof(metric_subsystem) - 1, "%s",
+                 tmp);
+    }
+    else {
+        snprintf(metric_subsystem, sizeof(metric_subsystem) - 1, "%s",
+                 ctx->metric_subsystem);
+    }
 
     /* Check property metric description */
     if (ctx->metric_description == NULL ||
@@ -602,17 +615,17 @@ static int cb_log_to_metrics_init(struct flb_filter_instance *f_ins,
     /* Depending on mode create different types of cmetrics metrics */
     switch (ctx->mode) {
         case FLB_LOG_TO_METRICS_COUNTER:
-            ctx->c = cmt_counter_create(ctx->cmt, "log_metric", "counter",
+            ctx->c = cmt_counter_create(ctx->cmt, metric_namespace, metric_subsystem,
                                    metric_name, metric_description,
                                    label_count, ctx->label_keys);
             break;
         case FLB_LOG_TO_METRICS_GAUGE:
-            ctx->g = cmt_gauge_create(ctx->cmt, "log_metric", "gauge",
+            ctx->g = cmt_gauge_create(ctx->cmt, metric_namespace, metric_subsystem,
                                       metric_name, metric_description,
                                       label_count, ctx->label_keys);
             break;
         case FLB_LOG_TO_METRICS_HISTOGRAM:
-            ctx->h = cmt_histogram_create(ctx->cmt, "log_metric", "histogram",
+            ctx->h = cmt_histogram_create(ctx->cmt, metric_namespace, metric_subsystem,
                                    metric_name, metric_description,
                                    ctx->histogram_buckets,
                                    label_count, ctx->label_keys);
@@ -955,6 +968,19 @@ static struct flb_config_map config_map[] = {
      FLB_FALSE, FLB_TRUE,
      offsetof(struct log_to_metrics_ctx, metric_name),
      "Name of metric"
+    },
+    {
+     FLB_CONFIG_MAP_STR, "metric_namespace",
+     DEFAULT_LOG_TO_METRICS_NAMESPACE,
+     FLB_FALSE, FLB_TRUE,
+     offsetof(struct log_to_metrics_ctx, metric_namespace),
+     "Namespace of the metric"
+    },
+    {
+     FLB_CONFIG_MAP_STR, "metric_subsystem",NULL,
+     FLB_FALSE, FLB_TRUE,
+     offsetof(struct log_to_metrics_ctx, metric_subsystem),
+     "Subsystem of the metric"
     },
     {
      FLB_CONFIG_MAP_STR, "metric_description", NULL,
