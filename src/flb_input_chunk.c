@@ -526,8 +526,8 @@ int flb_input_chunk_find_space_new_data(struct flb_input_chunk *ic,
     }
 
     if (count != 0) {
-        flb_error("[input chunk] fail to drop enough chunks in order to place new data");
-        exit(0);
+        flb_error("[input chunk] fail to drop enough chunks in order to place "
+                  "new data coming from input plugin %s", flb_input_name(ic->in));
     }
 
     return 0;
