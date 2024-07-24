@@ -49,6 +49,7 @@
 #define MAX_LABEL_COUNT 32
 
 #define FLB_MEM_BUF_LIMIT_DEFAULT  "10M"
+#define DEFAULT_LOG_TO_METRICS_NAMESPACE "log_metric"
 
 
 struct log_to_metrics_ctx
@@ -57,6 +58,8 @@ struct log_to_metrics_ctx
     struct flb_filter_instance *ins;
     int mode;
     flb_sds_t metric_name;
+    flb_sds_t metric_namespace;
+    flb_sds_t metric_subsystem;
     flb_sds_t metric_description;
     struct cmt *cmt;
     struct flb_input_instance *input_ins;
