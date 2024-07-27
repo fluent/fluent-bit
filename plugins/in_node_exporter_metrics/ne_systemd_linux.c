@@ -459,24 +459,28 @@ static int ne_systemd_update_unit_state(struct flb_ne *ctx)
             }
 
             for(index = 0 ; index < 5 ; index++) {
-                cmt_gauge_add(ctx->systemd_unit_state,
-                              timestamp,
-                              0,
-                              3,
-                              (char *[]){ unit.name,
+                if (strcmp(unit_states[index], unit.active_state) == 0) {
+                    cmt_gauge_set(ctx->systemd_unit_state,
+                                  timestamp,
+                                  1,
+                                  3,
+                                  (char *[]){ unit.name,
                                           unit_states[index],
                                           unit.type
-                                        });
+                                  }
+                    );
+                }
+                else {
+                    cmt_gauge_set(ctx->systemd_unit_state,
+                                  timestamp,
+                                  0,
+                                  3,
+                                  (char *[]){ unit.name,
+                                              unit_states[index],
+                                              unit.type
+                                  });
+                }
             }
-
-            cmt_gauge_inc(ctx->systemd_unit_state,
-                          timestamp,
-                          3,
-                          (char *[]){ unit.name,
-                                      unit.active_state,
-                                      unit.type
-                                    });
-
 
             if (unit.type != NULL) {
                 free(unit.type);
