@@ -1227,6 +1227,8 @@ static int put_all_chunks(struct flb_s3 *ctx)
                     flb_plg_error(ctx->ins, "Failed to compress data, uploading uncompressed data instead to prevent data loss");
                 } else {
                     flb_plg_info(ctx->ins, "Pre-compression chunk size is %zu, After compression, chunk is %zu bytes", buffer_size, payload_size);
+                    flb_free(buffer);
+
                     buffer = (void *) payload_buf;
                     buffer_size = payload_size;
                 }
