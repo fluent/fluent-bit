@@ -27,6 +27,17 @@
 #include <fluent-bit/flb_time.h>
 #include <fluent-bit/flb_log_event.h>
 
+#define FLB_WASM_DEFAULT_HEAP_SIZE  8192
+#define FLB_WASM_DEFAULT_STACK_SIZE 8192
+
+struct flb_wasm_config {
+    size_t heap_size;
+    size_t stack_size;
+    int stdinfd;
+    int stdoutfd;
+    int stderrfd;
+};
+
 /* WASM Context */
 struct flb_wasm {
     wasm_module_t module;
@@ -41,9 +52,11 @@ struct flb_wasm {
 };
 
 void flb_wasm_init(struct flb_config *config);
+struct flb_wasm_config *flb_wasm_config_init(struct flb_config *config);
+void flb_wasm_config_destroy(struct flb_wasm_config *wasm_config);
 struct flb_wasm *flb_wasm_instantiate(struct flb_config *config, const char *wasm_path,
                                       struct mk_list *acessible_dir_list,
-                                      int stdinfd, int stdoutfd, int stderrfd);
+                                      struct flb_wasm_config *wasm_config);
 
 char *flb_wasm_call_function_format_json(struct flb_wasm *fw, const char *function_name,
                                          const char* tag_data, size_t tag_len,

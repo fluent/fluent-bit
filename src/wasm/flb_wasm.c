@@ -43,6 +43,32 @@ void flb_wasm_init(struct flb_config *config)
     mk_list_init(&config->wasm_list);
 }
 
+struct flb_wasm_config *flb_wasm_config_init(struct flb_config *config)
+{
+    struct flb_wasm_config *wasm_config;
+
+    wasm_config = flb_calloc(1, sizeof(struct flb_wasm_config));
+    if (!wasm_config) {
+        flb_errno();
+        return NULL;
+    }
+
+    wasm_config->heap_size = FLB_WASM_DEFAULT_HEAP_SIZE;
+    wasm_config->stack_size = FLB_WASM_DEFAULT_STACK_SIZE;
+    wasm_config->stdinfd = -1;
+    wasm_config->stdoutfd = -1;
+    wasm_config->stderrfd = -1;
+
+    return wasm_config;
+}
+
+void flb_wasm_config_destroy(struct flb_wasm_config *wasm_config)
+{
+    if (wasm_config != NULL) {
+        flb_free(wasm_config);
+    }
+}
+
 static int flb_wasm_load_wasm_binary(const char *wasm_path, int8_t **out_buf, uint32_t *out_size)
 {
     char *buffer;
@@ -81,10 +107,10 @@ error:
 
 struct flb_wasm *flb_wasm_instantiate(struct flb_config *config, const char *wasm_path,
                                       struct mk_list *accessible_dir_list,
-                                      int stdinfd, int stdoutfd, int stderrfd)
+                                      struct flb_wasm_config *wasm_config)
 {
     struct flb_wasm *fw;
-    uint32_t buf_size, stack_size = 8 * 1024, heap_size = 8 * 1024;
+    uint32_t buf_size;
     int8_t *buffer = NULL;
     char error_buf[128];
 #if WASM_ENABLE_LIBC_WASI != 0
@@ -100,6 +126,14 @@ struct flb_wasm *flb_wasm_instantiate(struct flb_config *config, const char *was
     wasm_exec_env_t exec_env = NULL;
 
     RuntimeInitArgs wasm_args;
+
+    if (wasm_config->heap_size < FLB_WASM_DEFAULT_HEAP_SIZE) {
+        wasm_config->heap_size = FLB_WASM_DEFAULT_HEAP_SIZE;
+    }
+
+    if (wasm_config->stack_size < FLB_WASM_DEFAULT_STACK_SIZE) {
+        wasm_config->stack_size = FLB_WASM_DEFAULT_STACK_SIZE;
+    }
 
     fw = flb_malloc(sizeof(struct flb_wasm));
     if (!fw) {
@@ -150,19 +184,21 @@ struct flb_wasm *flb_wasm_instantiate(struct flb_config *config, const char *was
 #if WASM_ENABLE_LIBC_WASI != 0
     wasm_runtime_set_wasi_args_ex(module, wasi_dir_list, accessible_dir_list_size, NULL, 0,
                                   NULL, 0, NULL, 0,
-                                  (stdinfd != -1) ? stdinfd : STDIN_FILENO,
-                                  (stdoutfd != -1) ? stdoutfd : STDOUT_FILENO,
-                                  (stderrfd != -1) ? stderrfd : STDERR_FILENO);
+                                  (wasm_config->stdinfd != -1) ? wasm_config->stdinfd : STDIN_FILENO,
+                                  (wasm_config->stdoutfd != -1) ? wasm_config->stdoutfd : STDOUT_FILENO,
+                                  (wasm_config->stderrfd != -1) ? wasm_config->stderrfd : STDERR_FILENO);
 #endif
 
-    module_inst = wasm_runtime_instantiate(module, stack_size, heap_size,
+    module_inst = wasm_runtime_instantiate(module,
+                                           wasm_config->stack_size,
+                                           wasm_config->heap_size,
                                            error_buf, sizeof(error_buf));
     if (!module_inst) {
         flb_error("Instantiate wasm module failed. error: %s", error_buf);
         goto error;
     }
 
-    exec_env = wasm_runtime_create_exec_env(module_inst, stack_size);
+    exec_env = wasm_runtime_create_exec_env(module_inst, wasm_config->stack_size);
     if (!exec_env) {
         flb_error("Create wasm execution environment failed.");
         goto error;
