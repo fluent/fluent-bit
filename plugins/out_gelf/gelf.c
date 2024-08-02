@@ -228,6 +228,40 @@ static int gelf_send_udp(struct flb_out_gelf_config *ctx, char *msg,
     return 0;
 }
 
+static int inject_tag(msgpack_object *map,
+                      struct flb_event_chunk *event_chunk,
+                      struct flb_out_gelf_config *ctx,
+                      char** out_buf, int* out_size)
+{
+    int i;
+    int len;
+    size_t map_num;
+    msgpack_sbuffer sbuf;
+    msgpack_packer  pck;
+
+    len = map->via.map.size;
+    map_num = 1 + len;
+
+    msgpack_sbuffer_init(&sbuf);
+    msgpack_packer_init(&pck, &sbuf, msgpack_sbuffer_write);
+    msgpack_pack_map(&pck, map_num);
+
+    for (i = 0; i < len; i++) {
+        msgpack_pack_object(&pck, map->via.map.ptr[i].key);
+        msgpack_pack_object(&pck, map->via.map.ptr[i].val);
+    }
+
+    msgpack_pack_str(&pck, strlen(ctx->tag_key));
+    msgpack_pack_str_body(&pck, ctx->tag_key, strlen(ctx->tag_key));
+    msgpack_pack_str(&pck, flb_sds_len(event_chunk->tag));
+    msgpack_pack_str_body(&pck, event_chunk->tag, flb_sds_len(event_chunk->tag));
+
+    *out_buf = sbuf.data;
+    *out_size = sbuf.size;
+
+    return 0;
+}
+
 static void cb_gelf_flush(struct flb_event_chunk *event_chunk,
                           struct flb_output_flush *out_flush,
                           struct flb_input_instance *i_ins,
@@ -246,6 +280,8 @@ static void cb_gelf_flush(struct flb_event_chunk *event_chunk,
     struct flb_out_gelf_config *ctx = out_context;
     struct flb_log_event_decoder log_decoder;
     struct flb_log_event log_event;
+    char *tag_injected_map;
+    int injected_size;
 
     if (ctx->mode != FLB_GELF_UDP) {
         u_conn = flb_upstream_conn_get(ctx->u);
@@ -279,15 +315,29 @@ static void cb_gelf_flush(struct flb_event_chunk *event_chunk,
 
         map = *log_event.body;
 
-        size = (size * 1.4);
-        s = flb_sds_create_size(size);
-        if (s == NULL) {
-            flb_log_event_decoder_destroy(&log_decoder);
-            FLB_OUTPUT_RETURN(FLB_ERROR);
-        }
+        if (ctx->tag_key) {
+            ret = inject_tag(&map, event_chunk, ctx, &tag_injected_map, &injected_size);
 
-        tmp = flb_msgpack_to_gelf(&s, &map, &log_event.timestamp,
-                                  &(ctx->fields));
+            if (ret != 0) {
+                flb_log_event_decoder_destroy(&log_decoder);
+                FLB_OUTPUT_RETURN(FLB_ERROR);
+            }
+
+            tmp = flb_msgpack_raw_to_gelf(tag_injected_map, injected_size, &log_event.timestamp,
+                                          &(ctx->fields));
+            flb_free(tag_injected_map);
+        }
+        else {
+            size = (size * 1.4);
+            s = flb_sds_create_size(size);
+            if (s == NULL) {
+                flb_log_event_decoder_destroy(&log_decoder);
+                FLB_OUTPUT_RETURN(FLB_ERROR);
+            }
+
+            tmp = flb_msgpack_to_gelf(&s, &map, &log_event.timestamp,
+                                      &(ctx->fields));
+        }
         if (tmp != NULL) {
             s = tmp;
             if (ctx->mode == FLB_GELF_UDP) {
@@ -497,6 +547,11 @@ static struct flb_config_map config_map[] = {
      FLB_CONFIG_MAP_STR, "mode", "udp",
      0, FLB_FALSE, 0,
      "The protocol to use. 'tls', 'tcp' or 'udp'"
+    },
+    {
+     FLB_CONFIG_MAP_STR, "gelf_tag_key", NULL,
+     0, FLB_TRUE, offsetof(struct flb_out_gelf_config, tag_key),
+     "Tag key name (Optional in GELF)"
     },
     {
      FLB_CONFIG_MAP_STR, "gelf_short_message_key", NULL,

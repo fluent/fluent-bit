@@ -467,13 +467,11 @@ static int extract_msgpack_obj_from_msgpack_map(msgpack_object_map *root,
 static flb_sds_t get_str_value_from_msgpack_map(msgpack_object_map map,
                                                 const char *key, int key_size)
 {
-    int i;
     int ret;
-    msgpack_object k;
     msgpack_object v;
     flb_sds_t ptr = NULL;
 
-//  convert msgpack_object_map to msgpack_object
+    /* convert msgpack_object_map to msgpack_object */
     ret = extract_msgpack_obj_from_msgpack_map(&map, (char*) key, key_size,
                                                MSGPACK_OBJECT_STR, &v);
     if (ret == 0) {
@@ -2675,8 +2673,13 @@ static int parse_partial_success_response(struct flb_http_client* c,
     msgpack_unpacked_init(&result);
     ret = msgpack_unpack_next(&result, buffer, size, &off);
     if (ret != MSGPACK_UNPACK_SUCCESS) {
-        flb_plg_error(ctx->ins, "Cannot unpack %s response: %s",
-                      c->resp.payload);
+        if (c->resp.payload_size > 0) {
+            flb_plg_error(ctx->ins, "Cannot unpack response: %s",
+                          c->resp.payload);
+        }
+        else {
+            flb_plg_error(ctx->ins, "Cannot unpack response");
+        }
         flb_free(buffer);
         msgpack_unpacked_destroy(&result);
         return -1;
@@ -2684,7 +2687,7 @@ static int parse_partial_success_response(struct flb_http_client* c,
 
     root = result.data;
     if (root.type != MSGPACK_OBJECT_MAP) {
-        flb_plg_error(ctx->ins, "%s response parsing failed, msgpack_type=%i",
+        flb_plg_error(ctx->ins, "response parsing failed, msgpack_type=%i",
                       root.type);
         flb_free(buffer);
         msgpack_unpacked_destroy(&result);
@@ -2717,8 +2720,7 @@ static int parse_partial_success_response(struct flb_http_client* c,
     ret = extract_msgpack_obj_from_msgpack_map(&root.via.map, "error", 5,
                                                MSGPACK_OBJECT_MAP, &error_map);
     if (ret == -1) {
-        flb_plg_debug(ctx->ins,
-                      "%s response does not have key: \"error\"");
+        flb_plg_debug(ctx->ins, "response does not have key: \"error\"");
         flb_free(buffer);
         msgpack_unpacked_destroy(&result);
         return -1;
@@ -2728,8 +2730,7 @@ static int parse_partial_success_response(struct flb_http_client* c,
                                                MSGPACK_OBJECT_ARRAY,
                                                &details_arr);
     if (ret == -1) {
-        flb_plg_debug(ctx->ins,
-                      "%s response does not have key: \"details\"");
+        flb_plg_debug(ctx->ins, "response does not have key: \"details\"");
         flb_free(buffer);
         msgpack_unpacked_destroy(&result);
         return -1;
@@ -2769,7 +2770,7 @@ static int parse_partial_success_response(struct flb_http_client* c,
             }
             log_entry_ret = extract_msgpack_obj_from_msgpack_map(
                 &logEntryErrors_map.via.map,
-                logEntryError_key.via.str.ptr,
+                (char *) logEntryError_key.via.str.ptr,
                 logEntryError_key.via.str.size,
                 MSGPACK_OBJECT_MAP,
                 &logEntryError_map);

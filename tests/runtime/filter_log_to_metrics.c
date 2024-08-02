@@ -199,6 +199,8 @@ void flb_test_log_to_metrics_counter_k8s(void)
     const char *expected = "\"value\":5.0,\"labels\":[\"k8s-dummy\","
                            "\"testpod\",\"mycontainer\",\"abc123\","
                            "\"def456\",\"red\",\"right\"]";
+    const char *expected2 = "{\"ns\":\"log_metric\",\"ss\":\"counter\","
+                            "\"name\":\"test\",\"desc\":\"Counts messages\"}";
 
     ctx = flb_create();
     flb_service_set(ctx, "Flush", "0.200000000", "Grace", "1", "Log_Level",
@@ -219,6 +221,7 @@ void flb_test_log_to_metrics_counter_k8s(void)
                          "metric_mode", "counter",
                          "metric_name", "test",
                          "metric_description", "Counts messages",
+                         "metric_subsystem", "",
                          "kubernetes_mode", "on",
                          "label_field", "color",
                          "label_field", "direction",
@@ -242,6 +245,10 @@ void flb_test_log_to_metrics_counter_k8s(void)
     if (!TEST_CHECK(result != NULL)) {
         TEST_MSG("expected substring:\n%s\ngot:\n%s\n", expected, finalString);
     }
+    result = strstr(finalString, expected2);
+    if (!TEST_CHECK(result != NULL)) {
+        TEST_MSG("expected substring:\n%s\ngot:\n%s\n", expected, finalString);
+    }
 
     filter_test_destroy(ctx);
 
@@ -260,6 +267,8 @@ void flb_test_log_to_metrics_counter(void)
     char *input = JSON_MSG1;
     char finalString[32768] = "";
     const char *expected = "\"value\":5.0,\"labels\":[\"red\",\"right\"]";
+    const char *expected2 = "{\"ns\":\"myns\",\"ss\":\"subsystem\","
+                            "\"name\":\"test\",\"desc\":\"Counts messages\"}";
 
     ctx = flb_create();
     flb_service_set(ctx, "Flush", "0.200000000", "Grace", "1", "Log_Level",
@@ -280,6 +289,8 @@ void flb_test_log_to_metrics_counter(void)
                          "metric_mode", "counter",
                          "metric_name", "test",
                          "metric_description", "Counts messages",
+                         "metric_subsystem", "subsystem",
+                         "metric_namespace", "myns",
                          "kubernetes_mode", "off",
                          "label_field", "color",
                          "label_field", "direction",
@@ -299,6 +310,10 @@ void flb_test_log_to_metrics_counter(void)
     }
     wait_with_timeout(2000, finalString);
     result = strstr(finalString, expected);
+    if (!TEST_CHECK(result != NULL)) {
+        TEST_MSG("expected substring:\n%s\ngot:\n%s\n", expected, finalString);
+    }
+    result = strstr(finalString, expected2);
     if (!TEST_CHECK(result != NULL)) {
         TEST_MSG("expected substring:\n%s\ngot:\n%s\n", expected, finalString);
     }
@@ -346,6 +361,7 @@ void flb_test_log_to_metrics_counter_k8s_two_tuples(void)
                          "metric_mode", "counter",
                          "metric_name", "test",
                          "metric_description", "Counts two different messages",
+                         "metric_subsystem", "",
                          "kubernetes_mode", "on",
                          "label_field", "color",
                          "label_field", "direction",
@@ -414,6 +430,7 @@ void flb_test_log_to_metrics_gauge(void)
                          "metric_mode", "gauge",
                          "metric_name", "test",
                          "metric_description", "Reports gauge from messages",
+                         "metric_subsystem", "",
                          "kubernetes_mode", "off",
                          "value_field", "duration",
                          "label_field", "color",
@@ -478,6 +495,7 @@ void flb_test_log_to_metrics_histogram(void)
                          "metric_mode", "histogram",
                          "metric_name", "test",
                          "metric_description", "Histogram of duration",
+                         "metric_subsystem", "",
                          "kubernetes_mode", "off",
                          "value_field", "duration",
                          "label_field", "color",
@@ -542,6 +560,7 @@ void flb_test_log_to_metrics_reg(void)
                          "metric_mode", "counter",
                          "metric_name", "test",
                          "metric_description", "Counts messages with regex",
+                         "metric_subsystem", "",
                          "kubernetes_mode", "off",
                          "label_field", "color",
                          "label_field", "direction",
@@ -607,6 +626,7 @@ void flb_test_log_to_metrics_empty_label_keys_regex(void)
                          "metric_mode", "counter",
                          "metric_name", "test",
                          "metric_description", "Counts messages with regex",
+                         "metric_subsystem", "",
                          "kubernetes_mode", "off",
                          "regex", "message .*el.*",
                          NULL);
@@ -668,6 +688,7 @@ void flb_test_log_to_metrics_label(void)
                          "metric_mode", "counter",
                          "metric_name", "test",
                          "metric_description", "Counts messages",
+                         "metric_subsystem", "",
                          "kubernetes_mode", "off",
                          "add_label", "pod_name $kubernetes['pod_name']",
                          NULL);
@@ -684,7 +705,7 @@ void flb_test_log_to_metrics_label(void)
     for (i = 0; i < 2; i++){
         flb_lib_push(ctx, in_ffd, input, strlen(input));
     }
-    wait_with_timeout(500, finalString);
+    wait_with_timeout(2000, finalString);
     result = strstr(finalString, expected_label_name);
     if (!TEST_CHECK(result != NULL)) {
         TEST_MSG("expected substring:\n%s\ngot:\n%s\n", expected_label_name, finalString);
@@ -694,5 +715,4 @@ void flb_test_log_to_metrics_label(void)
         TEST_MSG("expected substring:\n%s\ngot:\n%s\n", expected_label_value, finalString);
     }
     filter_test_destroy(ctx);
-
 }

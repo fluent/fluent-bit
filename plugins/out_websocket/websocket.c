@@ -135,7 +135,7 @@ static int flb_ws_sendDataFrameHeader(struct flb_connection *u_conn,
             return -1;
         }
         data_frame_head[0] = 0x81;
-        data_frame_head[1] = 126 | 0x80;
+        data_frame_head[1] = (unsigned char) (126 | 0x80);
         data_frame_head[2] = (payloadSize >> 8) & 0xff;
         data_frame_head[3] = (payloadSize >> 0) & 0xff;
         data_frame_head[4] = masking_key[0];
@@ -151,7 +151,7 @@ static int flb_ws_sendDataFrameHeader(struct flb_connection *u_conn,
             return -1;
         }
         data_frame_head[0] = 0x81;
-        data_frame_head[1] = 127 | 0x80;
+        data_frame_head[1] = (unsigned char) (127 | 0x80);
         data_frame_head[2] = (payloadSize >> 56) & 0xff;
         data_frame_head[3] = (payloadSize >> 48) & 0xff;
         data_frame_head[4] = (payloadSize >> 40) & 0xff;

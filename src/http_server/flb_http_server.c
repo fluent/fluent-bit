@@ -285,14 +285,6 @@ static int flb_http_server_should_connection_be_closed(
     server = parent_session->parent;
     downstream = server->downstream;
 
-     /*
-      * user config overrides any protocol defaults, this is set
-      * with the option 'net.keepalive: off`
-      */
-    if (!downstream->net_setup->keepalive) {
-        return FLB_TRUE;
-    }
-
     /* Version behaviors implemented in the following block :
      * HTTP/0.9 keep-alive is opt-in
      * HTTP/1.0 keep-alive is opt-in
@@ -300,9 +292,18 @@ static int flb_http_server_should_connection_be_closed(
      * HTTP/2   keep-alive is "mandatory"
      */
 
-    if (request->protocol_version < HTTP_PROTOCOL_VERSION_20) {
+    if (request->protocol_version >= HTTP_PROTOCOL_VERSION_20) {
         /* HTTP/2 always keeps the connection open */
         return FLB_FALSE;
+    }
+
+    /*
+      * user config overrides any protocol defaults, this is set
+      * with the option 'net.keepalive: off`. This override is only
+      * effective less than HTTP/2.
+      */
+    if (!downstream->net_setup->keepalive) {
+        return FLB_TRUE;
     }
 
     /* Set the defaults per protocol version */

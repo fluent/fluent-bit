@@ -220,7 +220,7 @@ static int tls_context_server_alpn_select_callback(SSL *ssl,
     if (ctx->alpn != NULL) {
         result = SSL_select_next_proto((unsigned char **) out,
                                        outlen,
-                                       &ctx->alpn[1],
+                                       (const unsigned char *) &ctx->alpn[1],
                                        (unsigned int) ctx->alpn[0],
                                        in,
                                        inlen);

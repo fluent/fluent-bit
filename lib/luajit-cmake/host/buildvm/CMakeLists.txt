@@ -1,4 +1,4 @@
-cmake_minimum_required(VERSION 3.0)
+cmake_minimum_required(VERSION 3.5)
 
 project(buildvm C)
 
@@ -27,7 +27,9 @@ if(NOT (CMAKE_SIZEOF_VOID_P EQUAL ${TARGET_SIZE_OF_P}))
     endif()
 endif()
 
-find_library(LIBM_LIBRARIES NAMES m)
+if(NOT ${CMAKE_SYSTEM_NAME} STREQUAL Darwin)
+  find_library(LIBM_LIBRARIES NAMES m)
+endif()
 
 add_executable(buildvm
   ${LUAJIT_DIR}/src/host/buildvm.c
@@ -48,5 +50,6 @@ target_include_directories(buildvm PRIVATE
   ${LUAJIT_DIR}/src/host
   ${CMAKE_BINARY_DIR}
   ${CMAKE_CURRENT_BINARY_DIR}/..
+  ${CMAKE_CURRENT_BINARY_DIR}/../..
   ${CMAKE_CURRENT_BINARY_DIR}/../../..
   ${CMAKE_CURRENT_BINARY_DIR})

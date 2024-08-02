@@ -93,6 +93,9 @@ struct flb_tail_config {
     int   skip_long_lines;     /* skip long lines              */
     int   skip_empty_lines;    /* skip empty lines (off)       */
     int   exit_on_eof;         /* exit fluent-bit on EOF, test */
+#ifdef __linux__
+    int   file_cache_advise;   /* Use posix_fadvise for file access */
+#endif
 
     int progress_check_interval;      /* watcher interval             */
     int progress_check_interval_nsec; /* watcher interval             */

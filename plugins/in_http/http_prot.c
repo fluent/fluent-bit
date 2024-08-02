@@ -513,7 +513,7 @@ static int process_payload(struct flb_http *ctx, struct http_conn *conn,
                            struct mk_http_session *session,
                            struct mk_http_request *request)
 {
-    int ret;
+    int ret = -1;
     int type = -1;
     struct mk_http_header *header;
 

@@ -930,7 +930,7 @@ static void cb_chronicle_flush(struct flb_event_chunk *event_chunk,
             }
 
             flb_plg_debug(ctx->ins,
-                          "HTTP request body is exeeded to %d bytes. actual: %zu. left attempt(s): %d",
+                          "HTTP request body is exeeded to %zd bytes. actual: %zu. left attempt(s): %d",
                           one_mebibyte, payload_size, retry_limit - retries);
             flb_sds_destroy(payload_buf);
 

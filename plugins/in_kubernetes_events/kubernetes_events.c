@@ -304,8 +304,8 @@ static bool check_event_is_filtered(struct k8s_events *ctx, msgpack_object *obj,
 
     outdated = cfl_time_now() - (ctx->retention_time * 1000000000L);
     if (flb_time_to_nanosec(event_time) < outdated) {
-        flb_plg_debug(ctx->ins, "Item is older than retention_time: %ld < %ld",
-                      flb_time_to_nanosec(event_time),  outdated);
+        flb_plg_debug(ctx->ins, "Item is older than retention_time: %" PRIu64 " < %" PRIu64,
+                      flb_time_to_nanosec(event_time), outdated);
         return FLB_TRUE;
     }
 
@@ -459,7 +459,7 @@ static int process_watched_event(struct k8s_events *ctx, char *buf_data, size_t 
     root = result.data;
     if (root.type != MSGPACK_OBJECT_MAP) {
         return -1;
-    }    
+    }
 
     ret = record_get_field_sds(&root, "type", &event_type);
     if (ret == -1) {
@@ -906,6 +906,7 @@ static int k8s_events_collect(struct flb_input_instance *ins,
     }
 
     if (check_and_init_stream(ctx) == FLB_FALSE) {
+        pthread_mutex_unlock(&ctx->lock);
         FLB_INPUT_RETURN(0);
     }
 
@@ -921,15 +922,19 @@ static int k8s_events_collect(struct flb_input_instance *ins,
     }
     /* NOTE: skipping any processing after streaming socket closes */
 
-    if (ctx->streaming_client->resp.status != 200 || ret == FLB_HTTP_ERROR) {
+    if (ctx->streaming_client->resp.status != 200 || ret == FLB_HTTP_ERROR || ret == FLB_HTTP_OK) {
         if (ret == FLB_HTTP_ERROR) {
             flb_plg_warn(ins, "kubernetes chunked stream error.");
+        }
+        else if (ret == FLB_HTTP_OK) {
+            flb_plg_info(ins, "kubernetes stream closed by api server. Reconnect will happen on next interval.");
         }
         else {
             flb_plg_warn(ins, "events watch failure, http_status=%d payload=%s",
                          ctx->streaming_client->resp.status, ctx->streaming_client->resp.payload);
         }
 
+        flb_plg_info(ins, "kubernetes stream disconnected, ret=%d", ret);
         flb_http_client_destroy(ctx->streaming_client);
         flb_upstream_conn_release(ctx->current_connection);
         ctx->streaming_client = NULL;
