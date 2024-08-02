@@ -11,8 +11,7 @@ RUN sed -i -e "s/^mirrorlist=http:\/\/mirrorlist.centos.org/#mirrorlist=http:\/\
     wget unzip systemd-devel wget flex bison \
     cyrus-sasl-lib cyrus-sasl-devel openssl openss-libs openssl-devel \
     postgresql-libs postgresql-devel postgresql-server postgresql libyaml-devel && \
-    wget -q http://dl.fedoraproject.org/pub/epel/epel-release-latest-7.noarch.rpm && \
-    rpm -ivh epel-release-latest-7.noarch.rpm && \
+    yum install -y epel-release && \
     yum install -y cmake3
 
 COPY . /src/
