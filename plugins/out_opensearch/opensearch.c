@@ -884,6 +884,9 @@ static void cb_opensearch_flush(struct flb_event_chunk *event_chunk,
         pack = flb_msgpack_raw_to_json_sds(event_chunk->data, event_chunk->size);
         if (pack) {
             ret = 0;
+
+            out_buf = (void *) pack;
+            out_size = cfl_sds_len(pack);
         }
         else {
             ret = -1;
