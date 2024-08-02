@@ -21,7 +21,7 @@
 #define FLB_FILTER_LOG_TO_METRICS_H
 
 #include <fluent-bit/flb_info.h>
-#include <fluent-bit/flb_filter.h>
+#include <fluent-bit/flb_filter_plugin.h>
 #include <fluent-bit/flb_sds.h>
 #include <fluent-bit/flb_record_accessor.h>
 
@@ -52,29 +52,35 @@
 #define DEFAULT_LOG_TO_METRICS_NAMESPACE "log_metric"
 
 
-struct log_to_metrics_ctx
-{
+struct log_to_metrics_ctx {
     struct mk_list rules;
     struct flb_filter_instance *ins;
-    int mode;
-    flb_sds_t metric_name;
-    flb_sds_t metric_namespace;
-    flb_sds_t metric_subsystem;
-    flb_sds_t metric_description;
     struct cmt *cmt;
+
     struct flb_input_instance *input_ins;
-    flb_sds_t value_field;
+
+    char **label_keys;
+    char **label_accessors;
+
+    int label_counter;
+    int bucket_counter;
+    double *buckets;
+
     struct cmt_counter *c;
     struct cmt_gauge *g;
     struct cmt_histogram *h;
     struct cmt_histogram_buckets *histogram_buckets;
-    char **label_accessors;
-    char **label_keys;
-    int *label_counter;
-    bool kubernetes_mode;
+
+    /* config options */
+    int mode;
+    int discard_logs;
+    int kubernetes_mode;
+    flb_sds_t metric_name;
+    flb_sds_t metric_namespace;
+    flb_sds_t metric_subsystem;
+    flb_sds_t metric_description;
+    flb_sds_t value_field;
     flb_sds_t tag;
-    int *bucket_counter;
-    double *buckets;
     flb_sds_t emitter_name;
     size_t emitter_mem_buf_limit;
 };
