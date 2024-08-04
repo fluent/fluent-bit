@@ -38,5 +38,6 @@ int flb_gzip_decompressor_dispatch(struct flb_decompression_context *context,
                                    void *out_data, size_t *out_size);
 
 int flb_is_http_session_gzip_compressed(struct mk_http_session *session);
+size_t flb_gzip_count(const char *data, size_t len, size_t **out_borders, size_t border_count);
 
 #endif

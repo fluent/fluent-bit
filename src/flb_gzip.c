@@ -772,3 +772,67 @@ int flb_is_http_session_gzip_compressed(struct mk_http_session *session)
 
     return gzip_compressed;
 }
+
+static int vaild_os_flag(const char data)
+{
+    uint8_t p;
+
+    p = (uint8_t)data;
+    if (p == 0x00 || /* Fat Filesystem       */
+        p == 0x01 || /* Amiga                */
+        p == 0x02 || /* VMS                  */
+        p == 0x03 || /* Unix                 */
+        p == 0x04 || /* VM/CMS               */
+        p == 0x05 || /* Atari TOS            */
+        p == 0x06 || /* HPFS Filesystem (OS/2, NT) */
+        p == 0x07 || /* Macintosh            */
+        p == 0x08 || /* Z-System             */
+        p == 0x09 || /* CP/M                 */
+        p == 0x0a || /* TOPS-20              */
+        p == 0x0b || /* NTFS filesystem (NT) */
+        p == 0x0c || /* QDOS                 */
+        p == 0x0d || /* Acorn RISCOS         */
+        p == 0xff)   /* Unknown              */ {
+
+        return FLB_TRUE;
+    }
+
+    return FLB_FALSE;
+}
+
+size_t flb_gzip_count(const char *data, size_t len, size_t **out_borders, size_t border_count)
+{
+    int i;
+    size_t count = 0;
+    const uint8_t *p;
+    size_t *borders = NULL;
+
+    if (out_borders != NULL) {
+        borders = *out_borders;
+    }
+
+    p = (const uint8_t *) data;
+    /* search other gzip starting bits and method. */
+    for (i = 2; i < len &&
+                 i + 9 <= len; i++) {
+        /* A vaild gzip payloads are larger than 18 bytes. */
+        if (len - i < 18) {
+            break;
+        }
+
+        if (p[i] == 0x1F && p[i+1] == 0x8B && p[i+2] == 8 &&
+            vaild_os_flag(p[i+9])) {
+            if (out_borders != NULL) {
+                borders[count] = i;
+            }
+            count++;
+        }
+    }
+
+    if (out_borders != NULL && border_count >= count) {
+        /* The length of the last border refers to the original length. */
+        borders[border_count] = len;
+    }
+
+    return count;
+}
