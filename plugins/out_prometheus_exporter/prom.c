@@ -217,6 +217,7 @@ static void cb_prom_flush(struct flb_event_chunk *event_chunk,
         tmp = cmt_encode_prometheus_create(cmt, add_ts);
         if (!tmp) {
             cmt_destroy(cmt);
+            flb_sds_destroy(text);
             FLB_OUTPUT_RETURN(FLB_ERROR);
         }
         ret = flb_sds_cat_safe(&text, tmp, flb_sds_len(tmp));
