@@ -144,15 +144,19 @@ static int mqtt_data_append(char *topic, size_t topic_len,
         return -1;
     }
 
+
+printf("PAYLOAD : ||||||%.*s|||||\n\n", msg_len, msg);
     off = 0;
     msgpack_unpacked_init(&result);
     if (msgpack_unpack_next(&result, pack, out, &off) != MSGPACK_UNPACK_SUCCESS) {
         msgpack_unpacked_destroy(&result);
+        flb_free(pack);
         return -1;
     }
 
     if (result.data.type != MSGPACK_OBJECT_MAP){
         msgpack_unpacked_destroy(&result);
+        flb_free(pack);
         return -1;
     }
     root = result.data;

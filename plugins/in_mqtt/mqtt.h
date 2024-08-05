@@ -30,7 +30,8 @@ struct flb_in_mqtt_config {
     char *tcp_port;                    /* TCP Port                    */
 
     flb_sds_t payload_key;             /* payload key */
-
+    size_t buffer_size;                /* connection buffer size      */
+    
     int msgp_len;                      /* msgpack data length         */
     char msgp[MQTT_MSGP_BUF_SIZE];     /* msgpack static buffer       */
     struct flb_input_instance *ins;    /* plugin input instance       */
