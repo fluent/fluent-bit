@@ -41,8 +41,8 @@
 #define strncasecmp _strnicmp
 #define strcasecmp _stricmp
 #define timegm _mkgmtime
+typedef __int64 off_t;
 #endif /* _MSC_VER */
 
 #endif
 #endif
-
