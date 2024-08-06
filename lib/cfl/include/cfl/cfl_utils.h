@@ -4,6 +4,12 @@
 #include <cfl/cfl_sds.h>
 #include <cfl/cfl_compat.h>
 
+#ifdef off_t
+#pragma message("off_t is defined in cfl_utils.h")
+#else
+#pragma message("off_t is not defined in cfl_utils.h")
+#endif
+
 struct cfl_split_entry {
     char *value;
     int len;
