@@ -19,7 +19,7 @@ Fluent Bit allows to collect log events or metrics from different sources, proce
 
 Fluent Bit comes with full SQL [Stream Processing](https://docs.fluentbit.io/manual/stream-processing/introduction) capabilities: data manipulation and analytics using SQL queries.
 
-Fluent Bit runs on x86_64, x86, arm32v7, and arm64v8 architectures.
+Fluent Bit runs on x86_64, x86, s390x, arm32v7, and arm64v8 architectures.
 
 
 
@@ -104,7 +104,7 @@ Fluent Bit is fully supported on Windows environments, get started with [these i
 
 #### Running on s390x
 
-Fluent Bit is supported on Linux on IBM Z(s390x), but the WASM and LUA filter plugins are not.
+Fluent Bit is supported on Linux on IBM Z(s390x), but the WASM filter plugin is not. For the LUA filter plugin, it is only supported when `libluajit` is installed on the system and fluent bit is built with `FLB_LUAJIT` and `FLB_PREFER_SYSTEM_LIB_LUAJIT` on.
 
 ### Plugins: Inputs, Filters and Outputs
 
