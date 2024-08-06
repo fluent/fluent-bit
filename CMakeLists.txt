@@ -178,6 +178,11 @@ option(FLB_HTTP_CLIENT_DEBUG  "Enable HTTP Client debug callbacks"   No)
 # Run ldconfig on package post-install
 option(FLB_RUN_LDCONFIG "Enable execution of ldconfig after installation" No)
 
+include(CMakeDependentOption)
+
+# Coverage types.
+cmake_dependent_option(FLB_COVERAGE_TYPE "Coverage type"    Yes "FLB_COVERAGE"  No)
+
 # Enable all features
 if(FLB_ALL)
   # Global
@@ -310,7 +315,11 @@ if(FLB_SMALL)
 endif()
 
 if(FLB_COVERAGE)
-  set(CMAKE_C_FLAGS "${CMAKE_C_FLAGS} -g -O0 --coverage -fprofile-arcs -ftest-coverage")
+  if("llvm" STREQUAL FLB_COVERAGE_TYPE)
+    set(CMAKE_C_FLAGS "${CMAKE_C_FLAGS} -g -O0 -fprofile-instr-generate -fcoverage-mapping")
+  elseif("gcov" STREQUAL FLB_COVERAGE_TYPE OR FLB_COVERAGE_TYPE)
+    set(CMAKE_C_FLAGS "${CMAKE_C_FLAGS} -g -O0 --coverage -fprofile-arcs -ftest-coverage")
+  endif()
   set(CMAKE_BUILD_TYPE "Debug")
 endif()
 
