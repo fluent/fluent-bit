@@ -9,6 +9,7 @@ set(src
   cfl_array.c
   cfl_variant.c
   cfl_checksum.c
+  cfl_utils.c
   )
 
 # Static Library

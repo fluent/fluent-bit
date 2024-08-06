@@ -43,6 +43,11 @@ static inline struct cfl_variant *cfl_array_fetch_by_index(struct cfl_array *arr
     return array->entries[position];
 }
 
+static inline size_t cfl_array_size(struct cfl_array *array)
+{
+    return array->entry_count;
+}
+
 int cfl_array_append(struct cfl_array *array, struct cfl_variant *value);
 int cfl_array_append_string(struct cfl_array *array, char *value);
 int cfl_array_append_string_s(struct cfl_array *array, char *str, size_t str_len, int referenced);

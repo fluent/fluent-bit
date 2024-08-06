@@ -19,7 +19,7 @@ jobs:
         format: [ rpm, deb ]
     steps:
       - uses: actions/checkout@v3
-      - uses: uraimo/run-on-arch-action@v2.3.0
+      - uses: uraimo/run-on-arch-action@v2.5.0
         name: Build the ${{matrix.format}} packages
         with:
           arch: aarch64
