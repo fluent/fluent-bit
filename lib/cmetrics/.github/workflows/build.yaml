@@ -23,6 +23,11 @@ jobs:
         with:
           submodules: true
 
+      - name: Set up with Developer Command Prompt for Microsoft Visual C++
+        uses: ilammy/msvc-dev-cmd@v1
+        with:
+          toolset: 14.29 # For using VS2019 C++
+
       - name: Build on ${{ matrix.os }} with vs-2019
         run: |
           .\scripts\win_build.bat
@@ -39,10 +44,11 @@ jobs:
     steps:
       - name: Set up base image dependencies
         run: |
+          sed -i -e "s/^mirrorlist=http:\/\/mirrorlist.centos.org/#mirrorlist=http:\/\/mirrorlist.centos.org/g" /etc/yum.repos.d/CentOS-Base.repo
+          sed -i -e "s/^#baseurl=http:\/\/mirror.centos.org/baseurl=http:\/\/vault.centos.org/g" /etc/yum.repos.d/CentOS-Base.repo
           yum -y update && \
           yum install -y ca-certificates cmake gcc gcc-c++ git make wget && \
-          wget http://dl.fedoraproject.org/pub/epel/epel-release-latest-7.noarch.rpm && \
-          rpm -ivh epel-release-latest-7.noarch.rpm && \
+          yum install -y epel-release
           yum install -y cmake3
         shell: bash
 
