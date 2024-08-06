@@ -200,7 +200,7 @@ static int parse_uint64(const char *in, uint64_t *out)
     int64_t val;
 
     errno = 0;
-    val = strtol(in, &end, 10);
+    val = strtoll(in, &end, 10);
     if (end == in || *end != 0 || errno)  {
         return -1;
     }
