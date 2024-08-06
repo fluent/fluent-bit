@@ -48,7 +48,7 @@ int mqtt_conn_event(void *data)
     event = &connection->event;
 
     if (event->mask & MK_EVENT_READ) {
-        available = sizeof(conn->buf) - conn->buf_len;
+        available = conn->buf_size - conn->buf_len;
 
         bytes = flb_io_net_read(connection,
                                 (void *) &conn->buf[conn->buf_len],
@@ -93,6 +93,16 @@ struct mqtt_conn *mqtt_conn_add(struct flb_connection *connection,
         return NULL;
     }
 
+    conn->buf = flb_calloc(ctx->buffer_size, 1);
+
+    if (conn->buf == NULL) {
+        flb_errno();
+        flb_free(conn);
+        return NULL;
+    }
+
+    conn->buf_size = ctx->buffer_size;
+
     conn->connection = connection;
 
     /* Set data for the event-loop */
@@ -136,6 +146,10 @@ int mqtt_conn_del(struct mqtt_conn *conn)
 
     /* Release resources */
     mk_list_del(&conn->_head);
+
+    if (conn->buf != NULL) {
+        flb_free(conn->buf);
+    }
 
     flb_free(conn);
 

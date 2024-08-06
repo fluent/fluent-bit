@@ -144,6 +144,11 @@ static struct flb_config_map config_map[] = {
      0, FLB_TRUE, offsetof(struct flb_in_mqtt_config, payload_key),
      "Key where the payload will be preserved"
     },
+    {
+     FLB_CONFIG_MAP_SIZE, "buffer_size", MQTT_CONNECTION_DEFAULT_BUFFER_SIZE,
+     0, FLB_TRUE, offsetof(struct flb_in_mqtt_config, buffer_size),
+     "Maximum payload size"
+    },
     /* EOF */	
     {0}	
 };
