@@ -39,10 +39,11 @@ jobs:
     steps:
       - name: Set up base image dependencies
         run: |
+          sed -i -e "s/^mirrorlist=http:\/\/mirrorlist.centos.org/#mirrorlist=http:\/\/mirrorlist.centos.org/g" /etc/yum.repos.d/CentOS-Base.repo
+          sed -i -e "s/^#baseurl=http:\/\/mirror.centos.org/baseurl=http:\/\/vault.centos.org/g" /etc/yum.repos.d/CentOS-Base.repo
           yum -y update && \
           yum install -y ca-certificates cmake curl-devel gcc gcc-c++ git make wget && \
-          wget http://dl.fedoraproject.org/pub/epel/epel-release-latest-7.noarch.rpm && \
-          rpm -ivh epel-release-latest-7.noarch.rpm && \
+          yum install -y epel-release
           yum install -y cmake3
         shell: bash
 
