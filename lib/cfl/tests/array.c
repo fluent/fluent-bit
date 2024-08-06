@@ -18,7 +18,6 @@
  */
 
 #include <cfl/cfl.h>
-
 #include <float.h>
 #include <math.h>
 
