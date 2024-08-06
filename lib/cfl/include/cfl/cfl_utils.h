@@ -1,6 +1,7 @@
 #ifndef CFL_UTILS_H
 #define CFL_UTILS_H
 
+#include <sys/types.h> /* off_t */
 #include <cfl/cfl_sds.h>
 #include <cfl/cfl_compat.h>
 
