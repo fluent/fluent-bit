@@ -18,14 +18,20 @@
  */
 
 #include <cfl/cfl.h>
+#include "cfl_tests_internal.h"
 
-int cfl_init()
+static void test_version()
 {
-    return 0;
+    char *v;
+
+    v = cfl_version();
+    TEST_CHECK(v != NULL);
+    TEST_CHECK(strlen(v) >= 5);
+
+    printf("CFL VERSION => '%s'\n", v);
 }
 
-char *cfl_version()
-{
-    return CFL_VERSION_STR;
-}
-
+TEST_LIST = {
+    { "version" , test_version },
+    { 0 }
+};

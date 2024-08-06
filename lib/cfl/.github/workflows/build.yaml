@@ -7,6 +7,7 @@ on:
     branches:
       - master
     types: [opened, reopened, synchronize]
+
 jobs:
   build-windows:
     name: Build sources on amd64 for ${{ matrix.os }}
@@ -57,13 +58,17 @@ jobs:
     name: CentOS 7 build to confirm no issues once used downstream
     runs-on: ubuntu-latest
     container: centos:7
+    env:
+      # workaround required for checkout@v3, https://github.com/actions/checkout/issues/1590
+      ACTIONS_ALLOW_USE_UNSECURE_NODE_VERSION: true
     steps:
       - name: Set up base image dependencies
         run: |
+          sed -i -e "s/^mirrorlist=http:\/\/mirrorlist.centos.org/#mirrorlist=http:\/\/mirrorlist.centos.org/g" /etc/yum.repos.d/CentOS-Base.repo
+          sed -i -e "s/^#baseurl=http:\/\/mirror.centos.org/baseurl=http:\/\/vault.centos.org/g" /etc/yum.repos.d/CentOS-Base.repo
           yum -y update
           yum install -y ca-certificates cmake gcc gcc-c++ make wget
-          wget http://dl.fedoraproject.org/pub/epel/epel-release-latest-7.noarch.rpm
-          rpm -ivh epel-release-latest-7.noarch.rpm
+          yum install -y epel-release
           yum install -y cmake3
         shell: bash
 
@@ -103,7 +108,7 @@ jobs:
     steps:
       - uses: actions/checkout@v3
       - name: Build on ${{ matrix.os }} with ${{ matrix.compiler }}
-        uses: uraimo/run-on-arch-action@v2.3.0
+        uses: uraimo/run-on-arch-action@v2.5.0
         with:
           arch: aarch64
           distro: ubuntu20.04
