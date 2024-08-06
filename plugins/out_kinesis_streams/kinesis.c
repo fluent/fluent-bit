@@ -113,6 +113,11 @@ static int cb_kinesis_init(struct flb_output_instance *ins,
         ctx->custom_endpoint = FLB_FALSE;
     }
 
+    tmp = flb_output_get_property("port", ins);
+    if (tmp) {
+        ctx->port = tmp;
+    }
+
     tmp = flb_output_get_property("sts_endpoint", ins);
     if (tmp) {
         ctx->sts_endpoint = (char *) tmp;
@@ -255,7 +260,7 @@ static int cb_kinesis_init(struct flb_output_instance *ins,
     ctx->kinesis_client->region = (char *) ctx->region;
     ctx->kinesis_client->retry_requests = ctx->retry_requests;
     ctx->kinesis_client->service = "kinesis";
-    ctx->kinesis_client->port = 443;
+    ctx->kinesis_client->port = ctx->port;
     ctx->kinesis_client->flags = 0;
     ctx->kinesis_client->proxy = NULL;
     ctx->kinesis_client->static_headers = &content_type_header;
@@ -438,6 +443,12 @@ static struct flb_config_map config_map[] = {
      FLB_CONFIG_MAP_STR, "endpoint", NULL,
      0, FLB_FALSE, 0,
      "Specify a custom endpoint for the Kinesis API"
+    },
+
+    {
+     FLB_CONFIG_MAP_INT, "port", 443,
+     0, FLB_FALSE, 0,
+     "Specify a port for the Kinesis API"
     },
 
     {
