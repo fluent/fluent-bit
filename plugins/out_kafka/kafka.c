@@ -105,7 +105,7 @@ int produce_message(struct flb_time *tm, msgpack_object *map,
     msgpack_packer mp_pck;
     msgpack_object key;
     msgpack_object val;
-    flb_sds_t s;
+    flb_sds_t s = NULL;
 
 #ifdef FLB_HAVE_AVRO_ENCODER
     // used to flag when a buffer needs to be freed for avro
