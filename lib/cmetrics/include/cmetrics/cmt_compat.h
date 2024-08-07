@@ -25,6 +25,28 @@
 #include <windows.h>
 #endif
 
+/* This function is copied from monkey/monkey.
+   https://github.com/monkey/monkey/blob/2567a70912ed7a68d9e75dca3cf22d3927fea99a/mk_core/deps/libevent/evdns.c#L3323 */
+static inline char *
+cmt_platform_strtok_r(char *s, const char *delim, char **state) {
+    char *cp, *start;
+    start = cp = s ? s : *state;
+    if (!cp)
+        return NULL;
+    while (*cp && !strchr(delim, *cp))
+        ++cp;
+    if (!*cp) {
+        if (cp == start)
+            return NULL;
+        *state = NULL;
+        return start;
+    } else {
+        *cp++ = '\0';
+        *state = cp;
+        return start;
+    }
+}
+
 static inline struct tm *cmt_platform_gmtime_r(const time_t *timep, struct tm *result)
 {
 #ifdef CMT_HAVE_GMTIME_S

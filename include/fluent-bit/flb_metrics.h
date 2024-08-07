@@ -39,6 +39,7 @@
 #include <cmetrics/cmt_encode_msgpack.h>
 #include <cmetrics/cmt_encode_splunk_hec.h>
 #include <cmetrics/cmt_encode_cloudwatch_emf.h>
+#include <cmetrics/cmt_decode_statsd.h>
 #include <cmetrics/cmt_filter.h>
 
 /* Metrics IDs for general purpose (used by core and Plugins */
