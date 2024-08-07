@@ -630,6 +630,7 @@ static int check_ping(struct flb_input_instance *ins,
     if (o.type != MSGPACK_OBJECT_STR) {
         flb_plg_error(ins, "Invalid password_digest type message");
         flb_free(serverside);
+        flb_free(hostname);
         msgpack_unpacked_destroy(&result);
         return -1;
     }
