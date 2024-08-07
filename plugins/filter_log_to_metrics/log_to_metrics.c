@@ -453,6 +453,8 @@ static int cb_log_to_metrics_init(struct flb_filter_instance *f_ins,
     flb_sds_t tmp;
     char metric_description[MAX_METRIC_LENGTH];
     char metric_name[MAX_METRIC_LENGTH];
+    char metric_namespace[MAX_METRIC_LENGTH];
+    char metric_subsystem[MAX_METRIC_LENGTH];
     char value_field[MAX_METRIC_LENGTH];
     struct flb_input_instance *input_ins;
     int label_count;
@@ -556,6 +558,17 @@ static int cb_log_to_metrics_init(struct flb_filter_instance *f_ins,
         return -1;
     }
     snprintf(metric_name, sizeof(metric_name) - 1, "%s", ctx->metric_name);
+    snprintf(metric_namespace, sizeof(metric_namespace) - 1, "%s", ctx->metric_namespace);
+
+    /* Check property subsystem name */
+    if (ctx->metric_subsystem == NULL || strlen(ctx->metric_subsystem) == 0) {
+        snprintf(metric_subsystem, sizeof(metric_subsystem) - 1, "%s",
+                 tmp);
+    }
+    else {
+        snprintf(metric_subsystem, sizeof(metric_subsystem) - 1, "%s",
+                 ctx->metric_subsystem);
+    }
 
     /* Check property metric description */
     if (ctx->metric_description == NULL ||
@@ -602,17 +615,17 @@ static int cb_log_to_metrics_init(struct flb_filter_instance *f_ins,
     /* Depending on mode create different types of cmetrics metrics */
     switch (ctx->mode) {
         case FLB_LOG_TO_METRICS_COUNTER:
-            ctx->c = cmt_counter_create(ctx->cmt, "log_metric", "counter",
+            ctx->c = cmt_counter_create(ctx->cmt, metric_namespace, metric_subsystem,
                                    metric_name, metric_description,
                                    label_count, ctx->label_keys);
             break;
         case FLB_LOG_TO_METRICS_GAUGE:
-            ctx->g = cmt_gauge_create(ctx->cmt, "log_metric", "gauge",
+            ctx->g = cmt_gauge_create(ctx->cmt, metric_namespace, metric_subsystem,
                                       metric_name, metric_description,
                                       label_count, ctx->label_keys);
             break;
         case FLB_LOG_TO_METRICS_HISTOGRAM:
-            ctx->h = cmt_histogram_create(ctx->cmt, "log_metric", "histogram",
+            ctx->h = cmt_histogram_create(ctx->cmt, metric_namespace, metric_subsystem,
                                    metric_name, metric_description,
                                    ctx->histogram_buckets,
                                    label_count, ctx->label_keys);
@@ -623,12 +636,43 @@ static int cb_log_to_metrics_init(struct flb_filter_instance *f_ins,
             return -1;
     }
 
-    input_ins = flb_input_new(config, "emitter", NULL, FLB_FALSE);
-    if (!input_ins) {
-        flb_plg_error(f_ins, "cannot create metrics emitter instance");
+    tmp = (char *) flb_filter_get_property("emitter_name", f_ins);
+    /* If emitter_name is not set, use the default name */
+    if (tmp == NULL) {
+        tmp = (char *) flb_filter_name(f_ins);
+        ctx->emitter_name = flb_sds_create_size(64);
+        ctx->emitter_name = flb_sds_printf(&ctx->emitter_name, "emitter_for_%s", tmp);
+    }
+    else {
+        ctx->emitter_name = flb_sds_create(tmp);
+    }
+
+    ret = flb_input_name_exists(ctx->emitter_name, config);
+    if (ret == FLB_TRUE) {
+        flb_plg_error(f_ins, "emitter_name '%s' already exists",
+                      ctx->emitter_name);
+        flb_sds_destroy(ctx->emitter_name);
         log_to_metrics_destroy(ctx);
         return -1;
     }
+    input_ins = flb_input_new(config, "emitter", NULL, FLB_FALSE);
+    if (!input_ins) {
+        flb_plg_error(f_ins, "cannot create metrics emitter instance");
+        flb_sds_destroy(ctx->emitter_name);
+        log_to_metrics_destroy(ctx);
+        return -1;
+    }
+    /* Set the alias for emitter */
+    ret = flb_input_set_property(input_ins, "alias", ctx->emitter_name);
+    if (ret == -1) {
+        flb_plg_warn(ctx->ins,
+                     "cannot set emitter_name");
+        flb_sds_destroy(ctx->emitter_name);
+        log_to_metrics_destroy(ctx);
+        return -1;
+    }
+
+    flb_sds_destroy(ctx->emitter_name);
 
     /* Set the storage type for emitter */
     ret = flb_input_set_property(input_ins, "storage.type", "memory");
@@ -636,6 +680,11 @@ static int cb_log_to_metrics_init(struct flb_filter_instance *f_ins,
         flb_plg_error(f_ins, "cannot set storage type for emitter instance");
         log_to_metrics_destroy(ctx);
         return -1;
+    }
+
+    /* Set the emitter_mem_buf_limit */
+    if(ctx->emitter_mem_buf_limit > 0) {
+        input_ins->mem_buf_limit = ctx->emitter_mem_buf_limit;
     }
 
     /* Initialize emitter plugin */
@@ -921,6 +970,19 @@ static struct flb_config_map config_map[] = {
      "Name of metric"
     },
     {
+     FLB_CONFIG_MAP_STR, "metric_namespace",
+     DEFAULT_LOG_TO_METRICS_NAMESPACE,
+     FLB_FALSE, FLB_TRUE,
+     offsetof(struct log_to_metrics_ctx, metric_namespace),
+     "Namespace of the metric"
+    },
+    {
+     FLB_CONFIG_MAP_STR, "metric_subsystem",NULL,
+     FLB_FALSE, FLB_TRUE,
+     offsetof(struct log_to_metrics_ctx, metric_subsystem),
+     "Subsystem of the metric"
+    },
+    {
      FLB_CONFIG_MAP_STR, "metric_description", NULL,
      FLB_FALSE, FLB_TRUE,
      offsetof(struct log_to_metrics_ctx, metric_description),
@@ -952,6 +1014,18 @@ static struct flb_config_map config_map[] = {
      offsetof(struct log_to_metrics_ctx, tag),
      "Metric Tag"
     },
+    {
+     FLB_CONFIG_MAP_STR, "emitter_name", NULL,
+     FLB_FALSE, FLB_TRUE,
+     offsetof(struct log_to_metrics_ctx, emitter_name), NULL
+    },
+    {
+     FLB_CONFIG_MAP_SIZE, "emitter_mem_buf_limit", FLB_MEM_BUF_LIMIT_DEFAULT,
+     FLB_FALSE, FLB_TRUE,
+     offsetof(struct log_to_metrics_ctx, emitter_mem_buf_limit),
+     "set a buffer limit to restrict memory usage of metrics emitter"
+    },
+
     {0}
 };
 

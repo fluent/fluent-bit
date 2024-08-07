@@ -279,7 +279,7 @@ static int cmt_regex_exclude(void *ctx, const char *str, size_t slen)
 static inline int selector_metrics_process_fqname(struct cmt *cmt, struct cmt *out_cmt,
                                                   struct selector_ctx *ctx)
 {
-    int ret;
+    int ret = -1;
     int found = FLB_FALSE;
     struct cmt *filtered = NULL;
     int flags = 0;

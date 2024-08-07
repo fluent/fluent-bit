@@ -74,7 +74,7 @@ static int process_message(struct flb_in_kafka_config *ctx,
     if (ret == FLB_EVENT_ENCODER_SUCCESS) {
         if (rkm->rkt) {
             ret = flb_log_event_encoder_append_body_cstring(log_encoder,
-                                                            rd_kafka_topic_name(rkm->rkt));
+                                                            (char *) rd_kafka_topic_name(rkm->rkt));
         }
         else {
             ret = flb_log_event_encoder_append_body_null(log_encoder);
@@ -100,7 +100,7 @@ static int process_message(struct flb_in_kafka_config *ctx,
     if (ret == FLB_EVENT_ENCODER_SUCCESS) {
         if (rkm->err) {
             ret = flb_log_event_encoder_append_body_cstring(log_encoder,
-                                                            rd_kafka_message_errstr(rkm));
+                                                            (char *) rd_kafka_message_errstr(rkm));
         }
         else {
             ret = flb_log_event_encoder_append_body_null(log_encoder);
@@ -217,7 +217,7 @@ static int in_kafka_init(struct flb_input_instance *ins,
     struct flb_in_kafka_config *ctx;
     rd_kafka_conf_t *kafka_conf = NULL;
     rd_kafka_topic_partition_list_t *kafka_topics = NULL;
-    rd_kafka_resp_err_t err;
+    rd_kafka_resp_err_t err = RD_KAFKA_RESP_ERR_NO_ERROR;
     rd_kafka_conf_res_t res;
     char errstr[512];
     (void) data;

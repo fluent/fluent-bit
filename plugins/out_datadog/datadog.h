@@ -27,12 +27,12 @@
 #define FLB_DATADOG_DEFAULT_PORT      443
 #define FLB_DATADOG_DEFAULT_TIME_KEY  "timestamp"
 #define FLB_DATADOG_DEFAULT_TAG_KEY   "tagkey"
+#define FLB_DATADOG_DEFAULT_LOG_KEY   "log"
 #define FLB_DATADOG_DD_HOSTNAME_KEY   "hostname"
 #define FLB_DATADOG_DD_SOURCE_KEY     "ddsource"
 #define FLB_DATADOG_DD_SERVICE_KEY    "service"
 #define FLB_DATADOG_DD_TAGS_KEY       "ddtags"
 #define FLB_DATADOG_DD_MESSAGE_KEY    "message"
-#define FLB_DATADOG_DD_LOG_KEY        "log"
 
 #define FLB_DATADOG_REMAP_PROVIDER    "ecs"
 #define FLB_DATADOG_TAG_SEPERATOR     ","

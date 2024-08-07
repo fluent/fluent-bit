@@ -45,8 +45,9 @@ static int setup_hec_tokens(struct flb_splunk *ctx)
     struct mk_list *head = NULL;
     struct mk_list *kvs = NULL;
     struct flb_split_entry *cur = NULL;
-    flb_sds_t   auth_header;
+    flb_sds_t   auth_header = NULL;
     struct flb_splunk_tokens *splunk_token;
+    flb_sds_t credential = NULL;
 
     raw_token = flb_input_get_property("splunk_token", ctx->ins);
     if (raw_token) {
@@ -64,7 +65,19 @@ static int setup_hec_tokens(struct flb_splunk *ctx)
                 goto error;
             }
 
-            ret = flb_sds_cat_safe(&auth_header, cur->value, strlen(cur->value));
+            credential = flb_sds_create_len(cur->value, strlen(cur->value));
+            if (credential == NULL) {
+                flb_plg_warn(ctx->ins, "error on flb_sds allocation");
+                continue;
+            }
+
+            ret = flb_sds_trim(credential);
+            if (ret == -1) {
+                flb_plg_warn(ctx->ins, "error on trimming for a credential candidate");
+                goto error;
+            }
+
+            ret = flb_sds_cat_safe(&auth_header, credential, flb_sds_len(credential));
             if (ret < 0) {
                 flb_plg_error(ctx->ins, "error on token generation");
                 goto error;
@@ -78,6 +91,9 @@ static int setup_hec_tokens(struct flb_splunk *ctx)
             }
 
             splunk_token->header = auth_header;
+            splunk_token->length = flb_sds_len(auth_header);
+
+            flb_sds_destroy(credential);
 
             /* Link to parent list */
             mk_list_add(&splunk_token->_head, &ctx->auth_tokens);
@@ -95,6 +111,9 @@ split_error:
 error:
     if (kvs != NULL) {
         flb_utils_split_free(kvs);
+    }
+    if (credential != NULL) {
+        flb_sds_destroy(credential);
     }
     return -1;
 }

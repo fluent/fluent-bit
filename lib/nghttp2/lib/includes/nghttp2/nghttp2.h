@@ -440,7 +440,12 @@ typedef enum {
    * exhaustion on server side to send these frames forever and does
    * not read network.
    */
-  NGHTTP2_ERR_FLOODED = -904
+  NGHTTP2_ERR_FLOODED = -904,
+  /**
+   * When a local endpoint receives too many CONTINUATION frames
+   * following a HEADER frame.
+   */
+  NGHTTP2_ERR_TOO_MANY_CONTINUATIONS = -905,
 } nghttp2_error;
 
 /**

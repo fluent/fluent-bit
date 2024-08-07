@@ -393,28 +393,33 @@ buffer_error:
 
 PWSTR get_description(EVT_HANDLE handle, LANGID langID, unsigned int *message_size)
 {
-    WCHAR *buffer[EVENT_PROVIDER_NAME_LENGTH];
     PEVT_VARIANT values = NULL;
-    DWORD buffer_used = 0;
+    DWORD buffer_size = 0;
+    DWORD buffer_size_used = 0;
     DWORD status = ERROR_SUCCESS;
     DWORD count = 0;
     WCHAR *message = NULL;
     EVT_HANDLE metadata = NULL;
 
-    PCWSTR properties[] = { L"Event/System/Provider/@Name" };
+    PCWSTR properties[] = { L"Event/System/Provider/@Name", L"Event/RenderingInfo/Message" };
     EVT_HANDLE context =
-            EvtCreateRenderContext(1, properties, EvtRenderContextValues);
+            EvtCreateRenderContext(_countof(properties), properties,
+                                   EvtRenderContextValues);
     if (context == NULL) {
         flb_error("Failed to create renderContext");
         goto cleanup;
     }
 
+    // Get the size of the buffer
+    EvtRender(context, handle, EvtRenderEventValues, 0, NULL, &buffer_size, &count);
+    values = (PEVT_VARIANT)flb_malloc(buffer_size);
+
     if (EvtRender(context,
                   handle,
                   EvtRenderEventValues,
-                  EVENT_PROVIDER_NAME_LENGTH,
-                  buffer,
-                  &buffer_used,
+                  buffer_size,
+                  values,
+                  &buffer_size_used,
                   &count) != FALSE){
         status = ERROR_SUCCESS;
     }
@@ -426,18 +431,25 @@ PWSTR get_description(EVT_HANDLE handle, LANGID langID, unsigned int *message_si
         flb_error("failed to query RenderContextValues");
         goto cleanup;
     }
-    values = (PEVT_VARIANT)buffer;
 
-    /* Metadata can be NULL because forwarded events do not have an
-     * associated publisher metadata. */
-    metadata = EvtOpenPublisherMetadata(
-            NULL, // TODO: Remote handle
-            values[0].StringVal,
-            NULL,
-            MAKELCID(langID, SORT_DEFAULT),
-            0);
+    /* For non forwarded events, we need to determine the
+     * corresponding metadata. */
+    if ((values[1].Type & EVT_VARIANT_TYPE_MASK) == EvtVarTypeNull) {
+        /* Metadata can be NULL because some of the events do not have an
+         * associated publisher metadata. */
+        metadata = EvtOpenPublisherMetadata(
+                NULL, // TODO: Remote handle
+                values[0].StringVal,
+                NULL,
+                MAKELCID(langID, SORT_DEFAULT),
+                0);
 
-    message = get_message(metadata, handle, message_size);
+        message = get_message(metadata, handle, message_size);
+    }
+    else if ((values[1].Type & EVT_VARIANT_TYPE_MASK) == EvtVarTypeString) {
+        /* Forwarded events contain RenderingInfo element */
+        message = _wcsdup(values[1].StringVal);
+    }
 
 cleanup:
     if (context) {
@@ -446,6 +458,10 @@ cleanup:
 
     if (metadata) {
         EvtClose(metadata);
+    }
+
+    if (values) {
+        flb_free(values);
     }
 
     return message;
