@@ -31,6 +31,9 @@
  * libmonkey exposes compat macros for <unistd.h>, which some platforms lack,
  * so include the header here.
  */
+#include <stdint.h>
+#include <fluent-bit/flb_endian.h>
+
 #include <monkey/mk_core.h>
 
 #ifdef FLB_SYSTEM_WINDOWS
@@ -141,6 +144,67 @@ static inline int usleep(LONGLONG usec)
 
 #ifdef FLB_HAVE_UNIX_SOCKET
 #include <sys/un.h>
+#endif
+
+#ifdef FLB_ENFORCE_ALIGNMENT
+
+/* Please do not modify these functions without a very solid understanding of 
+ * the reasoning behind.
+ *
+ * These functions deliverately abuse the volatile qualifier in order to prevent
+ * the compiler from mistakenly optimizing the memory accesses into a singled 
+ * DWORD read (which in some architecture and compiler combinations it does regardless 
+ * of the flags).
+ * 
+ * The reason why we decided to include this is that according to PR 9096, 
+ * when the linux kernel is built and configured to pass through memory alignment 
+ * exceptions rather than remediate them fluent-bit generates one while accessing a 
+ * packed field in the msgpack wire format (which we cannot modify due to interoperability 
+ * reasons).
+ * 
+ * Because of this, a potential patch using memcpy was suggested, however, this patch did 
+ * not yield consistent machine code accross architecture and compiler versions with most 
+ * of them still generating optimized misaligned memory access instructions.
+ * 
+ * Keep in mind that these functions transform a single memory read into seven plus a few
+ * writes as this was the only way to prevent the compiler from mistakenly optimizing the 
+ * operations.
+ * 
+ * In most cases, FLB_ENFORCE_ALIGNMENT should not be enabled and the operating system 
+ * kernel should be left to handle these scenarios, however, this option is present for 
+ * those users who deliverately and knowingly choose to set up their operating system in 
+ * a way that requires it.
+ * 
+ */
+
+#if FLB_BYTE_ORDER == FLB_LITTLE_ENDIAN
+static inline uint32_t __attribute__((optimize("-O0"))) FLB_ALIGNED_DWORD_READ(unsigned char *source) {
+    volatile uint32_t result;
+
+    result  = ((uint32_t)(((uint8_t *) source)[0]) <<  0);
+    result |= ((uint32_t)(((uint8_t *) source)[1]) <<  8);
+    result |= ((uint32_t)(((uint8_t *) source)[2]) << 16);
+    result |= ((uint32_t)(((uint8_t *) source)[3]) << 24);
+
+    return result;
+}
+#else
+static inline uint32_t __attribute__((optimize("-O0"))) FLB_ALIGNED_DWORD_READ(unsigned char *source) {
+    volatile uint32_t result;
+
+    result  = ((uint32_t)(((uint8_t *) source)[3]) <<  0);
+    result |= ((uint32_t)(((uint8_t *) source)[2]) <<  8);
+    result |= ((uint32_t)(((uint8_t *) source)[1]) << 16);
+    result |= ((uint32_t)(((uint8_t *) source)[0]) << 24);
+
+    return result;
+}
+#endif
+
+#else
+static inline uint32_t FLB_ALIGNED_DWORD_READ(unsigned char *source) {
+    return *((uint32_t *) source);
+}
 #endif
 
 #endif
