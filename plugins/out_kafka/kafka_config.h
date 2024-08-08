@@ -34,6 +34,7 @@
 #ifdef FLB_HAVE_AVRO_ENCODER
 #define FLB_KAFKA_FMT_AVRO            3
 #endif
+#define FLB_KAFKA_FMT_RAW             4
 #define FLB_KAFKA_TS_KEY              "@timestamp"
 #define FLB_KAFKA_QUEUE_FULL_RETRIES  "10"
 
@@ -79,6 +80,9 @@ struct flb_out_kafka {
 
     int message_key_field_len;
     char *message_key_field;
+
+    int raw_log_key_len;
+    char *raw_log_key;
 
     /* Gelf Keys */
     struct flb_gelf_fields gelf_fields;
