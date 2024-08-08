@@ -83,21 +83,36 @@ static inline void _mk_event_loop_destroy(struct mk_event_ctx *ctx)
 static inline int _mk_event_add(struct mk_event_ctx *ctx, int fd,
                                 int type, uint32_t events, void *data)
 {
-    struct mk_event *event;
     int i;
+    int found = MK_FALSE;
+    struct mk_event *event;
 
     mk_bug(ctx == NULL);
     mk_bug(data == NULL);
 
-    /* Find an empty slot */
+    /* check if the event file descriptor is already being monitored */
     for (i = 0; i < ctx->queue_size; i++) {
         if (ctx->events[i] == NULL) {
+            continue;
+        }
+
+        if (ctx->events[i]->fd == fd) {
+            found = MK_TRUE;
             break;
         }
     }
 
-    if (i == ctx->queue_size) {
-        return -1;
+    if (found == MK_FALSE) {
+        /* Find an empty slot */
+        for (i = 0; i < ctx->queue_size; i++) {
+            if (ctx->events[i] == NULL) {
+                break;
+            }
+        }
+
+        if (i == ctx->queue_size) {
+            return -1;
+        }
     }
 
     event = (struct mk_event *) data;
