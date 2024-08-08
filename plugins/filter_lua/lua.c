@@ -428,17 +428,14 @@ static int pack_result (struct lua_filter *ctx, struct flb_time *ts,
     msgpack_unpacked_init(&result);
 
     ret = msgpack_unpack_next(&result, data, bytes, &off);
-
     if (ret != MSGPACK_UNPACK_SUCCESS) {
         msgpack_unpacked_destroy(&result);
 
         return FLB_FALSE;
     }
-
     if (result.data.type == MSGPACK_OBJECT_MAP) {
         ret = pack_record(ctx, log_encoder,
                           ts, metadata, &result.data);
-
         msgpack_unpacked_destroy(&result);
 
         if (ret != FLB_EVENT_ENCODER_SUCCESS) {
@@ -491,6 +488,8 @@ static int cb_lua_filter(const void *data, size_t bytes,
     struct flb_time t_orig;
     struct flb_time t;
     struct lua_filter *ctx = filter_context;
+    int i;
+    int array_size;
     /* Lua return values */
     int l_code;
     double l_timestamp;
@@ -499,6 +498,7 @@ static int cb_lua_filter(const void *data, size_t bytes,
     struct flb_log_event_encoder log_encoder;
     struct flb_log_event_decoder log_decoder;
     struct flb_log_event log_event;
+
 
     (void) f_ins;
     (void) i_ins;
@@ -525,140 +525,305 @@ static int cb_lua_filter(const void *data, size_t bytes,
         return FLB_FILTER_NOTOUCH;
     }
 
-    while ((ret = flb_log_event_decoder_next(
-                    &log_decoder,
-                    &log_event)) == FLB_EVENT_DECODER_SUCCESS) {
-        msgpack_sbuffer_init(&data_sbuf);
-        msgpack_packer_init(&data_pck, &data_sbuf, msgpack_sbuffer_write);
+    if (ctx->chunk_mode) {
+        if (ctx->time_as_table != FLB_TRUE) {
+            flb_plg_error(ctx->ins,
+                    "time_as_table needed in chunk_mode");
 
-        /* Get timestamp */
-        flb_time_copy(&t, &log_event.timestamp);
-        flb_time_copy(&t_orig, &log_event.timestamp);
+                    flb_log_event_decoder_destroy(&log_decoder);
+                    flb_log_event_encoder_destroy(&log_encoder);
 
-        /* Prepare function call, pass 3 arguments, expect 3 return values */
+                    return FLB_FILTER_NOTOUCH;
+        }
         lua_getglobal(ctx->lua->state, ctx->call);
+
+        /* Create Lua table outside the loop */
+        lua_createtable(ctx->lua->state, 0, 0);
+
+        /* Push all timestamp + record tuples into the table */
+        while ((ret = flb_log_event_decoder_next(
+                        &log_decoder,
+                        &log_event)) == FLB_EVENT_DECODER_SUCCESS) {
+
+                /* Copy the current timestamp */
+                flb_time_copy(&t, &log_event.timestamp);
+
+                /* Add record to be send to lua */
+                flb_lua_bulk_process(ctx->lua->state, &t, log_event.body, -2);
+            }
+        /* Push the tag to the lua table. Same for this whole chunk */
         lua_pushstring(ctx->lua->state, tag);
+        lua_insert(ctx->lua->state, -2);
 
-        /* Timestamp */
-        if (ctx->time_as_table == FLB_TRUE) {
-            flb_lua_pushtimetable(ctx->lua->state, &t);
-        }
-        else {
-            ts = flb_time_to_double(&t);
-            lua_pushnumber(ctx->lua->state, ts);
-        }
+            if (ctx->protected_mode) {
+                /* Prepare function call, pass tag + records, expect records */
+                ret = lua_pcall(ctx->lua->state, 2, 1, 0);
+                if (ret != 0) {
+                    flb_plg_error(ctx->ins, "error code %d: %s",
+                                ret, lua_tostring(ctx->lua->state, -1));
+                    lua_pop(ctx->lua->state, 1);
 
-        flb_lua_pushmsgpack(ctx->lua->state, log_event.body);
-        if (ctx->protected_mode) {
-            ret = lua_pcall(ctx->lua->state, 3, 3, 0);
-            if (ret != 0) {
-                flb_plg_error(ctx->ins, "error code %d: %s",
-                              ret, lua_tostring(ctx->lua->state, -1));
-                lua_pop(ctx->lua->state, 1);
+                    msgpack_sbuffer_destroy(&data_sbuf);
+                    flb_log_event_decoder_destroy(&log_decoder);
+                    flb_log_event_encoder_destroy(&log_encoder);
 
-                msgpack_sbuffer_destroy(&data_sbuf);
-                flb_log_event_decoder_destroy(&log_decoder);
-                flb_log_event_encoder_destroy(&log_encoder);
-
-                return FLB_FILTER_NOTOUCH;
-            }
-        }
-        else {
-            lua_call(ctx->lua->state, 3, 3);
-        }
-
-        /* Initialize Return values */
-        l_code = 0;
-        l_timestamp = ts;
-
-        flb_lua_tomsgpack(ctx->lua->state, &data_pck, 0, &ctx->l2cc);
-        lua_pop(ctx->lua->state, 1);
-
-        /* Lua table */
-        if (ctx->time_as_table == FLB_TRUE) {
-            if (lua_type(ctx->lua->state, -1) == LUA_TTABLE) {
-                /* Retrieve seconds */
-                lua_getfield(ctx->lua->state, -1, "sec");
-                t.tm.tv_sec = lua_tointeger(ctx->lua->state, -1);
-                lua_pop(ctx->lua->state, 1);
-
-                /* Retrieve nanoseconds */
-                lua_getfield(ctx->lua->state, -1, "nsec");
-                t.tm.tv_nsec = lua_tointeger(ctx->lua->state, -1);
-                lua_pop(ctx->lua->state, 2);
-            }
-            else {
-                flb_plg_error(ctx->ins, "invalid lua timestamp type returned");
-                t = t_orig;
-            }
-        }
-        else {
-            l_timestamp = (double) lua_tonumber(ctx->lua->state, -1);
-            lua_pop(ctx->lua->state, 1);
-        }
-
-        l_code = (int) lua_tointeger(ctx->lua->state, -1);
-        lua_pop(ctx->lua->state, 1);
-
-        if (l_code == -1) { /* Skip record */
-            msgpack_sbuffer_destroy(&data_sbuf);
-            continue;
-        }
-        else if (l_code == 1 || l_code == 2) { /* Modified, pack new data */
-            if (l_code == 1) {
-                if (ctx->time_as_table == FLB_FALSE) {
-                    flb_time_from_double(&t, l_timestamp);
+                    return FLB_FILTER_NOTOUCH;
                 }
             }
-            else if (l_code == 2) {
-                /* Keep the timestamp */
-                t = t_orig;
+            else {
+                /* Prepare function call, pass tag + records, expect records */
+                lua_call(ctx->lua->state, 2, 1);
             }
 
-            ret = pack_result(ctx, &t, log_event.metadata, &log_encoder,
-                              data_sbuf.data, data_sbuf.size);
+        if (lua_type(ctx->lua->state, -1) == LUA_TTABLE) {
+            array_size = lua_objlen(ctx->lua->state, -1);
+            for (i = 1; i <= array_size; i++) {
+                /* Retrieve each record entry from records table */
+                lua_rawgeti(ctx->lua->state, -1, i);
 
-            if (ret == FLB_FALSE) {
-                flb_plg_error(ctx->ins, "invalid table returned at %s(), %s",
-                              ctx->call, ctx->script);
-                msgpack_sbuffer_destroy(&data_sbuf);
+                if (lua_type(ctx->lua->state, -1) == LUA_TTABLE) {
+                    /* Retrieve timestamp */
+                    lua_getfield(ctx->lua->state, -1, "timestamp");
+                    if (lua_type(ctx->lua->state, -1) == LUA_TTABLE) {
+                        /* Retrieve seconds */
+                        lua_getfield(ctx->lua->state, -1, "sec");
+                        t.tm.tv_sec = lua_tointeger(ctx->lua->state, -1);
+                        lua_pop(ctx->lua->state, 1);
 
-                flb_log_event_decoder_destroy(&log_decoder);
-                flb_log_event_encoder_destroy(&log_encoder);
+                        /* Retrieve nsec */
+                        lua_getfield(ctx->lua->state, -1, "nsec");
+                        t.tm.tv_nsec = lua_tointeger(ctx->lua->state, -1);
+                        lua_pop(ctx->lua->state, 2);
 
-                return FLB_FILTER_NOTOUCH;
+                        flb_plg_debug(ctx->ins,
+                                    "Timestamp: sec=%ld, nsec=%ld",
+                                    (long)t.tm.tv_sec, (long)t.tm.tv_nsec);
+                    } else {
+                        flb_plg_error(ctx->ins,
+                                    "invalid field type returned. "
+                                    "Chunk will not be processed");
+                        flb_log_event_decoder_destroy(&log_decoder);
+                        flb_log_event_encoder_destroy(&log_encoder);
+                        return FLB_FILTER_NOTOUCH;
+                    }
+
+                    /* Retrieve record from table*/
+                    lua_getfield(ctx->lua->state, -1, "record");
+
+                    /* Check the type of 'record' field */
+                    if (lua_type(ctx->lua->state, -1) == LUA_TTABLE) {
+                        msgpack_sbuffer_init(&data_sbuf);
+                        msgpack_packer_init(&data_pck,
+                                    &data_sbuf,
+                                    msgpack_sbuffer_write);
+                        /* Create msgpack object for every record */
+                        flb_plg_debug(ctx->ins,
+                                    "Creating msgpack object for record");
+                        flb_lua_tomsgpack(ctx->lua->state,
+                                    &data_pck,
+                                    0,
+                                    &ctx->l2cc);
+                        ret = flb_log_event_encoder_begin_record(
+                                    &log_encoder);
+                        if ( ret != FLB_EVENT_ENCODER_SUCCESS) {
+                            flb_plg_error(ctx->ins,
+                                        "Failed to begin record. "
+                                        "Chunk will not be processed");
+                            msgpack_sbuffer_destroy(&data_sbuf);
+                            flb_log_event_decoder_destroy(&log_decoder);
+                            flb_log_event_encoder_destroy(&log_encoder);
+                            return FLB_FILTER_NOTOUCH;
+                        }
+                        ret = flb_log_event_encoder_set_timestamp(
+                                    &log_encoder, &t);
+                        if (ret != FLB_EVENT_ENCODER_SUCCESS) {
+                            flb_plg_error(ctx->ins,
+                                        "Failed to set timestamp. "
+                                        "Chunk will not be processed");
+                            msgpack_sbuffer_destroy(&data_sbuf);
+                            flb_log_event_decoder_destroy(&log_decoder);
+                            flb_log_event_encoder_destroy(&log_encoder);
+                            return FLB_FILTER_NOTOUCH;
+                        }
+                        ret = flb_log_event_encoder_set_body_from_raw_msgpack(
+                                    &log_encoder,
+                                    data_sbuf.data,
+                                    data_sbuf.size);
+                        if (ret != FLB_EVENT_ENCODER_SUCCESS) {
+                            flb_plg_error(ctx->ins,
+                                        "Failed to set body. "
+                                        "Chunk will not be processed");
+                            msgpack_sbuffer_destroy(&data_sbuf);
+                            flb_log_event_decoder_destroy(&log_decoder);
+                            flb_log_event_encoder_destroy(&log_encoder);
+                            return FLB_FILTER_NOTOUCH;
+                        }
+                        ret = flb_log_event_encoder_commit_record(
+                                    &log_encoder);
+                        if (ret != FLB_EVENT_ENCODER_SUCCESS) {
+                            flb_plg_error(ctx->ins,
+                                        "Failed to emit record. "
+                                        "Chunk will not be processed");
+                            msgpack_sbuffer_destroy(&data_sbuf);
+                            flb_log_event_decoder_destroy(&log_decoder);
+                            flb_log_event_encoder_destroy(&log_encoder);
+                            return FLB_FILTER_NOTOUCH;
+                        }
+
+                    msgpack_sbuffer_destroy(&data_sbuf);
+                        flb_plg_debug(ctx->ins,
+                        "Msgpack object created for record.");
+                    } else {
+                        flb_plg_error(ctx->ins,
+                        "invalid record field type returned");
+                    }
+
+                    lua_pop(ctx->lua->state, 1);
+                } else {
+                    flb_plg_error(ctx->ins,
+                        "invalid lua record entry type returned");
+                }
+
+                lua_pop(ctx->lua->state, 1);
             }
+        } else {
+            flb_plg_error(ctx->ins, "invalid lua table entry returned");
         }
-        else { /* Unexpected return code, keep original content */
-            /* Code 0 means Keep record, so we don't emit the warning */
-            if (l_code != 0) {
-                flb_plg_error(ctx->ins,
-                              "unexpected Lua script return code %i, "
-                              "original record will be kept." , l_code);
-            }
-
-            ret = flb_log_event_encoder_emit_raw_record(
-                    &log_encoder,
-                    log_decoder.record_base,
-                    log_decoder.record_length);
-
-            if (ret != FLB_EVENT_ENCODER_SUCCESS) {
-                flb_plg_error(ctx->ins,
-                              "Log event encoder error : %d", ret);
-            }
-        }
-
-        msgpack_sbuffer_destroy(&data_sbuf);
+                lua_pop(ctx->lua->state, 1);
     }
+    else {
+        while ((ret = flb_log_event_decoder_next(
+                        &log_decoder,
+                        &log_event)) == FLB_EVENT_DECODER_SUCCESS) {
+            msgpack_sbuffer_init(&data_sbuf);
+            msgpack_packer_init(&data_pck, &data_sbuf, msgpack_sbuffer_write);
 
+            /* Get timestamp */
+            flb_time_copy(&t, &log_event.timestamp);
+            flb_time_copy(&t_orig, &log_event.timestamp);
+
+            /* Prepare function call, pass 3 arguments, expect 3 return values */
+            lua_getglobal(ctx->lua->state, ctx->call);
+            lua_pushstring(ctx->lua->state, tag);
+
+            /* Timestamp */
+            if (ctx->time_as_table == FLB_TRUE) {
+                flb_lua_pushtimetable(ctx->lua->state, &t);
+            }
+            else {
+                ts = flb_time_to_double(&t);
+                lua_pushnumber(ctx->lua->state, ts);
+            }
+
+            flb_lua_pushmsgpack(ctx->lua->state, log_event.body);
+            if (ctx->protected_mode) {
+                ret = lua_pcall(ctx->lua->state, 3, 3, 0);
+                if (ret != 0) {
+                    flb_plg_error(ctx->ins, "error code %d: %s",
+                                ret, lua_tostring(ctx->lua->state, -1));
+                    lua_pop(ctx->lua->state, 1);
+
+                    msgpack_sbuffer_destroy(&data_sbuf);
+                    flb_log_event_decoder_destroy(&log_decoder);
+                    flb_log_event_encoder_destroy(&log_encoder);
+
+                    return FLB_FILTER_NOTOUCH;
+                }
+            }
+            else {
+                lua_call(ctx->lua->state, 3, 3);
+            }
+
+            /* Initialize Return values */
+            l_code = 0;
+            l_timestamp = ts;
+
+            flb_lua_tomsgpack(ctx->lua->state, &data_pck, 0, &ctx->l2cc);
+            lua_pop(ctx->lua->state, 1);
+
+            /* Lua table */
+            if (ctx->time_as_table == FLB_TRUE) {
+                if (lua_type(ctx->lua->state, -1) == LUA_TTABLE) {
+                    /* Retrieve seconds */
+                    lua_getfield(ctx->lua->state, -1, "sec");
+                    t.tm.tv_sec = lua_tointeger(ctx->lua->state, -1);
+                    lua_pop(ctx->lua->state, 1);
+
+                    /* Retrieve nanoseconds */
+                    lua_getfield(ctx->lua->state, -1, "nsec");
+                    t.tm.tv_nsec = lua_tointeger(ctx->lua->state, -1);
+                    lua_pop(ctx->lua->state, 2);
+                }
+                else {
+                    flb_plg_error(ctx->ins, "invalid lua timestamp type returned");
+                    t = t_orig;
+                }
+            }
+            else {
+                l_timestamp = (double) lua_tonumber(ctx->lua->state, -1);
+                lua_pop(ctx->lua->state, 1);
+            }
+
+            l_code = (int) lua_tointeger(ctx->lua->state, -1);
+            lua_pop(ctx->lua->state, 1);
+
+            if (l_code == -1) { /* Skip record */
+                msgpack_sbuffer_destroy(&data_sbuf);
+                continue;
+            }
+            else if (l_code == 1 || l_code == 2) { /* Modified, pack new data */
+                if (l_code == 1) {
+                    if (ctx->time_as_table == FLB_FALSE) {
+                        flb_time_from_double(&t, l_timestamp);
+                    }
+                }
+                else if (l_code == 2) {
+                    /* Keep the timestamp */
+                    t = t_orig;
+                }
+
+                ret = pack_result(ctx, &t, log_event.metadata, &log_encoder,
+                                data_sbuf.data, data_sbuf.size);
+
+                if (ret == FLB_FALSE) {
+                    flb_plg_error(ctx->ins, "invalid table returned at %s(), %s",
+                                ctx->call, ctx->script);
+                    msgpack_sbuffer_destroy(&data_sbuf);
+
+                    flb_log_event_decoder_destroy(&log_decoder);
+                    flb_log_event_encoder_destroy(&log_encoder);
+
+                    return FLB_FILTER_NOTOUCH;
+                }
+            }
+            else { /* Unexpected return code, keep original content */
+                /* Code 0 means Keep record, so we don't emit the warning */
+                if (l_code != 0) {
+                    flb_plg_error(ctx->ins,
+                                "unexpected Lua script return code %i, "
+                                "original record will be kept." , l_code);
+                }
+
+                ret = flb_log_event_encoder_emit_raw_record(
+                        &log_encoder,
+                        log_decoder.record_base,
+                        log_decoder.record_length);
+
+                if (ret != FLB_EVENT_ENCODER_SUCCESS) {
+                    flb_plg_error(ctx->ins,
+                                "Log event encoder error : %d", ret);
+                }
+            }
+
+            msgpack_sbuffer_destroy(&data_sbuf);
+        }
+    }
     if (ret == FLB_EVENT_DECODER_ERROR_INSUFFICIENT_DATA) {
         ret = FLB_EVENT_ENCODER_SUCCESS;
     }
-
     if (ret == FLB_EVENT_ENCODER_SUCCESS) {
         *out_buf   = log_encoder.output_buffer;
         *out_bytes = log_encoder.output_length;
-
         ret = FLB_FILTER_MODIFIED;
 
         flb_log_event_encoder_claim_internal_buffer_ownership(&log_encoder);
@@ -669,7 +834,6 @@ static int cb_lua_filter(const void *data, size_t bytes,
 
         ret = FLB_FILTER_NOTOUCH;
     }
-
     flb_log_event_decoder_destroy(&log_decoder);
     flb_log_event_encoder_destroy(&log_encoder);
 
@@ -721,6 +885,12 @@ static struct flb_config_map config_map[] = {
      0, FLB_TRUE, offsetof(struct lua_filter, protected_mode),
      "If enabled, Lua script will be executed in protected mode. "
      "It prevents to crash when invalid Lua script is executed."
+    },
+    {
+     FLB_CONFIG_MAP_BOOL, "chunk_mode", "false",
+     0, FLB_TRUE, offsetof(struct lua_filter, chunk_mode),
+     "If enabled, a whole chunk will be sent to Lua script as table. "
+     "It may be used for e.g. parallel execution inside Lua script."
     },
     {
      FLB_CONFIG_MAP_BOOL, "time_as_table", "false",
