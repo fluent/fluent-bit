@@ -48,14 +48,6 @@ static int configure(struct flb_out_lib_config *ctx,
         }
     }
 
-    tmp = flb_output_get_property("max_records", ins);
-    if (tmp) {
-        ctx->max_records = atoi(tmp);
-    }
-    else {
-        ctx->max_records = 0;
-    }
-
     return 0;
 }
 
@@ -76,6 +68,7 @@ static int out_lib_init(struct flb_output_instance *ins,
 {
     struct flb_out_lib_config *ctx = NULL;
     struct flb_lib_out_cb *cb_data = data;
+    int ret;
     (void) config;
 
     ctx = flb_calloc(1, sizeof(struct flb_out_lib_config));
@@ -84,6 +77,12 @@ static int out_lib_init(struct flb_output_instance *ins,
         return -1;
     }
     ctx->ins = ins;
+
+    ret = flb_output_config_map_set(ins, (void *) ctx);
+    if (ret == -1) {
+        flb_free(ctx);
+        return -1;
+    }
 
     if (cb_data) {
         /* Set user callback and data */
@@ -211,6 +210,22 @@ static int out_lib_exit(void *data, struct flb_config *config)
     return 0;
 }
 
+static struct flb_config_map config_map[] = {
+    {
+     FLB_CONFIG_MAP_STR, "format", FLB_OUT_LIB_FMT_MSGPACK,
+     0, FLB_FALSE, 0,
+     "Specifies the output format. Supported formats are msgpack or json."
+    },
+    {
+     FLB_CONFIG_MAP_INT, "max_records", "0",
+     0, FLB_TRUE, offsetof(struct flb_out_lib_config, max_records),
+     "Set a limit of number to execute callback."
+    },
+
+    /* EOF */
+    {0}
+};
+
 struct flb_output_plugin out_lib_plugin = {
     .name         = "lib",
     .description  = "Library mode Output",
@@ -219,4 +234,5 @@ struct flb_output_plugin out_lib_plugin = {
     .cb_exit      = out_lib_exit,
     .event_type   = FLB_OUTPUT_LOGS | FLB_OUTPUT_METRICS,
     .flags        = 0,
+    .config_map   = config_map
 };
