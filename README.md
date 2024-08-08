@@ -19,7 +19,7 @@ Fluent Bit allows to collect log events or metrics from different sources, proce
 
 Fluent Bit comes with full SQL [Stream Processing](https://docs.fluentbit.io/manual/stream-processing/introduction) capabilities: data manipulation and analytics using SQL queries.
 
-Fluent Bit runs on x86_64, x86, s390x, arm32v7, and arm64v8 architectures.
+Fluent Bit runs on x86_64, x86, arm32v7, and arm64v8 architectures.
 
 
 
