@@ -575,6 +575,40 @@
     goto done; \
   }
 
+#elif LJ_TARGET_S390X
+/* -- POSIX/s390x calling conventions --------------------------------------- */
+
+#define CCALL_HANDLE_STRUCTRET \
+  cc->retref = 1;  /* Return all structs by reference. */ \
+  cc->gpr[ngpr++] = (GPRArg)dp;
+
+#define CCALL_HANDLE_COMPLEXRET \
+  cc->retref = 1;  /* Return all complex values by reference. */ \
+  cc->gpr[ngpr++] = (GPRArg)dp;
+
+#define CCALL_HANDLE_COMPLEXRET2 \
+  UNUSED(dp); /* Nothing to do. */
+
+#define CCALL_HANDLE_STRUCTARG \
+  /* Pass structs of size 1, 2, 4 or 8 in a GPR by value. */ \
+  if (!(sz == 1 || sz == 2 || sz == 4 || sz == 8)) { \
+    rp = cdataptr(lj_cdata_new(cts, did, sz)); \
+    sz = CTSIZE_PTR;  /* Pass all other structs by reference. */ \
+  }
+
+#define CCALL_HANDLE_COMPLEXARG \
+  /* Pass complex numbers by reference. */ \
+  /* TODO: not sure why this is different to structs. */ \
+  rp = cdataptr(lj_cdata_new(cts, did, sz)); \
+  sz = CTSIZE_PTR; \
+
+#define CCALL_HANDLE_REGARG \
+  if (isfp) { \
+    if (nfpr < CCALL_NARG_FPR) { dp = &cc->fpr[nfpr++]; goto done; } \
+  } else { \
+    if (ngpr < maxgpr) { dp = &cc->gpr[ngpr++]; goto done; } \
+  }
+
 #else
 #error "Missing calling convention definitions for this architecture"
 #endif
@@ -999,6 +1033,9 @@ static int ccall_set_args(lua_State *L, CTState *cts, CType *ct,
     CType *d;
     CTSize sz;
     MSize n, isfp = 0, isva = 0;
+#if LJ_TARGET_S390X
+    MSize onstack = 0;
+#endif
     void *dp, *rp = NULL;
 
     if (fid) {  /* Get argument type from field. */
@@ -1037,6 +1074,9 @@ static int ccall_set_args(lua_State *L, CTState *cts, CType *ct,
     CCALL_HANDLE_REGARG  /* Handle register arguments. */
 
     /* Otherwise pass argument on stack. */
+#if LJ_TARGET_S390X
+    onstack = 1;
+#endif
     if (CCALL_ALIGN_STACKARG) {  /* Align argument on stack. */
       MSize align = (1u << ctype_align(d->info)) - 1;
       if (rp || (CCALL_PACK_STACKARG && isva && align < CTSIZE_PTR-1))
@@ -1084,6 +1124,16 @@ static int ccall_set_args(lua_State *L, CTState *cts, CType *ct,
 #endif
 	 ) && d->size <= 4) {
       *(int64_t *)dp = (int64_t)*(int32_t *)dp;  /* Sign-extend to 64 bit. */
+    }
+#endif
+#if LJ_TARGET_S390X
+    /* Arguments need to be sign-/zero-extended to 64-bits. */
+    if ((ctype_isinteger_or_bool(d->info) || ctype_isenum(d->info) ||
+          (isfp && onstack)) && d->size <= 4) {
+      if (d->info & CTF_UNSIGNED || isfp)
+        *(uint64_t *)dp = (uint64_t)*(uint32_t *)dp;
+      else
+        *(int64_t *)dp = (int64_t)*(int32_t *)dp;
     }
 #endif
 #if LJ_TARGET_X64 && LJ_ABI_WIN
