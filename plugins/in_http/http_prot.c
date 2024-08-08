@@ -21,6 +21,8 @@
 #include <fluent-bit/flb_version.h>
 #include <fluent-bit/flb_error.h>
 #include <fluent-bit/flb_pack.h>
+#include <fluent-bit/flb_log_event_decoder.h>
+#include <fluent-bit/flb_log_event_encoder.h>
 
 #include <monkey/monkey.h>
 #include <monkey/mk_core.h>
@@ -30,6 +32,7 @@
 
 #define HTTP_CONTENT_JSON       0
 #define HTTP_CONTENT_URLENCODED 1
+#define HTTP_CONTENT_MSGPACK    2
 
 static inline char hex2nibble(char c)
 {
@@ -508,6 +511,206 @@ split_error:
     return ret;
 }
 
+static ssize_t parse_payload_msgpack(struct flb_http *ctx, flb_sds_t tag,
+                                     char *payload, size_t size)
+{
+    int              ret = FLB_EVENT_ENCODER_SUCCESS;
+    flb_sds_t        tag_from_record = NULL;
+    struct flb_log_event_decoder log_decoder;
+    struct flb_log_event log_event;
+
+
+    ret = flb_log_event_decoder_init(&log_decoder, payload, size);
+
+    if (ret != FLB_EVENT_DECODER_SUCCESS) {
+        flb_plg_error(ctx->ins,
+                      "Log event decoder initialization error : %d", ret);
+        return -1;
+    }
+
+    while ((ret = flb_log_event_decoder_next(&log_decoder, &log_event)) ==
+            FLB_EVENT_ENCODER_SUCCESS) {
+
+        if (log_event.body->type != MSGPACK_OBJECT_MAP) {
+            flb_plg_error(ctx->ins, "invalid data type");
+            flb_log_event_decoder_destroy(&log_decoder);
+            return -1;
+        }
+
+        if (ctx->tag_key) {
+            tag_from_record = tag_key(ctx, log_event.root);
+        }
+
+        ret = flb_log_event_encoder_begin_record(&ctx->log_encoder);
+
+        if (ret != FLB_EVENT_ENCODER_SUCCESS) {
+            flb_plg_error(ctx->ins, "unable to decode incoming record: %d", ret);
+            flb_log_event_decoder_destroy(&log_decoder);
+            return -1;
+        }
+
+        ret = flb_log_event_encoder_set_timestamp(
+                &ctx->log_encoder,
+                &log_event.timestamp);
+
+        if (ret != FLB_EVENT_ENCODER_SUCCESS) {
+            flb_plg_error(ctx->ins, "unable to encode incoming record time: %d", ret);
+            flb_log_event_decoder_destroy(&log_decoder);
+            return -1;
+        }
+
+        ret = flb_log_event_encoder_set_body_from_msgpack_object(&ctx->log_encoder,
+                                                                 log_event.body);
+
+        if (ret != FLB_EVENT_ENCODER_SUCCESS) {
+            flb_plg_error(ctx->ins, "unable to encode incoming record: %d", ret);
+            flb_log_event_decoder_destroy(&log_decoder);
+            return -1;
+        }
+
+        ret = flb_log_event_encoder_commit_record(&ctx->log_encoder);
+
+        if (ret != FLB_EVENT_ENCODER_SUCCESS) {
+            flb_plg_error(ctx->ins, "unable to commit incoming record: %d", ret);
+            flb_log_event_decoder_destroy(&log_decoder);
+            return -1;
+        }
+
+        if (tag_from_record) {
+            ret = flb_input_log_append(ctx->ins, tag_from_record,
+                                       flb_sds_len(tag_from_record),
+                                       ctx->log_encoder.output_buffer,
+                                       ctx->log_encoder.output_length);
+        }
+        else if (tag) {
+            ret = flb_input_log_append(ctx->ins, tag, flb_sds_len(tag),
+                                       ctx->log_encoder.output_buffer,
+                                       ctx->log_encoder.output_length);
+        }
+        else {
+            ret = flb_input_log_append(ctx->ins, NULL, 0,
+                                       ctx->log_encoder.output_buffer,
+                                       ctx->log_encoder.output_length);
+        }
+
+        if (ret != FLB_EVENT_ENCODER_SUCCESS) {
+            flb_plg_error(ctx->ins, "unable to append incoming record: %d", ret);
+            flb_log_event_decoder_destroy(&log_decoder);
+            return -1;
+        }
+
+        flb_log_event_encoder_reset(&ctx->log_encoder);
+    }
+
+    flb_log_event_decoder_destroy(&log_decoder);
+    return 0;
+}
+
+static ssize_t parse_payload_msgpack_ng(flb_sds_t tag,
+                                        struct flb_http_request *request)
+{
+    int              ret = FLB_EVENT_ENCODER_SUCCESS;
+    struct flb_http *ctx;
+    flb_sds_t        tag_from_record = NULL;
+    struct flb_log_event_decoder log_decoder;
+    struct flb_log_event log_event;
+    char *payload;
+    size_t size;
+
+    ctx = (struct flb_http *) request->stream->user_data;
+    payload = (char *) request->body;
+    size = cfl_sds_len(request->body);
+
+    ret = flb_log_event_decoder_init(&log_decoder, payload, size);
+
+    if (ret != FLB_EVENT_DECODER_SUCCESS) {
+        flb_plg_error(ctx->ins,
+                      "Log event decoder initialization error : %d", ret);
+        return -1;
+    }
+
+    while ((ret = flb_log_event_decoder_next(&log_decoder, &log_event)) ==
+            FLB_EVENT_ENCODER_SUCCESS) {
+
+        if (log_event.body->type != MSGPACK_OBJECT_MAP) {
+            flb_plg_error(ctx->ins, "invalid data type");
+            flb_log_event_decoder_destroy(&log_decoder);
+            return -1;
+        }
+
+        if (ctx->tag_key) {
+            tag_from_record = tag_key(ctx, log_event.root);
+        }
+
+        ret = flb_log_event_encoder_begin_record(&ctx->log_encoder);
+
+        if (ret != FLB_EVENT_ENCODER_SUCCESS) {
+            flb_plg_error(ctx->ins, "unable to decode incoming record: %d", ret);
+            flb_log_event_decoder_destroy(&log_decoder);
+            return -1;
+        }
+
+        ret = flb_log_event_encoder_set_timestamp(
+                &ctx->log_encoder,
+                &log_event.timestamp);
+
+        if (ret != FLB_EVENT_ENCODER_SUCCESS) {
+            flb_plg_error(ctx->ins, "unable to encode incoming record time: %d", ret);
+            flb_log_event_decoder_destroy(&log_decoder);
+            return -1;
+        }
+
+        ret = flb_log_event_encoder_set_body_from_msgpack_object(&ctx->log_encoder,
+                                                                 log_event.body);
+
+        if (ret != FLB_EVENT_ENCODER_SUCCESS) {
+            flb_plg_error(ctx->ins, "unable to encode incoming record: %d", ret);
+            flb_log_event_decoder_destroy(&log_decoder);
+            return -1;
+        }
+
+        ret = flb_log_event_encoder_commit_record(&ctx->log_encoder);
+
+        if (ret != FLB_EVENT_ENCODER_SUCCESS) {
+            flb_plg_error(ctx->ins, "unable to commit incoming record: %d", ret);
+            flb_log_event_decoder_destroy(&log_decoder);
+            return -1;
+        }
+
+        /* submit each record separately when the tag is extracted from the record. */
+        if (ctx->tag_key) {
+            ret = flb_input_log_append(ctx->ins, tag_from_record,
+                                       flb_sds_len(tag_from_record),
+                                       ctx->log_encoder.output_buffer,
+                                       ctx->log_encoder.output_length);
+
+            if (ret != FLB_EVENT_ENCODER_SUCCESS) {
+                    flb_plg_error(ctx->ins, "unable to append incoming record: %d", ret);
+                    flb_log_event_decoder_destroy(&log_decoder);
+                    return -1;
+            }
+
+            flb_log_event_encoder_reset(&ctx->log_encoder);
+        }
+    }
+
+    if (!ctx->tag_key) {
+        if (tag) {
+            ret = flb_input_log_append(ctx->ins, tag, flb_sds_len(tag),
+                                       ctx->log_encoder.output_buffer,
+                                       ctx->log_encoder.output_length);
+        }
+        else {
+            ret = flb_input_log_append(ctx->ins, NULL, 0,
+                                       ctx->log_encoder.output_buffer,
+                                       ctx->log_encoder.output_length);
+        }
+    }
+
+    flb_log_event_decoder_destroy(&log_decoder);
+    return 0;
+}
+
 static int process_payload(struct flb_http *ctx, struct http_conn *conn,
                            flb_sds_t tag,
                            struct mk_http_session *session,
@@ -533,6 +736,11 @@ static int process_payload(struct flb_http *ctx, struct http_conn *conn,
         type = HTTP_CONTENT_URLENCODED;
     }
 
+    if (header->val.len == 19 &&
+        strncasecmp(header->val.data, "application/msgpack", 19) == 0) {
+        type = HTTP_CONTENT_MSGPACK;
+    }
+
     if (type == -1) {
         send_response(conn, 400, "error: invalid 'Content-Type'\n");
         return -1;
@@ -549,7 +757,9 @@ static int process_payload(struct flb_http *ctx, struct http_conn *conn,
     else if (type == HTTP_CONTENT_URLENCODED) {
         ret = parse_payload_urlencoded(ctx, tag, request->data.data, request->data.len);
     }
-
+    else if (type == HTTP_CONTENT_MSGPACK) {
+        ret = parse_payload_msgpack(ctx, tag, request->data.data, request->data.len);
+    }
     if (ret != 0) {
         send_response(conn, 400, "error: invalid payload\n");
         return -1;
@@ -897,6 +1107,101 @@ static ssize_t parse_payload_json_ng(flb_sds_t tag,
     return ret;
 }
 
+static ssize_t parse_payload_urlencoded_ng(flb_sds_t tag,
+                                           struct flb_http_request *request)
+{
+    struct mk_list *kvs;
+    struct mk_list *head = NULL;
+    struct flb_split_entry *cur = NULL;
+    char **keys = NULL;
+    char **vals = NULL;
+    char *sep;
+    char *start;
+    int idx = 0;
+    int ret = -1;
+    msgpack_packer pck;
+    msgpack_sbuffer sbuf;
+    struct flb_http *ctx;
+    char *payload;
+
+    ctx = (struct flb_http *) request->stream->user_data;
+    payload = (char *) request->body;
+
+    /* initialize buffers */
+    msgpack_sbuffer_init(&sbuf);
+    msgpack_packer_init(&pck, &sbuf, msgpack_sbuffer_write);
+
+    kvs = flb_utils_split(payload, '&', -1 );
+    if (kvs == NULL) {
+        goto split_error;
+    }
+
+    keys = flb_calloc(mk_list_size(kvs), sizeof(char *));
+    if (keys == NULL) {
+        goto keys_calloc_error;
+    }
+
+    vals = flb_calloc(mk_list_size(kvs), sizeof(char *));
+    if (vals == NULL) {
+        goto vals_calloc_error;
+    }
+
+    mk_list_foreach(head, kvs) {
+        cur = mk_list_entry(head, struct flb_split_entry, _head);
+        if (cur->value[0] == '\n') {
+            start = &cur->value[1];
+        } else {
+            start = cur->value;
+        }
+        sep = strchr(start, '=');
+        if (sep == NULL) {
+            vals[idx] = NULL;
+            continue;
+        }
+        *sep++ = '\0';
+
+        keys[idx] = flb_sds_create_len(start, strlen(start));
+        vals[idx] = flb_sds_create_len(sep, strlen(sep));
+
+        flb_sds_trim(keys[idx]);
+        flb_sds_trim(vals[idx]);
+        idx++;
+    }
+
+    msgpack_pack_map(&pck, mk_list_size(kvs));
+    for (idx = 0; idx < mk_list_size(kvs); idx++) {
+        msgpack_pack_str(&pck, flb_sds_len(keys[idx]));
+        msgpack_pack_str_body(&pck, keys[idx], flb_sds_len(keys[idx]));
+
+        if (sds_uri_decode(vals[idx]) != 0) {
+            goto decode_error;
+        } else {
+            msgpack_pack_str(&pck, flb_sds_len(vals[idx]));
+            msgpack_pack_str_body(&pck, vals[idx], strlen(vals[idx]));
+        }
+    }
+
+    ret = process_pack(ctx, tag, sbuf.data, sbuf.size);
+
+decode_error:
+    for (idx = 0; idx < mk_list_size(kvs); idx++) {
+        if (keys[idx]) {
+            flb_sds_destroy(keys[idx]);
+        }
+        if (vals[idx]) {
+            flb_sds_destroy(vals[idx]);
+        }
+    }
+    flb_free(vals);
+vals_calloc_error:
+    flb_free(keys);
+keys_calloc_error:
+    flb_utils_split_free(kvs);
+split_error:
+    msgpack_sbuffer_destroy(&sbuf);
+    return ret;
+}
+
 static int process_payload_ng(flb_sds_t tag,
                               struct flb_http_request *request,
                               struct flb_http_response *response)
@@ -904,6 +1209,8 @@ static int process_payload_ng(flb_sds_t tag,
     int type = -1;
     cfl_sds_t payload;
     struct flb_http *ctx;
+
+    type = -1;
 
     if (request->content_type == NULL) {
         send_response_ng(response, 400, "error: header 'Content-Type' is not set\n");
@@ -916,6 +1223,10 @@ static int process_payload_ng(flb_sds_t tag,
 
     if (strcasecmp(request->content_type, "application/x-www-form-urlencoded") == 0) {
         type = HTTP_CONTENT_URLENCODED;
+    }
+
+    if (strcasecmp(request->content_type, "application/msgpack") == 0) {
+        type = HTTP_CONTENT_MSGPACK;
     }
 
     if (type == -1) {
@@ -939,6 +1250,10 @@ static int process_payload_ng(flb_sds_t tag,
             return parse_payload_urlencoded(ctx, tag, payload, cfl_sds_len(payload));
         }
     }
+    else if (type == HTTP_CONTENT_MSGPACK) {
+        parse_payload_msgpack_ng(tag, request);
+    }
+
 
     return 0;
 }
