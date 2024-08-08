@@ -206,8 +206,7 @@ void test_non_blocking_and_blocking_timeout()
 
     /* Add somewhat inexact 1 second timer */
     target = 1000;
-    event.mask   = MK_EVENT_EMPTY;
-    event.status = MK_EVENT_NONE;
+    MK_EVENT_NEW(&event);
     test_timeout_create(ctx->evl, target / 1000, 0, &event);
 
     /* Non blocking wait -- one event */
