@@ -405,7 +405,8 @@ static void cb_logdna_flush(struct flb_event_chunk *event_chunk,
         FLB_OUTPUT_RETURN(FLB_RETRY);
     }
     tmp = flb_sds_printf(&uri,
-                         "/logs/ingest?hostname=%s&mac=%s&ip=%s&now=%lu&tags=%s",
+                         "%s?hostname=%s&mac=%s&ip=%s&now=%lu&tags=%s",
+                         ctx->logdna_endpoint,
                          ctx->_hostname,
                          ctx->mac_addr,
                          ctx->ip_addr,
@@ -530,6 +531,12 @@ static struct flb_config_map config_map[] = {
      FLB_CONFIG_MAP_INT, "logdna_port", FLB_LOGDNA_PORT,
      0, FLB_TRUE, offsetof(struct flb_logdna, logdna_port),
      "LogDNA TCP port"
+    },
+
+    {
+     FLB_CONFIG_MAP_STR, "logdna_endpoint", FLB_LOGDNA_ENDPOINT,
+     0, FLB_TRUE, offsetof(struct flb_logdna, logdna_endpoint),
+     "LogDNA endpoint to send logs"
     },
 
     {
