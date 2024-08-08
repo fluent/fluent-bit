@@ -106,6 +106,9 @@ int produce_message(struct flb_time *tm, msgpack_object *map,
     msgpack_object key;
     msgpack_object val;
     flb_sds_t s;
+    const char *header_value = NULL;
+    size_t header_value_len = 0;
+
 
 #ifdef FLB_HAVE_AVRO_ENCODER
     // used to flag when a buffer needs to be freed for avro
@@ -208,6 +211,16 @@ int produce_message(struct flb_time *tm, msgpack_object *map,
                     strncmp(key.via.str.ptr, ctx->message_key_field, ctx->message_key_field_len) == 0) {
                 message_key = (char *) val.via.str.ptr;
                 message_key_len = val.via.str.size;
+            }
+        }
+
+        /* Lookup header value */
+        if (ctx->header_key && val.type == MSGPACK_OBJECT_STR) {
+            if (key.via.str.size == ctx->header_key_len &&
+                    strncmp(key.via.str.ptr, ctx->header_key, ctx->header_key_len) == 0) {
+                header_value = val.via.str.ptr;
+                header_value_len = val.via.str.size;
+                flb_plg_debug(ctx->ins, "Header key: %s, Header value: %s", ctx->header_key, header_value);
             }
         }
 
@@ -392,12 +405,24 @@ int produce_message(struct flb_time *tm, msgpack_object *map,
         return FLB_RETRY;
     }
 
-    ret = rd_kafka_produce(topic->tp,
-                           RD_KAFKA_PARTITION_UA,
-                           RD_KAFKA_MSG_F_COPY,
-                           out_buf, out_size,
-                           message_key, message_key_len,
-                           ctx);
+    /* Set up Kafka headers */
+    rd_kafka_headers_t *headers = rd_kafka_headers_new(1);
+    if (ctx->header_value) {
+        rd_kafka_header_add(headers, ctx->header_key, ctx->header_key_len, ctx->header_value, ctx->header_value_len);
+        flb_plg_debug(ctx->ins, "Added header key: %s, value: %s", ctx->header_key, ctx->header_value);
+    }
+
+    ret = rd_kafka_producev(
+        ctx->kafka.rk,
+        RD_KAFKA_V_RKT(topic->tp),
+        RD_KAFKA_V_PARTITION(RD_KAFKA_PARTITION_UA),
+        RD_KAFKA_V_MSGFLAGS(RD_KAFKA_MSG_F_COPY),
+        RD_KAFKA_V_VALUE(out_buf, out_size),
+        RD_KAFKA_V_KEY(message_key, message_key_len),
+        RD_KAFKA_V_HEADERS(headers),
+        RD_KAFKA_V_OPAQUE(ctx),
+        RD_KAFKA_V_END);
+
 
     if (ret == -1) {
         flb_error(
@@ -540,6 +565,16 @@ static int cb_kafka_exit(void *data, struct flb_config *config)
 }
 
 static struct flb_config_map config_map[] = {
+    {
+        FLB_CONFIG_MAP_STR, "header_key", (char *)NULL,
+        0, FLB_TRUE, offsetof(struct flb_out_kafka, header_key),
+        "Header key for the Kafka message"
+    },
+    {
+        FLB_CONFIG_MAP_STR, "header_value", (char *)NULL,
+        0, FLB_TRUE, offsetof(struct flb_out_kafka, header_value),
+        "Header value for the Kafka message"
+    },
    {
     FLB_CONFIG_MAP_STR, "topic_key", (char *)NULL,
     0, FLB_TRUE, offsetof(struct flb_out_kafka, topic_key),
