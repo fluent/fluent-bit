@@ -1036,6 +1036,8 @@ int flb_utils_url_split(const char *in_url, char **out_protocol,
     char *p;
     char *tmp;
     char *sep;
+    char *v6_start;
+    char *v6_end;
 
     /* Protocol */
     p = strstr(in_url, "://");
@@ -1057,9 +1059,26 @@ int flb_utils_url_split(const char *in_url, char **out_protocol,
 
     /* Check for first '/' */
     sep = strchr(p, '/');
-    tmp = strchr(p, ':');
+    v6_start = strchr(p, '[');
+    v6_end = strchr(p, ']');
 
-    /* Validate port separator is found before the first slash */
+    /* 
+     * Validate port separator is found before the first slash,
+     * If IPv6, ensure it is after the ']',
+     * but only if before the first slash
+     */
+    if (v6_start && v6_end) {
+        if (sep && v6_end > sep) {
+            tmp = strchr(p, ':');
+        }
+        else {
+            tmp = strchr(v6_end, ':');
+        }
+    }
+    else {
+        tmp = strchr(p, ':');
+    }
+
     if (sep && tmp) {
         if (tmp > sep) {
             tmp = NULL;
