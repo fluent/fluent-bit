@@ -1403,7 +1403,7 @@ int flb_utils_get_machine_id(char **out_id, size_t *out_size)
     status = RegOpenKeyEx(HKEY_LOCAL_MACHINE,
                           TEXT("SOFTWARE\\Microsoft\\Cryptography"),
                           0,
-                          KEY_QUERY_VALUE,
+                          KEY_QUERY_VALUE|KEY_WOW64_64KEY,
                           &hKey);
 
     if (status != ERROR_SUCCESS) {
@@ -1415,13 +1415,19 @@ int flb_utils_get_machine_id(char **out_id, size_t *out_size)
 
     if (status == ERROR_SUCCESS) {
         *out_id = flb_calloc(1, dwBufSize+1);
+        memcpy(*out_id, buf, dwBufSize);
 
         if (*out_id == NULL) {
             return -1;
         }
 
-        *out_size = dwBufSize;
+        /* RegQueryValueEx sets dwBufSize to strlen()+1 for the NULL 
+         * terminator, but we only need strlen(). */
+        *out_size = dwBufSize-1;
         return 0;
+    }
+    else {
+        flb_error("unable to retrieve MachineGUID, error code: %d", status);
     }
 #elif defined (FLB_SYSTEM_MACOS)
     bool bret;
@@ -1463,6 +1469,8 @@ int flb_utils_get_machine_id(char **out_id, size_t *out_size)
         return 0;
     }
 #endif
+
+    flb_warn("falling back on random machine UUID");
 
     /* generate a random uuid */
     uuid = flb_malloc(38);
