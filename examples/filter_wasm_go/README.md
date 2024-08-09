@@ -7,14 +7,13 @@ This source source tree provides an example of WASM filter program with WASI mod
 Tested on
 
 * TinyGo
-  * [tinygo](https://tinygo.org/) tinygo version 0.23.0 linux/amd64 (using go version go1.18.2 and LLVM version 14.0.0)
-  * [tinygo](https://tinygo.org/) tinygo version 0.24.0 linux/amd64 (using go version go1.18.2 and LLVM version 14.0.0)
+  * [tinygo](https://tinygo.org/) tinygo version 0.32.0 linux/amd64 (using go version go1.22.5 and LLVM version 18.1.2)
 
 For Ubuntu, it's easy to install with:
 
 ```console
-$ wget https://github.com/tinygo-org/tinygo/releases/download/v0.24.0/tinygo_0.24.0_amd64.deb
-$ sudo dpkg -i tinygo_0.24.0_amd64.deb
+$ wget https://github.com/tinygo-org/tinygo/releases/download/v0.32.0/tinygo_0.32.0_amd64.deb
+$ sudo dpkg -i tinygo_0.32.0_amd64.deb
 ```
 
 ## How to build
@@ -22,7 +21,7 @@ $ sudo dpkg -i tinygo_0.24.0_amd64.deb
 Execute _tinygo build_ as follows:
 
 ```console
-$ tinygo build -wasm-abi=generic -target=wasi -o filter.wasm filter.go
+$ tinygo build -target=wasi -o filter.wasm filter.go
 ```
 
 Finally, under the same directory, `*.wasm` file will be created:
@@ -52,6 +51,7 @@ Create fluent-bit configuration file as follows:
 [FILTER]
     Name wasm
     match dummy.*
+    Event_Format json
     WASM_Path /path/to/filter.wasm
     Function_Name go_filter
     accessible_paths .,/path/to/fluent-bit
@@ -59,5 +59,4 @@ Create fluent-bit configuration file as follows:
 [OUTPUT]
     Name  stdout
     Match *
-
 ```
