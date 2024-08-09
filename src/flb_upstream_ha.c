@@ -120,6 +120,7 @@ static struct flb_upstream_node *create_node(int id,
     int vlen;
     int tls = FLB_FALSE;
     int tls_verify = FLB_TRUE;
+    int tls_verify_hostname = FLB_FALSE;
     int tls_debug = 1;
     char key[32];
     char *tmp;
@@ -138,7 +139,8 @@ static struct flb_upstream_node *create_node(int id,
     const char *known_keys[] = {"name", "host", "port",
                                 "tls", "tls.vhost", "tls.verify", "tls.debug",
                                 "tls.ca_path", "tls.ca_file", "tls.crt_file",
-                                "tls.key_file", "tls.key_passwd", NULL};
+                                "tls.key_file", "tls.key_passwd",
+                                "tls.verify_hostname", NULL};
 
     struct flb_upstream_node *node;
 
@@ -177,6 +179,13 @@ static struct flb_upstream_node *create_node(int id,
     tmp = flb_cf_section_property_get_string(cf, s, "tls.verify");
     if (tmp) {
         tls_verify = flb_utils_bool(tmp);
+        flb_sds_destroy(tmp);
+    }
+
+    /* tls.verify_hostname */
+    tmp = flb_cf_section_property_get_string(cf, s, "tls.verify_hostname");
+    if (tmp) {
+        tls_verify_hostname = flb_utils_bool(tmp);
         flb_sds_destroy(tmp);
     }
 
@@ -252,6 +261,7 @@ static struct flb_upstream_node *create_node(int id,
     }
 
     node = flb_upstream_node_create(name, host, port, tls, tls_verify,
+                                    tls_verify_hostname,
                                     tls_debug, tls_vhost, tls_ca_path, tls_ca_file,
                                     tls_crt_file, tls_key_file,
                                     tls_key_passwd, ht, config);

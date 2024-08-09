@@ -36,6 +36,7 @@ struct flb_upstream_node {
 #ifdef FLB_HAVE_TLS
     /* TLS: given configuration */
     int tls_verify;           /* Verify certs (default: true) */
+    int tls_verify_hostname;  /* Verify hostname (default: false) */
     int tls_debug;            /* mbedtls debug level          */
     char *tls_ca_path;        /* Path to certificates         */
     char *tls_ca_file;        /* CA root cert                 */
@@ -65,6 +66,7 @@ struct flb_upstream_node {
 struct flb_upstream_node *flb_upstream_node_create(flb_sds_t name, flb_sds_t host,
                                                    flb_sds_t port,
                                                    int tls, int tls_verify,
+                                                   int tls_verify_hostname,
                                                    int tls_debug,
                                                    const char *tls_vhost,
                                                    const char *tls_ca_path,
