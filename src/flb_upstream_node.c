@@ -30,6 +30,7 @@
 struct flb_upstream_node *flb_upstream_node_create(flb_sds_t name, flb_sds_t host,
                                                    flb_sds_t port,
                                                    int tls, int tls_verify,
+                                                   int tls_verify_hostname,
                                                    int tls_debug,
                                                    const char *tls_vhost,
                                                    const char *tls_ca_path,
@@ -40,6 +41,7 @@ struct flb_upstream_node *flb_upstream_node_create(flb_sds_t name, flb_sds_t hos
                                                    struct flb_hash_table *ht,
                                                    struct flb_config *config)
 {
+    int ret;
     int i_port;
     int io_flags;
     char tmp[255];
@@ -143,6 +145,16 @@ struct flb_upstream_node *flb_upstream_node_create(flb_sds_t name, flb_sds_t hos
             return NULL;
         }
         node->tls_enabled = FLB_TRUE;
+        if (tls_verify_hostname == FLB_TRUE) {
+            ret = flb_tls_set_verify_hostname(node->tls, tls_verify_hostname);
+            if (ret == -1) {
+                flb_error("[upstream_node] error set up to verify hostname in TLS context "
+                          "on node '%s'", name);
+                flb_upstream_node_destroy(node);
+
+                return NULL;
+            }
+        }
     }
 #endif
 
