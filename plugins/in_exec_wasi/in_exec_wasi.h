@@ -34,6 +34,9 @@
 #define DEFAULT_INTERVAL_SEC  "1"
 #define DEFAULT_INTERVAL_NSEC "0"
 
+#define DEFAULT_WASM_HEAP_SIZE  "8192"
+#define DEFAULT_WASM_STACK_SIZE "8192"
+
 struct flb_exec_wasi {
     flb_sds_t wasi_path;
     struct mk_list *accessible_dir_list; /* list of directories to be
@@ -44,10 +47,13 @@ struct flb_exec_wasi {
     size_t buf_size;
     struct flb_input_instance *ins;
     struct flb_wasm *wasm;
+    struct flb_wasm_config *wasm_conf;
     int oneshot;
     flb_pipefd_t ch_manager[2];
     int interval_sec;
     int interval_nsec;
+    size_t wasm_heap_size;
+    size_t wasm_stack_size;
     struct flb_log_event_encoder log_encoder;
     int coll_fd;
 };
