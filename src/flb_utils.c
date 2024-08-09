@@ -1415,11 +1415,12 @@ int flb_utils_get_machine_id(char **out_id, size_t *out_size)
 
     if (status == ERROR_SUCCESS) {
         *out_id = flb_calloc(1, dwBufSize+1);
-        memcpy(*out_id, buf, dwBufSize);
 
         if (*out_id == NULL) {
             return -1;
         }
+
+        memcpy(*out_id, buf, dwBufSize);
 
         /* RegQueryValueEx sets dwBufSize to strlen()+1 for the NULL 
          * terminator, but we only need strlen(). */
