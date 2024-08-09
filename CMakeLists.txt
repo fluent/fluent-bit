@@ -180,7 +180,12 @@ option(FLB_RUN_LDCONFIG "Enable execution of ldconfig after installation" No)
 
 # Prefer system libraries if available
 option(FLB_PREFER_SYSTEM_LIBS             "Prefer system libraries"                   No)
+option(FLB_PREFER_SYSTEM_LIB_BACKTRACE    "Prefer the libbacktrace system library"    ${FLB_PREFER_SYSTEM_LIBS})
+option(FLB_PREFER_SYSTEM_LIB_CARES        "Prefer the libcares system library"        ${FLB_PREFER_SYSTEM_LIBS})
+option(FLB_PREFER_SYSTEM_LIB_JEMALLOC     "Prefer the libjemalloc system library"     ${FLB_PREFER_SYSTEM_LIBS})
+option(FLB_PREFER_SYSTEM_LIB_KAFKA        "Prefer the libkafka system library"        ${FLB_PREFER_SYSTEM_LIBS})
 option(FLB_PREFER_SYSTEM_LIB_LUAJIT       "Prefer the libluajit system library"       ${FLB_PREFER_SYSTEM_LIBS})
+option(FLB_PREFER_SYSTEM_LIB_NGHTTP2      "Prefer the libnghttp2 system library"      ${FLB_PREFER_SYSTEM_LIBS})
 
 # Enable all features
 if(FLB_ALL)
@@ -461,25 +466,28 @@ add_subdirectory(${FLB_PATH_LIB_CMETRICS} EXCLUDE_FROM_ALL)
 add_subdirectory(${FLB_PATH_LIB_CTRACES} EXCLUDE_FROM_ALL)
 
 # Nghttp2 options
-FLB_OPTION(ENABLE_LIB_ONLY   ON)
-FLB_OPTION(ENABLE_STATIC_LIB ON)
-FLB_OPTION(ENABLE_SHARED_LIB OFF)
-
-FLB_DEFINITION(NGHTTP2_STATICLIB)
-
-add_subdirectory(${FLB_PATH_LIB_NGHTTP2} EXCLUDE_FROM_ALL)
+if(FLB_PREFER_SYSTEM_LIB_NGHTTP2)
+  find_package(PkgConfig)
+  pkg_check_modules(NGHTTP2 libnghttp2>=1.0.0)
+endif()
+if(NGHTTP2_FOUND)
+  include_directories(${NGHTTP2_INCLUDE_DIRS})
+  link_directories(${NGHTTP2_LIBRARY_DIRS})
+else()
+  include(cmake/nghttp2.cmake)
+endif()
 
 # C-Ares (DNS library)
-FLB_OPTION(CARES_STATIC      ON)
-FLB_OPTION(CARES_SHARED      OFF)
-FLB_OPTION(CARES_INSTALL     OFF)
-FLB_OPTION(CARES_BUILD_TESTS OFF)
-FLB_OPTION(CARES_BUILD_TOOLS OFF)
-if (FLB_SYSTEM_MACOS)
-  # macOS SDK always has <arpa/nameser.h>.
-  FLB_DEFINITION(CARES_HAVE_ARPA_NAMESER_H)
+if(FLB_PREFER_SYSTEM_LIB_CARES)
+  find_package(PkgConfig)
+  pkg_check_modules(LIBCARES libcares>=1.18.0)
 endif()
-add_subdirectory(${FLB_PATH_LIB_CARES})# EXCLUDE_FROM_ALL)
+if(LIBCARES_FOUND)
+  include_directories(${LIBCARES_INCLUDE_DIRS})
+  link_directories(${LIBCARES_LIBRARY_DIRS})
+else()
+  include(cmake/cares.cmake)
+endif()
 
 # Chunk I/O
 FLB_OPTION(CIO_LIB_STATIC  ON)
@@ -549,6 +557,7 @@ if(FLB_WASM)
           _Atomic int a;
           return 0;
        }" FLB_HAVE_STDATOMIC_H)
+    include(CheckIncludeFiles)
     check_include_files(stdatomic.h FLB_HAVE_STDATOMIC_H)
     if (FLB_HAVE_STDATOMIC_H)
       enable_language (ASM)
@@ -844,31 +853,41 @@ endif()
 # Memory Allocator
 # ================
 if(FLB_JEMALLOC AND ${CMAKE_SYSTEM_NAME} MATCHES "Linux")
-  FLB_DEFINITION(FLB_HAVE_JEMALLOC)
-  FLB_DEFINITION(JEMALLOC_MANGLE)
-
-  # Add support for options like page size, if empty we default it
-  if(NOT DEFINED FLB_JEMALLOC_OPTIONS OR "${FLB_JEMALLOC_OPTIONS}" STREQUAL "")
-    set(FLB_JEMALLOC_OPTIONS "--with-lg-quantum=3")
+  if(FLB_PREFER_SYSTEM_LIB_JEMALLOC)
+    find_package(PkgConfig)
+    pkg_check_modules(JEMALLOC jemalloc>=5.0.0)
   endif()
-  # Split into a list so CMake handles it correctly when passing to configure command
-  separate_arguments(FLB_JEMALLOC_OPTIONS_LIST UNIX_COMMAND ${FLB_JEMALLOC_OPTIONS})
-  message(STATUS "jemalloc configure: ${FLB_JEMALLOC_OPTIONS_LIST}")
+  if(JEMALLOC_FOUND)
+    include_directories(${JEMALLOC_INCLUDE_DIRS})
+    link_directories(${JEMALLOC_LIBRARY_DIRS})
+  else()
+    FLB_DEFINITION(JEMALLOC_MANGLE)
 
-  # Link to Jemalloc as an external dependency
-  set(FLB_LIBJEMALLOC_PATH "${CMAKE_CURRENT_BINARY_DIR}/lib/libjemalloc_pic.a")
-  ExternalProject_Add(jemalloc
-    SOURCE_DIR ${CMAKE_CURRENT_SOURCE_DIR}/lib/jemalloc-5.3.0
-    CONFIGURE_COMMAND ${CMAKE_CURRENT_SOURCE_DIR}/lib/jemalloc-5.3.0/configure ${AUTOCONF_HOST_OPT} "${FLB_JEMALLOC_OPTIONS_LIST}" --prefix=<INSTALL_DIR>
-    CFLAGS=-std=gnu99\ -Wall\ -pipe\ -g3\ -O3\ -funroll-loops
-    BUILD_COMMAND ${EXTERNAL_BUILD_TOOL}
-    BUILD_BYPRODUCTS ${FLB_LIBJEMALLOC_PATH}
-    INSTALL_DIR ${CMAKE_CURRENT_BINARY_DIR}/
-    INSTALL_COMMAND ${EXTERNAL_BUILD_TOOL} install_lib_static install_include)
-  add_library(libjemalloc STATIC IMPORTED GLOBAL)
-  set_target_properties(libjemalloc PROPERTIES IMPORTED_LOCATION ${FLB_LIBJEMALLOC_PATH})
-  add_dependencies(libjemalloc jemalloc)
-  include_directories("${CMAKE_BINARY_DIR}/include/")
+    # Add support for options like page size, if empty we default it
+    if(NOT DEFINED FLB_JEMALLOC_OPTIONS OR "${FLB_JEMALLOC_OPTIONS}" STREQUAL "")
+      set(FLB_JEMALLOC_OPTIONS "--with-lg-quantum=3")
+    endif()
+    # Split into a list so CMake handles it correctly when passing to configure command
+    separate_arguments(FLB_JEMALLOC_OPTIONS_LIST UNIX_COMMAND ${FLB_JEMALLOC_OPTIONS})
+    message(STATUS "jemalloc configure: ${FLB_JEMALLOC_OPTIONS_LIST}")
+
+    # Link to Jemalloc as an external dependency
+    set(FLB_LIBJEMALLOC_PATH "${CMAKE_CURRENT_BINARY_DIR}/lib/libjemalloc_pic.a")
+    ExternalProject_Add(jemalloc
+      SOURCE_DIR ${CMAKE_CURRENT_SOURCE_DIR}/lib/jemalloc-5.3.0
+      CONFIGURE_COMMAND ${CMAKE_CURRENT_SOURCE_DIR}/lib/jemalloc-5.3.0/configure ${AUTOCONF_HOST_OPT} "${FLB_JEMALLOC_OPTIONS_LIST}" --prefix=<INSTALL_DIR>
+      CFLAGS=-std=gnu99\ -Wall\ -pipe\ -g3\ -O3\ -funroll-loops
+      BUILD_COMMAND ${EXTERNAL_BUILD_TOOL}
+      BUILD_BYPRODUCTS ${FLB_LIBJEMALLOC_PATH}
+      INSTALL_DIR ${CMAKE_CURRENT_BINARY_DIR}/
+      INSTALL_COMMAND ${EXTERNAL_BUILD_TOOL} install_lib_static install_include)
+    add_library(libjemalloc STATIC IMPORTED GLOBAL)
+    set_target_properties(libjemalloc PROPERTIES IMPORTED_LOCATION ${FLB_LIBJEMALLOC_PATH})
+    add_dependencies(libjemalloc jemalloc)
+    include_directories("${CMAKE_BINARY_DIR}/include/")
+    set(JEMALLOC_LIBRARIES "libjemalloc")
+  endif()
+  FLB_DEFINITION(FLB_HAVE_JEMALLOC)
 else()
   FLB_OPTION(FLB_JEMALLOC OFF)
 endif()
@@ -876,40 +895,51 @@ endif()
 # LibBacktrace (friendly stacktrace support)
 # =========================================
 if(FLB_BACKTRACE)
-  FLB_DEFINITION(FLB_HAVE_LIBBACKTRACE)
-  if (CMAKE_OSX_SYSROOT)
-    # From macOS Mojave, /usr/include does not store C SDK headers.
-    # For libbacktrace building on macOS, we have to tell C headers where they are located.
-    set(DEPS_C_COMPILER "${CMAKE_C_COMPILER} -isysroot ${CMAKE_OSX_SYSROOT}")
-  else()
-    set(DEPS_C_COMPILER "${CMAKE_C_COMPILER}")
+  if(FLB_PREFER_SYSTEM_LIB_BACKTRACE)
+    find_path(LIBBACKTRACE_INCLUDE_DIRS NAMES backtrace.h)
+    find_library(LIBBACKTRACE_LIBRARIES NAMES backtrace)
   endif()
-  set(FLB_LIBBACKTRACE_PATH "${CMAKE_CURRENT_BINARY_DIR}/backtrace-prefix/lib/libbacktrace.a")
-  ExternalProject_Add(backtrace
-    SOURCE_DIR ${CMAKE_CURRENT_SOURCE_DIR}/lib/libbacktrace-8602fda/
-    CONFIGURE_COMMAND ${CMAKE_CURRENT_SOURCE_DIR}/lib/libbacktrace-8602fda/configure ${AUTOCONF_HOST_OPT} --prefix=<INSTALL_DIR> --enable-shared=no --enable-static=yes
-    BUILD_COMMAND ${EXTERNAL_BUILD_TOOL}
-    BUILD_BYPRODUCTS ${FLB_LIBBACKTRACE_PATH}
-    INSTALL_COMMAND ${EXTERNAL_BUILD_TOOL} DESTDIR= install
-    )
-  add_library(libbacktrace STATIC IMPORTED GLOBAL)
-  set_target_properties(libbacktrace PROPERTIES IMPORTED_LOCATION ${FLB_LIBBACKTRACE_PATH})
-  add_dependencies(libbacktrace backtrace)
-  include_directories("${CMAKE_CURRENT_BINARY_DIR}/backtrace-prefix/include/")
+  if(LIBBACKTRACE_INCLUDE_DIRS AND LIBBACKTRACE_LIBRARIES)
+    message(STATUS "libbacktrace found (${LIBBACKTRACE_LIBRARIES})")
+    include_directories(${LIBBACKTRACE_INCLUDE_DIRS})
+    link_directories(${LIBBACKTRACE_LIBRARY_DIRS})
+  else()
+    message(STATUS "libbacktrace not found, building ourselves")
+    if (CMAKE_OSX_SYSROOT)
+      # From macOS Mojave, /usr/include does not store C SDK headers.
+      # For libbacktrace building on macOS, we have to tell C headers where they are located.
+      set(DEPS_C_COMPILER "${CMAKE_C_COMPILER} -isysroot ${CMAKE_OSX_SYSROOT}")
+    else()
+      set(DEPS_C_COMPILER "${CMAKE_C_COMPILER}")
+    endif()
+    set(FLB_LIBBACKTRACE_PATH "${CMAKE_CURRENT_BINARY_DIR}/backtrace-prefix/lib/libbacktrace.a")
+    ExternalProject_Add(backtrace
+      SOURCE_DIR ${CMAKE_CURRENT_SOURCE_DIR}/lib/libbacktrace-8602fda/
+      CONFIGURE_COMMAND ${CMAKE_CURRENT_SOURCE_DIR}/lib/libbacktrace-8602fda/configure ${AUTOCONF_HOST_OPT} --prefix=<INSTALL_DIR> --enable-shared=no --enable-static=yes
+      BUILD_COMMAND ${EXTERNAL_BUILD_TOOL}
+      BUILD_BYPRODUCTS ${FLB_LIBBACKTRACE_PATH}
+      INSTALL_COMMAND ${EXTERNAL_BUILD_TOOL} DESTDIR= install
+      )
+    add_library(libbacktrace STATIC IMPORTED GLOBAL)
+    set_target_properties(libbacktrace PROPERTIES IMPORTED_LOCATION ${FLB_LIBBACKTRACE_PATH})
+    add_dependencies(libbacktrace backtrace)
+    include_directories("${CMAKE_CURRENT_BINARY_DIR}/backtrace-prefix/include/")
+    set(LIBBACKTRACE_LIBRARIES "libbacktrace")
+  endif()
+  FLB_DEFINITION(FLB_HAVE_LIBBACKTRACE)
 endif()
 
 if(FLB_IN_KAFKA OR FLB_OUT_KAFKA)
-    FLB_OPTION(RDKAFKA_BUILD_STATIC    On)
-    FLB_OPTION(RDKAFKA_BUILD_EXAMPLES Off)
-    FLB_OPTION(RDKAFKA_BUILD_TESTS    Off)
-    FLB_OPTION(ENABLE_LZ4_EXT         Off)
-
-    # disable Curl
-    if (FLB_SYSTEM_MACOS)
-      FLB_OPTION(WITH_CURL  Off)
-    endif()
-
-    add_subdirectory(${FLB_PATH_LIB_RDKAFKA} EXCLUDE_FROM_ALL)
+  if(FLB_PREFER_SYSTEM_LIB_KAFKA)
+    find_package(PkgConfig)
+    pkg_check_modules(KAFKA rdkafka>=2.3.0)
+  endif()
+  if(KAFKA_FOUND)
+    include_directories(${KAFKA_INCLUDE_DIRS})
+    link_directories(${KAFKA_LIBRARY_DIRS})
+  else()
+    include(cmake/kafka.cmake)
+  endif()
 endif()
 
 # Onigmo (Regex Engine) options

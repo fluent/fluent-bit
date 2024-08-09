@@ -28,5 +28,5 @@ add_library(flb-aws STATIC ${src})
 target_link_libraries(flb-aws flb-aws-compress)
 
 if(FLB_JEMALLOC)
-  target_link_libraries(flb-aws libjemalloc)
+  target_link_libraries(flb-aws ${JEMALLOC_LIBRARIES})
 endif()
