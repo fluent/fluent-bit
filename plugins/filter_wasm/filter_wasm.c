@@ -88,7 +88,8 @@ static int cb_wasm_filter(const void *data, size_t bytes,
         return FLB_FILTER_NOTOUCH;
     }
 
-    wasm = flb_wasm_instantiate(config, ctx->wasm_path, ctx->accessible_dir_list, -1, -1, -1);
+    wasm = flb_wasm_instantiate(config, ctx->wasm_path, ctx->accessible_dir_list,
+                                ctx->wasm_conf);
     if (wasm == NULL) {
         flb_plg_debug(ctx->ins, "instantiate wasm [%s] failed", ctx->wasm_path);
         goto on_error;
@@ -330,6 +331,7 @@ static int cb_wasm_init(struct flb_filter_instance *f_ins,
                         struct flb_config *config, void *data)
 {
     struct flb_filter_wasm *ctx = NULL;
+    struct flb_wasm_config *wasm_conf = NULL;
     int ret = -1;
     const char *tmp;
     int event_format;
@@ -363,6 +365,18 @@ static int cb_wasm_init(struct flb_filter_instance *f_ins,
     }
 
     flb_wasm_init(config);
+    wasm_conf = flb_wasm_config_init(config);
+    if (wasm_conf == NULL) {
+        goto init_error;
+    }
+    ctx->wasm_conf = wasm_conf;
+
+    if (ctx->wasm_heap_size > FLB_WASM_DEFAULT_HEAP_SIZE) {
+        wasm_conf->heap_size = ctx->wasm_heap_size;
+    }
+    if (ctx->wasm_stack_size > FLB_WASM_DEFAULT_STACK_SIZE) {
+        wasm_conf->stack_size = ctx->wasm_stack_size;
+    }
 
     /* Set context */
     flb_filter_set_context(f_ins, ctx);
@@ -378,6 +392,7 @@ static int cb_wasm_exit(void *data, struct flb_config *config)
 {
     struct flb_filter_wasm *ctx = data;
 
+    flb_wasm_config_destroy(ctx->wasm_conf);
     flb_wasm_destroy_all(config);
     delete_wasm_config(ctx);
     return 0;
@@ -404,6 +419,16 @@ static struct flb_config_map config_map[] = {
      FLB_CONFIG_MAP_STR, "function_name", NULL,
      0, FLB_TRUE, offsetof(struct flb_filter_wasm, wasm_function_name),
      "Set the function name in wasm to execute"
+    },
+    {
+      FLB_CONFIG_MAP_SIZE, "wasm_heap_size", DEFAULT_WASM_HEAP_SIZE,
+      0, FLB_TRUE, offsetof(struct flb_filter_wasm, wasm_heap_size),
+      "Set the heap size of wasm runtime"
+    },
+    {
+      FLB_CONFIG_MAP_SIZE, "wasm_stack_size", DEFAULT_WASM_STACK_SIZE,
+      0, FLB_TRUE, offsetof(struct flb_filter_wasm, wasm_stack_size),
+      "Set the stack size of wasm runtime"
     },
     /* EOF */
     {0}
