@@ -583,7 +583,7 @@ int flb_config_map_set(struct mk_list *properties, struct mk_list *map, void *co
     int ret;
     int len;
     char *base;
-    char *m_bool;
+    int *m_bool;
     int *m_i_num;
     double *m_d_num;
     size_t *m_s_num;
@@ -651,10 +651,10 @@ int flb_config_map_set(struct mk_list *properties, struct mk_list *map, void *co
         }
         else if (m->type == FLB_CONFIG_MAP_TIME) {
             m_i_num = (int *) (base + m->offset);
-            *m_i_num = m->value.val.s_num;
+            *m_i_num = m->value.val.i_num;
         }
         else if (m->type == FLB_CONFIG_MAP_BOOL) {
-            m_bool = (char *) (base + m->offset);
+            m_bool = (int *) (base + m->offset);
             *m_bool = m->value.val.boolean;
         }
         else if (m->type >= FLB_CONFIG_MAP_CLIST ||
@@ -779,7 +779,7 @@ int flb_config_map_set(struct mk_list *properties, struct mk_list *map, void *co
                 *m_d_num = atof(kv->val);
             }
             else if (m->type == FLB_CONFIG_MAP_BOOL) {
-                m_bool = (char *) (base + m->offset);
+                m_bool = (int *) (base + m->offset);
                 ret = flb_utils_bool(kv->val);
                 if (ret == -1) {
                     flb_error("[config map] invalid value for boolean property '%s=%s'",
