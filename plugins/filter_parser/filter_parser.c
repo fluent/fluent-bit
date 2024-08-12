@@ -367,6 +367,10 @@ static int cb_parser_filter(const void *data, size_t bytes,
                 encoder_result = flb_log_event_encoder_commit_record(&log_encoder);
             }
 
+            if (encoder_result != FLB_EVENT_ENCODER_SUCCESS) {
+                flb_plg_error(ctx->ins, "log event encoder error : %d", encoder_result);
+            }
+
             flb_free(append_arr);
             append_arr = NULL;
         }
