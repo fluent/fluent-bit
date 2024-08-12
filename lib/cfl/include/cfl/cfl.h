@@ -37,7 +37,9 @@
 #include <cfl/cfl_time.h>
 #include <cfl/cfl_variant.h>
 #include <cfl/cfl_object.h>
+#include <cfl/cfl_utils.h>
 
 int cfl_init();
+char *cfl_version();
 
 #endif

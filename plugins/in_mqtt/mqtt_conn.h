@@ -22,6 +22,8 @@
 
 #include <fluent-bit/flb_connection.h>
 
+#define MQTT_CONNECTION_DEFAULT_BUFFER_SIZE "2048"
+
 enum {
     MQTT_NEW        = 1,  /* it's a new connection                */
     MQTT_CONNECTED  = 2,  /* MQTT connection per protocol spec OK */
@@ -36,7 +38,8 @@ struct mqtt_conn {
     int  buf_frame_end;              /* Frame end position                */
     int  buf_pos;                    /* Index position                    */
     int  buf_len;                    /* Buffer content length             */
-    unsigned char buf[1024];         /* Buffer data                       */
+    size_t  buf_size;                /* Buffer size                       */
+    unsigned char *buf;              /* Buffer data                       */
     struct flb_in_mqtt_config *ctx;  /* Plugin configuration context      */
     struct flb_connection *connection;
     struct mk_list _head;            /* Link to flb_in_mqtt_config->conns */

@@ -8,7 +8,7 @@ set(CMAKE_POLICY_DEFAULT_CMP0069 NEW)
 # Fluent Bit Version
 set(FLB_VERSION_MAJOR  3)
 set(FLB_VERSION_MINOR  1)
-set(FLB_VERSION_PATCH  3)
+set(FLB_VERSION_PATCH  6)
 set(FLB_VERSION_STR "${FLB_VERSION_MAJOR}.${FLB_VERSION_MINOR}.${FLB_VERSION_PATCH}")
 
 set(CMAKE_POSITION_INDEPENDENT_CODE ON)
@@ -148,6 +148,7 @@ option(FLB_WINDOWS_DEFAULTS    "Build with predefined Windows settings"     Yes)
 option(FLB_WASM                "Build with WASM runtime support"            Yes)
 option(FLB_WAMRC               "Build with WASM AOT compiler executable"    No)
 option(FLB_WASM_STACK_PROTECT  "Build with WASM runtime with strong stack protector flags" No)
+option(FLB_ENFORCE_ALIGNMENT   "Enable limited platform specific aligned memory access" No)
 
 # Native Metrics Support (cmetrics)
 option(FLB_METRICS             "Enable metrics support"       Yes)
@@ -177,6 +178,10 @@ option(FLB_HTTP_CLIENT_DEBUG  "Enable HTTP Client debug callbacks"   No)
 
 # Run ldconfig on package post-install
 option(FLB_RUN_LDCONFIG "Enable execution of ldconfig after installation" No)
+
+# Prefer system libraries if available
+option(FLB_PREFER_SYSTEM_LIBS             "Prefer system libraries"                   No)
+option(FLB_PREFER_SYSTEM_LIB_LUAJIT       "Prefer the libluajit system library"       ${FLB_PREFER_SYSTEM_LIBS})
 
 # Enable all features
 if(FLB_ALL)
@@ -336,6 +341,11 @@ if(FLB_IPO STREQUAL "On" OR (FLB_IPO STREQUAL "ReleaseOnly" AND FLB_RELEASE))
   else()
     message(Warning "IPO is not supported on this platform")
   endif()
+endif()
+
+# Memory alignment enforcement
+if(FLB_ENFORCE_ALIGNMENT)
+  FLB_DEFINITION(FLB_ENFORCE_ALIGNMENT)
 endif()
 
 # Harden release binary against security vulnerabilities
@@ -944,7 +954,16 @@ endif()
 # LuaJIT (Scripting Support)
 # ==========================
 if(FLB_LUAJIT)
-  include(cmake/luajit.cmake)
+  if(FLB_PREFER_SYSTEM_LIB_LUAJIT)
+    find_package(PkgConfig)
+    pkg_check_modules(LUAJIT luajit>=2.1.0)
+  endif()
+  if(LUAJIT_FOUND)
+    include_directories(${LUAJIT_INCLUDE_DIRS})
+    link_directories(${LUAJIT_LIBRARY_DIRS})
+  else()
+    include(cmake/luajit.cmake)
+  endif()
   FLB_DEFINITION(FLB_HAVE_LUAJIT)
 endif()
 

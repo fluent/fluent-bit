@@ -23,4 +23,3 @@ service:
 ```
 
 Now you can run the example and see the trace data logged by the collector instance.
-

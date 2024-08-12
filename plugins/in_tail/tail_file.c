@@ -876,7 +876,7 @@ static int set_file_position(struct flb_tail_config *ctx,
     }
     file->offset = ret;
 
-    if (file->decompression_context == NULL) {        
+    if (file->decompression_context == NULL) {
         file->stream_offset = ret;
     }
 
@@ -946,13 +946,13 @@ int flb_tail_file_append(char *path, struct stat *st, int mode,
     if (flb_tail_file_exists(st, ctx) == FLB_TRUE) {
         return -1;
     }
-   
+
     #ifdef __linux__
     if (ctx->file_cache_advise) {
         flb_plg_debug(ctx->ins, "file will be read in POSIX_FADV_DONTNEED mode %s", path);
     }
     #endif
-    
+
     fd = open(path, O_RDONLY);
     if (fd == -1) {
         flb_errno();
@@ -1044,8 +1044,9 @@ int flb_tail_file_append(char *path, struct stat *st, int mode,
      * for path_key to continue working after rotation. */
     file->orig_name = flb_strdup(file->name);
     if (!file->orig_name) {
-        flb_free(file->name);
         flb_errno();
+        flb_free(file->name);
+        file->name = NULL;
         goto error;
     }
     file->orig_name_len = file->name_len;
@@ -1449,7 +1450,7 @@ int flb_tail_file_chunk(struct flb_tail_file *file)
         }
     }
     #endif
-    
+
     read_size = file_buffer_capacity;
 
     if (file->decompression_context != NULL) {
