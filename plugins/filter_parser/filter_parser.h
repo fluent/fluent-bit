@@ -35,6 +35,7 @@ struct filter_parser_ctx {
     int    key_name_len;
     int    reserve_data;
     int    preserve_key;
+    int    hash_value_field;
     struct mk_list parsers;
     struct flb_filter_instance *ins;
 };

@@ -32,6 +32,7 @@
 
 #include <string.h>
 #include <fluent-bit.h>
+#include <time.h>
 
 #include "filter_parser.h"
 
@@ -436,6 +437,11 @@ static struct flb_config_map config_map[] = {
      0, FLB_TRUE, offsetof(struct filter_parser_ctx, reserve_data),
      "Keep all other original fields in the parsed result. "
      "If false, all other original fields will be removed."
+    },
+    {
+     FLB_CONFIG_MAP_BOOL, "Hash_Value_Field", "false",
+     0, FLB_TRUE, offsetof(struct filter_parser_ctx, hash_value_field),
+     "Stores the parsed values as a hash value in a field with key `parsed`. "
     },
     {
      FLB_CONFIG_MAP_DEPRECATED, "Unescape_key", NULL,
