@@ -292,7 +292,16 @@ include_directories(include/monkey/)
 include_directories(${CMAKE_CURRENT_BINARY_DIR}/include/)
 include_directories(${CMAKE_CURRENT_BINARY_DIR}/include/monkey/)
 
-if (MK_EVENT_LOOP_LIBEVENT)
+# Check if we need to build libevent by using auto discovery mechanism
+if (CMAKE_SYSTEM_NAME MATCHES "Windows" AND
+    (
+      NOT MK_EVENT_LOOP_SELECT AND
+      NOT MK_EVENT_LOOP_POLL AND
+      NOT MK_EVENT_LOOP_KQUEUE AND
+      NOT MK_EVENT_LOOP_EPOLL
+    ) OR MK_EVENT_LOOP_LIBEVENT)
+
+  set(MK_EVENT_LOOP_LIBEVENT Yes)
   include_directories(mk_core/deps/libevent/include)
   include_directories("${PROJECT_BINARY_DIR}/mk_core/deps/libevent/include/")
 endif()
