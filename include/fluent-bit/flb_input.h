@@ -73,6 +73,10 @@
 #define FLB_INPUT_RUNNING     1
 #define FLB_INPUT_PAUSED      0
 
+/* Paused by */
+#define FLB_INPUT_PAUSED_BY_CHUNKS_OVERLIMIT 0
+#define FLB_INPUT_PAUSED_BY_STORAGE_OVERFLOW 1
+
 struct flb_input_instance;
 
 struct flb_input_plugin {
@@ -248,6 +252,9 @@ struct flb_input_instance {
      * - FLB_INPUT_PAUSED  -> cannot append data
      */
     int storage_buf_status;
+
+
+    int storage_buf_paused_by;
 
     /*
      * Optional data passed to the plugin, this info is useful when
