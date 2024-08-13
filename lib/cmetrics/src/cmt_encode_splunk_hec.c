@@ -601,14 +601,12 @@ static struct cmt_splunk_hec_context
     context = calloc(1, sizeof(struct cmt_splunk_hec_context));
     if (context == NULL) {
         result = CMT_ENCODE_SPLUNK_HEC_ALLOCATION_ERROR;
-
         goto cleanup;
     }
 
     /* host parameter is mandatory. */
     if (host == NULL) {
         result = CMT_ENCODE_SPLUNK_HEC_INVALID_ARGUMENT_ERROR;
-
         goto cleanup;
     }
 
@@ -634,7 +632,6 @@ cleanup:
     if (result != CMT_ENCODE_SPLUNK_HEC_SUCCESS) {
         if (context != NULL) {
             destroy_splunk_hec_context(context);
-
             context = NULL;
         }
     }
@@ -664,6 +661,7 @@ cfl_sds_t cmt_encode_splunk_hec_create(struct cmt *cmt, const char *host,
     /* Allocate a 1KB of buffer */
     buf = cfl_sds_create_size(1024);
     if (!buf) {
+        destroy_splunk_hec_context(context);
         return NULL;
     }
 

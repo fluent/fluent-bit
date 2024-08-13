@@ -107,8 +107,8 @@ int cmt_counter_inc(struct cmt_counter *counter,
                                 counter->map, labels_count, label_vals,
                                 CMT_TRUE);
     if (!metric) {
-        cmt_log_error(counter->cmt, "unable to retrieve metric: %s for counter %s_%s_%s",
-                      counter->map, counter->opts.ns, counter->opts.subsystem,
+        cmt_log_error(counter->cmt, "unable to retrieve metric for counter %s_%s_%s",
+                      counter->opts.ns, counter->opts.subsystem,
                       counter->opts.name);
         return -1;
     }
@@ -125,8 +125,8 @@ int cmt_counter_add(struct cmt_counter *counter, uint64_t timestamp, double val,
                                 counter->map, labels_count, label_vals,
                                 CMT_TRUE);
     if (!metric) {
-        cmt_log_error(counter->cmt, "unable to retrieve metric: %s for counter %s_%s_%s",
-                      counter->map, counter->opts.ns, counter->opts.subsystem,
+        cmt_log_error(counter->cmt, "unable to retrieve metric for counter %s_%s_%s",
+                      counter->opts.ns, counter->opts.subsystem,
                       counter->opts.name);
         return -1;
     }
@@ -144,8 +144,8 @@ int cmt_counter_set(struct cmt_counter *counter, uint64_t timestamp, double val,
                                 labels_count, label_vals,
                                 CMT_TRUE);
     if (!metric) {
-        cmt_log_error(counter->cmt, "unable to retrieve metric: %s for counter %s_%s_%s",
-                      counter->map, counter->opts.ns, counter->opts.subsystem,
+        cmt_log_error(counter->cmt, "unable to retrieve metric for counter %s_%s_%s",
+                      counter->opts.ns, counter->opts.subsystem,
                       counter->opts.name);
         return -1;
     }
@@ -170,8 +170,8 @@ int cmt_counter_get_val(struct cmt_counter *counter,
                                  counter->map, labels_count, label_vals,
                                  &val);
     if (ret == -1) {
-        cmt_log_error(counter->cmt, "unable to retrieve metric: %s for counter %s_%s_%s",
-                      counter->map, counter->opts.ns, counter->opts.subsystem,
+        cmt_log_error(counter->cmt, "unable to retrieve metric for counter %s_%s_%s",
+                      counter->opts.ns, counter->opts.subsystem,
                       counter->opts.name);
         return -1;
     }

@@ -341,8 +341,8 @@ int cmt_histogram_observe(struct cmt_histogram *histogram, uint64_t timestamp,
     metric = histogram_get_metric(histogram, labels_count, label_vals);
     if (!metric) {
         cmt_log_error(histogram->cmt,
-                      "unable to retrieve metric: %s for histogram %s_%s_%s",
-                      histogram->map, histogram->opts.ns, histogram->opts.subsystem,
+                      "unable to retrieve metric for histogram %s_%s_%s",
+                      histogram->opts.ns, histogram->opts.subsystem,
                       histogram->opts.name);
         return -1;
     }
@@ -381,8 +381,8 @@ int cmt_histogram_set_default(struct cmt_histogram *histogram,
     metric = histogram_get_metric(histogram, labels_count, label_vals);
     if (!metric) {
         cmt_log_error(histogram->cmt,
-                      "unable to retrieve metric: %s for histogram %s_%s_%s",
-                      histogram->map, histogram->opts.ns, histogram->opts.subsystem,
+                      "unable to retrieve metric for histogram %s_%s_%s",
+                      histogram->opts.ns, histogram->opts.subsystem,
                       histogram->opts.name);
         return -1;
     }
