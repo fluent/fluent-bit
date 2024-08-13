@@ -532,6 +532,7 @@ int ctr_decode_opentelemetry_create(struct ctrace **out_ctr,
         otel_resource_span = service_request->resource_spans[resource_span_index];
         if (otel_resource_span == NULL) {
             opentelemetry__proto__collector__trace__v1__export_trace_service_request__free_unpacked(service_request, NULL);
+            ctr_destroy(ctr);
             return -1;
         }
 

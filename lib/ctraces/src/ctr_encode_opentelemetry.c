@@ -1042,6 +1042,7 @@ static Opentelemetry__Proto__Trace__V1__ResourceSpans **set_resource_spans(struc
 
         otel_resource_span = initialize_resource_span();
         if (!otel_resource_span) {
+            free(rs);
             return NULL;
         }
         otel_resource_span->resource = ctr_set_resource(resource_span->resource);
@@ -1305,12 +1306,12 @@ cfl_sds_t ctr_encode_opentelemetry_create(struct ctrace *ctr)
     len = opentelemetry__proto__collector__trace__v1__export_trace_service_request__get_packed_size(req);
     buf = cfl_sds_create_size(len);
     if (!buf) {
+        destroy_export_service_request(req);
         return NULL;
     }
     cfl_sds_set_len(buf, len);
 
     opentelemetry__proto__collector__trace__v1__export_trace_service_request__pack(req, (uint8_t *)buf);
-
     destroy_export_service_request(req);
 
     return buf;
