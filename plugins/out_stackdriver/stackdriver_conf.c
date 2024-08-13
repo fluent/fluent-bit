@@ -262,6 +262,7 @@ struct flb_stackdriver *flb_stackdriver_conf_create(struct flb_output_instance *
     const char *backwards_compatible_env_var;
     struct flb_stackdriver *ctx;
     size_t http_request_key_size;
+    struct cmt_histogram_buckets *buckets;
 
     /* Allocate config context */
     ctx = flb_calloc(1, sizeof(struct flb_stackdriver));
@@ -559,6 +560,16 @@ struct flb_stackdriver *flb_stackdriver_conf_create(struct flb_output_instance *
                                                         "Total number of retried records.",
                                                         2, (char *[]) {"status", "name"});
 
+    buckets = cmt_histogram_buckets_create(7, 1.0, 2.0, 4.0, 8.0, 16.0, 32.0, 64.0);
+    ctx->cmt_write_entries_latency = cmt_histogram_create(ins->cmt,
+                                                          "fluentbit",
+                                                          "stackdriver",
+                                                          "write_entries_latency",
+                                                          "Latency of Cloud Logging WriteLogEntries HTTP request.",
+                                                          buckets,
+                                                          1, (char *[]) {"name"});
+
+
     /* OLD api */
     flb_metrics_add(FLB_STACKDRIVER_SUCCESSFUL_REQUESTS,
                     "stackdriver_successful_requests", ctx->ins->metrics);
@@ -599,7 +610,7 @@ int flb_stackdriver_conf_destroy(struct flb_stackdriver *ctx)
         }
         flb_free(ctx->creds);
     }
-    
+
     if (ctx->env) {
         if (ctx->env->creds_file) {
             flb_sds_destroy(ctx->env->creds_file);
@@ -620,7 +631,7 @@ int flb_stackdriver_conf_destroy(struct flb_stackdriver *ctx)
     if (ctx->metadata_server) {
         flb_sds_destroy(ctx->metadata_server);
     }
-    
+
     if (ctx->resource_type == RESOURCE_TYPE_K8S){
         flb_sds_destroy(ctx->namespace_name);
         flb_sds_destroy(ctx->pod_name);
