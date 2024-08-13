@@ -2830,6 +2830,9 @@ static void cb_stackdriver_flush(struct flb_event_chunk *event_chunk,
     struct flb_connection *u_conn;
     struct flb_http_client *c;
     int compressed = FLB_FALSE;
+    uint64_t write_entries_start = 0;
+    uint64_t write_entries_end = 0;
+    float write_entries_latency = 0.0;
 #ifdef FLB_HAVE_METRICS
     char *name = (char *) flb_output_name(ctx->ins);
     uint64_t ts = cfl_time_now();
@@ -2924,8 +2927,13 @@ static void cb_stackdriver_flush(struct flb_event_chunk *event_chunk,
         flb_http_set_content_encoding_gzip(c);
     }
 
+    write_entries_start = cfl_time_now();
+
     /* Send HTTP request */
     ret = flb_http_do(c, &b_sent);
+
+    write_entries_end = cfl_time_now();
+    write_entries_latency = (float)(write_entries_end - write_entries_start) / 1000000000.0;
 
     /* validate response */
     if (ret != 0) {
@@ -2995,6 +3003,9 @@ static void cb_stackdriver_flush(struct flb_event_chunk *event_chunk,
 #ifdef FLB_HAVE_METRICS
     if (ret_code == FLB_OK) {
         cmt_counter_inc(ctx->cmt_successful_requests, ts, 1, (char *[]) {name});
+        if (write_entries_latency > 0.0) {
+          cmt_histogram_observe(ctx->cmt_write_entries_latency, ts, write_entries_latency, 1, (char *[]) {name});
+        }
         add_record_metrics(ctx, ts, (int) event_chunk->total_events, 200, 0);
 
         /* OLD api */
