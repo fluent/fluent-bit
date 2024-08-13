@@ -1122,6 +1122,7 @@ static int append_log(struct flb_input_instance *ins, struct fw_conn *conn,
         flb_input_metrics_append(conn->in,
                                  out_tag, flb_sds_len(out_tag),
                                  cmt);
+        cmt_decode_msgpack_destroy(cmt);
     }
     else if (event_type == FLB_EVENT_TYPE_TRACES) {
         off = 0;
@@ -1133,6 +1134,8 @@ static int append_log(struct flb_input_instance *ins, struct fw_conn *conn,
         flb_input_trace_append(ins,
                                out_tag, flb_sds_len(out_tag),
                                ctr);
+
+        ctr_decode_msgpack_destroy(ctr);
     }
 
     return 0;
