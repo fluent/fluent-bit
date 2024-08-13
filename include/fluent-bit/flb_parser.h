@@ -83,6 +83,7 @@ static inline time_t flb_parser_tm2time(const struct flb_tm *src,
 
     tmp = src->tm;
     if (use_system_timezone) {
+        tmp.tm_isdst = -1;
         res = mktime(&tmp);
     } else {
         res = timegm(&tmp) - flb_tm_gmtoff(src);
