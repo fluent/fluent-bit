@@ -346,20 +346,16 @@ int cmt_cat_untyped(struct cmt *cmt, struct cmt_untyped *untyped,
 int cmt_cat_histogram(struct cmt *cmt, struct cmt_histogram *histogram,
                       struct cmt_map *filtered_map)
 {
-    int i;
-    double val;
     int ret;
     char **labels = NULL;
     struct cmt_map *map;
     struct cmt_opts *opts;
     struct cmt_histogram *hist;
-    uint64_t timestamp;
     struct cmt_histogram_buckets *buckets;
     int64_t buckets_count;
 
     map = histogram->map;
     opts = map->opts;
-    timestamp = cmt_metric_get_timestamp(&map->metric);
 
     ret = cmt_cat_copy_label_keys(map, (char **) &labels);
     if (ret == -1) {
@@ -433,6 +429,8 @@ int cmt_cat_summary(struct cmt *cmt, struct cmt_summary *summary,
                              quantiles,
                              map->label_count, labels);
     if (!sum) {
+        free(labels);
+        free(quantiles);
         return -1;
     }
 

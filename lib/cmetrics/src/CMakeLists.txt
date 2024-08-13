@@ -35,6 +35,7 @@ set(src
   cmt_encode_influx.c
   cmt_encode_msgpack.c
   cmt_decode_msgpack.c
+  cmt_decode_statsd.c
   cmt_mpack_utils.c
   external/remote.pb-c.c
   external/types.pb-c.c

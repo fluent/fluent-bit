@@ -663,6 +663,7 @@ int cmt_decode_prometheus_remote_write_create(struct cmt **out_cmt, char *in_buf
                                               (uint8_t *) in_buf);
     if (write == NULL) {
         result = CMT_DECODE_PROMETHEUS_REMOTE_WRITE_UNPACK_ERROR;
+        cmt_destroy(cmt);
         return result;
     }
 

@@ -1,0 +1,13 @@
+statsdTestMetric011:5000|g|#mykey:myvalue,mykey2:othervalue
+statsdTestMetric012:400|s|@0.125|#mykey:myvalue
+statsdTestMetric013:+500|g|#mykey:myvalue
+statsdTestMetric014:-400|g|#mykey:myvalue
+statsdTestMetric015:+2|g|#mykey:myvalue
+statsdTestMetric016:-1|g|@0.1|#mykey:myvalue
+statsdTestMetric021:365|g|#mykey:myvalue
+statsdTestMetric022:+300|c|#mykey:myvalue
+statsdTestMetric023:-200|s|#mykey:myvalue
+statsdTestMetric024:200|g|#mykey:myvalue
+expohisto:1|ms|#mykey:myvalue
+expohisto:0|ms|#mykey:myvalue
+expohisto:-1|ms|#mykey:myvalue
