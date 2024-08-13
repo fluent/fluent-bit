@@ -265,6 +265,32 @@ static struct flb_upstream_node *create_node(int id,
                                     tls_debug, tls_vhost, tls_ca_path, tls_ca_file,
                                     tls_crt_file, tls_key_file,
                                     tls_key_passwd, ht, config);
+
+    /* Teardown for created flb_sds_t stuffs by flb_cf_section_property_get_string(). */
+    if (tls_vhost != NULL) {
+        flb_sds_destroy(tls_vhost);
+    }
+
+    if (tls_ca_path != NULL) {
+        flb_sds_destroy(tls_ca_path);
+    }
+
+    if (tls_ca_file != NULL) {
+        flb_sds_destroy(tls_ca_file);
+    }
+
+    if (tls_crt_file != NULL) {
+        flb_sds_destroy(tls_crt_file);
+    }
+
+    if (tls_key_file != NULL) {
+        flb_sds_destroy(tls_key_file);
+    }
+
+    if (tls_key_passwd != NULL) {
+        flb_sds_destroy(tls_key_passwd);
+    }
+
     return node;
 }
 
