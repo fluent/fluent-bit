@@ -279,7 +279,7 @@ int flb_output_task_singleplex_enqueue(struct flb_task_queue *queue,
     if (is_empty) {
         return flb_output_task_queue_flush_one(out_ins->singleplex_queue);
     }
-    
+
     return 0;
 }
 
@@ -300,7 +300,7 @@ int flb_output_task_singleplex_flush_next(struct flb_task_queue *queue)
         mk_list_del(&ended_task->_head);
         flb_free(ended_task);
     }
-    
+
     /* Flush if there is a pending task queued */
     is_empty = mk_list_is_empty(&queue->pending) == 0;
     if (!is_empty) {
@@ -922,6 +922,20 @@ int flb_output_set_property(struct flb_output_instance *ins,
 
         flb_sds_destroy(tmp);
         ins->total_limit_size = (size_t) limit;
+    }
+    else if (prop_key_check("storage.overflow_action", k, len) == 0 && tmp) {
+        if (strcasecmp(tmp, "drop_oldest_chunk") == 0) {
+            ins->storage_overflow_action = FLB_OUTPUT_STORAGE_OVERFLOW_DROP;
+        }
+        else if (strcasecmp(tmp, "pause_ingestion") == 0) {
+            ins->storage_overflow_action = FLB_OUTPUT_STORAGE_OVERFLOW_PAUSE_INGESTION;
+        }
+        else {
+            flb_error("[config] invalid overflow_action '%s' for %s plugin",
+                      tmp, (char *) flb_output_name(ins));
+            flb_sds_destroy(tmp);
+            return -1;
+        }
     }
     else if (prop_key_check("workers", k, len) == 0 && tmp) {
         /* Set the number of workers */

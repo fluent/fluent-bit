@@ -77,6 +77,8 @@ int flb_chunk_trace_output(struct flb_chunk_trace *trace, struct flb_output_inst
 #define FLB_OUTPUT_PRIVATE      1024
 #define FLB_OUTPUT_SYNCHRONOUS  2048  /* run one task at a time, no flush cycle limit */
 
+#define FLB_OUTPUT_STORAGE_OVERFLOW_DROP  0            /* storage.overflow_action: drop_oldest_chunk */
+#define FLB_OUTPUT_STORAGE_OVERFLOW_PAUSE_INGESTION 1  /* storage.overlow_action : pause_ingestion   */
 
 /*
  * Event type handlers
@@ -405,6 +407,14 @@ struct flb_output_instance {
      * filesystem as buffer type.
      */
     size_t total_limit_size;
+
+    /* when the instance has been configured with a limit for storage.total_limit_size,
+     * if the limit is reached the action to take is defined by storage_overflow_action:
+     *
+     * - FLB_OUTPUT_STORAGE_OVERFLOW_DROP (default)
+     * - FLB_OUTPUT_STORAGE_OVERFLOW_PAUSE_INGESTION
+     */
+    int storage_overflow_action;
 
     /* Queue for singleplexed tasks */
     struct flb_task_queue *singleplex_queue;
