@@ -2358,6 +2358,7 @@ static flb_sds_t stackdriver_format(struct flb_stackdriver *ctx,
             flb_sds_destroy(operation_id);
             flb_sds_destroy(operation_producer);
             flb_sds_destroy(trace);
+            flb_sds_destroy(log_name);
             flb_log_event_decoder_destroy(&log_decoder);
             msgpack_sbuffer_destroy(&mp_sbuf);
             return NULL;
