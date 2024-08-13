@@ -80,3 +80,62 @@ int flb_msgpack_append_message_to_record(char **result_buffer,
 
     return result;
 }
+
+int flb_msgpack_append_map_to_record(char **result_buffer,
+                                     size_t *result_size,
+                                     flb_sds_t message_key_name,
+                                     char *base_object_buffer,
+                                     size_t base_object_size,
+                                     char *map_data,
+                                     size_t map_size)
+{
+    msgpack_unpacked   unpacker;
+    msgpack_object_kv *new_map_entries[1];
+    msgpack_object_kv  message_entry;
+    char              *modified_data_buffer;
+    int             modified_data_size;
+    size_t             off = 0;
+    int                i;
+    int                result = FLB_MAP_NOT_MODIFIED;
+    *result_buffer = NULL;
+    *result_size = 0;
+
+    if (message_key_name == NULL || map_data == NULL){
+        return result;
+    }
+
+    new_map_entries[0] = &message_entry;
+
+    message_entry.key.type = MSGPACK_OBJECT_STR;
+    message_entry.key.via.str.size = flb_sds_len(message_key_name);
+    message_entry.key.via.str.ptr  = message_key_name;
+
+    msgpack_unpacked_init(&unpacker);
+    if ((i=msgpack_unpack_next(&unpacker, map_data, map_size, &off)) !=
+        MSGPACK_UNPACK_SUCCESS ) {
+        msgpack_unpacked_destroy(&unpacker);
+        return FLB_MAP_EXPANSION_ERROR;
+    }
+    if (unpacker.data.type != MSGPACK_OBJECT_MAP) {
+        msgpack_unpacked_destroy(&unpacker);
+        return FLB_MAP_EXPANSION_ERROR;
+    }
+
+    message_entry.val = unpacker.data;
+    result = flb_msgpack_expand_map(base_object_buffer,
+                                        base_object_size,
+                                        new_map_entries, 1,
+                                        &modified_data_buffer,
+                                        &modified_data_size);
+    if (result == 0) {
+        result = FLB_MAP_EXPAND_SUCCESS;
+        *result_buffer = modified_data_buffer;
+        *result_size = modified_data_size;
+    }
+    else {
+        result = FLB_MAP_EXPANSION_ERROR;
+    }
+    msgpack_unpacked_destroy(&unpacker);
+
+    return result;
+}

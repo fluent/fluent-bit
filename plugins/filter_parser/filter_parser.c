@@ -28,11 +28,11 @@
 #include <fluent-bit/flb_kv.h>
 #include <fluent-bit/flb_log_event_decoder.h>
 #include <fluent-bit/flb_log_event_encoder.h>
+#include <fluent-bit/flb_msgpack_append_message.h>
 #include <msgpack.h>
 
 #include <string.h>
 #include <fluent-bit.h>
-#include <time.h>
 
 #include "filter_parser.h"
 
@@ -189,6 +189,8 @@ static int cb_parser_filter(const void *data, size_t bytes,
     int key_len;
     const char *val_str;
     int val_len;
+    char *parsed_buf;
+    size_t parsed_size;
     char *out_buf;
     size_t out_size;
     struct flb_time parsed_time;
@@ -232,6 +234,7 @@ static int cb_parser_filter(const void *data, size_t bytes,
                     &log_decoder,
                     &log_event)) == FLB_EVENT_DECODER_SUCCESS) {
         out_buf = NULL;
+        parsed_buf = NULL;
         append_arr_i = 0;
 
         flb_time_copy(&tm, &log_event.timestamp);
@@ -279,7 +282,7 @@ static int cb_parser_filter(const void *data, size_t bytes,
                         flb_time_zero(&parsed_time);
 
                         parse_ret = flb_parser_do(fp->parser, val_str, val_len,
-                                                  (void **) &out_buf, &out_size,
+                                                  (void **) &parsed_buf, &parsed_size,
                                                   &parsed_time);
                         if (parse_ret >= 0) {
                             /*
@@ -323,12 +326,13 @@ static int cb_parser_filter(const void *data, size_t bytes,
                         &log_encoder, log_event.metadata);
             }
 
-            if (out_buf != NULL) {
+            if (parsed_buf != NULL) {
+
                 if (ctx->reserve_data) {
                     char *new_buf = NULL;
                     int  new_size;
                     int ret;
-                    ret = flb_msgpack_expand_map(out_buf, out_size,
+                    ret = flb_msgpack_expand_map(parsed_buf, parsed_size,
                                                  append_arr, append_arr_len,
                                                  &new_buf, &new_size);
                     if (ret == -1) {
@@ -341,6 +345,32 @@ static int cb_parser_filter(const void *data, size_t bytes,
                         return FLB_FILTER_NOTOUCH;
                     }
 
+                    out_buf = new_buf;
+                    out_size = new_size;
+                }
+                else {
+                    out_buf = strdup(parsed_buf);
+                    out_size = parsed_size;
+                }
+                if (ctx->hash_value_field) {
+                    char *new_buf = NULL;
+                    size_t new_size;
+                    int ret;
+                    flb_sds_t hash_key = flb_sds_create("parsed");
+                    ret = flb_msgpack_append_map_to_record(&new_buf, &new_size,
+                                                                hash_key,
+                                                                out_buf, out_size,
+                                                                parsed_buf,parsed_size);
+                    flb_sds_destroy(hash_key);
+                    if ( ret != FLB_MAP_EXPAND_SUCCESS){
+                        flb_plg_error(ctx->ins, "cannot append parsed entry to record");
+
+                        flb_log_event_decoder_destroy(&log_decoder);
+                        flb_log_event_encoder_destroy(&log_encoder);
+                        flb_free(append_arr);
+
+                        return FLB_FILTER_NOTOUCH;
+                    }
                     flb_free(out_buf);
                     out_buf = new_buf;
                     out_size = new_size;
@@ -353,6 +383,7 @@ static int cb_parser_filter(const void *data, size_t bytes,
                 }
 
                 flb_free(out_buf);
+                flb_free(parsed_buf);
                 ret = FLB_FILTER_MODIFIED;
             }
             else {
