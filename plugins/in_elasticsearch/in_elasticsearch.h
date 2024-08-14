@@ -42,7 +42,7 @@ struct flb_in_elasticsearch {
     char cluster_name[16];
     char node_name[12];
 
-    struct flb_log_event_encoder log_encoder;
+    struct flb_log_event_encoder *log_encoder;
 
     struct flb_input_instance *ins;
 
