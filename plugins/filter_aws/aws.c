@@ -349,7 +349,7 @@ static int get_ec2_tag_keys(struct flb_filter_aws *ctx)
         flb_sds_destroy(tags_list);
         return -1;
     }
-    ctx->tag_keys_len = flb_calloc(ctx->tags_count, sizeof(size_t*));
+    ctx->tag_keys_len = flb_calloc(ctx->tags_count, sizeof(size_t));
     if (!ctx->tag_keys_len) {
         flb_errno();
         flb_sds_destroy(tags_list);
@@ -804,7 +804,8 @@ static int ec2_metadata_group_should_fetch(struct flb_filter_aws *ctx,
 
     interval = now - group->last_fetch_attempt;
 
-    if (interval < required_interval) {
+    if (group->last_fetch_attempt > 0 && 
+        interval < required_interval) {
         return FLB_FALSE;
     }
     return FLB_TRUE;
