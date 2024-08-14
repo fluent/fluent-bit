@@ -547,7 +547,8 @@ void flb_test_http_failure_400_bad_disk_write()
 
     flb_time_msleep(5000);
 
-    ret = chmod("/tmp/http-input-test-404-bad-write", 000);
+    rename("/tmp/http-input-test-404-bad-write", 
+           "/tmp/http-input-test-404-bad-write.fail");
     TEST_CHECK(ret == 0);
 
     ctx->httpc = http_client_ctx_create();
@@ -574,11 +575,9 @@ void flb_test_http_failure_400_bad_disk_write()
         TEST_MSG("http response code error. expect: %d, got: %d\n", 400, c->resp.status);
     }
 
-    chmod("/tmp/http-input-test-404-bad-write/http.0", 0700);
-    rmdir("/tmp/http-input-test-404-bad-write/http.0");
-
-    chmod("/tmp/http-input-test-404-bad-write", 0700);
-    rmdir("/tmp/http-input-test-404-bad-write");
+    rename("/tmp/http-input-test-404-bad-write.fail", 
+           "/tmp/http-input-test-404-bad-write");
+    TEST_CHECK(ret == 0);
 
     /* waiting to flush */
     flb_time_msleep(1500);
