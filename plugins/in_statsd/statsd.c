@@ -207,9 +207,11 @@ static int cb_statsd_receive(struct flb_input_instance *ins,
                              struct flb_config *config, void *data)
 {
     int ret;
-    char *line;
     int len;
     struct flb_statsd *ctx = data;
+    struct cfl_list *head = NULL;
+    struct cfl_list *kvs = NULL;
+    struct cfl_split_entry *cur = NULL;
 #ifdef FLB_HAVE_METRICS
     struct cmt *cmt = NULL;
     int cmt_flags = 0;
@@ -244,20 +246,26 @@ static int cb_statsd_receive(struct flb_input_instance *ins,
     else {
 #endif
         ret = FLB_EVENT_ENCODER_SUCCESS;
-        /* Process all messages in buffer */
-        line = strtok(ctx->buf, "\n");
-        while (line != NULL) {
-            flb_plg_trace(ctx->ins, "received a line: '%s'", line);
+        kvs = cfl_utils_split(ctx->buf, '\n', -1 );
+        if (kvs == NULL) {
+            goto split_error;
+        }
 
-            ret = statsd_process_line(ctx, line);
+        cfl_list_foreach(head, kvs) {
+            cur = cfl_list_entry(head, struct cfl_split_entry, _head);
+            flb_plg_trace(ctx->ins, "received a line: '%s'", cur->value);
+
+            ret = statsd_process_line(ctx, cur->value);
 
             if (ret != FLB_EVENT_ENCODER_SUCCESS) {
-                flb_plg_error(ctx->ins, "failed to process line: '%s'", line);
+                flb_plg_error(ctx->ins, "failed to process line: '%s'", cur->value);
 
                 break;
             }
+        }
 
-            line = strtok(NULL, "\n");
+        if (kvs != NULL) {
+            cfl_utils_split_free(kvs);
         }
 
         if (ctx->log_encoder->output_length > 0) {
@@ -275,6 +283,9 @@ static int cb_statsd_receive(struct flb_input_instance *ins,
 #endif
 
     return 0;
+
+split_error:
+    return -1;
 }
 
 static int cb_statsd_init(struct flb_input_instance *ins,
