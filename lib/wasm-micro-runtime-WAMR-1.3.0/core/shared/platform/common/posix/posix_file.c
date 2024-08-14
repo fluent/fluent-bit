@@ -7,6 +7,10 @@
 #include "libc_errno.h"
 #include <unistd.h>
 
+#ifdef __APPLE__
+#include <sys/stdio.h> /* renameat */
+#endif
+
 #if !defined(__APPLE__) && !defined(ESP_PLATFORM)
 #define CONFIG_HAS_PWRITEV 1
 #define CONFIG_HAS_PREADV 1
