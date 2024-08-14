@@ -651,7 +651,7 @@ const char *flb_input_get_property(const char *key,
 #ifdef FLB_HAVE_METRICS
 void *flb_input_get_cmt_instance(struct flb_input_instance *ins)
 {
-    return (void *)ins->cmt;
+    return (void *)ins->input_metrics->cmt;
 }
 #endif
 
@@ -743,9 +743,10 @@ void flb_input_instance_destroy(struct flb_input_instance *ins)
 
     /* Remove metrics */
 #ifdef FLB_HAVE_METRICS
-    if (ins->cmt) {
-        cmt_destroy(ins->cmt);
-    }
+    // TODO Actually destroy input_metrics
+    // if (ins->input_metrics) {
+    //     cmt_destroy(ins->cmt);
+    // }
 
     if (ins->metrics) {
         flb_metrics_destroy(ins->metrics);
@@ -953,127 +954,46 @@ int flb_input_instance_init(struct flb_input_instance *ins,
     ts = cfl_time_now();
 
     /* CMetrics */
-    ins->cmt = cmt_create();
-    if (!ins->cmt) {
-        flb_error("[input] could not create cmetrics context: %s",
-                  flb_input_name(ins));
-        return -1;
-    }
 
     /*
-     * Register generic input plugin metrics
+     * Set generic input plugin metrics
      * -------------------------------------
      */
 
-    /* fluentbit_input_bytes_total */
-    ins->cmt_bytes = \
-        cmt_counter_create(ins->cmt,
-                           "fluentbit", "input", "bytes_total",
-                           "Number of input bytes.",
-                           1, (char *[]) {"name"});
-    cmt_counter_set(ins->cmt_bytes, ts, 0, 1, (char *[]) {name});
-
-    /* fluentbit_input_records_total */
-    ins->cmt_records = \
-        cmt_counter_create(ins->cmt,
-                           "fluentbit", "input", "records_total",
-                           "Number of input records.",
-                           1, (char *[]) {"name"});
-    cmt_counter_set(ins->cmt_records, ts, 0, 1, (char *[]) {name});
-
-    /* fluentbit_input_ingestion_paused */
-    ins->cmt_ingestion_paused = \
-            cmt_gauge_create(ins->cmt,
-                             "fluentbit", "input",
-                             "ingestion_paused",
-                             "Is the input paused or not?",
-                             1, (char *[]) {"name"});
-    cmt_gauge_set(ins->cmt_ingestion_paused, ts, 0, 1, (char *[]) {name});
+    cmt_counter_set(ins->input_metrics->cmt_bytes, ts, 0, 1, (char *[]) {name});
+    cmt_counter_set(ins->input_metrics->cmt_records, ts, 0, 1, (char *[]) {name});
+    cmt_gauge_set(ins->input_metrics->cmt_ingestion_paused, ts, 0, 1, (char *[]) {name});
 
     /* Storage Metrics */
     if (ctx->storage_metrics == FLB_TRUE) {
         /* fluentbit_input_storage_overlimit */
-        ins->cmt_storage_overlimit = \
-            cmt_gauge_create(ins->cmt,
-                             "fluentbit", "input",
-                             "storage_overlimit",
-                             "Is the input memory usage overlimit ?.",
-                             1, (char *[]) {"name"});
-        cmt_gauge_set(ins->cmt_storage_overlimit, ts, 0, 1, (char *[]) {name});
+        cmt_gauge_set(ins->input_metrics->cmt_storage_overlimit, ts, 0, 1, (char *[]) {name});
 
         /* fluentbit_input_storage_memory_bytes */
-        ins->cmt_storage_memory_bytes = \
-            cmt_gauge_create(ins->cmt,
-                             "fluentbit", "input",
-                             "storage_memory_bytes",
-                             "Memory bytes used by the chunks.",
-                             1, (char *[]) {"name"});
-        cmt_gauge_set(ins->cmt_storage_memory_bytes, ts, 0, 1, (char *[]) {name});
+        cmt_gauge_set(ins->input_metrics->cmt_storage_memory_bytes, ts, 0, 1, (char *[]) {name});
 
         /* fluentbit_input_storage_chunks */
-        ins->cmt_storage_chunks = \
-            cmt_gauge_create(ins->cmt,
-                             "fluentbit", "input",
-                             "storage_chunks",
-                             "Total number of chunks.",
-                             1, (char *[]) {"name"});
-        cmt_gauge_set(ins->cmt_storage_chunks, ts, 0, 1, (char *[]) {name});
+        cmt_gauge_set(ins->input_metrics->cmt_storage_chunks, ts, 0, 1, (char *[]) {name});
 
         /* fluentbit_input_storage_chunks_up */
-        ins->cmt_storage_chunks_up = \
-            cmt_gauge_create(ins->cmt,
-                             "fluentbit", "input",
-                             "storage_chunks_up",
-                             "Total number of chunks up in memory.",
-                             1, (char *[]) {"name"});
-        cmt_gauge_set(ins->cmt_storage_chunks_up, ts, 0, 1, (char *[]) {name});
+        cmt_gauge_set(ins->input_metrics->cmt_storage_chunks_up, ts, 0, 1, (char *[]) {name});
 
         /* fluentbit_input_storage_chunks_down */
-        ins->cmt_storage_chunks_down = \
-            cmt_gauge_create(ins->cmt,
-                             "fluentbit", "input",
-                             "storage_chunks_down",
-                             "Total number of chunks down.",
-                             1, (char *[]) {"name"});
-        cmt_gauge_set(ins->cmt_storage_chunks_down, ts, 0, 1, (char *[]) {name});
+        cmt_gauge_set(ins->input_metrics->cmt_storage_chunks_down, ts, 0, 1, (char *[]) {name});
 
         /* fluentbit_input_storage_chunks_busy */
-        ins->cmt_storage_chunks_busy = \
-            cmt_gauge_create(ins->cmt,
-                             "fluentbit", "input",
-                             "storage_chunks_busy",
-                             "Total number of chunks in a busy state.",
-                             1, (char *[]) {"name"});
-        cmt_gauge_set(ins->cmt_storage_chunks_busy, ts, 0, 1, (char *[]) {name});
+        cmt_gauge_set(ins->input_metrics->cmt_storage_chunks_busy, ts, 0, 1, (char *[]) {name});
 
         /* fluentbit_input_storage_chunks_busy_bytes */
-        ins->cmt_storage_chunks_busy_bytes = \
-            cmt_gauge_create(ins->cmt,
-                             "fluentbit", "input",
-                             "storage_chunks_busy_bytes",
-                             "Total number of bytes used by chunks in a busy state.",
-                             1, (char *[]) {"name"});
-        cmt_gauge_set(ins->cmt_storage_chunks_busy_bytes, ts, 0, 1, (char *[]) {name});
+        cmt_gauge_set(ins->input_metrics->cmt_storage_chunks_busy_bytes, ts, 0, 1, (char *[]) {name});
     }
 
     if (ins->storage_type == FLB_STORAGE_MEMRB) {
         /* fluentbit_input_memrb_dropped_chunks */
-        ins->cmt_memrb_dropped_chunks = cmt_counter_create(ins->cmt,
-                                                          "fluentbit", "input",
-                                                          "memrb_dropped_chunks",
-                                                          "Number of memrb dropped chunks.",
-                                                          1, (char *[]) {"name"});
-        cmt_counter_set(ins->cmt_memrb_dropped_chunks, ts, 0, 1, (char *[]) {name});
-
+        cmt_counter_set(ins->input_metrics->cmt_memrb_dropped_chunks, ts, 0, 1, (char *[]) {name});
 
         /* fluentbit_input_memrb_dropped_bytes */
-        ins->cmt_memrb_dropped_bytes = cmt_counter_create(ins->cmt,
-                                                          "fluentbit", "input",
-                                                          "memrb_dropped_bytes",
-                                                          "Number of memrb dropped bytes.",
-                                                          1, (char *[]) {"name"});
-
-        cmt_counter_set(ins->cmt_memrb_dropped_bytes, ts, 0, 1, (char *[]) {name});
+        cmt_counter_set(ins->input_metrics->cmt_memrb_dropped_bytes, ts, 0, 1, (char *[]) {name});
     }
 
     /* OLD Metrics */
@@ -1260,9 +1180,16 @@ int flb_input_init_all(struct flb_config *config)
     struct mk_list *head;
     struct flb_input_instance *ins;
     struct flb_input_plugin *p;
+    struct flb_input_metrics *metrics;
 
     /* Initialize thread-id table */
     memset(&config->in_table_id, '\0', sizeof(config->in_table_id));
+
+    metrics = flb_input_metrics_create();
+    if (!metrics) {
+        // TODO something better
+        return -1;
+    }
 
     /* Iterate all active input instance plugins */
     mk_list_foreach_safe(head, tmp, &config->inputs) {
@@ -1273,6 +1200,9 @@ int flb_input_init_all(struct flb_config *config)
         if (!p) {
             continue;
         }
+
+        /* Set input instance metrics */
+        ins->input_metrics = metrics;
 
         /* Initialize instance */
         ret = flb_input_instance_init(ins, config);
@@ -1702,18 +1632,18 @@ int flb_input_test_pause_resume(struct flb_input_instance *ins, int sleep_second
 
 static void flb_input_ingestion_paused(struct flb_input_instance *ins)
 {
-    if (ins->cmt_ingestion_paused != NULL) {
+    if (ins->input_metrics->cmt_ingestion_paused != NULL) {
         /* cmetrics */
-        cmt_gauge_set(ins->cmt_ingestion_paused, cfl_time_now(), 1,
+        cmt_gauge_set(ins->input_metrics->cmt_ingestion_paused, cfl_time_now(), 1,
                       1, (char *[]) { (char *) flb_input_name(ins)});
     }
 }
 
 static void flb_input_ingestion_resumed(struct flb_input_instance *ins)
 {
-    if (ins->cmt_ingestion_paused != NULL) {
+    if (ins->input_metrics->cmt_ingestion_paused != NULL) {
         /* cmetrics */
-        cmt_gauge_set(ins->cmt_ingestion_paused, cfl_time_now(), 0,
+        cmt_gauge_set(ins->input_metrics->cmt_ingestion_paused, cfl_time_now(), 0,
                       1, (char *[]) {(char *) flb_input_name(ins)});
     }
 }
@@ -2015,4 +1945,114 @@ int flb_input_downstream_set(struct flb_downstream *stream,
     }
 
     return 0;
+}
+
+struct flb_input_metrics *flb_input_metrics_create()
+{
+    struct flb_input_metrics *metrics = flb_calloc(1, sizeof(struct flb_input_metrics));
+
+    metrics->cmt = cmt_create();
+    if (!metrics->cmt) {
+        flb_error("[input] could not create input plugin cmetrics context");
+        return NULL;
+    }
+
+    /*
+     * Register generic input plugin metrics
+     * -------------------------------------
+     */
+
+    /* fluentbit_input_bytes_total */
+    metrics->cmt_bytes = \
+        cmt_counter_create(metrics->cmt,
+                           "fluentbit", "input", "bytes_total",
+                           "Number of input bytes.",
+                           1, (char *[]) {"name"});
+
+    /* fluentbit_input_records_total */
+    metrics->cmt_records = \
+        cmt_counter_create(metrics->cmt,
+                           "fluentbit", "input", "records_total",
+                           "Number of input records.",
+                           1, (char *[]) {"name"});
+
+    /* fluentbit_input_ingestion_paused */
+    metrics->cmt_ingestion_paused = \
+            cmt_gauge_create(metrics->cmt,
+                             "fluentbit", "input",
+                             "ingestion_paused",
+                             "Is the input paused or not?",
+                             1, (char *[]) {"name"});
+
+    /* fluentbit_input_storage_overlimit */
+    metrics->cmt_storage_overlimit = \
+        cmt_gauge_create(metrics->cmt,
+                            "fluentbit", "input",
+                            "storage_overlimit",
+                            "Is the input memory usage overlimit ?.",
+                            1, (char *[]) {"name"});
+
+    /* fluentbit_input_storage_memory_bytes */
+    metrics->cmt_storage_memory_bytes = \
+        cmt_gauge_create(metrics->cmt,
+                            "fluentbit", "input",
+                            "storage_memory_bytes",
+                            "Memory bytes used by the chunks.",
+                            1, (char *[]) {"name"});
+
+    /* fluentbit_input_storage_chunks */
+    metrics->cmt_storage_chunks = \
+        cmt_gauge_create(metrics->cmt,
+                            "fluentbit", "input",
+                            "storage_chunks",
+                            "Total number of chunks.",
+                            1, (char *[]) {"name"});
+
+    /* fluentbit_input_storage_chunks_up */
+    metrics->cmt_storage_chunks_up = \
+        cmt_gauge_create(metrics->cmt,
+                            "fluentbit", "input",
+                            "storage_chunks_up",
+                            "Total number of chunks up in memory.",
+                            1, (char *[]) {"name"});
+
+    /* fluentbit_input_storage_chunks_down */
+    metrics->cmt_storage_chunks_down = \
+        cmt_gauge_create(metrics->cmt,
+                            "fluentbit", "input",
+                            "storage_chunks_down",
+                            "Total number of chunks down.",
+                            1, (char *[]) {"name"});
+
+    /* fluentbit_input_storage_chunks_busy */
+    metrics->cmt_storage_chunks_busy = \
+        cmt_gauge_create(metrics->cmt,
+                            "fluentbit", "input",
+                            "storage_chunks_busy",
+                            "Total number of chunks in a busy state.",
+                            1, (char *[]) {"name"});
+
+    /* fluentbit_input_storage_chunks_busy_bytes */
+    metrics->cmt_storage_chunks_busy_bytes = \
+        cmt_gauge_create(metrics->cmt,
+                            "fluentbit", "input",
+                            "storage_chunks_busy_bytes",
+                            "Total number of bytes used by chunks in a busy state.",
+                            1, (char *[]) {"name"});
+
+    /* fluentbit_input_memrb_dropped_chunks */
+    metrics->cmt_memrb_dropped_chunks = cmt_counter_create(metrics->cmt,
+                                                        "fluentbit", "input",
+                                                        "memrb_dropped_chunks",
+                                                        "Number of memrb dropped chunks.",
+                                                        1, (char *[]) {"name"});
+
+    /* fluentbit_input_memrb_dropped_bytes */
+    metrics->cmt_memrb_dropped_bytes = cmt_counter_create(metrics->cmt,
+                                                        "fluentbit", "input",
+                                                        "memrb_dropped_bytes",
+                                                        "Number of memrb dropped bytes.",
+                                                        1, (char *[]) {"name"});
+
+    return metrics;
 }

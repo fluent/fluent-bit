@@ -138,7 +138,7 @@ static int in_metrics_init(struct flb_input_instance *in,
     ctx->coll_fd_runtime = ret;
 
     /* Internal metrics */
-    ctx->c = cmt_counter_create(ctx->ins->cmt,
+    ctx->c = cmt_counter_create(ctx->ins->input_metrics->cmt,
                                 "fluentbit", "input_metrics", "scrapes_total",
                                 "Number of total metrics scrapes",
                                 1, (char *[]) {"name"});

@@ -243,7 +243,7 @@ static int create_counter(struct flb_in_metrics *ctx, struct cmt_counter **count
     /* if counter was not yet created, it means that this function is called for the first time per counter type */
     if (*counter == NULL) {
         flb_plg_debug(ctx->ins, "Creating counter for %s, %s_%s_%s", name, COUNTER_PREFIX, metric_prefix, metric_name);
-        *counter = cmt_counter_create(ctx->ins->cmt, COUNTER_PREFIX, metric_prefix, metric_name, description, label_count, fields);
+        *counter = cmt_counter_create(ctx->ins->input_metrics->cmt, COUNTER_PREFIX, metric_prefix, metric_name, description, label_count, fields);
     }
 
     /* Allow setting value that is not grater that current one (if, for example, memory usage stays exactly the same) */
@@ -279,7 +279,7 @@ static int create_gauge(struct flb_in_metrics *ctx, struct cmt_gauge **gauge, fl
     /* if gauge was not yet created, it means that this function is called for the first time per counter type */
     if (*gauge == NULL) {
         flb_plg_debug(ctx->ins, "Creating gauge for %s, %s_%s_%s", name, COUNTER_PREFIX, metric_prefix, metric_name);
-        *gauge = cmt_gauge_create(ctx->ins->cmt, COUNTER_PREFIX, metric_prefix, metric_name, description, label_count, fields);
+        *gauge = cmt_gauge_create(ctx->ins->input_metrics->cmt, COUNTER_PREFIX, metric_prefix, metric_name, description, label_count, fields);
     }
 
     flb_plg_debug(ctx->ins, "Set gauge for %s, %s_%s_%s: %lu", name, COUNTER_PREFIX, metric_prefix, metric_name, value);
@@ -386,7 +386,7 @@ static int scrape_metrics(struct flb_config *config, struct flb_in_metrics *ctx)
         return -1;
     }
 
-    if (flb_input_metrics_append(ctx->ins, NULL, 0, ctx->ins->cmt) == -1) {
+    if (flb_input_metrics_append(ctx->ins, NULL, 0, ctx->ins->input_metrics->cmt) == -1) {
         flb_plg_error(ctx->ins, "Could not append metrics");
         return -1;
     }

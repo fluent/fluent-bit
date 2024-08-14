@@ -205,7 +205,7 @@ static void metrics_append_input(msgpack_packer *mp_pck,
         }
         if (ret == FLB_TRUE) {
             /* cmetrics */
-            cmt_gauge_set(i->cmt_storage_overlimit, ts, 1,
+            cmt_gauge_set(i->input_metrics->cmt_storage_overlimit, ts, 1,
                           1, (char *[]) {name});
 
             /* old code */
@@ -213,7 +213,7 @@ static void metrics_append_input(msgpack_packer *mp_pck,
         }
         else {
             /* cmetrics */
-            cmt_gauge_set(i->cmt_storage_overlimit, ts, 0,
+            cmt_gauge_set(i->input_metrics->cmt_storage_overlimit, ts, 0,
                           1, (char *[]) {name});
 
             /* old code */
@@ -221,7 +221,7 @@ static void metrics_append_input(msgpack_packer *mp_pck,
         }
 
         /* fluentbit_storage_memory_bytes */
-        cmt_gauge_set(i->cmt_storage_memory_bytes, ts, i->mem_chunks_size,
+        cmt_gauge_set(i->input_metrics->cmt_storage_memory_bytes, ts, i->mem_chunks_size,
                       1, (char *[]) {name});
 
         /* status['mem_size'] */
@@ -251,7 +251,7 @@ static void metrics_append_input(msgpack_packer *mp_pck,
          */
 
         /* cmetrics */
-        cmt_gauge_set(i->cmt_storage_chunks, ts, total_chunks,
+        cmt_gauge_set(i->input_metrics->cmt_storage_chunks, ts, total_chunks,
                       1, (char *[]) {name});
 
 
@@ -299,7 +299,7 @@ static void metrics_append_input(msgpack_packer *mp_pck,
         }
 
         /* fluentbit_storage_chunks_up */
-        cmt_gauge_set(i->cmt_storage_chunks_up, ts, up,
+        cmt_gauge_set(i->input_metrics->cmt_storage_chunks_up, ts, up,
                       1, (char *[]) {name});
 
         /* chunks['up'] */
@@ -308,7 +308,7 @@ static void metrics_append_input(msgpack_packer *mp_pck,
         msgpack_pack_uint64(mp_pck, up);
 
         /* fluentbit_storage_chunks_down */
-        cmt_gauge_set(i->cmt_storage_chunks_down, ts, down,
+        cmt_gauge_set(i->input_metrics->cmt_storage_chunks_down, ts, down,
                       1, (char *[]) {name});
 
         /* chunks['down'] */
@@ -317,7 +317,7 @@ static void metrics_append_input(msgpack_packer *mp_pck,
         msgpack_pack_uint64(mp_pck, down);
 
         /* fluentbit_storage_chunks_busy */
-        cmt_gauge_set(i->cmt_storage_chunks_busy, ts, busy,
+        cmt_gauge_set(i->input_metrics->cmt_storage_chunks_busy, ts, busy,
                       1, (char *[]) {name});
 
         /* chunks['busy'] */
@@ -326,7 +326,7 @@ static void metrics_append_input(msgpack_packer *mp_pck,
         msgpack_pack_uint64(mp_pck, busy);
 
         /* fluentbit_storage_chunks_busy_size */
-        cmt_gauge_set(i->cmt_storage_chunks_busy_bytes, ts, busy_size,
+        cmt_gauge_set(i->input_metrics->cmt_storage_chunks_busy_bytes, ts, busy_size,
                       1, (char *[]) {name});
 
         /* chunks['busy_size'] */

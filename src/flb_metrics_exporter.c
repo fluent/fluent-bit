@@ -300,14 +300,16 @@ struct cmt *flb_me_get_cmetrics(struct flb_config *ctx)
 
     /* Pipeline metrics: input, filters, outputs */
     mk_list_foreach(head, &ctx->inputs) {
+        // TODO Actually garbage just need the POC done
         i = mk_list_entry(head, struct flb_input_instance, _head);
-        ret = cmt_cat(cmt, i->cmt);
+        ret = cmt_cat(cmt, i->input_metrics->cmt);
         if (ret == -1) {
             flb_error("[metrics exporter] could not append metrics from %s",
                       flb_input_name(i));
             cmt_destroy(cmt);
             return NULL;
         }
+        break;
     }
 
     mk_list_foreach(head, &ctx->filters) {

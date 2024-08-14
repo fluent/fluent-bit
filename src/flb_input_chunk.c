@@ -724,11 +724,11 @@ struct flb_input_chunk *flb_input_chunk_map(struct flb_input_instance *in,
         ts = cfl_time_now();
 
         /* fluentbit_input_records_total */
-        cmt_counter_add(in->cmt_records, ts, ic->total_records,
+        cmt_counter_add(in->input_metrics->cmt_records, ts, ic->total_records,
                         1, (char *[]) {(char *) flb_input_name(in)});
 
         /* fluentbit_input_bytes_total */
-        cmt_counter_add(in->cmt_bytes, ts, buf_size,
+        cmt_counter_add(in->input_metrics->cmt_bytes, ts, buf_size,
                         1, (char *[]) {(char *) flb_input_name(in)});
 
         /* OLD metrics */
@@ -1486,10 +1486,10 @@ static int input_chunk_append_raw(struct flb_input_instance *in,
                 name = (char *) flb_input_name(in);
 
                 /* update counters */
-                cmt_counter_add(in->cmt_memrb_dropped_chunks, ts,
+                cmt_counter_add(in->input_metrics->cmt_memrb_dropped_chunks, ts,
                                 dropped_chunks, 1, (char *[]) {name});
 
-                cmt_counter_add(in->cmt_memrb_dropped_bytes, ts,
+                cmt_counter_add(in->input_metrics->cmt_memrb_dropped_bytes, ts,
                                 dropped_bytes, 1, (char *[]) {name});
             }
 
@@ -1626,11 +1626,11 @@ static int input_chunk_append_raw(struct flb_input_instance *in,
         ts = cfl_time_now();
 
         /* fluentbit_input_records_total */
-        cmt_counter_add(in->cmt_records, ts, ic->added_records,
+        cmt_counter_add(in->input_metrics->cmt_records, ts, ic->added_records,
                         1, (char *[]) {(char *) flb_input_name(in)});
 
         /* fluentbit_input_bytes_total */
-        cmt_counter_add(in->cmt_bytes, ts, buf_size,
+        cmt_counter_add(in->input_metrics->cmt_bytes, ts, buf_size,
                         1, (char *[]) {(char *) flb_input_name(in)});
 
         /* OLD api */

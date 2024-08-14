@@ -189,6 +189,8 @@ struct flb_input_instance {
     /* flag to pause input when storage is full */
     int storage_pause_on_chunks_overlimit;
 
+    struct flb_input_metrics *input_metrics;
+
     /*
      * Input network info:
      *
@@ -309,43 +311,6 @@ struct flb_input_instance {
     /* List of downstreams */
     struct mk_list downstreams;
 
-    /*
-     * CMetrics
-     * --------
-     *
-     * All metrics available for an input plugin instance.
-     */
-    struct cmt *cmt;                     /* parent context              */
-    struct cmt_counter *cmt_bytes;       /* metric: input_bytes_total   */
-    struct cmt_counter *cmt_records;     /* metric: input_records_total */
-
-    /* is the input instance overlimit ?: 1 or 0 */
-    struct cmt_gauge   *cmt_storage_overlimit;
-
-    /* is the input instance paused or not ?: 1 or 0 */
-    struct cmt_gauge   *cmt_ingestion_paused;
-
-    /* memory bytes used by chunks */
-    struct cmt_gauge   *cmt_storage_memory_bytes;
-
-    /* total number of chunks */
-    struct cmt_gauge   *cmt_storage_chunks;
-
-    /* total number of chunks up in memory */
-    struct cmt_gauge   *cmt_storage_chunks_up;
-
-    /* total number of chunks down */
-    struct cmt_gauge   *cmt_storage_chunks_down;
-
-    /* number of chunks in a busy state */
-    struct cmt_gauge   *cmt_storage_chunks_busy;
-
-    /* total bytes used by chunks in a busy state */
-    struct cmt_gauge   *cmt_storage_chunks_busy_bytes;
-
-    /* memory ring buffer (memrb) metrics */
-    struct cmt_counter *cmt_memrb_dropped_chunks;
-    struct cmt_counter *cmt_memrb_dropped_bytes;
 
     /*
      * Indexes for generated chunks: simple hash tables that keeps the latest
@@ -383,6 +348,46 @@ struct flb_input_instance {
 
     /* Keep a reference to the original context this instance belongs to */
     struct flb_config *config;
+};
+
+struct flb_input_metrics {
+    /*
+     * CMetrics
+     * --------
+     *
+     * All metrics available for an input plugin instance.
+     */
+    struct cmt *cmt;                     /* parent context              */
+    struct cmt_counter *cmt_bytes;       /* metric: input_bytes_total   */
+    struct cmt_counter *cmt_records;     /* metric: input_records_total */
+
+    /* is the input instance overlimit ?: 1 or 0 */
+    struct cmt_gauge   *cmt_storage_overlimit;
+
+    /* is the input instance paused or not ?: 1 or 0 */
+    struct cmt_gauge   *cmt_ingestion_paused;
+
+    /* memory bytes used by chunks */
+    struct cmt_gauge   *cmt_storage_memory_bytes;
+
+    /* total number of chunks */
+    struct cmt_gauge   *cmt_storage_chunks;
+
+    /* total number of chunks up in memory */
+    struct cmt_gauge   *cmt_storage_chunks_up;
+
+    /* total number of chunks down */
+    struct cmt_gauge   *cmt_storage_chunks_down;
+
+    /* number of chunks in a busy state */
+    struct cmt_gauge   *cmt_storage_chunks_busy;
+
+    /* total bytes used by chunks in a busy state */
+    struct cmt_gauge   *cmt_storage_chunks_busy_bytes;
+
+    /* memory ring buffer (memrb) metrics */
+    struct cmt_counter *cmt_memrb_dropped_chunks;
+    struct cmt_counter *cmt_memrb_dropped_bytes;
 };
 
 struct flb_input_collector {
@@ -732,6 +737,8 @@ struct mk_event_loop *flb_input_event_loop_get(struct flb_input_instance *ins);
 int flb_input_upstream_set(struct flb_upstream *u, struct flb_input_instance *ins);
 int flb_input_downstream_set(struct flb_downstream *stream,
                              struct flb_input_instance *ins);
+
+struct flb_input_metrics *flb_input_metrics_create();
 
 /* processors */
 int flb_input_instance_processors_load(struct flb_input_instance *ins, struct flb_cf_group *processors);
