@@ -53,7 +53,7 @@ struct flb_in_proc_mem_offset {
 };
 
 struct flb_in_proc_config {
-    uint8_t  alert;
+    int  alert;
     uint8_t  alive;
 
     /* Checking process */
@@ -66,10 +66,10 @@ struct flb_in_proc_config {
     int interval_nsec;
 
     /* Memory */
-    uint8_t mem;
+    int mem;
 
     /* File descriptor */
-    uint8_t fds;
+    int fds;
 
     struct flb_input_instance *ins;
     struct flb_log_event_encoder *log_encoder;
