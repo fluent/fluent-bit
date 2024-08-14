@@ -173,7 +173,7 @@ static int init_udp(char *in_host, int in_port, struct sockaddr_in *addr)
     return fd;
 }
 
-static int test_normal(char *payload, struct str_list *expected)
+static int test_normal(char *payload, struct str_list *expected, int use_metrics)
 {
     struct flb_lib_out_cb cb_data;
     struct test_ctx *ctx;
@@ -200,6 +200,13 @@ static int test_normal(char *payload, struct str_list *expected)
     if (!TEST_CHECK(ctx != NULL)) {
         TEST_MSG("test_ctx_create failed");
         exit(EXIT_FAILURE);
+    }
+
+    if (use_metrics == FLB_TRUE) {
+        ret = flb_input_set(ctx->flb, ctx->i_ffd,
+                            "metrics", "On",
+                            NULL);
+        TEST_CHECK(ret == 0);
     }
 
     ret = flb_output_set(ctx->flb, ctx->o_ffd,
@@ -249,7 +256,7 @@ void flb_test_statsd_count()
     char *buf = "gorets:1|c";
     int ret;
 
-    ret = test_normal(buf, &expected);
+    ret = test_normal(buf, &expected, FLB_FALSE);
     if (!TEST_CHECK(ret == 0))  {
         TEST_MSG("test failed");
         exit(EXIT_FAILURE);
@@ -259,7 +266,7 @@ void flb_test_statsd_count()
 
 void flb_test_statsd_sample()
 {
-    char *expected_strs[] = {"\"bucket\":\"gorets\"", "\"type\":\"counter\"", 
+    char *expected_strs[] = {"\"bucket\":\"gorets\"", "\"type\":\"counter\"",
                              "\"value\":1", "\"sample_rate\":0.1"};
     struct str_list expected = {
                                 .size = sizeof(expected_strs)/sizeof(char*),
@@ -269,7 +276,7 @@ void flb_test_statsd_sample()
     char *buf = "gorets:1|c|@0.1";
     int ret;
 
-    ret = test_normal(buf, &expected);
+    ret = test_normal(buf, &expected, FLB_FALSE);
     if (!TEST_CHECK(ret == 0))  {
         TEST_MSG("test failed");
         exit(EXIT_FAILURE);
@@ -288,7 +295,7 @@ void flb_test_statsd_gauge()
     char *buf = "gaugor:333|g";
     int ret;
 
-    ret = test_normal(buf, &expected);
+    ret = test_normal(buf, &expected, FLB_FALSE);
     if (!TEST_CHECK(ret == 0))  {
         TEST_MSG("test failed");
         exit(EXIT_FAILURE);
@@ -297,7 +304,7 @@ void flb_test_statsd_gauge()
 
 void flb_test_statsd_set()
 {
-    char *expected_strs[] = {"\"bucket\":\"uniques\"", "\"type\":\"set\"", 
+    char *expected_strs[] = {"\"bucket\":\"uniques\"", "\"type\":\"set\"",
                              "\"value\":\"765\""};
     struct str_list expected = {
                                 .size = sizeof(expected_strs)/sizeof(char*),
@@ -307,18 +314,81 @@ void flb_test_statsd_set()
     char *buf = "uniques:765|s";
     int ret;
 
-    ret = test_normal(buf, &expected);
+    ret = test_normal(buf, &expected, FLB_FALSE);
     if (!TEST_CHECK(ret == 0))  {
         TEST_MSG("test failed");
         exit(EXIT_FAILURE);
     }
 }
 
+#ifdef FLB_HAVE_METRICS
+void flb_test_statsd_metrics_gauge()
+{
+    char *expected_strs[] = {"\"name\":\"gorets\"", "\"desc\":\"-\"", "\"type\":1"};
+    struct str_list expected = {
+                                .size = sizeof(expected_strs)/sizeof(char*),
+                                .lists = &expected_strs[0],
+    };
+
+    char *buf = "gorets:1|g";
+    int ret;
+
+    ret = test_normal(buf, &expected, FLB_TRUE);
+    if (!TEST_CHECK(ret == 0))  {
+        TEST_MSG("test failed");
+        exit(EXIT_FAILURE);
+    }
+
+}
+
+void flb_test_statsd_metrics_counter()
+{
+    char *expected_strs[] = {"\"name\":\"gorets\"", "\"desc\":\"-\"", "\"type\":0"};
+    struct str_list expected = {
+                                .size = sizeof(expected_strs)/sizeof(char*),
+                                .lists = &expected_strs[0],
+    };
+
+    char *buf = "gorets:1|c";
+    int ret;
+
+    ret = test_normal(buf, &expected, FLB_TRUE);
+    if (!TEST_CHECK(ret == 0))  {
+        TEST_MSG("test failed");
+        exit(EXIT_FAILURE);
+    }
+
+}
+
+void flb_test_statsd_metrics_untyped()
+{
+    char *expected_strs[] = {"\"name\":\"gorets\"", "\"desc\":\"-\"", "\"type\":4"};
+    struct str_list expected = {
+                                .size = sizeof(expected_strs)/sizeof(char*),
+                                .lists = &expected_strs[0],
+    };
+
+    char *buf = "gorets:1|s";
+    int ret;
+
+    ret = test_normal(buf, &expected, FLB_TRUE);
+    if (!TEST_CHECK(ret == 0))  {
+        TEST_MSG("test failed");
+        exit(EXIT_FAILURE);
+    }
+
+}
+#endif
+
 TEST_LIST = {
     {"count", flb_test_statsd_count},
     {"sample", flb_test_statsd_sample},
     {"gauge", flb_test_statsd_gauge},
     {"set", flb_test_statsd_set},
+#ifdef FLB_HAVE_METRICS
+    {"metrics_gauge", flb_test_statsd_metrics_gauge},
+    {"metrics_counter", flb_test_statsd_metrics_counter},
+    {"metrics_untyped", flb_test_statsd_metrics_untyped},
+#endif
     {NULL, NULL}
 };
-
