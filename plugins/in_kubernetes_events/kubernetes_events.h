@@ -61,7 +61,7 @@ struct k8s_events {
     char *token;
     int token_ttl;
     size_t token_len;
-    int token_created;
+    time_t token_created;
 
     /* Pre-formatted HTTP Authorization header value */
     char *auth;
