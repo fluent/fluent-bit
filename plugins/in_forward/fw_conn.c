@@ -153,6 +153,8 @@ struct fw_conn *fw_conn_add(struct flb_connection *connection, struct flb_in_fw_
         ret = fw_prot_secure_forward_handshake_start(ctx->ins, connection, helo);
         if (ret != 0) {
             flb_free(helo);
+            flb_free(conn);
+
             return NULL;
         }
 
