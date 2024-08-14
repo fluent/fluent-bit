@@ -198,11 +198,6 @@ static void cb_prom_flush(struct flb_event_chunk *event_chunk,
                                             (char *) event_chunk->data,
                                             event_chunk->size, &off)) == ok) {
 
-        if (ret != 0) {
-            flb_sds_destroy(text);
-            FLB_OUTPUT_RETURN(FLB_ERROR);
-        }
-
         /* append labels set by config */
         append_labels(ctx, cmt);
 
