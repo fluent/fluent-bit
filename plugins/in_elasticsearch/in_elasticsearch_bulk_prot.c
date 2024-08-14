@@ -418,9 +418,9 @@ static int process_ndpack(struct flb_in_elasticsearch *ctx, flb_sds_t tag, char 
                 }
 
                 if (error_op == FLB_FALSE) {
-                    flb_log_event_encoder_reset(&ctx->log_encoder);
+                    flb_log_event_encoder_reset(ctx->log_encoder);
 
-                    ret = flb_log_event_encoder_begin_record(&ctx->log_encoder);
+                    ret = flb_log_event_encoder_begin_record(ctx->log_encoder);
 
                     if (ret != FLB_EVENT_ENCODER_SUCCESS) {
                         flb_sds_destroy(write_op);
@@ -431,7 +431,7 @@ static int process_ndpack(struct flb_in_elasticsearch *ctx, flb_sds_t tag, char 
                     }
 
                     ret = flb_log_event_encoder_set_timestamp(
-                            &ctx->log_encoder,
+                            ctx->log_encoder,
                             &tm);
 
                     if (ret != FLB_EVENT_ENCODER_SUCCESS) {
@@ -444,7 +444,7 @@ static int process_ndpack(struct flb_in_elasticsearch *ctx, flb_sds_t tag, char 
 
                     if (ret == FLB_EVENT_ENCODER_SUCCESS) {
                         ret = flb_log_event_encoder_append_body_values(
-                                &ctx->log_encoder,
+                                ctx->log_encoder,
                                 FLB_LOG_EVENT_CSTRING_VALUE((char *) ctx->meta_key),
                                 FLB_LOG_EVENT_MSGPACK_OBJECT_VALUE(&result.data));
                     }
@@ -469,7 +469,7 @@ static int process_ndpack(struct flb_in_elasticsearch *ctx, flb_sds_t tag, char 
                         map_copy_entry = &result.data.via.map.ptr[map_copy_index];
 
                         ret = flb_log_event_encoder_append_body_values(
-                                &ctx->log_encoder,
+                                ctx->log_encoder,
                                 FLB_LOG_EVENT_MSGPACK_OBJECT_VALUE(&map_copy_entry->key),
                                 FLB_LOG_EVENT_MSGPACK_OBJECT_VALUE(&map_copy_entry->val));
                     }
@@ -481,7 +481,7 @@ static int process_ndpack(struct flb_in_elasticsearch *ctx, flb_sds_t tag, char 
                         break;
                     }
 
-                    ret = flb_log_event_encoder_commit_record(&ctx->log_encoder);
+                    ret = flb_log_event_encoder_commit_record(ctx->log_encoder);
 
                     if (ret != FLB_EVENT_ENCODER_SUCCESS) {
                         flb_plg_error(ctx->ins, "event encoder error : %d", ret);
@@ -501,8 +501,8 @@ static int process_ndpack(struct flb_in_elasticsearch *ctx, flb_sds_t tag, char 
                         flb_input_log_append(ctx->ins,
                                              tag_from_record,
                                              flb_sds_len(tag_from_record),
-                                             ctx->log_encoder.output_buffer,
-                                             ctx->log_encoder.output_length);
+                                             ctx->log_encoder->output_buffer,
+                                             ctx->log_encoder->output_length);
 
                         flb_sds_destroy(tag_from_record);
                     }
@@ -510,17 +510,17 @@ static int process_ndpack(struct flb_in_elasticsearch *ctx, flb_sds_t tag, char 
                         flb_input_log_append(ctx->ins,
                                              tag,
                                              flb_sds_len(tag),
-                                             ctx->log_encoder.output_buffer,
-                                             ctx->log_encoder.output_length);
+                                             ctx->log_encoder->output_buffer,
+                                             ctx->log_encoder->output_length);
                     }
                     else {
                         /* use default plugin Tag (it internal name, e.g: http.0 */
                         flb_input_log_append(ctx->ins, NULL, 0,
-                                             ctx->log_encoder.output_buffer,
-                                             ctx->log_encoder.output_length);
+                                             ctx->log_encoder->output_buffer,
+                                             ctx->log_encoder->output_length);
                     }
 
-                    flb_log_event_encoder_reset(&ctx->log_encoder);
+                    flb_log_event_encoder_reset(ctx->log_encoder);
                 }
                 if (op_ret) {
                     if (flb_sds_cmp(write_op, "index", op_str_size) == 0) {
