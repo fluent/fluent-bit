@@ -37,7 +37,7 @@ struct flb_tensorflow {
     int output_byte_size;
 
     /* feature scaling/normalization */
-    bool include_input_fields;
+    int include_input_fields;
     float* normalization_value;
 
     struct flb_filter_instance *ins;
