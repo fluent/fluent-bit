@@ -277,6 +277,14 @@ static int pack_sid(struct winevtlog_config *ctx, PSID sid, int extract_sid)
 
     if (ConvertSidToStringSidW(sid, &wide_sid)) {
         if (extract_sid == FLB_TRUE) {
+            /* Skip to translate SID for capability SIDs.
+             * see also: https://learn.microsoft.com/en-us/windows-server/identity/ad-ds/manage/understand-security-identifiers
+             */
+            if (wcsnicmp(wide_sid, L"S-1-15-3-", 9) == 0) {
+                flb_plg_debug(ctx->ins, "This SID is one of the capability SIDs. Skip.");
+
+                goto not_mapped_error;
+            }
             if (!LookupAccountSidA(NULL, sid,
                                    account, &len, domain,
                                    &len, &sid_type)) {
