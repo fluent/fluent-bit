@@ -274,6 +274,7 @@ static int send_traces(struct flb_input_instance *ins)
     span_root = ctr_span_create(ctx, scope_span, "main", NULL);
     if (!span_root) {
         ctr_destroy(ctx);
+        ctr_id_destroy(span_id);
         ctr_opts_exit(&opts);
         return -1;
     }
