@@ -1028,11 +1028,11 @@ static void cb_opensearch_flush(struct flb_event_chunk *event_chunk,
 
     /* Cleanup */
     flb_http_client_destroy(c);
-    flb_sds_destroy(pack);
 
     if (final_payload_buf != pack) {
         flb_free(final_payload_buf);
     }
+    flb_sds_destroy(pack);
 
     flb_upstream_conn_release(u_conn);
     if (signature) {
