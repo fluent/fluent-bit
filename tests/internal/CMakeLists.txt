@@ -22,14 +22,14 @@ set(UNIT_TESTS_FILES
   config_map.c
   mp.c
   input_chunk.c
-  flb_time.c
+  time.c
   file.c
   csv.c
   multiline.c
   typecast.c
   base64.c
   bucket_queue.c
-  flb_event_loop.c
+  event_loop.c
   ring_buffer.c
   regex.c
   parser_json.c

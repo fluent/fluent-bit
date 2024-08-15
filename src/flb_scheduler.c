@@ -26,7 +26,6 @@
 #include <fluent-bit/flb_engine.h>
 #include <fluent-bit/flb_engine_dispatch.h>
 #include <fluent-bit/flb_random.h>
-
 #include <sys/types.h>
 #include <sys/stat.h>
 #include <fcntl.h>
@@ -64,6 +63,8 @@ static inline int consume_byte(flb_pipefd_t fd)
 
     /* We need to consume the byte */
     ret = flb_pipe_r(fd, &val, sizeof(val));
+
+    /* ref: https://github.com/fluent/fluent-bit/pull/2463 */
 #if defined(__APPLE__) || __FreeBSD__ >= 12
     if (ret < 0) {
 #else
@@ -291,7 +292,7 @@ int flb_sched_request_create(struct flb_config *config, void *data, int tries)
     if (config->is_shutting_down) {
         seconds = 0;
     } else {
-        seconds = backoff_full_jitter((int)config->sched_base, (int)config->sched_cap, 
+        seconds = backoff_full_jitter((int)config->sched_base, (int)config->sched_cap,
                                       tries);
     }
     seconds += 1;
@@ -412,7 +413,9 @@ int flb_sched_event_handler(struct flb_config *config, struct mk_event *event)
     }
     else if (timer->type == FLB_SCHED_TIMER_FRAME) {
         sched = timer->data;
-#ifndef __APPLE__
+
+#if defined(FLB_EVENT_LOOP_KQUEUE) || defined(MK_EVENT_LOOP_KQUEUE) || \
+    defined(FLB_EVENT_LOOP_POLL) || defined(MK_EVENT_LOOP_EPOLL)
         consume_byte(sched->frame_fd);
 #endif
         schedule_request_promote(sched);
@@ -682,7 +685,7 @@ int flb_sched_timer_cleanup(struct flb_sched *sched)
     return c;
 }
 
-int flb_sched_retry_now(struct flb_config *config, 
+int flb_sched_retry_now(struct flb_config *config,
                         struct flb_task_retry *retry)
 {
     int ret;
@@ -699,7 +702,7 @@ int flb_sched_retry_now(struct flb_config *config,
     request = flb_malloc(sizeof(struct flb_sched_request));
     if (!request) {
         flb_errno();
-        flb_sched_timer_destroy(timer); 
+        flb_sched_timer_destroy(timer);
         return -1;
     }
 
