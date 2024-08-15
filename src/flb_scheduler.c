@@ -415,7 +415,7 @@ int flb_sched_event_handler(struct flb_config *config, struct mk_event *event)
         sched = timer->data;
 
 #if defined(FLB_EVENT_LOOP_KQUEUE) || defined(MK_EVENT_LOOP_KQUEUE) || \
-    defined(FLB_EVENT_LOOP_POLL) || defined(MK_EVENT_LOOP_POLL)
+    defined(FLB_EVENT_LOOP_POLL) || defined(MK_EVENT_LOOP_EPOLL)
         consume_byte(sched->frame_fd);
 #endif
         schedule_request_promote(sched);
