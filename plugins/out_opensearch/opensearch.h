@@ -61,7 +61,7 @@ struct flb_opensearch {
     struct flb_record_accessor *ra_index;
 
     char *type;
-    char suppress_type_name;
+    int suppress_type_name;
 
     /* HTTP Auth */
     char *http_user;
