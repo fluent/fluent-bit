@@ -877,6 +877,8 @@ static void cb_chronicle_flush(struct flb_event_chunk *event_chunk,
         flb_plg_error(ctx->ins,
                       "Log event decoder initialization error : %d", ret);
 
+        /* Cleanup token and conn */
+        flb_sds_destroy(token);
         flb_upstream_conn_release(u_conn);
         FLB_OUTPUT_RETURN(FLB_RETRY);
     }
