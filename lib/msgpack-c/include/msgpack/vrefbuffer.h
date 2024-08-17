@@ -16,11 +16,13 @@
 
 #if defined(unix) || defined(__unix) || defined(__linux__) || defined(__APPLE__) || defined(__OpenBSD__) || defined(__NetBSD__) || defined(__QNX__) || defined(__QNXTO__) || defined(__HAIKU__)
 #include <sys/uio.h>
+typedef struct iovec msgpack_iovec;
 #else
-struct iovec {
+struct msgpack_iovec {
     void  *iov_base;
     size_t iov_len;
 };
+typedef struct msgpack_iovec msgpack_iovec;
 #endif
 
 #ifdef __cplusplus
@@ -44,9 +46,9 @@ typedef struct msgpack_vrefbuffer_inner_buffer {
 } msgpack_vrefbuffer_inner_buffer;
 
 typedef struct msgpack_vrefbuffer {
-    struct iovec* tail;
-    struct iovec* end;
-    struct iovec* array;
+    msgpack_iovec* tail;
+    msgpack_iovec* end;
+    msgpack_iovec* array;
 
     size_t chunk_size;
     size_t ref_size;
@@ -74,7 +76,7 @@ static inline void msgpack_vrefbuffer_free(msgpack_vrefbuffer* vbuf);
 
 static inline int msgpack_vrefbuffer_write(void* data, const char* buf, size_t len);
 
-static inline const struct iovec* msgpack_vrefbuffer_vec(const msgpack_vrefbuffer* vref);
+static inline const msgpack_iovec* msgpack_vrefbuffer_vec(const msgpack_vrefbuffer* vref);
 static inline size_t msgpack_vrefbuffer_veclen(const msgpack_vrefbuffer* vref);
 
 MSGPACK_DLLEXPORT
@@ -126,7 +128,7 @@ static inline int msgpack_vrefbuffer_write(void* data, const char* buf, size_t l
     }
 }
 
-static inline const struct iovec* msgpack_vrefbuffer_vec(const msgpack_vrefbuffer* vref)
+static inline const msgpack_iovec* msgpack_vrefbuffer_vec(const msgpack_vrefbuffer* vref)
 {
     return vref->array;
 }

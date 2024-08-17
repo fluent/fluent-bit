@@ -125,6 +125,72 @@ int msgpack_pack_object(msgpack_packer* pk, msgpack_object d)
     }
 }
 
+void msgpack_object_init_nil(msgpack_object* d) {
+    d->type = MSGPACK_OBJECT_NIL;
+}
+
+void msgpack_object_init_boolean(msgpack_object* d, bool v) {
+    d->type = MSGPACK_OBJECT_BOOLEAN;
+    d->via.boolean = v;
+}
+
+void msgpack_object_init_unsigned_integer(msgpack_object* d, uint64_t v) {
+    d->type = MSGPACK_OBJECT_POSITIVE_INTEGER;
+    d->via.u64 = v;
+}
+
+void msgpack_object_init_signed_integer(msgpack_object* d, int64_t v) {
+    if (v < 0) {
+        d->type = MSGPACK_OBJECT_NEGATIVE_INTEGER;
+        d->via.i64 = v;
+    }
+    else {
+        d->type = MSGPACK_OBJECT_POSITIVE_INTEGER;
+        d->via.u64 = v;
+    }
+}
+
+void msgpack_object_init_float32(msgpack_object* d, float v) {
+    d->type = MSGPACK_OBJECT_FLOAT32;
+    d->via.f64 = v;
+}
+
+void msgpack_object_init_float64(msgpack_object* d, double v) {
+    d->type = MSGPACK_OBJECT_FLOAT64;
+    d->via.f64 = v;
+}
+
+void msgpack_object_init_str(msgpack_object* d, const char* data, uint32_t size) {
+    d->type = MSGPACK_OBJECT_STR;
+    d->via.str.ptr = data;
+    d->via.str.size = size;
+}
+
+void msgpack_object_init_bin(msgpack_object* d, const char* data, uint32_t size) {
+    d->type = MSGPACK_OBJECT_BIN;
+    d->via.bin.ptr = data;
+    d->via.bin.size = size;
+}
+
+void msgpack_object_init_ext(msgpack_object* d, int8_t type, const char* data, uint32_t size) {
+    d->type = MSGPACK_OBJECT_EXT;
+    d->via.ext.type = type;
+    d->via.ext.ptr = data;
+    d->via.ext.size = size;
+}
+
+void msgpack_object_init_array(msgpack_object* d, msgpack_object* data, uint32_t size) {
+    d->type = MSGPACK_OBJECT_ARRAY;
+    d->via.array.ptr = data;
+    d->via.array.size = size;
+}
+
+void msgpack_object_init_map(msgpack_object* d, msgpack_object_kv* data, uint32_t size) {
+    d->type = MSGPACK_OBJECT_MAP;
+    d->via.map.ptr = data;
+    d->via.map.size = size;
+}
+
 #if !defined(_KERNEL_MODE)
 
 static void msgpack_object_bin_print(FILE* out, const char *ptr, size_t size)
@@ -331,7 +397,9 @@ int msgpack_object_print_buffer(char *buffer, size_t buffer_size, msgpack_object
 
     case MSGPACK_OBJECT_STR:
         MSGPACK_CHECKED_CALL(ret, snprintf, aux_buffer, aux_buffer_size, "\"");
-        MSGPACK_CHECKED_CALL(ret, snprintf, aux_buffer, aux_buffer_size, "%.*s", (int)o.via.str.size, o.via.str.ptr);
+        if (o.via.str.size > 0) {
+            MSGPACK_CHECKED_CALL(ret, snprintf, aux_buffer, aux_buffer_size, "%.*s", (int)o.via.str.size, o.via.str.ptr);
+        }
         MSGPACK_CHECKED_CALL(ret, snprintf, aux_buffer, aux_buffer_size, "\"");
         break;
 

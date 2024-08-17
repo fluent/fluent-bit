@@ -33,6 +33,13 @@
     typedef unsigned __int32 uint32_t;
     typedef signed __int64 int64_t;
     typedef unsigned __int64 uint64_t;
+#   if defined(_WIN64)
+        typedef signed __int64 intptr_t;
+        typedef unsigned __int64 uintptr_t;
+#   else
+        typedef signed __int32 intptr_t;
+        typedef unsigned __int32 uintptr_t;
+#   endif
 #elif defined(_MSC_VER)  // && _MSC_VER >= 1600
 #   include <stdint.h>
 #else

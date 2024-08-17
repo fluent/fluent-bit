@@ -97,6 +97,39 @@ typedef struct msgpack_object_kv {
     msgpack_object val;
 } msgpack_object_kv;
 
+MSGPACK_DLLEXPORT
+void msgpack_object_init_nil(msgpack_object* d);
+
+MSGPACK_DLLEXPORT
+void msgpack_object_init_boolean(msgpack_object* d, bool v);
+
+MSGPACK_DLLEXPORT
+void msgpack_object_init_unsigned_integer(msgpack_object* d, uint64_t v);
+
+MSGPACK_DLLEXPORT
+void msgpack_object_init_signed_integer(msgpack_object* d, int64_t v);
+
+MSGPACK_DLLEXPORT
+void msgpack_object_init_float32(msgpack_object* d, float v);
+
+MSGPACK_DLLEXPORT
+void msgpack_object_init_float64(msgpack_object* d, double v);
+
+MSGPACK_DLLEXPORT
+void msgpack_object_init_str(msgpack_object* d, const char* data, uint32_t size);
+
+MSGPACK_DLLEXPORT
+void msgpack_object_init_bin(msgpack_object* d, const char* data, uint32_t size);
+
+MSGPACK_DLLEXPORT
+void msgpack_object_init_ext(msgpack_object* d, int8_t type, const char* data, uint32_t size);
+
+MSGPACK_DLLEXPORT
+void msgpack_object_init_array(msgpack_object* d, msgpack_object* data, uint32_t size);
+
+MSGPACK_DLLEXPORT
+void msgpack_object_init_map(msgpack_object* d, msgpack_object_kv* data, uint32_t size);
+
 #if !defined(_KERNEL_MODE)
 MSGPACK_DLLEXPORT
 void msgpack_object_print(FILE* out, msgpack_object o);
