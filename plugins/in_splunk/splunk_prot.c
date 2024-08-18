@@ -741,6 +741,7 @@ int splunk_prot_handle(struct flb_splunk *ctx, struct splunk_conn *conn,
     if (ctx->ins->tag && !ctx->ins->tag_default) {
         tag = flb_sds_create(ctx->ins->tag);
         if (tag == NULL) {
+            mk_mem_free(uri);
             return -1;
         }
     }
@@ -901,8 +902,8 @@ int splunk_prot_handle_error(struct flb_splunk *ctx, struct splunk_conn *conn,
 
 /* New gen HTTP server */
 
-static int send_response_ng(struct flb_http_response *response, 
-                            int http_status, 
+static int send_response_ng(struct flb_http_response *response,
+                            int http_status,
                             char *message)
 {
     flb_http_response_set_status(response, http_status);
@@ -921,8 +922,8 @@ static int send_response_ng(struct flb_http_response *response,
     }
 
     if (message != NULL) {
-        flb_http_response_set_body(response, 
-                                   (unsigned char *) message, 
+        flb_http_response_set_body(response,
+                                   (unsigned char *) message,
                                    strlen(message));
     }
 
@@ -931,8 +932,8 @@ static int send_response_ng(struct flb_http_response *response,
     return 0;
 }
 
-static int send_json_message_response_ng(struct flb_http_response *response, 
-                                         int http_status, 
+static int send_json_message_response_ng(struct flb_http_response *response,
+                                         int http_status,
                                          char *message)
 {
     flb_http_response_set_status(response, http_status);
@@ -950,13 +951,13 @@ static int send_json_message_response_ng(struct flb_http_response *response,
         flb_http_response_set_message(response, "Bad Request");
     }
 
-    flb_http_response_set_header(response, 
+    flb_http_response_set_header(response,
                                 "content-type", 0,
                                 "application/json", 0);
 
     if (message != NULL) {
-        flb_http_response_set_body(response, 
-                                   (unsigned char *) message, 
+        flb_http_response_set_body(response,
+                                   (unsigned char *) message,
                                    strlen(message));
     }
 
@@ -1099,7 +1100,7 @@ int splunk_prot_handle_ng(struct flb_http_request *request,
     }
 
     /* HTTP/1.1 needs Host header */
-    if (request->protocol_version == HTTP_PROTOCOL_HTTP1 && 
+    if (request->protocol_version == HTTP_PROTOCOL_HTTP1 &&
         request->host == NULL) {
 
         return -1;
@@ -1140,7 +1141,7 @@ int splunk_prot_handle_ng(struct flb_http_request *request,
     if (request->method != HTTP_METHOD_POST) {
         /* HEAD, PUT, PATCH, and DELETE methods are prohibited to use.*/
         send_response_ng(response, 400, "error: invalid HTTP method\n");
-        
+
         return -1;
     }
 

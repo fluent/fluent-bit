@@ -523,8 +523,9 @@ static int process_payload(struct flb_http *ctx, struct http_conn *conn,
         return -1;
     }
 
-    if (header->val.len == 16 &&
-        strncasecmp(header->val.data, "application/json", 16) == 0) {
+    if ((header->val.len == 16 && strncasecmp(header->val.data, "application/json", 16) == 0) ||
+        (header->val.len > 16 && (strncasecmp(header->val.data, "application/json ", 17) == 0) || 
+        strncasecmp(header->val.data, "application/json;", 17) == 0)) {
         type = HTTP_CONTENT_JSON;
     }
 
@@ -632,7 +633,7 @@ int http_prot_handle(struct flb_http *ctx, struct http_conn *conn,
         }
 
         /* New tag skipping the URI '/' */
-        flb_sds_cat(tag, uri + 1, len - 1);
+        flb_sds_cat_safe(&tag, uri + 1, len - 1);
 
         /* Sanitize, only allow alphanum chars */
         for (i = 0; i < flb_sds_len(tag); i++) {
