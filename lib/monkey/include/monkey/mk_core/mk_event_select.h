@@ -53,7 +53,7 @@ struct mk_event_ctx {
     for (__i = 0;                                                            \
          __i < evl->n_events;                                                \
          __i++,                                                              \
-             event = ((__i < evl->n_events) ? __ctx->fired[__i].data : NULL) \
+             event = ((__i < evl->n_events) ? &__ctx->fired[__i] : NULL) \
          )
 
 #endif
