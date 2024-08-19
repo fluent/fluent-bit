@@ -278,7 +278,8 @@ static int pack_sid(struct winevtlog_config *ctx, PSID sid, int extract_sid)
     if (ConvertSidToStringSidW(sid, &wide_sid)) {
         if (extract_sid == FLB_TRUE) {
             /* Skip to translate SID for capability SIDs.
-             * see also: https://learn.microsoft.com/en-us/windows-server/identity/ad-ds/manage/understand-security-identifiers
+             * ref: https://learn.microsoft.com/en-us/windows-server/identity/ad-ds/manage/understand-security-identifiers
+             * See also: https://learn.microsoft.com/en-us/troubleshoot/windows-server/windows-security/sids-not-resolve-into-friendly-names
              */
             if (wcsnicmp(wide_sid, L"S-1-15-3-", 9) == 0) {
                 flb_plg_debug(ctx->ins, "This SID is one of the capability SIDs. Skip.");
