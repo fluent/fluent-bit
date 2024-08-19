@@ -28,14 +28,27 @@
 #include <mk_core/mk_utils.h>
 #include <mk_core/mk_event.h>
 
-#if defined(_WIN32)
-    #include "mk_event_libevent.c"
-#elif defined(MK_HAVE_EVENT_SELECT)
+#if defined(MK_EVENT_LOOP_SELECT)
     #include "mk_event_select.c"
-#elif defined(__linux__) && !defined(LINUX_KQUEUE)
-    #include "mk_event_epoll.c"
-#else
+#elif defined(MK_EVENT_LOOP_POLL)
+    #include "mk_event_poll.c"
+#elif defined(MK_EVENT_LOOP_KQUEUE)
     #include "mk_event_kqueue.c"
+#elif defined(MK_EVENT_LOOP_EPOLL)
+    #include "mk_event_epoll.c"
+#elif defined(MK_EVENT_LOOP_LIBEVENT)
+    #include "mk_event_libevent.c"
+#else
+    /* do our best based on the operating system */
+    #if defined(__linux__)
+        #include "mk_event_epoll.c"
+    #elif defined(__FreeBSD__) || defined(__APPLE__) || defined(__DragonFly__) || defined(__OpenBSD__)
+        #include "mk_event_kqueue.c"
+    #elif defined(_WIN32)
+        #include "mk_event_libevent.c"
+    #else
+        #include "mk_event_select.c"
+    #endif
 #endif
 
 /* Initialize backend */
