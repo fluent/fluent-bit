@@ -50,13 +50,13 @@
 
 #define FLB_MEM_BUF_LIMIT_DEFAULT  "10M"
 #define DEFAULT_LOG_TO_METRICS_NAMESPACE "log_metric"
-
+#define DEFAULT_INTERVAL_SEC  "0"
+#define DEFAULT_INTERVAL_NSEC "0"
 
 struct log_to_metrics_ctx {
     struct mk_list rules;
     struct flb_filter_instance *ins;
     struct cmt *cmt;
-
     struct flb_input_instance *input_ins;
 
     char **label_keys;
@@ -83,6 +83,12 @@ struct log_to_metrics_ctx {
     flb_sds_t tag;
     flb_sds_t emitter_name;
     size_t emitter_mem_buf_limit;
+    long flush_interval_sec;
+    long flush_interval_nsec;
+    int timer_interval;
+    int timer_mode;
+    struct flb_sched_timer *timer;
+    int new_data;
 };
 
 struct grep_rule
