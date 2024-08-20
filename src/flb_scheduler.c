@@ -26,7 +26,6 @@
 #include <fluent-bit/flb_engine.h>
 #include <fluent-bit/flb_engine_dispatch.h>
 #include <fluent-bit/flb_random.h>
-
 #include <sys/types.h>
 #include <sys/stat.h>
 #include <fcntl.h>
@@ -64,6 +63,8 @@ static inline int consume_byte(flb_pipefd_t fd)
 
     /* We need to consume the byte */
     ret = flb_pipe_r(fd, &val, sizeof(val));
+
+    /* ref: https://github.com/fluent/fluent-bit/pull/2463 */
 #if defined(__APPLE__) || __FreeBSD__ >= 12
     if (ret < 0) {
 #else
@@ -291,7 +292,7 @@ int flb_sched_request_create(struct flb_config *config, void *data, int tries)
     if (config->is_shutting_down) {
         seconds = 0;
     } else {
-        seconds = backoff_full_jitter((int)config->sched_base, (int)config->sched_cap, 
+        seconds = backoff_full_jitter((int)config->sched_base, (int)config->sched_cap,
                                       tries);
     }
     seconds += 1;
@@ -384,6 +385,23 @@ int flb_sched_request_invalidate(struct flb_config *config, void *data)
     return -1;
 }
 
+/*
+ * Depending on the backend that provides the timer, most of the time except
+ * on event loops based on 'kqueue', we need to read the notification byte, which
+ * usually comes from a file descriptor registered through the backend based on
+ * epoll(), select() or poll().
+ *
+ * If we are NOT using kequeue, just read(2) the byte.
+ */
+static inline int timer_consume_byte(int fd)
+{
+#ifndef FLB_EVENT_LOOP_KQUEUE
+    return consume_byte(fd);
+#endif
+
+    return 0;
+}
+
 /* Handle a timeout event set by a previous flb_sched_request_create(...) */
 int flb_sched_event_handler(struct flb_config *config, struct mk_event *event)
 {
@@ -412,19 +430,17 @@ int flb_sched_event_handler(struct flb_config *config, struct mk_event *event)
     }
     else if (timer->type == FLB_SCHED_TIMER_FRAME) {
         sched = timer->data;
-#ifndef __APPLE__
-        consume_byte(sched->frame_fd);
-#endif
+        timer_consume_byte(sched->frame_fd);
         schedule_request_promote(sched);
     }
     else if (timer->type == FLB_SCHED_TIMER_CB_ONESHOT) {
-        consume_byte(timer->timer_fd);
+        timer_consume_byte(timer->timer_fd);
         flb_sched_timer_cb_disable(timer);
         timer->cb(config, timer->data);
         flb_sched_timer_cb_destroy(timer);
     }
     else if (timer->type == FLB_SCHED_TIMER_CB_PERM) {
-        consume_byte(timer->timer_fd);
+        timer_consume_byte(timer->timer_fd);
         timer->cb(config, timer->data);
     }
 
@@ -682,7 +698,7 @@ int flb_sched_timer_cleanup(struct flb_sched *sched)
     return c;
 }
 
-int flb_sched_retry_now(struct flb_config *config, 
+int flb_sched_retry_now(struct flb_config *config,
                         struct flb_task_retry *retry)
 {
     int ret;
@@ -699,7 +715,7 @@ int flb_sched_retry_now(struct flb_config *config,
     request = flb_malloc(sizeof(struct flb_sched_request));
     if (!request) {
         flb_errno();
-        flb_sched_timer_destroy(timer); 
+        flb_sched_timer_destroy(timer);
         return -1;
     }
 

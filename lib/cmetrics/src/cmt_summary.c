@@ -272,8 +272,8 @@ int cmt_summary_set_default(struct cmt_summary *summary,
                                 labels_count, label_vars,
                                 CMT_TRUE);
     if (!metric) {
-        cmt_log_error(summary->cmt, "unable to retrieve metric: %s for summary %s_%s_%s",
-                      summary->map, summary->opts.ns, summary->opts.subsystem,
+        cmt_log_error(summary->cmt, "unable to retrieve metric for summary %s_%s_%s",
+                      summary->opts.ns, summary->opts.subsystem,
                       summary->opts.name);
         return -1;
     }

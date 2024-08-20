@@ -8,7 +8,7 @@ set(CMAKE_POLICY_DEFAULT_CMP0069 NEW)
 # Fluent Bit Version
 set(FLB_VERSION_MAJOR  3)
 set(FLB_VERSION_MINOR  1)
-set(FLB_VERSION_PATCH  6)
+set(FLB_VERSION_PATCH  7)
 set(FLB_VERSION_STR "${FLB_VERSION_MAJOR}.${FLB_VERSION_MINOR}.${FLB_VERSION_PATCH}")
 
 set(CMAKE_POSITION_INDEPENDENT_CODE ON)
@@ -164,6 +164,22 @@ option(FLB_CONFIG_YAML         "Enable YAML config format"    Yes)
 
 # List of plugins available and defaults for each option
 include(cmake/plugins_options.cmake)
+
+
+# Event loop backend (advanced users only)
+# ----------------------------------------
+# The following options are for advanced users only, they are used to enable
+# specific event loop backends. By default, the build system will try to
+# detect the best backend for the current Operating System. If you want to
+# force a specific backend, you can use ONE of the following options.
+#
+# Note that these options will enable the proper option for Monkey library.
+option(FLB_EVENT_LOOP_EPOLL     "Enable epoll(2) event loop backend"  No)
+option(FLB_EVENT_LOOP_POLL      "Enable poll(2) event loop backend"   No)
+option(FLB_EVENT_LOOP_KQUEUE    "Enable kqueue(2) event loop backend" No)
+option(FLB_EVENT_LOOP_SELECT    "Enable select(2) event loop backend" No)
+option(FLB_EVENT_LOOP_LIBEVENT  "Enable libevent event loop backend"  No)
+
 
 if(DEFINED FLB_NIGHTLY_BUILD AND NOT "${FLB_NIGHTLY_BUILD}" STREQUAL "")
   FLB_DEFINITION_VAL(FLB_NIGHTLY_BUILD ${FLB_NIGHTLY_BUILD})
@@ -501,12 +517,38 @@ if(FLB_TESTS_RUNTIME)
   FLB_OPTION(FLB_HTTP_SERVER  ON)
 endif()
 
-# MK Core
+# Monkey Core Library
 macro(MK_SET_OPTION option value)
   set(${option} ${value} CACHE INTERNAL "" FORCE)
 endmacro()
-MK_SET_OPTION(MK_SYSTEM_MALLOC  ON)
-MK_SET_OPTION(MK_DEBUG          ON)
+MK_SET_OPTION(MK_SYSTEM_MALLOC    ON)
+MK_SET_OPTION(MK_DEBUG            ON)
+
+# Monkey backend event loop
+if (FLB_EVENT_LOOP_EPOLL)
+  MK_SET_OPTION(MK_EVENT_LOOP_EPOLL ON)
+  FLB_DEFINITION(FLB_EVENT_LOOP_EPOLL)
+  message(STATUS "FLB Event loop backend > epoll(2)")
+elseif (FLB_EVENT_LOOP_POLL)
+  MK_SET_OPTION(MK_EVENT_LOOP_POLL ON)
+  FLB_DEFINITION(FLB_EVENT_LOOP_POLL)
+  message(STATUS "FLB Event loop backend > poll(2)")
+elseif (FLB_EVENT_LOOP_KQUEUE)
+  MK_SET_OPTION(MK_EVENT_LOOP_KQUEUE ON)
+  FLB_DEFINITION(FLB_EVENT_LOOP_KQUEUE)
+  message(STATUS "FLB Event loop backend > kqueue(2)")
+elseif (FLB_EVENT_LOOP_SELECT)
+  MK_SET_OPTION(MK_EVENT_LOOP_SELECT ON)
+  FLB_DEFINITION(FLB_EVENT_LOOP_SELECT)
+  message(STATUS "FLB Event loop backend > select(2)")
+elseif (FLB_EVENT_LOOP_LIBEVENT)
+  MK_SET_OPTION(MK_EVENT_LOOP_LIBEVENT ON)
+  FLB_DEFINITION(FLB_EVENT_LOOP_LIBEVENT)
+  message(STATUS "FLB Event loop backend > libevent")
+else()
+  FLB_DEFINITION(FLB_EVENT_LOOP_AUTO_DISCOVERY)
+  message(STATUS "FLB Event loop backend > auto discovery (Monkey library)")
+endif()
 
 # Build Monkey HTTP Server
 if(FLB_HTTP_SERVER)

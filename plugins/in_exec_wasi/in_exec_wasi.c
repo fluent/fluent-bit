@@ -76,6 +76,7 @@ static int in_exec_wasi_collect(struct flb_input_instance *ins,
 
     if (ctx->wasm_conf == NULL) {
         flb_plg_error(ctx->ins, "wasm_conf cannot be NULL");
+        fclose(stdoutp);
         return -1;
     }
     ctx->wasm_conf->stdoutfd = fileno(stdoutp);

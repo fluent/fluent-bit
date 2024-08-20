@@ -106,8 +106,8 @@ int cmt_untyped_set(struct cmt_untyped *untyped, uint64_t timestamp, double val,
                                 labels_count, label_vals,
                                 CMT_TRUE);
     if (!metric) {
-        cmt_log_error(untyped->cmt, "unable to retrieve metric: %s for untyped %s_%s_%s",
-                      untyped->map, untyped->opts.ns, untyped->opts.subsystem,
+        cmt_log_error(untyped->cmt, "unable to retrieve metric for untyped %s_%s_%s",
+                      untyped->opts.ns, untyped->opts.subsystem,
                       untyped->opts.name);
         return -1;
     }
@@ -130,8 +130,8 @@ int cmt_untyped_get_val(struct cmt_untyped *untyped,
                                  &val);
     if (ret == -1) {
         cmt_log_error(untyped->cmt,
-                      "unable to retrieve metric value: %s for untyped %s_%s_%s",
-                      untyped->map, untyped->opts.ns, untyped->opts.subsystem,
+                      "unable to retrieve metric value for untyped %s_%s_%s",
+                      untyped->opts.ns, untyped->opts.subsystem,
                       untyped->opts.name);
         return -1;
     }

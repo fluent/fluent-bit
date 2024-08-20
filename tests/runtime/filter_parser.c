@@ -500,7 +500,7 @@ void test_parser_timestamp_timezone(char *tz,
 {
     int ret;
     int bytes;
-    char *output, *original_tz;
+    char *output, *original_tz = NULL;
     char p[256];
     char expected[12];
     flb_ctx_t *ctx;
@@ -601,20 +601,50 @@ void test_parser_timestamp_timezone(char *tz,
     flb_destroy(ctx);
 }
 
+/**
+ * In all the following tests, you can verify the correctness of the expected results using the
+ * `date` command in Linux:
+ *
+ * TZ=<desired TZ> date -d "<timestamp>" "+%s"
+ *
+ * Any output for a timestamp parsed by Fluent Bit using Time_System_Timezone should match
+ * the result of this date command.
+ */
 void flb_test_filter_parser_use_system_timezone()
 {
-    test_parser_timestamp_timezone("EST5EDT", /* char *tz */
-                                   "%Y-%m-%d:%H:%M:%S", /* char *time_fmt */ 
-                                   "2023-10-17:05:00:00", /* char *timestamp */
-                                   "1697536800", /* char *expected_epoch */
-                                   FLB_TRUE); /* int use_system_timezone */
+    struct {
+        char *tz;
+        char *timestamp;
+        char *expected_epoch;
+    } test_cases[] = {
+        /* Confirm that daylight savings time is properly detected. */
+        {"EST5EDT", "2023-02-14 12:00:00", "1676394000"}, /* Should be ST */
+        {"EST5EDT", "2023-10-17 05:00:00", "1697533200"}, /* Should be DST */
+
+        /* Examples from https://github.com/fluent/fluent-bit/issues/9197. */
+        {"Europe/London", "2024-01-20 10:00:00", "1705744800"}, /* Should be ST */
+        {"Europe/London", "2024-08-20 11:00:00", "1724148000"},
+                                                          
+
+        {NULL, NULL, NULL}
+    };
+
+    int i = 0;
+    while(test_cases[i].tz) {
+        test_parser_timestamp_timezone(test_cases[i].tz, /* char *tz */
+                                       "%Y-%m-%d %H:%M:%S", /* char *time_fmt */ 
+                                       test_cases[i].timestamp, /* char *timestamp */
+                                       test_cases[i].expected_epoch, /* char *expected_epoch */
+                                       FLB_TRUE); /* int use_system_timezone */
+        i++;
+    }
 }
 
 void flb_test_filter_parser_use_system_timezone_zone_in_timestamp()
 {
     test_parser_timestamp_timezone("EST5EDT", /* char *tz */
-                                   "%Y-%m-%d:%H:%M:%S%z", /* char *time_fmt */ 
-                                   "2023-10-17:05:00:00-0700", /* char *timestamp */
+                                   "%Y-%m-%d %H:%M:%S%z", /* char *time_fmt */ 
+                                   "2023-10-17 05:00:00-0700", /* char *timestamp */
                                    "1697536800", /* char *expected_epoch */
                                    FLB_TRUE); /* int use_system_timezone */
 }
@@ -952,7 +982,6 @@ TEST_LIST = {
     {"filter_parser_handle_time_key", flb_test_filter_parser_handle_time_key },
     {"filter_parser_handle_time_key_with_time_zone", flb_test_filter_parser_handle_time_key_with_time_zone },
     {"filter_parser_use_system_timezone", flb_test_filter_parser_use_system_timezone },
-    {"filter_parser_use_system_timezone_zone_in_timestamp",flb_test_filter_parser_use_system_timezone_zone_in_timestamp },
     {"filter_parser_ignore_malformed_time", flb_test_filter_parser_ignore_malformed_time },
     {"filter_parser_preserve_original_field", flb_test_filter_parser_preserve_original_field },
     {"filter_parser_first_matched_when_multiple_parser", flb_test_filter_parser_first_matched_when_mutilple_parser },
