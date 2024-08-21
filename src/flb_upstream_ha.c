@@ -27,6 +27,7 @@
 #include <fluent-bit/flb_upstream_node.h>
 #include <fluent-bit/flb_config_format.h>
 #include <fluent-bit/flb_kv.h>
+#include <fluent-bit/flb_env.h>
 
 #include <ctype.h>
 #include <sys/types.h>
@@ -106,6 +107,20 @@ struct flb_upstream_node *flb_upstream_ha_node_get(struct flb_upstream_ha *ctx)
                               _head, &ctx->nodes);
     ctx->last_used_node = node;
     return node;
+}
+
+static inline void translate_environment_variables(flb_sds_t *value, struct
+                                                   flb_config *config)
+{
+    flb_sds_t result;
+
+    result = flb_env_var_translate(config->env, *value);
+
+    if (result != NULL) {
+        flb_sds_destroy(*value);
+
+        *value = (flb_sds_t) result;
+    }
 }
 
 static struct flb_upstream_node *create_node(int id,
@@ -213,6 +228,16 @@ static struct flb_upstream_node *create_node(int id,
 
     /* tls.key_file */
     tls_key_passwd = flb_cf_section_property_get_string(cf, s, "tls.key_passwd");
+
+    translate_environment_variables((flb_sds_t *) &name, config);
+    translate_environment_variables((flb_sds_t *) &host, config);
+    translate_environment_variables((flb_sds_t *) &port, config);
+    translate_environment_variables((flb_sds_t *) &tls_vhost, config);
+    translate_environment_variables((flb_sds_t *) &tls_ca_path, config);
+    translate_environment_variables((flb_sds_t *) &tls_ca_file, config);
+    translate_environment_variables((flb_sds_t *) &tls_crt_file, config);
+    translate_environment_variables((flb_sds_t *) &tls_key_file, config);
+    translate_environment_variables((flb_sds_t *) &tls_key_passwd, config);
 
     /*
      * Create hash table to store unknown key/values that might be used
