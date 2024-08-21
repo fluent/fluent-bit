@@ -79,7 +79,7 @@ void flb_routes_mask_set_bit(flb_route_mask_element *routes_mask, int value,
     int index;
     uint64_t bit;
 
-    if (value < 0 || value > config->route_mask_slots) {
+    if (value < 0 || value >= config->route_mask_slots) {
         flb_warn("[routes_mask] Can't set bit (%d) past limits of bitfield",
                  value);
         return;
@@ -103,7 +103,7 @@ void flb_routes_mask_clear_bit(flb_route_mask_element *routes_mask, int value,
     int index;
     uint64_t bit;
 
-    if (value < 0 || value > config->route_mask_slots) {
+    if (value < 0 || value >= config->route_mask_slots) {
         flb_warn("[routes_mask] Can't set bit (%d) past limits of bitfield",
                  value);
         return;
@@ -128,7 +128,7 @@ int flb_routes_mask_get_bit(flb_route_mask_element *routes_mask, int value,
     int index;
     uint64_t bit;
 
-    if (value < 0 || value > config->route_mask_slots) {
+    if (value < 0 || value >= config->route_mask_slots) {
         flb_warn("[routes_mask] Can't get bit (%d) past limits of bitfield",
                  value);
         return 0;
