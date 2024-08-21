@@ -55,7 +55,7 @@
 struct flb_config_map_val {
     union {
         int i_num;                    /* FLB_CONFIG_MAP_INT */
-        char boolean;                 /* FLB_CONFIG_MAP_BOOL */
+        int boolean;                  /* FLB_CONFIG_MAP_BOOL */
         double d_num;                 /* FLB_CONFIG_MAP_DOUBLE */
         size_t s_num;                 /* FLB_CONFIG_MAP_SIZE */
         flb_sds_t str;                /* FLB_CONFIG_MAP_STR */
