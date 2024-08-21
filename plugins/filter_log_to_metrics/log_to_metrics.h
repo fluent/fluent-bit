@@ -73,6 +73,7 @@ struct log_to_metrics_ctx {
 
     /* config options */
     int mode;
+    flb_sds_t mode_name;
     int discard_logs;
     int kubernetes_mode;
     flb_sds_t metric_name;
