@@ -88,6 +88,7 @@ elseif(FLB_SYSTEM_FREEBSD)
   set(WAMR_DISABLE_STACK_HW_BOUND_CHECK 1)
 endif()
 
+INCLUDE(TestBigEndian)
 include(GNUInstallDirs)
 include(ExternalProject)
 include(cmake/FindJournald.cmake)
@@ -771,6 +772,15 @@ check_c_source_compiles("
 if(FLB_HAVE_UNIX_SOCKET)
   FLB_DEFINITION(FLB_HAVE_UNIX_SOCKET)
 endif()
+
+# byte order detection
+test_big_endian(BIG_ENDIAN_SYSTEM_DETECTED)
+
+if (BIG_ENDIAN_SYSTEM_DETECTED)
+    FLB_DEFINITION(FLB_HAVE_BIG_ENDIAN_SYSTEM)
+else()
+    FLB_DEFINITION(FLB_HAVE_LITTLE_ENDIAN_SYSTEM)
+endif ()
 
 # Configuration file YAML format support
 if(FLB_CONFIG_YAML)
