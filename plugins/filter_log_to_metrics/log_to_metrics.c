@@ -463,6 +463,7 @@ static int cb_log_to_metrics_init(struct flb_filter_instance *f_ins,
     char value_field[MAX_METRIC_LENGTH];
     struct flb_input_instance *input_ins;
 
+
     int i;
     /* Create context */
     ctx = flb_calloc(1, sizeof(struct log_to_metrics_ctx));
@@ -551,15 +552,17 @@ static int cb_log_to_metrics_init(struct flb_filter_instance *f_ins,
 
     /* Check property metric mode */
     ctx->mode = 0;
-    tmp = (char *) flb_filter_get_property("metric_mode", f_ins);
-    if (tmp != NULL) {
-        if (strcasecmp(tmp, FLB_LOG_TO_METRICS_COUNTER_STR) == 0) {
+    if (ctx->mode_name != NULL) {
+        if (strcasecmp(ctx->mode_name,
+                       FLB_LOG_TO_METRICS_COUNTER_STR) == 0) {
             ctx->mode = FLB_LOG_TO_METRICS_COUNTER;
         }
-        else if (strcasecmp(tmp, FLB_LOG_TO_METRICS_GAUGE_STR) == 0) {
+        else if (strcasecmp(ctx->mode_name,
+                            FLB_LOG_TO_METRICS_GAUGE_STR) == 0) {
             ctx->mode = FLB_LOG_TO_METRICS_GAUGE;
         }
-        else if (strcasecmp(tmp, FLB_LOG_TO_METRICS_HISTOGRAM_STR) == 0) {
+        else if (strcasecmp(ctx->mode_name,
+                            FLB_LOG_TO_METRICS_HISTOGRAM_STR) == 0) {
             ctx->mode = FLB_LOG_TO_METRICS_HISTOGRAM;
         }
         else {
@@ -589,7 +592,7 @@ static int cb_log_to_metrics_init(struct flb_filter_instance *f_ins,
     /* Check property subsystem name */
     if (ctx->metric_subsystem == NULL || strlen(ctx->metric_subsystem) == 0) {
         snprintf(metric_subsystem, sizeof(metric_subsystem) - 1, "%s",
-                 tmp);
+                 ctx->mode_name);
     }
     else {
         snprintf(metric_subsystem, sizeof(metric_subsystem) - 1, "%s",
@@ -977,7 +980,7 @@ static struct flb_config_map config_map[] = {
     },
     {
      FLB_CONFIG_MAP_STR, "metric_mode", "counter",
-     0, FLB_TRUE, offsetof(struct log_to_metrics_ctx, mode),
+     0, FLB_TRUE, offsetof(struct log_to_metrics_ctx, mode_name),
      "Mode selector. Values counter, gauge,"
      " or histogram. Summary is not supported"
     },
