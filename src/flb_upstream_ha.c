@@ -109,18 +109,23 @@ struct flb_upstream_node *flb_upstream_ha_node_get(struct flb_upstream_ha *ctx)
     return node;
 }
 
-static inline void translate_environment_variables(flb_sds_t *value, struct
-                                                   flb_config *config)
+static inline flb_sds_t translate_environment_variables(flb_sds_t *value,
+                                                        struct flb_config *config,
+                                                        int in_place_operation)
 {
     flb_sds_t result;
 
     result = flb_env_var_translate(config->env, *value);
 
     if (result != NULL) {
-        flb_sds_destroy(*value);
+        if (in_place_operation) {
+            flb_sds_destroy(*value);
 
-        *value = (flb_sds_t) result;
+            *value = (flb_sds_t) result;
+        }
     }
+
+    return result;
 }
 
 static struct flb_upstream_node *create_node(int id,
@@ -148,6 +153,7 @@ static struct flb_upstream_node *create_node(int id,
     char *tls_crt_file = NULL;
     char *tls_key_file = NULL;
     char *tls_key_passwd = NULL;
+    flb_sds_t translated_value;
     struct cfl_list *head;
     struct cfl_kvpair *entry;
     struct flb_hash_table *ht;
@@ -229,15 +235,15 @@ static struct flb_upstream_node *create_node(int id,
     /* tls.key_file */
     tls_key_passwd = flb_cf_section_property_get_string(cf, s, "tls.key_passwd");
 
-    translate_environment_variables((flb_sds_t *) &name, config);
-    translate_environment_variables((flb_sds_t *) &host, config);
-    translate_environment_variables((flb_sds_t *) &port, config);
-    translate_environment_variables((flb_sds_t *) &tls_vhost, config);
-    translate_environment_variables((flb_sds_t *) &tls_ca_path, config);
-    translate_environment_variables((flb_sds_t *) &tls_ca_file, config);
-    translate_environment_variables((flb_sds_t *) &tls_crt_file, config);
-    translate_environment_variables((flb_sds_t *) &tls_key_file, config);
-    translate_environment_variables((flb_sds_t *) &tls_key_passwd, config);
+    translate_environment_variables((flb_sds_t *) &name, config, FLB_TRUE);
+    translate_environment_variables((flb_sds_t *) &host, config, FLB_TRUE);
+    translate_environment_variables((flb_sds_t *) &port, config, FLB_TRUE);
+    translate_environment_variables((flb_sds_t *) &tls_vhost, config, FLB_TRUE);
+    translate_environment_variables((flb_sds_t *) &tls_ca_path, config, FLB_TRUE);
+    translate_environment_variables((flb_sds_t *) &tls_ca_file, config, FLB_TRUE);
+    translate_environment_variables((flb_sds_t *) &tls_crt_file, config, FLB_TRUE);
+    translate_environment_variables((flb_sds_t *) &tls_key_file, config, FLB_TRUE);
+    translate_environment_variables((flb_sds_t *) &tls_key_passwd, config, FLB_TRUE);
 
     /*
      * Create hash table to store unknown key/values that might be used
@@ -277,12 +283,39 @@ static struct flb_upstream_node *create_node(int id,
         }
         key[klen] = '\0';
 
+        translated_value = translate_environment_variables(
+                            (flb_sds_t *) &entry->val->data.as_string,
+                            config,
+                            FLB_FALSE);
+
+        if (translated_value == NULL) {
+            flb_error("[upstream_ha] cannot perform environment variable "
+                      "lookup for key %s",
+                      entry->key);
+            flb_hash_table_destroy(ht);
+
+            return NULL;
+        }
+        vlen = flb_sds_len(translated_value);
+
+        /* We need to ensure that vlen is larger than zero in order for
+         * to store a copy of the value instead of a reference but this
+         * is not a problem because flb_sds_t instances always have at
+         * least the NULL terminator byte.
+         */
+
+        if (vlen == 0) {
+            vlen = 1;
+        }
+
         /* Add the key and value to the hash table */
-        ret = flb_hash_table_add(ht, key, klen, entry->val->data.as_string, vlen);
+        ret = flb_hash_table_add(ht, key, klen, translated_value, vlen);
         if (ret == -1) {
             flb_error("[upstream_ha] cannot add key %s to hash table",
                       entry->key);
         }
+
+        flb_sds_destroy(translated_value);
     }
 
     node = flb_upstream_node_create(name, host, port, tls, tls_verify,
