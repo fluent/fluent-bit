@@ -43,6 +43,7 @@ set(UNIT_TESTS_FILES
   processor.c
   uri.c
   msgpack_append_message.c
+  endianness
   )
 
 # Config format
