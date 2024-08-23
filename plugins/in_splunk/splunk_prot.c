@@ -834,7 +834,8 @@ int splunk_prot_handle(struct flb_splunk *ctx, struct splunk_conn *conn,
     flb_log_event_encoder_reset(&ctx->log_encoder);
 
     if (request->method == MK_METHOD_POST) {
-        if (strcasecmp(uri, "/services/collector/raw") == 0) {
+        if (strcasecmp(uri, "/services/collector/raw/1.0") == 0 ||
+            strcasecmp(uri, "/services/collector/raw") == 0) {
             ret = process_hec_raw_payload(ctx, conn, tag, session, request);
 
             if (!ret) {
@@ -842,7 +843,8 @@ int splunk_prot_handle(struct flb_splunk *ctx, struct splunk_conn *conn,
             }
             send_json_message_response(conn, 200, "{\"text\":\"Success\",\"code\":0}");
         }
-        else if (strcasecmp(uri, "/services/collector/event") == 0 ||
+        else if (strcasecmp(uri, "/services/collector/event/1.0") == 0 ||
+                 strcasecmp(uri, "/services/collector/event") == 0 ||
                  strcasecmp(uri, "/services/collector") == 0) {
             ret = process_hec_payload(ctx, conn, tag, session, request);
 
@@ -1151,7 +1153,8 @@ int splunk_prot_handle_ng(struct flb_http_request *request,
         return -1;
     }
 
-    if (strcasecmp(request->path, "/services/collector/raw") == 0) {
+    if (strcasecmp(request->path, "/services/collector/raw/1.0") == 0 ||
+        strcasecmp(request->path, "/services/collector/raw") == 0) {
         ret = process_hec_raw_payload_ng(request, response, tag, context);
 
         if (ret != 0) {
@@ -1163,7 +1166,8 @@ int splunk_prot_handle_ng(struct flb_http_request *request,
 
         ret = 0;
     }
-    else if (strcasecmp(request->path, "/services/collector/event") == 0 ||
+    else if (strcasecmp(request->path, "/services/collector/event/1.0") == 0 ||
+             strcasecmp(request->path, "/services/collector/event") == 0 ||
              strcasecmp(request->path, "/services/collector") == 0) {
         ret = process_hec_payload_ng(request, response, tag, context);
 

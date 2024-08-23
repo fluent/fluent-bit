@@ -370,7 +370,7 @@ void flb_test_splunk_collector_event()
     flb_test_splunk(8810, "/services/collector/event");
 }
 
-void flb_test_splunk_raw(int port)
+void flb_test_splunk_raw(int port, char *endpoint)
 {
     struct flb_lib_out_cb cb_data;
     struct test_ctx *ctx;
@@ -413,7 +413,7 @@ void flb_test_splunk_raw(int port)
     ctx->httpc = splunk_client_ctx_create(port);
     TEST_CHECK(ctx->httpc != NULL);
 
-    c = flb_http_client(ctx->httpc->u_conn, FLB_HTTP_POST, "/services/collector/raw", buf, strlen(buf),
+    c = flb_http_client(ctx->httpc->u_conn, FLB_HTTP_POST, endpoint, buf, strlen(buf),
                         "127.0.0.1", port, NULL, 0);
     ret = flb_http_add_header(c, FLB_HTTP_HEADER_CONTENT_TYPE, strlen(FLB_HTTP_HEADER_CONTENT_TYPE),
                               JSON_CONTENT_TYPE, strlen(JSON_CONTENT_TYPE));
@@ -448,7 +448,7 @@ void flb_test_splunk_raw(int port)
 
 void flb_test_splunk_collector_raw()
 {
-    flb_test_splunk_raw(8811);
+    flb_test_splunk_raw(8811, "/services/collector/raw");
 }
 
 void flb_test_splunk_raw_multilines(int port)
@@ -910,11 +910,25 @@ void flb_test_splunk_collector_raw_hec_token_key()
     flb_test_splunk_auth_header(8817, "/services/collector/raw");
 }
 
+/* 1.0 endpoints */
+
+void flb_test_splunk_collector_raw_1_0()
+{
+    flb_test_splunk_raw(8818, "/services/collector/raw/1.0");
+}
+
+void flb_test_splunk_collector_event_1_0()
+{
+    flb_test_splunk(8819, "/services/collector/event/1.0");
+}
+
 TEST_LIST = {
     {"health", flb_test_splunk_health},
     {"collector", flb_test_splunk_collector},
     {"collector_event", flb_test_splunk_collector_event},
+    {"collector_event_1.0", flb_test_splunk_collector_event_1_0},
     {"collector_raw", flb_test_splunk_collector_raw},
+    {"collector_raw_1.0", flb_test_splunk_collector_raw_1_0},
     {"collector_raw_multilines", flb_test_splunk_collector_raw_multilines},
     {"collector_gzip", flb_test_splunk_collector_gzip},
     {"collector_event_gzip", flb_test_splunk_collector_event_gzip},
