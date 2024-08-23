@@ -656,6 +656,7 @@ static void emit_raw_record()
  */
 static void timestamp_encoding()
 {
+    uint8_t                     *encoder_buffer;
     struct flb_time              timestamp;
     struct flb_log_event_encoder encoder;
     int                          result;
@@ -707,13 +708,15 @@ static void timestamp_encoding()
         return;
     }
 
+    encoder_buffer = (uint8_t *) encoder.output_buffer;
+
     result = FLB_FALSE;
 
     for (index = 0 ; index < encoder.output_length  - 4 ; index++) {
-        if (encoder.output_buffer[index + 0] == 0x00 &&
-            encoder.output_buffer[index + 1] == 0xC0 &&
-            encoder.output_buffer[index + 2] == 0xFF &&
-            encoder.output_buffer[index + 3] == 0xEE) {
+        if (encoder_buffer[index + 0] == 0x00 &&
+            encoder_buffer[index + 1] == 0xC0 &&
+            encoder_buffer[index + 2] == 0xFF &&
+            encoder_buffer[index + 3] == 0xEE) {
             result = FLB_TRUE;
 
             break;
