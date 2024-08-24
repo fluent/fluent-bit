@@ -23,6 +23,12 @@
 #include <fluent-bit/flb_io.h>
 #include <fluent-bit/flb_upstream.h>
 #include <fluent-bit/flb_callback.h>
+#include <fluent-bit/flb_http_common.h>
+#include <fluent-bit/flb_http_client_http1.h>
+#include <fluent-bit/flb_http_client_http2.h>
+
+#define HTTP_CLIENT_SUCCESS         0
+#define HTTP_CLIENT_PROVIDER_ERROR -1
 
 /* Buffer size */
 #define FLB_HTTP_BUF_SIZE        2048
@@ -136,6 +142,73 @@ struct flb_http_client {
     void *cb_ctx;
 };
 
+struct flb_http_client_ng {
+    struct cfl_list      sessions;
+
+    uint16_t             port;
+    uint64_t             flags;
+    int                  protocol_version;
+
+    int                  releasable;
+    void                 *user_data;
+
+    struct flb_upstream *upstream;
+};
+
+struct flb_http_client_session {
+    struct flb_http1_client_session http1;
+    struct flb_http2_client_session http2;
+    struct cfl_list                 streams;
+
+    int                             protocol_version;
+
+    cfl_sds_t                       incoming_data;
+    cfl_sds_t                       outgoing_data;
+
+    int                             releasable;
+
+    struct cfl_list                 response_queue;
+
+    int                             stream_sequence_number;
+
+    struct flb_connection          *connection;
+    struct flb_http_client_ng      *parent;
+
+    struct cfl_list                 _head;
+};
+
+int flb_http_client_ng_init(struct flb_http_client_ng *client,
+                            struct flb_upstream *upstream,
+                            int protocol_version,
+                            uint64_t flags);
+
+struct flb_http_client_ng *flb_http_client_ng_create(
+                                struct flb_upstream *upstream,
+                                int protocol_version,
+                                uint64_t flags);
+
+void flb_http_client_ng_destroy(struct flb_http_client_ng *client);
+
+int flb_http_client_session_init(struct flb_http_client_session *session,
+                                 struct flb_http_client_ng *client,
+                                 int protocol_version,
+                                 struct flb_connection  *connection);
+
+struct flb_http_client_session *flb_http_client_session_create(struct flb_http_client_ng *client,
+                                                               int protocol_version,
+                                                               struct flb_connection  *connection);
+
+struct flb_http_client_session *flb_http_client_session_begin(struct flb_http_client_ng *client);
+
+void flb_http_client_session_destroy(struct flb_http_client_session *session);
+
+struct flb_http_request *flb_http_client_request_begin(struct flb_http_client_session *session);
+
+struct flb_http_response *flb_http_client_request_execute(struct flb_http_request *request);
+
+
+
+
 void flb_http_client_debug(struct flb_http_client *c,
                            struct flb_callback *cb_ctx);
 
@@ -163,6 +236,7 @@ int flb_http_set_callback_context(struct flb_http_client *c,
 
 int flb_http_get_response_data(struct flb_http_client *c, size_t bytes_consumed);
 int flb_http_do_request(struct flb_http_client *c, size_t *bytes);
+
 int flb_http_do(struct flb_http_client *c, size_t *bytes);
 int flb_http_client_proxy_connect(struct flb_connection *u_conn);
 void flb_http_client_destroy(struct flb_http_client *c);
