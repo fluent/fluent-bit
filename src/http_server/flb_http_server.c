@@ -56,54 +56,6 @@ int uncompress_gzip(char **output_buffer,
 
 /* COMMON */
 
-char *flb_http_server_convert_string_to_lowercase(char *input_buffer,
-                                                  size_t length)
-{
-    char  *output_buffer;
-    size_t index;
-
-    output_buffer = flb_calloc(1, length + 1);
-
-    if (output_buffer != NULL) {
-        for (index = 0 ; index < length ; index++) {
-            output_buffer[index] = tolower(input_buffer[index]);
-        }
-
-    }
-
-    return output_buffer;
-}
-
-
-int flb_http_server_strncasecmp(const uint8_t *first_buffer,
-                                size_t first_length,
-                                const char *second_buffer,
-                                size_t second_length)
-{
-    const char *first_buffer_;
-    const char *second_buffer_;
-
-    first_buffer_  = (const char *) first_buffer;
-    second_buffer_ = (const char *) second_buffer;
-
-    if (first_length == 0) {
-        first_length = strlen(first_buffer_);
-    }
-
-    if (second_length == 0) {
-        second_length = strlen(second_buffer_);
-    }
-
-    if (first_length < second_length) {
-        return -1;
-    }
-    else if (first_length > second_length) {
-        return 1;
-    }
-
-    return strncasecmp(first_buffer_, second_buffer_, first_length);
-}
-
 
 
 
@@ -274,11 +226,12 @@ static int flb_http_server_inflate_request_body(
 static int flb_http_server_should_connection_be_closed(
     struct flb_http_request *request)
 {
-    int keepalive = FLB_FALSE;
-    char *connection_header_value;
+    char                            *connection_header_value;
     struct flb_http_server_session  *parent_session;
+    struct flb_downstream           *downstream;
+    int                              keepalive;
     struct flb_http_server          *server;
-    struct flb_downstream *downstream;
+
 
     parent_session = (struct flb_http_server_session *) request->stream->parent;
 
@@ -316,6 +269,9 @@ static int flb_http_server_should_connection_be_closed(
     else if (request->protocol_version == HTTP_PROTOCOL_VERSION_11) {
         keepalive = FLB_TRUE;
     }
+    else {
+        keepalive = FLB_FALSE;
+    }
 
     /* Override protocol defaults by checking connection header */
     connection_header_value = flb_http_request_get_header(request,
@@ -325,11 +281,7 @@ static int flb_http_server_should_connection_be_closed(
         keepalive = FLB_TRUE;
     }
 
-    if (keepalive) {
-        return FLB_FALSE;
-    }
-
-    return FLB_TRUE;
+    return keepalive;
 }
 
 static int flb_http_server_client_activity_event_handler(void *data)
@@ -619,14 +571,14 @@ int flb_http_server_session_init(struct flb_http_server_session *session, int ve
 
     session->version = version;
 
-    if (session->version == HTTP_PROTOCOL_HTTP2) {
+    if (session->version == HTTP_PROTOCOL_VERSION_20) {
         result = flb_http2_server_session_init(&session->http2, session);
 
         if (result != 0) {
             return -3;
         }
     }
-    else if (session->version == HTTP_PROTOCOL_HTTP1) {
+    else if (session->version <= HTTP_PROTOCOL_VERSION_11) {
         result = flb_http1_server_session_init(&session->http1, session);
 
         if (result != 0) {
@@ -694,8 +646,8 @@ int flb_http_server_session_ingest(struct flb_http_server_session *session,
     cfl_sds_t resized_buffer;
     int       result;
 
-    if (session->version == HTTP_PROTOCOL_AUTODETECT ||
-        session->version == HTTP_PROTOCOL_HTTP1) {
+    if (session->version == HTTP_PROTOCOL_VERSION_AUTODETECT ||
+        session->version <= HTTP_PROTOCOL_VERSION_11) {
         resized_buffer = cfl_sds_cat(session->incoming_data,
                                      (const char *) buffer,
                                      length);
@@ -707,31 +659,31 @@ int flb_http_server_session_ingest(struct flb_http_server_session *session,
         session->incoming_data = resized_buffer;
     }
 
-    if (session->version == HTTP_PROTOCOL_AUTODETECT) {
+    if (session->version == HTTP_PROTOCOL_VERSION_AUTODETECT) {
         if (cfl_sds_len(session->incoming_data) >= 24) {
             if (strncmp(session->incoming_data,
                         "PRI * HTTP/2.0\r\n\r\nSM\r\n\r\n",
                         24) == 0) {
-                session->version = HTTP_PROTOCOL_HTTP2;
+                session->version = HTTP_PROTOCOL_VERSION_20;
             }
             else {
-                session->version = HTTP_PROTOCOL_HTTP1;
+                session->version = HTTP_PROTOCOL_VERSION_11;
             }
         }
         else if (cfl_sds_len(session->incoming_data) >= 4) {
             if (strncmp(session->incoming_data, "PRI ", 4) != 0) {
-                session->version = HTTP_PROTOCOL_HTTP1;
+                session->version = HTTP_PROTOCOL_VERSION_11;
             }
         }
 
-        if (session->version == HTTP_PROTOCOL_HTTP1) {
+        if (session->version <= HTTP_PROTOCOL_VERSION_11) {
             result = flb_http1_server_session_init(&session->http1, session);
 
             if (result != 0) {
                 return -1;
             }
         }
-        else if (session->version == HTTP_PROTOCOL_HTTP2) {
+        else if (session->version == HTTP_PROTOCOL_VERSION_20) {
             result = flb_http2_server_session_init(&session->http2, session);
 
             if (result != 0) {
@@ -740,12 +692,12 @@ int flb_http_server_session_ingest(struct flb_http_server_session *session,
         }
     }
 
-    if (session->version == HTTP_PROTOCOL_HTTP1) {
+    if (session->version <= HTTP_PROTOCOL_VERSION_11) {
         return flb_http1_server_session_ingest(&session->http1,
                                                buffer,
                                                length);
     }
-    else if (session->version == HTTP_PROTOCOL_HTTP2) {
+    else if (session->version == HTTP_PROTOCOL_VERSION_20) {
         return flb_http2_server_session_ingest(&session->http2,
                                                buffer,
                                                length);

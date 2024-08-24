@@ -382,7 +382,7 @@ int flb_http2_server_session_ingest(struct flb_http2_server_session *session,
     if (result < 0) {
         return HTTP_SERVER_PROVIDER_ERROR;
     }
-    
+
     result = nghttp2_session_send(session->inner_session);
 
     if (result < 0) {

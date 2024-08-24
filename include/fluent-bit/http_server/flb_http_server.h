@@ -96,13 +96,7 @@ struct flb_http_server_session {
 
 /* COMMON */
 
-char *flb_http_server_convert_string_to_lowercase(char *input_buffer, 
-                                                  size_t length);
 
-int flb_http_server_strncasecmp(const uint8_t *first_buffer, 
-                                size_t first_length,
-                                const char *second_buffer, 
-                                size_t second_length);
 
 /* HTTP SERVER */
 
