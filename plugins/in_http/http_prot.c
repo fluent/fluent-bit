@@ -524,7 +524,7 @@ static int process_payload(struct flb_http *ctx, struct http_conn *conn,
     }
 
     if ((header->val.len == 16 && strncasecmp(header->val.data, "application/json", 16) == 0) ||
-        (header->val.len > 16 && (strncasecmp(header->val.data, "application/json ", 17) == 0) || 
+        (header->val.len > 16 && (strncasecmp(header->val.data, "application/json ", 17) == 0) ||
         strncasecmp(header->val.data, "application/json;", 17) == 0)) {
         type = HTTP_CONTENT_JSON;
     }
@@ -982,7 +982,7 @@ int http_prot_handle_ng(struct flb_http_request *request,
 
     /* ToDo: Fix me */
     /* HTTP/1.1 needs Host header */
-    if (request->protocol_version == HTTP_PROTOCOL_HTTP1 &&
+    if (request->protocol_version == HTTP_PROTOCOL_VERSION_11 &&
         request->host == NULL) {
         flb_sds_destroy(tag);
 
