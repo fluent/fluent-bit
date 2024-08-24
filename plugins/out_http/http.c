@@ -35,6 +35,7 @@
 #ifdef FLB_HAVE_AWS
 #include <fluent-bit/flb_aws_credentials.h>
 #include <fluent-bit/flb_signv4.h>
+#include <fluent-bit/flb_signv4_ng.h>
 #endif
 #endif
 
@@ -105,6 +106,46 @@ static void append_headers(struct flb_http_client *c,
     }
 }
 
+static int append_headers_ng(struct flb_http_request *request,
+                             char **headers)
+{
+    int   i;
+    int   result;
+    char *header_key;
+    char *header_value;
+
+    i = 0;
+    header_key = NULL;
+    header_value = NULL;
+    while (*headers) {
+        if (i % 2 == 0) {
+            header_key = *headers;
+        }
+        else {
+            header_value = *headers;
+        }
+        if (header_key && header_value) {
+            result = flb_http_request_set_header(request,
+                                                 header_key,   0,
+                                                 header_value, 0);
+            flb_free(header_key);
+            flb_free(header_value);
+
+            header_key = NULL;
+            header_value = NULL;
+
+            if (result != 0) {
+                return -1;
+            }
+        }
+
+        headers++;
+        i++;
+    }
+
+    return 0;
+}
+
 static int http_post(struct flb_out_http *ctx,
                      const void *body, size_t body_len,
                      const char *tag, int tag_len,
@@ -118,21 +159,55 @@ static int http_post(struct flb_out_http *ctx,
     size_t payload_size = 0;
     struct flb_upstream *u;
     struct flb_connection *u_conn;
-    struct flb_http_client *c;
     struct mk_list *head;
     struct flb_config_map_val *mv;
     struct flb_slist_entry *key = NULL;
     struct flb_slist_entry *val = NULL;
     flb_sds_t signature = NULL;
+    struct flb_http_client_ng       client;
+    int                             result;
+    struct flb_http_client_session *session;
+    struct flb_http_request        *request;
+    struct flb_http_response       *response;
 
     /* Get upstream context and connection */
     u = ctx->u;
-    u_conn = flb_upstream_conn_get(u);
-    if (!u_conn) {
-        flb_plg_error(ctx->ins, "no upstream connections available to %s:%i",
-                      u->tcp_host, u->tcp_port);
+
+    result = flb_http_client_ng_init(&client,
+                                     u,
+                                     HTTP_PROTOCOL_VERSION_11,
+                                     0);
+
+    if (result != 0) {
+        flb_plg_debug(ctx->ins, "http client creation error");
+
         return FLB_RETRY;
     }
+
+    session = flb_http_client_session_begin(&client);
+
+    if (session == NULL) {
+        flb_plg_debug(ctx->ins, "http session creation error");
+
+        flb_http_client_ng_destroy(&client);
+
+        return FLB_RETRY;
+    }
+
+    request = flb_http_client_request_begin(session);
+
+    if (request == NULL) {
+        flb_plg_debug(ctx->ins, "http request creation error");
+
+        flb_http_client_ng_destroy(&client);
+
+        return FLB_RETRY;
+    }
+
+    flb_http_request_set_method(request, HTTP_METHOD_POST);
+    flb_http_request_set_host(request, ctx->host);
+    flb_http_request_set_port(request, ctx->port);
+    flb_http_request_set_uri(request, ctx->uri);
 
     /* Map payload */
     payload_buf = (void *) body;
@@ -151,81 +226,93 @@ static int http_post(struct flb_out_http *ctx,
         }
     }
 
-    /* Create HTTP client context */
-    c = flb_http_client(u_conn, FLB_HTTP_POST, ctx->uri,
-                        payload_buf, payload_size,
-                        ctx->host, ctx->port,
-                        ctx->proxy, 0);
+    if (payload_buf != NULL) {
+        result = flb_http_request_set_body(request,
+                                           payload_buf,
+                                           payload_size);
 
+        if (payload_buf != NULL &&
+            payload_buf != body) {
+            flb_free(payload_buf);
+        }
 
+        if (request == NULL) {
+            flb_plg_debug(ctx->ins, "http request creation error");
+
+            flb_http_client_ng_destroy(&client);
+
+            return FLB_RETRY;
+        }
+
+        flb_http_request_set_content_length(request, payload_size);
+    }
+
+/*
+    TODO: Add proxy support
     if (c->proxy.host) {
         flb_plg_debug(ctx->ins, "[http_client] proxy host: %s port: %i",
                       c->proxy.host, c->proxy.port);
     }
-
-    /* Allow duplicated headers ? */
-    flb_http_allow_duplicated_headers(c, ctx->allow_dup_headers);
-
-    /*
-     * Direct assignment of the callback context to the HTTP client context.
-     * This needs to be improved through a more clean API.
-     */
-    c->cb_ctx = ctx->ins->callback;
+*/
 
     /* Append headers */
     if (headers) {
-        append_headers(c, headers);
+        result = append_headers_ng(request, headers);
     }
     else if ((ctx->out_format == FLB_PACK_JSON_FORMAT_JSON) ||
         (ctx->out_format == FLB_PACK_JSON_FORMAT_STREAM) ||
+        (ctx->out_format == FLB_PACK_JSON_FORMAT_LINES) ||
         (ctx->out_format == FLB_HTTP_OUT_GELF)) {
-        flb_http_add_header(c,
-                            FLB_HTTP_CONTENT_TYPE,
-                            sizeof(FLB_HTTP_CONTENT_TYPE) - 1,
-                            FLB_HTTP_MIME_JSON,
-                            sizeof(FLB_HTTP_MIME_JSON) - 1);
+        flb_http_request_set_content_type(request, FLB_HTTP_MIME_JSON);
     }
-    else if (ctx->out_format == FLB_PACK_JSON_FORMAT_LINES) {
-        flb_http_add_header(c,
-                            FLB_HTTP_CONTENT_TYPE,
-                            sizeof(FLB_HTTP_CONTENT_TYPE) - 1,
-                            FLB_HTTP_MIME_NDJSON,
-                            sizeof(FLB_HTTP_MIME_NDJSON) - 1);
-    }
-    else if (ctx->out_format == FLB_HTTP_OUT_MSGPACK) {
-        flb_http_add_header(c,
-                            FLB_HTTP_CONTENT_TYPE,
-                            sizeof(FLB_HTTP_CONTENT_TYPE) - 1,
-                            FLB_HTTP_MIME_MSGPACK,
-                            sizeof(FLB_HTTP_MIME_MSGPACK) - 1);
+    else if ((ctx->out_format == FLB_HTTP_OUT_MSGPACK)) {
+        flb_http_request_set_content_type(request, FLB_HTTP_MIME_MSGPACK);
     }
 
-    if (ctx->header_tag) {
-        flb_http_add_header(c,
-                            ctx->header_tag,
-                            flb_sds_len(ctx->header_tag),
-                            tag, tag_len);
+    if (ctx->header_tag != NULL) {
+        result = flb_http_request_set_header(request,
+                                             ctx->header_tag, 0,
+                                             tag, tag_len);
+
+        if (result != 0) {
+            flb_plg_debug(ctx->ins, "http request creation error");
+
+            flb_http_client_ng_destroy(&client);
+
+            return FLB_RETRY;
+        }
     }
 
     /* Content Encoding: gzip */
     if (compressed == FLB_TRUE) {
-        flb_http_set_content_encoding_gzip(c);
+        result = flb_http_request_set_content_encoding(request, "gzip");
+
+        if (result != 0) {
+            flb_plg_debug(ctx->ins, "http request encoding setup error");
+
+            flb_http_client_ng_destroy(&client);
+
+            return FLB_RETRY;
+        }
     }
 
     /* Basic Auth headers */
     if (ctx->http_user && ctx->http_passwd) {
-        flb_http_basic_auth(c, ctx->http_user, ctx->http_passwd);
+        flb_http_request_set_authorization(request,
+                                           HTTP_WWW_AUTHORIZATION_SCHEME_BASIC,
+                                           ctx->http_user,
+                                           ctx->http_passwd);
     }
 
-    flb_http_add_header(c, "User-Agent", 10, "Fluent-Bit", 10);
+    flb_http_request_set_user_agent(request, "Fluent-Bit");
 
     flb_config_map_foreach(head, mv, ctx->headers) {
         key = mk_list_entry_first(mv->val.list, struct flb_slist_entry, _head);
         val = mk_list_entry_last(mv->val.list, struct flb_slist_entry, _head);
 
-        flb_http_add_header(c,
-                            key->str, flb_sds_len(key->str),
-                            val->str, flb_sds_len(val->str));
+        result = flb_http_request_set_header(request,
+                                             key->str, 0,
+                                             val->str, 0);
     }
 
 #ifdef FLB_HAVE_SIGNV4
@@ -233,14 +320,14 @@ static int http_post(struct flb_out_http *ctx,
     /* AWS SigV4 headers */
     if (ctx->has_aws_auth == FLB_TRUE) {
         flb_plg_debug(ctx->ins, "signing request with AWS Sigv4");
-        signature = flb_signv4_do(c,
-                                  FLB_TRUE,  /* normalize URI ? */
-                                  FLB_TRUE,  /* add x-amz-date header ? */
-                                  time(NULL),
-                                  (char *) ctx->aws_region,
-                                  (char *) ctx->aws_service,
-                                  0, NULL,
-                                  ctx->aws_provider);
+        signature = flb_signv4_ng_do(request,
+                                     FLB_TRUE,  /* normalize URI ? */
+                                     FLB_TRUE,  /* add x-amz-date header ? */
+                                     time(NULL),
+                                     (char *) ctx->aws_region,
+                                     (char *) ctx->aws_service,
+                                     0, NULL,
+                                     ctx->aws_provider);
 
         if (!signature) {
             flb_plg_error(ctx->ins, "could not sign request with sigv4");
@@ -252,74 +339,59 @@ static int http_post(struct flb_out_http *ctx,
 #endif
 #endif
 
-    ret = flb_http_do(c, &b_sent);
-    if (ret == 0) {
-        /*
-         * Only allow the following HTTP status:
-         *
-         * - 200: OK
-         * - 201: Created
-         * - 202: Accepted
-         * - 203: no authorative resp
-         * - 204: No Content
-         * - 205: Reset content
-         *
-         */
-        if (c->resp.status < 200 || c->resp.status > 205) {
-            if (ctx->log_response_payload &&
-                c->resp.payload && c->resp.payload_size > 0) {
-                flb_plg_error(ctx->ins, "%s:%i, HTTP status=%i\n%s",
-                              ctx->host, ctx->port,
-                              c->resp.status, c->resp.payload);
-            }
-            else {
-                flb_plg_error(ctx->ins, "%s:%i, HTTP status=%i",
-                              ctx->host, ctx->port, c->resp.status);
-            }
-            if (c->resp.status >= 400 && c->resp.status < 500 && c->resp.status != 429) {
-                flb_plg_warn(ctx->ins, "could not flush records to %s:%i (http_do=%i), "
-                                "chunk will not be retried",
-                                ctx->host, ctx->port, ret);
-                out_ret = FLB_ERROR;
-            }
-            else {
-                out_ret = FLB_RETRY;
-            }
+    response = flb_http_client_request_execute(request);
+
+    if (response == NULL) {
+        flb_plg_debug(ctx->ins, "http request execution error");
+
+        flb_http_client_ng_destroy(&client);
+
+        return FLB_RETRY;
+    }
+
+    /*
+        * Only allow the following HTTP status:
+        *
+        * - 200: OK
+        * - 201: Created
+        * - 202: Accepted
+        * - 203: no authorative resp
+        * - 204: No Content
+        * - 205: Reset content
+        *
+        */
+    if (response->status < 200 || response->status > 205) {
+        if (ctx->log_response_payload &&
+            response->body != NULL &&
+            cfl_sds_len(response->body) > 0) {
+            flb_plg_error(ctx->ins, "%s:%i, HTTP status=%i\n%s",
+                            ctx->host, ctx->port,
+                            response->status, response->body);
         }
         else {
-            if (ctx->log_response_payload &&
-                c->resp.payload && c->resp.payload_size > 0) {
-                flb_plg_info(ctx->ins, "%s:%i, HTTP status=%i\n%s",
-                             ctx->host, ctx->port,
-                             c->resp.status, c->resp.payload);
-            }
-            else {
-                flb_plg_info(ctx->ins, "%s:%i, HTTP status=%i",
-                             ctx->host, ctx->port,
-                             c->resp.status);
-            }
+            flb_plg_error(ctx->ins, "%s:%i, HTTP status=%i",
+                            ctx->host, ctx->port, response->status);
         }
+        out_ret = FLB_RETRY;
     }
     else {
-        flb_plg_error(ctx->ins, "could not flush records to %s:%i (http_do=%i)",
-                      ctx->host, ctx->port, ret);
-        out_ret = FLB_RETRY;
+        if (ctx->log_response_payload &&
+            response->body != NULL &&
+            cfl_sds_len(response->body) > 0) {
+            flb_plg_info(ctx->ins, "%s:%i, HTTP status=%i\n%s",
+                            ctx->host, ctx->port,
+                            response->status, response->body);
+        }
+        else {
+            flb_plg_info(ctx->ins, "%s:%i, HTTP status=%i",
+                            ctx->host, ctx->port,
+                            response->status);
+        }
     }
 
 cleanup:
-    /*
-     * If the payload buffer is different than incoming records in body, means
-     * we generated a different payload and must be freed.
-     */
-    if (payload_buf != body) {
-        flb_free(payload_buf);
-    }
-
     /* Destroy HTTP client context */
-    flb_http_client_destroy(c);
-
-    /* Release the TCP connection */
-    flb_upstream_conn_release(u_conn);
+    flb_http_client_ng_destroy(&client);
 
     return out_ret;
 }
