@@ -152,7 +152,7 @@ static flb_sds_t normalize_ra_key_name(struct flb_loki *ctx,
     mk_list_foreach(head, &ra->list) {
         rp = mk_list_entry(head, struct flb_ra_parser, _head);
         if (c > 0) {
-            flb_sds_cat(name, "_", 1);
+            flb_sds_cat_safe(&name, "_", 1);
         }
         normalize_cat(rp, &name);
         c++;
