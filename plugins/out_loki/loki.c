@@ -750,7 +750,7 @@ static int parse_kv(struct flb_loki *ctx, struct mk_list *kv, struct mk_list *li
         }
 
         key = flb_sds_create_size((p - entry->str) + 1);
-        flb_sds_cat(key, entry->str, p - entry->str);
+        flb_sds_cat_safe(&key, entry->str, p - entry->str);
         val = flb_sds_create(p + 1);
         if (!key) {
             flb_plg_error(ctx->ins,
