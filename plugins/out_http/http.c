@@ -155,8 +155,6 @@ static int http_post(struct flb_out_http *ctx,
     int out_ret = FLB_OK;
     int compressed = FLB_FALSE;
     size_t b_sent;
-    void *payload_buf = NULL;
-    size_t payload_size = 0;
     struct flb_upstream *u;
     struct flb_connection *u_conn;
     struct mk_list *head;
@@ -169,6 +167,7 @@ static int http_post(struct flb_out_http *ctx,
     struct flb_http_client_session *session;
     struct flb_http_request        *request;
     struct flb_http_response       *response;
+    const char                     *compression_algorithm;
 
     /* Get upstream context and connection */
     u = ctx->u;
@@ -209,32 +208,19 @@ static int http_post(struct flb_out_http *ctx,
     flb_http_request_set_port(request, ctx->port);
     flb_http_request_set_uri(request, ctx->uri);
 
-    /* Map payload */
-    payload_buf = (void *) body;
-    payload_size = body_len;
-
     /* Should we compress the payload ? */
     if (ctx->compress_gzip == FLB_TRUE) {
-        ret = flb_gzip_compress((void *) body, body_len,
-                                &payload_buf, &payload_size);
-        if (ret == -1) {
-            flb_plg_error(ctx->ins,
-                          "cannot gzip payload, disabling compression");
-        }
-        else {
-            compressed = FLB_TRUE;
-        }
+        compression_algorithm = "gzip";
+    }
+    else {
+        compression_algorithm = NULL;
     }
 
-    if (payload_buf != NULL) {
+    if (body != NULL) {
         result = flb_http_request_set_body(request,
-                                           payload_buf,
-                                           payload_size);
-
-        if (payload_buf != NULL &&
-            payload_buf != body) {
-            flb_free(payload_buf);
-        }
+                                           body,
+                                           body_len,
+                                           compression_algorithm);
 
         if (request == NULL) {
             flb_plg_debug(ctx->ins, "http request creation error");
@@ -243,8 +229,6 @@ static int http_post(struct flb_out_http *ctx,
 
             return FLB_RETRY;
         }
-
-        flb_http_request_set_content_length(request, payload_size);
     }
 
 /*
