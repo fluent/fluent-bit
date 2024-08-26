@@ -921,11 +921,11 @@ static int cb_s3_init(struct flb_output_instance *ins,
         ctx->timer_ms = UPLOAD_TIMER_MIN_WAIT;
     }
 
-    /* 
-     * S3 must ALWAYS use sync mode 
+    /*
+     * S3 must ALWAYS use sync mode
      * In the timer thread we do a mk_list_foreach_safe on the queue of uplaods and chunks
      * Iterating over those lists is not concurrent safe. If a flush call ran at the same time
-     * And deleted an item from the list, this could cause a crash/corruption. 
+     * And deleted an item from the list, this could cause a crash/corruption.
      */
     flb_stream_disable_async_mode(&ctx->s3_client->upstream->base);
 
@@ -1394,7 +1394,6 @@ static int s3_put_object(struct flb_s3 *ctx, const char *tag, time_t file_first_
         ret = write_seq_index(ctx->seq_index_file, ctx->seq_index);
         if (ret < 0 && access(ctx->seq_index_file, F_OK) == 0) {
             ctx->seq_index--;
-            flb_sds_destroy(s3_key);
             flb_plg_error(ctx->ins, "Failed to update sequential index metadata file");
             return -1;
         }
