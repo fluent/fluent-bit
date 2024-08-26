@@ -1029,6 +1029,8 @@ size_t flb_aws_strftime_precision(char **out_buf, const char *time_format,
 
     tmp = gmtime_r(&tms->tm.tv_sec, &timestamp);
     if (!tmp) {
+        flb_free(tmp_parsed_time_str);
+        flb_free(buf);
         return 0;
     }
 
