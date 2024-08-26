@@ -44,8 +44,6 @@
 #include <fluent-bit/flb_base64.h>
 #include <fluent-bit/tls/flb_tls.h>
 
-
-
 void flb_http_client_debug(struct flb_http_client *c,
                            struct flb_callback *cb_ctx)
 {
@@ -1806,7 +1804,7 @@ struct flb_http_response *flb_http_client_request_execute(struct flb_http_reques
 
     session = (struct flb_http_client_session *) request->stream->parent;
 
-    if (session->outgoing_data != NULL && 
+    if (session->outgoing_data != NULL &&
         cfl_sds_len(session->outgoing_data) > 0)
     {
         result = flb_http_client_session_write(session);
@@ -1823,16 +1821,7 @@ struct flb_http_response *flb_http_client_request_execute(struct flb_http_reques
         }
     }
 
-    if (request->protocol_version == HTTP_PROTOCOL_VERSION_20) {
-        result = flb_http2_request_commit(request);
-    }
-    else if (request->protocol_version == HTTP_PROTOCOL_VERSION_11 ||
-             request->protocol_version == HTTP_PROTOCOL_VERSION_10) {
-        result = flb_http1_request_commit(request);
-    }
-    else {
-        result = -1;
-    }
+    result = flb_http_request_commit(request);
 
     if (result != 0) {
         return NULL;
@@ -1974,111 +1963,6 @@ int flb_http_client_session_ingest(struct flb_http_client_session *session,
 
 
 
-
-int flb_http_request_set_method(struct flb_http_request *request,
-                                int method)
-{
-    request->method = method;
-
-    return 0;
-}
-
-int flb_http_request_set_host(struct flb_http_request *request,
-                                            char *host)
-{
-    request->host = cfl_sds_create(host);
-
-    if (request->host == NULL) {
-        return -1;
-    }
-
-    return 0;
-}
-
-int flb_http_request_set_port(struct flb_http_request *request,
-                                            uint16_t port)
-{
-    request->port = port;
-
-    return 0;
-}
-
-int flb_http_request_set_uri(struct flb_http_request *request,
-                                           char *uri)
-{
-    request->path = cfl_sds_create(uri);
-
-    if (request->path == NULL) {
-        return -1;
-    }
-
-    return 0;
-}
-
-int flb_http_request_set_query_string(struct flb_http_request *request,
-                                                    char *query_string)
-{
-    request->query_string = cfl_sds_create(query_string);
-
-    if (request->query_string == NULL) {
-        return -1;
-    }
-
-    return 0;
-}
-
-int flb_http_request_set_content_type(struct flb_http_request *request,
-                                                    char *content_type)
-{
-    request->content_type = cfl_sds_create(content_type);
-
-    if (request->content_type == NULL) {
-        return -1;
-    }
-
-    return 0;
-}
-
-int flb_http_request_set_user_agent(struct flb_http_request *request,
-                                    char *user_agent)
-{
-    request->user_agent = cfl_sds_create(user_agent);
-
-    if (request->user_agent == NULL) {
-        return -1;
-    }
-
-    return 0;
-}
-
-int flb_http_request_set_content_length(struct flb_http_request *request,
-                                        size_t content_length)
-{
-    request->content_length = content_length;
-
-    return 0;
-}
-
-int flb_http_request_set_content_encoding(struct flb_http_request *request,
-                                          char *encoding)
-{
-    return flb_http_request_set_header(request,
-                                       "content-encoding", 0,
-                                       encoding, 0);
-
-}
-
-int flb_http_request_set_body(struct flb_http_request *request,
-                                            unsigned char *body, size_t body_length)
-{
-    request->body = cfl_sds_create_len((const char *) body, body_length);
-
-    if (request->body == NULL) {
-        return -1;
-    }
-
-    return 0;
-}
 
 static int flb_http_encode_basic_auth_value(cfl_sds_t *output_buffer,
                                             char *username,
@@ -2267,3 +2151,4 @@ int flb_http_request_set_authorization(struct flb_http_request *request,
 
     return result;
 }
+

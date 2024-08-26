@@ -30,6 +30,10 @@
 #define HTTP_CLIENT_SUCCESS         0
 #define HTTP_CLIENT_PROVIDER_ERROR -1
 
+#define FLB_HTTP_CLIENT_FLAG_KEEPALIVE    (((uint64_t) 1) << 0)
+#define FLB_HTTP_CLIENT_FLAG_AUTO_DEFLATE (((uint64_t) 1) << 1)
+#define FLB_HTTP_CLIENT_FLAG_AUTO_INFLATE (((uint64_t) 1) << 2)
+
 /* Buffer size */
 #define FLB_HTTP_BUF_SIZE        2048
 #define FLB_HTTP_DATA_SIZE_MAX   4096
