@@ -1085,6 +1085,8 @@ start_resource:
                 log_records = flb_calloc(ctx->batch_size, sizeof(Opentelemetry__Proto__Logs__V1__LogRecord *));
                 if (!log_records) {
                     flb_errno();
+                    flb_free(scope_log->scope);
+                    flb_free(scope_log);
                     return -2;
                 }
                 log_record_count = 0;
