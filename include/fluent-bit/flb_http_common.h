@@ -141,6 +141,8 @@ int flb_http_request_init(struct flb_http_request *request);
 
 void flb_http_request_destroy(struct flb_http_request *request);
 
+int flb_http_request_commit(struct flb_http_request *request);
+
 char *flb_http_request_get_header(struct flb_http_request *request,
                                   char *name);
 
@@ -176,10 +178,18 @@ int flb_http_request_set_content_encoding(struct flb_http_request *request,
                                           char *encoding);
 
 int flb_http_request_set_body(struct flb_http_request *request,
-                              unsigned char *body, size_t body_length);
+                              unsigned char *body, size_t body_length,
+                              char *compression_algorithm);
 
 int flb_http_request_set_authorization(struct flb_http_request *request,
                                        int type, ...);
+
+int flb_http_request_compress_body(
+    struct flb_http_request *request,
+    char *content_encoding_header_value);
+
+int flb_http_request_uncompress_body(
+    struct flb_http_request *request);
 
 /* HTTP RESPONSE */
 
@@ -200,6 +210,9 @@ int flb_http_response_set_header(struct flb_http_response *response,
                              char *name, size_t name_length,
                              char *value, size_t value_length);
 
+int flb_http_response_unset_header(struct flb_http_response *response,
+                                  char *name);
+
 int flb_http_response_set_trailer_header(struct flb_http_response *response,
                                          char *name, size_t name_length,
                                          char *value, size_t value_length);
@@ -212,6 +225,14 @@ int flb_http_response_set_message(struct flb_http_response *response,
 
 int flb_http_response_set_body(struct flb_http_response *response,
                            unsigned char *body, size_t body_length);
+
+int flb_http_response_compress_body(
+    struct flb_http_response *response,
+    char *content_encoding_header_value);
+
+int flb_http_response_uncompress_body(
+    struct flb_http_response *response);
+
 
 /* HTTP STREAM */
 

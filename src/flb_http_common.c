@@ -21,8 +21,86 @@
 
 #include <fluent-bit/http_server/flb_http_server.h>
 #include <fluent-bit/flb_http_common.h>
+#include <fluent-bit/flb_snappy.h>
+#include <fluent-bit/flb_gzip.h>
+
+/* PRIVATE */
+
+static \
+int uncompress_zlib(char **output_buffer,
+                    size_t *output_size,
+                    char *input_buffer,
+                    size_t input_size);
+
+static \
+int uncompress_zstd(char **output_buffer,
+                    size_t *output_size,
+                    char *input_buffer,
+                    size_t input_size);
+
+static \
+int uncompress_deflate(char **output_buffer,
+                       size_t *output_size,
+                       char *input_buffer,
+                       size_t input_size);
+
+static \
+int uncompress_snappy(char **output_buffer,
+                      size_t *output_size,
+                      char *input_buffer,
+                      size_t input_size);
+
+static \
+int uncompress_gzip(char **output_buffer,
+                    size_t *output_size,
+                    char *input_buffer,
+                    size_t input_size);
+
+static \
+int compress_zlib(char **output_buffer,
+                  size_t *output_size,
+                  char *input_buffer,
+                  size_t input_size);
+
+static \
+int compress_zstd(char **output_buffer,
+                  size_t *output_size,
+                  char *input_buffer,
+                  size_t input_size);
+
+static \
+int compress_deflate(char **output_buffer,
+                     size_t *output_size,
+                     char *input_buffer,
+                     size_t input_size);
+
+static \
+int compress_snappy(char **output_buffer,
+                    size_t *output_size,
+                    char *input_buffer,
+                    size_t input_size);
+
+static \
+int compress_gzip(char **output_buffer,
+                  size_t *output_size,
+                  char *input_buffer,
+                  size_t input_size);
 
 /* HTTP REQUEST */
+
+static int flb_http_request_get_version(struct flb_http_request *request)
+{
+    int version;
+
+    if (request->stream->role == HTTP_STREAM_ROLE_SERVER) {
+        version = ((struct flb_http_server_session *) request->stream->parent)->version;
+    }
+    else {
+        version = ((struct flb_http_client_session *) request->stream->parent)->protocol_version;
+    }
+
+    return version;
+}
 
 int flb_http_request_init(struct flb_http_request *request)
 {
@@ -76,6 +154,19 @@ void flb_http_request_destroy(struct flb_http_request *request)
     }
 
     memset(request, 0, sizeof(struct flb_http_request));
+}
+
+int flb_http_request_commit(struct flb_http_request *request)
+{
+    int version;
+
+    version = flb_http_request_get_version(request);
+
+    if (version == HTTP_PROTOCOL_VERSION_20) {
+        return flb_http2_request_commit(request);
+    }
+
+    return flb_http1_request_commit(request);
 }
 
 char *flb_http_request_get_header(struct flb_http_request *request,
@@ -173,6 +264,302 @@ int flb_http_request_unset_header(struct flb_http_request *request,
 
     return 0;
 }
+
+int flb_http_request_compress_body(
+    struct flb_http_request *request,
+    char *content_encoding_header_value)
+{
+    char       new_content_length[21];
+    cfl_sds_t  inflated_body;
+    char      *output_buffer;
+    size_t     output_size;
+    int        result;
+
+    result = 0;
+
+    if (request->body == NULL) {
+        return 0;
+    }
+
+    if (content_encoding_header_value == NULL) {
+        return 0;
+    }
+
+    if (strncasecmp(content_encoding_header_value, "gzip", 4) == 0) {
+        result = compress_gzip(&output_buffer,
+                               &output_size,
+                               request->body,
+                               cfl_sds_len(request->body));
+    }
+    else if (strncasecmp(content_encoding_header_value, "zlib", 4) == 0) {
+        result = compress_zlib(&output_buffer,
+                               &output_size,
+                               request->body,
+                               cfl_sds_len(request->body));
+    }
+    else if (strncasecmp(content_encoding_header_value, "zstd", 4) == 0) {
+        result = compress_zstd(&output_buffer,
+                               &output_size,
+                               request->body,
+                               cfl_sds_len(request->body));
+    }
+    else if (strncasecmp(content_encoding_header_value, "snappy", 6) == 0) {
+        result = compress_snappy(&output_buffer,
+                                 &output_size,
+                                 request->body,
+                                 cfl_sds_len(request->body));
+    }
+    else if (strncasecmp(content_encoding_header_value, "deflate", 4) == 0) {
+        result = compress_deflate(&output_buffer,
+                                  &output_size,
+                                  request->body,
+                                  cfl_sds_len(request->body));
+    }
+
+    if (result == 1) {
+        inflated_body = cfl_sds_create_len(output_buffer, output_size);
+
+        flb_free(output_buffer);
+
+        if (inflated_body == NULL) {
+            return -1;
+        }
+
+        cfl_sds_destroy(request->body);
+
+        request->body = inflated_body;
+
+        snprintf(new_content_length,
+                 sizeof(new_content_length),
+                 "%zu",
+                 output_size);
+
+        flb_http_request_set_header(request,
+                                    "content-encoding", 0,
+                                    content_encoding_header_value, 0);
+
+        flb_http_request_set_header(request,
+                                    "content-length", 0,
+                                    new_content_length, 0);
+
+        request->content_length = output_size;
+    }
+
+    return 0;
+}
+
+int flb_http_request_uncompress_body(
+    struct flb_http_request *request)
+{
+    char      *content_encoding_header_value;
+    char       new_content_length[21];
+    cfl_sds_t  inflated_body;
+    char      *output_buffer;
+    size_t     output_size;
+    int        result;
+
+    result = 0;
+
+    if (request->body == NULL) {
+        return 0;
+    }
+
+    content_encoding_header_value = flb_http_request_get_header(
+                                        request,
+                                        "content-encoding");
+
+    if (content_encoding_header_value == NULL) {
+        return 0;
+    }
+
+    if (strncasecmp(content_encoding_header_value, "gzip", 4) == 0) {
+        result = uncompress_gzip(&output_buffer,
+                                    &output_size,
+                                    request->body,
+                                    cfl_sds_len(request->body));
+    }
+    else if (strncasecmp(content_encoding_header_value, "zlib", 4) == 0) {
+        result = uncompress_zlib(&output_buffer,
+                                    &output_size,
+                                    request->body,
+                                    cfl_sds_len(request->body));
+    }
+    else if (strncasecmp(content_encoding_header_value, "zstd", 4) == 0) {
+        result = uncompress_zstd(&output_buffer,
+                                    &output_size,
+                                    request->body,
+                                    cfl_sds_len(request->body));
+    }
+    else if (strncasecmp(content_encoding_header_value, "snappy", 6) == 0) {
+        result = uncompress_snappy(&output_buffer,
+                                    &output_size,
+                                    request->body,
+                                    cfl_sds_len(request->body));
+    }
+    else if (strncasecmp(content_encoding_header_value, "deflate", 4) == 0) {
+        result = uncompress_deflate(&output_buffer,
+                                    &output_size,
+                                    request->body,
+                                    cfl_sds_len(request->body));
+    }
+
+    if (result == 1) {
+        inflated_body = cfl_sds_create_len(output_buffer, output_size);
+
+        flb_free(output_buffer);
+
+        if (inflated_body == NULL) {
+            return -1;
+        }
+
+        cfl_sds_destroy(request->body);
+
+        request->body = inflated_body;
+
+        snprintf(new_content_length,
+                 sizeof(new_content_length),
+                 "%zu",
+                 output_size);
+
+        flb_http_request_unset_header(request, "content-encoding");
+        flb_http_request_set_header(request,
+                                    "content-length", 0,
+                                    new_content_length, 0);
+
+        request->content_length = output_size;
+    }
+
+    return 0;
+}
+
+
+int flb_http_request_set_method(struct flb_http_request *request,
+                                int method)
+{
+    request->method = method;
+
+    return 0;
+}
+
+int flb_http_request_set_host(struct flb_http_request *request,
+                              char *host)
+{
+    request->host = cfl_sds_create(host);
+
+    if (request->host == NULL) {
+        return -1;
+    }
+
+    return 0;
+}
+
+int flb_http_request_set_port(struct flb_http_request *request,
+                              uint16_t port)
+{
+    request->port = port;
+
+    return 0;
+}
+
+int flb_http_request_set_uri(struct flb_http_request *request,
+                             char *uri)
+{
+    request->path = cfl_sds_create(uri);
+
+    if (request->path == NULL) {
+        return -1;
+    }
+
+    return 0;
+}
+
+int flb_http_request_set_query_string(struct flb_http_request *request,
+                                      char *query_string)
+{
+    request->query_string = cfl_sds_create(query_string);
+
+    if (request->query_string == NULL) {
+        return -1;
+    }
+
+    return 0;
+}
+
+int flb_http_request_set_content_type(struct flb_http_request *request,
+                                      char *content_type)
+{
+    request->content_type = cfl_sds_create(content_type);
+
+    if (request->content_type == NULL) {
+        return -1;
+    }
+
+    return 0;
+}
+
+int flb_http_request_set_user_agent(struct flb_http_request *request,
+                                    char *user_agent)
+{
+    request->user_agent = cfl_sds_create(user_agent);
+
+    if (request->user_agent == NULL) {
+        return -1;
+    }
+
+    return 0;
+}
+
+int flb_http_request_set_content_length(struct flb_http_request *request,
+                                        size_t content_length)
+{
+    request->content_length = content_length;
+
+    return 0;
+}
+
+int flb_http_request_set_content_encoding(struct flb_http_request *request,
+                                          char *encoding)
+{
+    return flb_http_request_set_header(request,
+                                       "content-encoding", 0,
+                                       encoding, 0);
+
+}
+
+int flb_http_request_set_body(struct flb_http_request *request,
+                              unsigned char *body, size_t body_length,
+                              char *compression_algorithm)
+{
+    int      compress;
+    uint64_t flags;
+
+    if (request->stream->role == HTTP_STREAM_ROLE_SERVER) {
+        flags = ((struct flb_http_server_session *) request->stream->parent)->parent->flags;
+
+        compress = flags & FLB_HTTP_SERVER_FLAG_AUTO_DEFLATE;
+    }
+    else {
+        flags = ((struct flb_http_client_session *) request->stream->parent)->parent->flags;
+
+        compress = flags & FLB_HTTP_CLIENT_FLAG_AUTO_DEFLATE;
+    }
+
+    request->body = cfl_sds_create_len((const char *) body, body_length);
+
+    if (request->body == NULL) {
+        return -1;
+    }
+
+    if (compress != 0 && compression_algorithm != NULL) {
+        return flb_http_request_compress_body(request, compression_algorithm);
+    }
+    else {
+        flb_http_request_set_content_length(request, body_length);
+    }
+
+    return 0;
+}
+
 
 /* HTTP RESPONSE */
 
@@ -358,6 +745,31 @@ int flb_http_response_set_header(struct flb_http_response *response,
     return result;
 }
 
+int flb_http_response_unset_header(struct flb_http_response *response,
+                                  char *name)
+{
+    char  *lowercase_name;
+    int    result;
+
+    lowercase_name = flb_http_server_convert_string_to_lowercase(
+                        name, strlen(name));
+
+    if (lowercase_name == NULL) {
+        return -1;
+    }
+
+    result = flb_hash_table_del(response->headers,
+                                (const char *) lowercase_name);
+
+    flb_free(lowercase_name);
+
+    if (result == -1) {
+        return -1;
+    }
+
+    return 0;
+}
+
 int flb_http_response_set_trailer_header(struct flb_http_response *response,
                                          char *name, size_t name_length,
                                          char *value, size_t value_length)
@@ -434,7 +846,6 @@ int flb_http_response_set_message(struct flb_http_response *response,
     return 0;
 }
 
-
 int flb_http_response_set_body(struct flb_http_response *response,
                            unsigned char *body, size_t body_length)
 {
@@ -450,6 +861,175 @@ int flb_http_response_set_body(struct flb_http_response *response,
 
     return flb_http1_response_set_body(response, body, body_length);
 }
+
+
+int flb_http_response_compress_body(
+    struct flb_http_response *response,
+    char *content_encoding_header_value)
+{
+    char       new_content_length[21];
+    cfl_sds_t  inflated_body;
+    char      *output_buffer;
+    size_t     output_size;
+    int        result;
+
+    result = 0;
+
+    if (response->body == NULL) {
+        return 0;
+    }
+
+    if (content_encoding_header_value == NULL) {
+        return 0;
+    }
+
+    if (strncasecmp(content_encoding_header_value, "gzip", 4) == 0) {
+        result = compress_gzip(&output_buffer,
+                               &output_size,
+                               response->body,
+                               cfl_sds_len(response->body));
+    }
+    else if (strncasecmp(content_encoding_header_value, "zlib", 4) == 0) {
+        result = compress_zlib(&output_buffer,
+                               &output_size,
+                               response->body,
+                               cfl_sds_len(response->body));
+    }
+    else if (strncasecmp(content_encoding_header_value, "zstd", 4) == 0) {
+        result = compress_zstd(&output_buffer,
+                               &output_size,
+                               response->body,
+                               cfl_sds_len(response->body));
+    }
+    else if (strncasecmp(content_encoding_header_value, "snappy", 6) == 0) {
+        result = compress_snappy(&output_buffer,
+                                 &output_size,
+                                 response->body,
+                                 cfl_sds_len(response->body));
+    }
+    else if (strncasecmp(content_encoding_header_value, "deflate", 4) == 0) {
+        result = compress_deflate(&output_buffer,
+                                  &output_size,
+                                  response->body,
+                                  cfl_sds_len(response->body));
+    }
+
+    if (result == 1) {
+        inflated_body = cfl_sds_create_len(output_buffer, output_size);
+
+        flb_free(output_buffer);
+
+        if (inflated_body == NULL) {
+            return -1;
+        }
+
+        cfl_sds_destroy(response->body);
+
+        response->body = inflated_body;
+
+        snprintf(new_content_length,
+                 sizeof(new_content_length),
+                 "%zu",
+                 output_size);
+
+        flb_http_response_set_header(response,
+                                     "content-encoding", 0,
+                                     content_encoding_header_value, 0);
+
+        flb_http_response_set_header(response,
+                                     "content-length", 0,
+                                     new_content_length, 0);
+
+        response->content_length = output_size;
+    }
+
+    return 0;
+}
+
+int flb_http_response_uncompress_body(
+    struct flb_http_response *response)
+{
+    char      *content_encoding_header_value;
+    char       new_content_length[21];
+    cfl_sds_t  inflated_body;
+    char      *output_buffer;
+    size_t     output_size;
+    int        result;
+
+    result = 0;
+
+    if (response->body == NULL) {
+        return 0;
+    }
+
+    content_encoding_header_value = flb_http_response_get_header(
+                                        response,
+                                        "content-encoding");
+
+    if (content_encoding_header_value == NULL) {
+        return 0;
+    }
+
+    if (strncasecmp(content_encoding_header_value, "gzip", 4) == 0) {
+        result = uncompress_gzip(&output_buffer,
+                                    &output_size,
+                                    response->body,
+                                    cfl_sds_len(response->body));
+    }
+    else if (strncasecmp(content_encoding_header_value, "zlib", 4) == 0) {
+        result = uncompress_zlib(&output_buffer,
+                                    &output_size,
+                                    response->body,
+                                    cfl_sds_len(response->body));
+    }
+    else if (strncasecmp(content_encoding_header_value, "zstd", 4) == 0) {
+        result = uncompress_zstd(&output_buffer,
+                                    &output_size,
+                                    response->body,
+                                    cfl_sds_len(response->body));
+    }
+    else if (strncasecmp(content_encoding_header_value, "snappy", 6) == 0) {
+        result = uncompress_snappy(&output_buffer,
+                                    &output_size,
+                                    response->body,
+                                    cfl_sds_len(response->body));
+    }
+    else if (strncasecmp(content_encoding_header_value, "deflate", 4) == 0) {
+        result = uncompress_deflate(&output_buffer,
+                                    &output_size,
+                                    response->body,
+                                    cfl_sds_len(response->body));
+    }
+
+    if (result == 1) {
+        inflated_body = cfl_sds_create_len(output_buffer, output_size);
+
+        flb_free(output_buffer);
+
+        if (inflated_body == NULL) {
+            return -1;
+        }
+
+        cfl_sds_destroy(response->body);
+
+        response->body = inflated_body;
+
+        snprintf(new_content_length,
+                 sizeof(new_content_length),
+                 "%zu",
+                 output_size);
+
+        flb_http_response_unset_header(response, "content-encoding");
+        flb_http_response_set_header(response,
+                                    "content-length", 0,
+                                    new_content_length, 0);
+
+        response->content_length = output_size;
+    }
+
+    return 0;
+}
+
 
 /* HTTP STREAM */
 
@@ -602,5 +1182,137 @@ int flb_http_server_strncasecmp(const uint8_t *first_buffer,
     }
 
     return strncasecmp(first_buffer_, second_buffer_, first_length);
+}
+
+/* PRIVATE */
+
+static \
+int uncompress_zlib(char **output_buffer,
+                    size_t *output_size,
+                    char *input_buffer,
+                    size_t input_size)
+{
+    return 0;
+}
+
+static \
+int uncompress_zstd(char **output_buffer,
+                    size_t *output_size,
+                    char *input_buffer,
+                    size_t input_size)
+{
+    return 0;
+}
+
+static \
+int uncompress_deflate(char **output_buffer,
+                       size_t *output_size,
+                       char *input_buffer,
+                       size_t input_size)
+{
+    return 0;
+}
+
+static \
+int uncompress_snappy(char **output_buffer,
+                      size_t *output_size,
+                      char *input_buffer,
+                      size_t input_size)
+{
+    int ret;
+
+    ret = flb_snappy_uncompress_framed_data(input_buffer,
+                                            input_size,
+                                            output_buffer,
+                                            output_size);
+
+    if (ret != 0) {
+        flb_error("[opentelemetry] snappy decompression failed");
+
+        return -1;
+    }
+
+    return 1;
+}
+
+static \
+int uncompress_gzip(char **output_buffer,
+                    size_t *output_size,
+                    char *input_buffer,
+                    size_t input_size)
+{
+    int ret;
+
+    ret = flb_gzip_uncompress(input_buffer,
+                              input_size,
+                              (void **) output_buffer,
+                              output_size);
+
+    if (ret == -1) {
+        flb_error("[opentelemetry] gzip decompression failed");
+
+        return -1;
+    }
+
+    return 1;
+}
+
+
+static \
+int compress_zlib(char **output_buffer,
+                  size_t *output_size,
+                  char *input_buffer,
+                  size_t input_size)
+{
+    return 0;
+}
+
+static \
+int compress_zstd(char **output_buffer,
+                  size_t *output_size,
+                  char *input_buffer,
+                  size_t input_size)
+{
+    return 0;
+}
+
+static \
+int compress_deflate(char **output_buffer,
+                     size_t *output_size,
+                     char *input_buffer,
+                     size_t input_size)
+{
+    return 0;
+}
+
+static \
+int compress_snappy(char **output_buffer,
+                    size_t *output_size,
+                    char *input_buffer,
+                    size_t input_size)
+{
+    return 0;
+}
+
+static \
+int compress_gzip(char **output_buffer,
+                  size_t *output_size,
+                  char *input_buffer,
+                  size_t input_size)
+{
+    int ret;
+
+    ret = flb_gzip_compress((void *) input_buffer,
+                            input_size,
+                            (void **) output_buffer,
+                            output_size);
+
+    if (ret == -1) {
+        flb_error("http client gzip compression failed");
+
+        return -1;
+    }
+
+    return 1;
 }
 
