@@ -122,6 +122,11 @@ elseif("${LJ_DETECTED_ARCH}" STREQUAL "AArch64")
   endif()
 elseif("${LJ_DETECTED_ARCH}" STREQUAL "ARM")
   set(LJ_TARGET_ARCH "arm")
+elseif("${LJ_DETECTED_ARCH}" STREQUAL "SystemZ")
+  set(LJ_TARGET_ARCH "s390x")
+  if(LJ_BIG_ENDIAN)
+    set(TARGET_ARCH -DLJ_ARCH_ENDIAN=LUAJIT_BE)
+  endif()
 elseif("${LJ_DETECTED_ARCH}" STREQUAL "Mips64")
   set(LJ_TARGET_ARCH "mips64")
   if(NOT LJ_BIG_ENDIAN)
@@ -248,7 +253,7 @@ if(LUAJIT_DISABLE_FFI)
 endif()
 
 set(LJ_JIT 1)
-if(LUAJIT_DISABLE_JIT)
+if(LUAJIT_DISABLE_JIT OR ("${LJ_TARGET_ARCH}" STREQUAL "s390x"))
   set(LJ_JIT 0)
 endif()
 
@@ -282,6 +287,7 @@ endif()
 if(("${LJ_TARGET_ARCH}" STREQUAL "arm") OR
     ("${LJ_TARGET_ARCH}" STREQUAL "arm64") OR
     ("${LJ_TARGET_ARCH}" STREQUAL "mips") OR
+    ("${LJ_TARGET_ARCH}" STREQUAL "s390x") OR
     ("${LJ_TARGET_ARCH}" STREQUAL "mips64"))
   set(LJ_ARCH_NUMMODE ${LJ_NUMMODE_DUAL})
 endif()

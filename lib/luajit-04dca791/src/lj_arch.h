@@ -31,6 +31,8 @@
 #define LUAJIT_ARCH_mips32	6
 #define LUAJIT_ARCH_MIPS64	7
 #define LUAJIT_ARCH_mips64	7
+#define LUAJIT_ARCH_S390X	8
+#define LUAJIT_ARCH_s390x	8
 
 /* Target OS. */
 #define LUAJIT_OS_OTHER		0
@@ -59,6 +61,8 @@
 #define LUAJIT_TARGET	LUAJIT_ARCH_ARM
 #elif defined(__aarch64__) || defined(_M_ARM64)
 #define LUAJIT_TARGET	LUAJIT_ARCH_ARM64
+#elif defined(__s390x__) || defined(__s390x)
+#define LUAJIT_TARGET	LUAJIT_ARCH_S390X
 #elif defined(__ppc__) || defined(__ppc) || defined(__PPC__) || defined(__PPC) || defined(__powerpc__) || defined(__powerpc) || defined(__POWERPC__) || defined(__POWERPC) || defined(_M_PPC)
 #define LUAJIT_TARGET	LUAJIT_ARCH_PPC
 #elif defined(__mips64__) || defined(__mips64) || defined(__MIPS64__) || defined(__MIPS64)
@@ -438,6 +442,21 @@
 #else
 #define LJ_ARCH_VERSION		10
 #endif
+
+#elif LUAJIT_TARGET == LUAJIT_ARCH_S390X
+
+#define LJ_ARCH_NAME		"s390x"
+#define LJ_ARCH_BITS		64
+#define LJ_ARCH_ENDIAN		LUAJIT_BE
+#define LJ_TARGET_S390X		1
+#define LJ_TARGET_EHRETREG	0xe
+#define LJ_TARGET_JUMPRANGE	32	/* +-2^32 = +-4GB (32-bit, halfword aligned) */
+#define LJ_TARGET_MASKSHIFT	1
+#define LJ_TARGET_MASKROT	1
+#define LJ_TARGET_UNALIGNED	1
+#define LJ_ARCH_NUMMODE		LJ_NUMMODE_DUAL
+#define LJ_TARGET_GC64		1
+#define LJ_ARCH_NOJIT		1	/* NYI */
 
 #else
 #error "No target architecture defined"
