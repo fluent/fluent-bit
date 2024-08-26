@@ -328,6 +328,7 @@ static cpu_snapshot *get_docker_cpu_snapshot(struct flb_docker *ctx, char *id)
                 flb_plg_error(ctx->ins, "error scanning used CPU value from %s with key = %s",
                               usage_file, DOCKER_CGROUP_V2_CPU_USAGE_KEY);
                 flb_free(usage_file);
+                flb_free(line);
                 fclose(f);
                 return NULL;
             }
