@@ -299,7 +299,7 @@ int prom_rw_prot_handle(struct flb_prom_remote_write *ctx,
         }
 
         /* New tag skipping the URI '/' */
-        flb_sds_cat(tag, uri + 1, len - 1);
+        flb_sds_cat_safe(&tag, uri + 1, len - 1);
 
         /* Sanitize, only allow alphanum chars */
         for (i = 0; i < flb_sds_len(tag); i++) {
