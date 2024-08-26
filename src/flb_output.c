@@ -1044,7 +1044,6 @@ int flb_output_plugin_property_check(struct flb_output_instance *ins,
         if (!config_map) {
             flb_error("[output] error loading config map for '%s' plugin",
                       p->name);
-            flb_output_instance_destroy(ins);
             return -1;
         }
         ins->config_map = config_map;
