@@ -345,6 +345,7 @@ static int process_metrics(struct flb_event_chunk *event_chunk,
     }
     else {
         flb_plg_error(ctx->ins, "Error decoding msgpack encoded context");
+        flb_sds_destroy(buf);
         return FLB_ERROR;
     }
 
