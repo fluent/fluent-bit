@@ -40,7 +40,8 @@
 #define HTTP_SERVER_MAXIMUM_BUFFER_SIZE        (10 * (1000 * 1024))
 
 #define FLB_HTTP_SERVER_FLAG_KEEPALIVE         (((uint64_t) 1) << 0)
-#define FLB_HTTP_SERVER_FLAG_AUTO_INFLATE      (((uint64_t) 1) << 1)
+#define FLB_HTTP_SERVER_FLAG_AUTO_DEFLATE      (((uint64_t) 1) << 1)
+#define FLB_HTTP_SERVER_FLAG_AUTO_INFLATE      (((uint64_t) 1) << 2)
 
 #define HTTP_SERVER_SUCCESS                    0
 #define HTTP_SERVER_PROVIDER_ERROR            -1
@@ -100,7 +101,7 @@ struct flb_http_server_session {
 
 /* HTTP SERVER */
 
-int flb_http_server_init(struct flb_http_server *session, 
+int flb_http_server_init(struct flb_http_server *session,
                          int protocol_version,
                          uint64_t flags,
                          flb_http_server_request_processor_callback
@@ -128,8 +129,8 @@ struct flb_http_server_session *flb_http_server_session_create(int version);
 
 void flb_http_server_session_destroy(struct flb_http_server_session *session);
 
-int flb_http_server_session_ingest(struct flb_http_server_session *session, 
-                            unsigned char *buffer, 
+int flb_http_server_session_ingest(struct flb_http_server_session *session,
+                            unsigned char *buffer,
                             size_t length);
 
 #endif
