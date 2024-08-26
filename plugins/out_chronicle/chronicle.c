@@ -121,8 +121,8 @@ static int chronicle_jwt_encode(struct flb_chronicle *ctx,
     }
 
     /* Append header */
-    flb_sds_cat(out, buf, olen);
-    flb_sds_cat(out, ".", 1);
+    flb_sds_cat_safe(&out, buf, olen);
+    flb_sds_cat_safe(&out, ".", 1);
 
     /* Encode Payload */
     len = strlen(payload);
@@ -130,7 +130,7 @@ static int chronicle_jwt_encode(struct flb_chronicle *ctx,
                                     (unsigned char *) payload, len, &olen);
 
     /* Append Payload */
-    flb_sds_cat(out, buf, olen);
+    flb_sds_cat_safe(&out, buf, olen);
 
     /* do sha256() of base64(header).base64(payload) */
     ret = flb_hash_simple(FLB_HASH_SHA256,
@@ -171,8 +171,8 @@ static int chronicle_jwt_encode(struct flb_chronicle *ctx,
 
     chronicle_jwt_base64_url_encode((unsigned char *) sigd, 2048, sig, 256, &olen);
 
-    flb_sds_cat(out, ".", 1);
-    flb_sds_cat(out, sigd, olen);
+    flb_sds_cat_safe(&out, ".", 1);
+    flb_sds_cat_safe(&out, sigd, olen);
 
     *out_signature = out;
     *out_size = flb_sds_len(out);
