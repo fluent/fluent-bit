@@ -620,6 +620,7 @@ static int check_ping(struct flb_input_instance *ins,
     if (o.type != MSGPACK_OBJECT_STR) {
         flb_plg_error(ins, "Invalid username type message");
         flb_free(serverside);
+        flb_free(hostname);
         msgpack_unpacked_destroy(&result);
         return -1;
     }
@@ -631,6 +632,8 @@ static int check_ping(struct flb_input_instance *ins,
         flb_plg_error(ins, "Invalid password_digest type message");
         flb_free(serverside);
         flb_free(hostname);
+        flb_free(shared_key_salt);
+        flb_free(shared_key_digest);
         msgpack_unpacked_destroy(&result);
         return -1;
     }
@@ -643,6 +646,8 @@ static int check_ping(struct flb_input_instance *ins,
                                            shared_key_salt, hostname, hostname_len,
                                            serverside, 128)) {
         flb_free(serverside);
+        flb_free(username);
+        flb_free(password_digest);
         flb_plg_error(ctx->ins, "failed to hash shard_key");
         return -1;
     }
