@@ -183,19 +183,21 @@ static int config_add_labels(struct flb_output_instance *ins,
 * it can adjust the HTTP requests.
 */
 
-static void check_proxy(struct flb_output_instance *ins,
-                        struct opentelemetry_context *ctx,
-                        char *host, char *port,
-                        char *protocol, char *uri){
+static int check_proxy(struct flb_output_instance *ins,
+                      struct opentelemetry_context *ctx,
+                      char *host, char *port,
+                      char *protocol, char *uri)
+{
 
-    const char *tmp = NULL;
     int ret;
+    const char *tmp = NULL;
+
     tmp = flb_output_get_property("proxy", ins);
     if (tmp) {
         ret = flb_utils_url_split(tmp, &protocol, &host, &port, &uri);
         if (ret == -1) {
             flb_plg_error(ctx->ins, "could not parse proxy parameter: '%s'", tmp);
-            flb_free(ctx);
+            return -1;
         }
 
         ctx->proxy_host = host;
@@ -209,9 +211,12 @@ static void check_proxy(struct flb_output_instance *ins,
     else {
         flb_output_net_default("127.0.0.1", 80, ins);
     }
+
+    return 0;
 }
 
-static char *sanitize_uri(char *uri){
+static char *sanitize_uri(char *uri)
+{
     char *new_uri;
     int   uri_len;
 
@@ -272,9 +277,17 @@ struct opentelemetry_context *flb_opentelemetry_context_create(struct flb_output
         return NULL;
     }
 
+    ret = check_proxy(ins, ctx, host, port, protocol, metrics_uri);
+    if (ret == -1) {
+        flb_opentelemetry_context_destroy(ctx);
+        return NULL;
+    }
 
-    check_proxy(ins, ctx, host, port, protocol, metrics_uri);
-    check_proxy(ins, ctx, host, port, protocol, logs_uri);
+    ret = check_proxy(ins, ctx, host, port, protocol, logs_uri);
+    if (ret == -1) {
+        flb_opentelemetry_context_destroy(ctx);
+        return NULL;
+    }
 
     /* Check if SSL/TLS is enabled */
 #ifdef FLB_HAVE_TLS
