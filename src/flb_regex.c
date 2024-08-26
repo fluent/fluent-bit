@@ -64,12 +64,18 @@ static OnigOptionType check_option(const char *start, const char *end, char **ne
 
     if (start == NULL || end == NULL || new_end == NULL) {
         return ONIG_OPTION_DEFAULT;
-    } else if (start[0] != '/') {
+    }
+    else if (start[0] != '/') {
         *new_end = NULL;
         return ONIG_OPTION_DEFAULT;
     }
 
     chr = strrchr(start, '/');
+    if (!chr) {
+        *new_end = NULL;
+        return ONIG_OPTION_DEFAULT;
+    }
+
     if (chr == start || chr == end) {
         *new_end = NULL;
         return ONIG_OPTION_DEFAULT;
