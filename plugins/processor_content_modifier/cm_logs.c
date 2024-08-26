@@ -796,8 +796,8 @@ int cm_logs_process(struct flb_processor_instance *ins,
 
         /* the operation on top of the data type is unsupported */
         if (obj->variant->type != CFL_VARIANT_KVLIST) {
-            cfl_object_destroy(obj);
-            return -1;
+            flb_plg_error(ctx->ins, "unsupported data type for context");
+            return FLB_PROCESSOR_FAILURE;
         }
 
         /* process the action */
