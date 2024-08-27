@@ -313,7 +313,8 @@ static flb_sds_t parse_id_from_arn(const char *arn, int len)
 
 /*
  * This deserializes the msgpack metadata buf to msgpack_object
- * which can be used with flb_ra_translate in the main filter callback
+ * and then uses that msgpack_object to construct a list of key value pairs
+ * ready to attach to log records
  */
 static int flb_ecs_metadata_buffer_init(struct flb_filter_ecs *ctx,
                                         struct flb_ecs_metadata_buffer *meta)
@@ -322,6 +323,11 @@ static int flb_ecs_metadata_buffer_init(struct flb_filter_ecs *ctx,
     msgpack_object root;
     size_t off = 0;
     int ret;
+    struct flb_ecs_metadata_key *metadata_key = NULL;
+    flb_sds_t val = NULL;
+    struct mk_list *tmp;
+    struct mk_list *head;
+    struct flb_ecs_metadata_keypair *keypair = NULL;
 
     msgpack_unpacked_init(&result);
     ret = msgpack_unpack_next(&result, meta->buf, meta->size, &off);
@@ -339,23 +345,72 @@ static int flb_ecs_metadata_buffer_init(struct flb_filter_ecs *ctx,
         return -1;
     }
 
-    meta->unpacked = result;
-    meta->obj = root;
+    /* create list of metadata key value pairs */
+    mk_list_init(&meta->metadata_keypairs);
+    meta->keypairs_len = 0;
+
     meta->last_used_time = time(NULL);
-    meta->free_packer = FLB_TRUE;
+
+    mk_list_foreach_safe(head, tmp, &ctx->metadata_keys) {
+        metadata_key = mk_list_entry(head, struct flb_ecs_metadata_key, _head);
+        val = flb_ra_translate(metadata_key->ra, NULL, 0,
+                               root, NULL);
+        if (!val) {
+            flb_plg_info(ctx->ins, "Translation failed for %s : %s for container ID: %s",
+                         metadata_key->key, metadata_key->template, meta->id);
+            /* keep trying other keys*/
+            continue;
+        }
+
+        if (flb_sds_len(val) == 0) {
+            flb_plg_info(ctx->ins, "Translation failed for %s : %s for container ID: %s",
+                         metadata_key->key, metadata_key->template, meta->id);
+            flb_sds_destroy(val);
+            /* keep trying other keys*/
+            continue;
+        }
+
+        keypair = flb_calloc(1, sizeof(struct flb_ecs_metadata_keypair));
+        if (!keypair) {
+            flb_errno();
+            msgpack_unpacked_destroy(&result);
+            flb_sds_destroy(val);
+            return -1;
+        }
+
+        keypair->key = metadata_key->key;
+        keypair->val = val;
+
+        mk_list_add(&keypair->_head, &meta->metadata_keypairs);
+        meta->keypairs_len += 1;
+    }
+
+    msgpack_unpacked_destroy(&result);
 
     return 0;
 }
 
 static void flb_ecs_metadata_buffer_destroy(struct flb_ecs_metadata_buffer *meta)
 {
+    struct flb_ecs_metadata_keypair *keypair = NULL;
+    struct mk_list *tmp;
+    struct mk_list *head;
+
     if (meta) {
         flb_free(meta->buf);
-        if (meta->free_packer == FLB_TRUE) {
-            msgpack_unpacked_destroy(&meta->unpacked);
-        }
         if (meta->id) {
             flb_sds_destroy(meta->id);
+        }
+        if (mk_list_is_set( &meta->metadata_keypairs) == 0) {
+            mk_list_foreach_safe(head, tmp, &meta->metadata_keypairs) {
+                keypair = mk_list_entry(head, struct flb_ecs_metadata_keypair, _head);
+                /* only need to free val. key is ref to flb_ecs_metadata_key.key*/
+                if (keypair->val) {
+                        flb_sds_destroy(keypair->val);
+                }
+                mk_list_del(&keypair->_head);
+                flb_free(keypair);
+            }
         }
         flb_free(meta);
     }
@@ -1374,7 +1429,7 @@ static int is_tag_marked_failed(struct flb_filter_ecs *ctx,
                              tag, tag_len,
                              (void **) &val, &val_size);
     if (ret != -1) {
-        if (*val >= ctx->agent_endpoint_retries) {
+        if (*val > ctx->agent_endpoint_retries) {
             return FLB_TRUE;
         }
     }
@@ -1450,16 +1505,14 @@ static int cb_ecs_filter(const void *data, size_t bytes,
     msgpack_object_kv *kv;
     struct mk_list *tmp;
     struct mk_list *head;
-    struct flb_ecs_metadata_key *metadata_key;
-    struct flb_ecs_metadata_buffer *metadata_buffer;
-    flb_sds_t val;
     struct flb_log_event_encoder log_encoder;
     struct flb_log_event_decoder log_decoder;
     struct flb_log_event log_event;
-
     (void) f_ins;
     (void) i_ins;
     (void) config;
+    struct flb_ecs_metadata_keypair *keypair = NULL;
+    struct flb_ecs_metadata_buffer *metadata_buffer = NULL;
 
     /* First check that the static cluster metadata has been retrieved */
     if (ctx->has_cluster_metadata == FLB_FALSE) {
@@ -1541,39 +1594,29 @@ static int cb_ecs_filter(const void *data, size_t bytes,
         }
 
         /* append new keys */
-        mk_list_foreach_safe(head, tmp, &ctx->metadata_keys) {
-            metadata_key = mk_list_entry(head, struct flb_ecs_metadata_key, _head);
-            val = flb_ra_translate(metadata_key->ra, NULL, 0,
-                                   metadata_buffer->obj, NULL);
-            if (!val) {
-                flb_plg_info(ctx->ins, "Translation failed for %s : %s",
-                             metadata_key->key, metadata_key->template);
+        if (metadata_buffer->keypairs_len > 0) {
+            mk_list_foreach_safe(head, tmp, &metadata_buffer->metadata_keypairs) {
+                keypair = mk_list_entry(head, struct flb_ecs_metadata_keypair, _head);
 
-                flb_log_event_decoder_destroy(&log_decoder);
-                flb_log_event_encoder_destroy(&log_encoder);
+                ret = flb_log_event_encoder_append_body_values(
+                        &log_encoder,
+                        FLB_LOG_EVENT_STRING_VALUE(keypair->key,
+                                                flb_sds_len(keypair->key)),
+                        FLB_LOG_EVENT_STRING_VALUE(keypair->val, flb_sds_len(keypair->val)));
 
-                return FLB_FILTER_NOTOUCH;
+                if (ret != FLB_EVENT_ENCODER_SUCCESS) {
+                    flb_plg_info(ctx->ins,
+                                "Metadata appending failed for %.*s",
+                                (int) flb_sds_len(keypair->key),
+                                metadata_key->key);
+
+                    flb_log_event_decoder_destroy(&log_decoder);
+                    flb_log_event_encoder_destroy(&log_encoder);
+
+                    return FLB_FILTER_NOTOUCH;
+                }
+
             }
-
-            ret = flb_log_event_encoder_append_body_values(
-                    &log_encoder,
-                    FLB_LOG_EVENT_STRING_VALUE(metadata_key->key,
-                                               flb_sds_len(metadata_key->key)),
-                    FLB_LOG_EVENT_STRING_VALUE(val, flb_sds_len(val)));
-
-            if (ret != FLB_EVENT_ENCODER_SUCCESS) {
-                flb_plg_info(ctx->ins,
-                             "Metadata appendage failed for %.*s",
-                             (int) flb_sds_len(metadata_key->key),
-                             metadata_key->key);
-
-                flb_log_event_decoder_destroy(&log_decoder);
-                flb_log_event_encoder_destroy(&log_encoder);
-
-                return FLB_FILTER_NOTOUCH;
-            }
-
-            flb_sds_destroy(val);
         }
 
         if (ret == FLB_EVENT_ENCODER_SUCCESS) {
@@ -1633,6 +1676,7 @@ static void flb_filter_ecs_destroy(struct flb_filter_ecs *ctx)
     struct mk_list *head;
     struct flb_ecs_metadata_key *metadata_key;
     struct flb_ecs_metadata_buffer *buf;
+    struct flb_ecs_metadata_keypair *keypair = NULL;
 
     if (ctx) {
         if (ctx->ecs_upstream) {
@@ -1652,18 +1696,32 @@ static void flb_filter_ecs_destroy(struct flb_filter_ecs *ctx)
         }
         if (ctx->cluster_meta_buf.buf) {
             flb_free(ctx->cluster_meta_buf.buf);
-            msgpack_unpacked_destroy(&ctx->cluster_meta_buf.unpacked);
+            if (mk_list_is_set(&ctx->cluster_meta_buf.metadata_keypairs) == 0) {
+                mk_list_foreach_safe(head, tmp, &ctx->cluster_meta_buf.metadata_keypairs) {
+                    keypair = mk_list_entry(head, struct flb_ecs_metadata_keypair, _head);
+                    /* only need to free val. key is ref to flb_ecs_metadata_key.key*/
+                    if (keypair->val) {
+                        flb_sds_destroy(keypair->val);
+                    }
+                    mk_list_del(&keypair->_head);
+                    flb_free(keypair);
+                }
+            }
         }
-        mk_list_foreach_safe(head, tmp, &ctx->metadata_keys) {
-            metadata_key = mk_list_entry(head, struct flb_ecs_metadata_key, _head);
-            mk_list_del(&metadata_key->_head);
-            flb_ecs_metadata_key_destroy(metadata_key);
+        if (mk_list_is_set(&ctx->metadata_keys) == 0) {
+            mk_list_foreach_safe(head, tmp, &ctx->metadata_keys) {
+                metadata_key = mk_list_entry(head, struct flb_ecs_metadata_key, _head);
+                mk_list_del(&metadata_key->_head);
+                flb_ecs_metadata_key_destroy(metadata_key);
+            }
         }
-        mk_list_foreach_safe(head, tmp, &ctx->metadata_buffers) {
-            buf = mk_list_entry(head, struct flb_ecs_metadata_buffer, _head);
-            mk_list_del(&buf->_head);
-            flb_hash_table_del(ctx->container_hash_table, buf->id);
-            flb_ecs_metadata_buffer_destroy(buf);
+        if (mk_list_is_set(&ctx->metadata_buffers) == 0) {
+            mk_list_foreach_safe(head, tmp, &ctx->metadata_buffers) {
+                buf = mk_list_entry(head, struct flb_ecs_metadata_buffer, _head);
+                mk_list_del(&buf->_head);
+                flb_hash_table_del(ctx->container_hash_table, buf->id);
+                flb_ecs_metadata_buffer_destroy(buf);
+            }
         }
         if (ctx->container_hash_table) {
             flb_hash_table_destroy(ctx->container_hash_table);
