@@ -183,27 +183,12 @@ static void test_http_provider()
     struct flb_aws_credentials *creds;
     int ret;
     struct flb_config *config;
-    flb_sds_t host;
-    flb_sds_t path;
 
     g_request_count = 0;
 
     config = flb_config_init();
 
     if (config == NULL) {
-        return;
-    }
-
-    host = flb_sds_create("127.0.0.1");
-    if (!host) {
-        flb_errno();
-        flb_config_exit(config);
-        return;
-    }
-    path = flb_sds_create("/happy-case");
-    if (!path) {
-        flb_errno();
-        flb_config_exit(config);
         return;
     }
 
@@ -261,8 +246,6 @@ static void test_http_provider_error_case()
     struct flb_aws_credentials *creds;
     int ret;
     struct flb_config *config;
-    flb_sds_t host;
-    flb_sds_t path;
 
     g_request_count = 0;
 
@@ -272,21 +255,7 @@ static void test_http_provider_error_case()
         return;
     }
 
-    host = flb_sds_create("127.0.0.1");
-    if (!host) {
-        flb_errno();
-        flb_config_exit(config);
-        return;
-    }
-    path = flb_sds_create("/error-case");
-    if (!path) {
-        flb_errno();
-        flb_config_exit(config);
-        return;
-    }
-
     provider = flb_http_provider_create(config, generator_in_test());
-
     if (!provider) {
         flb_errno();
         flb_config_exit(config);
@@ -311,6 +280,7 @@ static void test_http_provider_error_case()
      */
     TEST_CHECK(g_request_count == 3);
 
+
     flb_aws_provider_destroy(provider);
     flb_config_exit(config);
 }
@@ -321,8 +291,6 @@ static void test_http_provider_malformed_response()
     struct flb_aws_credentials *creds;
     int ret;
     struct flb_config *config;
-    flb_sds_t host;
-    flb_sds_t path;
 
     g_request_count = 0;
 
@@ -333,19 +301,6 @@ static void test_http_provider_malformed_response()
     }
 
     mk_list_init(&config->upstreams);
-
-    host = flb_sds_create("127.0.0.1");
-    if (!host) {
-        flb_errno();
-        flb_config_exit(config);
-        return;
-    }
-    path = flb_sds_create("/malformed");
-    if (!path) {
-        flb_errno();
-        flb_config_exit(config);
-        return;
-    }
 
     provider = flb_http_provider_create(config, generator_in_test());
 
@@ -774,7 +729,6 @@ static void test_http_validator_invalid_host()
 
     flb_aws_client_mock_destroy_generator();
     flb_free(config);
-    
 }
 
 static void test_http_validator_invalid_port()
@@ -789,6 +743,8 @@ static void test_http_validator_invalid_port()
 
     config = flb_calloc(1, sizeof(struct flb_config));
     TEST_ASSERT(config != NULL);
+    TEST_ASSERT(config != NULL);
+
     mk_list_init(&config->upstreams);
 
     /* provider creation will fail with error message indicating port was invalid */
@@ -797,7 +753,6 @@ static void test_http_validator_invalid_port()
 
     flb_aws_client_mock_destroy_generator();
     flb_free(config);
-    
 }
 
 TEST_LIST = {
