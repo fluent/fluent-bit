@@ -19,6 +19,9 @@ void flb_custom_calyptia_pipeline_config_get_test()
     ctx = flb_create();
     flb_service_set(ctx, "flush", "1", "grace", "1", NULL);
 
+    flb_input_init();
+    flb_output_prepare();
+
     in_ffd_dummy = flb_input(ctx, (char *) "dummy", NULL);
     TEST_CHECK(in_ffd_dummy >= 0);
 
@@ -46,8 +49,6 @@ void flb_custom_calyptia_pipeline_config_get_test()
     cfg = custom_calyptia_pipeline_config_get(ctx->config);
     TEST_CHECK(strcmp(cfg, cfg_str) == 0);
 
-    // fix a thread local storage bug on macos
-    flb_output_prepare();
     flb_sds_destroy(cfg);
     flb_destroy(ctx);
 }
