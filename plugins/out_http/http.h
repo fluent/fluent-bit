@@ -20,6 +20,8 @@
 #ifndef FLB_OUT_HTTP_H
 #define FLB_OUT_HTTP_H
 
+#include <fluent-bit/flb_http_client.h>
+
 #define FLB_HTTP_OUT_MSGPACK        FLB_PACK_JSON_FORMAT_NONE
 #define FLB_HTTP_OUT_GELF           20
 
@@ -97,6 +99,9 @@ struct flb_out_http {
 
     /* Arbitrary HTTP headers */
     struct mk_list *headers;
+
+    /* HTTP client */
+    struct flb_http_client_ng http_client;
 
     /* Plugin instance */
     struct flb_output_instance *ins;

@@ -54,6 +54,7 @@ static int cb_http_init(struct flb_output_instance *ins,
                         struct flb_config *config, void *data)
 {
     struct flb_out_http *ctx = NULL;
+
     (void) data;
 
     ctx = flb_http_conf_create(ins, config);
@@ -151,64 +152,24 @@ static int http_post(struct flb_out_http *ctx,
                      const char *tag, int tag_len,
                      char **headers)
 {
-    int ret;
-    int out_ret = FLB_OK;
-    int compressed = FLB_FALSE;
-    size_t b_sent;
-    struct flb_upstream *u;
-    struct flb_connection *u_conn;
-    struct mk_list *head;
-    struct flb_config_map_val *mv;
-    struct flb_slist_entry *key = NULL;
-    struct flb_slist_entry *val = NULL;
-    flb_sds_t signature = NULL;
-    struct flb_http_client_ng       client;
-    int                             result;
-    struct flb_http_client_session *session;
-    struct flb_http_request        *request;
-    struct flb_http_response       *response;
-    const char                     *compression_algorithm;
+    const char               *compression_algorithm;
+    const char               *content_type;
+    struct flb_http_response *response;
+    struct flb_http_request  *request;
+    int                       out_ret;
+    int                       result;
+    int                       ret;
 
-    /* Get upstream context and connection */
-    u = ctx->u;
-
-    result = flb_http_client_ng_init(&client,
-                                     u,
-                                     HTTP_PROTOCOL_VERSION_11,
-                                     0);
-
-    if (result != 0) {
-        flb_plg_debug(ctx->ins, "http client creation error");
-
-        return FLB_RETRY;
+    if ((ctx->out_format == FLB_PACK_JSON_FORMAT_JSON) ||
+        (ctx->out_format == FLB_PACK_JSON_FORMAT_STREAM) ||
+        (ctx->out_format == FLB_PACK_JSON_FORMAT_LINES) ||
+        (ctx->out_format == FLB_HTTP_OUT_GELF)) {
+        content_type = FLB_HTTP_MIME_JSON;
+    }
+    else if ((ctx->out_format == FLB_HTTP_OUT_MSGPACK)) {
+        content_type = FLB_HTTP_MIME_MSGPACK;
     }
 
-    session = flb_http_client_session_begin(&client);
-
-    if (session == NULL) {
-        flb_plg_debug(ctx->ins, "http session creation error");
-
-        flb_http_client_ng_destroy(&client);
-
-        return FLB_RETRY;
-    }
-
-    request = flb_http_client_request_begin(session);
-
-    if (request == NULL) {
-        flb_plg_debug(ctx->ins, "http request creation error");
-
-        flb_http_client_ng_destroy(&client);
-
-        return FLB_RETRY;
-    }
-
-    flb_http_request_set_method(request, HTTP_METHOD_POST);
-    flb_http_request_set_host(request, ctx->host);
-    flb_http_request_set_port(request, ctx->port);
-    flb_http_request_set_uri(request, ctx->uri);
-
-    /* Should we compress the payload ? */
     if (ctx->compress_gzip == FLB_TRUE) {
         compression_algorithm = "gzip";
     }
@@ -216,134 +177,57 @@ static int http_post(struct flb_out_http *ctx,
         compression_algorithm = NULL;
     }
 
-    if (body != NULL) {
-        result = flb_http_request_set_body(request,
-                                           body,
-                                           body_len,
-                                           compression_algorithm);
+    request = flb_http_client_request_builder(
+                    &ctx->http_client,
+                    FLB_HTTP_CLIENT_ARGUMENT_METHOD(FLB_HTTP_POST),
+                    FLB_HTTP_CLIENT_ARGUMENT_HOST(ctx->host),
+                    FLB_HTTP_CLIENT_ARGUMENT_URI(ctx->uri),
+                    FLB_HTTP_CLIENT_ARGUMENT_HEADERS(
+                        FLB_HTTP_CLIENT_HEADER_CONFIG_MAP_LIST,
+                        ctx->headers),
+                    FLB_HTTP_CLIENT_ARGUMENT_CONTENT_TYPE(content_type),
+                    FLB_HTTP_CLIENT_ARGUMENT_BODY(body,
+                                                  body_len,
+                                                  compression_algorithm));
 
-        if (request == NULL) {
-            flb_plg_debug(ctx->ins, "http request creation error");
-
-            flb_http_client_ng_destroy(&client);
-
-            return FLB_RETRY;
-        }
-    }
-
-/*
-    TODO: Add proxy support
-    if (c->proxy.host) {
-        flb_plg_debug(ctx->ins, "[http_client] proxy host: %s port: %i",
-                      c->proxy.host, c->proxy.port);
-    }
-*/
-
-    /* Append headers */
-    if (headers) {
-        result = append_headers_ng(request, headers);
-    }
-    else if ((ctx->out_format == FLB_PACK_JSON_FORMAT_JSON) ||
-        (ctx->out_format == FLB_PACK_JSON_FORMAT_STREAM) ||
-        (ctx->out_format == FLB_PACK_JSON_FORMAT_LINES) ||
-        (ctx->out_format == FLB_HTTP_OUT_GELF)) {
-        flb_http_request_set_content_type(request, FLB_HTTP_MIME_JSON);
-    }
-    else if ((ctx->out_format == FLB_HTTP_OUT_MSGPACK)) {
-        flb_http_request_set_content_type(request, FLB_HTTP_MIME_MSGPACK);
-    }
-
-    if (ctx->header_tag != NULL) {
-        result = flb_http_request_set_header(request,
-                                             ctx->header_tag, 0,
-                                             tag, tag_len);
-
-        if (result != 0) {
-            flb_plg_debug(ctx->ins, "http request creation error");
-
-            flb_http_client_ng_destroy(&client);
-
-            return FLB_RETRY;
-        }
-    }
-
-    /* Content Encoding: gzip */
-    if (compressed == FLB_TRUE) {
-        result = flb_http_request_set_content_encoding(request, "gzip");
-
-        if (result != 0) {
-            flb_plg_debug(ctx->ins, "http request encoding setup error");
-
-            flb_http_client_ng_destroy(&client);
-
-            return FLB_RETRY;
-        }
-    }
-
-    /* Basic Auth headers */
-    if (ctx->http_user && ctx->http_passwd) {
+    if (ctx->http_user != NULL &&
+        ctx->http_passwd != NULL) {
         flb_http_request_set_authorization(request,
                                            HTTP_WWW_AUTHORIZATION_SCHEME_BASIC,
                                            ctx->http_user,
                                            ctx->http_passwd);
     }
 
-    flb_http_request_set_user_agent(request, "Fluent-Bit");
+    if (ctx->has_aws_auth) {
+        result = flb_http_request_perform_signv4_signature(request,
+                                                           ctx->aws_region,
+                                                           ctx->aws_service,
+                                                           ctx->aws_provider);
 
-    flb_config_map_foreach(head, mv, ctx->headers) {
-        key = mk_list_entry_first(mv->val.list, struct flb_slist_entry, _head);
-        val = mk_list_entry_last(mv->val.list, struct flb_slist_entry, _head);
-
-        result = flb_http_request_set_header(request,
-                                             key->str, 0,
-                                             val->str, 0);
     }
-
-#ifdef FLB_HAVE_SIGNV4
-#ifdef FLB_HAVE_AWS
-    /* AWS SigV4 headers */
-    if (ctx->has_aws_auth == FLB_TRUE) {
-        flb_plg_debug(ctx->ins, "signing request with AWS Sigv4");
-        signature = flb_signv4_ng_do(request,
-                                     FLB_TRUE,  /* normalize URI ? */
-                                     FLB_TRUE,  /* add x-amz-date header ? */
-                                     time(NULL),
-                                     (char *) ctx->aws_region,
-                                     (char *) ctx->aws_service,
-                                     0, NULL,
-                                     ctx->aws_provider);
-
-        if (!signature) {
-            flb_plg_error(ctx->ins, "could not sign request with sigv4");
-            out_ret = FLB_RETRY;
-            goto cleanup;
-        }
-        flb_sds_destroy(signature);
-    }
-#endif
-#endif
 
     response = flb_http_client_request_execute(request);
 
     if (response == NULL) {
-        flb_plg_debug(ctx->ins, "http request execution error");
+        flb_debug("http request execution error");
 
-        flb_http_client_ng_destroy(&client);
+        flb_http_client_session_destroy((struct flb_http_client_session *)
+                                            request->stream->parent);
 
         return FLB_RETRY;
     }
 
     /*
-        * Only allow the following HTTP status:
-        *
-        * - 200: OK
-        * - 201: Created
-        * - 202: Accepted
-        * - 203: no authorative resp
-        * - 204: No Content
-        * - 205: Reset content
-        *
-        */
+     * Only allow the following HTTP status:
+     *
+     * - 200: OK
+     * - 201: Created
+     * - 202: Accepted
+     * - 203: no authorative resp
+     * - 204: No Content
+     * - 205: Reset content
+     *
+     */
     if (response->status < 200 || response->status > 205) {
         if (ctx->log_response_payload &&
             response->body != NULL &&
@@ -356,6 +240,7 @@ static int http_post(struct flb_out_http *ctx,
             flb_plg_error(ctx->ins, "%s:%i, HTTP status=%i",
                             ctx->host, ctx->port, response->status);
         }
+
         out_ret = FLB_RETRY;
     }
     else {
@@ -371,11 +256,12 @@ static int http_post(struct flb_out_http *ctx,
                             ctx->host, ctx->port,
                             response->status);
         }
+
+        out_ret = FLB_OK;
     }
 
-cleanup:
-    /* Destroy HTTP client context */
-    flb_http_client_ng_destroy(&client);
+    flb_http_client_session_destroy((struct flb_http_client_session *)
+                                        request->stream->parent);
 
     return out_ret;
 }

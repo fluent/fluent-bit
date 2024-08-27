@@ -45,6 +45,7 @@ struct flb_out_http *flb_http_conf_create(struct flb_output_instance *ins,
     const char *tmp;
     struct flb_upstream *upstream;
     struct flb_out_http *ctx = NULL;
+    uint64_t http_client_flags;
 
     /* Allocate plugin context */
     ctx = flb_calloc(1, sizeof(struct flb_out_http));
@@ -268,6 +269,26 @@ struct flb_out_http *flb_http_conf_create(struct flb_output_instance *ins,
     /* Set instance flags into upstream */
     flb_output_upstream_set(ctx->u, ins);
 
+    http_client_flags = FLB_HTTP_CLIENT_FLAG_AUTO_DEFLATE |
+                        FLB_HTTP_CLIENT_FLAG_AUTO_INFLATE;
+
+    if (ctx->u->base.net.keepalive) {
+        http_client_flags |= FLB_HTTP_CLIENT_FLAG_KEEPALIVE;
+    }
+
+    ret = flb_http_client_ng_init(&ctx->http_client,
+                                  ctx->u,
+                                  HTTP_PROTOCOL_VERSION_11,
+                                  http_client_flags);
+
+    if (ret != 0) {
+        flb_plg_debug(ctx->ins, "http client creation error");
+
+        flb_http_conf_destroy(ctx);
+
+        ctx = NULL;
+    }
+
     return ctx;
 }
 
@@ -276,6 +297,8 @@ void flb_http_conf_destroy(struct flb_out_http *ctx)
     if (!ctx) {
         return;
     }
+
+    flb_http_client_ng_destroy(&ctx->http_client);
 
     if (ctx->body_ra && ctx->headers_ra) {
         flb_ra_destroy(ctx->body_ra);
