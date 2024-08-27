@@ -215,8 +215,7 @@ struct flb_http_client *flb_aws_client_request_basic_auth(
                                                struct flb_aws_client *aws_client,
                                                int method, const char *uri,
                                                const char *body, size_t body_len,
-                                               struct flb_aws_header
-                                               *dynamic_headers,
+                                               struct flb_aws_header *dynamic_headers,
                                                size_t dynamic_headers_len,
                                                char *header_name,
                                                char* auth_token)
@@ -224,12 +223,13 @@ struct flb_http_client *flb_aws_client_request_basic_auth(
     struct flb_http_client *c = NULL;
     struct flb_aws_header *auth_header = NULL;
     struct flb_aws_header *headers = NULL;
+
     auth_header = flb_calloc(1, sizeof(struct flb_aws_header));
     if (!auth_header) {
         flb_errno();
         return NULL;
     }
-    
+
     auth_header->key = header_name;
     auth_header->key_len = strlen(header_name);
     auth_header->val = auth_token;
