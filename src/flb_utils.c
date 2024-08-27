@@ -49,6 +49,10 @@ extern struct flb_aws_error_reporter *error_reporter;
 #ifdef FLB_SYSTEM_MACOS
 #include <CoreFoundation/CoreFoundation.h>
 #include <IOKit/IOKitLib.h>
+#include <AvailabilityMacros.h>
+#if MAC_OS_X_VERSION_MIN_REQUIRED < 120000
+#define kIOMainPortDefault kIOMasterPortDefault
+#endif
 #endif
 
 /*
