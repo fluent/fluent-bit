@@ -104,7 +104,7 @@ Fluent Bit is fully supported on Windows environments, get started with [these i
 
 #### Running on s390x
 
-Fluent Bit is supported on Linux on IBM Z(s390x), but the WASM and LUA filter plugins are not.
+Fluent Bit runs on Linux on IBM Z(s390x), but the WASM filter plugin is not. For the LUA filter plugin, it runs when `libluajit` is installed on the system and fluent bit is built with `FLB_LUAJIT` and `FLB_PREFER_SYSTEM_LIB_LUAJIT` on.
 
 ### Plugins: Inputs, Filters and Outputs
 
