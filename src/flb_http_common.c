@@ -21,6 +21,7 @@
 
 #include <fluent-bit/http_server/flb_http_server.h>
 #include <fluent-bit/flb_http_common.h>
+#include <fluent-bit/flb_signv4_ng.h>
 #include <fluent-bit/flb_snappy.h>
 #include <fluent-bit/flb_gzip.h>
 
@@ -560,6 +561,39 @@ int flb_http_request_set_body(struct flb_http_request *request,
     return 0;
 }
 
+int flb_http_request_perform_signv4_signature(
+        struct flb_http_request *request,
+        char *aws_region,
+        char *aws_service,
+        struct flb_aws_provider *aws_provider)
+{
+    flb_sds_t signature;
+
+#ifdef FLB_HAVE_SIGNV4
+#ifdef FLB_HAVE_AWS
+    flb_debug("signing request with AWS Sigv4");
+
+    signature = flb_signv4_ng_do(request,
+                                 FLB_TRUE,  /* normalize URI ? */
+                                 FLB_TRUE,  /* add x-amz-date header ? */
+                                 time(NULL),
+                                 aws_region,
+                                 aws_service,
+                                 0, NULL,
+                                 aws_provider);
+
+    if (signature == NULL) {
+        flb_error("could not sign request with sigv4");
+
+        return -1;
+    }
+
+    flb_sds_destroy(signature);
+#endif
+#endif
+
+    return 0;
+}
 
 /* HTTP RESPONSE */
 

@@ -75,8 +75,10 @@
 #define HTTP_STREAM_STATUS_CLOSED              8
 #define HTTP_STREAM_STATUS_ERROR               9
 
-#define HTTP_WWW_AUTHORIZATION_SCHEME_BASIC      0
-#define HTTP_WWW_AUTHORIZATION_SCHEME_BEARER     1
+#define HTTP_WWW_AUTHORIZATION_SCHEME_NONE       0
+#define HTTP_WWW_AUTHORIZATION_SCHEME_BASIC      (((uint64_t) 1) << 0)
+#define HTTP_WWW_AUTHORIZATION_SCHEME_BEARER     (((uint64_t) 1) << 1)
+#define HTTP_WWW_AUTHORIZATION_SCHEME_SIGNV4     (((uint64_t) 1) << 2)
 
 #define HTTP_PROXY_AUTHORIZATION_SCHEME_BASIC    10
 #define HTTP_PROXY_AUTHORIZATION_SCHEME_BEARER   11
@@ -135,6 +137,8 @@ struct flb_http_stream {
     struct cfl_list                 _head;
 };
 
+struct flb_aws_provider;
+
 /* HTTP REQUEST */
 
 int flb_http_request_init(struct flb_http_request *request);
@@ -190,6 +194,12 @@ int flb_http_request_compress_body(
 
 int flb_http_request_uncompress_body(
     struct flb_http_request *request);
+
+int flb_http_request_perform_signv4_signature(
+        struct flb_http_request *request,
+        char *aws_region,
+        char *aws_service,
+        struct flb_aws_provider *aws_provider);
 
 /* HTTP RESPONSE */
 
