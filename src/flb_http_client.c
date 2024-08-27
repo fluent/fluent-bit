@@ -43,6 +43,7 @@
 #include <fluent-bit/flb_utils.h>
 #include <fluent-bit/flb_base64.h>
 #include <fluent-bit/tls/flb_tls.h>
+#include <fluent-bit/flb_signv4_ng.h>
 
 void flb_http_client_debug(struct flb_http_client *c,
                            struct flb_callback *cb_ctx)
@@ -1856,6 +1857,14 @@ struct flb_http_response *flb_http_client_request_execute(struct flb_http_reques
         }
     }
 
+    if ((session->parent->flags & FLB_HTTP_CLIENT_FLAG_AUTO_INFLATE) != 0) {
+        result = flb_http_response_uncompress_body(response);
+
+        if (result != 0) {
+            return NULL;
+        }
+    }
+
     return response;
 }
 
@@ -2152,3 +2161,216 @@ int flb_http_request_set_authorization(struct flb_http_request *request,
     return result;
 }
 
+struct flb_http_request *flb_http_client_request_builder_internal(
+    struct flb_http_client_ng *client,
+    ...)
+{
+    flb_sds_t                       signature;
+    struct flb_http_response       *response;
+    struct flb_http_request        *request;
+    struct flb_http_client_session *session;
+    int                             out_ret;
+    int                             result;
+    size_t                          b_sent;
+    size_t                          index;
+    struct mk_list                 *head;
+    int                             ret;
+    struct flb_slist_entry         *val;
+    struct flb_slist_entry         *key;
+    struct flb_config_map_val      *mv;
+    struct flb_upstream            *u;
+    va_list                         arguments;
+    size_t                          value_type;
+    size_t                          method;
+    char                           *host;
+    char                           *uri;
+    char                           *content_type;
+    const void                     *body;
+    size_t                          body_len;
+    unsigned int                    authorization_type;
+    char                           *username;
+    char                           *password;
+    char                           *bearer_token;
+    char                           *aws_region;
+    char                           *aws_service;
+    struct flb_aws_provider        *aws_provider;
+    char                           *compression_algorithm;
+    size_t                          header_data_type;
+    char                          **header_array;
+    struct mk_list                 *header_list;
+    struct flb_config_map_val      *config_map_list_entry;
+    struct flb_slist_entry         *header_name;
+    struct flb_slist_entry         *header_value;
+    struct mk_list                 *iterator;
+    int                             failure_detected;
+
+    signature = NULL;
+    head = NULL;
+    key = NULL;
+    val = NULL;
+    mv = NULL;
+
+    session = flb_http_client_session_begin(client);
+
+    if (session == NULL) {
+        flb_debug("http session creation error");
+
+        return NULL;
+    }
+
+    request = flb_http_client_request_begin(session);
+
+    if (request == NULL) {
+        flb_debug("http request creation error");
+
+        flb_http_client_session_destroy(session);
+
+        return NULL;
+    }
+
+    flb_http_request_set_port(request, client->upstream->tcp_port);
+
+    failure_detected = FLB_FALSE;
+
+    va_start(arguments, client);
+
+    do {
+        value_type = va_arg(arguments, size_t);
+
+        if (value_type == FLB_HTTP_CLIENT_ARGUMENT_TYPE_METHOD) {
+            method = va_arg(arguments, size_t);
+
+            flb_http_request_set_method(request, (int) method);
+        }
+        else if (value_type == FLB_HTTP_CLIENT_ARGUMENT_TYPE_HOST) {
+            host = va_arg(arguments, char *);
+
+            flb_http_request_set_host(request, host);
+        }
+        else if (value_type == FLB_HTTP_CLIENT_ARGUMENT_TYPE_URI) {
+            uri = va_arg(arguments, char *);
+
+            flb_http_request_set_uri(request, uri);
+        }
+        else if (value_type == FLB_HTTP_CLIENT_ARGUMENT_TYPE_CONTENT_TYPE) {
+            content_type = va_arg(arguments, char *);
+
+            result = flb_http_request_set_content_type(request, content_type);
+
+            if (request == NULL) {
+                flb_debug("http request : error setting content type");
+
+                failure_detected = FLB_TRUE;
+            }
+        }
+        else if (value_type == FLB_HTTP_CLIENT_ARGUMENT_TYPE_BODY) {
+            body = va_arg(arguments, char *);
+            body_len = va_arg(arguments, size_t);
+            compression_algorithm = va_arg(arguments, char *);
+
+            result = flb_http_request_set_body(request,
+                                                body,
+                                                body_len,
+                                                compression_algorithm);
+
+            if (request == NULL) {
+                flb_debug("http request creation error");
+
+                failure_detected = FLB_TRUE;
+            }
+        }
+        else if (value_type == FLB_HTTP_CLIENT_ARGUMENT_TYPE_HEADERS) {
+            header_data_type = va_arg(arguments, size_t);
+
+            if (header_data_type == FLB_HTTP_CLIENT_HEADER_ARRAY) {
+                header_array = va_arg(arguments, char **);
+                if (header_array != NULL) {
+                    for (index = 0 ;
+                        header_array[index+0] != NULL &&
+                        header_array[index+1] != NULL;
+                        index += 2) {
+                        result = flb_http_request_set_header(request,
+                                                            header_array[index+0], 0,
+                                                            header_array[index+1], 0);
+
+                        if (result != 0) {
+                            flb_debug("http request header addition error");
+
+                            failure_detected = FLB_TRUE;
+
+                            break;
+                        }
+                    }
+                }
+            }
+            else if (header_data_type == FLB_HTTP_CLIENT_HEADER_CONFIG_MAP_LIST) {
+                header_list = va_arg(arguments, struct mk_list *);
+
+                flb_config_map_foreach(iterator, config_map_list_entry, header_list) {
+                    header_name = mk_list_entry_first(config_map_list_entry->val.list,
+                                                      struct flb_slist_entry,
+                                                      _head);
+
+                    header_value = mk_list_entry_last(config_map_list_entry->val.list,
+                                                      struct flb_slist_entry,
+                                                      _head);
+
+                    result = flb_http_request_set_header(request,
+                                                         header_name->str, 0,
+                                                         header_value->str, 0);
+
+                    if (result != 0) {
+                        flb_debug("http request header addition error");
+
+                        failure_detected = FLB_TRUE;
+
+                        break;
+                    }
+                }
+            }
+            else {
+                failure_detected = FLB_TRUE;
+            }
+        }
+        else if (value_type == FLB_HTTP_CLIENT_ARGUMENT_TYPE_AUTH_BASIC) {
+            username = va_arg(arguments, char *);
+            password = va_arg(arguments, char *);
+
+            flb_http_request_set_authorization(request,
+                                            HTTP_WWW_AUTHORIZATION_SCHEME_BASIC,
+                                            username,
+                                            password);
+        }
+        else if (value_type == FLB_HTTP_CLIENT_ARGUMENT_TYPE_AUTH_BEARER_TOKEN) {
+            bearer_token = va_arg(arguments, char *);
+
+            flb_http_request_set_authorization(request,
+                                            HTTP_WWW_AUTHORIZATION_SCHEME_BEARER,
+                                            bearer_token);
+        }
+        else if (value_type == FLB_HTTP_CLIENT_ARGUMENT_TYPE_AUTH_SIGNV4) {
+            aws_region = va_arg(arguments, char *);
+            aws_service = va_arg(arguments, char *);
+            aws_provider = va_arg(arguments, struct flb_aws_provider *);
+
+            result = flb_http_request_perform_signv4_signature(request,
+                                                               aws_region,
+                                                               aws_service,
+                                                               aws_provider);
+        }
+    } while (!failure_detected &&
+             value_type != FLB_HTTP_CLIENT_ARGUMENT_TYPE_TERMINATOR);
+
+    va_end(arguments);
+
+    if (failure_detected) {
+        flb_http_client_session_destroy(session);
+
+        /*
+         * The request instance is recursively disposed of
+         */
+        request = NULL;
+    }
+
+    return request;
+}

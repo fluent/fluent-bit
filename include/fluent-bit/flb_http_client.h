@@ -72,6 +72,37 @@
 #define FLB_HTTP_HEADER_CONNECTION       "Connection"
 #define FLB_HTTP_HEADER_KA               "keep-alive"
 
+#define FLB_HTTP_CLIENT_HEADER_ARRAY                      0
+#define FLB_HTTP_CLIENT_HEADER_LIST                       1
+#define FLB_HTTP_CLIENT_HEADER_CONFIG_MAP_LIST            2
+
+#define FLB_HTTP_CLIENT_ARGUMENT_TYPE_TERMINATOR          0
+#define FLB_HTTP_CLIENT_ARGUMENT_TYPE_METHOD              1
+#define FLB_HTTP_CLIENT_ARGUMENT_TYPE_HOST                2
+#define FLB_HTTP_CLIENT_ARGUMENT_TYPE_URI                 3
+#define FLB_HTTP_CLIENT_ARGUMENT_TYPE_CONTENT_TYPE        4
+#define FLB_HTTP_CLIENT_ARGUMENT_TYPE_BODY                5
+#define FLB_HTTP_CLIENT_ARGUMENT_TYPE_HEADERS             6
+#define FLB_HTTP_CLIENT_ARGUMENT_TYPE_AUTH_BASIC          7
+#define FLB_HTTP_CLIENT_ARGUMENT_TYPE_AUTH_BEARER_TOKEN   8
+#define FLB_HTTP_CLIENT_ARGUMENT_TYPE_AUTH_SIGNV4         9
+
+#ifdef FLB_SYSTEM_WINDOWS
+#ifdef _WIN64
+typedef size_t * flb_http_client_size_t;
+typedef size_t * flb_http_client_int64_t;
+typedef size_t * flb_http_client_uint64_t;
+#else
+typedef size_t * flb_http_client_size_t;
+typedef int64_t  flb_http_client_int64_t;
+typedef uint64_t flb_http_client_uint64_t;
+#endif
+#else
+typedef size_t   flb_http_client_size_t;
+typedef int64_t  flb_http_client_int64_t;
+typedef uint64_t flb_http_client_uint64_t;
+#endif
+
 struct flb_http_client_response {
     int status;                /* HTTP response status          */
     int content_length;        /* Content length set by headers */
@@ -181,6 +212,8 @@ struct flb_http_client_session {
     struct cfl_list                 _head;
 };
 
+struct flb_aws_provider;
+
 int flb_http_client_ng_init(struct flb_http_client_ng *client,
                             struct flb_upstream *upstream,
                             int protocol_version,
@@ -252,4 +285,62 @@ int flb_http_strip_port_from_host(struct flb_http_client *c);
 int flb_http_allow_duplicated_headers(struct flb_http_client *c, int allow);
 int flb_http_client_debug_property_is_valid(char *key, char *val);
 
+
+#define FLB_HTTP_CLIENT_ARGUMENT(argument_type, ...) \
+            (flb_http_client_size_t) argument_type, __VA_ARGS__
+
+#define FLB_HTTP_CLIENT_ARGUMENT_TERMINATOR() \
+            (flb_http_client_size_t) FLB_HTTP_CLIENT_ARGUMENT_TYPE_TERMINATOR
+
+#define FLB_HTTP_CLIENT_ARGUMENT_METHOD(method) \
+            FLB_HTTP_CLIENT_ARGUMENT(FLB_HTTP_CLIENT_ARGUMENT_TYPE_METHOD, \
+                                     (flb_http_client_size_t) method)
+
+#define FLB_HTTP_CLIENT_ARGUMENT_HOST(host) \
+            FLB_HTTP_CLIENT_ARGUMENT(FLB_HTTP_CLIENT_ARGUMENT_TYPE_HOST, \
+                                     host)
+
+#define FLB_HTTP_CLIENT_ARGUMENT_URI(uri) \
+            FLB_HTTP_CLIENT_ARGUMENT(FLB_HTTP_CLIENT_ARGUMENT_TYPE_URI, \
+                                     uri)
+
+#define FLB_HTTP_CLIENT_ARGUMENT_CONTENT_TYPE(content_type) \
+            FLB_HTTP_CLIENT_ARGUMENT(FLB_HTTP_CLIENT_ARGUMENT_TYPE_CONTENT_TYPE, \
+                                     content_type)
+
+#define FLB_HTTP_CLIENT_ARGUMENT_BODY(buffer, length, compression_algorithm) \
+            FLB_HTTP_CLIENT_ARGUMENT(FLB_HTTP_CLIENT_ARGUMENT_TYPE_BODY, \
+                                     buffer, \
+                                     (flb_http_client_size_t) length, \
+                                     compression_algorithm)
+
+#define FLB_HTTP_CLIENT_ARGUMENT_HEADERS(data_type, headers) \
+            FLB_HTTP_CLIENT_ARGUMENT(FLB_HTTP_CLIENT_ARGUMENT_TYPE_HEADERS, \
+                                     (flb_http_client_size_t) data_type, \
+                                     headers)
+
+#define FLB_HTTP_CLIENT_ARGUMENT_BASIC_AUTHORIZATION(username, password) \
+            FLB_HTTP_CLIENT_ARGUMENT(FLB_HTTP_CLIENT_ARGUMENT_TYPE_AUTH_BASIC, \
+                                     username, \
+                                     password)
+
+#define FLB_HTTP_CLIENT_ARGUMENT_BEARER_TOKEN(token) \
+            FLB_HTTP_CLIENT_ARGUMENT(FLB_HTTP_CLIENT_ARGUMENT_TYPE_AUTH_BEARER_TOKEN, \
+                                     token)
+
+#define FLB_HTTP_CLIENT_ARGUMENT_SIGNV4(aws_region, aws_service, aws_provider) \
+            FLB_HTTP_CLIENT_ARGUMENT(FLB_HTTP_CLIENT_ARGUMENT_TYPE_AUTH_SIGNV4, \
+                                     aws_region, \
+                                     aws_service, \
+                                     aws_provider)
+
+struct flb_http_request *flb_http_client_request_builder_internal(
+    struct flb_http_client_ng *client,
+    ...);
+
+#define flb_http_client_request_builder(client, ...) \
+            flb_http_client_request_builder_internal( \
+                client, \
+                __VA_ARGS__, \
+                FLB_HTTP_CLIENT_ARGUMENT_TERMINATOR());
 #endif
