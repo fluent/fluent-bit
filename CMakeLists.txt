@@ -902,7 +902,6 @@ endif()
 # Memory Allocator
 # ================
 if(FLB_JEMALLOC AND ${CMAKE_SYSTEM_NAME} MATCHES "Linux")
-  FLB_DEFINITION(FLB_HAVE_JEMALLOC)
   FLB_DEFINITION(JEMALLOC_MANGLE)
 
   # Add support for options like page size, if empty we default it
