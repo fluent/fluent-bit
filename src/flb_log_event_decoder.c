@@ -181,12 +181,12 @@ int flb_log_event_decoder_decode_timestamp(msgpack_object *input,
         }
 
         output->tm.tv_sec  = 
-            (int32_t) FLB_BSWAP_32(
+            (int32_t) FLB_UINT32_TO_HOST_BYTE_ORDER(
                         FLB_ALIGNED_DWORD_READ(
                             (unsigned char *) &input->via.ext.ptr[0]));
 
         output->tm.tv_nsec  = 
-            (int32_t) FLB_BSWAP_32(
+            (int32_t) FLB_UINT32_TO_HOST_BYTE_ORDER(
                         FLB_ALIGNED_DWORD_READ(
                             (unsigned char *) &input->via.ext.ptr[4]));
     }

@@ -519,8 +519,8 @@ int flb_log_event_encoder_append_forward_v1_timestamp(
 {
     uint32_t value[2];
 
-    value[0] = FLB_BSWAP_32((uint32_t) timestamp->tm.tv_sec);
-    value[1] = FLB_BSWAP_32((uint32_t) timestamp->tm.tv_nsec);
+    value[0] = FLB_UINT32_TO_NETWORK_BYTE_ORDER((uint32_t) timestamp->tm.tv_sec);
+    value[1] = FLB_UINT32_TO_NETWORK_BYTE_ORDER((uint32_t) timestamp->tm.tv_nsec);
 
     return flb_log_event_encoder_append_ext(context, target_field,
                                             0, (char *) value, 8);
