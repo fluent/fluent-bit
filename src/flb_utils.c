@@ -1138,6 +1138,7 @@ int flb_utils_url_split(const char *in_url, char **out_protocol,
 int flb_utils_url_split_sds(const flb_sds_t in_url, flb_sds_t *out_protocol,
                             flb_sds_t *out_host, flb_sds_t *out_port, flb_sds_t *out_uri)
 {
+    int i;
     flb_sds_t protocol = NULL;
     flb_sds_t host = NULL;
     flb_sds_t port = NULL;
@@ -1219,10 +1220,21 @@ int flb_utils_url_split_sds(const flb_sds_t in_url, flb_sds_t *out_protocol,
         flb_errno();
         goto error;
     }
+
     if (!port) {
         flb_errno();
         goto error;
     }
+    else {
+        /* check that port is a number */
+        for (i = 0; i < flb_sds_len(port); i++) {
+            if (!isdigit(port[i])) {
+                goto error;
+            }
+        }
+
+    }
+
     if (!uri) {
         flb_errno();
         goto error;
@@ -1237,7 +1249,16 @@ int flb_utils_url_split_sds(const flb_sds_t in_url, flb_sds_t *out_protocol,
 
  error:
     if (protocol) {
-        flb_free(protocol);
+        flb_sds_destroy(protocol);
+    }
+    if (host) {
+        flb_sds_destroy(host);
+    }
+    if (port) {
+        flb_sds_destroy(port);
+    }
+    if (uri) {
+        flb_sds_destroy(uri);
     }
 
     return -1;
