@@ -450,7 +450,7 @@ static void pack_string_inserts(struct winevtlog_config *ctx, PEVT_VARIANT value
             }
             break;
         case EvtVarTypeEvtXml:
-            if (pack_wstr(ctx, values[i].XmlVal, ctx)) {
+            if (pack_wstr(ctx, values[i].XmlVal)) {
                 pack_nullstr(ctx);
             }
             break;
