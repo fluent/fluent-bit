@@ -407,7 +407,9 @@ int flb_reload(flb_ctx_t *ctx, struct flb_cf *cf_opts)
         return FLB_RELOAD_HALTED;
     }
 
-    flb_info("reloading instance pid=%lu tid=%p", (long unsigned) getpid(), pthread_self());
+    flb_info("reloading instance pid=%lu tid=%p",
+             (long unsigned int) getpid(),
+             (void *) pthread_self());
 
     if (old_config->conf_path_file) {
         file = flb_sds_create(old_config->conf_path_file);
