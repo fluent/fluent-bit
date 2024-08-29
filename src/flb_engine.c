@@ -652,11 +652,14 @@ static int flb_engine_log_start(struct flb_config *config)
     if (config->log_file) {
         type = FLB_LOG_FILE;
     }
+    else if(config->lib_consumer){
+        type = FLB_LOG_LIB;
+    }
     else {
         type = FLB_LOG_STDERR;
     }
 
-    if (flb_log_create(config, type, level, config->log_file) == NULL) {
+    if (flb_log_create(config, type, level, config->log_file, config->lib_consumer) == NULL) {
         return -1;
     }
 

@@ -145,6 +145,7 @@ struct flb_config {
 
     /* Logging */
     char *log_file;
+    void (*lib_consumer) (struct log_message*);   /* custom consumer configured in the lib mode */
     struct flb_log *log;
 
     /* Parser Conf */
