@@ -931,6 +931,8 @@ static int prepare_remove_keys(struct flb_loki *ctx)
 
 static void loki_config_destroy(struct flb_loki *ctx)
 {
+    flb_http_client_ng_destroy(&ctx->http_client);
+
     if (ctx->u) {
         flb_upstream_destroy(ctx->u);
     }
@@ -961,6 +963,7 @@ static struct flb_loki *loki_config_create(struct flb_output_instance *ins,
     struct flb_upstream *upstream;
     char *compress;
     char *drop_single_key;
+    uint64_t http_client_flags;
 
     /* Create context */
     ctx = flb_calloc(1, sizeof(struct flb_loki));
@@ -1078,6 +1081,27 @@ static struct flb_loki *loki_config_create(struct flb_output_instance *ins,
     flb_output_upstream_set(ctx->u, ins);
     ctx->tcp_port = ins->host.port;
     ctx->tcp_host = ins->host.name;
+
+
+    http_client_flags = FLB_HTTP_CLIENT_FLAG_AUTO_DEFLATE |
+                        FLB_HTTP_CLIENT_FLAG_AUTO_INFLATE;
+
+    if (ctx->u->base.net.keepalive) {
+        http_client_flags |= FLB_HTTP_CLIENT_FLAG_KEEPALIVE;
+    }
+
+    ret = flb_http_client_ng_init(&ctx->http_client,
+                                  ctx->u,
+                                  HTTP_PROTOCOL_VERSION_11,
+                                  http_client_flags);
+
+    if (ret != 0) {
+        flb_plg_debug(ctx->ins, "http client creation error");
+
+        loki_config_destroy(ctx);
+
+        ctx = NULL;
+    }
 
     return ctx;
 }
@@ -1605,6 +1629,210 @@ static void payload_release(void *payload, int compressed)
     }
 }
 
+static int cb_loki_flush_ng(struct flb_event_chunk *event_chunk,
+                            struct flb_output_flush *out_flush,
+                            struct flb_input_instance *i_ins,
+                            void *out_context,
+                            struct flb_config *config)
+{
+    int out_ret = FLB_OK;
+    struct flb_loki *ctx = out_context;
+    struct flb_loki_dynamic_tenant_id_entry *dynamic_tenant_id;
+    const char *compression_algorithm;
+    char *additional_headers[3];
+    struct flb_http_response *response;
+    struct flb_http_request  *request;
+    flb_sds_t payload = NULL;
+
+    dynamic_tenant_id = FLB_TLS_GET(thread_local_tenant_id);
+
+    if (dynamic_tenant_id == NULL) {
+        dynamic_tenant_id = dynamic_tenant_id_create();
+
+        if (dynamic_tenant_id == NULL) {
+            flb_errno();
+            flb_plg_error(ctx->ins, "cannot allocate dynamic tenant id");
+
+            return FLB_RETRY;
+        }
+
+        FLB_TLS_SET(thread_local_tenant_id, dynamic_tenant_id);
+
+        pthread_mutex_lock(&ctx->dynamic_tenant_list_lock);
+
+        cfl_list_add(&dynamic_tenant_id->_head, &ctx->dynamic_tenant_list);
+
+        pthread_mutex_unlock(&ctx->dynamic_tenant_list_lock);
+    }
+
+    /* Format the data to the expected Newrelic Payload */
+    payload = loki_compose_payload(ctx,
+                                   event_chunk->total_events,
+                                   (char *) event_chunk->tag,
+                                   flb_sds_len(event_chunk->tag),
+                                   event_chunk->data, event_chunk->size,
+                                   &dynamic_tenant_id->value);
+
+    if (!payload) {
+        flb_plg_error(ctx->ins, "cannot compose request payload");
+
+        return FLB_RETRY;
+    }
+
+    if (ctx->compress_gzip == FLB_TRUE) {
+        compression_algorithm = "gzip";
+    }
+    else {
+        compression_algorithm = NULL;
+    }
+
+    /* Add X-Scope-OrgID header */
+    if (dynamic_tenant_id->value != NULL) {
+        additional_headers[0] = (char *) FLB_LOKI_HEADER_SCOPE;
+        additional_headers[1] = (char *) dynamic_tenant_id->value;
+    }
+    else if (ctx->tenant_id) {
+        additional_headers[0] = (char *) FLB_LOKI_HEADER_SCOPE;
+        additional_headers[1] = (char *) ctx->tenant_id;
+    }
+
+    additional_headers[2] = NULL;
+
+    request = flb_http_client_request_builder(
+                    &ctx->http_client,
+                    FLB_HTTP_CLIENT_ARGUMENT_METHOD(FLB_HTTP_POST),
+                    FLB_HTTP_CLIENT_ARGUMENT_HOST(ctx->tcp_host),
+                    FLB_HTTP_CLIENT_ARGUMENT_URI(ctx->uri),
+                    FLB_HTTP_CLIENT_ARGUMENT_HEADERS(
+                        FLB_HTTP_CLIENT_HEADER_ARRAY,
+                        additional_headers),
+                    FLB_HTTP_CLIENT_ARGUMENT_HEADERS(
+                        FLB_HTTP_CLIENT_HEADER_CONFIG_MAP_LIST,
+                        ctx->headers),
+                    FLB_HTTP_CLIENT_ARGUMENT_CONTENT_TYPE(
+                        FLB_LOKI_CT_JSON),
+                    FLB_HTTP_CLIENT_ARGUMENT_BODY(payload,
+                                                  flb_sds_len(payload),
+                                                  compression_algorithm));
+
+    flb_sds_destroy(payload);
+
+    if (request == NULL) {
+        flb_plg_error(ctx->ins, "error initializing http request");
+
+        return FLB_RETRY;
+    }
+
+    /*  Todo: implement this
+     *  flb_http_buffer_size(c, ctx->http_buffer_max_size);
+     */
+
+    if (ctx->http_user != NULL &&
+        ctx->http_passwd != NULL) {
+        flb_http_request_set_authorization(request,
+                                           HTTP_WWW_AUTHORIZATION_SCHEME_BASIC,
+                                           ctx->http_user,
+                                           ctx->http_passwd);
+    }
+    else if (ctx->bearer_token != NULL ) {
+        flb_http_request_set_authorization(request,
+                                           HTTP_WWW_AUTHORIZATION_SCHEME_BEARER,
+                                           ctx->bearer_token);
+    }
+
+    response = flb_http_client_request_execute(request);
+
+    if (response == NULL) {
+        flb_debug("http request execution error");
+
+        flb_http_client_session_destroy((struct flb_http_client_session *)
+                                         request->stream->parent);
+
+        return FLB_RETRY;
+    }
+
+    /*
+     * Only allow the following HTTP status:
+     *
+     * - 200: OK
+     * - 201: Created
+     * - 202: Accepted
+     * - 203: no authorative resp
+     * - 204: No Content
+     * - 205: Reset content
+     *
+     */
+    if (response->status == 400) {
+        /*
+         * Loki will return 400 if incoming data is out of order.
+         * We should not retry such data.
+         */
+        if (response->body == NULL) {
+            flb_plg_error(ctx->ins, "%s:%i, HTTP status=%i Not retrying.\n%s",
+                            ctx->tcp_host, ctx->tcp_port, response->status,
+                            response->body);
+        }
+        else {
+            flb_plg_error(ctx->ins, "%s:%i, HTTP status=%i Not retrying.",
+                            ctx->tcp_host, ctx->tcp_port, response->status);
+        }
+
+        out_ret = FLB_ERROR;
+    }
+    else if (response->status >= 500 && response->status <= 599) {
+        if (response->body != NULL) {
+            flb_plg_error(ctx->ins, "could not flush records to %s:%i"
+                        " HTTP status=%i",
+                        ctx->tcp_host, ctx->tcp_port, response->status);
+
+            flb_plg_trace(ctx->ins, "Response was:\n%s",
+                        response->body);
+        }
+        else {
+            flb_plg_error(ctx->ins, "could not flush records to %s:%i"
+                        " HTTP status=%i",
+                        ctx->tcp_host, ctx->tcp_port, response->status);
+        }
+        /*
+         * Server-side error occured, do not reuse this connection for retry.
+         * This could be an issue of Loki gateway.
+         * Rather initiate new connection.
+         */
+        flb_plg_trace(ctx->ins, "Destroying connection for %s:%i",
+                        ctx->tcp_host, ctx->tcp_port);
+
+        out_ret = FLB_RETRY;
+    }
+    else if (response->status < 200 || response->status > 205) {
+        if (response->body != NULL) {
+            flb_plg_error(ctx->ins, "%s:%i, HTTP status=%i\n%s",
+                            ctx->tcp_host, ctx->tcp_port, response->status,
+                            response->body);
+        }
+        else {
+            flb_plg_error(ctx->ins, "%s:%i, HTTP status=%i",
+                            ctx->tcp_host, ctx->tcp_port, response->status);
+        }
+
+        out_ret = FLB_RETRY;
+    }
+    else {
+        if (response->body != NULL) {
+            flb_plg_debug(ctx->ins, "%s:%i, HTTP status=%i\n%s",
+                            ctx->tcp_host, ctx->tcp_port,
+                            response->status, response->body);
+        }
+        else {
+            flb_plg_debug(ctx->ins, "%s:%i, HTTP status=%i",
+                            ctx->tcp_host, ctx->tcp_port,
+                            response->status);
+        }
+    }
+
+    return out_ret;
+}
+
+
 static void cb_loki_flush(struct flb_event_chunk *event_chunk,
                           struct flb_output_flush *out_flush,
                           struct flb_input_instance *i_ins,
@@ -1626,6 +1854,16 @@ static void cb_loki_flush(struct flb_event_chunk *event_chunk,
     struct flb_config_map_val *mv;
     struct flb_slist_entry *key = NULL;
     struct flb_slist_entry *val = NULL;
+
+    if (ctx->http2) {
+        ret = cb_loki_flush_ng(event_chunk,
+                               out_flush,
+                               i_ins,
+                               out_context,
+                               config);
+
+        FLB_OUTPUT_RETURN(ret);
+    }
 
     dynamic_tenant_id = FLB_TLS_GET(thread_local_tenant_id);
 
@@ -1982,6 +2220,12 @@ static struct flb_config_map config_map[] = {
      FLB_CONFIG_MAP_STR, "compress", NULL,
      0, FLB_FALSE, 0,
      "Set payload compression in network transfer. Option available is 'gzip'"
+    },
+
+    {
+     FLB_CONFIG_MAP_BOOL, "http2", "true",
+     0, FLB_TRUE, offsetof(struct flb_loki, http2),
+     "Enable http2 support"
     },
 
     /* EOF */
