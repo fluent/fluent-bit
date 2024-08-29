@@ -101,6 +101,7 @@ static int configure(struct filter_parser_ctx *ctx,
     int ret;
     struct mk_list *head;
     struct flb_kv *kv;
+    ctx->hash_value_field = NULL;
 
     ctx->key_name = NULL;
     ctx->reserve_data = FLB_FALSE;
@@ -352,16 +353,14 @@ static int cb_parser_filter(const void *data, size_t bytes,
                     out_buf = strdup(parsed_buf);
                     out_size = parsed_size;
                 }
-                if (ctx->hash_value_field) {
+                if (ctx->hash_value_field!=NULL) {
                     char *new_buf = NULL;
                     size_t new_size;
                     int ret;
-                    flb_sds_t hash_key = flb_sds_create("parsed");
                     ret = flb_msgpack_append_map_to_record(&new_buf, &new_size,
-                                                                hash_key,
+                                                                ctx->hash_value_field,
                                                                 out_buf, out_size,
                                                                 parsed_buf,parsed_size);
-                    flb_sds_destroy(hash_key);
                     if ( ret != FLB_MAP_EXPAND_SUCCESS){
                         flb_plg_error(ctx->ins, "cannot append parsed entry to record");
 
@@ -470,9 +469,9 @@ static struct flb_config_map config_map[] = {
      "If false, all other original fields will be removed."
     },
     {
-     FLB_CONFIG_MAP_BOOL, "Hash_Value_Field", "false",
+     FLB_CONFIG_MAP_STR, "Hash_Value_Field", NULL,
      0, FLB_TRUE, offsetof(struct filter_parser_ctx, hash_value_field),
-     "Stores the parsed values as a hash value in a field with key `parsed`. "
+     "Stores the parsed values as a hash value in a field with key given. "
     },
     {
      FLB_CONFIG_MAP_DEPRECATED, "Unescape_key", NULL,

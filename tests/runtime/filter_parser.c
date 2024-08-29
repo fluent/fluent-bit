@@ -855,7 +855,7 @@ void flb_test_filter_parser_hash_value_field()
                          "Match", "test",
                          "Key_Name", "data",
                          "Parser", "dummy_test",
-                         "Hash_Value_Field", "On",
+                         "Hash_Value_Field", "parsed",
                          NULL);
     TEST_CHECK(ret == 0);
 
