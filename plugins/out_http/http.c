@@ -158,7 +158,6 @@ static int http_post(struct flb_out_http *ctx,
     struct flb_http_request  *request;
     int                       out_ret;
     int                       result;
-    int                       ret;
 
     if ((ctx->out_format == FLB_PACK_JSON_FORMAT_JSON) ||
         (ctx->out_format == FLB_PACK_JSON_FORMAT_STREAM) ||
@@ -190,6 +189,12 @@ static int http_post(struct flb_out_http *ctx,
                                                   body_len,
                                                   compression_algorithm));
 
+    if (request == NULL) {
+        flb_plg_error(ctx->ins, "error initializing http request");
+
+        return FLB_RETRY;
+    }
+
     if (ctx->http_user != NULL &&
         ctx->http_passwd != NULL) {
         flb_http_request_set_authorization(request,
@@ -204,6 +209,13 @@ static int http_post(struct flb_out_http *ctx,
                                                            ctx->aws_service,
                                                            ctx->aws_provider);
 
+
+        if (result != 0) {
+            flb_http_client_session_destroy((struct flb_http_client_session *)
+                                             request->stream->parent);
+
+            return FLB_RETRY;
+        }
     }
 
     response = flb_http_client_request_execute(request);
@@ -212,7 +224,7 @@ static int http_post(struct flb_out_http *ctx,
         flb_debug("http request execution error");
 
         flb_http_client_session_destroy((struct flb_http_client_session *)
-                                            request->stream->parent);
+                                         request->stream->parent);
 
         return FLB_RETRY;
     }
@@ -261,7 +273,7 @@ static int http_post(struct flb_out_http *ctx,
     }
 
     flb_http_client_session_destroy((struct flb_http_client_session *)
-                                        request->stream->parent);
+                                     request->stream->parent);
 
     return out_ret;
 }
