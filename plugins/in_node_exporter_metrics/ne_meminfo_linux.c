@@ -33,6 +33,7 @@ static int meminfo_configure(struct flb_ne *ctx)
     int parts;
     int len;
     char *p;
+    flb_sds_t tmp;
     char desc[] = "Memory information field ";
     struct cmt_gauge *g;
     struct mk_list *head;
@@ -100,12 +101,21 @@ static int meminfo_configure(struct flb_ne *ctx)
 
         /* Metric description */
         flb_sds_len_set(metric_desc, 0);
-        flb_sds_cat(metric_desc, desc, sizeof(desc) - 1);
+        ret = flb_sds_cat_safe(&metric_desc, desc, sizeof(desc) - 1);
+
+        if (ret != 0) {
+            flb_slist_destroy(&split_list);
+            goto error;
+        }
 
         if (parts == 2) {
             /* No unit */
-            flb_sds_cat(metric_desc, metric_name, flb_sds_len(metric_name));
-            flb_sds_cat(metric_desc, ".", 1);
+            tmp = flb_sds_printf(&metric_desc, "%s.", metric_name);
+
+            if (tmp == NULL) {
+                flb_slist_destroy(&split_list);
+                goto error;
+            }
 
             g = cmt_gauge_create(ctx->cmt, "node", "memory", metric_name,
                                  metric_desc,
@@ -117,9 +127,20 @@ static int meminfo_configure(struct flb_ne *ctx)
         }
         else if (parts == 3) {
             /* It has an extra 'kB' string in the line */
-            flb_sds_cat(metric_name, "_bytes", 6);
-            flb_sds_cat(metric_desc, metric_name, flb_sds_len(metric_name));
-            flb_sds_cat(metric_desc, ".", 1);
+            ret = flb_sds_cat_safe(&metric_name, "_bytes", 6);
+
+            if (ret != 0) {
+                flb_slist_destroy(&split_list);
+                goto error;
+            }
+
+            tmp = flb_sds_printf(&metric_desc, "%s.", metric_name);
+
+            if (tmp == NULL) {
+                flb_slist_destroy(&split_list);
+                goto error;
+            }
+
             g = cmt_gauge_create(ctx->cmt, "node", "memory", metric_name,
                                  metric_desc,
                                  0, NULL);
@@ -132,6 +153,7 @@ static int meminfo_configure(struct flb_ne *ctx)
             flb_slist_destroy(&split_list);
             continue;
         }
+
         flb_slist_destroy(&split_list);
 
         /*
