@@ -197,8 +197,8 @@ int flb_http_request_uncompress_body(
 
 int flb_http_request_perform_signv4_signature(
         struct flb_http_request *request,
-        char *aws_region,
-        char *aws_service,
+        const char *aws_region,
+        const char *aws_service,
         struct flb_aws_provider *aws_provider);
 
 /* HTTP RESPONSE */

@@ -563,8 +563,8 @@ int flb_http_request_set_body(struct flb_http_request *request,
 
 int flb_http_request_perform_signv4_signature(
         struct flb_http_request *request,
-        char *aws_region,
-        char *aws_service,
+        const char *aws_region,
+        const char *aws_service,
         struct flb_aws_provider *aws_provider)
 {
     flb_sds_t signature;
