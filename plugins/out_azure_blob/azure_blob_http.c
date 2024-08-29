@@ -236,7 +236,6 @@ flb_sds_t azb_http_canonical_request(struct flb_azure_blob *ctx,
     can_headers = canonical_headers(c);
     if (!can_headers) {
         flb_sds_destroy(can_req);
-        flb_sds_destroy(tmp);
         return NULL;
     }
     tmp = flb_sds_cat(can_req, can_headers, flb_sds_len(can_headers));
