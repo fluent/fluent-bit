@@ -2370,6 +2370,8 @@ static flb_sds_t stackdriver_format(struct flb_stackdriver *ctx,
             flb_plg_error(ctx->ins, "the type of payload labels should be map");
             flb_sds_destroy(operation_id);
             flb_sds_destroy(operation_producer);
+            flb_sds_destroy(source_location_file);
+            flb_sds_destroy(source_location_function);
 
             if (trace_extracted == FLB_TRUE) {
                 flb_sds_destroy(trace);
