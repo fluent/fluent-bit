@@ -171,11 +171,11 @@ static char *influxdb_format(const char *tag, int tag_len,
             }
             else if (v->type == MSGPACK_OBJECT_POSITIVE_INTEGER) {
                 val = tmp;
-                val_len = snprintf(tmp, sizeof(tmp) - 1, "%" PRIu64, v->via.u64);
+                val_len = snprintf(tmp, sizeof(tmp) - 1, "%" PRIu64 "i", v->via.u64);
             }
             else if (v->type == MSGPACK_OBJECT_NEGATIVE_INTEGER) {
                 val = tmp;
-                val_len = snprintf(tmp, sizeof(tmp) - 1, "%" PRId64, v->via.i64);
+                val_len = snprintf(tmp, sizeof(tmp) - 1, "%" PRId64 "i", v->via.i64);
             }
             else if (v->type == MSGPACK_OBJECT_FLOAT || v->type == MSGPACK_OBJECT_FLOAT32) {
                 val = tmp;
