@@ -59,6 +59,10 @@ struct opentelemetry_context {
     char *host;
     int port;
 
+    /* HTTP client */
+    struct flb_http_client_ng http_client;
+    int http2;
+
     /* record metadata parsing */
     flb_sds_t logs_metadata_key;
 
