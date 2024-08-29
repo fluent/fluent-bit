@@ -57,7 +57,6 @@ struct tls_session {
     struct tls_context *parent;    /* parent struct tls_context ref */
 };
 
-
 static int tls_init(void)
 {
 /*
@@ -205,7 +204,7 @@ int tls_context_alpn_set(void *ctx_backend, const char *alpn)
 }
 
 static int tls_context_server_alpn_select_callback(SSL *ssl,
-                                                   const unsigned char **out,
+                                                   unsigned char **out,
                                                    unsigned char *outlen,
                                                    const unsigned char *in,
                                                    unsigned int inlen,
@@ -520,12 +519,14 @@ static int tls_session_destroy(void *session)
     return 0;
 }
 
-static const char *tls_session_alpn_get(struct flb_tls_session *session)
+static const char *tls_session_alpn_get(void *session_)
 {
-    const unsigned char *backend_alpn_buffer;
-    unsigned int         backend_alpn_length;
-    struct tls_session  *backend_session;
+    const unsigned char    *backend_alpn_buffer;
+    unsigned int            backend_alpn_length;
+    struct tls_session     *backend_session;
+    struct flb_tls_session *session;
 
+    session = (struct flb_tls_session *) session_;
     backend_session = (struct tls_session *) session->ptr;
 
     if (backend_session->alpn[0] == '\0') {
@@ -541,7 +542,7 @@ static const char *tls_session_alpn_get(struct flb_tls_session *session)
             }
 
             strncpy(backend_session->alpn,
-                    backend_alpn_buffer,
+                    (char *) backend_alpn_buffer,
                     backend_alpn_length);
         }
     }
@@ -838,9 +839,9 @@ static struct flb_tls_backend tls_openssl = {
     .context_create       = tls_context_create,
     .context_destroy      = tls_context_destroy,
     .context_alpn_set     = tls_context_alpn_set,
+    .session_alpn_get     = tls_session_alpn_get,
     .session_create       = tls_session_create,
     .session_destroy      = tls_session_destroy,
-    .session_alpn_get     = tls_session_alpn_get,
     .net_read             = tls_net_read,
     .net_write            = tls_net_write,
     .net_handshake        = tls_net_handshake,
