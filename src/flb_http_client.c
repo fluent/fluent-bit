@@ -37,6 +37,7 @@
 #include <fluent-bit/flb_kv.h>
 #include <fluent-bit/flb_log.h>
 #include <fluent-bit/flb_mem.h>
+#include <fluent-bit/flb_lock.h>
 #include <fluent-bit/flb_http_common.h>
 #include <fluent-bit/flb_http_client.h>
 #include <fluent-bit/flb_http_client_debug.h>
@@ -1503,10 +1504,6 @@ int flb_http_client_ng_init(struct flb_http_client_ng *client,
                             int protocol_version,
                             uint64_t flags)
 {
-    struct flb_http_response *response;
-    struct flb_http_request  *request;
-    int                       result;
-
     memset(client, 0, sizeof(struct flb_http_client_ng));
 
     client->protocol_version = protocol_version;
@@ -1535,6 +1532,8 @@ int flb_http_client_ng_init(struct flb_http_client_ng *client,
             flb_tls_set_alpn(upstream->base.tls_context, "http/1.0");
         }
     }
+
+    flb_lock_init(&client->lock);
 
     return 0;
 }
@@ -1573,6 +1572,10 @@ void flb_http_client_ng_destroy(struct flb_http_client_ng *client)
     struct cfl_list                *iterator;
     struct flb_http_client_session *session;
 
+    flb_lock_acquire(&client->lock,
+                     FLB_LOCK_INFINITE_RETRY_LIMIT,
+                     FLB_LOCK_DEFAULT_RETRY_DELAY);
+
     cfl_list_foreach_safe(iterator,
                           iterator_backup,
                           &client->sessions) {
@@ -1582,6 +1585,12 @@ void flb_http_client_ng_destroy(struct flb_http_client_ng *client)
 
         flb_http_client_session_destroy(session);
     }
+
+    flb_lock_release(&client->lock,
+                     FLB_LOCK_INFINITE_RETRY_LIMIT,
+                     FLB_LOCK_DEFAULT_RETRY_DELAY);
+
+    flb_lock_destroy(&client->lock);
 }
 
 int flb_http_client_session_init(struct flb_http_client_session *session,
@@ -1651,10 +1660,18 @@ struct flb_http_client_session *flb_http_client_session_create(struct flb_http_c
     session = flb_calloc(1, sizeof(struct flb_http_client_session));
 
     if (session != NULL) {
+        flb_lock_acquire(&client->lock,
+                        FLB_LOCK_INFINITE_RETRY_LIMIT,
+                        FLB_LOCK_DEFAULT_RETRY_DELAY);
+
         result = flb_http_client_session_init(session,
                                               client,
                                               protocol_version,
                                               connection);
+
+        flb_lock_release(&client->lock,
+                        FLB_LOCK_INFINITE_RETRY_LIMIT,
+                        FLB_LOCK_DEFAULT_RETRY_DELAY);
 
         session->releasable = FLB_TRUE;
 
@@ -1981,7 +1998,7 @@ static int flb_http_encode_basic_auth_value(cfl_sds_t *output_buffer,
     cfl_sds_t encoded_value;
     cfl_sds_t sds_result;
     cfl_sds_t raw_value;
-    cfl_sds_t result;
+    int       result;
 
     *output_buffer = NULL;
 
@@ -2150,7 +2167,9 @@ int flb_http_request_set_authorization(struct flb_http_request *request,
 
     va_end(arguments);
 
-    result = flb_http_request_set_header(request, header_name, 0, header_value, 0);
+    result = flb_http_request_set_header(request,
+                                         (char *) header_name, 0,
+                                         (char *) header_value, 0);
 
     cfl_sds_destroy(header_value);
 
@@ -2165,20 +2184,10 @@ struct flb_http_request *flb_http_client_request_builder_internal(
     struct flb_http_client_ng *client,
     ...)
 {
-    flb_sds_t                       signature;
-    struct flb_http_response       *response;
     struct flb_http_request        *request;
     struct flb_http_client_session *session;
-    int                             out_ret;
     int                             result;
-    size_t                          b_sent;
     size_t                          index;
-    struct mk_list                 *head;
-    int                             ret;
-    struct flb_slist_entry         *val;
-    struct flb_slist_entry         *key;
-    struct flb_config_map_val      *mv;
-    struct flb_upstream            *u;
     va_list                         arguments;
     size_t                          value_type;
     size_t                          method;
@@ -2187,7 +2196,6 @@ struct flb_http_request *flb_http_client_request_builder_internal(
     char                           *content_type;
     const void                     *body;
     size_t                          body_len;
-    unsigned int                    authorization_type;
     char                           *username;
     char                           *password;
     char                           *bearer_token;
@@ -2203,12 +2211,6 @@ struct flb_http_request *flb_http_client_request_builder_internal(
     struct flb_slist_entry         *header_value;
     struct mk_list                 *iterator;
     int                             failure_detected;
-
-    signature = NULL;
-    head = NULL;
-    key = NULL;
-    val = NULL;
-    mv = NULL;
 
     session = flb_http_client_session_begin(client);
 

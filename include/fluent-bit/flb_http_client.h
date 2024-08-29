@@ -21,6 +21,7 @@
 #define FLB_HTTP_CLIENT_H
 
 #include <fluent-bit/flb_io.h>
+#include <fluent-bit/flb_lock.h>
 #include <fluent-bit/flb_upstream.h>
 #include <fluent-bit/flb_callback.h>
 #include <fluent-bit/flb_http_common.h>
@@ -188,6 +189,8 @@ struct flb_http_client_ng {
     void                 *user_data;
 
     struct flb_upstream *upstream;
+
+    flb_lock_t           lock;
 };
 
 struct flb_http_client_session {
