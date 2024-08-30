@@ -407,11 +407,12 @@ static int cb_event_type_init(struct flb_input_instance *ins,
 
     ret = flb_input_config_map_set(ins, (void *) ctx);
     if (ret == -1) {
+        flb_free(ctx);
+
         return -1;
     }
 
     flb_input_set_context(ins, ctx);
-
 
     ctx->type = FLB_EVENT_TYPE_LOGS;
     tmp = (char *) flb_input_get_property("type", ins);
@@ -431,8 +432,11 @@ static int cb_event_type_init(struct flb_input_instance *ins,
     ret = flb_input_set_collector_time(ins, cb_collector_time,
                                        ctx->interval_sec, ctx->interval_nsec, config);
     if (ret < 0) {
+        flb_free(ctx);
+
         return -1;
     }
+
     ctx->coll_fd = ret;
 
     return 0;
