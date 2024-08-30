@@ -124,6 +124,7 @@ if(FLB_IN_LIB)
   endif()
   FLB_RT_TEST(FLB_OUT_S3                "out_s3.c")
   FLB_RT_TEST(FLB_OUT_TD                "out_td.c")
+  FLB_RT_TEST(FLB_OUT_INFLUXDB          "out_influxdb.c")
 
 endif()
 
