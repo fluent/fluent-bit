@@ -123,6 +123,53 @@ static void cb_check_negative_int_value(void *ctx, int ffd,
     flb_free(out);
 }
 
+static void cb_check_int_as_float_value(void *ctx, int ffd,
+                                        int res_ret, void *res_data, size_t res_size,
+                                        void *data)
+{
+    char *p;
+    flb_sds_t out = res_data;
+    char *missing_index_line = "int=100i";
+    char *index_line = "int=100";
+
+    set_output_num(1);
+
+    p = strstr(out, missing_index_line);
+    if (!TEST_CHECK(p == NULL)) {
+      TEST_MSG("Given:%s", out);
+    }
+    p = strstr(out, index_line);
+    if (!TEST_CHECK(p != NULL)) {
+      TEST_MSG("Given:%s", out);
+    }
+
+    flb_free(out);
+}
+
+static void cb_check_negative_int_as_float_value(
+    void *ctx, int ffd,
+    int res_ret, void *res_data, size_t res_size,
+    void *data)
+{
+    char *p;
+    flb_sds_t out = res_data;
+    char *missing_index_line = "int=-200i";
+    char *index_line = "int=-200";
+
+    set_output_num(1);
+
+    p = strstr(out, missing_index_line);
+    if (!TEST_CHECK(p == NULL)) {
+      TEST_MSG("Given:%s", out);
+    }
+    p = strstr(out, index_line);
+    if (!TEST_CHECK(p != NULL)) {
+      TEST_MSG("Given:%s", out);
+    }
+
+    flb_free(out);
+}
+
 void flb_test_basic()
 {
     int ret;
@@ -217,6 +264,7 @@ void flb_test_float_value()
     flb_destroy(ctx);
 }
 
+/* Using integer type */
 void flb_test_integer_value()
 {
     int ret;
@@ -241,6 +289,7 @@ void flb_test_integer_value()
     out_ffd = flb_output(ctx, (char *) "influxdb", NULL);
     flb_output_set(ctx, out_ffd,
                    "match", "test",
+                   "use_integer", "true",
                    NULL);
 
     /* Enable test mode */
@@ -291,6 +340,7 @@ void flb_test_negative_integer_value()
     out_ffd = flb_output(ctx, (char *) "influxdb", NULL);
     flb_output_set(ctx, out_ffd,
                    "match", "test",
+                   "use_integer", "true",
                    NULL);
 
     /* Enable test mode */
@@ -317,11 +367,116 @@ void flb_test_negative_integer_value()
     flb_destroy(ctx);
 }
 
+/* Not using integer type of line protocol */
+void flb_test_integer_as_float_value()
+{
+    int ret;
+    int size = sizeof(JSON_INTEGER) - 1;
+    flb_ctx_t *ctx;
+    int in_ffd;
+    int out_ffd;
+
+    clear_output_num();
+
+    /* Create context, flush every second (some checks omitted here) */
+    ctx = flb_create();
+    flb_service_set(ctx, "flush", "1", "grace", "1",
+                    "log_level", "error",
+                    NULL);
+
+    /* Lib input mode */
+    in_ffd = flb_input(ctx, (char *) "lib", NULL);
+    flb_input_set(ctx, in_ffd, "tag", "test", NULL);
+
+    /* Elasticsearch output */
+    out_ffd = flb_output(ctx, (char *) "influxdb", NULL);
+    flb_output_set(ctx, out_ffd,
+                   "match", "test",
+                   "use_integer", "false",
+                   NULL);
+
+    /* Enable test mode */
+    ret = flb_output_set_test(ctx, out_ffd, "formatter",
+                              cb_check_int_as_float_value,
+                              NULL, NULL);
+
+    /* Start */
+    ret = flb_start(ctx);
+    TEST_CHECK(ret == 0);
+
+    /* Ingest data sample */
+    ret = flb_lib_push(ctx, in_ffd, (char *) JSON_INTEGER, size);
+    TEST_CHECK(ret >= 0);
+
+    sleep(2);
+
+    ret = get_output_num();
+    if (!TEST_CHECK(ret != 0)) {
+        TEST_MSG("no output");
+    }
+
+    flb_stop(ctx);
+    flb_destroy(ctx);
+}
+
+void flb_test_negative_integer_as_float_value()
+{
+    int ret;
+    int size = sizeof(JSON_NEGATIVE_INTEGER) - 1;
+    flb_ctx_t *ctx;
+    int in_ffd;
+    int out_ffd;
+
+    clear_output_num();
+
+    /* Create context, flush every second (some checks omitted here) */
+    ctx = flb_create();
+    flb_service_set(ctx, "flush", "1", "grace", "1",
+                    "log_level", "error",
+                    NULL);
+
+    /* Lib input mode */
+    in_ffd = flb_input(ctx, (char *) "lib", NULL);
+    flb_input_set(ctx, in_ffd, "tag", "test", NULL);
+
+    /* Elasticsearch output */
+    out_ffd = flb_output(ctx, (char *) "influxdb", NULL);
+    flb_output_set(ctx, out_ffd,
+                   "match", "test",
+                   "use_integer", "false",
+                   NULL);
+
+    /* Enable test mode */
+    ret = flb_output_set_test(ctx, out_ffd, "formatter",
+                              cb_check_negative_int_as_float_value,
+                              NULL, NULL);
+
+    /* Start */
+    ret = flb_start(ctx);
+    TEST_CHECK(ret == 0);
+
+    /* Ingest data sample */
+    ret = flb_lib_push(ctx, in_ffd, (char *) JSON_NEGATIVE_INTEGER, size);
+    TEST_CHECK(ret >= 0);
+
+    sleep(2);
+
+    ret = get_output_num();
+    if (!TEST_CHECK(ret != 0)) {
+        TEST_MSG("no output");
+    }
+
+    flb_stop(ctx);
+    flb_destroy(ctx);
+}
+
 /* Test list */
 TEST_LIST = {
     {"basic"                  , flb_test_basic },
     {"float"                  , flb_test_float_value },
-    {"integer"                , flb_test_integer_value },
-    {"negative_integer"       , flb_test_negative_integer_value },
+    {"int_integer"            , flb_test_integer_value },
+    {"int_negative_integer"   , flb_test_negative_integer_value },
+    {"int_integer_as_float"   , flb_test_integer_as_float_value },
+    {"int_negative_integer_as_float" , flb_test_negative_integer_as_float_value },
     {NULL, NULL}
 };

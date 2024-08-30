@@ -65,6 +65,9 @@ struct flb_influxdb {
     /* Arbitrary HTTP headers */
     struct mk_list *headers;
 
+    /* Use line protocol's integer type */
+    int use_influxdb_integer;
+
     /* Upstream connection to the backend server */
     struct flb_upstream *u;
 
