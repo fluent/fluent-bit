@@ -1082,7 +1082,6 @@ static struct flb_loki *loki_config_create(struct flb_output_instance *ins,
     ctx->tcp_port = ins->host.port;
     ctx->tcp_host = ins->host.name;
 
-
     http_client_flags = FLB_HTTP_CLIENT_FLAG_AUTO_DEFLATE |
                         FLB_HTTP_CLIENT_FLAG_AUTO_INFLATE;
 
@@ -1745,8 +1744,7 @@ static int cb_loki_flush_ng(struct flb_event_chunk *event_chunk,
     if (response == NULL) {
         flb_debug("http request execution error");
 
-        flb_http_client_session_destroy((struct flb_http_client_session *)
-                                         request->stream->parent);
+        flb_http_client_request_destroy(request, FLB_TRUE);
 
         return FLB_RETRY;
     }
@@ -1828,6 +1826,8 @@ static int cb_loki_flush_ng(struct flb_event_chunk *event_chunk,
                             response->status);
         }
     }
+
+    flb_http_client_request_destroy(request, FLB_TRUE);
 
     return out_ret;
 }
