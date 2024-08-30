@@ -176,11 +176,21 @@ static int influxdb_format(struct flb_config *config,
             }
             else if (v->type == MSGPACK_OBJECT_POSITIVE_INTEGER) {
                 val = tmp;
-                val_len = snprintf(tmp, sizeof(tmp) - 1, "%" PRIu64 "i", v->via.u64);
+                if (ctx->use_influxdb_integer) {
+                    val_len = snprintf(tmp, sizeof(tmp) - 1, "%" PRIu64 "i", v->via.u64);
+                }
+                else {
+                    val_len = snprintf(tmp, sizeof(tmp) - 1, "%" PRIu64, v->via.u64);
+                }
             }
             else if (v->type == MSGPACK_OBJECT_NEGATIVE_INTEGER) {
                 val = tmp;
-                val_len = snprintf(tmp, sizeof(tmp) - 1, "%" PRId64 "i", v->via.i64);
+                if (ctx->use_influxdb_integer) {
+                    val_len = snprintf(tmp, sizeof(tmp) - 1, "%" PRId64 "i", v->via.i64);
+                }
+                else {
+                    val_len = snprintf(tmp, sizeof(tmp) - 1, "%" PRId64, v->via.i64);
+                }
             }
             else if (v->type == MSGPACK_OBJECT_FLOAT || v->type == MSGPACK_OBJECT_FLOAT32) {
                 val = tmp;
@@ -678,6 +688,12 @@ static struct flb_config_map config_map[] = {
      FLB_CONFIG_MAP_BOOL, "tag_keys", NULL,
      0, FLB_FALSE, 0,
      "Space separated list of keys that needs to be tagged."
+    },
+
+    {
+     FLB_CONFIG_MAP_BOOL, "use_integer", "false",
+     0, FLB_TRUE, offsetof(struct flb_influxdb, use_influxdb_integer),
+     "Use influxdb line protocol's integer type suffix."
     },
 
     /* EOF */
