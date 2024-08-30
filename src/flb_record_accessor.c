@@ -386,6 +386,7 @@ flb_sds_t flb_ra_create_str_from_list(struct flb_sds_list *str_list)
     strs = flb_sds_list_create_str_array(str_list);
     if (strs == NULL) {
         flb_error("%s flb_sds_list_create_str_array failed", __FUNCTION__);
+        flb_sds_destroy(str);
         return NULL;
     }
 
