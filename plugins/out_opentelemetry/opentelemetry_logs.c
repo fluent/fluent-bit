@@ -640,7 +640,7 @@ static int append_v1_logs_metadata_and_fields(struct opentelemetry_context *ctx,
         flb_ra_key_value_destroy(ra_val);
     }
 
-    if (!trace_flags_set && ctx->ra_trace_flags_metadata) {
+    if (!trace_flags_set) {
         ra_val = flb_ra_get_value_object(ctx->ra_trace_flags_metadata, *event->metadata);
         if (ra_val != NULL) {
             if (ra_val->o.type == MSGPACK_OBJECT_POSITIVE_INTEGER) {
