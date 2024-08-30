@@ -211,8 +211,7 @@ static int http_post(struct flb_out_http *ctx,
 
 
         if (result != 0) {
-            flb_http_client_session_destroy((struct flb_http_client_session *)
-                                             request->stream->parent);
+            flb_http_client_request_destroy(request, FLB_TRUE);
 
             return FLB_RETRY;
         }
@@ -223,8 +222,7 @@ static int http_post(struct flb_out_http *ctx,
     if (response == NULL) {
         flb_debug("http request execution error");
 
-        flb_http_client_session_destroy((struct flb_http_client_session *)
-                                         request->stream->parent);
+        flb_http_client_request_destroy(request, FLB_TRUE);
 
         return FLB_RETRY;
     }
@@ -272,8 +270,7 @@ static int http_post(struct flb_out_http *ctx,
         out_ret = FLB_OK;
     }
 
-    flb_http_client_session_destroy((struct flb_http_client_session *)
-                                     request->stream->parent);
+    flb_http_client_request_destroy(request, FLB_TRUE);
 
     return out_ret;
 }
