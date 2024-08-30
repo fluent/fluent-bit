@@ -93,7 +93,7 @@ int flb_msgpack_append_map_to_record(char **result_buffer,
     msgpack_object_kv *new_map_entries[1];
     msgpack_object_kv  message_entry;
     char              *modified_data_buffer;
-    int             modified_data_size;
+    int                modified_data_size;
     size_t             off = 0;
     int                i;
     int                result = FLB_MAP_NOT_MODIFIED;
@@ -123,10 +123,10 @@ int flb_msgpack_append_map_to_record(char **result_buffer,
 
     message_entry.val = unpacker.data;
     result = flb_msgpack_expand_map(base_object_buffer,
-                                        base_object_size,
-                                        new_map_entries, 1,
-                                        &modified_data_buffer,
-                                        &modified_data_size);
+                                    base_object_size,
+                                    new_map_entries, 1,
+                                    &modified_data_buffer,
+                                    &modified_data_size);
     if (result == 0) {
         result = FLB_MAP_EXPAND_SUCCESS;
         *result_buffer = modified_data_buffer;

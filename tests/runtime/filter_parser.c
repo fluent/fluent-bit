@@ -879,15 +879,12 @@ void flb_test_filter_parser_hash_value_field()
     wait_with_timeout(2000, &output); /* waiting flush and ensuring data flush */
     TEST_CHECK_(output != NULL, "Expected output to not be NULL");
     if (output != NULL) {
-        /* check original field is preserved */
+        /* check hash value field present */
         expected = "\"parsed\":{\"INT\":\"100\",\"FLOAT\":\"0.5\",\"BOOL\":\"true\",\"STRING\":\"This is an example\"}";
         TEST_CHECK_(strstr(output, expected) != NULL, "Expected output to contain '%s', got '%s'", expected, output);
         /* check fields were extracted */
         expected = "\"INT\":\"100\",\"FLOAT\":\"0.5\",\"BOOL\":\"true\",\"STRING\":\"This is an example\"";
         TEST_CHECK_(strstr(output, expected) != NULL, "Expected output to contain '%s', got '%s'", expected, output);
-        /* check other fields are preserved */
-        // expected = "\"log\":\"An example\"";
-        // TEST_CHECK_(strstr(output, expected) != NULL, "Expected output to contain '%s', got '%s'", expected, output);
         free(output);
     }
 
