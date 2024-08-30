@@ -25,6 +25,7 @@
 #include <fluent-bit/flb_record_accessor.h>
 #include <fluent-bit/flb_ra_key.h>
 #include <fluent-bit/record_accessor/flb_ra_parser.h>
+#include <fluent-bit/flb_http_client.h>
 
 #define FLB_ECS_FILTER_HOST                       "127.0.0.1"
 #define FLB_ECS_FILTER_PORT                       "51678"
@@ -36,7 +37,7 @@
  * Kubernetes recommends not running more than 110 pods per node
  * In ECS, the number of tasks per instance will vary considerably
  * But this should be a very safe starting size for the table
- * Since we use the TTL hash table there is no max size. 
+ * Since we use the TTL hash table there is no max size.
  */
 #define FLB_ECS_FILTER_HASH_TABLE_SIZE 100
 
@@ -64,8 +65,8 @@ struct flb_ecs_metadata_buffer {
     /* we clean up the memory for these once ecs_meta_cache_ttl has expired */
     time_t last_used_time;
 
-    /* 
-     * To remove from the hash table on TTL expiration, we need the ID 
+    /*
+     * To remove from the hash table on TTL expiration, we need the ID
      * While we use a TTL hash, it won't clean up the memory, so we have a separate routine for that
      * and it needs to ensure that the list and hash table has the same contents
      */
@@ -111,7 +112,7 @@ struct flb_filter_ecs {
 
     int agent_endpoint_retries;
 
-    /* 
+    /*
      * This field is used when we build new container metadata objects
      */
     struct flb_ecs_cluster_metadata cluster_metadata;
@@ -124,7 +125,7 @@ struct flb_filter_ecs {
      */
     struct flb_ecs_metadata_buffer cluster_meta_buf;
 
-    /* 
+    /*
      * Maps 12 char container short ID to metadata buffer
      */
     struct flb_hash_table *container_hash_table;
@@ -135,7 +136,7 @@ struct flb_filter_ecs {
      */
     struct mk_list metadata_buffers;
 
-    /* 
+    /*
      * Fluent Bit may pick up logs for containers that were not scheduled by ECS
      * These will lead to continuous error messages. Therefore, we store
      * a hash table of tags for which we could not get metadata so we can stop
@@ -147,6 +148,10 @@ struct flb_filter_ecs {
     char *ecs_tag_prefix;
     int ecs_tag_prefix_len;
     int cluster_metadata_only;
+
+    /* HTTP client */
+    struct flb_http_client_ng http_client;
+    int http2;
 };
 
 #endif
