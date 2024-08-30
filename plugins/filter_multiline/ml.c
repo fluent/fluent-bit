@@ -224,6 +224,9 @@ static int cb_ml_init(struct flb_filter_instance *ins,
             flb_plg_error(ins, "'Mode' must be '%s' or '%s'",
                           FLB_MULTILINE_MODE_PARTIAL_MESSAGE,
                           FLB_MULTILINE_MODE_PARSER);
+
+            flb_free(ctx);
+
             return -1;
         }
     }
