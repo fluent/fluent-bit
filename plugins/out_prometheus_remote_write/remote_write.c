@@ -39,218 +39,137 @@ static int http_post(struct prometheus_remote_write_context *ctx,
 {
     int ret;
     int out_ret = FLB_OK;
-    size_t b_sent;
-    void *payload_buf = NULL;
-    size_t payload_size = 0;
-    struct flb_upstream *u;
-    struct flb_connection *u_conn;
-    struct flb_http_client *c;
-    struct mk_list *head;
-    struct flb_config_map_val *mv;
-    struct flb_slist_entry *key = NULL;
-    struct flb_slist_entry *val = NULL;
-    flb_sds_t signature = NULL;
+    struct flb_http_response *response;
+    struct flb_http_request  *request;
+    const char *compression_algorithm;
+    char *additional_headers[3];
 
-    /* Get upstream context and connection */
-    u = ctx->u;
-    u_conn = flb_upstream_conn_get(u);
-    if (!u_conn) {
-        flb_plg_error(ctx->ins, "no upstream connections available to %s:%i",
-                      u->tcp_host, u->tcp_port);
+    if (strcasecmp(ctx->compression, "snappy") == 0) {
+        compression_algorithm = "snappy";
+    }
+    else if (strcasecmp(ctx->compression, "gzip") == 0) {
+        compression_algorithm = "gzip";
+    }
+    else {
+        compression_algorithm = NULL;
+    }
+
+    additional_headers[0] = (char *) \
+        FLB_PROMETHEUS_REMOTE_WRITE_VERSION_HEADER_NAME;
+    additional_headers[1] = (char *) \
+        FLB_PROMETHEUS_REMOTE_WRITE_VERSION_LITERAL;
+    additional_headers[2] = NULL;
+
+    request = flb_http_client_request_builder(
+                    &ctx->http_client,
+                    FLB_HTTP_CLIENT_ARGUMENT_METHOD(FLB_HTTP_POST),
+                    FLB_HTTP_CLIENT_ARGUMENT_HOST(ctx->host),
+                    FLB_HTTP_CLIENT_ARGUMENT_URI(ctx->uri),
+                    FLB_HTTP_CLIENT_ARGUMENT_HEADERS(
+                        FLB_HTTP_CLIENT_HEADER_ARRAY,
+                        additional_headers),
+                    FLB_HTTP_CLIENT_ARGUMENT_HEADERS(
+                        FLB_HTTP_CLIENT_HEADER_CONFIG_MAP_LIST,
+                        ctx->headers),
+                    FLB_HTTP_CLIENT_ARGUMENT_CONTENT_TYPE(
+                        FLB_PROMETHEUS_REMOTE_WRITE_MIME_PROTOBUF_LITERAL),
+                    FLB_HTTP_CLIENT_ARGUMENT_BODY(body,
+                                                  body_len,
+                                                  compression_algorithm));
+
+    if (request == NULL) {
+        flb_plg_error(ctx->ins, "error initializing http request");
+
         return FLB_RETRY;
     }
 
-    /* Map payload */
-
-    if (strcasecmp(ctx->compression, "snappy") == 0) {
-        ret = flb_snappy_compress((void *) body, body_len,
-                                  (char **) &payload_buf,
-                                  &payload_size);
-    }
-    else if (strcasecmp(ctx->compression, "gzip") == 0) {
-        ret = flb_gzip_compress((void *) body, body_len,
-                                &payload_buf, &payload_size);
-    }
-    else {
-        payload_buf = (void *) body;
-        payload_size = body_len;
-
-        ret = 0;
+    if (ctx->http_user != NULL &&
+        ctx->http_passwd != NULL) {
+        flb_http_request_set_authorization(request,
+                                           HTTP_WWW_AUTHORIZATION_SCHEME_BASIC,
+                                           ctx->http_user,
+                                           ctx->http_passwd);
     }
 
-    if (ret != 0) {
-        flb_upstream_conn_release(u_conn);
+    if (ctx->has_aws_auth) {
+        ret = flb_http_request_perform_signv4_signature(request,
+                                                        ctx->aws_region,
+                                                        ctx->aws_service,
+                                                        ctx->aws_provider);
 
-        flb_plg_error(ctx->ins,
-                      "cannot compress payload, aborting");
 
-        return FLB_ERROR;
+        if (ret != 0) {
+            flb_http_client_request_destroy(request, FLB_TRUE);
+
+            return FLB_RETRY;
+        }
     }
 
-    /* Create HTTP client context */
-    c = flb_http_client(u_conn, FLB_HTTP_POST, ctx->uri,
-                        payload_buf, payload_size,
-                        ctx->host, ctx->port,
-                        ctx->proxy, 0);
+    response = flb_http_client_request_execute(request);
 
+    if (response == NULL) {
+        flb_debug("http request execution error");
 
-    if (c->proxy.host) {
-        flb_plg_debug(ctx->ins, "[http_client] proxy host: %s port: %i",
-                      c->proxy.host, c->proxy.port);
+        flb_http_client_request_destroy(request, FLB_TRUE);
+
+        return FLB_RETRY;
     }
-
-    /* Allow duplicated headers ? */
-    flb_http_allow_duplicated_headers(c, FLB_FALSE);
-
     /*
-     * Direct assignment of the callback context to the HTTP client context.
-     * This needs to be improved through a more clean API.
-     */
-    c->cb_ctx = ctx->ins->callback;
-
-    flb_http_add_header(c,
-                        FLB_PROMETHEUS_REMOTE_WRITE_CONTENT_TYPE_HEADER_NAME,
-                        sizeof(FLB_PROMETHEUS_REMOTE_WRITE_CONTENT_TYPE_HEADER_NAME) - 1,
-                        FLB_PROMETHEUS_REMOTE_WRITE_MIME_PROTOBUF_LITERAL,
-                        sizeof(FLB_PROMETHEUS_REMOTE_WRITE_MIME_PROTOBUF_LITERAL) - 1);
-
-    flb_http_add_header(c,
-                        FLB_PROMETHEUS_REMOTE_WRITE_VERSION_HEADER_NAME,
-                        sizeof(FLB_PROMETHEUS_REMOTE_WRITE_VERSION_HEADER_NAME) - 1,
-                        FLB_PROMETHEUS_REMOTE_WRITE_VERSION_LITERAL,
-                        sizeof(FLB_PROMETHEUS_REMOTE_WRITE_VERSION_LITERAL) - 1);
-
-    if (strcasecmp(ctx->compression, "snappy") == 0) {
-        flb_http_add_header(c,
-                            "Content-Encoding",
-                            strlen("Content-Encoding"),
-                            "snappy",
-                            strlen("snappy"));
-    }
-    else if (strcasecmp(ctx->compression, "gzip") == 0) {
-        flb_http_add_header(c,
-                            "Content-Encoding",
-                            strlen("Content-Encoding"),
-                            "gzip",
-                            strlen("gzip"));
-    }
-
-    /* Basic Auth headers */
-    if (ctx->http_user && ctx->http_passwd) {
-        flb_http_basic_auth(c, ctx->http_user, ctx->http_passwd);
-    }
-
-    flb_http_add_header(c, "User-Agent", 10, "Fluent-Bit", 10);
-
-    flb_config_map_foreach(head, mv, ctx->headers) {
-        key = mk_list_entry_first(mv->val.list, struct flb_slist_entry, _head);
-        val = mk_list_entry_last(mv->val.list, struct flb_slist_entry, _head);
-
-        flb_http_add_header(c,
-                            key->str, flb_sds_len(key->str),
-                            val->str, flb_sds_len(val->str));
-    }
-
-#ifdef FLB_HAVE_SIGNV4
-#ifdef FLB_HAVE_AWS
-    /* AWS SigV4 headers */
-    if (ctx->has_aws_auth == FLB_TRUE) {
-        flb_plg_debug(ctx->ins, "signing request with AWS Sigv4");
-        signature = flb_signv4_do(c,
-                                  FLB_TRUE,  /* normalize URI ? */
-                                  FLB_TRUE,  /* add x-amz-date header ? */
-                                  time(NULL),
-                                  (char *) ctx->aws_region,
-                                  (char *) ctx->aws_service,
-                                  0, NULL,
-                                  ctx->aws_provider);
-
-        if (!signature) {
-            flb_plg_error(ctx->ins, "could not sign request with sigv4");
-            out_ret = FLB_RETRY;
-            goto cleanup;
-        }
-        flb_sds_destroy(signature);
-    }
-#endif
-#endif
-
-    ret = flb_http_do(c, &b_sent);
-    if (ret == 0) {
-        /*
-         * Only allow the following HTTP status:
-         *
-         * - 200: OK
-         * - 201: Created
-         * - 202: Accepted
-         * - 203: no authorative resp
-         * - 204: No Content
-         * - 205: Reset content
-         *
-         */
-        if ((c->resp.status < 200 || c->resp.status > 205) &&
-            c->resp.status != 400) {
-            if (ctx->log_response_payload &&
-                c->resp.payload && c->resp.payload_size > 0) {
-                flb_plg_error(ctx->ins, "%s:%i, HTTP status=%i\n%s",
-                              ctx->host, ctx->port,
-                              c->resp.status, c->resp.payload);
-            }
-            else {
-                flb_plg_error(ctx->ins, "%s:%i, HTTP status=%i",
-                              ctx->host, ctx->port, c->resp.status);
-            }
-            out_ret = FLB_RETRY;
-        }
-        else if (c->resp.status == 400) {
-            /* Returned 400 status means unrecoverable. Immidiately
-             * returning as a error. */
-            if (ctx->log_response_payload &&
-                c->resp.payload && c->resp.payload_size > 0) {
-                flb_plg_error(ctx->ins, "%s:%i, HTTP status=%i\n%s",
-                              ctx->host, ctx->port,
-                              c->resp.status, c->resp.payload);
-            }
-            else {
-                flb_plg_error(ctx->ins, "%s:%i, HTTP status=%i",
-                              ctx->host, ctx->port, c->resp.status);
-            }
-            out_ret = FLB_ERROR;
+        * Only allow the following HTTP status:
+        *
+        * - 200: OK
+        * - 201: Created
+        * - 202: Accepted
+        * - 203: no authorative resp
+        * - 204: No Content
+        * - 205: Reset content
+        *
+        */
+    if ((response->status < 200 ||
+         response->status > 205) &&
+        response->status != 400) {
+        if (ctx->log_response_payload &&
+            response->body != NULL) {
+            flb_plg_error(ctx->ins, "%s:%i, HTTP status=%i\n%s",
+                            ctx->host, ctx->port,
+                            response->status, response->body);
         }
         else {
-            if (ctx->log_response_payload &&
-                c->resp.payload && c->resp.payload_size > 0) {
-                flb_plg_debug(ctx->ins, "%s:%i, HTTP status=%i\n%s",
-                             ctx->host, ctx->port,
-                             c->resp.status, c->resp.payload);
-            }
-            else {
-                flb_plg_debug(ctx->ins, "%s:%i, HTTP status=%i",
-                             ctx->host, ctx->port,
-                             c->resp.status);
-            }
+            flb_plg_error(ctx->ins, "%s:%i, HTTP status=%i",
+                            ctx->host, ctx->port, response->status);
         }
-    }
-    else {
-        flb_plg_error(ctx->ins, "could not flush records to %s:%i (http_do=%i)",
-                      ctx->host, ctx->port, ret);
         out_ret = FLB_RETRY;
     }
-
-cleanup:
-    /*
-     * If the payload buffer is different than incoming records in body, means
-     * we generated a different payload and must be freed.
-     */
-    if (payload_buf != body) {
-        flb_free(payload_buf);
+    else if (response->status == 400) {
+        /* Returned 400 status means unrecoverable. Immidiately
+            * returning as a error. */
+        if (ctx->log_response_payload &&
+            response->body != NULL) {
+            flb_plg_error(ctx->ins, "%s:%i, HTTP status=%i\n%s",
+                            ctx->host, ctx->port,
+                            response->status, response->body);
+        }
+        else {
+            flb_plg_error(ctx->ins, "%s:%i, HTTP status=%i",
+                            ctx->host, ctx->port, response->status);
+        }
+        out_ret = FLB_ERROR;
+    }
+    else {
+        if (ctx->log_response_payload &&
+            response->body != NULL) {
+            flb_plg_debug(ctx->ins, "%s:%i, HTTP status=%i\n%s",
+                            ctx->host, ctx->port,
+                            response->status, response->body);
+        }
+        else {
+            flb_plg_debug(ctx->ins, "%s:%i, HTTP status=%i",
+                            ctx->host, ctx->port,
+                            response->status);
+        }
     }
 
-    /* Destroy HTTP client context */
-    flb_http_client_destroy(c);
-
-    /* Release the TCP connection */
-    flb_upstream_conn_release(u_conn);
+    flb_http_client_request_destroy(request, FLB_TRUE);
 
     return out_ret;
 }
