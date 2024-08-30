@@ -234,18 +234,28 @@ int flb_http_client_session_init(struct flb_http_client_session *session,
                                  int protocol_version,
                                  struct flb_connection  *connection);
 
-struct flb_http_client_session *flb_http_client_session_create(struct flb_http_client_ng *client,
-                                                               int protocol_version,
-                                                               struct flb_connection  *connection);
+struct flb_http_client_session *flb_http_client_session_create(
+                                    struct flb_http_client_ng *client,
+                                    int protocol_version,
+                                    struct flb_connection  *connection);
 
-struct flb_http_client_session *flb_http_client_session_begin(struct flb_http_client_ng *client);
+struct flb_http_client_session *flb_http_client_session_begin(
+                                    struct flb_http_client_ng *client);
 
 void flb_http_client_session_destroy(struct flb_http_client_session *session);
 
-struct flb_http_request *flb_http_client_request_begin(struct flb_http_client_session *session);
+struct flb_http_request *flb_http_client_request_begin(
+                            struct flb_http_client_session *session);
 
-struct flb_http_response *flb_http_client_request_execute(struct flb_http_request *request);
+struct flb_http_response *flb_http_client_request_execute(
+                            struct flb_http_request *request);
 
+void flb_http_client_request_destroy(struct flb_http_request *request,
+                                     int destroy_session);
+
+int flb_http_client_session_ingest(struct flb_http_client_session *session,
+                                   unsigned char *buffer,
+                                   size_t length);
 
 
 
@@ -337,13 +347,28 @@ int flb_http_client_debug_property_is_valid(char *key, char *val);
                                      aws_service, \
                                      aws_provider)
 
-struct flb_http_request *flb_http_client_request_builder_internal(
+int flb_http_request_set_parameters_internal(
+    struct flb_http_request *request,
+    va_list arguments);
+
+int flb_http_request_set_parameters_unsafe(
+    struct flb_http_request *request,
+    ...);
+
+struct flb_http_request *flb_http_client_request_builder_unsafe(
     struct flb_http_client_ng *client,
     ...);
 
 #define flb_http_client_request_builder(client, ...) \
-            flb_http_client_request_builder_internal( \
+            flb_http_client_request_builder_unsafe( \
                 client, \
                 __VA_ARGS__, \
                 FLB_HTTP_CLIENT_ARGUMENT_TERMINATOR());
+
+#define flb_http_request_set_parameters(request, ...) \
+            flb_http_request_set_parameters_unsafe( \
+                request, \
+                __VA_ARGS__, \
+                FLB_HTTP_CLIENT_ARGUMENT_TERMINATOR());
+
 #endif

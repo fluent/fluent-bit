@@ -1909,6 +1909,20 @@ static int flb_http_client_session_read(struct flb_http_client_session *session)
     return 0;
 }
 
+
+void flb_http_client_request_destroy(struct flb_http_request *request,
+                                     int destroy_session)
+{
+    if (destroy_session == FLB_TRUE) {
+        flb_http_client_session_destroy((struct flb_http_client_session *)
+                                         request->stream->parent);
+    }
+    else {
+        flb_http_request_destroy(request);
+    }
+}
+
+
 static int flb_http_client_session_write(struct flb_http_client_session *session)
 {
     size_t data_length;
@@ -1957,7 +1971,6 @@ int flb_http_client_session_ingest(struct flb_http_client_session *session,
                                    size_t length)
 {
     cfl_sds_t resized_buffer;
-    int       result;
 
     if (session->protocol_version == HTTP_PROTOCOL_VERSION_11 ||
         session->protocol_version == HTTP_PROTOCOL_VERSION_10) {
@@ -2009,7 +2022,7 @@ static int flb_http_encode_basic_auth_value(cfl_sds_t *output_buffer,
         return -1;
     }
 
-    sds_result = cfl_sds_printf(raw_value,
+    sds_result = cfl_sds_printf(&raw_value,
                                 "%s:%s",
                                 username,
                                 password);
@@ -2038,7 +2051,7 @@ static int flb_http_encode_basic_auth_value(cfl_sds_t *output_buffer,
         *output_buffer = cfl_sds_create_size(cfl_sds_len(encoded_value) + 6);
 
         if (*output_buffer != NULL) {
-            sds_result = cfl_sds_printf(*output_buffer, "Basic %s", encoded_value);
+            sds_result = cfl_sds_printf(output_buffer, "Basic %s", encoded_value);
 
             if (sds_result != NULL) {
                 *output_buffer = sds_result;
@@ -2180,15 +2193,15 @@ int flb_http_request_set_authorization(struct flb_http_request *request,
     return result;
 }
 
-struct flb_http_request *flb_http_client_request_builder_internal(
-    struct flb_http_client_ng *client,
-    ...)
+
+
+
+int flb_http_request_set_parameters_internal(
+    struct flb_http_request *request,
+    va_list arguments)
 {
-    struct flb_http_request        *request;
-    struct flb_http_client_session *session;
     int                             result;
     size_t                          index;
-    va_list                         arguments;
     size_t                          value_type;
     size_t                          method;
     char                           *host;
@@ -2212,29 +2225,7 @@ struct flb_http_request *flb_http_client_request_builder_internal(
     struct mk_list                 *iterator;
     int                             failure_detected;
 
-    session = flb_http_client_session_begin(client);
-
-    if (session == NULL) {
-        flb_debug("http session creation error");
-
-        return NULL;
-    }
-
-    request = flb_http_client_request_begin(session);
-
-    if (request == NULL) {
-        flb_debug("http request creation error");
-
-        flb_http_client_session_destroy(session);
-
-        return NULL;
-    }
-
-    flb_http_request_set_port(request, client->upstream->tcp_port);
-
     failure_detected = FLB_FALSE;
-
-    va_start(arguments, client);
 
     do {
         value_type = va_arg(arguments, size_t);
@@ -2292,8 +2283,8 @@ struct flb_http_request *flb_http_client_request_builder_internal(
                         header_array[index+1] != NULL;
                         index += 2) {
                         result = flb_http_request_set_header(request,
-                                                            header_array[index+0], 0,
-                                                            header_array[index+1], 0);
+                                                             header_array[index+0], 0,
+                                                             header_array[index+1], 0);
 
                         if (result != 0) {
                             flb_debug("http request header addition error");
@@ -2363,9 +2354,65 @@ struct flb_http_request *flb_http_client_request_builder_internal(
     } while (!failure_detected &&
              value_type != FLB_HTTP_CLIENT_ARGUMENT_TYPE_TERMINATOR);
 
+    if (failure_detected) {
+        return -1;
+    }
+
+    return 0;
+}
+
+int flb_http_request_set_parameters_unsafe(
+    struct flb_http_request *request,
+    ...)
+{
+    va_list arguments;
+    int     result;
+
+    va_start(arguments, request);
+
+    result = flb_http_request_set_parameters_internal(request, arguments);
+
     va_end(arguments);
 
-    if (failure_detected) {
+    return result;
+}
+
+struct flb_http_request *flb_http_client_request_builder_unsafe(
+    struct flb_http_client_ng *client,
+    ...)
+{
+    va_list                         arguments;
+    struct flb_http_request        *request;
+    struct flb_http_client_session *session;
+    int                             result;
+
+    session = flb_http_client_session_begin(client);
+
+    if (session == NULL) {
+        flb_debug("http session creation error");
+
+        return NULL;
+    }
+
+    request = flb_http_client_request_begin(session);
+
+    if (request == NULL) {
+        flb_debug("http request creation error");
+
+        flb_http_client_session_destroy(session);
+
+        return NULL;
+    }
+
+    flb_http_request_set_port(request, client->upstream->tcp_port);
+
+    va_start(arguments, client);
+
+    result = flb_http_request_set_parameters_internal(request, arguments);
+
+    va_end(arguments);
+
+    if (result != 0) {
         flb_http_client_session_destroy(session);
 
         /*
@@ -2376,3 +2423,7 @@ struct flb_http_request *flb_http_client_request_builder_internal(
 
     return request;
 }
+
+
+
+
