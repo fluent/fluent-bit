@@ -58,15 +58,19 @@ static void influxdb_tsmod(struct flb_time *ts, struct flb_time *dupe,
  * Convert the internal Fluent Bit data representation to the required one
  * by InfluxDB.
  */
-static char *influxdb_format(const char *tag, int tag_len,
-                             const void *data, size_t bytes, size_t *out_size,
-                             struct flb_influxdb *ctx)
+static int influxdb_format(struct flb_config *config,
+                           struct flb_input_instance *ins,
+                           void *plugin_context,
+                           void *flush_ctx,
+                           int event_type,
+                           const char *tag, int tag_len,
+                           const void *data, size_t bytes,
+                           void **out_data, size_t *out_size)
 {
     int i;
     int ret;
     int n_size;
     uint64_t seq = 0;
-    char *buf;
     char *str = NULL;
     size_t str_size;
     char tmp[128];
@@ -77,6 +81,7 @@ static char *influxdb_format(const char *tag, int tag_len,
     struct influxdb_bulk *bulk_body = NULL;
     struct flb_log_event_decoder log_decoder;
     struct flb_log_event log_event;
+    struct flb_influxdb *ctx = plugin_context;
 
     ret = flb_log_event_decoder_init(&log_decoder, (char *) data, bytes);
 
@@ -84,7 +89,7 @@ static char *influxdb_format(const char *tag, int tag_len,
         flb_plg_error(ctx->ins,
                       "Log event decoder initialization error : %d", ret);
 
-        return NULL;
+        return -1;
     }
 
     /* Create the bulk composer */
@@ -268,8 +273,8 @@ static char *influxdb_format(const char *tag, int tag_len,
 
     flb_log_event_decoder_destroy(&log_decoder);
 
+    *out_data = bulk->ptr;
     *out_size = bulk->len;
-    buf = bulk->ptr;
 
     /*
      * Note: we don't destroy the bulk as we need to keep the allocated
@@ -280,7 +285,7 @@ static char *influxdb_format(const char *tag, int tag_len,
     influxdb_bulk_destroy(bulk_head);
     influxdb_bulk_destroy(bulk_body);
 
-    return buf;
+    return 0;
 
 error:
     if (bulk != NULL) {
@@ -295,7 +300,7 @@ error:
 
     flb_log_event_decoder_destroy(&log_decoder);
 
-    return NULL;
+    return -1;
 }
 
 static int cb_influxdb_init(struct flb_output_instance *ins, struct flb_config *config,
@@ -453,6 +458,7 @@ static void cb_influxdb_flush(struct flb_event_chunk *event_chunk,
     int is_metric = FLB_FALSE;
     size_t b_sent;
     size_t bytes_out;
+    void *out_buf;
     char *pack;
     char tmp[128];
     struct mk_list *head;
@@ -477,12 +483,17 @@ static void cb_influxdb_flush(struct flb_event_chunk *event_chunk,
     }
     else {
         /* format logs */
-        pack = influxdb_format(event_chunk->tag, flb_sds_len(event_chunk->tag),
-                               event_chunk->data, event_chunk->size,
-                               &bytes_out, ctx);
-        if (!pack) {
+        ret = influxdb_format(config, i_ins,
+                              ctx, NULL,
+                              event_chunk->type,
+                              event_chunk->tag, flb_sds_len(event_chunk->tag),
+                              event_chunk->data, event_chunk->size,
+                              &out_buf, &bytes_out);
+        if (ret != 0) {
             FLB_OUTPUT_RETURN(FLB_ERROR);
         }
+
+        pack = (char *) out_buf;
     }
 
     /* Get upstream connection */
@@ -677,6 +688,7 @@ struct flb_output_plugin out_influxdb_plugin = {
     .cb_flush     = cb_influxdb_flush,
     .cb_exit      = cb_influxdb_exit,
     .config_map   = config_map,
+    .test_formatter.callback = influxdb_format,
     .flags        = FLB_OUTPUT_NET | FLB_IO_OPT_TLS,
     .event_type   = FLB_OUTPUT_LOGS | FLB_OUTPUT_METRICS
 };
