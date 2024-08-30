@@ -116,7 +116,7 @@ struct flb_sp_task_window {
      */
     bool first_hop;
     int fd_hop;
-    int advance_by;
+    time_t advance_by;
     struct mk_list hopping_slot;
 
     int records;
