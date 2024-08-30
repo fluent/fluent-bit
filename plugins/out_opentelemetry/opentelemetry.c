@@ -86,6 +86,17 @@ int opentelemetry_http_post_ng(struct opentelemetry_context *ctx,
 
     if (ctx->http_user != NULL &&
         ctx->http_passwd != NULL) {
+        result = flb_http_request_set_parameters(request,
+                    FLB_HTTP_CLIENT_ARGUMENT_BASIC_AUTHORIZATION(
+                                                    ctx->http_user,
+                                                    ctx->http_passwd));
+
+        if (result  != 0) {
+            flb_plg_error(ctx->ins, "error setting http authorization data");
+
+            return FLB_RETRY;
+        }
+
         flb_http_request_set_authorization(request,
                                            HTTP_WWW_AUTHORIZATION_SCHEME_BASIC,
                                            ctx->http_user,
@@ -97,8 +108,7 @@ int opentelemetry_http_post_ng(struct opentelemetry_context *ctx,
     if (response == NULL) {
         flb_debug("http request execution error");
 
-        flb_http_client_session_destroy((struct flb_http_client_session *)
-                                         request->stream->parent);
+        flb_http_client_request_destroy(request, FLB_TRUE);
 
         return FLB_RETRY;
     }
@@ -146,8 +156,7 @@ int opentelemetry_http_post_ng(struct opentelemetry_context *ctx,
         out_ret = FLB_OK;
     }
 
-    flb_http_client_session_destroy((struct flb_http_client_session *)
-                                     request->stream->parent);
+    flb_http_client_request_destroy(request, FLB_TRUE);
 
     return out_ret;
 }
