@@ -57,9 +57,16 @@ static void reset_context(struct cmt_decode_prometheus_context *context,
     }
 
     if (context->metric.ns) {
-        if (strcmp(context->metric.ns, "")) {
+        if ((void *) context->metric.ns != (void *) "") {
             /* when namespace is empty, "name" contains a pointer to the
-             * allocated string */
+             * allocated string.
+             *
+             * Note : When the metric name doesn't include the namespace
+             * ns is set to a constant empty string and we need to
+             * differentiate that case from the case where an empty
+             * namespace is provided.
+             */
+
             free(context->metric.ns);
         }
         else {
@@ -516,7 +523,7 @@ static int add_metric_histogram(struct cmt_decode_prometheus_context *context)
                             "failed to parse bucket");
                     goto end;
                 }
-                if (parse_uint64(sample->value1, 
+                if (parse_uint64(sample->value1,
                             bucket_defaults + bucket_index)) {
                     /* Count is supposed to be integer, but apparently
                      * some tools can generate count in a floating format.
