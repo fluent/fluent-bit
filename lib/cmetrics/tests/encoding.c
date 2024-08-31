@@ -803,6 +803,58 @@ void test_influx()
     cmt_destroy(cmt);
 }
 
+void test_influx_without_namespaces()
+{
+    uint64_t ts;
+    cfl_sds_t text;
+    struct cmt *cmt;
+    struct cmt_counter *c1;
+    struct cmt_counter *c2;
+
+    char *out1 = \
+        "test=1 1435658235000000123\n"
+        "host=calyptia.com,app=cmetrics test=2 1435658235000000123\n"
+        "host=aaa,app=bbb nosubsystem=1 1435658235000000123\n";
+
+    char *out2 = \
+        "dev=Calyptia,lang=C test=1 1435658235000000123\n"
+        "dev=Calyptia,lang=C,host=calyptia.com,app=cmetrics test=2 1435658235000000123\n"
+        "dev=Calyptia,lang=C,host=aaa,app=bbb nosubsystem=1 1435658235000000123\n";
+
+    cmt = cmt_create();
+    TEST_CHECK(cmt != NULL);
+
+    c1 = cmt_counter_create(cmt, "", "", "test", "Static labels test",
+                            2, (char *[]) {"host", "app"});
+
+    ts = 1435658235000000123;
+    cmt_counter_inc(c1, ts, 0, NULL);
+    cmt_counter_inc(c1, ts, 2, (char *[]) {"calyptia.com", "cmetrics"});
+    cmt_counter_inc(c1, ts, 2, (char *[]) {"calyptia.com", "cmetrics"});
+
+    c2 = cmt_counter_create(cmt, "", "", "nosubsystem", "No subsystem",
+                            2, (char *[]) {"host", "app"});
+
+    cmt_counter_inc(c2, ts, 2, (char *[]) {"aaa", "bbb"});
+
+    /* Encode to prometheus (no static labels) */
+    text = cmt_encode_influx_create(cmt);
+    printf("%s\n", text);
+    TEST_CHECK(strcmp(text, out1) == 0);
+    cmt_encode_influx_destroy(text);
+
+    /* append static labels */
+    cmt_label_add(cmt, "dev", "Calyptia");
+    cmt_label_add(cmt, "lang", "C");
+
+    text = cmt_encode_influx_create(cmt);
+    printf("%s\n", text);
+    TEST_CHECK(strcmp(text, out2) == 0);
+    cmt_encode_influx_destroy(text);
+
+    cmt_destroy(cmt);
+}
+
 void test_splunk_hec()
 {
     uint64_t ts;
@@ -1125,6 +1177,7 @@ TEST_LIST = {
     {"prometheus",                     test_prometheus},
     {"text",                           test_text},
     {"influx",                         test_influx},
+    {"influx_without_namespaces",      test_influx_without_namespaces},
     {"splunk_hec",                     test_splunk_hec},
     {"splunk_hec_floating_point",      test_splunk_hec_floating_point},
     {"splunk_hec_histogram",           test_splunk_hec_histogram},

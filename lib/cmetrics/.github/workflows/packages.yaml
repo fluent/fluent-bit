@@ -69,11 +69,68 @@ jobs:
           path: |
             ./*.${{matrix.format}}
 
+  build-macos-packages-amd64:
+    name: build macOS intel packages
+    strategy:
+      fail-fast: true
+      matrix:
+        config:
+          - format: productbuild
+            arch: intel
+            ext: pkg
+    runs-on: macos-12
+    steps:
+      - uses: actions/checkout@v3
+        with:
+          submodules: true
+
+      - name: Build the ${{matrix.config.format}} packages
+        run:  |
+          cmake . -DCPACK_GENERATOR=${{ matrix.config.format }}
+          echo ${{ matrix.config.format }} | xargs -I{} cpack -G {}
+
+      - name: Store the master package artifacts
+        uses: actions/upload-artifact@v3
+        with:
+          name: ${{ matrix.config.format }}-${{matrix.config.arch}}
+          path: |
+            ./*-${{matrix.config.arch}}.${{matrix.config.ext}}
+
+  build-macos-packages-arm64:
+    name: build macOS Apple Silicon packages
+    strategy:
+      fail-fast: true
+      matrix:
+        config:
+          - format: productbuild
+            arch: apple
+            ext: pkg
+    runs-on: macos-14
+    steps:
+      - uses: actions/checkout@v3
+        with:
+          submodules: true
+
+      - name: Build the ${{matrix.config.format}} packages
+        run:  |
+          cmake . -DCPACK_GENERATOR=${{ matrix.config.format }}
+          echo ${{ matrix.config.format }} | xargs -I{} cpack -G {}
+
+      - name: Store the master package artifacts
+        uses: actions/upload-artifact@v3
+        with:
+          name: ${{ matrix.config.format }}-${{matrix.config.arch}}
+          path: |
+            ./*-${{matrix.config.arch}}.${{matrix.config.ext}}
+
   release:
     name: Create release and upload packages
     needs:
       - build-distro-packages-amd64
       - build-distro-packages-arm64
+      - build-macos-packages-amd64
+      - build-macos-packages-arm64
+
     runs-on: ubuntu-latest
     permissions:
       contents: write

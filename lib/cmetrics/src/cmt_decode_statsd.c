@@ -108,7 +108,7 @@ static int decode_labels(struct cmt *cmt,
     size_t                 label_index;
     int                    label_found;
     char                  *label_kv, *colon;
-    cfl_sds_t              label_k, label_v, tmp;
+    cfl_sds_t              label_k = NULL, label_v = NULL, tmp = NULL;
     int                    result;
     struct cfl_list *head = NULL;
     struct cfl_list *kvs = NULL;
@@ -157,7 +157,14 @@ static int decode_labels(struct cmt *cmt,
             }
             label_k = cfl_sds_create_len(label_kv, colon - label_kv);
             if (label_k == NULL) {
+                for (label_index = 0 ; label_index < 128 ; label_index++) {
+                    if (value_index_list[label_index] != NULL) {
+                        cfl_sds_destroy(value_index_list[label_index]);
+                    }
+                }
+
                 free(value_index_list);
+
                 if (kvs != NULL) {
                     cfl_utils_split_free(kvs);
                 }
@@ -167,7 +174,15 @@ static int decode_labels(struct cmt *cmt,
             label_v = cfl_sds_create_len(colon + 1, strlen(label_kv) - strlen(label_k) - 1);
             if (label_v == NULL) {
                 cfl_sds_destroy(label_k);
+
+                for (label_index = 0 ; label_index < 128 ; label_index++) {
+                    if (value_index_list[label_index] != NULL) {
+                        cfl_sds_destroy(value_index_list[label_index]);
+                    }
+                }
+
                 free(value_index_list);
+
                 if (kvs != NULL) {
                     cfl_utils_split_free(kvs);
                 }
@@ -190,7 +205,15 @@ static int decode_labels(struct cmt *cmt,
             if (label_index > 127) {
                 cfl_sds_destroy(label_k);
                 cfl_sds_destroy(label_v);
+
+                for (label_index = 0 ; label_index < 128 ; label_index++) {
+                    if (value_index_list[label_index] != NULL) {
+                        cfl_sds_destroy(value_index_list[label_index]);
+                    }
+                }
+
                 free(value_index_list);
+
                 if (kvs != NULL) {
                     cfl_utils_split_free(kvs);
                 }
@@ -203,10 +226,12 @@ static int decode_labels(struct cmt *cmt,
             }
 
             if (result == CMT_DECODE_STATSD_SUCCESS) {
-                value_index_list[label_index] = (void *) label_v;
+                value_index_list[label_index] = (void *) cfl_sds_create_len(label_v,
+                                                                            cfl_sds_len(label_v));
             }
 
             cfl_sds_destroy(label_k);
+            cfl_sds_destroy(label_v);
         }
     }
 
@@ -225,19 +250,17 @@ split_error: /* Nop for adding labels */
         }
     }
 
-    for (map_label_index = 0 ;
-         result == CMT_DECODE_STATSD_SUCCESS &&
-         map_label_index < map_label_count ;
-         map_label_index++) {
-        label_v = (cfl_sds_t) value_index_list[map_label_index];
-        cfl_sds_destroy(label_v);
+    for (label_index = 0 ; label_index < 128 ; label_index++) {
+        if (value_index_list[label_index] != NULL) {
+            cfl_sds_destroy(value_index_list[label_index]);
+        }
     }
+
+    free(value_index_list);
 
     if (kvs != NULL) {
         cfl_utils_split_free(kvs);
     }
-
-    free(value_index_list);
 
     return result;
 }
