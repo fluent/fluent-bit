@@ -711,13 +711,13 @@ static inline Opentelemetry__Proto__Common__V1__AnyValue *cfl_variant_binary_to_
         result->bytes_value.len = cfl_sds_len(value->data.as_bytes);
         result->bytes_value.data = calloc(result->bytes_value.len, sizeof(char));
 
-        if (result->bytes_value.data == NULL) {
+        if (result->bytes_value.data) {
+            memcpy(result->bytes_value.data, value->data.as_bytes, result->bytes_value.len);
+        }
+        else {
             otlp_any_value_destroy(result);
-
             result = NULL;
         }
-
-        memcpy(result->bytes_value.data, value->data.as_bytes, result->bytes_value.len);
     }
 
     return result;
