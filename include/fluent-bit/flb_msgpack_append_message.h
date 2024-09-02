@@ -25,6 +25,7 @@
 #define FLB_MAP_NOT_MODIFIED    -1
 #define FLB_MAP_EXPANSION_ERROR -2
 #define FLB_MAP_EXPANSION_INVALID_VALUE_TYPE -3
+#define FLB_MSGPACK_UNPACK_ERROR -4
 
 #include <fluent-bit/flb_pack.h>
 #include <msgpack/unpack.h>

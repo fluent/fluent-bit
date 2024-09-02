@@ -101,11 +101,11 @@ static int configure(struct filter_parser_ctx *ctx,
     int ret;
     struct mk_list *head;
     struct flb_kv *kv;
-    ctx->hash_value_field = NULL;
 
     ctx->key_name = NULL;
     ctx->reserve_data = FLB_FALSE;
     ctx->preserve_key = FLB_FALSE;
+    ctx->hash_value_field = NULL;
     mk_list_init(&ctx->parsers);
 
     if (flb_filter_config_map_set(f_ins, ctx) < 0) {
@@ -353,7 +353,7 @@ static int cb_parser_filter(const void *data, size_t bytes,
                     out_buf = strdup(parsed_buf);
                     out_size = parsed_size;
                 }
-                if (ctx->hash_value_field!=NULL) {
+                if (ctx->hash_value_field != NULL) {
                     char *new_buf = NULL;
                     size_t new_size;
                     int ret;

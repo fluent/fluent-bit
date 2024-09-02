@@ -111,14 +111,15 @@ int flb_msgpack_append_map_to_record(char **result_buffer,
     message_entry.key.via.str.ptr  = message_key_name;
 
     msgpack_unpacked_init(&unpacker);
-    if ((i=msgpack_unpack_next(&unpacker, map_data, map_size, &off)) !=
-        MSGPACK_UNPACK_SUCCESS ) {
+    if ((i = msgpack_unpack_next(&unpacker,
+                                 map_data,
+                                 map_size, &off)) != MSGPACK_UNPACK_SUCCESS) {
         msgpack_unpacked_destroy(&unpacker);
-        return FLB_MAP_EXPANSION_ERROR;
+        return FLB_MSGPACK_UNPACK_ERROR;
     }
     if (unpacker.data.type != MSGPACK_OBJECT_MAP) {
         msgpack_unpacked_destroy(&unpacker);
-        return FLB_MAP_EXPANSION_ERROR;
+        return FLB_MSGPACK_UNPACK_ERROR;
     }
 
     message_entry.val = unpacker.data;
