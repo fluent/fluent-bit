@@ -82,6 +82,36 @@ set(src
   flb_msgpack_append_message.c
   )
 
+# File access abstraction layer
+if(FLB_SYSTEM_WINDOWS)
+  set(src
+    ${src}
+    flb_file_win32.c
+    )
+else()
+  if(FLB_SYSTEM_LINUX)
+    set(src
+      ${src}
+      flb_file_linux.c
+      )
+  elseif(FLB_SYSTEM_MACOS)
+    set(src
+      ${src}
+      flb_file_macos.c
+      )
+  elseif(FLB_SYSTEM_FREEBSD)
+    set(src
+      ${src}
+      flb_file_freebsd.c
+      )
+  endif()
+
+  set(src
+    ${src}
+    flb_file_unix.c
+    )
+endif()
+
 # Config format
 set(src
   ${src}
