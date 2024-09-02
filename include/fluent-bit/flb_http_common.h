@@ -103,6 +103,7 @@ struct flb_http_request {
 
     struct flb_http_stream           *stream;
 
+    int                               releasable;
     struct cfl_list                   _head;
 };
 
@@ -119,7 +120,8 @@ struct flb_http_response {
 
     struct flb_http_stream          *stream;
 
-    struct cfl_list                   _head;
+    int                              releasable;
+    struct cfl_list                  _head;
 };
 
 struct flb_http_stream {
@@ -143,6 +145,8 @@ struct flb_aws_provider;
 
 int flb_http_request_init(struct flb_http_request *request);
 
+struct flb_http_request *flb_http_request_create();
+
 void flb_http_request_destroy(struct flb_http_request *request);
 
 int flb_http_request_commit(struct flb_http_request *request);
@@ -165,6 +169,9 @@ int flb_http_request_set_host(struct flb_http_request *request,
 
 int flb_http_request_set_port(struct flb_http_request *request,
                               uint16_t port);
+
+int flb_http_request_set_url(struct flb_http_request *request,
+                             char *url);
 
 int flb_http_request_set_uri(struct flb_http_request *request,
                              char *uri);
@@ -204,6 +211,8 @@ int flb_http_request_perform_signv4_signature(
 /* HTTP RESPONSE */
 
 int flb_http_response_init(struct flb_http_response *response);
+
+struct flb_http_response *flb_http_response_create();
 
 void flb_http_response_destroy(struct flb_http_response *response);
 

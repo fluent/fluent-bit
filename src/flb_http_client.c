@@ -1660,18 +1660,22 @@ struct flb_http_client_session *flb_http_client_session_create(struct flb_http_c
     session = flb_calloc(1, sizeof(struct flb_http_client_session));
 
     if (session != NULL) {
-        flb_lock_acquire(&client->lock,
-                        FLB_LOCK_INFINITE_RETRY_LIMIT,
-                        FLB_LOCK_DEFAULT_RETRY_DELAY);
+        if (client != NULL) {
+            flb_lock_acquire(&client->lock,
+                            FLB_LOCK_INFINITE_RETRY_LIMIT,
+                            FLB_LOCK_DEFAULT_RETRY_DELAY);
+        }
 
         result = flb_http_client_session_init(session,
                                               client,
                                               protocol_version,
                                               connection);
 
-        flb_lock_release(&client->lock,
-                        FLB_LOCK_INFINITE_RETRY_LIMIT,
-                        FLB_LOCK_DEFAULT_RETRY_DELAY);
+        if (client != NULL) {
+            flb_lock_release(&client->lock,
+                            FLB_LOCK_INFINITE_RETRY_LIMIT,
+                            FLB_LOCK_DEFAULT_RETRY_DELAY);
+        }
 
         session->releasable = FLB_TRUE;
 
@@ -1821,6 +1825,14 @@ struct flb_http_response *flb_http_client_request_execute(struct flb_http_reques
     int                             result;
 
     session = (struct flb_http_client_session *) request->stream->parent;
+    response = &request->stream->response;
+
+    /* We allow this to enable request mocking, there is no
+     * other legitimate use for it.
+     */
+    if (session->connection == NULL) {
+        return response;
+    }
 
     if (session->outgoing_data != NULL &&
         cfl_sds_len(session->outgoing_data) > 0)
@@ -1844,8 +1856,6 @@ struct flb_http_response *flb_http_client_request_execute(struct flb_http_reques
     if (result != 0) {
         return NULL;
     }
-
-    response = &request->stream->response;
 
     result = flb_http_client_session_write(session);
 
@@ -2206,6 +2216,7 @@ int flb_http_request_set_parameters_internal(
     size_t                          method;
     char                           *host;
     char                           *uri;
+    char                           *url;
     char                           *content_type;
     const void                     *body;
     size_t                          body_len;
@@ -2239,6 +2250,11 @@ int flb_http_request_set_parameters_internal(
             host = va_arg(arguments, char *);
 
             flb_http_request_set_host(request, host);
+        }
+        else if (value_type == FLB_HTTP_CLIENT_ARGUMENT_TYPE_URL) {
+            url = va_arg(arguments, char *);
+
+            flb_http_request_set_url(request, url);
         }
         else if (value_type == FLB_HTTP_CLIENT_ARGUMENT_TYPE_URI) {
             uri = va_arg(arguments, char *);

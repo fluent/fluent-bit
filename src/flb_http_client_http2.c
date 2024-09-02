@@ -423,8 +423,6 @@ int flb_http2_client_session_init(struct flb_http2_client_session *session)
     nghttp2_session_callbacks *callbacks;
     int                        result;
 
-    //cfl_list_init(&session->streams);
-
     result = nghttp2_session_callbacks_new(&callbacks);
 
     if (result != 0) {

@@ -124,6 +124,30 @@ int flb_http_request_init(struct flb_http_request *request)
     return 0;
 }
 
+struct flb_http_request *flb_http_request_create()
+{
+    struct flb_http_request *request;
+    int                      result;
+
+    request = flb_calloc(1, sizeof(struct flb_http_request));
+
+    if (request == NULL) {
+        return NULL;
+    }
+
+    request->releasable = FLB_TRUE;
+
+    result = flb_http_request_init(request);
+
+    if (result != 0) {
+        flb_http_request_destroy(request);
+
+        return NULL;
+    }
+
+    return request;
+}
+
 void flb_http_request_destroy(struct flb_http_request *request)
 {
     if (request->path != NULL) {
@@ -155,6 +179,10 @@ void flb_http_request_destroy(struct flb_http_request *request)
     }
 
     memset(request, 0, sizeof(struct flb_http_request));
+
+    if (request->releasable == FLB_TRUE) {
+        flb_free(request);
+    }
 }
 
 int flb_http_request_commit(struct flb_http_request *request)
@@ -462,6 +490,150 @@ int flb_http_request_set_port(struct flb_http_request *request,
     return 0;
 }
 
+int flb_http_request_set_url(struct flb_http_request *request,
+                             char *url)
+{
+    char      *start_of_authorization;
+    char      *start_of_query_string;
+    char      *start_of_authority;
+    char      *start_of_username;
+    char      *start_of_password;
+    char      *start_of_port;
+    char      *start_of_host;
+    char      *start_of_path;
+    flb_sds_t  local_url;
+    int        result;
+    uint16_t   port;
+
+    local_url = cfl_sds_create(url);
+
+    if (local_url == NULL) {
+        return -1;
+    }
+
+    start_of_authority = strstr(local_url, "://");
+
+    if (start_of_authority == NULL) {
+        cfl_sds_destroy(local_url);
+
+        return -1;
+    }
+
+    start_of_authority = &start_of_authority[3];
+
+    start_of_path = strstr(start_of_authority, "/");
+
+    if (start_of_path == NULL) {
+        cfl_sds_destroy(local_url);
+
+        return -1;
+    }
+
+    start_of_query_string = strstr(start_of_path, "?");
+
+    if (start_of_query_string != NULL) {
+        result = flb_http_request_set_query_string(request, &start_of_query_string[1]);
+
+        if (result != 0) {
+            cfl_sds_destroy(local_url);
+
+            return -1;
+        }
+
+        start_of_query_string[0] = '\0';
+    }
+
+    if (start_of_path != NULL) {
+        result = flb_http_request_set_uri(request, start_of_path);
+
+        if (result != 0) {
+            cfl_sds_destroy(local_url);
+
+            return -1;
+        }
+
+        start_of_path[0] = '\0';
+    }
+
+    start_of_host = strstr(start_of_authority, "@");
+
+    if (start_of_host == NULL) {
+        start_of_host = start_of_authority;
+
+        start_of_authorization = NULL;
+    }
+    else {
+        start_of_authorization = start_of_authority;
+    }
+
+    if (start_of_host[0] == '@') {
+        start_of_host[0] = '\0';
+    }
+
+    if (start_of_authorization != NULL) {
+        start_of_password = strstr(start_of_authorization, ":");
+
+        if (start_of_password != NULL) {
+            start_of_password[0] = '\0';
+
+            start_of_password = &start_of_password[1];
+        }
+
+        start_of_username = start_of_authorization;
+    }
+
+    start_of_port = strstr(start_of_host, ":");
+
+    if (start_of_port != NULL) {
+        start_of_port[0] = '\0';
+
+        start_of_port = &start_of_port[1];
+
+        port = (uint16_t) strtoul(start_of_port, NULL, 10);
+
+        result = flb_http_request_set_port(
+                    request,
+                    port);
+
+        if (result != 0) {
+            cfl_sds_destroy(local_url);
+
+            return -1;
+        }
+    }
+
+    if (start_of_username != NULL &&
+        start_of_password != NULL) {
+        result = flb_http_request_set_authorization(
+                    request,
+                    HTTP_WWW_AUTHORIZATION_SCHEME_BASIC,
+                    start_of_username,
+                    start_of_password);
+
+        if (result != 0) {
+            cfl_sds_destroy(local_url);
+
+            return -1;
+        }
+    }
+
+    if (start_of_host != NULL) {
+        result = flb_http_request_set_host(
+                    request,
+                    start_of_host);
+
+        if (result != 0) {
+            cfl_sds_destroy(local_url);
+
+            return -1;
+        }
+    }
+
+    cfl_sds_destroy(local_url);
+
+    return 0;
+}
+
 int flb_http_request_set_uri(struct flb_http_request *request,
                              char *uri)
 {
@@ -632,6 +804,30 @@ int flb_http_response_init(struct flb_http_response *response)
     }
 
     return 0;
+}
+
+struct flb_http_response *flb_http_response_create()
+{
+    struct flb_http_response *response;
+    int                       result;
+
+    response = flb_calloc(1, sizeof(struct flb_http_response));
+
+    if (response == NULL) {
+        return NULL;
+    }
+
+    response->releasable = FLB_TRUE;
+
+    result = flb_http_response_init(response);
+
+    if (result != 0) {
+        flb_http_response_destroy(response);
+
+        return NULL;
+    }
+
+    return response;
 }
 
 void flb_http_response_destroy(struct flb_http_response *response)
