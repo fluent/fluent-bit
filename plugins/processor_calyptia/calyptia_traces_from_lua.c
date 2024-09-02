@@ -26,6 +26,7 @@ static void lua_to_links(lua_State *L, struct ctrace_span *span)
 {
     struct ctrace_link *link;
     size_t count;
+    size_t i;
     struct ctrace_id *trace_id;
 
     if (lua_type(L, -1) != LUA_TTABLE) {
@@ -33,7 +34,7 @@ static void lua_to_links(lua_State *L, struct ctrace_span *span)
     }
 
     count = lua_objlen(L, -1);
-    for (size_t i = 1; i <= count; i++) {
+    for (i = 1; i <= count; i++) {
         lua_rawgeti(L, -1, i);
 
         lua_getfield(L, -1, "traceId");
@@ -69,6 +70,7 @@ static void lua_to_events(lua_State *L, struct ctrace_span *span)
 {
     struct ctrace_span_event *event;
     size_t count;
+    size_t i;
     const char *name;
 
     if (lua_type(L, -1) != LUA_TTABLE) {
@@ -76,7 +78,7 @@ static void lua_to_events(lua_State *L, struct ctrace_span *span)
     }
 
     count = lua_objlen(L, -1);
-    for (size_t i = 1; i <= count; i++) {
+    for (i = 1; i <= count; i++) {
         lua_rawgeti(L, -1, i);
 
         lua_getfield(L, -1, "name");
@@ -155,6 +157,7 @@ static void lua_to_spans(lua_State *L, struct ctrace *ctx,
     size_t count;
     struct ctrace_span *span;
     cfl_sds_t name;
+    size_t i;
     struct ctrace_id *parent_span_id;
 
     if (lua_type(L, -1) != LUA_TTABLE) {
@@ -162,7 +165,7 @@ static void lua_to_spans(lua_State *L, struct ctrace *ctx,
     }
 
     count = lua_objlen(L, -1);
-    for (size_t i = 1; i <= count; i++) {
+    for (i = 1; i <= count; i++) {
         lua_rawgeti(L, -1, i);
 
         lua_getfield(L, -1, "name");
@@ -225,6 +228,7 @@ static void lua_to_scope_spans(lua_State *L, struct ctrace *ctx,
                                struct ctrace_resource_span *resource_span)
 {
     size_t count;
+    size_t i;
     struct ctrace_scope_span *scope_span;
 
     if (lua_type(L, -1) != LUA_TTABLE) {
@@ -233,7 +237,7 @@ static void lua_to_scope_spans(lua_State *L, struct ctrace *ctx,
 
     count = lua_objlen(L, -1);
 
-    for (size_t i = 1; i <= count; i++) {
+    for (i = 1; i <= count; i++) {
         scope_span = ctr_scope_span_create(resource_span);
 
         lua_rawgeti(L, -1, i);
@@ -258,6 +262,7 @@ static void lua_to_scope_spans(lua_State *L, struct ctrace *ctx,
 static void lua_to_resource_spans(lua_State *L, struct ctrace *ctx)
 {
     size_t count;
+    size_t i;
     struct ctrace_resource_span *resource_span;
 
     if (lua_type(L, -1) != LUA_TTABLE) {
@@ -266,7 +271,7 @@ static void lua_to_resource_spans(lua_State *L, struct ctrace *ctx)
 
     count = lua_objlen(L, -1);
 
-    for (size_t i = 1; i <= count; i++) {
+    for (i = 1; i <= count; i++) {
         resource_span = ctr_resource_span_create(ctx);
 
         lua_rawgeti(L, -1, i);

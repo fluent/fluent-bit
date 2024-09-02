@@ -81,6 +81,7 @@ static void push_histogram(lua_State *L, struct cmt_map *map,
 static void push_summary(lua_State *L, struct cmt_map *map,
                          struct cmt_metric *metric)
 {
+    int i;
     struct cmt_summary *summary;
     struct cmt_opts *opts;
 
@@ -89,7 +90,7 @@ static void push_summary(lua_State *L, struct cmt_map *map,
 
     if (metric->sum_quantiles_set) {
         lua_createtable(L, summary->quantiles_count, 0);
-        for (int i = 0; i < summary->quantiles_count; i++) {
+        for (i = 0; i < summary->quantiles_count; i++) {
             lua_pushnumber(L, summary->quantiles[i]);
             lua_pushnumber(L, cmt_summary_quantile_get_value(metric, i));
             lua_settable(L, -3);

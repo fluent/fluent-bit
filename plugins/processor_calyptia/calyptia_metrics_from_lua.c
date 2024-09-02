@@ -21,10 +21,11 @@ struct metrics_header {
 
 static void free_labels(char **labels, size_t label_count)
 {
+    int i;
     if (!labels) {
         return;
     }
-    for (int i = 0; i < label_count; i++) {
+    for (i = 0; i < label_count; i++) {
         if (labels[i]) {
             free(labels[i]);
         }
@@ -59,7 +60,8 @@ static void split_fqname(const char *fqname, struct metrics_header *header)
 static int assign_label(char **keys, size_t key_count, char **values,
                         const char *key, const char *value)
 {
-    for (size_t i = 0; i < key_count; i++) {
+    size_t i;
+    for (i = 0; i < key_count; i++) {
         if (!strcmp(keys[i], key)) {
             values[i] = strdup(value);
             if (!values[i]) {
@@ -124,13 +126,14 @@ static double *lua_to_quantile_values(struct flb_processor_instance *ins,
                                       lua_State *L, double *quantile_keys,
                                       int count)
 {
+    int i;
     double *quantile_values = calloc(count, sizeof(*quantile_values));
     if (!quantile_values) {
         flb_plg_error(ins, "could not allocate memory for quantile values");
         return NULL;
     }
 
-    for (int i = 0; i < count; i++) {
+    for (i = 0; i < count; i++) {
         lua_pushnumber(L, quantile_keys[i]);
         lua_gettable(L, -2);
         quantile_values[i] = lua_to_double(L, -1);
@@ -144,13 +147,14 @@ static uint64_t *lua_to_bucket_values(struct flb_processor_instance *ins,
                                       lua_State *L, double *bucket_keys,
                                       int count)
 {
+    int i;
     uint64_t *values = calloc(count, sizeof(*values));
     if (!values) {
         flb_plg_error(ins, "could not allocate memory for bucket values");
         return NULL;
     }
 
-    for (int i = 0; i < count; i++) {
+    for (i = 0; i < count; i++) {
         lua_pushnumber(L, bucket_keys[i]);
         lua_gettable(L, -2);
         values[i] = lua_to_uint(L);
@@ -163,6 +167,7 @@ static uint64_t *lua_to_bucket_values(struct flb_processor_instance *ins,
 static double *lua_to_quantiles_buckets(struct flb_processor_instance *ins,
                                         lua_State *L, int *count)
 {
+    int i;
     double *keys;
     *count = 0;
     if (lua_type(L, -1) != LUA_TTABLE) {
@@ -183,7 +188,7 @@ static double *lua_to_quantiles_buckets(struct flb_processor_instance *ins,
     }
 
     lua_pushnil(L); // first key
-    int i = 0;
+    i = 0;
     while (lua_next(L, -2) != 0) {
         keys[i] = lua_to_double(L, -2);
         i++;
@@ -200,6 +205,7 @@ static double *lua_to_quantile_bucket_keys(struct flb_processor_instance *ins,
                                            lua_State *L, const char *kind,
                                            int *count)
 {
+    int i;
     int sample_count;
     double *keys;
 
@@ -214,7 +220,7 @@ static double *lua_to_quantile_bucket_keys(struct flb_processor_instance *ins,
     int found = 0;
 
     /* find the first sample that has quantiles */
-    for (int i = 1; i <= sample_count; i++) {
+    for (i = 1; i <= sample_count; i++) {
         lua_rawgeti(L, -1, i);
         lua_getfield(L, -1, kind);
         if (lua_type(L, -1) == LUA_TTABLE) {
@@ -240,7 +246,8 @@ static double *lua_to_quantile_bucket_keys(struct flb_processor_instance *ins,
 static char **append_label(char **labels, size_t *labels_size,
                            size_t *label_index, const char *label)
 {
-    for (size_t i = 0; i < *label_index; i++) {
+    size_t i;
+    for (i = 0; i < *label_index; i++) {
         if (!strcmp(labels[i], label)) {
             /* don't do anything if the label is already in the array */
             return labels;
@@ -272,6 +279,7 @@ static char **append_label(char **labels, size_t *labels_size,
 static char **lua_to_label_keys(struct flb_processor_instance *ins,
                                 lua_State *L, int *label_count)
 {
+    int i;
     int sample_count;
     char **label_keys;
     size_t label_index;
@@ -295,7 +303,7 @@ static char **lua_to_label_keys(struct flb_processor_instance *ins,
     labels_size = 0;
     label_index = 0;
 
-    for (int i = 1; i <= sample_count; i++) {
+    for (i = 1; i <= sample_count; i++) {
         lua_rawgeti(L, -1, i);
         if (lua_type(L, -1) != LUA_TTABLE) {
             free_labels(label_keys, label_index);
@@ -357,6 +365,8 @@ int calyptia_metrics_from_lua(struct flb_processor_instance *ins, lua_State *L,
     char **label_vals;
     int label_count;
     uint64_t timestamp;
+    int i;
+    int j;
 
     if (lua_type(L, -1) != LUA_TTABLE) {
         flb_plg_error(ins, "expected metrics array");
@@ -365,7 +375,7 @@ int calyptia_metrics_from_lua(struct flb_processor_instance *ins, lua_State *L,
 
     metric_count = lua_objlen(L, -1);
 
-    for (int i = 1; i <= metric_count; i++) {
+    for (i = 1; i <= metric_count; i++) {
         lua_rawgeti(L, -1, i);
 
         label_keys = lua_to_label_keys(ins, L, &label_count);
@@ -465,7 +475,7 @@ int calyptia_metrics_from_lua(struct flb_processor_instance *ins, lua_State *L,
             return -1;
         }
 
-        for (int j = 1; j <= sample_count; j++) {
+        for (j = 1; j <= sample_count; j++) {
             label_vals = NULL;
 
             /* get sample */

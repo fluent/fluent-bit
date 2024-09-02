@@ -76,9 +76,10 @@ bool lua_isinteger(lua_State *L, int index)
 
 struct cfl_array *lua_array_to_variant(lua_State *L, int array_len)
 {
+    int i;
     struct cfl_array *array = cfl_array_create(array_len);
 
-    for (int i = 1; i <= array_len; i++) {
+    for (i = 1; i <= array_len; i++) {
         lua_rawgeti(L, -1, i);
         struct cfl_variant *variant = lua_to_variant(L, -1);
         cfl_array_append(array, variant);

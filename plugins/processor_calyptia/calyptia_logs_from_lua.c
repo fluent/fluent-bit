@@ -6,6 +6,7 @@
 int calyptia_logs_from_lua(struct flb_processor_instance *ins, lua_State *L,
                            struct flb_mp_chunk_cobj *chunk_cobj)
 {
+    int i;
     int logs_length, metadata_length, timestamps_length;
     struct flb_mp_chunk_record *record;
 
@@ -41,7 +42,7 @@ int calyptia_logs_from_lua(struct flb_processor_instance *ins, lua_State *L,
         return -1;
     }
 
-    for (int i = 1; i <= logs_length; i++) {
+    for (i = 1; i <= logs_length; i++) {
         record = flb_mp_chunk_record_create(chunk_cobj);
         if (!record) {
             flb_plg_error(ins, "failed to create record");
