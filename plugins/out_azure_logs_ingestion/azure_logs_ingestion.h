@@ -37,6 +37,7 @@
 #include <fluent-bit/flb_info.h>
 #include <fluent-bit/flb_output.h>
 #include <fluent-bit/flb_sds.h>
+#include <fluent-bit/flb_http_client.h>
 
 /* Context structure for Azure Logs Ingestion API */
 struct flb_az_li {
@@ -65,6 +66,9 @@ struct flb_az_li {
     /* upstream connection to the data collection endpoint */
     struct flb_upstream *u_dce;
     flb_sds_t dce_u_url;
+
+    /* HTTP client */
+    struct flb_http_client_ng http_client;
 
     /* plugin output and config instance reference */
     struct flb_output_instance *ins;
