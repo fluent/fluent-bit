@@ -22,4 +22,10 @@ set(src
   lua_to_cfl.c
   ${LUA_HELPERS_DST})
 
+if(MSVC)
+  FLB_PLUGIN(processor_calyptia "${src}" "")
+else()
+  FLB_PLUGIN(processor_calyptia "${src}" "m")
+endif()
+
 FLB_PLUGIN(processor_calyptia "${src}" "")

@@ -377,6 +377,7 @@ endif()
 
 if(FLB_LUAJIT)
   REGISTER_FILTER_PLUGIN("filter_lua")
+  REGISTER_PROCESSOR_PLUGIN("processor_calyptia")
 endif()
 
 REGISTER_FILTER_PLUGIN("filter_stdout")
