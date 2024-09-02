@@ -1,4 +1,3 @@
-#include <math.h>
 
 #include <lua.h>
 #include <cmetrics/cmt_metric.h>
@@ -8,6 +7,8 @@
 #include <cmetrics/cmt_summary.h>
 #include <cmetrics/cmt_histogram.h>
 #include <cmetrics/cmt_untyped.h>
+
+#include <math.h>
 
 #include "calyptia_metrics_to_lua.h"
 #include "cfl_to_lua.h"

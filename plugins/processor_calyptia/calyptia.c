@@ -1,9 +1,3 @@
-#include <sys/types.h>
-#include <sys/stat.h>
-#include <fcntl.h>
-
-#include <cmetrics/cmt_decode_prometheus.h>
-#include <ctraces/ctr_encode_opentelemetry.h>
 #include <fluent-bit/flb_filter.h>
 #include <fluent-bit/flb_lib.h>
 #include <fluent-bit/flb_lua.h>
@@ -23,6 +17,10 @@
 #include "calyptia_metrics.h"
 #include "calyptia_traces.h"
 #include "cfl_to_lua.h"
+
+#include <sys/types.h>
+#include <sys/stat.h>
+#include <fcntl.h>
 
 static void calyptia_config_destroy(struct calyptia_context *ctx)
 {

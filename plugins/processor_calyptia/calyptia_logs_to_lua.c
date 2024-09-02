@@ -1,4 +1,3 @@
-#include <math.h>
 
 #include <lua.h>
 #include <cmetrics/cmt_metric.h>
