@@ -1128,7 +1128,7 @@ int flb_utils_url_split(const char *in_url, char **out_protocol,
 
 /*
  * flb_utils_proxy_url_split parses a proxy's information from a http_proxy URL.
- * The URL is in the form like `http://username:password@myproxy.com:8080`.
+ * The URL is in the form like `http://[username:password@]myproxy.com:8080`.
  * Note: currently only HTTP is supported.
  */
 int flb_utils_proxy_url_split(const char *in_url, char **out_protocol,
@@ -1147,9 +1147,11 @@ int flb_utils_proxy_url_split(const char *in_url, char **out_protocol,
     /*  Parse protocol */
     proto_sep = strstr(in_url, "://");
     if (!proto_sep) {
+        flb_error("HTTP_PROXY variable must be set in the form of 'http://[username:password@]host:port'");
         return -1;
     }
     if (proto_sep == in_url) {
+        flb_error("HTTP_PROXY variable must be set in the form of 'http://[username:password@]host:port'");
         return -1;
     }
 
@@ -1160,6 +1162,7 @@ int flb_utils_proxy_url_split(const char *in_url, char **out_protocol,
     }
     /* Only HTTP proxy is supported for now. */
     if (strcmp(protocol, "http") != 0) {
+        flb_error("only HTTP proxy is supported.");
         flb_free(protocol);
         return -1;
     }
