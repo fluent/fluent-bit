@@ -40,14 +40,16 @@ static void split_fqname(const char *fqname, struct metrics_header *header)
     if (!header->subsystem) {
         header->name = header->fqname_buf;
         header->ns = "";
-    } else {
+    }
+    else {
         *header->subsystem = 0; /* split */
         header->subsystem++;
         header->name = strchr(header->subsystem, '_');
         if (!header->name) {
             header->name = header->subsystem;
             header->subsystem = "";
-        } else {
+        }
+        else {
             *header->name = 0; /* split */
             header->name++;
         }
@@ -109,9 +111,11 @@ static int double_cmp(const void *a, const void *b)
 
     if (x < y) {
         return -1;
-    } else if (x > y) {
+    }
+    else if (x > y) {
         return 1;
-    } else {
+    }
+    else {
         return 0;
     }
 }
@@ -246,7 +250,8 @@ static char **append_label(char **labels, size_t *labels_size,
     if (*label_index == *labels_size) {
         if (!*labels_size) {
             *labels_size = 8;
-        } else {
+        }
+        else {
             *labels_size *= 2;
         }
         labels = realloc(labels, *labels_size * sizeof(char *));
@@ -376,15 +381,20 @@ int calyptia_metrics_from_lua(struct flb_processor_instance *ins, lua_State *L,
 
         if (!strcasecmp(metric_type, "COUNTER")) {
             type = CMT_COUNTER;
-        } else if (!strcasecmp(metric_type, "GAUGE")) {
+        }
+        else if (!strcasecmp(metric_type, "GAUGE")) {
             type = CMT_GAUGE;
-        } else if (!strcasecmp(metric_type, "SUMMARY")) {
+        }
+        else if (!strcasecmp(metric_type, "SUMMARY")) {
             type = CMT_SUMMARY;
-        } else if (!strcasecmp(metric_type, "HISTOGRAM")) {
+        }
+        else if (!strcasecmp(metric_type, "HISTOGRAM")) {
             type = CMT_HISTOGRAM;
-        } else if (!strcasecmp(metric_type, "UNTYPED")) {
+        }
+        else if (!strcasecmp(metric_type, "UNTYPED")) {
             type = CMT_UNTYPED;
-        } else {
+        }
+        else {
             cmt_destroy(cmt);
             flb_plg_error(ins, "invalid metric type: \"%s\"", metric_type);
             return -1;
@@ -496,7 +506,8 @@ int calyptia_metrics_from_lua(struct flb_processor_instance *ins, lua_State *L,
                     return -1;
                 }
 
-            } else if (type == CMT_HISTOGRAM) {
+            }
+            else if (type == CMT_HISTOGRAM) {
 
                 lua_getfield(L, -1, "buckets");
                 bucket_values
@@ -509,7 +520,8 @@ int calyptia_metrics_from_lua(struct flb_processor_instance *ins, lua_State *L,
                     return -1;
                 }
 
-            } else {
+            }
+            else {
 
                 lua_getfield(L, -1, "value");
                 value = lua_to_double(L, -1);
@@ -521,13 +533,15 @@ int calyptia_metrics_from_lua(struct flb_processor_instance *ins, lua_State *L,
                                         label_vals)) {
                         return -1;
                     }
-                } else if (type == CMT_GAUGE) {
+                }
+                else if (type == CMT_GAUGE) {
                     if (cmt_gauge_set(gauge, timestamp, value,
                                       label_vals ? label_count : 0,
                                       label_vals)) {
                         return -1;
                     }
-                } else {
+                }
+                else {
                     if (cmt_untyped_set(untyped, timestamp, value,
                                         label_vals ? label_count : 0,
                                         label_vals)) {
@@ -542,7 +556,8 @@ int calyptia_metrics_from_lua(struct flb_processor_instance *ins, lua_State *L,
 
             if (type == CMT_SUMMARY) {
                 free(quantile_values);
-            } else if (type == CMT_HISTOGRAM) {
+            }
+            else if (type == CMT_HISTOGRAM) {
                 free(bucket_values);
             }
 
@@ -553,7 +568,8 @@ int calyptia_metrics_from_lua(struct flb_processor_instance *ins, lua_State *L,
 
         if (type == CMT_SUMMARY) {
             free(quantiles);
-        } else if (type == CMT_HISTOGRAM) {
+        }
+        else if (type == CMT_HISTOGRAM) {
             free(buckets);
         }
 

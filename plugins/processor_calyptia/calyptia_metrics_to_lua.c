@@ -21,7 +21,8 @@ static void push_uint64(lua_State *L, uint64_t val)
     if (val > DOUBLE_MAX_SAFE_INTEGER || val < DOUBLE_MIN_SAFE_INTEGER) {
         snprintf(buf, sizeof(buf), "%" PRIu64, val);
         lua_pushstring(L, buf);
-    } else {
+    }
+    else {
         lua_pushnumber(L, val);
     }
 }
@@ -61,7 +62,8 @@ static void push_histogram(lua_State *L, struct cmt_map *map,
     for (i = 0; i <= bucket->count; i++) {
         if (i < bucket->count) {
             lua_pushnumber(L, bucket->upper_bounds[i]);
-        } else {
+        }
+        else {
             lua_pushnumber(L, INFINITY);
         }
         push_uint64(L, cmt_metric_hist_get_value(metric, i));
@@ -115,9 +117,11 @@ static void push_metric(lua_State *L, struct cmt_map *map,
     push_timestamp(L, map, metric);
     if (map->type == CMT_HISTOGRAM) {
         push_histogram(L, map, metric);
-    } else if (map->type == CMT_SUMMARY) {
+    }
+    else if (map->type == CMT_SUMMARY) {
         push_summary(L, map, metric);
-    } else {
+    }
+    else {
         push_counter_gauge_untyped(L, map, metric);
     }
 

@@ -52,19 +52,23 @@ int calyptia_process_metrics(struct flb_processor_instance *ins,
     l_code = (int) lua_tointeger(ctx->lua->state, -3);
     if (l_code == -1) {
         *out_context = cmt_create();
-    } else if (l_code == 0) {
+    }
+    else if (l_code == 0) {
         /* don't touch the metrics */
         *out_context = metrics_context;
-    } else if (l_code != 1) {
+    }
+    else if (l_code != 1) {
         flb_plg_error(ctx->ins, "invalid return code %d", l_code);
         ret = FLB_PROCESSOR_FAILURE;
-    } else {
+    }
+    else {
         struct cmt *new_metrics = cmt_create();
         if (calyptia_metrics_from_lua(ins, ctx->lua->state, new_metrics)) {
             cmt_destroy(new_metrics);
             flb_plg_error(ctx->ins, "Failed to decode metrics from lua");
             ret = FLB_PROCESSOR_FAILURE;
-        } else {
+        }
+        else {
             *out_context = new_metrics;
         }
     }

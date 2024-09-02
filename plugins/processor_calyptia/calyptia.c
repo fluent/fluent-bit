@@ -82,7 +82,8 @@ calyptia_config_create(struct flb_processor_instance *ins,
     tmp = flb_processor_instance_get_property("code", ins);
     if (tmp) {
         ctx->code = flb_sds_create(tmp);
-    } else {
+    }
+    else {
         /* config: script */
         script = flb_processor_instance_get_property("script", ins);
         if (!script) {
@@ -192,7 +193,8 @@ calyptia_config_create(struct flb_processor_instance *ins,
             calyptia_config_destroy(ctx);
             return NULL;
         }
-    } else if (flb_luajit_load_script(ctx->lua, ctx->script)) {
+    }
+    else if (flb_luajit_load_script(ctx->lua, ctx->script)) {
         calyptia_config_destroy(ctx);
         return NULL;
     }

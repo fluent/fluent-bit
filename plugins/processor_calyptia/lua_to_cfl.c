@@ -21,9 +21,11 @@ double lua_to_double(lua_State *L, int index)
     int type = lua_type(L, index);
     if (type == LUA_TNUMBER) {
         return lua_tonumber(L, index);
-    } else if (type == LUA_TSTRING) {
+    }
+    else if (type == LUA_TSTRING) {
         return atof(lua_tostring(L, index));
-    } else {
+    }
+    else {
         return 0.0;
     }
 }
@@ -33,9 +35,11 @@ uint64_t lua_to_uint(lua_State *L)
     int type = lua_type(L, -1);
     if (type == LUA_TNUMBER) {
         return lua_tointeger(L, -1);
-    } else if (type == LUA_TSTRING) {
+    }
+    else if (type == LUA_TSTRING) {
         return strtoull(lua_tostring(L, -1), NULL, 10);
-    } else {
+    }
+    else {
         return 0;
     }
 }
@@ -45,9 +49,11 @@ long lua_to_int(lua_State *L)
     int type = lua_type(L, -1);
     if (type == LUA_TNUMBER) {
         return lua_tointeger(L, -1);
-    } else if (type == LUA_TSTRING) {
+    }
+    else if (type == LUA_TSTRING) {
         return strtol(lua_tostring(L, -1), NULL, 10);
-    } else {
+    }
+    else {
         return 0;
     }
 }
@@ -108,7 +114,8 @@ struct cfl_variant *lua_to_variant(lua_State *L, int index)
     case LUA_TNUMBER:
         if (lua_isinteger(L, index)) {
             return cfl_variant_create_from_int64(lua_tointeger(L, index));
-        } else {
+        }
+        else {
             return cfl_variant_create_from_double(lua_tonumber(L, index));
         }
     case LUA_TBOOLEAN:
@@ -119,7 +126,8 @@ struct cfl_variant *lua_to_variant(lua_State *L, int index)
         array_len = flb_lua_arraylength(L, index);
         if (array_len > 0) {
             return cfl_variant_create_from_array(lua_array_to_variant(L, array_len));
-        } else {
+        }
+        else {
             return cfl_variant_create_from_kvlist(lua_map_to_variant(L));
         }
     default:

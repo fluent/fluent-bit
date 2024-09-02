@@ -65,12 +65,15 @@ int calyptia_process_logs(struct flb_processor_instance *ins, void *chunk_data,
     l_code = (int) lua_tointeger(ctx->lua->state, -3);
     if (l_code == -1) {
       clear_logs(chunk_cobj);
-    } else if (l_code == 0) {
+    }
+    else if (l_code == 0) {
         /* nothing to do */
-    } else if (l_code != 1) {
+    }
+    else if (l_code != 1) {
         flb_plg_error(ctx->ins, "invalid return code %d", l_code);
         ret = FLB_PROCESSOR_FAILURE;
-    } else {
+    }
+    else {
         clear_logs(chunk_cobj);
         if (calyptia_logs_from_lua(ins, ctx->lua->state, chunk_cobj)) {
             flb_plg_error(ctx->ins, "Failed to decode logs from lua");

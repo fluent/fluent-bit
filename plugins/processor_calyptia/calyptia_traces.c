@@ -59,10 +59,12 @@ int calyptia_process_traces(struct flb_processor_instance *ins,
     l_code = (int) lua_tointeger(ctx->lua->state, -3);
     if (l_code == -1) {
         drop_traces(traces_context);
-    } else if (l_code == 0) {
+    }
+    else if (l_code == 0) {
         /* don't touch the traces */
         goto cleanup;
-    } else {
+    }
+    else {
         assert(l_code == 1);
         drop_traces(traces_context);
 
