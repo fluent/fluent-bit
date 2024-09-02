@@ -1,0 +1,15 @@
+|-------------------- RESOURCE SPAN --------------------|
+  resource:
+     - attributes:
+            - service.name: 'Fluent Bit Test Service'
+     - dropped_attributes_count: 10
+  schema_url: https://www.google2.com
+  [scope_span]
+    instrumentation scope:
+        - name                    : scope-span
+        - version                 : d.e.f
+        - dropped_attributes_count: 5
+        - attributes:
+
+    schema_url: https://www.google.com
+    [spans]

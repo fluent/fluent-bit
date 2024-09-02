@@ -1,0 +1,18 @@
+service:
+    flush: 0.2
+    log_level: error
+
+pipeline:
+    inputs:
+        - name: event_type
+          tag: event
+          type: metrics
+
+    outputs:
+        - name: stdout
+          match: event
+          processors:
+            metrics:
+              - name: calyptia
+                script: script.lua
+                call: process_metrics
