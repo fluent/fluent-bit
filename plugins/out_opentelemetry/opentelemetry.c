@@ -54,7 +54,6 @@ int opentelemetry_http_post_ng(struct opentelemetry_context *ctx,
     struct flb_http_request  *request;
     int                       out_ret;
     int                       result;
-    int                       ret;
 
     if (ctx->compress_gzip == FLB_TRUE) {
         compression_algorithm = "gzip";
