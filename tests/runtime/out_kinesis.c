@@ -33,6 +33,7 @@ void flb_test_firehose_success(void)
     flb_output_set(ctx, out_ffd,"stream", "fluent", NULL);
     flb_output_set(ctx, out_ffd,"time_key", "time", NULL);
     flb_output_set(ctx, out_ffd,"Retry_Limit", "1", NULL);
+    flb_output_set(ctx, out_ffd,"port", "443", NULL);
 
     ret = flb_start(ctx);
     TEST_CHECK(ret == 0);
