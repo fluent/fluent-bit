@@ -41,6 +41,21 @@
 
 #include "ecs.h"
 
+#define MOCK_CLUSTER_SUCCESS_RESPONSE_BODY \
+            "{\"Cluster\": \"cluster_name\",\"ContainerInstanceArn\": \"arn:" \
+            "aws:ecs:region:aws_account_id:container-instance/cluster_name/c" \
+            "ontainer_instance_id\",\"Version\": \"Amazon ECS Agent - v1.30." \
+            "0 (02ff320c)\"}"
+
+#define MOCK_REGULAR_SUCCESS_RESPONSE_BODY \
+            "{\"Arn\": \"arn:aws:ecs:us-west-2:012345678910:task/default/e01" \
+            "d58a8-151b-40e8-bc01-22647b9ecfec\",\"Containers\": [{\"DockerI" \
+            "d\": \"79c796ed2a7f864f485c76f83f3165488097279d296a7c05bd5201a1" \
+            "c69b2920\",\"DockerName\": \"ecs-nginx-efs-2-nginx-9ac0808dd0af" \
+            "a495f001\",\"Name\": \"nginx\"}],\"DesiredStatus\": \"RUNNING\"" \
+            ",\"Family\": \"nginx-efs\",\"KnownStatus\": \"RUNNING\",\"Versi" \
+            "on\": \"2\"}"
+
 static int get_ecs_cluster_metadata(struct flb_filter_ecs *ctx);
 static void flb_filter_ecs_destroy(struct flb_filter_ecs *ctx);
 
@@ -265,41 +280,56 @@ static char *mock_error_response(char *error_env_var)
     return NULL;
 }
 
-static struct flb_http_client *mock_http_call(char *error_env_var, char *api)
+static struct flb_http_request *mock_http_call(char *error_env_var,
+                                               char *api)
 {
-    /* create an http client so that we can set the response */
-    struct flb_http_client *c = NULL;
-    char *error = mock_error_response(error_env_var);
+    struct flb_http_client_session *session;
+    struct flb_http_request *request;
+    struct flb_http_response *response;
+    char *error;
 
-    c = flb_calloc(1, sizeof(struct flb_http_client));
-    if (!c) {
-        flb_errno();
-        flb_free(error);
+    session = flb_http_client_session_create(NULL,
+                                             HTTP_PROTOCOL_VERSION_11,
+                                             NULL);
+
+    if (session == NULL) {
         return NULL;
     }
-    mk_list_init(&c->headers);
+
+    request = flb_http_client_request_begin(session);
+
+    if (request == NULL) {
+        flb_http_client_session_destroy(session);
+
+        return NULL;
+    }
+
+    response = &request->stream->response;
+
+    error = mock_error_response(error_env_var);
 
     if (error != NULL) {
-        c->resp.status = 400;
-        /* resp.data is freed on destroy, payload is supposed to reference it */
-        c->resp.data = error;
-        c->resp.payload = c->resp.data;
-        c->resp.payload_size = strlen(error);
+        flb_http_response_set_status(response, 400);
+        flb_http_response_set_body(response, error, strlen(error));
+        flb_free(error);
     }
     else {
-        c->resp.status = 200;
+        flb_http_response_set_status(response, 200);
+
         if (strcmp(api, "Cluster") == 0) {
             /* mocked success response */
-            c->resp.payload = "{\"Cluster\": \"cluster_name\",\"ContainerInstanceArn\": \"arn:aws:ecs:region:aws_account_id:container-instance/cluster_name/container_instance_id\",\"Version\": \"Amazon ECS Agent - v1.30.0 (02ff320c)\"}";
-            c->resp.payload_size = strlen(c->resp.payload);
+            flb_http_response_set_body(response,
+                                       MOCK_CLUSTER_SUCCESS_RESPONSE_BODY,
+                                       strlen(MOCK_CLUSTER_SUCCESS_RESPONSE_BODY));
         }
         else {
-            c->resp.payload = "{\"Arn\": \"arn:aws:ecs:us-west-2:012345678910:task/default/e01d58a8-151b-40e8-bc01-22647b9ecfec\",\"Containers\": [{\"DockerId\": \"79c796ed2a7f864f485c76f83f3165488097279d296a7c05bd5201a1c69b2920\",\"DockerName\": \"ecs-nginx-efs-2-nginx-9ac0808dd0afa495f001\",\"Name\": \"nginx\"}],\"DesiredStatus\": \"RUNNING\",\"Family\": \"nginx-efs\",\"KnownStatus\": \"RUNNING\",\"Version\": \"2\"}";
-            c->resp.payload_size = strlen(c->resp.payload);
+            flb_http_response_set_body(response,
+                                       MOCK_REGULAR_SUCCESS_RESPONSE_BODY,
+                                       strlen(MOCK_REGULAR_SUCCESS_RESPONSE_BODY));
         }
     }
 
-    return c;
+    return request;
 }
 
 /*
@@ -410,10 +440,14 @@ static int get_ecs_cluster_metadata(struct flb_filter_ecs *ctx)
 
     /* Compose HTTP Client request*/
     if (plugin_under_test() == FLB_TRUE) {
-        //c = mock_http_call("TEST_CLUSTER_ERROR", "Cluster");
-        flb_plg_error(ctx->ins, "mock http call not implemented");
-        ret = 0;
-        return -1;
+        request = mock_http_call("TEST_CLUSTER_ERROR", "Cluster");
+
+        if (request != NULL) {
+            ret = 0;
+        }
+        else {
+            ret = -1;
+        }
     }
     else {
         request = flb_http_client_request_builder(
@@ -1012,10 +1046,14 @@ static int get_task_metadata(struct flb_filter_ecs *ctx, char* short_id)
 
     /* Compose HTTP Client request*/
     if (plugin_under_test() == FLB_TRUE) {
-        //c = mock_http_call("TEST_TASK_ERROR", "Task");
-        ret = 0;
-        flb_plg_error(ctx->ins, "mock http call not implemented");
-        return -1;
+        request = mock_http_call("TEST_TASK_ERROR", "Task");
+
+        if (request != NULL) {
+            ret = 0;
+        }
+        else {
+            ret = -1;
+        }
     }
     else {
         request = flb_http_client_request_builder(
