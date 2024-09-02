@@ -758,7 +758,7 @@ static inline void encoded_to_buf(char *out, const char *in, int len)
 
 /*
  * Write string pointed by 'str' to the destination buffer 'buf'. It's make sure
- * to escape sepecial characters and convert utf-8 byte characters to string
+ * to escape special characters and convert utf-8 byte characters to string
  * representation.
  */
 int flb_utils_write_str(char *buf, int *off, size_t size,
@@ -1170,10 +1170,10 @@ int flb_utils_proxy_url_split(const char *in_url, char **out_protocol,
     /* Advance position after protocol */
     proto_sep += 3;
 
-    /* Seperate `username:password` and `host:port` */
+    /* Separate `username:password` and `host:port` */
     at_sep = strrchr(proto_sep, '@');
     if (at_sep) {
-        /* Parse username:passwrod part. */
+        /* Parse username:password part. */
         tmp = strchr(proto_sep, ':');
         if (!tmp) {
             flb_free(protocol);
