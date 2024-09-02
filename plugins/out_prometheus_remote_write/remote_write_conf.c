@@ -240,7 +240,7 @@ struct prometheus_remote_write_context *flb_prometheus_remote_write_context_crea
     if (ret != 0) {
         flb_plg_debug(ctx->ins, "http client creation error");
 
-        flb_http_conf_destroy(ctx);
+        flb_prometheus_remote_write_context_destroy(ctx);
 
         ctx = NULL;
     }
