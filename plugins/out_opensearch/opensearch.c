@@ -872,12 +872,10 @@ static void cb_opensearch_flush(struct flb_event_chunk *event_chunk,
     int compressed = FLB_FALSE;
     void *final_payload_buf = NULL;
     size_t final_payload_size = 0;
-
-    /* Get upstream connection */
-    u_conn = flb_upstream_conn_get(ctx->u);
-    if (!u_conn) {
-        FLB_OUTPUT_RETURN(FLB_RETRY);
-    }
+    const char               *compression_algorithm;
+    struct flb_http_response *response;
+    struct flb_http_request  *request;
+    int                       result;
 
     /* Convert format */
     if (event_chunk->type == FLB_EVENT_TYPE_TRACES) {
@@ -902,154 +900,121 @@ static void cb_opensearch_flush(struct flb_event_chunk *event_chunk,
     }
 
     if (ret != 0) {
-        flb_upstream_conn_release(u_conn);
         FLB_OUTPUT_RETURN(FLB_ERROR);
     }
 
-    pack = (char *) out_buf;
-    pack_size = out_size;
-
-    final_payload_buf = pack;
-    final_payload_size = pack_size;
-    /* Should we compress the payload ? */
     if (ctx->compression == FLB_OS_COMPRESSION_GZIP) {
-        ret = flb_gzip_compress((void *) pack, pack_size,
-                                &out_buf, &out_size);
-        if (ret == -1) {
-            flb_plg_error(ctx->ins,
-                          "cannot gzip payload, disabling compression");
-        }
-        else {
-            compressed = FLB_TRUE;
-            final_payload_buf = out_buf;
-            final_payload_size = out_size;
-        }
+        compression_algorithm = "gzip";
+    }
+    else {
+        compression_algorithm = NULL;
     }
 
-    /* Compose HTTP Client request */
-    c = flb_http_client(u_conn, FLB_HTTP_POST, ctx->uri,
-                        final_payload_buf, final_payload_size, NULL, 0, NULL, 0);
-
-    flb_http_buffer_size(c, ctx->buffer_size);
-
-#ifndef FLB_HAVE_AWS
-    flb_http_add_header(c, "User-Agent", 10, "Fluent-Bit", 10);
-#endif
-
-    flb_http_add_header(c, "Content-Type", 12, "application/x-ndjson", 20);
+    request = flb_http_client_request_builder(
+                    &ctx->http_client,
+                    FLB_HTTP_CLIENT_ARGUMENT_METHOD(FLB_HTTP_POST),
+                    FLB_HTTP_CLIENT_ARGUMENT_URI(ctx->uri),
+                    FLB_HTTP_CLIENT_ARGUMENT_CONTENT_TYPE(
+                        "application/x-ndjson"),
+                    FLB_HTTP_CLIENT_ARGUMENT_BODY(out_buf,
+                                                  out_size,
+                                                  compression_algorithm));
 
     if (ctx->http_user && ctx->http_passwd) {
-        flb_http_basic_auth(c, ctx->http_user, ctx->http_passwd);
+        flb_http_request_set_authorization(request,
+                                           HTTP_WWW_AUTHORIZATION_SCHEME_BASIC,
+                                           ctx->http_user,
+                                           ctx->http_passwd);
     }
 
-#ifdef FLB_HAVE_AWS
-    if (ctx->has_aws_auth == FLB_TRUE) {
-        signature = add_aws_auth(c, ctx);
-        if (!signature) {
-            goto retry;
+    if (ctx->has_aws_auth) {
+        result = flb_http_request_perform_signv4_signature(request,
+                                                           ctx->aws_region,
+                                                           ctx->aws_service_name,
+                                                           ctx->aws_provider);
+
+
+        if (result != 0) {
+            flb_http_client_request_destroy(request, FLB_TRUE);
+
+            FLB_OUTPUT_RETURN(FLB_RETRY);
         }
     }
-    else {
-        flb_http_add_header(c, "User-Agent", 10, "Fluent-Bit", 10);
-    }
-#endif
 
-    /* Set Content-Encoding of compressed payload */
-    if (compressed == FLB_TRUE) {
-        if (ctx->compression == FLB_OS_COMPRESSION_GZIP) {
-            flb_http_set_content_encoding_gzip(c);
-        }
-    }
+    response = flb_http_client_request_execute(request);
 
-    /* Map debug callbacks */
-    flb_http_client_debug(c, ctx->ins->callback);
+    if (response == NULL) {
+        flb_debug("http request execution error");
 
-    ret = flb_http_do(c, &b_sent);
-    if (ret != 0) {
-        flb_plg_warn(ctx->ins, "http_do=%i URI=%s", ret, ctx->uri);
+        flb_http_client_request_destroy(request, FLB_TRUE);
+
         goto retry;
     }
-    else {
-        /* The request was issued successfully, validate the 'error' field */
-        flb_plg_debug(ctx->ins, "HTTP Status=%i URI=%s", c->resp.status, ctx->uri);
-        if (c->resp.status != 200 && c->resp.status != 201) {
-            if (c->resp.payload_size > 0) {
-                flb_plg_error(ctx->ins, "HTTP status=%i URI=%s, response:\n%s\n",
-                              c->resp.status, ctx->uri, c->resp.payload);
-            }
-            else {
-                flb_plg_error(ctx->ins, "HTTP status=%i URI=%s",
-                              c->resp.status, ctx->uri);
-            }
-            goto retry;
-        }
 
-        if (c->resp.payload_size > 0) {
-            /*
-             * OpenSearch payload should be JSON, we convert it to msgpack
-             * and lookup the 'error' field.
-             */
-            ret = opensearch_error_check(ctx, c);
-            if (ret == FLB_TRUE) {
-                /* we got an error */
-                if (ctx->trace_error) {
-                    /*
-                     * If trace_error is set, trace the actual
-                     * response from Elasticsearch explaining the problem.
-                     * Trace_Output can be used to see the request.
-                     */
-                    if (pack_size < 4000) {
-                        flb_plg_debug(ctx->ins, "error caused by: Input\n%.*s\n",
-                                      (int) pack_size, pack);
-                    }
-                    if (c->resp.payload_size < 4000) {
-                        flb_plg_error(ctx->ins, "error: Output\n%s",
-                                      c->resp.payload);
-                    } else {
-                        /*
-                        * We must use fwrite since the flb_log functions
-                        * will truncate data at 4KB
-                        */
-                        fwrite(c->resp.payload, 1, c->resp.payload_size, stderr);
-                        fflush(stderr);
-                    }
-                }
-                goto retry;
-            }
-            else {
-                flb_plg_debug(ctx->ins, "OpenSearch response\n%s",
-                              c->resp.payload);
-            }
+    /* The request was issued successfully, validate the 'error' field */
+    flb_plg_debug(ctx->ins, "HTTP Status=%i URI=%s", response->status, ctx->uri);
+    if (response->status != 200 && response->status != 201) {
+        if (response->body != NULL &&
+            cfl_sds_len(response->body) > 0) {
+            flb_plg_error(ctx->ins, "HTTP status=%i URI=%s, response:\n%s\n",
+                            response->status, ctx->uri, response->body);
         }
         else {
+            flb_plg_error(ctx->ins, "HTTP status=%i URI=%s",
+                            response->status, ctx->uri);
+        }
+        goto retry;
+    }
+
+    if (response->body != NULL && cfl_sds_len(response->body) > 0) {
+        /*
+            * OpenSearch payload should be JSON, we convert it to msgpack
+            * and lookup the 'error' field.
+            */
+        ret = opensearch_error_check(ctx, c);
+        if (ret == FLB_TRUE) {
+            /* we got an error */
+            if (ctx->trace_error) {
+                /*
+                    * If trace_error is set, trace the actual
+                    * response from Elasticsearch explaining the problem.
+                    * Trace_Output can be used to see the request.
+                    */
+                if (out_size < 4000) {
+                    flb_plg_debug(ctx->ins, "error caused by: Input\n%.*s\n",
+                                    (int) out_size, out_buf);
+                }
+                if (cfl_sds_len(response->body) < 4000) {
+                    flb_plg_error(ctx->ins, "error: Output\n%s",
+                                  response->body);
+                } else {
+                    /*
+                    * We must use fwrite since the flb_log functions
+                    * will truncate data at 4KB
+                    */
+                    fwrite(response->body, 1, cfl_sds_len(response->body), stderr);
+                    fflush(stderr);
+                }
+            }
             goto retry;
         }
+        else {
+            flb_plg_debug(ctx->ins, "OpenSearch response\n%s",
+                          response->body);
+        }
+    }
+    else {
+        goto retry;
     }
 
-    /* Cleanup */
-    flb_http_client_destroy(c);
+    flb_http_client_request_destroy(request, FLB_TRUE);
 
-    if (final_payload_buf != pack) {
-        flb_free(final_payload_buf);
-    }
-    flb_sds_destroy(pack);
-
-    flb_upstream_conn_release(u_conn);
-    if (signature) {
-        flb_sds_destroy(signature);
-    }
     FLB_OUTPUT_RETURN(FLB_OK);
 
     /* Issue a retry */
  retry:
-    flb_http_client_destroy(c);
-    flb_sds_destroy(pack);
+    flb_http_client_request_destroy(request, FLB_TRUE);
 
-    if (final_payload_buf != pack) {
-        flb_free(final_payload_buf);
-    }
-
-    flb_upstream_conn_release(u_conn);
     FLB_OUTPUT_RETURN(FLB_RETRY);
 }
 

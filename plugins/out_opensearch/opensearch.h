@@ -20,6 +20,8 @@
 #ifndef FLB_OUT_OPENSEARCH_H
 #define FLB_OUT_OPENSEARCH_H
 
+#include <fluent-bit/flb_http_client.h>
+
 /* config defaults */
 #define FLB_OS_DEFAULT_HOST       "127.0.0.1"
 #define FLB_OS_DEFAULT_PORT       92000
@@ -146,6 +148,9 @@ struct flb_opensearch {
 
     /* Plugin output instance reference */
     struct flb_output_instance *ins;
+
+    /* HTTP client */
+    struct flb_http_client_ng http_client;
 
     /* Compression algorithm */
     int compression;
