@@ -21,6 +21,8 @@
 #ifndef FLB_OUT_OCI_LOGAN_H
 #define FLB_OUT_OCI_LOGAN_H
 
+#include <fluent-bit/flb_http_client.h>
+
 #define FLB_OCI_LOG_ENTITY_ID_KEY "oci_la_entity_id"
 #define FLB_OCI_LOG_ENTITY_ID_KEY_SIZE sizeof(FLB_OCI_LOG_ENTITY_ID_KEY) - 1
 
@@ -208,6 +210,9 @@ struct flb_oci_logan {
     /* For OCI signing */
     flb_sds_t key_id; // tenancy/user/key_fingerprint
     flb_sds_t private_key;
+
+    /* HTTP client */
+    struct flb_http_client_ng http_client;
 
     struct flb_output_instance *ins;
 
