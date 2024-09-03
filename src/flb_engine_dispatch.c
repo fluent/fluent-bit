@@ -136,6 +136,40 @@ static void test_run_formatter(struct flb_config *config,
     }
 }
 
+static void test_run_response(struct flb_config *config,
+                              struct flb_input_instance *i_ins,
+                              struct flb_output_instance *o_ins,
+                              struct flb_task *task,
+                              void *flush_ctx)
+{
+    int ret;
+    void *out_buf = NULL;
+    size_t out_size = 0;
+    struct flb_test_out_response *otr;
+    struct flb_event_chunk *evc;
+
+    otr = &o_ins->test_response;
+    evc = task->event_chunk;
+
+    /* Invoke the output plugin formatter test callback */
+    ret = otr->callback(config,
+                        o_ins->context,
+                        evc->data, evc->size,
+                        &out_buf, &out_size);
+
+    /* Call the runtime test callback checker */
+    if (otr->rt_response_callback) {
+        otr->rt_response_callback(otr->rt_ctx,
+                                  otr->rt_ffd,
+                                  ret,
+                                  out_buf, out_size,
+                                  otr->rt_data);
+    }
+    else {
+        flb_free(out_buf);
+    }
+}
+
 static int tasks_start(struct flb_input_instance *in,
                        struct flb_config *config)
 {
@@ -172,18 +206,29 @@ static int tasks_start(struct flb_input_instance *in,
              * the proper test function and continue;
              */
             out = route->out;
-            if (out->test_mode == FLB_TRUE &&
-                out->test_formatter.callback != NULL) {
+            if (out->test_mode == FLB_TRUE) {
+                if (out->test_formatter.callback != NULL) {
+                    /* Run the formatter test */
+                    test_run_formatter(config, in, out,
+                                       task,
+                                       out->test_formatter.flush_ctx);
 
-                /* Run the formatter test */
-                test_run_formatter(config, in, out,
-                                   task,
-                                   out->test_formatter.flush_ctx);
+                    /* Remove the route */
+                    mk_list_del(&route->_head);
+                    flb_free(route);
+                    continue;
+                }
+                else if (out->test_response.callback != NULL) {
+                    /* Run the formatter test */
+                    test_run_response(config, in, out,
+                                      task,
+                                      out->test_response.flush_ctx);
 
-                /* Remove the route */
-                mk_list_del(&route->_head);
-                flb_free(route);
-                continue;
+                    /* Remove the route */
+                    mk_list_del(&route->_head);
+                    flb_free(route);
+                    continue;
+                }
             }
 
             /*
