@@ -326,7 +326,7 @@ static int process_metrics(struct flb_event_chunk *event_chunk,
             result = opentelemetry_http_post(ctx, buf, flb_sds_len(buf),
                                              event_chunk->tag,
                                              flb_sds_len(event_chunk->tag),
-                                             ctx->metrics_uri);
+                                             ctx->metrics_uri_sanitized);
 
             /* Debug http_post() result statuses */
             if (result == FLB_OK) {
@@ -416,7 +416,7 @@ static int process_traces(struct flb_event_chunk *event_chunk,
         result = opentelemetry_http_post(ctx, buf, flb_sds_len(buf),
                                          event_chunk->tag,
                                          flb_sds_len(event_chunk->tag),
-                                         ctx->traces_uri);
+                                         ctx->traces_uri_sanitized);
 
         /* Debug http_post() result statuses */
         if (result == FLB_OK) {
