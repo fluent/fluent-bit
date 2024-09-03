@@ -627,6 +627,8 @@ static inline int flb_input_config_map_set(struct flb_input_instance *ins,
 {
     int ret;
 
+    ret = -1;
+
     /* Process normal properties */
     if (ins->config_map) {
         ret = flb_config_map_set(&ins->properties, ins->config_map, context);
