@@ -773,7 +773,7 @@ static int logs_flush_to_otel(struct opentelemetry_context *ctx, struct flb_even
     ret = opentelemetry_http_post(ctx, body, len,
                                   event_chunk->tag,
                                   flb_sds_len(event_chunk->tag),
-                                  ctx->logs_uri);
+                                  ctx->logs_uri_sanitized);
     flb_free(body);
 
     return ret;
