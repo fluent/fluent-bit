@@ -540,6 +540,14 @@ int flb_output_set_test(flb_ctx_t *ctx, int ffd, char *test_name,
         o_ins->test_formatter.rt_data = out_callback_data;
         o_ins->test_formatter.flush_ctx = test_ctx;
     }
+    else if (strcmp(test_name, "response") == 0) {
+        o_ins->test_mode = FLB_TRUE;
+        o_ins->test_response.rt_ctx = ctx;
+        o_ins->test_response.rt_ffd = ffd;
+        o_ins->test_response.rt_response_callback = out_callback;
+        o_ins->test_response.rt_data = out_callback_data;
+        o_ins->test_response.flush_ctx = test_ctx;
+    }
     else {
         return -1;
     }
