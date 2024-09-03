@@ -325,29 +325,49 @@ struct opentelemetry_context *flb_opentelemetry_context_create(struct flb_output
         return NULL;
     }
 
-    logs_uri = sanitize_uri(ctx->logs_uri);
-    traces_uri = sanitize_uri(ctx->traces_uri);
-    metrics_uri = sanitize_uri(ctx->metrics_uri);
-
     ctx->u = upstream;
     ctx->host = ins->host.name;
     ctx->port = ins->host.port;
 
+    ctx->logs_uri_sanitized = sanitize_uri(ctx->logs_uri);
+    ctx->traces_uri_sanitized = sanitize_uri(ctx->traces_uri);
+    ctx->metrics_uri_sanitized = sanitize_uri(ctx->metrics_uri);
 
-    /* Logs Properties */
-    if (logs_uri == NULL) {
+    if (ctx->logs_uri_sanitized == NULL) {
         flb_plg_trace(ctx->ins,
                       "Could not allocate memory for sanitized "
                       "log endpoint uri");
+
+        flb_opentelemetry_context_destroy(ctx);
+
+        return NULL;
     }
-    else {
-        ctx->logs_uri = logs_uri;
+
+    if (ctx->traces_uri_sanitized == NULL) {
+        flb_plg_trace(ctx->ins,
+                      "Could not allocate memory for sanitized "
+                      "trace endpoint uri");
+
+        flb_opentelemetry_context_destroy(ctx);
+
+        return NULL;
+    }
+
+    if (ctx->metrics_uri_sanitized == NULL) {
+        flb_plg_trace(ctx->ins,
+                      "Could not allocate memory for sanitized "
+                      "metric endpoint uri");
+
+        flb_opentelemetry_context_destroy(ctx);
+
+        return NULL;
     }
 
     /* list of 'logs_body_key' */
     ret = log_body_key_list_create(ctx);
     if (ret != 0) {
         flb_opentelemetry_context_destroy(ctx);
+
         return NULL;
     }
 
@@ -363,25 +383,6 @@ struct opentelemetry_context *flb_opentelemetry_context_create(struct flb_output
         flb_opentelemetry_context_destroy(ctx);
         return NULL;
     }
-
-    if (traces_uri == NULL) {
-        flb_plg_trace(ctx->ins,
-                      "Could not allocate memory for sanitized "
-                      "trace endpoint uri");
-    }
-    else {
-        ctx->traces_uri = traces_uri;
-    }
-
-    if (metrics_uri == NULL) {
-        flb_plg_trace(ctx->ins,
-                      "Could not allocate memory for sanitized "
-                      "metric endpoint uri");
-    }
-    else {
-        ctx->metrics_uri = metrics_uri;
-    }
-
 
     /* Set instance flags into upstream */
     flb_output_upstream_set(ctx->u, ins);
@@ -552,6 +553,18 @@ void flb_opentelemetry_context_destroy(struct opentelemetry_context *ctx)
 
     if (ctx->u) {
         flb_upstream_destroy(ctx->u);
+    }
+
+    if (ctx->logs_uri_sanitized != NULL) {
+        flb_free(ctx->logs_uri_sanitized);
+    }
+
+    if (ctx->traces_uri_sanitized != NULL) {
+        flb_free(ctx->traces_uri_sanitized);
+    }
+
+    if (ctx->metrics_uri_sanitized != NULL) {
+        flb_free(ctx->metrics_uri_sanitized);
     }
 
     /* release log_body_key_list */

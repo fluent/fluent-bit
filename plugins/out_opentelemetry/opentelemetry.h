@@ -53,9 +53,13 @@ struct opentelemetry_context {
     int proxy_port;
 
     /* HTTP URI */
+    char *traces_uri_sanitized;
+    char *metrics_uri_sanitized;
+    char *logs_uri_sanitized;
     char *traces_uri;
     char *metrics_uri;
     char *logs_uri;
+
     char *host;
     int port;
 
