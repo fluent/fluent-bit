@@ -111,7 +111,7 @@ jobs:
           FLB_OPT: ${{ matrix.flb_option }}
 
 
-  run-qemu-aarch64-unit-tests:
+  run-qemu-ubuntu-unit-tests:
     # We chain this after Linux one as there are CPU time costs for QEMU emulation
     needs:
       - run-ubuntu-unit-tests
@@ -119,15 +119,18 @@ jobs:
     timeout-minutes: 60
     strategy:
       fail-fast: false
+      matrix:
+        arch:
+          - aarch64
     steps:
       - name: Checkout Fluent Bit code
         uses: actions/checkout@v4
 
-      - name: Prepare and build with QEMU aarch64
+      - name: Prepare and build with QEMU ${{ matrix.arch }}
         uses: uraimo/run-on-arch-action@v2
-        id: aarch64-build-on-qemu-aarch64
+        id: build-and-test-on-qemu
         with:
-          arch: aarch64
+          arch: ${{ matrix.arch }}
           distro: ubuntu20.04
           shell: /bin/bash
           dockerRunArgs: |
@@ -167,7 +170,7 @@ jobs:
     needs:
       - run-macos-unit-tests
       - run-ubuntu-unit-tests
-      - run-qemu-aarch64-unit-tests
+      - run-qemu-ubuntu-unit-tests
     steps:
       - name: Check build matrix status
         # Ignore MacOS failures
