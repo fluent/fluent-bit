@@ -203,7 +203,7 @@ static inline int handle_input_event(flb_pipefd_t fd, uint64_t ts,
         return -1;
     }
 
-    flb_input_coro_finished(config, ins_id);
+    flb_input_coro_finished(config, (int) ins_id);
     return 0;
 }
 
