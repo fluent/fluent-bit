@@ -691,7 +691,7 @@ static struct flb_config_map config_map[] = {
     },
 
     {
-     FLB_CONFIG_MAP_BOOL, "use_integer", "false",
+     FLB_CONFIG_MAP_BOOL, "add_integer_suffix", "false",
      0, FLB_TRUE, offsetof(struct flb_influxdb, use_influxdb_integer),
      "Use influxdb line protocol's integer type suffix."
     },
