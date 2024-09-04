@@ -138,14 +138,12 @@ jobs:
         uses: self-actuated/hub-mirror@master
 
       - name: Setup environment
-        if: github.repository == 'fluent/fluent-bit'
         run: |
           sudo apt-get update
           sudo apt-get install -y gcc-9 g++-9 clang-12 cmake flex bison libsystemd-dev gcovr libyaml-dev
           sudo ln -s /usr/bin/llvm-symbolizer-12 /usr/bin/llvm-symbolizer || true
 
       - name: Build and test with actuated runners
-        if: github.repository == 'fluent/fluent-bit'
         run: |
             sudo update-alternatives --install /usr/bin/gcc gcc /usr/bin/gcc-9 90
             sudo update-alternatives --install /usr/bin/g++ g++ /usr/bin/g++-9 90
