@@ -443,7 +443,8 @@ static struct aws_test *aws_test_create(char *path, char *context,
     return awt;
 
  error:
-    //aws_test_destroy(awt);
+    aws_test_destroy(awt);
+
     return NULL;
 }
 
