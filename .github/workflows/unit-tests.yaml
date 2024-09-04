@@ -178,7 +178,7 @@ jobs:
       fail-fast: false
       matrix:
         arch:
-          - aarch64
+          - s390x
     steps:
       - name: Checkout Fluent Bit code
         uses: actions/checkout@v4
@@ -209,8 +209,10 @@ jobs:
             export GLOBAL_OPTION="-DFLB_BACKTRACE=Off -DFLB_SHARED_LIB=Off -DFLB_DEBUG=On -DFLB_ALL=On -DFLB_EXAMPLES=Off"
             export FLB_UNIT_TEST_OPTION="-DFLB_TESTS_INTERNAL=On"
             export FLB_OPT="${FLB_OPTION} ${GLOBAL_OPTION} ${FLB_UNIT_TEST_OPTION} ${FLB_OMIT_OPTION}"
+            export CC=gcc
+            export CXX=gcc
 
-            echo "CC = gcc, CXX = gcc, FLB_OPT = $FLB_OPT"
+            echo "CC = $CC, CXX = $CXX, FLB_OPT = $FLB_OPT"
 
             cmake ${FLB_OPT}  ../
             make -j $nparallel
