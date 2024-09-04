@@ -205,7 +205,7 @@ jobs:
             cd build
             export nparallel=$(( $(getconf _NPROCESSORS_ONLN) > 8 ? 8 : $(getconf _NPROCESSORS_ONLN) ))
             export FLB_OPTION="-DFLB_WITHOUT_flb-it-network=1 -DFLB_WITHOUT_flb-it-fstore=1"
-            export FLB_OMIT_OPTION="-DFLB_WITHOUT_flb-it-utils=1 -DFLB_WITHOUT_flb-it-pack=1"
+            export FLB_OMIT_OPTION=""
             export GLOBAL_OPTION="-DFLB_BACKTRACE=Off -DFLB_SHARED_LIB=Off -DFLB_DEBUG=On -DFLB_ALL=On -DFLB_EXAMPLES=Off"
             export FLB_UNIT_TEST_OPTION="-DFLB_TESTS_INTERNAL=On"
             export FLB_OPT="${FLB_OPTION} ${GLOBAL_OPTION} ${FLB_UNIT_TEST_OPTION} ${FLB_OMIT_OPTION}"
