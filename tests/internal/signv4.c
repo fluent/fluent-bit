@@ -187,6 +187,8 @@ static struct request *http_request_create(char *request)
         start = sep + 1;
         br = strchr(start, '\n');
         if (!br) {
+            flb_sds_destroy(key);
+
             break;
         }
 
