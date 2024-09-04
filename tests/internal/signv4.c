@@ -446,7 +446,7 @@ static struct aws_test *aws_test_create(char *path, char *context,
     //aws_test_destroy(awt);
     return NULL;
 }
-
+/* test 1234 */
 static int load_aws_test_directory(struct mk_list *list, char *ut_path,
                                    struct flb_config *config)
 {
