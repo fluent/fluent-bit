@@ -289,7 +289,7 @@ void flb_test_integer_value()
     out_ffd = flb_output(ctx, (char *) "influxdb", NULL);
     flb_output_set(ctx, out_ffd,
                    "match", "test",
-                   "use_integer", "true",
+                   "add_integer_suffix", "true",
                    NULL);
 
     /* Enable test mode */
@@ -340,7 +340,7 @@ void flb_test_negative_integer_value()
     out_ffd = flb_output(ctx, (char *) "influxdb", NULL);
     flb_output_set(ctx, out_ffd,
                    "match", "test",
-                   "use_integer", "true",
+                   "add_integer_suffix", "true",
                    NULL);
 
     /* Enable test mode */
@@ -392,7 +392,7 @@ void flb_test_integer_as_float_value()
     out_ffd = flb_output(ctx, (char *) "influxdb", NULL);
     flb_output_set(ctx, out_ffd,
                    "match", "test",
-                   "use_integer", "false",
+                   "add_integer_suffix", "false",
                    NULL);
 
     /* Enable test mode */
@@ -443,7 +443,7 @@ void flb_test_negative_integer_as_float_value()
     out_ffd = flb_output(ctx, (char *) "influxdb", NULL);
     flb_output_set(ctx, out_ffd,
                    "match", "test",
-                   "use_integer", "false",
+                   "add_integer_suffix", "false",
                    NULL);
 
     /* Enable test mode */
