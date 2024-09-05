@@ -242,6 +242,7 @@ struct flb_input_instance *flb_input_new(struct flb_config *config,
         instance->alias    = NULL;
         instance->id       = id;
         instance->flags    = plugin->flags;
+        instance->test_mode = FLB_FALSE;
         instance->p        = plugin;
         instance->tag      = NULL;
         instance->tag_len  = 0;
@@ -345,6 +346,9 @@ struct flb_input_instance *flb_input_new(struct flb_config *config,
 
         /* processor instance */
         instance->processor = flb_processor_create(config, instance->name, instance, FLB_PLUGIN_INPUT);
+
+        /* Tests */
+        instance->test_formatter.callback = plugin->test_formatter.callback;
     }
 
     return instance;
