@@ -110,6 +110,113 @@ jobs:
           CXX: g++
           FLB_OPT: ${{ matrix.flb_option }}
 
+  run-aarch64-unit-tests:
+    # Ensure for OSS Fluent Bit repo we enable usage of Actuated runners for ARM builds, for forks it should keep existing ubuntu-latest usage.
+    runs-on: ${{(github.repository == 'fluent/fluent-bit') && 'actuated-arm64-8cpu-16gb' || 'ubuntu-latest' }}
+    permissions:
+      contents: read
+    # We chain this after Linux one as there are costs for actuated workers
+    needs:
+      - run-ubuntu-unit-tests
+    timeout-minutes: 10
+    strategy:
+      fail-fast: false
+      matrix:
+        config:
+          - name: "Aarch64 actuated testing"
+            flb_option: "-DFLB_WITHOUT_flb-it-network=1 -DFLB_WITHOUT_flb-it-fstore=1"
+            omit_option: "-DFLB_WITHOUT_flb-it-utils=1 -DFLB_WITHOUT_flb-it-pack=1"
+            global_option: "-DFLB_BACKTRACE=Off -DFLB_SHARED_LIB=Off -DFLB_DEBUG=On -DFLB_ALL=On -DFLB_EXAMPLES=Off"
+            unit_test_option: "-DFLB_TESTS_INTERNAL=On"
+            compiler: gcc
+    steps:
+      - name: Checkout Fluent Bit code
+        uses: actions/checkout@v4
+
+      - name: Set up Actuated mirror
+        if: github.repository == 'fluent/fluent-bit'
+        uses: self-actuated/hub-mirror@master
+
+      - name: Setup environment
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y gcc-9 g++-9 clang-12 cmake flex bison libsystemd-dev gcovr libyaml-dev
+          sudo ln -s /usr/bin/llvm-symbolizer-12 /usr/bin/llvm-symbolizer || true
+
+      - name: Build and test with actuated runners
+        run: |
+            sudo update-alternatives --install /usr/bin/gcc gcc /usr/bin/gcc-9 90
+            sudo update-alternatives --install /usr/bin/g++ g++ /usr/bin/g++-9 90
+            sudo update-alternatives --install /usr/bin/clang clang /usr/bin/clang-12 90
+
+            export nparallel=$(( $(getconf _NPROCESSORS_ONLN) > 8 ? 8 : $(getconf _NPROCESSORS_ONLN) ))
+            export FLB_OPTION="${{ matrix.config.flb_option }}"
+            export FLB_OMIT_OPTION="${{ matrix.config.omit_option }}"
+            export GLOBAL_OPTION="${{ matrix.config.global_option }}"
+            export FLB_UNIT_TEST_OPTION="${{ matrix.config.unit_test_option }}"
+            export FLB_OPT="${FLB_OPTION} ${GLOBAL_OPTION} ${FLB_UNIT_TEST_OPTION} ${FLB_OMIT_OPTION}"
+
+            echo "CC = ${{ matrix.config.compiler }}, CXX = ${{ matrix.config.compiler }}, FLB_OPT = $FLB_OPT"
+
+            cmake ${FLB_OPT}  ../
+            make -j $nparallel
+            ctest -j $nparallel --build-run-dir . --output-on-failure
+        working-directory: build
+        env:
+          CC: ${{ matrix.config.compiler }}
+          CXX: ${{ matrix.config.compiler }}
+
+  run-qemu-ubuntu-unit-tests:
+    # We chain this after Linux one as there are CPU time costs for QEMU emulation
+    needs:
+      - run-ubuntu-unit-tests
+    runs-on: ubuntu-20.04
+    timeout-minutes: 60
+    strategy:
+      fail-fast: false
+      matrix:
+        arch:
+          - s390x
+    steps:
+      - name: Checkout Fluent Bit code
+        uses: actions/checkout@v4
+
+      - name: Prepare and build with QEMU ${{ matrix.arch }}
+        uses: uraimo/run-on-arch-action@v2
+        id: build-and-test-on-qemu
+        with:
+          arch: ${{ matrix.arch }}
+          distro: ubuntu20.04
+          shell: /bin/bash
+          dockerRunArgs: |
+            --volume "/var/lib/dbus/machine-id:/var/lib/dbus/machine-id"
+            --volume "/etc/machine-id:/etc/machine-id"
+          install: |
+            apt-get update
+            apt-get install -y gcc-7 g++-7 clang-6.0 libyaml-dev cmake flex bison libssl-dev #libsystemd-dev
+            ln -s /usr/bin/llvm-symbolizer-6.0 /usr/bin/llvm-symbolizer || true
+
+            update-alternatives --install /usr/bin/gcc gcc /usr/bin/gcc-7 90
+            update-alternatives --install /usr/bin/g++ g++ /usr/bin/g++-7 90
+            update-alternatives --install /usr/bin/clang clang /usr/bin/clang-6.0 90
+          run: |
+            cd build
+            export nparallel=$(( $(getconf _NPROCESSORS_ONLN) > 8 ? 8 : $(getconf _NPROCESSORS_ONLN) ))
+            export FLB_OPTION="-DFLB_WITHOUT_flb-it-network=1 -DFLB_WITHOUT_flb-it-fstore=1"
+            export FLB_OMIT_OPTION=""
+            export GLOBAL_OPTION="-DFLB_BACKTRACE=Off -DFLB_SHARED_LIB=Off -DFLB_DEBUG=On -DFLB_ALL=On -DFLB_EXAMPLES=Off"
+            export FLB_UNIT_TEST_OPTION="-DFLB_TESTS_INTERNAL=On"
+            export FLB_OPT="${FLB_OPTION} ${GLOBAL_OPTION} ${FLB_UNIT_TEST_OPTION} ${FLB_OMIT_OPTION}"
+            export CC=gcc
+            export CXX=gcc
+
+            echo "CC = $CC, CXX = $CXX, FLB_OPT = $FLB_OPT"
+
+            cmake ${FLB_OPT}  ../
+            make -j $nparallel
+            ctest -j $nparallel --build-run-dir . --output-on-failure
+
+
   # Required check looks at this so do not remove
   run-all-unit-tests:
     if: always()
@@ -120,6 +227,8 @@ jobs:
     needs:
       - run-macos-unit-tests
       - run-ubuntu-unit-tests
+      - run-aarch64-unit-tests
+      - run-qemu-ubuntu-unit-tests
     steps:
       - name: Check build matrix status
         # Ignore MacOS failures
