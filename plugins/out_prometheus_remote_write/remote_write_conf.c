@@ -78,6 +78,7 @@ struct prometheus_remote_write_context *flb_prometheus_remote_write_context_crea
     const char *tmp;
     struct flb_upstream *upstream;
     struct prometheus_remote_write_context *ctx = NULL;
+    uint64_t http_client_flags;
 
     /* Allocate plugin context */
     ctx = flb_calloc(1, sizeof(struct prometheus_remote_write_context));
@@ -224,6 +225,26 @@ struct prometheus_remote_write_context *flb_prometheus_remote_write_context_crea
     /* Set instance flags into upstream */
     flb_output_upstream_set(ctx->u, ins);
 
+    http_client_flags = FLB_HTTP_CLIENT_FLAG_AUTO_DEFLATE |
+                        FLB_HTTP_CLIENT_FLAG_AUTO_INFLATE;
+
+    if (ctx->u->base.net.keepalive) {
+        http_client_flags |= FLB_HTTP_CLIENT_FLAG_KEEPALIVE;
+    }
+
+    ret = flb_http_client_ng_init(&ctx->http_client,
+                                  ctx->u,
+                                  HTTP_PROTOCOL_VERSION_11,
+                                  http_client_flags);
+
+    if (ret != 0) {
+        flb_plg_debug(ctx->ins, "http client creation error");
+
+        flb_prometheus_remote_write_context_destroy(ctx);
+
+        ctx = NULL;
+    }
+
     return ctx;
 }
 
@@ -233,6 +254,8 @@ void flb_prometheus_remote_write_context_destroy(
     if (!ctx) {
         return;
     }
+
+    flb_http_client_ng_destroy(&ctx->http_client);
 
     flb_kv_release(&ctx->kv_labels);
 

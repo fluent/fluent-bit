@@ -25,6 +25,7 @@
 #include <fluent-bit/flb_output.h>
 #include <fluent-bit/flb_sds.h>
 #include <fluent-bit/flb_upstream_ha.h>
+#include <fluent-bit/flb_http_client.h>
 
 /* refresh token every 50 minutes */
 #define FLB_AZURE_KUSTO_TOKEN_REFRESH 3000
@@ -99,6 +100,9 @@ struct flb_azure_kusto {
 
     /* Fluent Bit context */
     struct flb_config *config;
+
+    /* HTTP client */
+    struct flb_http_client_ng http_client;
 
     /* Plugin output instance reference */
     struct flb_output_instance *ins;

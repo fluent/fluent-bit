@@ -170,7 +170,7 @@ static flb_sds_t get_date(void)
     return rfc1123date;
 }
 
-static flb_sds_t add_header_and_signing(struct flb_http_client *c,
+static flb_sds_t add_header_and_signing(struct flb_http_request *request,
                                         flb_sds_t signing_str, const char *header, int headersize,
                                         const char *val, int val_size)
 {
@@ -178,7 +178,7 @@ static flb_sds_t add_header_and_signing(struct flb_http_client *c,
         return NULL;
     }
 
-    flb_http_add_header(c, header, headersize, val, val_size);
+    flb_http_request_set_header(request, header, headersize, val, val_size);
 
     flb_sds_cat_safe(&signing_str, "\n", 1);
     flb_sds_cat_safe(&signing_str, header, headersize);
@@ -188,8 +188,12 @@ static flb_sds_t add_header_and_signing(struct flb_http_client *c,
     return signing_str;
 }
 
-static int build_headers(struct flb_http_client *c, struct flb_oci_logan *ctx,
-                         flb_sds_t json, flb_sds_t hostname, int port, flb_sds_t uri)
+static int build_headers(struct flb_http_request  *request,
+                         struct flb_oci_logan *ctx,
+                         flb_sds_t json,
+                         flb_sds_t hostname,
+                         int port,
+                         flb_sds_t uri)
 {
     int ret = -1;
     flb_sds_t tmp_sds = NULL;
@@ -230,13 +234,13 @@ static int build_headers(struct flb_http_client *c, struct flb_oci_logan *ctx,
                                flb_sds_len(encoded_uri));
 
     /* Add Host to Header */
-    if (((c->flags & FLB_IO_TLS) && c->port == 443)
-        || (!(c->flags & FLB_IO_TLS) && c->port == 80)) {
+    if (((flb_stream_get_flags(&ctx->u->base) & FLB_IO_TLS) && ctx->u->tcp_port == 443) ||
+         (!(flb_stream_get_flags(&ctx->u->base)) && ctx->u->tcp_port == 80)) {
         /* default port */
-        tmp_ref = flb_sds_copy(tmp_sds, c->host, strlen(c->host));
+        tmp_ref = flb_sds_copy(tmp_sds, ctx->u->tcp_host, strlen(ctx->u->tcp_host));
     }
     else {
-        tmp_ref = flb_sds_printf(&tmp_sds, "%s:%i", c->host, c->port);
+        tmp_ref = flb_sds_printf(&tmp_sds, "%s:%i", ctx->u->tcp_host, ctx->u->tcp_port);
     }
     if (!tmp_ref) {
         flb_plg_error(ctx->ins, "cannot compose temporary host header");
@@ -245,7 +249,7 @@ static int build_headers(struct flb_http_client *c, struct flb_oci_logan *ctx,
     tmp_sds = tmp_ref;
     tmp_ref = NULL;
 
-    signing_str = add_header_and_signing(c, signing_str, FLB_OCI_HEADER_HOST,
+    signing_str = add_header_and_signing(request, signing_str, FLB_OCI_HEADER_HOST,
                                          sizeof(FLB_OCI_HEADER_HOST) - 1,
                                          tmp_sds, flb_sds_len(tmp_sds));
     if (!signing_str) {
@@ -259,7 +263,7 @@ static int build_headers(struct flb_http_client *c, struct flb_oci_logan *ctx,
         flb_plg_error(ctx->ins, "cannot compose temporary date header");
         goto error_label;
     }
-    signing_str = add_header_and_signing(c, signing_str, FLB_OCI_HEADER_DATE,
+    signing_str = add_header_and_signing(request, signing_str, FLB_OCI_HEADER_DATE,
                                          sizeof(FLB_OCI_HEADER_DATE) - 1, rfc1123date,
                                          flb_sds_len(rfc1123date));
     if (!signing_str) {
@@ -290,7 +294,7 @@ static int build_headers(struct flb_http_client *c, struct flb_oci_logan *ctx,
     tmp_sds[tmp_len] = '\0';
     flb_sds_len_set(tmp_sds, tmp_len);
 
-    signing_str = add_header_and_signing(c, signing_str,
+    signing_str = add_header_and_signing(request, signing_str,
                                          FLB_OCI_HEADER_X_CONTENT_SHA256,
                                          sizeof(FLB_OCI_HEADER_X_CONTENT_SHA256) - 1, tmp_sds,
                                          flb_sds_len(tmp_sds));
@@ -300,7 +304,7 @@ static int build_headers(struct flb_http_client *c, struct flb_oci_logan *ctx,
     }
 
     /* Add content-Type */
-    signing_str = add_header_and_signing(c, signing_str,
+    signing_str = add_header_and_signing(request, signing_str,
                                          FLB_OCI_HEADER_CONTENT_TYPE, sizeof(FLB_OCI_HEADER_CONTENT_TYPE) - 1,
                                          FLB_OCI_HEADER_CONTENT_TYPE_VAL,
                                          sizeof(FLB_OCI_HEADER_CONTENT_TYPE_VAL) - 1);
@@ -313,7 +317,7 @@ static int build_headers(struct flb_http_client *c, struct flb_oci_logan *ctx,
     tmp_len = snprintf(tmp_sds, flb_sds_alloc(tmp_sds) - 1, "%i",
                        (int) flb_sds_len(json));
     flb_sds_len_set(tmp_sds, tmp_len);
-    signing_str = add_header_and_signing(c, signing_str,
+    signing_str = add_header_and_signing(request, signing_str,
                                          FLB_OCI_HEADER_CONTENT_LENGTH, sizeof(FLB_OCI_HEADER_CONTENT_LENGTH) - 1,
                                          tmp_sds, flb_sds_len(tmp_sds));
     if (!signing_str) {
@@ -334,17 +338,21 @@ static int build_headers(struct flb_http_client *c, struct flb_oci_logan *ctx,
         goto error_label;
     }
 
-    flb_http_add_header(c, FLB_OCI_HEADER_AUTH, sizeof(FLB_OCI_HEADER_AUTH) - 1,
-                        auth_header_str, flb_sds_len(auth_header_str));
+    flb_http_request_set_header(request,
+                                FLB_OCI_HEADER_AUTH,
+                                sizeof(FLB_OCI_HEADER_AUTH) - 1,
+                                auth_header_str,
+                                flb_sds_len(auth_header_str));
 
     /* User-Agent */
-    flb_http_add_header(c, FLB_OCI_HEADER_USER_AGENT,
-                        sizeof(FLB_OCI_HEADER_USER_AGENT) - 1,
-                        FLB_OCI_HEADER_USER_AGENT_VAL,
-                        sizeof(FLB_OCI_HEADER_USER_AGENT_VAL) - 1);
+    flb_http_request_set_header(request,
+                                FLB_OCI_HEADER_USER_AGENT,
+                                sizeof(FLB_OCI_HEADER_USER_AGENT) - 1,
+                                FLB_OCI_HEADER_USER_AGENT_VAL,
+                                sizeof(FLB_OCI_HEADER_USER_AGENT_VAL) - 1);
 
     /* Accept */
-    flb_http_add_header(c, "Accept", 6, "*/*", 3);
+    flb_http_request_set_header(request, "Accept", 6, "*/*", 3);
 
     ret = 0;
 
@@ -461,59 +469,60 @@ static struct flb_oci_error_response* parse_response_error(struct flb_oci_logan 
     return error_response;
 }
 
-static int retry_error(struct flb_http_client *c, struct flb_oci_logan *ctx)
+static int retry_error(struct flb_http_response *response, struct flb_oci_logan *ctx)
 {
     struct flb_oci_error_response *error_response = NULL;
     int tmp_len;
     int ret = FLB_FALSE;
 
     /* possible retry error message */
-    if ( !(c->resp.status == 400 || c->resp.status == 401
-        || c->resp.status == 404 || c->resp.status == 409
-        || c->resp.status == 429 || c->resp.status == 500)) {
+    if ( !(response->status == 400 || response->status == 401
+        || response->status == 404 || response->status == 409
+        || response->status == 429 || response->status == 500)) {
         return FLB_FALSE;
     }
 
     /* parse error message */
-    error_response = parse_response_error(ctx, c->resp.payload,
-                                          c->resp.payload_size);
+    error_response = parse_response_error(ctx,
+                                          response->body,
+                                          cfl_sds_len(response->body));
     if (!error_response) {
         return FLB_FALSE;
     }
 
     if (error_response->code) {
         tmp_len = flb_sds_len(error_response->code);
-        if (c->resp.status == 400
+        if (response->status == 400
             && (tmp_len == sizeof(FLB_OCI_ERROR_CODE_RELATED_RESOURCE_NOT_FOUND) - 1)
             && strncasecmp(error_response->code, FLB_OCI_ERROR_CODE_RELATED_RESOURCE_NOT_FOUND, tmp_len) == 0) {
             ret = FLB_TRUE;
         }
-        else if( c->resp.status == 401
+        else if (response->status == 401
             &&( tmp_len == sizeof(FLB_OCI_ERROR_CODE_NOT_AUTHENTICATED)-1 )
             && strncasecmp(error_response->code, FLB_OCI_ERROR_CODE_NOT_AUTHENTICATED, tmp_len) == 0) {
             ret = FLB_TRUE;
         }
-        else if (c->resp.status == 404
+        else if (response->status == 404
             && (tmp_len == sizeof(FLB_OCI_ERROR_CODE_NOT_AUTHENTICATEDORNOTFOUND) - 1)
             && strncasecmp(error_response->code, FLB_OCI_ERROR_CODE_NOT_AUTHENTICATEDORNOTFOUND, tmp_len) == 0) {
             ret = FLB_TRUE;
         }
-        else if (c->resp.status == 409
+        else if (response->status == 409
             && (tmp_len == sizeof(FLB_OCI_ERROR_CODE_INCORRECTSTATE) - 1)
             && strncasecmp(error_response->code, FLB_OCI_ERROR_CODE_INCORRECTSTATE, tmp_len) == 0) {
             ret = FLB_TRUE;
         }
-        else if (c->resp.status == 409
+        else if (response->status == 409
             && (tmp_len == sizeof(FLB_OCI_ERROR_CODE_NOT_AUTH_OR_RESOURCE_EXIST) - 1)
             && strncasecmp(error_response->code, FLB_OCI_ERROR_CODE_NOT_AUTH_OR_RESOURCE_EXIST, tmp_len) == 0) {
             ret = FLB_TRUE;
         }
-        else if (c->resp.status == 429
+        else if (response->status == 429
             && (tmp_len == sizeof(FLB_OCI_ERROR_CODE_TOO_MANY_REQUESTS) - 1)
             && strncasecmp(error_response->code, FLB_OCI_ERROR_CODE_TOO_MANY_REQUESTS, tmp_len) == 0) {
             ret = FLB_TRUE;
         }
-        else if (c->resp.status == 500
+        else if (response->status == 500
             && (tmp_len == sizeof(FLB_OCI_ERROR_CODE_INTERNAL_SERVER_ERROR) - 1)
             && strncasecmp(error_response->code, FLB_OCI_ERROR_CODE_INTERNAL_SERVER_ERROR, tmp_len) == 0) {
             ret = FLB_TRUE;
@@ -632,11 +641,11 @@ static int flush_to_endpoint(struct flb_oci_logan *ctx,
                              flb_sds_t log_set_id)
 {
     int out_ret = FLB_RETRY;
-    int http_ret;
-    size_t b_sent;
     flb_sds_t full_uri;
-    struct flb_http_client *c = NULL;
-    struct flb_connection *u_conn;
+    struct flb_http_response *response;
+    struct flb_http_request  *request;
+
+    request =  NULL;
 
     full_uri = compose_uri(ctx, log_set_id, log_group_id);
     if(!full_uri) {
@@ -646,21 +655,30 @@ static int flush_to_endpoint(struct flb_oci_logan *ctx,
 
     flb_plg_debug(ctx->ins, "full_uri=%s", full_uri);
 
-    u_conn = flb_upstream_conn_get(ctx->u);
-    if(!u_conn) {
-        goto error_label;
+
+    request = flb_http_client_request_builder(
+                    &ctx->http_client,
+                    FLB_HTTP_CLIENT_ARGUMENT_METHOD(FLB_HTTP_POST),
+                    FLB_HTTP_CLIENT_ARGUMENT_HOST(ctx->ins->host.name),
+                    FLB_HTTP_CLIENT_ARGUMENT_URI(full_uri),
+                    FLB_HTTP_CLIENT_ARGUMENT_BODY(payload,
+                                                  flb_sds_len(payload),
+                                                  NULL));
+
+    if (request == NULL) {
+        flb_plg_error(ctx->ins, "error initializing http request");
+
+        return FLB_RETRY;
     }
-    /* Create HTTP client context */
-    c = flb_http_client(u_conn, FLB_HTTP_POST, full_uri, (void*) payload,
-                        flb_sds_len(payload), ctx->ins->host.name, ctx->ins->host.port, ctx->proxy, 0);
-    if (!c) {
-        goto error_label;
-    }
-    flb_http_allow_duplicated_headers(c, FLB_FALSE);
 
     flb_plg_debug(ctx->ins, "built client");
-    flb_http_buffer_size(c, FLB_HTTP_DATA_SIZE_MAX);
-    if (build_headers(c, ctx, payload, ctx->ins->host.name, ctx->ins->host.port, full_uri) < 0) {
+
+    if (build_headers(request,
+                      ctx,
+                      payload,
+                      ctx->ins->host.name,
+                      ctx->ins->host.port,
+                      full_uri) < 0) {
         flb_plg_error(ctx->ins, "failed to build headers");
         goto error_label;
     }
@@ -668,57 +686,49 @@ static int flush_to_endpoint(struct flb_oci_logan *ctx,
 
     out_ret = FLB_OK;
 
-    http_ret = flb_http_do(c, &b_sent);
-    flb_plg_debug(ctx->ins, "placed request");
+    response = flb_http_client_request_execute(request);
 
-    if (http_ret == 0) {
-
-        if (c->resp.status != 200) {
-            flb_plg_debug(ctx->ins, "request header %s", c->header_buf);
-
-            out_ret = FLB_ERROR;
-
-            if (c->resp.payload && c->resp.payload_size > 0) {
-                if (retry_error(c, ctx) == FLB_TRUE) {
-                    out_ret = FLB_RETRY;
-                }
-
-                flb_plg_error(ctx->ins, "%s:%i, retry=%s, HTTP status=%i\n%s",
-                              ctx->ins->host.name, ctx->ins->host.port,
-                              (out_ret == FLB_RETRY ? "true" : "false"),
-                              c->resp.status, c->resp.payload);
-            }
-            else {
-                flb_plg_error(ctx->ins, "%s:%i, retry=%s, HTTP status=%i",
-                              ctx->ins->host.name, ctx->ins->host.port,
-                              (out_ret == FLB_RETRY ? "true" : "false"),
-                              c->resp.status);
-            }
-        }
-    }
-    else {
+    if (response == NULL) {
         out_ret = FLB_RETRY;
-        flb_plg_error(ctx->ins, "could not flush records to %s:%i (http_do=%i), retry=%s",
+
+        flb_plg_error(ctx->ins, "could not flush records to %s:%i retry=%s",
                       ctx->ins->host.name, ctx->ins->host.port,
-                      http_ret, (out_ret == FLB_RETRY ? "true" : "false"));
+                      (out_ret == FLB_RETRY ? "true" : "false"));
+
         goto error_label;
     }
 
+    flb_plg_debug(ctx->ins, "placed request");
 
+    if (response->status != 200) {
+        out_ret = FLB_ERROR;
+
+        if (response->body != NULL &&
+            cfl_sds_len(response->body) > 0) {
+            if (retry_error(response, ctx) == FLB_TRUE) {
+                out_ret = FLB_RETRY;
+            }
+
+            flb_plg_error(ctx->ins, "%s:%i, retry=%s, HTTP status=%i\n%s",
+                            ctx->ins->host.name, ctx->ins->host.port,
+                            (out_ret == FLB_RETRY ? "true" : "false"),
+                            response->status, response->body);
+        }
+        else {
+            flb_plg_error(ctx->ins, "%s:%i, retry=%s, HTTP status=%i",
+                            ctx->ins->host.name, ctx->ins->host.port,
+                            (out_ret == FLB_RETRY ? "true" : "false"),
+                            response->status);
+        }
+    }
 
     error_label:
     if (full_uri) {
         flb_sds_destroy(full_uri);
     }
 
-    /* Destroy HTTP client context */
-    if (c) {
-        flb_http_client_destroy(c);
-    }
-
-    /* Release the TCP connection */
-    if (u_conn) {
-        flb_upstream_conn_release(u_conn);
+    if (request != NULL) {
+        flb_http_client_request_destroy(request, FLB_TRUE);
     }
 
     return out_ret;

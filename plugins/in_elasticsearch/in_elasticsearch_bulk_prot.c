@@ -925,8 +925,8 @@ int in_elasticsearch_bulk_prot_handle_error(struct flb_in_elasticsearch *ctx,
 
 
 /* New gen HTTP server */
-static int send_response_ng(struct flb_http_response *response, 
-                            int http_status, 
+static int send_response_ng(struct flb_http_response *response,
+                            int http_status,
                             char *content_type,
                             char *message)
 {
@@ -946,14 +946,14 @@ static int send_response_ng(struct flb_http_response *response,
     }
 
     if (content_type != NULL) {
-        flb_http_response_set_header(response, 
+        flb_http_response_set_header(response,
                                      "content-type", 0,
                                      content_type, 0);
     }
 
     if (message != NULL) {
-        flb_http_response_set_body(response, 
-                                   (unsigned char *) message, 
+        flb_http_response_set_body(response,
+                                   (unsigned char *) message,
                                    strlen(message));
     }
 
@@ -962,14 +962,14 @@ static int send_response_ng(struct flb_http_response *response,
     return 0;
 }
 
-static int send_json_response_ng(struct flb_http_response *response, 
+static int send_json_response_ng(struct flb_http_response *response,
                                  int http_status,
                                  char *message)
 {
-    return send_response_ng(response, http_status, "application/json", message); 
+    return send_response_ng(response, http_status, "application/json", message);
 }
 
-static int send_version_message_response_ng(struct flb_http_response *response, 
+static int send_version_message_response_ng(struct flb_http_response *response,
                                             struct flb_in_elasticsearch *ctx,
                                             int http_status)
 {
@@ -989,14 +989,14 @@ static int send_version_message_response_ng(struct flb_http_response *response,
                    ES_VERSION_RESPONSE_TEMPLATE,
                    ctx->es_version);
 
-    send_json_response_ng(response, http_status, message); 
+    send_json_response_ng(response, http_status, message);
 
     cfl_sds_destroy(message);
 
     return 0;
 }
 
-static int send_dummy_sniffer_response_ng(struct flb_http_response *response, 
+static int send_dummy_sniffer_response_ng(struct flb_http_response *response,
                                           struct flb_in_elasticsearch *ctx,
                                           int http_status)
 {
@@ -1024,7 +1024,7 @@ static int send_dummy_sniffer_response_ng(struct flb_http_response *response,
                    ctx->cluster_name, ctx->node_name,
                    hostname, ctx->tcp_port, ctx->buffer_max_size);
 
-    send_json_response_ng(response, http_status, resp); 
+    send_json_response_ng(response, http_status, resp);
 
     flb_sds_destroy(resp);
 
@@ -1081,7 +1081,7 @@ int in_elasticsearch_bulk_prot_handle_ng(struct flb_http_request *request,
     }
 
     /* HTTP/1.1 needs Host header */
-    if (request->protocol_version == HTTP_PROTOCOL_HTTP1 && 
+    if (request->protocol_version == HTTP_PROTOCOL_VERSION_11 &&
         request->host == NULL) {
 
         return -1;
@@ -1113,7 +1113,7 @@ int in_elasticsearch_bulk_prot_handle_ng(struct flb_http_request *request,
     else if (request->method == HTTP_METHOD_POST) {
         if (strcmp(request->path, "/_bulk") == 0) {
             bulk_statuses = flb_sds_create_size(context->buffer_max_size);
-            
+
             if (bulk_statuses == NULL) {
                 return -1;
             }
@@ -1159,7 +1159,7 @@ int in_elasticsearch_bulk_prot_handle_ng(struct flb_http_request *request,
 
             flb_sds_destroy(bulk_statuses);
             flb_sds_destroy(bulk_response);
-                        
+
         } else {
             send_response_ng(response, 400, NULL, "error: invalid HTTP endpoint\n");
 
@@ -1171,6 +1171,6 @@ int in_elasticsearch_bulk_prot_handle_ng(struct flb_http_request *request,
 
         return -1;
     }
-    
+
     return 0;
 }

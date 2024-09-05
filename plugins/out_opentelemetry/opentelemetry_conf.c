@@ -254,6 +254,7 @@ struct opentelemetry_context *flb_opentelemetry_context_create(struct flb_output
     struct flb_upstream *upstream;
     struct opentelemetry_context *ctx = NULL;
     const char *tmp = NULL;
+    uint64_t http_client_flags;
 
     /* Allocate plugin context */
     ctx = flb_calloc(1, sizeof(struct opentelemetry_context));
@@ -539,6 +540,26 @@ struct opentelemetry_context *flb_opentelemetry_context_create(struct flb_output
         flb_plg_error(ins, "failed to create record accessor for otlp trace flags");
     }
 
+    http_client_flags = FLB_HTTP_CLIENT_FLAG_AUTO_DEFLATE |
+                        FLB_HTTP_CLIENT_FLAG_AUTO_INFLATE;
+
+    if (ctx->u->base.net.keepalive) {
+        http_client_flags |= FLB_HTTP_CLIENT_FLAG_KEEPALIVE;
+    }
+
+    ret = flb_http_client_ng_init(&ctx->http_client,
+                                  ctx->u,
+                                  HTTP_PROTOCOL_VERSION_11,
+                                  http_client_flags);
+
+    if (ret != 0) {
+        flb_plg_debug(ctx->ins, "http client creation error");
+
+        flb_opentelemetry_context_destroy(ctx);
+
+        ctx = NULL;
+    }
+
     return ctx;
 }
 
@@ -547,6 +568,8 @@ void flb_opentelemetry_context_destroy(struct opentelemetry_context *ctx)
     if (!ctx) {
         return;
     }
+
+    flb_http_client_ng_destroy(&ctx->http_client);
 
     flb_kv_release(&ctx->kv_labels);
 

@@ -41,6 +41,21 @@
 
 #include "ecs.h"
 
+#define MOCK_CLUSTER_SUCCESS_RESPONSE_BODY \
+            "{\"Cluster\": \"cluster_name\",\"ContainerInstanceArn\": \"arn:" \
+            "aws:ecs:region:aws_account_id:container-instance/cluster_name/c" \
+            "ontainer_instance_id\",\"Version\": \"Amazon ECS Agent - v1.30." \
+            "0 (02ff320c)\"}"
+
+#define MOCK_REGULAR_SUCCESS_RESPONSE_BODY \
+            "{\"Arn\": \"arn:aws:ecs:us-west-2:012345678910:task/default/e01" \
+            "d58a8-151b-40e8-bc01-22647b9ecfec\",\"Containers\": [{\"DockerI" \
+            "d\": \"79c796ed2a7f864f485c76f83f3165488097279d296a7c05bd5201a1" \
+            "c69b2920\",\"DockerName\": \"ecs-nginx-efs-2-nginx-9ac0808dd0af" \
+            "a495f001\",\"Name\": \"nginx\"}],\"DesiredStatus\": \"RUNNING\"" \
+            ",\"Family\": \"nginx-efs\",\"KnownStatus\": \"RUNNING\",\"Versi" \
+            "on\": \"2\"}"
+
 static int get_ecs_cluster_metadata(struct flb_filter_ecs *ctx);
 static void flb_filter_ecs_destroy(struct flb_filter_ecs *ctx);
 
@@ -91,6 +106,8 @@ static int cb_ecs_init(struct flb_filter_instance *f_ins,
     struct flb_split_entry *sentry;
     int list_size;
     struct flb_ecs_metadata_key *ecs_meta = NULL;
+    uint64_t http_client_flags;
+
     (void) data;
 
     /* Create context */
@@ -204,6 +221,25 @@ static int cb_ecs_init(struct flb_filter_instance *f_ins,
     ret = get_ecs_cluster_metadata(ctx);
 
     flb_filter_set_context(f_ins, ctx);
+
+    http_client_flags = FLB_HTTP_CLIENT_FLAG_AUTO_DEFLATE |
+                        FLB_HTTP_CLIENT_FLAG_AUTO_INFLATE;
+
+    if (ctx->ecs_upstream->base.net.keepalive) {
+        http_client_flags |= FLB_HTTP_CLIENT_FLAG_KEEPALIVE;
+    }
+
+    ret = flb_http_client_ng_init(&ctx->http_client,
+                                  ctx->ecs_upstream,
+                                  HTTP_PROTOCOL_VERSION_11,
+                                  http_client_flags);
+
+    if (ret != 0) {
+        flb_plg_debug(ctx->ins, "http client creation error");
+
+        goto error;
+    }
+
     return 0;
 
 error:
@@ -244,41 +280,56 @@ static char *mock_error_response(char *error_env_var)
     return NULL;
 }
 
-static struct flb_http_client *mock_http_call(char *error_env_var, char *api)
+static struct flb_http_request *mock_http_call(char *error_env_var,
+                                               char *api)
 {
-    /* create an http client so that we can set the response */
-    struct flb_http_client *c = NULL;
-    char *error = mock_error_response(error_env_var);
+    struct flb_http_client_session *session;
+    struct flb_http_request *request;
+    struct flb_http_response *response;
+    char *error;
 
-    c = flb_calloc(1, sizeof(struct flb_http_client));
-    if (!c) {
-        flb_errno();
-        flb_free(error);
+    session = flb_http_client_session_create(NULL,
+                                             HTTP_PROTOCOL_VERSION_11,
+                                             NULL);
+
+    if (session == NULL) {
         return NULL;
     }
-    mk_list_init(&c->headers);
+
+    request = flb_http_client_request_begin(session);
+
+    if (request == NULL) {
+        flb_http_client_session_destroy(session);
+
+        return NULL;
+    }
+
+    response = &request->stream->response;
+
+    error = mock_error_response(error_env_var);
 
     if (error != NULL) {
-        c->resp.status = 400;
-        /* resp.data is freed on destroy, payload is supposed to reference it */
-        c->resp.data = error;
-        c->resp.payload = c->resp.data;
-        c->resp.payload_size = strlen(error);
+        flb_http_response_set_status(response, 400);
+        flb_http_response_set_body(response, error, strlen(error));
+        flb_free(error);
     }
     else {
-        c->resp.status = 200;
+        flb_http_response_set_status(response, 200);
+
         if (strcmp(api, "Cluster") == 0) {
             /* mocked success response */
-            c->resp.payload = "{\"Cluster\": \"cluster_name\",\"ContainerInstanceArn\": \"arn:aws:ecs:region:aws_account_id:container-instance/cluster_name/container_instance_id\",\"Version\": \"Amazon ECS Agent - v1.30.0 (02ff320c)\"}";
-            c->resp.payload_size = strlen(c->resp.payload);
+            flb_http_response_set_body(response,
+                                       MOCK_CLUSTER_SUCCESS_RESPONSE_BODY,
+                                       strlen(MOCK_CLUSTER_SUCCESS_RESPONSE_BODY));
         }
         else {
-            c->resp.payload = "{\"Arn\": \"arn:aws:ecs:us-west-2:012345678910:task/default/e01d58a8-151b-40e8-bc01-22647b9ecfec\",\"Containers\": [{\"DockerId\": \"79c796ed2a7f864f485c76f83f3165488097279d296a7c05bd5201a1c69b2920\",\"DockerName\": \"ecs-nginx-efs-2-nginx-9ac0808dd0afa495f001\",\"Name\": \"nginx\"}],\"DesiredStatus\": \"RUNNING\",\"Family\": \"nginx-efs\",\"KnownStatus\": \"RUNNING\",\"Version\": \"2\"}";
-            c->resp.payload_size = strlen(c->resp.payload);
+            flb_http_response_set_body(response,
+                                       MOCK_REGULAR_SUCCESS_RESPONSE_BODY,
+                                       strlen(MOCK_REGULAR_SUCCESS_RESPONSE_BODY));
         }
     }
 
-    return c;
+    return request;
 }
 
 /*
@@ -366,19 +417,15 @@ static void flb_ecs_metadata_buffer_destroy(struct flb_ecs_metadata_buffer *meta
  */
 static int get_ecs_cluster_metadata(struct flb_filter_ecs *ctx)
 {
-    struct flb_http_client *c;
-    struct flb_connection *u_conn;
     int ret;
     int root_type;
     int found_cluster = FLB_FALSE;
     int found_version = FLB_FALSE;
     int found_instance = FLB_FALSE;
-    int free_conn = FLB_FALSE;
     int i;
     int len;
     char *buffer;
     size_t size;
-    size_t b_sent;
     size_t off = 0;
     msgpack_unpacked result;
     msgpack_object root;
@@ -388,64 +435,74 @@ static int get_ecs_cluster_metadata(struct flb_filter_ecs *ctx)
     msgpack_packer tmp_pck;
     flb_sds_t container_instance_id = NULL;
     flb_sds_t tmp = NULL;
-    
+    struct flb_http_response *response;
+    struct flb_http_request  *request;
+
     /* Compose HTTP Client request*/
     if (plugin_under_test() == FLB_TRUE) {
-        c = mock_http_call("TEST_CLUSTER_ERROR", "Cluster");
-        ret = 0;
+        request = mock_http_call("TEST_CLUSTER_ERROR", "Cluster");
+
+        if (request != NULL) {
+            ret = 0;
+        }
+        else {
+            ret = -1;
+        }
     }
     else {
-        u_conn = flb_upstream_conn_get(ctx->ecs_upstream);
+        request = flb_http_client_request_builder(
+                        &ctx->http_client,
+                        FLB_HTTP_CLIENT_ARGUMENT_METHOD(FLB_HTTP_GET),
+                        FLB_HTTP_CLIENT_ARGUMENT_HOST(ctx->ecs_host),
+                        FLB_HTTP_CLIENT_ARGUMENT_URI(
+                            FLB_ECS_FILTER_CLUSTER_PATH));
 
-        if (!u_conn) {
-            flb_plg_error(ctx->ins, "ECS agent introspection endpoint connection error");
+        if (request == NULL) {
+            flb_plg_error(ctx->ins, "error initializing http request");
+
             return -1;
         }
-        free_conn = FLB_TRUE;
-        c = flb_http_client(u_conn, FLB_HTTP_GET,
-                            FLB_ECS_FILTER_CLUSTER_PATH,
-                            NULL, 0, 
-                            ctx->ecs_host, ctx->ecs_port,
-                            NULL, 0);
-        flb_http_buffer_size(c, 0); /* 0 means unlimited */
 
-        flb_http_add_header(c, "User-Agent", 10, "Fluent-Bit", 10);
+        response = flb_http_client_request_execute(request);
 
-        ret = flb_http_do(c, &b_sent);
-        flb_plg_debug(ctx->ins, "http_do=%i, "
-                    "HTTP Status: %i",
-                    ret, c->resp.status);
+        if (response == NULL) {
+            flb_debug("http request execution error");
+
+            flb_http_client_request_destroy(request, FLB_TRUE);
+
+            return 01;
+        }
+
+        ret = 0;
     }
 
-    if (ret != 0 || c->resp.status != 200) {
-        if (c->resp.payload_size > 0) {
-            flb_plg_warn(ctx->ins, "Failed to get metadata from %s, will retry", 
+    if (ret != 0 || response->status != 200) {
+        if (response->body != NULL) {
+            flb_plg_warn(ctx->ins, "Failed to get metadata from %s, will retry",
                          FLB_ECS_FILTER_CLUSTER_PATH);
             flb_plg_debug(ctx->ins, "HTTP response\n%s",
-                          c->resp.payload);
+                          response->body);
         } else {
-            flb_plg_warn(ctx->ins, "%s response status was %d with no payload, will retry", 
+            flb_plg_warn(ctx->ins, "%s response status was %d with no payload, will retry",
                          FLB_ECS_FILTER_CLUSTER_PATH,
-                         c->resp.status);
+                         response->status);
         }
-        flb_http_client_destroy(c);
-        if (free_conn == FLB_TRUE) {
-            flb_upstream_conn_release(u_conn);
-        }
+
+        flb_http_client_request_destroy(request, FLB_TRUE);
+
         return -1;
     }
 
-    if (free_conn == FLB_TRUE) {
-        flb_upstream_conn_release(u_conn);
-    }
-
-    ret = flb_pack_json(c->resp.payload, c->resp.payload_size,
+    ret = flb_pack_json(response->body,
+                        cfl_sds_len(response->body),
                         &buffer, &size, &root_type, NULL);
 
     if (ret < 0) {
-        flb_plg_warn(ctx->ins, "Could not parse response from %s; response=\n%s", 
-                     FLB_ECS_FILTER_CLUSTER_PATH, c->resp.payload);
-        flb_http_client_destroy(c);
+        flb_plg_warn(ctx->ins, "Could not parse response from %s; response=\n%s",
+                     FLB_ECS_FILTER_CLUSTER_PATH, response->body);
+
+        flb_http_client_request_destroy(request, FLB_TRUE);
+
         return -1;
     }
 
@@ -454,14 +511,15 @@ static int get_ecs_cluster_metadata(struct flb_filter_ecs *ctx)
     ret = msgpack_unpack_next(&result, buffer, size, &off);
     if (ret != MSGPACK_UNPACK_SUCCESS) {
         flb_plg_error(ctx->ins, "Cannot unpack %s response to find metadata\n%s",
-                      FLB_ECS_FILTER_CLUSTER_PATH, c->resp.payload);
+                      FLB_ECS_FILTER_CLUSTER_PATH, response->body);
         flb_free(buffer);
         msgpack_unpacked_destroy(&result);
-        flb_http_client_destroy(c);
+        flb_http_client_request_destroy(request, FLB_TRUE);
+
         return -1;
     }
 
-    flb_http_client_destroy(c);
+    flb_http_client_request_destroy(request, FLB_TRUE);
 
     root = result.data;
     if (root.type != MSGPACK_OBJECT_MAP) {
@@ -473,7 +531,7 @@ static int get_ecs_cluster_metadata(struct flb_filter_ecs *ctx)
         return -1;
     }
 
-    /* 
+    /*
 Metadata Response:
 {
     "Cluster": "cluster_name",
@@ -601,12 +659,12 @@ But our metadata keys names are:
         return -1;
     }
 
-    /* 
+    /*
      * We also create a standalone cluster metadata msgpack object
      * This is used as a fallback for logs when we can't find the
      * task metadata for a log. It is valid to attach cluster meta
      * to eg. Docker daemon logs which are not an AWS ECS Task via
-     * the `cluster_metadata_only` setting. 
+     * the `cluster_metadata_only` setting.
      */
     msgpack_sbuffer_init(&tmp_sbuf);
     msgpack_packer_init(&tmp_pck, &tmp_sbuf, msgpack_sbuffer_write);
@@ -709,7 +767,7 @@ static int process_container_response(struct flb_filter_ecs *ctx,
     msgpack_packer tmp_pck;
     flb_sds_t short_id = NULL;
 
-    /* 
+    /*
      * We copy the metadata response to a new buffer
      * So we can define the metadata key names
      */
@@ -924,9 +982,9 @@ static int process_container_response(struct flb_filter_ecs *ctx,
     }
     cont_meta_buf->id = short_id;
     mk_list_add(&cont_meta_buf->_head, &ctx->metadata_buffers);
-    
-    /* 
-     * Size is set to 0 so the table just stores our pointer 
+
+    /*
+     * Size is set to 0 so the table just stores our pointer
      * Otherwise it will try to copy the memory to a new buffer
      */
     ret = flb_hash_table_add(ctx->container_hash_table,
@@ -953,20 +1011,16 @@ static int process_container_response(struct flb_filter_ecs *ctx,
  */
 static int get_task_metadata(struct flb_filter_ecs *ctx, char* short_id)
 {
-    struct flb_http_client *c;
-    struct flb_connection *u_conn;
     int ret;
     int root_type;
     int found_task = FLB_FALSE;
     int found_version = FLB_FALSE;
     int found_family = FLB_FALSE;
     int found_containers = FLB_FALSE;
-    int free_conn = FLB_FALSE;
     int i;
     int k;
     char *buffer;
     size_t size;
-    size_t b_sent;
     size_t off = 0;
     msgpack_unpacked result;
     msgpack_object root;
@@ -977,6 +1031,8 @@ static int get_task_metadata(struct flb_filter_ecs *ctx, char* short_id)
     flb_sds_t http_path;
     flb_sds_t task_id = NULL;
     struct flb_ecs_task_metadata task_meta;
+    struct flb_http_response *response;
+    struct flb_http_request  *request;
 
     tmp = flb_sds_create_size(64);
     if (!tmp) {
@@ -987,67 +1043,79 @@ static int get_task_metadata(struct flb_filter_ecs *ctx, char* short_id)
         flb_sds_destroy(tmp);
         return -1;
     }
-    
+
     /* Compose HTTP Client request*/
     if (plugin_under_test() == FLB_TRUE) {
-        c = mock_http_call("TEST_TASK_ERROR", "Task");
-        ret = 0;
+        request = mock_http_call("TEST_TASK_ERROR", "Task");
+
+        if (request != NULL) {
+            ret = 0;
+        }
+        else {
+            ret = -1;
+        }
     }
     else {
-        u_conn = flb_upstream_conn_get(ctx->ecs_upstream);
+        request = flb_http_client_request_builder(
+                        &ctx->http_client,
+                        FLB_HTTP_CLIENT_ARGUMENT_METHOD(FLB_HTTP_GET),
+                        FLB_HTTP_CLIENT_ARGUMENT_HOST(ctx->ecs_host),
+                        FLB_HTTP_CLIENT_ARGUMENT_URI(http_path));
 
-        if (!u_conn) {
-            flb_plg_error(ctx->ins, "ECS agent introspection endpoint connection error");
+        if (request == NULL) {
+            flb_plg_error(ctx->ins, "error initializing http request");
+
             flb_sds_destroy(http_path);
+
             return -1;
         }
-        free_conn = FLB_TRUE;
-        c = flb_http_client(u_conn, FLB_HTTP_GET,
-                            http_path,
-                            NULL, 0, 
-                            ctx->ecs_host, ctx->ecs_port,
-                            NULL, 0);
-        flb_http_buffer_size(c, 0); /* 0 means unlimited */
 
-        flb_http_add_header(c, "User-Agent", 10, "Fluent-Bit", 10);
+        response = flb_http_client_request_execute(request);
 
-        ret = flb_http_do(c, &b_sent);
-        flb_plg_debug(ctx->ins, "http_do=%i, "
-                    "HTTP Status: %i",
-                    ret, c->resp.status);
+        if (response == NULL) {
+            flb_debug("http request execution error");
+
+            flb_http_client_request_destroy(request, FLB_TRUE);
+
+            flb_sds_destroy(http_path);
+
+            return -1;
+        }
+
+        ret = 0;
     }
 
-    if (ret != 0 || c->resp.status != 200) {
-        if (c->resp.payload_size > 0) {
-            flb_plg_warn(ctx->ins, "Failed to get metadata from %s, will retry", 
+    if (ret != 0 || response->status != 200) {
+        if (response->body != NULL) {
+            flb_plg_warn(ctx->ins, "Failed to get metadata from %s, will retry",
                          http_path);
             flb_plg_debug(ctx->ins, "HTTP response\n%s",
-                          c->resp.payload);
+                          response->body);
         } else {
-            flb_plg_warn(ctx->ins, "%s response status was %d with no payload, will retry", 
+            flb_plg_warn(ctx->ins, "%s response status was %d with no payload, will retry",
                          http_path,
-                         c->resp.status);
+                         response->status);
         }
-        flb_http_client_destroy(c);
-        if (free_conn == FLB_TRUE) {
-            flb_upstream_conn_release(u_conn);
-        }
+
+        flb_http_client_request_destroy(request, FLB_TRUE);
+
         flb_sds_destroy(http_path);
+
         return -1;
     }
 
-    if (free_conn == FLB_TRUE) {
-        flb_upstream_conn_release(u_conn);
-    }
-
-    ret = flb_pack_json(c->resp.payload, c->resp.payload_size,
+    ret = flb_pack_json(response->body,
+                        cfl_sds_len(response->body),
                         &buffer, &size, &root_type, NULL);
 
     if (ret < 0) {
-        flb_plg_warn(ctx->ins, "Could not parse response from %s; response=\n%s", 
-                     http_path, c->resp.payload);
+        flb_plg_warn(ctx->ins, "Could not parse response from %s; response=\n%s",
+                     http_path, response->body);
+
+        flb_http_client_request_destroy(request, FLB_TRUE);
+
         flb_sds_destroy(http_path);
-        flb_http_client_destroy(c);
+
         return -1;
     }
 
@@ -1056,15 +1124,16 @@ static int get_task_metadata(struct flb_filter_ecs *ctx, char* short_id)
     ret = msgpack_unpack_next(&result, buffer, size, &off);
     if (ret != MSGPACK_UNPACK_SUCCESS) {
         flb_plg_error(ctx->ins, "Cannot unpack %s response to find metadata\n%s",
-                      http_path, c->resp.payload);
+                      http_path, response->body);
         flb_free(buffer);
         msgpack_unpacked_destroy(&result);
         flb_sds_destroy(http_path);
-        flb_http_client_destroy(c);
+        flb_http_client_request_destroy(request, FLB_TRUE);
+
         return -1;
     }
 
-    flb_http_client_destroy(c);
+    flb_http_client_request_destroy(request, FLB_TRUE);
 
     root = result.data;
     if (root.type != MSGPACK_OBJECT_MAP) {
@@ -1230,8 +1299,8 @@ Metadata Response:
         return -1;
     }
 
-    /* 
-     * Process metadata response a 2nd time to get the Containers list 
+    /*
+     * Process metadata response a 2nd time to get the Containers list
      * This is because we need one complete metadata buf per container
      * with all task metadata. So we collect task before we process containers.
      */
@@ -1290,7 +1359,7 @@ Metadata Response:
     return 0;
 }
 
-static int get_metadata_by_id(struct flb_filter_ecs *ctx, 
+static int get_metadata_by_id(struct flb_filter_ecs *ctx,
                               const char *tag, int tag_len,
                               struct flb_ecs_metadata_buffer **metadata_buffer)
 {
@@ -1408,8 +1477,8 @@ static void mark_tag_failed(struct flb_filter_ecs *ctx,
         /* hash table will contain a copy */
         flb_free(val);
     } else {
-        /* 
-         * val is memory returned from hash table 
+        /*
+         * val is memory returned from hash table
          * if we simply update the value here and call flb_hash_add
          * it first frees the old memory (which is what we passed it)
          * then tries to copy over the memory we passed in to a new location
@@ -1635,6 +1704,8 @@ static void flb_filter_ecs_destroy(struct flb_filter_ecs *ctx)
     struct flb_ecs_metadata_buffer *buf;
 
     if (ctx) {
+        flb_http_client_ng_destroy(&ctx->http_client);
+
         if (ctx->ecs_upstream) {
             flb_upstream_destroy(ctx->ecs_upstream);
         }
@@ -1716,8 +1787,8 @@ static struct flb_config_map config_map[] = {
     {
      FLB_CONFIG_MAP_TIME, "ecs_meta_cache_ttl", "3600",
      0, FLB_TRUE, offsetof(struct flb_filter_ecs, ecs_meta_cache_ttl),
-     "Configurable TTL for cached ECS Task Metadata. Default 3600s (1 hour)" 
-     "For example, set this value to 600 or 600s or 10m and cache entries " 
+     "Configurable TTL for cached ECS Task Metadata. Default 3600s (1 hour)"
+     "For example, set this value to 600 or 600s or 10m and cache entries "
      "which have been created more than 10 minutes will be evicted."
      "Cache eviction is needed to purge task metadata for tasks that "
      "have been stopped."

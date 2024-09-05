@@ -44,6 +44,122 @@ extern void cmt_encode_opentelemetry_destroy(cfl_sds_t text);
 #include "opentelemetry_conf.h"
 #include "opentelemetry_utils.h"
 
+int opentelemetry_http_post_ng(struct opentelemetry_context *ctx,
+                               const void *body, size_t body_len,
+                               const char *tag, int tag_len,
+                               const char *uri)
+{
+    const char               *compression_algorithm;
+    struct flb_http_response *response;
+    struct flb_http_request  *request;
+    int                       out_ret;
+    int                       result;
+
+    if (ctx->compress_gzip == FLB_TRUE) {
+        compression_algorithm = "gzip";
+    }
+    else {
+        compression_algorithm = NULL;
+    }
+
+    request = flb_http_client_request_builder(
+                    &ctx->http_client,
+                    FLB_HTTP_CLIENT_ARGUMENT_METHOD(FLB_HTTP_POST),
+                    FLB_HTTP_CLIENT_ARGUMENT_HOST(ctx->host),
+                    FLB_HTTP_CLIENT_ARGUMENT_URI(uri),
+                    FLB_HTTP_CLIENT_ARGUMENT_HEADERS(
+                        FLB_HTTP_CLIENT_HEADER_CONFIG_MAP_LIST,
+                        ctx->headers),
+                    FLB_HTTP_CLIENT_ARGUMENT_CONTENT_TYPE(
+                        FLB_OPENTELEMETRY_MIME_PROTOBUF_LITERAL),
+                    FLB_HTTP_CLIENT_ARGUMENT_BODY(body,
+                                                  body_len,
+                                                  compression_algorithm));
+
+
+    if (request == NULL) {
+        flb_plg_error(ctx->ins, "error initializing http request");
+
+        return FLB_RETRY;
+    }
+
+    if (ctx->http_user != NULL &&
+        ctx->http_passwd != NULL) {
+        result = flb_http_request_set_parameters(request,
+                    FLB_HTTP_CLIENT_ARGUMENT_BASIC_AUTHORIZATION(
+                                                    ctx->http_user,
+                                                    ctx->http_passwd));
+
+        if (result  != 0) {
+            flb_plg_error(ctx->ins, "error setting http authorization data");
+
+            return FLB_RETRY;
+        }
+
+        flb_http_request_set_authorization(request,
+                                           HTTP_WWW_AUTHORIZATION_SCHEME_BASIC,
+                                           ctx->http_user,
+                                           ctx->http_passwd);
+    }
+
+    response = flb_http_client_request_execute(request);
+
+    if (response == NULL) {
+        flb_debug("http request execution error");
+
+        flb_http_client_request_destroy(request, FLB_TRUE);
+
+        return FLB_RETRY;
+    }
+
+    /*
+     * Only allow the following HTTP status:
+     *
+     * - 200: OK
+     * - 201: Created
+     * - 202: Accepted
+     * - 203: no authorative resp
+     * - 204: No Content
+     * - 205: Reset content
+     *
+     */
+    if (response->status < 200 || response->status > 205) {
+        if (ctx->log_response_payload &&
+            response->body != NULL &&
+            cfl_sds_len(response->body) > 0) {
+            flb_plg_error(ctx->ins, "%s:%i, HTTP status=%i\n%s",
+                            ctx->host, ctx->port,
+                            response->status, response->body);
+        }
+        else {
+            flb_plg_error(ctx->ins, "%s:%i, HTTP status=%i",
+                            ctx->host, ctx->port, response->status);
+        }
+
+        out_ret = FLB_RETRY;
+    }
+    else {
+        if (ctx->log_response_payload &&
+            response->body != NULL &&
+            cfl_sds_len(response->body) > 0) {
+            flb_plg_info(ctx->ins, "%s:%i, HTTP status=%i\n%s",
+                            ctx->host, ctx->port,
+                            response->status, response->body);
+        }
+        else {
+            flb_plg_info(ctx->ins, "%s:%i, HTTP status=%i",
+                            ctx->host, ctx->port,
+                            response->status);
+        }
+
+        out_ret = FLB_OK;
+    }
+
+    flb_http_client_request_destroy(request, FLB_TRUE);
+
+    return out_ret;
+}
+
 int otel_process_logs(struct flb_event_chunk *event_chunk,
                       struct flb_output_flush *out_flush,
                       struct flb_input_instance *ins, void *out_context,
@@ -66,6 +182,14 @@ int opentelemetry_http_post(struct opentelemetry_context *ctx,
     struct flb_slist_entry    *val;
     struct flb_config_map_val *mv;
     struct flb_http_client    *c;
+
+
+    if (ctx->http2) {
+        return opentelemetry_http_post_ng(ctx,
+                                          body, body_len,
+                                          tag, tag_len,
+                                          uri);
+    }
 
     compressed = FLB_FALSE;
 
@@ -532,6 +656,11 @@ static struct flb_config_map config_map[] = {
      FLB_CONFIG_MAP_STR, "compress", NULL,
      0, FLB_FALSE, 0,
      "Set payload compression mechanism. Option available is 'gzip'"
+    },
+    {
+     FLB_CONFIG_MAP_BOOL, "http2", "true",
+     0, FLB_TRUE, offsetof(struct opentelemetry_context, http2),
+     "Enable http2 support"
     },
     /*
      * Logs Properties

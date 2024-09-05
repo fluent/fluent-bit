@@ -24,6 +24,7 @@
 #include <fluent-bit/flb_record_accessor.h>
 #include <fluent-bit/flb_upstream.h>
 #include <fluent-bit/flb_hash_table.h>
+#include <fluent-bit/flb_http_client.h>
 #include <cfl/cfl_list.h>
 
 #define FLB_LOKI_CT              "Content-Type"
@@ -71,6 +72,10 @@ struct flb_loki {
     flb_sds_t http_user;
     flb_sds_t http_passwd;
 
+    /* HTTP client */
+    struct flb_http_client_ng http_client;
+    int http2;
+
     /* Bearer Token Auth */
     flb_sds_t bearer_token;
 
@@ -109,7 +114,6 @@ struct flb_loki {
 
     /* Response buffer size */
     size_t http_buffer_max_size;
-
 };
 
 #endif

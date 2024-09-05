@@ -31,6 +31,8 @@ struct flb_az_li* flb_az_li_ctx_create(struct flb_output_instance *ins,
 {
     int ret;
     struct flb_az_li *ctx;
+    uint64_t http_client_flags;
+
     (void) ins;
     (void) config;
 
@@ -113,7 +115,7 @@ struct flb_az_li* flb_az_li_ctx_create(struct flb_output_instance *ins,
         return NULL;
     }
     flb_sds_snprintf(&ctx->dce_u_url, flb_sds_alloc(ctx->dce_u_url),
-                    FLB_AZ_LI_DCE_URL_TMPLT, ctx->dce_url, 
+                    FLB_AZ_LI_DCE_URL_TMPLT, ctx->dce_url,
                     ctx->dcr_id, ctx->table_name);
 
     /* Initialize the auth mutex */
@@ -138,6 +140,26 @@ struct flb_az_li* flb_az_li_ctx_create(struct flb_output_instance *ins,
     }
     flb_output_upstream_set(ctx->u_dce, ins);
 
+    http_client_flags = FLB_HTTP_CLIENT_FLAG_AUTO_DEFLATE |
+                        FLB_HTTP_CLIENT_FLAG_AUTO_INFLATE;
+
+    if (ctx->u_dce->base.net.keepalive) {
+        http_client_flags |= FLB_HTTP_CLIENT_FLAG_KEEPALIVE;
+    }
+
+    ret = flb_http_client_ng_init(&ctx->http_client,
+                                  ctx->u_dce,
+                                  HTTP_PROTOCOL_VERSION_11,
+                                  http_client_flags);
+
+    if (ret != 0) {
+        flb_plg_debug(ctx->ins, "http client creation error");
+
+        flb_az_li_ctx_destroy(ctx);
+
+        return NULL;
+    }
+
     flb_plg_info(ins, "dce_url='%s', dcr='%s', table='%s', stream='Custom-%s'",
                 ctx->dce_url, ctx->dcr_id, ctx->table_name, ctx->table_name);
 
@@ -150,6 +172,8 @@ int flb_az_li_ctx_destroy(struct flb_az_li *ctx)
     if (!ctx) {
         return -1;
     }
+
+    flb_http_client_ng_destroy(&ctx->http_client);
 
     if (ctx->auth_url) {
         flb_sds_destroy(ctx->auth_url);

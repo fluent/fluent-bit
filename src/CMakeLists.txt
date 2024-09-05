@@ -63,6 +63,8 @@ set(src
   flb_snappy.c
   flb_compression.c
   flb_http_common.c
+  flb_http_client_http1.c
+  flb_http_client_http2.c
   flb_http_client.c
   flb_callback.c
   flb_strptime.c
@@ -80,6 +82,7 @@ set(src
   flb_processor.c
   flb_reload.c
   flb_msgpack_append_message.c
+  flb_lock.c
   )
 
 # Config format
@@ -163,6 +166,7 @@ if(FLB_SIGNV4 AND FLB_TLS)
   set(src
     ${src}
     "flb_signv4.c"
+    "flb_signv4_ng.c"
     )
 endif()
 

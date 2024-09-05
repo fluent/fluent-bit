@@ -21,6 +21,7 @@
 #define FLB_PROMETHEUS_REMOTE_WRITE_H
 
 #include <fluent-bit/flb_output_plugin.h>
+#include <fluent-bit/flb_http_client.h>
 
 #define FLB_PROMETHEUS_REMOTE_WRITE_CONTENT_TYPE_HEADER_NAME "Content-Type"
 #define FLB_PROMETHEUS_REMOTE_WRITE_MIME_PROTOBUF_LITERAL    "application/x-protobuf"
@@ -75,6 +76,8 @@ struct prometheus_remote_write_context {
     /* Arbitrary HTTP headers */
     struct mk_list *headers;
 
+    /* HTTP client */
+    struct flb_http_client_ng http_client;
 
     /* instance context */
     struct flb_output_instance *ins;
