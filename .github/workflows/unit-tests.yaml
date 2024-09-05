@@ -118,7 +118,7 @@ jobs:
     # We chain this after Linux one as there are costs for actuated workers
     needs:
       - run-ubuntu-unit-tests
-    timeout-minutes: 60
+    timeout-minutes: 10
     strategy:
       fail-fast: false
       matrix:
