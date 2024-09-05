@@ -750,6 +750,7 @@ int in_elasticsearch_bulk_prot_handle(struct flb_in_elasticsearch *ctx,
     if (ctx->ins->tag && !ctx->ins->tag_default) {
         tag = flb_sds_create(ctx->ins->tag);
         if (tag == NULL) {
+            mk_mem_free(uri);
             return -1;
         }
     }
