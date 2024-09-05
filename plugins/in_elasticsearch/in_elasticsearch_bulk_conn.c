@@ -116,9 +116,10 @@ static int in_elasticsearch_bulk_conn_event(void *data)
             }
 
             if (NULL != request_end) {
-                request_len = (size_t)(request_end - conn->buf_data);
+                request_len = (size_t) ((uintptr_t) request_end -
+                                        (uintptr_t) conn->buf_data);
 
-                if (0 < (conn->buf_len - request_len)) {
+                if (request_len < conn->buf_len) {
                     memmove(conn->buf_data, &conn->buf_data[request_len],
                             conn->buf_len - request_len);
 
