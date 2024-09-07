@@ -1985,6 +1985,10 @@ static int create_fleet_file(flb_sds_t fleetdir,
                             (unsigned char *)b64_content, blen);
 
     if (ret != 0) {
+        fclose(fp);
+        flb_sds_destroy(dst);
+        flb_sds_destroy(fname);
+
         return -1;
     }
 
