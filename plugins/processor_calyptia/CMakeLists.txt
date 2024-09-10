@@ -27,5 +27,3 @@ if(MSVC)
 else()
   FLB_PLUGIN(processor_calyptia "${src}" "m")
 endif()
-
-FLB_PLUGIN(processor_calyptia "${src}" "")
