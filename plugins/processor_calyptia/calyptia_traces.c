@@ -25,6 +25,8 @@
 #include "calyptia_traces_to_lua.h"
 #include "calyptia_traces_from_lua.h"
 
+#include <lua.h>
+
 static void drop_traces(struct ctrace *ctx)
 {
     struct cfl_list *head;

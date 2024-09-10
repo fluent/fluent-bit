@@ -19,7 +19,6 @@
 
 #include "cfl_to_lua.h"
 
-
 void push_string(lua_State *L, const char *str, size_t size)
 {
     lua_pushlstring(L, str, size);

@@ -17,7 +17,10 @@
  *  limitations under the License.
  */
 
-#include <lua.h>
+#include <fluent-bit/flb_metrics.h>
+
+#include <math.h>
+
 #include <cmetrics/cmt_metric.h>
 #include <cmetrics/cmt_map.h>
 #include <cmetrics/cmt_counter.h>
@@ -25,8 +28,6 @@
 #include <cmetrics/cmt_summary.h>
 #include <cmetrics/cmt_histogram.h>
 #include <cmetrics/cmt_untyped.h>
-
-#include <math.h>
 
 #include "calyptia_metrics_to_lua.h"
 #include "cfl_to_lua.h"

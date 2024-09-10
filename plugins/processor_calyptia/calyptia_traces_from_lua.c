@@ -17,7 +17,6 @@
  *  limitations under the License.
  */
 
-#include <lua.h>
 #include <lauxlib.h>
 #include <ctraces/ctraces.h>
 

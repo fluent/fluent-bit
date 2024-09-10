@@ -16,10 +16,10 @@
  *  See the License for the specific language governing permissions and
  *  limitations under the License.
  */
-#include <lua.h>
 #include <lauxlib.h>
 #include <ctraces/ctraces.h>
 
+#include "calyptia_traces_to_lua.h"
 #include "cfl_to_lua.h"
 
 static void push_attributes(lua_State *L, struct ctrace_attributes *attr)

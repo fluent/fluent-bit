@@ -20,8 +20,8 @@
 #ifndef FLB_CALYPTIA_PROCESSOR_CFL_TO_LUA_H
 #define FLB_CALYPTIA_PROCESSOR_CFL_TO_LUA_H
 
-#include <lua.h>
 #include <cfl/cfl.h>
+#include <lua.h>
 
 void push_variant(lua_State *L, struct cfl_variant *variant);
 void push_string(lua_State *L, const char *str, size_t size);

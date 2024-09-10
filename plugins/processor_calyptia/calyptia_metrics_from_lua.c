@@ -17,15 +17,6 @@
  *  limitations under the License.
  */
 
-#include <cmetrics/cmetrics.h>
-
-#include <cmetrics/cmt_metric.h>
-#include <cmetrics/cmt_map.h>
-#include <cmetrics/cmt_counter.h>
-#include <cmetrics/cmt_gauge.h>
-#include <cmetrics/cmt_summary.h>
-#include <cmetrics/cmt_histogram.h>
-#include <cmetrics/cmt_untyped.h>
 #include <fluent-bit/flb_processor_plugin.h>
 
 #include "calyptia_metrics_from_lua.h"
