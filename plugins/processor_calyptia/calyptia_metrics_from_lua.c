@@ -17,6 +17,9 @@
  *  limitations under the License.
  */
 
+#include <fluent-bit/flb_metrics.h>
+#include <cmetrics/cmt_summary.h>
+#include <cmetrics/cmt_histogram.h>
 #include <fluent-bit/flb_processor_plugin.h>
 
 #include "calyptia_metrics_from_lua.h"
