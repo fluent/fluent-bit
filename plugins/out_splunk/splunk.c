@@ -768,8 +768,13 @@ static void cb_splunk_flush(struct flb_event_chunk *event_chunk,
              * them:
              *
              * https://docs.splunk.com/Documentation/Splunk/8.0.5/Data/TroubleshootHTTPEventCollector#Possible_error_codes
+             * From trouble shoot document on Splunk secure gateway,
+             * 408 and 429 should be also handled as try again:
+             *
+             * https://docs.splunk.com/Documentation/SecureGateway/3.5.15/Admin/TroubleshootGateway#Troubleshoot_error_codes
              */
-            ret = (c->resp.status < 400 || c->resp.status >= 500) ?
+            ret = (c->resp.status < 400 || c->resp.status >= 500 ||
+                   c->resp.status == 408 || c->resp.status == 429) ?
                 FLB_RETRY : FLB_ERROR;
 
 
