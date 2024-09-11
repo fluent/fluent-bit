@@ -512,7 +512,8 @@ int flb_tls_session_create(struct flb_tls *tls,
     struct flb_tls_session *session;
     int                     result;
     char                   *vhost;
-    int                     flag;
+    int                     evflag;
+    int                     cflag = flb_connection_get_flags(connection);
 
     session = flb_calloc(1, sizeof(struct flb_tls_session));
 
@@ -562,13 +563,13 @@ int flb_tls_session_create(struct flb_tls *tls,
             goto cleanup;
         }
 
-        flag = 0;
+        evflag = 0;
 
         if (result == FLB_TLS_WANT_WRITE) {
-            flag = MK_EVENT_WRITE;
+            evflag = MK_EVENT_WRITE;
         }
         else if (result == FLB_TLS_WANT_READ) {
-            flag = MK_EVENT_READ;
+            evflag = MK_EVENT_READ;
         }
 
         /*
@@ -579,7 +580,7 @@ int flb_tls_session_create(struct flb_tls *tls,
          * In the other case for an async socket 'th' is NOT NULL so the code
          * is under a coroutine context and it can yield.
          */
-        if (co == NULL) {
+        if (co == NULL && (cflag & FLB_IO_ASYNC)) {
             flb_trace("[io_tls] server handshake connection #%i in process to %s",
                       connection->fd,
                       flb_connection_get_remote_address(connection));
@@ -614,7 +615,7 @@ int flb_tls_session_create(struct flb_tls *tls,
         result = mk_event_add(connection->evl,
                               connection->fd,
                               FLB_ENGINE_EV_THREAD,
-                              flag,
+                              evflag,
                               &connection->event);
 
         connection->event.priority = FLB_ENGINE_PRIORITY_CONNECT;
