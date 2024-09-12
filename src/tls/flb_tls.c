@@ -580,7 +580,7 @@ int flb_tls_session_create(struct flb_tls *tls,
          * In the other case for an async socket 'th' is NOT NULL so the code
          * is under a coroutine context and it can yield.
          */
-        if (co == NULL && (cflag & FLB_IO_ASYNC)) {
+        if (co == NULL || !(cflag & FLB_IO_ASYNC)) {
             flb_trace("[io_tls] server handshake connection #%i in process to %s",
                       connection->fd,
                       flb_connection_get_remote_address(connection));
