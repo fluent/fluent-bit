@@ -23,6 +23,127 @@
 #include <fluent-bit/flb_input_log.h>
 #include <fluent-bit/flb_input_plugin.h>
 #include <fluent-bit/flb_processor.h>
+#include <fluent-bit/flb_log_event_decoder.h>
+#include <fluent-bit/flb_log_event_encoder.h>
+
+#include <monkey/mk_core/mk_list.h>
+
+struct buffer_entry {
+    char *buf;
+    size_t buf_size;
+    struct mk_list _head;
+};
+
+static struct buffer_entry *new_buffer_entry(const void *buf, size_t buf_size)
+{
+    struct buffer_entry *new_entry = flb_malloc(sizeof(struct buffer_entry));
+    new_entry->buf_size = buf_size;
+    new_entry->buf = buf;
+    return new_entry;
+}
+
+// static struct buffer_entry *init_buffer_entry(size_t buf_size) {
+//     struct *buffer_entry new_entry = flb_malloc(sizeof(struct buffer_entry));
+//     new_entry->buf_size = buf_size;
+//     new_entry->buf = flb_malloc(buf_size);
+//     return new_entry;
+// }
+
+static int split_buffer_entry(struct buffer_entry *entry,
+                              struct buffer_entry ***entries)
+{
+    int ret;
+    int encoder_result;
+    size_t bytes_consumed = 0;
+    struct buffer_entry *split_entries[2];
+    struct buffer_entry *curr;
+    void *tmp_encoder_buf;
+    size_t tmp_encoder_buf_size;
+    size_t split_size = entry->buf_size / 2;
+    struct flb_log_event_encoder log_encoder;
+    struct flb_log_event_decoder log_decoder;
+    struct flb_log_event log_event;
+    size_t bytes_left;
+
+    ret = flb_log_event_decoder_init(&log_decoder, entry->buf, entry->buf_size);
+    if (ret != FLB_EVENT_DECODER_SUCCESS) {
+        flb_error("Log event decoder initialization error : %d", ret);
+
+        return FLB_FALSE;
+    }
+
+    ret = flb_log_event_encoder_init(&log_encoder,
+                                     FLB_LOG_EVENT_FORMAT_DEFAULT);
+    if (ret != FLB_EVENT_ENCODER_SUCCESS) {
+        flb_error("Log event encoder initialization error : %d", ret);
+
+        flb_log_event_decoder_destroy(&log_decoder);
+
+        return FLB_FALSE;
+    }
+
+    while ((ret = flb_log_event_decoder_next(
+                    &log_decoder,
+                    &log_event)) == FLB_EVENT_DECODER_SUCCESS) {
+        encoder_result = flb_log_event_encoder_begin_record(&log_encoder);
+        if (encoder_result == FLB_EVENT_ENCODER_SUCCESS) {
+            encoder_result = flb_log_event_encoder_set_timestamp(
+                                     &log_encoder, &log_event.timestamp);
+        }
+
+        if (encoder_result == FLB_EVENT_ENCODER_SUCCESS) {
+            encoder_result = \
+                flb_log_event_encoder_set_metadata_from_msgpack_object(
+                    &log_encoder, log_event.metadata);
+        }
+
+        if (encoder_result == FLB_EVENT_ENCODER_SUCCESS) {
+            encoder_result = \
+                flb_log_event_encoder_set_body_from_msgpack_object(
+                    &log_encoder, log_event.body);
+        }
+
+        if (encoder_result == FLB_EVENT_ENCODER_SUCCESS) {
+            encoder_result = flb_log_event_encoder_commit_record(&log_encoder);
+        }
+
+        if (encoder_result != FLB_EVENT_ENCODER_SUCCESS) {
+            flb_error("log event encoder error : %d", encoder_result);
+            continue;
+        }
+
+        if (log_encoder.output_length >= split_size) {
+            tmp_encoder_buf = log_encoder.output_buffer;
+            tmp_encoder_buf_size = log_encoder.output_length;
+            flb_log_event_encoder_claim_internal_buffer_ownership(&log_encoder);
+            split_entries[0] = new_buffer_entry(tmp_encoder_buf,
+                                                          tmp_encoder_buf_size);
+            flb_log_event_encoder_reset(&log_encoder);
+        }
+    }
+
+    if (log_encoder.output_length >= 0) {
+        tmp_encoder_buf = log_encoder.output_buffer;
+        tmp_encoder_buf_size = log_encoder.output_length;
+        flb_log_event_encoder_claim_internal_buffer_ownership(&log_encoder);
+        split_entries[1] = new_buffer_entry(tmp_encoder_buf,
+                                                        tmp_encoder_buf_size);
+        flb_log_event_encoder_reset(&log_encoder);
+    }
+
+    flb_log_event_encoder_destroy(&log_encoder);
+    flb_log_event_decoder_destroy(&log_decoder);
+    *entries = split_entries;
+    return FLB_TRUE;
+
+error:
+    flb_free(split_entries[0]);
+    flb_free(split_entries[1]);
+    flb_log_event_encoder_destroy(&log_encoder);
+    flb_log_event_decoder_destroy(&log_decoder);
+    return FLB_FALSE;
+}
+
 
 static int input_log_append(struct flb_input_instance *ins,
                             size_t processor_starting_stage,
@@ -34,6 +155,14 @@ static int input_log_append(struct flb_input_instance *ins,
     int processor_is_active;
     void *out_buf = (void *) buf;
     size_t out_size = buf_size;
+    struct mk_list buffers;
+    struct mk_list *head;
+    struct mk_list *tmp;
+    struct buffer_entry *curr_buffer;
+    struct buffer_entry *new_buffer;
+    struct buffer_entry **split_entries = flb_calloc(2, sizeof(struct buffer_entry*));
+    int all_buffers_sized;
+    int something_resized;
 
     processor_is_active = flb_processor_is_active(ins->processor);
     if (processor_is_active) {
@@ -68,9 +197,40 @@ static int input_log_append(struct flb_input_instance *ins,
         }
     }
 
-    ret = flb_input_chunk_append_raw(ins, FLB_INPUT_LOGS, records,
-                                     tag, tag_len, out_buf, out_size);
+    flb_info("start with buffer size %zu", buf_size);
 
+    mk_list_init(&buffers);
+    new_buffer = new_buffer_entry(buf, buf_size);
+    mk_list_add(&new_buffer->_head, &buffers);
+
+    all_buffers_sized = FLB_FALSE;
+    while (all_buffers_sized != FLB_TRUE) {
+        something_resized = FLB_FALSE;
+        mk_list_foreach_safe(head, tmp, &buffers) {
+            curr_buffer = mk_list_entry(head, struct buffer_entry, _head);
+
+            if (curr_buffer->buf_size > FLB_INPUT_CHUNK_FS_MAX_SIZE) {
+                ret = split_buffer_entry(curr_buffer, &split_entries);
+                if (ret == FLB_TRUE) {
+                    mk_list_add(&(split_entries[0]->_head), &buffers);
+                    mk_list_add(&(split_entries[1]->_head), &buffers);
+                    mk_list_del(&curr_buffer->_head);
+                    // flb_free(curr_buffer);
+                    something_resized = FLB_TRUE;
+                }
+            }
+        }
+        if (something_resized == FLB_FALSE) {
+            all_buffers_sized = FLB_TRUE;
+        }
+    }
+
+    mk_list_foreach_safe(head, tmp, &buffers) {
+        curr_buffer = mk_list_entry(head, struct buffer_entry, _head);
+        flb_info("appending buf size %zu", curr_buffer->buf_size);
+        ret = flb_input_chunk_append_raw(ins, FLB_INPUT_LOGS, records,
+                                        tag, tag_len, curr_buffer->buf, curr_buffer->buf_size);
+    }
 
     if (processor_is_active && buf != out_buf) {
         flb_free(out_buf);
