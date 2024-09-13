@@ -615,7 +615,7 @@ static int process_content(struct flb_tail_file *file, size_t *bytes)
                                          file->tag_len,
                                          file->sl_log_event_encoder->output_buffer,
                                          file->sl_log_event_encoder->output_length);
-
+            flb_log_event_encoder_claim_internal_buffer_ownership(file->sl_log_event_encoder);
             flb_log_event_encoder_reset(file->sl_log_event_encoder);
         }
     }
