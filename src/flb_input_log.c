@@ -34,7 +34,7 @@ struct buffer_entry {
     struct mk_list _head;
 };
 
-static struct buffer_entry *new_buffer_entry(const void *buf, size_t buf_size)
+static struct buffer_entry *new_buffer_entry(void *buf, size_t buf_size)
 {
     struct buffer_entry *new_entry = flb_malloc(sizeof(struct buffer_entry));
     new_entry->buf_size = buf_size;
@@ -61,7 +61,6 @@ static int split_buffer_entry(struct buffer_entry *entry,
     void *tmp_encoder_buf;
     size_t tmp_encoder_buf_size;
     struct flb_log_event_encoder log_encoder;
-    int new_encoder = FLB_TRUE;
     struct flb_log_event_decoder log_decoder;
     struct flb_log_event log_event;
     int entries_processed;
@@ -144,7 +143,7 @@ static int input_log_append(struct flb_input_instance *ins,
                             size_t processor_starting_stage,
                             size_t records,
                             const char *tag, size_t tag_len,
-                            const void *buf, size_t buf_size)
+                            void *buf, size_t buf_size)
 {
     int ret;
     int processor_is_active;
@@ -217,7 +216,7 @@ static int input_log_append(struct flb_input_instance *ins,
 /* Take a msgpack serialized record and enqueue it as a chunk */
 int flb_input_log_append(struct flb_input_instance *ins,
                          const char *tag, size_t tag_len,
-                         const void *buf, size_t buf_size)
+                         void *buf, size_t buf_size)
 {
     int ret;
     size_t records;
@@ -232,7 +231,7 @@ int flb_input_log_append_skip_processor_stages(struct flb_input_instance *ins,
                                                size_t processor_starting_stage,
                                                const char *tag,
                                                size_t tag_len,
-                                               const void *buf,
+                                               void *buf,
                                                size_t buf_size)
 {
     return input_log_append(ins,
@@ -248,7 +247,7 @@ int flb_input_log_append_skip_processor_stages(struct flb_input_instance *ins,
 int flb_input_log_append_records(struct flb_input_instance *ins,
                                  size_t records,
                                  const char *tag, size_t tag_len,
-                                 const void *buf, size_t buf_size)
+                                 void *buf, size_t buf_size)
 {
     int ret;
 
