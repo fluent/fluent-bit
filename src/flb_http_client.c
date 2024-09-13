@@ -633,7 +633,7 @@ static int add_host_and_content_length(struct flb_http_client *c)
     return 0;
 }
 
-struct flb_http_client *flb_http_client(struct flb_connection *u_conn,
+struct flb_http_client *create_http_client(struct flb_connection *u_conn,
                                         int method, const char *uri,
                                         const char *body, size_t body_len,
                                         const char *host, int port,
@@ -745,22 +745,79 @@ struct flb_http_client *flb_http_client(struct flb_connection *u_conn,
         c->query_string = p;
     }
 
+    /* Response */
+    c->resp.content_length = -1;
+    c->resp.connection_close = -1;
+
+    if (body && body_len > 0) {
+        c->body_buf = body;
+        c->body_len = body_len;
+    }
+
+    /* 'Read' buffer size */
+    c->resp.data = flb_malloc(FLB_HTTP_DATA_SIZE_MAX);
+    if (!c->resp.data) {
+        flb_errno();
+        flb_http_client_destroy(c);
+        return NULL;
+    }
+    c->resp.data[0] = '\0';
+    c->resp.data_len  = 0;
+    c->resp.data_size = FLB_HTTP_DATA_SIZE_MAX;
+    c->resp.data_size_max = FLB_HTTP_DATA_SIZE_MAX;
+
+    /* Tests */
+    c->test_mode = FLB_FALSE;
+    c->test_response.callback = NULL;
+
+    return c;
+}
+
+struct flb_http_client *flb_http_dummy_client(struct flb_connection *u_conn,
+                                              int method, const char *uri,
+                                              const char *body, size_t body_len,
+                                              const char *host, int port,
+                                              const char *proxy, int flags)
+{
+    struct flb_http_client *c;
+
+    c = create_http_client(u_conn, method, uri,
+                           body, body_len,
+                           host, port,
+                           proxy, flags);
+
+    if (!c) {
+        return NULL;
+    }
+
+    return c;
+}
+
+struct flb_http_client *flb_http_client(struct flb_connection *u_conn,
+                                        int method, const char *uri,
+                                        const char *body, size_t body_len,
+                                        const char *host, int port,
+                                        const char *proxy, int flags)
+{
+    int ret;
+    struct flb_http_client *c;
+
+    c = create_http_client(u_conn, method, uri,
+                           body, body_len,
+                           host, port,
+                           proxy, flags);
+
+    if (!c) {
+        return NULL;
+    }
+
     /* Is Upstream connection using keepalive mode ? */
     if (flb_stream_get_flag_status(&u_conn->upstream->base, FLB_IO_TCP_KA)) {
         c->flags |= FLB_HTTP_KA;
     }
 
-    /* Response */
-    c->resp.content_length = -1;
-    c->resp.connection_close = -1;
-
     if ((flags & FLB_HTTP_10) == 0) {
         c->flags |= FLB_HTTP_11;
-    }
-
-    if (body && body_len > 0) {
-        c->body_buf = body;
-        c->body_len = body_len;
     }
 
     add_host_and_content_length(c);
@@ -775,18 +832,6 @@ struct flb_http_client *flb_http_client(struct flb_connection *u_conn,
             return NULL;
         }
     }
-
-    /* 'Read' buffer size */
-    c->resp.data = flb_malloc(FLB_HTTP_DATA_SIZE_MAX);
-    if (!c->resp.data) {
-        flb_errno();
-        flb_http_client_destroy(c);
-        return NULL;
-    }
-    c->resp.data[0] = '\0';
-    c->resp.data_len  = 0;
-    c->resp.data_size = FLB_HTTP_DATA_SIZE_MAX;
-    c->resp.data_size_max = FLB_HTTP_DATA_SIZE_MAX;
 
     return c;
 }
@@ -1069,6 +1114,91 @@ int flb_http_set_callback_context(struct flb_http_client *c,
 {
     c->cb_ctx = cb_ctx;
     return 0;
+}
+
+int flb_http_set_response_test(struct flb_http_client *c, char *test_name,
+                               const void *data, size_t len,
+                               int status,
+                               void (*resp_callback) (void *, int, void *, size_t, void *),
+                               void *resp_callback_data)
+{
+    if (!c) {
+        return -1;
+    }
+
+    /*
+     * Enabling a test, set the http_client instance in 'test' mode, so no real
+     * http request is invoked, only the desired implemented test.
+     */
+
+    /* Response test */
+    if (strcmp(test_name, "response") == 0) {
+        c->test_mode = FLB_TRUE;
+        c->test_response.rt_ctx = c;
+        c->test_response.rt_status = status;
+        c->test_response.rt_resp_callback = resp_callback;
+        c->test_response.rt_data = resp_callback_data;
+        if (data != NULL && len > 0) {
+            c->resp.payload = (char *)data;
+            c->resp.payload_size = len;
+            c->resp.status = status;
+        }
+    }
+    else {
+        return -1;
+    }
+
+    return 0;
+}
+
+static int flb_http_run_response_test(struct flb_http_client *c,
+                                      const void *data, size_t len)
+{
+    int ret = 0;
+    void *out_buf = NULL;
+    size_t out_size = 0;
+    struct flb_test_http_response  *htr;
+
+    if (!c) {
+        return -1;
+    }
+
+    htr = &c->test_response;
+
+    /* Invoke the output plugin formatter test callback */
+    ret = htr->callback(c,
+                        data, len,
+                        &out_buf, &out_size);
+
+    /* Call the runtime test callback checker */
+    if (htr->rt_resp_callback) {
+        htr->rt_resp_callback(htr->rt_ctx,
+                              ret,
+                              out_buf, out_size,
+                              htr->rt_data);
+    }
+    else {
+        flb_free(out_buf);
+    }
+
+    return 0;
+}
+
+/* Push some response into the http client */
+static int flb_http_stub_response(struct flb_http_client *c)
+{
+    int ret = 0;
+
+    if (!c) {
+        return -1;
+    }
+
+    /* If http client's test_responses is registered, run the stub. */
+    if (c->test_response.callback != NULL && c->resp.payload != NULL) {
+        ret = flb_http_run_response_test(c, c->resp.payload, c->resp.payload_size);
+    }
+
+    return ret;
 }
 
 int flb_http_add_auth_header(struct flb_http_client *c,
@@ -1361,6 +1491,10 @@ int flb_http_get_response_data(struct flb_http_client *c, size_t bytes_consumed)
 int flb_http_do(struct flb_http_client *c, size_t *bytes)
 {
     int ret;
+
+    if (c->test_mode == FLB_TRUE) {
+        return flb_http_stub_response(c);
+    }
 
     ret = flb_http_do_request(c, bytes);
     if (ret != 0) {
