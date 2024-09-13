@@ -54,18 +54,17 @@ static void buffer_entry_destroy(struct buffer_entry *entry) {
 }
 
 static int split_buffer_entry(struct buffer_entry *entry,
-                              struct buffer_entry ***entries)
+                              struct mk_list *entries)
 {
     int ret;
     int encoder_result;
-    struct buffer_entry **split_entries;
     void *tmp_encoder_buf;
     size_t tmp_encoder_buf_size;
-    size_t split_size = entry->buf_size / 2;
     struct flb_log_event_encoder log_encoder;
     struct flb_log_event_decoder log_decoder;
     struct flb_log_event log_event;
     int entries_processed;
+    struct buffer_entry *new_buffer;
 
     ret = flb_log_event_decoder_init(&log_decoder, entry->buf, entry->buf_size);
     if (ret != FLB_EVENT_DECODER_SUCCESS) {
@@ -83,8 +82,6 @@ static int split_buffer_entry(struct buffer_entry *entry,
 
         return FLB_FALSE;
     }
-
-    split_entries = flb_calloc(2, sizeof(struct buffer_entry*));
 
     entries_processed = 0;
     while ((ret = flb_log_event_decoder_next(
@@ -117,12 +114,12 @@ static int split_buffer_entry(struct buffer_entry *entry,
             continue;
         }
 
-        if (log_encoder.output_length >= split_size) {
+        if (log_encoder.output_length >= FLB_INPUT_CHUNK_FS_MAX_SIZE) {
             tmp_encoder_buf_size = log_encoder.output_length;
             tmp_encoder_buf = flb_malloc(tmp_encoder_buf_size);
             memcpy(tmp_encoder_buf, log_encoder.output_buffer, tmp_encoder_buf_size);
-            split_entries[0] = new_buffer_entry(tmp_encoder_buf,
-                                                tmp_encoder_buf_size);
+            new_buffer = new_buffer_entry(tmp_encoder_buf, tmp_encoder_buf_size);
+            mk_list_add(&new_buffer->_head, entries);
             flb_log_event_encoder_claim_internal_buffer_ownership(&log_encoder);
             flb_log_event_encoder_reset(&log_encoder);
         }
@@ -130,31 +127,17 @@ static int split_buffer_entry(struct buffer_entry *entry,
         entries_processed++;
     }
 
-    /**
-     * Edge case: If only one entry was processed, that means this buffer of data
-     * is one entry that exceeds the chunk max size.
-     */
-    if (entries_processed <= 1) {
-        buffer_entry_destroy(split_entries[0]);
-        buffer_entry_destroy(split_entries[1]);
-        flb_free(split_entries);
-        flb_log_event_encoder_destroy(&log_encoder);
-        flb_log_event_decoder_destroy(&log_decoder);
-        return FLB_FALSE;
-    }
-
     if (log_encoder.output_length >= 0) {
         tmp_encoder_buf_size = log_encoder.output_length;
         tmp_encoder_buf = flb_malloc(tmp_encoder_buf_size);
         memcpy(tmp_encoder_buf, log_encoder.output_buffer, tmp_encoder_buf_size);
-        split_entries[1] = new_buffer_entry(tmp_encoder_buf,
-                                            tmp_encoder_buf_size);
+        new_buffer = new_buffer_entry(tmp_encoder_buf, tmp_encoder_buf_size);
+        mk_list_add(&new_buffer->_head, entries);
         flb_log_event_encoder_claim_internal_buffer_ownership(&log_encoder);
     }
 
     flb_log_event_encoder_destroy(&log_encoder);
     flb_log_event_decoder_destroy(&log_decoder);
-    *entries = split_entries;
     return FLB_TRUE;
 }
 
@@ -170,14 +153,10 @@ static int input_log_append(struct flb_input_instance *ins,
     void *out_buf = (void *) buf;
     size_t out_size = buf_size;
     struct mk_list buffers;
-    struct mk_list buffers_keep;
-    struct mk_list buffers_discard;
     struct mk_list *head;
     struct mk_list *tmp;
     struct buffer_entry *curr_buffer;
     struct buffer_entry **split_entries = flb_calloc(2, sizeof(struct buffer_entry*));
-    int all_buffers_sized;
-    int something_resized;
 
     processor_is_active = flb_processor_is_active(ins->processor);
     if (processor_is_active) {
@@ -213,53 +192,19 @@ static int input_log_append(struct flb_input_instance *ins,
     }
 
     flb_info("start with buffer size %zu", buf_size);
-
-    mk_list_init(&buffers);
-    curr_buffer = new_buffer_entry(buf, buf_size);
-    mk_list_add(&curr_buffer->_head, &buffers);
-
-    all_buffers_sized = FLB_FALSE;
-    while (all_buffers_sized != FLB_TRUE) {
-        something_resized = FLB_FALSE;
-        mk_list_init(&buffers_keep);
-        mk_list_init(&buffers_discard);
+    if (buf_size > FLB_INPUT_CHUNK_FS_MAX_SIZE) {
+        mk_list_init(&buffers);
+        curr_buffer = new_buffer_entry(buf, buf_size);
+        split_buffer_entry(curr_buffer, &buffers);
         mk_list_foreach_safe(head, tmp, &buffers) {
             curr_buffer = mk_list_entry(head, struct buffer_entry, _head);
-
-            if (curr_buffer->buf_size > FLB_INPUT_CHUNK_FS_MAX_SIZE) {
-                ret = split_buffer_entry(curr_buffer, &split_entries);
-                if (ret == FLB_TRUE) {
-                    flb_info("split to size %zu and %zu", split_entries[0]->buf_size, split_entries[1]->buf_size);
-                    mk_list_add(&(split_entries[0]->_head), &buffers_keep);
-                    mk_list_add(&(split_entries[1]->_head), &buffers_keep);
-                    mk_list_add(&curr_buffer->_head, &buffers_discard);
-                    something_resized = FLB_TRUE;
-                } else {
-                    mk_list_add(&curr_buffer->_head, &buffers_keep);
-                }
-            }
+            flb_info("appending buf size %zu", curr_buffer->buf_size);
+            ret = flb_input_chunk_append_raw(ins, FLB_INPUT_LOGS, records,
+                                            tag, tag_len, curr_buffer->buf, curr_buffer->buf_size);
         }
-
-        if (something_resized == FLB_TRUE) {
-            mk_list_foreach_safe(head, tmp, &buffers_discard) {
-                curr_buffer = mk_list_entry(head, struct buffer_entry, _head);
-                buffer_entry_destroy(curr_buffer);
-            }
-            mk_list_init(&buffers);
-            mk_list_foreach_safe(head, tmp, &buffers_keep) {
-                curr_buffer = mk_list_entry(head, struct buffer_entry, _head);
-                mk_list_add(&curr_buffer->_head, &buffers);
-            }
-        } else {
-            all_buffers_sized = FLB_TRUE;
-        }
-    }
-
-    mk_list_foreach_safe(head, tmp, &buffers) {
-        curr_buffer = mk_list_entry(head, struct buffer_entry, _head);
-        flb_info("appending buf size %zu", curr_buffer->buf_size);
+    } else {
         ret = flb_input_chunk_append_raw(ins, FLB_INPUT_LOGS, records,
-                                        tag, tag_len, curr_buffer->buf, curr_buffer->buf_size);
+                                        tag, tag_len, buf, buf_size);
     }
 
     if (processor_is_active && buf != out_buf) {
