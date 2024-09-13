@@ -188,7 +188,6 @@ static int input_log_append(struct flb_input_instance *ins,
         }
     }
 
-    flb_info("start with buffer size %zu", buf_size);
     if (buf_size > FLB_INPUT_CHUNK_FS_MAX_SIZE) {
         mk_list_init(&buffers);
         start_buffer = new_buffer_entry(buf, buf_size);
@@ -196,7 +195,6 @@ static int input_log_append(struct flb_input_instance *ins,
         flb_free(start_buffer);
         mk_list_foreach_safe(head, tmp, &buffers) {
             iter_buffer = mk_list_entry(head, struct buffer_entry, _head);
-            flb_info("appending buf size %zu", iter_buffer->buf_size);
             records = flb_mp_count(iter_buffer->buf, iter_buffer->buf_size);
             ret = flb_input_chunk_append_raw(ins, FLB_INPUT_LOGS, records,
                                             tag, tag_len, iter_buffer->buf, iter_buffer->buf_size);
