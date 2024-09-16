@@ -49,4 +49,14 @@ static inline double cmt_math_uint64_to_d64(uint64_t val)
     return u.d;
 }
 
+static inline uint64_t cmt_math_sum_native_uint64_as_d64(uint64_t dst, uint64_t src)
+{
+    double val;
+
+    val = cmt_math_uint64_to_d64(dst);
+    val += cmt_math_uint64_to_d64(src);
+
+    return cmt_math_d64_to_uint64(val);
+}
+
 #endif
