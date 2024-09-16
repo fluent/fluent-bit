@@ -24,6 +24,7 @@
 #include <cmetrics/cmt_histogram.h>
 #include <cmetrics/cmt_summary.h>
 #include <cmetrics/cmt_encode_text.h>
+#include <cmetrics/cmt_encode_prometheus.h>
 #include <cmetrics/cmt_cat.h>
 
 #include "cmt_tests.h"
@@ -232,7 +233,166 @@ void test_cat()
     cmt_destroy(cmt5);
 }
 
+
+void test_duplicate_metrics()
+{
+    int i;
+    int ret;
+    double val;
+    struct cmt *cmt1;
+    struct cmt *cmt2;
+    struct cmt *final;
+    struct cmt_counter *c;
+    struct cmt_gauge *g;
+    struct cmt_untyped *u;
+    struct cmt_summary *s;
+    struct cmt_histogram *h;
+    struct cmt_histogram_buckets *buckets1;
+    struct cmt_histogram_buckets *buckets2;
+    double sum;
+    int count;
+    uint64_t ts;
+
+    cfl_sds_t text;
+
+    /* context 1 */
+    cmt1 = cmt_create();
+    TEST_CHECK(cmt1 != NULL);
+
+    c = cmt_counter_create(cmt1, "cmetrics", "test", "cat_counter", "first counter",
+                           2, (char *[]) {"label1", "label2"});
+    TEST_CHECK(c != NULL);
+    cmt_counter_set(c, cfl_time_now(), 10, 0, NULL  );
+    cmt_counter_inc(c, cfl_time_now(), 2, (char *[]) {"aaa", "bbb"});
+
+
+    g = cmt_gauge_create(cmt1, "cmetrics", "test", "cat_gauge", "first gauge",
+                         2, (char *[]) {"label3", "label4"});
+    TEST_CHECK(g != NULL);
+    cmt_gauge_inc(g, cfl_time_now(), 2, (char *[]) {"yyy", "xxx"});
+
+    u = cmt_untyped_create(cmt1, "cmetrics", "test", "cat_untyped", "first untyped",
+                           2, (char *[]) {"label5", "label6"});
+    TEST_CHECK(u != NULL);
+    cmt_untyped_set(u, cfl_time_now(), 10, 2, (char *[]) {"qwe", "asd"});
+
+    s = cmt_summary_create(cmt1,
+                           "spring", "kafka_listener", "seconds", "Kafka Listener Timer",
+                           6, (double[]) {0.1, 0.2, 0.3, 0.4, 0.5, 1.0},
+                           3, (char *[]) {"exception", "name", "result"});
+
+    ts = cfl_time_now();
+
+    /* Summary
+     * -------
+     */
+    /* no quantiles, labels */
+    sum = 0.0;
+    count = 1;
+
+    cmt_summary_set_default(s, ts, NULL, sum, count,
+                            3, (char *[]) {"ListenerExecutionFailedException",
+                                           "org.springframework.kafka.KafkaListenerEndpointContainer#0-0",
+                                           "failure"});
+
+    /* no quantiles, labels */
+    sum = 0.1;
+    count = 2;
+    cmt_summary_set_default(s, ts, NULL, sum, count,
+                            3, (char *[]) {"none",
+                                          "org.springframework.kafka.KafkaListenerEndpointContainer#0-0",
+                                          "success"});
+
+    /* quantiles, labels */
+    sum = 0.2;
+    count = 3;
+    cmt_summary_set_default(s, ts, NULL, sum, count,
+                            3, (char *[]) {"extra test",
+                                           "org.springframework.kafka.KafkaListenerEndpointContainer#0-0",
+                                           "success"});
+
+    /*
+     * Histogram
+     * ---------
+     */
+    buckets1 = cmt_histogram_buckets_create(11,
+                                            0.005, 0.01, 0.025, 0.05,
+                                            0.1, 0.25, 0.5, 1.0, 2.5,
+                                            5.0, 10.0);
+
+    h = cmt_histogram_create(cmt1,
+                             "k8s", "network", "load", "Network load",
+                             buckets1,
+                             1, (char *[]) {"my_label"});
+    TEST_CHECK(h != NULL);
+
+    ts = cfl_time_now();
+    for (i = 0; i < sizeof(hist_observe_values)/(sizeof(double)); i++) {
+        val = hist_observe_values[i];
+        cmt_histogram_observe(h, ts, val, 1, (char *[]) {"my_label"});
+    }
+
+    /* duplicate counter */
+    cmt2 = cmt_create();
+    TEST_CHECK(cmt2 != NULL);
+
+    c = cmt_counter_create(cmt2, "cmetrics", "test", "cat_counter", "first counter",
+                           2, (char *[]) {"label1", "label2"});
+    TEST_CHECK(c != NULL);
+    cmt_counter_set(c, cfl_time_now(), 11, 0, NULL  );
+    cmt_counter_inc(c, cfl_time_now(), 2, (char *[]) {"ddd", "eee"});
+
+    /* duplicate gauge */
+    g = cmt_gauge_create(cmt2, "cmetrics", "test", "cat_gauge", "first gauge",
+                         2, (char *[]) {"label3", "label4"});
+    TEST_CHECK(g != NULL);
+    cmt_gauge_inc(g, cfl_time_now(), 2, (char *[]) {"zzz", "xxx"});
+
+    /* duplicate untyped */
+    u = cmt_untyped_create(cmt2, "cmetrics", "test", "cat_untyped", "first untyped",
+                           2, (char *[]) {"label5", "label6"});
+    TEST_CHECK(u != NULL);
+    cmt_untyped_set(u, cfl_time_now(), 20, 2, (char *[]) {"rty", "asd"});
+
+    buckets2 = cmt_histogram_buckets_create(11,
+                                            0.005, 0.01, 0.025, 0.05,
+                                            0.1, 0.25, 0.5, 1.0, 2.5,
+                                            5.0, 10.0);
+    h = cmt_histogram_create(cmt2,
+                             "k8s", "network", "load", "Network load",
+                             buckets2,
+                             1, (char *[]) {"my_label2"});
+    TEST_CHECK(h != NULL);
+
+    ts = cfl_time_now();
+
+    for (i = 0; i < sizeof(hist_observe_values)/(sizeof(double)); i++) {
+        val = hist_observe_values[i];
+        cmt_histogram_observe(h, ts, val, 1, (char *[]) {"my_label"});
+    }
+
+    /* concatenate cmt1 + cmt2 */
+    final = cmt_create();
+    ret = cmt_cat(final, cmt1);
+    TEST_CHECK(ret == 0);
+
+    ret = cmt_cat(final, cmt2);
+    TEST_CHECK(ret == 0);
+
+    /* prometheus format */
+    text = cmt_encode_prometheus_create(final, CMT_FALSE);
+    printf("Prometheus Text====>\n%s\n", text);
+    cfl_sds_destroy(text);
+
+
+    cmt_destroy(cmt1);
+    cmt_destroy(cmt2);
+    cmt_destroy(final);
+
+}
+
 TEST_LIST = {
     {"cat", test_cat},
+    {"duplicate_metrics", test_duplicate_metrics},
     { 0 }
 };
