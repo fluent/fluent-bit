@@ -22,6 +22,7 @@
 
 #include "azure_blob.h"
 #include "azure_blob_conf.h"
+#include "azure_blob_db.h"
 
 #include <sys/types.h>
 #include <sys/stat.h>
@@ -70,6 +71,7 @@ struct flb_azure_blob *flb_azure_blob_conf_create(struct flb_output_instance *in
         return NULL;
     }
     ctx->ins = ins;
+    ctx->config = config;
 
     /* Set context */
     flb_output_set_context(ins, ctx);
@@ -243,6 +245,16 @@ struct flb_azure_blob *flb_azure_blob_conf_create(struct flb_output_instance *in
         }
     }
 
+    /* database file for blob signal handling */
+    if (ctx->database_file) {
+        ctx->db = azb_db_open(ctx, ctx->database_file);
+        if (!ctx->db) {
+            return NULL;
+        }
+    }
+
+    pthread_mutex_init(&ctx->file_upload_commit_file_parts, NULL);
+
     flb_plg_info(ctx->ins,
                  "account_name=%s, container_name=%s, blob_type=%s, emulator_mode=%s, endpoint=%s, auth_type=%s",
                  ctx->account_name, ctx->container_name,
@@ -275,5 +287,7 @@ void flb_azure_blob_conf_destroy(struct flb_azure_blob *ctx)
         flb_upstream_destroy(ctx->u);
     }
 
+
+    azb_db_close(ctx);
     flb_free(ctx);
 }
