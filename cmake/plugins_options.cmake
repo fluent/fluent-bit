@@ -11,6 +11,7 @@ option(FLB_MINIMAL "Enable minimal build configuration" No)
 
 # Inputs (sources, data collectors)
 # =================================
+DEFINE_OPTION(FLB_IN_BLOB                     "Enable Blob input plugin"                     ON)
 DEFINE_OPTION(FLB_IN_CALYPTIA_FLEET           "Enable Calyptia Fleet input plugin"           ON)
 DEFINE_OPTION(FLB_IN_COLLECTD                 "Enable Collectd input plugin"                 ON)
 DEFINE_OPTION(FLB_IN_CPU                      "Enable CPU input plugin"                      ON)
