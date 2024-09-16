@@ -89,6 +89,7 @@ int flb_chunk_trace_output(struct flb_chunk_trace *trace, struct flb_output_inst
 #define FLB_OUTPUT_LOGS        1
 #define FLB_OUTPUT_METRICS     2
 #define FLB_OUTPUT_TRACES      4
+#define FLB_OUTPUT_BLOBS       8
 
 #define FLB_OUTPUT_FLUSH_COMPAT_OLD_18()                 \
     const void *data   = event_chunk->data;              \
@@ -231,6 +232,8 @@ struct flb_output_plugin {
 
     /* Default number of worker threads */
     int workers;
+
+    int (*cb_worker_init) (void *, struct flb_config *);
 
     /* Tests */
     struct flb_test_out_formatter test_formatter;
