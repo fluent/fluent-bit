@@ -1283,9 +1283,16 @@ int flb_utils_uuid_v4_gen(char *buf)
 
 int flb_utils_read_file(char *path, char **out_buf, size_t *out_size)
 {
+    return flb_utils_read_file_offset(path, 0, 0, out_buf, out_size);
+}
+
+int flb_utils_read_file_offset(char *path, off_t offset_start, off_t offset_end, char **out_buf, size_t *out_size)
+{
     int fd;
     int ret;
     size_t bytes;
+    size_t bytes_to_read;
+    size_t total_bytes_read = 0;
     struct stat st;
     flb_sds_t buf;
     FILE *fp;
@@ -1303,26 +1310,54 @@ int flb_utils_read_file(char *path, char **out_buf, size_t *out_size)
         return -1;
     }
 
-    buf = flb_calloc(1, st.st_size + 1);
+    if (offset_start > st.st_size || offset_end > st.st_size) {
+        flb_error("offsets exceed file size (%jd bytes)", (intmax_t) st.st_size);
+        fclose(fp);
+        return -1;
+    }
+
+    if (offset_start > 0) {
+        ret = fseek(fp, offset_start, SEEK_SET);
+        if (ret != 0) {
+            flb_errno();
+            fclose(fp);
+            return -1;
+        }
+    }
+
+    if (offset_end == 0) {
+        offset_end = st.st_size;
+    }
+
+    bytes_to_read = offset_end - offset_start;
+
+    buf = flb_calloc(1, bytes_to_read + 1);
     if (!buf) {
         flb_errno();
         fclose(fp);
         return -1;
     }
 
-    bytes = fread(buf, st.st_size, 1, fp);
-    if (bytes < 1) {
-        if (ferror(fp)) {
-            flb_errno();
+    while (total_bytes_read < bytes_to_read) {
+        bytes = fread(buf + total_bytes_read, 1, bytes_to_read - total_bytes_read, fp);
+        if (bytes < 1) {
+            if (feof(fp)) {
+                break;
+            }
+            if (ferror(fp)) {
+                flb_errno();
+                free(buf);
+                fclose(fp);
+                return -1;
+            }
         }
-        flb_free(buf);
-        fclose(fp);
-        return -1;
+        total_bytes_read += bytes;
     }
     fclose(fp);
 
     *out_buf = buf;
-    *out_size = st.st_size;
+    *out_size = total_bytes_read;
+
     return 0;
 }
 
@@ -1426,7 +1461,7 @@ int flb_utils_get_machine_id(char **out_id, size_t *out_size)
 
         memcpy(*out_id, buf, dwBufSize);
 
-        /* RegQueryValueEx sets dwBufSize to strlen()+1 for the NULL 
+        /* RegQueryValueEx sets dwBufSize to strlen()+1 for the NULL
          * terminator, but we only need strlen(). */
         *out_size = dwBufSize-1;
         return 0;
