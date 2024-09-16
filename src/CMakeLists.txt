@@ -27,6 +27,7 @@ set(src
   flb_input_log.c
   flb_input_metric.c
   flb_input_trace.c
+  flb_input_blob.c
   flb_input_thread.c
   flb_filter.c
   flb_output.c
