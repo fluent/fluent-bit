@@ -2049,6 +2049,9 @@ int flb_input_chunk_get_event_type(struct flb_input_chunk *ic)
         else if (buf[2] == FLB_INPUT_CHUNK_TYPE_TRACES) {
             type = FLB_INPUT_TRACES;
         }
+        else if (buf[2] == FLB_INPUT_CHUNK_TYPE_BLOBS) {
+            type = FLB_INPUT_BLOBS;
+        }
     }
     else {
         type = FLB_INPUT_LOGS;
