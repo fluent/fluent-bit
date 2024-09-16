@@ -577,7 +577,7 @@ static FLB_INLINE int flb_input_is_threaded(struct flb_input_instance *ins)
  * number of retries, if it has exceeded the 'retry_limit' option, an FLB_ERROR
  * will be returned instead.
  */
-static inline void flb_input_return(struct flb_coro *coro) {
+static FLB_INLINE void flb_input_return(struct flb_coro *coro) {
     int n;
     uint64_t val;
     struct flb_input_coro *input_coro;
@@ -599,7 +599,7 @@ static inline void flb_input_return(struct flb_coro *coro) {
     flb_input_coro_prepare_destroy(input_coro);
 }
 
-static inline void flb_input_return_do(int ret) {
+static FLB_INLINE void flb_input_return_do(int ret) {
     struct flb_coro *coro = flb_coro_get();
 
     flb_input_return(coro);
