@@ -1669,7 +1669,6 @@ void test_issue_fluent_bit_9267()
 {
     char errbuf[256];
     int status;
-    cfl_sds_t result = NULL;
     struct cmt *cmt;
     struct cmt_decode_prometheus_parse_opts opts;
     memset(&opts, 0, sizeof(opts));
