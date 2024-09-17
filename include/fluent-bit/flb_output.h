@@ -168,6 +168,66 @@ struct flb_test_out_formatter {
                      size_t *);      /* output buffer size */
 };
 
+struct flb_test_out_response {
+    /*
+     * Runtime Library Mode
+     * ====================
+     * When the runtime library enable the test formatter mode, it needs to
+     * keep a reference of the context and other information:
+     *
+     * - rt_ctx : context created by flb_create()
+     *
+     * - rt_ffd : this plugin assigned 'integer' created by flb_output()
+     *
+     * - rt_step_calback: intermediary function to receive the results of
+     *                    the formatter plugin test function.
+     *
+     * - rt_data: opaque data type for rt_step_callback()
+     */
+
+    /* runtime library context */
+    void *rt_ctx;
+
+    /* runtime library: assigned plugin integer */
+    int rt_ffd;
+
+    /*
+     * "runtime step callback": this function pointer is used by Fluent Bit
+     * library mode to reference a test function that must retrieve the
+     * results of 'callback'. Consider this an intermediary function to
+     * transfer the results to the runtime test.
+     *
+     * This function is private and should not be set manually in the plugin
+     * code, it's set on src/flb_lib.c .
+     */
+    void (*rt_out_response) (void *, int, int, void *, size_t, void *);
+
+    /*
+     * opaque data type passed by the runtime library to be used on
+     * rt_step_test().
+     */
+    void *rt_data;
+
+    /* optional context for flush callback */
+    void *flush_ctx;
+
+    /*
+     * Callback
+     * =========
+     * "Formatter callback": it references the plugin function that performs
+     * data formatting (msgpack -> local data). This entry is mostly to
+     * expose the plugin local function.
+     */
+    int (*callback) (/* Fluent Bit context */
+                     struct flb_config *,
+                     void *,         /* plugin instance context */
+                     int status,     /* HTTP status code */
+                     const void *,   /* respond msgpack data */
+                     size_t,         /* respond msgpack size */
+                     void **,        /* output buffer      */
+                     size_t *);      /* output buffer size */
+};
+
 struct flb_output_plugin {
     /*
      * a 'mask' to define what kind of data the plugin can manage:
@@ -241,6 +301,7 @@ struct flb_output_plugin {
 
     /* Tests */
     struct flb_test_out_formatter test_formatter;
+    struct flb_test_out_response test_response;
 
     /* Link to global list from flb_config->outputs */
     struct mk_list _head;
@@ -391,6 +452,7 @@ struct flb_output_instance {
 
     /* Tests */
     struct flb_test_out_formatter test_formatter;
+    struct flb_test_out_response test_response;
 
     /*
      * Buffer counter: it counts the total of disk space (filesystem) used by buffers
