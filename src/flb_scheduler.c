@@ -31,7 +31,7 @@
 #include <fcntl.h>
 
 FLB_TLS_DEFINE(struct flb_sched, flb_sched_ctx);
-FLB_TLS_DEFINE(struct flb_sched_timer_cb_params, sched_timer_coro_cb_params);
+FLB_TLS_DEFINE(struct flb_sched_timer_coro_cb_params, sched_timer_coro_cb_params);
 
 void flb_sched_ctx_init()
 {
