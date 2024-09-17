@@ -199,7 +199,7 @@ struct flb_sched_timer_coro_cb_params {
     struct flb_coro *coro;
 };
 
-extern FLB_TLS_DEFINE(struct flb_sched_timer_cb_coro_params, sched_timer_coro_cb_params);
+extern FLB_TLS_DEFINE(struct flb_sched_timer_coro_cb_params, sched_timer_coro_cb_params);
 
 
 struct flb_timer_cb_coro_params {
