@@ -62,6 +62,12 @@ struct flb_azure_blob {
     flb_sds_t database_file;
     size_t part_size;
     time_t upload_parts_timeout;
+    int file_delivery_attempt_limit;
+    int part_delivery_attempt_limit;
+    flb_sds_t configuration_endpoint_url;
+    flb_sds_t configuration_endpoint_username;
+    flb_sds_t configuration_endpoint_password;
+    flb_sds_t configuration_endpoint_bearer_token;
 
     /*
      * Internal use
@@ -93,11 +99,18 @@ struct flb_azure_blob {
     /* prepared statements: files  */
     sqlite3_stmt *stmt_insert_file;
     sqlite3_stmt *stmt_delete_file;
+    sqlite3_stmt *stmt_abort_file;
     sqlite3_stmt *stmt_get_file;
+    sqlite3_stmt *stmt_update_file_delivery_attempt_count;
+    sqlite3_stmt *stmt_set_file_aborted_state;
+    sqlite3_stmt *stmt_get_next_aborted_file;
+    sqlite3_stmt *stmt_reset_file_upload_states;
+
 
     /* prepared statement: file parts */
     sqlite3_stmt *stmt_insert_file_part;
     sqlite3_stmt *stmt_update_file_part_uploaded;
+    sqlite3_stmt *stmt_update_file_part_delivery_attempt_count;
 
     sqlite3_stmt *stmt_get_next_file_part;
     sqlite3_stmt *stmt_update_file_part_in_progress;
