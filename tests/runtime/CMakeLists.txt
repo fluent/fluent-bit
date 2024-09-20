@@ -32,7 +32,7 @@ FLB_RT_TEST(FLB_CHUNK_TRACE "core_chunk_trace.c")
 FLB_RT_TEST(FLB_IN_EVENT_TEST   "in_event_test.c")
 
 if(FLB_OUT_LIB)
-  # These plugins works only on Linux
+  # These plugins work only on Linux
   if(${CMAKE_SYSTEM_NAME} MATCHES "Linux")
     FLB_RT_TEST(FLB_IN_CPU            "in_cpu.c")
     FLB_RT_TEST(FLB_IN_DISK           "in_disk.c")
@@ -60,6 +60,25 @@ if(FLB_OUT_LIB)
   FLB_RT_TEST(FLB_IN_KUBERNETES_EVENTS "in_kubernetes_events.c")
 endif()
 
+# Add executable for in_ebpf test and link necessary sources
+if (FLB_IN_EBPF)
+  add_executable(
+    flb-rt-in_ebpf
+    in_ebpf.c
+    ../../plugins/in_ebpf/in_ebpf.c  # Ensure this is linked with the executable
+  )
+  target_link_libraries(flb-rt-in_ebpf
+    fluent-bit-static
+    ${CMAKE_THREAD_LIBS_INIT}
+    ${SYSTEMD_LIB}
+    -lbpf
+  )
+  add_test(NAME flb-rt-in_ebpf
+           COMMAND ${CMAKE_RUNTIME_OUTPUT_DIRECTORY}/flb-rt-in_ebpf
+           WORKING_DIRECTORY ${CMAKE_HOME_DIRECTORY}/build)
+  set_tests_properties(flb-rt-in_ebpf PROPERTIES LABELS "runtime")
+endif()
+
 # Filter Plugins
 if(FLB_IN_LIB AND FLB_OUT_LIB)
   FLB_RT_TEST(FLB_FILTER_AWS             "filter_aws.c")
@@ -69,23 +88,22 @@ if(FLB_IN_LIB AND FLB_OUT_LIB)
   FLB_RT_TEST(FLB_FILTER_GREP            "filter_grep.c")
   FLB_RT_TEST(FLB_FILTER_THROTTLE        "filter_throttle.c")
   FLB_RT_TEST(FLB_FILTER_THROTTLE_SIZE   "filter_throttle_size.c")
-  FLB_RT_TEST(FLB_FILTER_NEST       "filter_nest.c")
-  FLB_RT_TEST(FLB_FILTER_REWRITE_TAG  "filter_rewrite_tag.c")
-  FLB_RT_TEST(FLB_FILTER_KUBERNETES "filter_kubernetes.c")
-  FLB_RT_TEST(FLB_FILTER_PARSER     "filter_parser.c")
-  FLB_RT_TEST(FLB_FILTER_MODIFY     "filter_modify.c")
-  FLB_RT_TEST(FLB_FILTER_LUA        "filter_lua.c")
-  FLB_RT_TEST(FLB_FILTER_TYPE_CONVERTER "filter_type_converter.c")
+  FLB_RT_TEST(FLB_FILTER_NEST            "filter_nest.c")
+  FLB_RT_TEST(FLB_FILTER_REWRITE_TAG     "filter_rewrite_tag.c")
+  FLB_RT_TEST(FLB_FILTER_KUBERNETES      "filter_kubernetes.c")
+  FLB_RT_TEST(FLB_FILTER_PARSER          "filter_parser.c")
+  FLB_RT_TEST(FLB_FILTER_MODIFY          "filter_modify.c")
+  FLB_RT_TEST(FLB_FILTER_LUA             "filter_lua.c")
+  FLB_RT_TEST(FLB_FILTER_TYPE_CONVERTER  "filter_type_converter.c")
   FLB_RT_TEST(FLB_FILTER_RECORD_MODIFIER "filter_record_modifier.c")
   FLB_RT_TEST(FLB_FILTER_MULTILINE       "filter_multiline.c")
   FLB_RT_TEST(FLB_FILTER_SYSINFO         "filter_sysinfo.c")
   if (FLB_FILTER_WASM)
-    FLB_RT_TEST(FLB_FILTER_WASM            "filter_wasm.c")
+    FLB_RT_TEST(FLB_FILTER_WASM "filter_wasm.c")
   endif ()
   FLB_RT_TEST(FLB_FILTER_ECS       "filter_ecs.c")
-  FLB_RT_TEST(FLB_FILTER_LOG_TO_METRICS       "filter_log_to_metrics.c")
+  FLB_RT_TEST(FLB_FILTER_LOG_TO_METRICS "filter_log_to_metrics.c")
 endif()
-
 
 # Output Plugins
 if(FLB_IN_LIB)
@@ -118,14 +136,13 @@ if(FLB_IN_LIB)
   FLB_RT_TEST(FLB_OUT_CLOUDWATCH_LOGS   "out_cloudwatch.c")
   FLB_RT_TEST(FLB_OUT_KINESIS_FIREHOSE  "out_firehose.c")
   FLB_RT_TEST(FLB_OUT_KINESIS_STREAMS   "out_kinesis.c")
-    # These plugins work only on Linux
+  # These plugins work only on Linux
   if(NOT FLB_SYSTEM_WINDOWS)
     FLB_RT_TEST(FLB_OUT_FILE              "out_file.c")
   endif()
   FLB_RT_TEST(FLB_OUT_S3                "out_s3.c")
   FLB_RT_TEST(FLB_OUT_TD                "out_td.c")
   FLB_RT_TEST(FLB_OUT_INFLUXDB          "out_influxdb.c")
-
 endif()
 
 if (FLB_CUSTOM_CALYPTIA)
@@ -154,7 +171,7 @@ set(FLB_TESTS_DATA_PATH ${CMAKE_CURRENT_SOURCE_DIR})
 configure_file(
   "${CMAKE_CURRENT_SOURCE_DIR}/flb_tests_runtime.h.in"
   "${CMAKE_CURRENT_SOURCE_DIR}/flb_tests_runtime.h"
-  )
+)
 
 foreach(source_file ${CHECK_PROGRAMS})
   get_filename_component(o_source_file_we ${source_file} NAME_WE)
@@ -165,19 +182,19 @@ foreach(source_file ${CHECK_PROGRAMS})
     add_executable(
       ${source_file_we}
       ${source_file}
-      )
+    )
     add_sanitizers(${source_file_we})
     target_link_libraries(${source_file_we}
       fluent-bit-static
       ${CMAKE_THREAD_LIBS_INIT}
       ${SYSTEMD_LIB}
-      )
-      if(FLB_AVRO_ENCODER)
-        target_link_libraries(${source_file_we} avro-static jansson)
-      endif()
+    )
+    if(FLB_AVRO_ENCODER)
+      target_link_libraries(${source_file_we} avro-static jansson)
+    endif()
     add_test(NAME ${source_file_we}
-            COMMAND ${CMAKE_RUNTIME_OUTPUT_DIRECTORY}/${source_file_we}
-            WORKING_DIRECTORY ${CMAKE_HOME_DIRECTORY}/build)
+             COMMAND ${CMAKE_RUNTIME_OUTPUT_DIRECTORY}/${source_file_we}
+             WORKING_DIRECTORY ${CMAKE_HOME_DIRECTORY}/build)
     set_tests_properties(${source_file_we} PROPERTIES LABELS "runtime")
     set_property(TARGET ${source_file_we} APPEND_STRING PROPERTY COMPILE_FLAGS "-D${o_source_file_we}")
   endif()
