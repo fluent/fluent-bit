@@ -28,7 +28,8 @@ struct flb_blob_file {
     cfl_sds_t path;
 };
 
-int flb_input_blob_file_get_info(msgpack_object map, cfl_sds_t *file_path, size_t *size);
+int flb_input_blob_file_get_info(msgpack_object map, cfl_sds_t *source,
+                                 cfl_sds_t *file_path, size_t *size);
 int flb_input_blob_file_register(struct flb_input_instance *ins,
                                  struct flb_log_event_encoder *encoder,
                                  const char *tag, size_t tag_len,
