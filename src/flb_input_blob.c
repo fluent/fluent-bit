@@ -28,8 +28,9 @@
 
 #include <sys/stat.h>
 
-int flb_input_blob_file_get_info(msgpack_object map, cfl_sds_t *file_path, size_t *size)
+int flb_input_blob_file_get_info(msgpack_object map, cfl_sds_t *source, cfl_sds_t *file_path, size_t *size)
 {
+    cfl_sds_t tmp_source;
     cfl_sds_t tmp_file_path;
     msgpack_object o;
 
@@ -37,7 +38,7 @@ int flb_input_blob_file_get_info(msgpack_object map, cfl_sds_t *file_path, size_
         return -1;
     }
 
-    if (map.via.map.size < 2) {
+    if (map.via.map.size < 3) {
         return -1;
     }
 
@@ -77,8 +78,32 @@ int flb_input_blob_file_get_info(msgpack_object map, cfl_sds_t *file_path, size_
         return -1;
     }
 
+    /* get source plugin */
+    o = map.via.map.ptr[2].key;
+    if (o.type != MSGPACK_OBJECT_STR) {
+        cfl_sds_destroy(tmp_file_path);
+        return -1;
+    }
+    if (o.via.str.size != 6 || strncmp(o.via.str.ptr, "source", 6) != 0) {
+        cfl_sds_destroy(tmp_file_path);
+        return -1;
+    }
+
+    o = map.via.map.ptr[2].val;
+    if (o.type != MSGPACK_OBJECT_STR) {
+        cfl_sds_destroy(tmp_file_path);
+        return -1;
+    }
+
+    tmp_source = cfl_sds_create_len(o.via.str.ptr, o.via.str.size);
+    if (tmp_source == NULL) {
+        cfl_sds_destroy(tmp_file_path);
+        return -1;
+    }
+
     *size = o.via.u64;
     *file_path = tmp_file_path;
+    *source = tmp_source;
 
     return 0;
 }
@@ -133,6 +158,7 @@ int flb_input_blob_file_register(struct flb_input_instance *ins,
         flb_log_event_encoder_reset(encoder);
         return -1;
     }
+
     ret = flb_log_event_encoder_append_body_cstring(encoder, file_path);
     if (ret != FLB_EVENT_ENCODER_SUCCESS) {
         flb_error("[blob file registration] could not append path");
@@ -150,6 +176,20 @@ int flb_input_blob_file_register(struct flb_input_instance *ins,
     ret = flb_log_event_encoder_append_body_uint64(encoder, size);
     if (ret != FLB_EVENT_ENCODER_SUCCESS) {
         flb_error("[blob file registration] could not append size");
+        flb_log_event_encoder_reset(encoder);
+        return -1;
+    }
+
+    ret = flb_log_event_encoder_append_body_cstring(encoder, "source");
+    if (ret != FLB_EVENT_ENCODER_SUCCESS) {
+        flb_error("[blob file registration] could not append path");
+        flb_log_event_encoder_reset(encoder);
+        return -1;
+    }
+
+    ret = flb_log_event_encoder_append_body_cstring(encoder, flb_input_name(ins));
+    if (ret != FLB_EVENT_ENCODER_SUCCESS) {
+        flb_error("[blob file registration] could not append source plugin name");
         flb_log_event_encoder_reset(encoder);
         return -1;
     }
