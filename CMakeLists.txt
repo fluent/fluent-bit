@@ -1032,6 +1032,23 @@ else()
   set(FLB_ARROW OFF)
 endif()
 
+# EBPF Support
+# ============
+if (FLB_IN_EBPF)
+  find_package(PkgConfig)
+  pkg_check_modules(LIBBPF libbpf>=0.5.0)
+  if (LIBBPF_FOUND)
+    include_directories(${LIBBPF_INCLUDE_DIRS})
+    list(APPEND EXTRA_LIBS ${LIBBPF_LIBRARIES})
+  else()
+    if (FLB_SYSTEM_LINUX AND NOT(LIBBPF_FOUND))
+      MESSAGE(FATAL_ERROR "Libbpf required on Linux")
+    endif()
+    message(STATUS "Libbpf is not found")
+    set(FLB_IN_EBPF OFF)
+  endif()
+endif()
+
 # Pthread Local Storage
 # =====================
 # By default we expect the compiler already support thread local storage
