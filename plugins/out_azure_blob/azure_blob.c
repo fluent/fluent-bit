@@ -149,6 +149,81 @@ static int create_blob(struct flb_azure_blob *ctx, char *name)
     return FLB_OK;
 }
 
+static int delete_blob(struct flb_azure_blob *ctx, char *name)
+{
+    int ret;
+    size_t b_sent;
+    flb_sds_t uri = NULL;
+    struct flb_http_client *c;
+    struct flb_connection *u_conn;
+
+    uri = azb_uri_create_blob(ctx, name);
+    if (!uri) {
+        return FLB_RETRY;
+    }
+
+    /* Get upstream connection */
+    u_conn = flb_upstream_conn_get(ctx->u);
+    if (!u_conn) {
+        flb_plg_error(ctx->ins,
+                      "cannot create upstream connection for create_append_blob");
+        flb_sds_destroy(uri);
+        return FLB_RETRY;
+    }
+
+    /* Create HTTP client context */
+    c = flb_http_client(u_conn, FLB_HTTP_DELETE,
+                        uri,
+                        NULL, 0, NULL, 0, NULL, 0);
+    if (!c) {
+        flb_plg_error(ctx->ins, "cannot create HTTP client context");
+        flb_upstream_conn_release(u_conn);
+        flb_sds_destroy(uri);
+        return FLB_RETRY;
+    }
+
+    /* Prepare headers and authentication */
+    azb_http_client_setup(ctx, c, -1, FLB_TRUE,
+                          AZURE_BLOB_CT_NONE, AZURE_BLOB_CE_NONE);
+
+    /* Send HTTP request */
+    ret = flb_http_do(c, &b_sent);
+    flb_sds_destroy(uri);
+
+    if (ret == -1) {
+        flb_plg_error(ctx->ins, "error sending append_blob");
+        flb_http_client_destroy(c);
+        flb_upstream_conn_release(u_conn);
+        return FLB_RETRY;
+    }
+
+    if (c->resp.status == 201) {
+        /* delete "&sig=..." in the c->uri for security */
+        char *p = strstr(c->uri, "&sig=");
+        if (p) {
+            *p = '\0';
+        }
+        flb_plg_info(ctx->ins, "blob deleted successfully: %s", c->uri);
+    }
+    else {
+        if (c->resp.payload_size > 0) {
+            flb_plg_error(ctx->ins, "http_status=%i cannot delete append blob\n%s",
+                          c->resp.status, c->resp.payload);
+        }
+        else {
+            flb_plg_error(ctx->ins, "http_status=%i cannot delete append blob",
+                          c->resp.status);
+        }
+        flb_http_client_destroy(c);
+        flb_upstream_conn_release(u_conn);
+        return FLB_RETRY;
+    }
+
+    flb_http_client_destroy(c);
+    flb_upstream_conn_release(u_conn);
+    return FLB_OK;
+}
+
 static int http_send_blob(struct flb_config *config, struct flb_azure_blob *ctx,
                           flb_sds_t ref_name,
                           flb_sds_t uri,
@@ -563,6 +638,7 @@ static int process_blob_chunk(struct flb_azure_blob *ctx, struct flb_event_chunk
     int64_t ret;
     int64_t file_id;
     cfl_sds_t file_path = NULL;
+    cfl_sds_t source = NULL;
     size_t file_size;
     msgpack_object map;
 
@@ -582,20 +658,22 @@ static int process_blob_chunk(struct flb_azure_blob *ctx, struct flb_event_chunk
 
     while (flb_log_event_decoder_next(&log_decoder, &log_event) == FLB_EVENT_DECODER_SUCCESS) {
         map = *log_event.body;
-        ret = flb_input_blob_file_get_info(map, &file_path, &file_size);
+        ret = flb_input_blob_file_get_info(map, &source, &file_path, &file_size);
         if (ret == -1) {
             flb_plg_error(ctx->ins, "cannot get file info from blob record, skipping");
             continue;
         }
 
-        ret = azb_db_file_insert(ctx, file_path, file_size);
+        ret = azb_db_file_insert(ctx, source, file_path, file_size);
         if (ret == -1) {
             flb_plg_error(ctx->ins, "cannot insert blob file into database: %s (size=%lu)",
                           file_path, file_size);
             cfl_sds_destroy(file_path);
+            cfl_sds_destroy(source);
             continue;
         }
         cfl_sds_destroy(file_path);
+        cfl_sds_destroy(source);
 
         /* generate the parts by using the newest id created (ret) */
         file_id = ret;
@@ -608,8 +686,6 @@ static int process_blob_chunk(struct flb_azure_blob *ctx, struct flb_event_chunk
 
         flb_plg_debug(ctx->ins, "blob file '%s' (id=%zu) registered with %zu parts",
                       file_path, file_id, ret);
-
-
     }
 
     flb_log_event_decoder_destroy(&log_decoder);
@@ -624,10 +700,13 @@ static void cb_azb_blob_file_upload(struct flb_config *config, void *out_context
     uint64_t id;
     uint64_t file_id;
     uint64_t part_id;
+    uint64_t part_delivery_attempts;
+    uint64_t file_delivery_attempts;
     off_t offset_start;
     off_t offset_end;
     cfl_sds_t file_path = NULL;
     cfl_sds_t part_ids = NULL;
+    cfl_sds_t source = NULL;
     struct flb_azure_blob *ctx = out_context;
     struct worker_info *info;
 
@@ -645,6 +724,30 @@ static void cb_azb_blob_file_upload(struct flb_config *config, void *out_context
      */
 
     pthread_mutex_lock(&ctx->file_upload_commit_file_parts);
+
+    ret = azb_db_file_get_next_aborted(ctx,
+                                    &file_id,
+                                    &file_delivery_attempts,
+                                    &file_path,
+                                    &source);
+
+    if (ret == 1) {
+        ret = delete_blob(ctx, file_path);
+
+        if (ctx->file_delivery_attempt_limit != FLB_OUT_RETRY_UNLIMITED &&
+            file_delivery_attempts < ctx->file_delivery_attempt_limit) {
+            azb_db_file_reset_upload_states(ctx, file_id, file_path);
+            azb_db_file_set_aborted_state(ctx, file_id, file_path, 0);
+        }
+        else {
+            /* notify the input plugin
+             */
+            ret = azb_db_file_delete(ctx, file_id, file_path);
+        }
+
+        cfl_sds_destroy(file_path);
+        cfl_sds_destroy(source);
+    }
 
     ret = azb_db_file_oldest_ready(ctx, &file_id, &file_path, &part_ids);
     if (ret == 0) {
@@ -685,7 +788,11 @@ static void cb_azb_blob_file_upload(struct flb_config *config, void *out_context
     }
 
     /* check for a next part file and lock it */
-    ret = azb_db_file_part_get_next(ctx, &id, &file_id, &part_id, &offset_start, &offset_end, &file_path);
+    ret = azb_db_file_part_get_next(ctx, &id, &file_id, &part_id,
+                                    &offset_start, &offset_end,
+                                    &part_delivery_attempts,
+                                    &file_delivery_attempts,
+                                    &file_path);
     if (ret == -1) {
         flb_plg_error(ctx->ins, "cannot get next blob file part");
         info->active_upload = FLB_FALSE;
@@ -700,6 +807,13 @@ static void cb_azb_blob_file_upload(struct flb_config *config, void *out_context
         /* just continue, the row info was retrieved */
     }
 
+    /* since this is the first part we want to increment the files
+     * delivery attempt counter.
+     */
+    if (part_id == 0) {
+        ret = azb_db_file_delivery_attempts(ctx, file_id, ++file_delivery_attempts);
+    }
+
     /* read the file content */
     ret = flb_utils_read_file_offset(file_path, offset_start, offset_end, &out_buf, &out_size);
     if (ret == -1) {
@@ -708,6 +822,8 @@ static void cb_azb_blob_file_upload(struct flb_config *config, void *out_context
         info->active_upload = FLB_FALSE;
         flb_sched_timer_cb_coro_return();
     }
+
+    azb_db_file_part_delivery_attempts(ctx, part_id, ++part_delivery_attempts);
 
     flb_plg_debug(ctx->ins, "sending part file %s (id=%" PRIu64 " part_id=%" PRIu64 ")", file_path, id, part_id);
     ret = send_blob(config, NULL, ctx, FLB_EVENT_TYPE_BLOBS,
@@ -720,6 +836,12 @@ static void cb_azb_blob_file_upload(struct flb_config *config, void *out_context
         }
     }
     else if (ret == FLB_RETRY) {
+        azb_db_file_part_in_progress(ctx, 0, id);
+
+        if (ctx->part_delivery_attempt_limit != FLB_OUT_RETRY_UNLIMITED &&
+            part_delivery_attempts >= ctx->part_delivery_attempt_limit) {
+            azb_db_file_set_aborted_state(ctx, file_id, file_path, 1);
+        }
         /* FIXME */
     }
     info->active_upload = FLB_FALSE;
@@ -949,9 +1071,45 @@ static struct flb_config_map config_map[] = {
     },
 
     {
+     FLB_CONFIG_MAP_INT, "file_delivery_attempt_limit", "1",
+     0, FLB_TRUE, offsetof(struct flb_azure_blob, file_delivery_attempt_limit),
+     "File delivery attempt limit"
+    },
+
+    {
+     FLB_CONFIG_MAP_INT, "part_delivery_attempt_limit", "1",
+     0, FLB_TRUE, offsetof(struct flb_azure_blob, part_delivery_attempt_limit),
+     "File part delivery attempt limit"
+    },
+
+    {
      FLB_CONFIG_MAP_TIME, "upload_parts_timeout", "10M",
      0, FLB_TRUE, offsetof(struct flb_azure_blob, upload_parts_timeout),
      "Timeout to upload parts of a blob file"
+    },
+
+    {
+     FLB_CONFIG_MAP_STR, "configuration_endpoint_url", NULL,
+     0, FLB_TRUE, offsetof(struct flb_azure_blob, configuration_endpoint_url),
+     "Configuration endpoint URL"
+    },
+
+    {
+     FLB_CONFIG_MAP_STR, "configuration_endpoint_username", NULL,
+     0, FLB_TRUE, offsetof(struct flb_azure_blob, configuration_endpoint_username),
+     "Configuration endpoint basic authentication username"
+    },
+
+    {
+     FLB_CONFIG_MAP_STR, "configuration_endpoint_password", NULL,
+     0, FLB_TRUE, offsetof(struct flb_azure_blob, configuration_endpoint_password),
+     "Configuration endpoint basic authentication password"
+    },
+
+    {
+     FLB_CONFIG_MAP_STR, "configuration_endpoint_bearer_token", NULL,
+     0, FLB_TRUE, offsetof(struct flb_azure_blob, configuration_endpoint_bearer_token),
+     "Configuration endpoint bearer token"
     },
 
     /* EOF */
