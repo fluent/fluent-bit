@@ -27,35 +27,56 @@
 
 #define SQL_CREATE_AZURE_BLOB_FILES                                       \
     "CREATE TABLE IF NOT EXISTS out_azure_blob_files ("                   \
-    "  id        INTEGER PRIMARY KEY,"                                    \
-    "  path      TEXT NOT NULL,"                                          \
-    "  size      INTEGER,"                                                \
-    "  created   INTEGER"                                                 \
+    "  id                INTEGER PRIMARY KEY,"                            \
+    "  source            TEXT NOT NULL,"                                  \
+    "  path              TEXT NOT NULL,"                                  \
+    "  size              INTEGER,"                                        \
+    "  created           INTEGER,"                                        \
+    "  delivery_attempts INTEGER DEFAULT 0,"                              \
+    "  aborted           INTEGER DEFAULT 0"                               \
     ");"
 
 #define SQL_CREATE_AZURE_BLOB_PARTS                                       \
     "CREATE TABLE IF NOT EXISTS out_azure_blob_parts ("                   \
-    "  id           INTEGER PRIMARY KEY,"                                 \
-    "  file_id      INTEGER NOT NULL,"                                    \
-    "  part_id      INTEGER NOT NULL,"                                    \
-    "  uploaded     INTEGER DEFAULT 0,"                                   \
-    "  in_progress  INTEGER DEFAULT 0,"                                   \
-    "  offset_start INTEGER,"                                             \
-    "  offset_end   INTEGER,"                                             \
+    "  id                INTEGER PRIMARY KEY,"                            \
+    "  file_id           INTEGER NOT NULL,"                               \
+    "  part_id           INTEGER NOT NULL,"                               \
+    "  uploaded          INTEGER DEFAULT 0,"                              \
+    "  in_progress       INTEGER DEFAULT 0,"                              \
+    "  offset_start      INTEGER,"                                        \
+    "  offset_end        INTEGER,"                                        \
+    "  delivery_attempts INTEGER DEFAULT 0,"                              \
     "  FOREIGN KEY (file_id) REFERENCES out_azure_blob_files(id) "        \
     "    ON DELETE CASCADE"                                               \
     ");"
 
 #define SQL_INSERT_FILE                                              \
-    "INSERT INTO out_azure_blob_files (path, size, created)"              \
-    "  VALUES (@path, @size, @created);"
+    "INSERT INTO out_azure_blob_files (source, path, size, created)" \
+    "  VALUES (@source, @path, @size, @created);"
 
 /* DELETE a registered file and all it parts */
 #define SQL_DELETE_FILE                                              \
     "DELETE FROM out_azure_blob_files WHERE id=@id;"
 
+#define SQL_SET_FILE_ABORTED_STATE                                    \
+    "UPDATE out_azure_blob_files SET aborted=@state WHERE id=@id;"
+
+#define SQL_UPDATE_FILE_DELIVERY_ATTEMPT_COUNT                        \
+    "UPDATE out_azure_blob_files SET delivery_attempts=@delivery_attempts WHERE id=@id;"
+
 #define SQL_GET_FILE                                                 \
-    "SELECT * from out_azure_blob_files WHERE path=@path order by id desc;"
+    "SELECT * FROM out_azure_blob_files WHERE path=@path ORDER BY id DESC;"
+
+#define SQL_GET_NEXT_ABORTED_FILE                                    \
+    "SELECT id, delivery_attempts, source, path "                    \
+    "  FROM out_azure_blob_files azbf "                              \
+    " WHERE aborted = 1 "                                            \
+    "   AND (SELECT COUNT(*) "                                       \
+    "          FROM out_azure_blob_parts azbp "                      \
+    "         WHERE azbp.file_id = azbf.id "                         \
+    "           AND in_progress = 1) = 0 "                           \
+    "ORDER BY id DESC "                                              \
+    "LIMIT 1;"
 
 #define SQL_INSERT_FILE_PART                                                   \
     "INSERT INTO out_azure_blob_parts (file_id, part_id, offset_start, offset_end)" \
@@ -67,6 +88,12 @@
 #define SQL_UPDATE_FILE_PART_IN_PROGRESS                                   \
     "UPDATE out_azure_blob_parts SET in_progress=@status WHERE id=@id;"
 
+#define SQL_UPDATE_FILE_PART_DELIVERY_ATTEMPT_COUNT                        \
+    "UPDATE out_azure_blob_parts SET delivery_attempts=@delivery_attempts WHERE id=@id;"
+
+#define SQL_RESET_FILE_UPLOAD_STATES                                       \
+    "UPDATE out_azure_blob_parts SET delivery_attempts=0, uploaded=0, in_progress=0 WHERE file_id=@id;"
+
 /* Find the oldest files and retrieve the oldest part ready to be uploaded */
 #define SQL_GET_NEXT_FILE_PART            \
     "SELECT p.id, "                       \
@@ -74,12 +101,15 @@
     "       p.part_id, "                  \
     "       p.offset_start, "             \
     "       p.offset_end, "               \
-    "       f.path "                      \
+    "       p.delivery_attempts, "        \
+    "       f.path, "                     \
+    "       f.delivery_attempts "         \
     "FROM   out_azure_blob_parts p "      \
     "       JOIN out_azure_blob_files f " \
     "         ON p.file_id = f.id "       \
     "WHERE  p.uploaded = 0 "              \
-    "       AND p.in_progress = 0 "       \
+    "  AND  p.in_progress = 0 "           \
+    "  AND  f.aborted = 0 "               \
     "ORDER  BY f.created ASC, "           \
     "          p.part_id ASC "            \
     "LIMIT  1;"
@@ -109,8 +139,19 @@
 struct flb_sqldb *azb_db_open(struct flb_azure_blob *ctx, char *db_path);
 int azb_db_close(struct flb_azure_blob *ctx);
 int azb_db_file_exists(struct flb_azure_blob *ctx, char *path, uint64_t *id);
-int64_t azb_db_file_insert(struct flb_azure_blob *ctx, char *path, size_t size);
+int64_t azb_db_file_insert(struct flb_azure_blob *ctx,
+                           char *source, char *path, size_t size);
 int azb_db_file_delete(struct flb_azure_blob *ctx, uint64_t id, char *path);
+int azb_db_file_set_aborted_state(struct flb_azure_blob *ctx,
+                                  uint64_t id, char *path,
+                                  uint64_t state);
+int azb_db_file_delivery_attempts(struct flb_azure_blob *ctx, uint64_t id, uint64_t attempts);
+int azb_db_file_get_next_aborted(struct flb_azure_blob *ctx,
+                                 uint64_t *id,
+                                 uint64_t *delivery_attempts,
+                                 cfl_sds_t *path,
+                                 cfl_sds_t *source);
+int azb_db_file_reset_upload_states(struct flb_azure_blob *ctx, uint64_t id, char *path);
 
 int azb_db_file_part_insert(struct flb_azure_blob *ctx, uint64_t file_id,
                             uint64_t part_id,
@@ -120,8 +161,11 @@ int azb_db_file_part_in_progress(struct flb_azure_blob *ctx, int in_progress, ui
 int azb_db_file_part_get_next(struct flb_azure_blob *ctx,
                               uint64_t *id, uint64_t *file_id, uint64_t *part_id,
                               off_t *offset_start, off_t *offset_end,
+                              uint64_t *part_delivery_attempts,
+                              uint64_t *file_delivery_attempts,
                               cfl_sds_t *file_path);
 int azb_db_file_part_uploaded(struct flb_azure_blob *ctx, uint64_t id);
+int azb_db_file_part_delivery_attempts(struct flb_azure_blob *ctx, uint64_t id, uint64_t attempts);
 
 int azb_db_file_oldest_ready(struct flb_azure_blob *ctx,
                              uint64_t *file_id, cfl_sds_t *path, cfl_sds_t *part_ids);

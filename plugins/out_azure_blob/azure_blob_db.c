@@ -47,12 +47,49 @@ static int prepare_stmts(struct flb_sqldb *db, struct flb_azure_blob *ctx)
         return -1;
     }
 
+    /* abort */
+    ret = sqlite3_prepare_v2(db->handler, SQL_SET_FILE_ABORTED_STATE, -1,
+                             &ctx->stmt_set_file_aborted_state, NULL);
+    if (ret != SQLITE_OK) {
+        flb_plg_error(ctx->ins, "cannot prepare SQL statement: %s",
+                      SQL_SET_FILE_ABORTED_STATE);
+        return -1;
+    }
+
+    /* delivery attempt counter update  */
+    ret = sqlite3_prepare_v2(db->handler,
+                             SQL_UPDATE_FILE_DELIVERY_ATTEMPT_COUNT, -1,
+                             &ctx->stmt_update_file_delivery_attempt_count,
+                             NULL);
+    if (ret != SQLITE_OK) {
+        flb_plg_error(ctx->ins, "cannot prepare SQL statement: %s",
+                      SQL_UPDATE_FILE_DELIVERY_ATTEMPT_COUNT);
+        return -1;
+    }
+
     /* get */
     ret = sqlite3_prepare_v2(db->handler, SQL_GET_FILE, -1,
                              &ctx->stmt_get_file, NULL);
     if (ret != SQLITE_OK) {
         flb_plg_error(ctx->ins, "cannot prepare SQL statement: %s",
                       SQL_GET_FILE);
+        return -1;
+    }
+
+    /* get next aborted file */
+    ret = sqlite3_prepare_v2(db->handler, SQL_GET_NEXT_ABORTED_FILE, -1,
+                             &ctx->stmt_get_next_aborted_file, NULL);
+    if (ret != SQLITE_OK) {
+        flb_plg_error(ctx->ins, "cannot prepare SQL statement: %s",
+                      SQL_GET_NEXT_ABORTED_FILE);
+        return -1;
+    }
+
+    ret = sqlite3_prepare_v2(db->handler, SQL_RESET_FILE_UPLOAD_STATES, -1,
+                             &ctx->stmt_reset_file_upload_states, NULL);
+    if (ret != SQLITE_OK) {
+        flb_plg_error(ctx->ins, "cannot prepare SQL statement: %s",
+                      SQL_RESET_FILE_UPLOAD_STATES);
         return -1;
     }
 
@@ -90,6 +127,15 @@ static int prepare_stmts(struct flb_sqldb *db, struct flb_azure_blob *ctx)
         return -1;
     }
 
+    ret = sqlite3_prepare_v2(db->handler,
+                             SQL_UPDATE_FILE_PART_DELIVERY_ATTEMPT_COUNT, -1,
+                             &ctx->stmt_update_file_part_delivery_attempt_count,
+                             NULL);
+    if (ret != SQLITE_OK) {
+        flb_plg_error(ctx->ins, "cannot prepare SQL statement: %s",
+                      SQL_UPDATE_FILE_PART_DELIVERY_ATTEMPT_COUNT);
+        return -1;
+    }
 
     ret = sqlite3_prepare_v2(db->handler, SQL_GET_OLDEST_FILE_WITH_PARTS_CONCAT, -1,
                              &ctx->stmt_get_oldest_file_with_parts, NULL);
@@ -178,11 +224,16 @@ int azb_db_close(struct flb_azure_blob *ctx)
     /* finalize prepared statements */
     sqlite3_finalize(ctx->stmt_insert_file);
     sqlite3_finalize(ctx->stmt_delete_file);
+    sqlite3_finalize(ctx->stmt_set_file_aborted_state);
     sqlite3_finalize(ctx->stmt_get_file);
+    sqlite3_finalize(ctx->stmt_update_file_delivery_attempt_count);
+    sqlite3_finalize(ctx->stmt_get_next_aborted_file);
+    sqlite3_finalize(ctx->stmt_reset_file_upload_states);
 
     sqlite3_finalize(ctx->stmt_insert_file_part);
     sqlite3_finalize(ctx->stmt_update_file_part_uploaded);
     sqlite3_finalize(ctx->stmt_update_file_part_in_progress);
+    sqlite3_finalize(ctx->stmt_update_file_part_delivery_attempt_count);
 
     sqlite3_finalize(ctx->stmt_get_next_file_part);
     sqlite3_finalize(ctx->stmt_get_oldest_file_with_parts);
@@ -222,7 +273,8 @@ int azb_db_file_exists(struct flb_azure_blob *ctx, char *path, uint64_t *id)
     return exists;
 }
 
-int64_t azb_db_file_insert(struct flb_azure_blob *ctx, char *path, size_t size)
+int64_t azb_db_file_insert(struct flb_azure_blob *ctx,
+                           char *source, char *path, size_t size)
 {
     int ret;
     int64_t id;
@@ -234,9 +286,10 @@ int64_t azb_db_file_insert(struct flb_azure_blob *ctx, char *path, size_t size)
     azb_db_lock(ctx);
 
     /* Bind parameters */
-    sqlite3_bind_text(ctx->stmt_insert_file, 1, path, -1, 0);
-    sqlite3_bind_int64(ctx->stmt_insert_file, 2, size);
-    sqlite3_bind_int64(ctx->stmt_insert_file, 3, created);
+    sqlite3_bind_text(ctx->stmt_insert_file, 1, source, -1, 0);
+    sqlite3_bind_text(ctx->stmt_insert_file, 2, path, -1, 0);
+    sqlite3_bind_int64(ctx->stmt_insert_file, 3, size);
+    sqlite3_bind_int64(ctx->stmt_insert_file, 4, created);
 
     /* Run the insert */
     ret = sqlite3_step(ctx->stmt_insert_file);
@@ -291,6 +344,166 @@ int azb_db_file_delete(struct flb_azure_blob *ctx, uint64_t id, char *path)
                   ", path='%s' deleted from database", id, path);
 
     azb_db_unlock(ctx);
+    return 0;
+}
+
+int azb_db_file_set_aborted_state(struct flb_azure_blob *ctx,
+                                  uint64_t id, char *path,
+                                  uint64_t state)
+{
+    int ret;
+
+    azb_db_lock(ctx);
+
+    /* Bind parameters */
+    sqlite3_bind_int64(ctx->stmt_set_file_aborted_state, 1, state);
+    sqlite3_bind_int64(ctx->stmt_set_file_aborted_state, 2, id);
+    ret = sqlite3_step(ctx->stmt_set_file_aborted_state);
+    if (ret != SQLITE_DONE) {
+        sqlite3_clear_bindings(ctx->stmt_set_file_aborted_state);
+        sqlite3_reset(ctx->stmt_set_file_aborted_state);
+        azb_db_unlock(ctx);
+        return -1;
+    }
+
+    sqlite3_clear_bindings(ctx->stmt_set_file_aborted_state);
+    sqlite3_reset(ctx->stmt_set_file_aborted_state);
+
+    if (ret != SQLITE_DONE) {
+        flb_plg_error(ctx->ins, "db: error aborting entry id=%" PRIu64
+                      ", path='%s' from database", id, path);
+        azb_db_unlock(ctx);
+        return -1;
+    }
+
+    flb_plg_debug(ctx->ins, "db: file id=%" PRIu64
+                  ", path='%s' marked as aborted in the database", id, path);
+
+    azb_db_unlock(ctx);
+    return 0;
+}
+
+int azb_db_file_delivery_attempts(struct flb_azure_blob *ctx,
+                                  uint64_t id, uint64_t attempts)
+{
+    int ret;
+
+    azb_db_lock(ctx);
+
+    /* Bind parameters */
+    sqlite3_bind_int64(ctx->stmt_update_file_delivery_attempt_count, 1, attempts);
+    sqlite3_bind_int64(ctx->stmt_update_file_delivery_attempt_count, 2, id);
+
+    /* Run the update */
+    ret = sqlite3_step(ctx->stmt_update_file_delivery_attempt_count);
+
+    sqlite3_clear_bindings(ctx->stmt_update_file_delivery_attempt_count);
+    sqlite3_reset(ctx->stmt_update_file_delivery_attempt_count);
+
+    azb_db_unlock(ctx);
+
+    if (ret != SQLITE_DONE) {
+        flb_plg_error(ctx->ins,
+                      "cannot update delivery attempt "
+                      "count for file id=%" PRIu64, id);
+
+        return -1;
+    }
+
+    return 0;
+}
+
+int azb_db_file_get_next_aborted(struct flb_azure_blob *ctx,
+                                 uint64_t *id,
+                                 uint64_t *delivery_attempts,
+                                 cfl_sds_t *path,
+                                 cfl_sds_t *source)
+{
+    int ret;
+    char *tmp_source;
+    char *tmp_path;
+    int exists = FLB_FALSE;
+
+    azb_db_lock(ctx);
+
+    /* Bind parameters */
+    ret = sqlite3_step(ctx->stmt_get_next_aborted_file);
+    if (ret == SQLITE_ROW) {
+        exists = FLB_TRUE;
+
+        /* id: column 0 */
+        *id = sqlite3_column_int64(ctx->stmt_get_next_aborted_file, 0);
+        *delivery_attempts = sqlite3_column_int64(ctx->stmt_get_next_file_part, 1);
+        tmp_source = (char *) sqlite3_column_text(ctx->stmt_get_next_file_part, 2);
+        tmp_path = (char *) sqlite3_column_text(ctx->stmt_get_next_file_part, 3);
+
+        *path = cfl_sds_create(tmp_path);
+
+        if (*path == NULL) {
+            exists = -1;
+        }
+        else {
+            *source = cfl_sds_create(tmp_source);
+            if (*source == NULL) {
+                cfl_sds_destroy(*path);
+                exists = -1;
+            }
+        }
+    }
+    else if (ret == SQLITE_DONE) {
+        /* all good */
+    }
+    else {
+        exists = -1;
+    }
+
+    sqlite3_clear_bindings(ctx->stmt_get_next_aborted_file);
+    sqlite3_reset(ctx->stmt_get_next_aborted_file);
+
+    azb_db_unlock(ctx);
+
+    if (exists == -1) {
+        *id = 0;
+        *delivery_attempts = 0;
+        *path = NULL;
+        *source = NULL;
+    }
+
+    return exists;
+}
+
+int azb_db_file_reset_upload_states(struct flb_azure_blob *ctx, uint64_t id, char *path)
+{
+    int ret;
+
+    azb_db_lock(ctx);
+
+    /* Bind parameters */
+    sqlite3_bind_int64(ctx->stmt_reset_file_upload_states, 1, id);
+    ret = sqlite3_step(ctx->stmt_reset_file_upload_states);
+    if (ret != SQLITE_DONE) {
+        sqlite3_clear_bindings(ctx->stmt_reset_file_upload_states);
+        sqlite3_reset(ctx->stmt_reset_file_upload_states);
+        azb_db_unlock(ctx);
+        return -1;
+    }
+
+    sqlite3_clear_bindings(ctx->stmt_reset_file_upload_states);
+    sqlite3_reset(ctx->stmt_reset_file_upload_states);
+
+    if (ret != SQLITE_DONE) {
+        flb_plg_error(ctx->ins, "db: error reseting upload "
+                                "states for entry id=%" PRIu64
+                                ", path='%s'", id, path);
+        azb_db_unlock(ctx);
+        return -1;
+    }
+
+    flb_plg_debug(ctx->ins, "db: file id=%" PRIu64
+                  ", path='%s' upload states reset", id, path);
+
+    azb_db_unlock(ctx);
+
     return 0;
 }
 
@@ -358,6 +571,8 @@ int azb_db_file_part_in_progress(struct flb_azure_blob *ctx, int in_progress, ui
 int azb_db_file_part_get_next(struct flb_azure_blob *ctx,
                               uint64_t *id, uint64_t *file_id, uint64_t *part_id,
                               off_t *offset_start, off_t *offset_end,
+                              uint64_t *part_delivery_attempts,
+                              uint64_t *file_delivery_attempts,
                               cfl_sds_t *file_path)
 {
     int ret;
@@ -378,7 +593,9 @@ int azb_db_file_part_get_next(struct flb_azure_blob *ctx,
         *part_id = sqlite3_column_int64(ctx->stmt_get_next_file_part, 2);
         *offset_start = sqlite3_column_int64(ctx->stmt_get_next_file_part, 3);
         *offset_end = sqlite3_column_int64(ctx->stmt_get_next_file_part, 4);
-        tmp = (char *) sqlite3_column_text(ctx->stmt_get_next_file_part, 5);
+        *part_delivery_attempts = sqlite3_column_int64(ctx->stmt_get_next_file_part, 5);
+        tmp = (char *) sqlite3_column_text(ctx->stmt_get_next_file_part, 6);
+        *file_delivery_attempts = sqlite3_column_int64(ctx->stmt_get_next_file_part, 7);
     }
     else if (ret == SQLITE_DONE) {
         /* no records */
@@ -441,6 +658,36 @@ int azb_db_file_part_uploaded(struct flb_azure_blob *ctx, uint64_t id)
     sqlite3_reset(ctx->stmt_update_file_part_uploaded);
 
     azb_db_unlock(ctx);
+
+    return 0;
+}
+
+int azb_db_file_part_delivery_attempts(struct flb_azure_blob *ctx,
+                                       uint64_t id, uint64_t attempts)
+{
+    int ret;
+
+    azb_db_lock(ctx);
+
+    /* Bind parameters */
+    sqlite3_bind_int64(ctx->stmt_update_file_part_delivery_attempt_count, 1, attempts);
+    sqlite3_bind_int64(ctx->stmt_update_file_part_delivery_attempt_count, 2, id);
+
+    /* Run the update */
+    ret = sqlite3_step(ctx->stmt_update_file_part_delivery_attempt_count);
+
+    sqlite3_clear_bindings(ctx->stmt_update_file_part_delivery_attempt_count);
+    sqlite3_reset(ctx->stmt_update_file_part_delivery_attempt_count);
+
+    azb_db_unlock(ctx);
+
+    if (ret != SQLITE_DONE) {
+        flb_plg_error(ctx->ins,
+                      "cannot update delivery attempt "
+                      "count for part id=%" PRIu64, id);
+
+        return -1;
+    }
 
     return 0;
 }
