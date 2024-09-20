@@ -385,7 +385,7 @@ static int process_chunked_data(struct flb_http_client *c)
     if (found_full_chunk == FLB_TRUE) {
         return FLB_HTTP_CHUNK_AVAILABLE;
     }
-    return FLB_HTTP_MORE;    
+    return FLB_HTTP_MORE;
 }
 
 static int process_data(struct flb_http_client *c)
@@ -664,6 +664,9 @@ struct flb_http_client *flb_http_client(struct flb_connection *u_conn,
         break;
     case FLB_HTTP_PUT:
         str_method = "PUT";
+        break;
+    case FLB_HTTP_DELETE:
+        str_method = "DELETE";
         break;
     case FLB_HTTP_HEAD:
         str_method = "HEAD";
@@ -1182,10 +1185,10 @@ int flb_http_bearer_auth(struct flb_http_client *c, const char *token)
 
 /* flb_http_do_request only sends the http request the data.
 *  This is useful for processing the chunked responses on your own.
-*  If you do not want to process the response on your own or expect 
+*  If you do not want to process the response on your own or expect
 *  all response data before you process data, use flb_http_do instead.
 */
-int flb_http_do_request(struct flb_http_client *c, size_t *bytes) 
+int flb_http_do_request(struct flb_http_client *c, size_t *bytes)
 {
     int ret;
     int crlf = 2;
@@ -1261,24 +1264,24 @@ int flb_http_do_request(struct flb_http_client *c, size_t *bytes)
     return FLB_HTTP_MORE;
 }
 
-int flb_http_get_response_data(struct flb_http_client *c, size_t bytes_consumed) 
+int flb_http_get_response_data(struct flb_http_client *c, size_t bytes_consumed)
 {
-    /* returns 
+    /* returns
      *  FLB_HTTP_MORE - if we are waiting for more data to be received
      *  FLB_HTTP_CHUNK_AVAILABLE - if this is a chunked transfer and one or more chunks
      *                 have been received and it is not the end of the stream
-     *  FLB_HTTP_OK - if we have collected all response data and no errors were thrown 
-     *                (in chunked transfers this means we've received the end chunk 
+     *  FLB_HTTP_OK - if we have collected all response data and no errors were thrown
+     *                (in chunked transfers this means we've received the end chunk
      *                and any remaining data to process from the end of stream, will be
      *                contained in the response payload)
      *  FLB_HTTP_ERROR - for any error
      */
     int ret = FLB_HTTP_MORE;
-    int r_bytes;    
+    int r_bytes;
     ssize_t available;
     size_t out_size;
 
-    // if the caller has consumed some of the payload (via bytes_consumed) 
+    // if the caller has consumed some of the payload (via bytes_consumed)
     // we consume those bytes off the payload
     if( bytes_consumed > 0 ) {
         if(bytes_consumed > c->resp.payload_size) {
