@@ -60,6 +60,73 @@ if(FLB_OUT_LIB)
   FLB_RT_TEST(FLB_IN_KUBERNETES_EVENTS "in_kubernetes_events.c")
 endif()
 
+if(FLB_IN_EBPF)
+    # Define common variables
+    set(EBPF_TEST_INCLUDE_DIRS
+        ${CMAKE_SOURCE_DIR}/plugins/in_ebpf/traces/includes
+    )
+
+    set(EBPF_TEST_LINK_LIBS
+        fluent-bit-static
+        ${CMAKE_THREAD_LIBS_INIT}
+        ${SYSTEMD_LIB}
+        -lbpf
+    )
+
+    # Function to create eBPF handler tests
+    function(add_ebpf_handler_test name source_file handler_file)
+        set(TEST_TARGET "flb-rt-in_ebpf_${name}_handler")
+        
+        # Add executable
+        add_executable(${TEST_TARGET}
+            ${source_file}
+            ${handler_file}
+        )
+
+        # Set include directories
+        target_include_directories(${TEST_TARGET} PRIVATE
+            ${EBPF_TEST_INCLUDE_DIRS}
+        )
+
+        # Link libraries
+        target_link_libraries(${TEST_TARGET}
+            ${EBPF_TEST_LINK_LIBS}
+        )
+
+        # Add test
+        add_test(NAME ${TEST_TARGET}
+                COMMAND ${CMAKE_RUNTIME_OUTPUT_DIRECTORY}/${TEST_TARGET}
+                WORKING_DIRECTORY ${CMAKE_HOME_DIRECTORY}/build)
+
+        # Set test properties
+        set_tests_properties(${TEST_TARGET} PROPERTIES LABELS "runtime")
+    endfunction()
+
+    # Add handler tests
+    add_ebpf_handler_test(
+        "bind"
+        "in_ebpf_bind_handler.c"
+        "../../plugins/in_ebpf/traces/bind/handler.c"
+    )
+
+    add_ebpf_handler_test(
+        "signal"
+        "in_ebpf_signal_handler.c"
+        "../../plugins/in_ebpf/traces/signal/handler.c"
+    )
+
+    add_ebpf_handler_test(
+        "malloc"
+        "in_ebpf_malloc_handler.c"
+        "../../plugins/in_ebpf/traces/malloc/handler.c"
+    )
+
+    add_dependencies(flb-rt-in_ebpf_bind_handler fluent-bit-static)
+    add_dependencies(flb-rt-in_ebpf_signal_handler fluent-bit-static)
+    add_dependencies(flb-rt-in_ebpf_malloc_handler fluent-bit-static)
+
+endif()
+
 # Filter Plugins
 if(FLB_IN_LIB AND FLB_OUT_LIB)
   FLB_RT_TEST(FLB_FILTER_AWS             "filter_aws.c")
