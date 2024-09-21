@@ -127,7 +127,7 @@
  * this query is used to compose
  */
 #define SQL_GET_OLDEST_FILE_WITH_PARTS_CONCAT                                        \
-    "SELECT f.id, f.path, GROUP_CONCAT(p.part_id ORDER BY p.part_id ASC) AS part_ids " \
+    "SELECT f.id, f.path, GROUP_CONCAT(p.part_id ORDER BY p.part_id ASC) AS part_ids, f.source " \
     "FROM out_azure_blob_files f "                                               \
     "JOIN out_azure_blob_parts p ON f.id = p.file_id "                           \
     "WHERE p.uploaded = 1 " \
@@ -168,5 +168,5 @@ int azb_db_file_part_uploaded(struct flb_azure_blob *ctx, uint64_t id);
 int azb_db_file_part_delivery_attempts(struct flb_azure_blob *ctx, uint64_t id, uint64_t attempts);
 
 int azb_db_file_oldest_ready(struct flb_azure_blob *ctx,
-                             uint64_t *file_id, cfl_sds_t *path, cfl_sds_t *part_ids);
+                             uint64_t *file_id, cfl_sds_t *path, cfl_sds_t *part_ids, cfl_sds_t *source);
 #endif
