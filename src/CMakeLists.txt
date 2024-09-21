@@ -81,6 +81,7 @@ set(src
   flb_processor.c
   flb_reload.c
   flb_msgpack_append_message.c
+  flb_notification.c
   )
 
 # Config format
