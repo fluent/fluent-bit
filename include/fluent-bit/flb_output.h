@@ -235,6 +235,9 @@ struct flb_output_plugin {
 
     int (*cb_worker_init) (void *, struct flb_config *);
 
+    /* Notification: this callback will be invoked anytime a notification is received*/
+    int (*cb_notification) (struct flb_output_instance *, struct flb_config *, void *);
+
     /* Tests */
     struct flb_test_out_formatter test_formatter;
 
@@ -447,6 +450,8 @@ struct flb_output_instance {
     int flush_id;
     struct mk_list flush_list;
     struct mk_list flush_list_destroy;
+
+    flb_pipefd_t notification_channel;
 
     /* Keep a reference to the original context this instance belongs to */
     struct flb_config *config;

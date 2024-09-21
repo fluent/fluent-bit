@@ -63,6 +63,9 @@ struct flb_out_thread_instance {
     struct flb_bucket_queue *evl_bktq;    /* bucket queue for evl track event priority */
     flb_pipefd_t ch_parent_events[2];    /* channel to receive parent notifications */
     flb_pipefd_t ch_thread_events[2];    /* channel to send messages local event loop */
+    int notification_channels_initialized;
+    flb_pipefd_t notification_channels[2];
+    struct mk_event notification_event;
     struct flb_output_instance *ins;     /* output plugin instance */
     struct flb_config *config;
     struct flb_tp_thread *th;
