@@ -119,6 +119,8 @@ struct flb_processor {
     void *data;
     int source_plugin_type;
 
+    flb_pipefd_t notification_channel;
+
     /* Fluent Bit context */
     struct flb_config *config;
 };
@@ -155,6 +157,9 @@ struct flb_processor_plugin {
 
     int (*cb_exit) (struct flb_processor_instance *, void *);
 
+    /* Notification: this callback will be invoked anytime a notification is received*/
+    int (*cb_notification) (struct flb_processor_instance *, struct flb_config *, void *);
+
     struct mk_list _head;  /* Link to parent list (config->filters) */
 };
 
@@ -178,6 +183,8 @@ struct flb_processor_instance {
      * --------
      */
     struct cmt *cmt;                      /* parent context               */
+
+    flb_pipefd_t notification_channel;
 
     /* Keep a reference to the original context this instance belongs to */
     struct flb_config *config;

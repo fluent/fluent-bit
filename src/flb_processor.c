@@ -342,6 +342,9 @@ int flb_processor_unit_init(struct flb_processor_unit *pu)
             flb_error("[processor] error initializing unit filter %s", pu->name);
             return -1;
         }
+
+        ((struct flb_filter_instance *) pu->ctx)->notification_channel = \
+            proc->notification_channel;
     }
     else {
         ret = flb_processor_instance_init(
@@ -356,6 +359,9 @@ int flb_processor_unit_init(struct flb_processor_unit *pu)
 
             return -1;
         }
+
+        ((struct flb_processor_instance *) pu->ctx)->notification_channel = \
+            proc->notification_channel;
     }
 
     return ret;
