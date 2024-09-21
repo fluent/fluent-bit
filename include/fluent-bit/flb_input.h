@@ -102,6 +102,9 @@ struct flb_input_plugin {
     /* Collect: every certain amount of time, Fluent Bit trigger this callback */
     int (*cb_collect) (struct flb_input_instance *, struct flb_config *, void *);
 
+    /* Notification: this callback will be invoked anytime a notification is received*/
+    int (*cb_notification) (struct flb_input_instance *, struct flb_config *, void *);
+
     /*
      * Flush: each plugin during a collection, it does some buffering,
      * when the Flush timer takes place on the Engine, it will trigger
@@ -380,6 +383,8 @@ struct flb_input_instance {
     struct flb_net_setup net_setup;
     struct mk_list *net_config_map;
     struct mk_list net_properties;
+
+    flb_pipefd_t notification_channel;
 
     /* Keep a reference to the original context this instance belongs to */
     struct flb_config *config;
@@ -732,6 +737,7 @@ struct mk_event_loop *flb_input_event_loop_get(struct flb_input_instance *ins);
 int flb_input_upstream_set(struct flb_upstream *u, struct flb_input_instance *ins);
 int flb_input_downstream_set(struct flb_downstream *stream,
                              struct flb_input_instance *ins);
+
 
 /* processors */
 int flb_input_instance_processors_load(struct flb_input_instance *ins, struct flb_cf_group *processors);
