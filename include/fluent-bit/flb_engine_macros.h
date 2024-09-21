@@ -39,6 +39,8 @@
 #define FLB_ENGINE_EV_THREAD_OUTPUT (1 << 17)                          /* 131072 */
 #define FLB_ENGINE_EV_THREAD_ENGINE (1 << 18)                          /* 262144 */
 
+#define FLB_ENGINE_EV_NOTIFICATION  (1 << 19)                          /* 524288 */
+
 /* Engine events: all engine events set the left 32 bits to '1' */
 #define FLB_ENGINE_EV_STARTED   FLB_BITS_U64_SET(1, 1) /* Engine started    */
 #define FLB_ENGINE_EV_FAILED    FLB_BITS_U64_SET(1, 2) /* Engine started    */
