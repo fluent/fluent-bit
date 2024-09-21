@@ -402,7 +402,7 @@ static int cb_scan_path(struct flb_input_instance *ins,
 
     ctx = (struct blob_ctx *) in_context;
 
-    flb_plg_info(ctx->ins, "scanning path %s", ctx->path);
+    flb_plg_debug(ctx->ins, "scanning path %s", ctx->path);
 
     result = recursive_file_search(ctx, NULL, ctx->path);
 
@@ -519,14 +519,25 @@ static struct flb_config_map config_map[] = {
     {0}
 };
 
+static int in_blob_notification(struct flb_input_instance *in_context,
+                                struct flb_config *config,
+                                void *notification)
+{
+    printf("INPUT PLUGIN : NOTIFICATION RECEIVED %p\n", notification);
+    return 0;
+}
+
+
+
 /* Plugin reference */
 struct flb_input_plugin in_blob_plugin = {
-    .name         = "blob",
-    .description  = "Blob (binary) files",
-    .cb_init      = in_blob_init,
-    .cb_pre_run   = NULL,
-    .cb_collect   = NULL,
-    .cb_flush_buf = NULL,
-    .cb_exit      = in_blob_exit,
-    .config_map   = config_map
+    .name            = "blob",
+    .description     = "Blob (binary) files",
+    .cb_init         = in_blob_init,
+    .cb_pre_run      = NULL,
+    .cb_collect      = NULL,
+    .cb_flush_buf    = NULL,
+    .cb_exit         = in_blob_exit,
+    .cb_notification = in_blob_notification,
+    .config_map      = config_map
 };
