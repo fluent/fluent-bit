@@ -48,11 +48,11 @@ struct flb_config {
     int is_running;           /* service running ?              */
     double flush;             /* Flush timeout                  */
 
-    /* 
-     * Maximum grace time on shutdown. If set to -1, the engine will 
+    /*
+     * Maximum grace time on shutdown. If set to -1, the engine will
      * shutdown when all remaining tasks are flushed
      */
-    int grace; 
+    int grace;
     int grace_count;          /* Count of grace shutdown tries  */
     flb_pipefd_t flush_fd;    /* Timer FD associated to flush   */
     int convert_nan_to_null;  /* convert null to nan ?          */
@@ -70,6 +70,10 @@ struct flb_config {
     flb_pipefd_t ch_notif[2];       /* channel to receive notifications       */
 
     flb_pipefd_t ch_self_events[2]; /* channel to recieve thread tasks        */
+
+    int notification_channels_initialized;
+    flb_pipefd_t notification_channels[2];
+    struct mk_event notification_event;
 
     /* Channel event loop (just for ch_notif) */
     struct mk_event_loop *ch_evl;
