@@ -693,7 +693,7 @@ int azb_db_file_part_delivery_attempts(struct flb_azure_blob *ctx,
 }
 
 int azb_db_file_oldest_ready(struct flb_azure_blob *ctx,
-                             uint64_t *file_id, cfl_sds_t *path, cfl_sds_t *part_ids)
+                             uint64_t *file_id, cfl_sds_t *path, cfl_sds_t *part_ids, cfl_sds_t *source)
 {
     int ret;
     char *tmp = NULL;
@@ -720,6 +720,18 @@ int azb_db_file_oldest_ready(struct flb_azure_blob *ctx,
         tmp = (char *) sqlite3_column_text(ctx->stmt_get_oldest_file_with_parts, 2);
         *part_ids = cfl_sds_create(tmp);
         if (!*part_ids) {
+            cfl_sds_destroy(*path);
+            sqlite3_clear_bindings(ctx->stmt_get_oldest_file_with_parts);
+            sqlite3_reset(ctx->stmt_get_oldest_file_with_parts);
+            azb_db_unlock(ctx);
+            return -1;
+        }
+
+        /* source */
+        tmp = (char *) sqlite3_column_text(ctx->stmt_get_oldest_file_with_parts, 3);
+        *source = cfl_sds_create(tmp);
+        if (!*part_ids) {
+            cfl_sds_destroy(*part_ids);
             cfl_sds_destroy(*path);
             sqlite3_clear_bindings(ctx->stmt_get_oldest_file_with_parts);
             sqlite3_reset(ctx->stmt_get_oldest_file_with_parts);

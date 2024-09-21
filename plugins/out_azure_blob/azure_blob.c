@@ -28,6 +28,8 @@
 #include <fluent-bit/flb_sqldb.h>
 #include <fluent-bit/flb_input_blob.h>
 #include <fluent-bit/flb_log_event_decoder.h>
+#include <fluent-bit/flb_plugin.h>
+#include <fluent-bit/flb_notification.h>
 
 #include <msgpack.h>
 
@@ -709,6 +711,7 @@ static void cb_azb_blob_file_upload(struct flb_config *config, void *out_context
     cfl_sds_t source = NULL;
     struct flb_azure_blob *ctx = out_context;
     struct worker_info *info;
+    struct flb_blob_delivery_notification *notification;
 
     info = FLB_TLS_GET(worker_info);
     if (info->active_upload) {
@@ -747,9 +750,12 @@ static void cb_azb_blob_file_upload(struct flb_config *config, void *out_context
 
         cfl_sds_destroy(file_path);
         cfl_sds_destroy(source);
+
+        file_path = NULL;
+        source = NULL;
     }
 
-    ret = azb_db_file_oldest_ready(ctx, &file_id, &file_path, &part_ids);
+    ret = azb_db_file_oldest_ready(ctx, &file_id, &file_path, &part_ids, &source);
     if (ret == 0) {
         flb_plg_trace(ctx->ins, "no blob files ready to commit");
     }
@@ -764,11 +770,54 @@ static void cb_azb_blob_file_upload(struct flb_config *config, void *out_context
             flb_plg_error(ctx->ins, "cannot commit blob file parts for file id=%" PRIu64 " path=%s",
                           file_id, file_path);
 
+            notification = flb_calloc(1,
+                                    sizeof(
+                                        struct flb_blob_delivery_notification));
+
+            if (notification != NULL) {
+                notification->base.dynamically_allocated = FLB_TRUE;
+                notification->base.destructor = flb_input_blob_delivery_notification_destroy;
+                notification->success = FLB_TRUE;
+                notification->path = cfl_sds_create(file_path);
+
+                ret = flb_notification_enqueue(FLB_PLUGIN_INPUT,
+                                               source,
+                                               &notification->base,
+                                               config);
+
+                if (ret != 0) {
+                    flb_plg_error(ctx->ins,
+                                "blob file '%s' (id=%" PRIu64 ") notification " \
+                                "delivery error %d", file_path, file_id, ret);
+                }
+            }
         }
         else {
             flb_plg_info(ctx->ins, "blob file '%s' (id=%" PRIu64 ") committed successfully", file_path, file_id);
             /* notify the engine the blob file has been processed */
             /* FIXME! */
+
+            notification = flb_calloc(1,
+                                    sizeof(
+                                        struct flb_blob_delivery_notification));
+
+            if (notification != NULL) {
+                notification->base.dynamically_allocated = FLB_TRUE;
+                notification->base.destructor = flb_input_blob_delivery_notification_destroy;
+                notification->success = FLB_FALSE;
+                notification->path = cfl_sds_create(file_path);
+
+                ret = flb_notification_enqueue(FLB_PLUGIN_INPUT,
+                                               source,
+                                               &notification->base,
+                                               config);
+
+                if (ret != 0) {
+                    flb_plg_error(ctx->ins,
+                                "blob file '%s' (id=%" PRIu64 ") notification " \
+                                "delivery error %d", file_path, file_id, ret);
+                }
+            }
 
             /* remove the file entry from the database */
             ret = azb_db_file_delete(ctx, file_id, file_path);
@@ -785,6 +834,9 @@ static void cb_azb_blob_file_upload(struct flb_config *config, void *out_context
     }
     if (part_ids) {
         cfl_sds_destroy(part_ids);
+    }
+    if (source) {
+        cfl_sds_destroy(source);
     }
 
     /* check for a next part file and lock it */
