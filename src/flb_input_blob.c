@@ -215,3 +215,14 @@ int flb_input_blob_file_register(struct flb_input_instance *ins,
     flb_log_event_encoder_reset(encoder);
     return ret;
 }
+
+void flb_input_blob_delivery_notification_destroy(void *instance)
+{
+    struct flb_blob_delivery_notification *local_instance;
+
+    local_instance = (struct flb_blob_delivery_notification *) instance;
+
+    if (local_instance->path != NULL) {
+        cfl_sds_destroy(local_instance->path);
+    }
+}
