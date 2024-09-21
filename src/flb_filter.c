@@ -614,6 +614,9 @@ int flb_filter_init_all(struct flb_config *config)
             flb_filter_instance_destroy(ins);
             return -1;
         }
+
+        ins->notification_channel = \
+            config->notification_channels[1];
     }
 
     return 0;
