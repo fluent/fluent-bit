@@ -64,6 +64,9 @@ struct flb_input_thread_instance {
     struct mk_event_loop *evl;           /* thread event loop context */
     flb_pipefd_t ch_parent_events[2];    /* communication between parent and thread */
     flb_pipefd_t ch_thread_events[2];    /* local messages in the thread event loop */
+    int notification_channels_initialized;
+    flb_pipefd_t notification_channels[2];
+    struct mk_event notification_event;
     struct flb_input_instance *ins;      /* output plugin instance */
     struct flb_tp *tp;
     struct flb_tp_thread *th;
