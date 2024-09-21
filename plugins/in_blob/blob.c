@@ -115,9 +115,10 @@ static char *expand_tilde(const char *path)
 }
 #endif
 
-
-static inline int do_glob(const char *pattern, int flags,
-                          void *not_used, glob_t *pglob)
+static inline int do_glob(const char *pattern,
+                          int flags,
+                          void *not_used,
+                          glob_t *pglob)
 {
     int ret;
     int new_flags;
@@ -166,80 +167,252 @@ static inline int do_glob(const char *pattern, int flags,
     return ret;
 }
 
-static int scan_path(struct blob_ctx *ctx)
+/* This function recursively searches a directory tree using
+ * a glob compatible pattern that implements the fluentd style
+ * recursion wildcard **.
+ *
+ * Result values :
+ *   - Negative values identify error conditions
+ *   - Zero and positive values represent the match count
+ *
+ * Known issues :
+ *   - This function is only able to handle one recursion
+ *     wildcard in its pattern.
+ *   - This function does not follow directory links
+ *   - Pattern generation needs to be optimized to
+ *     minimize garbage pattern generation
+ */
+static ssize_t recursive_file_search(struct blob_ctx *ctx,
+                                     const char *path,
+                                     const char *pattern)
 {
-    int i;
-    int ret;
-    int count = 0;
-    glob_t globbuf;
-    struct stat st;
+    char       *recursive_search_token;
+    int         recursive_search_flag;
+    struct stat fs_entry_metadata;
+    ssize_t     recursion_result;
+    cfl_sds_t   local_pattern;
+    glob_t      glob_context;
+    ssize_t     match_count;
+    cfl_sds_t   local_path;
+    cfl_sds_t   sds_result;
+    int         result;
+    size_t      index;
+    match_count = 0;
 
-    flb_plg_debug(ctx->ins, "scanning path %s", ctx->path);
+    if (path != NULL) {
+        local_path = cfl_sds_create(path);
+    }
+    else {
+        local_path = cfl_sds_create("");
+    }
 
-    /* Safe reset for globfree() */
-    globbuf.gl_pathv = NULL;
+    if (local_path == NULL) {
+        return -1;
+    }
+
+    if (pattern != NULL) {
+        local_pattern = cfl_sds_create(pattern);
+    }
+    else {
+        local_pattern = cfl_sds_create("");
+    }
+
+    if (local_pattern == NULL) {
+        cfl_sds_destroy(local_path);
+
+        return -2;
+    }
+
+    recursive_search_flag = FLB_TRUE;
+    recursive_search_token = strstr(local_pattern, "/**/");
+
+    if (recursive_search_token != NULL) {
+        if (strstr(&recursive_search_token[4], "/**/") != NULL) {
+            flb_plg_error(ctx->ins,
+                          "a search path with multiple recursivity " \
+                          "wildcards was provided which is not " \
+                          "supported. \"%s\"", local_pattern);
+
+            cfl_sds_destroy(local_pattern);
+            cfl_sds_destroy(local_path);
+
+            return -3;
+        }
+
+        recursive_search_token[0] = '\0';
+
+        sds_result = cfl_sds_cat(local_path,
+                                 local_pattern,
+                                 strlen(local_pattern));
+
+        if (sds_result == NULL) {
+            cfl_sds_destroy(local_pattern);
+            cfl_sds_destroy(local_path);
+
+            return -4;
+        }
+
+        local_path = sds_result;
+
+        memmove(local_pattern,
+                &recursive_search_token[3],
+                strlen(&recursive_search_token[3]) + 1);
+
+        cfl_sds_len_set(local_pattern,
+                        strlen(&recursive_search_token[3]));
+    }
+    else if (cfl_sds_len(local_pattern) == 0) {
+        recursive_search_flag = FLB_FALSE;
+    }
+
+    memset(&glob_context, 0, sizeof(glob_t));
 
     /* Scan the given path */
-    ret = do_glob(ctx->path, GLOB_TILDE | GLOB_ERR, NULL, &globbuf);
-    if (ret != 0) {
-        switch (ret) {
+    result = do_glob(local_path, GLOB_TILDE | GLOB_ERR, NULL, &glob_context);
+    if (result != 0) {
+        switch (result) {
         case GLOB_NOSPACE:
             flb_plg_error(ctx->ins, "no memory space available");
-            return -1;
+            return -5;
         case GLOB_ABORTED:
-            flb_plg_error(ctx->ins, "read error, check permissions: %s", ctx->path);
-            return -1;
+            return 0;
         case GLOB_NOMATCH:
-            ret = stat(ctx->path, &st);
-            if (ret == -1) {
-                flb_plg_debug(ctx->ins, "cannot read info from: %s", ctx->path);
+            result = stat(local_path, &fs_entry_metadata);
+
+            if (result == -1) {
+                flb_plg_debug(ctx->ins, "cannot read info from: %s", local_path);
             }
             else {
-                ret = access(ctx->path, R_OK);
-                if (ret == -1 && errno == EACCES) {
-                    flb_plg_error(ctx->ins, "NO read access for path: %s", ctx->path);
+                result = access(local_path, R_OK);
+                if (result == -1 && errno == EACCES) {
+                    flb_plg_error(ctx->ins, "NO read access for path: %s", local_path);
                 }
                 else {
-                    flb_plg_debug(ctx->ins, "NO matches for path: %s", ctx->path);
+                    flb_plg_debug(ctx->ins, "NO matches for path: %s", local_path);
                 }
             }
-            return 0;
+
+            return 6;
         }
     }
 
-    /* For every entry found, generate an output list */
-    for (i = 0; i < globbuf.gl_pathc; i++) {
-        ret = stat(globbuf.gl_pathv[i], &st);
-        if (ret != 0) {
-            flb_plg_debug(ctx->ins, "skip entry=%s", globbuf.gl_pathv[i]);
+    for (index = 0; index < glob_context.gl_pathc; index++) {
+        result = stat(glob_context.gl_pathv[index], &fs_entry_metadata);
+
+        if (result != 0) {
+            flb_plg_debug(ctx->ins, "skip entry=%s", glob_context.gl_pathv[index]);
+
             continue;
         }
 
-        if (S_ISREG(st.st_mode) || S_ISLNK(st.st_mode)) {
-            ret = blob_file_append(ctx, globbuf.gl_pathv[i], &st);
-            if (ret == 0) {
-                flb_plg_debug(ctx->ins, "blob scan add: %s, inode %" PRIu64,
-                              globbuf.gl_pathv[i], (uint64_t) st.st_ino);
+        if (S_ISDIR(fs_entry_metadata.st_mode)) {
+            local_path[0] = '\0';
+
+            cfl_sds_len_set(local_path, 0);
+
+            sds_result = cfl_sds_printf(&local_path,
+                                        "%s/*",
+                                        glob_context.gl_pathv[index]);
+
+            if (sds_result == NULL) {
+                cfl_sds_destroy(local_pattern);
+                cfl_sds_destroy(local_path);
+
+                return -7;
+            }
+
+            recursion_result = recursive_file_search(ctx,
+                                                     local_path,
+                                                     local_pattern);
+
+            if (recursion_result < 0) {
+                cfl_sds_destroy(local_pattern);
+                cfl_sds_destroy(local_path);
+
+                return -8;
+            }
+
+            match_count += recursion_result;
+
+            local_path[0] = '\0';
+
+            cfl_sds_len_set(local_path, 0);
+
+            sds_result = cfl_sds_printf(&local_path,
+                                        "%s%s",
+                                        glob_context.gl_pathv[index],
+                                        local_pattern);
+
+            if (sds_result == NULL) {
+                cfl_sds_destroy(local_pattern);
+                cfl_sds_destroy(local_path);
+
+                return -9;
+            }
+
+            recursion_result = recursive_file_search(ctx,
+                                                     local_path,
+                                                     NULL);
+
+            if (recursion_result < 0) {
+                cfl_sds_destroy(local_pattern);
+                cfl_sds_destroy(local_path);
+
+                return -10;
+            }
+
+            match_count += recursion_result;
+        }
+        else if (recursive_search_flag == FLB_FALSE &&
+                 (S_ISREG(fs_entry_metadata.st_mode) ||
+                  S_ISLNK(fs_entry_metadata.st_mode))) {
+            result = blob_file_append(ctx,
+                                      glob_context.gl_pathv[index],
+                                      &fs_entry_metadata);
+
+            if (result == 0) {
+                flb_plg_debug(ctx->ins,
+                              "blob scan add: %s, inode %" PRIu64,
+                              glob_context.gl_pathv[index],
+                              (uint64_t) fs_entry_metadata.st_ino);
             }
             else {
-                flb_plg_debug(ctx->ins, "blob scan skip: %s", globbuf.gl_pathv[i]);
+                flb_plg_debug(ctx->ins,
+                              "blob scan skip: %s",
+                              glob_context.gl_pathv[index]);
             }
-        }
-        else {
-            flb_plg_debug(ctx->ins, "skip entry=%s", globbuf.gl_pathv[i]);
+
+            match_count++;
         }
     }
 
-    globfree(&globbuf);
-    return count;
+    globfree(&glob_context);
+
+    cfl_sds_destroy(local_pattern);
+    cfl_sds_destroy(local_path);
+
+    return match_count;
 }
 
 static int cb_scan_path(struct flb_input_instance *ins,
                         struct flb_config *config, void *in_context)
 {
-    struct blob_ctx *ctx = in_context;
+    ssize_t          result;
+    struct blob_ctx *ctx;;
 
-    return scan_path(ctx);
+    ctx = (struct blob_ctx *) in_context;
+
+    flb_plg_info(ctx->ins, "scanning path %s", ctx->path);
+
+    result = recursive_file_search(ctx, NULL, ctx->path);
+
+    if (result < 0) {
+        flb_plg_trace(ctx->ins,
+                      "path scanning returned error code : %zd",
+                      result);
+    }
+
+    return 0;
 }
 
 /* Initialize plugin */
