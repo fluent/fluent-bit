@@ -279,7 +279,7 @@ int flb_output_task_singleplex_enqueue(struct flb_task_queue *queue,
     if (is_empty) {
         return flb_output_task_queue_flush_one(out_ins->singleplex_queue);
     }
-    
+
     return 0;
 }
 
@@ -300,7 +300,7 @@ int flb_output_task_singleplex_flush_next(struct flb_task_queue *queue)
         mk_list_del(&ended_task->_head);
         flb_free(ended_task);
     }
-    
+
     /* Flush if there is a pending task queued */
     is_empty = mk_list_is_empty(&queue->pending) == 0;
     if (!is_empty) {
@@ -1311,6 +1311,8 @@ int flb_output_init_all(struct flb_config *config)
             return -1;
         }
 
+        ins->notification_channel = config->notification_channels[1];
+
         /* Multi-threading enabled if configured */
         ret = flb_output_enable_multi_threading(ins, config);
         if (ret == -1) {
@@ -1318,6 +1320,8 @@ int flb_output_init_all(struct flb_config *config)
                       flb_output_name(ins));
             return -1;
         }
+
+        ins->processor->notification_channel = ins->notification_channel;
 
         /* initialize processors */
         ret = flb_processor_init(ins->processor);

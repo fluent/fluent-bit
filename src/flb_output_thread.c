@@ -25,6 +25,7 @@
 #include <fluent-bit/flb_output_plugin.h>
 #include <fluent-bit/flb_output_thread.h>
 #include <fluent-bit/flb_thread_pool.h>
+#include <fluent-bit/flb_notification.h>
 
 static pthread_once_t local_thread_instance_init = PTHREAD_ONCE_INIT;
 FLB_TLS_DEFINE(struct flb_out_thread_instance, local_thread_instance);
@@ -182,6 +183,7 @@ static void output_thread(void *data)
     struct flb_out_thread_instance *th_ins = data;
     struct flb_out_flush_params *params;
     struct flb_net_dns dns_ctx;
+    struct flb_notification *notification;
 
     /* Register thread instance */
     flb_output_thread_instance_set(th_ins);
@@ -326,6 +328,15 @@ static void output_thread(void *data)
                  */
                 handle_output_event(th_ins->config, ins->ch_events[1], event->fd);
             }
+            else if(event->type == FLB_ENGINE_EV_NOTIFICATION) {
+                ret = flb_notification_receive(event->fd, &notification);
+
+                if (ret == 0) {
+                    ret = flb_notification_deliver(notification);
+
+                    flb_notification_cleanup(notification);
+                }
+            }
             else {
                 flb_plg_warn(ins, "unhandled event type => %i\n", event->type);
             }
@@ -378,6 +389,15 @@ static void output_thread(void *data)
                              th_ins->ch_parent_events[0],
                              th_ins->ch_parent_events[1],
                              th_ins);
+
+    if (th_ins->notification_channels_initialized == FLB_TRUE) {
+        mk_event_channel_destroy(th_ins->evl,
+                                 th_ins->notification_channels[0],
+                                 th_ins->notification_channels[1],
+                                 &th_ins->notification_event);
+
+        th_ins->notification_channels_initialized = FLB_FALSE;
+    }
 
     mk_event_loop_destroy(th_ins->evl);
     flb_bucket_queue_destroy(th_ins->evl_bktq);
@@ -498,6 +518,32 @@ int flb_output_thread_pool_create(struct flb_config *config,
         /* Signal type to indicate a "flush" request */
         th_ins->event.type = FLB_ENGINE_EV_THREAD_OUTPUT;
         th_ins->event.priority = FLB_ENGINE_PRIORITY_THREAD;
+
+        if (i == 0) {
+            ret = mk_event_channel_create(th_ins->evl,
+                                        &th_ins->notification_channels[0],
+                                        &th_ins->notification_channels[1],
+                                        &th_ins->notification_event);
+            if (ret == -1) {
+                flb_plg_error(th_ins->ins, "could not create notification channel");
+
+                mk_event_channel_destroy(th_ins->evl,
+                                        th_ins->ch_parent_events[0],
+                                        th_ins->ch_parent_events[1],
+                                        th_ins);
+
+                mk_event_loop_destroy(th_ins->evl);
+                flb_bucket_queue_destroy(th_ins->evl_bktq);
+                flb_free(th_ins);
+
+                continue;
+            }
+
+            th_ins->notification_channels_initialized = FLB_TRUE;
+            th_ins->notification_event.type = FLB_ENGINE_EV_NOTIFICATION;
+
+            ins->notification_channel = th_ins->notification_channels[1];
+        }
 
         /* Spawn the thread */
         th = flb_tp_thread_create(tp, output_thread, th_ins, config);
