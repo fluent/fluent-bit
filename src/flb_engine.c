@@ -692,6 +692,7 @@ int flb_engine_start(struct flb_config *config)
     struct flb_bucket_queue *evl_bktq;
     struct flb_sched *sched;
     struct flb_net_dns dns_ctx;
+    struct flb_notification *notification;
 
     /* Initialize the networking layer */
     flb_net_lib_init();
@@ -770,6 +771,19 @@ int flb_engine_start(struct flb_config *config)
         flb_error("[engine] could not create manager channels");
         return -1;
     }
+
+    ret = mk_event_channel_create(config->evl,
+                                  &config->notification_channels[0],
+                                  &config->notification_channels[1],
+                                  &config->notification_event);
+    if (ret == -1) {
+        flb_error("could not create main notification channel");
+
+        return -1;
+    }
+
+    config->notification_channels_initialized = FLB_TRUE;
+    config->notification_event.type = FLB_ENGINE_EV_NOTIFICATION;
 
     /* Initialize custom plugins */
     ret = flb_custom_init_all(config);
@@ -1072,6 +1086,15 @@ int flb_engine_start(struct flb_config *config)
 
                 rb_flush_flag = FLB_TRUE;
             }
+            else if(event->type == FLB_ENGINE_EV_NOTIFICATION) {
+                ret = flb_notification_receive(event->fd, &notification);
+
+                if (ret == 0) {
+                    ret = flb_notification_deliver(notification);
+
+                    flb_notification_cleanup(notification);
+                }
+            }
         }
 
         if (rb_flush_flag) {
@@ -1140,6 +1163,15 @@ int flb_engine_shutdown(struct flb_config *config)
                                  config->ch_self_events[0],
                                  config->ch_self_events[1],
                                  &config->event_thread_init);
+    }
+
+    if (config->notification_channels_initialized == FLB_TRUE) {
+        mk_event_channel_destroy(config->evl,
+                                 config->notification_channels[0],
+                                 config->notification_channels[1],
+                                 &config->notification_event);
+
+        config->notification_channels_initialized = FLB_FALSE;
     }
 
     return 0;
