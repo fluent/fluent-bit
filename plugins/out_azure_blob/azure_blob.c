@@ -410,7 +410,6 @@ static int send_blob(struct flb_config *config,
         payload_size = bytes;
     }
 
-
     ret = http_send_blob(config, ctx, ref_name, uri, block_id, event_type, payload_buf, payload_size);
     flb_plg_debug(ctx->ins, "http_send_blob()=%i", ret);
 
@@ -729,10 +728,10 @@ static void cb_azb_blob_file_upload(struct flb_config *config, void *out_context
     pthread_mutex_lock(&ctx->file_upload_commit_file_parts);
 
     ret = azb_db_file_get_next_aborted(ctx,
-                                    &file_id,
-                                    &file_delivery_attempts,
-                                    &file_path,
-                                    &source);
+                                       &file_id,
+                                       &file_delivery_attempts,
+                                       &file_path,
+                                       &source);
 
     if (ret == 1) {
         ret = delete_blob(ctx, file_path);
@@ -743,9 +742,30 @@ static void cb_azb_blob_file_upload(struct flb_config *config, void *out_context
             azb_db_file_set_aborted_state(ctx, file_id, file_path, 0);
         }
         else {
-            /* notify the input plugin
-             */
             ret = azb_db_file_delete(ctx, file_id, file_path);
+
+            notification = flb_calloc(1,
+                                    sizeof(
+                                        struct flb_blob_delivery_notification));
+
+            if (notification != NULL) {
+                notification->base.dynamically_allocated = FLB_TRUE;
+                notification->base.notification_type = FLB_NOTIFICATION_TYPE_BLOB_DELIVERY;
+                notification->base.destructor = flb_input_blob_delivery_notification_destroy;
+                notification->success = FLB_FALSE;
+                notification->path = cfl_sds_create(file_path);
+
+                ret = flb_notification_enqueue(FLB_PLUGIN_INPUT,
+                                               source,
+                                               &notification->base,
+                                               config);
+
+                if (ret != 0) {
+                    flb_plg_error(ctx->ins,
+                                  "blob file '%s' (id=%" PRIu64 ") notification " \
+                                  "delivery error %d", file_path, file_id, ret);
+                }
+            }
         }
 
         cfl_sds_destroy(file_path);
@@ -769,28 +789,6 @@ static void cb_azb_blob_file_upload(struct flb_config *config, void *out_context
         if (ret == -1) {
             flb_plg_error(ctx->ins, "cannot commit blob file parts for file id=%" PRIu64 " path=%s",
                           file_id, file_path);
-
-            notification = flb_calloc(1,
-                                    sizeof(
-                                        struct flb_blob_delivery_notification));
-
-            if (notification != NULL) {
-                notification->base.dynamically_allocated = FLB_TRUE;
-                notification->base.destructor = flb_input_blob_delivery_notification_destroy;
-                notification->success = FLB_TRUE;
-                notification->path = cfl_sds_create(file_path);
-
-                ret = flb_notification_enqueue(FLB_PLUGIN_INPUT,
-                                               source,
-                                               &notification->base,
-                                               config);
-
-                if (ret != 0) {
-                    flb_plg_error(ctx->ins,
-                                "blob file '%s' (id=%" PRIu64 ") notification " \
-                                "delivery error %d", file_path, file_id, ret);
-                }
-            }
         }
         else {
             flb_plg_info(ctx->ins, "blob file '%s' (id=%" PRIu64 ") committed successfully", file_path, file_id);
@@ -803,8 +801,9 @@ static void cb_azb_blob_file_upload(struct flb_config *config, void *out_context
 
             if (notification != NULL) {
                 notification->base.dynamically_allocated = FLB_TRUE;
+                notification->base.notification_type = FLB_NOTIFICATION_TYPE_BLOB_DELIVERY;
                 notification->base.destructor = flb_input_blob_delivery_notification_destroy;
-                notification->success = FLB_FALSE;
+                notification->success = FLB_TRUE;
                 notification->path = cfl_sds_create(file_path);
 
                 ret = flb_notification_enqueue(FLB_PLUGIN_INPUT,
