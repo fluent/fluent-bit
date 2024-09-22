@@ -25,6 +25,11 @@
 #include <fluent-bit/flb_log_event_decoder.h>
 #include <fluent-bit/flb_log_event_encoder.h>
 
+#define POST_UPLOAD_ACTION_NONE       0
+#define POST_UPLOAD_ACTION_DELETE     1
+#define POST_UPLOAD_ACTION_EMIT_LOG   2
+#define POST_UPLOAD_ACTION_ADD_SUFFIX 3
+
 struct blob_file {
     /* database reference (id) */
     uint64_t db_id;
@@ -70,6 +75,16 @@ struct blob_ctx {
     flb_sds_t path;
     flb_sds_t database_file;
     time_t scan_refresh_interval;
+
+    int       upload_success_action;
+    flb_sds_t upload_success_action_str;
+    flb_sds_t upload_success_suffix;
+    flb_sds_t upload_success_message;
+
+    int       upload_failure_action;
+    flb_sds_t upload_failure_action_str;
+    flb_sds_t upload_failure_suffix;
+    flb_sds_t upload_failure_message;
 };
 
 #endif
