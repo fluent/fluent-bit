@@ -23,11 +23,14 @@
 #include <fluent-bit/flb_time.h>
 #include <fluent-bit/flb_error.h>
 #include <fluent-bit/flb_utils.h>
+#include <fluent-bit/flb_notification.h>
+#include <fluent-bit/flb_input_blob.h>
 
 #include <sys/types.h>
 #include <sys/stat.h>
 #include <glob.h>
 #include <fnmatch.h>
+#include <stdio.h>
 
 #include "blob.h"
 #include "blob_db.h"
@@ -457,6 +460,68 @@ static int in_blob_init(struct flb_input_instance *ins,
     }
 #endif
 
+    ctx->upload_success_action = POST_UPLOAD_ACTION_NONE;
+
+    if (ctx->upload_success_action_str != NULL) {
+        if (strcasecmp(ctx->upload_success_action_str,
+                       "delete") == 0) {
+            ctx->upload_success_action = POST_UPLOAD_ACTION_DELETE;
+        }
+        else if (strcasecmp(ctx->upload_success_action_str,
+                            "emit_log") == 0) {
+            ctx->upload_success_action = POST_UPLOAD_ACTION_EMIT_LOG;
+        }
+        else if (strcasecmp(ctx->upload_success_action_str,
+                            "add_suffix") == 0) {
+            if (ctx->upload_success_suffix == NULL) {
+                flb_plg_error(ins,
+                              "'upload_success_suffix' configuration " \
+                              "property is not set");
+#ifdef FLB_HAVE_SQLDB
+                if (ctx->db != NULL) {
+                    blob_db_close(ctx);
+                    ctx->db = NULL;
+                }
+#endif
+                flb_free(ctx);
+
+                return -1;
+            }
+            ctx->upload_success_action = POST_UPLOAD_ACTION_ADD_SUFFIX;
+        }
+    }
+
+    ctx->upload_failure_action = POST_UPLOAD_ACTION_NONE;
+
+    if (ctx->upload_failure_action_str != NULL) {
+        if (strcasecmp(ctx->upload_failure_action_str,
+                       "delete") == 0) {
+            ctx->upload_failure_action = POST_UPLOAD_ACTION_DELETE;
+        }
+        else if (strcasecmp(ctx->upload_failure_action_str,
+                            "emit_log") == 0) {
+            ctx->upload_failure_action = POST_UPLOAD_ACTION_EMIT_LOG;
+        }
+        else if (strcasecmp(ctx->upload_failure_action_str,
+                            "add_suffix") == 0) {
+            if (ctx->upload_failure_suffix == NULL) {
+                flb_plg_error(ins,
+                              "'upload_failure_suffix' configuration " \
+                              "property is not set");
+#ifdef FLB_HAVE_SQLDB
+                if (ctx->db != NULL) {
+                    blob_db_close(ctx);
+                    ctx->db = NULL;
+                }
+#endif
+                flb_free(ctx);
+
+                return -1;
+            }
+            ctx->upload_failure_action = POST_UPLOAD_ACTION_ADD_SUFFIX;
+        }
+    }
+
     /* create a collector to scan the path of files */
     ret = flb_input_set_collector_time(ins,
                                        cb_scan_path,
@@ -495,6 +560,232 @@ static int in_blob_exit(void *in_context, struct flb_config *config)
     return 0;
 }
 
+
+static int in_blob_notification(struct flb_input_instance *in_context,
+                                struct flb_config *config,
+                                void *untyped_notification)
+{
+    struct flb_blob_delivery_notification *notification;
+    cfl_sds_t                              new_filename;
+    cfl_sds_t                              sds_result;
+    struct blob_ctx                       *context;
+    int                                    result;
+
+    context = (struct blob_ctx *) in_context;
+
+    notification = (struct flb_blob_delivery_notification *) untyped_notification;
+
+    if (notification->base.notification_type !=
+        FLB_NOTIFICATION_TYPE_BLOB_DELIVERY) {
+        flb_plg_error(context->ins,
+                      "unexpected notification type received : %d",
+                      notification->base.notification_type);
+
+        return -1;
+    }
+
+    if (notification->success == FLB_TRUE) {
+        switch (context->upload_success_action) {
+        case POST_UPLOAD_ACTION_DELETE:
+            result = unlink(notification->path);
+
+            if (result == -1) {
+                flb_errno();
+
+                flb_plg_error(context->ins,
+                              "successfully uploaded file \"%s\" could not be deleted",
+                              notification->path);
+            }
+
+            break;
+
+        case POST_UPLOAD_ACTION_EMIT_LOG:
+            flb_log_event_encoder_begin_record(context->log_encoder);
+
+            flb_log_event_encoder_set_current_timestamp(context->log_encoder);
+
+            result = flb_log_event_encoder_append_metadata_values(
+                        context->log_encoder,
+                        FLB_LOG_EVENT_CSTRING_VALUE("path"),
+                        FLB_LOG_EVENT_CSTRING_VALUE(notification->path));
+
+            if (result != FLB_EVENT_ENCODER_SUCCESS) {
+                flb_log_event_encoder_rollback_record(context->log_encoder);
+
+                break;
+            }
+
+            result = flb_log_event_encoder_append_body_values(
+                        context->log_encoder,
+                        FLB_LOG_EVENT_CSTRING_VALUE("message"),
+                        FLB_LOG_EVENT_CSTRING_VALUE(context->upload_success_message));
+
+            if (result != FLB_EVENT_ENCODER_SUCCESS) {
+                flb_log_event_encoder_rollback_record(context->log_encoder);
+
+                break;
+            }
+
+            result = flb_log_event_encoder_commit_record(context->log_encoder);
+
+            if (result != FLB_EVENT_ENCODER_SUCCESS) {
+                flb_log_event_encoder_rollback_record(context->log_encoder);
+
+                break;
+            }
+
+            flb_input_log_append(context->ins, NULL, 0,
+                                 context->log_encoder->output_buffer,
+                                 context->log_encoder->output_length);
+
+            flb_log_event_encoder_reset_record(context->log_encoder);
+
+            break;
+
+        case POST_UPLOAD_ACTION_ADD_SUFFIX:
+            new_filename = cfl_sds_create(notification->path);
+
+            if (new_filename == NULL) {
+                flb_plg_error(context->ins,
+                              "successfully uploaded file \"%s\" could not be renamed " \
+                              "(new filename buffer allocation error)",
+                              notification->path);
+
+                break;
+            }
+
+            sds_result = cfl_sds_cat(new_filename,
+                                     context->upload_success_suffix,
+                                     strlen(context->upload_success_suffix));
+
+            if (sds_result == NULL) {
+                flb_plg_error(context->ins,
+                              "successfully uploaded file \"%s\" could not be renamed " \
+                              "(filename suffix concatentation error)",
+                              notification->path);
+
+                break;
+            }
+
+            new_filename = sds_result;
+
+            result = rename(notification->path, new_filename);
+
+            if (result == -1) {
+                flb_errno();
+
+                flb_plg_error(context->ins,
+                              "successfully uploaded file \"%s\" could not be renamed " \
+                              "(rename operation error)",
+                              notification->path);
+            }
+
+            break;
+        }
+    }
+    else if (notification->success == FLB_FALSE) {
+        switch (context->upload_failure_action) {
+        case POST_UPLOAD_ACTION_DELETE:
+            result = unlink(notification->path);
+
+            if (result == -1) {
+                flb_errno();
+
+                flb_plg_error(context->ins,
+                              "failed to upload file \"%s\" could not be deleted",
+                              notification->path);
+            }
+
+            break;
+
+        case POST_UPLOAD_ACTION_EMIT_LOG:
+            flb_log_event_encoder_begin_record(context->log_encoder);
+
+            flb_log_event_encoder_set_current_timestamp(context->log_encoder);
+
+            result = flb_log_event_encoder_append_metadata_values(
+                        context->log_encoder,
+                        FLB_LOG_EVENT_CSTRING_VALUE("path"),
+                        FLB_LOG_EVENT_CSTRING_VALUE(notification->path));
+
+            if (result != FLB_EVENT_ENCODER_SUCCESS) {
+                flb_log_event_encoder_rollback_record(context->log_encoder);
+
+                break;
+            }
+
+            result = flb_log_event_encoder_append_body_values(
+                        context->log_encoder,
+                        FLB_LOG_EVENT_CSTRING_VALUE("message"),
+                        FLB_LOG_EVENT_CSTRING_VALUE(context->upload_failure_message));
+
+            if (result != FLB_EVENT_ENCODER_SUCCESS) {
+                flb_log_event_encoder_rollback_record(context->log_encoder);
+
+                break;
+            }
+
+            result = flb_log_event_encoder_commit_record(context->log_encoder);
+
+            if (result != FLB_EVENT_ENCODER_SUCCESS) {
+                flb_log_event_encoder_rollback_record(context->log_encoder);
+
+                break;
+            }
+
+            flb_input_log_append(context->ins, NULL, 0,
+                                 context->log_encoder->output_buffer,
+                                 context->log_encoder->output_length);
+
+            flb_log_event_encoder_reset_record(context->log_encoder);
+
+            break;
+
+        case POST_UPLOAD_ACTION_ADD_SUFFIX:
+            new_filename = cfl_sds_create(notification->path);
+
+            if (new_filename == NULL) {
+                flb_plg_error(context->ins,
+                              "failed to upload file \"%s\" could not be renamed " \
+                              "(new filename buffer allocation error)",
+                              notification->path);
+
+                break;
+            }
+
+            sds_result = cfl_sds_cat(new_filename,
+                                     context->upload_failure_suffix,
+                                     strlen(context->upload_failure_suffix));
+
+            if (sds_result == NULL) {
+                flb_plg_error(context->ins,
+                              "failed to upload file \"%s\" could not be renamed " \
+                              "(filename suffix concatentation error)",
+                              notification->path);
+
+                break;
+            }
+
+            new_filename = sds_result;
+
+            result = rename(notification->path, new_filename);
+
+            if (result == -1) {
+                flb_errno();
+
+                flb_plg_error(context->ins,
+                              "failed to upload file \"%s\" could not be renamed " \
+                              "(rename operation error)",
+                              notification->path);
+            }
+
+            break;
+        }
+    }
+
+    return 0;
+}
+
 static struct flb_config_map config_map[] = {
     {
      FLB_CONFIG_MAP_STR, "path", NULL,
@@ -515,19 +806,39 @@ static struct flb_config_map config_map[] = {
      "Set the interval time to scan for new files"
     },
 
+    {
+     FLB_CONFIG_MAP_STR, "upload_success_action", NULL,
+     0, FLB_TRUE, offsetof(struct blob_ctx, upload_success_action_str),
+    },
+
+    {
+     FLB_CONFIG_MAP_STR, "upload_success_suffix", NULL,
+     0, FLB_TRUE, offsetof(struct blob_ctx, upload_success_suffix),
+    },
+
+    {
+     FLB_CONFIG_MAP_STR, "upload_success_message", NULL,
+     0, FLB_TRUE, offsetof(struct blob_ctx, upload_success_message),
+    },
+
+    {
+     FLB_CONFIG_MAP_STR, "upload_failure_action", NULL,
+     0, FLB_TRUE, offsetof(struct blob_ctx, upload_failure_action_str),
+    },
+
+    {
+     FLB_CONFIG_MAP_STR, "upload_failure_suffix", NULL,
+     0, FLB_TRUE, offsetof(struct blob_ctx, upload_failure_suffix),
+    },
+
+    {
+     FLB_CONFIG_MAP_STR, "upload_failure_message", NULL,
+     0, FLB_TRUE, offsetof(struct blob_ctx, upload_failure_message),
+    },
+
     /* EOF */
     {0}
 };
-
-static int in_blob_notification(struct flb_input_instance *in_context,
-                                struct flb_config *config,
-                                void *notification)
-{
-    printf("INPUT PLUGIN : NOTIFICATION RECEIVED %p\n", notification);
-    return 0;
-}
-
-
 
 /* Plugin reference */
 struct flb_input_plugin in_blob_plugin = {
