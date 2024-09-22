@@ -433,9 +433,9 @@ int azb_db_file_get_next_aborted(struct flb_azure_blob *ctx,
 
         /* id: column 0 */
         *id = sqlite3_column_int64(ctx->stmt_get_next_aborted_file, 0);
-        *delivery_attempts = sqlite3_column_int64(ctx->stmt_get_next_file_part, 1);
-        tmp_source = (char *) sqlite3_column_text(ctx->stmt_get_next_file_part, 2);
-        tmp_path = (char *) sqlite3_column_text(ctx->stmt_get_next_file_part, 3);
+        *delivery_attempts = sqlite3_column_int64(ctx->stmt_get_next_aborted_file, 1);
+        tmp_source = (char *) sqlite3_column_text(ctx->stmt_get_next_aborted_file, 2);
+        tmp_path = (char *) sqlite3_column_text(ctx->stmt_get_next_aborted_file, 3);
 
         *path = cfl_sds_create(tmp_path);
 
