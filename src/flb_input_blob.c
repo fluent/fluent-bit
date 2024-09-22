@@ -33,6 +33,7 @@ int flb_input_blob_file_get_info(msgpack_object map, cfl_sds_t *source, cfl_sds_
     cfl_sds_t tmp_source;
     cfl_sds_t tmp_file_path;
     msgpack_object o;
+    size_t tmp_size;
 
     if (map.type != MSGPACK_OBJECT_MAP) {
         return -1;
@@ -78,6 +79,8 @@ int flb_input_blob_file_get_info(msgpack_object map, cfl_sds_t *source, cfl_sds_
         return -1;
     }
 
+    tmp_size = o.via.u64;
+
     /* get source plugin */
     o = map.via.map.ptr[2].key;
     if (o.type != MSGPACK_OBJECT_STR) {
@@ -101,7 +104,7 @@ int flb_input_blob_file_get_info(msgpack_object map, cfl_sds_t *source, cfl_sds_
         return -1;
     }
 
-    *size = o.via.u64;
+    *size = tmp_size;
     *file_path = tmp_file_path;
     *source = tmp_source;
 
