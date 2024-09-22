@@ -68,7 +68,7 @@
     "SELECT * FROM out_azure_blob_files WHERE path=@path ORDER BY id DESC;"
 
 #define SQL_GET_NEXT_ABORTED_FILE                                    \
-    "SELECT id, delivery_attempts, source, path "                    \
+    "SELECT id, azbf.delivery_attempts, source, path "               \
     "  FROM out_azure_blob_files azbf "                              \
     " WHERE aborted = 1 "                                            \
     "   AND (SELECT COUNT(*) "                                       \
@@ -89,7 +89,7 @@
     "UPDATE out_azure_blob_parts SET in_progress=@status WHERE id=@id;"
 
 #define SQL_UPDATE_FILE_PART_DELIVERY_ATTEMPT_COUNT                        \
-    "UPDATE out_azure_blob_parts SET delivery_attempts=@delivery_attempts WHERE id=@id;"
+    "UPDATE out_azure_blob_parts SET delivery_attempts=@delivery_attempts WHERE part_id=@id;"
 
 #define SQL_RESET_FILE_UPLOAD_STATES                                       \
     "UPDATE out_azure_blob_parts SET delivery_attempts=0, uploaded=0, in_progress=0 WHERE file_id=@id;"
