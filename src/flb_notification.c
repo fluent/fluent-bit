@@ -316,7 +316,7 @@ int flb_notification_deliver(struct flb_notification *notification)
     case FLB_PLUGIN_INPUT:
         if (instance.input->p->cb_notification != NULL) {
             result = instance.input->p->cb_notification(
-                                            instance.input,
+                                            instance.input->context,
                                             instance.input->config,
                                             (void *) notification);
         }
@@ -329,7 +329,7 @@ int flb_notification_deliver(struct flb_notification *notification)
     case FLB_PLUGIN_OUTPUT:
         if (instance.output->p->cb_notification != NULL) {
             result = instance.output->p->cb_notification(
-                                            instance.output,
+                                            instance.output->context,
                                             instance.output->config,
                                             (void *) notification);
         }
@@ -342,7 +342,7 @@ int flb_notification_deliver(struct flb_notification *notification)
     case FLB_PLUGIN_FILTER:
         if (instance.filter->p->cb_notification != NULL) {
             result = instance.filter->p->cb_notification(
-                                            instance.filter,
+                                            instance.filter->context,
                                             instance.filter->config,
                                             (void *) notification);
         }
@@ -355,7 +355,7 @@ int flb_notification_deliver(struct flb_notification *notification)
     case FLB_PLUGIN_PROCESSOR:
         if (instance.processor->p->cb_notification != NULL) {
             result = instance.processor->p->cb_notification(
-                                                instance.processor,
+                                                instance.processor->context,
                                                 instance.processor->config,
                                                 (void *) notification);
         }

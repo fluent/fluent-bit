@@ -26,9 +26,14 @@
 #include <fluent-bit/flb_config.h>
 #include <cfl/cfl_sds.h>
 
+
+#define FLB_NOTIFICATION_TYPE_BLOB_DELIVERY 1
+
+
 struct flb_notification {
     int   plugin_type;
     void *plugin_instance;
+    int   notification_type;
     int   dynamically_allocated;
 
     void (*destructor)(void *);
