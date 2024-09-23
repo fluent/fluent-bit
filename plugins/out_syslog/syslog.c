@@ -25,6 +25,8 @@
 #include <fluent-bit/flb_pack.h>
 #include <fluent-bit/flb_sds.h>
 #include <fluent-bit/flb_log_event_decoder.h>
+#include <fluent-bit/flb_record_accessor.h>
+#include <fluent-bit/flb_ra_key.h>
 
 #include "syslog_conf.h"
 
@@ -545,100 +547,68 @@ static flb_sds_t msgpack_to_sd(struct flb_syslog *ctx,
     return *s;
 }
 
+/* Use val array to return its string value unless its a string and return its pointer */
+static void extract_value_from_ra_result(struct flb_ra_value *rval, char** val,
+                                         int val_size, int *val_len) {
+    if (rval->o.type == MSGPACK_OBJECT_BOOLEAN) {
+        *val = rval->o.via.boolean ? "true" : "false";
+        *val_len = rval->o.via.boolean ? 4 : 5;
+    }
+    else if (rval->o.type == MSGPACK_OBJECT_POSITIVE_INTEGER) {
+        *val_len = snprintf(*val, val_size - 1,
+                            "%" PRIu64, rval->o.via.u64);
+    }
+    else if (rval->o.type == MSGPACK_OBJECT_NEGATIVE_INTEGER) {
+        *val_len = snprintf(*val, val_size - 1,
+                            "%" PRId64, rval->o.via.i64);
+    }
+    else if (rval->o.type == MSGPACK_OBJECT_FLOAT) {
+        *val_len = snprintf(*val, val_size - 1,
+                            "%f", rval->o.via.f64);
+    }
+    else if (rval->o.type == MSGPACK_OBJECT_STR) {
+        /* String value */
+        *val     = rval->o.via.str.ptr;
+        *val_len = rval->o.via.str.size;
+    }
+    else if (rval->o.type == MSGPACK_OBJECT_BIN) {
+        /* Bin value */
+        *val     = rval->o.via.bin.ptr;
+        *val_len = rval->o.via.bin.size;
+    }
+    else {
+        *val = NULL;
+        *val_len = 0;
+    }
+}
+
 static int msgpack_to_syslog(struct flb_syslog *ctx, msgpack_object *o,
                              struct syslog_msg *msg)
 {
     int i;
-    int loop;
     struct mk_list *head;
-    struct flb_config_map_val *mv;
+    struct mk_list *tmp;
+    struct flb_syslog_sd_key *sd_key_item;
+    struct flb_ra_value *rval = NULL;
+    char *val = NULL;
+    int val_len = 0;
+    char temp[48] = {0};
 
     if (o == NULL) {
         return -1;
     }
 
-    loop = o->via.map.size;
-    if (loop != 0) {
-        msgpack_object_kv *p = o->via.map.ptr;
-
-        for (i = 0; i < loop; i++) {
-            char temp[48] = {0};
-            const char *key = NULL;
-            int key_len = 0;
-            const char *val = NULL;
-            int val_len = 0;
-
-            msgpack_object *k = &p[i].key;
-            msgpack_object *v = &p[i].val;
-
-            if (k->type != MSGPACK_OBJECT_BIN && k->type != MSGPACK_OBJECT_STR){
-                continue;
-            }
-
-            if (k->type == MSGPACK_OBJECT_STR) {
-                key = k->via.str.ptr;
-                key_len = k->via.str.size;
-            }
-            else {
-                key = k->via.bin.ptr;
-                key_len = k->via.bin.size;
-            }
-
-            if (v->type == MSGPACK_OBJECT_MAP) {
-                if (ctx->sd_keys) {
-                    flb_config_map_foreach(head, mv, ctx->sd_keys) {
-                        if ((key_len == flb_sds_len(mv->val.str)) &&
-                            strncmp(key, mv->val.str, flb_sds_len(mv->val.str)) == 0) {
-                            msgpack_to_sd(ctx, &(msg->sd), key, key_len, v);
-                            break;
-                        }
-                    }
-                }
-                continue;
-            }
-
-            if (v->type == MSGPACK_OBJECT_BOOLEAN) {
-                val = v->via.boolean ? "true" : "false";
-                val_len = v->via.boolean ? 4 : 5;
-            }
-            else if (v->type == MSGPACK_OBJECT_POSITIVE_INTEGER) {
+    if (ctx->ra_severity_key != NULL) {
+        if (msg->severity == -1) {
+            rval = flb_ra_get_value_object(ctx->ra_severity_key, *o);
+            if (rval) {
                 val = temp;
-                val_len = snprintf(temp, sizeof(temp) - 1,
-                                   "%" PRIu64, v->via.u64);
-            }
-            else if (v->type == MSGPACK_OBJECT_NEGATIVE_INTEGER) {
-                val = temp;
-                val_len = snprintf(temp, sizeof(temp) - 1,
-                                   "%" PRId64, v->via.i64);
-            }
-            else if (v->type == MSGPACK_OBJECT_FLOAT) {
-                val = temp;
-                val_len = snprintf(temp, sizeof(temp) - 1,
-                                   "%f", v->via.f64);
-            }
-            else if (v->type == MSGPACK_OBJECT_STR) {
-                /* String value */
-                val     = v->via.str.ptr;
-                val_len = v->via.str.size;
-            }
-            else if (v->type == MSGPACK_OBJECT_BIN) {
-                /* Bin value */
-                val     = v->via.bin.ptr;
-                val_len = v->via.bin.size;
-            }
-
-            if (!val || !key) {
-              continue;
-            }
-
-            if ((ctx->severity_key != NULL) &&
-                flb_sds_cmp(ctx->severity_key, key, key_len) == 0) {
-                if (msg->severity == -1) {
+                extract_value_from_ra_result(rval, &val, sizeof(temp) - 1, &val_len);
+                if (val != NULL) {
                     if ((val_len == 1) && (val[0] >= '0' && val[0] <= '7')) {
                         msg->severity = val[0]-'0';
                     }
                     else {
-                        int i;
                         for (i=0; syslog_severity[i].name != NULL; i++) {
                             if ((syslog_severity[i].len == val_len) &&
                                 (!strncasecmp(syslog_severity[i].name, val, val_len))) {
@@ -651,10 +621,17 @@ static int msgpack_to_syslog(struct flb_syslog *ctx, msgpack_object *o,
                         }
                     }
                 }
+                flb_ra_key_value_destroy(rval);
             }
-            else if ((ctx->facility_key != NULL) &&
-                     flb_sds_cmp(ctx->facility_key, key, key_len) == 0) {
-                if (msg->facility == -1) {
+        }
+    }
+    if (ctx->ra_facility_key != NULL) {
+        if (msg->facility == -1) {
+            rval = flb_ra_get_value_object(ctx->ra_facility_key, *o);
+            if (rval) {
+                val = temp;
+                extract_value_from_ra_result(rval, &val, sizeof(temp) - 1, &val_len);
+                if (val != NULL) {
                     if ((val_len == 1) && (val[0] >= '0' && val[0] <= '9')) {
                         msg->facility = val[0]-'0';
                     }
@@ -670,7 +647,6 @@ static int msgpack_to_syslog(struct flb_syslog *ctx, msgpack_object *o,
                         }
                     }
                     else {
-                        int i;
                         for (i=0; syslog_facility[i].name != NULL; i++) {
                             if ((syslog_facility[i].len == val_len) &&
                                 (!strncasecmp(syslog_facility[i].name, val, val_len))) {
@@ -683,36 +659,81 @@ static int msgpack_to_syslog(struct flb_syslog *ctx, msgpack_object *o,
                         }
                     }
                 }
+                flb_ra_key_value_destroy(rval);
             }
-            else if ((ctx->hostname_key != NULL) &&
-                     flb_sds_cmp(ctx->hostname_key, key, key_len) == 0) {
-                if (!msg->hostname) {
-                    msg->hostname = flb_sds_create_len(val, val_len);
-                }
+        }
+    }
+
+    if (ctx->ra_hostname_key != NULL) {
+        rval = flb_ra_get_value_object(ctx->ra_hostname_key, *o);
+        if (rval) {
+            val = temp;
+            extract_value_from_ra_result(rval, &val, sizeof(temp) - 1, &val_len);
+            if (!msg->hostname) {
+                msg->hostname = flb_sds_create_len(val, val_len);
             }
-            else if ((ctx->appname_key != NULL) &&
-                     flb_sds_cmp(ctx->appname_key, key, key_len) == 0) {
-                if (!msg->appname) {
-                    msg->appname = flb_sds_create_len(val, val_len);
-                }
+            flb_ra_key_value_destroy(rval);
+        }
+    }
+
+    if (ctx->ra_appname_key != NULL) {
+        rval = flb_ra_get_value_object(ctx->ra_appname_key, *o);
+        if (rval) {
+            val = temp;
+            extract_value_from_ra_result(rval, &val, sizeof(temp) - 1, &val_len);
+            if (!msg->appname) {
+                msg->appname = flb_sds_create_len(val, val_len);
             }
-            else if ((ctx->procid_key != NULL) &&
-                     flb_sds_cmp(ctx->procid_key, key, key_len) == 0) {
-                if (!msg->procid) {
-                    msg->procid = flb_sds_create_len(val, val_len);
-                }
+            flb_ra_key_value_destroy(rval);
+        }
+    }
+
+    if (ctx->ra_procid_key != NULL) {
+        rval = flb_ra_get_value_object(ctx->ra_procid_key, *o);
+        if (rval) {
+            val = temp;
+            extract_value_from_ra_result(rval, &val, sizeof(temp) - 1, &val_len);
+            if (!msg->procid) {
+                msg->procid = flb_sds_create_len(val, val_len);
             }
-            else if ((ctx->msgid_key != NULL) &&
-                     flb_sds_cmp(ctx->msgid_key, key, key_len) == 0) {
-                if (!msg->msgid) {
-                    msg->msgid = flb_sds_create_len(val, val_len);
-                }
+            flb_ra_key_value_destroy(rval);
+        }
+    }
+
+    if (ctx->ra_msgid_key != NULL) {
+        rval = flb_ra_get_value_object(ctx->ra_msgid_key, *o);
+        if (rval) {
+            val = temp;
+            extract_value_from_ra_result(rval, &val, sizeof(temp) - 1, &val_len);
+            if (!msg->msgid) {
+                msg->msgid = flb_sds_create_len(val, val_len);
             }
-            else if ((ctx->message_key != NULL) &&
-                     flb_sds_cmp(ctx->message_key, key, key_len) == 0) {
-                if (!msg->message) {
-                    msg->message = flb_sds_create_len(val, val_len);
+            flb_ra_key_value_destroy(rval);
+        }
+    }
+
+    if (ctx->ra_message_key != NULL) {
+        rval = flb_ra_get_value_object(ctx->ra_message_key, *o);
+        if (rval) {
+            val = temp;
+            extract_value_from_ra_result(rval, &val, sizeof(temp) - 1, &val_len);
+            if (!msg->message) {
+                msg->message = flb_sds_create_len(val, val_len);
+            }
+            flb_ra_key_value_destroy(rval);
+        }
+    }
+
+    if (ctx->ra_sd_keys != NULL) {
+        mk_list_foreach_safe(head, tmp, ctx->ra_sd_keys) {
+            sd_key_item = mk_list_entry(head, struct flb_syslog_sd_key, _head);
+            rval = flb_ra_get_value_object(sd_key_item->ra_sd_key, *o);
+            if (rval) {
+                if (rval->o.type == MSGPACK_OBJECT_MAP) {
+                    msgpack_to_sd(ctx, &(msg->sd), sd_key_item->key_normalized,
+                        flb_sds_len(sd_key_item->key_normalized), &rval->o);
                 }
+                flb_ra_key_value_destroy(rval);
             }
         }
     }
