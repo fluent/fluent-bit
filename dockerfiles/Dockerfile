@@ -162,7 +162,7 @@ ENV FLUENT_BIT_VERSION=${RELEASE_VERSION}
 LABEL description="Fluent Bit multi-architecture container image" \
     vendor="Fluent Organization" \
     version="${RELEASE_VERSION}" \
-    author="Eduardo Silva <eduardo@calyptia.com>" \
+    author="Eduardo Silva <eduardo.silva@chronosphere.io>" \
     org.opencontainers.image.description="Fluent Bit container image" \
     org.opencontainers.image.title="Fluent Bit" \
     org.opencontainers.image.licenses="Apache-2.0" \
@@ -170,7 +170,7 @@ LABEL description="Fluent Bit multi-architecture container image" \
     org.opencontainers.image.version="${RELEASE_VERSION}" \
     org.opencontainers.image.source="https://github.com/fluent/fluent-bit" \
     org.opencontainers.image.documentation="https://docs.fluentbit.io/" \
-    org.opencontainers.image.authors="Eduardo Silva <eduardo@calyptia.com>"
+    org.opencontainers.image.authors="Eduardo Silva <eduardo.silva@chronosphere.io>"
 
 # Copy the libraries from the extractor stage into root
 COPY --from=deb-extractor /dpkg /
@@ -193,7 +193,7 @@ ENV FLUENT_BIT_VERSION=${RELEASE_VERSION}
 LABEL description="Fluent Bit multi-architecture debug container image" \
     vendor="Fluent Organization" \
     version="${RELEASE_VERSION}-debug" \
-    author="Eduardo Silva <eduardo@calyptia.com>" \
+    author="Eduardo Silva <eduardo.silva@chronosphere.io>" \
     org.opencontainers.image.description="Fluent Bit debug container image" \
     org.opencontainers.image.title="Fluent Bit Debug" \
     org.opencontainers.image.licenses="Apache-2.0" \
@@ -201,7 +201,7 @@ LABEL description="Fluent Bit multi-architecture debug container image" \
     org.opencontainers.image.version="${RELEASE_VERSION}-debug" \
     org.opencontainers.image.source="https://github.com/fluent/fluent-bit" \
     org.opencontainers.image.documentation="https://docs.fluentbit.io/" \
-    org.opencontainers.image.authors="Eduardo Silva <eduardo@calyptia.com>"
+    org.opencontainers.image.authors="Eduardo Silva <eduardo.silva@chronosphere.io>"
 
 COPY --from=qemu-arm32 /usr/bin/qemu-arm-static /usr/bin/
 COPY --from=qemu-arm64 /usr/bin/qemu-aarch64-static /usr/bin/
