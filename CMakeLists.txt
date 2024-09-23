@@ -1149,8 +1149,8 @@ set(CPACK_PACKAGE_VERSION ${FLB_VERSION_STR})
 set(CPACK_PACKAGE_NAME "fluent-bit")
 
 set(CPACK_PACKAGE_RELEASE 1)
-set(CPACK_PACKAGE_CONTACT "Eduardo Silva <eduardo@calyptia.com>")
-set(CPACK_PACKAGE_VENDOR "Calyptia Inc.")
+set(CPACK_PACKAGE_CONTACT "Eduardo Silva <eduardo.silva@chronosphere.io>")
+set(CPACK_PACKAGE_VENDOR "Chronosphere Inc.")
 set(CPACK_RESOURCE_FILE_LICENSE "${PROJECT_SOURCE_DIR}/LICENSE")
 set(CPACK_PACKAGING_INSTALL_PREFIX "/")
 
