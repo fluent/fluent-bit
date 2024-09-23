@@ -12,4 +12,4 @@ Fluent Bit is developed and supported by many individuals and companies.  The fo
 | [Wesley Pettit](https://github.com/PettitWesley)      | Amazon Plugins (AWS)     | [Amazon Web Services](https://aws.amazon.com/)    |
 | [Cedric Lamoriniere](https://github.com/clamoriniere) | Datadog Output Plugin    | [Datadog](https://www.datadoghq.com/)             |
 | [Jonathan Gonzalez V.](https://github.com/sxd)        | PostgreSQL Output Plugin | [2ndQuadrant](https://www.2ndquadrant.com/en/)    |
-| [Jorge Niedbalski](https://github.com/niedbalski)     | CI && Containers         | [Chronosphere](https://chronosphere.io/)                 |
+| [Jorge Niedbalski](https://github.com/niedbalski)     | CI && Containers         | [Personal Blog](https://niedbalski.dev/)                 |
