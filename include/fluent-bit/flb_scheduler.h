@@ -56,6 +56,7 @@ struct flb_sched_timer {
     int coro;
     void *data;
     struct flb_sched *sched;
+    void *cb_params;
 
     /*
      * Custom timer specific data:
@@ -138,7 +139,7 @@ struct flb_sched {
     flb_pipefd_t ch_events[2];
 };
 
-
+struct flb_sched_timer_coro;
 
 int flb_sched_request_create(struct flb_config *config,
                              void *data, int tries);
@@ -162,6 +163,7 @@ int flb_sched_timer_coro_cb_create(struct flb_sched *sched, int type, int64_t ms
                                    void (*cb)(struct flb_config *, void *),
                                    void *data, struct flb_sched_timer **out_timer);
 
+void flb_sched_timer_coro_destroy(struct flb_sched_timer_coro *instance);
 struct flb_sched_timer_coro *flb_sched_timer_coro_create(struct flb_sched_timer *timer,
                                                          struct flb_config *config,
                                                          void *data);
@@ -246,7 +248,8 @@ static FLB_INLINE void sched_timer_cb_params_set(struct flb_sched_timer_coro *st
 
     params = (struct flb_sched_timer_coro_cb_params *) FLB_TLS_GET(sched_timer_coro_cb_params);
     if (!params) {
-        params = flb_malloc(sizeof(struct flb_sched_timer_coro_cb_params));
+        params = flb_calloc(1, sizeof(struct flb_sched_timer_coro_cb_params));
+
         if (!params) {
             flb_errno();
             return;
