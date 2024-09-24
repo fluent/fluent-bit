@@ -234,6 +234,7 @@ struct flb_output_plugin {
     int workers;
 
     int (*cb_worker_init) (void *, struct flb_config *);
+    int (*cb_worker_exit) (void *, struct flb_config *);
 
     /* Notification: this callback will be invoked anytime a notification is received*/
     int (*cb_notification) (struct flb_output_instance *, struct flb_config *, void *);
