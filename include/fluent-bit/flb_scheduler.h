@@ -56,7 +56,6 @@ struct flb_sched_timer {
     int coro;
     void *data;
     struct flb_sched *sched;
-    void *cb_params;
 
     /*
      * Custom timer specific data:
