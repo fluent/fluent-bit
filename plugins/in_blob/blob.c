@@ -276,8 +276,15 @@ static ssize_t recursive_file_search(struct blob_ctx *ctx,
         switch (result) {
         case GLOB_NOSPACE:
             flb_plg_error(ctx->ins, "no memory space available");
+
+            cfl_sds_destroy(local_pattern);
+            cfl_sds_destroy(local_path);
+
             return -5;
         case GLOB_ABORTED:
+            cfl_sds_destroy(local_pattern);
+            cfl_sds_destroy(local_path);
+
             return 0;
         case GLOB_NOMATCH:
             result = stat(local_path, &fs_entry_metadata);
@@ -294,6 +301,9 @@ static ssize_t recursive_file_search(struct blob_ctx *ctx,
                     flb_plg_debug(ctx->ins, "NO matches for path: %s", local_path);
                 }
             }
+
+            cfl_sds_destroy(local_pattern);
+            cfl_sds_destroy(local_path);
 
             return 6;
         }
