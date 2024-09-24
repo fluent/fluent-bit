@@ -182,6 +182,7 @@ static void output_thread(void *data)
     struct flb_output_flush *out_flush;
     struct flb_out_thread_instance *th_ins = data;
     struct flb_out_flush_params *params;
+    struct flb_sched_timer_coro_cb_params *sched_params;
     struct flb_net_dns dns_ctx;
     struct flb_notification *notification;
 
@@ -274,6 +275,16 @@ static void output_thread(void *data)
                  */
                 flb_sched_event_handler(sched->config, event);
             }
+            else if (event->type & FLB_ENGINE_EV_SCHED_CORO) {
+                /*
+                 * Note that this scheduler event handler has more features
+                 * designed to be used from the parent thread, on this specific
+                 * use case we just care about simple timers created on this
+                 * thread or threaded by some output plugin.
+                 */
+                flb_sched_event_handler(sched->config, event);
+
+            }
             else if (event->type == FLB_ENGINE_EV_THREAD_OUTPUT) {
                 /* Read the task reference */
                 n = flb_pipe_r(event->fd, &task, sizeof(struct flb_task *));
@@ -361,6 +372,10 @@ static void output_thread(void *data)
         }
     }
 
+    if (ins->p->cb_worker_exit) {
+        ret = ins->p->cb_worker_exit(ins->context, ins->config);
+    }
+
     mk_event_channel_destroy(th_ins->evl,
                              th_ins->ch_thread_events[0],
                              th_ins->ch_thread_events[1],
@@ -383,7 +398,15 @@ static void output_thread(void *data)
     params = FLB_TLS_GET(out_flush_params);
     if (params) {
         flb_free(params);
+        FLB_TLS_SET(out_flush_params, NULL);
     }
+
+    sched_params = (struct flb_sched_timer_coro_cb_params *) FLB_TLS_GET(sched_timer_coro_cb_params);
+    if (sched_params != NULL) {
+        flb_free(sched_params);
+        FLB_TLS_SET(sched_timer_coro_cb_params, NULL);
+    }
+
 
     mk_event_channel_destroy(th_ins->evl,
                              th_ins->ch_parent_events[0],
