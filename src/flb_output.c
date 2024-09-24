@@ -464,6 +464,12 @@ void flb_output_exit(struct flb_config *config)
         ins = mk_list_entry(head, struct flb_output_instance, _head);
         p = ins->p;
 
+        if (ins->is_threaded == FLB_FALSE) {
+            if (ins->p->cb_worker_exit) {
+                ins->p->cb_worker_exit(ins->context, ins->config);
+            }
+        }
+
         /* Stop any worker thread */
         if (flb_output_is_threaded(ins) == FLB_TRUE) {
             flb_output_thread_pool_destroy(ins);
@@ -479,6 +485,7 @@ void flb_output_exit(struct flb_config *config)
     params = FLB_TLS_GET(out_flush_params);
     if (params) {
         flb_free(params);
+        FLB_TLS_SET(out_flush_params, NULL);
     }
 }
 
@@ -1319,6 +1326,12 @@ int flb_output_init_all(struct flb_config *config)
             flb_error("[output] could not start thread pool for '%s' plugin",
                       flb_output_name(ins));
             return -1;
+        }
+
+        if (ins->is_threaded == FLB_FALSE) {
+            if (ins->p->cb_worker_init) {
+                ret = ins->p->cb_worker_init(ins->context, ins->config);
+            }
         }
 
         ins->processor->notification_channel = ins->notification_channel;
