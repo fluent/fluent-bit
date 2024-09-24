@@ -55,18 +55,23 @@ int flb_parser_cri_do(struct flb_parser *parser,
     }
     time_key_len = strlen(time_key);
 
-    /* Prepare new outgoing buffer */
+    /* Time */
+    token_end = strpbrk(in_buf, CRI_SPACE_DELIM);
+    
+    /* after we find 'time' field (which is variable length),
+     * we also check that we have enough room for static size fields
+     * - 1 space + stream (6 chars) + 1 space
+     * - _p (1 char) + 1 space
+     * = 10 characters past 'time' field
+     */
+    if (token_end == NULL || token_end-in_buf+10 > in_size) {
+        return -1;
+    }
+
+    /* Prepare new outgoing buffer, then add time to it */
     msgpack_sbuffer_init(&tmp_sbuf);
     msgpack_packer_init(&tmp_pck, &tmp_sbuf, msgpack_sbuffer_write);
     msgpack_pack_map(&tmp_pck, map_size);
-
-    /* Time */
-    token_end = strpbrk(in_buf, CRI_SPACE_DELIM);
-    if (token_end == NULL) {
-        msgpack_sbuffer_destroy(&tmp_sbuf);
-        return -1;
-    }
-    token_end = token_end + 1; /* time + a space */
 
     struct flb_tm tm = {0};
     ret = flb_parser_time_lookup(in_buf, token_end-in_buf-1,
@@ -79,8 +84,9 @@ int flb_parser_cri_do(struct flb_parser *parser,
 
     msgpack_pack_str(&tmp_pck, time_key_len);
     msgpack_pack_str_body(&tmp_pck, time_key, time_key_len);
-    msgpack_pack_str(&tmp_pck, token_end-in_buf-1);
-    msgpack_pack_str_body(&tmp_pck, in_buf, token_end-in_buf-1);
+    msgpack_pack_str(&tmp_pck, token_end-in_buf);
+    msgpack_pack_str_body(&tmp_pck, in_buf, token_end-in_buf);
+    token_end = token_end + 1; /* time + a space */
 
     /* Stream */
     if (!(!strncmp(token_end, "stdout ", 7) || !strncmp(token_end, "stderr ", 7))) {
@@ -106,10 +112,11 @@ int flb_parser_cri_do(struct flb_parser *parser,
     token_end = token_end + 2; /* indicator + a space */
 
     /* Log */
-    end_of_line = strpbrk(token_end, "\n");
-    if (end_of_line == NULL ) {
-        end_of_line = in_buf+in_size;
+    end_of_line = strpbrk(token_end, "\r\n");
+    if (end_of_line == NULL || end_of_line-token_end > in_size) {
+        end_of_line = (char *)in_buf+in_size;
     }
+
     msgpack_pack_str(&tmp_pck, 3);
     msgpack_pack_str_body(&tmp_pck, "log", 3);
     msgpack_pack_str(&tmp_pck, end_of_line-token_end);
