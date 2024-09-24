@@ -62,12 +62,19 @@ struct flb_azure_blob {
     flb_sds_t database_file;
     size_t part_size;
     time_t upload_parts_timeout;
+    time_t upload_parts_freshness_threshold;
     int file_delivery_attempt_limit;
     int part_delivery_attempt_limit;
     flb_sds_t configuration_endpoint_url;
     flb_sds_t configuration_endpoint_username;
     flb_sds_t configuration_endpoint_password;
     flb_sds_t configuration_endpoint_bearer_token;
+
+    int endpoint_overriden_flag;
+    int shared_key_overriden_flag;
+    int sas_token_overriden_flag;
+    int container_name_overriden_flag;
+    int path_overriden_flag;
 
     /*
      * Internal use
@@ -104,7 +111,9 @@ struct flb_azure_blob {
     sqlite3_stmt *stmt_update_file_delivery_attempt_count;
     sqlite3_stmt *stmt_set_file_aborted_state;
     sqlite3_stmt *stmt_get_next_aborted_file;
+    sqlite3_stmt *stmt_get_next_stale_file;
     sqlite3_stmt *stmt_reset_file_upload_states;
+    sqlite3_stmt *stmt_reset_file_part_upload_states;
 
 
     /* prepared statement: file parts */

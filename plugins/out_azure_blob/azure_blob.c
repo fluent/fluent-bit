@@ -713,6 +713,7 @@ static void cb_azb_blob_file_upload(struct flb_config *config, void *out_context
     struct flb_blob_delivery_notification *notification;
 
     info = FLB_TLS_GET(worker_info);
+
     if (info->active_upload) {
         flb_plg_trace(ctx->ins, "[worker: file upload] upload already in progress...");
         flb_sched_timer_cb_coro_return();
@@ -727,52 +728,77 @@ static void cb_azb_blob_file_upload(struct flb_config *config, void *out_context
 
     pthread_mutex_lock(&ctx->file_upload_commit_file_parts);
 
-    ret = azb_db_file_get_next_aborted(ctx,
-                                       &file_id,
-                                       &file_delivery_attempts,
-                                       &file_path,
-                                       &source);
+    while (1) {
+        ret = azb_db_file_get_next_stale(ctx,
+                                         &file_id,
+                                         &file_path);
 
-    if (ret == 1) {
-        ret = delete_blob(ctx, file_path);
+        if (ret == 1) {
+            delete_blob(ctx, file_path);
 
-        if (ctx->file_delivery_attempt_limit != FLB_OUT_RETRY_UNLIMITED &&
-            file_delivery_attempts < ctx->file_delivery_attempt_limit) {
             azb_db_file_reset_upload_states(ctx, file_id, file_path);
             azb_db_file_set_aborted_state(ctx, file_id, file_path, 0);
+
+            cfl_sds_destroy(file_path);
+
+            file_path = NULL;
         }
         else {
-            ret = azb_db_file_delete(ctx, file_id, file_path);
+            break;
+        }
+    }
 
-            notification = flb_calloc(1,
-                                    sizeof(
-                                        struct flb_blob_delivery_notification));
+    while (1) {
+        ret = azb_db_file_get_next_aborted(ctx,
+                                           &file_id,
+                                           &file_delivery_attempts,
+                                           &file_path,
+                                           &source);
 
-            if (notification != NULL) {
-                notification->base.dynamically_allocated = FLB_TRUE;
-                notification->base.notification_type = FLB_NOTIFICATION_TYPE_BLOB_DELIVERY;
-                notification->base.destructor = flb_input_blob_delivery_notification_destroy;
-                notification->success = FLB_FALSE;
-                notification->path = cfl_sds_create(file_path);
+        if (ret == 1) {
+            ret = delete_blob(ctx, file_path);
 
-                ret = flb_notification_enqueue(FLB_PLUGIN_INPUT,
-                                               source,
-                                               &notification->base,
-                                               config);
+            if (ctx->file_delivery_attempt_limit != FLB_OUT_RETRY_UNLIMITED &&
+                file_delivery_attempts < ctx->file_delivery_attempt_limit) {
+                azb_db_file_reset_upload_states(ctx, file_id, file_path);
+                azb_db_file_set_aborted_state(ctx, file_id, file_path, 0);
+            }
+            else {
+                ret = azb_db_file_delete(ctx, file_id, file_path);
 
-                if (ret != 0) {
-                    flb_plg_error(ctx->ins,
-                                  "blob file '%s' (id=%" PRIu64 ") notification " \
-                                  "delivery error %d", file_path, file_id, ret);
+                notification = flb_calloc(1,
+                                        sizeof(
+                                            struct flb_blob_delivery_notification));
+
+                if (notification != NULL) {
+                    notification->base.dynamically_allocated = FLB_TRUE;
+                    notification->base.notification_type = FLB_NOTIFICATION_TYPE_BLOB_DELIVERY;
+                    notification->base.destructor = flb_input_blob_delivery_notification_destroy;
+                    notification->success = FLB_FALSE;
+                    notification->path = cfl_sds_create(file_path);
+
+                    ret = flb_notification_enqueue(FLB_PLUGIN_INPUT,
+                                                source,
+                                                &notification->base,
+                                                config);
+
+                    if (ret != 0) {
+                        flb_plg_error(ctx->ins,
+                                    "blob file '%s' (id=%" PRIu64 ") notification " \
+                                    "delivery error %d", file_path, file_id, ret);
+                    }
                 }
             }
+
+            cfl_sds_destroy(file_path);
+            cfl_sds_destroy(source);
+
+            file_path = NULL;
+            source = NULL;
         }
-
-        cfl_sds_destroy(file_path);
-        cfl_sds_destroy(source);
-
-        file_path = NULL;
-        source = NULL;
+        else {
+            break;
+        }
     }
 
     ret = azb_db_file_oldest_ready(ctx, &file_id, &file_path, &part_ids, &source);
@@ -874,7 +900,7 @@ static void cb_azb_blob_file_upload(struct flb_config *config, void *out_context
         flb_sched_timer_cb_coro_return();
     }
 
-    azb_db_file_part_delivery_attempts(ctx, part_id, ++part_delivery_attempts);
+    azb_db_file_part_delivery_attempts(ctx, file_id, part_id, ++part_delivery_attempts);
 
     flb_plg_debug(ctx->ins, "sending part file %s (id=%" PRIu64 " part_id=%" PRIu64 ")", file_path, id, part_id);
     ret = send_blob(config, NULL, ctx, FLB_EVENT_TYPE_BLOBS,
@@ -901,6 +927,7 @@ static void cb_azb_blob_file_upload(struct flb_config *config, void *out_context
         flb_free(out_buf);
     }
     cfl_sds_destroy(file_path);
+
     flb_sched_timer_cb_coro_return();
 }
 
@@ -1028,6 +1055,24 @@ static int cb_worker_init(void *data, struct flb_config *config)
     return 0;
 }
 
+/* worker teardown */
+static int cb_worker_exit(void *data, struct flb_config *config)
+{
+    int ret;
+    struct worker_info *info;
+    struct flb_azure_blob *ctx = data;
+
+    flb_plg_info(ctx->ins, "initializing worker");
+
+    info = FLB_TLS_GET(worker_info);
+    if (info != NULL) {
+        flb_free(info);
+        FLB_TLS_SET(worker_info, NULL);
+    }
+
+    return 0;
+}
+
 /* Configuration properties map */
 static struct flb_config_map config_map[] = {
     {
@@ -1140,6 +1185,12 @@ static struct flb_config_map config_map[] = {
     },
 
     {
+     FLB_CONFIG_MAP_TIME, "upload_part_freshness_limit", "6D",
+     0, FLB_TRUE, offsetof(struct flb_azure_blob, upload_parts_freshness_threshold),
+     "Maximum lifespan of an uncommitted file part"
+    },
+
+    {
      FLB_CONFIG_MAP_STR, "configuration_endpoint_url", NULL,
      0, FLB_TRUE, offsetof(struct flb_azure_blob, configuration_endpoint_url),
      "Configuration endpoint URL"
@@ -1175,6 +1226,7 @@ struct flb_output_plugin out_azure_blob_plugin = {
     .cb_flush       = cb_azure_blob_flush,
     .cb_exit        = cb_azure_blob_exit,
     .cb_worker_init = cb_worker_init,
+    .cb_worker_exit = cb_worker_exit,
 
     /* Test */
     .test_formatter.callback = azure_blob_format,
