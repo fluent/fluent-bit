@@ -1124,6 +1124,7 @@ int flb_engine_start(struct flb_config *config)
 /* Release all resources associated to the engine */
 int flb_engine_shutdown(struct flb_config *config)
 {
+    struct flb_sched_timer_coro_cb_params *sched_params;
 
     config->is_running = FLB_FALSE;
     flb_input_pause_all(config);
@@ -1142,6 +1143,13 @@ int flb_engine_shutdown(struct flb_config *config)
     flb_output_exit(config);
     flb_custom_exit(config);
     flb_input_exit_all(config);
+
+    /* scheduler */
+    sched_params = (struct flb_sched_timer_coro_cb_params *) FLB_TLS_GET(sched_timer_coro_cb_params);
+    if (sched_params != NULL) {
+        flb_free(sched_params);
+        FLB_TLS_SET(sched_timer_coro_cb_params, NULL);
+    }
 
     /* Destroy the storage context */
     flb_storage_destroy(config);
