@@ -441,6 +441,25 @@ static inline uint32_t sched_timer_coro_get_id(struct flb_sched *sched)
     return id;
 }
 
+static inline struct flb_sched_timer_coro *sched_timer_coro_get_by_id(
+                                            struct flb_sched *sched,
+                                            uint32_t id)
+{
+    struct cfl_list *head;
+    struct flb_sched_timer_coro *stc;
+
+    /* check if the proposed id is in use already */
+    cfl_list_foreach(head, &sched->timer_coro_list) {
+        stc = cfl_list_entry(head, struct flb_sched_timer_coro, _head);
+        if (stc->id == id) {
+            return stc;
+        }
+    }
+
+    return NULL;
+}
+
+
 /* context of a scheduled timer that holds a coroutine context */
 struct flb_sched_timer_coro *flb_sched_timer_coro_create(struct flb_sched_timer *timer,
                                                          struct flb_config *config,
@@ -458,7 +477,7 @@ struct flb_sched_timer_coro *flb_sched_timer_coro_create(struct flb_sched_timer 
         return NULL;
     }
 
-    stc = flb_malloc(sizeof(struct flb_sched_timer_coro));
+    stc = flb_calloc(1, sizeof(struct flb_sched_timer_coro));
     if (!stc) {
         flb_errno();
         return NULL;
@@ -487,6 +506,21 @@ struct flb_sched_timer_coro *flb_sched_timer_coro_create(struct flb_sched_timer 
 
     sched_timer_cb_params_set(stc, coro, config, data);
     return stc;
+}
+
+void flb_sched_timer_coro_destroy(struct flb_sched_timer_coro *instance)
+{
+    if (instance == NULL) {
+        return;
+    }
+
+    if (instance->coro != NULL) {
+        flb_coro_destroy(instance->coro);
+    }
+
+    cfl_list_del(&instance->_head);
+
+    flb_free(instance);
 }
 
 /*
@@ -519,16 +553,11 @@ int flb_sched_event_handler(struct flb_config *config, struct mk_event *event)
     struct flb_sched_timer_coro *stc;
 
     if (event->type == FLB_ENGINE_EV_SCHED_CORO) {
-        printf("CORO EVENT\n");
-        stc = (struct flb_sched_timer_coro *) event;
-        if (!stc) {
-            flb_error("[sched] invalid timer coro context");
-            return -1;
-        }
+        sched = flb_sched_ctx_get();
 
         /* consume the notification */
-        val = flb_pipe_r(event->fd, &val, sizeof(val));
-        if (val == -1) {
+        ret = flb_pipe_r(event->fd, &val, sizeof(val));
+        if (ret == -1) {
             flb_errno();
             return -1;
         }
@@ -536,9 +565,15 @@ int flb_sched_event_handler(struct flb_config *config, struct mk_event *event)
         op = FLB_BITS_U64_HIGH(val);
         id = FLB_BITS_U64_LOW(val);
 
+        stc = sched_timer_coro_get_by_id(sched, id);
+
+        if (stc == NULL) {
+            flb_error("[sched] invalid timer coroutine id %u", id);
+            return -1;
+        }
+
         if (op == FLB_SCHED_TIMER_CORO_RETURN) {
             /* move stc to the drop list */
-            sched = flb_sched_ctx_get();
             cfl_list_del(&stc->_head);
             cfl_list_add(&stc->_head, &sched->timer_coro_list_drop);
         }
@@ -761,7 +796,7 @@ struct flb_sched *flb_sched_create(struct flb_config *config,
         flb_sched_destroy(sched);
         return NULL;
     }
-    sched->event.type = FLB_ENGINE_EV_SCHED;
+    sched->event.type = FLB_ENGINE_EV_SCHED_CORO;
 
     /*
      * Note: mk_event_timeout_create() sets a type = MK_EVENT_NOTIFICATION by
@@ -895,9 +930,7 @@ int flb_sched_timer_coro_cleanup(struct flb_sched *sched)
 
     cfl_list_foreach_safe(head, tmp, &sched->timer_coro_list_drop) {
         stc = cfl_list_entry(head, struct flb_sched_timer_coro, _head);
-        flb_coro_destroy(stc->coro);
-        cfl_list_del(&stc->_head);
-        flb_free(stc);
+        flb_sched_timer_coro_destroy(stc);
         c++;
     }
 
