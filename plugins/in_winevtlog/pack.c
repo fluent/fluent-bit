@@ -277,12 +277,23 @@ static int pack_sid(struct winevtlog_config *ctx, PSID sid, int extract_sid)
 
     if (ConvertSidToStringSidW(sid, &wide_sid)) {
         if (extract_sid == FLB_TRUE) {
+            /* Skip to translate SID for capability SIDs.
+             * ref: https://learn.microsoft.com/en-us/windows-server/identity/ad-ds/manage/understand-security-identifiers
+             * See also: https://learn.microsoft.com/en-us/troubleshoot/windows-server/windows-security/sids-not-resolve-into-friendly-names
+             */
+            if (wcsnicmp(wide_sid, L"S-1-15-3-", 9) == 0) {
+                flb_plg_debug(ctx->ins, "This SID is one of the capability SIDs. Skip.");
+
+                goto not_mapped_error;
+            }
             if (!LookupAccountSidA(NULL, sid,
                                    account, &len, domain,
                                    &len, &sid_type)) {
                 err = GetLastError();
                 if (err == ERROR_NONE_MAPPED) {
-                    strcpy_s(account, MAX_NAME, "NONE_MAPPED");
+                    flb_plg_debug(ctx->ins, "AccountSid is not mapped. code: %u", err);
+
+                    goto not_mapped_error;
                 }
                 else {
                     flb_plg_warn(ctx->ins, "LookupAccountSid Error %u", err);
@@ -295,6 +306,8 @@ static int pack_sid(struct winevtlog_config *ctx, PSID sid, int extract_sid)
             formatted = flb_sds_create_size(result_len);
             if (formatted == NULL) {
                 flb_plg_warn(ctx->ins, "create result buffer failed");
+
+                ret = -1;
 
                 goto error;
             }
@@ -327,12 +340,17 @@ static int pack_sid(struct winevtlog_config *ctx, PSID sid, int extract_sid)
             return ret;
         }
 
-    error:
+    not_mapped_error:
         ret = pack_wstr(ctx, wide_sid);
 
         LocalFree(wide_sid);
 
-        return -1;
+        return ret;
+
+    error:
+        LocalFree(wide_sid);
+
+        return ret;
     }
 
     return ret;
@@ -432,7 +450,7 @@ static void pack_string_inserts(struct winevtlog_config *ctx, PEVT_VARIANT value
             }
             break;
         case EvtVarTypeEvtXml:
-            if (pack_wstr(ctx, values[i].XmlVal, ctx)) {
+            if (pack_wstr(ctx, values[i].XmlVal)) {
                 pack_nullstr(ctx);
             }
             break;
