@@ -150,6 +150,7 @@ static int flb_azure_blob_process_remote_configuration_payload(
     msgpack_object_map  *configuration_map;
     msgpack_unpacked     unpacked_root;
     char                *msgpack_body;
+    char                *value_backup;
     int                  root_type;
     size_t               offset;
     int                  result;
@@ -194,64 +195,99 @@ static int flb_azure_blob_process_remote_configuration_payload(
 
         configuration_map = &unpacked_root.data.via.map;
 
+        value_backup = context->endpoint;
+        context->endpoint = NULL;
+
         result = extract_map_string_entry_by_key(&context->endpoint,
                                                  configuration_map,
                                                  "host", 0, FLB_TRUE);
 
         if (result != 0) {
+            context->endpoint = value_backup;
+
             flb_plg_error(context->ins,
                             "endpoint extraction error : %d", result);
 
             goto cleanup;
         }
 
+        context->endpoint_overriden_flag = FLB_TRUE;
+
         if (context->atype == AZURE_BLOB_AUTH_KEY) {
+            value_backup = context->shared_key;
+            context->shared_key = NULL;
+
             result = extract_map_string_entry_by_key(&context->shared_key,
-                                                        configuration_map,
-                                                        "shared_key", 0, FLB_TRUE);
+                                                     configuration_map,
+                                                     "shared_key", 0, FLB_TRUE);
 
             if (result != 0) {
+                context->shared_key = value_backup;
+
                 flb_plg_error(context->ins,
-                                "neither sas_token nor shared_key " \
-                                "could be extracted : %d", result);
+                              "neither sas_token nor shared_key " \
+                              "could be extracted : %d", result);
 
                 goto cleanup;
             }
+
+            context->shared_key_overriden_flag = FLB_TRUE;
         }
         else if (context->atype == AZURE_BLOB_AUTH_SAS) {
+            value_backup = context->sas_token;
+            context->sas_token = NULL;
+
             result = extract_map_string_entry_by_key(&context->sas_token,
                                                     configuration_map,
                                                     "sas_token", 0, FLB_TRUE);
 
             if (result != 0) {
+                context->sas_token = value_backup;
+
                 flb_plg_error(context->ins,
                                 "sas_token extraction error : %d", result);
 
                 goto cleanup;
             }
+
+            context->sas_token_overriden_flag = FLB_TRUE;
         }
+
+        value_backup = context->container_name;
+        context->container_name = NULL;
 
         result = extract_map_string_entry_by_key(&context->container_name,
                                                  configuration_map,
                                                  "container", 0, FLB_TRUE);
 
         if (result != 0) {
+            context->container_name = value_backup;
+
             flb_plg_error(context->ins,
                             "container extraction error : %d", result);
 
             goto cleanup;
         }
 
+        context->container_name_overriden_flag = FLB_TRUE;
+
+        value_backup = context->path;
+        context->path = NULL;
+
         result = extract_map_string_entry_by_key(&context->path,
                                                  configuration_map,
                                                  "path", 0, FLB_TRUE);
 
         if (result != 0) {
+            context->path = value_backup;
+
             flb_plg_error(context->ins,
                             "path extraction error : %d", result);
 
             goto cleanup;
         }
+
+        context->path_overriden_flag = FLB_TRUE;
 
 cleanup:
         if (result != 0) {
@@ -729,6 +765,28 @@ struct flb_azure_blob *flb_azure_blob_conf_create(struct flb_output_instance *in
 
 void flb_azure_blob_conf_destroy(struct flb_azure_blob *ctx)
 {
+
+    if (ctx->endpoint_overriden_flag == FLB_TRUE) {
+        flb_sds_destroy(ctx->endpoint);
+        ctx->endpoint = NULL;
+    }
+    if (ctx->shared_key_overriden_flag == FLB_TRUE) {
+        flb_sds_destroy(ctx->shared_key);
+        ctx->shared_key = NULL;
+    }
+    if (ctx->sas_token_overriden_flag == FLB_TRUE) {
+        flb_sds_destroy(ctx->sas_token);
+        ctx->sas_token = NULL;
+    }
+    if (ctx->container_name_overriden_flag == FLB_TRUE) {
+        flb_sds_destroy(ctx->container_name);
+        ctx->container_name = NULL;
+    }
+    if (ctx->path_overriden_flag == FLB_TRUE) {
+        flb_sds_destroy(ctx->path);
+        ctx->path = NULL;
+    }
+
     if (ctx->decoded_sk) {
         flb_free(ctx->decoded_sk);
     }
