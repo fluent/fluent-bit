@@ -27,13 +27,14 @@
 
 #define SQL_CREATE_AZURE_BLOB_FILES                                       \
     "CREATE TABLE IF NOT EXISTS out_azure_blob_files ("                   \
-    "  id                INTEGER PRIMARY KEY,"                            \
-    "  source            TEXT NOT NULL,"                                  \
-    "  path              TEXT NOT NULL,"                                  \
-    "  size              INTEGER,"                                        \
-    "  created           INTEGER,"                                        \
-    "  delivery_attempts INTEGER DEFAULT 0,"                              \
-    "  aborted           INTEGER DEFAULT 0"                               \
+    "  id                    INTEGER PRIMARY KEY,"                        \
+    "  source                TEXT NOT NULL,"                              \
+    "  path                  TEXT NOT NULL,"                              \
+    "  size                  INTEGER,"                                    \
+    "  created               INTEGER,"                                    \
+    "  delivery_attempts     INTEGER DEFAULT 0,"                          \
+    "  aborted               INTEGER DEFAULT 0,"                          \
+    "  last_delivery_attempt INTEGER DEFAULT 0"                           \
     ");"
 
 #define SQL_CREATE_AZURE_BLOB_PARTS                                       \
@@ -62,7 +63,10 @@
     "UPDATE out_azure_blob_files SET aborted=@state WHERE id=@id;"
 
 #define SQL_UPDATE_FILE_DELIVERY_ATTEMPT_COUNT                        \
-    "UPDATE out_azure_blob_files SET delivery_attempts=@delivery_attempts WHERE id=@id;"
+    "UPDATE out_azure_blob_files " \
+    "   SET delivery_attempts=@delivery_attempts, " \
+    "       last_delivery_attempt=UNIXEPOCH() " \
+    " WHERE id=@id;"
 
 #define SQL_GET_FILE                                                 \
     "SELECT * FROM out_azure_blob_files WHERE path=@path ORDER BY id DESC;"
@@ -78,6 +82,16 @@
     "ORDER BY id DESC "                                              \
     "LIMIT 1;"
 
+
+#define SQL_GET_NEXT_STALE_FILE                                    \
+    "SELECT id, path "                                             \
+    "  FROM out_azure_blob_files azbf "                            \
+    " WHERE aborted = 0 "                                          \
+    "   AND last_delivery_attempt > 0 "                            \
+    "   AND last_delivery_attempt < @freshness_threshold "         \
+    "ORDER BY id DESC "                                            \
+    "LIMIT 1;"
+
 #define SQL_INSERT_FILE_PART                                                   \
     "INSERT INTO out_azure_blob_parts (file_id, part_id, offset_start, offset_end)" \
     "  VALUES (@file_id, @part_id, @offset_start, @offset_end);"
@@ -89,10 +103,22 @@
     "UPDATE out_azure_blob_parts SET in_progress=@status WHERE id=@id;"
 
 #define SQL_UPDATE_FILE_PART_DELIVERY_ATTEMPT_COUNT                        \
-    "UPDATE out_azure_blob_parts SET delivery_attempts=@delivery_attempts WHERE part_id=@id;"
+    "UPDATE out_azure_blob_parts "                                         \
+    "   SET delivery_attempts=@delivery_attempts "                         \
+    " WHERE file_id=@file_id "                                             \
+    "   AND part_id=@part_id;"
 
 #define SQL_RESET_FILE_UPLOAD_STATES                                       \
-    "UPDATE out_azure_blob_parts SET delivery_attempts=0, uploaded=0, in_progress=0 WHERE file_id=@id;"
+    "UPDATE out_azure_blob_files "                                         \
+    "   SET last_delivery_attempt=0 "                                      \
+    " WHERE id=@id;"
+
+#define SQL_RESET_FILE_PART_UPLOAD_STATES                                  \
+    "UPDATE out_azure_blob_parts "                                         \
+    "   SET delivery_attempts=0, "                                         \
+    "       uploaded=0, "                                                  \
+    "       in_progress=0 "                                                \
+    " WHERE file_id=@id;"
 
 /* Find the oldest files and retrieve the oldest part ready to be uploaded */
 #define SQL_GET_NEXT_FILE_PART            \
@@ -103,7 +129,8 @@
     "       p.offset_end, "               \
     "       p.delivery_attempts, "        \
     "       f.path, "                     \
-    "       f.delivery_attempts "         \
+    "       f.delivery_attempts, "        \
+    "       f.last_delivery_attempt "     \
     "FROM   out_azure_blob_parts p "      \
     "       JOIN out_azure_blob_files f " \
     "         ON p.file_id = f.id "       \
@@ -139,18 +166,29 @@
 struct flb_sqldb *azb_db_open(struct flb_azure_blob *ctx, char *db_path);
 int azb_db_close(struct flb_azure_blob *ctx);
 int azb_db_file_exists(struct flb_azure_blob *ctx, char *path, uint64_t *id);
+
 int64_t azb_db_file_insert(struct flb_azure_blob *ctx,
                            char *source, char *path, size_t size);
+
 int azb_db_file_delete(struct flb_azure_blob *ctx, uint64_t id, char *path);
+
 int azb_db_file_set_aborted_state(struct flb_azure_blob *ctx,
                                   uint64_t id, char *path,
                                   uint64_t state);
+
 int azb_db_file_delivery_attempts(struct flb_azure_blob *ctx, uint64_t id, uint64_t attempts);
+
 int azb_db_file_get_next_aborted(struct flb_azure_blob *ctx,
                                  uint64_t *id,
                                  uint64_t *delivery_attempts,
                                  cfl_sds_t *path,
                                  cfl_sds_t *source);
+
+
+int azb_db_file_get_next_stale(struct flb_azure_blob *ctx,
+                               uint64_t *id,
+                               cfl_sds_t *path);
+
 int azb_db_file_reset_upload_states(struct flb_azure_blob *ctx, uint64_t id, char *path);
 
 int azb_db_file_part_insert(struct flb_azure_blob *ctx, uint64_t file_id,
@@ -165,7 +203,10 @@ int azb_db_file_part_get_next(struct flb_azure_blob *ctx,
                               uint64_t *file_delivery_attempts,
                               cfl_sds_t *file_path);
 int azb_db_file_part_uploaded(struct flb_azure_blob *ctx, uint64_t id);
-int azb_db_file_part_delivery_attempts(struct flb_azure_blob *ctx, uint64_t id, uint64_t attempts);
+int azb_db_file_part_delivery_attempts(struct flb_azure_blob *ctx,
+                                       uint64_t file_id,
+                                       uint64_t part_id,
+                                       uint64_t attempts);
 
 int azb_db_file_oldest_ready(struct flb_azure_blob *ctx,
                              uint64_t *file_id, cfl_sds_t *path, cfl_sds_t *part_ids, cfl_sds_t *source);
