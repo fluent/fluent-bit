@@ -179,6 +179,9 @@ flb_sds_t azb_http_canonical_request(struct flb_azure_blob *ctx,
     case FLB_HTTP_PUT:
         tmp = flb_sds_cat(can_req, "PUT\n", 4);
         break;
+    case FLB_HTTP_DELETE:
+        tmp = flb_sds_cat(can_req, "DELETE\n", 4);
+        break;
     };
 
     if (!tmp) {
