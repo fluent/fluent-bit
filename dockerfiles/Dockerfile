@@ -1,3 +1,5 @@
+# syntax=docker/dockerfile:1
+# check=skip=InvalidBaseImagePlatform
 
 # To use this container you may need to do the following:
 # https://askubuntu.com/a/1369504
@@ -14,10 +16,10 @@
 ARG RELEASE_VERSION=3.1.7
 
 # For multi-arch builds - assumption is running on an AMD64 host
-FROM multiarch/qemu-user-static:x86_64-arm as qemu-arm32
-FROM multiarch/qemu-user-static:x86_64-aarch64 as qemu-arm64
+FROM multiarch/qemu-user-static:x86_64-arm AS qemu-arm32
+FROM multiarch/qemu-user-static:x86_64-aarch64 AS qemu-arm64
 
-FROM debian:bookworm-slim as builder-base
+FROM debian:bookworm-slim AS builder-base
 
 COPY --from=qemu-arm32 /usr/bin/qemu-arm-static /usr/bin/
 COPY --from=qemu-arm64 /usr/bin/qemu-aarch64-static /usr/bin/
@@ -30,7 +32,7 @@ ENV FLB_CHUNK_TRACE=${FLB_CHUNK_TRACE}
 
 RUN mkdir -p /fluent-bit/bin /fluent-bit/etc /fluent-bit/log
 
-ENV DEBIAN_FRONTEND noninteractive
+ENV DEBIAN_FRONTEND=noninteractive
 
 # hadolint ignore=DL3008
 RUN echo "deb http://deb.debian.org/debian bookworm-backports main" >> /etc/apt/sources.list && \
@@ -61,7 +63,7 @@ WORKDIR /src/fluent-bit/
 COPY . ./
 
 # We split the builder setup out so people can target it or use as a base image without doing a full build.
-FROM builder-base as builder
+FROM builder-base AS builder
 WORKDIR /src/fluent-bit/build/
 RUN cmake -DFLB_RELEASE=On \
     -DFLB_JEMALLOC=On \
@@ -97,7 +99,7 @@ RUN /fluent-bit/bin/fluent-bit -J > /fluent-bit/etc/schema.json
 
 # Simple example of how to properly extract packages for reuse in distroless
 # Taken from: https://github.com/GoogleContainerTools/distroless/issues/863
-FROM debian:bookworm-slim as deb-extractor
+FROM debian:bookworm-slim AS deb-extractor
 COPY --from=qemu-arm32 /usr/bin/qemu-arm-static /usr/bin/
 COPY --from=qemu-arm64 /usr/bin/qemu-aarch64-static /usr/bin/
 
@@ -154,7 +156,7 @@ RUN find /dpkg/ -type d -empty -delete && \
 
 # We want latest at time of build
 # hadolint ignore=DL3006
-FROM gcr.io/distroless/cc-debian12 as production
+FROM gcr.io/distroless/cc-debian12 AS production
 ARG RELEASE_VERSION
 ENV FLUENT_BIT_VERSION=${RELEASE_VERSION}
 LABEL description="Fluent Bit multi-architecture container image" \
@@ -185,7 +187,7 @@ EXPOSE 2020
 ENTRYPOINT [ "/fluent-bit/bin/fluent-bit" ]
 CMD ["/fluent-bit/bin/fluent-bit", "-c", "/fluent-bit/etc/fluent-bit.conf"]
 
-FROM debian:bookworm-slim as debug
+FROM debian:bookworm-slim AS debug
 ARG RELEASE_VERSION
 ENV FLUENT_BIT_VERSION=${RELEASE_VERSION}
 LABEL description="Fluent Bit multi-architecture debug container image" \
@@ -203,7 +205,7 @@ LABEL description="Fluent Bit multi-architecture debug container image" \
 
 COPY --from=qemu-arm32 /usr/bin/qemu-arm-static /usr/bin/
 COPY --from=qemu-arm64 /usr/bin/qemu-aarch64-static /usr/bin/
-ENV DEBIAN_FRONTEND noninteractive
+ENV DEBIAN_FRONTEND=noninteractive
 
 # hadolint ignore=DL3008
 RUN echo "deb http://deb.debian.org/debian bookworm-backports main" >> /etc/apt/sources.list && \
