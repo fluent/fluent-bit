@@ -786,6 +786,8 @@ static void cb_azb_blob_file_upload(struct flb_config *config, void *out_context
                         flb_plg_error(ctx->ins,
                                     "blob file '%s' (id=%" PRIu64 ") notification " \
                                     "delivery error %d", file_path, file_id, ret);
+
+                        flb_notification_cleanup(notification);
                     }
                 }
             }
@@ -841,6 +843,8 @@ static void cb_azb_blob_file_upload(struct flb_config *config, void *out_context
                     flb_plg_error(ctx->ins,
                                 "blob file '%s' (id=%" PRIu64 ") notification " \
                                 "delivery error %d", file_path, file_id, ret);
+
+                    flb_notification_cleanup(notification);
                 }
             }
 
