@@ -220,6 +220,8 @@ void flb_filter_do(struct flb_input_chunk *ic,
                     /* [OLD] Summarize all records removed */
                     flb_metrics_sum(FLB_METRIC_N_DROPPED,
                                     in_records, f_ins->metrics);
+                    flb_metrics_sum(FLB_METRIC_N_DROPPED_BYTES,
+                                    dropped_size, f_ins->metrics);
 #endif
                     break;
                 }
@@ -239,6 +241,8 @@ void flb_filter_do(struct flb_input_chunk *ic,
                         /* [OLD] Summarize new records */
                         flb_metrics_sum(FLB_METRIC_N_ADDED,
                                         diff, f_ins->metrics);
+                        flb_metrics_sum(FLB_METRIC_N_DROPPED_BYTES,
+                                        dropped_size, f_ins->metrics);
                     }
                     else if (out_records < in_records) {
                         diff = (in_records - out_records);
@@ -252,6 +256,8 @@ void flb_filter_do(struct flb_input_chunk *ic,
                         /* [OLD] Summarize dropped records */
                         flb_metrics_sum(FLB_METRIC_N_DROPPED,
                                         diff, f_ins->metrics);
+                        flb_metrics_sum(FLB_METRIC_N_DROPPED_BYTES,
+                                        dropped_size, f_ins->metrics);
                     }
 #endif
 
@@ -584,6 +590,7 @@ int flb_filter_init(struct flb_config *config, struct flb_filter_instance *ins)
     flb_metrics_add(FLB_METRIC_N_ADDED, "add_records", ins->metrics);
     flb_metrics_add(FLB_METRIC_N_RECORDS, "records", ins->metrics);
     flb_metrics_add(FLB_METRIC_N_BYTES, "bytes", ins->metrics);
+    flb_metrics_add(FLB_METRIC_N_DROPPED_BYTES, "drop_bytes", ins->metrics);
 #endif
 
     /*
