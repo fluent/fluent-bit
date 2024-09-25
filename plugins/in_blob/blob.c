@@ -687,6 +687,8 @@ static int in_blob_notification(struct flb_input_instance *in_context,
                               "(filename suffix concatentation error)",
                               notification->path);
 
+                cfl_sds_destroy(new_filename);
+
                 break;
             }
 
@@ -702,6 +704,8 @@ static int in_blob_notification(struct flb_input_instance *in_context,
                               "(rename operation error)",
                               notification->path);
             }
+
+            cfl_sds_destroy(new_filename);
 
             break;
         }
@@ -786,6 +790,8 @@ static int in_blob_notification(struct flb_input_instance *in_context,
                               "(filename suffix concatentation error)",
                               notification->path);
 
+                cfl_sds_destroy(new_filename);
+
                 break;
             }
 
@@ -801,6 +807,8 @@ static int in_blob_notification(struct flb_input_instance *in_context,
                               "(rename operation error)",
                               notification->path);
             }
+
+            cfl_sds_destroy(new_filename);
 
             break;
         }
