@@ -372,6 +372,9 @@ static int send_blob(struct flb_config *config,
             block_id = azb_block_blob_id_logs(&ms);
             if (!block_id) {
                 flb_plg_error(ctx->ins, "could not generate block id");
+
+                cfl_sds_destroy(ref_name);
+
                 return FLB_RETRY;
             }
             uri = azb_block_blob_uri(ctx, tag, block_id, ms);
