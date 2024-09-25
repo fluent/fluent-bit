@@ -28,8 +28,12 @@
 
 #include <sys/types.h>
 #include <sys/stat.h>
+
+#ifndef FLB_SYSTEM_WINDOWS
 #include <glob.h>
 #include <fnmatch.h>
+#endif
+
 #include <stdio.h>
 
 #include "blob.h"
@@ -43,6 +47,7 @@
 #define GLOB_TILDE    1<<2 /* use GNU Libc value */
 #define UNSUP_TILDE   1
 
+#ifndef FLB_SYSTEM_WINDOWS
 /* we need these extra headers for path resolution */
 #include <limits.h>
 #include <sys/types.h>
@@ -118,6 +123,12 @@ static char *expand_tilde(const char *path)
 
     return path;
 }
+#else
+static char* expand_tilde(const char* path)
+{
+    return NULL;
+}
+#endif
 #endif
 
 static inline int do_glob(const char *pattern,
@@ -134,8 +145,8 @@ static inline int do_glob(const char *pattern,
     /* Save current values */
     new_flags = flags;
 
+#if defined(UNSUP_TILDE) && !defined(FLB_SYSTEM_WINDOWS)
     if (flags & GLOB_TILDE) {
-#ifdef UNSUP_TILDE
         /*
          * Some libc libraries like Musl do not support GLOB_TILDE for tilde
          * expansion. A workaround is to use wordexp(3) but looking at it
@@ -156,8 +167,8 @@ static inline int do_glob(const char *pattern,
 
         /* remove unused flag */
         new_flags &= ~GLOB_TILDE;
-#endif
     }
+#endif
 
     /* invoke glob with new parameters */
     ret = glob(pattern, new_flags, NULL, pglob);

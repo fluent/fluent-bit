@@ -60,6 +60,10 @@
 #define GLOB_NOMATCH FLB_FILE_GLOB_ERROR_NO_MATCHES
 #endif
 
+#ifndef GLOB_ERR
+#define GLOB_ERR FLB_FILE_GLOB_ABORT_ON_ERROR
+#endif
+
 struct flb_file_glob_inner_entry {
     char           *path;
     struct cfl_list _head;
@@ -83,8 +87,9 @@ typedef struct glob_t {
     struct flb_file_glob_context inner_context;
     char                       **gl_pathv;
     size_t                       gl_pathc;
+};
 
-}
+typedef struct glob_t glob_t;
 
 static int flb_file_glob_start(struct flb_file_glob_context *context,
                                const char *path,
@@ -104,7 +109,7 @@ static void globfree(glob_t *context)
         context->gl_pathv = NULL;
     }
 
-    flb_file_glob_clean(context->inner_context);
+    flb_file_glob_clean(&context->inner_context);
 }
 
 static int glob(const char *path,
@@ -121,7 +126,7 @@ static int glob(const char *path,
     result = flb_file_glob_start(context, path, flags);
 
     if (result == FLB_FILE_GLOB_ERROR_SUCCESS) {
-        entries = cfl_list_size(context->inner_context->results);
+        entries = cfl_list_size(&context->inner_context.inner_context->results);
 
         context->gl_pathv = flb_calloc(entries, sizeof(char *));
 
@@ -132,7 +137,7 @@ static int glob(const char *path,
         }
 
         for (index = 0 ; index < entries ; index++) {
-            result = flb_file_glob_fetch(context->internal_context,
+            result = flb_file_glob_fetch(&context->inner_context,
                                          &context->gl_pathv[index]);
 
             if (result != FLB_FILE_GLOB_ERROR_SUCCESS) {
@@ -262,11 +267,11 @@ static int limited_win32_glob_append_entry(
 {
     char                              entry_path_buffer[FLB_FILE_MAX_PATH_LENGTH];
     char                             *entry_path;
-    struct flb_file_stat              entry_info;
+    struct stat                       entry_info;
     int                               result;
     struct flb_file_glob_inner_entry *entry;
 
-    result = flb_file_stat(path, &entry_info);
+    result = stat(path, &entry_info);
 
     if (result != 0) {
         result = FLB_FILE_GLOB_ERROR_NO_FILE;
@@ -337,7 +342,7 @@ static int limited_win32_glob(struct flb_file_glob_inner_context *context,
     WIN32_FIND_DATA data;
     struct flb_file_glob_inner_entry *entry;
     int transverse_directory;
-    struct flb_file_stat entry_info;
+    struct stat entry_info;
 
     if (strlen(path) >= FLB_FILE_MAX_PATH_LENGTH) {
         return FLB_FILE_GLOB_ERROR_OVERSIZED_PATH;
@@ -417,8 +422,7 @@ static int limited_win32_glob(struct flb_file_glob_inner_context *context,
                 transverse_directory = FLB_TRUE;
             }
             else if (data.dwFileAttributes & FILE_ATTRIBUTE_REPARSE_POINT) {
-                ret = flb_file_stat(data.cFileName,
-                                    &entry_info);
+                ret = stat(data.cFileName, &entry_info);
 
                 if (ret != 0) {
                     if (context->flags &
@@ -427,10 +431,6 @@ static int limited_win32_glob(struct flb_file_glob_inner_context *context,
 
                         break;
                     }
-                }
-
-                if (FLB_FILE_ISDIR(entry_info.mode)) {
-                    transverse_directory = FLB_TRUE;
                 }
             }
 
@@ -482,9 +482,9 @@ int flb_file_glob_start(struct flb_file_glob_context *context,
                         uint64_t flags)
 {
 
-    int                  tilde_expansion_attempted;
-    struct flb_file_stat path_stat;
-    int                  result;
+    int         tilde_expansion_attempted;
+    struct stat path_stat;
+    int         result;
 
     if (context == NULL) {
         return -1;
