@@ -14,7 +14,7 @@
 ARG WINDOWS_VERSION=ltsc2019
 
 # Builder Image - Windows Server Core
-FROM mcr.microsoft.com/windows/servercore:$WINDOWS_VERSION as builder
+FROM mcr.microsoft.com/windows/servercore:$WINDOWS_VERSION AS builder
 
 RUN setx /M PATH "%PATH%;C:\BuildTools\Common7\IDE\CommonExtensions\Microsoft\CMake\CMake\bin;C:\WinFlexBison;C:\dev\vcpkg"
 
@@ -87,7 +87,7 @@ RUN New-Item -Path  /fluent-bit/etc/ -ItemType "directory"; `
 #
 # Runtime Image - Windows Server Core
 #
-FROM mcr.microsoft.com/windows/servercore:$WINDOWS_VERSION as runtime
+FROM mcr.microsoft.com/windows/servercore:$WINDOWS_VERSION AS runtime
 
 ARG FLUENTBIT_VERSION=master
 ARG IMAGE_CREATE_DATE
