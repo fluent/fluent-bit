@@ -189,6 +189,15 @@ static FLB_INLINE int engine_handle_event(flb_pipefd_t fd, int mask,
 
 static void input_thread_instance_destroy(struct flb_input_thread_instance *thi)
 {
+    if (thi->notification_channels_initialized == FLB_TRUE) {
+        mk_event_channel_destroy(thi->evl,
+                                 thi->notification_channels[0],
+                                 thi->notification_channels[1],
+                                 &thi->notification_event);
+
+        thi->notification_channels_initialized = FLB_FALSE;
+    }
+
     if (thi->evl) {
         mk_event_loop_destroy(thi->evl);
     }
@@ -207,15 +216,6 @@ static void input_thread_instance_destroy(struct flb_input_thread_instance *thi)
     }
     if (thi->ch_thread_events[1] > 0) {
         mk_event_closesocket(thi->ch_thread_events[1]);
-    }
-
-    if (thi->notification_channels_initialized == FLB_TRUE) {
-        mk_event_channel_destroy(thi->evl,
-                                 thi->notification_channels[0],
-                                 thi->notification_channels[1],
-                                 &thi->notification_event);
-
-        thi->notification_channels_initialized = FLB_FALSE;
     }
 
     flb_tp_destroy(thi->tp);
