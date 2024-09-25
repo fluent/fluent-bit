@@ -790,7 +790,7 @@ static void cb_azb_blob_file_upload(struct flb_config *config, void *out_context
                                     "blob file '%s' (id=%" PRIu64 ") notification " \
                                     "delivery error %d", file_path, file_id, ret);
 
-                        flb_notification_cleanup(notification);
+                        flb_notification_cleanup(&notification->base);
                     }
                 }
             }
@@ -847,7 +847,7 @@ static void cb_azb_blob_file_upload(struct flb_config *config, void *out_context
                                 "blob file '%s' (id=%" PRIu64 ") notification " \
                                 "delivery error %d", file_path, file_id, ret);
 
-                    flb_notification_cleanup(notification);
+                    flb_notification_cleanup(&notification->base);
                 }
             }
 
@@ -1065,7 +1065,6 @@ static int cb_worker_init(void *data, struct flb_config *config)
 /* worker teardown */
 static int cb_worker_exit(void *data, struct flb_config *config)
 {
-    int ret;
     struct worker_info *info;
     struct flb_azure_blob *ctx = data;
 
