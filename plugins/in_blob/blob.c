@@ -36,6 +36,8 @@
 #include "blob_db.h"
 #include "blob_file.h"
 
+#include "win32_glob.c"
+
 /* Define missing GLOB_TILDE if not exists */
 #ifndef GLOB_TILDE
 #define GLOB_TILDE    1<<2 /* use GNU Libc value */
@@ -200,7 +202,10 @@ static ssize_t recursive_file_search(struct blob_ctx *ctx,
     cfl_sds_t   sds_result;
     int         result;
     size_t      index;
+
     match_count = 0;
+
+    memset(&glob_context, 0, sizeof(glob_t));
 
     if (path != NULL) {
         local_path = cfl_sds_create(path);
@@ -331,6 +336,8 @@ static ssize_t recursive_file_search(struct blob_ctx *ctx,
                 cfl_sds_destroy(local_pattern);
                 cfl_sds_destroy(local_path);
 
+                globfree(&glob_context);
+
                 return -7;
             }
 
@@ -341,6 +348,8 @@ static ssize_t recursive_file_search(struct blob_ctx *ctx,
             if (recursion_result < 0) {
                 cfl_sds_destroy(local_pattern);
                 cfl_sds_destroy(local_path);
+
+                globfree(&glob_context);
 
                 return -8;
             }
@@ -360,6 +369,8 @@ static ssize_t recursive_file_search(struct blob_ctx *ctx,
                 cfl_sds_destroy(local_pattern);
                 cfl_sds_destroy(local_path);
 
+                globfree(&glob_context);
+
                 return -9;
             }
 
@@ -370,6 +381,8 @@ static ssize_t recursive_file_search(struct blob_ctx *ctx,
             if (recursion_result < 0) {
                 cfl_sds_destroy(local_pattern);
                 cfl_sds_destroy(local_path);
+
+                globfree(&glob_context);
 
                 return -10;
             }
