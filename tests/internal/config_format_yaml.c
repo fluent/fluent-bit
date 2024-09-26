@@ -21,6 +21,7 @@
 #define FLB_001 FLB_TESTS_CONF_PATH "/issue_7559.yaml"
 #define FLB_002 FLB_TESTS_CONF_PATH "/processors.yaml"
 #define FLB_000_WIN FLB_TESTS_CONF_PATH "\\fluent-bit-windows.yaml"
+#define FLB_BROKEN_PLUGIN_VARIANT FLB_TESTS_CONF_PATH "/broken_plugin_variant.yaml"
 
 #ifdef _WIN32
 #define FLB_BASIC FLB_000_WIN
@@ -178,6 +179,20 @@ static void test_customs_section()
 
     flb_cf_dump(cf);
     flb_cf_destroy(cf);
+}
+
+static void test_broken_plugin_variant_yaml()
+{
+    struct flb_cf *cf;
+
+    cf = flb_cf_yaml_create(NULL, FLB_BROKEN_PLUGIN_VARIANT, NULL, 0);
+    TEST_CHECK(cf == NULL);
+
+    if (cf != NULL) {
+        TEST_CHECK_(cf != NULL, "somewhat config_format is created wrongly");
+        flb_cf_dump(cf);
+        flb_cf_destroy(cf);
+    }
 }
 
 static void test_slist_even()
@@ -443,6 +458,7 @@ static void test_processors()
 TEST_LIST = {
     { "basic"    , test_basic},
     { "customs section", test_customs_section},
+    { "broken_plugin_variant_yaml", test_broken_plugin_variant_yaml},
     { "slist odd", test_slist_odd},
     { "slist even", test_slist_even},
     { "parsers file conf", test_parser_conf},
