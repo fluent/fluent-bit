@@ -131,6 +131,15 @@ static char* expand_tilde(const char* path)
 #endif
 #endif
 
+
+
+#ifndef FLB_SYSTEM_WINDOWS
+static int is_directory(char *path, struct stat *fs_entry_metadata)
+{
+        return S_ISDIR(fs_entry_metadata->st_mode);
+}
+#endif
+
 static inline int do_glob(const char *pattern,
                           int flags,
                           void *not_used,
@@ -334,7 +343,8 @@ static ssize_t recursive_file_search(struct blob_ctx *ctx,
             continue;
         }
 
-        if (S_ISDIR(fs_entry_metadata.st_mode)) {
+        if (is_directory(glob_context.gl_pathv[index],
+                         fs_entry_metadata.st_mode)) {
             local_path[0] = '\0';
 
             cfl_sds_len_set(local_path, 0);
