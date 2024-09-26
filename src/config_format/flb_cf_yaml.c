@@ -2083,6 +2083,15 @@ static struct parser_state *state_pop(struct local_ctx *ctx)
         cfl_kvlist_destroy(last->keyvals);
     }
 
+    /* Teardown associated variant stuffs */
+    if (last->variant_kvlist_key != NULL) {
+        cfl_sds_destroy(last->variant_kvlist_key);
+    }
+
+    if (last->variant != NULL) {
+        cfl_variant_destroy(last->variant);
+    }
+
     state_destroy(last);
 
     if (cfl_list_size(&ctx->states) <= 0) {
