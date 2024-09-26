@@ -64,6 +64,8 @@
 #define GLOB_ERR FLB_FILE_GLOB_ABORT_ON_ERROR
 #endif
 
+#define FLB_FILE_MAX_PATH_LENGTH PATH_MAX
+
 struct flb_file_glob_inner_entry {
     char           *path;
     struct cfl_list _head;
@@ -83,7 +85,7 @@ struct flb_file_glob_context {
    char                               *path;
 };
 
-typedef struct glob_t {
+struct glob_t {
     struct flb_file_glob_context inner_context;
     char                       **gl_pathv;
     size_t                       gl_pathc;
@@ -284,7 +286,7 @@ static int limited_win32_glob_append_entry(
         result = FLB_FILE_GLOB_ERROR_SUCCESS;
 
         if (mode_filter != 0) {
-            if (!FLB_FILE_ISTYPE(entry_info.mode, mode_filter)) {
+            if (!FLB_FILE_ISTYPE(entry_info.st_mode, mode_filter)) {
                 result = FLB_FILE_GLOB_ERROR_NO_MATCHES;
             }
         }
