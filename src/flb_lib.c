@@ -792,11 +792,17 @@ int flb_stop(flb_ctx_t *ctx)
          * There is a chance the worker thread is still active while
          * the service exited for some reason (plugin action). Always
          * wait and double check that the child thread is not running.
+         *
+         * We check the value of tid first to avoid crashes on some 
+         * linux distributions.
          */
+
+        if (tid != 0) {
 #if defined(FLB_SYSTEM_MACOS)
-        pthread_cancel(tid);
+            pthread_cancel(tid);
 #endif
-        pthread_join(tid, NULL);
+            pthread_join(tid, NULL);
+        }
         return 0;
     }
 
