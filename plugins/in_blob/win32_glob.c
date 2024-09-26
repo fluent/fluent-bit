@@ -66,6 +66,8 @@
 
 #define FLB_FILE_MAX_PATH_LENGTH PATH_MAX
 
+#define FLB_FILE_ISTYPE(m, t) (((m) & 0170000) == t)
+
 struct flb_file_glob_inner_entry {
     char           *path;
     struct cfl_list _head;
