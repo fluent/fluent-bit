@@ -1443,6 +1443,7 @@ int flb_ml_flush_stream_group(struct flb_ml_parser *ml_parser,
         }
         msgpack_unpacked_destroy(&result);
         group->mp_sbuf.size = 0;
+        group->mp_md_sbuf.size = 0;
     }
     else if (len > 0) {
         /* Pack raw content as Fluent Bit record */
