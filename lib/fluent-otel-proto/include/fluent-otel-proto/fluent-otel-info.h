@@ -20,7 +20,7 @@
 #ifndef FLUENT_OTEL_INFO_H
 #define FLUENT_OTEL_INFO_H
 
-#define FLUENT_OTEL_SOURCE_DIR "/Users/edsiper/coding/fluent-otel-proto"
+#define FLUENT_OTEL_SOURCE_DIR "/home/edsiper/c/fluent-otel-proto"
 
 /* General flags set by /CMakeLists.txt */
 #ifndef FLUENT_OTEL_HAVE_COMMON
@@ -35,11 +35,11 @@
 #ifndef FLUENT_OTEL_HAVE_LOGS
 #define FLUENT_OTEL_HAVE_LOGS
 #endif
-#ifndef FLUENT_OTEL_HAVE_LOGS
-#define FLUENT_OTEL_HAVE_LOGS
-#endif
 #ifndef FLUENT_OTEL_HAVE_METRICS
 #define FLUENT_OTEL_HAVE_METRICS
+#endif
+#ifndef FLUENT_OTEL_HAVE_PROFILES
+#define FLUENT_OTEL_HAVE_PROFILES
 #endif
 
 

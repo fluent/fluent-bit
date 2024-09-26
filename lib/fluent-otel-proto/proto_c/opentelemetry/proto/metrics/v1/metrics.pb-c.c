@@ -815,7 +815,7 @@ const ProtobufCMessageDescriptor opentelemetry__proto__metrics__v1__scope_metric
   (ProtobufCMessageInit) opentelemetry__proto__metrics__v1__scope_metrics__init,
   NULL,NULL,NULL    /* reserved[123] */
 };
-static const ProtobufCFieldDescriptor opentelemetry__proto__metrics__v1__metric__field_descriptors[8] =
+static const ProtobufCFieldDescriptor opentelemetry__proto__metrics__v1__metric__field_descriptors[9] =
 {
   {
     "name",
@@ -862,7 +862,7 @@ static const ProtobufCFieldDescriptor opentelemetry__proto__metrics__v1__metric_
     offsetof(Opentelemetry__Proto__Metrics__V1__Metric, gauge),
     &opentelemetry__proto__metrics__v1__gauge__descriptor,
     NULL,
-    0 | PROTOBUF_C_FIELD_FLAG_ONEOF,             /* flags */
+    PROTOBUF_C_FIELD_FLAG_ONEOF,             /* flags */
     0,NULL,NULL    /* reserved1,reserved2, etc */
   },
   {
@@ -874,7 +874,7 @@ static const ProtobufCFieldDescriptor opentelemetry__proto__metrics__v1__metric_
     offsetof(Opentelemetry__Proto__Metrics__V1__Metric, sum),
     &opentelemetry__proto__metrics__v1__sum__descriptor,
     NULL,
-    0 | PROTOBUF_C_FIELD_FLAG_ONEOF,             /* flags */
+    PROTOBUF_C_FIELD_FLAG_ONEOF,             /* flags */
     0,NULL,NULL    /* reserved1,reserved2, etc */
   },
   {
@@ -886,7 +886,7 @@ static const ProtobufCFieldDescriptor opentelemetry__proto__metrics__v1__metric_
     offsetof(Opentelemetry__Proto__Metrics__V1__Metric, histogram),
     &opentelemetry__proto__metrics__v1__histogram__descriptor,
     NULL,
-    0 | PROTOBUF_C_FIELD_FLAG_ONEOF,             /* flags */
+    PROTOBUF_C_FIELD_FLAG_ONEOF,             /* flags */
     0,NULL,NULL    /* reserved1,reserved2, etc */
   },
   {
@@ -898,7 +898,7 @@ static const ProtobufCFieldDescriptor opentelemetry__proto__metrics__v1__metric_
     offsetof(Opentelemetry__Proto__Metrics__V1__Metric, exponential_histogram),
     &opentelemetry__proto__metrics__v1__exponential_histogram__descriptor,
     NULL,
-    0 | PROTOBUF_C_FIELD_FLAG_ONEOF,             /* flags */
+    PROTOBUF_C_FIELD_FLAG_ONEOF,             /* flags */
     0,NULL,NULL    /* reserved1,reserved2, etc */
   },
   {
@@ -910,7 +910,19 @@ static const ProtobufCFieldDescriptor opentelemetry__proto__metrics__v1__metric_
     offsetof(Opentelemetry__Proto__Metrics__V1__Metric, summary),
     &opentelemetry__proto__metrics__v1__summary__descriptor,
     NULL,
-    0 | PROTOBUF_C_FIELD_FLAG_ONEOF,             /* flags */
+    PROTOBUF_C_FIELD_FLAG_ONEOF,             /* flags */
+    0,NULL,NULL    /* reserved1,reserved2, etc */
+  },
+  {
+    "metadata",
+    12,
+    PROTOBUF_C_LABEL_REPEATED,
+    PROTOBUF_C_TYPE_MESSAGE,
+    offsetof(Opentelemetry__Proto__Metrics__V1__Metric, n_metadata),
+    offsetof(Opentelemetry__Proto__Metrics__V1__Metric, metadata),
+    &opentelemetry__proto__common__v1__key_value__descriptor,
+    NULL,
+    0,             /* flags */
     0,NULL,NULL    /* reserved1,reserved2, etc */
   },
 };
@@ -919,6 +931,7 @@ static const unsigned opentelemetry__proto__metrics__v1__metric__field_indices_b
   6,   /* field[6] = exponential_histogram */
   3,   /* field[3] = gauge */
   5,   /* field[5] = histogram */
+  8,   /* field[8] = metadata */
   0,   /* field[0] = name */
   4,   /* field[4] = sum */
   7,   /* field[7] = summary */
@@ -930,7 +943,7 @@ static const ProtobufCIntRange opentelemetry__proto__metrics__v1__metric__number
   { 5, 3 },
   { 7, 4 },
   { 9, 5 },
-  { 0, 8 }
+  { 0, 9 }
 };
 const ProtobufCMessageDescriptor opentelemetry__proto__metrics__v1__metric__descriptor =
 {
@@ -940,7 +953,7 @@ const ProtobufCMessageDescriptor opentelemetry__proto__metrics__v1__metric__desc
   "Opentelemetry__Proto__Metrics__V1__Metric",
   "opentelemetry.proto.metrics.v1",
   sizeof(Opentelemetry__Proto__Metrics__V1__Metric),
-  8,
+  9,
   opentelemetry__proto__metrics__v1__metric__field_descriptors,
   opentelemetry__proto__metrics__v1__metric__field_indices_by_name,
   4,  opentelemetry__proto__metrics__v1__metric__number_ranges,
@@ -1224,7 +1237,7 @@ static const ProtobufCFieldDescriptor opentelemetry__proto__metrics__v1__number_
     offsetof(Opentelemetry__Proto__Metrics__V1__NumberDataPoint, as_double),
     NULL,
     NULL,
-    0 | PROTOBUF_C_FIELD_FLAG_ONEOF,             /* flags */
+    PROTOBUF_C_FIELD_FLAG_ONEOF,             /* flags */
     0,NULL,NULL    /* reserved1,reserved2, etc */
   },
   {
@@ -1248,7 +1261,7 @@ static const ProtobufCFieldDescriptor opentelemetry__proto__metrics__v1__number_
     offsetof(Opentelemetry__Proto__Metrics__V1__NumberDataPoint, as_int),
     NULL,
     NULL,
-    0 | PROTOBUF_C_FIELD_FLAG_ONEOF,             /* flags */
+    PROTOBUF_C_FIELD_FLAG_ONEOF,             /* flags */
     0,NULL,NULL    /* reserved1,reserved2, etc */
   },
   {
@@ -1348,11 +1361,11 @@ static const ProtobufCFieldDescriptor opentelemetry__proto__metrics__v1__histogr
     5,
     PROTOBUF_C_LABEL_NONE,
     PROTOBUF_C_TYPE_DOUBLE,
-    0,   /* quantifier_offset */
+    offsetof(Opentelemetry__Proto__Metrics__V1__HistogramDataPoint, _sum_case),
     offsetof(Opentelemetry__Proto__Metrics__V1__HistogramDataPoint, sum),
     NULL,
     NULL,
-    0,             /* flags */
+    PROTOBUF_C_FIELD_FLAG_ONEOF,             /* flags */
     0,NULL,NULL    /* reserved1,reserved2, etc */
   },
   {
@@ -1364,7 +1377,7 @@ static const ProtobufCFieldDescriptor opentelemetry__proto__metrics__v1__histogr
     offsetof(Opentelemetry__Proto__Metrics__V1__HistogramDataPoint, bucket_counts),
     NULL,
     NULL,
-    0 | PROTOBUF_C_FIELD_FLAG_PACKED,             /* flags */
+    PROTOBUF_C_FIELD_FLAG_PACKED,             /* flags */
     0,NULL,NULL    /* reserved1,reserved2, etc */
   },
   {
@@ -1376,7 +1389,7 @@ static const ProtobufCFieldDescriptor opentelemetry__proto__metrics__v1__histogr
     offsetof(Opentelemetry__Proto__Metrics__V1__HistogramDataPoint, explicit_bounds),
     NULL,
     NULL,
-    0 | PROTOBUF_C_FIELD_FLAG_PACKED,             /* flags */
+    PROTOBUF_C_FIELD_FLAG_PACKED,             /* flags */
     0,NULL,NULL    /* reserved1,reserved2, etc */
   },
   {
@@ -1420,11 +1433,11 @@ static const ProtobufCFieldDescriptor opentelemetry__proto__metrics__v1__histogr
     11,
     PROTOBUF_C_LABEL_NONE,
     PROTOBUF_C_TYPE_DOUBLE,
-    0,   /* quantifier_offset */
+    offsetof(Opentelemetry__Proto__Metrics__V1__HistogramDataPoint, _min_case),
     offsetof(Opentelemetry__Proto__Metrics__V1__HistogramDataPoint, min),
     NULL,
     NULL,
-    0,             /* flags */
+    PROTOBUF_C_FIELD_FLAG_ONEOF,             /* flags */
     0,NULL,NULL    /* reserved1,reserved2, etc */
   },
   {
@@ -1432,11 +1445,11 @@ static const ProtobufCFieldDescriptor opentelemetry__proto__metrics__v1__histogr
     12,
     PROTOBUF_C_LABEL_NONE,
     PROTOBUF_C_TYPE_DOUBLE,
-    0,   /* quantifier_offset */
+    offsetof(Opentelemetry__Proto__Metrics__V1__HistogramDataPoint, _max_case),
     offsetof(Opentelemetry__Proto__Metrics__V1__HistogramDataPoint, max),
     NULL,
     NULL,
-    0,             /* flags */
+    PROTOBUF_C_FIELD_FLAG_ONEOF,             /* flags */
     0,NULL,NULL    /* reserved1,reserved2, etc */
   },
 };
@@ -1496,7 +1509,7 @@ static const ProtobufCFieldDescriptor opentelemetry__proto__metrics__v1__exponen
     offsetof(Opentelemetry__Proto__Metrics__V1__ExponentialHistogramDataPoint__Buckets, bucket_counts),
     NULL,
     NULL,
-    0 | PROTOBUF_C_FIELD_FLAG_PACKED,             /* flags */
+    PROTOBUF_C_FIELD_FLAG_PACKED,             /* flags */
     0,NULL,NULL    /* reserved1,reserved2, etc */
   },
 };
@@ -1524,7 +1537,7 @@ const ProtobufCMessageDescriptor opentelemetry__proto__metrics__v1__exponential_
   (ProtobufCMessageInit) opentelemetry__proto__metrics__v1__exponential_histogram_data_point__buckets__init,
   NULL,NULL,NULL    /* reserved[123] */
 };
-static const ProtobufCFieldDescriptor opentelemetry__proto__metrics__v1__exponential_histogram_data_point__field_descriptors[13] =
+static const ProtobufCFieldDescriptor opentelemetry__proto__metrics__v1__exponential_histogram_data_point__field_descriptors[14] =
 {
   {
     "attributes",
@@ -1579,11 +1592,11 @@ static const ProtobufCFieldDescriptor opentelemetry__proto__metrics__v1__exponen
     5,
     PROTOBUF_C_LABEL_NONE,
     PROTOBUF_C_TYPE_DOUBLE,
-    0,   /* quantifier_offset */
+    offsetof(Opentelemetry__Proto__Metrics__V1__ExponentialHistogramDataPoint, _sum_case),
     offsetof(Opentelemetry__Proto__Metrics__V1__ExponentialHistogramDataPoint, sum),
     NULL,
     NULL,
-    0,             /* flags */
+    PROTOBUF_C_FIELD_FLAG_ONEOF,             /* flags */
     0,NULL,NULL    /* reserved1,reserved2, etc */
   },
   {
@@ -1663,11 +1676,11 @@ static const ProtobufCFieldDescriptor opentelemetry__proto__metrics__v1__exponen
     12,
     PROTOBUF_C_LABEL_NONE,
     PROTOBUF_C_TYPE_DOUBLE,
-    0,   /* quantifier_offset */
+    offsetof(Opentelemetry__Proto__Metrics__V1__ExponentialHistogramDataPoint, _min_case),
     offsetof(Opentelemetry__Proto__Metrics__V1__ExponentialHistogramDataPoint, min),
     NULL,
     NULL,
-    0,             /* flags */
+    PROTOBUF_C_FIELD_FLAG_ONEOF,             /* flags */
     0,NULL,NULL    /* reserved1,reserved2, etc */
   },
   {
@@ -1675,8 +1688,20 @@ static const ProtobufCFieldDescriptor opentelemetry__proto__metrics__v1__exponen
     13,
     PROTOBUF_C_LABEL_NONE,
     PROTOBUF_C_TYPE_DOUBLE,
-    0,   /* quantifier_offset */
+    offsetof(Opentelemetry__Proto__Metrics__V1__ExponentialHistogramDataPoint, _max_case),
     offsetof(Opentelemetry__Proto__Metrics__V1__ExponentialHistogramDataPoint, max),
+    NULL,
+    NULL,
+    PROTOBUF_C_FIELD_FLAG_ONEOF,             /* flags */
+    0,NULL,NULL    /* reserved1,reserved2, etc */
+  },
+  {
+    "zero_threshold",
+    14,
+    PROTOBUF_C_LABEL_NONE,
+    PROTOBUF_C_TYPE_DOUBLE,
+    0,   /* quantifier_offset */
+    offsetof(Opentelemetry__Proto__Metrics__V1__ExponentialHistogramDataPoint, zero_threshold),
     NULL,
     NULL,
     0,             /* flags */
@@ -1697,11 +1722,12 @@ static const unsigned opentelemetry__proto__metrics__v1__exponential_histogram_d
   4,   /* field[4] = sum */
   2,   /* field[2] = time_unix_nano */
   6,   /* field[6] = zero_count */
+  13,   /* field[13] = zero_threshold */
 };
 static const ProtobufCIntRange opentelemetry__proto__metrics__v1__exponential_histogram_data_point__number_ranges[1 + 1] =
 {
   { 1, 0 },
-  { 0, 13 }
+  { 0, 14 }
 };
 const ProtobufCMessageDescriptor opentelemetry__proto__metrics__v1__exponential_histogram_data_point__descriptor =
 {
@@ -1711,7 +1737,7 @@ const ProtobufCMessageDescriptor opentelemetry__proto__metrics__v1__exponential_
   "Opentelemetry__Proto__Metrics__V1__ExponentialHistogramDataPoint",
   "opentelemetry.proto.metrics.v1",
   sizeof(Opentelemetry__Proto__Metrics__V1__ExponentialHistogramDataPoint),
-  13,
+  14,
   opentelemetry__proto__metrics__v1__exponential_histogram_data_point__field_descriptors,
   opentelemetry__proto__metrics__v1__exponential_histogram_data_point__field_indices_by_name,
   1,  opentelemetry__proto__metrics__v1__exponential_histogram_data_point__number_ranges,
@@ -1908,7 +1934,7 @@ static const ProtobufCFieldDescriptor opentelemetry__proto__metrics__v1__exempla
     offsetof(Opentelemetry__Proto__Metrics__V1__Exemplar, as_double),
     NULL,
     NULL,
-    0 | PROTOBUF_C_FIELD_FLAG_ONEOF,             /* flags */
+    PROTOBUF_C_FIELD_FLAG_ONEOF,             /* flags */
     0,NULL,NULL    /* reserved1,reserved2, etc */
   },
   {
@@ -1944,7 +1970,7 @@ static const ProtobufCFieldDescriptor opentelemetry__proto__metrics__v1__exempla
     offsetof(Opentelemetry__Proto__Metrics__V1__Exemplar, as_int),
     NULL,
     NULL,
-    0 | PROTOBUF_C_FIELD_FLAG_ONEOF,             /* flags */
+    PROTOBUF_C_FIELD_FLAG_ONEOF,             /* flags */
     0,NULL,NULL    /* reserved1,reserved2, etc */
   },
   {
@@ -2020,16 +2046,16 @@ const ProtobufCEnumDescriptor opentelemetry__proto__metrics__v1__aggregation_tem
 };
 static const ProtobufCEnumValue opentelemetry__proto__metrics__v1__data_point_flags__enum_values_by_number[2] =
 {
-  { "FLAG_NONE", "OPENTELEMETRY__PROTO__METRICS__V1__DATA_POINT_FLAGS__FLAG_NONE", 0 },
-  { "FLAG_NO_RECORDED_VALUE", "OPENTELEMETRY__PROTO__METRICS__V1__DATA_POINT_FLAGS__FLAG_NO_RECORDED_VALUE", 1 },
+  { "DATA_POINT_FLAGS_DO_NOT_USE", "OPENTELEMETRY__PROTO__METRICS__V1__DATA_POINT_FLAGS__DATA_POINT_FLAGS_DO_NOT_USE", 0 },
+  { "DATA_POINT_FLAGS_NO_RECORDED_VALUE_MASK", "OPENTELEMETRY__PROTO__METRICS__V1__DATA_POINT_FLAGS__DATA_POINT_FLAGS_NO_RECORDED_VALUE_MASK", 1 },
 };
 static const ProtobufCIntRange opentelemetry__proto__metrics__v1__data_point_flags__value_ranges[] = {
 {0, 0},{0, 2}
 };
 static const ProtobufCEnumValueIndex opentelemetry__proto__metrics__v1__data_point_flags__enum_values_by_name[2] =
 {
-  { "FLAG_NONE", 0 },
-  { "FLAG_NO_RECORDED_VALUE", 1 },
+  { "DATA_POINT_FLAGS_DO_NOT_USE", 0 },
+  { "DATA_POINT_FLAGS_NO_RECORDED_VALUE_MASK", 1 },
 };
 const ProtobufCEnumDescriptor opentelemetry__proto__metrics__v1__data_point_flags__descriptor =
 {

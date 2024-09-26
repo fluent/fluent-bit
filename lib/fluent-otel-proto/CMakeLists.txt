@@ -8,12 +8,13 @@ include(cmake/macros.cmake)
 option(FLUENT_PROTO_REGENERATE "Regenerate .[ch] files only"  "No")
 
 # build options for files generation
-option(FLUENT_PROTO_COMMON   "Include common.proto"    "Yes")
-option(FLUENT_PROTO_RESOURCE "Include resource.proto"  "Yes")
-option(FLUENT_PROTO_TRACE    "Include trace.proto"     "Yes")
-option(FLUENT_PROTO_LOGS     "Include logs.proto"      "Yes")
-option(FLUENT_PROTO_METRICS  "Inlcude metrics.proto"    "No")
-option(FLUENT_PROTO_EXAMPLES "Add example programs"    "Yes")
+option(FLUENT_PROTO_COMMON   "Include common.proto"          "Yes")
+option(FLUENT_PROTO_RESOURCE "Include resource.proto"        "Yes")
+option(FLUENT_PROTO_TRACE    "Include trace.proto"           "Yes")
+option(FLUENT_PROTO_LOGS     "Include logs.proto"            "Yes")
+option(FLUENT_PROTO_METRICS  "Inlcude metrics.proto"         "Yes")
+option(FLUENT_PROTO_PROFILES "Includes profiles proto files" "Yes")
+option(FLUENT_PROTO_EXAMPLES "Add example programs"          "Yes")
 
 if(FLUENT_PROTO_REGENERATE AND (NOT PROTOBUF_C_SOURCE_DIR OR NOT OTEL_PROTO_DIR))
 	if (NOT PROTOBUF_C_SOURCE_DIR)
@@ -86,12 +87,12 @@ if (FLUENT_PROTO_REGENERATE)
 		set(proto_file "${OTEL_PROTO_DIR}/opentelemetry/proto/logs/v1/logs.proto")
 		execute_process(COMMAND ${PROTOC_BIN} ${PROTOC_ARG_OUT} ${PROTOC_ARG_PATH} ${proto_file})
 		include_directories(${PROJECT_BINARY_DIR}/opentelemetry/proto/logs/v1/)
-		FLUENT_OTEL_DEFINITION(FLUENT_OTEL_HAVE_LOGS)
 
 		message(STATUS "processing logs_service.proto")
 		set(proto_file "${OTEL_PROTO_DIR}/opentelemetry/proto/collector/logs/v1/logs_service.proto")
 		execute_process(COMMAND ${PROTOC_BIN} ${PROTOC_ARG_OUT} ${PROTOC_ARG_PATH} ${proto_file})
 		include_directories(${PROJECT_BINARY_DIR}/opentelemetry/proto/collector/logs/v1/)
+
 		FLUENT_OTEL_DEFINITION(FLUENT_OTEL_HAVE_LOGS)
 	endif()
 
@@ -99,13 +100,26 @@ if (FLUENT_PROTO_REGENERATE)
 		message(STATUS "processing metrics.proto")
 		set(proto_file "${OTEL_PROTO_DIR}/opentelemetry/proto/metrics/v1/metrics.proto")
 		execute_process(COMMAND ${PROTOC_BIN} ${PROTOC_ARG_OUT} ${PROTOC_ARG_PATH} ${proto_file})
-		include_directories(${PROJECT_BINARY_DIR}/opentelemetry/proto/metrics/v1/)
 
 		message(STATUS "processing metrics_service.proto")
 		set(proto_file "${OTEL_PROTO_DIR}/opentelemetry/proto/collector/metrics/v1/metrics_service.proto")
 		execute_process(COMMAND ${PROTOC_BIN} ${PROTOC_ARG_OUT} ${PROTOC_ARG_PATH} ${proto_file})
-		include_directories(${PROJECT_BINARY_DIR}/opentelemetry/proto/collector/logs/v1/)
+
+		include_directories(${PROJECT_BINARY_DIR}/opentelemetry/proto/metrics/v1/)
 		FLUENT_OTEL_DEFINITION(FLUENT_OTEL_HAVE_METRICS)
+	endif()
+
+	if (FLUENT_PROTO_PROFILES)
+		message(STATUS "processing profiles.proto")
+		set(proto_file "${OTEL_PROTO_DIR}/opentelemetry/proto/profiles/v1development/profiles.proto")
+		execute_process(COMMAND ${PROTOC_BIN} ${PROTOC_ARG_OUT} ${PROTOC_ARG_PATH} ${proto_file})
+
+		message(STATUS "processing pprofextended.proto")
+		set(proto_file "${OTEL_PROTO_DIR}/opentelemetry/proto/profiles/v1development/pprofextended.proto")
+		execute_process(COMMAND ${PROTOC_BIN} ${PROTOC_ARG_OUT} ${PROTOC_ARG_PATH} ${proto_file})
+
+		include_directories(${PROJECT_BINARY_DIR}/opentelemetry/proto/profiles/v1development/)
+		FLUENT_OTEL_DEFINITION(FLUENT_OTEL_HAVE_PROFILES)
 	endif()
 
 	configure_file(

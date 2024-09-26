@@ -585,16 +585,16 @@ const ProtobufCEnumDescriptor opentelemetry__proto__logs__v1__severity_number__d
 };
 static const ProtobufCEnumValue opentelemetry__proto__logs__v1__log_record_flags__enum_values_by_number[2] =
 {
-  { "LOG_RECORD_FLAG_UNSPECIFIED", "OPENTELEMETRY__PROTO__LOGS__V1__LOG_RECORD_FLAGS__LOG_RECORD_FLAG_UNSPECIFIED", 0 },
-  { "LOG_RECORD_FLAG_TRACE_FLAGS_MASK", "OPENTELEMETRY__PROTO__LOGS__V1__LOG_RECORD_FLAGS__LOG_RECORD_FLAG_TRACE_FLAGS_MASK", 255 },
+  { "LOG_RECORD_FLAGS_DO_NOT_USE", "OPENTELEMETRY__PROTO__LOGS__V1__LOG_RECORD_FLAGS__LOG_RECORD_FLAGS_DO_NOT_USE", 0 },
+  { "LOG_RECORD_FLAGS_TRACE_FLAGS_MASK", "OPENTELEMETRY__PROTO__LOGS__V1__LOG_RECORD_FLAGS__LOG_RECORD_FLAGS_TRACE_FLAGS_MASK", 255 },
 };
 static const ProtobufCIntRange opentelemetry__proto__logs__v1__log_record_flags__value_ranges[] = {
 {0, 0},{255, 1},{0, 2}
 };
 static const ProtobufCEnumValueIndex opentelemetry__proto__logs__v1__log_record_flags__enum_values_by_name[2] =
 {
-  { "LOG_RECORD_FLAG_TRACE_FLAGS_MASK", 1 },
-  { "LOG_RECORD_FLAG_UNSPECIFIED", 0 },
+  { "LOG_RECORD_FLAGS_DO_NOT_USE", 0 },
+  { "LOG_RECORD_FLAGS_TRACE_FLAGS_MASK", 1 },
 };
 const ProtobufCEnumDescriptor opentelemetry__proto__logs__v1__log_record_flags__descriptor =
 {
