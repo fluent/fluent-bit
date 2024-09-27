@@ -155,7 +155,7 @@ static int glob(const char *path,
     return result;
 }
 
-static int is_directory(char* path, struct stat* fs_entry_metadata)
+static int is_directory(char *path, struct stat *fs_entry_metadata)
 {
     return (fs_entry_metadata->st_mode & S_IFDIR != 0);
 }
