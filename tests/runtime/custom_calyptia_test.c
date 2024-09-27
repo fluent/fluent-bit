@@ -1,6 +1,7 @@
 /* -*- Mode: C; tab-width: 4; indent-tabs-mode: nil; c-basic-offset: 4 -*- */
 
 #include <fluent-bit.h>
+#include <fluent-bit/flb_scheduler.h>
 #include <fluent-bit/flb_custom.h>
 #include "flb_tests_runtime.h"
 
@@ -17,6 +18,8 @@ void flb_custom_calyptia_pipeline_config_get_test()
     flb_sds_t cfg;
 
     ctx = flb_create();
+    flb_sched_ctx_init();
+
     flb_service_set(ctx, "flush", "1", "grace", "1", NULL);
 
     in_ffd_dummy = flb_input(ctx, (char *) "dummy", NULL);
@@ -36,7 +39,7 @@ void flb_custom_calyptia_pipeline_config_get_test()
 
     calyptia = flb_custom_new(ctx->config, (char *)"calyptia", NULL);
     TEST_CHECK(calyptia != NULL);
-    flb_custom_set_property(calyptia, "api_key", "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA");    
+    flb_custom_set_property(calyptia, "api_key", "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA");
     flb_custom_set_property(calyptia, "log_level", "debug");
     flb_custom_set_property(calyptia, "log_level", "7DDD2941-3ED6-4B8C-9F84-DD04C4A018A4");
     flb_custom_set_property(calyptia, "add_label", "pipeline_id 7DDD2941-3ED6-4B8C-9F84-DD04C4A018A4");
