@@ -274,6 +274,9 @@ struct flb_config *flb_config_init()
         }
     }
 
+    /* Routing */
+    flb_routes_mask_set_size(1, config);
+
     config->cio          = NULL;
     config->storage_path = NULL;
     config->storage_input_plugin = NULL;
@@ -546,6 +549,8 @@ void flb_config_exit(struct flb_config *config)
         mk_list_del(&cf->_head);
         flb_cf_destroy(cf);
     }
+
+    flb_routes_empty_mask_destroy(config);
 
     flb_free(config);
 }

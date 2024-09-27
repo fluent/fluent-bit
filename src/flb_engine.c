@@ -771,6 +771,13 @@ int flb_engine_start(struct flb_config *config)
         return -1;
     }
 
+    ret = flb_routes_mask_set_size(mk_list_size(&config->outputs), config);
+
+    if (ret != 0) {
+        flb_error("[engine] routing mask dimensioning failed");
+        return -1;
+    }
+    
     /* Initialize custom plugins */
     ret = flb_custom_init_all(config);
     if (ret == -1) {
