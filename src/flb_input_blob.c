@@ -190,7 +190,7 @@ int flb_input_blob_file_register(struct flb_input_instance *ins,
         return -1;
     }
 
-    ret = flb_log_event_encoder_append_body_cstring(encoder, flb_input_name(ins));
+    ret = flb_log_event_encoder_append_body_cstring(encoder, (char *) flb_input_name(ins));
     if (ret != FLB_EVENT_ENCODER_SUCCESS) {
         flb_error("[blob file registration] could not append source plugin name");
         flb_log_event_encoder_reset(encoder);
