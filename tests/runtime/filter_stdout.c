@@ -1,6 +1,8 @@
 /* -*- Mode: C; tab-width: 4; indent-tabs-mode: nil; c-basic-offset: 4 -*- */
 
 #include <fluent-bit.h>
+#include <fluent-bit/flb_scheduler.h>
+
 #include "flb_tests_runtime.h"
 
 /* Test data */
@@ -16,7 +18,7 @@ TEST_LIST = {
     {NULL, NULL}
 };
 
-/* 
+/*
  * This test case is to check if fluent-bit allows case-insensitive plugin name.
  * This test is not unique to filter_stdout, but we test here :) ,
  */
@@ -39,6 +41,7 @@ void flb_test_filter_stdout_case_insensitive(void)
      * In general, macOS requests surely initialization for pthread stuffs.
      */
     flb_init_env();
+    flb_sched_ctx_init();
     flb_destroy(ctx);
 }
 
