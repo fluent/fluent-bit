@@ -489,6 +489,7 @@ endif()
 if(FLB_UNICODE_ENCODER)
   enable_language(CXX)
   add_subdirectory(${FLB_PATH_LIB_SIMDUTF} EXCLUDE_FROM_ALL)
+  FLB_DEFINITION(FLB_HAVE_UNICODE_ENCODER)
 endif()
 
 # snappy
