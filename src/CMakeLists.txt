@@ -414,6 +414,14 @@ set(FLB_DEPS
   )
 endif()
 
+# Unicode Encoding
+if(FLB_UNICODE_ENCODER)
+set(FLB_DEPS
+  ${FLB_DEPS}
+  simdutf-static
+  )
+endif()
+
 # AWS specific
 if(FLB_AWS)
   set(FLB_DEPS
