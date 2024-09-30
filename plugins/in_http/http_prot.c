@@ -1303,6 +1303,10 @@ static int process_payload_ng(flb_sds_t tag,
         type = HTTP_CONTENT_URLENCODED;
     }
 
+    if (strcasecmp(request->content_type, "application/msgpack") == 0) {
+        type = HTTP_CONTENT_MSGPACK;
+    }
+
     if (type == -1) {
         send_response_ng(response, 400, "error: invalid 'Content-Type'\n");
         return -1;
@@ -1322,6 +1326,13 @@ static int process_payload_ng(flb_sds_t tag,
         payload = (char *) request->body;
         if (payload) {
             return parse_payload_urlencoded(ctx, tag, payload, cfl_sds_len(payload));
+        }
+    }
+    else if (type == HTTP_CONTENT_MSGPACK) {
+        ctx = (struct flb_http *) request->stream->user_data;
+        payload = (char *) request->body;
+        if (payload) {
+            return parse_payload_msgpack(ctx, tag, payload, cfl_sds_len(payload));
         }
     }
 
