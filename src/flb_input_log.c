@@ -54,7 +54,8 @@ static void buffer_entry_destroy(struct buffer_entry *entry) {
 }
 
 static int split_buffer_entry(struct buffer_entry *entry,
-                              struct mk_list *entries)
+                              struct mk_list *entries,
+                              int buf_entry_max_size)
 {
     int ret;
     int encoder_result;
@@ -114,7 +115,7 @@ static int split_buffer_entry(struct buffer_entry *entry,
             continue;
         }
 
-        if (log_encoder.output_length >= FLB_INPUT_CHUNK_FS_MAX_SIZE) {
+        if (log_encoder.output_length >= buf_entry_max_size) {
             tmp_encoder_buf_size = log_encoder.output_length;
             tmp_encoder_buf = log_encoder.output_buffer;
             flb_log_event_encoder_claim_internal_buffer_ownership(&log_encoder);
@@ -191,13 +192,14 @@ static int input_log_append(struct flb_input_instance *ins,
     if (buf_size > FLB_INPUT_CHUNK_FS_MAX_SIZE) {
         mk_list_init(&buffers);
         start_buffer = new_buffer_entry(buf, buf_size);
-        split_buffer_entry(start_buffer, &buffers);
+        split_buffer_entry(start_buffer, &buffers, ins->config->storage_chunk_max_size);
         flb_free(start_buffer);
         mk_list_foreach_safe(head, tmp, &buffers) {
             iter_buffer = mk_list_entry(head, struct buffer_entry, _head);
             records = flb_mp_count(iter_buffer->buf, iter_buffer->buf_size);
             ret = flb_input_chunk_append_raw(ins, FLB_INPUT_LOGS, records,
-                                            tag, tag_len, iter_buffer->buf, iter_buffer->buf_size);
+                                            tag, tag_len,
+                                            iter_buffer->buf, iter_buffer->buf_size);
             buffer_entry_destroy(iter_buffer);
         }
     } else {
