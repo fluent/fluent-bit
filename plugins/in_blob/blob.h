@@ -73,6 +73,7 @@ struct blob_ctx {
 
     /* config map options */
     flb_sds_t path;
+    flb_sds_t exclude_pattern;
     flb_sds_t database_file;
     time_t scan_refresh_interval;
 
