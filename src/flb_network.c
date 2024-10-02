@@ -1770,10 +1770,10 @@ flb_sockfd_t flb_net_accept(flb_sockfd_t server_fd)
      */
 
 #ifdef FLB_HAVE_ACCEPT4
-    remote_fd = accept4(server_fd, &sock_addr, &socket_size,
+    remote_fd = accept4(server_fd, (struct sockaddr*)&sock_addr, &socket_size,
                         SOCK_NONBLOCK | SOCK_CLOEXEC);
 #else
-    remote_fd = accept(server_fd, &sock_addr, &socket_size);
+    remote_fd = accept(server_fd, (struct sockaddr*)&sock_addr, &socket_size);
     flb_net_socket_nonblocking(remote_fd);
 #endif
 
