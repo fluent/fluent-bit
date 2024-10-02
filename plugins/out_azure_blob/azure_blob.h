@@ -108,6 +108,7 @@ struct flb_azure_blob {
     sqlite3_stmt *stmt_delete_file;
     sqlite3_stmt *stmt_abort_file;
     sqlite3_stmt *stmt_get_file;
+    sqlite3_stmt *stmt_update_file_destination;
     sqlite3_stmt *stmt_update_file_delivery_attempt_count;
     sqlite3_stmt *stmt_set_file_aborted_state;
     sqlite3_stmt *stmt_get_next_aborted_file;
