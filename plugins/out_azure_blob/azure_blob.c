@@ -668,7 +668,7 @@ static int process_blob_chunk(struct flb_azure_blob *ctx, struct flb_event_chunk
             continue;
         }
 
-        ret = azb_db_file_insert(ctx, source, file_path, file_size);
+        ret = azb_db_file_insert(ctx, source, ctx->endpoint, file_path, file_size);
         if (ret == -1) {
             flb_plg_error(ctx->ins, "cannot insert blob file into database: %s (size=%lu)",
                           file_path, file_size);
@@ -708,6 +708,7 @@ static void cb_azb_blob_file_upload(struct flb_config *config, void *out_context
     uint64_t file_delivery_attempts;
     off_t offset_start;
     off_t offset_end;
+    cfl_sds_t file_destination = NULL;
     cfl_sds_t file_path = NULL;
     cfl_sds_t part_ids = NULL;
     cfl_sds_t source = NULL;
@@ -876,7 +877,8 @@ static void cb_azb_blob_file_upload(struct flb_config *config, void *out_context
                                     &offset_start, &offset_end,
                                     &part_delivery_attempts,
                                     &file_delivery_attempts,
-                                    &file_path);
+                                    &file_path,
+                                    &file_destination);
     if (ret == -1) {
         flb_plg_error(ctx->ins, "cannot get next blob file part");
         info->active_upload = FLB_FALSE;
@@ -891,6 +893,25 @@ static void cb_azb_blob_file_upload(struct flb_config *config, void *out_context
         /* just continue, the row info was retrieved */
     }
 
+    if (strcmp(file_destination, ctx->endpoint) != 0) {
+        flb_plg_info(ctx->ins,
+                     "endpoint change detected, restarting file : %s",
+                     file_path);
+
+        info->active_upload = FLB_FALSE;
+
+        /* we need to set the aborted state flag to wait for existing uploads
+         * to finish and then wipe the slate and start again but we don't want
+         * to increment the failure count in this case.
+         */
+        azb_db_file_set_aborted_state(ctx, file_id, file_path, 1);
+
+        cfl_sds_destroy(file_path);
+        cfl_sds_destroy(file_destination);
+
+        flb_sched_timer_cb_coro_return();
+    }
+
     /* since this is the first part we want to increment the files
      * delivery attempt counter.
      */
@@ -902,20 +923,31 @@ static void cb_azb_blob_file_upload(struct flb_config *config, void *out_context
     ret = flb_utils_read_file_offset(file_path, offset_start, offset_end, &out_buf, &out_size);
     if (ret == -1) {
         flb_plg_error(ctx->ins, "cannot read file part %s", file_path);
-        cfl_sds_destroy(file_path);
+
         info->active_upload = FLB_FALSE;
+
+        cfl_sds_destroy(file_path);
+        cfl_sds_destroy(file_destination);
+
         flb_sched_timer_cb_coro_return();
     }
 
     azb_db_file_part_delivery_attempts(ctx, file_id, part_id, ++part_delivery_attempts);
 
     flb_plg_debug(ctx->ins, "sending part file %s (id=%" PRIu64 " part_id=%" PRIu64 ")", file_path, id, part_id);
+
     ret = send_blob(config, NULL, ctx, FLB_EVENT_TYPE_BLOBS,
                     AZURE_BLOB_BLOCKBLOB, file_path, part_id, NULL, 0, out_buf, out_size);
+
     if (ret == FLB_OK) {
         ret = azb_db_file_part_uploaded(ctx, id);
+
         if (ret == -1) {
             info->active_upload = FLB_FALSE;
+
+            cfl_sds_destroy(file_path);
+            cfl_sds_destroy(file_destination);
+
             flb_sched_timer_cb_coro_return();
         }
     }
@@ -926,14 +958,16 @@ static void cb_azb_blob_file_upload(struct flb_config *config, void *out_context
             part_delivery_attempts >= ctx->part_delivery_attempt_limit) {
             azb_db_file_set_aborted_state(ctx, file_id, file_path, 1);
         }
-        /* FIXME */
     }
+
     info->active_upload = FLB_FALSE;
 
     if (out_buf) {
         flb_free(out_buf);
     }
+
     cfl_sds_destroy(file_path);
+    cfl_sds_destroy(file_destination);
 
     flb_sched_timer_cb_coro_return();
 }
