@@ -48,6 +48,10 @@
 #include "win32.h"
 #endif
 
+#ifdef FLB_HAVE_UNICODE_ENCODER
+#include <fluent-bit/simdutf/flb_simdutf_connector.h>
+#endif
+
 #include <cfl/cfl.h>
 
 static inline void consume_bytes(char *buf, int bytes, int length)
@@ -440,6 +444,10 @@ static int process_content(struct flb_tail_file *file, size_t *bytes)
     time_t now = time(NULL);
     struct flb_time out_time = {0};
     struct flb_tail_config *ctx;
+#ifdef FLB_HAVE_UNICODE_ENCODER
+    char *decoded = NULL;
+    size_t decoded_len;
+#endif
 
     ctx = (struct flb_tail_config *) file->config;
 
@@ -508,6 +516,24 @@ static int process_content(struct flb_tail_file *file, size_t *bytes)
         line = data;
         line_len = len - crlf;
         repl_line = NULL;
+
+#ifdef FLB_HAVE_UNICODE_ENCODER
+        if (ctx->preferred_input_encoding != FLB_SIMDUTF_ENCODING_TYPE_UNSPECIFIED) {
+            decoded = NULL;
+            ret = flb_simdutf_connector_convert_from_unicode(ctx->preferred_input_encoding,
+                                                             line, line_len, &decoded, &decoded_len);
+            if (ret == FLB_SIMDUTF_CONNECTOR_CONVERT_OK) {
+                line = decoded;
+                line_len  = decoded_len;
+            } else if (ret == FLB_SIMDUTF_CONNECTOR_CONVERT_NOP) {
+                flb_plg_debug(ctx->ins, "nothing to convert encoding '%.*s'", line_len, line);
+            }
+            else {
+                flb_plg_error(ctx->ins, "encoding failed '%.*s'", line_len, line);
+                goto go_next;
+            }
+        }
+#endif
 
         if (ctx->ml_ctx) {
             ret = flb_ml_append_text(ctx->ml_ctx,
@@ -601,6 +627,12 @@ static int process_content(struct flb_tail_file *file, size_t *bytes)
         lines++;
         file->parsed = 0;
         file->last_processed_bytes += processed_bytes;
+#ifdef FLB_HAVE_UNICODE_ENCODER
+        if (decoded) {
+            flb_free(decoded);
+            decoded = NULL;
+        }
+#endif
     }
     file->parsed = file->buf_len;
 
