@@ -36,6 +36,10 @@
 #include "tail_multiline.h"
 #endif
 
+#ifdef FLB_HAVE_UNICODE_ENCODER
+#include <fluent-bit/simdutf/flb_simdutf_connector.h>
+#endif
+
 static int multiline_load_parsers(struct flb_tail_config *ctx)
 {
     struct mk_list *head;
@@ -94,6 +98,9 @@ struct flb_tail_config *flb_tail_config_create(struct flb_input_instance *ins,
     ctx->skip_long_lines = FLB_FALSE;
 #ifdef FLB_HAVE_SQLDB
     ctx->db_sync = 1;  /* sqlite sync 'normal' */
+#endif
+#ifdef FLB_HAVE_UNICODE_ENCODER
+    ctx->preferred_input_encoding = FLB_SIMDUTF_ENCODING_TYPE_UNSPECIFIED;
 #endif
 
     /* Load the config map */
@@ -177,6 +184,24 @@ struct flb_tail_config *flb_tail_config_create(struct flb_input_instance *ins,
         flb_free(ctx);
         return NULL;
     }
+
+#ifdef FLB_HAVE_UNICODE_ENCODER
+    tmp = flb_input_get_property("unicode.encoding", ins);
+    if (tmp) {
+        if (strcasecmp(tmp, "auto") == 0) {
+            ctx->preferred_input_encoding = FLB_SIMDUTF_ENCODING_TYPE_UNICODE_AUTO;
+        }
+        else if (strcasecmp(tmp, "utf-16le") == 0) {
+            ctx->preferred_input_encoding = FLB_SIMDUTF_ENCODING_TYPE_UTF16_LE;
+        }
+        else if (strcasecmp(tmp, "utf-16be") == 0) {
+            ctx->preferred_input_encoding = FLB_SIMDUTF_ENCODING_TYPE_UTF16_BE;
+        }
+        else {
+            flb_plg_error(ctx->ins, "invalid encoding 'unicode.encoding' value");
+        }
+    }
+#endif
 
 #ifdef FLB_HAVE_PARSER
     /* Config: multi-line support */
