@@ -1785,14 +1785,16 @@ int opentelemetry_prot_handle(struct flb_opentelemetry *ctx, struct http_conn *c
     int len;
     char *uri;
     char *qs;
+    char *out_chunked = NULL;
+    size_t out_chunked_size = 0;
     off_t diff;
-    flb_sds_t tag;
-    struct mk_http_header *header;
-    char *original_data;
-    size_t original_data_size;
-    char *uncompressed_data;
-    size_t uncompressed_data_size;
     size_t tag_len;
+    flb_sds_t tag;
+    char *original_data = NULL;
+    size_t original_data_size;
+    char *uncompressed_data = NULL;
+    size_t uncompressed_data_size;
+    struct mk_http_header *header;
 
     if (request->uri.data[0] != '/') {
         send_response(conn, 400, "error: invalid request\n");
@@ -1902,6 +1904,32 @@ int opentelemetry_prot_handle(struct flb_opentelemetry *ctx, struct http_conn *c
         request->data.len = uncompressed_data_size;
     }
 
+    /* check if the request comes with chunked transfer encoding */
+    if (mk_http_parser_is_content_chunked(&session->parser)) {
+        out_chunked = NULL;
+        out_chunked_size = 0;
+
+        /* decode the chunks */
+        ret = mk_http_parser_chunked_decode(&session->parser,
+                                            request->data.data,
+                                            request->data.len,
+                                            &out_chunked,
+                                            &out_chunked_size);
+        if (ret == -1) {
+            flb_sds_destroy(tag);
+            mk_mem_free(uri);
+            send_response(conn, 400, "error: invalid chunked data\n");
+            if (uncompressed_data != NULL) {
+                flb_free(uncompressed_data);
+            }
+            return -1;
+        }
+        else {
+            request->data.data = out_chunked;
+            request->data.len = out_chunked_size;
+        }
+    }
+
     if (strcmp(uri, "/v1/metrics") == 0) {
         ret = process_payload_metrics(ctx, conn, tag, tag_len, session, request);
     }
@@ -1918,6 +1946,10 @@ int opentelemetry_prot_handle(struct flb_opentelemetry *ctx, struct http_conn *c
 
     request->data.data = original_data;
     request->data.len = original_data_size;
+
+    if (out_chunked != NULL) {
+        mk_mem_free(out_chunked);
+    }
 
     mk_mem_free(uri);
     flb_sds_destroy(tag);
@@ -2423,7 +2455,7 @@ int opentelemetry_prot_handle_ng(struct flb_http_request *request,
     int                             grpc_request;
     struct flb_opentelemetry       *context;
     int                             result = -1;
-    flb_sds_t                       tag;
+    flb_sds_t                       tag = NULL;
 
     context = (struct flb_opentelemetry *) response->stream->user_data;
 
