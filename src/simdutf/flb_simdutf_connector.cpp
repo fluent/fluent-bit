@@ -18,9 +18,8 @@
  */
 
 #include <simdutf.h>
-#include <uchar.h>
-#include <memory.h>
 #include <fluent-bit/simdutf/flb_simdutf_connector.h>
+#include <memory.h>
 #include <memory>
 
 int flb_simdutf_connector_utf8_length_from_utf16le(const char16_t *buf, size_t len)

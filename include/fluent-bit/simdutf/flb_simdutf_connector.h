@@ -20,11 +20,18 @@
 #ifndef FLB_SIMDUTF_CONNECTOR_H
 #define FLB_SIMDUTF_CONNECTOR_H
 
-#include <uchar.h>
-
 #ifdef __cplusplus
 extern "C" {
 #endif /* __cplusplus */
+
+#ifdef __APPLE__
+#include <stdint.h>
+#include <stddef.h>
+typedef int_least16_t CHAR16_T;
+#else
+#include <uchar.h>
+typedef char16_t CHAR16_T;
+#endif
 
 #define FLB_SIMDUTF_CONNECTOR_CONVERT_OK           0
 #define FLB_SIMDUTF_CONNECTOR_CONVERT_NOP         -1
@@ -58,20 +65,20 @@ enum flb_simdutf_error_code {
     FLB_SIMDUTF_ERROR_CODE_OTHER,
 };
 
-int flb_simdutf_connector_utf8_length_from_utf16le(const char16_t *buf, size_t len);
-int flb_simdutf_connector_utf8_length_from_utf16be(const char16_t *buf, size_t len);
-int flb_simdutf_connector_utf8_length_from_utf16(const char16_t *buf, size_t len);
+int flb_simdutf_connector_utf8_length_from_utf16le(const CHAR16_T *buf, size_t len);
+int flb_simdutf_connector_utf8_length_from_utf16be(const CHAR16_T *buf, size_t len);
+int flb_simdutf_connector_utf8_length_from_utf16(const CHAR16_T *buf, size_t len);
 int flb_simdutf_connector_validate_utf8(const char *buf, size_t len);
-int flb_simdutf_connector_validate_utf16le(const char16_t *buf, size_t len);
-int flb_simdutf_connector_validate_utf16be(const char16_t *buf, size_t len);
-int flb_simdutf_connector_validate_utf16(const char16_t *buf, size_t len);
-int flb_simdutf_connector_convert_utf16le_to_utf8(const char16_t *buf, size_t len,
+int flb_simdutf_connector_validate_utf16le(const CHAR16_T *buf, size_t len);
+int flb_simdutf_connector_validate_utf16be(const CHAR16_T *buf, size_t len);
+int flb_simdutf_connector_validate_utf16(const CHAR16_T *buf, size_t len);
+int flb_simdutf_connector_convert_utf16le_to_utf8(const CHAR16_T *buf, size_t len,
                                                   char **utf8_output, size_t *out_size);
-int flb_simdutf_connector_convert_utf16be_to_utf8(const char16_t *buf, size_t len,
+int flb_simdutf_connector_convert_utf16be_to_utf8(const CHAR16_T *buf, size_t len,
                                                   char **utf8_output, size_t *out_size);
-int flb_simdutf_connector_convert_utf16_to_utf8(const char16_t *buf, size_t len,
+int flb_simdutf_connector_convert_utf16_to_utf8(const CHAR16_T *buf, size_t len,
                                                 char **utf8_output, size_t *out_size);
-void flb_simdutf_connector_change_endianness_utf16(const char16_t *input, size_t length, char16_t *output);
+void flb_simdutf_connector_change_endianness_utf16(const CHAR16_T *input, size_t length, CHAR16_T *output);
 int flb_simdutf_connector_detect_encodings(const char *input, size_t length);
 int flb_simdutf_connector_convert_from_unicode(int preferred_encoding,
                                                const char *input, size_t length,
