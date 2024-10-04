@@ -161,7 +161,6 @@ static int parse_storage_resources(struct flb_azure_kusto *ctx, struct flb_confi
     jsmn_parser parser;
     jsmntok_t *t;
     jsmntok_t *tokens = NULL;
-    //int tok_size = 100;
     int ret = -1;
     int i;
     int blob_count = 0;
@@ -199,10 +198,15 @@ static int parse_storage_resources(struct flb_azure_kusto *ctx, struct flb_confi
     }
 
     jsmn_init(&parser);
-    //tokens = flb_calloc(1, sizeof(jsmntok_t) * tok_size);
 
     /* Dynamically allocate memory for tokens based on response length */
     tokens = flb_calloc(1, sizeof(jsmntok_t) * (flb_sds_len(response)));
+
+    if (!tokens) {
+        flb_errno();  /* Log the error using flb_errno() */
+        flb_plg_error(ctx->ins, "failed to allocate memory for tokens");
+        return -1;
+    }
 
     if (tokens) {
         ret = jsmn_parse(&parser, response, flb_sds_len(response), tokens, flb_sds_len(response));
@@ -427,12 +431,12 @@ static flb_sds_t parse_ingestion_identity_token(struct flb_azure_kusto *ctx,
  * in kusto DM for .get ingestion resources upon expiry
  * */
 int azure_kusto_generate_random_integer() {
-    // Seed the random number generator
+    /* Seed the random number generator */
     int pid = getpid();
     unsigned long address = (unsigned long)&address;
     unsigned int seed = pid ^ (address & 0xFFFFFFFF) * time(0);
     srand(seed);
-    // Generate a random integer in the range [-600, 600]
+    /* Generate a random integer in the range [-600, 600] */
     int random_integer = rand() % 1201 - 600;
     return random_integer;
 }
