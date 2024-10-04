@@ -29,6 +29,7 @@ static void splunk_conn_request_init(struct mk_http_session *session,
 
 static int splunk_conn_event(void *data)
 {
+    int ret;
     int status;
     size_t size;
     ssize_t available;
@@ -95,7 +96,11 @@ static int splunk_conn_event(void *data)
 
         if (status == MK_HTTP_PARSER_OK) {
             /* Do more logic parsing and checks for this request */
-            splunk_prot_handle(ctx, conn, &conn->session, &conn->request);
+            ret = splunk_prot_handle(ctx, conn, &conn->session, &conn->request);
+            if (ret == -1) {
+                splunk_conn_del(conn);
+                return -1;
+            }
 
             /* Evict the processed request from the connection buffer and reinitialize
              * the HTTP parser.
