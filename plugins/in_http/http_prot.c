@@ -276,10 +276,11 @@ int process_pack(struct flb_http *ctx, flb_sds_t tag, char *buf, size_t size)
 
     msgpack_unpacked_init(&result);
     while (msgpack_unpack_next(&result, buf, size, &off) == MSGPACK_UNPACK_SUCCESS) {
+        obj = &result.data;
+
         if (result.data.type == MSGPACK_OBJECT_MAP) {
             tag_from_record = NULL;
             if (ctx->tag_key) {
-                obj = &result.data;
                 tag_from_record = tag_key(ctx, obj);
             }
 
@@ -301,7 +302,6 @@ int process_pack(struct flb_http *ctx, flb_sds_t tag, char *buf, size_t size)
             flb_log_event_encoder_reset(&ctx->log_encoder);
         }
         else if (result.data.type == MSGPACK_OBJECT_ARRAY) {
-            obj = &result.data;
             for (i = 0; i < obj->via.array.size; i++) {
                 record = obj->via.array.ptr[i];
 
@@ -523,8 +523,8 @@ static int process_payload(struct flb_http *ctx, struct http_conn *conn,
         return -1;
     }
 
-    if ((header->val.len == 16 && strncasecmp(header->val.data, "application/json", 16) == 0) ||
-        (header->val.len > 16 && (strncasecmp(header->val.data, "application/json ", 17) == 0) || 
+    if (((header->val.len == 16 && strncasecmp(header->val.data, "application/json", 16) == 0)) ||
+        ((header->val.len > 16 && (strncasecmp(header->val.data, "application/json ", 17) == 0)) ||
         strncasecmp(header->val.data, "application/json;", 17) == 0)) {
         type = HTTP_CONTENT_JSON;
     }
