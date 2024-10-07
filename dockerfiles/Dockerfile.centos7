@@ -23,6 +23,8 @@ RUN sed -i -e "s/^mirrorlist=http:\/\/mirrorlist.centos.org/#mirrorlist=http:\/\
 COPY . /src/
 WORKDIR /src/build
 
+# /opt/rh/devtoolset-8/enable is from centos-release-scl package.
+# hadolint ignore=SC1091
 RUN source /opt/rh/devtoolset-8/enable && \
     cmake3 -DCMAKE_INSTALL_PREFIX=/opt/fluent-bit/ -DCMAKE_INSTALL_SYSCONFDIR=/etc/ \
     -DFLB_RELEASE=On -DFLB_TRACE=On \
