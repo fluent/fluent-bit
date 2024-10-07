@@ -199,6 +199,8 @@ struct flb_tail_config *flb_tail_config_create(struct flb_input_instance *ins,
         }
         else {
             flb_plg_error(ctx->ins, "invalid encoding 'unicode.encoding' value");
+            flb_free(ctx);
+            return NULL;
         }
     }
 #endif
