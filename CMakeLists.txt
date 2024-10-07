@@ -365,6 +365,9 @@ endif()
 
 if(FLB_COVERAGE)
   set(CMAKE_C_FLAGS "${CMAKE_C_FLAGS} -g -O0 --coverage -fprofile-arcs -ftest-coverage")
+  if (FLB_UNICODE_ENCODER)
+    set(CMAKE_CXX_FLAGS "${CMAKE_C_FLAGS} -g -O0 --coverage -fprofile-arcs -ftest-coverage")
+  endif()
   set(CMAKE_BUILD_TYPE "Debug")
 endif()
 
