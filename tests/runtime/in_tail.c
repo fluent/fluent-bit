@@ -719,6 +719,20 @@ void flb_test_in_tail_utf16be_j()
                     "Unicode.Encoding", "auto",
                     NULL);
 }
+
+void flb_test_in_tail_utf16le_subdivision_flags()
+{
+    do_test_unicode("tail", "unicode_subdivision_flags", 1,
+                    "Unicode.Encoding", "auto",
+                    NULL);
+}
+
+void flb_test_in_tail_utf16be_subdivision_flags()
+{
+    do_test_unicode("tail", "unicode_subdivision_flags_be", 1,
+                    "Unicode.Encoding", "auto",
+                    NULL);
+}
 #endif
 
 int write_long_lines(int fd) {
@@ -2147,6 +2161,8 @@ TEST_LIST = {
     {"utf16be_c", flb_test_in_tail_utf16be_c},
     {"utf16le_j", flb_test_in_tail_utf16le_j},
     {"utf16be_j", flb_test_in_tail_utf16be_j},
+    {"utf16le_subdivision_flags", flb_test_in_tail_utf16le_subdivision_flags},
+    {"utf16be_subdivision_flags", flb_test_in_tail_utf16be_subdivision_flags},
 #endif
 
 #ifdef in_tail
