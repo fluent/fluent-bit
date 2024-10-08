@@ -304,19 +304,6 @@ void flb_test_input_chunk_dropping_chunks()
         TEST_CHECK(ret == 0);
     }
 
-    /* FORCE clean up test tasks*/
-    mk_list_foreach_safe(head, tmp, &i_ins->tasks) {
-        task = mk_list_entry(head, struct flb_task, _head);
-        flb_info("[task] cleanup test task");
-        flb_task_destroy(task, FLB_TRUE);
-    }
-
-    /* clean up test chunks */
-    mk_list_foreach_safe(head, tmp, &i_ins->chunks) {
-        ic = mk_list_entry(head, struct flb_input_chunk, _head);
-        flb_input_chunk_destroy(ic, FLB_TRUE);
-    }
-
     flb_time_msleep(2100);
     flb_stop(ctx);
     flb_destroy(ctx);
