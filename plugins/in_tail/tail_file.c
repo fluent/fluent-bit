@@ -525,7 +525,8 @@ static int process_content(struct flb_tail_file *file, size_t *bytes)
             if (ret == FLB_SIMDUTF_CONNECTOR_CONVERT_OK) {
                 line = decoded;
                 line_len  = decoded_len;
-            } else if (ret == FLB_SIMDUTF_CONNECTOR_CONVERT_NOP) {
+            }
+            else if (ret == FLB_SIMDUTF_CONNECTOR_CONVERT_NOP) {
                 flb_plg_debug(ctx->ins, "nothing to convert encoding '%.*s'", line_len, line);
             }
             else {
