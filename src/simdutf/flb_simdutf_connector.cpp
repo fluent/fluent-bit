@@ -155,8 +155,7 @@ int flb_simdutf_connector_convert_from_unicode(int preferred_encoding,
                                                const char *input, size_t length,
                                                char **output, size_t *out_size)
 {
-    int len = 0;
-    size_t clen = 0;
+    size_t len = 0;
     size_t i = 0;
     int encoding = 0;
     std::u16string str16;
