@@ -1895,15 +1895,6 @@ int opentelemetry_prot_handle(struct flb_opentelemetry *ctx, struct http_conn *c
     original_data = request->data.data;
     original_data_size = request->data.len;
 
-    ret = opentelemetry_prot_uncompress(session, request,
-                                        &uncompressed_data,
-                                        &uncompressed_data_size);
-
-    if (ret > 0) {
-        request->data.data = uncompressed_data;
-        request->data.len = uncompressed_data_size;
-    }
-
     /* check if the request comes with chunked transfer encoding */
     if (mk_http_parser_is_content_chunked(&session->parser)) {
         out_chunked = NULL;
@@ -1911,8 +1902,8 @@ int opentelemetry_prot_handle(struct flb_opentelemetry *ctx, struct http_conn *c
 
         /* decode the chunks */
         ret = mk_http_parser_chunked_decode(&session->parser,
-                                            request->data.data,
-                                            request->data.len,
+                                            conn->buf_data,
+                                            conn->buf_len,
                                             &out_chunked,
                                             &out_chunked_size);
         if (ret == -1) {
@@ -1930,6 +1921,15 @@ int opentelemetry_prot_handle(struct flb_opentelemetry *ctx, struct http_conn *c
         }
     }
 
+    ret = opentelemetry_prot_uncompress(session, request,
+                                        &uncompressed_data,
+                                        &uncompressed_data_size);
+
+    if (ret > 0) {
+        request->data.data = uncompressed_data;
+        request->data.len = uncompressed_data_size;
+    }
+
     if (strcmp(uri, "/v1/metrics") == 0) {
         ret = process_payload_metrics(ctx, conn, tag, tag_len, session, request);
     }
@@ -1940,12 +1940,12 @@ int opentelemetry_prot_handle(struct flb_opentelemetry *ctx, struct http_conn *c
         ret = process_payload_logs(ctx, conn, tag, tag_len, session, request);
     }
 
+    request->data.data = original_data;
+    request->data.len = original_data_size;
+
     if (uncompressed_data != NULL) {
         flb_free(uncompressed_data);
     }
-
-    request->data.data = original_data;
-    request->data.len = original_data_size;
 
     if (out_chunked != NULL) {
         mk_mem_free(out_chunked);
