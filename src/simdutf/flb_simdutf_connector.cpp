@@ -179,7 +179,10 @@ int flb_simdutf_connector_convert_from_unicode(int preferred_encoding,
         if (len % 2) {
             len--;
         }
-        for (i = 0; i < len;) {
+        if (len < 2) {
+            return FLB_SIMDUTF_CONNECTOR_CONVERT_NOP;
+        }
+        for (i = 0 ; i < len;) {
             if (i + 2 > len) {
                 break;
             }
@@ -196,6 +199,9 @@ int flb_simdutf_connector_convert_from_unicode(int preferred_encoding,
         len = length;
         if (len % 2) {
             len--;
+        }
+        if (len < 2) {
+            return FLB_SIMDUTF_CONNECTOR_CONVERT_NOP;
         }
         for (i = 0; i < len;) {
             if (i + 2 > len) {
