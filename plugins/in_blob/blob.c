@@ -33,6 +33,8 @@
 #ifndef FLB_SYSTEM_WINDOWS
 #include <glob.h>
 #include <fnmatch.h>
+#else
+#define strtok_r strtok_s
 #endif
 
 #include <stdio.h>
