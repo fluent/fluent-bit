@@ -45,6 +45,16 @@
 #define MK_HTTP_PARSER_UPGRADE_H2    1
 #define MK_HTTP_PARSER_UPGRADE_H2C   2
 
+/* Transfer encoding */
+#define MK_HTTP_PARSER_TRANSFER_ENCODING_NONE      (0)
+#define MK_HTTP_PARSER_TRANSFER_ENCODING_CHUNKED   (1 << 0)
+#define MK_HTTP_PARSER_TRANSFER_ENCODING_GZIP      (1 << 1)
+
+/* Transfer encoding (almost not used) */
+#define MK_HTTP_PARSER_TRANSFER_ENCODING_COMPRESS  (1 << 2)
+#define MK_HTTP_PARSER_TRANSFER_ENCODING_DEFLATE   (1 << 3)
+#define MK_HTTP_PARSER_TRANSFER_ENCODING_IDENTITY  (1 << 4)
+
 #define MK_HEADER_EXTRA_SIZE        50
 
 /* Request levels
@@ -118,6 +128,7 @@ enum mk_request_headers {
     MK_HEADER_LAST_MODIFIED_SINCE   ,
     MK_HEADER_RANGE                 ,
     MK_HEADER_REFERER               ,
+    MK_HEADER_TRANSFER_ENCODING     ,
     MK_HEADER_UPGRADE               ,
     MK_HEADER_USER_AGENT            ,
     MK_HEADER_SIZEOF                ,
@@ -193,6 +204,21 @@ struct mk_http_parser {
      */
     int                        header_upgrade;
 
+
+    /*
+     * Transfer-Encoding
+     * ------------------
+     *  we support the following values (bitwise):
+     *
+     *  - MK_HTTP_PARSER_TRANSFER_ENCODING_NONE
+     *  - MK_HTTP_PARSER_TRANSFER_ENCODING_CHUNKED
+     *  - MK_HTTP_PARSER_TRANSFER_ENCODING_GZIP
+     *  - MK_HTTP_PARSER_TRANSFER_ENCODING_COMPRESS
+     *  - MK_HTTP_PARSER_TRANSFER_ENCODING_DEFLATE
+     *  - MK_HTTP_PARSER_TRANSFER_ENCODING_IDENTITY
+    */
+    int                       header_transfer_encoding;
+
     /* probable current header, fly parsing */
     int                        header_key;
     int                        header_sep;
@@ -210,6 +236,20 @@ struct mk_http_parser {
 
     /* Extra headers */
     struct mk_http_header      headers_extra[MK_HEADER_EXTRA_SIZE];
+
+
+    /*
+     * total size of bytes received as chunked data; this don't count the
+     * hex strings
+     */
+    size_t chunk_total_size_received;
+
+    /* Transfer chunked encoding: state for active chunk being processed */
+    char *chunk_expected_start;  /* pointer to the expected very first chunk in the payload */
+
+    size_t chunk_expected_size;  /* expected size of a chunk being read */
+    char *chunk_processed_start; /* beginning of a chunk being read */
+    char *chunk_processed_end;   /* last position of a chunk that is complete */
 };
 
 
@@ -333,6 +373,20 @@ static inline void mk_http_parser_init(struct mk_http_parser *p)
     mk_list_init(&p->header_list);
 }
 
+int mk_http_parser(struct mk_http_request *req, struct mk_http_parser *p,
+                   char *buffer, int buf_len, struct mk_server *server);
+
+size_t mk_http_parser_content_length(struct mk_http_parser *p);
+int mk_http_parser_is_content_chunked(struct mk_http_parser *p);
+
+int mk_http_parser_chunked_decode(struct mk_http_parser *p,
+                                  char *buf_request, size_t buf_request_len,
+                                  char **out_buf, size_t *out_buf_size);
+
+int mk_http_parser_chunked_decode_buf(struct mk_http_parser *p,
+                                      char *buf_request, size_t buf_request_len,
+                                      char *out_buf, size_t out_buf_size, size_t *out_buf_len);
+
 static inline int mk_http_parser_more(struct mk_http_parser *p, int len)
 {
     if (abs(len - p->i) - 1 > 0) {
@@ -342,7 +396,34 @@ static inline int mk_http_parser_more(struct mk_http_parser *p, int len)
     return MK_FALSE;
 }
 
-int mk_http_parser(struct mk_http_request *req, struct mk_http_parser *p,
-                   char *buffer, int buf_len, struct mk_server *server);
+/* Returns the full size of the HTTP request in bytes "If" mk_http_parser() has returned MK_HTTP_PARSER_OK */
+static inline size_t mk_http_parser_request_size(struct mk_http_parser *p, char *buf_request, size_t buf_request_len)
+{
+    size_t bytes;
+
+    /*
+     * if the request is chunked encoded, p->i points to the beginning of the last chunk
+     * found, so we need to check if the last chunk is complete, if so we can return the
+     * size of the request
+     */
+    if (mk_http_parser_is_content_chunked(p)) {
+        if (p->chunk_processed_start < buf_request) {
+            return -1;
+        }
+
+        /* Look at the last chunk processed (0\r\n\r\n) */
+        bytes = p->chunk_processed_start - buf_request + 5;
+        if (bytes > buf_request_len) {
+            return -1;
+        }
+        return bytes;
+    }
+    else if (p->header_content_length > 0) {
+        /* p->i points to the last byte after the content body */
+        return p->i;
+    }
+
+    return -1;
+}
 
 #endif /* MK_HTTP_H */

@@ -197,7 +197,7 @@ static void mk_logger_start_worker(void *args)
 
             timeout = clk + mk_logger_timeout;
 
-            flog = open(target, O_WRONLY | O_CREAT | O_CLOEXEC, 0644);
+            flog = open(target, O_WRONLY | O_CREAT | O_CLOEXEC, 0600);
             if (mk_unlikely(flog == -1)) {
                 mk_warn("Could not open logfile '%s' (%s)", target, strerror(errno));
 
@@ -327,7 +327,7 @@ int mk_logger_plugin_init(struct plugin_api **api, char *confdir)
 
     /* Check masterlog */
     if (mk_logger_master_path) {
-        fd = open(mk_logger_master_path, O_WRONLY | O_CREAT | O_CLOEXEC, 0644);
+        fd = open(mk_logger_master_path, O_WRONLY | O_CREAT | O_CLOEXEC, 0600);
         if (fd == -1) {
             mk_err("Could not open/create master logfile %s", mk_logger_master_path);
             exit(EXIT_FAILURE);

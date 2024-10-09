@@ -1150,6 +1150,7 @@ int mk_http_request_end(struct mk_http_session *cs, struct mk_server *server)
         mk_http_parser_init(&cs->parser);
         status = mk_http_parser(sr, &cs->parser, cs->body, cs->body_length,
                                 server);
+
         if (status == MK_HTTP_PARSER_OK) {
             ret = mk_http_request_prepare(cs, sr, server);
             if (ret == MK_EXIT_ABORT) {
@@ -1564,8 +1565,10 @@ int mk_http_sched_read(struct mk_sched_conn *conn,
         else {
             sr = mk_list_entry_first(&cs->request_list, struct mk_http_request, _head);
         }
+
         status = mk_http_parser(sr, &cs->parser, cs->body,
                                 cs->body_length, server);
+
         if (status == MK_HTTP_PARSER_OK) {
             MK_TRACE("[FD %i] HTTP_PARSER_OK", socket);
             if (mk_http_status_completed(cs, conn) == -1) {
