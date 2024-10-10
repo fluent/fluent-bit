@@ -312,7 +312,7 @@ static int process_metrics(struct flb_event_chunk *event_chunk,
         diff = off;
 
         /* concat buffer */
-        flb_sds_cat_safe(&buf, encoded_chunk, flb_sds_len(encoded_chunk));
+        flb_sds_cat_safe(&buf, encoded_chunk, cfl_sds_len(encoded_chunk));
 
         /* release */
         cmt_encode_opentelemetry_destroy(encoded_chunk);
