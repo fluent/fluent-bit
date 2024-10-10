@@ -985,6 +985,78 @@ static void cb_es_flush(struct flb_event_chunk *event_chunk,
     FLB_OUTPUT_RETURN(FLB_RETRY);
 }
 
+static int elasticsearch_response_test(struct flb_config *config,
+                                       void *plugin_context,
+                                       int status,
+                                       const void *data, size_t bytes,
+                                       void **out_data, size_t *out_size)
+{
+    int ret = 0;
+    struct flb_elasticsearch *ctx = plugin_context;
+    struct flb_connection *u_conn;
+    struct flb_http_client *c;
+    size_t b_sent;
+
+    /* Not retrieve upstream connection */
+    u_conn = NULL;
+
+    /* Compose HTTP Client request (dummy client) */
+    c = flb_http_dummy_client(u_conn, FLB_HTTP_POST, ctx->uri,
+                              NULL, 0, NULL, 0, NULL, 0);
+
+    flb_http_buffer_size(c, ctx->buffer_size);
+
+    /* Just stubbing the HTTP responses */
+    flb_http_set_response_test(c, "response", data, bytes, status, NULL, NULL);
+
+    ret = flb_http_do(c, &b_sent);
+    if (ret != 0) {
+        flb_plg_warn(ctx->ins, "http_do=%i URI=%s", ret, ctx->uri);
+        goto error;
+    }
+    if (ret != 0) {
+        flb_plg_warn(ctx->ins, "http_do=%i URI=%s", ret, ctx->uri);
+        goto error;
+    }
+    else {
+        /* The request was issued successfully, validate the 'error' field */
+        flb_plg_debug(ctx->ins, "HTTP Status=%i URI=%s", c->resp.status, ctx->uri);
+        if (c->resp.status != 200 && c->resp.status != 201) {
+            if (c->resp.payload_size > 0) {
+                flb_plg_error(ctx->ins, "HTTP status=%i URI=%s, response:\n%s\n",
+                              c->resp.status, ctx->uri, c->resp.payload);
+            }
+            else {
+                flb_plg_error(ctx->ins, "HTTP status=%i URI=%s",
+                              c->resp.status, ctx->uri);
+            }
+            goto error;
+        }
+
+        if (c->resp.payload_size > 0) {
+            /*
+             * Elasticsearch payload should be JSON, we convert it to msgpack
+             * and lookup the 'error' field.
+             */
+            ret = elasticsearch_error_check(ctx, c);
+        }
+        else {
+            goto error;
+        }
+    }
+
+    /* Cleanup */
+    flb_http_client_destroy(c);
+
+    return ret;
+
+error:
+    /* Cleanup */
+    flb_http_client_destroy(c);
+
+    return -2;
+}
+
 static int cb_es_exit(void *data, struct flb_config *config)
 {
     struct flb_elasticsearch *ctx = data;
@@ -1231,6 +1303,7 @@ struct flb_output_plugin out_es_plugin = {
 
     /* Test */
     .test_formatter.callback = elasticsearch_format,
+    .test_response.callback = elasticsearch_response_test,
 
     /* Plugin flags */
     .flags          = FLB_OUTPUT_NET | FLB_IO_OPT_TLS,
