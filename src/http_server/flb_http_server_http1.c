@@ -544,10 +544,13 @@ int flb_http1_server_session_ingest(struct flb_http1_server_session *session,
     }
     else if (result == MK_HTTP_PARSER_PENDING) {
         /*
-         * If the parser is still in a pending state, we just return a success
-         * status and wait for more data
+         * No significant actions are taken here until we reach MK_HTTP_PARSER_OK.
+         * The primary reason is that the caller may need to expand the buffer size
+         * when payloads exceed the current buffer's capacity. In such cases, parser
+         * pointers could end up referencing incorrect memory locations.
+         * To prevent this, we reset the parser state, which introduces a minimal
+         * performance overhead in exchange for ensuring safety.
          */
-        return HTTP_SERVER_SUCCESS;
     }
 
     dummy_mk_http_request_init(&session->inner_session, &session->inner_request);
