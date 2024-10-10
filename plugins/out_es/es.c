@@ -817,6 +817,10 @@ static void cb_es_flush(struct flb_event_chunk *event_chunk,
     struct flb_http_client *c;
     flb_sds_t signature = NULL;
     int compressed = FLB_FALSE;
+    struct mk_list *head;
+    struct flb_config_map_val *mv;
+    struct flb_slist_entry *key = NULL;
+    struct flb_slist_entry *val = NULL;
 
     /* Get upstream connection */
     u_conn = flb_upstream_conn_get(ctx->u);
@@ -873,6 +877,16 @@ static void cb_es_flush(struct flb_event_chunk *event_chunk,
 #endif
 
     flb_http_add_header(c, "Content-Type", 12, "application/x-ndjson", 20);
+
+    /* Arbitrary additional headers */
+    flb_config_map_foreach(head, mv, ctx->headers) {
+        key = mk_list_entry_first(mv->val.list, struct flb_slist_entry, _head);
+        val = mk_list_entry_last(mv->val.list, struct flb_slist_entry, _head);
+
+        flb_http_add_header(c,
+                            key->str, flb_sds_len(key->str),
+                            val->str, flb_sds_len(val->str));
+    }
 
     if (ctx->http_user && ctx->http_passwd) {
         flb_http_basic_auth(c, ctx->http_user, ctx->http_passwd);
@@ -1022,6 +1036,14 @@ static struct flb_config_map config_map[] = {
      0, FLB_TRUE, offsetof(struct flb_elasticsearch, http_passwd),
      "Password for user defined in HTTP_User"
     },
+
+    /* Arbitrary HTTP headers */
+    {
+     FLB_CONFIG_MAP_SLIST_1, "header", NULL,
+     FLB_CONFIG_MAP_MULT, FLB_TRUE, offsetof(struct flb_elasticsearch, headers),
+     "Add a HTTP header key/value pair. Multiple headers can be set"
+    },
+
 
     /* HTTP Compression */
     {
