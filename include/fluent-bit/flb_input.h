@@ -75,6 +75,71 @@
 
 struct flb_input_instance;
 
+/*
+ * Tests callbacks
+ * ===============
+ */
+struct flb_test_in_formatter {
+    /*
+     * Runtime Library Mode
+     * ====================
+     * When the runtime library enable the test formatter mode, it needs to
+     * keep a reference of the context and other information:
+     *
+     * - rt_ctx : context created by flb_create()
+     *
+     * - rt_ffd : this plugin assigned 'integer' created by flb_output()
+     *
+     * - rt_in_calback: intermediary function to receive the results of
+     *                  the formatter plugin test function.
+     *
+     * - rt_data: opaque data type for rt_step_callback()
+     */
+
+    /* runtime library context */
+    void *rt_ctx;
+
+    /* runtime library: assigned plugin integer */
+    int rt_ffd;
+
+    /* optional format context */
+    void *format_ctx;
+
+    /*
+     * "runtime step callback": this function pointer is used by Fluent Bit
+     * library mode to reference a test function that must retrieve the
+     * results of 'callback'. Consider this an intermediary function to
+     * transfer the results to the runtime test.
+     *
+     * This function is private and should not be set manually in the plugin
+     * code, it's set on src/flb_lib.c .
+     */
+    void (*rt_in_callback) (void *, int, int, void *, size_t, void *);
+
+    /*
+     * opaque data type passed by the runtime library to be used on
+     * rt_step_test().
+     */
+    void *rt_data;
+
+    /*
+     * Callback
+     * =========
+     * "Formatter callback": it references the plugin function that performs
+     * data formatting (msgpack -> local data). This entry is mostly to
+     * expose the plugin local function.
+     */
+    int (*callback) (/* Fluent Bit context */
+                     struct flb_config *,
+                     /* plugin that ingested the records */
+                     struct flb_input_instance *,
+                     void *,         /* plugin instance context */
+                     const void *,   /* incoming unformatted data */
+                     size_t,         /* incoming unformatted size */
+                     void **,        /* output buffer      */
+                     size_t *);      /* output buffer size */
+};
+
 struct flb_input_plugin {
     /*
      * The type defines if this is a core-based plugin or it's handled by
@@ -138,6 +203,9 @@ struct flb_input_plugin {
     /* Destroy */
     void (*cb_destroy) (struct flb_input_plugin *);
 
+    /* Tests */
+    struct flb_test_in_formatter test_formatter;
+
     void *instance;
 
     struct mk_list _head;
@@ -177,6 +245,7 @@ struct flb_input_instance {
     int runs_in_coroutine;               /* instance runs in coroutine ? */
     char name[32];                       /* numbered name (cpu -> cpu.0) */
     char *alias;                         /* alias name for the instance  */
+    int test_mode;                       /* running tests? (default:off) */
     void *context;                       /* plugin configuration context */
     flb_pipefd_t ch_events[2];           /* channel for events           */
     struct flb_input_plugin *p;          /* original plugin              */
@@ -294,6 +363,8 @@ struct flb_input_instance {
     struct flb_metrics *metrics;         /* metrics                    */
 #endif
 
+    /* Tests */
+    struct flb_test_in_formatter test_formatter;
 
     /* is the plugin running in a separate thread ? */
     int is_threaded;
