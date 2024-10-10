@@ -117,6 +117,7 @@ option(FLB_COVERAGE            "Build with code-coverage"      No)
 option(FLB_JEMALLOC            "Build with Jemalloc support"   No)
 option(FLB_REGEX               "Build with Regex support"     Yes)
 option(FLB_UTF8_ENCODER        "Build with UTF8 encoding support" Yes)
+option(FLB_UNICODE_ENCODER     "Build with Unicode (UTF-16LE, UTF-16BE) encoding support" Yes)
 option(FLB_PARSER              "Build with Parser support"    Yes)
 option(FLB_TLS                 "Build with SSL/TLS support"   Yes)
 option(FLB_BINARY              "Build executable binary"      Yes)
@@ -333,6 +334,9 @@ endif()
 
 if(FLB_COVERAGE)
   set(CMAKE_C_FLAGS "${CMAKE_C_FLAGS} -g -O0 --coverage -fprofile-arcs -ftest-coverage")
+  if (FLB_UNICODE_ENCODER)
+    set(CMAKE_CXX_FLAGS "${CMAKE_C_FLAGS} -g -O0 --coverage -fprofile-arcs -ftest-coverage")
+  endif()
   set(CMAKE_BUILD_TYPE "Debug")
 endif()
 
@@ -472,6 +476,24 @@ endif()
 # tutf8e
 if(FLB_UTF8_ENCODER)
   add_subdirectory(${FLB_PATH_LIB_TUTF8E} EXCLUDE_FROM_ALL)
+endif()
+
+# simdutf
+if(FLB_UNICODE_ENCODER)
+  enable_language(CXX)
+  set (CMAKE_CXX_STANDARD 11)
+  # The current minimum required gcc and clang versions are sited from
+  # https://github.com/fluent/fluent-bit/blob/master/.github/workflows/unit-tests.yaml.
+  # gcc version is 7.0 and clang version is 6.0 now.
+  if (MSVC OR
+      (CMAKE_COMPILER_IS_CLANG AND CMAKE_CXX_COMPILER_VERSION VERSION_GREATER 6.0) OR
+      (CMAKE_COMPILER_IS_GNUCC AND CMAKE_CXX_COMPILER_VERSION VERSION_GREATER 7.0))
+    add_subdirectory(${FLB_PATH_LIB_SIMDUTF} EXCLUDE_FROM_ALL)
+    FLB_DEFINITION(FLB_HAVE_UNICODE_ENCODER)
+  else()
+    message(WARNING "${CMAKE_CXX_COMPILER} version: ${CMAKE_CXX_COMPILER_VERSION} is too old. Disabling simdutf library build.")
+    set (FLB_UNICODE_ENCODER Off)
+  endif()
 endif()
 
 # snappy
