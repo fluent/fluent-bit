@@ -555,15 +555,15 @@ void flb_opentelemetry_context_destroy(struct opentelemetry_context *ctx)
         flb_upstream_destroy(ctx->u);
     }
 
-    if (ctx->logs_uri_sanitized != NULL) {
+    if (ctx->logs_uri_sanitized != NULL &&  ctx->logs_uri_sanitized != ctx->logs_uri) {
         flb_free(ctx->logs_uri_sanitized);
     }
 
-    if (ctx->traces_uri_sanitized != NULL) {
+    if (ctx->traces_uri_sanitized != NULL && ctx->traces_uri_sanitized != ctx->traces_uri) {
         flb_free(ctx->traces_uri_sanitized);
     }
 
-    if (ctx->metrics_uri_sanitized != NULL) {
+    if (ctx->metrics_uri_sanitized != NULL && ctx->metrics_uri_sanitized != ctx->metrics_uri) {
         flb_free(ctx->metrics_uri_sanitized);
     }
 
