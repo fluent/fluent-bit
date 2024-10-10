@@ -441,6 +441,7 @@ static int process_content(struct flb_tail_file *file, size_t *bytes)
     size_t line_len;
     char *repl_line;
     size_t repl_line_len;
+    size_t original_len = 0;
     time_t now = time(NULL);
     struct flb_time out_time = {0};
     struct flb_tail_config *ctx;
@@ -457,6 +458,25 @@ static int process_content(struct flb_tail_file *file, size_t *bytes)
 
     /* reset last processed bytes */
     file->last_processed_bytes = 0;
+
+#ifdef FLB_HAVE_UNICODE_ENCODER
+    if (ctx->preferred_input_encoding != FLB_SIMDUTF_ENCODING_TYPE_UNSPECIFIED) {
+        original_len = end - data;
+        decoded = NULL;
+        ret = flb_simdutf_connector_convert_from_unicode(ctx->preferred_input_encoding,
+                                                         data, end - data, &decoded, &decoded_len);
+        if (ret == FLB_SIMDUTF_CONNECTOR_CONVERT_OK) {
+            data = decoded;
+            end  = data + decoded_len;
+        }
+        else if (ret == FLB_SIMDUTF_CONNECTOR_CONVERT_NOP) {
+            flb_plg_debug(ctx->ins, "nothing to convert encoding '%.*s'", end - data, data);
+        }
+        else {
+            flb_plg_error(ctx->ins, "encoding failed '%.*s'", end - data, data);
+        }
+    }
+#endif
 
     /* Skip null characters from the head (sometimes introduced by copy-truncate log rotation) */
     while (data < end && *data == '\0') {
@@ -516,25 +536,6 @@ static int process_content(struct flb_tail_file *file, size_t *bytes)
         line = data;
         line_len = len - crlf;
         repl_line = NULL;
-
-#ifdef FLB_HAVE_UNICODE_ENCODER
-        if (ctx->preferred_input_encoding != FLB_SIMDUTF_ENCODING_TYPE_UNSPECIFIED) {
-            decoded = NULL;
-            ret = flb_simdutf_connector_convert_from_unicode(ctx->preferred_input_encoding,
-                                                             line, line_len, &decoded, &decoded_len);
-            if (ret == FLB_SIMDUTF_CONNECTOR_CONVERT_OK) {
-                line = decoded;
-                line_len  = decoded_len;
-            }
-            else if (ret == FLB_SIMDUTF_CONNECTOR_CONVERT_NOP) {
-                flb_plg_debug(ctx->ins, "nothing to convert encoding '%.*s'", line_len, line);
-            }
-            else {
-                flb_plg_error(ctx->ins, "encoding failed '%.*s'", line_len, line);
-                goto go_next;
-            }
-        }
-#endif
 
         if (ctx->ml_ctx) {
             ret = flb_ml_append_text(ctx->ml_ctx,
@@ -628,18 +629,23 @@ static int process_content(struct flb_tail_file *file, size_t *bytes)
         lines++;
         file->parsed = 0;
         file->last_processed_bytes += processed_bytes;
-#ifdef FLB_HAVE_UNICODE_ENCODER
-        if (decoded) {
-            flb_free(decoded);
-            decoded = NULL;
-        }
-#endif
     }
+
+#ifdef FLB_HAVE_UNICODE_ENCODER
+    if (decoded) {
+        flb_free(decoded);
+        decoded = NULL;
+    }
+#endif
     file->parsed = file->buf_len;
 
     if (lines > 0) {
         /* Append buffer content to a chunk */
-        *bytes = processed_bytes;
+        if (original_len > 0) {
+            *bytes = original_len;
+        } else {
+            *bytes = processed_bytes;
+        }
 
         if (file->sl_log_event_encoder->output_length > 0) {
             flb_input_log_append_records(ctx->ins,
@@ -656,7 +662,11 @@ static int process_content(struct flb_tail_file *file, size_t *bytes)
         *bytes = file->buf_len;
     }
     else {
-        *bytes = processed_bytes;
+        if (original_len > 0) {
+            *bytes = original_len;
+        } else {
+            *bytes = processed_bytes;
+        }
     }
 
     if (ctx->ml_ctx) {
