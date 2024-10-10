@@ -26,7 +26,7 @@ add_library(processor-sql-parser STATIC
 
 add_flex_bison_dependency(lexer parser)
 
-if (FLB_JEMALLOC)
+if (FLB_JEMALLOC AND (NOT JEMALLOC_FOUND))
   add_dependencies(processor-sql-parser libjemalloc)
   include_directories("${CMAKE_BINARY_DIR}/include/")
 endif ()

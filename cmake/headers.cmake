@@ -32,25 +32,15 @@ include_directories(
   ${FLB_PATH_ROOT_SOURCE}/${FLB_PATH_LIB_SNAPPY}
   ${FLB_PATH_ROOT_SOURCE}/${FLB_PATH_LIB_CMETRICS}/include
   ${FLB_PATH_ROOT_SOURCE}/${FLB_PATH_LIB_CTRACES}/include
-  ${FLB_PATH_ROOT_SOURCE}/${FLB_PATH_LIB_CARES}/include
   ${FLB_PATH_ROOT_SOURCE}/${FLB_PATH_LIB_RING_BUFFER}/lwrb/src/include
 
-  ${CMAKE_CURRENT_BINARY_DIR}/${FLB_PATH_LIB_CARES}
   ${CMAKE_CURRENT_BINARY_DIR}/${FLB_PATH_LIB_JANSSON}/include
   ${CMAKE_CURRENT_BINARY_DIR}/lib/cmetrics
   ${CMAKE_CURRENT_BINARY_DIR}/include
 
   ${CMAKE_CURRENT_BINARY_DIR}/lib/monkey/include/
   ${CMAKE_CURRENT_BINARY_DIR}/lib/monkey/include/monkey/
-
-  ${CMAKE_CURRENT_BINARY_DIR}/lib/nghttp2
-  ${CMAKE_CURRENT_BINARY_DIR}/lib/nghttp2/lib/includes/
-  ${FLB_PATH_ROOT_SOURCE}/${FLB_PATH_LIB_NGHTTP2}/lib/includes/
   )
-
-if(FLB_IN_KAFKA OR FLB_OUT_KAFKA)
-    include_directories(${FLB_PATH_ROOT_SOURCE}/${FLB_PATH_LIB_RDKAFKA}/src/)
-endif()
 
 if(FLB_UTF8_ENCODER)
   include_directories(${FLB_PATH_ROOT_SOURCE}/${FLB_PATH_LIB_TUTF8E}/include)
