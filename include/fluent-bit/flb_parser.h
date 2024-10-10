@@ -51,6 +51,7 @@ struct flb_parser {
     int time_system_timezone; /* use the system timezone as a fallback */
     int time_keep;        /* keep time field */
     int time_strict;      /* parse time field strictly */
+    double time_numeric_unit; /* divisor for numeric time, or <= 0 if not enabled */
     int logfmt_no_bare_keys; /* in logfmt parsers, require all keys to have values */
     char *time_frac_secs; /* time format have fractional seconds ? */
     struct flb_parser_types *types; /* type casting */
