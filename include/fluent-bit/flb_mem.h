@@ -27,10 +27,6 @@
 #include <fluent-bit/flb_info.h>
 #include <fluent-bit/flb_macros.h>
 
-#ifdef FLB_HAVE_JEMALLOC
-#include <jemalloc/jemalloc.h>
-#endif
-
 #include <stdlib.h>
 
 /*
