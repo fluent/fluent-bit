@@ -1,6 +1,6 @@
 include_directories (../../${FLB_PATH_LIB_SIMDUTF}/src/simdutf)
 
-message(STATUS "include: ${FLB_PATH_LIB_SIMDUTF}/src/simdutf")
+message(STATUS "Using bundled simdutf: ${FLB_PATH_LIB_SIMDUTF}/src/simdutf")
 
 set(src
   flb_simdutf_connector.cpp)

@@ -482,12 +482,10 @@ endif()
 if(FLB_UNICODE_ENCODER)
   enable_language(CXX)
   set (CMAKE_CXX_STANDARD 11)
-  # The current minimum required gcc and clang versions are sited from
-  # https://github.com/fluent/fluent-bit/blob/master/.github/workflows/unit-tests.yaml.
-  # gcc version is 7.0 and clang version is 6.0 now.
-  if (MSVC OR
-      (CMAKE_COMPILER_IS_CLANG AND CMAKE_CXX_COMPILER_VERSION VERSION_GREATER 6.0) OR
-      (CMAKE_COMPILER_IS_GNUCC AND CMAKE_CXX_COMPILER_VERSION VERSION_GREATER 7.0))
+  # The current minimum required gcc and clang versions are sited from Ubuntu 16.04's system gcc.
+  # gcc version 5.4 or later is needed to compile and link libsimdutf.
+  if (MSVC OR CMAKE_CXX_COMPILER_ID MATCHES "Clang" OR
+      (CMAKE_COMPILER_IS_GNUCC AND CMAKE_CXX_COMPILER_VERSION VERSION_GREATER "5.3.99"))
     add_subdirectory(${FLB_PATH_LIB_SIMDUTF} EXCLUDE_FROM_ALL)
     FLB_DEFINITION(FLB_HAVE_UNICODE_ENCODER)
   else()
