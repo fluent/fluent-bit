@@ -56,6 +56,8 @@ struct flb_config {
     int grace_count;          /* Count of grace shutdown tries  */
     flb_pipefd_t flush_fd;    /* Timer FD associated to flush   */
     int convert_nan_to_null;  /* convert null to nan ?          */
+    int routes_mask_elements; /* size of routes mask array to configure maximum number of routes */
+
 
     int daemon;               /* Run as a daemon ?              */
     flb_pipefd_t shutdown_fd; /* Shutdown FD, 5 seconds         */
@@ -332,6 +334,7 @@ enum conf_type {
 #define FLB_CONF_STR_STREAMS_FILE "Streams_File"
 #define FLB_CONF_STR_STREAMS_STR_CONV "sp.convert_from_str_to_num"
 #define FLB_CONF_STR_CONV_NAN     "json.convert_nan_to_null"
+#define FLB_CONF_ROUTES_MASK_ELEMENTS "Routes_Mask_Elements"
 
 /* FLB_HAVE_HTTP_SERVER */
 #ifdef FLB_HAVE_HTTP_SERVER
