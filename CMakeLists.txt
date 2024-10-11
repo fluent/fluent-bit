@@ -296,6 +296,10 @@ if (FLB_SYSTEM_MACOS)
   include(cmake/macos-setup.cmake)
 endif()
 
+if (FLB_SYSTEM_LINUX)
+  include(cmake/ppc64le.cmake)
+endif ()
+
 # Build for SystemZ - s390x arch
 if (FLB_SYSTEM_LINUX)
   include(cmake/s390x.cmake)
