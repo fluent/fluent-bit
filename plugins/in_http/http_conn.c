@@ -212,7 +212,7 @@ struct http_conn *http_conn_add(int fd, struct flb_http *ctx)
 
     /* Set data for the event-loop */
     event = &conn->event;
-    MK_EVENT_NEW(event);
+    MK_EVENT_ZERO(event);
     event->fd      = fd;
     event->type    = FLB_ENGINE_EV_CUSTOM;
     event->handler = http_conn_event;

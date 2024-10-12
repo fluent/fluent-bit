@@ -438,7 +438,6 @@ static int net_connect_async(int fd,
               fd, host, port);
 
     /* Register the connection socket into the main event loop */
-    MK_EVENT_ZERO(&u_conn->event);
     ret = mk_event_add(u_conn->evl,
                        fd,
                        FLB_ENGINE_EV_THREAD,
@@ -841,8 +840,7 @@ static ares_socket_t flb_dns_ares_socket(int af, int type, int protocol, void *u
     lookup_context->ares_socket_type       = type;
     lookup_context->ares_socket_created    = FLB_TRUE;
 
-    lookup_context->response_event.mask    = MK_EVENT_EMPTY;
-    lookup_context->response_event.status  = MK_EVENT_NONE;
+    MK_EVENT_ZERO(&lookup_context->response_event);
     lookup_context->response_event.data    = &lookup_context->response_event;
     lookup_context->response_event.handler = flb_net_getaddrinfo_event_handler;
     lookup_context->response_event.fd      = sockfd;
