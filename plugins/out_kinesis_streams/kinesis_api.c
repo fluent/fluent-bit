@@ -967,8 +967,8 @@ int put_records(struct flb_kinesis *ctx, struct flush *buf,
                 flb_sds_destroy(error);
             }
             else {
-                /* error could not be parsed, print raw response to debug */
-                flb_plg_debug(ctx->ins, "Raw response: %s", c->resp.payload);
+                /* error could not be parsed, print raw response */
+                flb_plg_error(ctx->ins, "Raw response: %s", c->resp.payload);
             }
         }
     }

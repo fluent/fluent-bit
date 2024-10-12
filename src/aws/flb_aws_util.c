@@ -580,6 +580,8 @@ void flb_aws_print_error(char *response, size_t response_len,
 
     error = flb_json_get_val(response, response_len, "__type");
     if (!error) {
+        /* error can not be parsed, print raw response */
+        flb_plg_error(ins, "Raw response: %s", response);
         return;
     }
 
@@ -595,6 +597,7 @@ void flb_aws_print_error(char *response, size_t response_len,
     }
 
     flb_sds_destroy(error);
+    return;
 }
 
 /* parses AWS JSON API error responses and returns the value of the __type field */
