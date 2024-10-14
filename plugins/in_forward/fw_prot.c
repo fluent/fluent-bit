@@ -1113,34 +1113,49 @@ static int append_log(struct flb_input_instance *ins, struct fw_conn *conn,
     struct ctrace *ctr;
 
     if (event_type == FLB_EVENT_TYPE_LOGS) {
-        flb_input_log_append(conn->in,
-                             out_tag, flb_sds_len(out_tag),
-                             data, len);
+        ret = flb_input_log_append(conn->in,
+                                   out_tag, flb_sds_len(out_tag),
+                                   data, len);
+        if (ret != 0) {
+            flb_plg_error(ins, "could not append logs. ret=%d", ret);
+            return -1;
+        }
 
         return 0;
     }
     else if (event_type == FLB_EVENT_TYPE_METRICS) {
         ret = cmt_decode_msgpack_create(&cmt, (char *) data, len, &off);
         if (ret != CMT_DECODE_MSGPACK_SUCCESS) {
-            flb_error("cmt_decode_msgpack_create failed. ret=%d", ret);
+            flb_plg_error(ins, "cmt_decode_msgpack_create failed. ret=%d", ret);
             return -1;
         }
-        flb_input_metrics_append(conn->in,
-                                 out_tag, flb_sds_len(out_tag),
-                                 cmt);
+
+        ret = flb_input_metrics_append(conn->in,
+                                       out_tag, flb_sds_len(out_tag),
+                                       cmt);
+        if (ret != 0) {
+            flb_plg_error(ins, "could not append metrics. ret=%d", ret);
+            cmt_decode_msgpack_destroy(cmt);
+            return -1;
+        }
         cmt_decode_msgpack_destroy(cmt);
     }
     else if (event_type == FLB_EVENT_TYPE_TRACES) {
         off = 0;
         ret = ctr_decode_msgpack_create(&ctr, (char *) data, len, &off);
         if (ret == -1) {
+            flb_error("could not decode trace message. ret=%d", ret);
             return -1;
         }
 
-        flb_input_trace_append(ins,
-                               out_tag, flb_sds_len(out_tag),
-                               ctr);
-
+        ret = flb_input_trace_append(ins,
+                                     out_tag, flb_sds_len(out_tag),
+                                     ctr);
+        if (ret != 0) {
+            flb_plg_error(ins, "could not append traces. ret=%d", ret);
+            ctr_decode_msgpack_destroy(ctr);
+            return -1;
+        }
         ctr_decode_msgpack_destroy(ctr);
     }
 
