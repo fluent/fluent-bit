@@ -100,6 +100,8 @@ struct flb_pe *flb_pe_config_create(struct flb_input_instance *ins,
         return NULL;
     }
 
+    ctx->page_size = sysconf(_SC_PAGESIZE);
+
     return ctx;
 }
 

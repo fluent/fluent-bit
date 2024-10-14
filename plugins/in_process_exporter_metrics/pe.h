@@ -52,6 +52,7 @@ struct flb_pe {
     struct flb_input_instance *ins; /* input instance   */
     struct mk_list *metrics;        /* enabled metrics */
     int enabled_flag;               /* indicate enabled metrics */
+    long page_size;                  /* page size for converting number of pages to bytes */
 
     /*
      * Metrics Contexts
