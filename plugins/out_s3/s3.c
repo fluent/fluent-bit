@@ -247,6 +247,7 @@ struct flb_http_client *mock_s3_call(char *error_env_var, char *api)
             c->resp.data = flb_calloc(len + 1, sizeof(char));
             if (!c->resp.data) {
                 flb_errno();
+                flb_free(c);
                 return NULL;
             }
             memcpy(c->resp.data, resp, len);
