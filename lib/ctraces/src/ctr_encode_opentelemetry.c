@@ -34,6 +34,8 @@ static inline void otlp_array_destroy(Opentelemetry__Proto__Common__V1__ArrayVal
 
 static inline void otlp_kvpair_list_destroy(Opentelemetry__Proto__Common__V1__KeyValue **pair_list, size_t entry_count);
 
+static void destroy_spans(Opentelemetry__Proto__Trace__V1__Span **spans, size_t count);
+
 static inline void otlp_kvpair_destroy(Opentelemetry__Proto__Common__V1__KeyValue *kvpair)
 {
     if (kvpair != NULL) {
@@ -425,8 +427,7 @@ static inline Opentelemetry__Proto__Common__V1__AnyValue *ctr_variant_string_to_
 
         if (result->string_value == NULL) {
             otlp_any_value_destroy(result);
-
-            result = NULL;
+            return NULL;
         }
     }
 
@@ -484,8 +485,8 @@ static inline Opentelemetry__Proto__Common__V1__AnyValue *ctr_variant_binary_to_
 
         if (result->bytes_value.data == NULL) {
             otlp_any_value_destroy(result);
-
             result = NULL;
+
         }
 
         memcpy(result->bytes_value.data, value->data.as_bytes, result->bytes_value.len);
@@ -884,6 +885,9 @@ static Opentelemetry__Proto__Trace__V1__Span **set_spans(struct ctrace_scope_spa
 
         otel_span = initialize_span();
         if (!otel_span) {
+            if (span_index > 0) {
+                destroy_spans(spans, span_index);
+            }
             return NULL;
         }
 
@@ -992,9 +996,7 @@ static Opentelemetry__Proto__Trace__V1__ScopeSpans **set_scope_spans(struct ctra
             if (scope_span_index > 0) {
                 destroy_scope_spans(scope_spans, scope_span_index - 1);
             }
-
-            free(scope_spans);
-
+            /* note: scope_spans is freed inside destroy_scope_spans() */
             return NULL;
         }
 
