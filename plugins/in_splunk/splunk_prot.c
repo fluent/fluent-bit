@@ -524,10 +524,10 @@ static int validate_auth_header(struct flb_splunk *ctx, struct mk_http_request *
 
         ret = SPLUNK_AUTH_UNAUTHORIZED;
         flb_sds_destroy(authorization);
-
         return ret;
     }
     else {
+        flb_sds_destroy(authorization);
         return SPLUNK_AUTH_MISSING_CRED;
     }
 
@@ -710,7 +710,7 @@ int splunk_prot_handle(struct flb_splunk *ctx, struct splunk_conn *conn,
     char *uri;
     char *qs;
     char *original_data = NULL;
-    size_t original_data_size;
+    size_t original_data_size = 0;
     char *out_chunked = NULL;
     size_t out_chunked_size = 0;
     off_t diff;
@@ -1145,7 +1145,7 @@ int splunk_prot_handle_ng(struct flb_http_request *request,
                           struct flb_http_response *response)
 {
     struct flb_splunk *context;
-    int                ret;
+    int                ret = -1;
     flb_sds_t          tag;
 
     context = (struct flb_splunk *) response->stream->user_data;
@@ -1210,40 +1210,33 @@ int splunk_prot_handle_ng(struct flb_http_request *request,
     if (strcasecmp(request->path, "/services/collector/raw/1.0") == 0 ||
         strcasecmp(request->path, "/services/collector/raw") == 0) {
         ret = process_hec_raw_payload_ng(request, response, tag, context);
-
         if (ret != 0) {
             send_json_message_response_ng(response, 400, "{\"text\":\"Invalid data format\",\"code\":6}");
+            ret = -1;
         }
         else {
             send_json_message_response_ng(response, 200, "{\"text\":\"Success\",\"code\":0}");
+            ret = 0;
         }
-
-        ret = 0;
     }
     else if (strcasecmp(request->path, "/services/collector/event/1.0") == 0 ||
              strcasecmp(request->path, "/services/collector/event") == 0 ||
              strcasecmp(request->path, "/services/collector") == 0) {
         ret = process_hec_payload_ng(request, response, tag, context);
-
         if (ret != 0) {
             send_json_message_response_ng(response, 400, "{\"text\":\"Invalid data format\",\"code\":6}");
-
             ret = -1;
         }
         else {
             send_json_message_response_ng(response, 200, "{\"text\":\"Success\",\"code\":0}");
+            ret = 0;
         }
-
-        ret = 0;
     }
     else {
         send_response_ng(response, 400, "error: invalid HTTP endpoint\n");
-
         ret = -1;
     }
 
     flb_sds_destroy(tag);
-
-
     return ret;
 }
