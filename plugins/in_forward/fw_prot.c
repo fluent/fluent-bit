@@ -621,6 +621,7 @@ static int check_ping(struct flb_input_instance *ins,
         flb_plg_error(ins, "Invalid username type message");
         flb_free(serverside);
         flb_free(hostname);
+        flb_free(shared_key_salt);
         msgpack_unpacked_destroy(&result);
         return -1;
     }
