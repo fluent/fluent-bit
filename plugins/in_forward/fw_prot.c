@@ -599,6 +599,7 @@ static int check_ping(struct flb_input_instance *ins,
     if (o.type != MSGPACK_OBJECT_STR) {
         flb_plg_error(ins, "Invalid shared_key_salt type message");
         flb_free(serverside);
+        flb_free(hostname);
         msgpack_unpacked_destroy(&result);
         return -1;
     }
@@ -609,7 +610,9 @@ static int check_ping(struct flb_input_instance *ins,
     if (o.type != MSGPACK_OBJECT_STR) {
         flb_plg_error(ins, "Invalid shared_key_digest type message");
         flb_free(serverside);
+        flb_free(hostname);
         msgpack_unpacked_destroy(&result);
+
         return -1;
     }
     shared_key_digest = flb_sds_create_len(o.via.str.ptr, o.via.str.size);
@@ -635,6 +638,7 @@ static int check_ping(struct flb_input_instance *ins,
         flb_free(hostname);
         flb_free(shared_key_salt);
         flb_free(shared_key_digest);
+        flb_free(username);
         msgpack_unpacked_destroy(&result);
         return -1;
     }
@@ -649,7 +653,10 @@ static int check_ping(struct flb_input_instance *ins,
         flb_free(serverside);
         flb_free(username);
         flb_free(password_digest);
-        flb_plg_error(ctx->ins, "failed to hash shard_key");
+        flb_free(shared_key_salt);
+        flb_free(shared_key_digest);
+        flb_free(hostname);
+        flb_plg_error(ctx->ins, "failed to hash shared_key");
         return -1;
     }
 
