@@ -227,15 +227,15 @@ static int unpack_opts(mpack_reader_t *reader, struct cmt_opts *opts)
         }
 
         if (cfl_sds_len(opts->ns) > 0) {
-            cfl_sds_cat(opts->fqname, opts->ns, cfl_sds_len(opts->ns));
-            cfl_sds_cat(opts->fqname, "_", 1);
+            cfl_sds_cat_safe(&opts->fqname, opts->ns, cfl_sds_len(opts->ns));
+            cfl_sds_cat_safe(&opts->fqname, "_", 1);
         }
 
         if (cfl_sds_len(opts->subsystem) > 0) {
-            cfl_sds_cat(opts->fqname, opts->subsystem, cfl_sds_len(opts->subsystem));
-            cfl_sds_cat(opts->fqname, "_", 1);
+            cfl_sds_cat_safe(&opts->fqname, opts->subsystem, cfl_sds_len(opts->subsystem));
+            cfl_sds_cat_safe(&opts->fqname, "_", 1);
         }
-        cfl_sds_cat(opts->fqname, opts->name, cfl_sds_len(opts->name));
+        cfl_sds_cat_safe(&opts->fqname, opts->name, cfl_sds_len(opts->name));
     }
 
     return result;

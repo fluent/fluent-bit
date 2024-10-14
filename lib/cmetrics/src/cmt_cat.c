@@ -36,7 +36,7 @@ int cmt_cat_copy_label_keys(struct cmt_map *map, char **out)
 
     /* labels array */
     s = map->label_count;
-    if (s == 0) {
+    if (s <= 0) {
         *out = NULL;
         return 0;
     }
@@ -242,7 +242,7 @@ static inline int cmt_opts_compare(struct cmt_opts *a, struct cmt_opts *b)
 {
     int ret;
 
-    ret = strcmp(a->ns, a->ns);
+    ret = strcmp(a->ns, b->ns);
     if (ret != 0) {
         return ret;
     }

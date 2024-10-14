@@ -139,7 +139,7 @@ static void append_metric_value(cfl_sds_t *buf,
                                 struct prom_fmt *fmt, int add_timestamp)
 {
     int len;
-    double val;
+    double val = 0.0;
     uint64_t ts;
     char tmp[128];
 
