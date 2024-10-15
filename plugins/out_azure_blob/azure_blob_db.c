@@ -751,7 +751,7 @@ int azb_db_file_part_get_next(struct flb_azure_blob *ctx,
         *part_delivery_attempts = sqlite3_column_int64(ctx->stmt_get_next_file_part, 5);
         tmp = (char *) sqlite3_column_text(ctx->stmt_get_next_file_part, 6);
         *file_delivery_attempts = sqlite3_column_int64(ctx->stmt_get_next_file_part, 7);
-        tmp_destination = (char *) sqlite3_column_text(ctx->stmt_get_next_file_part, 8);
+        tmp_destination = (char *) sqlite3_column_text(ctx->stmt_get_next_file_part, 9);
     }
     else if (ret == SQLITE_DONE) {
         /* no records */
