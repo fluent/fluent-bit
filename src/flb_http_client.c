@@ -1500,6 +1500,7 @@ static int flb_http_client_session_write(struct flb_http_client_session *session
 
 
 int flb_http_client_ng_init(struct flb_http_client_ng *client,
+                            struct flb_upstream_ha *upstream_ha,
                             struct flb_upstream *upstream,
                             int protocol_version,
                             uint64_t flags)
@@ -1507,6 +1508,7 @@ int flb_http_client_ng_init(struct flb_http_client_ng *client,
     memset(client, 0, sizeof(struct flb_http_client_ng));
 
     client->protocol_version = protocol_version;
+    client->upstream_ha = upstream_ha;
     client->upstream = upstream;
     client->flags = flags;
 
@@ -1539,6 +1541,7 @@ int flb_http_client_ng_init(struct flb_http_client_ng *client,
 }
 
 struct flb_http_client_ng *flb_http_client_ng_create(
+                                struct flb_upstream_ha *upstream_ha,
                                 struct flb_upstream *upstream,
                                 int protocol_version,
                                 uint64_t flags)
@@ -1550,6 +1553,7 @@ struct flb_http_client_ng *flb_http_client_ng_create(
 
     if (client != NULL) {
         result = flb_http_client_ng_init(client,
+                                         upstream_ha,
                                          upstream,
                                          protocol_version,
                                          flags);
@@ -1693,11 +1697,25 @@ struct flb_http_client_session *flb_http_client_session_create(struct flb_http_c
 struct flb_http_client_session *flb_http_client_session_begin(struct flb_http_client_ng *client)
 {
     int                             protocol_version;
+    struct flb_upstream_node       *upstream_node;
     struct flb_connection          *connection;
     struct flb_http_client_session *session;
     const char                     *alpn;
 
-    connection = flb_upstream_conn_get(client->upstream);
+    if (client->upstream_ha != NULL) {
+        upstream_node = flb_upstream_ha_node_get(client->upstream_ha);
+
+        if (upstream_node == NULL) {
+            return NULL;
+        }
+
+        connection = flb_upstream_conn_get(upstream_node->u);
+    }
+    else {
+        upstream_node = NULL;
+
+        connection = flb_upstream_conn_get(client->upstream);
+    }
 
     if (connection == NULL) {
         return NULL;
@@ -1732,6 +1750,8 @@ struct flb_http_client_session *flb_http_client_session_begin(struct flb_http_cl
     if (session == NULL) {
         flb_upstream_conn_release(connection);
     }
+
+    session->upstream_node = upstream_node;
 
     return session;
 }
@@ -1845,7 +1865,6 @@ struct flb_http_response *flb_http_client_request_execute(struct flb_http_reques
 
         result = flb_http_client_session_read(session);
 
-
         if (result != 0) {
             return NULL;
         }
@@ -1890,6 +1909,81 @@ struct flb_http_response *flb_http_client_request_execute(struct flb_http_reques
         if (result != 0) {
             return NULL;
         }
+    }
+
+    return response;
+}
+
+struct flb_http_response *flb_http_client_request_execute_async(
+                            struct flb_http_request *request)
+{
+    struct flb_http_response       *response;
+    struct flb_http_client_session *session;
+    int                             result;
+
+    session = (struct flb_http_client_session *) request->stream->parent;
+    response = &request->stream->response;
+
+    /* We allow this to enable request mocking, there is no
+     * other legitimate use for it.
+     */
+    if (session->connection == NULL) {
+        return response;
+    }
+
+    if (session->outgoing_data != NULL &&
+        cfl_sds_len(session->outgoing_data) > 0)
+    {
+        result = flb_http_client_session_write(session);
+
+        if (result != 0) {
+            return NULL;
+        }
+
+        result = flb_http_client_session_read(session);
+
+        if (result != 0) {
+            return NULL;
+        }
+    }
+
+    if (request->stream->status == HTTP_STREAM_STATUS_SENDING_HEADERS) {
+        result = flb_http_request_commit(request);
+
+        if (result != 0) {
+            return NULL;
+        }
+
+        result = flb_http_client_session_write(session);
+
+        if (result != 0) {
+            return NULL;
+        }
+
+        request->stream->status = HTTP_STREAM_STATUS_RECEIVING_HEADERS;
+    }
+    else if (request->stream->status == HTTP_STREAM_STATUS_RECEIVING_HEADERS ||
+             request->stream->status == HTTP_STREAM_STATUS_RECEIVING_DATA ) {
+        result = flb_http_client_session_read(session);
+
+        if (result != 0) {
+            return NULL;
+        }
+
+        if (session->outgoing_data != NULL &&
+            cfl_sds_len(session->outgoing_data) > 0)
+        {
+            result = flb_http_client_session_write(session);
+
+            if (result != 0) {
+                return NULL;
+            }
+        }
+    }
+
+    if (request->stream->status != HTTP_STREAM_STATUS_RECEIVING_DATA &&
+        request->stream->status != HTTP_STREAM_STATUS_READY ) {
+        return NULL;
     }
 
     return response;
@@ -1980,20 +2074,8 @@ int flb_http_client_session_ingest(struct flb_http_client_session *session,
                                    unsigned char *buffer,
                                    size_t length)
 {
-    cfl_sds_t resized_buffer;
-
     if (session->protocol_version == HTTP_PROTOCOL_VERSION_11 ||
         session->protocol_version == HTTP_PROTOCOL_VERSION_10) {
-        resized_buffer = cfl_sds_cat(session->incoming_data,
-                                     (const char *) buffer,
-                                     length);
-
-        if (resized_buffer == NULL) {
-            return -10;
-        }
-
-        session->incoming_data = resized_buffer;
-
         return flb_http1_client_session_ingest(&session->http1,
                                                buffer,
                                                length);
@@ -2218,7 +2300,7 @@ int flb_http_request_set_parameters_internal(
     char                           *uri;
     char                           *url;
     char                           *content_type;
-    const void                     *body;
+    unsigned char                  *body;
     size_t                          body_len;
     char                           *username;
     char                           *password;
@@ -2273,14 +2355,14 @@ int flb_http_request_set_parameters_internal(
             }
         }
         else if (value_type == FLB_HTTP_CLIENT_ARGUMENT_TYPE_BODY) {
-            body = va_arg(arguments, char *);
+            body = va_arg(arguments, unsigned char *);
             body_len = va_arg(arguments, size_t);
             compression_algorithm = va_arg(arguments, char *);
 
             result = flb_http_request_set_body(request,
-                                                body,
-                                                body_len,
-                                                compression_algorithm);
+                                               body,
+                                               body_len,
+                                               compression_algorithm);
 
             if (request == NULL) {
                 flb_debug("http request creation error");

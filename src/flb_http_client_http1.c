@@ -69,6 +69,30 @@ void flb_http1_client_session_destroy(struct flb_http1_client_session *session)
     }
 }
 
+static int cfl_sds_shift_left(cfl_sds_t *buffer, size_t positions)
+{
+    size_t buffer_length;
+    size_t remainder;
+    int    result;
+
+    buffer_length = cfl_sds_len(*buffer);
+    remainder = 0;
+
+    if (positions < buffer_length) {
+        remainder = buffer_length - positions;
+
+        memmove(*buffer,
+                &((*buffer)[positions]),
+                remainder);
+    }
+
+    cfl_sds_len_set(*buffer, remainder);
+
+    (*buffer)[remainder] = '\0';
+
+    return 0;
+}
+
 int flb_http1_client_session_ingest(struct flb_http1_client_session *session,
                                     unsigned char *buffer,
                                     size_t length)
@@ -77,10 +101,14 @@ int flb_http1_client_session_ingest(struct flb_http1_client_session *session,
     int                             chunked_transfer;
     char                            status_code[4];
     struct flb_http_client_session *parent_session;
-    cfl_sds_t                       incoming_data;
+    int                             body_streaming_flag;
     uintptr_t                       body_offset;
     size_t                          body_length;
     char                           *status_line;
+    char                           *header_block_begining;
+    size_t                          header_block_length;
+    char                           *header_block_end;
+    cfl_sds_t                      resized_buffer;
     char                           *headers;
     struct flb_http_response       *response;
     struct flb_http_request        *request;
@@ -92,185 +120,225 @@ int flb_http1_client_session_ingest(struct flb_http1_client_session *session,
                                   struct flb_http_stream,
                                   _head);
 
+    body = NULL;
     request = &stream->request;
     response = &stream->response;
     parent_session = session->parent;
-    incoming_data = parent_session->incoming_data;
 
-    /* We need at least 8 characters to differentiate
-     * HTTP/1.x from HTTP/0.9
-     */
-    if (cfl_sds_len(incoming_data) < 8) {
-        return 0;
-    }
+    resized_buffer = cfl_sds_cat(parent_session->incoming_data,
+                                 (const char *) buffer,
+                                 length);
 
-    status_line = incoming_data;
-
-    if (strncasecmp(status_line, "HTTP/1.", 7) != 0) {
-        body = strstr(status_line, "\r\n\r\n");
-
-        if (body == NULL) {
-            return 0;
-        }
-
-        body_offset = (uintptr_t) body -
-                      (uintptr_t) status_line;
-
-        flb_http_response_set_status(response, 200);
-
-        flb_http_response_set_message(response, "");
-
-        flb_http_response_set_body(response,
-                                   body,
-                                   cfl_sds_len(incoming_data) - body_offset);
-
-        response->protocol_version = HTTP_PROTOCOL_VERSION_09;
-
-        response->stream->status = HTTP_STREAM_STATUS_READY;
-
-        return 0;
-    }
-
-    if (cfl_sds_len(incoming_data) < 15) {
-        return 0;
-    }
-
-    if (strncasecmp(status_line, "HTTP/1.1 ", 9) == 0) {
-        response->protocol_version = HTTP_PROTOCOL_VERSION_11;
-    }
-    else if (strncasecmp(status_line, "HTTP/1.0 ", 9) == 0) {
-        response->protocol_version = HTTP_PROTOCOL_VERSION_11;
-    }
-    else {
-        response->stream->status = HTTP_STREAM_STATUS_ERROR;
-
+    if (resized_buffer == NULL) {
         return -1;
     }
 
-    /* By delaying the status line parsing until the header
-     * seccion is complete we can work around a state machine
-     * design error in this iteration of the code.
-     */
-    headers = strstr(status_line, "\r\n");
+    parent_session->incoming_data = resized_buffer;
 
-    if (headers == NULL) {
-        return 0;
-    }
+    if (response->stream->status = HTTP_STREAM_STATUS_RECEIVING_HEADERS) {
+        status_line = parent_session->incoming_data;
 
-    headers = &headers[2];
-
-    body = strstr(headers, "\r\n\r\n");
-
-    if (body == NULL) {
-        return 0;
-    }
-
-    body = &body[4];
-
-    body_length = (size_t) ((uintptr_t) body - (uintptr_t) status_line);
-    body_length = cfl_sds_len(incoming_data) - body_length;
-
-    /* HTTP response status */
-    if (response->status <= 0) {
-        strncpy(status_code, &status_line[9], 3);
-        status_code[3] = '\0';
-
-        response->status = atoi(status_code);
-
-        if (response->status < 100 || response->status > 599) {
-            response->stream->status = HTTP_STREAM_STATUS_ERROR;
-
-            return -1;
+        /* We need at least 8 characters to differentiate
+        * HTTP/1.x from HTTP/0.9
+        */
+        if (cfl_sds_len(status_line) < 8) {
+            return 0;
         }
 
-        result = parse_headers(response, headers);
+        if (strncasecmp(status_line, "HTTP/1.", 7) != 0) {
+            body = strstr(status_line, "\r\n\r\n");
 
-        if (result != 0) {
-            response->stream->status = HTTP_STREAM_STATUS_ERROR;
-
-            return -1;
-        }
-    }
-
-    chunked_transfer = FLB_FALSE;
-
-    if (response->content_length == 0) {
-        transfer_encoding = flb_http_response_get_header(response, "transfer-encoding");
-
-        if (transfer_encoding != NULL) {
-            if (strncasecmp(transfer_encoding, "chunked", 7) == 0) {
-                chunked_transfer = FLB_TRUE;
-            }
-        }
-    }
-
-    if (!chunked_transfer) {
-        if (response->content_length > 0) {
-            if (body_length < response->content_length) {
+            if (body == NULL) {
                 return 0;
             }
+
+            body_offset = (uintptr_t) body -
+                          (uintptr_t) status_line;
+            body_length = cfl_sds_len(parent_session->incoming_data) -
+                          body_offset;
+
+            flb_http_response_set_status(response, 200);
+
+            flb_http_response_set_message(response, "");
+
+            flb_http_response_set_body(response,
+                                       body,
+                                       body_length);
+
+            response->protocol_version = HTTP_PROTOCOL_VERSION_09;
+
+            response->stream->status = HTTP_STREAM_STATUS_READY;
+
+            cfl_sds_len_set(parent_session->incoming_data, 0);
+
+            return 0;
+        }
+
+        if (cfl_sds_len(status_line) < 15) {
+            return 0;
+        }
+
+        if (strncasecmp(status_line, "HTTP/1.1 ", 9) == 0) {
+            response->protocol_version = HTTP_PROTOCOL_VERSION_11;
+        }
+        else if (strncasecmp(status_line, "HTTP/1.0 ", 9) == 0) {
+            response->protocol_version = HTTP_PROTOCOL_VERSION_11;
+        }
+        else {
+            response->stream->status = HTTP_STREAM_STATUS_ERROR;
+
+            return -1;
+        }
+
+        /* By delaying the status line parsing until the header
+        * seccion is complete we can work around a state machine
+        * design error in this iteration of the code.
+        */
+        header_block_begining = strstr(status_line, "\r\n");
+
+        if (header_block_begining == NULL) {
+            return 0;
+        }
+
+        header_block_begining = &header_block_begining[2];
+
+        header_block_end = strstr(headers, "\r\n\r\n");
+
+        if (header_block_end == NULL) {
+            return 0;
+        }
+
+        header_block_length = (size_t) ((uintptr_t) header_block_end -
+                                        (uintptr_t) header_block_begining);
+
+        /* HTTP response status */
+        if (response->status <= 0) {
+            strncpy(status_code, &status_line[9], 3);
+            status_code[3] = '\0';
+
+            response->status = atoi(status_code);
+
+            if (response->status < 100 || response->status > 599) {
+                response->stream->status = HTTP_STREAM_STATUS_ERROR;
+
+                return -1;
+            }
+
+            result = parse_headers(response, header_block_begining);
+
+            if (result != 0) {
+                response->stream->status = HTTP_STREAM_STATUS_ERROR;
+
+                return -1;
+            }
+        }
+
+        cfl_sds_shift_left(&parent_session->incoming_data, header_block_length);
+
+        response->stream->status = HTTP_STREAM_STATUS_RECEIVING_DATA;
+    }
+
+    if (response->stream->status == HTTP_STREAM_STATUS_RECEIVING_DATA) {
+        body = parent_session->incoming_data;
+
+        body_streaming_flag = (parent_session->parent->flags &
+                               FLB_HTTP_CLIENT_FLAG_STREAM_BODY) != 0;
+
+        chunked_transfer = FLB_FALSE;
+
+        if (response->content_length == 0) {
+            transfer_encoding = flb_http_response_get_header(response, "transfer-encoding");
+
+            if (transfer_encoding != NULL) {
+                if (strncasecmp(transfer_encoding, "chunked", 7) == 0) {
+                    chunked_transfer = FLB_TRUE;
+                }
+            }
+        }
+
+        body_length = cfl_sds_len(body);
+
+        if (chunked_transfer == FLB_FALSE) {
+            if (response->content_length > 0) {
+                if ((response->body_read_offset + body_length) <
+                    response->content_length) {
+                    if (body_streaming_flag == FLB_FALSE) {
+                        return 0;
+                    }
+
+                    response->body_read_offset += body_length;
+
+                    result = flb_http_response_append_to_body(response, body, body_length);
+                }
+                else {
+                    result = flb_http_response_append_to_body(response, body, body_length);
+
+                    response->stream->status = HTTP_STREAM_STATUS_READY;
+                }
+
+                cfl_sds_shift_left(&parent_session->incoming_data, body_length);
+            }
             else {
-                result = flb_http_response_set_body(response, body, body_length);
                 response->stream->status = HTTP_STREAM_STATUS_READY;
             }
         }
         else {
-            response->stream->status = HTTP_STREAM_STATUS_READY;
-        }
-    }
-    else {
-        size_t  chunk_length_length;
-        char   *chunk_length_end;
-        char   *chunk_header;
-        char   *chunk_data;
-        size_t  chunk_length;
-        size_t  body_remainder;
-        size_t  required_size;
-        cfl_sds_t sds_result;
+            size_t  chunk_length_length;
+            char   *chunk_length_end;
+            char   *chunk_header;
+            char   *chunk_data;
+            size_t  chunk_length;
+            size_t  body_remainder;
+            size_t  required_size;
+            cfl_sds_t sds_result;
 
-        body_remainder = body_length - response->body_read_offset;
+            body_remainder = body_length;
 
-        while (body_remainder > 0) {
-            chunk_header = &body[response->body_read_offset];
+            while (body_remainder > 0) {
+                chunk_header = parent_session->incoming_data;
 
-            if (strchr(chunk_header, '\r') == NULL) {
-                return 0;
-            }
+                if (strchr(chunk_header, '\r') == NULL) {
+                    return 0;
+                }
 
-            chunk_length = strtoull(chunk_header, &chunk_length_end, 16);
+                errno = 0;
 
-            chunk_length_length = (size_t) ((uintptr_t) chunk_length_end - (uintptr_t) chunk_header);
+                chunk_length = strtoull(chunk_header, &chunk_length_end, 16);
 
-            required_size = chunk_length_length + 2 + chunk_length + 2;
+                if (errno != 0) {
+                    response->stream->status = HTTP_STREAM_STATUS_ERROR;
 
-            if (body_remainder >= required_size) {
+                    return -1;
+                }
+
+                chunk_length_length = (size_t) ((uintptr_t) chunk_length_end -
+                                                (uintptr_t) chunk_header);
+
+                required_size = chunk_length_length + 2 + chunk_length + 2;
+
+                if (body_remainder < required_size) {
+                    return 0;
+                }
+
                 chunk_data = chunk_header + chunk_length_length + 2;
 
                 if (chunk_length > 0) {
-                    if (response->body == NULL) {
-                        flb_http_response_set_body(response, chunk_data, chunk_length);
-                    }
-                    else {
-                        sds_result = cfl_sds_cat(response->body, chunk_data, chunk_length);
+                    result = flb_http_response_append_to_body(response, chunk_data, chunk_length);
 
-                        if (sds_result == NULL) {
-                            response->stream->status = HTTP_STREAM_STATUS_ERROR;
+                    if (result != 0) {
+                        response->stream->status = HTTP_STREAM_STATUS_ERROR;
 
-                            return -1;
-                        }
-
-                        response->body = sds_result;
+                        return -1;
                     }
                 }
                 else {
                     response->stream->status = HTTP_STREAM_STATUS_READY;
                 }
 
+                cfl_sds_shift_left(&parent_session->incoming_data, required_size);
+
                 response->body_read_offset += required_size;
                 body_remainder -= required_size;
-            }
-            else {
-                return 0;
             }
         }
     }

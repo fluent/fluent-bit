@@ -324,6 +324,8 @@ static int http2_data_chunk_recv_callback(nghttp2_session *inner_session,
         memcpy(stream->response.body, data, len);
 
         cfl_sds_set_len(stream->response.body, len);
+
+        stream->response.body_read_offset = len;
     }
     else {
         resized_buffer = cfl_sds_cat(stream->response.body,
@@ -337,10 +339,12 @@ static int http2_data_chunk_recv_callback(nghttp2_session *inner_session,
         }
 
         stream->response.body = resized_buffer;
+        stream->response.body_read_offset += len;
     }
 
     if (stream->status == HTTP_STREAM_STATUS_RECEIVING_DATA) {
-        if (stream->response.content_length == cfl_sds_len(stream->response.body)) {
+        if (stream->response.content_length >=
+            stream->response.body_read_offset) {
             stream->status = HTTP_STREAM_STATUS_READY;
 
             if (!cfl_list_entry_is_orphan(&stream->response._head)) {

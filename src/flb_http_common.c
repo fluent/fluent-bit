@@ -1077,19 +1077,45 @@ int flb_http_response_set_message(struct flb_http_response *response,
 }
 
 int flb_http_response_set_body(struct flb_http_response *response,
-                           unsigned char *body, size_t body_length)
+                               unsigned char *body, size_t body_length)
 {
-    int version;
-
-    version = flb_http_response_get_version(response);
+    if (response->body != NULL) {
+       cfl_sds_destroy(response->body);
+    }
 
     response->body = cfl_sds_create_len((const char *) body, body_length);
 
-    if (version == HTTP_PROTOCOL_VERSION_20) {
-        return flb_http2_response_set_body(response, body, body_length);
+    if (response->body == NULL) {
+        return -1;
     }
 
-    return flb_http1_response_set_body(response, body, body_length);
+    return 0;
+}
+
+int flb_http_response_append_to_body(struct flb_http_response *response,
+                                     unsigned char *body, size_t body_length)
+{
+    cfl_sds_t resized_buffer;
+    int       version;
+
+    version = flb_http_response_get_version(response);
+
+    if (response->body == NULL) {
+        return flb_http_response_set_body(response, body, body_length);
+    }
+    else {
+        resized_buffer = cfl_sds_cat(response->body,
+                                    (const char *) body,
+                                    body_length);
+
+        if (resized_buffer == NULL) {
+            return -1;
+        }
+
+        response->body = resized_buffer;
+    }
+
+    return 0;
 }
 
 

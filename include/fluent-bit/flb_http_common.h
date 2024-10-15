@@ -245,6 +245,9 @@ int flb_http_response_set_message(struct flb_http_response *response,
 int flb_http_response_set_body(struct flb_http_response *response,
                            unsigned char *body, size_t body_length);
 
+int flb_http_response_append_to_body(struct flb_http_response *response,
+                                     unsigned char *body, size_t body_length);
+
 int flb_http_response_compress_body(
     struct flb_http_response *response,
     char *content_encoding_header_value);

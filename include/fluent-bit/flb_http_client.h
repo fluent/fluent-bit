@@ -34,6 +34,7 @@
 #define FLB_HTTP_CLIENT_FLAG_KEEPALIVE    (((uint64_t) 1) << 0)
 #define FLB_HTTP_CLIENT_FLAG_AUTO_DEFLATE (((uint64_t) 1) << 1)
 #define FLB_HTTP_CLIENT_FLAG_AUTO_INFLATE (((uint64_t) 1) << 2)
+#define FLB_HTTP_CLIENT_FLAG_STREAM_BODY  (((uint64_t) 1) << 3)
 
 /* Buffer size */
 #define FLB_HTTP_BUF_SIZE        2048
@@ -180,18 +181,19 @@ struct flb_http_client {
 };
 
 struct flb_http_client_ng {
-    struct cfl_list      sessions;
+    struct cfl_list         sessions;
 
-    uint16_t             port;
-    uint64_t             flags;
-    int                  protocol_version;
+    uint16_t                port;
+    uint64_t                flags;
+    int                     protocol_version;
 
-    int                  releasable;
-    void                 *user_data;
+    int                     releasable;
+    void                   *user_data;
 
-    struct flb_upstream *upstream;
+    struct flb_upstream    *upstream;
+    struct flb_upstream_ha *upstream_ha;
 
-    flb_lock_t           lock;
+    flb_lock_t              lock;
 };
 
 struct flb_http_client_session {
@@ -210,6 +212,7 @@ struct flb_http_client_session {
 
     int                             stream_sequence_number;
 
+    struct flb_upstream_node       *upstream_node;
     struct flb_connection          *connection;
     struct flb_http_client_ng      *parent;
 
@@ -219,11 +222,13 @@ struct flb_http_client_session {
 struct flb_aws_provider;
 
 int flb_http_client_ng_init(struct flb_http_client_ng *client,
+                            struct flb_upstream_ha *upstream_ha,
                             struct flb_upstream *upstream,
                             int protocol_version,
                             uint64_t flags);
 
 struct flb_http_client_ng *flb_http_client_ng_create(
+                                struct flb_upstream_ha *upstream_ha,
                                 struct flb_upstream *upstream,
                                 int protocol_version,
                                 uint64_t flags);
@@ -249,6 +254,9 @@ struct flb_http_request *flb_http_client_request_begin(
                             struct flb_http_client_session *session);
 
 struct flb_http_response *flb_http_client_request_execute(
+                            struct flb_http_request *request);
+
+struct flb_http_response *flb_http_client_request_execute_async(
                             struct flb_http_request *request);
 
 void flb_http_client_request_destroy(struct flb_http_request *request,
