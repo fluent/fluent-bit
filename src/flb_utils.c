@@ -756,6 +756,30 @@ static inline void encoded_to_buf(char *out, const char *in, int len)
     }
 }
 
+/* Structure to hold escape sequence */
+struct escape_seq {
+    const char *seq;
+};
+
+/* Lookup table for escape sequences */
+static const struct escape_seq json_escape_table[128] = {
+    ['\"'] = {"\\\""},
+    ['\\'] = {"\\\\"},
+    ['\n'] = {"\\n"},
+    ['\r'] = {"\\r"},
+    ['\t'] = {"\\t"},
+    ['\b'] = {"\\b"},
+    ['\f'] = {"\\f"},
+    [0x00] = {"\\u0000"}, [0x01] = {"\\u0001"}, [0x02] = {"\\u0002"}, [0x03] = {"\\u0003"},
+    [0x04] = {"\\u0004"}, [0x05] = {"\\u0005"}, [0x06] = {"\\u0006"}, [0x07] = {"\\u0007"},
+    [0x0B] = {"\\u000b"}, [0x0E] = {"\\u000e"}, [0x0F] = {"\\u000f"},
+    [0x10] = {"\\u0010"}, [0x11] = {"\\u0011"}, [0x12] = {"\\u0012"}, [0x13] = {"\\u0013"},
+    [0x14] = {"\\u0014"}, [0x15] = {"\\u0015"}, [0x16] = {"\\u0016"}, [0x17] = {"\\u0017"},
+    [0x18] = {"\\u0018"}, [0x19] = {"\\u0019"}, [0x1A] = {"\\u001a"}, [0x1B] = {"\\u001b"},
+    [0x1C] = {"\\u001c"}, [0x1D] = {"\\u001d"}, [0x1E] = {"\\u001e"}, [0x1F] = {"\\u001f"},
+    [0x7F] = {"\\u007f"}
+};
+
 /*
  * Write string pointed by 'str' to the destination buffer 'buf'. It's make sure
  * to escape special characters and convert utf-8 byte characters to string
@@ -795,43 +819,25 @@ int flb_utils_write_str(char *buf, int *off, size_t size,
         }
 
         c = (uint32_t) str[i];
-        if (c == '\"') {
-            *p++ = '\\';
-            *p++ = '\"';
-        }
-        else if (c == '\\') {
-            *p++ = '\\';
-            *p++ = '\\';
-        }
-        else if (c == '\n') {
-            *p++ = '\\';
-            *p++ = 'n';
-        }
-        else if (c == '\r') {
-            *p++ = '\\';
-            *p++ = 'r';
-        }
-        else if (c == '\t') {
-            *p++ = '\\';
-            *p++ = 't';
-        }
-        else if (c == '\b') {
-            *p++ = '\\';
-            *p++ = 'b';
-        }
-        else if (c == '\f') {
-            *p++ = '\\';
-            *p++ = 'f';
-        }
-        else if (c < 32 || c == 0x7f) {
-            if ((available - written) < 6) {
-                return FLB_FALSE;
+
+        /* Use the lookup table for known escape sequences */
+        if (c < 128 && json_escape_table[c].seq) {
+            /*
+             * check the length for the string, for simple escaping is always
+             * 2 bytes and 6 bytes for unicode
+             */
+            if (json_escape_table[c].seq[1] == 'u') {
+                len = 6;
             }
-            len = snprintf(tmp, sizeof(tmp) - 1, "\\u%.4hhx", (unsigned char) c);
+            else {
+                len = 2;
+            }
+
             if ((available - written) < len) {
                 return FLB_FALSE;
             }
-            encoded_to_buf(p, tmp, len);
+
+            memcpy(p, json_escape_table[c].seq, len);
             p += len;
         }
         else if (c >= 0x80 && c <= 0xFFFF) {
@@ -977,7 +983,6 @@ int flb_utils_write_str(char *buf, int *off, size_t size,
 
     return FLB_TRUE;
 }
-
 
 int flb_utils_write_str_buf(const char *str, size_t str_len, char **out, size_t *out_size)
 {
