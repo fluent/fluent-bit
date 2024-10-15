@@ -668,7 +668,8 @@ static int process_blob_chunk(struct flb_azure_blob *ctx, struct flb_event_chunk
             continue;
         }
 
-        ret = azb_db_file_insert(ctx, source, ctx->endpoint, file_path, file_size);
+        ret = azb_db_file_insert(ctx, source, ctx->real_endpoint, file_path, file_size);
+
         if (ret == -1) {
             flb_plg_error(ctx->ins, "cannot insert blob file into database: %s (size=%lu)",
                           file_path, file_size);
@@ -893,10 +894,13 @@ static void cb_azb_blob_file_upload(struct flb_config *config, void *out_context
         /* just continue, the row info was retrieved */
     }
 
-    if (strcmp(file_destination, ctx->endpoint) != 0) {
+
+    if (strcmp(file_destination, ctx->real_endpoint) != 0) {
         flb_plg_info(ctx->ins,
-                     "endpoint change detected, restarting file : %s",
-                     file_path);
+                     "endpoint change detected, restarting file : %s\n%s\n%s",
+                     file_path,
+                     file_destination,
+                     ctx->real_endpoint);
 
         info->active_upload = FLB_FALSE;
 
