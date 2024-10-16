@@ -51,4 +51,15 @@
 #define be64toh(x) OSSwapBigToHostInt64(x)
 #endif
 
+#define FLB_LITTLE_ENDIAN 0
+#define FLB_BIG_ENDIAN    1
+
+#ifndef FLB_BYTE_ORDER
+    #ifdef FLB_HAVE_BIG_ENDIAN_SYSTEM
+        #define FLB_BYTE_ORDER FLB_BIG_ENDIAN
+    #else
+        #define FLB_BYTE_ORDER FLB_LITTLE_ENDIAN
+    #endif
+#endif
+
 #endif

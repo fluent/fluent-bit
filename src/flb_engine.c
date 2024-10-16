@@ -53,6 +53,7 @@
 #include <fluent-bit/flb_upstream.h>
 #include <fluent-bit/flb_downstream.h>
 #include <fluent-bit/flb_ring_buffer.h>
+#include <fluent-bit/flb_notification.h>
 
 #ifdef FLB_HAVE_METRICS
 #include <fluent-bit/flb_metrics_exporter.h>
@@ -203,7 +204,7 @@ static inline int handle_input_event(flb_pipefd_t fd, uint64_t ts,
         return -1;
     }
 
-    flb_input_coro_finished(config, ins_id);
+    flb_input_coro_finished(config, (int) ins_id);
     return 0;
 }
 
@@ -692,6 +693,7 @@ int flb_engine_start(struct flb_config *config)
     struct flb_bucket_queue *evl_bktq;
     struct flb_sched *sched;
     struct flb_net_dns dns_ctx;
+    struct flb_notification *notification;
 
     /* Initialize the networking layer */
     flb_net_lib_init();
@@ -770,6 +772,19 @@ int flb_engine_start(struct flb_config *config)
         flb_error("[engine] could not create manager channels");
         return -1;
     }
+
+    ret = mk_event_channel_create(config->evl,
+                                  &config->notification_channels[0],
+                                  &config->notification_channels[1],
+                                  &config->notification_event);
+    if (ret == -1) {
+        flb_error("could not create main notification channel");
+
+        return -1;
+    }
+
+    config->notification_channels_initialized = FLB_TRUE;
+    config->notification_event.type = FLB_ENGINE_EV_NOTIFICATION;
 
     /* Initialize custom plugins */
     ret = flb_custom_init_all(config);
@@ -1072,6 +1087,15 @@ int flb_engine_start(struct flb_config *config)
 
                 rb_flush_flag = FLB_TRUE;
             }
+            else if(event->type == FLB_ENGINE_EV_NOTIFICATION) {
+                ret = flb_notification_receive(event->fd, &notification);
+
+                if (ret == 0) {
+                    ret = flb_notification_deliver(notification);
+
+                    flb_notification_cleanup(notification);
+                }
+            }
         }
 
         if (rb_flush_flag) {
@@ -1101,6 +1125,7 @@ int flb_engine_start(struct flb_config *config)
 /* Release all resources associated to the engine */
 int flb_engine_shutdown(struct flb_config *config)
 {
+    struct flb_sched_timer_coro_cb_params *sched_params;
 
     config->is_running = FLB_FALSE;
     flb_input_pause_all(config);
@@ -1119,6 +1144,13 @@ int flb_engine_shutdown(struct flb_config *config)
     flb_output_exit(config);
     flb_custom_exit(config);
     flb_input_exit_all(config);
+
+    /* scheduler */
+    sched_params = (struct flb_sched_timer_coro_cb_params *) FLB_TLS_GET(sched_timer_coro_cb_params);
+    if (sched_params != NULL) {
+        flb_free(sched_params);
+        FLB_TLS_SET(sched_timer_coro_cb_params, NULL);
+    }
 
     /* Destroy the storage context */
     flb_storage_destroy(config);
@@ -1140,6 +1172,15 @@ int flb_engine_shutdown(struct flb_config *config)
                                  config->ch_self_events[0],
                                  config->ch_self_events[1],
                                  &config->event_thread_init);
+    }
+
+    if (config->notification_channels_initialized == FLB_TRUE) {
+        mk_event_channel_destroy(config->evl,
+                                 config->notification_channels[0],
+                                 config->notification_channels[1],
+                                 &config->notification_event);
+
+        config->notification_channels_initialized = FLB_FALSE;
     }
 
     return 0;

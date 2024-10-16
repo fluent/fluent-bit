@@ -1003,9 +1003,9 @@ size_t flb_aws_strftime_precision(char **out_buf, const char *time_format,
 
     /* Replace %3N to millisecond, %9N and %L to nanosecond in time_format. */
     snprintf(millisecond_str, FLB_AWS_MILLISECOND_FORMATTER_LENGTH+1,
-             "%" PRIu64, (uint64_t) tms->tm.tv_nsec / 1000000);
+             "%03" PRIu64, (uint64_t) tms->tm.tv_nsec / 1000000);
     snprintf(nanosecond_str, FLB_AWS_NANOSECOND_FORMATTER_LENGTH+1,
-             "%" PRIu64, (uint64_t) tms->tm.tv_nsec);
+             "%09" PRIu64, (uint64_t) tms->tm.tv_nsec);
     for (i = 0; i < time_format_len; i++) {
         if (strncmp(time_format+i, FLB_AWS_MILLISECOND_FORMATTER, 3) == 0) {
             strncat(tmp_parsed_time_str, millisecond_str,
@@ -1029,6 +1029,8 @@ size_t flb_aws_strftime_precision(char **out_buf, const char *time_format,
 
     tmp = gmtime_r(&tms->tm.tv_sec, &timestamp);
     if (!tmp) {
+        flb_free(tmp_parsed_time_str);
+        flb_free(buf);
         return 0;
     }
 

@@ -2060,7 +2060,7 @@ static int state_create_group(struct flb_cf *conf, struct parser_state *state, c
     return YAML_SUCCESS;
 }
 
-static struct parser_state *state_pop(struct local_ctx *ctx)
+static struct parser_state *state_pop_with_cleanup(struct local_ctx *ctx, int destroy_variants)
 {
     struct parser_state *last;
 
@@ -2083,6 +2083,17 @@ static struct parser_state *state_pop(struct local_ctx *ctx)
         cfl_kvlist_destroy(last->keyvals);
     }
 
+    if (destroy_variants == FLB_TRUE) {
+        /* Teardown associated variant stuffs */
+        if (last->variant_kvlist_key != NULL) {
+            cfl_sds_destroy(last->variant_kvlist_key);
+        }
+
+        if (last->variant != NULL) {
+            cfl_variant_destroy(last->variant);
+        }
+    }
+
     state_destroy(last);
 
     if (cfl_list_size(&ctx->states) <= 0) {
@@ -2090,6 +2101,11 @@ static struct parser_state *state_pop(struct local_ctx *ctx)
     }
 
     return cfl_list_entry_last(&ctx->states, struct parser_state, _head);
+}
+
+static struct parser_state *state_pop(struct local_ctx *ctx)
+{
+    return state_pop_with_cleanup(ctx, FLB_FALSE);
 }
 
 static void state_destroy(struct parser_state *s)
@@ -2264,7 +2280,7 @@ done:
 
     /* free all remaining states */
     if (code == -1) {
-        while ((state = state_pop(ctx)));
+        while ((state = state_pop_with_cleanup(ctx, FLB_TRUE)));
     }
     else {
         state = state_pop(ctx);

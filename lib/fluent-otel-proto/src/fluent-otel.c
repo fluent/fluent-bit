@@ -59,4 +59,10 @@ void fluent_otel_info()
     printf("%10s", "not found (enable it with -DFLUENT_PROTO_METRICS)\n");
 #endif
 
+    printf("- opentelemetry proto 'profiles': ");
+#ifdef FLUENT_OTEL_HAVE_PROFILES
+    printf("%10s", "found\n");
+#else
+    printf("%10s", "not found (enable it with -DFLUENT_PROTO_PROFILES)\n");
+#endif
 }

@@ -27,6 +27,7 @@ set(src
   flb_input_log.c
   flb_input_metric.c
   flb_input_trace.c
+  flb_input_blob.c
   flb_input_thread.c
   flb_filter.c
   flb_output.c
@@ -80,6 +81,7 @@ set(src
   flb_processor.c
   flb_reload.c
   flb_msgpack_append_message.c
+  flb_notification.c
   )
 
 # Config format
@@ -223,7 +225,7 @@ endif()
 if(FLB_LUAJIT)
   set(extra_libs
     ${extra_libs}
-    "libluajit")
+    ${LUAJIT_LIBRARIES})
 endif()
 
 if(FLB_SQLDB)

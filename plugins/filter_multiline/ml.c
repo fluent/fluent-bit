@@ -204,9 +204,9 @@ static int cb_ml_init(struct flb_filter_instance *ins,
     ctx->config = config;
     ctx->timer_created = FLB_FALSE;
 
-    /* 
+    /*
      * Config map is not yet set at this point in the code
-     * user must explicitly set buffer to false to turn it off 
+     * user must explicitly set buffer to false to turn it off
      */
     ctx->use_buffer = FLB_TRUE;
     tmp = (char *) flb_filter_get_property("buffer", ins);
@@ -221,9 +221,12 @@ static int cb_ml_init(struct flb_filter_instance *ins,
         } else if (strcasecmp(tmp, FLB_MULTILINE_MODE_PARSER) == 0) {
             ctx->partial_mode = FLB_FALSE;
         } else {
-            flb_plg_error(ins, "'Mode' must be '%s' or '%s'", 
+            flb_plg_error(ins, "'Mode' must be '%s' or '%s'",
                           FLB_MULTILINE_MODE_PARTIAL_MESSAGE,
                           FLB_MULTILINE_MODE_PARSER);
+
+            flb_free(ctx);
+
             return -1;
         }
     }
@@ -278,7 +281,7 @@ static int cb_ml_init(struct flb_filter_instance *ins,
         flb_free(ctx);
         return -1;
     }
-    
+
     /* Set plugin context */
     flb_filter_set_context(ins, ctx);
 
@@ -313,7 +316,7 @@ static int cb_ml_init(struct flb_filter_instance *ins,
             flb_free(ctx);
             return -1;
         }
-        
+
         /* Create the emitter context */
         ret = emitter_create(ctx);
         if (ret == -1) {
@@ -412,7 +415,7 @@ static struct ml_stream *get_by_id(struct ml_ctx *ctx, uint64_t stream_id)
 }
 
 static struct ml_stream *get_or_create_stream(struct ml_ctx *ctx,
-                                              struct flb_input_instance *i_ins, 
+                                              struct flb_input_instance *i_ins,
                                               const char *tag, int tag_len)
 {
     uint64_t stream_id;
@@ -437,7 +440,6 @@ static struct ml_stream *get_or_create_stream(struct ml_ctx *ctx,
     }
 
     /* create a new stream */
-
     stream_name = flb_sds_create_size(64);
 
     tmp_sds = flb_sds_printf(&stream_name, "%s_%s", i_ins->name, tag);
@@ -456,7 +458,7 @@ static struct ml_stream *get_or_create_stream(struct ml_ctx *ctx,
     }
 
     tmp_sds = flb_sds_create(tag);
-    if (!tmp) {
+    if (!tmp_sds) {
         flb_errno();
         flb_sds_destroy(stream_name);
         ml_stream_destroy(stream);
@@ -504,18 +506,18 @@ static void partial_timer_cb(struct flb_config *config, void *data)
     struct split_message_packer *packer;
     unsigned long long now;
     unsigned long long diff;
-    int ret; 
+    int ret;
 
     now = ml_current_timestamp();
 
     mk_list_foreach_safe(head, tmp, &ctx->split_message_packers) {
         packer = mk_list_entry(head, struct split_message_packer, _head);
-        
+
         diff = now - packer->last_write_time;
         if (diff <= ctx->flush_ms) {
             continue;
         }
-        
+
         mk_list_del(&packer->_head);
         ml_split_message_packer_complete(packer);
         /* re-emit record with original tag */
@@ -602,7 +604,7 @@ static int ml_filter_partial(const void *data, size_t bytes,
         sched = flb_sched_ctx_get();
 
         ret = flb_sched_timer_cb_create(sched, FLB_SCHED_TIMER_CB_PERM,
-                                        ctx->flush_ms / 2, partial_timer_cb, 
+                                        ctx->flush_ms / 2, partial_timer_cb,
                                         ctx, NULL);
         if (ret < 0) {
             flb_plg_error(ctx->ins, "Failed to create flush timer");
@@ -611,7 +613,7 @@ static int ml_filter_partial(const void *data, size_t bytes,
         }
     }
 
-    /* 
+    /*
      * Create temporary msgpack buffer
      * for non-partial messages which are passed on as-is
      */
@@ -631,7 +633,7 @@ static int ml_filter_partial(const void *data, size_t bytes,
                 partial_records--;
                 goto pack_non_partial;
             }
-            packer = ml_get_packer(&ctx->split_message_packers, tag, 
+            packer = ml_get_packer(&ctx->split_message_packers, tag,
                                    i_ins->name, partial_id_str, partial_id_size);
             if (packer == NULL) {
                 flb_plg_trace(ctx->ins, "Found new partial record with tag %s", tag);
@@ -806,7 +808,7 @@ static int cb_ml_filter(const void *data, size_t bytes,
 
         /* unlikely to happen.. but just in case */
         return FLB_FILTER_NOTOUCH;
-    
+
     } else { /* buffered mode */
         stream = get_or_create_stream(ctx, i_ins, tag, tag_len);
 
@@ -830,7 +832,7 @@ static int cb_ml_filter(const void *data, size_t bytes,
 
         flb_log_event_decoder_destroy(&decoder);
 
-        /* 
+        /*
          * always returned modified, which will be 0 records, since the emitter takes
          * all records.
         */

@@ -884,6 +884,9 @@ static void cb_opensearch_flush(struct flb_event_chunk *event_chunk,
         pack = flb_msgpack_raw_to_json_sds(event_chunk->data, event_chunk->size);
         if (pack) {
             ret = 0;
+
+            out_buf = (void *) pack;
+            out_size = cfl_sds_len(pack);
         }
         else {
             ret = -1;
@@ -1025,11 +1028,11 @@ static void cb_opensearch_flush(struct flb_event_chunk *event_chunk,
 
     /* Cleanup */
     flb_http_client_destroy(c);
-    flb_sds_destroy(pack);
 
     if (final_payload_buf != pack) {
         flb_free(final_payload_buf);
     }
+    flb_sds_destroy(pack);
 
     flb_upstream_conn_release(u_conn);
     if (signature) {

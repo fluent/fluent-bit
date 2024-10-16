@@ -36,6 +36,7 @@
 #define FLB_HTTP_HEAD        3
 #define FLB_HTTP_CONNECT     4
 #define FLB_HTTP_PATCH       5
+#define FLB_HTTP_DELETE      6
 
 /* HTTP Flags */
 #define FLB_HTTP_10          1

@@ -6,7 +6,7 @@ set(CMAKE_EXPORT_COMPILE_COMMANDS ON)
 # CMetrics Version
 set(CMT_VERSION_MAJOR  0)
 set(CMT_VERSION_MINOR  9)
-set(CMT_VERSION_PATCH  1)
+set(CMT_VERSION_PATCH  8)
 set(CMT_VERSION_STR "${CMT_VERSION_MAJOR}.${CMT_VERSION_MINOR}.${CMT_VERSION_PATCH}")
 
 # Include helpers
@@ -69,12 +69,18 @@ endif()
 
 # Configuration options
 option(CMT_DEV                       "Enable development mode"                   No)
+option(CMT_DEBUG                     "Enable debug mode"                         No)
 option(CMT_TESTS                     "Enable unit testing"                       No)
 option(CMT_INSTALL_TARGETS           "Enable subdirectory library installations" Yes)
 option(CMT_ENABLE_PROMETHEUS_DECODER "Enable prometheus decoder"                 Yes)
 
 if(CMT_DEV)
   set(CMT_TESTS   Yes)
+  set(CMT_DEBUG   Yes)
+endif()
+
+if(CMT_DEBUG)
+  set(CMAKE_BUILD_TYPE Debug)
 endif()
 
 set(FLEX_BISON_GENERATED_DIR ${CMAKE_CURRENT_BINARY_DIR})
@@ -240,6 +246,12 @@ if (NOT CMT_HAVE_CFL)
       DESTINATION ${CMT_INSTALL_INCLUDEDIR}/cfl
       COMPONENT headers
       PERMISSIONS OWNER_READ OWNER_WRITE GROUP_READ WORLD_READ)
+
+    install(TARGETS cfl-static
+      RUNTIME DESTINATION ${CMT_INSTALL_BINDIR}
+      LIBRARY DESTINATION ${CMT_INSTALL_LIBDIR}
+      ARCHIVE DESTINATION ${CMT_INSTALL_LIBDIR}
+      COMPONENT library)
 
     # xxHash
     install(FILES lib/cfl/lib/xxhash/xxh3.h

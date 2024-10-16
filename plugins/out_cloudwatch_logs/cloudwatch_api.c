@@ -1116,6 +1116,7 @@ struct log_stream *get_or_create_log_stream(struct flb_cloudwatch *ctx,
     new_stream->name = flb_sds_create(stream_name);
     if (new_stream->name == NULL) {
         flb_errno();
+        flb_free(new_stream);
         return NULL;
     }
     new_stream->group = flb_sds_create(group_name);

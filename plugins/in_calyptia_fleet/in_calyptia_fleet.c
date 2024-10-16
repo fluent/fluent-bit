@@ -682,6 +682,10 @@ static msgpack_object *msgpack_lookup_map_key(msgpack_object *obj, const char *k
 
         key = &cur->key.via.str;
 
+        if (key->size != strlen(keyname)) {
+            continue;
+        }
+
         if (strncmp(key->ptr, keyname, key->size) == 0) {
             return &cur->val;
         }
@@ -799,7 +803,7 @@ static ssize_t parse_fleet_search_json(struct flb_in_calyptia_fleet_config *ctx,
             break;
         }
 
-        fleet = msgpack_lookup_map_key(map, "ID");
+        fleet = msgpack_lookup_map_key(map, "id");
         if (fleet == NULL) {
             flb_plg_error(ctx->ins, "unable to find fleet by name");
             break;
@@ -1985,6 +1989,10 @@ static int create_fleet_file(flb_sds_t fleetdir,
                             (unsigned char *)b64_content, blen);
 
     if (ret != 0) {
+        fclose(fp);
+        flb_sds_destroy(dst);
+        flb_sds_destroy(fname);
+
         return -1;
     }
 

@@ -14,7 +14,7 @@
 ARG WINDOWS_VERSION=ltsc2019
 
 # Builder Image - Windows Server Core
-FROM mcr.microsoft.com/windows/servercore:$WINDOWS_VERSION as builder
+FROM mcr.microsoft.com/windows/servercore:$WINDOWS_VERSION AS builder
 
 RUN setx /M PATH "%PATH%;C:\BuildTools\Common7\IDE\CommonExtensions\Microsoft\CMake\CMake\bin;C:\WinFlexBison;C:\dev\vcpkg"
 
@@ -87,7 +87,7 @@ RUN New-Item -Path  /fluent-bit/etc/ -ItemType "directory"; `
 #
 # Runtime Image - Windows Server Core
 #
-FROM mcr.microsoft.com/windows/servercore:$WINDOWS_VERSION as runtime
+FROM mcr.microsoft.com/windows/servercore:$WINDOWS_VERSION AS runtime
 
 ARG FLUENTBIT_VERSION=master
 ARG IMAGE_CREATE_DATE
@@ -99,7 +99,7 @@ LABEL org.opencontainers.image.title="Fluent Bit" `
     org.opencontainers.image.description="Fluent Bit is an open source and multi-platform Log Processor and Forwarder which allows you to collect data/logs from different sources, unify and send them to multiple destinations. It's fully compatible with Docker and Kubernetes environments." `
     org.opencontainers.image.created=$IMAGE_CREATE_DATE `
     org.opencontainers.image.version=$FLUENTBIT_VERSION `
-    org.opencontainers.image.authors="Eduardo Silva <eduardo@calyptia.com>" `
+    org.opencontainers.image.authors="Eduardo Silva <eduardo.silva@chronosphere.io>" `
     org.opencontainers.image.url="https://hub.docker.com/r/fluent/fluent-bit" `
     org.opencontainers.image.documentation="https://docs.fluentbit.io/manual/" `
     org.opencontainers.image.vendor="Fluent Organization" `

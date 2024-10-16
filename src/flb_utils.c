@@ -49,6 +49,10 @@ extern struct flb_aws_error_reporter *error_reporter;
 #ifdef FLB_SYSTEM_MACOS
 #include <CoreFoundation/CoreFoundation.h>
 #include <IOKit/IOKitLib.h>
+#include <AvailabilityMacros.h>
+#if MAC_OS_X_VERSION_MIN_REQUIRED < 120000
+#define kIOMainPortDefault kIOMasterPortDefault
+#endif
 #endif
 
 /*
@@ -754,7 +758,7 @@ static inline void encoded_to_buf(char *out, const char *in, int len)
 
 /*
  * Write string pointed by 'str' to the destination buffer 'buf'. It's make sure
- * to escape sepecial characters and convert utf-8 byte characters to string
+ * to escape special characters and convert utf-8 byte characters to string
  * representation.
  */
 int flb_utils_write_str(char *buf, int *off, size_t size,
@@ -1124,7 +1128,7 @@ int flb_utils_url_split(const char *in_url, char **out_protocol,
 
 /*
  * flb_utils_proxy_url_split parses a proxy's information from a http_proxy URL.
- * The URL is in the form like `http://username:password@myproxy.com:8080`.
+ * The URL is in the form like `http://[username:password@]myproxy.com:8080`.
  * Note: currently only HTTP is supported.
  */
 int flb_utils_proxy_url_split(const char *in_url, char **out_protocol,
@@ -1143,9 +1147,11 @@ int flb_utils_proxy_url_split(const char *in_url, char **out_protocol,
     /*  Parse protocol */
     proto_sep = strstr(in_url, "://");
     if (!proto_sep) {
+        flb_error("HTTP_PROXY variable must be set in the form of 'http://[username:password@]host:port'");
         return -1;
     }
     if (proto_sep == in_url) {
+        flb_error("HTTP_PROXY variable must be set in the form of 'http://[username:password@]host:port'");
         return -1;
     }
 
@@ -1156,6 +1162,7 @@ int flb_utils_proxy_url_split(const char *in_url, char **out_protocol,
     }
     /* Only HTTP proxy is supported for now. */
     if (strcmp(protocol, "http") != 0) {
+        flb_error("only HTTP proxy is supported.");
         flb_free(protocol);
         return -1;
     }
@@ -1163,10 +1170,10 @@ int flb_utils_proxy_url_split(const char *in_url, char **out_protocol,
     /* Advance position after protocol */
     proto_sep += 3;
 
-    /* Seperate `username:password` and `host:port` */
+    /* Separate `username:password` and `host:port` */
     at_sep = strrchr(proto_sep, '@');
     if (at_sep) {
-        /* Parse username:passwrod part. */
+        /* Parse username:password part. */
         tmp = strchr(proto_sep, ':');
         if (!tmp) {
             flb_free(protocol);
@@ -1279,9 +1286,16 @@ int flb_utils_uuid_v4_gen(char *buf)
 
 int flb_utils_read_file(char *path, char **out_buf, size_t *out_size)
 {
+    return flb_utils_read_file_offset(path, 0, 0, out_buf, out_size);
+}
+
+int flb_utils_read_file_offset(char *path, off_t offset_start, off_t offset_end, char **out_buf, size_t *out_size)
+{
     int fd;
     int ret;
     size_t bytes;
+    size_t bytes_to_read;
+    size_t total_bytes_read = 0;
     struct stat st;
     flb_sds_t buf;
     FILE *fp;
@@ -1299,26 +1313,54 @@ int flb_utils_read_file(char *path, char **out_buf, size_t *out_size)
         return -1;
     }
 
-    buf = flb_calloc(1, st.st_size + 1);
+    if (offset_start > st.st_size || offset_end > st.st_size) {
+        flb_error("offsets exceed file size (%jd bytes)", (intmax_t) st.st_size);
+        fclose(fp);
+        return -1;
+    }
+
+    if (offset_start > 0) {
+        ret = fseek(fp, offset_start, SEEK_SET);
+        if (ret != 0) {
+            flb_errno();
+            fclose(fp);
+            return -1;
+        }
+    }
+
+    if (offset_end == 0) {
+        offset_end = st.st_size;
+    }
+
+    bytes_to_read = offset_end - offset_start;
+
+    buf = flb_calloc(1, bytes_to_read + 1);
     if (!buf) {
         flb_errno();
         fclose(fp);
         return -1;
     }
 
-    bytes = fread(buf, st.st_size, 1, fp);
-    if (bytes < 1) {
-        if (ferror(fp)) {
-            flb_errno();
+    while (total_bytes_read < bytes_to_read) {
+        bytes = fread(buf + total_bytes_read, 1, bytes_to_read - total_bytes_read, fp);
+        if (bytes < 1) {
+            if (feof(fp)) {
+                break;
+            }
+            if (ferror(fp)) {
+                flb_errno();
+                free(buf);
+                fclose(fp);
+                return -1;
+            }
         }
-        flb_free(buf);
-        fclose(fp);
-        return -1;
+        total_bytes_read += bytes;
     }
     fclose(fp);
 
     *out_buf = buf;
-    *out_size = st.st_size;
+    *out_size = total_bytes_read;
+
     return 0;
 }
 
@@ -1403,7 +1445,7 @@ int flb_utils_get_machine_id(char **out_id, size_t *out_size)
     status = RegOpenKeyEx(HKEY_LOCAL_MACHINE,
                           TEXT("SOFTWARE\\Microsoft\\Cryptography"),
                           0,
-                          KEY_QUERY_VALUE,
+                          KEY_QUERY_VALUE|KEY_WOW64_64KEY,
                           &hKey);
 
     if (status != ERROR_SUCCESS) {
@@ -1420,8 +1462,15 @@ int flb_utils_get_machine_id(char **out_id, size_t *out_size)
             return -1;
         }
 
-        *out_size = dwBufSize;
+        memcpy(*out_id, buf, dwBufSize);
+
+        /* RegQueryValueEx sets dwBufSize to strlen()+1 for the NULL
+         * terminator, but we only need strlen(). */
+        *out_size = dwBufSize-1;
         return 0;
+    }
+    else {
+        flb_error("unable to retrieve MachineGUID, error code: %d", status);
     }
 #elif defined (FLB_SYSTEM_MACOS)
     bool bret;
@@ -1463,6 +1512,8 @@ int flb_utils_get_machine_id(char **out_id, size_t *out_size)
         return 0;
     }
 #endif
+
+    flb_warn("falling back on random machine UUID");
 
     /* generate a random uuid */
     uuid = flb_malloc(38);

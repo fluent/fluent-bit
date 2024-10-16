@@ -36,7 +36,7 @@ int cmt_cat_copy_label_keys(struct cmt_map *map, char **out)
 
     /* labels array */
     s = map->label_count;
-    if (s == 0) {
+    if (s <= 0) {
         *out = NULL;
         return 0;
     }
@@ -96,9 +96,66 @@ static int copy_label_values(struct cmt_metric *metric, char **out)
     return i;
 }
 
-int cmt_cat_copy_map(struct cmt_opts *opts, struct cmt_map *dst, struct cmt_map *src)
+static inline int cat_histogram_values(struct cmt_metric *metric_dst, struct cmt_histogram *histogram,
+                                       struct cmt_metric *metric_src)
 {
     int i;
+
+    if (!metric_dst->hist_buckets) {
+        metric_dst->hist_buckets = calloc(1, sizeof(uint64_t) * (histogram->buckets->count + 1));
+        if (!metric_dst->hist_buckets) {
+            return -1;
+        }
+    }
+
+    for (i = 0; i < histogram->buckets->count; i++) {
+        /* histogram buckets are always integers, no need to convert them */
+        metric_dst->hist_buckets[i] += metric_src->hist_buckets[i];
+    }
+
+    /* histogram count */
+    metric_dst->hist_count = cmt_math_sum_native_uint64_as_d64(metric_dst->hist_count,
+                                                               metric_src->hist_count);
+
+    /* histoggram sum */
+    metric_dst->hist_sum = cmt_math_sum_native_uint64_as_d64(metric_dst->hist_sum,
+                                                             metric_src->hist_sum);
+
+    return 0;
+}
+
+/*
+ * For summaries we don't support manual updates through the API, on concatenation we just
+ * keep the last values reported.
+ */
+static inline int cat_summary_values(struct cmt_metric *metric_dst, struct cmt_summary *summary,
+                                     struct cmt_metric *metric_src)
+{
+    int i;
+
+    if (!metric_dst->sum_quantiles) {
+        metric_dst->sum_quantiles = calloc(1, sizeof(uint64_t) * (summary->quantiles_count));
+        if (!metric_dst->sum_quantiles) {
+            return -1;
+        }
+    }
+
+    for (i = 0; i < summary->quantiles_count; i++) {
+        /* summary quantiles are always integers, no need to convert them */
+        metric_dst->sum_quantiles[i] = metric_src->sum_quantiles[i];
+    }
+
+    metric_dst->sum_quantiles_count = metric_src->sum_quantiles_count;
+    metric_dst->sum_quantiles_set = metric_src->sum_quantiles_set;
+
+    metric_dst->sum_count = metric_src->sum_count;
+    metric_dst->sum_sum = metric_src->sum_sum;
+
+    return 0;
+}
+
+int cmt_cat_copy_map(struct cmt_opts *opts, struct cmt_map *dst, struct cmt_map *src)
+{
     int c;
     int ret;
     uint64_t ts;
@@ -107,6 +164,7 @@ int cmt_cat_copy_map(struct cmt_opts *opts, struct cmt_map *dst, struct cmt_map 
     struct cfl_list *head;
     struct cmt_metric *metric_dst;
     struct cmt_metric *metric_src;
+    struct cmt_summary *summary;
     struct cmt_histogram *histogram;
 
     /* Handle static metric (no labels case) */
@@ -119,33 +177,17 @@ int cmt_cat_copy_map(struct cmt_opts *opts, struct cmt_map *dst, struct cmt_map 
 
         if (src->type == CMT_HISTOGRAM) {
             histogram = (struct cmt_histogram *) src->parent;
-
-            if (!metric_dst->hist_buckets) {
-                metric_dst->hist_buckets = calloc(1, sizeof(uint64_t) * (histogram->buckets->count + 1));
-                if (!metric_dst->hist_buckets) {
-                    return -1;
-                }
+            ret = cat_histogram_values(metric_dst, histogram, metric_src);
+            if (ret == -1) {
+                return -1;
             }
-            for (i = 0; i < histogram->buckets->count; i++) {
-                metric_dst->hist_buckets[i] = metric_src->hist_buckets[i];
-            }
-            metric_dst->hist_count = metric_src->hist_count;
-            metric_dst->hist_sum = metric_src->hist_sum;
         }
         else if (src->type == CMT_SUMMARY) {
-            metric_dst->sum_quantiles_count = metric_src->sum_quantiles_count;
-            metric_dst->sum_quantiles_set = metric_src->sum_quantiles_set;
-            if (!metric_dst->sum_quantiles) {
-                metric_dst->sum_quantiles = calloc(1, sizeof(uint64_t) * (metric_src->sum_quantiles_count));
-                if (!metric_dst->sum_quantiles) {
-                    return -1;
-                }
+            summary = (struct cmt_summary *) src->parent;
+            ret = cat_summary_values(metric_dst, summary, metric_src);
+            if (ret == -1) {
+                return -1;
             }
-            for (i = 0; i < metric_src->sum_quantiles_count; i++) {
-                metric_dst->sum_quantiles[i] = metric_src->sum_quantiles[i];
-            }
-            metric_dst->sum_count = metric_src->sum_count;
-            metric_dst->sum_sum = metric_src->sum_sum;
         }
 
         ts  = cmt_metric_get_timestamp(metric_src);
@@ -173,34 +215,17 @@ int cmt_cat_copy_map(struct cmt_opts *opts, struct cmt_map *dst, struct cmt_map 
 
         if (src->type == CMT_HISTOGRAM) {
             histogram = (struct cmt_histogram *) src->parent;
-
-            if (!metric_dst->hist_buckets) {
-                metric_dst->hist_buckets = calloc(1, sizeof(uint64_t) * (histogram->buckets->count + 1));
-                if (!metric_dst->hist_buckets) {
-                    return -1;
-                }
+            ret = cat_histogram_values(metric_dst, histogram, metric_src);
+            if (ret == -1) {
+                return -1;
             }
-
-            for (i = 0; i < histogram->buckets->count; i++) {
-                metric_dst->hist_buckets[i] = metric_src->hist_buckets[i];
-            }
-            metric_dst->hist_count = metric_src->hist_count;
-            metric_dst->hist_sum = metric_src->hist_sum;
         }
         else if (src->type == CMT_SUMMARY) {
-            metric_dst->sum_quantiles_count = metric_src->sum_quantiles_count;
-            metric_dst->sum_quantiles_set = metric_src->sum_quantiles_set;
-            if (!metric_dst->sum_quantiles) {
-                metric_dst->sum_quantiles = calloc(1, sizeof(uint64_t) * (metric_src->sum_quantiles_count));
-                if (!metric_dst->sum_quantiles) {
-                    return -1;
-                }
+            summary = (struct cmt_summary *) src->parent;
+            ret = cat_summary_values(metric_dst, summary, metric_src);
+            if (ret == -1) {
+                return -1;
             }
-            for (i = 0; i < metric_src->sum_quantiles_count; i++) {
-                metric_dst->sum_quantiles[i] = metric_src->sum_quantiles[i];
-            }
-            metric_dst->sum_count = metric_src->sum_count;
-            metric_dst->sum_sum = metric_src->sum_sum;
         }
 
         ts  = cmt_metric_get_timestamp(metric_src);
@@ -211,6 +236,88 @@ int cmt_cat_copy_map(struct cmt_opts *opts, struct cmt_map *dst, struct cmt_map 
 
     return 0;
 
+}
+
+static inline int cmt_opts_compare(struct cmt_opts *a, struct cmt_opts *b)
+{
+    int ret;
+
+    ret = strcmp(a->ns, b->ns);
+    if (ret != 0) {
+        return ret;
+    }
+
+    ret = strcmp(a->subsystem, b->subsystem);
+    if (ret != 0) {
+        return ret;
+    }
+
+    ret = strcmp(a->name, b->name);
+    if (ret != 0) {
+        return ret;
+    }
+
+    return strcmp(a->description, b->description);
+}
+
+static struct cmt_counter *counter_lookup(struct cmt *cmt, struct cmt_opts *opts)
+{
+    struct cmt_counter *counter;
+    struct cfl_list *head;
+
+    cfl_list_foreach(head, &cmt->counters) {
+        counter = cfl_list_entry(head, struct cmt_counter, _head);
+        if (cmt_opts_compare(&counter->opts, opts) == 0) {
+            return counter;
+        }
+    }
+
+    return NULL;
+}
+
+static struct cmt_gauge *gauge_lookup(struct cmt *cmt, struct cmt_opts *opts)
+{
+    struct cmt_gauge *gauge;
+    struct cfl_list *head;
+
+    cfl_list_foreach(head, &cmt->gauges) {
+        gauge = cfl_list_entry(head, struct cmt_gauge, _head);
+        if (cmt_opts_compare(&gauge->opts, opts) == 0) {
+            return gauge;
+        }
+    }
+
+    return NULL;
+}
+
+static struct cmt_untyped *untyped_lookup(struct cmt *cmt, struct cmt_opts *opts)
+{
+    struct cmt_untyped *untyped;
+    struct cfl_list *head;
+
+    cfl_list_foreach(head, &cmt->untypeds) {
+        untyped = cfl_list_entry(head, struct cmt_untyped, _head);
+        if (cmt_opts_compare(&untyped->opts, opts) == 0) {
+            return untyped;
+        }
+    }
+
+    return NULL;
+}
+
+static struct cmt_histogram *histogram_lookup(struct cmt *cmt, struct cmt_opts *opts)
+{
+    struct cmt_histogram *histogram;
+    struct cfl_list *head;
+
+    cfl_list_foreach(head, &cmt->histograms) {
+        histogram = cfl_list_entry(head, struct cmt_histogram, _head);
+        if (cmt_opts_compare(&histogram->opts, opts) == 0) {
+            return histogram;
+        }
+    }
+
+    return NULL;
 }
 
 int cmt_cat_counter(struct cmt *cmt, struct cmt_counter *counter,
@@ -230,11 +337,14 @@ int cmt_cat_counter(struct cmt *cmt, struct cmt_counter *counter,
         return -1;
     }
 
-    /* create counter */
-    c = cmt_counter_create(cmt,
-                           opts->ns, opts->subsystem,
-                           opts->name, opts->description,
-                           map->label_count, labels);
+    c = counter_lookup(cmt, opts);
+    if (!c) {
+        /* create counter */
+        c = cmt_counter_create(cmt,
+                            opts->ns, opts->subsystem,
+                            opts->name, opts->description,
+                            map->label_count, labels);
+    }
 
     free(labels);
     if (!c) {
@@ -274,11 +384,15 @@ int cmt_cat_gauge(struct cmt *cmt, struct cmt_gauge *gauge,
         return -1;
     }
 
-    /* create counter */
-    g = cmt_gauge_create(cmt,
-                         opts->ns, opts->subsystem,
-                         opts->name, opts->description,
-                         map->label_count, labels);
+    g = gauge_lookup(cmt, opts);
+    if (!g) {
+        /* create counter */
+        g = cmt_gauge_create(cmt,
+                            opts->ns, opts->subsystem,
+                            opts->name, opts->description,
+                            map->label_count, labels);
+    }
+
     free(labels);
     if (!g) {
         return -1;
@@ -317,11 +431,15 @@ int cmt_cat_untyped(struct cmt *cmt, struct cmt_untyped *untyped,
         return -1;
     }
 
-    /* create counter */
-    u = cmt_untyped_create(cmt,
-                           opts->ns, opts->subsystem,
-                           opts->name, opts->description,
-                           map->label_count, labels);
+    u = untyped_lookup(cmt, opts);
+    if (!u) {
+        /* create counter */
+        u = cmt_untyped_create(cmt,
+                            opts->ns, opts->subsystem,
+                            opts->name, opts->description,
+                            map->label_count, labels);
+    }
+
     free(labels);
     if (!u) {
         return -1;
@@ -346,36 +464,35 @@ int cmt_cat_untyped(struct cmt *cmt, struct cmt_untyped *untyped,
 int cmt_cat_histogram(struct cmt *cmt, struct cmt_histogram *histogram,
                       struct cmt_map *filtered_map)
 {
-    int i;
-    double val;
     int ret;
     char **labels = NULL;
     struct cmt_map *map;
     struct cmt_opts *opts;
     struct cmt_histogram *hist;
-    uint64_t timestamp;
     struct cmt_histogram_buckets *buckets;
     int64_t buckets_count;
 
     map = histogram->map;
     opts = map->opts;
-    timestamp = cmt_metric_get_timestamp(&map->metric);
 
     ret = cmt_cat_copy_label_keys(map, (char **) &labels);
     if (ret == -1) {
         return -1;
     }
 
-    buckets_count = histogram->buckets->count;
-    buckets = cmt_histogram_buckets_create_size(histogram->buckets->upper_bounds,
-                                                buckets_count);
+    hist = histogram_lookup(cmt, opts);
+    if (!hist) {
+        buckets_count = histogram->buckets->count;
+        buckets = cmt_histogram_buckets_create_size(histogram->buckets->upper_bounds,
+                                                    buckets_count);
 
-    /* create histogram */
-    hist = cmt_histogram_create(cmt,
-                                opts->ns, opts->subsystem,
-                                opts->name, opts->description,
-                                buckets,
-                                map->label_count, labels);
+        /* create histogram */
+        hist = cmt_histogram_create(cmt,
+                                    opts->ns, opts->subsystem,
+                                    opts->name, opts->description,
+                                    buckets,
+                                    map->label_count, labels);
+    }
     free(labels);
 
     if (!hist) {
@@ -433,6 +550,8 @@ int cmt_cat_summary(struct cmt *cmt, struct cmt_summary *summary,
                              quantiles,
                              map->label_count, labels);
     if (!sum) {
+        free(labels);
+        free(quantiles);
         return -1;
     }
 

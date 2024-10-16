@@ -312,7 +312,7 @@ static int process_metrics(struct flb_event_chunk *event_chunk,
         diff = off;
 
         /* concat buffer */
-        flb_sds_cat_safe(&buf, encoded_chunk, flb_sds_len(encoded_chunk));
+        flb_sds_cat_safe(&buf, encoded_chunk, cfl_sds_len(encoded_chunk));
 
         /* release */
         cmt_encode_opentelemetry_destroy(encoded_chunk);
@@ -326,7 +326,7 @@ static int process_metrics(struct flb_event_chunk *event_chunk,
             result = opentelemetry_http_post(ctx, buf, flb_sds_len(buf),
                                              event_chunk->tag,
                                              flb_sds_len(event_chunk->tag),
-                                             ctx->metrics_uri);
+                                             ctx->metrics_uri_sanitized);
 
             /* Debug http_post() result statuses */
             if (result == FLB_OK) {
@@ -345,6 +345,7 @@ static int process_metrics(struct flb_event_chunk *event_chunk,
     }
     else {
         flb_plg_error(ctx->ins, "Error decoding msgpack encoded context");
+        flb_sds_destroy(buf);
         return FLB_ERROR;
     }
 
@@ -415,7 +416,7 @@ static int process_traces(struct flb_event_chunk *event_chunk,
         result = opentelemetry_http_post(ctx, buf, flb_sds_len(buf),
                                          event_chunk->tag,
                                          flb_sds_len(event_chunk->tag),
-                                         ctx->traces_uri);
+                                         ctx->traces_uri_sanitized);
 
         /* Debug http_post() result statuses */
         if (result == FLB_OK) {

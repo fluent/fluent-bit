@@ -30,3 +30,46 @@ jobs:
         push: false
         load: false
         provenance: false
+
+  # Sanity check for compilation using system libraries
+  pr-compile-system-libs:
+    runs-on: ubuntu-20.04
+    timeout-minutes: 60
+    strategy:
+      fail-fast: false
+      matrix:
+        flb_option:
+          - "-DFLB_PREFER_SYSTEM_LIBS=On"
+        compiler:
+          - gcc
+          - clang
+    steps:
+      - name: Setup environment
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y gcc-7 g++-7 clang-6.0 libsystemd-dev gcovr libyaml-dev libluajit-5.1-dev
+          sudo ln -s /usr/bin/llvm-symbolizer-6.0 /usr/bin/llvm-symbolizer || true
+
+      - name: Checkout Fluent Bit code
+        uses: actions/checkout@v4
+
+      - name: ${{ matrix.compiler }} - ${{ matrix.flb_option }}
+        run: |
+          export nparallel=$(( $(getconf _NPROCESSORS_ONLN) > 8 ? 8 : $(getconf _NPROCESSORS_ONLN) ))
+          echo "CC = $CC, CXX = $CXX, FLB_OPT = $FLB_OPT"
+          sudo update-alternatives --install /usr/bin/gcc gcc /usr/bin/gcc-7 90
+          sudo update-alternatives --install /usr/bin/g++ g++ /usr/bin/g++-7 90
+          sudo update-alternatives --install /usr/bin/clang clang /usr/bin/clang-6.0 90
+          cmake $GLOBAL_OPTS $FLB_OPT  ../
+          make -j $nparallel
+        working-directory: build
+        env:
+          CC: ${{ matrix.compiler }}
+          CXX: ${{ matrix.compiler }}
+          FLB_OPT: ${{ matrix.flb_option }}
+          GLOBAL_OPTS: "-DFLB_BACKTRACE=Off -DFLB_SHARED_LIB=Off -DFLB_DEBUG=On -DFLB_ALL=On -DFLB_EXAMPLES=Off"
+
+      - name: Display dependencies w/ ldd
+        run: |
+          ldd ./bin/fluent-bit
+        working-directory: build

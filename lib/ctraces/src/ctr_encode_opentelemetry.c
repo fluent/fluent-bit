@@ -20,6 +20,9 @@
 #include <ctraces/ctraces.h>
 #include <fluent-otel-proto/fluent-otel.h>
 
+static void destroy_scope_spans(Opentelemetry__Proto__Trace__V1__ScopeSpans **scope_spans,
+                         size_t count);
+
 static inline Opentelemetry__Proto__Common__V1__AnyValue *ctr_variant_to_otlp_any_value(struct cfl_variant *value);
 static inline Opentelemetry__Proto__Common__V1__KeyValue *ctr_variant_kvpair_to_otlp_kvpair(struct cfl_kvpair *input_pair);
 static inline Opentelemetry__Proto__Common__V1__AnyValue *ctr_variant_kvlist_to_otlp_any_value(struct cfl_variant *value);
@@ -30,6 +33,8 @@ static inline void otlp_kvlist_destroy(Opentelemetry__Proto__Common__V1__KeyValu
 static inline void otlp_array_destroy(Opentelemetry__Proto__Common__V1__ArrayValue *array);
 
 static inline void otlp_kvpair_list_destroy(Opentelemetry__Proto__Common__V1__KeyValue **pair_list, size_t entry_count);
+
+static void destroy_spans(Opentelemetry__Proto__Trace__V1__Span **spans, size_t count);
 
 static inline void otlp_kvpair_destroy(Opentelemetry__Proto__Common__V1__KeyValue *kvpair)
 {
@@ -422,8 +427,7 @@ static inline Opentelemetry__Proto__Common__V1__AnyValue *ctr_variant_string_to_
 
         if (result->string_value == NULL) {
             otlp_any_value_destroy(result);
-
-            result = NULL;
+            return NULL;
         }
     }
 
@@ -481,8 +485,8 @@ static inline Opentelemetry__Proto__Common__V1__AnyValue *ctr_variant_binary_to_
 
         if (result->bytes_value.data == NULL) {
             otlp_any_value_destroy(result);
-
             result = NULL;
+
         }
 
         memcpy(result->bytes_value.data, value->data.as_bytes, result->bytes_value.len);
@@ -881,6 +885,9 @@ static Opentelemetry__Proto__Trace__V1__Span **set_spans(struct ctrace_scope_spa
 
         otel_span = initialize_span();
         if (!otel_span) {
+            if (span_index > 0) {
+                destroy_spans(spans, span_index);
+            }
             return NULL;
         }
 
@@ -914,11 +921,21 @@ static Opentelemetry__Proto__Common__V1__InstrumentationScope *set_instrumentati
         return NULL;
     }
 
-    otel_scope->name = instrumentation_scope->name;
-    otel_scope->version = instrumentation_scope->version;
+    if (instrumentation_scope->name) {
+        otel_scope->name = instrumentation_scope->name;
+    }
+    else {
+        otel_scope->name = "";
+    }
+    if (instrumentation_scope->version) {
+        otel_scope->version = instrumentation_scope->version;
+    }
+    else {
+        otel_scope->version = "";
+    }
     otel_scope->n_attributes = get_attributes_count(instrumentation_scope->attr);
     otel_scope->dropped_attributes_count = instrumentation_scope->dropped_attr_count;
-    otel_scope->attributes = set_attributes_from_ctr(instrumentation_scope->attr);;
+    otel_scope->attributes = set_attributes_from_ctr(instrumentation_scope->attr);
 
     return otel_scope;
 }
@@ -976,11 +993,17 @@ static Opentelemetry__Proto__Trace__V1__ScopeSpans **set_scope_spans(struct ctra
 
         otel_scope_span = initialize_scope_span();
         if (!otel_scope_span) {
+            if (scope_span_index > 0) {
+                destroy_scope_spans(scope_spans, scope_span_index - 1);
+            }
+            /* note: scope_spans is freed inside destroy_scope_spans() */
             return NULL;
         }
 
         otel_scope_span->schema_url = scope_span->schema_url;
-        otel_scope_span->scope = set_instrumentation_scope(scope_span->instrumentation_scope);
+        if (scope_span->instrumentation_scope != NULL) {
+            otel_scope_span->scope = set_instrumentation_scope(scope_span->instrumentation_scope);
+        }
 
         span_count = cfl_list_size(&scope_span->spans);
         otel_scope_span->n_spans = span_count;
@@ -1042,6 +1065,7 @@ static Opentelemetry__Proto__Trace__V1__ResourceSpans **set_resource_spans(struc
 
         otel_resource_span = initialize_resource_span();
         if (!otel_resource_span) {
+            free(rs);
             return NULL;
         }
         otel_resource_span->resource = ctr_set_resource(resource_span->resource);
@@ -1305,12 +1329,12 @@ cfl_sds_t ctr_encode_opentelemetry_create(struct ctrace *ctr)
     len = opentelemetry__proto__collector__trace__v1__export_trace_service_request__get_packed_size(req);
     buf = cfl_sds_create_size(len);
     if (!buf) {
+        destroy_export_service_request(req);
         return NULL;
     }
     cfl_sds_set_len(buf, len);
 
     opentelemetry__proto__collector__trace__v1__export_trace_service_request__pack(req, (uint8_t *)buf);
-
     destroy_export_service_request(req);
 
     return buf;

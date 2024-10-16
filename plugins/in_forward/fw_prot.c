@@ -599,6 +599,7 @@ static int check_ping(struct flb_input_instance *ins,
     if (o.type != MSGPACK_OBJECT_STR) {
         flb_plg_error(ins, "Invalid shared_key_salt type message");
         flb_free(serverside);
+        flb_free(hostname);
         msgpack_unpacked_destroy(&result);
         return -1;
     }
@@ -609,7 +610,9 @@ static int check_ping(struct flb_input_instance *ins,
     if (o.type != MSGPACK_OBJECT_STR) {
         flb_plg_error(ins, "Invalid shared_key_digest type message");
         flb_free(serverside);
+        flb_free(hostname);
         msgpack_unpacked_destroy(&result);
+
         return -1;
     }
     shared_key_digest = flb_sds_create_len(o.via.str.ptr, o.via.str.size);
@@ -620,6 +623,8 @@ static int check_ping(struct flb_input_instance *ins,
     if (o.type != MSGPACK_OBJECT_STR) {
         flb_plg_error(ins, "Invalid username type message");
         flb_free(serverside);
+        flb_free(hostname);
+        flb_free(shared_key_salt);
         msgpack_unpacked_destroy(&result);
         return -1;
     }
@@ -630,6 +635,10 @@ static int check_ping(struct flb_input_instance *ins,
     if (o.type != MSGPACK_OBJECT_STR) {
         flb_plg_error(ins, "Invalid password_digest type message");
         flb_free(serverside);
+        flb_free(hostname);
+        flb_free(shared_key_salt);
+        flb_free(shared_key_digest);
+        flb_free(username);
         msgpack_unpacked_destroy(&result);
         return -1;
     }
@@ -642,7 +651,12 @@ static int check_ping(struct flb_input_instance *ins,
                                            shared_key_salt, hostname, hostname_len,
                                            serverside, 128)) {
         flb_free(serverside);
-        flb_plg_error(ctx->ins, "failed to hash shard_key");
+        flb_free(username);
+        flb_free(password_digest);
+        flb_free(shared_key_salt);
+        flb_free(shared_key_digest);
+        flb_free(hostname);
+        flb_plg_error(ctx->ins, "failed to hash shared_key");
         return -1;
     }
 
@@ -1106,32 +1120,50 @@ static int append_log(struct flb_input_instance *ins, struct fw_conn *conn,
     struct ctrace *ctr;
 
     if (event_type == FLB_EVENT_TYPE_LOGS) {
-        flb_input_log_append(conn->in,
-                             out_tag, flb_sds_len(out_tag),
-                             data, len);
+        ret = flb_input_log_append(conn->in,
+                                   out_tag, flb_sds_len(out_tag),
+                                   data, len);
+        if (ret != 0) {
+            flb_plg_error(ins, "could not append logs. ret=%d", ret);
+            return -1;
+        }
 
         return 0;
     }
     else if (event_type == FLB_EVENT_TYPE_METRICS) {
         ret = cmt_decode_msgpack_create(&cmt, (char *) data, len, &off);
         if (ret != CMT_DECODE_MSGPACK_SUCCESS) {
-            flb_error("cmt_decode_msgpack_create failed. ret=%d", ret);
+            flb_plg_error(ins, "cmt_decode_msgpack_create failed. ret=%d", ret);
             return -1;
         }
-        flb_input_metrics_append(conn->in,
-                                 out_tag, flb_sds_len(out_tag),
-                                 cmt);
+
+        ret = flb_input_metrics_append(conn->in,
+                                       out_tag, flb_sds_len(out_tag),
+                                       cmt);
+        if (ret != 0) {
+            flb_plg_error(ins, "could not append metrics. ret=%d", ret);
+            cmt_decode_msgpack_destroy(cmt);
+            return -1;
+        }
+        cmt_decode_msgpack_destroy(cmt);
     }
     else if (event_type == FLB_EVENT_TYPE_TRACES) {
         off = 0;
         ret = ctr_decode_msgpack_create(&ctr, (char *) data, len, &off);
         if (ret == -1) {
+            flb_error("could not decode trace message. ret=%d", ret);
             return -1;
         }
 
-        flb_input_trace_append(ins,
-                               out_tag, flb_sds_len(out_tag),
-                               ctr);
+        ret = flb_input_trace_append(ins,
+                                     out_tag, flb_sds_len(out_tag),
+                                     ctr);
+        if (ret != 0) {
+            flb_plg_error(ins, "could not append traces. ret=%d", ret);
+            ctr_decode_msgpack_destroy(ctr);
+            return -1;
+        }
+        ctr_decode_msgpack_destroy(ctr);
     }
 
     return 0;
@@ -1198,55 +1230,6 @@ error:
     }
 
     return -1;
-}
-
-static size_t gzip_concatenated_count(const char *data, size_t len)
-{
-    int i;
-    size_t count = 0;
-    const uint8_t *p;
-
-    p = (const uint8_t *) data;
-
-    /* search other gzip starting bits and method. */
-    for (i = 2; i < len &&
-                 i + 2 <= len; i++) {
-        if (p[i] == 0x1F && p[i+1] == 0x8B && p[i+2] == 8) {
-            count++;
-        }
-    }
-
-    return count;
-}
-
-static size_t gzip_concatenated_borders(const char *data, size_t len, size_t **out_borders, size_t border_count)
-{
-    int i;
-    size_t count = 0;
-    const uint8_t *p;
-    size_t *borders = NULL;
-
-    p = (const uint8_t *) data;
-    borders = (size_t *) flb_calloc(1, sizeof(size_t) * (border_count + 1));
-    if (borders == NULL) {
-        flb_errno();
-        return -1;
-    }
-
-    /* search other gzip starting bits and method. */
-    for (i = 2; i < len &&
-                 i + 2 <= len; i++) {
-        if (p[i] == 0x1F && p[i+1] == 0x8B && p[i+2] == 8) {
-            borders[count] = i;
-            count++;
-        }
-    }
-    /* The length of the last border refers to the original length. */
-    borders[border_count] = len;
-
-    *out_borders = borders;
-
-    return count;
 }
 
 int fw_prot_process(struct flb_input_instance *ins, struct fw_conn *conn)
@@ -1543,11 +1526,16 @@ int fw_prot_process(struct flb_input_instance *ins, struct fw_conn *conn)
                         size_t *gzip_borders = NULL;
                         const size_t original_len = len;
 
-                        gzip_payloads_count = gzip_concatenated_count(data, len);
+                        gzip_payloads_count = flb_gzip_count(data, len, NULL, 0);
                         flb_plg_debug(ctx->ins, "concatenated gzip payload count is %zd",
                                      gzip_payloads_count);
                         if (gzip_payloads_count > 0) {
-                            if (gzip_concatenated_borders(data, len, &gzip_borders, gzip_payloads_count) < 0) {
+                            gzip_borders = (size_t *)flb_calloc(1, sizeof(size_t) * (gzip_payloads_count + 1));
+                            if (gzip_borders == NULL) {
+                                flb_errno();
+                                return -1;
+                            }
+                            if (flb_gzip_count(data, len, &gzip_borders, gzip_payloads_count) < 0) {
                                 flb_plg_error(ctx->ins,
                                              "failed to traverse boundaries of concatenated gzip payloads");
                                 return -1;
@@ -1618,7 +1606,7 @@ int fw_prot_process(struct flb_input_instance *ins, struct fw_conn *conn)
                         /* a valid payload of gzip is larger than 18 bytes. */
                         if (gzip_payloads_count > 0) {
                             if ((gzip_payloads_count - loop) > 0 &&
-                                (original_len - gzip_borders[loop]) > 18) {
+                                (original_len - gzip_borders[loop]) >= 18) {
                                 len = original_len - gzip_borders[loop];
                                 flb_plg_debug(ctx->ins, "left unconsumed %zd byte(s)", len);
                                 prev_pos = gzip_borders[loop];

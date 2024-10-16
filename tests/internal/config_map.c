@@ -13,8 +13,8 @@ struct context {
     /* Single values */
     int num_int;
     size_t size;
-    time_t time;
-    char boolean;
+    int time;
+    int boolean;
     double num_double;
     flb_sds_t string;
     struct mk_list *list1;

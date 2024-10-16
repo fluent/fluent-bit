@@ -121,12 +121,15 @@ static void append_metric_value(cfl_sds_t *buf, struct cmt_map *map,
 static void format_context_common(struct cmt_splunk_hec_context *context, cfl_sds_t *buf, struct cmt_map *map,
                                   struct cmt_metric *metric)
 {
-    int len, tlen;
-    char hostname[256], timestamp[128];
-    char *index = NULL, *source = NULL, *source_type = NULL;
-    struct timespec tms;
-    uint64_t ts;
+    int len;
+    int tlen;
     int result = CMT_ENCODE_SPLUNK_HEC_ALLOCATION_ERROR;
+    uint64_t ts;
+    char hostname[256], timestamp[128];
+    char *index = NULL;
+    char *source = NULL;
+    char *source_type = NULL;
+    struct timespec tms;
 
     /* Open parenthesis */
     cfl_sds_cat_safe(buf, "{", 1);
@@ -159,6 +162,7 @@ static void format_context_common(struct cmt_splunk_hec_context *context, cfl_sd
         len = snprintf(index, tlen, "\"index\":\"%s\",", context->index);
         cfl_sds_cat_safe(buf, index, len);
         free(index);
+        index = NULL;
     }
 
     /* source */
@@ -174,13 +178,14 @@ static void format_context_common(struct cmt_splunk_hec_context *context, cfl_sd
         len = snprintf(source, tlen, "\"source\":\"%s\",", context->source);
         cfl_sds_cat_safe(buf, source, len);
         free(source);
+        source = NULL;
     }
 
     /* sourcetype */
     if (context->source_type != NULL) {
         tlen = strlen(context->source_type) + 18; /* adding snprintf template character length */
         source_type = malloc(tlen);
-        if (source == NULL) {
+        if (source_type == NULL) {
             cmt_errno();
             result = CMT_ENCODE_SPLUNK_HEC_ALLOCATION_ERROR;
 
@@ -189,6 +194,7 @@ static void format_context_common(struct cmt_splunk_hec_context *context, cfl_sd
         len = snprintf(source_type, tlen, "\"sourcetype\":\"%s\",", context->source_type);
         cfl_sds_cat_safe(buf, source_type, len);
         free(source_type);
+        source_type = NULL;
     }
 
     return;
@@ -601,14 +607,12 @@ static struct cmt_splunk_hec_context
     context = calloc(1, sizeof(struct cmt_splunk_hec_context));
     if (context == NULL) {
         result = CMT_ENCODE_SPLUNK_HEC_ALLOCATION_ERROR;
-
         goto cleanup;
     }
 
     /* host parameter is mandatory. */
     if (host == NULL) {
         result = CMT_ENCODE_SPLUNK_HEC_INVALID_ARGUMENT_ERROR;
-
         goto cleanup;
     }
 
@@ -634,7 +638,6 @@ cleanup:
     if (result != CMT_ENCODE_SPLUNK_HEC_SUCCESS) {
         if (context != NULL) {
             destroy_splunk_hec_context(context);
-
             context = NULL;
         }
     }
@@ -664,6 +667,7 @@ cfl_sds_t cmt_encode_splunk_hec_create(struct cmt *cmt, const char *host,
     /* Allocate a 1KB of buffer */
     buf = cfl_sds_create_size(1024);
     if (!buf) {
+        destroy_splunk_hec_context(context);
         return NULL;
     }
 

@@ -21,6 +21,7 @@
 #define FLB_BYTESWAP_H
 
 #include <stdint.h>
+#include <fluent-bit/flb_endian.h>
 
 #if defined(FLB_HAVE_WIN32_BYTESWAP)
 #include <stdlib.h>
@@ -101,5 +102,16 @@ static inline uint64_t FLB_BSWAP_64(uint64_t value)
 }
 
 #endif
+
+static inline uint32_t FLB_UINT32_TO_HOST_BYTE_ORDER(uint32_t value)
+{
+    #if FLB_BYTE_ORDER == FLB_LITTLE_ENDIAN
+        return FLB_BSWAP_32(value);
+    #else
+        return value;
+    #endif
+}
+
+#define FLB_UINT32_TO_NETWORK_BYTE_ORDER(value) FLB_UINT32_TO_HOST_BYTE_ORDER(value)
 
 #endif

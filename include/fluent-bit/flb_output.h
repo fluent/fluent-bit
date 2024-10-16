@@ -89,6 +89,7 @@ int flb_chunk_trace_output(struct flb_chunk_trace *trace, struct flb_output_inst
 #define FLB_OUTPUT_LOGS        1
 #define FLB_OUTPUT_METRICS     2
 #define FLB_OUTPUT_TRACES      4
+#define FLB_OUTPUT_BLOBS       8
 
 #define FLB_OUTPUT_FLUSH_COMPAT_OLD_18()                 \
     const void *data   = event_chunk->data;              \
@@ -231,6 +232,12 @@ struct flb_output_plugin {
 
     /* Default number of worker threads */
     int workers;
+
+    int (*cb_worker_init) (void *, struct flb_config *);
+    int (*cb_worker_exit) (void *, struct flb_config *);
+
+    /* Notification: this callback will be invoked anytime a notification is received*/
+    int (*cb_notification) (struct flb_output_instance *, struct flb_config *, void *);
 
     /* Tests */
     struct flb_test_out_formatter test_formatter;
@@ -444,6 +451,8 @@ struct flb_output_instance {
     int flush_id;
     struct mk_list flush_list;
     struct mk_list flush_list_destroy;
+
+    flb_pipefd_t notification_channel;
 
     /* Keep a reference to the original context this instance belongs to */
     struct flb_config *config;

@@ -74,6 +74,9 @@ struct flb_filter_plugin {
                       void *, struct flb_config *);
     int (*cb_exit) (void *, struct flb_config *);
 
+    /* Notification: this callback will be invoked anytime a notification is received*/
+    int (*cb_notification) (struct flb_filter_instance *, struct flb_config *, void *);
+
     struct mk_list _head;  /* Link to parent list (config->filters) */
 };
 
@@ -110,6 +113,7 @@ struct flb_filter_instance {
 #ifdef FLB_HAVE_METRICS
     struct flb_metrics *metrics;   /* metrics                  */
 #endif
+    flb_pipefd_t notification_channel;
 
     /* Keep a reference to the original context this instance belongs to */
     struct flb_config *config;

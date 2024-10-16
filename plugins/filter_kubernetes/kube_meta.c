@@ -90,7 +90,7 @@ static int file_to_buffer(const char *path,
 
 #ifdef FLB_HAVE_KUBE_TOKEN_COMMAND
 /* Run command to get Kubernetes authorization token */
-static int get_token_with_command(const char *command, 
+static int get_token_with_command(const char *command,
                                   char **out_buf, size_t *out_size)
 {
     FILE *fp;
@@ -111,7 +111,7 @@ static int get_token_with_command(const char *command,
         pclose(fp);
         return -1;
     }
-    
+
     while (fgets(buf, sizeof(buf), fp) != NULL) {
         len = strlen(buf);
         if (len >= FLB_KUBE_TOKEN_BUF_SIZE - 1) {
@@ -133,7 +133,7 @@ static int get_token_with_command(const char *command,
         pclose(fp);
         return -1;
     }
-    
+
     pclose(fp);
 
     *out_buf = res;
@@ -141,16 +141,16 @@ static int get_token_with_command(const char *command,
 
     return 0;
 }
-#endif 
+#endif
 
 /* Set K8s Authorization Token and get HTTP Auth Header */
-static int get_http_auth_header(struct flb_kube *ctx) 
+static int get_http_auth_header(struct flb_kube *ctx)
 {
     int ret;
     char *temp;
     char *tk = NULL;
     size_t tk_size = 0;
-    
+
     if (ctx->kube_token_command != NULL) {
 #ifdef FLB_HAVE_KUBE_TOKEN_COMMAND
         ret = get_token_with_command(ctx->kube_token_command, &tk, &tk_size);
@@ -187,17 +187,17 @@ static int get_http_auth_header(struct flb_kube *ctx)
             flb_free(ctx->auth);
             ctx->auth = NULL;
             return -1;
-        } 
+        }
         ctx->auth = temp;
     }
-    
+
     if (!ctx->auth) {
         return -1;
     }
     ctx->auth_len = snprintf(ctx->auth, tk_size + 32,
                              "Bearer %s",
                              tk);
-    
+
     return 0;
 }
 
@@ -311,7 +311,7 @@ static int get_meta_file_info(struct flb_kube *ctx, const char *namespace,
         if (podname && strlen(podname) > 0) {
             ret = snprintf(uri, sizeof(uri) - 1, "%s/%s_%s.meta",
                     ctx->meta_preload_cache_dir, namespace, podname);
-        } 
+        }
         else {
             ret = snprintf(uri, sizeof(uri) - 1, "%s/%s.namespace_meta",
                     ctx->meta_preload_cache_dir, namespace);
@@ -357,7 +357,7 @@ static int get_meta_info_from_request(struct flb_kube *ctx,
                                       const char *podname,
                                       char **buffer, size_t *size,
                                       int *root_type,
-                                      char* uri, 
+                                      char* uri,
                                       int use_kubelet_connection)
 {
     struct flb_http_client *c;
@@ -365,14 +365,14 @@ static int get_meta_info_from_request(struct flb_kube *ctx,
     int ret;
     size_t b_sent;
     int packed;
-    
+
     if(use_kubelet_connection == FLB_TRUE) {
         if (!ctx->kubelet_upstream) {
             return -1;
         }
 
         u_conn = flb_upstream_conn_get(ctx->kubelet_upstream);
-    } 
+    }
     else {
         if (!ctx->kube_api_upstream) {
             return -1;
@@ -397,7 +397,7 @@ static int get_meta_info_from_request(struct flb_kube *ctx,
         flb_upstream_conn_release(u_conn);
         return -1;
     }
-    
+
     /* Compose HTTP Client request*/
     c = flb_http_client(u_conn, FLB_HTTP_GET,
                         uri,
@@ -464,7 +464,7 @@ static int get_pods_from_kubelet(struct flb_kube *ctx,
         flb_plg_debug(ctx->ins,
                       "Send out request to Kubelet for pods information.");
         packed = get_meta_info_from_request(ctx, namespace, podname,
-                                            &buf, &size, &root_type, uri, 
+                                            &buf, &size, &root_type, uri,
                                             ctx->use_kubelet);
     }
 
@@ -480,7 +480,7 @@ static int get_pods_from_kubelet(struct flb_kube *ctx,
 }
 
 /* Gather namespace metadata from API Server */
-static int get_namespace_api_server_info(struct flb_kube *ctx, const char *namespace, 
+static int get_namespace_api_server_info(struct flb_kube *ctx, const char *namespace,
                                char **out_buf, size_t *out_size)
 {
     int ret;
@@ -1081,7 +1081,7 @@ static int merge_namespace_meta(struct flb_kube_meta *meta, struct flb_kube *ctx
     if (have_labels >= 0 && ctx->namespace_labels == FLB_TRUE) {
         k = meta_val.via.map.ptr[have_labels].key;
         v = meta_val.via.map.ptr[have_labels].val;
-        
+
         msgpack_pack_object(&mp_pck, k);
         msgpack_pack_object(&mp_pck, v);
     }
@@ -1093,7 +1093,7 @@ static int merge_namespace_meta(struct flb_kube_meta *meta, struct flb_kube *ctx
         msgpack_pack_object(&mp_pck, k);
         msgpack_pack_object(&mp_pck, v);
     }
-    
+
     if (api_buf != NULL) {
         msgpack_unpacked_destroy(&api_result);
         if (meta_found == FLB_TRUE) {
@@ -1684,17 +1684,17 @@ static int flb_kubelet_network_init(struct flb_kube *ctx, struct flb_config *con
     int ret;
     int io_type = FLB_IO_TCP;
     int api_https = FLB_TRUE;
-    ctx->kubelet_upstream = NULL;    
+    ctx->kubelet_upstream = NULL;
 
     if(ctx->use_kubelet == FLB_FALSE) {
         return 0;
     }
 
-    // This is for unit test diagnostic purposes 
+    // This is for unit test diagnostic purposes
     if (ctx->meta_preload_cache_dir) {
         api_https = FLB_FALSE;
     }
-    
+
     if (api_https == FLB_TRUE) {
         if (!ctx->tls_ca_path && !ctx->tls_ca_file) {
             ctx->tls_ca_file  = flb_strdup(FLB_KUBE_CA);
@@ -1788,7 +1788,7 @@ static int flb_kube_network_init(struct flb_kube *ctx, struct flb_config *config
 
     /* Remove async flag from upstream */
     flb_stream_disable_async_mode(&ctx->kube_api_upstream->base);
-    
+
     kubelet_network_init_ret = flb_kubelet_network_init(ctx, config);
     return kubelet_network_init_ret;
 }
@@ -1828,7 +1828,7 @@ int flb_kube_meta_init(struct flb_kube *ctx, struct flb_config *config)
             /* Gather info from Kubelet */
             flb_plg_info(ctx->ins, "testing connectivity with Kubelet...");
             ret = get_pods_from_kubelet(ctx, ctx->namespace, ctx->podname,
-                                              &meta_buf, &meta_size);                      
+                                              &meta_buf, &meta_size);
         }
         else {
             /* Gather info from API server */
@@ -2046,7 +2046,7 @@ static inline int flb_kube_namespace_meta_get(struct flb_kube *ctx,
     /* Set the pointer and proper size for the caller */
     *out_buf = hash_meta_buf;
     *out_size = off;
-    
+
     msgpack_unpacked_destroy(&result);
 
     return 0;
@@ -2056,7 +2056,7 @@ int flb_kube_meta_get(struct flb_kube *ctx,
                       const char *tag, int tag_len,
                       const char *data, size_t data_size,
                       const char **out_buf, size_t *out_size,
-                      const char **namespace_out_buf, 
+                      const char **namespace_out_buf,
                       size_t *namespace_out_size,
                       struct flb_kube_meta *meta,
                       struct flb_kube_props *props,
@@ -2067,7 +2067,7 @@ int flb_kube_meta_get(struct flb_kube *ctx,
     int ret_pod_meta = -1;
 
     if(ctx->namespace_labels == FLB_TRUE || ctx->namespace_annotations == FLB_TRUE) {
-        ret_namespace_meta = flb_kube_namespace_meta_get(ctx, tag, tag_len, data, 
+        ret_namespace_meta = flb_kube_namespace_meta_get(ctx, tag, tag_len, data,
                         data_size, namespace_out_buf, namespace_out_size, namespace_meta);
     }
 

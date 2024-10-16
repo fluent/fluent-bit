@@ -239,6 +239,52 @@ static flb_sds_t get_agent_metadata(struct flb_calyptia *ctx)
     msgpack_pack_str(&mp_pck, 9);
     msgpack_pack_str_body(&mp_pck, "community", 9);
 
+    flb_mp_map_header_append(&mh);
+    msgpack_pack_str(&mp_pck, 2);
+    msgpack_pack_str_body(&mp_pck, "os", 2);
+#ifdef FLB_SYSTEM_WINDOWS
+    len = strlen("windows");
+    msgpack_pack_str(&mp_pck, len);
+    msgpack_pack_str_body(&mp_pck, "windows", len);
+#elif FLB_SYSTEM_MACOS
+    len = strlen("macos");
+    msgpack_pack_str(&mp_pck, len);
+    msgpack_pack_str_body(&mp_pck, "macos", len);
+#elif __linux__
+    len = strlen("linux");
+    msgpack_pack_str(&mp_pck, len);
+    msgpack_pack_str_body(&mp_pck, "linux", len);
+#else
+    len = strlen("unknown");
+    msgpack_pack_str(&mp_pck, len);
+    msgpack_pack_str_body(&mp_pck, "unknown", len);
+#endif
+
+    flb_mp_map_header_append(&mh);
+    msgpack_pack_str(&mp_pck, 4);
+    msgpack_pack_str_body(&mp_pck, "arch", 4);
+#if defined(__arm__) || defined(_M_ARM)
+    len = strlen("arm");
+    msgpack_pack_str(&mp_pck, len);
+    msgpack_pack_str_body(&mp_pck, "arm", len);
+#elif defined(__aarch64__)
+    len = strlen("arm64");
+    msgpack_pack_str(&mp_pck, len);
+    msgpack_pack_str_body(&mp_pck, "arm64", len);
+#elif defined(__amd64__) || defined(_M_AMD64)
+    len = strlen("x86_64");
+    msgpack_pack_str(&mp_pck, len);
+    msgpack_pack_str_body(&mp_pck, "x86_64", len);
+#elif defined(__i686__) || defined(_M_I86)
+    len = strlen("x86");
+    msgpack_pack_str(&mp_pck, len);
+    msgpack_pack_str_body(&mp_pck, "x86", len);
+#else
+    len = strlen("unknown");
+    msgpack_pack_str(&mp_pck, len);
+    msgpack_pack_str_body(&mp_pck, "unknown", len);
+#endif
+
     /* machineID */
     flb_mp_map_header_append(&mh);
     msgpack_pack_str(&mp_pck, 9);
@@ -759,7 +805,7 @@ static int cb_calyptia_init(struct flb_output_instance *ins,
 
 #ifdef FLB_HAVE_CHUNK_TRACE
     ctx->trace_endpoint = flb_sds_create_size(256);
-    flb_sds_printf(&ctx->trace_endpoint, CALYPTIA_ENDPOINT_TRACE, 
+    flb_sds_printf(&ctx->trace_endpoint, CALYPTIA_ENDPOINT_TRACE,
                    ctx->pipeline_id);
 #endif /* FLB_HAVE_CHUNK_TRACE */
     return 0;
@@ -790,7 +836,7 @@ static void cb_calyptia_flush(struct flb_event_chunk *event_chunk,
                               void *out_context,
                               struct flb_config *config)
 {
-    int ret;
+    int ret = FLB_RETRY;
     size_t off = 0;
     size_t out_size = 0;
     char *out_buf = NULL;
@@ -801,7 +847,7 @@ static void cb_calyptia_flush(struct flb_event_chunk *event_chunk,
 #endif /* FLB_HAVE_CHUNK_TRACE */
 
     struct flb_connection *u_conn;
-    struct flb_http_client *c;
+    struct flb_http_client *c = NULL;
     struct flb_calyptia *ctx = out_context;
     struct cmt *cmt;
     (void) i_ins;
@@ -867,7 +913,7 @@ static void cb_calyptia_flush(struct flb_event_chunk *event_chunk,
             cmt_encode_msgpack_destroy(out_buf);
         }
     }
-    
+
 #ifdef FLB_HAVE_CHUNK_TRACE
     if (event_chunk->type == (FLB_EVENT_TYPE_LOGS | FLB_EVENT_TYPE_HAS_TRACE)) {
         json = flb_pack_msgpack_to_json_format(event_chunk->data,
@@ -896,7 +942,7 @@ static void cb_calyptia_flush(struct flb_event_chunk *event_chunk,
             flb_sds_destroy(ctx->metrics_endpoint);
             FLB_OUTPUT_RETURN(FLB_RETRY);
         }
-        
+
         /* perform request: 'ret' might be FLB_OK, FLB_ERROR or FLB_RETRY */
         ret = calyptia_http_do(ctx, c, CALYPTIA_ACTION_TRACE);
         if (ret == FLB_OK) {
@@ -911,7 +957,10 @@ static void cb_calyptia_flush(struct flb_event_chunk *event_chunk,
 #endif /* FLB_HAVE_CHUNK_TRACE */
 
     flb_upstream_conn_release(u_conn);
-    flb_http_client_destroy(c);
+
+    if (c) {
+        flb_http_client_destroy(c);
+    }
     FLB_OUTPUT_RETURN(ret);
 }
 
