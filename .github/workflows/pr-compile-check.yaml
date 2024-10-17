@@ -47,8 +47,13 @@ jobs:
       - name: Setup environment
         run: |
           sudo apt-get update
-          sudo apt-get install -y gcc-7 g++-7 clang-6.0 libsystemd-dev gcovr libyaml-dev libluajit-5.1-dev
+          sudo apt-get install -y curl gcc-7 g++-7 clang-6.0 libsystemd-dev gcovr libyaml-dev libluajit-5.1-dev \
+            libnghttp2-dev libjemalloc-dev
           sudo ln -s /usr/bin/llvm-symbolizer-6.0 /usr/bin/llvm-symbolizer || true
+          mkdir -p /tmp/libbacktrace/build && \
+            curl -L https://github.com/ianlancetaylor/libbacktrace/archive/8602fda.tar.gz | \
+            tar --strip-components=1 -xzC /tmp/libbacktrace/ && \
+            pushd /tmp/libbacktrace/build && ../configure && make && sudo make install && popd
 
       - name: Checkout Fluent Bit code
         uses: actions/checkout@v4
@@ -67,7 +72,7 @@ jobs:
           CC: ${{ matrix.compiler }}
           CXX: ${{ matrix.compiler }}
           FLB_OPT: ${{ matrix.flb_option }}
-          GLOBAL_OPTS: "-DFLB_BACKTRACE=Off -DFLB_SHARED_LIB=Off -DFLB_DEBUG=On -DFLB_ALL=On -DFLB_EXAMPLES=Off"
+          GLOBAL_OPTS: "-DFLB_JEMALLOC=On -DFLB_SHARED_LIB=Off -DFLB_DEBUG=On -DFLB_ALL=On -DFLB_EXAMPLES=Off"
 
       - name: Display dependencies w/ ldd
         run: |
