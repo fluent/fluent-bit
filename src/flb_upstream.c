@@ -72,6 +72,32 @@ struct flb_config_map upstream_net[] = {
     },
 
     {
+     FLB_CONFIG_MAP_BOOL, "net.tcp_keepalive", "off",
+     0, FLB_TRUE, offsetof(struct flb_net_setup, tcp_keepalive),
+     "Enable or disable the use of TCP keepalive probes"
+    },
+
+    {
+     FLB_CONFIG_MAP_INT, "net.tcp_keepalive_time", "-1",
+     0, FLB_TRUE, offsetof(struct flb_net_setup, tcp_keepalive_time),
+     "interval between the last data packet sent and the first "
+     "TCP keepalive probe"
+    },
+
+    {
+     FLB_CONFIG_MAP_INT, "net.tcp_keepalive_interval", "-1",
+     0, FLB_TRUE, offsetof(struct flb_net_setup, tcp_keepalive_interval),
+     "interval between TCP keepalive probes when no response is"
+     "received on a keepidle probe"
+    },
+
+    {
+     FLB_CONFIG_MAP_INT, "net.tcp_keepalive_probes", "-1",
+     0, FLB_TRUE, offsetof(struct flb_net_setup, tcp_keepalive_probes),
+     "number of unacknowledged probes to consider a connection dead"
+    },
+
+    {
      FLB_CONFIG_MAP_TIME, "net.io_timeout", "0s",
      0, FLB_TRUE, offsetof(struct flb_net_setup, io_timeout),
      "Set maximum time a connection can stay idle while assigned"
