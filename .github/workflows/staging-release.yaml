@@ -502,9 +502,8 @@ jobs:
           TAG: ${{ steps.get-tag.outputs.tag }}
 
   staging-release-images-latest-tags:
-    # Only update latest tags for 3.1 releases
-    if: startsWith(github.event.inputs.version, '3.1')
-    # if: startsWith(github.event.inputs.version, '4.0')
+    # Only update latest tags for 3.2 releases
+    if: startsWith(github.event.inputs.version, '3.2')
     name: Release latest Linux container images
     runs-on: ubuntu-latest
     needs:
@@ -804,8 +803,7 @@ jobs:
           target_commitish: '3.0'
           make_latest: false
 
-      - name: Release 3.1 and latest
-        # TODO: change to 3.1 branch once 4.0 series is ready
+      - name: Release 3.1 - not latest
         uses: softprops/action-gh-release@v2
         if: startsWith(inputs.version, '3.1')
         with:
@@ -814,18 +812,19 @@ jobs:
           generate_release_notes: true
           name: "Fluent Bit ${{ inputs.version }}"
           tag_name: v${{ inputs.version }}
-          make_latest: true
+          target_commitish: '3.1'
+          make_latest: false
 
-      # - name: Release 4.0 and latest
-      #   uses: softprops/action-gh-release@v2
-      #   if: startsWith(inputs.version, '4.0')
-      #   with:
-      #     body: "https://fluentbit.io/announcements/v${{ inputs.version }}/"
-      #     draft: false
-      #     generate_release_notes: true
-      #     name: "Fluent Bit ${{ inputs.version }}"
-      #     tag_name: v${{ inputs.version }}
-      #     make_latest: true
+      - name: Release 3.2 and latest
+        uses: softprops/action-gh-release@v2
+        if: startsWith(inputs.version, '3.2')
+        with:
+          body: "https://fluentbit.io/announcements/v${{ inputs.version }}/"
+          draft: false
+          generate_release_notes: true
+          name: "Fluent Bit ${{ inputs.version }}"
+          tag_name: v${{ inputs.version }}
+          make_latest: true
 
   staging-release-windows-checksums:
     name: Get Windows checksums for new release
@@ -919,20 +918,20 @@ jobs:
           ref: 3.0
           token: ${{ secrets.GH_PA_TOKEN }}
 
-      - name: Release 3.1 and latest
-        # TODO: change to 3.1 branch once 4.0 series is ready
+      - name: Release 3.1 - not latest
         if: startsWith(inputs.version, '3.1')
         uses: actions/checkout@v4
         with:
           repository: fluent/fluent-bit-docs
+          ref: 3.1
           token: ${{ secrets.GH_PA_TOKEN }}
 
-      # - name: Release 4.0 and latest
-      #   if: startsWith(inputs.version, '4.0')
-      #   uses: actions/checkout@v4
-      #   with:
-      #     repository: fluent/fluent-bit-docs
-      #     token: ${{ secrets.GH_PA_TOKEN }}
+      - name: Release 3.2 and latest
+        if: startsWith(inputs.version, '3.2')
+        uses: actions/checkout@v4
+        with:
+          repository: fluent/fluent-bit-docs
+          token: ${{ secrets.GH_PA_TOKEN }}
 
       - name: Ensure we have the script we need
         run: |
@@ -1018,8 +1017,8 @@ jobs:
         with:
           ref: 3.1
 
-      - name: Release 4.0
-        if: startsWith(inputs.version, '4.0')
+      - name: Release 3.2
+        if: startsWith(inputs.version, '3.2')
         uses: actions/checkout@v4
         with:
           ref: master
