@@ -35,6 +35,10 @@ struct url_check url_checks[] = {
     {0, "https://fluentbit.io:1234", "https", "fluentbit.io", "1234", "/"},
     {0, "https://fluentbit.io:1234/", "https", "fluentbit.io", "1234", "/"},
     {0, "https://fluentbit.io:1234/v", "https", "fluentbit.io", "1234", "/v"},
+    {0, "http://[fd00:ec2::23]", "http", "fd00:ec2::23", "80", "/"},
+    {0, "http://[fd00:ec2::23]:81", "http", "fd00:ec2::23", "81", "/"},
+    {0, "http://[fd00:ec2::23]:81/something", "http", "fd00:ec2::23", "81", "/something"},
+    {0, "http://[fd00:ec2::23]/something", "http", "fd00:ec2::23", "80", "/something"},
     {-1, "://", NULL, NULL, NULL, NULL},
 };
 

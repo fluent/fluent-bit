@@ -22,6 +22,8 @@
 #include <fluent-bit/flb_http_client.h>
 #include <fluent-bit/flb_aws_credentials.h>
 #include <fluent-bit/flb_aws_util.h>
+#include <fluent-bit/flb_network.h>
+#include <fluent-bit/flb_utils.h>
 
 #include <fluent-bit/flb_jsmn.h>
 #include <stdlib.h>
@@ -34,9 +36,19 @@
 #define AWS_HTTP_RESPONSE_TOKEN              "Token"
 #define AWS_CREDENTIAL_RESPONSE_EXPIRATION   "Expiration"
 
-#define ECS_CREDENTIALS_HOST           "169.254.170.2"
-#define ECS_CREDENTIALS_HOST_LEN       13
-#define ECS_CREDENTIALS_PATH_ENV_VAR   "AWS_CONTAINER_CREDENTIALS_RELATIVE_URI"
+#define ECS_CONTAINER_ENDPOINT          "http://169.254.170.2"
+#define ECS_CONTAINER_ENDPOINT_LEN      20
+#define ECS_CREDENTIALS_HOST            "169.254.170.2"
+#define ECS_CREDENTIALS_HOST_LEN        13
+#define EKS_CREDENTIALS_HOST            "169.254.170.23"
+#define EKS_CREDENTIALS_HOST_LEN        14
+#define EKS_CREDENTIALS_HOST_IPV6       "fd00:ec2::23"
+#define EKS_CREDENTIALS_HOST_IPV6_LEN   12
+
+#define AWS_CONTAINER_AUTHORIZATION_TOKEN_FILE_ENV_VAR   "AWS_CONTAINER_AUTHORIZATION_TOKEN_FILE"
+#define AWS_CONTAINER_AUTHORIZATION_TOKEN_ENV_VAR        "AWS_CONTAINER_AUTHORIZATION_TOKEN"
+#define AWS_CONTAINER_CREDENTIALS_RELATIVE_URI_ENV_VAR   "AWS_CONTAINER_CREDENTIALS_RELATIVE_URI"
+#define AWS_CONTAINER_CREDENTIALS_FULL_URI_ENV_VAR       "AWS_CONTAINER_CREDENTIALS_FULL_URI"
 
 
 /* Declarations */
@@ -44,25 +56,12 @@ struct flb_aws_provider_http;
 static int http_credentials_request(struct flb_aws_provider_http
                                     *implementation);
 
-
-/*
- * HTTP Credentials Provider - retrieve credentials from a local http server
- * Used to implement the ECS Credentials provider.
- * Equivalent to:
- * https://github.com/aws/aws-sdk-go/tree/master/aws/credentials/endpointcreds
- */
-
-struct flb_aws_provider_http {
-    struct flb_aws_credentials *creds;
-    time_t next_refresh;
-
-    struct flb_aws_client *client;
-
-    /* Host and Path to request credentials */
-    flb_sds_t host;
-    flb_sds_t path;
+static struct flb_aws_header authorization_header = {
+    .key = "Authorization",
+    .key_len = 13,
+    .val = "",
+    .val_len = 0,
 };
-
 
 struct flb_aws_credentials *get_credentials_fn_http(struct flb_aws_provider
                                                     *provider)
@@ -136,6 +135,47 @@ error:
     return NULL;
 }
 
+/* 
+ * If the resolved URI’s scheme is HTTPS, its hostname may be used in the request. 
+ * Otherwise, implementations MUST fail to resolve when the URI hostname 
+ * does not satisfy any of the following conditions:
+ * is within the loopback CIDR (IPv4 127.0.0.0/8, IPv6 ::1/128)
+ * is the ECS container host 169.254.170.2
+ * is the EKS Pod Identity Agent (IPv4 169.254.170.23, IPv6 fd00:ec2::23)
+ */
+static int flb_aws_allowed_ip(char *prot, char *ip_address) {
+    if (strncmp(prot, "https", 5) == 0) {
+        return FLB_TRUE;
+    }
+
+    if (strcmp(ip_address, ECS_CREDENTIALS_HOST) == 0) {
+        return FLB_TRUE; // ECS container host
+    } else if (strcmp(ip_address, EKS_CREDENTIALS_HOST) == 0 ||
+               strcmp(ip_address, EKS_CREDENTIALS_HOST_IPV6) == 0) {
+        return FLB_TRUE; // EKS container host
+    }
+
+    // Loopback
+    // IPv4
+    if (strncmp(ip_address, "127.0.0.", 8) == 0 &&
+        strlen(ip_address) > 8 &&
+        strlen(ip_address) <= 11) {
+            ip_address += 8;
+            if (atoi(ip_address) > 255) {
+                return FLB_FALSE;
+            }
+            return FLB_TRUE;
+        }
+
+    // IPv6
+    if (strcmp(ip_address, "::1") == 0 ||
+        strcmp(ip_address, "0:0:0:0:0:0:0:1") == 0) {
+        return FLB_TRUE;
+    }
+
+    return FLB_FALSE;
+}
+
 int refresh_fn_http(struct flb_aws_provider *provider) {
     struct flb_aws_provider_http *implementation = provider->implementation;
     int ret = -1;
@@ -204,12 +244,20 @@ void destroy_fn_http(struct flb_aws_provider *provider) {
             flb_aws_client_destroy(implementation->client);
         }
 
-        if (implementation->host) {
-            flb_sds_destroy(implementation->host);
+        if (implementation->endpoint) {
+            flb_sds_destroy(implementation->endpoint);
         }
 
         if (implementation->path) {
             flb_sds_destroy(implementation->path);
+        }
+
+        if (implementation->auth_token) {
+            flb_sds_destroy(implementation->auth_token);
+        }
+
+        if (implementation->auth_token_file) {
+            flb_sds_destroy(implementation->auth_token_file);
         }
 
         flb_free(implementation);
@@ -230,18 +278,29 @@ static struct flb_aws_provider_vtable http_provider_vtable = {
 };
 
 struct flb_aws_provider *flb_http_provider_create(struct flb_config *config,
-                                                  flb_sds_t host,
+                                                  flb_sds_t endpoint,
                                                   flb_sds_t path,
+                                                  flb_sds_t auth_token,
                                                   struct
                                                   flb_aws_client_generator
                                                   *generator)
 {
+    char *auth_token_file = NULL;
     struct flb_aws_provider_http *implementation = NULL;
     struct flb_aws_provider *provider = NULL;
     struct flb_upstream *upstream = NULL;
 
-    flb_debug("[aws_credentials] Configuring HTTP provider with %s:80%s",
-              host, path);
+    if (auth_token) {
+        if (strstr(auth_token, "\\r\\n")) {
+            flb_error("[aws_credentials] unable to configure HTTP provider: "
+                        "auth token contains invalid characters (\\r\\n)");
+            flb_errno();
+            return NULL;
+        }
+    }
+
+    flb_debug("[aws_credentials] Configuring HTTP provider with %s",
+              endpoint);
 
     provider = flb_calloc(1, sizeof(struct flb_aws_provider));
 
@@ -263,10 +322,21 @@ struct flb_aws_provider *flb_http_provider_create(struct flb_config *config,
     provider->provider_vtable = &http_provider_vtable;
     provider->implementation = implementation;
 
-    implementation->host = host;
+    auth_token_file = getenv(AWS_CONTAINER_AUTHORIZATION_TOKEN_FILE_ENV_VAR);
+    if (auth_token_file) {
+        implementation->auth_token_file = flb_sds_create(auth_token_file);
+        if (!implementation->auth_token_file) {
+            flb_aws_provider_destroy(provider);
+            flb_errno();
+            return NULL;
+        }
+    }
+
+    implementation->auth_token = auth_token;
+    implementation->endpoint = endpoint;
     implementation->path = path;
 
-    upstream = flb_upstream_create(config, host, 80, FLB_IO_TCP, NULL);
+    upstream = flb_upstream_create_url(config, endpoint, FLB_IO_TCP, NULL);
 
     if (!upstream) {
         flb_aws_provider_destroy(provider);
@@ -289,7 +359,6 @@ struct flb_aws_provider *flb_http_provider_create(struct flb_config *config,
     implementation->client->provider = NULL;
     implementation->client->region = NULL;
     implementation->client->service = NULL;
-    implementation->client->port = 80;
     implementation->client->flags = 0;
     implementation->client->proxy = NULL;
     implementation->client->upstream = upstream;
@@ -297,64 +366,230 @@ struct flb_aws_provider *flb_http_provider_create(struct flb_config *config,
     return provider;
 }
 
+struct flb_aws_provider *flb_local_http_provider_create(struct flb_config *config,
+                                                        flb_sds_t endpoint,
+                                                        flb_sds_t auth_token,
+                                                        struct
+                                                        flb_aws_client_generator
+                                                        *generator)
+{
+    int ret;
+    char *prot = NULL;
+    char *host = NULL;
+    char *port = NULL;
+    char *uri = NULL;
+    flb_sds_t path = NULL;
+    struct flb_aws_provider *p = NULL;
+
+    ret = flb_utils_url_split(endpoint, &prot, &host, &port, &uri);
+    if (ret == -1) {
+        flb_error("[aws_credentials] HTTP Provider: invalid URL: %s", endpoint);
+        return NULL;
+    }
+
+    if (strlen(host) == 0) {
+        flb_error("[aws_credentials] HTTP Provider: "
+                  "unable to parse host from local HTTP cred provider URL");
+        goto out;
+    }
+
+    if (!flb_aws_allowed_ip(prot, host)) {
+        flb_error("[aws_credentials] HTTP Provider: "
+                    "invalid endpoint %s, only https or loopback/ecs/eks hosts are allowed",
+                    endpoint);
+        goto out;
+    }
+
+    ret = atoi(port);
+    if (ret == 0) {
+        flb_error("[aws_credentials] HTTP Provider: "
+                  "invalid endpoint port %s", port);
+        goto out;
+    }
+
+    if (strlen(uri) > 0) {
+        path = flb_sds_create(uri);
+        if (!path) {
+            flb_error("[aws_credentials] HTTP Provider: "
+                      "unable to get path for provider");
+            goto out;
+        }
+    }
+
+    p = flb_http_provider_create(config, endpoint, path, auth_token, generator);
+
+ out:
+    if (prot) {
+        flb_free(prot);
+    }
+    if (host) {
+        flb_free(host);
+    }
+    if (port) {
+        flb_free(port);
+    }
+    if (uri) {
+        flb_free(uri);
+    }
+
+    return p;
+}
+
 /*
- * ECS Provider
- * The ECS Provider is just a wrapper around the HTTP Provider
- * with the ECS credentials endpoint.
+ * Container Provider
+ * The Container Provider is just a wrapper around the HTTP Provider
+ * with the ECS/EKS credentials endpoint.
  */
 
- struct flb_aws_provider *flb_ecs_provider_create(struct flb_config *config,
+ struct flb_aws_provider *flb_container_provider_create(struct flb_config *config,
                                                   struct
                                                   flb_aws_client_generator
                                                   *generator)
 {
-    flb_sds_t host = NULL;
+    flb_sds_t endpoint = NULL;
     flb_sds_t path = NULL;
+    flb_sds_t token = NULL;
+    char *endpoint_var = NULL;
     char *path_var = NULL;
+    char *token_var = NULL;
+    struct flb_aws_provider *provider;
 
-    host = flb_sds_create_len(ECS_CREDENTIALS_HOST, ECS_CREDENTIALS_HOST_LEN);
-    if (!host) {
-        flb_errno();
-        return NULL;
+    token_var = getenv(AWS_CONTAINER_AUTHORIZATION_TOKEN_ENV_VAR);
+    if (token_var && strlen(token_var) > 0) {
+        token = flb_sds_create(token_var);
+        if (!token) {
+            flb_errno();
+            return NULL;
+        }
     }
 
-    path_var = getenv(ECS_CREDENTIALS_PATH_ENV_VAR);
+    endpoint_var = getenv(AWS_CONTAINER_CREDENTIALS_FULL_URI_ENV_VAR);
+    if (endpoint_var && strlen(endpoint_var) > 0) {
+        endpoint = flb_sds_create(endpoint_var);
+        if (!endpoint) {
+            flb_errno();
+            goto err;
+        }
+
+        provider = flb_local_http_provider_create(config, endpoint, token, generator);
+        if (!provider) {
+            flb_errno();
+            goto err;
+        }
+
+        return provider;
+    }
+
+    path_var = getenv(AWS_CONTAINER_CREDENTIALS_RELATIVE_URI_ENV_VAR);
     if (path_var && strlen(path_var) > 0) {
         path = flb_sds_create(path_var);
         if (!path) {
             flb_errno();
-            flb_free(host);
-            return NULL;
+            goto err; 
         }
 
-        return flb_http_provider_create(config, host, path, generator);
+        endpoint = flb_sds_create_len(ECS_CONTAINER_ENDPOINT, ECS_CONTAINER_ENDPOINT_LEN);
+        if (!endpoint) {
+            flb_errno();
+            goto err; 
+        }
+
+        provider = flb_http_provider_create(config, endpoint, path, token, generator);
+        if (!provider) {
+            flb_errno();
+            goto err;
+        }
     } else {
-        flb_debug("[aws_credentials] Not initializing ECS Provider because"
-                  " %s is not set", ECS_CREDENTIALS_PATH_ENV_VAR);
-        flb_sds_destroy(host);
-        return NULL;
+        flb_debug("[aws_credentials] Not initializing HTTP Provider because"
+                  " %s is not set", AWS_CONTAINER_CREDENTIALS_RELATIVE_URI_ENV_VAR);
+        goto err;
     }
 
+    return provider;
+
+ err:
+    if (token) {
+        flb_sds_destroy(token);
+    }
+
+    if (path) {
+        flb_sds_destroy(path);
+    }
+
+    if (endpoint) {
+        flb_sds_destroy(endpoint);
+    }
+
+    return NULL;
 }
 
 static int http_credentials_request(struct flb_aws_provider_http
                                     *implementation)
 {
+    int ret;
+    int headers_len = 0;
     char *response = NULL;
+    char *auth_token = NULL;
+    size_t auth_token_size;
     size_t response_len;
     time_t expiration;
     struct flb_aws_credentials *creds = NULL;
     struct flb_aws_client *client = implementation->client;
+    struct flb_aws_header *headers = NULL;
     struct flb_http_client *c = NULL;
+
+    if (implementation->auth_token_file) {
+        flb_debug("[aws_credentials] loading auth token file");
+        ret = flb_read_file(implementation->auth_token_file, &auth_token,
+                            &auth_token_size);
+        if (ret < 0) {
+            flb_debug("[aws_credentials] failed to retrieve token file");
+            flb_errno();
+            return -1;
+        }
+        if (strstr(auth_token, "\\r\\n")) {
+            flb_error("[aws_credentials] unable to retreive credentials: "
+                      "auth token file contains invalid characters (\\r\\n)");
+            flb_errno();
+            flb_free(auth_token);
+            return -1;
+        }
+    } else if (implementation->auth_token) {
+        auth_token_size = flb_sds_len(implementation->auth_token);
+        auth_token = flb_strndup(implementation->auth_token, auth_token_size);
+    }
+
+    if (auth_token) {
+        headers = flb_calloc(1, sizeof(struct flb_aws_header));
+        if (headers == NULL) {
+            flb_errno();
+            flb_free(auth_token);
+            return -1;
+        }
+
+        headers[0] = authorization_header;
+        headers[0].val = auth_token;
+        headers[0].val_len = auth_token_size;
+        headers_len = 1;
+    }
 
     c = client->client_vtable->request(client, FLB_HTTP_GET,
                                        implementation->path, NULL, 0,
-                                       NULL, 0);
+                                       headers, headers_len);
+
+    flb_free(headers);
 
     if (!c || c->resp.status != 200) {
         flb_debug("[aws_credentials] http credentials request failed");
         if (c) {
+            if (c->resp.payload_size > 0) {
+                flb_aws_print_error_code(c->resp.payload, c->resp.payload_size,
+                                         "ContainerCredentialsLocalServer");
+            }
             flb_http_client_destroy(c);
+        }
+        if (auth_token) {
+            flb_free(auth_token);
         }
         return -1;
     }
@@ -365,6 +600,9 @@ static int http_credentials_request(struct flb_aws_provider_http
     creds = flb_parse_http_credentials(response, response_len, &expiration);
     if (!creds) {
         flb_http_client_destroy(c);
+        if (auth_token) {
+            flb_free(auth_token);
+        }
         return -1;
     }
 
@@ -375,6 +613,11 @@ static int http_credentials_request(struct flb_aws_provider_http
     implementation->creds = creds;
     implementation->next_refresh = expiration - FLB_AWS_REFRESH_WINDOW;
     flb_http_client_destroy(c);
+
+    if (auth_token) {
+        flb_free(auth_token);
+    }
+
     return 0;
 }
 
@@ -532,12 +775,12 @@ struct flb_aws_credentials *flb_parse_json_credentials(char *response,
                     goto error;
                 }
                 *expiration = flb_aws_cred_expiration(tmp);
-                flb_sds_destroy(tmp);
                 if (*expiration < 0) {
                     flb_warn("[aws_credentials] '%s' was invalid or "
                              "could not be parsed. Disabling auto-refresh of "
-                             "credentials.", AWS_CREDENTIAL_RESPONSE_EXPIRATION);
+                             "credentials.", tmp);
                 }
+                flb_sds_destroy(tmp);
             }
         }
 
