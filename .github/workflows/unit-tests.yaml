@@ -43,11 +43,17 @@ jobs:
           - "-DFLB_SANITIZE_MEMORY=On"
           - "-DFLB_SANITIZE_THREAD=On"
         compiler:
-          - gcc
-          - clang
+          - gcc:
+            cc: gcc
+            cxx: g++
+          - clang:
+            cc: clang
+            cxx: clang++
         exclude:
           - flb_option: "-DFLB_COVERAGE=On"
-            compiler: clang
+            compiler:
+              cc: clang
+              cxx: clang++
     permissions:
       contents: read
     steps:
@@ -64,7 +70,7 @@ jobs:
           repository: calyptia/fluent-bit-ci
           path: ci
 
-      - name: ${{ matrix.compiler }} - ${{ matrix.flb_option }}
+      - name: ${{ matrix.compiler.cc }} & ${{ matrix.compiler.cxx }} - ${{ matrix.flb_option }}
         run: |
           echo "CC = $CC, CXX = $CXX, FLB_OPT = $FLB_OPT"
           sudo update-alternatives --install /usr/bin/gcc gcc /usr/bin/gcc-7 90
@@ -73,8 +79,8 @@ jobs:
           sudo usermod -a -G systemd-journal $(id -un)
           sudo -E su -p $(id -un) -c "PATH=$PATH ci/scripts/run-unit-tests.sh"
         env:
-          CC: ${{ matrix.compiler }}
-          CXX: ${{ matrix.compiler }}
+          CC: ${{ matrix.compiler.cc }}
+          CXX: ${{ matrix.compiler.cxx }}
           FLB_OPT: ${{ matrix.flb_option }}
 
   run-macos-unit-tests:
@@ -128,7 +134,8 @@ jobs:
             omit_option: "-DFLB_WITHOUT_flb-it-utils=1 -DFLB_WITHOUT_flb-it-pack=1"
             global_option: "-DFLB_BACKTRACE=Off -DFLB_SHARED_LIB=Off -DFLB_DEBUG=On -DFLB_ALL=On -DFLB_EXAMPLES=Off"
             unit_test_option: "-DFLB_TESTS_INTERNAL=On"
-            compiler: gcc
+            compiler_cc: gcc
+            compiler_cxx: g++
     steps:
       - name: Checkout Fluent Bit code
         uses: actions/checkout@v4
@@ -156,15 +163,15 @@ jobs:
             export FLB_UNIT_TEST_OPTION="${{ matrix.config.unit_test_option }}"
             export FLB_OPT="${FLB_OPTION} ${GLOBAL_OPTION} ${FLB_UNIT_TEST_OPTION} ${FLB_OMIT_OPTION}"
 
-            echo "CC = ${{ matrix.config.compiler }}, CXX = ${{ matrix.config.compiler }}, FLB_OPT = $FLB_OPT"
+            echo "CC = ${{ matrix.config.compiler_cc }}, CXX = ${{ matrix.config.compiler_cxx }}, FLB_OPT = $FLB_OPT"
 
             cmake ${FLB_OPT}  ../
             make -j $nparallel
             ctest -j $nparallel --build-run-dir . --output-on-failure
         working-directory: build
         env:
-          CC: ${{ matrix.config.compiler }}
-          CXX: ${{ matrix.config.compiler }}
+          CC: ${{ matrix.config.compiler_cc }}
+          CXX: ${{ matrix.config.compiler_cxx }}
 
   run-qemu-ubuntu-unit-tests:
     # We chain this after Linux one as there are CPU time costs for QEMU emulation
@@ -208,7 +215,7 @@ jobs:
             export FLB_UNIT_TEST_OPTION="-DFLB_TESTS_INTERNAL=On"
             export FLB_OPT="${FLB_OPTION} ${GLOBAL_OPTION} ${FLB_UNIT_TEST_OPTION} ${FLB_OMIT_OPTION}"
             export CC=gcc
-            export CXX=gcc
+            export CXX=g++
 
             echo "CC = $CC, CXX = $CXX, FLB_OPT = $FLB_OPT"
 
