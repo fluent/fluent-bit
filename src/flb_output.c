@@ -729,6 +729,7 @@ struct flb_output_instance *flb_output_new(struct flb_config *config,
 
     /* Tests */
     instance->test_formatter.callback = plugin->test_formatter.callback;
+    instance->test_response.callback = plugin->test_response.callback;
 
 
     return instance;
