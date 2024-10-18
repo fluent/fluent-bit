@@ -35,6 +35,7 @@
 #include <fluent-bit/flb_output.h>
 #include <fluent-bit/flb_utils.h>
 #include <fluent-bit/flb_utf8.h>
+#include <fluent-bit/flb_simd.h>
 
 #ifdef FLB_HAVE_AWS_ERROR_REPORTER
 #include <fluent-bit/aws/flb_aws_error_reporter.h>
@@ -577,7 +578,7 @@ int64_t flb_utils_size_to_bytes(const char *size)
 
     if (tmp[0] == 'K') {
         /* set upper bound (2**64/KB)/2 to avoid overflows */
-        if (val >= 9223372036854775 || val <= -9223372036854774)
+        if (val >= 9223372036854775.0 || val <= -9223372036854774.0)
         {
             return -1;
         }
@@ -785,201 +786,277 @@ static const struct escape_seq json_escape_table[128] = {
  * to escape special characters and convert utf-8 byte characters to string
  * representation.
  */
-int flb_utils_write_str(char *buf, int *off, size_t size,
-                        const char *str, size_t str_len)
+
+
+int flb_utils_write_str(char *buf, int *off, size_t size, const char *str, size_t str_len)
 {
-    int i;
-    int b;
-    int ret;
-    int written = 0;
-    int required;
-    int len;
-    int hex_bytes;
-    int is_valid;
-    int utf_sequence_number;
-    int utf_sequence_length;
-    uint32_t codepoint;
-    uint32_t state = 0;
+    int i, b, ret, len, hex_bytes, utf_sequence_length, utf_sequence_number;
+    int is_valid, copypos = 0, vlen;
+    uint32_t codepoint, state = 0;
     char tmp[16];
     size_t available;
     uint32_t c;
     char *p;
     uint8_t *s;
+    off_t offset = 0;
 
-    available = (size - *off);
-    required = str_len;
-    if (available <= required) {
+    available = size - *off;
+
+    /* Ensure we have some minimum space in the buffer */
+    if (available < str_len) {
         return FLB_FALSE;
     }
 
     p = buf + *off;
-    for (i = 0; i < str_len; i++) {
-        if ((available - written) < 2) {
-            return FLB_FALSE;
-        }
+    vlen = str_len & ~(sizeof(flb_vector8) - 1);  // Align length for SIMD
 
-        c = (uint32_t) str[i];
+    for (i = 0;;) {
+        /* SIMD optimization: Process chunk of input string */
+        for (; i < vlen; i += sizeof(flb_vector8)) {
+            flb_vector8 chunk;
+            flb_vector8_load(&chunk, (const uint8_t *)&str[i]);
 
-        /* Use the lookup table for known escape sequences */
-        if (c < 128 && json_escape_table[c].seq) {
             /*
-             * check the length for the string, for simple escaping is always
-             * 2 bytes and 6 bytes for unicode
+             * Look for the special characters we are interested in,
+             * if they are found we break the loop and escape them
+             * in a char-by-char basis. Otherwise the do a bulk copy
              */
-            if (json_escape_table[c].seq[1] == 'u') {
-                len = 6;
+            if (flb_vector8_has_le(chunk, (unsigned char)0x1F) ||
+                flb_vector8_has(chunk, (unsigned char)'"') ||
+                flb_vector8_has(chunk, (unsigned char)'\\') ||
+                flb_vector8_has(chunk, (unsigned char)'\n') ||
+                flb_vector8_has(chunk, (unsigned char)'\r') ||
+                flb_vector8_has(chunk, (unsigned char)'\t') ||
+                flb_vector8_has(chunk, (unsigned char)'\b') ||
+                flb_vector8_has(chunk, (unsigned char)'\f')) {
+                break;
             }
-            else {
-                len = 2;
-            }
+        }
 
-            if ((available - written) < len) {
+        /* Copy the chunk processed so far */
+        if (copypos < i) {
+            /* check if we have enough space */
+            if (available < i - copypos) {
                 return FLB_FALSE;
             }
 
-            memcpy(p, json_escape_table[c].seq, len);
-            p += len;
+            /* copy and adjust pointers */
+            memcpy(p, &str[copypos], i - copypos);
+            p += i - copypos;
+            offset += i - copypos;
+            available -= (i - copypos);
+            copypos = i;
         }
-        else if (c >= 0x80 && c <= 0xFFFF) {
-            hex_bytes = flb_utf8_len(str + i);
-            if (available - written < 6) {
-                return FLB_FALSE;
+
+        /* Process remaining characters one by one */
+        for (b = 0; b < sizeof(flb_vector8); b++) {
+            if (i == str_len) {
+                /* all characters has been processed */
+                goto done;
             }
 
-            if (i + hex_bytes > str_len) {
-                break; /* skip truncated UTF-8 */
-            }
+            c = (uint32_t) str[i];
 
-            state = FLB_UTF8_ACCEPT;
-            codepoint = 0;
-
-            for (b = 0; b < hex_bytes; b++) {
-                s = (unsigned char *) str + i + b;
-                ret = flb_utf8_decode(&state, &codepoint, *s);
-                if (ret == 0) {
-                    break;
-                }
-            }
-
-            if (state != FLB_UTF8_ACCEPT) {
-                /* Invalid UTF-8 hex, just skip utf-8 bytes */
-                flb_warn("[pack] invalid UTF-8 bytes found, skipping bytes");
-            }
-            else {
-                len = snprintf(tmp, sizeof(tmp) - 1, "\\u%.4x", codepoint);
-                if ((available - written) < len) {
-                    return FLB_FALSE;
-                }
-                encoded_to_buf(p, tmp, len);
-                p += len;
-            }
-            i += (hex_bytes - 1);
-        }
-        else if (c > 0xFFFF) {
-            utf_sequence_length = flb_utf8_len(str + i);
-
-            if (i + utf_sequence_length > str_len) {
-                break; /* skip truncated UTF-8 */
-            }
-
-            is_valid = FLB_TRUE;
-            for (utf_sequence_number = 0; utf_sequence_number < utf_sequence_length;
-                utf_sequence_number++) {
-                /* Leading characters must start with bits 11 */
-                if (utf_sequence_number == 0 && ((str[i] & 0xC0) != 0xC0)) {
-                    /* Invalid unicode character. replace */
-                    flb_debug("[pack] unexpected UTF-8 leading byte, "
-                             "substituting character with replacement character");
-                    tmp[utf_sequence_number] = str[i];
-                    ++i; /* Consume invalid leading byte */
-                    utf_sequence_length = utf_sequence_number + 1;
-                    is_valid = FLB_FALSE;
-                    break;
-                }
-                /* Trailing characters must start with bits 10 */
-                else if (utf_sequence_number > 0 && ((str[i] & 0xC0) != 0x80)) {
-                    /* Invalid unicode character. replace */
-                    flb_debug("[pack] unexpected UTF-8 continuation byte, "
-                             "substituting character with replacement character");
-                    /* This byte, i, is the start of the next unicode character */
-                    utf_sequence_length = utf_sequence_number;
-                    is_valid = FLB_FALSE;
-                    break;
-                }
-
-                tmp[utf_sequence_number] = str[i];
-                ++i;
-            }
-            --i;
-
-            if (is_valid) {
-                if (available - written < utf_sequence_length) {
-                    return FLB_FALSE;
-                }
-
-                encoded_to_buf(p, tmp, utf_sequence_length);
-                p += utf_sequence_length;
-            }
-            else {
-                if (available - written < utf_sequence_length * 3) {
-                    return FLB_FALSE;
-                }
-
+            /* Use lookup table for escaping known sequences */
+            if (c < 128 && json_escape_table[c].seq) {
                 /*
-                 * Utf-8 sequence is invalid. Map fragments to private use area
-                 * codepoints in range:
-                 * 0x<FLB_UTILS_FRAGMENT_PRIVATE_BLOCK_DESCRIPTOR>00 to
-                 * 0x<FLB_UTILS_FRAGMENT_PRIVATE_BLOCK_DESCRIPTOR>FF
+                 * All characters in the table have a lenght of 2 or 6 bytes,
+                 * just check if the second byte starts with 'u' so we know
+                 * it's unicode and needs 6 bytes of space.
                  */
-                for (b = 0; b < utf_sequence_length; ++b) {
+                if (json_escape_table[c].seq[1] == 'u') {
+                    len = 6;
+                }
+                else {
+                    len = 2;
+                }
+
+                /* check if we have anough space */
+                if (available < len) {
+                    return FLB_FALSE;
+                }
+
+                /* copy the escape sequence */
+                memcpy(p, json_escape_table[c].seq, len);
+                p += len;
+                offset += len;
+                available -= len;
+            }
+            /* Handle UTF-8 sequences from 0x80 to 0xFFFF */
+            else if (c >= 0x80 && c <= 0xFFFF) {
+                hex_bytes = flb_utf8_len(&str[i]);
+
+                /* Handle invalid or truncated sequence */
+                if (hex_bytes == 0 || i + hex_bytes > str_len) {
+                    /* check for the minimum space required */
+                    if (available < 3) {
+                        return FLB_FALSE;
+                    }
+
+                    /* insert replacement character (U+FFFD) */
+                    p[0] = 0xEF;
+                    p[1] = 0xBF;
+                    p[2] = 0xBD;
+                    p += 3;
+                    offset += 3;
+                    available -= 3;
+
+                    /* skip the original byte */
+                    i++;
+                    continue;
+                }
+
+                // Decode UTF-8 sequence
+                state = FLB_UTF8_ACCEPT;
+                codepoint = 0;
+
+                for (b = 0; b < hex_bytes; b++) {
+                    s = (unsigned char *) &str[i + b];
+                    ret = flb_utf8_decode(&state, &codepoint, *s);
+                    if (ret == 0) {
+                        break;
+                    }
+                }
+
+                if (state != FLB_UTF8_ACCEPT) {
+                    flb_warn("[pack] Invalid UTF-8 bytes found, skipping.");
+                }
+                else {
+                    len = snprintf(tmp, sizeof(tmp), "\\u%.4x", codepoint);
+                    if (available < len) {
+                        return FLB_FALSE;  // Not enough space
+                    }
+                    memcpy(p, tmp, len);
+                    p += len;
+                    offset += len;
+                    available -= len;
+                }
+
+                i += hex_bytes;
+            }
+            /* Handle sequences beyond 0xFFFF */
+            else if (c > 0xFFFF) {
+                utf_sequence_length = flb_utf8_len(str + i);
+
+                /* skip truncated UTF-8 ? */
+                if (i + utf_sequence_length > str_len) {
+                    i++;
+                    break;
+                }
+
+                is_valid = FLB_TRUE;
+                for (utf_sequence_number = 0; utf_sequence_number < utf_sequence_length; utf_sequence_number++) {
+                    /* Leading characters must start with bits 11 */
+                    if (utf_sequence_number == 0 && ((str[i] & 0xC0) != 0xC0)) {
+                        /* Invalid unicode character. replace */
+                        flb_debug("[pack] unexpected UTF-8 leading byte, "
+                                  "substituting character with replacement character");
+                        tmp[utf_sequence_number] = str[i];
+                        i++; /* Consume invalid leading byte */
+                        utf_sequence_length = utf_sequence_number + 1;
+                        is_valid = FLB_FALSE;
+                        break;
+                    }
+                    /* Trailing characters must start with bits 10 */
+                    else if (utf_sequence_number > 0 && ((str[i] & 0xC0) != 0x80)) {
+                        /* Invalid unicode character. replace */
+                        flb_debug("[pack] unexpected UTF-8 continuation byte, "
+                                "substituting character with replacement character");
+                        /* This byte, i, is the start of the next unicode character */
+                        utf_sequence_length = utf_sequence_number;
+                        is_valid = FLB_FALSE;
+                        break;
+                    }
+
+                    tmp[utf_sequence_number] = str[i];
+                    ++i;
+                }
+
+                --i;
+
+                if (is_valid) {
+                    if (available < utf_sequence_length) {
+                        return FLB_FALSE;  // Not enough space
+                    }
+
+                    encoded_to_buf(p, tmp, utf_sequence_length);
+                    p += utf_sequence_length;
+                    offset += utf_sequence_length;
+                    available -= utf_sequence_length;
+                }
+                else {
+                    if (available < utf_sequence_length * 3) {
+                        return FLB_FALSE;
+                    }
+
                     /*
-                     * Utf-8 private block invalid hex mapping. Format unicode charpoint
-                     * in the following format:
-                     *
-                     *      +--------+--------+--------+
-                     *      |1110PPPP|10PPPPHH|10HHHHHH|
-                     *      +--------+--------+--------+
-                     *
-                     * Where:
-                     *   P is FLB_UTILS_FRAGMENT_PRIVATE_BLOCK_DESCRIPTOR bits (1 byte)
-                     *   H is Utf-8 fragment hex bits (1 byte)
-                     *   1 is bit 1
-                     *   0 is bit 0
-                     */
+                    * Utf-8 sequence is invalid. Map fragments to private use area
+                    * codepoints in range:
+                    * 0x<FLB_UTILS_FRAGMENT_PRIVATE_BLOCK_DESCRIPTOR>00 to
+                    * 0x<FLB_UTILS_FRAGMENT_PRIVATE_BLOCK_DESCRIPTOR>FF
+                    */
+                    for (b = 0; b < utf_sequence_length; ++b) {
+                        /*
+                        * Utf-8 private block invalid hex mapping. Format unicode charpoint
+                        * in the following format:
+                        *
+                        *      +--------+--------+--------+
+                        *      |1110PPPP|10PPPPHH|10HHHHHH|
+                        *      +--------+--------+--------+
+                        *
+                        * Where:
+                        *   P is FLB_UTILS_FRAGMENT_PRIVATE_BLOCK_DESCRIPTOR bits (1 byte)
+                        *   H is Utf-8 fragment hex bits (1 byte)
+                        *   1 is bit 1
+                        *   0 is bit 0
+                        */
 
-                    /* unicode codepoint start */
-                    *p = 0xE0;
+                        /* unicode codepoint start */
+                        *p = 0xE0;
 
-                    /* print unicode private block header first 4 bits */
-                    *p |= FLB_UTILS_FRAGMENT_PRIVATE_BLOCK_DESCRIPTOR >> 4;
-                    ++p;
+                        /* print unicode private block header first 4 bits */
+                        *p |= FLB_UTILS_FRAGMENT_PRIVATE_BLOCK_DESCRIPTOR >> 4;
+                        ++p;
 
-                    /* unicode codepoint middle */
-                    *p = 0x80;
+                        /* unicode codepoint middle */
+                        *p = 0x80;
 
-                    /* print end of unicode private block header last 4 bits */
-                    *p |= ((FLB_UTILS_FRAGMENT_PRIVATE_BLOCK_DESCRIPTOR << 2) & 0x3f);
+                        /* print end of unicode private block header last 4 bits */
+                        *p |= ((FLB_UTILS_FRAGMENT_PRIVATE_BLOCK_DESCRIPTOR << 2) & 0x3f);
 
-                    /* print hex fragment first 2 bits */
-                    *p |= (tmp[b] >> 6) & 0x03;
-                    ++p;
+                        /* print hex fragment first 2 bits */
+                        *p |= (tmp[b] >> 6) & 0x03;
+                        ++p;
 
-                    /* unicode codepoint middle */
-                    *p = 0x80;
+                        /* unicode codepoint middle */
+                        *p = 0x80;
 
-                    /* print hex fragment last 6 bits */
-                    *p |= tmp[b] & 0x3f;
-                    ++p;
+                        /* print hex fragment last 6 bits */
+                        *p |= tmp[b] & 0x3f;
+                        ++p;
+
+                        offset += 3;
+                        available -= 3;
+                    }
                 }
             }
+            else {
+                if (available < 1) {
+                    return FLB_FALSE;  // No space for a single byte
+                }
+                *p++ = c;
+                offset++;
+                available--;
+            }
+
+            i++;
         }
-        else {
-            *p++ = c;
-        }
-        written = (p - (buf + *off));
+
+        copypos = i;
     }
 
-    *off += written;
+done:
+    *off += offset;  // Update the buffer offset
 
     return FLB_TRUE;
 }
