@@ -787,7 +787,6 @@ static const struct escape_seq json_escape_table[128] = {
  * representation.
  */
 
-
 int flb_utils_write_str(char *buf, int *off, size_t size, const char *str, size_t str_len)
 {
     int i, b, ret, len, hex_bytes, utf_sequence_length, utf_sequence_number;
@@ -808,8 +807,9 @@ int flb_utils_write_str(char *buf, int *off, size_t size, const char *str, size_
     }
 
     p = buf + *off;
-    vlen = str_len & ~(sizeof(flb_vector8) - 1);  // Align length for SIMD
 
+    /* align length to the nearest multiple of the vector size for safe SIMD processing */
+    vlen = str_len & ~(sizeof(flb_vector8) - 1);
     for (i = 0;;) {
         /* SIMD optimization: Process chunk of input string */
         for (; i < vlen; i += sizeof(flb_vector8)) {
@@ -821,14 +821,9 @@ int flb_utils_write_str(char *buf, int *off, size_t size, const char *str, size_
              * if they are found we break the loop and escape them
              * in a char-by-char basis. Otherwise the do a bulk copy
              */
-            if (flb_vector8_has_le(chunk, (unsigned char)0x1F) ||
-                flb_vector8_has(chunk, (unsigned char)'"') ||
-                flb_vector8_has(chunk, (unsigned char)'\\') ||
-                flb_vector8_has(chunk, (unsigned char)'\n') ||
-                flb_vector8_has(chunk, (unsigned char)'\r') ||
-                flb_vector8_has(chunk, (unsigned char)'\t') ||
-                flb_vector8_has(chunk, (unsigned char)'\b') ||
-                flb_vector8_has(chunk, (unsigned char)'\f')) {
+            if (flb_vector8_has_le(chunk, (unsigned char) 0x1F) ||
+                flb_vector8_has(chunk, (unsigned char)    '"') ||
+                flb_vector8_has(chunk, (unsigned char)    '\\')) {
                 break;
             }
         }
@@ -850,7 +845,7 @@ int flb_utils_write_str(char *buf, int *off, size_t size, const char *str, size_
 
         /* Process remaining characters one by one */
         for (b = 0; b < sizeof(flb_vector8); b++) {
-            if (i == str_len) {
+            if (i >= str_len) {
                 /* all characters has been processed */
                 goto done;
             }
@@ -906,7 +901,7 @@ int flb_utils_write_str(char *buf, int *off, size_t size, const char *str, size_
                     continue;
                 }
 
-                // Decode UTF-8 sequence
+                /* decode UTF-8 sequence */
                 state = FLB_UTF8_ACCEPT;
                 codepoint = 0;
 
@@ -922,6 +917,7 @@ int flb_utils_write_str(char *buf, int *off, size_t size, const char *str, size_
                     flb_warn("[pack] Invalid UTF-8 bytes found, skipping.");
                 }
                 else {
+
                     len = snprintf(tmp, sizeof(tmp), "\\u%.4x", codepoint);
                     if (available < len) {
                         return FLB_FALSE;  // Not enough space
@@ -1042,7 +1038,8 @@ int flb_utils_write_str(char *buf, int *off, size_t size, const char *str, size_
             }
             else {
                 if (available < 1) {
-                    return FLB_FALSE;  // No space for a single byte
+                    /*  no space for a single byte */
+                    return FLB_FALSE;
                 }
                 *p++ = c;
                 offset++;
@@ -1056,7 +1053,8 @@ int flb_utils_write_str(char *buf, int *off, size_t size, const char *str, size_
     }
 
 done:
-    *off += offset;  // Update the buffer offset
+    /* update the buffer offset */
+    *off += offset;
 
     return FLB_TRUE;
 }
