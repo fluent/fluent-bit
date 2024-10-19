@@ -54,6 +54,7 @@
 #include <fluent-bit/flb_downstream.h>
 #include <fluent-bit/flb_ring_buffer.h>
 #include <fluent-bit/flb_notification.h>
+#include <fluent-bit/flb_simd.h>
 
 #ifdef FLB_HAVE_METRICS
 #include <fluent-bit/flb_metrics_exporter.h>
@@ -798,6 +799,9 @@ int flb_engine_start(struct flb_config *config)
         flb_error("[engine] storage creation failed");
         return -1;
     }
+
+    /* Internals */
+    flb_info("[simd    ] %s", flb_simd_info());
 
     /* Init Metrics engine */
     cmt_initialize();
