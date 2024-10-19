@@ -42,6 +42,8 @@ jobs:
           - "-DFLB_COVERAGE=On"
           - "-DFLB_SANITIZE_MEMORY=On"
           - "-DFLB_SANITIZE_THREAD=On"
+          - "-DFLB_SIMD=On"
+          - "-DFLB_SIMD=Off"
         compiler:
           - gcc
           - clang
