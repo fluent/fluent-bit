@@ -141,6 +141,7 @@ option(FLB_SIGNV4              "Enable AWS Signv4 support"    Yes)
 option(FLB_AWS                 "Enable AWS support"           Yes)
 option(FLB_STATIC_CONF         "Build binary using static configuration")
 option(FLB_STREAM_PROCESSOR    "Enable Stream Processor"                    Yes)
+option(FLB_SIMD                "Enable SIMD support"                         No)
 option(FLB_CORO_STACK_SIZE     "Set coroutine stack size")
 option(FLB_AVRO_ENCODER        "Build with Avro encoding support"            No)
 option(FLB_AWS_ERROR_REPORTER  "Build with aws error reporting support"      No)
@@ -181,6 +182,10 @@ option(FLB_EVENT_LOOP_KQUEUE    "Enable kqueue(2) event loop backend" No)
 option(FLB_EVENT_LOOP_SELECT    "Enable select(2) event loop backend" No)
 option(FLB_EVENT_LOOP_LIBEVENT  "Enable libevent event loop backend"  No)
 
+# SIMD support
+if(FLB_SIMD)
+  FLB_DEFINITION(FLB_HAVE_SIMD)
+endif()
 
 if(DEFINED FLB_NIGHTLY_BUILD AND NOT "${FLB_NIGHTLY_BUILD}" STREQUAL "")
   FLB_DEFINITION_VAL(FLB_NIGHTLY_BUILD ${FLB_NIGHTLY_BUILD})
