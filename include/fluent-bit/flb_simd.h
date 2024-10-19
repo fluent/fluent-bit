@@ -23,8 +23,11 @@
 #include <stdint.h>
 #include <stdbool.h>
 
+#include <fluent-bit/flb_info.h>
+#define UINT64CONST(x) (x##ULL)
+
 /* Only enable SIMD support if it has not been explicity disabled */
-#ifndef FLB_SIMD_DISABLED
+#ifdef FLB_HAVE_SIMD
 
 #if (defined(__x86_64__) || defined(_M_AMD64))
 /*
@@ -38,6 +41,7 @@
  */
 #include <emmintrin.h>
 #define FLB_SIMD_SSE2
+
 typedef __m128i flb_vector8;
 typedef __m128i flb_vector32;
 
@@ -65,11 +69,14 @@ typedef uint32x4_t flb_vector32;
  * two 32-bit integers using a uint64.
  */
 #define FLB_SIMD_NONE
-typedef uint64 flb_vector8;
+typedef uint64_t flb_vector8;
 #endif
 
 #else
 #define FLB_SIMD_NONE
+
+/* Original code aims to handle this as a uint64_t to search */
+typedef uint8_t flb_vector8;
 #endif /* FLB_SIMD_DISABLED */
 
 /* element-wise comparisons to a scalar */
@@ -88,7 +95,7 @@ static inline void flb_vector8_load(flb_vector8 *v, const uint8_t *s)
 #elif defined(FLB_SIMD_NEON)
 	*v = vld1q_u8(s);
 #else
-	memcpy(v, s, sizeof(flb_vector8));
+	memset(v, 0, sizeof(flb_vector8));
 #endif
 }
 
@@ -124,7 +131,7 @@ static inline flb_vector8 flb_vector8_ssub(const flb_vector8 v1, const flb_vecto
 	return vqsubq_u8(v1, v2);
 #endif
 }
-#endif							/* ! USE_NO_SIMD */
+#endif /* ! FLB_SIMD_NONE */
 
 /*
  * Return a vector with all bits set in each lane where the corresponding
@@ -139,7 +146,7 @@ static inline flb_vector8 flb_vector8_eq(const flb_vector8 v1, const flb_vector8
 	return vceqq_u8(v1, v2);
 #endif
 }
-#endif							/* ! USE_NO_SIMD */
+#endif /* ! FLB_SIMD_NONE */
 
 #ifndef FLB_SIMD_NONE
 static inline flb_vector32 flb_vector32_eq(const flb_vector32 v1, const flb_vector32 v2)
@@ -150,7 +157,7 @@ static inline flb_vector32 flb_vector32_eq(const flb_vector32 v1, const flb_vect
 	return vceqq_u32(v1, v2);
 #endif
 }
-#endif
+#endif /* ! FLB_SIMD_NONE */
 
 /*
  * Create a vector with all elements set to the same value.
@@ -185,11 +192,10 @@ static inline bool flb_vector8_is_highbit_set(const flb_vector8 v)
  */
 static inline bool flb_vector8_has(const flb_vector8 v, const uint8_t c)
 {
-	bool result;
+	bool result = false;
 
 #if defined(FLB_SIMD_NONE)
-	/* any bytes in v equal to c will evaluate to zero via XOR */
-	result = flb_vector8_has_zero(v ^ flb_vector8_broadcast(c));
+	 return flb_vector8_has_zero(v ^ flb_vector8_broadcast(c));
 #else
 	result = flb_vector8_is_highbit_set(flb_vector8_eq(v, flb_vector8_broadcast(c)));
 #endif
@@ -202,26 +208,28 @@ static inline bool flb_vector8_has_le(const flb_vector8 v, const uint8_t c)
 	bool result = false;
 
 #if defined(FLB_SIMD_NONE)
-
 	/*
-	 * To find bytes <= c, we can use bitwise operations to find bytes < c+1,
-	 * but it only works if c+1 <= 128 and if the highest bit in v is not set.
-	 * Adapted from
-	 * https://graphics.stanford.edu/~seander/bithacks.html#HasLessInWord
+	 *  To find bytes <= c, we can use bitwise operations to find bytes < c+1,
+	 *  but it only works if c+1 <= 128 and if the highest bit in v is not set.
+	 *
+	 *  Adapted from
+	 *
+	 *    https://graphics.stanford.edu/~seander/bithacks.html#HasLessInWord
 	 */
-	if ((int64) v >= 0 && c < 0x80)
+	if ((int64_t) v >= 0 && c < 0x80) {
 		result = (v - flb_vector8_broadcast(c + 1)) & ~v & flb_vector8_broadcast(0x80);
+	}
 	else {
-		/* one byte at a time */
-        int i;
-		for (i = 0; i < sizeof(flb_vector8); i++)
-		{
-			if (((const uint8 *) &v)[i] <= c) {
+		size_t i;
+			for (i = 0; i < sizeof(flb_vector8); i++) {
+			if (((const uint8_t *) &v)[i] <= c) {
 				result = true;
 				break;
 			}
 		}
 	}
+
+	return result;
 #else
 	/*
 	 * Use saturating subtraction to find bytes <= c, which will present as
@@ -236,15 +244,19 @@ static inline bool flb_vector8_has_le(const flb_vector8 v, const uint8_t c)
 
 static inline char *flb_simd_info()
 {
-    #if defined(FLB_SIMD_SSE2)
-        return "SSE2";
-    #elif defined(FLB_SIMD_NEON)
-        return "NEON";
-    #elif defined(FLB_SIMD_NONE)
-        return "none";
-    #elif defined(FLB_SIMD_DISABLED)
-        return "none (disabled)";
+	#ifdef FLB_HAVE_SIMD
+		#if defined(FLB_SIMD_SSE2)
+			return "SSE2";
+		#elif defined(FLB_SIMD_NEON)
+			return "NEON";
+		#elif defined(FLB_SIMD_NONE)
+			return "none";
+		#else
+			return "unknown";
+		#endif
+	#else
+        return "disabled";
     #endif
 }
 
-#endif /* FLB_SIMD_H */
+#endif /* FLB_HAVE_SIMD */
