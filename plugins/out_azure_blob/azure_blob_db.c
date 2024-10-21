@@ -251,6 +251,10 @@ struct flb_sqldb *azb_db_open(struct flb_azure_blob *ctx, char *db_path)
 
 int azb_db_close(struct flb_azure_blob *ctx)
 {
+    if (ctx->db == NULL) {
+        return 0;
+    }
+
     /* finalize prepared statements */
     sqlite3_finalize(ctx->stmt_insert_file);
     sqlite3_finalize(ctx->stmt_delete_file);
@@ -272,6 +276,7 @@ int azb_db_close(struct flb_azure_blob *ctx)
     sqlite3_finalize(ctx->stmt_get_oldest_file_with_parts);
 
     pthread_mutex_destroy(&ctx->db_lock);
+
     return flb_sqldb_close(ctx->db);
 }
 
