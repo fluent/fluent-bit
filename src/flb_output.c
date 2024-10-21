@@ -45,6 +45,7 @@ FLB_TLS_DEFINE(struct flb_out_flush_params, out_flush_params);
 void flb_output_prepare()
 {
     FLB_TLS_INIT(out_flush_params);
+    FLB_TLS_SET(out_flush_params, NULL);
 }
 
 /* Validate the the output address protocol */
