@@ -40,7 +40,7 @@ int blob_file_append(struct blob_ctx *ctx, char *path, struct stat *st)
         bfile = cfl_list_entry(head, struct blob_file, _head);
         if (strcmp(bfile->path, path) == 0) {
             /* file already exists */
-            return -1;
+            return 1;
         }
     }
 
@@ -48,7 +48,7 @@ int blob_file_append(struct blob_ctx *ctx, char *path, struct stat *st)
     if (ctx->database_file) {
         /* the file was already registered, just skipt it */
         if (blob_db_file_exists(ctx, path, &id_found) == FLB_TRUE) {
-            return 0;
+            return 1;
         }
     }
 #endif

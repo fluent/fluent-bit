@@ -561,6 +561,11 @@ static ssize_t recursive_file_search(struct blob_ctx *ctx,
                                 (uint64_t) fs_entry_metadata.st_ino);
                 }
                 else {
+                    /* Result codes :
+                     *  0 - Success
+                     * -1 - Generic failure
+                     *  1 - The file was alrady present in our records
+                     */
                     flb_plg_debug(ctx->ins,
                                 "blob scan skip: %s",
                                 glob_context.gl_pathv[index]);

@@ -567,6 +567,11 @@ struct flb_azure_blob *flb_azure_blob_conf_create(struct flb_output_instance *in
         return NULL;
     }
 
+    if (ctx->account_name == NULL) {
+        flb_plg_error(ctx->ins, "'account_name' has not been set");
+        return NULL;
+    }
+
     if (ctx->configuration_endpoint_url != NULL) {
         ret = flb_azure_blob_apply_remote_configuration(ctx);
 
