@@ -68,6 +68,9 @@ FLB_EXPORT int flb_output_set_test(flb_ctx_t *ctx, int ffd, char *test_name,
                                    void *test_ctx);
 FLB_EXPORT int flb_output_set_callback(flb_ctx_t *ctx, int ffd, char *name,
                                        void (*cb)(char *, void *, void *));
+FLB_EXPORT int flb_output_set_http_test(flb_ctx_t *ctx, int ffd, char *test_name,
+                                        void (*out_response) (void *, int, int, void *, size_t, void *),
+                                        void *out_callback_data);
 
 FLB_EXPORT int flb_filter_set(flb_ctx_t *ctx, int ffd, ...);
 FLB_EXPORT int flb_service_set(flb_ctx_t *ctx, ...);
@@ -83,6 +86,9 @@ FLB_EXPORT int flb_loop(flb_ctx_t *ctx);
 /* data ingestion for "lib" input instance */
 FLB_EXPORT int flb_lib_push(flb_ctx_t *ctx, int ffd, const void *data, size_t len);
 FLB_EXPORT int flb_lib_config_file(flb_ctx_t *ctx, const char *path);
+
+/* Emulate ingestions of HTTP responses for output plugins */
+FLB_EXPORT int flb_lib_response(flb_ctx_t *ctx, int ffd, int status, const void *data, size_t len);
 
 /* library context handling */
 FLB_EXPORT void flb_context_set(flb_ctx_t *ctx);
