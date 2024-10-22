@@ -589,21 +589,21 @@ static void print_current_properties(struct parser_state *state)
     struct cfl_variant *var;
     int idx;
 
-    flb_info("%*s[%s] PROPERTIES:", state->level*2, "", section_names[state->section]);
+    flb_debug("%*s[%s] PROPERTIES:", state->level*2, "", section_names[state->section]);
 
     cfl_list_foreach(head, &state->keyvals->list) {
         prop = cfl_list_entry(head, struct cfl_kvpair, _head);
         switch (prop->val->type) {
         case CFL_VARIANT_STRING:
-            flb_info("%*s%s: %s", (state->level+2)*2, "", prop->key, prop->val->data.as_string);
+            flb_debug("%*s%s: %s", (state->level+2)*2, "", prop->key, prop->val->data.as_string);
             break;
         case CFL_VARIANT_ARRAY:
-            flb_info("%*s%s: [", (state->level+2)*2, "", prop->key);
+            flb_debug("%*s%s: [", (state->level+2)*2, "", prop->key);
             for (idx = 0; idx < prop->val->data.as_array->entry_count; idx++) {
                 var = cfl_array_fetch_by_index(prop->val->data.as_array, idx);
-                flb_info("%*s%s", (state->level+3)*2, "", var->data.as_string);
+                flb_debug("%*s%s", (state->level+3)*2, "", var->data.as_string);
             }
-            flb_info("%*s]", (state->level+2)*2, "");
+            flb_debug("%*s]", (state->level+2)*2, "");
             break;
         }
     }
