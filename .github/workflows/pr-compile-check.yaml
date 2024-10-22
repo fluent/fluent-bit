@@ -41,8 +41,12 @@ jobs:
         flb_option:
           - "-DFLB_PREFER_SYSTEM_LIBS=On"
         compiler:
-          - gcc
-          - clang
+          - gcc:
+            cc: gcc
+            cxx: g++
+          - clang:
+            cc: clang
+            cxx: clang++
     steps:
       - name: Setup environment
         run: |
@@ -53,7 +57,7 @@ jobs:
       - name: Checkout Fluent Bit code
         uses: actions/checkout@v4
 
-      - name: ${{ matrix.compiler }} - ${{ matrix.flb_option }}
+      - name: ${{ matrix.compiler.cc }} & ${{ matrix.compiler.cxx }} - ${{ matrix.flb_option }}
         run: |
           export nparallel=$(( $(getconf _NPROCESSORS_ONLN) > 8 ? 8 : $(getconf _NPROCESSORS_ONLN) ))
           echo "CC = $CC, CXX = $CXX, FLB_OPT = $FLB_OPT"
@@ -64,8 +68,8 @@ jobs:
           make -j $nparallel
         working-directory: build
         env:
-          CC: ${{ matrix.compiler }}
-          CXX: ${{ matrix.compiler }}
+          CC: ${{ matrix.compiler.cc }}
+          CXX: ${{ matrix.compiler.cxx }}
           FLB_OPT: ${{ matrix.flb_option }}
           GLOBAL_OPTS: "-DFLB_BACKTRACE=Off -DFLB_SHARED_LIB=Off -DFLB_DEBUG=On -DFLB_ALL=On -DFLB_EXAMPLES=Off"
 

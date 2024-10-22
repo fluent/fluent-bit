@@ -804,6 +804,14 @@ static struct flb_config_map config_map[] = {
     },
 #endif
 
+#ifdef FLB_HAVE_UNICODE_ENCODER
+    {
+     FLB_CONFIG_MAP_STR, "unicode.encoding", NULL,
+     0, FLB_FALSE, 0,
+     "specify the preferred input encoding for converting to UTF-8. "
+     "Currently, UTF-16LE, UTF-16BE, auto are supported.",
+    },
+#endif
     /* EOF */
     {0}
 };
