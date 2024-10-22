@@ -600,7 +600,7 @@ static int ensure_container(struct flb_azure_blob *ctx)
         return FLB_FALSE;
     }
     
-    flb_plg_debug(ctx->ins, "get container request failed, status=%i",
+    flb_plg_error(ctx->ins, "get container request failed, status=%i",
                   status);
 
     return FLB_FALSE;
@@ -997,8 +997,6 @@ static void cb_azure_blob_flush(struct flb_event_chunk *event_chunk,
      */
     ret = ensure_container(ctx);
     if (ret == FLB_FALSE) {
-        flb_plg_error(ctx->ins, "cannot ensure container '%s' exists",
-                      ctx->container_name);
         FLB_OUTPUT_RETURN(FLB_RETRY);
     }
 
