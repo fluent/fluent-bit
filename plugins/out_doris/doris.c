@@ -1,0 +1,306 @@
+/* -*- Mode: C; tab-width: 4; indent-tabs-mode: nil; c-basic-offset: 4 -*- */
+
+/*  Fluent Bit
+ *  ==========
+ *  Copyright (C) 2015-2024 The Fluent Bit Authors
+ *
+ *  Licensed under the Apache License, Version 2.0 (the "License");
+ *  you may not use this file except in compliance with the License.
+ *  You may obtain a copy of the License at
+ *
+ *      http://www.apache.org/licenses/LICENSE-2.0
+ *
+ *  Unless required by applicable law or agreed to in writing, software
+ *  distributed under the License is distributed on an "AS IS" BASIS,
+ *  WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+ *  See the License for the specific language governing permissions and
+ *  limitations under the License.
+ */
+
+#include <fluent-bit/flb_output_plugin.h>
+#include <fluent-bit/flb_output.h>
+#include <fluent-bit/flb_http_client.h>
+#include <fluent-bit/flb_pack.h>
+#include <fluent-bit/flb_str.h>
+#include <fluent-bit/flb_time.h>
+#include <fluent-bit/flb_utils.h>
+#include <fluent-bit/flb_pack.h>
+#include <fluent-bit/flb_sds.h>
+#include <fluent-bit/flb_gzip.h>
+#include <fluent-bit/flb_record_accessor.h>
+#include <fluent-bit/flb_log_event_decoder.h>
+#include <msgpack.h>
+
+#include <stdio.h>
+#include <stdlib.h>
+#include <string.h>
+#include <assert.h>
+#include <errno.h>
+
+#include "doris.h"
+#include "doris_conf.h"
+
+#include <fluent-bit/flb_callback.h>
+
+static int cb_doris_init(struct flb_output_instance *ins,
+                         struct flb_config *config, void *data)
+{
+    struct flb_out_doris *ctx = NULL;
+    (void) data;
+
+    ctx = flb_doris_conf_create(ins, config);
+    if (!ctx) {
+        return -1;
+    }
+
+    /* Set the plugin context */
+    flb_output_set_context(ins, ctx);
+
+    /*
+     * This plugin instance uses the HTTP client interface, let's register
+     * it debugging callbacks.
+     */
+    flb_output_set_http_debug_callbacks(ins);
+
+    return 0;
+}
+
+static int http_put(struct flb_out_doris *ctx,
+                     const void *body, size_t body_len,
+                     const char *tag, int tag_len)
+{
+    int ret;
+    int out_ret = FLB_OK;
+    size_t b_sent;
+    void *payload_buf = NULL;
+    size_t payload_size = 0;
+    struct flb_upstream *u;
+    struct flb_connection *u_conn;
+    struct flb_http_client *c;
+
+    /* Get upstream context and connection */
+    u = ctx->u;
+    u_conn = flb_upstream_conn_get(u);
+    if (!u_conn) {
+        flb_plg_error(ctx->ins, "no upstream connections available to %s:%i",
+                      u->tcp_host, u->tcp_port);
+        return FLB_RETRY;
+    }
+
+    /* Map payload */
+    payload_buf = (void *) body;
+    payload_size = body_len;
+
+    /* Create HTTP client context */
+    c = flb_http_client(u_conn, FLB_HTTP_PUT, ctx->uri,
+                        payload_buf, payload_size,
+                        ctx->host, ctx->port,
+                        NULL, 0);
+
+    /*
+     * Direct assignment of the callback context to the HTTP client context.
+     * This needs to be improved through a more clean API.
+     */
+    c->cb_ctx = ctx->ins->callback;
+
+    /* Append headers */
+    flb_http_add_header(c, "format", 6, "json", 4);
+    flb_http_add_header(c, "Expect", 6, "100-continue", 12);
+    flb_http_add_header(c, "strip_outer_array", 17, "true", 4);
+    flb_http_add_header(c, "columns", 7, ctx->columns, strlen(ctx->columns));
+    flb_http_add_header(c, "User-Agent", 10, "Fluent-Bit", 10);
+    if (ctx->timeout_second > 0) {
+        char timeout[256];
+        snprintf(timeout, sizeof(timeout) - 1, "%d", ctx->timeout_second);
+        flb_http_add_header(c, "timeout", 7, timeout, strlen(timeout));
+    }
+
+    /* Basic Auth headers */
+    flb_http_basic_auth(c, ctx->user, ctx->password);
+
+    ret = flb_http_do(c, &b_sent);
+    if (ret == 0) {
+        flb_plg_info(ctx->ins, "%s:%i, HTTP status=%i\n%s\n",
+                     ctx->host, ctx->port,
+                     c->resp.status, c->resp.payload);
+        if (c->resp.payload_size > 0 &&
+            (strstr(c->resp.payload, "\"Status\": \"Success\"") != NULL || 
+             strstr(c->resp.payload, "\"Status\": \"Publish Timeout\"") != NULL)) {
+                // continue
+        }
+        else {
+            out_ret = FLB_RETRY;
+        }
+    }
+    else {
+        flb_plg_error(ctx->ins, "could not flush records to %s:%i (http_do=%i)",
+                      ctx->host, ctx->port, ret);
+        out_ret = FLB_RETRY;
+    }
+
+    /* cleanup */
+    
+    /*
+     * If the payload buffer is different than incoming records in body, means
+     * we generated a different payload and must be freed.
+     */
+    if (payload_buf != body) {
+        flb_free(payload_buf);
+    }
+
+    /* Destroy HTTP client context */
+    flb_http_client_destroy(c);
+
+    /* Release the TCP connection */
+    flb_upstream_conn_release(u_conn);
+
+    return out_ret;
+}
+
+static int compose_payload(struct flb_out_doris *ctx,
+                           const void *in_body, size_t in_size,
+                           void **out_body, size_t *out_size)
+{
+    flb_sds_t encoded;
+
+    *out_body = NULL;
+    *out_size = 0;
+
+    encoded = flb_pack_msgpack_to_json_format(in_body,
+                                              in_size,
+                                              FLB_PACK_JSON_FORMAT_JSON,
+                                              FLB_PACK_JSON_DATE_DOUBLE,
+                                              ctx->time_key);
+    if (encoded == NULL) {
+        flb_plg_error(ctx->ins, "failed to convert json");
+        return FLB_ERROR;
+    }
+    *out_body = (void*)encoded;
+    *out_size = flb_sds_len(encoded);
+
+    flb_plg_info(ctx->ins, "%s", (char*) *out_body);
+
+    return FLB_OK;
+}
+
+static void cb_doris_flush(struct flb_event_chunk *event_chunk,
+                           struct flb_output_flush *out_flush,
+                           struct flb_input_instance *i_ins,
+                           void *out_context,
+                           struct flb_config *config)
+{
+    int ret = FLB_ERROR;
+    struct flb_out_doris *ctx = out_context;
+    void *out_body;
+    size_t out_size;
+    (void) i_ins;
+
+    ret = compose_payload(ctx, event_chunk->data, event_chunk->size,
+                          &out_body, &out_size);
+
+    if (ret != FLB_OK) {
+        FLB_OUTPUT_RETURN(ret);
+    }
+
+    ret = http_put(ctx, out_body, out_size,
+                    event_chunk->tag, flb_sds_len(event_chunk->tag));
+    flb_sds_destroy(out_body);
+
+    FLB_OUTPUT_RETURN(ret);
+}
+
+static int cb_doris_exit(void *data, struct flb_config *config)
+{
+    struct flb_out_doris *ctx = data;
+
+    flb_doris_conf_destroy(ctx);
+    return 0;
+}
+
+/* Configuration properties map */
+static struct flb_config_map config_map[] = {
+    // host
+    // port
+    // user
+    {
+     FLB_CONFIG_MAP_STR, "user", NULL,
+     0, FLB_TRUE, offsetof(struct flb_out_doris, user),
+     "Set HTTP auth user"
+    },
+    // password
+    {
+     FLB_CONFIG_MAP_STR, "password", "",
+     0, FLB_TRUE, offsetof(struct flb_out_doris, password),
+     "Set HTTP auth password"
+    },
+    // database
+    {
+     FLB_CONFIG_MAP_STR, "database", NULL,
+     0, FLB_TRUE, offsetof(struct flb_out_doris, database),
+     "Set database"
+    },
+    // table
+    {
+     FLB_CONFIG_MAP_STR, "table", NULL,
+     0, FLB_TRUE, offsetof(struct flb_out_doris, table),
+     "Set table"
+    },
+    // time_key
+    {
+     FLB_CONFIG_MAP_STR, "time_key", "date",
+     0, FLB_TRUE, offsetof(struct flb_out_doris, time_key),
+     "Specify the name of the date field in output"
+    },
+    // columns
+    {
+     FLB_CONFIG_MAP_STR, "columns", "date,log",
+     0, FLB_TRUE, offsetof(struct flb_out_doris, columns),
+     "Set columns"
+    },
+    // timeout
+    {
+     FLB_CONFIG_MAP_INT, "timeout_second", "60",
+     0, FLB_TRUE, offsetof(struct flb_out_doris, timeout_second),
+     "Set timeout in second"
+    },
+
+    /* EOF */
+    {0}
+};
+
+static int cb_doris_format_test(struct flb_config *config,
+                                struct flb_input_instance *ins,
+                                void *plugin_context,
+                                void *flush_ctx,
+                                int event_type,
+                                const char *tag, int tag_len,
+                                const void *data, size_t bytes,
+                                void **out_data, size_t *out_size)
+{
+    struct flb_out_doris *ctx = plugin_context;
+    int ret;
+
+    ret = compose_payload(ctx, data, bytes, out_data, out_size);
+    if (ret != FLB_OK) {
+        flb_error("ret=%d", ret);
+        return -1;
+    }
+    return 0;
+}
+
+/* Plugin reference */
+struct flb_output_plugin out_doris_plugin = {
+    .name        = "doris",
+    .description = "Doris Output",
+    .cb_init     = cb_doris_init,
+    .cb_pre_run  = NULL,
+    .cb_flush    = cb_doris_flush,
+    .cb_exit     = cb_doris_exit,
+    .config_map  = config_map,
+
+    /* for testing */
+    .test_formatter.callback = cb_doris_format_test,
+
+    .flags       = FLB_OUTPUT_NET | FLB_IO_OPT_TLS,
+    .workers     = 2
+};
