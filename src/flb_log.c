@@ -41,12 +41,6 @@ extern struct flb_aws_error_reporter *error_reporter;
 
 FLB_TLS_DEFINE(struct flb_log, flb_log_ctx)
 
-/* Simple structure to dispatch messages to the log collector */
-struct log_message {
-    size_t size;
-    char   msg[4096 - sizeof(size_t)];
-};
-
 static inline int consume_byte(flb_pipefd_t fd)
 {
     int ret;
@@ -79,6 +73,8 @@ static inline int log_push(struct log_message *msg, struct flb_log *log)
         }
         ret = write(fd, msg->msg, msg->size);
         close(fd);
+    } else if (log->type == FLB_LOG_LIB) {
+        log->custom_consumer(msg);
     }
 
     return ret;
@@ -388,7 +384,7 @@ int flb_log_set_file(struct flb_config *config, char *out)
 }
 
 struct flb_log *flb_log_create(struct flb_config *config, int type,
-                               int level, char *out)
+                               int level, char *out, void (*custom_consumer) (struct log_message*))
 {
     int ret;
     struct flb_log *log;
@@ -415,6 +411,7 @@ struct flb_log *flb_log_create(struct flb_config *config, int type,
     log->type  = type;
     log->level = level;
     log->out   = out;
+    log->custom_consumer = custom_consumer;
     log->evl   = evl;
     log->tid   = 0;
 
