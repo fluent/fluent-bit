@@ -1,0 +1,118 @@
+# Copyright (C) 2019 Intel Corporation.  All rights reserved.
+# SPDX-License-Identifier: Apache-2.0 WITH LLVM-exception
+
+name: compilation on nuttx
+
+on:
+  # will be triggered on PR events
+  pull_request:
+    types:
+      - opened
+      - synchronize
+    paths:
+      - ".github/workflows/compilation_on_nuttx.yml"
+      - "build-scripts/**"
+      - "core/**"
+      - "!core/deps/**"
+      - "product-mini/**"
+      - "samples/**"
+      - "!samples/workload/**"
+      - "tests/wamr-test-suites/**"
+      - "wamr-compiler/**"
+      - "wamr-sdk/**"
+  # will be triggered on push events
+  push:
+    branches:
+      - main
+      - "dev/**"
+    paths:
+      - ".github/workflows/compilation_on_nuttx.yml"
+      - "build-scripts/**"
+      - "core/**"
+      - "!core/deps/**"
+      - "product-mini/**"
+      - "samples/**"
+      - "!samples/workload/**"
+      - "tests/wamr-test-suites/**"
+      - "wamr-compiler/**"
+      - "wamr-sdk/**"
+  # allow to be triggered manually
+  workflow_dispatch:
+
+# Cancel any in-flight jobs for the same PR/branch so there's only one active
+# at a time
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  WASI_SDK_PATH: "/opt/wasi-sdk"
+
+jobs:
+  build_iwasm_on_nuttx:
+    runs-on: ubuntu-latest
+    container:
+      image: ghcr.io/apache/nuttx/apache-nuttx-ci-linux@sha256:d9261eacf6c6ebe656c571757751c803e8f04c3ae9b820320a5ea5dd57b7205a
+
+    strategy:
+      matrix:
+        nuttx_board_config: [
+          # x64
+          "boards/sim/sim/sim/configs/nsh",
+          # cortex-m0
+          "boards/arm/rp2040/raspberrypi-pico/configs/nsh",
+          # cortex-m7
+          "boards/arm/stm32h7/nucleo-h743zi/configs/nsh",
+          # riscv32imc
+          "boards/risc-v/espressif/esp32c3-generic/configs/nsh",
+          # riscv32gc
+          "boards/risc-v/qemu-rv/rv-virt/configs/nsh",
+          # riscv64gc
+          "boards/risc-v/qemu-rv/rv-virt/configs/nsh64",
+          # arm64
+          "boards/arm64/qemu/qemu-armv8a/configs/nsh",
+        ]
+        wamr_config_option: [
+          "CONFIG_INTERPRETERS_WAMR=y\\nCONFIG_INTERPRETERS_WAMR_AOT=y\\nCONFIG_INTERPRETERS_WAMR_FAST=y\\n",
+          "CONFIG_INTERPRETERS_WAMR=y\\nCONFIG_INTERPRETERS_WAMR_AOT=y\\nCONFIG_INTERPRETERS_WAMR_FAST=y\\nCONFIG_INTERPRETERS_WAMR_LIBC_WASI=y\\n",
+          "CONFIG_INTERPRETERS_WAMR=y\\nCONFIG_INTERPRETERS_WAMR_AOT=y\\nCONFIG_INTERPRETERS_WAMR_FAST=y\\nCONFIG_INTERPRETERS_WAMR_LIBC_BUILTIN=y\\n",
+          "CONFIG_INTERPRETERS_WAMR=y\\nCONFIG_INTERPRETERS_WAMR_AOT=y\\nCONFIG_INTERPRETERS_WAMR_CLASSIC=y\\n",
+          "CONFIG_INTERPRETERS_WAMR=y\\nCONFIG_INTERPRETERS_WAMR_AOT=y\\nCONFIG_INTERPRETERS_WAMR_CLASSIC=y\\nCONFIG_INTERPRETERS_WAMR_LIBC_WASI=y\\n",
+          "CONFIG_INTERPRETERS_WAMR=y\\nCONFIG_INTERPRETERS_WAMR_AOT=y\\nCONFIG_INTERPRETERS_WAMR_CLASSIC=y\\nCONFIG_INTERPRETERS_WAMR_LIBC_BUILTIN=y\\n",
+          "CONFIG_INTERPRETERS_WAMR=y\\nCONFIG_INTERPRETERS_WAMR_AOT=y\\nCONFIG_INTERPRETERS_WAMR_LIBC_BUILTIN=y\\n",
+          "CONFIG_INTERPRETERS_WAMR=y\\nCONFIG_INTERPRETERS_WAMR_AOT=y\\n",
+          "CONFIG_INTERPRETERS_WAMR=y\\nCONFIG_INTERPRETERS_WAMR_FAST=y\\n",
+          "CONFIG_INTERPRETERS_WAMR=y\\nCONFIG_INTERPRETERS_WAMR_CLASSIC=y\\n",
+        ]
+
+    steps:
+      - name: Checkout NuttX
+        uses: actions/checkout@v4
+        with:
+          repository: apache/incubator-nuttx
+          ref: releases/12.4
+          path: nuttx
+
+      - name: Checkout NuttX Apps
+        uses: actions/checkout@v4
+        with:
+          repository: apache/incubator-nuttx-apps
+          ref: releases/12.4
+          path: apps
+
+      - name: Checkout WAMR
+        uses: actions/checkout@v4
+        with:
+          repository: ${{ github.repository }}
+          path: apps/interpreters/wamr/wamr
+
+      - name: Enable WAMR for NuttX
+        run: |
+          find nuttx/boards -name defconfig | xargs sed -i '$a\CONFIG_EOL_IS_LF=y\n${{ matrix.wamr_config_option }}'
+          find nuttx/boards/sim -name defconfig | xargs sed -i '$a\CONFIG_LIBM=y\n'
+
+      - name: Build
+        run: |
+          cd nuttx
+          tools/configure.sh ${{ matrix.nuttx_board_config }}
+          make -j$(nproc) EXTRAFLAGS=-Werror
