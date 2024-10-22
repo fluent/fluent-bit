@@ -175,6 +175,7 @@ static int cb_parser_filter(const void *data, size_t bytes,
                             struct flb_config *config)
 {
     int continue_parsing;
+    int continue_reserve_only;
     struct filter_parser_ctx *ctx = context;
     struct flb_time tm;
     msgpack_object *obj;
@@ -253,11 +254,21 @@ static int cb_parser_filter(const void *data, size_t bytes,
             }
 
             continue_parsing = FLB_TRUE;
+            continue_reserve_only = FLB_FALSE;
             for (i = 0; i < map_num && continue_parsing; i++) {
                 kv = &obj->via.map.ptr[i];
                 if (ctx->reserve_data) {
                     append_arr[append_arr_i] = kv;
                     append_arr_i++;
+                    /*
+                     * If we already parsed a field matching the key name
+                     * then skip parsing the rest to avoid any entries with
+                     * the same key name (which would cause reassignment of
+                     * out_buf resulting in a memory leak).
+                     */
+                    if (continue_reserve_only) {
+                        continue;
+                    }
                 }
                 if ( msgpackobj2char(&kv->key, &key_str, &key_len) < 0 ) {
                     /* key is not string */
@@ -299,6 +310,7 @@ static int cb_parser_filter(const void *data, size_t bytes,
                                     append_arr_len--;
                                     append_arr[append_arr_i] = NULL;
                                 }
+                                continue_reserve_only = FLB_TRUE;
                             }
                             else {
                                 continue_parsing = FLB_FALSE;
