@@ -313,15 +313,15 @@ struct flb_parser *flb_parser_create(const char *name, const char *format,
             p->time_frac_secs = (tmp + 2);
         }
 
-        /* 
-         * Fall back to the system timezone 
-         * if there is no zone parsed from the log.  
+        /*
+         * Fall back to the system timezone
+         * if there is no zone parsed from the log.
          */
         p->time_system_timezone = time_system_timezone;
 
-        /* 
-         * Optional fixed timezone offset, only applied if 
-         * not falling back to system timezone. 
+        /*
+         * Optional fixed timezone offset, only applied if
+         * not falling back to system timezone.
          */
         if (!p->time_system_timezone && time_offset) {
             diff = 0;
@@ -481,9 +481,9 @@ static flb_sds_t get_parser_key(struct flb_config *config,
     return val;
 }
 
-/* Config file: read 'parser' definitions */
-static int parser_conf_file(const char *cfg, struct flb_cf *cf,
-                            struct flb_config *config)
+/* Load each parser definition set in 'struct flb_cf *cf' */
+int flb_parser_load_parser_definitions(const char *cfg, struct flb_cf *cf,
+                                       struct flb_config *config)
 {
     int i = 0;
     flb_sds_t name;
@@ -541,7 +541,7 @@ static int parser_conf_file(const char *cfg, struct flb_cf *cf,
                       name, cfg);
             goto fconf_early_error;
         }
-        
+
         /* skip_empty_values */
         skip_empty = FLB_TRUE;
         tmp_str = get_parser_key(config, cf, s, "skip_empty_values");
@@ -605,7 +605,7 @@ static int parser_conf_file(const char *cfg, struct flb_cf *cf,
         /* Create the parser context */
         if (!flb_parser_create(name, format, regex, skip_empty,
                                time_fmt, time_key, time_offset, time_keep, time_strict,
-                               time_system_timezone, logfmt_no_bare_keys, types, types_len, 
+                               time_system_timezone, logfmt_no_bare_keys, types, types_len,
                                decoders, config)) {
             goto fconf_error;
         }
@@ -946,8 +946,8 @@ int flb_parser_conf_file(const char *file, struct flb_config *config)
         return -1;
     }
 
-    /* process 'parser' sections */
-    ret = parser_conf_file(cfg, cf, config);
+    /* load the parser definitions */
+    ret = flb_parser_load_parser_definitions(cfg, cf, config);
     if (ret == -1) {
         flb_cf_destroy(cf);
         return -1;
