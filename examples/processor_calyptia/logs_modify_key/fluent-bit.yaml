@@ -1,0 +1,23 @@
+service:
+    flush: 0.2
+    log_level: error
+
+pipeline:
+    inputs:
+        - name: event_type
+          tag: event
+          type: logs
+          processors:
+            logs:
+              - name: calyptia
+                script: script.lua
+                call: process_logs
+                # A JSON/YAML object can be passed as "opts" to the script.
+                # See "script.lua" for an example of how it can be used
+                opts:
+                  key: extra_data
+                  value: ["null", false, "false", true, null, -4, ba4, 4., 1]
+
+    outputs:
+        - name: stdout
+          match: event
