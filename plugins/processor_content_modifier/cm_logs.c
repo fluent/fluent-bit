@@ -23,6 +23,7 @@
 #include <fluent-bit/flb_time.h>
 #include <fluent-bit/flb_hash.h>
 #include <fluent-bit/flb_processor.h>
+#include <fluent-bit/flb_record_accessor.h>
 #include <fluent-bit/flb_log_event_decoder.h>
 #include <fluent-bit/flb_log_event_encoder.h>
 
@@ -108,20 +109,76 @@ static int run_action_upsert(struct content_modifier_ctx *ctx,
 }
 
 static int run_action_delete(struct content_modifier_ctx *ctx,
-                            struct cfl_object *obj,
-                            const char *tag, int tag_len,
-                            cfl_sds_t key)
+                             struct cfl_object *obj,
+                             const char *tag, int tag_len,
+                             cfl_sds_t key, struct flb_regex *regex)
 {
-    struct cfl_kvpair *kvpair;
+    int match_count;
+    struct flb_regex_search match_list;
+    struct cfl_kvpair *kvpair = NULL;
+    struct cfl_variant *v = NULL;
+    flb_sds_t skey = NULL;
+    flb_sds_t okey = NULL;
+    struct cfl_variant *oval = NULL;
+    int matched = FLB_FALSE;
 
-    /* if the kv pair already exists, remove it from the list */
-    kvpair = cfl_object_kvpair_get(obj, key);
-    if (kvpair) {
-        cfl_kvpair_destroy(kvpair);
+    if (regex == NULL) {
+        /* if the kv pair already exists, remove it from the list */
+        kvpair = cfl_object_kvpair_get(obj, key);
+        if (kvpair) {
+            cfl_kvpair_destroy(kvpair);
+            return 0;
+        }
+
+        flb_plg_debug(ctx->ins, "[action: delete] key '%s' not found", key);
+    }
+    else {
+        if (ctx->cra) {
+            matched = flb_cobj_ra_get_kv_pair(ctx->cra, *obj, &skey, &okey, &oval);
+            if (matched == FLB_TRUE || okey != NULL || oval != NULL) {
+                kvpair = cfl_object_kvpair_get(obj, skey);
+                if (!kvpair) {
+                    flb_plg_debug(ctx->ins, "[action: delete] key '%s' not found", key);
+                }
+            }
+        }
+
+        if (kvpair == NULL) {
+            /* if the kv pair exists, obtain it from the list */
+            kvpair = cfl_object_kvpair_get(obj, key);
+            if (!kvpair) {
+                flb_plg_debug(ctx->ins, "[action: delete] key '%s' not found", key);
+
+                return 0;
+            }
+        }
+
+        v = kvpair->val;
+        if (oval != NULL) {
+            v = oval;
+        }
+        if (v->type != CFL_VARIANT_STRING) {
+            return -1;
+        }
+        match_count = flb_regex_do(regex,
+                                   v->data.as_string,
+                                   cfl_variant_size_get(v), &match_list);
+        if (match_count <= 0) {
+            flb_plg_debug(ctx->ins, "[action: delete] pattern '%s' not matched", ctx->pattern);
+            return 0;
+        }
+
+        flb_regex_results_release(&match_list);
+        if (kvpair) {
+            flb_plg_debug(ctx->ins, "[action: delete] key '%s' is removed", kvpair->key);
+            cfl_kvpair_destroy(kvpair);
+            return 0;
+        }
+
+        flb_plg_debug(ctx->ins, "[action: delete] key '%s' not found", key);
+
         return 0;
     }
-
-    flb_plg_debug(ctx->ins, "[action: delete] key '%s' not found", key);
 
     /* if the kvpair was not found, it's ok, we return zero */
     return 0;
@@ -373,7 +430,12 @@ int cm_logs_process(struct flb_processor_instance *ins,
             ret = run_action_upsert(ctx, obj, tag, tag_len, ctx->key, ctx->value);
         }
         else if (ctx->action_type == CM_ACTION_DELETE) {
-            ret = run_action_delete(ctx, obj, tag, tag_len, ctx->key);
+            if (ctx->regex) {
+                ret = run_action_delete(ctx, obj, tag, tag_len, ctx->key, ctx->regex);
+            }
+            else {
+                ret = run_action_delete(ctx, obj, tag, tag_len, ctx->key, NULL);
+            }
         }
         else if (ctx->action_type == CM_ACTION_RENAME) {
             ret = run_action_rename(ctx, obj, tag, tag_len, ctx->key, ctx->value);

@@ -20,6 +20,7 @@
 #include <fluent-bit/flb_processor_plugin.h>
 #include <fluent-bit/flb_mem.h>
 #include <fluent-bit/flb_regex.h>
+#include <fluent-bit/flb_record_accessor.h>
 
 #include "cm.h"
 
@@ -300,13 +301,39 @@ static int set_context(struct content_modifier_ctx *ctx)
 static int check_action_requirements(struct content_modifier_ctx *ctx)
 {
     int ret;
+    flb_sds_t field = NULL;
 
     if (!ctx->key) {
         flb_plg_error(ctx->ins, "key is required for action '%s'", ctx->action_str);
         return -1;
     }
 
-    if (ctx->action_type == CM_ACTION_DELETE || ctx->action_type == CM_ACTION_HASH) {
+    if (*ctx->key == '$') {
+        field = flb_sds_create_len(ctx->key, flb_sds_len(ctx->key));
+    }
+
+    ctx->cra = NULL;
+    if (field != NULL) {
+        /* Create a cobj_record accessor context for this rule */
+        ctx->cra = flb_cobj_ra_create(field, FLB_FALSE);
+        if (!ctx->cra) {
+            flb_plg_error(ctx->ins, "invalid record accessor? '%s'", ctx->key);
+            flb_cobj_ra_destroy(ctx->cra);
+            flb_sds_destroy(field);
+            return -1;
+        }
+
+        flb_sds_destroy(field);
+    }
+
+    if (ctx->action_type == CM_ACTION_DELETE) {
+        if (ctx->pattern) {
+            flb_plg_info(ctx->ins,
+                         "for 'delete' action, a regular expression in '%s' is specifed",
+                         ctx->pattern);
+        }
+    }
+    else if (ctx->action_type == CM_ACTION_HASH) {
         /* these only requires a key, already validated (useless code) */
     }
     else if (ctx->action_type == CM_ACTION_INSERT || ctx->action_type == CM_ACTION_UPSERT ||
@@ -403,6 +430,10 @@ void cm_config_destroy(struct content_modifier_ctx *ctx)
 {
     if (ctx->regex) {
         flb_regex_destroy(ctx->regex);
+    }
+
+    if (ctx->cra) {
+        flb_cobj_ra_destroy(ctx->cra);
     }
 
     flb_free(ctx);

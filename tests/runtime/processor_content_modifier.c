@@ -321,6 +321,76 @@ static void flb_logs_action_delete()
     processor_test_destroy(ctx);
 }
 
+static void flb_logs_action_delete_with_cobj_ra()
+{
+    struct processor_test *ctx;
+    struct flb_lib_out_cb cb_data;
+    int ret;
+    char *p;
+    int bytes;
+    size_t len;
+    struct expect_str expect[] = {
+      {"\"message\":\"dummy\"", FLB_TRUE},
+      {"\"target\":{\"nested\":{\"and\":\"value\"}}", FLB_FALSE},
+      {"\"agent\":\"fluent-bit\"", FLB_TRUE},
+      {NULL, FLB_TRUE}
+    };
+
+    struct cfl_variant action = {
+        .type = CFL_VARIANT_STRING,
+        .data.as_string = "delete",
+    };
+    struct cfl_variant context = {
+        .type = CFL_VARIANT_STRING,
+        .data.as_string = "message",
+    };
+    struct cfl_variant key = {
+        .type = CFL_VARIANT_STRING,
+        .data.as_string = "$target['nested']['and']",
+    };
+    struct cfl_variant pattern = {
+        .type = CFL_VARIANT_STRING,
+        .data.as_string = "/(dum.*|val.*)/",
+    };
+
+    /* Prepare output callback with expected result */
+    cb_data.cb = cb_check_result;
+    cb_data.data = &expect;
+
+    ctx = processor_test_create(FLB_PROCESSOR_LOGS, &cb_data);
+    if (!TEST_CHECK(ctx != NULL)) {
+        TEST_MSG("failed to create ctx");
+        return;
+    }
+
+    ret = flb_output_set(ctx->flb, ctx->o_ffd,
+                         "format", "json",
+                         NULL);
+    TEST_CHECK(ret == 0);
+
+    ret = flb_processor_unit_set_property(ctx->pu, "action", &action);
+    TEST_CHECK(ret == 0);
+    ret = flb_processor_unit_set_property(ctx->pu, "context", &context);
+    TEST_CHECK(ret == 0);
+    ret = flb_processor_unit_set_property(ctx->pu, "key", &key);
+    TEST_CHECK(ret == 0);
+    ret = flb_processor_unit_set_property(ctx->pu, "pattern", &pattern);
+    TEST_CHECK(ret == 0);
+
+    ret = flb_start(ctx->flb);
+    if (!TEST_CHECK(ret == 0)) {
+        TEST_MSG("flb_start failed");
+        return;
+    }
+
+    p = "[0, {\"message\":\"dummy\",\"target\":{\"nested\":{\"and\":\"value\"}},\"agent\":\"fluent-bit\"}]";
+    len = strlen(p);
+    bytes = flb_lib_push(ctx->flb, ctx->i_ffd, p, len);
+    TEST_CHECK(bytes == len);
+
+    processor_test_destroy(ctx);
+}
+
 static void flb_logs_action_rename()
 {
     struct processor_test *ctx;
@@ -1431,6 +1501,7 @@ TEST_LIST = {
     {"logs.action.upsert"           , flb_logs_action_upsert },
     {"logs.action.hash"             , flb_logs_action_hash },
     {"logs.action.extract"          , flb_logs_action_extract },
+    {"logs.action.delete_with_cobj_ra", flb_logs_action_delete_with_cobj_ra},
     {"logs.action.convert_from_string_to_int" , flb_logs_action_convert_from_string_to_int },
     {"logs.action.convert_from_int_to_string" , flb_logs_action_convert_from_int_to_string },
     {"logs.action.convert_from_string_to_double" , flb_logs_action_convert_from_string_to_double },

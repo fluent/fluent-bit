@@ -22,6 +22,7 @@
 
 #include <fluent-bit/flb_info.h>
 #include <fluent-bit/flb_mp_chunk.h>
+#include <fluent-bit/flb_cobj_record_accessor.h>
 
 enum {
     CM_TELEMETRY_LOGS = 1,
@@ -99,6 +100,9 @@ struct content_modifier_ctx {
     flb_sds_t key;                 /* target key */
     flb_sds_t value;               /* used for any value */
     struct flb_regex *regex;       /* regular expression context created from 'pattern' */
+
+    /* cobj record accessor for nested keys */
+    struct flb_cobj_record_accessor *cra; /* cobj record accessor */
 
     /* processor instance reference */
     struct flb_processor_instance *ins;
