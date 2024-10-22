@@ -93,6 +93,9 @@ struct flb_out_kafka *flb_out_kafka_create(struct flb_output_instance *ins,
             ctx->format = FLB_KAFKA_FMT_AVRO;
         }
 #endif
+        else if (strcasecmp(ctx->format_str, "raw") == 0) {
+            ctx->format = FLB_KAFKA_FMT_RAW;
+        }
     }
     else {
         ctx->format = FLB_KAFKA_FMT_JSON;
@@ -112,6 +115,14 @@ struct flb_out_kafka *flb_out_kafka_create(struct flb_output_instance *ins,
     }
     else {
         ctx->message_key_field_len = 0;
+    }
+
+    /* Config: Log_Key */
+    if (ctx->raw_log_key) {
+        ctx->raw_log_key_len = strlen(ctx->raw_log_key);
+    }
+    else {
+        ctx->raw_log_key_len = 0;
     }
 
     /* Config: Timestamp_Key */
@@ -226,10 +237,6 @@ int flb_out_kafka_destroy(struct flb_out_kafka *ctx)
 
     if (ctx->topic_key) {
         flb_free(ctx->topic_key);
-    }
-
-    if (ctx->message_key) {
-        flb_free(ctx->message_key);
     }
 
     if (ctx->message_key_field) {
