@@ -57,6 +57,7 @@ enum section {
     SECTION_FILTER,
     SECTION_OUTPUT,
     SECTION_PROCESSOR,
+    SECTION_PARSER,
     SECTION_OTHER,
 };
 
@@ -70,6 +71,7 @@ static char *section_names[] = {
     "filter",
     "output",
     "processor",
+    "parser",
     "other"
 };
 
@@ -130,6 +132,12 @@ enum state {
     STATE_INPUT_PROCESSORS,
     STATE_INPUT_PROCESSOR,
 
+    /* Parser */
+    STATE_PARSER,           /* parser section */
+    STATE_PARSER_ENTRY,     /* a parser definition */
+    STATE_PARSER_KEY,       /* reading a key inside a parser */
+    STATE_PARSER_VALUE,     /* reading a value inside a parser */
+
     /* environment variables */
     STATE_ENV,
 
@@ -152,17 +160,22 @@ struct parser_state {
 
     /* active section */
     struct flb_cf_section *cf_section;
+
     /* active group */
     struct flb_cf_group *cf_group;
 
     /* key value */
     flb_sds_t key;
+
     /* section key/value list */
     struct cfl_kvlist *keyvals;
+
     /* pointer to current values in a list. */
     struct cfl_array *values;
+
     /* pointer to current variant */
     struct cfl_variant *variant;
+
     /* if the current variant is reading the key of a kvlist */
     cfl_sds_t variant_kvlist_key;
     /* are we the owner of the values? */
@@ -252,6 +265,8 @@ static char *state_str(enum state val)
         return "processor";
     case STATE_ENV:
         return "env";
+    case STATE_PARSER:
+        return "parser";
     case STATE_STOP:
         return "stop";
     default:
@@ -266,16 +281,19 @@ static int add_section_type(struct flb_cf *conf, struct parser_state *state)
     }
 
     if (state->section == SECTION_INPUT) {
-        state->cf_section = flb_cf_section_create(conf, "INPUT", 0);
+        state->cf_section = flb_cf_section_create(conf, "input", 0);
     }
     else if (state->section == SECTION_FILTER) {
-        state->cf_section = flb_cf_section_create(conf, "FILTER", 0);
+        state->cf_section = flb_cf_section_create(conf, "filter", 0);
     }
     else if (state->section == SECTION_OUTPUT) {
-        state->cf_section = flb_cf_section_create(conf, "OUTPUT", 0);
+        state->cf_section = flb_cf_section_create(conf, "output", 0);
     }
     else if (state->section == SECTION_CUSTOM) {
         state->cf_section = flb_cf_section_create(conf, "customs", 0);
+    }
+    else if (state->section == SECTION_PARSER) {
+        state->cf_section = flb_cf_section_create(conf, "parser", 0);
     }
 
     if (!state->cf_section) {
@@ -571,21 +589,21 @@ static void print_current_properties(struct parser_state *state)
     struct cfl_variant *var;
     int idx;
 
-    flb_debug("%*s[%s] PROPERTIES:", state->level*2, "", section_names[state->section]);
+    flb_info("%*s[%s] PROPERTIES:", state->level*2, "", section_names[state->section]);
 
     cfl_list_foreach(head, &state->keyvals->list) {
         prop = cfl_list_entry(head, struct cfl_kvpair, _head);
         switch (prop->val->type) {
         case CFL_VARIANT_STRING:
-            flb_debug("%*s%s: %s", (state->level+2)*2, "", prop->key, prop->val->data.as_string);
+            flb_info("%*s%s: %s", (state->level+2)*2, "", prop->key, prop->val->data.as_string);
             break;
         case CFL_VARIANT_ARRAY:
-            flb_debug("%*s%s: [", (state->level+2)*2, "", prop->key);
+            flb_info("%*s%s: [", (state->level+2)*2, "", prop->key);
             for (idx = 0; idx < prop->val->data.as_array->entry_count; idx++) {
                 var = cfl_array_fetch_by_index(prop->val->data.as_array, idx);
-                flb_debug("%*s%s", (state->level+3)*2, "", var->data.as_string);
+                flb_info("%*s%s", (state->level+3)*2, "", var->data.as_string);
             }
-            flb_debug("%*s]", (state->level+2)*2, "");
+            flb_info("%*s]", (state->level+2)*2, "");
             break;
         }
     }
@@ -869,6 +887,100 @@ static int consume_event(struct flb_cf *conf, struct local_ctx *ctx,
         break;
     /* end of 'includes' */
 
+     /* Handle the 'parsers' section */
+    case STATE_PARSER:
+        switch (event->type) {
+        case YAML_SEQUENCE_START_EVENT:
+            /* Start of the parsers list */
+            break;
+
+        case YAML_MAPPING_START_EVENT:
+            /* we handle each parser definition as a new section */
+            if (add_section_type(conf, state) == -1) {
+                flb_error("Unable to add parsers section");
+                return YAML_FAILURE;
+            }
+
+            /* Start of an individual parser entry */
+            state = state_push_withvals(ctx, state, STATE_PARSER_ENTRY);
+            if (!state) {
+                flb_error("Unable to allocate state for parser entry");
+                return YAML_FAILURE;
+            }
+            break;
+
+        case YAML_SEQUENCE_END_EVENT:
+            /* End of the parsers list */
+            state = state_pop(ctx);
+            if (!state) {
+                flb_error("No state left");
+                return YAML_FAILURE;
+            }
+            break;
+
+        default:
+            yaml_error_event(ctx, state, event);
+            return YAML_FAILURE;
+        }
+        break;
+
+    case STATE_PARSER_ENTRY:
+        switch (event->type) {
+        case YAML_SCALAR_EVENT:
+            /* Found a key within the parser entry */
+            value = (char *) event->data.scalar.value;
+            state = state_push_key(ctx, STATE_PARSER_KEY, value);
+            if (!state) {
+                flb_error("Unable to allocate state for parser key");
+                return YAML_FAILURE;
+            }
+            break;
+
+        case YAML_MAPPING_END_EVENT:
+            /* End of an individual parser entry */
+            print_current_properties(state);
+            state = state_pop(ctx);
+            if (!state) {
+                flb_error("No state left");
+                return YAML_FAILURE;
+            }
+            break;
+
+        default:
+            yaml_error_event(ctx, state, event);
+            return YAML_FAILURE;
+        }
+        break;
+
+    case STATE_PARSER_KEY:
+        switch (event->type) {
+        case YAML_SCALAR_EVENT:
+            /* Store the value for the previous key */
+            value = (char *)event->data.scalar.value;
+            if (flb_cf_section_property_add(conf, state->cf_section->properties,
+                                        state->key, flb_sds_len(state->key),
+                                        value, strlen(value)) < 0) {
+                flb_error("unable to add property");
+                return YAML_FAILURE;
+            }
+
+            /* Return to the parser entry state */
+            state = state_pop(ctx);
+            if (!state) {
+                flb_error("No state left");
+                return YAML_FAILURE;
+            }
+            break;
+
+        default:
+            yaml_error_event(ctx, state, event);
+            return YAML_FAILURE;
+        }
+        break;
+    case STATE_PARSER_VALUE:
+        /* unused */
+        break;
+
     /*
      * 'customs'
      *  --------
@@ -955,6 +1067,13 @@ static int consume_event(struct flb_cf *conf, struct local_ctx *ctx,
                     return YAML_FAILURE;
                 }
             }
+            else if (strcasecmp(value, "parsers") == 0) {
+                state = state_push_section(ctx, STATE_PARSER, SECTION_PARSER);
+                if (state == NULL) {
+                    flb_error("unable to allocate state");
+                    return YAML_FAILURE;
+                }
+            }
             else if (strcasecmp(value, "pipeline") == 0) {
                 state = state_push_section(ctx, STATE_PIPELINE, SECTION_PIPELINE);
                 if (state == NULL) {
@@ -985,7 +1104,7 @@ static int consume_event(struct flb_cf *conf, struct local_ctx *ctx,
             else if (strcasecmp(value, "customs") == 0) {
                 state = state_push_section(ctx, STATE_CUSTOM, SECTION_CUSTOM);
 
-            if (state == NULL) {
+                if (state == NULL) {
                     flb_error("unable to allocate state");
                     return YAML_FAILURE;
                 }
@@ -2036,7 +2155,6 @@ static int state_create_section(struct flb_cf *conf, struct parser_state *state,
     }
 
     state->cf_section = flb_cf_section_create(conf, name, 0);
-
     if (state->cf_section == NULL) {
         return -1;
     }
@@ -2322,7 +2440,9 @@ struct flb_cf *flb_cf_yaml_create(struct flb_cf *conf, char *file_path,
         if (!conf) {
             return NULL;
         }
-
+        flb_cf_set_origin_format(conf, FLB_CF_YAML);
+    }
+    else {
         flb_cf_set_origin_format(conf, FLB_CF_YAML);
     }
 
