@@ -513,7 +513,7 @@ static int validate_auth_header(struct flb_splunk *ctx, struct mk_http_request *
                 continue;
             }
 
-            if (strncmp(splunk_token->header,
+            if (strncasecmp(splunk_token->header,
                         authorization,
                         splunk_token->length) == 0) {
                 flb_sds_destroy(authorization);
@@ -1046,7 +1046,7 @@ static int validate_auth_header_ng(struct flb_splunk *ctx, struct flb_http_reque
                 return SPLUNK_AUTH_UNAUTHORIZED;
             }
 
-            if (strncmp(splunk_token->header,
+            if (strncasecmp(splunk_token->header,
                         auth_header,
                         splunk_token->length) == 0) {
                 return SPLUNK_AUTH_SUCCESS;
