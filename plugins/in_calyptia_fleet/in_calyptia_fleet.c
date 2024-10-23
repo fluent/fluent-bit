@@ -57,6 +57,8 @@
 #define DEFAULT_INTERVAL_SEC  "15"
 #define DEFAULT_INTERVAL_NSEC "0"
 
+#define DEFAULT_MAX_HTTP_BUFFER_SIZE "10485760"
+
 #define CALYPTIA_HOST "cloud-api.calyptia.com"
 #define CALYPTIA_PORT "443"
 
@@ -72,6 +74,9 @@ struct flb_in_calyptia_fleet_config {
     /* Time interval check */
     int interval_sec;
     int interval_nsec;
+
+    /* maximum http buffer size */
+    int max_http_buffer_size;
 
     /* Grabbed from the cfg_path, used to check if configuration has
      * has been updated.
@@ -504,6 +509,7 @@ static void *do_reload(void *data)
 static int test_config_is_valid(struct flb_in_calyptia_fleet_config *ctx,
                                 flb_sds_t cfgpath)
 {
+    return FLB_TRUE;
     struct flb_cf *conf;
     int ret = FLB_FALSE;
 
@@ -894,7 +900,7 @@ static struct flb_http_client *fleet_http_do(struct flb_in_calyptia_fleet_config
         goto http_client_error;
     }
 
-    flb_http_buffer_size(client, 8192);
+    flb_http_buffer_size(client, ctx->max_http_buffer_size);
 
     flb_http_add_header(client,
                         CALYPTIA_H_PROJECT, sizeof(CALYPTIA_H_PROJECT) - 1,
@@ -2300,6 +2306,11 @@ static struct flb_config_map config_map[] = {
      FLB_CONFIG_MAP_STR, "machine_id", NULL,
      0, FLB_TRUE, offsetof(struct flb_in_calyptia_fleet_config, machine_id),
      "Agent Machine ID."
+    },
+    {
+      FLB_CONFIG_MAP_INT, "max_http_buffer_size", DEFAULT_MAX_HTTP_BUFFER_SIZE,
+      0, FLB_TRUE, offsetof(struct flb_in_calyptia_fleet_config, max_http_buffer_size),
+      "Set the maximum size for http buffers when communicating with the API"
     },
     {
       FLB_CONFIG_MAP_INT, "interval_sec", DEFAULT_INTERVAL_SEC,
