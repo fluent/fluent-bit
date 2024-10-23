@@ -60,6 +60,7 @@ struct calyptia {
     flb_sds_t fleet_id;                   /* fleet-id  */
     flb_sds_t fleet_name;
     flb_sds_t fleet_config_dir;           /* fleet configuration directory */
+    flb_sds_t fleet_max_http_buffer_size;
     int fleet_interval_sec;
     int fleet_interval_nsec;
 };
@@ -497,6 +498,9 @@ static int cb_calyptia_init(struct flb_custom_instance *ins,
             flb_input_set_property(ctx->fleet, "config_dir", ctx->fleet_config_dir);
         }
 
+        if (ctx->fleet_max_http_buffer_size) {
+            flb_input_set_property(ctx->fleet, "max_http_buffer_size", ctx->fleet_max_http_buffer_size);
+        }
         if (ctx->machine_id) {
             flb_input_set_property(ctx->fleet, "machine_id", ctx->machine_id);
         }
@@ -591,6 +595,11 @@ static struct flb_config_map config_map[] = {
       FLB_CONFIG_MAP_INT, "fleet.interval_nsec", "-1",
       0, FLB_TRUE, offsetof(struct calyptia, fleet_interval_nsec),
       "Set the collector interval (nanoseconds)"
+    },
+    {
+      FLB_CONFIG_MAP_STR, "fleet.max_http_buffer_size", NULL,
+      0, FLB_TRUE, offsetof(struct calyptia, fleet_max_http_buffer_size),
+      "Max HTTP buffer size for fleet"
     },
     {
      FLB_CONFIG_MAP_STR, "fleet_name", NULL,
