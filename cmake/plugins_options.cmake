@@ -114,6 +114,7 @@ DEFINE_OPTION(FLB_OUT_CHRONICLE               "Enable Google Chronicle output pl
 DEFINE_OPTION(FLB_OUT_CLOUDWATCH_LOGS         "Enable AWS CloudWatch output plugin"          ON)
 DEFINE_OPTION(FLB_OUT_COUNTER                 "Enable Counter output plugin"                 ON)
 DEFINE_OPTION(FLB_OUT_DATADOG                 "Enable DataDog output plugin"                 ON)
+DEFINE_OPTION(FLB_OUT_DORIS                   "Enable Apache Doris output plugin"            ON)
 DEFINE_OPTION(FLB_OUT_ES                      "Enable Elasticsearch output plugin"           ON)
 DEFINE_OPTION(FLB_OUT_EXIT                    "Enable Exit output plugin"                    ON)
 DEFINE_OPTION(FLB_OUT_FILE                    "Enable file output plugin"                    ON)
