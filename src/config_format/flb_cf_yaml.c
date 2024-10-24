@@ -58,6 +58,8 @@ enum section {
     SECTION_OUTPUT,
     SECTION_PROCESSOR,
     SECTION_PARSER,
+    SECTION_MULTILINE_PARSER,
+    SECTION_MULTILINE_PARSER_RULE,
     SECTION_OTHER,
 };
 
@@ -72,6 +74,8 @@ static char *section_names[] = {
     "output",
     "processor",
     "parser",
+    "multiline_parser",
+    "multiline_parser_rule",
     "other"
 };
 
@@ -137,6 +141,12 @@ enum state {
     STATE_PARSER_ENTRY,     /* a parser definition */
     STATE_PARSER_KEY,       /* reading a key inside a parser */
     STATE_PARSER_VALUE,     /* reading a value inside a parser */
+
+    /* Multiline Parser */
+    STATE_MULTILINE_PARSER, /* multiline parser section */
+    STATE_MULTILINE_PARSER_ENTRY, /* a multiline parser definition */
+    STATE_MULTILINE_PARSER_VALUE, /* reading a value inside a multiline parser */
+    STATE_MULTILINE_PARSER_RULE, /* reading a multiline parser rule */
 
     /* environment variables */
     STATE_ENV,
@@ -267,6 +277,8 @@ static char *state_str(enum state val)
         return "env";
     case STATE_PARSER:
         return "parser";
+    case STATE_MULTILINE_PARSER:
+        return "multiline-parser";
     case STATE_STOP:
         return "stop";
     default:
@@ -294,6 +306,12 @@ static int add_section_type(struct flb_cf *conf, struct parser_state *state)
     }
     else if (state->section == SECTION_PARSER) {
         state->cf_section = flb_cf_section_create(conf, "parser", 0);
+    }
+    else if (state->section == SECTION_MULTILINE_PARSER) {
+        state->cf_section = flb_cf_section_create(conf, "multiline_parser", 0);
+    }
+    else {
+        state->cf_section = flb_cf_section_create(conf, "other", 0);
     }
 
     if (!state->cf_section) {
@@ -346,8 +364,8 @@ static char *state_get_last(struct local_ctx *ctx)
     return entry->str;
 }
 
-static void yaml_error_event(struct local_ctx *ctx, struct parser_state *state,
-                             yaml_event_t *event)
+static void yaml_error_event_line(struct local_ctx *ctx, struct parser_state *state,
+                             yaml_event_t *event, int line)
 {
     struct flb_slist_entry *entry;
 
@@ -379,6 +397,9 @@ static void yaml_error_event(struct local_ctx *ctx, struct parser_state *state,
               entry->str, event->start_mark.line + 1, event->start_mark.column,
               event_type_str(event), event->type, state_str(state->state), state->state);
 }
+
+#define yaml_error_event(ctx, state, event) \
+    yaml_error_event_line(ctx, state, event, __LINE__)
 
 static void yaml_error_definition(struct local_ctx *ctx, struct parser_state *state,
                                   yaml_event_t *event, char *value)
@@ -578,6 +599,7 @@ static int read_glob(struct flb_cf *conf, struct local_ctx *ctx,
 static void print_current_state(struct local_ctx *ctx, struct parser_state *state,
                                 yaml_event_t *event)
 {
+    /* note: change this to flb_info() for debugging purposes */
     flb_debug("%*s%s->%s", state->level*2, "", state_str(state->state),
              event_type_str(event));
 }
@@ -588,6 +610,8 @@ static void print_current_properties(struct parser_state *state)
     struct cfl_kvpair *prop;
     struct cfl_variant *var;
     int idx;
+
+    /* note: change flb_debug with flb_info() for debugging purposes */
 
     flb_debug("%*s[%s] PROPERTIES:", state->level*2, "", section_names[state->section]);
 
@@ -971,7 +995,6 @@ static int consume_event(struct flb_cf *conf, struct local_ctx *ctx,
                 return YAML_FAILURE;
             }
             break;
-
         default:
             yaml_error_event(ctx, state, event);
             return YAML_FAILURE;
@@ -980,6 +1003,157 @@ static int consume_event(struct flb_cf *conf, struct local_ctx *ctx,
     case STATE_PARSER_VALUE:
         /* unused */
         break;
+
+
+    /* Handle the 'multiline_parsers' section */
+    /* *****************************************/
+    /* Handle the 'multiline_parsers' section */
+    case STATE_MULTILINE_PARSER:
+        switch (event->type) {
+        case YAML_SEQUENCE_START_EVENT:
+            /* Start of the multiline parsers list */
+            break;
+
+        case YAML_MAPPING_START_EVENT:
+            /* we handle each multiline parser definition as a new section */
+            if (add_section_type(conf, state) == -1) {
+                flb_error("Unable to add multiline parsers section");
+                return YAML_FAILURE;
+            }
+
+            /* Start of an individual multiline parser entry */
+            state = state_push_withvals(ctx, state, STATE_MULTILINE_PARSER_ENTRY);
+            if (!state) {
+                flb_error("Unable to allocate state for multiline parser entry");
+                return YAML_FAILURE;
+            }
+           break;
+
+        case YAML_SEQUENCE_END_EVENT:
+            /* End of the multiline parsers list */
+            state = state_pop(ctx);
+            if (!state) {
+                flb_error("No state left");
+                return YAML_FAILURE;
+            }
+            break;
+
+        default:
+            yaml_error_event(ctx, state, event);
+            return YAML_FAILURE;
+        }
+        break;
+    case STATE_MULTILINE_PARSER_ENTRY:
+        switch (event->type) {
+        case YAML_SCALAR_EVENT:
+            /* Found a key within the multiline parser entry */
+            value = (char *) event->data.scalar.value;
+
+            /* start of 'rules:' sequence */
+            if (strcmp(value, "rules") == 0) {
+                state = state_push_withvals(ctx, state, STATE_MULTILINE_PARSER_RULE);
+                if (state == NULL) {
+                    flb_error("Unable to allocate state for multiline parser rules");
+                    return YAML_FAILURE;
+                }
+                break;
+            }
+
+            /* normal key value pair for the multiline parser */
+            state = state_push_key(ctx, STATE_MULTILINE_PARSER_VALUE, value);
+            if (!state) {
+                flb_error("Unable to allocate state for multiline parser key");
+                return YAML_FAILURE;
+            }
+            break;
+
+        case YAML_MAPPING_END_EVENT:
+            /* End of an individual multiline parser entry */
+            print_current_properties(state);
+            state = state_pop(ctx);
+            if (!state) {
+                flb_error("No state left");
+                return YAML_FAILURE;
+            }
+            break;
+        default:
+            yaml_error_event(ctx, state, event);
+            return YAML_FAILURE;
+        }
+        break;
+    case STATE_MULTILINE_PARSER_VALUE:
+        switch (event->type) {
+        case YAML_SCALAR_EVENT:
+            /* Store the value for the previous key */
+            value = (char *)event->data.scalar.value;
+            if (flb_cf_section_property_add(conf, state->cf_section->properties,
+                                        state->key, flb_sds_len(state->key),
+                                        value, strlen(value)) < 0) {
+                flb_error("unable to add property");
+                return YAML_FAILURE;
+            }
+
+            /* Return to the multiline parser entry state */
+            state = state_pop(ctx);
+            if (!state) {
+                flb_error("No state left");
+                return YAML_FAILURE;
+              }
+            break;
+        default:
+            yaml_error_event(ctx, state, event);
+            return YAML_FAILURE;
+        }
+        break;
+
+    /*
+     * Multiline Parser "Rules"
+     * ------------------------
+     */
+    case STATE_MULTILINE_PARSER_RULE:
+        switch(event->type) {
+            case YAML_SEQUENCE_START_EVENT:
+                break;
+            case YAML_SEQUENCE_END_EVENT:
+                state = state_pop(ctx);
+                if (state == NULL) {
+                    flb_error("no state left");
+                    return YAML_FAILURE;
+                }
+                break;
+            case YAML_MAPPING_START_EVENT:
+                if (state_create_group(conf, state, "rule") == YAML_FAILURE) {
+                    flb_error("unable to create group");
+                    return YAML_FAILURE;
+                }
+
+                //state = state_push_withvals(ctx, state, STATE_GROUP_KEY);
+                state = state_push(ctx, STATE_GROUP_KEY);
+                if (state == NULL) {
+                    flb_error("unable to allocate state");
+                    return YAML_FAILURE;
+                }
+                /* create group */
+                state->values = flb_cf_section_property_add_list(conf,
+                                                                state->cf_section->properties,
+                                                                //state->key, flb_sds_len(state->key));
+                                                                    "rules", 5);
+
+                if (state->values == NULL) {
+                    flb_error("no values");
+                    return YAML_FAILURE;
+                }
+
+                break;
+            case YAML_MAPPING_END_EVENT:
+                return YAML_FAILURE;
+                break;
+            default:
+                yaml_error_event(ctx, state, event);
+                return YAML_FAILURE;
+        };
+        break;
+
 
     /*
      * 'customs'
@@ -1069,6 +1243,13 @@ static int consume_event(struct flb_cf *conf, struct local_ctx *ctx,
             }
             else if (strcasecmp(value, "parsers") == 0) {
                 state = state_push_section(ctx, STATE_PARSER, SECTION_PARSER);
+                if (state == NULL) {
+                    flb_error("unable to allocate state");
+                    return YAML_FAILURE;
+                }
+            }
+            else if (strcasecmp(value, "multiline_parsers") == 0) {
+                state = state_push_section(ctx, STATE_MULTILINE_PARSER, SECTION_MULTILINE_PARSER);
                 if (state == NULL) {
                     flb_error("unable to allocate state");
                     return YAML_FAILURE;
@@ -1804,11 +1985,13 @@ static int consume_event(struct flb_cf *conf, struct local_ctx *ctx,
             /* This is also the end of the plugin values mapping.
              * So we pop an additional state off the stack.
              */
-            state = state_pop(ctx);
+            if (state->state == STATE_PLUGIN_VAL) {
+                state = state_pop(ctx);
 
-            if (state == NULL) {
-                flb_error("no state left");
-                return YAML_FAILURE;
+                if (state == NULL) {
+                    flb_error("no state left");
+                    return YAML_FAILURE;
+                }
             }
             break;
         default:
@@ -2169,7 +2352,7 @@ static int state_create_group(struct flb_cf *conf, struct parser_state *state, c
     }
 
     state->cf_group = flb_cf_group_create(conf, state->cf_section,
-                                          "processors", strlen("processors"));
+                                          name, strlen(name));
 
     if (state->cf_group == NULL) {
         return -1;
