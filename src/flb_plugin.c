@@ -393,7 +393,6 @@ int flb_plugin_load_config_file(const char *file, struct flb_config *config)
     struct flb_cf_section *section;
     struct cfl_kvpair *entry;
 
-    printf("load from config file\n");
 #ifndef FLB_HAVE_STATIC_CONF
     ret = stat(file, &st);
     if (ret == -1 && errno == ENOENT) {
@@ -423,7 +422,17 @@ int flb_plugin_load_config_file(const char *file, struct flb_config *config)
         return -1;
     }
 
-    /* read all 'plugins' sections */
+    /*
+     * pass to the config_format loader also in case some Yaml have been included in
+     * the service section through the option 'plugins_file'
+     */
+    ret = flb_plugin_load_config_format(cf, config);
+    if (ret == -1) {
+        flb_cf_destroy(cf);
+        return -1;
+    }
+
+    /* (classic mode) read all 'plugins' sections */
     mk_list_foreach(head, &cf->sections) {
         section = mk_list_entry(head, struct flb_cf_section, _head);
         if (strcasecmp(section->name, "plugins") != 0) {
