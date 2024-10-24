@@ -22,6 +22,7 @@
 #define FLB_002 FLB_TESTS_CONF_PATH "/processors.yaml"
 #define FLB_003 FLB_TESTS_CONF_PATH "/parsers_and_multiline_parsers.yaml"
 #define FLB_004 FLB_TESTS_CONF_PATH "/stream_processor.yaml"
+#define FLB_005 FLB_TESTS_CONF_PATH "/plugins.yaml"
 
 #define FLB_000_WIN FLB_TESTS_CONF_PATH "\\fluent-bit-windows.yaml"
 #define FLB_BROKEN_PLUGIN_VARIANT FLB_TESTS_CONF_PATH "/broken_plugin_variant.yaml"
@@ -460,6 +461,7 @@ static void test_processors()
 
 static void test_parsers_and_multiline_parsers()
 {
+    int idx = 0;
     flb_sds_t str;
     struct mk_list *head;
     struct mk_list *rule_head;
@@ -467,12 +469,7 @@ static void test_parsers_and_multiline_parsers()
     struct flb_cf_section *s;
     struct flb_cf_group *g;
     struct cfl_variant *v;
-    struct cfl_variant *logs;
     struct cfl_variant *tmp;
-    struct cfl_variant *record_modifier_filter;
-    struct cfl_variant *records;
-    struct cfl_variant *record;
-    int idx = 0;
 
     cf = flb_cf_yaml_create(NULL, FLB_003, NULL, 0);
     TEST_CHECK(cf != NULL);
@@ -567,16 +564,11 @@ static void test_parsers_and_multiline_parsers()
 
 static void test_stream_processor()
 {
+    int idx = 0;
     struct mk_list *head;
     struct flb_cf *cf;
     struct flb_cf_section *s;
-    struct flb_cf_group *g;
     struct cfl_variant *v;
-    struct cfl_variant *tmp;
-    struct cfl_variant *record_modifier_filter;
-    struct cfl_variant *records;
-    struct cfl_variant *record;
-    int idx = 0;
 
     cf = flb_cf_yaml_create(NULL, FLB_004, NULL, 0);
     TEST_CHECK(cf != NULL);
@@ -630,6 +622,58 @@ static void test_stream_processor()
     flb_cf_destroy(cf);
 }
 
+static void test_plugins()
+{
+    int idx = 0;
+    struct mk_list *head;
+    struct flb_cf *cf;
+    struct flb_cf_section *s;
+
+    struct cfl_kvpair *path;
+    struct cfl_list *path_head;
+
+    cf = flb_cf_yaml_create(NULL, FLB_005, NULL, 0);
+    TEST_CHECK(cf != NULL);
+    if (!cf) {
+        exit(EXIT_FAILURE);
+    }
+
+    /* Total number of sections */
+    TEST_CHECK(mk_list_size(&cf->sections) == 4);
+
+    /* Check number sections per list */
+    TEST_CHECK(mk_list_size(&cf->plugins) == 1);
+    TEST_CHECK(mk_list_size(&cf->parsers) == 0);
+    TEST_CHECK(mk_list_size(&cf->multiline_parsers) == 0);
+    TEST_CHECK(mk_list_size(&cf->customs) == 0);
+    TEST_CHECK(mk_list_size(&cf->inputs) == 1);
+    TEST_CHECK(mk_list_size(&cf->filters) == 0);
+    TEST_CHECK(mk_list_size(&cf->outputs) == 1);
+    TEST_CHECK(mk_list_size(&cf->others) == 0);
+
+
+    mk_list_foreach(head, &cf->plugins) {
+        s = mk_list_entry(head, struct flb_cf_section, _head_section);
+
+        idx = 0;
+        cfl_list_foreach(path_head, &s->properties->list) {
+            path = cfl_list_entry(path_head, struct cfl_kvpair, _head);
+
+            switch (idx) {
+                case 0:
+                    TEST_CHECK(strcmp(path->key, "/path/to/out_gstdout.so") == 0);
+                    break;
+                case 1:
+                    TEST_CHECK(strcmp(path->key, "/path/to/out_fluent.so") == 0);
+                    break;
+            };
+            idx++;
+        }
+    }
+
+    flb_cf_destroy(cf);
+}
+
 TEST_LIST = {
     { "basic"    , test_basic},
     { "customs section", test_customs_section},
@@ -641,5 +685,6 @@ TEST_LIST = {
     { "processors", test_processors},
     { "parsers_and_multiline_parsers", test_parsers_and_multiline_parsers},
     { "stream_processor", test_stream_processor},
+    { "plugins", test_plugins},
     { 0 }
 };
