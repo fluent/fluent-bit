@@ -1,0 +1,16 @@
+---
+
+plugins:
+  - /path/to/out_gstdout.so
+  - /path/to/out_fluent.so
+
+service:
+  log_level: info
+
+pipeline:
+  inputs:
+    - name: random
+
+  outputs:
+    - name: gstdout
+      match: '*'
