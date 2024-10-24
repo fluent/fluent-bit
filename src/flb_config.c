@@ -945,6 +945,11 @@ int flb_config_load_config_format(struct flb_config *config, struct flb_cf *cf)
         return -1;
     }
 
+    ret = flb_plugin_load_config_format(cf, config);
+    if (ret == -1) {
+        return -1;
+    }
+
     ret = configure_plugins_type(config, cf, FLB_CF_CUSTOM);
     if (ret == -1) {
         return -1;
