@@ -728,29 +728,31 @@ struct flb_sp *flb_sp_create(struct flb_config *config)
     }
 
     /* register stream processor tasks registered through Yaml config */
-    mk_list_foreach(head, &config->cf_main->stream_processors) {
-        section = mk_list_entry(head, struct flb_cf_section, _head_section);
+    if (config->cf_main) {
+        mk_list_foreach(head, &config->cf_main->stream_processors) {
+            section = mk_list_entry(head, struct flb_cf_section, _head_section);
 
-        /* task name */
-        var = cfl_kvlist_fetch(section->properties, "name");
-        if (!var || var->type != CFL_VARIANT_STRING) {
-            flb_error("[sp] missing 'name' property in stream_processor section");
-            continue;
-        }
-        task_name = var->data.as_string;
+            /* task name */
+            var = cfl_kvlist_fetch(section->properties, "name");
+            if (!var || var->type != CFL_VARIANT_STRING) {
+                flb_error("[sp] missing 'name' property in stream_processor section");
+                continue;
+            }
+            task_name = var->data.as_string;
 
-        /* task exec/query */
-        var = cfl_kvlist_fetch(section->properties, "exec");
-        if (!var || var->type != CFL_VARIANT_STRING) {
-            flb_error("[sp] missing 'exec' property in stream_processor section");
-            continue;
-        }
-        task_exec = var->data.as_string;
+            /* task exec/query */
+            var = cfl_kvlist_fetch(section->properties, "exec");
+            if (!var || var->type != CFL_VARIANT_STRING) {
+                flb_error("[sp] missing 'exec' property in stream_processor section");
+                continue;
+            }
+            task_exec = var->data.as_string;
 
-        /* create task */
-        task = flb_sp_task_create(sp, task_name, task_exec);
-        if (!task) {
-            continue;
+            /* create task */
+            task = flb_sp_task_create(sp, task_name, task_exec);
+            if (!task) {
+                continue;
+            }
         }
     }
 
