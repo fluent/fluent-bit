@@ -21,6 +21,7 @@
 #define FLB_001 FLB_TESTS_CONF_PATH "/issue_7559.yaml"
 #define FLB_002 FLB_TESTS_CONF_PATH "/processors.yaml"
 #define FLB_003 FLB_TESTS_CONF_PATH "/parsers_and_multiline_parsers.yaml"
+#define FLB_004 FLB_TESTS_CONF_PATH "/stream_processor.yaml"
 
 #define FLB_000_WIN FLB_TESTS_CONF_PATH "\\fluent-bit-windows.yaml"
 #define FLB_BROKEN_PLUGIN_VARIANT FLB_TESTS_CONF_PATH "/broken_plugin_variant.yaml"
@@ -564,6 +565,71 @@ static void test_parsers_and_multiline_parsers()
     flb_cf_destroy(cf);
 }
 
+static void test_stream_processor()
+{
+    struct mk_list *head;
+    struct flb_cf *cf;
+    struct flb_cf_section *s;
+    struct flb_cf_group *g;
+    struct cfl_variant *v;
+    struct cfl_variant *tmp;
+    struct cfl_variant *record_modifier_filter;
+    struct cfl_variant *records;
+    struct cfl_variant *record;
+    int idx = 0;
+
+    cf = flb_cf_yaml_create(NULL, FLB_004, NULL, 0);
+    TEST_CHECK(cf != NULL);
+    if (!cf) {
+        exit(EXIT_FAILURE);
+    }
+
+    /* Total number of sections */
+    TEST_CHECK(mk_list_size(&cf->sections) == 5);
+
+    /* Check number sections per list */
+    TEST_CHECK(mk_list_size(&cf->parsers) == 0);
+    TEST_CHECK(mk_list_size(&cf->multiline_parsers) == 0);
+    TEST_CHECK(mk_list_size(&cf->customs) == 0);
+    TEST_CHECK(mk_list_size(&cf->inputs) == 1);
+    TEST_CHECK(mk_list_size(&cf->filters) == 0);
+    TEST_CHECK(mk_list_size(&cf->outputs) == 1);
+    TEST_CHECK(mk_list_size(&cf->others) == 0);
+
+    /* check others */
+    idx = 0;
+    mk_list_foreach(head, &cf->stream_processors) {
+        s = mk_list_entry(head, struct flb_cf_section, _head_section);
+
+        switch (idx) {
+            case 0:
+                v = flb_cf_section_property_get(cf, s, "name");
+                TEST_CHECK(v->type == CFL_VARIANT_STRING);
+                TEST_CHECK(strcmp(v->data.as_string, "create_results") == 0);
+
+                v = flb_cf_section_property_get(cf, s, "exec");
+                TEST_CHECK(v->type == CFL_VARIANT_STRING);
+                TEST_CHECK(strncmp(v->data.as_string, "CREATE STREAM results", 21) == 0);
+                break;
+            case 1:
+                v = flb_cf_section_property_get(cf, s, "name");
+                TEST_CHECK(v->type == CFL_VARIANT_STRING);
+                TEST_CHECK(strcmp(v->data.as_string, "select_results") == 0);
+
+                v = flb_cf_section_property_get(cf, s, "exec");
+                TEST_CHECK(v->type == CFL_VARIANT_STRING);
+                TEST_CHECK(strncmp(v->data.as_string, "SELECT * FROM", 13) == 0);
+                break;
+        };
+        idx++;
+
+        /* check groups */
+        TEST_CHECK(mk_list_size(&s->groups) == 0);
+    }
+
+    flb_cf_destroy(cf);
+}
+
 TEST_LIST = {
     { "basic"    , test_basic},
     { "customs section", test_customs_section},
@@ -574,5 +640,6 @@ TEST_LIST = {
     { "camel_case_key", test_camel_case_key},
     { "processors", test_processors},
     { "parsers_and_multiline_parsers", test_parsers_and_multiline_parsers},
+    { "stream_processor", test_stream_processor},
     { 0 }
 };
