@@ -680,6 +680,17 @@ int flb_parser_load_parser_definitions(const char *cfg, struct flb_cf *cf,
     return -1;
 }
 
+static int multiline_rule_create(struct flb_ml_parser *ml_parser,
+                                 char *from_state,
+                                 char *regex_pattern,
+                                 char *to_state)
+{
+    int ret;
+
+    ret = flb_ml_rule_create(ml_parser, from_state, regex_pattern, to_state, NULL);
+    return ret;
+}
+
 static int multiline_load_regex_rules(struct flb_ml_parser *ml_parser,
                                       struct flb_cf_section *section,
                                       struct flb_config *config)
@@ -692,7 +703,47 @@ static int multiline_load_regex_rules(struct flb_ml_parser *ml_parser,
     struct flb_slist_entry *from_state;
     struct flb_slist_entry *regex_pattern;
     struct flb_slist_entry *tmp;
+    struct mk_list *g_head;
+    struct flb_cf_group *group;
+    struct cfl_variant *var_state;
+    struct cfl_variant *var_regex;
+    struct cfl_variant *var_next_state;
 
+    /* Check if we have groups (coming from Yaml style config */
+    mk_list_foreach(g_head, &section->groups) {
+        /* Every group is a rule */
+        group = cfl_list_entry(g_head, struct flb_cf_group, _head);
+
+        var_state = cfl_kvlist_fetch(group->properties, "state");
+        if (!var_state || var_state->type != CFL_VARIANT_STRING) {
+            flb_error("[multiline parser: %s] invalid 'state' key", ml_parser->name);
+            return -1;
+        }
+
+        var_regex = cfl_kvlist_fetch(group->properties, "regex");
+        if (!var_regex || var_regex->type != CFL_VARIANT_STRING) {
+            flb_error("[multiline parser: %s] invalid 'regex' key", ml_parser->name);
+            return -1;
+        }
+
+        var_next_state = cfl_kvlist_fetch(group->properties, "next_state");
+        if (!var_next_state || var_next_state->type != CFL_VARIANT_STRING) {
+            flb_error("[multiline parser: %s] invalid 'next_state' key", ml_parser->name);
+            return -1;
+        }
+
+        ret = multiline_rule_create(ml_parser,
+                                    var_state->data.as_string,
+                                    var_regex->data.as_string,
+                                    var_next_state->data.as_string);
+
+        if (ret == -1) {
+            flb_error("[multiline parser: %s] error creating rule", ml_parser->name);
+            return -1;
+        }
+    }
+
+    /* Multiline rules set by a Fluent Bit classic mode config */
     cfl_list_foreach(head, &section->properties->list) {
         entry = cfl_list_entry(head, struct cfl_kvpair, _head);
 
@@ -705,7 +756,7 @@ static int multiline_load_regex_rules(struct flb_ml_parser *ml_parser,
         ret = flb_slist_split_tokens(&list, entry->val->data.as_string, 3);
         if (ret == -1) {
             flb_error("[multiline parser: %s] invalid section on key '%s'",
-                      ml_parser->name, entry->key);
+                    ml_parser->name, entry->key);
             return -1;
         }
 
@@ -734,11 +785,10 @@ static int multiline_load_regex_rules(struct flb_ml_parser *ml_parser,
             return -1;
         }
 
-        ret = flb_ml_rule_create(ml_parser,
-                                 from_state->str,
-                                 regex_pattern->str,
-                                 to_state,
-                                 NULL);
+        ret = multiline_rule_create(ml_parser,
+                                    from_state->str,
+                                    regex_pattern->str,
+                                    to_state);
         if (ret == -1) {
             flb_error("[multiline parser: %s] error creating rule",
                       ml_parser->name);
@@ -762,8 +812,8 @@ static int multiline_load_regex_rules(struct flb_ml_parser *ml_parser,
 
 
 /* config file: read 'multiline_parser' sections */
-static int multiline_parser_conf_file(const char *cfg, struct flb_cf *cf,
-                                      struct flb_config *config)
+int flb_parser_load_multiline_parser_definitions(const char *cfg, struct flb_cf *cf,
+                                                 struct flb_config *config)
 {
     int ret;
     int type;
@@ -780,6 +830,10 @@ static int multiline_parser_conf_file(const char *cfg, struct flb_cf *cf,
     struct mk_list *head;
     struct flb_cf_section *s;
     struct flb_ml_parser *ml_parser;
+
+    /*
+     * debug content of cf: flb_cf_dump(cf);
+     */
 
     /* read all 'multiline_parser' sections */
     mk_list_foreach(head, &cf->multiline_parsers) {
@@ -954,7 +1008,7 @@ int flb_parser_conf_file(const char *file, struct flb_config *config)
     }
 
     /* processs 'multiline_parser' sections */
-    ret = multiline_parser_conf_file(cfg, cf, config);
+    ret = flb_parser_load_multiline_parser_definitions(cfg, cf, config);
     if (ret == -1) {
         flb_cf_destroy(cf);
         return -1;
