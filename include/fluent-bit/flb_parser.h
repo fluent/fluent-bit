@@ -109,6 +109,9 @@ int flb_parser_conf_file_stat(const char *file, struct flb_config *config);
 int flb_parser_conf_file(const char *file, struct flb_config *config);
 int flb_parser_load_parser_definitions(const char *cfg, struct flb_cf *cf,
                                        struct flb_config *config);
+int flb_parser_load_multiline_parser_definitions(const char *cfg, struct flb_cf *cf,
+                                                 struct flb_config *config);
+
 void flb_parser_destroy(struct flb_parser *parser);
 struct flb_parser *flb_parser_get(const char *name, struct flb_config *config);
 int flb_parser_do(struct flb_parser *parser, const char *buf, size_t length,
