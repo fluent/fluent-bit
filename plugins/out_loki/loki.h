@@ -78,6 +78,7 @@ struct flb_loki {
     struct mk_list *labels;
     struct mk_list *label_keys;
     struct mk_list *structured_metadata;
+    struct mk_list *structured_metadata_map_keys;
     struct mk_list *remove_keys;
 
     flb_sds_t label_map_path;
@@ -87,13 +88,14 @@ struct flb_loki {
     char *tcp_host;
     int out_line_format;
     int out_drop_single_key;
-    int ra_used;                             /* number of record accessor label keys */
-    struct flb_record_accessor *ra_k8s;      /* kubernetes record accessor */
-    struct mk_list labels_list;              /* list of flb_loki_kv nodes */
-    struct mk_list structured_metadata_list; /* list of flb_loki_kv nodes */
-    struct mk_list remove_keys_derived;      /* remove_keys with label RAs */
+    int ra_used;                           /* number of record accessor label keys */
+    struct flb_record_accessor *ra_k8s;              /* kubernetes record accessor */
+    struct mk_list labels_list;                       /* list of flb_loki_kv nodes */
+    struct mk_list structured_metadata_list;          /* list of flb_loki_kv nodes */
+    struct mk_list structured_metadata_map_keys_list; /* list of flb_loki_kv nodes */
+    struct mk_list remove_keys_derived;              /* remove_keys with label RAs */
     struct flb_mp_accessor *remove_mpa;      /* remove_keys multi-pattern accessor */
-    struct flb_record_accessor *ra_tenant_id_key; /* dynamic tenant id key */
+    struct flb_record_accessor *ra_tenant_id_key;         /* dynamic tenant id key */
 
     struct cfl_list dynamic_tenant_list;
     pthread_mutex_t dynamic_tenant_list_lock;
