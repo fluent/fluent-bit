@@ -235,7 +235,6 @@ static int tls_context_server_alpn_select_callback(SSL *ssl,
 
     return result;
 }
-
 #ifdef _MSC_VER
 static int windows_load_system_certificates(struct tls_context *ctx)
 {
@@ -247,22 +246,22 @@ static int windows_load_system_certificates(struct tls_context *ctx)
     X509_STORE *ossl_store = SSL_CTX_get_cert_store(ctx->ctx);
     X509 *ossl_cert;
 
-    /* Check if OpenSSL certificate store is available */
+    // Check if OpenSSL certificate store is available
     if (!ossl_store) {
         flb_error("[tls] failed to retrieve openssl certificate store.");
         return -1;
     }
 
-    /* Open the Windows system certificate store */
+    // Open the Windows system certificate store
     win_store = CertOpenSystemStoreA(0, "Root");
     if (win_store == NULL) {
         flb_error("[tls] cannot open windows certificate store: %lu", GetLastError());
         return -1;
     }
 
-    /* Iterate over certificates in the store */
+    // Iterate over certificates in the store
     while ((win_cert = CertEnumCertificatesInStore(win_store, win_cert)) != NULL) {
-        /* Check if the certificate is encoded in ASN.1 DER format */
+        // Check if the certificate is encoded in ASN.1 DER format
         if (win_cert->dwCertEncodingType & X509_ASN_ENCODING) {
             /*
              * Decode the certificate into X509 struct.
@@ -281,7 +280,7 @@ static int windows_load_system_certificates(struct tls_context *ctx)
             /* Add X509 struct to the openssl cert store */
             ret = X509_STORE_add_cert(ossl_store, ossl_cert);
             if (!ret) {
-                err = ERR_get_error();
+                unsigned long err = ERR_get_error();
                 if (err == X509_R_CERT_ALREADY_IN_HASH_TABLE) {
                     flb_debug("[tls] certificate already exists in the store, skipping.");
                 }
@@ -294,14 +293,14 @@ static int windows_load_system_certificates(struct tls_context *ctx)
         }
     }
 
-    /* Check for errors during enumeration */
+    // Check for errors during enumeration
     if (GetLastError() != CRYPT_E_NOT_FOUND) {
         flb_error("[tls] error occurred while enumerating certificates: %lu", GetLastError());
         CertCloseStore(win_store, 0);
         return -1;
     }
 
-    /* Close the Windows system certificate store */
+    // Close the Windows system certificate store
     if (!CertCloseStore(win_store, 0)) {
         flb_error("[tls] cannot close windows certificate store: %lu", GetLastError());
         return -1;
@@ -310,6 +309,7 @@ static int windows_load_system_certificates(struct tls_context *ctx)
     flb_debug("[tls] successfully loaded certificates from windows system store.");
     return 0;
 }
+
 #endif
 
 static int load_system_certificates(struct tls_context *ctx)
@@ -716,6 +716,7 @@ static int tls_net_handshake(struct flb_tls *tls,
     ctx = session->parent;
     pthread_mutex_lock(&ctx->mutex);
 
+    // Set up SSL connection state if not continuing an existing handshake
     if (!session->continuation_flag) {
         if (tls->mode == FLB_TLS_CLIENT_MODE) {
             SSL_set_connect_state(session->ssl);
@@ -724,11 +725,12 @@ static int tls_net_handshake(struct flb_tls *tls,
             SSL_set_accept_state(session->ssl);
         }
         else {
-            flb_error("[tls] error: invalid tls mode : %d", tls->mode);
+            flb_error("[tls] invalid tls mode: %d", tls->mode);
             pthread_mutex_unlock(&ctx->mutex);
             return -1;
         }
 
+        // Set SNI (Server Name Indication)
         if (vhost != NULL) {
             SSL_set_tlsext_host_name(session->ssl, vhost);
         }
@@ -752,8 +754,10 @@ static int tls_net_handshake(struct flb_tls *tls,
         }
     }
 
+    // Clear any previous SSL errors
     ERR_clear_error();
 
+    // Perform SSL handshake
     if (tls->mode == FLB_TLS_CLIENT_MODE) {
         ret = SSL_connect(session->ssl);
     }
@@ -761,54 +765,53 @@ static int tls_net_handshake(struct flb_tls *tls,
         ret = SSL_accept(session->ssl);
     }
 
-    if (ret != 1) {
-        ret = SSL_get_error(session->ssl, ret);
-        if (ret != SSL_ERROR_WANT_READ &&
-            ret != SSL_ERROR_WANT_WRITE) {
-            ret = SSL_get_error(session->ssl, ret);
-            // The SSL_ERROR_SYSCALL with errno value of 0 indicates unexpected
-            //  EOF from the peer. This is fixed in OpenSSL 3.0.
-            if (ret == 0) {
+    // Exit early if the handshake was successful
+    if (ret == 1) {
+        session->continuation_flag = FLB_FALSE;
+        pthread_mutex_unlock(&ctx->mutex);
+        flb_debug("[tls] connection and handshake ok");
+        return 0;
+    }
+
+    int ssl_err = SSL_get_error(session->ssl, ret);
+
+    // Handle SSL handshake errors
+    switch (ssl_err) {
+        case SSL_ERROR_WANT_READ:
+            // Handle non-blocking read operation
+            pthread_mutex_unlock(&ctx->mutex);
+            session->continuation_flag = FLB_TRUE;
+            return FLB_TLS_WANT_READ;
+
+        case SSL_ERROR_WANT_WRITE:
+            // Handle non-blocking write operation
+            pthread_mutex_unlock(&ctx->mutex);
+            session->continuation_flag = FLB_TRUE;
+            return FLB_TLS_WANT_WRITE;
+
+        case SSL_ERROR_SYSCALL:
+        case SSL_ERROR_SSL:
+        default:
+            // Handle unexpected EOFs and other errors
+            if (ssl_err == 0) {
                 ssl_code = SSL_get_verify_result(session->ssl);
                 if (ssl_code != X509_V_OK) {
-                    /* Refer to: https://x509errors.org/ */
-                    x509_err = X509_verify_cert_error_string(ssl_code);
-                    flb_error("[tls] certificate verification failed, reason: %s (X509 code: %ld)", x509_err, ssl_code);
+                    const char *x509_err = X509_verify_cert_error_string(ssl_code);
+                    flb_error("[tls] certificate verification failed, reason: %s (X509 code: %ld)",
+                              x509_err, ssl_code);
                 }
                 else {
-                    flb_error("[tls] error: unexpected EOF");
+                    flb_error("[tls] unexpected EOF during handshake");
                 }
-            } else {
-                ERR_error_string_n(ret, err_buf, sizeof(err_buf)-1);
-                flb_error("[tls] error: %s", err_buf);
+            }
+            else {
+                ERR_error_string_n(ssl_err, err_buf, sizeof(err_buf) - 1);
+                flb_error("[tls] handshake error: %s", err_buf);
             }
 
             pthread_mutex_unlock(&ctx->mutex);
-
             return -1;
-        }
-
-        if (ret == SSL_ERROR_WANT_WRITE) {
-            pthread_mutex_unlock(&ctx->mutex);
-
-            session->continuation_flag = FLB_TRUE;
-
-            return FLB_TLS_WANT_WRITE;
-        }
-        else if (ret == SSL_ERROR_WANT_READ) {
-            pthread_mutex_unlock(&ctx->mutex);
-
-            session->continuation_flag = FLB_TRUE;
-
-            return FLB_TLS_WANT_READ;
-        }
     }
-
-    session->continuation_flag = FLB_FALSE;
-
-    pthread_mutex_unlock(&ctx->mutex);
-    flb_trace("[tls] connection and handshake OK");
-    return 0;
 }
 
 /* OpenSSL backend registration */
