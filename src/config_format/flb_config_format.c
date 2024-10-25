@@ -125,6 +125,9 @@ struct flb_cf *flb_cf_create()
     /* external plugins (*.so) */
     mk_list_init(&ctx->plugins);
 
+    /* upstream servers */
+    mk_list_init(&ctx->upstream_servers);
+
     /* 'custom' type plugins */
     mk_list_init(&ctx->customs);
 
@@ -180,6 +183,9 @@ static enum section_type get_section_type(char *name, int len)
     }
     else if (strncasecmp(name, "plugins", len) == 0) {
         return FLB_CF_PLUGINS;
+    }
+    else if (strncasecmp(name, "upstream_servers", len) == 0) {
+        return FLB_CF_UPSTREAM_SERVERS;
     }
     else if (strncasecmp(name, "custom", len) == 0 ||
              strncasecmp(name, "customs", len) == 0) {
@@ -652,6 +658,9 @@ struct flb_cf_section *flb_cf_section_create(struct flb_cf *cf, char *name, int 
     else if (type == FLB_CF_PLUGINS) {
         mk_list_add(&s->_head_section, &cf->plugins);
     }
+    else if (type == FLB_CF_UPSTREAM_SERVERS) {
+        mk_list_add(&s->_head_section, &cf->upstream_servers);
+    }
     else if (type == FLB_CF_CUSTOM) {
         mk_list_add(&s->_head_section, &cf->customs);
     }
@@ -750,6 +759,8 @@ static char *section_type_str(int type)
         return "STREAM_PROCESSOR";
     case FLB_CF_PLUGINS:
         return "PLUGINS";
+    case FLB_CF_UPSTREAM_SERVERS:
+        return "UPSTREAM_SERVERS";
     case FLB_CF_CUSTOM:
         return "CUSTOM";
     case FLB_CF_INPUT:
