@@ -23,6 +23,7 @@
 #define FLB_003 FLB_TESTS_CONF_PATH "/parsers_and_multiline_parsers.yaml"
 #define FLB_004 FLB_TESTS_CONF_PATH "/stream_processor.yaml"
 #define FLB_005 FLB_TESTS_CONF_PATH "/plugins.yaml"
+#define FLB_006 FLB_TESTS_CONF_PATH "/upstream.yaml"
 
 #define FLB_000_WIN FLB_TESTS_CONF_PATH "\\fluent-bit-windows.yaml"
 #define FLB_BROKEN_PLUGIN_VARIANT FLB_TESTS_CONF_PATH "/broken_plugin_variant.yaml"
@@ -674,6 +675,158 @@ static void test_plugins()
     flb_cf_destroy(cf);
 }
 
+static void test_upstream_servers()
+{
+    int idx = 0;
+    int g_idx = 0;
+    struct mk_list *head;
+    struct mk_list *g_head;
+    struct flb_cf *cf;
+    struct flb_cf_section *s;
+    struct cfl_variant *v;
+    struct flb_cf_group *group;
+
+    cf = flb_cf_yaml_create(NULL, FLB_006, NULL, 0);
+    TEST_CHECK(cf != NULL);
+    if (!cf) {
+        exit(EXIT_FAILURE);
+    }
+
+    /* Total number of sections */
+    TEST_CHECK(mk_list_size(&cf->sections) == 4);
+
+    /* Check number sections per list */
+    TEST_CHECK(mk_list_size(&cf->upstream_servers) == 2);
+    TEST_CHECK(mk_list_size(&cf->parsers) == 0);
+    TEST_CHECK(mk_list_size(&cf->multiline_parsers) == 0);
+    TEST_CHECK(mk_list_size(&cf->customs) == 0);
+    TEST_CHECK(mk_list_size(&cf->inputs) == 1);
+    TEST_CHECK(mk_list_size(&cf->filters) == 0);
+    TEST_CHECK(mk_list_size(&cf->outputs) == 1);
+    TEST_CHECK(mk_list_size(&cf->others) == 0);
+
+    /* check upstream servers */
+    idx = 0;
+    mk_list_foreach(head, &cf->upstream_servers) {
+        s = mk_list_entry(head, struct flb_cf_section, _head_section);
+
+        switch (idx) {
+            case 0:
+                v = flb_cf_section_property_get(cf, s, "name");
+                TEST_CHECK(v->type == CFL_VARIANT_STRING);
+                TEST_CHECK(strcmp(v->data.as_string, "forward-balancing") == 0);
+
+                /* iterate node/groups */
+                TEST_CHECK(mk_list_size(&s->groups) == 3);
+
+                g_idx = 0;
+                mk_list_foreach(g_head, &s->groups) {
+                    group = mk_list_entry(g_head, struct flb_cf_group, _head);
+                    TEST_CHECK(group != NULL);
+                    TEST_CHECK(strcmp(group->name, "upstream_node") == 0);
+
+                    switch (g_idx) {
+                        case 0:
+                            v = cfl_kvlist_fetch(group->properties, "name");
+                            TEST_CHECK(v != NULL);
+                            TEST_CHECK(v->type == CFL_VARIANT_STRING);
+                            TEST_CHECK(strcmp(v->data.as_string, "node-1") == 0);
+
+                            v = cfl_kvlist_fetch(group->properties, "host");
+                            TEST_CHECK(v != NULL);
+                            TEST_CHECK(v->type == CFL_VARIANT_STRING);
+                            TEST_CHECK(strcmp(v->data.as_string, "127.0.0.1") == 0);
+
+                            v = cfl_kvlist_fetch(group->properties, "port");
+                            TEST_CHECK(v != NULL);
+                            TEST_CHECK(v->type == CFL_VARIANT_STRING);
+                            TEST_CHECK(strcmp(v->data.as_string, "43000") == 0);
+                            break;
+
+                        case 1:
+                            v = cfl_kvlist_fetch(group->properties, "name");
+                            TEST_CHECK(v != NULL);
+                            TEST_CHECK(v->type == CFL_VARIANT_STRING);
+                            TEST_CHECK(strcmp(v->data.as_string, "node-2") == 0);
+
+                            v = cfl_kvlist_fetch(group->properties, "host");
+                            TEST_CHECK(v != NULL);
+                            TEST_CHECK(v->type == CFL_VARIANT_STRING);
+                            TEST_CHECK(strcmp(v->data.as_string, "127.0.0.1") == 0);
+
+                            v = cfl_kvlist_fetch(group->properties, "port");
+                            TEST_CHECK(v != NULL);
+                            TEST_CHECK(v->type == CFL_VARIANT_STRING);
+                            TEST_CHECK(strcmp(v->data.as_string, "44000") == 0);
+                            break;
+                        case 2:
+                            v = cfl_kvlist_fetch(group->properties, "name");
+                            TEST_CHECK(v != NULL);
+
+                            TEST_CHECK(v->type == CFL_VARIANT_STRING);
+                            TEST_CHECK(strcmp(v->data.as_string, "node-3") == 0);
+                            break;
+                    };
+                    g_idx++;
+                }
+                break;
+            case 1:
+                v = flb_cf_section_property_get(cf, s, "name");
+                TEST_CHECK(v->type == CFL_VARIANT_STRING);
+                TEST_CHECK(strcmp(v->data.as_string, "forward-balancing-2") == 0);
+
+                g_idx = 0;
+                mk_list_foreach(g_head, &s->groups) {
+                    group = mk_list_entry(g_head, struct flb_cf_group, _head);
+                    TEST_CHECK(group != NULL);
+                    TEST_CHECK(strcmp(group->name, "upstream_node") == 0);
+
+                    switch (g_idx) {
+                        case 0:
+                            v = cfl_kvlist_fetch(group->properties, "name");
+                            TEST_CHECK(v != NULL);
+                            TEST_CHECK(v->type == CFL_VARIANT_STRING);
+                            TEST_CHECK(strcmp(v->data.as_string, "node-A") == 0);
+
+                            v = cfl_kvlist_fetch(group->properties, "host");
+                            TEST_CHECK(v != NULL);
+                            TEST_CHECK(v->type == CFL_VARIANT_STRING);
+                            TEST_CHECK(strcmp(v->data.as_string, "192.168.1.10") == 0);
+
+                            v = cfl_kvlist_fetch(group->properties, "port");
+                            TEST_CHECK(v != NULL);
+                            TEST_CHECK(v->type == CFL_VARIANT_STRING);
+                            TEST_CHECK(strcmp(v->data.as_string, "50000") == 0);
+
+                            break;
+                        case 1:
+                            v = cfl_kvlist_fetch(group->properties, "name");
+                            TEST_CHECK(v != NULL);
+                            TEST_CHECK(v->type == CFL_VARIANT_STRING);
+                            TEST_CHECK(strcmp(v->data.as_string, "node-B") == 0);
+
+                            v = cfl_kvlist_fetch(group->properties, "host");
+                            TEST_CHECK(v != NULL);
+                            TEST_CHECK(v->type == CFL_VARIANT_STRING);
+                            TEST_CHECK(strcmp(v->data.as_string, "192.168.1.11") == 0);
+
+                            v = cfl_kvlist_fetch(group->properties, "port");
+                            TEST_CHECK(v != NULL);
+                            TEST_CHECK(v->type == CFL_VARIANT_STRING);
+                            TEST_CHECK(strcmp(v->data.as_string, "51000") == 0);
+                            break;
+                    };
+                    g_idx++;
+                }
+
+                break;
+        };
+        idx++;
+    }
+
+    flb_cf_destroy(cf);
+}
+
 TEST_LIST = {
     { "basic"    , test_basic},
     { "customs section", test_customs_section},
@@ -686,5 +839,6 @@ TEST_LIST = {
     { "parsers_and_multiline_parsers", test_parsers_and_multiline_parsers},
     { "stream_processor", test_stream_processor},
     { "plugins", test_plugins},
+    { "upstream_servers", test_upstream_servers},
     { 0 }
 };

@@ -1,0 +1,38 @@
+---
+
+upstream_servers:
+  - name: forward-balancing
+    nodes:
+      - name: node-1
+        host: 127.0.0.1
+        port: 43000
+
+      - name: node-2
+        host: 127.0.0.1
+        port: 44000
+
+      - name: node-3
+        host: 127.0.0.1
+        port: 45000
+        tls: true
+        tls_verify: false
+        shared_key: secret
+
+  - name: forward-balancing-2
+    nodes:
+      - name: node-A
+        host: 192.168.1.10
+        port: 50000
+
+      - name: node-B
+        host: 192.168.1.11
+        port: 51000
+
+pipeline:
+  inputs:
+    - name: random
+
+  outputs:
+    - name: stdout
+      match: '*'
+
