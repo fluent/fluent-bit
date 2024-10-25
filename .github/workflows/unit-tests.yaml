@@ -189,18 +189,18 @@ jobs:
         id: build-and-test-on-qemu
         with:
           arch: ${{ matrix.arch }}
-          distro: ubuntu20.04
+          distro: ubuntu22.04
           shell: /bin/bash
           dockerRunArgs: |
             --volume "/var/lib/dbus/machine-id:/var/lib/dbus/machine-id"
             --volume "/etc/machine-id:/etc/machine-id"
           install: |
             apt-get update
-            apt-get install -y gcc-9 g++-9 libyaml-dev cmake flex bison libssl-dev libbpf-dev linux-tools-common #clang-6.0 libsystemd-dev
+            apt-get install -y gcc-12 g++-12 libyaml-dev cmake flex bison libssl-dev libbpf-dev linux-tools-common #clang-6.0 libsystemd-dev
             # ln -s /usr/bin/llvm-symbolizer-6.0 /usr/bin/llvm-symbolizer || true
 
-            update-alternatives --install /usr/bin/gcc gcc /usr/bin/gcc-9 90
-            update-alternatives --install /usr/bin/g++ g++ /usr/bin/g++-9 90
+            update-alternatives --install /usr/bin/gcc gcc /usr/bin/gcc-12 90
+            update-alternatives --install /usr/bin/g++ g++ /usr/bin/g++-12 90
             # update-alternatives --install /usr/bin/clang clang /usr/bin/clang-6.0 90
           run: |
             cd build
