@@ -62,6 +62,7 @@ enum section {
     SECTION_MULTILINE_PARSER_RULE,
     SECTION_STREAM_PROCESSOR,
     SECTION_PLUGINS,
+    SECTION_UPSTREAM_SERVERS,
     SECTION_OTHER,
 };
 
@@ -79,6 +80,8 @@ static char *section_names[] = {
     "multiline_parser",
     "multiline_parser_rule",
     "stream_processor",
+    "plugins",
+    "upstream_servers",
     "other"
 };
 
@@ -158,6 +161,14 @@ enum state {
 
     /* Plugins */
     STATE_PLUGINS,
+
+    /* Upstream Servers */
+    STATE_UPSTREAM_SERVERS,
+    STATE_UPSTREAM_SERVER,
+    STATE_UPSTREAM_SERVER_VALUE,
+    STATE_UPSTREAM_NODE_GROUP,
+    STATE_UPSTREAM_NODE,
+    STATE_UPSTREAM_NODE_VALUE,
 
     /* environment variables */
     STATE_ENV,
@@ -294,6 +305,8 @@ static char *state_str(enum state val)
         return "stream-processor";
     case STATE_PLUGINS:
         return "plugins";
+    case STATE_UPSTREAM_SERVERS:
+        return "upstream-servers";
     case STATE_STOP:
         return "stop";
     default:
@@ -330,6 +343,9 @@ static int add_section_type(struct flb_cf *conf, struct parser_state *state)
     }
     else if (state->section == SECTION_PLUGINS) {
         state->cf_section = flb_cf_section_create(conf, "plugins", 0);
+    }
+    else if (state->section == SECTION_UPSTREAM_SERVERS) {
+        state->cf_section = flb_cf_section_create(conf, "upstream_servers", 0);
     }
     else {
         state->cf_section = flb_cf_section_create(conf, "other", 0);
@@ -421,6 +437,7 @@ static void yaml_error_event_line(struct local_ctx *ctx, struct parser_state *st
 
 #define yaml_error_event(ctx, state, event) \
     yaml_error_event_line(ctx, state, event, __LINE__)
+
 
 static void yaml_error_definition(struct local_ctx *ctx, struct parser_state *state,
                                   yaml_event_t *event, char *value)
@@ -1001,10 +1018,10 @@ static int consume_event(struct flb_cf *conf, struct local_ctx *ctx,
         switch (event->type) {
         case YAML_SCALAR_EVENT:
             /* Store the value for the previous key */
-            value = (char *)event->data.scalar.value;
+            value = (char *) event->data.scalar.value;
             if (flb_cf_section_property_add(conf, state->cf_section->properties,
-                                        state->key, flb_sds_len(state->key),
-                                        value, strlen(value)) < 0) {
+                                            state->key, flb_sds_len(state->key),
+                                            value, strlen(value)) < 0) {
                 flb_error("unable to add property");
                 return YAML_FAILURE;
             }
@@ -1107,10 +1124,10 @@ static int consume_event(struct flb_cf *conf, struct local_ctx *ctx,
         switch (event->type) {
         case YAML_SCALAR_EVENT:
             /* Store the value for the previous key */
-            value = (char *)event->data.scalar.value;
+            value = (char *) event->data.scalar.value;
             if (flb_cf_section_property_add(conf, state->cf_section->properties,
-                                        state->key, flb_sds_len(state->key),
-                                        value, strlen(value)) < 0) {
+                                            state->key, flb_sds_len(state->key),
+                                            value, strlen(value)) < 0) {
                 flb_error("unable to add property");
                 return YAML_FAILURE;
             }
@@ -1214,7 +1231,7 @@ static int consume_event(struct flb_cf *conf, struct local_ctx *ctx,
     case STATE_STREAM_PROCESSOR_ENTRY:
         switch (event->type) {
         case YAML_SCALAR_EVENT:
-            value = (char *)event->data.scalar.value;
+            value = (char *) event->data.scalar.value;
 
             state = state_push_key(ctx, STATE_STREAM_PROCESSOR_KEY, value);
             if (!state) {
@@ -1240,7 +1257,7 @@ static int consume_event(struct flb_cf *conf, struct local_ctx *ctx,
     case STATE_STREAM_PROCESSOR_KEY:
         switch (event->type) {
         case YAML_SCALAR_EVENT:
-            value = (char *)event->data.scalar.value;
+            value = (char *) event->data.scalar.value;
 
             if (flb_cf_section_property_add(conf, state->cf_section->properties,
                                             state->key, flb_sds_len(state->key),
@@ -1278,7 +1295,7 @@ static int consume_event(struct flb_cf *conf, struct local_ctx *ctx,
 
         case YAML_SCALAR_EVENT:
             /* Store the path as an entry in the plugins section */
-            value = (char *)event->data.scalar.value;
+            value = (char *) event->data.scalar.value;
 
             /*
              * note that we pass an empty string as the real value since this is
@@ -1303,6 +1320,149 @@ static int consume_event(struct flb_cf *conf, struct local_ctx *ctx,
         default:
             yaml_error_event(ctx, state, event);
             return YAML_FAILURE;
+        }
+        break;
+
+    /*
+     * Upstream Servers
+     * ----------------
+     */
+    case STATE_UPSTREAM_SERVERS:
+        switch (event->type) {
+        case YAML_SEQUENCE_START_EVENT:
+            break;
+
+        case YAML_MAPPING_START_EVENT:
+            if (add_section_type(conf, state) == -1) {
+                flb_error("Unable to add parsers section");
+                return YAML_FAILURE;
+            }
+
+            state = state_push_withvals(ctx, state, STATE_UPSTREAM_SERVER);
+            if (!state) {
+                flb_error("Unable to allocate state for upstream server");
+                return YAML_FAILURE;
+            }
+            break;
+
+        case YAML_SEQUENCE_END_EVENT:
+            state = state_pop(ctx);
+            break;
+
+        default:
+            yaml_error_event(ctx, state, event);
+            return YAML_FAILURE;
+        }
+        break;
+
+    /* Handling individual upstream server */
+    case STATE_UPSTREAM_SERVER:
+        switch (event->type) {
+        case YAML_SCALAR_EVENT:
+            value = (char *) event->data.scalar.value;
+
+            if (strcmp(value, "nodes") == 0) {
+                state = state_push_withvals(ctx, state, STATE_UPSTREAM_NODE_GROUP);
+                if (!state) {
+                    flb_error("Unable to allocate state for node group");
+                    return YAML_FAILURE;
+                }
+                break;
+            }
+
+            /* normal key value pair for the upstream server */
+            state = state_push_key(ctx, STATE_UPSTREAM_SERVER_VALUE, value);
+            if (!state) {
+                flb_error("Unable to allocate state for upstream server key");
+                return YAML_FAILURE;
+            }
+            break;
+
+        case YAML_MAPPING_END_EVENT:
+            state = state_pop(ctx);
+            break;
+
+        default:
+            yaml_error_event(ctx, state, event);
+            return YAML_FAILURE;
+        }
+        break;
+
+    /* Handling upstream server key-value pairs */
+    case STATE_UPSTREAM_SERVER_VALUE:
+        if (event->type == YAML_SCALAR_EVENT) {
+            value = (char *) event->data.scalar.value;
+            if (flb_cf_section_property_add(conf, state->cf_section->properties,
+                                            state->key, flb_sds_len(state->key),
+                                            value, strlen(value)) == NULL) {
+                flb_error("Unable to add upstream server property");
+                return YAML_FAILURE;
+            }
+            state = state_pop(ctx);
+        }
+        break;
+
+    /* Handling node group */
+    case STATE_UPSTREAM_NODE_GROUP:
+        switch(event->type) {
+            case YAML_SEQUENCE_START_EVENT:
+                break;
+            case YAML_SEQUENCE_END_EVENT:
+                state = state_pop(ctx);
+                if (state == NULL) {
+                    flb_error("no state left");
+                    return YAML_FAILURE;
+                }
+                break;
+            case YAML_MAPPING_START_EVENT:
+                if (state_create_group(conf, state, "upstream_node") == YAML_FAILURE) {
+                    flb_error("unable to create group");
+                    return YAML_FAILURE;
+                }
+                state = state_push(ctx, STATE_GROUP_KEY);
+                if (state == NULL) {
+                    flb_error("unable to allocate state");
+                    return YAML_FAILURE;
+                }
+                break;
+            case YAML_MAPPING_END_EVENT:
+                return YAML_FAILURE;
+                break;
+            default:
+                yaml_error_event(ctx, state, event);
+                return YAML_FAILURE;
+        };
+        break;
+
+    /* Handling individual node */
+    case STATE_UPSTREAM_NODE:
+        switch (event->type) {
+        case YAML_SCALAR_EVENT:
+            value = (char *) event->data.scalar.value;
+            state = state_push_key(ctx, STATE_UPSTREAM_NODE_VALUE, value);
+            break;
+
+        case YAML_MAPPING_END_EVENT:
+            state = state_pop(ctx);
+            break;
+
+        default:
+            yaml_error_event(ctx, state, event);
+            return YAML_FAILURE;
+        }
+        break;
+
+    /* Handling node key-value pairs */
+    case STATE_UPSTREAM_NODE_VALUE:
+        if (event->type == YAML_SCALAR_EVENT) {
+            value = (char *) event->data.scalar.value;
+            if (flb_cf_section_property_add(conf, state->cf_group->properties,
+                                            state->key, flb_sds_len(state->key),
+                                            value, strlen(value)) == NULL) {
+                flb_error("Unable to add node property");
+                return YAML_FAILURE;
+            }
+            state = state_pop(ctx);
         }
         break;
 
@@ -1343,7 +1503,7 @@ static int consume_event(struct flb_cf *conf, struct local_ctx *ctx,
     case STATE_PIPELINE:
         switch (event->type) {
         case YAML_SCALAR_EVENT:
-            value = (char *)event->data.scalar.value;
+            value = (char *) event->data.scalar.value;
 
             if (strcasecmp(value, "inputs") == 0) {
                 state = state_push_section(ctx, STATE_PLUGIN_INPUT, SECTION_INPUT);
@@ -1383,7 +1543,7 @@ static int consume_event(struct flb_cf *conf, struct local_ctx *ctx,
     case STATE_SECTION:
         switch (event->type) {
         case YAML_SCALAR_EVENT:
-            value = (char *)event->data.scalar.value;
+            value = (char *) event->data.scalar.value;
 
             if (strcasecmp(value, "env") == 0) {
                 state = state_push_section(ctx, STATE_ENV, SECTION_ENV);
@@ -1415,6 +1575,13 @@ static int consume_event(struct flb_cf *conf, struct local_ctx *ctx,
             }
             else if (strcasecmp(value, "plugins") == 0) {
                 state = state_push_section(ctx, STATE_PLUGINS, SECTION_PLUGINS);
+                if (state == NULL) {
+                    flb_error("unable to allocate state");
+                    return YAML_FAILURE;
+                }
+            }
+            else if (strcasecmp(value, "upstream_servers") == 0) {
+                state = state_push_section(ctx, STATE_UPSTREAM_SERVERS, SECTION_UPSTREAM_SERVERS);
                 if (state == NULL) {
                     flb_error("unable to allocate state");
                     return YAML_FAILURE;
@@ -1931,7 +2098,7 @@ static int consume_event(struct flb_cf *conf, struct local_ctx *ctx,
                 return YAML_FAILURE;
             }
 
-            if (cfl_array_append_string(state->values, (char *)event->data.scalar.value) < 0) {
+            if (cfl_array_append_string(state->values, (char *) event->data.scalar.value) < 0) {
                 flb_error("unable to add values to list");
                 return YAML_FAILURE;
             }
