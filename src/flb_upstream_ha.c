@@ -443,6 +443,7 @@ struct flb_upstream_ha *flb_upstream_ha_from_file(const char *file,
             c++;
         }
     }
+#ifdef FLB_HAVE_LIBYAML
     else if (cf->format == FLB_CF_YAML) {
         mk_list_foreach(head, &cf->upstream_servers) {
             section = mk_list_entry(head, struct flb_cf_section, _head_section);
@@ -499,6 +500,7 @@ struct flb_upstream_ha *flb_upstream_ha_from_file(const char *file,
             }
         }
     }
+#endif
 
     if (c == 0) {
         flb_error("[upstream_ha] no nodes defined");
