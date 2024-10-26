@@ -20,7 +20,13 @@
 #define FLB_000 FLB_TESTS_CONF_PATH "/fluent-bit.yaml"
 #define FLB_001 FLB_TESTS_CONF_PATH "/issue_7559.yaml"
 #define FLB_002 FLB_TESTS_CONF_PATH "/processors.yaml"
+
+#ifdef _WIN32
+#define FLB_003 FLB_TESTS_CONF_PATH "\\parsers_and_multiline_parsers.yaml"
+#else
 #define FLB_003 FLB_TESTS_CONF_PATH "/parsers_and_multiline_parsers.yaml"
+#endif
+
 #define FLB_004 FLB_TESTS_CONF_PATH "/stream_processor.yaml"
 #define FLB_005 FLB_TESTS_CONF_PATH "/plugins.yaml"
 #define FLB_006 FLB_TESTS_CONF_PATH "/upstream.yaml"
