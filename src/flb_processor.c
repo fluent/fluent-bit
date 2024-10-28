@@ -660,11 +660,13 @@ int flb_processor_run(struct flb_processor *proc,
                         return -1;
                     }
 
-                    if (cur_buf != data) {
+                    if (cur_buf != data && cur_buf != tmp_buf) {
                         cmt_destroy(cur_buf);
                     }
 
-                    cur_buf = (void *)tmp_buf;
+                    if (tmp_buf != NULL) {
+                        cur_buf = tmp_buf;
+                    }
                 }
             }
             else if (type == FLB_PROCESSOR_TRACES) {
