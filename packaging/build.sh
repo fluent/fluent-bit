@@ -74,7 +74,8 @@ FLB_TD=${FLB_TD:-Off}
 # This is provided for simplifying the build pipeline
 FLB_UNICODE_ENCODER=${FLB_UNICODE_ENCODER:-On}
 
-if [ "${FLB_DISTRO}" = "centos/6" ] || [ "${FLB_DISTRO}" = "centos/7" ]; then
+if [ "${FLB_DISTRO}" = "centos/6" ] || [ "${FLB_DISTRO}" = "centos/7" ] ||
+       [ "${FLB_DISTRO}" = "centos/7.arm64v8" ]; then
     FLB_UNICODE_ENCODER=Off
 fi
 
