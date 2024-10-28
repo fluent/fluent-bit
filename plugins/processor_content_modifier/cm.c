@@ -98,6 +98,24 @@ static int cb_process_traces(struct flb_processor_instance *ins,
 
 }
 
+static int cb_process_metrics(struct flb_processor_instance *ins,
+                              struct cmt *in_cmt,
+                              struct cmt **out_cmt,
+                              const char *tag,
+                              int tag_len)
+{
+    int ret;
+    struct content_modifier_ctx *ctx;
+
+    if (!ins->context) {
+        return FLB_PROCESSOR_FAILURE;
+    }
+    ctx = ins->context;
+
+    ret = cm_metrics_process(ins, ctx, in_cmt, out_cmt, tag, tag_len);
+    return ret;
+}
+
 static struct flb_config_map config_map[] = {
     {
         FLB_CONFIG_MAP_STR, "context", NULL,
@@ -144,7 +162,7 @@ struct flb_processor_plugin processor_content_modifier_plugin = {
     .description        = "Modify the content of Logs, Metrics and Traces",
     .cb_init            = cb_init,
     .cb_process_logs    = cb_process_logs,
-    .cb_process_metrics = NULL,
+    .cb_process_metrics = cb_process_metrics,
     .cb_process_traces  = cb_process_traces,
     .cb_exit            = cb_exit,
     .config_map         = config_map,
