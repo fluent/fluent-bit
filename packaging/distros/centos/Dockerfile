@@ -26,6 +26,8 @@ RUN sed -i -e "s/^mirrorlist=http:\/\/mirrorlist.centos.org/#mirrorlist=http:\/\
 
 ARG FLB_OUT_PGSQL=On
 ENV FLB_OUT_PGSQL=$FLB_OUT_PGSQL
+ARG FLB_UNICODE_ENCODER=Off
+ENV FLB_UNICODE_ENCODER=$FLB_UNICODE_ENCODER
 
 # centos/7.arm64v8 base image
 FROM arm64v8/centos:7 as centos-7.arm64v8-base
@@ -47,6 +49,8 @@ RUN sed -i -e "s/^mirrorlist=http:\/\/mirrorlist.centos.org/#mirrorlist=http:\/\
 # There are no postgresql libraries available for this target
 ARG FLB_OUT_PGSQL=Off
 ENV FLB_OUT_PGSQL=$FLB_OUT_PGSQL
+ARG FLB_UNICODE_ENCODER=Off
+ENV FLB_UNICODE_ENCODER=$FLB_UNICODE_ENCODER
 
 # Need larger page size
 ARG FLB_JEMALLOC_OPTIONS="--with-lg-page=16 --with-lg-quantum=3"
@@ -73,6 +77,8 @@ RUN yum -y update && \
 
 ARG FLB_OUT_PGSQL=On
 ENV FLB_OUT_PGSQL=$FLB_OUT_PGSQL
+ARG FLB_UNICODE_ENCODER=On
+ENV FLB_UNICODE_ENCODER=$FLB_UNICODE_ENCODER
 
 # centos/8.arm64v8 base image
 FROM arm64v8/centos:8 as centos-8.arm64v8-base
@@ -97,6 +103,8 @@ RUN yum -y update && \
 
 ARG FLB_OUT_PGSQL=On
 ENV FLB_OUT_PGSQL=$FLB_OUT_PGSQL
+ARG FLB_UNICODE_ENCODER=On
+ENV FLB_UNICODE_ENCODER=$FLB_UNICODE_ENCODER
 
 # Need larger page size
 ARG FLB_JEMALLOC_OPTIONS="--with-lg-page=16 --with-lg-quantum=3"
@@ -134,6 +142,8 @@ RUN dnf -y install 'dnf-command(config-manager)' && dnf -y config-manager --set-
 
 ARG FLB_OUT_PGSQL=On
 ENV FLB_OUT_PGSQL=$FLB_OUT_PGSQL
+ARG FLB_UNICODE_ENCODER=On
+ENV FLB_UNICODE_ENCODER=$FLB_UNICODE_ENCODER
 
 # Need larger page size
 ARG FLB_JEMALLOC_OPTIONS="--with-lg-page=16 --with-lg-quantum=3"
@@ -177,6 +187,7 @@ RUN cmake3 -DCMAKE_INSTALL_PREFIX="$CMAKE_INSTALL_PREFIX" \
     -DFLB_JEMALLOC_OPTIONS="$FLB_JEMALLOC_OPTIONS" \
     -DFLB_JEMALLOC="${FLB_JEMALLOC}" \
     -DFLB_CHUNK_TRACE="${FLB_CHUNK_TRACE}" \
+    -DFLB_UNICODE_ENCODER="${FLB_UNICODE_ENCODER}" \
     ../
 
 VOLUME [ "/output" ]
