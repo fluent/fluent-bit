@@ -239,6 +239,7 @@ if(FLB_ALL)
   set(FLB_IN_NGINX_STATUS 1)
   set(FLB_IN_EXEC         1)
   set(FLB_IN_UNIX_SOCKET  1)
+  set(FLB_IN_SOMEIP       1)
 
   # Output plugins
   set(FLB_OUT_ES          1)
@@ -663,6 +664,11 @@ if(FLB_WASM)
     enable_language (ASM)
     FLB_DEFINITION(FLB_HAVE_WASM)
   endif ()
+endif()
+
+# SOME/IP
+if(FLB_IN_SOMEIP)
+  add_subdirectory(${FLB_PATH_LIB_SOMEIP_C} EXCLUDE_FROM_ALL)
 endif()
 
 # AWS

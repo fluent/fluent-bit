@@ -1,0 +1,3 @@
+
+add_executable(someip_test_service test_service.c)
+target_link_libraries(someip_test_service PRIVATE someip-c)
