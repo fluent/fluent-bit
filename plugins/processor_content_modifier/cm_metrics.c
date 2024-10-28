@@ -17,29 +17,21 @@
  *  limitations under the License.
  */
 
-
 #include <fluent-bit/flb_processor_plugin.h>
 #include <fluent-bit/flb_utils.h>
 #include <fluent-bit/flb_time.h>
-#include <fluent-bit/flb_hash.h>
-#include <fluent-bit/flb_processor.h>
-#include <fluent-bit/flb_log_event_decoder.h>
-#include <fluent-bit/flb_log_event_encoder.h>
+#include <cfl/cfl.h>
 
 #include "cm.h"
 #include "cm_utils.h"
 #include "cm_opentelemetry.h"
 
-#include <stdio.h>
 
-static struct cfl_kvpair *cfl_object_kvpair_get(struct cfl_object *obj, cfl_sds_t key)
+static struct cfl_kvpair *kvlist_get_kvpair(struct cfl_kvlist *kvlist, cfl_sds_t key)
 {
     struct cfl_list *head;
-    struct cfl_kvlist *kvlist;
     struct cfl_kvpair *kvpair;
 
-
-    kvlist = obj->variant->data.as_kvlist;
     cfl_list_foreach(head, &kvlist->list) {
         kvpair = cfl_list_entry(head, struct cfl_kvpair, _head);
 
@@ -56,21 +48,21 @@ static struct cfl_kvpair *cfl_object_kvpair_get(struct cfl_object *obj, cfl_sds_
 }
 
 static int run_action_insert(struct content_modifier_ctx *ctx,
-                            struct cfl_object *obj,
+                            struct cfl_kvlist *kvlist,
                             const char *tag, int tag_len,
                             cfl_sds_t key, cfl_sds_t value)
 {
     int ret;
-    struct cfl_kvlist *kvlist;
+    struct cfl_kvpair *kvpair;
 
     /* check that the key don't exists */
-    if (cfl_object_kvpair_get(obj, key)) {
+    kvpair = kvlist_get_kvpair(kvlist, key);
+    if (kvpair) {
         /* Insert requires the key don't exists, we fail silently */
         return 0;
     }
 
     /* insert the new value */
-    kvlist = obj->variant->data.as_kvlist;
     ret = cfl_kvlist_insert_string_s(kvlist, key, cfl_sds_len(key), value, cfl_sds_len(value),
                                      CFL_FALSE);
     if (ret != 0) {
@@ -81,18 +73,15 @@ static int run_action_insert(struct content_modifier_ctx *ctx,
 }
 
 static int run_action_upsert(struct content_modifier_ctx *ctx,
-                            struct cfl_object *obj,
-                            const char *tag, int tag_len,
-                            cfl_sds_t key, cfl_sds_t value)
+                             struct cfl_kvlist *kvlist,
+                             const char *tag, int tag_len,
+                             cfl_sds_t key, cfl_sds_t value)
 {
     int ret;
-    struct cfl_kvlist *kvlist;
     struct cfl_kvpair *kvpair;
 
-    kvlist = obj->variant->data.as_kvlist;
-
     /* if the kv pair already exists, remove it from the list */
-    kvpair = cfl_object_kvpair_get(obj, key);
+    kvpair = kvlist_get_kvpair(kvlist, key);
     if (kvpair) {
         cfl_kvpair_destroy(kvpair);
     }
@@ -108,14 +97,14 @@ static int run_action_upsert(struct content_modifier_ctx *ctx,
 }
 
 static int run_action_delete(struct content_modifier_ctx *ctx,
-                            struct cfl_object *obj,
-                            const char *tag, int tag_len,
-                            cfl_sds_t key)
+                             struct cfl_kvlist *kvlist,
+                             const char *tag, int tag_len,
+                             cfl_sds_t key)
 {
     struct cfl_kvpair *kvpair;
 
     /* if the kv pair already exists, remove it from the list */
-    kvpair = cfl_object_kvpair_get(obj, key);
+    kvpair = kvlist_get_kvpair(kvlist, key);
     if (kvpair) {
         cfl_kvpair_destroy(kvpair);
         return 0;
@@ -128,15 +117,15 @@ static int run_action_delete(struct content_modifier_ctx *ctx,
 }
 
 static int run_action_rename(struct content_modifier_ctx *ctx,
-                            struct cfl_object *obj,
-                            const char *tag, int tag_len,
-                            cfl_sds_t key, cfl_sds_t value)
+                             struct cfl_kvlist *kvlist,
+                             const char *tag, int tag_len,
+                             cfl_sds_t key, cfl_sds_t value)
 {
     cfl_sds_t tmp;
     struct cfl_kvpair *kvpair;
 
     /* if the kv pair already exists, remove it from the list */
-    kvpair = cfl_object_kvpair_get(obj, key);
+    kvpair = kvlist_get_kvpair(kvlist, key);
     if (!kvpair) {
         flb_plg_debug(ctx->ins, "[action: rename] key '%s' not found", key);
         return 0;
@@ -157,7 +146,7 @@ static int run_action_rename(struct content_modifier_ctx *ctx,
 }
 
 static int run_action_hash(struct content_modifier_ctx *ctx,
-                           struct cfl_object *obj,
+                           struct cfl_kvlist *kvlist,
                            const char *tag, int tag_len,
                            cfl_sds_t key)
 {
@@ -165,7 +154,7 @@ static int run_action_hash(struct content_modifier_ctx *ctx,
     struct cfl_kvpair *kvpair;
 
     /* if the kv pair already exists, remove it from the list */
-    kvpair = cfl_object_kvpair_get(obj, key);
+    kvpair = kvlist_get_kvpair(kvlist, key);
     if (!kvpair) {
         /* the key was not found, so it's ok */
         return 0;
@@ -192,22 +181,19 @@ static void cb_extract_regex(const char *name, const char *value, size_t value_l
                                CFL_FALSE);
 }
 
-int run_action_extract(struct content_modifier_ctx *ctx,
-                       struct cfl_object *obj,
-                       const char *tag, int tag_len,
-                       cfl_sds_t key, struct flb_regex *regex)
+static int run_action_extract(struct content_modifier_ctx *ctx,
+                              struct cfl_kvlist *kvlist,
+                              const char *tag, int tag_len,
+                              cfl_sds_t key, struct flb_regex *regex)
 {
     int ret;
     int match_count;
     struct flb_regex_search match_list;
     struct cfl_kvpair *kvpair;
-    struct cfl_kvlist *kvlist;
     struct cfl_variant *v;
 
-    kvlist = obj->variant->data.as_kvlist;
-
     /* if the kv pair already exists, remove it from the list */
-    kvpair = cfl_object_kvpair_get(obj, key);
+    kvpair = kvlist_get_kvpair(kvlist, key);
     if (!kvpair) {
         return -1;
     }
@@ -233,18 +219,17 @@ int run_action_extract(struct content_modifier_ctx *ctx,
 }
 
 static int run_action_convert(struct content_modifier_ctx *ctx,
-                              struct cfl_object *obj,
+                              struct cfl_kvlist *kvlist,
                               const char *tag, int tag_len,
                               cfl_sds_t key, int converted_type)
 {
     int ret;
-    struct cfl_kvlist *kvlist;
-    struct cfl_kvpair *kvpair;
     struct cfl_variant *v;
+    struct cfl_kvpair *kvpair;
     struct cfl_variant *converted;
 
     /* if the kv pair already exists, remove it from the list */
-    kvpair = cfl_object_kvpair_get(obj, key);
+    kvpair = kvlist_get_kvpair(kvlist, key);
     if (!kvpair) {
         return -1;
     }
@@ -259,7 +244,6 @@ static int run_action_convert(struct content_modifier_ctx *ctx,
     /* remove the old kvpair */
     cfl_kvpair_destroy(kvpair);
 
-    kvlist = obj->variant->data.as_kvlist;
     ret = cfl_kvlist_insert_s(kvlist, key, cfl_sds_len(key), converted);
     if (ret != 0) {
         cfl_variant_destroy(converted);
@@ -269,129 +253,94 @@ static int run_action_convert(struct content_modifier_ctx *ctx,
     return 0;
 }
 
-
-static struct cfl_variant *otel_get_attributes(int context, struct flb_mp_chunk_record *record)
-{
-    struct cfl_object *obj = NULL;
-    struct cfl_kvlist *kvlist;
-
-    obj = record->cobj_record;
-    kvlist = obj->variant->data.as_kvlist;
-
-    return cm_otel_get_attributes(CM_TELEMETRY_LOGS, context, kvlist);
-}
-
-static struct cfl_variant *otel_get_scope(struct flb_mp_chunk_record *record)
-{
-    struct cfl_object *obj;
-    struct cfl_kvlist *kvlist;
-
-    obj = record->cobj_record;
-    kvlist = obj->variant->data.as_kvlist;
-
-    return cm_otel_get_scope_metadata(CM_TELEMETRY_LOGS, kvlist);
-}
-
-int cm_logs_process(struct flb_processor_instance *ins,
-                    struct content_modifier_ctx *ctx,
-                    struct flb_mp_chunk_cobj *chunk_cobj,
-                    const char *tag,
-                    int tag_len)
+int cm_metrics_process(struct flb_processor_instance *ins,
+                       struct content_modifier_ctx *ctx,
+                       struct cmt *in_cmt,
+                       struct cmt **out_cmt,
+                       const char *tag, int tag_len)
 {
     int ret = -1;
-    int record_type;
-    struct flb_mp_chunk_record *record;
-    struct cfl_object *obj = NULL;
-    struct cfl_object obj_static;
-    struct cfl_variant *var;
+    struct cfl_variant *var = NULL;
 
-    /* Iterate records */
-    while ((ret = flb_mp_chunk_cobj_record_next(chunk_cobj, &record)) == FLB_MP_CHUNK_RECORD_OK) {
-        obj = NULL;
+    printf("\n\n==== BEFORE =====\n");
+    cfl_kvlist_print(stdout, in_cmt->internal_metadata);
+    printf("\n");
+    printf("-----external----\n");
+    cfl_kvlist_print(stdout, in_cmt->external_metadata);
+    fflush(stdout);
 
-        /* Retrieve information about the record type */
-        ret = flb_log_event_decoder_get_record_type(&record->event, &record_type);
-        if (ret != 0) {
-            flb_plg_error(ctx->ins, "record has invalid event type");
-            continue;
-        }
 
-        /* retrieve the target cfl object */
-        if (ctx->context_type == CM_CONTEXT_LOG_METADATA) {
-            obj = record->cobj_metadata;
-        }
-        else if (ctx->context_type == CM_CONTEXT_LOG_BODY) {
-            obj = record->cobj_record;
-        }
-        else if (ctx->context_type == CM_CONTEXT_OTEL_RESOURCE_ATTR &&
-                 record_type == FLB_LOG_EVENT_GROUP_START) {
-            var = otel_get_attributes(CM_CONTEXT_OTEL_RESOURCE_ATTR, record);
-            if (!var) {
-                continue;
-            }
-
-            obj_static.type = CFL_VARIANT_KVLIST;
-            obj_static.variant = var;
-            obj = &obj_static;
-        }
-        else if (ctx->context_type == CM_CONTEXT_OTEL_SCOPE_ATTR &&
-                 record_type == FLB_LOG_EVENT_GROUP_START) {
-
-            var = otel_get_attributes(CM_CONTEXT_OTEL_SCOPE_ATTR, record);
-            if (!var) {
-                continue;
-            }
-
-            obj_static.type = CFL_VARIANT_KVLIST;
-            obj_static.variant = var;
-            obj = &obj_static;
-        }
-        else if ((ctx->context_type == CM_CONTEXT_OTEL_SCOPE_NAME || ctx->context_type == CM_CONTEXT_OTEL_SCOPE_VERSION) &&
-                 record_type == FLB_LOG_EVENT_GROUP_START) {
-
-            var = otel_get_scope(record);
-            obj_static.type = CFL_VARIANT_KVLIST;
-            obj_static.variant = var;
-            obj = &obj_static;
-        }
-
-        if (!obj) {
-            continue;
-        }
-
-        /* the operation on top of the data type is unsupported */
-        if (obj->variant->type != CFL_VARIANT_KVLIST) {
-            flb_plg_error(ctx->ins, "unsupported data type for context");
+    if (ctx->context_type == CM_CONTEXT_OTEL_RESOURCE_ATTR) {
+        /* Internal metadata must be valid */
+        var = cfl_kvlist_fetch(in_cmt->internal_metadata, "producer");
+        if (!var) {
             return FLB_PROCESSOR_FAILURE;
         }
 
-        /* process the action */
-        if (ctx->action_type == CM_ACTION_INSERT) {
-            ret = run_action_insert(ctx, obj, tag, tag_len, ctx->key, ctx->value);
-        }
-        else if (ctx->action_type == CM_ACTION_UPSERT) {
-            ret = run_action_upsert(ctx, obj, tag, tag_len, ctx->key, ctx->value);
-        }
-        else if (ctx->action_type == CM_ACTION_DELETE) {
-            ret = run_action_delete(ctx, obj, tag, tag_len, ctx->key);
-        }
-        else if (ctx->action_type == CM_ACTION_RENAME) {
-            ret = run_action_rename(ctx, obj, tag, tag_len, ctx->key, ctx->value);
-        }
-        else if (ctx->action_type == CM_ACTION_HASH) {
-            ret = run_action_hash(ctx, obj, tag, tag_len, ctx->key);
-        }
-        else if (ctx->action_type == CM_ACTION_EXTRACT) {
-            ret = run_action_extract(ctx, obj, tag, tag_len, ctx->key, ctx->regex);
-        }
-        else if (ctx->action_type == CM_ACTION_CONVERT) {
-            ret = run_action_convert(ctx, obj, tag, tag_len, ctx->key, ctx->converted_type);
+        if (var->type != CFL_VARIANT_STRING) {
+            return FLB_PROCESSOR_FAILURE;
         }
 
-        if (ret != 0) {
+        /* validate that the value is 'opentelemetry' */
+        if (strcmp(var->data.as_string, "opentelemetry") != 0) {
+            return FLB_PROCESSOR_FAILURE;
+        }
+
+        /* Now check the external metadata */
+        if (!in_cmt->external_metadata) {
+            return FLB_PROCESSOR_FAILURE;
+        }
+
+        var = NULL;
+
+        var = cm_otel_get_attributes(CM_TELEMETRY_METRICS, ctx->context_type, in_cmt->external_metadata);
+        if (!var) {
             return FLB_PROCESSOR_FAILURE;
         }
     }
+    else if (ctx->context_type == CM_CONTEXT_OTEL_SCOPE_ATTR) {
+        var = cm_otel_get_attributes(CM_TELEMETRY_METRICS, ctx->context_type, in_cmt->external_metadata);
+    }
+    else if ((ctx->context_type == CM_CONTEXT_OTEL_SCOPE_NAME || ctx->context_type == CM_CONTEXT_OTEL_SCOPE_VERSION)) {
+        var = cm_otel_get_scope_metadata(CM_TELEMETRY_METRICS, in_cmt->external_metadata);
+    }
+
+    if (!var) {
+        return FLB_PROCESSOR_FAILURE;
+    }
+
+    if (ctx->action_type == CM_ACTION_INSERT) {
+        ret = run_action_insert(ctx, var->data.as_kvlist, tag, tag_len, ctx->key, ctx->value);
+    }
+    else if (ctx->action_type == CM_ACTION_UPSERT) {
+        ret = run_action_upsert(ctx, var->data.as_kvlist, tag, tag_len, ctx->key, ctx->value);
+    }
+    else if (ctx->action_type == CM_ACTION_DELETE) {
+        ret = run_action_delete(ctx, var->data.as_kvlist, tag, tag_len, ctx->key);
+    }
+    else if (ctx->action_type == CM_ACTION_RENAME) {
+        ret = run_action_rename(ctx, var->data.as_kvlist, tag, tag_len, ctx->key, ctx->value);
+    }
+    else if (ctx->action_type == CM_ACTION_HASH) {
+        ret = run_action_hash(ctx, var->data.as_kvlist, tag, tag_len, ctx->key);
+    }
+    else if (ctx->action_type == CM_ACTION_EXTRACT) {
+        ret = run_action_extract(ctx, var->data.as_kvlist, tag, tag_len, ctx->key, ctx->regex);
+    }
+    else if (ctx->action_type == CM_ACTION_CONVERT) {
+        ret = run_action_convert(ctx, var->data.as_kvlist, tag, tag_len, ctx->key, ctx->converted_type);
+    }
+
+    if (ret != 0) {
+        return FLB_PROCESSOR_FAILURE;
+    }
+
+  printf("\n\n==== AFTER =====\n");
+    cfl_kvlist_print(stdout, in_cmt->internal_metadata);
+    printf("\n");
+    printf("-----external----\n");
+    cfl_kvlist_print(stdout, in_cmt->external_metadata);
+    fflush(stdout);
 
     return FLB_PROCESSOR_SUCCESS;
 }
