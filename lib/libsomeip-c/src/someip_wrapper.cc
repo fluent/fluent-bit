@@ -15,6 +15,7 @@
  *  limitations under the License.
  */
 #include <cstdlib>
+#include <cstring>
 #include <functional>
 #include <future>
 #include <iostream>
@@ -100,10 +101,17 @@ namespace {
         using AvailabilityHandler = std::function<void(bool)>;
         using RequestHandler      = std::function<void(uint32_t, uint8_t*, uint32_t)>;
 
+        /**
+         * Constructor
+         * @param app Vsomeip application instance for this context
+         */
         explicit SomeIpContext(std::shared_ptr<vsomeip::application> app) :
             application_(std::move(app)) {
         }
 
+        /**
+         * Starts the SOME/IP context
+         */
         void Start() {
             // Launch a thread that calls the start method on the application
             // Local mutex used to sync between this thread and the start thread
@@ -121,8 +129,7 @@ namespace {
                     // start() blocks, so notify the calling thread that we started
                     // executing
                     {
-                        std::lock_guard<std::mutex> local_lock{
-                            start_mutex};
+                        std::lock_guard<std::mutex> local_lock{start_mutex};
                         thread_running = true;
                         start_thread_executing.notify_all();
                     }
@@ -140,6 +147,9 @@ namespace {
             });
         }
 
+        /**
+         * Shuts down the SOME/IP context
+         */
         void Shutdown() {
             std::lock_guard<std::mutex> lock{context_mutex_};
             if (application_) {
@@ -150,11 +160,16 @@ namespace {
             }
         }
 
+        /**
+         * Retrieves the next event
+         * @param event_ptr Pointer to structure to populate with the event data
+         * @return SOMEIP_RET_SUCCESS if event is availble and structure is populated
+         *         SOMEIP_RET_NO_EVENT_AVAILABLE if there is no more events
+         */
         int GetNextEvent(some_ip_event* event_ptr) {
             std::shared_ptr<vsomeip::message> message;
             {
-                std::lock_guard<std::mutex> lock{
-                    context_mutex_};
+                std::lock_guard<std::mutex> lock{context_mutex_};
                 if (!event_queue_.empty()) {
                     message = event_queue_.front();
                     event_queue_.pop();
@@ -187,6 +202,13 @@ namespace {
             return SOMEIP_RET_SUCCESS;
         }
 
+        /**
+         * Subscribes for an event
+         * 
+         * @param event Event details
+         * @param groups Event groups the event belongs in
+         * @param handler Callback for delivering received notifications for the event
+         */
         void SubscribeForEvent(const Event& event,
                                const std::set<uint16_t>& groups,
                                NotifyHandler handler) {
@@ -217,6 +239,11 @@ namespace {
             CheckAndRequestService(event.service);
         }
 
+        /**
+         * Request a service from the SOME/IP stack
+         * @param service Service details
+         * @param cb Callback used to inform when service is/is not available
+         */
         void RequestService(const Service& service,
                             AvailabilityHandler cb) {
             std::lock_guard<std::mutex> lock(context_mutex_);
@@ -224,6 +251,13 @@ namespace {
             availability_handlers_[service].emplace_back(std::move(cb));
         }
 
+        /**
+         * Send a request through the SOME/IP stack
+         * @param parameters Pointer to struct with the request details
+         * @param response_handler Used to deliver a response back to the requestor
+         * @return SOMEIP_RET_SERVICE_NOT_AVAILABLE if the service is currently not available
+         *         SOMEIP_RET_SUCCESS if the request is sent out successfully
+         */
         int SendRequest(some_ip_request* parameters,
                         ResponseHandler response_handler) {
             std::lock_guard<std::mutex> lock(context_mutex_);
@@ -282,14 +316,20 @@ namespace {
             return SOMEIP_RET_SUCCESS;
         }
 
+        /**
+         * Retrieve a received SOME/IP response
+         * @param response_ptr Pointer to structure to store the response 
+         * @return SOMEIP_RET_SUCCESS if the response is stored successfully
+         *         SOMEIP_RET_REQUEST_NOT_FOUND if the response is not found for the specified request
+         *         SOMEIP_RET_FAILURE if there is a general error in creating the response
+         */
         int GetResponse(some_ip_response* response_ptr) {
             std::lock_guard<std::mutex> lock(context_mutex_);
             // See if we can find the response
             const Service service{
                 response_ptr->request_id.service_id,
                 response_ptr->request_id.instance_id};
-            auto&& service_response_entry{
-                responses_.find(service)};
+            auto&& service_response_entry{responses_.find(service)};
             if (service_response_entry == responses_.end()) {
                 return SOMEIP_RET_REQUEST_NOT_FOUND;
             }
@@ -325,6 +365,11 @@ namespace {
             return SOMEIP_RET_SUCCESS;
         }
 
+        /**
+         * Function to offer an event over the SOME/IP stack
+         * @param event Event details
+         * @param event_groups Event groups the event belongs to
+         */
         void OfferEvent(const Event& event,
                         const std::set<uint16_t>& event_groups) {
             std::lock_guard<std::mutex> lock(context_mutex_);
@@ -333,12 +378,21 @@ namespace {
                                       event.event_id, event_groups);
         }
 
+        /**
+         * Offer a SOME/IP service
+         * @param service Service details
+         */
         void OfferService(const Service& service) {
             std::lock_guard<std::mutex> lock{context_mutex_};
             application_->offer_service(service.service_id,
                                         service.instance_id);
         }
 
+        /**
+         * Sends a notification for a SOME/IP event
+         * @param event Event identifier
+         * @param payload Holds the payload to put in the notification
+         */
         void SendNotification(const Event& event,
                               std::shared_ptr<vsomeip::payload> payload) {
             std::lock_guard<std::mutex> lock(context_mutex_);
@@ -348,6 +402,11 @@ namespace {
             std::cout << "Sent notification for service " << event.service.service_id << ", event " << event.event_id << std::endl;
         }
 
+        /**
+         * Add a handler for a SOME/IP method
+         * @param method Method identifier
+         * @param handler Callback to use when a request is received
+         */
         void AddRequestHandler(const Method& method,
                                RequestHandler handler) {
             auto message_handler{
@@ -355,11 +414,9 @@ namespace {
                            std::move(handler)](const std::shared_ptr<vsomeip::message>& message) {
                     // Create the pending response
                     const auto request_id{message->get_request()};
-                    auto pending_response{
-                        ::vsomeip::runtime::get()->create_response(message)};
+                    auto pending_response{::vsomeip::runtime::get()->create_response(message)};
                     {
-                        std::lock_guard<std::mutex> callback_lock{
-                            context_mutex_};
+                        std::lock_guard<std::mutex> callback_lock{context_mutex_};
                         pending_responses_[request_id] =
                             std::move(pending_response);
                     }
@@ -379,6 +436,11 @@ namespace {
                                                    std::move(message_handler));
         }
 
+        /**
+         * Send a SOME/IP response
+         * @param request_id Identifies the request this response is for
+         * @param payload Payload to put into the response
+         */
         void SendResponse(const uint32_t request_id,
                           const std::vector<uint8_t>& payload) {
             std::lock_guard<std::mutex> lock(context_mutex_);
@@ -394,24 +456,36 @@ namespace {
         }
 
     private:
+        /* vSomeIp application associated with this context */
         std::shared_ptr<vsomeip::application> application_;
+
+        /* Mutex to protect access to the class members between vSomeIp threads and client threads */
         std::mutex context_mutex_;
+
+        /* Holds the future when the application is running */
         std::future<void> start_future_;
+
+        /* Used to hold received events until client retrieves them */
         std::queue<std::shared_ptr<vsomeip::message>> event_queue_;
+
+        /* Tracks the services this context has requested. The value is a flag to track if the service is available */
         std::map<Service, bool> requested_services_;
-        std::map<Service,
-                 std::vector<AvailabilityHandler>>
-            availability_handlers_;
+
+        /* Maps of service and registered availability handler */
+        std::map<Service, std::vector<AvailabilityHandler>> availability_handlers_;
+
+        /* Registered methods */
         std::set<Method> registered_methods_;
-        std::map<Service, std::map<vsomeip::request_t,
-                                   ResponseHandler>>
-            pending_requests_;
-        std::map<Service, std::map<vsomeip::request_t,
-                                   std::shared_ptr<vsomeip::message>>>
-            responses_;
-        std::map<vsomeip::request_t,
-                 std::shared_ptr<vsomeip::message>>
-            pending_responses_;
+
+        /* Map that holds response handlers for pending requests */
+        std::map<Service, std::map<vsomeip::request_t, ResponseHandler>> pending_requests_;
+
+        /* Map that holds received responses until retrieved from the client */
+        std::map<Service, std::map<vsomeip::request_t, std::shared_ptr<vsomeip::message>>> responses_;
+
+        /* Map used to hold received requests until the client application sends a response */
+        std::map<vsomeip::request_t, std::shared_ptr<vsomeip::message>> pending_responses_;
+
         /**
          * Function to check if the specified service instance has been requested. If it
          * hasn't been requested, then request it and add to the requested service list.
@@ -443,8 +517,7 @@ namespace {
                     }};
                 application_->register_availability_handler(service.service_id,
                                                             service.instance_id,
-                                                            std::
-                                                                move(availability_handler));
+                                                            std::move(availability_handler));
                 application_->request_service(service.service_id,
                                               service.instance_id);
                 requested_services_[service] = false;
@@ -490,10 +563,12 @@ namespace {
             handler(request_id);
         }
     };
+
+    /**
+     * @return The map of SOME/IP contexts
+     */
     std::map<uint16_t, std::shared_ptr<SomeIpContext>>& context_map() {
-        static std::map<uint16_t,
-                        std::shared_ptr<SomeIpContext>>
-            map;
+        static std::map<uint16_t, std::shared_ptr<SomeIpContext>> map;
         return map;
     }
 
@@ -504,35 +579,28 @@ int someip_initialize(const char* app_name,
     if (client_id == nullptr) {
         return SOMEIP_RET_FAILURE;
     }
-    auto application{
-        ::vsomeip::runtime::get()->create_application(app_name)};
+    auto application{::vsomeip::runtime::get()->create_application(app_name)};
     if (!application || !application->init()) {
         application.reset();
         return SOMEIP_RET_FAILURE;
     }
 
     // Create the application context
-    auto app_context{
-        std::make_shared<SomeIpContext>(application)};
+    auto app_context{std::make_shared<SomeIpContext>(application)};
     app_context->Start();
     // Record the client_id
     *client_id = application->get_client();
     // Save off the context
-    std::lock_guard<std::mutex> lock{
-        someip_mutex()};
-    auto&& contexts{
-        context_map()};
+    std::lock_guard<std::mutex> lock{someip_mutex()};
+    auto&& contexts{context_map()};
     contexts.emplace(*client_id, app_context);
     return SOMEIP_RET_SUCCESS;
 }
 
 void someip_shutdown(const uint16_t client_id) {
-    std::lock_guard<std::mutex> lock{
-        someip_mutex()};
-    auto&& contexts{
-        context_map()};
-    auto&& context{
-        contexts.find(client_id)};
+    std::lock_guard<std::mutex> lock{someip_mutex()};
+    auto&& contexts{context_map()};
+    auto&& context{contexts.find(client_id)};
     if (context != contexts.end()) {
         context->second->Shutdown();
     }
@@ -547,12 +615,9 @@ int someip_get_next_event(const uint16_t client_id,
     }
 
     // Get the context
-    std::lock_guard<std::mutex> lock{
-        someip_mutex()};
-    auto&& contexts{
-        context_map()};
-    auto&& context_entry{
-        contexts.find(client_id)};
+    std::lock_guard<std::mutex> lock{someip_mutex()};
+    auto&& contexts{context_map()};
+    auto&& context_entry{contexts.find(client_id)};
     if (context_entry == contexts.end()) {
         return SOMEIP_RET_FAILURE;
     }
@@ -568,12 +633,9 @@ int someip_subscribe_event(uint16_t client_id,
                            size_t num_event_groups,
                            void* cookie,
                            void (*notify_cb)(void*)) {
-    std::lock_guard<std::mutex> lock{
-        someip_mutex()};
-    auto&& contexts{
-        context_map()};
-    auto&& context_entry{
-        contexts.find(client_id)};
+    std::lock_guard<std::mutex> lock{someip_mutex()};
+    auto&& contexts{context_map()};
+    auto&& context_entry{contexts.find(client_id)};
     if (context_entry == contexts.end()) {
         return SOMEIP_RET_FAILURE;
     }
@@ -631,21 +693,14 @@ int someip_send_request(uint16_t client_id, struct some_ip_request* parameters,
         return SOMEIP_RET_FAILURE;
     }
 
-    std::lock_guard<std::mutex>
-        lock{
-            someip_mutex()};
-    auto&& contexts{
-        context_map()};
-    auto&& context_entry{
-        contexts.find(client_id)};
-    if (context_entry ==
-        contexts.end()) {
+    std::lock_guard<std::mutex> lock{someip_mutex()};
+    auto&& contexts{context_map()};
+    auto&& context_entry{contexts.find(client_id)};
+    if (context_entry == contexts.end()) {
         return SOMEIP_RET_FAILURE;
     }
 
-    SomeIpContext::
-        ResponseHandler
-            response_handler;
+    SomeIpContext::ResponseHandler response_handler;
     if (response_cb != nullptr) {
         response_handler =
             {[cookie, response_cb,
@@ -660,29 +715,20 @@ int someip_send_request(uint16_t client_id, struct some_ip_request* parameters,
                              &request_id); }};
     }
     return context_entry->second->SendRequest(parameters,
-                                              std::
-                                                  move(response_handler));
+                                              std::move(response_handler));
 }
 
 int someip_get_response(uint16_t client_id,
-                        struct
-                        some_ip_response* response) {
+                        struct some_ip_response* response) {
     // Check the parameters
-    if (response ==
-        nullptr) {
+    if (response == nullptr) {
         return SOMEIP_RET_FAILURE;
     }
 
-    std::lock_guard<
-        std::mutex>
-        lock{
-            someip_mutex()};
-    auto&& contexts{
-        context_map()};
-    auto&& context_entry{
-        contexts.find(client_id)};
-    if (context_entry ==
-        contexts.end()) {
+    std::lock_guard<std::mutex> lock{someip_mutex()};
+    auto&& contexts{context_map()};
+    auto&& context_entry{contexts.find(client_id)};
+    if (context_entry == contexts.end()) {
         return SOMEIP_RET_FAILURE;
     }
 
@@ -693,36 +739,22 @@ int someip_offer_event(uint16_t client_id,
                        uint16_t service,
                        uint16_t instance,
                        uint16_t event,
-                       uint16_t
-                           event_groups[],
-                       size_t
-                           num_event_grps) {
-    std::lock_guard<
-        std::mutex>
-        lock{
-            someip_mutex()};
-    auto&& contexts{
-        context_map()};
-    auto&& context_entry{
-        contexts.find(client_id)};
-    if (context_entry ==
-        contexts.end()) {
+                       uint16_t event_groups[],
+                       size_t num_event_grps) {
+    std::lock_guard<std::mutex> lock{someip_mutex()};
+    auto&& contexts{context_map()};
+    auto&& context_entry{contexts.find(client_id)};
+    if (context_entry == contexts.end()) {
         return SOMEIP_RET_FAILURE;
     }
 
-    if (event_groups ==
-        NULL) {
+    if (event_groups == NULL) {
         return SOMEIP_RET_FAILURE;
     }
 
-    std::set<uint16_t>
-        groups;
-    for (auto i = 0;
-         i <
-         num_event_grps;
-         ++i) {
-        groups.insert(event_groups
-                          [i]);
+    std::set<uint16_t> groups;
+    for (auto i = 0; i < num_event_grps; ++i) {
+        groups.insert(event_groups[i]);
     }
 
     context_entry->second->OfferEvent({{service,
@@ -735,16 +767,10 @@ int someip_offer_event(uint16_t client_id,
 int someip_offer_service(uint16_t client_id,
                          uint16_t service,
                          uint16_t instance) {
-    std::lock_guard<
-        std::mutex>
-        lock{
-            someip_mutex()};
-    auto&& contexts{
-        context_map()};
-    auto&& context_entry{
-        contexts.find(client_id)};
-    if (context_entry ==
-        contexts.end()) {
+    std::lock_guard<std::mutex> lock{someip_mutex()};
+    auto&& contexts{context_map()};
+    auto&& context_entry{contexts.find(client_id)};
+    if (context_entry == contexts.end()) {
         return SOMEIP_RET_FAILURE;
     }
 
@@ -758,40 +784,23 @@ int someip_send_event(uint16_t client_id,
                       uint16_t instance,
                       uint16_t event,
                       const void* payload_ptr,
-                      uint32_t
-                          payload_size) {
-    std::lock_guard<
-        std::mutex>
-        lock{
-            someip_mutex()};
-    auto&& contexts{
-        context_map()};
-    auto&& context_entry{
-        contexts.find(client_id)};
-    if (context_entry ==
-        contexts.end()) {
+                      uint32_t payload_size) {
+    std::lock_guard<std::mutex> lock{someip_mutex()};
+    auto&& contexts{context_map()};
+    auto&& context_entry{contexts.find(client_id)};
+    if (context_entry == contexts.end()) {
         return SOMEIP_RET_FAILURE;
     }
 
-    std::shared_ptr<
-        vsomeip::payload>
-        payload;
-    if (payload_ptr !=
-            nullptr &&
-        payload_size >
-            0) {
-        payload =
-            vsomeip::runtime::
-                get()
-                    ->create_payload(static_cast<
-                                         const uint8_t*>(payload_ptr),
-                                     payload_size);
+    std::shared_ptr<vsomeip::payload> payload;
+    auto runtime{vsomeip::runtime::get()};
+    if (payload_ptr != nullptr &&
+        payload_size > 0) {
+        payload = runtime->create_payload(static_cast<const uint8_t*>(payload_ptr),
+                                          payload_size);
     }
     else {
-        payload =
-            vsomeip::runtime::
-                get()
-                    ->create_payload();
+        payload = runtime->create_payload();
     }
 
     context_entry->second->SendNotification({{service,
@@ -845,9 +854,8 @@ int someip_send_response(uint16_t client_id, uint32_t request_id,
 
     std::vector<uint8_t> payload_buffer;
     if (payload != nullptr && payload_len > 0) {
-        payload_buffer = std::vector<
-            uint8_t>{(uint8_t*)payload,
-                     ((uint8_t*)payload) + payload_len};
+        payload_buffer.resize(payload_len);
+        std::memcpy(payload_buffer.data(), (uint8_t*)payload, payload_len);
     }
 
     context_entry->second->SendResponse(request_id,
