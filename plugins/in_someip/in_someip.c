@@ -53,7 +53,7 @@ struct in_someip_service_available
  */
 static void
 encode_bytes(struct flb_someip *ctx, size_t binary_len,
-             uint8_t * binary_data, flb_sds_t * encoded_buffer)
+             uint8_t *binary_data, flb_sds_t *encoded_buffer)
 {
     size_t encoded_buffer_size = (binary_len * 4);
     size_t encoded_len;
@@ -187,11 +187,14 @@ static void in_someip_subscribe_for_someip_events(struct flb_someip *ctx)
     cfl_list_foreach_safe(head, tmp, &(ctx->someip_events)) {
         an_event =
             cfl_list_entry(head, struct in_someip_event_identifier, _head);
-        if (someip_subscribe_event
-            (ctx->someip_client_id, an_event->service_id,
-             an_event->instance_id, an_event->event_id,
-             an_event->event_groups, an_event->number_of_event_groups, ctx,
-             in_someip_event_notification) != SOMEIP_RET_SUCCESS) {
+        if (someip_subscribe_event(ctx->someip_client_id, 
+                                   an_event->service_id,
+                                   an_event->instance_id, 
+                                   an_event->event_id,
+                                   an_event->event_groups, 
+                                   an_event->number_of_event_groups, 
+                                   ctx,
+                                   in_someip_event_notification) != SOMEIP_RET_SUCCESS) {
             flb_plg_error(ctx->ins,
                           "Failed to subscribe for service = %d, instance = %d, event %d",
                           an_event->service_id, an_event->instance_id,
@@ -221,9 +224,11 @@ static void in_someip_request_services(struct flb_someip *ctx)
 
     cfl_list_foreach_safe(head, tmp, &(ctx->someip_pending_rpc)) {
         an_rpc = cfl_list_entry(head, struct in_someip_rpc, _head);
-        if (someip_request_service
-            (ctx->someip_client_id, an_rpc->service_id, an_rpc->instance_id,
-             ctx, in_someip_avail_handler) != SOMEIP_RET_SUCCESS) {
+        if (someip_request_service(ctx->someip_client_id, 
+                                   an_rpc->service_id, 
+                                   an_rpc->instance_id,
+                                   ctx, 
+                                   in_someip_avail_handler) != SOMEIP_RET_SUCCESS) {
             flb_plg_error(ctx->ins,
                           "Failed to request service = %d, instance = %d",
                           an_rpc->service_id, an_rpc->instance_id);
@@ -263,21 +268,21 @@ in_someip_generate_someip_event_record(struct flb_someip *ctx,
             flb_log_event_encoder_set_current_timestamp(log_encoder);
     }
     if (encoder_result == FLB_EVENT_ENCODER_SUCCESS) {
-    encoder_result =
+        encoder_result =
             flb_log_event_encoder_append_body_values(log_encoder,
                                                          FLB_LOG_EVENT_CSTRING_VALUE
                                                          ("record type"),
                                                          FLB_LOG_EVENT_CSTRING_VALUE
                                                          ("event"))}
     if (encoder_result == FLB_EVENT_ENCODER_SUCCESS) {
-    encoder_result =
+        encoder_result =
             flb_log_event_encoder_append_body_values(log_encoder,
                                                          FLB_LOG_EVENT_CSTRING_VALUE
                                                          ("service"),
                                                          FLB_LOG_EVENT_UINT16_VALUE
                                                          (event->service_id))}
     if (encoder_result == FLB_EVENT_ENCODER_SUCCESS) {
-    encoder_result =
+        encoder_result =
             flb_log_event_encoder_append_body_values(log_encoder,
                                                          FLB_LOG_EVENT_CSTRING_VALUE
                                                          ("instance"),
@@ -285,7 +290,7 @@ in_someip_generate_someip_event_record(struct flb_someip *ctx,
                                                          (event->instance_id))}
 
     if (encoder_result == FLB_EVENT_ENCODER_SUCCESS) {
-    encoder_result =
+        encoder_result =
             flb_log_event_encoder_append_body_values(log_encoder,
                                                          FLB_LOG_EVENT_CSTRING_VALUE
                                                          ("event"),
@@ -375,21 +380,21 @@ in_someip_generate_someip_response_record(struct flb_someip *ctx,
             flb_log_event_encoder_set_current_timestamp(log_encoder);
     }
     if (encoder_result == FLB_EVENT_ENCODER_SUCCESS) {
-    encoder_result =
+        encoder_result =
             flb_log_event_encoder_append_body_values(log_encoder,
                                                          FLB_LOG_EVENT_CSTRING_VALUE
                                                          ("record type"),
                                                          FLB_LOG_EVENT_CSTRING_VALUE
                                                          ("response"))}
     if (encoder_result == FLB_EVENT_ENCODER_SUCCESS) {
-    encoder_result =
+        encoder_result =
             flb_log_event_encoder_append_body_values(log_encoder,
                                                          FLB_LOG_EVENT_CSTRING_VALUE
                                                          ("service"),
                                                          FLB_LOG_EVENT_UINT16_VALUE
                                                          (request_ptr->service_id))}
     if (encoder_result == FLB_EVENT_ENCODER_SUCCESS) {
-    encoder_result =
+        encoder_result =
             flb_log_event_encoder_append_body_values(log_encoder,
                                                          FLB_LOG_EVENT_CSTRING_VALUE
                                                          ("instance"),
@@ -397,7 +402,7 @@ in_someip_generate_someip_response_record(struct flb_someip *ctx,
                                                          (request_ptr->instance_id))}
 
     if (encoder_result == FLB_EVENT_ENCODER_SUCCESS) {
-    encoder_result =
+        encoder_result =
             flb_log_event_encoder_append_body_values(log_encoder,
                                                          FLB_LOG_EVENT_CSTRING_VALUE
                                                          ("method"),
@@ -470,10 +475,8 @@ static void in_someip_handle_avail_event(struct flb_someip *ctx)
     struct in_someip_response *an_response;
 
     // Pull the service availability off the pipe
-    bytes_read
-        =
-        flb_pipe_read_all(ctx->rpc_pipe_fd[0], &serv_available,
-                          sizeof(serv_available));
+    bytes_read = flb_pipe_read_all(ctx->rpc_pipe_fd[0], &serv_available,
+                                   sizeof(serv_available));
     if (bytes_read <= 0) {
         flb_errno();
         return;
@@ -491,8 +494,9 @@ static void in_someip_handle_avail_event(struct flb_someip *ctx)
                 && an_rpc->instance_id == serv_available.instance_id) {
                 request.request_id.service_id = an_rpc->service_id;
                 request.request_id.instance_id = an_rpc->instance_id;
-                request.request_id.client_request_id = 0;       // Will be overwritten on
-                // success
+
+                // Will be overwritten on success
+                request.request_id.client_request_id = 0;
                 request.method_id = an_rpc->method_id;
                 request.payload_len = an_rpc->payload_len;
                 request.payload = an_rpc->payload;
@@ -502,8 +506,7 @@ static void in_someip_handle_avail_event(struct flb_someip *ctx)
                 {
                     flb_plg_debug(ctx->ins, "Sent request method = %d",
                                   an_rpc->method_id);
-                    an_response =
-                        flb_malloc(sizeof(struct in_someip_response));
+                    an_response = flb_malloc(sizeof(struct in_someip_response));
                     if (NULL == an_response) {
                         flb_errno();
                         return;
@@ -573,9 +576,8 @@ static void in_someip_handle_response_event(struct flb_someip *ctx)
             received_request_id.client_request_id) {
 
             // Retrieve the response
-            ret =
-                someip_get_response(ctx->someip_client_id,
-                                    &an_response->response);
+            ret = someip_get_response(ctx->someip_client_id,
+                                      &an_response->response);
             if (ret != SOMEIP_RET_SUCCESS) {
                 flb_plg_error(ctx->ins,
                               "Failed to retrieve response for service = %d, instance "
@@ -632,8 +634,7 @@ in_someip_collect_notify(struct flb_input_instance *in,
     /* Pull events from SOME/IP until there aren't any */
     keep_reading = 1;
     while (keep_reading) {
-        someip_result =
-            someip_get_next_event(context->someip_client_id, &event_data);
+        someip_result = someip_get_next_event(context->someip_client_id, &event_data);
         if (someip_result == SOMEIP_RET_SUCCESS) {
             ret =
                 in_someip_generate_someip_event_record(context, &event_data);
@@ -656,7 +657,7 @@ in_someip_collect_notify(struct flb_input_instance *in,
 }
 
 /*
- * Function called when a SOME/IP RPC event as happened
+ * Function called when a SOME/IP RPC related message is available
  *
  * @param in Pointer to the Fluent Bit input instance
  * @param config Not used
@@ -776,7 +777,6 @@ static void in_someip_pause(void *data, struct flb_config *config)
     struct flb_someip *ctx = data;
     (void) config;
 
-    // TODO: Should we pause subscription during this time?
     /*
      * Pause collectors
      */
@@ -835,7 +835,7 @@ static struct flb_config_map config_map[]
 };
 
 struct flb_input_plugin in_someip_plugin = {.name = "someip",
-    .description = "Interact with SOME/IP " "services as a client",
+    .description = "Interact with SOME/IP services as a client",
     .cb_init = in_someip_init,
     .cb_pre_run = NULL,
     .cb_collect = NULL,
