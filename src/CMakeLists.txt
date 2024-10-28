@@ -85,6 +85,7 @@ set(src
   flb_msgpack_append_message.c
   flb_notification.c
   flb_lock.c
+  flb_cfl_ra_key.c
   )
 
 # Config format
