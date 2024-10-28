@@ -510,6 +510,7 @@ static int update_subkey_kvlist(struct cfl_variant *vobj, struct mk_list *subkey
     struct flb_ra_subentry *entry;
     int ret;
     flb_sds_t key = NULL;
+    flb_sds_t tmp = NULL;
     struct cfl_kvlist *kvlist = NULL;
     struct cfl_kvpair *kvpair = NULL;
     struct cfl_kvpair *pair = NULL;
@@ -547,12 +548,11 @@ static int update_subkey_kvlist(struct cfl_variant *vobj, struct mk_list *subkey
         *matched += 1;
         if (levels == *matched) {
             flb_trace("%s update key/val matched=%d", __FUNCTION__, *matched);
-            key = cfl_sds_create_len(pair->key, cfl_sds_len(pair->key));
-            if (key == NULL) {
-                return -1;
-            }
             if (in_key != NULL && in_val != NULL) {
                 cfl_kvlist_insert(kvlist, in_key, in_val);
+                if (pair) {
+                    cfl_kvpair_destroy(pair);
+                }
             }
             else if (in_key != NULL) {
                 tmp = kvpair->key;
@@ -564,11 +564,15 @@ static int update_subkey_kvlist(struct cfl_variant *vobj, struct mk_list *subkey
                 flb_sds_destroy(tmp);
             }
             else if (in_val != NULL) {
+                key = cfl_sds_create_len(pair->key, cfl_sds_len(pair->key));
+                if (key == NULL) {
+                    return -1;
+                }
                 cfl_kvlist_insert(kvlist, key, in_val);
-            }
-            cfl_sds_destroy(key);
-            if (pair) {
-                cfl_kvpair_destroy(pair);
+                cfl_sds_destroy(key);
+                if (pair) {
+                    cfl_kvpair_destroy(pair);
+                }
             }
             return 0;
         }

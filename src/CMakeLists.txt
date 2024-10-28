@@ -86,6 +86,7 @@ set(src
   flb_notification.c
   flb_lock.c
   flb_cobj_ra_key.c
+  flb_cobj_record_accessor.c
   )
 
 # Config format
