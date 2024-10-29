@@ -711,7 +711,8 @@ The dependencies must be present:
 
 * Microsoft Visual Studio C/C++ toolchain. The CI automation uses MSVC 2019 at time of writing. MSVC Community Edition works fine.
 * [CMake](https://cmake.org/) 3.x on the `PATH`
-* A build of [OpenSSL](https://www.openssl.org/) as static libraries, pointed to by the `-DOPENSSL_ROOT_DIR` CMake variable. The CI automation uses [Chocolatey](https://chocolatey.org/) to `choco install -y openssl`.
+* A build of [OpenSSL](https://www.openssl.org/) as static libraries, pointed to by the `-DOPENSSL_ROOT_DIR` CMake variable.
+* The CI automation uses vcpkg to install dependencies [](https://github.com/fluent/fluent-bit/blob/master/.github/workflows/call-build-windows.yaml#L148)
 * `flex.exe` and `bison.exe` must be present on the `PATH`. The CI automation uses https://github.com/lexxmark/winflexbison.
 
 Assuming that `cmake` is on the `PATH`, Visual Studio is installed,
@@ -730,6 +731,134 @@ cmake --build .
 The build output will be `bin\Debug\fluent-bit.exe`.
 
 If in doubt, check the CI and build automation files referenced above for specifics.
+
+### Building on a Windows Server 2022
+
+The following steps have been tested on a Windows Server 2022 Datacenter edition on top of GCP.
+
+1. **Download and Install Visual Studio 2022** (Community Edition)
+    - **Download**: Go to [Visual Studio Download Page](https://visualstudio.microsoft.com/downloads/).
+    - **Install**:
+        - Select **Community Edition** and check the following components during installation:
+            - **Desktop development with C++**
+            - **Linux development with C++**
+
+2. **Install Flex and Bison**
+    1. Create a new file called `setup-flex-bison.ps1` and paste the following script:
+
+    ```powershell
+    # Define variables for Flex and Bison
+    $flexBisonUrl = "https://sourceforge.net/projects/winflexbison/files/win_flex_bison3-latest.zip/download"
+    $downloadPath = "$env:TEMP\win_flex_bison.zip"
+    $extractPath = "C:\win_flex_bison"
+    $flexExe = "flex.exe"
+    $bisonExe = "bison.exe"
+
+    # Step 2: Download and Setup Flex and Bison
+    Write-Output "Downloading win_flex_bison..."
+    Invoke-WebRequest -Uri $flexBisonUrl -OutFile $downloadPath
+
+    # Create the extract directory if it does not exist
+    If (!(Test-Path -Path $extractPath)) {
+        New-Item -ItemType Directory -Path $extractPath
+    }
+
+    # Extract the zip file
+    Write-Output "Extracting win_flex_bison..."
+    Add-Type -AssemblyName System.IO.Compression.FileSystem
+    [System.IO.Compression.ZipFile]::ExtractToDirectory($downloadPath, $extractPath)
+
+    # Rename the executables
+    Write-Output "Renaming executables..."
+    Rename-Item "$extractPath\win_flex.exe" "$extractPath\$flexExe" -Force
+    Rename-Item "$extractPath\win_bison.exe" "$extractPath\$bisonExe" -Force
+
+    # Add Flex and Bison path to system environment variables
+    Write-Output "Adding Flex and Bison path to environment variables..."
+    $envPath = [System.Environment]::GetEnvironmentVariable("Path", "Machine")
+    If ($envPath -notlike "*$extractPath*") {
+        [System.Environment]::SetEnvironmentVariable("Path", "$envPath;$extractPath", "Machine")
+        Write-Output "Path updated. Please restart your command prompt to apply changes."
+    } else {
+        Write-Output "Path already contains the Flex and Bison directory."
+    }
+
+    # Cleanup
+    Remove-Item $downloadPath
+
+    Write-Output "Flex and Bison setup complete."
+    ```
+
+    2. Run the Script: Open PowerShell as administrator.
+
+    ```powershell
+    .\setup-flex-bison.ps1
+    ```
+
+    3. Restart the command prompt: After the script completes, restart your command prompt or Visual Studio for the changes to take effect.
+
+3. **Create `vcpkg.json` file for the dependencies**
+
+    In the root of your project, create a `vcpkg.json` file with the following content:
+
+    ```json
+    {
+        "name": "fluent-bit",
+        "version": "3.2.0",
+        "dependencies": [
+            {
+                "name": "openssl",
+                "default-features": false
+            },
+            {
+                "name": "libyaml",
+                "default-features": false
+            }
+        ],
+        "builtin-baseline": "9f5925e81bbcd9c8c34cc7a8bd25e3c557b582b2"
+    }
+    ```
+
+4. **Install dependencies using `vcpkg`**
+
+    ```bash
+    vcpkg install --triplet x64-windows-static
+    ```
+
+    You should see output like:
+
+    ```bash
+    libyaml:x64-windows-static      0.2.5#5      A C library for parsing and emitting YAML.
+    openssl:x64-windows-static      3.3.2#1      OpenSSL is an open source project that provides SSL and TLS.
+    ```
+
+5. **Link `vcpkg` with Visual Studio**
+
+    ```bash
+    vcpkg integrate install
+    ```
+
+6. **Generate the Visual Studio solution of Fluent Bit using CMake**
+
+    ```bash
+    cd build
+    cmake -G "Visual Studio 17 2022" -DFLB_TESTS_INTERNAL=Off -DFLB_TESTS_RUNTIME=Off -DCMAKE_TOOLCHAIN_FILE="C:/Program Files/Microsoft Visual Studio/2022/Community/VC/vcpkg/scripts/buildsystems/vcpkg.cmake" -DOPENSSL_ROOT_DIR=C:/path/to/your/vcpkg_installed/x64-windows-static -DFLB_LIBYAML_DIR=C:/path/to/your/vcpkg_installed/x64-windows-static ..
+    ```
+
+    **Notes**:
+    - Replace `C:/path/to/your/vcpkg_installed/x64-windows-static` with the actual path where `vcpkg` installed OpenSSL and LibYAML.
+    - When installing with `vcpkg`, you can also specify a different install root using `--x-install-root`.
+    - This will generate a Visual Studio solution file, which you can open and compile.
+
+7. **Run the binary build**
+
+    ```bash
+    cmake --build . --parallel 4 --clean-first
+    ```
+
+    **Notes**:
+    - You can choose to omit the `--parallel` option.
+    - The `--clean-first` option will clear cache and start a fresh clean build.
 
 ### Valgrind
 
