@@ -672,6 +672,15 @@ cleanup:
     return result;
 }
 
+const char *flb_tls_session_get_alpn(struct flb_tls_session *session)
+{
+    if (session->ptr != NULL) {
+        return session->tls->api->session_alpn_get(session);
+    }
+
+    return NULL;
+}
+
 int flb_tls_session_destroy(struct flb_tls_session *session)
 {
     int ret;

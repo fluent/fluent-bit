@@ -27,6 +27,8 @@
 #include <fluent-bit/flb_coro.h>
 #include <stddef.h>
 
+#define FLB_TLS_ALPN_MAX_LENGTH 16
+
 #define FLB_TLS_CLIENT   "Fluent Bit"
 
 /* TLS backend return status on read/write */
@@ -78,6 +80,7 @@ struct flb_tls_backend {
     /* Session management */
     void *(*session_create) (struct flb_tls *, int);
     int (*session_destroy) (void *);
+    const char *(*session_alpn_get) (void *);
 
     /* I/O */
     int (*net_read) (struct flb_tls_session *, void *, size_t);
@@ -125,18 +128,20 @@ int flb_tls_session_create(struct flb_tls *tls,
                            struct flb_connection *connection,
                            struct flb_coro *co);
 
-int flb_tls_net_read(struct flb_tls_session *session, 
-                     void *buf, 
+const char *flb_tls_session_get_alpn(struct flb_tls_session *session);
+
+int flb_tls_net_read(struct flb_tls_session *session,
+                     void *buf,
                      size_t len);
 
-int flb_tls_net_read_async(struct flb_coro *th, 
+int flb_tls_net_read_async(struct flb_coro *th,
                            struct flb_tls_session *session,
                            void *buf, size_t len);
 
 int flb_tls_net_write(struct flb_tls_session *session,
                       const void *data, size_t len, size_t *out_len);
 
-int flb_tls_net_write_async(struct flb_coro *th, 
+int flb_tls_net_write_async(struct flb_coro *th,
                             struct flb_tls_session *session,
                             const void *data, size_t len, size_t *out_len);
 
