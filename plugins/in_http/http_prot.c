@@ -1016,7 +1016,7 @@ int http_prot_handle_ng(struct flb_http_request *request,
 
     /* ToDo: Fix me */
     /* HTTP/1.1 needs Host header */
-    if (request->protocol_version == HTTP_PROTOCOL_HTTP1 &&
+    if (request->protocol_version == HTTP_PROTOCOL_VERSION_11 &&
         request->host == NULL) {
         flb_sds_destroy(tag);
 
