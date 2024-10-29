@@ -907,11 +907,21 @@ int flb_config_load_config_format(struct flb_config *config, struct flb_cf *cf)
         /* Extra sanity checks */
         if (strcasecmp(s->name, "parser") == 0 ||
             strcasecmp(s->name, "multiline_parser") == 0) {
-            fprintf(stderr,
-                    "Sections 'multiline_parser' and 'parser' are not valid in "
-                    "the main configuration file. It belongs to \n"
-                    "the 'parsers_file' configuration files.\n");
-            return -1;
+
+            /*
+             * Classic mode configuration don't allow parser or multiline_parser
+             * to be defined in the main configuration file.
+             */
+            if (cf->format == FLB_CF_CLASSIC) {
+                fprintf(stderr,
+                        "Sections 'multiline_parser' and 'parser' are not valid in "
+                        "the main configuration file. It belongs to \n"
+                        "the 'parsers_file' configuration files.\n");
+                return -1;
+            }
+            else {
+                /* Yaml allow parsers definitions in any Yaml file, all good */
+            }
         }
     }
 
@@ -923,6 +933,21 @@ int flb_config_load_config_format(struct flb_config *config, struct flb_cf *cf)
             ckv = cfl_list_entry(chead, struct cfl_kvpair, _head);
             flb_config_set_property(config, ckv->key, ckv->val->data.as_string);
         }
+    }
+
+    ret = flb_parser_load_parser_definitions("", cf, config);
+    if (ret == -1) {
+        return -1;
+    }
+
+    ret = flb_parser_load_multiline_parser_definitions("", cf, config);
+    if (ret == -1) {
+        return -1;
+    }
+
+    ret = flb_plugin_load_config_format(cf, config);
+    if (ret == -1) {
+        return -1;
     }
 
     ret = configure_plugins_type(config, cf, FLB_CF_CUSTOM);

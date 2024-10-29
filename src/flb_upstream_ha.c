@@ -363,10 +363,13 @@ struct flb_upstream_ha *flb_upstream_ha_from_file(const char *file,
     char path[PATH_MAX + 1];
     struct stat st;
     struct mk_list *head;
+    struct mk_list *g_head;
     struct flb_upstream_ha *ups;
     struct flb_upstream_node *node;
     struct flb_cf *cf = NULL;
     struct flb_cf_section *section;
+    struct flb_cf_group *group;
+    struct flb_cf_section *node_section;
 
 #ifndef FLB_HAVE_STATIC_CONF
     ret = stat(file, &st);
@@ -394,50 +397,110 @@ struct flb_upstream_ha *flb_upstream_ha_from_file(const char *file,
         return NULL;
     }
 
-    /* 'upstream' sections are under enum section_type FLB_CF_OTHER */
-    section = flb_cf_section_get_by_name(cf, "upstream");
-    if (!section) {
-        flb_error("[upstream_ha] section name 'upstream' could not be found");
-        flb_cf_destroy(cf);
-        return NULL;
-    }
-
-    /* upstream name */
-    tmp = flb_cf_section_property_get_string(cf, section, "name");
-    if (!tmp) {
-        flb_error("[upstream_ha] missing name for upstream at %s", cfg);
-        flb_cf_destroy(cf);
-        return NULL;
-    }
-
-    ups = flb_upstream_ha_create(tmp);
-    flb_sds_destroy(tmp);
-    if (!ups) {
-        flb_error("[upstream_ha] cannot create context");
-        flb_cf_destroy(cf);
-        return NULL;
-    }
-
-    /* 'node' sections */
-    mk_list_foreach(head, &cf->sections) {
-        section = mk_list_entry(head, struct flb_cf_section, _head);
-        if (strcasecmp(section->name, "node") != 0) {
-            continue;
-        }
-
-        /* Read section info and create a Node context */
-        node = create_node(c, cf, section, config);
-        if (!node) {
-            flb_error("[upstream_ha] cannot register node on upstream '%s'",
-                      tmp);
-            flb_upstream_ha_destroy(ups);
+    if (cf->format == FLB_CF_FLUENTBIT) {
+        /* 'upstream' sections are under enum section_type FLB_CF_OTHER */
+        section = flb_cf_section_get_by_name(cf, "upstream");
+        if (!section) {
+            flb_error("[upstream_ha] section name 'upstream' could not be found");
             flb_cf_destroy(cf);
             return NULL;
         }
 
-        flb_upstream_ha_node_add(ups, node);
-        c++;
+        /* upstream name */
+        tmp = flb_cf_section_property_get_string(cf, section, "name");
+        if (!tmp) {
+            flb_error("[upstream_ha] missing name for upstream at %s", cfg);
+            flb_cf_destroy(cf);
+            return NULL;
+        }
+
+        ups = flb_upstream_ha_create(tmp);
+        flb_sds_destroy(tmp);
+        if (!ups) {
+            flb_error("[upstream_ha] cannot create context");
+            flb_cf_destroy(cf);
+            return NULL;
+        }
+
+        /* 'node' sections */
+        mk_list_foreach(head, &cf->sections) {
+            section = mk_list_entry(head, struct flb_cf_section, _head);
+            if (strcasecmp(section->name, "node") != 0) {
+                continue;
+            }
+
+            /* Read section info and create a Node context */
+            node = create_node(c, cf, section, config);
+            if (!node) {
+                flb_error("[upstream_ha] cannot register node on upstream '%s'",
+                        tmp);
+                flb_upstream_ha_destroy(ups);
+                flb_cf_destroy(cf);
+                return NULL;
+            }
+
+            flb_upstream_ha_node_add(ups, node);
+            c++;
+        }
     }
+#ifdef FLB_HAVE_LIBYAML
+    else if (cf->format == FLB_CF_YAML) {
+        mk_list_foreach(head, &cf->upstream_servers) {
+            section = mk_list_entry(head, struct flb_cf_section, _head_section);
+
+            /* upstream name */
+            tmp = flb_cf_section_property_get_string(cf, section, "name");
+            if (!tmp) {
+                flb_error("[upstream_ha] missing name for upstream at %s", cfg);
+                flb_cf_destroy(cf);
+                return NULL;
+            }
+
+            ups = flb_upstream_ha_create(tmp);
+            flb_sds_destroy(tmp);
+            if (!ups) {
+                flb_error("[upstream_ha] cannot create context");
+                flb_cf_destroy(cf);
+                return NULL;
+            }
+
+            /* iterate nodes (groups) */
+            mk_list_foreach(g_head, &section->groups) {
+                group = mk_list_entry(g_head, struct flb_cf_group, _head);
+
+                /*
+                 * create temporary node section: the node creation function needs a section,
+                 * which is not the same as the group but similar: we just map the name and
+                 * properties.
+                 */
+                node_section = flb_calloc(1, sizeof(struct flb_cf_section));
+                if (!node_section) {
+                    flb_errno();
+                    flb_upstream_ha_destroy(ups);
+                    flb_cf_destroy(cf);
+                    return NULL;
+                }
+                node_section->name = group->name;
+                node_section->properties = group->properties;
+
+                /* Read section info and create a Node context */
+                node = create_node(c, cf, node_section, config);
+                if (!node) {
+                    flb_error("[upstream_ha] cannot register node on upstream '%s'",
+                            tmp);
+                    flb_upstream_ha_destroy(ups);
+                    flb_cf_destroy(cf);
+                    flb_free(node_section);
+                    return NULL;
+                }
+                flb_free(node_section);
+
+                flb_upstream_ha_node_add(ups, node);
+                c++;
+            }
+        }
+    }
+#endif
 
     if (c == 0) {
         flb_error("[upstream_ha] no nodes defined");

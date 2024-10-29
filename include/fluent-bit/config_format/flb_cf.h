@@ -55,7 +55,10 @@ enum cf_file_format {
 enum section_type {
     FLB_CF_SERVICE = 0,           /* [SERVICE]           */
     FLB_CF_PARSER,                /* [PARSER]            */
-    FLB_CF_MULTILINE_PARSER,      /* [MULTILINE_PARSER]  */
+    FLB_CF_MULTILINE_PARSER,      /* multiline_parser    */
+    FLB_CF_STREAM_PROCESSOR,      /* stream_processor    */
+    FLB_CF_PLUGINS,               /* plugins             */
+    FLB_CF_UPSTREAM_SERVERS,      /* upstream_servers    */
     FLB_CF_CUSTOM,                /* [CUSTOM]            */
     FLB_CF_INPUT,                 /* [INPUT]             */
     FLB_CF_FILTER,                /* [FILTER]            */
@@ -97,7 +100,16 @@ struct flb_cf {
     struct mk_list parsers;
     struct mk_list multiline_parsers;
 
-    /* custom plugins */
+    /* stream processor: every entry is added as a task */
+    struct mk_list stream_processors;
+
+    /* external plugins (.so) */
+    struct mk_list plugins;
+
+    /* upstream servers */
+    struct mk_list upstream_servers;
+
+    /* 'custom' type plugins */
     struct mk_list customs;
 
     /* pipeline */

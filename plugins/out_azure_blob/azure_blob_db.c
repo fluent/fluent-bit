@@ -251,6 +251,10 @@ struct flb_sqldb *azb_db_open(struct flb_azure_blob *ctx, char *db_path)
 
 int azb_db_close(struct flb_azure_blob *ctx)
 {
+    if (ctx->db == NULL) {
+        return 0;
+    }
+
     /* finalize prepared statements */
     sqlite3_finalize(ctx->stmt_insert_file);
     sqlite3_finalize(ctx->stmt_delete_file);
@@ -272,6 +276,7 @@ int azb_db_close(struct flb_azure_blob *ctx)
     sqlite3_finalize(ctx->stmt_get_oldest_file_with_parts);
 
     pthread_mutex_destroy(&ctx->db_lock);
+
     return flb_sqldb_close(ctx->db);
 }
 
@@ -751,7 +756,7 @@ int azb_db_file_part_get_next(struct flb_azure_blob *ctx,
         *part_delivery_attempts = sqlite3_column_int64(ctx->stmt_get_next_file_part, 5);
         tmp = (char *) sqlite3_column_text(ctx->stmt_get_next_file_part, 6);
         *file_delivery_attempts = sqlite3_column_int64(ctx->stmt_get_next_file_part, 7);
-        tmp_destination = (char *) sqlite3_column_text(ctx->stmt_get_next_file_part, 8);
+        tmp_destination = (char *) sqlite3_column_text(ctx->stmt_get_next_file_part, 9);
     }
     else if (ret == SQLITE_DONE) {
         /* no records */

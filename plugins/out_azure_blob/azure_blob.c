@@ -649,6 +649,12 @@ static int process_blob_chunk(struct flb_azure_blob *ctx, struct flb_event_chunk
     struct flb_log_event_decoder log_decoder;
     struct flb_log_event         log_event;
 
+    if (ctx->db == NULL) {
+        flb_plg_error(ctx->ins, "Cannot process blob because this operation requires a database.");
+
+        return -1;
+    }
+
     ret = flb_log_event_decoder_init(&log_decoder,
                                     (char *) event_chunk->data,
                                      event_chunk->size);
@@ -668,7 +674,8 @@ static int process_blob_chunk(struct flb_azure_blob *ctx, struct flb_event_chunk
             continue;
         }
 
-        ret = azb_db_file_insert(ctx, source, ctx->endpoint, file_path, file_size);
+        ret = azb_db_file_insert(ctx, source, ctx->real_endpoint, file_path, file_size);
+
         if (ret == -1) {
             flb_plg_error(ctx->ins, "cannot insert blob file into database: %s (size=%lu)",
                           file_path, file_size);
@@ -720,6 +727,10 @@ static void cb_azb_blob_file_upload(struct flb_config *config, void *out_context
 
     if (info->active_upload) {
         flb_plg_trace(ctx->ins, "[worker: file upload] upload already in progress...");
+        flb_sched_timer_cb_coro_return();
+    }
+
+    if (ctx->db == NULL) {
         flb_sched_timer_cb_coro_return();
     }
 
@@ -893,10 +904,13 @@ static void cb_azb_blob_file_upload(struct flb_config *config, void *out_context
         /* just continue, the row info was retrieved */
     }
 
-    if (strcmp(file_destination, ctx->endpoint) != 0) {
+
+    if (strcmp(file_destination, ctx->real_endpoint) != 0) {
         flb_plg_info(ctx->ins,
-                     "endpoint change detected, restarting file : %s",
-                     file_path);
+                     "endpoint change detected, restarting file : %s\n%s\n%s",
+                     file_path,
+                     file_destination,
+                     ctx->real_endpoint);
 
         info->active_upload = FLB_FALSE;
 

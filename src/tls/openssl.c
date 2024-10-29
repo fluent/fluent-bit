@@ -241,18 +241,28 @@ static int windows_load_system_certificates(struct tls_context *ctx)
 {
     int ret;
     HANDLE win_store;
+    unsigned long err;
     PCCERT_CONTEXT win_cert = NULL;
     const unsigned char *win_cert_data;
     X509_STORE *ossl_store = SSL_CTX_get_cert_store(ctx->ctx);
     X509 *ossl_cert;
 
-    win_store = CertOpenSystemStoreA(0, "Root");
-    if (win_store == NULL) {
-        flb_error("[tls] Cannot open cert store: %i", GetLastError());
+    /* Check if OpenSSL certificate store is available */
+    if (!ossl_store) {
+        flb_error("[tls] failed to retrieve openssl certificate store.");
         return -1;
     }
 
-    while (win_cert = CertEnumCertificatesInStore(win_store, win_cert)) {
+    /* Open the Windows system certificate store */
+    win_store = CertOpenSystemStoreA(0, "Root");
+    if (win_store == NULL) {
+        flb_error("[tls] cannot open windows certificate store: %lu", GetLastError());
+        return -1;
+    }
+
+    /* Iterate over certificates in the store */
+    while ((win_cert = CertEnumCertificatesInStore(win_store, win_cert)) != NULL) {
+        /* Check if the certificate is encoded in ASN.1 DER format */
         if (win_cert->dwCertEncodingType & X509_ASN_ENCODING) {
             /*
              * Decode the certificate into X509 struct.
@@ -262,25 +272,42 @@ static int windows_load_system_certificates(struct tls_context *ctx)
              */
             win_cert_data = win_cert->pbCertEncoded;
             ossl_cert = d2i_X509(NULL, &win_cert_data, win_cert->cbCertEncoded);
+
             if (!ossl_cert) {
-                flb_debug("[tls] Cannot parse a certificate. skipping...");
+                flb_debug("[tls] cannot parse a certificate, error code: %lu, skipping...", ERR_get_error());
                 continue;
             }
 
             /* Add X509 struct to the openssl cert store */
             ret = X509_STORE_add_cert(ossl_store, ossl_cert);
             if (!ret) {
-                flb_warn("[tls] Failed to add a certificate to the store: %lu: %s",
-                         ERR_get_error(), ERR_error_string(ERR_get_error(), NULL));
+                err = ERR_get_error();
+                if (err == X509_R_CERT_ALREADY_IN_HASH_TABLE) {
+                    flb_debug("[tls] certificate already exists in the store, skipping.");
+                }
+                else {
+                    flb_warn("[tls] failed to add certificate to openssl store. error code: %lu - %s",
+                             err, ERR_error_string(err, NULL));
+                }
             }
             X509_free(ossl_cert);
         }
     }
 
-    if (!CertCloseStore(win_store, 0)) {
-        flb_error("[tls] Cannot close cert store: %i", GetLastError());
+    /* Check for errors during enumeration */
+    if (GetLastError() != CRYPT_E_NOT_FOUND) {
+        flb_error("[tls] error occurred while enumerating certificates: %lu", GetLastError());
+        CertCloseStore(win_store, 0);
         return -1;
     }
+
+    /* Close the Windows system certificate store */
+    if (!CertCloseStore(win_store, 0)) {
+        flb_error("[tls] cannot close windows certificate store: %lu", GetLastError());
+        return -1;
+    }
+
+    flb_debug("[tls] successfully loaded certificates from windows system store.");
     return 0;
 }
 #endif
@@ -684,6 +711,7 @@ static int tls_net_handshake(struct flb_tls *tls,
     char err_buf[256];
     struct tls_session *session = ptr_session;
     struct tls_context *ctx;
+    const char *x509_err;
 
     ctx = session->parent;
     pthread_mutex_lock(&ctx->mutex);
@@ -743,8 +771,9 @@ static int tls_net_handshake(struct flb_tls *tls,
             if (ret == 0) {
                 ssl_code = SSL_get_verify_result(session->ssl);
                 if (ssl_code != X509_V_OK) {
-                    flb_error("[tls] error: unexpected EOF with reason: %s",
-                              ERR_reason_error_string(ERR_get_error()));
+                    /* Refer to: https://x509errors.org/ */
+                    x509_err = X509_verify_cert_error_string(ssl_code);
+                    flb_error("[tls] certificate verification failed, reason: %s (X509 code: %ld)", x509_err, ssl_code);
                 }
                 else {
                     flb_error("[tls] error: unexpected EOF");
