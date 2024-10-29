@@ -184,10 +184,9 @@ static int config_add_labels(struct flb_output_instance *ins,
 */
 
 static int check_proxy(struct flb_output_instance *ins,
-                      struct opentelemetry_context *ctx,
-                      char *host, char *port,
-                      char *protocol, char *uri)
-{
+                       struct opentelemetry_context *ctx,
+                       char *host, char *port,
+                       char *protocol, char *uri){
 
     int ret;
     const char *tmp = NULL;
@@ -215,8 +214,7 @@ static int check_proxy(struct flb_output_instance *ins,
     return 0;
 }
 
-static char *sanitize_uri(char *uri)
-{
+static char *sanitize_uri(char *uri){
     char *new_uri;
     int   uri_len;
 
@@ -254,6 +252,8 @@ struct opentelemetry_context *flb_opentelemetry_context_create(struct flb_output
     struct flb_upstream *upstream;
     struct opentelemetry_context *ctx = NULL;
     const char *tmp = NULL;
+    uint64_t http_client_flags;
+    int http_protocol_version;
 
     /* Allocate plugin context */
     ctx = flb_calloc(1, sizeof(struct opentelemetry_context));
@@ -540,6 +540,41 @@ struct opentelemetry_context *flb_opentelemetry_context_create(struct flb_output
         flb_plg_error(ins, "failed to create record accessor for otlp trace flags");
     }
 
+    http_client_flags = FLB_HTTP_CLIENT_FLAG_AUTO_DEFLATE |
+                        FLB_HTTP_CLIENT_FLAG_AUTO_INFLATE;
+
+    if (ctx->u->base.net.keepalive) {
+        http_client_flags |= FLB_HTTP_CLIENT_FLAG_KEEPALIVE;
+    }
+
+    ctx->enable_http2_flag = FLB_TRUE;
+
+    if (strcasecmp(ctx->enable_http2, "force") == 0) {
+        http_protocol_version = HTTP_PROTOCOL_VERSION_20;
+    }
+    else if (flb_utils_bool(ctx->enable_http2)) {
+        http_protocol_version = HTTP_PROTOCOL_VERSION_AUTODETECT;
+    }
+    else {
+        http_protocol_version = HTTP_PROTOCOL_VERSION_11;
+
+        ctx->enable_http2_flag = FLB_FALSE;
+    }
+
+    ret = flb_http_client_ng_init(&ctx->http_client,
+                                  NULL,
+                                  ctx->u,
+                                  http_protocol_version,
+                                  http_client_flags);
+
+    if (ret != 0) {
+        flb_plg_debug(ctx->ins, "http client creation error");
+
+        flb_opentelemetry_context_destroy(ctx);
+
+        ctx = NULL;
+    }
+
     return ctx;
 }
 
@@ -548,6 +583,8 @@ void flb_opentelemetry_context_destroy(struct opentelemetry_context *ctx)
     if (!ctx) {
         return;
     }
+
+    flb_http_client_ng_destroy(&ctx->http_client);
 
     flb_kv_release(&ctx->kv_labels);
 

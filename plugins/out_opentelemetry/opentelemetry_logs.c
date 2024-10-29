@@ -770,10 +770,11 @@ static int logs_flush_to_otel(struct opentelemetry_context *ctx, struct flb_even
     opentelemetry__proto__collector__logs__v1__export_logs_service_request__pack(export_logs, body);
 
     /* send post request to opentelemetry with content type application/x-protobuf */
-    ret = opentelemetry_http_post(ctx, body, len,
-                                  event_chunk->tag,
-                                  flb_sds_len(event_chunk->tag),
-                                  ctx->logs_uri_sanitized);
+    ret = opentelemetry_post(ctx, body, len,
+                             event_chunk->tag,
+                             flb_sds_len(event_chunk->tag),
+                             ctx->logs_uri_sanitized,
+                             ctx->grpc_logs_uri);
     flb_free(body);
 
     return ret;
