@@ -1090,7 +1090,6 @@ static int process_payload_ng(struct flb_http_request *request,
         return -1;
     }
 
-    printf("Processing payload 2 : %s\n", request->body);
     parse_payload_ndjson(context, tag, request->body, cfl_sds_len(request->body), bulk_statuses);
 
     return 0;
@@ -1117,7 +1116,7 @@ int in_elasticsearch_bulk_prot_handle_ng(struct flb_http_request *request,
     }
 
     /* HTTP/1.1 needs Host header */
-    if (request->protocol_version == HTTP_PROTOCOL_HTTP1 &&
+    if (request->protocol_version == HTTP_PROTOCOL_VERSION_11 &&
         request->host == NULL) {
 
         return -1;
