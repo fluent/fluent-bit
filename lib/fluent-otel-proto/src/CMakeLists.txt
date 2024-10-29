@@ -36,7 +36,6 @@ endif()
 
 if (FLUENT_PROTO_PROFILES)
 	set(src ${src} ${OTEL_C_FILES}/proto/profiles/v1development/profiles.pb-c.c)
-	set(src ${src} ${OTEL_C_FILES}/proto/profiles/v1development/pprofextended.pb-c.c)
 endif()
 
 add_library(fluent-otel-proto STATIC ${src})
