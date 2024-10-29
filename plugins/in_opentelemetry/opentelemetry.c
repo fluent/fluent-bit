@@ -92,7 +92,7 @@ static int in_opentelemetry_init(struct flb_input_instance *ins,
 
     if (ctx->enable_http2) {
         ret = flb_http_server_init(&ctx->http_server,
-                                    HTTP_PROTOCOL_AUTODETECT,
+                                    HTTP_PROTOCOL_VERSION_AUTODETECT,
                                     (FLB_HTTP_SERVER_FLAG_KEEPALIVE | FLB_HTTP_SERVER_FLAG_AUTO_INFLATE),
                                     NULL,
                                     ins->host.listen,
