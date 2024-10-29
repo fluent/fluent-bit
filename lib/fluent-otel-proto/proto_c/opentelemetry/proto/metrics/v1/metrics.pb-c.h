@@ -453,6 +453,9 @@ struct  Opentelemetry__Proto__Metrics__V1__ExponentialHistogram
  * data type. These data points cannot always be merged in a meaningful way.
  * While they can be useful in some applications, histogram data points are
  * recommended for new applications.
+ * Summary metrics do not have an aggregation temporality field. This is
+ * because the count and sum fields of a SummaryDataPoint are assumed to be
+ * cumulative values.
  */
 struct  Opentelemetry__Proto__Metrics__V1__Summary
 {
@@ -846,7 +849,8 @@ struct  Opentelemetry__Proto__Metrics__V1__SummaryDataPoint__ValueAtQuantile
 
 /*
  * SummaryDataPoint is a single data point in a timeseries that describes the
- * time-varying values of a Summary metric.
+ * time-varying values of a Summary metric. The count and sum fields represent
+ * cumulative values.
  */
 struct  Opentelemetry__Proto__Metrics__V1__SummaryDataPoint
 {
