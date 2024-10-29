@@ -52,10 +52,10 @@ struct tls_context {
 struct tls_session {
     SSL *ssl;
     int fd;
+    char alpn[FLB_TLS_ALPN_MAX_LENGTH];
     int continuation_flag;
     struct tls_context *parent;    /* parent struct tls_context ref */
 };
-
 
 static int tls_init(void)
 {
@@ -152,8 +152,8 @@ int tls_context_alpn_set(void *ctx_backend, const char *alpn)
     result = 0;
 
     if (alpn != NULL) {
-        wire_format_alpn = flb_calloc(strlen(alpn),
-                                      sizeof(char) + 1);
+        wire_format_alpn = flb_calloc(strlen(alpn) + 3,
+                                      sizeof(char));
 
         if (wire_format_alpn == NULL) {
             return -1;
@@ -373,6 +373,11 @@ static void *tls_context_create(int verify,
                                    tls_context_server_alpn_select_callback,
                                    ctx);
     }
+    else {
+        SSL_CTX_set_next_proto_select_cb(ssl_ctx,
+                                         tls_context_server_alpn_select_callback,
+                                         ctx);
+    }
 
     /* Verify peer: by default OpenSSL always verify peer */
     if (verify == FLB_FALSE) {
@@ -514,6 +519,37 @@ static int tls_session_destroy(void *session)
     return 0;
 }
 
+static const char *tls_session_alpn_get(void *session_)
+{
+    const unsigned char    *backend_alpn_buffer;
+    unsigned int            backend_alpn_length;
+    struct tls_session     *backend_session;
+    struct flb_tls_session *session;
+
+    session = (struct flb_tls_session *) session_;
+    backend_session = (struct tls_session *) session->ptr;
+
+    if (backend_session->alpn[0] == '\0') {
+        backend_alpn_buffer = NULL;
+
+        SSL_get0_alpn_selected(backend_session->ssl,
+                               &backend_alpn_buffer,
+                               &backend_alpn_length);
+
+        if (backend_alpn_buffer != NULL) {
+            if (backend_alpn_length >= FLB_TLS_ALPN_MAX_LENGTH) {
+                backend_alpn_length = FLB_TLS_ALPN_MAX_LENGTH - 1;
+            }
+
+            strncpy(backend_session->alpn,
+                    (char *) backend_alpn_buffer,
+                    backend_alpn_length);
+        }
+    }
+
+    return backend_session->alpn;
+}
+
 static int tls_net_read(struct flb_tls_session *session,
                         void *buf, size_t len)
 {
@@ -644,6 +680,7 @@ static int tls_net_write(struct flb_tls_session *session,
                 ERR_error_string_n(err_code, err_buf, sizeof(err_buf) - 1);
                 flb_error("[tls] error: %s", err_buf);
             }
+
             ret = -1;
         }
     }
@@ -691,6 +728,18 @@ static int tls_net_handshake(struct flb_tls *tls,
     if (!session->continuation_flag) {
         if (tls->mode == FLB_TLS_CLIENT_MODE) {
             SSL_set_connect_state(session->ssl);
+
+            if (ctx->alpn != NULL) {
+                ret = SSL_set_alpn_protos(session->ssl,
+                                          (const unsigned char *) &ctx->alpn[1],
+                                          (unsigned int) ctx->alpn[0]);
+
+                if (ret != 0) {
+                    flb_error("[tls] error: alpn setup failed : %d", ret);
+                    pthread_mutex_unlock(&ctx->mutex);
+                    return -1;
+                }
+            }
         }
         else if (tls->mode == FLB_TLS_SERVER_MODE) {
             SSL_set_accept_state(session->ssl);
@@ -738,8 +787,10 @@ static int tls_net_handshake(struct flb_tls *tls,
         if (ret != SSL_ERROR_WANT_READ &&
             ret != SSL_ERROR_WANT_WRITE) {
             ret = SSL_get_error(session->ssl, ret);
-            // The SSL_ERROR_SYSCALL with errno value of 0 indicates unexpected
-            //  EOF from the peer. This is fixed in OpenSSL 3.0.
+            /* The SSL_ERROR_SYSCALL with errno value of 0 indicates unexpected
+             *  EOF from the peer. This is fixed in OpenSSL 3.0.
+             */
+
             if (ret == 0) {
                 ssl_code = SSL_get_verify_result(session->ssl);
                 if (ssl_code != X509_V_OK) {
@@ -788,6 +839,7 @@ static struct flb_tls_backend tls_openssl = {
     .context_create       = tls_context_create,
     .context_destroy      = tls_context_destroy,
     .context_alpn_set     = tls_context_alpn_set,
+    .session_alpn_get     = tls_session_alpn_get,
     .session_create       = tls_session_create,
     .session_destroy      = tls_session_destroy,
     .net_read             = tls_net_read,
