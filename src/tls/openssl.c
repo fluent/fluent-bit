@@ -684,6 +684,7 @@ static int tls_net_handshake(struct flb_tls *tls,
     char err_buf[256];
     struct tls_session *session = ptr_session;
     struct tls_context *ctx;
+    const char *x509_err;
 
     ctx = session->parent;
     pthread_mutex_lock(&ctx->mutex);
@@ -743,8 +744,9 @@ static int tls_net_handshake(struct flb_tls *tls,
             if (ret == 0) {
                 ssl_code = SSL_get_verify_result(session->ssl);
                 if (ssl_code != X509_V_OK) {
-                    flb_error("[tls] error: unexpected EOF with reason: %s",
-                              ERR_reason_error_string(ERR_get_error()));
+                    /* Refer to: https://x509errors.org/ */
+                    x509_err = X509_verify_cert_error_string(ssl_code);
+                    flb_error("[tls] certificate verification failed, reason: %s (X509 code: %ld)", x509_err, ssl_code);
                 }
                 else {
                     flb_error("[tls] error: unexpected EOF");
