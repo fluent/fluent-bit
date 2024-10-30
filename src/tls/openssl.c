@@ -204,7 +204,7 @@ int tls_context_alpn_set(void *ctx_backend, const char *alpn)
 }
 
 static int tls_context_server_alpn_select_callback(SSL *ssl,
-                                                   const unsigned char **out,
+                                                   unsigned char **out,
                                                    unsigned char *outlen,
                                                    const unsigned char *in,
                                                    unsigned int inlen,
@@ -218,7 +218,7 @@ static int tls_context_server_alpn_select_callback(SSL *ssl,
     result = SSL_TLSEXT_ERR_NOACK;
 
     if (ctx->alpn != NULL) {
-        result = SSL_select_next_proto((unsigned char **) out,
+        result = SSL_select_next_proto(out,
                                        outlen,
                                        (const unsigned char *) &ctx->alpn[1],
                                        (unsigned int) ctx->alpn[0],
@@ -369,14 +369,18 @@ static void *tls_context_create(int verify,
     pthread_mutex_init(&ctx->mutex, NULL);
 
     if (mode == FLB_TLS_SERVER_MODE) {
-        SSL_CTX_set_alpn_select_cb(ssl_ctx,
-                                   tls_context_server_alpn_select_callback,
-                                   ctx);
+        SSL_CTX_set_alpn_select_cb(
+            ssl_ctx,
+            (SSL_CTX_alpn_select_cb_func)
+                tls_context_server_alpn_select_callback,
+            ctx);
     }
     else {
-        SSL_CTX_set_next_proto_select_cb(ssl_ctx,
-                                         tls_context_server_alpn_select_callback,
-                                         ctx);
+        SSL_CTX_set_next_proto_select_cb(
+            ssl_ctx,
+            (SSL_CTX_npn_select_cb_func)
+                tls_context_server_alpn_select_callback,
+            ctx);
     }
 
     /* Verify peer: by default OpenSSL always verify peer */
