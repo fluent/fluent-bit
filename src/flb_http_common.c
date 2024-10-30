@@ -242,15 +242,15 @@ int flb_http_request_set_header(struct flb_http_request *request,
     char  *lowercase_name;
     int    result;
 
+    if (name_length == 0) {
+        name_length = strlen(name);
+    }
+
     lowercase_name = flb_http_server_convert_string_to_lowercase(
                         name, name_length);
 
     if (lowercase_name == NULL) {
         return -1;
-    }
-
-    if (name_length == 0) {
-        name_length = strlen(name);
     }
 
     if (value_length == 0) {
@@ -949,15 +949,15 @@ int flb_http_response_set_header(struct flb_http_response *response,
     int   version;
     int   result;
 
+    if (name_length == 0) {
+        name_length = strlen(name);
+    }
+
     lowercase_name = flb_http_server_convert_string_to_lowercase(
                         name, name_length);
 
     if (lowercase_name == NULL) {
         return -1;
-    }
-
-    if (name_length == 0) {
-        name_length = strlen(name);
     }
 
     if (value_length == 0) {
