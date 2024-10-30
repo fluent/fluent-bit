@@ -451,7 +451,8 @@ int flb_http_server_session_init(struct flb_http_server_session *session, int ve
             return -3;
         }
     }
-    else if (session->version <= HTTP_PROTOCOL_VERSION_11) {
+    else if (session->version >  HTTP_PROTOCOL_VERSION_AUTODETECT &&
+             session->version <= HTTP_PROTOCOL_VERSION_11) {
         result = flb_http1_server_session_init(&session->http1, session);
 
         if (result != 0) {
