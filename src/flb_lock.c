@@ -1,4 +1,5 @@
 #include <fluent-bit/flb_macros.h>
+#include <fluent-bit/flb_compat.h>
 #include <fluent-bit/flb_lock.h>
 #include <errno.h>
 
