@@ -284,6 +284,7 @@ if(FLB_SYSTEM_MACOS)
     ${FLB_DEPS}
     "-framework Foundation"
     "-framework IOKit"
+    "-framework Security"
     )
 endif()
 

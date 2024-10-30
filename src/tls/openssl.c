@@ -27,6 +27,12 @@
 #include <openssl/opensslv.h>
 #include <openssl/x509v3.h>
 
+#ifdef FLB_SYSTEM_MACOS
+#include <Security/Security.h>
+#include <CoreFoundation/CoreFoundation.h>
+#include <unistd.h>
+#endif
+
 #ifdef FLB_SYSTEM_WINDOWS
     #define strtok_r(str, delimiter, context) \
             strtok_s(str, delimiter, context)
@@ -312,6 +318,102 @@ static int windows_load_system_certificates(struct tls_context *ctx)
 }
 #endif
 
+#ifdef FLB_SYSTEM_MACOS
+/* macOS-specific system certificate loading */
+static int macos_load_system_certificates(struct tls_context *ctx)
+{
+    X509_STORE *store = NULL;
+    X509 *x509 = NULL;
+    SecCertificateRef cert = NULL;
+    CFArrayRef certs = NULL;
+    CFDataRef certData = NULL;
+    CFIndex i = 0;
+    const unsigned char *data = NULL;
+    char *subject = NULL;
+    char *issuer = NULL;
+    OSStatus status;
+    unsigned long err;
+    int ret = -1;
+    unsigned long loaded_cert_count = 0;
+
+    /* Retrieve system certificates from macOS Keychain */
+    status = SecTrustSettingsCopyCertificates(kSecTrustSettingsDomainSystem, &certs);
+    if (status != errSecSuccess || !certs) {
+        flb_debug("[tls] failed to load system certificates from keychain, status: %d", status);
+        return -1;
+    }
+
+    flb_debug("[tls] attempting to load certificates from system keychain of macOS");
+
+    /* Get the SSL context's certificate store */
+    store = SSL_CTX_get_cert_store(ctx->ctx);
+    if (!store) {
+        flb_debug("[tls] failed to get certificate store from SSL context");
+        CFRelease(certs);
+        return -1;
+    }
+
+    /* Load each certificate into the X509 store */
+    for (i = 0; i < CFArrayGetCount(certs); i++) {
+        cert = (SecCertificateRef) CFArrayGetValueAtIndex(certs, i);
+        if (!cert) {
+            flb_debug("[tls] invalid certificate reference at index %ld, skipping", i);
+            continue;
+        }
+
+        certData = SecCertificateCopyData(cert);
+        if (!certData) {
+            flb_debug("[tls] failed to retrieve data for certificate %ld from keychain, skipping", i);
+            continue;
+        }
+
+        /* Convert certificate data to X509 */
+        data = CFDataGetBytePtr(certData);
+        x509 = d2i_X509(NULL, &data, CFDataGetLength(certData));
+        CFRelease(certData);
+
+        if (!x509) {
+            flb_debug("[tls] failed to parse certificate %ld from keychain, skipping", i);
+            continue;
+        }
+
+        subject = X509_NAME_oneline(X509_get_subject_name(x509), NULL, 0);
+        issuer = X509_NAME_oneline(X509_get_issuer_name(x509), NULL, 0);
+        if (subject && issuer) {
+            flb_debug("[tls] certificate %ld details - subject: %s, issuer: %s", i, subject, issuer);
+        }
+
+        /* Attempt to add certificate to trusted store */
+        ret = X509_STORE_add_cert(store, x509);
+        if (ret != 1) {
+            err = ERR_get_error();
+            if (ERR_GET_REASON(err) == X509_R_CERT_ALREADY_IN_HASH_TABLE) {
+                flb_debug("[tls] certificate %ld already exists in the trusted store (duplicate)", i);
+            } else {
+                flb_debug("[tls] failed to add certificate %ld to trusted store, error code: %lu", i, err);
+            }
+            X509_free(x509);
+            continue;
+        }
+
+        loaded_cert_count++;
+        flb_debug("[tls] successfully loaded and added certificate %ld to trusted store", i);
+
+        if (subject) {
+            OPENSSL_free(subject);
+        }
+        if (issuer) {
+            OPENSSL_free(issuer);
+        }
+        X509_free(x509);
+    }
+
+    CFRelease(certs);
+    flb_debug("[tls] finished loading keychain certificates, total loaded: %d", loaded_cert_count);
+    return 0;
+}
+#endif
+
 static int load_system_certificates(struct tls_context *ctx)
 {
     int ret;
@@ -320,7 +422,9 @@ static int load_system_certificates(struct tls_context *ctx)
     /* For Windows use specific API to read the certs store */
 #ifdef _MSC_VER
     return windows_load_system_certificates(ctx);
-#endif
+#elif defined(__APPLE__)
+    return macos_load_system_certificates(ctx);
+#else
     if (access(ca_file, R_OK) != 0) {
         ca_file = NULL;
     }
@@ -331,6 +435,7 @@ static int load_system_certificates(struct tls_context *ctx)
         ERR_print_errors_fp(stderr);
     }
     return 0;
+#endif
 }
 
 static void *tls_context_create(int verify,
