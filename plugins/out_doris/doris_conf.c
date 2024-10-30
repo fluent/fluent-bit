@@ -38,6 +38,8 @@ void *report(void *c) {
     size_t cur_time, cur_bytes, cur_rows, total_time, total_speed_mbps, total_speed_rps;
     size_t inc_bytes, inc_rows, inc_time, inc_speed_mbps, inc_speed_rps;
 
+    pthread_detach(pthread_self());
+
     flb_plg_info(ctx->ins, "Start progress reporter with interval %d", ctx->log_progress_interval);
     
     while (ctx->log_progress_interval > 0) {

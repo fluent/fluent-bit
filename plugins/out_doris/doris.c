@@ -225,6 +225,9 @@ static int http_put(struct flb_out_doris *ctx,
                     break;
                 }
             }
+        
+            flb_free(out_buf);
+            msgpack_unpacked_destroy(&result);
         }
         else {
             out_ret = FLB_RETRY;
