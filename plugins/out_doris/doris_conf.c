@@ -23,16 +23,60 @@
 #include <fluent-bit/flb_sds.h>
 #include <fluent-bit/flb_kv.h>
 #include <fluent-bit/flb_record_accessor.h>
+#include <fluent-bit/flb_pthread.h>
 #include "doris.h"
 #include "doris_conf.h"
+
+void *report(void *c) {
+    struct flb_out_doris *ctx = (struct flb_out_doris *) c;
+    
+    size_t init_time = cfl_time_now() / 1000000000L;
+    size_t last_time = init_time;
+    size_t last_bytes = ctx->reporter->total_bytes;
+    size_t last_rows = ctx->reporter->total_rows;
+
+    size_t cur_time, cur_bytes, cur_rows, total_time, total_speed_mbps, total_speed_rps;
+    size_t inc_bytes, inc_rows, inc_time, inc_speed_mbps, inc_speed_rps;
+
+    flb_plg_info(ctx->ins, "Start progress reporter with interval %d", ctx->log_progress_interval);
+    
+    while (ctx->log_progress_interval > 0) {
+        sleep(ctx->log_progress_interval);
+
+        cur_time = cfl_time_now() / 1000000000L;
+        cur_bytes =  ctx->reporter->total_bytes;
+        cur_rows =  ctx->reporter->total_rows;
+        total_time = cur_time - init_time;
+        total_speed_mbps = cur_bytes / 1024 / 1024 / total_time;
+        total_speed_rps = cur_rows / total_time;
+
+        inc_bytes = cur_bytes - last_bytes;
+		inc_rows = cur_rows - last_rows;
+		inc_time = cur_time - last_time;
+		inc_speed_mbps = inc_bytes / 1024 / 1024 / inc_time;
+		inc_speed_rps = inc_rows / inc_time;
+
+        flb_plg_info(ctx->ins, "total %zu MB %zu ROWS, total speed %zu MB/s %zu R/s, last %zu seconds speed %zu MB/s %zu R/s",
+			         cur_bytes/1024/1024, cur_rows, total_speed_mbps, total_speed_rps,
+			         inc_time, inc_speed_mbps, inc_speed_rps);
+        
+        last_time = cur_time;
+		last_bytes = cur_bytes;
+		last_rows = cur_rows;
+    }
+
+    return NULL;
+}
 
 struct flb_out_doris *flb_doris_conf_create(struct flb_output_instance *ins,
                                             struct flb_config *config)
 {
     int ret;
     int io_flags = 0;
+    const char *tmp;
     struct flb_upstream *upstream;
     struct flb_out_doris *ctx = NULL;
+    struct flb_doris_progress_reporter *reporter = NULL;
 
     /* Allocate plugin context */
     ctx = flb_calloc(1, sizeof(struct flb_out_doris));
@@ -92,12 +136,42 @@ struct flb_out_doris *flb_doris_conf_create(struct flb_output_instance *ins,
     /* url: /api/{database}/{table}/_stream_load */
     snprintf(ctx->uri, sizeof(ctx->uri) - 1, "/api/%s/%s/_stream_load", ctx->database, ctx->table);
 
+    /* Date key */
+    ctx->date_key = ctx->time_key;
+    tmp = flb_output_get_property("time_key", ins);
+    if (tmp) {
+        /* Just check if we have to disable it */
+        if (flb_utils_bool(tmp) == FLB_FALSE) {
+            ctx->date_key = NULL;
+        }
+    }
+
     ctx->u = upstream;
     ctx->host = ins->host.name;
     ctx->port = ins->host.port;
 
     /* Set instance flags into upstream */
     flb_output_upstream_set(ctx->u, ins);
+
+    /* create and start the progress reporter */
+    if (ctx->log_progress_interval > 0) {
+        reporter = flb_calloc(1, sizeof(struct flb_doris_progress_reporter));
+        if (!reporter) {
+            flb_plg_error(ins, "failed to create progress reporter");
+            flb_doris_conf_destroy(ctx);
+            return NULL;
+        }
+        reporter->total_bytes = 0;
+        reporter->total_rows = 0;
+        reporter->failed_rows = 0;
+        ctx->reporter = reporter;
+
+        if(pthread_create(&ctx->reporter_thread, NULL, report, (void *) ctx)) {
+            flb_plg_error(ins, "failed to create progress reporter");
+            flb_doris_conf_destroy(ctx);
+            return NULL;
+        }
+    }
 
     return ctx;
 }
@@ -110,6 +184,11 @@ void flb_doris_conf_destroy(struct flb_out_doris *ctx)
 
     if (ctx->u) {
         flb_upstream_destroy(ctx->u);
+    }
+
+    if (ctx->reporter) {
+        pthread_cancel(ctx->reporter_thread);
+        flb_free(ctx->reporter);
     }
 
     flb_free(ctx);

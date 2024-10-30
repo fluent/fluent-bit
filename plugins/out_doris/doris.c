@@ -78,12 +78,27 @@ static int http_put(struct flb_out_doris *ctx,
     struct flb_upstream *u;
     struct flb_connection *u_conn;
     struct flb_http_client *c;
+    struct mk_list *head;
+    struct flb_config_map_val *mv;
+    struct flb_slist_entry *key = NULL;
+    struct flb_slist_entry *val = NULL;
+
+    int i;
+    int root_type;
+    char *out_buf;
+    size_t off = 0;
+    size_t out_size;
+    msgpack_unpacked result;
+    msgpack_object root;
+    msgpack_object msg_key;
+    msgpack_object msg_val;
 
     /* Get upstream context and connection */
     if (strcmp(host, ctx->host) == 0 && port == ctx->port) {
         u = ctx->u;
     }
     else {
+        // TODO cache
         u = flb_upstream_create(ctx->u->base.config,
                                 host,
                                 port,
@@ -117,12 +132,15 @@ static int http_put(struct flb_out_doris *ctx,
     flb_http_add_header(c, "format", 6, "json", 4);
     flb_http_add_header(c, "Expect", 6, "100-continue", 12);
     flb_http_add_header(c, "strip_outer_array", 17, "true", 4);
-    flb_http_add_header(c, "columns", 7, ctx->columns, strlen(ctx->columns));
     flb_http_add_header(c, "User-Agent", 10, "Fluent-Bit", 10);
-    if (ctx->timeout_second > 0) {
-        char timeout[256];
-        snprintf(timeout, sizeof(timeout) - 1, "%d", ctx->timeout_second);
-        flb_http_add_header(c, "timeout", 7, timeout, strlen(timeout));
+    
+    flb_config_map_foreach(head, mv, ctx->headers) {
+        key = mk_list_entry_first(mv->val.list, struct flb_slist_entry, _head);
+        val = mk_list_entry_last(mv->val.list, struct flb_slist_entry, _head);
+
+        flb_http_add_header(c,
+                            key->str, flb_sds_len(key->str),
+                            val->str, flb_sds_len(val->str));
     }
 
     /* Basic Auth headers */
@@ -130,9 +148,16 @@ static int http_put(struct flb_out_doris *ctx,
 
     ret = flb_http_do(c, &b_sent);
     if (ret == 0) {
-        flb_plg_debug(ctx->ins, "%s:%i, HTTP status=%i\n%s\n",
-                      host, port,
-                      c->resp.status, c->resp.payload);
+        if (ctx->log_request) {
+            flb_plg_info(ctx->ins, "%s:%i, HTTP status=%i\n%s\n",
+                          host, port,
+                          c->resp.status, c->resp.payload);
+        } else {
+            flb_plg_debug(ctx->ins, "%s:%i, HTTP status=%i\n%s\n",
+                          host, port,
+                          c->resp.status, c->resp.payload);
+        }
+
         if (c->resp.status == 307) { // redict
             // example: Location: http://admin:admin@127.0.0.1:8040/api/d_fb/t_fb/_stream_load?
             char* location = strstr(c->resp.data, "Location:");
@@ -147,14 +172,52 @@ static int http_put(struct flb_out_doris *ctx,
             out_ret = http_put(ctx, redict_host, atoi(redict_port), 
                                body, body_len, tag, tag_len);
         }
-        else if (c->resp.status == 200) {
-            if (c->resp.payload_size > 0 &&
-                (strstr(c->resp.payload, "\"Status\": \"Success\"") != NULL || 
-                 strstr(c->resp.payload, "\"Status\": \"Publish Timeout\"") != NULL)) {
-                // continue
-            }
-            else {
+        else if (c->resp.status == 200 && c->resp.payload_size > 0) {
+            ret = flb_pack_json(c->resp.payload, c->resp.payload_size,
+                                &out_buf, &out_size, &root_type, NULL);
+
+            if (ret == -1) {
                 out_ret = FLB_RETRY;
+            }
+            
+            msgpack_unpacked_init(&result);
+            ret = msgpack_unpack_next(&result, out_buf, out_size, &off);
+            if (ret != MSGPACK_UNPACK_SUCCESS) {
+                out_ret = FLB_RETRY;
+            }
+
+            root = result.data;
+            if (root.type != MSGPACK_OBJECT_MAP) {
+                out_ret = FLB_RETRY;
+            }
+
+            for (i = 0; i < root.via.map.size; i++) {
+                msg_key = root.via.map.ptr[i].key;
+                if (msg_key.type != MSGPACK_OBJECT_STR) {
+                    out_ret = FLB_RETRY;
+                    break;
+                }
+
+                if (msg_key.via.str.size == 6 && strncmp(msg_key.via.str.ptr, "Status", 6) == 0) {
+                    msg_val = root.via.map.ptr[i].val;
+                    if (msg_val.type != MSGPACK_OBJECT_STR) {
+                        out_ret = FLB_RETRY;
+                        break;
+                    }
+
+                    if (msg_val.via.str.size == 7 && strncmp(msg_val.via.str.ptr, "Success", 7) == 0) {
+                        out_ret = FLB_OK;
+                        break;
+                    }
+                    
+                    if (msg_val.via.str.size == 15 && strncmp(msg_val.via.str.ptr, "Publish Timeout", 15) == 0) {
+                        out_ret = FLB_OK;
+                        break;
+                    }
+                    
+                    out_ret = FLB_RETRY;
+                    break;
+                }
             }
         }
         else {
@@ -204,7 +267,7 @@ static int compose_payload(struct flb_out_doris *ctx,
                                               in_size,
                                               FLB_PACK_JSON_FORMAT_JSON,
                                               FLB_PACK_JSON_DATE_EPOCH,
-                                              ctx->time_key);
+                                              ctx->date_key);
     if (encoded == NULL) {
         flb_plg_error(ctx->ins, "failed to convert json");
         return FLB_ERROR;
@@ -212,7 +275,11 @@ static int compose_payload(struct flb_out_doris *ctx,
     *out_body = (void*)encoded;
     *out_size = flb_sds_len(encoded);
 
-    flb_plg_debug(ctx->ins, "http body: %s", (char*) *out_body);
+    if (ctx->log_request) {
+        flb_plg_info(ctx->ins, "http body: %s", (char*) *out_body);
+    } else {
+        flb_plg_debug(ctx->ins, "http body: %s", (char*) *out_body);
+    }
 
     return FLB_OK;
 }
@@ -233,6 +300,9 @@ static void cb_doris_flush(struct flb_event_chunk *event_chunk,
                           &out_body, &out_size);
 
     if (ret != FLB_OK) {
+        if (ret == FLB_ERROR) {
+            __sync_fetch_and_add(&ctx->reporter->failed_rows, event_chunk->total_events);
+        }
         FLB_OUTPUT_RETURN(ret);
     }
 
@@ -240,6 +310,12 @@ static void cb_doris_flush(struct flb_event_chunk *event_chunk,
                    event_chunk->tag, flb_sds_len(event_chunk->tag));
     flb_sds_destroy(out_body);
 
+    if (ret == FLB_OK) {
+        __sync_fetch_and_add(&ctx->reporter->total_bytes, out_size);
+        __sync_fetch_and_add(&ctx->reporter->total_rows, event_chunk->total_events);
+    } else if (ret == FLB_ERROR) {
+        __sync_fetch_and_add(&ctx->reporter->failed_rows, event_chunk->total_events);
+    }
     FLB_OUTPUT_RETURN(ret);
 }
 
@@ -283,17 +359,23 @@ static struct flb_config_map config_map[] = {
      0, FLB_TRUE, offsetof(struct flb_out_doris, time_key),
      "Specify the name of the date field in output"
     },
-    // columns
+    // header
     {
-     FLB_CONFIG_MAP_STR, "columns", "date,log",
-     0, FLB_TRUE, offsetof(struct flb_out_doris, columns),
-     "Set columns"
+     FLB_CONFIG_MAP_SLIST_1, "header", NULL,
+     FLB_CONFIG_MAP_MULT, FLB_TRUE, offsetof(struct flb_out_doris, headers),
+     "Add a doris stream load header key/value pair. Multiple headers can be set"
     },
-    // timeout
+    // log_request
     {
-     FLB_CONFIG_MAP_INT, "timeout_second", "60",
-     0, FLB_TRUE, offsetof(struct flb_out_doris, timeout_second),
-     "Set timeout in second"
+     FLB_CONFIG_MAP_BOOL, "log_request", "true",
+     0, FLB_TRUE, offsetof(struct flb_out_doris, log_request),
+     "Specify if the doris stream load request and response should be logged or not"
+    },
+    // log_progress_interval
+    {
+     FLB_CONFIG_MAP_INT, "log_progress_interval", "10",
+     0, FLB_TRUE, offsetof(struct flb_out_doris, log_progress_interval),
+     "Specify the interval in seconds to log the progress of the doris stream load"
     },
 
     /* EOF */

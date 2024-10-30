@@ -20,6 +20,14 @@
 #ifndef FLB_OUT_DORIS_H
 #define FLB_OUT_DORIS_H
 
+#include <fluent-bit/flb_pthread.h>
+
+struct flb_doris_progress_reporter {
+    size_t total_bytes;
+    size_t total_rows;
+    size_t failed_rows;
+};
+
 struct flb_out_doris {
     char *host;
     int port;
@@ -32,9 +40,16 @@ struct flb_out_doris {
     flb_sds_t table;
 
     flb_sds_t time_key;
-    flb_sds_t columns;
+    flb_sds_t date_key;        /* internal use */
 
-    int timeout_second;
+    /* doris stream load headers */
+    struct mk_list *headers;
+
+    int log_request;
+    int log_progress_interval;
+
+    struct flb_doris_progress_reporter *reporter;
+    pthread_t reporter_thread;
 
     /* Upstream connection to the backend server */
     struct flb_upstream *u;
