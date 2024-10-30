@@ -415,7 +415,7 @@ static void headers_sanitize_ng(struct flb_http_request *request, struct mk_list
 
         /* Sanitize value */
         v_start = header_entry->val;
-        v_end = header_entry->val + header_entry->val_size;
+        v_end = &((char *) header_entry->val)[header_entry->val_size];
 
         if (header_entry->val_size > 0) {
             v_end--;
