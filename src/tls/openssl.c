@@ -210,7 +210,7 @@ int tls_context_alpn_set(void *ctx_backend, const char *alpn)
 }
 
 static int tls_context_server_alpn_select_callback(SSL *ssl,
-                                                   unsigned char **out,
+                                                   const unsigned char **out,
                                                    unsigned char *outlen,
                                                    const unsigned char *in,
                                                    unsigned int inlen,
@@ -224,7 +224,7 @@ static int tls_context_server_alpn_select_callback(SSL *ssl,
     result = SSL_TLSEXT_ERR_NOACK;
 
     if (ctx->alpn != NULL) {
-        result = SSL_select_next_proto(out,
+        result = SSL_select_next_proto((unsigned char **) out,
                                        outlen,
                                        (const unsigned char *) &ctx->alpn[1],
                                        (unsigned int) ctx->alpn[0],
@@ -240,6 +240,21 @@ static int tls_context_server_alpn_select_callback(SSL *ssl,
     }
 
     return result;
+}
+
+static int tls_context_client_alpn_select_callback(SSL *ssl,
+                                                   unsigned char **out,
+                                                   unsigned char *outlen,
+                                                   const unsigned char *in,
+                                                   unsigned int inlen,
+                                                   void *arg)
+{
+    return tls_context_server_alpn_select_callback(ssl,
+                                                   (const unsigned char **) out,
+                                                   outlen,
+                                                   in,
+                                                   inlen,
+                                                   arg);
 }
 
 #ifdef _MSC_VER
@@ -503,15 +518,13 @@ static void *tls_context_create(int verify,
     if (mode == FLB_TLS_SERVER_MODE) {
         SSL_CTX_set_alpn_select_cb(
             ssl_ctx,
-            (SSL_CTX_alpn_select_cb_func)
-                tls_context_server_alpn_select_callback,
+            tls_context_server_alpn_select_callback,
             ctx);
     }
     else {
         SSL_CTX_set_next_proto_select_cb(
             ssl_ctx,
-            (SSL_CTX_npn_select_cb_func)
-                tls_context_server_alpn_select_callback,
+            tls_context_client_alpn_select_callback,
             ctx);
     }
 
