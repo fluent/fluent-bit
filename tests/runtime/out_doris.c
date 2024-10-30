@@ -156,7 +156,7 @@ void flb_test_json()
     char *buf2 = "[2, {\"msg\":\"hello world\"}]";
     size_t size2 = strlen(buf2);
 
-    char *expected_strs[] = {"[{\"date\":1.0,\"msg\":\"hello world\"},{\"date\":2.0,\"msg\":\"hello world\"}]"};
+    char *expected_strs[] = {"[{\"date\":1,\"msg\":\"hello world\"},{\"date\":2,\"msg\":\"hello world\"}]"};
     struct str_list expected = {
                                 .size = sizeof(expected_strs)/sizeof(char*),
                                 .lists = &expected_strs[0],
@@ -213,7 +213,7 @@ void flb_test_time_key()
     char *buf1 = "[1, {\"msg\":\"hello world\"}]";
     size_t size1 = strlen(buf1);
 
-    char *expected_strs[] = {"{\"timestamp\":1.0,\"msg\":\"hello world\"}"};
+    char *expected_strs[] = {"{\"timestamp\":1,\"msg\":\"hello world\"}"};
     struct str_list expected = {
                                 .size = sizeof(expected_strs)/sizeof(char*),
                                 .lists = &expected_strs[0],
