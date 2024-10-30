@@ -136,6 +136,16 @@ struct flb_out_doris *flb_doris_conf_create(struct flb_output_instance *ins,
     /* url: /api/{database}/{table}/_stream_load */
     snprintf(ctx->uri, sizeof(ctx->uri) - 1, "/api/%s/%s/_stream_load", ctx->database, ctx->table);
 
+    /* label prefix */
+    ctx->add_label = 1;
+    tmp = flb_output_get_property("label_prefix", ins);
+    if (tmp) {
+        /* Just check if we have to disable it */
+        if (flb_utils_bool(tmp) == FLB_FALSE) {
+            ctx->add_label = 0;
+        }
+    }
+
     /* Date key */
     ctx->date_key = ctx->time_key;
     tmp = flb_output_get_property("time_key", ins);

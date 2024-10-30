@@ -39,6 +39,9 @@ struct flb_out_doris {
     flb_sds_t database;
     flb_sds_t table;
 
+    flb_sds_t label_prefix;
+    int add_label;
+
     flb_sds_t time_key;
     flb_sds_t date_key;        /* internal use */
 

@@ -68,7 +68,8 @@ static int cb_doris_init(struct flb_output_instance *ins,
 static int http_put(struct flb_out_doris *ctx,
                     const char *host, int port,
                     const void *body, size_t body_len,
-                    const char *tag, int tag_len)
+                    const char *tag, int tag_len,
+                    const char *label, int label_len)
 {
     int ret;
     int out_ret = FLB_OK;
@@ -134,6 +135,11 @@ static int http_put(struct flb_out_doris *ctx,
     flb_http_add_header(c, "strip_outer_array", 17, "true", 4);
     flb_http_add_header(c, "User-Agent", 10, "Fluent-Bit", 10);
     
+    if (ctx->add_label) {
+        flb_http_add_header(c, "label", 5, label, label_len);
+        flb_plg_debug(ctx->ins, "add label: %s", label);
+    }
+
     flb_config_map_foreach(head, mv, ctx->headers) {
         key = mk_list_entry_first(mv->val.list, struct flb_slist_entry, _head);
         val = mk_list_entry_last(mv->val.list, struct flb_slist_entry, _head);
@@ -170,7 +176,7 @@ static int http_put(struct flb_out_doris *ctx,
             memcpy(redict_port, mid + 1, end - (mid + 1));
             
             out_ret = http_put(ctx, redict_host, atoi(redict_port), 
-                               body, body_len, tag, tag_len);
+                               body, body_len, tag, tag_len, label, label_len);
         }
         else if (c->resp.status == 200 && c->resp.payload_size > 0) {
             ret = flb_pack_json(c->resp.payload, c->resp.payload_size,
@@ -296,6 +302,9 @@ static void cb_doris_flush(struct flb_event_chunk *event_chunk,
     size_t out_size;
     (void) i_ins;
 
+    char label[256] = {0};
+    int len = 0;
+
     ret = compose_payload(ctx, event_chunk->data, event_chunk->size,
                           &out_body, &out_size);
 
@@ -306,8 +315,14 @@ static void cb_doris_flush(struct flb_event_chunk *event_chunk,
         FLB_OUTPUT_RETURN(ret);
     }
 
+    if (ctx->add_label) {
+        len = snprintf(label, sizeof(label) - 1, "%s_%lu_", ctx->label_prefix, cfl_time_now() / 1000000000L);
+        flb_utils_uuid_v4_gen(label + len);
+        len += 36;
+    }
+
     ret = http_put(ctx, ctx->host, ctx->port, out_body, out_size,
-                   event_chunk->tag, flb_sds_len(event_chunk->tag));
+                   event_chunk->tag, flb_sds_len(event_chunk->tag), label, len);
     flb_sds_destroy(out_body);
 
     if (ret == FLB_OK) {
@@ -352,6 +367,12 @@ static struct flb_config_map config_map[] = {
      FLB_CONFIG_MAP_STR, "table", NULL,
      0, FLB_TRUE, offsetof(struct flb_out_doris, table),
      "Set table"
+    },
+    // label_prefix
+    {
+     FLB_CONFIG_MAP_STR, "label_prefix", "flubentbit",
+     0, FLB_TRUE, offsetof(struct flb_out_doris, label_prefix),
+     "Set label prefix"
     },
     // time_key
     {
