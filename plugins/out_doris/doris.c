@@ -373,7 +373,7 @@ static struct flb_config_map config_map[] = {
     },
     // label_prefix
     {
-     FLB_CONFIG_MAP_STR, "label_prefix", "flubentbit",
+     FLB_CONFIG_MAP_STR, "label_prefix", "fluentbit",
      0, FLB_TRUE, offsetof(struct flb_out_doris, label_prefix),
      "Set label prefix"
     },
