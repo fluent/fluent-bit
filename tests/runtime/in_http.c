@@ -429,13 +429,13 @@ void flb_test_http_json_charset_header(char *response_code)
 
 void flb_test_http_successful_response_code_200()
 {
-    flb_test_http_successful_response_code("200");    
+    flb_test_http_successful_response_code("200");
     flb_test_http_json_charset_header("200");
 }
 
 void flb_test_http_successful_response_code_204()
 {
-    flb_test_http_successful_response_code("204");    
+    flb_test_http_successful_response_code("204");
     flb_test_http_json_charset_header("204");
 }
 
@@ -547,9 +547,11 @@ void flb_test_http_failure_400_bad_disk_write()
 
     flb_time_msleep(5000);
 
-    rename("/tmp/http-input-test-404-bad-write", 
+    rmdir("/tmp/http-input-test-404-bad-write.fail/http.0");
+    rmdir("/tmp/http-input-test-404-bad-write.fail");
+
+    rename("/tmp/http-input-test-404-bad-write",
            "/tmp/http-input-test-404-bad-write.fail");
-    TEST_CHECK(ret == 0);
 
     ctx->httpc = http_client_ctx_create();
     TEST_CHECK(ctx->httpc != NULL);
@@ -575,9 +577,8 @@ void flb_test_http_failure_400_bad_disk_write()
         TEST_MSG("http response code error. expect: %d, got: %d\n", 400, c->resp.status);
     }
 
-    rename("/tmp/http-input-test-404-bad-write.fail", 
+    rename("/tmp/http-input-test-404-bad-write.fail",
            "/tmp/http-input-test-404-bad-write");
-    TEST_CHECK(ret == 0);
 
     /* waiting to flush */
     flb_time_msleep(1500);
