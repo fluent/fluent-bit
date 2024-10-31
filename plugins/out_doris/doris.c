@@ -312,7 +312,7 @@ static void cb_doris_flush(struct flb_event_chunk *event_chunk,
                           &out_body, &out_size);
 
     if (ret != FLB_OK) {
-        if (ret == FLB_ERROR) {
+        if (ret == FLB_ERROR && ctx->log_progress_interval > 0) {
             __sync_fetch_and_add(&ctx->reporter->failed_rows, event_chunk->total_events);
         }
         FLB_OUTPUT_RETURN(ret);
@@ -328,10 +328,10 @@ static void cb_doris_flush(struct flb_event_chunk *event_chunk,
                    event_chunk->tag, flb_sds_len(event_chunk->tag), label, len);
     flb_sds_destroy(out_body);
 
-    if (ret == FLB_OK) {
+    if (ret == FLB_OK && ctx->log_progress_interval > 0) {
         __sync_fetch_and_add(&ctx->reporter->total_bytes, out_size);
         __sync_fetch_and_add(&ctx->reporter->total_rows, event_chunk->total_events);
-    } else if (ret == FLB_ERROR) {
+    } else if (ret == FLB_ERROR && ctx->log_progress_interval > 0) {
         __sync_fetch_and_add(&ctx->reporter->failed_rows, event_chunk->total_events);
     }
     FLB_OUTPUT_RETURN(ret);
