@@ -87,6 +87,7 @@ if(FLB_RECORD_ACCESSOR)
   set(UNIT_TESTS_FILES
     ${UNIT_TESTS_FILES}
     record_accessor.c
+    cobj_record_accessor.c
     )
 endif()
 

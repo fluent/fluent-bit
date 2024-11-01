@@ -791,8 +791,6 @@ static int append_subkey_kvlist(struct cfl_variant *vobj, struct mk_list *subkey
         if (*matched >= 0) {
             *matched += 1;
         }
-        flb_info("[cobj_ra_key][nested] levels = %d", levels);
-        flb_info("[cobj_ra_key][nested] matched = %d", *matched);
         if (*matched > levels) {
             return 0;
         }

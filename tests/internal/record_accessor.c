@@ -742,7 +742,7 @@ void cb_update_key()
     flb_ra_destroy(ra);
     flb_free(out_buf);
 }
-  
+
 void cb_dash_key()
 {
     int len;
