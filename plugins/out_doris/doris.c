@@ -42,6 +42,10 @@
 
 #include <fluent-bit/flb_callback.h>
 
+#ifdef FLB_SYSTEM_WINDOWS
+#include <winnt.h>
+#endif
+
 static int cb_doris_init(struct flb_output_instance *ins,
                          struct flb_config *config, void *data)
 {
@@ -313,7 +317,11 @@ static void cb_doris_flush(struct flb_event_chunk *event_chunk,
 
     if (ret != FLB_OK) {
         if (ret == FLB_ERROR && ctx->log_progress_interval > 0) {
+#ifdef FLB_SYSTEM_WINDOWS
+            InterlockedAdd(&ctx->reporter->failed_rows, event_chunk->total_events);
+#else
             __sync_fetch_and_add(&ctx->reporter->failed_rows, event_chunk->total_events);
+#endif
         }
         FLB_OUTPUT_RETURN(ret);
     }
@@ -329,10 +337,19 @@ static void cb_doris_flush(struct flb_event_chunk *event_chunk,
     flb_sds_destroy(out_body);
 
     if (ret == FLB_OK && ctx->log_progress_interval > 0) {
+#ifdef FLB_SYSTEM_WINDOWS
+        InterlockedAdd(&ctx->reporter->total_bytes, out_size);
+        InterlockedAdd(&ctx->reporter->total_rows, event_chunk->total_events);
+#else
         __sync_fetch_and_add(&ctx->reporter->total_bytes, out_size);
         __sync_fetch_and_add(&ctx->reporter->total_rows, event_chunk->total_events);
+#endif
     } else if (ret == FLB_ERROR && ctx->log_progress_interval > 0) {
+#ifdef FLB_SYSTEM_WINDOWS
+        InterlockedAdd(&ctx->reporter->failed_rows, event_chunk->total_events);
+#else
         __sync_fetch_and_add(&ctx->reporter->failed_rows, event_chunk->total_events);
+#endif
     }
     FLB_OUTPUT_RETURN(ret);
 }
