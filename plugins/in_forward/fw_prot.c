@@ -495,6 +495,10 @@ static int user_authentication(struct flb_input_instance *ins,
             continue;
         }
 
+        if (password_digest_len != 128) {
+            continue;
+        }
+
         userauth_digest = flb_calloc(128, sizeof(char));
 
         if (flb_secure_forward_password_digest(ins, conn,
@@ -660,7 +664,7 @@ static int check_ping(struct flb_input_instance *ins,
         return -1;
     }
 
-    if (strncmp(serverside, shared_key_digest, shared_key_digest_len) != 0) {
+    if (strncmp(serverside, shared_key_digest, 128) != 0) {
         flb_plg_error(ins, "shared_key mismatch");
         flb_free(serverside);
 
