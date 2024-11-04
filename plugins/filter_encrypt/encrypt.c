@@ -402,80 +402,141 @@ void set_encryption_keys(char *aes_det_key_ptr, char *ip_encryption_key_ptr) {
     struct dek_kv *an_item;
 
     struct HashMapEntry* item_key_master_key = get(FLB_FILTER_ENCRYPT_MASTER_ENC_KEY);
+    if (!item_key_master_key) {
+        flb_error("Master encryption key not found in hashmap.");
+        exit(EXIT_FAILURE);
+    }
     const char *key_master_key_value = item_key_master_key->data;
     flb_info("key_master_key_value=%s", key_master_key_value);
 
-    /* iterate through the list */
-    flb_debug("Iterating through list");
+    /* Iterate through the encryption keys list */
+    flb_debug("Iterating through encryption keys list");
     bool found_ddk = false;
     mk_list_foreach_safe(head_dek, tmp, &items_dek) {
         an_item = mk_list_entry(head_dek, struct dek_kv, _head);
-        flb_info("encryption_key=%s,length=%d,encryption_key_time_start=%s",
+        flb_info("encryption_key=%s,length=%zu,encryption_key_time_start=%s",
                  an_item->encryption_key,
                  strlen(an_item->encryption_key),
                  an_item->encryption_key_time_start);
 
-        int size = strlen(an_item->encryption_key);
-        flb_info("key length:%d ", size);
+        size_t size = strlen(an_item->encryption_key);
+        flb_info("key length:%zu ", size);
 
-        int decoded_size = 0;
-        char *salt_iv_tag_ciphertext_hex = base64decode(an_item->encryption_key,
-                                                        strlen(an_item->encryption_key));
+        size_t decoded_size = 0;
+        unsigned char* salt_iv_tag_ciphertext_hex = base64decode(an_item->encryption_key,
+                                                                 strlen(an_item->encryption_key),
+                                                                 &decoded_size);
 
-        flb_info("decoded_size: %d", decoded_size);
-        BIO_dump_fp(stdout, (const char *)salt_iv_tag_ciphertext_hex, decoded_size);
+        if (salt_iv_tag_ciphertext_hex == NULL || decoded_size == 0) {
+            flb_error("Failed to decode base64 data");
+            continue;
+        }
 
-        flb_info("DEK: %s", salt_iv_tag_ciphertext_hex);
-        flb_info("DEK length: %d", decoded_size);
+        flb_info("decoded_size: %zu", decoded_size);
+        flb_debug("Decoded Base64 data:");
+        print_bytes(salt_iv_tag_ciphertext_hex, decoded_size);
 
-        /* plaintext */
+        /* Define expected lengths */
+        const int salt_len = 64;
+        const int iv_len = 16;
+        const int tag_len = 16;
+        const int tag_position = salt_len + iv_len;
+        const int encrypted_position = tag_position + tag_len;
+
+        /* Ensure that the decoded data is long enough */
+        if (decoded_size < encrypted_position) {
+            flb_error("Decoded data is too short");
+            free(salt_iv_tag_ciphertext_hex);
+            continue;
+        }
+
+        /* Extract different parts of the decoded data */
+        char *extracted_salt = substring((char*)salt_iv_tag_ciphertext_hex, 0, salt_len);
+        char *extracted_iv = substring((char*)salt_iv_tag_ciphertext_hex, salt_len, iv_len);
+        char *extracted_tag = substring((char*)salt_iv_tag_ciphertext_hex, tag_position, tag_len);
+        char *extracted_ciphertext = substring((char*)salt_iv_tag_ciphertext_hex, encrypted_position, decoded_size - encrypted_position);
+
+        /* Validate extracted parts */
+        if (!extracted_salt || !extracted_iv || !extracted_tag || !extracted_ciphertext) {
+            flb_error("Failed to extract parts from decoded data");
+            free(salt_iv_tag_ciphertext_hex);
+            free(extracted_salt);
+            free(extracted_iv);
+            free(extracted_tag);
+            free(extracted_ciphertext);
+            continue;
+        }
+
+        /* Debug: Print extracted components */
+        flb_debug("Extracted Salt:");
+        print_bytes((unsigned char*)extracted_salt, salt_len);
+        flb_debug("Extracted IV:");
+        print_bytes((unsigned char*)extracted_iv, iv_len);
+        flb_debug("Extracted Tag:");
+        print_bytes((unsigned char*)extracted_tag, tag_len);
+        flb_debug("Extracted Ciphertext:");
+        print_bytes((unsigned char*)extracted_ciphertext, decoded_size - encrypted_position);
+
+        /* Generate key using PBKDF2 */
         char key_out[128] = {0x00};
+        flb_debug("Generating key using PBKDF2");
+        crypto_utils_generate_key_from_pbkdf2(key_master_key_value, extracted_salt, key_out, 100000, 32); // key_length = 32
+        flb_debug("Generated key_out: %s", key_out);
 
-        /* Additional data */
+        /* Decrypt using AES-GCM */
+        unsigned char data_encryption_key[129] = {0x00}; // Increased size to 129 to accommodate null terminator
         unsigned char *additional = (unsigned char *)"";
 
-        /* Buffer for the decrypted text */
-        unsigned char data_encryption_key[128] = {0x00};
-
-        /* Desired key length generated by pbkdf2 */
-        int key_length = 32;
-
-        int salt_len = 64;
-        int iv_len = 16;
-        int tag_len = 16;
-        int tag_position = salt_len + iv_len;
-        int encrypted_position = tag_position + tag_len;
-
-        char *extracted_salt = substring(salt_iv_tag_ciphertext_hex, 0, salt_len);
-        char *extracted_iv = substring(salt_iv_tag_ciphertext_hex, salt_len, tag_position);
-        char *extracted_tag = substring(salt_iv_tag_ciphertext_hex, tag_position, encrypted_position);
-        char *extracted_ciphertext = substring(salt_iv_tag_ciphertext_hex, encrypted_position, strlen(salt_iv_tag_ciphertext_hex) - encrypted_position);
-
-        crypto_utils_generate_key_from_pbkdf2(key_master_key_value, extracted_salt, key_out, 100000, key_length);
-
-        int decryptedtext_len = aes_gcm_256_decrypt(extracted_ciphertext, strlen(extracted_ciphertext),
+        flb_debug("Attempting AES-GCM decryption");
+        int decryptedtext_len = aes_gcm_256_decrypt(extracted_ciphertext, decoded_size - encrypted_position,
                                                     additional, strlen((char *)additional),
                                                     extracted_tag,
                                                     key_out, extracted_iv, iv_len,
                                                     data_encryption_key);
 
         if (decryptedtext_len >= 0) {
-            data_encryption_key[decryptedtext_len] = '\0';
+            /* Ensure decryptedtext_len does not exceed buffer size */
+            if ((size_t)decryptedtext_len >= sizeof(data_encryption_key)) {
+                flb_error("Decrypted text length exceeds buffer size");
+                free(salt_iv_tag_ciphertext_hex);
+                free(extracted_salt);
+                free(extracted_iv);
+                free(extracted_tag);
+                free(extracted_ciphertext);
+                continue;
+            }
 
-            strncpy(aes_det_key_ptr, (char *)data_encryption_key, decryptedtext_len);
-            strncpy(ip_encryption_key_ptr, (char *)data_encryption_key, decryptedtext_len);
+            data_encryption_key[decryptedtext_len] = '\0'; // Safe now as buffer is 129 bytes
+            flb_debug("Decryption successful. Decrypted text length: %d", decryptedtext_len);
+            flb_debug("Decrypted Encryption Key: %s", data_encryption_key);
+
+            /* Copy decrypted key to destination buffers */
+            strncpy(aes_det_key_ptr, (char *)data_encryption_key, decryptedtext_len + 1);
+            strncpy(ip_encryption_key_ptr, (char *)data_encryption_key, decryptedtext_len + 1);
+
+            flb_debug("AES Deterministic Key: %s", aes_det_key_ptr);
+            flb_debug("IP Encryption Key: %s", ip_encryption_key_ptr);
 
             set_encryption_key(ip_encryption_key_ptr);
             found_ddk = true;
-            break;
         } else {
-            flb_debug("Decryption failed\n");
-            exit(0);
+            flb_debug("Decryption failed");
+        }
+
+        /* Free allocated memory */
+        free(salt_iv_tag_ciphertext_hex);
+        free(extracted_salt);
+        free(extracted_iv);
+        free(extracted_tag);
+        free(extracted_ciphertext);
+
+        if (found_ddk) {
+            break;
         }
     }
     if (!found_ddk) {
         flb_debug("No default data decryption key found.\n");
-        exit(0);
+        exit(EXIT_FAILURE);
     }
 }
 

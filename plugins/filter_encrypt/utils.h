@@ -27,8 +27,8 @@ void block_xor(unsigned char* dst, unsigned char* a, unsigned char* b);
 void block_leftshift(unsigned char* dst, unsigned char* src);
 char *concat(char *str1, const int str1_len, const char *str2, const int str2_len);
 char* concaten(const char* str1, const int str1_len, const char* str2, const int str2_len);
-char *substring(char *input, int start, int length);
-char *base64encode (const void *b64_encode_this, int encode_this_many_bytes);
-char *base64decode (const void *b64_decode_this, int decode_this_many_bytes);
+char* substring(const char* input, size_t start, size_t length);
+char* base64encode(const void* data, size_t input_length);
+unsigned char* base64decode(const char* b64message, size_t b64message_len, size_t* output_length);
 void populate_key_value_delimiters(char *value_delimiters);
 #endif //UTILS_H_
