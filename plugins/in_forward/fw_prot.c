@@ -495,6 +495,10 @@ static int user_authentication(struct flb_input_instance *ins,
             continue;
         }
 
+        if (password_digest_len != 128) {
+            continue;
+        }
+
         userauth_digest = flb_calloc(128, sizeof(char));
 
         if (flb_secure_forward_password_digest(ins, conn,
