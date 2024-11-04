@@ -118,6 +118,7 @@ in_someip_add_rpc(struct flb_someip *ctx, uint16_t service,
             flb_plg_warn(ctx->ins,
                          "Failed to decode RPC payload. Ignoring RPC.");
             flb_free(an_rpc);
+            flb_sds_destroy(decoded_buffer);
             return 0;
         }
         an_rpc->payload_len = decoded_len;
@@ -125,6 +126,7 @@ in_someip_add_rpc(struct flb_someip *ctx, uint16_t service,
         if (an_rpc->payload == NULL) {
             flb_errno();
             flb_free(an_rpc);
+            flb_sds_destroy(decoded_buffer);
             return -1;
         }
         memcpy(an_rpc->payload, decoded_buffer, decoded_len);
