@@ -584,6 +584,14 @@ static FLB_INLINE void output_pre_cb_flush(void)
 
     co_switch(coro->caller);
 
+    /* Skip flush if type is FLB_EVENT_TYPE_LOGS and event chunk has zero records  */
+    if (persisted_params.event_chunk &&
+        persisted_params.event_chunk->type == FLB_EVENT_TYPE_LOGS &&
+        persisted_params.event_chunk->total_events == 0) {
+        flb_debug("[output] skipping flush for event chunk with zero records.");
+        FLB_OUTPUT_RETURN(FLB_OK);
+    }
+
     /* Continue, we will resume later */
     out_p = persisted_params.out_plugin;
 
@@ -676,20 +684,13 @@ struct flb_output_flush *flb_output_flush_create(struct flb_task *task,
                                     evc->tag, flb_sds_len(evc->tag),
                                     evc->data, evc->size,
                                     &p_buf, &p_size);
-            if (ret == -1 || p_size == 0) {
+            if (ret == -1) {
                 flb_coro_destroy(coro);
                 flb_free(out_flush);
                 return NULL;
             }
 
             records = flb_mp_count(p_buf, p_size);
-            if (records == 0) {
-                flb_coro_destroy(coro);
-                flb_free(out_flush);
-                flb_free(p_buf);
-                return NULL;
-            }
-
             tmp = flb_event_chunk_create(evc->type, records, evc->tag, flb_sds_len(evc->tag), p_buf, p_size);
             if (!tmp) {
                 flb_coro_destroy(coro);
