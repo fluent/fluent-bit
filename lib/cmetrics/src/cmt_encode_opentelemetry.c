@@ -273,7 +273,7 @@ static inline void otlp_kvpair_destroy(Opentelemetry__Proto__Common__V1__KeyValu
 {
     if (kvpair != NULL) {
         if (kvpair->key != NULL) {
-            free(kvpair->key);
+            cfl_sds_destroy(kvpair->key);
         }
 
         if (kvpair->value != NULL) {
@@ -323,7 +323,7 @@ static inline void otlp_any_value_destroy(Opentelemetry__Proto__Common__V1__AnyV
     if (value != NULL) {
         if (value->value_case == OPENTELEMETRY__PROTO__COMMON__V1__ANY_VALUE__VALUE_STRING_VALUE) {
             if (value->string_value != NULL) {
-                free(value->string_value);
+                cfl_sds_destroy(value->string_value);
             }
         }
         else if (value->value_case == OPENTELEMETRY__PROTO__COMMON__V1__ANY_VALUE__VALUE_ARRAY_VALUE) {
@@ -494,21 +494,19 @@ static inline Opentelemetry__Proto__Common__V1__KeyValue *cfl_variant_kvpair_to_
     pair = otlp_kvpair_value_initialize();
 
     if (pair != NULL) {
-        pair->key = strdup(input_pair->key);
+        pair->key = cfl_sds_create(input_pair->key);
 
         if (pair->key != NULL) {
             pair->value = cfl_variant_to_otlp_any_value(input_pair->val);
 
             if (pair->value == NULL) {
-                free(pair->key);
-
+                cfl_sds_destroy(pair->key);
                 pair->key = NULL;
             }
         }
 
         if (pair->key == NULL) {
             free(pair);
-
             pair = NULL;
         }
     }
@@ -649,11 +647,9 @@ static inline Opentelemetry__Proto__Common__V1__AnyValue *cfl_variant_string_to_
     result = otlp_any_value_initialize(CFL_VARIANT_STRING, 0);
 
     if (result != NULL) {
-        result->string_value = strdup(value->data.as_string);
-
+        result->string_value = cfl_sds_create(value->data.as_string);
         if (result->string_value == NULL) {
             otlp_any_value_destroy(result);
-
             result = NULL;
         }
     }
@@ -1061,50 +1057,49 @@ static Opentelemetry__Proto__Common__V1__InstrumentationScope *
         return NULL;
     }
 
+    /* cmetrics: retrieve attributes and metadata fields */
     attributes = fetch_metadata_kvlist_key(scope_root, "attributes");
     metadata = fetch_metadata_kvlist_key(scope_root, "metadata");
 
-    if (cfl_kvlist_count(attributes) == 0 &&
-        cfl_kvlist_count(metadata) == 0) {
-        return NULL;
-    }
-
+    /* create scope */
     scope = calloc(1, sizeof(Opentelemetry__Proto__Common__V1__InstrumentationScope));
     if (scope == NULL) {
         *error_detection_flag = CMT_TRUE;
-
         return NULL;
     }
-
     opentelemetry__proto__common__v1__instrumentation_scope__init(scope);
 
-    scope->attributes = cfl_kvlist_to_otlp_kvpair_list(attributes);
+    /* attributes */
+    if (attributes && cfl_kvlist_count(attributes) > 0) {
+        scope->attributes = cfl_kvlist_to_otlp_kvpair_list(attributes);
 
-    if (scope->attributes == NULL) {
-        *error_detection_flag = CMT_TRUE;
+        if (scope->attributes == NULL) {
+            *error_detection_flag = CMT_TRUE;
+        }
+
+        scope->n_attributes = cfl_kvlist_count(attributes);
     }
 
-    scope->n_attributes = cfl_kvlist_count(attributes);
+    /* scope metadata */
+    if (metadata) {
+        if (!(*error_detection_flag)) {
+            scope->dropped_attributes_count = (uint32_t) fetch_metadata_int64_key(
+                                                                metadata,
+                                                                "dropped_attributes_count",
+                                                                error_detection_flag);
+        }
 
-    if (!(*error_detection_flag)) {
-        scope->dropped_attributes_count = (uint32_t) fetch_metadata_int64_key(
-                                                            metadata,
-                                                            "dropped_attributes_count",
-                                                            error_detection_flag);
+        if (!(*error_detection_flag)) {
+            scope->name = fetch_metadata_string_key(metadata, "name", error_detection_flag);
+        }
+
+        if (!(*error_detection_flag)) {
+            scope->version = fetch_metadata_string_key(metadata, "version", error_detection_flag);
+        }
     }
 
-    if (!(*error_detection_flag)) {
-        scope->name = fetch_metadata_string_key(metadata, "name", error_detection_flag);
-    }
-
-    if (!(*error_detection_flag)) {
-        scope->version = fetch_metadata_string_key(metadata, "version", error_detection_flag);
-    }
-
-    if (*error_detection_flag &&
-        scope != NULL) {
+    if (*error_detection_flag && scope != NULL) {
         destroy_instrumentation_scope(scope);
-
         scope = NULL;
     }
 
@@ -1205,13 +1200,11 @@ static void destroy_attribute(Opentelemetry__Proto__Common__V1__KeyValue *attrib
 {
     if (attribute != NULL) {
         if (attribute->value != NULL) {
-            if (attribute->value->value_case == \
-                OPENTELEMETRY__PROTO__COMMON__V1__ANY_VALUE__VALUE_STRING_VALUE) {
+            if (attribute->value->value_case == OPENTELEMETRY__PROTO__COMMON__V1__ANY_VALUE__VALUE_STRING_VALUE) {
                 if (is_string_releaseable(attribute->value->string_value)) {
                     cfl_sds_destroy(attribute->value->string_value);
                 }
             }
-
             free(attribute->value);
         }
 
