@@ -262,14 +262,6 @@ int cm_metrics_process(struct flb_processor_instance *ins,
     int ret = -1;
     struct cfl_variant *var = NULL;
 
-    printf("\n\n==== BEFORE =====\n");
-    cfl_kvlist_print(stdout, in_cmt->internal_metadata);
-    printf("\n");
-    printf("-----external----\n");
-    cfl_kvlist_print(stdout, in_cmt->external_metadata);
-    fflush(stdout);
-
-
     if (ctx->context_type == CM_CONTEXT_OTEL_RESOURCE_ATTR) {
         /* Internal metadata must be valid */
         var = cfl_kvlist_fetch(in_cmt->internal_metadata, "producer");
@@ -282,7 +274,8 @@ int cm_metrics_process(struct flb_processor_instance *ins,
         }
 
         /* validate that the value is 'opentelemetry' */
-        if (strcmp(var->data.as_string, "opentelemetry") != 0) {
+        if (strcmp(var->data.as_string, "opentelemetry") != 0 &&
+            strcmp(var->data.as_string, "fluent-bit") != 0) {
             return FLB_PROCESSOR_FAILURE;
         }
 
@@ -334,13 +327,6 @@ int cm_metrics_process(struct flb_processor_instance *ins,
     if (ret != 0) {
         return FLB_PROCESSOR_FAILURE;
     }
-
-  printf("\n\n==== AFTER =====\n");
-    cfl_kvlist_print(stdout, in_cmt->internal_metadata);
-    printf("\n");
-    printf("-----external----\n");
-    cfl_kvlist_print(stdout, in_cmt->external_metadata);
-    fflush(stdout);
 
     return FLB_PROCESSOR_SUCCESS;
 }
