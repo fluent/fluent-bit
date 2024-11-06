@@ -948,7 +948,7 @@ static int get_calyptia_fleet_id_by_name(struct flb_in_calyptia_fleet_config *ct
         return -1;
     }
 
-    flb_sds_printf(&url, "/v1/search?project_id=%s&resource=fleet&term=%s",
+    flb_sds_printf(&url, "/v1/search?project_id=%s&resource=fleet&term=%s&exact=true",
                    project_id, ctx->fleet_name);
 
     client = fleet_http_do(ctx, url);
