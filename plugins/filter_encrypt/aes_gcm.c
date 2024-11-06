@@ -117,48 +117,64 @@ int aes_gcm_encrypt(unsigned char *plaintext,
     return ciphertext_len;
 }
 
-int aes_gcm_decrypt(unsigned char *ciphertext, int ciphertext_len,
-                    unsigned char *aad, int aad_len,
-                    unsigned char *tag,
-                    unsigned char *key,
-                    unsigned char *iv, int iv_len,
-                    unsigned char *plaintext)
+
+/* Function to decrypt data using AES-256-GCM */
+int aes_gcm_decrypt(
+        unsigned char* ciphertext, int ciphertext_len,
+        unsigned char* key,
+        unsigned char* iv, int iv_len,
+        unsigned char* tag,
+        unsigned char* plaintext)
 {
-    EVP_CIPHER_CTX *ctx;
+    EVP_CIPHER_CTX* ctx;
     int len;
     int plaintext_len;
     int ret;
 
-    if(!(ctx = EVP_CIPHER_CTX_new()))
-        handleErrorsAesGcm();
+    /* Create and initialize the context */
+    if (!(ctx = EVP_CIPHER_CTX_new()))
+        handleErrors();
 
-    if(!EVP_DecryptInit_ex(ctx, EVP_aes_128_gcm(), NULL, NULL, NULL))
-        handleErrorsAesGcm();
+    /* Initialize the decryption operation */
+    if (!EVP_DecryptInit_ex(ctx, ALGORITHM, NULL, NULL, NULL))
+        handleErrors();
 
-    if(!EVP_CIPHER_CTX_ctrl(ctx, EVP_CTRL_GCM_SET_IVLEN, iv_len, NULL))
-        handleErrorsAesGcm();
+    /* Set IV length */
+    if (!EVP_CIPHER_CTX_ctrl(ctx, EVP_CTRL_GCM_SET_IVLEN, iv_len, NULL))
+        handleErrors();
 
-    if(!EVP_DecryptInit_ex(ctx, NULL, NULL, key, iv))
-        handleErrorsAesGcm();
+    /* Initialize key and IV */
+    if (!EVP_DecryptInit_ex(ctx, NULL, NULL, key, iv))
+        handleErrors();
 
-    if(!EVP_DecryptUpdate(ctx, NULL, &len, aad, aad_len))
-        handleErrorsAesGcm();
+    /* Provide any AAD data if needed (here we have none) */
+    // if (!EVP_DecryptUpdate(ctx, NULL, &len, aad, aad_len))
+    //    handleErrors();
 
-    if(!EVP_DecryptUpdate(ctx, plaintext, &len, ciphertext, ciphertext_len))
-        handleErrorsAesGcm();
+    /* Provide the message to be decrypted, and obtain the plaintext output */
+    if (!EVP_DecryptUpdate(ctx, plaintext, &len, ciphertext, ciphertext_len))
+        handleErrors();
     plaintext_len = len;
 
-    if(!EVP_CIPHER_CTX_ctrl(ctx, EVP_CTRL_GCM_SET_TAG, TAG_LEN, tag))
-        handleErrorsAesGcm();
+    /* Set expected tag value */
+    if (!EVP_CIPHER_CTX_ctrl(ctx, EVP_CTRL_GCM_SET_TAG, TAG_LENGTH, tag))
+        handleErrors();
 
+    /* Finalize the decryption */
     ret = EVP_DecryptFinal_ex(ctx, plaintext + len, &len);
 
+    /* Clean up */
     EVP_CIPHER_CTX_free(ctx);
 
-    if(ret > 0) {
+    if (ret > 0)
+    {
+        /* Success */
         plaintext_len += len;
         return plaintext_len;
-    } else {
+    }
+    else
+    {
+        /* Verification failed */
         return -1;
     }
 }

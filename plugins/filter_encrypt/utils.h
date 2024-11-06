@@ -31,4 +31,5 @@ char* substring(const char* input, size_t start, size_t length);
 char* base64encode(const void* data, size_t input_length);
 unsigned char* base64decode(const char* b64message, size_t b64message_len, size_t* output_length);
 void populate_key_value_delimiters(char *value_delimiters);
+void handleErrors(void);
 #endif //UTILS_H_

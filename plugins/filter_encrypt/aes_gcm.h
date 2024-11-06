@@ -27,6 +27,13 @@
 #include <unistd.h>
 #endif
 
+/* Define constants */
+#define ALGORITHM EVP_aes_256_gcm()
+#define SALT_LENGTH 64
+#define IV_LENGTH 16
+#define TAG_LENGTH 16
+#define KEY_LENGTH 32     // 32 bytes for AES-256
+
 void handleErrors(void);
 int aes_gcm_encrypt(unsigned char *plaintext, int plaintext_len,
                     unsigned char *aad, int aad_len,
@@ -34,12 +41,12 @@ int aes_gcm_encrypt(unsigned char *plaintext, int plaintext_len,
                     unsigned char *iv, int iv_len,
                     unsigned char *ciphertext,
                     unsigned char *tag);
-int aes_gcm_decrypt(unsigned char *ciphertext, int ciphertext_len,
-                    unsigned char *aad, int aad_len,
-                    unsigned char *tag,
-                    unsigned char *key,
-                    unsigned char *iv, int iv_len,
-                    unsigned char *plaintext);
+int aes_gcm_decrypt(
+        unsigned char* ciphertext, int ciphertext_len,
+        unsigned char* key,
+        unsigned char* iv, int iv_len,
+        unsigned char* tag,
+        unsigned char* plaintext);
 
 int aes_gcm_256_encrypt(unsigned char *plaintext, int plaintext_len,
                         unsigned char *aad, int aad_len,

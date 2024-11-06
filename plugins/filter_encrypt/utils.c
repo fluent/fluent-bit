@@ -4,6 +4,7 @@
 #include <stdio.h>
 #include <string.h>
 #include <openssl/pem.h>
+#include <openssl/err.h>
 #include <ctype.h>
 #include "utils.h"
 
@@ -33,6 +34,11 @@ void block_leftshift(unsigned char* dst, unsigned char* src)
         dst[i] |= ovf;
         ovf = (src[i] & 0x80) ? 1 : 0;
     }
+}
+
+char *concat(char *str1, const int str1_len, const char *str2, const int str2_len) {
+    memcpy(str1 + str1_len, str2, str2_len + 1);
+    return str1;
 }
 
 /* Function to concatenate two strings into a new buffer */
@@ -224,4 +230,9 @@ void populate_key_value_delimiters(char* value_delimiters) {
         }
     }
     value_delimiters[index] = '\0';
+}
+
+void handleErrors(void) {
+    ERR_print_errors_fp(stderr);
+    abort();
 }

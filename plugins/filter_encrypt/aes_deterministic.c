@@ -23,11 +23,6 @@ const char SALT[] = {0x4B, 0x73, 0x00};
 /* encryption salt */
 const unsigned char ENCRYPTION_SALT[5] = {0x31,0x32,0x33,0x34,0x00};
 
-void handleErrors(void) {
-    ERR_print_errors_fp(stderr);
-    abort();
-}
-
 int encrypt_aes_128_ctr(unsigned char *plaintext, int plaintext_len, unsigned char *key,
                         unsigned char *iv, unsigned char *ciphertext) {
     EVP_CIPHER_CTX *ctx;
