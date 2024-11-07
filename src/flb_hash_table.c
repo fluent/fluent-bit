@@ -255,7 +255,7 @@ static int entry_set_value(struct flb_hash_table_entry *entry, void *val, size_t
      * If the entry already contains a previous value in the heap, just remove
      * the previously assigned memory.
      */
-    if (entry->val_size > 0) {
+    if (entry->val_size > 0 && entry->val) {
         flb_free(entry->val);
     }
 
@@ -268,6 +268,7 @@ static int entry_set_value(struct flb_hash_table_entry *entry, void *val, size_t
         entry->val = flb_malloc(val_size + 1);
         if (!entry->val) {
             flb_errno();
+            entry->val_size = 0;
             return -1;
         }
 

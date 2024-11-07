@@ -85,7 +85,31 @@ void test_translate_long_env()
 }
 
 
+static void test_internal_vars()
+{
+    int64_t pid;
+    char *tmp;
+    struct flb_env *env;
+
+    env = flb_env_create();
+    TEST_CHECK(env != NULL);
+
+    /* HOSTNAME */
+    tmp = flb_env_get(env, "HOSTNAME");
+    TEST_CHECK(tmp != NULL);
+
+    /* FLUENT_BIT_PID */
+    tmp = flb_env_get(env, "FLUENT_BIT_PID");
+    TEST_CHECK(tmp != NULL);
+
+    pid = getpid();
+    TEST_CHECK(pid == atoll(tmp));
+
+    flb_env_destroy(env);
+}
+
 TEST_LIST = {
     { "translate_long_env"           , test_translate_long_env},
+    { "internal_vars"                , test_internal_vars},
     { NULL, NULL }
 };
