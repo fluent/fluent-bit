@@ -523,7 +523,7 @@ static int cb_cpu_init(struct flb_input_instance *in,
     int ret;
     struct flb_cpu *ctx;
     (void) data;
-    
+
     /* Allocate space for the configuration */
     ctx = flb_calloc(1, sizeof(struct flb_cpu));
     if (!ctx) {
@@ -531,7 +531,7 @@ static int cb_cpu_init(struct flb_input_instance *in,
         return -1;
     }
     ctx->ins = in;
-    
+
     ret = flb_input_config_map_set(in, (void *)ctx);
     if (ret == -1) {
         flb_free(ctx);
@@ -559,6 +559,7 @@ static int cb_cpu_init(struct flb_input_instance *in,
     /* Get CPU load, ready to be updated once fired the calc callback */
     if (ctx->pid > 0) {
         ret = proc_cpu_pid_load(ctx, ctx->pid, &ctx->cstats);
+        flb_plg_info(in, "monitoring PID %i", ctx->pid);
     }
     else {
         ret = proc_cpu_load(ctx->n_processors, &ctx->cstats);
