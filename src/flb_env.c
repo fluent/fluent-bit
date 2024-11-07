@@ -63,6 +63,20 @@ static int env_preset(struct flb_env *env)
         }
     }
 
+    /* Set the current process ID */
+    ret = snprintf(tmp, sizeof(tmp) - 1, "%i", getpid());
+    if (ret <= 0) {
+        flb_error("[env] could not set ${FLUENT_BIT_PID}");
+        return -1;
+    }
+    tmp[ret] = '\0';
+
+    ret = flb_env_set(env, "FLUENT_BIT_PID", tmp);
+    if (ret < 0) {
+        flb_error("[env] could not set ${FLUENT_BIT_PID}");
+        return -1;
+    }
+
     return 0;
 }
 
@@ -108,6 +122,8 @@ int flb_env_set(struct flb_env *env, const char *key, const char *val)
     /* Get lengths */
     klen = strlen(key);
     vlen = strlen(val);
+
+    printf("key: %s, val: %s (vlen: %i)\n", key, val, vlen);
 
     /* Check if the key is already set */
     id = flb_hash_table_get(env->ht, key, klen, &out_buf, &out_size);
