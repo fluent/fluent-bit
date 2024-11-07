@@ -40,6 +40,7 @@ struct flb_env {
     int warn_unused;        /* warn about unused environment variable */
     struct flb_hash_table *ht;
     struct mk_list vars;    /* list of environment variables */
+    char process_id[32];   /* PID at configuration initialization */
 };
 
 static inline void flb_env_warn_unused(struct flb_env *env, int warn)
