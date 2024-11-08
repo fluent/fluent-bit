@@ -49,7 +49,7 @@
 #endif
 
 #ifdef FLB_HAVE_UNICODE_ENCODER
-#include <fluent-bit/simdutf/flb_simdutf_connector.h>
+#include <fluent-bit/flb_unicode.h>
 #endif
 
 #include <cfl/cfl.h>
@@ -460,16 +460,16 @@ static int process_content(struct flb_tail_file *file, size_t *bytes)
     file->last_processed_bytes = 0;
 
 #ifdef FLB_HAVE_UNICODE_ENCODER
-    if (ctx->preferred_input_encoding != FLB_SIMDUTF_ENCODING_TYPE_UNSPECIFIED) {
+    if (ctx->preferred_input_encoding != FLB_UNICODE_ENCODING_UNSPECIFIED) {
         original_len = end - data;
         decoded = NULL;
-        ret = flb_simdutf_connector_convert_from_unicode(ctx->preferred_input_encoding,
-                                                         data, end - data, &decoded, &decoded_len);
+        ret = flb_unicode_convert(ctx->preferred_input_encoding,
+                                  data, end - data, &decoded, &decoded_len);
         if (ret == FLB_SIMDUTF_CONNECTOR_CONVERT_OK) {
             data = decoded;
             end  = data + decoded_len;
         }
-        else if (ret == FLB_SIMDUTF_CONNECTOR_CONVERT_NOP) {
+        else if (ret == FLB_UNICODE_CONVERT_NOP) {
             flb_plg_debug(ctx->ins, "nothing to convert encoding '%.*s'", end - data, data);
         }
         else {
