@@ -27,7 +27,7 @@ Approach for this tests is basing on filter_kubernetes tests
 #include <fluent-bit/flb_pthread.h>
 #include <fluent-bit/flb_compat.h>
 #ifdef FLB_HAVE_UNICODE_ENCODER
-#include <fluent-bit/simdutf/flb_simdutf_connector.h>
+#include <fluent-bit/flb_unicode.h>
 #endif
 #include <stdlib.h>
 #include <sys/stat.h>
@@ -455,7 +455,7 @@ static int cb_check_result_unicode(void *record, size_t size, void *data)
         goto exit;
     }
 
-    valid = flb_simdutf_connector_validate_utf8(record, size);
+    valid = flb_unicode_validate(record, size);
     if (valid == FLB_FALSE) {
         goto exit;
     }
