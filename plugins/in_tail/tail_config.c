@@ -37,7 +37,7 @@
 #endif
 
 #ifdef FLB_HAVE_UNICODE_ENCODER
-#include <fluent-bit/simdutf/flb_simdutf_connector.h>
+#include <fluent-bit/flb_unicode.h>
 #endif
 
 static int multiline_load_parsers(struct flb_tail_config *ctx)
@@ -112,7 +112,7 @@ struct flb_tail_config *flb_tail_config_create(struct flb_input_instance *ins,
     ctx->db_sync = 1;  /* sqlite sync 'normal' */
 #endif
 #ifdef FLB_HAVE_UNICODE_ENCODER
-    ctx->preferred_input_encoding = FLB_SIMDUTF_ENCODING_TYPE_UNSPECIFIED;
+    ctx->preferred_input_encoding = FLB_UNICODE_ENCODING_UNSPECIFIED;
 #endif
 
     /* Load the config map */
@@ -201,17 +201,17 @@ struct flb_tail_config *flb_tail_config_create(struct flb_input_instance *ins,
     tmp = flb_input_get_property("unicode.encoding", ins);
     if (tmp) {
         if (strcasecmp(tmp, "auto") == 0) {
-            ctx->preferred_input_encoding = FLB_SIMDUTF_ENCODING_TYPE_UNICODE_AUTO;
+            ctx->preferred_input_encoding = FLB_UNICODE_ENCODING_AUTO;
             adjust_buffer_for_2bytes_alignments(ctx);
         }
         else if (strcasecmp(tmp, "utf-16le") == 0 ||
                  strcasecmp(tmp, "utf16-le") == 0) {
-            ctx->preferred_input_encoding = FLB_SIMDUTF_ENCODING_TYPE_UTF16_LE;
+            ctx->preferred_input_encoding = FLB_UNICODE_ENCODING_UTF16_LE;
             adjust_buffer_for_2bytes_alignments(ctx);
         }
         else if (strcasecmp(tmp, "utf-16be") == 0 ||
                  strcasecmp(tmp, "utf16-be") == 0) {
-            ctx->preferred_input_encoding = FLB_SIMDUTF_ENCODING_TYPE_UTF16_BE;
+            ctx->preferred_input_encoding = FLB_UNICODE_ENCODING_UTF16_BE;
             adjust_buffer_for_2bytes_alignments(ctx);
         }
         else {
