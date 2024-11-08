@@ -82,6 +82,7 @@ static int env_preset(struct flb_env *env)
 
 struct flb_env *flb_env_create()
 {
+    int ret;
     struct flb_env *env;
     struct flb_hash_table *ht;
 
@@ -100,7 +101,11 @@ struct flb_env *flb_env_create()
 
     env->warn_unused = FLB_TRUE;
     env->ht = ht;
-    env_preset(env);
+    ret = env_preset(env);
+    if (ret == -1) {
+        flb_env_destroy(env);
+        return NULL;
+    }
 
     return env;
 }
@@ -123,7 +128,7 @@ int flb_env_set(struct flb_env *env, const char *key, const char *val)
     klen = strlen(key);
     vlen = strlen(val);
 
-    printf("key: %s, val: %s (vlen: %i)\n", key, val, vlen);
+    printf("[env set] key: %s, val: %s (vlen: %i)\n", key, val, vlen);
 
     /* Check if the key is already set */
     id = flb_hash_table_get(env->ht, key, klen, &out_buf, &out_size);
