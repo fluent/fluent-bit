@@ -341,6 +341,10 @@ endif()
 
 if(FLB_UNICODE_ENCODER)
   add_subdirectory(simdutf)
+  set(src
+    ${src}
+    "flb_unicode.c"
+    )
 endif()
 
 # WAMRC compiler
