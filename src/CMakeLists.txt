@@ -392,7 +392,7 @@ set(FLB_DEPS
   ctraces-static
   mk_core
   jsmn
-  msgpack-c-static
+  ${MSGPACK_LIBRARIES}
   mpack-static
   chunkio-static
   miniz
