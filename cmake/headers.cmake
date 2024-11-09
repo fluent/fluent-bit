@@ -20,7 +20,6 @@ include_directories(
 
   ${FLB_PATH_ROOT_SOURCE}/${FLB_PATH_LIB_CO}
   ${FLB_PATH_ROOT_SOURCE}/${FLB_PATH_LIB_RBTREE}
-  ${FLB_PATH_ROOT_SOURCE}/${FLB_PATH_LIB_MSGPACK}/include
 
   # Chunk I/O generate headers also in the binary path
   ${FLB_PATH_ROOT_SOURCE}/${FLB_PATH_LIB_CHUNKIO}/include

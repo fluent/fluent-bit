@@ -236,6 +236,7 @@ option(FLB_PREFER_SYSTEM_LIB_CARES        "Prefer the libcares system library"  
 option(FLB_PREFER_SYSTEM_LIB_JEMALLOC     "Prefer the libjemalloc system library"     ${FLB_PREFER_SYSTEM_LIBS})
 option(FLB_PREFER_SYSTEM_LIB_KAFKA        "Prefer the libkafka system library"        ${FLB_PREFER_SYSTEM_LIBS})
 option(FLB_PREFER_SYSTEM_LIB_LUAJIT       "Prefer the libluajit system library"       ${FLB_PREFER_SYSTEM_LIBS})
+option(FLB_PREFER_SYSTEM_LIB_MSGPACK      "Prefer the libmsgpack system library"      ${FLB_PREFER_SYSTEM_LIBS})
 option(FLB_PREFER_SYSTEM_LIB_NGHTTP2      "Prefer the libnghttp2 system library"      ${FLB_PREFER_SYSTEM_LIBS})
 
 # Enable all features
@@ -518,11 +519,16 @@ FLB_OPTION(FLUENT_PROTO_PROFILES ON)
 add_subdirectory(${FLB_PATH_LIB_FLUENT_OTEL} EXCLUDE_FROM_ALL)
 
 # MsgPack options
-option(MSGPACK_ENABLE_CXX             OFF)
-option(MSGPACK_ENABLE_SHARED          OFF)
-option(MSGPACK_BUILD_TESTS            OFF)
-option(MSGPACK_BUILD_EXAMPLES         OFF)
-add_subdirectory(${FLB_PATH_LIB_MSGPACK} EXCLUDE_FROM_ALL)
+if(FLB_PREFER_SYSTEM_LIB_MSGPACK)
+  find_package(PkgConfig)
+  pkg_check_modules(MSGPACK msgpack>=4.0.0)
+endif()
+if(MSGPACK_FOUND)
+  include_directories(${MSGPACK_INCLUDE_DIRS})
+  link_directories(${MSGPACK_LIBRARY_DIRS})
+else()
+  include(cmake/msgpack.cmake)
+endif()
 
 # MPack
 add_definitions(-DMPACK_EXTENSIONS=1)
