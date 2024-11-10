@@ -245,7 +245,7 @@ if(FLB_SQLDB)
     )
   set(extra_libs
     ${extra_libs}
-    "sqlite3")
+    ${SQLITE_LIBRARIES})
 endif()
 
 if(FLB_STATIC_CONF)
