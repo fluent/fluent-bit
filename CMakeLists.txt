@@ -238,6 +238,7 @@ option(FLB_PREFER_SYSTEM_LIB_KAFKA        "Prefer the libkafka system library"  
 option(FLB_PREFER_SYSTEM_LIB_LUAJIT       "Prefer the libluajit system library"       ${FLB_PREFER_SYSTEM_LIBS})
 option(FLB_PREFER_SYSTEM_LIB_MSGPACK      "Prefer the libmsgpack system library"      ${FLB_PREFER_SYSTEM_LIBS})
 option(FLB_PREFER_SYSTEM_LIB_NGHTTP2      "Prefer the libnghttp2 system library"      ${FLB_PREFER_SYSTEM_LIBS})
+option(FLB_PREFER_SYSTEM_LIB_SQLITE       "Prefer the libsqlite3 system library"      ${FLB_PREFER_SYSTEM_LIBS})
 
 # Enable all features
 if(FLB_ALL)
@@ -752,8 +753,17 @@ if (FLB_SIGNV4)
 endif()
 
 if(FLB_SQLDB)
+  if(FLB_PREFER_SYSTEM_LIB_SQLITE)
+    find_package(PkgConfig)
+    pkg_check_modules(SQLITE sqlite3>=3.0.0)
+  endif()
+  if(SQLITE_FOUND)
+    include_directories(${SQLITE_INCLUDE_DIRS})
+    link_directories(${SQLITE_LIBRARY_DIRS})
+  else()
+    include(cmake/sqlite.cmake)
+  endif()
   FLB_DEFINITION(FLB_HAVE_SQLDB)
-  add_subdirectory(${FLB_PATH_LIB_SQLITE})
 endif()
 
 if(FLB_TRACE)
