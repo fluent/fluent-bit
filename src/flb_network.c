@@ -324,9 +324,12 @@ int flb_net_socket_tcp_keepalive(flb_sockfd_t fd, struct flb_net_setup *net)
                      (const void *) &enabled, sizeof(enabled));
 
     if (ret == 0 && time >= 0) {
-        ret = setsockopt(fd, IPPROTO_TCP, TCP_KEEPIDLE,
-                         (const void *) &time, sizeof(time));
-    }
+#ifdef __APPLE__
+        ret = setsockopt(fd, IPPROTO_TCP, TCP_KEEPALIVE,
+#else
+                ret = setsockopt(fd, IPPROTO_TCP, TCP_KEEPIDLE,
+#endif
+                (const void *) &time, sizeof(time));    }
 
     if (ret == 0 && interval >= 0) {
         ret = setsockopt(fd, IPPROTO_TCP, TCP_KEEPINTVL,
