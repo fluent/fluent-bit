@@ -2767,8 +2767,8 @@ static struct parser_state *state_create(struct file_state *parent, struct file_
 
 #else
 
-    s->file->name = flb_sds_create("***static***");
-    s->file->path = flb_sds_create("***static***");
+    state->file->name = flb_sds_create("***static***");
+    state->file->path = flb_sds_create("***static***");
 
 #endif
 
