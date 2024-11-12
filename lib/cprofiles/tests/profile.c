@@ -35,6 +35,7 @@ void print_profile(struct cprof_profile *profile)
     struct cfl_list *type_head;
     struct cprof_sample *sample;
     struct cprof_value_type *sample_type;
+    size_t value_index = 0;
 
     printf("\n");
     printf("--- profile debug\n");
@@ -58,7 +59,6 @@ void print_profile(struct cprof_profile *profile)
         }
 
         printf("    Values:\n");
-        size_t value_index = 0;
         cfl_list_foreach(type_head, &profile->sample_type) {
             sample_type = cfl_list_entry(type_head, struct cprof_value_type, _head);
             if (value_index < sample->value_count) {
@@ -72,7 +72,7 @@ void print_profile(struct cprof_profile *profile)
 
         if (sample->timestamps_count > 0) {
             printf("    Timestamps:\n");
-            for (size_t i = 0; i < sample->timestamps_count; ++i) {
+            for (i = 0; i < sample->timestamps_count; ++i) {
                 printf("      Timestamp %zu: %" PRIu64 " ns\n", i, sample->timestamps_unix_nano[i]);
             }
         } else {
