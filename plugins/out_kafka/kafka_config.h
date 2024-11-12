@@ -124,6 +124,9 @@ struct flb_out_kafka {
     struct flb_avro_fields avro_fields;
 #endif
 
+#ifdef FLB_HAVE_METRICS
+    struct cmt_counter *cmt_kafka_errors;
+#endif
 };
 
 struct flb_out_kafka *flb_out_kafka_create(struct flb_output_instance *ins,
