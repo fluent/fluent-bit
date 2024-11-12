@@ -373,6 +373,7 @@ set(FLB_DEPS
   ${FLB_DEPS}
   cfl-static
   fluent-otel-proto
+  cprofiles-static
   cmetrics-static
   ctraces-static
   mk_core
