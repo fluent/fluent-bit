@@ -155,6 +155,9 @@ option(FLB_ENFORCE_ALIGNMENT   "Enable limited platform specific aligned memory 
 # Native Metrics Support (cmetrics)
 option(FLB_METRICS             "Enable metrics support"       Yes)
 
+# Native Profiules Support (cprofiles)
+option(FLB_PROFILES            "Enable profiles support"      Yes)
+
 # Proxy Plugins
 option(FLB_PROXY_GO            "Enable Go plugins support"    Yes)
 
@@ -257,6 +260,7 @@ if(FLB_DEV)
   set(FLB_TRACE             On)
   set(FLB_CHUNK_TRACE       On)
   set(FLB_METRICS           On)
+  set(FLB_PROFILES          On)
   set(FLB_IN_EVENT_TEST     On)
   set(FLB_HTTP_SERVER       On)
   set(FLB_HTTP_CLIENT_DEBUG On)
@@ -431,7 +435,7 @@ endif()
 set(WITH_SYSTEM_MALLOC  1 CACHE BOOL "Use system memory allocator")
 
 # Headers: required headers by bundled libraries, this act as a helper for
-# CFL, Ctraces, CMetrics and fluent-otel-proto
+# CFL, Ctraces, CMetrics, CProfiles and fluent-otel-proto
 #
 # Note: any check_c_source_compiles() cmake function might require this to
 # work.
@@ -447,6 +451,7 @@ add_subdirectory(${FLB_PATH_LIB_CFL} EXCLUDE_FROM_ALL)
 
 # fluent-otel-proto
 FLB_OPTION(FLUENT_PROTO_METRICS ON)
+FLB_OPTION(FLUENT_PROTO_PROFILES ON)
 add_subdirectory(${FLB_PATH_LIB_FLUENT_OTEL} EXCLUDE_FROM_ALL)
 
 # MsgPack options
@@ -492,6 +497,9 @@ add_subdirectory(${FLB_PATH_LIB_CMETRICS} EXCLUDE_FROM_ALL)
 
 # CTraces
 add_subdirectory(${FLB_PATH_LIB_CTRACES} EXCLUDE_FROM_ALL)
+
+# CProfiles
+add_subdirectory(${FLB_PATH_LIB_CPROFILES} EXCLUDE_FROM_ALL)
 
 # Nghttp2 options
 if(FLB_PREFER_SYSTEM_LIB_NGHTTP2)
@@ -600,6 +608,11 @@ endif()
 # Metrics
 if(FLB_METRICS)
   FLB_DEFINITION(FLB_HAVE_METRICS)
+endif()
+
+# Profiles
+if(FLB_PROFILES)
+  FLB_DEFINITION(FLB_HAVE_PROFILES)
 endif()
 
 # WASM

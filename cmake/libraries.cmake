@@ -3,6 +3,7 @@ set(FLB_PATH_LIB_CFL         "lib/cfl")
 set(FLB_PATH_LIB_FLUENT_OTEL "lib/fluent-otel-proto")
 set(FLB_PATH_LIB_CMETRICS    "lib/cmetrics")
 set(FLB_PATH_LIB_CTRACES     "lib/ctraces")
+set(FLB_PATH_LIB_CPROFILES   "lib/cprofiles")
 
 set(FLB_PATH_LIB_CO          "lib/flb_libco")
 set(FLB_PATH_LIB_RBTREE      "lib/rbtree")
