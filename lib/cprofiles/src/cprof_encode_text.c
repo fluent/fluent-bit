@@ -631,9 +631,9 @@ static int encode_int64_t_array(
         }
     }
 
-    result = cfl_sds_printf(&context->output_buffer,
-                            "%s",
-                            suffix);
+    sds_result = cfl_sds_printf(&context->output_buffer,
+                                "%s",
+                                suffix);
 
     if (sds_result == NULL) {
         return CPROF_ENCODE_TEXT_ALLOCATION_ERROR;
