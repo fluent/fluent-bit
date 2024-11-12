@@ -32,6 +32,8 @@
 
 #include <monkey/mk_core.h>
 #include <cmetrics/cmt_decode_opentelemetry.h>
+#include <cprofiles/cprof_decode_opentelemetry.h>
+#include <cprofiles/cprof_encode_text.h>
 
 #include <fluent-otel-proto/fluent-otel.h>
 #include "opentelemetry.h"
@@ -2431,6 +2433,146 @@ static int process_payload_logs_ng(struct flb_opentelemetry *ctx,
     return ret;
 }
 
+static int process_payload_profiles_ng(struct flb_opentelemetry *ctx,
+                                       flb_sds_t tag,
+                                       struct flb_http_request *request,
+                                       struct flb_http_response *response)
+{
+    cfl_sds_t                     text_encoded_profiles_context;
+    struct cprof                 *profiles_context;
+    struct flb_log_event_encoder *encoder;
+    size_t                        offset;
+    int                           ret;
+
+    encoder = flb_log_event_encoder_create(FLB_LOG_EVENT_FORMAT_FLUENT_BIT_V2);
+
+    if (encoder == NULL) {
+        return -1;
+    }
+
+    if (request->content_type == NULL) {
+        flb_log_event_encoder_destroy(encoder);
+
+        flb_error("[otel] content type missing");
+
+        return -1;
+    }
+    else if (strcasecmp(request->content_type, "application/json") == 0) {
+        flb_log_event_encoder_destroy(encoder);
+
+        flb_error("[otel] unsuported profiles encoding type : %s",
+                  request->content_type);
+
+        return -1;
+    }
+    else if (strcasecmp(request->content_type, "application/x-protobuf") == 0) {
+        flb_log_event_encoder_destroy(encoder);
+
+        flb_error("[otel] unsuported profiles encoding type : %s",
+                  request->content_type);
+
+        return -1;
+    }
+    else if (strcasecmp(request->content_type, "application/grpc") == 0) {
+        if (cfl_sds_len(request->body) < 5) {
+            flb_log_event_encoder_destroy(encoder);
+
+            flb_error("[otel] malformed grpc packet of size %zu",
+                      cfl_sds_len(request->body));
+
+            return -1;
+        }
+
+        profiles_context = NULL;
+        offset = 0;
+
+        ret = cprof_decode_opentelemetry_create(&profiles_context,
+                                                &((uint8_t *) request->body)[5],
+                                                (cfl_sds_len(request->body)) - 5,
+                                                &offset);
+
+        if (ret != CPROF_DECODE_OPENTELEMETRY_SUCCESS) {
+            flb_log_event_encoder_destroy(encoder);
+
+            flb_error("[otel] profile decoding error : %d",
+                      ret);
+
+            return -1;
+        }
+
+        ret = cprof_encode_text_create(&text_encoded_profiles_context, profiles_context);
+
+        cprof_decode_opentelemetry_destroy(profiles_context);
+
+        if (ret != CPROF_DECODE_OPENTELEMETRY_SUCCESS) {
+            flb_log_event_encoder_destroy(encoder);
+
+            flb_error("[otel] profile text encoding error : %d",
+                      ret);
+
+            return -1;
+        }
+
+        flb_log_event_encoder_begin_record(encoder);
+
+        flb_log_event_encoder_set_current_timestamp(encoder);
+
+        ret = flb_log_event_encoder_append_body_values(
+                    encoder,
+                    FLB_LOG_EVENT_CSTRING_VALUE("Profile"),
+                    FLB_LOG_EVENT_STRING_VALUE(text_encoded_profiles_context,
+                                               cfl_sds_len(text_encoded_profiles_context)));
+
+        cprof_encode_text_destroy(text_encoded_profiles_context);
+
+        if (ret != FLB_EVENT_ENCODER_SUCCESS) {
+            flb_log_event_encoder_destroy(encoder);
+
+            flb_error("[otel] re encoded profile ingestion error : %d",
+                      ret);
+
+            return -1;
+        }
+
+        ret = flb_log_event_encoder_commit_record(encoder);
+
+        if (ret != FLB_EVENT_ENCODER_SUCCESS) {
+            flb_log_event_encoder_destroy(encoder);
+
+            flb_error("[otel] re encoded profile ingestion error : %d",
+                      ret);
+
+            return -1;
+        }
+
+        ret = flb_input_log_append(ctx->ins,
+                                   tag,
+                                   flb_sds_len(tag),
+                                   encoder->output_buffer,
+                                   encoder->output_length);
+
+        if (ret != FLB_EVENT_ENCODER_SUCCESS) {
+            flb_log_event_encoder_destroy(encoder);
+
+            flb_error("[otel] re encoded profile ingestion error : %d",
+                      ret);
+
+            return -1;
+        }
+
+        ret = 0;
+    }
+    else {
+        flb_plg_error(ctx->ins, "Unsupported content type %s", request->content_type);
+
+        ret = -1;
+    }
+
+
+    flb_log_event_encoder_destroy(encoder);
+
+    return ret;
+}
 
 static int send_export_service_response_ng(struct flb_http_response *response,
                                            int result,
@@ -2476,6 +2618,10 @@ int opentelemetry_prot_handle_ng(struct flb_http_request *request,
             strcmp(request->path, "/opentelemetry.proto.collector.trace.v1.TraceService/Export") == 0 ||
             strcmp(request->path, "/opentelemetry.proto.collector.log.v1.LogService/Export") == 0) {
 
+        grpc_request = FLB_TRUE;
+    }
+    else if (context->profile_support_enabled &&
+             strcmp(request->path, "/opentelemetry.proto.collector.profiles.v1experimental.ProfilesService/Export") == 0) {
         grpc_request = FLB_TRUE;
     }
     else {
@@ -2530,6 +2676,17 @@ int opentelemetry_prot_handle_ng(struct flb_http_request *request,
             tag = flb_sds_create(context->ins->tag);
         }
         result = process_payload_logs_ng(context, tag, request, response);
+    }
+    else if (context->profile_support_enabled &&
+             strcmp(request->path, "/opentelemetry.proto.collector.profiles.v1experimental.ProfilesService/Export") == 0) {
+        payload_type = 'P';
+        if (context->tag_from_uri == FLB_TRUE) {
+            tag = flb_sds_create("v1development_profiles");
+        }
+        else {
+            tag = flb_sds_create(context->ins->tag);
+        }
+        result = process_payload_profiles_ng(context, tag, request, response);
     }
 
     if (grpc_request) {
