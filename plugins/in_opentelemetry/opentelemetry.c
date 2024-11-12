@@ -202,6 +202,14 @@ static struct flb_config_map config_map[] = {
     },
 
     {
+     FLB_CONFIG_MAP_BOOL, "profiles_support", "false",
+     0, FLB_TRUE, offsetof(struct flb_opentelemetry, profile_support_enabled),
+     "This is an experimental feature whoses specification is not stable yet, " \
+     "feel free to test it but please do not enable this in production " \
+     "environments"
+    },
+
+    {
      FLB_CONFIG_MAP_SIZE, "buffer_max_size", HTTP_BUFFER_MAX_SIZE,
      0, FLB_TRUE, offsetof(struct flb_opentelemetry, buffer_max_size),
      ""
