@@ -34,6 +34,9 @@ file(GLOB_RECURSE TRACE_C_FILES ${CMAKE_SOURCE_DIR}/plugins/in_ebpf/traces/*/bpf
 set(TRACE_OBJ_FILES "")
 set(TRACE_SKEL_HEADERS "")
 
+add_custom_target(ebpf-generated-directory ALL
+    COMMAND ${CMAKE_COMMAND} -E make_directory ${CMAKE_BINARY_DIR}/plugins/in_ebpf/traces/includes/generated/)
+
 # Iterate over each trace bpf.c file to generate corresponding .o and .skel.h files
 foreach(TRACE_C_FILE ${TRACE_C_FILES})
   # Get the filename and parent directory name (for uniqueness)
@@ -61,7 +64,7 @@ foreach(TRACE_C_FILE ${TRACE_C_FILES})
             -I${VMLINUX_PATH}         # Include the correct vmlinux.h based on architecture
             -c ${TRACE_C_FILE}
             -o ${TRACE_OBJ_FILE}
-    DEPENDS ${TRACE_C_FILE}
+    DEPENDS ${TRACE_C_FILE} ebpf-generated-directory
   )
 
   # Generate skeleton header for each compiled BPF object file
