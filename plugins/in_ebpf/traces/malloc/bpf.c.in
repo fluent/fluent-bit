@@ -115,58 +115,58 @@ static int gen_free_enter(struct pt_regs *ctx, enum memop op, u64 addr) {
 }
 
 /* Allocation tracking */
-SEC("uprobe//lib64/libc.so.6:malloc")
+SEC("uprobe/@LIBC_PATH@:malloc")
 int BPF_UPROBE(trace_uprobe_malloc, size_t size) {
     return gen_alloc_enter(size);
 }
 
-SEC("uretprobe//lib64/libc.so.6:malloc")
+SEC("uretprobe/@LIBC_PATH@:malloc")
 int trace_uretprobe_malloc(struct pt_regs *ctx) {
     return gen_alloc_exit(ctx, MEMOP_MALLOC, PT_REGS_RC(ctx));
 }
 
 /* Free tracking */
-SEC("uprobe//lib64/libc.so.6:free")
+SEC("uprobe/@LIBC_PATH@:free")
 int BPF_UPROBE(trace_uprobe_free, void *address) {
     return gen_free_enter(ctx, MEMOP_FREE, (u64)address);
 }
 
 /* Calloc tracking */
-SEC("uprobe//lib64/libc.so.6:calloc")
+SEC("uprobe/@LIBC_PATH@:calloc")
 int BPF_UPROBE(trace_uprobe_calloc, size_t nmemb, size_t size) {
     return gen_alloc_enter(nmemb * size);
 }
 
-SEC("uretprobe//lib64/libc.so.6:calloc")
+SEC("uretprobe/@LIBC_PATH@:calloc")
 int trace_uretprobe_calloc(struct pt_regs *ctx) {
     return gen_alloc_exit(ctx, MEMOP_CALLOC, PT_REGS_RC(ctx));
 }
 
 /* Realloc tracking */
-SEC("uprobe//lib64/libc.so.6:realloc")
+SEC("uprobe/@LIBC_PATH@:realloc")
 int BPF_UPROBE(trace_uprobe_realloc, void *ptr, size_t size) {
     gen_free_enter(ctx, MEMOP_REALLOC_FREE, (u64)ptr);
     return gen_alloc_enter(size);
 }
 
-SEC("uretprobe//lib64/libc.so.6:realloc")
+SEC("uretprobe/@LIBC_PATH@:realloc")
 int trace_uretprobe_realloc(struct pt_regs *ctx) {
     return gen_alloc_exit(ctx, MEMOP_REALLOC, PT_REGS_RC(ctx));
 }
 
 /* Mmap tracking */
-SEC("uprobe//lib64/libc.so.6:mmap")
+SEC("uprobe/@LIBC_PATH@:mmap")
 int BPF_UPROBE(trace_uprobe_mmap, void *address, size_t size) {
     return gen_alloc_enter(size);
 }
 
-SEC("uretprobe//lib64/libc.so.6:mmap")
+SEC("uretprobe/@LIBC_PATH@:mmap")
 int trace_uretprobe_mmap(struct pt_regs *ctx) {
     return gen_alloc_exit(ctx, MEMOP_MMAP, PT_REGS_RC(ctx));
 }
 
 /* Munmap tracking */
-SEC("uprobe//lib64/libc.so.6:munmap")
+SEC("uprobe/@LIBC_PATH@:munmap")
 int BPF_UPROBE(trace_uprobe_munmap, void *address) {
     return gen_free_enter(ctx, MEMOP_MUNMAP, (u64)address);
 }

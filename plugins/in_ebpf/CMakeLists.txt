@@ -27,6 +27,37 @@ include_directories(
 add_library(gadget INTERFACE)
 target_include_directories(gadget INTERFACE ${CMAKE_SOURCE_DIR}/plugins/in_ebpf/traces/includes/external/gadget)
 
+set(LIBC_PATH "/lib64/libc.so.6")
+
+find_program(LSB_RELEASE_EXEC lsb_release)
+if (LSB_RELEASE_EXEC)
+  execute_process(COMMAND ${LSB_RELEASE_EXEC} -i
+      OUTPUT_VARIABLE LSB_RELEASE_ID_SHORT
+      OUTPUT_STRIP_TRAILING_WHITESPACE
+  )
+
+  message(STATUS "##### lsb_release -i -- ${LSB_RELEASE_ID_SHORT}")
+
+  if (LSB_RELEASE_ID_SHORT MATCHES "Ubuntu" OR
+      LSB_RELEASE_ID_SHORT MATCHES "Debian" OR
+      LSB_RELEASE_ID_SHORT MATCHES "LinuxMint")
+    # Just added for the future enhancement
+    if (CMAKE_SYSTEM_PROCESSOR MATCHES "^(arm64|aarch64)")
+      set(LIBC_PATH "/usr/lib/aarch64-linux-gnu/libc.so.6")
+    elseif (CMAKE_SIZEOF_VOID_P EQUAL 8)
+      set(LIBC_PATH "/usr/lib/x86_64-linux-gnu/libc.so.6")
+    elseif (CMAKE_SIZEOF_VOID_P EQUAL 4)
+      set(LIBC_PATH "/usr/lib/i386-linux-gnu/libc.so.6")
+    endif()
+  endif()
+endif()
+
+# Generate the malloc trace from the template
+configure_file(
+  "${CMAKE_SOURCE_DIR}/plugins/in_ebpf/traces/malloc/bpf.c.in"
+  "${CMAKE_SOURCE_DIR}/plugins/in_ebpf/traces/malloc/bpf.c"
+  )
+
 # Find all bpf.c files in the traces directory
 file(GLOB_RECURSE TRACE_C_FILES ${CMAKE_SOURCE_DIR}/plugins/in_ebpf/traces/*/bpf.c)
 
@@ -90,7 +121,7 @@ add_custom_target(compile_ebpf ALL DEPENDS ${TRACE_OBJ_FILES} ${TRACE_SKEL_HEADE
 add_dependencies(compile_ebpf gadget)
 
 # Include generated skeleton headers in the main plugin
-include_directories(${CMAKE_BINARY_DIR}/plugins/in_ebpf/traces/includes/generated)
+include_directories(${CMAKE_BINARY_DIR}/plugins/in_ebpf/traces/includes/)
 
 # Declare the Fluent Bit plugin (using the default compiler for the main plugin)
 FLB_PLUGIN(in_ebpf "${src}" "")
