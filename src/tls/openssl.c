@@ -143,6 +143,54 @@ static void tls_context_destroy(void *ctx_backend)
     flb_free(ctx);
 }
 
+static int tls_context_server_alpn_select_callback(SSL *ssl,
+                                                   const unsigned char **out,
+                                                   unsigned char *outlen,
+                                                   const unsigned char *in,
+                                                   unsigned int inlen,
+                                                   void *arg)
+{
+    int                 result;
+    struct tls_context *ctx;
+
+    ctx = (struct tls_context *) arg;
+
+    result = SSL_TLSEXT_ERR_NOACK;
+
+    if (ctx->alpn != NULL) {
+        result = SSL_select_next_proto((unsigned char **) out,
+                                       outlen,
+                                       (const unsigned char *) &ctx->alpn[1],
+                                       (unsigned int) ctx->alpn[0],
+                                       in,
+                                       inlen);
+
+        if (result == OPENSSL_NPN_NEGOTIATED) {
+            result = SSL_TLSEXT_ERR_OK;
+        }
+        else if (result == OPENSSL_NPN_NO_OVERLAP) {
+            result = SSL_TLSEXT_ERR_ALERT_FATAL;
+        }
+    }
+
+    return result;
+}
+
+static int tls_context_client_alpn_select_callback(SSL *ssl,
+                                                   unsigned char **out,
+                                                   unsigned char *outlen,
+                                                   const unsigned char *in,
+                                                   unsigned int inlen,
+                                                   void *arg)
+{
+    return tls_context_server_alpn_select_callback(ssl,
+                                                   (const unsigned char **) out,
+                                                   outlen,
+                                                   in,
+                                                   inlen,
+                                                   arg);
+}
+
 int tls_context_alpn_set(void *ctx_backend, const char *alpn)
 {
     size_t              wire_format_alpn_index;
@@ -205,56 +253,22 @@ int tls_context_alpn_set(void *ctx_backend, const char *alpn)
     if (result != 0) {
         result = -1;
     }
-
-    return result;
-}
-
-static int tls_context_server_alpn_select_callback(SSL *ssl,
-                                                   const unsigned char **out,
-                                                   unsigned char *outlen,
-                                                   const unsigned char *in,
-                                                   unsigned int inlen,
-                                                   void *arg)
-{
-    int                 result;
-    struct tls_context *ctx;
-
-    ctx = (struct tls_context *) arg;
-
-    result = SSL_TLSEXT_ERR_NOACK;
-
-    if (ctx->alpn != NULL) {
-        result = SSL_select_next_proto((unsigned char **) out,
-                                       outlen,
-                                       (const unsigned char *) &ctx->alpn[1],
-                                       (unsigned int) ctx->alpn[0],
-                                       in,
-                                       inlen);
-
-        if (result == OPENSSL_NPN_NEGOTIATED) {
-            result = SSL_TLSEXT_ERR_OK;
+    else {
+        if (ctx->mode == FLB_TLS_SERVER_MODE) {
+            SSL_CTX_set_alpn_select_cb(
+                ctx->ctx,
+                tls_context_server_alpn_select_callback,
+                ctx);
         }
-        else if (result == OPENSSL_NPN_NO_OVERLAP) {
-            result = SSL_TLSEXT_ERR_ALERT_FATAL;
+        else {
+            SSL_CTX_set_next_proto_select_cb(
+                ctx->ctx,
+                tls_context_client_alpn_select_callback,
+                ctx);
         }
     }
 
     return result;
-}
-
-static int tls_context_client_alpn_select_callback(SSL *ssl,
-                                                   unsigned char **out,
-                                                   unsigned char *outlen,
-                                                   const unsigned char *in,
-                                                   unsigned int inlen,
-                                                   void *arg)
-{
-    return tls_context_server_alpn_select_callback(ssl,
-                                                   (const unsigned char **) out,
-                                                   outlen,
-                                                   in,
-                                                   inlen,
-                                                   arg);
 }
 
 #ifdef _MSC_VER
@@ -514,19 +528,6 @@ static void *tls_context_create(int verify,
     ctx->alpn = NULL;
     ctx->debug_level = debug;
     pthread_mutex_init(&ctx->mutex, NULL);
-
-    if (mode == FLB_TLS_SERVER_MODE) {
-        SSL_CTX_set_alpn_select_cb(
-            ssl_ctx,
-            tls_context_server_alpn_select_callback,
-            ctx);
-    }
-    else {
-        SSL_CTX_set_next_proto_select_cb(
-            ssl_ctx,
-            tls_context_client_alpn_select_callback,
-            ctx);
-    }
 
     /* Verify peer: by default OpenSSL always verify peer */
     if (verify == FLB_FALSE) {
