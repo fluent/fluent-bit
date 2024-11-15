@@ -121,7 +121,7 @@ add_custom_target(compile_ebpf ALL DEPENDS ${TRACE_OBJ_FILES} ${TRACE_SKEL_HEADE
 add_dependencies(compile_ebpf gadget)
 
 # Include generated skeleton headers in the main plugin
-include_directories(${CMAKE_BINARY_DIR}/plugins/in_ebpf/traces/includes/generated)
+include_directories(${CMAKE_BINARY_DIR}/plugins/in_ebpf/traces/includes/)
 
 # Declare the Fluent Bit plugin (using the default compiler for the main plugin)
 FLB_PLUGIN(in_ebpf "${src}" "")
