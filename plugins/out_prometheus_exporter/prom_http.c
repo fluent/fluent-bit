@@ -163,17 +163,17 @@ static void cb_metrics(mk_request_t *request, void *data)
     struct prom_http_buf *buf;
     (void) data;
 
+    mk_http_status(request, 200);
+    flb_hs_add_content_type_to_req(request, FLB_HS_CONTENT_TYPE_PROMETHEUS);
+
     buf = metrics_get_latest();
     if (!buf) {
-        mk_http_status(request, 404);
         mk_http_done(request);
         return;
     }
 
     buf->users++;
 
-    mk_http_status(request, 200);
-    flb_hs_add_content_type_to_req(request, FLB_HS_CONTENT_TYPE_PROMETHEUS);
     mk_http_send(request, buf->buf_data, buf->buf_size, NULL);
     mk_http_done(request);
 
