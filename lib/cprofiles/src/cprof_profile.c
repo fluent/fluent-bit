@@ -98,7 +98,7 @@ void cprof_profile_destroy(struct cprof_profile *instance)
     struct cfl_list             *iterator_backup;
     struct cprof_attribute_unit *attribute_unit;
     struct cprof_value_type     *value_type;
-    struct cprof_mapping        *location;
+    struct cprof_location       *location;
     struct cprof_function       *function;
     struct cfl_list             *iterator;
     struct cprof_mapping        *mapping;
