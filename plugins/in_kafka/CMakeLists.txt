@@ -3,5 +3,7 @@ set(src
   )
 
 FLB_PLUGIN(in_kafka "${src}" ${KAFKA_LIBRARIES} flb-aws)
-target_include_directories(flb-plugin-in_kafka PUBLIC ${KAFKA_INCLUDEDIR}/librdkafka)
+if(DEFINED KAFKA_INCLUDEDIR)
+  target_include_directories(flb-plugin-in_kafka PUBLIC ${KAFKA_INCLUDEDIR}/librdkafka)
+endif()
 target_link_libraries(flb-plugin-in_kafka -lpthread)
