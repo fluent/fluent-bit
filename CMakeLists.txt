@@ -151,6 +151,7 @@ option(FLB_WASM                "Build with WASM runtime support"            Yes)
 option(FLB_WAMRC               "Build with WASM AOT compiler executable"    No)
 option(FLB_WASM_STACK_PROTECT  "Build with WASM runtime with strong stack protector flags" No)
 option(FLB_ENFORCE_ALIGNMENT   "Enable limited platform specific aligned memory access" No)
+option(FLB_OUT_EXAMPLE   "Enable example output plugin" Yes)
 
 # Native Metrics Support (cmetrics)
 option(FLB_METRICS             "Enable metrics support"       Yes)
