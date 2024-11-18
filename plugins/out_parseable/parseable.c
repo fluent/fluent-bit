@@ -109,19 +109,27 @@ static void cb_parseable_flush(struct flb_event_chunk *event_chunk,
         /* Retrieve the namespace_header value from the body (assuming body is a JSON object) */
         // Assuming you have a way to parse JSON or MsgPack (like searching by key)
         // For simplicity, let's assume "namespace_header" is a key in the JSON object
+        /* Convert from msgpack serialization to JSON serialization for sending through HTTP */
+        body = flb_msgpack_raw_to_json_sds(sbuf.data, sbuf.size);
+        flb_plg_info(ctx->ins, "Body content: %s", body);
+
+        /* Free up buffer as we don't need it anymore */
+        msgpack_sbuffer_destroy(&sbuf);
+
+        /* Retrieve the namespace_name value from the body */
         if (body != NULL) {
-            // Example: simple lookup of the "namespace_header" field from the body
-            // (This assumes body is a JSON string, adjust if you're using MsgPack)
-            char *namespace_header_value = strstr(body, "\"namespace_header\":\"");
-            if (namespace_header_value != NULL) {
-                namespace_header_value += strlen("\"namespace_header\":\"");
-                char *end_quote = strchr(namespace_header_value, '\"');
+            // Search for the "namespace_name" field in the JSON string
+            char *namespace_name_value = strstr(body, "\"namespace_name\":\"");
+            if (namespace_name_value != NULL) {
+                namespace_name_value += strlen("\"namespace_name\":\"");
+                char *end_quote = strchr(namespace_name_value, '\"');
                 if (end_quote != NULL) {
                     *end_quote = '\0';  // Null-terminate the extracted value
-                    flb_plg_info(ctx->ins, "Namespace header: %s", namespace_header_value);
+                    flb_plg_info(ctx->ins, "Namespace name: %s", namespace_name_value);
                 }
             }
         }
+
         /* Get upstream connection */
         u_conn = flb_upstream_conn_get(ctx->upstream);
         if (!u_conn) {
