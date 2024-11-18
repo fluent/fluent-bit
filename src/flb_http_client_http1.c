@@ -479,6 +479,8 @@ int flb_http1_request_commit(struct flb_http_request *request)
         return -7;
     }
 
+    request_buffer = sds_result;
+
     if (request->body != NULL) {
         sds_result = cfl_sds_cat(request_buffer,
                                  request->body,
