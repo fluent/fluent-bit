@@ -2,6 +2,7 @@
 #include <string.h>
 #include <openssl/pem.h>
 #include <openssl/err.h>
+#include <fluent-bit/flb_log.h>
 #include <ctype.h>
 #include <stdlib.h>
 #include "utils.h"
@@ -39,17 +40,17 @@ char *concat(char *str1, const int str1_len, const char *str2, const int str2_le
     return str1;
 }
 
-char* concaten(const char* str1, const int str1_len, const char* str2, const int str2_len)
-{
-    int i = 0, j = 0;
-    char* result = malloc(str1_len + str2_len + 1);
-    while (i < str1_len) {
-        result[i++] = *str1++;
+char* concaten(const unsigned char* str1, const int str1_len, const unsigned char* str2, const int str2_len) {
+    flb_debug("Entering concaten.\n");
+    int total_len = str1_len + str2_len;
+    char* result = malloc(total_len);
+    if (!result) {
+        flb_debug("Failed to allocate memory in concaten.\n");
+        return NULL;
     }
-    while (j < str2_len) {
-        result[i + j++] = *str2++;
-    }
-    result[i + j] = '\0';
+    memcpy(result, str1, str1_len);
+    memcpy(result + str1_len, str2, str2_len);
+    flb_debug("Concatenation successful. Total length: %d\n", total_len);
     return result;
 }
 
