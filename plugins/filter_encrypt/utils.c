@@ -1,11 +1,9 @@
-/* Base64 decode data with output length */
-/* utils.c */
-
 #include <stdio.h>
 #include <string.h>
 #include <openssl/pem.h>
 #include <openssl/err.h>
 #include <ctype.h>
+#include <stdlib.h>
 #include "utils.h"
 
 /* Function to print bytes in hexadecimal format */
@@ -41,21 +39,21 @@ char *concat(char *str1, const int str1_len, const char *str2, const int str2_le
     return str1;
 }
 
-/* Function to concatenate two strings into a new buffer */
 char* concaten(const char* str1, const int str1_len, const char* str2, const int str2_len)
 {
+    int i = 0, j = 0;
     char* result = malloc(str1_len + str2_len + 1);
-    if (!result) {
-        perror("malloc");
-        return NULL;
+    while (i < str1_len) {
+        result[i++] = *str1++;
     }
-    memcpy(result, str1, str1_len);
-    memcpy(result + str1_len, str2, str2_len);
-    result[str1_len + str2_len] = '\0';
+    while (j < str2_len) {
+        result[i + j++] = *str2++;
+    }
+    result[i + j] = '\0';
     return result;
 }
 
-/* Function to extract a substring from a string */
+/* Extract a substring from binary data */
 char* substring(const char* input, size_t start, size_t length) {
     if (input == NULL) {
         return NULL;
@@ -83,6 +81,7 @@ char* substring(const char* input, size_t start, size_t length) {
     return substring_buffer;
 }
 
+/* Base64 encode data */
 char* base64encode(const void* data, size_t input_length) {
     BIO* b64 = NULL;
     BIO* mem = NULL;
@@ -219,15 +218,13 @@ unsigned char* base64decode(const char* b64message, size_t b64message_len, size_
 }
 
 /* Populate delimiters for key-value string tokenization */
-void populate_key_value_delimiters(char* value_delimiters) {
+void populate_key_value_delimiters(char *value_delimiters){
     int index = 0;
-    int k = 1; /* Start from ASCII 1 */
-    int end = 128; /* Up to ASCII 127 */
+    int k = 1; // start
+    int end = 128; // end
 
     for (; k < end; k++) {
-        if (!isalnum(k)) {
-            value_delimiters[index++] = (char)k;
-        }
+        value_delimiters[index++] = k;
     }
     value_delimiters[index] = '\0';
 }
@@ -236,3 +233,4 @@ void handleErrors(void) {
     ERR_print_errors_fp(stderr);
     abort();
 }
+
