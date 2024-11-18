@@ -165,7 +165,7 @@ static void cb_metrics(mk_request_t *request, void *data)
 
     buf = metrics_get_latest();
     if (!buf) {
-        mk_http_status(request, 404);
+        mk_http_status(request, 204);
         mk_http_done(request);
         return;
     }
