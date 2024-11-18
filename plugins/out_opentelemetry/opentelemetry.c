@@ -227,6 +227,7 @@ int opentelemetry_post(struct opentelemetry_context *ctx,
     const char               *compression_algorithm;
     uint32_t                  wire_message_length;
     size_t                    grpc_body_length;
+    cfl_sds_t                 sds_result;
     cfl_sds_t                 grpc_body;
     struct flb_http_response *response;
     struct flb_http_request  *request;
@@ -261,6 +262,8 @@ int opentelemetry_post(struct opentelemetry_context *ctx,
         grpc_body = cfl_sds_create_size(body_len + 5);
 
         if (grpc_body == NULL) {
+            flb_http_client_request_destroy(request, FLB_TRUE);
+
             return FLB_RETRY;
         }
 
@@ -268,12 +271,32 @@ int opentelemetry_post(struct opentelemetry_context *ctx,
 
         cfl_sds_cat(grpc_body, "\x00----", 5);
 
+        if (sds_result == NULL) {
+            flb_http_client_request_destroy(request, FLB_TRUE);
+
+            cfl_sds_destroy(grpc_body);
+
+            return FLB_RETRY;
+        }
+
+        grpc_body = sds_result;
+
         ((uint8_t *) grpc_body)[1] = (wire_message_length & 0xFF000000) >> 24;
         ((uint8_t *) grpc_body)[2] = (wire_message_length & 0x00FF0000) >> 16;
         ((uint8_t *) grpc_body)[3] = (wire_message_length & 0x0000FF00) >> 8;
         ((uint8_t *) grpc_body)[4] = (wire_message_length & 0x000000FF) >> 0;
 
-        cfl_sds_cat(grpc_body, body, body_len);
+        sds_result = cfl_sds_cat(grpc_body, body, body_len);
+
+        if (sds_result == NULL) {
+            flb_http_client_request_destroy(request, FLB_TRUE);
+
+            cfl_sds_destroy(grpc_body);
+
+            return FLB_RETRY;
+        }
+
+        grpc_body = sds_result;
 
         grpc_body_length = cfl_sds_len(grpc_body);
 
