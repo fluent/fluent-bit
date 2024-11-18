@@ -5,8 +5,8 @@
 #include <fluent-bit/flb_sds.h>
 
 struct flb_out_parseable {
-    flb_sds_t server_host;
-    int server_port;
+    flb_sds_t p_server;
+    int p_port;
     struct flb_upstream *upstream;
     struct flb_output_instance *ins;
 };

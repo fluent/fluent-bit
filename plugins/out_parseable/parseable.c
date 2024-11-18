@@ -33,8 +33,8 @@ static int cb_parseable_init(struct flb_output_instance *ins,
     }
 
     ctx->upstream = flb_upstream_create(config,
-                                        ctx->server_host,
-                                        ctx->server_port,
+                                        ctx->p_server,
+                                        ctx->p_port,
                                         FLB_IO_TCP,
                                         NULL);
 
@@ -102,10 +102,26 @@ static void cb_parseable_flush(struct flb_event_chunk *event_chunk,
 
         /* Convert from msgpack serialization to JSON serialization for sending through HTTP */
         body = flb_msgpack_raw_to_json_sds(sbuf.data, sbuf.size);
+        flb_plg_info(ctx->ins, "Body content: %s", body);
 
         /* Free up buffer as we don't need it anymore */
         msgpack_sbuffer_destroy(&sbuf);
-
+        /* Retrieve the namespace_header value from the body (assuming body is a JSON object) */
+        // Assuming you have a way to parse JSON or MsgPack (like searching by key)
+        // For simplicity, let's assume "namespace_header" is a key in the JSON object
+        if (body != NULL) {
+            // Example: simple lookup of the "namespace_header" field from the body
+            // (This assumes body is a JSON string, adjust if you're using MsgPack)
+            char *namespace_header_value = strstr(body, "\"namespace_header\":\"");
+            if (namespace_header_value != NULL) {
+                namespace_header_value += strlen("\"namespace_header\":\"");
+                char *end_quote = strchr(namespace_header_value, '\"');
+                if (end_quote != NULL) {
+                    *end_quote = '\0';  // Null-terminate the extracted value
+                    flb_plg_info(ctx->ins, "Namespace header: %s", namespace_header_value);
+                }
+            }
+        }
         /* Get upstream connection */
         u_conn = flb_upstream_conn_get(ctx->upstream);
         if (!u_conn) {
@@ -117,9 +133,9 @@ static void cb_parseable_flush(struct flb_event_chunk *event_chunk,
 
         /* Compose HTTP Client request */
         client = flb_http_client(u_conn,
-                                 FLB_HTTP_POST, "/api/v1/logstream/random",
+                                 FLB_HTTP_POST, "/api/v1/ingest",
                                  body, flb_sds_len(body),
-                                 ctx->server_host, ctx->server_port,
+                                 ctx->p_server, ctx->p_port,
                                  NULL, 0);
 
         if (!client) {
@@ -131,6 +147,8 @@ static void cb_parseable_flush(struct flb_event_chunk *event_chunk,
         }
 
         flb_http_add_header(client, "Content-Type", 12, "application/json", 16);
+       // flb_http_add_header(client, "X-P-Stream", 12, "random", 6);
+        flb_http_basic_auth(client, "admin", "admin");
 
         /* Perform request */
         ret = flb_http_do(client, &b_sent);
@@ -166,13 +184,13 @@ static int cb_parseable_exit(void *data, struct flb_config *config)
 /* Configuration properties map */
 static struct flb_config_map config_map[] = {
     {
-     FLB_CONFIG_MAP_STR, "server_host", NULL,
-     0, FLB_TRUE, offsetof(struct flb_out_parseable, server_host),
+     FLB_CONFIG_MAP_STR, "P_Server", NULL,
+     0, FLB_TRUE, offsetof(struct flb_out_parseable, p_server),
     "The host of the server to send logs to."
     },
     {
-     FLB_CONFIG_MAP_INT, "server_port", 0,
-     0, FLB_TRUE, offsetof(struct flb_out_parseable, server_port),
+     FLB_CONFIG_MAP_INT, "P_Port", 0,
+     0, FLB_TRUE, offsetof(struct flb_out_parseable, p_port),
     "The port on the host to send logs to."
     },
 
