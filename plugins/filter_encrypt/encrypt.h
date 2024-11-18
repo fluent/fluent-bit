@@ -70,10 +70,6 @@
 
 #include "openssl/bio.h"
 
-#ifdef _WIN32
-#include "openssl/applink.c"
-#endif
-
 #define PSEUDONYMIZED_VALUE_MAX_SIZE 256
 
 #define FLB_FILTER_ENCRYPT_HOST             "host"

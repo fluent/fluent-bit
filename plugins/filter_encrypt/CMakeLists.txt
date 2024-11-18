@@ -1,3 +1,4 @@
+# Define the list of source files excluding applink.c
 set(src
         utils.c
         crypto_utils.c
@@ -14,4 +15,11 @@ set(src
         hmac.c
         encrypt.c)
 
+# Conditionally include applink.c only on Windows
+if(WIN32)
+    # Adjust the path if applink.c is in a different directory
+    list(APPEND src applink.c)
+endif()
+
+# Define the Fluent Bit plugin with the configured source files
 FLB_PLUGIN(filter_encrypt "${src}" "")
