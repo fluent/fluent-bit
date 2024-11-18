@@ -239,7 +239,6 @@ if(FLB_ALL)
   set(FLB_IN_NGINX_STATUS 1)
   set(FLB_IN_EXEC         1)
   set(FLB_IN_UNIX_SOCKET  1)
-  set(FLB_IN_SOMEIP       1)
 
   # Output plugins
   set(FLB_OUT_ES          1)
