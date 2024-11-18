@@ -1,0 +1,57 @@
+#!/usr/bin/env bash
+
+# Copyright (C) 2024 Bayerische Motoren Werke Aktiengesellschaft (BMW AG)
+# This Source Code Form is subject to the terms of the Mozilla Public
+# License, v. 2.0. If a copy of the MPL was not distributed with this
+# file, You can obtain one at http://mozilla.org/MPL/2.0/.
+
+# Configuration to be used by daemon and service.
+export VSOMEIP_CONFIGURATION=service
+
+# Start the routing manager.
+export VSOMEIP_APPLICATION_NAME="service-daemon"
+../../../examples/routingmanagerd/routingmanagerd &
+DAEMON_PID=$!
+
+# Start the test service.
+export VSOMEIP_APPLICATION_NAME="service-sample"
+./cyclic_event_test_service &
+SERVICE_PID=$!
+
+# Start the test client.
+if [ -n "$USE_LXC_TEST" ]; then
+    echo "starting cyclic_event_test_slave_starter.sh on slave LXC"
+    ssh -tt -i "$SANDBOX_ROOT_DIR"/commonapi_main/lxc-config/.ssh/mgc_lxc/rsa_key_file.pub -o StrictHostKeyChecking=no root@"$LXC_TEST_SLAVE_IP" "bash -ci \"set -m; cd \\\$SANDBOX_TARGET_DIR/vsomeip_lib/test/network_tests/cyclic_event_tests; ./cyclic_event_test_slave_starter.sh\"" &
+    echo "remote ssh job id: $!"
+elif [ -n "$USE_DOCKER" ]; then
+    docker exec "$DOCKER_IMAGE" sh -c "cd $DOCKER_TESTS && ./cyclic_event_test_slave_starter.sh" &
+else
+    cat <<EOF
+*******************************************************************************
+*******************************************************************************
+** Please now run:
+** cyclic_event_test_slave_starter.sh
+** from an external host to successfully complete this test.
+**
+** You probably will need to adapt the 'unicast' settings in
+** cyclic_event_test_client.json and
+** cyclic_event_test_service.json to your personal setup.
+*******************************************************************************
+*******************************************************************************
+EOF
+fi
+
+# Whether the test failed.
+FAIL=0
+
+# Wait for the service to finish.
+wait "$SERVICE_PID" || ((FAIL=1))
+
+# Send a termination signal to the routing manager.
+kill "$DAEMON_PID"
+
+# Wait for the routing manager to exit.
+wait "$DAEMON_PID"
+
+# Return the result of the test.
+exit "$FAIL"

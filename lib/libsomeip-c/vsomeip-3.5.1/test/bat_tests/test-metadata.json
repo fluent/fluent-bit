@@ -1,0 +1,1088 @@
+[
+  {
+    "name": "configuration-test",
+    "command": [
+      "configuration-test"
+    ],
+    "environment": {}
+  },
+  {
+    "name": "application_test",
+    "command": [
+      "application_test_starter.sh"
+    ],
+    "environment": {}
+  },
+  {
+    "name": "application_test_single_process",
+    "command": [
+      "application_test_single_process_starter.sh"
+    ],
+    "environment": {}
+  },
+  {
+    "name": "application_test_availability",
+    "command": [
+      "application_test_availability_starter.sh"
+    ],
+    "environment": {}
+  },
+  {
+    "name": "magic_cookies_test",
+    "command": [
+      "magic_cookies_test_starter.sh"
+    ],
+    "environment": {}
+  },
+  {
+    "name": "header_factory_test",
+    "command": [
+      "header_factory_test"
+    ],
+    "environment": {}
+  },
+  {
+    "name": "header_factory_test_send_receive",
+    "command": [
+      "header_factory_test_send_receive_starter.sh"
+    ],
+    "environment": {}
+  },
+  {
+    "name": "local_routing_test",
+    "command": [
+      "local_routing_test_starter.sh"
+    ],
+    "environment": {}
+  },
+  {
+    "name": "external_local_routing_test",
+    "command": [
+      "external_local_routing_test_starter.sh"
+    ],
+    "environment": {}
+  },
+  {
+    "name": "local_payload_test",
+    "command": [
+      "local_payload_test_starter.sh"
+    ],
+    "environment": {}
+  },
+  {
+    "name": "local_payload_test_huge_payload",
+    "command": [
+      "local_payload_test_huge_payload_starter.sh"
+    ],
+    "environment": {}
+  },
+  {
+    "name": "external_local_payload_test_client_local",
+    "command": [
+      "external_local_payload_test_client_local_starter.sh"
+    ],
+    "environment": {}
+  },
+  {
+    "name": "external_local_payload_test_client_external",
+    "command": [
+      "external_local_payload_test_client_external_starter.sh"
+    ],
+    "environment": {}
+  },
+  {
+    "name": "external_local_payload_test_client_local_and_external",
+    "command": [
+      "external_local_payload_test_client_local_and_external_starter.sh"
+    ],
+    "environment": {}
+  },
+  {
+    "name": "big_payload_test_local",
+    "command": [
+      "big_payload_test_local_starter.sh"
+    ],
+    "environment": {}
+  },
+  {
+    "name": "big_payload_test_local_random",
+    "command": [
+      "big_payload_test_local_starter.sh",
+      "RANDOM"
+    ],
+    "environment": {}
+  },
+  {
+    "name": "big_payload_test_local_limited",
+    "command": [
+      "big_payload_test_local_starter.sh",
+      "LIMITED"
+    ],
+    "environment": {}
+  },
+  {
+    "name": "big_payload_test_local_queue_limited",
+    "command": [
+      "big_payload_test_local_starter.sh",
+      "QUEUELIMITEDGENERAL"
+    ],
+    "environment": {}
+  },
+  {
+    "name": "big_payload_test_local_tcp",
+    "command": [
+      "big_payload_test_local_tcp_starter.sh"
+    ],
+    "environment": {}
+  },
+  {
+    "name": "big_payload_test_local_tcp_random",
+    "command": [
+      "big_payload_test_local_tcp_starter.sh",
+      "RANDOM"
+    ],
+    "environment": {}
+  },
+  {
+    "name": "big_payload_test_local_tcp_limited",
+    "command": [
+      "big_payload_test_local_tcp_starter.sh",
+      "LIMITED"
+    ],
+    "environment": {}
+  },
+  {
+    "name": "big_payload_test_local_tcp_queue_limited",
+    "command": [
+      "big_payload_test_local_tcp_starter.sh",
+      "QUEUELIMITEDGENERAL"
+    ],
+    "environment": {}
+  },
+  {
+    "name": "big_payload_test_external",
+    "command": [
+      "big_payload_test_external_starter.sh"
+    ],
+    "environment": {}
+  },
+  {
+    "name": "big_payload_test_external_random",
+    "command": [
+      "big_payload_test_external_starter.sh",
+      "RANDOM"
+    ],
+    "environment": {}
+  },
+  {
+    "name": "big_payload_test_external_limited",
+    "command": [
+      "big_payload_test_external_starter.sh",
+      "LIMITED"
+    ],
+    "environment": {}
+  },
+  {
+    "name": "big_payload_test_external_limited_general",
+    "command": [
+      "big_payload_test_external_starter.sh",
+      "LIMITEDGENERAL"
+    ],
+    "environment": {}
+  },
+  {
+    "name": "big_payload_test_external_queue_limited_general",
+    "command": [
+      "big_payload_test_external_starter.sh",
+      "QUEUELIMITEDGENERAL"
+    ],
+    "environment": {}
+  },
+  {
+    "name": "big_payload_test_external_queue_limited_specific",
+    "command": [
+      "big_payload_test_external_starter.sh",
+      "QUEUELIMITEDSPECIFIC"
+    ],
+    "environment": {}
+  },
+  {
+    "name": "big_payload_test_external_udp",
+    "command": [
+      "big_payload_test_external_starter.sh",
+      "UDP"
+    ],
+    "environment": {}
+  },
+  {
+    "name": "client_id_test_diff_client_ids_diff_ports",
+    "command": [
+      "client_id_test_master_starter.sh",
+      "client_id_test_diff_client_ids_diff_ports_master.json"
+    ],
+    "environment": {}
+  },
+  {
+    "name": "client_id_test_diff_client_ids_same_ports",
+    "command": [
+      "client_id_test_master_starter.sh",
+      "client_id_test_diff_client_ids_same_ports_master.json"
+    ],
+    "environment": {}
+  },
+  {
+    "name": "client_id_test_diff_client_ids_partial_same_ports",
+    "command": [
+      "client_id_test_master_starter.sh",
+      "client_id_test_diff_client_ids_partial_same_ports_master.json"
+    ],
+    "environment": {}
+  },
+  {
+    "name": "client_id_test_utility",
+    "command": [
+      "client_id_test_utility"
+    ],
+    "environment": {
+      "VSOMEIP_CONFIGURATION": "client_id_test_utility.json"
+    }
+  },
+  {
+    "name": "client_id_test_utility_masked_511",
+    "command": [
+      "client_id_test_utility"
+    ],
+    "environment": {
+      "VSOMEIP_CONFIGURATION": "client_id_test_utility_masked_511.json"
+    }
+  },
+  {
+    "name": "client_id_test_utility_masked_4095",
+    "command": [
+      "client_id_test_utility"
+    ],
+    "environment": {
+      "VSOMEIP_CONFIGURATION": "client_id_test_utility_masked_4095.json"
+    }
+  },
+  {
+    "name": "client_id_test_utility_masked_127",
+    "command": [
+      "client_id_test_utility"
+    ],
+    "environment": {
+      "VSOMEIP_CONFIGURATION": "client_id_test_utility_masked_127.json"
+    }
+  },
+  {
+    "name": "client_id_test_utility_discontinuous_masked_511",
+    "command": [
+      "client_id_test_utility"
+    ],
+    "environment": {
+      "VSOMEIP_CONFIGURATION": "client_id_test_utility_discontinuous_masked_511.json"
+    }
+  },
+  {
+    "name": "debounce_test",
+    "command": [
+      "debounce_test_master_starter.sh"
+    ],
+    "environment": {}
+  },
+  {
+    "name": "subscribe_notify_test_diff_client_ids_diff_ports_udp_local_tcp",
+    "command": [
+      "subscribe_notify_test_master_starter.sh",
+      "UDP",
+      "subscribe_notify_test_diff_client_ids_diff_ports_master_udp_local_tcp.json"
+    ],
+    "environment": {}
+  },
+  {
+    "name": "subscribe_notify_test_diff_client_ids_diff_ports_tcp_local_tcp",
+    "command": [
+      "subscribe_notify_test_master_starter.sh",
+      "TCP",
+      "subscribe_notify_test_diff_client_ids_diff_ports_master_tcp_local_tcp.json"
+    ],
+    "environment": {}
+  },
+  {
+    "name": "subscribe_notify_test_diff_client_ids_diff_ports_both_tcp_and_udp_local_tcp",
+    "command": [
+      "subscribe_notify_test_master_starter.sh",
+      "TCP_AND_UDP",
+      "subscribe_notify_test_diff_client_ids_diff_ports_master_local_tcp.json"
+    ],
+    "environment": {}
+  },
+  {
+    "name": "subscribe_notify_test_diff_client_ids_same_ports_udp_local_tcp",
+    "command": [
+      "subscribe_notify_test_master_starter.sh",
+      "UDP",
+      "subscribe_notify_test_diff_client_ids_same_ports_master_udp_local_tcp.json"
+    ],
+    "environment": {}
+  },
+  {
+    "name": "subscribe_notify_test_diff_client_ids_same_ports_tcp_local_tcp",
+    "command": [
+      "subscribe_notify_test_master_starter.sh",
+      "TCP",
+      "subscribe_notify_test_diff_client_ids_same_ports_master_tcp_local_tcp.json"
+    ],
+    "environment": {}
+  },
+  {
+    "name": "subscribe_notify_test_diff_client_ids_same_ports_both_tcp_and_udp_local_tcp",
+    "command": [
+      "subscribe_notify_test_master_starter.sh",
+      "TCP_AND_UDP",
+      "subscribe_notify_test_diff_client_ids_same_ports_master_local_tcp.json"
+    ],
+    "environment": {}
+  },
+  {
+    "name": "subscribe_notify_test_diff_client_ids_partial_same_ports_both_tcp_and_udp_local_tcp",
+    "command": [
+      "subscribe_notify_test_master_starter.sh",
+      "TCP_AND_UDP",
+      "subscribe_notify_test_diff_client_ids_partial_same_ports_master_local_tcp.json"
+    ],
+    "environment": {}
+  },
+  {
+    "name": "subscribe_notify_test_diff_client_ids_diff_ports_same_service_id_udp_local_tcp",
+    "command": [
+      "subscribe_notify_test_master_starter.sh",
+      "UDP",
+      "subscribe_notify_test_diff_client_ids_diff_ports_same_service_id_master_udp_local_tcp.json",
+      "SAME_SERVICE_ID"
+    ],
+    "environment": {}
+  },
+  {
+    "name": "subscribe_notify_test_diff_client_ids_diff_ports_autoconfig_udp_local_tcp",
+    "command": [
+      "subscribe_notify_test_master_starter.sh",
+      "UDP",
+      "subscribe_notify_test_diff_client_ids_diff_ports_autoconfig_master_local_tcp.json"
+    ],
+    "environment": {}
+  },
+  {
+    "name": "subscribe_notify_test_one_event_two_eventgroups_udp_local_tcp",
+    "command": [
+      "subscribe_notify_test_one_event_two_eventgroups_master_starter.sh",
+      "UDP",
+      "subscribe_notify_test_one_event_two_eventgroups_master_local_tcp.json"
+    ],
+    "environment": {}
+  },
+  {
+    "name": "subscribe_notify_test_one_event_two_eventgroups_tcp_local_tcp",
+    "command": [
+      "subscribe_notify_test_one_event_two_eventgroups_master_starter.sh",
+      "TCP",
+      "subscribe_notify_test_one_event_two_eventgroups_master_local_tcp.json"
+    ],
+    "environment": {}
+  },
+  {
+    "name": "subscribe_notify_test_diff_client_ids_diff_ports_udp",
+    "command": [
+      "subscribe_notify_test_master_starter.sh",
+      "UDP",
+      "subscribe_notify_test_diff_client_ids_diff_ports_master_udp.json"
+    ],
+    "environment": {}
+  },
+  {
+    "name": "subscribe_notify_test_diff_client_ids_diff_ports_tcp",
+    "command": [
+      "subscribe_notify_test_master_starter.sh",
+      "TCP",
+      "subscribe_notify_test_diff_client_ids_diff_ports_master_tcp.json"
+    ],
+    "environment": {}
+  },
+  {
+    "name": "subscribe_notify_test_diff_client_ids_diff_ports_both_tcp_and_udp",
+    "command": [
+      "subscribe_notify_test_master_starter.sh",
+      "TCP_AND_UDP",
+      "subscribe_notify_test_diff_client_ids_diff_ports_master.json"
+    ],
+    "environment": {}
+  },
+  {
+    "name": "subscribe_notify_test_diff_client_ids_same_ports_udp",
+    "command": [
+      "subscribe_notify_test_master_starter.sh",
+      "UDP",
+      "subscribe_notify_test_diff_client_ids_same_ports_master_udp.json"
+    ],
+    "environment": {}
+  },
+  {
+    "name": "subscribe_notify_test_diff_client_ids_same_ports_tcp",
+    "command": [
+      "subscribe_notify_test_master_starter.sh",
+      "TCP",
+      "subscribe_notify_test_diff_client_ids_same_ports_master_tcp.json"
+    ],
+    "environment": {}
+  },
+  {
+    "name": "subscribe_notify_test_diff_client_ids_same_ports_both_tcp_and_udp",
+    "command": [
+      "subscribe_notify_test_master_starter.sh",
+      "TCP_AND_UDP",
+      "subscribe_notify_test_diff_client_ids_same_ports_master.json"
+    ],
+    "environment": {}
+  },
+  {
+    "name": "subscribe_notify_test_diff_client_ids_partial_same_ports_both_tcp_and_udp",
+    "command": [
+      "subscribe_notify_test_master_starter.sh",
+      "TCP_AND_UDP",
+      "subscribe_notify_test_diff_client_ids_partial_same_ports_master.json"
+    ],
+    "environment": {}
+  },
+  {
+    "name": "subscribe_notify_test_diff_client_ids_diff_ports_same_service_id_udp",
+    "command": [
+      "subscribe_notify_test_master_starter.sh",
+      "UDP",
+      "subscribe_notify_test_diff_client_ids_diff_ports_same_service_id_master_udp.json",
+      "SAME_SERVICE_ID"
+    ],
+    "environment": {}
+  },
+  {
+    "name": "subscribe_notify_test_diff_client_ids_diff_ports_autoconfig_udp",
+    "command": [
+      "subscribe_notify_test_master_starter.sh",
+      "UDP",
+      "subscribe_notify_test_diff_client_ids_diff_ports_autoconfig_master.json"
+    ],
+    "environment": {}
+  },
+  {
+    "name": "subscribe_notify_test_one_event_two_eventgroups_udp",
+    "command": [
+      "subscribe_notify_test_one_event_two_eventgroups_master_starter.sh",
+      "UDP",
+      "subscribe_notify_test_one_event_two_eventgroups_master.json"
+    ],
+    "environment": {}
+  },
+  {
+    "name": "subscribe_notify_test_one_event_two_eventgroups_tcp",
+    "command": [
+      "subscribe_notify_test_one_event_two_eventgroups_master_starter.sh",
+      "TCP",
+      "subscribe_notify_test_one_event_two_eventgroups_master.json"
+    ],
+    "environment": {}
+  },
+  {
+    "name": "subscribe_notify_one_test_diff_client_ids_diff_ports_udp",
+    "command": [
+      "subscribe_notify_one_test_master_starter.sh",
+      "UDP",
+      "subscribe_notify_one_test_diff_client_ids_diff_ports_master_udp.json"
+    ],
+    "environment": {}
+  },
+  {
+    "name": "subscribe_notify_one_test_diff_client_ids_diff_ports_tcp",
+    "command": [
+      "subscribe_notify_one_test_master_starter.sh",
+      "TCP",
+      "subscribe_notify_one_test_diff_client_ids_diff_ports_master_tcp.json"
+    ],
+    "environment": {}
+  },
+  {
+    "name": "subscribe_notify_one_test_diff_client_ids_diff_ports_both_tcp_and_udp",
+    "command": [
+      "subscribe_notify_one_test_master_starter.sh",
+      "TCP_AND_UDP",
+      "subscribe_notify_one_test_diff_client_ids_diff_ports_master.json"
+    ],
+    "environment": {}
+  },
+  {
+    "name": "cpu_load_test",
+    "command": [
+      "cpu_load_test_master_starter.sh"
+    ],
+    "environment": {}
+  },
+  {
+    "name": "initial_event_test_diff_client_ids_diff_ports_udp",
+    "command": [
+      "initial_event_test_master_starter.sh",
+      "initial_event_test_diff_client_ids_diff_ports_master_udp.json",
+      "UDP"
+    ],
+    "environment": {}
+  },
+  {
+    "name": "initial_event_test_diff_client_ids_diff_ports_tcp",
+    "command": [
+      "initial_event_test_master_starter.sh",
+      "initial_event_test_diff_client_ids_diff_ports_master_tcp.json",
+      "TCP"
+    ],
+    "environment": {}
+  },
+  {
+    "name": "initial_event_test_diff_client_ids_diff_ports_both_tcp_and_udp",
+    "command": [
+      "initial_event_test_master_starter.sh",
+      "initial_event_test_diff_client_ids_diff_ports_master.json",
+      "TCP_AND_UDP"
+    ],
+    "environment": {}
+  },
+  {
+    "name": "initial_event_test_diff_client_ids_same_ports_udp",
+    "command": [
+      "initial_event_test_master_starter.sh",
+      "initial_event_test_diff_client_ids_same_ports_master_udp.json",
+      "UDP"
+    ],
+    "environment": {}
+  },
+  {
+    "name": "initial_event_test_diff_client_ids_same_ports_tcp",
+    "command": [
+      "initial_event_test_master_starter.sh",
+      "initial_event_test_diff_client_ids_same_ports_master_tcp.json",
+      "TCP"
+    ],
+    "environment": {}
+  },
+  {
+    "name": "initial_event_test_diff_client_ids_same_ports_both_tcp_and_udp",
+    "command": [
+      "initial_event_test_master_starter.sh",
+      "initial_event_test_diff_client_ids_same_ports_master.json",
+      "TCP_AND_UDP"
+    ],
+    "environment": {}
+  },
+  {
+    "name": "initial_event_test_diff_client_ids_partial_same_ports_both_tcp_and_udp",
+    "command": [
+      "initial_event_test_master_starter.sh",
+      "initial_event_test_diff_client_ids_partial_same_ports_master.json",
+      "TCP_AND_UDP"
+    ],
+    "environment": {}
+  },
+  {
+    "name": "initial_event_test_diff_client_ids_diff_ports_same_service_id_udp",
+    "command": [
+      "initial_event_test_master_starter.sh",
+      "initial_event_test_diff_client_ids_diff_ports_same_service_id_master.json",
+      "TCP_AND_UDP",
+      "SAME_SERVICE_ID"
+    ],
+    "environment": {}
+  },
+  {
+    "name": "initial_event_test_multiple_events_diff_client_ids_diff_ports_udp",
+    "command": [
+      "initial_event_test_master_starter.sh",
+      "initial_event_test_diff_client_ids_diff_ports_master_udp.json",
+      "UDP",
+      "MULTIPLE_EVENTS"
+    ],
+    "environment": {}
+  },
+  {
+    "name": "initial_event_test_multiple_events_diff_client_ids_diff_ports_tcp",
+    "command": [
+      "initial_event_test_master_starter.sh",
+      "initial_event_test_diff_client_ids_diff_ports_master_tcp.json",
+      "TCP",
+      "MULTIPLE_EVENTS"
+    ],
+    "environment": {}
+  },
+  {
+    "name": "initial_event_test_multiple_events_diff_client_ids_diff_ports_both_tcp_and_udp",
+    "command": [
+      "initial_event_test_master_starter.sh",
+      "initial_event_test_diff_client_ids_diff_ports_master.json",
+      "TCP_AND_UDP",
+      "MULTIPLE_EVENTS"
+    ],
+    "environment": {}
+  },
+  {
+    "name": "initial_event_test_multiple_events_diff_client_ids_same_ports_udp",
+    "command": [
+      "initial_event_test_master_starter.sh",
+      "initial_event_test_diff_client_ids_same_ports_master_udp.json",
+      "UDP",
+      "MULTIPLE_EVENTS"
+    ],
+    "environment": {}
+  },
+  {
+    "name": "initial_event_test_multiple_events_diff_client_ids_same_ports_tcp",
+    "command": [
+      "initial_event_test_master_starter.sh",
+      "initial_event_test_diff_client_ids_same_ports_master_tcp.json",
+      "TCP",
+      "MULTIPLE_EVENTS"
+    ],
+    "environment": {}
+  },
+  {
+    "name": "initial_event_test_multiple_events_diff_client_ids_same_ports_both_tcp_and_udp",
+    "command": [
+      "initial_event_test_master_starter.sh",
+      "initial_event_test_diff_client_ids_same_ports_master.json",
+      "TCP_AND_UDP",
+      "MULTIPLE_EVENTS"
+    ],
+    "environment": {}
+  },
+  {
+    "name": "initial_event_test_multiple_events_diff_client_ids_partial_same_ports_both_tcp_and_udp",
+    "command": [
+      "initial_event_test_master_starter.sh",
+      "initial_event_test_diff_client_ids_partial_same_ports_master.json",
+      "TCP_AND_UDP",
+      "MULTIPLE_EVENTS"
+    ],
+    "environment": {}
+  },
+  {
+    "name": "initial_event_test_multiple_events_diff_client_ids_diff_ports_same_service_id_udp",
+    "command": [
+      "initial_event_test_master_starter.sh",
+      "initial_event_test_diff_client_ids_diff_ports_same_service_id_master.json",
+      "TCP_AND_UDP",
+      "SAME_SERVICE_ID",
+      "MULTIPLE_EVENTS"
+    ],
+    "environment": {}
+  },
+  {
+    "name": "initial_event_test_multiple_events_subscribe_on_availability_diff_client_ids_diff_ports_udp",
+    "command": [
+      "initial_event_test_master_starter.sh",
+      "initial_event_test_diff_client_ids_diff_ports_master_udp.json",
+      "UDP",
+      "MULTIPLE_EVENTS",
+      "SUBSCRIBE_ON_AVAILABILITY"
+    ],
+    "environment": {}
+  },
+  {
+    "name": "initial_event_test_multiple_events_subscribe_on_availability_diff_client_ids_diff_ports_tcp",
+    "command": [
+      "initial_event_test_master_starter.sh",
+      "initial_event_test_diff_client_ids_diff_ports_master_tcp.json",
+      "TCP",
+      "MULTIPLE_EVENTS",
+      "SUBSCRIBE_ON_AVAILABILITY"
+    ],
+    "environment": {}
+  },
+  {
+    "name": "initial_event_test_multiple_events_subscribe_on_availability_diff_client_ids_diff_ports_both_tcp_and_udp",
+    "command": [
+      "initial_event_test_master_starter.sh",
+      "initial_event_test_diff_client_ids_diff_ports_master.json",
+      "TCP_AND_UDP",
+      "MULTIPLE_EVENTS",
+      "SUBSCRIBE_ON_AVAILABILITY"
+    ],
+    "environment": {}
+  },
+  {
+    "name": "initial_event_test_multiple_events_subscribe_on_availability_diff_client_ids_same_ports_udp",
+    "command": [
+      "initial_event_test_master_starter.sh",
+      "initial_event_test_diff_client_ids_same_ports_master_udp.json",
+      "UDP",
+      "MULTIPLE_EVENTS",
+      "SUBSCRIBE_ON_AVAILABILITY"
+    ],
+    "environment": {}
+  },
+  {
+    "name": "initial_event_test_multiple_events_subscribe_on_availability_diff_client_ids_same_ports_tcp",
+    "command": [
+      "initial_event_test_master_starter.sh",
+      "initial_event_test_diff_client_ids_same_ports_master_tcp.json",
+      "TCP",
+      "MULTIPLE_EVENTS",
+      "SUBSCRIBE_ON_AVAILABILITY"
+    ],
+    "environment": {}
+  },
+  {
+    "name": "initial_event_test_multiple_events_subscribe_on_availability_diff_client_ids_same_ports_both_tcp_and_udp",
+    "command": [
+      "initial_event_test_master_starter.sh",
+      "initial_event_test_diff_client_ids_same_ports_master.json",
+      "TCP_AND_UDP",
+      "MULTIPLE_EVENTS",
+      "SUBSCRIBE_ON_AVAILABILITY"
+    ],
+    "environment": {}
+  },
+  {
+    "name": "initial_event_test_multiple_events_subscribe_on_availability_diff_client_ids_partial_same_ports_both_tcp_and_udp",
+    "command": [
+      "initial_event_test_master_starter.sh",
+      "initial_event_test_diff_client_ids_partial_same_ports_master.json",
+      "TCP_AND_UDP",
+      "MULTIPLE_EVENTS",
+      "SUBSCRIBE_ON_AVAILABILITY"
+    ],
+    "environment": {}
+  },
+  {
+    "name": "initial_event_test_multiple_events_subscribe_on_availability_diff_client_ids_diff_ports_same_service_id_udp",
+    "command": [
+      "initial_event_test_master_starter.sh",
+      "initial_event_test_diff_client_ids_diff_ports_same_service_id_master.json",
+      "TCP_AND_UDP",
+      "SAME_SERVICE_ID",
+      "MULTIPLE_EVENTS",
+      "SUBSCRIBE_ON_AVAILABILITY"
+    ],
+    "environment": {}
+  },
+  {
+    "name": "initial_event_test_multiple_events_diff_client_ids_diff_ports_partial_subscription_udp",
+    "command": [
+      "initial_event_test_master_starter.sh",
+      "initial_event_test_diff_client_ids_diff_ports_master_udp.json",
+      "UDP",
+      "MULTIPLE_EVENTS",
+      "SUBSCRIBE_ONLY_ONE"
+    ],
+    "environment": {}
+  },
+  {
+    "name": "initial_event_test_multiple_events_diff_client_ids_diff_ports_partial_subscription_tcp",
+    "command": [
+      "initial_event_test_master_starter.sh",
+      "initial_event_test_diff_client_ids_diff_ports_master_tcp.json",
+      "TCP",
+      "MULTIPLE_EVENTS",
+      "SUBSCRIBE_ONLY_ONE"
+    ],
+    "environment": {}
+  },
+  {
+    "name": "initial_event_test_multiple_events_diff_client_ids_diff_ports_partial_subscription_both_tcp_and_udp",
+    "command": [
+      "initial_event_test_master_starter.sh",
+      "initial_event_test_diff_client_ids_diff_ports_master.json",
+      "TCP_AND_UDP",
+      "MULTIPLE_EVENTS",
+      "SUBSCRIBE_ONLY_ONE"
+    ],
+    "environment": {}
+  },
+  {
+    "name": "initial_event_test_diff_client_ids_same_ports_udp_client_subscribes_twice",
+    "command": [
+      "initial_event_test_master_starter.sh",
+      "initial_event_test_diff_client_ids_same_ports_master_udp.json",
+      "UDP",
+      "CLIENT_SUBSCRIBES_TWICE"
+    ],
+    "environment": {}
+  },
+  {
+    "name": "offer_test_local",
+    "command": [
+      "offer_test_local_starter.sh"
+    ],
+    "environment": {}
+  },
+  {
+    "name": "offer_test_external",
+    "command": [
+      "offer_test_external_master_starter.sh"
+    ],
+    "environment": {}
+  },
+  {
+    "name": "offer_test_big_sd_msg",
+    "command": [
+      "offer_test_big_sd_msg_master_starter.sh"
+    ],
+    "environment": {}
+  },
+  {
+    "name": "offered_services_info_test_local",
+    "command": [
+      "offered_services_info_test_local_starter.sh"
+    ],
+    "environment": {}
+  },
+  {
+    "name": "restart_routing_test",
+    "command": [
+      "restart_routing_test_starter.sh"
+    ],
+    "environment": {}
+  },
+  {
+    "name": "pending_subscription_test_subscribe",
+    "command": [
+      "pending_subscription_test_master_starter.sh",
+      "SUBSCRIBE"
+    ],
+    "environment": {}
+  },
+  {
+    "name": "pending_subscription_test_alternating_subscribe_unsubscribe",
+    "command": [
+      "pending_subscription_test_master_starter.sh",
+      "SUBSCRIBE_UNSUBSCRIBE"
+    ],
+    "environment": {}
+  },
+  {
+    "name": "pending_subscription_test_unsubscribe",
+    "command": [
+      "pending_subscription_test_master_starter.sh",
+      "UNSUBSCRIBE"
+    ],
+    "environment": {}
+  },
+  {
+    "name": "pending_subscription_test_alternating_subscribe_unsubscribe_nack",
+    "command": [
+      "pending_subscription_test_master_starter.sh",
+      "SUBSCRIBE_UNSUBSCRIBE_NACK"
+    ],
+    "environment": {}
+  },
+  {
+    "name": "pending_subscription_test_alternating_subscribe_unsubscribe_same_port",
+    "command": [
+      "pending_subscription_test_master_starter.sh",
+      "SUBSCRIBE_UNSUBSCRIBE_SAME_PORT"
+    ],
+    "environment": {}
+  },
+  {
+    "name": "pending_subscription_test_subscribe_resubscribe_mixed",
+    "command": [
+      "pending_subscription_test_master_starter.sh",
+      "SUBSCRIBE_RESUBSCRIBE_MIXED"
+    ],
+    "environment": {}
+  },
+  {
+    "name": "pending_subscription_test_subscribe_stopsubscribe_subscribe",
+    "command": [
+      "pending_subscription_test_master_starter.sh",
+      "SUBSCRIBE_STOPSUBSCRIBE_SUBSCRIBE"
+    ],
+    "environment": {}
+  },
+  {
+    "name": "pending_subscription_test_send_request_to_sd_port",
+    "command": [
+      "pending_subscription_test_master_starter.sh",
+      "REQUEST_TO_SD"
+    ],
+    "environment": {}
+  },
+  {
+    "name": "malicious_data_test_events",
+    "command": [
+      "malicious_data_test_master_starter.sh",
+      "MALICIOUS_EVENTS"
+    ],
+    "environment": {}
+  },
+  {
+    "name": "malicious_data_test_protocol_version",
+    "command": [
+      "malicious_data_test_master_starter.sh",
+      "PROTOCOL_VERSION"
+    ],
+    "environment": {}
+  },
+  {
+    "name": "malicious_data_test_message_type",
+    "command": [
+      "malicious_data_test_master_starter.sh",
+      "MESSAGE_TYPE"
+    ],
+    "environment": {}
+  },
+  {
+    "name": "malicious_data_test_return_code",
+    "command": [
+      "malicious_data_test_master_starter.sh",
+      "RETURN_CODE"
+    ],
+    "environment": {}
+  },
+  {
+    "name": "malicious_data_test_wrong_header_fields_udp",
+    "command": [
+      "malicious_data_test_master_starter.sh",
+      "WRONG_HEADER_FIELDS_UDP"
+    ],
+    "environment": {}
+  },
+  {
+    "name": "npdu_test_udp",
+    "command": [
+      "npdu_test_starter.sh",
+      "UDP",
+      "sync"
+    ],
+    "environment": {}
+  },
+  {
+    "name": "npdu_test_tcp",
+    "command": [
+      "npdu_test_starter.sh",
+      "TCP",
+      "sync"
+    ],
+    "environment": {}
+  },
+  {
+    "name": "e2e_test_external",
+    "command": [
+      "e2e_test_external_master_start.sh",
+      "e2e_test_client_external.json"
+    ],
+    "environment": {}
+  },
+  {
+    "name": "e2e_profile_04_test_external",
+    "command": [
+      "e2e_profile_04_test_external_master_start.sh",
+      "e2e_profile_04_test_client_external.json"
+    ],
+    "environment": {}
+  },
+  {
+    "name": "event_test_payload_fixed_udp",
+    "command": [
+      "event_test_master_starter.sh",
+      "PAYLOAD_FIXED",
+      "UDP"
+    ],
+    "environment": {}
+  },
+  {
+    "name": "event_test_payload_fixed_tcp",
+    "command": [
+      "event_test_master_starter.sh",
+      "PAYLOAD_FIXED",
+      "TCP"
+    ],
+    "environment": {}
+  },
+  {
+    "name": "event_test_payload_dynamic_udp",
+    "command": [
+      "event_test_master_starter.sh",
+      "PAYLOAD_DYNAMIC",
+      "UDP"
+    ],
+    "environment": {}
+  },
+  {
+    "name": "event_test_payload_dynamic_tcp",
+    "command": [
+      "event_test_master_starter.sh",
+      "PAYLOAD_DYNAMIC",
+      "TCP"
+    ],
+    "environment": {}
+  },
+  {
+    "name": "someip_tp_test_in_sequence",
+    "command": [
+      "someip_tp_test_master_starter.sh",
+      "IN_SEQUENCE"
+    ],
+    "environment": {}
+  },
+  {
+    "name": "someip_tp_test_mixed",
+    "command": [
+      "someip_tp_test_master_starter.sh",
+      "MIXED"
+    ],
+    "environment": {}
+  },
+  {
+    "name": "someip_tp_test_incomplete",
+    "command": [
+      "someip_tp_test_master_starter.sh",
+      "INCOMPLETE"
+    ],
+    "environment": {}
+  },
+  {
+    "name": "someip_tp_test_duplicate",
+    "command": [
+      "someip_tp_test_master_starter.sh",
+      "DUPLICATE"
+    ],
+    "environment": {}
+  },
+  {
+    "name": "someip_tp_test_overlap",
+    "command": [
+      "someip_tp_test_master_starter.sh",
+      "OVERLAP"
+    ],
+    "environment": {}
+  },
+  {
+    "name": "someip_tp_test_overlap_front_back",
+    "command": [
+      "someip_tp_test_master_starter.sh",
+      "OVERLAP_FRONT_BACK"
+    ],
+    "environment": {}
+  },
+  {
+    "name": "suspend_resume_test_initial",
+    "command": [
+      "suspend_resume_test_master_starter.sh",
+      "SERVICE"
+    ],
+    "environment": {}
+  },
+  {
+    "name": "internal_routing_disabled_acceptance_test",
+    "command": [
+      "internal_routing_disabled_acceptance_test/internal_routing_disabled_acceptance_test"
+    ],
+    "environment": {
+      "LD_LIBRARY_PATH": "build",
+      "VSOMEIP_CONFIGURATION": "internal_routing_disabled_acceptance_test/vsomeip.json"
+    }
+  }
+]

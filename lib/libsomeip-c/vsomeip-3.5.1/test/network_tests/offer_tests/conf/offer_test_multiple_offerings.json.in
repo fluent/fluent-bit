@@ -1,0 +1,25 @@
+{
+    "logging": {
+        "level": "verbose",
+        "console": "true",
+        "file": {
+            "enable": "false"
+        },
+        "dlt": "false"
+    },
+    "applications": [
+        {
+            "name": "daemon",
+            "id": "0x0001"
+        },
+        {
+            "name": "service",
+            "id": "0x0002"
+        },
+        {
+            "name": "client",
+            "id": "0x0004"
+        }
+    ],
+    "routing": "daemon"
+}

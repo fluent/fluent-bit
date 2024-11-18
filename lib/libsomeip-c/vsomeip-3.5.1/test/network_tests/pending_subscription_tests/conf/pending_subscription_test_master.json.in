@@ -1,0 +1,55 @@
+{
+    "unicast":"@TEST_IP_MASTER@",
+    "logging":
+    {
+        "level":"info",
+        "console":"true",
+        "file":
+        {
+            "enable":"false",
+            "path":"/tmp/vsomeip.log"
+        },
+        "dlt":"true"
+    },
+    "applications" :
+    [
+        {
+            "name" : "pending_subscription_test_service",
+            "id" : "0xCAFE",
+            "max_dispatch_time" : "1000"
+        }
+    ],
+    "services":
+    [
+        {
+            "service":"0x1122",
+            "instance":"0x0001",
+            "unreliable":"30001",
+            "reliable":
+            {
+                "port":"40001",
+                "enable-magic-cookies":"false"
+            },
+            "events" :
+            [
+                {
+                    "event" : "0x1111",
+                    "is_reliable" : "false"
+                },
+                {
+                    "event" : "0x1112",
+                    "is_reliable" : "false"
+                }
+            ]
+        }
+    ],
+    "routing":"routingmanagerd",
+    "service-discovery":
+    {
+        "enable":"true",
+        "multicast":"224.0.23.1",
+        "port":"30490",
+        "protocol":"udp",
+        "cyclic_offer_delay" : "1000"
+    }
+}
