@@ -527,6 +527,15 @@ int flb_http_request_set_url(struct flb_http_request *request,
         return -1;
     }
 
+    start_of_authorization = NULL;
+    start_of_query_string = NULL;
+    start_of_authority = NULL;
+    start_of_username = NULL;
+    start_of_password = NULL;
+    start_of_port = NULL;
+    start_of_host = NULL;
+    start_of_path = NULL;
+
     start_of_authority = &start_of_authority[3];
 
     start_of_path = strstr(start_of_authority, "/");
