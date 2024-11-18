@@ -2204,6 +2204,11 @@ int flb_http_request_set_authorization(struct flb_http_request *request,
             return -1;
         }
     }
+    else {
+        va_end(arguments);
+
+        return -1;
+    }
 
     va_end(arguments);
 
