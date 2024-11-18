@@ -1,0 +1,20 @@
+@startuml
+
+left to right direction
+:Application: as User
+
+(Offer service) <-- User
+(Stop to offer a service) <-- User
+(Publish eventgroup) <-- User
+(Stop to publish a service) <-- User
+User -> (Send request)
+User -> (Send response)
+User -> (Trigger event)
+User -> (Update field)
+User -> (Receiv message)
+User --> (Request service)
+User --> (Release service)
+User --> (Subscribe eventgroup)
+User --> (Unsubscribe service)
+
+@enduml

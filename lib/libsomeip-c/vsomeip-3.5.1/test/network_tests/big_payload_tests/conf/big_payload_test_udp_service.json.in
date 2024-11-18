@@ -1,0 +1,41 @@
+{
+    "unicast":"@TEST_IP_SLAVE@",
+    "logging":
+    {
+        "level":"debug",
+        "console":"true",
+        "file":
+        {
+            "enable":"false",
+            "path":"/tmp/vsomeip.log"
+        },
+        "dlt":"true"
+    },
+    "applications":
+    [
+        {
+            "name":"big_payload_test_service",
+            "id":"0x1277",
+            "max_dispatchers" : "0"
+        }
+    ],
+    "services":
+    [
+        {
+            "service":"0x1240",
+            "instance":"0x01",
+            "unreliable": "30509",
+            "someip-tp" : {
+                "service-to-client" : [ "0x8421" ]
+            }
+        }
+    ],
+    "routing":"big_payload_test_service",
+    "service-discovery":
+    {
+        "enable":"true",
+        "multicast":"224.244.224.245",
+        "port":"30490",
+        "protocol":"udp"
+    }
+}

@@ -1,0 +1,35 @@
+{
+    "unicast":"127.0.0.1",
+    "logging":
+    {
+        "level":"warning",
+        "console":"true",
+        "file":
+        {
+            "enable":"false",
+            "path":"/tmp/vsomeip.log"
+        },
+        "dlt":"false"
+    },
+    "diagnosis":"0x63",
+    "applications":
+    [
+        {
+            "name":"client_id_test_utility_service_in",
+            "id":"0x6311"
+        },
+        {
+            "name":"client_id_test_utility_service_in_two",
+            "id":"0x6312"
+        },
+        {
+            "name":"client_id_test_utility_service_out_low",
+            "id":"0x5911"
+        },
+        {
+            "name":"client_id_test_utility_service_out_high",
+            "id":"0x7411"
+        }
+    ],
+    "routing":"routingmanagerd"
+}

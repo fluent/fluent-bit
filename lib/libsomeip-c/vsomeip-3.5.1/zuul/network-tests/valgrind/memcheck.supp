@@ -1,0 +1,26 @@
+{
+	<memcheck_leak_bash_if_command>
+	Memcheck:Leak
+	match-leak-kinds: definite
+	fun:malloc
+	fun:make_if_command
+	fun:yyparse
+	fun:parse_command
+	fun:read_command
+	fun:reader_loop
+	fun:main
+}
+{
+	<memcheck_leak_libdlt>
+	Memcheck:Leak
+	match-leak-kinds: possible
+	...
+	fun:dlt_init
+}
+{
+	<memcheck_leak_libc>
+	Memcheck:Leak
+	match-leak-kinds: definite
+	...
+	fun:__libc_dlopen_mode
+}

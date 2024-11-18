@@ -1,0 +1,1 @@
+{"container_policy_extensions": [{"container": "android-rse", "path": "../vsomeip_ext/android"}, {"container": "android-idc", "path": "../vsomeip_ext/android"}, {"container": "android-idc-base", "path": "../vsomeip_ext/android"}]}

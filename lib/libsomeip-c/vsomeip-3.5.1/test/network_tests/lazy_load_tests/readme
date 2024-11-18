@@ -1,0 +1,112 @@
+Lazy Load Test
+
+Quick description:
+
+client-sample-normal: communicates with service id 0x1234, instance id 0x5678 without utilizing lazy loading.
+client-sample-lazy: communicates with service id 0x1234, instance id 0x02.
+
+During the test registrations are made to the 0x01 eventgroup for both cases.
+the normal client expects to receive the event 0x8001 while the lazy client expects the 0x8002 event.
+
+Multiple messages are then sent to the 0x8421, and the 0x888 methods of the respective service/instance for each test. Only responses from 0x8421 are expected.
+
+Details:
+
+Configs
+The lazy load tests consists of 3 config jsons.
+Two are configured json.in files, one is a direct json.
+
+-The lazy_load_test_config.json.in contains the basic app information:
+    --logging
+
+        default configs
+
+    --applications
+
+        This tests uses 4 applications
+        "service-sample", "id" : "0x1277" runs the service app and will receive the requests from the clients
+        "client-sample-normal", "id" : "0x1255" client normal
+        "client-sample-lazy", "id" : "0x1256" client lazy
+        "routingmanagerd", "id" : "0x1111" in charge of the routing
+
+    --services
+
+        the list of services to be used in the app
+            service : "0x1234" holds 2 instance 0x5678 to interact with client a and 0x02 lazy client
+            service : "0x111" a dummy service which will not be permitted to be offered by policies
+
+    --security:
+
+        The security policy included in this json has the check_credentials set to true to enable the security feature to use Linux UserId and GroupId as credentials.
+        it always includes a policy that enables the offers of the service 0x1234 instances 0x5678 and 0x02 for the given credentials 0 0 and 1 1
+        And holds the request part of the 0 0 credential (client sample)
+
+        The request part of the security for lazy client is loaded subsequently by lazy loading
+
+    --routing
+
+        Routing will be handled by the routingmanagerd app
+
+    --service discovery
+        default configs
+
+-The vsomeip_policy_extensions.json.in contains the container_policy_extensions which is a key value pair of the host container to the path of the vsomeip_security.json
+
+-The vsomeip_security.json contains the security policy for the requests allowed to credentials 1 1 (client-sample-lazy)
+
+
+
+The test
+
+Routingmanagerd app
+    The routingmanagerd app is brought up using the /vsomeip/ folder as its VSOMEIP_CONFIGURATION
+    Forcing it to parse the entire folder, and load the lazy_load_test_config.json
+    as well as the vsomeip_policy_extenions.json
+    The routingmanagerd is the routing manager and will handle communications between vsomeip apps.
+
+Service-sample app
+    The service-sample app is brought up using the same path as the routingmanagerd app.
+    The service-sample app offers 3 services
+        service 0x1234, instance 0x5678 (instance to interact with client-sample-normal due to security)
+        service 0x1234, instance 0x02 (instance to interact with client-sample-lazy due to security)
+        service 0x111, instance 0x5678 (dummy services offered, to be denied by security policies)
+
+        The service 0x1234
+            Contains an eventgroup 0x01 which has two offered events 0x8001 and 0x8002
+            Both those events are populated with the payload 1234 and notified
+            Shutdown method 0x7777, used to shutdown the whole app
+            Method TEST_SERVICE_METHOD_ID = 0x8421 the method which will receive messages from the clients
+
+        The service 0x111
+            Offered but the security policies should prohibit the offer from happening.
+            Expect no interactions
+
+    The test verifies the service-sample only receives message for the 0x1234 service and 0x8421 method
+
+Client-sample-normal app
+    The client-sample-normal app is brought up using direct injection of the lazy_load_test_config.json it will not undergo the lazy load process, used and will be used as the control case in this test.
+
+    The app is initialized, request handlers are registered.
+    Upon registration of the app (app_state = registered) the client will request all three services offered by the service-sample. The on_availibity handler is the same for all 3 services. And tries to subscribe to both event of the 0x1234 0x5678 eventgroup 0x01 event 0x8001 and 0x8002
+
+    The first step of the test is to check that only the service 0x1234 instance 0x5678 becomes available to client-sample-normal
+
+    The second step is to verify that only the notification from 0x8001 is received
+
+    The third and final step is to send NUMBER_OF_MESSAGES_TO_SEND (32 as of writing this read me) messages to method 0x8421 and 0x888 of 0x1234 0x02 only responses from 0x8421 are expected. The tests expect to receive a total of NUMBER_OF_MESSAGES_TO_SEND
+
+Client-sample-lazy app
+    The client-sample-lazy app is brought up using the /vsomeip/ folder as its VSOMEIP_CONFIGURATION
+    Forcing it to parse the entire folder, and load the lazy_load_test_config.json
+    as well as the vsomeip_policy_extenions.json as well as execute the lazy loading of the vsomeip_security.json in the /vsomeip/vsomeip_ext/1_1/ folder
+    client-sample-lazy is the test case for lazy loading.
+    client-sample-lazy uses linux user-id uid: 1 and group-id gid: 1
+
+    The app is initialized, request handlers are registered.
+    Upon registration of the app (app_state = registered) the client will request all three services offered by the service-sample. The on_availibity handler is the same for all 3 services. And tries to subscribe to both event of the 0x1234 0x02 eventgroup 0x01 event 0x8001 and 0x8002
+
+    The first step of the test is to check that only the service 0x1234 instance 0x02 becomes available to client-sample-lazy
+
+    The second step is to verify that only the notification from 0x8002 is received
+
+    The third and final step is to send NUMBER_OF_MESSAGES_TO_SEND messages to method 0x8421 and 0x888 of 0x1234 0x02 only responses from 0x8421 are expected. The tests expect to receive a total of NUMBER_OF_MESSAGES_TO_SEND

@@ -1,0 +1,17 @@
+@startuml
+actor "User application " as User
+participant application
+participant routing_manager
+participant endpoint_manager
+participant configuration
+
+User -> application : offer_service(service_t, instance_t, major_version_t, minor_version_t): bool
+application -> routing_manager : offer_service(client_t, service_t, instance_t, major_version_t, minor_version_t):bool
+routing_manager -> endpoint_manager : find_or_create_server_endpoint(service_t, instance_t): bool
+endpoint_manager -> endpoint_manager : find_server_endpoint(service_t, instance_t)
+
+endpoint_manager --> routing_manager
+routing_manager --> application
+application --> User
+
+@enduml

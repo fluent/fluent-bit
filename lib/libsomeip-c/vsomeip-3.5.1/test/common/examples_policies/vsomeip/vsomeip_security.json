@@ -1,0 +1,25 @@
+{
+  "routing-credentials": {
+    "gid": "5002",
+    "uid": "4003017"
+  },
+  "security": {
+    "check_credentials": "true",
+    "policies": [
+      {
+        "allow": {},
+        "credentials": {
+          "gid": "5002",
+          "uid": "4003017"
+        }
+      },
+      {
+        "credentials": {
+          "gid": "0",
+          "uid": "0"
+        },
+        "deny": {}
+      }
+    ]
+  }
+}
