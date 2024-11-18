@@ -1,0 +1,28 @@
+{
+    "unicast": "134.86.56.94",
+    "logging": {
+        "level": "debug",
+        "console": "true"
+    },
+    "applications": [
+        {
+            "name": "hello_world_service",
+            "id": "0x4444"
+        },
+        {
+            "name": "hello_world_client",
+            "id": "0x5555"
+        }
+    ],
+    "services": [
+        {
+            "service": "0x1111",
+            "instance": "0x2222",
+            "unreliable": "30509"
+        }
+    ],
+    "routing": "hello_world_service",
+    "service-discovery": {
+        "enable": "false"
+    }
+}

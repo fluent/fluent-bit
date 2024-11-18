@@ -1,0 +1,32 @@
+{
+    "unicast" : "@TEST_IP_SLAVE@",
+    "netmask" : "255.255.255.0",
+    "logging" :
+    {
+        "level" : "debug",
+        "console" : "true",
+        "file" : { "enable" : "false", "path" : "" },
+        "dlt" : "true"
+    },
+    "applications" :
+    [
+        {
+            "name" : "suspend_resume_test_client",
+            "id" : "0x4567"
+        }
+    ],
+    "routing" : "suspend_resume_test_client",
+    "service-discovery" :
+    {
+        "enable" : "true",
+        "multicast" : "224.0.0.1",
+        "port" : "30490",
+        "protocol" : "udp",
+        "initial_delay_min" : "10",
+        "initial_delay_max" : "10",
+        "repetitions_base_delay" : "30",
+        "repetitions_max" : "3",
+        "cyclic_offer_delay" : "1000",
+        "ttl" : "3"
+    }
+}

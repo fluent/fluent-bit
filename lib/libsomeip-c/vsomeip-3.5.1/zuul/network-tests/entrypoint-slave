@@ -1,0 +1,6 @@
+#!/bin/bash -eu
+
+source "${BASH_SOURCE[0]%/*}"/shlib/common.shlib
+
+mkdir -p /run/sshd
+exec /sbin/sshd -D

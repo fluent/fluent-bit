@@ -1,0 +1,1392 @@
+Changes
+=======
+
+v3.5.1
+- Restructure Network Tests CMakeLists
+- policy.cpp unit test
+- Remove deprecated usage of byteorder and use bithelper
+- unblock endpoint when closing it
+- Find_Debounce_Time made configurable
+- Check if configuration_ pointer exists before using
+- Initialize routing_state_
+- Solved data race in configuration_impl class
+- utility.cpp unit tests
+- unit tests payload_impl
+- unit tests serializer
+- unit tests deserializer
+- Unit Tests for policy_manager_impl.cpp
+- Unit Test - Routing Manager set_routing_state
+- Move documentation to markdown
+- clang-format to verify the code vsomeip-lib
+- fix deadlock with event and message debounce feature
+- disabled some groups of tests
+- Try to force connection reset on suspend
+- Call availability handler on request service instance
+- Handle endpoint queue size underflow
+- Add Valgrind massif tool
+- Create new train after scheduling to avoid duplicate messages
+- Re-Added offer_tests group in all sanitizers tests
+- removed extra DLT logs of the policies print
+- COVESA-615: vsomeip.lck file not removed upon application termination
+- COVESA-527: Locally switch off -Wstringop-overflow
+- Create network regression test for specific issue
+- Change IndentPPDirectives rule in clang-format
+- applied auto in some identified lines by sonarqube
+- Add Valgrind memcheck
+- Ensure buffer is valid before de-referencing pointer
+- Renaming folder test and fixing typos
+- Fix minor formatting issues from some commits
+- Adds interger overflow check
+- Adds application name on cout logs
+- Adding helgrind, to test output
+- Boost 1.65 cleanup
+- network_test - Offer Stop Offer test
+- Support host name (env) for internal TCP communication
+- Remove cached configuration after app stops
+- Optimize tests/network-tests/CMakeLists.txt
+- Check if pointer exists before dereferencing it
+- avoid requiring valgrind locally
+- Fix Lock-Order-Inversion in policy_manager_impl
+- Revert "Fix to not ignore stop offers when sd acceptance is not required"
+- Fix timeout on offer_stop_offer test
+- Restore config_plugin_impl mutex
+- Rework [STOP_]OFFER command handling
+- some-tp memory consumption increasing fast
+- Remove dlt traces from memory_test
+- restart_routing_test enabled
+- Fix cyclic events
+- Tracing LOI
+- improve connection log on error path
+- added subscribe_notify groups to non-leak verification
+- Relocate hostname config command
+- allow subscribeACK if at least one offer was sent by SD
+- Improve "end of file" error handling
+- Update Clang-Format to Version 18
+- Debounce tests fix
+- Wireshark dissector for vsomeip protocol
+- Remove logging on operation cancel in connect_cbk
+- Add additional info on failure to open TCP port
+- Implementation of SOMEIPSD_00577
+- Refactor how niceness values are applied to threads
+- prevent race between event expiration/forwarding
+- Fix subscribe_notify_one tests
+- Fix missing/blocked subscription requests
+- change references to C++14 into C++17
+- Explicitly check whether an endpoint is in use
+- Enabled all network tests with whitelist
+- Fix target client id in local_send
+- remove redundants package import definitions
+- run unit tests on windows
+- Fix debounce network tests
+- type upgrade and temporary disable of test for QNX build
+- Force abort hanging detached threads
+- Application tests fix
+- Remove behavior from catch block in ~message
+- Stop/Start (network) endpoints on suspend/resume
+- Reduce the number of copy operations on event payloads
+- Sets linger to 0 in local tcp clients
+- Prevent exception re-throw in ~message
+- remove linger on local_tcp
+- Fix android traces build
+- Introduce stateful availability handler
+- Update the availability state
+- Reintroduces the TIME_WAIT for ltcei
+- Faster handlers lookup
+- Increase app registration timeout
+- Force endpoint restart if re registering
+- fix semaphore logs
+- fix compile issue with pthreads in android
+- Disabling set routing state unit test
+- Fixing get_policy_manager error with security disabled
+
+v3.5.0
+- Load Policies Lazy Load
+- Test - Processing SD messages with unknown type option
+- ensure endpoints before deletion
+- Improve "end of file" error handling
+- Enable debouncing of events & selective events
+- Revert "Test - Processing SD messages with unknown type"
+- Logs added to points of failure on registration process
+- One *.json to ignorem all
+- Someip-tp remote address rework
+- Fix crash in multicast_receive receive_cb
+- Generate network_test configs directly to build
+- Fix deadlock if binding of TCP client endpoint fails
+- Added missing includes of iomanip to support compilation on Mint
+- Cache not yet registered events
+- Return true to make sure endpoints are deleted
+- Byteorder implementation
+- Reorder of prepare_stop method
+- Allows applications in the same process using different security configurations
+- Fix to not ignore stop offers when sd acceptance is not required
+
+v3.4.10
+- Fix QNX build
+- Fix missing Stop Offer
+- Apply extra fixes to QNX environment
+- Remove key <service, instance> from the offer_commands_
+- COVESA#478: deleted unused param _use_exclusive_proxy
+- Fix code smell related to condition variable
+- COVESA#462: Fix IPv6 Service Discovery
+- Added multicast_mutex to async function that makes use of multicast socket
+- COVESA#479: Allow service_discovery to continue without random_device
+- Fix availability handler sending false on offer
+- Set host/port in vsomeip_sec_client_t whenever possible
+- Use executor_work_guard instead of io_context::work for boost v1.66 and higher
+- Update Windows build
+- Added profile 07 as an option for E2E protection
+- ASIO: use heap-allocation to avoid using garbage data
+- Fix integer underflow in server_endpoint_impl.cpp
+- Cleanup prepare_stop_handlers_
+- Automatic unsubscribe
+- Debounce now works without routingmanagerd running
+- Debouncing: Send last received value after debounce time + X
+- Fix resource deadlock avoided crash
+- Use closure instead of callable struct
+
+v3.4.9
+- Merge COVESA PR447 with support for QNX 7.1
+- Merge COVESA PR470 with changes to not instantiate
+a non existent type for boost < 1.66.0
+- Merge COVESA PR515 with changes that remove not used lines
+
+v3.4.8
+- Adds debounce_filter_tests json files to gitignore
+- Adds check for null serviceinfo
+- Implementation of debounce frequency test
+- Accept malformed StopSubscribe/Subscribe messages
+- security: Fix security library name
+- Also remove service instance from map of pending offers
+- enforce lock acquisition order to avoid LOI
+- Improved logs
+
+v3.4.7
+- Do _NOT_ try to serialize empty names
+- Avoid crash on access to invalid position from tcp_endpoint buffer
+- Fix security library name
+- revert std::move usage in train buffer's
+- Fix deadlock in mutex_
+
+v3.4.6
+- check if a policy exist in the vector of policies
+- Crash in process vsomeipd crash id: D8DF38B19EEBC79D
+- Enable guest port configuration per uid/gid
+
+v3.4.5
+- Implementation of new debounce filter test
+- test availability when double offering service
+- network test fixes
+- Try to synchronize subscribe/unsubscribe/resubscribe
+- Add vsomeip_portcfg.json to the list of mandatory configuration files
+- Check buffer before accessing it
+- Rework condition for starting the send operation for client endpoint
+- Avoid spamming the log
+- Extend security interface to enable syncing security clients
+- Revert get_local_port() behaviour
+
+v3.4.4.1
+- manually reset tables for unavailable services on suspend state
+
+v3.4.4
+- Fix deadlock if binding of UDP client endpoint fails
+- Changed local_tcp_client endpoint connect to async connect.
+- Change shutdown sequence
+- vSomeIP Security: Update vsomeip_sec
+
+v3.4.3
+- Fixed race between incoming subscription and StopOffer/Offer
+
+v3.4.2
+- Removed local_port_ attribute
+
+v3.4.1
+- Rename the new "register_message_handler" overload function
+- Set the Client identifier when sending pong command
+
+v3.4.0
+- Allow to register multiple message handlers for the same message
+- load_security_policy_extensions Unit and Benchmark Tests
+- Fix is_local flag for acl acceptance msg
+- Fix registration issues regarding connecting timeout
+
+v3.3.8
+- Check buffer size when serializing/deserializing event registrations
+- Remove leftovers from shm usage
+- Avoid using uninitialized variable
+- Displays lib version when starting any app
+
+v3.3.7
+- Fix handling of endpoint options
+- Fix build on Windows
+- Fix client-side logging filters
+- Rework in event::set_payload
+- Release no longer in use client endpoints
+- Rework condition for starting the send operation
+- Verify if the event is shadow
+
+v3.3.6
+- The "last forwarded" timestamp must be handled per event
+- Fix deadlock
+- Restart the connection on broken unix sockets
+- Fix routing root not binding to local tcp if
+- Rework connecting timeout
+
+v3.3.5.1
+- Fix typo in application_impl.cpp
+- Update load_balancing_option_impl.cpp
+- Fix format specifier in memory_log_timer_cbk
+- Prevent boost symbols from leaking into global namespace
+- Remove redundant ostream manipulators
+- Fix for configuration option deserialize bug
+- Accept return codes within range 0x20 - 0x5E as valid
+
+v3.3.5
+- Do NOT use iterators in asynchronous operations.
+- Add event identifier to "REGISTER EVENT" log message at routing manager stub.
+- Fix for crash in flush function, server_endpoint_impl class
+- added FD_CLOEXEC flag in all open operations
+- Use "make_unique" and "make_shared" to construct "unique_ptr" and "shared_ptr"
+- Removed redundant pairs of parentheses
+- Do not erase while iterating.
+- Changed invalid call of deserialize to serialize
+- Fixed the the problem in policy::deserialize counts down the given policy size,
+and after deserializing the policy it is 0.
+- Monitor session IDs in SD messages and log missing IDs
+- Fix timestamp format of log message
+- Prevent crash when logging with DLT
+- load_security_update_whitelist Unit and Benchmark Tests
+- Added protection when a message is destroyed
+- Pu/connect timeout refactor
+- Rework the addition of services when in suspended mode
+- Remove const qualifier from function return types
+- Adapt to boost 1.81.0
+
+v3.3.4
+- Removed VSOMEIP_DEPRECATED_UID_GID from some elements.
+- Add nullptr guards to receive_cbk.
+- Add nullptr check to receive_cbk.
+- Fix network test build for g++11.3.
+- Remove mutexes from logger_impl and security_impl.
+- Fix VSOMEIP_LOCAL_CLIENT_ENDPOINT_RECV_BUFFER_SIZE buffer.
+- Fix range-loop-construct warning for g++11.3.
+- Implementation of support for header-only tracing.
+- Fix applied regarding the timeout in endpoints connections.
+- Use standard reliability_type_e on service_discovery_impl.
+- Added receive operation for UDP server endpoints.
+- Reduce log level of some vsomeip messages.
+- Change dependency on LINK UP.
+- Change rejoining mechanism in UDP server endpoint.
+
+v3.3.3
+- Fixed android build issues
+- Added more DLT log info on credentials error
+- Fixed ICON register issues.
+- Added an  unlocked method to get the policy extension path
+
+v3.3.2
+- Manage E2E Profile04 counters per instance
+- Fix handling of subscription objects during unsubscribe.
+- Remove subscription on connection resets.
+- Reuse local client ports.
+- Add try block in message deserialization.
+- Remove unneeded / unused structure servicegroup.
+- Optimize event/field registration.
+- Add dependency from network tests to e2e library (plugin).
+- re-introduce the definition of socket timeout.
+- pu/event-tests: Avoid deadlock.
+- Linux: avoid static initialization of std::mutex.
+- Improve robustness when stopping initial-event tests.
+- Fixed various unused-variable warnings.
+- Handling with some udp errors in send_cbk process.
+- Avoid services becoming available when the daemon is suspended.
+- refactor: remove `set_bound_sec_client()` from `local_tcp_server_endpoint_impl`.
+
+v3.3.1
+- Refactor `plugin_manager_impl::load_symbol()`
+- Use consistent naming for `security::is_client_allowed_to_access()`
+- Raise C++ standard used to C++17 on non-Windows platforms
+- Prefer using reinterpret_cast instead of C-style casts
+- DRYer approach to loading `libvsomeip_sec` hook functions
+- Indent with 4-spaces
+- Hide `symbol_table` inside `security::load()`
+- `policy_manager::get()` should call `policy_manager_impl::get()`
+- Fix integer conversion warning
+- Refine silencing MSVC warning C4101
+- Add `VSOMEIP_DISABLE_SECURITY` in a few remaining spots
+- Add support for `vsomeip_sec_client_t` to subscription handlers
+- Disable security unit/benchmark tests when `DISABLE_SECURITY`
+- Disable security network tests when `DISABLE_SECURITY`
+- Make the sec client a member of the connection
+- Add support for TCP clients in the default security hooks
+- Fix security checks when using internal TCP sockets
+
+v3.3.0
+- Introduced protocol classes
+- Extended interface to allow application specific configurations
+- Allow to switch off internal routing
+- Added ACL plugin
+- Respect subscription status handler for ANY_EVENT
+- Corrected handling of ANY_[SERVICE|INSTANCE|EVENTGROUP|EVENT] when handling subscription status
+- Fix handling of lock files
+- Add subnet support for IPv6 networks (boost 1.66+ only for now)
+- Fix client specific debouncing
+- Set SO_REUSEADDR before binding socket
+- Specify local IP/interface when joining multicast group
+- Avoid false positives when warning about not having loaded acceptance data
+- Extended buffer size adaptation for UDP sockets
+- Removed leftover from attempt to fix setsockopt blocking
+- Implemented a cache for is_client_allowed
+- Adapted version in OSS information
+- Log errors (connection reset, end of file, bad descriptor) as such
+- Rename extended "subscribe" method to "subscribe_with_debounce"
+
+v3.2.15
+- Unit/Benchmark tests for Security::Check Credentials
+- Client dependent usage of session handling
+- Fix Windows build
+- Fix for multicast_socket bug
+- Fixed spam messages of security policy extensions
+- Added OSS information for RSE
+
+v3.2.14
+- Implementation of support for header-only tracing
+- Replaced exceptions with error messages
+- Asynchronously set join/leave options
+- React on failed option setting
+- Prevented StopSubscribe/Subscribe on first offer reception
+- Implemented a cache for is_client_allowed operations
+
+v3.2.13
+- Fixed lock_guard and mutexes on lazy load policies
+
+v3.2.12
+- Fixed race condition on startup of suspend_resume_test
+- Added a default initialize in tcp_client_endpoint_impl::is_sending
+- Updated the log "Maximum number of dispatchers exceeded"
+- Refactored the policy extensions map
+- Added protection for Received buffer size and buffer capacity
+- Added nullptr checks to some pointers in the eventgroupinfo
+- Fixed Windows build
+- Removed print error messages for unneeded endpoints
+- Wrapped accept method to use accept4
+- Improved reliability of multicast leave group
+
+v3.2.11
+- Fix incorrect load of policies
+- Fix unlocked access to multicast_info
+- Rework the join mechanism.
+- Fix receiving of routing info messages in TCP mode.
+- Make routing client port range configurable ("routing-client-ports").
+- Allow to configure event update properties.
+
+v3.2.10.1
+- Fix false positive security warning
+
+v3.2.10
+- Fix race condition which could lead to not establishing a TCP
+  connection to a remote service
+
+v3.2.9
+- Send StopSubscribe and clear subscribed_ map on STR
+- Added suspend/resume test
+- Erase subscribed_ map on received StopOffer
+- Select new local port on bind error for uce
+
+v3.2.8
+- Fixed credentials::receive_credentials() error handling
+- Ensured to call prepare_stop handler for TCP server endpoints
+
+v3.2.7
+- Fixed lock order inversion
+
+v3.2.6
+- Adapted helloworld references within user guide
+- Added nullptr check for remote subscription pointers
+
+v3.2.5
+- Fixed race condition in client endpoint send queue
+- Improved robustness when receiving malformed remote subscriptions
+- Cleanup remote subscribers on suspend
+- Make sure that the connection (and thus the policy loading)
+  has taken place before checking something against the policies
+
+v3.2.4
+- Removed load of the vsomeip_ext policies from the start
+- Allow to partition service instances. Each partition uses a separate client
+  port, even if service instances from different partitions are offered on the
+  same server port of a remote device.
+- Fixed timer restart (detection of last received SD message)
+- Optimized distribution of credentials- Improve handling of expired subscriptions
+- Fix event payload caching at proxy
+- Select a free client port that was not used recently
+- Fixed invalid insertion in known_clients_ map
+- Fixed clearing of client endpoints
+- Rework for expire_subscriptions()
+- Rework map insertions
+- Avoid deadlocks during expiration of subscriptions
+
+v3.2.3
+- Optimized updating the sent counter for FindService messages in requested_ map
+- Improved log messages
+- Enabled tracing for initial values of shadow events for subsequent subscribers.
+- Reduced the vsomeip security logging
+- Fixed race condition in the logger
+- Fix for initial events
+- Fixed crash in TCP client endpoint
+- Fixed TCP socket bind error handling
+- Selected new local port on bind error for tce.
+- Ignored subscribes when suspended
+- Added subscriber count to log / extended config switches
+- Limited subscriptions to same service, instance, eventgroup depending on remote IP
+- Synchronized update_remote_subscription / send_(un)subscription()
+- Fixed lazy loading on daemon
+
+v3.2.2
+- Fixed the loading of the security policies at the start
+- Fixed the tags in the android logging
+- Added the additional client ports in the ipsec-plugin default configuration
+- Removed the unneeded socket option IPPROTO_IP/IPPKTINFO.
+- Removed the libdlt dependency from android
+- Improved the documentation of debouncer configuration.
+- Check the port to send notifications
+- Fixed the nullptr on multicast_socket
+- Improved the sending of STOP_OFFER messages
+
+v3.2.1
+- Updated cmake minimum required version
+- Fixed expire_subscriptions(address)
+- Updated examples
+- Ensured to clear previous error before calling dlsym (plugin_manager)
+- Always send values after subscription acknowledgment-
+- Added support to logs in Android
+- Updated android build files
+- Ensured to forward logs to DLT independently of FILE / CONSOLE log configuration
+- Avoided heap-buffer-overflow in look_ahead() when deserializing SD entry
+- Adapted the reader of the config to put always logging in Android
+- Used error code when starting main phase timer
+- Added some SomeIP/TP optimization
+- Changed the loglevel for blocked incoming notifications
+- Restarted UDP client endpoint on connection refused error
+- Acquired mutex before change sd_acceptance_rules_active_
+- Fixed getEnv returning empty value
+
+v3.2.0
+- Dropped support for boost 1.65 and below
+- Do not lock the multicast mutex twice
+- Disable warnings for boost and DLT headers
+- Fix security credentials update in rm::proxy
+- Prevent deletion of server endpoint
+- Fix instance removal in local_services_history_ map
+- Lazy load security policies
+- Use a configuration variable for the SOME/IP-TP maximum segment length
+- Use instance based SOME/IP-TP configuration
+- Use service configuration within server endpoint
+- Ensure maximum segment length is a multiple of 16 (SIP_RPC_772)
+- Use configured separation times
+- Added debounce test and refined debouncing
+- Fix hostname transmission
+- Do _NOT_ remove subscription on a received StopOffer
+- serviceinfo: Removed unused & undefined member group_
+- Implemented socket wrapper using ld(1)'s "--wrap"
+- Set the android LOG_TAG to VSIP
+- Added message statistics
+- Reworked android logging
+
+v3.1.18
+- Support boost 1.74
+- Ignore remote offers without referenced endpoint options
+- Fixed race condition when removing security policies
+- Ensure composite send operations have finished before resetting TCP server endpoint
+
+v3.1.17
+- Support AutoSAR E2E Profile 4
+- Support dynamic policies for offered services
+- Fixed race condition between service shutdown and subscription
+- Fixed race condition between service instances offered on the
+  same endpoint(s).
+
+v3.1.16
+- Fixed race condition when leaving multicast group
+- Do not busy loop when receiving garbage data on local endpoint
+
+v3.1.15
+- Ensure to remove the correct subscription object on unsubscribe
+- Implemented support to define "secure services"
+- Speedup security policy handling
+- Enable building with boost v1.73.0
+
+v3.1.14
+- Fixed race conditions (application registration, subscription)
+
+v3.1.13
+- Abort operation when doing a full rejoin
+- Protect access when consuming a policy
+- Decrease wait time for composite send operations
+- Reimplemented logger without using boost::log
+
+v3.1.12
+- Ensure composite send operations have finished before resetting an endpoint.
+  Otherwise this may cause a crash within boost.asio.
+- Always use the assigned client identifier when sending messages from a proxy.
+- Add TTL to initial timestamp to avoid immediate expiration.
+
+v3.1.11
+- Preparation for new IPsec plugin (3.1.1)
+
+v3.1.10
+- Reset subscriptions on stop offer service
+- Protect access to security policy contents
+- Tolerate wrong/incomplete event registrations in compatibility mode
+- Avoid buffering of pending subscriptions
+
+v3.1.9
+- Fix race condition when processing multicast messages
+
+v3.1.8
+- Fix deadlock when sending messages
+- Fix race condition when processing SD messages
+
+v3.1.7
+- Fix stop subscribes when a service is released
+- Improve handling of time stamps when processing subscriptions
+- Log queued data instead of socket fill levels
+- Ensure all shutdown steps are executed (even in case of exceptions)
+
+v3.1.6
+- Fix possible busy loop when expiring subscriptions
+- Use set of serializers to avoid deadlock situation
+- Improve client identifier handling
+    - Check whether corresponding socket is available
+    - Implement retry if a client identifier cannot be used
+- Log buffer fill levels if they exceed a configurable threshold (default=67%).
+
+v3.1.5
+- Ensure subscriptions to remote services are correctly reset when
+  services are no longer available.
+- Fix race condition when inserting new subscriptions.
+- Fix accessing of security module during library shutdown.
+
+v3.1.4
+- Ensure to only mark remote services offered via UDP and TCP as
+  available when both endpoints are marked as connected to prevent TCP
+  connection restarting by the service discovery.
+- Fix possible deadlock when expiring a remote subscription and
+  sending the corresponding event at the same time.
+- Fix nullptr access in service discovery when receiving a
+  subscription for an unknown eventgroup.
+- Add new cmake variables DEFAULT_CONFIGURATION_FOLDER and
+  DEFAULT_CONFIGURATION_FILE which can be used to change the default
+  configuration folder and file at compile time (see vsomeipUserGuide
+  for more information)
+- Fix race condition leading to not accepting service offers from
+  a local client when the same service was offered and stop offered in
+  a high frequency
+
+v3.1.3
+- Set client ID to 0x0 for SOME/IP SD messages
+
+v3.1.2
+- Fix bug in vSomeIP 2 compatibility layer which lead to offering
+  selective events as normal events in conjunction with
+  CommonAPI-SomeIP mainloop integration when a proxy was build to a
+  stub through the same CommonAPI connection ID in the same binary.
+
+v3.1.1
+- Ensure sending StopOffers for services specified with a different
+  protocol than someip in the configuration.
+- Add support for boost v1.70 and v1.71.
+
+v3.1.0
+- Integrate changes of 2.14.12 - 2.14.18
+- Add get_uid and get_gid methods to message class
+- Add reliability parameter to application::offer_event and
+  application::request_event methods
+- Add vSomeIP 2 compatibility layer.
+- Fix crash when expiring a reliable-only subscription
+- Fix Android compile errors
+- Fix bug in service discovery offer acceptance handling which led to
+  only checking the first service entry of an incoming SD message via
+  the registered handler.
+- Deactivate adherence to NPDU debounce time between SOME/IP-TP
+  segments of the same message.
+- Fix less than operator of remote_info_t which lead to
+  application::get_sd_acceptance_required() always returning a map
+  with only one erroneous element
+- Fix SD startup on Windows
+- Fix heap-use-after-free in server endpoints
+
+v3.0.0
+- Cleanup of application interface
+    - Removed (un)register_subscription_error_handler methods. The
+      functionality is now offered through the
+      (un)register_subscription_status_handler methods.
+    - All methods concerning events/fields now use a new event_type_e
+      enum to specify the event type.
+    - The subscription_type_e parameter was removed from the subscribe
+      method. The way the remote service is offered now determines the
+      subscription type.
+    - The offer_acceptance* methods were renamed to sd_acceptance*.
+    - The flush parameter was removed from the send method
+    - Removed notify and notify_one methods which used the flush
+      parameter.
+- Added SOME/IP-TP functionality. Please see the vsomeipUserGuide for
+  more information.
+- Added nPDU functionality. Please see the vsomeipUserGuide for more
+  information
+- E2E protection is now implemented as plugin
+- Added Android support
+- Internal improvements and bugfixes
+
+v2.14.18
+- Fix bug leading to not sending out FindService entries after a
+  resume from Suspend-to-RAM, if the service was already known at the
+  time of the request.
+
+v2.14.17
+- Performance improvements for request-service message handling
+
+v2.14.16
+- Ensure restarting of TCP connection if TCP reset is received
+  before 3 way handshake is finished
+
+v2.14.15
+- Ensure that all clients receive the security policy update
+
+v2.14.14
+- Improved handling for EMFILE error (per-process limit of open
+  filedescriptors reached)
+- Fixed client ID assignment
+
+v2.14.13
+- Fixed race condition leading to unintended sending
+  of selective broadcasts.
+
+v2.14.12
+- Make timeout during application shutdown configurable via
+  "shutdown_timeout" json configuration file parameter
+- Fix bug leading to too fast reassignment of client IDs acquired via
+  auto-configuration in conjunction with usage of a non-continuous
+  diagnosis mask
+
+v2.14.11
+- Fixed race condition when opening shared memory
+- Fixed race condition when inserting SubscribeEventGroupACK
+  entries
+- Added prefix for security related log messages
+
+v2.14.10
+- Fixed race condition in client ID to UID mapping.
+
+v2.14.9
+- Fixed race condition in event / response validation
+  and client ID to UID mapping removal
+- Limit reconnect attempts of local client endpoints
+- Increase robustness of local server endpoint
+  in case of corrupted data stream
+
+v2.14.8
+- Handle ANY_METHOD for security policy updates
+
+v2.14.7
+- Reverted security related feature if same client connects
+  again with different credentials.
+
+v2.14.6
+- Fixed issue related to client ID reuse if security is activated
+- Use chmod instead of umask to ensure correct permissions of unix
+  domain sockets
+
+v2.14.5
+- Fixed race condition when handling security policy updates
+
+v2.14.4
+- Added whitelist feature for security policy update / removal
+- Added / improved security related checks
+
+v2.14.3
+- Prevent concurrent access to any client policies
+- Updated ACL plugin interface
+
+v2.14.2
+- Fix possible deadlock when receiving invalid responses from remote
+  TCP services
+- Enabled loading of UID GID specific security configuration during
+  application startup
+
+v2.14.1
+- Check header fields in udp endpoints for correct values
+- Fixed race condition in event::notify methods
+- Ensure to always resume sending if endpoints were restarted
+- Prevent possible concurrent access to receive buffer in endpoints
+- Allow or deny all remote clients via security config parameter
+- Adapt security config plugin to updated ACL interface
+- Make receive buffer size configurable for UDP client and
+  server endpoints via "udp-receive-buffer-size" parameter
+  in json configuration file
+- Fix race condition which could lead to premature resubscription if a
+  remote service was stop offered and offered again
+
+v2.14.0
+- Introduce security policy updates during runtime and extend
+  security configuration to filter on instance ID and method ID level
+  For more information see the vsomeipUserGuide.
+- Make IPsec plugin more robust against libdavici communication loss
+
+v2.13.2
+- Make I/O thread nice level configurable
+
+v2.13.1
+- Improve check of subnet mask for remote subscribers
+- Restart TCP connections if too big messages are received
+- Don't process subscriptions if IPsec connection isn't established
+- Additionally check protocol header fields in tcp endpoints as well
+- Fix race when expiring remote services
+
+v2.13.0
+- Update debug_diagnosis_plugin and add update_service_configuration
+  method to public application interface. This enables offering of
+  service instances on the network which are only offered locally by
+  default. The changes done through the new method are not persistent
+  over reboots.
+- Fix handling of requests send to the service discovery port
+- Log time since routing state was set to RS_RESUMED in cyclic version
+  logger
+- Blame externally offered services if routing state is set to
+  RS_SUSPENDED
+- Prevent possible exception during application shutdown
+
+v2.12.4
+- Improve handling of reboot detection in IPsec plugin if the
+  same ipsec connection is still used after reboot.
+
+v2.12.3
+- Improve handling of broken TCP streams
+
+v2.12.2
+- Expire remote subscriptions to local services when routing state is set to
+  suspending
+
+v2.12.1
+- Fixed race condition in event registration
+
+v2.12.0
+- Improve error handling and STR behaviour of IPsec plugin.
+- Improve magic cookie handling.
+- Fix possible deadlock on application shutdown
+- Fix handling of local StopOffers when duplicate service instances
+  are present in the network.
+- Make trace connector json configuration more flexible
+- Fix bug in security configuration when black listing single
+  UIDs/GIDs
+
+v2.11.2
+- Ensure service availability if IPSec plugin is activated but IPsec
+  not configured correctly.
+
+v2.11.1
+- Improve handling of slow remote ECUs in IPsec plugin
+- Fix possible deadlock on application shutdown
+
+v2.11.0
+- Added IPsec plugin.
+  The compilation of the plugin has to be explicitly enabled when calling cmake.
+  Example: cmake -DPLUGIN_IPSEC_BUILD=1 ..
+
+v2.10.22
+- Handle EPERM error (Operation not permitted) in cei::send_cbk
+- Restart TCP endpoint if a maximum number of aborted restarts
+  (due to state == CONNECTING) is reached or if a maximum allowed time since
+  the connection attempt was started has elapsed
+- Fixed missing call of subscription status handlers
+  for external fields if a following subscription
+  was done triggered by a service being stopped/expired
+- Fixed crash in vsomeip security credential check
+- Added Debian hardening compiler flags (requires GCC >= 5.2)
+- Fixed compilation with GCC 8
+
+v2.10.21
+- Improve memory usage of routing manager.
+- Improve handling of incoming SD messages with uncommon entry
+  combinations.
+- Name all threads under Linux and log thread IDs during startup.
+- Optimize memory allocation for internal message handling.
+- Ensure an (extra) dispatch thread is running in case the main
+  dispatch thread is (still) blocked.
+- Fix race condition which could lead to missing initial events for
+  local subscriptions if the application hosting the service called
+  application::offer_event and additionally application::request_event
+  for the same event.
+- Fixed crash
+
+v2.10.20
+- Add security config (i.e. vsomeip_security.json) to mandatory config files
+- Enable local_routing_test_starter.sh to use externally defined configuration
+  files
+- Reject malformed subscriptions with SubscribeEventgroupNACK if multiple
+  endpoint options are referenced
+- Use CMake define or environment variable to find gtest
+- Quit vsomeipd when Service Discovery is configured but module cannot be loaded
+- Added error message when Configuration module cannot be loaded
+- Export payload_impl to enable compilation with newer GCC versions
+- Avoid printing the same warning twice. Ensure all error paths are identifiable
+- Fixed security checks for policies without configured client ID
+- Fixed crash on auto config load in case of EOWNERDEAD caused by previous crashed/exited application
+
+v2.10.19
+- Catch exceptions on shutdown (especially from boost::log)
+- Fixed handling of malformed packets in TCP client endpoint in conjunction
+  with magic cookies
+
+v2.10.18
+- Fix restarting of TCP connection on connection reset by the server
+  and mark services reachable through it as unavailable until
+  connection is established again.
+- Fix bug which prevented restarting of TCP connections if the peer
+  instantly send a RST after the connection had been established.
+- Fix bug which could cause missing initial events in conjunction with
+  service discovery messages containing new subscriptions and
+  resubscriptions.
+
+v2.10.17
+- Speedup initial subscriptions to unreliable remote services
+- Fix deadlock in conjunction with configured client ports
+- Fix bug leading to usage of client port outside of configured range
+
+v2.10.16
+- Added changes for diagnosis mode plugin (as in v2.10.14)
+- Only map shared memory for client IDs once per process
+
+v2.10.15
+- Reverted diagnosis mode plugin (as in v2.10.11)
+- Fix remote event caching
+
+v2.10.14
+- Added changes for diagnosis mode plugin.
+- Bugfix for pending subscriptions when same port is used
+  for TCP and UDP endpoint option.
+
+v2.10.13
+- Reverted diagnosis mode plugin
+
+v2.10.12
+- Fix exception handling for boost logger
+- Update diagnosis mode plugin
+
+v2.10.11
+- Fix client ID handling for remote selective subscriptions
+- Add handling for EDESTADDRREQ in endpoints
+
+v2.10.10
+- Fix concurrency issue leading to a crash
+
+v2.10.9
+- Improve handling of service discovery messages with entries
+  referencing too many options.
+- Prevent sending of duplicate remote subscriptions to local clients
+  if the local client processes incoming subscriptions too slow.
+- Remote (un)subscriptions to the same eventgroup are now queued in
+  the routing manager until the local client has processed the
+  previous (un)subscription for this eventgroup.
+- Introduce new json configuration parameter 'diagnosis_mask' to
+  control the number of bits in the client ID used for the diagnosis
+  address. This can be used to enable more than 254 concurrent clients
+  on a node. For more information see the vsomeipUserGuide.
+- If the service discovery is enabled it is is only started if a
+  matching multicast route for the configured service discovery
+  multicast group is present in the system. This applies only to
+  Linux.
+- Rework security configuration:
+    - Allow policy specifications without client specification.
+    - Allow policies to be specified for ranges of uids/gids.
+  For more information see the vsomeipUserGuide.
+
+v2.10.8
+- Change dispatching of availability states in case an availability
+  handler of a service instance is blocked in user code: Availability
+  states of a service instance are now never dispatched parallel. The
+  next availability state for a service instance is only dispatched
+  after the blocked availability handler returned from user code. If
+  the availability of the service instance changes in the meantime,
+  subsequent incoming messages of the service instance are queued
+  until the availability change was reported to the user code.
+- Subscriptions to remotely offered services are now always done based
+  on the protocol(s) the remote service is offered with. The
+  subscription_type parameter of the application::subscribe method is
+  ignored.
+- Added wildcard support ("any") for the uid and gid json parameters
+  in the security configuration.
+- Fix possible deadlock on application shutdown
+
+v2.10.7
+- Fix potential deadlock when expiring remote subscriptions
+- Rework restarting of tcp client endpoints to prevent heap corruption
+  under high load situations
+
+v2.10.6
+- Fix concurrency issue leading to a crash when asynchronous
+  subscription handlers were used.
+- Improved packing of subscriptions sent out as answer to incoming
+  offer service messages.
+
+v2.10.5
+- Fix possible deadlock on application shutdown
+- Try to reestablish TCP connection on resubscription if the remote
+  closed the connection
+- Introduce new configuration file parameters to control
+  interpretation of TTL field of incoming remote offers and
+  subscriptions:
+  - service-discovery > ttl_factor_offers (optional array of
+    service/instance/TTL factor tuples)
+  - service-discovery > ttl_factor_subscriptions (optional array of
+    service/instance/TTL factor tuples)
+- Added possibility to debounce external events/fields
+  based on time or change of data in the payload (maskable) via new
+  configuration file parameter:
+  - debounce (optional array)
+  For more information see the vsomeipUserGuide.
+- Added possibility to limit amount of memory used to cache outgoing
+  messages on IP port basis or globally via configuration file
+  parameter:
+  - endpoint-queue-limits (array): to limit on IP:Port (endpoint)
+    level
+  - endpoint-queue-limit-external: to generally limit all external
+    endpoints.
+  - endpoint-queue-limit-local: to limit queue sizes for local
+    communication
+  For more information see the vsomeipUserGuide.
+
+
+v2.10.4
+- Extended diagnosis plugin to handle requests for
+  "disableRxAndEnableTx" and "disableRxAndTx".
+- Catch unhandled user code exceptions thrown from called handlers.
+- Don't send SubscribeEventGroupNACK for pending subscriptions on next
+  offer to reduce the amount of StopSubscribe/Subscribe messages.
+- Added possibility to apply filter for client side logging
+  using VSOMEIP_CLIENTSIDELOGGING environment variable.
+
+v2.10.3
+- Interpret all incoming TTLs five times longer in service discovery
+  to prevent inadvertent expiration of remote offers during high load
+  situations.
+
+v2.10.2
+- Fix deadlock in routing manager when processing subscription
+  acknowledgment from a local client if the corresponding service
+  instance was stopped in the meanwhile.
+- Introduce status_log_interval and memory_log_interval json file
+  parameters which can be used to cyclically log memory consumption
+  and/or internal status of the routing manager in a given interval
+- Add Debug Diagnosis Job plug-in
+- Support definition of multiple client port ranges in configuration
+
+v2.10.1
+- Fix possible memory corruption in routing manager on TCP connection
+  reset
+
+v2.10.0
+- Add register_async_subscription_handler to application interface
+- Ensure faster stopping of UDP and TCP endpoints
+- StopSubscribe eventgroup entries of StopSubscribe/Subscribe
+  eventgroup entry sequences in incoming SD messages are now
+  completely handled in the service discovery module
+
+v2.9.5
+- Change magic cookie behaviour to only send a magic cookie every 10
+  seconds instead of in front of every SOME/IP message
+- Fixed bug which prevented resubscription after resuming from
+  suspended state
+
+v2.9.4
+- Fixed deadlock on suspend to RAM / resume, triggered
+  by signal handler.
+
+v2.9.3
+- Fixed race condition on application shutdown
+- Fixed bug that application object was not destroyed
+- Enabled client side logging of received messages
+  to DLT if environment variable VSOMEIP_CLIENTSIDELOGGING
+  is set to empty string or another arbitrary value.
+- Ensure that the correct source port is used for sending events
+
+v2.9.2
+- fix handling of received response messages for unknown
+  clients.
+- Ensure that all external services are marked as offline when
+  routing_state is set to RS_SUSPENDED
+- Ensure to start sending out FindService messages for requested
+  services after resuming.
+- Ensure that the service info is also deleted if no unreliable
+  communication happened before the service TTL has expired.
+
+v2.9.1
+- Don't ignore service requests for UDP-only remote services done
+  before corresponding OfferService message was received.
+- Ensure that main dispatcher thread waits until newly started
+  dispatcher threads are finished with their call into the user code
+  before starting to dispatch again after a blocking call occurred.
+
+v2.9.0
+- Added get_offered_services_async method to application interface to
+  read the currently offered services
+- Added set_watchdog_handler method to application interface which can
+  be used to register a handler invoked in a given interval.
+- Optimize processing time of incoming service discovery messages
+- Events are now sent based on their configuration in the json file
+- If a remote service is offered reliable and unreliable subscriptions
+  are now done always with both endpoint options.
+- Incoming subscriptions are now not acknowledged if not all events of
+  the eventgroup can be served with the given endpoint options.
+
+v2.8.1
+- Support negative filter in trace connector
+
+v2.8.0
+- Change behaviour of register_subscription_status_handler method of
+  the application interface: Registered handlers will only be called
+  if the subscription was accepted by the remote side.
+- Add 2nd register_subscription_status_handler method to application
+  interface with additional flag to enable calling of the registered
+  handler if the subscription is rejected by the remote side.
+
+v.2.7.3
+- Fix deadlock when stopping client endpoints to remote services
+- Fix deadlock during construction of Subscribe Eventgroup entries
+
+v.2.7.2
+- Avoid deadlock when printing error message about too large messages
+
+v2.7.1
+- Prevent processing of too short messages received via UDP
+- Avoid catching SIGABRT in vsomeipd
+- Prevent duplicate logging of remote messages
+- Log message cleanup/enhancement
+
+v2.7.0
+- Add possibility to register a subscription status handler via
+  application interface. The handler will be called if a subscription
+  is acknowledged / not acknowledged by the application hosting the
+  target service instance of the subscription
+- The default subscription type of application::subscribe method was
+  changed from RELIABLE_AND_UNRELIABLE to PREFER_RELIABLE to harmonize
+  initial event behaviour
+- Add generic plug-in concept
+- Fix bug which caused sending out subscription messages containing
+  endpoint options with port set to zero
+- Make magic cookie detection TCP connection based
+- Avoid sending unneeded SIGKILLs to current routing manager
+- Forward service's instance IDs to DLT
+- Fixed performance loss on "client ID" lookup needed for ingoing
+  remote subscriptions
+- Add signal handling for starting stopping the service discovery to
+  vsomeipd
+- The message object can now be asked for CRC check state:
+  is_valid_crc()
+- Incoming remote responses where the CRC check fails will trigger:
+  set_is_valid_crc(false)
+
+v2.6.4
+- Fix bug in reboot detection of other nodes
+- Improve restarting of TCP connections
+
+v2.6.3
+- Improve reboot detection of other nodes
+- Introduce 'max-payload-size-reliable' json file parameter which can be used to
+  globally limit the maximum allowed payload size for TCP communication
+- Added CRC checksum calculation for bit optimized messages
+
+v2.6.2
+- Service-Disovery performance improvements
+- Made Routing Manager restartable
+- Fixed file handle leak caused by remote ECU reboot
+- Activate TCP-Keep-Alive for TCP endpoints
+- Debouncing of request-service messages (routing info performance)
+- Fixed false session-id handling of identification request
+
+v2.6.1
+- Fixed clearing of subscribers on stop offer service
+
+v2.6.0
+- Fixed races and crashes
+- Fixed repetition phase timings for find service messages
+- Reworked internal event/field distribution to reduce CPU load
+- Reworked internal routing info distribution leading to fewer and smaller
+  messages and lower CPU load
+- Extend public application interface with second unsubscribe method with
+  additional event parameter
+
+v2.5.3
+- Fixed races and crashes
+- The minor version of a service instance is considered again when reporting the
+  service instance's availability (this was removed with v2.4.2). If the minor
+  version should not be considered use ANY_MINOR or DEFAULT_MINOR when
+  registering availability handlers.
+- Fixed initial events on unsubscription
+- Improved dispatcher handling for blocking calls
+- Crashed applications are now automatically unsubscribed
+
+v2.5.2
+- Fixed deadlock and crashes
+- Prevent race of initial attributes
+- Allow incomplete application configurations
+- Unit test timeouts increased to avoid failures on (slow) build servers
+
+v2.5.1
+- Removed payload size limit. By default messages with an arbitrary length can
+  now be sent locally and via TCP. The payload-sizes configuration file array is
+  now used to limit the payload size for the specified endpoints instead of
+  increasing it. There are two new configuration file parameters:
+  - max-payload-size-local: limit maximum allowed payload size for node internal
+    communication.
+  - buffer-shrink-threshold: variable to control buffer memory deallocation
+    after big messages have been processed. For more information see the
+    vsomeipUserGuide.
+- Fixed cleanup of endpoints for subscriptions using an exclusive proxy
+  (selective) which unnecessarily increased the number of open file descriptors.
+- Fixed assignment of predefined application IDs via autoconfiguration.
+- Decouple start of routing manager from network availability.
+- Made number of internal threads per application configurable.
+- Postpone notify_one events sent from subscription handler to ensure correct
+  message order on receiver side.
+
+v2.5.0
+- Added notify-/notify_one-methods to enable flush control for notifications.
+- Restructured configuration to be a separate module (preparation to enable
+  the usage of compiled configurations to speed-up startup)
+- Added vSomeIP-Security: Socket authentication based on Linux-credentials
+  together with further security checks using configurable policies.
+- Fixed pending subscriptions had not sent out if subscribing application
+  hosts the routing manager.
+- Fixed crash in vsomeipd due to concurrent access when closing/shutdown socket.
+- The service discovery now debounces newly offered service instances to avoid
+  sending out the offers of the same service instance with a too high frequency.
+  The default debounce time is set to 500ms. It can be changed via the new json
+  file parameter service-discovery/offer_debounce_time.
+
+v2.4.3
+- Fix receiving of UDP frames containing multiple SOME/IP messages via UDP from
+  external service instances
+
+v2.4.2
+- TCP connections for services no longer requested aren't reestablished anymore
+- The minor version of a service instance is no longer considered when reporting
+  the service instance's availability
+- Introduce new internal_services json file parameter to define the internal
+  service instances. This parameter can be used to control the sending behaviour
+  for find service entries
+- Fixed event processing if service and client shared the same application
+- Incoming find service entries with unicast flag set to 0 are now replied with
+  a unicast offer service message instead of a multicast offer service message.
+- application::stop() now blocks until the shutdown has finished completely
+
+v2.4.1
+- Extended number of endpoints that can be referenced from entries array in
+  service discovery messages
+- Remove DLT contexts on application shutdown
+- Avoid initialization of vsomeip-applications if the maximum number of
+  applications (client identifiers) has been reached
+- Prevent sending of OfferService entry as a reply to FindService message for
+  internal services
+- Fixed deregistration of vsomeip-applications that became unresponsive
+- Fixed loop in endpoints causing high load during shutdown of vsomeip
+  applications
+- Fixed loop in endpoints causing temporary high load if other devices become
+  unavailable without deregistering
+
+v2.4.0
+- Disabled tracing SOME/IP-SD messages by default. Set "tracing/sd_enable"
+  switch to "true" to enable it.
+- Trace notification events once instead of per target.
+
+v2.3.5
+- Fix TTL in Subscribe Eventgroup Entries
+
+v2.3.4
+- Exhaust client id range before reuse
+- Provide public interface to ask for available instances
+
+v2.3.3
+- Added -q/--quiet switch to the daemon to allow it to be started without
+  DLT logging
+- Fix event caching in routing manager
+
+v2.3.2
+- Fix client deregistration during the client registration
+- Fix handling of pending commands during registration
+
+v2.3.1
+- Fix shutdown crashes (logger & application shutdown)
+- Fix race condition in client identifier configuration
+- Fix vsomeipd crash
+- Fixed handling of notifications (compliance)
+
+v2.3.0
+- Extend the API to force field notifications
+- Implemented cyclic updated for events/fields
+- Implemented epsilon updates (the used can provide a function to decide
+  whether or not a value update shall be considered as a change)
+- Fixed lifecycle: Wait acknowledge of de/register application
+- Periodically log version information
+- Avoid (shadow) event registrations for services only offered locally
+- Fixed determination of routing manager host in case auto-configuration
+  fails
+- Removed initial flag from internal message format
+- Fixed calling of registered message handlers for cases where wildcards
+  were used during registration.
+- Fixed availability reporting of reliable (TCP) remote services offered
+  on the same port
+
+v2.2.4
+- Set default log level to DEBUG
+- Improved segmentation of service discovery messages
+- Fixed a race condition during subscriptions
+
+v2.2.3
+- Ensure service discovery messages to not exceed maximum packet size
+
+v2.2.2
+- Ensure multicast messages are sent by the network adapter that is configured
+  to be used for unicasts instead of relying on the configured routes
+
+v2.2.1
+- Backward compatibility fixes
+
+v2.2.0
+- Implemented Peer-to-Peer data exchange for notifications
+- Fixed handling of minor version during service discovery
+- Made initialization of application objects reentrant
+- Routing manager proxies now reconnect to the routing manager if the
+  connection got lost
+- Auto-configuration supports multiple (different) configuration files
+- The opening of TCP connections is no longer done without an explicit request
+- Request No Respose messages are no longer answered in case of errors
+- Notifications over IP were fixed
+
+v2.1.2
+- Ensure correct message order
+
+v2.1.1
+- Ensure SD FindService-messages are sent after client re-registration
+- Corrected configuration of MagicCookies
+- Make client ports configurable
+- Implemented FindService message optimization
+- Extended configuration consistency checks
+
+v2.1.0
+- Avoid duplicate notifications if a selective event is in more than one
+  eventgroup
+- Ensure SD messages are sent from the SD port
+- Ignore SD messages with wrong message identifier
+- Accept unreliable subscription for eventgroups without configured multicast
+  address
+- Reject subscriptions that contain invalid IP address or port
+- Reject subscriptions for TCP if the connection is not established
+- Exclude vsomeip_ctrl from default installation
+- Only accept SD messages from SD port
+- Acknowledge multiple subscriptions sent within the same message with a single
+  message
+- Allow to specify an application specific DLT application
+- Ensure correct ordering of availability notifications
+- Automatically expire subscription based on the given TTL
+- Do not include internal services in SD offer messages
+- Consider all fields of SD subscribe messages
+- Made the watchdog configurable
+- Support destination address resolution on Windows (for reboot detection)
+- Support auto-configuration (client identifiers, routing manager) on Windows
+
+v2.0.6
+- Diagnosis address can be configured at runtime
+
+v2.0.5
+- Fixed reboot detection behavior
+
+v2.0.4
+- Service Discovery now used configured Client ID prefixes (=DIAGNOSIS_ADDRESS)
+- Reworked reboot detection (now based on the destination address)
+- Aligned default TTL setting (was 5 in vsomeip and 0xFFFFFF in vsomeip-sd, now
+  its constently 0xFFFFFF)
+
+v2.0.3
+- Fixed shutdown and application re-registering
+
+v2.0.2
+- Fixed endpoint flushing
+- Improved handling of Selective Broadcasts (CommonAPI)
+- Trace connector was added
+- Added reboot detection
+- Reworked handling of TCP connections
+- Support multiple multicast eventgroups per service
+- Improved handling of multicasts
+- Extended Service Discovery to send FindMessage messages for unknown services
+- Support multiple SOME/IP messages in a single UDP datagram
+
+v2.0.1
+- Ensure Unicast flag is set in all Service Discovery messages
+- Allow "local" as alias for unicast address in Magic Cookie configuration
+- Correctly set layer 4 protocol in multicast options
+- Increased robustness of deserialization of configuration options
+- Fixed handling of unknown Service Discovery options
+
+v2.0.0
+- Buffer sizes were adapted to the transport protocols
+- Added support for IPv6 multicast
+- Improved handling of endpoints
+- Report service state changes instead of service state to the application
+- Set and process TTL field in Service Discovery to support detection of "lost"
+  services
+- Support automatic configuration of local communication
+- Added compile time variable DIAGNOSIS_ADDRESS (which maps to the high byte of
+  the SOME/IP client identifier)
+- Configuration of events was moved from configuration file to API.
+- Fixed routing of notication events.
+- Increased robustness of configuration loader
+- Changed default watchdog cycle from 1s to 5s
+- Removed TTL arguments from public interface
+- Allow Service Discovery to report non-SOME/IP services by setting the
+  configuration variable "protocol"
+- Fixed serialization of major version in Eventgroup entries
+- Magic Cookies are no longer forwarded to the routing manager but handled in
+  the receiving endpoint
+- vsomeip daemon was added
+
+v1.3.0
+- Fixed SD library loading on Windows
+- Changed cmake directory name (CMake --> cmake)
+- Corrected check for multicast address in Service Discovery
+- Added default setting for Service Discovery timings
+- Ensure only local services are reported by the Service Discovery
+- Fixed a crash in case of a wrong unicast address definition
+- Protected forwarding of availability information
+- Improved handling of notification events
+- Added initial support for selective broadcasts (CommonAPI)
+- Avoid deadlock when offering services
+- Correct handling of events
+- Added initial support for managed interfaces (CommonAPI)
+
+v1.2.0
+- Added (optional) thread pool for distribution of messages to the application
+- Made configuration of service groups optional (as it is unneeded in pure
+  client applications)
+- Support specification of transportation mode (reliable (TCP) / unreliable
+  (UDP)) when creating messages
+- Fixed internal distribution of notication events
+- Block messages that are received on the wrong port
+- Fixed deregistration of local clients
+- Fixed startup of applications that were started earlier than the routing
+  manager
+- Resetting all events of a service if it becomes unavailable (to ensure initial
+  events are sent when it becomes available again)
+- Ensure consistency of version information
+- Fixed Service Discovery state machine
+
+v1.1.0
+- Local communication in multiprocessor environments was fixed
+- Runtime access was changed from raw to shared pointer
+- vsomeip logger is used whereever possible (replacing std::cerr calls)
+- Ensure the logger is not deleted before issueing tha last log message when
+  shutting down
+- Fixed shutdown crash by checking the existence of endpoint host before
+  accessing it
+- Routing info processing in case of multiple instances of the same service
+  was fixed
+- Support for local communication on Windows was added

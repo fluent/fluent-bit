@@ -1,0 +1,24 @@
+{
+   libdlt_unlocked
+   Helgrind:UnlockUnlocked
+   ...
+   obj:/usr/lib/libdlt.so.*
+}
+{
+   libdlt_unlocked2
+   Helgrind:UnlockForeign
+   ...
+   obj:/usr/lib/libdlt.so.*
+}
+{
+   libdlt_pthAPIerror
+   Helgrind:PthAPIerror
+   ...
+   obj:/usr/lib/libdlt.so.*
+}
+{
+   libdlt_misc
+   Helgrind:Misc
+   ...
+   obj:/usr/lib/libdlt.so.*
+}

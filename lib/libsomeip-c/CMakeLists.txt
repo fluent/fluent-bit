@@ -1,12 +1,6 @@
 project(someipc CXX)
 
-include(FetchContent)
-FetchContent_Declare(
-    vsomeip3
-    GIT_REPOSITORY https://github.com/COVESA/vsomeip
-    GIT_TAG        0b83e24d16e1611958194e9b727136522f46556b # 3.5.1
-)
-FetchContent_MakeAvailable(vsomeip3)
+add_subdirectory(vsomeip-3.5.1)
 
 find_package(vsomeip3 REQUIRED)
 

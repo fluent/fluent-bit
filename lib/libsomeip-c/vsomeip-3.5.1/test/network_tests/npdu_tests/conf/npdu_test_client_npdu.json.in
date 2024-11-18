@@ -1,0 +1,167 @@
+{
+    "unicast":"@TEST_IP_SLAVE@",
+    "logging":
+    {
+        "level":"info",
+        "console":"true"
+    },
+    "applications":
+    [
+        {
+            "name":"npdu_test_routing_manager_daemon_client_side",
+            "id":"0x6666"
+        },
+        {
+            "name":"npdu_test_client_one",
+            "id":"0x1111"
+        },
+        {
+            "name":"npdu_test_client_two",
+            "id":"0x2222"
+        },
+        {
+            "name":"npdu_test_client_three",
+            "id":"0x3333"
+        },
+        {
+            "name":"npdu_test_client_four",
+            "id":"0x4444"
+        }
+    ],
+    "services":
+    [
+        {
+            "service":"0x1000",
+            "instance":"0x0001",
+            "unicast":"@TEST_IP_MASTER@",
+            "unreliable":"30509",
+            "reliable":
+            {
+                "port":"30510",
+                "enable-magic-cookies":"false"
+            },
+            "debounce-times":
+            {
+                "requests" : {
+                    "0x1001" : {
+                        "debounce-time" : "10",
+                        "maximum-retention-time" : "100"
+                    },
+                    "0x1002" : {
+                        "debounce-time" : "20",
+                        "maximum-retention-time" : "200"
+                    },
+                    "0x1003" : {
+                        "debounce-time" : "30",
+                        "maximum-retention-time" : "300"
+                    },
+                    "0x1004" : {
+                        "debounce-time" : "40",
+                        "maximum-retention-time" : "400"
+                    }
+                }
+            }
+        },
+        {
+            "service":"0x2000",
+            "instance":"0x0002",
+            "unicast":"@TEST_IP_MASTER@",
+            "unreliable":"30509",
+            "reliable":
+            {
+                "port":"30510",
+                "enable-magic-cookies":"false"
+            },
+            "debounce-times" : {
+                "requests" : {
+                    "0x2001" : {
+                        "debounce-time" : "10",
+                        "maximum-retention-time" : "100"
+                    },
+                    "0x2002" : {
+                        "debounce-time" : "20",
+                        "maximum-retention-time" : "200"
+                    },
+                    "0x2003" : {
+                        "debounce-time" : "30",
+                        "maximum-retention-time" : "300"
+                    },
+                    "0x2004" : {
+                        "debounce-time" : "40",
+                        "maximum-retention-time" : "400"
+                    }
+                }
+            }
+        },
+        {
+            "service":"0x3000",
+            "instance":"0x0003",
+            "unicast":"@TEST_IP_MASTER@",
+            "unreliable":"30509",
+            "reliable":
+            {
+                "port":"30510",
+                "enable-magic-cookies":"false"
+            },
+            "debounce-times" : {
+                "requests" : {
+                    "0x3001" : {
+                        "debounce-time" : "10",
+                        "maximum-retention-time" : "100"
+                    },
+                    "0x3002" : {
+                        "debounce-time" : "20",
+                        "maximum-retention-time" : "200"
+                    },
+                    "0x3003" : {
+                        "debounce-time" : "30",
+                        "maximum-retention-time" : "300"
+                    },
+                    "0x3004" : {
+                        "debounce-time" : "40",
+                        "maximum-retention-time" : "400"
+                    }
+                }
+            }
+        },
+        {
+            "service":"0x4000",
+            "instance":"0x0004",
+            "unicast":"@TEST_IP_MASTER@",
+            "unreliable":"30509",
+            "reliable":
+            {
+                "port":"30510",
+                "enable-magic-cookies":"false"
+            },
+            "debounce-times": {
+                "requests" : {
+                    "0x4001" : {
+                        "debounce-time" : "10",
+                        "maximum-retention-time" : "100"
+                    },
+                    "0x4002" : {
+                        "debounce-time" : "20",
+                        "maximum-retention-time" : "200"
+                    },
+                    "0x4003" : {
+                        "debounce-time" : "30",
+                        "maximum-retention-time" : "300"
+                    },
+                    "0x4004" : {
+                        "debounce-time" : "40",
+                        "maximum-retention-time" : "400"
+                    }
+                }
+            }
+        }
+    ],
+    "routing":"npdu_test_routing_manager_daemon_client_side",
+    "service-discovery":
+    {
+        "enable":"true",
+        "multicast":"224.0.0.1",
+        "port":"30490",
+        "protocol":"udp"
+    }
+}

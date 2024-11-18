@@ -1,0 +1,123 @@
+#!/bin/bash -eu
+
+source "${BASH_SOURCE[0]%/*}"/shlib/common.shlib
+source "${BASH_SOURCE[0]%/*}"/shlib/results.shlib
+
+ip_master=$(dig +short master)
+ip_slave=$(dig +short slave)
+
+# Stress label extraction
+# 1. We convert the incoming JSON-encoded array of labels into an object by
+#    using regex capture to extract the key/value from the format
+#    "<key> : <value>", with spaces around the colon being optional
+# 2. The `stress_regex` is available on key "ctest-include"
+# 3. The `stress_times` are extracted to a Bash array
+#    a) The value of key "ctest-stress" is split on "-" (format "N-M")
+#    b) Each split token is converted into a JSON number or defaults to 1 if
+#       conversion fails
+#    c) Resulting array is bumped with an extra 1 to ensure at least 2 elements
+#    d) Slice array to extract first 2 elements
+stress_labels_json=$(jq 'map(capture("(?<key>[^:\\s]+)\\s*:\\s*(?<value>[^:\\s]+)")) | from_entries' <<< "$STRESS_LABELS")
+stress_regex=$(jq -r '.["ctest-include"] // ""' <<< "$stress_labels_json")
+mapfile -t stress_times < <(jq -r '.["ctest-stress"] // "1-1" | split("-") | map(try tonumber catch 1) + [1] | .[:2][]' <<< "$stress_labels_json")
+
+# Enable gateway mode in DLT config
+echo 'GatewayMode = 1' >> /etc/dlt-master.conf
+cat <<-DLT > /etc/dlt_gateway.conf
+	[PassiveNode1]
+	EcuID = S
+	IPaddress = $ip_slave
+	Timeout = 0
+DLT
+
+(
+	set -x
+	cmake --preset ci-network-tests \
+		-D "ENABLE_${SANITIZER_TYPE}_SANITIZER=Y" \
+		-D "TEST_IP_MASTER=$ip_master" \
+		-D "TEST_IP_SLAVE=$ip_slave" \
+		-D "VALGRIND_LOGS_DIR=/home/logs/valgrind/$VALGRIND_TYPE" \
+		-D "VALGRIND_SUPPRESS_FILE=/home/source/zuul/network-tests/valgrind/$VALGRIND_TYPE.supp" \
+		-D "VALGRIND_TYPE=$VALGRIND_TYPE"
+	cmake --build --preset ci-network-tests
+)
+
+tests_result_file=/home/logs/tests_result.json
+declare -i valgrind_errors=0
+mkdir -p /home/logs/{cores,coverage,dlt,{,failed-}junit,pcap,"valgrind/$VALGRIND_TYPE"}
+gen-result-file "$tests_result_file" "/home/source/.tests-whitelist"
+
+for ((n = 0; n < stress_times[0]; n++))
+do
+	for test in $(ctest --preset ci-network-tests --show-only=json-v1 ${stress_regex:+--tests-regex "$stress_regex"} | jq -r '.tests[].name')
+	do
+		for ((m = 0; m < stress_times[1]; m++))
+		do
+			if is-timed-out
+			then
+				break
+			fi
+
+			run-both rm -f /tmp/vsomeip*
+			run-both dlt-daemon -c /etc/dlt-@name@.conf -d
+			dlt-receive -o /home/logs/dlt/"$test".dlt localhost &
+			tcpdump -U -i eth0 -w /home/logs/pcap/"$test".pcap &
+
+			if ! ctest --preset ci-network-tests --output-junit /home/logs/junit/"$test".xml --tests-regex "^$test$" --test-output-size-passed 10485760 --test-output-size-failed 10485760
+			then
+				update-result-file "$tests_result_file" "$test" 1
+				cp /home/logs/{junit/"$test".xml,failed-junit/}
+			else
+				valgrind_errors=$(valgrind-errors "/home/logs/valgrind/$VALGRIND_TYPE" "$test")
+				if ((valgrind_errors > 0))
+				then
+					update-result-file "$tests_result_file" "$test" "$valgrind_errors" "$VALGRIND_TYPE"
+					cp /home/logs/{junit/"$test".xml,failed-junit/}
+				else
+					update-result-file "$tests_result_file" "$test"
+				fi
+			fi
+
+			kill %1
+			kill -USR2 %2 || :
+			kill -INT %2 || :
+			run-both pkill -TERM dlt-daemon || :
+			run-both pidwait dlt-daemon || :
+			run-both kill -KILL -1 || :
+		done
+	done
+done
+
+(
+	cd /home/logs
+	tar -acvf junit.tgz --transform=s/^junit/network-tests/ junit/*.xml
+	shopt -s nullglob
+	if [[ "$(echo failed-junit/*.xml)" ]]
+	then
+		tar -acvf failed-junit.tgz --transform=s/^failed-junit/network-tests/ failed-junit/*.xml
+	fi
+)
+
+gen-core-backtraces /home/logs/cores
+
+if [ "$ENABLE_COVERAGE" != False ]
+then
+	run-both gcovr --gcov-executable "$GCOV" --json /home/logs/coverage/@name@.json --root /home/source /home/build
+	run-both lcov --base-directory /home/source --capture --directory /home/build --gcov-tool "$GCOV" --output-file /home/logs/coverage/@name@.info
+	gcovr --add-tracefile=/home/logs/coverage/{master,slave}.json --json /home/logs/coverage.json
+	lcov --add-tracefile=/home/logs/coverage/{master,slave}.info --output-file /home/logs/coverage/merged.info
+	lcov --remove /home/logs/coverage/merged.info '/usr/*' --output-file /home/logs/coverage/filtered.info
+	genhtml --output-directory /home/logs/coverage/html --prefix /home/source /home/logs/coverage/filtered.info
+fi
+
+run-slave kill 1 || :
+
+print-results "$tests_result_file"
+if is-timed-out
+then
+	echo 'Global timeout was reached!'
+	echo 'See above which test(s) were at fault.'
+	exit 255
+else
+	exit "$(jq '.exit_error' "$tests_result_file")"
+fi
