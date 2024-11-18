@@ -187,6 +187,8 @@ static struct request *http_request_create(char *request)
         start = sep + 1;
         br = strchr(start, '\n');
         if (!br) {
+            flb_sds_destroy(key);
+
             break;
         }
 
@@ -443,7 +445,8 @@ static struct aws_test *aws_test_create(char *path, char *context,
     return awt;
 
  error:
-    //aws_test_destroy(awt);
+    aws_test_destroy(awt);
+
     return NULL;
 }
 

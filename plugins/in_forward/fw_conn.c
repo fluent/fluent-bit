@@ -147,6 +147,7 @@ struct fw_conn *fw_conn_add(struct flb_connection *connection, struct flb_in_fw_
         helo = flb_malloc(sizeof(struct flb_in_fw_helo));
         if (!helo) {
             flb_errno();
+            flb_free(conn);
             return NULL;
         }
 

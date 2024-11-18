@@ -243,7 +243,7 @@ static const ProtobufCFieldDescriptor opentelemetry__proto__common__v1__any_valu
     offsetof(Opentelemetry__Proto__Common__V1__AnyValue, string_value),
     NULL,
     &protobuf_c_empty_string,
-    0 | PROTOBUF_C_FIELD_FLAG_ONEOF,             /* flags */
+    PROTOBUF_C_FIELD_FLAG_ONEOF,             /* flags */
     0,NULL,NULL    /* reserved1,reserved2, etc */
   },
   {
@@ -255,7 +255,7 @@ static const ProtobufCFieldDescriptor opentelemetry__proto__common__v1__any_valu
     offsetof(Opentelemetry__Proto__Common__V1__AnyValue, bool_value),
     NULL,
     NULL,
-    0 | PROTOBUF_C_FIELD_FLAG_ONEOF,             /* flags */
+    PROTOBUF_C_FIELD_FLAG_ONEOF,             /* flags */
     0,NULL,NULL    /* reserved1,reserved2, etc */
   },
   {
@@ -267,7 +267,7 @@ static const ProtobufCFieldDescriptor opentelemetry__proto__common__v1__any_valu
     offsetof(Opentelemetry__Proto__Common__V1__AnyValue, int_value),
     NULL,
     NULL,
-    0 | PROTOBUF_C_FIELD_FLAG_ONEOF,             /* flags */
+    PROTOBUF_C_FIELD_FLAG_ONEOF,             /* flags */
     0,NULL,NULL    /* reserved1,reserved2, etc */
   },
   {
@@ -279,7 +279,7 @@ static const ProtobufCFieldDescriptor opentelemetry__proto__common__v1__any_valu
     offsetof(Opentelemetry__Proto__Common__V1__AnyValue, double_value),
     NULL,
     NULL,
-    0 | PROTOBUF_C_FIELD_FLAG_ONEOF,             /* flags */
+    PROTOBUF_C_FIELD_FLAG_ONEOF,             /* flags */
     0,NULL,NULL    /* reserved1,reserved2, etc */
   },
   {
@@ -291,7 +291,7 @@ static const ProtobufCFieldDescriptor opentelemetry__proto__common__v1__any_valu
     offsetof(Opentelemetry__Proto__Common__V1__AnyValue, array_value),
     &opentelemetry__proto__common__v1__array_value__descriptor,
     NULL,
-    0 | PROTOBUF_C_FIELD_FLAG_ONEOF,             /* flags */
+    PROTOBUF_C_FIELD_FLAG_ONEOF,             /* flags */
     0,NULL,NULL    /* reserved1,reserved2, etc */
   },
   {
@@ -303,7 +303,7 @@ static const ProtobufCFieldDescriptor opentelemetry__proto__common__v1__any_valu
     offsetof(Opentelemetry__Proto__Common__V1__AnyValue, kvlist_value),
     &opentelemetry__proto__common__v1__key_value_list__descriptor,
     NULL,
-    0 | PROTOBUF_C_FIELD_FLAG_ONEOF,             /* flags */
+    PROTOBUF_C_FIELD_FLAG_ONEOF,             /* flags */
     0,NULL,NULL    /* reserved1,reserved2, etc */
   },
   {
@@ -315,7 +315,7 @@ static const ProtobufCFieldDescriptor opentelemetry__proto__common__v1__any_valu
     offsetof(Opentelemetry__Proto__Common__V1__AnyValue, bytes_value),
     NULL,
     NULL,
-    0 | PROTOBUF_C_FIELD_FLAG_ONEOF,             /* flags */
+    PROTOBUF_C_FIELD_FLAG_ONEOF,             /* flags */
     0,NULL,NULL    /* reserved1,reserved2, etc */
   },
 };

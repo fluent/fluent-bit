@@ -276,7 +276,7 @@ static void reset_proc_state(struct proc_state *state) {
 static int check_path_for_proc(struct flb_pe *ctx, const char *prefix, const char *path)
 {
     int len;
-    flb_sds_t p;
+    flb_sds_t p = NULL;
 
     /* Compose the proc path */
     p = flb_sds_create(prefix);
@@ -303,8 +303,8 @@ static int check_path_for_proc(struct flb_pe *ctx, const char *prefix, const cha
 
 static int get_name(const char *entry, char **out_name, char *id_entry)
 {
-    flb_sds_t tmp;
-    flb_sds_t tmp_name;
+    flb_sds_t tmp = NULL;
+    flb_sds_t tmp_name = NULL;
 
     tmp = strdup(entry);
     tmp_name = strtok(tmp, ")");
@@ -324,8 +324,8 @@ static int process_proc_thread_io(struct flb_pe *ctx, uint64_t ts,
                                   struct flb_slist_entry *thread)
 {
     int ret;
-    flb_sds_t tmp;
-    flb_sds_t status;
+    flb_sds_t tmp = NULL;
+    flb_sds_t status = NULL;
     uint64_t val;
     struct mk_list io_list;
     struct mk_list *ihead;
@@ -382,9 +382,9 @@ static int process_proc_thread_status(struct flb_pe *ctx, uint64_t ts,
                                       struct flb_slist_entry *thread)
 {
     int ret;
-    flb_sds_t tmp;
-    flb_sds_t name;
-    flb_sds_t status;
+    flb_sds_t tmp = NULL;
+    flb_sds_t name = NULL;
+    flb_sds_t status = NULL;
     uint64_t val;
     struct mk_list status_list;
     struct mk_list *shead;
@@ -481,9 +481,9 @@ cleanup:
 static int process_thread_update(struct flb_pe *ctx, uint64_t ts, flb_sds_t pid, flb_sds_t name)
 {
     int ret;
-    flb_sds_t tmp;
-    flb_sds_t thread_name;
-    flb_sds_t tid_str;
+    flb_sds_t tmp = NULL;
+    flb_sds_t thread_name = NULL;
+    flb_sds_t tid_str = NULL;
     uint64_t val;
     const char *pattern = "/[0-9]*";
     struct mk_list *head;
@@ -648,8 +648,8 @@ static int process_proc_io(struct flb_pe *ctx, uint64_t ts,
                            struct flb_slist_entry *process)
 {
     int ret;
-    flb_sds_t tmp;
-    flb_sds_t status;
+    flb_sds_t tmp = NULL;
+    flb_sds_t status = NULL;
     uint64_t val;
     struct mk_list io_list;
     struct mk_list *ihead;
@@ -784,9 +784,9 @@ static int process_proc_fds(struct flb_pe *ctx, uint64_t ts,
 static int process_proc_status(struct flb_pe *ctx, uint64_t ts, flb_sds_t pid, struct flb_slist_entry *process)
 {
     int ret;
-    flb_sds_t tmp;
-    flb_sds_t name;
-    flb_sds_t status;
+    flb_sds_t tmp = NULL;
+    flb_sds_t name = NULL;
+    flb_sds_t status = NULL;
     uint64_t val;
     struct mk_list status_list;
     struct mk_list *shead;
@@ -881,8 +881,8 @@ cleanup:
 static int process_proc_boot_time(struct flb_pe *ctx, uint64_t *out_boot_time)
 {
     int ret;
-    flb_sds_t tmp;
-    flb_sds_t status;
+    flb_sds_t tmp = NULL;
+    flb_sds_t status = NULL;
     uint64_t val;
     struct mk_list stat_list;
     struct mk_list *rshead;
@@ -923,12 +923,12 @@ static int process_proc_boot_time(struct flb_pe *ctx, uint64_t *out_boot_time)
 static int process_update(struct flb_pe *ctx)
 {
     int ret;
-    flb_sds_t tmp;
-    flb_sds_t name;
-    flb_sds_t pid_str;
-    flb_sds_t state_str;
-    flb_sds_t ppid_str;
-    flb_sds_t thread_str;
+    flb_sds_t tmp = NULL;
+    flb_sds_t name = NULL;
+    flb_sds_t pid_str = NULL;
+    flb_sds_t state_str = NULL;
+    flb_sds_t ppid_str = NULL;
+    flb_sds_t thread_str = NULL;
     struct mk_list *head;
     struct mk_list *ehead;
     struct mk_list procfs_list;

@@ -2304,9 +2304,22 @@ static flb_sds_t stackdriver_format(struct flb_stackdriver *ctx,
             insert_id_extracted = FLB_FALSE;
         }
         else {
+            if (trace_extracted == FLB_TRUE) {
+                flb_sds_destroy(trace);
+            }
+
+            if (span_id_extracted == FLB_TRUE) {
+                flb_sds_destroy(span_id);
+            }
+
+            if (project_id_extracted == FLB_TRUE) {
+                flb_sds_destroy(project_id_key);
+            }
+
             if (log_name_extracted == FLB_TRUE) {
                 flb_sds_destroy(log_name);
             }
+
             continue;
         }
 
@@ -2357,10 +2370,28 @@ static flb_sds_t stackdriver_format(struct flb_stackdriver *ctx,
             flb_plg_error(ctx->ins, "the type of payload labels should be map");
             flb_sds_destroy(operation_id);
             flb_sds_destroy(operation_producer);
-            flb_sds_destroy(trace);
-            flb_sds_destroy(log_name);
+            flb_sds_destroy(source_location_file);
+            flb_sds_destroy(source_location_function);
+
+            if (trace_extracted == FLB_TRUE) {
+                flb_sds_destroy(trace);
+            }
+
+            if (span_id_extracted == FLB_TRUE) {
+                flb_sds_destroy(span_id);
+            }
+
+            if (project_id_extracted == FLB_TRUE) {
+                flb_sds_destroy(project_id_key);
+            }
+
+            if (log_name_extracted == FLB_TRUE) {
+                flb_sds_destroy(log_name);
+            }
+
             flb_log_event_decoder_destroy(&log_decoder);
             msgpack_sbuffer_destroy(&mp_sbuf);
+
             return NULL;
         }
 

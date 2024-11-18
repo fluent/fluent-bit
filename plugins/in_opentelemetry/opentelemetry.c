@@ -92,7 +92,7 @@ static int in_opentelemetry_init(struct flb_input_instance *ins,
 
     if (ctx->enable_http2) {
         ret = flb_http_server_init(&ctx->http_server,
-                                    HTTP_PROTOCOL_AUTODETECT,
+                                    HTTP_PROTOCOL_VERSION_AUTODETECT,
                                     (FLB_HTTP_SERVER_FLAG_KEEPALIVE | FLB_HTTP_SERVER_FLAG_AUTO_INFLATE),
                                     NULL,
                                     ins->host.listen,
@@ -199,6 +199,14 @@ static struct flb_config_map config_map[] = {
      FLB_CONFIG_MAP_BOOL, "http2", "true",
      0, FLB_TRUE, offsetof(struct flb_opentelemetry, enable_http2),
      NULL
+    },
+
+    {
+     FLB_CONFIG_MAP_BOOL, "profiles_support", "false",
+     0, FLB_TRUE, offsetof(struct flb_opentelemetry, profile_support_enabled),
+     "This is an experimental feature whoses specification is not stable yet, " \
+     "feel free to test it but please do not enable this in production " \
+     "environments"
     },
 
     {

@@ -245,14 +245,26 @@ int netprot_to_msgpack(char *buf, int len, struct mk_list *tdb,
 
     while (len >= 4) {
         part_type = be16read(buf);
-        part_len = be16read(buf + 2);
+        part_len = be16read((unsigned char *) buf + 2);
 
         if (len < part_len) {
             flb_error("[in_collectd] data truncated (%i < %i)", len, part_len);
             return -1;
         }
+
         ptr = buf + 4;
         size = part_len - 4;
+
+        if ((part_type == PART_TIME ||
+             part_type == PART_TIME_HR ||
+             part_type == PART_INTERVAL ||
+             part_type == PART_INTERVAL_HR) &&
+            size < sizeof(uint64_t)) {
+            flb_error("[in_collectd] data truncated (%i < %i)",
+                        size, sizeof(uint64_t));
+
+            return -1;
+        }
 
         switch (part_type) {
             case PART_HOST:

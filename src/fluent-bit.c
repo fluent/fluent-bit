@@ -809,7 +809,7 @@ static int enable_trace_input(flb_ctx_t *ctx, const char *name, const char *pref
 static int disable_trace_input(flb_ctx_t *ctx, const char *name)
 {
     struct flb_input_instance *in;
-    
+
 
     in = find_input(ctx, name);
     if (in == NULL) {
@@ -911,11 +911,18 @@ static int parse_trace_pipeline(flb_ctx_t *ctx, const char *pipeline, char **tra
         else if (strncmp(key, "output.", strlen("output.")) == 0) {
             propname = mk_string_copy_substr(key, strlen("output."), strlen(key));
             if (propname == NULL) {
+                mk_mem_free(key);
+                flb_free(value);
+
                 return FLB_ERROR;
             }
 
             propval = flb_strdup(value);
             if (propval == NULL) {
+                mk_mem_free(propname);
+                mk_mem_free(key);
+                flb_free(value);
+
                 return FLB_ERROR;
             }
 
@@ -927,6 +934,10 @@ static int parse_trace_pipeline(flb_ctx_t *ctx, const char *pipeline, char **tra
             flb_kv_item_create_len(*props,
                                    (char *)propname, strlen(propname),
                                    (char *)propval, strlen(propval));
+
+            mk_mem_free(propname);
+            flb_free(propval);
+
         }
 
         if (key != NULL) {

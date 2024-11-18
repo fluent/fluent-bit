@@ -334,13 +334,15 @@ Opentelemetry__Proto__Common__V1__AnyValue *msgpack_bin_to_otlp_any_value(struct
         result->bytes_value.len = o->via.bin.size;
         result->bytes_value.data = flb_malloc(o->via.bin.size);
 
-        if (result->bytes_value.data == NULL) {
+        if (result->bytes_value.data != NULL) {
+            memcpy(result->bytes_value.data, o->via.bin.ptr, o->via.bin.size);
+        }
+        else {
             otlp_any_value_destroy(result);
 
             result = NULL;
         }
 
-        memcpy(result->bytes_value.data, o->via.bin.ptr, o->via.bin.size);
     }
 
     return result;

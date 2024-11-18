@@ -99,6 +99,7 @@ int flb_sqldb_close(struct flb_sqldb *db)
         parent->users--;
     }
     else {
+        sqlite3_exec(db->handler, "COMMIT;", NULL, NULL, NULL);
         sqlite3_close(db->handler);
     }
     mk_list_del(&db->_head);

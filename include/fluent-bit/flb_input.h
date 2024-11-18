@@ -102,6 +102,9 @@ struct flb_input_plugin {
     /* Collect: every certain amount of time, Fluent Bit trigger this callback */
     int (*cb_collect) (struct flb_input_instance *, struct flb_config *, void *);
 
+    /* Notification: this callback will be invoked anytime a notification is received*/
+    int (*cb_notification) (struct flb_input_instance *, struct flb_config *, void *);
+
     /*
      * Flush: each plugin during a collection, it does some buffering,
      * when the Flush timer takes place on the Engine, it will trigger
@@ -381,6 +384,8 @@ struct flb_input_instance {
     struct mk_list *net_config_map;
     struct mk_list net_properties;
 
+    flb_pipefd_t notification_channel;
+
     /* Keep a reference to the original context this instance belongs to */
     struct flb_config *config;
 };
@@ -577,7 +582,7 @@ static FLB_INLINE int flb_input_is_threaded(struct flb_input_instance *ins)
  * number of retries, if it has exceeded the 'retry_limit' option, an FLB_ERROR
  * will be returned instead.
  */
-static inline void flb_input_return(struct flb_coro *coro) {
+static FLB_INLINE void flb_input_return(struct flb_coro *coro) {
     int n;
     uint64_t val;
     struct flb_input_coro *input_coro;
@@ -599,7 +604,7 @@ static inline void flb_input_return(struct flb_coro *coro) {
     flb_input_coro_prepare_destroy(input_coro);
 }
 
-static inline void flb_input_return_do(int ret) {
+static FLB_INLINE void flb_input_return_do(int ret) {
     struct flb_coro *coro = flb_coro_get();
 
     flb_input_return(coro);
@@ -626,6 +631,8 @@ static inline int flb_input_config_map_set(struct flb_input_instance *ins,
                                            void *context)
 {
     int ret;
+
+    ret = -1;
 
     /* Process normal properties */
     if (ins->config_map) {
@@ -732,6 +739,7 @@ struct mk_event_loop *flb_input_event_loop_get(struct flb_input_instance *ins);
 int flb_input_upstream_set(struct flb_upstream *u, struct flb_input_instance *ins);
 int flb_input_downstream_set(struct flb_downstream *stream,
                              struct flb_input_instance *ins);
+
 
 /* processors */
 int flb_input_instance_processors_load(struct flb_input_instance *ins, struct flb_cf_group *processors);

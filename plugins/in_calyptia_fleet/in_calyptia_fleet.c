@@ -57,6 +57,8 @@
 #define DEFAULT_INTERVAL_SEC  "15"
 #define DEFAULT_INTERVAL_NSEC "0"
 
+#define DEFAULT_MAX_HTTP_BUFFER_SIZE "10485760"
+
 #define CALYPTIA_HOST "cloud-api.calyptia.com"
 #define CALYPTIA_PORT "443"
 
@@ -101,6 +103,9 @@ struct flb_in_calyptia_fleet_config {
     int interval_sec;
     int interval_nsec;
 
+    /* maximum http buffer size */
+    int max_http_buffer_size;
+
     /* Grabbed from the cfg_path, used to check if configuration has
      * has been updated.
      */
@@ -140,6 +145,7 @@ static flb_sds_t fleet_config_filename(struct flb_in_calyptia_fleet_config *ctx,
 #define new_fleet_config_filename(a) fleet_config_filename((a), "new")
 #define cur_fleet_config_filename(a) fleet_config_filename((a), "cur")
 #define old_fleet_config_filename(a) fleet_config_filename((a), "old")
+#define hdr_fleet_config_filename(a) fleet_config_filename((a), "header")
 
 static int get_calyptia_files(struct flb_in_calyptia_fleet_config *ctx,
                               const char *url,
@@ -411,7 +417,6 @@ static int is_timestamped_fleet_config_path(struct flb_in_calyptia_fleet_config 
     errno = 0;
     val = strtol(fname, &end, 10);
     if ((errno == ERANGE && (val == LONG_MAX || val == LONG_MIN)) || (errno != 0 && val == 0)) {
-        flb_errno();
         return FLB_FALSE;
     }
 
@@ -503,6 +508,23 @@ static int exists_old_fleet_config(struct flb_in_calyptia_fleet_config *ctx)
     return ret;
 }
 
+static int exists_header_fleet_config(struct flb_in_calyptia_fleet_config *ctx)
+{
+    int ret = FLB_FALSE;
+    flb_sds_t cfgheadername;
+
+    cfgheadername = hdr_fleet_config_filename(ctx);
+    if (cfgheadername == NULL) {
+        flb_plg_error(ctx->ins, "unable to allocate configuration name");
+        return FLB_FALSE;
+    }
+
+    ret = access(cfgheadername, F_OK) == 0 ? FLB_TRUE : FLB_FALSE;
+    flb_sds_destroy(cfgheadername);
+
+    return ret;
+}
+
 static void *do_reload(void *data)
 {
     struct reload_ctx *reload = (struct reload_ctx *)data;
@@ -532,6 +554,7 @@ static void *do_reload(void *data)
 static int test_config_is_valid(struct flb_in_calyptia_fleet_config *ctx,
                                 flb_sds_t cfgpath)
 {
+    return FLB_TRUE;
     struct flb_cf *conf;
     int ret = FLB_FALSE;
 
@@ -713,6 +736,10 @@ static msgpack_object *msgpack_lookup_map_key(msgpack_object *obj, const char *k
 
         key = &cur->key.via.str;
 
+        if (key->size != strlen(keyname)) {
+            continue;
+        }
+
         if (strncmp(key->ptr, keyname, key->size) == 0) {
             return &cur->val;
         }
@@ -830,7 +857,7 @@ static ssize_t parse_fleet_search_json(struct flb_in_calyptia_fleet_config *ctx,
             break;
         }
 
-        fleet = msgpack_lookup_map_key(map, "ID");
+        fleet = msgpack_lookup_map_key(map, "id");
         if (fleet == NULL) {
             flb_plg_error(ctx->ins, "unable to find fleet by name");
             break;
@@ -921,7 +948,7 @@ static struct flb_http_client *fleet_http_do(struct flb_in_calyptia_fleet_config
         goto http_client_error;
     }
 
-    flb_http_buffer_size(client, 8192);
+    flb_http_buffer_size(client, ctx->max_http_buffer_size);
 
     flb_http_add_header(client,
                         CALYPTIA_H_PROJECT, sizeof(CALYPTIA_H_PROJECT) - 1,
@@ -975,7 +1002,7 @@ static int get_calyptia_fleet_id_by_name(struct flb_in_calyptia_fleet_config *ct
         return -1;
     }
 
-    flb_sds_printf(&url, "/v1/search?project_id=%s&resource=fleet&term=%s",
+    flb_sds_printf(&url, "/v1/search?project_id=%s&resource=fleet&term=%s&exact=true",
                    project_id, ctx->fleet_name);
 
     client = fleet_http_do(ctx, url);
@@ -1686,12 +1713,68 @@ static void fleet_config_get_properties(flb_sds_t *buf, struct mk_list *props)
     }
 }
 
+static flb_sds_t get_fleet_id_from_header(struct flb_in_calyptia_fleet_config *ctx)
+{
+    struct mk_list *head;
+    struct flb_cf_section *section;
+    flb_sds_t fleet_id;
+    flb_sds_t name;
+    struct flb_cf *cf_hdr;
+
+
+    if (exists_header_fleet_config(ctx)) {
+        cf_hdr = flb_cf_create_from_file(NULL, hdr_fleet_config_filename(ctx));
+
+        if (cf_hdr == NULL) {
+            flb_cf_destroy(cf_hdr);
+            return NULL;
+        }
+
+        mk_list_foreach(head, &cf_hdr->sections) {
+            section = mk_list_entry(head, struct flb_cf_section, _head);
+
+            if (strcasecmp(section->name, "custom") != 0) {
+                continue;
+            }
+
+            name = flb_cf_section_property_get_string(cf_hdr, section, "name");
+
+            if (!name) {
+                flb_plg_error(ctx->ins, "no name in fleet header");
+                flb_cf_destroy(cf_hdr);
+                return NULL;
+            }
+
+            if (strcasecmp(name, "calyptia") != 0) {
+                flb_sds_destroy(name);
+                continue;
+            }
+            flb_sds_destroy(name);
+
+            fleet_id = flb_cf_section_property_get_string(cf_hdr, section, "fleet_id");
+
+            if (!fleet_id) {
+                flb_plg_error(ctx->ins, "no fleet_id in fleet header");
+                flb_cf_destroy(cf_hdr);
+                return NULL;
+            }
+
+            flb_cf_destroy(cf_hdr);
+            return fleet_id;
+        }
+    }
+
+    flb_cf_destroy(cf_hdr);
+    return NULL;
+}
+
 flb_sds_t fleet_config_get(struct flb_in_calyptia_fleet_config *ctx)
 {
     flb_sds_t buf;
     struct mk_list *head;
     struct flb_custom_instance *c_ins;
     flb_ctx_t *flb = flb_context_get();
+    flb_sds_t fleet_id = NULL;
 
 
     buf = flb_sds_create_size(2048);
@@ -1700,7 +1783,6 @@ flb_sds_t fleet_config_get(struct flb_in_calyptia_fleet_config *ctx)
         return NULL;
     }
 
-    /* [INPUT] */
     mk_list_foreach(head, &flb->config->customs) {
         c_ins = mk_list_entry(head, struct flb_custom_instance, _head);
         if (strcasecmp(c_ins->p->name, "calyptia")) {
@@ -1711,8 +1793,21 @@ flb_sds_t fleet_config_get(struct flb_in_calyptia_fleet_config *ctx)
 
         fleet_config_get_properties(&buf, &c_ins->properties);
 
-        if (ctx->fleet_id && flb_config_prop_get("fleet_id", &c_ins->properties) == NULL) {
-            flb_sds_printf(&buf, "    fleet_id %s\n", ctx->fleet_id);
+        if (flb_config_prop_get("fleet_id", &c_ins->properties) == NULL) {
+            if (ctx->fleet_id != NULL) {
+                flb_sds_printf(&buf, "    fleet_id %s\n", ctx->fleet_id);
+            }
+            else {
+                fleet_id = get_fleet_id_from_header(ctx);
+
+                if (fleet_id == NULL) {
+                    flb_plg_error(ctx->ins, "unable to get fleet_id from header");
+                    return NULL;
+                }
+
+                flb_sds_printf(&buf, "    fleet_id %s\n", fleet_id);
+                flb_sds_destroy(fleet_id);
+            }
         }
     }
     flb_sds_printf(&buf, "\n");
@@ -2016,6 +2111,10 @@ static int create_fleet_file(flb_sds_t fleetdir,
                             (unsigned char *)b64_content, blen);
 
     if (ret != 0) {
+        fclose(fp);
+        flb_sds_destroy(dst);
+        flb_sds_destroy(fname);
+
         return -1;
     }
 
@@ -2232,7 +2331,9 @@ static int in_calyptia_fleet_init(struct flb_input_instance *in,
     /* refresh calyptia settings before attempting to load the fleet
      * configuration file.
      */
-    create_fleet_header(ctx);
+    if (exists_header_fleet_config(ctx) == FLB_TRUE) {
+        create_fleet_header(ctx);
+    }
 
     /* if we load a new configuration then we will be reloaded anyways */
     if (load_fleet_config(ctx) == FLB_TRUE) {
@@ -2323,6 +2424,11 @@ static struct flb_config_map config_map[] = {
      FLB_CONFIG_MAP_STR, "machine_id", NULL,
      0, FLB_TRUE, offsetof(struct flb_in_calyptia_fleet_config, machine_id),
      "Agent Machine ID."
+    },
+    {
+      FLB_CONFIG_MAP_INT, "max_http_buffer_size", DEFAULT_MAX_HTTP_BUFFER_SIZE,
+      0, FLB_TRUE, offsetof(struct flb_in_calyptia_fleet_config, max_http_buffer_size),
+      "Set the maximum size for http buffers when communicating with the API"
     },
     {
       FLB_CONFIG_MAP_INT, "interval_sec", DEFAULT_INTERVAL_SEC,

@@ -1,0 +1,42 @@
+---
+service:
+  log_level: info
+  #parsers_file: parsers_multiline.conf
+
+includes:
+    - extra_parser.yaml
+
+parsers:
+  - name: json
+    format: json
+
+  - name: docker
+    format: json
+    time_key: time
+    time_format: "%Y-%m-%dT%H:%M:%S.%L"
+    time_keep: true
+
+multiline_parsers:
+  - name: exception_test
+    type: regex
+    flush_timeout: 1000
+    rules:
+      - state: start_state
+        regex: "/(Dec \\d+ \\d+\\:\\d+\\:\\d+)(.*)/"
+        next_state: cont
+
+      - state: cont
+        regex: "/^\\s+at.*/"
+        next_state: cont
+
+pipeline:
+  inputs:
+    - name: tail
+      path: ../test_multiline.log
+      read_from_head: true
+      multiline.parser: multiline-regex-test
+
+  outputs:
+    - name: stdout
+      match: '*'
+      format: json_lines

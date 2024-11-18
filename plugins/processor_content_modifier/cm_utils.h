@@ -629,5 +629,10 @@ int cfl_variant_convert(struct cfl_variant *input_value,
                         int output_type);
 
 
+int cm_utils_hash_transformer(void *context, struct cfl_variant *value);
+cfl_sds_t cm_utils_variant_convert_to_json(struct cfl_variant *value);
+int cm_utils_variant_convert(struct cfl_variant *input_value,
+                             struct cfl_variant **output_value,
+                             int output_type);
 
 #endif

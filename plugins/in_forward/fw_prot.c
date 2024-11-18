@@ -495,6 +495,10 @@ static int user_authentication(struct flb_input_instance *ins,
             continue;
         }
 
+        if (password_digest_len != 128) {
+            continue;
+        }
+
         userauth_digest = flb_calloc(128, sizeof(char));
 
         if (flb_secure_forward_password_digest(ins, conn,
@@ -599,6 +603,7 @@ static int check_ping(struct flb_input_instance *ins,
     if (o.type != MSGPACK_OBJECT_STR) {
         flb_plg_error(ins, "Invalid shared_key_salt type message");
         flb_free(serverside);
+        flb_free(hostname);
         msgpack_unpacked_destroy(&result);
         return -1;
     }
@@ -609,7 +614,9 @@ static int check_ping(struct flb_input_instance *ins,
     if (o.type != MSGPACK_OBJECT_STR) {
         flb_plg_error(ins, "Invalid shared_key_digest type message");
         flb_free(serverside);
+        flb_free(hostname);
         msgpack_unpacked_destroy(&result);
+
         return -1;
     }
     shared_key_digest = flb_sds_create_len(o.via.str.ptr, o.via.str.size);
@@ -620,6 +627,8 @@ static int check_ping(struct flb_input_instance *ins,
     if (o.type != MSGPACK_OBJECT_STR) {
         flb_plg_error(ins, "Invalid username type message");
         flb_free(serverside);
+        flb_free(hostname);
+        flb_free(shared_key_salt);
         msgpack_unpacked_destroy(&result);
         return -1;
     }
@@ -631,6 +640,9 @@ static int check_ping(struct flb_input_instance *ins,
         flb_plg_error(ins, "Invalid password_digest type message");
         flb_free(serverside);
         flb_free(hostname);
+        flb_free(shared_key_salt);
+        flb_free(shared_key_digest);
+        flb_free(username);
         msgpack_unpacked_destroy(&result);
         return -1;
     }
@@ -643,11 +655,16 @@ static int check_ping(struct flb_input_instance *ins,
                                            shared_key_salt, hostname, hostname_len,
                                            serverside, 128)) {
         flb_free(serverside);
-        flb_plg_error(ctx->ins, "failed to hash shard_key");
+        flb_free(username);
+        flb_free(password_digest);
+        flb_free(shared_key_salt);
+        flb_free(shared_key_digest);
+        flb_free(hostname);
+        flb_plg_error(ctx->ins, "failed to hash shared_key");
         return -1;
     }
 
-    if (strncmp(serverside, shared_key_digest, shared_key_digest_len) != 0) {
+    if (strncmp(serverside, shared_key_digest, 128) != 0) {
         flb_plg_error(ins, "shared_key mismatch");
         flb_free(serverside);
 
@@ -1107,34 +1124,49 @@ static int append_log(struct flb_input_instance *ins, struct fw_conn *conn,
     struct ctrace *ctr;
 
     if (event_type == FLB_EVENT_TYPE_LOGS) {
-        flb_input_log_append(conn->in,
-                             out_tag, flb_sds_len(out_tag),
-                             data, len);
+        ret = flb_input_log_append(conn->in,
+                                   out_tag, flb_sds_len(out_tag),
+                                   data, len);
+        if (ret != 0) {
+            flb_plg_error(ins, "could not append logs. ret=%d", ret);
+            return -1;
+        }
 
         return 0;
     }
     else if (event_type == FLB_EVENT_TYPE_METRICS) {
         ret = cmt_decode_msgpack_create(&cmt, (char *) data, len, &off);
         if (ret != CMT_DECODE_MSGPACK_SUCCESS) {
-            flb_error("cmt_decode_msgpack_create failed. ret=%d", ret);
+            flb_plg_error(ins, "cmt_decode_msgpack_create failed. ret=%d", ret);
             return -1;
         }
-        flb_input_metrics_append(conn->in,
-                                 out_tag, flb_sds_len(out_tag),
-                                 cmt);
+
+        ret = flb_input_metrics_append(conn->in,
+                                       out_tag, flb_sds_len(out_tag),
+                                       cmt);
+        if (ret != 0) {
+            flb_plg_error(ins, "could not append metrics. ret=%d", ret);
+            cmt_decode_msgpack_destroy(cmt);
+            return -1;
+        }
         cmt_decode_msgpack_destroy(cmt);
     }
     else if (event_type == FLB_EVENT_TYPE_TRACES) {
         off = 0;
         ret = ctr_decode_msgpack_create(&ctr, (char *) data, len, &off);
         if (ret == -1) {
+            flb_error("could not decode trace message. ret=%d", ret);
             return -1;
         }
 
-        flb_input_trace_append(ins,
-                               out_tag, flb_sds_len(out_tag),
-                               ctr);
-
+        ret = flb_input_trace_append(ins,
+                                     out_tag, flb_sds_len(out_tag),
+                                     ctr);
+        if (ret != 0) {
+            flb_plg_error(ins, "could not append traces. ret=%d", ret);
+            ctr_decode_msgpack_destroy(ctr);
+            return -1;
+        }
         ctr_decode_msgpack_destroy(ctr);
     }
 

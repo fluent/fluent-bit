@@ -22,8 +22,8 @@ endif()
 
 # Monkey Version
 set(MK_VERSION_MAJOR  1)
-set(MK_VERSION_MINOR  7)
-set(MK_VERSION_PATCH  2)
+set(MK_VERSION_MINOR  8)
+set(MK_VERSION_PATCH  1)
 set(MK_VERSION_STR "${MK_VERSION_MAJOR}.${MK_VERSION_MINOR}.${MK_VERSION_PATCH}")
 
 # Output paths
@@ -70,6 +70,19 @@ option(MK_PLUGIN_TLS           "TLS/SSL support"          No)
 option(MK_WITHOUT_BIN          "Do not build binary"      No)
 option(MK_WITHOUT_CONF         "Skip configuration files" No)
 option(MK_STATIC_LIB_MODE      "Static library mode"      No)
+
+
+# Event loop backend
+# ------------------
+# Options to force a specific event loop mechanism. If all of them are
+# turned off, the system will do an automatic selection.
+#
+# Check on mk_core/CMakeLists.txt for more details.
+option(MK_EVENT_LOOP_SELECT    "Use select(2) event loop" No)
+option(MK_EVENT_LOOP_POLL      "Use poll(2) event loop"   No)
+option(MK_EVENT_LOOP_KQUEUE    "Use kqueue(2) event loop" No)
+option(MK_EVENT_LOOP_EPOLL     "Use epoll(2) event loop"  No)
+option(MK_EVENT_LOOP_LIBEVENT  "Use libevent event loop"  No)
 
 # If building just for a "library" mode, disable plugins
 if(MK_LIB_ONLY)
@@ -279,7 +292,16 @@ include_directories(include/monkey/)
 include_directories(${CMAKE_CURRENT_BINARY_DIR}/include/)
 include_directories(${CMAKE_CURRENT_BINARY_DIR}/include/monkey/)
 
-if (CMAKE_SYSTEM_NAME MATCHES "Windows")
+# Check if we need to build libevent by using auto discovery mechanism
+if (CMAKE_SYSTEM_NAME MATCHES "Windows" AND
+    (
+      NOT MK_EVENT_LOOP_SELECT AND
+      NOT MK_EVENT_LOOP_POLL AND
+      NOT MK_EVENT_LOOP_KQUEUE AND
+      NOT MK_EVENT_LOOP_EPOLL
+    ) OR MK_EVENT_LOOP_LIBEVENT)
+
+  set(MK_EVENT_LOOP_LIBEVENT Yes)
   include_directories(mk_core/deps/libevent/include)
   include_directories("${PROJECT_BINARY_DIR}/mk_core/deps/libevent/include/")
 endif()

@@ -116,6 +116,10 @@ void flb_net_setup_init(struct flb_net_setup *net)
     net->keepalive = FLB_TRUE;
     net->keepalive_idle_timeout = 30;
     net->keepalive_max_recycle = 0;
+    net->tcp_keepalive = FLB_FALSE;
+    net->tcp_keepalive_time = -1;
+    net->tcp_keepalive_interval = -1;
+    net->tcp_keepalive_probes = -1;
     net->accept_timeout = 10;
     net->connect_timeout = 10;
     net->io_timeout = 0; /* Infinite time */
@@ -296,6 +300,54 @@ int flb_net_socket_tcp_fastopen(flb_sockfd_t fd)
 {
     int qlen = 5;
     return setsockopt(fd, SOL_TCP, TCP_FASTOPEN, &qlen, sizeof(qlen));
+}
+
+
+/*
+ * Enable TCP keepalive
+ */
+int flb_net_socket_tcp_keepalive(flb_sockfd_t fd, struct flb_net_setup *net)
+{
+    int interval;
+    int enabled;
+    int probes;
+    int time;
+    int ret;
+
+    enabled = 1;
+
+    time = net->tcp_keepalive_time;
+    probes = net->tcp_keepalive_probes;
+    interval = net->tcp_keepalive_interval;
+
+    ret = setsockopt(fd, SOL_SOCKET, SO_KEEPALIVE,
+                     (const void *) &enabled, sizeof(enabled));
+
+    if (ret == 0 && time >= 0) {
+#ifdef __APPLE__
+        ret = setsockopt(fd, IPPROTO_TCP, TCP_KEEPALIVE,
+#else
+                ret = setsockopt(fd, IPPROTO_TCP, TCP_KEEPIDLE,
+#endif
+                (const void *) &time, sizeof(time));    }
+
+    if (ret == 0 && interval >= 0) {
+        ret = setsockopt(fd, IPPROTO_TCP, TCP_KEEPINTVL,
+                         (const void *) &interval, sizeof(interval));
+    }
+
+    if (ret == 0 && probes >= 0) {
+        ret = setsockopt(fd, IPPROTO_TCP, TCP_KEEPCNT,
+                         (const void *) &probes, sizeof(probes));
+    }
+
+    if (ret != 0) {
+        flb_error("[net] failed to configure TCP keepalive for connection #%i", fd);
+
+        ret = -1;
+    }
+
+    return ret;
 }
 
 flb_sockfd_t flb_net_socket_create(int family, int nonblock)
@@ -996,12 +1048,9 @@ static struct flb_dns_lookup_context *flb_net_dns_lookup_context_create(
         return NULL;
     }
 
-    /* c-ares options: Set the transport layer to the desired protocol and
-     *                 the number of retries to 2
-     */
+    /* c-ares options: Set the transport layer to the desired protocol */
 
     optmask = ARES_OPT_FLAGS;
-    opts.tries = 2;
 
     if (dns_mode == FLB_DNS_USE_TCP) {
         opts.flags = ARES_FLAG_USEVC;

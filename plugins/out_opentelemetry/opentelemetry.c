@@ -44,15 +44,10 @@ extern void cmt_encode_opentelemetry_destroy(cfl_sds_t text);
 #include "opentelemetry_conf.h"
 #include "opentelemetry_utils.h"
 
-int otel_process_logs(struct flb_event_chunk *event_chunk,
-                      struct flb_output_flush *out_flush,
-                      struct flb_input_instance *ins, void *out_context,
-                      struct flb_config *config);
-
-int opentelemetry_http_post(struct opentelemetry_context *ctx,
-                            const void *body, size_t body_len,
-                            const char *tag, int tag_len,
-                            const char *uri)
+int opentelemetry_legacy_post(struct opentelemetry_context *ctx,
+                              const void *body, size_t body_len,
+                              const char *tag, int tag_len,
+                              const char *uri)
 {
     size_t                     final_body_len;
     void                      *final_body;
@@ -223,6 +218,184 @@ int opentelemetry_http_post(struct opentelemetry_context *ctx,
     return out_ret;
 }
 
+int opentelemetry_post(struct opentelemetry_context *ctx,
+                       const void *body, size_t body_len,
+                       const char *tag, int tag_len,
+                       const char *http_uri,
+                       const char *grpc_uri)
+{
+    const char               *compression_algorithm;
+    uint32_t                  wire_message_length;
+    size_t                    grpc_body_length;
+    cfl_sds_t                 grpc_body;
+    struct flb_http_response *response;
+    struct flb_http_request  *request;
+    int                       out_ret;
+    int                       result;
+
+    if (!ctx->enable_http2_flag) {
+        return opentelemetry_legacy_post(ctx,
+                                         body, body_len,
+                                         tag, tag_len,
+                                         http_uri);
+    }
+
+    compression_algorithm = NULL;
+
+    request = flb_http_client_request_builder(
+                    &ctx->http_client,
+                    FLB_HTTP_CLIENT_ARGUMENT_METHOD(FLB_HTTP_POST),
+                    FLB_HTTP_CLIENT_ARGUMENT_HOST(ctx->host),
+                    FLB_HTTP_CLIENT_ARGUMENT_USER_AGENT("Fluent-Bit"),
+                    FLB_HTTP_CLIENT_ARGUMENT_HEADERS(
+                        FLB_HTTP_CLIENT_HEADER_CONFIG_MAP_LIST,
+                        ctx->headers));
+
+    if (request == NULL) {
+        flb_plg_error(ctx->ins, "error initializing http request");
+
+        return FLB_RETRY;
+    }
+
+    if (request->protocol_version == HTTP_PROTOCOL_VERSION_20) {
+        grpc_body = cfl_sds_create_size(body_len + 5);
+
+        if (grpc_body == NULL) {
+            return FLB_RETRY;
+        }
+
+        wire_message_length = (uint32_t) body_len;
+
+        cfl_sds_cat(grpc_body, "\x00----", 5);
+
+        ((uint8_t *) grpc_body)[1] = (wire_message_length & 0xFF000000) >> 24;
+        ((uint8_t *) grpc_body)[2] = (wire_message_length & 0x00FF0000) >> 16;
+        ((uint8_t *) grpc_body)[3] = (wire_message_length & 0x0000FF00) >> 8;
+        ((uint8_t *) grpc_body)[4] = (wire_message_length & 0x000000FF) >> 0;
+
+        cfl_sds_cat(grpc_body, body, body_len);
+
+        grpc_body_length = cfl_sds_len(grpc_body);
+
+        result = flb_http_request_set_parameters(request,
+                    FLB_HTTP_CLIENT_ARGUMENT_URI(grpc_uri),
+                    FLB_HTTP_CLIENT_ARGUMENT_CONTENT_TYPE(
+                    "application/grpc"),
+                    FLB_HTTP_CLIENT_ARGUMENT_BODY(grpc_body,
+                                                  grpc_body_length,
+                                                  compression_algorithm));
+
+        cfl_sds_destroy(grpc_body);
+
+        if (result  != 0) {
+            flb_http_client_request_destroy(request, FLB_TRUE);
+
+            return FLB_RETRY;
+        }
+    }
+    else {
+        if (ctx->compress_gzip == FLB_TRUE) {
+            compression_algorithm = "gzip";
+        }
+
+        result = flb_http_request_set_parameters(request,
+                        FLB_HTTP_CLIENT_ARGUMENT_URI(http_uri),
+                        FLB_HTTP_CLIENT_ARGUMENT_CONTENT_TYPE(
+                            FLB_OPENTELEMETRY_MIME_PROTOBUF_LITERAL),
+                        FLB_HTTP_CLIENT_ARGUMENT_BODY(body,
+                                                      body_len,
+                                                      compression_algorithm));
+
+        if (result  != 0) {
+            flb_http_client_request_destroy(request, FLB_TRUE);
+
+            return FLB_RETRY;
+        }
+    }
+
+    if (ctx->http_user != NULL &&
+        ctx->http_passwd != NULL) {
+        result = flb_http_request_set_parameters(request,
+                    FLB_HTTP_CLIENT_ARGUMENT_BASIC_AUTHORIZATION(
+                                                    ctx->http_user,
+                                                    ctx->http_passwd));
+
+        if (result  != 0) {
+            flb_plg_error(ctx->ins, "error setting http authorization data");
+
+            return FLB_RETRY;
+        }
+
+        flb_http_request_set_authorization(request,
+                                           HTTP_WWW_AUTHORIZATION_SCHEME_BASIC,
+                                           ctx->http_user,
+                                           ctx->http_passwd);
+    }
+
+    response = flb_http_client_request_execute(request);
+
+    if (response == NULL) {
+        flb_debug("http request execution error");
+
+        flb_http_client_request_destroy(request, FLB_TRUE);
+
+        return FLB_RETRY;
+    }
+
+    /*
+     * Only allow the following HTTP status:
+     *
+     * - 200: OK
+     * - 201: Created
+     * - 202: Accepted
+     * - 203: no authorative resp
+     * - 204: No Content
+     * - 205: Reset content
+     *
+     */
+    if (response->status < 200 || response->status > 205) {
+        if (ctx->log_response_payload &&
+            response->body != NULL &&
+            cfl_sds_len(response->body) > 0) {
+            flb_plg_error(ctx->ins, "%s:%i, HTTP status=%i\n%s",
+                            ctx->host, ctx->port,
+                            response->status, response->body);
+        }
+        else {
+            flb_plg_error(ctx->ins, "%s:%i, HTTP status=%i",
+                            ctx->host, ctx->port, response->status);
+        }
+
+        out_ret = FLB_RETRY;
+    }
+    else {
+        if (ctx->log_response_payload &&
+            response->body != NULL &&
+            cfl_sds_len(response->body) > 0) {
+            flb_plg_info(ctx->ins, "%s:%i, HTTP status=%i\n%s",
+                            ctx->host, ctx->port,
+                            response->status, response->body);
+        }
+        else {
+            flb_plg_info(ctx->ins, "%s:%i, HTTP status=%i",
+                            ctx->host, ctx->port,
+                            response->status);
+        }
+
+        out_ret = FLB_OK;
+    }
+
+    flb_http_client_request_destroy(request, FLB_TRUE);
+
+    return out_ret;
+}
+
+int otel_process_logs(struct flb_event_chunk *event_chunk,
+                      struct flb_output_flush *out_flush,
+                      struct flb_input_instance *ins, void *out_context,
+                      struct flb_config *config);
+
+
 static void append_labels(struct opentelemetry_context *ctx,
                           struct cmt *cmt)
 {
@@ -258,7 +431,7 @@ static int opentelemetry_format_test(struct flb_config *config,
 }
 
 static int process_metrics(struct flb_event_chunk *event_chunk,
-                           struct flb_output_flush *out_flush,
+                           struct flb_output_flush *out1_flush,
                            struct flb_input_instance *ins, void *out_context,
                            struct flb_config *config)
 {
@@ -323,10 +496,11 @@ static int process_metrics(struct flb_event_chunk *event_chunk,
         flb_plg_debug(ctx->ins, "final payload size: %lu", flb_sds_len(buf));
         if (buf && flb_sds_len(buf) > 0) {
             /* Send HTTP request */
-            result = opentelemetry_http_post(ctx, buf, flb_sds_len(buf),
-                                             event_chunk->tag,
-                                             flb_sds_len(event_chunk->tag),
-                                             ctx->metrics_uri);
+            result = opentelemetry_post(ctx, buf, flb_sds_len(buf),
+                                        event_chunk->tag,
+                                        flb_sds_len(event_chunk->tag),
+                                        ctx->metrics_uri_sanitized,
+                                        ctx->grpc_metrics_uri);
 
             /* Debug http_post() result statuses */
             if (result == FLB_OK) {
@@ -345,6 +519,7 @@ static int process_metrics(struct flb_event_chunk *event_chunk,
     }
     else {
         flb_plg_error(ctx->ins, "Error decoding msgpack encoded context");
+        flb_sds_destroy(buf);
         return FLB_ERROR;
     }
 
@@ -412,10 +587,11 @@ static int process_traces(struct flb_event_chunk *event_chunk,
     flb_plg_debug(ctx->ins, "final payload size: %lu", flb_sds_len(buf));
     if (buf && flb_sds_len(buf) > 0) {
         /* Send HTTP request */
-        result = opentelemetry_http_post(ctx, buf, flb_sds_len(buf),
-                                         event_chunk->tag,
-                                         flb_sds_len(event_chunk->tag),
-                                         ctx->traces_uri);
+        result = opentelemetry_post(ctx, buf, flb_sds_len(buf),
+                                    event_chunk->tag,
+                                    flb_sds_len(event_chunk->tag),
+                                    ctx->traces_uri_sanitized,
+                                    ctx->grpc_traces_uri);
 
         /* Debug http_post() result statuses */
         if (result == FLB_OK) {
@@ -495,7 +671,11 @@ static struct flb_config_map config_map[] = {
                                              add_labels),
      "Adds a custom label to the metrics use format: 'add_label name value'"
     },
-
+    {
+     FLB_CONFIG_MAP_STR, "http2", "on",
+     0, FLB_TRUE, offsetof(struct opentelemetry_context, enable_http2),
+     "Enable, disable or force HTTP/2 usage. Accepted values : on, off, force"
+    },
     {
      FLB_CONFIG_MAP_STR, "proxy", NULL,
      0, FLB_FALSE, 0,
@@ -521,6 +701,11 @@ static struct flb_config_map config_map[] = {
      0, FLB_TRUE, offsetof(struct opentelemetry_context, metrics_uri),
      "Specify an optional HTTP URI for the target OTel endpoint."
     },
+    {
+     FLB_CONFIG_MAP_STR, "grpc_metrics_uri", "/opentelemetry.proto.collector.metrics.v1.MetricsService/Export",
+     0, FLB_TRUE, offsetof(struct opentelemetry_context, grpc_metrics_uri),
+     "Specify an optional gRPC URI for the target OTel endpoint."
+    },
 
     {
       FLB_CONFIG_MAP_INT, "batch_size", DEFAULT_LOG_RECORD_BATCH_SIZE,
@@ -543,6 +728,12 @@ static struct flb_config_map config_map[] = {
     },
 
     {
+     FLB_CONFIG_MAP_STR, "grpc_logs_uri", "/opentelemetry.proto.collector.logs.v1.LogsService/Export",
+     0, FLB_TRUE, offsetof(struct opentelemetry_context, grpc_logs_uri),
+     "Specify an optional gRPCß URI for the target OTel endpoint."
+    },
+
+    {
      FLB_CONFIG_MAP_STR, "logs_body_key", NULL,
      FLB_CONFIG_MAP_MULT, FLB_TRUE, offsetof(struct opentelemetry_context, log_body_key_list_str),
      "Specify an optional HTTP URI for the target OTel endpoint."
@@ -560,6 +751,12 @@ static struct flb_config_map config_map[] = {
      0, FLB_TRUE, offsetof(struct opentelemetry_context, traces_uri),
      "Specify an optional HTTP URI for the target OTel endpoint."
     },
+    {
+     FLB_CONFIG_MAP_STR, "grpc_traces_uri", "/opentelemetry.proto.collector.trace.v1.TraceService/Export",
+     0, FLB_TRUE, offsetof(struct opentelemetry_context, grpc_traces_uri),
+     "Specify an optional gRPC URI for the target OTel endpoint."
+    },
+
     {
      FLB_CONFIG_MAP_BOOL, "log_response_payload", "true",
      0, FLB_TRUE, offsetof(struct opentelemetry_context, log_response_payload),

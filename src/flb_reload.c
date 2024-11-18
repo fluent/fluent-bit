@@ -407,7 +407,9 @@ int flb_reload(flb_ctx_t *ctx, struct flb_cf *cf_opts)
         return FLB_RELOAD_HALTED;
     }
 
-    flb_info("reloading instance pid=%lu tid=%p", (long unsigned) getpid(), pthread_self());
+    flb_info("reloading instance pid=%lu tid=%p",
+             (long unsigned int) getpid(),
+             (void *) pthread_self());
 
     if (old_config->conf_path_file) {
         file = flb_sds_create(old_config->conf_path_file);
@@ -473,7 +475,6 @@ int flb_reload(flb_ctx_t *ctx, struct flb_cf *cf_opts)
                 flb_sds_destroy(file);
             }
             flb_cf_destroy(new_cf);
-            flb_stop(new_ctx);
             flb_destroy(new_ctx);
             flb_error("[reload] reloaded config is invalid. Reloading is halted");
 
@@ -486,7 +487,6 @@ int flb_reload(flb_ctx_t *ctx, struct flb_cf *cf_opts)
     if (ret != 0) {
         flb_sds_destroy(file);
         flb_cf_destroy(new_cf);
-        flb_stop(new_ctx);
         flb_destroy(new_ctx);
 
         flb_error("[reload] reloaded config format is invalid. Reloading is halted");
@@ -499,7 +499,6 @@ int flb_reload(flb_ctx_t *ctx, struct flb_cf *cf_opts)
     if (ret != 0) {
         flb_sds_destroy(file);
         flb_cf_destroy(new_cf);
-        flb_stop(new_ctx);
         flb_destroy(new_ctx);
 
         flb_error("[reload] reloaded config is invalid. Reloading is halted");
@@ -528,7 +527,6 @@ int flb_reload(flb_ctx_t *ctx, struct flb_cf *cf_opts)
     ret = flb_start(new_ctx);
 
     if (ret != 0) {
-        flb_stop(new_ctx);
         flb_destroy(new_ctx);
 
         flb_error("[reload] loaded configuration contains error(s). Reloading is aborted");
