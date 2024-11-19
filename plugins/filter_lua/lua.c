@@ -27,8 +27,10 @@
 #include <fluent-bit/flb_pack.h>
 #include <fluent-bit/flb_sds.h>
 #include <fluent-bit/flb_time.h>
+#include <fluent-bit/flb_env.h>
 #include <fluent-bit/flb_log_event_decoder.h>
 #include <fluent-bit/flb_log_event_encoder.h>
+
 #include <msgpack.h>
 
 #include "fluent-bit/flb_mem.h"
@@ -76,6 +78,31 @@ static int cb_lua_pre_run(struct flb_filter_instance *f_ins,
     return ret;
 }
 
+static int env_variables(struct flb_config *config, struct flb_luajit *lj)
+{
+    struct mk_list *list;
+    struct mk_list *head;
+    struct flb_env *env;
+    struct flb_hash_table_entry *entry;
+
+    lua_newtable(lj->state);
+
+    env = (struct flb_env *) config->env;
+    list = (struct mk_list *) &env->ht->entries;
+    mk_list_foreach(head, list) {
+        entry = mk_list_entry(head, struct flb_hash_table_entry, _head_parent);
+        if (entry->val_size <= 0) {
+            continue;
+        }
+        lua_pushlstring(lj->state, entry->key, entry->key_len);
+        lua_pushlstring(lj->state, entry->val, entry->val_size);
+        lua_settable(lj->state, -3);
+    }
+
+    lua_setglobal(lj->state, "FLB_ENV");
+    return 0;
+}
+
 static int cb_lua_init(struct flb_filter_instance *f_ins,
                        struct flb_config *config,
                        void *data)
@@ -100,6 +127,9 @@ static int cb_lua_init(struct flb_filter_instance *f_ins,
         return -1;
     }
     ctx->lua = lj;
+
+    /* register environment variables */
+    env_variables(config, lj);
 
     if (ctx->enable_flb_null) {
         flb_lua_enable_flb_null(lj->state);
