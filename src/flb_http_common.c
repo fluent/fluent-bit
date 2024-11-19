@@ -519,14 +519,6 @@ int flb_http_request_set_url(struct flb_http_request *request,
         return -1;
     }
 
-    start_of_authority = strstr(local_url, "://");
-
-    if (start_of_authority == NULL) {
-        cfl_sds_destroy(local_url);
-
-        return -1;
-    }
-
     start_of_authorization = NULL;
     start_of_query_string = NULL;
     start_of_authority = NULL;
@@ -535,6 +527,14 @@ int flb_http_request_set_url(struct flb_http_request *request,
     start_of_port = NULL;
     start_of_host = NULL;
     start_of_path = NULL;
+
+    start_of_authority = strstr(local_url, "://");
+
+    if (start_of_authority == NULL) {
+        cfl_sds_destroy(local_url);
+
+        return -1;
+    }
 
     start_of_authority = &start_of_authority[3];
 
