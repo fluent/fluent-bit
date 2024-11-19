@@ -629,6 +629,7 @@ static int check_ping(struct flb_input_instance *ins,
         flb_free(serverside);
         flb_free(hostname);
         flb_free(shared_key_salt);
+        flb_free(shared_key_digest);
         msgpack_unpacked_destroy(&result);
         return -1;
     }
