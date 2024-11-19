@@ -302,7 +302,7 @@ int ne_utils_path_scan(struct flb_ne *ctx, const char *mount, const char *path,
             flb_plg_error(ctx->ins, "no memory space available");
             return -1;
         case GLOB_ABORTED:
-            flb_plg_error(ctx->ins, "read error, check permissions: %s", path);
+            flb_plg_error(ctx->ins, "read error, check permissions: %s", real_path);
             return -1;;
         case GLOB_NOMATCH:
             ret = stat(path, &st);
