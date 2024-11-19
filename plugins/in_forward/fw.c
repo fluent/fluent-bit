@@ -351,6 +351,8 @@ static int in_fw_init(struct flb_input_instance *ins,
 
     ctx->coll_fd = ret;
 
+    pthread_mutex_init(&ctx->conn_mutex, NULL);
+
     return 0;
 }
 
@@ -358,15 +360,18 @@ static void in_fw_pause(void *data, struct flb_config *config)
 {
     struct flb_in_fw_config *ctx = data;
     if (config->is_running == FLB_TRUE) {
-        /*
-         * This is the case when we are not in a shutdown phase, but
-         * backpressure built up, and the plugin needs to
-         * pause the ingestion. The plugin should close all the connections
-         * and wait for the ingestion to resume.
-         */
-        flb_input_collector_pause(ctx->coll_fd, ctx->ins);
-        fw_conn_del_all(ctx);
-        ctx->is_paused = FLB_TRUE;
+        if (pthread_mutex_lock(&ctx->conn_mutex)) {
+            /*
+             * This is the case when we are not in a shutdown phase, but
+             * backpressure built up, and the plugin needs to
+             * pause the ingestion. The plugin should close all the connections
+             * and wait for the ingestion to resume.
+             */
+            flb_input_collector_pause(ctx->coll_fd, ctx->ins);
+            fw_conn_del_all(ctx);
+            ctx->is_paused = FLB_TRUE;
+        }
+        pthread_mutex_unlock(&ctx->conn_mutex);
     }
 
     /*
@@ -387,23 +392,26 @@ static void in_fw_resume(void *data, struct flb_config *config) {
     struct fw_conn          *conn;
     struct flb_in_fw_config *ctx = data;
     if (config->is_running == FLB_TRUE) {
-        connection = flb_downstream_conn_get(ctx->downstream);
+        if (pthread_mutex_lock(&ctx->conn_mutex)) {
+            connection = flb_downstream_conn_get(ctx->downstream);
+            if (connection == NULL) {
+                flb_plg_error(ctx->ins, "could not accept new connection");
 
-        if (connection == NULL) {
-            flb_plg_error(ctx->ins, "could not accept new connection");
+                return;
+            }
 
-            return;
+            conn = fw_conn_add(connection, ctx);
+            if (!conn) {
+                flb_plg_error(ctx->ins, "could not add connection");
+
+                return;
+            }
+
+            flb_input_collector_resume(ctx->coll_fd, ctx->ins);
+            ctx->is_paused = FLB_FALSE;
         }
-        conn = fw_conn_add(connection, ctx);
+        pthread_mutex_unlock(&ctx->conn_mutex);
 
-        if (!conn) {
-            flb_plg_error(ctx->ins, "could not add connection");
-
-            return;
-        }
-
-        ctx->is_paused = FLB_FALSE;
-        flb_input_collector_resume(ctx->coll_fd, ctx->ins);
     }
 }
 
