@@ -170,7 +170,7 @@ static void cb_parseable_flush(struct flb_event_chunk *event_chunk,
         flb_http_add_header(client, "Content-Type", 12, "application/json", 16);
         flb_plg_info(ctx->ins, "Adding Header: Content-Type: application/json");
 
-        flb_http_add_header(client, "X-P-Stream", 12, namespace_name, flb_sds_len(namespace_name));
+        flb_http_add_header(client, "X-P-Stream", 10, namespace_name, flb_sds_len(namespace_name));
         flb_plg_info(ctx->ins, "Adding Header: X-P-Stream: %s", namespace_name);
 
         flb_http_basic_auth(client, "admin", "admin");
