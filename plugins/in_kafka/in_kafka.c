@@ -161,7 +161,7 @@ static int in_kafka_collect(struct flb_input_instance *ins,
     ret = FLB_EVENT_ENCODER_SUCCESS;
 
     while (ret == FLB_EVENT_ENCODER_SUCCESS) {
-        rkm = rd_kafka_consumer_poll(ctx->kafka.rk, 1);
+        rkm = rd_kafka_consumer_poll(ctx->kafka.rk, ctx->poll_timeount_ms);
 
         if (!rkm) {
             break;
@@ -244,6 +244,21 @@ static int in_kafka_init(struct flb_input_instance *ins,
     if (!kafka_conf) {
         flb_plg_error(ins, "Could not initialize kafka config object");
         goto init_error;
+    }
+
+    /* Set the kafka poll timeout dependend on wether we run in our own 
+     * or in the main event thread. 
+     * a) run in main event thread: 
+     *    -> minimize the delay we might create
+     * b) run in our own thread: 
+     *    -> optimize for throuput and relay on 'fetch.wait.max.ms' 
+     *       which is set to 500 by default default. lets set it to
+     *       twice that so that increasing fetch.wait.max.ms still
+     *       has an effect.
+     */
+    ctx->poll_timeount_ms = 1;   
+    if(ins->is_threaded) {
+        ctx->poll_timeount_ms = 1000;
     }
 
     if (ctx->buffer_max_size > 0) {
