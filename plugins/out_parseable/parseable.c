@@ -163,6 +163,8 @@ static void cb_parseable_flush(struct flb_event_chunk *event_chunk,
             flb_plg_info(ctx->ins, "Namespace name not found, using default: %s", namespace_name);
         }
 
+        flb_plg_info(ctx->ins, "Namespace name to be passed is: %s", namespace_name);
+
         // Add namespace_name to the HTTP header
         flb_http_add_header(client, "Content-Type", 12, "application/json", 16);
         flb_http_add_header(client, "X-P-Stream", 12, namespace_name, flb_sds_len(namespace_name));
@@ -173,6 +175,12 @@ static void cb_parseable_flush(struct flb_event_chunk *event_chunk,
         flb_plg_info(ctx->ins, "HTTP request http_do=%i, HTTP Status: %i",
                      ret, client->resp.status);
                         
+        /* Log the HTTP request details */
+        flb_plg_info(ctx->ins, "HTTP Request:");
+        flb_plg_info(ctx->ins, "  Method: POST");
+        flb_plg_info(ctx->ins, "  URL: %s", client->uri);
+        flb_plg_info(ctx->ins, "  Host: %s:%d", ctx->p_server, ctx->p_port);
+        flb_plg_info(ctx->ins, "  Payload: %s", body ? body : "(null)");
         /* Free up resources */
         flb_sds_destroy(body);
         flb_http_client_destroy(client);
