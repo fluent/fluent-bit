@@ -111,17 +111,19 @@ static void cb_parseable_flush(struct flb_event_chunk *event_chunk,
         // Assuming you have a way to parse JSON or MsgPack (like searching by key)
         // For simplicity, let's assume "namespace_header" is a key in the JSON object
         /* Convert from msgpack serialization to JSON serialization for sending through HTTP */
-        body = flb_msgpack_raw_to_json_sds(sbuf.data, sbuf.size);
-        flb_plg_info(ctx->ins, "Body content: %s", body);
+        /* Copy the body to another variable to avoid mutating the original */
+        flb_sds_t body_copy = flb_sds_create(body);
+        if (body_copy == NULL) {
+            flb_plg_error(ctx->ins, "Failed to create a copy of the body");
+            flb_sds_destroy(body);
+            return NULL;  // Handle the error appropriately
+        }
 
-        /* Free up buffer as we don't need it anymore */
-        msgpack_sbuffer_destroy(&sbuf);
-
-        /* Retrieve the namespace_name value from the body */
-       flb_sds_t namespace_name = flb_sds_create_size(256); // Dynamic string
-        if (body != NULL) {
+        /* Retrieve the namespace_name value from the body copy */
+        flb_sds_t namespace_name = flb_sds_create_size(256); // Dynamic string
+        if (body_copy != NULL) {
             // Search for the "namespace_name" field in the JSON string
-            char *namespace_name_value = strstr(body, "\"namespace_name\":\"");
+            char *namespace_name_value = strstr(body_copy, "\"namespace_name\":\"");
             if (namespace_name_value != NULL) {
                 namespace_name_value += strlen("\"namespace_name\":\"");
                 char *end_quote = strchr(namespace_name_value, '\"');
