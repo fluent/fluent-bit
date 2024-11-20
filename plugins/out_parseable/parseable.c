@@ -6,6 +6,7 @@
 #include <fluent-bit/flb_config_map.h>
 #include <fluent-bit/flb_metrics.h>
 
+
 #include <msgpack.h>
 #include "parseable.h"
 
@@ -167,8 +168,14 @@ static void cb_parseable_flush(struct flb_event_chunk *event_chunk,
 
         // Add namespace_name to the HTTP header
         flb_http_add_header(client, "Content-Type", 12, "application/json", 16);
+        flb_plg_info(ctx->ins, "Adding Header: Content-Type: application/json");
+
         flb_http_add_header(client, "X-P-Stream", 12, namespace_name, flb_sds_len(namespace_name));
+        flb_plg_info(ctx->ins, "Adding Header: X-P-Stream: %s", namespace_name);
+
         flb_http_basic_auth(client, "admin", "admin");
+        flb_plg_info(ctx->ins, "Adding Header: Authorization: Basic <hidden>");
+
 
         /* Perform request */
         ret = flb_http_do(client, &b_sent);
@@ -181,6 +188,8 @@ static void cb_parseable_flush(struct flb_event_chunk *event_chunk,
         flb_plg_info(ctx->ins, "  URL: %s", client->uri);
         flb_plg_info(ctx->ins, "  Host: %s:%d", ctx->p_server, ctx->p_port);
         flb_plg_info(ctx->ins, "  Payload: %s", body ? body : "(null)");
+
+       
         /* Free up resources */
         flb_sds_destroy(body);
         flb_http_client_destroy(client);
