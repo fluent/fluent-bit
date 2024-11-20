@@ -99,7 +99,7 @@ static void cb_parseable_flush(struct flb_event_chunk *event_chunk,
 
         /* Convert from msgpack to JSON */
         body = flb_msgpack_raw_to_json_sds(sbuf.data, sbuf.size);
-        flb_plg_info(ctx->ins, "Body content: %s", body);
+        // flb_plg_info(ctx->ins, "Body content: %s", body);
 
         /* Free up buffer as we don't need it anymore */
         msgpack_sbuffer_destroy(&sbuf);
@@ -124,7 +124,7 @@ static void cb_parseable_flush(struct flb_event_chunk *event_chunk,
                     if (end_quote != NULL) {
                         *end_quote = '\0';  // Null-terminate the extracted value
                         namespace_name = flb_sds_printf(&namespace_name, "%s", namespace_name_value);
-                        flb_plg_info(ctx->ins, "Namespace name extracted value: %s", namespace_name_value);
+                        // flb_plg_info(ctx->ins, "Namespace name extracted value: %s", namespace_name_value);
                     }
                 }
             }
