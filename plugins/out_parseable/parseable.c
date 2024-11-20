@@ -117,6 +117,7 @@ static void cb_parseable_flush(struct flb_event_chunk *event_chunk,
         msgpack_sbuffer_destroy(&sbuf);
 
         /* Retrieve the namespace_name value from the body */
+       flb_sds_t namespace_name = flb_sds_create_size(256); // Dynamic string
         if (body != NULL) {
             // Search for the "namespace_name" field in the JSON string
             char *namespace_name_value = strstr(body, "\"namespace_name\":\"");
@@ -125,10 +126,12 @@ static void cb_parseable_flush(struct flb_event_chunk *event_chunk,
                 char *end_quote = strchr(namespace_name_value, '\"');
                 if (end_quote != NULL) {
                     *end_quote = '\0';  // Null-terminate the extracted value
-                    flb_plg_info(ctx->ins, "Namespace name: %s", namespace_name_value);
+                    namespace_name = flb_sds_printf(&namespace_name, "%s", namespace_name_value);
+                    flb_plg_info(ctx->ins, "Namespace name extracted value: %s", namespace_name_value);
                 }
             }
         }
+
 
         /* Get upstream connection */
         u_conn = flb_upstream_conn_get(ctx->upstream);
@@ -154,8 +157,15 @@ static void cb_parseable_flush(struct flb_event_chunk *event_chunk,
             FLB_OUTPUT_RETURN(FLB_ERROR);
         }
 
+        // Handle cases where namespace_name is empty
+        if (flb_sds_len(namespace_name) == 0) {
+            namespace_name = flb_sds_cat(namespace_name, "default-stream", 13);
+            flb_plg_info(ctx->ins, "Namespace name not found, using default: %s", namespace_name);
+        }
+
+        // Add namespace_name to the HTTP header
         flb_http_add_header(client, "Content-Type", 12, "application/json", 16);
-       // flb_http_add_header(client, "X-P-Stream", 12, "random", 6);
+        flb_http_add_header(client, "X-P-Stream", 12, namespace_name, flb_sds_len(namespace_name));
         flb_http_basic_auth(client, "admin", "admin");
 
         /* Perform request */
@@ -167,6 +177,8 @@ static void cb_parseable_flush(struct flb_event_chunk *event_chunk,
         flb_sds_destroy(body);
         flb_http_client_destroy(client);
         flb_upstream_conn_release(u_conn);
+        flb_sds_destroy(namespace_name);
+
     }
     msgpack_unpacked_destroy(&result);
 
