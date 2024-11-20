@@ -50,6 +50,7 @@ struct flb_in_kafka_config {
     size_t buffer_max_size;          /* Maximum size of chunk allocation */
     size_t polling_threshold;
     bool enable_auto_commit;
+    int poll_timeount_ms;
 };
 
 #endif
