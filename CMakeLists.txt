@@ -1080,6 +1080,17 @@ else()
   set(FLB_ARROW OFF)
 endif()
 
+# zstd
+# ==========
+set(ZSTD_BUILD_STATIC ON)
+set(ZSTD_BUILD_SHARED OFF)
+set(ZSTD_BUILD_COMPRESSION ON)
+set(ZSTD_BUILD_DECOMPRESSION ON)
+set(ZSTD_BUILD_DICTBUILDER ON)
+set(ZSTD_BUILD_DEPRECATED OFF)
+set(LIBRARY_DIR ${FLB_PATH_LIB_ZSTD_CMAKE_RELATIVE}) # !!TODO!!: before merge find a way to make a construction of an absolute path rather than using hacky relative path trick, much cleaner to construct an absolute path and pass it rather than rely on the dir structure with "./../../../lib" here relative to the deeply nested CMake directory bundled by zstd
+add_subdirectory(${FLB_PATH_LIB_ZSTD_CMAKE} EXCLUDE_FROM_ALL)
+
 # EBPF Support
 # ============
 if (FLB_IN_EBPF)

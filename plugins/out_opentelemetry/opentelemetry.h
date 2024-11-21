@@ -154,6 +154,7 @@ struct opentelemetry_context {
 
     /* Compression mode (gzip) */
     int compress_gzip;
+    int compress_zstd;
 
     /* FLB/OTLP Record accessor patterns */
     struct flb_record_accessor *ra_meta_schema;

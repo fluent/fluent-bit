@@ -389,9 +389,14 @@ struct opentelemetry_context *flb_opentelemetry_context_create(struct flb_output
 
     tmp = flb_output_get_property("compress", ins);
     ctx->compress_gzip = FLB_FALSE;
+    ctx->compress_zstd = FLB_FALSE;
     if (tmp) {
         if (strcasecmp(tmp, "gzip") == 0) {
             ctx->compress_gzip = FLB_TRUE;
+        } else if (strcasecmp(tmp, "zstd") == 0) {
+            ctx->compress_zstd = FLB_TRUE;
+        } else {
+            flb_plg_error(ins, "failed to set compression, unknown value");
         }
     }
 
