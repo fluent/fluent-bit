@@ -31,11 +31,20 @@ elif [[ ! -f "$SOURCE_DIR"/CMakeLists.txt ]]; then
     exit 1
 fi
 
+machine_id_file="$(mktemp)"
+< /dev/urandom tr -dc 'a-zA-Z0-9' | fold -w 32 | head -n 1 > "${machine_id_file}"
+
+exit_code=0
 # Run the action we want on it but using an in-container build directory to prevent various permissions errors and files locally
 "$CONTAINER_RUNTIME" run --rm -t -w "/tmp/source" -v "${SOURCE_DIR}:/source:ro" \
+    -v "${machine_id_file}:/etc/machine-id:ro" \
     -e INPUT_PRESET="$TEST_PRESET" \
     -e INPUT_DEPENDENCIES_DEBIAN="$ADDITIONAL_DEPS" \
     -e INPUT_CMAKEFLAGS="$FLB_CMAKE_OPTIONS $SKIP" \
     -e INPUT_PRE_COMMAND="cp -R /source /tmp" \
     -e INPUT_WORKING-DIRECTORY="/tmp/source" \
-    lpenz/ghaction-cmake:0.19
+    lpenz/ghaction-cmake:0.19 \
+    || exit_code=$?
+
+rm -f "${machine_id_file}"
+exit "${exit_code}"
