@@ -1713,44 +1713,41 @@ static int cb_process_metrics(struct flb_processor_instance *processor_instance,
         return FLB_PROCESSOR_FAILURE;
     }
 
-    result = delete_labels(metrics_context,
+    result = cmt_cat(out_cmt, metrics_context);
+    if (result != 0) {
+        cmt_destroy(out_cmt);
+
+        return FLB_PROCESSOR_FAILURE;
+    }
+
+    result = delete_labels(out_cmt,
                            &processor_context->delete_labels);
 
     if (result == FLB_PROCESSOR_SUCCESS) {
-        result = update_labels(metrics_context,
+        result = update_labels(out_cmt,
                                &processor_context->update_labels);
     }
 
     if (result == FLB_PROCESSOR_SUCCESS) {
-        result = upsert_labels(metrics_context,
+        result = upsert_labels(out_cmt,
                                &processor_context->upsert_labels);
     }
 
     if (result == FLB_PROCESSOR_SUCCESS) {
-        result = insert_labels(metrics_context,
+        result = insert_labels(out_cmt,
                                &processor_context->insert_labels);
     }
 
     if (result == FLB_PROCESSOR_SUCCESS) {
-        result = hash_labels(metrics_context,
+        result = hash_labels(out_cmt,
                              &processor_context->hash_labels);
-    }
-
-    if (result == FLB_PROCESSOR_SUCCESS) {
-        result = cmt_cat(out_cmt, metrics_context);
-        if (result != 0) {
-            cmt_destroy(out_cmt);
-
-            return FLB_PROCESSOR_FAILURE;
-        }
-
-        *out_context = out_cmt;
     }
 
     if (result != FLB_PROCESSOR_SUCCESS) {
         return FLB_PROCESSOR_FAILURE;
     }
 
+    *out_context = out_cmt;
     return FLB_PROCESSOR_SUCCESS;
 }
 
