@@ -449,7 +449,7 @@ static struct flb_config_map config_map[] = {
    {
     FLB_CONFIG_MAP_BOOL, "enable_auto_commit", FLB_IN_KAFKA_ENABLE_AUTO_COMMIT,
     0, FLB_TRUE, offsetof(struct flb_in_kafka_config, enable_auto_commit),
-    "Relay on kafka auto-commit and commit messages in batches"
+    "Rely on kafka auto-commit and commit messages in batches"
    },
    /* EOF */
    {0}
