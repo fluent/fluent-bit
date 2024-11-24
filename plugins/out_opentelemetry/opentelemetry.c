@@ -32,6 +32,7 @@
 
 #include <cmetrics/cmetrics.h>
 #include <fluent-bit/flb_gzip.h>
+#include <fluent-bit/flb_zstd.h>
 #include <cmetrics/cmt_encode_opentelemetry.h>
 
 #include <ctraces/ctraces.h>
@@ -43,8 +44,6 @@ extern void cmt_encode_opentelemetry_destroy(cfl_sds_t text);
 #include "opentelemetry.h"
 #include "opentelemetry_conf.h"
 #include "opentelemetry_utils.h"
-
-#include <zstd/lib/zstd.h>
 
 int opentelemetry_legacy_post(struct opentelemetry_context *ctx,
                               const void *body, size_t body_len,
@@ -85,40 +84,22 @@ int opentelemetry_legacy_post(struct opentelemetry_context *ctx,
             compressed = FLB_TRUE;
         }
         else {
+            final_body = (void *) body;
+            final_body_len = body_len;
             flb_plg_error(ctx->ins, "cannot gzip payload, disabling compression");
         }
     }
     else if (ctx->compress_zstd) {
-        // NB(rob): final_body and final_body_len are never initialized
-        // so we need to estimate compressed size and then alloc
-        // the output buffer. 
-        // Caller needs to free output_buffer after call to this function.
-        size_t max_compress_size = (size_t)ZSTD_compressBound(body_len);
-        if (ZSTD_isError(max_compress_size) != 0) {
-            flb_error("zstd compression failed estimate buffer");
-            final_body = (void *) body;
-            final_body_len = body_len;
-            return -1;
-        }
+        ret = flb_zstd_compress((void *) body, body_len,
+                                &final_body, &final_body_len);
 
-        void *out_buf = flb_malloc(max_compress_size);
-
-        size_t compress_ret = ZSTD_compress(out_buf, 
-                                            max_compress_size,
-                                            body, 
-                                            body_len,
-                                            ZSTD_CLEVEL_DEFAULT);
-        if (ZSTD_isError(compress_ret) != 0) {
-            final_body = (void *) body;
-            final_body_len = body_len;
-            ret = -1;
-            flb_plg_error(ctx->ins, "cannot zstd compress payload, disabling compression");
+        if (ret == 0) {
+            compressed = FLB_TRUE;
         }
         else {
-            final_body = out_buf;
-            final_body_len = compress_ret;
-            compressed = FLB_TRUE;
-            ret = 0;
+            final_body = (void *) body;
+            final_body_len = body_len;
+            flb_plg_error(ctx->ins, "cannot zstd payload, disabling compression");
         }
     }
     else {

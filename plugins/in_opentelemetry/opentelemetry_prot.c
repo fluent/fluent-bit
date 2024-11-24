@@ -24,6 +24,7 @@
 #include <fluent-bit/flb_time.h>
 #include <fluent-bit/flb_gzip.h>
 #include <fluent-bit/flb_snappy.h>
+#include <fluent-bit/flb_zstd.h>
 #include <fluent-bit/flb_mp.h>
 #include <fluent-bit/flb_log_event_encoder.h>
 
@@ -38,8 +39,6 @@
 #include <fluent-otel-proto/fluent-otel.h>
 #include "opentelemetry.h"
 #include "http_conn.h"
-
-#include <zstd/lib/zstd.h>
 
 #define HTTP_CONTENT_JSON  0
 
@@ -1659,36 +1658,19 @@ int uncompress_zstd(char **output_buffer,
                     char *input_buffer,
                     size_t input_size)
 {
-    // NB(rob): output_buffer and output_size are never initialized
-    // so we need to estimate compressed size and then alloc
-    // the output buffer. 
-    // Caller needs to free output_buffer after call to this function.
-    size_t max_decompress_size = (size_t)ZSTD_getFrameContentSize(
-        (void*)input_buffer, input_size);
-    if (ZSTD_isError(max_decompress_size) != 0) {
-        flb_error("[opentelemetry] zstd decompression failed estimate buffer");
-        *output_buffer = (char *)input_buffer;
-        *output_size = input_size;
-        return -1;
-    }
+    int ret;
 
-    void *out_buf = flb_malloc(max_decompress_size);
+    ret = flb_zstd_uncompress(input_buffer,
+                              input_size,
+                              (void **)output_buffer,
+                              output_size);
 
-    size_t ret;
-
-    ret = ZSTD_decompress(out_buf, 
-                          max_decompress_size,
-                          (void *)input_buffer, 
-                          input_size);
-    if (ZSTD_isError(ret) != 0) {
+    if (ret != 0) {
         flb_error("[opentelemetry] zstd decompression failed");
-        *output_buffer = (char *)input_buffer;
-        *output_size = input_size;
+
         return -1;
     }
 
-    *output_buffer = (char *)out_buf;
-    *output_size = ret;
     return 1;
 }
 

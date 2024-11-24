@@ -24,8 +24,7 @@
 #include <fluent-bit/flb_signv4_ng.h>
 #include <fluent-bit/flb_snappy.h>
 #include <fluent-bit/flb_gzip.h>
-
-#include <zstd/lib/zstd.h>
+#include <fluent-bit/flb_zstd.h>
 
 /* PRIVATE */
 
@@ -1468,36 +1467,19 @@ int uncompress_zstd(char **output_buffer,
                     char *input_buffer,
                     size_t input_size)
 {
-    // NB(rob): output_buffer and output_size are never initialized
-    // so we need to estimate compressed size and then alloc
-    // the output buffer. 
-    // Caller needs to free output_buffer after call to this function.
-    size_t max_decompress_size = (size_t)ZSTD_getFrameContentSize(
-        (void*)input_buffer, input_size);
-    if (ZSTD_isError(max_decompress_size) != 0) {
-        flb_error("[opentelemetry] zstd decompression failed estimate buffer: error_no=%zu", max_decompress_size);
-        *output_buffer = (char *)input_buffer;
-        *output_size = input_size;
+    int ret;
+
+    ret = flb_zstd_uncompress(input_buffer,
+                              input_size,
+                              output_buffer,
+                              output_size);
+
+    if (ret != 0) {
+        flb_error("zstd decompression failed");
+
         return -1;
     }
 
-    void *out_buf = flb_malloc(max_decompress_size);
-
-    size_t ret;
-
-    ret = ZSTD_decompress(out_buf, 
-                          max_decompress_size,
-                          (void *)input_buffer, 
-                          input_size);
-    if (ZSTD_isError(ret) != 0) {
-        flb_error("[opentelemetry] zstd decompression failed");
-        *output_buffer = (char *)input_buffer;
-        *output_size = input_size;
-        return -1;
-    }
-
-    *output_buffer = (char *)out_buf;
-    *output_size = ret;
     return 1;
 }
 
@@ -1570,36 +1552,18 @@ int compress_zstd(char **output_buffer,
                   char *input_buffer,
                   size_t input_size)
 {
-    // NB(rob): output_buffer and output_size are never initialized
-    // so we need to estimate compressed size and then alloc
-    // the output buffer. 
-    // Caller needs to free output_buffer after call to this function.
-    size_t max_compress_size = (size_t)ZSTD_compressBound(input_size);
-    if (ZSTD_isError(max_compress_size) != 0) {
-        flb_error("zstd compression failed estimate buffer");
-        *output_buffer = (char *)input_buffer;
-        *output_size = input_size;
+    int ret;
+
+    ret = flb_zstd_compress((void *) input_buffer,
+                            input_size,
+                            (void **) output_buffer,
+                            output_size);
+
+    if (ret == -1) {
+        flb_error("http client zstd compression failed");
         return -1;
     }
 
-    void *out_buf = flb_malloc(max_compress_size);
-
-    size_t ret;
-
-    ret = ZSTD_compress(out_buf,
-                        max_compress_size,
-                        (void *)input_buffer, 
-                        input_size,
-                        ZSTD_CLEVEL_DEFAULT);
-    if (ZSTD_isError(ret) != 0) {
-        flb_error("zstd compression failed: error_no=%zu", ret);
-        *output_buffer = (char *)input_buffer;
-        *output_size = input_size;
-        return -1;
-    }
-
-    *output_buffer = (char *)out_buf;
-    *output_size = ret;
     return 1;
 }
 
