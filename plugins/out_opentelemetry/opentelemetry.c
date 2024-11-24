@@ -94,8 +94,7 @@ int opentelemetry_legacy_post(struct opentelemetry_context *ctx,
         // the output buffer. 
         // Caller needs to free output_buffer after call to this function.
         size_t max_compress_size = (size_t)ZSTD_compressBound(body_len);
-
-        if (ZSTD_isError(max_compress_size)) {
+        if (ZSTD_isError(max_compress_size) != 0) {
             flb_error("zstd compression failed estimate buffer");
             final_body = (void *) body;
             final_body_len = body_len;
@@ -109,18 +108,17 @@ int opentelemetry_legacy_post(struct opentelemetry_context *ctx,
                                             body, 
                                             body_len,
                                             ZSTD_CLEVEL_DEFAULT);
-
-        if (!ZSTD_isError(compress_ret)) {
-            final_body = out_buf;
-            final_body_len = compress_ret;
-            compressed = FLB_TRUE;
-            ret = 0;
-        }
-        else {
+        if (ZSTD_isError(compress_ret) != 0) {
             final_body = (void *) body;
             final_body_len = body_len;
             ret = -1;
             flb_plg_error(ctx->ins, "cannot zstd compress payload, disabling compression");
+        }
+        else {
+            final_body = out_buf;
+            final_body_len = compress_ret;
+            compressed = FLB_TRUE;
+            ret = 0;
         }
     }
     else {

@@ -1474,8 +1474,7 @@ int uncompress_zstd(char **output_buffer,
     // Caller needs to free output_buffer after call to this function.
     size_t max_decompress_size = (size_t)ZSTD_getFrameContentSize(
         (void*)input_buffer, input_size);
-
-    if (ZSTD_isError(max_decompress_size)) {
+    if (ZSTD_isError(max_decompress_size) != 0) {
         flb_error("[opentelemetry] zstd decompression failed estimate buffer: error_no=%zu", max_decompress_size);
         *output_buffer = (char *)input_buffer;
         *output_size = input_size;
@@ -1490,8 +1489,7 @@ int uncompress_zstd(char **output_buffer,
                           max_decompress_size,
                           (void *)input_buffer, 
                           input_size);
-
-    if (ZSTD_isError(ret)) {
+    if (ZSTD_isError(ret) != 0) {
         flb_error("[opentelemetry] zstd decompression failed");
         *output_buffer = (char *)input_buffer;
         *output_size = input_size;
@@ -1577,8 +1575,7 @@ int compress_zstd(char **output_buffer,
     // the output buffer. 
     // Caller needs to free output_buffer after call to this function.
     size_t max_compress_size = (size_t)ZSTD_compressBound(input_size);
-
-    if (ZSTD_isError(max_compress_size)) {
+    if (ZSTD_isError(max_compress_size) != 0) {
         flb_error("zstd compression failed estimate buffer");
         *output_buffer = (char *)input_buffer;
         *output_size = input_size;
@@ -1594,8 +1591,7 @@ int compress_zstd(char **output_buffer,
                         (void *)input_buffer, 
                         input_size,
                         ZSTD_CLEVEL_DEFAULT);
-
-    if (ZSTD_isError(ret)) {
+    if (ZSTD_isError(ret) != 0) {
         flb_error("zstd compression failed: error_no=%zu", ret);
         *output_buffer = (char *)input_buffer;
         *output_size = input_size;
