@@ -1,0 +1,78 @@
+# Copyright (C) 2019 Intel Corporation.  All rights reserved.
+# SPDX-License-Identifier: Apache-2.0 WITH LLVM-exception
+name: build wamr-sdk
+
+on:
+  workflow_call:
+    inputs:
+      arch:
+        description: arch of the release
+        type: string
+        required: false
+        default: x86_64
+      config_file:
+        description: warm-sdk config file path
+        type: string
+        required: true
+      runner:
+        description: OS of compilation
+        type: string
+        required: true
+      upload_url:
+        description: upload binary assets to the URL of release
+        type: string
+        required: true
+      ver_num:
+        description: a semantic version number
+        type: string
+        required: true
+      wasi_sdk_url:
+        description: download WASI_SDK from this URL
+        type: string
+        required: true
+
+jobs:
+  build:
+    runs-on: ${{ inputs.runner }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: download and install wasi-sdk
+        run: |
+          cd /opt
+          basename=$(basename ${{ inputs.wasi_sdk_url }})
+          sudo wget --progress=dot:giga ${{ inputs.wasi_sdk_url }}
+          sudo tar -xzf ${basename}
+          sudo rm ${basename}
+          sudo mv wasi-sdk-* wasi-sdk
+
+      - name: generate wamr-sdk release
+        run: |
+          ./build_sdk.sh -n wamr-sdk -x $(pwd)/${{ inputs.config_file }}
+        working-directory: wamr-sdk
+
+      - name: compress the binary
+        run: |
+          tar czf wamr-sdk-${{ inputs.ver_num }}-${{ inputs.runner }}.tar.gz wamr-sdk
+          zip -r wamr-sdk-${{ inputs.ver_num }}-${{ inputs.runner }}.zip wamr-sdk
+        working-directory: wamr-sdk/out
+
+      - name: upload release tar.gz
+        uses: actions/upload-release-asset@v1
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        with:
+          upload_url: ${{ inputs.upload_url }}
+          asset_path: wamr-sdk/out/wamr-sdk-${{ inputs.ver_num }}-${{ inputs.runner }}.tar.gz
+          asset_name: wamr-sdk-${{ inputs.ver_num }}-${{ inputs.arch }}-${{ inputs.runner }}.tar.gz
+          asset_content_type: application/x-gzip
+
+      - name: upload release zip
+        uses: actions/upload-release-asset@v1
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        with:
+          upload_url: ${{ inputs.upload_url }}
+          asset_path: wamr-sdk/out/wamr-sdk-${{ inputs.ver_num }}-${{ inputs.runner }}.zip
+          asset_name: wamr-sdk-${{ inputs.ver_num }}-${{ inputs.arch }}-${{ inputs.runner }}.zip
+          asset_content_type: application/zip

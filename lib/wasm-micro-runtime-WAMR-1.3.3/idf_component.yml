@@ -1,0 +1,14 @@
+version: "1.3.2"
+description: WebAssembly Micro Runtime - A lightweight standalone WebAssembly (Wasm) runtime with small footprint, high performance and highly configurable features
+url: https://bytecodealliance.org/
+repository: https://github.com/bytecodealliance/wasm-micro-runtime.git
+documentation: https://wamr.gitbook.io/
+issues: https://github.com/bytecodealliance/wasm-micro-runtime/issues
+dependencies:
+  idf: ">=4.4"
+targets:
+  - esp32
+  - esp32s3
+  - esp32c3
+examples:
+  - path: product-mini/platforms/esp-idf
