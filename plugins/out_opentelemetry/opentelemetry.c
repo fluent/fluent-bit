@@ -258,7 +258,8 @@ int opentelemetry_post(struct opentelemetry_context *ctx,
         return FLB_RETRY;
     }
 
-    if (request->protocol_version == HTTP_PROTOCOL_VERSION_20) {
+    if (request->protocol_version == HTTP_PROTOCOL_VERSION_20 &&
+        ctx->enable_grpc_flag) {
         grpc_body = cfl_sds_create_size(body_len + 5);
 
         if (grpc_body == NULL) {
@@ -269,7 +270,7 @@ int opentelemetry_post(struct opentelemetry_context *ctx,
 
         wire_message_length = (uint32_t) body_len;
 
-        cfl_sds_cat(grpc_body, "\x00----", 5);
+        sds_result = cfl_sds_cat(grpc_body, "\x00----", 5);
 
         if (sds_result == NULL) {
             flb_http_client_request_destroy(request, FLB_TRUE);
@@ -376,17 +377,24 @@ int opentelemetry_post(struct opentelemetry_context *ctx,
      * - 205: Reset content
      *
      */
+
     if (response->status < 200 || response->status > 205) {
         if (ctx->log_response_payload &&
             response->body != NULL &&
             cfl_sds_len(response->body) > 0) {
-            flb_plg_error(ctx->ins, "%s:%i, HTTP status=%i\n%s",
-                            ctx->host, ctx->port,
-                            response->status, response->body);
+            flb_plg_error(ctx->ins,
+                          "%s:%i, HTTP status=%i\n%s",
+                          ctx->host,
+                          ctx->port,
+                          response->status,
+                          response->body);
         }
         else {
-            flb_plg_error(ctx->ins, "%s:%i, HTTP status=%i",
-                            ctx->host, ctx->port, response->status);
+            flb_plg_error(ctx->ins,
+                          "%s:%i, HTTP status=%i",
+                          ctx->host,
+                          ctx->port,
+                          response->status);
         }
 
         out_ret = FLB_RETRY;
@@ -698,6 +706,11 @@ static struct flb_config_map config_map[] = {
      FLB_CONFIG_MAP_STR, "http2", "on",
      0, FLB_TRUE, offsetof(struct opentelemetry_context, enable_http2),
      "Enable, disable or force HTTP/2 usage. Accepted values : on, off, force"
+    },
+    {
+     FLB_CONFIG_MAP_BOOL, "grpc", "off",
+     0, FLB_TRUE, offsetof(struct opentelemetry_context, enable_grpc_flag),
+     "Enable, disable or force gRPC usage. Accepted values : on, off, auto"
     },
     {
      FLB_CONFIG_MAP_STR, "proxy", NULL,
