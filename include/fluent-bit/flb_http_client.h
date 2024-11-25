@@ -28,6 +28,8 @@
 #include <fluent-bit/flb_http_client_http1.h>
 #include <fluent-bit/flb_http_client_http2.h>
 
+#define HTTP_CLIENT_TEMPORARY_BUFFER_SIZE (1024 * 64)
+
 #define HTTP_CLIENT_SUCCESS         0
 #define HTTP_CLIENT_PROVIDER_ERROR -1
 
@@ -188,6 +190,7 @@ struct flb_http_client_ng {
     uint16_t                port;
     uint64_t                flags;
     int                     protocol_version;
+    cfl_sds_t               temporary_buffer;
 
     int                     releasable;
     void                   *user_data;
