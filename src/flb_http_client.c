@@ -1510,6 +1510,12 @@ int flb_http_client_ng_init(struct flb_http_client_ng *client,
 {
     memset(client, 0, sizeof(struct flb_http_client_ng));
 
+    client->temporary_buffer = cfl_sds_create_size(HTTP_CLIENT_TEMPORARY_BUFFER_SIZE);
+
+    if (client->temporary_buffer == NULL) {
+        return -1;
+    }
+
     client->protocol_version = protocol_version;
     client->upstream_ha = upstream_ha;
     client->upstream = upstream;
@@ -1582,6 +1588,12 @@ void flb_http_client_ng_destroy(struct flb_http_client_ng *client)
     flb_lock_acquire(&client->lock,
                      FLB_LOCK_INFINITE_RETRY_LIMIT,
                      FLB_LOCK_DEFAULT_RETRY_DELAY);
+
+    if (client->temporary_buffer != NULL) {
+        cfl_sds_destroy(client->temporary_buffer);
+
+        client->temporary_buffer = NULL;
+    }
 
     cfl_list_foreach_safe(iterator,
                           iterator_backup,
@@ -1701,6 +1713,7 @@ struct flb_http_client_session *flb_http_client_session_begin(struct flb_http_cl
     int                             protocol_version;
     struct flb_upstream_node       *upstream_node;
     struct flb_connection          *connection;
+    struct flb_upstream            *upstream;
     struct flb_http_client_session *session;
     const char                     *alpn;
 
@@ -1711,10 +1724,14 @@ struct flb_http_client_session *flb_http_client_session_begin(struct flb_http_cl
             return NULL;
         }
 
+        upstream = upstream_node->u;
+
         connection = flb_upstream_conn_get(upstream_node->u);
     }
     else {
         upstream_node = NULL;
+
+        upstream = client->upstream;
 
         connection = flb_upstream_conn_get(client->upstream);
     }
@@ -1745,6 +1762,10 @@ struct flb_http_client_session *flb_http_client_session_begin(struct flb_http_cl
 
     if (protocol_version == HTTP_PROTOCOL_VERSION_AUTODETECT) {
         protocol_version = HTTP_PROTOCOL_VERSION_11;
+    }
+
+    if (protocol_version == HTTP_PROTOCOL_VERSION_20) {
+        flb_stream_disable_keepalive(&upstream->base);
     }
 
     session = flb_http_client_session_create(client, protocol_version, connection);
@@ -1932,20 +1953,20 @@ struct flb_http_response *flb_http_client_request_execute(struct flb_http_reques
 
 static int flb_http_client_session_read(struct flb_http_client_session *session)
 {
-    unsigned char input_buffer[1024 * 65];
     ssize_t result;
 
     result = flb_io_net_read(session->connection,
-                             (void *) &input_buffer,
-                             sizeof(input_buffer));
+                             (void *) session->parent->temporary_buffer,
+                             cfl_sds_avail(session->parent->temporary_buffer));
 
     if (result <= 0) {
         return -1;
     }
 
-    result = (ssize_t) flb_http_client_session_ingest(session,
-                                                      input_buffer,
-                                                      result);
+    result = (ssize_t) flb_http_client_session_ingest(
+                            session,
+                            (unsigned char *) session->parent->temporary_buffer,
+                            result);
 
     if (result < 0) {
         return -2;
