@@ -46,6 +46,7 @@ struct opentelemetry_body_key {
 struct opentelemetry_context {
     int   enable_http2_flag;
     char *enable_http2;
+    int   enable_grpc_flag;
 
     /* HTTP Auth */
     char *http_user;
