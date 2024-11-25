@@ -256,6 +256,8 @@ if(FLB_ALL)
 endif()
 
 if(FLB_DEV)
+  FLB_DEFINITION(FLB_HAVE_DEV)
+
   set(FLB_DEBUG             On)
   set(FLB_TRACE             On)
   set(FLB_CHUNK_TRACE       On)
