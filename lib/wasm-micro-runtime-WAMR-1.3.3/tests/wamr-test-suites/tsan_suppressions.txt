@@ -1,0 +1,8 @@
+# Proposing to accept this risk for now. It might be wasi-libc related.
+# https://github.com/bytecodealliance/wasm-micro-runtime/pull/1963#issuecomment-1455342931
+race:STORE_U32
+race:STORE_U8
+
+# Suppressing signal-unsafe inside of a signal for AOT mode 
+# see https://github.com/bytecodealliance/wasm-micro-runtime/issues/2248#issuecomment-1630189656
+signal:*
