@@ -1,0 +1,263 @@
+{
+    "name": "wamride",
+    "publisher": "wamr-ide",
+    "repository": {
+        "url": "https://github.com/bytecodealliance/wasm-micro-runtime/tree/main/test-tools/wamr-ide"
+    },
+    "displayName": "WAMR-IDE",
+    "description": "An Integrated Development Environment for WASM",
+    "version": "1.3.2",
+    "engines": {
+        "vscode": "^1.59.0",
+        "node": ">=16.0.0"
+    },
+    "engineStrict": true,
+    "categories": [
+        "Other"
+    ],
+    "activationEvents": [
+        "onStartupFinished"
+    ],
+    "main": "./out/extension.js",
+    "contributes": {
+        "commands": [
+            {
+                "command": "wamride.newProject",
+                "title": "Create new project",
+                "category": "New project"
+            },
+            {
+                "command": "wamride.changeWorkspace",
+                "title": "Change workspace",
+                "category": "Change Workspace"
+            },
+            {
+                "command": "wamride.build",
+                "title": "WAMRIDE:Build Wasm"
+            },
+            {
+                "command": "wamride.run",
+                "title": "WAMRIDE:Run Wasm"
+            },
+            {
+                "command": "wamride.debug",
+                "title": "WAMRIDE:Source Debug"
+            },
+            {
+                "command": "wamride.openFolder",
+                "title": "WAMRIDE:openWorkspace"
+            },
+            {
+                "command": "wamride.build.toggleStateIncludePath",
+                "title": "Toggle state of path including"
+            },
+            {
+                "command": "wamride.build.toggleStateExclude",
+                "title": "Toggle state of excluding"
+            },
+            {
+                "command": "wamride.targetConfig",
+                "title": "Target Configuration"
+            }
+        ],
+        "viewsContainers": {
+            "activitybar": [
+                {
+                    "id": "wamride",
+                    "title": "WAMRIDE",
+                    "icon": "$(star)"
+                }
+            ]
+        },
+        "views": {
+            "wamride": [
+                {
+                    "id": "wamride.views.welcome",
+                    "name": "Quick Access"
+                }
+            ]
+        },
+        "viewsWelcome": [
+            {
+                "view": "wamride.views.welcome",
+                "contents": "[ WAMR IDE ]\n[$(project)New project](command:wamride.newProject)\n[$(files)Open project](command:wamride.openFolder)\n[$(book)Change workspace](command:wamride.changeWorkspace)"
+            },
+            {
+                "view": "wamride.views.welcome",
+                "contents": "[ Current Project ]\n[$(pencil)Configuration](command:wamride.targetConfig)\n[$(gear)Build](command:wamride.build)\n[$(run)Run](command:wamride.run)\n[$(debug-alt) Debug](command:wamride.debug)",
+                "enablement": "ext.isWasmProject"
+            }
+        ],
+        "menus": {
+            "explorer/context": [
+                {
+                    "command": "wamride.build.toggleStateIncludePath",
+                    "alt": "wamride.build.toggleStateIncludePath",
+                    "group": "config",
+                    "when": "explorerResourceIsFolder"
+                },
+                {
+                    "command": "wamride.build.toggleStateExclude",
+                    "alt": "wamride.build.toggleStateExclude",
+                    "group": "config",
+                    "when": "!explorerResourceIsFolder && resourceExtname in ext.supportedFileType"
+                }
+            ]
+        },
+        "debuggers": [
+            {
+                "type": "wamr-debug",
+                "label": "WAMR lldb debugger",
+                "enableBreakpointsFor": {
+                    "languageIds": [
+                        "ada",
+                        "arm",
+                        "asm",
+                        "c",
+                        "cpp",
+                        "crystal",
+                        "d",
+                        "fortan",
+                        "fortran-modern",
+                        "nim",
+                        "objective-c",
+                        "objectpascal",
+                        "pascal",
+                        "rust",
+                        "swift"
+                    ]
+                },
+                "windows": {
+                    "program": "./resource/debug/windows/bin/lldb-vscode.exe"
+                },
+                "osx": {
+                    "program": "./resource/debug/darwin/bin/lldb-vscode"
+                },
+                "linux": {
+                    "program": "./resource/debug/linux/bin/lldb-vscode"
+                },
+                "configurationAttributes": {
+                    "attach": {
+                        "properties": {
+                            "sourcePath": {
+                                "type": "string",
+                                "description": "Specify a source path to remap \"./\" to allow full paths to be used when setting breakpoints in binaries that have relative source paths."
+                            },
+                            "sourceMap": {
+                                "type": "array",
+                                "description": "Specify an array of path remappings; each element must itself be a two element array containing a source and destination pathname. Overrides sourcePath.",
+                                "default": []
+                            },
+                            "debuggerRoot": {
+                                "type": "string",
+                                "description": "Specify a working directory to set the debug adaptor to so relative object files can be located."
+                            },
+                            "attachCommands": {
+                                "type": "array",
+                                "description": "Custom commands that are executed instead of attaching to a process ID or to a process by name. These commands may optionally create a new target and must perform an attach. A valid process must exist after these commands complete or the \"attach\" will fail.",
+                                "default": []
+                            },
+                            "initCommands": {
+                                "type": "array",
+                                "description": "Initialization commands executed upon debugger startup.",
+                                "default": []
+                            },
+                            "preRunCommands": {
+                                "type": "array",
+                                "description": "Commands executed just before the program is attached to.",
+                                "default": []
+                            },
+                            "stopCommands": {
+                                "type": "array",
+                                "description": "Commands executed each time the program stops.",
+                                "default": []
+                            },
+                            "exitCommands": {
+                                "type": "array",
+                                "description": "Commands executed at the end of debugging session.",
+                                "default": []
+                            }
+                        }
+                    }
+                },
+                "initialConfigurations": [
+                    {
+                        "type": "wamr-debug",
+                        "request": "attach",
+                        "name": "Debug",
+                        "stopOnEntry": true,
+                        "attachCommands": [
+                            "process connect -p wasm connect://127.0.0.1:1234"
+                        ]
+                    }
+                ],
+                "configurationSnippets": [
+                    {
+                        "label": "WAMR: Attach",
+                        "description": "",
+                        "body": {
+                            "type": "wamr-debug",
+                            "request": "attach",
+                            "name": "${2:Attach}",
+                            "stopOnEntry": true,
+                            "attachCommands": [
+                                "process connect -p wasm connect://${3:127.0.0.1}:${4:1234}"
+                            ]
+                        }
+                    }
+                ]
+            }
+        ],
+        "configuration": [
+            {
+                "title": "WAMR-IDE",
+                "properties": {
+                    "WAMR-IDE.configWorkspace": {
+                        "type": "string",
+                        "description": "Config the workspace for WebAssembly project."
+                    }
+                }
+            }
+        ],
+        "taskDefinitions": [
+            {
+                "type": "wasm"
+            }
+        ]
+    },
+    "scripts": {
+        "vscode:prepublish": "npm run compile",
+        "compile": "tsc -p ./",
+        "watch": "tsc -watch -p ./",
+        "pretest": "npm run compile && npm run lint",
+        "lint": "eslint src --ext ts",
+        "lint-fix": "eslint --fix src --ext ts",
+        "test": "node ./out/test/runTest.js",
+        "prettier-format-check": "prettier --config .prettierrc.json 'src/**/*.ts' --check",
+        "prettier-format-apply": "prettier --config .prettierrc.json 'src/**/*.ts' --write"
+    },
+    "devDependencies": {
+        "@types/chai": "^4.3.5",
+        "@types/glob": "^7.1.3",
+        "@types/mocha": "^8.2.2",
+        "@types/node": "14.x",
+        "@types/request": "^2.48.8",
+        "@types/vscode": "^1.54.0",
+        "@types/yauzl": "^2.10.0",
+        "@typescript-eslint/eslint-plugin": "^4.26.0",
+        "@typescript-eslint/parser": "^4.26.0",
+        "@vscode/debugprotocol": "^1.61.0",
+        "@vscode/test-electron": "^2.3.3",
+        "chai": "^4.3.7",
+        "eslint": "^7.32.0",
+        "glob": "^7.1.7",
+        "mocha": "^10.2.0",
+        "prettier": "2.5.1",
+        "typescript": "^4.3.2"
+    },
+    "dependencies": {
+        "@vscode/webview-ui-toolkit": "^0.8.4",
+        "request": "^2.88.2",
+        "yauzl": "^2.10.0"
+    }
+}
