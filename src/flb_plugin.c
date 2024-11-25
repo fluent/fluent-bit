@@ -428,7 +428,6 @@ int flb_plugin_load_config_file(const char *file, struct flb_config *config)
      */
     ret = flb_plugin_load_config_format(cf, config);
     if (ret == -1) {
-        flb_cf_destroy(cf);
         return -1;
     }
 
