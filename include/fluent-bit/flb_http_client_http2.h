@@ -22,6 +22,7 @@
 
 #include <fluent-bit/flb_http_common.h>
 #include <nghttp2/nghttp2.h>
+#include <nghttp2/nghttp2.h>
 
 struct flb_http_client_session;
 
