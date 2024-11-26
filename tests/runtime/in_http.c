@@ -588,7 +588,7 @@ void flb_test_http_failure_400_bad_disk_write()
     test_ctx_destroy(ctx);
 }
 
-void flb_test_http_tag_key()
+void test_http_tag_key(char *input)
 {
     struct flb_lib_out_cb cb_data;
     struct test_ctx *ctx;
@@ -597,7 +597,7 @@ void flb_test_http_tag_key()
     int num;
     size_t b_sent;
 
-    char *buf = "{\"test\":\"msg\", \"tag\":\"new_tag\"}";
+    char *buf = input;
 
     clear_output_num();
 
@@ -661,12 +661,23 @@ void flb_test_http_tag_key()
     test_ctx_destroy(ctx);
 }
 
+void flb_test_http_tag_key_with_map_input()
+{
+    test_http_tag_key("{\"tag\":\"new_tag\",\"test\":\"msg\"}");
+}
+
+void flb_test_http_tag_key_with_array_input()
+{
+    test_http_tag_key("[{\"tag\":\"new_tag\",\"test\":\"msg\"}]");
+}
+
 TEST_LIST = {
     {"http", flb_test_http},
     {"successful_response_code_200", flb_test_http_successful_response_code_200},
     {"successful_response_code_204", flb_test_http_successful_response_code_204},
     {"failure_response_code_400_bad_json", flb_test_http_failure_400_bad_json},
     {"failure_response_code_400_bad_disk_write", flb_test_http_failure_400_bad_disk_write},
-    {"tag_key", flb_test_http_tag_key},
+    {"tag_key_with_map_input", flb_test_http_tag_key_with_map_input},
+    {"tag_key_with_array_input", flb_test_http_tag_key_with_array_input},
     {NULL, NULL}
 };
