@@ -843,6 +843,11 @@ static int process_pack_ng(struct flb_http *ctx, flb_sds_t tag, char *buf, size_
             {
                 record = obj->via.array.ptr[i];
 
+                tag_from_record = NULL;
+                if (ctx->tag_key) {
+                    tag_from_record = tag_key(ctx, &record);
+                }
+
                 if (tag_from_record) {
                     ret = process_pack_record(ctx, &tm, tag_from_record, &record);
                     flb_sds_destroy(tag_from_record);
