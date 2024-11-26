@@ -49,7 +49,10 @@
 #define AZURE_KUSTO_RESOURCE_UPSTREAM_URI "uri"
 #define AZURE_KUSTO_RESOURCE_UPSTREAM_SAS "sas"
 
-#define FLB_AZURE_KUSTO_RESOURCES_LOAD_INTERVAL_SEC 3600
+#define FLB_AZURE_KUSTO_RESOURCES_LOAD_INTERVAL_SEC "3600"
+
+#define FLB_AZURE_KUSTO_INGEST_ENDPOINT_CONNECTION_TIMEOUT "60"
+
 
 struct flb_azure_kusto_resources {
     struct flb_upstream_ha *blob_ha;
@@ -69,6 +72,13 @@ struct flb_azure_kusto {
     flb_sds_t database_name;
     flb_sds_t table_name;
     flb_sds_t ingestion_mapping_reference;
+
+    int ingestion_endpoint_connect_timeout;
+
+    /* compress payload */
+    int compression_enabled;
+
+    int ingestion_resources_refresh_interval;
 
     /* records configuration */
     flb_sds_t log_key;
@@ -93,6 +103,8 @@ struct flb_azure_kusto {
 
     /* mutex for loading reosurces */
     pthread_mutex_t resources_mutex;
+
+    pthread_mutex_t blob_mutex;
 
     /* Upstream connection to the backend server */
     struct flb_upstream *u;
