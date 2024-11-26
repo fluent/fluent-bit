@@ -1068,6 +1068,18 @@ int flb_http_set_content_encoding_gzip(struct flb_http_client *c)
     return ret;
 }
 
+/* Adds a header specifying that the payload is compressed with zstd */
+int flb_http_set_content_encoding_zstd(struct flb_http_client *c)
+{
+    int ret;
+
+    ret = flb_http_add_header(c,
+                              FLB_HTTP_HEADER_CONTENT_ENCODING,
+                              sizeof(FLB_HTTP_HEADER_CONTENT_ENCODING) - 1,
+                              "zstd", 4);
+    return ret;
+}
+
 int flb_http_set_callback_context(struct flb_http_client *c,
                                   struct flb_callback *cb_ctx)
 {

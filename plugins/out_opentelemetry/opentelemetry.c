@@ -52,6 +52,7 @@ int opentelemetry_legacy_post(struct opentelemetry_context *ctx,
 {
     size_t                     final_body_len;
     void                      *final_body;
+    const char                *compression_algorithm;
     int                        compressed;
     int                        out_ret;
     size_t                     b_sent;
@@ -63,6 +64,7 @@ int opentelemetry_legacy_post(struct opentelemetry_context *ctx,
     struct flb_config_map_val *mv;
     struct flb_http_client    *c;
 
+    compression_algorithm = NULL;
     compressed = FLB_FALSE;
 
     u_conn = flb_upstream_conn_get(ctx->u);
@@ -81,6 +83,7 @@ int opentelemetry_legacy_post(struct opentelemetry_context *ctx,
                                 &final_body, &final_body_len);
 
         if (ret == 0) {
+            compression_algorithm = "gzip";
             compressed = FLB_TRUE;
         }
         else {
@@ -94,6 +97,7 @@ int opentelemetry_legacy_post(struct opentelemetry_context *ctx,
                                 &final_body, &final_body_len);
 
         if (ret == 0) {
+            compression_algorithm = "zstd";
             compressed = FLB_TRUE;
         }
         else {
@@ -163,7 +167,12 @@ int opentelemetry_legacy_post(struct opentelemetry_context *ctx,
     }
 
     if (compressed) {
-        flb_http_set_content_encoding_gzip(c);
+        if (strncasecmp(compression_algorithm, "gzip", 4) == 0) {
+            flb_http_set_content_encoding_gzip(c);
+        }
+        else if (strncasecmp(compression_algorithm, "zstd", 4) == 0) {
+            flb_http_set_content_encoding_zstd(c);
+        }
     }
 
     ret = flb_http_do(c, &b_sent);
@@ -256,7 +265,15 @@ int opentelemetry_post(struct opentelemetry_context *ctx,
                                          http_uri);
     }
 
-    compression_algorithm = NULL;
+    if (ctx->compress_gzip == FLB_TRUE) {
+        compression_algorithm = "gzip";
+    }
+    else if (ctx->compress_zstd == FLB_TRUE) {
+        compression_algorithm = "zstd";
+    }
+    else {
+        compression_algorithm = NULL;
+    }
 
     request = flb_http_client_request_builder(
                     &ctx->http_client,
@@ -293,6 +310,19 @@ int opentelemetry_post(struct opentelemetry_context *ctx,
 
         grpc_body_length = cfl_sds_len(grpc_body);
 
+        if (compression_algorithm != NULL) {
+            // If compression enabled, ensure compression is gzip otherwise we 
+            // need to fallback to gzip.
+            // Today grpc only supports gzip compression.
+            if (strncasecmp(compression_algorithm, "gzip", 4) != 0) {
+                // Only gzip is supported for gRPC, fall back to gzip.
+                flb_plg_debug(ctx->ins, 
+                              "grpc compression '%s' unsupported, using gzip",
+                              compression_algorithm);
+                compression_algorithm = "gzip";
+            }
+        }
+
         result = flb_http_request_set_parameters(request,
                     FLB_HTTP_CLIENT_ARGUMENT_URI(grpc_uri),
                     FLB_HTTP_CLIENT_ARGUMENT_CONTENT_TYPE(
@@ -310,12 +340,6 @@ int opentelemetry_post(struct opentelemetry_context *ctx,
         }
     }
     else {
-        if (ctx->compress_gzip == FLB_TRUE) {
-            compression_algorithm = "gzip";
-        } else if (ctx->compress_zstd == FLB_TRUE) {
-            compression_algorithm = "zstd";
-        }
-
         result = flb_http_request_set_parameters(request,
                         FLB_HTTP_CLIENT_ARGUMENT_URI(http_uri),
                         FLB_HTTP_CLIENT_ARGUMENT_CONTENT_TYPE(
