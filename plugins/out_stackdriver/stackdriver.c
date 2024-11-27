@@ -357,6 +357,7 @@ static flb_sds_t get_google_token(struct flb_stackdriver *ctx)
     int ret = 0;
     flb_sds_t output = NULL;
     time_t cached_expiration = 0;
+    time_t current_timestamp = 0;
 
     ret = pthread_mutex_trylock(&ctx->token_mutex);
     if (ret == EBUSY) {
@@ -369,14 +370,16 @@ static flb_sds_t get_google_token(struct flb_stackdriver *ctx)
          */
         output = oauth2_cache_to_token();
         cached_expiration = oauth2_cache_get_expiration();
-        if (time(NULL) >= cached_expiration) {
+        current_timestamp = time(NULL);
+
+        if (current_timestamp < cached_expiration) {
             return output;
         } else {
             /*
              * Cached token is expired. Wait on lock to use up-to-date token
              * by either waiting for it to be refreshed or refresh it ourselves.
              */
-            flb_plg_info(ctx->ins, "Cached token is expired. Waiting on lock.");
+            flb_plg_info(ctx->ins, "Cached token is expired, waiting on lock: current_timestamp=%lld, cached_expiration=%lld");
             ret = pthread_mutex_lock(&ctx->token_mutex);
         }
     }
