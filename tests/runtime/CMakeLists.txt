@@ -60,6 +60,32 @@ if(FLB_OUT_LIB)
   FLB_RT_TEST(FLB_IN_KUBERNETES_EVENTS "in_kubernetes_events.c")
 endif()
 
+if (FLB_CUSTOM_CALYPTIA)
+    # Define common variables for calyptia tests
+    set(CALYPTIA_TEST_LINK_LIBS
+        fluent-bit-static
+        ${CMAKE_THREAD_LIBS_INIT}
+    )
+
+    # Add calyptia input properties test
+    set(TEST_TARGET "flb-rt-calyptia_input_properties")
+    add_executable(${TEST_TARGET}
+        "custom_calyptia_input_test.c"
+        "../../plugins/custom_calyptia/calyptia.c"
+    )
+
+    target_link_libraries(${TEST_TARGET}
+        ${CALYPTIA_TEST_LINK_LIBS}
+    )
+
+    add_test(NAME ${TEST_TARGET}
+            COMMAND ${CMAKE_RUNTIME_OUTPUT_DIRECTORY}/${TEST_TARGET}
+            WORKING_DIRECTORY ${CMAKE_HOME_DIRECTORY}/build)
+
+    set_tests_properties(${TEST_TARGET} PROPERTIES LABELS "runtime")
+    add_dependencies(${TEST_TARGET} fluent-bit-static)
+endif()
+
 if(FLB_IN_EBPF)
     # Define common variables
     set(EBPF_TEST_INCLUDE_DIRS
