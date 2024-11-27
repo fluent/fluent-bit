@@ -322,8 +322,24 @@ static int calyptia_http_do(struct flb_calyptia *ctx, struct flb_http_client *c,
     int ret;
     size_t b_sent;
 
+    if( !ctx || !c ) {
+        return FLB_ERROR;
+    }
+
+    /* Ensure agent_token is not empty when required */
+    if ((type == CALYPTIA_ACTION_METRICS || type == CALYPTIA_ACTION_PATCH || type == CALYPTIA_ACTION_TRACE) &&
+        !ctx->agent_token) {
+        flb_plg_warn(ctx->ins, "agent_token is missing for action type %d", type);
+        return FLB_ERROR;
+    }
+
     /* append headers */
     if (type == CALYPTIA_ACTION_REGISTER) {
+        // When registering a new agent api key is required
+        if (!ctx->api_key) {
+            flb_plg_error(ctx->ins, "api_key is missing");
+            return FLB_ERROR;
+        }
         flb_http_add_header(c,
                             CALYPTIA_H_CTYPE, sizeof(CALYPTIA_H_CTYPE) - 1,
                             CALYPTIA_H_CTYPE_JSON, sizeof(CALYPTIA_H_CTYPE_JSON) - 1);
@@ -721,6 +737,21 @@ static struct flb_calyptia *config_init(struct flb_output_instance *ins,
         return NULL;
     }
 
+    ctx->metrics_endpoint = flb_sds_create_size(256);
+    if (!ctx->metrics_endpoint) {
+        flb_free(ctx);
+        return NULL;
+    }
+
+#ifdef FLB_HAVE_CHUNK_TRACE
+    ctx->trace_endpoint = flb_sds_create_size(256);
+    if (!ctx->trace_endpoint) {
+        flb_sds_destroy(ctx->metrics_endpoint);
+        flb_free(ctx);
+        return NULL;
+    }
+#endif
+
     /* api_key */
     if (!ctx->api_key) {
         flb_plg_error(ctx->ins, "configuration 'api_key' is missing");
@@ -905,17 +936,18 @@ static void cb_calyptia_flush(struct flb_event_chunk *event_chunk,
     struct flb_http_client *c = NULL;
     struct flb_calyptia *ctx = out_context;
     struct cmt *cmt;
+    flb_sds_t json;
     (void) i_ins;
     (void) config;
 
-    if (!ctx->agent_id && ctx->register_retry_on_flush) {
-        flb_plg_info(ctx->ins, "agent_id not found and register_retry_on_flush=true, attempting registration");
+    if ((!ctx->agent_id || !ctx->agent_token) && ctx->register_retry_on_flush) {
+        flb_plg_info(ctx->ins, "missing agent_id or agent_token, attempting re-registration register_retry_on_flush=true");
         if (register_agent(ctx, config) != FLB_OK) {
             FLB_OUTPUT_RETURN(FLB_RETRY);
         }
     }
-    else if (!ctx->agent_id) {
-        flb_plg_error(ctx->ins, "no agent_id available and register_retry_on_flush=false");
+    else if (!ctx->agent_id || !ctx->agent_token) {
+        flb_plg_error(ctx->ins, "missing agent_id or agent_token, and register_retry_on_flush=false");
         FLB_OUTPUT_RETURN(FLB_ERROR);
     }
 
@@ -981,12 +1013,13 @@ static void cb_calyptia_flush(struct flb_event_chunk *event_chunk,
     }
 
 #ifdef FLB_HAVE_CHUNK_TRACE
-    if (event_chunk->type == (FLB_EVENT_TYPE_LOGS | FLB_EVENT_TYPE_HAS_TRACE)) {
-        flb_sds_t json = flb_pack_msgpack_to_json_format(event_chunk->data,
-                                                        event_chunk->size,
-                                                        FLB_PACK_JSON_FORMAT_STREAM,
-                                                        FLB_PACK_JSON_DATE_DOUBLE,
-                                                        NULL);
+    if (event_chunk->type & FLB_EVENT_TYPE_LOGS &&
+        event_chunk->type & FLB_EVENT_TYPE_HAS_TRACE) {
+        json = flb_pack_msgpack_to_json_format(event_chunk->data,
+                                            event_chunk->size,
+                                            FLB_PACK_JSON_FORMAT_STREAM,
+                                            FLB_PACK_JSON_DATE_DOUBLE,
+                                            NULL);
         if (json == NULL) {
             flb_upstream_conn_release(u_conn);
             FLB_OUTPUT_RETURN(FLB_RETRY);

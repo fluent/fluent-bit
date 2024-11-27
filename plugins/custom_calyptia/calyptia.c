@@ -293,6 +293,12 @@ static struct flb_output_instance *setup_cloud_output(struct flb_config *config,
     flb_output_set_property(cloud, "match", "_calyptia_cloud");
     flb_output_set_property(cloud, "api_key", ctx->api_key);
 
+    if (ctx->register_retry_on_flush) {
+        flb_output_set_property(cloud, "register_retry_on_flush", "true");
+    } else {
+        flb_output_set_property(cloud, "register_retry_on_flush", "false");
+    }
+
     if (ctx->store_path) {
         flb_output_set_property(cloud, "store_path", ctx->store_path);
     }
@@ -585,7 +591,11 @@ static struct flb_config_map config_map[] = {
      "Pipeline ID for reporting to calyptia cloud."
     },
 #endif /* FLB_HAVE_CHUNK_TRACE */
-
+    {
+     FLB_CONFIG_MAP_BOOL, "register_retry_on_flush", "true",
+     0, FLB_TRUE, offsetof(struct calyptia, register_retry_on_flush),
+     "Retry agent registration on flush if failed on init."
+    },
     /* EOF */
     {0}
 };
