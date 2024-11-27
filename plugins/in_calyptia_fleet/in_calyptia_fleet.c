@@ -2233,7 +2233,6 @@ static int in_calyptia_fleet_init(struct flb_input_instance *in,
     ctx->collect_fd = -1;
     ctx->fleet_id_found = FLB_FALSE;
 
-
     /* Load the config map */
     ret = flb_input_config_map_set(in, (void *) ctx);
     if (ret == -1) {
@@ -2278,14 +2277,16 @@ static int in_calyptia_fleet_init(struct flb_input_instance *in,
         return -1;
     }
 
+    /* Log initial interval values */
+    flb_plg_debug(ctx->ins, "initial collector interval: sec=%d nsec=%d",
+                  ctx->interval_sec, ctx->interval_nsec);
+
     if (ctx->interval_sec <= 0 && ctx->interval_nsec <= 0) {
         /* Illegal settings. Override them. */
         ctx->interval_sec = atoi(DEFAULT_INTERVAL_SEC);
         ctx->interval_nsec = atoi(DEFAULT_INTERVAL_NSEC);
-    }
-
-    if (ctx->interval_sec < atoi(DEFAULT_INTERVAL_SEC)) {
-        ctx->interval_sec = atoi(DEFAULT_INTERVAL_SEC);
+        flb_plg_info(ctx->ins, "invalid interval settings, using defaults: sec=%d nsec=%d",
+                    ctx->interval_sec, ctx->interval_nsec);
     }
 
     /* Set the context */
@@ -2328,6 +2329,8 @@ static int in_calyptia_fleet_init(struct flb_input_instance *in,
     }
 
     ctx->collect_fd = ret;
+    flb_plg_info(ctx->ins, "fleet collector initialized with interval: %d sec %d nsec",
+                 ctx->interval_sec, ctx->interval_nsec);
 
     return 0;
 }
