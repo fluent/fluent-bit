@@ -379,7 +379,7 @@ static flb_sds_t get_google_token(struct flb_stackdriver *ctx)
              * Cached token is expired. Wait on lock to use up-to-date token
              * by either waiting for it to be refreshed or refresh it ourselves.
              */
-            flb_plg_info(ctx->ins, "Cached token is expired, waiting on lock: current_timestamp=%lld, cached_expiration=%lld");
+            flb_plg_info(ctx->ins, "Cached token is expired. Waiting on lock.");
             ret = pthread_mutex_lock(&ctx->token_mutex);
         }
     }
