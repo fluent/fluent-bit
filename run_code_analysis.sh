@@ -42,6 +42,7 @@ exit_code=0
     -e INPUT_DEPENDENCIES_DEBIAN="$ADDITIONAL_DEPS" \
     -e INPUT_CMAKEFLAGS="$FLB_CMAKE_OPTIONS $SKIP" \
     -e INPUT_PRE_COMMAND="cp -R /source /tmp" \
+    -e INPUT_TEST_COMMAND="${INPUT_TEST_COMMAND}" \
     -e INPUT_WORKING-DIRECTORY="/tmp/source" \
     lpenz/ghaction-cmake:0.19 \
     || exit_code=$?

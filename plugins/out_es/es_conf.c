@@ -269,6 +269,20 @@ struct flb_elasticsearch *flb_es_conf_create(struct flb_output_instance *ins,
     if (f_type) {
         ctx->type = flb_strdup(f_type->value); /* FIXME */
     }
+    else {
+        /* Check if the index has been set in the configuration */
+        if (ctx->index) {
+            /* do we have a record accessor pattern ? */
+            if (strchr(ctx->index, '$')) {
+                ctx->ra_index = flb_ra_create(ctx->index, FLB_TRUE);
+                if (!ctx->ra_index) {
+                    flb_plg_error(ctx->ins, "invalid record accessor pattern set for 'index' property");
+                    flb_es_conf_destroy(ctx);
+                    return NULL;
+                }
+            }
+        }
+    }
 
     /* HTTP Payload (response) maximum buffer size (0 == unlimited) */
     if (ctx->buffer_size == -1) {
@@ -289,6 +303,7 @@ struct flb_elasticsearch *flb_es_conf_create(struct flb_output_instance *ins,
     else {
         snprintf(ctx->uri, sizeof(ctx->uri) - 1, "%s/_bulk", path);
     }
+
 
     if (ctx->id_key) {
         ctx->ra_id_key = flb_ra_create(ctx->id_key, FLB_FALSE);
@@ -497,6 +512,10 @@ int flb_es_conf_destroy(struct flb_elasticsearch *ctx)
     if (ctx->ra_id_key) {
         flb_ra_destroy(ctx->ra_id_key);
         ctx->ra_id_key = NULL;
+    }
+    if (ctx->ra_index) {
+        flb_ra_destroy(ctx->ra_index);
+        ctx->ra_index = NULL;
     }
     if (ctx->es_action) {
         flb_free(ctx->es_action);
