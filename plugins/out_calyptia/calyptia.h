@@ -80,6 +80,7 @@ struct flb_calyptia {
     flb_sds_t trace_endpoint;
     flb_sds_t pipeline_id;
 #endif /* FLB_HAVE_CHUNK_TRACE */
+    bool register_retry_on_flush;   /* retry registration on flush if failed */
 };
 
 #endif
