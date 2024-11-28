@@ -129,7 +129,34 @@ if(FLB_IN_LIB)
 endif()
 
 if (FLB_CUSTOM_CALYPTIA)
-  FLB_RT_TEST(FLB_CUSTOM_CALYPTIA "custom_calyptia_test.c")
+  set(CALYPTIA_TEST_LINK_LIBS
+    fluent-bit-static
+    ${CMAKE_THREAD_LIBS_INIT}
+  )
+  set(CALYPTIA_TESTS
+    "custom_calyptia_test.c"
+    "custom_calyptia_registration_retry_test.c"
+    "custom_calyptia_input_test.c"
+  )
+
+  foreach(TEST_SOURCE ${CALYPTIA_TESTS})
+    get_filename_component(TEST_NAME ${TEST_SOURCE} NAME_WE)
+    set(TEST_TARGET "flb-rt-${TEST_NAME}")
+    add_executable(${TEST_TARGET}
+        ${TEST_SOURCE}
+        "../../plugins/custom_calyptia/calyptia.c"
+    )
+
+    target_link_libraries(${TEST_TARGET}
+        ${CALYPTIA_TEST_LINK_LIBS}
+    )
+    add_test(NAME ${TEST_TARGET}
+             COMMAND ${CMAKE_RUNTIME_OUTPUT_DIRECTORY}/${TEST_TARGET}
+             WORKING_DIRECTORY ${CMAKE_HOME_DIRECTORY}/build)
+
+    set_tests_properties(${TEST_TARGET} PROPERTIES LABELS "runtime")
+    add_dependencies(${TEST_TARGET} fluent-bit-static)
+  endforeach()
 endif()
 
 if (FLB_PROCESSOR_METRICS_SELECTOR)
