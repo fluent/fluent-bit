@@ -769,6 +769,30 @@ int flb_msgpack_to_json(char *json_str, size_t json_size,
     return ret ? off: ret;
 }
 
+/* This function updates a char pointer that points to a string in the msgpack object */
+int flb_msgpack_get_char_from_obj(msgpack_object *obj,
+                                  const char **ret_char, size_t *ret_char_size)
+{
+    int ret = -1;
+
+    if (obj == NULL || ret_char == NULL || ret_char_size == NULL) {
+        return ret;
+    }
+
+    if (obj->type == MSGPACK_OBJECT_STR) {
+        *ret_char      = obj->via.str.ptr;
+        *ret_char_size = obj->via.str.size;
+        ret = 0;
+    }
+    else if (obj->type == MSGPACK_OBJECT_BIN) {
+        *ret_char      = obj->via.bin.ptr;
+        *ret_char_size = obj->via.bin.size;
+        ret = 0;
+    }
+
+    return ret;
+}
+
 flb_sds_t flb_msgpack_raw_to_json_sds(const void *in_buf, size_t in_size)
 {
     int ret;

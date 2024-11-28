@@ -890,6 +890,61 @@ void test_json_date_epoch_ms()
     test_json_date("123456789123", FLB_PACK_JSON_DATE_EPOCH_MS);
 }
 
+void test_msgpack_get_char_from_obj()
+{
+    const char *str_p = NULL;
+    size_t str_size = 0;
+    size_t off = 0;
+    char *input = "hoge";
+    int ret;
+
+    msgpack_sbuffer mp_sbuf;
+    msgpack_packer mp_pck;
+    msgpack_object obj;
+    msgpack_unpacked result;
+
+    msgpack_sbuffer_init(&mp_sbuf);
+    msgpack_packer_init(&mp_pck, &mp_sbuf, msgpack_sbuffer_write);
+    msgpack_pack_int64(&mp_pck, 10);
+
+    msgpack_unpacked_init(&result);
+    if ( !TEST_CHECK(MSGPACK_UNPACK_SUCCESS == msgpack_unpack_next(&result, mp_sbuf.data, mp_sbuf.size, &off)) ) {
+        TEST_MSG("unpack failed");
+    }
+    obj = result.data;
+
+    ret = flb_msgpack_get_char_from_obj(&obj, &str_p, &str_size);
+    if (!TEST_CHECK(ret < 0)) {
+        TEST_MSG("It should be failed. input object type is int.");
+    }
+    msgpack_unpacked_destroy(&result);
+    msgpack_sbuffer_destroy(&mp_sbuf);
+
+    msgpack_sbuffer_init(&mp_sbuf);
+    msgpack_packer_init(&mp_pck, &mp_sbuf, msgpack_sbuffer_write);
+    msgpack_pack_str(&mp_pck, strlen(input));
+    msgpack_pack_str_body(&mp_pck, input, strlen(input));
+    off = 0;
+
+    msgpack_unpacked_init(&result);
+    if ( !TEST_CHECK(MSGPACK_UNPACK_SUCCESS == msgpack_unpack_next(&result, mp_sbuf.data, mp_sbuf.size, &off)) ) {
+        TEST_MSG("unpack failed");
+    }
+    obj = result.data;
+
+    ret = flb_msgpack_get_char_from_obj(&obj, &str_p, &str_size);
+    if (!TEST_CHECK(ret == 0)) {
+        TEST_MSG("flb_msgpack_get_char_from_obj failed. ret=%d obj type=%d", ret, obj.type);
+    }
+    else if (!TEST_CHECK(0 == strncmp(input, str_p, strlen(input) ))) {
+        TEST_MSG("compare error.\n Got=%s\n Expect: %s", str_p, input);
+    }
+
+
+    msgpack_unpacked_destroy(&result);
+    msgpack_sbuffer_destroy(&mp_sbuf);
+}
+
 TEST_LIST = {
     /* JSON maps iteration */
     { "json_pack"          , test_json_pack },
@@ -910,5 +965,7 @@ TEST_LIST = {
 
     /* Mixed bytes, check JSON encoding */
     { "utf8_to_json", test_utf8_to_json},
+
+    { "msgpack_get_char", test_msgpack_get_char_from_obj} ,
     { 0 }
 };

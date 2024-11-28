@@ -35,25 +35,6 @@
 
 #include "filter_parser.h"
 
-static int msgpackobj2char(msgpack_object *obj,
-                           const char **ret_char, int *ret_char_size)
-{
-    int ret = -1;
-
-    if (obj->type == MSGPACK_OBJECT_STR) {
-        *ret_char      = obj->via.str.ptr;
-        *ret_char_size = obj->via.str.size;
-        ret = 0;
-    }
-    else if (obj->type == MSGPACK_OBJECT_BIN) {
-        *ret_char      = obj->via.bin.ptr;
-        *ret_char_size = obj->via.bin.size;
-        ret = 0;
-    }
-
-    return ret;
-}
-
 static int add_parser(const char *parser, struct filter_parser_ctx *ctx,
                        struct flb_config *config)
 {
@@ -185,9 +166,9 @@ static int cb_parser_filter(const void *data, size_t bytes,
     int parse_ret = -1;
     int map_num;
     const char *key_str;
-    int key_len;
+    size_t key_len;
     const char *val_str;
-    int val_len;
+    size_t val_len;
     char *out_buf;
     size_t out_size;
     struct flb_time parsed_time;
@@ -259,13 +240,13 @@ static int cb_parser_filter(const void *data, size_t bytes,
                     append_arr[append_arr_i] = kv;
                     append_arr_i++;
                 }
-                if ( msgpackobj2char(&kv->key, &key_str, &key_len) < 0 ) {
+                if ( flb_msgpack_get_char_from_obj(&kv->key, &key_str, &key_len) < 0 ) {
                     /* key is not string */
                     continue;
                 }
                 if (key_len == ctx->key_name_len &&
                     !strncmp(key_str, ctx->key_name, key_len)) {
-                    if ( msgpackobj2char(&kv->val, &val_str, &val_len) < 0 ) {
+                    if ( flb_msgpack_get_char_from_obj(&kv->val, &val_str, &val_len) < 0 ) {
                         /* val is not string */
                         continue;
                     }
