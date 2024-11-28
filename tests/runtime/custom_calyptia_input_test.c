@@ -6,7 +6,6 @@
 #include <fluent-bit/flb_env.h>
 #include <fluent-bit/flb_custom_plugin.h>
 #include "flb_tests_runtime.h"
-#include "../../plugins/custom_calyptia/calyptia.h"
 
 /* Test context structure */
 struct test_context {
