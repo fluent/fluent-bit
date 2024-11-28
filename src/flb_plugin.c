@@ -369,7 +369,7 @@ int flb_plugin_load_config_format(struct flb_cf *cf, struct flb_config *config)
             entry = cfl_list_entry(head_e, struct cfl_kvpair, _head);
 
             /* Load plugin with router function */
-            ret = flb_plugin_load_router(entry->key, config);
+            ret = flb_plugin_load_router(entry->val->data.as_string, config);
             if (ret == -1) {
                 flb_cf_destroy(cf);
                 return -1;
