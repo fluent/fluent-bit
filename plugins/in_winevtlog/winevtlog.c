@@ -489,7 +489,7 @@ int get_string_inserts(EVT_HANDLE handle, PEVT_VARIANT *string_inserts_values,
 
     succeeded = EvtRender(context,
                           handle,
-                          EvtRenderContextValues,
+                          EvtRenderEventValues,
                           buffer_size,
                           values,
                           &buffer_size_used,
