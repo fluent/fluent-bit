@@ -25,8 +25,10 @@
 #define FLB_MAP_NOT_MODIFIED    -1
 #define FLB_MAP_EXPANSION_ERROR -2
 #define FLB_MAP_EXPANSION_INVALID_VALUE_TYPE -3
+#define FLB_MSGPACK_UNPACK_ERROR -4
 
 #include <fluent-bit/flb_pack.h>
+#include <msgpack/unpack.h>
 
 int flb_msgpack_append_message_to_record(char **result_buffer,
                                          size_t *result_size,
@@ -36,4 +38,12 @@ int flb_msgpack_append_message_to_record(char **result_buffer,
                                          char *message_buffer,
                                          size_t message_size,
                                          int message_type);
+
+int flb_msgpack_append_map_to_record(char **result_buffer,
+                                     size_t *result_size,
+                                     flb_sds_t message_key_name,
+                                     char *base_object_buffer,
+                                     size_t base_object_size,
+                                     char *map_data,
+                                     size_t map_size);
 #endif
