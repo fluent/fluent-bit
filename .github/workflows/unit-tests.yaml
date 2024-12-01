@@ -127,7 +127,7 @@ jobs:
         config:
           - name: "Aarch64 actuated testing"
             flb_option: "-DFLB_WITHOUT_flb-it-network=1 -DFLB_WITHOUT_flb-it-fstore=1"
-            omit_option: "-DFLB_WITHOUT_flb-it-utils=1 -DFLB_WITHOUT_flb-it-pack=1"
+            omit_option: ""
             global_option: "-DFLB_BACKTRACE=Off -DFLB_SHARED_LIB=Off -DFLB_DEBUG=On -DFLB_ALL=On -DFLB_EXAMPLES=Off"
             unit_test_option: "-DFLB_TESTS_INTERNAL=On"
             compiler: gcc
