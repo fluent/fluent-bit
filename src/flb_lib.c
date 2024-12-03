@@ -347,6 +347,37 @@ int flb_input_set_processor(flb_ctx_t *ctx, int ffd, struct flb_processor *proc)
     return 0;
 }
 
+int flb_output_set_http_test(flb_ctx_t *ctx, int ffd, char *test_name,
+                             void (*out_response) (void *, int, int, void *, size_t, void *),
+                             void *out_callback_data)
+{
+    struct flb_output_instance *o_ins;
+
+    o_ins = out_instance_get(ctx, ffd);
+    if (!o_ins) {
+        return -1;
+    }
+
+    /*
+     * Enabling a test, set the output instance in 'test' mode, so no real
+     * flush callback is invoked, only the desired implemented test.
+     */
+
+    /* Response test */
+    if (strcmp(test_name, "response") == 0) {
+        o_ins->test_mode = FLB_TRUE;
+        o_ins->test_response.rt_ctx = ctx;
+        o_ins->test_response.rt_ffd = ffd;
+        o_ins->test_response.rt_out_response = out_response;
+        o_ins->test_response.rt_data = out_callback_data;
+    }
+    else {
+        return -1;
+    }
+
+    return 0;
+}
+
 static inline int flb_config_map_property_check(char *plugin_name, struct mk_list *config_map, char *key, char *val)
 {
     struct flb_kv *kv;
@@ -638,6 +669,41 @@ int flb_lib_free(void* data)
 }
 
 
+static int flb_output_run_response(flb_ctx_t *ctx, struct flb_output_instance *o_ins,
+                                   int status, const void *data, size_t len)
+{
+    int ret;
+    void *out_buf = NULL;
+    size_t out_size = 0;
+    struct flb_test_out_response *resp;
+
+    if (!o_ins) {
+        return -1;
+    }
+
+    resp = &o_ins->test_response;
+
+    /* Invoke the input plugin formatter test callback */
+    ret = resp->callback(ctx->config,
+                         o_ins->context,
+                         status, data, len,
+                         &out_buf, &out_size);
+
+    /* Call the runtime test callback checker */
+    if (resp->rt_out_response) {
+        resp->rt_out_response(resp->rt_ctx,
+                              resp->rt_ffd,
+                              ret,
+                              out_buf, out_size,
+                              resp->rt_data);
+    }
+    else {
+        flb_free(out_buf);
+    }
+
+    return 0;
+}
+
 /* Push some data into the Engine */
 int flb_lib_push(flb_ctx_t *ctx, int ffd, const void *data, size_t len)
 {
@@ -658,6 +724,29 @@ int flb_lib_push(flb_ctx_t *ctx, int ffd, const void *data, size_t len)
     if (ret == -1) {
         flb_errno();
         return -1;
+    }
+    return ret;
+}
+
+/* Emulate some data from the response */
+int flb_lib_response(flb_ctx_t *ctx, int ffd, int status, const void *data, size_t len)
+{
+    int ret;
+    struct flb_output_instance *o_ins;
+
+    if (ctx->status == FLB_LIB_NONE || ctx->status == FLB_LIB_ERROR) {
+        flb_error("[lib] cannot push data, engine is not running");
+        return -1;
+    }
+
+    o_ins = out_instance_get(ctx, ffd);
+    if (!o_ins) {
+        return -1;
+    }
+
+    /* If input's test_formatter is registered, priorize to run it. */
+    if (o_ins->test_response.callback != NULL) {
+        ret = flb_output_run_response(ctx, o_ins, status, data, len);
     }
     return ret;
 }

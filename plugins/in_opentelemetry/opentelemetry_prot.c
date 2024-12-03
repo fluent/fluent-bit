@@ -2242,7 +2242,7 @@ static int process_payload_metrics_ng(struct flb_opentelemetry *ctx,
         cfl_list_foreach(iterator, &decoded_contexts) {
             context = cfl_list_entry(iterator, struct cmt, _head);
 
-            result = flb_input_metrics_append(ctx->ins, NULL, 0, context);
+            result = flb_input_metrics_append(ctx->ins, tag, cfl_sds_len(tag), context);
 
             if (result != 0) {
                 flb_plg_debug(ctx->ins, "could not ingest metrics context : %d", result);
@@ -2301,7 +2301,7 @@ static int process_payload_traces_proto_ng(struct flb_opentelemetry *ctx,
     }
 
     if (result == 0) {
-        result = flb_input_trace_append(ctx->ins, NULL, 0, decoded_context);
+        result = flb_input_trace_append(ctx->ins, tag, cfl_sds_len(tag), decoded_context);
         ctr_decode_opentelemetry_destroy(decoded_context);
     }
     else {
