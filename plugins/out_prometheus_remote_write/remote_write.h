@@ -60,7 +60,7 @@ struct prometheus_remote_write_context {
 
     const char *compression;
 
-    /* Log the response paylod */
+    /* Log the response payload */
     int log_response_payload;
 
     /* config reader for 'add_label' */
