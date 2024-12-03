@@ -448,6 +448,11 @@ static struct flb_config_map config_map[] = {
     0, FLB_TRUE, offsetof(struct flb_in_fw_config, buffer_max_size),
     "The maximum buffer memory size used to receive a Forward message."
    },
+   {
+    FLB_CONFIG_MAP_BOOL, "empty_shared_key", "false",
+    0, FLB_TRUE, offsetof(struct flb_in_fw_config, empty_shared_key),
+    "Set an empty shared key for authentication"
+   },
    {0}
 };
 
