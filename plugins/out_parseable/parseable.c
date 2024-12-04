@@ -6,7 +6,6 @@
 #include <fluent-bit/flb_config_map.h>
 #include <fluent-bit/flb_metrics.h>
 
-
 #include <msgpack.h>
 #include "parseable.h"
 
@@ -99,7 +98,6 @@ static void cb_parseable_flush(struct flb_event_chunk *event_chunk,
 
         /* Convert from msgpack to JSON */
         body = flb_msgpack_raw_to_json_sds(sbuf.data, sbuf.size);
-        // flb_plg_info(ctx->ins, "Body content: %s", body);
 
         /* Free up buffer as we don't need it anymore */
         msgpack_sbuffer_destroy(&sbuf);
@@ -133,6 +131,7 @@ static void cb_parseable_flush(struct flb_event_chunk *event_chunk,
                                 flb_plg_info(ctx->ins, "Skipping excluded namespace: %s", namespace_name);
                                 flb_sds_destroy(namespace_name);
                                 flb_sds_destroy(body);
+                                flb_sds_destroy(body_copy);
                                 continue;  // Skip sending the HTTP request
                             }
                         }
@@ -199,8 +198,6 @@ static void cb_parseable_flush(struct flb_event_chunk *event_chunk,
         flb_http_add_header(client, "X-P-Stream", 10, x_p_stream_value, flb_sds_len(x_p_stream_value));
         flb_http_basic_auth(client, ctx->p_username, ctx->p_password);
 
-        /* Log the body being sent */
-        // flb_plg_info(ctx->ins, "HTTP request body: %s", body);
         /* Perform request */
         ret = flb_http_do(client, &b_sent);
         flb_plg_info(ctx->ins, "HTTP request http_do=%i, HTTP Status: %i",
@@ -216,7 +213,6 @@ static void cb_parseable_flush(struct flb_event_chunk *event_chunk,
 
     FLB_OUTPUT_RETURN(FLB_OK);
 }
-
 
 static int cb_parseable_exit(void *data, struct flb_config *config)
 {
@@ -239,47 +235,37 @@ static int cb_parseable_exit(void *data, struct flb_config *config)
 static struct flb_config_map config_map[] = {
     {
      FLB_CONFIG_MAP_STR, "P_Server", NULL,
-     0, FLB_TRUE, offsetof(struct flb_out_parseable, p_server),
-    "The host of the server to send logs to."
+     0, FLB_TRUE, offsetof(struct flb_out_parseable, p_server)
     },
     {
-     FLB_CONFIG_MAP_STR, "P_Username", NULL,
-     0, FLB_TRUE, offsetof(struct flb_out_parseable, p_username),
-    "The parseable server username."
-    },
-    {
-     FLB_CONFIG_MAP_STR, "P_Password", NULL,
-     0, FLB_TRUE, offsetof(struct flb_out_parseable, p_password),
-    "The parseable server password."
+     FLB_CONFIG_MAP_STR, "P_Port", "443",
+     0, FLB_TRUE, offsetof(struct flb_out_parseable, p_port)
     },
     {
      FLB_CONFIG_MAP_STR, "P_Stream", NULL,
-     0, FLB_TRUE, offsetof(struct flb_out_parseable, p_stream),
-    "The stream name to send logs to. Using $NAMESPACE will dynamically create a namespace."
+     0, FLB_TRUE, offsetof(struct flb_out_parseable, p_stream)
     },
     {
-     FLB_CONFIG_MAP_INT, "P_Port", NULL,
-     0, FLB_TRUE, offsetof(struct flb_out_parseable, p_port),
-    "The port on the host to send logs to."
+     FLB_CONFIG_MAP_STR, "P_Username", NULL,
+     0, FLB_TRUE, offsetof(struct flb_out_parseable, p_username)
     },
     {
-     FLB_CONFIG_MAP_SLIST, "P_Exclude_Namespaces", NULL,
-     0, FLB_TRUE, offsetof(struct flb_out_parseable, exclude_namespaces),
-    "A space-separated list of Kubernetes namespaces to exclude from log forwarding."
+     FLB_CONFIG_MAP_STR, "P_Password", NULL,
+     0, FLB_TRUE, offsetof(struct flb_out_parseable, p_password)
     },
-    /* EOF */
+    {
+     FLB_CONFIG_MAP_LIST, "ExcludeNamespaces", NULL,
+     0, FLB_TRUE, offsetof(struct flb_out_parseable, exclude_namespaces)
+    },
     {0}
 };
 
-
-/* Plugin registration */
 struct flb_output_plugin out_parseable_plugin = {
     .name         = "parseable",
-    .description  = "Sends events to a HTTP server",
+    .description  = "Parseable output plugin",
     .cb_init      = cb_parseable_init,
     .cb_flush     = cb_parseable_flush,
     .cb_exit      = cb_parseable_exit,
-    .flags        = 0,
-    .event_type   = FLB_OUTPUT_LOGS,
-    .config_map   = config_map
+    .config_map   = config_map,
+    .flags        = FLB_OUTPUT_PLUGIN | FLB_IO_TCP
 };
