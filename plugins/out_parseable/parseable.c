@@ -123,25 +123,48 @@ static void cb_parseable_flush(struct flb_event_chunk *event_chunk,
                         *end_quote = '\0';  // Null-terminate the extracted value
                         namespace_name = flb_sds_printf(&namespace_name, "%s", namespace_name_value);
 
+                        // Debug: Print the extracted namespace name
+                        flb_plg_info(ctx->ins, "Extracted namespace_name: %s", namespace_name);
+
                         // Exclusion logic (revised)
                         if (!mk_list_is_empty(&ctx->exclude_namespaces)) {
+                            flb_plg_info(ctx->ins, "Checking exclude namespaces...");
+
                             struct mk_list *head;
                             struct flb_slist_entry *entry;
                             mk_list_foreach(head, &ctx->exclude_namespaces) {
                                 entry = mk_list_entry(head, struct flb_slist_entry, _head);
+                                
+                                // Debug: Print each exclude namespace in the list
+                                flb_plg_info(ctx->ins, "Checking against exclude namespace: %s", entry->str);
+
                                 if (flb_sds_cmp(entry->str, namespace_name, flb_sds_len(namespace_name)) == 0) {
                                     flb_plg_info(ctx->ins, "Skipping excluded namespace: %s", namespace_name);
+                                    
+                                    // Cleanup
                                     flb_sds_destroy(namespace_name);
                                     flb_sds_destroy(body);
                                     flb_sds_destroy(body_copy);
                                     msgpack_unpacked_destroy(&result);
-                                    FLB_OUTPUT_RETURN(FLB_OK);  // Skip sending the HTTP request
+                                    
+                                    // Skip sending the HTTP request
+                                    FLB_OUTPUT_RETURN(FLB_OK);  
                                 }
                             }
+                        } else {
+                            // Debug: List of exclude namespaces is empty
+                            flb_plg_info(ctx->ins, "No exclude namespaces configured.");
                         }
                     }
+                } else {
+                    // Debug: Could not find the namespace_name in body_copy
+                    flb_plg_info(ctx->ins, "namespace_name not found in body_copy.");
                 }
+            } else {
+                // Debug: body_copy is NULL
+                flb_plg_info(ctx->ins, "body_copy is NULL.");
             }
+
             flb_sds_destroy(body_copy);
 
             if (!namespace_name || flb_sds_len(namespace_name) == 0) {
