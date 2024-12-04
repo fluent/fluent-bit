@@ -122,19 +122,23 @@ static void cb_parseable_flush(struct flb_event_chunk *event_chunk,
                     if (end_quote != NULL) {
                         *end_quote = '\0';  // Null-terminate the extracted value
                         namespace_name = flb_sds_printf(&namespace_name, "%s", namespace_name_value);
-                        // // Inline check for excluded namespaces
-                        // struct mk_list *head;
-                        // struct flb_slist_entry *entry;
-                        // mk_list_foreach(head, &ctx->exclude_namespaces) {
-                        //     entry = mk_list_entry(head, struct flb_slist_entry, _head);
-                        //     if (flb_sds_cmp(entry->str, namespace_name, flb_sds_len(namespace_name)) == 0) {
-                        //         flb_plg_info(ctx->ins, "Skipping excluded namespace: %s", namespace_name);
-                        //         flb_sds_destroy(namespace_name);
-                        //         flb_sds_destroy(body);
-                        //         flb_sds_destroy(body_copy);
-                        //         continue;  // Skip sending the HTTP request
-                        //     }
-                        // }
+
+                        // Exclusion logic (revised)
+                        if (!mk_list_is_empty(&ctx->exclude_namespaces)) {
+                            struct mk_list *head;
+                            struct flb_slist_entry *entry;
+                            mk_list_foreach(head, &ctx->exclude_namespaces) {
+                                entry = mk_list_entry(head, struct flb_slist_entry, _head);
+                                if (flb_sds_cmp(entry->str, namespace_name, flb_sds_len(namespace_name)) == 0) {
+                                    flb_plg_info(ctx->ins, "Skipping excluded namespace: %s", namespace_name);
+                                    flb_sds_destroy(namespace_name);
+                                    flb_sds_destroy(body);
+                                    flb_sds_destroy(body_copy);
+                                    msgpack_unpacked_destroy(&result);
+                                    FLB_OUTPUT_RETURN(FLB_OK);  // Skip sending the HTTP request
+                                }
+                            }
+                        }
                     }
                 }
             }
@@ -147,6 +151,7 @@ static void cb_parseable_flush(struct flb_event_chunk *event_chunk,
                 msgpack_unpacked_destroy(&result);
                 FLB_OUTPUT_RETURN(FLB_ERROR);
             }
+
             /* Determine the value of the X-P-Stream header */
             x_p_stream_value = namespace_name;  // Use the namespace name for the header
         }
