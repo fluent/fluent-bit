@@ -33,11 +33,6 @@ static int cb_parseable_init(struct flb_output_instance *ins,
     }
 
     flb_plg_info(ctx->ins, "Configured port: %d", ctx->port);
-    flb_plg_info(ctx->ins, "Configured server: %s", ctx->server);
-    flb_plg_info(ctx->ins, "Configured username: %s", ctx->username);
-    flb_plg_info(ctx->ins, "Configured password: %s", ctx->password);
-    flb_plg_info(ctx->ins, "Configured exclude_namespaces: %s", ctx->exclude_namespaces);
-    flb_plg_info(ctx->ins, "Configured stream: %s", ctx->stream);
 
     ctx->upstream = flb_upstream_create(config,
                                         ctx->server,
