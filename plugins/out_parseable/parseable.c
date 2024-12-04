@@ -33,11 +33,11 @@ static int cb_parseable_init(struct flb_output_instance *ins,
     }
 
     flb_plg_info(ctx->ins, "Configured port: %d", ctx->port);
-    flb_plg_info(ctx->ins, "Configured server: %d", ctx->server);
-    flb_plg_info(ctx->ins, "Configured username: %d", ctx->username);
-    flb_plg_info(ctx->ins, "Configured password: %d", ctx->password);
-    flb_plg_info(ctx->ins, "Configured exclude_namespaces: %d", ctx->exclude_namespaces);
-    flb_plg_info(ctx->ins, "Configured stream: %d", ctx->stream);
+    flb_plg_info(ctx->ins, "Configured server: %s", ctx->server);
+    flb_plg_info(ctx->ins, "Configured username: %s", ctx->username);
+    flb_plg_info(ctx->ins, "Configured password: %s", ctx->password);
+    flb_plg_info(ctx->ins, "Configured exclude_namespaces: %s", ctx->exclude_namespaces);
+    flb_plg_info(ctx->ins, "Configured stream: %s", ctx->stream);
 
     ctx->upstream = flb_upstream_create(config,
                                         ctx->server,
@@ -285,7 +285,7 @@ static struct flb_config_map config_map[] = {
     "The stream name to send logs to. Using $NAMESPACE will dynamically create a namespace."
     },
     {
-     FLB_CONFIG_MAP_INT, "Port", NULL,
+     FLB_CONFIG_MAP_INT, "Port", 80,
      0, FLB_TRUE, offsetof(struct flb_out_parseable, port),
     "The port on the host to send logs to."
     },
