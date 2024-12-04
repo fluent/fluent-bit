@@ -20,6 +20,7 @@
 #ifndef FLB_CALYPTIA_H
 #define FLB_CALYPTIA_H
 
+#include <fluent-bit/flb_utils.h>
 #include <stdbool.h>
 
 struct calyptia {
