@@ -792,8 +792,10 @@ static const struct escape_seq json_escape_table[128] = {
 int flb_utils_write_str(char *buf, int *off, size_t size, const char *str, size_t str_len)
 {
     int i, b, ret, len, hex_bytes, utf_sequence_length, utf_sequence_number;
+    int processed_bytes = 0;
     int is_valid, copypos = 0, vlen;
-    uint32_t codepoint, state = 0;
+    uint32_t codepoint = 0;
+    uint32_t state = 0;
     char tmp[16];
     size_t available;
     uint32_t c;
@@ -906,31 +908,40 @@ int flb_utils_write_str(char *buf, int *off, size_t size, const char *str, size_
                 /* decode UTF-8 sequence */
                 state = FLB_UTF8_ACCEPT;
                 codepoint = 0;
+                processed_bytes = 0;
 
                 for (b = 0; b < hex_bytes; b++) {
                     s = (unsigned char *) &str[i + b];
                     ret = flb_utf8_decode(&state, &codepoint, *s);
-                    if (ret == 0) {
+                    processed_bytes++;
+
+                    if (ret == FLB_UTF8_ACCEPT) {
+                        /* check if all required bytes for the sequence are processed */
+                        if (processed_bytes == hex_bytes) {
+                            break;
+                        }
+                    }
+                    else if (ret == FLB_UTF8_REJECT) {
+                        flb_warn("[pack] Invalid UTF-8 bytes found, skipping.");
                         break;
                     }
                 }
 
-                if (state != FLB_UTF8_ACCEPT) {
-                    flb_warn("[pack] Invalid UTF-8 bytes found, skipping.");
-                }
-                else {
-
+                if (state == FLB_UTF8_ACCEPT) {
                     len = snprintf(tmp, sizeof(tmp), "\\u%.4x", codepoint);
                     if (available < len) {
-                        return FLB_FALSE;  // Not enough space
+                        return FLB_FALSE;
                     }
                     memcpy(p, tmp, len);
                     p += len;
                     offset += len;
                     available -= len;
                 }
+                else {
+                    flb_warn("[pack] Invalid UTF-8 bytes found, skipping.");
+                }
 
-                i += hex_bytes;
+                i += processed_bytes;
             }
             /* Handle sequences beyond 0xFFFF */
             else if (c > 0xFFFF) {
@@ -942,26 +953,25 @@ int flb_utils_write_str(char *buf, int *off, size_t size, const char *str, size_
                     break;
                 }
 
+                state = FLB_UTF8_ACCEPT;
+                codepoint = 0;
                 is_valid = FLB_TRUE;
+
+                /* Decode the sequence */
                 for (utf_sequence_number = 0; utf_sequence_number < utf_sequence_length; utf_sequence_number++) {
-                    /* Leading characters must start with bits 11 */
-                    if (utf_sequence_number == 0 && ((str[i] & 0xC0) != 0xC0)) {
-                        /* Invalid unicode character. replace */
-                        flb_debug("[pack] unexpected UTF-8 leading byte, "
-                                  "substituting character with replacement character");
-                        tmp[utf_sequence_number] = str[i];
-                        i++; /* Consume invalid leading byte */
-                        utf_sequence_length = utf_sequence_number + 1;
-                        is_valid = FLB_FALSE;
-                        break;
-                    }
-                    /* Trailing characters must start with bits 10 */
-                    else if (utf_sequence_number > 0 && ((str[i] & 0xC0) != 0x80)) {
-                        /* Invalid unicode character. replace */
-                        flb_debug("[pack] unexpected UTF-8 continuation byte, "
-                                "substituting character with replacement character");
-                        /* This byte, i, is the start of the next unicode character */
-                        utf_sequence_length = utf_sequence_number;
+                    ret = flb_utf8_decode(&state, &codepoint, (uint8_t)     str[i]);
+
+                    if (ret == FLB_UTF8_REJECT) {
+                        if (utf_sequence_number == 0 && ((str[i] & 0xC0) != 0xC0)) {
+                            tmp[utf_sequence_number] = str[i];
+                            i++; /* Consume invalid leading byte */
+                            utf_sequence_length = utf_sequence_number + 1;
+                        }
+                        else if (utf_sequence_number > 0 && ((str[i] & 0xC0) != 0x80)) {
+                            utf_sequence_length = utf_sequence_number;
+                        }
+                        flb_debug("[pack] invalid UTF-8 sequence detected, replacing with substitution character");
+                        //codepoint = 0xFFFD;  // Replacement character
                         is_valid = FLB_FALSE;
                         break;
                     }
@@ -970,17 +980,23 @@ int flb_utils_write_str(char *buf, int *off, size_t size, const char *str, size_
                     ++i;
                 }
 
-                --i;
+                //--i;
 
                 if (is_valid) {
                     if (available < utf_sequence_length) {
-                        return FLB_FALSE;  // Not enough space
+                        /* not enough space */
+                        return FLB_FALSE;
                     }
 
-                    encoded_to_buf(p, tmp, utf_sequence_length);
-                    p += utf_sequence_length;
+                    len = snprintf(tmp, sizeof(tmp), "\\u%.4x", codepoint);
+                    if (available < len) {
+                        /* not enough space */
+                        return FLB_FALSE;
+                    }
+                    memcpy(p, tmp, len);
+                    p += len;
                     offset += utf_sequence_length;
-                    available -= utf_sequence_length;
+                    available -= len;//utf_sequence_length;
                 }
                 else {
                     if (available < utf_sequence_length * 3) {
@@ -1037,8 +1053,9 @@ int flb_utils_write_str(char *buf, int *off, size_t size, const char *str, size_
                         available -= 3;
                     }
                 }
+
             }
-            else {
+             else {
                 if (available < 1) {
                     /*  no space for a single byte */
                     return FLB_FALSE;
