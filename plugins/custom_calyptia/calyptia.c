@@ -33,6 +33,8 @@
 #include <fluent-bit/flb_utils.h>
 #include <fluent-bit/flb_hash.h>
 
+#include <fluent-bit/calyptia/calyptia_constants.h>
+
 #include "calyptia.h"
 
 #define UUID_BUFFER_SIZE 38 /* Maximum length of UUID string + null terminator */
