@@ -113,6 +113,16 @@ static void cb_parseable_flush(struct flb_event_chunk *event_chunk,
                 FLB_OUTPUT_RETURN(FLB_ERROR);
             }
 
+            // Print the full configuration for debugging
+            flb_plg_info(ctx->ins, "Full config details:");
+            flb_plg_info(ctx->ins, "Server: %s", ctx->p_server);
+            flb_plg_info(ctx->ins, "Port: %d", ctx->p_port);
+            flb_plg_info(ctx->ins, "Username: %s", ctx->p_username);
+            flb_plg_info(ctx->ins, "Password: %s", ctx->p_password);
+            flb_plg_info(ctx->ins, "Stream: %s", ctx->p_stream);
+            flb_plg_info(ctx->ins, "EN: %s", ctx->p_exclude_namespaces);
+
+
             flb_sds_t namespace_name = flb_sds_create_size(256); // Dynamic string
             if (body_copy != NULL) {
                 char *namespace_name_value = strstr(body_copy, "\"namespace_name\":\"");
@@ -127,12 +137,12 @@ static void cb_parseable_flush(struct flb_event_chunk *event_chunk,
                         flb_plg_info(ctx->ins, "Extracted namespace_name: %s", namespace_name);
 
                         // Exclusion logic (revised)
-                        if (!mk_list_is_empty(&ctx->exclude_namespaces)) {
+                        if (!mk_list_is_empty(&ctx->p_exclude_namespaces)) {
                             flb_plg_info(ctx->ins, "Checking exclude namespaces...");
 
                             struct mk_list *head;
                             struct flb_slist_entry *entry;
-                            mk_list_foreach(head, &ctx->exclude_namespaces) {
+                            mk_list_foreach(head, &ctx->p_exclude_namespaces) {
                                 entry = mk_list_entry(head, struct flb_slist_entry, _head);
                                 
                                 // Debug: Print each exclude namespace in the list
@@ -250,7 +260,7 @@ static int cb_parseable_exit(void *data, struct flb_config *config)
         return 0;
     }
 
-    flb_slist_destroy(&ctx->exclude_namespaces);
+    flb_slist_destroy(&ctx->p_exclude_namespaces);
     /* Free up resources */
     if (ctx->upstream) {
         flb_upstream_destroy(ctx->upstream);
@@ -288,7 +298,7 @@ static struct flb_config_map config_map[] = {
     },
     {
      FLB_CONFIG_MAP_SLIST, "P_Exclude_Namespaces", NULL,
-     0, FLB_TRUE, offsetof(struct flb_out_parseable, exclude_namespaces),
+     0, FLB_TRUE, offsetof(struct flb_out_parseable, p_exclude_namespaces),
     "A space-separated list of Kubernetes namespaces to exclude from log forwarding."
     },
     /* EOF */
