@@ -32,6 +32,8 @@ static int cb_parseable_init(struct flb_output_instance *ins,
         return -1;
     }
 
+    flb_plg_info(ctx->ins, "Configured port: %d", ctx->port);
+
     ctx->upstream = flb_upstream_create(config,
                                         ctx->server,
                                         ctx->port,
@@ -183,11 +185,13 @@ static void cb_parseable_flush(struct flb_event_chunk *event_chunk,
             }
         }
         else {
-            flb_plg_error(ctx->ins, "P_Stream is not set. Cannot determine the value for X-P-Stream.");
+            flb_plg_error(ctx->ins, "Stream is not set. Cannot determine the value for X-P-Stream.");
             flb_sds_destroy(body);
             msgpack_unpacked_destroy(&result);
             FLB_OUTPUT_RETURN(FLB_ERROR);
         }
+
+        flb_plg_info(ctx->ins, "Creating upstream with server: %s, port: %d", ctx->server, ctx->port);
 
         /* Get upstream connection */
         u_conn = flb_upstream_conn_get(ctx->upstream);
