@@ -151,14 +151,14 @@ static void cb_parseable_flush(struct flb_event_chunk *event_chunk,
                 FLB_OUTPUT_RETURN(FLB_ERROR);
             }
 
-            /* Check if the namespace is excluded */
-            if (is_namespace_excluded(ctx, namespace_name)) {
-                flb_plg_info(ctx->ins, "Skipping HTTP request for excluded namespace: %s", namespace_name);
-                flb_sds_destroy(namespace_name);
-                flb_sds_destroy(body);
-                msgpack_sbuffer_destroy(&sbuf);
-                continue;  // Skip sending the HTTP request
-            }
+            // /* Check if the namespace is excluded */
+            // if (is_namespace_excluded(ctx, namespace_name)) {
+            //     flb_plg_info(ctx->ins, "Skipping HTTP request for excluded namespace: %s", namespace_name);
+            //     flb_sds_destroy(namespace_name);
+            //     flb_sds_destroy(body);
+            //     msgpack_sbuffer_destroy(&sbuf);
+            //     continue;  // Skip sending the HTTP request
+            // }
 
 
             /* Determine the value of the X-P-Stream header */
@@ -239,6 +239,7 @@ static int cb_parseable_exit(void *data, struct flb_config *config)
         return 0;
     }
 
+    flb_slist_destroy(&ctx->exclude_namespaces);
     /* Free up resources */
     if (ctx->upstream) {
         flb_upstream_destroy(ctx->upstream);
