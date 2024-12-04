@@ -1481,6 +1481,7 @@ int flb_utils_get_machine_id(char **out_id, size_t *out_size)
     char *id;
     size_t bytes;
     char *uuid;
+    int fallback = FLB_FALSE;
 
 #ifdef __linux__
     char *dbus_var = "/var/lib/dbus/machine-id";
@@ -1490,6 +1491,11 @@ int flb_utils_get_machine_id(char **out_id, size_t *out_size)
     if (access(dbus_var, F_OK) == 0) { /* check if the file exists first */
         ret = machine_id_read_and_sanitize(dbus_var, &id, &bytes);
         if (ret == 0) {
+            if (bytes == 0) {
+                /* guid is somewhat corrupted */
+                fallback = FLB_TRUE;
+                goto fallback;
+            }
             *out_id = id;
             *out_size = bytes;
             return 0;
@@ -1500,6 +1506,11 @@ int flb_utils_get_machine_id(char **out_id, size_t *out_size)
     if (access(dbus_etc, F_OK) == 0) { /* check if the file exists first */
         ret = machine_id_read_and_sanitize(dbus_etc, &id, &bytes);
         if (ret == 0) {
+            if (bytes == 0) {
+                /* guid is somewhat corrupted */
+                fallback = FLB_TRUE;
+                goto fallback;
+            }
             *out_id = id;
             *out_size = bytes;
             return 0;
@@ -1595,6 +1606,8 @@ int flb_utils_get_machine_id(char **out_id, size_t *out_size)
     }
 #endif
 
+fallback:
+
     flb_warn("falling back on random machine UUID");
 
     /* generate a random uuid */
@@ -1607,6 +1620,9 @@ int flb_utils_get_machine_id(char **out_id, size_t *out_size)
     if (ret == 0) {
         *out_id = uuid;
         *out_size = strlen(uuid);
+        if (fallback == FLB_TRUE) {
+            return 2;
+        }
         return 0;
     }
 
