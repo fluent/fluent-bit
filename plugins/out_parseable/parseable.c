@@ -10,19 +10,6 @@
 #include <msgpack.h>
 #include "parseable.h"
 
-static int is_namespace_excluded(struct flb_out_parseable *ctx, flb_sds_t namespace_name) {
-    struct mk_list *head;
-    struct flb_slist_entry *entry;
-
-    mk_list_foreach(head, &ctx->exclude_namespaces) {
-        entry = mk_list_entry(head, struct flb_slist_entry, _head);
-        if (flb_sds_cmp(entry->str, namespace_name, flb_sds_len(namespace_name)) == 0) {
-            return FLB_TRUE;  // Namespace is in the exclusion list
-        }
-    }
-    return FLB_FALSE;  // Namespace is not excluded
-}
-
 static int cb_parseable_init(struct flb_output_instance *ins,
                              struct flb_config *config, void *data)
 {
@@ -137,7 +124,18 @@ static void cb_parseable_flush(struct flb_event_chunk *event_chunk,
                     if (end_quote != NULL) {
                         *end_quote = '\0';  // Null-terminate the extracted value
                         namespace_name = flb_sds_printf(&namespace_name, "%s", namespace_name_value);
-                        // flb_plg_info(ctx->ins, "Namespace name extracted value: %s", namespace_name_value);
+                        // Inline check for excluded namespaces
+                        struct mk_list *head;
+                        struct flb_slist_entry *entry;
+                        mk_list_foreach(head, &ctx->exclude_namespaces) {
+                            entry = mk_list_entry(head, struct flb_slist_entry, _head);
+                            if (flb_sds_cmp(entry->str, namespace_name, flb_sds_len(namespace_name)) == 0) {
+                                flb_plg_info(ctx->ins, "Skipping excluded namespace: %s", namespace_name);
+                                flb_sds_destroy(namespace_name);
+                                flb_sds_destroy(body);
+                                continue;  // Skip sending the HTTP request
+                            }
+                        }
                     }
                 }
             }
@@ -150,17 +148,6 @@ static void cb_parseable_flush(struct flb_event_chunk *event_chunk,
                 msgpack_unpacked_destroy(&result);
                 FLB_OUTPUT_RETURN(FLB_ERROR);
             }
-
-            // /* Check if the namespace is excluded */
-            // if (is_namespace_excluded(ctx, namespace_name)) {
-            //     flb_plg_info(ctx->ins, "Skipping HTTP request for excluded namespace: %s", namespace_name);
-            //     flb_sds_destroy(namespace_name);
-            //     flb_sds_destroy(body);
-            //     msgpack_sbuffer_destroy(&sbuf);
-            //     continue;  // Skip sending the HTTP request
-            // }
-
-
             /* Determine the value of the X-P-Stream header */
             x_p_stream_value = namespace_name;  // Use the namespace name for the header
         }
