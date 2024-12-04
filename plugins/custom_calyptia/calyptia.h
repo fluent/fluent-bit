@@ -20,6 +20,8 @@
 #ifndef FLB_CALYPTIA_H
 #define FLB_CALYPTIA_H
 
+#include <stdbool.h>
+
 struct calyptia {
     /* config map options */
     flb_sds_t api_key;
