@@ -135,6 +135,7 @@ static void cb_parseable_flush(struct flb_event_chunk *event_chunk,
                             mk_list_foreach(head, ctx->p_exclude_namespaces) {
                                 entry = mk_list_entry(head, struct flb_slist_entry, _head);
                                 flb_plg_info(ctx->ins, "Checking against exclude namespace: %s", entry->str);
+                                flb_plg_info(ctx->ins, "namespace_name: %s %d", namespace_name,flb_sds_len(namespace_name));
                                 if (flb_sds_cmp(entry->str, namespace_name, flb_sds_len(namespace_name)) == 0) {
                                         flb_plg_info(ctx->ins, "Skipping excluded namespace: %s", namespace_name);
                                         // Cleanup
