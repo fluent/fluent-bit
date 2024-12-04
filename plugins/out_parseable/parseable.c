@@ -10,6 +10,19 @@
 #include <msgpack.h>
 #include "parseable.h"
 
+static int is_namespace_excluded(struct flb_out_parseable *ctx, flb_sds_t namespace_name) {
+    struct mk_list *head;
+    struct flb_slist_entry *entry;
+
+    mk_list_foreach(head, &ctx->exclude_namespaces) {
+        entry = mk_list_entry(head, struct flb_slist_entry, _head);
+        if (flb_sds_cmp(entry->str, namespace_name, flb_sds_len(namespace_name)) == 0) {
+            return FLB_TRUE;  // Namespace is in the exclusion list
+        }
+    }
+    return FLB_FALSE;  // Namespace is not excluded
+}
+
 static int cb_parseable_init(struct flb_output_instance *ins,
                              struct flb_config *config, void *data)
 {
@@ -282,17 +295,3 @@ struct flb_output_plugin out_parseable_plugin = {
     .event_type   = FLB_OUTPUT_LOGS,
     .config_map   = config_map
 };
-
-
-static int is_namespace_excluded(struct flb_out_parseable *ctx, flb_sds_t namespace_name) {
-    struct mk_list *head;
-    struct flb_slist_entry *entry;
-
-    mk_list_foreach(head, &ctx->exclude_namespaces) {
-        entry = mk_list_entry(head, struct flb_slist_entry, _head);
-        if (flb_sds_cmp(entry->str, namespace_name, flb_sds_len(namespace_name)) == 0) {
-            return FLB_TRUE;  // Namespace is in the exclusion list
-        }
-    }
-    return FLB_FALSE;  // Namespace is not excluded
-}
