@@ -235,37 +235,46 @@ static int cb_parseable_exit(void *data, struct flb_config *config)
 static struct flb_config_map config_map[] = {
     {
      FLB_CONFIG_MAP_STR, "P_Server", NULL,
-     0, FLB_TRUE, offsetof(struct flb_out_parseable, p_server)
-    },
-    {
-     FLB_CONFIG_MAP_STR, "P_Port", "443",
-     0, FLB_TRUE, offsetof(struct flb_out_parseable, p_port)
-    },
-    {
-     FLB_CONFIG_MAP_STR, "P_Stream", NULL,
-     0, FLB_TRUE, offsetof(struct flb_out_parseable, p_stream)
+     0, FLB_TRUE, offsetof(struct flb_out_parseable, p_server),
+    "The host of the server to send logs to."
     },
     {
      FLB_CONFIG_MAP_STR, "P_Username", NULL,
-     0, FLB_TRUE, offsetof(struct flb_out_parseable, p_username)
+     0, FLB_TRUE, offsetof(struct flb_out_parseable, p_username),
+    "The parseable server username."
     },
     {
      FLB_CONFIG_MAP_STR, "P_Password", NULL,
-     0, FLB_TRUE, offsetof(struct flb_out_parseable, p_password)
+     0, FLB_TRUE, offsetof(struct flb_out_parseable, p_password),
+    "The parseable server password."
     },
     {
-     FLB_CONFIG_MAP_LIST, "ExcludeNamespaces", NULL,
-     0, FLB_TRUE, offsetof(struct flb_out_parseable, exclude_namespaces)
+     FLB_CONFIG_MAP_STR, "P_Stream", NULL,
+     0, FLB_TRUE, offsetof(struct flb_out_parseable, p_stream),
+    "The stream name to send logs to. Using $NAMESPACE will dynamically create a namespace."
     },
+    {
+     FLB_CONFIG_MAP_INT, "P_Port", NULL,
+     0, FLB_TRUE, offsetof(struct flb_out_parseable, p_port),
+    "The port on the host to send logs to."
+    },
+    {
+     FLB_CONFIG_MAP_SLIST, "P_Exclude_Namespaces", NULL,
+     0, FLB_TRUE, offsetof(struct flb_out_parseable, exclude_namespaces),
+    "A space-separated list of Kubernetes namespaces to exclude from log forwarding."
+    },
+    /* EOF */
     {0}
 };
 
+/* Plugin registration */
 struct flb_output_plugin out_parseable_plugin = {
     .name         = "parseable",
-    .description  = "Parseable output plugin",
+    .description  = "Sends events to a HTTP server",
     .cb_init      = cb_parseable_init,
     .cb_flush     = cb_parseable_flush,
     .cb_exit      = cb_parseable_exit,
-    .config_map   = config_map,
-    .flags        = FLB_OUTPUT_PLUGIN | FLB_IO_TCP
+    .flags        = 0,
+    .event_type   = FLB_OUTPUT_LOGS,
+    .config_map   = config_map
 };
