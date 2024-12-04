@@ -138,7 +138,18 @@ static void cb_parseable_flush(struct flb_event_chunk *event_chunk,
                 FLB_OUTPUT_RETURN(FLB_ERROR);
             }
 
-            x_p_stream_value = namespace_name;
+            /* Check if the namespace is excluded */
+            if (is_namespace_excluded(ctx, namespace_name)) {
+                flb_plg_info(ctx->ins, "Skipping HTTP request for excluded namespace: %s", namespace_name);
+                flb_sds_destroy(namespace_name);
+                flb_sds_destroy(body);
+                msgpack_sbuffer_destroy(&sbuf);
+                continue;  // Skip sending the HTTP request
+            }
+
+
+            /* Determine the value of the X-P-Stream header */
+            x_p_stream_value = namespace_name;  // Use the namespace name for the header
         }
         else if (ctx->p_stream) {
             /* Use the user-specified stream directly */
@@ -188,6 +199,8 @@ static void cb_parseable_flush(struct flb_event_chunk *event_chunk,
         flb_http_add_header(client, "X-P-Stream", 10, x_p_stream_value, flb_sds_len(x_p_stream_value));
         flb_http_basic_auth(client, ctx->p_username, ctx->p_password);
 
+        /* Log the body being sent */
+        // flb_plg_info(ctx->ins, "HTTP request body: %s", body);
         /* Perform request */
         ret = flb_http_do(client, &b_sent);
         flb_plg_info(ctx->ins, "HTTP request http_do=%i, HTTP Status: %i",
@@ -241,17 +254,22 @@ static struct flb_config_map config_map[] = {
     {
      FLB_CONFIG_MAP_STR, "P_Stream", NULL,
      0, FLB_TRUE, offsetof(struct flb_out_parseable, p_stream),
-    "The stream name to send logs to. using $NAMESPACE will dynamically create namespace."
+    "The stream name to send logs to. Using $NAMESPACE will dynamically create a namespace."
     },
     {
-     FLB_CONFIG_MAP_INT, "P_Port", 0,
+     FLB_CONFIG_MAP_INT, "P_Port", NULL,
      0, FLB_TRUE, offsetof(struct flb_out_parseable, p_port),
     "The port on the host to send logs to."
     },
-
+    {
+     FLB_CONFIG_MAP_SLIST, "P_Exclude_Namespaces", NULL,
+     0, FLB_TRUE, offsetof(struct flb_out_parseable, exclude_namespaces),
+    "A space-separated list of Kubernetes namespaces to exclude from log forwarding."
+    },
     /* EOF */
     {0}
 };
+
 
 /* Plugin registration */
 struct flb_output_plugin out_parseable_plugin = {
@@ -264,3 +282,17 @@ struct flb_output_plugin out_parseable_plugin = {
     .event_type   = FLB_OUTPUT_LOGS,
     .config_map   = config_map
 };
+
+
+static int is_namespace_excluded(struct flb_out_parseable *ctx, flb_sds_t namespace_name) {
+    struct mk_list *head;
+    struct flb_slist_entry *entry;
+
+    mk_list_foreach(head, &ctx->exclude_namespaces) {
+        entry = mk_list_entry(head, struct flb_slist_entry, _head);
+        if (flb_sds_cmp(entry->str, namespace_name, flb_sds_len(namespace_name)) == 0) {
+            return FLB_TRUE;  // Namespace is in the exclusion list
+        }
+    }
+    return FLB_FALSE;  // Namespace is not excluded
+}
