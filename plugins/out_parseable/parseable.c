@@ -123,6 +123,17 @@ static void cb_parseable_flush(struct flb_event_chunk *event_chunk,
             flb_plg_info(ctx->ins, "EN: %s", ctx->p_exclude_namespaces);
 
 
+            if (mk_list_is_empty(&ctx->p_exclude_namespaces)) {
+                flb_plg_info(ctx->ins, "No exclude namespaces configured.");
+            } else {
+                struct mk_list *head;
+                struct flb_slist_entry *entry;
+                mk_list_foreach(head, &ctx->p_exclude_namespaces) {
+                    entry = mk_list_entry(head, struct flb_slist_entry, _head);
+                    flb_plg_info(ctx->ins, "Exclude namespace: %s", entry->str);
+                }
+            }
+
             flb_sds_t namespace_name = flb_sds_create_size(256); // Dynamic string
             if (body_copy != NULL) {
                 char *namespace_name_value = strstr(body_copy, "\"namespace_name\":\"");
