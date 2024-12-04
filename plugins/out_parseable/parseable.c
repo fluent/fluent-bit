@@ -113,36 +113,6 @@ static void cb_parseable_flush(struct flb_event_chunk *event_chunk,
                 FLB_OUTPUT_RETURN(FLB_ERROR);
             }
 
-            // Print the full configuration for debugging
-            flb_plg_info(ctx->ins, "Full config details:");
-            flb_plg_info(ctx->ins, "Server: %s", ctx->p_server);
-            flb_plg_info(ctx->ins, "Port: %d", ctx->p_port);
-            flb_plg_info(ctx->ins, "Username: %s", ctx->p_username);
-            flb_plg_info(ctx->ins, "Password: %s", ctx->p_password);
-            flb_plg_info(ctx->ins, "Stream: %s", ctx->p_stream);
-            flb_plg_info(ctx->ins, "EN: %s", ctx->p_exclude_namespaces);
-
-
-            struct mk_list *head;
-            struct flb_slist_entry *entry;
-
-            if (ctx->p_exclude_namespaces) {
-                mk_list_foreach(head, ctx->p_exclude_namespaces) {
-                    entry = mk_list_entry(head, struct flb_slist_entry, _head);
-                    flb_plg_info(ctx->ins, "Exclude namespace: %s", entry->str);
-                }
-             }
-
-            // if (mk_list_is_empty(&ctx->p_exclude_namespaces)) {
-            //     flb_plg_info(ctx->ins, "No exclude namespaces configured.");
-            // } else {
-            //     struct mk_list *head;
-            //     struct flb_slist_entry *entry;
-            //     mk_list_foreach(head, &ctx->p_exclude_namespaces) {
-            //         entry = mk_list_entry(head, struct flb_slist_entry, _head);
-            //         flb_plg_info(ctx->ins, "Exclude namespace: %s", entry->str);
-            //     }
-            // }
 
             flb_sds_t namespace_name = flb_sds_create_size(256); // Dynamic string
             if (body_copy != NULL) {
@@ -157,35 +127,27 @@ static void cb_parseable_flush(struct flb_event_chunk *event_chunk,
                         // Debug: Print the extracted namespace name
                         flb_plg_info(ctx->ins, "Extracted namespace_name: %s", namespace_name);
 
-                        // // Exclusion logic (revised)
-                        // if (!mk_list_is_empty(&ctx->p_exclude_namespaces)) {
-                        //     flb_plg_info(ctx->ins, "Checking exclude namespaces...");
 
-                        //     struct mk_list *head;
-                        //     struct flb_slist_entry *entry;
-                        //     mk_list_foreach(head, &ctx->p_exclude_namespaces) {
-                        //         entry = mk_list_entry(head, struct flb_slist_entry, _head);
-                                
-                        //         // Debug: Print each exclude namespace in the list
-                        //         flb_plg_info(ctx->ins, "Checking against exclude namespace: %s", entry->str);
+                        struct mk_list *head;
+                        struct flb_slist_entry *entry;
 
-                        //         if (flb_sds_cmp(entry->str, namespace_name, flb_sds_len(namespace_name)) == 0) {
-                        //             flb_plg_info(ctx->ins, "Skipping excluded namespace: %s", namespace_name);
-                                    
-                        //             // Cleanup
-                        //             flb_sds_destroy(namespace_name);
-                        //             flb_sds_destroy(body);
-                        //             flb_sds_destroy(body_copy);
-                        //             msgpack_unpacked_destroy(&result);
-                                    
-                        //             // Skip sending the HTTP request
-                        //             FLB_OUTPUT_RETURN(FLB_OK);  
-                        //         }
-                        //     }
-                        // } else {
-                        //     // Debug: List of exclude namespaces is empty
-                        //     flb_plg_info(ctx->ins, "No exclude namespaces configured.");
-                        // }
+                        if (ctx->p_exclude_namespaces) {
+                            mk_list_foreach(head, ctx->p_exclude_namespaces) {
+                                entry = mk_list_entry(head, struct flb_slist_entry, _head);
+                                flb_plg_info(ctx->ins, "Checking against exclude namespace: %s", entry->str);
+                                if (flb_sds_cmp(entry->str, namespace_name, flb_sds_len(namespace_name)) == 0) {
+                                        flb_plg_info(ctx->ins, "Skipping excluded namespace: %s", namespace_name);
+                                        // Cleanup
+                                        flb_sds_destroy(namespace_name);
+                                        flb_sds_destroy(body);
+                                        flb_sds_destroy(body_copy);
+                                        msgpack_unpacked_destroy(&result);
+                                        
+                                        // Skip sending the HTTP request
+                                        FLB_OUTPUT_RETURN(FLB_OK);
+                                }
+                            }
+                        }
                     }
                 } else {
                     // Debug: Could not find the namespace_name in body_copy
