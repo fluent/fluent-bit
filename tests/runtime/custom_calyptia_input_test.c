@@ -1,7 +1,6 @@
 #include <stdio.h>
 #include <string.h>
 #include <fluent-bit/flb_info.h>
-#include <fluent-bit/flb_input_plugin.h>
 #include <fluent-bit/flb_config.h>
 #include <fluent-bit/flb_env.h>
 #include <fluent-bit/flb_custom_plugin.h>
