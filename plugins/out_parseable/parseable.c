@@ -280,7 +280,7 @@ static struct flb_config_map config_map[] = {
     "The stream name to send logs to. Using $NAMESPACE will dynamically create a namespace."
     },
     {
-     FLB_CONFIG_MAP_INT, "Port", 80,
+     FLB_CONFIG_MAP_INT, "Port", NULL,
      0, FLB_TRUE, offsetof(struct flb_out_parseable, port),
     "The port on the host to send logs to."
     },
