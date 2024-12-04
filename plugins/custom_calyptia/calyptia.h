@@ -20,7 +20,6 @@
 #ifndef FLB_CALYPTIA_H
 #define FLB_CALYPTIA_H
 
-#include <fluent-bit/flb_utils.h>
 #include <stdbool.h>
 
 struct calyptia {
@@ -64,12 +63,5 @@ static flb_sds_t agent_config_filename(struct calyptia *ctx, char *fname);
 
 /* These are unique to the agent rather than the fleet */
 #define machine_id_fleet_config_filename(a) agent_config_filename((a), "machine-id")
-
-/* Function wrappers to enable mocking for unit test filesystem access */
-int (*flb_access)(const char *pathname, int mode) = access;
-int (*flb_open)(const char *pathname, int flags, ...) = open;
-ssize_t (*flb_write)(int fd, const void *buf, size_t count) = write;
-int (*flb_close)(int fd) = close;
-int (*flb_utils_read_file_wrapper)(char *path, char **out_buf, size_t *out_size) = flb_utils_read_file;
 
 #endif /* FLB_CALYPTIA_H */

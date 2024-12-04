@@ -4,6 +4,8 @@
 #include <fluent-bit/flb_config.h>
 #include <fluent-bit/flb_env.h>
 #include <fluent-bit/flb_custom_plugin.h>
+#include <fluent-bit/flb_mem.h>
+#include <fluent-bit/flb_str.h>
 #include "flb_tests_runtime.h"
 #include "../../plugins/custom_calyptia/calyptia.h"
 

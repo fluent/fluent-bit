@@ -39,6 +39,13 @@
 
 #define UUID_BUFFER_SIZE 38 /* Maximum length of UUID string + null terminator */
 
+/* Function wrappers to enable mocking for unit test filesystem access */
+int (*flb_access)(const char *pathname, int mode) = access;
+int (*flb_open)(const char *pathname, int flags, ...) = open;
+ssize_t (*flb_write)(int fd, const void *buf, size_t count) = write;
+int (*flb_close)(int fd) = close;
+int (*flb_utils_read_file_wrapper)(char *path, char **out_buf, size_t *out_size) = flb_utils_read_file;
+
 /*
  * Check if the key belongs to a sensitive data field, if so report it. We never
  * share any sensitive data.
