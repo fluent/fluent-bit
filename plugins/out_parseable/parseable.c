@@ -33,8 +33,8 @@ static int cb_parseable_init(struct flb_output_instance *ins,
     }
 
     ctx->upstream = flb_upstream_create(config,
-                                        ctx->p_server,
-                                        ctx->p_port,
+                                        ctx->server,
+                                        ctx->port,
                                         FLB_IO_TCP,
                                         NULL);
 
@@ -103,7 +103,7 @@ static void cb_parseable_flush(struct flb_event_chunk *event_chunk,
         msgpack_sbuffer_destroy(&sbuf);
 
         /* Determine the value of the X-P-Stream header */
-        if (ctx->p_stream && strcmp(ctx->p_stream, "$NAMESPACE") == 0) {
+        if (ctx->stream && strcmp(ctx->stream, "$NAMESPACE") == 0) {
             /* Extract namespace_name from the body */
             flb_sds_t body_copy = flb_sds_create(body);
             if (body_copy == NULL) {
@@ -131,8 +131,8 @@ static void cb_parseable_flush(struct flb_event_chunk *event_chunk,
                         struct mk_list *head;
                         struct flb_slist_entry *entry;
 
-                        if (ctx->p_exclude_namespaces) {
-                            mk_list_foreach(head, ctx->p_exclude_namespaces) {
+                        if (ctx->exclude_namespaces) {
+                            mk_list_foreach(head, ctx->exclude_namespaces) {
                                 entry = mk_list_entry(head, struct flb_slist_entry, _head);
                                 flb_plg_info(ctx->ins, "Checking against exclude namespace: %s", entry->str);
                                 // flb_plg_info(ctx->ins, "namespace_name: %s %d", namespace_name,flb_sds_len(namespace_name));
@@ -172,11 +172,11 @@ static void cb_parseable_flush(struct flb_event_chunk *event_chunk,
             /* Determine the value of the X-P-Stream header */
             x_p_stream_value = namespace_name;  // Use the namespace name for the header
         }
-        else if (ctx->p_stream) {
+        else if (ctx->stream) {
             /* Use the user-specified stream directly */
-            x_p_stream_value = flb_sds_create(ctx->p_stream);
+            x_p_stream_value = flb_sds_create(ctx->stream);
             if (!x_p_stream_value) {
-                flb_plg_error(ctx->ins, "Failed to set X-P-Stream header to the specified stream: %s", ctx->p_stream);
+                flb_plg_error(ctx->ins, "Failed to set X-P-Stream header to the specified stream: %s", ctx->stream);
                 flb_sds_destroy(body);
                 msgpack_unpacked_destroy(&result);
                 FLB_OUTPUT_RETURN(FLB_ERROR);
@@ -203,7 +203,7 @@ static void cb_parseable_flush(struct flb_event_chunk *event_chunk,
         client = flb_http_client(u_conn,
                                  FLB_HTTP_POST, "/api/v1/ingest",
                                  body, flb_sds_len(body),
-                                 ctx->p_server, ctx->p_port,
+                                 ctx->server, ctx->port,
                                  NULL, 0);
 
         if (!client) {
@@ -218,7 +218,7 @@ static void cb_parseable_flush(struct flb_event_chunk *event_chunk,
         /* Add HTTP headers */
         flb_http_add_header(client, "Content-Type", 12, "application/json", 16);
         flb_http_add_header(client, "X-P-Stream", 10, x_p_stream_value, flb_sds_len(x_p_stream_value));
-        flb_http_basic_auth(client, ctx->p_username, ctx->p_password);
+        flb_http_basic_auth(client, ctx->username, ctx->password);
 
         /* Perform request */
         ret = flb_http_do(client, &b_sent);
@@ -244,7 +244,7 @@ static int cb_parseable_exit(void *data, struct flb_config *config)
         return 0;
     }
 
-    flb_slist_destroy(&ctx->p_exclude_namespaces);
+    flb_slist_destroy(&ctx->exclude_namespaces);
     /* Free up resources */
     if (ctx->upstream) {
         flb_upstream_destroy(ctx->upstream);
@@ -256,33 +256,33 @@ static int cb_parseable_exit(void *data, struct flb_config *config)
 /* Configuration properties map */
 static struct flb_config_map config_map[] = {
     {
-     FLB_CONFIG_MAP_STR, "P_Server", NULL,
-     0, FLB_TRUE, offsetof(struct flb_out_parseable, p_server),
+     FLB_CONFIG_MAP_STR, "Server", NULL,
+     0, FLB_TRUE, offsetof(struct flb_out_parseable, server),
     "The host of the server to send logs to."
     },
     {
-     FLB_CONFIG_MAP_STR, "P_Username", NULL,
-     0, FLB_TRUE, offsetof(struct flb_out_parseable, p_username),
+     FLB_CONFIG_MAP_STR, "Username", NULL,
+     0, FLB_TRUE, offsetof(struct flb_out_parseable, username),
     "The parseable server username."
     },
     {
-     FLB_CONFIG_MAP_STR, "P_Password", NULL,
-     0, FLB_TRUE, offsetof(struct flb_out_parseable, p_password),
+     FLB_CONFIG_MAP_STR, "Password", NULL,
+     0, FLB_TRUE, offsetof(struct flb_out_parseable, password),
     "The parseable server password."
     },
     {
-     FLB_CONFIG_MAP_STR, "P_Stream", NULL,
-     0, FLB_TRUE, offsetof(struct flb_out_parseable, p_stream),
+     FLB_CONFIG_MAP_STR, "Stream", NULL,
+     0, FLB_TRUE, offsetof(struct flb_out_parseable, stream),
     "The stream name to send logs to. Using $NAMESPACE will dynamically create a namespace."
     },
     {
-     FLB_CONFIG_MAP_INT, "P_Port", NULL,
-     0, FLB_TRUE, offsetof(struct flb_out_parseable, p_port),
+     FLB_CONFIG_MAP_INT, "Port", NULL,
+     0, FLB_TRUE, offsetof(struct flb_out_parseable, port),
     "The port on the host to send logs to."
     },
     {
-     FLB_CONFIG_MAP_CLIST, "P_Exclude_Namespaces", NULL,
-     0, FLB_TRUE, offsetof(struct flb_out_parseable, p_exclude_namespaces),
+     FLB_CONFIG_MAP_CLIST, "Exclude_Namespaces", NULL,
+     0, FLB_TRUE, offsetof(struct flb_out_parseable, exclude_namespaces),
     "A space-separated list of Kubernetes namespaces to exclude from log forwarding."
     },
     /* EOF */
