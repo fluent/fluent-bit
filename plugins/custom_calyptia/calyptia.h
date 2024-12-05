@@ -60,6 +60,7 @@ struct calyptia {
 
 int set_fleet_input_properties(struct calyptia *ctx, struct flb_input_instance *fleet);
 static flb_sds_t agent_config_filename(struct calyptia *ctx, char *fname);
+static flb_sds_t get_machine_id(struct calyptia *ctx);
 
 /* These are unique to the agent rather than the fleet */
 #define machine_id_fleet_config_filename(a) agent_config_filename((a), "machine-id")
