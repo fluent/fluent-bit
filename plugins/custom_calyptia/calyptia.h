@@ -64,11 +64,4 @@ static flb_sds_t agent_config_filename(struct calyptia *ctx, char *fname);
 /* These are unique to the agent rather than the fleet */
 #define machine_id_fleet_config_filename(a) agent_config_filename((a), "machine-id")
 
-/* Function wrappers to enable mocking for unit test filesystem access */
-int (*flb_access)(const char *pathname, int mode);
-int (*flb_open)(const char *pathname, int flags, ...);
-ssize_t (*flb_write)(int fd, const void *buf, size_t count);
-int (*flb_close)(int fd);
-int (*flb_utils_read_file_wrapper)(char *path, char **out_buf, size_t *out_size);
-
 #endif /* FLB_CALYPTIA_H */
