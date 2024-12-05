@@ -584,19 +584,7 @@ int flb_output_set_callback(flb_ctx_t *ctx, int ffd, char *name,
 int flb_output_set_test(flb_ctx_t *ctx, int ffd, char *test_name,
                         void (*out_callback) (void *, int, int, void *, size_t, void *),
                         void *out_callback_data,
-                        void *test_ctx)
-{
-    return flb_output_set_test_with_ctx_callback(ctx, ffd, test_name, out_callback,
-                                                 out_callback_data, test_ctx, NULL);
-}
-
-int flb_output_set_test_with_ctx_callback(flb_ctx_t *ctx, int ffd, char *test_name,
-                        void (*out_callback) (void *, int, int, void *, size_t, void *),
-                        void *out_callback_data,
-                        void *test_ctx,
-                        void *(*test_ctx_callback) (struct flb_config *,
-                                                    struct flb_input_instance *,
-                                                    void *, void *))
+                        void *flush_ctx)
 {
     struct flb_output_instance *o_ins;
 
@@ -617,8 +605,41 @@ int flb_output_set_test_with_ctx_callback(flb_ctx_t *ctx, int ffd, char *test_na
         o_ins->test_formatter.rt_ffd = ffd;
         o_ins->test_formatter.rt_out_callback = out_callback;
         o_ins->test_formatter.rt_data = out_callback_data;
-        o_ins->test_formatter.flush_ctx = test_ctx;
-        o_ins->test_formatter.flush_ctx_callback = test_ctx_callback;
+        o_ins->test_formatter.flush_ctx = flush_ctx;
+    }
+    else {
+        return -1;
+    }
+
+    return 0;
+}
+
+int flb_output_set_test_flush_ctx_callback(flb_ctx_t *ctx, int ffd,
+                                           char *test_name,
+                                           void *(*flush_ctx_callback) (struct flb_config *,
+                                                                        struct flb_input_instance *,
+                                                                        void *, void *),
+                                           void *flush_ctx)
+{
+    struct flb_output_instance *o_ins;
+
+    o_ins = out_instance_get(ctx, ffd);
+    if (!o_ins) {
+        return -1;
+    }
+
+    /*
+     * Enabling a test, set the output instance in 'test' mode, so no real
+     * flush callback is invoked, only the desired implemented test.
+     */
+
+    /* Formatter test */
+    if (strcmp(test_name, "formatter") == 0) {
+        o_ins->test_mode = FLB_TRUE;
+        o_ins->test_formatter.rt_ctx = ctx;
+        o_ins->test_formatter.rt_ffd = ffd;
+        o_ins->test_formatter.flush_ctx = flush_ctx;
+        o_ins->test_formatter.flush_ctx_callback = flush_ctx_callback;
     }
     else {
         return -1;
