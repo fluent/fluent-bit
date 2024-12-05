@@ -240,8 +240,7 @@ static void test_calyptia_machine_id_generation() {
     TEST_CHECK(new_machine_id != NULL);
     TEST_MSG("machine_id changed, expected=%s got=%s", machine_id, new_machine_id);
     TEST_CHECK(value && strcmp(new_machine_id, machine_id) == 0);
-    flb_free(new_machine_id);
-    new_machine_id = NULL;
+    flb_sds_destroy(new_machine_id);
 
     /* repeat with new config directory */
     t_ctx = update_config_dir(t_ctx, "/tmp/config/fleet");
@@ -263,9 +262,8 @@ static void test_calyptia_machine_id_generation() {
     TEST_MSG("machine_id did not change, expected!=%s got=%s", machine_id, new_machine_id);
     TEST_CHECK(new_machine_id && strcmp(new_machine_id, machine_id) != 0);
 
-    flb_free(machine_id);
+    flb_sds_destroy(machine_id);
     machine_id = new_machine_id;
-    new_machine_id = NULL;
 
     /* repeat to confirm existing UUID is maintained */
     new_machine_id = get_machine_id(t_ctx->ctx);
@@ -273,8 +271,8 @@ static void test_calyptia_machine_id_generation() {
     TEST_MSG("machine_id changed, expected=%s got=%s", machine_id, new_machine_id);
     TEST_CHECK(new_machine_id && strcmp(new_machine_id, machine_id) == 0);
 
-    flb_free(new_machine_id);
-    flb_free(machine_id);
+    flb_sds_destroy(new_machine_id);
+    flb_sds_destroy(machine_id);
     cleanup_test_context(t_ctx);
 }
 
