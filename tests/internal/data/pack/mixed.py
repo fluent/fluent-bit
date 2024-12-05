@@ -6,22 +6,24 @@ import os
 import json
 import msgpack
 
+
 def gen_json(f):
-    raw = open(f, 'r')
-    data = raw.read()
-    raw.close()
+    # Open the input file in text mode with UTF-8 encoding
+    with open(f, 'r', encoding='utf-8') as raw:
+        data = raw.read()
 
-    out_mp = f[:-4] + ".mp"
-    out_json = f[:-4] + ".json"
+    # Define output filenames
+    base_name = os.path.splitext(f)[0]
+    out_mp = base_name + ".mp"
+    out_json = base_name + ".json"
 
-    # Write messagepack
-    fmp = open(out_mp, 'w')
-    fmp.write(msgpack.packb(data))
-    fmp.close()
+    # Write MessagePack-encoded data in binary mode
+    with open(out_mp, 'wb') as fmp:
+        fmp.write(msgpack.packb(data))
 
-    fjson = open(out_json, 'w')
-    fjson.write(json.dumps(data))
-    fjson.close()
+    # Write JSON-encoded data in text mode
+    with open(out_json, 'w', encoding='utf-8') as fjson:
+        fjson.write(json.dumps(data))
 
 for fn in os.listdir('.'):
      if not os.path.isfile(fn):
