@@ -7,6 +7,7 @@
 #include <fluent-bit/flb_mem.h>
 #include <fluent-bit/flb_str.h>
 #include <fluent-bit/flb_utils.h>
+#include <fluent-bit/calyptia/calyptia_constants.h>
 #include "flb_tests_runtime.h"
 #include "../../plugins/custom_calyptia/calyptia.h"
 
