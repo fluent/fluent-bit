@@ -411,7 +411,7 @@ static flb_sds_t generate_base_agent_directory(struct calyptia *ctx, flb_sds_t *
     return ret;
 }
 
-static flb_sds_t agent_config_filename(struct calyptia *ctx, char *fname)
+flb_sds_t agent_config_filename(struct calyptia *ctx, char *fname)
 {
     flb_sds_t cfgname = NULL;
     flb_sds_t ret;
@@ -493,7 +493,7 @@ static int create_agent_directory(struct calyptia *ctx)
     return 0;
 }
 
-static flb_sds_t get_machine_id(struct calyptia *ctx)
+flb_sds_t get_machine_id(struct calyptia *ctx)
 {
     int ret = -1;
     char *buf = NULL;

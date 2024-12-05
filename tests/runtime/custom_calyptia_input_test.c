@@ -18,6 +18,9 @@ struct flb_input_instance *flb_input_new(struct flb_config *config,
                                          int public_only);
 void flb_input_instance_destroy(struct flb_input_instance *ins);
 
+flb_sds_t agent_config_filename(struct calyptia *ctx, char *fname);
+flb_sds_t get_machine_id(struct calyptia *ctx);
+
 /* Test context structure */
 struct test_context {
     struct calyptia *ctx;
@@ -205,7 +208,7 @@ static void test_calyptia_machine_id_generation() {
     TEST_CHECK(ret == 0);
 
     /* Verify properties were set correctly */
-    const char *value;
+    const char *value, *expectedValue, *machine_id;
 
     /* Check config_dir */
     value = flb_input_get_property("config_dir", t_ctx->fleet);
@@ -219,14 +222,14 @@ static void test_calyptia_machine_id_generation() {
      * Repeat with custom directory to confirm that works too
     */
     value = machine_id_fleet_config_filename(t_ctx->ctx);
-    const char* expectedValue = flb_sds_printf(expectedValue, "%s/machine-id.conf", FLEET_DEFAULT_CONFIG_DIR);
+    expectedValue = flb_sds_printf(expectedValue, "%s/machine-id.conf", FLEET_DEFAULT_CONFIG_DIR);
     TEST_CHECK(value != NULL);
     TEST_CHECK(expectedValue != NULL);
     TEST_MSG("machine_id filename expected=%s got=%s", expectedValue, value);
     TEST_CHECK(value && strcmp(value, expectedValue) == 0);
 
     /* generate a new machine ID and verify it is not null then store for later use */
-    const char* machine_id = get_machine_id(t_ctx->ctx);
+    machine_id = get_machine_id(t_ctx->ctx);
     TEST_CHECK(machine_id != NULL);
 
     /* repeat to confirm existing UUID is maintained */
