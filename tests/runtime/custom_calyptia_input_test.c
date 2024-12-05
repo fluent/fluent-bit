@@ -197,7 +197,7 @@ static void test_calyptia_machine_id_generation() {
     TEST_CHECK(t_ctx != NULL);
 
     /* Set config directory to default */
-    t_ctx = update_config_dir(FLEET_DEFAULT_CONFIG_DIR)
+    t_ctx = update_config_dir(t_ctx, FLEET_DEFAULT_CONFIG_DIR);
     TEST_CHECK(t_ctx != NULL);
 
     /* Test setting properties */
@@ -236,7 +236,7 @@ static void test_calyptia_machine_id_generation() {
     TEST_CHECK(value && strcmp(value, machine_id) == 0);
 
     /* repeat with new config directory */
-    t_ctx = update_config_dir("/test/config/fleet")
+    t_ctx = update_config_dir(t_ctx, "/test/config/fleet");
     TEST_CHECK(t_ctx != NULL);
 
     /* check we use the new directory for the filename */
