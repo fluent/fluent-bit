@@ -6,27 +6,34 @@ import json
 import msgpack
 
 def gen_json(f):
+    print(f)
 
-    print f
-
-    with io.open(f, 'rb') as raw:
+    with open(f, 'rb') as raw:
         data = raw.read()
 
-    out_mp = f[:-4] + ".mp"
-    out_json = f[:-4] + ".json"
+    out_mp = f"{os.path.splitext(f)[0]}.mp"
+    out_json = f"{os.path.splitext(f)[0]}.json"
+
+    # Decode input bytes to a string
+    try:
+        decoded_data = data.decode('utf-8')
+    except UnicodeDecodeError as e:
+        print(f"Error: Unable to decode file {f} as UTF-8: {e}")
+        return
 
     # Write messagepack
-    fmp = open(out_mp, 'w')
-    fmp.write(msgpack.packb(data))
-    fmp.close()
+    with open(out_mp, 'wb') as fmp:
+        fmp.write(msgpack.packb(decoded_data))
 
-    fjson = open(out_json, 'w')
-    fjson.write(json.dumps(data).encode('utf8'))
-    fjson.close()
+    # Write JSON with properly encoded Unicode escape sequences
+    with open(out_json, 'w', encoding='utf-8') as fjson:
+        # Use json.dumps with ensure_ascii=True for \uXXXX escape sequences
+        escaped_data = json.dumps(decoded_data, ensure_ascii=True)
+        fjson.write(escaped_data)
 
 for fn in os.listdir('.'):
-     if not os.path.isfile(fn):
-         continue
+    if not os.path.isfile(fn):
+        continue
 
-     if fn.startswith('utf8_') and fn.endswith('.txt'):
-         gen_json(fn)
+    if fn.startswith('utf8_') and fn.endswith('.txt'):
+        gen_json(fn)
