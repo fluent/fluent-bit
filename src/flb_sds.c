@@ -28,6 +28,7 @@
 #include <fluent-bit/flb_log.h>
 #include <fluent-bit/flb_sds.h>
 #include <fluent-bit/flb_utf8.h>
+#include <fluent-bit/flb_utils.h>
 
 #include <stdarg.h>
 #include <ctype.h>
@@ -279,13 +280,15 @@ flb_sds_t flb_sds_copy(flb_sds_t s, const char *str, int len)
     return s;
 }
 
-flb_sds_t flb_sds_cat_utf8 (flb_sds_t *sds, const char *str, int str_len)
+flb_sds_t flb_sds_cat_utf8(flb_sds_t *sds, const char *str, int str_len)
 {
     static const char int2hex[] = "0123456789abcdef";
     int i;
     int b;
     int ret;
     int hex_bytes;
+    int offset;
+    size_t size;
     uint32_t cp;
     uint32_t state = 0;
     unsigned char c;
@@ -297,6 +300,7 @@ flb_sds_t flb_sds_cat_utf8 (flb_sds_t *sds, const char *str, int str_len)
     s = *sds;
     head = FLB_SDS_HEADER(s);
 
+    /* make sure we have at least str_len extra bytes available */
     if (flb_sds_avail(s) <= str_len) {
         tmp = flb_sds_increase(s, str_len);
         if (tmp == NULL) {
@@ -305,6 +309,30 @@ flb_sds_t flb_sds_cat_utf8 (flb_sds_t *sds, const char *str, int str_len)
         *sds = s = tmp;
         head = FLB_SDS_HEADER(s);
     }
+
+    while (1) {
+        offset = head->len;
+        ret = flb_utils_write_str(s, &offset, flb_sds_alloc(s), str, str_len);
+        if (ret == FLB_FALSE) {
+            /* realloc */
+            size = flb_sds_alloc(s) * 2;
+            tmp = flb_sds_increase(s, size);
+            if (tmp == NULL) {
+                return NULL;
+            }
+            *sds = s = tmp;
+            head = FLB_SDS_HEADER(s);
+        }
+        else {
+            break;
+        }
+    }
+
+    flb_sds_len_set(s, offset);
+    s[head->len] = '\0';
+    return s;
+
+
 
     for (i = 0; i < str_len; i++) {
         if (flb_sds_avail(s) < 8) {
