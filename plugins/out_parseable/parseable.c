@@ -32,11 +32,11 @@ static int cb_parseable_init(struct flb_output_instance *ins,
         return -1;
     }
 
-    flb_plg_info(ctx->ins, "Configured port: %d", ctx->port);
+    flb_plg_info(ctx->ins, "Configured port: %d", ctx->server_port);
 
     ctx->upstream = flb_upstream_create(config,
-                                        ctx->server,
-                                        ctx->port,
+                                        ctx->server_host,
+                                        ctx->server_port,
                                         FLB_IO_TCP,
                                         NULL);
 
@@ -191,7 +191,7 @@ static void cb_parseable_flush(struct flb_event_chunk *event_chunk,
             FLB_OUTPUT_RETURN(FLB_ERROR);
         }
 
-        flb_plg_info(ctx->ins, "Creating upstream with server: %s, port: %d", ctx->server, ctx->port);
+        flb_plg_info(ctx->ins, "Creating upstream with server: %s, port: %d", ctx->server_host, ctx->server_port);
 
         /* Get upstream connection */
         u_conn = flb_upstream_conn_get(ctx->upstream);
@@ -207,7 +207,7 @@ static void cb_parseable_flush(struct flb_event_chunk *event_chunk,
         client = flb_http_client(u_conn,
                                  FLB_HTTP_POST, "/api/v1/ingest",
                                  body, flb_sds_len(body),
-                                 ctx->server, ctx->port,
+                                 ctx->server_host, ctx->server_port,
                                  NULL, 0);
 
         if (!client) {
@@ -260,28 +260,28 @@ static int cb_parseable_exit(void *data, struct flb_config *config)
 /* Configuration properties map */
 static struct flb_config_map config_map[] = {
     {
-     FLB_CONFIG_MAP_STR, "Server", NULL,
-     0, FLB_TRUE, offsetof(struct flb_out_parseable, server),
+     FLB_CONFIG_MAP_STR, "server_host", NULL,
+     0, FLB_TRUE, offsetof(struct flb_out_parseable, server_host),
     "The host of the server to send logs to."
     },
     {
-     FLB_CONFIG_MAP_STR, "Username", NULL,
+     FLB_CONFIG_MAP_STR, "username", NULL,
      0, FLB_TRUE, offsetof(struct flb_out_parseable, username),
     "The parseable server username."
     },
     {
-     FLB_CONFIG_MAP_STR, "Password", NULL,
+     FLB_CONFIG_MAP_STR, "password", NULL,
      0, FLB_TRUE, offsetof(struct flb_out_parseable, password),
     "The parseable server password."
     },
     {
-     FLB_CONFIG_MAP_STR, "Stream", NULL,
+     FLB_CONFIG_MAP_STR, "stream", NULL,
      0, FLB_TRUE, offsetof(struct flb_out_parseable, stream),
     "The stream name to send logs to. Using $NAMESPACE will dynamically create a namespace."
     },
     {
-     FLB_CONFIG_MAP_INT, "Port", NULL,
-     0, FLB_TRUE, offsetof(struct flb_out_parseable, port),
+     FLB_CONFIG_MAP_INT, "server_port", NULL,
+     0, FLB_TRUE, offsetof(struct flb_out_parseable, server_port),
     "The port on the host to send logs to."
     },
     {
