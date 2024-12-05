@@ -27,10 +27,24 @@
 #include <fluent-bit/flb_input.h>
 #include <fluent-bit/flb_filter.h>
 #include <fluent-bit/flb_output.h>
-
+#include <fluent-bit/flb_custom_plugin.h>
+#include <fluent-bit/flb_config.h>
+#include <fluent-bit/flb_config_map.h>
+#include <fluent-bit/flb_utils.h>
 #include <fluent-bit/flb_hash.h>
 
+#include <fluent-bit/calyptia/calyptia_constants.h>
+
 #include "calyptia.h"
+
+#define UUID_BUFFER_SIZE 38 /* Maximum length of UUID string + null terminator */
+
+/* Function wrappers to enable mocking for unit test filesystem access */
+int (*flb_access)(const char *pathname, int mode) = access;
+int (*flb_open)(const char *pathname, int flags, ...) = open;
+ssize_t (*flb_write)(int fd, const void *buf, size_t count) = write;
+int (*flb_close)(int fd) = close;
+int (*flb_utils_read_file_wrapper)(char *path, char **out_buf, size_t *out_size) = flb_utils_read_file;
 
 /*
  * Check if the key belongs to a sensitive data field, if so report it. We never
@@ -217,16 +231,13 @@ int set_fleet_input_properties(struct calyptia *ctx, struct flb_input_instance *
     flb_input_set_property(fleet, "api_key", ctx->api_key);
     flb_input_set_property(fleet, "host", ctx->cloud_host);
     flb_input_set_property(fleet, "port", ctx->cloud_port);
+    flb_input_set_property(fleet, "config_dir", ctx->fleet_config_dir);
 
     /* Set TLS properties */
     flb_input_set_property(fleet, "tls", ctx->cloud_tls == 1 ? "on" : "off");
     flb_input_set_property(fleet, "tls.verify", ctx->cloud_tls_verify == 1 ? "on" : "off");
 
     /* Optional configurations */
-    if (ctx->fleet_config_dir) {
-        flb_input_set_property(fleet, "config_dir", ctx->fleet_config_dir);
-    }
-
     if (ctx->fleet_max_http_buffer_size) {
         flb_input_set_property(fleet, "max_http_buffer_size", ctx->fleet_max_http_buffer_size);
     }
@@ -376,15 +387,182 @@ static flb_sds_t sha256_to_hex(unsigned char *sha256)
     return hex;
 }
 
-static flb_sds_t get_machine_id(struct calyptia *ctx)
+static flb_sds_t generate_base_agent_directory(struct calyptia *ctx, flb_sds_t *fleet_dir)
 {
-    int ret;
-    char *buf;
-    size_t blen;
+    flb_sds_t ret = NULL;
+
+    if (ctx == NULL || fleet_dir == NULL) {
+        return NULL;
+    }
+
+    if (*fleet_dir == NULL) {
+        *fleet_dir = flb_sds_create_size(CALYPTIA_MAX_DIR_SIZE);
+        if (*fleet_dir == NULL) {
+            return NULL;
+        }
+    }
+
+    ret = flb_sds_printf(fleet_dir, "%s", ctx->fleet_config_dir);
+    if (ret == NULL) {
+        flb_sds_destroy(*fleet_dir);
+        return NULL;
+    }
+
+    return ret;
+}
+
+flb_sds_t agent_config_filename(struct calyptia *ctx, char *fname)
+{
+    flb_sds_t cfgname = NULL;
+    flb_sds_t ret;
+
+    if (ctx == NULL || fname == NULL) {
+        return NULL;
+    }
+
+    if (generate_base_agent_directory(ctx, &cfgname) == NULL) {
+        return NULL;
+    }
+
+    ret = flb_sds_printf(&cfgname, PATH_SEPARATOR "%s.conf", fname);
+    if (ret == NULL) {
+        flb_sds_destroy(cfgname);
+        return NULL;
+    }
+
+    return cfgname;
+}
+
+static char* generate_uuid() {
+    char* uuid = flb_malloc(UUID_BUFFER_SIZE);
+    if (!uuid) {
+        flb_errno();
+        return NULL;
+    }
+
+    /* create new UUID for fleet */
+    if (flb_utils_uuid_v4_gen(uuid) != 0 || strlen(uuid) == 0) {
+        flb_free(uuid);
+        return NULL;
+    }
+    return uuid;
+}
+
+static int write_uuid_to_file(flb_sds_t fleet_machine_id, char* uuid) {
+    int fd;
+    size_t uuid_len;
+
+    if (fleet_machine_id == NULL || uuid == NULL) {
+        return FLB_FALSE;
+    }
+
+    /* write uuid to file */
+    fd = flb_open(fleet_machine_id, O_CREAT | O_WRONLY | O_TRUNC, 0666);
+    if (fd == -1) {
+        return FLB_FALSE;
+    }
+
+    uuid_len = strlen(uuid);
+
+    if (flb_write(fd, uuid, uuid_len) != uuid_len) {
+        flb_close(fd);
+        return FLB_FALSE;
+    }
+
+    flb_close(fd);
+    return FLB_TRUE;
+}
+
+static int create_agent_directory(struct calyptia *ctx)
+{
+    if( ctx == NULL ) {
+        return -1;
+    }
+
+    /* If it exists just return */
+    if (access(ctx->fleet_config_dir, F_OK) == 0) {
+        return 0;
+    }
+
+    /* Create the directory if it does not exist */
+    if (flb_utils_mkdir(ctx->fleet_config_dir, 0700) != 0) {
+        flb_plg_error(ctx->ins, "failed to create directory: %s", ctx->fleet_config_dir);
+        return -1;
+    }
+
+    return 0;
+}
+
+flb_sds_t get_machine_id(struct calyptia *ctx)
+{
+    int ret = -1;
+    char *buf = NULL;
+    size_t blen = 0;
     unsigned char sha256_buf[64] = {0};
 
+#if defined(FLB_SYSTEM_WINDOWS)
     /* retrieve raw machine id */
     ret = flb_utils_get_machine_id(&buf, &blen);
+#else
+    /* /etc/machine-id is not guaranteed to be unique so we generate one */
+    flb_sds_t fleet_machine_id = NULL;
+
+    /** ensure we have the directory created */
+    if (create_agent_directory(ctx) != 0) {
+        return NULL;
+    }
+
+    /** now get the agent filename */
+    fleet_machine_id = machine_id_fleet_config_filename(ctx);
+    if (fleet_machine_id == NULL) {
+        flb_plg_error(ctx->ins, "unable to allocate machine id file");
+        return NULL;
+    }
+
+    /* check if the file exists first, if it does not we generate a UUID */
+    if (flb_access(fleet_machine_id, F_OK) != 0) {
+
+        /* create new UUID for fleet */
+        buf = generate_uuid();
+        if( buf == NULL ) {
+            flb_plg_error(ctx->ins, "failed to create uuid for fleet machine id");
+            flb_sds_destroy(fleet_machine_id);
+            return NULL;
+        }
+        flb_plg_info(ctx->ins, "generated UUID for machine ID: %s", buf);
+
+        /* write uuid to file */
+        if (write_uuid_to_file(fleet_machine_id, buf ) != FLB_TRUE) {
+            flb_plg_error(ctx->ins, "failed to write fleet machine id file: %s", fleet_machine_id);
+            flb_free(buf);
+            flb_sds_destroy(fleet_machine_id);
+            return NULL;
+        }
+
+        flb_free(buf);
+        buf = NULL;
+
+        flb_plg_info(ctx->ins, "written machine ID to file: %s", fleet_machine_id);
+    }
+
+    /* now check file exists (it always should) and read from it */
+    if (flb_access(fleet_machine_id, F_OK) == 0) {
+        ret = flb_utils_read_file_wrapper(fleet_machine_id, &buf, &blen);
+        if (ret != 0) {
+            flb_plg_error(ctx->ins, "failed to read fleet machine id file: %s", fleet_machine_id);
+            flb_sds_destroy(fleet_machine_id);
+            return NULL;
+        }
+        flb_plg_info(ctx->ins, "read UUID (%s) from file: %s", buf, fleet_machine_id);
+    }
+    else { /* fall back to machine-id */
+        flb_plg_warn(ctx->ins, "unable to get uuid from file (%s) so falling back to machine id", fleet_machine_id);
+        ret = flb_utils_get_machine_id(&buf, &blen);
+    }
+
+    /* Clean up no longer required filename */
+    flb_sds_destroy(fleet_machine_id);
+#endif
 
     if (ret == -1) {
         flb_plg_error(ctx->ins, "could not obtain machine id");
@@ -520,13 +698,13 @@ static struct flb_config_map config_map[] = {
     },
 
     {
-     FLB_CONFIG_MAP_STR, "calyptia_host", "cloud-api.calyptia.com",
+     FLB_CONFIG_MAP_STR, "calyptia_host", DEFAULT_CALYPTIA_HOST,
      0, FLB_TRUE, offsetof(struct calyptia, cloud_host),
      ""
     },
 
     {
-     FLB_CONFIG_MAP_STR, "calyptia_port", "443",
+     FLB_CONFIG_MAP_STR, "calyptia_port", DEFAULT_CALYPTIA_PORT,
      0, FLB_TRUE, offsetof(struct calyptia, cloud_port),
      ""
     },
@@ -559,7 +737,7 @@ static struct flb_config_map config_map[] = {
      "Fleet id to be used when registering agent in a fleet"
     },
     {
-     FLB_CONFIG_MAP_STR, "fleet.config_dir", NULL,
+     FLB_CONFIG_MAP_STR, "fleet.config_dir", FLEET_DEFAULT_CONFIG_DIR,
      0, FLB_TRUE, offsetof(struct calyptia, fleet_config_dir),
      "Base path for the configuration directory."
     },
