@@ -41,78 +41,6 @@ int flb_utf8_len(const char *s)
     return trailing_bytes_for_utf8[(unsigned int)(unsigned char)s[0]] + 1;
 }
 
-#if defined(__GNUC__) || defined(__clang__)
-/*
- * if we are compiling with GNU or CLang compiler , we have the ranges
- * functionality available, so we can tweak our decoder by using a lookup
- * table.
- *
- * Lookup table for byte classification and state transitions:
- *
- *  Format: {initial_state, bitmask, expected_continuation_bytes}
- *  ASCII: state 0, no continuation bytes
- *  Start of multi-byte sequence: state X, continuation byte count
- *  Invalid: reject state
- */
-static const uint8_t utf8_lookup[256][3] = {
-    [0x00 ... 0x7F] = {0, 0x7F, 0},            /* ASCII */
-    [0xC0 ... 0xDF] = {1, 0x1F, 1},            /* Start of 2-byte sequence */
-    [0xE0 ... 0xEF] = {2, 0x0F, 2},            /* Start of 3-byte sequence */
-    [0xF0 ... 0xF7] = {3, 0x07, 3},            /* Start of 4-byte sequence */
-    [0x80 ... 0xBF] = {FLB_UTF8_REJECT, 0, 0}, /* Continuation bytes */
-    [0xF8 ... 0xFF] = {FLB_UTF8_REJECT, 0, 0}, /* Invalid bytes */
-};
-
-uint32_t flb_utf8_decode(uint32_t *state, uint32_t *codep, uint8_t byte)
-{
-    const uint8_t *entry = utf8_lookup[byte];
-
-    if (*state == FLB_UTF8_ACCEPT) {
-        /* starting a new character */
-        *state = entry[0];
-        if (*state == FLB_UTF8_REJECT) {
-            /* invalid start byte */
-            return FLB_UTF8_REJECT;
-        }
-        *codep = byte & entry[1];
-    }
-    else {
-        /* continuation byte */
-        if ((byte & 0xC0) == 0x80) {
-            *codep = (*codep << 6) | (byte & 0x3F);
-            /* decrement continuation bytes */
-            (*state)--;
-        }
-        else {
-            /* invalid continuation byte */
-            *state = FLB_UTF8_REJECT;
-            return FLB_UTF8_REJECT;
-        }
-    }
-
-    /* check if the sequence is complete */
-    if (*state == 0) {
-        if (*codep >= 0xD800 && *codep <= 0xDFFF) {
-            /* surrogate pair (invalid UTF-8) */
-            *state = FLB_UTF8_REJECT;
-            return FLB_UTF8_REJECT;
-        }
-        else if (*codep > 0x10FFFF) {
-            /* out of range codepoint */
-            *state = FLB_UTF8_REJECT;
-            return FLB_UTF8_REJECT;
-        }
-        /* valid and complete sequence */
-        return FLB_UTF8_ACCEPT;
-    }
-
-    /* we are still processing the current sequence */
-    return FLB_UTF8_CONTINUE;
-}
-
-#else
-
-/* fallback decoder: no lookup table */
 uint32_t flb_utf8_decode(uint32_t *state, uint32_t *codep, uint8_t byte)
 {
     /* Start of a new character */
@@ -176,8 +104,6 @@ uint32_t flb_utf8_decode(uint32_t *state, uint32_t *codep, uint8_t byte)
     /* we are still processing the current sequence */
     return FLB_UTF8_CONTINUE;
 }
-
-#endif
 
 void flb_utf8_print(char *input)
 {
