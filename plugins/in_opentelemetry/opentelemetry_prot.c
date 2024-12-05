@@ -24,6 +24,7 @@
 #include <fluent-bit/flb_time.h>
 #include <fluent-bit/flb_gzip.h>
 #include <fluent-bit/flb_snappy.h>
+#include <fluent-bit/flb_zstd.h>
 #include <fluent-bit/flb_mp.h>
 #include <fluent-bit/flb_log_event_encoder.h>
 
@@ -1657,9 +1658,20 @@ int uncompress_zstd(char **output_buffer,
                     char *input_buffer,
                     size_t input_size)
 {
-    flb_error("[opentelemetry] unsupported compression format");
+    int ret;
 
-    return -1;
+    ret = flb_zstd_uncompress(input_buffer,
+                              input_size,
+                              (void **)output_buffer,
+                              output_size);
+
+    if (ret != 0) {
+        flb_error("[opentelemetry] zstd decompression failed");
+
+        return -1;
+    }
+
+    return 1;
 }
 
 static \

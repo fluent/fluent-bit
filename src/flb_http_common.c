@@ -24,6 +24,7 @@
 #include <fluent-bit/flb_signv4_ng.h>
 #include <fluent-bit/flb_snappy.h>
 #include <fluent-bit/flb_gzip.h>
+#include <fluent-bit/flb_zstd.h>
 
 /* PRIVATE */
 
@@ -350,7 +351,7 @@ int flb_http_request_compress_body(
                                  request->body,
                                  cfl_sds_len(request->body));
     }
-    else if (strncasecmp(content_encoding_header_value, "deflate", 4) == 0) {
+    else if (strncasecmp(content_encoding_header_value, "deflate", 7) == 0) {
         result = compress_deflate(&output_buffer,
                                   &output_size,
                                   request->body,
@@ -1503,7 +1504,20 @@ int uncompress_zstd(char **output_buffer,
                     char *input_buffer,
                     size_t input_size)
 {
-    return 0;
+    int ret;
+
+    ret = flb_zstd_uncompress(input_buffer,
+                              input_size,
+                              output_buffer,
+                              output_size);
+
+    if (ret != 0) {
+        flb_error("zstd decompression failed");
+
+        return -1;
+    }
+
+    return 1;
 }
 
 static \
@@ -1529,7 +1543,7 @@ int uncompress_snappy(char **output_buffer,
                                             output_size);
 
     if (ret != 0) {
-        flb_error("[opentelemetry] snappy decompression failed");
+        flb_error("snappy decompression failed");
 
         return -1;
     }
@@ -1551,7 +1565,7 @@ int uncompress_gzip(char **output_buffer,
                               output_size);
 
     if (ret == -1) {
-        flb_error("[opentelemetry] gzip decompression failed");
+        flb_error("gzip decompression failed");
 
         return -1;
     }
@@ -1575,7 +1589,19 @@ int compress_zstd(char **output_buffer,
                   char *input_buffer,
                   size_t input_size)
 {
-    return 0;
+    int ret;
+
+    ret = flb_zstd_compress((void *) input_buffer,
+                            input_size,
+                            (void **) output_buffer,
+                            output_size);
+
+    if (ret == -1) {
+        flb_error("http client zstd compression failed");
+        return -1;
+    }
+
+    return 1;
 }
 
 static \
