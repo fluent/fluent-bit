@@ -10,6 +10,13 @@
 #include "flb_tests_runtime.h"
 #include "../../plugins/custom_calyptia/calyptia.h"
 
+const char *flb_input_get_property(const char *key,
+                                   struct flb_input_instance *ins);
+struct flb_input_instance *flb_input_new(struct flb_config *config,
+                                         const char *input, void *data,
+                                         int public_only);
+void flb_input_instance_destroy(struct flb_input_instance *ins);
+
 /* Test context structure */
 struct test_context {
     struct calyptia *ctx;
