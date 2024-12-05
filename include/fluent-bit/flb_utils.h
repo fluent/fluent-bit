@@ -74,5 +74,6 @@ int flb_utils_get_machine_id(char **out_id, size_t *out_size);
 void flb_utils_set_plugin_string_property(const char *name,
                                           flb_sds_t *field_storage,
                                           flb_sds_t  new_value);
+int flb_utils_mkdir(const char *dir, int perms);
 
 #endif

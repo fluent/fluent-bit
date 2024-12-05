@@ -5,6 +5,12 @@
 #include <fluent-bit/flb_custom.h>
 #include "flb_tests_runtime.h"
 
+const char *flb_input_get_property(const char *key,
+                                   struct flb_input_instance *ins);
+struct flb_input_instance *flb_input_new(struct flb_config *config,
+                                         const char *input, void *data,
+                                         int public_only);
+
 flb_sds_t custom_calyptia_pipeline_config_get(struct flb_config *ctx);
 
 void flb_custom_calyptia_pipeline_config_get_test()

@@ -38,6 +38,9 @@
 #include <fluent-bit/flb_kv.h>
 #include <fluent-bit/config_format/flb_cf_fluentbit.h>
 #include <fluent-bit/flb_base64.h>
+#include <fluent-bit/flb_utils.h>
+
+#include <fluent-bit/calyptia/calyptia_constants.h>
 
 /* Glob support */
 #ifndef _MSC_VER
@@ -50,25 +53,14 @@
 #define PATH_MAX MAX_PATH
 #endif
 
-#define CALYPTIA_H_PROJECT       "X-Project-Token"
-#define CALYPTIA_H_CTYPE         "Content-Type"
-#define CALYPTIA_H_CTYPE_JSON    "application/json"
+#define CALYPTIA_HEADERS_PROJECT       "X-Project-Token"
+#define CALYPTIA_HEADERS_CTYPE         "Content-Type"
+#define CALYPTIA_HEADERS_CTYPE_JSON    "application/json"
 
 #define DEFAULT_INTERVAL_SEC  "15"
 #define DEFAULT_INTERVAL_NSEC "0"
 
 #define DEFAULT_MAX_HTTP_BUFFER_SIZE "10485760"
-
-#define CALYPTIA_HOST "cloud-api.calyptia.com"
-#define CALYPTIA_PORT "443"
-
-#ifndef _WIN32
-#define PATH_SEPARATOR "/"
-#define DEFAULT_CONFIG_DIR "/tmp/calyptia-fleet"
-#else
-#define DEFAULT_CONFIG_DIR NULL
-#define PATH_SEPARATOR "\\"
-#endif
 
 struct flb_in_calyptia_fleet_config {
     /* Time interval check */
@@ -920,7 +912,7 @@ static struct flb_http_client *fleet_http_do(struct flb_in_calyptia_fleet_config
     flb_http_buffer_size(client, ctx->max_http_buffer_size);
 
     flb_http_add_header(client,
-                        CALYPTIA_H_PROJECT, sizeof(CALYPTIA_H_PROJECT) - 1,
+                        CALYPTIA_HEADERS_PROJECT, sizeof(CALYPTIA_HEADERS_PROJECT) - 1,
                         ctx->api_key, flb_sds_len(ctx->api_key));
 
     ret = flb_http_do(client, &b_sent);
@@ -1085,56 +1077,6 @@ file_error:
 client_error:
     flb_http_client_destroy(client);
     return ret;
-}
-
-#ifdef FLB_SYSTEM_WINDOWS
-#define _mkdir(a, b) mkdir(a)
-#else
-#define _mkdir(a, b) mkdir(a, b)
-#endif
-
-/* recursively create directories, based on:
- *   https://stackoverflow.com/a/2336245
- * who found it at:
- *   http://nion.modprobe.de/blog/archives/357-Recursive-directory-creation.html
- */
-static int __mkdir(const char *dir, int perms) {
-    char tmp[255];
-    char *ptr = NULL;
-    size_t len;
-    int ret;
-
-    ret = snprintf(tmp, sizeof(tmp),"%s",dir);
-    if (ret > sizeof(tmp)) {
-        flb_error("directory too long for __mkdir: %s", dir);
-        return -1;
-    }
-
-    len = strlen(tmp);
-
-    if (tmp[len - 1] == PATH_SEPARATOR[0]) {
-        tmp[len - 1] = 0;
-    }
-
-#ifndef FLB_SYSTEM_WINDOWS
-    for (ptr = tmp + 1; *ptr; ptr++) {
-#else
-    for (ptr = tmp + 3; *ptr; ptr++) {
-#endif
-
-        if (*ptr == PATH_SEPARATOR[0]) {
-            *ptr = 0;
-            if (access(tmp, F_OK) != 0) {
-                ret = _mkdir(tmp, perms);
-                if (ret != 0) {
-                    return ret;
-                }
-            }
-            *ptr = PATH_SEPARATOR[0];
-        }
-    }
-
-    return _mkdir(tmp, perms);
 }
 
 #ifndef _WIN32
@@ -1839,7 +1781,7 @@ static int get_calyptia_fleet_config(struct flb_in_calyptia_fleet_config *ctx)
             return -1;
         }
 
-        flb_sds_printf(&ctx->fleet_url, "/v1/fleets/%s/config?format=ini", ctx->fleet_id);
+        flb_sds_printf(&ctx->fleet_url, CALYPTIA_ENDPOINT_FLEET_CONFIG_INI, ctx->fleet_id);
     }
 
     if (ctx->fleet_files_url == NULL) {
@@ -1849,7 +1791,7 @@ static int get_calyptia_fleet_config(struct flb_in_calyptia_fleet_config *ctx)
             return -1;
         }
 
-        flb_sds_printf(&ctx->fleet_files_url, "/v1/fleets/%s/files", ctx->fleet_id);
+        flb_sds_printf(&ctx->fleet_files_url, CALYPTIA_ENDPOINT_FLEET_FILES, ctx->fleet_id);
     }
 
     create_fleet_header(ctx);
@@ -1920,7 +1862,7 @@ static int create_fleet_directory(struct flb_in_calyptia_fleet_config *ctx)
     flb_sds_t myfleetdir = NULL;
 
     if (access(ctx->config_dir, F_OK) != 0) {
-        if (__mkdir(ctx->config_dir, 0700) != 0) {
+        if (flb_utils_mkdir(ctx->config_dir, 0700) != 0) {
             return -1;
         }
     }
@@ -1931,7 +1873,7 @@ static int create_fleet_directory(struct flb_in_calyptia_fleet_config *ctx)
     }
 
     if (access(myfleetdir, F_OK) != 0) {
-        if (__mkdir(myfleetdir, 0700) !=0) {
+        if (flb_utils_mkdir(myfleetdir, 0700) !=0) {
             return -1;
         }
     }
@@ -1970,18 +1912,19 @@ static flb_sds_t fleet_gendir(struct flb_in_calyptia_fleet_config *ctx, time_t t
 
 static int fleet_mkdir(struct flb_in_calyptia_fleet_config *ctx, time_t timestamp)
 {
+    int ret = -1;
     flb_sds_t fleetcurdir;
 
     fleetcurdir = fleet_gendir(ctx, timestamp);
 
-    if (fleetcurdir == NULL) {
-        return -1;
+    if (fleetcurdir != NULL) {
+        if (flb_utils_mkdir(fleetcurdir, 0700) == 0) {
+            ret = 0;
+        }
+        flb_sds_destroy(fleetcurdir);
     }
 
-    __mkdir(fleetcurdir, 0700);
-    flb_sds_destroy(fleetcurdir);
-
-    return 0;
+    return ret;
 }
 
 static int fleet_cur_chdir(struct flb_in_calyptia_fleet_config *ctx)
@@ -2378,7 +2321,7 @@ static struct flb_config_map config_map[] = {
      "Calyptia Cloud API Key."
     },
     {
-     FLB_CONFIG_MAP_STR, "config_dir", DEFAULT_CONFIG_DIR,
+     FLB_CONFIG_MAP_STR, "config_dir", FLEET_DEFAULT_CONFIG_DIR,
      0, FLB_TRUE, offsetof(struct flb_in_calyptia_fleet_config, config_dir),
      "Base path for the configuration directory."
     },

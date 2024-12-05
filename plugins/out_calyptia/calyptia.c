@@ -341,43 +341,43 @@ static int calyptia_http_do(struct flb_calyptia *ctx, struct flb_http_client *c,
             return FLB_ERROR;
         }
         flb_http_add_header(c,
-                            CALYPTIA_H_CTYPE, sizeof(CALYPTIA_H_CTYPE) - 1,
-                            CALYPTIA_H_CTYPE_JSON, sizeof(CALYPTIA_H_CTYPE_JSON) - 1);
+                            CALYPTIA_HEADERS_CTYPE, sizeof(CALYPTIA_HEADERS_CTYPE) - 1,
+                            CALYPTIA_HEADERS_CTYPE_JSON, sizeof(CALYPTIA_HEADERS_CTYPE_JSON) - 1);
 
         flb_http_add_header(c,
-                            CALYPTIA_H_PROJECT, sizeof(CALYPTIA_H_PROJECT) - 1,
+                            CALYPTIA_HEADERS_PROJECT, sizeof(CALYPTIA_HEADERS_PROJECT) - 1,
                             ctx->api_key, flb_sds_len(ctx->api_key));
     }
     else if (type == CALYPTIA_ACTION_PATCH) {
         flb_http_add_header(c,
-                            CALYPTIA_H_CTYPE, sizeof(CALYPTIA_H_CTYPE) - 1,
-                            CALYPTIA_H_CTYPE_JSON, sizeof(CALYPTIA_H_CTYPE_JSON) - 1);
+                            CALYPTIA_HEADERS_CTYPE, sizeof(CALYPTIA_HEADERS_CTYPE) - 1,
+                            CALYPTIA_HEADERS_CTYPE_JSON, sizeof(CALYPTIA_HEADERS_CTYPE_JSON) - 1);
 
         flb_http_add_header(c,
-                            CALYPTIA_H_AGENT_TOKEN,
-                            sizeof(CALYPTIA_H_AGENT_TOKEN) - 1,
+                            CALYPTIA_HEADERS_AGENT_TOKEN,
+                            sizeof(CALYPTIA_HEADERS_AGENT_TOKEN) - 1,
                             ctx->agent_token, flb_sds_len(ctx->agent_token));
     }
     else if (type == CALYPTIA_ACTION_METRICS) {
         flb_http_add_header(c,
-                            CALYPTIA_H_CTYPE, sizeof(CALYPTIA_H_CTYPE) - 1,
-                            CALYPTIA_H_CTYPE_MSGPACK,
-                            sizeof(CALYPTIA_H_CTYPE_MSGPACK) - 1);
+                            CALYPTIA_HEADERS_CTYPE, sizeof(CALYPTIA_HEADERS_CTYPE) - 1,
+                            CALYPTIA_HEADERS_CTYPE_MSGPACK,
+                            sizeof(CALYPTIA_HEADERS_CTYPE_MSGPACK) - 1);
 
         flb_http_add_header(c,
-                            CALYPTIA_H_AGENT_TOKEN,
-                            sizeof(CALYPTIA_H_AGENT_TOKEN) - 1,
+                            CALYPTIA_HEADERS_AGENT_TOKEN,
+                            sizeof(CALYPTIA_HEADERS_AGENT_TOKEN) - 1,
                             ctx->agent_token, flb_sds_len(ctx->agent_token));
     }
 #ifdef FLB_HAVE_CHUNK_TRACE
     else if (type == CALYPTIA_ACTION_TRACE)  {
         flb_http_add_header(c,
-                            CALYPTIA_H_CTYPE, sizeof(CALYPTIA_H_CTYPE) - 1,
-                            CALYPTIA_H_CTYPE_JSON, sizeof(CALYPTIA_H_CTYPE_JSON) - 1);
+                            CALYPTIA_HEADERS_CTYPE, sizeof(CALYPTIA_HEADERS_CTYPE) - 1,
+                            CALYPTIA_HEADERS_CTYPE_JSON, sizeof(CALYPTIA_HEADERS_CTYPE_JSON) - 1);
 
         flb_http_add_header(c,
-                            CALYPTIA_H_AGENT_TOKEN,
-                            sizeof(CALYPTIA_H_AGENT_TOKEN) - 1,
+                            CALYPTIA_HEADERS_AGENT_TOKEN,
+                            sizeof(CALYPTIA_HEADERS_AGENT_TOKEN) - 1,
                             ctx->agent_token, flb_sds_len(ctx->agent_token));
     }
 #endif
@@ -1059,13 +1059,13 @@ static void cb_calyptia_flush(struct flb_event_chunk *event_chunk,
 /* Configuration properties map */
 static struct flb_config_map config_map[] = {
     {
-     FLB_CONFIG_MAP_STR, "cloud_host", CALYPTIA_HOST,
+     FLB_CONFIG_MAP_STR, "cloud_host", DEFAULT_CALYPTIA_HOST,
      0, FLB_TRUE, offsetof(struct flb_calyptia, cloud_host),
      "",
     },
 
     {
-     FLB_CONFIG_MAP_INT, "cloud_port", CALYPTIA_PORT,
+     FLB_CONFIG_MAP_INT, "cloud_port", DEFAULT_CALYPTIA_PORT,
      0, FLB_TRUE, offsetof(struct flb_calyptia, cloud_port),
      "",
     },
