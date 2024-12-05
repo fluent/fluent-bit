@@ -225,11 +225,11 @@ static void test_calyptia_machine_id_generation() {
     ret = sprintf(expectedValue, "%s/machine-id.conf", FLEET_DEFAULT_CONFIG_DIR);
     TEST_CHECK(ret > 0);
 
-    value = machine_id_fleet_config_filename(t_ctx->ctx);
-    TEST_CHECK(value != NULL);
-    TEST_CHECK(expectedValue != NULL);
-    TEST_MSG("machine_id filename expected=%s got=%s", expectedValue, value);
-    TEST_CHECK(value && strcmp(value, expectedValue) == 0);
+    flb_sds_t filename = machine_id_fleet_config_filename(t_ctx->ctx);
+    TEST_CHECK(filename != NULL);
+    TEST_MSG("machine_id filename expected=%s got=%s", expectedValue, filename);
+    TEST_CHECK(filename && strcmp(filename, expectedValue) == 0);
+    flb_sds_destroy(filename);
 
     /* generate a new machine ID and verify it is not null then store for later use */
     flb_sds_t machine_id = get_machine_id(t_ctx->ctx);
@@ -250,11 +250,11 @@ static void test_calyptia_machine_id_generation() {
     ret = sprintf(expectedValue, "/tmp/config/fleet/machine-id.conf");
     TEST_CHECK(ret > 0);
 
-    value = machine_id_fleet_config_filename(t_ctx->ctx);
-    TEST_CHECK(value != NULL);
-    TEST_CHECK(expectedValue != NULL);
-    TEST_MSG("machine_id filename expected=%s got=%s", expectedValue, value);
-    TEST_CHECK(value && strcmp(value, expectedValue) == 0);
+    filename = machine_id_fleet_config_filename(t_ctx->ctx);
+    TEST_CHECK(filename != NULL);
+    TEST_MSG("machine_id filename expected=%s got=%s", expectedValue, filename);
+    TEST_CHECK(filename && strcmp(filename, expectedValue) == 0);
+    flb_sds_destroy(filename);
 
     /* check we generate a new value */
     new_machine_id = get_machine_id(t_ctx->ctx);
