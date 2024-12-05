@@ -208,7 +208,7 @@ static void test_calyptia_machine_id_generation() {
     TEST_CHECK(ret == 0);
 
     /* Verify properties were set correctly */
-    const char *value, *expectedValue, *machine_id;
+    const char *value;
 
     /* Check config_dir */
     value = flb_input_get_property("config_dir", t_ctx->fleet);
@@ -221,48 +221,60 @@ static void test_calyptia_machine_id_generation() {
      * Subsequent generation should reuse the previous one
      * Repeat with custom directory to confirm that works too
     */
+    char expectedValue[CALYPTIA_MAX_DIR_SIZE];
+    ret = sprintf(expectedValue, "%s/machine-id.conf", FLEET_DEFAULT_CONFIG_DIR);
+    TEST_CHECK(ret > 0);
+
     value = machine_id_fleet_config_filename(t_ctx->ctx);
-    expectedValue = flb_sds_printf(expectedValue, "%s/machine-id.conf", FLEET_DEFAULT_CONFIG_DIR);
     TEST_CHECK(value != NULL);
     TEST_CHECK(expectedValue != NULL);
     TEST_MSG("machine_id filename expected=%s got=%s", expectedValue, value);
     TEST_CHECK(value && strcmp(value, expectedValue) == 0);
 
     /* generate a new machine ID and verify it is not null then store for later use */
-    machine_id = get_machine_id(t_ctx->ctx);
+    flb_sds_t machine_id = get_machine_id(t_ctx->ctx);
     TEST_CHECK(machine_id != NULL);
 
     /* repeat to confirm existing UUID is maintained */
-    value = get_machine_id(t_ctx->ctx);
-    TEST_CHECK(value != NULL);
-    TEST_MSG("machine_id changed, expected=%s got=%s", machine_id, value);
-    TEST_CHECK(value && strcmp(value, machine_id) == 0);
+    flb_sds_t new_machine_id = get_machine_id(t_ctx->ctx);
+    TEST_CHECK(new_machine_id != NULL);
+    TEST_MSG("machine_id changed, expected=%s got=%s", machine_id, new_machine_id);
+    TEST_CHECK(value && strcmp(new_machine_id, machine_id) == 0);
+    flb_free(new_machine_id);
+    new_machine_id = NULL;
 
     /* repeat with new config directory */
     t_ctx = update_config_dir(t_ctx, "/test/config/fleet");
     TEST_CHECK(t_ctx != NULL);
 
     /* check we use the new directory for the filename */
+    ret = sprintf(expectedValue, "/test/config/fleet/machine-id.conf");
+    TEST_CHECK(ret > 0);
+
     value = machine_id_fleet_config_filename(t_ctx->ctx);
-    expectedValue = flb_sds_printf(expectedValue, "/test/config/fleet/machine-id.conf");
     TEST_CHECK(value != NULL);
     TEST_CHECK(expectedValue != NULL);
     TEST_MSG("machine_id filename expected=%s got=%s", expectedValue, value);
     TEST_CHECK(value && strcmp(value, expectedValue) == 0);
 
     /* check we generate a new value */
-    value = get_machine_id(t_ctx->ctx);
-    TEST_CHECK(value != NULL);
-    TEST_MSG("machine_id did not change, expected!=%s got=%s", machine_id, value);
-    TEST_CHECK(value && strcmp(value, machine_id) != 0);
+    new_machine_id = get_machine_id(t_ctx->ctx);
+    TEST_CHECK(new_machine_id != NULL);
+    TEST_MSG("machine_id did not change, expected!=%s got=%s", machine_id, new_machine_id);
+    TEST_CHECK(new_machine_id && strcmp(new_machine_id, machine_id) != 0);
 
-    machine_id = value;
+    flb_free(machine_id);
+    machine_id = new_machine_id;
+    new_machine_id = NULL;
+
     /* repeat to confirm existing UUID is maintained */
-    value = get_machine_id(t_ctx->ctx);
-    TEST_CHECK(value != NULL);
-    TEST_MSG("machine_id changed, expected=%s got=%s", machine_id, value);
-    TEST_CHECK(value && strcmp(value, machine_id) == 0);
+    new_machine_id = get_machine_id(t_ctx->ctx);
+    TEST_CHECK(new_machine_id != NULL);
+    TEST_MSG("machine_id changed, expected=%s got=%s", machine_id, new_machine_id);
+    TEST_CHECK(new_machine_id && strcmp(new_machine_id, machine_id) == 0);
 
+    flb_free(new_machine_id);
+    flb_free(machine_id);
     cleanup_test_context(t_ctx);
 }
 
