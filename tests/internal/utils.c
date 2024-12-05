@@ -278,7 +278,6 @@ void test_write_str_invalid_leading_byte()
 
 void test_write_str_special_bytes()
 {
-
     struct write_str_case cases[] = {
         /*
          * Escaped leading hex (two hex, one valid unicode)
@@ -286,6 +285,11 @@ void test_write_str_special_bytes()
         {
             "你好世界", 12,
             "\\u4f60\\u597d\\u4e16\\u754c",
+            FLB_TRUE
+        },
+        {
+            "\xC3\xA1\x0A", 3,  /* UTF-8 encoding of á and newline */
+            "\\u00e1\\n",       /* Expected escaped output */
             FLB_TRUE
         },
         { 0 }
