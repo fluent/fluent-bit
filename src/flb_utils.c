@@ -786,20 +786,23 @@ static const struct escape_seq json_escape_table[128] = {
  * to escape special characters and convert utf-8 byte characters to string
  * representation.
  */
-
 int flb_utils_write_str(char *buf, int *off, size_t size, const char *str, size_t str_len)
 {
     int i, b, ret, len, hex_bytes, utf_sequence_length, utf_sequence_number;
     int processed_bytes = 0;
     int is_valid, copypos = 0, vlen;
+    uint32_t c;
     uint32_t codepoint = 0;
     uint32_t state = 0;
-    char tmp[16];
     size_t available;
-    uint32_t c;
-    char *p;
     uint8_t *s;
     off_t offset = 0;
+    char tmp[16];
+    char *p;
+
+    /* to encode codepoints > 0xFFFF */
+    uint16_t high;
+    uint16_t low;
 
     available = size - *off;
 
@@ -957,19 +960,21 @@ int flb_utils_write_str(char *buf, int *off, size_t size, const char *str, size_
 
                 /* Decode the sequence */
                 for (utf_sequence_number = 0; utf_sequence_number < utf_sequence_length; utf_sequence_number++) {
-                    ret = flb_utf8_decode(&state, &codepoint, (uint8_t)     str[i]);
+                    ret = flb_utf8_decode(&state, &codepoint, (uint8_t) str[i]);
 
                     if (ret == FLB_UTF8_REJECT) {
-                        if (utf_sequence_number == 0 && ((str[i] & 0xC0) != 0xC0)) {
+                        /* Handle invalid leading byte */
+                        if (utf_sequence_number == 0) {
+                            flb_debug("[pack] unexpected UTF-8 leading byte, substituting character");
                             tmp[utf_sequence_number] = str[i];
-                            i++; /* Consume invalid leading byte */
-                            utf_sequence_length = utf_sequence_number + 1;
+                            utf_sequence_length = utf_sequence_number + 1; /* Process only this invalid byte */
+                            i++; /* Consume invalid byte */
                         }
-                        else if (utf_sequence_number > 0 && ((str[i] & 0xC0) != 0x80)) {
-                            utf_sequence_length = utf_sequence_number;
+                        /* Handle invalid continuation byte */
+                        else {
+                            flb_debug("[pack] unexpected UTF-8 continuation byte, substituting character");
+                            utf_sequence_length = utf_sequence_number; /* Adjust length */
                         }
-                        flb_debug("[pack] invalid UTF-8 sequence detected, replacing with substitution character");
-                        //codepoint = 0xFFFD;  // Replacement character
                         is_valid = FLB_FALSE;
                         break;
                     }
@@ -978,7 +983,7 @@ int flb_utils_write_str(char *buf, int *off, size_t size, const char *str, size_
                     ++i;
                 }
 
-                //--i;
+                --i;
 
                 if (is_valid) {
                     if (available < utf_sequence_length) {
@@ -986,15 +991,25 @@ int flb_utils_write_str(char *buf, int *off, size_t size, const char *str, size_
                         return FLB_FALSE;
                     }
 
-                    len = snprintf(tmp, sizeof(tmp), "\\u%.4x", codepoint);
+                    /* Handle codepoints beyond BMP (requires surrogate pairs in UTF-16) */
+                    if (codepoint > 0xFFFF) {
+                        high = 0xD800 + ((codepoint - 0x10000) >> 10);
+                        low = 0xDC00 + ((codepoint - 0x10000) & 0x3FF);
+
+                        len = snprintf(tmp, sizeof(tmp), "\\u%.4x\\u%.4x", high, low);
+                    }
+                    else {
+                        len = snprintf(tmp, sizeof(tmp), "\\u%.4x", codepoint);
+                    }
+
                     if (available < len) {
                         /* not enough space */
                         return FLB_FALSE;
                     }
                     memcpy(p, tmp, len);
                     p += len;
-                    offset += utf_sequence_length;
-                    available -= len;//utf_sequence_length;
+                    offset += len;
+                    available -= len;
                 }
                 else {
                     if (available < utf_sequence_length * 3) {
