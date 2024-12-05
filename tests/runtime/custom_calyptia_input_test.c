@@ -244,11 +244,11 @@ static void test_calyptia_machine_id_generation() {
     new_machine_id = NULL;
 
     /* repeat with new config directory */
-    t_ctx = update_config_dir(t_ctx, "/test/config/fleet");
+    t_ctx = update_config_dir(t_ctx, "/tmp/config/fleet");
     TEST_CHECK(t_ctx != NULL);
 
     /* check we use the new directory for the filename */
-    ret = sprintf(expectedValue, "/test/config/fleet/machine-id.conf");
+    ret = sprintf(expectedValue, "/tmp/config/fleet/machine-id.conf");
     TEST_CHECK(ret > 0);
 
     value = machine_id_fleet_config_filename(t_ctx->ctx);
