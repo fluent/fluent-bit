@@ -301,9 +301,11 @@ void flb_test_write_operation_index()
                    NULL);
 
     /* Enable test mode */
-    ret = flb_output_set_test_with_ctx_callback(ctx, out_ffd, "formatter",
-                                                cb_check_write_op_index,
-                                                NULL, NULL, cb_flush_context);
+    ret = flb_output_set_test(ctx, out_ffd, "formatter",
+                              cb_check_write_op_index, NULL, NULL);
+    TEST_CHECK(ret == 0);
+    ret = flb_output_set_test_flush_ctx_callback(ctx, out_ffd, "formatter",
+                                                 cb_flush_context, NULL);
     TEST_CHECK(ret == 0);
 
     /* Start */
@@ -346,9 +348,12 @@ void flb_test_write_operation_create()
                    NULL);
 
     /* Enable test mode */
-    ret = flb_output_set_test_with_ctx_callback(ctx, out_ffd, "formatter",
-                                                cb_check_write_op_create,
-                                                NULL, NULL, cb_flush_context);
+    ret = flb_output_set_test(ctx, out_ffd, "formatter",
+                              cb_check_write_op_create,
+                              NULL, NULL);
+    TEST_CHECK(ret == 0);
+    ret = flb_output_set_test_flush_ctx_callback(ctx, out_ffd, "formatter",
+                                                 cb_flush_context, NULL);
     TEST_CHECK(ret == 0);
 
     /* Start */
@@ -393,9 +398,12 @@ void flb_test_write_operation_update()
                    NULL);
 
     /* Enable test mode */
-    ret = flb_output_set_test_with_ctx_callback(ctx, out_ffd, "formatter",
-                                                cb_check_write_op_update,
-                                                NULL, NULL, cb_flush_context);
+    ret = flb_output_set_test(ctx, out_ffd, "formatter",
+                              cb_check_write_op_update,
+                              NULL, NULL);
+    TEST_CHECK(ret == 0);
+    ret = flb_output_set_test_flush_ctx_callback(ctx, out_ffd, "formatter",
+                                                 cb_flush_context, NULL);
     TEST_CHECK(ret == 0);
 
     /* Start */
@@ -440,9 +448,12 @@ void flb_test_write_operation_upsert()
                    NULL);
 
     /* Enable test mode */
-    ret = flb_output_set_test_with_ctx_callback(ctx, out_ffd, "formatter",
-                                                cb_check_write_op_upsert,
-                                                NULL, NULL, cb_flush_context);
+    ret = flb_output_set_test(ctx, out_ffd, "formatter",
+                              cb_check_write_op_upsert,
+                              NULL, NULL);
+    TEST_CHECK(ret == 0);
+    ret = flb_output_set_test_flush_ctx_callback(ctx, out_ffd, "formatter",
+                                                 cb_flush_context, NULL);
     TEST_CHECK(ret == 0);
 
     /* Start */
@@ -486,9 +497,11 @@ void flb_test_index_type()
                    NULL);
 
     /* Enable test mode */
-    ret = flb_output_set_test_with_ctx_callback(ctx, out_ffd, "formatter",
-                                                cb_check_index_type,
-                                                NULL, NULL, cb_flush_context);
+    ret = flb_output_set_test(ctx, out_ffd, "formatter", cb_check_index_type,
+                              NULL, NULL);
+    TEST_CHECK(ret == 0);
+    ret = flb_output_set_test_flush_ctx_callback(ctx, out_ffd, "formatter",
+                                                 cb_flush_context, NULL);
     TEST_CHECK(ret == 0);
 
     /* Start */
@@ -533,9 +546,12 @@ void flb_test_logstash_format()
                    NULL);
 
     /* Enable test mode */
-    ret = flb_output_set_test_with_ctx_callback(ctx, out_ffd, "formatter",
-                                                cb_check_logstash_format,
-                                                NULL, NULL, cb_flush_context);
+    ret = flb_output_set_test(ctx, out_ffd, "formatter",
+                              cb_check_logstash_format,
+                              NULL, NULL);
+    TEST_CHECK(ret == 0);
+    ret = flb_output_set_test_flush_ctx_callback(ctx, out_ffd, "formatter",
+                                                 cb_flush_context, NULL);
     TEST_CHECK(ret == 0);
 
     /* Start */
@@ -581,9 +597,12 @@ void flb_test_logstash_format_nanos()
                    NULL);
 
     /* Enable test mode */
-    ret = flb_output_set_test_with_ctx_callback(ctx, out_ffd, "formatter",
-                                                cb_check_logstash_format_nanos,
-                                                NULL, NULL, cb_flush_context);
+    ret = flb_output_set_test(ctx, out_ffd, "formatter",
+                              cb_check_logstash_format_nanos,
+                              NULL, NULL);
+    TEST_CHECK(ret == 0);
+    ret = flb_output_set_test_flush_ctx_callback(ctx, out_ffd, "formatter",
+                                                 cb_flush_context, NULL);
     TEST_CHECK(ret == 0);
 
     /* Start */
@@ -627,9 +646,11 @@ void flb_test_tag_key()
                    NULL);
 
     /* Enable test mode */
-    ret = flb_output_set_test_with_ctx_callback(ctx, out_ffd, "formatter",
-                                                cb_check_tag_key,
-                                                NULL, NULL, cb_flush_context);
+    ret = flb_output_set_test(ctx, out_ffd, "formatter", cb_check_tag_key,
+                              NULL, NULL);
+    TEST_CHECK(ret == 0);
+    ret = flb_output_set_test_flush_ctx_callback(ctx, out_ffd, "formatter",
+                                                 cb_flush_context, NULL);
     TEST_CHECK(ret == 0);
 
     /* Start */
@@ -672,9 +693,11 @@ void flb_test_replace_dots()
                    NULL);
 
     /* Enable test mode */
-    ret = flb_output_set_test_with_ctx_callback(ctx, out_ffd, "formatter",
-                                                cb_check_replace_dots,
-                                                NULL, NULL, cb_flush_context);
+    ret = flb_output_set_test(ctx, out_ffd, "formatter", cb_check_replace_dots,
+                              NULL, NULL);
+    TEST_CHECK(ret == 0);
+    ret = flb_output_set_test_flush_ctx_callback(ctx, out_ffd, "formatter",
+                                                 cb_flush_context, NULL);
     TEST_CHECK(ret == 0);
 
     /* Start */
@@ -717,9 +740,11 @@ void flb_test_id_key()
                    NULL);
 
     /* Enable test mode */
-    ret = flb_output_set_test_with_ctx_callback(ctx, out_ffd, "formatter",
-                                                cb_check_id_key,
-                                                NULL, NULL, cb_flush_context);
+    ret = flb_output_set_test(ctx, out_ffd, "formatter", cb_check_id_key,
+                              NULL, NULL);
+    TEST_CHECK(ret == 0);
+    ret = flb_output_set_test_flush_ctx_callback(ctx, out_ffd, "formatter",
+                                                 cb_flush_context, NULL);
     TEST_CHECK(ret == 0);
 
     /* Start */
@@ -772,9 +797,11 @@ void flb_test_div0()
                    NULL);
 
     /* Enable test mode */
-    ret = flb_output_set_test_with_ctx_callback(ctx, out_ffd, "formatter",
-                                                cb_check_nothing,
-                                                NULL, NULL, cb_flush_context);
+    ret = flb_output_set_test(ctx, out_ffd, "formatter", cb_check_nothing,
+                              NULL, NULL);
+    TEST_CHECK(ret == 0);
+    ret = flb_output_set_test_flush_ctx_callback(ctx, out_ffd, "formatter",
+                                                 cb_flush_context, NULL);
     TEST_CHECK(ret == 0);
 
     /* Start */
@@ -853,9 +880,11 @@ void flb_test_long_index()
                    NULL);
 
     /* Enable test mode */
-    ret = flb_output_set_test_with_ctx_callback(ctx, out_ffd, "formatter",
-                                                cb_check_long_index,
-                                                NULL, NULL, cb_flush_context);
+    ret = flb_output_set_test(ctx, out_ffd, "formatter", cb_check_long_index,
+                              NULL, NULL);
+    TEST_CHECK(ret == 0);
+    ret = flb_output_set_test_flush_ctx_callback(ctx, out_ffd, "formatter",
+                                                 cb_flush_context, NULL);
     TEST_CHECK(ret == 0);
 
     /* Start */
@@ -901,9 +930,12 @@ void flb_test_logstash_prefix_separator()
                    NULL);
 
     /* Enable test mode */
-    ret = flb_output_set_test_with_ctx_callback(ctx, out_ffd, "formatter",
-                                                cb_check_logstash_prefix_separator,
-                                                NULL, NULL, cb_flush_context);
+    ret = flb_output_set_test(ctx, out_ffd, "formatter",
+                              cb_check_logstash_prefix_separator,
+                              NULL, NULL);
+    TEST_CHECK(ret == 0);
+    ret = flb_output_set_test_flush_ctx_callback(ctx, out_ffd, "formatter",
+                                                 cb_flush_context, NULL);
     TEST_CHECK(ret == 0);
 
     /* Start */
@@ -957,9 +989,12 @@ void flb_test_upstream_write_operation()
                    NULL);
 
     /* Enable test mode */
-    ret = flb_output_set_test_with_ctx_callback(ctx, out_ffd, "formatter",
-                                                cb_check_write_op_index,
-                                                NULL, NULL, cb_flush_context);
+    ret = flb_output_set_test(ctx, out_ffd, "formatter",
+                              cb_check_write_op_index,
+                              NULL, NULL);
+    TEST_CHECK(ret == 0);
+    ret = flb_output_set_test_flush_ctx_callback(ctx, out_ffd, "formatter",
+                                                 cb_flush_context, NULL);
     TEST_CHECK(ret == 0);
 
     /* Start */
@@ -1013,9 +1048,11 @@ void flb_test_upstream_index_type()
                    NULL);
 
     /* Enable test mode */
-    ret = flb_output_set_test_with_ctx_callback(ctx, out_ffd, "formatter",
-                                                cb_check_index_type,
-                                                NULL, NULL, cb_flush_context);
+    ret = flb_output_set_test(ctx, out_ffd, "formatter", cb_check_index_type,
+                              NULL, NULL);
+    TEST_CHECK(ret == 0);
+    ret = flb_output_set_test_flush_ctx_callback(ctx, out_ffd, "formatter",
+                                                 cb_flush_context, NULL);
     TEST_CHECK(ret == 0);
 
     /* Start */
@@ -1078,9 +1115,12 @@ void flb_test_upstream_logstash_format()
                    NULL);
 
     /* Enable test mode */
-    ret = flb_output_set_test_with_ctx_callback(ctx, out_ffd, "formatter",
-                                                cb_check_logstash_prefix_separator,
-                                                NULL, NULL, cb_flush_context);
+    ret = flb_output_set_test(ctx, out_ffd, "formatter",
+                              cb_check_logstash_prefix_separator,
+                              NULL, NULL);
+    TEST_CHECK(ret == 0);
+    ret = flb_output_set_test_flush_ctx_callback(ctx, out_ffd, "formatter",
+                                                 cb_flush_context, NULL);
     TEST_CHECK(ret == 0);
 
     /* Start */
@@ -1137,9 +1177,11 @@ void flb_test_upstream_replace_dots()
                    NULL);
 
     /* Enable test mode */
-    ret = flb_output_set_test_with_ctx_callback(ctx, out_ffd, "formatter",
-                                                cb_check_replace_dots,
-                                                NULL, NULL, cb_flush_context);
+    ret = flb_output_set_test(ctx, out_ffd, "formatter", cb_check_replace_dots,
+                              NULL, NULL);
+    TEST_CHECK(ret == 0);
+    ret = flb_output_set_test_flush_ctx_callback(ctx, out_ffd, "formatter",
+                                                 cb_flush_context, NULL);
     TEST_CHECK(ret == 0);
 
     /* Start */
@@ -1190,9 +1232,11 @@ void flb_test_upstream_id_key()
                    NULL);
 
     /* Enable test mode */
-    ret = flb_output_set_test_with_ctx_callback(ctx, out_ffd, "formatter",
-                                                cb_check_id_key,
-                                                NULL, NULL, cb_flush_context);
+    ret = flb_output_set_test(ctx, out_ffd, "formatter", cb_check_id_key,
+                              NULL, NULL);
+    TEST_CHECK(ret == 0);
+    ret = flb_output_set_test_flush_ctx_callback(ctx, out_ffd, "formatter",
+                                                 cb_flush_context, NULL);
     TEST_CHECK(ret == 0);
 
     /* Start */
