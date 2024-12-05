@@ -37,6 +37,8 @@
 #include <fluent-bit/flb_utf8.h>
 #include <fluent-bit/flb_simd.h>
 
+#include <fluent-bit/calyptia/calyptia_constants.h>
+
 #ifdef FLB_HAVE_AWS_ERROR_REPORTER
 #include <fluent-bit/aws/flb_aws_error_reporter.h>
 
@@ -1635,4 +1637,54 @@ void flb_utils_set_plugin_string_property(const char *name,
     }
 
     *field_storage = new_value;
+}
+
+#ifdef FLB_SYSTEM_WINDOWS
+#define _mkdir(a, b) mkdir(a)
+#else
+#define _mkdir(a, b) mkdir(a, b)
+#endif
+
+/* recursively create directories, based on:
+ *   https://stackoverflow.com/a/2336245
+ * who found it at:
+ *   http://nion.modprobe.de/blog/archives/357-Recursive-directory-creation.html
+ */
+int flb_utils_mkdir(const char *dir, int perms) {
+    char tmp[CALYPTIA_MAX_DIR_SIZE];
+    char *ptr = NULL;
+    size_t len;
+    int ret;
+
+    ret = snprintf(tmp, sizeof(tmp),"%s",dir);
+    if (ret < 0 || ret >= sizeof(tmp)) {
+        flb_error("directory too long for flb_utils_mkdir: %s", dir);
+        return -1;
+    }
+
+    len = strlen(tmp);
+    /* len == ret but verifying index is valid */
+    if ( len > 0 && tmp[len - 1] == PATH_SEPARATOR[0]) {
+        tmp[len - 1] = 0;
+    }
+
+#ifndef FLB_SYSTEM_WINDOWS
+    for (ptr = tmp + 1; *ptr; ptr++) {
+#else
+    for (ptr = tmp + 3; *ptr; ptr++) {
+#endif
+
+        if (*ptr == PATH_SEPARATOR[0]) {
+            *ptr = 0;
+            if (access(tmp, F_OK) != 0) {
+                ret = _mkdir(tmp, perms);
+                if (ret != 0) {
+                    return ret;
+                }
+            }
+            *ptr = PATH_SEPARATOR[0];
+        }
+    }
+
+    return _mkdir(tmp, perms);
 }
