@@ -312,6 +312,7 @@ static int cb_emitter_init(struct flb_input_instance *in,
 
     ret = flb_input_config_map_set(in, (void *) ctx);
     if (ret == -1) {
+        flb_free(ctx);
         return -1;
     }
 

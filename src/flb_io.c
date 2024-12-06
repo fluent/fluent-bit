@@ -109,6 +109,7 @@ int flb_io_net_connect(struct flb_connection *connection,
     int ret;
     int async = FLB_FALSE;
     flb_sockfd_t fd = -1;
+    int flags = flb_connection_get_flags(connection);
     // struct flb_upstream *u = u_conn->u;
 
     if (connection->fd > 0) {
@@ -119,7 +120,7 @@ int flb_io_net_connect(struct flb_connection *connection,
     }
 
     /* Check which connection mode must be done */
-    if (coro) {
+    if (coro && (flags & FLB_IO_ASYNC)) {
         async = flb_upstream_is_async(connection->upstream);
     }
     else {
@@ -153,6 +154,18 @@ int flb_io_net_connect(struct flb_connection *connection,
                   connection->fd,
                   connection->upstream->tcp_host,
                   connection->upstream->tcp_port);
+    }
+
+    /* set TCP keepalive and it's options */
+    if (connection->net->tcp_keepalive) {
+        ret = flb_net_socket_tcp_keepalive(connection->fd,
+                                           connection->net);
+
+        if (ret == -1) {
+            flb_socket_close(fd);
+
+            return -1;
+        }
     }
 
 #ifdef FLB_HAVE_TLS

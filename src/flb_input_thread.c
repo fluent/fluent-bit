@@ -31,6 +31,7 @@
 #include <fluent-bit/flb_input.h>
 #include <fluent-bit/flb_input_plugin.h>
 #include <fluent-bit/flb_input_thread.h>
+#include <fluent-bit/flb_notification.h>
 
 static int input_thread_instance_set_status(struct flb_input_instance *ins, uint32_t status);
 static int input_thread_instance_get_status(struct flb_input_instance *ins);
@@ -188,6 +189,15 @@ static FLB_INLINE int engine_handle_event(flb_pipefd_t fd, int mask,
 
 static void input_thread_instance_destroy(struct flb_input_thread_instance *thi)
 {
+    if (thi->notification_channels_initialized == FLB_TRUE) {
+        mk_event_channel_destroy(thi->evl,
+                                 thi->notification_channels[0],
+                                 thi->notification_channels[1],
+                                 &thi->notification_event);
+
+        thi->notification_channels_initialized = FLB_FALSE;
+    }
+
     if (thi->evl) {
         mk_event_loop_destroy(thi->evl);
     }
@@ -270,6 +280,24 @@ static struct flb_input_thread_instance *input_thread_instance_create(struct flb
     }
     thi->event_local.type = FLB_ENGINE_EV_THREAD_INPUT;
 
+    ret = mk_event_channel_create(thi->evl,
+                                  &thi->notification_channels[0],
+                                  &thi->notification_channels[1],
+                                  &thi->notification_event);
+    if (ret == -1) {
+        flb_error("could not create notification channel for %s",
+                  flb_input_name(ins));
+
+        input_thread_instance_destroy(thi);
+
+        return NULL;
+    }
+
+    thi->notification_channels_initialized = FLB_TRUE;
+    thi->notification_event.type = FLB_ENGINE_EV_NOTIFICATION;
+
+    ins->notification_channel = thi->notification_channels[1];
+
     /* create thread pool, just one worker */
     thi->tp = flb_tp_create(ins->config);
     if (!thi->tp) {
@@ -296,6 +324,7 @@ static void input_thread(void *data)
     struct flb_input_plugin *p;
     struct flb_sched *sched = NULL;
     struct flb_net_dns dns_ctx = {0};
+    struct flb_notification *notification;
 
     thi = (struct flb_input_thread_instance *) data;
     ins = thi->ins;
@@ -431,6 +460,15 @@ static void input_thread(void *data)
             }
             else if (event->type == FLB_ENGINE_EV_THREAD_INPUT) {
                 handle_input_thread_event(event->fd, ins->config);
+            }
+            else if(event->type == FLB_ENGINE_EV_NOTIFICATION) {
+                ret = flb_notification_receive(event->fd, &notification);
+
+                if (ret == 0) {
+                    ret = flb_notification_deliver(notification);
+
+                    flb_notification_cleanup(notification);
+                }
             }
         }
 

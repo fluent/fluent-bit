@@ -36,11 +36,20 @@
 #define FLB_ES_WRITE_OP_UPDATE    "update"
 #define FLB_ES_WRITE_OP_UPSERT    "upsert"
 
+#define FLB_ES_STATUS_SUCCESS          (1 << 0)
+#define FLB_ES_STATUS_IMCOMPLETE       (1 << 1)
+#define FLB_ES_STATUS_ERROR_UNPACK     (1 << 2)
+#define FLB_ES_STATUS_BAD_TYPE         (1 << 3)
+#define FLB_ES_STATUS_INVAILD_ARGUMENT (1 << 4)
+#define FLB_ES_STATUS_BAD_RESPONSE     (1 << 5)
+#define FLB_ES_STATUS_DUPLICATES       (1 << 6)
+#define FLB_ES_STATUS_ERROR            (1 << 7)
+
 struct flb_elasticsearch {
     /* Elasticsearch index (database) and type (table) */
     char *index;
     char *type;
-    char suppress_type_name;
+    int suppress_type_name;
 
     /* HTTP Auth */
     char *http_user;

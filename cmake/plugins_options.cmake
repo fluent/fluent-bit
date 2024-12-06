@@ -11,6 +11,7 @@ option(FLB_MINIMAL "Enable minimal build configuration" No)
 
 # Inputs (sources, data collectors)
 # =================================
+DEFINE_OPTION(FLB_IN_BLOB                     "Enable Blob input plugin"                     ON)
 DEFINE_OPTION(FLB_IN_CALYPTIA_FLEET           "Enable Calyptia Fleet input plugin"           ON)
 DEFINE_OPTION(FLB_IN_COLLECTD                 "Enable Collectd input plugin"                 ON)
 DEFINE_OPTION(FLB_IN_CPU                      "Enable CPU input plugin"                      ON)
@@ -61,6 +62,7 @@ DEFINE_OPTION(FLB_IN_WINLOG                   "Enable Windows Log input plugin" 
 DEFINE_OPTION(FLB_IN_WINDOWS_EXPORTER_METRICS "Enable windows exporter metrics input plugin" ON)
 DEFINE_OPTION(FLB_IN_WINEVTLOG                "Enable Windows EvtLog input plugin"           OFF)
 DEFINE_OPTION(FLB_IN_WINSTAT                  "Enable Windows Stat input plugin"             OFF)
+DEFINE_OPTION(FLB_IN_EBPF                     "Enable Linux eBPF input plugin"               OFF)
 
 # Processors
 # ==========

@@ -55,9 +55,7 @@
 #define FLB_BIG_ENDIAN    1
 
 #ifndef FLB_BYTE_ORDER
-    #if defined(__BYTE_ORDER__) &&  __BYTE_ORDER__ == __ORDER_BIG_ENDIAN__
-        #define FLB_BYTE_ORDER FLB_BIG_ENDIAN
-    #elif defined(__BIG_ENDIAN__) || defined(__BIG_ENDIAN) || defined(_BIG_ENDIAN)
+    #ifdef FLB_HAVE_BIG_ENDIAN_SYSTEM
         #define FLB_BYTE_ORDER FLB_BIG_ENDIAN
     #else
         #define FLB_BYTE_ORDER FLB_LITTLE_ENDIAN

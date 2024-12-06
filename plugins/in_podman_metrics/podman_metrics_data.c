@@ -287,6 +287,7 @@ int collect_sysfs_directories(struct flb_in_metrics *ctx, flb_sds_t name)
                 pth = flb_malloc(sizeof(struct sysfs_path));
                 if (!pth) {
                     flb_errno();
+                    closedir(dir);
                     return -1;
                 }
                 pth->path = flb_sds_create(path);

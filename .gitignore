@@ -28,7 +28,7 @@ workflow/
 *.key
 *.log
 *.tar.gz
-
+*.o
 # clangd files
 .cache/
 compile_commands.json

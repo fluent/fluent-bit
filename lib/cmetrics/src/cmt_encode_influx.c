@@ -226,8 +226,9 @@ static void format_metric(struct cmt *cmt, cfl_sds_t *buf, struct cmt_map *map,
 {
     int i;
     int n;
-    int count = 0;
+    int static_count = 0;
     int static_labels = 0;
+    int has_namespace = CMT_FALSE;
     struct cmt_map_label *label_k;
     struct cmt_map_label *label_v;
     struct cfl_list *head;
@@ -241,19 +242,26 @@ static void format_metric(struct cmt *cmt, cfl_sds_t *buf, struct cmt_map *map,
     opts = map->opts;
 
     /* Measurement */
-    cfl_sds_cat_safe(buf, opts->ns, cfl_sds_len(opts->ns));
-
-    if (cfl_sds_len(opts->subsystem) > 0) {
-        cfl_sds_cat_safe(buf, "_", 1);
-        cfl_sds_cat_safe(buf, opts->subsystem, cfl_sds_len(opts->subsystem));
+    if (cfl_sds_len(opts->ns) > 0) {
+        cfl_sds_cat_safe(buf, opts->ns, cfl_sds_len(opts->ns));
+        if (cfl_sds_len(opts->subsystem) > 0) {
+            cfl_sds_cat_safe(buf, "_", 1);
+            cfl_sds_cat_safe(buf, opts->subsystem, cfl_sds_len(opts->subsystem));
+        }
+        has_namespace = CMT_TRUE;
+    }
+    else {
+        has_namespace = CMT_FALSE;
     }
 
     /* Static labels (tags) */
     static_labels = cmt_labels_count(cmt->static_labels);
     if (static_labels > 0) {
-        cfl_sds_cat_safe(buf, ",", 1);
+      if (has_namespace == CMT_TRUE) {
+            cfl_sds_cat_safe(buf, ",", 1);
+        }
         cfl_list_foreach(head, &cmt->static_labels->list) {
-            count++;
+            static_count++;
             slabel = cfl_list_entry(head, struct cmt_label, _head);
 
             /* key */
@@ -265,7 +273,7 @@ static void format_metric(struct cmt *cmt, cfl_sds_t *buf, struct cmt_map *map,
             /* val */
             append_string(buf, slabel->val);
 
-            if (count < static_labels) {
+            if (static_count < static_labels) {
                 cfl_sds_cat_safe(buf, ",", 1);
             }
         }
@@ -274,7 +282,9 @@ static void format_metric(struct cmt *cmt, cfl_sds_t *buf, struct cmt_map *map,
     /* Labels / Tags */
     n = cfl_list_size(&metric->labels);
     if (n > 0) {
-        cfl_sds_cat_safe(buf, ",", 1);
+        if (static_labels > 0 || has_namespace == CMT_TRUE) {
+            cfl_sds_cat_safe(buf, ",", 1);
+        }
 
         label_k = cfl_list_entry_first(&map->label_keys, struct cmt_map_label, _head);
 
@@ -297,7 +307,9 @@ static void format_metric(struct cmt *cmt, cfl_sds_t *buf, struct cmt_map *map,
         }
     }
 
-    cfl_sds_cat_safe(buf, " ", 1);
+    if (has_namespace == CMT_TRUE || static_labels > 0 || n > 0) {
+        cfl_sds_cat_safe(buf, " ", 1);
+    }
     append_metric_value(map, buf, metric);
 }
 

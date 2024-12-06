@@ -357,6 +357,7 @@ static flb_sds_t get_google_token(struct flb_stackdriver *ctx)
     int ret = 0;
     flb_sds_t output = NULL;
     time_t cached_expiration = 0;
+    time_t current_timestamp = 0;
 
     ret = pthread_mutex_trylock(&ctx->token_mutex);
     if (ret == EBUSY) {
@@ -369,7 +370,9 @@ static flb_sds_t get_google_token(struct flb_stackdriver *ctx)
          */
         output = oauth2_cache_to_token();
         cached_expiration = oauth2_cache_get_expiration();
-        if (time(NULL) >= cached_expiration) {
+        current_timestamp = time(NULL);
+
+        if (current_timestamp < cached_expiration) {
             return output;
         } else {
             /*
@@ -2304,9 +2307,22 @@ static flb_sds_t stackdriver_format(struct flb_stackdriver *ctx,
             insert_id_extracted = FLB_FALSE;
         }
         else {
+            if (trace_extracted == FLB_TRUE) {
+                flb_sds_destroy(trace);
+            }
+
+            if (span_id_extracted == FLB_TRUE) {
+                flb_sds_destroy(span_id);
+            }
+
+            if (project_id_extracted == FLB_TRUE) {
+                flb_sds_destroy(project_id_key);
+            }
+
             if (log_name_extracted == FLB_TRUE) {
                 flb_sds_destroy(log_name);
             }
+
             continue;
         }
 
@@ -2357,10 +2373,28 @@ static flb_sds_t stackdriver_format(struct flb_stackdriver *ctx,
             flb_plg_error(ctx->ins, "the type of payload labels should be map");
             flb_sds_destroy(operation_id);
             flb_sds_destroy(operation_producer);
-            flb_sds_destroy(trace);
-            flb_sds_destroy(log_name);
+            flb_sds_destroy(source_location_file);
+            flb_sds_destroy(source_location_function);
+
+            if (trace_extracted == FLB_TRUE) {
+                flb_sds_destroy(trace);
+            }
+
+            if (span_id_extracted == FLB_TRUE) {
+                flb_sds_destroy(span_id);
+            }
+
+            if (project_id_extracted == FLB_TRUE) {
+                flb_sds_destroy(project_id_key);
+            }
+
+            if (log_name_extracted == FLB_TRUE) {
+                flb_sds_destroy(log_name);
+            }
+
             flb_log_event_decoder_destroy(&log_decoder);
             msgpack_sbuffer_destroy(&mp_sbuf);
+
             return NULL;
         }
 

@@ -168,6 +168,8 @@ struct flb_wasm *flb_wasm_instantiate(struct flb_config *config, const char *was
 
     if (!wasm_runtime_full_init(&wasm_args)) {
         flb_error("Init runtime environment failed.");
+        flb_free(fw);
+
         return NULL;
     }
 

@@ -152,7 +152,7 @@ static flb_sds_t normalize_ra_key_name(struct flb_loki *ctx,
     mk_list_foreach(head, &ra->list) {
         rp = mk_list_entry(head, struct flb_ra_parser, _head);
         if (c > 0) {
-            flb_sds_cat(name, "_", 1);
+            flb_sds_cat_safe(&name, "_", 1);
         }
         normalize_cat(rp, &name);
         c++;
@@ -750,7 +750,7 @@ static int parse_kv(struct flb_loki *ctx, struct mk_list *kv, struct mk_list *li
         }
 
         key = flb_sds_create_size((p - entry->str) + 1);
-        flb_sds_cat(key, entry->str, p - entry->str);
+        flb_sds_cat_safe(&key, entry->str, p - entry->str);
         val = flb_sds_create(p + 1);
         if (!key) {
             flb_plg_error(ctx->ins,

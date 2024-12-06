@@ -413,6 +413,8 @@ static int decode_histogram_points(struct cmt *cmt,
             destroy_label_list(&metric->labels);
 
             free(metric);
+
+            return CMT_DECODE_PROMETHEUS_REMOTE_WRITE_DECODE_ERROR;
         }
         else {
             cfl_list_add(&metric->_head, &map->metrics);
@@ -438,7 +440,13 @@ static int decode_histogram_points(struct cmt *cmt,
             }
         }
         else {
-            free(metric);
+            if (static_metric_detected == CMT_FALSE) {
+                destroy_label_list(&metric->labels);
+
+                cfl_list_del(&metric->_head);
+
+                free(metric);
+            }
 
             return CMT_DECODE_PROMETHEUS_REMOTE_WRITE_DECODE_ERROR;
         }
@@ -452,7 +460,13 @@ static int decode_histogram_points(struct cmt *cmt,
         metric->hist_count = hist->count_float;
     }
     else {
-        free(metric);
+        if (static_metric_detected == CMT_FALSE) {
+            destroy_label_list(&metric->labels);
+
+            cfl_list_del(&metric->_head);
+
+            free(metric);
+        }
 
         return CMT_DECODE_PROMETHEUS_REMOTE_WRITE_DECODE_ERROR;
     }

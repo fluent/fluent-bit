@@ -482,7 +482,7 @@ static int append_v1_logs_metadata_and_fields(struct opentelemetry_context *ctx,
     }
 
     if (!severity_number_set && ctx->ra_severity_number_message) {
-        ra_val = flb_ra_get_value_object(ctx->ra_severity_number_metadata, *event->body);
+        ra_val = flb_ra_get_value_object(ctx->ra_severity_number_message, *event->body);
         if (ra_val != NULL) {
             if (ra_val->o.type == MSGPACK_OBJECT_POSITIVE_INTEGER && is_valid_severity_number(ra_val->o.via.u64)) {
                 log_record->severity_number = ra_val->o.via.u64;
@@ -640,7 +640,7 @@ static int append_v1_logs_metadata_and_fields(struct opentelemetry_context *ctx,
         flb_ra_key_value_destroy(ra_val);
     }
 
-    if (!trace_flags_set && ctx->ra_trace_flags_metadata) {
+    if (!trace_flags_set) {
         ra_val = flb_ra_get_value_object(ctx->ra_trace_flags_metadata, *event->metadata);
         if (ra_val != NULL) {
             if (ra_val->o.type == MSGPACK_OBJECT_POSITIVE_INTEGER) {
@@ -770,10 +770,11 @@ static int logs_flush_to_otel(struct opentelemetry_context *ctx, struct flb_even
     opentelemetry__proto__collector__logs__v1__export_logs_service_request__pack(export_logs, body);
 
     /* send post request to opentelemetry with content type application/x-protobuf */
-    ret = opentelemetry_http_post(ctx, body, len,
-                                  event_chunk->tag,
-                                  flb_sds_len(event_chunk->tag),
-                                  ctx->logs_uri);
+    ret = opentelemetry_post(ctx, body, len,
+                             event_chunk->tag,
+                             flb_sds_len(event_chunk->tag),
+                             ctx->logs_uri_sanitized,
+                             ctx->grpc_logs_uri);
     flb_free(body);
 
     return ret;
@@ -1085,6 +1086,8 @@ start_resource:
                 log_records = flb_calloc(ctx->batch_size, sizeof(Opentelemetry__Proto__Logs__V1__LogRecord *));
                 if (!log_records) {
                     flb_errno();
+                    flb_free(scope_log->scope);
+                    flb_free(scope_log);
                     return -2;
                 }
                 log_record_count = 0;

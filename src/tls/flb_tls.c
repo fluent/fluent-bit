@@ -579,7 +579,7 @@ int flb_tls_session_create(struct flb_tls *tls,
          * In the other case for an async socket 'th' is NOT NULL so the code
          * is under a coroutine context and it can yield.
          */
-        if (co == NULL) {
+        if (co == NULL || !flb_upstream_is_async(connection->upstream)) {
             flb_trace("[io_tls] server handshake connection #%i in process to %s",
                       connection->fd,
                       flb_connection_get_remote_address(connection));
@@ -670,6 +670,15 @@ cleanup:
     }
 
     return result;
+}
+
+const char *flb_tls_session_get_alpn(struct flb_tls_session *session)
+{
+    if (session->ptr != NULL) {
+        return session->tls->api->session_alpn_get(session);
+    }
+
+    return NULL;
 }
 
 int flb_tls_session_destroy(struct flb_tls_session *session)
