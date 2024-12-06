@@ -415,7 +415,7 @@ static struct flb_config_map config_map[] = {
    },
    {
     FLB_CONFIG_MAP_STR, "shared_key", NULL,
-    0, FLB_FALSE, 0,
+    0, FLB_TRUE, offsetof(struct flb_in_fw_config, shared_key),
     "Shared key for authentication"
    },
    {
