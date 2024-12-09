@@ -388,30 +388,13 @@ static void in_fw_pause(void *data, struct flb_config *config)
 }
 
 static void in_fw_resume(void *data, struct flb_config *config) {
-    struct flb_connection   *connection;
-    struct fw_conn          *conn;
     struct flb_in_fw_config *ctx = data;
     if (config->is_running == FLB_TRUE) {
         if (pthread_mutex_lock(&ctx->conn_mutex)) {
-            connection = flb_downstream_conn_get(ctx->downstream);
-            if (connection == NULL) {
-                flb_plg_error(ctx->ins, "could not accept new connection");
-
-                return;
-            }
-
-            conn = fw_conn_add(connection, ctx);
-            if (!conn) {
-                flb_plg_error(ctx->ins, "could not add connection");
-
-                return;
-            }
-
             flb_input_collector_resume(ctx->coll_fd, ctx->ins);
             ctx->is_paused = FLB_FALSE;
         }
         pthread_mutex_unlock(&ctx->conn_mutex);
-
     }
 }
 
