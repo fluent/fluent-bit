@@ -146,6 +146,9 @@ static int configure(struct filter_nest_ctx *ctx,
             ctx->prefix = flb_strdup(kv->val);
             ctx->prefix_len = flb_sds_len(kv->val);
             ctx->remove_prefix = true;
+        }
+        else if (strcasecmp(kv->key, "suppress_warnings") == 0) {
+            continue;
         } else {
             flb_plg_error(ctx->ins, "Invalid configuration key '%s'", kv->key);
             return -1;
@@ -385,9 +388,11 @@ static inline bool is_kv_to_lift(msgpack_object_kv * kv,
         }
         memcpy(tmp, key, klen);
         tmp[klen] = '\0';
-        flb_plg_warn(ctx->ins, "Value of key '%s' is not a map. "
-                     "Will not attempt to lift from here",
-                     tmp);
+        if (ctx->suppress_warnings == false) {
+            flb_plg_warn(ctx->ins, "Value of key '%s' is not a map. "
+                          "Will not attempt to lift from here",
+                          tmp);
+        }
         flb_free(tmp);
         return false;
     }
@@ -756,6 +761,11 @@ static struct flb_config_map config_map[] = {
     FLB_CONFIG_MAP_STR, "Remove_prefix", NULL,
     0, FLB_FALSE, 0,
     "Remove prefix from affected keys if it matches this string"
+   },
+   {
+    FLB_CONFIG_MAP_BOOL, "suppress_warnings", "false",
+    0, FLB_TRUE, offsetof(struct filter_nest_ctx, suppress_warnings),
+    "Suppress warnings about non-matching keys"
    },
    {0}
 };

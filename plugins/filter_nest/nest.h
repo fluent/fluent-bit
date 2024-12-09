@@ -35,6 +35,7 @@ struct filter_nest_ctx
     int key_len;
     char *prefix;
     int prefix_len;
+    bool suppress_warnings;
     // nest
     struct mk_list wildcards;
     int wildcards_cnt;
