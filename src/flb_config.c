@@ -183,6 +183,11 @@ struct flb_service_config service_configs[] = {
      offsetof(struct flb_config, enable_chunk_trace)},
 #endif
 
+#ifdef FLB_SYSTEM_WINDOWS
+    {FLB_CONF_STR_MAX_STDIO,
+     FLB_CONF_TYPE_INT,
+     offsetof(struct flb_config, maxstdio)},
+#endif
     {FLB_CONF_STR_HOT_RELOAD,
      FLB_CONF_TYPE_BOOL,
      offsetof(struct flb_config, enable_hot_reload)},
@@ -290,6 +295,10 @@ struct flb_config *flb_config_init()
     config->hot_reloaded_count = 0;
     config->shutdown_by_hot_reloading = FLB_FALSE;
     config->hot_reloading = FLB_FALSE;
+
+#ifdef FLB_SYSTEM_WINDOWS
+    config->maxstdio = 512;
+#endif
 
 #ifdef FLB_HAVE_SQLDB
     mk_list_init(&config->sqldb_list);

@@ -287,6 +287,10 @@ struct flb_config {
     size_t route_mask_size;
     size_t route_mask_slots;
     uint64_t *route_empty_mask;
+#ifdef FLB_SYSTEM_WINDOWS
+    /* maxstdio (Windows) */
+    int maxstdio;
+#endif
 
     /* Co-routines */
     unsigned int coro_stack_size;
@@ -372,6 +376,9 @@ enum conf_type {
 
 #define FLB_CONF_STR_HOT_RELOAD        "Hot_Reload"
 #define FLB_CONF_STR_HOT_RELOAD_ENSURE_THREAD_SAFETY  "Hot_Reload.Ensure_Thread_Safety"
+
+/* Set up maxstdio (Windows) */
+#define FLB_CONF_STR_MAX_STDIO          "Max_Stdio"
 
 /* DNS */
 #define FLB_CONF_DNS_MODE              "dns.mode"
