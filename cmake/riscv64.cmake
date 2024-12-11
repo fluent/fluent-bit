@@ -1,0 +1,8 @@
+if(CMAKE_SYSTEM_PROCESSOR MATCHES "^(riscv64)")
+  message(STATUS "Forcing characters to be signed, as on x86_64.")
+  set(CMAKE_C_FLAGS "${CMAKE_C_FLAGS} -fsigned-char")
+  if(FLB_LUAJIT)
+    message(WARNING "LuaJIT is disabled, this platform does not support built-in LuaJIT and system provided one neither.")
+    set(FLB_LUAJIT OFF)
+  endif()
+endif ()
