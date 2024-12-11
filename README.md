@@ -13,15 +13,13 @@
 
 ![](documentation/fluentbit_ecosystem.png)
 
-[Fluent Bit](http://fluentbit.io) is a fast Log Processor and Forwarder for Linux, Windows, Embedded Linux, MacOS and BSD family operating systems. It's part of the Graduated [Fluentd](http://fluentd.org) Ecosystem and a [CNCF](https://cncf.io) sub-project.
+[Fluent Bit](http://fluentbit.io) is a fast Log, Metrics and Traces Processor and Forwarder for Linux, Windows, Embedded Linux, MacOS and BSD family operating systems. It's part of the Graduated [Fluentd](http://fluentd.org) Ecosystem and a [CNCF](https://cncf.io) sub-project.
 
-Fluent Bit allows to collect log events or metrics from different sources, process them and deliver them to different backends such as [Fluentd](http://fluentd.org), Elasticsearch, Splunk, DataDog, Kafka, New Relic, Azure services, AWS services, Google services, NATS, InfluxDB or any custom HTTP end-point.
+Fluent Bit allows to collect different signal types such as logs, metrics and traces from different sources, process them and deliver them to different backends such as [Fluentd](http://fluentd.org), Elasticsearch, Splunk, DataDog, Kafka, New Relic, Azure services, AWS services, Google services, NATS, InfluxDB or any custom HTTP end-point.
 
 Fluent Bit comes with full SQL [Stream Processing](https://docs.fluentbit.io/manual/stream-processing/introduction) capabilities: data manipulation and analytics using SQL queries.
 
 Fluent Bit runs on x86_64, x86, arm32v7, and arm64v8 architectures.
-
-
 
 ## Features
 
@@ -48,7 +46,7 @@ Fluent Bit runs on x86_64, x86, arm32v7, and arm64v8 architectures.
 
 ## Fluent Bit in Production
 
-[Fluent Bit](https://fluentbit.io) is used widely in production environments. As of 2022, [Fluent Bit surpasses 3 Billion downloads](https://www.cncf.io/blog/2022/10/13/fluent-bit-surpasses-three-billion-downloads/) and continues to be deployed over **10 million times a day**. The following is a preview of who uses Fluent Bit heavily in production:
+Fluent Bit is a widely adopted solution in production environments. As of 2024, Fluent Bit has surpassed 15 billion downloads and continues to be deployed over 10 million times daily. Below is a preview of some of the organizations that rely heavily on Fluent Bit in their production systems:
 
 > If your company uses Fluent Bit and is not listed, feel free to open a GitHub issue and we will add the logo.
 
