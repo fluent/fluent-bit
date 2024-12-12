@@ -360,14 +360,14 @@ static void in_fw_pause(void *data, struct flb_config *config)
 {
     struct flb_in_fw_config *ctx = data;
     if (config->is_running == FLB_TRUE) {
+        /*
+         * This is the case when we are not in a shutdown phase, but
+         * backpressure built up, and the plugin needs to
+         * pause the ingestion. The plugin should close all the connections
+         * and wait for the ingestion to resume.
+         */
+        flb_input_collector_pause(ctx->coll_fd, ctx->ins);
         if (pthread_mutex_lock(&ctx->conn_mutex)) {
-            /*
-             * This is the case when we are not in a shutdown phase, but
-             * backpressure built up, and the plugin needs to
-             * pause the ingestion. The plugin should close all the connections
-             * and wait for the ingestion to resume.
-             */
-            flb_input_collector_pause(ctx->coll_fd, ctx->ins);
             fw_conn_del_all(ctx);
             ctx->is_paused = FLB_TRUE;
         }
@@ -390,8 +390,8 @@ static void in_fw_pause(void *data, struct flb_config *config)
 static void in_fw_resume(void *data, struct flb_config *config) {
     struct flb_in_fw_config *ctx = data;
     if (config->is_running == FLB_TRUE) {
+        flb_input_collector_resume(ctx->coll_fd, ctx->ins);
         if (pthread_mutex_lock(&ctx->conn_mutex)) {
-            flb_input_collector_resume(ctx->coll_fd, ctx->ins);
             ctx->is_paused = FLB_FALSE;
         }
         pthread_mutex_unlock(&ctx->conn_mutex);
