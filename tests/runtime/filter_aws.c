@@ -337,6 +337,204 @@ void flb_test_aws_private_ip() {
     set_output(NULL);
 }
 
+void flb_test_aws_public_ip() {
+    int ret;
+    int bytes;
+    char *p = "[0, {\"log\": \"hello, from my ec2 instance\"}]";
+    flb_ctx_t *ctx;
+    int in_ffd;
+    int out_ffd;
+    int filter_ffd;
+    struct flb_lib_out_cb cb_data;
+    struct flb_aws_client_generator *client_generator;
+    struct flb_filter_aws_init_options *ops;
+    struct flb_aws_client_mock_request_chain *request_chain;
+    char *output = NULL;
+    char *result;
+
+    request_chain = FLB_AWS_CLIENT_MOCK(
+        response(
+            expect(URI, "/latest/meta-data/public-ipv4/"),
+            expect(METHOD, FLB_HTTP_GET),
+            set(STATUS, 200),
+            set(PAYLOAD, "10.158.112.84"),
+            set(PAYLOAD_SIZE, 13)
+        )
+    );
+    flb_aws_client_mock_configure_generator(request_chain);
+
+    client_generator = flb_aws_client_get_mock_generator();
+    ops = flb_calloc(1, sizeof(struct flb_filter_aws_init_options));
+    if (ops == NULL) {
+        TEST_MSG("calloc for aws plugin options failed\n");
+        TEST_CHECK(false);
+        return;
+    }
+    ops->client_generator = client_generator;
+
+    ctx = flb_create();
+
+    in_ffd = flb_input(ctx, (char *) "lib", NULL);
+    TEST_CHECK(in_ffd >= 0);
+    flb_input_set(ctx, in_ffd, "tag", "test", NULL);
+
+
+    /* Prepare output callback context*/
+    cb_data.cb = callback_test;
+    cb_data.data = NULL;
+
+    /* Lib output */
+    out_ffd = flb_output(ctx, (char *) "lib", (void *)&cb_data);
+    TEST_CHECK(out_ffd >= 0);
+    flb_output_set(ctx, out_ffd,
+                   "match", "*",
+                   "format", "json",
+                   NULL);
+
+    filter_ffd = flb_filter(ctx, (char *) "aws", ops);
+    TEST_CHECK(filter_ffd >= 0);
+    ret = flb_filter_set(ctx, filter_ffd, "match", "*", NULL);
+    TEST_CHECK(ret == 0);
+    ret = flb_filter_set(ctx, filter_ffd, "ec2_instance_id", "false", NULL);
+    TEST_CHECK(ret == 0);
+    ret = flb_filter_set(ctx, filter_ffd, "public_ip", "true", NULL);
+    TEST_CHECK(ret == 0);
+    ret = flb_filter_set(ctx, filter_ffd, "az", "false", NULL);
+    TEST_CHECK(ret == 0);
+
+    ret = flb_start(ctx);
+    TEST_CHECK(ret == 0);
+
+    bytes = flb_lib_push(ctx, in_ffd, p, strlen(p));
+    if (!TEST_CHECK(bytes > 0)) {
+        TEST_MSG("zero bytes were pushed\n");
+    }
+
+    flb_time_msleep(1500); /* waiting flush */
+
+    output = get_output();
+    if (output) {
+        result = strstr(output, "\"public_ip\":\"10.158.112.84\"");
+        if (!TEST_CHECK(result != NULL)) {
+            TEST_MSG("output:%s\n", output);
+        }
+        result = strstr(output, "hello, from my ec2 instance");
+        if (!TEST_CHECK(result != NULL)) {
+            TEST_MSG("output:%s\n", output);
+        }
+    }
+    else {
+        TEST_CHECK(false);
+        TEST_MSG("output is empty\n");
+    }
+
+    flb_stop(ctx);
+    flb_aws_client_mock_destroy_generator();
+    flb_destroy(ctx);
+    flb_free(ops);
+
+    set_output(NULL);
+}
+
+void flb_test_aws_ipv6() {
+    int ret;
+    int bytes;
+    char *p = "[0, {\"log\": \"hello, from my ec2 instance\"}]";
+    flb_ctx_t *ctx;
+    int in_ffd;
+    int out_ffd;
+    int filter_ffd;
+    struct flb_lib_out_cb cb_data;
+    struct flb_aws_client_generator *client_generator;
+    struct flb_filter_aws_init_options *ops;
+    struct flb_aws_client_mock_request_chain *request_chain;
+    char *output = NULL;
+    char *result;
+
+    request_chain = FLB_AWS_CLIENT_MOCK(
+        response(
+            expect(URI, "/latest/meta-data/ipv6/"),
+            expect(METHOD, FLB_HTTP_GET),
+            set(STATUS, 200),
+            set(PAYLOAD, "2001:0db8:85a3:0000:0000:8a2e:0370:7334"),
+            set(PAYLOAD_SIZE, 39)
+        )
+    );
+    flb_aws_client_mock_configure_generator(request_chain);
+
+    client_generator = flb_aws_client_get_mock_generator();
+    ops = flb_calloc(1, sizeof(struct flb_filter_aws_init_options));
+    if (ops == NULL) {
+        TEST_MSG("calloc for aws plugin options failed\n");
+        TEST_CHECK(false);
+        return;
+    }
+    ops->client_generator = client_generator;
+
+    ctx = flb_create();
+
+    in_ffd = flb_input(ctx, (char *) "lib", NULL);
+    TEST_CHECK(in_ffd >= 0);
+    flb_input_set(ctx, in_ffd, "tag", "test", NULL);
+
+
+    /* Prepare output callback context*/
+    cb_data.cb = callback_test;
+    cb_data.data = NULL;
+
+    /* Lib output */
+    out_ffd = flb_output(ctx, (char *) "lib", (void *)&cb_data);
+    TEST_CHECK(out_ffd >= 0);
+    flb_output_set(ctx, out_ffd,
+                   "match", "*",
+                   "format", "json",
+                   NULL);
+
+    filter_ffd = flb_filter(ctx, (char *) "aws", ops);
+    TEST_CHECK(filter_ffd >= 0);
+    ret = flb_filter_set(ctx, filter_ffd, "match", "*", NULL);
+    TEST_CHECK(ret == 0);
+    ret = flb_filter_set(ctx, filter_ffd, "ec2_instance_id", "false", NULL);
+    TEST_CHECK(ret == 0);
+    ret = flb_filter_set(ctx, filter_ffd, "ipv6", "true", NULL);
+    TEST_CHECK(ret == 0);
+    ret = flb_filter_set(ctx, filter_ffd, "az", "false", NULL);
+    TEST_CHECK(ret == 0);
+
+    ret = flb_start(ctx);
+    TEST_CHECK(ret == 0);
+
+    bytes = flb_lib_push(ctx, in_ffd, p, strlen(p));
+    if (!TEST_CHECK(bytes > 0)) {
+        TEST_MSG("zero bytes were pushed\n");
+    }
+
+    flb_time_msleep(1500); /* waiting flush */
+
+    output = get_output();
+    if (output) {
+        result = strstr(output, "\"ipv6\":\"2001:0db8:85a3:0000:0000:8a2e:0370:7334\"");
+        if (!TEST_CHECK(result != NULL)) {
+            TEST_MSG("output:%s\n", output);
+        }
+        result = strstr(output, "hello, from my ec2 instance");
+        if (!TEST_CHECK(result != NULL)) {
+            TEST_MSG("output:%s\n", output);
+        }
+    }
+    else {
+        TEST_CHECK(false);
+        TEST_MSG("output is empty\n");
+    }
+
+    flb_stop(ctx);
+    flb_aws_client_mock_destroy_generator();
+    flb_destroy(ctx);
+    flb_free(ops);
+
+    set_output(NULL);
+}
+
 void flb_test_aws_vpc_id() {
     int ret;
     int bytes;
@@ -740,6 +938,303 @@ void flb_test_aws_hostname() {
     set_output(NULL);
 }
 
+void flb_test_aws_partition() {
+    int ret;
+    int bytes;
+    char *p = "[0, {\"log\": \"hello, from my ec2 instance\"}]";
+    flb_ctx_t *ctx;
+    int in_ffd;
+    int out_ffd;
+    int filter_ffd;
+    struct flb_lib_out_cb cb_data;
+    struct flb_aws_client_generator *client_generator;
+    struct flb_filter_aws_init_options *ops;
+    struct flb_aws_client_mock_request_chain *request_chain;
+    char *output = NULL;
+    char *result;
+
+    request_chain = FLB_AWS_CLIENT_MOCK(
+        response(
+            expect(URI, "/latest/meta-data/services/partition/"),
+            expect(METHOD, FLB_HTTP_GET),
+            set(STATUS, 200),
+            set(PAYLOAD, "aws"),
+            set(PAYLOAD_SIZE, 3)
+        )
+    );
+    flb_aws_client_mock_configure_generator(request_chain);
+
+    client_generator = flb_aws_client_get_mock_generator();
+    ops = flb_calloc(1, sizeof(struct flb_filter_aws_init_options));
+    if (ops == NULL) {
+        TEST_MSG("calloc for aws plugin options failed\n");
+        TEST_CHECK(false);
+        return;
+    }
+    ops->client_generator = client_generator;
+
+    ctx = flb_create();
+
+    in_ffd = flb_input(ctx, (char *) "lib", NULL);
+    TEST_CHECK(in_ffd >= 0);
+    flb_input_set(ctx, in_ffd, "tag", "test", NULL);
+
+
+    /* Prepare output callback context*/
+    cb_data.cb = callback_test;
+    cb_data.data = NULL;
+
+    /* Lib output */
+    out_ffd = flb_output(ctx, (char *) "lib", (void *)&cb_data);
+    TEST_CHECK(out_ffd >= 0);
+    flb_output_set(ctx, out_ffd,
+                   "match", "*",
+                   "format", "json",
+                   NULL);
+
+    filter_ffd = flb_filter(ctx, (char *) "aws", ops);
+    TEST_CHECK(filter_ffd >= 0);
+    ret = flb_filter_set(ctx, filter_ffd, "match", "*", NULL);
+    TEST_CHECK(ret == 0);
+    ret = flb_filter_set(ctx, filter_ffd, "ec2_instance_id", "false", NULL);
+    TEST_CHECK(ret == 0);
+    ret = flb_filter_set(ctx, filter_ffd, "partition", "true", NULL);
+    TEST_CHECK(ret == 0);
+    ret = flb_filter_set(ctx, filter_ffd, "az", "false", NULL);
+    TEST_CHECK(ret == 0);
+
+    ret = flb_start(ctx);
+    TEST_CHECK(ret == 0);
+
+    bytes = flb_lib_push(ctx, in_ffd, p, strlen(p));
+    if (!TEST_CHECK(bytes > 0)) {
+        TEST_MSG("zero bytes were pushed\n");
+    }
+
+    flb_time_msleep(1500); /* waiting flush */
+
+    output = get_output();
+    if (output) {
+        result = strstr(output, "\"partition\":\"aws\"");
+        if (!TEST_CHECK(result != NULL)) {
+            TEST_MSG("output:%s\n", output);
+        }
+        result = strstr(output, "hello, from my ec2 instance");
+        if (!TEST_CHECK(result != NULL)) {
+            TEST_MSG("output:%s\n", output);
+        }
+    }
+    else {
+        TEST_CHECK(false);
+        TEST_MSG("output is empty\n");
+    }
+
+    flb_stop(ctx);
+    flb_aws_client_mock_destroy_generator();
+    flb_destroy(ctx);
+    flb_free(ops);
+
+    set_output(NULL);
+}
+
+void flb_test_aws_domain() {
+    int ret;
+    int bytes;
+    char *p = "[0, {\"log\": \"hello, from my ec2 instance\"}]";
+    flb_ctx_t *ctx;
+    int in_ffd;
+    int out_ffd;
+    int filter_ffd;
+    struct flb_lib_out_cb cb_data;
+    struct flb_aws_client_generator *client_generator;
+    struct flb_filter_aws_init_options *ops;
+    struct flb_aws_client_mock_request_chain *request_chain;
+    char *output = NULL;
+    char *result;
+
+    request_chain = FLB_AWS_CLIENT_MOCK(
+        response(
+            expect(URI, "/latest/meta-data/services/domain/"),
+            expect(METHOD, FLB_HTTP_GET),
+            set(STATUS, 200),
+            set(PAYLOAD, "amazonaws.com"),
+            set(PAYLOAD_SIZE, 13)
+        )
+    );
+    flb_aws_client_mock_configure_generator(request_chain);
+
+    client_generator = flb_aws_client_get_mock_generator();
+    ops = flb_calloc(1, sizeof(struct flb_filter_aws_init_options));
+    if (ops == NULL) {
+        TEST_MSG("calloc for aws plugin options failed\n");
+        TEST_CHECK(false);
+        return;
+    }
+    ops->client_generator = client_generator;
+
+    ctx = flb_create();
+
+    in_ffd = flb_input(ctx, (char *) "lib", NULL);
+    TEST_CHECK(in_ffd >= 0);
+    flb_input_set(ctx, in_ffd, "tag", "test", NULL);
+
+
+    /* Prepare output callback context*/
+    cb_data.cb = callback_test;
+    cb_data.data = NULL;
+
+    /* Lib output */
+    out_ffd = flb_output(ctx, (char *) "lib", (void *)&cb_data);
+    TEST_CHECK(out_ffd >= 0);
+    flb_output_set(ctx, out_ffd,
+                   "match", "*",
+                   "format", "json",
+                   NULL);
+
+    filter_ffd = flb_filter(ctx, (char *) "aws", ops);
+    TEST_CHECK(filter_ffd >= 0);
+    ret = flb_filter_set(ctx, filter_ffd, "match", "*", NULL);
+    TEST_CHECK(ret == 0);
+    ret = flb_filter_set(ctx, filter_ffd, "ec2_instance_id", "false", NULL);
+    TEST_CHECK(ret == 0);
+    ret = flb_filter_set(ctx, filter_ffd, "domain", "true", NULL);
+    TEST_CHECK(ret == 0);
+    ret = flb_filter_set(ctx, filter_ffd, "az", "false", NULL);
+    TEST_CHECK(ret == 0);
+
+    ret = flb_start(ctx);
+    TEST_CHECK(ret == 0);
+
+    bytes = flb_lib_push(ctx, in_ffd, p, strlen(p));
+    if (!TEST_CHECK(bytes > 0)) {
+        TEST_MSG("zero bytes were pushed\n");
+    }
+
+    flb_time_msleep(1500); /* waiting flush */
+
+    output = get_output();
+    if (output) {
+        result = strstr(output, "\"domain\":\"amazonaws.com\"");
+        if (!TEST_CHECK(result != NULL)) {
+            TEST_MSG("output:%s\n", output);
+        }
+        result = strstr(output, "hello, from my ec2 instance");
+        if (!TEST_CHECK(result != NULL)) {
+            TEST_MSG("output:%s\n", output);
+        }
+    }
+    else {
+        TEST_CHECK(false);
+        TEST_MSG("output is empty\n");
+    }
+
+    flb_stop(ctx);
+    flb_aws_client_mock_destroy_generator();
+    flb_destroy(ctx);
+    flb_free(ops);
+
+    set_output(NULL);
+}
+
+void flb_test_aws_region() {
+    int ret;
+    int bytes;
+    char *p = "[0, {\"log\": \"hello, from my ec2 instance\"}]";
+    flb_ctx_t *ctx;
+    int in_ffd;
+    int out_ffd;
+    int filter_ffd;
+    struct flb_lib_out_cb cb_data;
+    struct flb_aws_client_generator *client_generator;
+    struct flb_filter_aws_init_options *ops;
+    struct flb_aws_client_mock_request_chain *request_chain;
+    char *output = NULL;
+    char *result;
+
+    request_chain = FLB_AWS_CLIENT_MOCK(
+        response(
+            expect(URI, "/latest/meta-data/placement/region/"),
+            expect(METHOD, FLB_HTTP_GET),
+            set(STATUS, 200),
+            set(PAYLOAD, "us-east-1"),
+            set(PAYLOAD_SIZE, 9)
+        )
+    );
+    flb_aws_client_mock_configure_generator(request_chain);
+
+    client_generator = flb_aws_client_get_mock_generator();
+    ops = flb_calloc(1, sizeof(struct flb_filter_aws_init_options));
+    if (ops == NULL) {
+        TEST_MSG("calloc for aws plugin options failed\n");
+        TEST_CHECK(false);
+        return;
+    }
+    ops->client_generator = client_generator;
+
+    ctx = flb_create();
+
+    in_ffd = flb_input(ctx, (char *) "lib", NULL);
+    TEST_CHECK(in_ffd >= 0);
+    flb_input_set(ctx, in_ffd, "tag", "test", NULL);
+
+
+    /* Prepare output callback context*/
+    cb_data.cb = callback_test;
+    cb_data.data = NULL;
+
+    /* Lib output */
+    out_ffd = flb_output(ctx, (char *) "lib", (void *)&cb_data);
+    TEST_CHECK(out_ffd >= 0);
+    flb_output_set(ctx, out_ffd,
+                   "match", "*",
+                   "format", "json",
+                   NULL);
+
+    filter_ffd = flb_filter(ctx, (char *) "aws", ops);
+    TEST_CHECK(filter_ffd >= 0);
+    ret = flb_filter_set(ctx, filter_ffd, "match", "*", NULL);
+    TEST_CHECK(ret == 0);
+    ret = flb_filter_set(ctx, filter_ffd, "ec2_instance_id", "false", NULL);
+    TEST_CHECK(ret == 0);
+    ret = flb_filter_set(ctx, filter_ffd, "region", "true", NULL);
+    TEST_CHECK(ret == 0);
+    ret = flb_filter_set(ctx, filter_ffd, "az", "false", NULL);
+    TEST_CHECK(ret == 0);
+
+    ret = flb_start(ctx);
+    TEST_CHECK(ret == 0);
+
+    bytes = flb_lib_push(ctx, in_ffd, p, strlen(p));
+    if (!TEST_CHECK(bytes > 0)) {
+        TEST_MSG("zero bytes were pushed\n");
+    }
+
+    flb_time_msleep(1500); /* waiting flush */
+
+    output = get_output();
+    if (output) {
+        result = strstr(output, "\"region\":\"us-east-1\"");
+        if (!TEST_CHECK(result != NULL)) {
+            TEST_MSG("output:%s\n", output);
+        }
+        result = strstr(output, "hello, from my ec2 instance");
+        if (!TEST_CHECK(result != NULL)) {
+            TEST_MSG("output:%s\n", output);
+        }
+    }
+    else {
+        TEST_CHECK(false);
+        TEST_MSG("output is empty\n");
+    }
+
+    flb_stop(ctx);
+    flb_aws_client_mock_destroy_generator();
+    flb_destroy(ctx);
+    flb_free(ops);
+
+    set_output(NULL);
+}
+
 void flb_test_aws_az() {
     int ret;
     int bytes;
@@ -816,6 +1311,402 @@ void flb_test_aws_az() {
     output = get_output();
     if (output) {
         result = strstr(output, "\"az\":\"us-east-1a\"");
+        if (!TEST_CHECK(result != NULL)) {
+            TEST_MSG("output:%s\n", output);
+        }
+        result = strstr(output, "hello, from my ec2 instance");
+        if (!TEST_CHECK(result != NULL)) {
+            TEST_MSG("output:%s\n", output);
+        }
+    }
+    else {
+        TEST_CHECK(false);
+        TEST_MSG("output is empty\n");
+    }
+
+    flb_stop(ctx);
+    flb_aws_client_mock_destroy_generator();
+    flb_destroy(ctx);
+    flb_free(ops);
+
+    set_output(NULL);
+}
+
+void flb_test_aws_az_id() {
+    int ret;
+    int bytes;
+    char *p = "[0, {\"log\": \"hello, from my ec2 instance\"}]";
+    flb_ctx_t *ctx;
+    int in_ffd;
+    int out_ffd;
+    int filter_ffd;
+    struct flb_lib_out_cb cb_data;
+    struct flb_aws_client_generator *client_generator;
+    struct flb_filter_aws_init_options *ops;
+    struct flb_aws_client_mock_request_chain *request_chain;
+    char *output = NULL;
+    char *result;
+
+    request_chain = FLB_AWS_CLIENT_MOCK(
+        response(
+            expect(URI, "/latest/meta-data/placement/availability-zone-id/"),
+            expect(METHOD, FLB_HTTP_GET),
+            set(STATUS, 200),
+            set(PAYLOAD, "use1-az1"),
+            set(PAYLOAD_SIZE, 8)
+        )
+    );
+    flb_aws_client_mock_configure_generator(request_chain);
+
+    client_generator = flb_aws_client_get_mock_generator();
+    ops = flb_calloc(1, sizeof(struct flb_filter_aws_init_options));
+    if (ops == NULL) {
+        TEST_MSG("calloc for aws plugin options failed\n");
+        TEST_CHECK(false);
+        return;
+    }
+    ops->client_generator = client_generator;
+
+    ctx = flb_create();
+
+    in_ffd = flb_input(ctx, (char *) "lib", NULL);
+    TEST_CHECK(in_ffd >= 0);
+    flb_input_set(ctx, in_ffd, "tag", "test", NULL);
+
+
+    /* Prepare output callback context*/
+    cb_data.cb = callback_test;
+    cb_data.data = NULL;
+
+    /* Lib output */
+    out_ffd = flb_output(ctx, (char *) "lib", (void *)&cb_data);
+    TEST_CHECK(out_ffd >= 0);
+    flb_output_set(ctx, out_ffd,
+                   "match", "*",
+                   "format", "json",
+                   NULL);
+
+    filter_ffd = flb_filter(ctx, (char *) "aws", ops);
+    TEST_CHECK(filter_ffd >= 0);
+    ret = flb_filter_set(ctx, filter_ffd, "match", "*", NULL);
+    TEST_CHECK(ret == 0);
+    ret = flb_filter_set(ctx, filter_ffd, "ec2_instance_id", "false", NULL);
+    TEST_CHECK(ret == 0);
+    ret = flb_filter_set(ctx, filter_ffd, "az_id", "true", NULL);
+    TEST_CHECK(ret == 0);
+    ret = flb_filter_set(ctx, filter_ffd, "az", "false", NULL);
+    TEST_CHECK(ret == 0);
+
+    ret = flb_start(ctx);
+    TEST_CHECK(ret == 0);
+
+    bytes = flb_lib_push(ctx, in_ffd, p, strlen(p));
+    if (!TEST_CHECK(bytes > 0)) {
+        TEST_MSG("zero bytes were pushed\n");
+    }
+
+    flb_time_msleep(1500); /* waiting flush */
+
+    output = get_output();
+    if (output) {
+        result = strstr(output, "\"az_id\":\"use1-az1\"");
+        if (!TEST_CHECK(result != NULL)) {
+            TEST_MSG("output:%s\n", output);
+        }
+        result = strstr(output, "hello, from my ec2 instance");
+        if (!TEST_CHECK(result != NULL)) {
+            TEST_MSG("output:%s\n", output);
+        }
+    }
+    else {
+        TEST_CHECK(false);
+        TEST_MSG("output is empty\n");
+    }
+
+    flb_stop(ctx);
+    flb_aws_client_mock_destroy_generator();
+    flb_destroy(ctx);
+    flb_free(ops);
+
+    set_output(NULL);
+}
+
+void flb_test_aws_placement_group() {
+    int ret;
+    int bytes;
+    char *p = "[0, {\"log\": \"hello, from my ec2 instance\"}]";
+    flb_ctx_t *ctx;
+    int in_ffd;
+    int out_ffd;
+    int filter_ffd;
+    struct flb_lib_out_cb cb_data;
+    struct flb_aws_client_generator *client_generator;
+    struct flb_filter_aws_init_options *ops;
+    struct flb_aws_client_mock_request_chain *request_chain;
+    char *output = NULL;
+    char *result;
+
+    request_chain = FLB_AWS_CLIENT_MOCK(
+        response(
+            expect(URI, "/latest/meta-data/placement/group-name/"),
+            expect(METHOD, FLB_HTTP_GET),
+            set(STATUS, 200),
+            set(PAYLOAD, "my_placement_group"),
+            set(PAYLOAD_SIZE, 18)
+        )
+    );
+    flb_aws_client_mock_configure_generator(request_chain);
+
+    client_generator = flb_aws_client_get_mock_generator();
+    ops = flb_calloc(1, sizeof(struct flb_filter_aws_init_options));
+    if (ops == NULL) {
+        TEST_MSG("calloc for aws plugin options failed\n");
+        TEST_CHECK(false);
+        return;
+    }
+    ops->client_generator = client_generator;
+
+    ctx = flb_create();
+
+    in_ffd = flb_input(ctx, (char *) "lib", NULL);
+    TEST_CHECK(in_ffd >= 0);
+    flb_input_set(ctx, in_ffd, "tag", "test", NULL);
+
+
+    /* Prepare output callback context*/
+    cb_data.cb = callback_test;
+    cb_data.data = NULL;
+
+    /* Lib output */
+    out_ffd = flb_output(ctx, (char *) "lib", (void *)&cb_data);
+    TEST_CHECK(out_ffd >= 0);
+    flb_output_set(ctx, out_ffd,
+                   "match", "*",
+                   "format", "json",
+                   NULL);
+
+    filter_ffd = flb_filter(ctx, (char *) "aws", ops);
+    TEST_CHECK(filter_ffd >= 0);
+    ret = flb_filter_set(ctx, filter_ffd, "match", "*", NULL);
+    TEST_CHECK(ret == 0);
+    ret = flb_filter_set(ctx, filter_ffd, "ec2_instance_id", "false", NULL);
+    TEST_CHECK(ret == 0);
+    ret = flb_filter_set(ctx, filter_ffd, "placement_group", "true", NULL);
+    TEST_CHECK(ret == 0);
+    ret = flb_filter_set(ctx, filter_ffd, "az", "false", NULL);
+    TEST_CHECK(ret == 0);
+
+    ret = flb_start(ctx);
+    TEST_CHECK(ret == 0);
+
+    bytes = flb_lib_push(ctx, in_ffd, p, strlen(p));
+    if (!TEST_CHECK(bytes > 0)) {
+        TEST_MSG("zero bytes were pushed\n");
+    }
+
+    flb_time_msleep(1500); /* waiting flush */
+
+    output = get_output();
+    if (output) {
+        result = strstr(output, "\"placement_group\":\"my_placement_group\"");
+        if (!TEST_CHECK(result != NULL)) {
+            TEST_MSG("output:%s\n", output);
+        }
+        result = strstr(output, "hello, from my ec2 instance");
+        if (!TEST_CHECK(result != NULL)) {
+            TEST_MSG("output:%s\n", output);
+        }
+    }
+    else {
+        TEST_CHECK(false);
+        TEST_MSG("output is empty\n");
+    }
+
+    flb_stop(ctx);
+    flb_aws_client_mock_destroy_generator();
+    flb_destroy(ctx);
+    flb_free(ops);
+
+    set_output(NULL);
+}
+
+void flb_test_aws_partition_number() {
+    int ret;
+    int bytes;
+    char *p = "[0, {\"log\": \"hello, from my ec2 instance\"}]";
+    flb_ctx_t *ctx;
+    int in_ffd;
+    int out_ffd;
+    int filter_ffd;
+    struct flb_lib_out_cb cb_data;
+    struct flb_aws_client_generator *client_generator;
+    struct flb_filter_aws_init_options *ops;
+    struct flb_aws_client_mock_request_chain *request_chain;
+    char *output = NULL;
+    char *result;
+
+    request_chain = FLB_AWS_CLIENT_MOCK(
+        response(
+            expect(URI, "/latest/meta-data/placement/partition-number/"),
+            expect(METHOD, FLB_HTTP_GET),
+            set(STATUS, 200),
+            set(PAYLOAD, "1"),
+            set(PAYLOAD_SIZE, 1)
+        )
+    );
+    flb_aws_client_mock_configure_generator(request_chain);
+
+    client_generator = flb_aws_client_get_mock_generator();
+    ops = flb_calloc(1, sizeof(struct flb_filter_aws_init_options));
+    if (ops == NULL) {
+        TEST_MSG("calloc for aws plugin options failed\n");
+        TEST_CHECK(false);
+        return;
+    }
+    ops->client_generator = client_generator;
+
+    ctx = flb_create();
+
+    in_ffd = flb_input(ctx, (char *) "lib", NULL);
+    TEST_CHECK(in_ffd >= 0);
+    flb_input_set(ctx, in_ffd, "tag", "test", NULL);
+
+
+    /* Prepare output callback context*/
+    cb_data.cb = callback_test;
+    cb_data.data = NULL;
+
+    /* Lib output */
+    out_ffd = flb_output(ctx, (char *) "lib", (void *)&cb_data);
+    TEST_CHECK(out_ffd >= 0);
+    flb_output_set(ctx, out_ffd,
+                   "match", "*",
+                   "format", "json",
+                   NULL);
+
+    filter_ffd = flb_filter(ctx, (char *) "aws", ops);
+    TEST_CHECK(filter_ffd >= 0);
+    ret = flb_filter_set(ctx, filter_ffd, "match", "*", NULL);
+    TEST_CHECK(ret == 0);
+    ret = flb_filter_set(ctx, filter_ffd, "ec2_instance_id", "false", NULL);
+    TEST_CHECK(ret == 0);
+    ret = flb_filter_set(ctx, filter_ffd, "partition_number", "true", NULL);
+    TEST_CHECK(ret == 0);
+    ret = flb_filter_set(ctx, filter_ffd, "az", "false", NULL);
+    TEST_CHECK(ret == 0);
+
+    ret = flb_start(ctx);
+    TEST_CHECK(ret == 0);
+
+    bytes = flb_lib_push(ctx, in_ffd, p, strlen(p));
+    if (!TEST_CHECK(bytes > 0)) {
+        TEST_MSG("zero bytes were pushed\n");
+    }
+
+    flb_time_msleep(1500); /* waiting flush */
+
+    output = get_output();
+    if (output) {
+        result = strstr(output, "\"partition_number\":\"1\"");
+        if (!TEST_CHECK(result != NULL)) {
+            TEST_MSG("output:%s\n", output);
+        }
+        result = strstr(output, "hello, from my ec2 instance");
+        if (!TEST_CHECK(result != NULL)) {
+            TEST_MSG("output:%s\n", output);
+        }
+    }
+    else {
+        TEST_CHECK(false);
+        TEST_MSG("output is empty\n");
+    }
+
+    flb_stop(ctx);
+    flb_aws_client_mock_destroy_generator();
+    flb_destroy(ctx);
+    flb_free(ops);
+
+    set_output(NULL);
+}
+
+void flb_test_aws_host_id() {
+    int ret;
+    int bytes;
+    char *p = "[0, {\"log\": \"hello, from my ec2 instance\"}]";
+    flb_ctx_t *ctx;
+    int in_ffd;
+    int out_ffd;
+    int filter_ffd;
+    struct flb_lib_out_cb cb_data;
+    struct flb_aws_client_generator *client_generator;
+    struct flb_filter_aws_init_options *ops;
+    struct flb_aws_client_mock_request_chain *request_chain;
+    char *output = NULL;
+    char *result;
+
+    request_chain = FLB_AWS_CLIENT_MOCK(
+        response(
+            expect(URI, "/latest/meta-data/placement/host-id/"),
+            expect(METHOD, FLB_HTTP_GET),
+            set(STATUS, 200),
+            set(PAYLOAD, "h-012a3456b7890cdef"),
+            set(PAYLOAD_SIZE, 19)
+        )
+    );
+    flb_aws_client_mock_configure_generator(request_chain);
+
+    client_generator = flb_aws_client_get_mock_generator();
+    ops = flb_calloc(1, sizeof(struct flb_filter_aws_init_options));
+    if (ops == NULL) {
+        TEST_MSG("calloc for aws plugin options failed\n");
+        TEST_CHECK(false);
+        return;
+    }
+    ops->client_generator = client_generator;
+
+    ctx = flb_create();
+
+    in_ffd = flb_input(ctx, (char *) "lib", NULL);
+    TEST_CHECK(in_ffd >= 0);
+    flb_input_set(ctx, in_ffd, "tag", "test", NULL);
+
+
+    /* Prepare output callback context*/
+    cb_data.cb = callback_test;
+    cb_data.data = NULL;
+
+    /* Lib output */
+    out_ffd = flb_output(ctx, (char *) "lib", (void *)&cb_data);
+    TEST_CHECK(out_ffd >= 0);
+    flb_output_set(ctx, out_ffd,
+                   "match", "*",
+                   "format", "json",
+                   NULL);
+
+    filter_ffd = flb_filter(ctx, (char *) "aws", ops);
+    TEST_CHECK(filter_ffd >= 0);
+    ret = flb_filter_set(ctx, filter_ffd, "match", "*", NULL);
+    TEST_CHECK(ret == 0);
+    ret = flb_filter_set(ctx, filter_ffd, "ec2_instance_id", "false", NULL);
+    TEST_CHECK(ret == 0);
+    ret = flb_filter_set(ctx, filter_ffd, "host_id", "true", NULL);
+    TEST_CHECK(ret == 0);
+    ret = flb_filter_set(ctx, filter_ffd, "az", "false", NULL);
+    TEST_CHECK(ret == 0);
+
+    ret = flb_start(ctx);
+    TEST_CHECK(ret == 0);
+
+    bytes = flb_lib_push(ctx, in_ffd, p, strlen(p));
+    if (!TEST_CHECK(bytes > 0)) {
+        TEST_MSG("zero bytes were pushed\n");
+    }
+
+    flb_time_msleep(1500); /* waiting flush */
+
+    output = get_output();
+    if (output) {
+        result = strstr(output, "\"host_id\":\"h-012a3456b7890cdef\"");
         if (!TEST_CHECK(result != NULL)) {
             TEST_MSG("output:%s\n", output);
         }
@@ -1646,11 +2537,20 @@ TEST_LIST = {
     {"aws_instance_id", flb_test_aws_instance_id},
     {"aws_instance_type", flb_test_aws_instance_type},
     {"aws_private_ip", flb_test_aws_private_ip},
+    {"aws_public_ip", flb_test_aws_public_ip},
+    {"aws_ipv6", flb_test_aws_ipv6},
     {"aws_vpc_id", flb_test_aws_vpc_id},
     {"aws_ami_id", flb_test_aws_ami_id},
     {"aws_account_id", flb_test_aws_account_id},
     {"aws_hostname", flb_test_aws_hostname},
+    {"aws_partition", flb_test_aws_partition},
+    {"aws_domain", flb_test_aws_domain},
+    {"aws_region", flb_test_aws_region},
     {"aws_az", flb_test_aws_az},
+    {"aws_az_id", flb_test_aws_az_id},
+    {"aws_placement_group", flb_test_aws_placement_group},
+    {"aws_partition_number", flb_test_aws_partition_number},
+    {"aws_host_id", flb_test_aws_host_id},
     {"aws_ec2_tags_present", flb_test_aws_ec2_tags_present},
     {"aws_ec2_tags_404", flb_test_aws_ec2_tags_404},
     {"aws_ec2_tags_list_500", flb_test_aws_ec2_tags_list_500},
