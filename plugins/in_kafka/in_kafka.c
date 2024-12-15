@@ -221,13 +221,14 @@ static int in_kafka_collect(struct flb_input_instance *ins,
         flb_plg_debug(ins, "kafka message received");
 
         ret = process_message(ctx, rkm);
-        flb_plg_debug(ins, 
-                      "encode kafka message error, \
+        
+        if (ret == FLB_EVENT_ENCODER_SUCCESS) {
+            flb_plg_debug(ins, 
+                      "parsed kafka message, \
                        topic: %s, offset: %s, partition: %s\n",
                       rd_kafka_topic_name(rkm -> rkt),
                       rkm->offset,
                       rkm->partition);
-        if (ret == FLB_EVENT_ENCODER_SUCCESS) {
             if ( ctx -> auto_commit ) {
                 rd_kafka_offset_store_message(rkm);
             }
