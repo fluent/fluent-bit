@@ -73,6 +73,8 @@ struct flb_in_fw_config {
     struct flb_log_event_decoder *log_decoder;
     struct flb_log_event_encoder *log_encoder;
 
+    pthread_mutex_t conn_mutex;
+
     /* Plugin is paused */
     int is_paused;
 };
