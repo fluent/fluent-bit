@@ -59,7 +59,7 @@ typedef __m128i flb_vector32;
 typedef uint8x16_t flb_vector8;
 typedef uint32x4_t flb_vector32;
 
-#elif defined(__riscv) && (__riscv_v_intrinsic >= 10000)
+#elif defined(__riscv) && (__riscv_v_intrinsic >= 11000)
 /*
  * We use RVV (RISC-V "Vector") instructions if the compiler provides
  * access to them (as indicated by __riscv_v_intrinsic) and using with
