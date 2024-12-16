@@ -59,6 +59,13 @@ typedef __m128i flb_vector32;
 typedef uint8x16_t flb_vector8;
 typedef uint32x4_t flb_vector32;
 
+#elif defined(__riscv) && (__riscv_v_intrinsic >= 10000)
+#include <riscv_vector.h>
+#define FLB_SIMD_RVV
+typedef vuint8m1_t flb_vector8;
+typedef vuint32m1_t flb_vector32;
+#define RVV_VEC_INST_LEN 16
+
 #else
 /*
  * If no SIMD instructions are available, we can in some cases emulate vector
@@ -94,6 +101,8 @@ static inline void flb_vector8_load(flb_vector8 *v, const uint8_t *s)
 	*v = _mm_loadu_si128((const __m128i *) s);
 #elif defined(FLB_SIMD_NEON)
 	*v = vld1q_u8(s);
+#elif defined(FLB_SIMD_RVV)
+	*v = __riscv_vle8_v_u8m1(s, 16);
 #else
 	memset(v, 0, sizeof(flb_vector8));
 #endif
@@ -129,6 +138,8 @@ static inline flb_vector8 flb_vector8_ssub(const flb_vector8 v1, const flb_vecto
 	return _mm_subs_epu8(v1, v2);
 #elif defined(FLB_SIMD_NEON)
 	return vqsubq_u8(v1, v2);
+#elif defined(FLB_SIMD_RVV)
+	return __riscv_vssubu_vv_u8m1(v1, v2, 16);
 #endif
 }
 #endif /* ! FLB_SIMD_NONE */
@@ -144,6 +155,9 @@ static inline flb_vector8 flb_vector8_eq(const flb_vector8 v1, const flb_vector8
 	return _mm_cmpeq_epi8(v1, v2);
 #elif defined(FLB_SIMD_NEON)
 	return vceqq_u8(v1, v2);
+#elif defined(FLB_SIMD_RVV)
+	vbool8_t ret = __riscv_vmseq_vv_u8m1_b8(v1, v2, 16);
+	return __riscv_vmerge_vvm_u8m1(__riscv_vmv_v_x_u8m1(0, 16), __riscv_vmv_v_x_u8m1(UINT8_MAX, 16), ret, 16);
 #endif
 }
 #endif /* ! FLB_SIMD_NONE */
@@ -155,6 +169,9 @@ static inline flb_vector32 flb_vector32_eq(const flb_vector32 v1, const flb_vect
 	return _mm_cmpeq_epi32(v1, v2);
 #elif defined(FLB_SIMD_NEON)
 	return vceqq_u32(v1, v2);
+#elif defined(FLB_SIMD_RVV)
+	vbool32_t ret = __riscv_vmseq_vv_u32m1_b32(v1, v2, 4);
+	return __riscv_vmerge_vvm_u32m1(__riscv_vmv_v_x_u32m1(0, 4), __riscv_vmv_v_x_u32m1(UINT32_MAX, 4), ret, 4);
 #endif
 }
 #endif /* ! FLB_SIMD_NONE */
@@ -168,6 +185,8 @@ static inline flb_vector8 flb_vector8_broadcast(const uint8_t c)
 	return _mm_set1_epi8(c);
 #elif defined(FLB_SIMD_NEON)
 	return vdupq_n_u8(c);
+#elif defined(FLB_SIMD_RVV)
+	return __riscv_vmv_v_x_u8m1(c, 16);
 #else
 	return ~UINT64CONST(0) / 0xFF * c;
 #endif
@@ -182,6 +201,8 @@ static inline bool flb_vector8_is_highbit_set(const flb_vector8 v)
 	return _mm_movemask_epi8(v) != 0;
 #elif defined(FLB_SIMD_NEON)
 	return vmaxvq_u8(v) > 0x7F;
+#elif defined(FLB_SIMD_RVV)
+	return __riscv_vmv_x_s_u8m1_u8(__riscv_vredmaxu_vs_u8m1_u8m1(v, __riscv_vmv_v_x_u8m1(0, 16), 16));
 #else
 	return v & flb_vector8_broadcast(0x80);
 #endif
@@ -249,6 +270,8 @@ static inline char *flb_simd_info()
 			return "SSE2";
 		#elif defined(FLB_SIMD_NEON)
 			return "NEON";
+		#elif defined(FLB_SIMD_RVV)
+			return "RVV";
 		#elif defined(FLB_SIMD_NONE)
 			return "none";
 		#else
