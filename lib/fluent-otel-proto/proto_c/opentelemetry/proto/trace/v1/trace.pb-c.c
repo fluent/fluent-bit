@@ -487,7 +487,7 @@ const ProtobufCMessageDescriptor opentelemetry__proto__trace__v1__span__event__d
   (ProtobufCMessageInit) opentelemetry__proto__trace__v1__span__event__init,
   NULL,NULL,NULL    /* reserved[123] */
 };
-static const ProtobufCFieldDescriptor opentelemetry__proto__trace__v1__span__link__field_descriptors[5] =
+static const ProtobufCFieldDescriptor opentelemetry__proto__trace__v1__span__link__field_descriptors[6] =
 {
   {
     "trace_id",
@@ -549,10 +549,23 @@ static const ProtobufCFieldDescriptor opentelemetry__proto__trace__v1__span__lin
     0,             /* flags */
     0,NULL,NULL    /* reserved1,reserved2, etc */
   },
+  {
+    "flags",
+    6,
+    PROTOBUF_C_LABEL_NONE,
+    PROTOBUF_C_TYPE_FIXED32,
+    0,   /* quantifier_offset */
+    offsetof(Opentelemetry__Proto__Trace__V1__Span__Link, flags),
+    NULL,
+    NULL,
+    0,             /* flags */
+    0,NULL,NULL    /* reserved1,reserved2, etc */
+  },
 };
 static const unsigned opentelemetry__proto__trace__v1__span__link__field_indices_by_name[] = {
   3,   /* field[3] = attributes */
   4,   /* field[4] = dropped_attributes_count */
+  5,   /* field[5] = flags */
   1,   /* field[1] = span_id */
   0,   /* field[0] = trace_id */
   2,   /* field[2] = trace_state */
@@ -560,7 +573,7 @@ static const unsigned opentelemetry__proto__trace__v1__span__link__field_indices
 static const ProtobufCIntRange opentelemetry__proto__trace__v1__span__link__number_ranges[1 + 1] =
 {
   { 1, 0 },
-  { 0, 5 }
+  { 0, 6 }
 };
 const ProtobufCMessageDescriptor opentelemetry__proto__trace__v1__span__link__descriptor =
 {
@@ -570,7 +583,7 @@ const ProtobufCMessageDescriptor opentelemetry__proto__trace__v1__span__link__de
   "Opentelemetry__Proto__Trace__V1__Span__Link",
   "opentelemetry.proto.trace.v1",
   sizeof(Opentelemetry__Proto__Trace__V1__Span__Link),
-  5,
+  6,
   opentelemetry__proto__trace__v1__span__link__field_descriptors,
   opentelemetry__proto__trace__v1__span__link__field_indices_by_name,
   1,  opentelemetry__proto__trace__v1__span__link__number_ranges,
@@ -613,7 +626,7 @@ const ProtobufCEnumDescriptor opentelemetry__proto__trace__v1__span__span_kind__
   opentelemetry__proto__trace__v1__span__span_kind__value_ranges,
   NULL,NULL,NULL,NULL   /* reserved[1234] */
 };
-static const ProtobufCFieldDescriptor opentelemetry__proto__trace__v1__span__field_descriptors[15] =
+static const ProtobufCFieldDescriptor opentelemetry__proto__trace__v1__span__field_descriptors[16] =
 {
   {
     "trace_id",
@@ -795,6 +808,18 @@ static const ProtobufCFieldDescriptor opentelemetry__proto__trace__v1__span__fie
     0,             /* flags */
     0,NULL,NULL    /* reserved1,reserved2, etc */
   },
+  {
+    "flags",
+    16,
+    PROTOBUF_C_LABEL_NONE,
+    PROTOBUF_C_TYPE_FIXED32,
+    0,   /* quantifier_offset */
+    offsetof(Opentelemetry__Proto__Trace__V1__Span, flags),
+    NULL,
+    NULL,
+    0,             /* flags */
+    0,NULL,NULL    /* reserved1,reserved2, etc */
+  },
 };
 static const unsigned opentelemetry__proto__trace__v1__span__field_indices_by_name[] = {
   8,   /* field[8] = attributes */
@@ -803,6 +828,7 @@ static const unsigned opentelemetry__proto__trace__v1__span__field_indices_by_na
   13,   /* field[13] = dropped_links_count */
   7,   /* field[7] = end_time_unix_nano */
   10,   /* field[10] = events */
+  15,   /* field[15] = flags */
   5,   /* field[5] = kind */
   12,   /* field[12] = links */
   4,   /* field[4] = name */
@@ -816,7 +842,7 @@ static const unsigned opentelemetry__proto__trace__v1__span__field_indices_by_na
 static const ProtobufCIntRange opentelemetry__proto__trace__v1__span__number_ranges[1 + 1] =
 {
   { 1, 0 },
-  { 0, 15 }
+  { 0, 16 }
 };
 const ProtobufCMessageDescriptor opentelemetry__proto__trace__v1__span__descriptor =
 {
@@ -826,7 +852,7 @@ const ProtobufCMessageDescriptor opentelemetry__proto__trace__v1__span__descript
   "Opentelemetry__Proto__Trace__V1__Span",
   "opentelemetry.proto.trace.v1",
   sizeof(Opentelemetry__Proto__Trace__V1__Span),
-  15,
+  16,
   opentelemetry__proto__trace__v1__span__field_descriptors,
   opentelemetry__proto__trace__v1__span__field_indices_by_name,
   1,  opentelemetry__proto__trace__v1__span__number_ranges,
@@ -913,4 +939,36 @@ const ProtobufCMessageDescriptor opentelemetry__proto__trace__v1__status__descri
   1,  opentelemetry__proto__trace__v1__status__number_ranges,
   (ProtobufCMessageInit) opentelemetry__proto__trace__v1__status__init,
   NULL,NULL,NULL    /* reserved[123] */
+};
+static const ProtobufCEnumValue opentelemetry__proto__trace__v1__span_flags__enum_values_by_number[4] =
+{
+  { "SPAN_FLAGS_DO_NOT_USE", "OPENTELEMETRY__PROTO__TRACE__V1__SPAN_FLAGS__SPAN_FLAGS_DO_NOT_USE", 0 },
+  { "SPAN_FLAGS_TRACE_FLAGS_MASK", "OPENTELEMETRY__PROTO__TRACE__V1__SPAN_FLAGS__SPAN_FLAGS_TRACE_FLAGS_MASK", 255 },
+  { "SPAN_FLAGS_CONTEXT_HAS_IS_REMOTE_MASK", "OPENTELEMETRY__PROTO__TRACE__V1__SPAN_FLAGS__SPAN_FLAGS_CONTEXT_HAS_IS_REMOTE_MASK", 256 },
+  { "SPAN_FLAGS_CONTEXT_IS_REMOTE_MASK", "OPENTELEMETRY__PROTO__TRACE__V1__SPAN_FLAGS__SPAN_FLAGS_CONTEXT_IS_REMOTE_MASK", 512 },
+};
+static const ProtobufCIntRange opentelemetry__proto__trace__v1__span_flags__value_ranges[] = {
+{0, 0},{255, 1},{512, 3},{0, 4}
+};
+static const ProtobufCEnumValueIndex opentelemetry__proto__trace__v1__span_flags__enum_values_by_name[4] =
+{
+  { "SPAN_FLAGS_CONTEXT_HAS_IS_REMOTE_MASK", 2 },
+  { "SPAN_FLAGS_CONTEXT_IS_REMOTE_MASK", 3 },
+  { "SPAN_FLAGS_DO_NOT_USE", 0 },
+  { "SPAN_FLAGS_TRACE_FLAGS_MASK", 1 },
+};
+const ProtobufCEnumDescriptor opentelemetry__proto__trace__v1__span_flags__descriptor =
+{
+  PROTOBUF_C__ENUM_DESCRIPTOR_MAGIC,
+  "opentelemetry.proto.trace.v1.SpanFlags",
+  "SpanFlags",
+  "Opentelemetry__Proto__Trace__V1__SpanFlags",
+  "opentelemetry.proto.trace.v1",
+  4,
+  opentelemetry__proto__trace__v1__span_flags__enum_values_by_number,
+  4,
+  opentelemetry__proto__trace__v1__span_flags__enum_values_by_name,
+  3,
+  opentelemetry__proto__trace__v1__span_flags__value_ranges,
+  NULL,NULL,NULL,NULL   /* reserved[1234] */
 };

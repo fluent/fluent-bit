@@ -137,8 +137,8 @@ static int in_elasticsearch_bulk_init(struct flb_input_instance *ins,
     bytes_to_nodename(rand, ctx->node_name, 12);
 
     if (ctx->enable_http2) {
-        ret = flb_http_server_init(&ctx->http_server, 
-                                    HTTP_PROTOCOL_AUTODETECT,
+        ret = flb_http_server_init(&ctx->http_server,
+                                    HTTP_PROTOCOL_VERSION_AUTODETECT,
                                     (FLB_HTTP_SERVER_FLAG_KEEPALIVE | FLB_HTTP_SERVER_FLAG_AUTO_INFLATE),
                                     NULL,
                                     ins->host.listen,
@@ -209,7 +209,7 @@ static int in_elasticsearch_bulk_init(struct flb_input_instance *ins,
             return -1;
         }
 
-        ctx->collector_id = ret;        
+        ctx->collector_id = ret;
     }
 
     return 0;

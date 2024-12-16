@@ -120,9 +120,9 @@ static int datadog_format(struct flb_config *config,
     /* in normal flush callback we have the event_chunk set as flush context
      * so we don't need to calculate the event len.
      * But in test mode the formatter won't get the event_chunk as flush_ctx
-     */ 
+     */
     if (flush_ctx != NULL) {
-        event_chunk = flush_ctx; 
+        event_chunk = flush_ctx;
         array_size = event_chunk->total_events;
     } else {
         array_size = flb_mp_count(data, bytes);
@@ -292,25 +292,24 @@ static int datadog_format(struct flb_config *config,
         /* here we concatenate ctx->dd_tags and remapped_tags, depending on their presence */
         if (remap_cnt) {
             if (ctx->dd_tags != NULL) {
-                tmp = flb_sds_cat(remapped_tags, FLB_DATADOG_TAG_SEPERATOR,
-                                  strlen(FLB_DATADOG_TAG_SEPERATOR));
-                if (!tmp) {
+                ret = flb_sds_cat_safe(&remapped_tags, FLB_DATADOG_TAG_SEPERATOR,
+                                       strlen(FLB_DATADOG_TAG_SEPERATOR));
+                if (ret < 0) {
                     flb_errno();
                     flb_sds_destroy(remapped_tags);
                     msgpack_sbuffer_destroy(&mp_sbuf);
                     flb_log_event_decoder_destroy(&log_decoder);
                     return -1;
                 }
-                remapped_tags = tmp;
-                flb_sds_cat(remapped_tags, ctx->dd_tags, strlen(ctx->dd_tags));
-                if (!tmp) {
+
+                ret = flb_sds_cat_safe(&remapped_tags, ctx->dd_tags, strlen(ctx->dd_tags));
+                if (ret < 0) {
                     flb_errno();
                     flb_sds_destroy(remapped_tags);
                     msgpack_sbuffer_destroy(&mp_sbuf);
                     flb_log_event_decoder_destroy(&log_decoder);
                     return -1;
                 }
-                remapped_tags = tmp;
             }
             dd_msgpack_pack_key_value_str(&mp_pck,
                                           FLB_DATADOG_DD_TAGS_KEY,
@@ -369,6 +368,10 @@ static void cb_datadog_flush(struct flb_event_chunk *event_chunk,
     size_t b_sent;
     int ret = FLB_ERROR;
     int compressed = FLB_FALSE;
+    struct mk_list *head;
+    struct flb_config_map_val *mv;
+    struct flb_slist_entry *key = NULL;
+    struct flb_slist_entry *val = NULL;
 
     /* Get upstream connection */
     upstream_conn = flb_upstream_conn_get(ctx->upstream);
@@ -428,7 +431,15 @@ static void cb_datadog_flush(struct flb_event_chunk *event_chunk,
     if (compressed == FLB_TRUE) {
         flb_http_set_content_encoding_gzip(client);
     }
-    /* TODO: Append other headers if needed*/
+
+    flb_config_map_foreach(head, mv, ctx->headers) {
+        key = mk_list_entry_first(mv->val.list, struct flb_slist_entry, _head);
+        val = mk_list_entry_last(mv->val.list, struct flb_slist_entry, _head);
+
+        flb_http_add_header(client,
+                            key->str, flb_sds_len(key->str),
+                            val->str, flb_sds_len(val->str));
+    }
 
     /* finaly send the query */
     ret = flb_http_do(client, &b_sent);
@@ -493,6 +504,11 @@ static struct flb_config_map config_map[] = {
      0, FLB_FALSE, 0,
      "compresses the payload in GZIP format, "
      "Datadog supports and recommends setting this to 'gzip'."
+    },
+    {
+     FLB_CONFIG_MAP_SLIST_1, "header", NULL,
+     FLB_CONFIG_MAP_MULT, FLB_TRUE, offsetof(struct flb_out_datadog, headers),
+     "Add a HTTP header key/value pair. Multiple headers can be set"
     },
     {
      FLB_CONFIG_MAP_STR, "apikey", NULL,

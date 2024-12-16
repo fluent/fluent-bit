@@ -261,7 +261,7 @@ void test_escape_sequences()
 }
 
 void test_metric_without_labels()
-{ 
+{
     cfl_sds_t result;
 
     const char expected[] =
@@ -776,7 +776,7 @@ void test_issue_fluent_bit_5541()
         "http_request_duration_seconds_bucket{le=\"0.25\"} 2 0\n"
         "http_request_duration_seconds_bucket{le=\"0.5\"} 2 0\n"
         "http_request_duration_seconds_bucket{le=\"0.75\"} 2 0\n"
-        "http_request_duration_seconds_bucket{le=\"1.0\"} 2 0\n" 
+        "http_request_duration_seconds_bucket{le=\"1.0\"} 2 0\n"
         "http_request_duration_seconds_bucket{le=\"2.5\"} 2 0\n"
         "http_request_duration_seconds_bucket{le=\"5.0\"} 2 0\n"
         "http_request_duration_seconds_bucket{le=\"7.5\"} 2 0\n"
@@ -1665,6 +1665,31 @@ void test_issue_fluent_bit_6534()
     cmt_decode_prometheus_destroy(cmt);
 }
 
+void test_issue_fluent_bit_9267()
+{
+    char errbuf[256];
+    int status;
+    struct cmt *cmt;
+    struct cmt_decode_prometheus_parse_opts opts;
+    memset(&opts, 0, sizeof(opts));
+    opts.errbuf = errbuf;
+    opts.errbuf_size = sizeof(errbuf);
+    cfl_sds_t in_buf = read_file(CMT_TESTS_DATA_PATH "/issue_fluent_bit_9267.txt");
+    size_t in_size = cfl_sds_len(in_buf);
+
+    cmt = NULL;
+    status = cmt_decode_prometheus_create(&cmt, in_buf, in_size, &opts);
+    TEST_CHECK(status == 0);
+    if (status) {
+        fprintf(stderr, "PARSE ERROR:\n======\n%s\n======\n", errbuf);
+    }
+
+    if (cmt != NULL) {
+        cmt_decode_prometheus_destroy(cmt);
+    }
+    cfl_sds_destroy(in_buf);
+}
+
 TEST_LIST = {
     {"header_help", test_header_help},
     {"header_type", test_header_type},
@@ -1697,5 +1722,6 @@ TEST_LIST = {
     {"pr_168", test_pr_168},
     {"histogram_different_label_count", test_histogram_different_label_count},
     {"issue_fluent_bit_6534", test_issue_fluent_bit_6534},
+    {"issue_fluent_bit_9267", test_issue_fluent_bit_9267},
     { 0 }
 };

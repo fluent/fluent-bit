@@ -426,7 +426,7 @@ static struct flb_config_map config_map[] = {
      "Set the record key"
     },
     {
-      FLB_CONFIG_MAP_INT, "buf_size", DEFAULT_BUF_SIZE,
+      FLB_CONFIG_MAP_SIZE, "buf_size", DEFAULT_BUF_SIZE,
       0, FLB_TRUE, offsetof(struct flb_in_head_config, buf_size),
       "Set the read buffer size"
     },

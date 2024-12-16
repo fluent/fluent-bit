@@ -342,6 +342,9 @@ int flb_processor_unit_init(struct flb_processor_unit *pu)
             flb_error("[processor] error initializing unit filter %s", pu->name);
             return -1;
         }
+
+        ((struct flb_filter_instance *) pu->ctx)->notification_channel = \
+            proc->notification_channel;
     }
     else {
         ret = flb_processor_instance_init(
@@ -356,6 +359,9 @@ int flb_processor_unit_init(struct flb_processor_unit *pu)
 
             return -1;
         }
+
+        ((struct flb_processor_instance *) pu->ctx)->notification_channel = \
+            proc->notification_channel;
     }
 
     return ret;
@@ -442,6 +448,13 @@ int flb_processor_run(struct flb_processor *proc,
     struct flb_filter_instance *f_ins;
     struct flb_processor_instance *p_ins;
     struct flb_mp_chunk_cobj *chunk_cobj = NULL;
+#ifdef FLB_HAVE_METRICS
+    int in_records = 0;
+    int out_records = 0;
+    int diff = 0;
+    uint64_t ts;
+    char *name;
+#endif
 
     if (type == FLB_PROCESSOR_LOGS) {
         list = &proc->logs;
@@ -452,6 +465,11 @@ int flb_processor_run(struct flb_processor *proc,
     else if (type == FLB_PROCESSOR_TRACES) {
         list = &proc->traces;
     }
+
+#ifdef FLB_HAVE_METRICS
+    /* timestamp */
+    ts = cfl_time_now();
+#endif
 
     /* set current data buffer */
     cur_buf = data;
@@ -493,7 +511,17 @@ int flb_processor_run(struct flb_processor *proc,
                                       proc->data,           /* (input/output) instance context */
                                       f_ins->context,       /* filter context */
                                       proc->config);
+#ifdef FLB_HAVE_METRICS
+            name = (char *) (flb_filter_name(f_ins));
+            in_records = flb_mp_count(cur_buf, cur_size);
+            cmt_counter_add(f_ins->cmt_records, ts, in_records,
+                    1, (char *[]) {name});
+            cmt_counter_add(f_ins->cmt_bytes, ts, tmp_size,
+                    1, (char *[]) {name});
 
+            flb_metrics_sum(FLB_METRIC_N_RECORDS, in_records, f_ins->metrics);
+            flb_metrics_sum(FLB_METRIC_N_BYTES, tmp_size, f_ins->metrics);
+#endif
             /*
              * The cb_filter() function return status tells us if something changed
              * during it process. The possible values are:
@@ -520,6 +548,15 @@ int flb_processor_run(struct flb_processor *proc,
                     *out_buf = NULL;
                     *out_size = 0;
 
+#ifdef FLB_HAVE_METRICS
+                    /* cmetrics */
+                    cmt_counter_add(f_ins->cmt_drop_records, ts, in_records,
+                                    1, (char *[]) {name});
+
+                    /* [OLD] Summarize all records removed */
+                    flb_metrics_sum(FLB_METRIC_N_DROPPED,
+                                    in_records, f_ins->metrics);
+#endif
                     release_lock(&pu->lock,
                                  FLB_PROCESSOR_LOCK_RETRY_LIMIT,
                                  FLB_PROCESSOR_LOCK_RETRY_DELAY);
@@ -530,6 +567,32 @@ int flb_processor_run(struct flb_processor *proc,
                 /* set new buffer */
                 cur_buf = tmp_buf;
                 cur_size = tmp_size;
+                out_records = flb_mp_count(tmp_buf, tmp_size);
+#ifdef FLB_HAVE_METRICS
+                    if (out_records > in_records) {
+                        diff = (out_records - in_records);
+
+                        /* cmetrics */
+                        cmt_counter_add(f_ins->cmt_add_records, ts, diff,
+                                    1, (char *[]) {name});
+
+                        /* [OLD] Summarize new records */
+                        flb_metrics_sum(FLB_METRIC_N_ADDED,
+                                        diff, f_ins->metrics);
+                    }
+                    else if (out_records < in_records) {
+                        diff = (in_records - out_records);
+
+                        /* cmetrics */
+                        cmt_counter_add(f_ins->cmt_drop_records, ts, diff,
+                                    1, (char *[]) {name});
+
+                        /* [OLD] Summarize dropped records */
+                        flb_metrics_sum(FLB_METRIC_N_DROPPED,
+                                        diff, f_ins->metrics);
+                    }
+#endif
+
             }
             else if (ret == FLB_FILTER_NOTOUCH) {
                 /* keep original data, do nothing */
@@ -654,11 +717,13 @@ int flb_processor_run(struct flb_processor *proc,
                         return -1;
                     }
 
-                    if (cur_buf != data) {
+                    if (cur_buf != data && cur_buf != tmp_buf) {
                         cmt_destroy(cur_buf);
                     }
 
-                    cur_buf = (void *)tmp_buf;
+                    if (tmp_buf != NULL) {
+                        cur_buf = tmp_buf;
+                    }
                 }
             }
             else if (type == FLB_PROCESSOR_TRACES) {

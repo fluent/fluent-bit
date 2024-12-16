@@ -32,6 +32,8 @@
 
 #include <monkey/mk_core.h>
 #include <cmetrics/cmt_decode_opentelemetry.h>
+#include <cprofiles/cprof_decode_opentelemetry.h>
+#include <cprofiles/cprof_encode_text.h>
 
 #include <fluent-otel-proto/fluent-otel.h>
 #include "opentelemetry.h"
@@ -1785,14 +1787,16 @@ int opentelemetry_prot_handle(struct flb_opentelemetry *ctx, struct http_conn *c
     int len;
     char *uri;
     char *qs;
+    char *out_chunked = NULL;
+    size_t out_chunked_size = 0;
     off_t diff;
-    flb_sds_t tag;
-    struct mk_http_header *header;
-    char *original_data;
-    size_t original_data_size;
-    char *uncompressed_data;
-    size_t uncompressed_data_size;
     size_t tag_len;
+    flb_sds_t tag;
+    char *original_data = NULL;
+    size_t original_data_size;
+    char *uncompressed_data = NULL;
+    size_t uncompressed_data_size;
+    struct mk_http_header *header;
 
     if (request->uri.data[0] != '/') {
         send_response(conn, 400, "error: invalid request\n");
@@ -1893,6 +1897,32 @@ int opentelemetry_prot_handle(struct flb_opentelemetry *ctx, struct http_conn *c
     original_data = request->data.data;
     original_data_size = request->data.len;
 
+    /* check if the request comes with chunked transfer encoding */
+    if (mk_http_parser_is_content_chunked(&session->parser)) {
+        out_chunked = NULL;
+        out_chunked_size = 0;
+
+        /* decode the chunks */
+        ret = mk_http_parser_chunked_decode(&session->parser,
+                                            conn->buf_data,
+                                            conn->buf_len,
+                                            &out_chunked,
+                                            &out_chunked_size);
+        if (ret == -1) {
+            flb_sds_destroy(tag);
+            mk_mem_free(uri);
+            send_response(conn, 400, "error: invalid chunked data\n");
+            if (uncompressed_data != NULL) {
+                flb_free(uncompressed_data);
+            }
+            return -1;
+        }
+        else {
+            request->data.data = out_chunked;
+            request->data.len = out_chunked_size;
+        }
+    }
+
     ret = opentelemetry_prot_uncompress(session, request,
                                         &uncompressed_data,
                                         &uncompressed_data_size);
@@ -1912,12 +1942,16 @@ int opentelemetry_prot_handle(struct flb_opentelemetry *ctx, struct http_conn *c
         ret = process_payload_logs(ctx, conn, tag, tag_len, session, request);
     }
 
+    request->data.data = original_data;
+    request->data.len = original_data_size;
+
     if (uncompressed_data != NULL) {
         flb_free(uncompressed_data);
     }
 
-    request->data.data = original_data;
-    request->data.len = original_data_size;
+    if (out_chunked != NULL) {
+        mk_mem_free(out_chunked);
+    }
 
     mk_mem_free(uri);
     flb_sds_destroy(tag);
@@ -2208,7 +2242,7 @@ static int process_payload_metrics_ng(struct flb_opentelemetry *ctx,
         cfl_list_foreach(iterator, &decoded_contexts) {
             context = cfl_list_entry(iterator, struct cmt, _head);
 
-            result = flb_input_metrics_append(ctx->ins, NULL, 0, context);
+            result = flb_input_metrics_append(ctx->ins, tag, cfl_sds_len(tag), context);
 
             if (result != 0) {
                 flb_plg_debug(ctx->ins, "could not ingest metrics context : %d", result);
@@ -2267,7 +2301,7 @@ static int process_payload_traces_proto_ng(struct flb_opentelemetry *ctx,
     }
 
     if (result == 0) {
-        result = flb_input_trace_append(ctx->ins, NULL, 0, decoded_context);
+        result = flb_input_trace_append(ctx->ins, tag, cfl_sds_len(tag), decoded_context);
         ctr_decode_opentelemetry_destroy(decoded_context);
     }
     else {
@@ -2399,6 +2433,146 @@ static int process_payload_logs_ng(struct flb_opentelemetry *ctx,
     return ret;
 }
 
+static int process_payload_profiles_ng(struct flb_opentelemetry *ctx,
+                                       flb_sds_t tag,
+                                       struct flb_http_request *request,
+                                       struct flb_http_response *response)
+{
+    cfl_sds_t                     text_encoded_profiles_context;
+    struct cprof                 *profiles_context;
+    struct flb_log_event_encoder *encoder;
+    size_t                        offset;
+    int                           ret;
+
+    encoder = flb_log_event_encoder_create(FLB_LOG_EVENT_FORMAT_FLUENT_BIT_V2);
+
+    if (encoder == NULL) {
+        return -1;
+    }
+
+    if (request->content_type == NULL) {
+        flb_log_event_encoder_destroy(encoder);
+
+        flb_error("[otel] content type missing");
+
+        return -1;
+    }
+    else if (strcasecmp(request->content_type, "application/json") == 0) {
+        flb_log_event_encoder_destroy(encoder);
+
+        flb_error("[otel] unsuported profiles encoding type : %s",
+                  request->content_type);
+
+        return -1;
+    }
+    else if (strcasecmp(request->content_type, "application/x-protobuf") == 0) {
+        flb_log_event_encoder_destroy(encoder);
+
+        flb_error("[otel] unsuported profiles encoding type : %s",
+                  request->content_type);
+
+        return -1;
+    }
+    else if (strcasecmp(request->content_type, "application/grpc") == 0) {
+        if (cfl_sds_len(request->body) < 5) {
+            flb_log_event_encoder_destroy(encoder);
+
+            flb_error("[otel] malformed grpc packet of size %zu",
+                      cfl_sds_len(request->body));
+
+            return -1;
+        }
+
+        profiles_context = NULL;
+        offset = 0;
+
+        ret = cprof_decode_opentelemetry_create(&profiles_context,
+                                                &((uint8_t *) request->body)[5],
+                                                (cfl_sds_len(request->body)) - 5,
+                                                &offset);
+
+        if (ret != CPROF_DECODE_OPENTELEMETRY_SUCCESS) {
+            flb_log_event_encoder_destroy(encoder);
+
+            flb_error("[otel] profile decoding error : %d",
+                      ret);
+
+            return -1;
+        }
+
+        ret = cprof_encode_text_create(&text_encoded_profiles_context, profiles_context);
+
+        cprof_decode_opentelemetry_destroy(profiles_context);
+
+        if (ret != CPROF_DECODE_OPENTELEMETRY_SUCCESS) {
+            flb_log_event_encoder_destroy(encoder);
+
+            flb_error("[otel] profile text encoding error : %d",
+                      ret);
+
+            return -1;
+        }
+
+        flb_log_event_encoder_begin_record(encoder);
+
+        flb_log_event_encoder_set_current_timestamp(encoder);
+
+        ret = flb_log_event_encoder_append_body_values(
+                    encoder,
+                    FLB_LOG_EVENT_CSTRING_VALUE("Profile"),
+                    FLB_LOG_EVENT_STRING_VALUE(text_encoded_profiles_context,
+                                               cfl_sds_len(text_encoded_profiles_context)));
+
+        cprof_encode_text_destroy(text_encoded_profiles_context);
+
+        if (ret != FLB_EVENT_ENCODER_SUCCESS) {
+            flb_log_event_encoder_destroy(encoder);
+
+            flb_error("[otel] re encoded profile ingestion error : %d",
+                      ret);
+
+            return -1;
+        }
+
+        ret = flb_log_event_encoder_commit_record(encoder);
+
+        if (ret != FLB_EVENT_ENCODER_SUCCESS) {
+            flb_log_event_encoder_destroy(encoder);
+
+            flb_error("[otel] re encoded profile ingestion error : %d",
+                      ret);
+
+            return -1;
+        }
+
+        ret = flb_input_log_append(ctx->ins,
+                                   tag,
+                                   flb_sds_len(tag),
+                                   encoder->output_buffer,
+                                   encoder->output_length);
+
+        if (ret != FLB_EVENT_ENCODER_SUCCESS) {
+            flb_log_event_encoder_destroy(encoder);
+
+            flb_error("[otel] re encoded profile ingestion error : %d",
+                      ret);
+
+            return -1;
+        }
+
+        ret = 0;
+    }
+    else {
+        flb_plg_error(ctx->ins, "Unsupported content type %s", request->content_type);
+
+        ret = -1;
+    }
+
+
+    flb_log_event_encoder_destroy(encoder);
+
+    return ret;
+}
 
 static int send_export_service_response_ng(struct flb_http_response *response,
                                            int result,
@@ -2423,6 +2597,7 @@ int opentelemetry_prot_handle_ng(struct flb_http_request *request,
     int                             grpc_request;
     struct flb_opentelemetry       *context;
     int                             result = -1;
+    flb_sds_t                       tag = NULL;
 
     context = (struct flb_opentelemetry *) response->stream->user_data;
 
@@ -2445,6 +2620,10 @@ int opentelemetry_prot_handle_ng(struct flb_http_request *request,
 
         grpc_request = FLB_TRUE;
     }
+    else if (context->profile_support_enabled &&
+             strcmp(request->path, "/opentelemetry.proto.collector.profiles.v1experimental.ProfilesService/Export") == 0) {
+        grpc_request = FLB_TRUE;
+    }
     else {
         send_response_ng(response, 400, "error: invalid endpoint\n");
         return -1;
@@ -2452,7 +2631,7 @@ int opentelemetry_prot_handle_ng(struct flb_http_request *request,
 
     /* ToDo: Fix me */
     /* HTTP/1.1 needs Host header */
-    if (request->protocol_version == HTTP_PROTOCOL_HTTP1 &&
+    if (request->protocol_version == HTTP_PROTOCOL_VERSION_11 &&
         request->host == NULL) {
         return -1;
     }
@@ -2466,19 +2645,48 @@ int opentelemetry_prot_handle_ng(struct flb_http_request *request,
         strcmp(request->path, "/opentelemetry.proto.collector.metric.v1.MetricService/Export") == 0 ||
         strcmp(request->path, "/opentelemetry.proto.collector.metrics.v1.MetricsService/Export") == 0) {
         payload_type = 'M';
-        result = process_payload_metrics_ng(context, context->ins->tag, request, response);
+        if (context->tag_from_uri == FLB_TRUE) {
+            tag = flb_sds_create("v1_metrics");
+        }
+        else {
+            tag = flb_sds_create(context->ins->tag);
+        }
+        result = process_payload_metrics_ng(context, tag, request, response);
     }
     else if (strcmp(request->path, "/v1/traces") == 0 ||
              strcmp(request->path, "/opentelemetry.proto.collector.trace.v1.TraceService/Export") == 0 ||
              strcmp(request->path, "/opentelemetry.proto.collector.traces.v1.TracesService/Export") == 0) {
         payload_type = 'T';
-        result = process_payload_traces_ng(context, context->ins->tag, request, response);
+        if (context->tag_from_uri == FLB_TRUE) {
+            tag = flb_sds_create("v1_traces");
+        }
+        else {
+            tag = flb_sds_create(context->ins->tag);
+        }
+        result = process_payload_traces_ng(context, tag, request, response);
     }
     else if (strcmp(request->path, "/v1/logs") == 0 ||
              strcmp(request->path, "/opentelemetry.proto.collector.log.v1.LogService/Export") == 0 ||
              strcmp(request->path, "/opentelemetry.proto.collector.logs.v1.LogsService/Export") == 0) {
         payload_type = 'L';
-        result = process_payload_logs_ng(context, context->ins->tag, request, response);
+        if (context->tag_from_uri == FLB_TRUE) {
+            tag = flb_sds_create("v1_logs");
+        }
+        else {
+            tag = flb_sds_create(context->ins->tag);
+        }
+        result = process_payload_logs_ng(context, tag, request, response);
+    }
+    else if (context->profile_support_enabled &&
+             strcmp(request->path, "/opentelemetry.proto.collector.profiles.v1experimental.ProfilesService/Export") == 0) {
+        payload_type = 'P';
+        if (context->tag_from_uri == FLB_TRUE) {
+            tag = flb_sds_create("v1development_profiles");
+        }
+        else {
+            tag = flb_sds_create(context->ins->tag);
+        }
+        result = process_payload_profiles_ng(context, tag, request, response);
     }
 
     if (grpc_request) {
@@ -2492,6 +2700,8 @@ int opentelemetry_prot_handle_ng(struct flb_http_request *request,
             send_response_ng(response, 400, "invalid request: deserialisation error\n");
         }
     }
+
+    flb_sds_destroy(tag);
 
     return result;
 }

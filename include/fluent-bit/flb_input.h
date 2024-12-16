@@ -75,6 +75,71 @@
 
 struct flb_input_instance;
 
+/*
+ * Tests callbacks
+ * ===============
+ */
+struct flb_test_in_formatter {
+    /*
+     * Runtime Library Mode
+     * ====================
+     * When the runtime library enable the test formatter mode, it needs to
+     * keep a reference of the context and other information:
+     *
+     * - rt_ctx : context created by flb_create()
+     *
+     * - rt_ffd : this plugin assigned 'integer' created by flb_output()
+     *
+     * - rt_in_calback: intermediary function to receive the results of
+     *                  the formatter plugin test function.
+     *
+     * - rt_data: opaque data type for rt_step_callback()
+     */
+
+    /* runtime library context */
+    void *rt_ctx;
+
+    /* runtime library: assigned plugin integer */
+    int rt_ffd;
+
+    /* optional format context */
+    void *format_ctx;
+
+    /*
+     * "runtime step callback": this function pointer is used by Fluent Bit
+     * library mode to reference a test function that must retrieve the
+     * results of 'callback'. Consider this an intermediary function to
+     * transfer the results to the runtime test.
+     *
+     * This function is private and should not be set manually in the plugin
+     * code, it's set on src/flb_lib.c .
+     */
+    void (*rt_in_callback) (void *, int, int, void *, size_t, void *);
+
+    /*
+     * opaque data type passed by the runtime library to be used on
+     * rt_step_test().
+     */
+    void *rt_data;
+
+    /*
+     * Callback
+     * =========
+     * "Formatter callback": it references the plugin function that performs
+     * data formatting (msgpack -> local data). This entry is mostly to
+     * expose the plugin local function.
+     */
+    int (*callback) (/* Fluent Bit context */
+                     struct flb_config *,
+                     /* plugin that ingested the records */
+                     struct flb_input_instance *,
+                     void *,         /* plugin instance context */
+                     const void *,   /* incoming unformatted data */
+                     size_t,         /* incoming unformatted size */
+                     void **,        /* output buffer      */
+                     size_t *);      /* output buffer size */
+};
+
 struct flb_input_plugin {
     /*
      * The type defines if this is a core-based plugin or it's handled by
@@ -101,6 +166,9 @@ struct flb_input_plugin {
 
     /* Collect: every certain amount of time, Fluent Bit trigger this callback */
     int (*cb_collect) (struct flb_input_instance *, struct flb_config *, void *);
+
+    /* Notification: this callback will be invoked anytime a notification is received*/
+    int (*cb_notification) (struct flb_input_instance *, struct flb_config *, void *);
 
     /*
      * Flush: each plugin during a collection, it does some buffering,
@@ -134,6 +202,9 @@ struct flb_input_plugin {
 
     /* Destroy */
     void (*cb_destroy) (struct flb_input_plugin *);
+
+    /* Tests */
+    struct flb_test_in_formatter test_formatter;
 
     void *instance;
 
@@ -174,6 +245,7 @@ struct flb_input_instance {
     int runs_in_coroutine;               /* instance runs in coroutine ? */
     char name[32];                       /* numbered name (cpu -> cpu.0) */
     char *alias;                         /* alias name for the instance  */
+    int test_mode;                       /* running tests? (default:off) */
     void *context;                       /* plugin configuration context */
     flb_pipefd_t ch_events[2];           /* channel for events           */
     struct flb_input_plugin *p;          /* original plugin              */
@@ -291,6 +363,8 @@ struct flb_input_instance {
     struct flb_metrics *metrics;         /* metrics                    */
 #endif
 
+    /* Tests */
+    struct flb_test_in_formatter test_formatter;
 
     /* is the plugin running in a separate thread ? */
     int is_threaded;
@@ -380,6 +454,8 @@ struct flb_input_instance {
     struct flb_net_setup net_setup;
     struct mk_list *net_config_map;
     struct mk_list net_properties;
+
+    flb_pipefd_t notification_channel;
 
     /* Keep a reference to the original context this instance belongs to */
     struct flb_config *config;
@@ -577,7 +653,7 @@ static FLB_INLINE int flb_input_is_threaded(struct flb_input_instance *ins)
  * number of retries, if it has exceeded the 'retry_limit' option, an FLB_ERROR
  * will be returned instead.
  */
-static inline void flb_input_return(struct flb_coro *coro) {
+static FLB_INLINE void flb_input_return(struct flb_coro *coro) {
     int n;
     uint64_t val;
     struct flb_input_coro *input_coro;
@@ -599,7 +675,7 @@ static inline void flb_input_return(struct flb_coro *coro) {
     flb_input_coro_prepare_destroy(input_coro);
 }
 
-static inline void flb_input_return_do(int ret) {
+static FLB_INLINE void flb_input_return_do(int ret) {
     struct flb_coro *coro = flb_coro_get();
 
     flb_input_return(coro);
@@ -626,6 +702,8 @@ static inline int flb_input_config_map_set(struct flb_input_instance *ins,
                                            void *context)
 {
     int ret;
+
+    ret = -1;
 
     /* Process normal properties */
     if (ins->config_map) {
@@ -732,6 +810,7 @@ struct mk_event_loop *flb_input_event_loop_get(struct flb_input_instance *ins);
 int flb_input_upstream_set(struct flb_upstream *u, struct flb_input_instance *ins);
 int flb_input_downstream_set(struct flb_downstream *stream,
                              struct flb_input_instance *ins);
+
 
 /* processors */
 int flb_input_instance_processors_load(struct flb_input_instance *ins, struct flb_cf_group *processors);

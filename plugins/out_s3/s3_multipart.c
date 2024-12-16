@@ -192,6 +192,7 @@ static struct multipart_upload *upload_from_file(struct flb_s3 *ctx,
     if (ret == -1) {
         flb_plg_error(ctx->ins, "Could not read file metadata: %s",
                       fsf->name);
+        flb_free(buffered_data);
         return NULL;
     }
 

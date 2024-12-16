@@ -26,16 +26,20 @@
 /* Types of events handled by the Server engine */
 #define FLB_ENGINE_EV_CORE          MK_EVENT_NOTIFICATION
 #define FLB_ENGINE_EV_CUSTOM        MK_EVENT_CUSTOM
-#define FLB_ENGINE_EV_THREAD        1024
-#define FLB_ENGINE_EV_SCHED         2048
-#define FLB_ENGINE_EV_SCHED_FRAME   (FLB_ENGINE_EV_SCHED + 4096)
 
-#define FLB_ENGINE_EV_INPUT          8192
-#define FLB_ENGINE_EV_THREAD_INPUT  16384  /* reserved, not used yet */
+#define FLB_ENGINE_EV_THREAD        (1 << 10)                          /*  1024 */
+#define FLB_ENGINE_EV_SCHED         (1 << 11)                          /*  2048 */
+#define FLB_ENGINE_EV_SCHED_FRAME   (FLB_ENGINE_EV_SCHED | (1 << 12))  /*  2048 | 4096 = 6144  */
+#define FLB_ENGINE_EV_SCHED_CORO    (1 << 13)                          /*  8192 */
 
-#define FLB_ENGINE_EV_OUTPUT        32768
-#define FLB_ENGINE_EV_THREAD_OUTPUT 65536
-#define FLB_ENGINE_EV_THREAD_ENGINE 131072
+#define FLB_ENGINE_EV_INPUT         (1 << 14)                          /*  16384 */
+#define FLB_ENGINE_EV_THREAD_INPUT  (1 << 15)                          /*  32768 */
+
+#define FLB_ENGINE_EV_OUTPUT        (1 << 16)                          /*  65536 */
+#define FLB_ENGINE_EV_THREAD_OUTPUT (1 << 17)                          /* 131072 */
+#define FLB_ENGINE_EV_THREAD_ENGINE (1 << 18)                          /* 262144 */
+
+#define FLB_ENGINE_EV_NOTIFICATION  (1 << 19)                          /* 524288 */
 
 /* Engine events: all engine events set the left 32 bits to '1' */
 #define FLB_ENGINE_EV_STARTED   FLB_BITS_U64_SET(1, 1) /* Engine started    */

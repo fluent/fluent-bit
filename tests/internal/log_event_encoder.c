@@ -650,6 +650,86 @@ static void emit_raw_record()
     flb_log_event_encoder_destroy(&encoder);
 }
 
+/* This test case encodes a log event with a specific timestamp
+ * value and then it checks the raw data to ensure that regardless
+ * of the host byte order the value is encoded in network order.
+ */
+static void timestamp_encoding()
+{
+    uint8_t                     *encoder_buffer;
+    struct flb_time              timestamp;
+    struct flb_log_event_encoder encoder;
+    int                          result;
+    size_t                       index;
+
+    timestamp.tm.tv_sec  = 0x00C0FFEE;
+    timestamp.tm.tv_nsec = 0;
+
+    result = flb_log_event_encoder_init(&encoder,
+                                        FLB_LOG_EVENT_FORMAT_FLUENT_BIT_V2);
+    if (!TEST_CHECK(result == FLB_EVENT_ENCODER_SUCCESS)) {
+        TEST_MSG("flb_log_event_encoder_init failed");
+        return;
+    }
+
+    result = flb_log_event_encoder_begin_record(&encoder);
+    if (!TEST_CHECK(result == FLB_EVENT_ENCODER_SUCCESS)) {
+        TEST_MSG("flb_log_event_encoder_begin_record failed. result=%s",
+                 flb_log_event_encoder_get_error_description(result));
+        flb_log_event_encoder_destroy(&encoder);
+        return;
+    }
+
+    result = flb_log_event_encoder_set_timestamp(&encoder, &timestamp);
+    if (!TEST_CHECK(result == FLB_EVENT_ENCODER_SUCCESS)) {
+        TEST_MSG("flb_log_event_encoder_set_current_timestamp failed. result=%s",
+                 flb_log_event_encoder_get_error_description(result));
+        flb_log_event_encoder_destroy(&encoder);
+        return;
+    }
+
+    result = flb_log_event_encoder_append_body_values(
+                &encoder,
+                FLB_LOG_EVENT_CSTRING_VALUE("test"),
+                FLB_LOG_EVENT_CSTRING_VALUE("value"));
+
+    if (!TEST_CHECK(result == FLB_EVENT_ENCODER_SUCCESS)) {
+        TEST_MSG("flb_log_event_encoder_append_body_values failed. result=%s",
+                 flb_log_event_encoder_get_error_description(result));
+        flb_log_event_encoder_destroy(&encoder);
+        return;
+    }
+
+    result = flb_log_event_encoder_commit_record(&encoder);
+    if (!TEST_CHECK(result == FLB_EVENT_ENCODER_SUCCESS)) {
+        TEST_MSG("flb_log_event_encoder_commit_record failed. result=%s",
+                 flb_log_event_encoder_get_error_description(result));
+        flb_log_event_encoder_destroy(&encoder);
+        return;
+    }
+
+    encoder_buffer = (uint8_t *) encoder.output_buffer;
+
+    result = FLB_FALSE;
+
+    for (index = 0 ; index < encoder.output_length  - 4 ; index++) {
+        if (encoder_buffer[index + 0] == 0x00 &&
+            encoder_buffer[index + 1] == 0xC0 &&
+            encoder_buffer[index + 2] == 0xFF &&
+            encoder_buffer[index + 3] == 0xEE) {
+            result = FLB_TRUE;
+
+            break;
+        }
+    }
+
+    if (!TEST_CHECK(result == FLB_TRUE)) {
+        TEST_MSG("timestamp value not encoded in network order");
+    }
+
+    flb_log_event_encoder_destroy(&encoder);
+}
+
 TEST_LIST = {
     { "basic_format_fluent_bit_v2", basic_format_fluent_bit_v2},
     { "basic_format_fluent_bit_v1", basic_format_fluent_bit_v1},
@@ -659,5 +739,6 @@ TEST_LIST = {
     { "init_destroy", init_destroy},
     { "init_unsupported_format", init_unsupported_format},
     { "emit_raw_record", emit_raw_record},
+    { "timestamp_encoding", timestamp_encoding},
     { NULL, NULL }
 };

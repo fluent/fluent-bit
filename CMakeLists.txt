@@ -7,8 +7,8 @@ set(CMAKE_POLICY_DEFAULT_CMP0069 NEW)
 
 # Fluent Bit Version
 set(FLB_VERSION_MAJOR  3)
-set(FLB_VERSION_MINOR  1)
-set(FLB_VERSION_PATCH  5)
+set(FLB_VERSION_MINOR  2)
+set(FLB_VERSION_PATCH  3)
 set(FLB_VERSION_STR "${FLB_VERSION_MAJOR}.${FLB_VERSION_MINOR}.${FLB_VERSION_PATCH}")
 
 set(CMAKE_POSITION_INDEPENDENT_CODE ON)
@@ -30,6 +30,10 @@ endif()
 if(CMAKE_SYSTEM_NAME MATCHES "Linux")
   set(FLB_SYSTEM_LINUX On)
   add_definitions(-DFLB_SYSTEM_LINUX)
+  if (CMAKE_SYSTEM_PROCESSOR MATCHES "^(arm64|aarch64)")
+    set(FLB_LINUX_ON_AARCH64 On)
+    add_definitions(-DFLB_LINUX_ON_AARCH64)
+  endif()
 endif()
 
 # Update CFLAGS
@@ -88,6 +92,7 @@ elseif(FLB_SYSTEM_FREEBSD)
   set(WAMR_DISABLE_STACK_HW_BOUND_CHECK 1)
 endif()
 
+INCLUDE(TestBigEndian)
 include(GNUInstallDirs)
 include(ExternalProject)
 include(cmake/FindJournald.cmake)
@@ -140,6 +145,7 @@ option(FLB_SIGNV4              "Enable AWS Signv4 support"    Yes)
 option(FLB_AWS                 "Enable AWS support"           Yes)
 option(FLB_STATIC_CONF         "Build binary using static configuration")
 option(FLB_STREAM_PROCESSOR    "Enable Stream Processor"                    Yes)
+option(FLB_SIMD                "Enable SIMD support"                         No)
 option(FLB_CORO_STACK_SIZE     "Set coroutine stack size")
 option(FLB_AVRO_ENCODER        "Build with Avro encoding support"            No)
 option(FLB_AWS_ERROR_REPORTER  "Build with aws error reporting support"      No)
@@ -148,9 +154,13 @@ option(FLB_WINDOWS_DEFAULTS    "Build with predefined Windows settings"     Yes)
 option(FLB_WASM                "Build with WASM runtime support"            Yes)
 option(FLB_WAMRC               "Build with WASM AOT compiler executable"    No)
 option(FLB_WASM_STACK_PROTECT  "Build with WASM runtime with strong stack protector flags" No)
+option(FLB_ENFORCE_ALIGNMENT   "Enable limited platform specific aligned memory access" No)
 
 # Native Metrics Support (cmetrics)
 option(FLB_METRICS             "Enable metrics support"       Yes)
+
+# Native Profiules Support (cprofiles)
+option(FLB_PROFILES            "Enable profiles support"      Yes)
 
 # Proxy Plugins
 option(FLB_PROXY_GO            "Enable Go plugins support"    Yes)
@@ -163,6 +173,26 @@ option(FLB_CONFIG_YAML         "Enable YAML config format"    Yes)
 
 # List of plugins available and defaults for each option
 include(cmake/plugins_options.cmake)
+
+
+# Event loop backend (advanced users only)
+# ----------------------------------------
+# The following options are for advanced users only, they are used to enable
+# specific event loop backends. By default, the build system will try to
+# detect the best backend for the current Operating System. If you want to
+# force a specific backend, you can use ONE of the following options.
+#
+# Note that these options will enable the proper option for Monkey library.
+option(FLB_EVENT_LOOP_EPOLL     "Enable epoll(2) event loop backend"  No)
+option(FLB_EVENT_LOOP_POLL      "Enable poll(2) event loop backend"   No)
+option(FLB_EVENT_LOOP_KQUEUE    "Enable kqueue(2) event loop backend" No)
+option(FLB_EVENT_LOOP_SELECT    "Enable select(2) event loop backend" No)
+option(FLB_EVENT_LOOP_LIBEVENT  "Enable libevent event loop backend"  No)
+
+# SIMD support
+if(FLB_SIMD)
+  FLB_DEFINITION(FLB_HAVE_SIMD)
+endif()
 
 if(DEFINED FLB_NIGHTLY_BUILD AND NOT "${FLB_NIGHTLY_BUILD}" STREQUAL "")
   FLB_DEFINITION_VAL(FLB_NIGHTLY_BUILD ${FLB_NIGHTLY_BUILD})
@@ -177,6 +207,15 @@ option(FLB_HTTP_CLIENT_DEBUG  "Enable HTTP Client debug callbacks"   No)
 
 # Run ldconfig on package post-install
 option(FLB_RUN_LDCONFIG "Enable execution of ldconfig after installation" No)
+
+# Prefer system libraries if available
+option(FLB_PREFER_SYSTEM_LIBS             "Prefer system libraries"                   No)
+option(FLB_PREFER_SYSTEM_LIB_BACKTRACE    "Prefer the libbacktrace system library"    ${FLB_PREFER_SYSTEM_LIBS})
+option(FLB_PREFER_SYSTEM_LIB_CARES        "Prefer the libcares system library"        ${FLB_PREFER_SYSTEM_LIBS})
+option(FLB_PREFER_SYSTEM_LIB_JEMALLOC     "Prefer the libjemalloc system library"     ${FLB_PREFER_SYSTEM_LIBS})
+option(FLB_PREFER_SYSTEM_LIB_KAFKA        "Prefer the libkafka system library"        ${FLB_PREFER_SYSTEM_LIBS})
+option(FLB_PREFER_SYSTEM_LIB_LUAJIT       "Prefer the libluajit system library"       ${FLB_PREFER_SYSTEM_LIBS})
+option(FLB_PREFER_SYSTEM_LIB_NGHTTP2      "Prefer the libnghttp2 system library"      ${FLB_PREFER_SYSTEM_LIBS})
 
 # Enable all features
 if(FLB_ALL)
@@ -221,10 +260,13 @@ if(FLB_ALL)
 endif()
 
 if(FLB_DEV)
+  FLB_DEFINITION(FLB_HAVE_DEV)
+
   set(FLB_DEBUG             On)
   set(FLB_TRACE             On)
   set(FLB_CHUNK_TRACE       On)
   set(FLB_METRICS           On)
+  set(FLB_PROFILES          On)
   set(FLB_IN_EVENT_TEST     On)
   set(FLB_HTTP_SERVER       On)
   set(FLB_HTTP_CLIENT_DEBUG On)
@@ -279,6 +321,17 @@ if (FLB_SYSTEM_LINUX)
   include(cmake/s390x.cmake)
 endif ()
 
+# Build for Linux - riscv64 arch
+if (FLB_SYSTEM_LINUX)
+  include(cmake/riscv64.cmake)
+endif ()
+
+# Enable signed char support on Linux AARCH64 if specified
+if (FLB_LINUX_ON_AARCH64)
+  set (CMAKE_C_FLAGS "${CMAKE_C_FLAGS} -fsigned-char")
+  message(STATUS "Enabling signed char")
+endif()
+
 # Extract Git commit information for debug output.
 # Note that this is only set when cmake is run, the intent here is to use in CI for verification of releases so is acceptable.
 # For a better solution see https://jonathanhamberg.com/post/cmake-embedding-git-hash/ but this is simple and easy.
@@ -332,6 +385,11 @@ if(FLB_IPO STREQUAL "On" OR (FLB_IPO STREQUAL "ReleaseOnly" AND FLB_RELEASE))
   else()
     message(Warning "IPO is not supported on this platform")
   endif()
+endif()
+
+# Memory alignment enforcement
+if(FLB_ENFORCE_ALIGNMENT)
+  FLB_DEFINITION(FLB_ENFORCE_ALIGNMENT)
 endif()
 
 # Harden release binary against security vulnerabilities
@@ -394,7 +452,7 @@ endif()
 set(WITH_SYSTEM_MALLOC  1 CACHE BOOL "Use system memory allocator")
 
 # Headers: required headers by bundled libraries, this act as a helper for
-# CFL, Ctraces, CMetrics and fluent-otel-proto
+# CFL, Ctraces, CMetrics, CProfiles and fluent-otel-proto
 #
 # Note: any check_c_source_compiles() cmake function might require this to
 # work.
@@ -410,6 +468,7 @@ add_subdirectory(${FLB_PATH_LIB_CFL} EXCLUDE_FROM_ALL)
 
 # fluent-otel-proto
 FLB_OPTION(FLUENT_PROTO_METRICS ON)
+FLB_OPTION(FLUENT_PROTO_PROFILES ON)
 add_subdirectory(${FLB_PATH_LIB_FLUENT_OTEL} EXCLUDE_FROM_ALL)
 
 # MsgPack options
@@ -456,26 +515,32 @@ add_subdirectory(${FLB_PATH_LIB_CMETRICS} EXCLUDE_FROM_ALL)
 # CTraces
 add_subdirectory(${FLB_PATH_LIB_CTRACES} EXCLUDE_FROM_ALL)
 
+# CProfiles
+add_subdirectory(${FLB_PATH_LIB_CPROFILES} EXCLUDE_FROM_ALL)
+
 # Nghttp2 options
-FLB_OPTION(ENABLE_LIB_ONLY   ON)
-FLB_OPTION(ENABLE_STATIC_LIB ON)
-FLB_OPTION(ENABLE_SHARED_LIB OFF)
-
-FLB_DEFINITION(NGHTTP2_STATICLIB)
-
-add_subdirectory(${FLB_PATH_LIB_NGHTTP2} EXCLUDE_FROM_ALL)
+if(FLB_PREFER_SYSTEM_LIB_NGHTTP2)
+  find_package(PkgConfig)
+  pkg_check_modules(NGHTTP2 libnghttp2>=1.0.0)
+endif()
+if(NGHTTP2_FOUND)
+  include_directories(${NGHTTP2_INCLUDE_DIRS})
+  link_directories(${NGHTTP2_LIBRARY_DIRS})
+else()
+  include(cmake/nghttp2.cmake)
+endif()
 
 # C-Ares (DNS library)
-FLB_OPTION(CARES_STATIC      ON)
-FLB_OPTION(CARES_SHARED      OFF)
-FLB_OPTION(CARES_INSTALL     OFF)
-FLB_OPTION(CARES_BUILD_TESTS OFF)
-FLB_OPTION(CARES_BUILD_TOOLS OFF)
-if (FLB_SYSTEM_MACOS)
-  # macOS SDK always has <arpa/nameser.h>.
-  FLB_DEFINITION(CARES_HAVE_ARPA_NAMESER_H)
+if(FLB_PREFER_SYSTEM_LIB_CARES)
+  find_package(PkgConfig)
+  pkg_check_modules(LIBCARES libcares>=1.18.0)
 endif()
-add_subdirectory(${FLB_PATH_LIB_CARES})# EXCLUDE_FROM_ALL)
+if(LIBCARES_FOUND)
+  include_directories(${LIBCARES_INCLUDE_DIRS})
+  link_directories(${LIBCARES_LIBRARY_DIRS})
+else()
+  include(cmake/cares.cmake)
+endif()
 
 # Chunk I/O
 FLB_OPTION(CIO_LIB_STATIC  ON)
@@ -491,12 +556,38 @@ if(FLB_TESTS_RUNTIME)
   FLB_OPTION(FLB_HTTP_SERVER  ON)
 endif()
 
-# MK Core
+# Monkey Core Library
 macro(MK_SET_OPTION option value)
   set(${option} ${value} CACHE INTERNAL "" FORCE)
 endmacro()
-MK_SET_OPTION(MK_SYSTEM_MALLOC  ON)
-MK_SET_OPTION(MK_DEBUG          ON)
+MK_SET_OPTION(MK_SYSTEM_MALLOC    ON)
+MK_SET_OPTION(MK_DEBUG            ON)
+
+# Monkey backend event loop
+if (FLB_EVENT_LOOP_EPOLL)
+  MK_SET_OPTION(MK_EVENT_LOOP_EPOLL ON)
+  FLB_DEFINITION(FLB_EVENT_LOOP_EPOLL)
+  message(STATUS "FLB Event loop backend > epoll(2)")
+elseif (FLB_EVENT_LOOP_POLL)
+  MK_SET_OPTION(MK_EVENT_LOOP_POLL ON)
+  FLB_DEFINITION(FLB_EVENT_LOOP_POLL)
+  message(STATUS "FLB Event loop backend > poll(2)")
+elseif (FLB_EVENT_LOOP_KQUEUE)
+  MK_SET_OPTION(MK_EVENT_LOOP_KQUEUE ON)
+  FLB_DEFINITION(FLB_EVENT_LOOP_KQUEUE)
+  message(STATUS "FLB Event loop backend > kqueue(2)")
+elseif (FLB_EVENT_LOOP_SELECT)
+  MK_SET_OPTION(MK_EVENT_LOOP_SELECT ON)
+  FLB_DEFINITION(FLB_EVENT_LOOP_SELECT)
+  message(STATUS "FLB Event loop backend > select(2)")
+elseif (FLB_EVENT_LOOP_LIBEVENT)
+  MK_SET_OPTION(MK_EVENT_LOOP_LIBEVENT ON)
+  FLB_DEFINITION(FLB_EVENT_LOOP_LIBEVENT)
+  message(STATUS "FLB Event loop backend > libevent")
+else()
+  FLB_DEFINITION(FLB_EVENT_LOOP_AUTO_DISCOVERY)
+  message(STATUS "FLB Event loop backend > auto discovery (Monkey library)")
+endif()
 
 # Build Monkey HTTP Server
 if(FLB_HTTP_SERVER)
@@ -536,6 +627,11 @@ if(FLB_METRICS)
   FLB_DEFINITION(FLB_HAVE_METRICS)
 endif()
 
+# Profiles
+if(FLB_PROFILES)
+  FLB_DEFINITION(FLB_HAVE_PROFILES)
+endif()
+
 # WASM
 if(FLB_WASM)
   if (FLB_SYSTEM_LINUX)
@@ -545,6 +641,7 @@ if(FLB_WASM)
           _Atomic int a;
           return 0;
        }" FLB_HAVE_STDATOMIC_H)
+    include(CheckIncludeFiles)
     check_include_files(stdatomic.h FLB_HAVE_STDATOMIC_H)
     if (FLB_HAVE_STDATOMIC_H)
       enable_language (ASM)
@@ -720,6 +817,15 @@ if(FLB_HAVE_UNIX_SOCKET)
   FLB_DEFINITION(FLB_HAVE_UNIX_SOCKET)
 endif()
 
+# byte order detection
+test_big_endian(BIG_ENDIAN_SYSTEM_DETECTED)
+
+if (BIG_ENDIAN_SYSTEM_DETECTED)
+    FLB_DEFINITION(FLB_HAVE_BIG_ENDIAN_SYSTEM)
+else()
+    FLB_DEFINITION(FLB_HAVE_LITTLE_ENDIAN_SYSTEM)
+endif ()
+
 # Configuration file YAML format support
 if(FLB_CONFIG_YAML)
   find_package(PkgConfig)
@@ -840,31 +946,41 @@ endif()
 # Memory Allocator
 # ================
 if(FLB_JEMALLOC AND ${CMAKE_SYSTEM_NAME} MATCHES "Linux")
-  FLB_DEFINITION(FLB_HAVE_JEMALLOC)
-  FLB_DEFINITION(JEMALLOC_MANGLE)
-
-  # Add support for options like page size, if empty we default it
-  if(NOT DEFINED FLB_JEMALLOC_OPTIONS OR "${FLB_JEMALLOC_OPTIONS}" STREQUAL "")
-    set(FLB_JEMALLOC_OPTIONS "--with-lg-quantum=3")
+  if(FLB_PREFER_SYSTEM_LIB_JEMALLOC)
+    find_package(PkgConfig)
+    pkg_check_modules(JEMALLOC jemalloc>=5.0.0)
   endif()
-  # Split into a list so CMake handles it correctly when passing to configure command
-  separate_arguments(FLB_JEMALLOC_OPTIONS_LIST UNIX_COMMAND ${FLB_JEMALLOC_OPTIONS})
-  message(STATUS "jemalloc configure: ${FLB_JEMALLOC_OPTIONS_LIST}")
+  if(JEMALLOC_FOUND)
+    include_directories(${JEMALLOC_INCLUDE_DIRS})
+    link_directories(${JEMALLOC_LIBRARY_DIRS})
+  else()
+    FLB_DEFINITION(JEMALLOC_MANGLE)
 
-  # Link to Jemalloc as an external dependency
-  set(FLB_LIBJEMALLOC_PATH "${CMAKE_CURRENT_BINARY_DIR}/lib/libjemalloc_pic.a")
-  ExternalProject_Add(jemalloc
-    SOURCE_DIR ${CMAKE_CURRENT_SOURCE_DIR}/lib/jemalloc-5.3.0
-    CONFIGURE_COMMAND ${CMAKE_CURRENT_SOURCE_DIR}/lib/jemalloc-5.3.0/configure ${AUTOCONF_HOST_OPT} "${FLB_JEMALLOC_OPTIONS_LIST}" --prefix=<INSTALL_DIR>
-    CFLAGS=-std=gnu99\ -Wall\ -pipe\ -g3\ -O3\ -funroll-loops
-    BUILD_COMMAND ${EXTERNAL_BUILD_TOOL}
-    BUILD_BYPRODUCTS ${FLB_LIBJEMALLOC_PATH}
-    INSTALL_DIR ${CMAKE_CURRENT_BINARY_DIR}/
-    INSTALL_COMMAND ${EXTERNAL_BUILD_TOOL} install_lib_static install_include)
-  add_library(libjemalloc STATIC IMPORTED GLOBAL)
-  set_target_properties(libjemalloc PROPERTIES IMPORTED_LOCATION ${FLB_LIBJEMALLOC_PATH})
-  add_dependencies(libjemalloc jemalloc)
-  include_directories("${CMAKE_BINARY_DIR}/include/")
+    # Add support for options like page size, if empty we default it
+    if(NOT DEFINED FLB_JEMALLOC_OPTIONS OR "${FLB_JEMALLOC_OPTIONS}" STREQUAL "")
+      set(FLB_JEMALLOC_OPTIONS "--with-lg-quantum=3")
+    endif()
+    # Split into a list so CMake handles it correctly when passing to configure command
+    separate_arguments(FLB_JEMALLOC_OPTIONS_LIST UNIX_COMMAND ${FLB_JEMALLOC_OPTIONS})
+    message(STATUS "jemalloc configure: ${FLB_JEMALLOC_OPTIONS_LIST}")
+
+    # Link to Jemalloc as an external dependency
+    set(FLB_LIBJEMALLOC_PATH "${CMAKE_CURRENT_BINARY_DIR}/lib/libjemalloc_pic.a")
+    ExternalProject_Add(jemalloc
+      SOURCE_DIR ${CMAKE_CURRENT_SOURCE_DIR}/lib/jemalloc-5.3.0
+      CONFIGURE_COMMAND ${CMAKE_CURRENT_SOURCE_DIR}/lib/jemalloc-5.3.0/configure ${AUTOCONF_HOST_OPT} "${FLB_JEMALLOC_OPTIONS_LIST}" --prefix=<INSTALL_DIR>
+      CFLAGS=-std=gnu99\ -Wall\ -pipe\ -g3\ -O3\ -funroll-loops
+      BUILD_COMMAND ${EXTERNAL_BUILD_TOOL}
+      BUILD_BYPRODUCTS ${FLB_LIBJEMALLOC_PATH}
+      INSTALL_DIR ${CMAKE_CURRENT_BINARY_DIR}/
+      INSTALL_COMMAND ${EXTERNAL_BUILD_TOOL} install_lib_static install_include)
+    add_library(libjemalloc STATIC IMPORTED GLOBAL)
+    set_target_properties(libjemalloc PROPERTIES IMPORTED_LOCATION ${FLB_LIBJEMALLOC_PATH})
+    add_dependencies(libjemalloc jemalloc)
+    include_directories("${CMAKE_BINARY_DIR}/include/")
+    set(JEMALLOC_LIBRARIES "libjemalloc")
+  endif()
+  FLB_DEFINITION(FLB_HAVE_JEMALLOC)
 else()
   FLB_OPTION(FLB_JEMALLOC OFF)
 endif()
@@ -872,40 +988,51 @@ endif()
 # LibBacktrace (friendly stacktrace support)
 # =========================================
 if(FLB_BACKTRACE)
-  FLB_DEFINITION(FLB_HAVE_LIBBACKTRACE)
-  if (CMAKE_OSX_SYSROOT)
-    # From macOS Mojave, /usr/include does not store C SDK headers.
-    # For libbacktrace building on macOS, we have to tell C headers where they are located.
-    set(DEPS_C_COMPILER "${CMAKE_C_COMPILER} -isysroot ${CMAKE_OSX_SYSROOT}")
-  else()
-    set(DEPS_C_COMPILER "${CMAKE_C_COMPILER}")
+  if(FLB_PREFER_SYSTEM_LIB_BACKTRACE)
+    find_path(LIBBACKTRACE_INCLUDE_DIRS NAMES backtrace.h)
+    find_library(LIBBACKTRACE_LIBRARIES NAMES backtrace)
   endif()
-  set(FLB_LIBBACKTRACE_PATH "${CMAKE_CURRENT_BINARY_DIR}/backtrace-prefix/lib/libbacktrace.a")
-  ExternalProject_Add(backtrace
-    SOURCE_DIR ${CMAKE_CURRENT_SOURCE_DIR}/lib/libbacktrace-8602fda/
-    CONFIGURE_COMMAND ${CMAKE_CURRENT_SOURCE_DIR}/lib/libbacktrace-8602fda/configure ${AUTOCONF_HOST_OPT} --prefix=<INSTALL_DIR> --enable-shared=no --enable-static=yes
-    BUILD_COMMAND ${EXTERNAL_BUILD_TOOL}
-    BUILD_BYPRODUCTS ${FLB_LIBBACKTRACE_PATH}
-    INSTALL_COMMAND ${EXTERNAL_BUILD_TOOL} DESTDIR= install
-    )
-  add_library(libbacktrace STATIC IMPORTED GLOBAL)
-  set_target_properties(libbacktrace PROPERTIES IMPORTED_LOCATION ${FLB_LIBBACKTRACE_PATH})
-  add_dependencies(libbacktrace backtrace)
-  include_directories("${CMAKE_CURRENT_BINARY_DIR}/backtrace-prefix/include/")
+  if(LIBBACKTRACE_INCLUDE_DIRS AND LIBBACKTRACE_LIBRARIES)
+    message(STATUS "libbacktrace found (${LIBBACKTRACE_LIBRARIES})")
+    include_directories(${LIBBACKTRACE_INCLUDE_DIRS})
+    link_directories(${LIBBACKTRACE_LIBRARY_DIRS})
+  else()
+    message(STATUS "libbacktrace not found, building ourselves")
+    if (CMAKE_OSX_SYSROOT)
+      # From macOS Mojave, /usr/include does not store C SDK headers.
+      # For libbacktrace building on macOS, we have to tell C headers where they are located.
+      set(DEPS_C_COMPILER "${CMAKE_C_COMPILER} -isysroot ${CMAKE_OSX_SYSROOT}")
+    else()
+      set(DEPS_C_COMPILER "${CMAKE_C_COMPILER}")
+    endif()
+    set(FLB_LIBBACKTRACE_PATH "${CMAKE_CURRENT_BINARY_DIR}/backtrace-prefix/lib/libbacktrace.a")
+    ExternalProject_Add(backtrace
+      SOURCE_DIR ${CMAKE_CURRENT_SOURCE_DIR}/lib/libbacktrace-8602fda/
+      CONFIGURE_COMMAND ${CMAKE_CURRENT_SOURCE_DIR}/lib/libbacktrace-8602fda/configure ${AUTOCONF_HOST_OPT} --prefix=<INSTALL_DIR> --enable-shared=no --enable-static=yes
+      BUILD_COMMAND ${EXTERNAL_BUILD_TOOL}
+      BUILD_BYPRODUCTS ${FLB_LIBBACKTRACE_PATH}
+      INSTALL_COMMAND ${EXTERNAL_BUILD_TOOL} DESTDIR= install
+      )
+    add_library(libbacktrace STATIC IMPORTED GLOBAL)
+    set_target_properties(libbacktrace PROPERTIES IMPORTED_LOCATION ${FLB_LIBBACKTRACE_PATH})
+    add_dependencies(libbacktrace backtrace)
+    include_directories("${CMAKE_CURRENT_BINARY_DIR}/backtrace-prefix/include/")
+    set(LIBBACKTRACE_LIBRARIES "libbacktrace")
+  endif()
+  FLB_DEFINITION(FLB_HAVE_LIBBACKTRACE)
 endif()
 
 if(FLB_IN_KAFKA OR FLB_OUT_KAFKA)
-    FLB_OPTION(RDKAFKA_BUILD_STATIC    On)
-    FLB_OPTION(RDKAFKA_BUILD_EXAMPLES Off)
-    FLB_OPTION(RDKAFKA_BUILD_TESTS    Off)
-    FLB_OPTION(ENABLE_LZ4_EXT         Off)
-
-    # disable Curl
-    if (FLB_SYSTEM_MACOS)
-      FLB_OPTION(WITH_CURL  Off)
-    endif()
-
-    add_subdirectory(${FLB_PATH_LIB_RDKAFKA} EXCLUDE_FROM_ALL)
+  if(FLB_PREFER_SYSTEM_LIB_KAFKA)
+    find_package(PkgConfig)
+    pkg_check_modules(KAFKA rdkafka>=2.3.0)
+  endif()
+  if(KAFKA_FOUND)
+    include_directories(${KAFKA_INCLUDE_DIRS})
+    link_directories(${KAFKA_LIBRARY_DIRS})
+  else()
+    include(cmake/kafka.cmake)
+  endif()
 endif()
 
 # Onigmo (Regex Engine) options
@@ -940,7 +1067,16 @@ endif()
 # LuaJIT (Scripting Support)
 # ==========================
 if(FLB_LUAJIT)
-  include(cmake/luajit.cmake)
+  if(FLB_PREFER_SYSTEM_LIB_LUAJIT)
+    find_package(PkgConfig)
+    pkg_check_modules(LUAJIT luajit>=2.1.0)
+  endif()
+  if(LUAJIT_FOUND)
+    include_directories(${LUAJIT_INCLUDE_DIRS})
+    link_directories(${LUAJIT_LIBRARY_DIRS})
+  else()
+    include(cmake/luajit.cmake)
+  endif()
   FLB_DEFINITION(FLB_HAVE_LUAJIT)
 endif()
 
@@ -959,6 +1095,36 @@ if(FLB_ARROW AND ARROW_GLIB_FOUND)
   FLB_DEFINITION(FLB_HAVE_ARROW)
 else()
   set(FLB_ARROW OFF)
+endif()
+
+# EBPF Support
+# ============
+if (FLB_IN_EBPF)
+  find_package(PkgConfig)
+
+  # Check for libbpf with pkg-config
+  pkg_check_modules(LIBBPF libbpf>=0.5.0)
+
+  if (LIBBPF_FOUND)
+    message(STATUS "libbpf found: ${LIBBPF_LIBRARIES}")
+    include_directories(${LIBBPF_INCLUDE_DIRS})
+    list(APPEND EXTRA_LIBS ${LIBBPF_LIBRARIES})
+  else()
+    # Manually find the library if pkg-config fails
+    find_library(LIBBPF_LIBRARY NAMES bpf REQUIRED)
+    if (LIBBPF_LIBRARY)
+      message(STATUS "Found libbpf: ${LIBBPF_LIBRARY}")
+      list(APPEND EXTRA_LIBS ${LIBBPF_LIBRARY})
+    else()
+      if (FLB_SYSTEM_LINUX)
+        message(FATAL_ERROR "libbpf is required on Linux. Please install libbpf or ensure it is in your library path.")
+      else()
+        message(STATUS "libbpf is not found. Disabling eBPF support.")
+        set(FLB_IN_EBPF OFF)
+      endif()
+    endif()
+  endif()
+
 endif()
 
 # Pthread Local Storage
@@ -1078,8 +1244,8 @@ set(CPACK_PACKAGE_VERSION ${FLB_VERSION_STR})
 set(CPACK_PACKAGE_NAME "fluent-bit")
 
 set(CPACK_PACKAGE_RELEASE 1)
-set(CPACK_PACKAGE_CONTACT "Eduardo Silva <eduardo@calyptia.com>")
-set(CPACK_PACKAGE_VENDOR "Calyptia Inc.")
+set(CPACK_PACKAGE_CONTACT "Eduardo Silva <eduardo.silva@chronosphere.io>")
+set(CPACK_PACKAGE_VENDOR "Chronosphere Inc.")
 set(CPACK_RESOURCE_FILE_LICENSE "${PROJECT_SOURCE_DIR}/LICENSE")
 set(CPACK_PACKAGING_INSTALL_PREFIX "/")
 

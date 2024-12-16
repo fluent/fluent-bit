@@ -43,6 +43,7 @@ set(UNIT_TESTS_FILES
   processor.c
   uri.c
   msgpack_append_message.c
+  endianness
   )
 
 # Config format
@@ -86,6 +87,7 @@ if(FLB_RECORD_ACCESSOR)
   set(UNIT_TESTS_FILES
     ${UNIT_TESTS_FILES}
     record_accessor.c
+    cfl_record_accessor.c
     )
 endif()
 
@@ -184,7 +186,7 @@ function(prepare_unit_tests TEST_PREFIX SOURCEFILES)
       add_sanitizers(${source_file_we})
 
       if(FLB_JEMALLOC)
-        target_link_libraries(${source_file_we} libjemalloc ${CMAKE_THREAD_LIBS_INIT})
+        target_link_libraries(${source_file_we} ${JEMALLOC_LIBRARIES} ${CMAKE_THREAD_LIBS_INIT})
       else()
         target_link_libraries(${source_file_we} ${CMAKE_THREAD_LIBS_INIT})
       endif()

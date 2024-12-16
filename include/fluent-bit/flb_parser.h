@@ -75,7 +75,7 @@ enum {
     FLB_PARSER_TYPE_HEX,
 };
 
-static inline time_t flb_parser_tm2time(const struct flb_tm *src, 
+static inline time_t flb_parser_tm2time(const struct flb_tm *src,
                                         int use_system_timezone)
 {
     struct tm tmp;
@@ -83,6 +83,7 @@ static inline time_t flb_parser_tm2time(const struct flb_tm *src,
 
     tmp = src->tm;
     if (use_system_timezone) {
+        tmp.tm_isdst = -1;
         res = mktime(&tmp);
     } else {
         res = timegm(&tmp) - flb_tm_gmtoff(src);
@@ -106,6 +107,11 @@ struct flb_parser *flb_parser_create(const char *name, const char *format,
                                      struct flb_config *config);
 int flb_parser_conf_file_stat(const char *file, struct flb_config *config);
 int flb_parser_conf_file(const char *file, struct flb_config *config);
+int flb_parser_load_parser_definitions(const char *cfg, struct flb_cf *cf,
+                                       struct flb_config *config);
+int flb_parser_load_multiline_parser_definitions(const char *cfg, struct flb_cf *cf,
+                                                 struct flb_config *config);
+
 void flb_parser_destroy(struct flb_parser *parser);
 struct flb_parser *flb_parser_get(const char *name, struct flb_config *config);
 int flb_parser_do(struct flb_parser *parser, const char *buf, size_t length,

@@ -107,8 +107,7 @@ int static do_in_emitter_add_record(struct em_chunk *ec,
                                ec->mp_sbuf.data,
                                ec->mp_sbuf.size);
     if (ret == -1) {
-        flb_plg_error(ctx->ins, "error registering chunk with tag: %s",
-                      ec->tag);
+        flb_plg_error(ctx->ins, "error registering chunk with tag: %s", ec->tag);
         /* Release the echunk */
         em_chunk_destroy(ec);
         return -1;
@@ -156,7 +155,7 @@ int in_emitter_add_record(const char *tag, int tag_len,
         i_ref->i_ins = i_ins;
         mk_list_add(&i_ref->_head, &ctx->i_ins_list);
         /* If in_emitter is paused, but new input plugin is not paused, pause it */
-        if (flb_input_buf_paused(ctx->ins) == FLB_TRUE && 
+        if (flb_input_buf_paused(ctx->ins) == FLB_TRUE &&
                 flb_input_buf_paused(i_ins) == FLB_FALSE) {
             flb_input_pause(i_ins);
         }
@@ -229,7 +228,7 @@ static int in_emitter_ingest_ring_buffer(struct flb_input_instance *in,
     (void) in;
 
 
-    while ((ret = flb_ring_buffer_read(ctx->msgs, (void *)&ec, 
+    while ((ret = flb_ring_buffer_read(ctx->msgs, (void *)&ec,
                                        sizeof(struct em_chunk))) == 0) {
         ret = flb_input_log_append(in,
                                    ec.tag, flb_sds_len(ec.tag),
@@ -260,8 +259,6 @@ static int cb_queue_chunks(struct flb_input_instance *in,
         /* Associate this backlog chunk to this instance into the engine */
         ret = do_in_emitter_add_record(echunk, in);
         if (ret == -1) {
-            flb_error("[in_emitter] error registering chunk with tag: %s",
-                      echunk->tag);
             continue;
         }
     }
@@ -315,6 +312,7 @@ static int cb_emitter_init(struct flb_input_instance *in,
 
     ret = flb_input_config_map_set(in, (void *) ctx);
     if (ret == -1) {
+        flb_free(ctx);
         return -1;
     }
 
@@ -400,7 +398,7 @@ static int cb_emitter_exit(void *data, struct flb_config *config)
     }
 
     if (ctx->msgs) {
-        while ((ret = flb_ring_buffer_read(ctx->msgs, (void *)&ec, 
+        while ((ret = flb_ring_buffer_read(ctx->msgs, (void *)&ec,
                                         sizeof(struct em_chunk))) == 0) {
             flb_sds_destroy(ec.tag);
             msgpack_sbuffer_destroy(&ec.mp_sbuf);

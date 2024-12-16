@@ -3,8 +3,10 @@
 # https://openssf.org/blog/2022/01/19/reducing-security-risks-in-open-source-software-at-scale-scorecards-launches-v4/
 name: Scorecards supply-chain security
 on:
-  # Only the default branch is supported.
-  branch_protection_rule:
+  push:
+    # Only the default branch is supported.
+    branches:
+    - main
   schedule:
     # Weekly on Saturdays.
     - cron: '30 1 * * 6'
@@ -29,31 +31,22 @@ jobs:
           persist-credentials: false
 
       - name: "Run analysis"
-        uses: ossf/scorecard-action@dc50aa9510b46c811795eb24b2f1ba02a914e534
+        uses: ossf/scorecard-action@62b2cac7ed8198b15735ed49ab1e5cf35480ba46
         with:
-          results_file: scorecard-results.sarif
+          results_file: results.sarif
           results_format: sarif
-          # (Optional) fine-grained personal access token. Uncomment the `repo_token` line below if:
-          # - you want to enable the Branch-Protection check on a *public* repository, or
-          # To create the PAT, follow the steps in https://github.com/ossf/scorecard-action#authentication-with-fine-grained-pat-optional.
-          repo_token: ${{ secrets.SCORECARD_TOKEN }}
-          #
-          # Publish the results for public repositories to enable scorecard badges. For more details, see
-          # https://github.com/ossf/scorecard-action#publishing-results.
-          # For private repositories, `publish_results` will automatically be set to `false`, regardless
-          # of the value entered here.
           publish_results: true
 
       - name: "Upload artifact"
         uses: actions/upload-artifact@v4
         with:
           name: SARIF file
-          path: scorecard-results.sarif
+          path: results.sarif
           retention-days: 7
 
       # Upload the results to GitHub's code scanning dashboard.
       - name: "Upload to code-scanning"
         uses: github/codeql-action/upload-sarif@v3
         with:
-          sarif_file: scorecard-results.sarif
+          sarif_file: results.sarif
           category: ossf-scorecard

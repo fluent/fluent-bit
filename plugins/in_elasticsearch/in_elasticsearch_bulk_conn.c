@@ -34,7 +34,6 @@ static int in_elasticsearch_bulk_conn_event(void *data)
     ssize_t available;
     ssize_t bytes;
     char *tmp;
-    char *request_end;
     size_t request_len;
     struct flb_connection *connection;
     struct in_elasticsearch_bulk_conn *conn;
@@ -98,47 +97,45 @@ static int in_elasticsearch_bulk_conn_event(void *data)
             /* Do more logic parsing and checks for this request */
             in_elasticsearch_bulk_prot_handle(ctx, conn, &conn->session, &conn->request);
 
-            /* Evict the processed request from the connection buffer and reinitialize
+            /*
+             * Evict the processed request from the connection buffer and reinitialize
              * the HTTP parser.
              */
 
-            request_end = NULL;
+            /* Use the last parser position as the request length */
+            request_len = mk_http_parser_request_size(&conn->session.parser,
+                                                      conn->buf_data,
+                                                      conn->buf_len);
 
-            if (NULL != conn->request.data.data) {
-                request_end = &conn->request.data.data[conn->request.data.len];
+            if (request_len == -1 || (request_len > conn->buf_len)) {
+                /* Unexpected but let's make sure things are safe */
+                conn->buf_len = 0;
+                flb_plg_debug(ctx->ins, "request length exceeds buffer length, closing connection");
+                in_elasticsearch_bulk_conn_del(conn);
+                return -1;
+            }
+
+            /* If we have extra bytes in our bytes, adjust the extra bytes */
+            if (0 < (conn->buf_len - request_len)) {
+                memmove(conn->buf_data, &conn->buf_data[request_len],
+                        conn->buf_len - request_len);
+
+                conn->buf_data[conn->buf_len - request_len] = '\0';
+                conn->buf_len -= request_len;
             }
             else {
-                request_end = strstr(conn->buf_data, "\r\n\r\n");
-
-                if(NULL != request_end) {
-                    request_end = &request_end[4];
-                }
+                memset(conn->buf_data, 0, request_len);
+                conn->buf_len = 0;
             }
 
-            if (NULL != request_end) {
-                request_len = (size_t)(request_end - conn->buf_data);
-
-                if (0 < (conn->buf_len - request_len)) {
-                    memmove(conn->buf_data, &conn->buf_data[request_len],
-                            conn->buf_len - request_len);
-
-                    conn->buf_data[conn->buf_len - request_len] = '\0';
-                    conn->buf_len -= request_len;
-                }
-                else {
-                    memset(conn->buf_data, 0, request_len);
-
-                    conn->buf_len = 0;
-                }
-
-                /* Reinitialize the parser so the next request is properly
-                 * handled, the additional memset intends to wipe any left over data
-                 * from the headers parsed in the previous request.
-                 */
-                memset(&conn->session.parser, 0, sizeof(struct mk_http_parser));
-                mk_http_parser_init(&conn->session.parser);
-                in_elasticsearch_bulk_conn_request_init(&conn->session, &conn->request);
-            }
+            /*
+             * Reinitialize the parser so the next request is properly
+             * handled, the additional memset intends to wipe any left over data
+             * from the headers parsed in the previous request.
+             */
+            memset(&conn->session.parser, 0, sizeof(struct mk_http_parser));
+            mk_http_parser_init(&conn->session.parser);
+            in_elasticsearch_bulk_conn_request_init(&conn->session, &conn->request);
         }
         else if (status == MK_HTTP_PARSER_ERROR) {
             in_elasticsearch_bulk_prot_handle_error(ctx, conn, &conn->session, &conn->request);

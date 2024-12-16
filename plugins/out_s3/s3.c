@@ -247,6 +247,7 @@ struct flb_http_client *mock_s3_call(char *error_env_var, char *api)
             c->resp.data = flb_calloc(len + 1, sizeof(char));
             if (!c->resp.data) {
                 flb_errno();
+                flb_free(c);
                 return NULL;
             }
             memcpy(c->resp.data, resp, len);
@@ -380,7 +381,11 @@ static int init_seq_index(void *context) {
     }
 
     /* Create directory path if it doesn't exist */
+#ifdef FLB_SYSTEM_WINDOWS
+    ret = mkdir(ctx->metadata_dir);
+#else
     ret = mkdir(ctx->metadata_dir, 0700);
+#endif
     if (ret < 0 && errno != EEXIST) {
         flb_plg_error(ctx->ins, "Failed to create metadata directory");
         return -1;
@@ -921,11 +926,11 @@ static int cb_s3_init(struct flb_output_instance *ins,
         ctx->timer_ms = UPLOAD_TIMER_MIN_WAIT;
     }
 
-    /* 
-     * S3 must ALWAYS use sync mode 
+    /*
+     * S3 must ALWAYS use sync mode
      * In the timer thread we do a mk_list_foreach_safe on the queue of uplaods and chunks
      * Iterating over those lists is not concurrent safe. If a flush call ran at the same time
-     * And deleted an item from the list, this could cause a crash/corruption. 
+     * And deleted an item from the list, this could cause a crash/corruption.
      */
     flb_stream_disable_async_mode(&ctx->s3_client->upstream->base);
 
@@ -1227,6 +1232,8 @@ static int put_all_chunks(struct flb_s3 *ctx)
                     flb_plg_error(ctx->ins, "Failed to compress data, uploading uncompressed data instead to prevent data loss");
                 } else {
                     flb_plg_info(ctx->ins, "Pre-compression chunk size is %zu, After compression, chunk is %zu bytes", buffer_size, payload_size);
+                    flb_free(buffer);
+
                     buffer = (void *) payload_buf;
                     buffer_size = payload_size;
                 }
@@ -1392,7 +1399,6 @@ static int s3_put_object(struct flb_s3 *ctx, const char *tag, time_t file_first_
         ret = write_seq_index(ctx->seq_index_file, ctx->seq_index);
         if (ret < 0 && access(ctx->seq_index_file, F_OK) == 0) {
             ctx->seq_index--;
-            flb_sds_destroy(s3_key);
             flb_plg_error(ctx->ins, "Failed to update sequential index metadata file");
             return -1;
         }

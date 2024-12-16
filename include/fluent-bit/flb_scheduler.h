@@ -31,10 +31,13 @@
 #define FLB_SCHED_REQUEST_FRAME  10
 
 /* Timer types */
-#define FLB_SCHED_TIMER_REQUEST     1  /* timerfd             */
-#define FLB_SCHED_TIMER_FRAME       2  /* timer frame checker */
-#define FLB_SCHED_TIMER_CB_ONESHOT  3  /* one-shot callback timer  */
-#define FLB_SCHED_TIMER_CB_PERM     4  /* permanent callback timer */
+#define FLB_SCHED_TIMER_REQUEST      1   /* timerfd             */
+#define FLB_SCHED_TIMER_FRAME        2  /* timer frame checker */
+#define FLB_SCHED_TIMER_CB_ONESHOT   3  /* one-shot callback timer  */
+#define FLB_SCHED_TIMER_CB_PERM      4  /* permanent callback timer */
+
+/* notifications through channels */
+#define FLB_SCHED_TIMER_CORO_RETURN  1
 
 struct flb_sched;
 
@@ -50,6 +53,7 @@ struct flb_sched_timer {
     struct mk_event event;
     int active;
     int type;
+    int coro;
     void *data;
     struct flb_sched *sched;
 
@@ -58,9 +62,11 @@ struct flb_sched_timer {
      *
      * - timer_fd = timer file descriptor
      * - cb       = callback to be triggerd upon expiration
+     * - cb_coroutine_wrapper = coroutine wrapper for the callback
      */
     int timer_fd;
     void (*cb)(struct flb_config *, void *);
+    void (*cb_coroutine_wrapper)(struct flb_config *, void *);
 
     /* Parent context */
     struct flb_config *config;
@@ -81,6 +87,7 @@ struct flb_sched_request {
 
 /* Scheduler context */
 struct flb_sched {
+    struct mk_event event;  /* event context to associate events */
 
     /*
      * Scheduler lists:
@@ -112,12 +119,26 @@ struct flb_sched {
      */
     struct mk_list timers_drop;
 
+    /* Linked list of timers*/
+    struct cfl_list timer_coro_list;
+    struct cfl_list timer_coro_list_drop;
+
     /* Frame timer context */
     flb_pipefd_t frame_fd;
 
     struct mk_event_loop *evl;
     struct flb_config *config;
+
+    /*
+     * Every scheduler context have it own file descriptor to receive
+     * custom notifications from other scheduler components. The primary use
+     * case is the use of timers running under a co-routine that needs to
+     * be handled in active event loop.
+     */
+    flb_pipefd_t ch_events[2];
 };
+
+struct flb_sched_timer_coro;
 
 int flb_sched_request_create(struct flb_config *config,
                              void *data, int tries);
@@ -137,16 +158,129 @@ int flb_sched_request_invalidate(struct flb_config *config, void *data);
 int flb_sched_timer_cb_create(struct flb_sched *sched, int type, int ms,
                               void (*cb)(struct flb_config *, void *),
                               void *data, struct flb_sched_timer **out_timer);
+int flb_sched_timer_coro_cb_create(struct flb_sched *sched, int type, int64_t ms,
+                                   void (*cb)(struct flb_config *, void *),
+                                   void *data, struct flb_sched_timer **out_timer);
+
+void flb_sched_timer_coro_destroy(struct flb_sched_timer_coro *instance);
+struct flb_sched_timer_coro *flb_sched_timer_coro_create(struct flb_sched_timer *timer,
+                                                         struct flb_config *config,
+                                                         void *data);
+int flb_sched_timer_coro_cleanup(struct flb_sched *sched);
+
 int flb_sched_timer_cb_disable(struct flb_sched_timer *timer);
 int flb_sched_timer_cb_destroy(struct flb_sched_timer *timer);
 void flb_sched_timer_invalidate(struct flb_sched_timer *timer);
 int flb_sched_timer_cleanup(struct flb_sched *sched);
-int flb_sched_retry_now(struct flb_config *config, 
+int flb_sched_retry_now(struct flb_config *config,
                         struct flb_task_retry *retry);
 
 /* Sched context api for multithread environment */
 void flb_sched_ctx_init();
 struct flb_sched *flb_sched_ctx_get();
 void flb_sched_ctx_set(struct flb_sched *sched);
+
+
+struct flb_sched_timer_coro {
+    uint32_t id;
+    struct flb_sched_timer *timer;
+    struct flb_config *config;
+    struct flb_coro *coro;
+    void *data;
+
+    /* link to sched->timer_coro_list */
+    struct cfl_list _head;
+};
+
+/* parameter for timer callback running under a co-routine */
+struct flb_sched_timer_coro_cb_params {
+    struct flb_sched_timer_coro *stc;
+    struct flb_config *config;
+    void *data;
+    struct flb_coro *coro;
+};
+
+extern FLB_TLS_DEFINE(struct flb_sched_timer_coro_cb_params, sched_timer_coro_cb_params);
+
+
+struct flb_timer_cb_coro_params {
+    struct flb_config *config;
+    void *data;
+};
+
+
+static FLB_INLINE void flb_sched_timer_cb_coro_return()
+{
+    int n;
+    uint64_t val;
+    struct flb_coro *coro;
+    struct flb_sched *sched;
+    struct flb_sched_timer_coro *stc;
+
+    coro = flb_coro_get();
+
+    sched = flb_sched_ctx_get();
+    if (!sched) {
+        flb_error("[sched] invalid scheduler context");
+        return;
+    }
+
+    stc = (struct flb_sched_timer_coro *) coro->data;
+    if (!stc) {
+        flb_error("[sched] invalid timer coro context");
+        return;
+    }
+
+    val = FLB_BITS_U64_SET(FLB_SCHED_TIMER_CORO_RETURN, stc->id);
+    n = flb_pipe_w(sched->ch_events[1], &val, sizeof(val));
+    if (n == -1) {
+        flb_errno();
+    }
+
+    flb_coro_yield(coro, FLB_TRUE);
+}
+
+static FLB_INLINE void sched_timer_cb_params_set(struct flb_sched_timer_coro *stc,
+                                                 struct flb_coro *coro, struct flb_config *config, void *data)
+{
+    struct flb_sched_timer_coro_cb_params *params;
+
+    params = (struct flb_sched_timer_coro_cb_params *) FLB_TLS_GET(sched_timer_coro_cb_params);
+    if (!params) {
+        params = flb_calloc(1, sizeof(struct flb_sched_timer_coro_cb_params));
+
+        if (!params) {
+            flb_errno();
+            return;
+        }
+    }
+
+    params->stc = stc;
+    params->config = config;
+    params->data = data;
+    params->coro = coro;
+
+    FLB_TLS_SET(sched_timer_coro_cb_params, params);
+    co_switch(coro->callee);
+}
+
+static FLB_INLINE void sched_timer_coro_cb_run(void)
+{
+    struct flb_coro *coro;
+    struct flb_sched_timer *timer;
+    struct flb_sched_timer_coro_cb_params *params;
+
+    params = (struct flb_sched_timer_coro_cb_params *) FLB_TLS_GET(sched_timer_coro_cb_params);
+    if (!params) {
+        return;
+    }
+
+    coro = params->coro;
+
+    co_switch(coro->caller);
+
+    timer = params->stc->timer;
+    timer->cb(params->config, params->data);
+}
 
 #endif

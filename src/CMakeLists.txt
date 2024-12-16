@@ -12,6 +12,7 @@ set(src
   flb_env.c
   flb_file.c
   flb_uri.c
+  flb_utf8.c
   flb_hash_table.c
   flb_help.c
   flb_pack.c
@@ -27,6 +28,7 @@ set(src
   flb_input_log.c
   flb_input_metric.c
   flb_input_trace.c
+  flb_input_blob.c
   flb_input_thread.c
   flb_filter.c
   flb_output.c
@@ -63,6 +65,8 @@ set(src
   flb_snappy.c
   flb_compression.c
   flb_http_common.c
+  flb_http_client_http1.c
+  flb_http_client_http2.c
   flb_http_client.c
   flb_callback.c
   flb_strptime.c
@@ -80,6 +84,10 @@ set(src
   flb_processor.c
   flb_reload.c
   flb_msgpack_append_message.c
+  flb_notification.c
+  flb_lock.c
+  flb_cfl_ra_key.c
+  flb_cfl_record_accessor.c
   )
 
 # Config format
@@ -163,6 +171,7 @@ if(FLB_SIGNV4 AND FLB_TLS)
   set(src
     ${src}
     "flb_signv4.c"
+    "flb_signv4_ng.c"
     )
 endif()
 
@@ -207,7 +216,7 @@ set(extra_libs
 if(FLB_JEMALLOC)
   set(extra_libs
     ${extra_libs}
-    "libjemalloc")
+    ${JEMALLOC_LIBRARIES})
 endif()
 
 if(FLB_REGEX)
@@ -223,7 +232,7 @@ endif()
 if(FLB_LUAJIT)
   set(extra_libs
     ${extra_libs}
-    "libluajit")
+    ${LUAJIT_LIBRARIES})
 endif()
 
 if(FLB_SQLDB)
@@ -282,6 +291,7 @@ if(FLB_SYSTEM_MACOS)
     ${FLB_DEPS}
     "-framework Foundation"
     "-framework IOKit"
+    "-framework Security"
     )
 endif()
 
@@ -366,6 +376,7 @@ set(FLB_DEPS
   ${FLB_DEPS}
   cfl-static
   fluent-otel-proto
+  cprofiles-static
   cmetrics-static
   ctraces-static
   mk_core
@@ -378,10 +389,10 @@ set(FLB_DEPS
   ${FLB_PLUGINS}
   ${FLB_PROXY_PLUGINS}
   ${extra_libs}
-  c-ares
+  ${LIBCARES_LIBRARIES}
   snappy-c
   lwrb
-  nghttp2_static
+  ${NGHTTP2_LIBRARIES}
   )
 
 if(OPENSSL_FOUND)
@@ -478,7 +489,7 @@ else()
 endif(MSVC)
 
 if(FLB_JEMALLOC)
-  target_link_libraries(fluent-bit-static libjemalloc)
+  target_link_libraries(fluent-bit-static ${JEMALLOC_LIBRARIES})
 endif()
 
 # Binary / Executable
@@ -501,12 +512,12 @@ if(FLB_BINARY)
   endif()
 
   if(FLB_JEMALLOC)
-    target_link_libraries(fluent-bit-bin libjemalloc)
+    target_link_libraries(fluent-bit-bin ${JEMALLOC_LIBRARIES})
   endif()
 
   if(FLB_BACKTRACE)
     add_definitions(-DFLB_DUMP_STACKTRACE=1)
-    target_link_libraries(fluent-bit-bin libbacktrace)
+    target_link_libraries(fluent-bit-bin ${LIBBACKTRACE_LIBRARIES})
   endif()
 
   target_link_libraries(fluent-bit-bin fluent-bit-static ${CMAKE_THREAD_LIBS_INIT})

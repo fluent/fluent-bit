@@ -19,6 +19,7 @@
 
 #include <fluent-bit/flb_log_event_decoder.h>
 #include <fluent-bit/flb_byteswap.h>
+#include <fluent-bit/flb_compat.h>
 
 static int create_empty_map(struct flb_log_event_decoder *context) {
     msgpack_packer  packer;
@@ -179,8 +180,15 @@ int flb_log_event_decoder_decode_timestamp(msgpack_object *input,
             return FLB_EVENT_DECODER_ERROR_WRONG_TIMESTAMP_TYPE;
         }
 
-        output->tm.tv_sec  = (int32_t) FLB_BSWAP_32(*((uint32_t *) &input->via.ext.ptr[0]));
-        output->tm.tv_nsec = (int32_t) FLB_BSWAP_32(*((uint32_t *) &input->via.ext.ptr[4]));
+        output->tm.tv_sec  = 
+            (int32_t) FLB_UINT32_TO_HOST_BYTE_ORDER(
+                        FLB_ALIGNED_DWORD_READ(
+                            (unsigned char *) &input->via.ext.ptr[0]));
+
+        output->tm.tv_nsec  = 
+            (int32_t) FLB_UINT32_TO_HOST_BYTE_ORDER(
+                        FLB_ALIGNED_DWORD_READ(
+                            (unsigned char *) &input->via.ext.ptr[4]));
     }
     else {
         return FLB_EVENT_DECODER_ERROR_WRONG_TIMESTAMP_TYPE;

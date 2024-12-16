@@ -17,7 +17,15 @@
  *  limitations under the License.
  */
 
+#include <cfl/cfl.h>
+
 int cfl_init()
 {
     return 0;
 }
+
+char *cfl_version()
+{
+    return CFL_VERSION_STR;
+}
+

@@ -1,0 +1,105 @@
+# Copyright (C) 2019 Intel Corporation.  All rights reserved.
+# SPDX-License-Identifier: Apache-2.0 WITH LLVM-exception
+name: Reusable workflow-build_llvm_libraries
+
+on:
+  workflow_call:
+    inputs:
+      os:
+        required: true
+        type: string
+      arch:
+        required: true
+        type: string
+      container_image:
+        required: false
+        type: string
+    outputs:
+      cache_key:
+        description: "A cached key of LLVM libraries"
+        value: ${{ jobs.build_llvm_libraries.outputs.key}}
+
+jobs:
+  build_llvm_libraries:
+    runs-on: ${{ inputs.os }}
+    # Using given container image if it is specified.
+    # Otherwise, it will be ignored by the runner.
+    container:
+      image: ${{ inputs.container_image }}
+    outputs:
+      key: ${{ steps.create_lib_cache_key.outputs.key}}
+
+    steps:
+      - name: checkout
+        uses: actions/checkout@v4
+
+      - name: install dependencies for non macos-14
+        if: inputs.os != 'macos-14'
+        run: /usr/bin/env python3 -m pip install -r requirements.txt
+        working-directory: build-scripts
+
+      - name: install dependencies for macos-14
+        if: inputs.os == 'macos-14'
+        run: /usr/bin/env python3 -m pip install -r requirements.txt --break-system-packages
+        working-directory: build-scripts
+
+      - name: retrive the last commit ID
+        id: get_last_commit
+        run: echo "last_commit=$(GH_TOKEN=${{ secrets.GITHUB_TOKEN }} /usr/bin/env python3 ./build_llvm.py --llvm-ver)" >> $GITHUB_OUTPUT
+        working-directory: build-scripts
+
+      # Bump the prefix number to evict all previous caches and
+      # enforce a clean build, in the unlikely case that some
+      # weird build error occur and llvm/build becomes a potential
+      # suspect.
+      - name: form the cache key of libraries
+        id: create_lib_cache_key
+        run: echo "key=0-llvm-libraries-${{ inputs.os }}-${{ inputs.arch }}-${{ steps.get_last_commit.outputs.last_commit }}" >> $GITHUB_OUTPUT
+
+      - name: Cache LLVM libraries
+        id: retrieve_llvm_libs
+        uses: actions/cache@v4
+        with:
+          path: |
+            ./core/deps/llvm/build/bin
+            ./core/deps/llvm/build/include
+            ./core/deps/llvm/build/lib
+            ./core/deps/llvm/build/libexec
+            ./core/deps/llvm/build/share
+          key: ${{ steps.create_lib_cache_key.outputs.key}}
+
+      - uses: actions/cache@v4
+        with:
+          path: ~/.ccache
+          key: 0-ccache-${{ inputs.os }}-${{ steps.get_last_commit.outputs.last_commit }}
+          restore-keys: |
+            0-ccache-${{ inputs.os }}
+        if: steps.retrieve_llvm_libs.outputs.cache-hit != 'true' && inputs.os == 'ubuntu-20.04'
+
+      - uses: actions/cache@v4
+        with:
+          path: ~/.cache/ccache
+          key: 0-ccache-${{ inputs.os }}-${{ steps.get_last_commit.outputs.last_commit }}
+          restore-keys: |
+            0-ccache-${{ inputs.os }}
+        if: steps.retrieve_llvm_libs.outputs.cache-hit != 'true' && inputs.os == 'ubuntu-22.04'
+
+      # Don't install dependencies if the cache is hit or running in docker container
+      - run: sudo apt install -y ccache ninja-build
+        if: steps.retrieve_llvm_libs.outputs.cache-hit != 'true' && startsWith(inputs.os, 'ubuntu') && inputs.container_image == ''
+
+      - uses: actions/cache@v4
+        with:
+          path: ~/Library/Caches/ccache
+          key: 0-ccache-${{ inputs.os }}-${{ steps.get_last_commit.outputs.last_commit }}
+          restore-keys: |
+            0-ccache-${{ inputs.os }}
+        if: steps.retrieve_llvm_libs.outputs.cache-hit != 'true' && startsWith(inputs.os, 'macos')
+
+      - run: brew install ccache ninja
+        if: steps.retrieve_llvm_libs.outputs.cache-hit != 'true' && startsWith(inputs.os, 'macos')
+
+      - name: Build LLVM libraries
+        if: steps.retrieve_llvm_libs.outputs.cache-hit != 'true'
+        run: /usr/bin/env python3 ./build_llvm.py --arch ${{ inputs.arch }}
+        working-directory: build-scripts
