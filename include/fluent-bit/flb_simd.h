@@ -60,6 +60,18 @@ typedef uint8x16_t flb_vector8;
 typedef uint32x4_t flb_vector32;
 
 #elif defined(__riscv) && (__riscv_v_intrinsic >= 10000)
+/*
+ * We use RVV (RISC-V "Vector") instructions if the compiler provides
+ * access to them (as indicated by __riscv_v_intrinsic) and using with
+ * -march=rv64gcv_zba flag. RVV extension is currently optional for
+ * risc-v processors. If the processors can handle this RVV
+ * intrinsics, this extension is able to use on that platform.
+ * However, there is a few RISC-V prosessors to support RVV
+ * extensions.
+ * If there is no RISC-V processor which supports RVV extensions,
+ * qemu-riscv with -cpu rv64,v=true,zba=true,vlen=128 flags could be
+ * able to emulate such extensions.
+ */
 #include <riscv_vector.h>
 #define FLB_SIMD_RVV
 typedef vuint8m1_t flb_vector8;
