@@ -76,7 +76,9 @@ typedef uint32x4_t flb_vector32;
 #define FLB_SIMD_RVV
 typedef vuint8m1_t flb_vector8;
 typedef vuint32m1_t flb_vector32;
-#define RVV_VEC_INST_LEN 16
+
+/* Currently, VLEN is assumed to 128. */
+#define RVV_VEC_INST_LEN (128 / 8) /* 16 */
 
 #else
 /*
