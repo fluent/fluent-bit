@@ -35,7 +35,6 @@ void print_profile(struct cprof_profile *profile)
     struct cfl_list *type_head;
     struct cprof_sample *sample;
     struct cprof_value_type *sample_type;
-    size_t value_index = 0;
 
     printf("\n");
     printf("--- profile debug\n");
@@ -59,6 +58,7 @@ void print_profile(struct cprof_profile *profile)
         }
 
         printf("    Values:\n");
+        size_t value_index = 0;
         cfl_list_foreach(type_head, &profile->sample_type) {
             sample_type = cfl_list_entry(type_head, struct cprof_value_type, _head);
             if (value_index < sample->value_count) {
@@ -73,7 +73,7 @@ void print_profile(struct cprof_profile *profile)
         if (sample->timestamps_count > 0) {
             printf("    Timestamps:\n");
             for (i = 0; i < sample->timestamps_count; ++i) {
-                printf("      Timestamp %zu: %" PRIu64 " ns\n", i, sample->timestamps_unix_nano[i]);
+                printf("      Timestamp %d: %" PRIu64 " ns\n", i, sample->timestamps_unix_nano[i]);
             }
         } else {
             printf("    [No Timestamps]\n");
@@ -108,7 +108,7 @@ static void test_profile()
     TEST_CHECK(cprof != NULL);
 
     /* create profile */
-    profile = cprof_profile_create(cprof);
+    profile = cprof_profile_create();
     TEST_CHECK(profile != NULL);
 
     cprof_sample_type_str_create(profile, "CPU time", "ns", CPROF_AGGREGATION_TEMPORALITY_CUMULATIVE);
@@ -153,6 +153,8 @@ static void test_profile()
     }
 
     print_profile(profile);
+
+    cprof_profile_destroy(profile);
 
     /* destroy context */
     cprof_destroy(cprof);
