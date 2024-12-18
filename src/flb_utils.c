@@ -802,7 +802,7 @@ int flb_utils_write_str(char *buf, int *off, size_t size, const char *str, size_
     char tmp[16];
     char *p;
 #if defined(FLB_SIMD_RVV)
-    const size_t inst_len = RVV_VEC_INST_LEN;
+    const size_t inst_len = RVV_VEC8_INST_LEN;
 #else
     const size_t inst_len = sizeof(flb_vector8);
 #endif
