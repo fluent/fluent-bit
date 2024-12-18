@@ -2,7 +2,7 @@
 
 /*  CProfiles
  *  ========
- *  Copyright 2024 The CMetrics Authors
+ *  Copyright 2024 The CProfiles Authors
  *
  *  Licensed under the Apache License, Version 2.0 (the "License");
  *  you may not use this file except in compliance with the License.
@@ -17,24 +17,26 @@
  *  limitations under the License.
  */
 
-#ifndef CPROF_INFO_H
-#define CPROF_INFO_H
+#ifndef CPROF_ENCODE_MSGPACK_H
+#define CPROF_ENCODE_MSGPACK_H
 
-#define CPROF_SOURCE_DIR "/src/fluent-bit"
+#include <cprofiles/cprofiles.h>
+#include <mpack/mpack.h>
+#include <cfl/cfl_sds.h>
 
-/* General flags set by /CMakeLists.txt */
-#ifndef CPROF_HAVE_TIMESPEC_GET
-#define CPROF_HAVE_TIMESPEC_GET
-#endif
-#ifndef CPROF_HAVE_GMTIME_R
-#define CPROF_HAVE_GMTIME_R
-#endif
-#ifndef CPROF_HAVE_CFL
-#define CPROF_HAVE_CFL
-#endif
-#ifndef CPROF_HAVE_FLUENT_OTEL_PROTO
-#define CPROF_HAVE_FLUENT_OTEL_PROTO
-#endif
+#define CPROF_ENCODE_MSGPACK_SUCCESS                0
+#define CPROF_ENCODE_MSGPACK_ALLOCATION_ERROR       1
+#define CPROF_ENCODE_MSGPACK_INVALID_ARGUMENT_ERROR 2
 
+struct cprof_msgpack_encoding_context {
+    mpack_writer_t writer;
+    char          *output_buffer;
+    size_t         output_size;
+};
+
+int cprof_encode_msgpack_create(cfl_sds_t *result_buffer,
+                                struct cprof *profile);
+
+void cprof_encode_msgpack_destroy(cfl_sds_t instance);
 
 #endif
