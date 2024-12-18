@@ -216,6 +216,17 @@ struct flb_input_instance *flb_input_new(struct flb_config *config,
             return NULL;
         }
 
+        /* Index for profile Chunks (hash table) */
+        instance->ht_profile_chunks = flb_hash_table_create(FLB_HASH_TABLE_EVICT_NONE,
+                                                            512, 0);
+        if (!instance->ht_profile_chunks) {
+            flb_hash_table_destroy(instance->ht_log_chunks);
+            flb_hash_table_destroy(instance->ht_metric_chunks);
+            flb_hash_table_destroy(instance->ht_trace_chunks);
+            flb_free(instance);
+            return NULL;
+        }
+
         /* format name (with instance id) */
         snprintf(instance->name, sizeof(instance->name) - 1,
                  "%s.%i", plugin->name, id);
@@ -772,14 +783,22 @@ void flb_input_instance_destroy(struct flb_input_instance *ins)
     /* hash table for chunks */
     if (ins->ht_log_chunks) {
         flb_hash_table_destroy(ins->ht_log_chunks);
+        ins->ht_log_chunks = NULL;
     }
 
     if (ins->ht_metric_chunks) {
         flb_hash_table_destroy(ins->ht_metric_chunks);
+        ins->ht_metric_chunks = NULL;
     }
 
     if (ins->ht_trace_chunks) {
         flb_hash_table_destroy(ins->ht_trace_chunks);
+        ins->ht_trace_chunks = NULL;
+    }
+
+    if (ins->ht_profile_chunks) {
+        flb_hash_table_destroy(ins->ht_profile_chunks);
+        ins->ht_profile_chunks = NULL;
     }
 
     if (ins->ch_events[0] > 0) {
