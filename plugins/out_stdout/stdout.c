@@ -29,6 +29,10 @@
 #include <ctraces/ctraces.h>
 #include <ctraces/ctr_decode_msgpack.h>
 
+#include <cprofiles/cprofiles.h>
+#include <cprofiles/cprof_encode_text.h>
+#include <cprofiles/cprof_decode_msgpack.h>
+
 #include <msgpack.h>
 #include "stdout.h"
 
@@ -165,6 +169,45 @@ static void print_traces_text(struct flb_output_instance *ins,
     }
 }
 
+static void print_profiles_text(struct flb_output_instance *ins,
+                                const void *data, size_t bytes)
+{
+    int ret;
+    size_t off;
+    cfl_sds_t text;
+    struct cprof *profiles_context;
+
+    profiles_context = NULL;
+    off = 0;
+
+    /* Decode each profiles context */
+    while ((ret = cprof_decode_msgpack_create(&profiles_context,
+                                              (unsigned char *) data,
+                                              bytes, &off)) ==
+                                                CPROF_DECODE_MSGPACK_SUCCESS) {
+        /* convert to text representation */
+        ret = cprof_encode_text_create(&text, profiles_context);
+
+        if (ret != CPROF_ENCODE_TEXT_SUCCESS) {
+            flb_plg_debug(ins, "cprofiles text encoder returned : %d", ret);
+
+            continue;
+        }
+
+        /* destroy ctr context */
+        cprof_decode_msgpack_destroy(profiles_context);
+
+        printf("%s", text);
+        fflush(stdout);
+
+        cprof_encode_text_destroy(text);
+    }
+
+    if (ret != CPROF_DECODE_MSGPACK_SUCCESS) {
+        flb_plg_debug(ins, "cprofiles msgpack decoder returned : %d", ret);
+    }
+}
+
 static void cb_stdout_flush(struct flb_event_chunk *event_chunk,
                             struct flb_output_flush *out_flush,
                             struct flb_input_instance *i_ins,
@@ -198,6 +241,13 @@ static void cb_stdout_flush(struct flb_event_chunk *event_chunk,
         print_traces_text(ctx->ins, (char *)
                           event_chunk->data,
                           event_chunk->size);
+        FLB_OUTPUT_RETURN(FLB_OK);
+    }
+
+    if (event_chunk->type == FLB_EVENT_TYPE_PROFILES) {
+        print_profiles_text(ctx->ins, (char *)
+                            event_chunk->data,
+                            event_chunk->size);
         FLB_OUTPUT_RETURN(FLB_OK);
     }
 
@@ -305,6 +355,7 @@ struct flb_output_plugin out_stdout_plugin = {
     .cb_exit      = cb_stdout_exit,
     .flags        = 0,
     .workers      = 1,
-    .event_type   = FLB_OUTPUT_LOGS | FLB_OUTPUT_METRICS | FLB_OUTPUT_TRACES | FLB_OUTPUT_BLOBS,
+    .event_type   = FLB_OUTPUT_LOGS | FLB_OUTPUT_METRICS | FLB_OUTPUT_TRACES |
+                    FLB_OUTPUT_PROFILES | FLB_OUTPUT_BLOBS,
     .config_map   = config_map
 };
