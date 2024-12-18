@@ -46,11 +46,12 @@
 #define FLB_INPUT_CHUNK_MAGIC_BYTE_0  (unsigned char) 0xF1
 #define FLB_INPUT_CHUNK_MAGIC_BYTE_1  (unsigned char) 0x77
 
-/* Chunk types: Log, Metrics and Traces are supported */
+/* Chunk types: Log, Metrics, Traces, Profiles and Blobs are supported */
 #define FLB_INPUT_CHUNK_TYPE_LOGS      0
 #define FLB_INPUT_CHUNK_TYPE_METRICS   1
 #define FLB_INPUT_CHUNK_TYPE_TRACES    2
 #define FLB_INPUT_CHUNK_TYPE_BLOBS     3
+#define FLB_INPUT_CHUNK_TYPE_PROFILES  4
 
 #ifdef FLB_HAVE_CHUNK_TRACE
 #define FLB_INPUT_CHUNK_HAS_TRACE     1 << 31
