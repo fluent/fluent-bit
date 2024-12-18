@@ -21,12 +21,38 @@
 #include <fluent-bit/flb_output_plugin.h>
 #include <fluent-bit/flb_fstore.h>
 #include <fluent-bit/flb_time.h>
-#include <fcntl.h>
-#include <unistd.h>
 
-/*
- * Simple and fast hashing algorithm to create keys in the local buffer
+/**
+ * Generates a unique store filename based on a given tag and the current time.
+ *
+ * This function creates a unique filename by computing a hash from the provided
+ * tag and combining it with a hash derived from the current time. The resulting
+ * filename is intended to be used for storing data in a way that ensures
+ * uniqueness and avoids collisions.
+ *
+ * Parameters:
+ * - tag: A constant character pointer representing the tag for which the
+ *   filename is being generated. This tag is used as part of the hash
+ *   computation to ensure that filenames are unique to each tag.
+ *
+ * Returns:
+ * - A dynamically allocated `flb_sds_t` string containing the generated
+ *   filename. The caller is responsible for freeing this string using
+ *   `flb_sds_destroy` when it is no longer needed.
+ * - Returns `NULL` if memory allocation fails during the process.
+ *
+ * Behavior:
+ * - The function first retrieves the current time using `flb_time_get`.
+ * - It then computes a hash from the input tag using the DJB2 algorithm.
+ * - A secondary hash is computed using the current time's seconds and
+ *   nanoseconds to further ensure uniqueness.
+ * - The function formats these hashes into a string using `flb_sds_printf`,
+ *   ensuring that the resulting filename is unique for each tag and time
+ *   combination.
+ * - If any memory allocation fails, the function logs an error using
+ *   `flb_errno` and returns `NULL`.
  */
+
 static flb_sds_t gen_store_filename(const char *tag)
 {
     int c;
@@ -63,7 +89,44 @@ static flb_sds_t gen_store_filename(const char *tag)
 }
 
 
-/* Retrieve a candidate buffer file using the tag */
+/**
+ * Retrieve a candidate buffer file using the tag.
+ *
+ * This function searches through the list of active files in the current
+ * Azure Kusto plugin context to find a file that matches the specified tag. The
+ * tag is used as a lookup pattern to identify the appropriate file for
+ * storing incoming data.
+ *
+ * The function iterates over the list of files associated with the active
+ * stream in the context. For each file, it performs the following checks:
+ *
+ * 1. **Null Data Check**: If a file's data reference is NULL, it logs a
+ *    warning and attempts to delete the file, as it indicates a partially
+ *    initialized chunk.
+ *
+ * 2. **Meta Size Check**: Compares the size of the file's metadata with
+ *    the length of the provided tag. If they do not match, the file is
+ *    skipped.
+ *
+ * 3. **Locked File Check**: If the file is locked, it logs a debug message
+ *    and skips the file, as locked files are not eligible for selection.
+ *
+ * 4. **Tag Comparison**: Compares the file's metadata buffer with the
+ *    provided tag. If they match, it logs a debug message indicating a
+ *    successful match and breaks out of the loop.
+ *
+ * If a matching file is found, the function returns a pointer to the
+ * `azure_kusto_file` structure associated with the file. If no match is
+ * found, it returns NULL.
+ *
+ * @param ctx     Pointer to the Azure Kusto plugin context containing the active
+ *                stream and file list.
+ * @param tag     The tag used as a lookup pattern to find the matching file.
+ * @param tag_len The length of the tag.
+ *
+ * @return A pointer to the `azure_kusto_file` structure if a matching file
+ *         is found; otherwise, NULL.
+ */
 struct azure_kusto_file *azure_kusto_store_file_get(struct flb_azure_kusto *ctx, const char *tag,
                                                     int tag_len)
 {
@@ -115,7 +178,42 @@ struct azure_kusto_file *azure_kusto_store_file_get(struct flb_azure_kusto *ctx,
     }
 }
 
-/* Append data to a new or existing fstore file */
+/**
+ * Append data to a new or existing fstore file.
+ *
+ * This function is responsible for appending data to a file in the Azure Kusto
+ * buffer storage system. It handles both the creation of new files and the appending
+ * of data to existing files. The function ensures that the buffer does not
+ * exceed the specified storage limit and manages file metadata and context.
+ *
+ * Parameters:
+ * - ctx: A pointer to the flb_azure_kusto context, which contains configuration
+ *   and state information for the Azure Kusto storage system.
+ * - azure_kusto_file: A pointer to an existing azure_kusto_file structure. If
+ *   NULL, a new file will be created.
+ * - tag: A string representing the tag associated with the data. This is used
+ *   for metadata purposes.
+ * - tag_len: The length of the tag string.
+ * - data: The data to be appended to the file.
+ * - bytes: The size of the data in bytes.
+ *
+ * Returns:
+ * - 0 on success, indicating that the data was successfully appended to the
+ *   file.
+ * - -1 on failure, indicating an error occurred during the process, such as
+ *   exceeding the buffer limit, file creation failure, or metadata writing
+ *   failure.
+ *
+ * The function performs the following steps:
+ * 1. Checks if adding the new data would exceed the storage directory limit.
+ * 2. If no target file is provided, it generates a new file name and creates
+ *    a new file in the storage system.
+ * 3. Writes the tag as metadata to the newly created file.
+ * 4. Allocates a new buffer file context and associates it with the file.
+ * 5. Appends the data to the target file.
+ * 6. Updates the file and buffer sizes.
+ * 7. Warns the user if the buffer is nearing its capacity.
+ */
 int azure_kusto_store_buffer_put(struct flb_azure_kusto *ctx, struct azure_kusto_file *azure_kusto_file,
                                  flb_sds_t tag, size_t tag_len,
                                  flb_sds_t data, size_t bytes) {
@@ -202,6 +300,35 @@ int azure_kusto_store_buffer_put(struct flb_azure_kusto *ctx, struct azure_kusto
     return 0;
 }
 
+/**
+ * Set Files in Azure Kusto Plugin Buffer Context
+ *
+ * This function iterates over the file streams associated with the context,
+ * excluding the currently active stream and the multi-upload stream. For each file in
+ * these streams, it checks if the file's data context is uninitialized. If so, it allocates
+ * a new `azure_kusto_file` structure to serve as the file's context.
+ *
+ * The function performs the following steps:
+ * 1. Iterate over each file stream in the context's file store, skipping the active and
+ *    multi-upload streams.
+ * 2. For each file in the stream, check if the file's data context is already set.
+ *    - If the data context is set, continue to the next file.
+ * 3. Allocate memory for a new `azure_kusto_file` structure to serve as the file's context.
+ *    - If memory allocation fails, log an error and continue to the next file.
+ * 4. Initialize the `azure_kusto_file` structure with the current file and the current time.
+ * 5. Assign the newly created `azure_kusto_file` structure to the file's data context.
+ *
+ * This function ensures that each file in the relevant streams has an associated context
+ * for further processing, which is crucial for managing file operations within the Azure
+ * Kusto environment.
+ *
+ * Parameters:
+ * - ctx: A pointer to the `flb_azure_kusto` structure, which contains the file store and
+ *        other relevant context information.
+ *
+ * Returns:
+ * - Always returns 0, indicating successful execution.
+ */
 static int set_files_context(struct flb_azure_kusto *ctx)
 {
     struct mk_list *head;
@@ -247,7 +374,48 @@ static int set_files_context(struct flb_azure_kusto *ctx)
     return 0;
 }
 
-/* Initialize filesystem storage for azure_kusto plugin */
+/**
+ * Initialize the filesystem storage for the Azure Kusto plugin.
+ *
+ * This function is responsible for setting up the storage context and creating
+ * a new stream for data storage. It ensures that the Azure Kusto plugin can
+ * differentiate between new data generated during the current process run and
+ * backlog data from previous runs.
+ *
+ * Key Steps:
+ * 1. **Set Storage Type**: The storage type is set to `FLB_FSTORE_FS`, indicating
+ *    that the storage will be filesystem-based.
+ *
+ * 2. **Initialize Storage Context**:
+ *    - Constructs a path for the storage context using the `buffer_dir` and
+ *      `azure_kusto_buffer_key` from the context (`ctx`).
+ *    - Creates the storage context using `flb_fstore_create`. If this fails,
+ *      the function returns an error.
+ *
+ * 3. **Stream Creation**:
+ *    - On each start, a new stream is created. This stream is a directory named
+ *      with the current date and time (formatted as `YYYY-MM-DDTHH:MM:SS`), which
+ *      stores all new data generated during the current process run.
+ *    - The plugin differentiates between new and older buffered data, with older
+ *      data considered as backlog.
+ *
+ * 4. **Platform-Specific Considerations**:
+ *    - On Windows, the function replaces colons (`:`) with hyphens (`-`) in the
+ *      stream name because colons are not allowed in directory names on Windows.
+ *
+ * 5. **Error Handling**:
+ *    - If the stream creation fails, the function logs an error, destroys the
+ *      storage context, and returns an error code.
+ *
+ * 6. **Finalization**:
+ *    - If successful, the function sets the active stream in the context and
+ *      calls `set_files_context` to finalize the setup.
+ *
+ * @param ctx A pointer to the `flb_azure_kusto` structure containing the plugin
+ *            context and configuration.
+ *
+ * @return Returns 0 on success, or -1 on failure.
+ */
 int azure_kusto_store_init(struct flb_azure_kusto *ctx)
 {
     int type;
@@ -311,6 +479,23 @@ int azure_kusto_store_init(struct flb_azure_kusto *ctx)
     return 0;
 }
 
+/**
+ * azure_kusto_store_exit - Cleans up and releases resources associated with
+ * the Kusto plugin storage context.
+ *
+ * This function is responsible for releasing any local resources associated
+ * with the Kusto plugin storage context (`ctx`). It iterates over the file
+ * streams in the context's file store (`ctx->fs`) and frees any allocated
+ * memory for non-multi upload files. Finally, it destroys the file store
+ * if it exists.
+ *
+ * Parameters:
+ *   ctx - A pointer to the `flb_azure_kusto` structure representing the
+ *         Kusto plugin storage context.
+ *
+ * Returns:
+ *   An integer value, always returns 0 indicating successful cleanup.
+ */
 int azure_kusto_store_exit(struct flb_azure_kusto *ctx)
 {
     struct mk_list *head;
@@ -345,6 +530,20 @@ int azure_kusto_store_exit(struct flb_azure_kusto *ctx)
     return 0;
 }
 
+/**
+ * azure_kusto_store_has_data - Check if there is any data in the Azure Kusto store.
+ * @ctx: Pointer to the Kusto plugin context structure.
+ *
+ * This function checks whether there is any data stored in the file storage
+ * associated with the Kusto plugin context. It iterates over each stream in the
+ * file storage, excluding the stream used for uploads, and checks if there are
+ * any files present. If files are found, it logs their names and returns true.
+ * If no files are found in any stream, it logs this information and returns false.
+ *
+ * Returns:
+ * FLB_TRUE if there is data in any stream other than the upload stream,
+ * FLB_FALSE otherwise.
+ */
 int azure_kusto_store_has_data(struct flb_azure_kusto *ctx)
 {
     struct mk_list *head;
@@ -392,6 +591,19 @@ int azure_kusto_store_has_data(struct flb_azure_kusto *ctx)
     return FLB_FALSE;
 }
 
+/**
+ * Checks if there are any files in the upload stream of the Kusto plugin context.
+ *
+ * This function verifies whether the given Kusto plugin context has any files
+ * queued for upload. It performs the following checks:
+ *
+ * 1. Validates that the context and the upload stream are initialized.
+ * 2. Checks the number of files in the upload stream.
+ * 3. Returns true if there are files present, otherwise returns false.
+ *
+ * @param ctx A pointer to the Kusto plugin context structure.
+ * @return FLB_TRUE if there are files in the upload stream, FLB_FALSE otherwise.
+ */
 int azure_kusto_store_has_uploads(struct flb_azure_kusto *ctx)
 {
     if (!ctx || !ctx->stream_upload) {
@@ -405,6 +617,21 @@ int azure_kusto_store_has_uploads(struct flb_azure_kusto *ctx)
     return FLB_FALSE;
 }
 
+/**
+ * azure_kusto_store_file_inactive - Marks a file as inactive in the Kusto plugin storage context.
+ * @ctx: Pointer to the Kusto plugin context structure.
+ * @azure_kusto_file: Pointer to the Azure Kusto file structure to be marked inactive.
+ *
+ * This function is responsible for marking a specific file as inactive within the
+ * Kusto plugin storage context. It first retrieves the file store file structure
+ * associated with the buffer file, then frees the memory allocated for the
+ * file structure. Finally, it calls the function to mark the file
+ * as inactive in the file store and returns the result of this operation.
+ *
+ * Returns:
+ * The return value of the flb_fstore_file_inactive function, indicating success
+ * or failure of marking the file as inactive.
+ */
 int azure_kusto_store_file_inactive(struct flb_azure_kusto *ctx, struct azure_kusto_file *azure_kusto_file)
 {
     int ret;
@@ -418,6 +645,18 @@ int azure_kusto_store_file_inactive(struct flb_azure_kusto *ctx, struct azure_ku
     return ret;
 }
 
+/**
+ * azure_kusto_store_file_cleanup - Cleans up and permanently deletes a file from Kusto plugin buffer storage.
+ * @ctx: Pointer to the Kusto plugin context structure.
+ * @azure_kusto_file: Pointer to the Kusto plugin buffer file structure to be cleaned up.
+ *
+ * This function retrieves the file store structure from the given buffer file,
+ * performs a permanent deletion of the file from the file store, and then frees the memory
+ * allocated for the file structure. It returns 0 upon successful completion.
+ *
+ * Returns:
+ * 0 on successful cleanup and deletion of the file.
+ */
 int azure_kusto_store_file_cleanup(struct flb_azure_kusto *ctx, struct azure_kusto_file *azure_kusto_file)
 {
     struct flb_fstore_file *fsf;
@@ -431,6 +670,20 @@ int azure_kusto_store_file_cleanup(struct flb_azure_kusto *ctx, struct azure_kus
     return 0;
 }
 
+/**
+ * azure_kusto_store_file_delete - Deletes a file from Kusto plugin byffer storage.
+ * @ctx: Pointer to the Kusto plugin context structure.
+ * @azure_kusto_file: Pointer to the Kusto plugin file structure to be deleted.
+ *
+ * This function performs the permanent deletion of a file from the Kusto plugin buffer
+ * storage. It first retrieves the file store structure associated with the
+ * file. Then, it updates the current buffer size in the context by
+ * subtracting the size of the file being deleted. Finally, it deletes the file
+ * from the file store and frees the memory allocated for the buffer file
+ * structure.
+ *
+ * Returns 0 on successful deletion.
+ */
 int azure_kusto_store_file_delete(struct flb_azure_kusto *ctx, struct azure_kusto_file *azure_kusto_file)
 {
     struct flb_fstore_file *fsf;
@@ -445,6 +698,19 @@ int azure_kusto_store_file_delete(struct flb_azure_kusto *ctx, struct azure_kust
     return 0;
 }
 
+/**
+ * azure_kusto_store_file_upload_read - Reads the content of a file from the Azure Kusto store.
+ * @ctx: Pointer to the Kusto plugin context structure.
+ * @fsf: Pointer to the file store structure representing the file to be read.
+ * @out_buf: Pointer to a buffer where the file content will be stored.
+ * @out_size: Pointer to a variable where the size of the file content will be stored.
+ *
+ * This function copies the content of the specified file from the Azure Kusto store
+ * into a buffer. The buffer and its size are returned through the out parameters.
+ *
+ * Returns:
+ *   0 on success, or a negative error code on failure.
+ */
 int azure_kusto_store_file_upload_read(struct flb_azure_kusto *ctx, struct flb_fstore_file *fsf,
                                        char **out_buf, size_t *out_size)
 {
@@ -455,17 +721,48 @@ int azure_kusto_store_file_upload_read(struct flb_azure_kusto *ctx, struct flb_f
     return ret;
 }
 
-/* Always set an updated copy of metadata into the fs_store_file entry */
+/**
+ * Retrieves metadata for a specified file in the Kusto plugin buffer context.
+ *
+ * This function is a wrapper around the `flb_fstore_file_meta_get` function,
+ * which fetches metadata for a given file within the file storage system.
+ *
+ * @param ctx A pointer to the `flb_azure_kusto` structure, which contains
+ *            the context for Azure Kusto operations, including the file storage system.
+ * @param fsf A pointer to the `flb_fstore_file` structure representing the file
+ *            for which metadata is to be retrieved.
+ *
+ * @return The result of the `flb_fstore_file_meta_get` function call, which
+ *         typically indicates success or failure of the metadata retrieval operation.
+ */
 int azure_kusto_store_file_meta_get(struct flb_azure_kusto *ctx, struct flb_fstore_file *fsf)
 {
     return flb_fstore_file_meta_get(ctx->fs, fsf);
 }
 
+/**
+ * Locks the specified buffer file.
+ *
+ * This function sets the `locked` attribute of the given `azure_kusto_file`
+ * structure to `FLB_TRUE`, indicating that the file is currently locked.
+ *
+ * @param azure_kusto_file A pointer to the `azure_kusto_file` structure
+ *                         representing the file to be locked.
+ */
 void azure_kusto_store_file_lock(struct azure_kusto_file *azure_kusto_file)
 {
     azure_kusto_file->locked = FLB_TRUE;
 }
 
+/**
+ * Unlocks the specified buffer file.
+ *
+ * This function sets the `locked` attribute of the given `azure_kusto_file`
+ * structure to `FLB_FALSE`, indicating that the file is currently unlocked.
+ *
+ * @param azure_kusto_file A pointer to the `azure_kusto_file` structure
+ *                         representing the file to be unlocked.
+ */
 void azure_kusto_store_file_unlock(struct azure_kusto_file *azure_kusto_file)
 {
     azure_kusto_file->locked = FLB_FALSE;

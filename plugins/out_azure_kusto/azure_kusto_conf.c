@@ -452,13 +452,29 @@ static uint32_t pcg32_random_r(pcg32_random_t* rng) {
     return (xorshifted >> rot) | (xorshifted << ((-rot) & 31));
 }
 
-
-
 /**
- * This method returns random integers from range -600000 to +3600000 which needs to be added
- * to the kusto ingestion resources refresh interval to even out the spikes
- * in kusto DM for .get ingestion resources upon expiry
- * */
+ * Generates a random integer within a specified range to adjust the refresh interval
+ * for Azure Kusto ingestion resources. This helps in distributing the load evenly
+ * by adding variability to the refresh timing, thus preventing spikes in demand.
+ *
+ * The method combines various sources of entropy including environment variables,
+ * current time, process and thread identifiers, and additional random bytes to
+ * generate a robust random number.
+ *
+ * Inputs:
+ * - Environment variables: HOSTNAME and CLUSTER_NAME, which are used to identify
+ *   the pod and cluster respectively. Defaults are used if these are not set.
+ * - Current time with high precision is obtained to ensure uniqueness.
+ * - Process ID and Thread ID are used to add further entropy.
+ *
+ * Outputs:
+ * - Returns a random integer in the range of -600,000 to +3,600,000.
+ * - In case of failure in generating random bytes, the method returns -1.
+ *
+ * The method utilizes SHA256 hashing and additional entropy from OpenSSL's
+ * RAND_bytes to ensure randomness. The PCG (Permuted Congruential Generator)
+ * algorithm is used for generating the final random number.
+ */
 int azure_kusto_generate_random_integer() {
     /* Get environment variables or use default values */
     const char *pod_id = getenv("HOSTNAME");

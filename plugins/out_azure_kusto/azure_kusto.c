@@ -38,6 +38,32 @@
 #include "azure_kusto_store.h"
 
 
+/**
+ * flb_azure_imds_get_token - Retrieve an Azure IMDS token for authentication.
+ *
+ * This function constructs an HTTP GET request to the Azure Instance Metadata Service (IMDS)
+ * to obtain an authentication token. The token is used for accessing Azure services.
+ *
+ * Parameters:
+ *   - ctx: A pointer to the flb_azure_kusto context, which contains configuration and state
+ *          information necessary for the operation.
+ *   - client_id: A string representing the client ID for which the token is requested.
+ *
+ * Returns:
+ *   - A dynamically allocated string (flb_sds_t) containing the token if the request is successful.
+ *   - NULL if the request fails or if any error occurs during the process.
+ *
+ * The function performs the following steps:
+ *   1. Constructs the request URL using the Azure IMDS endpoint, API version, and resource.
+ *   2. Establishes a connection to the IMDS service using the upstream connection from the context.
+ *   3. Sends an HTTP GET request with the necessary headers, including Metadata and client_id.
+ *   4. Checks the HTTP response status and retrieves the token from the response payload if successful.
+ *   5. Cleans up resources, including the HTTP client, connection, and URL string, before returning.
+ *
+ * Note:
+ *   - The caller is responsible for freeing the returned token string.
+ *   - The function logs debug information about the HTTP request and response.
+ */
 flb_sds_t flb_azure_imds_get_token(struct flb_azure_kusto *ctx, flb_sds_t client_id)
 {
     int ret;
@@ -64,7 +90,6 @@ flb_sds_t flb_azure_imds_get_token(struct flb_azure_kusto *ctx, flb_sds_t client
         return NULL;
     }
 
-    flb_plg_debug(ctx->ins, " HTTP uri to be hit status: %s", url);
     flb_plg_debug(ctx->ins, "[flb_azure_imds_get_token] client_id : %s", client_id);
 
     client = flb_http_client(u_conn, FLB_HTTP_GET, url, NULL, 0, "169.254.169.254", 80, NULL, 0);
@@ -73,17 +98,14 @@ flb_sds_t flb_azure_imds_get_token(struct flb_azure_kusto *ctx, flb_sds_t client
 
     ret = flb_http_do(client, &b_sent);
     if (ret != 0 || client->resp.status != 200) {
-        flb_plg_debug(ctx->ins, "[flb_azure_imds_get_token] connection initialization error");
-        flb_plg_debug(ctx->ins, "[flb_azure_imds_get_token] HTTP response status: %d", client->resp.status);
-        flb_plg_debug(ctx->ins, "[flb_azure_imds_get_token] HTTP response payload: %.*s", (int)client->resp.payload_size, client->resp.payload);
+        flb_plg_debug(ctx->ins, "[flb_azure_imds_get_token] HTTP response status  %d & payload: %.*s",client->resp.status, (int)client->resp.payload_size, client->resp.payload);
         flb_http_client_destroy(client);
         flb_upstream_conn_release(u_conn);
         flb_sds_destroy(url);
         return NULL;
     }
 
-    flb_plg_debug(ctx->ins, "[flb_azure_imds_get_token] HTTP response status: %d", client->resp.status);
-    flb_plg_debug(ctx->ins, "[flb_azure_imds_get_token] HTTP response payload: %.*s", (int)client->resp.payload_size, client->resp.payload);
+    flb_plg_debug(ctx->ins, "[flb_azure_imds_get_token] HTTP response status: %d & payload: %.*s", client->resp.status, (int)client->resp.payload_size, client->resp.payload);
 
     response = flb_sds_create_len(client->resp.payload, client->resp.payload_size);
     flb_http_client_destroy(client);
@@ -92,6 +114,46 @@ flb_sds_t flb_azure_imds_get_token(struct flb_azure_kusto *ctx, flb_sds_t client
 
     return response;
 }
+
+
+/**
+ * azure_kusto_get_oauth2_token - Retrieve an OAuth2 token for Azure Kusto
+ *
+ * This function is responsible for obtaining an OAuth2 access token required
+ * for authenticating requests to Azure Kusto. It supports two methods of
+ * token retrieval: using the Azure Instance Metadata Service (IMDS) or
+ * through a client secret flow.
+ *
+ * Parameters:
+ *   - ctx: A pointer to the flb_azure_kusto context structure, which contains
+ *          configuration and state information necessary for token retrieval.
+ *
+ * Returns:
+ *   - 0 on success, indicating that the token was successfully retrieved and
+ *     stored in the context.
+ *   - -1 on failure, indicating an error occurred during the token retrieval
+ *     process.
+ *
+ * The function performs the following steps:
+ *   1. Logs the start of the token retrieval process.
+ *   2. Checks if IMDS-based token retrieval is enabled:
+ *      - If enabled, it attempts to retrieve a token from the Azure IMDS.
+ *      - Parses the JSON response to extract the access token.
+ *      - Logs and handles errors if token extraction fails.
+ *   3. If IMDS is not used, it falls back to the client secret flow:
+ *      - Clears any existing OAuth2 payload data.
+ *      - Appends necessary parameters to the OAuth2 payload, including
+ *        grant type, scope, client ID, and client secret.
+ *      - Requests an OAuth2 token using the constructed payload.
+ *      - Logs and handles errors if token retrieval fails.
+ *   4. Logs the successful completion of the token retrieval process.
+ *
+ * Note:
+ *   - The function assumes that the context (ctx) is properly initialized
+ *     and contains valid configuration data.
+ *   - The extracted access token is stored in the context's OAuth2 structure
+ *     for subsequent use in authenticated requests.
+ */
 
 static int azure_kusto_get_oauth2_token(struct flb_azure_kusto *ctx)
 {
@@ -184,6 +246,38 @@ static int azure_kusto_get_oauth2_token(struct flb_azure_kusto *ctx)
     return 0;
 }
 
+/**
+ * get_azure_kusto_token - Retrieve the OAuth2 token for Azure Kusto
+ *
+ * This function is responsible for obtaining a valid OAuth2 token for
+ * authenticating requests to Azure Kusto. It ensures thread safety by
+ * using a mutex to lock the token retrieval process, preventing race
+ * conditions when accessing or modifying the token.
+ *
+ * The function first attempts to lock the mutex associated with the
+ * token context. If the lock is successful, it checks if the current
+ * token has expired. If the token is expired, it calls
+ * `azure_kusto_get_oauth2_token` to refresh the token.
+ *
+ * After ensuring the token is valid, the function logs the token type
+ * and access token for debugging purposes. It then creates a new
+ * string buffer to store the token type and access token, ensuring
+ * that the original token strings are not modified or freed during
+ * this process.
+ *
+ * Finally, the function unlocks the mutex and returns the newly
+ * created token string. If any errors occur during the process,
+ * appropriate error messages are logged, and the function returns
+ * NULL.
+ *
+ * Parameters:
+ *   ctx - A pointer to the `flb_azure_kusto` context structure, which
+ *         contains the token information and mutex.
+ *
+ * Returns:
+ *   A newly allocated `flb_sds_t` string containing the token type and
+ *   access token, or NULL if an error occurs.
+ */
 
 flb_sds_t get_azure_kusto_token(struct flb_azure_kusto *ctx)
 {
@@ -338,8 +432,41 @@ flb_sds_t execute_ingest_csl_command(struct flb_azure_kusto *ctx, const char *cs
     return resp;
 }
 
-/*
- * Either new_data or chunk can be NULL, but not both
+/**
+ * construct_request_buffer - Constructs a request buffer for Azure Kusto ingestion.
+ *
+ * This function is responsible for preparing a data buffer that will be used
+ * to send data to Azure Kusto. It handles both new incoming data and data
+ * that has been previously buffered in a file. The function performs the
+ * following tasks:
+ *
+ * 1. Validates Input: Checks if both `new_data` and `upload_file` are NULL,
+ *    which would indicate an error since there is no data to process.
+ *
+ * 2. Reads Buffered Data: If an `upload_file` is provided, it reads the
+ *    locally buffered data from the file and locks the file to prevent
+ *    concurrent modifications.
+ *
+ * 3. Appends New Data: If `new_data` is provided, it appends this data to
+ *    the buffered data, reallocating memory as necessary to accommodate the
+ *    combined data size.
+ *
+ * 4. Outputs the Result: Sets the output parameters `out_buf` and `out_size`
+ *    to point to the constructed buffer and its size, respectively.
+ *
+ * The function ensures that the buffer is correctly terminated if compression
+ * is not enabled, and it handles memory allocation and error checking
+ * throughout the process.
+ *
+ * Parameters:
+ * @ctx:        The context containing configuration and state information.
+ * @new_data:   The new data to be appended to the buffer, if any.
+ * @upload_file: The file containing previously buffered data, if any.
+ * @out_buf:    Pointer to the output buffer that will be constructed.
+ * @out_size:   Pointer to the size of the constructed buffer.
+ *
+ * Returns:
+ * 0 on success, or -1 on failure with an appropriate error message logged.
  */
 static int construct_request_buffer(struct flb_azure_kusto *ctx, flb_sds_t new_data,
                                     struct azure_kusto_file *upload_file,
@@ -408,6 +535,35 @@ static int construct_request_buffer(struct flb_azure_kusto *ctx, flb_sds_t new_d
     return 0;
 }
 
+/**
+ * Ingest all data chunks from the file storage streams into Azure Kusto.
+ *
+ * This function iterates over all file storage streams associated with the
+ * given Azure Kusto context. For each
+ * file in the stream, it checks if the file (chunk) is locked or has exceeded
+ * the maximum number of retry attempts. If the chunk is eligible for processing,
+ * it constructs a request buffer from the chunk data, optionally compresses
+ * the payload, and attempts to ingest it into Azure Kusto.
+ *
+ * The function performs the following steps:
+ * 1. Iterate over each file storage stream in the context.
+ * 2. For each file in the stream, check if it is locked or has exceeded
+ *    the maximum retry attempts. If so, skip processing.
+ * 3. Construct a request buffer from the chunk data.
+ * 4. Create a payload from the buffer and optionally compress it if
+ *    compression is enabled.
+ * 5. Load the necessary ingestion resources for Azure Kusto.
+ * 6. Attempt to ingest the payload into Azure Kusto using queued ingestion.
+ * 7. If ingestion is successful, clean up the local buffer file.
+ * 8. Handle errors by unlocking the chunk, incrementing failure counts,
+ *    and logging appropriate error messages.
+ *
+ * @param ctx    Pointer to the Azure Kusto context containing configuration
+ *               and state information.
+ * @param config Pointer to the Fluent Bit configuration structure.
+ *
+ * @return 0 on success, or -1 on failure.
+ */
 static int ingest_all_chunks(struct flb_azure_kusto *ctx, struct flb_config *config)
 {
     struct azure_kusto_file *chunk;
@@ -426,7 +582,6 @@ static int ingest_all_chunks(struct flb_azure_kusto *ctx, struct flb_config *con
     flb_sds_t tag_sds;
 
     mk_list_foreach(head, &ctx->fs->streams) {
-        /* skip multi upload stream */
         fs_stream = mk_list_entry(head, struct flb_fstore_stream, _head);
         if (fs_stream == ctx->stream_upload) {
             continue;
@@ -523,6 +678,32 @@ static int ingest_all_chunks(struct flb_azure_kusto *ctx, struct flb_config *con
     return 0;
 }
 
+/**
+ * cb_azure_kusto_ingest - Callback function for ingesting data to Azure Kusto.
+ *
+ * Parameters:
+ * @config: Pointer to the Fluent Bit configuration context.
+ * @data: Pointer to the Kusto plugin context, which contains configuration and
+ *        state information for the ingestion process.
+ *
+ * The function performs the following steps:
+ * 1. Initializes a random seed for staggered refresh intervals.
+ * 2. Logs the start of the upload timer callback.
+ * 3. Iterates over all files in the active stream.
+ * 4. Checks if each file has timed out and skips those that haven't.
+ * 5. Skips files that are currently locked.
+ * 6. For each eligible file, enters a retry loop to handle ingestion attempts:
+ *    a. Constructs the request buffer for the file.
+ *    b. Compresses the payload if compression is enabled.
+ *    c. Loads necessary ingestion resources.
+ *    d. Performs the queued ingestion to Azure Kusto.
+ *    e. Deletes the file upon successful ingestion.
+ * 7. Implements exponential backoff with jitter for retries.
+ * 8. Logs errors and warnings for failed operations and retries.
+ * 9. If the maximum number of retries is reached, logs an error and either
+ *    deletes or marks the file as inactive based on configuration.
+ * 10. Logs the end of the upload timer callback.
+ */
 static void cb_azure_kusto_ingest(struct flb_config *config, void *data)
 {
     struct flb_azure_kusto *ctx = data;
@@ -717,7 +898,31 @@ static void cb_azure_kusto_ingest(struct flb_config *config, void *data)
 }
 
 
-/* ingest data to Azure Kusto */
+/**
+ * Ingest data to Azure Kusto
+ *
+ * This function is responsible for preparing and sending data to Azure Kusto for ingestion.
+ * It constructs a request buffer from the provided data, optionally compresses the payload,
+ * and then sends it to Azure Kusto using a queued ingestion method.
+ *
+ * Parameters:
+ * - out_context: A pointer to the output context, which is expected to be of type `struct flb_azure_kusto`.
+ * - new_data: The new data to be ingested, represented as a flexible string descriptor (flb_sds_t).
+ * - upload_file: A pointer to an `azure_kusto_file` structure that contains information about the file to be uploaded.
+ * - tag: A constant character pointer representing the tag associated with the data.
+ * - tag_len: An integer representing the length of the tag.
+ *
+ * Returns:
+ * - 0 on successful ingestion.
+ * - -1 if an error occurs during buffer construction, compression, or ingestion.
+ *
+ * The function performs the following steps:
+ * 1. Constructs a request buffer from the provided data and upload file information.
+ * 2. Creates a payload from the buffer and frees the buffer memory.
+ * 3. Optionally compresses the payload using gzip if compression is enabled in the context.
+ * 4. Calls the `azure_kusto_queued_ingestion` function to send the payload to Azure Kusto.
+ * 5. Cleans up allocated resources, including destroying the payload and tag strings, and freeing the compressed payload if applicable.
+ */
 static int ingest_to_kusto(void *out_context, flb_sds_t new_data,
                                struct azure_kusto_file *upload_file,
                                const char *tag, int tag_len)
@@ -785,7 +990,34 @@ static int ingest_to_kusto(void *out_context, flb_sds_t new_data,
     return 0;
 }
 
-
+/**
+ * Initializes the Azure Kusto output plugin.
+ *
+ * This function sets up the necessary configurations and resources for the Azure Kusto
+ * output plugin to function correctly. It performs the following tasks:
+ *
+ * 1. Creates a configuration context for the plugin using the provided instance and config.
+ * 2. Initializes local storage if buffering is enabled, ensuring that the storage directory
+ *    is set up and any existing buffered data is accounted for.
+ * 3. Validates the configured file size for uploads, ensuring it meets the minimum and
+ *    maximum constraints.
+ * 4. Sets up network configurations, including enabling IPv6 if specified.
+ * 5. Initializes mutexes for thread-safe operations related to OAuth tokens and resource
+ *    management.
+ * 6. Creates an upstream context for connecting to the Kusto Ingestion endpoint, configuring
+ *    it for synchronous or asynchronous operation based on buffering settings.
+ * 7. If IMDS (Instance Metadata Service) is used, creates an upstream context for it.
+ * 8. Establishes an OAuth2 context for handling authentication with Azure services.
+ * 9. Associates the upstream context with the output instance for data transmission.
+ *
+ * The function returns 0 on successful initialization or -1 if any step fails.
+ *
+ * @param ins    The output instance to initialize.
+ * @param config The configuration context for Fluent Bit.
+ * @param data   Additional data passed to the initialization function.
+ *
+ * @return 0 on success, -1 on failure.
+ */
 static int cb_azure_kusto_init(struct flb_output_instance *ins, struct flb_config *config,
                                void *data)
 {
@@ -888,6 +1120,24 @@ static int cb_azure_kusto_init(struct flb_output_instance *ins, struct flb_confi
     return 0;
 }
 
+
+/**
+     * This function formats log data for Azure Kusto ingestion.
+     * It processes a batch of log records, encodes them in a specific format,
+     * and outputs the formatted data.
+     *
+     * Parameters:
+     * - ctx: Context containing configuration and state for Azure Kusto.
+     * - tag: A string tag associated with the log data.
+     * - tag_len: Length of the tag string.
+     * - data: Pointer to the raw log data in msgpack format.
+     * - bytes: Size of the raw log data.
+     * - out_data: Pointer to store the formatted output data.
+     * - out_size: Pointer to store the size of the formatted output data.
+     *
+     * Returns:
+     * - 0 on success, or -1 on error.
+     */
 static int azure_kusto_format(struct flb_azure_kusto *ctx, const char *tag, int tag_len,
                               const void *data, size_t bytes, void **out_data,
                               size_t *out_size)
@@ -1017,6 +1267,24 @@ static int buffer_chunk(void *out_context, struct azure_kusto_file *upload_file,
     return 0;
 }
 
+/**
+ * @brief Initialize the flush process for Azure Kusto output plugin.
+ *
+ * This function is responsible for setting up the initial conditions required
+ * for flushing data to Azure Kusto. It performs the following tasks:
+ *
+ * 1. **Old Buffer Cleanup**: Checks if there are any old buffers from previous
+ *    executions that need to be sent to Azure Kusto. If such buffers exist, it
+ *    attempts to ingest all chunks of data. If the ingestion fails, it logs an
+ *    error and marks the buffers to be retried later.
+ *
+ * 2. **Upload Timer Setup**: If not already created, it sets up a periodic timer
+ *    that checks for uploads ready for completion. This timer is crucial for
+ *    ensuring that data is uploaded at regular intervals.
+ *
+ * @param out_context Pointer to the output context, specifically the Azure Kusto context.
+ * @param config Pointer to the Fluent Bit configuration structure.
+ */
 static void flush_init(void *out_context, struct flb_config *config)
 {
     int ret;
@@ -1072,6 +1340,17 @@ static void flush_init(void *out_context, struct flb_config *config)
     }
 }
 
+/**
+ * This function handles the flushing of event data to Azure Kusto.
+ * It manages both buffered and non-buffered modes, handles JSON formatting,
+ * compression, and manages file uploads based on conditions like timeout and file size.
+ *
+ * @param event_chunk The event chunk containing the data to be flushed.
+ * @param out_flush The output flush context.
+ * @param i_ins The input instance (unused).
+ * @param out_context The output context, specifically for Azure Kusto.
+ * @param config The configuration context (unused).
+ */
 static void cb_azure_kusto_flush(struct flb_event_chunk *event_chunk,
                                  struct flb_output_flush *out_flush,
                                  struct flb_input_instance *i_ins, void *out_context,
@@ -1097,17 +1376,18 @@ static void cb_azure_kusto_flush(struct flb_event_chunk *event_chunk,
 
     flb_plg_debug(ctx->ins, "flushing bytes for event tag %s and size %zu", event_chunk->tag ,event_chunk->size);
 
+    /* Get the length of the event tag */
     tag_len = flb_sds_len(event_chunk->tag);
 
     if (ctx->buffering_enabled == FLB_TRUE) {
-
+    /* Determine the tag name based on the unify_tag setting */
         if (ctx->unify_tag == FLB_TRUE){
             tag_name = flb_sds_create("fluentbit-buffer-file-unify-tag.log");
         }else {
             tag_name = event_chunk->tag;
         }
         tag_name_len = flb_sds_len(tag_name);
-
+        /* Initialize the flush process */
         flush_init(ctx,config);
 
         /* Reformat msgpack to JSON payload */
@@ -1124,7 +1404,7 @@ static void cb_azure_kusto_flush(struct flb_event_chunk *event_chunk,
                                                  tag_name,
                                                  tag_name_len);
 
-        /* Discard upload_file if it has failed to upload ctx->scheduler_max_retries times */
+        /* Check if the file has failed to upload too many times */
         if (upload_file != NULL && upload_file->failures >= ctx->scheduler_max_retries) {
             flb_plg_warn(ctx->ins, "File with tag %s failed to send %d times, will not "
                                    "retry", event_chunk->tag, ctx->scheduler_max_retries);
@@ -1136,7 +1416,7 @@ static void cb_azure_kusto_flush(struct flb_event_chunk *event_chunk,
             upload_file = NULL;
         }
 
-        /* If upload_timeout has elapsed, upload file */
+        /* Check if the upload timeout has elapsed */
         if (upload_file != NULL && time(NULL) >
                                    (upload_file->create_time + ctx->upload_timeout)) {
             upload_timeout_check = FLB_TRUE;
@@ -1144,14 +1424,14 @@ static void cb_azure_kusto_flush(struct flb_event_chunk *event_chunk,
                           event_chunk->tag);
         }
 
-        /* If total_file_size has been reached, upload file */
+        /* Check if the total file size has been exceeded */
         if (upload_file && upload_file->size + json_size > ctx->file_size) {
             flb_plg_trace(ctx->ins, "total_file_size exceeded %s",
                           event_chunk->tag);
             total_file_size_check = FLB_TRUE;
         }
 
-        /* File is ready for upload, upload_file != NULL prevents from segfaulting. */
+        /* If the file is ready for upload */
         if ((upload_file != NULL) && (upload_timeout_check == FLB_TRUE || total_file_size_check == FLB_TRUE)) {
             flb_plg_debug(ctx->ins, "uploading file %s with size %zu", upload_file->fsf->name, upload_file->size);
             /* Load or refresh ingestion resources */
@@ -1162,7 +1442,7 @@ static void cb_azure_kusto_flush(struct flb_event_chunk *event_chunk,
                 goto error;
             }
 
-            /* ingest to kusto */
+            /* Ingest data to kusto */
             ret = ingest_to_kusto(ctx, json, upload_file,
                                       tag_name,
                                       tag_name_len);
@@ -1175,7 +1455,7 @@ static void cb_azure_kusto_flush(struct flb_event_chunk *event_chunk,
                 }else{
                     ret = azure_kusto_store_file_delete(ctx, upload_file);
                     if (ret != 0){
-                        /* file coudn't be deleted */
+                        /* File couldn't be deleted */
                         ret = FLB_RETRY;
                         if (upload_file){
                             azure_kusto_store_file_unlock(upload_file);
@@ -1183,7 +1463,7 @@ static void cb_azure_kusto_flush(struct flb_event_chunk *event_chunk,
                         }
                         goto error;
                     } else{
-                        /* file deleted successfully */
+                        /* File deleted successfully */
                         ret = FLB_OK;
                         goto cleanup;
                     }
@@ -1199,7 +1479,7 @@ static void cb_azure_kusto_flush(struct flb_event_chunk *event_chunk,
             }
         }
 
-        /* Buffer current chunk in filesystem and wait for next chunk from engine */
+        /* Buffer the current chunk in the filesystem */
         ret = buffer_chunk(ctx, upload_file, json, json_size,
                            tag_name, tag_name_len);
 
@@ -1215,7 +1495,7 @@ static void cb_azure_kusto_flush(struct flb_event_chunk *event_chunk,
     } else {
         /* Buffering mode is disabled, proceed with regular flush */
 
-        /* Reformat msgpack to JSON payload */
+        /* Reformat msgpack data to JSON payload */
         ret = azure_kusto_format(ctx, event_chunk->tag, tag_len, event_chunk->data,
                                  event_chunk->size, (void **)&json, &json_size);
         if (ret != 0) {
@@ -1228,6 +1508,7 @@ static void cb_azure_kusto_flush(struct flb_event_chunk *event_chunk,
         /* Map buffer */
         final_payload = json;
         final_payload_size = json_size;
+        /* Check if compression is enabled */
         if (ctx->compression_enabled == FLB_TRUE) {
             ret = flb_gzip_compress((void *) json, json_size,
                                     &final_payload, &final_payload_size);
@@ -1254,6 +1535,7 @@ static void cb_azure_kusto_flush(struct flb_event_chunk *event_chunk,
             goto error;
         }
 
+        /* Perform queued ingestion to Kusto */
         ret = azure_kusto_queued_ingestion(ctx, event_chunk->tag, tag_len, final_payload, final_payload_size, NULL);
         flb_plg_trace(ctx->ins, "after kusto queued ingestion %d", ret);
         if (ret != 0) {
@@ -1267,7 +1549,7 @@ static void cb_azure_kusto_flush(struct flb_event_chunk *event_chunk,
     }
 
     cleanup:
-    /* Cleanup */
+    /* Cleanup resources */
     if (json) {
         flb_sds_destroy(json);
     }
@@ -1280,6 +1562,7 @@ static void cb_azure_kusto_flush(struct flb_event_chunk *event_chunk,
     FLB_OUTPUT_RETURN(ret);
 
     error:
+    /* Error handling and cleanup */
     if (json) {
         flb_sds_destroy(json);
     }
@@ -1292,7 +1575,36 @@ static void cb_azure_kusto_flush(struct flb_event_chunk *event_chunk,
     FLB_OUTPUT_RETURN(ret);
 }
 
-
+/**
+ * cb_azure_kusto_exit - Clean up and finalize the Azure Kusto plugin context.
+ *
+ * This function is responsible for performing cleanup operations when the
+ * Azure Kusto plugin is exiting. It ensures that all resources are properly
+ * released and any remaining data is sent to Azure Kusto before the plugin
+ * shuts down.
+ *
+ * Functionality:
+ * - Checks if the plugin context (`ctx`) is valid. If not, it returns an error.
+ * - If there is locally buffered data, it attempts to send all chunks to Azure
+ *   Kusto using the `ingest_all_chunks` function. Logs an error if the operation
+ *   fails.
+ * - Destroys any active upstream connections (`ctx->u` and `ctx->imds_upstream`)
+ *   to free network resources.
+ * - Destroys mutexes (`resources_mutex`, `token_mutex`, `blob_mutex`) to ensure
+ *   proper synchronization cleanup.
+ * - Calls `azure_kusto_store_exit` to perform any additional storage-related
+ *   cleanup operations.
+ * - Finally, it calls `flb_azure_kusto_conf_destroy` to free the plugin context
+ *   and its associated resources.
+ *
+ * Parameters:
+ * - data: A pointer to the plugin context (`struct flb_azure_kusto`).
+ * - config: A pointer to the Fluent Bit configuration (`struct flb_config`).
+ *
+ * Returns:
+ * - 0 on successful cleanup.
+ * - -1 if the context is invalid or if an error occurs during cleanup.
+ */
 static int cb_azure_kusto_exit(void *data, struct flb_config *config)
 {
     struct flb_azure_kusto *ctx = data;
