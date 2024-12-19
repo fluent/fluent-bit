@@ -2670,6 +2670,69 @@ static int process_payload_logs_ng(struct flb_opentelemetry *ctx,
     return ret;
 }
 
+static int ingest_profiles_context_as_log_entry(struct flb_opentelemetry *ctx,
+                                                flb_sds_t tag,
+                                                struct cprof *profiles_context)
+{
+    cfl_sds_t                     text_encoded_profiles_context;
+    struct flb_log_event_encoder *encoder;
+    int                           ret;
+
+    encoder = flb_log_event_encoder_create(FLB_LOG_EVENT_FORMAT_FLUENT_BIT_V2);
+
+    if (encoder == NULL) {
+        return -1;
+    }
+
+    ret = cprof_encode_text_create(&text_encoded_profiles_context, profiles_context);
+
+    if (ret != CPROF_ENCODE_TEXT_SUCCESS) {
+        flb_log_event_encoder_destroy(encoder);
+
+        return -2;
+    }
+
+    flb_log_event_encoder_begin_record(encoder);
+
+    flb_log_event_encoder_set_current_timestamp(encoder);
+
+    ret = flb_log_event_encoder_append_body_values(
+                encoder,
+                FLB_LOG_EVENT_CSTRING_VALUE("Profile"),
+                FLB_LOG_EVENT_STRING_VALUE(text_encoded_profiles_context,
+                                            cfl_sds_len(text_encoded_profiles_context)));
+
+    cprof_encode_text_destroy(text_encoded_profiles_context);
+
+    if (ret != FLB_EVENT_ENCODER_SUCCESS) {
+        flb_log_event_encoder_destroy(encoder);
+
+        return -3;
+    }
+
+    ret = flb_log_event_encoder_commit_record(encoder);
+
+    if (ret != FLB_EVENT_ENCODER_SUCCESS) {
+        flb_log_event_encoder_destroy(encoder);
+
+        return -4;
+    }
+
+    ret = flb_input_log_append(ctx->ins,
+                               tag,
+                               flb_sds_len(tag),
+                               encoder->output_buffer,
+                               encoder->output_length);
+
+    flb_log_event_encoder_destroy(encoder);
+
+    if (ret != FLB_EVENT_ENCODER_SUCCESS) {
+        return -5;
+    }
+
+    return 0;
+}
+
 static int process_payload_profiles_ng(struct flb_opentelemetry *ctx,
                                        flb_sds_t tag,
                                        struct flb_http_request *request,
@@ -2719,10 +2782,17 @@ static int process_payload_profiles_ng(struct flb_opentelemetry *ctx,
             return -1;
         }
 
-        ret = flb_input_profiles_append(ctx->ins,
-                                        tag,
-                                        flb_sds_len(tag),
-                                        profiles_context);
+        if (ctx->encode_profiles_as_text) {
+            ret = ingest_profiles_context_as_log_entry(ctx,
+                                                       tag,
+                                                       profiles_context);
+        }
+        else {
+            ret = flb_input_profiles_append(ctx->ins,
+                                            tag,
+                                            flb_sds_len(tag),
+                                            profiles_context);
+        }
 
         cprof_decode_opentelemetry_destroy(profiles_context);
 
