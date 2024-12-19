@@ -38,7 +38,7 @@
 #define FLB_PROCESSOR_LOGS           1
 #define FLB_PROCESSOR_METRICS        2
 #define FLB_PROCESSOR_TRACES         4
-#define FLB_PROCESSOR_PROFILES       5
+#define FLB_PROCESSOR_PROFILES       8
 
 /* Type of processor unit: 'pipeline filter' or 'native unit' */
 #define FLB_PROCESSOR_UNIT_NATIVE    0
