@@ -74,8 +74,6 @@ jobs:
       fail-fast: false
       matrix:
         config:
-          - name: "Normal macOS-latest runner (Intel)"
-            runner: macos-12
           - name: "Apple Silicon macOS runner"
             runner: macos-14
 
@@ -121,8 +119,6 @@ jobs:
       fail-fast: false
       matrix:
         config:
-          - name: "Normal macOS-latest package (Intel)"
-            os: macos-12
           - name: "Apple Silicon macOS package"
             os: macos-14
 
