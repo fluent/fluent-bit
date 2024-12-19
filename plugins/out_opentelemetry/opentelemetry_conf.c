@@ -332,6 +332,7 @@ struct opentelemetry_context *flb_opentelemetry_context_create(struct flb_output
     ctx->logs_uri_sanitized = sanitize_uri(ctx->logs_uri);
     ctx->traces_uri_sanitized = sanitize_uri(ctx->traces_uri);
     ctx->metrics_uri_sanitized = sanitize_uri(ctx->metrics_uri);
+    ctx->profiles_uri_sanitized = sanitize_uri(ctx->profiles_uri);
 
     if (ctx->logs_uri_sanitized == NULL) {
         flb_plg_trace(ctx->ins,
@@ -357,6 +358,16 @@ struct opentelemetry_context *flb_opentelemetry_context_create(struct flb_output
         flb_plg_trace(ctx->ins,
                       "Could not allocate memory for sanitized "
                       "metric endpoint uri");
+
+        flb_opentelemetry_context_destroy(ctx);
+
+        return NULL;
+    }
+
+    if (ctx->profiles_uri_sanitized == NULL) {
+        flb_plg_trace(ctx->ins,
+                      "Could not allocate memory for sanitized "
+                      "profiles endpoint uri");
 
         flb_opentelemetry_context_destroy(ctx);
 
@@ -602,6 +613,10 @@ void flb_opentelemetry_context_destroy(struct opentelemetry_context *ctx)
 
     if (ctx->metrics_uri_sanitized != NULL && ctx->metrics_uri_sanitized != ctx->metrics_uri) {
         flb_free(ctx->metrics_uri_sanitized);
+    }
+
+    if (ctx->profiles_uri_sanitized != NULL && ctx->profiles_uri_sanitized != ctx->profiles_uri) {
+        flb_free(ctx->profiles_uri_sanitized);
     }
 
     /* release log_body_key_list */
