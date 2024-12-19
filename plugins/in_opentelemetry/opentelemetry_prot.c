@@ -2782,7 +2782,7 @@ static int process_payload_profiles_ng(struct flb_opentelemetry *ctx,
             return -1;
         }
 
-        if (ctx->encode_profiles_as_text) {
+        if (ctx->encode_profiles_as_log) {
             ret = ingest_profiles_context_as_log_entry(ctx,
                                                        tag,
                                                        profiles_context);
