@@ -721,6 +721,7 @@ struct flb_output_flush *flb_output_flush_create(struct flb_task *task,
     out_flush = (struct flb_output_flush *) flb_calloc(1, sizeof(struct flb_output_flush));
     if (!out_flush) {
         flb_errno();
+
         return NULL;
     }
 
@@ -774,6 +775,8 @@ struct flb_output_flush *flb_output_flush_create(struct flb_task *task,
             p_buf = flb_calloc(evc->size * 2, sizeof(char));
 
             if (p_buf == NULL) {
+                flb_errno();
+
                 flb_coro_destroy(coro);
                 flb_free(out_flush);
 
@@ -833,6 +836,8 @@ struct flb_output_flush *flb_output_flush_create(struct flb_task *task,
                             flb_realloc(p_buf, p_size + serialized_context_size);
 
                         if (resized_serialization_buffer == NULL) {
+                            flb_errno();
+
                             cmt_encode_msgpack_destroy(serialized_context_buffer);
                             flb_coro_destroy(coro);
                             flb_free(out_flush);
@@ -883,6 +888,8 @@ struct flb_output_flush *flb_output_flush_create(struct flb_task *task,
             p_buf = flb_calloc(evc->size * 2, sizeof(char));
 
             if (p_buf == NULL) {
+                flb_errno();
+
                 flb_coro_destroy(coro);
                 flb_free(out_flush);
 
@@ -930,6 +937,8 @@ struct flb_output_flush *flb_output_flush_create(struct flb_task *task,
                             flb_realloc(p_buf, p_size + serialized_context_size);
 
                         if (resized_serialization_buffer == NULL) {
+                            flb_errno();
+
                             ctr_encode_msgpack_destroy(serialized_context_buffer);
                             flb_coro_destroy(coro);
                             flb_free(out_flush);
@@ -980,6 +989,8 @@ struct flb_output_flush *flb_output_flush_create(struct flb_task *task,
             p_buf = flb_calloc(evc->size * 2, sizeof(char));
 
             if (p_buf == NULL) {
+                flb_errno();
+
                 flb_coro_destroy(coro);
                 flb_free(out_flush);
 
@@ -1026,6 +1037,8 @@ struct flb_output_flush *flb_output_flush_create(struct flb_task *task,
                             flb_realloc(p_buf, p_size + cfl_sds_len(serialized_profiles_context_buffer));
 
                         if (resized_serialization_buffer == NULL) {
+                            flb_errno();
+
                             cprof_encode_msgpack_destroy(serialized_profiles_context_buffer);
                             flb_coro_destroy(coro);
                             flb_free(out_flush);
