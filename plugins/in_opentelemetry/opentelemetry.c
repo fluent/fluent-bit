@@ -210,7 +210,7 @@ static struct flb_config_map config_map[] = {
     },
     {
      FLB_CONFIG_MAP_BOOL, "encode_profiles_as_log", "true",
-     0, FLB_TRUE, offsetof(struct flb_opentelemetry, encode_profiles_as_text),
+     0, FLB_TRUE, offsetof(struct flb_opentelemetry, encode_profiles_as_log),
      "Encode profiles received as text and ingest them in the logging pipeline"
     },
 
