@@ -501,7 +501,7 @@ static int decode_profile_container_entry(struct cprof_scope_profiles *scope_pro
         return CPROF_DECODE_OPENTELEMETRY_INVALID_ARGUMENT_ERROR;
     }
 
-    profile = cprof_profile_create(NULL);
+    profile = cprof_profile_create();
 
     if (profile == NULL) {
         return CPROF_DECODE_OPENTELEMETRY_ALLOCATION_ERROR;

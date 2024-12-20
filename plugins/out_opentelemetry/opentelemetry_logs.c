@@ -27,8 +27,6 @@
 #include <fluent-bit/flb_ra_key.h>
 #include <fluent-bit/flb_gzip.h>
 
-
-//#include <cfl/cfl.h>
 #include <fluent-otel-proto/fluent-otel.h>
 
 #include "opentelemetry.h"
@@ -82,26 +80,6 @@ static int hex_to_id(char *str, int len, unsigned char *out_buf, int out_size)
 }
 
 /* https://opentelemetry.io/docs/specs/otel/logs/data-model/#field-severitynumber */
-static int is_valid_severity_text(const char *str, size_t str_len)
-{
-    if (str_len == 5) {
-        if (strncmp("TRACE", str, 5) == 0 ||
-            strncmp("DEBUG", str, 5) == 0 ||
-            strncmp("ERROR", str, 5) == 0 ||
-            strncmp("FATAL", str, 5) == 0) {
-            return FLB_TRUE;
-        }
-    }
-    else if (str_len == 4) {
-        if (strncmp("INFO", str, 4) == 0||
-            strncmp("WARN", str, 4) == 0) {
-            return FLB_TRUE;
-        }
-    }
-    return FLB_FALSE;
-}
-
-/* https://opentelemetry.io/docs/specs/otel/logs/data-model/#field-severitynumber */
 static int is_valid_severity_number(uint64_t val)
 {
     if (val >= 1 && val <= 24) {
@@ -109,7 +87,6 @@ static int is_valid_severity_number(uint64_t val)
     }
     return FLB_FALSE;
 }
-
 
 /*
  * From a group record, extract it metadata and validate if it has a valid OTLP schema and check that
@@ -495,9 +472,7 @@ static int append_v1_logs_metadata_and_fields(struct opentelemetry_context *ctx,
     /* SeverityText */
     ra_val = flb_ra_get_value_object(ctx->ra_log_meta_otlp_severity_text, *event->metadata);
     if (ra_val != NULL) {
-        if (ra_val->o.type == MSGPACK_OBJECT_STR &&
-            is_valid_severity_text(ra_val->o.via.str.ptr, ra_val->o.via.str.size)) {
-
+        if (ra_val->o.type == MSGPACK_OBJECT_STR) {
             log_record->severity_text = flb_calloc(1, ra_val->o.via.str.size + 1);
             if (log_record->severity_text) {
                 strncpy(log_record->severity_text, ra_val->o.via.str.ptr, ra_val->o.via.str.size);
@@ -510,8 +485,7 @@ static int append_v1_logs_metadata_and_fields(struct opentelemetry_context *ctx,
     if (!severity_text_set && ctx->ra_severity_text_metadata) {
         ra_val = flb_ra_get_value_object(ctx->ra_severity_text_metadata, *event->metadata);
         if (ra_val != NULL) {
-            if (ra_val->o.type == MSGPACK_OBJECT_STR &&
-                is_valid_severity_text(ra_val->o.via.str.ptr, ra_val->o.via.str.size)) {
+            if (ra_val->o.type == MSGPACK_OBJECT_STR) {
                 log_record->severity_text = flb_calloc(1, ra_val->o.via.str.size + 1);
                 if (log_record->severity_text) {
                     strncpy(log_record->severity_text, ra_val->o.via.str.ptr, ra_val->o.via.str.size);
@@ -525,8 +499,7 @@ static int append_v1_logs_metadata_and_fields(struct opentelemetry_context *ctx,
     if (!severity_text_set && ctx->ra_severity_text_message) {
         ra_val = flb_ra_get_value_object(ctx->ra_severity_text_message, *event->body);
         if (ra_val != NULL) {
-            if (ra_val->o.type == MSGPACK_OBJECT_STR &&
-                is_valid_severity_text(ra_val->o.via.str.ptr, ra_val->o.via.str.size)) {
+            if (ra_val->o.type == MSGPACK_OBJECT_STR) {
                 log_record->severity_text = flb_calloc(1, ra_val->o.via.str.size + 1);
                 if (log_record->severity_text) {
                     strncpy(log_record->severity_text, ra_val->o.via.str.ptr, ra_val->o.via.str.size);

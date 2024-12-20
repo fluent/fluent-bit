@@ -86,12 +86,11 @@ struct flb_in_fw_config *fw_config_init(struct flb_input_instance *i_ins)
     }
 
     /* Shared Key */
-    p = flb_input_get_property("shared_key", i_ins);
-    if (p) {
-        config->shared_key = flb_sds_create(p);
-    }
-    else {
-        config->shared_key = NULL;
+    if (config->empty_shared_key) {
+        if (config->shared_key) {
+            flb_sds_destroy(config->shared_key);
+        }
+        config->shared_key = flb_sds_create("");
     }
 
     /* Self Hostname */

@@ -321,6 +321,11 @@ if (FLB_SYSTEM_LINUX)
   include(cmake/s390x.cmake)
 endif ()
 
+# Build for Linux - riscv64 arch
+if (FLB_SYSTEM_LINUX)
+  include(cmake/riscv64.cmake)
+endif ()
+
 # Enable signed char support on Linux AARCH64 if specified
 if (FLB_LINUX_ON_AARCH64)
   set (CMAKE_C_FLAGS "${CMAKE_C_FLAGS} -fsigned-char")

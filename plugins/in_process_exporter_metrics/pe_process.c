@@ -759,8 +759,10 @@ static int process_proc_fds(struct flb_pe *ctx, uint64_t ts,
 
     snprintf(fd_procfs, sizeof(fd_procfs) - 1, "%s/%s", process->str, "fd");
     dir = opendir(fd_procfs);
-    if (dir == NULL && errno == EACCES) {
-        flb_plg_debug(ctx->ins, "NO read access for path: %s", fd_procfs);
+    if (dir == NULL) {
+        if (errno == EACCES) {
+            flb_plg_debug(ctx->ins, "NO read access for path: %s", fd_procfs);
+        }
         return -1;
     }
 
