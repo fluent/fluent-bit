@@ -261,6 +261,71 @@ error:
     return -1;
 }
 
+static int systemd_process_simple(struct flb_config *config,
+                                  struct flb_input_instance *ins,
+                                  void *plugin_context,
+                                  void *format_context,
+                                  const void *data, size_t data_size)
+{
+    int i;
+    int ret;
+    int len;
+    size_t length = data_size;
+    char *buf = NULL;
+    const char *sep;
+    const char *key;
+    const char *val;
+    struct flb_systemd_config *ctx = plugin_context;
+
+    key = (const char *) data;
+    sep = strchr(key, '=');
+    if (sep == NULL) {
+        return -2;
+    }
+
+    len = (sep - key);
+
+    ret = flb_log_event_encoder_append_body_string_length(
+            ctx->log_encoder, len);
+
+    if (ctx->lowercase == FLB_TRUE) {
+        /*
+         * Ensure buf to have enough space for the key because the libsystemd
+         * might return larger data than the threshold.
+         */
+        if (buf == NULL) {
+            buf = flb_sds_create_len(NULL, ctx->threshold);
+        }
+        if (flb_sds_alloc(buf) < len) {
+            buf = flb_sds_increase(buf, len - flb_sds_alloc(buf));
+        }
+        for (i = 0; i < len; i++) {
+            buf[i] = tolower(key[i]);
+        }
+
+        if (ret == FLB_EVENT_ENCODER_SUCCESS) {
+            ret = flb_log_event_encoder_append_body_string_body(
+                    ctx->log_encoder, buf, len);
+        }
+    }
+    else {
+        if (ret == FLB_EVENT_ENCODER_SUCCESS) {
+            ret = flb_log_event_encoder_append_body_string_body(
+                    ctx->log_encoder, (char *) key, len);
+        }
+    }
+
+    val = sep + 1;
+    len = length - (sep - key) - 1;
+
+    if (ret == FLB_EVENT_ENCODER_SUCCESS) {
+        ret = flb_log_event_encoder_append_body_string(
+                ctx->log_encoder, (char *) val, len);
+    }
+
+    return 0;
+}
+
 static int in_systemd_collect(struct flb_input_instance *ins,
                               struct flb_config *config, void *in_context)
 {
@@ -387,44 +452,74 @@ static int in_systemd_collect(struct flb_input_instance *ins,
             ret = flb_log_event_encoder_set_timestamp(ctx->log_encoder, &tm);
         }
 
-        /* create an empty kvlist as the labels */
-        kvlist = cfl_kvlist_create();
-        if (!kvlist) {
-            flb_plg_error(ctx->ins, "error allocating kvlist");
-            break;
-        }
-
         /* Pack every field in the entry */
         entries = 0;
         skip_entries = 0;
-        while (sd_journal_enumerate_data(ctx->j, &data, &length) > 0 &&
-               entries < ctx->max_fields) {
-            key = (const char *) data;
-            if (ctx->strip_underscores == FLB_TRUE && key[0] == '_') {
-                key++;
-                length--;
+        if (ctx->compact_key == FLB_TRUE) {
+            /* create an empty kvlist as the labels */
+            kvlist = cfl_kvlist_create();
+            if (!kvlist) {
+                flb_plg_error(ctx->ins, "error allocating kvlist");
+                break;
             }
 
-            ret = systemd_enumerate_data_store(config, ctx->ins,
-                                               (void *)ctx, (void *)kvlist,
-                                               key, length);
-            if (ret == -2) {
-                skip_entries++;
-                continue;
-            }
-            else if (ret == -1) {
-                continue;
-            }
+            while (sd_journal_enumerate_data(ctx->j, &data, &length) > 0 &&
+                   entries < ctx->max_fields) {
+                key = (const char *) data;
+                if (ctx->strip_underscores == FLB_TRUE && key[0] == '_') {
+                    key++;
+                    length--;
+                }
 
-            entries++;
+                ret = systemd_enumerate_data_store(config, ctx->ins,
+                                                   (void *)ctx, (void *)kvlist,
+                                                   key, length);
+                if (ret == -2) {
+                    skip_entries++;
+                    continue;
+                }
+                else if (ret == -1) {
+                    continue;
+                }
+
+                entries++;
+            }
+            rows++;
+
+            /* Interpret cfl_kvlist as logs type of events later. */
+            ret = append_enumerate_data(ctx, kvlist);
+
+            if (kvlist) {
+                cfl_kvlist_destroy(kvlist);
+            }
         }
-        rows++;
+        else {
+            /* Pack every field in the entry */
+            while (sd_journal_enumerate_data(ctx->j, &data, &length) > 0 &&
+                   entries < ctx->max_fields) {
+                key = (const char *) data;
+                if (ctx->strip_underscores == FLB_TRUE && key[0] == '_') {
+                    key++;
+                    length--;
+                }
 
-        /* Interpret cfl_kvlist as logs type of events later. */
-        ret = append_enumerate_data(ctx, kvlist);
+                if (ret == FLB_EVENT_ENCODER_SUCCESS) {
+                    ret = systemd_process_simple(config, ctx->ins,
+                                                 (void *)ctx, NULL,
+                                                 key, length);
+                }
 
-        if (kvlist) {
-            cfl_kvlist_destroy(kvlist);
+                if (ret == -2) {
+                    skip_entries++;
+                    continue;
+                }
+                else if (ret == -1) {
+                    continue;
+                }
+
+                entries++;
+            }
+            rows++;
         }
 
         if (skip_entries > 0) {
@@ -668,35 +763,49 @@ static int cb_systemd_format_test(struct flb_config *config,
         ret = flb_log_event_encoder_set_timestamp(ctx->log_encoder, &tm);
     }
 
-    /* create an empty kvlist as the labels */
-    kvlist = cfl_kvlist_create();
-    if (!kvlist) {
-        flb_plg_error(ctx->ins, "error allocating kvlist");
-        return -1;
-    }
-
     keys = (const char *) data;
     kvs = cfl_utils_split(keys, '\n', -1 );
     if (kvs == NULL) {
         goto split_error;
     }
 
-    cfl_list_foreach(head, kvs) {
-        cur = cfl_list_entry(head, struct cfl_split_entry, _head);
-        ret = systemd_enumerate_data_store(config, ctx->ins,
-                                           (void *)ctx, (void *)kvlist,
-                                           cur->value, cur->len);
+    if (ctx->compact_key == FLB_TRUE) {
+        /* create an empty kvlist as the labels */
+        kvlist = cfl_kvlist_create();
+        if (!kvlist) {
+            flb_plg_error(ctx->ins, "error allocating kvlist");
+            return -1;
+        }
 
-        if (ret == -2 || ret == -1) {
-            continue;
+        cfl_list_foreach(head, kvs) {
+            cur = cfl_list_entry(head, struct cfl_split_entry, _head);
+            ret = systemd_enumerate_data_store(config, ctx->ins,
+                                               (void *)ctx, (void *)kvlist,
+                                               cur->value, cur->len);
+
+            if (ret == -2 || ret == -1) {
+                continue;
+            }
+        }
+
+        /* Interpret cfl_kvlist as logs type of events later. */
+        ret = append_enumerate_data(ctx, kvlist);
+
+        if (kvlist) {
+            cfl_kvlist_destroy(kvlist);
         }
     }
+    else {
+        cfl_list_foreach(head, kvs) {
+            cur = cfl_list_entry(head, struct cfl_split_entry, _head);
+            ret = systemd_process_simple(config, ctx->ins,
+                                         (void *)ctx, NULL,
+                                         cur->value, cur->len);
 
-    /* Interpret cfl_kvlist as logs type of events later. */
-    ret = append_enumerate_data(ctx, kvlist);
-
-    if (kvlist) {
-        cfl_kvlist_destroy(kvlist);
+            if (ret == -2 || ret == -1) {
+                continue;
+            }
+        }
     }
 
     if (kvs != NULL) {
@@ -759,6 +868,11 @@ static struct flb_config_map config_map[] = {
       FLB_CONFIG_MAP_BOOL, "strip_underscores", "false",
       0, FLB_TRUE, offsetof(struct flb_systemd_config, strip_underscores),
       "Strip undersecores from fields"
+    },
+    {
+      FLB_CONFIG_MAP_BOOL, "compact_key", "true",
+      0, FLB_TRUE, offsetof(struct flb_systemd_config, compact_key),
+      "Do compaction for dupliucated keys into an array"
     },
 #ifdef FLB_HAVE_SQLDB
     {
