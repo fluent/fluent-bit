@@ -378,7 +378,7 @@ enum conf_type {
 #define FLB_CONF_STR_HOT_RELOAD_ENSURE_THREAD_SAFETY  "Hot_Reload.Ensure_Thread_Safety"
 
 /* Set up maxstdio (Windows) */
-#define FLB_CONF_STR_MAX_STDIO          "Max_Stdio"
+#define FLB_CONF_STR_WINDOWS_MAX_STDIO "windows.maxstdio"
 
 /* DNS */
 #define FLB_CONF_DNS_MODE              "dns.mode"
