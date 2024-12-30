@@ -184,7 +184,7 @@ struct flb_service_config service_configs[] = {
 #endif
 
 #ifdef FLB_SYSTEM_WINDOWS
-    {FLB_CONF_STR_MAX_STDIO,
+    {FLB_CONF_STR_WINDOWS_MAX_STDIO,
      FLB_CONF_TYPE_INT,
      offsetof(struct flb_config, maxstdio)},
 #endif
