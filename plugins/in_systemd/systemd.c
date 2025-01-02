@@ -218,16 +218,16 @@ static int systemd_enumerate_data_store(struct flb_config *config,
 
             cfl_array_append_string_s(array,
                                       tmp_val->data.as_string,
-                                      strlen(tmp_val->data.as_string),
+                                      tmp_val->size,
                                       CFL_FALSE);
-            cfl_array_append_string_s(array, (char *)val, strlen(val), CFL_FALSE);
+            cfl_array_append_string_s(array, (char *)val, len, CFL_FALSE);
             cfl_kvlist_insert_array_s(kvlist, list_key, key_len, array);
             cfl_variant_destroy(tmp_val);
             break;
         case CFL_VARIANT_ARRAY:
             /* Just appending the newly arrived field(s) */
             array = tmp_val->data.as_array;
-            cfl_array_append_string_s(array, (char *)val, strlen(val), CFL_FALSE);
+            cfl_array_append_string_s(array, (char *)val, len, CFL_FALSE);
             break;
         default:
             /* nop */
@@ -236,7 +236,7 @@ static int systemd_enumerate_data_store(struct flb_config *config,
     }
     else {
         cfl_kvlist_insert_string_s(kvlist, list_key, key_len,
-                                   (char *)val, strlen(val), CFL_FALSE);
+                                   (char *)val, len, CFL_FALSE);
     }
 
     flb_sds_destroy(list_key);
