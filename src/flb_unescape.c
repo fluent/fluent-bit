@@ -122,11 +122,13 @@ static int u8_read_escape_sequence(const char *str, int size, uint32_t *dest)
         }
         if (dno != 4) {
             /* Incomplete \u escape sequence */
+            ch = L'\uFFFD';
             goto invalid_sequence;
         }
         ch = strtol(digs, NULL, 16);
         if (u8_low_surrogate(ch)) {
             /* Invalid: low surrogate without preceding high surrogate */
+            ch = L'\uFFFD';
             goto invalid_sequence;
         }
         else if (u8_high_surrogate(ch)) {
@@ -140,6 +142,7 @@ static int u8_read_escape_sequence(const char *str, int size, uint32_t *dest)
                 }
                 if (dno != 4) {
                     /* Incomplete low surrogate */
+                    ch = L'\uFFFD';
                     goto invalid_sequence;
                 }
                 low = strtol(digs, NULL, 16);
@@ -148,11 +151,13 @@ static int u8_read_escape_sequence(const char *str, int size, uint32_t *dest)
                 }
                 else {
                     /* Invalid: high surrogate not followed by low surrogate */
+                    ch = L'\uFFFD';
                     goto invalid_sequence;
                 }
             }
             else {
                 /* Invalid: high surrogate not followed by \u */
+                ch = L'\uFFFD';
                 goto invalid_sequence;
             }
         }
@@ -165,12 +170,12 @@ static int u8_read_escape_sequence(const char *str, int size, uint32_t *dest)
             ch = strtol(digs, NULL, 16);
         }
     }
+
+invalid_sequence:
+
     *dest = ch;
 
     return i;
-
-invalid_sequence:
-    return -1;
 }
 
 int flb_unescape_string_utf8(const char *in_buf, int sz, char *out_buf)
