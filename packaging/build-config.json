@@ -107,6 +107,10 @@
         {
           "target": "raspbian/bullseye",
           "type": "deb"
+        },
+        {
+          "target": "raspbian/bookworm",
+          "type": "deb"
         }
       ],
       "windows_targets" : [
