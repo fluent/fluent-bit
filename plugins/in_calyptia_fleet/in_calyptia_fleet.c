@@ -212,7 +212,8 @@ flb_sds_t fleet_config_filename(struct flb_in_calyptia_fleet_config *ctx, char *
 
     if (ctx->fleet_config_legacy_format) {
         ret = flb_sds_printf(&cfgname, PATH_SEPARATOR "%s.conf", fname);
-    } else {
+    }
+    else {
         ret = flb_sds_printf(&cfgname, PATH_SEPARATOR "%s.yaml", fname);
     }
 
@@ -1390,7 +1391,8 @@ static flb_sds_t calyptia_config_get_newest(struct flb_in_calyptia_fleet_config 
             flb_sds_destroy(glob_conf_files);
             return NULL;
         }
-    } else if (flb_sds_cat_safe(&glob_conf_files, PATH_SEPARATOR "*.yaml", strlen(PATH_SEPARATOR "*.yaml")) != 0) {
+    }
+    else if (flb_sds_cat_safe(&glob_conf_files, PATH_SEPARATOR "*.yaml", strlen(PATH_SEPARATOR "*.yaml")) != 0) {
         flb_plg_error(ctx->ins, "unable to concatenate fleet glob");
         flb_sds_destroy(glob_conf_files);
         return NULL;
@@ -1596,7 +1598,8 @@ static void fleet_config_get_properties(flb_sds_t *buf, struct mk_list *props, i
         if (kv->key != NULL && kv->val != NULL) {
             if (fleet_config_legacy_format) {
                 flb_sds_printf(buf, "    %s ", kv->key);
-            } else {
+            }
+            else {
                 flb_sds_printf(buf, "      %s: ", kv->key);
             }
             flb_sds_cat_safe(buf, kv->val, strlen(kv->val));
@@ -1686,7 +1689,8 @@ flb_sds_t fleet_config_get(struct flb_in_calyptia_fleet_config *ctx)
         if (ctx->fleet_config_legacy_format) {
             flb_sds_printf(&buf, "[CUSTOM]\n");
             flb_sds_printf(&buf, "    name %s\n", c_ins->p->name);
-        } else {
+        }
+        else {
             flb_sds_printf(&buf, "customs:\n");
             flb_sds_printf(&buf, "    - name: %s\n", c_ins->p->name);
         }
@@ -1780,7 +1784,8 @@ int get_calyptia_fleet_config(struct flb_in_calyptia_fleet_config *ctx)
 
         if (ctx->fleet_config_legacy_format) {
             flb_sds_printf(&ctx->fleet_url, CALYPTIA_ENDPOINT_FLEET_CONFIG_INI, ctx->fleet_id);
-        } else {
+        }
+        else {
             flb_sds_printf(&ctx->fleet_url, CALYPTIA_ENDPOINT_FLEET_CONFIG_YAML, ctx->fleet_id);
         }
     }
@@ -1801,7 +1806,8 @@ int get_calyptia_fleet_config(struct flb_in_calyptia_fleet_config *ctx)
     header = flb_sds_create_size(CALYPTIA_MAX_DIR_SIZE);
     if (ctx->fleet_config_legacy_format) {
         flb_sds_printf(&header, "@include %s\n\n", hdrname);
-    } else {
+    }
+    else {
         flb_sds_printf(&header, "includes: \n    - %s\n", hdrname);
     }
     flb_sds_destroy(hdrname);
