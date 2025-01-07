@@ -40,6 +40,7 @@
 
 /* Stackdriver Logging 'write' end-point */
 #define FLB_STD_WRITE_URI "/v2/entries:write"
+#define FLB_STD_WRITE_URI_SIZE 17
 #define FLB_STD_WRITE_URL "https://logging.googleapis.com" FLB_STD_WRITE_URI
 
 /* Timestamp format */
@@ -212,6 +213,10 @@ struct flb_stackdriver {
 
     /* the key to extract unstructured text payload from */
     flb_sds_t text_payload_key;
+
+    /* config key to allow an alternate Cloud Logging URL */
+    flb_sds_t cloud_logging_base_url;
+    flb_sds_t cloud_logging_write_url;
 
 #ifdef FLB_HAVE_METRICS
     /* metrics */
