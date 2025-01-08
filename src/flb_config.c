@@ -226,6 +226,40 @@ struct flb_service_config service_configs[] = {
     {NULL, FLB_CONF_TYPE_OTHER, 0} /* end of array */
 };
 
+static char *flb_config_getenv(const char *name)
+{
+    char *ret;
+    const char *env;
+    char *ucname = flb_calloc(1, strlen(name)+1);
+    char *lcname = flb_calloc(1, strlen(name)+1);
+    int idx;
+
+
+    for (idx = 0; idx < strlen(name); idx++) {
+        ucname[idx] = toupper(name[idx]);
+    }
+
+    for (idx = 0; idx < strlen(name); idx++) {
+        lcname[idx] = toupper(name[idx]);
+    }
+
+    env = getenv(ucname);
+    if (env == NULL || flb_str_emptyval(env) == FLB_TRUE) {
+        env = getenv(lcname);
+    }
+
+    flb_free(ucname);
+    flb_free(lcname);
+
+    if (flb_str_emptyval(env)) {
+        return NULL;
+    }
+
+    ret = flb_malloc(strlen(env) + 1);
+    memcpy(ret, env, strlen(env)+1);
+
+    return ret;
+}
 
 struct flb_config *flb_config_init()
 {
@@ -289,23 +323,6 @@ struct flb_config *flb_config_init()
     config->hc_retry_failure_count       = HC_RETRY_FAILURE_COUNTS_DEFAULT;
     config->health_check_period          = HEALTH_CHECK_PERIOD;
 #endif
-
-    config->http_proxy = getenv("HTTP_PROXY");
-    if (flb_str_emptyval(config->http_proxy) == FLB_TRUE) {
-        config->http_proxy = getenv("http_proxy");
-        if (flb_str_emptyval(config->http_proxy) == FLB_TRUE) {
-            /* Proxy should not be set when `HTTP_PROXY` or `http_proxy` are set to "" */
-            config->http_proxy = NULL;
-        }
-    }
-    config->no_proxy = getenv("NO_PROXY");
-    if (flb_str_emptyval(config->no_proxy) == FLB_TRUE || config->http_proxy == NULL) {
-        config->no_proxy = getenv("no_proxy");
-        if (flb_str_emptyval(config->no_proxy) == FLB_TRUE || config->http_proxy == NULL) {
-            /* NoProxy  should not be set when `NO_PROXY` or `no_proxy` are set to "" or there is no Proxy. */
-            config->no_proxy = NULL;
-        }
-    }
 
     /* Routing */
     flb_routes_mask_set_size(1, config);
@@ -440,6 +457,12 @@ struct flb_config *flb_config_init()
 #endif
 
     return config;
+}
+
+void flb_config_env(struct flb_config *config)
+{
+    config->http_proxy = flb_config_getenv("HTTP_PROXY");
+    config->no_proxy = flb_config_getenv("NO_PROXY");
 }
 
 void flb_config_exit(struct flb_config *config)

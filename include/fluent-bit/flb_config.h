@@ -330,6 +330,7 @@ struct flb_config {
 #define FLB_CONFIG_LOG_LEVEL(c) (c->log->level)
 
 struct flb_config *flb_config_init();
+void flb_config_env(struct flb_config *config);
 void flb_config_exit(struct flb_config *config);
 const char *flb_config_prop_get(const char *key, struct mk_list *list);
 int flb_config_set_property(struct flb_config *config,
