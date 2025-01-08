@@ -397,6 +397,10 @@ enum conf_type {
 #define FLB_CONF_DNS_PREFER_IPV4       "dns.prefer_ipv4"
 #define FLB_CONF_DNS_PREFER_IPV6       "dns.prefer_ipv6"
 
+/* Proxies */
+#define FLB_CONF_HTTP_PROXY            "net.http_proxy"
+#define FLB_CONF_NO_PROXY              "net.no_proxy"
+
 /* Storage / Chunk I/O */
 #define FLB_CONF_STORAGE_PATH          "storage.path"
 #define FLB_CONF_STORAGE_SYNC          "storage.sync"
