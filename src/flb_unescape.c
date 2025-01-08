@@ -82,6 +82,7 @@ static int u8_read_escape_sequence(const char *str, int size, uint32_t *dest)
 {
     uint32_t ch = 0;
     char digs[9]="\0\0\0\0\0\0\0\0";
+    char ldigs[9]="\0\0\0\0\0\0\0\0";
     int dno=0, i=1;
     uint32_t low = 0;
 
@@ -122,8 +123,10 @@ static int u8_read_escape_sequence(const char *str, int size, uint32_t *dest)
         }
         if (dno != 4) {
             /* Incomplete \u escape sequence */
-            ch = L'\uFFFD';
-            goto invalid_sequence;
+            if (dno > 0) {
+                ch = L'\uFFFD';
+                goto invalid_sequence;
+            }
         }
         ch = strtol(digs, NULL, 16);
         if (u8_low_surrogate(ch)) {
@@ -138,14 +141,16 @@ static int u8_read_escape_sequence(const char *str, int size, uint32_t *dest)
                 dno = 0;
                 i += 2; /* Skip "\u" */
                 while (i < size && hex_digit(str[i]) && dno < 4) {
-                    digs[dno++] = str[i++];
+                    ldigs[dno++] = str[i++];
                 }
                 if (dno != 4) {
                     /* Incomplete low surrogate */
-                    ch = L'\uFFFD';
-                    goto invalid_sequence;
+                    if (dno > 0) {
+                        ch = L'\uFFFD';
+                        goto invalid_sequence;
+                    }
                 }
-                low = strtol(digs, NULL, 16);
+                low = strtol(ldigs, NULL, 16);
                 if (u8_low_surrogate(low)) {
                     ch = u8_combine_surrogates(ch, low);
                 }
