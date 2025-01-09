@@ -230,8 +230,8 @@ static inline bool flb_vector8_is_highbit_set(const flb_vector8 v)
 	return vmaxvq_u8(v) > 0x7F;
 #elif defined(FLB_SIMD_RVV)
 	return __riscv_vmv_x_s_u8m1_u8(__riscv_vredmaxu_vs_u8m1_u8m1(v,
-																 __riscv_vmv_v_x_u8m1(0, RVV_VEC8_INST_LEN),
-																 RVV_VEC8_INST_LEN));
+                                                                 __riscv_vmv_v_x_u8m1(0, RVV_VEC8_INST_LEN),
+                                                                 RVV_VEC8_INST_LEN));
 #else
 	return v & flb_vector8_broadcast(0x80);
 #endif
