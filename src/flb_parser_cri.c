@@ -27,7 +27,7 @@
 #include <fluent-bit/flb_unescape.h>
 #include <fluent-bit/flb_mem.h>
 
-#define CRI_SPACE_DELIM " "
+#define CRI_SPACE_DELIM ' '
 
 int flb_parser_cri_do(struct flb_parser *parser,
                         const char *in_buf, size_t in_size,
@@ -56,7 +56,7 @@ int flb_parser_cri_do(struct flb_parser *parser,
     time_key_len = strlen(time_key);
 
     /* Time */
-    token_end = strpbrk(in_buf, CRI_SPACE_DELIM);
+    token_end = strchr(in_buf, CRI_SPACE_DELIM);
     
     /* after we find 'time' field (which is variable length),
      * we also check that we have enough room for static size fields
@@ -68,19 +68,19 @@ int flb_parser_cri_do(struct flb_parser *parser,
         return -1;
     }
 
-    /* Prepare new outgoing buffer, then add time to it */
-    msgpack_sbuffer_init(&tmp_sbuf);
-    msgpack_packer_init(&tmp_pck, &tmp_sbuf, msgpack_sbuffer_write);
-    msgpack_pack_map(&tmp_pck, map_size);
-
     struct flb_tm tm = {0};
-    ret = flb_parser_time_lookup(in_buf, token_end-in_buf-1,
+    ret = flb_parser_time_lookup(in_buf, token_end-in_buf,
         0, parser, &tm, &tmfrac);
     if (ret == -1) {
         flb_error("[parser:%s] Invalid time format %s",
                     parser->name, parser->time_fmt_full);
         return -1;
     }
+
+    /* Prepare new outgoing buffer, then add time to it */
+    msgpack_sbuffer_init(&tmp_sbuf);
+    msgpack_packer_init(&tmp_pck, &tmp_sbuf, msgpack_sbuffer_write);
+    msgpack_pack_map(&tmp_pck, map_size);
 
     msgpack_pack_str(&tmp_pck, time_key_len);
     msgpack_pack_str_body(&tmp_pck, time_key, time_key_len);
