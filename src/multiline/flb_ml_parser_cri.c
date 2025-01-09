@@ -21,6 +21,9 @@
 #include <fluent-bit/multiline/flb_ml.h>
 #include <fluent-bit/multiline/flb_ml_parser.h>
 
+//Reverting change for fuzz test... 
+#define FLB_ML_CRI_REGEX                                                \
+  "^(?<time>.+?) (?<stream>stdout|stderr) (?<_p>F|P) (?<log>.*)$"
 #define FLB_ML_CRI_TIME                         \
   "%Y-%m-%dT%H:%M:%S.%L%z"
 
@@ -30,8 +33,8 @@ static struct flb_parser *cri_parser_create(struct flb_config *config)
     struct flb_parser *p;
 
     p = flb_parser_create("_ml_cri",               /* parser name */
-                          "cri",                   /* backend type */
-                          NULL,                    /* regex */
+                          "regex", //"cri",                   /* backend type */
+                          FLB_ML_CRI_REGEX, //NULL,                    /* regex */
                           FLB_FALSE,               /* skip_empty */
                           FLB_ML_CRI_TIME,         /* time format */
                           "time",                  /* time key */
