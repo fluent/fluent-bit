@@ -100,6 +100,15 @@ typedef uint64_t flb_vector8;
 typedef uint8_t flb_vector8;
 #endif /* FLB_SIMD_DISABLED */
 
+/* RVV's instruction length is flexible and not fixed width.
+ * We assumed that VLEN which is the fundamental intsruction length is 128.
+ */
+#if defined(FLB_SIMD_RVV)
+#define FLB_SIMD_VEC8_INST_LEN RVV_VEC8_INST_LEN
+#else
+#define FLB_SIMD_VEC8_INST_LEN sizeof(flb_vector8)
+#endif
+
 /* element-wise comparisons to a scalar */
 static inline bool flb_vector8_has(const flb_vector8 v, const uint8_t c);
 static inline bool flb_vector8_has_zero(const flb_vector8 v);
