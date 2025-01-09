@@ -289,7 +289,7 @@ struct flb_config {
     uint64_t *route_empty_mask;
 #ifdef FLB_SYSTEM_WINDOWS
     /* maxstdio (Windows) */
-    int maxstdio;
+    int win_maxstdio;
 #endif
 
     /* Co-routines */

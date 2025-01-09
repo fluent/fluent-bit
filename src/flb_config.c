@@ -186,7 +186,7 @@ struct flb_service_config service_configs[] = {
 #ifdef FLB_SYSTEM_WINDOWS
     {FLB_CONF_STR_WINDOWS_MAX_STDIO,
      FLB_CONF_TYPE_INT,
-     offsetof(struct flb_config, maxstdio)},
+     offsetof(struct flb_config, win_maxstdio)},
 #endif
     {FLB_CONF_STR_HOT_RELOAD,
      FLB_CONF_TYPE_BOOL,
@@ -297,7 +297,7 @@ struct flb_config *flb_config_init()
     config->hot_reloading = FLB_FALSE;
 
 #ifdef FLB_SYSTEM_WINDOWS
-    config->maxstdio = 512;
+    config->win_maxstdio = 512;
 #endif
 
 #ifdef FLB_HAVE_SQLDB
