@@ -1068,7 +1068,7 @@ int flb_main(int argc, char **argv)
 #endif
         { "enable-hot-reload",     no_argument, NULL, 'Y' },
 #ifdef FLB_SYSTEM_WINDOWS
-        { "maxstdio",        required_argument, NULL, 'M' },
+        { "windows_maxstdio",      required_argument, NULL, 'M' },
 #endif
 #ifdef FLB_HAVE_CHUNK_TRACE
         { "enable-chunk-trace",    no_argument, NULL, 'Z' },
@@ -1165,7 +1165,7 @@ int flb_main(int argc, char **argv)
 #ifdef FLB_SYSTEM_WINDOWS
         case 'M':
             flb_cf_section_property_add(cf_opts, service->properties,
-                                        "max_stdio", 0, optarg, 0);
+                                        "windows.maxstdio", 0, optarg, 0);
             break;
 #endif
         case 'o':
@@ -1401,13 +1401,13 @@ int flb_main(int argc, char **argv)
 
 #ifdef FLB_SYSTEM_WINDOWS
     /* Validate specified maxstdio */
-    if (config->maxstdio >= 512 && config->maxstdio <= 2048) {
-        _setmaxstdio(config->maxstdio);
+    if (config->win_maxstdio >= 512 && config->win_maxstdio <= 2048) {
+        _setmaxstdio(config->win_maxstdio);
     }
     else {
         fprintf(stderr,
-                "maxstdio is invalid. From 512 to 2048 is vaild but got %d\n",
-                config->maxstdio);
+                "windows.maxstdio is invalid. From 512 to 2048 is vaild but got %d\n",
+                config->win_maxstdio);
         flb_free(cfg_file);
         flb_cf_destroy(cf_opts);
         exit(EXIT_FAILURE);
