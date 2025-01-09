@@ -801,11 +801,7 @@ int flb_utils_write_str(char *buf, int *off, size_t size, const char *str, size_
     off_t offset = 0;
     char tmp[16];
     char *p;
-#if defined(FLB_SIMD_RVV)
-    const size_t inst_len = RVV_VEC8_INST_LEN;
-#else
-    const size_t inst_len = sizeof(flb_vector8);
-#endif
+    const size_t inst_len = FLB_SIMD_VEC8_INST_LEN;
 
     /* to encode codepoints > 0xFFFF */
     uint16_t high;
