@@ -232,6 +232,7 @@ int set_fleet_input_properties(struct calyptia *ctx, struct flb_input_instance *
     flb_input_set_property(fleet, "host", ctx->cloud_host);
     flb_input_set_property(fleet, "port", ctx->cloud_port);
     flb_input_set_property(fleet, "config_dir", ctx->fleet_config_dir);
+    flb_input_set_property(fleet, "fleet_config_legacy_format", ctx->fleet_config_legacy_format == 1 ? "on" : "off");
 
     /* Set TLS properties */
     flb_input_set_property(fleet, "tls", ctx->cloud_tls == 1 ? "on" : "off");
@@ -617,7 +618,7 @@ static int cb_calyptia_init(struct flb_custom_instance *ins,
             flb_free(ctx);
             return -1;
         }
-        ctx->machine_id_auto_configured = 1;
+        ctx->machine_id_auto_configured = FLB_TRUE;
     }
 
     /* input collector */
@@ -773,6 +774,11 @@ static struct flb_config_map config_map[] = {
      FLB_CONFIG_MAP_BOOL, "register_retry_on_flush", "true",
      0, FLB_TRUE, offsetof(struct calyptia, register_retry_on_flush),
      "Retry agent registration on flush if failed on init."
+    },
+    {
+     FLB_CONFIG_MAP_BOOL, "fleet_config_legacy_format", "true",
+     0, FLB_TRUE, offsetof(struct calyptia, fleet_config_legacy_format),
+     "If set, use legacy (TOML) format for configuration files."
     },
     /* EOF */
     {0}

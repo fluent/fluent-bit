@@ -67,6 +67,7 @@ static struct test_context *init_test_context()
     t_ctx->ctx->fleet_max_http_buffer_size = flb_strdup("1024");
     t_ctx->ctx->fleet_interval_sec = flb_strdup("60");
     t_ctx->ctx->fleet_interval_nsec = flb_strdup("500000000");
+    t_ctx->ctx->fleet_config_legacy_format = FLB_TRUE;
 
     t_ctx->fleet = flb_input_new(t_ctx->config, "calyptia_fleet", NULL, FLB_FALSE);
     if (!t_ctx->fleet) {
@@ -160,13 +161,13 @@ void test_set_fleet_input_properties()
     TEST_MSG("max_http_buffer_size expected=%s got=%s", t_ctx->ctx->fleet_max_http_buffer_size, value);
     TEST_CHECK(value && strcmp(value, t_ctx->ctx->fleet_max_http_buffer_size) == 0);
 
-    // /* Check interval_sec */
+    /* Check interval_sec */
     value = flb_input_get_property("interval_sec", t_ctx->fleet);
     TEST_CHECK(value != NULL);
     TEST_MSG("interval_sec expected=%s got=%s", t_ctx->ctx->fleet_interval_sec, value);
     TEST_CHECK(value && strcmp(value, t_ctx->ctx->fleet_interval_sec) == 0);
 
-    // /* Check interval_nsec */
+    /* Check interval_nsec */
     value = flb_input_get_property("interval_nsec", t_ctx->fleet);
     TEST_CHECK(value != NULL);
     TEST_MSG("interval_nsec expected=%s got=%s", t_ctx->ctx->fleet_interval_nsec, value);

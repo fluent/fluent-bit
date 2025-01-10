@@ -36,8 +36,10 @@
 #define CALYPTIA_ENDPOINT_TRACE   "/v1/traces/%s"
 
 #define CALYPTIA_ENDPOINT_FLEETS "/v1/fleets"
-#define CALYPTIA_ENDPOINT_FLEET_CONFIG_INI "/v1/fleets/%s/config?format=ini"
+#define CALYPTIA_ENDPOINT_FLEET_CONFIG_INI "/v1/fleets/%s/config?format=ini&config_format=ini"
+#define CALYPTIA_ENDPOINT_FLEET_CONFIG_YAML "/v1/fleets/%s/config?format=yaml&config_format=yaml"
 #define CALYPTIA_ENDPOINT_FLEET_FILES "/v1/fleets/%s/files"
+#define CALYPTIA_ENDPOINT_FLEET_BY_NAME "/v1/search?project_id=%s&resource=fleet&term=%s&exact=true"
 
 /* Storage */
 #define CALYPTIA_SESSION_FILE     "session.CALYPTIA"

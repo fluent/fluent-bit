@@ -78,6 +78,7 @@ jobs:
           CC: ${{ matrix.compiler }}
           CXX: ${{ matrix.compiler }}
           FLB_OPT: ${{ matrix.flb_option }}
+          CALYPTIA_FLEET_TOKEN: ${{ secrets.CALYPTIA_FLEET_TOKEN }}
 
   run-macos-unit-tests:
     # We chain this after Linux one as there are costs and restrictions associated
@@ -111,6 +112,7 @@ jobs:
           CC: gcc
           CXX: g++
           FLB_OPT: ${{ matrix.flb_option }}
+          CALYPTIA_FLEET_TOKEN: ${{ secrets.CALYPTIA_FLEET_TOKEN }}
 
   run-aarch64-unit-tests:
     # Ensure for OSS Fluent Bit repo we enable usage of Actuated runners for ARM builds, for forks it should keep existing ubuntu-latest usage.
@@ -167,6 +169,7 @@ jobs:
         env:
           CC: ${{ matrix.config.compiler }}
           CXX: ${{ matrix.config.compiler }}
+          CALYPTIA_FLEET_TOKEN: ${{ secrets.CALYPTIA_FLEET_TOKEN }}
 
   run-qemu-ubuntu-unit-tests:
     # We chain this after Linux one as there are CPU time costs for QEMU emulation
@@ -216,7 +219,6 @@ jobs:
             cmake ${FLB_OPT}  ../
             make -j $nparallel
             ctest -j $nparallel --build-run-dir . --output-on-failure
-
 
   # Required check looks at this so do not remove
   run-all-unit-tests:
