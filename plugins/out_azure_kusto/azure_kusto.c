@@ -1614,12 +1614,16 @@ static int cb_azure_kusto_exit(void *data, struct flb_config *config)
         return -1;
     }
 
-    if (azure_kusto_store_has_data(ctx) == FLB_TRUE) {
-        flb_plg_info(ctx->ins, "Sending all locally buffered data to Kusto");
-        ret = ingest_all_chunks(ctx, config);
-        if (ret < 0) {
-            flb_plg_error(ctx->ins, "Could not send all chunks on exit");
+
+    if (ctx->buffering_enabled == FLB_TRUE){
+        if (azure_kusto_store_has_data(ctx) == FLB_TRUE) {
+            flb_plg_info(ctx->ins, "Sending all locally buffered data to Kusto");
+            ret = ingest_all_chunks(ctx, config);
+            if (ret < 0) {
+                flb_plg_error(ctx->ins, "Could not send all chunks on exit");
+            }
         }
+        azure_kusto_store_exit(ctx);
     }
 
     if (ctx->u) {
@@ -1637,8 +1641,6 @@ static int cb_azure_kusto_exit(void *data, struct flb_config *config)
     pthread_mutex_destroy(&ctx->resources_mutex);
     pthread_mutex_destroy(&ctx->token_mutex);
     pthread_mutex_destroy(&ctx->blob_mutex);
-
-    azure_kusto_store_exit(ctx);
 
     flb_azure_kusto_conf_destroy(ctx);
 
