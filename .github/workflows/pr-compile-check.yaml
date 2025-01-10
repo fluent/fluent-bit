@@ -53,9 +53,13 @@ jobs:
       - name: Setup environment
         run: |
           sudo apt-get update
-          sudo apt-get install -y curl gcc-9 g++-9 clang-12 libsystemd-dev gcovr libyaml-dev libluajit-5.1-dev \
-            libnghttp2-dev libjemalloc-dev
+          sudo apt-get install -y curl gcc-9 g++-9 clang-12 libsystemd-dev gcovr libyaml-dev
           sudo ln -s /usr/bin/llvm-symbolizer-12 /usr/bin/llvm-symbolizer || true
+
+      - name: Install system libraries for this test
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y libjemalloc-dev libluajit-5.1-dev libnghttp2-dev
           mkdir -p /tmp/libbacktrace/build && \
             curl -L https://github.com/ianlancetaylor/libbacktrace/archive/8602fda.tar.gz | \
             tar --strip-components=1 -xzC /tmp/libbacktrace/ && \
@@ -87,5 +91,10 @@ jobs:
 
       - name: Display dependencies w/ ldd
         run: |
-          ldd ./bin/fluent-bit
+          export ldd_result=$(ldd ./bin/fluent-bit)
+          echo "ldd result:"
+          echo "$ldd_result"
+          echo "$ldd_result" | grep libjemalloc
+          echo "$ldd_result" | grep libluajit
+          echo "$ldd_result" | grep libnghttp2
         working-directory: build
