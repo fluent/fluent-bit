@@ -56,7 +56,7 @@ int flb_parser_cri_do(struct flb_parser *parser,
     time_key_len = strlen(time_key);
 
     /* Time */
-    token_end = strchr(in_buf, CRI_SPACE_DELIM);
+    token_end = memchr(in_buf, CRI_SPACE_DELIM, in_size);
     
     /* after we find 'time' field (which is variable length),
      * we also check that we have enough room for static size fields
@@ -112,7 +112,10 @@ int flb_parser_cri_do(struct flb_parser *parser,
     token_end = token_end + 2; /* indicator + a space */
 
     /* Log */
-    end_of_line = strpbrk(token_end, "\r\n");
+    end_of_line = memchr(token_end, '\n', in_size-(token_end-in_buf));
+    if (end_of_line == NULL) {
+        end_of_line = memchr(token_end, '\r', in_size-(token_end-in_buf));
+    }
     if (end_of_line == NULL || end_of_line-token_end > in_size) {
         end_of_line = (char *)in_buf+in_size;
     }
