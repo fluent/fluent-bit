@@ -132,11 +132,13 @@ static int flb_azure_kusto_resources_clear(struct flb_azure_kusto_resources *res
     }
 
     if (resources->blob_ha) {
+        flb_upstream_node_destroy(flb_upstream_ha_node_get(resources->blob_ha));
         flb_upstream_ha_destroy(resources->blob_ha);
         resources->blob_ha = NULL;
     }
 
     if (resources->queue_ha) {
+        flb_upstream_node_destroy(flb_upstream_ha_node_get(resources->queue_ha));
         flb_upstream_ha_destroy(resources->queue_ha);
         resources->queue_ha = NULL;
     }
