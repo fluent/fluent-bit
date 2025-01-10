@@ -27,6 +27,10 @@
 #include <fluent-bit/flb_metrics.h>
 #endif
 
+/* Custom plugin flag masks */
+#define FLB_CUSTOM_NET_CLIENT   1   /* custom may use upstream net.* properties  */
+#define FLB_CUSTOM_NET_SERVER   2   /* custom may use downstream net.* properties  */
+
 struct flb_custom_instance;
 
 struct flb_custom_plugin {
@@ -57,7 +61,9 @@ struct flb_custom_instance {
     void *data;
     struct flb_custom_plugin *p;   /* original plugin          */
     struct mk_list properties;     /* config properties        */
+    struct mk_list net_properties; /* net properties           */
     struct mk_list *config_map;    /* configuration map        */
+    struct mk_list *net_config_map;/* net configuration map    */
     struct mk_list _head;          /* link to config->customs  */
 
     /*
