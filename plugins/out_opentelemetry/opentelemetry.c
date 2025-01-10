@@ -427,6 +427,21 @@ int opentelemetry_post(struct opentelemetry_context *ctx,
     }
     else {
         if (ctx->log_response_payload &&
+                 strncasecmp(response->content_type, "application/grpc", 16)
+                 == 0){
+            grpc_status = flb_hash_table_get_ptr(response->headers,
+                                                 "grpc-status", 11);
+            grpc_message = flb_hash_table_get_ptr(response->headers,
+                                                  "grpc-message", 12);
+            flb_plg_info(ctx->ins,
+                         "%s:%i, HTTP status=%i GRPC status=%s \n%s",
+                         ctx->host,
+                         ctx->port,
+                         response->status,
+                         grpc_status,
+                         grpc_message);
+        }
+        else if (ctx->log_response_payload &&
             response->body != NULL &&
             cfl_sds_len(response->body) > 0) {
             flb_plg_info(ctx->ins, "%s:%i, HTTP status=%i%s",
