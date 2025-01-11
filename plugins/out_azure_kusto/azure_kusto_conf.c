@@ -132,13 +132,11 @@ static int flb_azure_kusto_resources_clear(struct flb_azure_kusto_resources *res
     }
 
     if (resources->blob_ha) {
-        flb_upstream_node_destroy(flb_upstream_ha_node_get(resources->blob_ha));
         flb_upstream_ha_destroy(resources->blob_ha);
         resources->blob_ha = NULL;
     }
 
     if (resources->queue_ha) {
-        flb_upstream_node_destroy(flb_upstream_ha_node_get(resources->queue_ha));
         flb_upstream_ha_destroy(resources->queue_ha);
         resources->queue_ha = NULL;
     }
@@ -171,6 +169,7 @@ static int parse_storage_resources(struct flb_azure_kusto *ctx, struct flb_confi
                                    struct flb_upstream_ha *queue_ha)
 {
     jsmn_parser parser;
+    jsmntok_t *t = NULL;
     jsmntok_t *tokens = NULL;
     int ret = -1;
     int i;
@@ -224,7 +223,7 @@ static int parse_storage_resources(struct flb_azure_kusto *ctx, struct flb_confi
         if (ret > 0) {
             /* skip all tokens until we reach "Rows" */
             for (i = 0; i < ret - 1; i++) {
-                jsmntok_t *t = &tokens[i];
+                 t = &tokens[i];
 
                 if (t->type != JSMN_STRING) {
                     continue;
@@ -247,7 +246,7 @@ static int parse_storage_resources(struct flb_azure_kusto *ctx, struct flb_confi
              * values, the first value containing the resource type, and the second value
              * containing the resource uri */
             for (; i < ret; i++) {
-                jsmntok_t *t = &tokens[i];
+                 t = &tokens[i];
 
                 /**
                  * each token should be an array with 2 strings:
@@ -358,6 +357,9 @@ static int parse_storage_resources(struct flb_azure_kusto *ctx, struct flb_confi
     if (resource_uri) {
         flb_sds_destroy(resource_uri);
     }
+    if (t){
+        flb_free(t);
+    }
     if (tokens) {
         flb_free(tokens);
     }
@@ -441,6 +443,7 @@ static flb_sds_t parse_ingestion_identity_token(struct flb_azure_kusto *ctx,
     }
 
     flb_free(tokens);
+    flb_free(t);
 
     return identity_token;
 }
@@ -674,8 +677,6 @@ int azure_kusto_load_ingestion_resources(struct flb_azure_kusto *ctx,
             goto cleanup;
         }
     }
-
-    return ret;
 
     cleanup:
     if (ret == -1) {
