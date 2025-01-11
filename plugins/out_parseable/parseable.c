@@ -7,6 +7,8 @@
 #include <fluent-bit/flb_metrics.h>
 #include <fluent-bit/flb_log_event_decoder.h>
 #include <fluent-bit/flb_event.h>
+#include <fluent-bit/flb_record_accessor.h>
+
 
 #include "parseable.h"
 
@@ -52,6 +54,52 @@ static int cb_parseable_init(struct flb_output_instance *ins,
     return 0;
 }
 
+/* Function to extract namespace_name using Fluent Bit record accessor API */
+static flb_sds_t cb_get_namespace_name(struct flb_out_parseable *ctx, struct flb_log_event *log_event)
+{
+    flb_sds_t namespace_name = NULL;
+    struct flb_record_accessor *ra_namespace;
+    flb_sds_t str_val = NULL;
+    int len = -1;
+
+    /* Create a record accessor for namespace_name */
+    ra_namespace = flb_ra_create("$kubernetes['namespace_name']", FLB_TRUE);
+    if (!ra_namespace) {
+        flb_plg_error(ctx->ins, "failed to create record accessor for namespace_name");
+        return NULL;
+    }
+
+    /* Check if metadata is accessible */
+    if (!log_event->metadata || log_event->metadata->type != MSGPACK_OBJECT_MAP) {
+        flb_plg_error(ctx->ins, "log event metadata is not a map or is NULL");
+        flb_ra_destroy(ra_namespace);
+        return NULL;
+    }
+
+    /* Get the value using the record accessor */
+    str_val = flb_ra_translate(ra_namespace, NULL, 0, *log_event->metadata, NULL);
+    if (!str_val) {
+        flb_plg_error(ctx->ins, "namespace_name not found in log event metadata");
+        flb_ra_destroy(ra_namespace);
+        return NULL;
+    }
+
+    /* Create an SDS string for namespace_name */
+    namespace_name = flb_sds_create(str_val);
+    if (!namespace_name) {
+        flb_plg_error(ctx->ins, "failed to allocate memory for namespace_name");
+        flb_sds_destroy(str_val);
+        flb_ra_destroy(ra_namespace);
+        return NULL;
+    }
+
+    /* Clean up */
+    flb_sds_destroy(str_val);
+    flb_ra_destroy(ra_namespace);
+
+    return namespace_name;
+}
+
 /* Main flush callback */
 static void cb_parseable_flush(struct flb_event_chunk *event_chunk,
                                struct flb_output_flush *out_flush,
@@ -95,7 +143,7 @@ static void cb_parseable_flush(struct flb_event_chunk *event_chunk,
 
         /* Determine the value of the X-P-Stream header */
         if (ctx->stream && strcmp(ctx->stream, "$NAMESPACE") == 0) {
-            x_p_stream_value = get_namespace_name(ctx, &log_event);
+            x_p_stream_value = cb_get_namespace_name(ctx, &log_event);
             if (!x_p_stream_value) {
                 flb_plg_error(ctx->ins, "failed to extract namespace_name");
                 flb_sds_destroy(body);
@@ -164,7 +212,6 @@ static void cb_parseable_flush(struct flb_event_chunk *event_chunk,
     FLB_OUTPUT_RETURN(FLB_OK);
 }
 
-
 static int cb_parseable_exit(void *data, struct flb_config *config)
 {
     struct flb_out_parseable *ctx = data;
@@ -173,7 +220,10 @@ static int cb_parseable_exit(void *data, struct flb_config *config)
         return 0;
     }
 
-    flb_slist_destroy(&ctx->exclude_namespaces);
+    if (ctx->exclude_namespaces) {
+        flb_slist_destroy((struct mk_list *)ctx->exclude_namespaces);
+    }
+    
     /* Free up resources */
     if (ctx->upstream) {
         flb_upstream_destroy(ctx->upstream);
@@ -217,42 +267,6 @@ static struct flb_config_map config_map[] = {
     /* EOF */
     {0}
 };
-
-/* Function to extract namespace_name using Fluent Bit record accessor API */
-static flb_sds_t get_namespace_name(struct flb_out_parseable *ctx, struct flb_log_event *log_event)
-{
-    flb_sds_t namespace_name = NULL;
-    struct flb_ra *ra_namespace;
-    const char *namespace_val;
-    size_t namespace_len;
-    int ret;
-
-    /* Create a record accessor for namespace_name */
-    ra_namespace = flb_ra_create("$kubernetes['namespace_name']", FLB_TRUE);
-    if (!ra_namespace) {
-        flb_plg_error(ctx->ins, "failed to create record accessor for namespace_name");
-        return NULL;
-    }
-
-    /* Extract namespace_name from log event metadata */
-    ret = flb_ra_get_value(ra_namespace, log_event->metadata, NULL, &namespace_val, &namespace_len);
-    if (ret == -1) {
-        flb_plg_error(ctx->ins, "namespace_name not found in log event metadata");
-        flb_ra_destroy(ra_namespace);
-        return NULL;
-    }
-
-    /* Create an SDS string for namespace_name */
-    namespace_name = flb_sds_create_len(namespace_val, namespace_len);
-    if (!namespace_name) {
-        flb_plg_error(ctx->ins, "failed to allocate memory for namespace_name");
-    }
-
-    /* Clean up the record accessor */
-    flb_ra_destroy(ra_namespace);
-
-    return namespace_name;
-}
 
 /* Plugin registration */
 struct flb_output_plugin out_parseable_plugin = {
