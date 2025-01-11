@@ -124,7 +124,7 @@ static void cb_parseable_flush(struct flb_event_chunk *event_chunk,
 
     /* Initialize record accessor if using $NAMESPACE */
     if (ctx->stream && strcmp(ctx->stream, "$NAMESPACE") == 0) {
-        ra = flb_ra_create("$namespace_name", FLB_TRUE);
+        ra = flb_ra_create("$record['namespace_name']", FLB_TRUE);
         if (!ra) {
             flb_plg_error(ctx->ins, "failed to create record accessor");
             FLB_OUTPUT_RETURN(FLB_ERROR);
@@ -174,12 +174,14 @@ static void cb_parseable_flush(struct flb_event_chunk *event_chunk,
             
             /* Get namespace using record accessor */
             namespace_name = flb_ra_translate(ra, NULL, -1, *log_event.body, NULL);
-            if (!namespace_name) {
-                flb_plg_error(ctx->ins, "Failed to extract namespace_name from record");
+            if (!namespace_name || flb_sds_len(namespace_name) == 0) {
+                flb_plg_warn(ctx->ins, "Empty or null namespace_name in record, skipping");
+                if (namespace_name) {
+                    flb_sds_destroy(namespace_name);
+                }
                 flb_sds_destroy(body);
                 continue;
             }
-
 
             /* Check excluded namespaces */
             if (ctx->exclude_namespaces) {
@@ -188,12 +190,12 @@ static void cb_parseable_flush(struct flb_event_chunk *event_chunk,
 
                 mk_list_foreach(head, ctx->exclude_namespaces) {
                     entry = mk_list_entry(head, struct flb_slist_entry, _head);
-                    flb_plg_info(ctx->ins, "Checking against exclude namespace: %s", entry->str);
+                    flb_plg_debug(ctx->ins, "Checking against exclude namespace: %s", entry->str);
                     if (flb_sds_cmp(entry->str, namespace_name, flb_sds_len(namespace_name)) == 0) {
-                        flb_plg_info(ctx->ins, "Skipping excluded namespace: %s", namespace_name);
+                        flb_plg_debug(ctx->ins, "Skipping excluded namespace: %s", namespace_name);
                         flb_sds_destroy(namespace_name);
                         flb_sds_destroy(body);
-                        continue;
+                        goto skip_record;
                     }
                 }
             }
@@ -215,7 +217,7 @@ static void cb_parseable_flush(struct flb_event_chunk *event_chunk,
             continue;
         }
 
-        flb_plg_info(ctx->ins, "Creating upstream with server: %s, port: %d", ctx->server_host, ctx->server_port);
+        flb_plg_debug(ctx->ins, "Creating upstream with server: %s, port: %d", ctx->server_host, ctx->server_port);
 
         /* Get upstream connection */
         u_conn = flb_upstream_conn_get(ctx->upstream);
@@ -248,7 +250,7 @@ static void cb_parseable_flush(struct flb_event_chunk *event_chunk,
 
         /* Perform request */
         ret = flb_http_do(client, &b_sent);
-        flb_plg_info(ctx->ins, "HTTP request http_do=%i, HTTP Status: %i",
+        flb_plg_debug(ctx->ins, "HTTP request http_do=%i, HTTP Status: %i",
                      ret, client->resp.status);
 
         /* Clean up resources */
@@ -256,6 +258,9 @@ static void cb_parseable_flush(struct flb_event_chunk *event_chunk,
         flb_sds_destroy(x_p_stream_value);
         flb_http_client_destroy(client);
         flb_upstream_conn_release(u_conn);
+
+skip_record:
+        continue;
     }
 
     flb_log_event_decoder_destroy(&log_decoder);
