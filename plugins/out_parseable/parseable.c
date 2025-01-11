@@ -124,16 +124,16 @@ static void cb_parseable_flush(struct flb_event_chunk *event_chunk,
     }
 
     while (flb_log_event_decoder_next(&log_decoder, &log_event) == FLB_EVENT_DECODER_SUCCESS) {
-        /* Convert body to JSON */
-        if (log_event.body->type == MSGPACK_OBJECT_STR) {
-            body = flb_sds_create_len(log_event.body->via.str.ptr, log_event.body->via.str.size);
-        } else if (log_event.body->type == MSGPACK_OBJECT_BIN) {
-            body = flb_sds_create_len(log_event.body->via.bin.ptr, log_event.body->via.bin.size);
-        } else {
-            flb_plg_error(ctx->ins, "unsupported log event body type: %d", log_event.body->type);
-            flb_log_event_decoder_destroy(&log_decoder);
-            FLB_OUTPUT_RETURN(FLB_ERROR);
-        }
+        // /* Convert body to JSON */
+        // if (log_event.body->type == MSGPACK_OBJECT_STR) {
+        //     body = flb_sds_create_len(log_event.body->via.str.ptr, log_event.body->via.str.size);
+        // } else if (log_event.body->type == MSGPACK_OBJECT_BIN) {
+        //     body = flb_sds_create_len(log_event.body->via.bin.ptr, log_event.body->via.bin.size);
+        // } else {
+        //     flb_plg_error(ctx->ins, "unsupported log event body type: %d", log_event.body->type);
+        //     flb_log_event_decoder_destroy(&log_decoder);
+        //     FLB_OUTPUT_RETURN(FLB_ERROR);
+        // }
 
         if (!body) {
             flb_plg_error(ctx->ins, "failed to convert log event body to JSON");
