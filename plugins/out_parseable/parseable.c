@@ -69,6 +69,7 @@ static flb_sds_t cb_get_namespace_name(struct flb_out_parseable *ctx, struct flb
         return NULL;
     }
 
+
     /* Check if metadata is accessible */
     if (!log_event->metadata || log_event->metadata->type != MSGPACK_OBJECT_MAP) {
         flb_plg_error(ctx->ins, "log event metadata is not a map or is NULL");
@@ -131,6 +132,7 @@ static void cb_parseable_flush(struct flb_event_chunk *event_chunk,
         }
     }
 
+
     ret = flb_log_event_decoder_init(&log_decoder, (char *) event_chunk->data,
                                     event_chunk->size);
     if (ret != FLB_EVENT_DECODER_SUCCESS) {
@@ -173,6 +175,7 @@ static void cb_parseable_flush(struct flb_event_chunk *event_chunk,
             flb_sds_t namespace_name;
             
             /* Get namespace using record accessor */
+            flb_plg_debug(ctx->ins, "Record body: %s", body);
             namespace_name = flb_ra_translate(ra, NULL, -1, *log_event.body, NULL);
             if (!namespace_name || flb_sds_len(namespace_name) == 0) {
                 flb_plg_warn(ctx->ins, "Empty or null namespace_name in record, skipping");
