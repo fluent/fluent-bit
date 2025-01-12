@@ -55,27 +55,25 @@ static int cb_parseable_init(struct flb_output_instance *ins,
 }
 
 /* Main flush callback */
-/* Main flush callback */
 static void cb_parseable_flush(struct flb_event_chunk *event_chunk,
-                               struct flb_output_flush *out_flush,
-                               struct flb_input_instance *i_ins,
-                               void *out_context,
-                               struct flb_config *config)
+                             struct flb_output_flush *out_flush,
+                             struct flb_input_instance *i_ins,
+                             void *out_context,
+                             struct flb_config *config)
 {
     struct flb_out_parseable *ctx = out_context;
     struct flb_log_event_decoder log_decoder;
     struct flb_log_event log_event;
+    struct flb_record_accessor *ra = NULL;
     (void) config;
     struct flb_http_client *client;
     struct flb_connection *u_conn;
     flb_sds_t body;
     flb_sds_t x_p_stream_value = NULL;
-    flb_sds_t namespace_name = flb_sds_create_size(256); // Dynamic string
     int ret;
     size_t b_sent;
     msgpack_sbuffer sbuf;
     msgpack_packer pk;
-    int i;
 
     /* Initialize event decoder */
     flb_plg_info(ctx->ins, "Initializing event decoder...");
@@ -85,151 +83,143 @@ static void cb_parseable_flush(struct flb_event_chunk *event_chunk,
         FLB_OUTPUT_RETURN(FLB_ERROR);
     }
 
+    /* Create record accessor if stream is set to $NAMESPACE */
+    if (ctx->stream && strcmp(ctx->stream, "$NAMESPACE") == 0) {
+        ra = flb_ra_create("$kubernetes['namespace_name']", FLB_TRUE);
+        if (!ra) {
+            flb_plg_error(ctx->ins, "Failed to create record accessor");
+            flb_log_event_decoder_destroy(&log_decoder);
+            FLB_OUTPUT_RETURN(FLB_ERROR);
+        }
+    }
+
     /* Process each event */
     flb_plg_info(ctx->ins, "Processing events...");
     while (flb_log_event_decoder_next(&log_decoder, &log_event) == FLB_EVENT_DECODER_SUCCESS) {
-        /* Debug: Log the type of the log event body */
-        flb_plg_info(ctx->ins, "Log event body type: %d", log_event.body->type);
-
-        /* Only operate if log is map type */
-        if (log_event.body->type != MSGPACK_OBJECT_MAP) {
-            continue;
-        }
-
-        /* Initialize the packer and buffer for serialization/packing */
-        flb_plg_info(ctx->ins, "Initializing msgpack buffer...");
+        /* Initialize the packer and buffer */
         msgpack_sbuffer_init(&sbuf);
         msgpack_packer_init(&pk, &sbuf, msgpack_sbuffer_write);
 
-        /* Pack original key-value pairs */
+        /* Pack the map with one additional field */
         msgpack_pack_map(&pk, log_event.body->via.map.size + 1);
-        for (i = 0; i < log_event.body->via.map.size; i++) {
+        
+        /* Pack original map content */
+        for (int i = 0; i < log_event.body->via.map.size; i++) {
             msgpack_pack_object(&pk, log_event.body->via.map.ptr[i].key);
             msgpack_pack_object(&pk, log_event.body->via.map.ptr[i].val);
         }
 
-        /* Append one more key-value pair */
+        /* Add source field */
         msgpack_pack_str_with_body(&pk, "source", 6);
         msgpack_pack_str_with_body(&pk, "fluent bit parseable plugin", 25);
 
-        /* Convert from msgpack to JSON */
+        /* Convert to JSON */
         body = flb_msgpack_raw_to_json_sds(sbuf.data, sbuf.size);
-        flb_plg_info(ctx->ins, "Original JSON body: %s", body);
+        if (!body) {
+            flb_plg_error(ctx->ins, "Failed to convert msgpack to JSON");
+            msgpack_sbuffer_destroy(&sbuf);
+            if (ra) {
+                flb_ra_destroy(ra);
+            }
+            flb_log_event_decoder_destroy(&log_decoder);
+            FLB_OUTPUT_RETURN(FLB_ERROR);
+        }
 
-        /* Free up buffer as we don't need it anymore */
-        msgpack_sbuffer_destroy(&sbuf);
-
-        /* Determine the value of the X-P-Stream header */
-        if (ctx->stream && strcmp(ctx->stream, "$NAMESPACE") == 0) {
-            /* Extract namespace_name from the body */
-            flb_plg_info(ctx->ins, "Extracting namespace_name...");
-            flb_sds_t body_copy = flb_sds_create(body);
-            if (body_copy == NULL) {
-                flb_plg_error(ctx->ins, "Failed to create a copy of the body");
+        /* Determine X-P-Stream value */
+        if (ra) {
+            /* Use record accessor to get namespace_name - dereference the pointer */
+            flb_sds_t ns = flb_ra_translate(ra, NULL, -1, *log_event.body, NULL);
+            if (!ns) {
+                flb_plg_error(ctx->ins, "Failed to extract namespace_name using record accessor");
                 flb_sds_destroy(body);
+                msgpack_sbuffer_destroy(&sbuf);
+                flb_ra_destroy(ra);
                 flb_log_event_decoder_destroy(&log_decoder);
                 FLB_OUTPUT_RETURN(FLB_ERROR);
             }
-
-            char *namespace_name_value = strstr(body_copy, "\"namespace_name\":\"");
-            if (namespace_name_value != NULL) {
-                namespace_name_value += strlen("\"namespace_name\":\"");
-                char *end_quote = strchr(namespace_name_value, '\"');
-                if (end_quote != NULL) {
-                    *end_quote = '\0';  // Null-terminate the extracted value
-                    namespace_name = flb_sds_printf(&namespace_name, "%s", namespace_name_value);
-                    flb_plg_info(ctx->ins, "Extracted namespace_name: %s", namespace_name);
-                } else {
-                    flb_plg_info(ctx->ins, "Failed to find end quote for namespace_name");
-                }
-            } else {
-                flb_plg_info(ctx->ins, "namespace_name not found in body_copy.");
-            }
-            flb_sds_destroy(body_copy);
-
-            if (!namespace_name || flb_sds_len(namespace_name) == 0) {
-                flb_plg_error(ctx->ins, "Failed to extract namespace_name from the body");
-                flb_sds_destroy(body);
-                flb_sds_destroy(namespace_name);
-                flb_log_event_decoder_destroy(&log_decoder);
-                FLB_OUTPUT_RETURN(FLB_ERROR);
-            }
-
-            /* Use the namespace name for the header */
-            x_p_stream_value = namespace_name;
+            x_p_stream_value = ns;
         }
         else if (ctx->stream) {
-            /* Use the user-specified stream directly */
-            flb_plg_info(ctx->ins, "Using user-specified stream: %s", ctx->stream);
             x_p_stream_value = flb_sds_create(ctx->stream);
             if (!x_p_stream_value) {
-                flb_plg_error(ctx->ins, "Failed to set X-P-Stream header to the specified stream: %s", ctx->stream);
+                flb_plg_error(ctx->ins, "Failed to set X-P-Stream header");
                 flb_sds_destroy(body);
+                msgpack_sbuffer_destroy(&sbuf);
+                if (ra) {
+                    flb_ra_destroy(ra);
+                }
                 flb_log_event_decoder_destroy(&log_decoder);
                 FLB_OUTPUT_RETURN(FLB_ERROR);
             }
         }
         else {
-            flb_plg_error(ctx->ins, "Stream is not set. Cannot determine the value for X-P-Stream.");
+            flb_plg_error(ctx->ins, "Stream is not set");
             flb_sds_destroy(body);
+            msgpack_sbuffer_destroy(&sbuf);
+            if (ra) {
+                flb_ra_destroy(ra);
+            }
             flb_log_event_decoder_destroy(&log_decoder);
             FLB_OUTPUT_RETURN(FLB_ERROR);
         }
 
-        /* Debug: Log the value of X-P-Stream */
-        flb_plg_info(ctx->ins, "X-P-Stream value: %s", x_p_stream_value);
-
         /* Get upstream connection */
-        flb_plg_info(ctx->ins, "Creating upstream connection...");
         u_conn = flb_upstream_conn_get(ctx->upstream);
         if (!u_conn) {
             flb_plg_error(ctx->ins, "Connection initialization error");
             flb_sds_destroy(body);
             flb_sds_destroy(x_p_stream_value);
+            msgpack_sbuffer_destroy(&sbuf);
+            if (ra) {
+                flb_ra_destroy(ra);
+            }
             flb_log_event_decoder_destroy(&log_decoder);
             FLB_OUTPUT_RETURN(FLB_ERROR);
         }
 
-        /* Compose HTTP Client request */
-        flb_plg_info(ctx->ins, "Composing HTTP client request...");
+        /* Create HTTP client */
         client = flb_http_client(u_conn,
-                                FLB_HTTP_POST, "/api/v1/ingest",
-                                body, flb_sds_len(body),
-                                ctx->server_host, ctx->server_port,
-                                NULL, 0);
+                               FLB_HTTP_POST, "/api/v1/ingest",
+                               body, flb_sds_len(body),
+                               ctx->server_host, ctx->server_port,
+                               NULL, 0);
         if (!client) {
             flb_plg_error(ctx->ins, "Could not create HTTP client");
             flb_sds_destroy(body);
             flb_sds_destroy(x_p_stream_value);
+            msgpack_sbuffer_destroy(&sbuf);
             flb_upstream_conn_release(u_conn);
+            if (ra) {
+                flb_ra_destroy(ra);
+            }
             flb_log_event_decoder_destroy(&log_decoder);
             FLB_OUTPUT_RETURN(FLB_ERROR);
         }
 
-        /* Add HTTP headers */
+        /* Set headers */
         flb_http_add_header(client, "Content-Type", 12, "application/json", 16);
         flb_http_add_header(client, "X-P-Stream", 10, x_p_stream_value, flb_sds_len(x_p_stream_value));
         flb_http_basic_auth(client, ctx->username, ctx->password);
 
         /* Perform request */
-        flb_plg_info(ctx->ins, "Sending HTTP request...");
         ret = flb_http_do(client, &b_sent);
-        flb_plg_info(ctx->ins, "HTTP request sent. http_do=%i, HTTP Status: %i", ret, client->resp.status);
+        flb_plg_info(ctx->ins, "HTTP request sent. Status=%i", client->resp.status);
 
-        /* Clean up resources */
+        /* Clean up resources for this iteration */
         flb_sds_destroy(body);
         flb_sds_destroy(x_p_stream_value);
         flb_http_client_destroy(client);
         flb_upstream_conn_release(u_conn);
+        msgpack_sbuffer_destroy(&sbuf);
     }
 
-    /* Clean up log event decoder */
-    flb_plg_info(ctx->ins, "Cleaning up log event decoder...");
+    /* Final cleanup */
+    if (ra) {
+        flb_ra_destroy(ra);
+    }
     flb_log_event_decoder_destroy(&log_decoder);
-    flb_plg_info(ctx->ins, "Processing complete.");
     FLB_OUTPUT_RETURN(FLB_OK);
 }
-
 
 static int cb_parseable_exit(void *data, struct flb_config *config)
 {
