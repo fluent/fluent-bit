@@ -65,6 +65,7 @@ static void cb_parseable_flush(struct flb_event_chunk *event_chunk,
     struct flb_log_event_decoder log_decoder;
     struct flb_log_event log_event;
     struct flb_record_accessor *ra = NULL;
+    struct flb_record_accessor *ns_ra = NULL;  // For checking namespace
     (void) config;
     struct flb_http_client *client;
     struct flb_connection *u_conn;
@@ -93,9 +94,46 @@ static void cb_parseable_flush(struct flb_event_chunk *event_chunk,
         }
     }
 
+    /* Create record accessor for namespace exclusion check */
+    if (ctx->exclude_namespaces) {
+        ns_ra = flb_ra_create("$kubernetes['namespace_name']", FLB_TRUE);
+        if (!ns_ra) {
+            flb_plg_error(ctx->ins, "Failed to create namespace record accessor");
+            if (ra) {
+                flb_ra_destroy(ra);
+            }
+            flb_log_event_decoder_destroy(&log_decoder);
+            FLB_OUTPUT_RETURN(FLB_ERROR);
+        }
+    }
+
     /* Process each event */
     flb_plg_info(ctx->ins, "Processing events...");
     while (flb_log_event_decoder_next(&log_decoder, &log_event) == FLB_EVENT_DECODER_SUCCESS) {
+        /* Check if namespace is in exclusion list */
+        if (ns_ra && ctx->exclude_namespaces) {
+            flb_sds_t current_ns = flb_ra_translate(ns_ra, NULL, -1, *log_event.body, NULL);
+            if (current_ns) {
+                struct cfl_list *head;
+                struct flb_slist_entry *entry;
+                int skip = 0;
+
+                cfl_list_foreach(head, ctx->exclude_namespaces) {
+                    entry = cfl_list_entry(head, struct flb_slist_entry, _head);
+                    if (strcmp(current_ns, entry->str) == 0) {
+                        flb_plg_debug(ctx->ins, "Skipping excluded namespace: %s", current_ns);
+                        skip = 1;
+                        break;
+                    }
+                }
+
+                flb_sds_destroy(current_ns);
+                if (skip) {
+                    continue;
+                }
+            }
+        }
+
         /* Initialize the packer and buffer */
         msgpack_sbuffer_init(&sbuf);
         msgpack_packer_init(&pk, &sbuf, msgpack_sbuffer_write);
@@ -121,19 +159,25 @@ static void cb_parseable_flush(struct flb_event_chunk *event_chunk,
             if (ra) {
                 flb_ra_destroy(ra);
             }
+            if (ns_ra) {
+                flb_ra_destroy(ns_ra);
+            }
             flb_log_event_decoder_destroy(&log_decoder);
             FLB_OUTPUT_RETURN(FLB_ERROR);
         }
 
         /* Determine X-P-Stream value */
         if (ra) {
-            /* Use record accessor to get namespace_name - dereference the pointer */
+            /* Use record accessor to get namespace_name */
             flb_sds_t ns = flb_ra_translate(ra, NULL, -1, *log_event.body, NULL);
             if (!ns) {
                 flb_plg_error(ctx->ins, "Failed to extract namespace_name using record accessor");
                 flb_sds_destroy(body);
                 msgpack_sbuffer_destroy(&sbuf);
                 flb_ra_destroy(ra);
+                if (ns_ra) {
+                    flb_ra_destroy(ns_ra);
+                }
                 flb_log_event_decoder_destroy(&log_decoder);
                 FLB_OUTPUT_RETURN(FLB_ERROR);
             }
@@ -148,6 +192,9 @@ static void cb_parseable_flush(struct flb_event_chunk *event_chunk,
                 if (ra) {
                     flb_ra_destroy(ra);
                 }
+                if (ns_ra) {
+                    flb_ra_destroy(ns_ra);
+                }
                 flb_log_event_decoder_destroy(&log_decoder);
                 FLB_OUTPUT_RETURN(FLB_ERROR);
             }
@@ -158,6 +205,9 @@ static void cb_parseable_flush(struct flb_event_chunk *event_chunk,
             msgpack_sbuffer_destroy(&sbuf);
             if (ra) {
                 flb_ra_destroy(ra);
+            }
+            if (ns_ra) {
+                flb_ra_destroy(ns_ra);
             }
             flb_log_event_decoder_destroy(&log_decoder);
             FLB_OUTPUT_RETURN(FLB_ERROR);
@@ -172,6 +222,9 @@ static void cb_parseable_flush(struct flb_event_chunk *event_chunk,
             msgpack_sbuffer_destroy(&sbuf);
             if (ra) {
                 flb_ra_destroy(ra);
+            }
+            if (ns_ra) {
+                flb_ra_destroy(ns_ra);
             }
             flb_log_event_decoder_destroy(&log_decoder);
             FLB_OUTPUT_RETURN(FLB_ERROR);
@@ -191,6 +244,9 @@ static void cb_parseable_flush(struct flb_event_chunk *event_chunk,
             flb_upstream_conn_release(u_conn);
             if (ra) {
                 flb_ra_destroy(ra);
+            }
+            if (ns_ra) {
+                flb_ra_destroy(ns_ra);
             }
             flb_log_event_decoder_destroy(&log_decoder);
             FLB_OUTPUT_RETURN(FLB_ERROR);
@@ -216,6 +272,9 @@ static void cb_parseable_flush(struct flb_event_chunk *event_chunk,
     /* Final cleanup */
     if (ra) {
         flb_ra_destroy(ra);
+    }
+    if (ns_ra) {
+        flb_ra_destroy(ns_ra);
     }
     flb_log_event_decoder_destroy(&log_decoder);
     FLB_OUTPUT_RETURN(FLB_OK);
