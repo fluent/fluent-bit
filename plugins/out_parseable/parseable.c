@@ -78,12 +78,13 @@ static void cb_parseable_flush(struct flb_event_chunk *event_chunk,
 
     /* Initialize record accessor if using $NAMESPACE */
     if (ctx->stream && strcmp(ctx->stream, "$NAMESPACE") == 0) {
-        ra = flb_ra_create("$record['namespace_name']", FLB_TRUE);
+        ra = flb_ra_create("$.namespace_name", FLB_TRUE);
         if (!ra) {
             flb_plg_error(ctx->ins, "failed to create record accessor");
             FLB_OUTPUT_RETURN(FLB_ERROR);
         }
     }
+
 
     ret = flb_log_event_decoder_init(&log_decoder, (char *) event_chunk->data,
                                     event_chunk->size);
@@ -99,6 +100,15 @@ static void cb_parseable_flush(struct flb_event_chunk *event_chunk,
         /* Only operate if log is map type */
         if (log_event.body->type != MSGPACK_OBJECT_MAP) {
             continue;
+        }
+
+        /* Debug: Print map contents before packing */
+        flb_plg_debug(ctx->ins, "Original record fields:");
+        for (i = 0; i < log_event.body->via.map.size; i++) {
+            msgpack_object *k = &log_event.body->via.map.ptr[i].key;
+            if (k->type == MSGPACK_OBJECT_STR) {
+                flb_plg_debug(ctx->ins, "Key: %.*s", (int)k->via.str.size, k->via.str.ptr);
+            }
         }
 
         /* Initialize the packer and buffer for serialization/packing */
@@ -119,6 +129,7 @@ static void cb_parseable_flush(struct flb_event_chunk *event_chunk,
 
         /* Convert from msgpack to JSON */
         body = flb_msgpack_raw_to_json_sds(sbuf.data, sbuf.size);
+        flb_plg_debug(ctx->ins, "JSON body: %s", body);
 
         /* Free up buffer as we don't need it anymore */
         msgpack_sbuffer_destroy(&sbuf);
@@ -126,25 +137,19 @@ static void cb_parseable_flush(struct flb_event_chunk *event_chunk,
         /* Determine the value of the X-P-Stream header */
         if (ctx->stream && strcmp(ctx->stream, "$NAMESPACE") == 0) {
             flb_sds_t namespace_name;
-            
-            /* Get namespace using record accessor */
-            flb_plg_debug(ctx->ins, "Record body: %s", body);
-            
-            /* Debug: Print map size and contents */
-            flb_plg_debug(ctx->ins, "Map size: %d", log_event.body->via.map.size);
-            for (i = 0; i < log_event.body->via.map.size; i++) {
-                msgpack_object *k = &log_event.body->via.map.ptr[i].key;
-                msgpack_object *v = &log_event.body->via.map.ptr[i].val;
-                
-                if (k->type == MSGPACK_OBJECT_STR) {
-                    flb_plg_debug(ctx->ins, "Key: %.*s", (int)k->via.str.size, k->via.str.ptr);
+                        
+             /* Get namespace using record accessor */
+            namespace_name = flb_ra_translate(ra, NULL, -1, *log_event.body, NULL);
+            if (!namespace_name || flb_sds_len(namespace_name) == 0) {
+                flb_plg_warn(ctx->ins, "Empty or null namespace_name in record, skipping");
+                if (namespace_name) {
+                    flb_sds_destroy(namespace_name);
                 }
+                flb_sds_destroy(body);
+                continue;
             }
 
-            flb_plg_debug(ctx->ins, "Using record accessor pattern: %s", 
-                         flb_ra_get_pattern(ra));
-
-            namespace_name = flb_ra_translate(ra, NULL, -1, *log_event.body, NULL);
+                        flb_plg_debug(ctx->ins, "Extracted namespace: %s", namespace_name);
 
             /* Check excluded namespaces */
             if (ctx->exclude_namespaces) {
