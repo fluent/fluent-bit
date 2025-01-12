@@ -72,6 +72,7 @@ static void cb_parseable_flush(struct flb_event_chunk *event_chunk,
     flb_sds_t body;
     flb_sds_t x_p_stream_value = NULL;
     int ret;
+    int i;
     size_t b_sent;
     msgpack_sbuffer sbuf;
     msgpack_packer pk;
@@ -142,7 +143,7 @@ static void cb_parseable_flush(struct flb_event_chunk *event_chunk,
         msgpack_pack_map(&pk, log_event.body->via.map.size + 1);
         
         /* Pack original map content */
-        for (int i = 0; i < log_event.body->via.map.size; i++) {
+        for (i = 0; i < log_event.body->via.map.size; i++) {
             msgpack_pack_object(&pk, log_event.body->via.map.ptr[i].key);
             msgpack_pack_object(&pk, log_event.body->via.map.ptr[i].val);
         }
