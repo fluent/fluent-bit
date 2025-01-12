@@ -58,11 +58,14 @@ struct opentelemetry_context {
     int proxy_port;
 
     /* HTTP URI */
+    char *profiles_uri_sanitized;
     char *traces_uri_sanitized;
     char *metrics_uri_sanitized;
     char *logs_uri_sanitized;
     char *traces_uri;
     char *grpc_traces_uri;
+    char *profiles_uri;
+    char *grpc_profiles_uri;
     char *metrics_uri;
     char *grpc_metrics_uri;
     char *logs_uri;
@@ -120,7 +123,7 @@ struct opentelemetry_context {
     /* Number of logs to flush at a time */
     int batch_size;
 
-    /* Log the response paylod */
+    /* Log the response payload */
     int log_response_payload;
 
     /* config reader for 'add_label' */

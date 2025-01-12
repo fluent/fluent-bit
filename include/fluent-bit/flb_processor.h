@@ -28,6 +28,7 @@
 
 #include <ctraces/ctraces.h>
 #include <cmetrics/cmetrics.h>
+#include <cprofiles/cprofiles.h>
 
 /* Processor plugin result values */
 #define FLB_PROCESSOR_SUCCESS        0
@@ -37,6 +38,7 @@
 #define FLB_PROCESSOR_LOGS           1
 #define FLB_PROCESSOR_METRICS        2
 #define FLB_PROCESSOR_TRACES         4
+#define FLB_PROCESSOR_PROFILES       8
 
 /* Type of processor unit: 'pipeline filter' or 'native unit' */
 #define FLB_PROCESSOR_UNIT_NATIVE    0
@@ -93,7 +95,7 @@ struct flb_processor_unit {
      */
     struct mk_list unused_list;
 
-    /* link to struct flb_processor->(logs, metrics, traces) list */
+    /* link to struct flb_processor->(logs, metrics, traces, profiles) list */
     struct mk_list _head;
 
     /* link to parent processor */
@@ -110,6 +112,7 @@ struct flb_processor {
     struct mk_list logs;
     struct mk_list metrics;
     struct mk_list traces;
+    struct mk_list profiles;
 
     size_t stage_count;
     /*
@@ -152,6 +155,11 @@ struct flb_processor_plugin {
 
     int (*cb_process_traces) (struct flb_processor_instance *,
                               struct ctrace *,
+                              const char *,
+                              int);
+
+    int (*cb_process_profiles) (struct flb_processor_instance *,
+                              struct cprof *,
                               const char *,
                               int);
 

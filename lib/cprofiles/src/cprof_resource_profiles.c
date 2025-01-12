@@ -60,8 +60,7 @@ void cprof_resource_profiles_destroy(struct cprof_resource_profiles *instance) {
                               iterator_backup,
                               &instance->scope_profiles) {
             scope_profiles = cfl_list_entry(iterator,
-                                            struct cprof_scope_profiles,
-                                            _head);
+                                            struct cprof_scope_profiles, _head);
 
             cfl_list_del(&scope_profiles->_head);
 

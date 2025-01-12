@@ -25,5 +25,6 @@
 #define FLB_INPUT_METRICS     1
 #define FLB_INPUT_TRACES      2
 #define FLB_INPUT_BLOBS       3
+#define FLB_INPUT_PROFILES    4
 
 #endif
