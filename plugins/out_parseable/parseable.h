@@ -10,7 +10,7 @@ struct flb_out_parseable {
     flb_sds_t username;
     flb_sds_t password;
     flb_sds_t stream;
-    struct mk_list *exclude_namespaces;  // Use mk_list for namespace exclusion
+    struct cfl_list *exclude_namespaces;  // Use mk_list for namespace exclusion
     struct flb_upstream *upstream;
     struct flb_output_instance *ins;
 };

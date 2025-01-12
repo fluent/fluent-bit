@@ -29,7 +29,6 @@
 #ifndef CPROF_HAVE_GMTIME_R
 #define CPROF_HAVE_GMTIME_R
 #endif
-#ifndef CPROF_HAVE_CLOCK_GET_TIME
 #define CPROF_HAVE_CLOCK_GET_TIME
 #endif
 #ifndef CPROF_HAVE_CFL
