@@ -134,6 +134,7 @@ static void cb_parseable_flush(struct flb_event_chunk *event_chunk,
                         // Debug: Print the extracted namespace name
                         flb_plg_info(ctx->ins, "Extracted namespace_name: %s", namespace_name);
 
+
                         struct mk_list *head;
                         struct flb_slist_entry *entry;
 
@@ -141,24 +142,26 @@ static void cb_parseable_flush(struct flb_event_chunk *event_chunk,
                             mk_list_foreach(head, ctx->exclude_namespaces) {
                                 entry = mk_list_entry(head, struct flb_slist_entry, _head);
                                 flb_plg_info(ctx->ins, "Checking against exclude namespace: %s", entry->str);
+                                // flb_plg_info(ctx->ins, "namespace_name: %s %d", namespace_name,flb_sds_len(namespace_name));
                                 if (flb_sds_cmp(entry->str, namespace_name, flb_sds_len(namespace_name)) == 0) {
-                                    flb_plg_info(ctx->ins, "Skipping excluded namespace: %s", namespace_name);
-                                    // Cleanup
-                                    flb_sds_destroy(namespace_name);
-                                    flb_sds_destroy(body);
-                                    flb_sds_destroy(body_copy);
-                                    flb_log_event_decoder_destroy(&log_decoder);
-                                    
-                                    // Skip sending the HTTP request
-                                    FLB_OUTPUT_RETURN(FLB_OK);
+                                        flb_plg_info(ctx->ins, "Skipping excluded namespace: %s", namespace_name);
+                                        // Cleanup
+                                        flb_sds_destroy(namespace_name);
+                                        flb_sds_destroy(body);
+                                        flb_sds_destroy(body_copy);
+                                        
+                                        // Skip sending the HTTP request
+                                        FLB_OUTPUT_RETURN(FLB_OK);
                                 }
                             }
                         }
                     }
                 } else {
+                    // Debug: Could not find the namespace_name in body_copy
                     flb_plg_info(ctx->ins, "namespace_name not found in body_copy.");
                 }
             } else {
+                // Debug: body_copy is NULL
                 flb_plg_info(ctx->ins, "body_copy is NULL.");
             }
 
