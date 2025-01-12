@@ -26,8 +26,6 @@
 #include <fluent-bit/flb_utils.h>
 #include <openssl/sha.h>
 #include <openssl/rand.h>
-#include <unistd.h>
-#include <pthread.h>
 #include <fluent-bit/flb_time.h>
 
 #include "azure_kusto.h"
@@ -463,14 +461,12 @@ static uint32_t pcg32_random_r(pcg32_random_t* rng) {
  * by adding variability to the refresh timing, thus preventing spikes in demand.
  *
  * The method combines various sources of entropy including environment variables,
- * current time, process and thread identifiers, and additional random bytes to
- * generate a robust random number.
+ * current time, and additional random bytes to generate a robust random number.
  *
  * Inputs:
  * - Environment variables: HOSTNAME and CLUSTER_NAME, which are used to identify
  *   the pod and cluster respectively. Defaults are used if these are not set.
  * - Current time with high precision is obtained to ensure uniqueness.
- * - Process ID and Thread ID are used to add further entropy.
  *
  * Outputs:
  * - Returns a random integer in the range of -600,000 to +3,600,000.
@@ -486,53 +482,44 @@ int azure_kusto_generate_random_integer() {
     const char *cluster_name = getenv("CLUSTER_NAME");
     pod_id = pod_id ? pod_id : "default_pod_id";
     cluster_name = cluster_name ? cluster_name : "default_cluster_name";
-    struct flb_time tm_now;
-    uint64_t now;
 
     /* Get current time with high precision */
+    struct flb_time tm_now;
     flb_time_get(&tm_now);
     uint64_t current_time = flb_time_to_nanosec(&tm_now);
 
-    /* Get process ID and thread ID */
-#ifdef FLB_SYSTEM_WINDOWS
-    unsigned long pid = GetCurrentProcessId();
-    unsigned long tid = GetCurrentThreadId();
-#else
-    unsigned long pid = getpid();
-    unsigned long tid = (unsigned long)pthread_self();
-#endif
-    /* Combine all sources of entropy into a single string */
-    char combined[1024];
-    snprintf(combined, sizeof(combined), "%s%s%llu%lu%lu%p",
-             pod_id, cluster_name, current_time, pid, tid, (void*)&combined);
-
-    /* Generate SHA256 hash of the combined string */
-    unsigned char hash[SHA256_DIGEST_LENGTH];
-    SHA256((unsigned char*)combined, strlen(combined), hash);
-
-    /* Generate additional entropy */
+    /* Generate additional random entropy */
     unsigned char entropy[32];
     if (RAND_bytes(entropy, sizeof(entropy)) != 1) {
         fprintf(stderr, "Error generating random bytes\n");
         return -1;
     }
 
-    /* Generate an additional 64-bit random number */
-    uint64_t additional_random;
-    if (RAND_bytes((unsigned char*)&additional_random, sizeof(additional_random)) != 1) {
-        fprintf(stderr, "Error generating additional random bytes\n");
-        return -1;
-    }
+    /* Combine all sources of entropy into a single string */
+    char combined[1024];
+    snprintf(combined, sizeof(combined), "%s%s%llu%p",
+             pod_id, cluster_name, current_time, (void *)&combined);
+
+    /* Hash the combined data using SHA256 */
+    unsigned char hash[SHA256_DIGEST_LENGTH];
+    SHA256((unsigned char *)combined, strlen(combined), hash);
 
     /* XOR the hash with the additional entropy */
     for (int i = 0; i < SHA256_DIGEST_LENGTH; i++) {
         hash[i] ^= entropy[i];
     }
 
+    /* Generate an additional 64-bit random number */
+    uint64_t additional_random;
+    if (RAND_bytes((unsigned char *)&additional_random, sizeof(additional_random)) != 1) {
+        fprintf(stderr, "Error generating additional random bytes\n");
+        return -1;
+    }
+
     /* Initialize PCG random number generator */
     pcg32_random_t rng;
-    rng.state = *(uint64_t*)hash ^ additional_random;  // XOR with additional random number
-    rng.inc = *(uint64_t*)(hash + 8);
+    rng.state = *(uint64_t *)hash ^ additional_random; // XOR with additional random number
+    rng.inc = *(uint64_t *)(hash + 8);
 
     /* Generate random value and scale it to desired range */
     uint32_t random_value = pcg32_random_r(&rng);
