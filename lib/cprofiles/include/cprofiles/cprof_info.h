@@ -20,7 +20,7 @@
 #ifndef CPROF_INFO_H
 #define CPROF_INFO_H
 
-#define CPROF_SOURCE_DIR "/src/fluent-bit"
+#define CPROF_SOURCE_DIR "/Users/adheipsingh/parseable/fluent-bit"
 
 /* General flags set by /CMakeLists.txt */
 #ifndef CPROF_HAVE_TIMESPEC_GET
@@ -29,6 +29,7 @@
 #ifndef CPROF_HAVE_GMTIME_R
 #define CPROF_HAVE_GMTIME_R
 #endif
+#ifndef CPROF_HAVE_CLOCK_GET_TIME
 #define CPROF_HAVE_CLOCK_GET_TIME
 #endif
 #ifndef CPROF_HAVE_CFL
