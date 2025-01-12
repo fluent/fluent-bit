@@ -55,6 +55,7 @@ static int cb_parseable_init(struct flb_output_instance *ins,
 }
 
 /* Main flush callback */
+/* Main flush callback */
 static void cb_parseable_flush(struct flb_event_chunk *event_chunk,
                                struct flb_output_flush *out_flush,
                                struct flb_input_instance *i_ins,
@@ -76,20 +77,27 @@ static void cb_parseable_flush(struct flb_event_chunk *event_chunk,
     msgpack_packer pk;
     int i;
 
-    ret = flb_log_event_decoder_init(&log_decoder, (char *) event_chunk->data,
-                                    event_chunk->size);
+    /* Initialize event decoder */
+    flb_plg_info(ctx->ins, "Initializing event decoder...");
+    ret = flb_log_event_decoder_init(&log_decoder, (char *) event_chunk->data, event_chunk->size);
     if (ret != FLB_EVENT_DECODER_SUCCESS) {
-        flb_plg_error(ctx->ins, "failed to initialize event decoder");
+        flb_plg_error(ctx->ins, "Failed to initialize event decoder");
         FLB_OUTPUT_RETURN(FLB_ERROR);
     }
 
+    /* Process each event */
+    flb_plg_info(ctx->ins, "Processing events...");
     while (flb_log_event_decoder_next(&log_decoder, &log_event) == FLB_EVENT_DECODER_SUCCESS) {
+        /* Debug: Log the type of the log event body */
+        flb_plg_info(ctx->ins, "Log event body type: %d", log_event.body->type);
+
         /* Only operate if log is map type */
         if (log_event.body->type != MSGPACK_OBJECT_MAP) {
             continue;
         }
 
         /* Initialize the packer and buffer for serialization/packing */
+        flb_plg_info(ctx->ins, "Initializing msgpack buffer...");
         msgpack_sbuffer_init(&sbuf);
         msgpack_packer_init(&pk, &sbuf, msgpack_sbuffer_write);
 
@@ -106,6 +114,7 @@ static void cb_parseable_flush(struct flb_event_chunk *event_chunk,
 
         /* Convert from msgpack to JSON */
         body = flb_msgpack_raw_to_json_sds(sbuf.data, sbuf.size);
+        flb_plg_info(ctx->ins, "Original JSON body: %s", body);
 
         /* Free up buffer as we don't need it anymore */
         msgpack_sbuffer_destroy(&sbuf);
@@ -113,6 +122,7 @@ static void cb_parseable_flush(struct flb_event_chunk *event_chunk,
         /* Determine the value of the X-P-Stream header */
         if (ctx->stream && strcmp(ctx->stream, "$NAMESPACE") == 0) {
             /* Extract namespace_name from the body */
+            flb_plg_info(ctx->ins, "Extracting namespace_name...");
             flb_sds_t body_copy = flb_sds_create(body);
             if (body_copy == NULL) {
                 flb_plg_error(ctx->ins, "Failed to create a copy of the body");
@@ -121,50 +131,20 @@ static void cb_parseable_flush(struct flb_event_chunk *event_chunk,
                 FLB_OUTPUT_RETURN(FLB_ERROR);
             }
 
-            
-            if (body_copy != NULL) {
-                char *namespace_name_value = strstr(body_copy, "\"namespace_name\":\"");
-                if (namespace_name_value != NULL) {
-                    namespace_name_value += strlen("\"namespace_name\":\"");
-                    char *end_quote = strchr(namespace_name_value, '\"');
-                    if (end_quote != NULL) {
-                        *end_quote = '\0';  // Null-terminate the extracted value
-                        namespace_name = flb_sds_printf(&namespace_name, "%s", namespace_name_value);
-
-                        // Debug: Print the extracted namespace name
-                        flb_plg_info(ctx->ins, "Extracted namespace_name: %s", namespace_name);
-
-
-                        struct mk_list *head;
-                        struct flb_slist_entry *entry;
-
-                        if (ctx->exclude_namespaces) {
-                            mk_list_foreach(head, ctx->exclude_namespaces) {
-                                entry = mk_list_entry(head, struct flb_slist_entry, _head);
-                                flb_plg_info(ctx->ins, "Checking against exclude namespace: %s", entry->str);
-                                // flb_plg_info(ctx->ins, "namespace_name: %s %d", namespace_name,flb_sds_len(namespace_name));
-                                if (flb_sds_cmp(entry->str, namespace_name, flb_sds_len(namespace_name)) == 0) {
-                                        flb_plg_info(ctx->ins, "Skipping excluded namespace: %s", namespace_name);
-                                        // Cleanup
-                                        flb_sds_destroy(namespace_name);
-                                        flb_sds_destroy(body);
-                                        flb_sds_destroy(body_copy);
-                                        
-                                        // Skip sending the HTTP request
-                                        FLB_OUTPUT_RETURN(FLB_OK);
-                                }
-                            }
-                        }
-                    }
+            char *namespace_name_value = strstr(body_copy, "\"namespace_name\":\"");
+            if (namespace_name_value != NULL) {
+                namespace_name_value += strlen("\"namespace_name\":\"");
+                char *end_quote = strchr(namespace_name_value, '\"');
+                if (end_quote != NULL) {
+                    *end_quote = '\0';  // Null-terminate the extracted value
+                    namespace_name = flb_sds_printf(&namespace_name, "%s", namespace_name_value);
+                    flb_plg_info(ctx->ins, "Extracted namespace_name: %s", namespace_name);
                 } else {
-                    // Debug: Could not find the namespace_name in body_copy
-                    flb_plg_info(ctx->ins, "namespace_name not found in body_copy.");
+                    flb_plg_info(ctx->ins, "Failed to find end quote for namespace_name");
                 }
             } else {
-                // Debug: body_copy is NULL
-                flb_plg_info(ctx->ins, "body_copy is NULL.");
+                flb_plg_info(ctx->ins, "namespace_name not found in body_copy.");
             }
-
             flb_sds_destroy(body_copy);
 
             if (!namespace_name || flb_sds_len(namespace_name) == 0) {
@@ -180,6 +160,7 @@ static void cb_parseable_flush(struct flb_event_chunk *event_chunk,
         }
         else if (ctx->stream) {
             /* Use the user-specified stream directly */
+            flb_plg_info(ctx->ins, "Using user-specified stream: %s", ctx->stream);
             x_p_stream_value = flb_sds_create(ctx->stream);
             if (!x_p_stream_value) {
                 flb_plg_error(ctx->ins, "Failed to set X-P-Stream header to the specified stream: %s", ctx->stream);
@@ -195,12 +176,14 @@ static void cb_parseable_flush(struct flb_event_chunk *event_chunk,
             FLB_OUTPUT_RETURN(FLB_ERROR);
         }
 
-        flb_plg_info(ctx->ins, "Creating upstream with server: %s, port: %d", ctx->server_host, ctx->server_port);
+        /* Debug: Log the value of X-P-Stream */
+        flb_plg_info(ctx->ins, "X-P-Stream value: %s", x_p_stream_value);
 
         /* Get upstream connection */
+        flb_plg_info(ctx->ins, "Creating upstream connection...");
         u_conn = flb_upstream_conn_get(ctx->upstream);
         if (!u_conn) {
-            flb_plg_error(ctx->ins, "connection initialization error");
+            flb_plg_error(ctx->ins, "Connection initialization error");
             flb_sds_destroy(body);
             flb_sds_destroy(x_p_stream_value);
             flb_log_event_decoder_destroy(&log_decoder);
@@ -208,14 +191,14 @@ static void cb_parseable_flush(struct flb_event_chunk *event_chunk,
         }
 
         /* Compose HTTP Client request */
+        flb_plg_info(ctx->ins, "Composing HTTP client request...");
         client = flb_http_client(u_conn,
                                 FLB_HTTP_POST, "/api/v1/ingest",
                                 body, flb_sds_len(body),
                                 ctx->server_host, ctx->server_port,
                                 NULL, 0);
-
         if (!client) {
-            flb_plg_error(ctx->ins, "could not create HTTP client");
+            flb_plg_error(ctx->ins, "Could not create HTTP client");
             flb_sds_destroy(body);
             flb_sds_destroy(x_p_stream_value);
             flb_upstream_conn_release(u_conn);
@@ -229,9 +212,9 @@ static void cb_parseable_flush(struct flb_event_chunk *event_chunk,
         flb_http_basic_auth(client, ctx->username, ctx->password);
 
         /* Perform request */
+        flb_plg_info(ctx->ins, "Sending HTTP request...");
         ret = flb_http_do(client, &b_sent);
-        flb_plg_info(ctx->ins, "HTTP request http_do=%i, HTTP Status: %i",
-                     ret, client->resp.status);
+        flb_plg_info(ctx->ins, "HTTP request sent. http_do=%i, HTTP Status: %i", ret, client->resp.status);
 
         /* Clean up resources */
         flb_sds_destroy(body);
@@ -240,9 +223,13 @@ static void cb_parseable_flush(struct flb_event_chunk *event_chunk,
         flb_upstream_conn_release(u_conn);
     }
 
+    /* Clean up log event decoder */
+    flb_plg_info(ctx->ins, "Cleaning up log event decoder...");
     flb_log_event_decoder_destroy(&log_decoder);
+    flb_plg_info(ctx->ins, "Processing complete.");
     FLB_OUTPUT_RETURN(FLB_OK);
 }
+
 
 static int cb_parseable_exit(void *data, struct flb_config *config)
 {
