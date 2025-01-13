@@ -27,7 +27,7 @@ test_custom_calyptia_fleet_yaml() {
     fi
 
     # Clean up
-    kill -15 $FLB_PID
+    kill -15 $FLB_PID || true
 }
 
 test_custom_calyptia_fleet_toml() {
@@ -57,7 +57,7 @@ test_custom_calyptia_fleet_toml() {
     fi
 
     # Clean up
-    kill -15 $FLB_PID
+    kill -15 $FLB_PID || true
 }
 
 # The following command launch the unit test
