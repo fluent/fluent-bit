@@ -63,6 +63,7 @@ set(src
   flb_plugin.c
   flb_gzip.c
   flb_snappy.c
+  flb_zstd.c
   flb_compression.c
   flb_http_common.c
   flb_http_client_http1.c
@@ -386,6 +387,7 @@ set(FLB_DEPS
   mpack-static
   chunkio-static
   miniz
+  libzstd_static
 
   ${FLB_PLUGINS}
   ${FLB_PROXY_PLUGINS}
