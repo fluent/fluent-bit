@@ -18,6 +18,7 @@ set(UNIT_TESTS_FILES
   http_client.c
   utils.c
   gzip.c
+  zstd.c
   random.c
   config_map.c
   mp.c
