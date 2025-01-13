@@ -30,7 +30,6 @@
 #include <fluent-bit/flb_fstore.h>
 #include <msgpack.h>
 #include <fluent-bit/flb_version.h>
-#include <unistd.h>
 
 #include "azure_kusto.h"
 #include "azure_kusto_conf.h"
