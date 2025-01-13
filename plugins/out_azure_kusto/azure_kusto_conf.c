@@ -477,6 +477,7 @@ static uint32_t pcg32_random_r(pcg32_random_t* rng) {
  * algorithm is used for generating the final random number.
  */
 int azure_kusto_generate_random_integer() {
+    int i;
     /* Get environment variables or use default values */
     const char *pod_id = getenv("HOSTNAME");
     const char *cluster_name = getenv("CLUSTER_NAME");
@@ -505,7 +506,7 @@ int azure_kusto_generate_random_integer() {
     SHA256((unsigned char *)combined, strlen(combined), hash);
 
     /* XOR the hash with the additional entropy */
-    for (int i = 0; i < SHA256_DIGEST_LENGTH; i++) {
+    for (i = 0; i < SHA256_DIGEST_LENGTH; i++) {
         hash[i] ^= entropy[i];
     }
 
