@@ -10,7 +10,6 @@ on:
       - 'packaging/**'
       - '.gitignore'
       - 'appveyor.yml'
-      - '**.sh'
       - 'examples/**'
 
 jobs:
