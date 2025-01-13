@@ -547,8 +547,10 @@ static flb_sds_t azure_kusto_create_blob_id(struct flb_azure_kusto *ctx, flb_sds
     size_t b64_len = 0;
     char *uuid = NULL;
     char timestamp[20]; /* Buffer for timestamp */
-    char generated_random_string[ctx->blob_uri_length + 1];
+    char *generated_random_string = NULL;
 
+    /* Allocate memory for the random string */
+    generated_random_string = flb_malloc(ctx->blob_uri_length + 1);
     flb_time_get(&tm);
     ms = ((tm.tm.tv_sec * 1000) + (tm.tm.tv_nsec / 1000000));
 
@@ -597,6 +599,7 @@ static flb_sds_t azure_kusto_create_blob_id(struct flb_azure_kusto *ctx, flb_sds
         flb_free(b64tag);
     }
     flb_free(uuid);
+    flb_free(generated_random_string);
 
     return blob_id;
 }
