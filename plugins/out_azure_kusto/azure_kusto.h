@@ -29,7 +29,6 @@
 #include <fluent-bit/flb_scheduler.h>
 #include <fluent-bit/flb_utils.h>
 #include <fluent-bit/flb_time.h>
-#include <dirent.h>
 #include <sys/stat.h>
 #include <fcntl.h>
 

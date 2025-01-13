@@ -1724,9 +1724,9 @@ static struct flb_config_map config_map[] = {
                              offsetof(struct flb_azure_kusto, buffer_file_delete_early),
         "Whether to delete the buffered file early after successful blob creation. Default is false"
         },
-        {FLB_CONFIG_MAP_BOOL, "unify_tag", "false",0, FLB_TRUE,
+        {FLB_CONFIG_MAP_BOOL, "unify_tag", "true",0, FLB_TRUE,
                 offsetof(struct flb_azure_kusto, unify_tag),
-        "This creates a single buffer file when the buffering mode is ON. Default is false"
+        "This creates a single buffer file when the buffering mode is ON. Default is true"
         },
         {FLB_CONFIG_MAP_INT, "blob_uri_length", "64",0, FLB_TRUE,
                     offsetof(struct flb_azure_kusto, blob_uri_length),
