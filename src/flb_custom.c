@@ -226,12 +226,12 @@ int flb_custom_plugin_property_check(struct flb_custom_instance *ins,
         }
         ins->config_map = config_map;
 
-        if ((p->flags & FLB_CUSTOM_NET_CLIENT) && (p->flags & FLB_CUSTOM_NET_SERVER)) {
+        if ((p->flags & FLB_CUSTOM_NET_UPSTREAM) && (p->flags & FLB_CUSTOM_NET_UPSTREAM)) {
                 flb_error("[custom] cannot configure upstream and downstream "
                           "in the same custom plugin: '%s'",
                           p->name);
         }
-        if (p->flags & FLB_CUSTOM_NET_CLIENT) {
+        if (p->flags & FLB_CUSTOM_NET_UPSTREAM) {
                 ins->net_config_map = flb_upstream_get_config_map(config);
                 if (ins->net_config_map == NULL) {
                         flb_error("[custom] unable to load upstream properties: '%s'",
@@ -239,7 +239,7 @@ int flb_custom_plugin_property_check(struct flb_custom_instance *ins,
                         return -1;
                 }
         }
-        else if (p->flags & FLB_CUSTOM_NET_SERVER) {
+        else if (p->flags & FLB_CUSTOM_NET_UPSTREAM) {
                 ins->net_config_map = flb_downstream_get_config_map(config);
                 if (ins->net_config_map == NULL) {
                         flb_error("[custom] unable to load downstream properties: '%s'",

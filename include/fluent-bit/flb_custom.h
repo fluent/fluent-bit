@@ -28,8 +28,8 @@
 #endif
 
 /* Custom plugin flag masks */
-#define FLB_CUSTOM_NET_CLIENT   1   /* custom may use upstream net.* properties  */
-#define FLB_CUSTOM_NET_SERVER   2   /* custom may use downstream net.* properties  */
+#define FLB_CUSTOM_NET_UPSTREAM   1   /* custom may use upstream net.* properties  */
+#define FLB_CUSTOM_NET_DOWNSTREAM 2   /* custom may use downstream net.* properties  */
 
 struct flb_custom_instance;
 
