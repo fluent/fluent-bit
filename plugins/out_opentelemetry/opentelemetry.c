@@ -90,6 +90,17 @@ int opentelemetry_legacy_post(struct opentelemetry_context *ctx,
             flb_plg_error(ctx->ins, "cannot gzip payload, disabling compression");
         }
     }
+    else if (ctx->compress_zstd) {
+        ret = flb_zstd_compress((void *) body, body_len,
+                                &final_body, &final_body_len);
+
+        if (ret == 0) {
+            compressed = FLB_TRUE;
+        }
+        else {
+            flb_plg_error(ctx->ins, "cannot zstd payload, disabling compression");
+        }
+    }
     else {
         final_body = (void *) body;
         final_body_len = body_len;
@@ -151,8 +162,16 @@ int opentelemetry_legacy_post(struct opentelemetry_context *ctx,
     }
 
     if (compressed) {
-        flb_http_set_content_encoding_gzip(c);
+        if (ctx->compress_gzip) {
+            flb_http_set_content_encoding_gzip(c);
+        }
+        else if (ctx->compress_zstd) {
+            flb_http_set_content_encoding_zstd(c);
+        }
     }
+
+    /* Map debug callbacks */
+    flb_http_client_debug(c, ctx->ins->callback);
 
     ret = flb_http_do(c, &b_sent);
 
@@ -759,6 +778,12 @@ static int cb_opentelemetry_init(struct flb_output_instance *ins,
     }
 
     flb_output_set_context(ins, ctx);
+
+    /*
+     * This plugin instance uses the HTTP client interface, let's register
+     * it debugging callbacks.
+     */
+    flb_output_set_http_debug_callbacks(ins);
 
     return 0;
 }
