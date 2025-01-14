@@ -325,6 +325,9 @@ int opentelemetry_post(struct opentelemetry_context *ctx,
         if (ctx->compress_gzip == FLB_TRUE) {
             compression_algorithm = "gzip";
         }
+        else if (ctx->compress_zstd == FLB_TRUE) {
+            compression_algorithm = "zstd";
+        }
 
         result = flb_http_request_set_parameters(request,
                         FLB_HTTP_CLIENT_ARGUMENT_URI(http_uri),
@@ -407,7 +410,7 @@ int opentelemetry_post(struct opentelemetry_context *ctx,
         if (ctx->log_response_payload &&
             response->body != NULL &&
             cfl_sds_len(response->body) > 0) {
-            flb_plg_info(ctx->ins, "%s:%i, HTTP status=%i\n%s",
+            flb_plg_info(ctx->ins, "%s:%i, HTTP status=%i%s",
                             ctx->host, ctx->port,
                             response->status, response->body);
         }
@@ -840,7 +843,7 @@ static struct flb_config_map config_map[] = {
     {
      FLB_CONFIG_MAP_STR, "compress", NULL,
      0, FLB_FALSE, 0,
-     "Set payload compression mechanism. Option available is 'gzip'"
+     "Set payload compression mechanism. Options available are 'gzip' and 'zstd'."
     },
     /*
      * Logs Properties
