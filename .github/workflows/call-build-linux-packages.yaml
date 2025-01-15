@@ -121,7 +121,7 @@ jobs:
           ref: ${{ inputs.ref }}
 
       - name: Set up Actuated mirror
-        if: contains(matrix.distro, 'arm' ) && (github.repository == 'fluent/fluent-bit')
+        if: (contains(matrix.distro, 'arm' ) || contains(matrix.distro, 'raspbian')) && (github.repository == 'fluent/fluent-bit')
         uses: self-actuated/hub-mirror@master
 
       - name: Set up QEMU
