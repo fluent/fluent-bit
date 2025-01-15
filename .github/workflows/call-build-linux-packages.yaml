@@ -106,7 +106,7 @@ jobs:
     name: ${{ matrix.distro }} package build and stage to S3
     environment: ${{ inputs.environment }}
     # Ensure for OSS Fluent Bit repo we enable usage of Actuated runners for ARM builds, for forks it should keep existing ubuntu-22.04 usage.
-    runs-on: ${{ ((contains(matrix.distro, 'arm' ) || (contains(matrix.distro, 'raspbian' )) && (github.repository == 'fluent/fluent-bit') && 'actuated-arm64-8cpu-16gb') || 'ubuntu-22.04' }}
+    runs-on: ${{ ((contains(matrix.distro, 'arm' ) || contains(matrix.distro, 'raspbian')) && (github.repository == 'fluent/fluent-bit') && 'actuated-arm64-8cpu-16gb') || 'ubuntu-22.04' }}
     permissions:
       contents: read
     strategy:
