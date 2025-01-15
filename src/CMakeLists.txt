@@ -571,27 +571,50 @@ if(FLB_BINARY)
       DESTINATION ${FLB_INSTALL_CONFDIR}
       COMPONENT binary
       RENAME "${FLB_OUT_NAME}.conf")
+    install(FILES
+      "${PROJECT_SOURCE_DIR}/conf/fluent-bit-win32.yaml"
+      DESTINATION ${FLB_INSTALL_CONFDIR}
+      COMPONENT binary
+      RENAME "${FLB_OUT_NAME}.yaml")
   elseif(FLB_SYSTEM_MACOS)
     install(FILES
       "${PROJECT_SOURCE_DIR}/conf/fluent-bit-macos.conf"
       DESTINATION ${FLB_INSTALL_CONFDIR}
       COMPONENT binary
       RENAME "${FLB_OUT_NAME}.conf")
+    install(FILES
+      "${PROJECT_SOURCE_DIR}/conf/fluent-bit-macos.yaml"
+      DESTINATION ${FLB_INSTALL_CONFDIR}
+      COMPONENT binary
+      RENAME "${FLB_OUT_NAME}.yaml")
   else()
     install(FILES
       "${PROJECT_SOURCE_DIR}/conf/fluent-bit.conf"
       DESTINATION ${FLB_INSTALL_CONFDIR}
       COMPONENT binary
       RENAME "${FLB_OUT_NAME}.conf")
+    install(FILES
+      "${PROJECT_SOURCE_DIR}/conf/fluent-bit.yaml"
+      DESTINATION ${FLB_INSTALL_CONFDIR}
+      COMPONENT binary
+      RENAME "${FLB_OUT_NAME}.yaml")
   endif()
 
   install(FILES
     "${PROJECT_SOURCE_DIR}/conf/parsers.conf"
     COMPONENT binary
     DESTINATION ${FLB_INSTALL_CONFDIR})
+  install(FILES
+    "${PROJECT_SOURCE_DIR}/conf/parsers.yaml"
+    COMPONENT binary
+    DESTINATION ${FLB_INSTALL_CONFDIR})
 
   install(FILES
     "${PROJECT_SOURCE_DIR}/conf/plugins.conf"
+    COMPONENT binary
+    DESTINATION ${FLB_INSTALL_CONFDIR})
+  install(FILES
+    "${PROJECT_SOURCE_DIR}/conf/plugins.yaml"
     COMPONENT binary
     DESTINATION ${FLB_INSTALL_CONFDIR})
 
