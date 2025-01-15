@@ -142,6 +142,10 @@ jobs:
         uses: self-actuated/hub-mirror@master
 >>>>>>> 2882ecf9e (workflows: speed up Raspbian builds)
 
+      - name: Set up Docker Buildx
+        if: ${{ !(contains(matrix.distro, 'arm' ) || contains(matrix.distro, 'raspbian')) && (github.repository == 'fluent/fluent-bit') }}
+        uses: docker/setup-buildx-action@v3
+
       - name: Set up QEMU
         uses: docker/setup-qemu-action@v3
 
