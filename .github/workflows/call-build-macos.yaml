@@ -76,6 +76,8 @@ jobs:
         config:
           - name: "Apple Silicon macOS runner"
             runner: macos-14
+          - name: "Intel macOS runner"
+            runner: macos-14-large
 
     steps:
       - name: Checkout repository
