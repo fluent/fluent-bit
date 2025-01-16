@@ -93,7 +93,7 @@ struct flb_out_datadog *flb_datadog_conf_create(struct flb_output_instance *ins,
     /* configure URI */
     api_key = flb_output_get_property("apikey", ins);
     if (api_key == NULL) {
-        flb_plg_error(ctx->ins, "no ApiKey configuration key defined");
+        flb_plg_error(ctx->ins, "no apikey configuration key defined");
         flb_datadog_conf_destroy(ctx);
         return NULL;
     }
