@@ -404,6 +404,13 @@ struct opentelemetry_context *flb_opentelemetry_context_create(struct flb_output
         if (strcasecmp(tmp, "gzip") == 0) {
             ctx->compress_gzip = FLB_TRUE;
         }
+        else if (strcasecmp(tmp, "zstd") == 0) {
+            ctx->compress_zstd = FLB_TRUE;
+        }
+        else {
+            flb_plg_error(ctx->ins, "Unknown compression method %s", tmp);
+            return NULL;
+        }
     }
 
     ctx->ra_observed_timestamp_metadata = flb_ra_create((char*)ctx->logs_observed_timestamp_metadata_key,

@@ -20,6 +20,8 @@
 #include <fluent-bit/flb_output_plugin.h>
 #include <fluent-bit/flb_input_event.h>
 #include <fluent-bit/flb_snappy.h>
+#include <fluent-bit/flb_gzip.h>
+#include <fluent-bit/flb_zstd.h>
 #include <fluent-bit/flb_metrics.h>
 #include <fluent-bit/flb_time.h>
 #include <fluent-bit/flb_kv.h>
@@ -90,6 +92,17 @@ int opentelemetry_legacy_post(struct opentelemetry_context *ctx,
             flb_plg_error(ctx->ins, "cannot gzip payload, disabling compression");
         }
     }
+    else if (ctx->compress_zstd) {
+        ret = flb_zstd_compress((void *) body, body_len,
+                                &final_body, &final_body_len);
+
+        if (ret == 0) {
+            compressed = FLB_TRUE;
+        }
+        else {
+            flb_plg_error(ctx->ins, "cannot zstd payload, disabling compression");
+        }
+    }
     else {
         final_body = (void *) body;
         final_body_len = body_len;
@@ -151,8 +164,16 @@ int opentelemetry_legacy_post(struct opentelemetry_context *ctx,
     }
 
     if (compressed) {
-        flb_http_set_content_encoding_gzip(c);
+        if (ctx->compress_gzip) {
+            flb_http_set_content_encoding_gzip(c);
+        }
+        else if (ctx->compress_zstd) {
+            flb_http_set_content_encoding_zstd(c);
+        }
     }
+
+    /* Map debug callbacks */
+    flb_http_client_debug(c, ctx->ins->callback);
 
     ret = flb_http_do(c, &b_sent);
 
@@ -286,6 +307,10 @@ int opentelemetry_post(struct opentelemetry_context *ctx,
 
         grpc_body = sds_result;
 
+        if(compression_algorithm != NULL) {
+            ((uint8_t *) grpc_body)[0] = 0x01;
+        }
+
         ((uint8_t *) grpc_body)[1] = (wire_message_length & 0xFF000000) >> 24;
         ((uint8_t *) grpc_body)[2] = (wire_message_length & 0x00FF0000) >> 16;
         ((uint8_t *) grpc_body)[3] = (wire_message_length & 0x0000FF00) >> 8;
@@ -324,6 +349,9 @@ int opentelemetry_post(struct opentelemetry_context *ctx,
     else {
         if (ctx->compress_gzip == FLB_TRUE) {
             compression_algorithm = "gzip";
+        }
+        else if (ctx->compress_zstd == FLB_TRUE) {
+            compression_algorithm = "zstd";
         }
 
         result = flb_http_request_set_parameters(request,
@@ -407,7 +435,7 @@ int opentelemetry_post(struct opentelemetry_context *ctx,
         if (ctx->log_response_payload &&
             response->body != NULL &&
             cfl_sds_len(response->body) > 0) {
-            flb_plg_info(ctx->ins, "%s:%i, HTTP status=%i\n%s",
+            flb_plg_info(ctx->ins, "%s:%i, HTTP status=%i%s",
                             ctx->host, ctx->port,
                             response->status, response->body);
         }
@@ -757,6 +785,12 @@ static int cb_opentelemetry_init(struct flb_output_instance *ins,
 
     flb_output_set_context(ins, ctx);
 
+    /*
+     * This plugin instance uses the HTTP client interface, let's register
+     * it debugging callbacks.
+     */
+    flb_output_set_http_debug_callbacks(ins);
+
     return 0;
 }
 
@@ -840,7 +874,7 @@ static struct flb_config_map config_map[] = {
     {
      FLB_CONFIG_MAP_STR, "compress", NULL,
      0, FLB_FALSE, 0,
-     "Set payload compression mechanism. Option available is 'gzip'"
+     "Set payload compression mechanism. Options available are 'gzip' and 'zstd'."
     },
     /*
      * Logs Properties
