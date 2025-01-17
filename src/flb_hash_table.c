@@ -18,6 +18,7 @@
  */
 
 #include <stdint.h>
+#include <ctype.h>
 
 #include <fluent-bit/flb_info.h>
 #include <fluent-bit/flb_mem.h>
