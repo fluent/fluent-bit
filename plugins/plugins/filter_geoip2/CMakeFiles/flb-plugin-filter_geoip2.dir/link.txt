@@ -1,0 +1,2 @@
+/Library/Developer/CommandLineTools/usr/bin/ar qc ../../library/libflb-plugin-filter_geoip2.a "CMakeFiles/flb-plugin-filter_geoip2.dir/geoip2.c.o" "CMakeFiles/flb-plugin-filter_geoip2.dir/__/__/lib/lwrb/lwrb/src/lwrb/lwrb.c.o"
+/Library/Developer/CommandLineTools/usr/bin/ranlib ../../library/libflb-plugin-filter_geoip2.a

@@ -1,0 +1,2 @@
+/Library/Developer/CommandLineTools/usr/bin/ar qc ../../library/libflb-plugin-in_prometheus_scrape.a "CMakeFiles/flb-plugin-in_prometheus_scrape.dir/prom_scrape.c.o" "CMakeFiles/flb-plugin-in_prometheus_scrape.dir/__/__/lib/lwrb/lwrb/src/lwrb/lwrb.c.o"
+/Library/Developer/CommandLineTools/usr/bin/ranlib ../../library/libflb-plugin-in_prometheus_scrape.a

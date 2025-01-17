@@ -1,0 +1,2 @@
+/Library/Developer/CommandLineTools/usr/bin/ar qc ../../library/libflb-plugin-processor_opentelemetry_envelope.a "CMakeFiles/flb-plugin-processor_opentelemetry_envelope.dir/otel_envelope.c.o" "CMakeFiles/flb-plugin-processor_opentelemetry_envelope.dir/__/__/lib/lwrb/lwrb/src/lwrb/lwrb.c.o"
+/Library/Developer/CommandLineTools/usr/bin/ranlib ../../library/libflb-plugin-processor_opentelemetry_envelope.a

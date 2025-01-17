@@ -1,0 +1,2 @@
+/Library/Developer/CommandLineTools/usr/bin/ar qc ../../library/libflb-plugin-in_blob.a "CMakeFiles/flb-plugin-in_blob.dir/blob.c.o" "CMakeFiles/flb-plugin-in_blob.dir/blob_db.c.o" "CMakeFiles/flb-plugin-in_blob.dir/blob_file.c.o" "CMakeFiles/flb-plugin-in_blob.dir/__/__/lib/lwrb/lwrb/src/lwrb/lwrb.c.o"
+/Library/Developer/CommandLineTools/usr/bin/ranlib ../../library/libflb-plugin-in_blob.a

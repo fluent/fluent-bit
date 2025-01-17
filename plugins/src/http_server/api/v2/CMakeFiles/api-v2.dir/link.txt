@@ -1,0 +1,2 @@
+/Library/Developer/CommandLineTools/usr/bin/ar qc ../../../../library/libapi-v2.a "CMakeFiles/api-v2.dir/metrics.c.o" "CMakeFiles/api-v2.dir/reload.c.o" "CMakeFiles/api-v2.dir/register.c.o" "CMakeFiles/api-v2.dir/__/__/__/__/lib/lwrb/lwrb/src/lwrb/lwrb.c.o"
+/Library/Developer/CommandLineTools/usr/bin/ranlib ../../../../library/libapi-v2.a

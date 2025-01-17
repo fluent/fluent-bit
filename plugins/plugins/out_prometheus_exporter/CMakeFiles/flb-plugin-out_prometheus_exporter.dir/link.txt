@@ -1,0 +1,2 @@
+/Library/Developer/CommandLineTools/usr/bin/ar qc ../../library/libflb-plugin-out_prometheus_exporter.a "CMakeFiles/flb-plugin-out_prometheus_exporter.dir/prom_http.c.o" "CMakeFiles/flb-plugin-out_prometheus_exporter.dir/prom.c.o" "CMakeFiles/flb-plugin-out_prometheus_exporter.dir/__/__/lib/lwrb/lwrb/src/lwrb/lwrb.c.o"
+/Library/Developer/CommandLineTools/usr/bin/ranlib ../../library/libflb-plugin-out_prometheus_exporter.a

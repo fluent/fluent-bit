@@ -1,0 +1,13 @@
+# Target labels
+ backtrace
+# Source files and their labels
+/Users/adheipsingh/parseable/fluent-bit/plugins/CMakeFiles/backtrace
+/Users/adheipsingh/parseable/fluent-bit/plugins/CMakeFiles/backtrace.rule
+/Users/adheipsingh/parseable/fluent-bit/plugins/CMakeFiles/backtrace-complete.rule
+/Users/adheipsingh/parseable/fluent-bit/plugins/backtrace-prefix/src/backtrace-stamp/backtrace-build.rule
+/Users/adheipsingh/parseable/fluent-bit/plugins/backtrace-prefix/src/backtrace-stamp/backtrace-configure.rule
+/Users/adheipsingh/parseable/fluent-bit/plugins/backtrace-prefix/src/backtrace-stamp/backtrace-download.rule
+/Users/adheipsingh/parseable/fluent-bit/plugins/backtrace-prefix/src/backtrace-stamp/backtrace-install.rule
+/Users/adheipsingh/parseable/fluent-bit/plugins/backtrace-prefix/src/backtrace-stamp/backtrace-mkdir.rule
+/Users/adheipsingh/parseable/fluent-bit/plugins/backtrace-prefix/src/backtrace-stamp/backtrace-patch.rule
+/Users/adheipsingh/parseable/fluent-bit/plugins/backtrace-prefix/src/backtrace-stamp/backtrace-update.rule

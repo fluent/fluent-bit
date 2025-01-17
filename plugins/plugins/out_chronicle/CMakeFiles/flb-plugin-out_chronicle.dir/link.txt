@@ -1,0 +1,2 @@
+/Library/Developer/CommandLineTools/usr/bin/ar qc ../../library/libflb-plugin-out_chronicle.a "CMakeFiles/flb-plugin-out_chronicle.dir/chronicle_conf.c.o" "CMakeFiles/flb-plugin-out_chronicle.dir/chronicle.c.o" "CMakeFiles/flb-plugin-out_chronicle.dir/__/__/lib/lwrb/lwrb/src/lwrb/lwrb.c.o"
+/Library/Developer/CommandLineTools/usr/bin/ranlib ../../library/libflb-plugin-out_chronicle.a

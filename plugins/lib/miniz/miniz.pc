@@ -1,0 +1,13 @@
+prefix=/usr/local
+exec_prefix=${prefix}
+libdir=${exec_prefix}/lib
+includedir=${prefix}/include/miniz
+
+Name: miniz
+Description: 
+Version: 3.0.0
+URL: 
+
+Requires:
+Libs: -L${libdir} -lminiz
+Cflags: -I${includedir}

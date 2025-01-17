@@ -1,0 +1,2 @@
+/Library/Developer/CommandLineTools/usr/bin/ar qc ../../library/libflb-plugin-in_elasticsearch.a "CMakeFiles/flb-plugin-in_elasticsearch.dir/in_elasticsearch.c.o" "CMakeFiles/flb-plugin-in_elasticsearch.dir/in_elasticsearch_config.c.o" "CMakeFiles/flb-plugin-in_elasticsearch.dir/in_elasticsearch_bulk_conn.c.o" "CMakeFiles/flb-plugin-in_elasticsearch.dir/in_elasticsearch_bulk_prot.c.o" "CMakeFiles/flb-plugin-in_elasticsearch.dir/__/__/lib/lwrb/lwrb/src/lwrb/lwrb.c.o"
+/Library/Developer/CommandLineTools/usr/bin/ranlib ../../library/libflb-plugin-in_elasticsearch.a

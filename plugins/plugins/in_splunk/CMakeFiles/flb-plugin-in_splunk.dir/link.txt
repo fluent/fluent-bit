@@ -1,0 +1,2 @@
+/Library/Developer/CommandLineTools/usr/bin/ar qc ../../library/libflb-plugin-in_splunk.a "CMakeFiles/flb-plugin-in_splunk.dir/splunk.c.o" "CMakeFiles/flb-plugin-in_splunk.dir/splunk_conn.c.o" "CMakeFiles/flb-plugin-in_splunk.dir/splunk_prot.c.o" "CMakeFiles/flb-plugin-in_splunk.dir/splunk_config.c.o" "CMakeFiles/flb-plugin-in_splunk.dir/__/__/lib/lwrb/lwrb/src/lwrb/lwrb.c.o"
+/Library/Developer/CommandLineTools/usr/bin/ranlib ../../library/libflb-plugin-in_splunk.a

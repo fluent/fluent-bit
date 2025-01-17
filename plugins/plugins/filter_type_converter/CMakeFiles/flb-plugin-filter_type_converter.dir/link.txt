@@ -1,0 +1,2 @@
+/Library/Developer/CommandLineTools/usr/bin/ar qc ../../library/libflb-plugin-filter_type_converter.a "CMakeFiles/flb-plugin-filter_type_converter.dir/type_converter.c.o" "CMakeFiles/flb-plugin-filter_type_converter.dir/__/__/lib/lwrb/lwrb/src/lwrb/lwrb.c.o"
+/Library/Developer/CommandLineTools/usr/bin/ranlib ../../library/libflb-plugin-filter_type_converter.a

@@ -1,0 +1,2 @@
+/Library/Developer/CommandLineTools/usr/bin/ar qc ../../library/libflb-plugin-in_calyptia_fleet.a "CMakeFiles/flb-plugin-in_calyptia_fleet.dir/in_calyptia_fleet.c.o" "CMakeFiles/flb-plugin-in_calyptia_fleet.dir/__/__/lib/lwrb/lwrb/src/lwrb/lwrb.c.o"
+/Library/Developer/CommandLineTools/usr/bin/ranlib ../../library/libflb-plugin-in_calyptia_fleet.a

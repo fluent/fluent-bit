@@ -1,0 +1,2 @@
+/Library/Developer/CommandLineTools/usr/bin/ar qc ../../library/libflb-plugin-in_emitter.a "CMakeFiles/flb-plugin-in_emitter.dir/emitter.c.o" "CMakeFiles/flb-plugin-in_emitter.dir/__/__/lib/lwrb/lwrb/src/lwrb/lwrb.c.o"
+/Library/Developer/CommandLineTools/usr/bin/ranlib ../../library/libflb-plugin-in_emitter.a

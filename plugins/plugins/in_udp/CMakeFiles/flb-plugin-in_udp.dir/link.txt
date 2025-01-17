@@ -1,0 +1,2 @@
+/Library/Developer/CommandLineTools/usr/bin/ar qc ../../library/libflb-plugin-in_udp.a "CMakeFiles/flb-plugin-in_udp.dir/udp.c.o" "CMakeFiles/flb-plugin-in_udp.dir/udp_conn.c.o" "CMakeFiles/flb-plugin-in_udp.dir/udp_config.c.o" "CMakeFiles/flb-plugin-in_udp.dir/__/__/lib/lwrb/lwrb/src/lwrb/lwrb.c.o"
+/Library/Developer/CommandLineTools/usr/bin/ranlib ../../library/libflb-plugin-in_udp.a

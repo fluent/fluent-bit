@@ -1,0 +1,2 @@
+/Library/Developer/CommandLineTools/usr/bin/ar qc ../../library/libflb-plugin-out_forward.a "CMakeFiles/flb-plugin-out_forward.dir/forward.c.o" "CMakeFiles/flb-plugin-out_forward.dir/forward_format.c.o" "CMakeFiles/flb-plugin-out_forward.dir/__/__/lib/lwrb/lwrb/src/lwrb/lwrb.c.o"
+/Library/Developer/CommandLineTools/usr/bin/ranlib ../../library/libflb-plugin-out_forward.a

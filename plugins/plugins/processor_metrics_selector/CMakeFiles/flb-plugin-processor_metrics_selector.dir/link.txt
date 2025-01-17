@@ -1,0 +1,2 @@
+/Library/Developer/CommandLineTools/usr/bin/ar qc ../../library/libflb-plugin-processor_metrics_selector.a "CMakeFiles/flb-plugin-processor_metrics_selector.dir/selector.c.o" "CMakeFiles/flb-plugin-processor_metrics_selector.dir/__/__/lib/lwrb/lwrb/src/lwrb/lwrb.c.o"
+/Library/Developer/CommandLineTools/usr/bin/ranlib ../../library/libflb-plugin-processor_metrics_selector.a

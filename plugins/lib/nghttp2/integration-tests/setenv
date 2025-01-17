@@ -1,0 +1,13 @@
+#!/bin/sh -e
+
+libdir="/Users/adheipsingh/parseable/fluent-bit/plugins/lib/nghttp2/lib"
+if [ -d "$libdir/.libs" ]; then
+    libdir="$libdir/.libs"
+fi
+
+export CGO_CFLAGS="-I/Users/adheipsingh/parseable/fluent-bit/lib/nghttp2/lib/includes -I/Users/adheipsingh/parseable/fluent-bit/plugins/lib/nghttp2/lib/includes "
+export CGO_CPPFLAGS=""
+export CGO_LDFLAGS="-L$libdir "
+export LD_LIBRARY_PATH="$libdir"
+export GODEBUG=cgocheck=0
+"$@"

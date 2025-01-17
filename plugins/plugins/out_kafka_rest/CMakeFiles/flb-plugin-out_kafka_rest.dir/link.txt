@@ -1,0 +1,2 @@
+/Library/Developer/CommandLineTools/usr/bin/ar qc ../../library/libflb-plugin-out_kafka_rest.a "CMakeFiles/flb-plugin-out_kafka_rest.dir/kafka_conf.c.o" "CMakeFiles/flb-plugin-out_kafka_rest.dir/kafka.c.o" "CMakeFiles/flb-plugin-out_kafka_rest.dir/__/__/lib/lwrb/lwrb/src/lwrb/lwrb.c.o"
+/Library/Developer/CommandLineTools/usr/bin/ranlib ../../library/libflb-plugin-out_kafka_rest.a

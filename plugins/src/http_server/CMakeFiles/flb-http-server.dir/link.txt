@@ -1,0 +1,2 @@
+/Library/Developer/CommandLineTools/usr/bin/ar qc ../../library/libflb-http-server.a "CMakeFiles/flb-http-server.dir/flb_hs.c.o" "CMakeFiles/flb-http-server.dir/flb_hs_endpoints.c.o" "CMakeFiles/flb-http-server.dir/flb_hs_utils.c.o" "CMakeFiles/flb-http-server.dir/flb_http_server.c.o" "CMakeFiles/flb-http-server.dir/flb_http_server_http1.c.o" "CMakeFiles/flb-http-server.dir/flb_http_server_http2.c.o"
+/Library/Developer/CommandLineTools/usr/bin/ranlib ../../library/libflb-http-server.a

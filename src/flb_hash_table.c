@@ -18,7 +18,10 @@
  */
 
 #include <stdint.h>
+<<<<<<< HEAD
 #include <ctype.h>
+=======
+>>>>>>> 8d7687f37 (hash_table: added optional case insensitive mode)
 
 #include <fluent-bit/flb_info.h>
 #include <fluent-bit/flb_mem.h>

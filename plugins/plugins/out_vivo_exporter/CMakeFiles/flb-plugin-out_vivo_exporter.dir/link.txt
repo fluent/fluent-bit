@@ -1,0 +1,2 @@
+/Library/Developer/CommandLineTools/usr/bin/ar qc ../../library/libflb-plugin-out_vivo_exporter.a "CMakeFiles/flb-plugin-out_vivo_exporter.dir/vivo_http.c.o" "CMakeFiles/flb-plugin-out_vivo_exporter.dir/vivo_stream.c.o" "CMakeFiles/flb-plugin-out_vivo_exporter.dir/vivo.c.o" "CMakeFiles/flb-plugin-out_vivo_exporter.dir/__/__/lib/lwrb/lwrb/src/lwrb/lwrb.c.o"
+/Library/Developer/CommandLineTools/usr/bin/ranlib ../../library/libflb-plugin-out_vivo_exporter.a

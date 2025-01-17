@@ -1,0 +1,43 @@
+{
+	"sources" : 
+	[
+		{
+			"file" : "/Users/adheipsingh/parseable/fluent-bit/plugins/CMakeFiles/backtrace"
+		},
+		{
+			"file" : "/Users/adheipsingh/parseable/fluent-bit/plugins/CMakeFiles/backtrace.rule"
+		},
+		{
+			"file" : "/Users/adheipsingh/parseable/fluent-bit/plugins/CMakeFiles/backtrace-complete.rule"
+		},
+		{
+			"file" : "/Users/adheipsingh/parseable/fluent-bit/plugins/backtrace-prefix/src/backtrace-stamp/backtrace-build.rule"
+		},
+		{
+			"file" : "/Users/adheipsingh/parseable/fluent-bit/plugins/backtrace-prefix/src/backtrace-stamp/backtrace-configure.rule"
+		},
+		{
+			"file" : "/Users/adheipsingh/parseable/fluent-bit/plugins/backtrace-prefix/src/backtrace-stamp/backtrace-download.rule"
+		},
+		{
+			"file" : "/Users/adheipsingh/parseable/fluent-bit/plugins/backtrace-prefix/src/backtrace-stamp/backtrace-install.rule"
+		},
+		{
+			"file" : "/Users/adheipsingh/parseable/fluent-bit/plugins/backtrace-prefix/src/backtrace-stamp/backtrace-mkdir.rule"
+		},
+		{
+			"file" : "/Users/adheipsingh/parseable/fluent-bit/plugins/backtrace-prefix/src/backtrace-stamp/backtrace-patch.rule"
+		},
+		{
+			"file" : "/Users/adheipsingh/parseable/fluent-bit/plugins/backtrace-prefix/src/backtrace-stamp/backtrace-update.rule"
+		}
+	],
+	"target" : 
+	{
+		"labels" : 
+		[
+			"backtrace"
+		],
+		"name" : "backtrace"
+	}
+}

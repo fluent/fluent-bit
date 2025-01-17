@@ -1,0 +1,2 @@
+/Library/Developer/CommandLineTools/usr/bin/ar qc ../../library/libflb-plugin-in_collectd.a "CMakeFiles/flb-plugin-in_collectd.dir/typesdb.c.o" "CMakeFiles/flb-plugin-in_collectd.dir/typesdb_parser.c.o" "CMakeFiles/flb-plugin-in_collectd.dir/netprot.c.o" "CMakeFiles/flb-plugin-in_collectd.dir/in_collectd.c.o" "CMakeFiles/flb-plugin-in_collectd.dir/__/__/lib/lwrb/lwrb/src/lwrb/lwrb.c.o"
+/Library/Developer/CommandLineTools/usr/bin/ranlib ../../library/libflb-plugin-in_collectd.a

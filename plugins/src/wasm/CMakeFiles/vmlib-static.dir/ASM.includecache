@@ -1,0 +1,10 @@
+#IncludeRegexLine: ^[ 	]*[#%][ 	]*(include|import)[ 	]*[<"]([^">]+)([">])
+
+#IncludeRegexScan: ^.*$
+
+#IncludeRegexComplain: ^$
+
+#IncludeRegexTransform: 
+
+/Users/adheipsingh/parseable/fluent-bit/lib/wasm-micro-runtime-WAMR-1.3.3/core/iwasm/common/arch/invokeNative_aarch64.s
+

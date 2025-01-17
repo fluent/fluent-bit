@@ -1,0 +1,2 @@
+/Library/Developer/CommandLineTools/usr/bin/ar qc ../../library/libflb-plugin-filter_log_to_metrics.a "CMakeFiles/flb-plugin-filter_log_to_metrics.dir/log_to_metrics.c.o" "CMakeFiles/flb-plugin-filter_log_to_metrics.dir/__/__/lib/lwrb/lwrb/src/lwrb/lwrb.c.o"
+/Library/Developer/CommandLineTools/usr/bin/ranlib ../../library/libflb-plugin-filter_log_to_metrics.a

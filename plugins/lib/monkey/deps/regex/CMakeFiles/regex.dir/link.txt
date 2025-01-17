@@ -1,0 +1,2 @@
+/Library/Developer/CommandLineTools/usr/bin/ar qc ../../library/libregex.a CMakeFiles/regex.dir/re.c.o
+/Library/Developer/CommandLineTools/usr/bin/ranlib ../../library/libregex.a

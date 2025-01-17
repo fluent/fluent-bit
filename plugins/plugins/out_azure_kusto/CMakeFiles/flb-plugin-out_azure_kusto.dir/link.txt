@@ -1,0 +1,2 @@
+/Library/Developer/CommandLineTools/usr/bin/ar qc ../../library/libflb-plugin-out_azure_kusto.a "CMakeFiles/flb-plugin-out_azure_kusto.dir/azure_kusto.c.o" "CMakeFiles/flb-plugin-out_azure_kusto.dir/azure_kusto_conf.c.o" "CMakeFiles/flb-plugin-out_azure_kusto.dir/azure_kusto_ingest.c.o" "CMakeFiles/flb-plugin-out_azure_kusto.dir/__/__/lib/lwrb/lwrb/src/lwrb/lwrb.c.o"
+/Library/Developer/CommandLineTools/usr/bin/ranlib ../../library/libflb-plugin-out_azure_kusto.a

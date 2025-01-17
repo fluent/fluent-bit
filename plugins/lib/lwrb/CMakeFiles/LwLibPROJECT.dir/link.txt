@@ -1,0 +1,1 @@
+/Library/Developer/CommandLineTools/usr/bin/cc  -Wall -D__FLB_FILENAME__=__FILE__ -Wundef-prefix=TARGET_OS_  -g -arch arm64 -isysroot /Library/Developer/CommandLineTools/SDKs/MacOSX14.0.sdk -Wl,-search_paths_first -Wl,-headerpad_max_install_names CMakeFiles/LwLibPROJECT.dir/dev/main.c.o CMakeFiles/LwLibPROJECT.dir/lwrb/src/lwrb/lwrb.c.o -o ../../bin/LwLibPROJECT

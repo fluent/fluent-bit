@@ -1,0 +1,2 @@
+/Library/Developer/CommandLineTools/usr/bin/ar qc ../../../library/libprocessor-sql-parser.a "CMakeFiles/processor-sql-parser.dir/sql_parser.c.o" "CMakeFiles/processor-sql-parser.dir/sql_expression.c.o" "CMakeFiles/processor-sql-parser.dir/processor-sql-parser_lex.c.o" "CMakeFiles/processor-sql-parser.dir/processor-sql_parser.c.o"
+/Library/Developer/CommandLineTools/usr/bin/ranlib ../../../library/libprocessor-sql-parser.a

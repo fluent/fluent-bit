@@ -1,0 +1,43 @@
+file(REMOVE_RECURSE
+  "../../../library/libctraces.a"
+  "../../../library/libctraces.pdb"
+  "CMakeFiles/ctraces-static.dir/ctr_attributes.c.o"
+  "CMakeFiles/ctraces-static.dir/ctr_attributes.c.o.d"
+  "CMakeFiles/ctraces-static.dir/ctr_decode_msgpack.c.o"
+  "CMakeFiles/ctraces-static.dir/ctr_decode_msgpack.c.o.d"
+  "CMakeFiles/ctraces-static.dir/ctr_decode_opentelemetry.c.o"
+  "CMakeFiles/ctraces-static.dir/ctr_decode_opentelemetry.c.o.d"
+  "CMakeFiles/ctraces-static.dir/ctr_encode_msgpack.c.o"
+  "CMakeFiles/ctraces-static.dir/ctr_encode_msgpack.c.o.d"
+  "CMakeFiles/ctraces-static.dir/ctr_encode_opentelemetry.c.o"
+  "CMakeFiles/ctraces-static.dir/ctr_encode_opentelemetry.c.o.d"
+  "CMakeFiles/ctraces-static.dir/ctr_encode_text.c.o"
+  "CMakeFiles/ctraces-static.dir/ctr_encode_text.c.o.d"
+  "CMakeFiles/ctraces-static.dir/ctr_id.c.o"
+  "CMakeFiles/ctraces-static.dir/ctr_id.c.o.d"
+  "CMakeFiles/ctraces-static.dir/ctr_link.c.o"
+  "CMakeFiles/ctraces-static.dir/ctr_link.c.o.d"
+  "CMakeFiles/ctraces-static.dir/ctr_log.c.o"
+  "CMakeFiles/ctraces-static.dir/ctr_log.c.o.d"
+  "CMakeFiles/ctraces-static.dir/ctr_mpack_utils.c.o"
+  "CMakeFiles/ctraces-static.dir/ctr_mpack_utils.c.o.d"
+  "CMakeFiles/ctraces-static.dir/ctr_random.c.o"
+  "CMakeFiles/ctraces-static.dir/ctr_random.c.o.d"
+  "CMakeFiles/ctraces-static.dir/ctr_resource.c.o"
+  "CMakeFiles/ctraces-static.dir/ctr_resource.c.o.d"
+  "CMakeFiles/ctraces-static.dir/ctr_scope.c.o"
+  "CMakeFiles/ctraces-static.dir/ctr_scope.c.o.d"
+  "CMakeFiles/ctraces-static.dir/ctr_span.c.o"
+  "CMakeFiles/ctraces-static.dir/ctr_span.c.o.d"
+  "CMakeFiles/ctraces-static.dir/ctr_utils.c.o"
+  "CMakeFiles/ctraces-static.dir/ctr_utils.c.o.d"
+  "CMakeFiles/ctraces-static.dir/ctr_version.c.o"
+  "CMakeFiles/ctraces-static.dir/ctr_version.c.o.d"
+  "CMakeFiles/ctraces-static.dir/ctraces.c.o"
+  "CMakeFiles/ctraces-static.dir/ctraces.c.o.d"
+)
+
+# Per-language clean rules from dependency scanning.
+foreach(lang C)
+  include(CMakeFiles/ctraces-static.dir/cmake_clean_${lang}.cmake OPTIONAL)
+endforeach()

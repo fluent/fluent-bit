@@ -1,0 +1,2 @@
+/Library/Developer/CommandLineTools/usr/bin/ar qc ../../library/libflb-plugin-out_slack.a "CMakeFiles/flb-plugin-out_slack.dir/slack.c.o" "CMakeFiles/flb-plugin-out_slack.dir/__/__/lib/lwrb/lwrb/src/lwrb/lwrb.c.o"
+/Library/Developer/CommandLineTools/usr/bin/ranlib ../../library/libflb-plugin-out_slack.a

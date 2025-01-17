@@ -1,0 +1,2 @@
+/Library/Developer/CommandLineTools/usr/bin/ar qc ../../library/libflb-plugin-out_plot.a "CMakeFiles/flb-plugin-out_plot.dir/plot.c.o" "CMakeFiles/flb-plugin-out_plot.dir/__/__/lib/lwrb/lwrb/src/lwrb/lwrb.c.o"
+/Library/Developer/CommandLineTools/usr/bin/ranlib ../../library/libflb-plugin-out_plot.a

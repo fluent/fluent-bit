@@ -1,0 +1,2 @@
+/Library/Developer/CommandLineTools/usr/bin/ar qc ../../library/libflb-plugin-filter_sysinfo.a "CMakeFiles/flb-plugin-filter_sysinfo.dir/sysinfo.c.o" "CMakeFiles/flb-plugin-filter_sysinfo.dir/sysinfo_platform.c.o" "CMakeFiles/flb-plugin-filter_sysinfo.dir/__/__/lib/lwrb/lwrb/src/lwrb/lwrb.c.o"
+/Library/Developer/CommandLineTools/usr/bin/ranlib ../../library/libflb-plugin-filter_sysinfo.a

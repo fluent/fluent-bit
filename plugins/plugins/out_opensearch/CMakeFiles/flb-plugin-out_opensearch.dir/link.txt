@@ -1,0 +1,2 @@
+/Library/Developer/CommandLineTools/usr/bin/ar qc ../../library/libflb-plugin-out_opensearch.a "CMakeFiles/flb-plugin-out_opensearch.dir/os_conf.c.o" "CMakeFiles/flb-plugin-out_opensearch.dir/opensearch.c.o" "CMakeFiles/flb-plugin-out_opensearch.dir/__/__/lib/lwrb/lwrb/src/lwrb/lwrb.c.o"
+/Library/Developer/CommandLineTools/usr/bin/ranlib ../../library/libflb-plugin-out_opensearch.a

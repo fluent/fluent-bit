@@ -1,0 +1,2 @@
+/Library/Developer/CommandLineTools/usr/bin/ar qc ../../library/libflb-aws.a "CMakeFiles/flb-aws.dir/flb_aws_compress.c.o" "CMakeFiles/flb-aws.dir/flb_aws_util.c.o" "CMakeFiles/flb-aws.dir/flb_aws_credentials.c.o" "CMakeFiles/flb-aws.dir/flb_aws_credentials_sts.c.o" "CMakeFiles/flb-aws.dir/flb_aws_credentials_ec2.c.o" "CMakeFiles/flb-aws.dir/flb_aws_imds.c.o" "CMakeFiles/flb-aws.dir/flb_aws_credentials_http.c.o" "CMakeFiles/flb-aws.dir/flb_aws_credentials_profile.c.o"
+/Library/Developer/CommandLineTools/usr/bin/ranlib ../../library/libflb-aws.a

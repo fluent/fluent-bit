@@ -1,0 +1,2 @@
+/Library/Developer/CommandLineTools/usr/bin/ar qc ../../library/libflb-plugin-in_nginx_exporter_metrics.a "CMakeFiles/flb-plugin-in_nginx_exporter_metrics.dir/nginx.c.o" "CMakeFiles/flb-plugin-in_nginx_exporter_metrics.dir/__/__/lib/lwrb/lwrb/src/lwrb/lwrb.c.o"
+/Library/Developer/CommandLineTools/usr/bin/ranlib ../../library/libflb-plugin-in_nginx_exporter_metrics.a

@@ -1,0 +1,2 @@
+/Library/Developer/CommandLineTools/usr/bin/ar qc ../../library/libflb-plugin-out_tcp.a "CMakeFiles/flb-plugin-out_tcp.dir/tcp.c.o" "CMakeFiles/flb-plugin-out_tcp.dir/tcp_conf.c.o" "CMakeFiles/flb-plugin-out_tcp.dir/__/__/lib/lwrb/lwrb/src/lwrb/lwrb.c.o"
+/Library/Developer/CommandLineTools/usr/bin/ranlib ../../library/libflb-plugin-out_tcp.a
