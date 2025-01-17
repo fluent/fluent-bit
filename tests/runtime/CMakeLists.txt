@@ -239,6 +239,10 @@ if (FLB_PROCESSOR_METRICS_SELECTOR)
   FLB_RT_TEST(FLB_PROCESSOR_METRICS_SELECTOR "processor_metrics_selector.c")
 endif()
 
+if (FLB_PROCESSOR_LABELS)
+  FLB_RT_TEST(FLB_PROCESSOR_LABELS "processor_labels.c")
+endif()
+
 if (FLB_PROCESSOR_CONTENT_MODIFIER)
   FLB_RT_TEST(FLB_PROCESSOR_CONTENT_MODIFIER "processor_content_modifier.c")
 endif()
