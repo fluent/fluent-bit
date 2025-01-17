@@ -244,7 +244,7 @@ if(FLB_SQLDB)
     )
   set(extra_libs
     ${extra_libs}
-    "sqlite3")
+    ${SQLITE_LIBRARIES})
 endif()
 
 if(FLB_STATIC_CONF)
@@ -383,7 +383,7 @@ set(FLB_DEPS
   ctraces-static
   mk_core
   jsmn
-  msgpack-c-static
+  ${MSGPACK_LIBRARIES}
   mpack-static
   chunkio-static
   miniz
