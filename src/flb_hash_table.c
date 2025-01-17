@@ -19,9 +19,13 @@
 
 #include <stdint.h>
 <<<<<<< HEAD
+<<<<<<< HEAD
 #include <ctype.h>
 =======
 >>>>>>> 8d7687f37 (hash_table: added optional case insensitive mode)
+=======
+#include <ctype.h>
+>>>>>>> efd5a618c (hash_table: add missing header to build on macOS)
 
 #include <fluent-bit/flb_info.h>
 #include <fluent-bit/flb_mem.h>
