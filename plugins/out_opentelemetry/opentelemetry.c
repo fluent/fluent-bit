@@ -20,6 +20,8 @@
 #include <fluent-bit/flb_output_plugin.h>
 #include <fluent-bit/flb_input_event.h>
 #include <fluent-bit/flb_snappy.h>
+#include <fluent-bit/flb_gzip.h>
+#include <fluent-bit/flb_zstd.h>
 #include <fluent-bit/flb_metrics.h>
 #include <fluent-bit/flb_time.h>
 #include <fluent-bit/flb_kv.h>
@@ -304,6 +306,10 @@ int opentelemetry_post(struct opentelemetry_context *ctx,
         }
 
         grpc_body = sds_result;
+
+        if(compression_algorithm != NULL) {
+            ((uint8_t *) grpc_body)[0] = 0x01;
+        }
 
         ((uint8_t *) grpc_body)[1] = (wire_message_length & 0xFF000000) >> 24;
         ((uint8_t *) grpc_body)[2] = (wire_message_length & 0x00FF0000) >> 16;
