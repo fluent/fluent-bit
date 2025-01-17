@@ -24,6 +24,7 @@
 #include <fluent-bit/flb_time.h>
 #include <fluent-bit/flb_gzip.h>
 #include <fluent-bit/flb_snappy.h>
+#include <fluent-bit/flb_zstd.h>
 #include <fluent-bit/flb_mp.h>
 #include <fluent-bit/flb_log_event_encoder.h>
 
@@ -760,6 +761,7 @@ static int binary_payload_to_msgpack(struct flb_opentelemetry *ctx,
 
         }
     }
+
 
  binary_payload_to_msgpack_end:
     msgpack_sbuffer_destroy(&mp_sbuf);
@@ -1820,7 +1822,6 @@ static int process_payload_logs(struct flb_opentelemetry *ctx, struct http_conn 
     int                           ret;
 
     encoder = flb_log_event_encoder_create(FLB_LOG_EVENT_FORMAT_FLUENT_BIT_V2);
-
     if (encoder == NULL) {
         return -1;
     }
@@ -1840,8 +1841,7 @@ static int process_payload_logs(struct flb_opentelemetry *ctx, struct http_conn 
         ret = binary_payload_to_msgpack(ctx, encoder, (uint8_t *) request->data.data, request->data.len);
     }
     else {
-        flb_error("[otel] Unsupported content type %.*s", (int)request->content_type.len, request->content_type.data);
-
+        flb_plg_error(ctx->ins, "unsupported content type %.*s", (int)request->content_type.len, request->content_type.data);
         ret = -1;
     }
 
@@ -1894,9 +1894,19 @@ int uncompress_zstd(char **output_buffer,
                     char *input_buffer,
                     size_t input_size)
 {
-    flb_error("[opentelemetry] unsupported compression format");
+    int ret;
 
-    return -1;
+    ret = flb_zstd_uncompress(input_buffer,
+                              input_size,
+                              (void **) output_buffer,
+                              output_size);
+
+    if (ret != 0) {
+        flb_error("[http zstd] decompression failed");
+        return -1;
+    }
+
+    return 1;
 }
 
 static \
@@ -1995,7 +2005,7 @@ int opentelemetry_prot_uncompress(struct mk_http_session *session,
                                          request->data.data,
                                          request->data.len);
             }
-            else if (strncasecmp(header->val.data, "deflate", 4) == 0) {
+            else if (strncasecmp(header->val.data, "deflate", 7) == 0) {
                 return uncompress_deflate(output_buffer,
                                           output_size,
                                           request->data.data,
@@ -2447,8 +2457,7 @@ static int process_payload_metrics_ng(struct flb_opentelemetry *ctx,
     offset = 0;
 
     if (request->content_type == NULL) {
-        flb_error("[otel] content type missing");
-
+        flb_plg_error(ctx->ins, "content type missing");
         return -1;
     }
 
@@ -2509,8 +2518,7 @@ static int process_payload_traces_proto_ng(struct flb_opentelemetry *ctx,
     offset = 0;
 
     if (request->content_type == NULL) {
-        flb_error("[otel] content type missing");
-
+        flb_plg_error(ctx->ins, "content type missing");
         return -1;
     }
 
@@ -2625,8 +2633,7 @@ static int process_payload_logs_ng(struct flb_opentelemetry *ctx,
     }
 
     if (request->content_type == NULL) {
-        flb_error("[otel] content type missing");
-
+        flb_plg_error(ctx->ins, "content type missing");
         ret = -1;
     }
     else if (strcasecmp(request->content_type, "application/json") == 0) {
@@ -2744,7 +2751,6 @@ static int process_payload_profiles_ng(struct flb_opentelemetry *ctx,
 
     if (request->content_type == NULL) {
         flb_error("[otel] content type missing");
-
         return -1;
     }
     else if (strcasecmp(request->content_type, "application/json") == 0) {
