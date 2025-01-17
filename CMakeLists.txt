@@ -34,6 +34,24 @@ if(CMAKE_SYSTEM_NAME MATCHES "Linux")
     set(FLB_LINUX_ON_AARCH64 On)
     add_definitions(-DFLB_LINUX_ON_AARCH64)
   endif()
+
+  find_program(CAT_EXEC cat)
+  if (CAT_EXEC)
+    set(RELEASE_FILE "/etc/system-release")
+    if (EXISTS ${RELEASE_FILE})
+      execute_process(COMMAND ${CAT_EXEC} ${RELEASE_FILE}
+        OUTPUT_VARIABLE CAT_SYSTEM_RELEASE
+        OUTPUT_STRIP_TRAILING_WHITESPACE
+      )
+
+      message(STATUS "##### cat /etc/system-release -- OK")
+
+      if (CAT_SYSTEM_RELEASE STREQUAL "Amazon Linux release 2 (Karoo)")
+        set(FLB_AMAZON_LINUX2 On)
+        add_definitions(-DFLB_AMAZON_LINUX2)
+      endif()
+    endif()
+  endif()
 endif()
 
 # Update CFLAGS
