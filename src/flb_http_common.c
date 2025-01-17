@@ -128,11 +128,15 @@ int flb_http_request_init(struct flb_http_request *request)
         return -1;
     }
 
+    flb_hash_table_set_case_sensitivity(request->headers, FLB_FALSE);
+
     request->trailer_headers = flb_hash_table_create(FLB_HASH_TABLE_EVICT_NONE, 16, -1);
 
     if (request->trailer_headers == NULL) {
         return -1;
     }
+
+    flb_hash_table_set_case_sensitivity(request->trailer_headers, FLB_FALSE);
 
     return 0;
 }
@@ -280,7 +284,7 @@ int flb_http_request_set_header(struct flb_http_request *request,
     }
 
     result = flb_hash_table_add(request->headers,
-                                (const char *) lowercase_name,
+                                (const char *) name,
                                 name_length,
                                 (void *) value,
                                 value_length);
@@ -297,20 +301,10 @@ int flb_http_request_set_header(struct flb_http_request *request,
 int flb_http_request_unset_header(struct flb_http_request *request,
                                   char *name)
 {
-    char  *lowercase_name;
-    int    result;
-
-    lowercase_name = flb_http_server_convert_string_to_lowercase(
-                        name, strlen(name));
-
-    if (lowercase_name == NULL) {
-        return -1;
-    }
+    int result;
 
     result = flb_hash_table_del(request->headers,
-                                (const char *) lowercase_name);
-
-    flb_free(lowercase_name);
+                                (const char *) name);
 
     if (result == -1) {
         return -1;
@@ -389,12 +383,8 @@ int flb_http_request_compress_body(
                  output_size);
 
         flb_http_request_set_header(request,
-                                    "content-encoding", 0,
+                                    "Content-Encoding", 0,
                                     content_encoding_header_value, 0);
-
-        flb_http_request_set_header(request,
-                                    "content-length", 0,
-                                    new_content_length, 0);
 
         request->content_length = output_size;
     }
@@ -420,7 +410,7 @@ int flb_http_request_uncompress_body(
 
     content_encoding_header_value = flb_http_request_get_header(
                                         request,
-                                        "content-encoding");
+                                        "Content-Encoding");
 
     if (content_encoding_header_value == NULL) {
         return 0;
@@ -475,9 +465,9 @@ int flb_http_request_uncompress_body(
                  "%zu",
                  output_size);
 
-        flb_http_request_unset_header(request, "content-encoding");
+        flb_http_request_unset_header(request, "Content-Encoding");
         flb_http_request_set_header(request,
-                                    "content-length", 0,
+                                    "Content-Length", 0,
                                     new_content_length, 0);
 
         request->content_length = output_size;
@@ -752,7 +742,7 @@ int flb_http_request_set_content_encoding(struct flb_http_request *request,
                                           char *encoding)
 {
     return flb_http_request_set_header(request,
-                                       "content-encoding", 0,
+                                       "Content-Encoding", 0,
                                        encoding, 0);
 
 }
@@ -853,6 +843,8 @@ int flb_http_response_init(struct flb_http_response *response)
         return -1;
     }
 
+    flb_hash_table_set_case_sensitivity(response->headers, FLB_FALSE);
+
     response->trailer_headers = flb_hash_table_create(FLB_HASH_TABLE_EVICT_NONE, 16, -1);
 
     if (response->trailer_headers == NULL) {
@@ -860,6 +852,8 @@ int flb_http_response_init(struct flb_http_response *response)
 
         return -1;
     }
+
+    flb_hash_table_set_case_sensitivity(response->trailer_headers, FLB_FALSE);
 
     return 0;
 }
@@ -1334,10 +1328,10 @@ int flb_http_response_uncompress_body(
                  "%zu",
                  output_size);
 
-        flb_http_response_unset_header(response, "content-encoding");
+        flb_http_response_unset_header(response, "Content-Encoding");
         flb_http_response_set_header(response,
-                                    "content-length", 0,
-                                    new_content_length, 0);
+                                     "Content-Length", 0,
+                                     new_content_length, 0);
 
         response->content_length = output_size;
     }
