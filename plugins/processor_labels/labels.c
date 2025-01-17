@@ -932,8 +932,9 @@ int metrics_map_set_label_value(struct cmt_map *map,
         }
     }
 
+
 #ifdef PROMOTE_STATIC_METRICS_ON_LABEL_INSERT
-    if (map->metric_static_set == 1) {
+    if (map->metric_static_set == 1 && insert) {
         result = metrics_map_convert_static_metric(map,
                                                    label_index,
                                                    label_value);
@@ -980,7 +981,6 @@ int metrics_map_update_label(struct cmt_map *map,
     int     result;
 
     label_index = metrics_map_get_label_index(map, label_name);
-
     if (label_index == -1) {
         return FLB_TRUE;
     }
@@ -1552,6 +1552,7 @@ static flb_sds_t get_label_value(struct label_kv *pair, char *tag, int tag_len, 
         if (value == NULL) {
             return NULL;
         }
+        *destroy_buf = FLB_TRUE;
     }
     else {
         /* use the pre-defined string */
@@ -1632,29 +1633,29 @@ static int insert_labels(struct cmt *metrics_context,
     cfl_list_foreach(iterator, labels) {
         pair = cfl_list_entry(iterator, struct label_kv, _head);
 
-        result = metrics_context_contains_dynamic_label(metrics_context,
-                                                        pair->key);
-
-        if (result == FLB_TRUE) {
-            continue;
-        }
-
         value = get_label_value(pair, tag, tag_len, &destroy_buf);
         if (value == NULL) {
             return FLB_FALSE;
         }
 
-        result = metrics_context_insert_dynamic_label(metrics_context,
-                                                      pair->key,
-                                                      value);
-
+        /* check if the label exists in the metrics labels list (dynamic) */
+        result = metrics_context_contains_dynamic_label(metrics_context,
+                                                        pair->key);
         if (result == FLB_FALSE) {
-            if (destroy_buf == FLB_TRUE) {
-                flb_sds_destroy(value);
+            /* retrieve the new label */
+            result = metrics_context_insert_dynamic_label(metrics_context,
+                                                        pair->key,
+                                                        value);
+
+            if (result == FLB_FALSE) {
+                if (destroy_buf == FLB_TRUE) {
+                    flb_sds_destroy(value);
+                }
+                return FLB_FALSE;
             }
-            return FLB_FALSE;
         }
 
+        /* static label: metric with no labels that needs to be moved to dynamic */
         result = metrics_context_contains_static_label(metrics_context,
                                                        pair->key);
 
