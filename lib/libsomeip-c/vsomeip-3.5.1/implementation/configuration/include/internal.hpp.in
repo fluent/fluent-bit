@@ -1,0 +1,172 @@
+// Copyright (C) 2014-2023 Bayerische Motoren Werke Aktiengesellschaft (BMW AG)
+// This Source Code Form is subject to the terms of the Mozilla Public
+// License, v. 2.0. If a copy of the MPL was not distributed with this
+// file, You can obtain one at http://mozilla.org/MPL/2.0/.
+
+#ifndef VSOMEIP_V3_INTERNAL_HPP_
+#define VSOMEIP_V3_INTERNAL_HPP_
+
+#include <cstdint>
+#include <limits>
+#include <memory>
+
+#include <vsomeip/primitive_types.hpp>
+#include <vsomeip/structured_types.hpp>
+
+#define VSOMEIP_ENV_APPLICATION_NAME            "VSOMEIP_APPLICATION_NAME"
+#define VSOMEIP_ENV_CONFIGURATION               "VSOMEIP_CONFIGURATION"
+#define VSOMEIP_ENV_CONFIGURATION_MODULE        "VSOMEIP_CONFIGURATION_MODULE"
+#define VSOMEIP_ENV_E2E_PROTECTION_MODULE       "VSOMEIP_E2E_PROTECTION_MODULE"
+#define VSOMEIP_ENV_MANDATORY_CONFIGURATION_FILES "VSOMEIP_MANDATORY_CONFIGURATION_FILES"
+#define VSOMEIP_ENV_LOAD_PLUGINS                "VSOMEIP_LOAD_PLUGINS"
+#define VSOMEIP_ENV_CLIENTSIDELOGGING           "VSOMEIP_CLIENTSIDELOGGING"
+
+#define VSOMEIP_DEFAULT_CONFIGURATION_FILE      "@DEFAULT_CONFIGURATION_FILE@"
+#define VSOMEIP_LOCAL_CONFIGURATION_FILE        "./vsomeip.json"
+#define VSOMEIP_MANDATORY_CONFIGURATION_FILES   "vsomeip_std.json,vsomeip_app.json,vsomeip_events.json,vsomeip_plc.json,vsomeip_log.json,vsomeip_security.json,vsomeip_whitelist.json,vsomeip_policy_extensions.json,vsomeip_portcfg.json"
+
+#define VSOMEIP_DEFAULT_CONFIGURATION_FOLDER    "@DEFAULT_CONFIGURATION_FOLDER@"
+#define VSOMEIP_DEBUG_CONFIGURATION_FOLDER      "/var/opt/public/sin/vsomeip/"
+#define VSOMEIP_LOCAL_CONFIGURATION_FOLDER      "./vsomeip"
+
+#define VSOMEIP_BASE_PATH                       "@VSOMEIP_BASE_PATH@/"
+
+#define VSOMEIP_ROUTING_HOST_PORT_DEFAULT       31490
+
+#ifdef _WIN32
+#define VSOMEIP_CFG_LIBRARY                      "vsomeip3-cfg.dll"
+#else
+#define VSOMEIP_CFG_LIBRARY                      "libvsomeip3-cfg.so.@VSOMEIP_MAJOR_VERSION@"
+#endif
+
+#ifdef _WIN32
+#define VSOMEIP_SD_LIBRARY                      "vsomeip3-sd.dll"
+#else
+#define VSOMEIP_SD_LIBRARY                      "libvsomeip3-sd.so.@VSOMEIP_MAJOR_VERSION@"
+#endif
+
+#ifdef _WIN32
+#define VSOMEIP_E2E_LIBRARY                      "vsomeip3-e2e.dll"
+#else
+#define VSOMEIP_E2E_LIBRARY                      "libvsomeip3-e2e.so.@VSOMEIP_MAJOR_VERSION@"
+#endif
+
+#ifdef _WIN32
+#define VSOMEIP_SEC_LIBRARY                      "vsomeip_sec.dll"
+#else
+#define VSOMEIP_SEC_LIBRARY                      "libvsomeip-sec.so.1"
+#endif
+
+#define VSOMEIP_ROUTING_CLIENT                  0
+
+#define VSOMEIP_CLIENT_UNSET                    0xFFFF
+
+#ifdef _WIN32
+#define VSOMEIP_INTERNAL_BASE_PORT              51234
+#define __func__ __FUNCTION__
+#endif
+
+#define VSOMEIP_UNICAST_ADDRESS                 "@VSOMEIP_UNICAST_ADDRESS@"
+#define VSOMEIP_NETMASK                         "255.255.255.0"
+#define VSOMEIP_PREFIX                          24
+
+#define VSOMEIP_DEFAULT_CONNECT_TIMEOUT         100
+#define VSOMEIP_MAX_CONNECT_TIMEOUT             1600
+#define VSOMEIP_DEFAULT_CONNECTING_TIMEOUT      500
+#define VSOMEIP_DEFAULT_FLUSH_TIMEOUT           1000
+#define VSOMEIP_ROUTING_ROOT_RECONNECT_RETRIES  10000
+#define VSOMEIP_ROUTING_ROOT_RECONNECT_INTERVAL 10  // miliseconds
+
+#define VSOMEIP_DEFAULT_SHUTDOWN_TIMEOUT        5000
+
+#define VSOMEIP_DEFAULT_QUEUE_WARN_SIZE         102400
+
+#define VSOMEIP_MAX_TCP_CONNECT_TIME            5000
+#define VSOMEIP_MAX_TCP_RESTART_ABORTS          5
+#define VSOMEIP_MAX_TCP_SENT_WAIT_TIME          10000
+
+#define VSOMEIP_MAX_NETLINK_RETRIES             3
+
+#define VSOMEIP_TP_MAX_SEGMENT_LENGTH_DEFAULT   1392
+
+#define VSOMEIP_DEFAULT_BUFFER_SHRINK_THRESHOLD 5
+
+#define VSOMEIP_DEFAULT_WATCHDOG_TIMEOUT        5000
+#define VSOMEIP_DEFAULT_MAX_MISSING_PONGS       3
+
+#define VSOMEIP_DEFAULT_UDP_RCV_BUFFER_SIZE     1703936
+
+#define VSOMEIP_DEFAULT_IO_THREAD_COUNT         2
+#define VSOMEIP_DEFAULT_IO_THREAD_NICE_LEVEL    0
+
+#define VSOMEIP_MAX_DISPATCHERS                 10
+#define VSOMEIP_MAX_DISPATCH_TIME               100
+
+#define VSOMEIP_MAX_WAIT_TIME_DETACHED_THREADS  5
+
+#define VSOMEIP_REQUEST_DEBOUNCE_TIME           10
+#define VSOMEIP_DEFAULT_STATISTICS_MAX_MSG      50
+#define VSOMEIP_DEFAULT_STATISTICS_MIN_FREQ     50
+#define VSOMEIP_DEFAULT_STATISTICS_INTERVAL     10000
+
+#define VSOMEIP_DEFAULT_MAX_REMOTE_SUBSCRIBERS  3
+
+#define VSOMEIP_MAX_WAIT_SENT                   5
+
+#define VSOMEIP_LOCAL_CLIENT_ENDPOINT_RECV_BUFFER_SIZE  19
+
+#define VSOMEIP_MINIMUM_CHECK_TTL_TIMEOUT       100
+#define VSOMEIP_SETSOCKOPT_TIMEOUT_US           500000  // us
+
+#define LOCAL_TCP_PORT_WAIT_TIME                @VSOMEIP_LOCAL_TCP_PORT_WAIT_TIME@
+#define LOCAL_TCP_PORT_MAX_WAIT_TIME            @VSOMEIP_LOCAL_TCP_PORT_MAX_WAIT_TIME@
+
+#if defined(__linux__) || defined(ANDROID) || defined(__QNX__)
+#include <pthread.h>
+#endif
+
+#define VSOMEIP_DATA_ID                         0x677D
+#define VSOMEIP_DIAGNOSIS_ADDRESS               @VSOMEIP_DIAGNOSIS_ADDRESS@
+
+#define VSOMEIP_DEFAULT_SHM_PERMISSION          0666
+#define VSOMEIP_DEFAULT_UDS_PERMISSIONS         0666
+
+#define VSOMEIP_ROUTING_READY_MESSAGE           "@VSOMEIP_ROUTING_READY_MESSAGE@"
+
+#ifndef VSOMEIP_VERSION
+#define VSOMEIP_VERSION "unknown version"
+#endif
+
+namespace vsomeip_v3 {
+
+typedef enum {
+    SUBSCRIPTION_ACKNOWLEDGED,
+    SUBSCRIPTION_NOT_ACKNOWLEDGED,
+    IS_SUBSCRIBING
+} subscription_state_e;
+
+inline constexpr std::uint32_t MESSAGE_SIZE_UNLIMITED = (std::numeric_limits<std::uint32_t>::max)();
+
+inline constexpr std::uint32_t QUEUE_SIZE_UNLIMITED = (std::numeric_limits<std::uint32_t>::max)();
+
+#define VSOMEIP_DEFAULT_NPDU_DEBOUNCING_NANO         2 * 1000 * 1000
+#define VSOMEIP_DEFAULT_NPDU_MAXIMUM_RETENTION_NANO  5 * 1000 * 1000
+
+inline constexpr std::uint32_t MAX_RECONNECTS_UNLIMITED = (std::numeric_limits<std::uint32_t>::max)();
+
+const uid_t ANY_UID = 0xFFFFFFFF;
+const gid_t ANY_GID = 0xFFFFFFFF;
+
+enum class port_type_e {
+    PT_OPTIONAL,
+    PT_SECURE,
+    PT_UNSECURE,
+    PT_UNKNOWN
+};
+
+using partition_id_t = std::uint8_t;
+const partition_id_t VSOMEIP_DEFAULT_PARTITION_ID = 0;
+
+} // namespace vsomeip_v3
+
+#endif // VSOMEIP_V3_INTERNAL_HPP_

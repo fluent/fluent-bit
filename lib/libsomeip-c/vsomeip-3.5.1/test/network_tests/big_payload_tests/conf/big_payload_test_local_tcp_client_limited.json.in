@@ -1,0 +1,51 @@
+{
+    "unicast":"127.0.0.1",
+    "logging":
+    {
+        "level":"info",
+        "console":"true",
+        "file":
+        {
+            "enable":"false",
+            "path":"/tmp/vsomeip.log"
+        },
+        "dlt":"true"
+    },
+    "applications":
+    [
+        {
+            "name":"big_payload_test_service",
+            "id":"0x1277",
+            "max_dispatchers" : "0"
+        },
+        {
+            "name":"big_payload_test_client",
+            "id":"0x1344",
+            "max_dispatchers" : "0"
+        }
+    ],
+    "services":
+    [
+        {
+            "service":"0x1234",
+            "instance":"0x5678"
+        }
+    ],
+    "max-payload-size-local" : "614400",
+    "routing":
+    {
+        "host" :
+        {
+            "name" : "big_payload_test_client",
+            "unicast" : "@TEST_IP_MASTER@",
+            "port" : "31490"
+        }
+    },
+    "service-discovery":
+    {
+        "enable":"true",
+        "multicast":"224.244.224.245",
+        "port":"30490",
+        "protocol":"udp"
+    }
+}

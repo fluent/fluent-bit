@@ -1,0 +1,27 @@
+{
+    "security" :
+    {
+        "policies" :
+        [
+            {
+                "credentials" : { "uid" : "1", "gid" : "1" },
+                "allow" :
+                {
+                    "requests":
+                    [
+                        {
+                            "service"  : "0x1234",
+                            "instances" :
+                            [
+                                {
+                                    "ids" : ["0x02"],
+                                    "methods" : [ {"first" : "0x8421", "last" : "0x8422" }, "0x8002", "0x7777" ]
+                                }
+                            ]
+                        }
+                    ]
+                }
+            }
+        ]
+    }
+}

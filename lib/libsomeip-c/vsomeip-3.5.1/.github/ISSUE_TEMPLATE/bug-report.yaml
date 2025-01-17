@@ -1,0 +1,56 @@
+name: Bug Report
+description: Create a report to help us improve
+title: "[BUG]: <title>"
+labels: bug
+body:
+  - type: input
+    id: version
+    attributes:
+      label: vSomeip Version
+      placeholder: "v3.4.10"
+      description: "*or hash of the latest commit used"
+    validations:
+      required: true
+  - type: input
+    id: boost
+    attributes:
+      label: Boost Version
+      placeholder: "1.71"
+    validations:
+      required: true
+  - type: input
+    id: environment
+    attributes:
+      label: Environment
+      placeholder: "Windows 11, Ubuntu 22.04, Embedded Linux, QNX, ..."
+      description: "*or compiler used"
+    validations:
+      required: true
+  - type: textarea
+    id: description
+    attributes:
+      label: Describe the bug
+      description: A clear and concise description of what the bug is.
+    validations:
+      required: true
+  - type: textarea
+    id: reproduction
+    attributes:
+      label: Reproduction Steps
+      description: Steps to reproduce the behavior
+    validations:
+      required: false
+  - type: textarea
+    id: expected
+    attributes:
+      label: Expected behaviour
+      description: A clear and concise description of what you expected to happen
+    validations:
+      required: false
+  - type: textarea
+    id: screenshots
+    attributes:
+      label: Logs and Screenshots
+      description: If applicable, add logs and screenshots to help explain your problem.
+    validations:
+      required: false

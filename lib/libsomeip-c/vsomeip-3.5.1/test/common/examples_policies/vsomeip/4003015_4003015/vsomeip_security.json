@@ -1,0 +1,82 @@
+{
+    "security": {
+        "policies": [
+            {
+                "allow": {
+                    "offers": [
+                        {
+                            "instance": "any",
+                            "service": "0xf918"
+                        }
+                    ],
+                    "requests": [
+                        {
+                            "instance": "any",
+                            "service": "0xf8c4"
+                        },
+                        {
+                            "instance": "any",
+                            "service": "0xf90c"
+                        },
+                        {
+                            "instance": "any",
+                            "service": "0xf913"
+                        },
+                        {
+                            "instance": "any",
+                            "service": "0xf901"
+                        },
+                        {
+                            "instance": "any",
+                            "service": "0xf8a4"
+                        },
+                        {
+                            "instance": "any",
+                            "service": "0xf902"
+                        }
+                    ]
+                },
+                "credentials": {
+                    "gid": "4003015",
+                    "uid": "4003015"
+                }
+            },
+            {
+                "allow": {
+                    "requests": [
+                        {
+                            "instance": "any",
+                            "service": "0xf918"
+                        }
+                    ]
+                },
+                "credentials": {
+                    "gid": "4003014",
+                    "uid": "4003014"
+                }
+            },
+            {
+                "credentials": {
+                    "allow": [
+                        {
+                            "gid": [
+                                "4003014",
+                                "0",
+                                "4013207",
+                                "4003203",
+                                "4002200"
+                            ],
+                            "uid": [
+                                "4003014",
+                                "0",
+                                "4013207",
+                                "4003203",
+                                "4002200"
+                            ]
+                        }
+                    ]
+                }
+            }
+        ]
+    }
+}

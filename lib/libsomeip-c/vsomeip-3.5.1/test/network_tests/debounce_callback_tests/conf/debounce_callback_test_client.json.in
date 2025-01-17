@@ -1,0 +1,42 @@
+{
+  "unicast" : "@TEST_IP_MASTER@",
+  "logging": {
+    "level": "info",
+    "console": "true",
+    "file": {
+      "enable": "false",
+      "path": "/tmp/foo.log"
+    },
+    "dlt": "true"
+  },
+  "debounce" :
+  [
+      {
+          "service" : "0xb657",
+          "instance" : "0x0003",
+          "events" :
+          [
+              {
+                  "event" : "0x8001",
+                  "on_change" : "false",
+                  "interval": 2000,
+                  "send_current_value_after" : "true"
+              },
+              {
+                  "event" : "0x8002",
+                  "on_change" : "false",
+                  "interval": 3000,
+                  "send_current_value_after" : "true"
+              }
+          ]
+      }
+  ],
+  "service-discovery" :
+   {
+      "enable" : "true",
+      "multicast" : "224.251.192.252",
+      "port" : "30490",
+      "protocol" : "udp",
+      "cyclic_offer_delay" : "1000"
+   }
+}

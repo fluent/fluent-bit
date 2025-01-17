@@ -1,0 +1,83 @@
+#!/usr/bin/echo non-executable-shell-library
+# shellcheck shell=bash
+
+function gen-result-file
+{
+	local result_file="$1"
+	local whitelist_file="$2"
+	whitelist=$(jq --null-input --rawfile list "$whitelist_file" '$list | split("\n") | map(select(test("^(#|$)") | not))')
+	jq --argjson whitelist "$whitelist" \
+		 -n '{executed_tests: [], failures: [], exit_error: 0, whitelist: $whitelist}'\
+		 > "$result_file"
+}
+
+function update-result-file
+{
+	local result_file="$1"
+	local test_name="$2"
+	local errors=${3:-0}
+	local reason="${4:-}"
+
+	status=$( ((errors > 0)) && echo "failed" || echo "passed" )
+	data=$(jq '.executed_tests += [{name: $test_name, status: $status, reason: $reason}]'\
+		--arg test_name "$test_name"\
+		--arg status "$status"\
+		--arg reason "$reason"\
+		< "$result_file")
+	if ((errors > 0))
+	then
+		test_label="$test_name"
+		if [[ "$reason" ]]
+		then
+			test_label+=" ($errors $reason error(s))"
+		fi
+		# Check if the test is whitelisted
+		if jq --arg test_name "$test_name" --exit-status '[.whitelist[] | select(. == $test_name)] | length > 0' "$result_file"
+		then
+			test_label+=" (whitelisted)"
+		else
+			data=$(jq '.exit_error += 1' <<< "$data")
+		fi
+		data=$(jq '.failures += [$test_label]' --arg test_label "$test_label" <<< "$data")
+	fi
+	echo "$data" > "$result_file"
+}
+
+function valgrind-errors
+{
+	local outputs_folder="$1"
+	local test_name="$2"
+
+	output_file="$outputs_folder/$test_name.out"
+	if [[ ! -f "$output_file" || -d "$output_file" ]]
+	then
+		echo 0
+		return
+	fi
+	(grep -oP 'ERROR SUMMARY: \K\d+' "$output_file" || echo 0) | sort -n | tail -n1
+}
+
+function gen-core-backtraces
+{
+	local outputs_folder="$1"
+	shopt -s nullglob
+	for core in /tmp/core.*
+	do
+		prog=${core#/tmp/core.}
+		prog=${prog//!/\/}
+		gdb -ex 'thread apply all bt' -ex 'set pagination 0' -batch "$prog" "$core" | tee "$outputs_folder/backtrace.${prog##*/}"
+		cp -v "$core" "$outputs_folder/core.${prog##*/}"
+	done
+	shopt -u nullglob
+}
+
+function print-results
+{
+	local result_file="$1"
+	executed_tests=$(jq '.executed_tests | length' "$result_file")
+	declare failed_tests=()
+	mapfile -t failed_tests < <(jq -r '.failures[]' "$result_file")
+	echo '[Execution summary]'
+	echo "Passed tests: $((executed_tests - ${#failed_tests[@]})) of $executed_tests"
+	print-list 'Failed tests' "${failed_tests[@]}"
+}

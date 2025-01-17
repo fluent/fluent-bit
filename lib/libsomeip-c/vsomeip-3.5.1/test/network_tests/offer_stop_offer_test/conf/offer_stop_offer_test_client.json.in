@@ -1,0 +1,32 @@
+{
+    "unicast" : "@TEST_IP_MASTER@",
+    "logging" :
+    {
+        "level" : "debug",
+        "console" : "true",
+        "dlt" : "true"
+    },
+    "applications" :
+    [
+        {
+            "name" : "client-sample",
+            "id" : "0x1343"
+        }
+    ],
+    "clients" :
+    [
+        {
+            "reliable_remote_ports" : { "first" : "30501", "last" : "30506" },
+            "reliable_client_ports" : { "first" : "30491", "last" : "30493" }
+        }
+    ],
+    "routing" : "client-sample",
+    "service-discovery":
+    {
+        "enable": "true",
+        "multicast": "224.244.224.245",
+        "port": "30490",
+        "protocol": "udp",
+        "cyclic_offer_delay": "1000"
+    }
+}

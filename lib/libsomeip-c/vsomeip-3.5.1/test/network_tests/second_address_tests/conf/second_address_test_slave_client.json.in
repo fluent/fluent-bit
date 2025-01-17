@@ -1,0 +1,32 @@
+{
+    "unicast":"@TEST_IP_SLAVE_SECOND@",
+    "logging":
+    {
+        "level":"warning",
+        "console":"true",
+        "file":
+        {
+            "enable":"false",
+            "path":"/tmp/vsomeip.log"
+        },
+        "dlt":"true"
+    },
+    "applications" :
+    [
+        {
+            "name" : "second_address_test_client",
+            "id" : "0x1210",
+            "max_dispatch_time" : "1000"
+        }
+    ],
+    "routing":"routingmanagerd",
+    "service-discovery":
+    {
+        "enable":"true",
+        "multicast":"224.0.50.1",
+        "port":"30490",
+        "protocol":"udp",
+        "cyclic_offer_delay" : "1000",
+        "ttl" : "3"
+    }
+}

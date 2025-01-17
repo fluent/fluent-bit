@@ -1,0 +1,31 @@
+{
+    "unicast":"@TEST_IP_MASTER@",
+    "netmask":"255.255.255.0",
+    "logging":
+    {
+        "level":"info",
+        "console":"true",
+        "file":
+        {
+            "enable":"true",
+            "path":"/var/log/vsomeip.log"
+        },
+        "dlt":"true"
+    },
+    "applications":
+    [
+        {
+            "name":"big_payload_test_client",
+            "id":"0x1343"
+        }
+    ],
+    "max-payload-size-reliable":"614400",
+    "routing":"big_payload_test_client",
+    "service-discovery":
+    {
+        "enable":"true",
+        "multicast":"224.244.224.245",
+        "port":"30490",
+        "protocol":"udp"
+    }
+}

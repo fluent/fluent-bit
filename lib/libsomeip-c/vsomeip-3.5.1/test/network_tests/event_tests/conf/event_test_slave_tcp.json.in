@@ -1,0 +1,43 @@
+{
+    "unicast":"@TEST_IP_SLAVE@",
+    "logging":
+    {
+        "level":"info",
+        "console":"true",
+        "file":
+        {
+            "enable":"false",
+            "path":"/tmp/vsomeip.log"
+        },
+        "dlt":"true"
+    },
+    "applications" :
+    [
+        {
+            "name" : "event_test_service",
+            "id" : "0x1210",
+            "max_dispatch_time" : "1000"
+        }
+    ],
+    "services":
+    [
+        {
+            "service":"0x3344",
+            "instance":"0x0001",
+            "reliable": {
+                "port":"40001",
+                "enable-magic-cookies":"false"
+            }
+        }
+    ],
+    "routing":"routingmanagerd",
+    "service-discovery":
+    {
+        "enable":"true",
+        "multicast":"224.0.50.1",
+        "port":"30490",
+        "protocol":"udp",
+        "cyclic_offer_delay" : "1000",
+        "ttl" : "3"
+    }
+}
