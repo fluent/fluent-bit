@@ -1,0 +1,17 @@
+[Unit]
+Description=@FLB_PROG_NAME@
+Documentation=https://docs.fluentbit.io/manual/
+Requires=network.target
+After=network.target
+Requires=sethostname.service
+After=sethostname.service
+
+[Service]
+Type=simple
+EnvironmentFile=-/etc/sysconfig/@FLB_OUT_NAME@
+EnvironmentFile=-/etc/default/@FLB_OUT_NAME@
+ExecStart=@CMAKE_INSTALL_FULL_BINDIR@/@FLB_OUT_NAME@ -c /@CMAKE_INSTALL_SYSCONFDIR@/@FLB_OUT_NAME@/@FLB_OUT_NAME@.conf
+Restart=always
+
+[Install]
+WantedBy=multi-user.target
