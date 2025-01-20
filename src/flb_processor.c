@@ -101,7 +101,7 @@ static int release_lock(pthread_mutex_t *lock,
 
 /*
  * A processor creates a chain of processing units for different telemetry data
- * types such as logs, metrics and traces.
+ * types such as logs, metrics, traces and profiles.
  *
  * From a design perspective, a Processor can be run independently from inputs, outputs
  * or unit tests directly.
@@ -129,6 +129,7 @@ struct flb_processor *flb_processor_create(struct flb_config *config,
     mk_list_init(&proc->logs);
     mk_list_init(&proc->metrics);
     mk_list_init(&proc->traces);
+    mk_list_init(&proc->profiles);
 
     return proc;
 }
@@ -266,6 +267,9 @@ struct flb_processor_unit *flb_processor_unit_create(struct flb_processor *proc,
     }
     else if (event_type == FLB_PROCESSOR_TRACES) {
         mk_list_add(&pu->_head, &proc->traces);
+    }
+    else if (event_type == FLB_PROCESSOR_PROFILES) {
+        mk_list_add(&pu->_head, &proc->profiles);
     }
 
     pu->stage = proc->stage_count;
@@ -406,6 +410,16 @@ int flb_processor_init(struct flb_processor *proc)
         count++;
     }
 
+    mk_list_foreach(head, &proc->profiles) {
+        pu = mk_list_entry(head, struct flb_processor_unit, _head);
+        ret = flb_processor_unit_init(pu);
+
+        if (ret == -1) {
+            return -1;
+        }
+        count++;
+    }
+
     if (count > 0) {
         proc->is_active = FLB_TRUE;
     }
@@ -426,7 +440,8 @@ int flb_processor_is_active(struct flb_processor *proc)
 /*
  * This function will run all the processor units for the given tag and data, note
  * that depending of the 'type', 'data' can reference a msgpack for logs, a CMetrics
- * context for metrics or a 'CTraces' context for traces.
+ * context for metrics, a 'CTraces' context for traces or a 'CProfiles' context for
+ * profiles.
  */
 int flb_processor_run(struct flb_processor *proc,
                       size_t starting_stage,
@@ -464,6 +479,9 @@ int flb_processor_run(struct flb_processor *proc,
     }
     else if (type == FLB_PROCESSOR_TRACES) {
         list = &proc->traces;
+    }
+    else if (type == FLB_PROCESSOR_PROFILES) {
+        list = &proc->profiles;
     }
 
 #ifdef FLB_HAVE_METRICS
@@ -743,6 +761,22 @@ int flb_processor_run(struct flb_processor *proc,
                     }
                 }
             }
+            else if (type == FLB_PROCESSOR_PROFILES) {
+                if (p_ins->p->cb_process_profiles != NULL) {
+                    ret = p_ins->p->cb_process_profiles(p_ins,
+                                                        (struct cprof *) cur_buf,
+                                                        tag,
+                                                        tag_len);
+
+                    if (ret != FLB_PROCESSOR_SUCCESS) {
+                        release_lock(&pu->lock,
+                                     FLB_PROCESSOR_LOCK_RETRY_LIMIT,
+                                     FLB_PROCESSOR_LOCK_RETRY_DELAY);
+
+                        return -1;
+                    }
+                }
+            }
         }
 
         release_lock(&pu->lock,
@@ -785,6 +819,13 @@ void flb_processor_destroy(struct flb_processor *proc)
         mk_list_del(&pu->_head);
         flb_processor_unit_destroy(pu);
     }
+
+    mk_list_foreach_safe(head, tmp, &proc->profiles) {
+        pu = mk_list_entry(head, struct flb_processor_unit, _head);
+        mk_list_del(&pu->_head);
+        flb_processor_unit_destroy(pu);
+    }
+
     flb_free(proc);
 }
 
@@ -908,6 +949,17 @@ int flb_processors_load_from_config_format_group(struct flb_processor *proc, str
 
         if (ret == -1) {
             flb_error("failed to load 'traces' processors");
+            return -1;
+        }
+    }
+
+    /* profiles */
+    val = cfl_kvlist_fetch(g->properties, "profiles");
+    if (val) {
+        ret = load_from_config_format_group(proc, FLB_PROCESSOR_PROFILES, val);
+
+        if (ret == -1) {
+            flb_error("failed to load 'profiles' processors");
             return -1;
         }
     }

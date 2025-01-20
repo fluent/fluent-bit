@@ -15,10 +15,13 @@ on:
       - 'packaging/**'
       - '.gitignore'
       - 'appveyor.yml'
-      - '**.sh'
       - 'examples/**'
     branches:
       - master
+      - 3.2
+      - 3.1
+      - 3.0
+      - 2.2
       - 2.1
       - 2.0
       - 1.9
@@ -78,6 +81,7 @@ jobs:
           CC: ${{ matrix.compiler }}
           CXX: ${{ matrix.compiler }}
           FLB_OPT: ${{ matrix.flb_option }}
+          CALYPTIA_FLEET_TOKEN: ${{ secrets.CALYPTIA_FLEET_TOKEN }}
 
   run-macos-unit-tests:
     # We chain this after Linux one as there are costs and restrictions associated
@@ -167,6 +171,7 @@ jobs:
         env:
           CC: ${{ matrix.config.compiler }}
           CXX: ${{ matrix.config.compiler }}
+          CALYPTIA_FLEET_TOKEN: ${{ secrets.CALYPTIA_FLEET_TOKEN }}
 
   run-qemu-ubuntu-unit-tests:
     # We chain this after Linux one as there are CPU time costs for QEMU emulation
@@ -216,7 +221,6 @@ jobs:
             cmake ${FLB_OPT}  ../
             make -j $nparallel
             ctest -j $nparallel --build-run-dir . --output-on-failure
-
 
   # Required check looks at this so do not remove
   run-all-unit-tests:
