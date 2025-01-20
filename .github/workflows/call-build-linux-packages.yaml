@@ -108,6 +108,7 @@ jobs:
     # Ensure for OSS Fluent Bit repo we enable usage of Actuated runners for ARM builds, for forks it should keep existing ubuntu-22.04 usage.
 <<<<<<< HEAD
 <<<<<<< HEAD
+<<<<<<< HEAD
     runs-on: ${{ ((contains(matrix.distro, 'arm' ) || contains(matrix.distro, 'raspbian')) && (github.repository == 'fluent/fluent-bit') && 'ubuntu-22.04-arm') || 'ubuntu-22.04' }}
 =======
     runs-on: ${{ ((contains(matrix.distro, 'arm' ) || (contains(matrix.distro, 'raspbian' )) && (github.repository == 'fluent/fluent-bit') && 'actuated-arm64-8cpu-16gb') || 'ubuntu-22.04' }}
@@ -115,6 +116,9 @@ jobs:
 =======
     runs-on: ${{ ((contains(matrix.distro, 'arm' ) || contains(matrix.distro, 'raspbian')) && (github.repository == 'fluent/fluent-bit') && 'actuated-arm64-8cpu-16gb') || 'ubuntu-22.04' }}
 >>>>>>> 6dcf8cd22 (workflows: speed up Raspbian builds)
+=======
+    runs-on: ${{ ((contains(matrix.distro, 'arm' ) || contains(matrix.distro, 'raspbian')) && (github.repository == 'fluent/fluent-bit') && 'ubuntu-22.04-arm') || 'ubuntu-22.04' }}
+>>>>>>> 452465ecb (workflows: try new runner)
     permissions:
       contents: read
     strategy:
@@ -129,6 +133,7 @@ jobs:
           ref: ${{ inputs.ref }}
 
 <<<<<<< HEAD
+<<<<<<< HEAD
       # - name: Set up Actuated mirror
       #   if: (contains(matrix.distro, 'arm' ) || contains(matrix.distro, 'raspbian')) && (github.repository == 'fluent/fluent-bit')
       #   uses: self-actuated/hub-mirror@master
@@ -141,9 +146,14 @@ jobs:
         if: (contains(matrix.distro, 'arm' ) || contains(matrix.distro, 'raspbian')) && (github.repository == 'fluent/fluent-bit')
         uses: self-actuated/hub-mirror@master
 >>>>>>> 2882ecf9e (workflows: speed up Raspbian builds)
+=======
+      # - name: Set up Actuated mirror
+      #   if: (contains(matrix.distro, 'arm' ) || contains(matrix.distro, 'raspbian')) && (github.repository == 'fluent/fluent-bit')
+      #   uses: self-actuated/hub-mirror@master
+>>>>>>> 452465ecb (workflows: try new runner)
 
       - name: Set up Docker Buildx
-        if: ${{ !(contains(matrix.distro, 'arm' ) || contains(matrix.distro, 'raspbian')) && (github.repository == 'fluent/fluent-bit') }}
+        # if: ${{ !(contains(matrix.distro, 'arm' ) || contains(matrix.distro, 'raspbian')) && (github.repository == 'fluent/fluent-bit') }}
         uses: docker/setup-buildx-action@v3
 
       - name: Set up QEMU
