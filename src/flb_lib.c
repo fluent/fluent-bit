@@ -127,6 +127,7 @@ void flb_init_env()
     flb_upstream_init();
     flb_downstream_init();
     flb_output_prepare();
+    flb_input_init();
 
     FLB_TLS_INIT(flb_lib_active_context);
     FLB_TLS_INIT(flb_lib_active_cf_context);
