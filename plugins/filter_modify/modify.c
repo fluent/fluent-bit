@@ -1492,75 +1492,80 @@ static int cb_modify_filter(const void *data, size_t bytes,
     struct filter_modify_ctx *ctx = context;
     int modifications = 0;
     int total_modifications = 0;
-    int ret;
+    int ret = FLB_FILTER_NOTOUCH;
+    int dec_ret;
+    int enc_ret;
 
     (void) f_ins;
     (void) i_ins;
     (void) config;
 
-    ret = flb_log_event_decoder_init(&log_decoder, (char *) data, bytes);
-
-    if (ret != FLB_EVENT_DECODER_SUCCESS) {
+    dec_ret = flb_log_event_decoder_init(&log_decoder, (char *) data, bytes);
+    if (dec_ret != FLB_EVENT_DECODER_SUCCESS) {
         flb_plg_error(ctx->ins,
-                      "Log event decoder initialization error : %d", ret);
-
+                      "Log event decoder initialization error : %s",
+                      flb_log_event_decoder_get_error_description(dec_ret));
         return FLB_FILTER_NOTOUCH;
     }
 
-    ret = flb_log_event_encoder_init(&log_encoder,
-                                     FLB_LOG_EVENT_FORMAT_DEFAULT);
-
-    if (ret != FLB_EVENT_ENCODER_SUCCESS) {
+    enc_ret = flb_log_event_encoder_init(&log_encoder,
+                                        FLB_LOG_EVENT_FORMAT_DEFAULT);
+    if (enc_ret != FLB_EVENT_ENCODER_SUCCESS) {
         flb_plg_error(ctx->ins,
-                      "Log event encoder initialization error : %d", ret);
-
+                      "Log event encoder initialization error : %s",
+                      flb_log_event_encoder_get_error_description(enc_ret));
         flb_log_event_decoder_destroy(&log_decoder);
-
         return FLB_FILTER_NOTOUCH;
     }
 
-    while ((ret = flb_log_event_decoder_next(
-                    &log_decoder,
-                    &log_event)) == FLB_EVENT_DECODER_SUCCESS) {
+    while ((dec_ret = flb_log_event_decoder_next(
+                      &log_decoder,
+                      &log_event)) == FLB_EVENT_DECODER_SUCCESS) {
         modifications =
             apply_modifying_rules(&log_encoder, &log_event, ctx);
 
         if (modifications == 0) {
             /* not matched, so copy original event. */
-            ret = flb_log_event_encoder_emit_raw_record(
-                             &log_encoder,
-                             log_decoder.record_base,
-                             log_decoder.record_length);
+            enc_ret = flb_log_event_encoder_emit_raw_record(
+                               &log_encoder,
+                               log_decoder.record_base,
+                               log_decoder.record_length);
         }
 
         total_modifications += modifications;
     }
 
-    if(total_modifications > 0) {
-        if (ret == FLB_EVENT_DECODER_ERROR_INSUFFICIENT_DATA &&
-            log_decoder.offset == bytes) {
-            ret = FLB_EVENT_ENCODER_SUCCESS;
-        }
-
-        if (ret == FLB_EVENT_ENCODER_SUCCESS) {
-            *out_buf  = log_encoder.output_buffer;
-            *out_size = log_encoder.output_length;
-
-            ret = FLB_FILTER_MODIFIED;
-
-            flb_log_event_encoder_claim_internal_buffer_ownership(&log_encoder);
-        }
-        else {
-            flb_plg_error(ctx->ins,
-                          "Log event encoder error : %d", ret);
-
-            ret = FLB_FILTER_NOTOUCH;
-        }
-    }
-    else {
+    if (total_modifications <= 0) {
         ret = FLB_FILTER_NOTOUCH;
+        goto cb_modify_filter_end;
     }
 
+    dec_ret = flb_log_event_decoder_get_last_result(&log_decoder);
+    if (dec_ret != FLB_EVENT_DECODER_SUCCESS) {
+        flb_plg_error(ctx->ins,
+                      "Log event decoder error : %s",
+                      flb_log_event_decoder_get_error_description(dec_ret));
+        ret = FLB_FILTER_NOTOUCH;
+        goto cb_modify_filter_end;
+    }
+
+    if (enc_ret != FLB_EVENT_ENCODER_SUCCESS) {
+        flb_plg_error(ctx->ins,
+                      "Log event encoder error : %s",
+                      flb_log_event_encoder_get_error_description(enc_ret));
+
+        ret = FLB_FILTER_NOTOUCH;
+        goto cb_modify_filter_end;
+    }
+
+    *out_buf  = log_encoder.output_buffer;
+    *out_size = log_encoder.output_length;
+
+    ret = FLB_FILTER_MODIFIED;
+
+    flb_log_event_encoder_claim_internal_buffer_ownership(&log_encoder);
+
+ cb_modify_filter_end:
     flb_log_event_decoder_destroy(&log_decoder);
     flb_log_event_encoder_destroy(&log_encoder);
 
