@@ -10,7 +10,7 @@ RUN sed -i -e "s/^mirrorlist=http:\/\/mirrorlist.centos.org/#mirrorlist=http:\/\
     yum install -y rpm-build curl ca-certificates gcc gcc-c++ cmake make bash \
     wget unzip systemd-devel wget flex bison \
     cyrus-sasl-lib cyrus-sasl-devel openssl openss-libs openssl-devel \
-    postgresql-libs postgresql-devel postgresql-server postgresql libyaml-devel && \
+    postgresql-libs postgresql-devel postgresql-server postgresql libyaml-devel libsnmp-devel && \
     yum install -y epel-release && \
     yum install -y cmake3
 
