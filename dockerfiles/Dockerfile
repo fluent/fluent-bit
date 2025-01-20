@@ -84,14 +84,14 @@ RUN make -j "$(getconf _NPROCESSORS_ONLN)"
 RUN install bin/fluent-bit /fluent-bit/bin/
 
 # Configuration files
-COPY conf/fluent-bit.conf \
-    conf/parsers.conf \
-    conf/parsers_ambassador.conf \
-    conf/parsers_java.conf \
-    conf/parsers_extra.conf \
-    conf/parsers_openstack.conf \
-    conf/parsers_cinder.conf \
-    conf/plugins.conf \
+COPY conf/fluent-bit.* \
+    conf/parsers.* \
+    conf/parsers_ambassador.* \
+    conf/parsers_java.* \
+    conf/parsers_extra.* \
+    conf/parsers_openstack.* \
+    conf/parsers_cinder.* \
+    conf/plugins.* \
     /fluent-bit/etc/
 
 # Generate schema and include as part of the container image
@@ -185,7 +185,7 @@ EXPOSE 2020
 
 # Entry point
 ENTRYPOINT [ "/fluent-bit/bin/fluent-bit" ]
-CMD ["/fluent-bit/bin/fluent-bit", "-c", "/fluent-bit/etc/fluent-bit.conf"]
+CMD ["/fluent-bit/bin/fluent-bit", "-c", "/fluent-bit/etc/fluent-bit.yaml"]
 
 FROM debian:bookworm-slim AS debug
 ARG RELEASE_VERSION
@@ -239,4 +239,4 @@ COPY --from=builder /fluent-bit /fluent-bit
 EXPOSE 2020
 
 # No entry point so we can just shell in
-CMD ["/fluent-bit/bin/fluent-bit", "-c", "/fluent-bit/etc/fluent-bit.conf"]
+CMD ["/fluent-bit/bin/fluent-bit", "-c", "/fluent-bit/etc/fluent-bit.yaml"]
