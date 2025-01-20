@@ -100,7 +100,7 @@ static inline int is_float(const char *buf, int len)
     const char *p = buf;
 
     while (p <= end) {
-        if (*p == 'e' && p < end && *(p + 1) == '-') {
+        if ((*p == 'e' || *p == 'E') && p < end && (*(p + 1) == '-' || *(p + 1) == '+')) {
             return 1;
         }
         else if (*p == '.') {
