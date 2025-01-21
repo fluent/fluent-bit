@@ -509,6 +509,11 @@ if(FLB_BINARY)
     add_dependencies(fluent-bit-bin flb-static-conf)
   endif()
 
+  # in_ebpf
+  if(FLB_IN_EBPF)
+    add_dependencies(fluent-bit-bin flb-ebpf-generate_skeletons)
+  endif()
+
   if(FLB_REGEX)
     target_link_libraries(fluent-bit-bin onigmo-static)
   endif()
