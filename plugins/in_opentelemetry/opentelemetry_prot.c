@@ -589,6 +589,7 @@ static int binary_payload_to_msgpack(struct flb_opentelemetry *ctx,
             msgpack_pack_str(&mp_pck, 8);
             msgpack_pack_str_body(&mp_pck, "resource", 8);
 
+            /* resource header content */
             flb_mp_map_header_init(&mh_tmp, &mp_pck);
 
             /* look for OTel resource attributes */
@@ -612,7 +613,7 @@ static int binary_payload_to_msgpack(struct flb_opentelemetry *ctx,
                 msgpack_pack_uint64(&mp_pck, resource->dropped_attributes_count);
             }
 
-
+            flb_mp_map_header_end(&mh_tmp);
 
             if (resource_log->schema_url) {
                 flb_mp_map_header_append(&mh);
@@ -1819,12 +1820,13 @@ static int process_payload_logs(struct flb_opentelemetry *ctx, struct http_conn 
                                 struct mk_http_request *request)
 {
     struct flb_log_event_encoder *encoder;
-    int                           ret;
+    int                           ret = -1;
 
     encoder = flb_log_event_encoder_create(FLB_LOG_EVENT_FORMAT_FLUENT_BIT_V2);
     if (encoder == NULL) {
         return -1;
     }
+
 
     /* Check if the incoming payload is a valid JSON message and convert it to msgpack */
     if (strncasecmp(request->content_type.data,
