@@ -265,7 +265,6 @@ int opentelemetry_post(struct opentelemetry_context *ctx,
                                          tag, tag_len,
                                          http_uri);
     }
-
     compression_algorithm = NULL;
 
     request = flb_http_client_request_builder(
@@ -308,7 +307,15 @@ int opentelemetry_post(struct opentelemetry_context *ctx,
         grpc_body = sds_result;
 
         if(compression_algorithm != NULL) {
-            ((uint8_t *) grpc_body)[0] = 0x01;
+            /*
+             * Usually in a compressed gRPC level, we should set the first byte to 1,
+             * like this:
+             *
+             *   ((uint8_t *) grpc_body)[0] = 0x01;
+             *
+             * however, we are not compressing the gRPC message, the whole payload of
+             * the HTTP request is being compressed, so we set the first byte to 0.
+             */
         }
 
         ((uint8_t *) grpc_body)[1] = (wire_message_length & 0xFF000000) >> 24;
