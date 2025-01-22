@@ -85,7 +85,8 @@ rd_kafka_conf_t *flb_kafka_conf_create(struct flb_kafka *kafka,
             flb_sds_len(kv->key) > 8) {
             if (rd_kafka_conf_set(kafka_cfg, kv->key + 8, kv->val,
                         errstr, sizeof(errstr)) != RD_KAFKA_CONF_OK) {
-                flb_error("[flb_kafka] cannot configure '%s' property", kv->key + 8);
+                flb_error("[flb_kafka] cannot configure '%s' property with error: '%s'",
+                          kv->key + 8, errstr);
             }
         }
     }
