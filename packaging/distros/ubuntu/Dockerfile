@@ -21,7 +21,8 @@ RUN apt-get update && \
     make bash wget unzip nano vim valgrind dh-make flex bison \
     libpq-dev postgresql-server-dev-all software-properties-common \
     software-properties-common libyaml-dev apt-transport-https  \
-    pkg-config libsasl2-2 libsasl2-dev openssl libssl-dev libssl1.0 zlib1g-dev && \
+    pkg-config libsasl2-2 libsasl2-dev openssl libssl-dev libssl1.0 \
+    libcurl4-openssl-dev zlib1g-dev && \
     wget -q -O - https://apt.kitware.com/keys/kitware-archive-latest.asc 2>/dev/null | \
     gpg --dearmor - | tee /etc/apt/trusted.gpg.d/kitware.gpg >/dev/null && \
     apt-add-repository 'deb https://apt.kitware.com/ubuntu/ xenial main' && \
@@ -38,7 +39,7 @@ RUN apt-get update && \
     apt-get install -y curl ca-certificates gcc-8 g++-8 libsystemd-dev \
     cmake make bash wget unzip nano vim valgrind dh-make flex bison \
     libpq-dev postgresql-server-dev-all \
-    libsasl2-2 libsasl2-dev openssl libssl-dev libssl1.1 \
+    libsasl2-2 libsasl2-dev openssl libssl-dev libssl1.1 libcurl4-openssl-dev \
     software-properties-common libyaml-dev apt-transport-https pkg-config zlib1g-dev && \
     wget -q -O - https://apt.kitware.com/keys/kitware-archive-latest.asc 2>/dev/null | \
     gpg --dearmor - | tee /etc/apt/trusted.gpg.d/kitware.gpg >/dev/null && \
@@ -60,7 +61,7 @@ RUN apt-get update && \
     apt-get install -y curl ca-certificates gcc-8 g++-8 libsystemd-dev \
     cmake make bash wget unzip nano vim valgrind dh-make flex bison \
     libpq-dev postgresql-server-dev-all \
-    libsasl2-2 libsasl2-dev openssl libssl-dev libssl1.1 \
+    libsasl2-2 libsasl2-dev openssl libssl-dev libssl1.1 libcurl4-openssl-dev \
     software-properties-common libyaml-dev apt-transport-https pkg-config zlib1g-dev && \
     wget -q -O - https://apt.kitware.com/keys/kitware-archive-latest.asc 2>/dev/null | \
     gpg --dearmor - | tee /etc/apt/trusted.gpg.d/kitware.gpg >/dev/null && \
@@ -79,7 +80,8 @@ RUN apt-get update && \
     apt-get install -y curl ca-certificates build-essential libsystemd-dev \
     cmake make bash wget unzip nano vim valgrind dh-make flex bison \
     libpq-dev postgresql-server-dev-all \
-    libsasl2-2 libsasl2-dev openssl libssl-dev libssl1.1 libyaml-dev pkg-config zlib1g-dev && \
+    libsasl2-2 libsasl2-dev openssl libssl-dev libssl1.1 libcurl4-openssl-dev \
+    libyaml-dev pkg-config zlib1g-dev && \
     apt-get install -y --reinstall lsb-base lsb-release
 
 # ubuntu/20.04.arm64v8 base image
@@ -93,7 +95,8 @@ RUN apt-get update && \
     apt-get install -y curl ca-certificates build-essential libsystemd-dev \
     cmake make bash wget unzip nano vim valgrind dh-make flex bison \
     libpq-dev postgresql-server-dev-all \
-    libsasl2-2 libsasl2-dev openssl libssl-dev libssl1.1 libyaml-dev pkg-config zlib1g-dev && \
+    libsasl2-2 libsasl2-dev openssl libssl-dev libssl1.1 libcurl4-openssl-dev \
+    libyaml-dev pkg-config zlib1g-dev && \
     apt-get install -y --reinstall lsb-base lsb-release
 
 # ubuntu/22.04 base image
@@ -105,7 +108,8 @@ RUN apt-get update && \
     apt-get install -y curl ca-certificates build-essential libsystemd-dev \
     cmake make bash wget unzip nano vim valgrind dh-make flex bison \
     libpq-dev postgresql-server-dev-all libpq5 \
-    libsasl2-2 libsasl2-dev openssl libssl-dev libssl3 libyaml-dev pkg-config zlib1g-dev && \
+    libsasl2-2 libsasl2-dev openssl libssl-dev libssl3 libcurl4-openssl-dev \
+    libyaml-dev pkg-config zlib1g-dev && \
     apt-get install -y --reinstall lsb-base lsb-release
 
 # ubuntu/22.04.arm64v8 base image
@@ -119,7 +123,8 @@ RUN apt-get update && \
     apt-get install -y curl ca-certificates build-essential libsystemd-dev \
     cmake make bash wget unzip nano vim valgrind dh-make flex bison \
     libpq-dev postgresql-server-dev-all libpq5 \
-    libsasl2-2 libsasl2-dev openssl libssl-dev libssl3 libyaml-dev pkg-config zlib1g-dev && \
+    libsasl2-2 libsasl2-dev openssl libssl-dev libssl3 libcurl4-openssl-dev \
+    libyaml-dev pkg-config zlib1g-dev && \
     apt-get install -y --reinstall lsb-base lsb-release
 
     # ubuntu/24.04 base image
@@ -131,7 +136,8 @@ RUN apt-get update && \
     apt-get install -y curl ca-certificates build-essential libsystemd-dev \
     cmake make bash wget unzip nano vim valgrind dh-make flex bison \
     libpq-dev postgresql-server-dev-all libpq5 \
-    libsasl2-2 libsasl2-dev openssl libssl-dev libssl3 libyaml-dev pkg-config zlib1g-dev && \
+    libsasl2-2 libsasl2-dev openssl libssl-dev libssl3 libcurl4-openssl-dev \
+    libyaml-dev pkg-config zlib1g-dev && \
     apt-get install -y --reinstall lsb-base lsb-release
 
 # ubuntu/24.04.arm64v8 base image
@@ -145,7 +151,8 @@ RUN apt-get update && \
     apt-get install -y curl ca-certificates build-essential libsystemd-dev \
     cmake make bash wget unzip nano vim valgrind dh-make flex bison \
     libpq-dev postgresql-server-dev-all libpq5 \
-    libsasl2-2 libsasl2-dev openssl libssl-dev libssl3 libyaml-dev pkg-config zlib1g-dev && \
+    libsasl2-2 libsasl2-dev openssl libssl-dev libssl3 libcurl4-openssl-dev \
+    libyaml-dev pkg-config zlib1g-dev && \
     apt-get install -y --reinstall lsb-base lsb-release
 
 # Common build for all distributions now
