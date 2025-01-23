@@ -115,13 +115,19 @@ RUN echo "deb http://deb.debian.org/debian bookworm-backports main" >> /etc/apt/
     libssl3 \
     libcurl4 \
 <<<<<<< HEAD
+<<<<<<< HEAD
+=======
+>>>>>>> 5767ca84e (dockerfile: Fix library dependencies)
     libnghttp2-14 \
     librtmp1 \
     libssh2-1 \
     libpsl5 \
     libbrotli1 \
+<<<<<<< HEAD
 =======
 >>>>>>> faceb5c26 (dockerfiles: Add libcurl4 dependency for OAuth/OICD feature of librdkafka)
+=======
+>>>>>>> 5767ca84e (dockerfile: Fix library dependencies)
     libsasl2-2 \
     pkg-config \
     libpq5 \
