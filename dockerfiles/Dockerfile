@@ -113,6 +113,11 @@ RUN echo "deb http://deb.debian.org/debian bookworm-backports main" >> /etc/apt/
     apt-get download \
     libssl3 \
     libcurl4 \
+    libnghttp2-14 \
+    librtmp1 \
+    libssh2-1 \
+    libpsl5 \
+    libbrotli1 \
     libsasl2-2 \
     pkg-config \
     libpq5 \
@@ -214,6 +219,12 @@ RUN echo "deb http://deb.debian.org/debian bookworm-backports main" >> /etc/apt/
     apt-get update && \
     apt-get install -y --no-install-recommends \
     libssl3 \
+    libcurl4 \
+    libnghttp2-14 \
+    librtmp1 \
+    libssh2-1 \
+    libpsl5 \
+    libbrotli1 \
     libsasl2-2 \
     pkg-config \
     libpq5 \
