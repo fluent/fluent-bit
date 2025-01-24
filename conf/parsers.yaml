@@ -1,0 +1,9 @@
+parsers:
+  - name: json
+    format: json
+
+  - name: docker
+    format: json
+    time_key: time
+    time_format: "%Y-%m-%dT%H:%M:%S.%L"
+    time_keep: true

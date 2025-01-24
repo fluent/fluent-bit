@@ -75,13 +75,16 @@ RUN cmake -G "'Visual Studio 16 2019'" -DOPENSSL_ROOT_DIR='C:\dev\vcpkg\packages
 # Set up config files and binaries in single /fluent-bit hierarchy for easy copy in later stage
 RUN New-Item -Path  /fluent-bit/etc/ -ItemType "directory"; `
     Copy-Item -Path /src/conf/fluent-bit-win32.conf /fluent-bit/etc/fluent-bit.conf; `
+    Copy-Item -Path /src/conf/fluent-bit-win32.yaml /fluent-bit/etc/fluent-bit.yaml; `
     Copy-Item -Path /src/conf/parsers.conf /fluent-bit/etc/; `
+    Copy-Item -Path /src/conf/parsers.yaml /fluent-bit/etc/; `
     Copy-Item -Path /src/conf/parsers_ambassador.conf /fluent-bit/etc/; `
     Copy-Item -Path /src/conf/parsers_java.conf /fluent-bit/etc/; `
     Copy-Item -Path /src/conf/parsers_extra.conf /fluent-bit/etc/; `
     Copy-Item -Path /src/conf/parsers_openstack.conf /fluent-bit/etc/; `
     Copy-Item -Path /src/conf/parsers_cinder.conf /fluent-bit/etc/; `
     Copy-Item -Path /src/conf/plugins.conf /fluent-bit/etc/; `
+    Copy-Item -Path /src/conf/plugins.yaml /fluent-bit/etc/; `
     Copy-Item -Path /src/build/bin/Release/fluent-bit.exe /fluent-bit/bin/; `
     Copy-Item -Path /src/build/bin/Release/fluent-bit.dll /fluent-bit/bin/;
 #
@@ -114,4 +117,4 @@ RUN setx /M PATH "%PATH%;C:\fluent-bit\bin"
 ENTRYPOINT [ "fluent-bit.exe" ]
 # Hadolint gets confused by Windows it seems
 # hadolint ignore=DL3025
-CMD [ "fluent-bit.exe", "-c", "/fluent-bit/etc/fluent-bit.conf" ]
+CMD [ "fluent-bit.exe", "-c", "/fluent-bit/etc/fluent-bit.yaml" ]

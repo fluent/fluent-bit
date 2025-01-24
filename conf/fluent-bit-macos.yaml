@@ -1,0 +1,17 @@
+service:
+  flush: 1
+  log_level: info
+  http_server: false
+  http_listen: 0.0.0.0
+  http_port: 2020
+  parsers_file: parsers.yaml
+  plugins_file: plugins.yaml
+
+pipeline:
+  inputs:
+    - name: dummy
+      tag: dummy.local
+
+  outputs:
+    - name: stdout
+      match: '*'
