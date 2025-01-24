@@ -44,10 +44,18 @@ static int setup_hec_tokens(struct flb_splunk *ctx)
     const char *raw_token;
     struct mk_list *head = NULL;
     struct mk_list *kvs = NULL;
+    int token_idx = 0;
     struct flb_split_entry *cur = NULL;
     flb_sds_t   auth_header = NULL;
     struct flb_splunk_tokens *splunk_token;
     flb_sds_t credential = NULL;
+
+    struct flb_config_map_val *matching_token_mapping;
+    /* iterators for token to tag mappings */
+    struct mk_list *ttm_list_i;
+    struct flb_config_map_val *ttm_cmval_i;
+    struct flb_slist_entry *ttm_i_token;
+    struct flb_slist_entry *ttm_tag;
 
     raw_token = flb_input_get_property("splunk_token", ctx->ins);
     if (raw_token) {
@@ -93,10 +101,45 @@ static int setup_hec_tokens(struct flb_splunk *ctx)
             splunk_token->header = auth_header;
             splunk_token->length = flb_sds_len(auth_header);
 
+            if (ctx->token_to_tag_mappings != NULL) {
+                int mapping_idx = 0;
+                matching_token_mapping = NULL;
+                /* search all the configured token_to_tag_mappings to see if the current
+                   token is one that a mapping was specified for */
+                flb_config_map_foreach(ttm_list_i, ttm_cmval_i, ctx->token_to_tag_mappings) {
+                    ttm_i_token = mk_list_entry_first(ttm_cmval_i->val.list,
+                                        struct flb_slist_entry,
+                                        _head);
+
+                    if (flb_sds_cmp(ttm_i_token->str, credential, flb_sds_len(credential)) == 0) {
+                        matching_token_mapping = ttm_cmval_i;
+                        break;
+                    }
+                    mapping_idx += 1;
+                }
+                if (matching_token_mapping != NULL) {
+                    /* Token is the first arg (list->next),
+                       Tag is the second arg (list->next->next) */
+                    ttm_tag = container_of(matching_token_mapping->val.list->next->next,
+                                        struct flb_slist_entry,
+                                        _head);
+                    flb_plg_debug(ctx->ins, "token #%d will map to tag %s", token_idx + 1, ttm_tag->str);
+                    splunk_token->map_to_tag = flb_sds_create(ttm_tag->str);
+                }
+                else {
+                    flb_plg_warn(ctx->ins, "token #%d has no tag mapping, records from this token will not re-map to specific tag", token_idx + 1);
+                    splunk_token->map_to_tag = NULL;
+                }
+            }
+            else {
+                splunk_token->map_to_tag = NULL;
+            }
+
             flb_sds_destroy(credential);
 
             /* Link to parent list */
             mk_list_add(&splunk_token->_head, &ctx->auth_tokens);
+            token_idx++;
         }
     }
 
