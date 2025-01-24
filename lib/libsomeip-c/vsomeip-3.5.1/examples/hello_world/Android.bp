@@ -1,0 +1,35 @@
+cc_defaults {
+    name: "vsomeip_hello_world_defaults",
+    vendor: true,
+
+    cppflags: [
+        "-std=c++17",
+        "-Wno-unused-parameter",
+    ],
+
+    shared_libs: [
+        "libvsomeip3",
+        "libvsomeip_cfg",
+        "libvsomeip_e2e",
+        "libvsomeip_sd",
+        "liblog",
+    ],
+}
+
+cc_binary {
+    name: "vsomeip_hello_world_service",
+    defaults: ["vsomeip_hello_world_defaults"],
+
+    srcs: [
+        "hello_world_service_main.cpp",
+    ],
+}
+
+cc_binary {
+    name: "vsomeip_hello_world_client",
+    defaults: ["vsomeip_hello_world_defaults"],
+
+    srcs: [
+        "hello_world_client_main.cpp",
+    ],
+}

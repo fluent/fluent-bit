@@ -56,6 +56,9 @@ RUN echo "deb http://deb.debian.org/debian bookworm-backports main" >> /etc/apt/
     flex \
     bison \
     libyaml-dev \
+    libboost-system-dev \
+    libboost-thread-dev \
+    libboost-filesystem-dev \
     && apt-get clean \
     && rm -rf /var/lib/apt/lists/*
 
@@ -148,6 +151,9 @@ RUN echo "deb http://deb.debian.org/debian bookworm-backports main" >> /etc/apt/
     liblzma5 \
     libyaml-0-2 \
     libcap2 \
+    libboost-system1.74.0 \
+    libboost-thread1.74.0 \
+    libboost-filesystem1.74.0 \
     && \
     mkdir -p /dpkg/var/lib/dpkg/status.d/ && \
     for deb in *.deb; do \
@@ -234,6 +240,9 @@ RUN echo "deb http://deb.debian.org/debian bookworm-backports main" >> /etc/apt/
     libatomic1 \
     libgcrypt20 \
     libyaml-0-2 \
+    libboost-system1.74.0 \
+    libboost-thread1.74.0 \
+    libboost-filesystem1.74.0 \
     bash gdb valgrind build-essential  \
     git bash-completion vim tmux jq \
     dnsutils iputils-ping iputils-arping iputils-tracepath iputils-clockdiff \

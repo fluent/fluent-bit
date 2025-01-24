@@ -1,0 +1,8 @@
+{
+    "container_policy_extensions":
+    [
+        {
+            "container": "@HOSTNAME@", "path": "../..@CMAKE_CURRENT_BINARY_DIR@/vsomeip/vsomeip_ext"
+        }
+    ]
+}

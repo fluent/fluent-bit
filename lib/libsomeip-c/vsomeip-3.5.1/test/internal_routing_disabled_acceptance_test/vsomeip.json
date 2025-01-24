@@ -1,0 +1,35 @@
+{
+    "logging": {
+        "level": "trace",
+        "console": "true"
+    },
+    "applications": [
+        {
+            "name": "server",
+            "id": "0x1001"
+        },
+        {
+            "name": "client",
+            "id": "0x1002"
+        }
+    ],
+    "services": [
+        {
+            "service": "0x2222",
+            "instance": "0x3333",
+            "unreliable": 12345
+        }
+    ],
+    "routing": {
+        "enabled": "false",
+        "host": "server",
+        "address": "127.0.0.1",
+        "port": 1270
+    },
+    "service-discovery": {
+        "enable": "true",
+        "multicast": "224.244.224.244",
+        "port": 2240,
+        "protocol": "udp"
+    }
+}

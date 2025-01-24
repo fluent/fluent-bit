@@ -1,0 +1,48 @@
+{
+   "unicast" : "127.0.0.1",
+   "netmask" : "255.255.255.0",
+   "logging" :
+   {
+      "level" : "info",
+      "console" : "true",
+      "file" :
+      {
+         "enable" : "true",
+         "path" : "/var/log/vsomeip.log"
+      },
+
+      "dlt" : "true"
+   },
+
+   "applications" :
+   [
+      {
+         "name" : "restart_routing_test_client1",
+         "id" : "0x1343"
+      },
+      {
+         "name" : "restart_routing_test_client2",
+         "id" : "0x1344"
+      },
+      {
+         "name" : "restart_routing_test_client3",
+         "id" : "0x1345"
+      },
+      {
+         "name" : "restart_routing_test_client4",
+         "id" : "0x1346"
+      }
+   ],
+   "services" :
+   [
+   ],
+
+   "routing" : "routingmanagerd",
+   "service-discovery" :
+   {
+      "enable" : "false",
+      "multicast" : "224.0.0.1",
+      "port" : "30491",
+      "protocol" : "udp"
+   }
+}

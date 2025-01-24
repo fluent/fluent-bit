@@ -1,0 +1,78 @@
+{
+    "unicast" : "localhost",
+    "logging" :
+    {
+        "level" : "info",
+        "console" : "true",
+        "file" : { "enable" : "false", "path" : "/tmp/vsomeip.log" },
+        "dlt" : "true"
+    },
+    "applications" :
+    [
+        {
+            "name" : "service-sample",
+            "id" : "0x1277"
+        },
+        {
+            "name" : "client-sample",
+            "id" : "0x1255"
+        },
+        {
+            "name" : "routingmanagerd",
+            "id" : "0x1111"
+        }
+    ],
+    "security" :
+    {
+        "check_credentials" : "true",
+        "policies" :
+        [
+            {
+                "credentials" : { "uid" : "@TEST_UID@", "gid" : "@TEST_GID@" },
+                "allow" :
+                {
+                    "offers":
+                    [
+                        {
+                            "service"  : "0x1234",
+                            "instance" : "0x5678"
+                        }
+                    ],
+                    "requests":
+                    [
+                        {
+                            "service"  : "0x1234",
+                            "instances" :
+                            [
+                                {
+                                    "ids" : ["0x5678"],
+                                    "methods" : [ {"first" : "0x8421", "last" : "0x8422" }, "0x8001", "0x7777" ]
+                                }
+                            ]
+                        }
+                    ]
+                }
+            }
+        ]
+    },
+    "routing" : "routingmanagerd",
+    "routing-credentials" :
+    {
+        "uid" : "@TEST_UID@",
+        "gid" : "@TEST_GID@"
+    },
+    "service-discovery" :
+    {
+        "enable" : "true",
+        "multicast" : "224.244.224.245",
+        "port" : "30490",
+        "protocol" : "udp",
+        "initial_delay_min" : "10",
+        "initial_delay_max" : "100",
+        "repetitions_base_delay" : "200",
+        "repetitions_max" : "3",
+        "ttl" : "3",
+        "cyclic_offer_delay" : "2000",
+        "request_response_delay" : "1500"
+    }
+}

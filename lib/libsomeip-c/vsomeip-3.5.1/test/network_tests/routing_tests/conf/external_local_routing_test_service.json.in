@@ -1,0 +1,42 @@
+{
+   "unicast" : "@TEST_IP_MASTER@",
+   "diagnosis":"0x12",
+   "logging" :
+   {
+      "level" : "debug",
+      "console" : "true",
+      "file" :
+      {
+         "enable" : "false",
+         "path" : "/tmp/vsomeip.log"
+      },
+
+      "dlt" : "true"
+   },
+
+   "applications" :
+   [
+      {
+         "name" : "external_local_routing_test_service",
+         "id" : "0x1277"
+      }
+   ],
+
+   "services" :
+   [
+      {
+         "service" : "0x1234",
+         "instance" : "0x5678",
+         "unreliable" : "30509"
+      }
+   ],
+
+   "routing" : "external_local_routing_test_service",
+   "service-discovery" :
+   {
+      "enable" : "false",
+      "multicast" : "224.0.0.1",
+      "port" : "30490",
+      "protocol" : "udp"
+   }
+}

@@ -1,0 +1,46 @@
+{
+    "unicast" : "@TEST_IP_SLAVE@",
+    "logging" :
+    {
+        "level" : "info",
+        "console" : "true",
+        "file" : { "enable" : "false", "path" : "/tmp/vsomeip.log" },
+        "dlt" : "true"
+    },
+    "applications" :
+    [
+        {
+            "name" : "subscribe_notify_test_service",
+            "id" : "0x8888"
+        }
+    ],
+    "services" :
+    [
+        {
+            "service" : "0xcafe",
+            "instance" : "0x1",
+            "reliable" : { "port":"30509", "enable-magic-cookies":"false" }
+        }
+    ],
+    "routing" :
+    {
+        "host" :
+        {
+            "name" : "routingmanagerd",
+            "unicast" : "127.0.0.1"
+        }
+    },
+    "service-discovery" :
+    {
+        "enable":"true",
+        "multicast":"224.0.0.1",
+        "port":"30490",
+        "protocol":"udp",
+        "initial_delay_min" : "10",
+        "initial_delay_max" : "10",
+        "repetitions_base_delay" : "30",
+        "repetitions_max" : "0",
+        "cyclic_offer_delay" : "1000",
+        "ttl" : "3"
+    }
+}

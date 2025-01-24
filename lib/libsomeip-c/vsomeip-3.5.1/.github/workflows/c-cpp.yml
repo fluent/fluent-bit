@@ -1,0 +1,68 @@
+name: C/C++ CI
+
+on:
+  push:
+    branches: [master]
+  pull_request:
+    branches: [master]
+
+jobs:
+  build_on_ubuntu_boost_183_gcc_x86:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Ubuntu - Install boost 1.83.0 with gcc and x86
+        uses: MarkusJx/install-boost@v2.4.4
+        id: ubuntu-gcc-1_83-x86
+        with:
+          boost_version: 1.83.0
+          platform_version: 20.04
+          boost_install_dir: /home/runner
+          toolset: gcc
+          arch: x86
+          cache: true
+
+      - uses: actions/checkout@v4
+
+      - name: install dependencies
+        run: |
+          sudo apt-get update -qq
+          sudo apt-get install -y googletest asciidoc source-highlight doxygen graphviz libbenchmark-dev
+
+      - name: Run CMake config
+        run: cmake -Bbuild -DBOOST_ROOT=/home/runner/boost/boost/ -DGTEST_ROOT=/usr/src/googletest
+
+      - name: Build CMake
+        run: cmake --build build --target build_tests
+
+      - name: Run Unit tests
+        run: ctest --test-dir build --tests-regex '^unit_' --verbose
+
+      - name: Run BenchMark tests
+        run: env -C build test/benchmark_tests/benchmark_tests_bin
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: vsomeip
+          path: "${{ runner.workspace }}/install/**/*"
+
+  build_on_windows_boost_183_gcc_x86:
+    runs-on: windows-latest
+    steps:
+      - name: Windows - Install boost 1.83.0 with gcc and x86
+        uses: MarkusJx/install-boost@v2.4.4
+        id: windows-gcc-1_83-x86
+        with:
+          boost_version: 1.83.0
+          platform: windows
+          boost_install_dir: C:\runner
+          toolset: msvc
+          arch: x86
+          cache: true
+
+      - uses: actions/checkout@v4
+
+      - name: Run CMake
+        run: cmake -Bbuild -D BOOST_ROOT=C:\runner\boost/boost\ .
+
+      - name: Build CMake
+        run: cmake --build build

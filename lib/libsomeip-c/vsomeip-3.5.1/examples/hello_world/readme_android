@@ -1,0 +1,22 @@
+AOSP:
+1. Apply vsomeip project to AOSP tree and build hello_world example (e.g. via mma build command)
+2. Push changes to target
+3. Start service and client via different adb shell sessions under root user:
+
+Shell1:
+VSOMEIP_CONFIGURATION=/vendor/etc/vsomeip/helloworld-local.json \
+VSOMEIP_APPLICATION_NAME=hello_world_service \
+vsomeip_hello_world_service
+
+Shell2:
+VSOMEIP_CONFIGURATION=/vendor/etc/vsomeip/helloworld-local.json \
+VSOMEIP_APPLICATION_NAME=hello_world_client \
+vsomeip_hello_world_client
+
+NDK:
+AndroidStudio example how to use vsomeip like communication mechanism between two Android services:
+https://github.com/nkh-lab/ndk-vsomeip-hello-world
+
+Expected Android app Logcat output:
+2020-06-05 11:13:06.407 31221-31266/com.example.vsomeiphelloworld I/hello_world_client: Sending: World
+2020-06-05 11:13:06.437 31221-31266/com.example.vsomeiphelloworld I/hello_world_client: Received: Hello World

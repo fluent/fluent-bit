@@ -1,0 +1,49 @@
+#!/usr/bin/echo non-executable-shell-library
+# shellcheck shell=bash
+
+# Detect build timeout
+function is-timed-out
+{
+	declare -gi stop_time
+	if [[ ! -v stop_time ]]
+	then
+		stop_time=$(date -d "$GLOBAL_TIMEOUT" +%s)
+		readonly stop_time
+	fi
+	(($(date +%s) >= stop_time))
+}
+
+# Run a command on the slave container
+function run-slave
+{
+	ssh -no StrictHostKeyChecking=no slave -- "${@@Q}"
+}
+
+# Run a command on both containers
+function run-both
+{
+	local -A commands=(
+		[master]=exec
+		[slave]=run-slave
+	)
+	local name
+	for name in master slave
+	do
+		("${commands[$name]}" "${@//@name@/"$name"}")
+	done
+}
+
+# Pretty-print a list of items
+function print-list
+{
+	echo "$1: $(($#-1))"
+	shift
+	local elem
+	for elem
+	do
+		echo "- $elem"
+	done
+}
+
+# Add multicast route
+ip route add multicast 224.0.0.0/4 dev eth0

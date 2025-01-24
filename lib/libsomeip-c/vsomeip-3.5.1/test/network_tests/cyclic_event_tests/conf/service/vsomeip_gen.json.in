@@ -1,0 +1,9 @@
+{
+    "services": [
+        {
+            "service": "0x1111",
+            "instance": "0x0001",
+            "unreliable": "30509"
+        }
+    ]
+}
