@@ -40,8 +40,20 @@ static int cb_parseable_init(struct flb_output_instance *ins,
     ctx->upstream = flb_upstream_create(config,
                                         ctx->server_host,
                                         ctx->server_port,
-                                        FLB_IO_TCP,
+                                        FLB_IO_TCP | FLB_IO_ASYNC,
                                         NULL);
+
+    ctx->upstream->base.net.connect_timeout = ctx->connect_timeout;
+    ctx->upstream->base.net.accept_timeout = ctx->accept_timeout;
+
+    flb_plg_info(ctx->ins, "Timeouts - Connect: %ds, Accept: %ds", ctx->connect_timeout, ctx->accept_timeout);
+
+    /* Set retry limit */
+    char retry_limit_str[16];
+    snprintf(retry_limit_str, sizeof(retry_limit_str), "%d", ctx->retry_limit);
+    flb_output_set_property(ins, "Retry_Limit", retry_limit_str);
+    
+    flb_plg_info(ctx->ins, "Retry limit set to: %d", ctx->retry_limit);
 
     if (!ctx->upstream) {
         flb_free(ctx);
@@ -309,6 +321,11 @@ static struct flb_config_map config_map[] = {
     "The host of the server to send logs to."
     },
     {
+     FLB_CONFIG_MAP_INT, "server_port", "443",  // Default port is 443 for HTTPS
+     0, FLB_TRUE, offsetof(struct flb_out_parseable, server_port),
+    "The port on the host to send logs to."
+    },
+    {
      FLB_CONFIG_MAP_STR, "username", NULL,
      0, FLB_TRUE, offsetof(struct flb_out_parseable, username),
     "The parseable server username."
@@ -324,18 +341,29 @@ static struct flb_config_map config_map[] = {
     "The stream name to send logs to. Using $NAMESPACE will dynamically create a namespace."
     },
     {
-     FLB_CONFIG_MAP_INT, "server_port", NULL,
-     0, FLB_TRUE, offsetof(struct flb_out_parseable, server_port),
-    "The port on the host to send logs to."
-    },
-    {
      FLB_CONFIG_MAP_CLIST, "Exclude_Namespaces", NULL,
      0, FLB_TRUE, offsetof(struct flb_out_parseable, exclude_namespaces),
     "A space-separated list of Kubernetes namespaces to exclude from log forwarding."
     },
+    {
+     FLB_CONFIG_MAP_INT, "connect_timeout", "600",  // Default to 600 seconds
+     0, FLB_TRUE, offsetof(struct flb_out_parseable, connect_timeout),
+    "Timeout in seconds for establishing connections."
+    },
+    {
+     FLB_CONFIG_MAP_INT, "accept_timeout", "600",  // Default to 600 seconds
+     0, FLB_TRUE, offsetof(struct flb_out_parseable, accept_timeout),
+    "Timeout in seconds for accepting connections."
+    },
+    {
+     FLB_CONFIG_MAP_INT, "retry_limit", "5",  // Default to 5 retries
+     0, FLB_TRUE, offsetof(struct flb_out_parseable, retry_limit),
+    "Maximum number of retries for sending logs."
+    },
     /* EOF */
     {0}
 };
+
 
 /* Plugin registration */
 struct flb_output_plugin out_parseable_plugin = {
