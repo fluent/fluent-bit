@@ -79,7 +79,6 @@ jobs:
       username: ${{ github.actor }}
       image: ${{ github.repository }}/staging
       environment: staging
-      platforms: 'linux/amd64, linux/arm64'
     secrets:
       token: ${{ secrets.GITHUB_TOKEN }}
       cosign_private_key: ${{ secrets.COSIGN_PRIVATE_KEY }}
