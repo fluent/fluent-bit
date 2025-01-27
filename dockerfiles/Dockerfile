@@ -81,7 +81,7 @@ RUN cmake -DFLB_RELEASE=On \
     -DFLB_CHUNK_TRACE="$FLB_CHUNK_TRACE" \
     ..
 
-RUN make -j "$(getconf _NPROCESSORS_ONLN)"
+RUN make -j "$(getconf _NPROCESSORS_ONLN)" VERBOSE=1
 RUN install bin/fluent-bit /fluent-bit/bin/
 
 # Configuration files
