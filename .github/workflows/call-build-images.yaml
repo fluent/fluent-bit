@@ -155,6 +155,8 @@ jobs:
     needs:
       - call-build-images-meta
       - call-build-single-arch-container-images
+    outputs:
+      version: ${{ steps.meta.outputs.version }}
     steps:
       - name: Extract metadata from Github
         id: meta
@@ -205,6 +207,8 @@ jobs:
     needs:
       - call-build-images-meta
       - call-build-single-arch-container-images
+    outputs:
+      version: ${{ steps.meta.outputs.debug-version }}
     steps:
       - id: debug-meta
         uses: docker/metadata-action@v5
@@ -313,6 +317,7 @@ jobs:
     needs:
       - call-build-images-meta
       - call-build-container-image-manifests
+      - call-build-debug-container-image-manifests
     name: Deploy and sign multi-arch container image manifests
     permissions:
       contents: read
@@ -333,13 +338,13 @@ jobs:
         #
         # We use recursive signing on the manifest to cover all the images.
         run: |
-          cosign sign --recursive \
+          cosign sign --recursive --force \
             -a "repo=${{ github.repository }}" \
             -a "workflow=${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}" \
             -a "ref=${{ github.sha }}" \
             -a "release=${{ inputs.version }}" \
-            "${{ inputs.registry }}/${{ inputs.image }}@${{ needs.call-build-images.outputs.production-digest }}" \
-            "${{ inputs.registry }}/${{ inputs.image }}@${{ needs.call-build-images.outputs.debug-digest }}"
+            "${{ inputs.registry }}/${{ inputs.image }}@${{ needs.call-build-container-image-manifests.outputs.version }}" \
+            "${{ inputs.registry }}/${{ inputs.image }}@${{ needs.call-build-debug-container-image-manifests.outputs.version }}"
         shell: bash
         # Ensure we move on to key-based signing as well
         continue-on-error: true
@@ -352,13 +357,13 @@ jobs:
         # The key needs to cope with newlines
         run: |
           echo -e "${COSIGN_PRIVATE_KEY}" > /tmp/my_cosign.key
-          cosign sign --key /tmp/my_cosign.key --recursive \
+          cosign sign --key /tmp/my_cosign.key --recursive --force \
             -a "repo=${{ github.repository }}" \
             -a "workflow=${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}" \
             -a "ref=${{ github.sha }}" \
             -a "release=${{ inputs.version }}" \
-            "${{ inputs.registry }}/${{ inputs.image }}@${{ needs.call-build-images.outputs.production-digest }}" \
-            "${{ inputs.registry }}/${{ inputs.image }}@${{ needs.call-build-images.outputs.debug-digest }}"
+            "${{ inputs.registry }}/${{ inputs.image }}@${{ needs.call-build-container-image-manifests.outputs.version }}" \
+            "${{ inputs.registry }}/${{ inputs.image }}@${{ needs.call-build-debug-container-image-manifests.outputs.version }}"
           rm -f /tmp/my_cosign.key
         shell: bash
         continue-on-error: true
