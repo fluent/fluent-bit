@@ -209,7 +209,7 @@ jobs:
       - call-build-images-meta
       - call-build-single-arch-container-images
     outputs:
-      version: ${{ steps.meta.outputs.debug-version }}
+      version: ${{ steps.debug-meta.outputs.version }}
     steps:
       - id: debug-meta
         uses: docker/metadata-action@v5
