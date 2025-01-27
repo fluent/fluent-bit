@@ -67,7 +67,8 @@ COPY . ./
 FROM builder-base AS builder
 WORKDIR /src/fluent-bit/build/
 
-ARG WAMR_BUILD_TARGET
+# Required to be set to ARMV7 for that target
+ARG WAMR_BUILD_TARGET=X86_64
 
 RUN cmake -DFLB_RELEASE=On \
     -DFLB_JEMALLOC=On \

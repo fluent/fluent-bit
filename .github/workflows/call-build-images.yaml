@@ -129,7 +129,7 @@ jobs:
           build-args: |
             FLB_NIGHTLY_BUILD=${{ inputs.unstable }}
             RELEASE_VERSION=${{ inputs.version }}
-            WAMR_BUILD_TARGET=${{ (contains(matrix.platform, 'arm/v7') && 'ARMV7') || '' }}
+            WAMR_BUILD_TARGET=${{ (contains(matrix.platform, 'arm/v7') && 'ARMV7') || (contains(matrix.platform, 'arm') && 'ARM') || 'X86_64' }}
 
       - name: Export ${{ matrix.target }} digest
         run: |
