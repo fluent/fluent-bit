@@ -13,7 +13,7 @@
 # docker buildx build --platform "linux/amd64,linux/arm64,linux/arm/v7,linux/s390x" -f ./dockerfiles/Dockerfile.multiarch --build-arg FLB_TARBALL=https://github.com/fluent/fluent-bit/archive/v1.8.11.tar.gz ./dockerfiles/
 
 # Set this to the current release version: it gets done so as part of the release.
-ARG RELEASE_VERSION=3.2.5
+ARG RELEASE_VERSION=3.2.4
 
 # For multi-arch builds - assumption is running on an AMD64 host
 FROM multiarch/qemu-user-static:x86_64-arm AS qemu-arm32
@@ -66,6 +66,16 @@ COPY . ./
 # We split the builder setup out so people can target it or use as a base image without doing a full build.
 FROM builder-base AS builder
 WORKDIR /src/fluent-bit/build/
+
+# Required to be set to ARMV7 for that target
+ARG WAMR_BUILD_TARGET
+ARG EXTRA_CMAKE_FLAGS
+ENV EXTRA_CMAKE_FLAGS=${EXTRA_CMAKE_FLAGS}
+
+RUN [ -n "${WAMR_BUILD_TARGET:-}" ] && export EXTRA_CMAKE_FLAGS="$EXTRA_CMAKE_FLAGS -DWAMR_BUILD_TARGET=$WAMR_BUILD_TARGET"
+
+# We do not want word splitting for EXTRA_CMAKE_FLAGS in case multiple are defined
+# hadolint ignore=SC2086
 RUN cmake -DFLB_RELEASE=On \
     -DFLB_JEMALLOC=On \
     -DFLB_TLS=On \
@@ -79,7 +89,11 @@ RUN cmake -DFLB_RELEASE=On \
     -DFLB_NIGHTLY_BUILD="$FLB_NIGHTLY_BUILD" \
     -DFLB_LOG_NO_CONTROL_CHARS=On \
     -DFLB_CHUNK_TRACE="$FLB_CHUNK_TRACE" \
+    $EXTRA_CMAKE_FLAGS \
     ..
+
+ARG CFLAGS="-v"
+ENV CFLAGS=${CFLAGS}
 
 RUN make -j "$(getconf _NPROCESSORS_ONLN)"
 RUN install bin/fluent-bit /fluent-bit/bin/
