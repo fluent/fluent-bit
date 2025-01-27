@@ -15,7 +15,8 @@ on:
       registry:
         description: The registry to push container images to.
         type: string
-        required: true
+        required: false
+        default: ghcr.io
       username:
         description: The username for the registry.
         type: string
@@ -107,7 +108,7 @@ jobs:
       - name: Log in to the Container registry
         uses: docker/login-action@v3
         with:
-          registry: ghcr.io
+          registry: ${{ inputs.registry }}
           username: ${{ github.actor }}
           password: ${{ secrets.token }}
 
@@ -178,7 +179,7 @@ jobs:
       - name: Log in to the Container registry
         uses: docker/login-action@v3
         with:
-          registry: ghcr.io
+          registry: ${{ inputs.registry }}
           username: ${{ github.actor }}
           password: ${{ secrets.token }}
 
@@ -227,7 +228,7 @@ jobs:
       - name: Log in to the Container registry
         uses: docker/login-action@v3
         with:
-          registry: ghcr.io
+          registry: ${{ inputs.registry }}
           username: ${{ github.actor }}
           password: ${{ secrets.token }}
 
