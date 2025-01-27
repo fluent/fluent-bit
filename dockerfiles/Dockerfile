@@ -69,7 +69,7 @@ WORKDIR /src/fluent-bit/build/
 
 ARG WAMR_BUILD_TARGET
 
-RUN cmake -v -DFLB_RELEASE=On \
+RUN cmake -DFLB_RELEASE=On \
     -DFLB_JEMALLOC=On \
     -DFLB_TLS=On \
     -DFLB_SHARED_LIB=Off \
@@ -84,6 +84,9 @@ RUN cmake -v -DFLB_RELEASE=On \
     -DFLB_CHUNK_TRACE="$FLB_CHUNK_TRACE" \
     -DWAMR_BUILD_TARGET="${WAMR_BUILD_TARGET}" \
     ..
+
+ARG CFLAGS="-v"
+ENV CFLAGS=${CFLAGS}
 
 RUN make -j "$(getconf _NPROCESSORS_ONLN)"
 RUN install bin/fluent-bit /fluent-bit/bin/
