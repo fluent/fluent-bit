@@ -16,6 +16,6 @@ jobs:
       username: ${{ github.actor }}
       image: ${{ github.repository }}/test/${{ github.event.inputs.version }}
       unstable: ${{ github.event.inputs.version }}
-      platforms: 'linux/amd64, linux/arm64'
+      platforms: 'linux/arm64'
     secrets:
       token: ${{ secrets.GITHUB_TOKEN }}
