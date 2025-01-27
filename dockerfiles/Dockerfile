@@ -46,7 +46,6 @@ RUN echo "deb http://deb.debian.org/debian bookworm-backports main" >> /etc/apt/
     make \
     tar \
     libssl-dev \
-    libcurl4-openssl-dev \
     libsasl2-dev \
     pkg-config \
     libsystemd-dev/bookworm-backports \
@@ -112,7 +111,6 @@ RUN echo "deb http://deb.debian.org/debian bookworm-backports main" >> /etc/apt/
     apt-get update && \
     apt-get download \
     libssl3 \
-    libcurl4 \
     libsasl2-2 \
     pkg-config \
     libpq5 \
