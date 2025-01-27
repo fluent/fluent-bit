@@ -69,7 +69,7 @@ WORKDIR /src/fluent-bit/build/
 
 ARG WAMR_BUILD_TARGET
 
-RUN cmake -DFLB_RELEASE=On \
+RUN cmake -v -DFLB_RELEASE=On \
     -DFLB_JEMALLOC=On \
     -DFLB_TLS=On \
     -DFLB_SHARED_LIB=Off \
