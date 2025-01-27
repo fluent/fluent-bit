@@ -739,7 +739,6 @@ static void cb_check_float_value(void *ctx, int ffd,
     flb_sds_destroy(out_js);
 }
 
-
 #define JSON_FLOAT "[12345678, {\"float\":1.3}]"
 void flb_test_float_value()
 {
@@ -959,6 +958,15 @@ void flb_test_structured_metadata_map_single_missing_map() {
         "[\"12345678000000000\",\"This is an interesting log message!\",{}]");
 }
 
+void flb_test_structured_metadata_map_invalid_ra_key() {
+    flb_test_structured_metadata_map_params(
+        "map1, map2, map3",
+        "",
+        "$",
+        JSON_MAP,
+        "[\"12345678000000000\",\"This is an interesting log message!\",{}]");
+}
+
 /* Test list */
 TEST_LIST = {
     {"remove_keys_remove_map" , flb_test_remove_map},
@@ -991,5 +999,7 @@ TEST_LIST = {
         flb_test_structured_metadata_map_and_explicit},
     {"structured_metadata_map_single_missing_map",
         flb_test_structured_metadata_map_single_missing_map},
+    {"structured_metadata_map_invalid_ra_key",
+        flb_test_structured_metadata_map_invalid_ra_key},
     {NULL, NULL}
 };

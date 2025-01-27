@@ -458,7 +458,7 @@ static void pack_maps(struct flb_loki *ctx,
 
             /* try to get the value for the record accessor */
             if (flb_ra_get_kv_pair(kv->ra_key, *map, &start_key, &out_key, &out_val)
-                == MSGPACK_UNPACK_CONTINUE) {
+                != -1) {
 
                 /*
                  * we require the value to be a map, or it doesn't make sense as
@@ -483,17 +483,16 @@ static void pack_maps(struct flb_loki *ctx,
 
                         pack_label_key(mp_pck, (char*) accessed_map_kv.key.via.str.ptr,
                                        accessed_map_kv.key.via.str.size);
-                        /*
-                         * Does this need optimising? For example, to handle
-                         * bool as non-JSON?
-                         */
+
+                        /* If the value is a string, just pack it... */
                         if (accessed_map_kv.val.type == MSGPACK_OBJECT_STR) {
                             msgpack_pack_str_with_body(mp_pck,
                                                        accessed_map_kv.val.via.str.ptr,
                                                        accessed_map_kv.val.via.str.size);
                         }
                         /*
-                         * convert value to JSON, as Loki expects a string value
+                         * ...otherwise convert value to JSON string, as Loki always
+                         * requires a string value
                          */
                         else {
                             accessed_map_val_json = flb_msgpack_to_json_str(1024,
@@ -914,7 +913,7 @@ static int parse_labels(struct flb_loki *ctx)
             }
 
             ret = flb_loki_kv_append(ctx, &ctx->structured_metadata_map_keys_list,
-                                 entry->str, NULL);
+                                     entry->str, NULL);
             if (ret == -1) {
                 return -1;
             }
