@@ -1,0 +1,44 @@
+{
+    "unicast":"@TEST_IP_MASTER@",
+    "logging":
+    {
+        "level":"info",
+        "console":"true"
+    },
+    "applications" :
+    [
+        {
+            "name" : "someip_tp_test_service",
+            "id" : "0xCAFE"
+        }
+    ],
+    "services":
+    [
+        {
+            "service":"0x4545",
+            "instance":"0x1",
+            "unreliable":"30001",
+            "someip-tp" : {
+                "service-to-client": [ "0x4545", "0x8001"]
+            }
+        },
+        {
+            "service":"0x6767",
+            "instance":"0x1",
+            "unreliable":"40001",
+            "someip-tp" : {
+                "client-to-service": [ "0x6767", "0x8001" ]
+            }
+        }
+    ],
+    "max-payload-size-unreliable" : "8352",
+    "routing":"routingmanagerd",
+    "service-discovery":
+    {
+        "enable":"true",
+        "multicast":"224.0.77.1",
+        "port":"30490",
+        "protocol":"udp",
+        "cyclic_offer_delay" : "1000"
+    }
+}

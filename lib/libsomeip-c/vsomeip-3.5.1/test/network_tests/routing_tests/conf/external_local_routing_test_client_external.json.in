@@ -1,0 +1,47 @@
+{
+   "unicast" : "@TEST_IP_SLAVE@",
+   "netmask" : "255.255.255.0",
+   "diagnosis" : "0x16",
+   "logging" :
+   {
+      "level" : "debug",
+      "console" : "true",
+      "file" :
+      {
+         "enable" : "true",
+         "path" : "/var/log/vsomeip.log"
+      },
+
+      "dlt" : "true"
+   },
+
+   "applications" :
+   [
+      {
+         "name" : "external_local_routing_test_client_external",
+         "id" : "0x1644"
+      }
+   ],
+
+   "services" :
+   [
+      {
+         "service" : "0x1234",
+         "instance" : "0x5678",
+         "unicast" : "@TEST_IP_MASTER@",
+         "unreliable" : "30509"
+      }
+   ],
+
+   "routing": {
+      "enabled": false,
+      "host": "external_local_routing_test_client_external"
+   },
+   "service-discovery" :
+   {
+      "enable" : "false",
+      "multicast" : "224.0.0.1",
+      "port" : "30491",
+      "protocol" : "udp"
+   }
+}

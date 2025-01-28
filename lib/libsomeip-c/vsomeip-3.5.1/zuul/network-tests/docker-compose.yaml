@@ -1,0 +1,52 @@
+version: '3.7'
+
+networks:
+  ci-network-tests:
+    attachable: false
+    driver: macvlan
+    internal: true
+    ipam:
+      config:
+        - subnet: 169.254.87.0/24
+          gateway: 169.254.87.254
+          aux_addresses:
+            slave_2nd: &slave-2nd 169.254.87.42
+
+x-common:
+  &common
+  build:
+    args:
+      - http_proxy
+      - https_proxy
+      - no_proxy
+    context: ../../..
+    dockerfile: vsomeip/zuul/network-tests/Dockerfile
+  cap_add:
+    - NET_ADMIN
+  environment:
+    ENABLE_COVERAGE: ${ENABLE_COVERAGE-False} # empty to inherit from parent environment (Zuul/Ansible)
+    GLOBAL_TIMEOUT: 240 minutes
+    IP_SLAVE_2ND: *slave-2nd
+    SANITIZER_TYPE: ${SANITIZER_TYPE-}
+    STRESS_LABELS: ${STRESS_LABELS-[]}
+    VALGRIND_TYPE: ${VALGRIND_TYPE-}
+  networks:
+    - ci-network-tests
+  security_opt:
+    - seccomp:unconfined
+  ulimits:
+    core: -1
+  volumes:
+    - ${SOURCE_DIR:-../..}:/home/source
+    - ${BUILD_DIR:-../../build}:/home/build
+    - ${LOGS_DIR:-../../logs}:/home/logs
+
+services:
+  master:
+    <<: *common
+    depends_on:
+      - slave
+    entrypoint: setarch -R /home/source/zuul/network-tests/entrypoint-master
+  slave:
+    <<: *common
+    entrypoint: setarch -R /home/source/zuul/network-tests/entrypoint-slave

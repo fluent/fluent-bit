@@ -1,0 +1,57 @@
+{
+   "unicast" : "127.0.0.1",
+   "diagnosis":"0x12",
+   "logging" :
+   {
+      "level" : "warning",
+      "console" : "true",
+      "file" :
+      {
+         "enable" : "false",
+         "path" : "/tmp/vsomeip.log"
+      },
+
+      "dlt" : "true"
+   },
+
+   "applications" :
+   [
+      {
+         "name" : "offered_services_info_test_service",
+         "id" : "0x1277"
+      }
+   ],
+
+   "services" :
+   [
+      {
+         "service" : "0x1111",
+         "instance" : "0x1"
+      },
+      {
+         "service" : "0x2222",
+         "instance" : "0x2",
+         "reliable" : { "port" : "30502" },
+         "unreliable" : "31002"
+       },
+       {
+         "service" : "0x2223",
+         "instance" : "0x3",
+         "reliable" : { "port" : "30503" }
+       },
+       {
+         "service" : "0x2224",
+         "instance" : "0x4",
+         "unreliable" : "31004"
+       }
+   ],
+
+   "routing" : "routingmanagerd",
+   "service-discovery" :
+   {
+      "enable" : "false",
+      "multicast" : "224.0.0.1",
+      "port" : "30490",
+      "protocol" : "udp"
+   }
+}

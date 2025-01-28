@@ -1,0 +1,1556 @@
+{
+    "security": {
+        "policies": [
+            {
+                "allow": {
+                    "offers": [
+                        {
+                            "instance": "any",
+                            "service": "0xf8a3"
+                        },
+                        {
+                            "instance": "any",
+                            "service": "0xf8ac"
+                        },
+                        {
+                            "instance": "any",
+                            "service": "0x102d"
+                        },
+                        {
+                            "instance": "any",
+                            "service": "0x102e"
+                        },
+                        {
+                            "instance": "any",
+                            "service": "0xf8a5"
+                        },
+                        {
+                            "instance": "any",
+                            "service": "0xf8a7"
+                        },
+                        {
+                            "instance": "any",
+                            "service": "0xf8a1"
+                        },
+                        {
+                            "instance": "any",
+                            "service": "0x1023"
+                        },
+                        {
+                            "instance": "any",
+                            "service": "0xf8aa"
+                        },
+                        {
+                            "instance": "any",
+                            "service": "0xf8a0"
+                        },
+                        {
+                            "instance": "any",
+                            "service": "0xf8a2"
+                        },
+                        {
+                            "instance": "any",
+                            "service": "0x1002"
+                        },
+                        {
+                            "instance": "any",
+                            "service": "0xf8ab"
+                        },
+                        {
+                            "instance": "any",
+                            "service": "0xf8a4"
+                        }
+                    ],
+                    "requests": [
+                        {
+                            "instance": "any",
+                            "service": "0xf91c"
+                        },
+                        {
+                            "instance": "any",
+                            "service": "0xfea8"
+                        },
+                        {
+                            "instance": "any",
+                            "service": "0xfe8c"
+                        },
+                        {
+                            "instance": "any",
+                            "service": "0xf91b"
+                        },
+                        {
+                            "instance": "any",
+                            "service": "0x101c"
+                        },
+                        {
+                            "instance": "any",
+                            "service": "0xfe9c"
+                        },
+                        {
+                            "instance": "any",
+                            "service": "0xb51a"
+                        },
+                        {
+                            "instance": "any",
+                            "service": "0xfeaa"
+                        },
+                        {
+                            "instance": "any",
+                            "service": "0xb510"
+                        },
+                        {
+                            "instance": "any",
+                            "service": "0xfa60"
+                        },
+                        {
+                            "instance": "any",
+                            "service": "0xf917"
+                        },
+                        {
+                            "instance": "any",
+                            "service": "0xfeac"
+                        },
+                        {
+                            "instance": "any",
+                            "service": "0xfe87"
+                        },
+                        {
+                            "instance": "any",
+                            "service": "0xfe8a"
+                        },
+                        {
+                            "instance": "any",
+                            "service": "0xfe86"
+                        },
+                        {
+                            "instance": "any",
+                            "service": "0xfe88"
+                        },
+                        {
+                            "instance": "any",
+                            "service": "0xfeab"
+                        },
+                        {
+                            "instance": "any",
+                            "service": "0xfe9d"
+                        },
+                        {
+                            "instance": "any",
+                            "service": "0xfea3"
+                        },
+                        {
+                            "instance": "any",
+                            "service": "0xfea6"
+                        },
+                        {
+                            "instance": "any",
+                            "service": "0xfe8e"
+                        },
+                        {
+                            "instance": "any",
+                            "service": "0xfe9f"
+                        },
+                        {
+                            "instance": "any",
+                            "service": "0xfe92"
+                        },
+                        {
+                            "instance": "any",
+                            "service": "0xb519"
+                        },
+                        {
+                            "instance": "any",
+                            "service": "0xfe8d"
+                        },
+                        {
+                            "instance": "any",
+                            "service": "0xfe83"
+                        },
+                        {
+                            "instance": "any",
+                            "service": "0xfeae"
+                        },
+                        {
+                            "instance": "any",
+                            "service": "0xfe81"
+                        },
+                        {
+                            "instance": "any",
+                            "service": "0xfe98"
+                        },
+                        {
+                            "instance": "any",
+                            "service": "0xfe85"
+                        },
+                        {
+                            "instance": "any",
+                            "service": "0xfea7"
+                        },
+                        {
+                            "instance": "any",
+                            "service": "0xfea1"
+                        },
+                        {
+                            "instance": "any",
+                            "service": "0xfead"
+                        },
+                        {
+                            "instance": "any",
+                            "service": "0xfe93"
+                        },
+                        {
+                            "instance": "any",
+                            "service": "0xfe8b"
+                        },
+                        {
+                            "instance": "any",
+                            "service": "0xfea5"
+                        },
+                        {
+                            "instance": "any",
+                            "service": "0x1534"
+                        },
+                        {
+                            "instance": "any",
+                            "service": "0xfeaf"
+                        },
+                        {
+                            "instance": "any",
+                            "service": "0xf912"
+                        },
+                        {
+                            "instance": "any",
+                            "service": "0x1506"
+                        },
+                        {
+                            "instance": "any",
+                            "service": "0xfe90"
+                        },
+                        {
+                            "instance": "any",
+                            "service": "0x101d"
+                        },
+                        {
+                            "instance": "any",
+                            "service": "0xfea9"
+                        },
+                        {
+                            "instance": "any",
+                            "service": "0xf911"
+                        },
+                        {
+                            "instance": "any",
+                            "service": "0x1001"
+                        },
+                        {
+                            "instance": "any",
+                            "service": "0xfe9a"
+                        },
+                        {
+                            "instance": "any",
+                            "service": "0xfe97"
+                        },
+                        {
+                            "instance": "any",
+                            "service": "0x9001"
+                        },
+                        {
+                            "instance": "any",
+                            "service": "0xf913"
+                        },
+                        {
+                            "instance": "any",
+                            "service": "0xfe9e"
+                        },
+                        {
+                            "instance": "any",
+                            "service": "0xb513"
+                        },
+                        {
+                            "instance": "any",
+                            "service": "0xfeb0"
+                        },
+                        {
+                            "instance": "any",
+                            "service": "0xf901"
+                        },
+                        {
+                            "instance": "any",
+                            "service": "0xf902"
+                        },
+                        {
+                            "instance": "any",
+                            "service": "0xfe89"
+                        },
+                        {
+                            "instance": "any",
+                            "service": "0xfe82"
+                        },
+                        {
+                            "instance": "any",
+                            "service": "0x1536"
+                        },
+                        {
+                            "instance": "any",
+                            "service": "0x1531"
+                        },
+                        {
+                            "instance": "any",
+                            "service": "0xfea4"
+                        },
+                        {
+                            "instance": "any",
+                            "service": "0xfe9b"
+                        },
+                        {
+                            "instance": "any",
+                            "service": "0xfe99"
+                        },
+                        {
+                            "instance": "any",
+                            "service": "0xfe95"
+                        },
+                        {
+                            "instance": "any",
+                            "service": "0xfe84"
+                        },
+                        {
+                            "instance": "any",
+                            "service": "0xfea2"
+                        },
+                        {
+                            "instance": "any",
+                            "service": "0xfe91"
+                        },
+                        {
+                            "instance": "any",
+                            "service": "0xfe94"
+                        }
+                    ]
+                },
+                "credentials": {
+                    "gid": "4002200",
+                    "uid": "4002200"
+                }
+            },
+            {
+                "allow": {
+                    "requests": [
+                        {
+                            "instance": "any",
+                            "service": "0xf8a0"
+                        }
+                    ]
+                },
+                "credentials": {
+                    "gid": "0",
+                    "uid": "0"
+                }
+            },
+            {
+                "allow": {
+                    "requests": [
+                        {
+                            "instance": "any",
+                            "service": "0xf8a4"
+                        }
+                    ]
+                },
+                "credentials": {
+                    "gid": "4003015",
+                    "uid": "0"
+                }
+            },
+            {
+                "allow": {
+                    "requests": [
+                        {
+                            "instance": "any",
+                            "service": "0xf8a1"
+                        },
+                        {
+                            "instance": "any",
+                            "service": "0xf8a4"
+                        }
+                    ]
+                },
+                "credentials": {
+                    "gid": "4003011",
+                    "uid": "4003013"
+                }
+            },
+            {
+                "allow": {
+                    "requests": [
+                        {
+                            "instance": "any",
+                            "service": "0xf8a0"
+                        },
+                        {
+                            "instance": "any",
+                            "service": "0xf8a2"
+                        },
+                        {
+                            "instance": "any",
+                            "service": "0xf8a4"
+                        }
+                    ]
+                },
+                "credentials": {
+                    "gid": "4003014",
+                    "uid": "4003014"
+                }
+            },
+            {
+                "allow": {
+                    "requests": [
+                        {
+                            "instance": "any",
+                            "service": "0xf8a4"
+                        }
+                    ]
+                },
+                "credentials": {
+                    "gid": "4003015",
+                    "uid": "4003015"
+                }
+            },
+            {
+                "allow": {
+                    "requests": [
+                        {
+                            "instance": "any",
+                            "service": "0xf8a1"
+                        },
+                        {
+                            "instance": "any",
+                            "service": "0xf8a0"
+                        }
+                    ]
+                },
+                "credentials": {
+                    "gid": "4003025",
+                    "uid": "4003025"
+                }
+            },
+            {
+                "allow": {
+                    "requests": [
+                        {
+                            "instance": "any",
+                            "service": "0xf8a1"
+                        },
+                        {
+                            "instance": "any",
+                            "service": "0xf8a0"
+                        }
+                    ]
+                },
+                "credentials": {
+                    "gid": "4003026",
+                    "uid": "4003026"
+                }
+            },
+            {
+                "allow": {
+                    "requests": [
+                        {
+                            "instance": "any",
+                            "service": "0xf8a0"
+                        }
+                    ]
+                },
+                "credentials": {
+                    "gid": "4003029",
+                    "uid": "4003029"
+                }
+            },
+            {
+                "allow": {
+                    "requests": [
+                        {
+                            "instance": "any",
+                            "service": "0xf8a0"
+                        }
+                    ]
+                },
+                "credentials": {
+                    "gid": "4003031",
+                    "uid": "4003031"
+                }
+            },
+            {
+                "allow": {
+                    "requests": [
+                        {
+                            "instance": "any",
+                            "service": "0xf8a3"
+                        },
+                        {
+                            "instance": "any",
+                            "service": "0xf8a0"
+                        },
+                        {
+                            "instance": "any",
+                            "service": "0xf8a4"
+                        }
+                    ]
+                },
+                "credentials": {
+                    "gid": "4003205",
+                    "uid": "4003205"
+                }
+            },
+            {
+                "allow": {
+                    "requests": [
+                        {
+                            "instance": "any",
+                            "service": "0xf8a0"
+                        }
+                    ]
+                },
+                "credentials": {
+                    "gid": "4004200",
+                    "uid": "4004201"
+                }
+            },
+            {
+                "allow": {
+                    "requests": [
+                        {
+                            "instance": "any",
+                            "service": "0xf8a0"
+                        }
+                    ]
+                },
+                "credentials": {
+                    "gid": "4005300",
+                    "uid": "4005204"
+                }
+            },
+            {
+                "allow": {
+                    "requests": [
+                        {
+                            "instance": "any",
+                            "service": "0xf8a1"
+                        },
+                        {
+                            "instance": "any",
+                            "service": "0xf8a0"
+                        },
+                        {
+                            "instance": "any",
+                            "service": "0xf8a4"
+                        }
+                    ]
+                },
+                "credentials": {
+                    "gid": "4006200",
+                    "uid": "4006200"
+                }
+            },
+            {
+                "allow": {
+                    "requests": [
+                        {
+                            "instance": "any",
+                            "service": "0xf8a1"
+                        }
+                    ]
+                },
+                "credentials": {
+                    "gid": "4006201",
+                    "uid": "4006201"
+                }
+            },
+            {
+                "allow": {
+                    "requests": [
+                        {
+                            "instance": "any",
+                            "service": "0xf8a0"
+                        }
+                    ]
+                },
+                "credentials": {
+                    "gid": "4006202",
+                    "uid": "4006202"
+                }
+            },
+            {
+                "allow": {
+                    "requests": [
+                        {
+                            "instance": "any",
+                            "service": "0xf8a1"
+                        },
+                        {
+                            "instance": "any",
+                            "service": "0xf8a0"
+                        }
+                    ]
+                },
+                "credentials": {
+                    "gid": "4006220",
+                    "uid": "4006220"
+                }
+            },
+            {
+                "allow": {
+                    "requests": [
+                        {
+                            "instance": "any",
+                            "service": "0xf8a1"
+                        }
+                    ]
+                },
+                "credentials": {
+                    "gid": "4006221",
+                    "uid": "4006221"
+                }
+            },
+            {
+                "allow": {
+                    "requests": [
+                        {
+                            "instance": "any",
+                            "service": "0xf8a1"
+                        }
+                    ]
+                },
+                "credentials": {
+                    "gid": "4006241",
+                    "uid": "4006241"
+                }
+            },
+            {
+                "allow": {
+                    "requests": [
+                        {
+                            "instance": "any",
+                            "service": "0xf8a0"
+                        }
+                    ]
+                },
+                "credentials": {
+                    "gid": "4007200",
+                    "uid": "4007200"
+                }
+            },
+            {
+                "allow": {
+                    "requests": [
+                        {
+                            "instance": "any",
+                            "service": "0xf8a3"
+                        },
+                        {
+                            "instance": "any",
+                            "service": "0xf8a0"
+                        }
+                    ]
+                },
+                "credentials": {
+                    "gid": "4007210",
+                    "uid": "4007210"
+                }
+            },
+            {
+                "allow": {
+                    "requests": [
+                        {
+                            "instance": "any",
+                            "service": "0xf8a0"
+                        }
+                    ]
+                },
+                "credentials": {
+                    "gid": "4007211",
+                    "uid": "4007211"
+                }
+            },
+            {
+                "allow": {
+                    "requests": [
+                        {
+                            "instance": "any",
+                            "service": "0xf8a0"
+                        }
+                    ]
+                },
+                "credentials": {
+                    "gid": "4007212",
+                    "uid": "4007212"
+                }
+            },
+            {
+                "allow": {
+                    "requests": [
+                        {
+                            "instance": "any",
+                            "service": "0xf8a0"
+                        }
+                    ]
+                },
+                "credentials": {
+                    "gid": "4008300",
+                    "uid": "4008200"
+                }
+            },
+            {
+                "allow": {
+                    "requests": [
+                        {
+                            "instance": "any",
+                            "service": "0xf8a0"
+                        }
+                    ]
+                },
+                "credentials": {
+                    "gid": "4008300",
+                    "uid": "4008203"
+                }
+            },
+            {
+                "allow": {
+                    "requests": [
+                        {
+                            "instance": "any",
+                            "service": "0xf8a3"
+                        },
+                        {
+                            "instance": "any",
+                            "service": "0xf8a1"
+                        },
+                        {
+                            "instance": "any",
+                            "service": "0xf8a0"
+                        }
+                    ]
+                },
+                "credentials": {
+                    "gid": "4008303",
+                    "uid": "4008205"
+                }
+            },
+            {
+                "allow": {
+                    "requests": [
+                        {
+                            "instance": "any",
+                            "service": "0xf8a0"
+                        }
+                    ]
+                },
+                "credentials": {
+                    "gid": "4008305",
+                    "uid": "4008207"
+                }
+            },
+            {
+                "allow": {
+                    "requests": [
+                        {
+                            "instance": "any",
+                            "service": "0xf8a3"
+                        },
+                        {
+                            "instance": "any",
+                            "service": "0xf8aa"
+                        },
+                        {
+                            "instance": "any",
+                            "service": "0xf8a2"
+                        },
+                        {
+                            "instance": "any",
+                            "service": "0xf8a4"
+                        }
+                    ]
+                },
+                "credentials": {
+                    "gid": "4010200",
+                    "uid": "4010200"
+                }
+            },
+            {
+                "allow": {
+                    "requests": [
+                        {
+                            "instance": "any",
+                            "service": "0xf8a3"
+                        },
+                        {
+                            "instance": "any",
+                            "service": "0xf8a0"
+                        },
+                        {
+                            "instance": "any",
+                            "service": "0xf8a4"
+                        }
+                    ]
+                },
+                "credentials": {
+                    "gid": "4011201",
+                    "uid": "4011201"
+                }
+            },
+            {
+                "allow": {
+                    "requests": [
+                        {
+                            "instance": "any",
+                            "service": "0xf8a3"
+                        },
+                        {
+                            "instance": "any",
+                            "service": "0xf8a1"
+                        },
+                        {
+                            "instance": "any",
+                            "service": "0xf8a0"
+                        }
+                    ]
+                },
+                "credentials": {
+                    "gid": "4012300",
+                    "uid": "4012200"
+                }
+            },
+            {
+                "allow": {
+                    "requests": [
+                        {
+                            "instance": "any",
+                            "service": "0xf8a3"
+                        },
+                        {
+                            "instance": "any",
+                            "service": "0xf8a1"
+                        },
+                        {
+                            "instance": "any",
+                            "service": "0xf8ab"
+                        }
+                    ]
+                },
+                "credentials": {
+                    "gid": "4012300",
+                    "uid": "4012201"
+                }
+            },
+            {
+                "allow": {
+                    "requests": [
+                        {
+                            "instance": "any",
+                            "service": "0xf8a3"
+                        }
+                    ]
+                },
+                "credentials": {
+                    "gid": "4012300",
+                    "uid": "4012230"
+                }
+            },
+            {
+                "allow": {
+                    "requests": [
+                        {
+                            "instance": "any",
+                            "service": "0xf8a0"
+                        }
+                    ]
+                },
+                "credentials": {
+                    "gid": "4012300",
+                    "uid": "4012240"
+                }
+            },
+            {
+                "allow": {
+                    "requests": [
+                        {
+                            "instance": "any",
+                            "service": "0xf8a0"
+                        },
+                        {
+                            "instance": "any",
+                            "service": "0xf8a4"
+                        }
+                    ]
+                },
+                "credentials": {
+                    "gid": "4013201",
+                    "uid": "4013201"
+                }
+            },
+            {
+                "allow": {
+                    "requests": [
+                        {
+                            "instance": "any",
+                            "service": "0xf8a3"
+                        },
+                        {
+                            "instance": "any",
+                            "service": "0xf8a0"
+                        }
+                    ]
+                },
+                "credentials": {
+                    "gid": "4013202",
+                    "uid": "4013202"
+                }
+            },
+            {
+                "allow": {
+                    "requests": [
+                        {
+                            "instance": "any",
+                            "service": "0xf8a4"
+                        },
+                        {
+                            "instance": "any",
+                            "service": "0xf8a4"
+                        },
+                        {
+                            "instance": "any",
+                            "service": "0xf8a4"
+                        }
+                    ]
+                },
+                "credentials": {
+                    "gid": "5501",
+                    "uid": "4013203"
+                }
+            },
+            {
+                "allow": {
+                    "requests": [
+                        {
+                            "instance": "any",
+                            "service": "0xf8a0"
+                        }
+                    ]
+                },
+                "credentials": {
+                    "gid": "5510",
+                    "uid": "4013206"
+                }
+            },
+            {
+                "allow": {
+                    "requests": [
+                        {
+                            "instance": "any",
+                            "service": "0xf8a0"
+                        }
+                    ]
+                },
+                "credentials": {
+                    "gid": "4013209",
+                    "uid": "4013209"
+                }
+            },
+            {
+                "allow": {
+                    "requests": [
+                        {
+                            "instance": "any",
+                            "service": "0xf8a0"
+                        }
+                    ]
+                },
+                "credentials": {
+                    "gid": "4013213",
+                    "uid": "4013213"
+                }
+            },
+            {
+                "allow": {
+                    "requests": [
+                        {
+                            "instance": "any",
+                            "service": "0xf8a0"
+                        }
+                    ]
+                },
+                "credentials": {
+                    "gid": "4013214",
+                    "uid": "4013214"
+                }
+            },
+            {
+                "allow": {
+                    "requests": [
+                        {
+                            "instance": "any",
+                            "service": "0xf8a0"
+                        }
+                    ]
+                },
+                "credentials": {
+                    "gid": "4013215",
+                    "uid": "4013215"
+                }
+            },
+            {
+                "allow": {
+                    "requests": [
+                        {
+                            "instance": "any",
+                            "service": "0xf8a0"
+                        }
+                    ]
+                },
+                "credentials": {
+                    "gid": "4013217",
+                    "uid": "4013217"
+                }
+            },
+            {
+                "allow": {
+                    "requests": [
+                        {
+                            "instance": "any",
+                            "service": "0xf8a0"
+                        }
+                    ]
+                },
+                "credentials": {
+                    "gid": "4013218",
+                    "uid": "4013218"
+                }
+            },
+            {
+                "allow": {
+                    "requests": [
+                        {
+                            "instance": "any",
+                            "service": "0xf8a0"
+                        }
+                    ]
+                },
+                "credentials": {
+                    "gid": "4013219",
+                    "uid": "4013219"
+                }
+            },
+            {
+                "allow": {
+                    "requests": [
+                        {
+                            "instance": "any",
+                            "service": "0xf8a0"
+                        }
+                    ]
+                },
+                "credentials": {
+                    "gid": "4013223",
+                    "uid": "4013223"
+                }
+            },
+            {
+                "allow": {
+                    "requests": [
+                        {
+                            "instance": "any",
+                            "service": "0xf8a0"
+                        }
+                    ]
+                },
+                "credentials": {
+                    "gid": "4013225",
+                    "uid": "4013225"
+                }
+            },
+            {
+                "allow": {
+                    "requests": [
+                        {
+                            "instance": "any",
+                            "service": "0xf8a3"
+                        }
+                    ]
+                },
+                "credentials": {
+                    "gid": "4013229",
+                    "uid": "4013229"
+                }
+            },
+            {
+                "allow": {
+                    "requests": [
+                        {
+                            "instance": "any",
+                            "service": "0xf8a0"
+                        }
+                    ]
+                },
+                "credentials": {
+                    "gid": "5510",
+                    "uid": "4013232"
+                }
+            },
+            {
+                "allow": {
+                    "requests": [
+                        {
+                            "instance": "any",
+                            "service": "0xf8a1"
+                        }
+                    ]
+                },
+                "credentials": {
+                    "gid": "4013233",
+                    "uid": "4013233"
+                }
+            },
+            {
+                "allow": {
+                    "requests": [
+                        {
+                            "instance": "any",
+                            "service": "0xf8a0"
+                        }
+                    ]
+                },
+                "credentials": {
+                    "gid": "4013234",
+                    "uid": "4013234"
+                }
+            },
+            {
+                "allow": {
+                    "requests": [
+                        {
+                            "instance": "any",
+                            "service": "0xf8a1"
+                        }
+                    ]
+                },
+                "credentials": {
+                    "gid": "4013242",
+                    "uid": "4013242"
+                }
+            },
+            {
+                "allow": {
+                    "requests": [
+                        {
+                            "instance": "any",
+                            "service": "0xf8a4"
+                        }
+                    ]
+                },
+                "credentials": {
+                    "gid": "4014201",
+                    "uid": "4014201"
+                }
+            },
+            {
+                "allow": {
+                    "requests": [
+                        {
+                            "instance": "any",
+                            "service": "0xf8a5"
+                        },
+                        {
+                            "instance": "any",
+                            "service": "0xf8a0"
+                        },
+                        {
+                            "instance": "any",
+                            "service": "0xf8a0"
+                        },
+                        {
+                            "instance": "any",
+                            "service": "0xf8a2"
+                        }
+                    ]
+                },
+                "credentials": {
+                    "gid": "4014300",
+                    "uid": "4014300"
+                }
+            },
+            {
+                "allow": {
+                    "requests": [
+                        {
+                            "instance": "any",
+                            "service": "0x102d"
+                        },
+                        {
+                            "instance": "any",
+                            "service": "0xf8a1"
+                        },
+                        {
+                            "instance": "any",
+                            "service": "0xf8a0"
+                        },
+                        {
+                            "instance": "any",
+                            "service": "0xf8a2"
+                        },
+                        {
+                            "instance": "any",
+                            "service": "0xf8a4"
+                        }
+                    ]
+                },
+                "credentials": {
+                    "gid": "4014390",
+                    "uid": "4014390"
+                }
+            },
+            {
+                "allow": {
+                    "requests": [
+                        {
+                            "instance": "any",
+                            "service": "0xf8a1"
+                        },
+                        {
+                            "instance": "any",
+                            "service": "0xf8a4"
+                        }
+                    ]
+                },
+                "credentials": {
+                    "gid": "4015210",
+                    "uid": "4015210"
+                }
+            },
+            {
+                "allow": {
+                    "requests": [
+                        {
+                            "instance": "any",
+                            "service": "0xf8a0"
+                        }
+                    ]
+                },
+                "credentials": {
+                    "gid": "5509",
+                    "uid": "4016203"
+                }
+            },
+            {
+                "allow": {
+                    "requests": [
+                        {
+                            "instance": "any",
+                            "service": "0xf8a3"
+                        },
+                        {
+                            "instance": "any",
+                            "service": "0xf8a1"
+                        }
+                    ]
+                },
+                "credentials": {
+                    "gid": "5509",
+                    "uid": "4016205"
+                }
+            },
+            {
+                "allow": {
+                    "requests": [
+                        {
+                            "instance": "any",
+                            "service": "0xf8a1"
+                        },
+                        {
+                            "instance": "any",
+                            "service": "0xf8a2"
+                        }
+                    ]
+                },
+                "credentials": {
+                    "gid": "4017201",
+                    "uid": "4017201"
+                }
+            },
+            {
+                "allow": {
+                    "requests": [
+                        {
+                            "instance": "any",
+                            "service": "0xf8a1"
+                        }
+                    ]
+                },
+                "credentials": {
+                    "gid": "4017202",
+                    "uid": "4017202"
+                }
+            },
+            {
+                "allow": {
+                    "requests": [
+                        {
+                            "instance": "any",
+                            "service": "0xf8a4"
+                        }
+                    ]
+                },
+                "credentials": {
+                    "gid": "4017208",
+                    "uid": "4017208"
+                }
+            },
+            {
+                "allow": {
+                    "requests": [
+                        {
+                            "instance": "any",
+                            "service": "0xf8a1"
+                        },
+                        {
+                            "instance": "any",
+                            "service": "0xf8a2"
+                        },
+                        {
+                            "instance": "any",
+                            "service": "0xf8a4"
+                        }
+                    ]
+                },
+                "credentials": {
+                    "gid": "4017209",
+                    "uid": "4017209"
+                }
+            },
+            {
+                "allow": {
+                    "requests": [
+                        {
+                            "instance": "any",
+                            "service": "0xf8a1"
+                        },
+                        {
+                            "instance": "any",
+                            "service": "0xf8a4"
+                        }
+                    ]
+                },
+                "credentials": {
+                    "gid": "4017210",
+                    "uid": "4017210"
+                }
+            },
+            {
+                "allow": {
+                    "requests": [
+                        {
+                            "instance": "any",
+                            "service": "0xf8ac"
+                        },
+                        {
+                            "instance": "any",
+                            "service": "0xf8a1"
+                        },
+                        {
+                            "instance": "any",
+                            "service": "0xf8a0"
+                        },
+                        {
+                            "instance": "any",
+                            "service": "0xf8a4"
+                        }
+                    ]
+                },
+                "credentials": {
+                    "gid": "4017211",
+                    "uid": "4017211"
+                }
+            },
+            {
+                "allow": {
+                    "requests": [
+                        {
+                            "instance": "any",
+                            "service": "0xf8a1"
+                        },
+                        {
+                            "instance": "any",
+                            "service": "0xf8a4"
+                        }
+                    ]
+                },
+                "credentials": {
+                    "gid": "4017215",
+                    "uid": "4017215"
+                }
+            },
+            {
+                "allow": {
+                    "requests": [
+                        {
+                            "instance": "any",
+                            "service": "0xf8a1"
+                        }
+                    ]
+                },
+                "credentials": {
+                    "gid": "4017216",
+                    "uid": "4017216"
+                }
+            },
+            {
+                "allow": {
+                    "requests": [
+                        {
+                            "instance": "any",
+                            "service": "0xf8a1"
+                        },
+                        {
+                            "instance": "any",
+                            "service": "0xf8a2"
+                        }
+                    ]
+                },
+                "credentials": {
+                    "gid": "4017219",
+                    "uid": "4017219"
+                }
+            },
+            {
+                "allow": {
+                    "requests": [
+                        {
+                            "instance": "any",
+                            "service": "0xf8a1"
+                        },
+                        {
+                            "instance": "any",
+                            "service": "0xf8a2"
+                        }
+                    ]
+                },
+                "credentials": {
+                    "gid": "4017220",
+                    "uid": "4017220"
+                }
+            },
+            {
+                "allow": {
+                    "requests": [
+                        {
+                            "instance": "any",
+                            "service": "0xf8a4"
+                        }
+                    ]
+                },
+                "credentials": {
+                    "gid": "4017221",
+                    "uid": "4017221"
+                }
+            },
+            {
+                "allow": {
+                    "requests": [
+                        {
+                            "instance": "any",
+                            "service": "0xf8a1"
+                        }
+                    ]
+                },
+                "credentials": {
+                    "gid": "4018204",
+                    "uid": "4018204"
+                }
+            },
+            {
+                "credentials": {
+                    "allow": [
+                        {
+                            "gid": [
+                                "4012300",
+                                "4013225",
+                                "4003031",
+                                "4013201",
+                                "4017219",
+                                "4013202",
+                                "4003014",
+                                "4017221",
+                                "4017201",
+                                "4017211",
+                                "4006200",
+                                "4013213",
+                                "4003026",
+                                "4011201",
+                                "4006220",
+                                "4013218",
+                                "4013217",
+                                "0",
+                                "4014300",
+                                "4013215",
+                                "4003019",
+                                "4013207",
+                                "4013211",
+                                "4013223",
+                                "4008303",
+                                "4013220",
+                                "4005300",
+                                "4003205",
+                                "4013219",
+                                "4007210",
+                                "4003024",
+                                "4004200",
+                                "4007234",
+                                "4006202",
+                                "5510",
+                                "4013200"
+                            ],
+                            "uid": [
+                                "4013232",
+                                "4013225",
+                                "4003031",
+                                "4012201",
+                                "4013201",
+                                "4005202",
+                                "4017219",
+                                "4008205",
+                                "4013202",
+                                "4003014",
+                                "4017221",
+                                "4017201",
+                                "4004201",
+                                "4017211",
+                                "4006200",
+                                "4013213",
+                                "4003026",
+                                "4011201",
+                                "4006220",
+                                "4013218",
+                                "4013217",
+                                "4013206",
+                                "0",
+                                "4014300",
+                                "4013215",
+                                "4003019",
+                                "4013207",
+                                "4013211",
+                                "4013223",
+                                "4013220",
+                                "4003205",
+                                "4013219",
+                                "4007210",
+                                "4012240",
+                                "4003024",
+                                "4007234",
+                                "4006202",
+                                "4013200"
+                            ]
+                        }
+                    ]
+                }
+            }
+        ]
+    }
+}

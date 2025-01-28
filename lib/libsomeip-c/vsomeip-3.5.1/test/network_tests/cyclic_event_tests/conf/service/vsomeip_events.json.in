@@ -1,0 +1,23 @@
+{
+    "services": [
+        {
+            "service": "0x1111",
+            "instance": "0x0001",
+            "unreliable": "30509",
+            "events": [
+                {
+                    "event": "0x0002",
+                    "cycle": 200
+                }
+            ],
+            "eventgroups": [
+                {
+                    "eventgroup": "0x0001",
+                    "events": [
+                        "0x0002"
+                    ]
+                }
+            ]
+        }
+    ]
+}

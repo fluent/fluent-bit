@@ -1,0 +1,46 @@
+{
+    "unicast": "@TEST_IP_MASTER@",
+    "logging": {
+        "level": "debug",
+        "console": "true",
+        "file": {
+            "enable": "false",
+            "path": "/tmp/vsomeip.log"
+        },
+        "dlt": "true"
+    },
+    "applications": [
+        {
+            "name": "service-sample",
+            "id": "0xaaaa"
+        }
+    ],
+    "services": [
+        {
+            "service": "0x1111",
+            "instance": "0x0001",
+            "unreliable": "30509",
+            "events": [
+                {
+                    "event": "0x0002",
+                    "cycle": 200
+                }
+            ],
+            "eventgroups": [
+                {
+                    "eventgroup": "0x0001",
+                    "events": [
+                        "0x0002"
+                    ]
+                }
+            ]
+        }
+    ],
+    "routing": "routingmanagerd",
+    "service-discovery": {
+        "enable": "true",
+        "multicast": "224.0.0.1",
+        "port": "30490",
+        "protocol": "udp"
+    }
+}

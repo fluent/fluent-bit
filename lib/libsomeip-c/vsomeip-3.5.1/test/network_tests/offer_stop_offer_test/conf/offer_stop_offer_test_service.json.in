@@ -1,0 +1,73 @@
+{
+    "unicast" : "@TEST_IP_SLAVE@",
+    "logging" :
+    {
+        "level" : "debug",
+        "console" : "true",
+        "dlt" : "true"
+    },
+    "applications" :
+    [
+        {
+            "name" : "service-sample",
+            "id" : "0x1277"
+        },
+        {
+            "name" : "routingmanagerd",
+            "id" : "0x1200"
+        }
+    ],
+    "services" :
+    [
+        {
+            "service" : "0x1234",
+            "instance" : "0x5678",
+            "reliable" : "30506",
+            "events" :
+            [
+                {
+                    "event" : "0x8778",
+                    "is_field" : "true"
+                }
+            ],
+            "eventgroups" :
+            [
+                {
+                    "eventgroup" : "0x4465",
+                    "events" : [ "0x8778" ]
+
+                }
+            ]
+        },
+        {
+            "service" : "0x1235",
+            "instance" : "0x5678",
+            "reliable" : "30506",
+            "unreliable" : "30506",
+            "events" :
+            [
+                {
+                    "event" : "0x8778",
+                    "is_field" : "true"
+                }
+            ],
+            "eventgroups" :
+            [
+                {
+                    "eventgroup" : "0x4465",
+                    "events" : [ "0x8778" ]
+
+                }
+            ]
+        }
+    ],
+    "routing" : "routingmanagerd",
+    "service-discovery":
+    {
+        "enable": "true",
+        "multicast": "224.244.224.245",
+        "port": "30490",
+        "protocol": "udp",
+        "cyclic_offer_delay": "1000"
+    }
+}

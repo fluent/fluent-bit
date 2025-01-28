@@ -1,0 +1,54 @@
+{
+    "security": {
+        "policies": [
+            {
+                "allow": {
+                    "offers": [
+                        {
+                            "instance": "any",
+                            "service": "0xf8a6"
+                        }
+                    ],
+                    "requests": [
+                        {
+                            "instance": "any",
+                            "service": "0xf8c1"
+                        }
+                    ]
+                },
+                "credentials": {
+                    "gid": "4002205",
+                    "uid": "4002205"
+                }
+            },
+            {
+                "allow": {
+                    "requests": [
+                        {
+                            "instance": "any",
+                            "service": "0xf8a6"
+                        }
+                    ]
+                },
+                "credentials": {
+                    "gid": "4014300",
+                    "uid": "4014300"
+                }
+            },
+            {
+                "credentials": {
+                    "allow": [
+                        {
+                            "gid": [
+                                "4003024"
+                            ],
+                            "uid": [
+                                "4003024"
+                            ]
+                        }
+                    ]
+                }
+            }
+        ]
+    }
+}

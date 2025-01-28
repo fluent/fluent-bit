@@ -1,0 +1,38 @@
+{
+   "unicast" : "127.0.0.1",
+   "netmask" : "255.255.255.0",
+   "diagnosis":"0x12",
+   "logging" :
+   {
+      "level" : "debug",
+      "console" : "true",
+      "file" :
+      {
+         "enable" : "true",
+         "path" : "/var/log/vsomeip.log"
+      },
+
+      "dlt" : "true"
+   },
+
+   "applications" :
+   [
+      {
+         "name" : "local_routing_test_client",
+         "id" : "0x1255"
+      }
+   ],
+
+   "services" :
+   [
+   ],
+
+   "routing" : "routingmanagerd",
+   "service-discovery" :
+   {
+      "enable" : "false",
+      "multicast" : "224.0.0.1",
+      "port" : "30491",
+      "protocol" : "udp"
+   }
+}

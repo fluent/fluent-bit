@@ -1,0 +1,74 @@
+{
+	"version": 3,
+	"cmakeMinimumRequired": {
+		"major": 3,
+		"minor": 13
+	},
+	"configurePresets": [
+		{
+			"name": "ci-network-tests",
+			"displayName": "Network tests (CI)",
+			"description": "Preset for network tests on CI",
+			"generator": "Ninja",
+			"binaryDir": "/home/build",
+			"cacheVariables": {
+				"CMAKE_CXX_FLAGS_INIT": {
+					"type": "STRING",
+					"value": "--coverage -Wno-error=tsan"
+				},
+				"TEST_IP_SLAVE_SECOND": {
+					"type": "STRING",
+					"value": "$penv{IP_SLAVE_2ND}"
+				},
+				"TEST_GID": {
+					"type": "STRING",
+					"value": "0"
+				},
+				"TEST_UID": {
+					"type": "STRING",
+					"value": "0"
+				}
+			},
+			"environment": {
+				"GTEST_ROOT": "/usr/src/googletest"
+			}
+		}
+	],
+	"buildPresets": [
+		{
+			"name": "ci-network-tests",
+			"displayName": "Network tests (CI)",
+			"description": "Preset for network tests on CI",
+			"configurePreset": "ci-network-tests",
+			"targets": "build_network_tests"
+		}
+	],
+	"testPresets": [
+		{
+			"name": "ci-network-tests",
+			"displayName": "Network tests (CI)",
+			"description": "Preset for network tests on CI",
+			"environment": {
+				"LD_LIBRARY_PATH": "/home/build",
+				"LXC_TEST_MASTER_IP": "master",
+				"LXC_TEST_SLAVE_IP": "slave",
+				"TSAN_OPTIONS": "suppressions=${sourceDir}/test/tsan-suppressions.txt",
+				"USE_LXC_TEST": "1"
+			},
+			"configurePreset": "ci-network-tests",
+			"output": {
+				"maxFailedTestOutputSize": 1e6,
+				"maxPassedTestOutputSize": 1e6,
+				"outputOnFailure": true
+			},
+			"execution": {
+				"timeout": 150
+			},
+			"filter": {
+				"exclude": {
+					"name": "^unit_"
+				}
+			}
+		}
+	]
+}

@@ -1,0 +1,74 @@
+{
+    "unicast" : "10.0.3.28",
+    "netmask" : "255.255.255.0",
+    "logging" :
+    {
+        "level" : "debug",
+        "console" : "true",
+        "file" : { "enable" : "true", "path" : "/var/log/vsomeip.log" },
+        "dlt" : "true"
+    },
+    "applications" :
+    [
+        {
+            "name" : "client-sample",
+            "id" : "0x1343"
+        },
+        {
+            "name" : "second-client-sample",
+            "id" : "0x1344"
+        },
+        {
+            "name" : "third-client-sample",
+            "id" : "0x1345"
+        },
+        {
+            "name" : "fourth-client-sample",
+            "id" : "0x1346"
+        }
+    ],
+    "clients" :
+    [
+        {
+            "service" : "0x1234",
+            "instance" : "0x5678",
+            "unreliable" : [ 40000, 40002 ]
+        }
+    ],
+    "security" :
+    {
+        "check_credentials" : "true",
+        "policies" :
+        [
+            {
+                "client" : { "first" : "0x1343", "last" : "0x1346" },
+                "credentials" : { "uid" : "0", "gid" : "0" },
+                "allow" :
+                {
+                    "requests":
+                    [
+                        {
+                            "service"  : "0x1234",
+                            "instance" : "0x5678"
+                        }
+                    ]
+                }
+            }
+        ]
+    },
+    "routing" : "client-sample",
+    "service-discovery" :
+    {
+        "enable" : "true",
+        "multicast" : "224.244.224.245",
+        "port" : "30490",
+        "protocol" : "udp",
+        "initial_delay_min" : "10",
+        "initial_delay_max" : "100",
+        "repetitions_base_delay" : "200",
+        "repetitions_max" : "3",
+        "ttl" : "3",
+        "cyclic_offer_delay" : "2000",
+        "request_response_delay" : "1500"
+    }
+}
