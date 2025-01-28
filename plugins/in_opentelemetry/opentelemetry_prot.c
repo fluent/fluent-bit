@@ -202,7 +202,7 @@ static int process_payload_raw_traces(struct flb_opentelemetry *ctx, struct http
     msgpack_pack_array(&mp_pck, 2);
     flb_pack_time_now(&mp_pck);
 
-    /* Check if the incoming payload is a valid JSON message and convert it to msgpack */
+    /* Check if the incoming payload is a valid  message and convert it to msgpack */
     ret = flb_pack_json(request->data.data, request->data.len,
                         &out_buf, &out_size, &root_type, NULL);
 
@@ -685,7 +685,8 @@ static int binary_payload_to_msgpack(struct flb_opentelemetry *ctx,
                 flb_plg_error(ctx->ins, "could not set group content metadata");
                 goto binary_payload_to_msgpack_end;
             }
-            flb_log_event_encoder_group_header_end(encoder);
+
+            flb_log_event_encoder_group_end(encoder);
 
             msgpack_sbuffer_clear(&mp_sbuf);
 
@@ -2857,7 +2858,6 @@ int opentelemetry_prot_handle_ng(struct flb_http_request *request,
             strcmp(request->path, "/opentelemetry.proto.collector.metric.v1.MetricService/Export") == 0 ||
             strcmp(request->path, "/opentelemetry.proto.collector.trace.v1.TraceService/Export") == 0 ||
             strcmp(request->path, "/opentelemetry.proto.collector.log.v1.LogService/Export") == 0) {
-
         grpc_request = FLB_TRUE;
     }
     else if (context->profile_support_enabled &&
@@ -2915,6 +2915,7 @@ int opentelemetry_prot_handle_ng(struct flb_http_request *request,
         else {
             tag = flb_sds_create(context->ins->tag);
         }
+
         result = process_payload_logs_ng(context, tag, request, response);
     }
     else if (context->profile_support_enabled &&
