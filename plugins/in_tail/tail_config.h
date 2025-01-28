@@ -122,6 +122,10 @@ struct flb_tail_config {
     /* Parser / Format */
     struct flb_parser *parser;
 
+#ifdef FLB_HAVE_UNICODE_ENCODER
+    int preferred_input_encoding;
+#endif
+
     /* Multiline */
     int multiline;             /* multiline enabled ?  */
     int multiline_flush;       /* multiline flush/wait */
