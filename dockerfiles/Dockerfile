@@ -66,7 +66,15 @@ COPY . ./
 # We split the builder setup out so people can target it or use as a base image without doing a full build.
 FROM builder-base AS builder
 WORKDIR /src/fluent-bit/build/
-RUN cmake -DFLB_RELEASE=On \
+
+# SIMD support: x86_64, amd64 and arm64
+ARG SIMD_CMAKE_FLAG=""
+RUN SIMD_CMAKE_FLAG="" && \
+    case "$(uname -m)" in \
+        "x86_64"|"amd64"|"aarch64"|"arm64") \
+            SIMD_CMAKE_FLAG="-DFLB_SIMD=On";; \
+    esac && \
+    cmake -DFLB_RELEASE=On \
     -DFLB_JEMALLOC=On \
     -DFLB_TLS=On \
     -DFLB_SHARED_LIB=Off \
@@ -79,6 +87,7 @@ RUN cmake -DFLB_RELEASE=On \
     -DFLB_NIGHTLY_BUILD="$FLB_NIGHTLY_BUILD" \
     -DFLB_LOG_NO_CONTROL_CHARS=On \
     -DFLB_CHUNK_TRACE="$FLB_CHUNK_TRACE" \
+    $SIMD_CMAKE_FLAG \
     ..
 
 RUN make -j "$(getconf _NPROCESSORS_ONLN)"
