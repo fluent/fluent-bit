@@ -223,7 +223,7 @@ jobs:
       - name: Download debug digests
         uses: actions/download-artifact@v4
         with:
-          pattern: production-digests-*
+          pattern: debug-digests-*
           path: /tmp/debug-digests
           merge-multiple: true
 
