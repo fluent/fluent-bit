@@ -66,7 +66,16 @@ COPY . ./
 # We split the builder setup out so people can target it or use as a base image without doing a full build.
 FROM builder-base AS builder
 WORKDIR /src/fluent-bit/build/
-RUN cmake -DFLB_RELEASE=On \
+
+# Required to be set to ARMV7 for that target
+ARG WAMR_BUILD_TARGET
+ARG EXTRA_CMAKE_FLAGS
+ENV EXTRA_CMAKE_FLAGS=${EXTRA_CMAKE_FLAGS}
+
+# We do not want word splitting for EXTRA_CMAKE_FLAGS in case multiple are defined
+# hadolint ignore=SC2086
+RUN [ -n "${WAMR_BUILD_TARGET:-}" ] && EXTRA_CMAKE_FLAGS="$EXTRA_CMAKE_FLAGS -DWAMR_BUILD_TARGET=$WAMR_BUILD_TARGET"; \
+    cmake -DFLB_RELEASE=On \
     -DFLB_JEMALLOC=On \
     -DFLB_TLS=On \
     -DFLB_SHARED_LIB=Off \
@@ -79,7 +88,11 @@ RUN cmake -DFLB_RELEASE=On \
     -DFLB_NIGHTLY_BUILD="$FLB_NIGHTLY_BUILD" \
     -DFLB_LOG_NO_CONTROL_CHARS=On \
     -DFLB_CHUNK_TRACE="$FLB_CHUNK_TRACE" \
+    $EXTRA_CMAKE_FLAGS \
     ..
+
+ARG CFLAGS="-v"
+ENV CFLAGS=${CFLAGS}
 
 RUN make -j "$(getconf _NPROCESSORS_ONLN)"
 RUN install bin/fluent-bit /fluent-bit/bin/
