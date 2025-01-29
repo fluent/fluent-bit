@@ -328,6 +328,7 @@ void flb_test_events_v1_with_lastTimestamp()
     int ret;
     int num;
     const char *filename = "eventlist_v1_with_lastTimestamp";
+    int trys;
 
     clear_output_num();
 
@@ -347,8 +348,10 @@ void flb_test_events_v1_with_lastTimestamp()
     ret = flb_start(ctx->flb);
     TEST_CHECK(ret == 0);
 
-    // waiting to flush 
-    flb_time_msleep(1500);
+    // waiting to flush
+    for (trys = 0; trys < 5 && get_output_num() <= 0; trys++) {
+        flb_time_msleep(1000);
+    }
 
     num = get_output_num();
     if (!TEST_CHECK(num > 0))  {
@@ -365,6 +368,7 @@ void flb_test_events_v1_with_creationTimestamp()
     int ret;
     int num;
     const char *filename = "eventlist_v1_with_creationTimestamp";
+    int trys;
 
     clear_output_num();
 
@@ -384,8 +388,10 @@ void flb_test_events_v1_with_creationTimestamp()
     ret = flb_start(ctx->flb);
     TEST_CHECK(ret == 0);
 
-    // waiting to flush 
-    flb_time_msleep(1500);
+    // waiting to flush
+    for (trys = 0; trys < 5 && get_output_num() <= 0; trys++) {
+        flb_time_msleep(1000);
+    }
 
     num = get_output_num();
     if (!TEST_CHECK(num > 0))  {
@@ -399,6 +405,7 @@ void flb_test_events_with_chunkedrecv()
 {
     struct flb_lib_out_cb cb_data;
     struct test_ctx *ctx;
+    int trys;
 
     int ret;
     int num;
@@ -423,8 +430,10 @@ void flb_test_events_with_chunkedrecv()
     ret = flb_start(ctx->flb);
     TEST_CHECK(ret == 0);
 
-    // waiting to flush 
-    flb_time_msleep(5000);
+    // waiting to flush
+    for (trys = 0; trys < 5 && get_output_num() <= 1; trys++) {
+        flb_time_msleep(1000);
+    }
 
     num = get_output_num();
     if (!TEST_CHECK(num >= 2))  {
