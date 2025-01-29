@@ -991,12 +991,14 @@ static int get_calyptia_file(struct flb_in_calyptia_fleet_config *ctx,
     }
 
     if (dst == NULL) {
+        // Assuming this is the base Fleet config file
         flb_strptime(fbit_last_modified, "%a, %d %B %Y %H:%M:%S GMT", &tm_last_modified);
         last_modified = mktime(&tm_last_modified.tm);
 
         fname = time_fleet_config_filename(ctx, last_modified);
     }
     else {
+        // Fleet File file
         fname = flb_sds_create_len(dst, strlen(dst));
     }
 
@@ -1818,6 +1820,19 @@ int get_calyptia_fleet_config(struct flb_in_calyptia_fleet_config *ctx)
 
     /* new file created! */
     if (ret == 1) {
+        if (ctx->config_timestamp > 0) {
+            if (ctx->config_timestamp < time_last_modified) {
+                flb_plg_info(ctx->ins, "fleet API returned config with newer timestamp than current config (%ld -> %ld)", ctx->config_timestamp, time_last_modified);
+            }
+            else if (ctx->config_timestamp == time_last_modified) {
+                flb_plg_debug(ctx->ins, "fleet API returned config with same timestamp as current config (%ld)", time_last_modified);
+            }
+            else {
+                flb_plg_warn(ctx->ins, "fleet API returned config with earlier timestamp than current config (%ld -> %ld)", ctx->config_timestamp, time_last_modified);
+            }
+        } else {
+            flb_plg_info(ctx->ins, "fleet API returned new config (none -> %ld)", time_last_modified);
+        }
         get_calyptia_files(ctx, time_last_modified);
 
         cfgname = time_fleet_config_filename(ctx, time_last_modified);
@@ -2187,6 +2202,7 @@ static int in_calyptia_fleet_init(struct flb_input_instance *in,
     ctx->ins = in;
     ctx->collect_fd = -1;
     ctx->fleet_id_found = FLB_FALSE;
+    ctx->config_timestamp = -1;
 
     /* Load the config map */
     ret = flb_input_config_map_set(in, (void *) ctx);
