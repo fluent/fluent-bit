@@ -85,7 +85,6 @@ jobs:
           - amd64
           - arm64
           - arm/v7
-          - s390x
         target:
           - production
           - debug
