@@ -1,0 +1,14 @@
+service:
+  flush: 1
+  log_level: info
+
+pipeline:
+  inputs:
+    - name: node_exporter_metrics
+      tag: node_metrics
+
+  outputs:
+    - name: prometheus_exporter
+      match: node_metrics
+      host: 0.0.0.0
+      port: 2021
