@@ -46,7 +46,7 @@ RUN apt-get -qq update && \
     apt-get install -y curl ca-certificates build-essential \
     cmake make bash sudo wget unzip dh-make \
     libsystemd-dev zlib1g-dev flex bison \
-    libssl1.1 libssl-dev libpq-dev postgresql-server-dev-all \
+    libssl3 libssl-dev libpq-dev postgresql-server-dev-all \
     libsasl2-2 libsasl2-dev libyaml-dev libcurl4-openssl-dev pkg-config && \
     apt-get install -y --reinstall lsb-base lsb-release
 
@@ -61,7 +61,7 @@ RUN apt-get -qq update && \
     apt-get install -y curl ca-certificates build-essential \
     cmake make bash sudo wget unzip dh-make \
     libsystemd-dev zlib1g-dev flex bison \
-    libssl1.1 libssl-dev libpq-dev postgresql-server-dev-all \
+    libssl3 libssl-dev libpq-dev postgresql-server-dev-all \
     libsasl2-2 libsasl2-dev libyaml-dev libcurl4-openssl-dev pkg-config && \
     apt-get install -y --reinstall lsb-base lsb-release
 
