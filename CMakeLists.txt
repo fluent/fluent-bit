@@ -485,6 +485,15 @@ add_subdirectory(${FLB_PATH_LIB_MPACK} EXCLUDE_FROM_ALL)
 # Miniz (zip)
 add_subdirectory(${FLB_PATH_LIB_MINIZ} EXCLUDE_FROM_ALL)
 
+# Zstd (zstd)
+set(ZSTD_BUILD_STATIC ON)
+set(ZSTD_BUILD_SHARED OFF)
+set(ZSTD_BUILD_COMPRESSION ON)
+set(ZSTD_BUILD_DECOMPRESSION ON)
+set(ZSTD_BUILD_DICTBUILDER OFF)
+set(ZSTD_BUILD_DEPRECATED OFF)
+add_subdirectory(${FLB_PATH_LIB_ZSTD}/build/cmake EXCLUDE_FROM_ALL)
+
 # ring buffer library
 add_subdirectory(${FLB_PATH_LIB_RING_BUFFER} EXCLUDE_FROM_ALL)
 
