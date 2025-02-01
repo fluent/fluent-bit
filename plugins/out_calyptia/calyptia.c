@@ -322,46 +322,62 @@ static int calyptia_http_do(struct flb_calyptia *ctx, struct flb_http_client *c,
     int ret;
     size_t b_sent;
 
+    if( !ctx || !c ) {
+        return FLB_ERROR;
+    }
+
+    /* Ensure agent_token is not empty when required */
+    if ((type == CALYPTIA_ACTION_METRICS || type == CALYPTIA_ACTION_PATCH || type == CALYPTIA_ACTION_TRACE) &&
+        !ctx->agent_token) {
+        flb_plg_warn(ctx->ins, "agent_token is missing for action type %d", type);
+        return FLB_ERROR;
+    }
+
     /* append headers */
     if (type == CALYPTIA_ACTION_REGISTER) {
+        // When registering a new agent api key is required
+        if (!ctx->api_key) {
+            flb_plg_error(ctx->ins, "api_key is missing");
+            return FLB_ERROR;
+        }
         flb_http_add_header(c,
-                            CALYPTIA_H_CTYPE, sizeof(CALYPTIA_H_CTYPE) - 1,
-                            CALYPTIA_H_CTYPE_JSON, sizeof(CALYPTIA_H_CTYPE_JSON) - 1);
+                            CALYPTIA_HEADERS_CTYPE, sizeof(CALYPTIA_HEADERS_CTYPE) - 1,
+                            CALYPTIA_HEADERS_CTYPE_JSON, sizeof(CALYPTIA_HEADERS_CTYPE_JSON) - 1);
 
         flb_http_add_header(c,
-                            CALYPTIA_H_PROJECT, sizeof(CALYPTIA_H_PROJECT) - 1,
+                            CALYPTIA_HEADERS_PROJECT, sizeof(CALYPTIA_HEADERS_PROJECT) - 1,
                             ctx->api_key, flb_sds_len(ctx->api_key));
     }
     else if (type == CALYPTIA_ACTION_PATCH) {
         flb_http_add_header(c,
-                            CALYPTIA_H_CTYPE, sizeof(CALYPTIA_H_CTYPE) - 1,
-                            CALYPTIA_H_CTYPE_JSON, sizeof(CALYPTIA_H_CTYPE_JSON) - 1);
+                            CALYPTIA_HEADERS_CTYPE, sizeof(CALYPTIA_HEADERS_CTYPE) - 1,
+                            CALYPTIA_HEADERS_CTYPE_JSON, sizeof(CALYPTIA_HEADERS_CTYPE_JSON) - 1);
 
         flb_http_add_header(c,
-                            CALYPTIA_H_AGENT_TOKEN,
-                            sizeof(CALYPTIA_H_AGENT_TOKEN) - 1,
+                            CALYPTIA_HEADERS_AGENT_TOKEN,
+                            sizeof(CALYPTIA_HEADERS_AGENT_TOKEN) - 1,
                             ctx->agent_token, flb_sds_len(ctx->agent_token));
     }
     else if (type == CALYPTIA_ACTION_METRICS) {
         flb_http_add_header(c,
-                            CALYPTIA_H_CTYPE, sizeof(CALYPTIA_H_CTYPE) - 1,
-                            CALYPTIA_H_CTYPE_MSGPACK,
-                            sizeof(CALYPTIA_H_CTYPE_MSGPACK) - 1);
+                            CALYPTIA_HEADERS_CTYPE, sizeof(CALYPTIA_HEADERS_CTYPE) - 1,
+                            CALYPTIA_HEADERS_CTYPE_MSGPACK,
+                            sizeof(CALYPTIA_HEADERS_CTYPE_MSGPACK) - 1);
 
         flb_http_add_header(c,
-                            CALYPTIA_H_AGENT_TOKEN,
-                            sizeof(CALYPTIA_H_AGENT_TOKEN) - 1,
+                            CALYPTIA_HEADERS_AGENT_TOKEN,
+                            sizeof(CALYPTIA_HEADERS_AGENT_TOKEN) - 1,
                             ctx->agent_token, flb_sds_len(ctx->agent_token));
     }
 #ifdef FLB_HAVE_CHUNK_TRACE
     else if (type == CALYPTIA_ACTION_TRACE)  {
         flb_http_add_header(c,
-                            CALYPTIA_H_CTYPE, sizeof(CALYPTIA_H_CTYPE) - 1,
-                            CALYPTIA_H_CTYPE_JSON, sizeof(CALYPTIA_H_CTYPE_JSON) - 1);
+                            CALYPTIA_HEADERS_CTYPE, sizeof(CALYPTIA_HEADERS_CTYPE) - 1,
+                            CALYPTIA_HEADERS_CTYPE_JSON, sizeof(CALYPTIA_HEADERS_CTYPE_JSON) - 1);
 
         flb_http_add_header(c,
-                            CALYPTIA_H_AGENT_TOKEN,
-                            sizeof(CALYPTIA_H_AGENT_TOKEN) - 1,
+                            CALYPTIA_HEADERS_AGENT_TOKEN,
+                            sizeof(CALYPTIA_HEADERS_AGENT_TOKEN) - 1,
                             ctx->agent_token, flb_sds_len(ctx->agent_token));
     }
 #endif
@@ -721,6 +737,21 @@ static struct flb_calyptia *config_init(struct flb_output_instance *ins,
         return NULL;
     }
 
+    ctx->metrics_endpoint = flb_sds_create_size(256);
+    if (!ctx->metrics_endpoint) {
+        flb_free(ctx);
+        return NULL;
+    }
+
+#ifdef FLB_HAVE_CHUNK_TRACE
+    ctx->trace_endpoint = flb_sds_create_size(256);
+    if (!ctx->trace_endpoint) {
+        flb_sds_destroy(ctx->metrics_endpoint);
+        flb_free(ctx);
+        return NULL;
+    }
+#endif
+
     /* api_key */
     if (!ctx->api_key) {
         flb_plg_error(ctx->ins, "configuration 'api_key' is missing");
@@ -771,12 +802,40 @@ static struct flb_calyptia *config_init(struct flb_output_instance *ins,
     return ctx;
 }
 
-static int cb_calyptia_init(struct flb_output_instance *ins,
-                            struct flb_config *config, void *data)
+static int register_agent(struct flb_calyptia *ctx, struct flb_config *config)
 {
     int ret;
+
+    /* Try registration */
+    ret = api_agent_create(config, ctx);
+    if (ret != FLB_OK) {
+        flb_plg_warn(ctx->ins, "agent registration failed");
+        return FLB_ERROR;
+    }
+
+    /* Update endpoints */
+    flb_sds_len_set(ctx->metrics_endpoint, 0);
+    flb_sds_printf(&ctx->metrics_endpoint, CALYPTIA_ENDPOINT_METRICS,
+                   ctx->agent_id);
+
+#ifdef FLB_HAVE_CHUNK_TRACE
+    if (ctx->pipeline_id) {
+        flb_sds_len_set(ctx->trace_endpoint, 0);
+        flb_sds_printf(&ctx->trace_endpoint, CALYPTIA_ENDPOINT_TRACE,
+                       ctx->pipeline_id);
+    }
+#endif
+
+    flb_plg_info(ctx->ins, "agent registration successful");
+    return FLB_OK;
+}
+
+static int cb_calyptia_init(struct flb_output_instance *ins,
+                           struct flb_config *config, void *data)
+{
     struct flb_calyptia *ctx;
     (void) data;
+    int ret;
 
     /* create config context */
     ctx = config_init(ins, config);
@@ -791,23 +850,12 @@ static int cb_calyptia_init(struct flb_output_instance *ins,
      */
     flb_output_set_http_debug_callbacks(ins);
 
-    /* register/update agent */
-    ret = api_agent_create(config, ctx);
-    if (ret != FLB_OK) {
-        flb_plg_error(ctx->ins, "agent registration failed");
+    ret = register_agent(ctx, config);
+    if (ret != FLB_OK && !ctx->register_retry_on_flush) {
+        flb_plg_error(ins, "agent registration failed and register_retry_on_flush=false");
         return -1;
     }
 
-    /* metrics endpoint */
-    ctx->metrics_endpoint = flb_sds_create_size(256);
-    flb_sds_printf(&ctx->metrics_endpoint, CALYPTIA_ENDPOINT_METRICS,
-                   ctx->agent_id);
-
-#ifdef FLB_HAVE_CHUNK_TRACE
-    ctx->trace_endpoint = flb_sds_create_size(256);
-    flb_sds_printf(&ctx->trace_endpoint, CALYPTIA_ENDPOINT_TRACE,
-                   ctx->pipeline_id);
-#endif /* FLB_HAVE_CHUNK_TRACE */
     return 0;
 }
 
@@ -828,140 +876,6 @@ static void debug_payload(struct flb_calyptia *ctx, void *data, size_t bytes)
     flb_plg_debug(ctx->ins, "debug payload:\n%s", out);
     cmt_encode_text_destroy(out);
     cmt_destroy(cmt);
-}
-
-static void cb_calyptia_flush(struct flb_event_chunk *event_chunk,
-                              struct flb_output_flush *out_flush,
-                              struct flb_input_instance *i_ins,
-                              void *out_context,
-                              struct flb_config *config)
-{
-    int ret = FLB_RETRY;
-    size_t off = 0;
-    size_t out_size = 0;
-    char *out_buf = NULL;
-
-/* used to create records for reporting traces to the cloud. */
-#ifdef FLB_HAVE_CHUNK_TRACE
-    flb_sds_t json;
-#endif /* FLB_HAVE_CHUNK_TRACE */
-
-    struct flb_connection *u_conn;
-    struct flb_http_client *c = NULL;
-    struct flb_calyptia *ctx = out_context;
-    struct cmt *cmt;
-    (void) i_ins;
-    (void) config;
-
-    /* Get upstream connection */
-    u_conn = flb_upstream_conn_get(ctx->u);
-    if (!u_conn) {
-        FLB_OUTPUT_RETURN(FLB_RETRY);
-    }
-
-    if (event_chunk->type == FLB_EVENT_TYPE_METRICS) {
-        /* if we have labels append them */
-        if (ctx->add_labels && mk_list_size(ctx->add_labels) > 0) {
-            ret = cmt_decode_msgpack_create(&cmt,
-                                            (char *) event_chunk->data,
-                                            event_chunk->size,
-                                            &off);
-            if (ret != CMT_DECODE_MSGPACK_SUCCESS) {
-                flb_upstream_conn_release(u_conn);
-                FLB_OUTPUT_RETURN(FLB_ERROR);
-            }
-
-            /* append labels set by config */
-            append_labels(ctx, cmt);
-
-            /* encode back to msgpack */
-            ret = cmt_encode_msgpack_create(cmt, &out_buf, &out_size);
-            if (ret != 0) {
-                cmt_destroy(cmt);
-                flb_upstream_conn_release(u_conn);
-                FLB_OUTPUT_RETURN(FLB_ERROR);
-            }
-            cmt_destroy(cmt);
-        }
-        else {
-            out_buf = (char *) event_chunk->data;
-            out_size = event_chunk->size;
-        }
-
-        /* Compose HTTP Client request */
-        c = flb_http_client(u_conn, FLB_HTTP_POST, ctx->metrics_endpoint,
-                            out_buf, out_size, NULL, 0, NULL, 0);
-        if (!c) {
-            if (out_buf != event_chunk->data) {
-                cmt_encode_msgpack_destroy(out_buf);
-            }
-            flb_upstream_conn_release(u_conn);
-            FLB_OUTPUT_RETURN(FLB_RETRY);
-        }
-
-        /* perform request: 'ret' might be FLB_OK, FLB_ERROR or FLB_RETRY */
-        ret = calyptia_http_do(ctx, c, CALYPTIA_ACTION_METRICS);
-        if (ret == FLB_OK) {
-            flb_plg_debug(ctx->ins, "metrics delivered OK");
-        }
-        else if (ret == FLB_ERROR) {
-            flb_plg_error(ctx->ins, "could not deliver metrics");
-            debug_payload(ctx, out_buf, out_size);
-        }
-
-        if (out_buf != event_chunk->data) {
-            cmt_encode_msgpack_destroy(out_buf);
-        }
-    }
-
-#ifdef FLB_HAVE_CHUNK_TRACE
-    if (event_chunk->type == (FLB_EVENT_TYPE_LOGS | FLB_EVENT_TYPE_HAS_TRACE)) {
-        json = flb_pack_msgpack_to_json_format(event_chunk->data,
-                                               event_chunk->size,
-                                               FLB_PACK_JSON_FORMAT_STREAM,
-                                               FLB_PACK_JSON_DATE_DOUBLE,
-                                               NULL);
-        if (json == NULL) {
-            flb_upstream_conn_release(u_conn);
-            FLB_OUTPUT_RETURN(FLB_RETRY);
-        }
-        out_buf = (char *)json;
-        out_size = flb_sds_len(json);
-
-        if (flb_sds_printf(&ctx->metrics_endpoint, CALYPTIA_ENDPOINT_METRICS,
-                       ctx->agent_id) == NULL) {
-            flb_upstream_conn_release(u_conn);
-            flb_sds_destroy(json);
-            FLB_OUTPUT_RETURN(FLB_RETRY);
-        }
-        c = flb_http_client(u_conn, FLB_HTTP_POST, ctx->trace_endpoint,
-                            out_buf, out_size, NULL, 0, NULL, 0);
-        if (!c) {
-            flb_upstream_conn_release(u_conn);
-            flb_sds_destroy(json);
-            flb_sds_destroy(ctx->metrics_endpoint);
-            FLB_OUTPUT_RETURN(FLB_RETRY);
-        }
-
-        /* perform request: 'ret' might be FLB_OK, FLB_ERROR or FLB_RETRY */
-        ret = calyptia_http_do(ctx, c, CALYPTIA_ACTION_TRACE);
-        if (ret == FLB_OK) {
-            flb_plg_debug(ctx->ins, "trace delivered OK");
-        }
-        else if (ret == FLB_ERROR) {
-            flb_plg_error(ctx->ins, "could not deliver trace");
-            debug_payload(ctx, out_buf, out_size);
-        }
-        flb_sds_destroy(json);
-    }
-#endif /* FLB_HAVE_CHUNK_TRACE */
-
-    flb_upstream_conn_release(u_conn);
-
-    if (c) {
-        flb_http_client_destroy(c);
-    }
-    FLB_OUTPUT_RETURN(ret);
 }
 
 static int cb_calyptia_exit(void *data, struct flb_config *config)
@@ -1008,16 +922,150 @@ static int cb_calyptia_exit(void *data, struct flb_config *config)
     return 0;
 }
 
+static void cb_calyptia_flush(struct flb_event_chunk *event_chunk,
+                             struct flb_output_flush *out_flush,
+                             struct flb_input_instance *i_ins,
+                             void *out_context,
+                             struct flb_config *config)
+{
+    int ret;
+    size_t off = 0;
+    size_t out_size = 0;
+    char *out_buf = NULL;
+    struct flb_connection *u_conn;
+    struct flb_http_client *c = NULL;
+    struct flb_calyptia *ctx = out_context;
+    struct cmt *cmt;
+    flb_sds_t json;
+    (void) i_ins;
+    (void) config;
+
+    if ((!ctx->agent_id || !ctx->agent_token) && ctx->register_retry_on_flush) {
+        flb_plg_info(ctx->ins, "missing agent_id or agent_token, attempting re-registration register_retry_on_flush=true");
+        if (register_agent(ctx, config) != FLB_OK) {
+            FLB_OUTPUT_RETURN(FLB_RETRY);
+        }
+    }
+    else if (!ctx->agent_id || !ctx->agent_token) {
+        flb_plg_error(ctx->ins, "missing agent_id or agent_token, and register_retry_on_flush=false");
+        FLB_OUTPUT_RETURN(FLB_ERROR);
+    }
+
+    /* Get upstream connection */
+    u_conn = flb_upstream_conn_get(ctx->u);
+    if (!u_conn) {
+        FLB_OUTPUT_RETURN(FLB_RETRY);
+    }
+
+    if (event_chunk->type == FLB_EVENT_TYPE_METRICS) {
+        /* if we have labels append them */
+        if (ctx->add_labels && mk_list_size(ctx->add_labels) > 0) {
+            ret = cmt_decode_msgpack_create(&cmt,
+                                            (char *) event_chunk->data,
+                                            event_chunk->size,
+                                            &off);
+            if (ret != CMT_DECODE_MSGPACK_SUCCESS) {
+                flb_upstream_conn_release(u_conn);
+                FLB_OUTPUT_RETURN(FLB_ERROR);
+            }
+
+            /* append labels set by config */
+            append_labels(ctx, cmt);
+
+            /* encode back to msgpack */
+            ret = cmt_encode_msgpack_create(cmt, &out_buf, &out_size);
+            if (ret != 0) {
+                cmt_destroy(cmt);
+                flb_upstream_conn_release(u_conn);
+                FLB_OUTPUT_RETURN(FLB_ERROR);
+            }
+            cmt_destroy(cmt);
+        }
+        else {
+            out_buf = (char *) event_chunk->data;
+            out_size = event_chunk->size;
+        }
+
+        /* Compose HTTP Client request */
+        c = flb_http_client(u_conn, FLB_HTTP_POST, ctx->metrics_endpoint,
+                           out_buf, out_size, NULL, 0, NULL, 0);
+        if (!c) {
+            if (out_buf != event_chunk->data) {
+                cmt_encode_msgpack_destroy(out_buf);
+            }
+            flb_upstream_conn_release(u_conn);
+            FLB_OUTPUT_RETURN(FLB_RETRY);
+        }
+
+        /* perform request */
+        ret = calyptia_http_do(ctx, c, CALYPTIA_ACTION_METRICS);
+        if (ret == FLB_OK) {
+            flb_plg_debug(ctx->ins, "metrics delivered OK");
+        }
+        else {
+            flb_plg_error(ctx->ins, "could not deliver metrics");
+            debug_payload(ctx, out_buf, out_size);
+        }
+
+        if (out_buf != event_chunk->data) {
+            cmt_encode_msgpack_destroy(out_buf);
+        }
+    }
+
+#ifdef FLB_HAVE_CHUNK_TRACE
+    if (event_chunk->type & FLB_EVENT_TYPE_LOGS &&
+        event_chunk->type & FLB_EVENT_TYPE_HAS_TRACE) {
+        json = flb_pack_msgpack_to_json_format(event_chunk->data,
+                                            event_chunk->size,
+                                            FLB_PACK_JSON_FORMAT_STREAM,
+                                            FLB_PACK_JSON_DATE_DOUBLE,
+                                            NULL);
+        if (json == NULL) {
+            flb_upstream_conn_release(u_conn);
+            FLB_OUTPUT_RETURN(FLB_RETRY);
+        }
+
+        c = flb_http_client(u_conn, FLB_HTTP_POST, ctx->trace_endpoint,
+                           (char *) json, flb_sds_len(json),
+                           NULL, 0, NULL, 0);
+
+        if (!c) {
+            flb_upstream_conn_release(u_conn);
+            flb_sds_destroy(json);
+            FLB_OUTPUT_RETURN(FLB_RETRY);
+        }
+
+        ret = calyptia_http_do(ctx, c, CALYPTIA_ACTION_TRACE);
+        if (ret == FLB_OK) {
+            flb_plg_debug(ctx->ins, "trace delivered OK");
+        }
+        else {
+            flb_plg_error(ctx->ins, "could not deliver trace");
+            debug_payload(ctx, (char *) json, flb_sds_len(json));
+        }
+        flb_sds_destroy(json);
+    }
+#endif /* FLB_HAVE_CHUNK_TRACE */
+
+    flb_upstream_conn_release(u_conn);
+
+    if (c) {
+        flb_http_client_destroy(c);
+    }
+
+    FLB_OUTPUT_RETURN(ret);
+}
+
 /* Configuration properties map */
 static struct flb_config_map config_map[] = {
     {
-     FLB_CONFIG_MAP_STR, "cloud_host", CALYPTIA_HOST,
+     FLB_CONFIG_MAP_STR, "cloud_host", DEFAULT_CALYPTIA_HOST,
      0, FLB_TRUE, offsetof(struct flb_calyptia, cloud_host),
      "",
     },
 
     {
-     FLB_CONFIG_MAP_INT, "cloud_port", CALYPTIA_PORT,
+     FLB_CONFIG_MAP_INT, "cloud_port", DEFAULT_CALYPTIA_PORT,
      0, FLB_TRUE, offsetof(struct flb_calyptia, cloud_port),
      "",
     },
@@ -1057,7 +1105,11 @@ static struct flb_config_map config_map[] = {
      "Pipeline ID for calyptia core traces."
     },
 #endif
-
+    {
+     FLB_CONFIG_MAP_BOOL, "register_retry_on_flush", "true",
+     0, FLB_TRUE, offsetof(struct flb_calyptia, register_retry_on_flush),
+     "Retry agent registration on flush if failed on init."
+    },
     /* EOF */
     {0}
 };

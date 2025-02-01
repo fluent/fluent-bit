@@ -37,6 +37,10 @@
 #include <ctraces/ctraces.h>
 #include <ctraces/ctr_decode_msgpack.h>
 
+#include <cprofiles/cprofiles.h>
+#include <cprofiles/cprof_decode_msgpack.h>
+#include <cprofiles/cprof_encode_opentelemetry.h>
+
 extern cfl_sds_t cmt_encode_opentelemetry_create(struct cmt *cmt);
 extern void cmt_encode_opentelemetry_destroy(cfl_sds_t text);
 
@@ -227,6 +231,7 @@ int opentelemetry_post(struct opentelemetry_context *ctx,
     const char               *compression_algorithm;
     uint32_t                  wire_message_length;
     size_t                    grpc_body_length;
+    cfl_sds_t                 sds_result;
     cfl_sds_t                 grpc_body;
     struct flb_http_response *response;
     struct flb_http_request  *request;
@@ -257,23 +262,46 @@ int opentelemetry_post(struct opentelemetry_context *ctx,
         return FLB_RETRY;
     }
 
-    if (request->protocol_version == HTTP_PROTOCOL_VERSION_20) {
+    if (request->protocol_version == HTTP_PROTOCOL_VERSION_20 &&
+        ctx->enable_grpc_flag) {
         grpc_body = cfl_sds_create_size(body_len + 5);
 
         if (grpc_body == NULL) {
+            flb_http_client_request_destroy(request, FLB_TRUE);
+
             return FLB_RETRY;
         }
 
         wire_message_length = (uint32_t) body_len;
 
-        cfl_sds_cat(grpc_body, "\x00----", 5);
+        sds_result = cfl_sds_cat(grpc_body, "\x00----", 5);
+
+        if (sds_result == NULL) {
+            flb_http_client_request_destroy(request, FLB_TRUE);
+
+            cfl_sds_destroy(grpc_body);
+
+            return FLB_RETRY;
+        }
+
+        grpc_body = sds_result;
 
         ((uint8_t *) grpc_body)[1] = (wire_message_length & 0xFF000000) >> 24;
         ((uint8_t *) grpc_body)[2] = (wire_message_length & 0x00FF0000) >> 16;
         ((uint8_t *) grpc_body)[3] = (wire_message_length & 0x0000FF00) >> 8;
         ((uint8_t *) grpc_body)[4] = (wire_message_length & 0x000000FF) >> 0;
 
-        cfl_sds_cat(grpc_body, body, body_len);
+        sds_result = cfl_sds_cat(grpc_body, body, body_len);
+
+        if (sds_result == NULL) {
+            flb_http_client_request_destroy(request, FLB_TRUE);
+
+            cfl_sds_destroy(grpc_body);
+
+            return FLB_RETRY;
+        }
+
+        grpc_body = sds_result;
 
         grpc_body_length = cfl_sds_len(grpc_body);
 
@@ -353,17 +381,24 @@ int opentelemetry_post(struct opentelemetry_context *ctx,
      * - 205: Reset content
      *
      */
+
     if (response->status < 200 || response->status > 205) {
         if (ctx->log_response_payload &&
             response->body != NULL &&
             cfl_sds_len(response->body) > 0) {
-            flb_plg_error(ctx->ins, "%s:%i, HTTP status=%i\n%s",
-                            ctx->host, ctx->port,
-                            response->status, response->body);
+            flb_plg_error(ctx->ins,
+                          "%s:%i, HTTP status=%i\n%s",
+                          ctx->host,
+                          ctx->port,
+                          response->status,
+                          response->body);
         }
         else {
-            flb_plg_error(ctx->ins, "%s:%i, HTTP status=%i",
-                            ctx->host, ctx->port, response->status);
+            flb_plg_error(ctx->ins,
+                          "%s:%i, HTTP status=%i",
+                          ctx->host,
+                          ctx->port,
+                          response->status);
         }
 
         out_ret = FLB_RETRY;
@@ -612,6 +647,88 @@ exit:
     return result;
 }
 
+static int process_profiles(struct flb_event_chunk *event_chunk,
+                            struct flb_output_flush *out_flush,
+                            struct flb_input_instance *ins, void *out_context,
+                            struct flb_config *config)
+{
+    int ret;
+    int result;
+    cfl_sds_t encoded_chunk;
+    flb_sds_t buf = NULL;
+    size_t off = 0;
+    struct cprof *profiles_context;
+    struct opentelemetry_context *ctx = out_context;
+
+    /* Initialize vars */
+    ctx = out_context;
+    result = FLB_OK;
+
+    buf = flb_sds_create_size(event_chunk->size);
+    if (!buf) {
+        flb_plg_error(ctx->ins, "could not allocate outgoing buffer");
+        return FLB_RETRY;
+    }
+
+    flb_plg_debug(ctx->ins, "cprofiles msgpack size: %lu",
+                  event_chunk->size);
+
+    while (cprof_decode_msgpack_create(&profiles_context,
+                                       (unsigned char *) event_chunk->data,
+                                       event_chunk->size, &off) == 0) {
+        /* Create a OpenTelemetry payload */
+        ret = cprof_encode_opentelemetry_create(&encoded_chunk, profiles_context);
+        if (ret != CPROF_ENCODE_OPENTELEMETRY_SUCCESS) {
+            flb_plg_error(ctx->ins,
+                          "Error encoding context as opentelemetry");
+            result = FLB_ERROR;
+            cprof_decode_msgpack_destroy(profiles_context);
+            goto exit;
+        }
+
+        /* concat buffer */
+        ret = flb_sds_cat_safe(&buf, encoded_chunk, flb_sds_len(encoded_chunk));
+        if (ret != 0) {
+            flb_plg_error(ctx->ins, "Error appending encoded profiles to buffer");
+            result = FLB_ERROR;
+            cprof_encode_opentelemetry_destroy(encoded_chunk);
+            cprof_decode_msgpack_destroy(profiles_context);
+            goto exit;
+        }
+
+        /* release */
+        cprof_encode_opentelemetry_destroy(encoded_chunk);
+        cprof_decode_msgpack_destroy(profiles_context);
+    }
+
+    flb_plg_debug(ctx->ins, "final payload size: %lu", flb_sds_len(buf));
+    if (buf && flb_sds_len(buf) > 0) {
+        /* Send HTTP request */
+        result = opentelemetry_post(ctx, buf, flb_sds_len(buf),
+                                    event_chunk->tag,
+                                    flb_sds_len(event_chunk->tag),
+                                    ctx->profiles_uri_sanitized,
+                                    ctx->grpc_profiles_uri);
+
+        /* Debug http_post() result statuses */
+        if (result == FLB_OK) {
+            flb_plg_debug(ctx->ins, "http_post result FLB_OK");
+        }
+        else if (result == FLB_ERROR) {
+            flb_plg_debug(ctx->ins, "http_post result FLB_ERROR");
+        }
+        else if (result == FLB_RETRY) {
+            flb_plg_debug(ctx->ins, "http_post result FLB_RETRY");
+        }
+    }
+
+exit:
+    if (buf) {
+        flb_sds_destroy(buf);
+    }
+    return result;
+}
+
 static int cb_opentelemetry_exit(void *data, struct flb_config *config)
 {
     struct opentelemetry_context *ctx;
@@ -659,6 +776,9 @@ static void cb_opentelemetry_flush(struct flb_event_chunk *event_chunk,
     else if (event_chunk->type == FLB_INPUT_TRACES){
         result = process_traces(event_chunk, out_flush, ins, out_context, config);
     }
+    else if (event_chunk->type == FLB_INPUT_PROFILES){
+        result = process_profiles(event_chunk, out_flush, ins, out_context, config);
+    }
 
     FLB_OUTPUT_RETURN(result);
 }
@@ -675,6 +795,11 @@ static struct flb_config_map config_map[] = {
      FLB_CONFIG_MAP_STR, "http2", "on",
      0, FLB_TRUE, offsetof(struct opentelemetry_context, enable_http2),
      "Enable, disable or force HTTP/2 usage. Accepted values : on, off, force"
+    },
+    {
+     FLB_CONFIG_MAP_BOOL, "grpc", "off",
+     0, FLB_TRUE, offsetof(struct opentelemetry_context, enable_grpc_flag),
+     "Enable, disable or force gRPC usage. Accepted values : on, off, auto"
     },
     {
      FLB_CONFIG_MAP_STR, "proxy", NULL,
@@ -752,15 +877,28 @@ static struct flb_config_map config_map[] = {
      "Specify an optional HTTP URI for the target OTel endpoint."
     },
     {
-     FLB_CONFIG_MAP_STR, "grpc_traces_uri", "/opentelemetry.proto.collector.trace.v1.TraceService/Export",
+     FLB_CONFIG_MAP_STR, "grpc_traces_uri",
+     "/opentelemetry.proto.collector.trace.v1.TraceService/Export",
      0, FLB_TRUE, offsetof(struct opentelemetry_context, grpc_traces_uri),
      "Specify an optional gRPC URI for the target OTel endpoint."
     },
 
     {
+     FLB_CONFIG_MAP_STR, "profiles_uri", "/v1development/profiles",
+     0, FLB_TRUE, offsetof(struct opentelemetry_context, profiles_uri),
+     "Specify an optional HTTP URI for the profiles OTel endpoint."
+    },
+    {
+     FLB_CONFIG_MAP_STR, "grpc_profiles_uri",
+     "/opentelemetry.proto.collector.profiles.v1experimental.ProfilesService/Export",
+     0, FLB_TRUE, offsetof(struct opentelemetry_context, grpc_profiles_uri),
+     "Specify an optional gRPC URI for the profiles OTel endpoint."
+    },
+
+    {
      FLB_CONFIG_MAP_BOOL, "log_response_payload", "true",
      0, FLB_TRUE, offsetof(struct opentelemetry_context, log_response_payload),
-     "Specify if the response paylod should be logged or not"
+     "Specify if the response payload should be logged or not"
     },
     {
      FLB_CONFIG_MAP_STR, "logs_metadata_key", "otlp",
@@ -850,7 +988,7 @@ struct flb_output_plugin out_opentelemetry_plugin = {
     .cb_flush    = cb_opentelemetry_flush,
     .cb_exit     = cb_opentelemetry_exit,
     .config_map  = config_map,
-    .event_type  = FLB_OUTPUT_LOGS | FLB_OUTPUT_METRICS | FLB_OUTPUT_TRACES,
+    .event_type  = FLB_OUTPUT_LOGS | FLB_OUTPUT_METRICS | FLB_OUTPUT_TRACES | FLB_OUTPUT_PROFILES,
     .flags       = FLB_OUTPUT_NET | FLB_IO_OPT_TLS,
 
     .test_formatter.callback = opentelemetry_format_test,

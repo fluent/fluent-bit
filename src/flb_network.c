@@ -1807,16 +1807,22 @@ int flb_net_bind_udp(flb_sockfd_t fd, const struct sockaddr *addr,
 flb_sockfd_t flb_net_accept(flb_sockfd_t server_fd)
 {
     flb_sockfd_t remote_fd;
-    struct sockaddr sock_addr;
-    socklen_t socket_size = sizeof(struct sockaddr);
+    struct sockaddr_storage sock_addr = { 0 };
+    socklen_t socket_size = sizeof(sock_addr);
 
-    // return accept(server_fd, &sock_addr, &socket_size);
+    /* 
+     * sock_addr used to be a sockaddr struct, but this was too
+     * small of a structure to handle IPV6 addresses (#9053).
+     * This would cause accept() to not accept the connection (with no error),
+     * and a loop would occur continually trying to accept the connection.
+     * The sockaddr_storage can handle both IPV4 and IPV6.
+     */
 
 #ifdef FLB_HAVE_ACCEPT4
-    remote_fd = accept4(server_fd, &sock_addr, &socket_size,
+    remote_fd = accept4(server_fd, (struct sockaddr*)&sock_addr, &socket_size,
                         SOCK_NONBLOCK | SOCK_CLOEXEC);
 #else
-    remote_fd = accept(server_fd, &sock_addr, &socket_size);
+    remote_fd = accept(server_fd, (struct sockaddr*)&sock_addr, &socket_size);
     flb_net_socket_nonblocking(remote_fd);
 #endif
 

@@ -43,6 +43,7 @@ set(UNIT_TESTS_FILES
   processor.c
   uri.c
   msgpack_append_message.c
+  conditionals.c
   endianness
   )
 
@@ -87,6 +88,7 @@ if(FLB_RECORD_ACCESSOR)
   set(UNIT_TESTS_FILES
     ${UNIT_TESTS_FILES}
     record_accessor.c
+    cfl_record_accessor.c
     )
 endif()
 

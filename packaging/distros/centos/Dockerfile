@@ -18,7 +18,7 @@ RUN sed -i -e "s/^mirrorlist=http:\/\/mirrorlist.centos.org/#mirrorlist=http:\/\
     yum -y update && \
     yum install -y rpm-build curl ca-certificates gcc gcc-c++ cmake make bash \
     wget unzip systemd-devel wget flex bison \
-    cyrus-sasl-lib cyrus-sasl-devel openssl openss-libs openssl-devel \
+    cyrus-sasl-lib cyrus-sasl-devel openssl openss-libs openssl-devel libcurl-devel \
     postgresql-libs postgresql-devel postgresql-server postgresql libyaml-devel && \
     yum install -y epel-release && \
     yum install -y cmake3 && \
@@ -38,7 +38,7 @@ RUN sed -i -e "s/^mirrorlist=http:\/\/mirrorlist.centos.org/#mirrorlist=http:\/\
     yum -y update && \
     yum install -y rpm-build curl ca-certificates gcc gcc-c++ cmake make bash \
     wget unzip systemd-devel wget flex bison \
-    cyrus-sasl-lib cyrus-sasl-devel openssl openss-libs openssl-devel \
+    cyrus-sasl-lib cyrus-sasl-devel openssl openss-libs openssl-devel libcurl-devel \
     postgresql-libs postgresql-devel postgresql-server postgresql libyaml-devel && \
     yum install -y epel-release && \
     yum install -y cmake3 && \
@@ -67,7 +67,7 @@ RUN yum -y update && \
     yum install -y rpm-build curl ca-certificates gcc gcc-c++ cmake make bash \
     wget unzip systemd-devel wget flex bison \
     postgresql-libs postgresql-devel postgresql-server postgresql \
-    cyrus-sasl-lib cyrus-sasl-devel openssl openssl-libs openssl-devel \
+    cyrus-sasl-lib cyrus-sasl-devel openssl openssl-libs openssl-devel libcurl-devel \
     libyaml-devel zlib-devel && \
     yum clean all
 
@@ -91,7 +91,7 @@ RUN yum -y update && \
     yum install -y rpm-build curl ca-certificates gcc gcc-c++ cmake make bash \
     wget unzip systemd-devel wget flex bison \
     postgresql-libs postgresql-devel postgresql-server postgresql \
-    cyrus-sasl-lib cyrus-sasl-devel openssl openssl-libs openssl-devel \
+    cyrus-sasl-lib cyrus-sasl-devel openssl openssl-libs openssl-devel libcurl-devel \
     libyaml-devel zlib-devel && \
     yum clean all
 
@@ -110,7 +110,7 @@ RUN dnf -y install 'dnf-command(config-manager)' && dnf -y config-manager --set-
     dnf -y install rpm-build ca-certificates gcc gcc-c++ cmake make bash \
     wget unzip systemd-devel wget flex bison \
     postgresql-libs postgresql-devel postgresql-server postgresql \
-    cyrus-sasl-lib cyrus-sasl-devel openssl openssl-libs openssl-devel \
+    cyrus-sasl-lib cyrus-sasl-devel openssl openssl-libs openssl-devel libcurl-devel \
     libyaml-devel zlib-devel && \
     dnf clean all
 
@@ -128,7 +128,7 @@ RUN dnf -y install 'dnf-command(config-manager)' && dnf -y config-manager --set-
     dnf -y install rpm-build ca-certificates gcc gcc-c++ cmake make bash \
     wget unzip systemd-devel wget flex bison \
     postgresql-libs postgresql-devel postgresql-server postgresql \
-    cyrus-sasl-lib cyrus-sasl-devel openssl openssl-libs openssl-devel  \
+    cyrus-sasl-lib cyrus-sasl-devel openssl openssl-libs openssl-devel libcurl-devel \
     libyaml-devel zlib-devel && \
     dnf clean all
 

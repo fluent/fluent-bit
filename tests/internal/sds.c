@@ -44,7 +44,7 @@ static void test_sds_printf_7143_off_by_1()
     flb_sds_t test;
     flb_sds_t test2;
     int len;
-    
+
     /* 66 char final string, not impacted by bug */
     test = flb_sds_create_size(64);
     TEST_CHECK(test != NULL);
@@ -69,13 +69,20 @@ static void test_sds_printf_7143_off_by_1()
 
 static void test_sds_cat_utf8()
 {
+    int ret;
     flb_sds_t s;
     char *utf8_str = "\xe8\x9f\xb9\xf0\x9f\xa6\x80";
+    char *expected = "\\u87f9\\ud83e\\udd80";
 
     s = flb_sds_create("");
     flb_sds_cat_utf8(&s, utf8_str, strlen(utf8_str));
 
-    TEST_CHECK(strcmp(s, "\\u87f9\\u1f980") == 0);
+    ret = strcmp(s, expected);
+    TEST_CHECK(ret == 0);
+    if (ret != 0) {
+        printf("Expected: %s\n", expected);
+        printf("Received: %s\n", s);
+    }
     flb_sds_destroy(s);
 }
 

@@ -225,8 +225,12 @@ static inline int header_lookup(struct mk_http_parser *p, char *buffer)
             header->val.data = buffer + p->header_val;
             header->val.len  = p->end - p->header_val;
             p->header_count++;
-            mk_list_add(&header->_head, &p->header_list);
 
+            if (!mk_list_entry_is_orphan(&header->_head)) {
+                mk_list_del(&header->_head);
+            }
+
+            mk_list_add(&header->_head, &p->header_list);
 
             if (i == MK_HEADER_HOST) {
                 /* Handle a possible port number in the Host header */

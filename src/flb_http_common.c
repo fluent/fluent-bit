@@ -115,11 +115,15 @@ int flb_http_request_init(struct flb_http_request *request)
         return -1;
     }
 
+    flb_hash_table_set_case_sensitivity(request->headers, FLB_FALSE);
+
     request->trailer_headers = flb_hash_table_create(FLB_HASH_TABLE_EVICT_NONE, 16, -1);
 
     if (request->trailer_headers == NULL) {
         return -1;
     }
+
+    flb_hash_table_set_case_sensitivity(request->trailer_headers, FLB_FALSE);
 
     return 0;
 }
@@ -150,6 +154,10 @@ struct flb_http_request *flb_http_request_create()
 
 void flb_http_request_destroy(struct flb_http_request *request)
 {
+    if (request->authority != NULL) {
+         cfl_sds_destroy(request->authority);
+    }
+
     if (request->path != NULL) {
          cfl_sds_destroy(request->path);
     }
@@ -263,7 +271,7 @@ int flb_http_request_set_header(struct flb_http_request *request,
     }
 
     result = flb_hash_table_add(request->headers,
-                                (const char *) lowercase_name,
+                                (const char *) name,
                                 name_length,
                                 (void *) value,
                                 value_length);
@@ -280,20 +288,10 @@ int flb_http_request_set_header(struct flb_http_request *request,
 int flb_http_request_unset_header(struct flb_http_request *request,
                                   char *name)
 {
-    char  *lowercase_name;
-    int    result;
-
-    lowercase_name = flb_http_server_convert_string_to_lowercase(
-                        name, strlen(name));
-
-    if (lowercase_name == NULL) {
-        return -1;
-    }
+    int result;
 
     result = flb_hash_table_del(request->headers,
-                                (const char *) lowercase_name);
-
-    flb_free(lowercase_name);
+                                (const char *) name);
 
     if (result == -1) {
         return -1;
@@ -372,12 +370,8 @@ int flb_http_request_compress_body(
                  output_size);
 
         flb_http_request_set_header(request,
-                                    "content-encoding", 0,
+                                    "Content-Encoding", 0,
                                     content_encoding_header_value, 0);
-
-        flb_http_request_set_header(request,
-                                    "content-length", 0,
-                                    new_content_length, 0);
 
         request->content_length = output_size;
     }
@@ -403,7 +397,7 @@ int flb_http_request_uncompress_body(
 
     content_encoding_header_value = flb_http_request_get_header(
                                         request,
-                                        "content-encoding");
+                                        "Content-Encoding");
 
     if (content_encoding_header_value == NULL) {
         return 0;
@@ -458,9 +452,9 @@ int flb_http_request_uncompress_body(
                  "%zu",
                  output_size);
 
-        flb_http_request_unset_header(request, "content-encoding");
+        flb_http_request_unset_header(request, "Content-Encoding");
         flb_http_request_set_header(request,
-                                    "content-length", 0,
+                                    "Content-Length", 0,
                                     new_content_length, 0);
 
         request->content_length = output_size;
@@ -518,6 +512,15 @@ int flb_http_request_set_url(struct flb_http_request *request,
     if (local_url == NULL) {
         return -1;
     }
+
+    start_of_authorization = NULL;
+    start_of_query_string = NULL;
+    start_of_authority = NULL;
+    start_of_username = NULL;
+    start_of_password = NULL;
+    start_of_port = NULL;
+    start_of_host = NULL;
+    start_of_path = NULL;
 
     start_of_authority = strstr(local_url, "://");
 
@@ -645,6 +648,12 @@ int flb_http_request_set_url(struct flb_http_request *request,
 int flb_http_request_set_uri(struct flb_http_request *request,
                              char *uri)
 {
+    if (request->path != NULL) {
+        cfl_sds_destroy(request->path);
+
+        request->path = NULL;
+    }
+
     request->path = cfl_sds_create(uri);
 
     if (request->path == NULL) {
@@ -657,6 +666,12 @@ int flb_http_request_set_uri(struct flb_http_request *request,
 int flb_http_request_set_query_string(struct flb_http_request *request,
                                       char *query_string)
 {
+    if (request->query_string != NULL) {
+        cfl_sds_destroy(request->query_string);
+
+        request->query_string = NULL;
+    }
+
     request->query_string = cfl_sds_create(query_string);
 
     if (request->query_string == NULL) {
@@ -669,6 +684,12 @@ int flb_http_request_set_query_string(struct flb_http_request *request,
 int flb_http_request_set_content_type(struct flb_http_request *request,
                                       char *content_type)
 {
+    if (request->content_type != NULL) {
+        cfl_sds_destroy(request->content_type);
+
+        request->content_type = NULL;
+    }
+
     request->content_type = cfl_sds_create(content_type);
 
     if (request->content_type == NULL) {
@@ -681,6 +702,12 @@ int flb_http_request_set_content_type(struct flb_http_request *request,
 int flb_http_request_set_user_agent(struct flb_http_request *request,
                                     char *user_agent)
 {
+    if (request->user_agent != NULL) {
+        cfl_sds_destroy(request->user_agent);
+
+        request->user_agent = NULL;
+    }
+
     request->user_agent = cfl_sds_create(user_agent);
 
     if (request->user_agent == NULL) {
@@ -702,7 +729,7 @@ int flb_http_request_set_content_encoding(struct flb_http_request *request,
                                           char *encoding)
 {
     return flb_http_request_set_header(request,
-                                       "content-encoding", 0,
+                                       "Content-Encoding", 0,
                                        encoding, 0);
 
 }
@@ -803,6 +830,8 @@ int flb_http_response_init(struct flb_http_response *response)
         return -1;
     }
 
+    flb_hash_table_set_case_sensitivity(response->headers, FLB_FALSE);
+
     response->trailer_headers = flb_hash_table_create(FLB_HASH_TABLE_EVICT_NONE, 16, -1);
 
     if (response->trailer_headers == NULL) {
@@ -810,6 +839,8 @@ int flb_http_response_init(struct flb_http_response *response)
 
         return -1;
     }
+
+    flb_hash_table_set_case_sensitivity(response->trailer_headers, FLB_FALSE);
 
     return 0;
 }
@@ -1284,10 +1315,10 @@ int flb_http_response_uncompress_body(
                  "%zu",
                  output_size);
 
-        flb_http_response_unset_header(response, "content-encoding");
+        flb_http_response_unset_header(response, "Content-Encoding");
         flb_http_response_set_header(response,
-                                    "content-length", 0,
-                                    new_content_length, 0);
+                                     "Content-Length", 0,
+                                     new_content_length, 0);
 
         response->content_length = output_size;
     }

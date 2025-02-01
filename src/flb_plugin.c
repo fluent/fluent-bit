@@ -422,37 +422,41 @@ int flb_plugin_load_config_file(const char *file, struct flb_config *config)
         return -1;
     }
 
-    /*
-     * pass to the config_format loader also in case some Yaml have been included in
-     * the service section through the option 'plugins_file'
-     */
-    ret = flb_plugin_load_config_format(cf, config);
-    if (ret == -1) {
-        flb_cf_destroy(cf);
-        return -1;
-    }
-
-    /* (classic mode) read all 'plugins' sections */
-    mk_list_foreach(head, &cf->sections) {
-        section = mk_list_entry(head, struct flb_cf_section, _head);
-        if (strcasecmp(section->name, "plugins") != 0) {
-            continue;
-        }
-
-        cfl_list_foreach(head_e, &section->properties->list) {
-            entry = cfl_list_entry(head_e, struct cfl_kvpair, _head);
-            if (strcasecmp(entry->key, "path") != 0) {
+    if (cf->format == FLB_CF_FLUENTBIT) {
+        /* (classic mode) read all 'plugins' sections */
+        mk_list_foreach(head, &cf->sections) {
+            section = mk_list_entry(head, struct flb_cf_section, _head);
+            if (strcasecmp(section->name, "plugins") != 0) {
                 continue;
             }
 
-            /* Load plugin with router function */
-            ret = flb_plugin_load_router(entry->val->data.as_string, config);
-            if (ret == -1) {
-                flb_cf_destroy(cf);
-                return -1;
+            cfl_list_foreach(head_e, &section->properties->list) {
+                entry = cfl_list_entry(head_e, struct cfl_kvpair, _head);
+                if (strcasecmp(entry->key, "path") != 0) {
+                    continue;
+                }
+
+                /* Load plugin with router function */
+                ret = flb_plugin_load_router(entry->val->data.as_string, config);
+                if (ret == -1) {
+                    flb_cf_destroy(cf);
+                    return -1;
+                }
             }
         }
     }
+#ifdef FLB_HAVE_LIBYAML
+    else if (cf->format == FLB_CF_YAML) {
+        /*
+         * pass to the config_format loader also in case some Yaml have been included in
+         * the service section through the option 'plugins_file'
+         */
+        ret = flb_plugin_load_config_format(cf, config);
+        if (ret == -1) {
+            return -1;
+        }
+    }
+#endif
 
     flb_cf_destroy(cf);
     return 0;

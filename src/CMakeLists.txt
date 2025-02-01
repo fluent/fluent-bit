@@ -12,6 +12,7 @@ set(src
   flb_env.c
   flb_file.c
   flb_uri.c
+  flb_utf8.c
   flb_hash_table.c
   flb_help.c
   flb_pack.c
@@ -27,6 +28,7 @@ set(src
   flb_input_log.c
   flb_input_metric.c
   flb_input_trace.c
+  flb_input_profiles.c
   flb_input_blob.c
   flb_input_thread.c
   flb_filter.c
@@ -85,6 +87,9 @@ set(src
   flb_msgpack_append_message.c
   flb_notification.c
   flb_lock.c
+  flb_cfl_ra_key.c
+  flb_cfl_record_accessor.c
+  flb_conditionals.c
   )
 
 # Config format
@@ -502,6 +507,11 @@ if(FLB_BINARY)
 
   if(FLB_STATIC_CONF)
     add_dependencies(fluent-bit-bin flb-static-conf)
+  endif()
+
+  # in_ebpf
+  if(FLB_IN_EBPF)
+    add_dependencies(fluent-bit-bin flb-ebpf-generate_skeletons)
   endif()
 
   if(FLB_REGEX)

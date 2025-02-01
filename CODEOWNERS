@@ -63,7 +63,7 @@
 /plugins/out_datadog     @nokute78 @edsiper
 /plugins/out_es          @pettitwesley @edsiper
 /plugins/out_pgsql       @sxd
-/plugins/out_stackdriver @braydonk @igorpeshansky @qingling128
+/plugins/out_stackdriver @braydonk @jefferbrecht @jeffluoo
 
 # AWS Plugins
 /plugins/out_s3               @pettitwesley
@@ -85,12 +85,14 @@
 
 # Google test code
 # --------------
-/tests/runtime/out_stackdriver.c @braydonk @igorpeshansky @qingling128
-/tests/runtime/data/stackdriver  @braydonk @igorpeshansky @qingling128
+/tests/runtime/out_stackdriver.c @braydonk @jefferbrecht @jeffluoo
+/tests/runtime/data/stackdriver  @braydonk @jefferbrecht @jeffluoo
 
 # Devcontainer
 /.devcontainer                  @patrick-stephens @niedbalski @edsiper
 
-# Calytia Fleet
-/plugins/custom_calyptia/       @pwhelan
-/plugins/in_calyptia_fleet/     @pwhelan
+# Calyptia Fleet
+/include/fluent-bit/calyptia/       @pwhelan @patrick-stephens @niedbalski
+/plugins/custom_calyptia/       @pwhelan @patrick-stephens @niedbalski
+/plugins/custom_calyptia/       @pwhelan @patrick-stephens @niedbalski
+/plugins/out_calyptia/     @pwhelan @patrick-stephens @niedbalski
