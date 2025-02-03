@@ -434,7 +434,7 @@ static flb_sds_t url_params_format(char *params)
                 tmp = flb_sds_printf(&buf, "%s=%s&",
                                      kv->key, kv->val);
             }
-        } 
+        }
         else {
             if (kv->val == NULL) {
                 tmp = flb_sds_printf(&buf, "%s=",
@@ -621,6 +621,9 @@ static flb_sds_t flb_signv4_canonical_request(struct flb_http_client *c,
         break;
     case FLB_HTTP_HEAD:
         tmp = flb_sds_cat(cr, "HEAD\n", 5);
+        break;
+    case FLB_HTTP_DELETE:
+        tmp = flb_sds_cat(cr, "DELETE\n", 7);
         break;
     };
 
