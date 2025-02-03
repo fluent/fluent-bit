@@ -810,6 +810,201 @@ char* strtok_concurrent(
 #endif
 }
 
+/* Constructs S3 object key as per the blob format. */
+flb_sds_t flb_get_s3_blob_key(const char *format,
+                              const char *tag,
+                              char *tag_delimiter,
+                              const char *blob_path)
+{
+    int i = 0;
+    int ret = 0;
+    char *tag_token = NULL;
+    char *random_alphanumeric;
+    /* concurrent safe strtok_r requires a tracking ptr */
+    char *strtok_saveptr;
+    flb_sds_t tmp = NULL;
+    flb_sds_t buf = NULL;
+    flb_sds_t s3_key = NULL;
+    flb_sds_t tmp_key = NULL;
+    flb_sds_t tmp_tag = NULL;
+    flb_sds_t sds_result = NULL;
+    char *valid_blob_path = NULL;
+
+    if (strlen(format) > S3_KEY_SIZE){
+        flb_warn("[s3_key] Object key length is longer than the 1024 character limit.");
+    }
+
+    tmp_tag = flb_sds_create_len(tag, strlen(tag));
+    if(!tmp_tag){
+        goto error;
+    }
+
+    s3_key = flb_sds_create_len(format, strlen(format));
+    if (!s3_key) {
+        goto error;
+    }
+
+    /* Check if delimiter(s) specifed exists in the tag. */
+    for (i = 0; i < strlen(tag_delimiter); i++){
+        if (strchr(tag, tag_delimiter[i])){
+            ret = 1;
+            break;
+        }
+    }
+
+    tmp = flb_sds_create_len(TAG_PART_DESCRIPTOR, 5);
+    if (!tmp) {
+        goto error;
+    }
+    if (strstr(s3_key, tmp)){
+        if(ret == 0){
+            flb_warn("[s3_key] Invalid Tag delimiter: does not exist in tag. "
+                    "tag=%s, format=%s", tag, format);
+        }
+    }
+
+    flb_sds_destroy(tmp);
+    tmp = NULL;
+
+    /* Split the string on the delimiters */
+    tag_token = strtok_concurrent(tmp_tag, tag_delimiter, &strtok_saveptr);
+
+    /* Find all occurences of $TAG[*] and
+     * replaces it with the right token from tag.
+     */
+    i = 0;
+    while(tag_token != NULL && i < MAX_TAG_PARTS) {
+        buf = flb_sds_create_size(10);
+        if (!buf) {
+            goto error;
+        }
+        tmp = flb_sds_printf(&buf, TAG_PART_DESCRIPTOR, i);
+        if (!tmp) {
+            goto error;
+        }
+
+        tmp_key = replace_uri_tokens(s3_key, tmp, tag_token);
+        if (!tmp_key) {
+            goto error;
+        }
+
+        if(strlen(tmp_key) > S3_KEY_SIZE){
+            flb_warn("[s3_key] Object key length is longer than the 1024 character limit.");
+        }
+
+        if (buf != tmp) {
+            flb_sds_destroy(buf);
+        }
+        flb_sds_destroy(tmp);
+        tmp = NULL;
+        buf = NULL;
+        flb_sds_destroy(s3_key);
+        s3_key = tmp_key;
+        tmp_key = NULL;
+
+        tag_token = strtok_concurrent(NULL, tag_delimiter, &strtok_saveptr);
+        i++;
+    }
+
+    tmp = flb_sds_create_len(TAG_PART_DESCRIPTOR, 5);
+    if (!tmp) {
+        goto error;
+    }
+
+    /* A match against "$TAG[" indicates an invalid or out of bounds tag part. */
+    if (strstr(s3_key, tmp)){
+        flb_warn("[s3_key] Invalid / Out of bounds tag part: At most 10 tag parts "
+                 "($TAG[0] - $TAG[9]) can be processed. tag=%s, format=%s, delimiters=%s",
+                 tag, format, tag_delimiter);
+    }
+
+    /* Find all occurences of $TAG and replace with the entire tag. */
+    tmp_key = replace_uri_tokens(s3_key, TAG_DESCRIPTOR, tag);
+    if (!tmp_key) {
+        goto error;
+    }
+
+    if(strlen(tmp_key) > S3_KEY_SIZE){
+        flb_warn("[s3_key] Object key length is longer than the 1024 character limit.");
+    }
+
+    flb_sds_destroy(s3_key);
+    s3_key = tmp_key;
+    tmp_key = NULL;
+
+    flb_sds_len_set(s3_key, strlen(s3_key));
+
+    valid_blob_path = (char *) blob_path;
+
+    while (*valid_blob_path == '.' ||
+           *valid_blob_path == '/') {
+            valid_blob_path++;
+    }
+
+    /* Append the blob path. */
+    sds_result = flb_sds_cat(s3_key, valid_blob_path, strlen(valid_blob_path));
+
+    if (!sds_result) {
+        goto error;
+    }
+
+    s3_key = sds_result;
+
+    if(strlen(s3_key) > S3_KEY_SIZE){
+        flb_warn("[s3_key] Object key length is longer than the 1024 character limit.");
+    }
+
+    /* Find all occurences of $UUID and replace with a random string. */
+    random_alphanumeric = flb_sts_session_name();
+    if (!random_alphanumeric) {
+        goto error;
+    }
+    /* only use 8 chars of the random string */
+    random_alphanumeric[8] = '\0';
+    tmp_key = replace_uri_tokens(s3_key, RANDOM_STRING, random_alphanumeric);
+    if (!tmp_key) {
+        flb_free(random_alphanumeric);
+        goto error;
+    }
+
+    if(strlen(tmp_key) > S3_KEY_SIZE){
+        flb_warn("[s3_key] Object key length is longer than the 1024 character limit.");
+    }
+
+    flb_sds_destroy(s3_key);
+    s3_key = tmp_key;
+    tmp_key = NULL;
+
+    flb_free(random_alphanumeric);
+
+    flb_sds_destroy(tmp);
+    tmp = NULL;
+
+    flb_sds_destroy(tmp_tag);
+    tmp_tag = NULL;
+
+    return s3_key;
+
+    error:
+        flb_errno();
+        if (tmp_tag){
+            flb_sds_destroy(tmp_tag);
+        }
+        if (s3_key){
+            flb_sds_destroy(s3_key);
+        }
+        if (buf && buf != tmp){
+            flb_sds_destroy(buf);
+        }
+        if (tmp){
+            flb_sds_destroy(tmp);
+        }
+        if (tmp_key){
+            flb_sds_destroy(tmp_key);
+        }
+        return NULL;
+}
+
 /* Constructs S3 object key as per the format. */
 flb_sds_t flb_get_s3_key(const char *format, time_t time, const char *tag,
                          char *tag_delimiter, uint64_t seq_index)
