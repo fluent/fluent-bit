@@ -25,6 +25,7 @@
 #include <fluent-bit/flb_info.h>
 #include <fluent-bit/flb_aws_credentials.h>
 #include <fluent-bit/flb_aws_util.h>
+#include <fluent-bit/flb_blob_db.h>
 
 /* Upload data to S3 in 5MB chunks */
 #define MIN_CHUNKED_UPLOAD_SIZE 5242880
@@ -43,7 +44,7 @@
 #define MAX_FILE_SIZE_STR     "50,000,000,000"
 
 /* Allowed max file size 1 GB for publishing to S3 */
-#define MAX_FILE_SIZE_PUT_OBJECT        1000000000 
+#define MAX_FILE_SIZE_PUT_OBJECT        1000000000
 
 #define DEFAULT_UPLOAD_TIMEOUT 3600
 
@@ -123,6 +124,18 @@ struct flb_s3 {
     int insecure;
     size_t store_dir_limit_size;
 
+    struct flb_blob_db blob_db;
+    flb_sds_t blob_database_file;
+    size_t part_size;
+    time_t upload_parts_timeout;
+    time_t upload_parts_freshness_threshold;
+    int file_delivery_attempt_limit;
+    int part_delivery_attempt_limit;
+    flb_sds_t configuration_endpoint_url;
+    flb_sds_t configuration_endpoint_username;
+    flb_sds_t configuration_endpoint_password;
+    flb_sds_t configuration_endpoint_bearer_token;
+
     /* track the total amount of buffered data */
     size_t current_buffer_size;
 
@@ -186,6 +199,9 @@ int create_multipart_upload(struct flb_s3 *ctx,
 
 int complete_multipart_upload(struct flb_s3 *ctx,
                               struct multipart_upload *m_upload);
+
+int abort_multipart_upload(struct flb_s3 *ctx,
+                           struct multipart_upload *m_upload);
 
 void multipart_read_uploads_from_fs(struct flb_s3 *ctx);
 
