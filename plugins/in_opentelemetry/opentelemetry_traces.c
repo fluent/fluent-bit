@@ -20,7 +20,9 @@
 #include <fluent-bit/flb_input_plugin.h>
 #include <fluent-bit/flb_sds.h>
 #include <fluent-bit/flb_pack.h>
+
 #include <ctraces/ctraces.h>
+#include <ctraces/ctr_encode_text.h>
 
 #include "opentelemetry.h"
 #include "opentelemetry_traces.h"
@@ -47,8 +49,8 @@ int opentelemetry_traces_process_protobuf(struct flb_opentelemetry *ctx,
     return result;
 }
 
-static int process_resource_set_attribute(struct ctrace *ctr, struct ctrace_attributes *attr,
-                                          msgpack_object *key, msgpack_object *value, int type)
+static int process_attribute(struct ctrace_attributes *attr,
+                             msgpack_object *key, msgpack_object *value, int type)
 {
     int ret;
     char *key_str;
@@ -135,14 +137,12 @@ static int process_resource_set_attribute(struct ctrace *ctr, struct ctrace_attr
     return ret;
 }
 
-static int process_resource_unwrap_attribute(struct ctrace *ctr, msgpack_object *attr,
+static int process_resource_unwrap_attribute(msgpack_object *attr,
                                              msgpack_object *out_key,
                                              msgpack_object *out_value, int *out_value_type)
 {
-    int i;
     int ret;
     int type;
-    msgpack_object obj;
     msgpack_object key;
     msgpack_object val;
     msgpack_object *real_value;
@@ -180,53 +180,311 @@ static int process_resource_unwrap_attribute(struct ctrace *ctr, msgpack_object 
     return 0;
 }
 
-static int process_resource_attributes(struct flb_opentelemetry *ctx,
-                                       struct ctrace *ctr,
-                                       struct ctrace_attributes *attr,
-                                       msgpack_object *attributes)
-
+/*
+ * Convert a list of attributes in msgpack format to a cfl attributes by
+ * unwrapping JSON encoded value types.
+ */
+static struct ctrace_attributes *convert_attributes(struct flb_opentelemetry *ctx,
+                                                    msgpack_object *attributes,
+                                                    char *log_context)
 {
     int i;
     int ret;
-    int type;
     int value_type;
     msgpack_object key;
     msgpack_object value;
+    struct ctrace_attributes *attr;
+
+    attr = ctr_attributes_create();
+    if (attr == NULL) {
+        return NULL;
+    }
 
     for (i = 0; i < attributes->via.array.size; i++) {
-        ret = process_resource_unwrap_attribute(ctr, &attributes->via.array.ptr[i],
+        ret = process_resource_unwrap_attribute(&attributes->via.array.ptr[i],
                                                 &key, &value, &value_type);
         if (ret == -1) {
-            flb_plg_warn(ctx->ins, "found invalid trace resource attribute, skipping");
+            flb_plg_warn(ctx->ins, "found invalid %s attribute, skipping",
+                         log_context);
             continue;
         }
 
         /* set attribute */
-        ret = process_resource_set_attribute(ctr, attr, &key, &value, value_type);
+        ret = process_attribute(attr, &key, &value, value_type);
         if (ret == -1) {
-            flb_plg_warn(ctx->ins, "failed to set trace resource attribute, skipping");
+            flb_plg_warn(ctx->ins, "failed to set %s attribute, skipping",
+                         log_context);
             continue;
         }
     }
 
+    return attr;
+}
 
-    ctr_resource_set_attributes(ctr, attr);
-    exit(0);
+static int process_resource_attributes(struct flb_opentelemetry *ctx,
+                                       struct ctrace *ctr,
+                                       struct ctrace_resource_span *resource_span,
+                                       msgpack_object *attributes)
+
+{
+    struct ctrace_resource *resource;
+    struct ctrace_attributes *attr;
+
+    attr = convert_attributes(ctx, attributes, "trace resource");
+    if (!attr) {
+        return -1;
+    }
+
+    resource = ctr_resource_span_get_resource(resource_span);
+    ctr_resource_set_attributes(resource, attr);
+
     return 0;
 }
 
-#include <ctraces/ctr_encode_text.h>
+static int process_scope_attributes(struct flb_opentelemetry *ctx,
+                                    struct ctrace *ctr,
+                                    struct ctrace_scope_span *scope_span,
+                                    msgpack_object *name,
+                                    msgpack_object *version,
+                                    msgpack_object *attributes,
+                                    msgpack_object *dropped_attributes_count)
+
+{
+    int i;
+    int ret;
+    int value_type;
+    int dropped = 0;
+    msgpack_object key;
+    msgpack_object value;
+    cfl_sds_t name_str = NULL;
+    cfl_sds_t version_str = NULL;
+    struct ctrace_resource *resource;
+    struct ctrace_attributes *attr = NULL;
+    struct ctrace_instrumentation_scope *ins_scope;
+
+    if (attributes) {
+        attr = convert_attributes(ctx, attributes, "trace scope");
+        if (!attr) {
+            return -1;
+        }
+    }
+
+    if (name) {
+        name_str = cfl_sds_create_len(name->via.str.ptr, name->via.str.size);
+    }
+    if (version) {
+        version_str = cfl_sds_create_len(version->via.str.ptr, version->via.str.size);
+    }
+
+    if (dropped_attributes_count) {
+        dropped = dropped_attributes_count->via.u64;
+    }
+
+    ins_scope = ctr_instrumentation_scope_create(name_str, version_str, dropped, attr);
+    if (!ins_scope) {
+        if (name_str) {
+            cfl_sds_destroy(name_str);
+        }
+        if (version_str) {
+            cfl_sds_destroy(version_str);
+        }
+        if (attr) {
+            ctr_attributes_destroy(attr);
+        }
+        return -1;
+    }
+
+    ctr_scope_span_set_instrumentation_scope(scope_span, ins_scope);
+    return 0;
+}
+
+static int process_spans(struct flb_opentelemetry *ctx,
+                         struct ctrace *ctr,
+                         struct ctrace_scope_span *scope_span,
+                         msgpack_object *spans)
+{
+    int i;
+    int ret;
+    cfl_sds_t name_str = NULL;
+    msgpack_object span;
+    msgpack_object *name = NULL;
+    msgpack_object *attr = NULL;
+    msgpack_object *status = NULL;
+    msgpack_object *start_time = NULL;
+    msgpack_object *end_time = NULL;
+    struct ctrace_span *ctr_span = NULL;
+    struct ctrace_attributes *ctr_attr = NULL;
+
+    for (i = 0; i < spans->via.array.size; i++) {
+        span = spans->via.array.ptr[i];
+        if (span.type != MSGPACK_OBJECT_MAP) {
+            flb_plg_error(ctx->ins, "unexpected span type");
+            return -1;
+        }
+
+        /* name */
+        ret = find_map_entry_by_key(&span.via.map, "name", 0, FLB_TRUE);
+        if (ret >= 0 && span.via.map.ptr[ret].val.type == MSGPACK_OBJECT_STR) {
+            name = &span.via.map.ptr[ret].val;
+            name_str = cfl_sds_create_len(name->via.str.ptr, name->via.str.size);
+        }
+
+        /* create the span */
+        ctr_span = ctr_span_create(ctr, scope_span, name_str, NULL);
+        if (ctr_span == NULL) {
+            return -1;
+        }
+
+        /* traceId */
+        ret = find_map_entry_by_key(&span.via.map, "traceId", 0, FLB_TRUE);
+        if (ret >= 0 && span.via.map.ptr[ret].val.type == MSGPACK_OBJECT_STR) {
+            ctr_span_set_trace_id(ctr_span,
+                                  span.via.map.ptr[ret].val.via.str.ptr,
+                                  span.via.map.ptr[ret].val.via.str.size);
+        }
+
+        /* spanId */
+        ret = find_map_entry_by_key(&span.via.map, "spanId", 0, FLB_TRUE);
+        if (ret >= 0 && span.via.map.ptr[ret].val.type == MSGPACK_OBJECT_STR) {
+            ctr_span_set_span_id(ctr_span,
+                                 span.via.map.ptr[ret].val.via.str.ptr,
+                                 span.via.map.ptr[ret].val.via.str.size);
+        }
+
+        /* parentSpanId */
+        ret = find_map_entry_by_key(&span.via.map, "parentSpanId", 0, FLB_TRUE);
+        if (ret >= 0 && span.via.map.ptr[ret].val.type == MSGPACK_OBJECT_STR) {
+            ctr_span_set_parent_span_id(ctr_span,
+                                        span.via.map.ptr[ret].val.via.str.ptr,
+                                        span.via.map.ptr[ret].val.via.str.size);
+        }
+
+        /* start_time_unix_nano */
+        ret = find_map_entry_by_key(&span.via.map, "startTimeUnixNano", 0, FLB_TRUE);
+        if (ret >= 0 && span.via.map.ptr[ret].val.type == MSGPACK_OBJECT_POSITIVE_INTEGER) {
+            start_time = &span.via.map.ptr[ret].val;
+            ctr_span_start_ts(ctr, ctr_span, start_time->via.u64);
+        }
+
+        /* end_time_unix_nano */
+        ret = find_map_entry_by_key(&span.via.map, "endTimeUnixNano", 0, FLB_TRUE);
+        if (ret >= 0 && span.via.map.ptr[ret].val.type == MSGPACK_OBJECT_POSITIVE_INTEGER) {
+            end_time = &span.via.map.ptr[ret].val;
+            ctr_span_end_ts(ctr, ctr_span, end_time->via.u64);
+        }
+
+        /* kind */
+        ret = find_map_entry_by_key(&span.via.map, "kind", 0, FLB_TRUE);
+        if (ret >= 0 && span.via.map.ptr[ret].val.type == MSGPACK_OBJECT_POSITIVE_INTEGER) {
+            ctr_span_kind_set(ctr_span, span.via.map.ptr[ret].val.via.u64);
+        }
+
+        /* attributes */
+        ret = find_map_entry_by_key(&span.via.map, "attributes", 0, FLB_TRUE);
+        if (ret >= 0 && span.via.map.ptr[ret].val.type == MSGPACK_OBJECT_ARRAY) {
+            attr = &span.via.map.ptr[ret].val;
+
+            ctr_attr = convert_attributes(ctx, attr, "span");
+            ctr_span->attr = ctr_attr;
+        }
+    }
+
+}
+
+
+static int process_scope_span(struct flb_opentelemetry *ctx,
+                              struct ctrace *ctr,
+                              struct ctrace_resource_span *resource_span,
+                              msgpack_object *scope_spans)
+{
+    int ret;
+    msgpack_object scope;
+    msgpack_object *name;
+    msgpack_object *attr;
+    msgpack_object *version;
+    msgpack_object *dropped_attr;
+    msgpack_object *spans;
+    struct ctrace_scope_span *scope_span;
+    struct ctrace_attributes *ctr_attr;
+
+    /* get 'scope' */
+    ret = find_map_entry_by_key(&scope_spans->via.map, "scope", 0, FLB_TRUE);
+    if (ret >= 0) {
+        scope = scope_spans->via.map.ptr[ret].val;
+        if (scope.type != MSGPACK_OBJECT_MAP) {
+            flb_plg_error(ctx->ins, "unexpected scope type in scope span");
+            return -1;
+        }
+
+        /* create the scope_span */
+        scope_span = ctr_scope_span_create(resource_span);
+        if (scope_span == NULL) {
+            return -1;
+        }
+
+        /* instrumentation scope: name */
+        name = NULL;
+        ret = find_map_entry_by_key(&scope.via.map, "name", 0, FLB_TRUE);
+        if (ret >= 0 && scope.via.map.ptr[ret].val.type == MSGPACK_OBJECT_STR) {
+            name = &scope.via.map.ptr[ret].val;
+        }
+
+        /* instrumentation scope: version */
+        version = NULL;
+        ret = find_map_entry_by_key(&scope.via.map, "version", 0, FLB_TRUE);
+        if (ret >= 0 && scope.via.map.ptr[ret].val.type == MSGPACK_OBJECT_STR) {
+            version = &scope.via.map.ptr[ret].val;
+        }
+
+        /* instrumentation scope: attributes */
+        attr = NULL;
+        ret = find_map_entry_by_key(&scope.via.map, "attributes", 0, FLB_TRUE);
+        if (ret >= 0 && scope.via.map.ptr[ret].val.type == MSGPACK_OBJECT_ARRAY) {
+            attr = &scope.via.map.ptr[ret].val;
+        }
+
+        /* instrumentation scope: dropped_attributes_count */
+        dropped_attr = NULL;
+        ret = find_map_entry_by_key(&scope.via.map, "dropped_attributes_count", 0, FLB_TRUE);
+        if (ret >= 0 && scope.via.map.ptr[ret].val.type == MSGPACK_OBJECT_POSITIVE_INTEGER) {
+            dropped_attr = &scope.via.map.ptr[ret].val;
+        }
+
+        ret = process_scope_attributes(ctx,
+                                       ctr,
+                                       scope_span,
+                                       name, version, attr, dropped_attr);
+        if (ret == -1) {
+            flb_plg_warn(ctx->ins, "failed to process scope attributes");
+        }
+    }
+
+    /* process the scope spans[] */
+    ret = find_map_entry_by_key(&scope_spans->via.map, "spans", 0, FLB_TRUE);
+    if (ret >= 0 && scope_spans->via.map.ptr[ret].val.type == MSGPACK_OBJECT_ARRAY) {
+        spans = &scope_spans->via.map.ptr[ret].val;
+        ret = process_spans(ctx, ctr, scope_span, spans);
+        if (ret == -1) {
+            flb_plg_warn(ctx->ins, "failed to process spans");
+        }
+    }
+
+    return 0;
+}
 
 static int process_resource_span(struct flb_opentelemetry *ctx,
                                  msgpack_object *resource_spans)
 {
     int i;
     int ret;
-    int type;
+    cfl_sds_t url;
     struct ctrace *ctr;
-    msgpack_object obj;
+    struct ctrace_resource_span *resource_span;
     msgpack_object resource;
     msgpack_object attr;
+    msgpack_object scope_spans;
+    msgpack_object schema_url;
+
     struct ctrace_attributes *ctr_attr;
 
     if (resource_spans->type != MSGPACK_OBJECT_MAP) {
@@ -252,32 +510,62 @@ static int process_resource_span(struct flb_opentelemetry *ctx,
         return -1;
     }
 
+    resource_span = ctr_resource_span_create(ctr);
+    if (resource_span == NULL) {
+        ctr_destroy(ctr);
+        return -1;
+    }
+
     /* Get resource attributes */
     ret = find_map_entry_by_key(&resource.via.map, "attributes", 0, FLB_TRUE);
     if (ret >= 0) {
         attr = resource.via.map.ptr[ret].val;
         if (attr.type == MSGPACK_OBJECT_ARRAY) {
-            /* initialize attributes context */
-            ctr_attr = ctr_attributes_create();
-            if (ctr_attr == NULL) {
-                ctr_destroy(ctr);
-                return -1;
-            }
-
             /* iterate and register attributes */
-            ret = process_resource_attributes(ctx, ctr, ctr_attr, &attr);
-            // for (i = 0; i < attr.via.array.size; i++) {
-            //     ret = process_resource_unwrap_attribute(ctr, &attr.via.array.ptr[i], &obj, &type);
-            //     if (ret == -1) {
-            //         flb_plg_warn(ctx->ins, "found invalid trace resource attribute, skipping");
-            //         continue;
-            //     }
+            ret = process_resource_attributes(ctx,
+                                              ctr,
+                                              resource_span,
+                                              &attr);
+            if (ret == -1) {
+                flb_plg_warn(ctx->ins, "failed to process resource attributes");
+            }
+        }
+    }
 
-            //     /* set attribute */
-            //     ret = process_resource_set_attribute(ctr, ctr_attr, &obj, &obj, type);
+    /* schema_url */
+    ret = find_map_entry_by_key(&resource.via.map, "schema_url", 0, FLB_TRUE);
+    if (ret >= 0) {
+        schema_url = resource.via.map.ptr[ret].val;
+        if (schema_url.type == MSGPACK_OBJECT_STR) {
+            url = cfl_sds_create_len(schema_url.via.str.ptr, schema_url.via.str.size);
+            if (url) {
+                ctr_resource_span_set_schema_url(resource_span, url);
+            }
+        }
+    }
 
+    /* scopeSpans */
+    ret = find_map_entry_by_key(&resource_spans->via.map, "scopeSpans", 0, FLB_TRUE);
+    if (ret == -1) {
+        flb_plg_error(ctx->ins, "scopeSpans missing");
+        ctr_destroy(ctr);
+        return -1;
+    }
+    scope_spans = resource_spans->via.map.ptr[ret].val;
 
-            // }
+    if (scope_spans.type != MSGPACK_OBJECT_ARRAY) {
+        flb_plg_error(ctx->ins, "unexpected scopeSpans type");
+        ctr_destroy(ctr);
+        return -1;
+    }
+
+    for (i = 0; i < scope_spans.via.array.size; i++) {
+        ret = process_scope_span(ctx,
+                                 ctr,
+                                 resource_span,
+                                 &scope_spans.via.array.ptr[i]);
+        if (ret == -1) {
+            flb_plg_warn(ctx->ins, "failed to process scope span");
         }
     }
 
@@ -287,7 +575,7 @@ static int process_resource_span(struct flb_opentelemetry *ctx,
 
     printf("------\n\n");
     msgpack_object_print(stdout, resource);
-    exit(0);
+
     return 0;
 }
 
@@ -325,10 +613,6 @@ static int process_root_msgpack(struct flb_opentelemetry *ctx, msgpack_object *o
     return 0;
 }
 
-
-/* This code is definitely not complete and beyond fishy, it needs to be
- * refactored.
- */
 static int process_json(struct flb_opentelemetry *ctx,
                         const char *body,
                         size_t len)
@@ -339,8 +623,6 @@ static int process_json(struct flb_opentelemetry *ctx,
     size_t           msgpack_body_length;
     size_t           offset = 0;
     msgpack_unpacked unpacked_root;
-
-    printf("json: %s\n", body);
 
     result = flb_pack_json(body, len, &msgpack_body, &msgpack_body_length,
                            &root_type, NULL);
@@ -376,9 +658,9 @@ static int opentelemetry_traces_process_json(struct flb_opentelemetry *ctx,
 {
     int ret;
 
-    return process_json(ctx, data, size);
+    ret = process_json(ctx, data, size);
 
-    return 0;
+    return ret;
 }
 
 /*
