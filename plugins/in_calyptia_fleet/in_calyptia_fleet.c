@@ -468,12 +468,19 @@ static void *do_reload(void *data)
     }
     reload->flb->config->conf_path_file = reload->cfg_path;
 
-    flb_free(reload);
     sleep(5);
 #ifndef FLB_SYSTEM_WINDOWS
+    flb_free(reload);
     kill(getpid(), SIGHUP);
 #else
-    GenerateConsoleCtrlEvent(1 /* CTRL_BREAK_EVENT_1 */, 0);
+    /* using the refactor that placed  `bin_restarting` inside 
+     * `flb_config` to use it as a messaging mechanism instead of
+     * GenerateConsoleCtrlEvent to overcome the fact that windows
+     * services do not have a console and therefore cannot
+     * react to console events or handle them (fixes sc-112185).
+     */
+    reload->flb->config->bin_restarting = FLB_RELOAD_IN_PROGRESS;
+    flb_free(reload);
 #endif
     return NULL;
 }
