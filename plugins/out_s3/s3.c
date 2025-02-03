@@ -29,9 +29,11 @@
 #include <fluent-bit/flb_crypto.h>
 #include <fluent-bit/flb_signv4.h>
 #include <fluent-bit/flb_scheduler.h>
+#include <fluent-bit/flb_plugin.h>
 #include <fluent-bit/flb_gzip.h>
 #include <fluent-bit/flb_base64.h>
 #include <fluent-bit/flb_log_event_decoder.h>
+#include <fluent-bit/flb_input_blob.h>
 #include <stdlib.h>
 #include <sys/stat.h>
 
@@ -42,6 +44,16 @@
 
 #define DEFAULT_S3_PORT 443
 #define DEFAULT_S3_INSECURE_PORT 80
+
+/* thread_local_storage for workers */
+
+struct worker_info {
+    int active_upload;
+};
+
+FLB_TLS_DEFINE(struct worker_info, s3_worker_info);
+
+static int s3_timer_create(struct flb_s3 *ctx);
 
 static int construct_request_buffer(struct flb_s3 *ctx, flb_sds_t new_data,
                                     struct s3_file *chunk,
@@ -510,6 +522,456 @@ static void s3_context_destroy(struct flb_s3 *ctx)
     flb_free(ctx);
 }
 
+static int find_map_entry_by_key(msgpack_object_map *map,
+                                 char *key,
+                                 size_t match_index,
+                                 int case_insensitive)
+{
+    size_t  match_count;
+    int     result;
+    int     index;
+
+    match_count = 0;
+
+    for (index = 0 ; index < (int) map->size ; index++) {
+        if (map->ptr[index].key.type == MSGPACK_OBJECT_STR) {
+            if (case_insensitive) {
+                result = strncasecmp(map->ptr[index].key.via.str.ptr,
+                                     key,
+                                     map->ptr[index].key.via.str.size);
+            }
+            else {
+                result = strncmp(map->ptr[index].key.via.str.ptr,
+                                 key,
+                                 map->ptr[index].key.via.str.size);
+            }
+
+            if (result == 0) {
+                if (match_count == match_index) {
+                    return index;
+                }
+
+                match_count++;
+            }
+        }
+    }
+
+    return -1;
+}
+
+static int extract_map_string_entry_by_key(flb_sds_t *output,
+                                           msgpack_object_map *map,
+                                           char *key,
+                                           size_t match_index,
+                                           int case_insensitive)
+{
+    int index;
+    int result;
+
+    index = find_map_entry_by_key(map,
+                                 key,
+                                 match_index,
+                                 case_insensitive);
+
+    if (index == -1) {
+        return -1;
+    }
+
+    if (map->ptr[index].val.type != MSGPACK_OBJECT_STR) {
+        return -2;
+    }
+
+    if (*output == NULL) {
+        *output = flb_sds_create_len(map->ptr[index].val.via.str.ptr,
+                                     map->ptr[index].val.via.str.size);
+
+        if (*output == NULL) {
+            return -3;
+        }
+    }
+    else {
+        (*output)[0] = '\0';
+
+        flb_sds_len_set(*output, 0);
+
+        result = flb_sds_cat_safe(output,
+                                  map->ptr[index].val.via.str.ptr,
+                                  map->ptr[index].val.via.str.size);
+
+        if (result != 0) {
+            return -4;
+        }
+    }
+
+    return 0;
+}
+
+static int process_remote_configuration_payload(
+                struct flb_s3 *context,
+                char *payload,
+                size_t payload_size)
+{
+    size_t               msgpack_body_length;
+    msgpack_object_map  *configuration_map;
+    flb_sds_t            secret_access_key;
+    flb_sds_t            access_key_id;
+    flb_sds_t            session_token;
+    msgpack_unpacked     unpacked_root;
+    char                *msgpack_body;
+    int                  root_type;
+    size_t               offset;
+    int                  result;
+
+    result = flb_pack_json(payload,
+                           payload_size,
+                           &msgpack_body,
+                           &msgpack_body_length,
+                           &root_type,
+                           NULL);
+
+    if (result != 0) {
+        flb_plg_error(context->ins,
+                      "JSON to msgpack conversion error");
+
+        result = -1;
+    }
+    else {
+        msgpack_unpacked_init(&unpacked_root);
+
+        offset = 0;
+        result = msgpack_unpack_next(&unpacked_root,
+                                     msgpack_body,
+                                     msgpack_body_length,
+                                     &offset);
+
+        if (result != MSGPACK_UNPACK_SUCCESS) {
+            flb_plg_error(context->ins, "corrupted msgpack data");
+
+            result = -1;
+
+            goto cleanup;
+        }
+
+        if (unpacked_root.data.type != MSGPACK_OBJECT_MAP) {
+            flb_plg_error(context->ins, "unexpected root object type");
+
+            result = -1;
+
+            goto cleanup;
+        }
+
+        configuration_map = &unpacked_root.data.via.map;
+
+        secret_access_key = NULL;
+        access_key_id = NULL;
+        session_token = NULL;
+
+        result = extract_map_string_entry_by_key(&access_key_id,
+                                                 configuration_map,
+                                                 "access_key_id", 0, FLB_TRUE);
+
+        if (result != 0) {
+            flb_plg_error(context->ins,
+                            "access_key_id could be extracted : %d", result);
+
+            goto cleanup;
+        }
+
+        result = extract_map_string_entry_by_key(&secret_access_key,
+                                                 configuration_map,
+                                                 "secret_access_key", 0, FLB_TRUE);
+
+        if (result != 0) {
+            flb_plg_error(context->ins,
+                            "secret_access_key extraction error : %d", result);
+
+            goto cleanup;
+        }
+
+        result = extract_map_string_entry_by_key(&session_token,
+                                                 configuration_map,
+                                                 "secret_access_key", 0, FLB_TRUE);
+
+        if (result != 0) {
+            flb_plg_error(context->ins,
+                            "secret_access_key extraction error : %d", result);
+
+            goto cleanup;
+        }
+
+        setenv("aws_secret_access_key", secret_access_key, 1);
+        setenv("aws_access_key_id", access_key_id, 1);
+        setenv("aws_session_token", session_token, 1);
+
+cleanup:
+        if (result != 0) {
+            if (secret_access_key != NULL) {
+                free(secret_access_key);
+
+                secret_access_key = NULL;
+            }
+
+            if (access_key_id != NULL) {
+                free(access_key_id);
+
+                access_key_id = NULL;
+            }
+
+            if (session_token != NULL) {
+                free(session_token);
+
+                session_token = NULL;
+            }
+
+
+            result = -1;
+        }
+
+        msgpack_unpacked_destroy(&unpacked_root);
+
+        flb_free(msgpack_body);
+    }
+
+    return result;
+}
+
+static int apply_remote_configuration(struct flb_s3 *context)
+{
+    int ret;
+    size_t b_sent;
+    struct flb_http_client *http_client;
+    struct flb_connection *connection;
+    struct flb_upstream *upstream;
+    struct flb_tls *tls_context;
+    char *scheme = NULL;
+    char *host = NULL;
+    char *port = NULL;
+    char *uri = NULL;
+    uint16_t port_as_short;
+
+    /* Parse and split URL */
+    ret = flb_utils_url_split(context->configuration_endpoint_url,
+                              &scheme, &host, &port, &uri);
+    if (ret == -1) {
+        flb_plg_error(context->ins,
+                      "Invalid URL: %s",
+                      context->configuration_endpoint_url);
+
+        return -1;
+    }
+
+    if (port != NULL) {
+        port_as_short = (uint16_t) strtoul(port, NULL, 10);
+    }
+    else {
+        if (scheme != NULL) {
+            if (strcasecmp(scheme, "https") == 0) {
+                port_as_short = 443;
+            }
+            else {
+                port_as_short = 80;
+            }
+        }
+    }
+
+    if (scheme != NULL) {
+        flb_free(scheme);
+        scheme = NULL;
+    }
+
+    if (port != NULL) {
+        flb_free(port);
+        port = NULL;
+    }
+
+    if (host == NULL || uri == NULL) {
+        flb_plg_error(context->ins,
+                      "Invalid URL: %s",
+                      context->configuration_endpoint_url);
+
+        if (host != NULL) {
+            flb_free(host);
+        }
+
+        if (uri != NULL) {
+            flb_free(uri);
+        }
+
+        return -2;
+    }
+
+    tls_context = flb_tls_create(FLB_TLS_CLIENT_MODE,
+                                 FLB_FALSE,
+                                 FLB_FALSE,
+                                 host,
+                                 NULL,
+                                 NULL,
+                                 NULL,
+                                 NULL,
+                                 NULL);
+
+    if (tls_context == NULL) {
+        flb_free(host);
+        flb_free(uri);
+
+        flb_plg_error(context->ins,
+                      "TLS context creation errror");
+
+        return -2;
+    }
+
+    upstream = flb_upstream_create_url(context->ins->config,
+                                       context->configuration_endpoint_url,
+                                       FLB_IO_TCP,
+                                       tls_context);
+
+    if (upstream == NULL) {
+        flb_tls_destroy(tls_context);
+        flb_free(host);
+        flb_free(uri);
+
+        flb_plg_error(context->ins,
+                      "Upstream creation errror");
+
+        return -3;
+    }
+
+    flb_stream_disable_async_mode(&upstream->base);
+
+    /* Get upstream connection */
+    connection = flb_upstream_conn_get(upstream);
+    if (connection == NULL) {
+        flb_upstream_destroy(upstream);
+        flb_tls_destroy(tls_context);
+        flb_free(host);
+        flb_free(uri);
+
+        flb_plg_error(context->ins,
+                      "cannot create connection");
+
+        return -3;
+    }
+
+    /* Create HTTP client context */
+    http_client = flb_http_client(connection,
+                                  FLB_HTTP_GET,
+                                  uri,
+                                  NULL, 0,
+                                  host,
+                                  (int) port_as_short,
+                                  NULL, 0);
+    if (http_client == NULL) {
+        flb_upstream_conn_release(connection);
+        flb_upstream_destroy(upstream);
+        flb_tls_destroy(tls_context);
+        flb_free(host);
+        flb_free(uri);
+
+        flb_plg_error(context->ins,
+                      "cannot create HTTP client");
+
+        return -4;
+    }
+
+    flb_http_add_header(http_client,
+                        "Accept",
+                        strlen("Accept"),
+                        "application/json",
+                        16);
+
+    /* User Agent */
+    flb_http_add_header(http_client,
+                        "User-Agent", 10,
+                        "Fluent-Bit", 10);
+
+    if (context->configuration_endpoint_username != NULL &&
+        context->configuration_endpoint_password != NULL) {
+        flb_http_basic_auth(http_client,
+                            context->configuration_endpoint_username,
+                            context->configuration_endpoint_password);
+    }
+    else if (context->configuration_endpoint_bearer_token != NULL) {
+        flb_http_bearer_auth(http_client,
+                             context->configuration_endpoint_bearer_token);
+    }
+
+    /* Send HTTP request */
+    ret = flb_http_do(http_client, &b_sent);
+
+    if (ret == -1) {
+        flb_http_client_destroy(http_client);
+        flb_upstream_conn_release(connection);
+        flb_upstream_destroy(upstream);
+        flb_tls_destroy(tls_context);
+        flb_free(host);
+        flb_free(uri);
+
+        flb_plg_error(context->ins,
+                      "Error sending configuration request");
+
+        return -5;
+    }
+
+    if (http_client->resp.status == 200) {
+        flb_plg_info(context->ins,
+                     "Configuration retrieved successfully");
+
+        ret = process_remote_configuration_payload(
+                context,
+                http_client->resp.payload,
+                http_client->resp.payload_size);
+
+        if (ret != 0) {
+            flb_plg_error(context->ins,
+                          "Configuration payload processing error %d",
+                          ret);
+
+            flb_http_client_destroy(http_client);
+            flb_upstream_conn_release(connection);
+            flb_upstream_destroy(upstream);
+            flb_tls_destroy(tls_context);
+            flb_free(host);
+            flb_free(uri);
+
+            return -7;
+        }
+
+        flb_plg_info(context->ins,
+                     "Configuration applied successfully");
+    }
+    else {
+        if (http_client->resp.payload_size > 0) {
+            flb_plg_error(context->ins,
+                          "Configuration retrieval failed with status %i\n%s",
+                          http_client->resp.status,
+                          http_client->resp.payload);
+        }
+        else {
+            flb_plg_error(context->ins,
+                          "Configuration retrieval failed with status %i",
+                          http_client->resp.status);
+        }
+
+        flb_http_client_destroy(http_client);
+        flb_upstream_conn_release(connection);
+        flb_upstream_destroy(upstream);
+        flb_tls_destroy(tls_context);
+        flb_free(host);
+        flb_free(uri);
+
+        return -6;
+    }
+
+    flb_http_client_destroy(http_client);
+    flb_upstream_conn_release(connection);
+    flb_upstream_destroy(upstream);
+    flb_tls_destroy(tls_context);
+    flb_free(host);
+    flb_free(uri);
+
+    return 0;
+}
+
 static int cb_s3_init(struct flb_output_instance *ins,
                       struct flb_config *config, void *data)
 {
@@ -868,6 +1330,18 @@ static int cb_s3_init(struct flb_output_instance *ins,
         }
     }
 
+    if (ctx->configuration_endpoint_url != NULL) {
+        ret = apply_remote_configuration(ctx);
+
+        if (ret != 0) {
+            flb_plg_error(ctx->ins, "Failed to retrieve configuration "
+                                    "from endpoint");
+            flb_errno();
+
+            return -1;
+        }
+    }
+
     /* read any remaining buffers from previous (failed) executions */
     ctx->has_old_buffers = s3_store_has_data(ctx);
     ctx->has_old_uploads = s3_store_has_uploads(ctx);
@@ -968,6 +1442,64 @@ static int cb_s3_init(struct flb_output_instance *ins,
 
     /* this is done last since in the previous block we make calls to AWS */
     ctx->provider->provider_vtable->upstream_set(ctx->provider, ctx->ins);
+
+    /* database file for blob signal handling */
+    if (ctx->blob_database_file != NULL) {
+        ret = flb_blob_db_open(&ctx->blob_db,
+                               config,
+                               ctx->blob_database_file);
+
+        if (ret != FLB_BLOB_DB_SUCCESS) {
+            return -1;
+        }
+    }
+
+    return 0;
+}
+
+/* worker initialization, used for our internal timers */
+static int cb_s3_worker_init(void *data, struct flb_config *config)
+{
+    int ret;
+    struct worker_info *info;
+    struct flb_s3 *ctx = data;
+
+    flb_plg_info(ctx->ins, "initializing worker");
+
+    info = FLB_TLS_GET(s3_worker_info);
+    if (!info) {
+        /* initialize worker global info */
+        info = flb_calloc(1, sizeof(struct worker_info));
+        if (!info) {
+            flb_errno();
+            return -1;
+        }
+        info->active_upload = FLB_FALSE;
+        FLB_TLS_SET(s3_worker_info, info);
+    }
+
+    ret = s3_timer_create(ctx);
+    if (ret == -1) {
+        flb_plg_error(ctx->ins, "failed to create upload timer");
+        return -1;
+    }
+
+    return 0;
+}
+
+/* worker teardown */
+static int cb_s3_worker_exit(void *data, struct flb_config *config)
+{
+    struct worker_info *info;
+    struct flb_s3 *ctx = data;
+
+    flb_plg_info(ctx->ins, "initializing worker");
+
+    info = FLB_TLS_GET(s3_worker_info);
+    if (info != NULL) {
+        flb_free(info);
+        FLB_TLS_SET(s3_worker_info, NULL);
+    }
 
     return 0;
 }
@@ -1536,6 +2068,7 @@ static struct multipart_upload *create_upload(struct flb_s3 *ctx, const char *ta
     tmp_sds = flb_sds_create_len(tag, tag_len);
     if (!tmp_sds) {
         flb_errno();
+        flb_sds_destroy(s3_key);
         flb_free(m_upload);
         return NULL;
     }
@@ -1552,8 +2085,16 @@ static struct multipart_upload *create_upload(struct flb_s3 *ctx, const char *ta
         ret = write_seq_index(ctx->seq_index_file, ctx->seq_index);
         if (ret < 0) {
             ctx->seq_index--;
+
+            mk_list_del(&m_upload->_head);
+
+            flb_sds_destroy(tmp_sds);
             flb_sds_destroy(s3_key);
+
+            flb_free(m_upload);
+
             flb_plg_error(ctx->ins, "Failed to write to sequential index metadata file");
+
             return NULL;
         }
     }
@@ -1755,6 +2296,786 @@ exit:
     return;
 }
 
+
+static struct multipart_upload *create_blob_upload(struct flb_s3 *ctx, const char *tag,
+                                                   int tag_len,
+                                                   const char *path)
+{
+    int ret;
+    struct multipart_upload *m_upload = NULL;
+    flb_sds_t s3_key = NULL;
+    flb_sds_t tmp_sds = NULL;
+
+    /* create new upload for this key */
+    m_upload = flb_calloc(1, sizeof(struct multipart_upload));
+    if (!m_upload) {
+        flb_errno();
+        return NULL;
+    }
+
+    s3_key = flb_get_s3_blob_key("/$TAG/",
+                                 tag,
+                                 ctx->tag_delimiters,
+                                 path);
+
+    if (!s3_key) {
+        flb_plg_error(ctx->ins, "Failed to construct S3 Object Key for %s", tag);
+        flb_free(m_upload);
+        return NULL;
+    }
+    m_upload->s3_key = s3_key;
+    tmp_sds = flb_sds_create_len(tag, tag_len);
+    if (!tmp_sds) {
+        flb_errno();
+        flb_sds_destroy(s3_key);
+        flb_free(m_upload);
+        return NULL;
+    }
+    m_upload->tag = tmp_sds;
+    m_upload->upload_state = MULTIPART_UPLOAD_STATE_NOT_CREATED;
+    m_upload->part_number = 1;
+    m_upload->init_time = time(NULL);
+    mk_list_add(&m_upload->_head, &ctx->uploads);
+
+    /* Update file and increment index value right before request */
+    if (ctx->key_fmt_has_seq_index) {
+        ctx->seq_index++;
+
+        ret = write_seq_index(ctx->seq_index_file, ctx->seq_index);
+        if (ret < 0) {
+            ctx->seq_index--;
+
+            mk_list_del(&m_upload->_head);
+
+            flb_sds_destroy(tmp_sds);
+            flb_sds_destroy(s3_key);
+
+            flb_free(m_upload);
+
+            flb_plg_error(ctx->ins, "Failed to write to sequential index metadata file");
+
+            return NULL;
+        }
+    }
+
+    return m_upload;
+}
+
+static int put_blob_object(struct flb_s3 *ctx,
+                           const char *tag,
+                           const char *path,
+                           char *body, size_t body_size)
+{
+    flb_sds_t s3_key = NULL;
+    struct flb_http_client *c = NULL;
+    struct flb_aws_client *s3_client;
+    struct flb_aws_header *headers = NULL;
+    int len;
+    int ret;
+    int num_headers = 0;
+    char *final_key;
+    flb_sds_t uri;
+    flb_sds_t tmp;
+    char final_body_md5[25];
+
+    s3_key = flb_get_s3_blob_key("/$TAG/",
+                                 tag,
+                                 ctx->tag_delimiters,
+                                 path);
+
+    if (!s3_key) {
+        flb_plg_error(ctx->ins, "Failed to construct S3 Object Key for %s", tag);
+        return -1;
+    }
+
+    len = strlen(s3_key);
+    len += strlen(ctx->bucket + 1);
+
+    uri = flb_sds_create_size(len);
+
+    tmp = flb_sds_printf(&uri, "/%s%s", ctx->bucket, s3_key);
+
+    if (!tmp) {
+        flb_sds_destroy(s3_key);
+        flb_plg_error(ctx->ins, "Failed to create PutObject URI");
+        return -1;
+    }
+
+    flb_sds_destroy(s3_key);
+    uri = tmp;
+
+    memset(final_body_md5, 0, sizeof(final_body_md5));
+    if (ctx->send_content_md5 == FLB_TRUE) {
+        ret = get_md5_base64(body, body_size,
+                             final_body_md5, sizeof(final_body_md5));
+        if (ret != 0) {
+            flb_plg_error(ctx->ins, "Failed to create Content-MD5 header");
+            flb_sds_destroy(uri);
+            return -1;
+        }
+    }
+
+    s3_client = ctx->s3_client;
+    if (s3_plugin_under_test() == FLB_TRUE) {
+        c = mock_s3_call("TEST_PUT_OBJECT_ERROR", "PutObject");
+    }
+    else {
+        ret = create_headers(ctx, final_body_md5, &headers, &num_headers, FLB_FALSE);
+        if (ret == -1) {
+            flb_plg_error(ctx->ins, "Failed to create headers");
+            flb_sds_destroy(uri);
+            return -1;
+        }
+        c = s3_client->client_vtable->request(s3_client, FLB_HTTP_PUT,
+                                              uri, body, body_size,
+                                              headers, num_headers);
+        flb_free(headers);
+    }
+    if (c) {
+        flb_plg_debug(ctx->ins, "PutObject http status=%d", c->resp.status);
+        if (c->resp.status == 200) {
+            /*
+             * URI contains bucket name, so we must advance over it
+             * to print the object key
+             */
+            final_key = uri + strlen(ctx->bucket) + 1;
+            flb_plg_info(ctx->ins, "Successfully uploaded object %s", final_key);
+            flb_sds_destroy(uri);
+            flb_http_client_destroy(c);
+
+            return 0;
+        }
+        flb_aws_print_xml_error(c->resp.payload, c->resp.payload_size,
+                                "PutObject", ctx->ins);
+        if (c->resp.data != NULL) {
+            flb_plg_error(ctx->ins, "Raw PutObject response: %s", c->resp.data);
+        }
+        flb_http_client_destroy(c);
+    }
+
+    flb_plg_error(ctx->ins, "PutObject request failed");
+    flb_sds_destroy(uri);
+
+    return -1;
+}
+
+static int cb_s3_upload_blob(struct flb_config *config, void *data)
+{
+    int ret;
+    char *out_buf = NULL;
+    size_t out_size;
+    uint64_t id;
+    uint64_t file_id;
+    uint64_t part_id;
+    uint64_t part_delivery_attempts;
+    uint64_t file_delivery_attempts;
+    off_t offset_start;
+    off_t offset_end;
+    cfl_sds_t file_remote_id = NULL;
+    cfl_sds_t file_destination = NULL;
+    cfl_sds_t file_path = NULL;
+    cfl_sds_t file_tag = NULL;
+    cfl_sds_t part_ids = NULL;
+    cfl_sds_t source = NULL;
+    struct flb_s3 *ctx = data;
+    struct worker_info *info;
+    struct flb_blob_delivery_notification *notification;
+    struct multipart_upload *m_upload;
+    int part_count;
+    int put_object_required;
+
+    info = FLB_TLS_GET(s3_worker_info);
+
+    if (info->active_upload) {
+        flb_plg_trace(ctx->ins, "[worker: file upload] upload already in progress...");
+
+        return 0;
+    }
+
+    if (ctx->blob_db.db == NULL) {
+        return 0;
+    }
+
+    info->active_upload = FLB_TRUE;
+
+    /*
+     * Check if is there any file which has been fully uploaded and we need to commit it with
+     * the Put Block List operation
+     */
+
+    flb_blob_db_lock(&ctx->blob_db);
+
+    while (1) {
+        ret = flb_blob_db_file_get_next_stale(&ctx->blob_db,
+                                              &file_id,
+                                              &file_path,
+                                              ctx->upload_parts_freshness_threshold,
+                                              &file_remote_id,
+                                              &file_tag,
+                                              &part_count);
+
+        if (ret == 1) {
+            if (part_count > 1) {
+                m_upload = create_blob_upload(ctx, file_tag, cfl_sds_len(file_tag), file_path);
+
+                if (m_upload == NULL) {
+                    cfl_sds_destroy(file_tag);
+                    cfl_sds_destroy(file_path);
+                    cfl_sds_destroy(file_remote_id);
+                    cfl_sds_destroy(file_destination);
+
+                    flb_blob_db_unlock(&ctx->blob_db);
+
+                    return -1;
+                }
+
+                mk_list_del(&m_upload->_head);
+
+                m_upload->upload_id = flb_sds_create(file_remote_id);
+
+                if (m_upload->upload_id == NULL) {
+                    cfl_sds_destroy(file_tag);
+                    cfl_sds_destroy(file_path);
+                    cfl_sds_destroy(file_remote_id);
+                    cfl_sds_destroy(file_destination);
+
+                    m_upload->part_number = 0;
+                    multipart_upload_destroy(m_upload);
+
+                    flb_plg_error(ctx->ins, "Could not allocate upload id copy");
+
+                    flb_blob_db_unlock(&ctx->blob_db);
+
+                    return -4;
+                }
+
+                ret = abort_multipart_upload(ctx, m_upload);
+            }
+
+            if (ctx->file_delivery_attempt_limit != FLB_OUT_RETRY_UNLIMITED &&
+                file_delivery_attempts < ctx->file_delivery_attempt_limit) {
+                flb_blob_db_file_reset_upload_states(&ctx->blob_db, file_id, file_path);
+                flb_blob_db_file_set_aborted_state(&ctx->blob_db, file_id, file_path, 0);
+            }
+            else {
+                ret = flb_blob_db_file_delete(&ctx->blob_db, file_id, file_path);
+
+                notification = flb_calloc(1,
+                                          sizeof(
+                                            struct flb_blob_delivery_notification));
+
+                if (notification != NULL) {
+                    notification->base.dynamically_allocated = FLB_TRUE;
+                    notification->base.notification_type = FLB_NOTIFICATION_TYPE_BLOB_DELIVERY;
+                    notification->base.destructor = flb_input_blob_delivery_notification_destroy;
+                    notification->success = FLB_FALSE;
+                    notification->path = cfl_sds_create(file_path);
+
+                    ret = flb_notification_enqueue(FLB_PLUGIN_INPUT,
+                                                   source,
+                                                   &notification->base,
+                                                   config);
+
+                    if (ret != 0) {
+                        flb_plg_error(ctx->ins,
+                                    "blob file '%s' (id=%" PRIu64 ") notification " \
+                                    "delivery error %d", file_path, file_id, ret);
+
+                        flb_notification_cleanup(&notification->base);
+                    }
+                }
+            }
+
+            flb_blob_file_update_remote_id(&ctx->blob_db, file_id, "");
+            flb_blob_db_file_reset_upload_states(&ctx->blob_db, file_id, file_path);
+            flb_blob_db_file_set_aborted_state(&ctx->blob_db, file_id, file_path, 0);
+
+            cfl_sds_destroy(file_remote_id);
+            cfl_sds_destroy(file_path);
+            cfl_sds_destroy(source);
+
+            file_remote_id = NULL;
+            file_path = NULL;
+            source = NULL;
+        }
+        else {
+            break;
+        }
+    }
+
+    while (1) {
+        ret = flb_blob_db_file_get_next_aborted(&ctx->blob_db,
+                                                &file_id,
+                                                &file_delivery_attempts,
+                                                &file_path,
+                                                &source,
+                                                &file_remote_id,
+                                                &file_tag,
+                                                &part_count);
+
+        if (ret == 1) {
+            if (part_count > 1) {
+                m_upload = create_blob_upload(ctx, file_tag, cfl_sds_len(file_tag), file_path);
+
+                if (m_upload == NULL) {
+                    cfl_sds_destroy(file_tag);
+                    cfl_sds_destroy(file_path);
+                    cfl_sds_destroy(file_remote_id);
+                    cfl_sds_destroy(file_destination);
+
+                    flb_blob_db_unlock(&ctx->blob_db);
+
+                    return -1;
+                }
+
+                mk_list_del(&m_upload->_head);
+
+                m_upload->upload_id = flb_sds_create(file_remote_id);
+
+                if (m_upload->upload_id == NULL) {
+                    cfl_sds_destroy(file_tag);
+                    cfl_sds_destroy(file_path);
+                    cfl_sds_destroy(file_remote_id);
+                    cfl_sds_destroy(file_destination);
+
+                    m_upload->part_number = 0;
+                    multipart_upload_destroy(m_upload);
+
+                    flb_plg_error(ctx->ins, "Could not allocate upload id copy");
+
+                    flb_blob_db_unlock(&ctx->blob_db);
+
+                    return -4;
+                }
+
+                ret = abort_multipart_upload(ctx, m_upload);
+            }
+
+            if (ctx->file_delivery_attempt_limit != FLB_OUT_RETRY_UNLIMITED &&
+                file_delivery_attempts < ctx->file_delivery_attempt_limit) {
+
+                flb_blob_file_update_remote_id(&ctx->blob_db, file_id, "");
+                flb_blob_db_file_reset_upload_states(&ctx->blob_db, file_id, file_path);
+                flb_blob_db_file_set_aborted_state(&ctx->blob_db, file_id, file_path, 0);
+            }
+            else {
+                ret = flb_blob_db_file_delete(&ctx->blob_db, file_id, file_path);
+
+                notification = flb_calloc(1,
+                                          sizeof(
+                                            struct flb_blob_delivery_notification));
+
+                if (notification != NULL) {
+                    notification->base.dynamically_allocated = FLB_TRUE;
+                    notification->base.notification_type = FLB_NOTIFICATION_TYPE_BLOB_DELIVERY;
+                    notification->base.destructor = flb_input_blob_delivery_notification_destroy;
+                    notification->success = FLB_FALSE;
+                    notification->path = cfl_sds_create(file_path);
+
+                    ret = flb_notification_enqueue(FLB_PLUGIN_INPUT,
+                                                   source,
+                                                   &notification->base,
+                                                   config);
+
+                    if (ret != 0) {
+                        flb_plg_error(ctx->ins,
+                                    "blob file '%s' (id=%" PRIu64 ") notification " \
+                                    "delivery error %d", file_path, file_id, ret);
+
+                        flb_notification_cleanup(&notification->base);
+                    }
+                }
+            }
+
+            cfl_sds_destroy(file_remote_id);
+            cfl_sds_destroy(file_path);
+            cfl_sds_destroy(source);
+
+            file_remote_id = NULL;
+            file_path = NULL;
+            source = NULL;
+        }
+        else {
+            break;
+        }
+    }
+
+    ret = flb_blob_db_file_fetch_oldest_ready(&ctx->blob_db,
+                                              &file_id,
+                                              &file_path,
+                                              &part_ids,
+                                              &source,
+                                              &file_remote_id,
+                                              &file_tag,
+                                              &part_count);
+
+    if (ret == 0) {
+        flb_plg_trace(ctx->ins, "no blob files ready to commit");
+    }
+    else if (ret == -1) {
+        flb_plg_error(ctx->ins, "cannot get oldest blob file ready to upload");
+    }
+    else if (ret == 1) {
+        /* one file is ready to be committed */
+        flb_plg_debug(ctx->ins, "blob file '%s' (id=%" PRIu64 ") ready to upload", file_path, file_id);
+
+        if (part_count > 1) {
+            m_upload = create_blob_upload(ctx, file_tag, cfl_sds_len(file_tag), file_path);
+
+            if (m_upload == NULL) {
+                flb_blob_db_unlock(&ctx->blob_db);
+
+                return -1;
+            }
+
+            mk_list_del(&m_upload->_head);
+
+            m_upload->upload_id = flb_sds_create(file_remote_id);
+
+            if (m_upload->upload_id == NULL) {
+                m_upload->part_number = 0;
+                multipart_upload_destroy(m_upload);
+
+                flb_plg_error(ctx->ins, "Could not allocate upload id copy");
+
+                flb_blob_db_unlock(&ctx->blob_db);
+
+                return -4;
+            }
+
+            ret =  flb_blob_db_file_fetch_part_ids(&ctx->blob_db,
+                                                    file_id,
+                                                    m_upload->etags,
+                                                    1000,
+                                                    &part_count);
+
+            if (ret == -1) {
+                m_upload->part_number = 0;
+                multipart_upload_destroy(m_upload);
+
+                flb_plg_error(ctx->ins, "Could not retrieve part ids");
+
+                flb_blob_db_unlock(&ctx->blob_db);
+
+                return -5;
+            }
+
+            m_upload->part_number = part_count;
+
+            ret = complete_multipart_upload(ctx, m_upload);
+
+            if (ret < 0) {
+                multipart_upload_destroy(m_upload);
+
+                flb_plg_error(ctx->ins, "Could not initiate multipart upload");
+
+                flb_blob_db_unlock(&ctx->blob_db);
+
+                return -6;
+            }
+
+            multipart_upload_destroy(m_upload);
+        }
+        else {
+            ret = 0;
+        }
+
+        if (ret == -1) {
+            flb_plg_error(ctx->ins, "cannot commit blob file parts for file id=%" PRIu64 " path=%s",
+                            file_id, file_path);
+        }
+        else {
+            flb_plg_info(ctx->ins, "blob file '%s' (id=%" PRIu64 ") committed successfully", file_path, file_id);
+            /* notify the engine the blob file has been processed */
+
+            notification = flb_calloc(1,
+                                        sizeof(
+                                        struct flb_blob_delivery_notification));
+
+            if (notification != NULL) {
+                notification->base.dynamically_allocated = FLB_TRUE;
+                notification->base.notification_type = FLB_NOTIFICATION_TYPE_BLOB_DELIVERY;
+                notification->base.destructor = flb_input_blob_delivery_notification_destroy;
+                notification->success = FLB_TRUE;
+                notification->path = cfl_sds_create(file_path);
+
+                ret = flb_notification_enqueue(FLB_PLUGIN_INPUT,
+                                                source,
+                                                &notification->base,
+                                                config);
+
+                if (ret != 0) {
+                    flb_plg_error(ctx->ins,
+                                "blob file '%s' (id=%" PRIu64 ") notification " \
+                                "delivery error %d", file_path, file_id, ret);
+
+                    flb_notification_cleanup(&notification->base);
+                }
+            }
+
+            /* remove the file entry from the database */
+            ret = flb_blob_db_file_delete(&ctx->blob_db, file_id, file_path);
+            if (ret == -1) {
+                flb_plg_error(ctx->ins, "cannot delete blob file '%s' (id=%" PRIu64 ") from the database",
+                                file_path, file_id);
+            }
+        }
+    }
+
+    flb_blob_db_unlock(&ctx->blob_db);
+
+    if (file_tag) {
+        cfl_sds_destroy(file_tag);
+        file_tag = NULL;
+    }
+
+    if (file_path) {
+        cfl_sds_destroy(file_path);
+        file_path = NULL;
+    }
+
+    if (part_ids) {
+        cfl_sds_destroy(part_ids);
+        part_ids = NULL;
+    }
+
+    if (source) {
+        cfl_sds_destroy(source);
+        source = NULL;
+    }
+
+    if (file_remote_id) {
+        cfl_sds_destroy(file_remote_id);
+        file_remote_id = NULL;
+    }
+
+    /* check for a next part file and lock it */
+    ret = flb_blob_db_file_part_get_next(&ctx->blob_db, &id, &file_id, &part_id,
+                                         &offset_start, &offset_end,
+                                         &part_delivery_attempts,
+                                         &file_delivery_attempts,
+                                         &file_path,
+                                         &file_destination,
+                                         &file_remote_id,
+                                         &file_tag,
+                                         &part_count);
+
+    if (ret == -1) {
+        flb_plg_error(ctx->ins, "cannot get next blob file part");
+        info->active_upload = FLB_FALSE;
+
+        return -1;
+    }
+    else if (ret == 0) {
+        flb_plg_trace(ctx->ins, "no more blob file parts to process");
+        info->active_upload = FLB_FALSE;
+
+        return -1;
+    }
+    else if (ret == 1) {
+        /* just continue, the row info was retrieved */
+    }
+
+    if (strcmp(file_destination, ctx->endpoint) != 0) {
+        flb_plg_info(ctx->ins,
+                     "endpoint change detected, restarting file : %s\n%s\n%s",
+                     file_path,
+                     file_destination,
+                     ctx->endpoint);
+
+        info->active_upload = FLB_FALSE;
+
+        /* we need to set the aborted state flag to wait for existing uploads
+         * to finish and then wipe the slate and start again but we don't want
+         * to increment the failure count in this case.
+         */
+        flb_blob_db_file_set_aborted_state(&ctx->blob_db, file_id, file_path, 1);
+
+        cfl_sds_destroy(file_tag);
+        cfl_sds_destroy(file_path);
+        cfl_sds_destroy(file_remote_id);
+        cfl_sds_destroy(file_destination);
+
+        return 0;
+    }
+
+    /* since this is the first part we want to increment the files
+     * delivery attempt counter.
+     */
+    if (part_id == 0) {
+        ret = flb_blob_db_file_delivery_attempts(&ctx->blob_db, file_id, ++file_delivery_attempts);
+    }
+
+    /* read the file content */
+    ret = flb_utils_read_file_offset(file_path, offset_start, offset_end, &out_buf, &out_size);
+    if (ret == -1) {
+        flb_plg_error(ctx->ins, "cannot read file part %s", file_path);
+
+        info->active_upload = FLB_FALSE;
+
+        cfl_sds_destroy(file_tag);
+        cfl_sds_destroy(file_path);
+        cfl_sds_destroy(file_remote_id);
+        cfl_sds_destroy(file_destination);
+
+        return 0;
+    }
+
+    flb_blob_db_file_part_update_delivery_attempt_counter(&ctx->blob_db, file_id, part_id, ++part_delivery_attempts);
+
+    flb_plg_debug(ctx->ins, "sending part file %s (id=%" PRIu64 " part_id=%" PRIu64 ")", file_path, id, part_id);
+
+    put_object_required = FLB_FALSE;
+
+
+    if (part_id == 0) {
+        if (part_count == 1) {
+            if (out_size <=  MIN_CHUNKED_UPLOAD_SIZE) {
+                put_object_required = FLB_TRUE;
+            }
+        }
+    }
+
+    if (put_object_required == FLB_TRUE) {
+        ret = put_blob_object(ctx,
+                        file_tag,
+                        file_path,
+                        out_buf,
+                        out_size);
+
+        if (ret != 0) {
+            cfl_sds_destroy(file_tag);
+            cfl_sds_destroy(file_path);
+            cfl_sds_destroy(file_remote_id);
+            cfl_sds_destroy(file_destination);
+
+            return -1;
+        }
+    }
+    else {
+        m_upload = create_blob_upload(ctx, file_tag, cfl_sds_len(file_tag), file_path);
+
+        if (m_upload == NULL) {
+            cfl_sds_destroy(file_tag);
+            cfl_sds_destroy(file_path);
+            cfl_sds_destroy(file_remote_id);
+            cfl_sds_destroy(file_destination);
+
+            return -1;
+        }
+
+        mk_list_del(&m_upload->_head);
+
+        if (part_id == 0) {
+            ret = create_multipart_upload(ctx, m_upload);
+
+            if (ret < 0) {
+                cfl_sds_destroy(file_tag);
+                cfl_sds_destroy(file_path);
+                cfl_sds_destroy(file_remote_id);
+                cfl_sds_destroy(file_destination);
+
+
+                m_upload->part_number = 0;
+                multipart_upload_destroy(m_upload);
+
+                flb_plg_error(ctx->ins, "Could not initiate multipart upload");
+
+                return -2;
+            }
+
+            ret = flb_blob_file_update_remote_id(&ctx->blob_db, file_id, m_upload->upload_id);
+
+            if (ret != FLB_BLOB_DB_SUCCESS) {
+                cfl_sds_destroy(file_tag);
+                cfl_sds_destroy(file_path);
+                cfl_sds_destroy(file_remote_id);
+                cfl_sds_destroy(file_destination);
+
+                m_upload->part_number = 0;
+                multipart_upload_destroy(m_upload);
+
+                flb_plg_error(ctx->ins, "Could not save upload id");
+
+                return -3;
+            }
+        }
+        else {
+            m_upload->upload_id = flb_sds_create(file_remote_id);
+
+            if (m_upload->upload_id == NULL) {
+                cfl_sds_destroy(file_tag);
+                cfl_sds_destroy(file_path);
+                cfl_sds_destroy(file_remote_id);
+                cfl_sds_destroy(file_destination);
+
+                m_upload->part_number = 0;
+                multipart_upload_destroy(m_upload);
+
+                flb_plg_error(ctx->ins, "Could not allocate upload id copy");
+
+                return -4;
+            }
+        }
+
+        m_upload->part_number = part_id + 1;
+
+        ret = upload_part(ctx, m_upload, out_buf, out_size);
+
+        if (ret == 0) {
+            ret = flb_blob_db_file_part_update_remote_id(&ctx->blob_db,
+                                                        id,
+                                                        m_upload->etags[m_upload->part_number - 1]);
+
+            flb_sds_destroy(m_upload->etags[m_upload->part_number - 1]);
+        }
+
+
+        m_upload->part_number = 0;
+        multipart_upload_destroy(m_upload);
+    }
+
+    if (ret == 0) {
+        ret = flb_blob_db_file_part_uploaded(&ctx->blob_db, id);
+    }
+    else {
+        ret = flb_blob_db_file_part_in_progress(&ctx->blob_db, 0, id);
+
+        if (ctx->part_delivery_attempt_limit != FLB_OUT_RETRY_UNLIMITED &&
+            part_delivery_attempts >= ctx->part_delivery_attempt_limit) {
+            flb_blob_db_file_set_aborted_state(&ctx->blob_db, file_id, file_path, 1);
+        }
+    }
+
+    if (ret == -1) {
+        info->active_upload = FLB_FALSE;
+
+        cfl_sds_destroy(file_tag);
+        cfl_sds_destroy(file_path);
+        cfl_sds_destroy(file_remote_id);
+        cfl_sds_destroy(file_destination);
+
+        return 0;
+    }
+
+    info->active_upload = FLB_FALSE;
+
+    if (out_buf) {
+        flb_free(out_buf);
+    }
+
+    cfl_sds_destroy(file_tag);
+    cfl_sds_destroy(file_path);
+    cfl_sds_destroy(file_remote_id);
+    cfl_sds_destroy(file_destination);
+
+    return 0;
+}
+
+
+
+
+
 static void cb_s3_upload(struct flb_config *config, void *data)
 {
     struct flb_s3 *ctx = data;
@@ -1769,7 +3090,7 @@ static void cb_s3_upload(struct flb_config *config, void *data)
     int ret;
     time_t now;
 
-    flb_plg_debug(ctx->ins, "Running upload timer callback (cb_s3_upload)..");
+    flb_plg_info(ctx->ins, "Running upload timer callback (cb_s3_upload)..");
 
     now = time(NULL);
 
@@ -2081,6 +3402,145 @@ static void flush_init(void *out_context)
     }
 }
 
+static int blob_chunk_register_parts(struct flb_s3 *ctx, uint64_t file_id, size_t total_size)
+{
+    int ret;
+    int64_t parts = 0;
+    int64_t id;
+    size_t offset_start = 0;
+    size_t offset_end = 0;
+
+    /* generate file parts */
+    while (offset_start < total_size) {
+        offset_end = offset_start + ctx->part_size;
+
+        /* do not exceed maximum size */
+        if (offset_end > total_size) {
+            offset_end = total_size;
+        }
+
+        /* insert part */
+        ret = flb_blob_db_file_part_insert(&ctx->blob_db, file_id, parts, offset_start, offset_end, &id);
+        if (ret == -1) {
+            flb_plg_error(ctx->ins, "cannot insert blob file part into database");
+            return -1;
+        }
+
+        offset_start = offset_end;
+        parts++;
+    }
+
+    return parts;
+}
+
+static int process_blob_chunk(struct flb_s3 *ctx, struct flb_event_chunk *event_chunk)
+{
+    int64_t ret;
+    int64_t file_id;
+    cfl_sds_t file_path = NULL;
+    cfl_sds_t source = NULL;
+    size_t file_size;
+    msgpack_object map;
+
+    struct flb_log_event_decoder log_decoder;
+    struct flb_log_event         log_event;
+
+    if (ctx->blob_db.db == NULL) {
+        flb_plg_error(ctx->ins, "Cannot process blob because this operation requires a database.");
+
+        return -1;
+    }
+
+    ret = flb_log_event_decoder_init(&log_decoder,
+                                    (char *) event_chunk->data,
+                                     event_chunk->size);
+
+    if (ret != FLB_EVENT_DECODER_SUCCESS) {
+        flb_plg_error(ctx->ins,
+                    "Log event decoder initialization error : %i", (int) ret);
+        return -1;
+
+    }
+
+    while (flb_log_event_decoder_next(&log_decoder, &log_event) == FLB_EVENT_DECODER_SUCCESS) {
+        map = *log_event.body;
+        ret = flb_input_blob_file_get_info(map, &source, &file_path, &file_size);
+        if (ret == -1) {
+            flb_plg_error(ctx->ins, "cannot get file info from blob record, skipping");
+            continue;
+        }
+
+        ret = flb_blob_db_file_insert(&ctx->blob_db,
+                                      event_chunk->tag,
+                                      source,
+                                      ctx->endpoint,
+                                      file_path,
+                                      file_size);
+
+        if (ret == -1) {
+            flb_plg_error(ctx->ins, "cannot insert blob file into database: %s (size=%lu)",
+                          file_path, file_size);
+
+            cfl_sds_destroy(file_path);
+            cfl_sds_destroy(source);
+
+            continue;
+        }
+
+        /* generate the parts by using the newest id created (ret) */
+        file_id = ret;
+        ret = blob_chunk_register_parts(ctx, file_id, file_size);
+        if (ret == -1) {
+            flb_plg_error(ctx->ins, "cannot register blob file '%s 'parts into database",
+                            file_path);
+
+            cfl_sds_destroy(file_path);
+            cfl_sds_destroy(source);
+
+            return -1;
+        }
+
+        flb_plg_debug(ctx->ins, "blob file '%s' (id=%zu) registered with %zu parts",
+                      file_path, file_id, ret);
+
+
+        cfl_sds_destroy(file_path);
+        cfl_sds_destroy(source);
+    }
+
+    flb_log_event_decoder_destroy(&log_decoder);
+
+    return 0;
+}
+
+static void cb_s3_blob_file_upload(struct flb_config *config, void *out_context)
+{
+    cb_s3_upload_blob(config, out_context);
+
+    flb_sched_timer_cb_coro_return();
+}
+
+static int s3_timer_create(struct flb_s3 *ctx)
+{
+    int ret;
+    int64_t ms;
+    struct flb_sched *sched;
+
+    sched = flb_sched_ctx_get();
+
+    /* convert from seconds to milliseconds (scheduler needs ms) */
+    ms = ctx->upload_parts_timeout * 1000;
+
+    ret = flb_sched_timer_coro_cb_create(sched, FLB_SCHED_TIMER_CB_PERM, ms,
+                                         cb_s3_blob_file_upload, ctx, NULL);
+    if (ret == -1) {
+        flb_plg_error(ctx->ins, "failed to create upload timer");
+        return -1;
+    }
+
+    return 0;
+}
+
 static void cb_s3_flush(struct flb_event_chunk *event_chunk,
                         struct flb_output_flush *out_flush,
                         struct flb_input_instance *i_ins,
@@ -2098,6 +3558,19 @@ static void cb_s3_flush(struct flb_event_chunk *event_chunk,
     time_t file_first_log_time = 0;
     struct flb_log_event_decoder log_decoder;
     struct flb_log_event log_event;
+
+    if (event_chunk->type == FLB_EVENT_TYPE_BLOBS) {
+        /*
+         * For Blob types, we use the flush callback to enqueue the file, then cb_azb_blob_file_upload()
+         * takes care of the rest like reading the file and uploading it to S3.
+         */
+        ret = process_blob_chunk(ctx, event_chunk);
+        if (ret == -1) {
+            FLB_OUTPUT_RETURN(FLB_RETRY);
+        }
+
+        FLB_OUTPUT_RETURN(FLB_OK);
+    }
 
     /* Cleanup old buffers and initialize upload timer */
     flush_init(ctx);
@@ -2292,6 +3765,12 @@ static int cb_s3_exit(void *data, struct flb_config *config)
                 }
             }
         }
+    }
+
+    if (ctx->blob_database_file != NULL &&
+        ctx->blob_db.db != NULL) {
+
+        flb_blob_db_close(&ctx->blob_db);
     }
 
     s3_store_exit(ctx);
@@ -2489,18 +3968,81 @@ static struct flb_config_map config_map[] = {
      "$HOME/.aws/ directory."
     },
 
+    {
+     FLB_CONFIG_MAP_STR, "blob_database_file", NULL,
+     0, FLB_TRUE, offsetof(struct flb_s3, blob_database_file),
+     "Absolute path to a database file to be used to store blob files contexts"
+    },
+
+    {
+     FLB_CONFIG_MAP_SIZE, "part_size", "25M",
+     0, FLB_TRUE, offsetof(struct flb_s3, part_size),
+     "Size of each part when uploading blob files"
+    },
+
+    {
+     FLB_CONFIG_MAP_INT, "file_delivery_attempt_limit", "1",
+     0, FLB_TRUE, offsetof(struct flb_s3, file_delivery_attempt_limit),
+     "File delivery attempt limit"
+    },
+
+    {
+     FLB_CONFIG_MAP_INT, "part_delivery_attempt_limit", "1",
+     0, FLB_TRUE, offsetof(struct flb_s3, part_delivery_attempt_limit),
+     "File part delivery attempt limit"
+    },
+
+    {
+     FLB_CONFIG_MAP_TIME, "upload_parts_timeout", "10M",
+     0, FLB_TRUE, offsetof(struct flb_s3, upload_parts_timeout),
+     "Timeout to upload parts of a blob file"
+    },
+
+    {
+     FLB_CONFIG_MAP_TIME, "upload_part_freshness_limit", "6D",
+     0, FLB_TRUE, offsetof(struct flb_s3, upload_parts_freshness_threshold),
+     "Maximum lifespan of an uncommitted file part"
+    },
+
+    {
+     FLB_CONFIG_MAP_STR, "configuration_endpoint_url", NULL,
+     0, FLB_TRUE, offsetof(struct flb_s3, configuration_endpoint_url),
+     "Configuration endpoint URL"
+    },
+
+    {
+     FLB_CONFIG_MAP_STR, "configuration_endpoint_username", NULL,
+     0, FLB_TRUE, offsetof(struct flb_s3, configuration_endpoint_username),
+     "Configuration endpoint basic authentication username"
+    },
+
+    {
+     FLB_CONFIG_MAP_STR, "configuration_endpoint_password", NULL,
+     0, FLB_TRUE, offsetof(struct flb_s3, configuration_endpoint_password),
+     "Configuration endpoint basic authentication password"
+    },
+
+    {
+     FLB_CONFIG_MAP_STR, "configuration_endpoint_bearer_token", NULL,
+     0, FLB_TRUE, offsetof(struct flb_s3, configuration_endpoint_bearer_token),
+     "Configuration endpoint bearer token"
+    },
+
     /* EOF */
     {0}
 };
 
 /* Plugin registration */
 struct flb_output_plugin out_s3_plugin = {
-    .name         = "s3",
-    .description  = "Send to S3",
-    .cb_init      = cb_s3_init,
-    .cb_flush     = cb_s3_flush,
-    .cb_exit      = cb_s3_exit,
-    .workers      = 1,
-    .flags        = FLB_OUTPUT_NET | FLB_IO_TLS,
-    .config_map   = config_map
+    .name           = "s3",
+    .description    = "Send to S3",
+    .cb_init        = cb_s3_init,
+    .cb_flush       = cb_s3_flush,
+    .cb_exit        = cb_s3_exit,
+    .cb_worker_init = cb_s3_worker_init,
+    .cb_worker_exit = cb_s3_worker_exit,
+    .workers        = 1,
+    .event_type     = FLB_OUTPUT_LOGS | FLB_OUTPUT_BLOBS,
+    .flags          = FLB_OUTPUT_NET | FLB_IO_TLS,
+    .config_map     = config_map
 };

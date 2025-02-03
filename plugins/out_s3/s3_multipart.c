@@ -334,7 +334,7 @@ static int complete_multipart_upload_payload(struct flb_s3 *ctx,
     int offset = 0;
     flb_sds_t etag;
     size_t size = COMPLETE_MULTIPART_UPLOAD_BASE_LEN;
-    char part_num[7];
+    char part_num[11];
 
     size = size + (COMPLETE_MULTIPART_UPLOAD_PART_LEN * m_upload->part_number);
 
@@ -476,6 +476,72 @@ int complete_multipart_upload(struct flb_s3 *ctx,
     return -1;
 }
 
+int abort_multipart_upload(struct flb_s3 *ctx,
+                           struct multipart_upload *m_upload)
+{
+    flb_sds_t uri = NULL;
+    flb_sds_t tmp;
+    int ret;
+    struct flb_http_client *c = NULL;
+    struct flb_aws_client *s3_client;
+
+    if (!m_upload->upload_id) {
+        flb_plg_error(ctx->ins, "Cannot complete multipart upload for key %s: "
+                      "upload ID is unset ", m_upload->s3_key);
+        return -1;
+    }
+
+    uri = flb_sds_create_size(flb_sds_len(m_upload->s3_key) + 11 +
+                              flb_sds_len(m_upload->upload_id));
+    if (!uri) {
+        flb_errno();
+        return -1;
+    }
+
+    tmp = flb_sds_printf(&uri, "/%s%s?uploadId=%s", ctx->bucket,
+                         m_upload->s3_key, m_upload->upload_id);
+    if (!tmp) {
+        flb_sds_destroy(uri);
+        return -1;
+    }
+    uri = tmp;
+
+    s3_client = ctx->s3_client;
+    if (s3_plugin_under_test() == FLB_TRUE) {
+        /* c = mock_s3_call("TEST_ABORT_MULTIPART_UPLOAD_ERROR", "AbortMultipartUpload"); */
+        c = NULL;
+    }
+    else {
+        c = s3_client->client_vtable->request(s3_client, FLB_HTTP_DELETE,
+                                              uri, NULL, 0,
+                                              NULL, 0);
+    }
+    flb_sds_destroy(uri);
+
+    if (c) {
+        flb_plg_debug(ctx->ins, "AbortMultipartUpload http status=%d",
+                      c->resp.status);
+        if (c->resp.status == 204) {
+            flb_plg_info(ctx->ins, "Successfully completed multipart upload "
+                         "for %s, UploadId=%s", m_upload->s3_key,
+                         m_upload->upload_id);
+            flb_http_client_destroy(c);
+            /* remove this upload from the file system */
+            remove_upload_from_fs(ctx, m_upload);
+            return 0;
+        }
+        flb_aws_print_xml_error(c->resp.payload, c->resp.payload_size,
+                                "AbortMultipartUpload", ctx->ins);
+        if (c->resp.payload != NULL) {
+            flb_plg_debug(ctx->ins, "Raw AbortMultipartUpload response: %s",
+                          c->resp.payload);
+        }
+        flb_http_client_destroy(c);
+    }
+
+    flb_plg_error(ctx->ins, "AbortMultipartUpload request failed");
+    return -1;
+}
 
 int create_multipart_upload(struct flb_s3 *ctx,
                             struct multipart_upload *m_upload)
