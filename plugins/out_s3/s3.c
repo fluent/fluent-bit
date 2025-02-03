@@ -996,6 +996,8 @@ static int cb_s3_init(struct flb_output_instance *ins,
     struct mk_list *split;
     int list_size;
 
+    FLB_TLS_INIT(s3_worker_info);
+
     ctx = flb_calloc(1, sizeof(struct flb_s3));
     if (!ctx) {
         flb_errno();
