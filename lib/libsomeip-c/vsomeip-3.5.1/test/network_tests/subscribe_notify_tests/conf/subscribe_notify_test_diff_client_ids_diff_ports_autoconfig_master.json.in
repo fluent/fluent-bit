@@ -1,0 +1,60 @@
+{
+    "unicast":"@TEST_IP_MASTER@",
+    "logging":
+    {
+        "level":"warning",
+        "console":"true",
+        "file":
+        {
+            "enable":"false",
+            "path":"/tmp/vsomeip.log"
+        },
+        "dlt":"true"
+    },
+    "services":
+    [
+        {
+            "service":"0x1111",
+            "instance":"0x0001",
+            "unreliable":"30001",
+            "reliable":
+            {
+                "port":"40001",
+                "enable-magic-cookies":"false"
+            }
+        },
+        {
+            "service":"0x2222",
+            "instance":"0x0001",
+            "unreliable":"30002",
+            "reliable":
+            {
+                "port":"40002",
+                "enable-magic-cookies":"false"
+            }
+        },
+        {
+            "service":"0x3333",
+            "instance":"0x0001",
+            "unreliable":"30003",
+            "reliable":
+            {
+                "port":"40003",
+                "enable-magic-cookies":"false"
+            }
+        }
+    ],
+    "service-discovery":
+    {
+        "enable":"true",
+        "multicast":"224.0.0.1",
+        "port":"30490",
+        "protocol":"udp",
+        "initial_delay_min" : "10",
+        "initial_delay_max" : "10",
+        "repetitions_base_delay" : "30",
+        "repetitions_max" : "3",
+        "cyclic_offer_delay" : "1000",
+        "ttl" : "3"
+    }
+}

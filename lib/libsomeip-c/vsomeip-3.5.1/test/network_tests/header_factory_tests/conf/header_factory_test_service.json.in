@@ -1,0 +1,105 @@
+{
+    "unicast" : "127.0.0.1",
+    "logging" :
+    {
+        "level" : "debug",
+        "console" : "true",
+        "file" :
+        {
+            "enable" : "false",
+            "path" : "/tmp/vsomeip.log"
+        },
+        "dlt" : "true"
+    },
+
+    "applications" :
+    [
+        {
+            "name" : "header_factory_test_service",
+            "id" : "0x1277"
+        }
+    ],
+
+    "services" :
+    [
+        {
+            "service" : "0x1234",
+            "instance" : "0x5678",
+            "unreliable" : "30509",
+            "multicast" :
+            {
+                "address" : "224.225.226.233",
+                "port" : "32344"
+            },
+
+            "events" :
+            [
+                {
+                    "event" : "0x0777",
+                    "is_field" : "true",
+                    "update-cycle" : 2000
+                },
+
+                {
+                    "event" : "0x0778",
+                    "is_field" : "true",
+                    "update-cycle" : 0
+                },
+
+                {
+                    "event" : "0x0779",
+                    "is_field" : "true"
+                }
+            ],
+
+            "eventgroups" :
+            [
+                {
+                    "eventgroup" : "0x4455",
+                    "events" :
+                    [
+                        "0x777",
+                        "0x778"
+                    ]
+                },
+
+                {
+                    "eventgroup" : "0x4465",
+                    "events" :
+                    [
+                        "0x778",
+                        "0x779"
+                    ],
+
+                    "is_multicast" : "true"
+                },
+
+                {
+                    "eventgroup" : "0x4555",
+                    "events" :
+                    [
+                        "0x777",
+                        "0x779"
+                    ]
+                }
+            ]
+        }
+    ],
+
+    "routing" : "header_factory_test_service",
+
+    "service-discovery" :
+    {
+        "enable" : "false",
+        "multicast" : "224.0.0.1",
+        "port" : "30490",
+        "protocol" : "udp",
+        "initial_delay_min" : "10",
+        "initial_delay_max" : "100",
+        "repetitions_base_delay" : "200",
+        "repetitions_max" : "3",
+        "ttl" : "3",
+        "cyclic_offer_delay" : "2000",
+        "request_response_delay" : "1500"
+    }
+}

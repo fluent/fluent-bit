@@ -1,0 +1,150 @@
+#!/bin/bash
+# Copyright (C) 2015-2023 Bayerische Motoren Werke Aktiengesellschaft (BMW AG)
+# This Source Code Form is subject to the terms of the Mozilla Public
+# License, v. 2.0. If a copy of the MPL was not distributed with this
+# file, You can obtain one at http://mozilla.org/MPL/2.0/.
+
+# Purpose: This script is needed to start the services with
+# one command. This is necessary as ctest - which is used to run the
+# tests - isn't able to start multiple binaries for one testcase. Therefore
+# the testcase simply executes this script. This script then runs the services
+# and checks that all exit successfully.
+
+FAIL=0
+# Rejecting offer for which there is already a remote offer:
+# * start daemon
+# * start application which offers service
+# * start daemon remotely
+# * start same application which offers the same service again remotely
+#   -> should be rejected as there is already a service instance
+#   running in the network
+
+export VSOMEIP_CONFIGURATION=offer_test_external_master.json
+# start daemon
+../../../examples/routingmanagerd/routingmanagerd &
+PID_VSOMEIPD=$!
+# Start the services
+./offer_test_service 2 &
+PID_SERVICE_TWO=$!
+echo "SERVICE_TWO pid $PID_SERVICE_TWO"
+
+./offer_test_client SUBSCRIBE &
+CLIENT_PID_ONE=$!
+echo "client pid ${CLIENT_PIDS}"
+
+sleep 1
+
+if [ ! -z "$USE_LXC_TEST" ]; then
+    echo "Waiting for 5s"
+    sleep 5
+    echo "starting offer test on slave LXC offer_test_external_slave_starter.sh"
+    ssh -tt -i $SANDBOX_ROOT_DIR/commonapi_main/lxc-config/.ssh/mgc_lxc/rsa_key_file.pub -o StrictHostKeyChecking=no root@$LXC_TEST_SLAVE_IP "bash -ci \"set -m; cd \\\$SANDBOX_TARGET_DIR/vsomeip_lib/test/network_tests/offer_tests; ./offer_test_external_slave_starter.sh\"" &
+    echo "remote ssh pid: $!"
+elif [ ! -z "$USE_DOCKER" ]; then
+    echo "Waiting for 5s"
+    sleep 5
+    docker exec $DOCKER_IMAGE sh -c "cd $DOCKER_TESTS && sleep 10; ./offer_test_external_slave_starter.sh" &
+else
+cat <<End-of-message
+*******************************************************************************
+*******************************************************************************
+** Please now run:
+** offer_test_external_slave_starter.sh
+** from an external host to successfully complete this test.
+**
+** You probably will need to adapt the 'unicast' settings in
+** offer_test_external_master.json and
+** offer_test_external_slave.json to your personal setup.
+*******************************************************************************
+*******************************************************************************
+End-of-message
+fi
+
+# Wait until all clients and services are finished
+# Fail gets incremented if a client exits with a non-zero exit code
+echo "waiting for $job"
+wait $CLIENT_PID_ONE || FAIL=$(($FAIL+1))
+wait $PID_SERVICE_TWO || FAIL=$(($FAIL+1))
+
+# kill the services
+kill $PID_VSOMEIPD
+sleep 1
+
+# wait for slave to finish
+for job in $(jobs -p)
+do
+    # Fail gets incremented if either client or service exit
+    # with a non-zero exit code
+    echo "[Master] waiting for job $job"
+    wait $job || ((FAIL+=1))
+done
+
+# Rejecting remote offer for which there is already a local offer
+# * start application which offers service
+# * send sd message trying to offer the same service instance as already
+#   offered locally from a remote host
+
+export VSOMEIP_CONFIGURATION=offer_test_external_master.json
+# start daemon
+../../../examples/routingmanagerd/routingmanagerd &
+PID_VSOMEIPD=$!
+# Start the services
+./offer_test_service 2 &
+PID_SERVICE_TWO=$!
+
+./offer_test_client SUBSCRIBE &
+CLIENT_PID_ONE=$!
+echo "client pid ${CLIENT_PID_ONE}"
+
+sleep 1
+
+if [ ! -z "$USE_LXC_TEST" ]; then
+    echo "Waiting for 5s"
+    sleep 5
+    echo "starting offer test on slave LXC offer_test_external_sd_msg_sender"
+    ssh -tt -i $SANDBOX_ROOT_DIR/commonapi_main/lxc-config/.ssh/mgc_lxc/rsa_key_file.pub -o StrictHostKeyChecking=no root@$LXC_TEST_SLAVE_IP "bash -ci \"set -m; cd \\\$SANDBOX_TARGET_DIR/vsomeip_lib/test/network_tests/offer_tests; ./offer_test_external_sd_msg_sender @TEST_IP_MASTER@\"" &
+    echo "remote ssh job id: $!"
+elif [ ! -z "$USE_DOCKER" ]; then
+    echo "Waiting for 5s"
+    sleep 5
+    docker exec $DOCKER_IMAGE sh -c "cd $DOCKER_TESTS && sleep 10; ./offer_test_external_sd_msg_sender @TEST_IP_MASTER@" &
+else
+cat <<End-of-message
+*******************************************************************************
+*******************************************************************************
+** Please now run:
+** offer_test_external_sd_msg_sender @TEST_IP_MASTER@
+** (pass the correct ip address of your test master)
+** from an external host to successfully complete this test.
+**
+*******************************************************************************
+*******************************************************************************
+End-of-message
+fi
+
+# Wait until all clients and services are finished
+# Fail gets incremented if a client exits with a non-zero exit code
+echo "waiting for $job"
+wait $CLIENT_PID_ONE || FAIL=$(($FAIL+1))
+wait $PID_SERVICE_TWO || FAIL=$(($FAIL+1))
+
+# kill the services
+kill $PID_VSOMEIPD
+sleep 1
+
+# wait for slave to finish
+for job in $(jobs -p)
+do
+    # Fail gets incremented if either client or service exit
+    # with a non-zero exit code
+    echo "[Master] waiting for job $job"
+    wait $job || ((FAIL+=1))
+done
+
+# Check if everything went well
+if [ $FAIL -eq 0 ]
+then
+    exit 0
+else
+    exit 1
+fi

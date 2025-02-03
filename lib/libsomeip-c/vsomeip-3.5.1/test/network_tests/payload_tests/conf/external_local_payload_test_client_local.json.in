@@ -1,0 +1,54 @@
+{
+   "unicast" : "@TEST_IP_MASTER@",
+   "netmask" : "255.255.255.0",
+   "logging" :
+   {
+      "level" : "debug",
+      "console" : "true",
+      "file" :
+      {
+         "enable" : "true",
+         "path" : "/var/log/vsomeip.log"
+      },
+
+      "dlt" : "true"
+   },
+
+   "applications" :
+   [
+      {
+         "name" : "external_local_payload_test_client_local",
+         "id" : "0x1343"
+      }
+   ],
+
+
+   "services" :
+   [
+      {
+         "service" : "0x1234",
+         "instance" : "0x5678",
+         "unicast" : "@TEST_IP_MASTER@",
+         "unreliable" : "30509",
+         "reliable" :
+         {
+            "port" : "30510",
+            "enable-magic-cookies" : "false"
+         }
+      }
+   ],
+    "npdu-default-timings" : {
+        "debounce-time-request" : "0",
+        "debounce-time-response" : "0",
+        "max-retention-time-request" : "0",
+        "max-retention-time-response" : "0"
+    },
+   "routing" : "external_local_payload_test_service",
+   "service-discovery" :
+   {
+      "enable" : "false",
+      "multicast" : "224.0.0.1",
+      "port" : "30491",
+      "protocol" : "udp"
+   }
+}

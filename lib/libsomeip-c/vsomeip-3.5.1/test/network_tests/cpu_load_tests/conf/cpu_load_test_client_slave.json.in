@@ -1,0 +1,38 @@
+{
+   "unicast" : "@TEST_IP_SLAVE@",
+   "netmask" : "255.255.255.0",
+   "logging" :
+   {
+      "level" : "debug",
+      "console" : "true",
+      "file" :
+      {
+         "enable" : "false",
+         "path" : "/var/log/vsomeip.log"
+      },
+
+      "dlt" : "true"
+   },
+
+   "applications" :
+   [
+      {
+         "name" : "cpu_load_test_client",
+         "id" : "0x2222"
+      }
+   ],
+    "npdu-default-timings" : {
+        "debounce-time-request" : "0",
+        "debounce-time-response" : "0",
+        "max-retention-time-request" : "0",
+        "max-retention-time-response" : "0"
+    },
+   "routing" : "cpu_load_test_client",
+   "service-discovery" :
+   {
+      "enable" : "true",
+      "multicast" : "224.0.0.1",
+      "port" : "30490",
+      "protocol" : "udp"
+   }
+}
