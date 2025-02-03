@@ -53,6 +53,13 @@ struct worker_info {
 
 FLB_TLS_DEFINE(struct worker_info, s3_worker_info);
 
+#ifdef FLB_SYSTEM_WINDOWS
+static int setenv(const char *name, const char *value, int overwrite)
+{
+    return SetEnvironmentVariableA(name, value);
+}
+#endif
+
 static int s3_timer_create(struct flb_s3 *ctx);
 
 static int construct_request_buffer(struct flb_s3 *ctx, flb_sds_t new_data,
