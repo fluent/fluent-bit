@@ -676,9 +676,9 @@ void flb_test_in_tail_skip_long_lines()
     unlink(path);
 }
 
-/* 
+/*
  * test case for https://github.com/fluent/fluent-bit/issues/3943
- * 
+ *
  * test to read the lines "CRLF + empty_line + LF"
  */
 void flb_test_in_tail_issue_3943()
@@ -1312,6 +1312,76 @@ void flb_test_ignore_older()
     }
 }
 
+void flb_test_in_tail_ignore_active_older_files()
+{
+    struct flb_lib_out_cb cb_data;
+    struct test_tail_ctx *ctx;
+    char *file[] = {"source_file.log"};
+    char *path = "source_file.log";
+    char *msg = "TEST LINE";
+    const int expected = 1;
+    int ret;
+    int num;
+    int unused;
+
+    clear_output_num();
+
+    cb_data.cb = cb_count_msgpack;
+    cb_data.data = &unused;
+
+    ctx = test_tail_ctx_create(&cb_data, &file[0], sizeof(file)/sizeof(char *), FLB_TRUE);
+    if (!TEST_CHECK(ctx != NULL)) {
+        TEST_MSG("test_ctx_create failed");
+        return;
+    }
+
+    ret = flb_input_set(ctx->flb, ctx->o_ffd,
+                        "path", path,
+                        "ignore_older", "2s",
+                        "read_from_head", "on",
+                        "ignore_active_older_files", "on",
+                        NULL);
+    TEST_CHECK(ret == 0);
+
+    /* Start the engine */
+    ret = flb_start(ctx->flb);
+
+    if (!TEST_CHECK(ret == 0)) {
+        test_tail_ctx_destroy(ctx);
+
+        return;
+    }
+
+    ret = write_msg(ctx, msg, strlen(msg));
+
+    if (!TEST_CHECK(ret > 0)) {
+        test_tail_ctx_destroy(ctx);
+
+        return;
+    }
+
+    /* waiting to flush */
+    flb_time_msleep(6000);
+
+    ret = write_msg(ctx, msg, strlen(msg));
+
+    if (!TEST_CHECK(ret > 0)) {
+        test_tail_ctx_destroy(ctx);
+
+        return;
+    }
+
+    /* waiting to flush */
+    flb_time_msleep(1500);
+
+    num = get_output_num();
+    if (!TEST_CHECK(num == expected))  {
+        TEST_MSG("output num error. expect=%d got=%d", expected, num);
+    }
+
+    test_tail_ctx_destroy(ctx);
+}
+
 void flb_test_inotify_watcher_false()
 {
     struct flb_lib_out_cb cb_data;
@@ -1695,7 +1765,7 @@ void flb_test_db_delete_stale_file()
 
     /*
      * Changing the file name from 'test_db_stale.log' to
-     * 'test_db_stale_new.log.' In this scenario, it is assumed that the 
+     * 'test_db_stale_new.log.' In this scenario, it is assumed that the
      * file was deleted after the FluentBit was terminated. However, since
      * the FluentBit was shutdown, the inode remains in the database.
      * The reason for renaming is to preserve the existing file for later use.
@@ -1792,7 +1862,7 @@ void flb_test_db_delete_stale_file()
 
     num = get_output_num();
     if (!TEST_CHECK(num == 3))  {
-        /* 3 = 
+        /* 3 =
          * test_db.log : "hello db end"
          * test_db_stale.log : "msg_init" + "hello db end"
          */
@@ -1963,6 +2033,7 @@ TEST_LIST = {
     {"skip_empty_lines", flb_test_skip_empty_lines},
     {"skip_empty_lines_crlf", flb_test_skip_empty_lines_crlf},
     {"ignore_older", flb_test_ignore_older},
+    {"ignore_active_older_files", flb_test_in_tail_ignore_active_older_files},
 #ifdef FLB_HAVE_INOTIFY
     {"inotify_watcher_false", flb_test_inotify_watcher_false},
 #endif /* FLB_HAVE_INOTIFY */
