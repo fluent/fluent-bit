@@ -85,7 +85,10 @@ struct flb_tail_config {
     int read_from_head;        /* read new files from head     */
     int rotate_wait;           /* sec to wait on rotated files */
     int watcher_interval;      /* watcher interval             */
-    int ignore_older;          /* ignore fields older than X seconds        */
+    int ignore_older;          /* ignore fields older than X seconds */
+    int ignore_active_older_files; /* ignore files that exceed the ignore
+                                    * older limit even if they are already
+                                    * being ingested */
     time_t last_pending;       /* last time a 'pending signal' was emitted' */
     struct mk_list *path_list; /* list of paths to scan (glob) */
     flb_sds_t path_key;        /* key name of file path        */
