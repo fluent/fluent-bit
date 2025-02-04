@@ -402,6 +402,7 @@ static int process_scope_span(struct flb_opentelemetry *ctx,
     msgpack_object *name;
     msgpack_object *attr;
     msgpack_object *version;
+    msgpack_object *schema_url;
     msgpack_object *dropped_attr;
     msgpack_object *spans;
     struct ctrace_scope_span *scope_span;
@@ -434,6 +435,12 @@ static int process_scope_span(struct flb_opentelemetry *ctx,
         ret = find_map_entry_by_key(&scope.via.map, "version", 0, FLB_TRUE);
         if (ret >= 0 && scope.via.map.ptr[ret].val.type == MSGPACK_OBJECT_STR) {
             version = &scope.via.map.ptr[ret].val;
+        }
+
+        /* instrumentation scope: schemaUrl */
+        ret = find_map_entry_by_key(&scope.via.map, "schemaUrl", 0, FLB_TRUE);
+        if (ret >= 0 && scope.via.map.ptr[ret].val.type == MSGPACK_OBJECT_STR) {
+            schema_url = &scope.via.map.ptr[ret].val;
         }
 
         /* instrumentation scope: attributes */
@@ -533,7 +540,7 @@ static int process_resource_span(struct flb_opentelemetry *ctx,
     }
 
     /* schema_url */
-    ret = find_map_entry_by_key(&resource.via.map, "schema_url", 0, FLB_TRUE);
+    ret = find_map_entry_by_key(&resource.via.map, "schemaUrl", 0, FLB_TRUE);
     if (ret >= 0) {
         schema_url = resource.via.map.ptr[ret].val;
         if (schema_url.type == MSGPACK_OBJECT_STR) {
