@@ -656,6 +656,12 @@ static struct flb_config_map config_map[] = {
      "of a record."
     },
     {
+     FLB_CONFIG_MAP_BOOL, "ignore_active_older_files", "false",
+     0, FLB_TRUE, offsetof(struct flb_tail_config, ignore_active_older_files),
+     "ignore files that are older than the value set in ignore_older even "
+     "if the file is being ingested."
+    },
+    {
      FLB_CONFIG_MAP_SIZE, "buffer_chunk_size", FLB_TAIL_CHUNK,
      0, FLB_TRUE, offsetof(struct flb_tail_config, buf_chunk_size),
      "set the initial buffer size to read data from files. This value is "
