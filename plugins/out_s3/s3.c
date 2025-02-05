@@ -2878,7 +2878,7 @@ static int cb_s3_upload_blob(struct flb_config *config, void *data)
      * delivery attempt counter.
      */
     if (part_id == 0) {
-        ret = flb_blob_db_file_delivery_attempts(&ctx->blob_db, file_id, ++file_delivery_attempts);
+        flb_blob_db_file_delivery_attempts(&ctx->blob_db, file_id, ++file_delivery_attempts);
     }
 
     /* read the file content */
