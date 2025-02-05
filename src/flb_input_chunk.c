@@ -530,7 +530,7 @@ int flb_input_chunk_find_space_new_data(struct flb_input_chunk *ic,
                   "new data coming from input plugin %s", flb_input_name(ic->in));
     }
 
-    return 0;
+    return count;
 }
 
 /*
@@ -575,13 +575,18 @@ int flb_input_chunk_has_overlimit_routes(struct flb_input_chunk *ic,
  */
 int flb_input_chunk_place_new_chunk(struct flb_input_chunk *ic, size_t chunk_size)
 {
+    int result;
 	int overlimit;
     struct flb_input_instance *i_ins = ic->in;
 
     if (i_ins->storage_type == CIO_STORE_FS) {
         overlimit = flb_input_chunk_has_overlimit_routes(ic, chunk_size);
         if (overlimit != 0) {
-            flb_input_chunk_find_space_new_data(ic, chunk_size, overlimit);
+            result = flb_input_chunk_find_space_new_data(ic, chunk_size, overlimit);
+
+            if (result != 0) {
+                return 0;
+            }
         }
     }
     return !flb_routes_mask_is_empty(ic->routes_mask);
