@@ -219,25 +219,25 @@ static int process_pack_record(struct flb_http *ctx, struct flb_time *tm,
 
     ret = flb_log_event_encoder_begin_record(&ctx->log_encoder);
     if (ret != FLB_EVENT_ENCODER_SUCCESS) {
-        return -1;
+        return ret;
     }
 
     ret = flb_log_event_encoder_set_timestamp(&ctx->log_encoder, tm);
     if (ret != FLB_EVENT_ENCODER_SUCCESS) {
-        return -1;
+        return ret;
     }
 
     ret = flb_log_event_encoder_set_body_from_msgpack_object(
             &ctx->log_encoder,
             record);
     if (ret != FLB_EVENT_ENCODER_SUCCESS) {
-        return -1;
+        return ret;
     }
 
     ret = flb_log_event_encoder_commit_record(&ctx->log_encoder);
 
     if (ret != FLB_EVENT_ENCODER_SUCCESS) {
-        return -1;
+        return ret;
     }
 
     if (tag) {
@@ -254,11 +254,7 @@ static int process_pack_record(struct flb_http *ctx, struct flb_time *tm,
                                    ctx->log_encoder.output_length);
     }
 
-    if (ret != FLB_EVENT_ENCODER_SUCCESS) {
-        return -1;
-    }
-
-    return 0;
+    return ret;
 }
 
 int process_pack(struct flb_http *ctx, flb_sds_t tag, char *buf, size_t size)
@@ -510,6 +506,32 @@ split_error:
     return ret;
 }
 
+/// ERROR/HTTP: Missing Content TYpe
+#define EHNOTYPE  5001
+/// ERROR/HTTP: Invalid Content Type
+#define EHINVTYPE 5002
+/// ERROR/HTTP: Invalid Content Type
+#define EHNOBODY  5003
+
+static int send_response_error(struct flb_http *ctx, struct http_conn *conn, int error)
+{
+    switch (error) {
+    case -ENOMEM:
+        // 500 ??
+        return send_response(conn, 429, "error: no memory available\n");
+    case -ENOSPC:
+        return send_response(conn, 429, "error: no storage available\n");
+    case -EIO:
+        return send_response(conn, 500, "error: I/O failure\n");
+    case -EAGAIN:
+        return send_response(conn, 429, "error: too many requests\n");
+    case -1:
+        return send_response(conn, 400, "error: invalid request\n");
+    }
+    flb_plg_debug(ctx->ins, "unknown error: %d", errno);
+    return send_response(conn, 400, "error: unknown error\n");
+}
+
 static int process_payload(struct flb_http *ctx, struct http_conn *conn,
                            flb_sds_t tag,
                            struct mk_http_session *session,
@@ -585,8 +607,9 @@ static int process_payload(struct flb_http *ctx, struct http_conn *conn,
         request->data.len = original_data_size;
     }
 
+
     if (ret != 0) {
-        send_response(conn, 400, "error: invalid payload\n");
+        send_response_error(ctx, conn, ret);
         return -1;
     }
 
@@ -797,6 +820,31 @@ static int send_response_ng(struct flb_http_response *response,
     return 0;
 }
 
+static int send_response_error_ng(struct flb_http *ctx, struct flb_http_response *response, int error)
+{
+    switch (error) {
+    case -ENOMEM:
+        // 500 ??
+        return send_response_ng(response, 429, "error: no memory available\n");
+    case -ENOSPC:
+        return send_response_ng(response, 429, "error: no storage available\n");
+    case -EIO:
+        return send_response_ng(response, 500, "error: I/O failure\n");
+    case -EAGAIN:
+        return send_response_ng(response, 429, "error: too many requests\n");
+    case -EHNOTYPE:
+        return send_response_ng(response, 400, "error: header 'Content-Type' is not set\n");
+    case -EHINVTYPE:
+        return send_response_ng(response, 400, "error: invalid 'Content-Type'\n");
+    case -EHNOBODY:
+        return send_response_ng(response, 400, "eror: no payload found\n");
+    case -1:
+        return send_response_ng(response, 400, "error: invalid request\n");
+    }
+    flb_plg_debug(ctx->ins, "unknown error: %d", errno);
+    return send_response_ng(response, 400, "error: unknown error\n");
+}
+
 static int process_pack_ng(struct flb_http *ctx, flb_sds_t tag, char *buf, size_t size)
 {
     int ret;
@@ -891,7 +939,7 @@ static int process_pack_ng(struct flb_http *ctx, flb_sds_t tag, char *buf, size_
 log_event_error:
     flb_plg_error(ctx->ins, "Error encoding record : %d", ret);
     msgpack_unpacked_destroy(&result);
-    return -1;
+    return ret;
 }
 
 static ssize_t parse_payload_json_ng(flb_sds_t tag,
@@ -946,8 +994,7 @@ static int process_payload_ng(flb_sds_t tag,
     struct flb_http *ctx;
 
     if (request->content_type == NULL) {
-        send_response_ng(response, 400, "error: header 'Content-Type' is not set\n");
-        return -1;
+        return -EHNOTYPE;
     }
 
     if (strcasecmp(request->content_type, "application/json") == 0) {
@@ -959,14 +1006,12 @@ static int process_payload_ng(flb_sds_t tag,
     }
 
     if (type == -1) {
-        send_response_ng(response, 400, "error: invalid 'Content-Type'\n");
-        return -1;
+        return -EHINVTYPE;
     }
 
     if (request->body == NULL ||
         cfl_sds_len(request->body) == 0) {
-        send_response_ng(response, 400, "error: no payload found\n");
-        return -1;
+        return -EHNOBODY;
     }
 
     if (type == HTTP_CONTENT_JSON) {
@@ -1042,7 +1087,7 @@ int http_prot_handle_ng(struct flb_http_request *request,
         send_response_ng(response, ctx->successful_response_code, NULL);
     }
     else {
-        send_response_ng(response, 400, "error: unable to process records\n");
+        send_response_error_ng(ctx, response, ret);
     }
 
     return ret;
