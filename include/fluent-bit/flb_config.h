@@ -21,6 +21,7 @@
 #define FLB_CONFIG_H
 
 #include <time.h>
+#include <signal.h>
 
 #include <fluent-bit/flb_info.h>
 #include <fluent-bit/flb_pipe.h>
@@ -266,6 +267,8 @@ struct flb_config {
     int enable_hot_reload;
     int ensure_thread_safety_on_hot_reloading;
     unsigned int hot_reloaded_count;
+    unsigned int hot_reloaded_failures_count;
+    volatile sig_atomic_t bin_restarting;
     int shutdown_by_hot_reloading;
     int hot_reloading;
 
