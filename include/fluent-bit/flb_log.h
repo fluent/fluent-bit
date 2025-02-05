@@ -54,6 +54,11 @@ extern FLB_TLS_DEFINE(struct flb_log, flb_log_ctx)
 #define FLB_LOG_EVENT    MK_EVENT_NOTIFICATION
 #define FLB_LOG_MNG      1024
 
+
+#define FLB_LOG_MNG_TERMINATION_SIGNAL 1
+#define FLB_LOG_MNG_REFRESH_SIGNAL     2
+
+
 #define FLB_LOG_CACHE_ENTRIES        10
 #define FLB_LOG_CACHE_TEXT_BUF_SIZE  1024
 
