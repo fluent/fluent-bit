@@ -99,6 +99,13 @@ static int cb_check_result_json(void *record, size_t size, void *data)
     return 0;
 }
 
+/* Callback to check expected results */
+static int cb_check_result_none(void *record, size_t size, void *data)
+{
+    flb_free(record);
+    return 0;
+}
+
 struct http_client_ctx* http_client_ctx_create()
 {
     struct http_client_ctx *ret_ctx = NULL;
@@ -588,6 +595,470 @@ void flb_test_http_failure_400_bad_disk_write()
     test_ctx_destroy(ctx);
 }
 
+void flb_test_http_failure_400_empty_body()
+{
+    struct flb_lib_out_cb cb_data;
+    struct test_ctx *ctx;
+    struct flb_http_client *c;
+    int ret;
+    size_t b_sent;
+
+    char *buf = "";
+
+    clear_output_num();
+
+    cb_data.cb = cb_check_result_json;
+    cb_data.data = "";
+
+    ctx = test_ctx_create(&cb_data);
+    if (!TEST_CHECK(ctx != NULL)) {
+        TEST_MSG("test_ctx_create failed");
+        exit(EXIT_FAILURE);
+    }
+
+    ret = flb_output_set(ctx->flb, ctx->o_ffd,
+                         "match", "*",
+                         "format", "json",
+                         NULL);
+    TEST_CHECK(ret == 0);
+
+    /* Start the engine */
+    ret = flb_start(ctx->flb);
+    TEST_CHECK(ret == 0);
+
+    flb_time_msleep(5000);
+
+    ctx->httpc = http_client_ctx_create();
+    TEST_CHECK(ctx->httpc != NULL);
+
+    c = flb_http_client(ctx->httpc->u_conn, FLB_HTTP_POST, "/", buf, strlen(buf),
+                        "127.0.0.1", 9880, NULL, 0);
+    ret = flb_http_add_header(c, FLB_HTTP_HEADER_CONTENT_TYPE, strlen(FLB_HTTP_HEADER_CONTENT_TYPE),
+                              JSON_CONTENT_TYPE, strlen(JSON_CONTENT_TYPE));
+    TEST_CHECK(ret == 0);
+    if (!TEST_CHECK(c != NULL)) {
+        TEST_MSG("http_client failed");
+        exit(EXIT_FAILURE);
+    }
+
+    ret = flb_http_do(c, &b_sent);
+    if (!TEST_CHECK(ret == 0)) {
+        TEST_MSG("ret error. ret=%d\n", ret);
+    }
+    else if (!TEST_CHECK(c->resp.status == 400)) {
+        TEST_MSG("http response code error. expect: %d, got: %d\n", 400, c->resp.status);
+    }
+
+    /* waiting to flush */
+    flb_time_msleep(1500);
+
+    flb_http_client_destroy(c);
+    flb_upstream_conn_release(ctx->httpc->u_conn);
+    test_ctx_destroy(ctx);
+}
+
+void flb_test_http_failure_429_paused()
+{
+    struct flb_lib_out_cb cb_data;
+    struct test_ctx *ctx;
+    struct flb_http_client *c;
+    struct mk_list *cur;
+    struct flb_input_instance *i_ins;
+    int ret;
+    size_t b_sent;
+
+    char *buf = "{\"foo\": \"bar\"}";
+
+    clear_output_num();
+
+    cb_data.cb = cb_check_result_json;
+    cb_data.data = "";
+
+    ctx = test_ctx_create(&cb_data);
+    if (!TEST_CHECK(ctx != NULL)) {
+        TEST_MSG("test_ctx_create failed");
+        exit(EXIT_FAILURE);
+    }
+
+    ret = flb_output_set(ctx->flb, ctx->o_ffd,
+                         "match", "*",
+                         "format", "json",
+                         NULL);
+    TEST_CHECK(ret == 0);
+
+    /* Start the engine */
+    ret = flb_start(ctx->flb);
+    TEST_CHECK(ret == 0);
+
+    // how can we pause the input buffers?
+    mk_list_foreach(cur, &ctx->flb->config->inputs) {
+        i_ins = mk_list_entry(cur, struct flb_input_instance, _head);
+        i_ins->mem_buf_status = FLB_INPUT_PAUSED;
+        i_ins->storage_buf_status = FLB_INPUT_PAUSED;
+    }
+
+    flb_time_msleep(5000);
+
+    ctx->httpc = http_client_ctx_create();
+    TEST_CHECK(ctx->httpc != NULL);
+
+    c = flb_http_client(ctx->httpc->u_conn, FLB_HTTP_POST, "/", buf, strlen(buf),
+                        "127.0.0.1", 9880, NULL, 0);
+    ret = flb_http_add_header(c, FLB_HTTP_HEADER_CONTENT_TYPE, strlen(FLB_HTTP_HEADER_CONTENT_TYPE),
+                              JSON_CONTENT_TYPE, strlen(JSON_CONTENT_TYPE));
+    TEST_CHECK(ret == 0);
+    if (!TEST_CHECK(c != NULL)) {
+        TEST_MSG("http_client failed");
+        exit(EXIT_FAILURE);
+    }
+
+    ret = flb_http_do(c, &b_sent);
+    if (!TEST_CHECK(ret == 0)) {
+        TEST_MSG("ret error. ret=%d\n", ret);
+    }
+    else if (!TEST_CHECK(c->resp.status == 429)) {
+        TEST_MSG("http response code error. expect: %d, got: %d\n", 429, c->resp.status);
+    }
+
+    /* waiting to flush */
+    flb_time_msleep(1500);
+
+    flb_http_client_destroy(c);
+    flb_upstream_conn_release(ctx->httpc->u_conn);
+    test_ctx_destroy(ctx);
+}
+
+void flb_test_http_failure_429_enospc()
+{
+    struct flb_lib_out_cb cb_data;
+    struct test_ctx *ctx;
+    struct flb_http_client *c = NULL;
+    int ret;
+    int try;
+    size_t b_sent;
+
+    char *buf = "{\"foo\": \"AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA\"}";
+
+    clear_output_num();
+
+    cb_data.cb = cb_check_result_none;
+    cb_data.data = "\"test\":\"msg\"";
+
+    ctx = test_ctx_create(&cb_data);
+    if (!TEST_CHECK(ctx != NULL)) {
+        TEST_MSG("test_ctx_create failed");
+        exit(EXIT_FAILURE);
+    }
+
+    ret = flb_service_set(ctx->flb,
+                          "storage.path", "/tmp/http-input-test-429-enospc",
+                          NULL);
+    TEST_CHECK(ret == 0);
+
+    ret = flb_input_set(ctx->flb, ctx->i_ffd,
+                        "storage.type", "filesystem",
+                        NULL);
+    TEST_CHECK(ret == 0);
+
+    ret = flb_output_set(ctx->flb, ctx->o_ffd,
+                         "match", "*",
+                         "format", "json",
+                         "storage.total_limit_size", "1K",
+                         NULL);
+    TEST_CHECK(ret == 0);
+
+    /* Start the engine */
+    ret = flb_start(ctx->flb);
+    TEST_CHECK(ret == 0);
+
+    flb_time_msleep(5000);
+
+    ctx->httpc = http_client_ctx_create();
+    TEST_CHECK(ctx->httpc != NULL);
+
+    for (try = 0; try < 16384; try++) {
+        if (c != NULL) {
+            flb_http_client_destroy(c);
+        }
+        c = flb_http_client(ctx->httpc->u_conn, FLB_HTTP_POST, "/", buf, strlen(buf),
+                            "127.0.0.1", 9880, NULL, 0);
+        ret = flb_http_add_header(c, FLB_HTTP_HEADER_CONTENT_TYPE, strlen(FLB_HTTP_HEADER_CONTENT_TYPE),
+                                JSON_CONTENT_TYPE, strlen(JSON_CONTENT_TYPE));
+        TEST_CHECK(ret == 0);
+        if (!TEST_CHECK(c != NULL)) {
+            TEST_MSG("http_client failed");
+            exit(EXIT_FAILURE);
+        }
+
+        ret = flb_http_do(c, &b_sent);
+        if (!TEST_CHECK(ret == 0)) {
+            TEST_MSG("ret error. ret=%d\n", ret);
+        }
+        else if (!TEST_CHECK(b_sent > 0)){
+            TEST_MSG("b_sent size error. b_sent = %lu\n", b_sent);
+        }
+        if (c->resp.status == 429) {
+            if (memcmp(c->resp.payload, 
+                       "error: no storage available\n",
+                       strlen("error: no storage available\n")) == 0) {
+               break;
+            }
+        }
+
+        if (!(try % 128)) {
+            flb_time_msleep(1);
+        }
+    }
+
+    if (TEST_CHECK((c->resp.payload != NULL && c->resp.status != 0))) {
+        if (!TEST_CHECK(c->resp.status == 429)) {
+            TEST_MSG("http response code error. expect: %d, got: %d\n", 429, c->resp.status);
+        }
+
+        if (!TEST_CHECK(memcmp(c->resp.payload, 
+                        "error: no storage available\n",
+                        strlen("error: no storage available\n")) == 0)) {
+            TEST_MSG("http response code error. expect: %d, got: %d\n", 429, c->resp.status);
+        }
+    }
+    else {
+        TEST_MSG("no response to check");
+    }
+
+    /* waiting to flush */
+    flb_time_msleep(1500);
+
+    flb_http_client_destroy(c);
+    flb_upstream_conn_release(ctx->httpc->u_conn);
+    test_ctx_destroy(ctx);
+}
+
+void flb_test_http_failure_400_notype()
+{
+    struct flb_lib_out_cb cb_data;
+    struct test_ctx *ctx;
+    struct flb_http_client *c;
+    int ret;
+    size_t b_sent;
+
+    char *buf = "{\"foo\": \"bar\"}";
+
+    clear_output_num();
+
+    cb_data.cb = cb_check_result_json;
+    cb_data.data = "";
+
+    ctx = test_ctx_create(&cb_data);
+    if (!TEST_CHECK(ctx != NULL)) {
+        TEST_MSG("test_ctx_create failed");
+        exit(EXIT_FAILURE);
+    }
+
+    ret = flb_output_set(ctx->flb, ctx->o_ffd,
+                         "match", "*",
+                         "format", "json",
+                         NULL);
+    TEST_CHECK(ret == 0);
+
+    /* Start the engine */
+    ret = flb_start(ctx->flb);
+    TEST_CHECK(ret == 0);
+
+    flb_time_msleep(5000);
+
+    ctx->httpc = http_client_ctx_create();
+    TEST_CHECK(ctx->httpc != NULL);
+
+    c = flb_http_client(ctx->httpc->u_conn, FLB_HTTP_POST, "/", buf, strlen(buf),
+                        "127.0.0.1", 9880, NULL, 0);
+    if (!TEST_CHECK(c != NULL)) {
+        TEST_MSG("http_client failed");
+        exit(EXIT_FAILURE);
+    }
+
+    ret = flb_http_do(c, &b_sent);
+    if (!TEST_CHECK(ret == 0)) {
+        TEST_MSG("ret error. ret=%d\n", ret);
+    }
+    else if (!TEST_CHECK(c->resp.status == 400)) {
+        TEST_MSG("http response code error. expect: %d, got: %d\n", 400, c->resp.status);
+    }
+
+    /* waiting to flush */
+    flb_time_msleep(1500);
+
+    flb_http_client_destroy(c);
+    flb_upstream_conn_release(ctx->httpc->u_conn);
+    test_ctx_destroy(ctx);
+}
+
+void flb_test_http_failure_400_invtype()
+{
+    struct flb_lib_out_cb cb_data;
+    struct test_ctx *ctx;
+    struct flb_http_client *c;
+    int ret;
+    size_t b_sent;
+
+    char *buf = "{\"foo\": \"bar\"}";
+
+    clear_output_num();
+
+    cb_data.cb = cb_check_result_json;
+    cb_data.data = "";
+
+    ctx = test_ctx_create(&cb_data);
+    if (!TEST_CHECK(ctx != NULL)) {
+        TEST_MSG("test_ctx_create failed");
+        exit(EXIT_FAILURE);
+    }
+
+    ret = flb_output_set(ctx->flb, ctx->o_ffd,
+                         "match", "*",
+                         "format", "json",
+                         NULL);
+    TEST_CHECK(ret == 0);
+
+    /* Start the engine */
+    ret = flb_start(ctx->flb);
+    TEST_CHECK(ret == 0);
+
+    flb_time_msleep(5000);
+
+    ctx->httpc = http_client_ctx_create();
+    TEST_CHECK(ctx->httpc != NULL);
+
+    c = flb_http_client(ctx->httpc->u_conn, FLB_HTTP_POST, "/", buf, strlen(buf),
+                        "127.0.0.1", 9880, NULL, 0);
+    ret = flb_http_add_header(c, FLB_HTTP_HEADER_CONTENT_TYPE, strlen(FLB_HTTP_HEADER_CONTENT_TYPE),
+                              "application/x-unknown", strlen("application/x-unknown"));
+    TEST_CHECK(ret == 0);
+    if (!TEST_CHECK(c != NULL)) {
+        TEST_MSG("http_client failed");
+        exit(EXIT_FAILURE);
+    }
+
+    ret = flb_http_do(c, &b_sent);
+    if (!TEST_CHECK(ret == 0)) {
+        TEST_MSG("ret error. ret=%d\n", ret);
+    }
+    else if (!TEST_CHECK(c->resp.status == 400)) {
+        TEST_MSG("http response code error. expect: %d, got: %d\n", 400, c->resp.status);
+    }
+
+    /* waiting to flush */
+    flb_time_msleep(1500);
+
+    flb_http_client_destroy(c);
+    flb_upstream_conn_release(ctx->httpc->u_conn);
+    test_ctx_destroy(ctx);
+}
+
+void flb_test_http_failure_429_enomem()
+{
+    struct flb_lib_out_cb cb_data;
+    struct test_ctx *ctx;
+    struct flb_http_client *c = NULL;
+    int ret;
+    int try;
+    size_t b_sent;
+
+    char *buf = "{\"foo\": \"AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA\"}";
+
+    clear_output_num();
+
+    cb_data.cb = cb_check_result_none;
+    cb_data.data = "\"test\":\"msg\"";
+
+    ctx = test_ctx_create(&cb_data);
+    if (!TEST_CHECK(ctx != NULL)) {
+        TEST_MSG("test_ctx_create failed");
+        exit(EXIT_FAILURE);
+    }
+
+    /*
+    flb_service_set(ctx->flb,
+                    "Flush", "5",
+                    NULL);
+    */
+    ret = flb_input_set(ctx->flb, ctx->i_ffd,
+                        "storage.type", "memrb",
+                        "mem_buf_limit", "10",
+                        NULL);
+    TEST_CHECK(ret == 0);
+
+    ret = flb_output_set(ctx->flb, ctx->o_ffd,
+                         "match", "*",
+                         "format", "json",
+                         NULL);
+    TEST_CHECK(ret == 0);
+
+    /* Start the engine */
+    ret = flb_start(ctx->flb);
+    TEST_CHECK(ret == 0);
+
+    flb_time_msleep(5000);
+
+    ctx->httpc = http_client_ctx_create();
+    TEST_CHECK(ctx->httpc != NULL);
+
+    for (try = 0; try < 16384; try++) {
+        if (c != NULL) {
+            flb_http_client_destroy(c);
+        }
+        c = flb_http_client(ctx->httpc->u_conn, FLB_HTTP_POST, "/", buf, strlen(buf),
+                            "127.0.0.1", 9880, NULL, 0);
+        ret = flb_http_add_header(c, FLB_HTTP_HEADER_CONTENT_TYPE, strlen(FLB_HTTP_HEADER_CONTENT_TYPE),
+                                JSON_CONTENT_TYPE, strlen(JSON_CONTENT_TYPE));
+        TEST_CHECK(ret == 0);
+        if (!TEST_CHECK(c != NULL)) {
+            TEST_MSG("http_client failed");
+            exit(EXIT_FAILURE);
+        }
+
+        ret = flb_http_do(c, &b_sent);
+        if (!TEST_CHECK(ret == 0)) {
+            TEST_MSG("ret error. ret=%d\n", ret);
+        }
+        else if (!TEST_CHECK(b_sent > 0)){
+            TEST_MSG("b_sent size error. b_sent = %lu\n", b_sent);
+        }
+        if (c->resp.status == 429) {
+            if (memcmp(c->resp.payload,
+                       "error: no memory available\n",
+                       strlen("error: no memory available\n")) == 0) {
+               break;
+            }
+        }
+
+        if (!(try % 128)) {
+            flb_time_msleep(1);
+        }
+    }
+
+    if (TEST_CHECK((c->resp.payload != NULL && c->resp.status != 0))) {
+        if (!TEST_CHECK(c->resp.status == 429)) {
+            TEST_MSG("http response code error. expect: %d, got: %d\n", 429, c->resp.status);
+        }
+
+        if (!TEST_CHECK(memcmp(c->resp.payload, 
+                        "error: no memory available\n",
+                        strlen("error: no memory available\n")) == 0)) {
+            TEST_MSG("http response code error. expect: %d, got: %d\n", 429, c->resp.status);
+        }
+    }
+    else {
+        TEST_MSG("no response to check");
+    }
+
+    /* waiting to flush */
+    flb_time_msleep(1500);
+
+    flb_http_client_destroy(c);
+    flb_upstream_conn_release(ctx->httpc->u_conn);
+    test_ctx_destroy(ctx);
+}
+
 void test_http_tag_key(char *input)
 {
     struct flb_lib_out_cb cb_data;
@@ -677,6 +1148,12 @@ TEST_LIST = {
     {"successful_response_code_204", flb_test_http_successful_response_code_204},
     {"failure_response_code_400_bad_json", flb_test_http_failure_400_bad_json},
     {"failure_response_code_400_bad_disk_write", flb_test_http_failure_400_bad_disk_write},
+    {"failure_response_code_400_empty_body", flb_test_http_failure_400_empty_body},
+    {"failure_response_code_429_paused", flb_test_http_failure_429_paused},
+    {"failure_response_code_429_enomem", flb_test_http_failure_429_enomem},
+    {"failure_response_code_429_enospc", flb_test_http_failure_429_enospc},
+    {"failure_response_code_400_notype", flb_test_http_failure_400_notype},
+    {"failure_response_code_400_invtype", flb_test_http_failure_400_invtype},
     {"tag_key_with_map_input", flb_test_http_tag_key_with_map_input},
     {"tag_key_with_array_input", flb_test_http_tag_key_with_array_input},
     {NULL, NULL}
