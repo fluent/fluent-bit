@@ -2919,6 +2919,8 @@ static int cb_s3_upload_blob(struct flb_config *config, void *data)
                         out_size);
 
         if (ret != 0) {
+            flb_free(out_buf);
+
             cfl_sds_destroy(file_tag);
             cfl_sds_destroy(file_path);
             cfl_sds_destroy(file_remote_id);
@@ -2931,6 +2933,8 @@ static int cb_s3_upload_blob(struct flb_config *config, void *data)
         m_upload = create_blob_upload(ctx, file_tag, cfl_sds_len(file_tag), file_path);
 
         if (m_upload == NULL) {
+            flb_free(out_buf);
+
             cfl_sds_destroy(file_tag);
             cfl_sds_destroy(file_path);
             cfl_sds_destroy(file_remote_id);
@@ -2945,6 +2949,8 @@ static int cb_s3_upload_blob(struct flb_config *config, void *data)
             ret = create_multipart_upload(ctx, m_upload);
 
             if (ret < 0) {
+                flb_free(out_buf);
+
                 cfl_sds_destroy(file_tag);
                 cfl_sds_destroy(file_path);
                 cfl_sds_destroy(file_remote_id);
@@ -2962,6 +2968,8 @@ static int cb_s3_upload_blob(struct flb_config *config, void *data)
             ret = flb_blob_file_update_remote_id(&ctx->blob_db, file_id, m_upload->upload_id);
 
             if (ret != FLB_BLOB_DB_SUCCESS) {
+                flb_free(out_buf);
+
                 cfl_sds_destroy(file_tag);
                 cfl_sds_destroy(file_path);
                 cfl_sds_destroy(file_remote_id);
@@ -2979,6 +2987,8 @@ static int cb_s3_upload_blob(struct flb_config *config, void *data)
             m_upload->upload_id = flb_sds_create(file_remote_id);
 
             if (m_upload->upload_id == NULL) {
+                flb_free(out_buf);
+
                 cfl_sds_destroy(file_tag);
                 cfl_sds_destroy(file_path);
                 cfl_sds_destroy(file_remote_id);
@@ -3022,22 +3032,9 @@ static int cb_s3_upload_blob(struct flb_config *config, void *data)
         }
     }
 
-    if (ret == -1) {
-        info->active_upload = FLB_FALSE;
-
-        cfl_sds_destroy(file_tag);
-        cfl_sds_destroy(file_path);
-        cfl_sds_destroy(file_remote_id);
-        cfl_sds_destroy(file_destination);
-
-        return 0;
-    }
-
     info->active_upload = FLB_FALSE;
 
-    if (out_buf) {
-        flb_free(out_buf);
-    }
+    flb_free(out_buf);
 
     cfl_sds_destroy(file_tag);
     cfl_sds_destroy(file_path);
