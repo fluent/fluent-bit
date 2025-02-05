@@ -2561,40 +2561,6 @@ static int cb_s3_upload_blob(struct flb_config *config, void *data)
                 ret = abort_multipart_upload(ctx, m_upload);
             }
 
-            if (ctx->file_delivery_attempt_limit != FLB_OUT_RETRY_UNLIMITED &&
-                file_delivery_attempts < ctx->file_delivery_attempt_limit) {
-                flb_blob_db_file_reset_upload_states(&ctx->blob_db, file_id, file_path);
-                flb_blob_db_file_set_aborted_state(&ctx->blob_db, file_id, file_path, 0);
-            }
-            else {
-                ret = flb_blob_db_file_delete(&ctx->blob_db, file_id, file_path);
-
-                notification = flb_calloc(1,
-                                          sizeof(
-                                            struct flb_blob_delivery_notification));
-
-                if (notification != NULL) {
-                    notification->base.dynamically_allocated = FLB_TRUE;
-                    notification->base.notification_type = FLB_NOTIFICATION_TYPE_BLOB_DELIVERY;
-                    notification->base.destructor = flb_input_blob_delivery_notification_destroy;
-                    notification->success = FLB_FALSE;
-                    notification->path = cfl_sds_create(file_path);
-
-                    ret = flb_notification_enqueue(FLB_PLUGIN_INPUT,
-                                                   source,
-                                                   &notification->base,
-                                                   config);
-
-                    if (ret != 0) {
-                        flb_plg_error(ctx->ins,
-                                    "blob file '%s' (id=%" PRIu64 ") notification " \
-                                    "delivery error %d", file_path, file_id, ret);
-
-                        flb_notification_cleanup(&notification->base);
-                    }
-                }
-            }
-
             flb_blob_file_update_remote_id(&ctx->blob_db, file_id, "");
             flb_blob_db_file_reset_upload_states(&ctx->blob_db, file_id, file_path);
             flb_blob_db_file_set_aborted_state(&ctx->blob_db, file_id, file_path, 0);
