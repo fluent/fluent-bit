@@ -176,7 +176,7 @@ static void format_event(cfl_sds_t *buf, struct ctrace_span_event *event, int le
 
 }
 
-static void format_span(cfl_sds_t *buf, struct ctrace *ctx, struct ctrace_span *span, int level)
+static void format_span(cfl_sds_t *buf, struct ctrace *ctx, int id, struct ctrace_span *span, int level)
 {
     int min;
     int off = 1 + (level * 4);
@@ -188,7 +188,7 @@ static void format_span(cfl_sds_t *buf, struct ctrace *ctx, struct ctrace_span *
 
     min = off + 4;
 
-    snprintf(tmp, sizeof(tmp) - 1, "%*s[span '%s']\n", off, "", span->name);
+    snprintf(tmp, sizeof(tmp) - 1, "%*s[span #%i '%s']\n", off, "", id, span->name);
     sds_cat_safe(buf, tmp);
 
     /* trace_id */
@@ -330,13 +330,14 @@ static void format_span(cfl_sds_t *buf, struct ctrace *ctx, struct ctrace_span *
         else {
             snprintf(tmp, sizeof(tmp) - 1, "%*s- attributes           : ", off, "");
             sds_cat_safe(buf, tmp);
-            format_attributes(buf, span->attr->kv, off);
+            format_attributes(buf, link->attr->kv, off);
         }
     }
 }
 
 static void format_spans(cfl_sds_t *buf, struct ctrace *ctx, struct cfl_list *spans)
 {
+    int id = 0;
     struct cfl_list *head;
     struct ctrace_span *span;
 
@@ -347,7 +348,8 @@ static void format_spans(cfl_sds_t *buf, struct ctrace *ctx, struct cfl_list *sp
         span = cfl_list_entry(head, struct ctrace_span, _head);
 
         /* skip resource if there is no match */
-        format_span(buf, ctx, span, 2);
+        format_span(buf, ctx, id, span, 2);
+        id++;
     }
 }
 
@@ -360,7 +362,7 @@ static void format_instrumentation_scope(cfl_sds_t *buf,
     cfl_sds_printf(buf, "        - dropped_attributes_count: %i\n", scope->dropped_attr_count);
 
     if (scope->attr) {
-        cfl_sds_printf(buf, "        - attributes:\n");
+        cfl_sds_printf(buf, "        - attributes:");
         format_attributes(buf, scope->attr->kv, 8);
     }
     else {
@@ -430,10 +432,10 @@ cfl_sds_t ctr_encode_text_create(struct ctrace *ctx)
 
         /* schema_url */
         if (resource_span->schema_url) {
-            cfl_sds_printf(&buf, "  schema_url: %s\n", resource_span->schema_url);
+            cfl_sds_printf(&buf, "     - schema_url: %s\n", resource_span->schema_url);
         }
         else {
-            cfl_sds_printf(&buf, "  schema_url: \"\"\n");
+            cfl_sds_printf(&buf, "     - schema_url: \"\"\n");
         }
 
         /* scope spans */

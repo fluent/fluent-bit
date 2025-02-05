@@ -18,6 +18,7 @@
  */
 
 #include <fluent-bit/flb_input_plugin.h>
+#include <ctype.h>
 
 int find_map_entry_by_key(msgpack_object_map *map,
                           char *key,
@@ -151,4 +152,66 @@ int json_payload_get_wrapped_value(msgpack_object *wrapper,
     }
 
     return 0;
+}
+
+static int hex_to_int(char ch)
+{
+    if (ch >= '0' && ch <= '9') {
+        return ch - '0';
+    }
+
+    if (ch >= 'a' && ch <= 'f') {
+        return ch - 'a' + 10;
+    }
+
+    if (ch >= 'A' && ch <= 'F') {
+        return ch - 'A' + 10;
+    }
+
+    return -1;
+}
+
+/* convert an hex string to the expected id (16 bytes) */
+int hex_to_id(char *str, int len, unsigned char *out_buf, int out_size)
+{
+    int i;
+    int high;
+    int low;
+
+    if (len % 2 != 0) {
+        return -1;
+    }
+
+    for (i = 0; i < len; i += 2) {
+        if (!isxdigit(str[i]) || !isxdigit(str[i + 1])) {
+            return -1;
+        }
+
+        high = hex_to_int(str[i]);
+        low = hex_to_int(str[i + 1]);
+
+        if (high == -1 || low == -1) {
+            return -1;
+        }
+
+        out_buf[i / 2] = (high << 4) | low;
+    }
+
+    return 0;
+}
+
+uint64_t convert_string_number_to_u64(char *str, size_t len)
+{
+    uint64_t val;
+    char tmp[32];
+
+    if (len > sizeof(tmp) - 1) {
+        return 0;
+    }
+
+    memcpy(tmp, str, len);
+    tmp[len] = '\0';
+
+    val = strtoull(tmp, NULL, 10);
+    return val;
 }
