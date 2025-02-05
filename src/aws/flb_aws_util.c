@@ -987,21 +987,23 @@ flb_sds_t flb_get_s3_blob_key(const char *format,
 
     error:
         flb_errno();
+
         if (tmp_tag){
             flb_sds_destroy(tmp_tag);
         }
+
         if (s3_key){
             flb_sds_destroy(s3_key);
         }
+
         if (buf && buf != tmp){
             flb_sds_destroy(buf);
         }
+
         if (tmp){
             flb_sds_destroy(tmp);
         }
-        if (tmp_key){
-            flb_sds_destroy(tmp_key);
-        }
+
         return NULL;
 }
 
