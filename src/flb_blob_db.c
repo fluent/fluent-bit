@@ -701,10 +701,10 @@ int flb_blob_db_file_get_next_aborted(struct flb_blob_db *context,
     int           result;
     int           exists;
 
-    path = NULL;
-    source = NULL;
-    remote_id = NULL;
-    file_tag = NULL;
+    *path = NULL;
+    *source = NULL;
+    *remote_id = NULL;
+    *file_tag = NULL;
 
     statement = context->stmt_get_next_aborted_file;
 
