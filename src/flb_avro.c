@@ -268,7 +268,7 @@ bool flb_msgpack_raw_to_avro_sds(const void *in_buf, size_t in_size, struct flb_
 
     avro_writer_t awriter;
     flb_debug("in flb_msgpack_raw_to_avro_sds\n");
-    flb_debug("schemaID:%s:\n", ctx->schema_id);
+    flb_debug("schemaID:%d:\n", ctx->schema_id);
     flb_debug("schema string:%s:\n", ctx->schema_str);
 
     size_t schema_json_len = flb_sds_len(ctx->schema_str);
@@ -341,18 +341,15 @@ bool flb_msgpack_raw_to_avro_sds(const void *in_buf, size_t in_size, struct flb_
     }
 
     // write the schemaid
-    // its md5hash of the avro schema
-    // it looks like this c4b52aaf22429c7f9eb8c30270bc1795
-    const char *pos = ctx->schema_id;
-    unsigned char val[16];
-    size_t count;
-    for (count = 0; count < sizeof val/sizeof *val; count++) {
-            sscanf(pos, "%2hhx", &val[count]);
-            pos += 2;
-    }
+    unsigned int id = ctx->schema_id;
+    unsigned char val[4];
+    val[0] = (id >> 24) & 0xFF;
+    val[1] = (id >> 16) & 0xFF;
+    val[2] = (id >> 8) & 0xFF;
+    val[3] = id & 0xFF;
     
     // write it into a buffer which can be passed to librdkafka
-    rval = avro_write(awriter, val, 16);
+    rval = avro_write(awriter, val, 4);
     if (rval != 0) {
         flb_error("Unable to write schemaid\n");
         avro_writer_free(awriter);
