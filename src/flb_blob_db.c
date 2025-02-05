@@ -1366,7 +1366,7 @@ int flb_blob_db_file_fetch_part_count(struct flb_blob_db *context,
     result = sqlite3_step(statement);
 
     if (result == SQLITE_ROW) {
-        result = sqlite3_column_int64(statement, 0);
+        result = (int) sqlite3_column_int64(statement, 0);
     }
     else {
         context->last_error = result;
