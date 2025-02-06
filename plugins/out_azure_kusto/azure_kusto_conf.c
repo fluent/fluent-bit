@@ -221,7 +221,7 @@ static int parse_storage_resources(struct flb_azure_kusto *ctx, struct flb_confi
         if (ret > 0) {
             /* skip all tokens until we reach "Rows" */
             for (i = 0; i < ret - 1; i++) {
-                 t = &tokens[i];
+                jsmntok_t *t = &tokens[i];
 
                 if (t->type != JSMN_STRING) {
                     continue;
@@ -244,7 +244,7 @@ static int parse_storage_resources(struct flb_azure_kusto *ctx, struct flb_confi
              * values, the first value containing the resource type, and the second value
              * containing the resource uri */
             for (; i < ret; i++) {
-                 t = &tokens[i];
+                jsmntok_t *t = &tokens[i];
 
                 /**
                  * each token should be an array with 2 strings:
@@ -354,9 +354,6 @@ static int parse_storage_resources(struct flb_azure_kusto *ctx, struct flb_confi
     cleanup:
     if (resource_uri) {
         flb_sds_destroy(resource_uri);
-    }
-    if (t){
-        flb_free(t);
     }
     if (tokens) {
         flb_free(tokens);
