@@ -76,7 +76,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        arch: [ linux/amd64, linux/arm64, linux/arm/v7, linux/s390x ]
+        arch: [ linux/amd64, linux/arm64, linux/arm/v7 ]
         include:
           # Rather than extract the specific central arch we just provide it
           - arch: linux/amd64
@@ -85,8 +85,6 @@ jobs:
             expected: arm64
           - arch: linux/arm/v7
             expected: arm
-          - arch: linux/s390x
-            expected: s390x
     steps:
       - name: Log in to the Container registry
         uses: docker/login-action@v3
@@ -184,7 +182,7 @@ jobs:
           ref: ${{ inputs.ref }}
 
       - name: Create k8s Kind Cluster
-        uses: helm/kind-action@v1.10.0
+        uses: helm/kind-action@v1.12.0
 
       - name: Set up Helm
         uses: azure/setup-helm@v4

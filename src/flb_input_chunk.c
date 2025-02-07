@@ -815,6 +815,9 @@ static int input_chunk_write_header(struct cio_chunk *chunk, int event_type,
     else if (event_type == FLB_INPUT_TRACES) {
         meta[2] = FLB_INPUT_CHUNK_TYPE_TRACES;
     }
+    else if (event_type == FLB_INPUT_PROFILES) {
+        meta[2] = FLB_INPUT_CHUNK_TYPE_PROFILES;
+    }
 
     /* unused byte */
     meta[3] = 0;
@@ -928,6 +931,9 @@ struct flb_input_chunk *flb_input_chunk_create(struct flb_input_instance *in, in
     else if (event_type == FLB_INPUT_TRACES) {
         flb_hash_table_add(in->ht_trace_chunks, tag, tag_len, ic, 0);
     }
+    else if (event_type == FLB_INPUT_PROFILES) {
+        flb_hash_table_add(in->ht_profile_chunks, tag, tag_len, ic, 0);
+    }
 
     return ic;
 }
@@ -981,6 +987,10 @@ int flb_input_chunk_destroy_corrupted(struct flb_input_chunk *ic,
         }
         else if (ic->event_type == FLB_INPUT_TRACES) {
             flb_hash_table_del_ptr(ic->in->ht_trace_chunks,
+                                   tag_buf, tag_len, (void *) ic);
+        }
+        else if (ic->event_type == FLB_INPUT_PROFILES) {
+            flb_hash_table_del_ptr(ic->in->ht_profile_chunks,
                                    tag_buf, tag_len, (void *) ic);
         }
     }
@@ -1076,6 +1086,10 @@ int flb_input_chunk_destroy(struct flb_input_chunk *ic, int del)
             flb_hash_table_del_ptr(ic->in->ht_trace_chunks,
                                    tag_buf, tag_len, (void *) ic);
         }
+        else if (ic->event_type == FLB_INPUT_PROFILES) {
+            flb_hash_table_del_ptr(ic->in->ht_profile_chunks,
+                                   tag_buf, tag_len, (void *) ic);
+        }
     }
 
 #ifdef FLB_HAVE_CHUNK_TRACE
@@ -1120,6 +1134,10 @@ static struct flb_input_chunk *input_chunk_get(struct flb_input_instance *in,
     }
     else if (event_type == FLB_INPUT_TRACES) {
         id = flb_hash_table_get(in->ht_trace_chunks, tag, tag_len,
+                                (void *) &ic, &out_size);
+    }
+    else if (event_type == FLB_INPUT_PROFILES) {
+        id = flb_hash_table_get(in->ht_profile_chunks, tag, tag_len,
                                 (void *) &ic, &out_size);
     }
 
@@ -2048,6 +2066,9 @@ int flb_input_chunk_get_event_type(struct flb_input_chunk *ic)
         }
         else if (buf[2] == FLB_INPUT_CHUNK_TYPE_TRACES) {
             type = FLB_INPUT_TRACES;
+        }
+        else if (buf[2] == FLB_INPUT_CHUNK_TYPE_PROFILES) {
+            type = FLB_INPUT_PROFILES;
         }
         else if (buf[2] == FLB_INPUT_CHUNK_TYPE_BLOBS) {
             type = FLB_INPUT_BLOBS;

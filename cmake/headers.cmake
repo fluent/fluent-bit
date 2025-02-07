@@ -37,6 +37,7 @@ include_directories(
 
   ${CMAKE_CURRENT_BINARY_DIR}/${FLB_PATH_LIB_JANSSON}/include
   ${CMAKE_CURRENT_BINARY_DIR}/lib/cmetrics
+  ${CMAKE_CURRENT_BINARY_DIR}/lib/cprofiles/include
   ${CMAKE_CURRENT_BINARY_DIR}/include
 
   ${CMAKE_CURRENT_BINARY_DIR}/lib/monkey/include/

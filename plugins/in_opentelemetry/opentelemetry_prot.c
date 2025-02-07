@@ -202,7 +202,7 @@ static int process_payload_raw_traces(struct flb_opentelemetry *ctx, struct http
     msgpack_pack_array(&mp_pck, 2);
     flb_pack_time_now(&mp_pck);
 
-    /* Check if the incoming payload is a valid JSON message and convert it to msgpack */
+    /* Check if the incoming payload is a valid  message and convert it to msgpack */
     ret = flb_pack_json(request->data.data, request->data.len,
                         &out_buf, &out_size, &root_type, NULL);
 
@@ -685,7 +685,8 @@ static int binary_payload_to_msgpack(struct flb_opentelemetry *ctx,
                 flb_plg_error(ctx->ins, "could not set group content metadata");
                 goto binary_payload_to_msgpack_end;
             }
-            flb_log_event_encoder_group_header_end(encoder);
+
+            flb_log_event_encoder_group_end(encoder);
 
             msgpack_sbuffer_clear(&mp_sbuf);
 
@@ -2670,15 +2671,12 @@ static int process_payload_logs_ng(struct flb_opentelemetry *ctx,
     return ret;
 }
 
-static int process_payload_profiles_ng(struct flb_opentelemetry *ctx,
-                                       flb_sds_t tag,
-                                       struct flb_http_request *request,
-                                       struct flb_http_response *response)
+static int ingest_profiles_context_as_log_entry(struct flb_opentelemetry *ctx,
+                                                flb_sds_t tag,
+                                                struct cprof *profiles_context)
 {
     cfl_sds_t                     text_encoded_profiles_context;
-    struct cprof                 *profiles_context;
     struct flb_log_event_encoder *encoder;
-    size_t                        offset;
     int                           ret;
 
     encoder = flb_log_event_encoder_create(FLB_LOG_EVENT_FORMAT_FLUENT_BIT_V2);
@@ -2687,24 +2685,76 @@ static int process_payload_profiles_ng(struct flb_opentelemetry *ctx,
         return -1;
     }
 
-    if (request->content_type == NULL) {
+    ret = cprof_encode_text_create(&text_encoded_profiles_context, profiles_context);
+
+    if (ret != CPROF_ENCODE_TEXT_SUCCESS) {
         flb_log_event_encoder_destroy(encoder);
 
+        return -2;
+    }
+
+    flb_log_event_encoder_begin_record(encoder);
+
+    flb_log_event_encoder_set_current_timestamp(encoder);
+
+    ret = flb_log_event_encoder_append_body_values(
+                encoder,
+                FLB_LOG_EVENT_CSTRING_VALUE("Profile"),
+                FLB_LOG_EVENT_STRING_VALUE(text_encoded_profiles_context,
+                                            cfl_sds_len(text_encoded_profiles_context)));
+
+    cprof_encode_text_destroy(text_encoded_profiles_context);
+
+    if (ret != FLB_EVENT_ENCODER_SUCCESS) {
+        flb_log_event_encoder_destroy(encoder);
+
+        return -3;
+    }
+
+    ret = flb_log_event_encoder_commit_record(encoder);
+
+    if (ret != FLB_EVENT_ENCODER_SUCCESS) {
+        flb_log_event_encoder_destroy(encoder);
+
+        return -4;
+    }
+
+    ret = flb_input_log_append(ctx->ins,
+                               tag,
+                               flb_sds_len(tag),
+                               encoder->output_buffer,
+                               encoder->output_length);
+
+    flb_log_event_encoder_destroy(encoder);
+
+    if (ret != FLB_EVENT_ENCODER_SUCCESS) {
+        return -5;
+    }
+
+    return 0;
+}
+
+static int process_payload_profiles_ng(struct flb_opentelemetry *ctx,
+                                       flb_sds_t tag,
+                                       struct flb_http_request *request,
+                                       struct flb_http_response *response)
+{
+    struct cprof *profiles_context;
+    size_t        offset;
+    int           ret;
+
+    if (request->content_type == NULL) {
         flb_error("[otel] content type missing");
 
         return -1;
     }
     else if (strcasecmp(request->content_type, "application/json") == 0) {
-        flb_log_event_encoder_destroy(encoder);
-
         flb_error("[otel] unsuported profiles encoding type : %s",
                   request->content_type);
 
         return -1;
     }
     else if (strcasecmp(request->content_type, "application/x-protobuf") == 0) {
-        flb_log_event_encoder_destroy(encoder);
-
         flb_error("[otel] unsuported profiles encoding type : %s",
                   request->content_type);
 
@@ -2712,8 +2762,6 @@ static int process_payload_profiles_ng(struct flb_opentelemetry *ctx,
     }
     else if (strcasecmp(request->content_type, "application/grpc") == 0) {
         if (cfl_sds_len(request->body) < 5) {
-            flb_log_event_encoder_destroy(encoder);
-
             flb_error("[otel] malformed grpc packet of size %zu",
                       cfl_sds_len(request->body));
 
@@ -2729,69 +2777,28 @@ static int process_payload_profiles_ng(struct flb_opentelemetry *ctx,
                                                 &offset);
 
         if (ret != CPROF_DECODE_OPENTELEMETRY_SUCCESS) {
-            flb_log_event_encoder_destroy(encoder);
-
             flb_error("[otel] profile decoding error : %d",
                       ret);
 
             return -1;
         }
 
-        ret = cprof_encode_text_create(&text_encoded_profiles_context, profiles_context);
+        if (ctx->encode_profiles_as_log) {
+            ret = ingest_profiles_context_as_log_entry(ctx,
+                                                       tag,
+                                                       profiles_context);
+        }
+        else {
+            ret = flb_input_profiles_append(ctx->ins,
+                                            tag,
+                                            flb_sds_len(tag),
+                                            profiles_context);
+        }
 
         cprof_decode_opentelemetry_destroy(profiles_context);
 
-        if (ret != CPROF_DECODE_OPENTELEMETRY_SUCCESS) {
-            flb_log_event_encoder_destroy(encoder);
-
-            flb_error("[otel] profile text encoding error : %d",
-                      ret);
-
-            return -1;
-        }
-
-        flb_log_event_encoder_begin_record(encoder);
-
-        flb_log_event_encoder_set_current_timestamp(encoder);
-
-        ret = flb_log_event_encoder_append_body_values(
-                    encoder,
-                    FLB_LOG_EVENT_CSTRING_VALUE("Profile"),
-                    FLB_LOG_EVENT_STRING_VALUE(text_encoded_profiles_context,
-                                               cfl_sds_len(text_encoded_profiles_context)));
-
-        cprof_encode_text_destroy(text_encoded_profiles_context);
-
-        if (ret != FLB_EVENT_ENCODER_SUCCESS) {
-            flb_log_event_encoder_destroy(encoder);
-
-            flb_error("[otel] re encoded profile ingestion error : %d",
-                      ret);
-
-            return -1;
-        }
-
-        ret = flb_log_event_encoder_commit_record(encoder);
-
-        if (ret != FLB_EVENT_ENCODER_SUCCESS) {
-            flb_log_event_encoder_destroy(encoder);
-
-            flb_error("[otel] re encoded profile ingestion error : %d",
-                      ret);
-
-            return -1;
-        }
-
-        ret = flb_input_log_append(ctx->ins,
-                                   tag,
-                                   flb_sds_len(tag),
-                                   encoder->output_buffer,
-                                   encoder->output_length);
-
-        if (ret != FLB_EVENT_ENCODER_SUCCESS) {
-            flb_log_event_encoder_destroy(encoder);
-
-            flb_error("[otel] re encoded profile ingestion error : %d",
+        if (ret != 0) {
+            flb_error("[otel] profile ingestion error : %d",
                       ret);
 
             return -1;
@@ -2804,9 +2811,6 @@ static int process_payload_profiles_ng(struct flb_opentelemetry *ctx,
 
         ret = -1;
     }
-
-
-    flb_log_event_encoder_destroy(encoder);
 
     return ret;
 }
@@ -2854,7 +2858,6 @@ int opentelemetry_prot_handle_ng(struct flb_http_request *request,
             strcmp(request->path, "/opentelemetry.proto.collector.metric.v1.MetricService/Export") == 0 ||
             strcmp(request->path, "/opentelemetry.proto.collector.trace.v1.TraceService/Export") == 0 ||
             strcmp(request->path, "/opentelemetry.proto.collector.log.v1.LogService/Export") == 0) {
-
         grpc_request = FLB_TRUE;
     }
     else if (context->profile_support_enabled &&
@@ -2912,6 +2915,7 @@ int opentelemetry_prot_handle_ng(struct flb_http_request *request,
         else {
             tag = flb_sds_create(context->ins->tag);
         }
+
         result = process_payload_logs_ng(context, tag, request, response);
     }
     else if (context->profile_support_enabled &&

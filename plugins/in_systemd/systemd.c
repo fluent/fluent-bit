@@ -138,7 +138,7 @@ static int systemd_enumerate_data_store(struct flb_config *config,
     const char *sep;
     const char *key;
     const char *val;
-    char *buf = NULL;
+    char *buf;
     struct cfl_kvlist *kvlist = format_context;
     struct flb_systemd_config *ctx = plugin_context;
     struct cfl_variant *cfl_val = NULL;
@@ -155,29 +155,17 @@ static int systemd_enumerate_data_store(struct flb_config *config,
 
     len = (sep - key);
     key_len = len;
-
-    if (ctx->lowercase == FLB_TRUE) {
-        /*
-         * Ensure buf to have enough space for the key because the libsystemd
-         * might return larger data than the threshold.
-         */
-        if (buf == NULL) {
-            buf = flb_sds_create_len(NULL, ctx->threshold);
-        }
-        if (flb_sds_alloc(buf) < len) {
-            buf = flb_sds_increase(buf, len - flb_sds_alloc(buf));
-        }
-        for (i = 0; i < len; i++) {
-            buf[i] = tolower(key[i]);
-        }
-        list_key = flb_sds_create_len(buf, key_len);
-    }
-    else {
-        list_key = flb_sds_create_len(key, key_len);
-    }
+    list_key = flb_sds_create_len(key, key_len);
 
     if (!list_key) {
         return -1;
+    }
+
+    if (ctx->lowercase == FLB_TRUE) {
+        buf = list_key;
+        for (i = 0; i < key_len; i++) {
+            buf[i] = tolower(buf[i]);
+        }
     }
 
     /* Check existence */
@@ -230,16 +218,16 @@ static int systemd_enumerate_data_store(struct flb_config *config,
 
             cfl_array_append_string_s(array,
                                       tmp_val->data.as_string,
-                                      strlen(tmp_val->data.as_string),
+                                      tmp_val->size,
                                       CFL_FALSE);
-            cfl_array_append_string_s(array, (char *)val, strlen(val), CFL_FALSE);
+            cfl_array_append_string_s(array, (char *)val, len, CFL_FALSE);
             cfl_kvlist_insert_array_s(kvlist, list_key, key_len, array);
             cfl_variant_destroy(tmp_val);
             break;
         case CFL_VARIANT_ARRAY:
             /* Just appending the newly arrived field(s) */
             array = tmp_val->data.as_array;
-            cfl_array_append_string_s(array, (char *)val, strlen(val), CFL_FALSE);
+            cfl_array_append_string_s(array, (char *)val, len, CFL_FALSE);
             break;
         default:
             /* nop */
@@ -248,7 +236,7 @@ static int systemd_enumerate_data_store(struct flb_config *config,
     }
     else {
         cfl_kvlist_insert_string_s(kvlist, list_key, key_len,
-                                   (char *)val, strlen(val), CFL_FALSE);
+                                   (char *)val, len, CFL_FALSE);
     }
 
     flb_sds_destroy(list_key);
@@ -274,7 +262,6 @@ static int in_systemd_collect(struct flb_input_instance *ins,
     uint64_t usec;
     size_t length;
     const char *key;
-    char *buf = NULL;
 #ifdef FLB_HAVE_SQLDB
     char *cursor = NULL;
 #endif
@@ -457,8 +444,6 @@ static int in_systemd_collect(struct flb_input_instance *ins,
             break;
         }
     }
-
-    flb_sds_destroy(buf);
 
 #ifdef FLB_HAVE_SQLDB
     /* Save cursor */
