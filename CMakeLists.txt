@@ -1102,6 +1102,32 @@ endif()
 if (FLB_IN_EBPF)
   find_package(PkgConfig)
 
+  # Check for Clang compiler
+  find_program(CLANG_EXECUTABLE clang)
+
+  if (CLANG_EXECUTABLE)
+    message(STATUS "Clang found: ${CLANG_EXECUTABLE}")
+    # Get Clang version
+    execute_process(
+            COMMAND ${CLANG_EXECUTABLE} --version
+            OUTPUT_VARIABLE CLANG_VERSION_OUTPUT
+            ERROR_QUIET OUTPUT_STRIP_TRAILING_WHITESPACE
+    )
+    if (CLANG_VERSION_OUTPUT MATCHES "clang version ([0-9]+)\\.([0-9]+)\\.([0-9]+)")
+      set(CLANG_VERSION_MAJOR "${CMAKE_MATCH_1}")
+      set(CLANG_VERSION_MINOR "${CMAKE_MATCH_2}")
+      set(CLANG_VERSION_PATCH "${CMAKE_MATCH_3}")
+
+      message(STATUS "Detected Clang version: ${CLANG_VERSION_MAJOR}.${CLANG_VERSION_MINOR}.${CLANG_VERSION_PATCH}")
+      # Check if Clang version is at least 3.7.0
+      if (CLANG_VERSION_MAJOR LESS 3 AND CLANG_VERSION_MINOR LESS 7)
+        message(FATAL_ERROR "Clang version must be at least 3.7.0, but found ${CLANG_VERSION_MAJOR}.${CLANG_VERSION_MINOR}.${CLANG_VERSION_PATCH}")
+      endif()
+    endif()
+  else()
+    message(FATAL_ERROR "Clang not found! Please install Clang version >= 3.7.0!")
+  endif()
+
   # Check for libbpf with pkg-config
   pkg_check_modules(LIBBPF libbpf>=0.5.0)
 
