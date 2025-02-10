@@ -574,13 +574,13 @@ int flb_signal_reload(struct flb_config *config)
 #ifndef FLB_SYSTEM_WINDOWS
     kill(getpid(), SIGHUP);
 #else
-    /* using the refactor that placed  `bin_restarting` inside 
+    /* using the refactor that placed  `service_is_restarting` inside 
      * `flb_config` to use it as a messaging mechanism instead of
      * GenerateConsoleCtrlEvent to overcome the fact that windows
      * services do not have a console and therefore cannot
      * react to console events or handle them (fixes sc-112185).
      */
-    config->bin_restarting = FLB_RELOAD_IN_PROGRESS;
+    config->service_is_restarting = FLB_RELOAD_IN_PROGRESS;
 #endif
     return 0;
 }

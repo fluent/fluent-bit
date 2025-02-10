@@ -282,7 +282,7 @@ struct flb_config {
     int ensure_thread_safety_on_hot_reloading;
     unsigned int hot_reloaded_count;
     unsigned int hot_reloaded_failures_count;
-    volatile sig_atomic_t bin_restarting;
+    volatile sig_atomic_t service_is_restarting;
     int shutdown_by_hot_reloading;
     int hot_reloading;
 
