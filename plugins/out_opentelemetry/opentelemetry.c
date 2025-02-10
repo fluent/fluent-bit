@@ -380,10 +380,9 @@ int opentelemetry_post(struct opentelemetry_context *ctx,
     }
 
     response = flb_http_client_request_execute(request);
-
     if (response == NULL) {
-        flb_debug("http request execution error");
-
+        flb_plg_warn(ctx->ins, "error performing HTTP request, remote host=%s:%i connection error",
+                     ctx->host, ctx->port);
         flb_http_client_request_destroy(request, FLB_TRUE);
 
         return FLB_RETRY;
@@ -400,7 +399,6 @@ int opentelemetry_post(struct opentelemetry_context *ctx,
      * - 205: Reset content
      *
      */
-
     if (response->status < 200 || response->status > 205) {
         if (ctx->log_response_payload &&
             response->body != NULL &&
