@@ -45,7 +45,7 @@ struct opentelemetry_body_key {
 /* Plugin context */
 struct opentelemetry_context {
     int   enable_http2_flag;
-    char *enable_http2;
+    flb_sds_t enable_http2;
     int   enable_grpc_flag;
 
     /* HTTP Auth */
