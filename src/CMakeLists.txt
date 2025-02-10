@@ -344,6 +344,14 @@ if(FLB_WASM)
   add_subdirectory(wasm)
 endif()
 
+if(FLB_UNICODE_ENCODER)
+  add_subdirectory(simdutf)
+  set(src
+    ${src}
+    "flb_unicode.c"
+    )
+endif()
+
 # WAMRC compiler
 if(FLB_WAMRC)
   add_subdirectory(wamrc)
@@ -417,6 +425,15 @@ if(FLB_UTF8_ENCODER)
 set(FLB_DEPS
   ${FLB_DEPS}
   tutf8e
+  )
+endif()
+
+# Unicode Encoding (UTF-16LE, UTF-16BE)
+if(FLB_UNICODE_ENCODER)
+set(FLB_DEPS
+  ${FLB_DEPS}
+  simdutf-static
+  flb-simdutf-connector-static
   )
 endif()
 
