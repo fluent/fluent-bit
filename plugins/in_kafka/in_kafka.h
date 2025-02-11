@@ -32,6 +32,8 @@
 #define FLB_IN_KAFKA_DEFAULT_FORMAT        "none"
 #define FLB_IN_KAFKA_UNLIMITED             (size_t)-1
 #define FLB_IN_KAFKA_BUFFER_MAX_SIZE       "4M"
+#define FLB_IN_KAFKA_ENABLE_AUTO_COMMIT    "false"
+#define FLB_IN_KAFKA_POLL_TIMEOUT_MS       "550"        // same as kafka fetch.wait.max.ms + 10%
 
 enum {
     FLB_IN_KAFKA_FORMAT_NONE,
@@ -48,6 +50,8 @@ struct flb_in_kafka_config {
     int coll_fd;
     size_t buffer_max_size;          /* Maximum size of chunk allocation */
     size_t polling_threshold;
+    bool enable_auto_commit;
+    int poll_timeout_ms;
 };
 
 #endif
