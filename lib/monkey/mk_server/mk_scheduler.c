@@ -46,6 +46,7 @@ extern struct mk_sched_handler mk_http2_handler;
 
 pthread_mutex_t mutex_worker_init = PTHREAD_MUTEX_INITIALIZER;
 pthread_mutex_t mutex_worker_exit = PTHREAD_MUTEX_INITIALIZER;
+pthread_mutex_t mutex_conn_timeout = PTHREAD_MUTEX_INITIALIZER;
 
 /*
  * Returns the worker id which should take a new incomming connection,
@@ -238,7 +239,9 @@ struct mk_sched_conn *mk_sched_add_connection(int remote_fd,
      * The protocol handler is in charge to remove the session from the
      * timeout_queue.
      */
+    pthread_mutex_lock(&mutex_conn_timeout);
     mk_sched_conn_timeout_add(conn, sched);
+    pthread_mutex_unlock(&mutex_conn_timeout);
 
     /* Linux trace message */
     MK_LT_SCHED(remote_fd, "REGISTERED");
@@ -540,7 +543,9 @@ int mk_sched_remove_client(struct mk_sched_conn *conn,
 
     /* Unlink from the red-black tree */
     //rb_erase(&conn->_rb_head, &sched->rb_queue);
+    pthread_mutex_lock(&mutex_conn_timeout);
     mk_sched_conn_timeout_del(conn);
+    pthread_mutex_unlock(&mutex_conn_timeout);
 
     /* Close at network layer level */
     conn->net->close(conn->net->plugin, event->fd);
