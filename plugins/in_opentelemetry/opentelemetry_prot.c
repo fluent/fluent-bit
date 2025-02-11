@@ -27,16 +27,19 @@
 #include <fluent-bit/flb_mp.h>
 #include <fluent-bit/flb_log_event_encoder.h>
 
-#include <monkey/monkey.h>
 #include <fluent-bit/http_server/flb_http_server.h>
 
-#include <monkey/mk_core.h>
 #include <cmetrics/cmt_decode_opentelemetry.h>
 #include <cprofiles/cprof_decode_opentelemetry.h>
 #include <cprofiles/cprof_encode_text.h>
 
 #include <fluent-otel-proto/fluent-otel.h>
+
+
 #include "opentelemetry.h"
+#include "opentelemetry_utils.h"
+#include "opentelemetry_traces.h"
+
 #include "http_conn.h"
 
 #define HTTP_CONTENT_JSON  0
@@ -157,93 +160,6 @@ static int process_payload_metrics(struct flb_opentelemetry *ctx, struct http_co
     }
 
     return 0;
-}
-
-static int process_payload_traces_proto(struct flb_opentelemetry *ctx, struct http_conn *conn,
-                                        flb_sds_t tag,
-                                        size_t tag_len,
-                                        struct mk_http_session *session,
-                                        struct mk_http_request *request)
-{
-    struct ctrace *decoded_context;
-    size_t         offset;
-    int            result;
-
-    offset = 0;
-    result = ctr_decode_opentelemetry_create(&decoded_context,
-                                             request->data.data,
-                                             request->data.len,
-                                             &offset);
-    if (result == 0) {
-        result = flb_input_trace_append(ctx->ins, tag, tag_len, decoded_context);
-        ctr_decode_opentelemetry_destroy(decoded_context);
-    }
-
-    return result;
-}
-
-static int process_payload_raw_traces(struct flb_opentelemetry *ctx, struct http_conn *conn,
-                                      flb_sds_t tag,
-                                      size_t tag_len,
-                                      struct mk_http_session *session,
-                                      struct mk_http_request *request)
-{
-    int ret;
-    int root_type;
-    char *out_buf = NULL;
-    size_t out_size;
-
-    msgpack_packer mp_pck;
-    msgpack_sbuffer mp_sbuf;
-
-    msgpack_sbuffer_init(&mp_sbuf);
-    msgpack_packer_init(&mp_pck, &mp_sbuf, msgpack_sbuffer_write);
-
-    msgpack_pack_array(&mp_pck, 2);
-    flb_pack_time_now(&mp_pck);
-
-    /* Check if the incoming payload is a valid  message and convert it to msgpack */
-    ret = flb_pack_json(request->data.data, request->data.len,
-                        &out_buf, &out_size, &root_type, NULL);
-
-    if (ret == 0 && root_type == JSMN_OBJECT) {
-        /* JSON found, pack it msgpack representation */
-        msgpack_sbuffer_write(&mp_sbuf, out_buf, out_size);
-    }
-    else {
-        /* the content might be a binary payload or invalid JSON */
-        msgpack_pack_map(&mp_pck, 1);
-        msgpack_pack_str_with_body(&mp_pck, "trace", 5);
-        msgpack_pack_str_with_body(&mp_pck, request->data.data, request->data.len);
-    }
-
-    /* release 'out_buf' if it was allocated */
-    if (out_buf) {
-        flb_free(out_buf);
-    }
-
-    flb_input_log_append(ctx->ins, tag, tag_len, mp_sbuf.data, mp_sbuf.size);
-    msgpack_sbuffer_destroy(&mp_sbuf);
-
-    return 0;
-}
-
-static int process_payload_traces(struct flb_opentelemetry *ctx, struct http_conn *conn,
-                                  flb_sds_t tag,
-                                  size_t tag_len,
-                                  struct mk_http_session *session,
-                                  struct mk_http_request *request)
-{
-    int result;
-
-    if (ctx->raw_traces) {
-        result = process_payload_raw_traces(ctx, conn, tag, tag_len, session, request);
-    }
-    else {
-        result = process_payload_traces_proto(ctx, conn, tag, tag_len, session, request);
-    }
-
-    return result;
 }
 
 static int otel_pack_string(msgpack_packer *mp_pck, char *str)
@@ -773,140 +689,6 @@ static int binary_payload_to_msgpack(struct flb_opentelemetry *ctx,
 
     if (ret != 0) {
         return -1;
-    }
-
-    return 0;
-}
-
-static int find_map_entry_by_key(msgpack_object_map *map,
-                                 char *key,
-                                 size_t match_index,
-                                 int case_insensitive)
-{
-    int     result;
-    int     index;
-    int key_len;
-    size_t  match_count;
-
-    if (!key) {
-        return -1;
-    }
-
-    key_len = strlen(key);
-    match_count = 0;
-
-    for (index = 0 ; index < (int) map->size ; index++) {
-        if (key_len != map->ptr[index].key.via.str.size) {
-            continue;
-        }
-
-        if (map->ptr[index].key.type == MSGPACK_OBJECT_STR) {
-            if (case_insensitive) {
-                result = strncasecmp(map->ptr[index].key.via.str.ptr,
-                                     key,
-                                     map->ptr[index].key.via.str.size);
-            }
-            else {
-                result = strncmp(map->ptr[index].key.via.str.ptr,
-                                 key,
-                                 map->ptr[index].key.via.str.size);
-            }
-
-            if (result == 0) {
-                if (match_count == match_index) {
-                    return index;
-                }
-
-                match_count++;
-            }
-        }
-    }
-
-    return -1;
-}
-
-static int json_payload_get_wrapped_value(msgpack_object *wrapper,
-                                          msgpack_object **value,
-                                          int            *type)
-{
-    int                 internal_type;
-    msgpack_object     *kv_value;
-    msgpack_object_str *kv_key;
-    msgpack_object_map *map;
-
-    if (wrapper->type != MSGPACK_OBJECT_MAP) {
-        return -1;
-    }
-
-    map = &wrapper->via.map;
-    kv_value = NULL;
-    internal_type = -1;
-
-    if (map->size == 1) {
-        if (map->ptr[0].key.type == MSGPACK_OBJECT_STR) {
-            kv_value = &map->ptr[0].val;
-            kv_key = &map->ptr[0].key.via.str;
-
-            if (strncasecmp(kv_key->ptr, "stringValue",  kv_key->size) == 0 ||
-                strncasecmp(kv_key->ptr, "string_value", kv_key->size) == 0) {
-                internal_type = MSGPACK_OBJECT_STR;
-            }
-            else if (strncasecmp(kv_key->ptr, "boolValue",  kv_key->size) == 0 ||
-                     strncasecmp(kv_key->ptr, "bool_value", kv_key->size) == 0) {
-                internal_type = MSGPACK_OBJECT_BOOLEAN;
-            }
-            else if (strncasecmp(kv_key->ptr, "intValue",  kv_key->size) == 0 ||
-                     strncasecmp(kv_key->ptr, "int_value", kv_key->size) == 0) {
-                internal_type = MSGPACK_OBJECT_POSITIVE_INTEGER;
-            }
-            else if (strncasecmp(kv_key->ptr, "doubleValue",  kv_key->size) == 0 ||
-                     strncasecmp(kv_key->ptr, "double_value", kv_key->size) == 0) {
-                internal_type = MSGPACK_OBJECT_FLOAT;
-            }
-            else if (strncasecmp(kv_key->ptr, "bytesValue",  kv_key->size) == 0 ||
-                     strncasecmp(kv_key->ptr, "bytes_value", kv_key->size) == 0) {
-                internal_type = MSGPACK_OBJECT_BIN;
-            }
-            else if (strncasecmp(kv_key->ptr, "arrayValue",  kv_key->size) == 0 ||
-                     strncasecmp(kv_key->ptr, "array_value", kv_key->size) == 0) {
-                internal_type = MSGPACK_OBJECT_ARRAY;
-            }
-            else if (strncasecmp(kv_key->ptr, "kvlistValue",  kv_key->size) == 0 ||
-                     strncasecmp(kv_key->ptr, "kvlist_value", kv_key->size) == 0) {
-                internal_type = MSGPACK_OBJECT_MAP;
-            }
-        }
-    }
-
-    if (internal_type != -1) {
-        if (type != NULL) {
-            *type  = internal_type;
-        }
-
-        if (value != NULL) {
-            *value = kv_value;
-        }
-
-        if (kv_value->type == MSGPACK_OBJECT_MAP) {
-            map = &kv_value->via.map;
-
-            if (map->size == 1) {
-                kv_value = &map->ptr[0].val;
-                kv_key = &map->ptr[0].key.via.str;
-
-                if (strncasecmp(kv_key->ptr, "values", kv_key->size) == 0) {
-                    if (value != NULL) {
-                        *value = kv_value;
-                    }
-                }
-                else {
-                    return -3;
-                }
-            }
-        }
-    }
-    else {
-        return -2;
     }
 
     return 0;
@@ -1465,9 +1247,15 @@ static int process_json_payload_log_records_entry(struct flb_opentelemetry *ctx,
         }
 
         result = json_payload_append_converted_value(
-                    encoder,
-                    FLB_LOG_EVENT_BODY,
-                    body_object);
+                                                    encoder,
+                                                    FLB_LOG_EVENT_BODY,
+                                                    body_object);
+        if (result != FLB_EVENT_ENCODER_SUCCESS) {
+            flb_plg_error(ctx->ins, "could not append body");
+            flb_log_event_encoder_rollback_record(encoder);
+            result = -4;
+            return result;
+        }
     }
 
     result = flb_log_event_encoder_dynamic_field_flush(&encoder->body);
@@ -2013,7 +1801,6 @@ int opentelemetry_prot_uncompress(struct mk_http_session *session,
     return 0;
 }
 
-
 /*
  * Handle an incoming request. It performs extra checks over the request, if
  * everything is OK, it enqueue the incoming payload.
@@ -2028,6 +1815,7 @@ int opentelemetry_prot_handle(struct flb_opentelemetry *ctx, struct http_conn *c
     char *uri;
     char *qs;
     char *out_chunked = NULL;
+    flb_sds_t content_type = NULL;
     size_t out_chunked_size = 0;
     off_t diff;
     size_t tag_len;
@@ -2086,7 +1874,7 @@ int opentelemetry_prot_handle(struct flb_opentelemetry *ctx, struct http_conn *c
         }
 
         /* New tag skipping the URI '/' */
-        flb_sds_cat(tag, uri + 1, len - 1);
+        flb_sds_cat_safe(&tag, uri + 1, len - 1);
 
         /* Sanitize, only allow alphanum chars */
         for (i = 0; i < flb_sds_len(tag); i++) {
@@ -2152,9 +1940,6 @@ int opentelemetry_prot_handle(struct flb_opentelemetry *ctx, struct http_conn *c
             flb_sds_destroy(tag);
             mk_mem_free(uri);
             send_response(conn, 400, "error: invalid chunked data\n");
-            if (uncompressed_data != NULL) {
-                flb_free(uncompressed_data);
-            }
             return -1;
         }
         else {
@@ -2176,7 +1961,14 @@ int opentelemetry_prot_handle(struct flb_opentelemetry *ctx, struct http_conn *c
         ret = process_payload_metrics(ctx, conn, tag, tag_len, session, request);
     }
     else if (strcmp(uri, "/v1/traces") == 0) {
-        ret = process_payload_traces(ctx, conn, tag, tag_len, session, request);
+        if (request->content_type.data != NULL) {
+            content_type = flb_sds_create_len(request->content_type.data,
+                                              request->content_type.len);
+        }
+
+        ret = opentelemetry_process_traces(ctx, content_type, tag, tag_len,
+                                           request->data.data, request->data.len);
+        flb_sds_destroy(content_type);
     }
     else if (strcmp(uri, "/v1/logs") == 0) {
         ret = process_payload_logs(ctx, conn, tag, tag_len, session, request);
@@ -2278,7 +2070,7 @@ static int send_grpc_response_ng(struct flb_http_response *response,
 
     wire_message_length = (uint32_t) message_length;
 
-    cfl_sds_cat(body_buffer, "\x00----", 5);
+    cfl_sds_cat_safe(&body_buffer, "\x00----", 5);
 
     ((uint8_t *) body_buffer)[1] = (wire_message_length & 0xFF000000) >> 24;
     ((uint8_t *) body_buffer)[2] = (wire_message_length & 0x00FF0000) >> 16;
@@ -2286,7 +2078,7 @@ static int send_grpc_response_ng(struct flb_http_response *response,
     ((uint8_t *) body_buffer)[4] = (wire_message_length & 0x000000FF) >> 0;
 
     if (message_buffer != NULL) {
-        cfl_sds_cat(body_buffer, (char *) message_buffer, message_length);
+        cfl_sds_cat_safe(&body_buffer, (char *) message_buffer, message_length);
     }
 
     flb_http_response_set_status(response, 200);
@@ -2497,120 +2289,6 @@ static int process_payload_metrics_ng(struct flb_opentelemetry *ctx,
     }
 
     return 0;
-}
-
-
-static int process_payload_traces_proto_ng(struct flb_opentelemetry *ctx,
-                                           flb_sds_t tag,
-                                           struct flb_http_request *request,
-                                           struct flb_http_response *response)
-{
-    struct ctrace *decoded_context;
-    size_t         offset;
-    int            result;
-
-    offset = 0;
-
-    if (request->content_type == NULL) {
-        flb_error("[otel] content type missing");
-
-        return -1;
-    }
-
-    if (strcasecmp(request->content_type, "application/grpc") == 0) {
-        if (cfl_sds_len(request->body) < 5) {
-            return -1;
-        }
-
-        result = ctr_decode_opentelemetry_create(&decoded_context,
-                                                 &request->body[5],
-                                                 cfl_sds_len(request->body) - 5,
-                                                 &offset);
-    }
-    else if (strcasecmp(request->content_type, "application/x-protobuf") == 0 ||
-             strcasecmp(request->content_type, "application/json") == 0) {
-        result = ctr_decode_opentelemetry_create(&decoded_context,
-                                                request->body,
-                                                cfl_sds_len(request->body),
-                                                &offset);
-    }
-    else {
-        flb_plg_error(ctx->ins, "Unsupported content type %s", request->content_type);
-
-        return -1;
-    }
-
-    if (result == 0) {
-        result = flb_input_trace_append(ctx->ins, tag, cfl_sds_len(tag), decoded_context);
-        ctr_decode_opentelemetry_destroy(decoded_context);
-    }
-    else {
-        flb_plg_warn(ctx->ins, "non-success ctraces opentelemetry decode result %d", result);
-    }
-
-    return result;
-}
-
-static int process_payload_raw_traces_ng(struct flb_opentelemetry *ctx,
-                                         flb_sds_t tag,
-                                         struct flb_http_request *request,
-                                         struct flb_http_response *response)
-{
-    int ret;
-    int root_type;
-    char *out_buf = NULL;
-    size_t out_size;
-
-    msgpack_packer mp_pck;
-    msgpack_sbuffer mp_sbuf;
-
-    msgpack_sbuffer_init(&mp_sbuf);
-    msgpack_packer_init(&mp_pck, &mp_sbuf, msgpack_sbuffer_write);
-
-    msgpack_pack_array(&mp_pck, 2);
-    flb_pack_time_now(&mp_pck);
-
-    /* Check if the incoming payload is a valid JSON message and convert it to msgpack */
-    ret = flb_pack_json(request->body, cfl_sds_len(request->body),
-                        &out_buf, &out_size, &root_type, NULL);
-
-    if (ret == 0 && root_type == JSMN_OBJECT) {
-        /* JSON found, pack it msgpack representation */
-        msgpack_sbuffer_write(&mp_sbuf, out_buf, out_size);
-    }
-    else {
-        /* the content might be a binary payload or invalid JSON */
-        msgpack_pack_map(&mp_pck, 1);
-        msgpack_pack_str_with_body(&mp_pck, "trace", 5);
-        msgpack_pack_str_with_body(&mp_pck, request->body, cfl_sds_len(request->body));
-    }
-
-    /* release 'out_buf' if it was allocated */
-    if (out_buf) {
-        flb_free(out_buf);
-    }
-
-    flb_input_log_append(ctx->ins, tag, flb_sds_len(tag), mp_sbuf.data, mp_sbuf.size);
-    msgpack_sbuffer_destroy(&mp_sbuf);
-
-    return 0;
-}
-
-static int process_payload_traces_ng(struct flb_opentelemetry *ctx,
-                                     flb_sds_t tag,
-                                     struct flb_http_request *request,
-                                     struct flb_http_response *response)
-{
-    int result;
-
-    if (ctx->raw_traces) {
-        result = process_payload_raw_traces_ng(ctx, tag, request, response);
-    }
-    else {
-        result = process_payload_traces_proto_ng(ctx, tag, request, response);
-    }
-
-    return result;
 }
 
 static int process_payload_logs_ng(struct flb_opentelemetry *ctx,
@@ -2902,7 +2580,10 @@ int opentelemetry_prot_handle_ng(struct flb_http_request *request,
         else {
             tag = flb_sds_create(context->ins->tag);
         }
-        result = process_payload_traces_ng(context, tag, request, response);
+
+        result = opentelemetry_process_traces(context, request->content_type,
+                                              tag, flb_sds_len(tag),
+                                              request->body, cfl_sds_len(request->body));
     }
     else if (strcmp(request->path, "/v1/logs") == 0 ||
              strcmp(request->path, "/opentelemetry.proto.collector.log.v1.LogService/Export") == 0 ||
