@@ -105,6 +105,11 @@ void ctr_link_set_dropped_attr_count(struct ctrace_link *link, uint32_t count)
     link->dropped_attr_count = count;
 }
 
+void ctr_link_set_flags(struct ctrace_link *link, uint32_t flags)
+{
+    link->flags = flags;
+}
+
 void ctr_link_destroy(struct ctrace_link *link)
 {
     if (link->trace_id) {
