@@ -1,0 +1,255 @@
+{
+    "security": {
+        "policies": [
+            {
+                "credentials": {
+                    "gid": "0",
+                    "uid": "0"
+                },
+                "deny": {}
+            },
+            {
+                "deny": {
+                    "requests": [
+                        {
+                            "instance": "any",
+                            "service": "0x40"
+                        }
+                    ]
+                },
+                "credentials": {
+                    "gid": "9999",
+                    "uid": "9999"
+                }
+            },
+            {
+                "allow": {
+                    "requests": [
+                        {
+                            "instance": "any",
+                            "service": "0xf913"
+                        }
+                    ]
+                },
+                "credentials": {
+                    "gid": "4003015",
+                    "uid": "0"
+                }
+            },
+            {
+                "allow": {
+                    "requests": [
+                        {
+                            "instance": "any",
+                            "service": "0xf91b"
+                        },
+                        {
+                            "instance": "any",
+                            "service": "0xf913"
+                        }
+                    ]
+                },
+                "credentials": {
+                    "gid": "4002200",
+                    "uid": "4002200"
+                }
+            },
+            {
+                "allow": {
+                    "requests": [
+                        {
+                            "instance": "any",
+                            "service": "0xf913"
+                        }
+                    ]
+                },
+                "credentials": {
+                    "gid": "4003014",
+                    "uid": "4003014"
+                }
+            },
+            {
+                "allow": {
+                    "requests": [
+                        {
+                            "instance": "any",
+                            "service": "0xf913"
+                        }
+                    ]
+                },
+                "credentials": {
+                    "gid": "4003015",
+                    "uid": "4003015"
+                }
+            },
+            {
+                "allow": {
+                    "requests": [
+                        {
+                            "instance": "any",
+                            "service": "0xf913"
+                        }
+                    ]
+                },
+                "credentials": {
+                    "gid": "5004",
+                    "uid": "4003021"
+                }
+            },
+            {
+                "allow": {
+                    "requests": [
+                        {
+                            "instance": "any",
+                            "service": "0xf91f"
+                        },
+                        {
+                            "instance": "any",
+                            "service": "0xf8c7"
+                        }
+                    ]
+                },
+                "credentials": {
+                    "gid": "4003024",
+                    "uid": "4003024"
+                }
+            },
+            {
+                "allow": {
+                    "requests": [
+                        {
+                            "instance": "any",
+                            "service": "0xf913"
+                        }
+                    ]
+                },
+                "credentials": {
+                    "gid": "4003025",
+                    "uid": "4003025"
+                }
+            },
+            {
+                "allow": {
+                    "requests": [
+                        {
+                            "instance": "any",
+                            "service": "0xf913"
+                        }
+                    ]
+                },
+                "credentials": {
+                    "gid": "4003026",
+                    "uid": "4003026"
+                }
+            },
+            {
+                "allow": {
+                    "requests": [
+                        {
+                            "instance": "any",
+                            "service": "0xf91f"
+                        }
+                    ]
+                },
+                "credentials": {
+                    "gid": "4003029",
+                    "uid": "4003029"
+                }
+            },
+            {
+                "allow": {
+                    "requests": [
+                        {
+                            "instance": "any",
+                            "service": "0xf913"
+                        }
+                    ]
+                },
+                "credentials": {
+                    "gid": "4003031",
+                    "uid": "4003031"
+                }
+            },
+            {
+                "allow": {
+                    "requests": [
+                        {
+                            "instance": "any",
+                            "service": "0xb025"
+                        },
+                        {
+                            "instance": "any",
+                            "service": "0xb024"
+                        },
+                        {
+                            "instance": "any",
+                            "service": "0xb021"
+                        }
+                    ]
+                },
+                "credentials": {
+                    "gid": "4004200",
+                    "uid": "4004201"
+                }
+            },
+            {
+                "allow": {
+                    "requests": [
+                        {
+                            "instance": "any",
+                            "service": "0xf91f"
+                        }
+                    ]
+                },
+                "credentials": {
+                    "gid": "4013201",
+                    "uid": "4013201"
+                }
+            },
+            {
+                "allow": {
+                    "requests": [
+                        {
+                            "instance": "any",
+                            "service": "0xf91f"
+                        }
+                    ]
+                },
+                "credentials": {
+                    "gid": "4013210",
+                    "uid": "4013210"
+                }
+            },
+            {
+                "allow": {
+                    "requests": [
+                        {
+                            "instance": "any",
+                            "service": "0xf91b"
+                        }
+                    ]
+                },
+                "credentials": {
+                    "gid": "4017205",
+                    "uid": "4017205"
+                }
+            },
+            {
+                "credentials": {
+                    "allow": [
+                        {
+                            "gid": [
+                                "4002200",
+                                "4003014"
+                            ],
+                            "uid": [
+                                "4002200",
+                                "4003014"
+                            ]
+                        }
+                    ]
+                }
+            }
+        ]
+    }
+}

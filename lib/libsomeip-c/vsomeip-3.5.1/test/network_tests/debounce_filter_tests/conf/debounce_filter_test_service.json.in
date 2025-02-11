@@ -1,0 +1,32 @@
+{
+  "unicast" : "@TEST_IP_SLAVE@",
+  "logging": {
+    "level": "info",
+    "console": "true",
+    "file": {
+      "enable": "false",
+      "path": "/tmp/foo.log"
+    },
+    "dlt": "true"
+  },
+  "tracing" :
+  {
+    "enable" : "true"
+  },
+  "services" :
+  [
+    {
+      "service" : "0xb519",
+      "instance" : "0x0001",
+      "unreliable" : "30503"
+    }
+  ],
+  "service-discovery" :
+   {
+      "enable" : "true",
+      "multicast" : "224.251.192.252",
+      "port" : "30490",
+      "protocol" : "udp",
+      "cyclic_offer_delay" : "1000"
+   }
+}

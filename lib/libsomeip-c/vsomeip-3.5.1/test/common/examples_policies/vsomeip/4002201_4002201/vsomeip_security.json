@@ -1,0 +1,122 @@
+{
+    "security": {
+        "policies": [
+            {
+                "allow": {
+                    "offers": [
+                        {
+                            "instance": "any",
+                            "service": "0x1501"
+                        },
+                        {
+                            "instance": "any",
+                            "service": "0xf8a8"
+                        }
+                    ],
+                    "requests": [
+                        {
+                            "instance": "any",
+                            "service": "0xf901"
+                        },
+                        {
+                            "instance": "any",
+                            "service": "0xf902"
+                        },
+                        {
+                            "instance": "any",
+                            "service": "0x1532"
+                        }
+                    ]
+                },
+                "credentials": {
+                    "gid": "4002201",
+                    "uid": "4002201"
+                }
+            },
+            {
+                "allow": {
+                    "requests": [
+                        {
+                            "instance": "any",
+                            "service": "0xf8a8"
+                        }
+                    ]
+                },
+                "credentials": {
+                    "gid": "4003024",
+                    "uid": "4003024"
+                }
+            },
+            {
+                "allow": {
+                    "requests": [
+                        {
+                            "instance": "any",
+                            "service": "0xf8a8"
+                        }
+                    ]
+                },
+                "credentials": {
+                    "gid": "4004200",
+                    "uid": "4004201"
+                }
+            },
+            {
+                "allow": {
+                    "requests": [
+                        {
+                            "instance": "any",
+                            "service": "0x1501"
+                        }
+                    ]
+                },
+                "credentials": {
+                    "gid": "4006202",
+                    "uid": "4006202"
+                }
+            },
+            {
+                "allow": {
+                    "requests": [
+                        {
+                            "instance": "any",
+                            "service": "0xf8a8"
+                        }
+                    ]
+                },
+                "credentials": {
+                    "gid": "4011201",
+                    "uid": "4011201"
+                }
+            },
+            {
+                "allow": {
+                    "requests": [
+                        {
+                            "instance": "any",
+                            "service": "0xf8a8"
+                        }
+                    ]
+                },
+                "credentials": {
+                    "gid": "5509",
+                    "uid": "4016203"
+                }
+            },
+            {
+                "credentials": {
+                    "allow": [
+                        {
+                            "gid": [
+                                "4003014"
+                            ],
+                            "uid": [
+                                "4003014"
+                            ]
+                        }
+                    ]
+                }
+            }
+        ]
+    }
+}

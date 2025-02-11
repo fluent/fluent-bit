@@ -1,0 +1,40 @@
+{
+    "unicast":"@TEST_IP_MASTER@",
+    "logging":
+    {
+        "level":"warning",
+        "console":"true",
+        "file":
+        {
+            "enable":"false",
+            "path":"/tmp/vsomeip.log"
+        },
+        "dlt":"true"
+    },
+    "applications" :
+    [
+        {
+            "name" : "second_address_test_service",
+            "id" : "0x3489",
+            "max_dispatch_time" : "1000"
+        }
+    ],
+    "services":
+    [
+        {
+            "service":"0x3333",
+            "instance":"0x0001",
+            "unreliable":"30001"
+        }
+    ],
+    "routing":"routingmanagerd",
+    "service-discovery":
+    {
+        "enable":"true",
+        "multicast":"224.0.50.1",
+        "port":"30490",
+        "protocol":"udp",
+        "cyclic_offer_delay" : "1000",
+        "ttl" : "3"
+    }
+}

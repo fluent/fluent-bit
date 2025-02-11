@@ -1,0 +1,88 @@
+{
+    "unicast" : "10.0.3.1",
+    "logging" :
+    {
+        "level" : "debug",
+        "console" : "true",
+        "file" : { "enable" : "false", "path" : "/tmp/vsomeip.log" },
+        "dlt" : "false"
+    },
+    "applications" :
+    [
+        {
+            "name" : "service-sample",
+            "id" : "0x1277"
+        }
+    ],
+    "services" :
+    [
+        {
+            "service" : "0x1234",
+            "instance" : "0x5678",
+            "unreliable" : "30509"
+        },
+        {
+            "service" : "0x1235",
+            "instance" : "0x5678",
+            "unreliable" : "30509",
+            "multicast" :
+            {
+                "address" : "224.225.226.234",
+                "port" : "32344"
+            }
+        }
+    ],
+    "security" :
+    {
+        "check_credentials" : "true",
+        "policies" :
+        [
+            {
+                "client" : "0x1277",
+                "credentials" : { "uid" : "1000", "gid" : "1000" },
+                "allow" :
+                {
+                    "offers":
+                    [
+                        {
+                            "service"  : "0x1234",
+                            "instance" : "0x5678"
+                        },
+                        {
+                            "service"  : "0x1235",
+                            "instance" : "0x5678"
+                        }
+                    ]
+                }
+            },
+            {
+                "client" : { "first" : "0x1343", "last" : "0x1346" },
+                "allow" :
+                {
+                    "requests":
+                    [
+                        {
+                            "service"  : "0x1234",
+                            "instance" : "0x5678"
+                        }
+                    ]
+                }
+            }
+        ]
+    },
+    "routing" : "service-sample",
+    "service-discovery" :
+    {
+        "enable" : "true",
+        "multicast" : "224.244.224.245",
+        "port" : "30490",
+        "protocol" : "udp",
+        "initial_delay_min" : "10",
+        "initial_delay_max" : "100",
+        "repetitions_base_delay" : "200",
+        "repetitions_max" : "3",
+        "ttl" : "3",
+        "cyclic_offer_delay" : "2000",
+        "request_response_delay" : "1500"
+    }
+}

@@ -1,0 +1,57 @@
+{
+    "unicast" : "@TEST_IP_SLAVE@",
+    "netmask" : "255.255.255.0",
+    "logging" :
+    {
+        "level" : "info",
+        "console" : "true",
+        "file" : { "enable" : "false", "path" : "/tmp/vsomeip.log" },
+        "dlt" : "true"
+    },
+    "applications" :
+    [
+        {
+            "name" : "service-sample",
+            "id" : "0x1277",
+            "has_session_handling" : "false"
+        }
+    ],
+    "services" :
+    [
+       {
+          "service" : "0xd025",
+          "instance" : "0x0001",
+          "unreliable" : "30501"
+       }
+    ],
+    "e2e" :
+    {
+        "e2e_enabled" : "true",
+        "protected" :
+        [
+            {
+                "service_id" : "0xd025",
+                "event_id" : "0x0001",
+                "profile" : "P07",
+                "variant" : "protector",
+                "crc_offset" : "64",
+                "data_id" : "0x2d"
+            }
+        ]
+    },
+    "routing" : "service-sample",
+    "service-discovery" :
+    {
+        "enable" : "true",
+        "multicast" : "224.0.0.1",
+        "port" : "30490",
+        "protocol" : "udp",
+        "initial_delay_min" : "10",
+        "initial_delay_max" : "100",
+        "repetitions_base_delay" : "200",
+        "repetitions_max" : "3",
+        "ttl" : "3",
+        "cyclic_offer_delay" : "2000",
+        "request_response_delay" : "1500"
+    }
+}

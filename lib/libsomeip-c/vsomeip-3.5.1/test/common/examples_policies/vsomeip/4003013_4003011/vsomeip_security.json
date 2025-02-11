@@ -1,0 +1,64 @@
+{
+    "security": {
+        "policies": [
+            {
+                "allow": {
+                    "offers": [
+                        {
+                            "instance": "any",
+                            "service": "0xf8d0"
+                        }
+                    ],
+                    "requests": [
+                        {
+                            "instance": "any",
+                            "service": "0xf901"
+                        },
+                        {
+                            "instance": "any",
+                            "service": "0xf8a4"
+                        },
+                        {
+                            "instance": "any",
+                            "service": "0xf8a1"
+                        }
+                    ]
+                },
+                "credentials": {
+                    "gid": "4003011",
+                    "uid": "4003013"
+                }
+            },
+            {
+                "allow": {
+                    "requests": [
+                        {
+                            "instance": "any",
+                            "service": "0xf8d0"
+                        }
+                    ]
+                },
+                "credentials": {
+                    "gid": "4003025",
+                    "uid": "4003025"
+                }
+            },
+            {
+                "credentials": {
+                    "allow": [
+                        {
+                            "gid": [
+                                "4002200",
+                                "4003014"
+                            ],
+                            "uid": [
+                                "4002200",
+                                "4003014"
+                            ]
+                        }
+                    ]
+                }
+            }
+        ]
+    }
+}

@@ -1,0 +1,34 @@
+#!/usr/bin/env bash
+
+# Copyright (C) 2024 Bayerische Motoren Werke Aktiengesellschaft (BMW AG)
+# This Source Code Form is subject to the terms of the Mozilla Public
+# License, v. 2.0. If a copy of the MPL was not distributed with this
+# file, You can obtain one at http://mozilla.org/MPL/2.0/.
+
+# Configuration to be used by daemon and service.
+export VSOMEIP_CONFIGURATION=cyclic_event_test_client.json
+
+# Start the routing manager.
+export VSOMEIP_APPLICATION_NAME="client-daemon"
+../../../examples/routingmanagerd/routingmanagerd &
+DAEMON_PID=$!
+
+# Start the test client.
+export VSOMEIP_APPLICATION_NAME="client-sample"
+./cyclic_event_test_client &
+CLIENT_PID=$!
+
+# Whether the test failed.
+FAIL=0
+
+# Wait for the service to finish.
+wait "$CLIENT_PID" || ((FAIL=1))
+
+# Send a termination signal to the routing manager.
+kill "$DAEMON_PID"
+
+# Wait for the routing manager to exit.
+wait "$DAEMON_PID"
+
+# Return the result of the test.
+exit "$FAIL"
