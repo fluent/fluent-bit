@@ -754,6 +754,9 @@ int flb_engine_start(struct flb_config *config)
     flb_info("[fluent bit] version=%s, commit=%.10s, pid=%i",
              FLB_VERSION_STR, FLB_GIT_HASH, getpid());
 
+#ifdef FLB_SYSTEM_WINDOWS
+    flb_debug("[engine] maxstdio set: %d", _getmaxstdio());
+#endif
     /* Debug coroutine stack size */
     flb_utils_bytes_to_human_readable_size(config->coro_stack_size,
                                            tmp, sizeof(tmp));
