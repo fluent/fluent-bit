@@ -785,6 +785,10 @@ static void dump_section(struct flb_cf_section *s)
     struct cfl_kvpair *kv;
     struct flb_cf_group *g;
 
+    if (!s) {
+        return;
+    }
+    
     printf("> section:\n  name: %s\n  type: %s\n",
            s->name, section_type_str(s->type));
 
@@ -826,6 +830,10 @@ static void dump_env(struct mk_list *list)
     struct mk_list *head;
     struct flb_kv *kv;
 
+    if (!list) {
+        return;
+    }
+
     if (mk_list_size(list) == 0) {
         return;
     }
@@ -843,6 +851,10 @@ static void dump_metas(struct mk_list *list)
     struct mk_list *head;
     struct flb_kv *kv;
 
+    if (!list) {
+        return;
+    }
+
     if (mk_list_size(list) == 0) {
         return;
     }
@@ -859,6 +871,10 @@ static void dump_section_list(struct mk_list *list)
 {
     struct mk_list *head;
     struct flb_cf_section *s;
+
+    if (!list) {
+        return;
+    }
 
     mk_list_foreach(head, list) {
         s = mk_list_entry(head, struct flb_cf_section, _head);
