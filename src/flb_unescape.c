@@ -64,13 +64,27 @@ static int u8_wc_toutf8(char *dest, uint32_t ch)
     return 0;
 }
 
+static int u8_high_surrogate(uint32_t ch) {
+    return ch >= 0xD800 && ch <= 0xDBFF;
+}
+
+static int u8_low_surrogate(uint32_t ch) {
+    return ch >= 0xDC00 && ch <= 0xDFFF;
+}
+
+static uint32_t u8_combine_surrogates(uint32_t high, uint32_t low) {
+    return 0x10000 + (((high - 0xD800) << 10) | (low - 0xDC00));
+}
+
 /* assumes that src points to the character after a backslash
    returns number of input characters processed */
 static int u8_read_escape_sequence(const char *str, int size, uint32_t *dest)
 {
-    uint32_t ch;
+    uint32_t ch = 0;
     char digs[9]="\0\0\0\0\0\0\0\0";
+    char ldigs[9]="\0\0\0\0\0\0\0\0";
     int dno=0, i=1;
+    uint32_t low = 0;
 
     ch = (uint32_t)str[0];    /* take literal character */
 
@@ -107,8 +121,50 @@ static int u8_read_escape_sequence(const char *str, int size, uint32_t *dest)
         while (i < size && hex_digit(str[i]) && dno < 4) {
             digs[dno++] = str[i++];
         }
-        if (dno > 0) {
-            ch = strtol(digs, NULL, 16);
+        if (dno != 4) {
+            /* Incomplete \u escape sequence */
+            if (dno > 0) {
+                ch = L'\uFFFD';
+                goto invalid_sequence;
+            }
+        }
+        ch = strtol(digs, NULL, 16);
+        if (u8_low_surrogate(ch)) {
+            /* Invalid: low surrogate without preceding high surrogate */
+            ch = L'\uFFFD';
+            goto invalid_sequence;
+        }
+        else if (u8_high_surrogate(ch)) {
+            /* Handle a surrogate pair.
+             * Note that i is already incremented with 4 here. */
+            if (i + 2 < size && str[i] == '\\' && str[i + 1] == 'u') {
+                dno = 0;
+                i += 2; /* Skip "\u" */
+                while (i < size && hex_digit(str[i]) && dno < 4) {
+                    ldigs[dno++] = str[i++];
+                }
+                if (dno != 4) {
+                    /* Incomplete low surrogate */
+                    if (dno > 0) {
+                        ch = L'\uFFFD';
+                        goto invalid_sequence;
+                    }
+                }
+                low = strtol(ldigs, NULL, 16);
+                if (u8_low_surrogate(low)) {
+                    ch = u8_combine_surrogates(ch, low);
+                }
+                else {
+                    /* Invalid: high surrogate not followed by low surrogate */
+                    ch = L'\uFFFD';
+                    goto invalid_sequence;
+                }
+            }
+            else {
+                /* Invalid: high surrogate not followed by \u */
+                ch = L'\uFFFD';
+                goto invalid_sequence;
+            }
         }
     }
     else if (str[0] == 'U') {
@@ -119,6 +175,9 @@ static int u8_read_escape_sequence(const char *str, int size, uint32_t *dest)
             ch = strtol(digs, NULL, 16);
         }
     }
+
+invalid_sequence:
+
     *dest = ch;
 
     return i;
