@@ -1111,6 +1111,15 @@ endif()
 if (FLB_IN_EBPF)
   find_package(PkgConfig)
 
+  # Check for Clang compiler
+  find_program(CLANG_EXECUTABLE clang)
+
+  if (CLANG_EXECUTABLE)
+    message(STATUS "Clang found: ${CLANG_EXECUTABLE}")
+  else()
+    message(FATAL_ERROR "Clang not found! Please install Clang.")
+  endif()
+
   # Check for libbpf with pkg-config
   pkg_check_modules(LIBBPF libbpf>=0.5.0)
 
