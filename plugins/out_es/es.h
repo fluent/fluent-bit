@@ -20,8 +20,12 @@
 #ifndef FLB_OUT_ES_H
 #define FLB_OUT_ES_H
 
+#include <monkey/mk_core/mk_list.h>
+#include <fluent-bit/flb_sds.h>
+#include <fluent-bit/flb_upstream_node.h>
+
 #define FLB_ES_DEFAULT_HOST       "127.0.0.1"
-#define FLB_ES_DEFAULT_PORT       92000
+#define FLB_ES_DEFAULT_PORT       9200
 #define FLB_ES_DEFAULT_INDEX      "fluent-bit"
 #define FLB_ES_DEFAULT_TYPE       "_doc"
 #define FLB_ES_DEFAULT_PREFIX     "logstash"
@@ -31,10 +35,6 @@
 #define FLB_ES_DEFAULT_TAG_KEY    "flb-key"
 #define FLB_ES_DEFAULT_HTTP_MAX   "512k"
 #define FLB_ES_DEFAULT_HTTPS_PORT 443
-#define FLB_ES_WRITE_OP_INDEX     "index"
-#define FLB_ES_WRITE_OP_CREATE    "create"
-#define FLB_ES_WRITE_OP_UPDATE    "update"
-#define FLB_ES_WRITE_OP_UPSERT    "upsert"
 
 #define FLB_ES_STATUS_SUCCESS          (1 << 0)
 #define FLB_ES_STATUS_IMCOMPLETE       (1 << 1)
@@ -45,10 +45,12 @@
 #define FLB_ES_STATUS_DUPLICATES       (1 << 6)
 #define FLB_ES_STATUS_ERROR            (1 << 7)
 
-struct flb_elasticsearch {
+struct flb_elasticsearch_config {
     /* Elasticsearch index (database) and type (table) */
     char *index;
+    int own_index;
     char *type;
+    int own_type;
     int suppress_type_name;
 
     /* HTTP Auth */
@@ -57,7 +59,9 @@ struct flb_elasticsearch {
 
     /* Elastic Cloud Auth */
     char *cloud_user;
+    int own_cloud_user;
     char *cloud_passwd;
+    int own_cloud_passwd;
 
     /* AWS Auth */
 #ifdef FLB_HAVE_AWS
@@ -66,14 +70,17 @@ struct flb_elasticsearch {
     char *aws_sts_endpoint;
     char *aws_profile;
     struct flb_aws_provider *aws_provider;
+    int own_aws_provider;
     struct flb_aws_provider *base_aws_provider;
+    int own_base_aws_provider;
     /* tls instances can't be re-used; aws provider requires a separate one */
     struct flb_tls *aws_tls;
-    /* one for the standard chain provider, one for sts assume role */
+    int own_aws_tls;
     struct flb_tls *aws_sts_tls;
-    char *aws_session_name;
+    int own_aws_sts_tls;
     char *aws_service_name;
     struct mk_list *aws_unsigned_headers;
+    int own_aws_unsigned_headers;
 #endif
 
     /* HTTP Client Setup */
@@ -100,50 +107,74 @@ struct flb_elasticsearch {
 
     /* prefix */
     flb_sds_t logstash_prefix;
+    int own_logstash_prefix;
     flb_sds_t logstash_prefix_separator;
+    int own_logstash_prefix_separator;
 
     /* prefix key */
     flb_sds_t logstash_prefix_key;
+    int own_logstash_prefix_key;
 
     /* date format */
     flb_sds_t logstash_dateformat;
+    int own_logstash_dateformat;
 
     /* time key */
     flb_sds_t time_key;
+    int own_time_key;
 
     /* time key format */
     flb_sds_t time_key_format;
+    int own_time_key_format;
 
     /* time key nanoseconds */
     int time_key_nanos;
 
-
     /* write operation */
     flb_sds_t write_operation;
+    int own_write_operation;
     /* write operation elasticsearch operation */
-    flb_sds_t es_action;
+    const char *es_action;
 
     /* id_key */
     flb_sds_t id_key;
+    int own_id_key;
     struct flb_record_accessor *ra_id_key;
+    int own_ra_id_key;
 
     /* include_tag_key */
     int include_tag_key;
     flb_sds_t tag_key;
+    int own_tag_key;
 
     /* Elasticsearch HTTP API */
     char uri[256];
 
     struct flb_record_accessor *ra_prefix_key;
+    int own_ra_prefix_key;
 
     /* Compression mode (gzip) */
     int compress_gzip;
 
-    /* Upstream connection to the backend server */
+    /* List entry data for flb_elasticsearch->configs list */
+    struct mk_list _head;
+};
+
+struct flb_elasticsearch {
+    /* if HA mode is enabled */
+    int ha_mode;              /* High Availability mode enabled ? */
+    char *ha_upstream;        /* Upstream configuration file      */
+    struct flb_upstream_ha *ha;
+
+    /* Upstream handler and config context for single mode (no HA) */
     struct flb_upstream *u;
+    struct mk_list configs;
 
     /* Plugin output instance reference */
     struct flb_output_instance *ins;
 };
+
+struct flb_elasticsearch_config *flb_elasticsearch_target(
+        struct flb_elasticsearch *ctx, struct flb_upstream_node **node);
 
 #endif
