@@ -404,6 +404,13 @@ struct opentelemetry_context *flb_opentelemetry_context_create(struct flb_output
         if (strcasecmp(tmp, "gzip") == 0) {
             ctx->compress_gzip = FLB_TRUE;
         }
+        else if (strcasecmp(tmp, "zstd") == 0) {
+            ctx->compress_zstd = FLB_TRUE;
+        }
+        else {
+            flb_plg_error(ctx->ins, "Unknown compression method %s", tmp);
+            return NULL;
+        }
     }
 
     ctx->ra_observed_timestamp_metadata = flb_ra_create((char*)ctx->logs_observed_timestamp_metadata_key,
@@ -560,17 +567,35 @@ struct opentelemetry_context *flb_opentelemetry_context_create(struct flb_output
 
     ctx->enable_http2_flag = FLB_TRUE;
 
+    /* if gRPC has been enabled, auto-enable HTTP/2 to make end-user life easier */
+    if (ctx->enable_grpc_flag && !flb_utils_bool(ctx->enable_http2)) {
+        flb_plg_info(ctx->ins, "gRPC enabled, HTTP/2 has been auto-enabled");
+        flb_sds_destroy(ctx->enable_http2);
+        ctx->enable_http2 = flb_sds_create("on");
+    }
+
+    /*
+     * 'force' aims to be used for plaintext communication when HTTP/2 is set. Note that
+     * moving forward it wont be necessary since we are now setting some special defaults
+     * in case of gRPC is enabled (which is the only case where HTTP/2 is mandatory).
+     */
     if (strcasecmp(ctx->enable_http2, "force") == 0) {
         http_protocol_version = HTTP_PROTOCOL_VERSION_20;
     }
     else if (flb_utils_bool(ctx->enable_http2)) {
-        http_protocol_version = HTTP_PROTOCOL_VERSION_AUTODETECT;
+        if (!ins->use_tls) {
+            http_protocol_version = HTTP_PROTOCOL_VERSION_20;
+        }
+        else {
+            http_protocol_version = HTTP_PROTOCOL_VERSION_AUTODETECT;
+        }
     }
     else {
         http_protocol_version = HTTP_PROTOCOL_VERSION_11;
 
         ctx->enable_http2_flag = FLB_FALSE;
     }
+
 
     ret = flb_http_client_ng_init(&ctx->http_client,
                                   NULL,
