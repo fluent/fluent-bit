@@ -569,7 +569,10 @@ int flb_reload(flb_ctx_t *ctx, struct flb_cf *cf_opts)
     return 0;
 }
 
-int flb_signal_reload(struct flb_config *config)
+/* flb_reload_signal_reload signals the `flb_config` to reload the fluent-bit context.
+ * It will use whatever method is most reliable on the given platform.
+ */
+int flb_reload_signal_reload(struct flb_config *config)
 {
 #ifndef FLB_SYSTEM_WINDOWS
     kill(getpid(), SIGHUP);
