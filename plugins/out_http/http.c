@@ -591,6 +591,8 @@ static void cb_http_flush(struct flb_event_chunk *event_chunk,
     (void) i_ins;
 
     if (ctx->body_key) {
+        /* If the HTTP body is pulled out of the record via a key, one POST
+           must be done per record */
         ret = post_all_requests(ctx, event_chunk->data, event_chunk->size,
                                 ctx->body_key, ctx->headers_key, event_chunk);
         if (ret < 0) {
@@ -599,6 +601,7 @@ static void cb_http_flush(struct flb_event_chunk *event_chunk,
         }
     }
     else {
+        /* Otherwise, the whole chunk can be POSTed */
         ret = compose_payload(ctx, event_chunk->data, event_chunk->size,
                               &out_body, &out_size);
         if (ret != FLB_OK) {
