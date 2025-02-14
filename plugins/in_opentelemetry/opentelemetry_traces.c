@@ -1066,7 +1066,7 @@ static int process_json(struct flb_opentelemetry *ctx,
                            &root_type, NULL);
 
     if (result != 0) {
-        flb_plg_error(ctx->ins, "invalid JSON: msgpack conversion error");
+        flb_plg_error(ctx->ins, "invalid JSON trace: msgpack conversion error");
         return -1;
     }
 
