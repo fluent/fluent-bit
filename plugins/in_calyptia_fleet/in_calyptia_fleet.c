@@ -469,7 +469,7 @@ static void *do_reload(void *data)
     reload->flb->config->conf_path_file = reload->cfg_path;
 
     sleep(5);
-    flb_signal_reload(reload->flb->config);
+    flb_reload_signal_reload(reload->flb->config);
     flb_free(reload);
     return NULL;
 }
