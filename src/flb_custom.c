@@ -325,6 +325,10 @@ void flb_custom_instance_destroy(struct flb_custom_instance *ins)
     if (ins->config_map) {
         flb_config_map_destroy(ins->config_map);
     }
+    /* destroy net config map */
+    if (ins->net_config_map) {
+        flb_config_map_destroy(ins->net_config_map);
+    }
 
     /* release properties */
     flb_kv_release(&ins->properties);
