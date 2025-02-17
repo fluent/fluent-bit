@@ -39,36 +39,35 @@ struct flb_input_plugin in_mem_plugin;
 
 static int in_mem_collect(struct flb_input_instance *i_ins,
                           struct flb_config *config, void *in_context);
-#if 0
-/* Locate a specific key into the buffer */
-static char *field(char *data, char *field)
-{
-    char *p;
-    char *q;
-    char *sep;
-    char *value;
-    int len = strlen(field);
 
-    p = strstr(data, field);
-    if (!p) {
-        return NULL;
+static uint64_t get_proc_meminfo_memavailable()
+{
+    char *buffer;
+    size_t len = 0;
+
+    FILE *f = fopen("/proc/meminfo", "r");
+    if (!f) {
+        return -1;
     }
 
-    sep = strchr(p, ':');
-    p = ++sep;
-    p++;
+    do {
+        ssize_t n = getline(&buffer, &len, f);
 
-    while (*p == ' ') p++;
+        if (n == -1) {
+            free(buffer);
+            fclose(f);
+            return -1;
+        }
 
-    q = strchr(p, ' ');
-    len = q - p;
-    value = flb_malloc(len + 1);
-    strncpy(value, p, len);
-    value[len] = '\0';
-
-    return value;
+        if (strncmp(buffer, "MemAvailable:", strlen("MemAvailable:"))==0) {
+            uint64_t ret = atoll(buffer + strlen("MemAvailable:"));  /* Kb */
+            free(buffer);
+            fclose(f);
+            return ret;
+        }
+    }
+    while (true);
 }
-#endif
 
 static uint64_t calc_kb(unsigned long amount, unsigned int unit)
 {
@@ -91,6 +90,7 @@ static int mem_calc(struct flb_in_mem_info *m_info)
 {
     int ret;
     struct sysinfo info;
+    uint64_t meminfo_memavailable;
 
     ret = sysinfo(&info);
     if (ret == -1) {
@@ -100,18 +100,18 @@ static int mem_calc(struct flb_in_mem_info *m_info)
 
     /* set values in KBs */
     m_info->mem_total     = calc_kb(info.totalram, info.mem_unit);
-
-    /*
-     * This value seems to be MemAvailable if it is supported
-     * or MemFree on legacy Linux.
-     */
     m_info->mem_free      = calc_kb(info.freeram, info.mem_unit);
-
     m_info->mem_used      = m_info->mem_total - m_info->mem_free;
 
     m_info->swap_total    = calc_kb(info.totalswap, info.mem_unit);
     m_info->swap_free     = calc_kb(info.freeswap, info.mem_unit);
     m_info->swap_used     = m_info->swap_total - m_info->swap_free;
+
+    /* use MemAvailable from /proc/meminfo if possible (linux 3.14+ specific). */
+    meminfo_memavailable = get_proc_meminfo_memavailable();
+    if (meminfo_memavailable != -1) {
+        m_info->mem_free = meminfo_memavailable;
+    }
 
     return 0;
 }
