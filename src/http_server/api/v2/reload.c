@@ -67,7 +67,7 @@ static void handle_reload_request(mk_request_t *request, struct flb_config *conf
         http_status =  400;
     }
     else {
-        flb_signal_reload(config);
+        flb_reload_signal_reload(config);
         msgpack_pack_str(&mp_pck, 4);
         msgpack_pack_str_body(&mp_pck, "done", 4);
         msgpack_pack_str(&mp_pck, 6);
@@ -91,7 +91,7 @@ static void handle_reload_request(mk_request_t *request, struct flb_config *conf
         http_status =  400;
     }
     else {
-        ret = flb_signal_reload(config);
+        ret = flb_reload_signal_reload(config);
         if (ret != 0) {
             mk_http_status(request, 500);
             mk_http_done(request);
