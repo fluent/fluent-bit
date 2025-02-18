@@ -931,6 +931,20 @@ int flb_output_set_property(struct flb_output_instance *ins,
         flb_sds_destroy(tmp);
         ins->total_limit_size = (size_t) limit;
     }
+    else if (prop_key_check("storage.overflow_action", k, len) == 0 && tmp) {
+        if (strcasecmp(tmp, "drop_oldest_chunk") == 0) {
+            ins->storage_overflow_action = FLB_OUTPUT_STORAGE_OVERFLOW_DROP;
+        }
+        else if (strcasecmp(tmp, "pause_ingestion") == 0) {
+            ins->storage_overflow_action = FLB_OUTPUT_STORAGE_OVERFLOW_PAUSE_INGESTION;
+        }
+        else {
+            flb_error("[config] invalid overflow_action '%s' for %s plugin",
+                      tmp, (char *) flb_output_name(ins));
+            flb_sds_destroy(tmp);
+            return -1;
+        }
+    }
     else if (prop_key_check("workers", k, len) == 0 && tmp) {
         /* Set the number of workers */
         ins->tp_workers = atoi(tmp);
