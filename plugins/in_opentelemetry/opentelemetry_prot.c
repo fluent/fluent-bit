@@ -1058,8 +1058,8 @@ int opentelemetry_prot_handle_ng(struct flb_http_request *request,
     char *buf = (char *) request->body;
     char *payload = NULL;
     size_t payload_size = 0;
+    size_t max_grpc_size = 16 * 1024 * 1024; /* 16M limit per message */
     struct flb_opentelemetry *context;
-
 
     context = (struct flb_opentelemetry *) response->stream->user_data;
 
@@ -1123,6 +1123,11 @@ next_grpc_message:
                     ((uint64_t) (uint8_t) buf[2] << 16) |
                     ((uint64_t) (uint8_t) buf[3] << 8)  |
                     ((uint64_t) (uint8_t) buf[4]);
+
+        if (grpc_size == 0 || grpc_size > max_grpc_size) {
+            send_response_ng(response, 400, "error: gRPC message size out of valid range\n");
+            return -1;
+        }
 
         if (cfl_sds_len(request->body) < grpc_size + 5) {
             send_response_ng(response, 400, "error: invalid gRPC packet\n");
