@@ -440,7 +440,7 @@ int flb_http_request_uncompress_body(
                                     request->body,
                                     cfl_sds_len(request->body));
     }
-    else if (strncasecmp(content_encoding_header_value, "deflate", 4) == 0) {
+    else if (strncasecmp(content_encoding_header_value, "deflate", 7) == 0) {
         result = uncompress_deflate(&output_buffer,
                                     &output_size,
                                     request->body,
