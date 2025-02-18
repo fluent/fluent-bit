@@ -1500,12 +1500,12 @@ int opentelemetry_process_logs(struct flb_opentelemetry *ctx,
     int ret = -1;
     int is_proto = FLB_FALSE; /* default to JSON */
     char *buf;
-    char *payload;
+    uint8_t *payload;
     uint64_t payload_size;
     struct flb_log_event_encoder *encoder;
 
-    buf = (char *) data;
-    payload = buf;
+    buf = (unsigned char *) data;
+    payload = data;
     payload_size = size;
 
     /* Detect the type of payload */
@@ -1515,48 +1515,11 @@ int opentelemetry_process_logs(struct flb_opentelemetry *ctx,
                 flb_plg_error(ctx->ins, "Invalid JSON payload");
                 return -1;
             }
-
             is_proto = FLB_FALSE;
         }
         else if (strcasecmp(content_type, "application/protobuf") == 0 ||
+                 strcasecmp(content_type, "application/grpc") == 0 ||
                  strcasecmp(content_type, "application/x-protobuf") == 0) {
-            is_proto = FLB_TRUE;
-        }
-        else if (strcasecmp(content_type, "application/grpc") == 0) {
-            if (size < 5) {
-                return -1;
-            }
-
-            /* magic bytes: 0x00 or 0x01 */
-            if (buf[0] != 0 && buf[0] != 1) {
-                flb_plg_error(ctx->ins, "Invalid gRPC magic byte");
-                return -1;
-            }
-
-            if (buf[0] == 1) {
-                flb_plg_error(ctx->ins, "gRPC compression is not supported");
-                return -1;
-            }
-            /* payload size */
-            payload_size = ((uint64_t) (uint8_t) buf[1] << 24) |
-                           ((uint64_t) (uint8_t) buf[2] << 16) |
-                           ((uint64_t) (uint8_t) buf[3] << 8)  |
-                           ((uint64_t) (uint8_t) buf[4]);
-
-            if (size < payload_size + 5) {
-                flb_plg_error(ctx->ins, "Invalid gRPC payload size: received=%zu expected=%zu",
-                              size, payload_size + 5);
-                return -1;
-            }
-
-            /*
-             * FIXME: implement compression support for the gRPC message, leaving on
-             * hold for now.
-             */
-
-            /* skip the gRPC header bytes */
-            payload = buf + 5;
-
             is_proto = FLB_TRUE;
         }
         else {
