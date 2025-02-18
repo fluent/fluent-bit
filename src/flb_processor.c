@@ -161,7 +161,7 @@ struct flb_processor *flb_processor_create(struct flb_config *config,
 
 struct flb_processor_unit *flb_processor_unit_create(struct flb_processor *proc,
                                                      int event_type,
-                                                     char *unit_name)
+                                                     const char *unit_name)
 {
     int result;
     struct mk_list *head;
