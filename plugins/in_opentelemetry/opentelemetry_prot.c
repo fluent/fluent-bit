@@ -977,7 +977,6 @@ next_grpc_message:
                     ((uint64_t) (uint8_t) buf[3] << 8)  |
                     ((uint64_t) (uint8_t) buf[4]);
 
-
         if (grpc_size == 0 || grpc_size > max_grpc_size) {
             send_response_ng(response, 400, "error: gRPC message size out of valid range\n");
             return -1;
