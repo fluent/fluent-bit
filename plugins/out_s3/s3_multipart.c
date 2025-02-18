@@ -403,7 +403,8 @@ error:
 }
 
 int complete_multipart_upload(struct flb_s3 *ctx,
-                              struct multipart_upload *m_upload)
+                              struct multipart_upload *m_upload,
+                              char *pre_signed_url)
 {
     char *body;
     size_t size;
@@ -426,8 +427,14 @@ int complete_multipart_upload(struct flb_s3 *ctx,
         return -1;
     }
 
-    tmp = flb_sds_printf(&uri, "/%s%s?uploadId=%s", ctx->bucket,
-                         m_upload->s3_key, m_upload->upload_id);
+    if (pre_signed_url != NULL) {
+        tmp = flb_sds_copy(uri, pre_signed_url, strlen(pre_signed_url));
+    }
+    else {
+        tmp = flb_sds_printf(&uri, "/%s%s?uploadId=%s", ctx->bucket,
+                            m_upload->s3_key, m_upload->upload_id);
+    }
+
     if (!tmp) {
         flb_sds_destroy(uri);
         return -1;
@@ -477,11 +484,11 @@ int complete_multipart_upload(struct flb_s3 *ctx,
 }
 
 int abort_multipart_upload(struct flb_s3 *ctx,
-                           struct multipart_upload *m_upload)
+                           struct multipart_upload *m_upload,
+                           char *pre_signed_url)
 {
     flb_sds_t uri = NULL;
     flb_sds_t tmp;
-    int ret;
     struct flb_http_client *c = NULL;
     struct flb_aws_client *s3_client;
 
@@ -498,8 +505,14 @@ int abort_multipart_upload(struct flb_s3 *ctx,
         return -1;
     }
 
-    tmp = flb_sds_printf(&uri, "/%s%s?uploadId=%s", ctx->bucket,
-                         m_upload->s3_key, m_upload->upload_id);
+    if (pre_signed_url != NULL) {
+        tmp = flb_sds_copy(uri, pre_signed_url, strlen(pre_signed_url));
+    }
+    else {
+        tmp = flb_sds_printf(&uri, "/%s%s?uploadId=%s", ctx->bucket,
+                            m_upload->s3_key, m_upload->upload_id);
+    }
+
     if (!tmp) {
         flb_sds_destroy(uri);
         return -1;
@@ -544,7 +557,8 @@ int abort_multipart_upload(struct flb_s3 *ctx,
 }
 
 int create_multipart_upload(struct flb_s3 *ctx,
-                            struct multipart_upload *m_upload)
+                            struct multipart_upload *m_upload,
+                            char *pre_signed_url)
 {
     flb_sds_t uri = NULL;
     flb_sds_t tmp;
@@ -560,7 +574,13 @@ int create_multipart_upload(struct flb_s3 *ctx,
         return -1;
     }
 
-    tmp = flb_sds_printf(&uri, "/%s%s?uploads=", ctx->bucket, m_upload->s3_key);
+    if (pre_signed_url != NULL) {
+        tmp = flb_sds_copy(uri, pre_signed_url, strlen(pre_signed_url));
+    }
+    else {
+        tmp = flb_sds_printf(&uri, "/%s%s?uploads=", ctx->bucket, m_upload->s3_key);
+    }
+
     if (!tmp) {
         flb_sds_destroy(uri);
         return -1;
@@ -664,7 +684,7 @@ flb_sds_t get_etag(char *response, size_t size)
 }
 
 int upload_part(struct flb_s3 *ctx, struct multipart_upload *m_upload,
-                char *body, size_t body_size)
+                char *body, size_t body_size, char *pre_signed_url)
 {
     flb_sds_t uri = NULL;
     flb_sds_t tmp;
@@ -681,9 +701,15 @@ int upload_part(struct flb_s3 *ctx, struct multipart_upload *m_upload,
         return -1;
     }
 
-    tmp = flb_sds_printf(&uri, "/%s%s?partNumber=%d&uploadId=%s",
-                         ctx->bucket, m_upload->s3_key, m_upload->part_number,
-                         m_upload->upload_id);
+    if (pre_signed_url != NULL) {
+        tmp = flb_sds_copy(uri, pre_signed_url, strlen(pre_signed_url));
+    }
+    else {
+        tmp = flb_sds_printf(&uri, "/%s%s?partNumber=%d&uploadId=%s",
+                            ctx->bucket, m_upload->s3_key, m_upload->part_number,
+                            m_upload->upload_id);
+    }
+
     if (!tmp) {
         flb_errno();
         flb_sds_destroy(uri);

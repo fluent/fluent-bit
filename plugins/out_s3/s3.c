@@ -82,6 +82,8 @@ static struct multipart_upload *create_upload(struct flb_s3 *ctx,
 
 static void remove_from_queue(struct upload_queue *entry);
 
+static int blob_initialize_authorization_endpoint_upstream(struct flb_s3 *context);
+
 static struct flb_aws_header content_encoding_header = {
     .key = "Content-Encoding",
     .key_len = 16,
@@ -512,6 +514,14 @@ static void s3_context_destroy(struct flb_s3 *ctx)
         flb_sds_destroy(ctx->seq_index_file);
     }
 
+    if (ctx->authorization_endpoint_upstream != NULL) {
+        flb_upstream_destroy(ctx->authorization_endpoint_upstream);
+    }
+
+    if (ctx->authorization_endpoint_tls_context != NULL) {
+        flb_tls_destroy(ctx->authorization_endpoint_tls_context);
+    }
+
     /* Remove uploads */
     mk_list_foreach_safe(head, tmp, &ctx->uploads) {
         m_upload = mk_list_entry(head, struct multipart_upload, _head);
@@ -527,456 +537,6 @@ static void s3_context_destroy(struct flb_s3 *ctx)
     }
 
     flb_free(ctx);
-}
-
-static int find_map_entry_by_key(msgpack_object_map *map,
-                                 char *key,
-                                 size_t match_index,
-                                 int case_insensitive)
-{
-    size_t  match_count;
-    int     result;
-    int     index;
-
-    match_count = 0;
-
-    for (index = 0 ; index < (int) map->size ; index++) {
-        if (map->ptr[index].key.type == MSGPACK_OBJECT_STR) {
-            if (case_insensitive) {
-                result = strncasecmp(map->ptr[index].key.via.str.ptr,
-                                     key,
-                                     map->ptr[index].key.via.str.size);
-            }
-            else {
-                result = strncmp(map->ptr[index].key.via.str.ptr,
-                                 key,
-                                 map->ptr[index].key.via.str.size);
-            }
-
-            if (result == 0) {
-                if (match_count == match_index) {
-                    return index;
-                }
-
-                match_count++;
-            }
-        }
-    }
-
-    return -1;
-}
-
-static int extract_map_string_entry_by_key(flb_sds_t *output,
-                                           msgpack_object_map *map,
-                                           char *key,
-                                           size_t match_index,
-                                           int case_insensitive)
-{
-    int index;
-    int result;
-
-    index = find_map_entry_by_key(map,
-                                 key,
-                                 match_index,
-                                 case_insensitive);
-
-    if (index == -1) {
-        return -1;
-    }
-
-    if (map->ptr[index].val.type != MSGPACK_OBJECT_STR) {
-        return -2;
-    }
-
-    if (*output == NULL) {
-        *output = flb_sds_create_len(map->ptr[index].val.via.str.ptr,
-                                     map->ptr[index].val.via.str.size);
-
-        if (*output == NULL) {
-            return -3;
-        }
-    }
-    else {
-        (*output)[0] = '\0';
-
-        flb_sds_len_set(*output, 0);
-
-        result = flb_sds_cat_safe(output,
-                                  map->ptr[index].val.via.str.ptr,
-                                  map->ptr[index].val.via.str.size);
-
-        if (result != 0) {
-            return -4;
-        }
-    }
-
-    return 0;
-}
-
-static int process_remote_configuration_payload(
-                struct flb_s3 *context,
-                char *payload,
-                size_t payload_size)
-{
-    size_t               msgpack_body_length;
-    msgpack_object_map  *configuration_map;
-    flb_sds_t            secret_access_key;
-    flb_sds_t            access_key_id;
-    flb_sds_t            session_token;
-    msgpack_unpacked     unpacked_root;
-    char                *msgpack_body;
-    int                  root_type;
-    size_t               offset;
-    int                  result;
-
-    result = flb_pack_json(payload,
-                           payload_size,
-                           &msgpack_body,
-                           &msgpack_body_length,
-                           &root_type,
-                           NULL);
-
-    if (result != 0) {
-        flb_plg_error(context->ins,
-                      "JSON to msgpack conversion error");
-
-        result = -1;
-    }
-    else {
-        msgpack_unpacked_init(&unpacked_root);
-
-        offset = 0;
-        result = msgpack_unpack_next(&unpacked_root,
-                                     msgpack_body,
-                                     msgpack_body_length,
-                                     &offset);
-
-        if (result != MSGPACK_UNPACK_SUCCESS) {
-            flb_plg_error(context->ins, "corrupted msgpack data");
-
-            result = -1;
-
-            goto cleanup;
-        }
-
-        if (unpacked_root.data.type != MSGPACK_OBJECT_MAP) {
-            flb_plg_error(context->ins, "unexpected root object type");
-
-            result = -1;
-
-            goto cleanup;
-        }
-
-        configuration_map = &unpacked_root.data.via.map;
-
-        secret_access_key = NULL;
-        access_key_id = NULL;
-        session_token = NULL;
-
-        result = extract_map_string_entry_by_key(&access_key_id,
-                                                 configuration_map,
-                                                 "access_key_id", 0, FLB_TRUE);
-
-        if (result != 0) {
-            flb_plg_error(context->ins,
-                            "access_key_id could be extracted : %d", result);
-
-            goto cleanup;
-        }
-
-        result = extract_map_string_entry_by_key(&secret_access_key,
-                                                 configuration_map,
-                                                 "secret_access_key", 0, FLB_TRUE);
-
-        if (result != 0) {
-            flb_plg_error(context->ins,
-                            "secret_access_key extraction error : %d", result);
-
-            goto cleanup;
-        }
-
-        result = extract_map_string_entry_by_key(&session_token,
-                                                 configuration_map,
-                                                 "secret_access_key", 0, FLB_TRUE);
-
-        if (result != 0) {
-            flb_plg_error(context->ins,
-                            "secret_access_key extraction error : %d", result);
-
-            goto cleanup;
-        }
-
-        setenv("aws_secret_access_key", secret_access_key, 1);
-        setenv("aws_access_key_id", access_key_id, 1);
-        setenv("aws_session_token", session_token, 1);
-
-cleanup:
-        if (result != 0) {
-            if (secret_access_key != NULL) {
-                free(secret_access_key);
-
-                secret_access_key = NULL;
-            }
-
-            if (access_key_id != NULL) {
-                free(access_key_id);
-
-                access_key_id = NULL;
-            }
-
-            if (session_token != NULL) {
-                free(session_token);
-
-                session_token = NULL;
-            }
-
-
-            result = -1;
-        }
-
-        msgpack_unpacked_destroy(&unpacked_root);
-
-        flb_free(msgpack_body);
-    }
-
-    return result;
-}
-
-static int apply_remote_configuration(struct flb_s3 *context)
-{
-    int ret;
-    size_t b_sent;
-    struct flb_http_client *http_client;
-    struct flb_connection *connection;
-    struct flb_upstream *upstream;
-    struct flb_tls *tls_context;
-    char *scheme = NULL;
-    char *host = NULL;
-    char *port = NULL;
-    char *uri = NULL;
-    uint16_t port_as_short;
-
-    /* Parse and split URL */
-    ret = flb_utils_url_split(context->configuration_endpoint_url,
-                              &scheme, &host, &port, &uri);
-    if (ret == -1) {
-        flb_plg_error(context->ins,
-                      "Invalid URL: %s",
-                      context->configuration_endpoint_url);
-
-        return -1;
-    }
-
-    if (port != NULL) {
-        port_as_short = (uint16_t) strtoul(port, NULL, 10);
-    }
-    else {
-        if (scheme != NULL) {
-            if (strcasecmp(scheme, "https") == 0) {
-                port_as_short = 443;
-            }
-            else {
-                port_as_short = 80;
-            }
-        }
-    }
-
-    if (scheme != NULL) {
-        flb_free(scheme);
-        scheme = NULL;
-    }
-
-    if (port != NULL) {
-        flb_free(port);
-        port = NULL;
-    }
-
-    if (host == NULL || uri == NULL) {
-        flb_plg_error(context->ins,
-                      "Invalid URL: %s",
-                      context->configuration_endpoint_url);
-
-        if (host != NULL) {
-            flb_free(host);
-        }
-
-        if (uri != NULL) {
-            flb_free(uri);
-        }
-
-        return -2;
-    }
-
-    tls_context = flb_tls_create(FLB_TLS_CLIENT_MODE,
-                                 FLB_FALSE,
-                                 FLB_FALSE,
-                                 host,
-                                 NULL,
-                                 NULL,
-                                 NULL,
-                                 NULL,
-                                 NULL);
-
-    if (tls_context == NULL) {
-        flb_free(host);
-        flb_free(uri);
-
-        flb_plg_error(context->ins,
-                      "TLS context creation errror");
-
-        return -2;
-    }
-
-    upstream = flb_upstream_create_url(context->ins->config,
-                                       context->configuration_endpoint_url,
-                                       FLB_IO_TCP,
-                                       tls_context);
-
-    if (upstream == NULL) {
-        flb_tls_destroy(tls_context);
-        flb_free(host);
-        flb_free(uri);
-
-        flb_plg_error(context->ins,
-                      "Upstream creation errror");
-
-        return -3;
-    }
-
-    flb_stream_disable_async_mode(&upstream->base);
-
-    /* Get upstream connection */
-    connection = flb_upstream_conn_get(upstream);
-    if (connection == NULL) {
-        flb_upstream_destroy(upstream);
-        flb_tls_destroy(tls_context);
-        flb_free(host);
-        flb_free(uri);
-
-        flb_plg_error(context->ins,
-                      "cannot create connection");
-
-        return -3;
-    }
-
-    /* Create HTTP client context */
-    http_client = flb_http_client(connection,
-                                  FLB_HTTP_GET,
-                                  uri,
-                                  NULL, 0,
-                                  host,
-                                  (int) port_as_short,
-                                  NULL, 0);
-    if (http_client == NULL) {
-        flb_upstream_conn_release(connection);
-        flb_upstream_destroy(upstream);
-        flb_tls_destroy(tls_context);
-        flb_free(host);
-        flb_free(uri);
-
-        flb_plg_error(context->ins,
-                      "cannot create HTTP client");
-
-        return -4;
-    }
-
-    flb_http_add_header(http_client,
-                        "Accept",
-                        strlen("Accept"),
-                        "application/json",
-                        16);
-
-    /* User Agent */
-    flb_http_add_header(http_client,
-                        "User-Agent", 10,
-                        "Fluent-Bit", 10);
-
-    if (context->configuration_endpoint_username != NULL &&
-        context->configuration_endpoint_password != NULL) {
-        flb_http_basic_auth(http_client,
-                            context->configuration_endpoint_username,
-                            context->configuration_endpoint_password);
-    }
-    else if (context->configuration_endpoint_bearer_token != NULL) {
-        flb_http_bearer_auth(http_client,
-                             context->configuration_endpoint_bearer_token);
-    }
-
-    /* Send HTTP request */
-    ret = flb_http_do(http_client, &b_sent);
-
-    if (ret == -1) {
-        flb_http_client_destroy(http_client);
-        flb_upstream_conn_release(connection);
-        flb_upstream_destroy(upstream);
-        flb_tls_destroy(tls_context);
-        flb_free(host);
-        flb_free(uri);
-
-        flb_plg_error(context->ins,
-                      "Error sending configuration request");
-
-        return -5;
-    }
-
-    if (http_client->resp.status == 200) {
-        flb_plg_info(context->ins,
-                     "Configuration retrieved successfully");
-
-        ret = process_remote_configuration_payload(
-                context,
-                http_client->resp.payload,
-                http_client->resp.payload_size);
-
-        if (ret != 0) {
-            flb_plg_error(context->ins,
-                          "Configuration payload processing error %d",
-                          ret);
-
-            flb_http_client_destroy(http_client);
-            flb_upstream_conn_release(connection);
-            flb_upstream_destroy(upstream);
-            flb_tls_destroy(tls_context);
-            flb_free(host);
-            flb_free(uri);
-
-            return -7;
-        }
-
-        flb_plg_info(context->ins,
-                     "Configuration applied successfully");
-    }
-    else {
-        if (http_client->resp.payload_size > 0) {
-            flb_plg_error(context->ins,
-                          "Configuration retrieval failed with status %i\n%s",
-                          http_client->resp.status,
-                          http_client->resp.payload);
-        }
-        else {
-            flb_plg_error(context->ins,
-                          "Configuration retrieval failed with status %i",
-                          http_client->resp.status);
-        }
-
-        flb_http_client_destroy(http_client);
-        flb_upstream_conn_release(connection);
-        flb_upstream_destroy(upstream);
-        flb_tls_destroy(tls_context);
-        flb_free(host);
-        flb_free(uri);
-
-        return -6;
-    }
-
-    flb_http_client_destroy(http_client);
-    flb_upstream_conn_release(connection);
-    flb_upstream_destroy(upstream);
-    flb_tls_destroy(tls_context);
-    flb_free(host);
-    flb_free(uri);
-
-    return 0;
 }
 
 static int cb_s3_init(struct flb_output_instance *ins,
@@ -1339,18 +899,6 @@ static int cb_s3_init(struct flb_output_instance *ins,
         }
     }
 
-    if (ctx->configuration_endpoint_url != NULL) {
-        ret = apply_remote_configuration(ctx);
-
-        if (ret != 0) {
-            flb_plg_error(ctx->ins, "Failed to retrieve configuration "
-                                    "from endpoint");
-            flb_errno();
-
-            return -1;
-        }
-    }
-
     /* read any remaining buffers from previous (failed) executions */
     ctx->has_old_buffers = s3_store_has_data(ctx);
     ctx->has_old_uploads = s3_store_has_uploads(ctx);
@@ -1416,6 +964,19 @@ static int cb_s3_init(struct flb_output_instance *ins,
      * And deleted an item from the list, this could cause a crash/corruption.
      */
     flb_stream_disable_async_mode(&ctx->s3_client->upstream->base);
+
+    if (ctx->authorization_endpoint_url != NULL) {
+        ret = blob_initialize_authorization_endpoint_upstream(ctx);
+
+        if (ret != 0) {
+            flb_plg_error(ctx->ins,
+                          "Failed to initialize authorization endpoint upstream");
+
+            return -1;
+        }
+
+        ctx->s3_client->has_auth = FLB_FALSE;
+    }
 
     /* clean up any old buffers found on startup */
     if (ctx->has_old_buffers == FLB_TRUE) {
@@ -1644,7 +1205,7 @@ multipart:
     }
 
     if (m_upload->upload_state == MULTIPART_UPLOAD_STATE_NOT_CREATED) {
-        ret = create_multipart_upload(ctx, m_upload);
+        ret = create_multipart_upload(ctx, m_upload, NULL);
         if (ret < 0) {
             flb_plg_error(ctx->ins, "Could not initiate multipart upload");
             if (chunk) {
@@ -1658,7 +1219,7 @@ multipart:
         m_upload->upload_state = MULTIPART_UPLOAD_STATE_CREATED;
     }
 
-    ret = upload_part(ctx, m_upload, body, body_size);
+    ret = upload_part(ctx, m_upload, body, body_size, NULL);
     if (ret < 0) {
         if (ctx->compression == FLB_AWS_COMPRESS_GZIP) {
             flb_free(payload_buf);
@@ -2305,6 +1866,487 @@ exit:
     return;
 }
 
+static int blob_initialize_authorization_endpoint_upstream(struct flb_s3 *context)
+{
+    int ret;
+    struct flb_upstream *upstream;
+    struct flb_tls *tls_context;
+    char *scheme = NULL;
+    char *host = NULL;
+    char *port = NULL;
+    char *uri = NULL;
+    int upstream_flags;
+
+    context->authorization_endpoint_upstream = NULL;
+    context->authorization_endpoint_tls_context = NULL;
+
+    /* Parse and split URL */
+    ret = flb_utils_url_split(context->authorization_endpoint_url,
+                              &scheme, &host, &port, &uri);
+
+    if (ret == -1) {
+        flb_plg_error(context->ins,
+                      "Invalid URL: %s",
+                      context->authorization_endpoint_url);
+
+        return -1;
+    }
+
+    if (scheme != NULL) {
+        flb_free(scheme);
+
+        scheme = NULL;
+    }
+
+    if (port != NULL) {
+        flb_free(port);
+
+        port = NULL;
+    }
+
+    if (host == NULL || uri == NULL) {
+        flb_plg_error(context->ins,
+                      "Invalid URL: %s",
+                      context->authorization_endpoint_url);
+
+        if (host != NULL) {
+            flb_free(host);
+        }
+
+        if (uri != NULL) {
+            flb_free(uri);
+        }
+
+        return -2;
+    }
+
+    tls_context = flb_tls_create(FLB_TLS_CLIENT_MODE,
+                                 FLB_FALSE,
+                                 FLB_FALSE,
+                                 host,
+                                 NULL,
+                                 NULL,
+                                 NULL,
+                                 NULL,
+                                 NULL);
+
+    flb_free(host);
+    flb_free(uri);
+
+    if (tls_context == NULL) {
+        flb_plg_error(context->ins,
+                      "TLS context creation errror");
+
+        return -2;
+    }
+
+    upstream = flb_upstream_create_url(context->ins->config,
+                                       context->authorization_endpoint_url,
+                                       FLB_IO_TCP,
+                                       tls_context);
+
+    if (upstream == NULL) {
+        flb_tls_destroy(tls_context);
+
+        flb_plg_error(context->ins,
+                      "Upstream creation errror");
+
+        return -3;
+    }
+
+    upstream_flags =  flb_stream_get_flags(&upstream->base);
+
+    flb_output_upstream_set(upstream, context->ins);
+
+    flb_stream_set_flags(&upstream->base, upstream_flags);
+
+    context->authorization_endpoint_upstream = upstream;
+    context->authorization_endpoint_tls_context = tls_context;
+
+    return 0;
+}
+
+static int blob_fetch_pre_signed_url(struct flb_s3 *context,
+                                     flb_sds_t *result_url,
+                                     char *url)
+{
+    int ret;
+    size_t b_sent;
+    struct flb_http_client *http_client;
+    struct flb_connection *connection;
+    char *scheme = NULL;
+    char *host = NULL;
+    char *port = NULL;
+    char *uri = NULL;
+    uint16_t port_as_short;
+    flb_sds_t tmp;
+
+    /* Parse and split URL */
+    ret = flb_utils_url_split(url,
+                              &scheme, &host, &port, &uri);
+    if (ret == -1) {
+        flb_plg_error(context->ins,
+                      "Invalid URL: %s",
+                      url);
+
+        return -1;
+    }
+
+    if (port != NULL) {
+        port_as_short = (uint16_t) strtoul(port, NULL, 10);
+    }
+    else {
+        if (scheme != NULL) {
+            if (strcasecmp(scheme, "https") == 0) {
+                port_as_short = 443;
+            }
+            else {
+                port_as_short = 80;
+            }
+        }
+    }
+
+    if (scheme != NULL) {
+        flb_free(scheme);
+        scheme = NULL;
+    }
+
+    if (port != NULL) {
+        flb_free(port);
+        port = NULL;
+    }
+
+    if (host == NULL || uri == NULL) {
+        flb_plg_error(context->ins,
+                      "Invalid URL: %s",
+                      context->authorization_endpoint_url);
+
+        if (host != NULL) {
+            flb_free(host);
+        }
+
+        if (uri != NULL) {
+            flb_free(uri);
+        }
+
+        return -2;
+    }
+
+    /* Get upstream connection */
+    connection = flb_upstream_conn_get(context->authorization_endpoint_upstream);
+    if (connection == NULL) {
+        flb_free(host);
+        flb_free(uri);
+
+        flb_plg_error(context->ins,
+                      "cannot create connection");
+
+        return -3;
+    }
+
+    /* Create HTTP client context */
+    http_client = flb_http_client(connection,
+                                  FLB_HTTP_GET,
+                                  uri,
+                                  NULL, 0,
+                                  host,
+                                  (int) port_as_short,
+                                  NULL, 0);
+    if (http_client == NULL) {
+        flb_upstream_conn_release(connection);
+        flb_free(host);
+        flb_free(uri);
+
+        flb_plg_error(context->ins,
+                      "cannot create HTTP client");
+
+        return -4;
+    }
+
+    flb_http_add_header(http_client,
+                        "Accept",
+                        strlen("Accept"),
+                        "text/plain",
+                        10);
+
+    /* User Agent */
+    flb_http_add_header(http_client,
+                        "User-Agent", 10,
+                        "Fluent-Bit", 10);
+
+    if (context->authorization_endpoint_username != NULL &&
+        context->authorization_endpoint_password != NULL) {
+        flb_http_basic_auth(http_client,
+                            context->authorization_endpoint_username,
+                            context->authorization_endpoint_password);
+    }
+    else if (context->authorization_endpoint_bearer_token != NULL) {
+        flb_http_bearer_auth(http_client,
+                             context->authorization_endpoint_bearer_token);
+    }
+
+    /* Send HTTP request */
+    ret = flb_http_do(http_client, &b_sent);
+
+    if (ret == -1) {
+        flb_plg_error(context->ins,
+                      "Error sending configuration request");
+
+        ret = -5;
+    }
+    else {
+        if (http_client->resp.status == 200) {
+            flb_plg_info(context->ins,
+                        "Pre signed url retrieved successfully");
+
+            if (*result_url != NULL) {
+                tmp = flb_sds_copy(*result_url,
+                                   http_client->resp.payload,
+                                   http_client->resp.payload_size);
+            }
+            else {
+                tmp = flb_sds_create_len(http_client->resp.payload,
+                                         http_client->resp.payload_size);
+            }
+
+            if (tmp == NULL) {
+                flb_plg_error(context->ins,
+                            "Pre signed url duplication error");
+
+                ret = -7;
+            }
+            else {
+                *result_url = tmp;
+            }
+        }
+        else {
+            if (http_client->resp.payload_size > 0) {
+                flb_plg_error(context->ins,
+                            "Pre signed url retrieval failed with status %i\n%s",
+                            http_client->resp.status,
+                            http_client->resp.payload);
+            }
+            else {
+                flb_plg_error(context->ins,
+                            "Pre signed url retrieval failed with status %i",
+                            http_client->resp.status);
+            }
+
+            ret = -6;
+        }
+    }
+
+    flb_http_client_destroy(http_client);
+    flb_upstream_conn_release(connection);
+    flb_free(host);
+    flb_free(uri);
+
+    return ret;
+}
+
+static int blob_fetch_put_object_pre_signed_url(struct flb_s3 *context,
+                                                flb_sds_t *result_url,
+                                                char *tag,
+                                                char *bucket,
+                                                char *path)
+{
+    char      *valid_path;
+    int        ret;
+    flb_sds_t  url;
+    flb_sds_t  tmp;
+
+    valid_path = (char *) path;
+
+    while (*valid_path == '.' ||
+           *valid_path == '/') {
+            valid_path++;
+    }
+
+    url = flb_sds_create(context->authorization_endpoint_url);
+
+    if (url == NULL) {
+        return -1;
+    }
+
+    tmp = flb_sds_printf(&url, "/put_object_presigned_url/%s/%s/%s", bucket, tag, valid_path);
+
+    if (tmp != NULL) {
+        url = tmp;
+
+        ret = blob_fetch_pre_signed_url(context, result_url, (char *) url);
+    }
+    else {
+        ret = -1;
+    }
+
+    flb_sds_destroy(url);
+
+    return ret;
+}
+
+static int blob_fetch_create_multipart_upload_pre_signed_url(struct flb_s3 *context,
+                                                             flb_sds_t *result_url,
+                                                             char *tag,
+                                                             char *bucket,
+                                                             char *path)
+{
+    char      *valid_path;
+    int        ret;
+    flb_sds_t  url;
+    flb_sds_t  tmp;
+
+    valid_path = (char *) path;
+
+    while (*valid_path == '.' ||
+           *valid_path == '/') {
+            valid_path++;
+    }
+
+    url = flb_sds_create(context->authorization_endpoint_url);
+
+    if (url == NULL) {
+        return -1;
+    }
+
+    tmp = flb_sds_printf(&url, "/multipart_creation_presigned_url/%s/%s/%s", bucket, tag, valid_path);
+
+    if (tmp != NULL) {
+        url = tmp;
+
+        ret = blob_fetch_pre_signed_url(context, result_url, (char *) url);
+    }
+    else {
+        ret = -1;
+    }
+
+    flb_sds_destroy(url);
+
+    return ret;
+}
+
+static int blob_fetch_multipart_upload_pre_signed_url(struct flb_s3 *context,
+                                                             flb_sds_t *result_url,
+                                                             char *tag,
+                                                             char *bucket,
+                                                             char *path,
+                                                             char *upload_id,
+                                                             int part_number)
+{
+    char      *valid_path;
+    int        ret;
+    flb_sds_t  url;
+    flb_sds_t  tmp;
+
+    valid_path = (char *) path;
+
+    while (*valid_path == '.' ||
+           *valid_path == '/') {
+            valid_path++;
+    }
+
+    url = flb_sds_create(context->authorization_endpoint_url);
+
+    if (url == NULL) {
+        return -1;
+    }
+
+    tmp = flb_sds_printf(&url, "/multipart_upload_presigned_url/%s/%s/%s/%s/%d", bucket, tag, valid_path, upload_id, part_number);
+
+    if (tmp != NULL) {
+        url = tmp;
+
+        ret = blob_fetch_pre_signed_url(context, result_url, (char *) url);
+    }
+    else {
+        ret = -1;
+    }
+
+    flb_sds_destroy(url);
+
+    return ret;
+}
+
+static int blob_fetch_multipart_complete_pre_signed_url(struct flb_s3 *context,
+                                                             flb_sds_t *result_url,
+                                                             char *tag,
+                                                             char *bucket,
+                                                             char *path,
+                                                             char *upload_id)
+{
+    char      *valid_path;
+    int        ret;
+    flb_sds_t  url;
+    flb_sds_t  tmp;
+
+    valid_path = (char *) path;
+
+    while (*valid_path == '.' ||
+           *valid_path == '/') {
+            valid_path++;
+    }
+
+    url = flb_sds_create(context->authorization_endpoint_url);
+
+    if (url == NULL) {
+        return -1;
+    }
+
+    tmp = flb_sds_printf(&url, "/multipart_complete_presigned_url/%s/%s/%s/%s", bucket, tag, valid_path, upload_id);
+
+    if (tmp != NULL) {
+        url = tmp;
+
+        ret = blob_fetch_pre_signed_url(context, result_url, (char *) url);
+    }
+    else {
+        ret = -1;
+    }
+
+    flb_sds_destroy(url);
+
+    return ret;
+}
+
+static int blob_fetch_multipart_abort_pre_signed_url(struct flb_s3 *context,
+                                                     flb_sds_t *result_url,
+                                                     char *tag,
+                                                     char *bucket,
+                                                     char *path,
+                                                     char *upload_id)
+{
+    char      *valid_path;
+    int        ret;
+    flb_sds_t  url;
+    flb_sds_t  tmp;
+
+    valid_path = (char *) path;
+
+    while (*valid_path == '.' ||
+           *valid_path == '/') {
+            valid_path++;
+    }
+
+    url = flb_sds_create(context->authorization_endpoint_url);
+
+    if (url == NULL) {
+        return -1;
+    }
+
+    tmp = flb_sds_printf(&url, "/multipart_upload_presigned_url/%s/%s/%s/%s", bucket, tag, valid_path, upload_id);
+
+    if (tmp != NULL) {
+        url = tmp;
+
+        ret = blob_fetch_pre_signed_url(context, result_url, (char *) url);
+    }
+    else {
+        ret = -1;
+    }
+
+    flb_sds_destroy(url);
+
+    return ret;
+}
 
 static struct multipart_upload *create_blob_upload(struct flb_s3 *ctx, const char *tag,
                                                    int tag_len,
@@ -2387,31 +2429,42 @@ static int put_blob_object(struct flb_s3 *ctx,
     flb_sds_t tmp;
     char final_body_md5[25];
 
-    s3_key = flb_get_s3_blob_key("/$TAG/",
-                                 tag,
-                                 ctx->tag_delimiters,
-                                 path);
+    if (ctx->authorization_endpoint_url == NULL) {
+        s3_key = flb_get_s3_blob_key("/$TAG/",
+                                    tag,
+                                    ctx->tag_delimiters,
+                                    path);
 
-    if (!s3_key) {
-        flb_plg_error(ctx->ins, "Failed to construct S3 Object Key for %s", tag);
-        return -1;
-    }
+        if (!s3_key) {
+            flb_plg_error(ctx->ins, "Failed to construct S3 Object Key for %s", tag);
+            return -1;
+        }
 
-    len = strlen(s3_key);
-    len += strlen(ctx->bucket + 1);
+        len = strlen(s3_key);
+        len += strlen(ctx->bucket + 1);
 
-    uri = flb_sds_create_size(len);
+        uri = flb_sds_create_size(len);
 
-    tmp = flb_sds_printf(&uri, "/%s%s", ctx->bucket, s3_key);
+        tmp = flb_sds_printf(&uri, "/%s%s", ctx->bucket, s3_key);
 
-    if (!tmp) {
+        if (!tmp) {
+            flb_sds_destroy(s3_key);
+            flb_plg_error(ctx->ins, "Failed to create PutObject URI");
+            return -1;
+        }
+
         flb_sds_destroy(s3_key);
-        flb_plg_error(ctx->ins, "Failed to create PutObject URI");
-        return -1;
+        uri = tmp;
     }
+    else {
+        uri = NULL;
 
-    flb_sds_destroy(s3_key);
-    uri = tmp;
+        ret = blob_fetch_put_object_pre_signed_url(ctx, &uri, (char *) tag, ctx->bucket, (char *) path);
+
+        if (ret != 0) {
+            return -1;
+        }
+    }
 
     memset(final_body_md5, 0, sizeof(final_body_md5));
     if (ctx->send_content_md5 == FLB_TRUE) {
@@ -2435,6 +2488,7 @@ static int put_blob_object(struct flb_s3 *ctx,
             flb_sds_destroy(uri);
             return -1;
         }
+
         c = s3_client->client_vtable->request(s3_client, FLB_HTTP_PUT,
                                               uri, body, body_size,
                                               headers, num_headers);
@@ -2492,6 +2546,7 @@ static int cb_s3_upload_blob(struct flb_config *config, void *data)
     struct multipart_upload *m_upload;
     int part_count;
     int put_object_required;
+    flb_sds_t pre_signed_url;
 
     info = FLB_TLS_GET(s3_worker_info);
 
@@ -2506,6 +2561,7 @@ static int cb_s3_upload_blob(struct flb_config *config, void *data)
     }
 
     info->active_upload = FLB_TRUE;
+    pre_signed_url = NULL;
 
     /*
      * Check if is there any file which has been fully uploaded and we need to commit it with
@@ -2558,7 +2614,34 @@ static int cb_s3_upload_blob(struct flb_config *config, void *data)
                     return -4;
                 }
 
-                ret = abort_multipart_upload(ctx, m_upload);
+
+                if (ctx->authorization_endpoint_url != NULL) {
+                    ret = blob_fetch_multipart_abort_pre_signed_url(ctx,
+                                                                    &pre_signed_url,
+                                                                    file_tag,
+                                                                    ctx->bucket,
+                                                                    file_path,
+                                                                    m_upload->upload_id);
+
+                    if (ret != 0) {
+                        multipart_upload_destroy(m_upload);
+
+                        flb_blob_db_unlock(&ctx->blob_db);
+
+                        return -5;
+                    }
+                }
+                else {
+                    pre_signed_url = NULL;
+                }
+
+                ret = abort_multipart_upload(ctx, m_upload, pre_signed_url);
+
+                if (pre_signed_url != NULL) {
+                    flb_sds_destroy(pre_signed_url);
+
+                    pre_signed_url = NULL;
+                }
             }
 
             flb_blob_file_update_remote_id(&ctx->blob_db, file_id, "");
@@ -2623,7 +2706,33 @@ static int cb_s3_upload_blob(struct flb_config *config, void *data)
                     return -4;
                 }
 
-                ret = abort_multipart_upload(ctx, m_upload);
+                if (ctx->authorization_endpoint_url != NULL) {
+                    ret = blob_fetch_multipart_abort_pre_signed_url(ctx,
+                                                                    &pre_signed_url,
+                                                                    file_tag,
+                                                                    ctx->bucket,
+                                                                    file_path,
+                                                                    m_upload->upload_id);
+
+                    if (ret != 0) {
+                        multipart_upload_destroy(m_upload);
+
+                        flb_blob_db_unlock(&ctx->blob_db);
+
+                        return -5;
+                    }
+                }
+                else {
+                    pre_signed_url = NULL;
+                }
+
+                ret = abort_multipart_upload(ctx, m_upload, pre_signed_url);
+
+                if (pre_signed_url != NULL) {
+                    flb_sds_destroy(pre_signed_url);
+
+                    pre_signed_url = NULL;
+                }
             }
 
             if (ctx->file_delivery_attempt_limit != FLB_OUT_RETRY_UNLIMITED &&
@@ -2737,7 +2846,33 @@ static int cb_s3_upload_blob(struct flb_config *config, void *data)
 
             m_upload->part_number = part_count;
 
-            ret = complete_multipart_upload(ctx, m_upload);
+            if (ctx->authorization_endpoint_url != NULL) {
+                ret = blob_fetch_multipart_complete_pre_signed_url(ctx,
+                                                                    &pre_signed_url,
+                                                                    file_tag,
+                                                                    ctx->bucket,
+                                                                    file_path,
+                                                                    m_upload->upload_id);
+
+                if (ret != 0) {
+                    multipart_upload_destroy(m_upload);
+
+                    flb_blob_db_unlock(&ctx->blob_db);
+
+                    return -5;
+                }
+            }
+            else {
+                pre_signed_url = NULL;
+            }
+
+            ret = complete_multipart_upload(ctx, m_upload, pre_signed_url);
+
+            if (pre_signed_url != NULL) {
+                flb_sds_destroy(pre_signed_url);
+
+                pre_signed_url = NULL;
+            }
 
             if (ret < 0) {
                 multipart_upload_destroy(m_upload);
@@ -2946,7 +3081,38 @@ static int cb_s3_upload_blob(struct flb_config *config, void *data)
         mk_list_del(&m_upload->_head);
 
         if (part_id == 0) {
-            ret = create_multipart_upload(ctx, m_upload);
+            if (ctx->authorization_endpoint_url != NULL) {
+                ret = blob_fetch_create_multipart_upload_pre_signed_url(ctx,
+                                                                        &pre_signed_url,
+                                                                        file_tag,
+                                                                        ctx->bucket,
+                                                                        file_path);
+
+                if (ret != 0) {
+                    flb_free(out_buf);
+
+                    cfl_sds_destroy(file_tag);
+                    cfl_sds_destroy(file_path);
+                    cfl_sds_destroy(file_remote_id);
+                    cfl_sds_destroy(file_destination);
+
+                    m_upload->part_number = 0;
+                    multipart_upload_destroy(m_upload);
+
+                    return -1;
+                }
+            }
+            else {
+                pre_signed_url = NULL;
+            }
+
+            ret = create_multipart_upload(ctx, m_upload, pre_signed_url);
+
+            if (pre_signed_url != NULL) {
+                flb_sds_destroy(pre_signed_url);
+
+                pre_signed_url = NULL;
+            }
 
             if (ret < 0) {
                 flb_free(out_buf);
@@ -3005,7 +3171,40 @@ static int cb_s3_upload_blob(struct flb_config *config, void *data)
 
         m_upload->part_number = part_id + 1;
 
-        ret = upload_part(ctx, m_upload, out_buf, out_size);
+        if (ctx->authorization_endpoint_url != NULL) {
+            ret = blob_fetch_multipart_upload_pre_signed_url(ctx,
+                                                             &pre_signed_url,
+                                                             file_tag,
+                                                             ctx->bucket,
+                                                             file_path,
+                                                             m_upload->upload_id,
+                                                             m_upload->part_number);
+
+            if (ret != 0) {
+                flb_free(out_buf);
+
+                cfl_sds_destroy(file_tag);
+                cfl_sds_destroy(file_path);
+                cfl_sds_destroy(file_remote_id);
+                cfl_sds_destroy(file_destination);
+
+                m_upload->part_number = 0;
+                multipart_upload_destroy(m_upload);
+
+                return -1;
+            }
+        }
+        else {
+            pre_signed_url = NULL;
+        }
+
+        ret = upload_part(ctx, m_upload, out_buf, out_size, pre_signed_url);
+
+        if (pre_signed_url != NULL) {
+            flb_sds_destroy(pre_signed_url);
+
+            pre_signed_url = NULL;
+        }
 
         if (ret == 0) {
             ret = flb_blob_db_file_part_update_remote_id(&ctx->blob_db,
@@ -3127,7 +3326,7 @@ static void cb_s3_upload(struct flb_config *config, void *data)
         if (complete == FLB_TRUE) {
             m_upload->upload_state = MULTIPART_UPLOAD_STATE_COMPLETE_IN_PROGRESS;
             mk_list_del(&m_upload->_head);
-            ret = complete_multipart_upload(ctx, m_upload);
+            ret = complete_multipart_upload(ctx, m_upload, NULL);
             if (ret == 0) {
                 multipart_upload_destroy(m_upload);
             }
@@ -3726,7 +3925,7 @@ static int cb_s3_exit(void *data, struct flb_config *config)
             if (m_upload->bytes > 0) {
                 m_upload->upload_state = MULTIPART_UPLOAD_STATE_COMPLETE_IN_PROGRESS;
                 mk_list_del(&m_upload->_head);
-                ret = complete_multipart_upload(ctx, m_upload);
+                ret = complete_multipart_upload(ctx, m_upload, NULL);
                 if (ret == 0) {
                     multipart_upload_destroy(m_upload);
                 }
@@ -3977,27 +4176,27 @@ static struct flb_config_map config_map[] = {
     },
 
     {
-     FLB_CONFIG_MAP_STR, "configuration_endpoint_url", NULL,
-     0, FLB_TRUE, offsetof(struct flb_s3, configuration_endpoint_url),
-     "Configuration endpoint URL"
+     FLB_CONFIG_MAP_STR, "authorization_endpoint_url", NULL,
+     0, FLB_TRUE, offsetof(struct flb_s3, authorization_endpoint_url),
+     "Authorization endpoint URL"
     },
 
     {
-     FLB_CONFIG_MAP_STR, "configuration_endpoint_username", NULL,
-     0, FLB_TRUE, offsetof(struct flb_s3, configuration_endpoint_username),
-     "Configuration endpoint basic authentication username"
+     FLB_CONFIG_MAP_STR, "authorization_endpoint_username", NULL,
+     0, FLB_TRUE, offsetof(struct flb_s3, authorization_endpoint_username),
+     "Authorization endpoint basic authentication username"
     },
 
     {
-     FLB_CONFIG_MAP_STR, "configuration_endpoint_password", NULL,
-     0, FLB_TRUE, offsetof(struct flb_s3, configuration_endpoint_password),
-     "Configuration endpoint basic authentication password"
+     FLB_CONFIG_MAP_STR, "authorization_endpoint_password", NULL,
+     0, FLB_TRUE, offsetof(struct flb_s3, authorization_endpoint_password),
+     "Authorization endpoint basic authentication password"
     },
 
     {
-     FLB_CONFIG_MAP_STR, "configuration_endpoint_bearer_token", NULL,
-     0, FLB_TRUE, offsetof(struct flb_s3, configuration_endpoint_bearer_token),
-     "Configuration endpoint bearer token"
+     FLB_CONFIG_MAP_STR, "authorization_endpoint_bearer_token", NULL,
+     0, FLB_TRUE, offsetof(struct flb_s3, authorization_endpoint_bearer_token),
+     "Authorization endpoint bearer token"
     },
 
     /* EOF */
