@@ -1,0 +1,19 @@
+service:
+    flush: 1
+    log_level: error
+
+pipeline:
+    inputs:
+        - name: dummy
+          tag: event
+          dummy: |-
+            {"involvedObject":{"uid":"33146c89-69d9-4d99-b8f9-f256278732c9","kind":"Pod","resourceVersion":"381","apiVersion":"v1","name":"calyptia-core-controller-manager-7d64bbcdbc-fdpd9","namespace":"calyptia"},"reportingComponent":"default-scheduler","reportingInstance":"","reason":"FailedScheduling","type":"Warning","message":"0/1 nodes are available: 1 node(s) had untolerated taint {node.kubernetes.io/not-ready: }. preemption: 0/1 nodes are available: 1 Preemption is not helpful for scheduling.","source":{"component":"default-scheduler"},"lastTimestamp":"2024-07-04T12:14:48Z","firstTimestamp":"2024-07-04T12:14:48Z","metadata":{"uid":"0f537d3a-df6d-478f-9ead-54c0be200ea7","namespace":"calyptia","resourceVersion":"403","creationTimestamp":"2024-07-04T12:14:48Z","name":"calyptia-core-controller-manager-7d64bbcdbc-fdpd9.17df018d10d3fc8a","managedFields":[{"manager":"kube-scheduler","operation":"Update","apiVersion":"v1","fieldsType":"FieldsV1","time":"2024-07-04T12:14:48Z"}]}}
+          processors:
+            logs:
+              - name: calyptia
+                script: script.lua
+                call: process_logs
+
+    outputs:
+        - name: stdout
+          match: event

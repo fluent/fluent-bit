@@ -290,6 +290,9 @@ REGISTER_PROCESSOR_PLUGIN("processor_labels")
 REGISTER_PROCESSOR_PLUGIN("processor_metrics_selector")
 REGISTER_PROCESSOR_PLUGIN("processor_sql")
 REGISTER_PROCESSOR_PLUGIN("processor_opentelemetry_envelope")
+if(FLB_LUAJIT)
+  REGISTER_PROCESSOR_PLUGIN("processor_calyptia")
+endif()
 
 # OUTPUTS
 # =======
