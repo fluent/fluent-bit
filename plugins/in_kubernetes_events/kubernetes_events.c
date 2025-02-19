@@ -648,14 +648,13 @@ static int k8s_events_cleanup_db(struct flb_input_instance *ins,
 {
     int ret;
     struct k8s_events *ctx = (struct k8s_events *)in_context;
-    time_t retention_time_ago;
-    time_t now = (cfl_time_now() / 1000000000);
+    uint64_t retention_time_ago;
 
     if (ctx->db == NULL) {
         FLB_INPUT_RETURN(0);
     }
 
-    retention_time_ago = now - (ctx->retention_time);
+    retention_time_ago = cfl_time_now() - (ctx->retention_time * 1000000000L);
     sqlite3_bind_int64(ctx->stmt_delete_old_kubernetes_events,
                         1, (int64_t)retention_time_ago);
     ret = sqlite3_step(ctx->stmt_delete_old_kubernetes_events);
