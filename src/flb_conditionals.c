@@ -67,6 +67,7 @@ static struct flb_condition_rule *rule_create(const char *field,
     case FLB_RULE_OP_EQ:
     case FLB_RULE_OP_NEQ:
     case FLB_RULE_OP_REGEX:
+    case FLB_RULE_OP_NOT_REGEX:
         if (!value || !((char *)value)[0]) {
             return NULL;
         }
@@ -126,6 +127,7 @@ static struct flb_condition_rule *rule_create(const char *field,
         break;
 
     case FLB_RULE_OP_REGEX:
+    case FLB_RULE_OP_NOT_REGEX:
         rule->regex = flb_regex_create((char *)value);
         if (!rule->regex) {
             flb_cfl_ra_destroy(rule->ra);
@@ -183,6 +185,7 @@ static void rule_destroy(struct flb_condition_rule *rule)
         break;
 
     case FLB_RULE_OP_REGEX:
+    case FLB_RULE_OP_NOT_REGEX:
         if (rule->regex) {
             flb_regex_destroy(rule->regex);
         }
@@ -304,6 +307,12 @@ static int evaluate_rule(struct flb_condition_rule *rule,
         result = (flb_regex_match(rule->regex,
                                   (unsigned char *)str_val,
                                   flb_sds_len(str_val)) > 0);
+        break;
+
+    case FLB_RULE_OP_NOT_REGEX:
+        result = (flb_regex_match(rule->regex,
+                                  (unsigned char *)str_val,
+                                  flb_sds_len(str_val)) <= 0);
         break;
 
     case FLB_RULE_OP_IN:
