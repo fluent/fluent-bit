@@ -122,14 +122,16 @@ static int process_payload_metrics(struct flb_prom_remote_write *ctx,
     if (result == CMT_DECODE_PROMETHEUS_REMOTE_WRITE_SUCCESS) {
         result = flb_input_metrics_append(ctx->ins, NULL, 0, context);
 
+        cmt_decode_prometheus_remote_write_destroy(context);
         if (result != 0) {
             flb_plg_debug(ctx->ins, "could not ingest metrics : %d", result);
+            return -1;
         }
 
-        cmt_decode_prometheus_remote_write_destroy(context);
+        return 0;
     }
 
-    return 0;
+    return -1;
 }
 
 static inline int mk_http_point_header(mk_ptr_t *h,
@@ -374,8 +376,12 @@ int prom_rw_prot_handle(struct flb_prom_remote_write *ctx,
     mk_mem_free(uri);
     flb_sds_destroy(tag);
 
-    send_response(ctx->ins, conn, ctx->successful_response_code, NULL);
+    if (ret == -1) {
+        send_response(ctx->ins, conn, 400, "error: invalid request\n");
+        return -1;
+    }
 
+    send_response(ctx->ins, conn, ctx->successful_response_code, NULL);
     return ret;
 }
 
