@@ -95,6 +95,7 @@ static int splunk_conn_event(void *data)
             ret = splunk_conn_buffer_realloc(ctx, conn, size);
             if (ret == -1) {
                 flb_errno();
+                splunk_conn_del(conn);
                 return -1;
             }
             flb_plg_trace(ctx->ins, "fd=%i buffer realloc %i -> %zu",
