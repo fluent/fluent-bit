@@ -47,6 +47,7 @@ enum flb_rule_operator {
     FLB_RULE_OP_GT,
     FLB_RULE_OP_LT,
     FLB_RULE_OP_REGEX,
+    FLB_RULE_OP_NOT_REGEX,
     FLB_RULE_OP_IN,
     FLB_RULE_OP_NOT_IN
 };
