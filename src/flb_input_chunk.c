@@ -1275,7 +1275,7 @@ size_t flb_input_chunk_set_limits(struct flb_input_instance *in)
         if (in->p->cb_resume) {
             flb_input_resume(in);
             flb_info("[input] %s resume (mem buf overlimit)",
-                      in->name);
+                      flb_input_name(in));
         }
     }
     if (flb_input_chunk_is_storage_overlimit(in) == FLB_FALSE &&
@@ -1286,7 +1286,7 @@ size_t flb_input_chunk_set_limits(struct flb_input_instance *in)
         if (in->p->cb_resume) {
             flb_input_resume(in);
             flb_info("[input] %s resume (storage buf overlimit %zu/%zu)",
-                      in->name,
+                      flb_input_name(in),
                       ((struct flb_storage_input *)in->storage)->cio->total_chunks_up,
                       ((struct flb_storage_input *)in->storage)->cio->max_chunks_up);
         }
@@ -1305,7 +1305,7 @@ static inline int flb_input_chunk_protect(struct flb_input_instance *i)
 
     if (flb_input_chunk_is_storage_overlimit(i) == FLB_TRUE) {
         flb_warn("[input] %s paused (storage buf overlimit %zu/%zu)",
-                 i->name,
+                 flb_input_name(i),
                  storage->cio->total_chunks_up,
                  storage->cio->max_chunks_up);
         flb_input_pause(i);
@@ -1332,7 +1332,7 @@ static inline int flb_input_chunk_protect(struct flb_input_instance *i)
          * it limit, just pause the ingestion.
          */
         flb_warn("[input] %s paused (mem buf overlimit)",
-                 i->name);
+                 flb_input_name(i));
         flb_input_pause(i);
         i->mem_buf_status = FLB_INPUT_PAUSED;
         return FLB_TRUE;
@@ -1521,7 +1521,7 @@ static int input_chunk_append_raw(struct flb_input_instance *in,
     /* Check if the input plugin has been paused */
     if (flb_input_buf_paused(in) == FLB_TRUE) {
         flb_debug("[input chunk] %s is paused, cannot append records",
-                  in->name);
+                  flb_input_name(in));
         return -1;
     }
 
@@ -1659,7 +1659,7 @@ static int input_chunk_append_raw(struct flb_input_instance *in,
 
     if (ret == -1) {
         flb_error("[input chunk] error writing data from %s instance",
-                  in->name);
+                  flb_input_name(in));
         cio_chunk_tx_rollback(ic->chunk);
 
         return -1;
