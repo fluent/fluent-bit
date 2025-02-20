@@ -28,13 +28,40 @@
 static void prom_rw_conn_request_init(struct mk_http_session *session,
                                       struct mk_http_request *request);
 
+
+static int prom_rw_conn_buffer_realloc(struct flb_prom_remote_write *ctx,
+                                       struct prom_remote_write_conn *conn, size_t size)
+{
+    char *tmp;
+
+    /* Perform realloc */
+    tmp = flb_realloc(conn->buf_data, size);
+    if (!tmp) {
+        flb_errno();
+        flb_plg_error(ctx->ins, "could not perform realloc for size %zu", size);
+        return -1;
+    }
+
+    /* Update buffer info */
+    conn->buf_data = tmp;
+    conn->buf_size = size;
+
+    /* Keep NULL termination */
+    conn->buf_data[conn->buf_len] = '\0';
+
+    /* Reset parser state */
+    mk_http_parser_init(&conn->session.parser);
+
+    return 0;
+}
+
 static int prom_rw_conn_event(void *data)
 {
+    int ret;
     int status;
     size_t size;
     ssize_t available;
     ssize_t bytes;
-    char *tmp;
     char *request_end;
     size_t request_len;
     struct prom_remote_write_conn *conn;
@@ -62,16 +89,16 @@ static int prom_rw_conn_event(void *data)
             }
 
             size = conn->buf_size + ctx->buffer_chunk_size;
-            tmp = flb_realloc(conn->buf_data, size);
-            if (!tmp) {
+            ret = prom_rw_conn_buffer_realloc(ctx, conn, size);
+            if (ret == -1) {
                 flb_errno();
+                prom_rw_conn_del(conn);
                 return -1;
             }
+
             flb_plg_trace(ctx->ins, "fd=%i buffer realloc %i -> %zu",
                           event->fd, conn->buf_size, size);
 
-            conn->buf_data = tmp;
-            conn->buf_size = size;
             available = (conn->buf_size - conn->buf_len) - 1;
         }
 
