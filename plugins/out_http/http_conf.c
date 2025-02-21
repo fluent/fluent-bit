@@ -23,6 +23,7 @@
 #include <fluent-bit/flb_sds.h>
 #include <fluent-bit/flb_kv.h>
 #include <fluent-bit/flb_record_accessor.h>
+
 #ifdef FLB_HAVE_SIGNV4
 #ifdef FLB_HAVE_AWS
 #include <fluent-bit/flb_aws_credentials.h>
@@ -257,6 +258,17 @@ struct flb_out_http *flb_http_conf_create(struct flb_output_instance *ins,
     if (tmp) {
         if (strcasecmp(tmp, "gzip") == 0) {
             ctx->compress_gzip = FLB_TRUE;
+        }
+        else if (strcasecmp(tmp, "snappy") == 0) {
+            ctx->compress_snappy = FLB_TRUE;
+        }
+        else if (strcasecmp(tmp, "zstd") == 0) {
+            ctx->compress_zstd = FLB_TRUE;
+        }
+        else {
+            flb_plg_error(ctx->ins, "invalid compress option '%s'", tmp);
+            flb_free(ctx);
+            return NULL;
         }
     }
 
