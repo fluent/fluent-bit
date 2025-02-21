@@ -136,7 +136,7 @@ struct flb_kube *flb_kube_conf_create(struct flb_filter_instance *ins,
                                                 FLB_HASH_TABLE_SIZE,
                                                 FLB_HASH_TABLE_SIZE);
     }
-    
+
     if (ctx->kube_meta_namespace_cache_ttl > 0) {
         ctx->namespace_hash_table = flb_hash_table_create_with_ttl(
                                             ctx->kube_meta_namespace_cache_ttl,
@@ -150,7 +150,7 @@ struct flb_kube *flb_kube_conf_create(struct flb_filter_instance *ins,
                                             FLB_HASH_TABLE_SIZE,
                                             FLB_HASH_TABLE_SIZE);
     }
-    
+
 
     if (!ctx->hash_table || !ctx->namespace_hash_table) {
         flb_kube_conf_destroy(ctx);
