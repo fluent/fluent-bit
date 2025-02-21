@@ -568,13 +568,13 @@ int flb_log_construct(struct log_message *msg, int *ret_len,
     int ret;
     int len;
     int total;
-    time_t now;
     const char *header_color = NULL;
     const char *header_title = NULL;
     const char *bold_color = ANSI_BOLD;
     const char *reset_color = ANSI_RESET;
     struct tm result;
     struct tm *current;
+    struct timespec ts;
 
     switch (type) {
     case FLB_LOG_HELP:
@@ -620,15 +620,15 @@ int flb_log_construct(struct log_message *msg, int *ret_len,
     }
     #endif // FLB_LOG_NO_CONTROL_CHARS
 
-    now = time(NULL);
-    current = localtime_r(&now, &result);
+    clock_gettime(CLOCK_REALTIME, &ts);
+    current = localtime_r(&ts.tv_sec, &result);
 
     if (current == NULL) {
         return -1;
     }
 
     len = snprintf(msg->msg, sizeof(msg->msg) - 1,
-                   "%s[%s%i/%02i/%02i %02i:%02i:%02i%s]%s [%s%5s%s] ",
+                   "%s[%s%i/%02i/%02i %02i:%02i:%02i.%03ld%s]%s [%s%5s%s] ",
                    /*      time     */                    /* type */
 
                    /* time variables */
@@ -639,6 +639,7 @@ int flb_log_construct(struct log_message *msg, int *ret_len,
                    current->tm_hour,
                    current->tm_min,
                    current->tm_sec,
+                   ts.tv_nsec,
                    bold_color, reset_color,
 
                    /* type format */
