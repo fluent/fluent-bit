@@ -36,8 +36,8 @@ OECMAKE_GENERATOR ?= "Unix Makefiles"
 # Host related setup
 EXTRA_OECMAKE += "-DGNU_HOST=${HOST_SYS} "
 
-# Disable LuaJIT and filter_lua support
-EXTRA_OECMAKE += "-DFLB_LUAJIT=Off -DFLB_FILTER_LUA=Off "
+# Disable LuaJIT, filter_lua and processor_calyptia support
+EXTRA_OECMAKE += "-DFLB_LUAJIT=Off -DFLB_FILTER_LUA=Off -DFLB_PROCESSOR_CALYPTIA=Off "
 
 # Disable Library and examples
 EXTRA_OECMAKE += "-DFLB_SHARED_LIB=Off -DFLB_EXAMPLES=Off "
