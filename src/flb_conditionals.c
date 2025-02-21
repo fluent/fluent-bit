@@ -74,6 +74,8 @@ static struct flb_condition_rule *rule_create(const char *field,
         break;
     case FLB_RULE_OP_GT:
     case FLB_RULE_OP_LT:
+    case FLB_RULE_OP_GTE:
+    case FLB_RULE_OP_LTE:
         if (!value) {
             return NULL;
         }
@@ -123,6 +125,8 @@ static struct flb_condition_rule *rule_create(const char *field,
 
     case FLB_RULE_OP_GT:
     case FLB_RULE_OP_LT:
+    case FLB_RULE_OP_GTE:
+    case FLB_RULE_OP_LTE:
         rule->value.num_val = *(double *)value;
         break;
 
@@ -201,6 +205,8 @@ static void rule_destroy(struct flb_condition_rule *rule)
 
     case FLB_RULE_OP_GT:
     case FLB_RULE_OP_LT:
+    case FLB_RULE_OP_GTE:
+    case FLB_RULE_OP_LTE:
         break;
 
     default:
@@ -301,6 +307,16 @@ static int evaluate_rule(struct flb_condition_rule *rule,
     case FLB_RULE_OP_LT:
         num_val = atof(str_val);
         result = (num_val < rule->value.num_val);
+        break;
+
+    case FLB_RULE_OP_GTE:
+        num_val = atof(str_val);
+        result = (num_val >= rule->value.num_val);
+        break;
+
+    case FLB_RULE_OP_LTE:
+        num_val = atof(str_val);
+        result = (num_val <= rule->value.num_val);
         break;
 
     case FLB_RULE_OP_REGEX:
