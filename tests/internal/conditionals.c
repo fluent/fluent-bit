@@ -1524,6 +1524,277 @@ void test_condition_not_regex_border_cases()
     destroy_test_record(record_data);
 }
 
+void test_condition_gte_lte()
+{
+    struct test_record *record_data;
+    struct flb_condition *cond;
+    int result;
+    double val;
+
+    /* Test GTE with equal CPU value */
+    record_data = create_test_record_numeric("cpu_usage", 80.0);
+    TEST_CHECK(record_data != NULL);
+
+    cond = flb_condition_create(FLB_COND_OP_AND);
+    TEST_CHECK(cond != NULL);
+
+    val = 80.0;
+    TEST_CHECK(flb_condition_add_rule(cond, "$cpu_usage", FLB_RULE_OP_GTE,
+                                    &val, 0, RECORD_CONTEXT_BODY) == FLB_TRUE);
+
+    result = flb_condition_evaluate(cond, &record_data->chunk);
+    TEST_CHECK(result == FLB_TRUE);
+
+    flb_condition_destroy(cond);
+    destroy_test_record(record_data);
+
+    /* Test GTE with higher CPU usage */
+    record_data = create_test_record_numeric("cpu_usage", 95.0);
+    TEST_CHECK(record_data != NULL);
+
+    cond = flb_condition_create(FLB_COND_OP_AND);
+    TEST_CHECK(cond != NULL);
+
+    val = 80.0;
+    TEST_CHECK(flb_condition_add_rule(cond, "$cpu_usage", FLB_RULE_OP_GTE,
+                                    &val, 0, RECORD_CONTEXT_BODY) == FLB_TRUE);
+
+    result = flb_condition_evaluate(cond, &record_data->chunk);
+    TEST_CHECK(result == FLB_TRUE);
+
+    flb_condition_destroy(cond);
+    destroy_test_record(record_data);
+
+    /* Test GTE with lower CPU usage */
+    record_data = create_test_record_numeric("cpu_usage", 75.0);
+    TEST_CHECK(record_data != NULL);
+
+    cond = flb_condition_create(FLB_COND_OP_AND);
+    TEST_CHECK(cond != NULL);
+
+    val = 80.0;
+    TEST_CHECK(flb_condition_add_rule(cond, "$cpu_usage", FLB_RULE_OP_GTE,
+                                    &val, 0, RECORD_CONTEXT_BODY) == FLB_TRUE);
+
+    result = flb_condition_evaluate(cond, &record_data->chunk);
+    TEST_CHECK(result == FLB_FALSE);
+
+    flb_condition_destroy(cond);
+    destroy_test_record(record_data);
+
+    /* Test LTE with equal memory value */
+    record_data = create_test_record_numeric("memory_usage", 2048.0);
+    TEST_CHECK(record_data != NULL);
+
+    cond = flb_condition_create(FLB_COND_OP_AND);
+    TEST_CHECK(cond != NULL);
+
+    val = 2048.0;
+    TEST_CHECK(flb_condition_add_rule(cond, "$memory_usage", FLB_RULE_OP_LTE,
+                                    &val, 0, RECORD_CONTEXT_BODY) == FLB_TRUE);
+
+    result = flb_condition_evaluate(cond, &record_data->chunk);
+    TEST_CHECK(result == FLB_TRUE);
+
+    flb_condition_destroy(cond);
+    destroy_test_record(record_data);
+
+    /* Test LTE with lower memory usage */
+    record_data = create_test_record_numeric("memory_usage", 1024.0);
+    TEST_CHECK(record_data != NULL);
+
+    cond = flb_condition_create(FLB_COND_OP_AND);
+    TEST_CHECK(cond != NULL);
+
+    val = 2048.0;
+    TEST_CHECK(flb_condition_add_rule(cond, "$memory_usage", FLB_RULE_OP_LTE,
+                                    &val, 0, RECORD_CONTEXT_BODY) == FLB_TRUE);
+
+    result = flb_condition_evaluate(cond, &record_data->chunk);
+    TEST_CHECK(result == FLB_TRUE);
+
+    flb_condition_destroy(cond);
+    destroy_test_record(record_data);
+
+    /* Test LTE with higher memory usage */
+    record_data = create_test_record_numeric("memory_usage", 3072.0);
+    TEST_CHECK(record_data != NULL);
+
+    cond = flb_condition_create(FLB_COND_OP_AND);
+    TEST_CHECK(cond != NULL);
+
+    val = 2048.0;
+    TEST_CHECK(flb_condition_add_rule(cond, "$memory_usage", FLB_RULE_OP_LTE,
+                                    &val, 0, RECORD_CONTEXT_BODY) == FLB_TRUE);
+
+    result = flb_condition_evaluate(cond, &record_data->chunk);
+    TEST_CHECK(result == FLB_FALSE);
+
+    flb_condition_destroy(cond);
+    destroy_test_record(record_data);
+}
+
+void test_condition_gte_lte_multiple()
+{
+    struct test_record *record_data;
+    struct flb_condition *cond;
+    int result;
+    double val1, val2;
+
+    /* Test multiple GTE/LTE with AND (pod ready condition) */
+    record_data = create_test_record_numeric("ready_replicas", 3.0);
+    TEST_CHECK(record_data != NULL);
+
+    cond = flb_condition_create(FLB_COND_OP_AND);
+    TEST_CHECK(cond != NULL);
+
+    val1 = 2.0;  /* minimum replicas */
+    val2 = 5.0;  /* maximum replicas */
+    TEST_CHECK(flb_condition_add_rule(cond, "$ready_replicas", FLB_RULE_OP_GTE,
+                                    &val1, 0, RECORD_CONTEXT_BODY) == FLB_TRUE);
+    TEST_CHECK(flb_condition_add_rule(cond, "$ready_replicas", FLB_RULE_OP_LTE,
+                                    &val2, 0, RECORD_CONTEXT_BODY) == FLB_TRUE);
+
+    result = flb_condition_evaluate(cond, &record_data->chunk);
+    TEST_CHECK(result == FLB_TRUE);  /* 3 replicas is within [2, 5] */
+
+    flb_condition_destroy(cond);
+    destroy_test_record(record_data);
+
+    /* Test GTE/LTE with OR (resource request check) */
+    record_data = create_test_record_numeric("requested_cpu", 1.5);
+    TEST_CHECK(record_data != NULL);
+
+    cond = flb_condition_create(FLB_COND_OP_OR);
+    TEST_CHECK(cond != NULL);
+
+    val1 = 2.0;  /* CPU threshold */
+    val2 = 1.0;  /* Minimum CPU */
+    TEST_CHECK(flb_condition_add_rule(cond, "$requested_cpu", FLB_RULE_OP_GTE,
+                                    &val1, 0, RECORD_CONTEXT_BODY) == FLB_TRUE);
+    TEST_CHECK(flb_condition_add_rule(cond, "$requested_cpu", FLB_RULE_OP_LTE,
+                                    &val2, 0, RECORD_CONTEXT_BODY) == FLB_TRUE);
+
+    result = flb_condition_evaluate(cond, &record_data->chunk);
+    TEST_CHECK(result == FLB_FALSE);  /* 1.5 CPU is neither >= 2.0 nor <= 1.0 */
+
+    flb_condition_destroy(cond);
+    destroy_test_record(record_data);
+
+    /* Test combined with other operators */
+    record_data = create_test_record_with_meta("restart_count", "5",
+                                             "namespace", "production");
+    TEST_CHECK(record_data != NULL);
+
+    cond = flb_condition_create(FLB_COND_OP_AND);
+    TEST_CHECK(cond != NULL);
+
+    val1 = 3.0;  /* restart threshold */
+    TEST_CHECK(flb_condition_add_rule(cond, "$restart_count", FLB_RULE_OP_GTE,
+                                    &val1, 0, RECORD_CONTEXT_BODY) == FLB_TRUE);
+    TEST_CHECK(flb_condition_add_rule(cond, "$namespace", FLB_RULE_OP_EQ,
+                                    "production", 0, RECORD_CONTEXT_METADATA) == FLB_TRUE);
+
+    result = flb_condition_evaluate(cond, &record_data->chunk);
+    TEST_CHECK(result == FLB_TRUE);
+
+    flb_condition_destroy(cond);
+    destroy_test_record(record_data);
+}
+
+void test_condition_gte_lte_border_cases()
+{
+    struct test_record *record_data;
+    struct flb_condition *cond;
+    int result;
+    double val;
+
+    /* Test with non-numeric string */
+    record_data = create_test_record("pod_status", "CrashLoopBackOff");
+    TEST_CHECK(record_data != NULL);
+
+    cond = flb_condition_create(FLB_COND_OP_AND);
+    TEST_CHECK(cond != NULL);
+
+    val = 1.0;
+    TEST_CHECK(flb_condition_add_rule(cond, "$pod_status", FLB_RULE_OP_GTE,
+                                    &val, 0, RECORD_CONTEXT_BODY) == FLB_TRUE);
+
+    result = flb_condition_evaluate(cond, &record_data->chunk);
+    TEST_CHECK(result == FLB_FALSE);
+
+    flb_condition_destroy(cond);
+    destroy_test_record(record_data);
+
+    /* Test with very small resource difference */
+    record_data = create_test_record_numeric("cpu_limit", 1.0000001);
+    TEST_CHECK(record_data != NULL);
+
+    cond = flb_condition_create(FLB_COND_OP_AND);
+    TEST_CHECK(cond != NULL);
+
+    val = 1.0;
+    TEST_CHECK(flb_condition_add_rule(cond, "$cpu_limit", FLB_RULE_OP_GTE,
+                                    &val, 0, RECORD_CONTEXT_BODY) == FLB_TRUE);
+
+    result = flb_condition_evaluate(cond, &record_data->chunk);
+    TEST_CHECK(result == FLB_TRUE);
+
+    flb_condition_destroy(cond);
+    destroy_test_record(record_data);
+
+    /* Test with negative resource request (invalid but should handle) */
+    record_data = create_test_record_numeric("memory_request", -128.0);
+    TEST_CHECK(record_data != NULL);
+
+    cond = flb_condition_create(FLB_COND_OP_AND);
+    TEST_CHECK(cond != NULL);
+
+    val = -256.0;
+    TEST_CHECK(flb_condition_add_rule(cond, "$memory_request", FLB_RULE_OP_GTE,
+                                    &val, 0, RECORD_CONTEXT_BODY) == FLB_TRUE);
+
+    result = flb_condition_evaluate(cond, &record_data->chunk);
+    TEST_CHECK(result == FLB_TRUE);
+
+    flb_condition_destroy(cond);
+    destroy_test_record(record_data);
+
+    /* Test with zero replicas */
+    record_data = create_test_record_numeric("current_replicas", 0.0);
+    TEST_CHECK(record_data != NULL);
+
+    cond = flb_condition_create(FLB_COND_OP_AND);
+    TEST_CHECK(cond != NULL);
+
+    val = 0.0;
+    TEST_CHECK(flb_condition_add_rule(cond, "$current_replicas", FLB_RULE_OP_GTE,
+                                    &val, 0, RECORD_CONTEXT_BODY) == FLB_TRUE);
+
+    result = flb_condition_evaluate(cond, &record_data->chunk);
+    TEST_CHECK(result == FLB_TRUE);
+
+    flb_condition_destroy(cond);
+    destroy_test_record(record_data);
+
+    /* Test scaling down to zero */
+    record_data = create_test_record_numeric("desired_replicas", -0.0);
+    TEST_CHECK(record_data != NULL);
+
+    cond = flb_condition_create(FLB_COND_OP_AND);
+    TEST_CHECK(cond != NULL);
+
+    val = 0.0;
+    TEST_CHECK(flb_condition_add_rule(cond, "$desired_replicas", FLB_RULE_OP_LTE,
+                                    &val, 0, RECORD_CONTEXT_BODY) == FLB_TRUE);
+
+    result = flb_condition_evaluate(cond, &record_data->chunk);
+    TEST_CHECK(result == FLB_TRUE);
+
+    flb_condition_destroy(cond);
+    destroy_test_record(record_data);
+}
+
 TEST_LIST = {
     {"equals", test_condition_equals},
     {"not_equals", test_condition_not_equals},
@@ -1542,5 +1813,8 @@ TEST_LIST = {
     {"metadata", test_condition_metadata},
     {"missing_values", test_condition_missing_values},
     {"border_cases", test_condition_border_cases},
+    {"gte_lte", test_condition_gte_lte},
+    {"gte_lte_multiple", test_condition_gte_lte_multiple},
+    {"gte_lte_border_cases", test_condition_gte_lte_border_cases},
     {NULL, NULL}
 };
