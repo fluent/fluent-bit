@@ -33,6 +33,7 @@
 #include <fluent-bit/flb_utils.h>
 #include <fluent-bit/flb_plugin_proxy.h>
 #include <fluent-bit/flb_input_log.h>
+#include <fluent-bit/flb_custom.h>
 
 /* Proxies */
 #include "proxy/go/go.h"
@@ -409,6 +410,42 @@ static int flb_proxy_register_input(struct flb_plugin_proxy *proxy,
     return 0;
 }
 
+int flb_proxy_custom_cb_init(struct flb_custom_instance *ins,
+                             struct flb_config *config, void *data);
+
+static int flb_proxy_custom_cb_exit(void *custom_context, 
+                                    struct flb_config *config);
+
+static int flb_proxy_register_custom(struct flb_plugin_proxy *proxy,
+                                     struct flb_plugin_proxy_def *def,
+                                     struct flb_config *config)
+{
+    struct flb_custom_plugin *custom;
+
+    custom = flb_calloc(1, sizeof(struct flb_custom_plugin));
+    if (!custom) {
+        flb_errno();
+        return -1;
+    }
+
+    /* Plugin registration */
+    custom->type  = FLB_CUSTOM_PLUGIN_PROXY;
+    custom->proxy = proxy;
+    custom->flags = def->flags;
+    custom->name  = flb_strdup(def->name);
+    custom->description = def->description;
+    mk_list_add(&custom->_head, &config->custom_plugins);
+
+    /*
+     * Set proxy callbacks: external plugins which are not following
+     * the core plugins specs, have a different callback approach, so
+     * we put our proxy-middle callbacks to do the translation properly.
+     */
+    custom->cb_init = flb_proxy_custom_cb_init;
+    custom->cb_exit = flb_proxy_custom_cb_exit;
+    return 0;
+}
+
 void *flb_plugin_proxy_symbol(struct flb_plugin_proxy *proxy,
                               const char *symbol)
 {
@@ -474,6 +511,9 @@ int flb_plugin_proxy_register(struct flb_plugin_proxy *proxy,
         }
         else if (def->type == FLB_PROXY_INPUT_PLUGIN) {
             ret = proxy_go_input_register(proxy, def);
+        } 
+        else if (def->type == FLB_PROXY_CUSTOM_PLUGIN) {
+            ret = proxy_go_custom_register(proxy, def);
         }
 #endif
     }
@@ -487,6 +527,9 @@ int flb_plugin_proxy_register(struct flb_plugin_proxy *proxy,
         }
         else if (def->type == FLB_PROXY_INPUT_PLUGIN) {
             flb_proxy_register_input(proxy, def, config);
+        }
+        else if (def->type == FLB_PROXY_CUSTOM_PLUGIN) {
+            flb_proxy_register_custom(proxy, def, config);
         }
     }
 
@@ -602,4 +645,43 @@ int flb_plugin_proxy_set(struct flb_plugin_proxy_def *def, int type,
     def->description = flb_strdup(description);
 
     return 0;
+}
+
+int flb_proxy_custom_cb_init(struct flb_custom_instance *ins,
+                             struct flb_config *config, void *data)
+{
+    int ret = -1;
+    struct flb_plugin_proxy_context *pc;
+    struct flb_plugin_proxy *proxy;
+
+    pc = (struct flb_plugin_proxy_context *)(ins->context);
+    proxy = pc->proxy;
+
+    if (proxy->def->proxy == FLB_PROXY_GOLANG) {
+#ifdef FLB_HAVE_PROXY_GO
+        ret = proxy_go_custom_init(proxy);
+#endif
+    }
+
+    return ret;
+}
+
+int flb_proxy_custom_cb_exit(void *custom_context, 
+                             struct flb_config *config)
+{
+    int ret = -1;
+    struct flb_plugin_proxy_context *ctx = custom_context;
+    struct flb_plugin_proxy *proxy = (ctx->proxy);
+    if (!custom_context) {
+        return ret;
+    }
+
+    if (proxy->def->proxy == FLB_PROXY_GOLANG) {
+#ifdef FLB_HAVE_PROXY_GO
+        ret = proxy_go_custom_destroy(ctx);
+#endif
+    }
+
+    flb_free(ctx);
+    return ret;
 }
