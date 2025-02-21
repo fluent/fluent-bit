@@ -561,6 +561,32 @@ struct flb_log *flb_log_create(struct flb_config *config, int type,
     return log;
 }
 
+#ifdef _WIN32
+#include "windows.h"
+
+#define WINDOWS_EPOCH_OFFSET 116444736000000000ULL
+
+void get_current_time(struct timespec *ts)
+{
+    FILETIME ft;
+    ULARGE_INTEGER li;
+
+    GetSystemTimeAsFileTime(&ft);
+    li.LowPart = ft.dwLowDateTime;
+    li.HighPart = ft.dwHighDateTime;
+
+    // Convert to Unix epoch
+    uint64_t time = (li.QuadPart - WINDOWS_EPOCH_OFFSET) / 10;
+    ts->tv_sec = time / 1000000;
+    ts->tv_nsec = (time % 1000000) * 1000;
+}
+#else
+void get_current_time(struct timespec *ts)
+{
+    clock_gettime(CLOCK_REALTIME, ts);
+}
+#endif
+
 int flb_log_construct(struct log_message *msg, int *ret_len,
                      int type, const char *file, int line, const char *fmt, va_list *args)
 {
@@ -620,7 +646,7 @@ int flb_log_construct(struct log_message *msg, int *ret_len,
     }
     #endif // FLB_LOG_NO_CONTROL_CHARS
 
-    clock_gettime(CLOCK_REALTIME, &ts);
+    get_current_time(&ts);
     current = localtime_r(&ts.tv_sec, &result);
 
     if (current == NULL) {
