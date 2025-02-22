@@ -92,6 +92,9 @@ struct flb_out_http {
     /* Log the response paylod */
     int log_response_payload;
 
+    /* Whether 200 OK etc results should be logged or not */
+    int log_2xx_successes;
+
     /* Upstream connection to the backend server */
     struct flb_upstream *u;
 
