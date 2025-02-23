@@ -476,6 +476,17 @@ int prom_rw_prot_handle_ng(struct flb_http_request *request,
         return -1;
     }
 
+    /* check content-length */
+    if (request->content_length <= 0) {
+        send_response_ng(response, 400, "error: invalid content-length\n");
+        return -1;
+    }
+
+    if (request->body == NULL) {
+        send_response_ng(response, 400, "error: invalid payload\n");
+        return -1;
+    }
+
     if (context->uri != NULL && strcmp(request->path, context->uri) == 0) {
         result = process_payload_metrics_ng(context, context->ins->tag, request, response);
     }
