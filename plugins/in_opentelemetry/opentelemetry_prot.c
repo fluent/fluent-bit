@@ -2347,6 +2347,17 @@ static int process_payload_logs_ng(struct flb_opentelemetry *ctx,
     struct flb_log_event_encoder *encoder;
     int                           ret;
 
+    /* check content-length */
+    if (request->content_length <= 0) {
+        send_response_ng(response, 400, "error: invalid content-length\n");
+        return -1;
+    }
+
+    if (request->body == NULL) {
+        send_response_ng(response, 400, "error: invalid payload\n");
+        return -1;
+    }
+
     encoder = flb_log_event_encoder_create(FLB_LOG_EVENT_FORMAT_FLUENT_BIT_V2);
 
     if (encoder == NULL) {
