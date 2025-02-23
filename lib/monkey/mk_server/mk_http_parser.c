@@ -274,7 +274,7 @@ static inline int header_lookup(struct mk_http_parser *p, char *buffer)
                 if (endptr == header->val.data) {
                     return -1;
                 }
-                if (val < 0) {
+                if (val <= 0) {
                     return -1;
                 }
 
