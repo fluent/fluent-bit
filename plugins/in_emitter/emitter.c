@@ -236,8 +236,6 @@ static int in_emitter_ingest_ring_buffer(struct flb_input_instance *in,
                                    ec.mp_sbuf.size);
         flb_sds_destroy(ec.tag);
         msgpack_sbuffer_destroy(&ec.mp_sbuf);
-    }
-    if (ret < 0) {
         return -1;
     }
     return ret;
