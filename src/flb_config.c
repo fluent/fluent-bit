@@ -154,6 +154,9 @@ struct flb_service_config service_configs[] = {
     {FLB_CONF_STORAGE_TRIM_FILES,
      FLB_CONF_TYPE_BOOL,
      offsetof(struct flb_config, storage_trim_files)},
+    {FLB_CONF_STORAGE_CHUNK_MAX_SIZE,
+     FLB_CONF_TYPE_INT,
+     offsetof(struct flb_config, storage_chunk_max_size)},
 
     /* Coroutines */
     {FLB_CONF_STR_CORO_STACK_SIZE,
@@ -278,6 +281,7 @@ struct flb_config *flb_config_init()
     config->storage_path = NULL;
     config->storage_input_plugin = NULL;
     config->storage_metrics = FLB_TRUE;
+    config->storage_chunk_max_size = FLB_INPUT_CHUNK_FS_MAX_SIZE;
 
     config->sched_cap  = FLB_SCHED_CAP;
     config->sched_base = FLB_SCHED_BASE;
