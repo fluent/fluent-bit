@@ -347,6 +347,13 @@ int prom_rw_prot_handle(struct flb_prom_remote_write *ctx,
         return -1;
     }
 
+    if (request->data.data == NULL || request->data.len <= 0) {
+        flb_sds_destroy(tag);
+        mk_mem_free(uri);
+        send_response(ctx->ins, conn, 400, "error: no payload found\n");
+        return -1;
+    }
+
     original_data = request->data.data;
     original_data_size = request->data.len;
 
@@ -472,13 +479,22 @@ int prom_rw_prot_handle_ng(struct flb_http_request *request,
     /* HTTP/1.1 needs Host header */
     if (request->protocol_version >= HTTP_PROTOCOL_VERSION_11 &&
         request->host == NULL) {
-
         return -1;
     }
 
     if (request->method != HTTP_METHOD_POST) {
         send_response_ng(response, 400, "error: invalid HTTP method\n");
+        return -1;
+    }
 
+    /* check content-length */
+    if (request->content_length <= 0) {
+        send_response_ng(response, 400, "error: invalid content-length\n");
+        return -1;
+    }
+
+    if (request->body == NULL) {
+        send_response_ng(response, 400, "error: invalid payload\n");
         return -1;
     }
 
