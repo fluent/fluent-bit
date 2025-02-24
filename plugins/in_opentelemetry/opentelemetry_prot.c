@@ -1876,6 +1876,13 @@ int opentelemetry_prot_handle(struct flb_opentelemetry *ctx, struct http_conn *c
     if (header->type == MK_HEADER_CONTENT_LENGTH) {
         request->_content_length.data = header->val.data;
         request->_content_length.len  = header->val.len;
+
+        if (request->content_length <= 0) {
+            flb_sds_destroy(tag);
+            mk_mem_free(uri);
+            send_response(conn, 400, "error: invalid content length\n");
+            return -1;
+        }
     }
     else {
         request->_content_length.data = NULL;
@@ -1887,6 +1894,13 @@ int opentelemetry_prot_handle(struct flb_opentelemetry *ctx, struct http_conn *c
         flb_sds_destroy(tag);
         mk_mem_free(uri);
         send_response(conn, 400, "error: invalid HTTP method\n");
+        return -1;
+    }
+
+    if (request->body.data == NULL || request->body.len <= 0) {
+        flb_sds_destroy(tag);
+        mk_mem_free(uri);
+        send_response(conn, 400, "error: empty body\n");
         return -1;
     }
 
@@ -2460,6 +2474,11 @@ int opentelemetry_prot_handle_ng(struct flb_http_request *request,
 
     if (request->method != HTTP_METHOD_POST) {
         send_response_ng(response, 400, "error: invalid HTTP method\n");
+        return -1;
+    }
+
+    if (request->body == NULL || (request->body && cfl_sds_len(request->body) <= 0)) {
+        send_response_ng(response, 400, "error: empty body\n");
         return -1;
     }
 
