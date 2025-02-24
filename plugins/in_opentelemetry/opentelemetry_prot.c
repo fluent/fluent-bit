@@ -511,6 +511,13 @@ int opentelemetry_prot_handle(struct flb_opentelemetry *ctx, struct http_conn *c
     original_data = request->data.data;
     original_data_size = request->data.len;
 
+    if (request->data.len <= 0 && !mk_http_parser_is_content_chunked(&session->parser)) {
+        flb_sds_destroy(tag);
+        mk_mem_free(uri);
+        send_response(conn, 400, "error: no payload found\n");
+        return -1;
+    }
+
     /* check if the request comes with chunked transfer encoding */
     if (mk_http_parser_is_content_chunked(&session->parser)) {
         out_chunked = NULL;
@@ -1099,6 +1106,17 @@ int opentelemetry_prot_handle_ng(struct flb_http_request *request,
 
     if (request->method != HTTP_METHOD_POST) {
         send_response_ng(response, 400, "error: invalid HTTP method\n");
+        return -1;
+    }
+
+    /* check content-length */
+    if (request->content_length <= 0) {
+        send_response_ng(response, 400, "error: invalid content-length\n");
+        return -1;
+    }
+
+    if (request->body == NULL) {
+        send_response_ng(response, 400, "error: invalid payload\n");
         return -1;
     }
 
