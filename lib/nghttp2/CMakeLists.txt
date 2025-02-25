@@ -24,7 +24,7 @@
 
 cmake_minimum_required(VERSION 3.0)
 # XXX using 1.8.90 instead of 1.9.0-DEV
-project(nghttp2 VERSION 1.58.90)
+project(nghttp2 VERSION 1.58.90 LANGUAGES C)
 
 # See versioning rule:
 #  https://www.gnu.org/software/libtool/manual/html_node/Updating-version-info.html
@@ -122,29 +122,31 @@ else()
   set(HINT_NORETURN)
 endif()
 
-include(ExtractValidFlags)
-foreach(_cxx1x_flag -std=c++14)
-  extract_valid_cxx_flags(_cxx1x_flag_supported ${_cxx1x_flag})
-  if(_cxx1x_flag_supported)
-    set(CXX1XCXXFLAGS ${_cxx1x_flag})
-    break()
-  endif()
-endforeach()
+if(NOT ENABLE_LIB_ONLY)
+  include(ExtractValidFlags)
+  foreach(_cxx1x_flag -std=c++14)
+    extract_valid_cxx_flags(_cxx1x_flag_supported ${_cxx1x_flag})
+    if(_cxx1x_flag_supported)
+      set(CXX1XCXXFLAGS ${_cxx1x_flag})
+      break()
+    endif()
+  endforeach()
 
-include(CMakePushCheckState)
-include(CheckCXXSourceCompiles)
-cmake_push_check_state()
-set(CMAKE_REQUIRED_DEFINITIONS "${CXX1XCXXFLAGS}")
-# Check that std::future is available.
-check_cxx_source_compiles("
-#include <vector>
-#include <future>
-int main() { std::vector<std::future<int>> v; }" HAVE_STD_FUTURE)
-# Check that std::map::emplace is available for g++-4.7.
-check_cxx_source_compiles("
-#include <map>
-int main() { std::map<int, int>().emplace(1, 2); }" HAVE_STD_MAP_EMPLACE)
-cmake_pop_check_state()
+  include(CMakePushCheckState)
+  include(CheckCXXSourceCompiles)
+  cmake_push_check_state()
+  set(CMAKE_REQUIRED_DEFINITIONS "${CXX1XCXXFLAGS}")
+  # Check that std::future is available.
+  check_cxx_source_compiles("
+  #include <vector>
+  #include <future>
+  int main() { std::vector<std::future<int>> v; }" HAVE_STD_FUTURE)
+  # Check that std::map::emplace is available for g++-4.7.
+  check_cxx_source_compiles("
+  #include <map>
+  int main() { std::map<int, int>().emplace(1, 2); }" HAVE_STD_MAP_EMPLACE)
+  cmake_pop_check_state()
+endif()
 
 
 # Checks for libraries.
@@ -177,7 +179,7 @@ endif()
 # openssl (for src)
 include(CheckSymbolExists)
 set(HAVE_OPENSSL    ${OPENSSL_FOUND})
-if(OPENSSL_FOUND)
+if(NOT ENABLE_LIB_ONLY AND OPENSSL_FOUND)
   set(OPENSSL_INCLUDE_DIRS  ${OPENSSL_INCLUDE_DIR})
   cmake_push_check_state()
   set(CMAKE_REQUIRED_INCLUDES   "${OPENSSL_INCLUDE_DIR}")
