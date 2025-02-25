@@ -67,13 +67,7 @@ static void handle_reload_request(mk_request_t *request, struct flb_config *conf
         http_status =  400;
     }
     else {
-        ret = GenerateConsoleCtrlEvent(1 /* CTRL_BREAK_EVENT_1 */, 0);
-        if (ret == 0) {
-            mk_http_status(request, 500);
-            mk_http_done(request);
-            return;
-        }
-
+        flb_reload_signal_reload(config);
         msgpack_pack_str(&mp_pck, 4);
         msgpack_pack_str_body(&mp_pck, "done", 4);
         msgpack_pack_str(&mp_pck, 6);
@@ -97,7 +91,7 @@ static void handle_reload_request(mk_request_t *request, struct flb_config *conf
         http_status =  400;
     }
     else {
-        ret = kill(getpid(), SIGHUP);
+        ret = flb_reload_signal_reload(config);
         if (ret != 0) {
             mk_http_status(request, 500);
             mk_http_done(request);
