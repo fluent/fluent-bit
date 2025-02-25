@@ -183,13 +183,13 @@ static int http_post(struct prometheus_remote_write_context *ctx,
          * - 200: OK
          * - 201: Created
          * - 202: Accepted
-         * - 203: no authorative resp
+         * - 203: no authoritative resp
          * - 204: No Content
          * - 205: Reset content
          *
          */
         if ((c->resp.status < 200 || c->resp.status > 205) &&
-            c->resp.status != 400) {
+            c->resp.status != 400 && c->resp.status != 403) {
             if (ctx->log_response_payload &&
                 c->resp.payload && c->resp.payload_size > 0) {
                 flb_plg_error(ctx->ins, "%s:%i, HTTP status=%i\n%s",
@@ -203,7 +203,7 @@ static int http_post(struct prometheus_remote_write_context *ctx,
             out_ret = FLB_RETRY;
         }
         else if (c->resp.status == 400) {
-            /* Returned 400 status means unrecoverable. Immidiately
+            /* Returned 400 status means unrecoverable. Immediately
              * returning as a error. */
             if (ctx->log_response_payload &&
                 c->resp.payload && c->resp.payload_size > 0) {
@@ -216,6 +216,13 @@ static int http_post(struct prometheus_remote_write_context *ctx,
                               ctx->host, ctx->port, c->resp.status);
             }
             out_ret = FLB_ERROR;
+        }
+        else if (c->resp.status == 403) {
+            if (ctx->has_aws_auth == FLB_TRUE) {
+                    flb_plg_info(ctx->ins, "auth error, refreshing creds");
+                    ctx->aws_provider->provider_vtable->refresh(ctx->aws_provider);
+            }
+            out_ret = FLB_RETRY;
         }
         else {
             if (ctx->log_response_payload &&
