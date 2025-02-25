@@ -111,13 +111,24 @@ struct flb_opensearch *flb_os_conf_create(struct flb_output_instance *ins,
         /* Check if the index has been set in the configuration */
         if (ctx->index) {
             /* do we have a record accessor pattern ? */
-            if (strchr(ctx->index, '$')) {
+            if (strchr(ctx->index, '$') != NULL) {
                 ctx->ra_index = flb_ra_create(ctx->index, FLB_TRUE);
                 if (!ctx->ra_index) {
                     flb_plg_error(ctx->ins, "invalid record accessor pattern set for 'index' property");
                     flb_os_conf_destroy(ctx);
                     return NULL;
                 }
+            }
+        }
+    }
+
+    if(ctx->data_stream_name) {
+        if(strchr(ctx->data_stream_name, '$') != NULL) {
+            ctx->ra_data_stream = flb_ra_create(ctx->data_stream_name, FLB_TRUE);
+            if(!ctx->ra_data_stream) {
+                flb_plg_error(ctx->ins, "invalid record accessor pattern set for 'data_stream_name' property");
+                flb_os_conf_destroy(ctx);
+                return NULL;
             }
         }
     }
@@ -146,6 +157,14 @@ struct flb_opensearch *flb_os_conf_create(struct flb_output_instance *ins,
         snprintf(ctx->uri, sizeof(ctx->uri) - 1, "%s/_bulk", path);
     }
 
+    snprintf(ctx->template_uri,
+             sizeof(ctx->template_uri) - 1,
+             "%s/_index_template/%s",
+             path, ctx->data_stream_template_name);
+    snprintf(ctx->ds_uri,
+             sizeof(ctx->ds_uri) - 1,
+             "%s/_data_stream/%s",
+             path, ctx->data_stream_name);
 
     if (ctx->id_key) {
         ctx->ra_id_key = flb_ra_create(ctx->id_key, FLB_FALSE);
@@ -403,6 +422,11 @@ int flb_os_conf_destroy(struct flb_opensearch *ctx)
 
     if (ctx->ra_index) {
         flb_ra_destroy(ctx->ra_index);
+    }
+
+    if (ctx->ra_data_stream != NULL) {
+        flb_ra_destroy(ctx->ra_data_stream);
+        ctx->ra_data_stream = NULL;
     }
 
     flb_free(ctx);
