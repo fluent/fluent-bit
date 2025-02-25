@@ -73,7 +73,7 @@ void flb_test_log_to_metrics_label(void);
     "\"kubernetes\":{"                      \
 	"\"container_name\": \"mycontainer\","	\
 	"\"namespace_name\": \"k8s-dummy\","	\
-	"\"docker_id\": \"abc123\","		    \
+	"\"container_id\": \"abc123\","		    \
 	"\"pod_name\": \"testpod\","		    \
 	"\"pod_id\": \"def456\","	    	    \
     "},"                                    \
@@ -89,7 +89,7 @@ void flb_test_log_to_metrics_label(void);
     "\"kubernetes\":{"                      \
 	"\"container_name\": \"mycontainer\","	\
 	"\"namespace_name\": \"k8s-dummy\","	\
-	"\"docker_id\": \"abc123\","	    	\
+	"\"container_id\": \"abc123\","	    	\
 	"\"pod_name\": \"testpod\","	        \
 	"\"pod_id\": \"def456\","	    	    \
     "},"                                    \
@@ -105,7 +105,7 @@ void flb_test_log_to_metrics_label(void);
     "\"kubernetes\":{"                      \
 	"\"container_name\": \"mycontainer\","	\
 	"\"namespace_name\": \"k8s-dummy\","	\
-	"\"docker_id\": \"abc123\","		    \
+	"\"container_id\": \"abc123\","		    \
 	"\"pod_name\": \"testpod\","	        \
 	"\"pod_id\": \"def456\","	    	    \
     "},"                                    \
