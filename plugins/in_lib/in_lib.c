@@ -69,6 +69,7 @@ static int in_lib_collect(struct flb_input_instance *ins,
     flb_plg_trace(ctx->ins, "in_lib read() = %i", bytes);
     if (bytes == -1) {
         perror("read");
+        flb_pipe_error();
         if (errno == -EPIPE) {
             return -1;
         }

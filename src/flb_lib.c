@@ -793,7 +793,7 @@ int flb_lib_push(flb_ctx_t *ctx, int ffd, const void *data, size_t len)
     else {
         ret = flb_pipe_w(i_ins->channel[1], data, len);
         if (ret == -1) {
-            flb_errno();
+            flb_pipe_error();
             return -1;
         }
     }
