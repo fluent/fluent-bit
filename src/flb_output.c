@@ -407,7 +407,7 @@ int flb_output_task_flush(struct flb_task *task,
         ret = flb_pipe_w(config->ch_self_events[1], &out_flush,
                         sizeof(struct flb_output_flush*));
         if (ret == -1) {
-            flb_errno();
+            flb_pipe_error();
             flb_output_flush_destroy(out_flush);
             flb_task_users_dec(task, FLB_FALSE);
 

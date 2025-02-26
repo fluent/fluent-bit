@@ -232,11 +232,18 @@ static inline int flb_log_suppress_check(int log_suppress_interval, const char *
 int flb_log_worker_init(struct flb_worker *worker);
 int flb_log_worker_destroy(struct flb_worker *worker);
 int flb_errno_print(int errnum, const char *file, int line);
+int flb_WSAGetLastError_print(int errnum, const char *file, int line);
 
 #ifdef __FLB_FILENAME__
 #define flb_errno() flb_errno_print(errno, __FLB_FILENAME__, __LINE__)
+#ifdef WIN32
+#define flb_WSAGetLastError() flb_WSAGetLastError_print(WSAGetLastError(), __FLB_FILENAME__, __LINE__)
+#endif
 #else
 #define flb_errno() flb_errno_print(errno, __FILE__, __LINE__)
+#ifdef WIN32
+#define flb_WSAGetLastError() flb_WSAGetLastError_print(WSAGetLastError(), __FILE__, __LINE__)
+#endif
 #endif
 
 #endif

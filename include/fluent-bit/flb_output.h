@@ -1202,7 +1202,7 @@ static inline void flb_output_return(int ret, struct flb_coro *co) {
     /* Notify the event loop about our return status */
     n = flb_pipe_w(pipe_fd, (void *) &val, sizeof(val));
     if (n == -1) {
-        flb_errno();
+        flb_pipe_error();
     }
 
     /*
