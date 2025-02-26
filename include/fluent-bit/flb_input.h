@@ -676,7 +676,7 @@ static FLB_INLINE void flb_input_return(struct flb_coro *coro) {
     val = FLB_BITS_U64_SET(FLB_ENGINE_IN_CORO, ins->id);
     n = flb_pipe_w(ins->ch_events[1], (void *) &val, sizeof(val));
     if (n == -1) {
-        flb_errno();
+        flb_pipe_error();
     }
 
     flb_input_coro_prepare_destroy(input_coro);

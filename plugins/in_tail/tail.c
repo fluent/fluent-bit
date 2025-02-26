@@ -50,7 +50,7 @@ static inline int consume_byte(flb_pipefd_t fd)
     /* We need to consume the byte */
     ret = flb_pipe_r(fd, (char *) &val, sizeof(val));
     if (ret <= 0) {
-        flb_errno();
+        flb_pipe_error();
         return -1;
     }
 

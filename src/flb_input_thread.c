@@ -105,7 +105,7 @@ static inline int handle_input_thread_event(flb_pipefd_t fd, struct flb_config *
 
     bytes = flb_pipe_r(fd, &val, sizeof(val));
     if (bytes == -1) {
-        flb_errno();
+        flb_pipe_error();
         return -1;
     }
 
@@ -426,7 +426,7 @@ static void input_thread(void *data)
                 /* Read the coroutine reference */
                 ret = flb_pipe_r(event->fd, &output_flush, sizeof(struct flb_output_flush *));
                 if (ret <= 0 || output_flush == 0) {
-                    flb_errno();
+                    flb_pipe_error();
                     continue;
                 }
 
@@ -522,7 +522,7 @@ int flb_input_thread_instance_pause(struct flb_input_instance *ins)
 
     ret = flb_pipe_w(thi->ch_parent_events[1], &val, sizeof(val));
     if (ret <= 0) {
-        flb_errno();
+        flb_pipe_error();
         return -1;
     }
 
@@ -551,7 +551,7 @@ int flb_input_thread_instance_resume(struct flb_input_instance *ins)
 
     ret = flb_pipe_w(thi->ch_parent_events[1], &val, sizeof(val));
     if (ret <= 0) {
-        flb_errno();
+        flb_pipe_error();
         return -1;
     }
 
@@ -577,7 +577,7 @@ int flb_input_thread_instance_exit(struct flb_input_instance *ins)
 
     ret = flb_pipe_w(thi->ch_parent_events[1], &val, sizeof(val));
     if (ret <= 0) {
-        flb_errno();
+        flb_pipe_error();
         return -1;
     }
 
@@ -743,7 +743,7 @@ int flb_input_thread_collectors_signal_start(struct flb_input_instance *ins)
 
     ret = flb_pipe_w(thi->ch_parent_events[1], &val, sizeof(uint64_t));
     if (ret <= 0) {
-        flb_errno();
+        flb_pipe_error();
         return -1;
     }
 
@@ -761,7 +761,7 @@ int flb_input_thread_collectors_signal_wait(struct flb_input_instance *ins)
     thi = ins->thi;
     bytes = flb_pipe_r(thi->ch_parent_events[0], &val, sizeof(uint64_t));
     if (bytes <= 0) {
-        flb_errno();
+        flb_pipe_error();
         return -1;
     }
 
