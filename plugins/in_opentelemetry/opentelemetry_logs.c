@@ -1321,7 +1321,7 @@ static int binary_payload_to_msgpack(struct flb_opentelemetry *ctx,
                 msgpack_pack_uint64(&mp_pck, resource->dropped_attributes_count);
             }
 
-
+            flb_mp_map_header_end(&mh_tmp);
 
             if (resource_log->schema_url) {
                 flb_mp_map_header_append(&mh);
@@ -1396,7 +1396,7 @@ static int binary_payload_to_msgpack(struct flb_opentelemetry *ctx,
                 goto binary_payload_to_msgpack_end;
             }
 
-            flb_log_event_encoder_group_end(encoder);
+            flb_log_event_encoder_group_header_end(encoder);
 
             msgpack_sbuffer_clear(&mp_sbuf);
 
