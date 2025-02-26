@@ -1,0 +1,68 @@
+# Copyright (C) 2019 Intel Corporation.  All rights reserved.
+# SPDX-License-Identifier: Apache-2.0 WITH LLVM-exception
+name: reuse binaries of the latest release if no more modification on the_path since last_commit
+
+on:
+  workflow_call:
+    inputs:
+      binary_name_stem:
+        type: string
+        required: true
+      last_commit:
+        type: string
+        required: true
+      the_path:
+        type: string
+        required: true
+      upload_url:
+        description: upload binary assets to the URL of release
+        type: string
+        required: true
+    outputs:
+      result:
+        value: ${{ jobs.build.outputs.result }}
+
+jobs:
+  reuse:
+    runs-on: ubuntu-latest
+    outputs:
+      result: ${{ steps.try_reuse.outputs.result }}
+    steps:
+      - uses: actions/checkout@v4
+        # Full git history is needed to get a proper list of commits and tags
+        with:
+          fetch-depth: 0
+
+      - name: try to reuse binaries
+        id: try_reuse
+        run: |
+          echo '::echo::on'
+          python3 ./.github/scripts/reuse_latest_release_binaries.py \
+              --binary_name_stem ${{ inputs.binary_name_stem }} \
+              --last_commit ${{ inputs.last_commit }} \
+              --the_path ${{ inputs.the_path }} .
+          ls -lh .
+
+      - run: echo ${{ steps.try_reuse.outputs.result }}
+
+      - name: upload release tar.gz
+        if: steps.try_reuse.outputs.result == 'hit'
+        uses: actions/upload-release-asset@v1
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        with:
+          upload_url: ${{ inputs.upload_url }}
+          asset_path: ${{ inputs.binary_name_stem }}.tar.gz
+          asset_name: ${{ inputs.binary_name_stem }}.tar.gz
+          asset_content_type: application/x-gzip
+
+      - name: upload release zip
+        if: steps.try_reuse.outputs.result == 'hit'
+        uses: actions/upload-release-asset@v1
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        with:
+          upload_url: ${{ inputs.upload_url }}
+          asset_path: ${{ inputs.binary_name_stem }}.zip
+          asset_name: ${{ inputs.binary_name_stem }}.zip
+          asset_content_type: application/zip

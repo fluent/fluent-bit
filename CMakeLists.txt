@@ -6,9 +6,9 @@ cmake_policy(SET CMP0069 NEW)
 set(CMAKE_POLICY_DEFAULT_CMP0069 NEW)
 
 # Fluent Bit Version
-set(FLB_VERSION_MAJOR  3)
-set(FLB_VERSION_MINOR  2)
-set(FLB_VERSION_PATCH  3)
+set(FLB_VERSION_MAJOR  4)
+set(FLB_VERSION_MINOR  0)
+set(FLB_VERSION_PATCH  0)
 set(FLB_VERSION_STR "${FLB_VERSION_MAJOR}.${FLB_VERSION_MINOR}.${FLB_VERSION_PATCH}")
 
 set(CMAKE_POSITION_INDEPENDENT_CODE ON)
@@ -30,6 +30,10 @@ endif()
 if(CMAKE_SYSTEM_NAME MATCHES "Linux")
   set(FLB_SYSTEM_LINUX On)
   add_definitions(-DFLB_SYSTEM_LINUX)
+  if (CMAKE_SYSTEM_PROCESSOR MATCHES "^(arm64|aarch64)")
+    set(FLB_LINUX_ON_AARCH64 On)
+    add_definitions(-DFLB_LINUX_ON_AARCH64)
+  endif()
 endif()
 
 # Update CFLAGS
@@ -317,6 +321,17 @@ if (FLB_SYSTEM_LINUX)
   include(cmake/s390x.cmake)
 endif ()
 
+# Build for Linux - riscv64 arch
+if (FLB_SYSTEM_LINUX)
+  include(cmake/riscv64.cmake)
+endif ()
+
+# Enable signed char support on Linux AARCH64 if specified
+if (FLB_LINUX_ON_AARCH64)
+  set (CMAKE_C_FLAGS "${CMAKE_C_FLAGS} -fsigned-char")
+  message(STATUS "Enabling signed char")
+endif()
+
 # Extract Git commit information for debug output.
 # Note that this is only set when cmake is run, the intent here is to use in CI for verification of releases so is acceptable.
 # For a better solution see https://jonathanhamberg.com/post/cmake-embedding-git-hash/ but this is simple and easy.
@@ -469,6 +484,15 @@ add_subdirectory(${FLB_PATH_LIB_MPACK} EXCLUDE_FROM_ALL)
 
 # Miniz (zip)
 add_subdirectory(${FLB_PATH_LIB_MINIZ} EXCLUDE_FROM_ALL)
+
+# Zstd (zstd)
+set(ZSTD_BUILD_STATIC ON)
+set(ZSTD_BUILD_SHARED OFF)
+set(ZSTD_BUILD_COMPRESSION ON)
+set(ZSTD_BUILD_DECOMPRESSION ON)
+set(ZSTD_BUILD_DICTBUILDER OFF)
+set(ZSTD_BUILD_DEPRECATED OFF)
+add_subdirectory(${FLB_PATH_LIB_ZSTD}/build/cmake EXCLUDE_FROM_ALL)
 
 # ring buffer library
 add_subdirectory(${FLB_PATH_LIB_RING_BUFFER} EXCLUDE_FROM_ALL)
@@ -1086,6 +1110,32 @@ endif()
 # ============
 if (FLB_IN_EBPF)
   find_package(PkgConfig)
+
+  # Check for Clang compiler
+  find_program(CLANG_EXECUTABLE clang)
+
+  if (CLANG_EXECUTABLE)
+    message(STATUS "Clang found: ${CLANG_EXECUTABLE}")
+    # Get Clang version
+    execute_process(
+            COMMAND ${CLANG_EXECUTABLE} --version
+            OUTPUT_VARIABLE CLANG_VERSION_OUTPUT
+            ERROR_QUIET OUTPUT_STRIP_TRAILING_WHITESPACE
+    )
+    if (CLANG_VERSION_OUTPUT MATCHES "clang version ([0-9]+)\\.([0-9]+)\\.([0-9]+)")
+      set(CLANG_VERSION_MAJOR "${CMAKE_MATCH_1}")
+      set(CLANG_VERSION_MINOR "${CMAKE_MATCH_2}")
+      set(CLANG_VERSION_PATCH "${CMAKE_MATCH_3}")
+
+      message(STATUS "Detected Clang version: ${CLANG_VERSION_MAJOR}.${CLANG_VERSION_MINOR}.${CLANG_VERSION_PATCH}")
+      # Check if Clang version is at least 3.7.0
+      if (CLANG_VERSION_MAJOR LESS 3 AND CLANG_VERSION_MINOR LESS 7)
+        message(FATAL_ERROR "Clang version must be at least 3.7.0, but found ${CLANG_VERSION_MAJOR}.${CLANG_VERSION_MINOR}.${CLANG_VERSION_PATCH}")
+      endif()
+    endif()
+  else()
+    message(FATAL_ERROR "Clang not found! Please install Clang version >= 3.7.0!")
+  endif()
 
   # Check for libbpf with pkg-config
   pkg_check_modules(LIBBPF libbpf>=0.5.0)

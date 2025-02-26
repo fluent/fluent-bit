@@ -32,11 +32,16 @@ APTLY_REPO_NAME="debify-$CODENAME"
 APTLY_ROOTDIR=$(mktemp -d)
 APTLY_CONFIG=$(mktemp)
 
-# The origin and label fields seem to cover the base directory for the repo and codename.
-# The docs seems to suggest these fields are optional and free-form: https://wiki.debian.org/DebianRepository/Format#Origin
+# The origin and label fields are free text fields that should indicate the heritage of the package repository.
+# They are used in an unattend-upgrade scenario and therefore they should be unique for each package source.
+# Further information can be found here https://wiki.debian.org/DebianRepository/Format & https://wiki.debian.org/UnattendedUpgrades
+# For fluent-bit a valid apt config entry for unattended upgrades is
+# Unattended-Upgrade::Origins-Pattern {
+#   "origin=packages.fluentbit.io,codename=${distro_codename},label=fluent-bit"
+# }
 # They are security checks to verify if they have changed so we match the legacy server.
-APTLY_ORIGIN=". $CODENAME"
-APTLY_LABEL=". $CODENAME"
+APTLY_ORIGIN="packages.fluentbit.io"
+APTLY_LABEL="fluent-bit"
 if [[ "$DEB_REPO" == "debian/bullseye" ]]; then
     # For Bullseye, the legacy server had a slightly different setup we try to reproduce here
     APTLY_ORIGIN="bullseye bullseye"
@@ -60,17 +65,17 @@ count=$(find "$REPO_DIR" -maxdepth 1 -type f -name "*.deb" | wc -l)
 if [[ $count != 0 ]] ; then
     # Do not remove files as we need them from moving to staging-release
     aptly -config="$APTLY_CONFIG" repo add -force-replace "$APTLY_REPO_NAME" "$REPO_DIR/"
+    aptly -config="$APTLY_CONFIG" repo show "$APTLY_REPO_NAME"
+
+    if [[ "$DISABLE_SIGNING" != "true" ]]; then
+        aptly -config="$APTLY_CONFIG" publish repo -gpg-key="$GPG_KEY" -origin="$APTLY_ORIGIN" -label="$APTLY_LABEL" "$APTLY_REPO_NAME"
+    else
+        aptly -config="$APTLY_CONFIG" publish repo --skip-signing -origin="$APTLY_ORIGIN" -label="$APTLY_LABEL" "$APTLY_REPO_NAME"
+    fi
+
+    rsync -av "$APTLY_ROOTDIR"/public/* "$REPO_DIR"
+    # Remove unnecessary files
+    rm -rf "$REPO_DIR/conf/" "$REPO_DIR/db/" "$APTLY_ROOTDIR" "$APTLY_CONFIG"
 else
     echo "WARNING: no files to add in $DEB_REPO for $CODENAME"
 fi
-aptly -config="$APTLY_CONFIG" repo show "$APTLY_REPO_NAME"
-
-if [[ "$DISABLE_SIGNING" != "true" ]]; then
-    aptly -config="$APTLY_CONFIG" publish repo -gpg-key="$GPG_KEY" -origin="$APTLY_ORIGIN" -label="$APTLY_LABEL" "$APTLY_REPO_NAME"
-else
-    aptly -config="$APTLY_CONFIG" publish repo --skip-signing -origin="$APTLY_ORIGIN" -label="$APTLY_LABEL" "$APTLY_REPO_NAME"
-fi
-
-rsync -av "$APTLY_ROOTDIR"/public/* "$REPO_DIR"
-# Remove unnecessary files
-rm -rf "$REPO_DIR/conf/" "$REPO_DIR/db/" "$APTLY_ROOTDIR" "$APTLY_CONFIG"

@@ -332,6 +332,7 @@ struct opentelemetry_context *flb_opentelemetry_context_create(struct flb_output
     ctx->logs_uri_sanitized = sanitize_uri(ctx->logs_uri);
     ctx->traces_uri_sanitized = sanitize_uri(ctx->traces_uri);
     ctx->metrics_uri_sanitized = sanitize_uri(ctx->metrics_uri);
+    ctx->profiles_uri_sanitized = sanitize_uri(ctx->profiles_uri);
 
     if (ctx->logs_uri_sanitized == NULL) {
         flb_plg_trace(ctx->ins,
@@ -357,6 +358,16 @@ struct opentelemetry_context *flb_opentelemetry_context_create(struct flb_output
         flb_plg_trace(ctx->ins,
                       "Could not allocate memory for sanitized "
                       "metric endpoint uri");
+
+        flb_opentelemetry_context_destroy(ctx);
+
+        return NULL;
+    }
+
+    if (ctx->profiles_uri_sanitized == NULL) {
+        flb_plg_trace(ctx->ins,
+                      "Could not allocate memory for sanitized "
+                      "profiles endpoint uri");
 
         flb_opentelemetry_context_destroy(ctx);
 
@@ -392,6 +403,13 @@ struct opentelemetry_context *flb_opentelemetry_context_create(struct flb_output
     if (tmp) {
         if (strcasecmp(tmp, "gzip") == 0) {
             ctx->compress_gzip = FLB_TRUE;
+        }
+        else if (strcasecmp(tmp, "zstd") == 0) {
+            ctx->compress_zstd = FLB_TRUE;
+        }
+        else {
+            flb_plg_error(ctx->ins, "Unknown compression method %s", tmp);
+            return NULL;
         }
     }
 
@@ -549,17 +567,35 @@ struct opentelemetry_context *flb_opentelemetry_context_create(struct flb_output
 
     ctx->enable_http2_flag = FLB_TRUE;
 
+    /* if gRPC has been enabled, auto-enable HTTP/2 to make end-user life easier */
+    if (ctx->enable_grpc_flag && !flb_utils_bool(ctx->enable_http2)) {
+        flb_plg_info(ctx->ins, "gRPC enabled, HTTP/2 has been auto-enabled");
+        flb_sds_destroy(ctx->enable_http2);
+        ctx->enable_http2 = flb_sds_create("on");
+    }
+
+    /*
+     * 'force' aims to be used for plaintext communication when HTTP/2 is set. Note that
+     * moving forward it wont be necessary since we are now setting some special defaults
+     * in case of gRPC is enabled (which is the only case where HTTP/2 is mandatory).
+     */
     if (strcasecmp(ctx->enable_http2, "force") == 0) {
         http_protocol_version = HTTP_PROTOCOL_VERSION_20;
     }
     else if (flb_utils_bool(ctx->enable_http2)) {
-        http_protocol_version = HTTP_PROTOCOL_VERSION_AUTODETECT;
+        if (!ins->use_tls) {
+            http_protocol_version = HTTP_PROTOCOL_VERSION_20;
+        }
+        else {
+            http_protocol_version = HTTP_PROTOCOL_VERSION_AUTODETECT;
+        }
     }
     else {
         http_protocol_version = HTTP_PROTOCOL_VERSION_11;
 
         ctx->enable_http2_flag = FLB_FALSE;
     }
+
 
     ret = flb_http_client_ng_init(&ctx->http_client,
                                   NULL,
@@ -602,6 +638,10 @@ void flb_opentelemetry_context_destroy(struct opentelemetry_context *ctx)
 
     if (ctx->metrics_uri_sanitized != NULL && ctx->metrics_uri_sanitized != ctx->metrics_uri) {
         flb_free(ctx->metrics_uri_sanitized);
+    }
+
+    if (ctx->profiles_uri_sanitized != NULL && ctx->profiles_uri_sanitized != ctx->profiles_uri) {
+        flb_free(ctx->profiles_uri_sanitized);
     }
 
     /* release log_body_key_list */
