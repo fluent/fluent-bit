@@ -458,7 +458,7 @@ static void pack_maps(struct flb_loki *ctx,
 
             /* try to get the value for the record accessor */
             if (flb_ra_get_kv_pair(kv->ra_key, *map, &start_key, &out_key, &out_val)
-                != -1) {
+                == 0) {
 
                 /*
                  * we require the value to be a map, or it doesn't make sense as
