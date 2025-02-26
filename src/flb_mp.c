@@ -501,11 +501,20 @@ struct flb_mp_accessor *flb_mp_accessor_create(struct mk_list *slist_patterns)
     return mpa;
 }
 
-static inline int accessor_key_find_match(struct flb_mp_accessor *mpa,
-                                          msgpack_object *key)
+/**
+ * Finds matches for a given key in the list of record accessor patterns.
+ * Stores the indexes of the matches in the provided array.
+ *
+ * @return The number of matches found.
+ */
+static inline int accessor_key_find_matches(struct flb_mp_accessor *mpa,
+                                            msgpack_object *key,
+                                            int* matched_indexes)
 {
     int i;
     int count;
+    int match_count = 0;
+    int out_index = 0;
     struct flb_mp_accessor_match *match;
 
     count = mk_list_size(&mpa->ra_list);
@@ -516,14 +525,17 @@ static inline int accessor_key_find_match(struct flb_mp_accessor *mpa,
         }
 
         if (match->start_key == key) {
-            return i;
+            match_count++;
+            matched_indexes[out_index++] = i;
         }
     }
 
-    return -1;
+    return match_count;
 }
 
-static inline int accessor_sub_pack(struct flb_mp_accessor_match *match,
+static inline int accessor_sub_pack(struct flb_mp_accessor *mpa,
+                                    int* matched_indexes,
+                                    int match_count,
                                     msgpack_packer *mp_pck,
                                     msgpack_object *key,
                                     msgpack_object *val)
@@ -533,9 +545,13 @@ static inline int accessor_sub_pack(struct flb_mp_accessor_match *match,
     msgpack_object *k;
     msgpack_object *v;
     struct flb_mp_map_header mh;
+    struct flb_mp_accessor_match *match;
 
-    if (match->key == key || match->key == val) {
-        return FLB_FALSE;
+    for (i = 0; i < match_count; i++) {
+        match = &mpa->matches[matched_indexes[i]];
+        if (match->key == key || match->key == val) {
+            return FLB_FALSE;
+        }
     }
 
     if (key) {
@@ -548,7 +564,7 @@ static inline int accessor_sub_pack(struct flb_mp_accessor_match *match,
             k = &val->via.map.ptr[i].key;
             v = &val->via.map.ptr[i].val;
 
-            ret = accessor_sub_pack(match, mp_pck, k, v);
+            ret = accessor_sub_pack(mpa, matched_indexes, match_count, mp_pck, k, v);
             if (ret == FLB_TRUE) {
                 flb_mp_map_header_append(&mh);
             }
@@ -559,7 +575,7 @@ static inline int accessor_sub_pack(struct flb_mp_accessor_match *match,
         flb_mp_array_header_init(&mh, mp_pck);
         for (i = 0; i < val->via.array.size; i++) {
             v = &val->via.array.ptr[i];
-            ret = accessor_sub_pack(match, mp_pck, NULL, v);
+            ret = accessor_sub_pack(mpa, matched_indexes, match_count, mp_pck, NULL, v);
             if (ret == FLB_TRUE) {
                 flb_mp_array_header_append(&mh);
             }
@@ -586,6 +602,7 @@ int flb_mp_accessor_keys_remove(struct flb_mp_accessor *mpa,
     int ret;
     int rule_id = 0;
     int matches = 0;
+    int* matched_indexes;
     msgpack_object *key;
     msgpack_object *val;
     msgpack_object *s_key;
@@ -640,6 +657,13 @@ int flb_mp_accessor_keys_remove(struct flb_mp_accessor *mpa,
     /* Initialize map */
     flb_mp_map_header_init(&mh, &mp_pck);
 
+    /* Initialize array of matching indexes to properly handle sibling keys */
+    matched_indexes = flb_malloc(sizeof(int) * matches);
+    if (!matched_indexes) {
+        flb_errno();
+        return -1;
+    }
+
     for (i = 0; i < map->via.map.size; i++) {
         key = &map->via.map.ptr[i].key;
         val = &map->via.map.ptr[i].val;
@@ -648,14 +672,11 @@ int flb_mp_accessor_keys_remove(struct flb_mp_accessor *mpa,
          * For every entry on the path, check if we should do a step-by-step
          * repackaging or just pack the whole object.
          *
-         * Just check: does this 'key' exists on any path of the record
-         * accessor patterns ?
-         *
-         * Find if the active key in the map, matches an accessor rule, if
-         * if match we get the match id as return value, otherwise -1.
+         * Find all matching rules that match this 'key'. Return the number of matches or 0
+         * if no matches were found. Found matches are stored in the 'matched_indexes' array.
          */
-        ret = accessor_key_find_match(mpa, key);
-        if (ret == -1) {
+        ret = accessor_key_find_matches(mpa, key, matched_indexes);
+        if (ret == 0) {
             /* No matches, it's ok to pack the kv pair */
             flb_mp_map_header_append(&mh);
             msgpack_pack_object(&mp_pck, *key);
@@ -663,14 +684,16 @@ int flb_mp_accessor_keys_remove(struct flb_mp_accessor *mpa,
         }
         else {
             /* The key has a match. Now we do a step-by-step packaging */
-            match = &mpa->matches[ret];
-            ret = accessor_sub_pack(match, &mp_pck, key, val);
+
+            ret = accessor_sub_pack(mpa, matched_indexes, ret, &mp_pck, key, val);
             if (ret == FLB_TRUE) {
                 flb_mp_map_header_append(&mh);
             }
         }
     }
     flb_mp_map_header_end(&mh);
+
+    flb_free(matched_indexes);
 
     *out_buf = mp_sbuf.data;
     *out_size = mp_sbuf.size;
