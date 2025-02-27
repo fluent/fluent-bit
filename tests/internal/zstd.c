@@ -119,11 +119,56 @@ static void test_compress_decompress_large_data() {
     flb_free(decompressed_data);
 }
 
+/*
+ * zstd can contain a payload with an unknown registered size, as an example we have this payload
+ * that can be generated from the command line:
+ *
+ *   $ echo -n '{"hello":"world"}' | zstd > data.json.stream.zstd
+ *
+ *   $zstd -l data.json.stream.zstd
+ *
+ *   Frames  Skips  Compressed  Uncompressed  Ratio  Check  Filename
+ *        1      0      31   B                       XXH64  data.json.streamed.zstd
+ *
+ * note: to regenerate the payload in the compressed_data buffer, you can use the following command:
+ *
+ *   $ xxd -i data.json.stream.zstd
+ */
+static void test_decompress_unknown_size()
+{
+    int ret;
+    int input_len = 0;
+    int compressed_len;
+    char *input = "{\"hello\":\"world\"}";
+    void *decompressed_data;
+    size_t decompressed_len;
+
+    /* this is data.json.stream.zstd in a buffer representation (hexdump data.json.streamed.zstd )*/
+     unsigned char compressed_data[30] = {
+        0x28, 0xb5, 0x2f, 0xfd, 0x04, 0x58, 0x89, 0x00, 0x00, 0x7b, 0x22, 0x68,
+        0x65, 0x6c, 0x6c, 0x6f, 0x22, 0x3a, 0x22, 0x77, 0x6f, 0x72, 0x6c, 0x64,
+        0x22, 0x7d, 0x8e, 0x23, 0xa6, 0x52
+    };
+
+    compressed_len = sizeof(compressed_data);
+    input_len = strlen(input);
+
+    /* decompress */
+    ret = flb_zstd_uncompress(compressed_data, compressed_len, &decompressed_data, &decompressed_len);
+    TEST_CHECK(ret == 0);
+    TEST_CHECK(decompressed_data != NULL);
+    TEST_CHECK(decompressed_len == input_len);
+    TEST_CHECK(memcmp(decompressed_data, input, input_len) == 0);
+
+    flb_free(decompressed_data);
+}
+
 TEST_LIST = {
     { "compress_small_string",          test_compress_small_string },
     { "decompress_small_string",        test_decompress_small_string },
     { "compress_empty_input",           test_compress_empty_input },
     { "decompress_invalid_data",        test_decompress_invalid_data },
     { "compress_decompress_large_data", test_compress_decompress_large_data },
+    { "decompress_unknown_size",        test_decompress_unknown_size },
     { NULL, NULL }
 };
