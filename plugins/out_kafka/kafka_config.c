@@ -211,6 +211,12 @@ struct flb_out_kafka *flb_out_kafka_create(struct flb_output_instance *ins,
         }
     }
 
+    /* Metrics */
+#ifdef FLB_HAVE_METRICS
+    ctx->cmt_kafka_errors = cmt_counter_create(ctx->ins->cmt, "fluentbit", "output", "kafka_errors_total", "Number of kafka errors processing queued messages", 1, (char*[]) {"name"});
+    cmt_counter_set(ctx->cmt_kafka_errors, cfl_time_now(), 0, 1, (char *[]){ctx->ins->alias});
+#endif
+
     flb_plg_info(ctx->ins, "brokers='%s' topics='%s'", ctx->kafka.brokers, tmp);
 #ifdef FLB_HAVE_AVRO_ENCODER
     flb_plg_info(ctx->ins, "schemaID='%s' schema='%s'", ctx->avro_fields.schema_id, ctx->avro_fields.schema_str);
