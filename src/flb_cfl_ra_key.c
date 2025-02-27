@@ -131,7 +131,6 @@ static int subkey_to_variant(struct cfl_variant *vobj, struct mk_list *subkeys,
 {
     int levels;
     int matched = 0;
-    cfl_sds_t found = NULL;
     cfl_sds_t key = NULL;
     struct cfl_variant *val = NULL;
     struct cfl_kvpair *kvpair = NULL;
@@ -141,6 +140,11 @@ static int subkey_to_variant(struct cfl_variant *vobj, struct mk_list *subkeys,
 
     /* Expected number of map levels in the map */
     levels = mk_list_size(subkeys);
+
+    /* Early return if no subkeys */
+    if (levels == 0) {
+        return -1;
+    }
 
     cur = *vobj;
 
@@ -157,14 +161,20 @@ static int subkey_to_variant(struct cfl_variant *vobj, struct mk_list *subkeys,
 
             /* Index limit and ensure no overflow */
             if (entry->array_id == INT_MAX ||
-                cfl_array_size(cur.data.as_array) < entry->array_id + 1) {
+                entry->array_id >= cfl_array_size(cur.data.as_array)) {
                 return -1;
             }
 
             val = cur.data.as_array->entries[entry->array_id];
             cur = *val;
             key = NULL; /* fill NULL since the type is array. */
-            goto next;
+            matched++;
+
+            if (levels == matched) {
+                break;
+            }
+
+            continue;
         }
 
         if (cur.type != CFL_VARIANT_KVLIST) {
@@ -173,17 +183,13 @@ static int subkey_to_variant(struct cfl_variant *vobj, struct mk_list *subkeys,
 
         kvpair = cfl_variant_kvpair_get(&cur, entry->str);
         if (kvpair == NULL) {
-            found = NULL;
-            continue;
+            continue;  /* Try next entry */
         }
 
         key = kvpair->key;
         val = kvpair->val;
 
-        found = key;
         cur = *val;
-
-    next:
         matched++;
 
         if (levels == matched) {
@@ -192,7 +198,7 @@ static int subkey_to_variant(struct cfl_variant *vobj, struct mk_list *subkeys,
     }
 
     /* No matches */
-    if (found == NULL || (matched > 0 && levels != matched)) {
+    if (matched == 0 || (matched > 0 && levels != matched)) {
         return -1;
     }
 
@@ -201,7 +207,6 @@ static int subkey_to_variant(struct cfl_variant *vobj, struct mk_list *subkeys,
 
     return 0;
 }
-
 
 struct flb_cfl_ra_value *flb_cfl_ra_key_to_value(flb_sds_t ckey,
                                                  struct cfl_variant vobj,
