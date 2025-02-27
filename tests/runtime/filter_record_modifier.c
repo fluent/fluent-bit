@@ -470,7 +470,9 @@ void flb_exclusive_setting()
     /* It should be error since "allowlist_key" and "remove_key" are exclusive */
     TEST_CHECK(ret != 0);
 
-    flb_stop(ctx);
+    if (ret == 0) {
+        flb_stop(ctx);
+    }
     flb_destroy(ctx);
 }
 
