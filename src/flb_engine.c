@@ -190,7 +190,7 @@ static inline int handle_input_event(flb_pipefd_t fd, uint64_t ts,
 
     bytes = flb_pipe_r(fd, &val, sizeof(val));
     if (bytes == -1) {
-        flb_errno();
+        flb_pipe_error();
         return -1;
     }
 
@@ -484,7 +484,7 @@ static inline int handle_output_events(flb_pipefd_t fd,
     bytes = flb_pipe_r(fd, &values, sizeof(values));
 
     if (bytes == -1) {
-        flb_errno();
+        flb_pipe_error();
         return -1;
     }
 
@@ -525,7 +525,7 @@ static inline int flb_engine_manager(flb_pipefd_t fd, struct flb_config *config)
     /* read the event */
     bytes = flb_pipe_r(fd, &val, sizeof(val));
     if (bytes == -1) {
-        flb_errno();
+        flb_pipe_error();
         return -1;
     }
 
@@ -1049,7 +1049,7 @@ int flb_engine_start(struct flb_config *config)
                 /* Read the coroutine reference */
                 ret = flb_pipe_r(event->fd, &output_flush, sizeof(struct flb_output_flush *));
                 if (ret <= 0 || output_flush == 0) {
-                    flb_errno();
+                    flb_pipe_error();
                     continue;
                 }
 
