@@ -1477,6 +1477,229 @@ void cb_add_root_key_val()
     cfl_variant_destroy(vobj);
 }
 
+void cb_direct_array_access()
+{
+    struct cfl_kvlist *kvlist = NULL;
+    struct cfl_array *array = NULL;
+    struct cfl_variant *vobj = NULL;
+    char *fmt;
+    char *fmt_out;
+    flb_sds_t str;
+    struct flb_cfl_record_accessor *cra;
+
+    /* Sample kvlist with direct array */
+    kvlist = cfl_kvlist_create();
+    if (kvlist == NULL) {
+        exit(EXIT_FAILURE);
+    }
+
+    /* Create array with elements a, b, c */
+    array = cfl_array_create(3);
+    if (array == NULL) {
+        exit(EXIT_FAILURE);
+    }
+
+    cfl_array_append_string(array, "a");
+    cfl_array_append_string(array, "b");
+    cfl_array_append_string(array, "c");
+
+    /* Add array to kvlist */
+    cfl_kvlist_insert_array(kvlist, "array", array);
+
+    /* Set up CFL variant(vobj) */
+    vobj = cfl_variant_create_from_kvlist(kvlist);
+    if (vobj == NULL) {
+        exit(EXIT_FAILURE);
+    }
+
+    /* Formatter for direct array access */
+    fmt = flb_sds_create("$array[0]");
+    fmt_out = "a";
+
+    cra = flb_cfl_ra_create(fmt, FLB_FALSE);
+    TEST_CHECK(cra != NULL);
+    if (!cra) {
+        exit(EXIT_FAILURE);
+    }
+
+    /* Do translation */
+    str = flb_cfl_ra_translate(cra, NULL, -1, *vobj, NULL);
+    TEST_CHECK(str != NULL);
+    if (!str) {
+        exit(EXIT_FAILURE);
+    }
+
+    TEST_CHECK(flb_sds_len(str) == strlen(fmt_out));
+    TEST_CHECK(memcmp(str, fmt_out, strlen(fmt_out)) == 0);
+    printf("== direct array access test ==\n== input ==\n%s\n== output ==\n%s\n", str, fmt_out);
+
+    flb_sds_destroy(str);
+    flb_sds_destroy(fmt);
+    flb_cfl_ra_destroy(cra);
+    cfl_variant_destroy(vobj);
+}
+
+void cb_nested_array_access()
+{
+    struct cfl_kvlist *kvlist = NULL;
+    struct cfl_array *matrix = NULL;
+    struct cfl_array *row1 = NULL;
+    struct cfl_array *row2 = NULL;
+    struct cfl_array *row3 = NULL;
+    struct cfl_variant *vobj = NULL;
+    char *fmt;
+    char *fmt_out;
+    flb_sds_t str;
+    struct flb_cfl_record_accessor *cra;
+
+    /* Sample kvlist with nested arrays */
+    kvlist = cfl_kvlist_create();
+    if (kvlist == NULL) {
+        exit(EXIT_FAILURE);
+    }
+
+    /* Create 3x3 matrix */
+    matrix = cfl_array_create(3);
+    row1 = cfl_array_create(3);
+    row2 = cfl_array_create(3);
+    row3 = cfl_array_create(3);
+
+    if (matrix == NULL || row1 == NULL || row2 == NULL || row3 == NULL) {
+        exit(EXIT_FAILURE);
+    }
+
+    /* Fill the rows */
+    cfl_array_append_int64(row1, 1);
+    cfl_array_append_int64(row1, 2);
+    cfl_array_append_int64(row1, 3);
+
+    cfl_array_append_int64(row2, 4);
+    cfl_array_append_int64(row2, 5);
+    cfl_array_append_int64(row2, 6);
+
+    cfl_array_append_int64(row3, 7);
+    cfl_array_append_int64(row3, 8);
+    cfl_array_append_int64(row3, 9);
+
+    /* Add rows to matrix */
+    cfl_array_append_array(matrix, row1);
+    cfl_array_append_array(matrix, row2);
+    cfl_array_append_array(matrix, row3);
+
+    /* Add matrix to kvlist */
+    cfl_kvlist_insert_array(kvlist, "matrix", matrix);
+
+    /* Set up CFL variant(vobj) */
+    vobj = cfl_variant_create_from_kvlist(kvlist);
+    if (vobj == NULL) {
+        exit(EXIT_FAILURE);
+    }
+
+    /* Formatter for nested array access */
+    fmt = flb_sds_create("$matrix[1][2]");  /* Should access the value 6 */
+    fmt_out = "6";
+
+    cra = flb_cfl_ra_create(fmt, FLB_FALSE);
+    TEST_CHECK(cra != NULL);
+    if (!cra) {
+        exit(EXIT_FAILURE);
+    }
+
+    /* Do translation */
+    str = flb_cfl_ra_translate(cra, NULL, -1, *vobj, NULL);
+    TEST_CHECK(str != NULL);
+    if (!str) {
+        exit(EXIT_FAILURE);
+    }
+
+    TEST_CHECK(flb_sds_len(str) == strlen(fmt_out));
+    TEST_CHECK(memcmp(str, fmt_out, strlen(fmt_out)) == 0);
+    printf("== nested array access test ==\n== input ==\n%s\n== output ==\n%s\n", str, fmt_out);
+
+    flb_sds_destroy(str);
+    flb_sds_destroy(fmt);
+    flb_cfl_ra_destroy(cra);
+    cfl_variant_destroy(vobj);
+}
+
+void cb_mixed_array_map_access()
+{
+    struct cfl_kvlist *kvlist = NULL;
+    struct cfl_kvlist *person1 = NULL;
+    struct cfl_kvlist *person2 = NULL;
+    struct cfl_array *records = NULL;
+    struct cfl_variant *vobj = NULL;
+    char *fmt;
+    char *fmt_out;
+    flb_sds_t str;
+    struct flb_cfl_record_accessor *cra;
+
+    /* Sample kvlist with array containing maps */
+    kvlist = cfl_kvlist_create();
+    if (kvlist == NULL) {
+        exit(EXIT_FAILURE);
+    }
+
+    /* Create records array */
+    records = cfl_array_create(2);
+    if (records == NULL) {
+        exit(EXIT_FAILURE);
+    }
+
+    /* Create person records */
+    person1 = cfl_kvlist_create();
+    person2 = cfl_kvlist_create();
+    if (person1 == NULL || person2 == NULL) {
+        exit(EXIT_FAILURE);
+    }
+
+    /* Add properties to persons */
+    cfl_kvlist_insert_string(person1, "name", "John");
+    cfl_kvlist_insert_int64(person1, "age", 30);
+
+    cfl_kvlist_insert_string(person2, "name", "Jane");
+    cfl_kvlist_insert_int64(person2, "age", 25);
+
+    /* Add persons to records */
+    cfl_array_append_kvlist(records, person1);
+    cfl_array_append_kvlist(records, person2);
+
+    /* Add records to kvlist */
+    cfl_kvlist_insert_array(kvlist, "records", records);
+
+    /* Set up CFL variant(vobj) */
+    vobj = cfl_variant_create_from_kvlist(kvlist);
+    if (vobj == NULL) {
+        exit(EXIT_FAILURE);
+    }
+
+    /* Formatter for mixed array+map access */
+    fmt = flb_sds_create("$records[1]['name']");  /* Should access "Jane" */
+    fmt_out = "Jane";
+
+    cra = flb_cfl_ra_create(fmt, FLB_FALSE);
+    TEST_CHECK(cra != NULL);
+    if (!cra) {
+        exit(EXIT_FAILURE);
+    }
+
+    /* Do translation */
+    str = flb_cfl_ra_translate(cra, NULL, -1, *vobj, NULL);
+    TEST_CHECK(str != NULL);
+    if (!str) {
+        exit(EXIT_FAILURE);
+    }
+
+    TEST_CHECK(flb_sds_len(str) == strlen(fmt_out));
+    TEST_CHECK(memcmp(str, fmt_out, strlen(fmt_out)) == 0);
+    printf("== mixed array+map access test ==\n== input ==\n%s\n== output ==\n%s\n", str, fmt_out);
+
+    flb_sds_destroy(str);
+    flb_sds_destroy(fmt);
+    flb_cfl_ra_destroy(cra);
+    cfl_variant_destroy(vobj);
+}
+
 TEST_LIST = {
     { "keys"                   , cb_keys},
     { "dash_key"               , cb_dash_key},
@@ -1495,5 +1718,8 @@ TEST_LIST = {
     { "add_root_key_val"       , cb_add_root_key_val},
     { "flb_ra_translate_check" , cb_ra_translate_check},
     { "ra_create_str_from_list", cb_ra_create_str_from_list},
+    { "direct_array_access"    , cb_direct_array_access},
+    { "nested_array_access"    , cb_nested_array_access},
+    { "mixed_array_map_access" , cb_mixed_array_map_access},
     { NULL }
 };
