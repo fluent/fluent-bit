@@ -1620,7 +1620,13 @@ static void flb_test_issue_7368()
     ret = flb_start(ctx->flb);
     TEST_CHECK(ret != 0);
 
-    filter_test_destroy(ctx);
+    if (ret == 0) {
+        filter_test_destroy(ctx);
+    }
+    else {
+        flb_destroy(ctx->flb);
+        flb_free(ctx);
+    }
 }
 
 TEST_LIST = {
