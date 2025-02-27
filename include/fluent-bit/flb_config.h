@@ -269,6 +269,11 @@ struct flb_config {
     int shutdown_by_hot_reloading;
     int hot_reloading;
 
+#ifdef FLB_SYSTEM_WINDOWS
+    /* maxstdio (Windows) */
+    int win_maxstdio;
+#endif
+
     /* Co-routines */
     unsigned int coro_stack_size;
 
@@ -350,6 +355,9 @@ enum conf_type {
 
 #define FLB_CONF_STR_HOT_RELOAD        "Hot_Reload"
 #define FLB_CONF_STR_HOT_RELOAD_ENSURE_THREAD_SAFETY  "Hot_Reload.Ensure_Thread_Safety"
+
+/* Set up maxstdio (Windows) */
+#define FLB_CONF_STR_WINDOWS_MAX_STDIO "windows.maxstdio"
 
 /* DNS */
 #define FLB_CONF_DNS_MODE              "dns.mode"
