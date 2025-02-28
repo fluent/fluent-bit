@@ -758,8 +758,7 @@ static void test_http_validator_invalid_port()
 TEST_LIST = {
     { "test_http_provider", test_http_provider},
     { "test_http_provider_error_case", test_http_provider_error_case},
-    { "test_http_provider_malformed_response", test_http_provider_malformed_response},
-    { "test_http_provider", test_http_provider},
+    { "test_http_provider_malformed_response",test_http_provider_malformed_response},
     { "test_http_provider_ecs_case", test_http_provider_ecs_case},
     { "test_http_provider_eks_with_token", test_http_provider_eks_with_token},
     { "test_http_provider_eks_with_token_file", test_http_provider_eks_with_token_file},
