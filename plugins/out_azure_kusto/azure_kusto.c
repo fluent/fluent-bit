@@ -88,10 +88,13 @@ flb_sds_t get_azure_kusto_token(struct flb_azure_kusto *ctx)
         return NULL;
     }
 
-    if (flb_oauth2_token_expired(ctx->o) == FLB_TRUE) {
+    if (ctx->o != NULL && flb_oauth2_token_expired(ctx->o) == FLB_TRUE) {
         ret = azure_kusto_get_oauth2_token(ctx);
     }
-
+    else if (/*msi token is expired*/) {
+        ret = azure_kusto_get_msi_token(ctx);    
+    }
+    
     /* Copy string to prevent race conditions (get_oauth2 can free the string) */
     if (ret == 0) {
         output = flb_sds_create_size(flb_sds_len(ctx->o->token_type) +
