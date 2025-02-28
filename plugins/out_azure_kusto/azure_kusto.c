@@ -33,7 +33,6 @@
 
 static int azure_kusto_get_msi_token(struct flb_azure_kusto *ctx)
 {
-    int ret;
     char *token;
 
     /* Retrieve access token */

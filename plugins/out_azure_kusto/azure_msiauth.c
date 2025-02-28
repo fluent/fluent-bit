@@ -26,6 +26,8 @@
 #include <fluent-bit/flb_http_client.h>
 #include <fluent-bit/flb_jsmn.h>
 
+#include "azure_msiauth.h"
+
 char *flb_azure_msiauth_token_get(struct flb_oauth2 *ctx)
  {
      int ret;
@@ -87,7 +89,7 @@ char *flb_azure_msiauth_token_get(struct flb_oauth2 *ctx)
  
      /* Extract token */
      if (c->resp.payload_size > 0 && c->resp.status == 200) {
-         ret = flb_azure_msiauth_parse_json_response(c->resp.payload,
+         ret = flb_oauth2_parse_json_response(c->resp.payload,
                                               c->resp.payload_size, ctx);
          if (ret == 0) {
              flb_info("[azure msi auth] access token from '%s:%s' retrieved",

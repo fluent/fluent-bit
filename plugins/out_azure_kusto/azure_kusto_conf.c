@@ -647,7 +647,7 @@ struct flb_azure_kusto *flb_azure_kusto_conf_create(struct flb_output_instance *
     }
 
     if (ctx->managed_identity_id != NULL) {
-        ctx->oauth_url = flb_sds_create_size(sizeof(FLB_AZURE_IMDS_TOKEN_URI) - 1));
+        ctx->oauth_url = flb_sds_create_size(sizeof(FLB_AZURE_IMDS_TOKEN_URI) - 1);
 
         if (!ctx->oauth_url) {
             flb_errno();

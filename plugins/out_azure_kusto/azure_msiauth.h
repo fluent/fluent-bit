@@ -17,9 +17,6 @@
  *  limitations under the License.
  */
 
- #ifndef FLB_AZURE_MSIAUTH_H
- #define FLB_AZURE_MSIAUTH_H
-
 #include <fluent-bit/flb_info.h>
 #include <fluent-bit/flb_sds.h>
 #include <fluent-bit/tls/flb_tls.h>
@@ -29,10 +26,9 @@
 #define FLB_AZURE_IMDS_PORT 80
 #define FLB_AZURE_IMDS_TIMEOUT 1  /* 1 second */
 
-#define FLB_AZURE_IMDS_TOKEN_URI "/metadata/identity/oauth2/token?api-version=2023-01-01&resource=https://api.kusto.windows.net""
+#define FLB_AZURE_IMDS_TOKEN_URI "/metadata/identity/oauth2/token?api-version=2023-01-01&resource=https://api.kusto.windows.net"
 
 #define FLB_AZURE_IMDS_HTTP_HEADER_METADATA "Metadata"
 
 char *flb_azure_msiauth_token_get(struct flb_oauth2 *ctx);
 
-#endif
