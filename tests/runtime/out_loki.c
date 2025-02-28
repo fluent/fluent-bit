@@ -83,7 +83,7 @@ void flb_test_basic()
     in_ffd = flb_input(ctx, (char *) "lib", NULL);
     flb_input_set(ctx, in_ffd, "tag", "test", NULL);
 
-    /* Elasticsearch output */
+    /* Loki output */
     out_ffd = flb_output(ctx, (char *) "loki", NULL);
     flb_output_set(ctx, out_ffd,
                    "match", "test",
@@ -141,7 +141,7 @@ void flb_test_labels()
     in_ffd = flb_input(ctx, (char *) "lib", NULL);
     flb_input_set(ctx, in_ffd, "tag", "test", NULL);
 
-    /* Elasticsearch output */
+    /* Loki output */
     out_ffd = flb_output(ctx, (char *) "loki", NULL);
     flb_output_set(ctx, out_ffd,
                    "match", "test",
@@ -201,7 +201,7 @@ void flb_test_label_keys()
     in_ffd = flb_input(ctx, (char *) "lib", NULL);
     flb_input_set(ctx, in_ffd, "tag", "test", NULL);
 
-    /* Elasticsearch output */
+    /* Loki output */
     out_ffd = flb_output(ctx, (char *) "loki", NULL);
     flb_output_set(ctx, out_ffd,
                    "match", "test",
@@ -260,7 +260,7 @@ void flb_test_line_format()
     in_ffd = flb_input(ctx, (char *) "lib", NULL);
     flb_input_set(ctx, in_ffd, "tag", "test", NULL);
 
-    /* Elasticsearch output */
+    /* Loki output */
     out_ffd = flb_output(ctx, (char *) "loki", NULL);
     flb_output_set(ctx, out_ffd,
                    "match", "test",
@@ -498,7 +498,7 @@ void flb_test_remove_map()
     in_ffd = flb_input(ctx, (char *) "lib", NULL);
     flb_input_set(ctx, in_ffd, "tag", "test", NULL);
 
-    /* Elasticsearch output */
+    /* Loki output */
     out_ffd = flb_output(ctx, (char *) "loki", NULL);
     flb_output_set(ctx, out_ffd,
                    "match", "test",
@@ -558,7 +558,7 @@ void flb_test_labels_ra()
     in_ffd = flb_input(ctx, (char *) "lib", NULL);
     flb_input_set(ctx, in_ffd, "tag", "test", NULL);
 
-    /* Elasticsearch output */
+    /* Loki output */
     out_ffd = flb_output(ctx, (char *) "loki", NULL);
     flb_output_set(ctx, out_ffd,
                    "match", "test",
@@ -620,7 +620,7 @@ void flb_test_remove_keys()
     in_ffd = flb_input(ctx, (char *) "lib", NULL);
     flb_input_set(ctx, in_ffd, "tag", "test", NULL);
 
-    /* Elasticsearch output */
+    /* Loki output */
     out_ffd = flb_output(ctx, (char *) "loki", NULL);
     flb_output_set(ctx, out_ffd,
                    "match", "test",
@@ -692,7 +692,7 @@ void flb_test_label_map_path()
     in_ffd = flb_input(ctx, (char *) "lib", NULL);
     flb_input_set(ctx, in_ffd, "tag", "test", NULL);
 
-    /* Elasticsearch output */
+    /* Loki output */
     out_ffd = flb_output(ctx, (char *) "loki", NULL);
     flb_output_set(ctx, out_ffd,
                    "match", "test",
@@ -743,7 +743,7 @@ static void cb_check_float_value(void *ctx, int ffd,
 void flb_test_float_value()
 {
     int ret;
-    int size = sizeof(JSON_FLOAT) - 1;
+    size_t size = sizeof(JSON_FLOAT) - 1;
     flb_ctx_t *ctx;
     int in_ffd;
     int out_ffd;
@@ -758,7 +758,7 @@ void flb_test_float_value()
     in_ffd = flb_input(ctx, (char *) "lib", NULL);
     flb_input_set(ctx, in_ffd, "tag", "test", NULL);
 
-    /* Elasticsearch output */
+    /* Loki output */
     out_ffd = flb_output(ctx, (char *) "loki", NULL);
     flb_output_set(ctx, out_ffd,
                    "match", "test",
@@ -783,6 +783,189 @@ void flb_test_float_value()
     flb_destroy(ctx);
 }
 
+static void cb_check_structured_metadata_value(void *ctx, int ffd,
+                                 int res_ret, void *res_data, size_t res_size,
+                                 void *data)
+{
+    char *p;
+    flb_sds_t out_js = res_data;
+    if (!TEST_CHECK(out_js != NULL)) {
+        TEST_MSG("out_js is NULL");
+        return;
+    }
+
+    char *index_line = (char *) data;
+
+    p = strstr(out_js, index_line);
+    if (!TEST_CHECK(p != NULL)) {
+      TEST_MSG("Expecting %s but Given:%s", index_line, out_js);
+    }
+
+    flb_sds_destroy(out_js);
+}
+
+#define JSON_MAP "[12345678, {\"log\": \"This is an interesting log message!\", " \
+    "\"map1\": {\"key1\": \"value1\", \"key2\": \"value2\", \"key_nested_object_1\": " \
+    "{\"sub_key1\": \"sub_value1\", \"sub_key2\": false}}, \"map2\": {\"key4\": " \
+    "\"value1\", \"key5\": false}, \"map3\": {\"key1\": \"map3_value1\", \"key2\": " \
+    "\"map3_value2\"}}]"
+void flb_test_structured_metadata_map_params(char *remove_keys,
+                                             char *structured_metadata,
+                                             char *structured_metadata_map_keys,
+                                             char *input_log_json,
+                                             char *expected_sub_str)
+{
+    int ret;
+    size_t size = strlen(input_log_json);
+    flb_ctx_t *ctx;
+    int in_ffd;
+    int out_ffd;
+
+    /* Create context, flush every second (some checks omitted here) */
+    ctx = flb_create();
+    flb_service_set(ctx, "flush", "1", "grace", "1",
+                    "log_level", "error",
+                    NULL);
+
+    /* Lib input mode */
+    in_ffd = flb_input(ctx, (char *) "lib", NULL);
+    flb_input_set(ctx, in_ffd, "tag", "test", NULL);
+
+    /* Loki output */
+    out_ffd = flb_output(ctx, (char *) "loki", NULL);
+    flb_output_set(ctx, out_ffd,
+                   "match", "test",
+                   "line_format", "key_value",
+                   "remove_keys", remove_keys,
+                   "drop_single_key", "on",
+                   "labels", "service_name=my_service_name",
+                   "structured_metadata", structured_metadata,
+                   "structured_metadata_map_keys", structured_metadata_map_keys,
+                   NULL);
+
+    /* Enable test mode */
+    ret = flb_output_set_test(ctx, out_ffd, "formatter",
+                              cb_check_structured_metadata_value,
+                              expected_sub_str, NULL);
+
+    /* Start */
+    ret = flb_start(ctx);
+    TEST_CHECK(ret == 0);
+
+    /* Ingest data sample */
+    ret = flb_lib_push(ctx, in_ffd, (char *) input_log_json, size);
+    TEST_CHECK(ret >= 0);
+
+    sleep(2);
+    flb_stop(ctx);
+    flb_destroy(ctx);
+}
+
+void flb_test_structured_metadata_map_single_map() {
+    flb_test_structured_metadata_map_params(
+        "map1, map2, map3",
+        "",
+        "$map1",
+        JSON_MAP,
+        "{\"key1\":\"value1\",\"key2\":\"value2\","
+        "\"key_nested_object_1\":\"{\\\"sub_key1\\\":\\\"sub_value1\\\","
+        "\\\"sub_key2\\\":false}\"}");
+}
+
+void flb_test_structured_metadata_map_two_maps() {
+    flb_test_structured_metadata_map_params(
+        "map1, map2, map3",
+        "",
+        "$map1,$map2",
+        JSON_MAP,
+        "{\"key1\":\"value1\",\"key2\":\"value2\","
+        "\"key_nested_object_1\":\"{\\\"sub_key1\\\":\\\"sub_value1\\\","
+        "\\\"sub_key2\\\":false}\",\"key4\":\"value1\",\"key5\":\"false\"}");
+}
+
+void flb_test_structured_metadata_map_sub_map() {
+    flb_test_structured_metadata_map_params(
+        "map1, map2, map3",
+        "",
+        "$map1['key_nested_object_1']",
+        JSON_MAP,
+        "\"This is an interesting log message!\",{\"sub_key1\":\"sub_value1\","
+        "\"sub_key2\":\"false\"}");
+}
+
+void flb_test_structured_metadata_map_both_with_non_map_value() {
+    flb_test_structured_metadata_map_params(
+        "map1, map2, map3",
+        "$map2",
+        "$map1,$map2",
+        JSON_MAP,
+        "{\"key1\":\"value1\",\"key2\":\"value2\","
+        "\"key_nested_object_1\":\"{\\\"sub_key1\\\":\\\"sub_value1\\\","
+        "\\\"sub_key2\\\":false}\",\"key4\":\"value1\",\"key5\":\"false\","
+        "\"map2\":\"{\\\"key4\\\":\\\"value1\\\",\\\"key5\\\":false}\"}");
+}
+
+/* key1 is overridden by the explicit value given to structured_metadata */
+void flb_test_structured_metadata_map_value_explicit_override_map_key() {
+    flb_test_structured_metadata_map_params(
+        "map1, map2, map3",
+        "key1=value_explicit",
+        "$map1,$map2",
+        JSON_MAP,
+        "{\"key2\":\"value2\","
+        "\"key_nested_object_1\":\"{\\\"sub_key1\\\":\\\"sub_value1\\\","
+        "\\\"sub_key2\\\":false}\",\"key4\":\"value1\",\"key5\":\"false\","
+        "\"key1\":\"value_explicit\"}");
+}
+
+void flb_test_structured_metadata_explicit_only_no_map() {
+    flb_test_structured_metadata_map_params(
+        "map1, map2, map3",
+        "key1=value_explicit",
+        "",
+        JSON_MAP,
+        "[\"12345678000000000\","
+        "\"This is an interesting log message!\",{\"key1\":\"value_explicit\"}]");
+}
+
+void flb_test_structured_metadata_explicit_only_map() {
+    flb_test_structured_metadata_map_params(
+        "map1, map2, map3",
+        "$map2",
+        "",
+        JSON_MAP,
+        "{\"map2\":\"{\\\"key4\\\":\\\"value1\\\",\\\"key5\\\":false}\"}");
+}
+
+void flb_test_structured_metadata_map_and_explicit() {
+    flb_test_structured_metadata_map_params(
+        "map1, map2, map3",
+        "key_explicit=value_explicit",
+        "$map1",
+        JSON_MAP,
+        "[\"12345678000000000\",\"This is an interesting log message!\","
+        "{\"key1\":\"value1\",\"key2\":\"value2\","
+        "\"key_nested_object_1\":\"{\\\"sub_key1\\\":\\\"sub_value1\\\","
+        "\\\"sub_key2\\\":false}\",\"key_explicit\":\"value_explicit\"}]");
+}
+
+void flb_test_structured_metadata_map_single_missing_map() {
+    flb_test_structured_metadata_map_params(
+        "map1, map2, map3",
+        "",
+        "$missing_map",
+        JSON_MAP,
+        "[\"12345678000000000\",\"This is an interesting log message!\",{}]");
+}
+
+void flb_test_structured_metadata_map_invalid_ra_key() {
+    flb_test_structured_metadata_map_params(
+        "map1, map2, map3",
+        "",
+        "$",
+        JSON_MAP,
+        "[\"12345678000000000\",\"This is an interesting log message!\",{}]");
+}
 
 /* Test list */
 TEST_LIST = {
@@ -798,5 +981,25 @@ TEST_LIST = {
     {"drop_single_key_raw"    , flb_test_drop_single_key_raw },
     {"label_map_path"         , flb_test_label_map_path},
     {"float_value"            , flb_test_float_value},
+    {"structured_metadata_map_single_map",
+        flb_test_structured_metadata_map_single_map},
+    {"structured_metadata_map_two_maps",
+        flb_test_structured_metadata_map_two_maps},
+    {"structured_metadata_map_sub_map",
+        flb_test_structured_metadata_map_sub_map},
+    {"structured_metadata_map_both_with_non_map_value",
+        flb_test_structured_metadata_map_both_with_non_map_value},
+    {"structured_metadata_map_value_explicit_override_map_key",
+        flb_test_structured_metadata_map_value_explicit_override_map_key},
+    {"structured_metadata_explicit_only_no_map",
+        flb_test_structured_metadata_explicit_only_no_map},
+    {"structured_metadata_explicit_only_map",
+        flb_test_structured_metadata_explicit_only_map},
+    {"structured_metadata_map_and_explicit",
+        flb_test_structured_metadata_map_and_explicit},
+    {"structured_metadata_map_single_missing_map",
+        flb_test_structured_metadata_map_single_missing_map},
+    {"structured_metadata_map_invalid_ra_key",
+        flb_test_structured_metadata_map_invalid_ra_key},
     {NULL, NULL}
 };
