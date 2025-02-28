@@ -85,6 +85,8 @@ struct flb_out_http {
 
     /* Compression mode (gzip) */
     int compress_gzip;
+    int compress_snappy;
+    int compress_zstd;
 
     /* Allow duplicated headers */
     int allow_dup_headers;

@@ -815,6 +815,9 @@ static int input_chunk_write_header(struct cio_chunk *chunk, int event_type,
     else if (event_type == FLB_INPUT_TRACES) {
         meta[2] = FLB_INPUT_CHUNK_TYPE_TRACES;
     }
+    else if (event_type == FLB_INPUT_PROFILES) {
+        meta[2] = FLB_INPUT_CHUNK_TYPE_PROFILES;
+    }
 
     /* unused byte */
     meta[3] = 0;
@@ -928,6 +931,9 @@ struct flb_input_chunk *flb_input_chunk_create(struct flb_input_instance *in, in
     else if (event_type == FLB_INPUT_TRACES) {
         flb_hash_table_add(in->ht_trace_chunks, tag, tag_len, ic, 0);
     }
+    else if (event_type == FLB_INPUT_PROFILES) {
+        flb_hash_table_add(in->ht_profile_chunks, tag, tag_len, ic, 0);
+    }
 
     return ic;
 }
@@ -981,6 +987,10 @@ int flb_input_chunk_destroy_corrupted(struct flb_input_chunk *ic,
         }
         else if (ic->event_type == FLB_INPUT_TRACES) {
             flb_hash_table_del_ptr(ic->in->ht_trace_chunks,
+                                   tag_buf, tag_len, (void *) ic);
+        }
+        else if (ic->event_type == FLB_INPUT_PROFILES) {
+            flb_hash_table_del_ptr(ic->in->ht_profile_chunks,
                                    tag_buf, tag_len, (void *) ic);
         }
     }
@@ -1076,6 +1086,10 @@ int flb_input_chunk_destroy(struct flb_input_chunk *ic, int del)
             flb_hash_table_del_ptr(ic->in->ht_trace_chunks,
                                    tag_buf, tag_len, (void *) ic);
         }
+        else if (ic->event_type == FLB_INPUT_PROFILES) {
+            flb_hash_table_del_ptr(ic->in->ht_profile_chunks,
+                                   tag_buf, tag_len, (void *) ic);
+        }
     }
 
 #ifdef FLB_HAVE_CHUNK_TRACE
@@ -1120,6 +1134,10 @@ static struct flb_input_chunk *input_chunk_get(struct flb_input_instance *in,
     }
     else if (event_type == FLB_INPUT_TRACES) {
         id = flb_hash_table_get(in->ht_trace_chunks, tag, tag_len,
+                                (void *) &ic, &out_size);
+    }
+    else if (event_type == FLB_INPUT_PROFILES) {
+        id = flb_hash_table_get(in->ht_profile_chunks, tag, tag_len,
                                 (void *) &ic, &out_size);
     }
 
@@ -1257,7 +1275,7 @@ size_t flb_input_chunk_set_limits(struct flb_input_instance *in)
         if (in->p->cb_resume) {
             flb_input_resume(in);
             flb_info("[input] %s resume (mem buf overlimit)",
-                      in->name);
+                      flb_input_name(in));
         }
     }
     if (flb_input_chunk_is_storage_overlimit(in) == FLB_FALSE &&
@@ -1268,7 +1286,7 @@ size_t flb_input_chunk_set_limits(struct flb_input_instance *in)
         if (in->p->cb_resume) {
             flb_input_resume(in);
             flb_info("[input] %s resume (storage buf overlimit %zu/%zu)",
-                      in->name,
+                      flb_input_name(in),
                       ((struct flb_storage_input *)in->storage)->cio->total_chunks_up,
                       ((struct flb_storage_input *)in->storage)->cio->max_chunks_up);
         }
@@ -1287,7 +1305,7 @@ static inline int flb_input_chunk_protect(struct flb_input_instance *i)
 
     if (flb_input_chunk_is_storage_overlimit(i) == FLB_TRUE) {
         flb_warn("[input] %s paused (storage buf overlimit %zu/%zu)",
-                 i->name,
+                 flb_input_name(i),
                  storage->cio->total_chunks_up,
                  storage->cio->max_chunks_up);
         flb_input_pause(i);
@@ -1314,7 +1332,7 @@ static inline int flb_input_chunk_protect(struct flb_input_instance *i)
          * it limit, just pause the ingestion.
          */
         flb_warn("[input] %s paused (mem buf overlimit)",
-                 i->name);
+                 flb_input_name(i));
         flb_input_pause(i);
         i->mem_buf_status = FLB_INPUT_PAUSED;
         return FLB_TRUE;
@@ -1503,7 +1521,7 @@ static int input_chunk_append_raw(struct flb_input_instance *in,
     /* Check if the input plugin has been paused */
     if (flb_input_buf_paused(in) == FLB_TRUE) {
         flb_debug("[input chunk] %s is paused, cannot append records",
-                  in->name);
+                  flb_input_name(in));
         return -1;
     }
 
@@ -1641,7 +1659,7 @@ static int input_chunk_append_raw(struct flb_input_instance *in,
 
     if (ret == -1) {
         flb_error("[input chunk] error writing data from %s instance",
-                  in->name);
+                  flb_input_name(in));
         cio_chunk_tx_rollback(ic->chunk);
 
         return -1;
@@ -2048,6 +2066,9 @@ int flb_input_chunk_get_event_type(struct flb_input_chunk *ic)
         }
         else if (buf[2] == FLB_INPUT_CHUNK_TYPE_TRACES) {
             type = FLB_INPUT_TRACES;
+        }
+        else if (buf[2] == FLB_INPUT_CHUNK_TYPE_PROFILES) {
+            type = FLB_INPUT_PROFILES;
         }
         else if (buf[2] == FLB_INPUT_CHUNK_TYPE_BLOBS) {
             type = FLB_INPUT_BLOBS;

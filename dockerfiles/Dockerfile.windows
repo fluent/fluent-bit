@@ -69,8 +69,9 @@ RUN vcpkg install --recurse openssl --triplet x64-windows-static; `
 WORKDIR /src/build
 COPY . /src/
 
+ARG BUILD_PARALLEL=1
 RUN cmake -G "'Visual Studio 16 2019'" -DOPENSSL_ROOT_DIR='C:\dev\vcpkg\packages\openssl_x64-windows-static' -DFLB_LIBYAML_DIR='C:\dev\vcpkg\packages\libyaml_x64-windows-static' -DCMAKE_BUILD_TYPE=Release ../;`
-    cmake --build . --config Release;
+    cmake --build . --config Release -j ${BUILD_PARALLEL};
 
 # Set up config files and binaries in single /fluent-bit hierarchy for easy copy in later stage
 RUN New-Item -Path  /fluent-bit/etc/ -ItemType "directory"; `

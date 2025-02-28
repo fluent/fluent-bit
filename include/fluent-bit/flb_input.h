@@ -39,6 +39,7 @@
 #include <fluent-bit/flb_input_log.h>
 #include <fluent-bit/flb_input_metric.h>
 #include <fluent-bit/flb_input_trace.h>
+#include <fluent-bit/flb_input_profiles.h>
 #include <fluent-bit/flb_config_format.h>
 #include <fluent-bit/flb_processor.h>
 
@@ -429,6 +430,7 @@ struct flb_input_instance {
     struct flb_hash_table *ht_log_chunks;
     struct flb_hash_table *ht_metric_chunks;
     struct flb_hash_table *ht_trace_chunks;
+    struct flb_hash_table *ht_profile_chunks;
 
     /* TLS settings */
     int use_tls;                         /* bool, try to use TLS for I/O */
