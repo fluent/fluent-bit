@@ -131,7 +131,7 @@ size_t flb_zstd_uncompress(void *in_data, size_t in_len, void **out_data, size_t
 {
     int ret;
     void *buf;
-    size_t size;
+    unsigned long long size;
 
     size = ZSTD_getFrameContentSize(in_data, in_len);
     if (size == ZSTD_CONTENTSIZE_ERROR) {
