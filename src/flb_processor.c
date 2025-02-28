@@ -1227,7 +1227,6 @@ int flb_processor_instance_init(
     if (!ins->cmt) {
         flb_error("[processor] could not create cmetrics context: %s",
                   name);
-
         return -1;
     }
 
@@ -1247,8 +1246,7 @@ int flb_processor_instance_init(
                          config);
 
         if (ret != 0) {
-            flb_error("[processor] failed initialize filter %s", ins->name);
-
+            flb_error("[processor] failed initialize processor %s", ins->name);
             return -1;
         }
     }
