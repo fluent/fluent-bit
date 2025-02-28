@@ -29,10 +29,21 @@
 #include "azure_kusto.h"
 #include "azure_kusto_conf.h"
 #include "azure_kusto_ingest.h"
+#include "azure_msiauth.h"
 
 static int azure_kusto_get_msi_token(struct flb_azure_kusto *ctx)
 {
+    int ret;
+    char *token;
 
+    /* Retrieve access token */
+    token = flb_azure_msiauth_token_get(ctx->o);
+    if (!token) {
+        flb_plg_error(ctx->ins, "error retrieving oauth2 access token");
+        return -1;
+    }
+
+    return 0;
 }
 
 /* Create a new oauth2 context and get a oauth2 token */
@@ -88,11 +99,13 @@ flb_sds_t get_azure_kusto_token(struct flb_azure_kusto *ctx)
         return NULL;
     }
 
-    if (ctx->o != NULL && flb_oauth2_token_expired(ctx->o) == FLB_TRUE) {
-        ret = azure_kusto_get_oauth2_token(ctx);
-    }
-    else if (/*msi token is expired*/) {
-        ret = azure_kusto_get_msi_token(ctx);    
+    if (flb_oauth2_token_expired(ctx->o) == FLB_TRUE) {
+        if (ctx->managed_identity_id != NULL) { 
+            ret = azure_kusto_get_msi_token(ctx);
+        }
+        else {
+            ret = azure_kusto_get_oauth2_token(ctx);
+        }
     }
     
     /* Copy string to prevent race conditions (get_oauth2 can free the string) */

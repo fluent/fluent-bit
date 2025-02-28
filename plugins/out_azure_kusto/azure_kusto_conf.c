@@ -30,6 +30,7 @@
 
 #include "azure_kusto.h"
 #include "azure_kusto_conf.h"
+#include "azure_msiauth.h"
 
 static struct flb_upstream_node *flb_upstream_node_create_url(struct flb_azure_kusto *ctx,
                                                               struct flb_config *config,
@@ -645,17 +646,31 @@ struct flb_azure_kusto *flb_azure_kusto_conf_create(struct flb_output_instance *
         return NULL;
     }
 
-    /* Create the auth URL */
-    ctx->oauth_url = flb_sds_create_size(sizeof(FLB_MSAL_AUTH_URL_TEMPLATE) - 1 +
-                                         flb_sds_len(ctx->tenant_id));
-    if (!ctx->oauth_url) {
-        flb_errno();
-        flb_azure_kusto_conf_destroy(ctx);
-        return NULL;
-    }
-    flb_sds_snprintf(&ctx->oauth_url, flb_sds_alloc(ctx->oauth_url),
-                     FLB_MSAL_AUTH_URL_TEMPLATE, ctx->tenant_id);
+    if (ctx->managed_identity_id != NULL) {
+        ctx->oauth_url = flb_sds_create_size(sizeof(FLB_AZURE_IMDS_TOKEN_URI) - 1));
 
+        if (!ctx->oauth_url) {
+            flb_errno();
+            flb_azure_kusto_conf_destroy(ctx);
+            return NULL;
+        }
+
+        flb_sds_snprintf(&ctx->oauth_url, flb_sds_alloc(ctx->oauth_url),
+                        FLB_AZURE_IMDS_TOKEN_URI);
+    }
+    else {
+        /* Create the auth URL */
+        ctx->oauth_url = flb_sds_create_size(sizeof(FLB_MSAL_AUTH_URL_TEMPLATE) - 1 +
+                                            flb_sds_len(ctx->tenant_id));
+        if (!ctx->oauth_url) {
+            flb_errno();
+            flb_azure_kusto_conf_destroy(ctx);
+            return NULL;
+        }
+        flb_sds_snprintf(&ctx->oauth_url, flb_sds_alloc(ctx->oauth_url),
+                         FLB_MSAL_AUTH_URL_TEMPLATE, ctx->tenant_id);
+    }
+                     
     ctx->resources = flb_calloc(1, sizeof(struct flb_azure_kusto_resources));
     if (!ctx->resources) {
         flb_errno();
