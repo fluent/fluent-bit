@@ -40,7 +40,7 @@
 #define ECS_CREDENTIALS_HOST_LEN       13
 #define EKS_CREDENTIALS_HOST           "169.254.170.23"
 #define EKS_CREDENTIALS_HOST_LEN       14
-#define AWS_CREDENTIALS_PATH           "AWS_CONTAINER_CREDENTIALS_RELATIVE_URI"
+#define AWS_CREDENTIALS_RELATIVE_URI   "AWS_CONTAINER_CREDENTIALS_RELATIVE_URI"
 #define AWS_CREDENTIALS_FULL_URI       "AWS_CONTAINER_CREDENTIALS_FULL_URI"
 
 #define AUTH_TOKEN_ENV_VAR             "AWS_CONTAINER_AUTHORIZATION_TOKEN"
@@ -333,7 +333,7 @@ struct flb_aws_provider *flb_http_provider_create(struct flb_config *config,
     char *full_uri = NULL;
     int ret;
 
-    relative_uri = getenv(AWS_CREDENTIALS_PATH);
+    relative_uri = getenv(AWS_CREDENTIALS_RELATIVE_URI);
     full_uri = getenv(AWS_CREDENTIALS_FULL_URI);
 
     if (relative_uri && strlen(relative_uri) > 0) {
@@ -370,7 +370,7 @@ struct flb_aws_provider *flb_http_provider_create(struct flb_config *config,
     }
     else {
         flb_debug("[aws_credentials] Not initializing ECS/EKS HTTP Provider because"
-                  " %s and %s is not set", AWS_CREDENTIALS_PATH, AWS_CREDENTIALS_FULL_URI);
+                  " %s and %s is not set", AWS_CREDENTIALS_RELATIVE_URI, AWS_CREDENTIALS_FULL_URI);
         return NULL;
     }
 
