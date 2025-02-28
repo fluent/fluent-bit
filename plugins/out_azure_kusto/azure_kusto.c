@@ -504,11 +504,11 @@ static struct flb_config_map config_map[] = {
      offsetof(struct flb_azure_kusto, client_secret),
      "Set the client secret (Application Password) of the AAD application used for "
      "authentication"},
-    {FLB_CONFIG_MAP_STR, "managed_identity_id", (char *)NULL, 0, FLB_TRUE,,
-    offsetof(struct flb_azure_kusto, managed_identity_id),
-    "A managed identity id to authenticate with. "
-    "Set to 'system' for system-assigned managed identity. "
-    "Set the MI client ID (GUID) for user-assigned managed identity."},
+    {FLB_CONFIG_MAP_STR, "managed_identity_id", (char *)NULL, 0, FLB_TRUE,
+     offsetof(struct flb_azure_kusto, managed_identity_id),
+     "A managed identity id to authenticate with. "
+     "Set to 'system' for system-assigned managed identity. "
+     "Set the MI client ID (GUID) for user-assigned managed identity."},
     {FLB_CONFIG_MAP_STR, "ingestion_endpoint", (char *)NULL, 0, FLB_TRUE,
      offsetof(struct flb_azure_kusto, ingestion_endpoint),
      "Set the Kusto cluster's ingestion endpoint URL (e.g. "
