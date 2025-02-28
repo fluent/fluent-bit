@@ -19,7 +19,7 @@ plugs:
 
 apps:
   service:
-    command: fluent-bit -c $SNAP/etc/fluent-bit/fluent-bit.conf
+    command: fluent-bit -c $SNAP/etc/fluent-bit/fluent-bit.yaml
     daemon: simple
     plugs:
       - network
