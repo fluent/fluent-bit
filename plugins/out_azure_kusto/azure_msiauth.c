@@ -54,7 +54,7 @@ char *flb_azure_msiauth_token_get(struct flb_oauth2 *ctx)
      /* Create HTTP client context */
      c = flb_http_client(u_conn, FLB_HTTP_GET, ctx->uri,
                          NULL, 0,
-                         FLB_AZURE_IMDS_HOST, FLB_AZURE_IMDS_PORT,
+                         ctx->host, atoi(ctx->port),
                          NULL, 0);
      if (!c) {
          flb_error("[azure msi auth] error creating HTTP client context");
