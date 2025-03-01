@@ -3,7 +3,12 @@ cmake_minimum_required(VERSION 3.2)
 include("packaging/cmake/parseversion.cmake")
 parseversion("src/rdkafka.h")
 
-project(RdKafka VERSION ${RDKAFKA_VERSION})
+project(RdKafka VERSION ${RDKAFKA_VERSION} LANGUAGES C)
+
+option(RDKAFKA_BUILD_CXX "Enable CXX support" ON)
+if(RDKAFKA_BUILD_CXX)
+  enable_language(CXX)
+endif()
 
 set(CMAKE_MODULE_PATH ${CMAKE_MODULE_PATH} "${CMAKE_CURRENT_SOURCE_DIR}/packaging/cmake/Modules/")
 
@@ -181,7 +186,11 @@ endif()
 
 option(RDKAFKA_BUILD_STATIC "Build static rdkafka library" OFF)
 option(RDKAFKA_BUILD_EXAMPLES "Build examples" ON)
-option(RDKAFKA_BUILD_TESTS "Build tests" ON)
+
+if(RDKAFKA_BUILD_CXX)
+    option(RDKAFKA_BUILD_TESTS "Build tests" ON)
+endif()
+
 if(WIN32)
     option(WITHOUT_WIN32_CONFIG "Avoid including win32_config.h on cmake builds" ON)
 endif(WIN32)
@@ -279,7 +288,10 @@ install(
 )
 
 add_subdirectory(src)
-add_subdirectory(src-cpp)
+
+if(RDKAFKA_BUILD_CXX)
+  add_subdirectory(src-cpp)
+endif()
 
 if(RDKAFKA_BUILD_EXAMPLES)
   add_subdirectory(examples)
