@@ -231,7 +231,7 @@ struct flb_oauth2 *flb_oauth2_create(struct flb_config *config,
         ctx->u = flb_upstream_create_url(config, auth_url,
                                         FLB_IO_TLS, ctx->tls);
     }
-    else (strcmp(prot, "http")) {
+    else if (strcmp(prot, "http")) {
         ctx->u = flb_upstream_create_url(config, auth_url,
                                         FLB_IO_TCP, NULL);
     }
