@@ -26,6 +26,10 @@
 #define FLB_AZURE_IMDS_PORT 80
 #define FLB_AZURE_IMDS_TIMEOUT 1  /* 1 second */
 
+/* MSAL authorization URL  */
+#define FLB_AZURE_MSIAUTH_URL_TEMPLATE \
+    "http://169.254.169.254/metadata/identity/oauth2/token?api-version=2021-02-01&client_id=%s&resource=https://api.kusto.windows.net"
+
 #define FLB_AZURE_IMDS_TOKEN_URI "/metadata/identity/oauth2/token?api-version=2023-01-01&resource=https://api.kusto.windows.net"
 
 #define FLB_AZURE_IMDS_HTTP_HEADER_METADATA "Metadata"
