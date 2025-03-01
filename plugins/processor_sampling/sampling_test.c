@@ -27,6 +27,7 @@
  */
 
 struct sampling_rule {
+    int empty;
 };
 
 /* we don't have any options (yet) */
