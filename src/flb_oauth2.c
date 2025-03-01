@@ -179,7 +179,7 @@ struct flb_oauth2 *flb_oauth2_create(struct flb_config *config,
         goto error;
     }
 
-    if (!prot || strcmp(prot, "https") != 0) {
+    if (!prot || strcmp(prot, "http") != 0) {
         flb_error("[oauth2] invalid endpoint protocol: %s", auth_url);
         goto error;
     }
@@ -214,7 +214,7 @@ struct flb_oauth2 *flb_oauth2_create(struct flb_config *config,
     /* Create TLS context */
     ctx->tls = flb_tls_create(FLB_TLS_CLIENT_MODE,
                               FLB_TRUE,  /* verify */
-                              -1,        /* debug */
+                              4,        /* debug */
                               NULL,      /* vhost */
                               NULL,      /* ca_path */
                               NULL,      /* ca_file */
@@ -228,7 +228,8 @@ struct flb_oauth2 *flb_oauth2_create(struct flb_config *config,
 
     /* Create Upstream context */
     ctx->u = flb_upstream_create_url(config, auth_url,
-                                     FLB_IO_TLS, ctx->tls);
+		 	             FLB_IO_TCP, NULL);
+//                                     FLB_IO_TLS, ctx->tls);
     if (!ctx->u) {
         flb_error("[oauth2] error creating upstream context");
         goto error;
