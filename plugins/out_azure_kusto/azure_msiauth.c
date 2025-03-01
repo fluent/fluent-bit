@@ -65,11 +65,6 @@ char *flb_azure_msiauth_token_get(struct flb_oauth2 *ctx)
  
      /* Append HTTP Header */
      flb_http_add_header(c, "Metadata", 8, "true", 4);
-     /*flb_http_add_header(c,
-                         FLB_AZURE_IMDS_HTTP_HEADER_METADATA,
-                         sizeof(FLB_AZURE_IMDS_HTTP_HEADER_METADATA) -1,
-                         FLB_TRUE,
-                         sizeof(FLB_TRUE) - 1);*/
  
      /* Issue request */
      ret = flb_http_do(c, &b_sent);
