@@ -24,7 +24,6 @@
 #include <fluent-bit/flb_oauth2.h>
 #include <fluent-bit/flb_upstream.h>
 #include <fluent-bit/flb_http_client.h>
-#include <fluent-bit/flb_jsmn.h>
 
 #include "azure_msiauth.h"
 

@@ -18,8 +18,6 @@
  */
 
 #include <fluent-bit/flb_info.h>
-#include <fluent-bit/flb_sds.h>
-#include <fluent-bit/tls/flb_tls.h>
 
 /* MSAL authorization URL  */
 #define FLB_AZURE_MSIAUTH_URL_TEMPLATE \
