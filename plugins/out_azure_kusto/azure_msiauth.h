@@ -21,7 +21,7 @@
 
 /* MSAL authorization URL  */
 #define FLB_AZURE_MSIAUTH_URL_TEMPLATE \
-    "http://169.254.169.254/metadata/identity/oauth2/token?api-version=2021-02-01&client_id=%s&resource=https://api.kusto.windows.net"
+    "http://169.254.169.254/metadata/identity/oauth2/token?api-version=2021-02-01%s&resource=https://api.kusto.windows.net"
 
 char *flb_azure_msiauth_token_get(struct flb_oauth2 *ctx);
 

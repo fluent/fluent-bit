@@ -68,11 +68,7 @@ struct flb_azure_kusto {
     flb_sds_t tenant_id;
     flb_sds_t client_id;
     flb_sds_t client_secret;
-
-    /* A managed identity id to authenticate with. 
-     * Set to "system" for system-assigned managed identity.
-     * Set the MI client ID (GUID) for user-assigned managed identity. */
-    flb_sds_t managed_identity_id;
+    flb_sds_t managed_identity_client_id;
     flb_sds_t ingestion_endpoint;
     flb_sds_t database_name;
     flb_sds_t table_name;

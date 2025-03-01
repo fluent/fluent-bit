@@ -99,7 +99,7 @@ flb_sds_t get_azure_kusto_token(struct flb_azure_kusto *ctx)
     }
 
     if (flb_oauth2_token_expired(ctx->o) == FLB_TRUE) {
-        if (ctx->managed_identity_id != NULL) { 
+        if (ctx->managed_identity_client_id != NULL) { 
             ret = azure_kusto_get_msi_token(ctx);
         }
         else {
@@ -503,9 +503,9 @@ static struct flb_config_map config_map[] = {
      offsetof(struct flb_azure_kusto, client_secret),
      "Set the client secret (Application Password) of the AAD application used for "
      "authentication"},
-    {FLB_CONFIG_MAP_STR, "managed_identity_id", (char *)NULL, 0, FLB_TRUE,
-     offsetof(struct flb_azure_kusto, managed_identity_id),
-     "A managed identity id to authenticate with. "
+    {FLB_CONFIG_MAP_STR, "managed_identity_client_id", (char *)NULL, 0, FLB_TRUE,
+     offsetof(struct flb_azure_kusto, managed_identity_client_id),
+     "A managed identity client id to authenticate with. "
      "Set to 'system' for system-assigned managed identity. "
      "Set the MI client ID (GUID) for user-assigned managed identity."},
     {FLB_CONFIG_MAP_STR, "ingestion_endpoint", (char *)NULL, 0, FLB_TRUE,

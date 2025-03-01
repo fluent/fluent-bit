@@ -602,27 +602,10 @@ struct flb_azure_kusto *flb_azure_kusto_conf_create(struct flb_output_instance *
         return NULL;
     }
 
-    if (ctx->managed_identity_id == NULL) {
-        /* config: 'tenant_id' */
-        if (ctx->tenant_id == NULL) {
-            flb_plg_error(ctx->ins, "property 'tenant_id' is not defined.");
-            flb_azure_kusto_conf_destroy(ctx);
-            return NULL;
-        }
-
-        /* config: 'client_id' */
-        if (ctx->client_id == NULL) {
-            flb_plg_error(ctx->ins, "property 'client_id' is not defined");
-            flb_azure_kusto_conf_destroy(ctx);
-            return NULL;
-        }
-    
-        /* config: 'client_secret' */
-        if (ctx->client_secret == NULL) {
-            flb_plg_error(ctx->ins, "property 'client_secret' is not defined");
-            flb_azure_kusto_conf_destroy(ctx);
-            return NULL;
-        }
+    if (ctx->tenant_id == NULL && ctx->client_id == NULL && ctx->client_secret == NULL && ctx->managed_identity_client_id == NULL) {
+        flb_plg_error(ctx->ins, "Service Principal or Managed Identity is not defined");
+        flb_azure_kusto_conf_destroy(ctx);
+        return NULL;
     }
 
     /* config: 'ingestion_endpoint' */
@@ -646,20 +629,58 @@ struct flb_azure_kusto *flb_azure_kusto_conf_create(struct flb_output_instance *
         return NULL;
     }
 
-    if (ctx->managed_identity_id != NULL) {
-	ctx->oauth_url = flb_sds_create_size(sizeof(FLB_AZURE_MSIAUTH_URL_TEMPLATE) - 1 +
-                                            flb_sds_len(ctx->managed_identity_id));
+    if (ctx->managed_identity_client_id != NULL) {
+        /* system assigned managed identity */
+        if (strcasecmp(ctx->managed_identity_client_id, "system") == 0) {
+            ctx->oauth_url = flb_sds_create_size(sizeof(FLB_AZURE_MSIAUTH_URL_TEMPLATE) - 1);
 
-        if (!ctx->oauth_url) {
-            flb_errno();
+            if (!ctx->oauth_url) {
+                flb_errno();
+                flb_azure_kusto_conf_destroy(ctx);
+                return NULL;
+            }
+
+            flb_sds_snprintf(&ctx->oauth_url, flb_sds_alloc(ctx->oauth_url),
+                            FLB_AZURE_MSIAUTH_URL_TEMPLATE, "");
+
+        } else {
+            /* user assigned managed identity */
+            ctx->oauth_url = flb_sds_create_size(sizeof(FLB_AZURE_MSIAUTH_URL_TEMPLATE) - 1 +
+                                                 sizeof("&client_id=") - 1 +
+                                                 flb_sds_len(ctx->managed_identity_client_id));
+    
+            if (!ctx->oauth_url) {
+                flb_errno();
+                flb_azure_kusto_conf_destroy(ctx);
+                return NULL;
+            }
+
+            flb_sds_snprintf(&ctx->oauth_url, flb_sds_alloc(ctx->oauth_url),
+                            FLB_AZURE_MSIAUTH_URL_TEMPLATE, ctx->managed_identity_client_id);
+        }
+    }
+    else {
+        /* config: 'tenant_id' */
+        if (ctx->tenant_id == NULL) {
+            flb_plg_error(ctx->ins, "property 'tenant_id' is not defined.");
             flb_azure_kusto_conf_destroy(ctx);
             return NULL;
         }
 
-        flb_sds_snprintf(&ctx->oauth_url, flb_sds_alloc(ctx->oauth_url),
-                        FLB_AZURE_MSIAUTH_URL_TEMPLATE, ctx->managed_identity_id);
-    }
-    else {
+        /* config: 'client_id' */
+        if (ctx->client_id == NULL) {
+            flb_plg_error(ctx->ins, "property 'client_id' is not defined");
+            flb_azure_kusto_conf_destroy(ctx);
+            return NULL;
+        }
+    
+        /* config: 'client_secret' */
+        if (ctx->client_secret == NULL) {
+            flb_plg_error(ctx->ins, "property 'client_secret' is not defined");
+            flb_azure_kusto_conf_destroy(ctx);
+            return NULL;
+        }
+
         /* Create the auth URL */
         ctx->oauth_url = flb_sds_create_size(sizeof(FLB_MSAL_AUTH_URL_TEMPLATE) - 1 +
                                             flb_sds_len(ctx->tenant_id));
