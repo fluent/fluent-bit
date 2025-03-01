@@ -1,0 +1,8 @@
+1970-01-01T00:00:00.000000100Z metric_kubernetes_network_load_counter = 3
+1970-01-01T00:00:00.000000100Z metric_kubernetes_network_load_counter{app="cmetrics"} = 1
+1970-01-01T00:00:00.000000100Z metric_kubernetes_network_load_counter{app="test"} = 12.15
+1970-01-01T00:00:00.000000100Z metric_kubernetes_network_load_gauge = 1
+1970-01-01T00:00:00.000000100Z metric_k8s_disk_load_summary = { quantiles = { 0.1=1.1, 0.2=2.2, 0.3=3.3, 0.4=4.4, 0.5=5.5 }, sum=51.6129, count=10 }
+1970-01-01T00:00:00.000000100Z metric_k8s_disk_load_summary{my_label="my_val"} = { quantiles = { 0.1=11.11, 0.2=0, 0.3=33.33, 0.4=44.44, 0.5=55.55 }, sum=51.6129, count=10 }
+1970-01-01T00:00:00.000000100Z metric_k8s_network_load_histogram = { buckets = { 0.05=2, 5=3, 10=4, +Inf=5 }, sum=1013.02, count=5 }
+1970-01-01T00:00:00.000000100Z metric_k8s_network_load_histogram{my_label="my_val"} = { buckets = { 0.05=2, 5=3, 10=4, +Inf=5 }, sum=1013.02, count=5 }

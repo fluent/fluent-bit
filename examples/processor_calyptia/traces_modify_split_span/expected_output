@@ -1,0 +1,84 @@
+|-------------------- RESOURCE SPAN --------------------|
+  resource:
+     - attributes:
+            - service.name: 'Fluent Bit Test Service'
+     - dropped_attributes_count: 5
+  schema_url: https://ctraces/resource_span_schema_url
+  [scope_span]
+    instrumentation scope:
+        - name                    : ctrace
+        - version                 : a.b.c
+        - dropped_attributes_count: 3
+        - attributes:
+
+    schema_url: https://ctraces/scope_span_schema_url
+    [spans]
+         [span 'main']
+             - trace_id                : abababab
+             - span_id                 : cdcdcdcd
+             - parent_span_id          : efefefef
+             - kind                    : 1 (internal)
+             - start_time              : 100
+             - end_time                : 200
+             - dropped_attributes_count: 0
+             - dropped_events_count    : 0
+             - status:
+                 - code        : 0
+             - attributes: 
+                 - my_array: [
+                     'first',
+                     2,
+                     false,
+                     [
+                         3.1000000000000001,
+                         5.2000000000000002,
+                         6.2999999999999998
+                     ]
+                 ]
+             - events: 
+                 - name: connect to remote server
+                     - timestamp               : 300
+                     - dropped_attributes_count: 0
+                     - attributes:
+                         - syscall 2: 'connect()'
+             - [links]
+         [span 'hello-2']
+             - trace_id                : abababab
+             - span_id                 : cdcdcdcd
+             - parent_span_id          : efefefef
+             - kind                    : 3 (client)
+             - start_time              : 100
+             - end_time                : 200
+             - dropped_attributes_count: 0
+             - dropped_events_count    : 0
+             - status:
+                 - code        : 0
+             - attributes: none
+             - events: none
+             - [links]
+                 - link:
+                     - trace_id             : aaaaaaaa
+                     - span_id              : cdcdcdcd
+                     - trace_state          : aaabbbccc
+                     - dropped_events_count : 2
+                     - attributes           : none
+         [span 'hello-2']
+             - trace_id                : abababab
+             - span_id                 : cdcdcdcd
+             - parent_span_id          : efefefef
+             - kind                    : 3 (client)
+             - start_time              : 100
+             - end_time                : 200
+             - dropped_attributes_count: 0
+             - dropped_events_count    : 0
+             - status:
+                 - code        : 0
+             - attributes: none
+             - events: none
+             - [links]
+                 - link:
+                     - trace_id             : aaaaaaaa
+                     - span_id              : cdcdcdcd
+                     - trace_state          : aaabbbccc
+                     - dropped_events_count : 2
+                     - attributes           : none
