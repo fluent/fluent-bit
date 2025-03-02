@@ -376,14 +376,7 @@ char *flb_wasm_call_function_format_msgpack(struct flb_wasm *fw, const char *fun
 int flb_wasm_call_wasi_main(struct flb_wasm *fw)
 {
 #if WASM_ENABLE_LIBC_WASI != 0
-    wasm_function_inst_t func = NULL;
-
-    if (!(func = wasm_runtime_lookup_wasi_start_function(fw->module_inst))) {
-        flb_error("The wasi mode main function is not found.");
-        return -1;
-    }
-
-    return wasm_runtime_call_wasm(fw->exec_env, func, 0, NULL);
+    return wasm_application_execute_main(fw->module_inst, 0, NULL);
 #else
     return -1;
 #endif
