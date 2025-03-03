@@ -190,7 +190,7 @@ jobs:
         uses: actions/checkout@v4
 
       - name: Prepare and build with QEMU ${{ matrix.arch }}
-        uses: uraimo/run-on-arch-action@v2
+        uses: uraimo/run-on-arch-action@v3
         id: build-and-test-on-qemu
         with:
           arch: ${{ matrix.arch }}
