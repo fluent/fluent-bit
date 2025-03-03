@@ -46,7 +46,10 @@
 #define FLB_LOG_EVENT_EXPECTED_HEADER_ELEMENT_COUNT      2
 
 struct flb_log_event_decoder {
+    msgpack_object   *current_group_attributes;
+    msgpack_unpacked  unpacked_group_record;
     int               dynamically_allocated;
+    msgpack_object  *current_group_metadata;
     msgpack_unpacked  unpacked_empty_map;
     size_t            previous_offset;
     msgpack_unpacked  unpacked_event;
