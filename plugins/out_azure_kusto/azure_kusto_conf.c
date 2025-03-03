@@ -641,7 +641,7 @@ struct flb_azure_kusto *flb_azure_kusto_conf_create(struct flb_output_instance *
             }
 
             flb_sds_snprintf(&ctx->oauth_url, flb_sds_alloc(ctx->oauth_url),
-                            FLB_AZURE_MSIAUTH_URL_TEMPLATE, "");
+                            FLB_AZURE_MSIAUTH_URL_TEMPLATE, "", "");
 
         } else {
             /* user assigned managed identity */
@@ -656,7 +656,7 @@ struct flb_azure_kusto *flb_azure_kusto_conf_create(struct flb_output_instance *
             }
 
             flb_sds_snprintf(&ctx->oauth_url, flb_sds_alloc(ctx->oauth_url),
-                            FLB_AZURE_MSIAUTH_URL_TEMPLATE, ctx->managed_identity_client_id);
+                            FLB_AZURE_MSIAUTH_URL_TEMPLATE, "&client_id=", ctx->managed_identity_client_id);
         }
     }
     else {

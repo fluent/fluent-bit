@@ -227,11 +227,11 @@ struct flb_oauth2 *flb_oauth2_create(struct flb_config *config,
     }
 
     /* Create Upstream context */
-    if (strcmp(prot, "https")) {
+    if (strcmp(prot, "https") == 0) {
         ctx->u = flb_upstream_create_url(config, auth_url,
                                         FLB_IO_TLS, ctx->tls);
     }
-    else if (strcmp(prot, "http")) {
+    else if (strcmp(prot, "http") == 0) {
         ctx->u = flb_upstream_create_url(config, auth_url,
                                         FLB_IO_TCP, NULL);
     }
