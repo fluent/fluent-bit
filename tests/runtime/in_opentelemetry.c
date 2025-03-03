@@ -91,6 +91,8 @@ static char *get_group_metadata(void *chunk, size_t size)
     ret = flb_log_event_decoder_init(&log_decoder, chunk, size);
     TEST_CHECK(ret == FLB_EVENT_DECODER_SUCCESS);
 
+    flb_log_event_decoder_read_groups(&log_decoder, FLB_TRUE);
+
     ret = flb_log_event_decoder_next(&log_decoder, &log_event);
     if (ret != FLB_EVENT_DECODER_SUCCESS) {
         return NULL;
@@ -112,6 +114,8 @@ static char *get_group_body(void *chunk, size_t size)
     ret = flb_log_event_decoder_init(&log_decoder, chunk, size);
     TEST_CHECK(ret == FLB_EVENT_DECODER_SUCCESS);
 
+    flb_log_event_decoder_read_groups(&log_decoder, FLB_TRUE);
+
     ret = flb_log_event_decoder_next(&log_decoder, &log_event);
     if (ret != FLB_EVENT_DECODER_SUCCESS) {
         return NULL;
@@ -132,6 +136,8 @@ static char *get_log_body(void *chunk, size_t size)
 
     ret = flb_log_event_decoder_init(&log_decoder, chunk, size);
     TEST_CHECK(ret == FLB_EVENT_DECODER_SUCCESS);
+
+    flb_log_event_decoder_read_groups(&log_decoder, FLB_TRUE);
 
     /* 0: group header */
     flb_log_event_decoder_next(&log_decoder, &log_event);
