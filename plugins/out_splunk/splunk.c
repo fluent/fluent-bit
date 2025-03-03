@@ -174,7 +174,7 @@ static int pack_otel_data(struct flb_splunk *ctx,
                                               sizeof(schema));
 
     if (result != 0) {
-        return -1;
+        return 0;
     }
 
     if (strcmp(schema, "otlp") != 0) {
