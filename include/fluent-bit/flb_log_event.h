@@ -38,6 +38,8 @@
 #define FLB_LOG_EVENT_GROUP_END           (int32_t) -2
 
 struct flb_log_event {
+    msgpack_object  *group_attributes;
+    msgpack_object  *group_metadata;
     msgpack_object  *raw_timestamp;
     struct flb_time  timestamp;
     msgpack_object  *metadata;
