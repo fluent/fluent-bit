@@ -181,7 +181,9 @@ void flb_test_filter_grep_invalid(void)
         TEST_CHECK(bytes == -1);
     }
 
-    flb_stop(ctx);
+    if (ret == 0) {
+        flb_stop(ctx);
+    }
     flb_destroy(ctx);
 }
 
@@ -484,7 +486,9 @@ void flb_test_error_AND_regex_exclude(void)
     ret = flb_start(ctx);
     TEST_CHECK(ret != 0);
 
-    flb_stop(ctx);
+    if (ret == 0) {
+        flb_stop(ctx);
+    }
     flb_destroy(ctx);
 }
 
@@ -520,7 +524,9 @@ void flb_test_error_OR_regex_exclude(void)
     ret = flb_start(ctx);
     TEST_CHECK(ret != 0);
 
-    flb_stop(ctx);
+    if (ret == 0) {
+        flb_stop(ctx);
+    }
     flb_destroy(ctx);
 }
 
