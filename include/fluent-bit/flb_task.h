@@ -127,6 +127,8 @@ int flb_task_running_count(struct flb_config *config);
 int flb_task_running_print(struct flb_config *config);
 int flb_task_map_get_task_id(struct flb_config *config);
 
+struct flb_task *task_alloc(struct flb_config *config);
+
 struct flb_task *flb_task_create(uint64_t ref_id,
                                  const char *buf,
                                  size_t size,
