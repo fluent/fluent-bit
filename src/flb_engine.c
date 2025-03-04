@@ -273,7 +273,7 @@ static inline int handle_output_event(uint64_t ts,
               task_id, out_id, trace_st);
 #endif
 
-    task = config->tasks_map[task_id].task;
+    task = config->task_map[task_id].task;
     ins  = flb_output_get_instance(config, out_id);
     if (flb_output_is_threaded(ins) == FLB_FALSE) {
         flb_output_flush_finished(config, out_id);
