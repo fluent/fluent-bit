@@ -32,6 +32,7 @@
 #include <fluent-bit/flb_config.h>
 #include <fluent-bit/flb_worker.h>
 #include <fluent-bit/flb_mem.h>
+#include "cfl/cfl_time.h"
 
 #ifdef FLB_HAVE_AWS_ERROR_REPORTER
 #include <fluent-bit/aws/flb_aws_error_reporter.h>
@@ -40,6 +41,8 @@ extern struct flb_aws_error_reporter *error_reporter;
 #endif
 
 FLB_TLS_DEFINE(struct flb_log, flb_log_ctx)
+
+#define NANOSECONDS_IN_SECOND 1000000000
 
 /* Simple structure to dispatch messages to the log collector */
 struct log_message {
@@ -561,6 +564,13 @@ struct flb_log *flb_log_create(struct flb_config *config, int type,
     return log;
 }
 
+void get_current_time(struct timespec *ts)
+{
+    uint64_t now = cfl_time_now();
+    ts->tv_sec = now / NANOSECONDS_IN_SECOND;
+    ts->tv_nsec = now % NANOSECONDS_IN_SECOND;
+}
+
 int flb_log_construct(struct log_message *msg, int *ret_len,
                      int type, const char *file, int line, const char *fmt, va_list *args)
 {
@@ -568,13 +578,13 @@ int flb_log_construct(struct log_message *msg, int *ret_len,
     int ret;
     int len;
     int total;
-    time_t now;
     const char *header_color = NULL;
     const char *header_title = NULL;
     const char *bold_color = ANSI_BOLD;
     const char *reset_color = ANSI_RESET;
     struct tm result;
     struct tm *current;
+    struct timespec ts;
 
     switch (type) {
     case FLB_LOG_HELP:
@@ -620,15 +630,15 @@ int flb_log_construct(struct log_message *msg, int *ret_len,
     }
     #endif // FLB_LOG_NO_CONTROL_CHARS
 
-    now = time(NULL);
-    current = localtime_r(&now, &result);
+    get_current_time(&ts);
+    current = localtime_r(&ts.tv_sec, &result);
 
     if (current == NULL) {
         return -1;
     }
 
     len = snprintf(msg->msg, sizeof(msg->msg) - 1,
-                   "%s[%s%i/%02i/%02i %02i:%02i:%02i%s]%s [%s%5s%s] ",
+                   "%s[%s%i/%02i/%02i %02i:%02i:%02i.%03ld%s]%s [%s%5s%s] ",
                    /*      time     */                    /* type */
 
                    /* time variables */
@@ -639,6 +649,7 @@ int flb_log_construct(struct log_message *msg, int *ret_len,
                    current->tm_hour,
                    current->tm_min,
                    current->tm_sec,
+                   ts.tv_nsec,
                    bold_color, reset_color,
 
                    /* type format */
