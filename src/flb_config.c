@@ -1026,8 +1026,6 @@ int flb_config_task_map_resize(struct flb_config *config, size_t new_size)
 int flb_config_task_map_grow(struct flb_config *config)
 {
     if (config->task_map_size >= FLB_CONFIG_DEFAULT_TASK_MAP_SIZE_LIMIT) {
-        fprintf(stderr, "TASK MAP SIZE REACHED ITS LIMIT\n");
-
         return -1;
     }
 
