@@ -561,6 +561,32 @@ struct flb_log *flb_log_create(struct flb_config *config, int type,
     return log;
 }
 
+#ifdef _WIN32
+#include "windows.h"
+
+#define WINDOWS_EPOCH_OFFSET 116444736000000000ULL
+
+void get_current_time(struct timespec *ts)
+{
+    FILETIME ft;
+    ULARGE_INTEGER li;
+
+    GetSystemTimeAsFileTime(&ft);
+    li.LowPart = ft.dwLowDateTime;
+    li.HighPart = ft.dwHighDateTime;
+
+    // Convert to Unix epoch
+    uint64_t time = (li.QuadPart - WINDOWS_EPOCH_OFFSET) / 10;
+    ts->tv_sec = time / 1000000;
+    ts->tv_nsec = (time % 1000000) * 1000;
+}
+#else
+void get_current_time(struct timespec *ts)
+{
+    clock_gettime(CLOCK_REALTIME, ts);
+}
+#endif
+
 int flb_log_construct(struct log_message *msg, int *ret_len,
                      int type, const char *file, int line, const char *fmt, va_list *args)
 {
@@ -568,13 +594,13 @@ int flb_log_construct(struct log_message *msg, int *ret_len,
     int ret;
     int len;
     int total;
-    time_t now;
     const char *header_color = NULL;
     const char *header_title = NULL;
     const char *bold_color = ANSI_BOLD;
     const char *reset_color = ANSI_RESET;
     struct tm result;
     struct tm *current;
+    struct timespec ts;
 
     switch (type) {
     case FLB_LOG_HELP:
@@ -620,15 +646,15 @@ int flb_log_construct(struct log_message *msg, int *ret_len,
     }
     #endif // FLB_LOG_NO_CONTROL_CHARS
 
-    now = time(NULL);
-    current = localtime_r(&now, &result);
+    get_current_time(&ts);
+    current = localtime_r(&ts.tv_sec, &result);
 
     if (current == NULL) {
         return -1;
     }
 
     len = snprintf(msg->msg, sizeof(msg->msg) - 1,
-                   "%s[%s%i/%02i/%02i %02i:%02i:%02i%s]%s [%s%5s%s] ",
+                   "%s[%s%i/%02i/%02i %02i:%02i:%02i.%03ld%s]%s [%s%5s%s] ",
                    /*      time     */                    /* type */
 
                    /* time variables */
@@ -639,6 +665,7 @@ int flb_log_construct(struct log_message *msg, int *ret_len,
                    current->tm_hour,
                    current->tm_min,
                    current->tm_sec,
+                   ts.tv_nsec,
                    bold_color, reset_color,
 
                    /* type format */
