@@ -745,20 +745,39 @@ int flb_processor_run(struct flb_processor *proc,
                 }
             }
             else if (type == FLB_PROCESSOR_TRACES) {
-
                 if (p_ins->p->cb_process_traces != NULL) {
+                    tmp_buf = NULL;
+                    out_size = NULL;
                     ret = p_ins->p->cb_process_traces(p_ins,
                                                       (struct ctrace *) cur_buf,
+                                                      (struct ctrace **) &tmp_buf,
                                                       tag,
                                                       tag_len);
-
-                    if (ret != FLB_PROCESSOR_SUCCESS) {
+                    if (ret == FLB_PROCESSOR_FAILURE) {
                         release_lock(&pu->lock,
                                      FLB_PROCESSOR_LOCK_RETRY_LIMIT,
                                      FLB_PROCESSOR_LOCK_RETRY_DELAY);
 
                         return -1;
                     }
+                    else if (ret == FLB_PROCESSOR_SUCCESS) {
+                        if (tmp_buf == NULL) {
+                            /*
+                             * the processsor ran successfuly but there is no
+                             * trace output, that means that the invoked processor
+                             * will enqueue the trace through a different mechanism,
+                             * we just return saying nothing else is needed.
+                             */
+                            release_lock(&pu->lock,
+                                         FLB_PROCESSOR_LOCK_RETRY_LIMIT,
+                                         FLB_PROCESSOR_LOCK_RETRY_DELAY);
+                            return 0;
+                        }
+                        else {
+                            cur_buf = tmp_buf;
+                        }
+                    }
+
                 }
             }
             else if (type == FLB_PROCESSOR_PROFILES) {

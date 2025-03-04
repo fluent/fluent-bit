@@ -290,6 +290,7 @@ REGISTER_PROCESSOR_PLUGIN("processor_labels")
 REGISTER_PROCESSOR_PLUGIN("processor_metrics_selector")
 REGISTER_PROCESSOR_PLUGIN("processor_sql")
 REGISTER_PROCESSOR_PLUGIN("processor_opentelemetry_envelope")
+REGISTER_PROCESSOR_PLUGIN("processor_buffered_trace")
 
 # OUTPUTS
 # =======

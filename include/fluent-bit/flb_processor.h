@@ -155,6 +155,7 @@ struct flb_processor_plugin {
 
     int (*cb_process_traces) (struct flb_processor_instance *,
                               struct ctrace *,
+                              struct ctrace **,
                               const char *,
                               int);
 

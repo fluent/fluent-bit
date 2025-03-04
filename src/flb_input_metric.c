@@ -71,7 +71,6 @@ static int input_metrics_append(struct flb_input_instance *ins,
 
         if (ret != 0) {
             flb_plg_error(ins, "could not encode metrics");
-
             return -1;
         }
     }
