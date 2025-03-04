@@ -1008,6 +1008,8 @@ int flb_config_task_map_resize(struct flb_config *config, size_t new_size)
     }
 
     if (new_task_map == NULL) {
+        flb_errno();
+
         return -1;
     }
 
