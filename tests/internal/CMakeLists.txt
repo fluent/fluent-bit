@@ -45,7 +45,8 @@ set(UNIT_TESTS_FILES
   uri.c
   msgpack_append_message.c
   conditionals.c
-  endianness
+  endianness.c
+  task_map.c
   )
 
 # Config format
