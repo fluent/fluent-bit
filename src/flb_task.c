@@ -238,7 +238,7 @@ int flb_task_retry_clean(struct flb_task *task, struct flb_output_instance *ins)
 }
 
 /* Allocate an initialize a basic Task structure */
-static struct flb_task *task_alloc(struct flb_config *config)
+struct flb_task *task_alloc(struct flb_config *config)
 {
     int task_id;
     struct flb_task *task;
@@ -491,22 +491,30 @@ void flb_task_destroy(struct flb_task *task, int del)
     }
 
     /* Unlink and release task */
-    mk_list_del(&task->_head);
+    if (!mk_list_entry_is_orphan(&task->_head)) {
+        mk_list_del(&task->_head);
+    }
 
     /* destroy chunk */
-    flb_input_chunk_destroy(task->ic, del);
+    if (task->ic != NULL) {
+        flb_input_chunk_destroy(task->ic, del);
+    }
 
     /* Remove 'retries' */
     mk_list_foreach_safe(head, tmp, &task->retries) {
         retry = mk_list_entry(head, struct flb_task_retry, _head);
+
         flb_task_retry_destroy(retry);
     }
 
-    flb_input_chunk_set_limits(task->i_ins);
+    if (task->i_ins != NULL) {
+        flb_input_chunk_set_limits(task->i_ins);
+    }
 
-    if (task->event_chunk) {
+    if (task->event_chunk != NULL) {
         flb_event_chunk_destroy(task->event_chunk);
     }
+
     flb_free(task);
 }
 
