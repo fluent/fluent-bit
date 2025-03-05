@@ -557,6 +557,10 @@ int flb_input_thread_instance_exit(struct flb_input_instance *ins)
     struct flb_input_thread_instance *thi = ins->thi;
     pthread_t tid;
 
+    if (thi == NULL) {
+        return 0;
+    }
+
     memcpy(&tid, &thi->th->tid, sizeof(pthread_t));
 
     /* compose message to pause the thread */
