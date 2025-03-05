@@ -40,5 +40,7 @@ int flb_ring_buffer_add_event_loop(struct flb_ring_buffer *rb, void *evl, uint8_
 
 int flb_ring_buffer_write(struct flb_ring_buffer *rb, void *ptr, size_t size);
 int flb_ring_buffer_read(struct flb_ring_buffer *rb, void *ptr, size_t size);
+int flb_ring_buffer_peek(struct flb_ring_buffer *rb, int skip_count, void *ptr, size_t size);
+int flb_ring_buffer_skip(struct flb_ring_buffer *rb, size_t size);
 
 #endif
