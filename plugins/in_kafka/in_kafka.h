@@ -48,6 +48,9 @@ struct flb_in_kafka_config {
     int coll_fd;
     size_t buffer_max_size;          /* Maximum size of chunk allocation */
     size_t polling_threshold;
+    flb_sds_t parser_name;           /* Bame of the parser */
+    struct flb_parser *parser;       /* Parser  */
+    bool auto_commit;                /* Auto commit  switch */
 };
 
 #endif
