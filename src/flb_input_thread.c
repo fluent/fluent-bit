@@ -510,6 +510,10 @@ int flb_input_thread_instance_pause(struct flb_input_instance *ins)
     uint64_t val;
     struct flb_input_thread_instance *thi = ins->thi;
 
+    if (thi == NULL) {
+        return 0;
+    }
+
     flb_plg_debug(ins, "thread pause instance");
 
     /* compose message to pause the thread */
@@ -535,6 +539,10 @@ int flb_input_thread_instance_resume(struct flb_input_instance *ins)
     uint64_t val;
     struct flb_input_thread_instance *thi = ins->thi;
 
+    if (thi == NULL) {
+        return 0;
+    }
+
     flb_plg_debug(ins, "thread resume instance");
 
     /* compose message to resume the thread */
@@ -556,6 +564,10 @@ int flb_input_thread_instance_exit(struct flb_input_instance *ins)
     uint64_t val;
     struct flb_input_thread_instance *thi = ins->thi;
     pthread_t tid;
+
+    if (thi == NULL) {
+        return 0;
+    }
 
     memcpy(&tid, &thi->th->tid, sizeof(pthread_t));
 
