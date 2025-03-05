@@ -653,7 +653,7 @@ jobs:
         # The key needs to cope with newlines
         run: |
           echo -e "${COSIGN_PRIVATE_KEY}" > /tmp/my_cosign.key
-          cosign sign --key /tmp/my_cosign.key --recursive \
+          cosign sign --key /tmp/my_cosign.key --recursive --yes \
             -a "repo=${{ github.repository }}" \
             -a "workflow=${{ github.workflow }}" \
             -a "release=${{ github.event.inputs.version }}" \
