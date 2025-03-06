@@ -23,6 +23,7 @@
 #include <fluent-bit/flb_input_log.h>
 #include <fluent-bit/flb_input_plugin.h>
 #include <fluent-bit/flb_processor.h>
+#include <fluent-bit/flb_log_event_decoder.h>
 
 static int input_log_append(struct flb_input_instance *ins,
                             size_t processor_starting_stage,
@@ -34,6 +35,11 @@ static int input_log_append(struct flb_input_instance *ins,
     int processor_is_active;
     void *out_buf = (void *) buf;
     size_t out_size = buf_size;
+    size_t in_buf_start, in_buf_size, in_records;
+    size_t record_size, cursor, cursor_last;
+    struct flb_log_event_decoder decoder;
+    struct flb_log_event log_event;
+    msgpack_unpacked result;
 
     processor_is_active = flb_processor_is_active(ins->processor);
     if (processor_is_active) {
@@ -68,9 +74,48 @@ static int input_log_append(struct flb_input_instance *ins,
         }
     }
 
-    ret = flb_input_chunk_append_raw(ins, FLB_INPUT_LOGS, records,
-                                     tag, tag_len, out_buf, out_size);
+    if (out_size < ins->config->storage_chunk_max_size) {
+        ret = flb_input_chunk_append_raw(ins, FLB_INPUT_LOGS, records,
+                                        tag, tag_len, out_buf, out_size);
+    } else {
+        in_buf_start = 0;
+        in_buf_size = 0;
+        in_records = 0;
+        cursor = 0;
+        cursor_last = 0;
+        msgpack_unpacked_init(&result);
+        while (msgpack_unpack_next(&result, out_buf, out_size, &cursor)) {
+            record_size = cursor - cursor_last;
 
+            /* If the current decoded record won't fit, append what we have. */
+            if (in_records > 0 &&
+                in_buf_size + record_size > ins->config->storage_chunk_max_size) {
+                /* Send the events we have so far. */
+                ret = flb_input_chunk_append_raw(ins, FLB_INPUT_LOGS, in_records,
+                                                tag, tag_len,
+                                                out_buf + in_buf_start, in_buf_size);
+
+                /* Set the next buffer to start where the last one ended. */
+                in_buf_start += in_buf_size;
+
+                /* Reset size and record count. */
+                in_buf_size = 0;
+                in_records = 0;
+            }
+
+            /* Add record to current tracker. */
+            in_records += 1;
+            in_buf_size += record_size;
+            cursor_last = cursor;
+        }
+
+        /* Send along any remaining events. */
+        if (in_records > 0) {
+            ret = flb_input_chunk_append_raw(ins, FLB_INPUT_LOGS, in_records,
+                                            tag, tag_len,
+                                            out_buf + in_buf_start, in_buf_size);
+        }
+    }
 
     if (processor_is_active && buf != out_buf) {
         flb_free(out_buf);
