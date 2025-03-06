@@ -65,6 +65,32 @@
 static pthread_once_t local_thread_net_dns_ctx_init = PTHREAD_ONCE_INIT;
 FLB_TLS_DEFINE(struct flb_net_dns, flb_net_dns_ctx);
 
+/* Defines an async DNS lookup context */
+struct flb_dns_lookup_context {
+    struct mk_event              response_event;                  /* c-ares socket event */
+    int                          ares_socket_registered;
+    struct ares_socket_functions ares_socket_functions;
+    int                         *udp_timeout_detected;
+    int                          ares_socket_created;
+    int                          ares_socket_type;
+    void                        *ares_channel;
+    int                         *result_code;
+    struct mk_event_loop        *event_loop;
+    struct flb_coro             *coroutine;
+    struct flb_sched_timer      *udp_timer;
+    int                          finished;
+    int                          dropped;
+    struct flb_net_dns          *dns_ctx;
+    struct addrinfo            **result;
+    /* result is a synthetized result, don't call freeaddrinfo on it */
+    struct mk_list               _head;
+};
+
+#define FLB_DNS_LOOKUP_CONTEXT_FOR_EVENT(event) \
+    ((struct flb_dns_lookup_context *) \
+        &((uint8_t *) event)[-offsetof(struct flb_dns_lookup_context, response_event)])
+
+
 /*
  * Initialize thread-local-storage, every worker thread has it owns
  * dns context with relevant info populated inside the thread.
