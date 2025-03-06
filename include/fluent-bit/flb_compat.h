@@ -130,6 +130,29 @@ static inline int usleep(LONGLONG usec)
     // Convert into 100ns unit.
     return nanosleep(usec * 10);
 }
+
+static inline FILE* flb_popen(const char *command, const char *type) {
+    return _popen(command, type);
+}
+/*
+ * flb_pclose() has the same return value on Windows as win32 _pclose(), rather
+ * than posix pclose(). The process exit code is not bit-shifted to the high
+ * byte.
+ *
+ * The MSVC docs for _pclose() at
+ * https://learn.microsoft.com/en-us/cpp/c-runtime-library/reference/pclose?view=msvc-170
+ * are misleading; they say that "The format of the return value is the same as
+ * for _cwait, except the low-order and high-order bytes are swapped." But
+ * _cwait isn't documented as having any meaningful return on success, the
+ * process exit code is meant to be in  its "termstat" out parameter per
+ * https://learn.microsoft.com/en-us/cpp/c-runtime-library/reference/cwait?view=msvc-170
+ * The return code of _pclose() actually appears to be the process exit code
+ * without the bit-shift that waitpid() applies.
+ */
+static inline int flb_pclose(FILE *stream) {
+    return _pclose(stream);
+}
+
 #else
 #include <netdb.h>
 #include <netinet/in.h>
@@ -140,7 +163,27 @@ static inline int usleep(LONGLONG usec)
 #include <dlfcn.h>
 
 #define FLB_DIRCHAR '/'
-#endif
+
+/*
+ * Because Windows has to do everything differently, call _popen() and
+ * _pclose() instead of the POSIX popen() and pclose() functions.
+ *
+ * flb_pclose() has different return value semantics on Windows vs non-windows
+ * targets because it propagates the pclose() or _pclose() return value
+ * directly. You MUST use the FLB_WIFEXITED(), FLB_WEXITSTATUS(),
+ * FLB_WIFSIGNALED() and FLB_WTERMSIG() macros to consume the return value,
+ * rather than the underlying POSIX macros or manual bit-shifts.
+ */
+static inline FILE* flb_popen(const char *command, const char *type) {
+    return popen(command, type);
+}
+static inline int flb_pclose(FILE *stream) {
+    return pclose(stream);
+}
+
+#define FLB_PCLOSE pclose
+
+#endif /* FLB_SYSTEM_WINDOWS */
 
 #ifdef FLB_HAVE_UNIX_SOCKET
 #include <sys/un.h>
