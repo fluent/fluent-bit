@@ -643,13 +643,14 @@ static int cb_log_to_metrics_init(struct flb_filter_instance *f_ins,
     snprintf(metric_description, sizeof(metric_description) - 1, "%s",
              ctx->metric_description);
 
-    /* Value field only needed for modes gauge and histogram */
-    if (ctx->mode > 0) {
-        if (ctx->value_field == NULL || strlen(ctx->value_field) == 0) {
-            flb_plg_error(f_ins, "value_field is not set");
-            log_to_metrics_destroy(ctx);
-            return -1;
+    if (ctx->value_field == NULL || strlen(ctx->value_field) == 0) {
+        /* require value field for modes gauge and histogram */
+        if (ctx->mode > 0) {
+                flb_plg_error(f_ins, "value_field is not set");
+                log_to_metrics_destroy(ctx);
+                return -1;
         }
+    } else {
         snprintf(value_field, sizeof(value_field) - 1, "%s",
                     ctx->value_field);
 
@@ -836,6 +837,7 @@ static int cb_log_to_metrics_filter(const void *data, size_t bytes,
     char **label_values = NULL;
     int label_count = 0;
     int i;
+    double counter_value = 0;
     double gauge_value = 0;
     double histogram_value = 0;
     char kubernetes_label_values
@@ -912,8 +914,50 @@ static int cb_log_to_metrics_filter(const void *data, size_t bytes,
             /* Calculating and setting metric depending on the mode */
             switch (ctx->mode) {
                 case FLB_LOG_TO_METRICS_COUNTER:
-                    ret = cmt_counter_inc(ctx->c, ts, label_count,
-                                    label_values);
+
+                    // If value_field is not set, increment counter by 1
+                    if (ctx->value_field == NULL || strlen(ctx->value_field) == 0) {
+                        ret = cmt_counter_inc(ctx->c, ts, label_count,
+                                        label_values);
+                        break;
+                    }
+                    // If value_field is set, increment counter by value
+                    ra = flb_ra_create(ctx->value_field, FLB_TRUE);
+                    if (!ra) {
+                        flb_plg_error(ctx->ins, "invalid record accessor key, aborting");
+                        break;
+                    }
+
+                    rval = flb_ra_get_value_object(ra, map);
+
+                    if (!rval) {
+                        flb_warn("given value field is empty or not existent");
+                        break;
+                    }
+                    if (rval->type == FLB_RA_STRING) {
+                        sscanf(rval->val.string, "%lf", &counter_value);
+                    }
+                    else if (rval->type == FLB_RA_FLOAT) {
+                        counter_value = rval->val.f64;
+                    }
+                    else if (rval->type == FLB_RA_INT) {
+                        counter_value = (double)rval->val.i64;
+                    }
+                    else {
+                        flb_plg_error(f_ins,
+                                    "cannot convert given value to metric");
+                        break;
+                    }
+                    ret = cmt_counter_add(ctx->c, ts, counter_value,
+                                        label_count, label_values);
+                    if (rval) {
+                        flb_ra_key_value_destroy(rval);
+                        rval = NULL;
+                    }
+                    if (ra) {
+                        flb_ra_destroy(ra);
+                        ra = NULL;
+                    }
                     break;
 
                 case FLB_LOG_TO_METRICS_GAUGE:
@@ -1057,7 +1101,7 @@ static struct flb_config_map config_map[] = {
     {
      FLB_CONFIG_MAP_STR, "value_field", NULL,
      0, FLB_TRUE, offsetof(struct log_to_metrics_ctx, value_field),
-     "Numeric field to use for gauge or histogram"
+     "Numeric field to use for gauge, histogram or counter"
     },
     {
      FLB_CONFIG_MAP_STR, "metric_name", "a",
