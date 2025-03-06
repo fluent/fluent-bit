@@ -2,6 +2,10 @@ if(NOT FLB_PATH_ROOT_SOURCE)
   set(FLB_PATH_ROOT_SOURCE ${FLB_ROOT})
 endif()
 
+if(NOT DEFINED FLB_PATH_ROOT_BINARY_DIR)
+  set(FLB_PATH_ROOT_BINARY_DIR ${CMAKE_CURRENT_BINARY_DIR})
+endif()
+
 include_directories(
   ${FLB_PATH_ROOT_SOURCE}/include/
   ${FLB_PATH_ROOT_SOURCE}/lib/
@@ -20,7 +24,7 @@ include_directories(
 
   # Chunk I/O generate headers also in the binary path
   ${FLB_PATH_ROOT_SOURCE}/${FLB_PATH_LIB_CHUNKIO}/include
-  ${CMAKE_CURRENT_BINARY_DIR}/lib/chunkio/include
+  ${FLB_PATH_ROOT_BINARY_DIR}/lib/chunkio/include
 
   ${FLB_PATH_ROOT_SOURCE}/${FLB_PATH_LIB_MONKEY}/include
   ${FLB_PATH_ROOT_SOURCE}/${FLB_PATH_LIB_MONKEY}/include/monkey
@@ -36,13 +40,22 @@ include_directories(
   ${FLB_PATH_ROOT_SOURCE}/${FLB_PATH_LIB_RING_BUFFER}/lwrb/src/include
   ${FLB_PATH_ROOT_SOURCE}/${FLB_PATH_LIB_ZSTD}/lib
 
-  ${CMAKE_CURRENT_BINARY_DIR}/${FLB_PATH_LIB_JANSSON}/include
-  ${CMAKE_CURRENT_BINARY_DIR}/lib/cmetrics
-  ${CMAKE_CURRENT_BINARY_DIR}/lib/cprofiles/include
-  ${CMAKE_CURRENT_BINARY_DIR}/include
+  # c-ares
+  ${FLB_PATH_ROOT_SOURCE}/${FLB_PATH_LIB_CARES}/include
+  ${FLB_PATH_ROOT_BINARY_DIR}/${FLB_PATH_LIB_CARES}
 
-  ${CMAKE_CURRENT_BINARY_DIR}/lib/monkey/include/
-  ${CMAKE_CURRENT_BINARY_DIR}/lib/monkey/include/monkey/
+  # nghttp2
+  ${FLB_PATH_ROOT_SOURCE}/${FLB_PATH_LIB_NGHTTP2}/lib/includes/
+  ${FLB_PATH_ROOT_BINARY_DIR}/lib/nghttp2
+  ${FLB_PATH_ROOT_BINARY_DIR}/lib/nghttp2/lib/includes/
+
+  ${FLB_PATH_ROOT_BINARY_DIR}/${FLB_PATH_LIB_JANSSON}/include
+  ${FLB_PATH_ROOT_BINARY_DIR}/lib/cmetrics
+  ${FLB_PATH_ROOT_BINARY_DIR}/lib/cprofiles/include
+  ${FLB_PATH_ROOT_BINARY_DIR}/include
+
+  ${FLB_PATH_ROOT_BINARY_DIR}/lib/monkey/include/
+  ${FLB_PATH_ROOT_BINARY_DIR}/lib/monkey/include/monkey/
   )
 
 if(FLB_UTF8_ENCODER)
