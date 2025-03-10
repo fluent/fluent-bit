@@ -80,7 +80,8 @@ static void debug_trace(struct sampling *ctx, struct ctrace *ctr, int is_before)
 }
 
 static int cb_process_traces(struct flb_processor_instance *ins,
-                             struct ctrace *ctr,
+                             struct ctrace *in_ctr,
+                             struct ctrace **out_ctr,
                              const char *tag,
                              int tag_len)
 {
@@ -95,19 +96,20 @@ static int cb_process_traces(struct flb_processor_instance *ins,
     }
 
     if (ctx->debug_mode) {
-        debug_trace(ctx, ctr, FLB_TRUE);
+        debug_trace(ctx, in_ctr, FLB_TRUE);
     }
 
     /* do sampling: the callback will modify the ctrace context */
-    ret = ctx->plugin->cb_do_sampling(ctx, ctx->plugin_context, ctr);
+    ret = ctx->plugin->cb_do_sampling(ctx, ctx->plugin_context, in_ctr, out_ctr);
 
     if (ctx->debug_mode) {
-        debug_trace(ctx, ctr, FLB_FALSE);
+        debug_trace(ctx, *out_ctr, FLB_FALSE);
     }
 
     /* check if the ctrace context has empty resource spans */
-    count = clean_empty_resource_spans(ctr);
+    count = clean_empty_resource_spans(*out_ctr);
     flb_plg_debug(ins, "cleaned %i empty resource spans", count);
+
     return ret;
 }
 
