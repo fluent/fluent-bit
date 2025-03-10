@@ -99,7 +99,8 @@ static int check_sampling(cfl_sds_t trace_id, double sampling_percentage)
     return hash_value < sampling_percentage;
 }
 
-static int cb_do_sampling(struct sampling *ctx, void *plugin_context, struct ctrace *ctr)
+static int cb_do_sampling(struct sampling *ctx, void *plugin_context,
+                          struct ctrace *in_ctr, struct ctrace **out_ctr)
 {
     int ret;
     struct cfl_list *head;
@@ -107,7 +108,7 @@ static int cb_do_sampling(struct sampling *ctx, void *plugin_context, struct ctr
     struct ctrace_span *span;
     struct sampling_rule *rule = (struct sampling_rule *) plugin_context;
 
-    cfl_list_foreach_safe(head, tmp, &ctr->span_list) {
+    cfl_list_foreach_safe(head, tmp, &in_ctr->span_list) {
         span = cfl_list_entry(head, struct ctrace_span, _head_global);
         ret = check_sampling(span->trace_id->buf, rule->sampling_percentage);
         if (ret == 1) {
@@ -119,6 +120,8 @@ static int cb_do_sampling(struct sampling *ctx, void *plugin_context, struct ctr
         }
     }
 
+    /* do not override the context */
+    *out_ctr = in_ctr;
     return 0;
 }
 

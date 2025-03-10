@@ -41,7 +41,8 @@ static int cb_init(struct flb_config *config, struct sampling *ctx)
     return 0;
 }
 
-static int cb_do_sampling(struct sampling *ctx, void *plugin_context, struct ctrace *ctr)
+static int cb_do_sampling(struct sampling *ctx, void *plugin_context,
+                          struct ctrace *in_ctr, struct ctrace **out_ctr)
 {
     int ret;
     struct sampling_span_registry *span_reg;
@@ -51,7 +52,7 @@ static int cb_do_sampling(struct sampling *ctx, void *plugin_context, struct ctr
         return -1;
     }
 
-    ret = sampling_span_registry_add_trace(ctx, span_reg, ctr);
+    ret = sampling_span_registry_add_trace(ctx, span_reg, in_ctr);
     if (ret == -1) {
         sampling_span_registry_destroy(span_reg);
         flb_plg_error(ctx->ins, "failed to add trace to span registry");
