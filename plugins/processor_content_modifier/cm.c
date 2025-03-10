@@ -81,7 +81,8 @@ static int cb_process_logs(struct flb_processor_instance *ins,
 }
 
 static int cb_process_traces(struct flb_processor_instance *ins,
-                             struct ctrace *traces_context,
+                             struct ctrace *in_ctr,
+                             struct ctrace **out_ctr,
                              const char *tag,
                              int tag_len)
 {
@@ -93,7 +94,7 @@ static int cb_process_traces(struct flb_processor_instance *ins,
     }
     ctx = ins->context;
 
-    ret = cm_traces_process(ins, ctx, traces_context, tag, tag_len);
+    ret = cm_traces_process(ins, ctx, in_ctr, out_ctr, tag, tag_len);
     return ret;
 
 }
