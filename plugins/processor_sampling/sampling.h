@@ -83,7 +83,8 @@ struct sampling_plugin {
     int type;
     struct flb_config_map *config_map;
     int (*cb_init) (struct flb_config *config, struct sampling *ctx);
-    int (*cb_do_sampling) (struct sampling *ctx, void *context, struct ctrace *trace);
+    int (*cb_do_sampling) (struct sampling *ctx, void *context,
+                           struct ctrace *in_trace, struct ctrace **out_trace);
     int (*cb_exit) (struct flb_config *config, void *context);
     struct cfl_list _head;
 };
