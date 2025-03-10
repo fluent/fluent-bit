@@ -32,9 +32,10 @@ static int input_trace_append(struct flb_input_instance *ins,
                               struct ctrace *ctr)
 {
     int ret;
-    char *out_buf;
-    size_t out_size;
+    char *out_buf = NULL;
+    size_t out_size = 0;
     int processor_is_active;
+    struct ctrace *out_context = NULL;
 
     processor_is_active = flb_processor_is_active(ins->processor);
     if (processor_is_active) {
@@ -53,19 +54,26 @@ static int input_trace_append(struct flb_input_instance *ins,
                                 processor_starting_stage,
                                 FLB_PROCESSOR_TRACES,
                                 tag, tag_len,
-                                (char *) ctr,
-                                0, NULL, NULL);
-
+                                (char *) ctr, 0,
+                                (void **) &out_context, NULL);
         if (ret == -1) {
             return -1;
         }
-    }
 
-    /* Convert trace context to msgpack */
-    ret = ctr_encode_msgpack_create(ctr, &out_buf, &out_size);
-    if (ret != 0) {
-        flb_plg_error(ins, "could not encode traces");
-        return -1;
+        if (out_context != NULL) {
+            ret = ctr_encode_msgpack_create(out_context, &out_buf, &out_size);
+            if (out_context != ctr) {
+                ctr_destroy(out_context);
+            }
+            if (ret != 0) {
+                flb_plg_error(ins, "could not encode traces");
+                return -1;
+            }
+        }
+        else {
+            /* nothing to do */
+            return 0;
+        }
     }
 
     /* Append packed metrics */
