@@ -21,10 +21,23 @@
 #include <fluent-bit.h>
 #include "flb_tests_runtime.h"
 
+/* Test data */
+#include "data/common/json_invalid.h" /* JSON_INVALID */
+
+/* Test functions */
+void flb_test_azure_kusto_json_invalid(void);
+
+/* Test list */
+TEST_LIST = {
+    {"json_invalid",    flb_test_azure_kusto_json_invalid },
+    {NULL, NULL}
+};
+
 void flb_test_azure_kusto_json_invalid(void)
 {
     int i;
     int ret;
+    int total;
     int bytes;
     char *p = (char *) JSON_INVALID;
     flb_ctx_t *ctx;
