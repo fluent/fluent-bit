@@ -778,10 +778,10 @@ int flb_processor_run(struct flb_processor *proc,
                         }
                         else {
                             /* override the ctrace context */
-                            if (tmp_buf != cur_buf) {
-                                ctr_destroy(cur_buf);
-                                cur_buf = tmp_buf;
-                            }
+                            // if (tmp_buf != cur_buf) {
+                            //     ctr_destroy(cur_buf);
+                            //     cur_buf = tmp_buf;
+                            // }
                         }
                     }
 

@@ -102,13 +102,16 @@ static int cb_process_traces(struct flb_processor_instance *ins,
     /* do sampling: the callback will modify the ctrace context */
     ret = ctx->plugin->cb_do_sampling(ctx, ctx->plugin_context, in_ctr, out_ctr);
 
-    if (ctx->debug_mode) {
+    if (ctx->debug_mode && *out_ctr) {
         debug_trace(ctx, *out_ctr, FLB_FALSE);
     }
 
+    printf("out_ctr=>%p\n", *out_ctr);
     /* check if the ctrace context has empty resource spans */
-    count = clean_empty_resource_spans(*out_ctr);
-    flb_plg_debug(ins, "cleaned %i empty resource spans", count);
+    if (*out_ctr) {
+        // count = clean_empty_resource_spans(*out_ctr);
+        // flb_plg_debug(ins, "cleaned %i empty resource spans", count);
+    }
 
     return ret;
 }
@@ -126,6 +129,7 @@ static int cb_init(struct flb_processor_instance *processor_instance,
 {
     int ret;
     struct sampling *ctx;
+    struct flb_sched *sched;
 
     /* create main plugin context */
     ctx = sampling_config_create(processor_instance, config);
@@ -141,6 +145,13 @@ static int cb_init(struct flb_processor_instance *processor_instance,
     if (ret == -1) {
         flb_plg_error(processor_instance, "failed to parse sampling rules");
         flb_free(ctx);
+        return -1;
+    }
+
+    /* get the scheduler context */
+    sched = flb_sched_ctx_get();
+    if (!sched) {
+        flb_plg_error(ctx->ins, "could not get scheduler context");
         return -1;
     }
 

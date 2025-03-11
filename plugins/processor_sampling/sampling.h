@@ -105,7 +105,6 @@ int sampling_config_process_rules(struct flb_config *config, struct sampling *ct
 
 int sampling_config_map_set(struct flb_config *config, struct sampling *ctx, void *plugin_ctx, struct flb_config_map *map);
 
-//char *sampling_config_type_str(int type);
 struct sampling *sampling_config_create(struct flb_processor_instance *processor_instance,
                                         struct flb_config *config);
 void sampling_config_destroy(struct flb_config *config, struct sampling *ctx);
