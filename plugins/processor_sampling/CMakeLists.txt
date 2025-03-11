@@ -5,6 +5,7 @@ set(src
 
   # types of sampling
   sampling_test.c
+  sampling_tail.c
   sampling_probabilistic.c
 )
 

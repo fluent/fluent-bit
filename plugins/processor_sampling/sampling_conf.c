@@ -30,6 +30,9 @@ static int sampling_type_lookup(const char *type_str)
     else if (strcasecmp(type_str, "probabilistic") == 0) {
         return SAMPLING_TYPE_PROBABILISTIC;
     }
+    else if (strcasecmp(type_str, "tail") == 0) {
+        return SAMPLING_TYPE_TAIL;
+    }
 
     return -1;
 }
@@ -41,6 +44,8 @@ static char *sampling_config_type_str(int type)
         return "test";
     case SAMPLING_TYPE_PROBABILISTIC:
         return "probabilistic";
+    case SAMPLING_TYPE_TAIL:
+        return "tail";
     default:
         return "unknown";
     }
@@ -56,6 +61,9 @@ static struct sampling_plugin *sampling_config_get_plugin(int type)
         break;
     case SAMPLING_TYPE_PROBABILISTIC:
         plugin = &sampling_probabilistic_plugin;
+        break;
+    case SAMPLING_TYPE_TAIL:
+        plugin = &sampling_tail_plugin;
         break;
     default:
         plugin = NULL;

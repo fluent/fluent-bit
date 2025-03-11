@@ -50,7 +50,7 @@ static int cb_init(struct flb_config *config, struct sampling *ctx)
     int ret;
     struct sampling_rule *rule;
 
-    flb_plg_info(ctx->ins, "initializing probabilistic sampling processor");
+    flb_plg_info(ctx->ins, "initializing 'probabilistic' sampling processor");
 
     rule = flb_calloc(1, sizeof(struct sampling_rule));
     if (!rule) {

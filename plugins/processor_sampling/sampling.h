@@ -24,10 +24,11 @@
 #include <ctraces/ctraces.h>
 
 enum {
-    SAMPLING_TYPE_TEST = 0,
-    SAMPLING_TYPE_PROBABILISTIC,
-    SAMPLING_TYPE_RATE_LIMITING,
-    SAMPLING_TYPE_DYNAMIC,
+    SAMPLING_TYPE_PROBABILISTIC = 0,
+    SAMPLING_TYPE_TAIL,
+
+    /* unused: for dev/test purposes only */
+    SAMPLING_TYPE_TEST,
 };
 
 struct trace_span {
@@ -92,6 +93,7 @@ struct sampling_plugin {
 /* Plugins registration */
 extern struct sampling_plugin sampling_test_plugin;
 extern struct sampling_plugin sampling_probabilistic_plugin;
+extern struct sampling_plugin sampling_tail_plugin;
 
 static inline void sampling_set_context(struct sampling *ctx, void *plugin_context)
 {
