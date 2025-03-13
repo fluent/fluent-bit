@@ -126,8 +126,6 @@ static inline int log_read(flb_pipefd_t fd, struct flb_log *log)
     bytes = flb_pipe_read_all(fd, &msg, sizeof(struct log_message));
 
     if (bytes <= 0) {
-        flb_pipe_error();
-
         return -1;
     }
     if (msg.size > sizeof(msg.msg)) {
@@ -750,16 +748,17 @@ int flb_errno_print(int errnum, const char *file, int line)
     return 0;
 }
 
+#ifdef WIN32
 int flb_WSAGetLastError_print(int errnum, const char *file, int line)
 {
-#ifdef WIN32
     char buf[256];
     FormatMessage(FORMAT_MESSAGE_FROM_SYSTEM | FORMAT_MESSAGE_IGNORE_INSERTS,
                   NULL, errnum, MAKELANGID(LANG_NEUTRAL, SUBLANG_DEFAULT),
                   buf, sizeof(buf), NULL);
     flb_error("[%s:%i WSAGetLastError=%i] %s", file, line, errnum, buf);
-#endif
+    return 0;
 }
+#endif
 
 int flb_log_destroy(struct flb_log *log, struct flb_config *config)
 {
