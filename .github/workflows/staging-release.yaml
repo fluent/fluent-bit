@@ -268,6 +268,7 @@ jobs:
         mkdir -p "packaging/releases/$DISTRO"
         aws s3 sync "s3://${{ secrets.AWS_S3_BUCKET_RELEASE }}/$DISTRO" "packaging/releases/$DISTRO" --no-progress
         aws s3 sync "s3://${{ secrets.AWS_S3_BUCKET_STAGING }}/$DISTRO" "packaging/releases/$DISTRO" --no-progress
+        aws s3 sync "s3://${{ secrets.AWS_S3_BUCKET_STAGING }}/${{ github.event.inputs.version }}/$DISTRO" "packaging/releases/$DISTRO" --no-progress
       env:
         AWS_ACCESS_KEY_ID: ${{ secrets.AWS_ACCESS_KEY_ID }}
         AWS_SECRET_ACCESS_KEY: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
@@ -631,7 +632,7 @@ jobs:
       GHCR_RELEASE_IMAGE_NAME: ghcr.io/${{ github.event.inputs.github-image || github.repository }}
     steps:
       - name: Install cosign
-        uses: sigstore/cosign-installer@v2
+        uses: sigstore/cosign-installer@v3
 
       - name: Login to Docker Hub
         uses: docker/login-action@v3
@@ -1019,6 +1020,12 @@ jobs:
 
       - name: Release 3.2
         if: startsWith(inputs.version, '3.2')
+        uses: actions/checkout@v4
+        with:
+          ref: 3.2
+
+      - name: Release 4.0
+        if: startsWith(inputs.version, '4.0')
         uses: actions/checkout@v4
         with:
           ref: master
