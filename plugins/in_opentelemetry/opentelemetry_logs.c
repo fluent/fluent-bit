@@ -1342,6 +1342,7 @@ static int binary_payload_to_msgpack(struct flb_opentelemetry *ctx,
 
             /* Scope */
             scope = scope_log->scope;
+
             if (scope && (scope->name || scope->version || scope->n_attributes > 0)) {
                 flb_mp_map_header_init(&mh_tmp, &mp_pck);
 
@@ -1385,6 +1386,10 @@ static int binary_payload_to_msgpack(struct flb_opentelemetry *ctx,
                 }
 
                 flb_mp_map_header_end(&mh_tmp);
+            }
+            else {
+                /* set an empty scope */
+                msgpack_pack_map(&mp_pck, 0);
             }
 
             flb_mp_map_header_end(&mh);
