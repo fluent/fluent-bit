@@ -33,6 +33,11 @@
 #include <fluent-bit/flb_worker.h>
 #include <fluent-bit/flb_mem.h>
 
+#ifdef WIN32
+#include <winsock.h>
+#include <winbase.h>
+#endif
+
 #ifdef FLB_HAVE_AWS_ERROR_REPORTER
 #include <fluent-bit/aws/flb_aws_error_reporter.h>
 
@@ -57,7 +62,7 @@ static inline int64_t flb_log_consume_signal(struct flb_log *context)
                         sizeof(signal_value));
 
     if (result <= 0) {
-        flb_errno();
+        flb_pipe_error();
 
         return -1;
     }
@@ -75,7 +80,7 @@ static inline int flb_log_enqueue_signal(struct flb_log *context,
                         sizeof(signal_value));
 
     if (result <= 0) {
-        flb_errno();
+        flb_pipe_error();
 
         result = 1;
     }
@@ -121,8 +126,6 @@ static inline int log_read(flb_pipefd_t fd, struct flb_log *log)
     bytes = flb_pipe_read_all(fd, &msg, sizeof(struct log_message));
 
     if (bytes <= 0) {
-        flb_errno();
-
         return -1;
     }
     if (msg.size > sizeof(msg.msg)) {
@@ -742,8 +745,20 @@ int flb_errno_print(int errnum, const char *file, int line)
 
     strerror_r(errnum, buf, sizeof(buf) - 1);
     flb_error("[%s:%i errno=%i] %s", file, line, errnum, buf);
-    return 0;
+    return errnum;
 }
+
+#ifdef WIN32
+int flb_wsa_get_last_error_print(int errnum, const char *file, int line)
+{
+    char buf[256];
+    FormatMessage(FORMAT_MESSAGE_FROM_SYSTEM | FORMAT_MESSAGE_IGNORE_INSERTS,
+                  NULL, errnum, MAKELANGID(LANG_NEUTRAL, SUBLANG_DEFAULT),
+                  buf, sizeof(buf), NULL);
+    flb_error("[%s:%i WSAGetLastError=%i] %s", file, line, errnum, buf);
+    return errnum;
+}
+#endif
 
 int flb_log_destroy(struct flb_log *log, struct flb_config *config)
 {
