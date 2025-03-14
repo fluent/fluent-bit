@@ -358,9 +358,10 @@ static int send_traces(struct flb_input_instance *ins)
     ctr_id_destroy(trace_id);
 
     ret = flb_input_trace_append(ins, NULL, 0, ctx);
-
-    /* destroy the context */
-    ctr_destroy(ctx);
+    if (ret == -1) {
+        /* destroy the context */
+        ctr_destroy(ctx);
+    }
 
     /* exit options (it release resources allocated) */
     ctr_opts_exit(&opts);
