@@ -745,18 +745,18 @@ int flb_errno_print(int errnum, const char *file, int line)
 
     strerror_r(errnum, buf, sizeof(buf) - 1);
     flb_error("[%s:%i errno=%i] %s", file, line, errnum, buf);
-    return 0;
+    return errnum;
 }
 
 #ifdef WIN32
-int flb_WSAGetLastError_print(int errnum, const char *file, int line)
+int flb_wsa_get_last_error_print(int errnum, const char *file, int line)
 {
     char buf[256];
     FormatMessage(FORMAT_MESSAGE_FROM_SYSTEM | FORMAT_MESSAGE_IGNORE_INSERTS,
                   NULL, errnum, MAKELANGID(LANG_NEUTRAL, SUBLANG_DEFAULT),
                   buf, sizeof(buf), NULL);
     flb_error("[%s:%i WSAGetLastError=%i] %s", file, line, errnum, buf);
-    return 0;
+    return errnum;
 }
 #endif
 
