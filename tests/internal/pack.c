@@ -520,6 +520,146 @@ void test_utf8_to_json()
     utf8_tests_destroy(n_tests);
 }
 
+void test_json_pack_surrogate_pairs()
+{
+    int i;
+    int ret;
+    int len;
+    int type;
+    int items;
+    char *p_in;
+    char *p_unescaped;
+    size_t len_in;
+    char *out_buf;
+    size_t out_size;
+    char *data_in[] = {
+        "{\"text\":\"\\ud83e\\udd17\"}",
+        "{\"text\":\"thinking...\\ud83e\\uddd0\"}",
+        "{\"text\":\"\\ud83e\\udee1\"}",
+    };
+    char *data_unescaped[] = {
+        "🤗",
+        "thinking...🧐",
+        "🫡",
+    };
+    msgpack_unpacked result;
+    msgpack_object root;
+    msgpack_object val;
+    size_t off = 0;
+
+    items = sizeof(data_in) / sizeof(char *);
+    for (i = 0; i < items; i++) {
+        p_in = data_in[i];
+        len_in = strlen(p_in);
+        p_unescaped = data_unescaped[i];
+
+        /* Pack raw JSON as msgpack */
+        ret = flb_pack_json(p_in, len_in, &out_buf, &out_size, &type, NULL);
+        TEST_CHECK(ret == 0);
+
+        /* Unpack 'text' value and compare it to the original raw */
+        off = 0;
+        msgpack_unpacked_init(&result);
+        ret = msgpack_unpack_next(&result, out_buf, out_size, &off);
+        TEST_CHECK(ret == MSGPACK_UNPACK_SUCCESS);
+
+        /* Check parent type is a map */
+        root = result.data;
+        TEST_CHECK(root.type == MSGPACK_OBJECT_MAP);
+
+        /* Get map value */
+        val = root.via.map.ptr[0].val;
+        TEST_CHECK(val.type == MSGPACK_OBJECT_STR);
+
+        /* Compare bytes length */
+        len = strlen(p_unescaped);
+        TEST_CHECK(len == val.via.str.size);
+        if (len != val.via.str.size) {
+            printf("failed comparing string length\n");
+        }
+
+        /* Compare raw bytes */
+        ret = memcmp(val.via.str.ptr, p_unescaped, len);
+        TEST_CHECK(ret == 0);
+        if (ret != 0) {
+            printf("failed comparing to original value\n");
+        }
+
+        msgpack_unpacked_destroy(&result);
+        flb_free(out_buf);
+    }
+}
+
+void test_json_pack_surrogate_pairs_with_replacement()
+{
+    int i;
+    int ret;
+    int len;
+    int type;
+    int items;
+    char *p_in;
+    char *p_unescaped;
+    size_t len_in;
+    char *out_buf;
+    size_t out_size;
+    char *data_in[] = {
+        "{\"text\":\"\\fddd,\"}",
+        "{\"text\":\"\\udee1,\"}",
+        "{\"text\":\"\\ud83e,|,\"}",
+    };
+    char *data_unescaped[] = {
+        "\fddd,",
+        "�,",
+        "�,|,",
+    };
+    msgpack_unpacked result;
+    msgpack_object root;
+    msgpack_object val;
+    size_t off = 0;
+
+    items = sizeof(data_in) / sizeof(char *);
+    for (i = 0; i < items; i++) {
+        p_in = data_in[i];
+        len_in = strlen(p_in);
+        p_unescaped = data_unescaped[i];
+
+        /* Pack raw JSON as msgpack */
+        ret = flb_pack_json(p_in, len_in, &out_buf, &out_size, &type, NULL);
+        TEST_CHECK(ret == 0);
+
+        /* Unpack 'text' value and compare it to the original raw */
+        off = 0;
+        msgpack_unpacked_init(&result);
+        ret = msgpack_unpack_next(&result, out_buf, out_size, &off);
+        TEST_CHECK(ret == MSGPACK_UNPACK_SUCCESS);
+
+        /* Check parent type is a map */
+        root = result.data;
+        TEST_CHECK(root.type == MSGPACK_OBJECT_MAP);
+
+        /* Get map value */
+        val = root.via.map.ptr[0].val;
+        TEST_CHECK(val.type == MSGPACK_OBJECT_STR);
+
+        /* Compare bytes length */
+        len = strlen(p_unescaped);
+        TEST_CHECK(len == val.via.str.size);
+        if (len != val.via.str.size) {
+            printf("failed comparing string length\n");
+        }
+
+        /* Compare raw bytes */
+        ret = memcmp(val.via.str.ptr, p_unescaped, len);
+        TEST_CHECK(ret == 0);
+        if (ret != 0) {
+            printf("failed comparing to original value\n");
+        }
+
+        msgpack_unpacked_destroy(&result);
+        flb_free(out_buf);
+    }
+}
+
 void test_json_pack_bug1278()
 {
     int i;
@@ -910,5 +1050,8 @@ TEST_LIST = {
 
     /* Mixed bytes, check JSON encoding */
     { "utf8_to_json", test_utf8_to_json},
+    { "json_pack_surrogate_pairs", test_json_pack_surrogate_pairs},
+    { "json_pack_surrogate_pairs_with_replacement",
+      test_json_pack_surrogate_pairs_with_replacement},
     { 0 }
 };
