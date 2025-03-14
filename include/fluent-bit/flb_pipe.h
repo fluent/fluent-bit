@@ -28,7 +28,7 @@
 #define flb_sockfd_t evutil_socket_t
 #define flb_pipe_w(fd, buf, len) send(fd, buf, len, 0)
 #define flb_pipe_r(fd, buf, len) recv(fd, buf, len, 0)
-#define flb_pipe_error() flb_WSAGetLastError()
+#define flb_pipe_error() flb_wsa_get_last_error()
 #define FLB_PIPE_WOULDBLOCK() (WSAGetLastError() == WSAEWOULDBLOCK)
 #else
 #define flb_pipefd_t int
