@@ -114,6 +114,7 @@ int cm_logs_process(struct flb_processor_instance *ins,
 int cm_traces_process(struct flb_processor_instance *ins,
                       struct content_modifier_ctx *ctx,
                       struct ctrace *traces_context,
+                      struct ctrace **out_traces_context,
                       const char *tag, int tag_len);
 
 int cm_metrics_process(struct flb_processor_instance *ins,
