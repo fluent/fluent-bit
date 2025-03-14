@@ -43,7 +43,9 @@ int opentelemetry_traces_process_protobuf(struct flb_opentelemetry *ctx,
                                              &offset);
     if (result == 0) {
         result = flb_input_trace_append(ctx->ins, tag, tag_len, decoded_context);
-        ctr_decode_opentelemetry_destroy(decoded_context);
+        if (result == -1) {
+            ctr_destroy(decoded_context);
+        }
     }
 
     return result;
@@ -1106,7 +1108,9 @@ static int process_json(struct flb_opentelemetry *ctx,
     ctr = process_root_msgpack(ctx, &unpacked_root.data);
     if (ctr) {
         result = flb_input_trace_append(ctx->ins, tag, tag_len, ctr);
-        ctr_destroy(ctr);
+        if (result == -1) {
+            ctr_destroy(ctr);
+        }
     }
 
     msgpack_unpacked_destroy(&unpacked_root);
