@@ -776,13 +776,6 @@ int flb_processor_run(struct flb_processor *proc,
                                          FLB_PROCESSOR_LOCK_RETRY_DELAY);
                             return 0;
                         }
-                        else {
-                            /* override the ctrace context */
-                            if (tmp_buf != cur_buf) {
-                                ctr_destroy(cur_buf);
-                                cur_buf = tmp_buf;
-                            }
-                        }
                     }
 
                 }
