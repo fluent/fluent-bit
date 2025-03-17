@@ -40,7 +40,7 @@
 /* Status code */
 #define CTRACE_SPAN_STATUS_CODE_UNSET  0
 #define CTRACE_SPAN_STATUS_CODE_OK     1
-#define CTRACE_SPAN_STAUTS_CODE_ERROR  2
+#define CTRACE_SPAN_STATUS_CODE_ERROR  2
 
 struct ctrace_span_status {
     int code;
