@@ -114,6 +114,7 @@ struct flb_s3 {
     char *log_key;
     char *external_id;
     char *profile;
+    char *object_tagging;
     int free_endpoint;
     int retry_requests;
     int use_put_object;
