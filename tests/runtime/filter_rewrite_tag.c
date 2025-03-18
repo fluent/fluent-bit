@@ -184,6 +184,61 @@ static void flb_test_matched()
  * Original  tag: rewrite
  * Rewritten tag: updated
  */
+static void flb_test_ring_buffer()
+{ 
+    struct flb_lib_out_cb cb_data;
+    struct filter_test *ctx;
+    int ret;
+    int not_used = 0;
+    int bytes;
+    int got;
+    char *p = "[0, {\"key\":\"rewrite\"}]";
+
+    /* Prepare output callback with expected result */
+    cb_data.cb = cb_count_msgpack;
+    cb_data.data = &not_used;
+
+    /* Create test context */
+    ctx = filter_test_create((void *) &cb_data);
+    if (!ctx) {
+        exit(EXIT_FAILURE);
+    }
+    clear_output_num();
+    /* Configure filter */
+    ret = flb_filter_set(ctx->flb, ctx->f_ffd,
+                         "emitter_ring_buffer_size", "128",
+                         "Rule", "$key ^(rewrite)$ updated false",
+                         NULL);
+    TEST_CHECK(ret == 0);
+
+    /* Configure output */
+    ret = flb_output_set(ctx->flb, ctx->o_ffd,
+                         "Match", "updated",
+                         NULL);
+    TEST_CHECK(ret == 0);
+
+    /* Start the engine */
+    ret = flb_start(ctx->flb);
+    TEST_CHECK(ret == 0);
+
+    /* ingest record */
+    bytes = flb_lib_push(ctx->flb, ctx->i_ffd, p, strlen(p));
+    TEST_CHECK(bytes == strlen(p));
+
+    flb_time_msleep(1500); /* waiting flush */
+    got = get_output_num();
+
+    if (!TEST_CHECK(got != 0)) {
+        TEST_MSG("expect: %d got: %d", 1, got);
+    }
+
+    filter_test_destroy(ctx);
+}
+
+/* 
+ * Original  tag: rewrite
+ * Rewritten tag: updated
+ */
 static void flb_test_not_matched()
 {
     struct flb_lib_out_cb cb_data;
@@ -556,6 +611,7 @@ TEST_LIST = {
     {"matched",          flb_test_matched},
     {"not_matched",      flb_test_not_matched},
     {"keep_true",        flb_test_keep_true},
+    {"ring_buffer",      flb_test_ring_buffer},
     {"heavy_input_pause_emitter", flb_test_heavy_input_pause_emitter},
     {"issue_4518", flb_test_issue_4518},
     {"issue_4793", flb_test_issue_4793},
