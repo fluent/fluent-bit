@@ -43,12 +43,12 @@ struct flb_rewrite_tag {
     flb_sds_t emitter_name;                 /* emitter input plugin name */
     flb_sds_t emitter_storage_type;         /* emitter storage type */
     size_t emitter_mem_buf_limit;           /* Emitter buffer limit */
+    size_t emitter_ring_buffer_size;        /* ring buffer size of the emitter */
     struct mk_list rules;                   /* processed rules */
     struct mk_list *cm_rules;               /* config_map rules (only strings) */
     struct flb_input_instance *ins_emitter; /* emitter input plugin instance */
     struct flb_filter_instance *ins;        /* self-filter instance */
     struct flb_config *config;              /* Fluent Bit context */
-
 #ifdef FLB_HAVE_METRICS
     struct cmt_counter *cmt_emitted;
 #endif
