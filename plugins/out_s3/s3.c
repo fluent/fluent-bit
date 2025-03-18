@@ -155,6 +155,13 @@ static struct flb_aws_header storage_class_header = {
     .val_len = 0,
 };
 
+static struct flb_aws_header object_tagging = {
+    .key = "x-amz-tagging",
+    .key_len = 13,
+    .val = "",
+    .val_len = 0,
+};
+
 static char *mock_error_response(char *error_env_var)
 {
     char *err_val = NULL;
@@ -213,6 +220,9 @@ int create_headers(struct flb_s3 *ctx, char *body_md5,
     if (ctx->storage_class != NULL) {
         headers_len++;
     }
+    if (ctx->object_tagging != NULL) {
+        headers_len++;
+    }
     if (headers_len == 0) {
         *num_headers = headers_len;
         *headers = s3_headers;
@@ -254,6 +264,12 @@ int create_headers(struct flb_s3 *ctx, char *body_md5,
         s3_headers[n] = content_md5_header;
         s3_headers[n].val = body_md5;
         s3_headers[n].val_len = strlen(body_md5);
+        n++;
+    }
+    if (ctx->object_tagging != NULL) {
+        s3_headers[n] = object_tagging;
+        s3_headers[n].val = ctx->object_tagging;
+        s3_headers[n].val_len = strlen(ctx->object_tagging);
         n++;
     }
     if (ctx->storage_class != NULL) {
@@ -959,6 +975,11 @@ skip_size_validation:
     tmp = flb_output_get_property("storage_class", ins);
     if (tmp) {
         ctx->storage_class = (char *) tmp;
+    }
+
+    tmp = flb_output_get_property("object_tagging", ins);
+    if (tmp) {
+        ctx->object_tagging = (char *) tmp;
     }
 
     if (ctx->insecure == FLB_FALSE) {
@@ -4419,6 +4440,12 @@ static struct flb_config_map config_map[] = {
      FLB_CONFIG_MAP_STR, "authorization_endpoint_bearer_token", NULL,
      0, FLB_TRUE, offsetof(struct flb_s3, authorization_endpoint_bearer_token),
      "Authorization endpoint bearer token"
+    },
+
+    {
+     FLB_CONFIG_MAP_STR, "object_tagging", NULL,
+     0, FLB_TRUE, offsetof(struct flb_s3, object_tagging),
+     "Specify a list of tags to apply to the S3 object, url-query encoded: `key1=value1&key2=value2`"
     },
 
     /* EOF */
