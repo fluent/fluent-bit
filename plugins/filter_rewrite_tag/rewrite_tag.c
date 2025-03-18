@@ -39,7 +39,7 @@ static int emitter_create(struct flb_rewrite_tag *ctx)
 {
     int ret;
     struct flb_input_instance *ins;
-    char ring_buffer_size[8];
+    char ring_buffer_size[42];
 
     ret = flb_input_name_exists(ctx->emitter_name, ctx->config);
     if (ret == FLB_TRUE) {
@@ -76,15 +76,8 @@ static int emitter_create(struct flb_rewrite_tag *ctx)
 
     /* Set ring_buffer_size */
     if (ctx->emitter_ring_buffer_size > 0) {
-        ret = snprintf(ring_buffer_size, sizeof(ring_buffer_size)-1, "%zd",
-                       ctx->emitter_ring_buffer_size);
-        if (ret > sizeof(ring_buffer_size)-1) {
-            flb_plg_error(ctx->ins, "ring_buffer_size exceeds maximum size");
-            flb_input_instance_exit(ins, ctx->config);
-            flb_input_instance_destroy(ins);
-            return -1;
-        }
-        ring_buffer_size[ret] = '\0';
+        snprintf(ring_buffer_size, sizeof(ring_buffer_size)-1, "%zd",
+                 ctx->emitter_ring_buffer_size);
         ret = flb_input_set_property(ins, "ring_buffer_size", ring_buffer_size);
         if (ret == -1) {
             flb_plg_error(ins, "cannot set ring buffer size");
