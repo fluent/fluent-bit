@@ -193,7 +193,7 @@ void test_peek_seek()
     c = NULL;
 
     /* consume one entry */
-    ret = flb_ring_buffer_peek(rb, (void *) &c, sizeof(c));
+    ret = flb_ring_buffer_peek(rb, 0, (void *) &c, sizeof(c));
     TEST_CHECK(ret == 0);
 
     /* the consumed entry must be equal to the first one */
@@ -201,7 +201,7 @@ void test_peek_seek()
     TEST_CHECK(strcmp(c->buf_a, "a1") == 0 && strcmp(c->buf_b, "a2") ==0);
 
     /* consume one entry */
-    ret = flb_ring_buffer_peek(rb, (void *) &c, sizeof(c));
+    ret = flb_ring_buffer_peek(rb, 0, (void *) &c, sizeof(c));
     TEST_CHECK(ret == 0);
 
     /* the consumed entry must be equal to the first one */
