@@ -32,6 +32,9 @@ static int condition_type_str_to_int(char *type_str)
     else if (strcasecmp(type_str, "latency") == 0) {
         return SAMPLING_COND_LATENCY;
     }
+    else if (strcasecmp(type_str, "string_attribute") == 0) {
+        return SAMPLING_COND_STRING_ATTRIBUTE;
+    }
 
     return -1;
 }
@@ -53,6 +56,9 @@ void sampling_conditions_destroy(struct sampling_conditions *sampling_conditions
         }
         else if (sampling_condition->type == SAMPLING_COND_LATENCY) {
             cond_latency_destroy(sampling_condition);
+        }
+        else if (sampling_condition->type == SAMPLING_COND_STRING_ATTRIBUTE) {
+            cond_string_attr_destroy(sampling_condition);
         }
 
         cfl_list_del(&sampling_condition->_head);
@@ -85,6 +91,12 @@ int sampling_conditions_check(struct sampling *ctx, struct sampling_conditions *
         }
         else if (sampling_condition->type == SAMPLING_COND_LATENCY) {
             ret = cond_latency_check(sampling_condition, span);
+            if (ret == FLB_TRUE) {
+                return FLB_TRUE;
+            }
+        }
+        else if (sampling_condition->type == SAMPLING_COND_STRING_ATTRIBUTE) {
+            ret = cond_string_attr_check(sampling_condition, span);
             if (ret == FLB_TRUE) {
                 return FLB_TRUE;
             }
@@ -158,6 +170,9 @@ struct sampling_conditions *sampling_conditions_create(struct sampling *ctx, str
             break;
         case SAMPLING_COND_LATENCY:
             cond_ptr = cond_latency_create(ctx, sampling_cond, condition_settings);
+            break;
+        case SAMPLING_COND_STRING_ATTRIBUTE:
+            cond_ptr = cond_string_attr_create(ctx, sampling_cond, condition_settings);
             break;
         default:
             sampling_conditions_destroy(sampling_cond);

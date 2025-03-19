@@ -64,6 +64,7 @@ struct trace_entry {
 enum {
     SAMPLING_COND_STATUS_CODE = 0,
     SAMPLING_COND_LATENCY,
+    SAMPLING_COND_STRING_ATTRIBUTE,
 };
 
 struct sampling_condition {
@@ -162,5 +163,12 @@ struct sampling_condition *cond_latency_create(struct sampling *ctx,
                                                struct cfl_variant *settings);
 int cond_latency_check(struct sampling_condition *sampling_condition, struct ctrace_span *span);
 void cond_latency_destroy(struct sampling_condition *sampling_condition);
+
+/* condition: string_attribute */
+struct sampling_condition *cond_string_attr_create(struct sampling *ctx,
+                                                   struct sampling_conditions *sampling_conditions,
+                                                   struct cfl_variant *settings);
+int cond_string_attr_check(struct sampling_condition *sampling_condition, struct ctrace_span *span);
+void cond_string_attr_destroy(struct sampling_condition *sampling_condition);
 
 #endif

@@ -5,6 +5,7 @@ set(src
   sampling_conditions.c
   sampling_cond_status_codes.c
   sampling_cond_latency.c
+  sampling_cond_string_attribute.c
 
   # types of sampling
   #sampling_test.c

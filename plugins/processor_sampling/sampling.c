@@ -108,8 +108,8 @@ static int cb_process_traces(struct flb_processor_instance *ins,
 
     /* check if the ctrace context has empty resource spans */
     if (*out_ctr) {
-        // count = clean_empty_resource_spans(*out_ctr);
-        // flb_plg_debug(ins, "cleaned %i empty resource spans", count);
+        count = clean_empty_resource_spans(*out_ctr);
+        flb_plg_trace(ins, "cleaned %i empty resource spans", count);
     }
 
     return ret;
