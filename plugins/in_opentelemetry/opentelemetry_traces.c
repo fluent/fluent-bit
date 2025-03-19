@@ -22,6 +22,7 @@
 #include <fluent-bit/flb_pack.h>
 
 #include <ctraces/ctraces.h>
+#include <ctraces/ctr_span.h>
 #include <ctraces/ctr_encode_text.h>
 
 #include "opentelemetry.h"
@@ -553,6 +554,7 @@ static int process_span_status(struct flb_opentelemetry *ctx,
     int ret;
     int code = 0;
     char *message = NULL;
+    cfl_sds_t tmp;
 
     if (status->type != MSGPACK_OBJECT_MAP) {
         flb_plg_error(ctx->ins, "unexpected status type");
@@ -561,11 +563,30 @@ static int process_span_status(struct flb_opentelemetry *ctx,
 
     /* code */
     ret = find_map_entry_by_key(&status->via.map, "code", 0, FLB_TRUE);
-    if (ret >= 0 && status->via.map.ptr[ret].val.type == MSGPACK_OBJECT_POSITIVE_INTEGER) {
-        code = status->via.map.ptr[ret].val.via.u64;
+    if (ret >= 0 && status->via.map.ptr[ret].val.type == MSGPACK_OBJECT_STR) {
+        tmp = cfl_sds_create_len(status->via.map.ptr[ret].val.via.str.ptr,
+                                 status->via.map.ptr[ret].val.via.str.size);
+        if (!tmp) {
+            return -1;
+        }
+        if (strcasecmp(tmp, "UNSET") == 0) {
+            code = CTRACE_SPAN_STATUS_CODE_UNSET;
+        }
+        else if (strcasecmp(tmp, "OK") == 0) {
+            code = CTRACE_SPAN_STATUS_CODE_OK;
+        }
+        else if (strcasecmp(tmp, "ERROR") == 0) {
+            code = CTRACE_SPAN_STATUS_CODE_ERROR;
+        }
+        else {
+            flb_plg_error(ctx->ins, "status code value is invalid: %s", tmp);
+            cfl_sds_destroy(tmp);
+            return -1;
+        }
+        cfl_sds_destroy(tmp);
     }
     else {
-        flb_plg_error(ctx->ins, "status code is missing");
+        flb_plg_error(ctx->ins, "status code value type is wrong");
         return -1;
     }
 
