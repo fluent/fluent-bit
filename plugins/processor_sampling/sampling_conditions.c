@@ -29,6 +29,9 @@ static int condition_type_str_to_int(char *type_str)
     if (strcasecmp(type_str, "status_code") == 0) {
         return SAMPLING_COND_STATUS_CODE;
     }
+    else if (strcasecmp(type_str, "latency") == 0) {
+        return SAMPLING_COND_LATENCY;
+    }
 
     return -1;
 }
@@ -48,6 +51,10 @@ void sampling_conditions_destroy(struct sampling_conditions *sampling_conditions
         if (sampling_condition->type == SAMPLING_COND_STATUS_CODE) {
             cond_status_codes_destroy(sampling_condition);
         }
+        else if (sampling_condition->type == SAMPLING_COND_LATENCY) {
+            cond_latency_destroy(sampling_condition);
+        }
+
         cfl_list_del(&sampling_condition->_head);
         flb_free(sampling_condition);
     }
@@ -69,15 +76,23 @@ int sampling_conditions_check(struct sampling *ctx, struct sampling_conditions *
 
     cfl_list_foreach_safe(head, tmp, &sampling_conditions->list) {
         sampling_condition = cfl_list_entry(head, struct sampling_condition, _head);
+
         if (sampling_condition->type == SAMPLING_COND_STATUS_CODE) {
             ret = cond_status_codes_check(sampling_condition, span);
-            /* we are interested only in conditions that matches */
-            if (ret == FLB_FALSE) {
-                return FLB_FALSE;
+            if (ret == FLB_TRUE) {
+                return FLB_TRUE;
+            }
+        }
+        else if (sampling_condition->type == SAMPLING_COND_LATENCY) {
+            ret = cond_latency_check(sampling_condition, span);
+            if (ret == FLB_TRUE) {
+                return FLB_TRUE;
             }
         }
     }
-    return FLB_TRUE;
+
+    /* no matches, trace will be dropped */
+    return FLB_FALSE;
 }
 
 struct sampling_conditions *sampling_conditions_create(struct sampling *ctx, struct cfl_variant *conditions)
@@ -131,6 +146,7 @@ struct sampling_conditions *sampling_conditions_create(struct sampling *ctx, str
         type_str = type_settings->data.as_string;
         type = condition_type_str_to_int(type_str);
         if (type == -1) {
+            flb_plg_error(ctx->ins, "unknown condition type '%s'", type_str);
             sampling_conditions_destroy(sampling_cond);
             return NULL;
         }
@@ -139,6 +155,9 @@ struct sampling_conditions *sampling_conditions_create(struct sampling *ctx, str
         switch (type) {
         case SAMPLING_COND_STATUS_CODE:
             cond_ptr = cond_status_codes_create(ctx, sampling_cond, condition_settings);
+            break;
+        case SAMPLING_COND_LATENCY:
+            cond_ptr = cond_latency_create(ctx, sampling_cond, condition_settings);
             break;
         default:
             sampling_conditions_destroy(sampling_cond);
