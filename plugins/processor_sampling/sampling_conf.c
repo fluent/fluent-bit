@@ -2,7 +2,7 @@
 
 /*  Fluent Bit
  *  ==========
- *  Copyright (C) 2015-2024 The Fluent Bit Authors
+ *  Copyright (C) 2015-2025 The Fluent Bit Authors
  *
  *  Licensed under the Apache License, Version 2.0 (the "License");
  *  you may not use this file except in compliance with the License.
@@ -30,6 +30,9 @@ static int sampling_type_lookup(const char *type_str)
     else if (strcasecmp(type_str, "probabilistic") == 0) {
         return SAMPLING_TYPE_PROBABILISTIC;
     }
+    else if (strcasecmp(type_str, "tail") == 0) {
+        return SAMPLING_TYPE_TAIL;
+    }
 
     return -1;
 }
@@ -41,6 +44,8 @@ static char *sampling_config_type_str(int type)
         return "test";
     case SAMPLING_TYPE_PROBABILISTIC:
         return "probabilistic";
+    case SAMPLING_TYPE_TAIL:
+        return "tail";
     default:
         return "unknown";
     }
@@ -51,11 +56,16 @@ static struct sampling_plugin *sampling_config_get_plugin(int type)
     struct sampling_plugin *plugin = NULL;
 
     switch (type) {
-    case SAMPLING_TYPE_TEST:
+    /*
+        case SAMPLING_TYPE_TEST:
         plugin = &sampling_test_plugin;
         break;
+    */
     case SAMPLING_TYPE_PROBABILISTIC:
         plugin = &sampling_probabilistic_plugin;
+        break;
+    case SAMPLING_TYPE_TAIL:
+        plugin = &sampling_tail_plugin;
         break;
     default:
         plugin = NULL;
@@ -76,12 +86,12 @@ static struct sampling_plugin *sampling_config_get_plugin(int type)
     struct mk_list *map;
     struct flb_kv *kv_entry;
 
-    if (!ctx->rules) {
+    if (!ctx->sampling_settings) {
         /* no rules have been defined */
         return 0;
     }
 
-    var = ctx->rules;
+    var = ctx->sampling_settings;
     if (var->type != CFL_VARIANT_KVLIST) {
         flb_plg_error(ctx->ins, "rules must be a map");
         return -1;
@@ -131,7 +141,7 @@ static struct sampling_plugin *sampling_config_get_plugin(int type)
             return -1;
         }
 
-        kv_entry = flb_kv_item_create_len(&ctx->plugin_rules_properties, pair->key, strlen(pair->key), val, ret);
+        kv_entry = flb_kv_item_create_len(&ctx->plugin_settings_properties, pair->key, strlen(pair->key), val, ret);
         if (!kv_entry) {
             flb_plg_error(ctx->ins, "failed to create kv entry for rule key '%s'", pair->key);
             return -1;
@@ -145,7 +155,7 @@ static struct sampling_plugin *sampling_config_get_plugin(int type)
     }
     ctx->plugin_config_map = map;
 
-    ret = flb_config_map_properties_check(ctx->type_str, &ctx->plugin_rules_properties, map);
+    ret = flb_config_map_properties_check(ctx->type_str, &ctx->plugin_settings_properties, map);
     if (ret == -1) {
         flb_plg_error(ctx->ins, "failed to validate plugin rules properties");
         return -1;
@@ -160,6 +170,7 @@ struct sampling *sampling_config_create(struct flb_processor_instance *processor
     int ret;
     struct sampling *ctx;
     struct sampling_plugin *plugin_context;
+    struct sampling_conditions *sampling_conditions;
 
     ctx = flb_calloc(1, sizeof(struct sampling));
     if (!ctx) {
@@ -167,6 +178,7 @@ struct sampling *sampling_config_create(struct flb_processor_instance *processor
         return NULL;
     }
     ctx->ins = processor_instance;
+    ctx->input_ins = flb_processor_get_input_instance(ctx->ins->pu);
 
     /* config map */
     ret = flb_processor_instance_config_map_set(processor_instance, ctx);
@@ -201,7 +213,18 @@ struct sampling *sampling_config_create(struct flb_processor_instance *processor
     ctx->plugin = plugin_context;
 
     cfl_list_init(&ctx->plugins);
-    flb_kv_init(&ctx->plugin_rules_properties);
+    flb_kv_init(&ctx->plugin_settings_properties);
+
+    /* load conditions */
+    if (ctx->conditions) {
+        sampling_conditions = sampling_conditions_create(ctx, ctx->conditions);
+        if (!sampling_conditions) {
+            flb_plg_error(processor_instance, "failed to create conditions");
+            flb_free(ctx);
+            return NULL;
+        }
+        ctx->sampling_conditions = sampling_conditions;
+    }
 
     return ctx;
 }
@@ -212,13 +235,17 @@ void sampling_config_destroy(struct flb_config *config, struct sampling *ctx)
         return;
     }
 
+    if (ctx->sampling_conditions) {
+        sampling_conditions_destroy(ctx->sampling_conditions);
+    }
+
     if (ctx->plugin) {
         if (ctx->plugin->cb_exit) {
             ctx->plugin->cb_exit(config, ctx->plugin_context);
         }
     }
 
-    flb_kv_release(&ctx->plugin_rules_properties);
+    flb_kv_release(&ctx->plugin_settings_properties);
 
     if (ctx->plugin_config_map) {
         flb_config_map_destroy(ctx->plugin_config_map);
