@@ -63,6 +63,7 @@ struct trace_entry {
 
 enum {
     SAMPLING_COND_STATUS_CODE = 0,
+    SAMPLING_COND_LATENCY,
 };
 
 struct sampling_condition {
@@ -143,8 +144,23 @@ struct sampling_conditions *sampling_conditions_create(struct sampling *ctx, str
 int sampling_conditions_check(struct sampling *ctx, struct sampling_conditions *sampling_conditions, struct ctrace_span *span);
 void sampling_conditions_destroy(struct sampling_conditions *sampling_conditions);
 
-/* conditions types */
+/*
+ * conditions types
+ * ----------------
+ */
+
+/* condition: status_codes_check */
+struct sampling_condition *cond_status_codes_create(struct sampling *ctx,
+                                                    struct sampling_conditions *sampling_conditions,
+                                                    struct cfl_variant *settings);
 int cond_status_codes_check(struct sampling_condition *sampling_condition, struct ctrace_span *span);
 void cond_status_codes_destroy(struct sampling_condition *sampling_condition);
+
+/* condition: latency */
+struct sampling_condition *cond_latency_create(struct sampling *ctx,
+                                               struct sampling_conditions *sampling_conditions,
+                                               struct cfl_variant *settings);
+int cond_latency_check(struct sampling_condition *sampling_condition, struct ctrace_span *span);
+void cond_latency_destroy(struct sampling_condition *sampling_condition);
 
 #endif
