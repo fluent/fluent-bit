@@ -38,8 +38,29 @@ struct sampling_span_registry *sampling_span_registry_create()
         return NULL;
     }
     cfl_list_init(&reg->trace_list);
+    cfl_list_init(&reg->trace_list_complete);
+    cfl_list_init(&reg->trace_list_incomplete);
 
     return reg;
+}
+
+static void sampling_span_registry_delete_traces(struct sampling *ctx, struct sampling_span_registry *reg)
+{
+    struct cfl_list *head;
+    struct cfl_list *tmp;
+    struct trace_entry *t_entry;
+
+    cfl_list_foreach_safe(head, tmp, &reg->trace_list) {
+        t_entry = cfl_list_entry(head, struct trace_entry, _head);
+        cfl_list_del(&t_entry->_head);
+        cfl_list_del(&t_entry->_head_complete);
+
+        /* free the trace_entry */
+        cfl_sds_destroy(t_entry->hex_trace_id);
+
+        ctr_id_destroy(t_entry->trace_id);
+        flb_free(t_entry);
+    }
 }
 
 void sampling_span_registry_destroy(struct sampling_span_registry *reg)
@@ -48,18 +69,55 @@ void sampling_span_registry_destroy(struct sampling_span_registry *reg)
         return;
     }
 
+    sampling_span_registry_delete_traces(NULL, reg);
+
     if (reg->ht) {
         flb_hash_table_destroy(reg->ht);
     }
-
     flb_free(reg);
+}
+
+
+int sampling_span_registry_delete_entry(struct sampling *ctx, struct sampling_span_registry *reg, struct trace_entry *t_entry)
+{
+    int ret;
+    struct cfl_list *head_span;
+    struct cfl_list *tmp_span;
+    struct trace_span *t_span;
+
+    /* remove from the hash table */
+    ret = flb_hash_table_del_ptr(reg->ht, ctr_id_get_buf(t_entry->trace_id), ctr_id_get_len(t_entry->trace_id), t_entry);
+    if (ret == -1) {
+        flb_plg_error(ctx->ins, "failed to delete trace entry from buffer");
+        return -1;
+    }
+
+    /* remove from the linked list */
+    cfl_list_del(&t_entry->_head);
+    cfl_list_del(&t_entry->_head_complete);
+
+    /* free the trace_entry */
+    cfl_sds_destroy(t_entry->hex_trace_id);
+
+    ctr_id_destroy(t_entry->trace_id);
+
+    /* delete trace spans (this don't delete spans!) */
+    cfl_list_foreach_safe(head_span, tmp_span, &t_entry->span_list) {
+        t_span = cfl_list_entry(head_span, struct trace_span, _head);
+        cfl_list_del(&t_span->_head);
+        flb_free(t_span);
+    }
+
+    flb_free(t_entry);
+
+    return 0;
 }
 
 int sampling_span_registry_add_span(struct sampling *ctx, struct sampling_span_registry *reg, struct ctrace_span *span)
 {
     int ret;
     size_t out_size = 0;
-    cfl_sds_t trace_id;
+    cfl_sds_t hex_trace_id;
     struct trace_entry *t_entry;
     struct trace_span *t_span;
 
@@ -74,7 +132,6 @@ int sampling_span_registry_add_span(struct sampling *ctx, struct sampling_span_r
         return -1;
     }
 
-
     /* check if the trace_id exists or not in the trace_buffer hash table */
     ret = flb_hash_table_get(reg->ht,
                              ctr_id_get_buf(span->trace_id),
@@ -87,30 +144,52 @@ int sampling_span_registry_add_span(struct sampling *ctx, struct sampling_span_r
             flb_errno();
             return -1;
         }
-
-        t_entry->ts_created = cfl_time_now();
+        t_entry->ts_created = time(NULL);
         t_entry->ts_last_updated = t_entry->ts_created;
-
         cfl_list_init(&t_entry->span_list);
 
-        trace_id = ctr_id_to_lower_base16(span->trace_id);
-        if (!trace_id) {
+        /* trace_id */
+        t_entry->trace_id = ctr_id_create(ctr_id_get_buf(span->trace_id), ctr_id_get_len(span->trace_id));
+        if (!t_entry->trace_id) {
+            flb_plg_error(ctx->ins, "failed to create trace_id");
+            flb_free(t_entry);
+            return -1;
+        }
+
+        /* hex trace id (for test/dev purposes mostly) */
+        hex_trace_id = ctr_id_to_lower_base16(span->trace_id);
+        if (!hex_trace_id) {
             flb_plg_error(ctx->ins, "failed to convert trace_id to readable format");
             flb_free(t_entry);
             return -1;
         }
-        t_entry->trace_id = trace_id;
+        t_entry->hex_trace_id = hex_trace_id;
         cfl_list_add(&t_entry->_head, &reg->trace_list);
 
+        /* always add a new trace into the incomplete list */
+        cfl_list_add(&t_entry->_head_complete, &reg->trace_list_incomplete);
+
+        /* add to the hash table */
         ret = flb_hash_table_add(reg->ht,
                                  ctr_id_get_buf(span->trace_id),
                                  ctr_id_get_len(span->trace_id),
                                  t_entry, 0);
         if (ret == -1) {
             flb_plg_error(ctx->ins, "failed to add trace entry to buffer");
+            cfl_list_del(&t_entry->_head);
+            cfl_list_del(&t_entry->_head_complete);
             flb_free(t_entry);
             return -1;
         }
+    }
+
+    /* update if the trace is completed */
+    if (!span->parent_span_id) {
+        t_entry->is_trace_complete = FLB_TRUE;
+
+        /* move entry to the complete list */
+        cfl_list_del(&t_entry->_head_complete);
+        cfl_list_add(&t_entry->_head_complete, &reg->trace_list_complete);
     }
 
     /* add the span to the trace_entry */
@@ -159,7 +238,7 @@ int sampling_span_registry_print(struct sampling *ctx, struct sampling_span_regi
     cfl_list_foreach(head, &reg->trace_list) {
         t_entry = cfl_list_entry(head, struct trace_entry, _head);
         printf("   ┌─────────────────────────────────────────────────────────────────┐\n");
-        printf("   │ trace_id=%s                       │\n", t_entry->trace_id);
+        printf("   │ trace_id=%s                       │\n", t_entry->hex_trace_id);
         printf("   ├─────────────────────────────────────────────────────────────────┤\n");
         printf("   │ spans:                                                          │\n");
 

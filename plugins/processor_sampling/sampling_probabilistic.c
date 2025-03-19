@@ -2,7 +2,7 @@
 
 /*  Fluent Bit
  *  ==========
- *  Copyright (C) 2015-2024 The Fluent Bit Authors
+ *  Copyright (C) 2015-2025 The Fluent Bit Authors
  *
  *  Licensed under the Apache License, Version 2.0 (the "License");
  *  you may not use this file except in compliance with the License.
@@ -31,14 +31,14 @@ static inline uint64_t htonll(uint64_t value) {
 }
 #endif
 
-struct sampling_rule {
+struct sampling_settings {
     int sampling_percentage;
 };
 
-static struct flb_config_map rules_config_map[] = {
+static struct flb_config_map settings_config_map[] = {
     {
         FLB_CONFIG_MAP_INT, "sampling_percentage", "10",
-        0, FLB_TRUE, offsetof(struct sampling_rule, sampling_percentage),
+        0, FLB_TRUE, offsetof(struct sampling_settings, sampling_percentage),
     },
 
     /* EOF */
@@ -48,24 +48,23 @@ static struct flb_config_map rules_config_map[] = {
 static int cb_init(struct flb_config *config, struct sampling *ctx)
 {
     int ret;
-    struct sampling_rule *rule;
+    struct sampling_rule *settings;
 
-    flb_plg_info(ctx->ins, "initializing probabilistic sampling processor");
+    flb_plg_info(ctx->ins, "initializing 'probabilistic' sampling processor");
 
-    rule = flb_calloc(1, sizeof(struct sampling_rule));
-    if (!rule) {
+    settings = flb_calloc(1, sizeof(struct sampling_settings));
+    if (!settings) {
         flb_errno();
         return -1;
     }
 
-    ret = flb_config_map_set(&ctx->plugin_rules_properties, ctx->plugin_config_map, (void *) rule);
+    ret = flb_config_map_set(&ctx->plugin_settings_properties, ctx->plugin_config_map, (void *) settings);
     if (ret == -1) {
-        flb_free(rule);
+        flb_free(settings);
         return -1;
     }
 
-    sampling_set_context(ctx, rule);
-
+    sampling_set_context(ctx, settings);
     return 0;
 }
 
@@ -106,11 +105,11 @@ static int cb_do_sampling(struct sampling *ctx, void *plugin_context,
     struct cfl_list *head;
     struct cfl_list *tmp;
     struct ctrace_span *span;
-    struct sampling_rule *rule = (struct sampling_rule *) plugin_context;
+    struct sampling_settings *settings = (struct sampling_settings *) plugin_context;
 
     cfl_list_foreach_safe(head, tmp, &in_ctr->span_list) {
         span = cfl_list_entry(head, struct ctrace_span, _head_global);
-        ret = check_sampling(span->trace_id->buf, rule->sampling_percentage);
+        ret = check_sampling(span->trace_id->buf, settings->sampling_percentage);
         if (ret == 1) {
             /* we keep the span, all good */
         }
@@ -139,7 +138,7 @@ static int cb_exit(struct flb_config *config, void *data)
 struct sampling_plugin sampling_probabilistic_plugin = {
     .type           = SAMPLING_TYPE_PROBABILISTIC,
     .name           = "probabilistic",
-    .config_map     = rules_config_map,
+    .config_map     = settings_config_map,
     .cb_init        = cb_init,
     .cb_do_sampling = cb_do_sampling,
     .cb_exit        = cb_exit,
