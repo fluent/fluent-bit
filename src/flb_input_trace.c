@@ -69,23 +69,31 @@ static int input_trace_append(struct flb_input_instance *ins,
             return -1;
         }
 
-        if (out_context != NULL) {
-            ret = ctr_encode_msgpack_create(out_context, &out_buf, &out_size);
-            if (out_context != ctr) {
-                ctr_destroy(out_context);
-            }
-            if (ret != 0) {
-                flb_plg_error(ins, "could not encode traces");
-                return -1;
-            }
-        }
-        else {
+        if (out_context == NULL) {
             /*
              * nothing to do: no output context was set (out_context) that means that likely
              * the original CTrace context is being handled by the processor itself. We don't
              * need to destroy it.
              */
             return 0;
+        }
+    }
+
+    if (out_context) {
+        ret = ctr_encode_msgpack_create(out_context, &out_buf, &out_size);
+        if (out_context != ctr) {
+            ctr_destroy(out_context);
+        }
+        if (ret != 0) {
+            flb_plg_error(ins, "could not encode traces");
+            return -1;
+        }
+    }
+    else {
+        ret = ctr_encode_msgpack_create(ctr, &out_buf, &out_size);
+        if (ret != 0) {
+            flb_plg_error(ins, "could not encode traces");
+            return -1;
         }
     }
 
