@@ -24,15 +24,14 @@ FROM debian:trixie-slim AS builder-base
 COPY --from=qemu-arm32 /usr/bin/qemu-arm-static /usr/bin/
 COPY --from=qemu-arm64 /usr/bin/qemu-aarch64-static /usr/bin/
 
-ARG FLB_NIGHTLY_BUILD
-ENV FLB_NIGHTLY_BUILD=$FLB_NIGHTLY_BUILD
+ARG FLB_NIGHTLY_BUILD \
+    FLB_CHUNK_TRACE=On
 
-ARG FLB_CHUNK_TRACE=On
-ENV FLB_CHUNK_TRACE=${FLB_CHUNK_TRACE}
+ENV FLB_NIGHTLY_BUILD=$FLB_NIGHTLY_BUILD \
+    FLB_CHUNK_TRACE=${FLB_CHUNK_TRACE} \
+    DEBIAN_FRONTEND=noninteractive
 
 RUN mkdir -p /fluent-bit/bin /fluent-bit/etc /fluent-bit/log
-
-ENV DEBIAN_FRONTEND=noninteractive
 
 # hadolint ignore=DL3008
 RUN apt-get update && \
@@ -67,8 +66,9 @@ FROM builder-base AS builder
 WORKDIR /src/fluent-bit/build/
 
 # Required to be set to ARMV7 for that target
-ARG WAMR_BUILD_TARGET
-ARG EXTRA_CMAKE_FLAGS
+ARG WAMR_BUILD_TARGET \
+    EXTRA_CMAKE_FLAGS
+
 ENV EXTRA_CMAKE_FLAGS=${EXTRA_CMAKE_FLAGS}
 
 # Optional: jemalloc configure flags (e.g., page size). Leave unset to keep defaults.
@@ -99,8 +99,8 @@ RUN [ -n "${WAMR_BUILD_TARGET:-}" ] && EXTRA_CMAKE_FLAGS="$EXTRA_CMAKE_FLAGS -DW
 ARG CFLAGS="-v"
 ENV CFLAGS=${CFLAGS}
 
-RUN make -j "$(getconf _NPROCESSORS_ONLN)"
-RUN install bin/fluent-bit /fluent-bit/bin/
+RUN make -j "$(getconf _NPROCESSORS_ONLN)" && \
+    install bin/fluent-bit /fluent-bit/bin/
 
 # Configuration files
 COPY conf/fluent-bit.conf \
@@ -183,6 +183,7 @@ RUN find /dpkg/ -type d -empty -delete && \
 # We want latest at time of build
 # hadolint ignore=DL3006
 FROM gcr.io/distroless/cc-debian13 AS production
+EXPOSE 2020
 ARG RELEASE_VERSION
 ENV FLUENT_BIT_VERSION=${RELEASE_VERSION}
 LABEL description="Fluent Bit multi-architecture container image" \
@@ -198,22 +199,25 @@ LABEL description="Fluent Bit multi-architecture container image" \
     org.opencontainers.image.documentation="https://docs.fluentbit.io/" \
     org.opencontainers.image.authors="Eduardo Silva <eduardo.silva@chronosphere.io>"
 
-# Copy the libraries from the extractor stage into root
-COPY --from=deb-extractor /dpkg /
-
-# Copy certificates
-COPY --from=builder /etc/ssl/certs /etc/ssl/certs
-
-# Finally the binaries as most likely to change
-COPY --from=builder /fluent-bit /fluent-bit
-
-EXPOSE 2020
-
 # Entry point
 ENTRYPOINT [ "/fluent-bit/bin/fluent-bit" ]
 CMD ["/fluent-bit/bin/fluent-bit", "-c", "/fluent-bit/etc/fluent-bit.conf"]
 
+# Copy certificates
+COPY --from=builder /etc/ssl/certs /etc/ssl/certs
+
+# Copy the libraries from the extractor stage into root
+COPY --from=deb-extractor /dpkg /
+
+# Finally the binaries as most likely to change
+COPY --from=builder /fluent-bit /fluent-bit
+
+
 FROM debian:trixie-slim AS debug
+EXPOSE 2020
+
+# No entry point so we can just shell in
+CMD ["/fluent-bit/bin/fluent-bit", "-c", "/fluent-bit/etc/fluent-bit.conf"]
 ARG RELEASE_VERSION
 ENV FLUENT_BIT_VERSION=${RELEASE_VERSION}
 LABEL description="Fluent Bit multi-architecture debug container image" \
@@ -269,8 +273,3 @@ RUN apt-get update && \
 
 RUN rm -f /usr/bin/qemu-*-static
 COPY --from=builder /fluent-bit /fluent-bit
-
-EXPOSE 2020
-
-# No entry point so we can just shell in
-CMD ["/fluent-bit/bin/fluent-bit", "-c", "/fluent-bit/etc/fluent-bit.conf"]
