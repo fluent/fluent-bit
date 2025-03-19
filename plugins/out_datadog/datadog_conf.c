@@ -118,6 +118,11 @@ struct flb_out_datadog *flb_datadog_conf_create(struct flb_output_instance *ins,
         ctx->nb_additional_entries++;
     }
 
+    tmp = flb_output_get_property("dd_hostname", ins);
+    if (tmp) {
+        ctx->nb_additional_entries++;
+    }
+
     tmp = flb_output_get_property("provider", ins);
     ctx->remap = tmp && (strlen(tmp) == strlen(FLB_DATADOG_REMAP_PROVIDER)) && \
         (strncmp(tmp, FLB_DATADOG_REMAP_PROVIDER, strlen(tmp)) == 0);
