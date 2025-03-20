@@ -117,11 +117,9 @@ jobs:
           FLB_OPT: ${{ matrix.flb_option }}
 
   run-aarch64-unit-tests:
-    # Ensure for OSS Fluent Bit repo we enable usage of Actuated runners for ARM builds, for forks it should keep existing ubuntu-latest usage.
-    runs-on: ${{(github.repository == 'fluent/fluent-bit') && 'actuated-arm64-8cpu-16gb' || 'ubuntu-latest' }}
+    runs-on: ${{(github.repository == 'fluent/fluent-bit') && 'ubuntu-22.04-arm' || 'ubuntu-latest' }}
     permissions:
       contents: read
-    # We chain this after Linux one as there are costs for actuated workers
     needs:
       - run-ubuntu-unit-tests
     timeout-minutes: 10
@@ -129,7 +127,7 @@ jobs:
       fail-fast: false
       matrix:
         config:
-          - name: "Aarch64 actuated testing"
+          - name: "Aarch64 testing"
             flb_option: "-DFLB_WITHOUT_flb-it-network=1 -DFLB_WITHOUT_flb-it-fstore=1"
             omit_option: ""
             global_option: "-DFLB_BACKTRACE=Off -DFLB_SHARED_LIB=Off -DFLB_DEBUG=On -DFLB_ALL=On -DFLB_EXAMPLES=Off"
@@ -139,17 +137,13 @@ jobs:
       - name: Checkout Fluent Bit code
         uses: actions/checkout@v4
 
-      - name: Set up Actuated mirror
-        if: github.repository == 'fluent/fluent-bit'
-        uses: self-actuated/hub-mirror@master
-
       - name: Setup environment
         run: |
           sudo apt-get update
           sudo apt-get install -y gcc-9 g++-9 clang-12 cmake flex bison libsystemd-dev gcovr libyaml-dev libbpf-dev linux-tools-common
           sudo ln -s /usr/bin/llvm-symbolizer-12 /usr/bin/llvm-symbolizer || true
 
-      - name: Build and test with actuated runners
+      - name: Build and test with arm runners
         run: |
             sudo update-alternatives --install /usr/bin/gcc gcc /usr/bin/gcc-9 90
             sudo update-alternatives --install /usr/bin/g++ g++ /usr/bin/g++-9 90
