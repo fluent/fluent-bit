@@ -49,8 +49,6 @@ on:
       cosign_private_key_password:
         description: If the Cosign key requires a password then specify here, otherwise not required.
         required: false
-env:
-  DOCKER_PUSH_EXTRA_FLAGS: ${{ inputs.push && '' || '--dry-run' }}
 jobs:
   call-build-images-meta:
     name: Extract any supporting metadata
@@ -123,12 +121,13 @@ jobs:
           file: ./dockerfiles/Dockerfile
           context: .
           target: ${{ matrix.target }}
-          outputs: type=image,name=${{ inputs.registry }}/${{ inputs.image }},push-by-digest=true,name-canonical=true,push=true
+          outputs: type=image,name=${{ inputs.registry }}/${{ inputs.image }},push-by-digest=true,name-canonical=true,push=${{ inputs.push }}
           platforms: linux/${{ matrix.platform }}
           # Must be disabled to provide legacy format images from the registry
           provenance: false
+          # This is configured in outputs above
           push: ${{ inputs.push }}
-          load: ${{ !inputs.push}}
+          load: false
           build-args: |
             FLB_NIGHTLY_BUILD=${{ inputs.unstable }}
             RELEASE_VERSION=${{ inputs.version }}
@@ -191,7 +190,7 @@ jobs:
 
       - name: Create production manifest
         run: |
-          docker buildx imagetools create $DOCKER_PUSH_EXTRA_FLAGS $(jq -cr '.tags | map("-t " + .) | join(" ")' <<< "$DOCKER_METADATA_OUTPUT_JSON") \
+          ${{ inputs.push && '' || 'echo' }} docker buildx imagetools create $(jq -cr '.tags | map("-t " + .) | join(" ")' <<< "$DOCKER_METADATA_OUTPUT_JSON") \
             $(printf '${{ inputs.registry }}/${{ inputs.image }}@sha256:%s ' *)
         shell: bash
         working-directory: /tmp/production-digests
@@ -243,7 +242,7 @@ jobs:
 
       - name: Create debug manifest
         run: |
-          docker buildx imagetools create $DOCKER_PUSH_EXTRA_FLAGS $(jq -cr '.tags | map("-t " + .) | join(" ")' <<< "$DOCKER_METADATA_OUTPUT_JSON") \
+          ${{ inputs.push && '' || 'echo' }} docker buildx imagetools create $DOCKER_PUSH_EXTRA_FLAGS $(jq -cr '.tags | map("-t " + .) | join(" ")' <<< "$DOCKER_METADATA_OUTPUT_JSON") \
             $(printf '${{ inputs.registry }}/${{ inputs.image }}@sha256:%s ' *)
         shell: bash
         working-directory: /tmp/debug-digests
