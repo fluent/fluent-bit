@@ -17,8 +17,13 @@
  *  limitations under the License.
  */
 
- #include <fluent-bit/flb_processor_plugin.h>
- #include "sampling.h"
+#include <fluent-bit/flb_processor_plugin.h>
+#include "sampling.h"
+
+enum match_type {
+    MATCH_TYPE_STRICT = 0,
+    MATCH_TYPE_EXISTS
+};
 
 struct string_value {
     cfl_sds_t value;
@@ -26,6 +31,7 @@ struct string_value {
 };
 
 struct cond_string_attribute {
+    int match_type;
     cfl_sds_t key;
     struct cfl_list list_values;
 };
@@ -43,9 +49,14 @@ static int cond_string_attr_check_kvlist(struct cond_string_attribute *ctx,
         return FLB_FALSE;
     }
 
-    /* check if the value is a string */
+    /* validate the value type */
     if (var->type != CFL_VARIANT_STRING) {
         return FLB_FALSE;
+    }
+
+    /* if the match type is exists, return right away */
+    if (ctx->match_type == MATCH_TYPE_EXISTS) {
+        return FLB_TRUE;
     }
 
     /* check if the value matches any of the expected values */
@@ -102,6 +113,7 @@ struct sampling_condition *cond_string_attr_create(struct sampling *ctx,
         flb_errno();
         return NULL;
     }
+    cond->match_type = MATCH_TYPE_STRICT;
     cfl_list_init(&cond->list_values);
 
     /* key */
@@ -120,6 +132,28 @@ struct sampling_condition *cond_string_attr_create(struct sampling *ctx,
         return NULL;
     }
 
+    /* match_type */
+    var = cfl_kvlist_fetch(settings->data.as_kvlist, "match_type");
+    if (var) {
+        if (var->type != CFL_VARIANT_STRING) {
+            flb_plg_error(ctx->ins, "match_type must be a string");
+            flb_free(cond);
+            return NULL;
+        }
+
+        if (strcasecmp(var->data.as_string, "strict") == 0) {
+            cond->match_type = MATCH_TYPE_STRICT;
+        }
+        else if (strcasecmp(var->data.as_string, "exists") == 0) {
+            cond->match_type = MATCH_TYPE_EXISTS;
+        }
+        else {
+            flb_plg_error(ctx->ins, "invalid match_type '%s'", var->data.as_string);
+            flb_free(cond);
+            return NULL;
+        }
+    }
+
     /* values */
     var = cfl_kvlist_fetch(settings->data.as_kvlist, "values");
     if (var) {
@@ -129,7 +163,8 @@ struct sampling_condition *cond_string_attr_create(struct sampling *ctx,
             return NULL;
         }
 
-        cond->key = cfl_sds_create_len(var_key->data.as_string, cfl_sds_len(var_key->data.as_string));
+        cond->key = cfl_sds_create_len(var_key->data.as_string,
+                                       cfl_sds_len(var_key->data.as_string));
         if (!cond->key) {
             flb_free(cond);
             return NULL;
@@ -150,6 +185,7 @@ struct sampling_condition *cond_string_attr_create(struct sampling *ctx,
                 flb_free(cond);
                 return NULL;
             }
+
             str_val->value = cfl_sds_create_len(var_value->data.as_string, cfl_sds_len(var_value->data.as_string));
             if (!str_val->value) {
                 flb_free(str_val);
@@ -160,9 +196,11 @@ struct sampling_condition *cond_string_attr_create(struct sampling *ctx,
         }
     }
     else {
-        flb_plg_error(ctx->ins, "missing 'values' in condition");
-        flb_free(cond);
-        return NULL;
+        if (cond->match_type != MATCH_TYPE_EXISTS) {
+            flb_plg_error(ctx->ins, "missing 'values' in condition");
+            flb_free(cond);
+            return NULL;
+        }
     }
 
     sampling_condition = flb_calloc(1, sizeof(struct sampling_condition));
