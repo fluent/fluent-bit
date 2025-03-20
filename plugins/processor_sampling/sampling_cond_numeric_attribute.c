@@ -17,15 +17,21 @@
  *  limitations under the License.
  */
 
-#include <fluent-bit/flb_processor_plugin.h>
-#include <fluent-bit/flb_regex.h>
+ #include <fluent-bit/flb_processor_plugin.h>
+ #include <fluent-bit/flb_regex.h>
 
-#include "sampling.h"
-#include "sampling_cond_attribute.h"
+ #include "sampling.h"
+ #include "sampling_cond_attribute.h"
 
-struct sampling_condition *cond_string_attr_create(struct sampling *ctx,
-                                                   struct sampling_conditions *sampling_conditions,
-                                                   struct cfl_variant *settings)
+int cond_numeric_attr_check(struct sampling_condition *sampling_condition, struct ctrace_span *span,
+                            int variant_type)
+{
+    return cond_attr_check(sampling_condition, span, ATTRIBUTE_TYPE_NUMERIC);
+}
+
+struct sampling_condition *cond_numeric_attr_create(struct sampling *ctx,
+                                                    struct sampling_conditions *sampling_conditions,
+                                                    struct cfl_variant *settings)
 {
     int i;
     struct cfl_variant *var;
@@ -39,7 +45,7 @@ struct sampling_condition *cond_string_attr_create(struct sampling *ctx,
         flb_errno();
         return NULL;
     }
-    cond->attribute_type = ATTRIBUTE_TYPE_STRING;
+    cond->attribute_type = ATTRIBUTE_TYPE_NUMERIC;
     cond->match_type = MATCH_TYPE_STRICT;
     cfl_list_init(&cond->list_values);
 
@@ -79,14 +85,62 @@ struct sampling_condition *cond_string_attr_create(struct sampling *ctx,
         else if (strcasecmp(var->data.as_string, "exists") == 0) {
             cond->match_type = MATCH_TYPE_EXISTS;
         }
-        else if (strcasecmp(var->data.as_string, "regex") == 0) {
-            cond->match_type = MATCH_TYPE_REGEX;
-        }
         else {
             flb_plg_error(ctx->ins, "invalid match_type '%s'", var->data.as_string);
             flb_free(cond);
             return NULL;
         }
+    }
+
+    /* min_value */
+    var = cfl_kvlist_fetch(settings->data.as_kvlist, "min_value");
+    if (var) {
+        if (var->type != CFL_VARIANT_INT && var->type != CFL_VARIANT_UINT) {
+            flb_plg_error(ctx->ins, "min_value must be an integer");
+            flb_free(cond);
+            return NULL;
+        }
+
+        if (var->type == CFL_VARIANT_INT) {
+            cond->min_value = var->data.as_int64;
+        }
+        else {
+            cond->min_value = (int64_t) var->data.as_uint64;
+        }
+    }
+    else {
+        flb_plg_error(ctx->ins, "missing 'min_value' in condition");
+        flb_free(cond);
+        return NULL;
+    }
+
+    /* max_value */
+    var = cfl_kvlist_fetch(settings->data.as_kvlist, "max_value");
+    if (var) {
+        if (var->type != CFL_VARIANT_INT && var->type != CFL_VARIANT_UINT) {
+            flb_plg_error(ctx->ins, "max_value must be an integer");
+            flb_free(cond);
+            return NULL;
+        }
+
+        if (var->type == CFL_VARIANT_INT) {
+            cond->max_value = var->data.as_int64;
+        }
+        else {
+            cond->max_value = (int64_t) var->data.as_uint64;
+        }
+    }
+    else {
+        flb_plg_error(ctx->ins, "missing 'max_value' in condition");
+        flb_free(cond);
+        return NULL;
+    }
+
+    /* check min_value < max_value */
+    if (cond->min_value > cond->max_value) {
+        flb_plg_error(ctx->ins, "'min_value' must be less than 'max_value'");
+        flb_free(cond);
+        return NULL;
     }
 
     /* values */
@@ -114,32 +168,15 @@ struct sampling_condition *cond_string_attr_create(struct sampling *ctx,
                 return NULL;
             }
 
-            if (cond->match_type == MATCH_TYPE_REGEX) {
-                str_val->regex_value = flb_regex_create(var_value->data.as_string);
-                if (!str_val->regex_value) {
-                    flb_free(str_val);
-                    flb_free(cond);
-                    return NULL;
-                }
-            }
-            else {
-                str_val->value = cfl_sds_create_len(var_value->data.as_string,
-                                                    cfl_sds_len(var_value->data.as_string));
-                if (!str_val->value) {
-                    flb_free(str_val);
-                    flb_free(cond);
-                    return NULL;
-                }
+            str_val->value = cfl_sds_create_len(var_value->data.as_string,
+                                                cfl_sds_len(var_value->data.as_string));
+            if (!str_val->value) {
+                flb_free(str_val);
+                flb_free(cond);
+                return NULL;
             }
 
             cfl_list_add(&str_val->_head, &cond->list_values);
-        }
-    }
-    else {
-        if (cond->match_type != MATCH_TYPE_EXISTS) {
-            flb_plg_error(ctx->ins, "missing 'values' in condition");
-            flb_free(cond);
-            return NULL;
         }
     }
 
@@ -149,7 +186,7 @@ struct sampling_condition *cond_string_attr_create(struct sampling *ctx,
         flb_free(cond);
         return NULL;
     }
-    sampling_condition->type = SAMPLING_COND_STRING_ATTRIBUTE;
+    sampling_condition->type = SAMPLING_COND_NUMERIC_ATTRIBUTE;
     sampling_condition->type_context = cond;
     cfl_list_add(&sampling_condition->_head, &sampling_conditions->list);
 
@@ -157,7 +194,7 @@ struct sampling_condition *cond_string_attr_create(struct sampling *ctx,
 
 }
 
-void cond_string_attr_destroy(struct sampling_condition *sampling_condition)
+void cond_numeric_attr_destroy(struct sampling_condition *sampling_condition)
 {
     struct cfl_list *tmp;
     struct cfl_list *head;
@@ -171,10 +208,6 @@ void cond_string_attr_destroy(struct sampling_condition *sampling_condition)
 
         if (str_val->value) {
             cfl_sds_destroy(str_val->value);
-        }
-
-        if (str_val->regex_value) {
-            flb_regex_destroy(str_val->regex_value);
         }
 
         cfl_list_del(&str_val->_head);
