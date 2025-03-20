@@ -253,7 +253,7 @@ static int check_conditions(struct sampling *ctx, struct trace_entry *t_entry)
 
     cfl_list_foreach(head, &t_entry->span_list) {
         t_span = cfl_list_entry(head, struct trace_span, _head);
-        ret = sampling_conditions_check(ctx, ctx->sampling_conditions, t_span->span);
+        ret = sampling_conditions_check(ctx, ctx->sampling_conditions, t_entry, t_span->span);
         if (ret == FLB_TRUE) {
             return FLB_TRUE;
         }

@@ -17,26 +17,17 @@
  *  limitations under the License.
  */
 
- #include <fluent-bit/flb_processor_plugin.h>
- #include <fluent-bit/flb_regex.h>
+#include <fluent-bit/flb_processor_plugin.h>
+#include <fluent-bit/flb_regex.h>
 
- #include "sampling.h"
- #include "sampling_cond_attribute.h"
-
-int cond_numeric_attr_check(struct sampling_condition *sampling_condition, struct ctrace_span *span,
-                            int variant_type)
-{
-    return cond_attr_check(sampling_condition, span, ATTRIBUTE_TYPE_NUMERIC);
-}
+#include "sampling.h"
+#include "sampling_cond_attribute.h"
 
 struct sampling_condition *cond_numeric_attr_create(struct sampling *ctx,
                                                     struct sampling_conditions *sampling_conditions,
                                                     struct cfl_variant *settings)
 {
-    int i;
     struct cfl_variant *var;
-    struct cfl_variant *var_value;
-    struct attribute_value *str_val;
     struct cond_attribute *cond;
     struct sampling_condition *sampling_condition;
 
@@ -143,43 +134,6 @@ struct sampling_condition *cond_numeric_attr_create(struct sampling *ctx,
         return NULL;
     }
 
-    /* values */
-    var = cfl_kvlist_fetch(settings->data.as_kvlist, "values");
-    if (var) {
-        if (var->type != CFL_VARIANT_ARRAY) {
-            flb_plg_error(ctx->ins, "values must be an array");
-            flb_free(cond);
-            return NULL;
-        }
-
-        /* iterate values */
-        for (i = 0; i < var->data.as_array->entry_count; i++) {
-            var_value = var->data.as_array->entries[i];
-            if (var_value->type != CFL_VARIANT_STRING) {
-                flb_plg_error(ctx->ins, "value must be an string");
-                flb_free(cond);
-                return NULL;
-            }
-
-            str_val = flb_calloc(1, sizeof(struct attribute_value));
-            if (!str_val) {
-                flb_errno();
-                flb_free(cond);
-                return NULL;
-            }
-
-            str_val->value = cfl_sds_create_len(var_value->data.as_string,
-                                                cfl_sds_len(var_value->data.as_string));
-            if (!str_val->value) {
-                flb_free(str_val);
-                flb_free(cond);
-                return NULL;
-            }
-
-            cfl_list_add(&str_val->_head, &cond->list_values);
-        }
-    }
-
     sampling_condition = flb_calloc(1, sizeof(struct sampling_condition));
     if (!sampling_condition) {
         flb_errno();
@@ -196,23 +150,5 @@ struct sampling_condition *cond_numeric_attr_create(struct sampling *ctx,
 
 void cond_numeric_attr_destroy(struct sampling_condition *sampling_condition)
 {
-    struct cfl_list *tmp;
-    struct cfl_list *head;
-    struct attribute_value *str_val;
-    struct cond_attribute *cond = sampling_condition->type_context;
-
-    cfl_sds_destroy(cond->key);
-
-    cfl_list_foreach_safe(head, tmp, &cond->list_values) {
-        str_val = cfl_list_entry(head, struct attribute_value, _head);
-
-        if (str_val->value) {
-            cfl_sds_destroy(str_val->value);
-        }
-
-        cfl_list_del(&str_val->_head);
-        flb_free(str_val);
-    }
-
-    flb_free(cond);
+    cond_attr_destroy(sampling_condition);
 }

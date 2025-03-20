@@ -66,6 +66,8 @@ enum {
     SAMPLING_COND_LATENCY,
     SAMPLING_COND_STRING_ATTRIBUTE,
     SAMPLING_COND_NUMERIC_ATTRIBUTE,
+    SAMPLING_COND_BOOLEAN_ATTRIBUTE,
+    SAMPLING_COND_SPAN_COUNT,
 };
 
 struct sampling_condition {
@@ -143,7 +145,9 @@ void sampling_config_destroy(struct flb_config *config, struct sampling *ctx);
 
 /* conditions */
 struct sampling_conditions *sampling_conditions_create(struct sampling *ctx, struct cfl_variant *conditions);
-int sampling_conditions_check(struct sampling *ctx, struct sampling_conditions *sampling_conditions, struct ctrace_span *span);
+int sampling_conditions_check(struct sampling *ctx, struct sampling_conditions *sampling_conditions,
+                              struct trace_entry *trace_entry, struct ctrace_span *span);
+
 void sampling_conditions_destroy(struct sampling_conditions *sampling_conditions);
 
 /*
@@ -172,11 +176,25 @@ struct sampling_condition *cond_string_attr_create(struct sampling *ctx,
 int cond_string_attr_check(struct sampling_condition *sampling_condition, struct ctrace_span *span);
 void cond_string_attr_destroy(struct sampling_condition *sampling_condition);
 
-/* condition: nuemric_attribute */
+/* condition: numeric_attribute */
 struct sampling_condition *cond_numeric_attr_create(struct sampling *ctx,
                                                     struct sampling_conditions *sampling_conditions,
                                                     struct cfl_variant *settings);
 void cond_numeric_attr_destroy(struct sampling_condition *sampling_condition);
 
+
+/* condition: boolean_attribute */
+struct sampling_condition *cond_boolean_attr_create(struct sampling *ctx,
+                                                    struct sampling_conditions *sampling_conditions,
+                                                    struct cfl_variant *settings);
+void cond_boolean_attr_destroy(struct sampling_condition *sampling_condition);
+
+/* condition: span_count */
+int cond_span_count_check(struct sampling_condition *sampling_condition, struct trace_entry *trace_entry, struct ctrace_span *span);
+
+struct sampling_condition *cond_span_count_create(struct sampling *ctx,
+                                                  struct sampling_conditions *sampling_conditions,
+                                                  struct cfl_variant *settings);
+void cond_span_count_destroy(struct sampling_condition *sampling_condition);
 
 #endif

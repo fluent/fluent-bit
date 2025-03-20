@@ -46,7 +46,7 @@ static int cond_attr_check_kvlist(struct cond_attribute *ctx, struct cfl_kvlist 
             return FLB_FALSE;
         }
     }
-    else if (attribute_type == ATTRIBUTE_TYPE_BOOL) {
+    else if (attribute_type == ATTRIBUTE_TYPE_BOOLEAN) {
         if (var->type != CFL_VARIANT_BOOL) {
             return FLB_FALSE;
         }
@@ -73,6 +73,15 @@ static int cond_attr_check_kvlist(struct cond_attribute *ctx, struct cfl_kvlist 
             if (var->data.as_double >= ctx->min_value && var->data.as_double <= ctx->max_value) {
                 return FLB_TRUE;
             }
+        }
+
+        return FLB_FALSE;
+    }
+
+    /* boolean_attribute */
+    if (attribute_type == ATTRIBUTE_TYPE_BOOLEAN) {
+        if (var->data.as_bool == ctx->boolean_value) {
+            return FLB_TRUE;
         }
 
         return FLB_FALSE;

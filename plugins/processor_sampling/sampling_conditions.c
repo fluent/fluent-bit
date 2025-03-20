@@ -40,6 +40,12 @@ static int condition_type_str_to_int(char *type_str)
     else if (strcasecmp(type_str, "numeric_attribute") == 0) {
         return SAMPLING_COND_NUMERIC_ATTRIBUTE;
     }
+    else if (strcasecmp(type_str, "boolean_attribute") == 0) {
+        return SAMPLING_COND_BOOLEAN_ATTRIBUTE;
+    }
+    else if (strcasecmp(type_str, "span_count") == 0) {
+        return SAMPLING_COND_SPAN_COUNT;
+    }
 
     return -1;
 }
@@ -68,6 +74,12 @@ void sampling_conditions_destroy(struct sampling_conditions *sampling_conditions
         else if (sampling_condition->type == SAMPLING_COND_NUMERIC_ATTRIBUTE) {
             cond_numeric_attr_destroy(sampling_condition);
         }
+        else if (sampling_condition->type == SAMPLING_COND_BOOLEAN_ATTRIBUTE) {
+            cond_boolean_attr_destroy(sampling_condition);
+        }
+        else if (sampling_condition->type == SAMPLING_COND_SPAN_COUNT) {
+            cond_span_count_destroy(sampling_condition);
+        }
 
         cfl_list_del(&sampling_condition->_head);
         flb_free(sampling_condition);
@@ -77,7 +89,7 @@ void sampling_conditions_destroy(struct sampling_conditions *sampling_conditions
 }
 
 int sampling_conditions_check(struct sampling *ctx, struct sampling_conditions *sampling_conditions,
-                              struct ctrace_span *span)
+                              struct trace_entry *trace_entry, struct ctrace_span *span)
 {
     int ret;
     struct cfl_list *tmp;
@@ -111,6 +123,18 @@ int sampling_conditions_check(struct sampling *ctx, struct sampling_conditions *
         }
         else if (sampling_condition->type == SAMPLING_COND_NUMERIC_ATTRIBUTE) {
             ret = cond_attr_check(sampling_condition, span, ATTRIBUTE_TYPE_NUMERIC);
+            if (ret == FLB_TRUE) {
+                return FLB_TRUE;
+            }
+        }
+        else if (sampling_condition->type == SAMPLING_COND_BOOLEAN_ATTRIBUTE) {
+            ret = cond_attr_check(sampling_condition, span, ATTRIBUTE_TYPE_BOOLEAN);
+            if (ret == FLB_TRUE) {
+                return FLB_TRUE;
+            }
+        }
+        else if (sampling_condition->type == SAMPLING_COND_SPAN_COUNT) {
+            ret = cond_span_count_check(sampling_condition, trace_entry, span);
             if (ret == FLB_TRUE) {
                 return FLB_TRUE;
             }
@@ -190,6 +214,12 @@ struct sampling_conditions *sampling_conditions_create(struct sampling *ctx, str
             break;
         case SAMPLING_COND_NUMERIC_ATTRIBUTE:
             cond_ptr = cond_numeric_attr_create(ctx, sampling_cond, condition_settings);
+            break;
+        case SAMPLING_COND_BOOLEAN_ATTRIBUTE:
+            cond_ptr = cond_boolean_attr_create(ctx, sampling_cond, condition_settings);
+            break;
+        case SAMPLING_COND_SPAN_COUNT:
+            cond_ptr = cond_span_count_create(ctx, sampling_cond, condition_settings);
             break;
         default:
             sampling_conditions_destroy(sampling_cond);
