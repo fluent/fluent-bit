@@ -159,27 +159,5 @@ struct sampling_condition *cond_string_attr_create(struct sampling *ctx,
 
 void cond_string_attr_destroy(struct sampling_condition *sampling_condition)
 {
-    struct cfl_list *tmp;
-    struct cfl_list *head;
-    struct attribute_value *str_val;
-    struct cond_attribute *cond = sampling_condition->type_context;
-
-    cfl_sds_destroy(cond->key);
-
-    cfl_list_foreach_safe(head, tmp, &cond->list_values) {
-        str_val = cfl_list_entry(head, struct attribute_value, _head);
-
-        if (str_val->value) {
-            cfl_sds_destroy(str_val->value);
-        }
-
-        if (str_val->regex_value) {
-            flb_regex_destroy(str_val->regex_value);
-        }
-
-        cfl_list_del(&str_val->_head);
-        flb_free(str_val);
-    }
-
-    flb_free(cond);
+    cond_attr_destroy(sampling_condition);
 }
