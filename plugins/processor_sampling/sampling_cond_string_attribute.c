@@ -18,15 +18,18 @@
  */
 
 #include <fluent-bit/flb_processor_plugin.h>
+#include <fluent-bit/flb_regex.h>
 #include "sampling.h"
 
 enum match_type {
     MATCH_TYPE_STRICT = 0,
-    MATCH_TYPE_EXISTS
+    MATCH_TYPE_EXISTS,
+    MATCH_TYPE_REGEX,
 };
 
 struct string_value {
     cfl_sds_t value;
+    struct flb_regex *regex_value;
     struct cfl_list _head;
 };
 
@@ -62,12 +65,22 @@ static int cond_string_attr_check_kvlist(struct cond_string_attribute *ctx,
     /* check if the value matches any of the expected values */
     cfl_list_foreach(head, &ctx->list_values) {
         str_val = cfl_list_entry(head, struct string_value, _head);
-        if (cfl_sds_len(var->data.as_string) != cfl_sds_len(str_val->value)) {
-            continue;
-        }
 
-        if (strncmp(var->data.as_string, str_val->value, cfl_sds_len(var->data.as_string)) == 0) {
-            return FLB_TRUE;
+        if (ctx->match_type == MATCH_TYPE_STRICT) {
+            if (cfl_sds_len(var->data.as_string) != cfl_sds_len(str_val->value)) {
+                continue;
+            }
+
+            if (strncmp(var->data.as_string, str_val->value, cfl_sds_len(var->data.as_string)) == 0) {
+                return FLB_TRUE;
+            }
+        }
+        else if (ctx->match_type == MATCH_TYPE_REGEX) {
+            if (flb_regex_match(str_val->regex_value,
+                                (unsigned char *) var->data.as_string,
+                                cfl_sds_len(var->data.as_string))) {
+                return FLB_TRUE;
+            }
         }
     }
 
@@ -147,6 +160,9 @@ struct sampling_condition *cond_string_attr_create(struct sampling *ctx,
         else if (strcasecmp(var->data.as_string, "exists") == 0) {
             cond->match_type = MATCH_TYPE_EXISTS;
         }
+        else if (strcasecmp(var->data.as_string, "regex") == 0) {
+            cond->match_type = MATCH_TYPE_REGEX;
+        }
         else {
             flb_plg_error(ctx->ins, "invalid match_type '%s'", var->data.as_string);
             flb_free(cond);
@@ -186,12 +202,24 @@ struct sampling_condition *cond_string_attr_create(struct sampling *ctx,
                 return NULL;
             }
 
-            str_val->value = cfl_sds_create_len(var_value->data.as_string, cfl_sds_len(var_value->data.as_string));
-            if (!str_val->value) {
-                flb_free(str_val);
-                flb_free(cond);
-                return NULL;
+            if (cond->match_type == MATCH_TYPE_REGEX) {
+                str_val->regex_value = flb_regex_create(var_value->data.as_string);
+                if (!str_val->regex_value) {
+                    flb_free(str_val);
+                    flb_free(cond);
+                    return NULL;
+                }
             }
+            else {
+                str_val->value = cfl_sds_create_len(var_value->data.as_string,
+                                                    cfl_sds_len(var_value->data.as_string));
+                if (!str_val->value) {
+                    flb_free(str_val);
+                    flb_free(cond);
+                    return NULL;
+                }
+            }
+
             cfl_list_add(&str_val->_head, &cond->list_values);
         }
     }
@@ -228,7 +256,15 @@ void cond_string_attr_destroy(struct sampling_condition *sampling_condition)
 
     cfl_list_foreach_safe(head, tmp, &cond->list_values) {
         str_val = cfl_list_entry(head, struct string_value, _head);
-        cfl_sds_destroy(str_val->value);
+
+        if (str_val->value) {
+            cfl_sds_destroy(str_val->value);
+        }
+
+        if (str_val->regex_value) {
+            flb_regex_destroy(str_val->regex_value);
+        }
+
         cfl_list_del(&str_val->_head);
         flb_free(str_val);
     }
