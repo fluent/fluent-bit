@@ -25,6 +25,8 @@
 #include <fluent-bit/flb_coro.h>
 #include <fluent-bit/flb_config.h>
 #include <fluent-bit/flb_network.h>
+#include <fluent-bit/flb_downstream.h>
+#include <fluent-bit/flb_upstream.h>
 #include <fluent-bit/flb_mem.h>
 #include <fluent-bit/flb_str.h>
 #include <fluent-bit/flb_bits.h>
