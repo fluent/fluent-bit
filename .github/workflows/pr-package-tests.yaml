@@ -47,6 +47,8 @@ jobs:
       username: ${{ github.actor }}
       image: ${{ github.repository }}/pr
       unstable: ${{ needs.pr-package-test-build-get-meta.outputs.date }}
+      # We do not push as forks cannot get a token with the right permissions
+      push: false
     secrets:
       token: ${{ secrets.GITHUB_TOKEN }}
       cosign_private_key: ${{ secrets.COSIGN_PRIVATE_KEY }}
