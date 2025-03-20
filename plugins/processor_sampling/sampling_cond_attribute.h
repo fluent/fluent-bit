@@ -26,7 +26,7 @@
 enum attribute_type {
     ATTRIBUTE_TYPE_STRING = 0,
     ATTRIBUTE_TYPE_NUMERIC,
-    ATTRIBUTE_TYPE_BOOL,
+    ATTRIBUTE_TYPE_BOOLEAN,
 };
 
 enum match_type {
@@ -52,6 +52,9 @@ struct cond_attribute {
     int invert_match;
     int64_t min_value;
     int64_t max_value;
+
+    /* boolean_attribute */
+    bool boolean_value;
 
     struct cfl_list list_values;
 };
