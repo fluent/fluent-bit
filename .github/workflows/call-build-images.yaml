@@ -34,6 +34,11 @@ on:
         type: string
         required: false
         default: ""
+      push:
+        description: Optionally push the images to the registry, defaults to true but for forks we cannot do this in PRs.
+        type: boolean
+        required: false
+        default: true
     secrets:
       token:
         description: The Github token or similar to authenticate with for the registry.
@@ -44,6 +49,8 @@ on:
       cosign_private_key_password:
         description: If the Cosign key requires a password then specify here, otherwise not required.
         required: false
+env:
+  DOCKER_PUSH_EXTRA_FLAGS: ${{ inputs.push && '' || '--dry-run' }}
 jobs:
   call-build-images-meta:
     name: Extract any supporting metadata
@@ -120,8 +127,8 @@ jobs:
           platforms: linux/${{ matrix.platform }}
           # Must be disabled to provide legacy format images from the registry
           provenance: false
-          push: true
-          load: false
+          push: ${{ inputs.push }}
+          load: ${{ !inputs.push}}
           build-args: |
             FLB_NIGHTLY_BUILD=${{ inputs.unstable }}
             RELEASE_VERSION=${{ inputs.version }}
@@ -184,12 +191,13 @@ jobs:
 
       - name: Create production manifest
         run: |
-          docker buildx imagetools create $(jq -cr '.tags | map("-t " + .) | join(" ")' <<< "$DOCKER_METADATA_OUTPUT_JSON") \
+          docker buildx imagetools create $DOCKER_PUSH_EXTRA_FLAGS $(jq -cr '.tags | map("-t " + .) | join(" ")' <<< "$DOCKER_METADATA_OUTPUT_JSON") \
             $(printf '${{ inputs.registry }}/${{ inputs.image }}@sha256:%s ' *)
         shell: bash
         working-directory: /tmp/production-digests
 
       - name: Inspect image
+        if: inputs.push
         run: |
           docker buildx imagetools inspect ${{ inputs.registry }}/${{ inputs.image }}:${{ steps.meta.outputs.version }}
         shell: bash
@@ -235,17 +243,19 @@ jobs:
 
       - name: Create debug manifest
         run: |
-          docker buildx imagetools create $(jq -cr '.tags | map("-t " + .) | join(" ")' <<< "$DOCKER_METADATA_OUTPUT_JSON") \
+          docker buildx imagetools create $DOCKER_PUSH_EXTRA_FLAGS $(jq -cr '.tags | map("-t " + .) | join(" ")' <<< "$DOCKER_METADATA_OUTPUT_JSON") \
             $(printf '${{ inputs.registry }}/${{ inputs.image }}@sha256:%s ' *)
         shell: bash
         working-directory: /tmp/debug-digests
 
       - name: Inspect image
+        if: inputs.push
         run: |
           docker buildx imagetools inspect ${{ inputs.registry }}/${{ inputs.image }}:${{ steps.debug-meta.outputs.version }}
         shell: bash
 
   call-build-images-generate-schema:
+    if: inputs.push
     needs:
       - call-build-images-meta
       - call-build-container-image-manifests
@@ -276,6 +286,7 @@ jobs:
           if-no-files-found: error
 
   call-build-images-scan:
+    if: inputs.push
     needs:
       - call-build-images-meta
       - call-build-container-image-manifests
@@ -311,6 +322,7 @@ jobs:
           exit-level: WARN
 
   call-build-images-sign:
+    if: inputs.push
     needs:
       - call-build-images-meta
       - call-build-container-image-manifests
@@ -400,6 +412,10 @@ jobs:
       - name: Build the production images
         run: |
           docker build -t ${{ inputs.registry }}/${{ inputs.image }}:windows-${{ matrix.windows-base-version }}-${{ inputs.version }} --build-arg FLB_NIGHTLY_BUILD=${{ inputs.unstable }} --build-arg WINDOWS_VERSION=ltsc${{ matrix.windows-base-version }} -f ./dockerfiles/Dockerfile.windows .
+
+      - name: Push the production images
+        if: inputs.push
+        run: |
           docker push ${{ inputs.registry }}/${{ inputs.image }}:windows-${{ matrix.windows-base-version }}-${{ inputs.version }}
 
         # We cannot use this action as it requires privileged mode
