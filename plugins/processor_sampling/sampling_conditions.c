@@ -18,7 +18,9 @@
  */
 
 #include <fluent-bit/flb_processor_plugin.h>
+
 #include "sampling.h"
+#include "sampling_cond_attribute.h"
 
 struct sampling_condition *cond_status_codes_create(struct sampling *ctx,
                                                     struct sampling_conditions *sampling_conditions,
@@ -34,6 +36,9 @@ static int condition_type_str_to_int(char *type_str)
     }
     else if (strcasecmp(type_str, "string_attribute") == 0) {
         return SAMPLING_COND_STRING_ATTRIBUTE;
+    }
+    else if (strcasecmp(type_str, "numeric_attribute") == 0) {
+        return SAMPLING_COND_NUMERIC_ATTRIBUTE;
     }
 
     return -1;
@@ -59,6 +64,9 @@ void sampling_conditions_destroy(struct sampling_conditions *sampling_conditions
         }
         else if (sampling_condition->type == SAMPLING_COND_STRING_ATTRIBUTE) {
             cond_string_attr_destroy(sampling_condition);
+        }
+        else if (sampling_condition->type == SAMPLING_COND_NUMERIC_ATTRIBUTE) {
+            cond_numeric_attr_destroy(sampling_condition);
         }
 
         cfl_list_del(&sampling_condition->_head);
@@ -96,7 +104,13 @@ int sampling_conditions_check(struct sampling *ctx, struct sampling_conditions *
             }
         }
         else if (sampling_condition->type == SAMPLING_COND_STRING_ATTRIBUTE) {
-            ret = cond_string_attr_check(sampling_condition, span);
+            ret = cond_attr_check(sampling_condition, span, ATTRIBUTE_TYPE_STRING);
+            if (ret == FLB_TRUE) {
+                return FLB_TRUE;
+            }
+        }
+        else if (sampling_condition->type == SAMPLING_COND_NUMERIC_ATTRIBUTE) {
+            ret = cond_attr_check(sampling_condition, span, ATTRIBUTE_TYPE_NUMERIC);
             if (ret == FLB_TRUE) {
                 return FLB_TRUE;
             }
@@ -173,6 +187,9 @@ struct sampling_conditions *sampling_conditions_create(struct sampling *ctx, str
             break;
         case SAMPLING_COND_STRING_ATTRIBUTE:
             cond_ptr = cond_string_attr_create(ctx, sampling_cond, condition_settings);
+            break;
+        case SAMPLING_COND_NUMERIC_ATTRIBUTE:
+            cond_ptr = cond_numeric_attr_create(ctx, sampling_cond, condition_settings);
             break;
         default:
             sampling_conditions_destroy(sampling_cond);
