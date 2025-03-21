@@ -1,0 +1,155 @@
+{
+  "kind": "Pod",
+  "apiVersion": "v1",
+  "metadata": {
+    "name": "kairosdb-914055854-b63vq",
+    "generateName": "kairosdb-914055854-",
+    "namespace": "default",
+    "selfLink": "/api/v1/namespaces/default/pods/kairosdb-914055854-b63vq",
+    "uid": "d6c53deb-05a4-11e8-a8c4-080027435fb7",
+    "resourceVersion": "25205",
+    "creationTimestamp": "2018-01-30T10:03:37Z",
+    "labels": {
+      "name": "kairosdb",
+      "pod-template-hash": "914055854"
+    },
+    "annotations": {
+      "kubernetes.io/created-by": "{\"kind\":\"SerializedReference\",\"apiVersion\":\"v1\",\"reference\":{\"kind\":\"ReplicaSet\",\"namespace\":\"default\",\"name\":\"kairosdb-914055854\",\"uid\":\"d6c2f841-05a4-11e8-a8c4-080027435fb7\",\"apiVersion\":\"extensions\",\"resourceVersion\":\"1592\"}}\n"
+    },
+    "ownerReferences": [
+      {
+        "apiVersion": "extensions/v1beta1",
+        "kind": "ReplicaSet",
+        "name": "kairosdb-914055854",
+        "uid": "d6c2f841-05a4-11e8-a8c4-080027435fb7",
+        "controller": true,
+        "blockOwnerDeletion": true
+      }
+    ]
+  },
+  "spec": {
+    "volumes": [
+      {
+        "name": "default-token-vv11j",
+        "secret": {
+          "secretName": "default-token-vv11j",
+          "defaultMode": 420
+        }
+      }
+    ],
+    "containers": [
+      {
+        "name": "kairosdb",
+        "image": "docker.io/davradocker/docker-kairosdb:1.1.1_9",
+        "env": [
+          {
+            "name": "kairosdb_http_port",
+            "value": "58080"
+          },
+          {
+            "name": "kairosdb_datastore_cassandra_host_list",
+            "valueFrom": {
+              "configMapKeyRef": {
+                "name": "cassandra-config",
+                "key": "cassandra.nodeports"
+              }
+            }
+          },
+          {
+            "name": "kairosdb_ttl",
+            "value": "315360000"
+          },
+          {
+            "name": "_JAVA_OPTIONS",
+            "value": "-Xms128m -Xmx512m"
+          }
+        ],
+        "resources": {},
+        "volumeMounts": [
+          {
+            "name": "default-token-vv11j",
+            "readOnly": true,
+            "mountPath": "/var/run/secrets/kubernetes.io/serviceaccount"
+          }
+        ],
+        "livenessProbe": {
+          "httpGet": {
+            "path": "/api/v1/metricnames",
+            "port": 58080,
+            "scheme": "HTTP"
+          },
+          "initialDelaySeconds": 20,
+          "timeoutSeconds": 1,
+          "periodSeconds": 1,
+          "successThreshold": 1,
+          "failureThreshold": 1
+        },
+        "terminationMessagePath": "/dev/termination-log",
+        "terminationMessagePolicy": "File",
+        "imagePullPolicy": "IfNotPresent",
+        "securityContext": {
+          "privileged": false
+        }
+      }
+    ],
+    "restartPolicy": "Always",
+    "terminationGracePeriodSeconds": 30,
+    "dnsPolicy": "ClusterFirst",
+    "serviceAccountName": "default",
+    "serviceAccount": "default",
+    "nodeName": "192.168.10.169",
+    "securityContext": {},
+    "schedulerName": "default-scheduler"
+  },
+  "status": {
+    "phase": "Running",
+    "conditions": [
+      {
+        "type": "Initialized",
+        "status": "True",
+        "lastProbeTime": null,
+        "lastTransitionTime": "2018-01-30T10:03:37Z"
+      },
+      {
+        "type": "Ready",
+        "status": "True",
+        "lastProbeTime": null,
+        "lastTransitionTime": "2018-02-27T07:28:45Z"
+      },
+      {
+        "type": "PodScheduled",
+        "status": "True",
+        "lastProbeTime": null,
+        "lastTransitionTime": "2018-01-30T10:03:37Z"
+      }
+    ],
+    "hostIP": "192.168.10.169",
+    "podIP": "10.2.39.12",
+    "startTime": "2018-01-30T10:03:37Z",
+    "containerStatuses": [
+      {
+        "name": "kairosdb",
+        "state": {
+          "running": {
+            "startedAt": "2018-02-27T07:28:45Z"
+          }
+        },
+        "lastState": {
+          "terminated": {
+            "exitCode": 0,
+            "reason": "Completed",
+            "startedAt": "2018-02-27T07:27:13Z",
+            "finishedAt": "2018-02-27T07:27:16Z",
+            "containerID": "docker://5bc9f63b02c09d7726ed3669f734b365f90e077e77a88c4a2f004459772bf912"
+          }
+        },
+        "ready": true,
+        "restartCount": 20,
+        "image": "davradocker/docker-kairosdb:1.1.1_9",
+        "imageID": "docker-pullable://davradocker/docker-kairosdb@sha256:2ee07e3f3ba61b96597c78ab0aa7b837d771b375888b020da7a7316bb524b6e8",
+        "containerID": "docker://02d45318f220ad01109d13df31fbbb0668b87fdd06ef6607abfdecf5eba4b311"
+      }
+    ],
+    "qosClass": "BestEffort"
+  }
+}

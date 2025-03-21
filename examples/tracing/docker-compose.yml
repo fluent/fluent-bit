@@ -1,0 +1,26 @@
+version: "3"
+
+services:
+  fluent-bit:
+    build:
+      context: ../..
+      dockerfile: dockerfiles/Dockerfile
+      args:
+        - FLB_CHUNK_TRACE=On
+    ports:
+      - "2020:2020"
+    volumes:
+      - ./fluent-bit.conf:/fluent-bit/etc/fluent-bit.conf:ro
+    command:
+      - /fluent-bit/bin/fluent-bit
+      - -Z
+      - -c
+      - /fluent-bit/etc/fluent-bit.conf
+
+  enable-tracing:
+    image: ubuntu:20.04
+    command: /enable-tracing.sh
+    volumes:
+      - ./enable-tracing.sh:/enable-tracing.sh:ro
+    environment:
+      REMOTE_HOST: fluent-bit

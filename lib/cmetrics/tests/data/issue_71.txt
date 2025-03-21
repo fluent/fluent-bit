@@ -1,0 +1,11 @@
+# HELP node_power_supply_info info of /sys/class/power_supply/<power_supply>.
+# TYPE node_power_supply_info gauge
+node_power_supply_info{power_supply="AC",type="Mains"} 1
+node_power_supply_info{power_supply="ucsi-source-psy-USBC000:001",type="USB",usb_type="[C] PD PD_PPS"} 1
+node_power_supply_info{power_supply="ucsi-source-psy-USBC000:002",type="USB",usb_type="C [PD] PD_PPS"} 1
+node_power_supply_info{capacity_level="Normal",manufacturer="SMP",model_name="02DL005",power_supply="BAT0",serial_number="4195",status="Discharging",technology="Li-poly",type="Battery"} 1
+# HELP node_power_supply_online online value of /sys/class/power_supply/<power_supply>.
+# TYPE node_power_supply_online gauge
+node_power_supply_online{power_supply="AC"} 0
+node_power_supply_online{power_supply="ucsi-source-psy-USBC000:001"} 0
+node_power_supply_online{power_supply="ucsi-source-psy-USBC000:002"} 1

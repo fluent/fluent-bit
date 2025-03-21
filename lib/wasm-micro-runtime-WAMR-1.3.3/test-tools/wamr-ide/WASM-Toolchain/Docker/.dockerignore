@@ -1,0 +1,4 @@
+# remove unnecessary files here to save build time cost and image size
+*.md
+*.sh
+*.bat

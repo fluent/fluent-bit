@@ -1,0 +1,30 @@
+###############################################################################
+# DESCRIPTION
+#	Trivial test to check Last-Modified header
+#
+# AUTHOR
+#	Eduardo Silva <edsiper@gmail.com>
+#
+# DATE
+#	Jun 26 2010
+#
+# COMMENTS
+#	Server must return the Last-Modified header.
+###############################################################################
+
+
+INCLUDE __CONFIG
+INCLUDE __MACROS
+
+CLIENT
+_CALL INIT
+
+_REQ $HOST $PORT
+__GET / $HTTPVER
+__Host: $HOST
+__
+_EXPECT . "HTTP/1.1 200 OK"
+_EXPECT . "Last-Modified:"
+_EXPECT . "Content-Length:"
+_WAIT 0
+END

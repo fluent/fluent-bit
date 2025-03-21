@@ -1,0 +1,20 @@
+#!/usr/bin/make -f
+
+%:
+	dh $@ --with autotools_dev
+
+override_dh_auto_configure:
+	dh_auto_configure -- -DCMAKE_INSTALL_PREFIX='/usr' \
+		-DCMAKE_INSTALL_SBINDIR='/usr/sbin'        \
+		-DCMAKE_INSTALL_MANDIR='/usr/share/man'    \
+		-DINSTALL_SYSCONFDIR='/etc/monkey'         \
+		-DINSTALL_WEBROOTDIR='/usr/share/monkey'   \
+		-DINSTALL_LOGDIR='/var/log/monkey'         \
+		-DINSTALL_INCLUDEDIR='/usr/include/monkey' \
+		-DDEFAULT_USER='www-data'                  \
+	        -DDEFAULT_PORT='80'                        \
+		-DCMAKE_INSTALL_LIBDIR='/usr/lib/monkey'   \
+		-DPID_PATH='/var/run/'                     \
+		-DWITH_PLUGIN_TLS=ON                       \
+		-DSTATIC_PLUGINS='tls'                     \
+		-DSYSTEMD_DIR='/lib/systemd/system/'

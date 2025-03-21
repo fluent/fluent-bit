@@ -1,0 +1,119 @@
+name: Composite action to generate the matrix of targets to build packages for.
+description: Remove any duplication of this information so we only have to update in one place.
+
+# Remember to add any new checks and target creation required.
+# For example, when 2.0 comes out we should detect it and add any target changes.
+
+inputs:
+  target:
+    description: Override to build a single target for debug/test only.
+    required: false
+    default: ""
+  ref:
+    description: The commit, tag or branch of Fluent Bit to checkout for building we then use to determine version for.
+    required: true
+outputs:
+  build-matrix:
+    description: The total build matrix we have created.
+    value: ${{ steps.set-matrix.outputs.matrix }}
+  deb-build-matrix:
+    description: The targets that provide DEB artefacts.
+    value: ${{ steps.set-matrix.outputs.debmatrix }}
+  rpm-build-matrix:
+    description: The targets that provide RPN artefacts.
+    value: ${{ steps.set-matrix.outputs.rpmmatrix }}
+runs:
+  using: "composite"
+  steps:
+    - name: Checkout code for version check
+      uses: actions/checkout@v3
+      with:
+        ref: ${{ inputs.ref }}
+        path: version-check
+
+    - name: Determine target type
+      id: determine-build-type
+      run: |
+        BUILD_TYPE="legacy"
+        if [[ -f "packaging/build-config.json" ]]; then
+          BUILD_TYPE="modern"
+        fi
+        echo "Detected type: $BUILD_TYPE"
+        echo "BUILD_TYPE=$BUILD_TYPE" >> $GITHUB_OUTPUT
+      shell: bash
+      working-directory: version-check
+
+    - name: 2.0+ targets
+      if: steps.determine-build-type.outputs.BUILD_TYPE == 'modern'
+      run: |
+        matrix=$(echo '{ "distro" : '$(jq -cr '.linux_targets|map(.target)' packaging/build-config.json)'}'|jq -c .)
+        echo "MATRIX=$matrix" >> $GITHUB_ENV
+
+        # The following are only used by release so exclude architecture as well
+
+        debtargets=$(jq -cr '[.linux_targets[] | select(.target|contains("arm64v8")|not) | select(.type=="deb") | .target ]' packaging/build-config.json)
+        debmatrix=$(echo "{ \"distro\" : $debtargets }"|jq -c .)
+        echo "DEB_MATRIX=$debmatrix" >> $GITHUB_ENV
+
+        rpmtargets=$(jq -cr '[.linux_targets[] | select(.target|contains("arm64v8")|not) | select(.type=="rpm") | .target ]' packaging/build-config.json)
+        rpmmatrix=$(echo "{ \"distro\" : $rpmtargets}"|jq -c .)
+        echo "RPM_MATRIX=$rpmmatrix" >> $GITHUB_ENV
+      shell: bash
+
+    - name: 1.9 targets
+      if: steps.determine-build-type.outputs.BUILD_TYPE == 'legacy'
+      run: |
+        matrix=$((
+          echo '{ "distro" : ['
+          echo '"amazonlinux/2", "amazonlinux/2.arm64v8",'
+          echo '"centos/7", "centos/7.arm64v8", "centos/8", "centos/8.arm64v8",'
+          echo '"debian/buster", "debian/buster.arm64v8", "debian/bullseye", "debian/bullseye.arm64v8",'
+          echo '"ubuntu/16.04", "ubuntu/18.04", "ubuntu/20.04", "ubuntu/22.04",'
+          echo '"ubuntu/18.04.arm64v8", "ubuntu/20.04.arm64v8", "ubuntu/22.04.arm64v8",'
+          echo '"raspbian/buster", "raspbian/bullseye"'
+          echo ']}'
+        ) | jq -c .)
+        echo "MATRIX=$matrix" >> $GITHUB_ENV
+        debmatrix=$((
+          echo '{ "distro" : ['
+          echo '"debian/buster", "debian/bullseye",'
+          echo '"ubuntu/16.04", "ubuntu/18.04", "ubuntu/20.04", "ubuntu/22.04",'
+          echo '"raspbian/buster", "raspbian/bullseye"'
+          echo ']}'
+        ) | jq -c .)
+        echo "DEB_MATRIX=$debmatrix" >> $GITHUB_ENV
+        rpmmatrix=$((
+          echo '{ "distro" : ['
+          echo '"amazonlinux/2",'
+          echo '"centos/7", "centos/8"'
+          echo ']}'
+        ) | jq -c .)
+        echo "RPM_MATRIX=$rpmmatrix" >> $GITHUB_ENV
+      shell: bash
+
+    - name: Manual override of target
+      if: inputs.target != ''
+      run: |
+        if [ -n "${{ inputs.target || '' }}" ]; then
+          echo "Overriding matrix to build: ${{ inputs.target }}"
+          matrix=$((
+            echo '{ "distro" : ['
+            echo '"${{ inputs.target }}"'
+            echo ']}'
+          ) | jq -c .)
+        fi
+        echo "MATRIX=$matrix" >> $GITHUB_ENV
+      shell: bash
+
+    - id: set-matrix
+      run: |
+        echo $MATRIX
+        echo $MATRIX| jq .
+        echo "matrix=$MATRIX" >> $GITHUB_OUTPUT
+        echo $DEB_MATRIX
+        echo $DEB_MATRIX| jq .
+        echo "debmatrix=$DEB_MATRIX" >> $GITHUB_OUTPUT
+        echo $RPM_MATRIX
+        echo $RPM_MATRIX| jq .
+        echo "rpmmatrix=$RPM_MATRIX" >> $GITHUB_OUTPUT
+      shell: bash

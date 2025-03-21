@@ -1,0 +1,12 @@
+{
+    "metadata": {
+        "annotations": {
+            "fluentbit.io/invalid": "true",
+            "fluentbit.io/exclude_": "true",
+            "fluentbit.io/exclude_invalid": "true",
+            "fluentbit.io/exclude_stdout-": "true",
+            "fluentbit.io/exclude-": "true",
+            "fluentbit.io/exclude+": "true"
+        }
+    }
+}

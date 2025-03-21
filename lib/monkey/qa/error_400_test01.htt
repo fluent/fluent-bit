@@ -1,0 +1,26 @@
+################################################################################
+# DESCRIPTION
+#	Exercise error 400	
+#
+# AUTHOR
+#	Carlos Ghan <charlie.brown.uy@gmail.com>
+#
+# DATE
+#	June 29 2009
+#
+# COMMENTS
+#	Sending a bad request. In this case, one with missing "Host" header.
+#   ("Host" header is required in HTTP v1.1)
+################################################################################
+
+
+INCLUDE __CONFIG
+
+CLIENT
+_REQ $HOST $PORT
+__GET / $HTTPVER
+__Connection: close
+__
+_EXPECT . "HTTP/1.1 400 Bad Request"
+_WAIT
+END

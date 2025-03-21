@@ -1,0 +1,55 @@
+<!--
+  -- Copyright (C) 2019 Intel Corporation.  All rights reserved.
+  -- SPDX-License-Identifier: Apache-2.0 WITH LLVM-exception
+  -->
+
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <script type="module" src="${toolkitUri}"></script>
+    <script type="module" src="${mainUri}"></script>
+    <link rel="stylesheet" href="${styleUri}">
+    <title>Create project</title>
+</head>
+
+<body>
+        <div class="box_wrapper">
+            <div class="form_heading">
+                <h2>Create project</h2>
+                <vscode-divider class="divider_wrapper"></vscode-divider>
+            </div>
+        </div>
+
+        <div class="box_wrapper">
+            <div class="form_body">
+                <div id="text_filed_div">
+                        <label><b>Project Name: </b></label>
+                        <vscode-text-field id="ipt_projName"></vscode-text-field>
+                </div>
+
+                <div id="select_div">
+                        <label><b>Template:</b></label>
+                        <vscode-dropdown id="select_dropdown">
+                            <vscode-option value="" selected:disabled style="display:none"></vscode-option>
+                            <vscode-option value="default">default</vscode-option>
+                        </vscode-dropdown>
+                </div>
+            </div>
+        </div>
+
+        <div class="box_wrapper">
+            <div class="form_bottom">
+                <vscode-divider></vscode-divider>
+                <div class="proj_submit_btn_wrapper">
+                    <div></div>
+                    <div id="btn">
+                        <vscode-button id="btn_submit"><b>Create</b></vscode-buton>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+</body>
+</html>

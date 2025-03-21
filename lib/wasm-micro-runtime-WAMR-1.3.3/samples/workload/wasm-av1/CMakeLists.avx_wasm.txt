@@ -1,0 +1,72 @@
+# Copyright (C) 2019 Intel Corporation. All rights reserved.
+# SPDX-License-Identifier: Apache-2.0 WITH LLVM-exception
+
+cmake_minimum_required (VERSION 3.14)
+
+project(testavx)
+
+list(APPEND CMAKE_MODULE_PATH ${CMAKE_CURRENT_SOURCE_DIR}/../../cmake)
+
+################ dependencies ################
+find_package(Binaryen 111 REQUIRED)
+
+################  AOM  ################
+set(ENABLE_CCACHE ON)
+set(ENABLE_DOCS OFF CACHE BOOL "ENABLE_DOCS" FORCE)
+set(ENABLE_EXAMPLES OFF CACHE BOOL "ENABLE_EXAMPLES" FORCE)
+set(ENABLE_NEON OFF CACHE BOOL "ENABLE_EXAMPLES" FORCE)
+set(ENABLE_NEON_ASM OFF CACHE BOOL "ENABLE_EXAMPLES" FORCE)
+set(ENABLE_VSX OFF CACHE BOOL "ENABLE_EXAMPLES" FORCE)
+set(ENABLE_MMX OFF CACHE BOOL "ENABLE_EXAMPLES" FORCE)
+set(AOM_TARGET_CPU generic)
+set(CONFIG_ACCOUNTING 1 CACHE NUMBER "" FORCE)
+set(CONFIG_INSPECTION 1 CACHE NUMBER "" FORCE)
+set(CONFIG_MULTITHREAD 0 CACHE NUMBER "" FORCE)
+set(CONFIG_RUNTIME_CPU_DETECT 0 CACHE NUMBER "" FORCE)
+set(CONFIG_UNIT_TESTS 0 CACHE NUMBER "" FORCE)
+set(CONFIG_WEBM_IO 0 CACHE NUMBER "" FORCE)
+add_subdirectory(third_party/aom third_party/aom/bin EXCLUDE_FROM_ALL)
+
+################  AV ################
+add_executable(${PROJECT_NAME}
+  test.c
+  decode-av1.c
+)
+
+target_include_directories(${PROJECT_NAME}
+  PRIVATE
+    third_party/aom/
+    ${CMAKE_CURRENT_BINARY_DIR}/third_party/aom/bin
+)
+
+set_target_properties(${PROJECT_NAME}
+  PROPERTIES
+    OUTPUT_NAME ${PROJECT_NAME}.wasm
+)
+
+target_link_options(${PROJECT_NAME}
+  PRIVATE
+    LINKER:--allow-undefined
+    LINKER:--export=__heap_base
+    LINKER:--export=__data_end
+    LINKER:--initial-memory=33554432
+    LINKER:-z,stack-size=25165824
+)
+
+target_link_libraries(${PROJECT_NAME}
+  PRIVATE
+    aom
+)
+
+add_dependencies(${PROJECT_NAME} aom)
+
+add_custom_target(${PROJECT_NAME}_opt ALL
+  COMMAND
+    ${Binaryen_WASM_OPT} -Oz --enable-simd -o ${PROJECT_NAME}.opt.wasm ${PROJECT_NAME}.wasm
+  BYPRODUCTS
+    ${CMAKE_CURRENT_BINARY_DIR}/${PROJECT_NAME}.opt.wasm
+  WORKING_DIRECTORY
+    ${CMAKE_CURRENT_BINARY_DIR}
+)
+
+add_dependencies(${PROJECT_NAME}_opt ${PROJECT_NAME})

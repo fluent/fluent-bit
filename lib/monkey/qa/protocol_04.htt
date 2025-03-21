@@ -1,0 +1,25 @@
+################################################################################
+# DESCRIPTION
+#	Exercise error 400
+#
+# AUTHOR
+#	Eduardo Silva <edsiper@gmail.com>
+#
+# DATE
+#	June 23 2010
+#
+# COMMENTS
+#   Request without HTTP protocol version
+################################################################################
+
+
+INCLUDE __CONFIG
+
+CLIENT
+_REQ $HOST $PORT
+__GET / 
+__Connection: close
+__
+_EXPECT . "HTTP/1.1 505 HTTP Version Not Supported"
+_WAIT
+END

@@ -1,0 +1,57 @@
+# Default Host - Configuration
+# ============================
+# Here the variable principals of the program are defined in respect
+# to the configuration of the different types of directives.
+
+[HOST]
+    # ServerName:
+    # -----------
+    # Allow you to set a host and domain name (e.g monkey.linuxchile.cl). If
+    # you are working in a local network just set your IP address or if you
+    # are working like localhost set your loopback address (127.0.0.1).
+
+    ServerName @MK_VH_SERVERNAME@
+
+    # DocumentRoot:
+    # -------------
+    # This variable corresponds to the location of the main server directory
+    # of the web pages, where the files of your site are located.
+    #
+    # Example:
+    #      DocumentRoot /home/krypton/htdocs
+
+    DocumentRoot @MK_PATH_WWW@
+
+    # Redirect:
+    # ---------
+    # Under specific conditions, you may want the server performs a HTTP
+    # redirect when this Virtual Host is reach. If that is the case, append
+    # to the Redirect key the value of the address where to redirect the
+    # HTTP client.
+    #
+    # Redirect http://monkey-project.com
+
+[LOGGER]
+    # AccessLog:
+    # ----------
+    # Registration file of correct request.
+
+    AccessLog @MK_PATH_LOG@/access.log
+
+    # ErrorLog:
+    # ---------
+    # Registration file of incorrect request.
+
+    ErrorLog @MK_PATH_LOG@/error.log
+
+[ERROR_PAGES]
+    404  404.html
+
+[HANDLERS]
+    # FastCGI
+    # =======
+    # Match /.*\.php fastcgi
+
+    # CGI
+    # ===
+    # Match /cgi-bin/.*\.cgi cgi

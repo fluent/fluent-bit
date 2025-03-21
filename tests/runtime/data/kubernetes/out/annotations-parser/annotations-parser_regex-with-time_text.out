@@ -1,0 +1,1 @@
+[1554476063.584270,{"stream":"stdout","message":"Simple text","kubernetes":{"pod_name":"regex-with-time","namespace_name":"annotations-parser","annotations":{"fluentbit.io/parser":"regex-parser-with-time"},"container_name":"text"}}]

@@ -1,0 +1,5 @@
+name: wasm-micro-runtime
+
+build:
+  cmake-ext: True
+  kconfig-ext: True

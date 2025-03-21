@@ -1,0 +1,1 @@
+[1554141513.598656,{"log":"2019-04-05T14:54:23.584269761 - Simple text\n","stream":"stdout","kubernetes":{"pod_name":"regex-with-time","namespace_name":"annotations-parser","annotations":{"fluentbit.io/parser":"regex-parser-with-time"},"container_name":"invalid-text-1"}}]

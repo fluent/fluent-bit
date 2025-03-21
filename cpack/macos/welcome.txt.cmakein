@@ -1,0 +1,19 @@
+This will install @FLB_OUT_NAME@ on your Mac.
+
+--------------------------------------------------
+
+Thank you for trying @FLB_OUT_NAME@! Have a fantastic day!
+
+You can start / stop @FLB_OUT_NAME@ via launchctl command.
+
+- start @FLB_OUT_NAME@
+
+% sudo launchctl load /Library/LaunchDaemons/@FLB_OUT_NAME@.plist
+
+- stop @FLB_OUT_NAME@
+
+% sudo launchctl unload /Library/LaunchDaemons/@FLB_OUT_NAME@.plist
+
+If you have a question, please ask it on Fluent Bit Community Forum:
+
+https://github.com/fluent/fluent-bit/discussions

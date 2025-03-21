@@ -1,0 +1,51 @@
+# ----------------------------------------------------------------------------
+# INIT: Common client-initialization
+# ----------------------------------------------------------------------------
+BLOCK INIT
+_LOG_LEVEL $TEST_LOG_LEVEL
+END
+
+
+# ----------------------------------------------------------------------------
+# FMT_DATE: Format given time in seconds to RFC 1123 format
+# Param 1: time in seconds
+# Param 2: where to store result (variable-name)
+#
+# (note: httest' STRFTIME works with msec instead of sec)
+# ----------------------------------------------------------------------------
+BLOCK FMT_DATE
+_OP $1 MUL 1000 aux
+_STRFTIME $aux "%a, %d %b %Y %H:%M:%S GMT" $2
+END
+
+
+# ----------------------------------------------------------------------------
+# TESTDOC_GETSIZE: Get TEST_DOC's file size & store it in TEST_DOC_LEN variable
+# ----------------------------------------------------------------------------
+BLOCK TESTDOC_GETSIZE
+_MATCH EXEC "(.*)" TEST_DOC_LEN
+_SH #!/bin/bash
+_SH stat -c %s $DOC_ROOT/$TEST_DOC
+_SH END
+END
+
+
+# ----------------------------------------------------------------------------
+# TESTDOC_GETEPOCH: Get TEST_DOC's Epoch time & store it in TEST_DOC_EPOCH
+# variable
+# ----------------------------------------------------------------------------
+BLOCK TESTDOC_GETEPOCH
+_MATCH EXEC "(.*)" TEST_DOC_EPOCH
+_SH #!/bin/bash
+_SH stat -c %Y $DOC_ROOT/$TEST_DOC
+_SH END
+END
+
+
+# ----------------------------------------------------------------------------
+# TESTDOC_GETDATE: Get TEST_DOC's date & store it in TEST_DOC_HTTPDATE variable
+# ----------------------------------------------------------------------------
+BLOCK TESTDOC_GETDATE
+_CALL TESTDOC_GETEPOCH
+_CALL FMT_DATE $TEST_DOC_EPOCH TEST_DOC_HTTPDATE
+END

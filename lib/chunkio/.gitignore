@@ -1,0 +1,5 @@
+*~
+build/
+tests/cio_tests_internal.h
+include/chunkio/cio_info.h
+include/chunkio/cio_version.h

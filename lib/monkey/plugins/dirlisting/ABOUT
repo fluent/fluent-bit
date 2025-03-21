@@ -1,0 +1,4 @@
+Directory Listing Plugin
+========================
+When a directory is requested, this plugin will show
+an HTML list of the available content to the client.

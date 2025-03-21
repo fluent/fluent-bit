@@ -1,0 +1,163 @@
+---
+name: Reusable workflow to run unit tests on Windows packages (only for x86 and x64)
+
+on:
+  workflow_call:
+    inputs:
+      version:
+        description: The version of Fluent Bit to create.
+        type: string
+        required: true
+      ref:
+        description: The commit, tag or branch of Fluent Bit to checkout for building that creates the version above.
+        type: string
+        required: true
+      environment:
+        description: The Github environment to run this workflow on.
+        type: string
+        required: false
+      unstable:
+        description: Optionally add metadata to build to indicate an unstable build, set to the contents you want to add.
+        type: string
+        required: false
+        default: ''
+    secrets:
+      token:
+        description: The Github token or similar to authenticate with.
+        required: true
+
+jobs:
+  call-build-windows-unit-test:
+    runs-on: windows-latest
+    environment: ${{ inputs.environment }}
+    strategy:
+      fail-fast: false
+      matrix:
+        config:
+          - name: "Windows 32bit"
+            arch: x86
+            openssl_dir: C:\vcpkg\packages\openssl_x86-windows-static
+            cmake_additional_opt: ""
+            vcpkg_triplet: x86-windows-static
+          - name: "Windows 64bit"
+            arch: x64
+            openssl_dir: C:\vcpkg\packages\openssl_x64-windows-static
+            cmake_additional_opt: ""
+            vcpkg_triplet: x64-windows-static
+    permissions:
+      contents: read
+    # Default environment variables can be overridden below. To prevent library pollution - without this other random libraries may be found on the path leading to failures.
+    env:
+      PATH: C:\ProgramData\Chocolatey\bin;c:/Program Files/Git/cmd;c:/Windows/system32;C:/Windows/System32/WindowsPowerShell/v1.0;$ENV:WIX/bin;C:/Program Files/CMake/bin;C:\vcpkg;
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ inputs.ref }}
+
+      - name: Get dependencies
+        run: |
+          Invoke-WebRequest -OutFile winflexbison.zip $env:WINFLEXBISON
+          Expand-Archive winflexbison.zip -Destination C:\WinFlexBison
+          Copy-Item -Path C:\WinFlexBison/win_bison.exe C:\WinFlexBison/bison.exe
+          Copy-Item -Path C:\WinFlexBison/win_flex.exe C:\WinFlexBison/flex.exe
+          echo "C:\WinFlexBison" | Out-File -FilePath $env:GITHUB_PATH -Append
+        env:
+          WINFLEXBISON: https://github.com/lexxmark/winflexbison/releases/download/v2.5.22/win_flex_bison-2.5.22.zip
+        shell: pwsh
+
+      - name: Set up with Developer Command Prompt for Microsoft Visual C++
+        uses: ilammy/msvc-dev-cmd@v1
+        with:
+          arch: ${{ matrix.config.arch }}
+
+      - name: Get gzip command w/ chocolatey
+        uses: crazy-max/ghaction-chocolatey@v3
+        with:
+          args: install gzip -y
+
+      # http://man7.org/linux/man-pages/man1/date.1.html
+      - name: Get Date
+        id: get-date
+        run: |
+          echo "date=$(/bin/date -u "+%Y%m%d")" >> $GITHUB_OUTPUT
+        shell: bash
+
+      - name: Restore cached packages of vcpkg
+        id: cache-unit-test-vcpkg-sources
+        uses: actions/cache/restore@v4
+        with:
+          path: |
+            C:\vcpkg\packages
+          key: ${{ runner.os }}-${{ matrix.config.arch }}-wintest-vcpkg-${{ steps.get-date.outputs.date }}
+          restore-keys: |
+            ${{ runner.os }}-${{ matrix.config.arch }}-wintest-vcpkg-
+          enableCrossOsArchive: false
+
+      - name: Build openssl with vcpkg
+        run: |
+          C:\vcpkg\vcpkg install --recurse openssl --triplet ${{ matrix.config.vcpkg_triplet }}
+        shell: cmd
+
+      - name: Build libyaml with vcpkg
+        run: |
+          C:\vcpkg\vcpkg install --recurse libyaml --triplet ${{ matrix.config.vcpkg_triplet }}
+        shell: cmd
+
+      - name: Save packages of vcpkg
+        id: save-vcpkg-sources
+        uses: actions/cache/save@v4
+        with:
+          path: |
+            C:\vcpkg\packages
+          key: ${{ steps.cache-unit-test-vcpkg-sources.outputs.cache-primary-key }}
+          enableCrossOsArchive: false
+
+      - name: Build unit-test for Fluent Bit packages (only for x86 and x64)
+        run: |
+          cmake -G "NMake Makefiles" `
+            -D FLB_TESTS_INTERNAL=On `
+            -D FLB_NIGHTLY_BUILD='${{ inputs.unstable }}' `
+            -D OPENSSL_ROOT_DIR='${{ matrix.config.openssl_dir }}' `
+            ${{ matrix.config.cmake_additional_opt }} `
+            -D FLB_LIBYAML_DIR=C:\vcpkg\packages\libyaml_${{ matrix.config.vcpkg_triplet }} `
+            -D FLB_WITHOUT_flb-rt-out_elasticsearch=On `
+            -D FLB_WITHOUT_flb-rt-out_td=On `
+            -D FLB_WITHOUT_flb-rt-out_forward=On `
+            -D FLB_WITHOUT_flb-rt-in_disk=On `
+            -D FLB_WITHOUT_flb-rt-in_proc=On `
+            -D FLB_WITHOUT_flb-it-parser=On `
+            -D FLB_WITHOUT_flb-it-unit_sizes=On `
+            -D FLB_WITHOUT_flb-it-network=On `
+            -D FLB_WITHOUT_flb-it-pack=On `
+            -D FLB_WITHOUT_flb-it-signv4=On `
+            -D FLB_WITHOUT_flb-it-aws_credentials=On `
+            -D FLB_WITHOUT_flb-it-aws_credentials_ec2=On `
+            -D FLB_WITHOUT_flb-it-aws_credentials_http=On `
+            -D FLB_WITHOUT_flb-it-aws_credentials_profile=On `
+            -D FLB_WITHOUT_flb-it-aws_credentials_sts=On `
+            -D FLB_WITHOUT_flb-it-aws_util=On `
+            -D FLB_WITHOUT_flb-it-input_chunk=On `
+            ../
+          cmake --build .
+        shell: pwsh
+        working-directory: build
+
+      - name: Upload unit test binaries
+        uses: actions/upload-artifact@v4
+        with:
+          name: windows-unit-tests-${{ matrix.config.arch }}
+          path: |
+            build/**/*.exe
+          if-no-files-found: error
+
+      - name: Display dependencies w/ dumpbin
+        run: |
+          dumpbin /dependents .\bin\fluent-bit.exe
+        working-directory: build
+
+      - name: Build unit-test for Fluent Bit packages (only for x86 and x64)
+        run: |
+            ctest --build-run-dir "$PWD" --output-on-failure
+        shell: pwsh
+        working-directory: build

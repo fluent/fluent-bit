@@ -1,0 +1,55 @@
+---
+name: Reusable workflow to test packages in S3 bucket
+on:
+  workflow_call:
+    inputs:
+      environment:
+        description: The Github environment to run this workflow on.
+        type: string
+        required: false
+      ref:
+        description: The commit, tag or branch to checkout for testing scripts.
+        type: string
+        default: master
+        required: false
+    secrets:
+      token:
+        description: The Github token or similar to authenticate with.
+        required: true
+      bucket:
+        description: The name of the S3 (US-East) bucket to pull packages from.
+        required: true
+
+jobs:
+  call-test-packaging:
+    # We use Dokken to run a series of test suites locally on containers representing
+    # each OS we want to install on. This creates custom images with the package
+    # installed and configured as per our documentation then verifies that the agent
+    # is running at startup.
+    name: ${{ matrix.distro }} package tests
+    runs-on: ubuntu-latest
+    environment: ${{ inputs.environment }}
+    env:
+        AWS_URL: https://${{ secrets.bucket }}.s3.amazonaws.com
+    strategy:
+      fail-fast: false
+      matrix:
+        distro: [ amazonlinux2022, amazonlinux2, centos7, centos8, debian10, debian11, ubuntu1804, ubuntu2004, ubuntu2204 ]
+    steps:
+    - name: Checkout repository
+      uses: actions/checkout@v4
+
+    - name: Get the version
+      id: get_version
+      run: |
+        curl --fail -LO "$AWS_URL/latest-version.txt"
+        VERSION=$(cat latest-version.txt)
+        echo "VERSION=$VERSION" >> $GITHUB_OUTPUT
+      shell: bash
+
+    - name: Run package installation tests
+      run: |
+        packaging/testing/smoke/packages/run-package-tests.sh
+      env:
+        PACKAGE_TEST: ${{ matrix.distro }}
+        RELEASE_URL: https://packages.fluentbit.io

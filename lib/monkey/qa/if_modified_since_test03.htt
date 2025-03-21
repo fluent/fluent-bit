@@ -1,0 +1,50 @@
+###############################################################################
+# DESCRIPTION
+#	Test server's response against invalid If-Modified-Since header values.
+#
+# AUTHOR
+#	Carlos Ghan	<charlie.brown.uy@gmail.com>
+#
+# DATE
+#	January 27 2010
+#
+# COMMENTS
+#	Server must return a 200 response (RFC 2616 Section 14.25a)
+###############################################################################
+
+
+INCLUDE __CONFIG
+INCLUDE __MACROS
+
+CLIENT
+_CALL INIT
+
+# Garbage in If-Modified-Since header
+_REQ $HOST $PORT
+__GET / $HTTPVER
+__Host: $HOST
+__If-Modified-Since: i'm a bad monkey }:]
+__Connection: Keep-Alive
+__
+_EXPECT . "HTTP/1.1 200 OK"
+_WAIT
+
+# Some invalid dates
+_REQ $HOST $PORT
+__GET / $HTTPVER
+__Host: $HOST
+__If-Modified-Since: Sat, 30 Feb 2009 14:40:57 GMT
+__Connection: Keep-Alive
+__
+_EXPECT . "HTTP/1.1 200 OK"
+_WAIT
+
+_REQ $HOST $PORT
+__GET / $HTTPVER
+__Host: $HOST
+__If-Modified-Since: Sat, 21 Nov 9999 14:40:57 GMT
+__Connection: close
+__
+_EXPECT . "HTTP/1.1 304 Not Modified"
+_WAIT
+END

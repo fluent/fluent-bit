@@ -1,0 +1,37 @@
+# Monkey headers
+debian/tmp/usr/include/monkey
+debian/tmp/usr/include/monkey/mk_memory.h
+debian/tmp/usr/include/monkey/mk_env.h
+debian/tmp/usr/include/monkey/mk_limits.h
+debian/tmp/usr/include/monkey/mk_epoll.h
+debian/tmp/usr/include/monkey/mk_http.h
+debian/tmp/usr/include/monkey/mk_api.h
+debian/tmp/usr/include/monkey/mk_header.h
+debian/tmp/usr/include/monkey/monkey.h
+debian/tmp/usr/include/monkey/mk_string.h
+debian/tmp/usr/include/monkey/mk_config.h
+debian/tmp/usr/include/monkey/mk_clock.h
+debian/tmp/usr/include/monkey/mk_request.h
+debian/tmp/usr/include/monkey/mk_http_status.h
+debian/tmp/usr/include/monkey/mk_macros.h
+debian/tmp/usr/include/monkey/mk_cache.h
+debian/tmp/usr/include/monkey/mk_scheduler.h
+debian/tmp/usr/include/monkey/mk_info.h
+debian/tmp/usr/include/monkey/mk_rbtree.h
+debian/tmp/usr/include/monkey/mk_method.h
+debian/tmp/usr/include/monkey/mk_user.h
+debian/tmp/usr/include/monkey/mk_file.h
+debian/tmp/usr/include/monkey/mk_signals.h
+debian/tmp/usr/include/monkey/mk_iov.h
+debian/tmp/usr/include/monkey/mk_server.h
+debian/tmp/usr/include/monkey/mk_mimetype.h
+debian/tmp/usr/include/monkey/mk_plugin.h
+debian/tmp/usr/include/monkey/mk_list.h
+debian/tmp/usr/include/monkey/mk_socket.h
+debian/tmp/usr/include/monkey/mk_utils.h
+debian/tmp/usr/include/monkey/mk_connection.h
+
+# Library headers
+debian/tmp/usr/include/monkey/mk_lib.h
+debian/tmp/usr/include/monkey/libmonkey.h
+

@@ -1,0 +1,28 @@
+###############################################################################
+# DESCRIPTION
+#	HTTP/1.0 Request with 'Connection: Keep-Alive'.
+#
+# AUTHOR
+#	Eduardo Silva	<edsiper@gmail.com>
+#
+# DATE
+#	March 16 2010
+#
+# COMMENTS
+#	Do not expect header response with keep-alive header
+###############################################################################
+
+
+INCLUDE __CONFIG
+INCLUDE __MACROS
+
+CLIENT
+_REQ $HOST $PORT
+__GET / $HTTPVER10
+__Connection: Keep-Alive
+__
+_EXPECT . "HTTP/1.1 200 OK"
+_EXPECT . "!Keep-Alive: timeout=5, max=1000"
+_EXPECT . "Connection: Keep-Alive"
+_WAIT
+END

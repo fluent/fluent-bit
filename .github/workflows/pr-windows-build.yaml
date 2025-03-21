@@ -1,0 +1,51 @@
+name: PR - Windows checks
+
+#
+# Test PRs on Windows
+#
+# This won't run automatically on PRs from untrusted repos, it must be approved
+# manually. If PR authors want to run it themselves, they should enable running
+# actions on their fork, then invoke it on their branch via their forked repo's
+# Actions tab.
+#
+
+on:
+  # Enable invocation via Github repo Actions tab. Having this in the repo
+  # allows people with github forks to run this job on their own branches to
+  # build Windows branches conveniently. See DEVELOPER_GUIDE.md.
+  workflow_dispatch:
+
+  pull_request:
+    # Limit to just those changes that 'might' affect Windows for automated builds
+    # We can always do a manual build for a branch
+    paths:
+      - '**.h'
+      - '**.c'
+      - '**.windows'
+      - './conf/**'
+      - './cmake/**'
+    types:
+      - opened
+      - reopened
+      - synchronize
+
+jobs:
+  pr-windows-build:
+    uses: ./.github/workflows/call-build-windows.yaml
+    with:
+      version: ${{ github.sha }}
+      ref: ${{ github.sha }}
+      environment: pr
+    secrets:
+      token: ${{ secrets.GITHUB_TOKEN }}
+
+  run-windows-unit-tests:
+    needs:
+      - pr-windows-build
+    uses: ./.github/workflows/call-windows-unit-tests.yaml
+    with:
+      version: ${{ github.sha }}
+      ref: ${{ github.sha }}
+      environment: pr
+    secrets:
+      token: ${{ secrets.GITHUB_TOKEN }}

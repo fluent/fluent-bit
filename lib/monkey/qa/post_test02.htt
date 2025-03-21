@@ -1,0 +1,33 @@
+################################################################################
+# DESCRIPTION
+#	An incomplete POST request.
+#
+# AUTHOR
+#	Carlos Ghan	<charlie.brown.uy@gmail.com>
+#
+# DATE
+#	June 29 2009
+#
+# COMMENTS
+# 	A POST request with missing Content-Length.(Should return "Length Required")
+################################################################################
+
+# Why post_test02.htt sometimes fail ?
+# ------------------------------------
+# it fails because the httest tool catch the close connection from Monkey before it
+# finish to send the whole request, Monkey will not continue working in a request
+# which will not work properly, bad monkey >:D
+
+INCLUDE __CONFIG
+
+CLIENT
+_REQ $HOST $PORT 
+__POST / $HTTPVER
+__Host: $HOST
+__Content-Type: text/plain
+__Connection: close
+__
+_-someVariable=1234&daemon=monkeyd&SESSION=e1d83283d597ca88f599e34c8ef2e8c3
+_EXPECT . "HTTP/1.1 411 Length Required"
+_WAIT 0
+END

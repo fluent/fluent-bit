@@ -1,0 +1,34 @@
+env:
+  flush_interval: 1
+
+service:
+  http_server: "on"
+  Health_Check: "on"
+  log_level: info
+
+pipeline:
+    inputs:
+        - name: event_type
+          tag: event
+          type: logs
+          processors:
+            logs:
+              - name: log_replacer
+                replacement:
+                  some_extra_data:
+                    unsupported:
+                      hi: * # this character should be quoted
+                    some_string: "hello world"
+                    unquoted_literals:
+                        - some_int: 4
+                        - some_float: 3.1
+                        - some_bool: true
+                    quoted_literals:
+                        - some_quoted_int: "4"
+                        - some_quoted_float: '3.1'
+                        - some_quoted_bool: "true"
+
+    outputs:
+        - name: stdout
+          format: json
+          match: event

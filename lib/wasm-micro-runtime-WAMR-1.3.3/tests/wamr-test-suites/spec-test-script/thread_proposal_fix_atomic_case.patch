@@ -1,0 +1,49 @@
+diff --git a/test/core/atomic.wast b/test/core/atomic.wast
+index 66ad0eb..40259a9 100644
+--- a/test/core/atomic.wast
++++ b/test/core/atomic.wast
+@@ -324,7 +324,7 @@
+ 
+ (invoke "init" (i64.const 0x1111111111111111))
+ (assert_return (invoke "i32.atomic.rmw8.cmpxchg_u" (i32.const 0) (i32.const 0x11111111) (i32.const 0xcdcdcdcd)) (i32.const 0x11))
+-(assert_return (invoke "i64.atomic.load" (i32.const 0)) (i64.const 0x1111111111111111))
++(assert_return (invoke "i64.atomic.load" (i32.const 0)) (i64.const 0x11111111111111cd))
+ 
+ (invoke "init" (i64.const 0x1111111111111111))
+ (assert_return (invoke "i32.atomic.rmw16.cmpxchg_u" (i32.const 0) (i32.const 0) (i32.const 0xcafecafe)) (i32.const 0x1111))
+@@ -332,7 +332,7 @@
+ 
+ (invoke "init" (i64.const 0x1111111111111111))
+ (assert_return (invoke "i32.atomic.rmw16.cmpxchg_u" (i32.const 0) (i32.const 0x11111111) (i32.const 0xcafecafe)) (i32.const 0x1111))
+-(assert_return (invoke "i64.atomic.load" (i32.const 0)) (i64.const 0x1111111111111111))
++(assert_return (invoke "i64.atomic.load" (i32.const 0)) (i64.const 0x111111111111cafe))
+ 
+ (invoke "init" (i64.const 0x1111111111111111))
+ (assert_return (invoke "i64.atomic.rmw8.cmpxchg_u" (i32.const 0) (i64.const 0) (i64.const 0x4242424242424242)) (i64.const 0x11))
+@@ -340,7 +340,7 @@
+ 
+ (invoke "init" (i64.const 0x1111111111111111))
+ (assert_return (invoke "i64.atomic.rmw8.cmpxchg_u" (i32.const 0) (i64.const 0x1111111111111111) (i64.const 0x4242424242424242)) (i64.const 0x11))
+-(assert_return (invoke "i64.atomic.load" (i32.const 0)) (i64.const 0x1111111111111111))
++(assert_return (invoke "i64.atomic.load" (i32.const 0)) (i64.const 0x1111111111111142))
+ 
+ (invoke "init" (i64.const 0x1111111111111111))
+ (assert_return (invoke "i64.atomic.rmw16.cmpxchg_u" (i32.const 0) (i64.const 0) (i64.const 0xbeefbeefbeefbeef)) (i64.const 0x1111))
+@@ -348,7 +348,7 @@
+ 
+ (invoke "init" (i64.const 0x1111111111111111))
+ (assert_return (invoke "i64.atomic.rmw16.cmpxchg_u" (i32.const 0) (i64.const 0x1111111111111111) (i64.const 0xbeefbeefbeefbeef)) (i64.const 0x1111))
+-(assert_return (invoke "i64.atomic.load" (i32.const 0)) (i64.const 0x1111111111111111))
++(assert_return (invoke "i64.atomic.load" (i32.const 0)) (i64.const 0x111111111111beef))
+ 
+ (invoke "init" (i64.const 0x1111111111111111))
+ (assert_return (invoke "i64.atomic.rmw32.cmpxchg_u" (i32.const 0) (i64.const 0) (i64.const 0xcabba6e5cabba6e5)) (i64.const 0x11111111))
+@@ -356,7 +356,7 @@
+ 
+ (invoke "init" (i64.const 0x1111111111111111))
+ (assert_return (invoke "i64.atomic.rmw32.cmpxchg_u" (i32.const 0) (i64.const 0x1111111111111111) (i64.const 0xcabba6e5cabba6e5)) (i64.const 0x11111111))
+-(assert_return (invoke "i64.atomic.load" (i32.const 0)) (i64.const 0x1111111111111111))
++(assert_return (invoke "i64.atomic.load" (i32.const 0)) (i64.const 0x11111111cabba6e5))
+ 
+ ;; *.atomic.rmw*.cmpxchg (compare true)
+ 

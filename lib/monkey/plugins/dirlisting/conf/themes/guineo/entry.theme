@@ -1,0 +1,14 @@
+<TR>
+<TD class="row">
+	<A title='%_target_title_%' href='%_target_url_%'>
+		%_target_name_%
+	</A>
+</TD>
+<TD class="row">
+	%_target_time_%
+</TD>
+<TD class="row">
+	%_target_size_%
+	%_theme_path_%
+</TD>
+</TR>

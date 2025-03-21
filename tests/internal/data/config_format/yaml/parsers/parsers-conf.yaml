@@ -1,0 +1,3 @@
+---
+service:
+  parsers_file: parsers.conf

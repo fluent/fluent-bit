@@ -1,0 +1,26 @@
+###############################################################################
+# DESCRIPTION
+#	HTTP/1.0 request expect 'Connection: close'
+#
+# AUTHOR
+#	Eduardo Silva	<edsiper@gmail.com>
+#
+# DATE
+#	March 16 2010
+#
+# COMMENTS
+#	Server must return a 200 response.
+###############################################################################
+
+
+INCLUDE __CONFIG
+INCLUDE __MACROS
+
+CLIENT
+_REQ $HOST $PORT
+__GET / $HTTPVER10
+__
+_EXPECT . "HTTP/1.1 200 OK"
+_EXPECT . "Connection: Close"
+_WAIT
+END

@@ -1,0 +1,165 @@
+# HELP dotnet_threadpool_num_threads The number of active threads in the thread pool
+# TYPE dotnet_threadpool_num_threads gauge
+dotnet_threadpool_num_threads 6
+# HELP dotnet_jit_method_total Total number of methods compiled by the JIT compiler
+# TYPE dotnet_jit_method_total counter
+dotnet_jit_method_total 6476
+# HELP dotnet_gc_heap_size_bytes The current size of all heaps (only updated after a garbage collection)
+# TYPE dotnet_gc_heap_size_bytes gauge
+dotnet_gc_heap_size_bytes{gc_generation="0"} 24
+dotnet_gc_heap_size_bytes{gc_generation="loh"} 550280
+dotnet_gc_heap_size_bytes{gc_generation="2"} 2625704
+dotnet_gc_heap_size_bytes{gc_generation="1"} 226944
+# HELP dotnet_gc_collection_count_total Counts the number of garbage collections that have occurred, broken down by generation number and the reason for the collection.
+# TYPE dotnet_gc_collection_count_total counter
+dotnet_gc_collection_count_total{gc_generation="1",gc_reason="alloc_small"} 133
+dotnet_gc_collection_count_total{gc_generation="0",gc_reason="alloc_small"} 618
+dotnet_gc_collection_count_total{gc_generation="2",gc_reason="alloc_small"} 8
+# HELP dotnet_threadpool_timer_count The number of timers active
+# TYPE dotnet_threadpool_timer_count gauge
+dotnet_threadpool_timer_count 5
+# HELP dotnet_threadpool_queue_length Measures the queue length of the thread pool. Values greater than 0 indicate a backlog of work for the threadpool to process.
+# TYPE dotnet_threadpool_queue_length histogram
+dotnet_threadpool_queue_length_sum 5
+dotnet_threadpool_queue_length_count 321733
+dotnet_threadpool_queue_length_bucket{le="0"} 321728
+dotnet_threadpool_queue_length_bucket{le="1"} 321733
+dotnet_threadpool_queue_length_bucket{le="10"} 321733
+dotnet_threadpool_queue_length_bucket{le="100"} 321733
+dotnet_threadpool_queue_length_bucket{le="1000"} 321733
+dotnet_threadpool_queue_length_bucket{le="+Inf"} 321733
+# HELP dotnet_gc_cpu_ratio The percentage of process CPU time spent running garbage collections
+# TYPE dotnet_gc_cpu_ratio gauge
+dotnet_gc_cpu_ratio 0
+# HELP dotnet_collection_count_total GC collection count
+# TYPE dotnet_collection_count_total counter
+dotnet_collection_count_total{generation="0"} 759
+dotnet_collection_count_total{generation="2"} 8
+dotnet_collection_count_total{generation="1"} 141
+# HELP dotnet_threadpool_adjustments_total The total number of changes made to the size of the thread pool, labeled by the reason for change
+# TYPE dotnet_threadpool_adjustments_total counter
+dotnet_threadpool_adjustments_total{adjustment_reason="starvation"} 957
+dotnet_threadpool_adjustments_total{adjustment_reason="warmup"} 4
+dotnet_threadpool_adjustments_total{adjustment_reason="thread_timed_out"} 2409
+dotnet_threadpool_adjustments_total{adjustment_reason="climbing_move"} 93458
+# HELP process_open_handles Number of open handles
+# TYPE process_open_handles gauge
+process_open_handles 264
+# HELP dotnet_gc_pause_ratio The percentage of time the process spent paused for garbage collection
+# TYPE dotnet_gc_pause_ratio gauge
+dotnet_gc_pause_ratio 0
+# HELP process_cpu_seconds_total Total user and system CPU time spent in seconds.
+# TYPE process_cpu_seconds_total counter
+process_cpu_seconds_total 1450.85
+# HELP dotnet_gc_pause_seconds The amount of time execution was paused for garbage collection
+# TYPE dotnet_gc_pause_seconds histogram
+dotnet_gc_pause_seconds_sum 1.3192573999999997
+dotnet_gc_pause_seconds_count 759
+dotnet_gc_pause_seconds_bucket{le="0.001"} 7
+dotnet_gc_pause_seconds_bucket{le="0.01"} 747
+dotnet_gc_pause_seconds_bucket{le="0.05"} 759
+dotnet_gc_pause_seconds_bucket{le="0.1"} 759
+dotnet_gc_pause_seconds_bucket{le="0.5"} 759
+dotnet_gc_pause_seconds_bucket{le="1"} 759
+dotnet_gc_pause_seconds_bucket{le="10"} 759
+dotnet_gc_pause_seconds_bucket{le="+Inf"} 759
+# HELP dotnet_jit_il_bytes Total bytes of IL compiled by the JIT compiler
+# TYPE dotnet_jit_il_bytes gauge
+dotnet_jit_il_bytes 487850
+# HELP dotnet_gc_collection_seconds The amount of time spent running garbage collections
+# TYPE dotnet_gc_collection_seconds histogram
+dotnet_gc_collection_seconds_sum{gc_generation="1",gc_type="non_concurrent_gc"} 0.20421500000000006
+dotnet_gc_collection_seconds_count{gc_generation="1",gc_type="non_concurrent_gc"} 133
+dotnet_gc_collection_seconds_bucket{gc_generation="1",gc_type="non_concurrent_gc",le="0.001"} 3
+dotnet_gc_collection_seconds_bucket{gc_generation="1",gc_type="non_concurrent_gc",le="0.01"} 133
+dotnet_gc_collection_seconds_bucket{gc_generation="1",gc_type="non_concurrent_gc",le="0.05"} 133
+dotnet_gc_collection_seconds_bucket{gc_generation="1",gc_type="non_concurrent_gc",le="0.1"} 133
+dotnet_gc_collection_seconds_bucket{gc_generation="1",gc_type="non_concurrent_gc",le="0.5"} 133
+dotnet_gc_collection_seconds_bucket{gc_generation="1",gc_type="non_concurrent_gc",le="1"} 133
+dotnet_gc_collection_seconds_bucket{gc_generation="1",gc_type="non_concurrent_gc",le="10"} 133
+dotnet_gc_collection_seconds_bucket{gc_generation="1",gc_type="non_concurrent_gc",le="+Inf"} 133
+dotnet_gc_collection_seconds_sum 0
+dotnet_gc_collection_seconds_count 0
+dotnet_gc_collection_seconds_bucket{le="0.001"} 0
+dotnet_gc_collection_seconds_bucket{le="0.01"} 0
+dotnet_gc_collection_seconds_bucket{le="0.05"} 0
+dotnet_gc_collection_seconds_bucket{le="0.1"} 0
+dotnet_gc_collection_seconds_bucket{le="0.5"} 0
+dotnet_gc_collection_seconds_bucket{le="1"} 0
+dotnet_gc_collection_seconds_bucket{le="10"} 0
+dotnet_gc_collection_seconds_bucket{le="+Inf"} 0
+dotnet_gc_collection_seconds_sum{gc_generation="2",gc_type="non_concurrent_gc"} 0.09344780000000001
+dotnet_gc_collection_seconds_count{gc_generation="2",gc_type="non_concurrent_gc"} 8
+dotnet_gc_collection_seconds_bucket{gc_generation="2",gc_type="non_concurrent_gc",le="0.001"} 0
+dotnet_gc_collection_seconds_bucket{gc_generation="2",gc_type="non_concurrent_gc",le="0.01"} 0
+dotnet_gc_collection_seconds_bucket{gc_generation="2",gc_type="non_concurrent_gc",le="0.05"} 8
+dotnet_gc_collection_seconds_bucket{gc_generation="2",gc_type="non_concurrent_gc",le="0.1"} 8
+dotnet_gc_collection_seconds_bucket{gc_generation="2",gc_type="non_concurrent_gc",le="0.5"} 8
+dotnet_gc_collection_seconds_bucket{gc_generation="2",gc_type="non_concurrent_gc",le="1"} 8
+dotnet_gc_collection_seconds_bucket{gc_generation="2",gc_type="non_concurrent_gc",le="10"} 8
+dotnet_gc_collection_seconds_bucket{gc_generation="2",gc_type="non_concurrent_gc",le="+Inf"} 8
+dotnet_gc_collection_seconds_sum{gc_generation="0",gc_type="non_concurrent_gc"} 0.855451900000001
+dotnet_gc_collection_seconds_count{gc_generation="0",gc_type="non_concurrent_gc"} 618
+dotnet_gc_collection_seconds_bucket{gc_generation="0",gc_type="non_concurrent_gc",le="0.001"} 127
+dotnet_gc_collection_seconds_bucket{gc_generation="0",gc_type="non_concurrent_gc",le="0.01"} 617
+dotnet_gc_collection_seconds_bucket{gc_generation="0",gc_type="non_concurrent_gc",le="0.05"} 618
+dotnet_gc_collection_seconds_bucket{gc_generation="0",gc_type="non_concurrent_gc",le="0.1"} 618
+dotnet_gc_collection_seconds_bucket{gc_generation="0",gc_type="non_concurrent_gc",le="0.5"} 618
+dotnet_gc_collection_seconds_bucket{gc_generation="0",gc_type="non_concurrent_gc",le="1"} 618
+dotnet_gc_collection_seconds_bucket{gc_generation="0",gc_type="non_concurrent_gc",le="10"} 618
+dotnet_gc_collection_seconds_bucket{gc_generation="0",gc_type="non_concurrent_gc",le="+Inf"} 618
+# HELP dotnet_contention_total The number of locks contended
+# TYPE dotnet_contention_total counter
+dotnet_contention_total 6758
+# HELP dotnet_contention_seconds_total The total amount of time spent contending locks
+# TYPE dotnet_contention_seconds_total counter
+dotnet_contention_seconds_total 1.0246322000000074
+# HELP dotnet_gc_memory_total_available_bytes The upper limit on the amount of physical memory .NET can allocate to
+# TYPE dotnet_gc_memory_total_available_bytes gauge
+dotnet_gc_memory_total_available_bytes 805306368
+# HELP dotnet_build_info Build information about prometheus-net.DotNetRuntime and the environment
+# TYPE dotnet_build_info gauge
+dotnet_build_info{version="4.2.4.0",target_framework=".NETCoreApp,Version=v6.0",runtime_version=".NET 6.0.11",os_version="Linux 5.4.0-1094-azure #100~18.04.1-Ubuntu SMP Mon Oct 17 11:44:30 UTC 2022",process_architecture="X64",gc_mode="Workstation"} 1
+# HELP dotnet_internal_recycle_count prometheus-net.DotNetRuntime internal metric. Counts the number of times the underlying event listeners have been recycled
+# TYPE dotnet_internal_recycle_count counter
+dotnet_internal_recycle_count 3
+# HELP dotnet_gc_allocated_bytes_total The total number of bytes allocated on the managed heap
+# TYPE dotnet_gc_allocated_bytes_total counter
+dotnet_gc_allocated_bytes_total{gc_heap="soh"} 19853322336
+# HELP process_start_time_seconds Start time of the process since unix epoch in seconds.
+# TYPE process_start_time_seconds gauge
+process_start_time_seconds 1670526623.05
+# HELP process_cpu_count The number of processor cores available to this process.
+# TYPE process_cpu_count gauge
+process_cpu_count 1
+# HELP dotnet_gc_pinned_objects The number of pinned objects
+# TYPE dotnet_gc_pinned_objects gauge
+dotnet_gc_pinned_objects 0
+# HELP dotnet_total_memory_bytes Total known allocated memory
+# TYPE dotnet_total_memory_bytes gauge
+dotnet_total_memory_bytes 20979896
+# HELP process_virtual_memory_bytes Virtual memory size in bytes.
+# TYPE process_virtual_memory_bytes gauge
+process_virtual_memory_bytes 8562679808
+# HELP dotnet_threadpool_throughput_total The total number of work items that have finished execution in the thread pool
+# TYPE dotnet_threadpool_throughput_total counter
+dotnet_threadpool_throughput_total 3381388
+# HELP process_working_set_bytes Process working set
+# TYPE process_working_set_bytes gauge
+process_working_set_bytes 135118848
+# HELP process_num_threads Total number of threads
+# TYPE process_num_threads gauge
+process_num_threads 21
+# HELP dotnet_gc_finalization_queue_length The number of objects waiting to be finalized
+# TYPE dotnet_gc_finalization_queue_length gauge
+dotnet_gc_finalization_queue_length 15
+# HELP process_private_memory_bytes Process private memory size
+# TYPE process_private_memory_bytes gauge
+process_private_memory_bytes 247390208
+# HELP dotnet_exceptions_total Count of exceptions thrown, broken down by type
+# TYPE dotnet_exceptions_total counter
+dotnet_exceptions_total{type="System.Net.Http.HttpRequestException"} 792
+dotnet_exceptions_total{type="System.ObjectDisposedException"} 11977
+dotnet_exceptions_total{type="System.IO.DirectoryNotFoundException"} 14
+dotnet_exceptions_total{type="System.Net.Sockets.SocketException"} 258287
+dotnet_exceptions_total{type="Grpc.Core.RpcException"} 72

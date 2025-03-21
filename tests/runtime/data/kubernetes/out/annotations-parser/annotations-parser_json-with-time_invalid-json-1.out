@@ -1,0 +1,1 @@
+[1554141513.598656,{"log":"{\"time\":\"2019-04-05T14:54:23.584269761\",\"message\":\"Simple text\"]\n","stream":"stdout","kubernetes":{"pod_name":"json-with-time","namespace_name":"annotations-parser","annotations":{"fluentbit.io/parser":"json-parser-with-time"},"container_name":"invalid-json-1"}}]
