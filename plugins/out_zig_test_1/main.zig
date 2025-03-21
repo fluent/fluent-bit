@@ -45,13 +45,6 @@ fn cb_flush(data: *const anyopaque, bytes: usize, tag: [*c]const u8, tag_len: us
     std.debug.print("FLUSH CALLBACK FOR TAG {s}\n", .{tag});
     std.debug.print("cb_flush, context = {any}\n", .{context});
 
-
-pub const flb_log_event_decoder = c.flb_log_event_decoder;
-pub const flb_log_event_decoder_create = c.flb_log_event_decoder_create;
-pub const flb_log_event_decoder_destroy = c.flb_log_event_decoder_destroy;
-pub const flb_log_event_decoder_next = c.flb_log_event_decoder_next;
-
-
     return zig_sdk.FLB_OK;
 }
 
