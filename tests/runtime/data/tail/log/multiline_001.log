@@ -1,0 +1,6 @@
+{"key1": 12345, "key2": "abc", "time": "2006-07-28T13:22:04Z","message":"Dec 14 06:41:08 Exception in thread main java.lang.RuntimeException: Something has gone wrong, aborting!"}
+{"key1": 12345, "key2": "abc", "time": "2006-07-28T13:22:04Z","message":" at com.myproject.module.MyProject.badMethod(MyProject.java:22)"}
+{"key1": 12345, "key2": "abc", "time": "2006-07-28T13:22:04Z","message":" at com.myproject.module.MyProject.oneMoreMethod(MyProject.java:18)"}
+{"key1": 12345, "key2": "abc", "time": "2006-07-28T13:22:04Z","message":" at com.myproject.module.MyProject.anotherMethod(MyProject.java:14)"}
+{"key1": 12345, "key2": "abc", "time": "2006-07-28T13:22:04Z","message":" at com.myproject.module.MyProject.oneMoreMethod(MyProject.java:13)"}
+{"key1": 12345, "key2": "abc", "time": "2006-07-28T13:22:04Z","message":" at com.myproject.module.MyProject.oneMoreMethod(MyProject.java:12)"}

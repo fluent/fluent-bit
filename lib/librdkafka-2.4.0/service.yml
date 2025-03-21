@@ -1,0 +1,18 @@
+name: librdkafka
+lang: unknown
+lang_version: unknown
+git:
+  enable: true
+github:
+  enable: true
+semaphore:
+  enable: true
+  pipeline_enable: false
+  triggers:
+  - tags
+  - branches
+  branches:
+  - master
+  - /semaphore.*/
+  - /dev_.*/
+  - /feature\/.*/

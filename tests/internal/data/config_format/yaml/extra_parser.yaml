@@ -1,0 +1,16 @@
+parsers:
+  - name: json-2
+    format: json
+
+multiline_parsers:
+  - name: exception_test-2
+    type: regex
+    flush_timeout: 1000
+    rules:
+      - state: start_state
+        regex: "/(Dec \\d+ \\d+\\:\\d+\\:\\d+)(.*)/"
+        next_state: cont
+
+      - state: cont
+        regex: "/^\\s+at.*/"
+        next_state: cont

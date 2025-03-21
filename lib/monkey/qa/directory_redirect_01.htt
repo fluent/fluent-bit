@@ -1,0 +1,33 @@
+###############################################################################
+# DESCRIPTION
+#	Check directory redirect
+#
+# AUTHOR
+#	Eduardo Silva <edsiper@gmail.com>
+#
+# DATE
+#	Jun 2 2010
+#
+# COMMENTS
+#	Server must return a 301 moved permanently header.
+###############################################################################
+
+
+INCLUDE __CONFIG
+INCLUDE __MACROS
+
+CLIENT
+_CALL INIT
+_CALL TESTDOC_GETDATE
+
+_REQ $HOST $PORT
+__GET /img $HTTPVER
+__Host: $HOST:$PORT
+__If-Modified-Since: $TEST_DOC_HTTPDATE
+__Connection: close
+__
+_EXPECT . "HTTP/1.1 301 Moved Permanently"
+_EXPECT . "Content-Length: 0"
+_EXPECT . "Location: http://$HOST:$PORT/img/
+_WAIT
+END

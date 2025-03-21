@@ -1,0 +1,3 @@
+build/*
+include/ctraces/ctr_info.h
+include/ctraces/ctr_version.h

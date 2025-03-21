@@ -1,0 +1,138 @@
+diff --git a/.bazelrc b/.bazelrc
+index fcaff1063..e61d53337 100644
+--- a/.bazelrc
++++ b/.bazelrc
+@@ -1,6 +1,7 @@
+ # Basic build settings
+ build --jobs 128
+ build --cxxopt='-std=gnu++14'
++build --incompatible_enable_cc_toolchain_resolution
+ 
+ # Sets the default Apple platform to macOS.
+ build --apple_platform_type=macos
+@@ -55,3 +56,10 @@ build:macos --apple_platform_type=macos
+ 
+ build:macos_arm64 --config=macos
+ build:macos_arm64 --cpu=darwin_arm64
++
++# Emscripten configs
++build:wasm --copt="-Wno-unused"
++build:wasm --copt="-Wno-unused-function"
++build:wasm --copt="-Wno-unused-but-set-variable"
++build:wasm --cpu=wasm
++build:wasm --features=wasm_simd
+diff --git a/WORKSPACE b/WORKSPACE
+index 2e568088b..3961371ca 100644
+--- a/WORKSPACE
++++ b/WORKSPACE
+@@ -83,7 +83,23 @@ http_archive(
+ )
+ 
+ # Android NDK location and version is auto-detected from $ANDROID_NDK_HOME environment variable
+-android_ndk_repository(name = "androidndk")
++# android_ndk_repository(name = "androidndk")
+ 
+ # Android SDK location and API is auto-detected from $ANDROID_HOME environment variable
+-android_sdk_repository(name = "androidsdk")
++# android_sdk_repository(name = "androidsdk")
++
++http_archive(
++    name = "emsdk",
++    sha256 = "5fa6f5eb45a4d50264610c4c9e1c155535359b63bfaad69b4e5101d16c1e7e32",
++    strip_prefix = "emsdk-a896e3d066448b3530dbcaa48869fafefd738f57/bazel",
++    url = "https://github.com/emscripten-core/emsdk/archive/a896e3d066448b3530dbcaa48869fafefd738f57.tar.gz",
++)
++
++load("@emsdk//:deps.bzl", emsdk_deps = "deps")
++emsdk_deps()
++
++load("@emsdk//:emscripten_deps.bzl", emsdk_emscripten_deps = "emscripten_deps")
++emsdk_emscripten_deps(emscripten_version = "3.1.44")
++
++load("@emsdk//:toolchains.bzl", "register_emscripten_toolchains")
++register_emscripten_toolchains()
+diff --git a/bench/utils.cc b/bench/utils.cc
+index 3b32503a7..656845336 100644
+--- a/bench/utils.cc
++++ b/bench/utils.cc
+@@ -456,3 +456,13 @@ CodeMemoryHelper::~CodeMemoryHelper() {
+ 
+ }  // namespace utils
+ }  // namespace benchmark
++
++
++extern "C"
++__attribute__((import_module("env"), import_name("getentropy"))) int import_getentropy(void* buffer, size_t length);
++
++extern "C"
++int getentropy(void* buffer, size_t length)
++{
++  return import_getentropy(buffer, length);
++}
+diff --git a/build_defs.bzl b/build_defs.bzl
+index 01b436eb7..2738fd50a 100644
+--- a/build_defs.bzl
++++ b/build_defs.bzl
+@@ -1,6 +1,7 @@
+ """Build definitions and rules for XNNPACK."""
+ 
+-load(":emscripten.bzl", "xnnpack_emscripten_benchmark_linkopts", "xnnpack_emscripten_deps", "xnnpack_emscripten_minimal_linkopts", "xnnpack_emscripten_test_linkopts")
++load(":emscripten.bzl", "xnnpack_emscripten_benchmark_linkopts", "xnnpack_emscripten_deps", "xnnpack_emscripten_minimal_linkopts", "xnnpack_emscripten_test_linkopts", "xnnpack_emscripten_standalone_benchmark_linkopts")
++load("@emsdk//emscripten_toolchain:wasm_rules.bzl", "wasm_cc_binary")
+ 
+ def xnnpack_visibility():
+     """Visibility of :XNNPACK target.
+@@ -393,7 +394,8 @@ def xnnpack_benchmark(name, srcs, copts = [], deps = [], tags = []):
+             "//conditions:default": ["-Wno-unused-function"],
+         }) + copts,
+         linkopts = select({
+-            ":emscripten": xnnpack_emscripten_benchmark_linkopts(),
++            ":emscripten": xnnpack_emscripten_standalone_benchmark_linkopts(),
++            ":emscripten_wasmsimd": xnnpack_emscripten_standalone_benchmark_linkopts(),
+             ":windows_x86_64_mingw": ["-lshlwapi"],
+             ":windows_x86_64_msys": ["-lshlwapi"],
+             "//conditions:default": [],
+@@ -405,5 +407,16 @@ def xnnpack_benchmark(name, srcs, copts = [], deps = [], tags = []):
+             ":emscripten": xnnpack_emscripten_deps(),
+             "//conditions:default": [],
+         }),
+-	tags = tags,
++        tags = tags,
++    )
++
++    wasm_cc_binary(
++        name = name + "-wasm",
++        cc_target = ":" + name,
++        threads = "off",
++        simd = True,
++        standalone= True,
++        outputs = [
++            name + ".wasm",
++        ]
+     )
+diff --git a/emscripten.bzl b/emscripten.bzl
+index f1557a7b1..a3c4f93b9 100644
+--- a/emscripten.bzl
++++ b/emscripten.bzl
+@@ -33,6 +33,21 @@ def xnnpack_emscripten_benchmark_linkopts():
+         "--pre-js $(location :preamble.js.lds)",
+     ]
+ 
++def xnnpack_emscripten_standalone_benchmark_linkopts():
++    return [
++        "-s ASSERTIONS=1",
++        "-s ERROR_ON_UNDEFINED_SYMBOLS=0",
++        "-s ALLOW_MEMORY_GROWTH=1",
++        "-s TOTAL_MEMORY=536870912",  # 512M
++        "-s USE_PTHREADS=0",
++        "-s STANDALONE_WASM=1",
++        "-Wl,--export=__heap_base",
++        "-Wl,--export=__data_end",
++        "-Wl,--export=malloc",
++        "-Wl,--export=free",
++    ]
++
++
+ def xnnpack_emscripten_deps():
+     """Emscripten-specific dependencies for unit tests and benchmarks."""
+     return [

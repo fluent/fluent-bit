@@ -1,0 +1,36 @@
+name: Lint PRs
+on:
+  pull_request:
+  workflow_dispatch:
+
+jobs:
+  hadolint-pr:
+    runs-on: ubuntu-latest
+    name: PR - Hadolint
+    steps:
+      - uses: actions/checkout@v4
+        # Ignores do not work: https://github.com/reviewdog/action-hadolint/issues/35 is resolved
+      - uses: reviewdog/action-hadolint@v1
+        with:
+          exclude: |
+            packaging/testing/smoke/packages/Dockerfile.*
+
+  shellcheck-pr:
+    runs-on: ubuntu-latest
+    name: PR - Shellcheck
+    steps:
+      - uses: actions/checkout@v4
+      - uses: ludeeus/action-shellcheck@master
+        with:
+          ignore_paths: cmake/sanitizers-cmake lib plugins tests
+
+  actionlint-pr:
+    runs-on: ubuntu-latest
+    name: PR - Actionlint
+    steps:
+      - uses: actions/checkout@v4
+      - run: |
+          echo "::add-matcher::.github/actionlint-matcher.json"
+          bash <(curl https://raw.githubusercontent.com/rhysd/actionlint/main/scripts/download-actionlint.bash)
+          ./actionlint -color -shellcheck=
+        shell: bash

@@ -1,0 +1,26 @@
+###############################################################################
+# DESCRIPTION
+#	Test description	
+#
+# AUTHOR
+#	Author Name	<author@email.here>
+#
+# DATE
+#	Month_text Day_number Year_number	
+#
+# COMMENTS
+#	Anything pertinent.
+###############################################################################
+
+
+INCLUDE __CONFIG
+
+CLIENT
+_REQ $HOST $PORT
+__GET / $HTTPVER
+__Host: $HOST
+__Connection: close
+__
+_EXPECT . "HTTP/1.1 200 OK"
+_WAIT
+END

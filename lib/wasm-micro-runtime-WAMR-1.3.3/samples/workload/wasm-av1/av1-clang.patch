@@ -1,0 +1,19 @@
+diff --git a/test.c b/test.c
+index df2d44b..520bf13 100644
+--- a/test.c
++++ b/test.c
+@@ -63,9 +63,14 @@ main(int argc, char *argv[]) {
+                     static int     i = 0;
+                     
+                     ++i;
++                    printf("Decoding frame #%d\n", i);
+                     if (30 <= i && i < 40) {
++                        printf("Dumping frame #%d\n", i);
+                         dump_raw_frame(af, i);
+                     }
++                    if (i >= 1000) {
++                        break;
++                    }
+                 }
+                 /*
+                  * Run the decoder every time, so that we keep

@@ -1,0 +1,27 @@
+###############################################################################
+# DESCRIPTION
+#	HTTP/1.0 Request with an invalid 'Connection' header
+#
+# AUTHOR
+#	Eduardo Silva	<edsiper@gmail.com>
+#
+# DATE
+#	March 16 2010
+#
+# COMMENTS
+#	Expect 'Connection: closed' from server
+###############################################################################
+
+
+INCLUDE __CONFIG
+INCLUDE __MACROS
+
+CLIENT
+_REQ $HOST $PORT
+__GET / $HTTPVER10
+__Connection: an invalid value
+__
+_EXPECT . "HTTP/1.1 200 OK"
+_EXPECT . "Connection: Close"
+_WAIT
+END

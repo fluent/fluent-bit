@@ -1,0 +1,33 @@
+#
+# Copyright (c) 2021, RT-Thread Development Team
+#
+# SPDX-License-Identifier: Apache-2.0 WITH LLVM-exception
+#
+
+from building import *
+import re
+Import('rtconfig')
+
+cwd     = GetCurrentDir()
+
+src = Split('''
+aot_loader.c
+aot_runtime.c
+aot_intrinsic.c
+''')
+
+if rtconfig.ARCH == 'arm':
+    if re.match('^cortex-m.*', rtconfig.CPU):
+        src += ['arch/aot_reloc_thumb.c']
+    elif re.match('^cortex-a.*', rtconfig.CPU):
+        src += ['arch/aot_reloc_arm.c']
+elif rtconfig.ARCH == 'ia32':
+    src += ['arch/aot_reloc_x86_32.c']
+
+CPPPATH = [cwd, cwd + '/../include']
+
+CPPDEFINES = ['WASM_ENABLE_AOT=1']
+
+group = DefineGroup('iwasm_aot', src, depend = [''], CPPPATH = CPPPATH, CPPDEFINES = CPPDEFINES)
+
+Return('group')

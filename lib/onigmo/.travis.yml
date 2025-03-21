@@ -1,0 +1,35 @@
+language: c
+
+branches:
+  except:
+    - ruby-2.x
+
+compiler:
+  - gcc
+  - clang
+
+env:
+  - CFLAGS=--coverage CONFOPT=
+
+sudo: false
+
+addons:
+  apt:
+    packages:
+      - lcov
+      #- python3
+
+before_install:
+  - gem install lcoveralls
+
+before_script:
+  - ./autogen.sh
+  - ./configure $CONFOPT && make
+
+script:
+  - make test
+
+after_success:
+  - lcov -c -d .libs -d enc/.libs -o coverage.info
+  - lcoveralls --retry-count 5 coverage.info
+  - bash <(curl -s https://codecov.io/bash)

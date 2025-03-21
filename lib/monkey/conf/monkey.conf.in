@@ -1,0 +1,166 @@
+# Monkey HTTP Server - Configuration
+# ==================================
+# These are the main variables and their descriptions, defined in respect
+# to the configuration of the different types of directives.
+
+[SERVER]
+    # Listen:
+    # -------
+    # The Listen directive maps the port and optionally restricts the
+    # network interface from where Monkey will be listens for incoming
+    # connections. Multiple Listen directives are allowed.
+    #
+    # The Listen directive requires a port number, preceded by an
+    # optional IPv4 or IPv6 address separated by a colon (:).
+    # IPv6 addresses must be enclosed in brackets ([]), e.g:
+    #
+    # Listen 127.0.0.1:2001
+    # Listen [::1]:2001
+
+    Listen @MK_CONF_LISTEN@
+
+    # Workers:
+    # --------
+    # Monkey launches threads to attend clients; each worker thread is capable
+    # of attending more than one client request at one time. The amount of
+    # clients that can be handled by each thread is calculated using the
+    # number of file descriptors allowed by the system. If this variable
+    # is set to 0 monkey will launch one thread per processor.
+
+    Workers @MK_CONF_WORKERS@
+
+    # Timeout:
+    # --------
+    # The largest span of time, expressed in seconds, during which you should
+    # wait to receive the information or waiting time for the remote host to
+    # accept an answer. (Timeout > 0)
+
+    Timeout @MK_CONF_TIMEOUT@
+
+    # PidFile:
+    # --------
+    # File where the server guards the process number when starting.
+
+    PidFile @MK_PATH_PIDPATH@/@MK_PIDFILE@
+
+    # UserDir:
+    # --------
+    # Directory name for users home (~/user).
+
+    UserDir @MK_CONF_USERDIR@
+
+    # Indexfile:
+    # ----------
+    # Number of the initial file of aperture when calling a directory.
+
+    Indexfile @MK_CONF_INDEXFILE@
+
+    # HideVersion:
+    # ------------
+    # For security reasons, sometimes people want to hide the version of his
+    # own webserver to clients (values on/off).
+
+    HideVersion @MK_CONF_HIDEVERSION@
+
+    # Resume:
+    # -------
+    # Allow clients to request files by ranges (values on/off).
+
+    Resume @MK_CONF_RESUME@
+
+    # User:
+    # -----
+    # If you want the webserver to run as a process of a defined user, you can
+    # define it in this variable. For the change of user to work, it's necessary
+    # to execute Monkey with root privileges. If it's started by a user that
+    # that doesn't have root privileges, this variable will be omitted.
+
+    User @MK_CONF_USER@
+
+    # -----------------
+    #  ADVANCED CONFIG
+    # -----------------
+    # Just change the next variables if you know what are you doing.
+
+    # KeepAlive:
+    # ----------
+    # Allow persistent connections. (on/off)
+
+    KeepAlive @MK_CONF_KA@
+
+    # KeepAliveTimeout
+    # ----------------
+    # Number of seconds to wait for the next request in a persistent
+    # connection (value > 0).
+
+    KeepAliveTimeout @MK_CONF_KA_TIMEOUT@
+
+    # MaxKeepAliveRequest:
+    # --------------------
+    # Maximum number of requests per connection. (value > 0)
+
+    MaxKeepAliveRequest @MK_CONF_KA_MAXREQ@
+
+    # MaxRequestSize:
+    # ---------------
+    # When a request arrives, Monkey allocs a 'chunk' of memory space
+    # to receive the incoming data. As many times the incoming data
+    # size is undeterminated, Monkey increases the buffer as required. This
+    # variable defines the maximum size that the buffer can grow in terms
+    # of KB. Example: defining 'MaxRequestSize 32' means 32 Kilobytes.
+    # The value defined must be greater than zero. Default value defined
+    # is 32.
+
+    MaxRequestSize @MK_CONF_REQ_SIZE@
+
+    # SymLink:
+    # --------
+    # Allow request to symbolic link files.
+
+    SymLink @MK_CONF_SYMLINK@
+
+    # DefaultMimeType:
+    # ----------------
+    # If a static content is requested and it does not contain a known extension,
+    # Monkey will send the mime type specified on this directive.
+
+    DefaultMimeType @MK_CONF_DEFAULT_MIME@
+
+    # FDT:
+    # ----
+    # The File Descriptor Table (FDT) it's an internal mechanism to share open
+    # file descriptors under specific threads and virtual host context. When
+    # enabled, it helps to reduce the number of opened file descriptors for the
+    # same resource and the number of required system calls to open and close
+    # files.
+    #
+    # The overhead in memory of this feature is around ~5KB per worker.
+
+    FDT @MK_CONF_FDT@
+
+    # OverCapacity:
+    # -------------
+    # When the server is over capacity at networking level, is required to
+    # prepare a contingency plan. The OverCapacity feature allows to define
+    # the behavior under this situation. Monkey defines three options:
+    #
+    #  Drop   : just drop any new incoming connection.
+    #  Resist : try to serve all request, even some of them may delay.
+    #  TooBusy: report a 503 Service Unavailable HTTP status.
+    #
+    # The default behavior is 'Resist'.
+
+    OverCapacity @MK_CONF_OVERCAPACITY@
+
+    # FDLimit:
+    # --------
+    # Defines the maximum number of file descriptors that the server
+    # can use, it can be translated to the maximum number of connections.
+    # If the value is not set, Monkey will use the soft limit imposed to
+    # the process (ulimit -n).
+    #
+    # If the variable is set, Monkey will try to increase or decrease
+    # the limit under it restrictions. For values higher that Hard Limit
+    # Monkey needs to be started by root user.
+    #
+    # FDLimit 4096

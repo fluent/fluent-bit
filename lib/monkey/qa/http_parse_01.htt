@@ -1,0 +1,23 @@
+################################################################################
+# DESCRIPTION
+#	It sends an invalid Host header
+#
+# AUTHOR
+#	Eduardo Silva <edsiper@gmail.com>
+#
+# DATE
+#	April 04 2012
+################################################################################
+
+
+INCLUDE __CONFIG
+CLIENT
+_REQ $HOST $PORT
+__GET / $HTTPVER
+__Host: [::1]:AABB
+__Connection: close
+__
+_EXPECT . "HTTP/1.1 400 Bad Request"
+_WAIT
+_CLOSE
+END

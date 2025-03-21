@@ -1,0 +1,26 @@
+################################################################################
+# DESCRIPTION
+#	Test request in hexadecimal format.
+#
+# AUTHOR
+#	Eduardo Silva <edsiper@gmail.com>
+#
+# DATE
+#	March 16 2010
+#
+# COMMENTS
+#	Simple "index.html"	
+################################################################################
+
+
+INCLUDE __CONFIG
+
+CLIENT
+_REQ $HOST $PORT
+__GET /%69%6E%64%65%78.%68%74%6D%6C $HTTPVER
+__Host: $HOST
+__Connection: close
+__
+_EXPECT . "HTTP/1.1 200 OK"
+_WAIT
+END

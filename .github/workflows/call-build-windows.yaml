@@ -1,0 +1,231 @@
+---
+name: Reusable workflow to build Windows packages optionally into S3 bucket
+
+#
+# If you change dependencies etc here, please also check and update
+# the other Windows build resources:
+#
+# - DEVELOPER_GUIDE.md "Windows" section
+# - appveyor.yml
+# - .github/workflows/call-build-windows.yaml
+# - dockerfiles/Dockerfile.windows
+#
+
+on:
+  workflow_call:
+    inputs:
+      version:
+        description: The version of Fluent Bit to create.
+        type: string
+        required: true
+      ref:
+        description: The commit, tag or branch of Fluent Bit to checkout for building that creates the version above.
+        type: string
+        required: true
+      environment:
+        description: The Github environment to run this workflow on.
+        type: string
+        required: false
+      unstable:
+        description: Optionally add metadata to build to indicate an unstable build, set to the contents you want to add.
+        type: string
+        required: false
+        default: ''
+    secrets:
+      token:
+        description: The Github token or similar to authenticate with.
+        required: true
+      bucket:
+        description: The name of the S3 (US-East) bucket to push packages into.
+        required: false
+      access_key_id:
+        description: The S3 access key id for the bucket.
+        required: false
+      secret_access_key:
+        description: The S3 secret access key for the bucket.
+        required: false
+
+jobs:
+
+  call-build-windows-get-meta:
+    name: Determine build info
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    outputs:
+      armSupported: ${{ steps.armcheck.outputs.armSupported }}
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ inputs.ref }}
+
+      - name: Determine if we are doing a build with ARM support
+        id: armcheck
+        # Check for new contents from https://github.com/fluent/fluent-bit/pull/6621
+        run: |
+          if grep -q "winarm64" CMakeLists.txt ; then
+            echo "armSupported=true" >> $GITHUB_OUTPUT
+          else
+            echo "armSupported=false" >> $GITHUB_OUTPUT
+          fi
+        shell: bash
+
+  call-build-windows-package:
+    runs-on: windows-latest
+    environment: ${{ inputs.environment }}
+    needs:
+      - call-build-windows-get-meta
+    strategy:
+      fail-fast: false
+      matrix:
+        config:
+          - name: "Windows 32bit"
+            arch: x86
+            openssl_dir: C:\vcpkg\packages\openssl_x86-windows-static
+            cmake_additional_opt: ""
+            vcpkg_triplet: x86-windows-static
+          - name: "Windows 64bit"
+            arch: x64
+            openssl_dir: C:\vcpkg\packages\openssl_x64-windows-static
+            cmake_additional_opt: ""
+            vcpkg_triplet: x64-windows-static
+          - name: "Windows 64bit (Arm64)"
+            arch: amd64_arm64
+            openssl_dir: C:\vcpkg\packages\openssl_arm64-windows-static
+            cmake_additional_opt: "-DCMAKE_SYSTEM_NAME=Windows -DCMAKE_SYSTEM_VERSION=10.0 -DCMAKE_SYSTEM_PROCESSOR=ARM64"
+            vcpkg_triplet: arm64-windows-static
+    permissions:
+      contents: read
+    # Default environment variables can be overridden below. To prevent library pollution - without this other random libraries may be found on the path leading to failures.
+    env:
+      PATH: C:\ProgramData\Chocolatey\bin;c:/Program Files/Git/cmd;c:/Windows/system32;C:/Windows/System32/WindowsPowerShell/v1.0;$ENV:WIX/bin;C:/Program Files/CMake/bin;C:\vcpkg;
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ inputs.ref }}
+
+      - name: Get dependencies
+        run: |
+          Invoke-WebRequest -OutFile winflexbison.zip $env:WINFLEXBISON
+          Expand-Archive winflexbison.zip -Destination C:\WinFlexBison
+          Copy-Item -Path C:\WinFlexBison/win_bison.exe C:\WinFlexBison/bison.exe
+          Copy-Item -Path C:\WinFlexBison/win_flex.exe C:\WinFlexBison/flex.exe
+          echo "C:\WinFlexBison" | Out-File -FilePath $env:GITHUB_PATH -Append
+        env:
+          WINFLEXBISON: https://github.com/lexxmark/winflexbison/releases/download/v2.5.22/win_flex_bison-2.5.22.zip
+        shell: pwsh
+
+      - name: Set up with Developer Command Prompt for Microsoft Visual C++
+        uses: ilammy/msvc-dev-cmd@v1
+        with:
+          arch: ${{ matrix.config.arch }}
+
+      - name: Get gzip command w/ chocolatey
+        uses: crazy-max/ghaction-chocolatey@v3
+        with:
+          args: install gzip -y
+
+      # http://man7.org/linux/man-pages/man1/date.1.html
+      - name: Get Date
+        id: get-date
+        run: |
+          echo "date=$(/bin/date -u "+%Y%m%d")" >> $GITHUB_OUTPUT
+        shell: bash
+
+      - name: Restore cached packages of vcpkg
+        id: cache-vcpkg-sources
+        uses: actions/cache/restore@v4
+        with:
+          path: |
+            C:\vcpkg\packages
+          key: ${{ runner.os }}-${{ matrix.config.arch }}-vcpkg-${{ steps.get-date.outputs.date }}
+          restore-keys: |
+            ${{ runner.os }}-${{ matrix.config.arch }}-vcpkg-
+          enableCrossOsArchive: false
+
+      - name: Build openssl with vcpkg
+        run: |
+          C:\vcpkg\vcpkg install --recurse openssl --triplet ${{ matrix.config.vcpkg_triplet }}
+        shell: cmd
+
+      - name: Build libyaml with vcpkg
+        run: |
+          C:\vcpkg\vcpkg install --recurse libyaml --triplet ${{ matrix.config.vcpkg_triplet }}
+        shell: cmd
+
+      - name: Save packages of vcpkg
+        id: save-vcpkg-sources
+        uses: actions/cache/save@v4
+        with:
+          path: |
+            C:\vcpkg\packages
+          key: ${{ steps.cache-vcpkg-sources.outputs.cache-primary-key }}
+          enableCrossOsArchive: false
+
+      - name: Build Fluent Bit packages
+        # If we are using 2.0.* or earlier we need to exclude the ARM64 build as the dependencies fail to compile.
+        # Trying to do via an exclude for the job triggers linting errors.
+        # This is only supposed to be a workaround for now so can be easily removed later.
+        if: ${{ matrix.config.arch != 'amd64_arm64' || needs.call-build-windows-get-meta.outputs.armSupported == 'true' }}
+        run: |
+          cmake -G "NMake Makefiles" -DFLB_NIGHTLY_BUILD='${{ inputs.unstable }}' -DOPENSSL_ROOT_DIR='${{ matrix.config.openssl_dir }}' ${{ matrix.config.cmake_additional_opt }} -DFLB_LIBYAML_DIR=C:\vcpkg\packages\libyaml_${{ matrix.config.vcpkg_triplet }} ../
+          cmake --build .
+          cpack
+        working-directory: build
+
+      - name: Upload build packages
+        # Skip upload if we skipped build.
+        if: ${{ matrix.config.arch != 'amd64_arm64' || needs.call-build-windows-get-meta.outputs.armSupported == 'true' }}
+        uses: actions/upload-artifact@v4
+        with:
+          name: windows-packages-${{ matrix.config.arch }}
+          path: |
+            build/*-bit-*.exe
+            build/*-bit-*.msi
+            build/*-bit-*.zip
+          if-no-files-found: error
+
+  call-build-windows-s3-upload:
+    name: Handle upload to S3
+    # The environment must be used that has access to any secrets required, even if passed in.
+    # If passed in but not in the environment here you end up with an empty secret.
+    environment: ${{ inputs.environment }}
+    runs-on: ubuntu-latest
+    needs:
+      - call-build-windows-package
+    permissions:
+      contents: read
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+        with:
+          # Need latest for checksum packaging script
+          ref: master
+
+      - name: Download all artefacts
+        uses: actions/download-artifact@v4
+        with:
+          pattern: windows-packages-*
+          merge-multiple: true
+          path: artifacts/
+
+      - name: Set up Windows checksums
+        run: |
+          packaging/windows-checksums.sh
+          ls -lR artifacts/
+        shell: bash
+        env:
+          SOURCE_DIR: artifacts
+
+      - name: Push Windows packages to S3
+        # Only upload for staging
+        if: inputs.environment == 'staging'
+        uses: ./.github/actions/sync-to-bucket
+        with:
+          bucket: ${{ secrets.bucket }}
+          access_key_id: ${{ secrets.access_key_id }}
+          secret_access_key: ${{ secrets.secret_access_key }}
+          bucket-directory: "${{ inputs.version }}/windows/"
+          source-directory: "artifacts/"

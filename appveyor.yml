@@ -1,0 +1,98 @@
+version: v1-winbuild-{build}
+
+#
+# If you change dependencies etc here, please also check and update
+# the other Windows build resources:
+#
+# - DEVELOPER_GUIDE.md "Windows" section
+# - appveyor.yml
+# - .github/workflows/call-build-windows.yaml
+# - dockerfiles/Dockerfile.windows
+#
+
+image: Visual Studio 2019
+
+platform:
+  - Win32
+  - x64
+
+environment:
+  vspath: 'C:\Program Files (x86)\Microsoft Visual Studio\2019\Community'
+  winflexbison: https://github.com/lexxmark/winflexbison/releases/download/v2.5.22/win_flex_bison-2.5.22.zip
+  PATH: '%PATH%;C:\WinFlexBison'
+
+configuration:
+  - Release
+
+skip_commits:
+  files:
+    - ".github/**/*"
+    - "packaging/**/*"
+    - "dockerfiles/**/*"
+    - "**/*.md"
+    - "**/*.sh"
+
+install:
+  - ps: Invoke-WebRequest -O winflexbison.zip $env:winflexbison
+  - ps: Expand-Archive winflexbison.zip -Destination /WinFlexBison
+  - ps: Copy-Item -Path /WinFlexBison/win_bison.exe /WinFlexBison/bison.exe
+  - ps: Copy-Item -Path /WinFlexBison/win_flex.exe /WinFlexBison/flex.exe
+  - cd C:\Tools\vcpkg
+  - git pull
+  - .\bootstrap-vcpkg.bat
+  - cd %APPVEYOR_BUILD_FOLDER%
+
+before_build:
+  - if %PLATFORM%==Win32 call C:\tools\vcpkg\vcpkg install --recurse openssl --triplet x86-windows-static
+  - if %PLATFORM%==x64   call C:\tools\vcpkg\vcpkg install --recurse openssl --triplet x64-windows-static
+  - if %PLATFORM%==Win32 call "%vspath%\VC\Auxiliary\Build\vcvars32.bat"
+  - if %PLATFORM%==x64   call "%vspatH%\VC\Auxiliary\Build\vcvars64.bat"
+
+build_script:
+  - ps: |
+        cd $ENV:APPVEYOR_BUILD_FOLDER\build
+
+        if ( "x64" -eq $env:PLATFORM ) {
+             $OPENSSL_DIR = "C:\tools\vcpkg\packages\openssl_x64-windows-static"
+        }
+        else {
+            $OPENSSL_DIR = "C:\tools\vcpkg\packages\openssl_x86-windows-static"
+        }
+        # CACHE GENERATION
+        cmake -G "NMake Makefiles" `
+                     -D FLB_TESTS_INTERNAL=On `
+                     -D OPENSSL_ROOT_DIR=$OPENSSL_DIR `
+                     -D FLB_WITHOUT_flb-rt-out_elasticsearch=On `
+                     -D FLB_WITHOUT_flb-rt-out_td=On `
+                     -D FLB_WITHOUT_flb-rt-out_forward=On `
+                     -D FLB_WITHOUT_flb-rt-in_disk=On `
+                     -D FLB_WITHOUT_flb-rt-in_proc=On `
+                     -D FLB_WITHOUT_flb-it-parser=On `
+                     -D FLB_WITHOUT_flb-it-unit_sizes=On `
+                     -D FLB_WITHOUT_flb-it-network=On `
+                     -D FLB_WITHOUT_flb-it-pack=On `
+                     -D FLB_WITHOUT_flb-it-signv4=On `
+                     -D FLB_WITHOUT_flb-it-aws_credentials=On `
+                     -D FLB_WITHOUT_flb-it-aws_credentials_ec2=On `
+                     -D FLB_WITHOUT_flb-it-aws_credentials_http=On `
+                     -D FLB_WITHOUT_flb-it-aws_credentials_profile=On `
+                     -D FLB_WITHOUT_flb-it-aws_credentials_sts=On `
+                     -D FLB_WITHOUT_flb-it-aws_util=On `
+                     -D FLB_WITHOUT_flb-it-input_chunk=On `
+                     ../
+        # COMPILE
+        cmake --build .
+
+        # RUNNING TESTS
+        ctest --build-run-dir $PWD --output-on-failure
+
+  - cpack
+  - cmake -G "NMake Makefiles" ..\
+  - cmake --build .
+  - cpack
+
+artifacts:
+  - path: build/fluent-bit-*.exe
+    name: fluent-bit-installer
+  - path: build/fluent-bit-*.zip
+    name: fluent-bit-zip

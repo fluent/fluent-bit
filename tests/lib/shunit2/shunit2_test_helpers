@@ -1,0 +1,234 @@
+# vim:et:ft=sh:sts=2:sw=2
+#
+# shUnit2 unit test common functions
+#
+# Copyright 2008 Kate Ward. All Rights Reserved.
+# Released under the Apache 2.0 license.
+#
+# Author: kate.ward@forestent.com (Kate Ward)
+# https://github.com/kward/shunit2
+#
+### ShellCheck (http://www.shellcheck.net/)
+# Commands are purposely escaped so they can be mocked outside shUnit2.
+#   shellcheck disable=SC1001,SC1012
+# expr may be antiquated, but it is the only solution in some cases.
+#   shellcheck disable=SC2003
+# $() are not fully portable (POSIX != portable).
+#   shellcheck disable=SC2006
+
+# Treat unset variables as an error when performing parameter expansion.
+set -u
+
+# Set shwordsplit for zsh.
+\[ -n "${ZSH_VERSION:-}" ] && setopt shwordsplit
+
+#
+# Constants.
+#
+
+# Path to shUnit2 library. Can be overridden by setting SHUNIT_INC.
+TH_SHUNIT=${SHUNIT_INC:-./shunit2}; export TH_SHUNIT
+
+# Configure debugging. Set the DEBUG environment variable to any
+# non-empty value to enable debug output, or TRACE to enable trace
+# output.
+TRACE=${TRACE:+'th_trace '}
+\[ -n "${TRACE}" ] && DEBUG=1
+\[ -z "${TRACE}" ] && TRACE=':'
+
+DEBUG=${DEBUG:+'th_debug '}
+\[ -z "${DEBUG}" ] && DEBUG=':'
+
+#
+# Variables.
+#
+
+th_RANDOM=0
+
+#
+# Functions.
+#
+
+# Logging functions.
+th_trace() { echo "${MY_NAME}:TRACE $*" >&2; }
+th_debug() { echo "${MY_NAME}:DEBUG $*" >&2; }
+th_info() { echo "${MY_NAME}:INFO $*" >&2; }
+th_warn() { echo "${MY_NAME}:WARN $*" >&2; }
+th_error() { echo "${MY_NAME}:ERROR $*" >&2; }
+th_fatal() { echo "${MY_NAME}:FATAL $*" >&2; }
+
+# Output subtest name.
+th_subtest() { echo " $*" >&2; }
+
+th_oneTimeSetUp() {
+  # These files will be cleaned up automatically by shUnit2.
+  stdoutF="${SHUNIT_TMPDIR}/stdout"
+  stderrF="${SHUNIT_TMPDIR}/stderr"
+  returnF="${SHUNIT_TMPDIR}/return"
+  expectedF="${SHUNIT_TMPDIR}/expected"
+  export stdoutF stderrF returnF expectedF
+}
+
+# Generate a random number.
+th_generateRandom() {
+  tfgr_random=${th_RANDOM}
+
+  while \[ "${tfgr_random}" = "${th_RANDOM}" ]; do
+    # shellcheck disable=SC2039
+    if \[ -n "${RANDOM:-}" ]; then
+      # $RANDOM works
+      # shellcheck disable=SC2039
+      tfgr_random=${RANDOM}${RANDOM}${RANDOM}$$
+    elif \[ -r '/dev/urandom' ]; then
+      tfgr_random=`od -vAn -N4 -tu4 </dev/urandom |sed 's/^[^0-9]*//'`
+    else
+      tfgr_date=`date '+%H%M%S'`
+      tfgr_random=`expr "${tfgr_date}" \* $$`
+      unset tfgr_date
+    fi
+    \[ "${tfgr_random}" = "${th_RANDOM}" ] && sleep 1
+  done
+
+  th_RANDOM=${tfgr_random}
+  unset tfgr_random
+}
+
+# This section returns the data section from the specified section of a file. A
+# data section is defined by a [header], one or more lines of data, and then a
+# blank line.
+th_getDataSect() {
+  th_sgrep "\\[$1\\]" "$2" |sed '1d'
+}
+
+# This function greps a section from a file. a section is defined as a group of
+# lines preceded and followed by blank lines..
+th_sgrep() {
+  th_pattern_=$1
+  shift
+
+  # shellcheck disable=SC2068
+  sed -e '/./{H;$!d;}' -e "x;/${th_pattern_}/"'!d;' $@ |sed '1d'
+
+  unset th_pattern_
+}
+
+# Custom assert that checks for true return value (0), and no output to STDOUT
+# or STDERR. If a non-zero return value is encountered, the output of STDERR
+# will be output.
+#
+# Args:
+#  th_test_: string: name of the subtest
+#  th_rtrn_: integer: the return value of the subtest performed
+#  th_stdout_: string: filename where stdout was redirected to
+#  th_stderr_: string: filename where stderr was redirected to
+th_assertTrueWithNoOutput() {
+  th_test_=$1
+  th_rtrn_=$2
+  th_stdout_=$3
+  th_stderr_=$4
+
+  assertTrue "${th_test_}; expected return value of zero" "${th_rtrn_}"
+  \[ "${th_rtrn_}" -ne "${SHUNIT_TRUE}" ] && \cat "${th_stderr_}"
+  assertFalse "${th_test_}; expected no output to STDOUT" \
+      "[ -s '${th_stdout_}' ]"
+  assertFalse "${th_test_}; expected no output to STDERR" \
+      "[ -s '${th_stderr_}' ]"
+
+  unset th_test_ th_rtrn_ th_stdout_ th_stderr_
+}
+
+# Custom assert that checks for non-zero return value, output to STDOUT, but no
+# output to STDERR.
+#
+# Args:
+#  th_test_: string: name of the subtest
+#  th_rtrn_: integer: the return value of the subtest performed
+#  th_stdout_: string: filename where stdout was redirected to
+#  th_stderr_: string: filename where stderr was redirected to
+th_assertFalseWithOutput()
+{
+  th_test_=$1
+  th_rtrn_=$2
+  th_stdout_=$3
+  th_stderr_=$4
+
+  assertFalse "${th_test_}; expected non-zero return value" "${th_rtrn_}"
+  assertTrue "${th_test_}; expected output to STDOUT" \
+      "[ -s '${th_stdout_}' ]"
+  assertFalse "${th_test_}; expected no output to STDERR" \
+      "[ -s '${th_stderr_}' ]"
+  \[ -s "${th_stdout_}" -a ! -s "${th_stderr_}" ] || \
+      _th_showOutput "${SHUNIT_FALSE}" "${th_stdout_}" "${th_stderr_}"
+
+  unset th_test_ th_rtrn_ th_stdout_ th_stderr_
+}
+
+# Custom assert that checks for non-zero return value, no output to STDOUT, but
+# output to STDERR.
+#
+# Args:
+#  th_test_: string: name of the subtest
+#  th_rtrn_: integer: the return value of the subtest performed
+#  th_stdout_: string: filename where stdout was redirected to
+#  th_stderr_: string: filename where stderr was redirected to
+th_assertFalseWithError() {
+  th_test_=$1
+  th_rtrn_=$2
+  th_stdout_=$3
+  th_stderr_=$4
+
+  assertFalse "${th_test_}; expected non-zero return value" "${th_rtrn_}"
+  assertFalse "${th_test_}; expected no output to STDOUT" \
+      "[ -s '${th_stdout_}' ]"
+  assertTrue "${th_test_}; expected output to STDERR" \
+      "[ -s '${th_stderr_}' ]"
+  \[ ! -s "${th_stdout_}" -a -s "${th_stderr_}" ] || \
+      _th_showOutput "${SHUNIT_FALSE}" "${th_stdout_}" "${th_stderr_}"
+
+  unset th_test_ th_rtrn_ th_stdout_ th_stderr_
+}
+
+# Some shells, zsh on Solaris in particular, return immediately from a sub-shell
+# when a non-zero return value is encountered. To properly catch these values,
+# they are either written to disk, or recognized as an error the file is empty.
+th_clearReturn() { cp /dev/null "${returnF}"; }
+th_queryReturn() {
+  if \[ -s "${returnF}" ]; then
+    th_return=`\cat "${returnF}"`
+  else
+    th_return=${SHUNIT_ERROR}
+  fi
+  export th_return
+}
+
+# Providing external and internal calls to the showOutput helper function.
+th_showOutput() { _th_showOutput "$@"; }
+_th_showOutput() {
+  _th_return_=$1
+  _th_stdout_=$2
+  _th_stderr_=$3
+
+  isSkipping
+  if \[ $? -eq "${SHUNIT_FALSE}" -a "${_th_return_}" != "${SHUNIT_TRUE}" ]; then
+    if \[ -n "${_th_stdout_}" -a -s "${_th_stdout_}" ]; then
+      echo '>>> STDOUT' >&2
+      \cat "${_th_stdout_}" >&2
+    fi
+    if \[ -n "${_th_stderr_}" -a -s "${_th_stderr_}" ]; then
+      echo '>>> STDERR' >&2
+      \cat "${_th_stderr_}" >&2
+    fi
+    if \[ -n "${_th_stdout_}" -o -n "${_th_stderr_}" ]; then
+      echo '<<< end output' >&2
+    fi
+  fi
+
+  unset _th_return_ _th_stdout_ _th_stderr_
+}
+
+#
+# Main.
+#
+
+${TRACE} 'trace output enabled'
+${DEBUG} 'debug output enabled'

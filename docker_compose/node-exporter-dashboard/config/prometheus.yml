@@ -1,0 +1,9 @@
+global:
+  scrape_interval: 5s
+
+scrape_configs:
+  - job_name: fluentbit-exporter
+    scheme: http
+    metrics_path: /metrics
+    static_configs:
+      - targets: ["fluentbit:2021"]

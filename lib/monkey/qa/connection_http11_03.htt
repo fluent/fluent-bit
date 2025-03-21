@@ -1,0 +1,30 @@
+###############################################################################
+# DESCRIPTION
+#	HTTP/1.1 Request with an invalid connection header, server must
+#	not send a connection header, must assume keepalive by default
+#
+# AUTHOR
+#	Eduardo Silva	<edsiper@gmail.com>
+#
+# DATE
+#	March 17 2010
+#
+# COMMENTS
+#	Do not Expect 'Connection:' header
+###############################################################################
+
+
+INCLUDE __CONFIG
+INCLUDE __MACROS
+
+CLIENT
+_REQ $HOST $PORT
+__GET / $HTTPVER
+__Host: $HOST
+__Connection: an invalid value
+__
+_EXPECT . "HTTP/1.1 200 OK"
+_EXPECT . "!Connection:"
+_EXPECT . "!Keep-Alive:"
+_WAIT
+END

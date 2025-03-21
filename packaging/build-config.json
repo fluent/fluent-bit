@@ -1,0 +1,121 @@
+{
+    "linux_targets": [
+        {
+          "target": "amazonlinux/2",
+          "type": "rpm"
+        },
+        {
+          "target": "amazonlinux/2.arm64v8",
+          "type": "rpm"
+        },
+        {
+          "target": "amazonlinux/2023",
+          "type": "rpm"
+        },
+        {
+          "target": "amazonlinux/2023.arm64v8",
+          "type": "rpm"
+        },
+        {
+          "target": "centos/7",
+          "type": "rpm"
+        },
+        {
+          "target": "centos/7.arm64v8",
+          "type": "rpm"
+        },
+        {
+          "target": "centos/8",
+          "type": "rpm"
+        },
+        {
+          "target": "centos/8.arm64v8",
+          "type": "rpm"
+        },
+        {
+          "target": "centos/9",
+          "type": "rpm"
+        },
+        {
+          "target": "centos/9.arm64v8",
+          "type": "rpm"
+        },
+        {
+          "target": "debian/bookworm",
+          "type": "deb"
+        },
+        {
+          "target": "debian/bookworm.arm64v8",
+          "type": "deb"
+        },
+        {
+          "target": "debian/buster",
+          "type": "deb"
+        },
+        {
+          "target": "debian/buster.arm64v8",
+          "type": "deb"
+        },
+        {
+          "target": "debian/bullseye",
+          "type": "deb"
+        },
+        {
+          "target": "debian/bullseye.arm64v8",
+          "type": "deb"
+        },
+        {
+          "target": "ubuntu/16.04",
+          "type": "deb"
+        },
+        {
+          "target": "ubuntu/18.04",
+          "type": "deb"
+        },
+        {
+          "target": "ubuntu/18.04.arm64v8",
+          "type": "deb"
+        },
+        {
+          "target": "ubuntu/20.04",
+          "type": "deb"
+        },
+        {
+          "target": "ubuntu/20.04.arm64v8",
+          "type": "deb"
+        },
+        {
+          "target": "ubuntu/22.04",
+          "type": "deb"
+        },
+        {
+          "target": "ubuntu/22.04.arm64v8",
+          "type": "deb"
+        },
+        {
+          "target": "ubuntu/24.04",
+          "type": "deb"
+        },
+        {
+          "target": "ubuntu/24.04.arm64v8",
+          "type": "deb"
+        },
+        {
+          "target": "raspbian/buster",
+          "type": "deb"
+        },
+        {
+          "target": "raspbian/bullseye",
+          "type": "deb"
+        },
+        {
+          "target": "raspbian/bookworm",
+          "type": "deb"
+        }
+      ],
+      "windows_targets" : [
+        "x86",
+        "x64",
+        "amd64_arm64"
+      ]
+}

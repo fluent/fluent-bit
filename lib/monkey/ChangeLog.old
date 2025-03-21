@@ -1,0 +1,233 @@
+Monkey HTTP Daemon - ChangeLog 
+==============================
+
+v0.9.2 (2008/01/16):
+		- Translations: New translation of Monkey+PHP to
+		  polish language and a funny 1337!, thanks 
+		  to Sugarush!
+
+		- Bug fix: negative memory allocation when a request
+		  doesn't contain a '?' string. Thanks to Daniel
+		  Hope for discover this problem and submit a patch!
+
+v0.9.1 (2004/04/13):
+		- BUG FIXES: Thanks to Rob and Tavis of gentoo security 
+		  team for report it. A bug found causes a DoS when it's 
+		  requested a file with 0 bytes of lenght and another one 
+		  that was found on cgi.c where exist the possibility to 
+		  run any code we wished before the connection be closed.
+
+v0.9.0 (2004/10/28):
+		- Some internal changes.
+		- Fixed bug in if_modified_since feature.
+		- POST_TIMEOUT value changed to value 10 to fix a problem 
+		  found with lagged connections (thanks to Federico Fuga).
+		- A little Virtualhost bug has been fixed.
+		- Fixed limit of max persistent connections for virtualhosts.
+		- Persistent connection now works with directory nagivation.
+		- Fixed GetDir problem with special vhost configurations.
+		- Fixed 'close connection on dir request without / '.
+		- Memory leak fixes :) .
+
+v0.8.5	 (2004/08/28):
+		- Now monkey works on NetBSD (Matthew Gream)
+		- Fixed a lot of memory leaks, thanks to Matthew Gream.
+
+v0.8.4-2 (2004/06/10) :
+		- A bug found on users home feature has been fixed (oops!).
+
+v0.8.4 (2004/06/10) :
+		- Length of client IP now it's checked, are not allowed 
+		  anormal IP strings (thanks to BSD Chile team for 
+		  report possible bugs).
+
+v0.8.4-RC2 (2004/06/08) :
+		- Fixed bug found on get_real_string() (thanks to Luigi for 
+		  report this bug).
+		- Header and footer files now are hidden to dir listing.
+		- SymLink, Max_IP and Timeout initial values are been added
+		  to configuration (src/config.c).
+ 		- Fixed check path of Addscript var on src/config.c.
+
+v0.8.4-RC1 (2004/06/03) :
+		- New Binary size: 44.8KB (compiled with gcc-3.3)!!!.
+		- Better memory management!!!.
+		- A lot of snprintf and sprintf has been replaced.
+		- A lot of internal changes, now all headers are sent to 
+		  the same time (same buffer), now response from server 
+		  to client it's a little more faster. Ah, now you can 
+		  test monkey with Apache Benchmark without problems.
+		- New translation of Monkey+PHP to portuguess has been added.
+		- New mutex has been added to thread_counter var 
+		  (mutex_thread_counter).
+		- Glibc needs __USE_XOPEN to be defined in order to add
+		  a prototype for strptime (src/utils.c)
+		- Fixed 'if' warning produced by src/deny.c.
+
+v0.8.3 (2004/05/28) :
+		- Added Check for Symbolic links (allow/deny).
+		- Added French translation (thanks to Dominique Voillemot).
+		- Fixed Cache comparison check.
+		- Fixed header date time of file, now server send time  
+		  in GMT.
+		
+v0.8.2 (2004/02/10) :
+		- Fixed 'server signature' overwrite address.
+		- Fixed DoS bug caused by get_real_string() (function rewrited).
+		- Fixed bad timeout response when a persistent connection have
+		  a timeout.
+
+v0.8.1 (2004/01/14) :
+		- Little corrections in system to set limit of connections from
+		  same IP address.
+		- Fixed response 301 with a little delay in response to HTTP/1.1 request.
+		
+v0.8.0 (2003/10/18) :
+		- Added a new feature to limit maximum of clients from same 
+		  IP address connected to server.
+		- New translation of Monkey+PHP document to Russian, thanks to Toto.
+		- Fixed little problem with files with length = 0, persistent 
+		  connection now in this case are closed.
+		- Now make clean don't remove bin/banana file.
+
+v0.7.2 (2003/09/09) :
+		- Added a new feature to show information by 
+		  directories, are two new variables in monkey.conf:header_file
+		  and footer_file. This allow define a special file to be 
+		  showed when a full directory is shown.
+		- CGI support has been optimized. Post method is more 
+		  faster.
+
+v0.7.1 (2003/05/30) :
+		- Little bugs has been fixed in resume and virtualhost
+		  supports.
+		- pthread_mutex_* functions has been added.
+		- strtok() has been replaced with strtok_r().
+		- Some english translation has been fixed.
+		- Bug fixed in free_request().
+
+v0.7.0 (2003/05/11) :
+		- Resume support has been added.
+		- Added MySQL module. This allow you register the log
+		  entries in a MySQL database (UNDER DEVELOPMENT!, just for
+		  test it).
+		- New variable 'Include' in monkey.conf has been added, this
+		  allow you include another files in main configuration 
+		  (Implemented by Rodrigo Mayorga).
+		- Some little problems reading config files has
+		  fixed (thanks to Olatunji Oluwabukunmi).
+		- Added new functions to validate malloc(), free() and
+		  strdup().
+		- Deny_Check() now check query string.
+   		- Added validation to return value of pipe().
+		- Include directory has been moved into src/.
+		- Memory leaks has been fixed.
+		- Codes cleanup.
+
+v0.6.3 (2003/04/07) :
+		- New variable 'VirtualForceGetDir' in VirtualHost section, 
+		  this variable force to show full directory information.
+		- Some header files has been included (T).
+		- Bug searching path component in cgi_alias() has been
+		  fixed. Thanks to 'T' for report this problem.
+		- Code cleanup.
+		- Persistent connection support has been fixed.
+		- License updates.
+
+v0.6.2 (2003/03/24) :
+		- Post_Method() security fixes: Request with post buffer
+		  more long than MAX_REQUEST_BODY would cause the server to 
+		  fail, denying service to other (Matthew Murphy).
+		- Post_Method() security fixes: Request without  
+		  'Content-Type' header make crash monkey (Eduardo).
+		- Added http_status.h file (JCI).
+
+v0.6.1 (2002/12/31) :
+		- ISO 8859-15 character table has been added to chars.c.
+		- Header files has been added for every module. 
+		- New variable in monkey.conf 'HideVersion', allow hide
+		  the version of the WebServer to clients.
+		- Information about Server Protocol has been added.
+		- Fixed a little problem when are checked access
+		  permission of files , 'Forbidden' header now is sent
+		  in all cases, cgi.c and request.c files has been modified. 
+
+v0.6.0 (2002/12/28) :
+		- Hexa URI request support has been added.
+		- include/chars.h file has been added.
+		- New way to control subprocess (process.c).
+		- Optimized chunked transfer encoding.
+ 
+v0.5.2 (2002/12/02) :
+		- Makefile now work with $CC and $STRIP environment vars.
+		- If some script fail now server report an 'Internal Server
+		  Error' to client.
+		- '505 Internal Server Error' header has been fixed.
+		- AddScript function has been fixed. Now check if path
+		  of binary files is an valid regular file.
+		- A little problem with extensions of files has been fixed.
+		- MAX_REQUEST_URI size has been increased. (Glenn Neidermeier)
+		- Referer header has been added.
+		- Some little bugs located into add_log_pid() and
+		  remove_log_pid() functions from logfile.c file has been
+		  fixed.
+
+v0.5.1 (2002/10/29) :
+		- Chunked transfer coding has been added.
+		- Removed uninstall option from Makefile .
+		- Virtualhost configuration has been changed.
+		- Overflow in User_main has been fixed.
+		- cgi_send() has been rewritten.
+		- Post method: some security fixes.
+
+v0.5.0 (2002/09/22) :
+		- Persistent connections counter fixed.  
+		- Monkey+PHP document updates.
+                - Changelog and home page has been translated into english.
+		- New document HowToWorks.txt has been added.
+                - New variable ServerName was added to monkey.conf.
+                - Timeout now works from begin to the end of request.
+                - Cookie support was added.
+		- Configure script now checks if pthread lib exist.
+                - Post_Method() fixes.
+
+v0.4.2 (2002/09/16) :
+		- Modificacion en configure script -> src/Makefile.
+		- Traduccion de monkey+php al Ingles (Davidlhor Bueso). 
+		- Pequeños cambios en request.c y cgi.c .
+		- Cambios en la verificacion de metodos.
+
+v0.4.1-1 (2002/09/03) :
+		- Correcion en falla de seguridad en Set_Page_Default().
+
+v0.4.1 (2002/09/03) :
+		- Modificaciones en configure script.
+		- No registro de errores en archivo de log corregido.
+		- Agregado Banana script para controlar monkey.
+		- Eliminacion de la opcion '-m stop'.
+		- Correccion en opcion -c sin argumento.
+		- Denegacion de conexion persistente a clientes HTTP/1.0.
+
+v0.4.0 (2002/06/15) :
+		- Correcciones en soporte CGI para VirtualHost.
+		- Nuevo soporte para conexiones persistentes.
+		- Nueva variable de configuracion "MaxClients".
+		- Actualizaciones en script configure.
+		- Pequena correccion en mimetype.c .
+		- Implementado soporte basico de multithreading.
+		- Reestructuracion de variables.
+
+v0.1.1 (2001/06/05) :
+		- Nueva variable Indexfile en monkey.conf
+		- Optimizacion de codigo (redundancias)
+
+v0.1   (2001/05/30) :
+		- Nuevo archivo de configuracion monkey.conf
+		- Implementado Content-Lenght
+		- Reconocimiento e implementacion de MimeTypes
+		- Correccion de Get Method
+		- Negacion a Methods no implementados
+		- Resstructuracion de directorios raiz			
+
+v0.0.5 (2001/05/17) :
+		- Primera version

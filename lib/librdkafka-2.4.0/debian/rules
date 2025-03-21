@@ -1,0 +1,19 @@
+#!/usr/bin/make -f
+
+# Uncomment this to turn on verbose mode.
+#export DH_VERBOSE=1
+
+export DPKG_EXPORT_BUILDFLAGS=1
+export DEB_BUILD_MAINT_OPTIONS=hardening=+bindnow,-pie
+include /usr/share/dpkg/buildflags.mk
+
+%:
+	dh $@ --without systemd,autoreconf
+
+override_dh_auto_configure:
+	# Use dependency installation for missing dependencies, zstd in particular.
+	# These will be statically linked.
+	dh_auto_configure -- --install-deps
+
+override_dh_strip:
+	dh_strip --dbg-package=librdkafka1-dbg

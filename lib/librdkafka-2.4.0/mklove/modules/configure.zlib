@@ -1,0 +1,61 @@
+#!/bin/bash
+#
+# zlib support, with installer
+#
+# Usage:
+#   mkl_require zlib
+#
+# And then call the following function from the correct place/order in checks:
+#   mkl_check zlib
+#
+
+mkl_toggle_option "Feature" ENABLE_ZLIB "--enable-zlib" "Enable support for zlib compression" "try"
+
+function manual_checks {
+    case "$ENABLE_ZLIB" in
+        n) return 0 ;;
+        y) local action=fail ;;
+        try) local action=disable ;;
+        *) mkl_err "mklove internal error: invalid value for ENABLE_ZLIB: $ENABLE_ZLIB"; exit 1 ;;
+    esac
+
+    mkl_meta_set "zlib" "apk" "zlib-dev"
+    mkl_meta_set "zlib" "static" "libz.a"
+    mkl_lib_check "zlib" "WITH_ZLIB" $action CC "-lz" \
+                  "
+#include <stddef.h>
+#include <zlib.h>
+
+void foo (void) {
+     z_stream *p = NULL;
+     inflate(p, 0);
+}
+"
+}
+
+
+# Install zlib from source tarball
+#
+# Param 1: name (zlib)
+# Param 2: install-dir-prefix (e.g., DESTDIR)
+# Param 2: version (optional)
+function install_source {
+    local name=$1
+    local destdir=$2
+    local ver=1.2.13
+    local checksum="b3a24de97a8fdbc835b9833169501030b8977031bcb54b3b3ac13740f846ab30"
+
+    echo "### Installing $name $ver from source to $destdir"
+    if [[ ! -f Makefile ]]; then
+        mkl_download_archive \
+            "https://zlib.net/fossils/zlib-${ver}.tar.gz" \
+            "256" \
+            "$checksum" || return 1
+    fi
+
+    CFLAGS=-fPIC ./configure --static --prefix=/usr
+    make -j
+    make test
+    make DESTDIR="${destdir}" install
+    return $?
+}

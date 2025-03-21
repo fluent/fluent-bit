@@ -1,0 +1,38 @@
+###############################################################################
+# DESCRIPTION
+#	Trivial test for If-Modified-Since header.
+#
+# AUTHOR
+#	Carlos Ghan	<charlie.brown.uy@gmail.com>
+#
+# DATE
+#	January 27 2010
+#
+# COMMENTS
+#	Server must return a 304 response, since we are passing a date 1-week after
+#	requested file's date as If-Modified-Since's parameter.
+###############################################################################
+
+
+INCLUDE __CONFIG
+INCLUDE __MACROS
+
+CLIENT
+_CALL INIT
+_CALL TESTDOC_GETEPOCH
+
+# 604800 seconds = 1 week 
+_OP $TEST_DOC_EPOCH ADD 604800 TEST_DOC_EPOCH
+
+# Format date
+_CALL FMT_DATE $TEST_DOC_EPOCH TEST_DOC_HTTPDATE 
+
+_REQ $HOST $PORT
+__GET / $HTTPVER
+__Host: $HOST
+__If-Modified-Since: $TEST_DOC_HTTPDATE
+__Connection: close
+__
+_EXPECT . "HTTP/1.1 304 Not Modified"
+_WAIT
+END

@@ -1,0 +1,1 @@
+[1554141513.598656,{"log":"{\"text\":\"Simple text\"}\n","stream":"stdout","text":"Simple text","kubernetes":{"pod_name":"keep-log-enabled","namespace_name":"options","container_name":"json"}}]

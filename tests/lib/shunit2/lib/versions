@@ -1,0 +1,273 @@
+#! /bin/sh
+# vim:et:ft=sh:sts=2:sw=2
+#
+# Versions determines the versions of all installed shells.
+#
+# Copyright 2008-2018 Kate Ward. All Rights Reserved.
+# Released under the Apache 2.0 License.
+#
+# Author: kate.ward@forestent.com (Kate Ward)
+# https://github.com/kward/shlib
+#
+# This library provides reusable functions that determine actual names and
+# versions of installed shells and the OS. The library can also be run as a
+# script if set executable.
+#
+# Disable checks that aren't fully portable (POSIX != portable).
+# shellcheck disable=SC2006
+
+ARGV0=`basename "$0"`
+LSB_RELEASE='/etc/lsb-release'
+VERSIONS_SHELLS='ash /bin/bash /bin/dash /bin/ksh /bin/pdksh /bin/zsh /bin/sh /usr/xpg4/bin/sh /sbin/sh'
+
+true; TRUE=$?
+false; FALSE=$?
+ERROR=2
+
+UNAME_R=`uname -r`
+UNAME_S=`uname -s`
+
+__versions_haveStrings=${ERROR}
+
+versions_osName() {
+  os_name_='unrecognized'
+  os_system_=${UNAME_S}
+  os_release_=${UNAME_R}
+  case ${os_system_} in
+    CYGWIN_NT-*) os_name_='Cygwin' ;;
+    Darwin)
+      os_name_=`/usr/bin/sw_vers -productName`
+      os_version_=`versions_osVersion`
+      case ${os_version_} in
+        10.4|10.4.[0-9]*) os_name_='Mac OS X Tiger' ;;
+        10.5|10.5.[0-9]*) os_name_='Mac OS X Leopard' ;;
+        10.6|10.6.[0-9]*) os_name_='Mac OS X Snow Leopard' ;;
+        10.7|10.7.[0-9]*) os_name_='Mac OS X Lion' ;;
+        10.8|10.8.[0-9]*) os_name_='Mac OS X Mountain Lion' ;;
+        10.9|10.9.[0-9]*) os_name_='Mac OS X Mavericks' ;;
+        10.10|10.10.[0-9]*) os_name_='Mac OS X Yosemite' ;;
+        10.11|10.11.[0-9]*) os_name_='Mac OS X El Capitan' ;;
+        10.12|10.12.[0-9]*) os_name_='macOS Sierra' ;;
+        10.13|10.13.[0-9]*) os_name_='macOS High Sierra' ;;
+        10.14|10.14.[0-9]*) os_name_='macOS Mojave' ;;
+        *) os_name_='macOS' ;;
+      esac
+      ;;
+    FreeBSD) os_name_='FreeBSD' ;;
+    Linux) os_name_='Linux' ;;
+    SunOS)
+      os_name_='SunOS'
+      if [ -r '/etc/release' ]; then
+        if grep 'OpenSolaris' /etc/release >/dev/null; then
+          os_name_='OpenSolaris'
+        else
+          os_name_='Solaris'
+        fi
+      fi
+      ;;
+  esac
+
+  echo ${os_name_}
+  unset os_name_ os_system_ os_release_ os_version_
+}
+
+versions_osVersion() {
+  os_version_='unrecognized'
+  os_system_=${UNAME_S}
+  os_release_=${UNAME_R}
+  case ${os_system_} in
+    CYGWIN_NT-*)
+      os_version_=`expr "${os_release_}" : '\([0-9]*\.[0-9]\.[0-9]*\).*'`
+      ;;
+    Darwin)
+      os_version_=`/usr/bin/sw_vers -productVersion`
+      ;;
+    FreeBSD)
+      os_version_=`expr "${os_release_}" : '\([0-9]*\.[0-9]*\)-.*'`
+      ;;
+    Linux)
+      if [ -r '/etc/os-release' ]; then
+          os_version_=`awk -F= '$1~/PRETTY_NAME/{print $2}' /etc/os-release \
+            |sed 's/"//g'`
+      elif [ -r '/etc/redhat-release' ]; then
+        os_version_=`cat /etc/redhat-release`
+      elif [ -r '/etc/SuSE-release' ]; then
+        os_version_=`head -n 1 /etc/SuSE-release`
+      elif [ -r "${LSB_RELEASE}" ]; then
+        if grep -q 'DISTRIB_ID=Ubuntu' "${LSB_RELEASE}"; then
+          # shellcheck disable=SC2002
+          os_version_=`cat "${LSB_RELEASE}" \
+            |awk -F= '$1~/DISTRIB_DESCRIPTION/{print $2}' \
+            |sed 's/"//g;s/ /-/g'`
+        fi
+      fi
+      ;;
+    SunOS)
+      if [ -r '/etc/release' ]; then
+        if grep 'OpenSolaris' /etc/release >/dev/null; then  # OpenSolaris
+          os_version_=`grep 'OpenSolaris' /etc/release |awk '{print $2"("$3")"}'`
+        else  # Solaris
+          major_=`echo "${os_release_}" |sed 's/[0-9]*\.\([0-9]*\)/\1/'`
+          minor_=`grep Solaris /etc/release |sed 's/[^u]*\(u[0-9]*\).*/\1/'`
+          os_version_="${major_}${minor_}"
+        fi
+      fi
+      ;;
+  esac
+
+  echo "${os_version_}"
+  unset os_release_ os_system_ os_version_ major_ minor_
+}
+
+versions_shellVersion() {
+  shell_=$1
+
+  shell_present_=${FALSE}
+  case "${shell_}" in
+    ash) [ -x '/bin/busybox' ] && shell_present_=${TRUE} ;;
+    *) [ -x "${shell_}" ] && shell_present_=${TRUE} ;;
+  esac
+  if [ ${shell_present_} -eq ${FALSE} ]; then
+    echo 'not installed'
+    return ${FALSE}
+  fi
+
+  version_=''
+  case ${shell_} in
+    /sbin/sh) ;; # SunOS
+    /usr/xpg4/bin/sh)
+      version_=`versions_shell_xpg4 "${shell_}"`
+      ;; # SunOS
+    */sh)
+      # This could be one of any number of shells. Try until one fits.
+      version_=''
+      [ -z "${version_}" ] && version_=`versions_shell_bash "${shell_}"`
+      # dash cannot be self determined yet
+      [ -z "${version_}" ] && version_=`versions_shell_ksh "${shell_}"`
+      # pdksh is covered in versions_shell_ksh()
+      [ -z "${version_}" ] && version_=`versions_shell_xpg4 "${shell_}"`
+      [ -z "${version_}" ] && version_=`versions_shell_zsh "${shell_}"`
+      ;;
+    ash) version_=`versions_shell_ash "${shell_}"` ;;
+    */bash) version_=`versions_shell_bash "${shell_}"` ;;
+    */dash)
+      # Assuming Ubuntu Linux until somebody comes up with a better test. The
+      # following test will return an empty string if dash is not installed.
+      version_=`versions_shell_dash`
+      ;;
+    */ksh) version_=`versions_shell_ksh "${shell_}"` ;;
+    */pdksh) version_=`versions_shell_pdksh "${shell_}"` ;;
+    */zsh) version_=`versions_shell_zsh "${shell_}"` ;;
+    *) version_='invalid'
+  esac
+
+  echo "${version_:-unknown}"
+  unset shell_ version_
+}
+
+# The ash shell is included in BusyBox.
+versions_shell_ash() {
+  busybox --help |head -1 |sed 's/BusyBox v\([0-9.]*\) .*/\1/'
+}
+
+versions_shell_bash() {
+  $1 --version : 2>&1 |grep 'GNU bash' |sed 's/.*version \([^ ]*\).*/\1/'
+}
+
+versions_shell_dash() {
+  eval dpkg >/dev/null 2>&1
+  [ $? -eq 127 ] && return  # Return if dpkg not found.
+
+  dpkg -l |grep ' dash ' |awk '{print $3}'
+}
+
+versions_shell_ksh() {
+  versions_shell_=$1
+  versions_version_=''
+
+  # Try a few different ways to figure out the version.
+  versions_version_=`${versions_shell_} --version : 2>&1`
+  # shellcheck disable=SC2181
+  if [ $? -eq 0 ]; then
+    versions_version_=`echo "${versions_version_}" \
+      |sed 's/.*\([0-9][0-9][0-9][0-9]-[0-9][0-9]-[0-9][0-9]\).*/\1/'`
+  else
+    versions_version_=''
+  fi
+  if [ -z "${versions_version_}" ]; then
+    _versions_have_strings
+    versions_version_=`strings "${versions_shell_}" 2>&1 \
+      |grep Version \
+      |sed 's/^.*Version \(.*\)$/\1/;s/ s+ \$$//;s/ /-/g'`
+  fi
+  if [ -z "${versions_version_}" ]; then
+    versions_version_=`versions_shell_pdksh "${versions_shell_}"`
+  fi
+
+  echo "${versions_version_}"
+  unset versions_shell_ versions_version_
+}
+
+versions_shell_pdksh() {
+  _versions_have_strings
+  strings "$1" 2>&1 \
+  |grep 'PD KSH' \
+  |sed -e 's/.*PD KSH \(.*\)/\1/;s/ /-/g'
+}
+
+versions_shell_xpg4() {
+  _versions_have_strings
+  strings "$1" 2>&1 \
+  |grep 'Version' \
+  |sed -e 's/^@(#)Version //'
+}
+
+versions_shell_zsh() {
+  versions_shell_=$1
+
+  # Try a few different ways to figure out the version.
+  # shellcheck disable=SC2016
+  versions_version_=`echo 'echo ${ZSH_VERSION}' |${versions_shell_}`
+  if [ -z "${versions_version_}" ]; then
+    versions_version_=`${versions_shell_} --version : 2>&1`
+    # shellcheck disable=SC2181
+    if [ $? -eq 0 ]; then
+      versions_version_=`echo "${versions_version_}" |awk '{print $2}'`
+    else
+      versions_version_=''
+    fi
+  fi
+
+  echo "${versions_version_}"
+  unset versions_shell_ versions_version_
+}
+
+# Determine if the 'strings' binary installed.
+_versions_have_strings() {
+  [ ${__versions_haveStrings} -ne ${ERROR} ] && return
+  if eval strings /dev/null >/dev/null 2>&1; then
+    __versions_haveStrings=${TRUE}
+    return
+  fi
+
+  echo 'WARN: strings not installed. try installing binutils?' >&2
+  __versions_haveStrings=${FALSE}
+}
+
+versions_main() {
+  # Treat unset variables as an error.
+  set -u
+
+  os_name=`versions_osName`
+  os_version=`versions_osVersion`
+  echo "os: ${os_name} version: ${os_version}"
+
+  for shell in ${VERSIONS_SHELLS}; do
+    shell_version=`versions_shellVersion "${shell}"`
+    echo "shell: ${shell} version: ${shell_version}"
+  done
+}
+
+if [ "${ARGV0}" = 'versions' ]; then
+  versions_main "$@"
+fi

@@ -1,0 +1,68 @@
+version: '3.4'
+
+x-service-common-fields: &service-common-fields
+    volumes:
+      - ./scripts:/scripts
+    env_file:
+        - ./.env
+
+
+services:
+  fluent-bit:
+      <<: *service-common-fields
+      build:
+          context: ../..
+          target: runner
+          dockerfile: examples/kafka_filter/Dockerfile
+      command: /scripts/flb-start.sh
+      depends_on:
+          - kafka-consumer
+
+
+  kafka-create-topics:
+      <<: *service-common-fields
+      image: confluentinc/cp-server:7.0.1
+      command: /scripts/create-topics.sh
+      depends_on:
+          - kafka-broker
+
+
+  kafka-producer:
+      <<: *service-common-fields
+      image: confluentinc/cp-server:7.0.1
+      command: /scripts/kafka-produce.sh
+      depends_on:
+          - fluent-bit
+
+
+  kafka-consumer:
+      <<: *service-common-fields
+      image: confluentinc/cp-server:7.0.1
+      command: /scripts/kafka-consume.sh
+      depends_on:
+          - kafka-create-topics
+
+
+  kafka-broker:
+      image: confluentinc/cp-server:7.0.1
+      hostname: broker
+      container_name: kafka-broker
+      depends_on:
+          - zookeeper
+      environment:
+          KAFKA_BROKER_ID: 1
+          KAFKA_ZOOKEEPER_CONNECT: "${ZOOKEEPER_HOST}:${ZOOKEEPER_PORT}"
+          KAFKA_LISTENER_SECURITY_PROTOCOL_MAP: "PLAINTEXT:PLAINTEXT"
+          KAFKA_ADVERTISED_LISTENERS: "PLAINTEXT://${KAFKA_HOST}:${KAFKA_PORT}"
+          KAFKA_OFFSETS_TOPIC_REPLICATION_FACTOR: 1
+          KAFKA_GROUP_INITIAL_REBALANCE_DELAY_MS: 0
+          KAFKA_CONFLUENT_LICENSE_TOPIC_REPLICATION_FACTOR: 1
+
+
+  zookeeper:
+      image: confluentinc/cp-zookeeper:7.0.1
+      hostname: zookeeper
+      container_name: zookeeper
+      environment:
+          ZOOKEEPER_CLIENT_PORT: "${ZOOKEEPER_PORT}"
+          ZOOKEEPER_TICK_TIME: 2000

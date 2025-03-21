@@ -1,0 +1,9 @@
+[submodule "third_party/Unity"]
+	path = third_party/Unity
+	url = https://github.com/ThrowTheSwitch/Unity.git
+[submodule "third_party/sanitizers-cmake"]
+	path = third_party/sanitizers-cmake
+	url = https://github.com/arsenm/sanitizers-cmake.git
+[submodule "third_party/cmake-modules"]
+	path = third_party/cmake-modules
+	url = https://github.com/bilke/cmake-modules.git

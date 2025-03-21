@@ -1,0 +1,55 @@
+{
+    "kind": "EventList",
+    "apiVersion": "v1",
+    "metadata": {
+      "resourceVersion": "177157"
+    },
+    "items": [
+      {
+        "metadata": {
+          "name": ".17a3ba8b4aa36c81",
+          "namespace": "default",
+          "uid": "ec5546b7-f1b9-4e61-a90c-a1f3b611edbc",
+          "resourceVersion": "174688",
+          "creationTimestamp": "2023-12-24T09:30:07Z",
+          "managedFields": [
+            {
+              "manager": "storage-provisioner",
+              "operation": "Update",
+              "apiVersion": "v1",
+              "time": "2023-12-24T09:30:07Z",
+              "fieldsType": "FieldsV1",
+              "fieldsV1": {
+                "f:count": {},
+                "f:firstTimestamp": {},
+                "f:involvedObject": {},
+                "f:lastTimestamp": {},
+                "f:message": {},
+                "f:reason": {},
+                "f:source": {
+                  "f:component": {}
+                },
+                "f:type": {}
+              }
+            }
+          ]
+        },
+        "involvedObject": {
+          "kind": "Endpoints",
+          "apiVersion": "v1"
+        },
+        "reason": "LeaderElection",
+        "message": "minikube_31f5cdfb-29b0-4f84-9f9c-585088e9235f stopped leading",
+        "source": {
+          "component": "k8s.io/minikube-hostpath_minikube_31f5cdfb-29b0-4f84-9f9c-585088e9235f"
+        },
+        "firstTimestamp": "2023-12-24T09:29:51Z",
+        "lastTimestamp": "2023-12-24T09:29:51Z",
+        "count": 1,
+        "type": "Normal",
+        "eventTime": null,
+        "reportingComponent": "",
+        "reportingInstance": ""
+      }
+    ]
+}

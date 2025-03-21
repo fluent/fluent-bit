@@ -1,0 +1,33 @@
+#
+# Copyright (c) 2021, RT-Thread Development Team
+#
+# SPDX-License-Identifier: Apache-2.0 WITH LLVM-exception
+#
+
+from building import *
+import os
+
+cwd     = GetCurrentDir()
+
+src = Split('''
+''')
+
+
+def addSrcFiles(arr, path):
+    for f in os.listdir(path):
+        fpath = os.path.join(path, f);
+        if os.path.isfile(fpath):
+            ext = os.path.splitext(fpath)[-1]
+            if ext == '.c' or ext == '.cpp':
+                arr += [fpath]
+        elif os.path.isdir(fpath):
+            addSrcFiles(arr, fpath)
+
+
+
+addSrcFiles(src, cwd);
+CPPPATH = [cwd, cwd+'/../include']
+
+group = DefineGroup('iwasm_platform_core', src, depend = [''], CPPPATH = CPPPATH)
+
+Return('group')

@@ -1,0 +1,7 @@
+*~
+build/*
+include/cmetrics/cmt_info.h
+include/cmetrics/cmt_version.h
+LICENSE.txt
+README.html
+welcome.txt

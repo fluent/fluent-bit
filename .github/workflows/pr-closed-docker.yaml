@@ -1,0 +1,21 @@
+name: Remove docker images for stale/closed PR(s).
+on:
+  pull_request:
+    branches:
+      - master
+    types: [closed]
+jobs:
+  cleanup:
+    name: PR - cleanup pr-${{ github.event.number }} images
+    runs-on: ubuntu-latest
+    permissions:
+      # We may need a specific token here with `packages:admin` privileges which is not available to GITHUB_TOKEN
+      packages: write
+    steps:
+      - uses: vlaurin/action-ghcr-prune@v0.6.0
+        with:
+          organization: fluent
+          container: fluent-bit/pr-${{ github.event.number }}
+          token: ${{ secrets.GITHUB_TOKEN }}
+          prune-untagged: true
+          keep-last: 0

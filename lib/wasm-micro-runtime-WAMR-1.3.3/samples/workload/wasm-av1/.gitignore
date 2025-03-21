@@ -1,0 +1,8 @@
+# from CMakeLists
+av1
+build
+include
+
+# from build.sh
+wasm-av1
+out

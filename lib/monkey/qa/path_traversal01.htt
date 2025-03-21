@@ -1,0 +1,27 @@
+################################################################################
+# DESCRIPTION
+#	Test against directory traversal (client must not be allowed to "get out" of
+#	DocumentRoot.
+#
+# AUTHOR
+#	Carlos Ghan	<charlie.brown.uy@gmail.com>
+#
+# DATE
+#	March 08 2010
+#
+# COMMENTS
+#	Simple "../"	
+################################################################################
+
+
+INCLUDE __CONFIG
+
+CLIENT
+_REQ $HOST $PORT
+__GET /../conf/monkey.conf $HTTPVER
+__Host: $HOST
+__Connection: close
+__
+_EXPECT . "HTTP/1.1 403 Forbidden"
+_WAIT
+END
