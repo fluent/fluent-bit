@@ -29,6 +29,7 @@ struct sampling_ctrace_entry {
 
 struct sampling_settings {
     int decision_wait;
+    uint64_t max_traces;
 
     /* internal */
     void *parent;                   /* struct sampling *ctx */
@@ -45,6 +46,11 @@ static struct flb_config_map settings_config_map[] = {
     {
         FLB_CONFIG_MAP_TIME, "decision_wait", "30s",
         0, FLB_TRUE, offsetof(struct sampling_settings, decision_wait),
+    },
+
+    {
+        FLB_CONFIG_MAP_INT, "max_traces", "50000",
+        0, FLB_TRUE, offsetof(struct sampling_settings, max_traces),
     },
 
     /* EOF */
@@ -240,7 +246,7 @@ static struct ctrace *reconcile_and_create_ctrace(struct sampling *ctx, struct s
         flb_free(t_span);
     }
 
-    sampling_span_registry_delete_entry(ctx, settings->span_reg, t_entry);
+    sampling_span_registry_delete_entry(ctx, settings->span_reg, t_entry, FLB_FALSE);
 
     return ctr;
 }
@@ -306,7 +312,7 @@ static int reconcile_and_dispatch_traces(struct sampling *ctx, struct sampling_s
             trace_entry_delete_spans(t_entry);
 
             /* remove the trace entry */
-            sampling_span_registry_delete_entry(ctx, settings->span_reg, t_entry);
+            sampling_span_registry_delete_entry(ctx, settings->span_reg, t_entry, FLB_FALSE);
             continue;
         }
 
@@ -389,7 +395,7 @@ static int cb_init(struct flb_config *config, struct sampling *ctx)
         return -1;
     }
 
-    settings->span_reg = sampling_span_registry_create();
+    settings->span_reg = sampling_span_registry_create(settings->max_traces);
     if (!settings->span_reg) {
         flb_plg_error(ctx->ins, "could not span registry");
         flb_free(settings);
