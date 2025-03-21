@@ -553,6 +553,7 @@ static int process_span_status(struct flb_opentelemetry *ctx,
 {
     int ret;
     int code = 0;
+    cfl_sds_t tmp = NULL;
     char *message = NULL;
     cfl_sds_t tmp;
 
@@ -569,6 +570,7 @@ static int process_span_status(struct flb_opentelemetry *ctx,
         if (!tmp) {
             return -1;
         }
+
         if (strcasecmp(tmp, "UNSET") == 0) {
             code = CTRACE_SPAN_STATUS_CODE_UNSET;
         }

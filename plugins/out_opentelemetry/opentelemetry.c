@@ -284,6 +284,7 @@ int opentelemetry_post(struct opentelemetry_context *ctx,
 
     if (request->protocol_version == HTTP_PROTOCOL_VERSION_20 &&
         ctx->enable_grpc_flag) {
+
         grpc_body = cfl_sds_create_size(body_len + 5);
 
         if (grpc_body == NULL) {
@@ -819,7 +820,7 @@ static struct flb_config_map config_map[] = {
      "Adds a custom label to the metrics use format: 'add_label name value'"
     },
     {
-     FLB_CONFIG_MAP_STR, "http2", "on",
+     FLB_CONFIG_MAP_STR, "http2", "off",
      0, FLB_TRUE, offsetof(struct opentelemetry_context, enable_http2),
      "Enable, disable or force HTTP/2 usage. Accepted values : on, off, force"
     },

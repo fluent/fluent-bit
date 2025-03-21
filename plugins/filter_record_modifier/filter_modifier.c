@@ -369,12 +369,20 @@ static int cb_modifier_filter(const void *data, size_t bytes,
             if (map_num > BOOL_MAP_LIMIT) {
                 flb_plg_error(ctx->ins, "The number of elements exceeds limit %d",
                               BOOL_MAP_LIMIT);
+
+                flb_log_event_decoder_destroy(&log_decoder);
+                flb_log_event_encoder_destroy(&log_encoder);
+
                 return -1;
             }
             /* allocate map_num + guard byte */
             bool_map = flb_calloc(map_num+1, sizeof(bool_map_t));
             if (bool_map == NULL) {
                 flb_errno();
+
+                flb_log_event_decoder_destroy(&log_decoder);
+                flb_log_event_encoder_destroy(&log_encoder);
+
                 return -1;
             }
             removed_map_num = make_bool_map(ctx, obj,

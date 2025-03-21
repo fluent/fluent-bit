@@ -922,6 +922,8 @@ int otel_process_logs(struct flb_event_chunk *event_chunk,
         return -1;
     }
 
+    flb_log_event_decoder_read_groups(decoder, FLB_TRUE);
+
     log_record_count = 0;
     opentelemetry__proto__collector__logs__v1__export_logs_service_request__init(&export_logs);
 
