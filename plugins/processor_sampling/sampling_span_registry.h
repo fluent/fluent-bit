@@ -25,6 +25,9 @@
 struct sampling_span_registry {
     struct flb_hash_table *ht;
 
+    uint64_t count_traces;
+    uint64_t max_traces;
+
     /* linked lists of trace_entries inside the hash table (ht) using the _head node */
     struct cfl_list trace_list;
 
@@ -33,9 +36,10 @@ struct sampling_span_registry {
     struct cfl_list trace_list_incomplete;
 };
 
-struct sampling_span_registry *sampling_span_registry_create();
+struct sampling_span_registry *sampling_span_registry_create(uint64_t max_traces);
 void sampling_span_registry_destroy(struct sampling_span_registry *reg);
-int sampling_span_registry_delete_entry(struct sampling *ctx, struct sampling_span_registry *reg, struct trace_entry *t_entry);
+int sampling_span_registry_delete_entry(struct sampling *ctx, struct sampling_span_registry *reg,
+                                        struct trace_entry *t_entry, int delete_spans);
 int sampling_span_registry_add_trace(struct sampling *ctx, struct sampling_span_registry *reg, struct ctrace *ctr);
 int sampling_span_registry_print(struct sampling *ctx, struct sampling_span_registry *reg, char *title);
 
