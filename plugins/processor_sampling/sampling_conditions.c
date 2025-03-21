@@ -46,6 +46,9 @@ static int condition_type_str_to_int(char *type_str)
     else if (strcasecmp(type_str, "span_count") == 0) {
         return SAMPLING_COND_SPAN_COUNT;
     }
+    else if (strcasecmp(type_str, "trace_state") == 0) {
+        return SAMPLING_COND_TRACE_STATE;
+    }
 
     return -1;
 }
@@ -80,6 +83,9 @@ void sampling_conditions_destroy(struct sampling_conditions *sampling_conditions
         else if (sampling_condition->type == SAMPLING_COND_SPAN_COUNT) {
             cond_span_count_destroy(sampling_condition);
         }
+        else if (sampling_condition->type == SAMPLING_COND_TRACE_STATE) {
+            cond_trace_state_destroy(sampling_condition);
+        }
 
         cfl_list_del(&sampling_condition->_head);
         flb_free(sampling_condition);
@@ -103,41 +109,32 @@ int sampling_conditions_check(struct sampling *ctx, struct sampling_conditions *
     cfl_list_foreach_safe(head, tmp, &sampling_conditions->list) {
         sampling_condition = cfl_list_entry(head, struct sampling_condition, _head);
 
+        ret = FLB_FALSE;
+
         if (sampling_condition->type == SAMPLING_COND_STATUS_CODE) {
             ret = cond_status_codes_check(sampling_condition, span);
-            if (ret == FLB_TRUE) {
-                return FLB_TRUE;
-            }
         }
         else if (sampling_condition->type == SAMPLING_COND_LATENCY) {
             ret = cond_latency_check(sampling_condition, span);
-            if (ret == FLB_TRUE) {
-                return FLB_TRUE;
-            }
         }
         else if (sampling_condition->type == SAMPLING_COND_STRING_ATTRIBUTE) {
             ret = cond_attr_check(sampling_condition, span, ATTRIBUTE_TYPE_STRING);
-            if (ret == FLB_TRUE) {
-                return FLB_TRUE;
-            }
         }
         else if (sampling_condition->type == SAMPLING_COND_NUMERIC_ATTRIBUTE) {
             ret = cond_attr_check(sampling_condition, span, ATTRIBUTE_TYPE_NUMERIC);
-            if (ret == FLB_TRUE) {
-                return FLB_TRUE;
-            }
         }
         else if (sampling_condition->type == SAMPLING_COND_BOOLEAN_ATTRIBUTE) {
             ret = cond_attr_check(sampling_condition, span, ATTRIBUTE_TYPE_BOOLEAN);
-            if (ret == FLB_TRUE) {
-                return FLB_TRUE;
-            }
         }
         else if (sampling_condition->type == SAMPLING_COND_SPAN_COUNT) {
             ret = cond_span_count_check(sampling_condition, trace_entry, span);
-            if (ret == FLB_TRUE) {
-                return FLB_TRUE;
-            }
+        }
+        else if (sampling_condition->type == SAMPLING_COND_TRACE_STATE) {
+            ret = cond_trace_state_check(sampling_condition, span);
+        }
+
+        if (ret == FLB_TRUE) {
+            return FLB_TRUE;
         }
     }
 
@@ -220,6 +217,9 @@ struct sampling_conditions *sampling_conditions_create(struct sampling *ctx, str
             break;
         case SAMPLING_COND_SPAN_COUNT:
             cond_ptr = cond_span_count_create(ctx, sampling_cond, condition_settings);
+            break;
+        case SAMPLING_COND_TRACE_STATE:
+            cond_ptr = cond_trace_state_create(ctx, sampling_cond, condition_settings);
             break;
         default:
             sampling_conditions_destroy(sampling_cond);

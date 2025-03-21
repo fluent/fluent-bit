@@ -68,6 +68,7 @@ enum {
     SAMPLING_COND_NUMERIC_ATTRIBUTE,
     SAMPLING_COND_BOOLEAN_ATTRIBUTE,
     SAMPLING_COND_SPAN_COUNT,
+    SAMPLING_COND_TRACE_STATE,
 };
 
 struct sampling_condition {
@@ -196,5 +197,12 @@ struct sampling_condition *cond_span_count_create(struct sampling *ctx,
                                                   struct sampling_conditions *sampling_conditions,
                                                   struct cfl_variant *settings);
 void cond_span_count_destroy(struct sampling_condition *sampling_condition);
+
+/* condition: trace_state */
+int cond_trace_state_check(struct sampling_condition *sampling_condition, struct ctrace_span *span);
+struct sampling_condition *cond_trace_state_create(struct sampling *ctx,
+                                                   struct sampling_conditions *sampling_conditions,
+                                                   struct cfl_variant *settings);
+void cond_trace_state_destroy(struct sampling_condition *sampling_condition);
 
 #endif
