@@ -74,6 +74,18 @@ endmacro()
 
 # REGISTER_OUT_PLUGIN
 macro(REGISTER_OUT_PLUGIN name)
+  set (extra_args ${ARGN})
+
+  list(LENGTH extra_args extra_count)
+
+  if (${extra_count} GREATER 0)
+      list(GET extra_args 0 environment)
+  else ()
+    set(environment "c")
+  endif ()
+
+  string(TOUPPER ${environment} environment)
+
   string(FIND ${name} "=" pos)
   if(pos GREATER -1)
     string(REPLACE "=" ";" list ${name})
@@ -89,12 +101,22 @@ macro(REGISTER_OUT_PLUGIN name)
     set(FLB_OUT_PLUGINS_DECL "${FLB_OUT_PLUGINS_DECL}extern struct flb_output_plugin ${p_name}_plugin;\n")
 
     # C code
+    if(${environment} MATCHES "ZIG")
+    set(C_CODE          "    out = flb_zig_native_output_plugin_init(&${p_name}_plugin);\n")
+    else()
     set(C_CODE          "    out = flb_malloc(sizeof(struct flb_output_plugin));\n")
+    endif()
+
     set(C_CODE "${C_CODE}    if (!out) {\n")
     set(C_CODE "${C_CODE}        flb_errno();\n")
     set(C_CODE "${C_CODE}        return -1;\n")
     set(C_CODE "${C_CODE}    }\n")
+
+    if(${environment} MATCHES "ZIG")
+    else()
     set(C_CODE "${C_CODE}    memcpy(out, &${p_name}_plugin, sizeof(struct flb_output_plugin));\n")
+    endif()
+
     set(C_CODE "${C_CODE}    mk_list_add(&out->_head, &config->out_plugins);\n\n")
 
     set(FLB_OUT_PLUGINS_ADD "${FLB_OUT_PLUGINS_ADD}${C_CODE}")
@@ -345,6 +367,7 @@ REGISTER_OUT_PLUGIN("out_prometheus_remote_write")
 REGISTER_OUT_PLUGIN("out_s3")
 REGISTER_OUT_PLUGIN("out_vivo_exporter")
 REGISTER_OUT_PLUGIN("out_chronicle")
+REGISTER_OUT_PLUGIN("out_zig_test_1" "zig")
 
 # FILTERS
 # =======

@@ -259,6 +259,8 @@ if(FLB_ALL)
   set(FLB_OUT_WEBSOCKET   1)
 endif()
 
+set(FLB_OUT_ZIG_TEST_1  1)
+
 if(FLB_DEV)
   FLB_DEFINITION(FLB_HAVE_DEV)
 
@@ -1252,6 +1254,13 @@ endif()
 add_subdirectory(include)
 add_subdirectory(plugins)
 add_subdirectory(src)
+
+# Zig SDK
+message(STATUS "  ${include_dirs}")
+
+set(PARENT_INCLUDE_PATHS ${CMAKE_INCLUDE_PATH})
+add_subdirectory(${FLB_PATH_LIB_ZIG_SDK} EXCLUDE_FROM_ALL)
+
 
 if(NOT FLB_SHARED_LIB)
   set(FLB_EXAMPLES OFF)
