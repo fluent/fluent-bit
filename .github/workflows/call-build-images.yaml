@@ -43,9 +43,6 @@ on:
       token:
         description: The Github token or similar to authenticate with for the registry.
         required: true
-      docker-token:
-        required: true
-        description: The Github token or similar to authenticate with for the registry.
       cosign_private_key:
         description: The optional Cosign key to use for signing the images.
         required: false
@@ -272,7 +269,7 @@ jobs:
         with:
           registry: ${{ inputs.registry }}
           username: ${{ inputs.username }}
-          password: ${{ secrets.docker-token}}
+          password: ${{ secrets.token }}
 
       - name: Generate schema
         run: |
@@ -304,7 +301,7 @@ jobs:
         with:
           registry: ${{ inputs.registry }}
           username: ${{ inputs.username }}
-          password: ${{ secrets.docker-token}}
+          password: ${{ secrets.token }}
 
       - name: Trivy - multi-arch
         uses: aquasecurity/trivy-action@master
@@ -409,7 +406,7 @@ jobs:
         with:
           registry: ${{ inputs.registry }}
           username: ${{ inputs.username }}
-          password: ${{ secrets.docker-token}}
+          password: ${{ secrets.token }}
 
       - name: Build the production images
         run: |
