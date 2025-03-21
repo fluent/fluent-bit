@@ -27,9 +27,20 @@
 #include <fluent-bit/flb_metrics.h>
 #endif
 
+/* Custom plugin types */
+#define FLB_CUSTOM_PLUGIN_CORE   0
+#define FLB_CUSTOM_PLUGIN_PROXY  1
+
 struct flb_custom_instance;
 
 struct flb_custom_plugin {
+    /*
+     * The type defines if this is a core-based plugin or it's handled by
+     * some specific proxy.
+     */
+    int type;
+    void *proxy;
+
     int flags;             /* Flags (not available at the moment */
     char *name;            /* Custom plugin short name           */
     char *description;     /* Description                        */
