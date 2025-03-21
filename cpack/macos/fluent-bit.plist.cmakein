@@ -10,7 +10,7 @@
 	<array>
 		<string>@CMAKE_INSTALL_FULL_BINDIR@/@FLB_OUT_NAME@</string>
 		<string>--config</string>
-		<string>@CMAKE_INSTALL_PREFIX@/@CMAKE_INSTALL_SYSCONFDIR@/@FLB_OUT_NAME@/@FLB_OUT_NAME@.conf</string>
+		<string>@CMAKE_INSTALL_PREFIX@/@CMAKE_INSTALL_SYSCONFDIR@/@FLB_OUT_NAME@/@FLB_OUT_NAME@.yaml</string>
 	</array>
 	<key>RunAtLoad</key>
 	<true/>
