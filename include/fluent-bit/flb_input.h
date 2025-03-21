@@ -534,14 +534,14 @@ struct flb_input_coro *flb_input_coro_create(struct flb_input_instance *ins,
     return input_coro;
 }
 
-struct flb_libco_in_params {
+struct flb_in_collect_params {
     struct flb_config *config;
     struct flb_input_collector *coll;
     struct flb_coro *coro;
 };
 
-extern pthread_key_t libco_in_param_key;
-extern struct flb_libco_in_params libco_in_param;
+extern FLB_TLS_DEFINE(struct flb_in_collect_params, in_collect_params);
+
 void flb_input_coro_prepare_destroy(struct flb_input_coro *input_coro);
 
 static FLB_INLINE void input_params_set(struct flb_coro *coro,
@@ -549,16 +549,16 @@ static FLB_INLINE void input_params_set(struct flb_coro *coro,
                              struct flb_config *config,
                              void *context)
 {
-    struct flb_libco_in_params *params;
+    struct flb_in_collect_params *params;
 
-    params = pthread_getspecific(libco_in_param_key);
+    params = (struct flb_in_collect_params *) FLB_TLS_GET(in_collect_params);
     if (params == NULL) {
-        params = flb_calloc(1, sizeof(struct flb_libco_in_params));
+        params = flb_calloc(1, sizeof(struct flb_in_collect_params));
         if (params == NULL) {
             flb_errno();
             return;
         }
-        pthread_setspecific(libco_in_param_key, params);
+        FLB_TLS_SET(in_collect_params, params);
     }
 
     /* Set callback parameters */
@@ -573,16 +573,12 @@ static FLB_INLINE void input_pre_cb_collect(void)
     struct flb_input_collector *coll;
     struct flb_config *config;
     struct flb_coro *coro;
-    struct flb_libco_in_params *params;
+    struct flb_in_collect_params *params;
 
-    params = pthread_getspecific(libco_in_param_key);
+    params = (struct flb_in_collect_params *)FLB_TLS_GET(in_collect_params);
     if (params == NULL) {
-        params = flb_calloc(1, sizeof(struct flb_libco_in_params));
-        if (params == NULL) {
-            flb_errno();
-            return;
-        }
-        pthread_setspecific(libco_in_param_key, params);
+        flb_errno();
+        return;
     }
     coll = params->coll;
     config = params->config;
@@ -597,13 +593,6 @@ static FLB_INLINE void flb_input_coro_resume(struct flb_input_coro *input_coro)
     flb_coro_resume(input_coro->coro);
 }
 
-static void libco_in_param_key_destroy(void *data)
-{
-    struct flb_libco_inparams *params = (struct flb_libco_inparams*)data;
-
-    flb_free(params);
-}
-
 static FLB_INLINE
 struct flb_input_coro *flb_input_coro_collect(struct flb_input_collector *coll,
                                               struct flb_config *config)
@@ -616,8 +605,6 @@ struct flb_input_coro *flb_input_coro_collect(struct flb_input_collector *coll,
     if (!input_coro) {
         return NULL;
     }
-
-    pthread_key_create(&libco_in_param_key, libco_in_param_key_destroy);
 
     coro = input_coro->coro;
     if (!coro) {
@@ -727,6 +714,9 @@ static inline int flb_input_config_map_set(struct flb_input_instance *ins,
 
     return ret;
 }
+
+void flb_input_init();
+void flb_input_exit();
 
 int flb_input_register_all(struct flb_config *config);
 struct flb_input_instance *flb_input_new(struct flb_config *config,

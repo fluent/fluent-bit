@@ -49,8 +49,7 @@
 #include <fluent-bit/flb_chunk_trace.h>
 #endif /* FLB_HAVE_CHUNK_TRACE */
 
-struct flb_libco_in_params libco_in_param;
-pthread_key_t libco_in_param_key;
+FLB_TLS_DEFINE(struct flb_in_collect_params, in_collect_params);
 
 #define protcmp(a, b)  strncasecmp(a, b, strlen(a))
 
@@ -139,6 +138,24 @@ int flb_input_log_check(struct flb_input_instance *ins, int l)
     }
 
     return FLB_TRUE;
+}
+
+/* Prepare input co-routines for the thread. */
+void flb_input_init()
+{
+    FLB_TLS_INIT(in_collect_params);
+    FLB_TLS_SET(in_collect_params, NULL);
+}
+
+void flb_input_exit()
+{
+    struct flb_in_collect_params *params;
+
+    params = (struct flb_in_collect_params *)FLB_TLS_GET(in_collect_params);
+    if (params) {
+        flb_free(params);
+        FLB_TLS_SET(in_collect_params, NULL);
+    }
 }
 
 /* Create an input plugin instance */
@@ -1374,6 +1391,8 @@ void flb_input_exit_all(struct flb_config *config)
         /* destroy the instance */
         flb_input_instance_destroy(ins);
     }
+
+   flb_input_exit();
 }
 
 /* Check that at least one Input is enabled */
