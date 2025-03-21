@@ -61,7 +61,7 @@ static void debug_trace(struct sampling *ctx, struct ctrace *ctr, int is_before)
     char tmp[128];
     struct sampling_span_registry *reg = NULL;
 
-    reg = sampling_span_registry_create();
+    reg = sampling_span_registry_create(100);
     if (!reg) {
         return;
     }

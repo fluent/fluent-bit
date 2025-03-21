@@ -22,7 +22,7 @@
 #include "sampling.h"
 #include "sampling_span_registry.h"
 
-struct sampling_span_registry *sampling_span_registry_create()
+struct sampling_span_registry *sampling_span_registry_create(uint64_t max_traces)
 {
     struct sampling_span_registry *reg;
 
@@ -40,6 +40,8 @@ struct sampling_span_registry *sampling_span_registry_create()
     cfl_list_init(&reg->trace_list);
     cfl_list_init(&reg->trace_list_complete);
     cfl_list_init(&reg->trace_list_incomplete);
+
+    reg->max_traces = max_traces;
 
     return reg;
 }
@@ -77,8 +79,8 @@ void sampling_span_registry_destroy(struct sampling_span_registry *reg)
     flb_free(reg);
 }
 
-
-int sampling_span_registry_delete_entry(struct sampling *ctx, struct sampling_span_registry *reg, struct trace_entry *t_entry)
+int sampling_span_registry_delete_entry(struct sampling *ctx, struct sampling_span_registry *reg,
+                                        struct trace_entry *t_entry, int delete_spans)
 {
     int ret;
     struct cfl_list *head_span;
@@ -104,11 +106,17 @@ int sampling_span_registry_delete_entry(struct sampling *ctx, struct sampling_sp
     /* delete trace spans (this don't delete spans!) */
     cfl_list_foreach_safe(head_span, tmp_span, &t_entry->span_list) {
         t_span = cfl_list_entry(head_span, struct trace_span, _head);
+        if (delete_spans) {
+            ctr_span_destroy(t_span->span);
+        }
+
         cfl_list_del(&t_span->_head);
         flb_free(t_span);
     }
 
     flb_free(t_entry);
+
+    reg->count_traces--;
 
     return 0;
 }
@@ -118,7 +126,9 @@ int sampling_span_registry_add_span(struct sampling *ctx, struct sampling_span_r
     int ret;
     size_t out_size = 0;
     cfl_sds_t hex_trace_id;
+    struct cfl_list *head;
     struct trace_entry *t_entry;
+    struct trace_entry *t_entry_delete;
     struct trace_span *t_span;
 
     /* convert trace_id to readable format */
@@ -181,6 +191,8 @@ int sampling_span_registry_add_span(struct sampling *ctx, struct sampling_span_r
             flb_free(t_entry);
             return -1;
         }
+
+        reg->count_traces++;
     }
 
     /* update if the trace is completed */
@@ -203,17 +215,29 @@ int sampling_span_registry_add_span(struct sampling *ctx, struct sampling_span_r
 
     /* update timestamp */
     t_entry->ts_last_updated = cfl_time_now();
+
+    /* if the new number of traces exceeds max_traces, delete the oldest one */
+    if (reg->count_traces > reg->max_traces) {
+        cfl_list_foreach(head, &reg->trace_list) {
+            t_entry_delete = cfl_list_entry(head, struct trace_entry, _head);
+
+            /* delete the first entry from the list */
+            sampling_span_registry_delete_entry(ctx, reg, t_entry_delete, FLB_TRUE);
+            break;
+        }
+    }
     return 0;
 }
 
 int sampling_span_registry_add_trace(struct sampling *ctx, struct sampling_span_registry *reg, struct ctrace *ctr)
 {
     int ret;
+    struct cfl_list *tmp;
     struct cfl_list *head;
     struct ctrace_span *span;
 
     /* iterate spans */
-    cfl_list_foreach(head, &ctr->span_list) {
+    cfl_list_foreach_safe(head, tmp, &ctr->span_list) {
         span = cfl_list_entry(head, struct ctrace_span, _head_global);
         ret = sampling_span_registry_add_span(ctx, reg, span);
         if (ret != 0) {
