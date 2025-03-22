@@ -22,6 +22,7 @@
 #include <fluent-bit/flb_pack.h>
 
 #include <ctraces/ctraces.h>
+#include <ctraces/ctr_span.h>
 #include <ctraces/ctr_encode_text.h>
 
 #include "opentelemetry.h"
@@ -43,7 +44,9 @@ int opentelemetry_traces_process_protobuf(struct flb_opentelemetry *ctx,
                                              &offset);
     if (result == 0) {
         result = flb_input_trace_append(ctx->ins, tag, tag_len, decoded_context);
-        ctr_decode_opentelemetry_destroy(decoded_context);
+        if (result == -1) {
+            ctr_destroy(decoded_context);
+        }
     }
 
     return result;
@@ -584,7 +587,7 @@ static int process_span_status(struct flb_opentelemetry *ctx,
         cfl_sds_destroy(tmp);
     }
     else {
-        flb_plg_error(ctx->ins, "status code is missing");
+        flb_plg_error(ctx->ins, "status code value type is wrong");
         return -1;
     }
 
@@ -1106,7 +1109,9 @@ static int process_json(struct flb_opentelemetry *ctx,
     ctr = process_root_msgpack(ctx, &unpacked_root.data);
     if (ctr) {
         result = flb_input_trace_append(ctx->ins, tag, tag_len, ctr);
-        ctr_destroy(ctr);
+        if (result == -1) {
+            ctr_destroy(ctr);
+        }
     }
 
     msgpack_unpacked_destroy(&unpacked_root);
