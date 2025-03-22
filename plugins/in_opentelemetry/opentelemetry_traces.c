@@ -555,7 +555,6 @@ static int process_span_status(struct flb_opentelemetry *ctx,
     int code = 0;
     cfl_sds_t tmp = NULL;
     char *message = NULL;
-    cfl_sds_t tmp;
 
     if (status->type != MSGPACK_OBJECT_MAP) {
         flb_plg_error(ctx->ins, "unexpected status type");
