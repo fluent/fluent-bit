@@ -18,18 +18,10 @@
  */
 
 #include <fluent-bit/flb_processor_plugin.h>
+#include <fluent-bit/flb_network.h>
+
 #include "sampling.h"
 
-#ifndef htonll
-static inline uint64_t htonll(uint64_t value) {
-    #if __BYTE_ORDER == __LITTLE_ENDIAN
-        return ((uint64_t) htonl (value & 0xFFFFFFFF) << 32) | htonl(value >> 32);
-    #else
-        /* this is already big-endian, there is no need to swap */
-        return value;
-    #endif
-}
-#endif
 
 struct sampling_settings {
     int sampling_percentage;
@@ -80,7 +72,7 @@ static uint64_t extract_trace_id(cfl_sds_t trace_id) {
     memcpy(&trace_number, trace_id, 8);
 
     /* convert to big-endian (if needed) */
-    trace_number = htonll(trace_number);
+    trace_number = flb_net_htonll(trace_number);
     return trace_number;
 }
 
