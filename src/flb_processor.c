@@ -1115,6 +1115,7 @@ struct flb_processor_instance *flb_processor_instance_create(struct flb_config *
         flb_processor_instance_destroy(instance);
         instance = NULL;
     }
+    flb_log_event_decoder_read_groups(instance->log_decoder, FLB_TRUE);
 
     return instance;
 }
