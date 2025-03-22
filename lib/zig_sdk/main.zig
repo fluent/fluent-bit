@@ -6,6 +6,76 @@ const c = @cImport({
     @cInclude("fluent-bit/flb_output.h");
 });
 
+const le = @cImport({
+    @cInclude("fluent-bit/flb_log_event.h");
+});
+
+const led = @cImport({
+    @cInclude("fluent-bit/flb_log_event_decoder.h");
+});
+
+const lee = @cImport({
+    @cInclude("fluent-bit/flb_log_event_encoder.h");
+});
+
+const d = @cImport({
+    @cInclude("fluent-bit/flb_mp_chunk.h");
+});
+
+const cv = @cImport({
+    @cInclude("cfl/cfl_variant.h");
+});
+
+pub const cfl_array = cv.cfl_array;
+pub const cfl_kvlist = cv.cfl_kvlist;
+pub const cfl_variant = cv.cfl_variant;
+
+pub const CFL_VARIANT_BOOL = cv.CFL_VARIANT_BOOL;
+pub const CFL_VARIANT_INT = cv.CFL_VARIANT_INT;
+pub const CFL_VARIANT_UINT = cv.CFL_VARIANT_UINT;
+pub const CFL_VARIANT_DOUBLE = cv.CFL_VARIANT_DOUBLE;
+pub const CFL_VARIANT_NULL = cv.CFL_VARIANT_NULL;
+pub const CFL_VARIANT_REFERENCE = cv.CFL_VARIANT_REFERENCE;
+pub const CFL_VARIANT_STRING = cv.CFL_VARIANT_STRING;
+pub const CFL_VARIANT_BYTES = cv.CFL_VARIANT_BYTES;
+pub const CFL_VARIANT_ARRAY = cv.CFL_VARIANT_ARRAY;
+pub const CFL_VARIANT_KVLIST = cv.CFL_VARIANT_KVLIST;
+
+pub const ReturnValue = enum {
+    Int,
+    String,
+    Float,
+};
+
+fn convert_variant_bool_to_native(value: *zig_sdk.cfl_variant) bool {
+    return false;
+}
+
+export fn convert_variant_to_native(value: *cfl_variant) ReturnValue {
+    //
+    //pub const cfl_array = cv.cfl_array;
+    //pub const cfl_kvlist = cv.cfl_kvlist;
+    //pub const cfl_variant = cv.cfl_variant;
+    //
+
+    switch (data.*.type) {
+        zig_sdk.CFL_VARIANT_BOOL => {
+            return convert_variant_bool_to_native(value.*.data.as_bool);
+        },
+        zig_sdk.CFL_VARIANT_INT => {},
+        zig_sdk.CFL_VARIANT_UINT => {},
+        zig_sdk.CFL_VARIANT_DOUBLE => {},
+        zig_sdk.CFL_VARIANT_NULL => {},
+        zig_sdk.CFL_VARIANT_REFERENCE => {},
+        zig_sdk.CFL_VARIANT_STRING => {},
+        zig_sdk.CFL_VARIANT_BYTES => {},
+        zig_sdk.CFL_VARIANT_ARRAY => {},
+        zig_sdk.CFL_VARIANT_KVLIST => {},
+    }
+
+    return undefined;
+}
+
 pub const FLB_TRUE = 1;
 pub const FLB_FALSE = 0;
 
@@ -20,95 +90,6 @@ pub const FLB_CONFIG_MAP_TIME = c.FLB_CONFIG_MAP_TIME;
 pub const FLB_OK = c.FLB_OK;
 pub const FLB_RETRY = c.FLB_RETRY;
 pub const FLB_ERROR = c.FLB_ERROR;
-
-//pub const flb_config = extern struct {
-//    name: [*c]const u8,
-//};
-//
-//pub const flb_output_instance = extern struct {
-//    name: [*c]const u8,
-//};
-
-//struct flb_output_plugin {
-//    ///*
-//    // * a 'mask' to define what kind of data the plugin can manage:
-//    // *
-//    // *  - FLB_OUTPUT_LOGS
-//    // *  - FLB_OUTPUT_METRICS
-//    // */
-//    event_type: c_int;
-//
-//    ///*
-//    // * The type defines if this is a core-based plugin or it's handled by
-//    // * some specific proxy.
-//    // */
-//    type: c_int;
-//    proxy: *anyopaque;
-//
-//    flags: c_int;
-//
-//    ///* The plugin name */
-//    name: [*c]const u8;
-//
-//    ///* Plugin description */
-//    *description: [*c]const u8;
-//
-//    config_map: *anyopaque;
-//
-//    host: c.flb_net_host;
-//
-//    ///* Initalization */
-//    cb_init: ?*const fn (ins: *anyopaque, config: *anyopaque, data: ?*anyopaque) callconv(.C) c_int,
-//
-//    ///* Pre run */
-//    //int (*cb_pre_run) (void *, struct flb_config *);
-//    cb_pre_run: ?*const fn (ins: *anyopaque, config: *anyopaque) callconv(.C) c_int,
-//
-//    ///* Flush callback */
-//    //void (*cb_flush) (struct flb_event_chunk *,
-//    //                  struct flb_output_flush *,
-//    //                  struct flb_input_instance *,
-//    //                  void *,
-//    //                  struct flb_config *);
-//
-//    cb_flush: ?*const fn (chunk: *anyopaque, flush: *anyopaque, ins: *anyopaque, data: *anyopaque, config: *anyopaque) callconv(.C) anyopaque,
-//
-//    ///* Exit */
-//    //int (*cb_exit) (void *, struct flb_config *);
-//    cb_exit: ?*const fn (ins: *anyopaque, config: *anyopaque) callconv(.C) c_int,
-//
-//    ///* Destroy */
-//    //void (*cb_destroy) (struct flb_output_plugin *);
-//    cb_destroy: ?*const fn (ins: *anyopaque) callconv(.C) anyopaque,
-//
-//    ///* Default number of worker threads */
-//    workers: c_int;
-//
-//    //int (*cb_worker_init) (void *, struct flb_config *);
-//    cb_worker_init: ?*const fn (ins: *anyopaque, config: *anyopaque) callconv(.C) c_int,
-//    //int (*cb_worker_exit) (void *, struct flb_config *);
-//    cb_worker_exit: ?*const fn (ins: *anyopaque, config: *anyopaque) callconv(.C) c_int,
-//
-//    ///* Notification: this callback will be invoked anytime a notification is received*/
-//    //int (*cb_notification) (struct flb_output_instance *, struct flb_config *, void *);
-//    cb_notification: ?*const fn (ins: *anyopaque, config: *anyopaque, data: *anyopaque) callconv(.C) c_int,
-//
-//    ///* Tests */
-//    //struct flb_test_out_formatter test_formatter;
-//    //struct flb_test_out_response test_response;
-//
-//    ///* Link to global list from flb_config->outputs */
-//    //struct mk_list _head;
-//};
-//
-//pub const flb_output_plugin = extern struct {
-//    name: [*c]const u8,
-//    description: [*c]const u8,
-//    cb_init: ?*const fn (ins: *anyopaque, config: *anyopaque, data: ?*anyopaque) callconv(.C) c_int,
-//    // cb_flush: ?*const fn (data: *const anyopaque, bytes: usize, tag: [*c]const u8, tag_len: c_int, i_ins: *c.flb_input_instance, out_context: ?*anyopaque, config: *c.flb_config) callconv(.C) c_int,
-//    // cb_exit: ?*const fn (data: ?*anyopaque) callconv(.C) c_int,
-//    flags: c_int,
-//};
 
 pub const flb_config_map = c.flb_config_map;
 pub const flb_event_chunk = c.flb_event_chunk;
@@ -127,10 +108,43 @@ pub const flb_output_set_context = c.flb_output_set_context;
 
 pub const FLB_OUTPUT_RETURN = c.flb_output_return_do;
 
-pub const flb_log_event_decoder = c.flb_log_event_decoder;
-pub const flb_log_event_decoder_create = c.flb_log_event_decoder_create;
-pub const flb_log_event_decoder_destroy = c.flb_log_event_decoder_destroy;
-pub const flb_log_event_decoder_next = c.flb_log_event_decoder_next;
+pub const flb_log_event = c.flb_log_event;
+
+pub const flb_log_event_encoder = lee.flb_log_event_encoder;
+
+pub const flb_log_event_encoder_create = lee.flb_log_event_encoder_create;
+pub const flb_log_event_encoder_destroy = lee.flb_log_event_encoder_destroy;
+
+pub const FLB_LOG_EVENT_FORMAT_FLUENT_BIT_V2 = le.FLB_LOG_EVENT_FORMAT_FLUENT_BIT_V2;
+
+pub const flb_log_event_decoder = led.flb_log_event_decoder;
+pub const flb_log_event_decoder_create = led.flb_log_event_decoder_create;
+pub const flb_log_event_decoder_destroy = led.flb_log_event_decoder_destroy;
+pub const flb_log_event_decoder_next = led.flb_log_event_decoder_next;
+
+pub const FLB_EVENT_DECODER_SUCCESS = led.FLB_EVENT_DECODER_SUCCESS;
+pub const FLB_EVENT_DECODER_ERROR_INITIALIZATION_FAILURE = led.FLB_EVENT_DECODER_ERROR_INITIALIZATION_FAILURE;
+pub const FLB_EVENT_DECODER_ERROR_INVALID_CONTEXT = led.FLB_EVENT_DECODER_ERROR_INVALID_CONTEXT;
+pub const FLB_EVENT_DECODER_ERROR_INVALID_ARGUMENT = led.FLB_EVENT_DECODER_ERROR_INVALID_ARGUMENT;
+pub const FLB_EVENT_DECODER_ERROR_WRONG_ROOT_TYPE = led.FLB_EVENT_DECODER_ERROR_WRONG_ROOT_TYPE;
+pub const FLB_EVENT_DECODER_ERROR_WRONG_ROOT_SIZE = led.FLB_EVENT_DECODER_ERROR_WRONG_ROOT_SIZE;
+pub const FLB_EVENT_DECODER_ERROR_WRONG_HEADER_TYPE = led.FLB_EVENT_DECODER_ERROR_WRONG_HEADER_TYPE;
+pub const FLB_EVENT_DECODER_ERROR_WRONG_HEADER_SIZE = led.FLB_EVENT_DECODER_ERROR_WRONG_HEADER_SIZE;
+pub const FLB_EVENT_DECODER_ERROR_WRONG_TIMESTAMP_TYPE = led.FLB_EVENT_DECODER_ERROR_WRONG_TIMESTAMP_TYPE;
+pub const FLB_EVENT_DECODER_ERROR_WRONG_METADATA_TYPE = led.FLB_EVENT_DECODER_ERROR_WRONG_METADATA_TYPE;
+pub const FLB_EVENT_DECODER_ERROR_WRONG_BODY_TYPE = led.FLB_EVENT_DECODER_ERROR_WRONG_BODY_TYPE;
+pub const FLB_EVENT_DECODER_ERROR_DESERIALIZATION_FAILURE = led.FLB_EVENT_DECODER_ERROR_DESERIALIZATION_FAILURE;
+pub const FLB_EVENT_DECODER_ERROR_INSUFFICIENT_DATA = led.FLB_EVENT_DECODER_ERROR_INSUFFICIENT_DATA;
+
+pub const flb_mp_chunk_record = d.flb_mp_chunk_record;
+pub const flb_mp_chunk_record_create = d.flb_mp_chunk_record_create;
+pub const flb_mp_chunk_cobj_record_destroy = d.flb_mp_chunk_cobj_record_destroy;
+pub const flb_mp_chunk_cobj_record_next = d.flb_mp_chunk_cobj_record_next;
+
+pub const flb_mp_chunk_cobj = d.flb_mp_chunk_cobj;
+pub const flb_mp_chunk_cobj_create = d.flb_mp_chunk_cobj_create;
+pub const flb_mp_chunk_cobj_destroy = d.flb_mp_chunk_cobj_destroy;
+pub const flb_mp_chunk_cobj_encode = d.flb_mp_chunk_cobj_encode;
 
 pub const flb_zig_output_plugin = extern struct {
     native_plugin: flb_output_plugin = .{},
@@ -175,8 +189,8 @@ fn flb_zig_output_plugin_cb_flush(
     var result: c_int = FLB_ERROR;
 
     result = zig_instance.cb_flush.?(
-        undefined,
-        undefined,
+        @ptrCast(@constCast(event_chunk.*.data)),
+        event_chunk.*.size,
         event_chunk.*.tag,
         c.flb_sds_len(event_chunk.*.tag),
         input_instance,

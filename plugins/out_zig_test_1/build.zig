@@ -16,6 +16,14 @@ pub fn build(b: *std.Build) void {
     const my_package_dep = b.dependency("zigsdk", .{});
     lib.root_module.addImport("zigsdk", my_package_dep.module("zigsdk"));
 
+    //const msgpack = b.dependency("zig_msgpack", .{
+    //    .target = target,
+    //    .optimize = optimize,
+    //});
+
+    // add module
+    //lib.root_module.addImport("zig_msgpack", msgpack.module("msgpack"));
+
     const install = b.addInstallArtifact(lib, .{
         .dest_dir = .{ .override = .{ .custom = "." } },
         .h_dir = .{ .override = .{ .custom = "." } },

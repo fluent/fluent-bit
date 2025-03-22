@@ -1,5 +1,6 @@
 const std = @import("std");
 const zig_sdk = @import("zigsdk");
+//const msgpack = @import("msgpack");
 
 pub const plugin_context = extern struct {
     format: [*c]const u8,
@@ -30,8 +31,8 @@ fn cb_init(ins: *anyopaque, config: *anyopaque, data: ?*anyopaque) callconv(.C) 
 }
 
 fn cb_flush(data: *const anyopaque, bytes: usize, tag: [*c]const u8, tag_len: usize, i_ins: *zig_sdk.flb_input_instance, context: ?*anyopaque, config: *zig_sdk.flb_config) callconv(.C) c_int {
-    _ = data;
-    _ = bytes;
+    //_ = data;
+    //_ = bytes;
     _ = i_ins;
     //_ = tag;
     _ = tag_len;
@@ -44,6 +45,40 @@ fn cb_flush(data: *const anyopaque, bytes: usize, tag: [*c]const u8, tag_len: us
     //std.debug.print("Flushing chunk with size: {}\n", .{chunk.*.size});
     std.debug.print("FLUSH CALLBACK FOR TAG {s}\n", .{tag});
     std.debug.print("cb_flush, context = {any}\n", .{context});
+
+    var encoder: *zig_sdk.flb_log_event_encoder = undefined;
+    var decoder: *zig_sdk.flb_log_event_decoder = undefined;
+
+    var record: *zig_sdk.flb_mp_chunk_record = undefined;
+    var cobj: *zig_sdk.flb_mp_chunk_cobj = undefined;
+
+    encoder = zig_sdk.flb_log_event_encoder_create(zig_sdk.FLB_LOG_EVENT_FORMAT_FLUENT_BIT_V2) orelse {
+        std.debug.print("encoder init failure\n", .{});
+        return zig_sdk.FLB_RETRY;
+    };
+
+    defer zig_sdk.flb_log_event_encoder_destroy(encoder);
+
+    std.debug.print("Initializing decoder with {} and {}\n", .{ data, bytes });
+
+    decoder = zig_sdk.flb_log_event_decoder_create(@constCast(@ptrCast(data)), bytes) orelse {
+        std.debug.print("decoder init failure\n", .{});
+        return zig_sdk.FLB_RETRY;
+    };
+
+    defer zig_sdk.flb_log_event_decoder_destroy(decoder);
+
+    cobj = zig_sdk.flb_mp_chunk_cobj_create(@ptrCast(encoder), @ptrCast(decoder)) orelse {
+        std.debug.print("coj init failure\n", .{});
+        return zig_sdk.FLB_RETRY;
+    };
+
+    defer _ = zig_sdk.flb_mp_chunk_cobj_destroy(cobj);
+
+    while (zig_sdk.flb_mp_chunk_cobj_record_next(cobj, @ptrCast(&record)) == 0) {
+        std.debug.print("metadata = {}\n", .{record.*.cobj_metadata.*.variant.*});
+        std.debug.print("record = {}\n\n", .{record.*.cobj_record.*.variant.*});
+    }
 
     return zig_sdk.FLB_OK;
 }
