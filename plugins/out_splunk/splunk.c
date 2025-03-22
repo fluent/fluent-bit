@@ -164,6 +164,7 @@ static int pack_otel_data(struct flb_splunk *ctx,
     msgpack_object          *source_map;
     char                     schema[8];
     int                      result;
+    int                      source_map_resource_attributes = FLB_FALSE;
     struct flb_mp_map_header mh_tmp;
     msgpack_object          *value;
     size_t                   index;
@@ -187,6 +188,7 @@ static int pack_otel_data(struct flb_splunk *ctx,
         source_map  = local_msgpack_map_lookup(source_map, "attributes");
 
         if (source_map != NULL) {
+            source_map_resource_attributes = FLB_TRUE;
             value = local_msgpack_map_lookup(source_map,
                                             "host.name");
 
@@ -208,6 +210,15 @@ static int pack_otel_data(struct flb_splunk *ctx,
     local_msgpack_pack_cstr(mp_pck, "fields");
 
     flb_mp_map_header_init(&mh_tmp, mp_pck);
+
+    /* check if we have resource attributes to pack */
+    if (source_map_resource_attributes == FLB_TRUE) {
+        for (index = 0; index < source_map->via.map.size ; index++) {
+            flb_mp_map_header_append(&mh_tmp);
+            msgpack_pack_object(mp_pck, source_map->via.map.ptr[index].key);
+            msgpack_pack_object(mp_pck, source_map->via.map.ptr[index].val);
+        }
+    }
 
     source_map  = local_msgpack_map_lookup(record_attributes, "otlp");
 
@@ -457,7 +468,6 @@ static int pack_map(struct flb_splunk *ctx, msgpack_packer *mp_pck,
                                 record_attributes);
 
         if (result != 0) {
-            printf("ERROR %d\n", result);
             return -1;
         }
 
