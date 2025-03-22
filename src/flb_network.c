@@ -29,6 +29,7 @@
 
 #ifdef FLB_SYSTEM_WINDOWS
 #define poll WSAPoll
+#include <winsock2.h>
 #else
 #include <sys/poll.h>
 #endif
@@ -1810,7 +1811,7 @@ flb_sockfd_t flb_net_accept(flb_sockfd_t server_fd)
     struct sockaddr_storage sock_addr = { 0 };
     socklen_t socket_size = sizeof(sock_addr);
 
-    /* 
+    /*
      * sock_addr used to be a sockaddr struct, but this was too
      * small of a structure to handle IPV6 addresses (#9053).
      * This would cause accept() to not accept the connection (with no error),
@@ -2290,4 +2291,16 @@ int flb_net_socket_peer_info(flb_sockfd_t fd,
                                        str_output_buffer,
                                        str_output_buffer_size,
                                        str_output_data_size);
+}
+
+uint64_t flb_net_htonll(uint64_t value)
+{
+#if defined(_WIN32)
+    /* use windows system provided htonll */
+    return htonll(value);
+#elif __BYTE_ORDER == __LITTLE_ENDIAN
+    return ((uint64_t) htonl(value & 0xFFFFFFFF) << 32) | htonl(value >> 32);
+#else
+    return value;
+#endif
 }
