@@ -34,7 +34,12 @@ struct ctrace_scope_span {
     struct ctrace_instrumentation_scope *instrumentation_scope;
     struct cfl_list spans;
     cfl_sds_t schema_url;
-    struct cfl_list _head;           /* link to ctrace_resource_span->scope_spans list */
+
+     /* parent resource span */
+    struct ctrace_resource_span *resource_span;
+
+    /* link to ctrace_resource_span->scope_spans list */
+    struct cfl_list _head;
 };
 
 /* scope span */

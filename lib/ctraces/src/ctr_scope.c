@@ -30,6 +30,7 @@ struct ctrace_scope_span *ctr_scope_span_create(struct ctrace_resource_span *res
     }
     cfl_list_init(&scope_span->spans);
     cfl_list_add(&scope_span->_head, &resource_span->scope_spans);
+    scope_span->resource_span = resource_span;
 
     return scope_span;
 }
