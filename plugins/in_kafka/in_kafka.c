@@ -164,7 +164,7 @@ static int in_kafka_collect(struct flb_input_instance *ins,
         /* Set the Kafka poll timeout based on execution mode:
          *
          * a) Running in the main event loop (non-threaded):
-         *    - Use a minimal timeout (1ms - 10ms) to avoid blocking other inputs.
+         *    - Use a minimal timeout to avoid blocking other inputs.
          *
          * b) Running in a dedicated thread:
          *    - Optimize for throughput by allowing Kafka's internal batching.
@@ -450,9 +450,9 @@ static struct flb_config_map config_map[] = {
     FLB_CONFIG_MAP_INT, "poll_timeout_ms", "1",
     0, FLB_TRUE, offsetof(struct flb_in_kafka_config, poll_timeout_ms),
     "Set the timeout in milliseconds for Kafka consumer poll operations. "
-    "When running in the main event loop, use a low value (e.g., 1-10ms) to minimize blocking. "
-    "When running in a dedicated thread, a higher value (e.g., 1.5x - 2x 'librdkafka.fetch.wait.max.ms') "
-    "can improve efficiency by leveraging Kafka's batching."
+    "This option only takes effect when running in a dedicated thread (i.e., when 'threaded' is enabled). "
+    "Using a higher timeout (e.g., 1.5x - 2x 'rdkafka.fetch.wait.max.ms') "
+    "can improve efficiency by leveraging Kafka's batching mechanism."
    },
    /* EOF */
    {0}
