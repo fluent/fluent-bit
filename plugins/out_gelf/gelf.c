@@ -312,6 +312,7 @@ static void cb_gelf_flush(struct flb_event_chunk *event_chunk,
         off = log_decoder.offset;
         size = off - prev_off;
         prev_off = off;
+        s = NULL;
 
         map = *log_event.body;
 
