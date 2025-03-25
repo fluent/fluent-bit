@@ -48,6 +48,16 @@ struct flbgo_input_plugin {
     int (*cb_exit)();
 };
 
+struct flbgo_custom_plugin {
+    char *name;
+    void *api;
+    void *i_ins;
+    struct flb_plugin_proxy_context *context;
+
+    int (*cb_init)();
+    int (*cb_exit)();
+};
+
 int proxy_go_output_register(struct flb_plugin_proxy *proxy,
                              struct flb_plugin_proxy_def *def);
 
@@ -69,4 +79,12 @@ int proxy_go_input_cleanup(struct flb_plugin_proxy *ctx,
                            void *allocated_data);
 int proxy_go_input_destroy(struct flb_plugin_input_proxy_context *ctx);
 void proxy_go_input_unregister(void *data);
+
+int proxy_go_custom_register(struct flb_plugin_proxy *proxy,
+                             struct flb_plugin_proxy_def *def);
+
+int proxy_go_custom_init(struct flb_plugin_proxy *proxy);
+
+int proxy_go_custom_destroy(struct flb_plugin_proxy_context *ctx);
+void proxy_go_custom_unregister(void *data);
 #endif
