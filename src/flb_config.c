@@ -62,6 +62,10 @@ struct flb_service_config service_configs[] = {
      FLB_CONF_TYPE_BOOL,
      offsetof(struct flb_config, convert_nan_to_null)},
 
+    {FLB_CONF_ROUTES_MASK_ELEMENTS,
+     FLB_CONF_TYPE_INT,
+     offsetof(struct flb_config, routes_mask_elements)}, 
+
     {FLB_CONF_STR_DAEMON,
      FLB_CONF_TYPE_BOOL,
      offsetof(struct flb_config, daemon)},
@@ -245,6 +249,8 @@ struct flb_config *flb_config_init()
 
     /* json */
     config->convert_nan_to_null = FLB_FALSE;
+
+    config->routes_mask_elements = 4;
 
 #ifdef FLB_HAVE_HTTP_SERVER
     config->http_ctx                     = NULL;

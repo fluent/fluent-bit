@@ -59,6 +59,7 @@
 #include <fluent-bit/flb_kv.h>
 #include <fluent-bit/flb_reload.h>
 #include <fluent-bit/flb_config_format.h>
+#include <fluent-bit/flb_routes_mask.h>
 
 #ifdef FLB_HAVE_MTRACE
 #include <mcheck.h>
@@ -1360,6 +1361,7 @@ int flb_main(int argc, char **argv)
         flb_destroy(ctx);
         exit(EXIT_SUCCESS);
     }
+    flb_routes_mask_init(config);
 
     /* start Fluent Bit library */
     ret = flb_start(ctx);
