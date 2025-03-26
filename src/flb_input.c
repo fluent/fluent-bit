@@ -596,6 +596,15 @@ int flb_input_set_property(struct flb_input_instance *ins,
     else if (prop_key_check("tls.key_passwd", k, len) == 0) {
         flb_utils_set_plugin_string_property("tls.key_passwd", &ins->tls_key_passwd, tmp);
     }
+    else if (prop_key_check("tls.min_version", k, len) == 0) {
+        flb_utils_set_plugin_string_property("tls.min_version", &ins->tls_min_version, tmp);
+    }
+    else if (prop_key_check("tls.max_version", k, len) == 0) {
+        flb_utils_set_plugin_string_property("tls.max_version", &ins->tls_max_version, tmp);
+    }
+    else if (prop_key_check("tls.ciphers", k, len) == 0) {
+        flb_utils_set_plugin_string_property("tls.ciphers", &ins->tls_ciphers, tmp);
+    }
 #endif
     else if (prop_key_check("storage.type", k, len) == 0 && tmp) {
         /* Set the storage type */
@@ -740,6 +749,18 @@ void flb_input_instance_destroy(struct flb_input_instance *ins)
 
     if (ins->tls_key_passwd) {
         flb_sds_destroy(ins->tls_key_passwd);
+    }
+
+    if (ins->tls_min_version) {
+        flb_sds_destroy(ins->tls_min_version);
+    }
+
+    if (ins->tls_max_version) {
+        flb_sds_destroy(ins->tls_max_version);
+    }
+
+    if (ins->tls_ciphers) {
+        flb_sds_destroy(ins->tls_ciphers);
     }
 
     /* release the tag if any */
@@ -1320,6 +1341,26 @@ int flb_input_init_all(struct flb_config *config)
         if (ret == -1) {
             flb_input_instance_destroy(ins);
             return -1;
+        }
+
+        if (ins->tls_min_version != NULL || ins->tls_max_version != NULL) {
+            ret = flb_tls_set_minmax_proto(ins->tls, ins->tls_min_version, ins->tls_max_version);
+            if (ret != 0) {
+                flb_error("[input %s] error setting up minmax protocol version of TLS",
+                          ins->name);
+                flb_input_instance_destroy(ins);
+                return -1;
+            }
+        }
+
+        if (ins->tls_ciphers != NULL) {
+            ret = flb_tls_set_ciphers(ins->tls, ins->tls_ciphers);
+            if (ret != 0) {
+                flb_error("[input %s] error setting up TLS ciphers up to TLSv1.2",
+                          ins->name);
+                flb_input_instance_destroy(ins);
+                return -1;
+            }
         }
     }
 
