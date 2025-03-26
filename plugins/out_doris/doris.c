@@ -182,7 +182,7 @@ static int http_put(struct flb_out_doris *ctx,
             char* start = strstr(location, "@") + 1;
             char* mid = strstr(start, ":");
             char* end = strstr(mid, "/api");
-            char redict_host[50] = {0};
+            char redict_host[1024] = {0};
             memcpy(redict_host, start, mid - start);
             char redict_port[10] = {0};
             memcpy(redict_port, mid + 1, end - (mid + 1));
