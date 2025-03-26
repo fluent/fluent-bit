@@ -733,6 +733,8 @@ static inline int flb_input_config_map_set(struct flb_input_instance *ins,
     return ret;
 }
 
+struct mk_list *flb_input_get_global_config_map(struct flb_config *config);
+
 int flb_input_register_all(struct flb_config *config);
 struct flb_input_instance *flb_input_new(struct flb_config *config,
                                          const char *input, void *data,
