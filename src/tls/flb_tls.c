@@ -80,6 +80,24 @@ struct flb_config_map tls_configmap[] = {
      "Enable or disable to verify hostname"
     },
 
+    {
+     FLB_CONFIG_MAP_STR, "tls.min_version", NULL,
+     0, FLB_FALSE, 0,
+     "Specify the minimum version of TLS"
+    },
+
+    {
+     FLB_CONFIG_MAP_STR, "tls.max_version", NULL,
+     0, FLB_FALSE, 0,
+     "Specify the maximum version of TLS"
+    },
+
+    {
+     FLB_CONFIG_MAP_STR, "tls.ciphers", NULL,
+     0, FLB_FALSE, 0,
+     "Specify TLS ciphers up to TLSv1.2"
+    },
+
     /* EOF */
     {0}
 };
@@ -207,6 +225,25 @@ struct flb_tls *flb_tls_create(int mode,
     tls->api = &tls_openssl;
 
     return tls;
+}
+
+int flb_tls_set_minmax_proto(struct flb_tls *tls,
+                             const char *min_version, const char *max_version)
+{
+    if (tls->ctx) {
+        return tls->api->set_minmax_proto(tls, min_version, max_version);
+    }
+
+    return 0;
+}
+
+int flb_tls_set_ciphers(struct flb_tls *tls, const char *ciphers)
+{
+    if (tls->ctx) {
+        return tls->api->set_ciphers(tls, ciphers);
+    }
+
+    return 0;
 }
 
 int flb_tls_init()
