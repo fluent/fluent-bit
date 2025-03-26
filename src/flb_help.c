@@ -217,7 +217,7 @@ int flb_help_input(struct flb_input_instance *ins, void **out_buf, size_t *out_s
         .desc =      "Listen Port",
     };
 
-    
+
     msgpack_sbuffer_init(&mp_sbuf);
     msgpack_packer_init(&mp_pck, &mp_sbuf, msgpack_sbuffer_write);
 
@@ -238,6 +238,18 @@ int flb_help_input(struct flb_input_instance *ins, void **out_buf, size_t *out_s
     /* list of properties */
     pack_str(&mp_pck, "properties");
     flb_mp_map_header_init(&mh, &mp_pck);
+
+    /* properties['global_options'] */
+    flb_mp_map_header_append(&mh);
+    pack_str(&mp_pck, "global_options");
+
+    config_map = flb_input_get_global_config_map(ins->config);
+    msgpack_pack_array(&mp_pck, mk_list_size(config_map));
+    mk_list_foreach(head, config_map) {
+        m = mk_list_entry(head, struct flb_config_map, _head);
+        pack_config_map_entry(&mp_pck, m);
+    }
+    flb_config_map_destroy(config_map);
 
     /* properties['options']: options exposed by the plugin */
     if (ins->p->config_map) {
@@ -449,7 +461,7 @@ int flb_help_output(struct flb_output_instance *ins, void **out_buf, size_t *out
             }
             flb_config_map_destroy(tls_config);
         }
-        
+
         mk_list_foreach(head, config_map) {
             m = mk_list_entry(head, struct flb_config_map, _head);
             pack_config_map_entry(&mp_pck, m);
