@@ -62,6 +62,10 @@ RUN `
     Rename-Item -Path /dev/vcpkg-${ENV:VCPKG_VERSION} -NewName vcpkg; `
     /dev/vcpkg/bootstrap-vcpkg.bat;
 
+# Ensure we only attempt to build release and static linking
+ENV VCPKG_BUILD_TYPE=release
+ENV VCPKG_LIBRARY_LINKAGE=static
+
 RUN vcpkg install --recurse openssl --triplet x64-windows-static; `
     vcpkg install --recurse libyaml --triplet x64-windows-static;
 
