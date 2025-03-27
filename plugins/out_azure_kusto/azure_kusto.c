@@ -29,6 +29,21 @@
 #include "azure_kusto.h"
 #include "azure_kusto_conf.h"
 #include "azure_kusto_ingest.h"
+#include "azure_msiauth.h"
+
+static int azure_kusto_get_msi_token(struct flb_azure_kusto *ctx)
+{
+    char *token;
+
+    /* Retrieve access token */
+    token = flb_azure_msiauth_token_get(ctx->o);
+    if (!token) {
+        flb_plg_error(ctx->ins, "error retrieving oauth2 access token");
+        return -1;
+    }
+
+    return 0;
+}
 
 /* Create a new oauth2 context and get a oauth2 token */
 static int azure_kusto_get_oauth2_token(struct flb_azure_kusto *ctx)
@@ -84,9 +99,14 @@ flb_sds_t get_azure_kusto_token(struct flb_azure_kusto *ctx)
     }
 
     if (flb_oauth2_token_expired(ctx->o) == FLB_TRUE) {
-        ret = azure_kusto_get_oauth2_token(ctx);
+        if (ctx->managed_identity_client_id != NULL) { 
+            ret = azure_kusto_get_msi_token(ctx);
+        }
+        else {
+            ret = azure_kusto_get_oauth2_token(ctx);
+        }
     }
-
+    
     /* Copy string to prevent race conditions (get_oauth2 can free the string) */
     if (ret == 0) {
         output = flb_sds_create_size(flb_sds_len(ctx->o->token_type) +
@@ -483,6 +503,11 @@ static struct flb_config_map config_map[] = {
      offsetof(struct flb_azure_kusto, client_secret),
      "Set the client secret (Application Password) of the AAD application used for "
      "authentication"},
+    {FLB_CONFIG_MAP_STR, "managed_identity_client_id", (char *)NULL, 0, FLB_TRUE,
+     offsetof(struct flb_azure_kusto, managed_identity_client_id),
+     "A managed identity client id to authenticate with. "
+     "Set to 'system' for system-assigned managed identity. "
+     "Set the MI client ID (GUID) for user-assigned managed identity."},
     {FLB_CONFIG_MAP_STR, "ingestion_endpoint", (char *)NULL, 0, FLB_TRUE,
      offsetof(struct flb_azure_kusto, ingestion_endpoint),
      "Set the Kusto cluster's ingestion endpoint URL (e.g. "

@@ -68,6 +68,7 @@ struct flb_azure_kusto {
     flb_sds_t tenant_id;
     flb_sds_t client_id;
     flb_sds_t client_secret;
+    flb_sds_t managed_identity_client_id;
     flb_sds_t ingestion_endpoint;
     flb_sds_t database_name;
     flb_sds_t table_name;
