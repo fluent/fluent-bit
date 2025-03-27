@@ -31,6 +31,30 @@
 #include <fluent-bit/flb_log_event_encoder.h>
 #include <cfl/cfl.h>
 
+struct flb_config_map processor_global_properties[] = {
+    {
+        FLB_CONFIG_MAP_STR, "alias", NULL,
+        0, FLB_FALSE, 0,
+        "Sets an alias for the processor instance. This is useful when using multiple instances of the same "
+        "processor plugin. If no alias is set, the instance will be named using the plugin name and a sequence number."
+    },
+    {
+        FLB_CONFIG_MAP_STR, "log_level", "info",
+        0, FLB_FALSE, 0,
+        "Specifies the log level for this processor plugin. If not set, the plugin "
+        "will use the global log level defined in the 'service' section. If the global "
+        "log level is also not specified, it defaults to 'info'."
+    },
+
+    {0}
+};
+
+struct mk_list *flb_processor_get_global_config_map(struct flb_config *config)
+{
+    return flb_config_map_create(config, processor_global_properties);
+}
+
+
 static int acquire_lock(pthread_mutex_t *lock,
                         size_t retry_limit,
                         size_t retry_delay)
