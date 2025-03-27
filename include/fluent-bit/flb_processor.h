@@ -286,4 +286,6 @@ struct flb_input_instance *flb_processor_get_input_instance(struct flb_processor
         return ins;
 }
 
+struct mk_list *flb_processor_get_global_config_map(struct flb_config *config);
+
 #endif
