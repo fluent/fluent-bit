@@ -64,6 +64,7 @@ struct flb_input_instance;
 struct flb_log_event_decoder;
 struct flb_log_event_encoder;
 struct flb_processor_instance;
+struct flb_condition;
 
 struct flb_processor_unit {
     int event_type;
@@ -76,6 +77,11 @@ struct flb_processor_unit {
      * contains the filter instance context.
      */
     void *ctx;
+
+    /* Conditional processing: if set, determines if the processor should
+     * be applied to a specific record
+     */
+    struct flb_condition *condition;
 
     /* This lock is meant to cover the case where two output plugin
      * worker threads flb_output_flush_create calls overlap which
