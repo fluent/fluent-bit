@@ -283,6 +283,10 @@ REGISTER_IN_PLUGIN("in_lib")
 REGISTER_IN_PLUGIN("in_forward")
 REGISTER_IN_PLUGIN("in_random")
 
+if(FLB_IN_SOMEIP)
+  REGISTER_IN_PLUGIN("in_someip")
+endif()
+
 # PROCESSORS
 # ==========
 REGISTER_PROCESSOR_PLUGIN("processor_content_modifier")

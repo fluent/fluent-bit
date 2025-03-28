@@ -63,6 +63,32 @@ RUN echo "deb http://deb.debian.org/debian bookworm-backports main" >> /etc/apt/
 WORKDIR /src/fluent-bit/
 COPY . ./
 
+# to build for vsomeip but not add C++ dependencies to pro
+FROM builder-base AS builder-vsomeip
+
+WORKDIR /tmp
+
+# fetch and compile boost 1.74 (for vsomeip)
+RUN curl -Ls https://archives.boost.io/release/1.74.0/source/boost_1_74_0.tar.bz2 -o boost.tar.bz2 && \
+    echo "83bfc1507731a0906e387fc28b7ef5417d591429e51e788417fe9ff025e116b1  boost.tar.bz2" > boost-sha.txt && \
+    sha256sum --quiet -c boost-sha.txt && \
+    mkdir -p /opt/boost && \
+    tar --strip-components 1 --no-same-owner --directory /opt/boost -xjf boost.tar.bz2 && \
+    cd /opt/boost && \
+    ./bootstrap.sh && \
+    ./b2 --with-system --with-thread --with-filesystem cxxflags="-fPIC" install -j $(nproc) --variant=release link=static && \
+    rm -rf /tmp/*
+
+# fetch and compile vsomeip version 3.5.1
+RUN curl -Ls https://github.com/COVESA/vsomeip/archive/refs/tags/3.5.1.tar.gz -o vsomeip.tar.gz && \
+    echo "220ff5f105ac5f7eb33071986a12505526415217b28d4dd75164b38087dc9bcc  vsomeip.tar.gz" > vsomeip-sha.txt && \
+    sha256sum --quiet -c vsomeip-sha.txt && \
+    mkdir -p /opt/vsomeip && \
+    tar --strip-components 1 --no-same-owner --directory /opt/vsomeip -xzf vsomeip.tar.gz && \
+    cd /opt/vsomeip && \
+    cmake -Bbuild -H. && cd build && make -j "$(getconf _NPROCESSORS_ONLN)" install && \
+    rm -rf /tmp/*
+
 # We split the builder setup out so people can target it or use as a base image without doing a full build.
 FROM builder-base AS builder
 WORKDIR /src/fluent-bit/build/
@@ -78,6 +104,7 @@ RUN [ -n "${WAMR_BUILD_TARGET:-}" ] && EXTRA_CMAKE_FLAGS="$EXTRA_CMAKE_FLAGS -DW
     cmake -DFLB_RELEASE=On \
     -DFLB_JEMALLOC=On \
     -DFLB_TLS=On \
+    -DFLB_IN_SOMEIP=On \
     -DFLB_SHARED_LIB=Off \
     -DFLB_EXAMPLES=Off \
     -DFLB_HTTP_SERVER=On \
@@ -198,6 +225,12 @@ COPY --from=deb-extractor /dpkg /
 # Copy certificates
 COPY --from=builder /etc/ssl/certs /etc/ssl/certs
 
+# Copy vsomeip
+COPY --from=builder-vsomeip /usr/local/lib/libvsomeip* /usr/local/lib/
+COPY --from=builder-vsomeip /usr/local/lib/cmake/vsomeip3/* /usr/local/lib/cmake/vsomeip3/
+COPY --from=builder-vsomeip /usr/local/lib/pkgconfig/vsomeip3.pc /usr/local/lib/pkgconfig/
+COPY --from=builder-vsomeip ./usr/local/include/vsomeip/. /usr/local/include/vsomeip/
+
 # Finally the binaries as most likely to change
 COPY --from=builder /fluent-bit /fluent-bit
 
@@ -261,6 +294,12 @@ RUN echo "deb http://deb.debian.org/debian bookworm-backports main" >> /etc/apt/
 
 RUN rm -f /usr/bin/qemu-*-static
 COPY --from=builder /fluent-bit /fluent-bit
+
+# Copy vsomeip
+COPY --from=builder-vsomeip /usr/local/lib/libvsomeip* /usr/local/lib/
+COPY --from=builder-vsomeip /usr/local/lib/cmake/vsomeip3/* /usr/local/lib/cmake/vsomeip3/
+COPY --from=builder-vsomeip /usr/local/lib/pkgconfig/vsomeip3.pc /usr/local/lib/pkgconfig/
+COPY --from=builder-vsomeip ./usr/local/include/vsomeip/. /usr/local/include/vsomeip/
 
 EXPOSE 2020
 

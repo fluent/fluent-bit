@@ -665,6 +665,11 @@ if(FLB_WASM)
   endif ()
 endif()
 
+# SOME/IP
+if(FLB_IN_SOMEIP)
+  add_subdirectory(${FLB_PATH_LIB_SOMEIP_C} EXCLUDE_FROM_ALL)
+endif()
+
 # AWS
 if (FLB_AWS)
   FLB_DEFINITION(FLB_HAVE_AWS)
