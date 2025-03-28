@@ -854,8 +854,39 @@ void test_all_comparison_operators()
         TEST_CHECK(mk_list_size(&pu->condition->rules) == 6);
     }
     
+    /* Condition is now owned by processor unit, destroy our copy */
+    cfl_variant_destroy(condition);
+    condition = NULL;
+    
 cleanup:
-    cleanup_test_resources(config, pu, condition, rule);
+    if (rule) {
+        cfl_variant_destroy(rule);
+    }
+    if (condition) {
+        cfl_variant_destroy(condition);
+    }
+    
+    if (pu) {
+        if (pu->condition) {
+            flb_condition_destroy(pu->condition);
+        }
+        if (pu->name) {
+            flb_sds_destroy(pu->name);
+        }
+        pthread_mutex_destroy(&pu->lock);
+        
+        if (pu->parent) {
+            /* Remove from parent's list */
+            mk_list_del(&pu->_head);
+            flb_processor_destroy(pu->parent);
+        }
+        
+        flb_free(pu);
+    }
+    
+    if (config) {
+        flb_config_exit(config);
+    }
 }
 
 void test_gte_lte_operators() 
@@ -1248,6 +1279,10 @@ void test_overwrite_existing_condition()
     TEST_CHECK(pu->condition->op == FLB_COND_OP_AND);
     TEST_CHECK(mk_list_size(&pu->condition->rules) == 1);
     
+    /* The pu->condition now owns the condition, so we can free condition1 */
+    cfl_variant_destroy(condition1);
+    condition1 = NULL;
+    
     /* Now create second condition with OR operator */
     condition2 = create_condition_variant("or", 1);
     TEST_CHECK(condition2 != NULL);
@@ -1283,18 +1318,23 @@ void test_overwrite_existing_condition()
         TEST_CHECK(mk_list_size(&pu->condition->rules) == 1);
     }
     
+    /* Condition is now owned by the processor unit, so we can free condition2 */
+    cfl_variant_destroy(condition2);
+    condition2 = NULL;
+    
 cleanup:
-    /* After first condition is set, it's owned by processor unit, so don't free it separately */
-    /* Only free condition1 if it wasn't successfully set */
-    if (condition1 && (!pu || !pu->condition || pu->condition->op != FLB_COND_OP_AND)) {
+    if (rule1) {
+        cfl_variant_destroy(rule1);
+    }
+    if (rule2) {
+        cfl_variant_destroy(rule2);
+    }
+    if (condition1) {
         cfl_variant_destroy(condition1);
     }
-    /* After the second condition is set, the first one is destroyed, so only free condition2 if it wasn't set successfully */
-    if (condition2 && (!pu || !pu->condition || pu->condition->op != FLB_COND_OP_OR)) {
+    if (condition2) {
         cfl_variant_destroy(condition2);
     }
-    if (rule1) cfl_variant_destroy(rule1);
-    if (rule2) cfl_variant_destroy(rule2);
     if (pu) {
         if (pu->condition) {
             flb_condition_destroy(pu->condition);
@@ -1902,11 +1942,37 @@ void test_complex_nested_condition()
         TEST_CHECK(mk_list_size(&pu->condition->rules) == 3);
     }
     
+    /* Condition is now owned by the processor unit, destroy our copy */
+    cfl_variant_destroy(condition);
+    condition = NULL;
+    
 cleanup:
-    cleanup_test_resources(config, pu, condition, NULL);
     if (rule1) cfl_variant_destroy(rule1);
     if (rule2) cfl_variant_destroy(rule2);
     if (rule3) cfl_variant_destroy(rule3);
+    if (condition) cfl_variant_destroy(condition);
+    
+    if (pu) {
+        if (pu->condition) {
+            flb_condition_destroy(pu->condition);
+        }
+        if (pu->name) {
+            flb_sds_destroy(pu->name);
+        }
+        pthread_mutex_destroy(&pu->lock);
+        
+        if (pu->parent) {
+            /* Remove from parent's list */
+            mk_list_del(&pu->_head);
+            flb_processor_destroy(pu->parent);
+        }
+        
+        flb_free(pu);
+    }
+    
+    if (config) {
+        flb_config_exit(config);
+    }
 }
 
 TEST_LIST = {
