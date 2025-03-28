@@ -541,7 +541,11 @@ static int flb_processor_unit_set_condition(struct flb_processor_unit *pu, struc
         /* Add rule to the condition */
         ret = flb_condition_add_rule(condition, field, rule_op, value, value_count, context);
 
-        /* Free array value if we allocated it */
+        /* 
+         * Free array value if we allocated it. For 'in' and 'not_in' operators, 
+         * flb_condition_add_rule makes its own copy of the strings in the array, 
+         * so we need to free our copies whether or not the rule was added successfully.
+         */
         if (rule_val && rule_val->type == CFL_VARIANT_ARRAY) {
             for (j = 0; j < value_count; j++) {
                 flb_sds_destroy(((flb_sds_t *)value)[j]);
