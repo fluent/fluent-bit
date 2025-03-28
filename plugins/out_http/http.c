@@ -26,7 +26,11 @@
 #include <fluent-bit/flb_utils.h>
 #include <fluent-bit/flb_pack.h>
 #include <fluent-bit/flb_sds.h>
+
 #include <fluent-bit/flb_gzip.h>
+#include <fluent-bit/flb_snappy.h>
+#include <fluent-bit/flb_zstd.h>
+
 #include <fluent-bit/flb_record_accessor.h>
 #include <fluent-bit/flb_log_event_decoder.h>
 #include <msgpack.h>
@@ -110,7 +114,7 @@ static int http_post(struct flb_out_http *ctx,
                      const char *tag, int tag_len,
                      char **headers)
 {
-    int ret;
+    int ret = 0;
     int out_ret = FLB_OK;
     int compressed = FLB_FALSE;
     size_t b_sent;
@@ -139,17 +143,34 @@ static int http_post(struct flb_out_http *ctx,
     payload_size = body_len;
 
     /* Should we compress the payload ? */
+    ret = 0;
     if (ctx->compress_gzip == FLB_TRUE) {
         ret = flb_gzip_compress((void *) body, body_len,
                                 &payload_buf, &payload_size);
-        if (ret == -1) {
-            flb_plg_error(ctx->ins,
-                          "cannot gzip payload, disabling compression");
-        }
-        else {
+        if (ret == 0) {
             compressed = FLB_TRUE;
         }
     }
+    else if (ctx->compress_snappy == FLB_TRUE) {
+        ret = flb_snappy_compress((void *) body, body_len,
+                                  (char **) &payload_buf, &payload_size);
+        if (ret == 0) {
+            compressed = FLB_TRUE;
+        }
+    }
+    else if (ctx->compress_zstd == FLB_TRUE) {
+        ret = flb_zstd_compress((void *) body, body_len,
+                                &payload_buf, &payload_size);
+        if (ret == 0) {
+            compressed = FLB_TRUE;
+        }
+    }
+
+    if (ret == -1) {
+        flb_plg_warn(ctx->ins, "could not compress payload, sending as it is");
+        compressed = FLB_FALSE;
+    }
+
 
     /* Create HTTP client context */
     c = flb_http_client(u_conn, FLB_HTTP_POST, ctx->uri,
@@ -209,7 +230,15 @@ static int http_post(struct flb_out_http *ctx,
 
     /* Content Encoding: gzip */
     if (compressed == FLB_TRUE) {
-        flb_http_set_content_encoding_gzip(c);
+        if (ctx->compress_gzip == FLB_TRUE) {
+            flb_http_set_content_encoding_gzip(c);
+        }
+        else if (ctx->compress_snappy == FLB_TRUE) {
+            flb_http_set_content_encoding_snappy(c);
+        }
+        else if (ctx->compress_zstd == FLB_TRUE) {
+            flb_http_set_content_encoding_zstd(c);
+        }
     }
 
     /* Basic Auth headers */
@@ -697,7 +726,7 @@ static struct flb_config_map config_map[] = {
     {
      FLB_CONFIG_MAP_STR, "compress", NULL,
      0, FLB_FALSE, 0,
-     "Set payload compression mechanism. Option available is 'gzip'"
+     "Set payload compression mechanism. Option available are 'gzip', 'snappy' and 'zstd'"
     },
     {
      FLB_CONFIG_MAP_SLIST_1, "header", NULL,

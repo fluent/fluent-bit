@@ -208,6 +208,11 @@ static struct flb_config_map config_map[] = {
      "feel free to test it but please do not enable this in production " \
      "environments"
     },
+    {
+     FLB_CONFIG_MAP_BOOL, "encode_profiles_as_log", "true",
+     0, FLB_TRUE, offsetof(struct flb_opentelemetry, encode_profiles_as_log),
+     "Encode profiles received as text and ingest them in the logging pipeline"
+    },
 
     {
      FLB_CONFIG_MAP_SIZE, "buffer_max_size", HTTP_BUFFER_MAX_SIZE,

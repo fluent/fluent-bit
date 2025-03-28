@@ -172,7 +172,7 @@ jobs:
 
   staging-release-apt-packages:
     name: S3 - update APT packages bucket
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-22.04
     environment: release
     needs:
       - staging-release-version-check
@@ -327,7 +327,7 @@ jobs:
 
   staging-release-source-s3:
     name: S3 - update source bucket
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-22.04
     environment: release
     needs:
       - staging-release-version-check

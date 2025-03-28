@@ -532,72 +532,72 @@ static int cfl_to_json(struct cfl_variant *var, flb_sds_t buf)
 
     switch (var->type) {
     case CFL_VARIANT_NULL:
-        flb_sds_cat(buf, "null", 4);
+        flb_sds_cat_safe(&buf, "null", 4);
         break;
     case CFL_VARIANT_BOOL:
         if (var->data.as_bool) {
-            flb_sds_cat(buf, "true", 4);
+            flb_sds_cat_safe(&buf, "true", 4);
         }
         else {
-            flb_sds_cat(buf, "false", 5);
+            flb_sds_cat_safe(&buf, "false", 5);
         }
         break;
     case CFL_VARIANT_INT: {
         char tmp[32] = {0};
         i = snprintf(tmp, sizeof(tmp)-1, "%"PRId64, var->data.as_int64);
-        flb_sds_cat(buf, tmp, i);
+        flb_sds_cat_safe(&buf, tmp, i);
         break;
     }
     case CFL_VARIANT_UINT: {
         char tmp[32] = {0};
         i = snprintf(tmp, sizeof(tmp)-1, "%"PRIu64, var->data.as_uint64);
-        flb_sds_cat(buf, tmp, i);
+        flb_sds_cat_safe(&buf, tmp, i);
         break;
     }
     case CFL_VARIANT_DOUBLE: {
         char tmp[512] = {0};
         i = snprintf(tmp, sizeof(tmp)-1, "%"PRIu64, var->data.as_uint64);
-        flb_sds_cat(buf, tmp, i);
+        flb_sds_cat_safe(&buf, tmp, i);
         break;
     }
     case CFL_VARIANT_STRING:
-        flb_sds_cat(buf, "\"", 1);
-        flb_sds_cat(buf, var->data.as_string, cfl_sds_len(var->data.as_string));
-        flb_sds_cat(buf, "\"", 1);
+        flb_sds_cat_safe(&buf, "\"", 1);
+        flb_sds_cat_safe(&buf, var->data.as_string, cfl_sds_len(var->data.as_string));
+        flb_sds_cat_safe(&buf, "\"", 1);
         break;
     case CFL_VARIANT_BYTES:
-        flb_sds_cat(buf, "\"", 1);
-        flb_sds_cat(buf, var->data.as_string, cfl_sds_len(var->data.as_bytes));
-        flb_sds_cat(buf, "\"", 1);
+        flb_sds_cat_safe(&buf, "\"", 1);
+        flb_sds_cat_safe(&buf, var->data.as_string, cfl_sds_len(var->data.as_bytes));
+        flb_sds_cat_safe(&buf, "\"", 1);
         break;
     case CFL_VARIANT_ARRAY: {
         struct cfl_array *array = var->data.as_array;
         loop = cfl_array_size(array);
 
-        flb_sds_cat(buf, "[", 1);
+        flb_sds_cat_safe(&buf, "[", 1);
         if (loop != 0) {
             for (i = 0; i < loop - 1; i++) {
                 cfl_to_json(array->entries[i], buf);
-                flb_sds_cat(buf, ",", 1);
+                flb_sds_cat_safe(&buf, ",", 1);
             }
         }
         cfl_to_json(array->entries[loop-1], buf);
-        flb_sds_cat(buf, "]", 1);
+        flb_sds_cat_safe(&buf, "]", 1);
         break;
     }
     case CFL_VARIANT_KVLIST:
         kvlist = var->data.as_kvlist;
-        flb_sds_cat(buf, "{", 1);
+        flb_sds_cat_safe(&buf, "{", 1);
         cfl_list_foreach(head, &kvlist->list) {
             kv = cfl_list_entry(head, struct cfl_kvpair, _head);
 
             /* key */
-            flb_sds_cat(buf, "\"", 1);
-            flb_sds_cat(buf, kv->key, cfl_sds_len(kv->key));
-            flb_sds_cat(buf, "\"", 1);
+            flb_sds_cat_safe(&buf, "\"", 1);
+            flb_sds_cat_safe(&buf, kv->key, cfl_sds_len(kv->key));
+            flb_sds_cat_safe(&buf, "\"", 1);
 
             /* separator */
-            flb_sds_cat(buf, ":", 1);
+            flb_sds_cat_safe(&buf, ":", 1);
 
             /* value */
             ret = cfl_to_json(kv->val, buf);
@@ -606,7 +606,7 @@ static int cfl_to_json(struct cfl_variant *var, flb_sds_t buf)
             }
             break;
         }
-        flb_sds_cat(buf, "}", 1);
+        flb_sds_cat_safe(&buf, "}", 1);
     }
 
     return 0;
