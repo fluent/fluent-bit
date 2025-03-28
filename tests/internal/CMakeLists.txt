@@ -42,6 +42,7 @@ set(UNIT_TESTS_FILES
   log_event_decoder.c
   log_event_encoder.c
   processor.c
+  processor_conditional.c
   uri.c
   msgpack_append_message.c
   conditionals.c
