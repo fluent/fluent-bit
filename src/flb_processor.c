@@ -928,11 +928,11 @@ int flb_processor_run(struct flb_processor *proc,
 
                     /* Set the processor condition if it exists */
                     if (pu->condition) {
-                        flb_info("[processor] setting condition for chunk processing (pu=%s)", pu->name);
+                        flb_debug("[processor] setting condition for chunk processing (pu=%s)", pu->name);
                         chunk_cobj->condition = pu->condition;
                     }
                     else {
-                        flb_info("[processor] no condition set for processor unit (pu=%s)", pu->name);
+                        flb_debug("[processor] no condition set for processor unit (pu=%s)", pu->name);
                     }
 
                     /* Invoke processor plugin callback */
