@@ -353,7 +353,6 @@ int flb_help_processor(struct flb_processor_instance *ins, void **out_buf, size_
     msgpack_packer_init(&mp_pck, &mp_sbuf, msgpack_sbuffer_write);
 
     msgpack_pack_map(&mp_pck, 4);
-
     /* plugin type */
     pack_str(&mp_pck, "type");
     pack_str(&mp_pck, "processor");
@@ -760,7 +759,6 @@ flb_sds_t flb_help_build_json_schema(struct flb_config *config)
     msgpack_pack_str(&mp_pck, 10);
     msgpack_pack_str_body(&mp_pck, "processors", 10);
     flb_mp_array_header_init(&mh, &mp_pck);
-    flb_mp_array_header_end(&mh);
     mk_list_foreach(head, &config->processor_plugins) {
         p = mk_list_entry(head, struct flb_processor_plugin, _head);
 
@@ -773,6 +771,7 @@ flb_sds_t flb_help_build_json_schema(struct flb_config *config)
         msgpack_sbuffer_write(&mp_sbuf, out_buf, out_size);
         flb_free(out_buf);
     }
+    flb_mp_array_header_end(&mh);
 
     /* filters */
     msgpack_pack_str(&mp_pck, 7);
