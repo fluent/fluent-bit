@@ -513,6 +513,18 @@ int flb_help_output(struct flb_output_instance *ins, void **out_buf, size_t *out
     pack_str(&mp_pck, "properties");
     flb_mp_map_header_init(&mh, &mp_pck);
 
+    /* properties['global_options'] */
+    flb_mp_map_header_append(&mh);
+    pack_str(&mp_pck, "global_options");
+
+    config_map = flb_output_get_global_config_map(ins->config);
+    msgpack_pack_array(&mp_pck, mk_list_size(config_map));
+    mk_list_foreach(head, config_map) {
+        m = mk_list_entry(head, struct flb_config_map, _head);
+        pack_config_map_entry(&mp_pck, m);
+    }
+    flb_config_map_destroy(config_map);
+
     /* properties['options']: options exposed by the plugin */
     if (ins->p->config_map) {
         flb_mp_map_header_append(&mh);
