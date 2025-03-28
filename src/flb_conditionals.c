@@ -282,20 +282,27 @@ static int evaluate_rule(struct flb_condition_rule *rule,
     double num_val;
 
     if (!rule || !record_variant) {
+        flb_trace("[condition] evaluate_rule: NULL rule or record variant");
         return FLB_FALSE;
     }
 
+    flb_trace("[condition] evaluating rule with record accessor");
     str_val = flb_cfl_ra_translate(rule->ra, NULL, 0, *record_variant, NULL);
     if (!str_val) {
+        flb_trace("[condition] record accessor translation failed");
         return FLB_FALSE;
     }
+
+    flb_trace("[condition] record accessor returned value: '%s'", str_val);
 
     switch (rule->op) {
     case FLB_RULE_OP_EQ:
+        flb_trace("[condition] EQ comparison: '%s' == '%s'", str_val, rule->value.str_val);
         result = (strcmp(str_val, rule->value.str_val) == 0);
         break;
 
     case FLB_RULE_OP_NEQ:
+        flb_trace("[condition] NEQ comparison: '%s' != '%s'", str_val, rule->value.str_val);
         result = (strcmp(str_val, rule->value.str_val) != 0);
         break;
 
@@ -358,31 +365,42 @@ int flb_condition_evaluate(struct flb_condition *cond,
     int result;
 
     if (!cond || !record) {
+        flb_trace("[condition] NULL condition or record, returning TRUE");
         return FLB_TRUE;
     }
 
+    flb_trace("[condition] evaluating condition with %d rules", mk_list_size(&cond->rules));
+
     if (mk_list_size(&cond->rules) == 0) {
+        flb_trace("[condition] empty rule set, returning default result");
         return (cond->op == FLB_COND_OP_AND);
     }
 
     mk_list_foreach(head, &cond->rules) {
         rule = mk_list_entry(head, struct flb_condition_rule, _head);
+        flb_trace("[condition] processing rule with op=%d", rule->op);
 
         /* Get the variant for this rule's context */
         record_variant = get_record_variant(record, rule->context);
         if (!record_variant) {
+            flb_trace("[condition] no record variant found for context %d", rule->context);
             continue;
         }
 
+        flb_trace("[condition] evaluating rule against record");
         result = evaluate_rule(rule, record_variant);
+        flb_trace("[condition] rule evaluation result: %d", result);
 
         if (cond->op == FLB_COND_OP_AND && result == FLB_FALSE) {
+            flb_trace("[condition] AND condition with FALSE result, short-circuiting");
             return FLB_FALSE;
         }
         else if (cond->op == FLB_COND_OP_OR && result == FLB_TRUE) {
+            flb_trace("[condition] OR condition with TRUE result, short-circuiting");
             return FLB_TRUE;
         }
     }
 
+    flb_trace("[condition] final evaluation result: %d", (cond->op == FLB_COND_OP_AND) ? FLB_TRUE : FLB_FALSE);
     return (cond->op == FLB_COND_OP_AND) ? FLB_TRUE : FLB_FALSE;
 }
