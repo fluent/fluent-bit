@@ -70,6 +70,8 @@ static struct cfl_variant *create_condition_variant(const char *op, int rules_co
 {
     struct cfl_variant *variant;
     struct cfl_kvlist *kvlist;
+    struct cfl_array *rules;
+    struct cfl_variant *rules_var;
 
     variant = cfl_variant_create();
     if (!variant) {
@@ -90,7 +92,7 @@ static struct cfl_variant *create_condition_variant(const char *op, int rules_co
     }
 
     /* Create empty rules array */
-    struct cfl_array *rules = cfl_array_create(rules_count);
+    rules = cfl_array_create(rules_count);
     if (!rules) {
         cfl_kvlist_destroy(kvlist);
         cfl_variant_destroy(variant);
@@ -98,7 +100,7 @@ static struct cfl_variant *create_condition_variant(const char *op, int rules_co
     }
 
     /* Insert rules array into kvlist */
-    struct cfl_variant *rules_var = cfl_variant_create();
+    rules_var = cfl_variant_create();
     if (!rules_var) {
         cfl_array_destroy(rules);
         cfl_kvlist_destroy(kvlist);
@@ -114,6 +116,10 @@ static struct cfl_variant *create_condition_variant(const char *op, int rules_co
         cfl_variant_destroy(variant);
         return NULL;
     }
+
+    /* The array is now owned by the kvlist, but we need to clean up rules_var */
+    rules_var->data.as_array = NULL; /* Prevent double-free */
+    cfl_variant_destroy(rules_var);
 
     /* Link variant to kvlist */
     variant->type = CFL_VARIANT_KVLIST;
