@@ -363,6 +363,10 @@ void test_basic_condition()
         TEST_CHECK(pu->condition != NULL);
         TEST_CHECK(pu->condition->op == FLB_COND_OP_AND);
         TEST_CHECK(mk_list_size(&pu->condition->rules) == 1);
+        
+        /* Condition is now owned by processor unit, destroy our copy */
+        cfl_variant_destroy(condition);
+        condition = NULL;
     }
     
 cleanup:
@@ -615,6 +619,10 @@ void test_multiple_rules()
     if (ret == 0 && pu->condition != NULL) {
         TEST_CHECK(pu->condition->op == FLB_COND_OP_AND);
         TEST_CHECK(mk_list_size(&pu->condition->rules) == 2);
+        
+        /* Condition is now owned by processor unit, destroy our copy */
+        cfl_variant_destroy(condition);
+        condition = NULL;
     }
     
 cleanup:
@@ -709,6 +717,10 @@ void test_context_metadata()
         TEST_CHECK(pu->condition != NULL);
         TEST_CHECK(pu->condition->op == FLB_COND_OP_AND);
         TEST_CHECK(mk_list_size(&pu->condition->rules) == 1);
+        
+        /* Condition is now owned by processor unit, destroy our copy */
+        cfl_variant_destroy(condition);
+        condition = NULL;
     }
     
 cleanup:
@@ -961,6 +973,10 @@ void test_gte_lte_operators()
         TEST_CHECK(pu->condition != NULL);
         TEST_CHECK(pu->condition->op == FLB_COND_OP_AND);
         TEST_CHECK(mk_list_size(&pu->condition->rules) == 2);
+        
+        /* Condition is now owned by processor unit, destroy our copy */
+        cfl_variant_destroy(condition);
+        condition = NULL;
     }
     
 cleanup:
@@ -1028,6 +1044,10 @@ void test_not_regex_operator()
         TEST_CHECK(pu->condition != NULL);
         TEST_CHECK(pu->condition->op == FLB_COND_OP_AND);
         TEST_CHECK(mk_list_size(&pu->condition->rules) == 1);
+        
+        /* Condition is now owned by processor unit, destroy our copy */
+        cfl_variant_destroy(condition);
+        condition = NULL;
     }
     
 cleanup:
@@ -1089,6 +1109,10 @@ void test_not_in_operator()
         TEST_CHECK(pu->condition != NULL);
         TEST_CHECK(pu->condition->op == FLB_COND_OP_AND);
         TEST_CHECK(mk_list_size(&pu->condition->rules) == 1);
+        
+        /* Condition is now owned by processor unit, destroy our copy */
+        cfl_variant_destroy(condition);
+        condition = NULL;
     }
     
 cleanup:
@@ -1150,6 +1174,10 @@ void test_dollar_prefixed_fields()
         TEST_CHECK(pu->condition != NULL);
         TEST_CHECK(pu->condition->op == FLB_COND_OP_AND);
         TEST_CHECK(mk_list_size(&pu->condition->rules) == 1);
+        
+        /* Condition is now owned by processor unit, destroy our copy */
+        cfl_variant_destroy(condition);
+        condition = NULL;
     }
     
 cleanup:
@@ -1212,6 +1240,10 @@ void test_deeply_nested_field_access()
         TEST_CHECK(pu->condition != NULL);
         TEST_CHECK(pu->condition->op == FLB_COND_OP_AND);
         TEST_CHECK(mk_list_size(&pu->condition->rules) == 1);
+        
+        /* Condition is now owned by processor unit, destroy our copy */
+        cfl_variant_destroy(condition);
+        condition = NULL;
     }
     
 cleanup:
