@@ -399,7 +399,7 @@ static int ingest_all_chunks(struct flb_azure_kusto *ctx, struct flb_config *con
     int is_compressed = FLB_FALSE;
     flb_sds_t tag_sds;
 
-    mk_list_foreach_safe(head, &ctx->fs->streams) {
+    mk_list_foreach_safe(head, tmp, &ctx->fs->streams) {
         fs_stream = mk_list_entry(head, struct flb_fstore_stream, _head);
         if (fs_stream == ctx->stream_upload) {
             continue;
