@@ -27,6 +27,7 @@
 #include <fluent-bit/flb_slist.h>
 #include <fluent-bit/flb_record_accessor.h>
 #include <fluent-bit/flb_metrics.h>
+#include <fluent-bit/flb_conditionals.h>
 
 #include <fluent-bit/flb_log_event_encoder.h>
 #include <fluent-bit/flb_log_event_decoder.h>
@@ -1051,6 +1052,7 @@ struct flb_mp_chunk_cobj *flb_mp_chunk_cobj_create(struct flb_log_event_encoder 
     chunk_cobj->record_pos  = NULL;
     chunk_cobj->log_encoder = log_encoder;
     chunk_cobj->log_decoder = log_decoder;
+    chunk_cobj->condition   = NULL;
 
     return chunk_cobj;
 }
@@ -1184,9 +1186,13 @@ int flb_mp_chunk_cobj_record_next(struct flb_mp_chunk_cobj *chunk_cobj,
     int ret = FLB_MP_CHUNK_RECORD_EOF;
     size_t bytes;
     struct flb_mp_chunk_record *record = NULL;
+    struct flb_condition *condition = NULL;
 
     *out_record = NULL;
     bytes = chunk_cobj->log_decoder->length - chunk_cobj->log_decoder->offset;
+
+    /* Check if we have a condition */
+    condition = chunk_cobj->condition;
 
     /*
      * if there are remaining decoder bytes, keep iterating msgpack and populate
@@ -1218,6 +1224,20 @@ int flb_mp_chunk_cobj_record_next(struct flb_mp_chunk_cobj *chunk_cobj,
         }
 
         cfl_list_add(&record->_head, &chunk_cobj->records);
+
+        /* If there's a condition, check if the record matches */
+        if (condition != NULL && record != NULL) {
+            flb_trace("[mp] evaluating condition for record");
+            ret = flb_condition_evaluate(condition, record);
+            flb_trace("[mp] condition evaluation result: %s", ret ? "TRUE" : "FALSE");
+            if (ret == FLB_FALSE) {
+                flb_trace("[mp] record didn't match condition, skipping");
+                /* Record doesn't match the condition, continue to next record */
+                return flb_mp_chunk_cobj_record_next(chunk_cobj, out_record);
+            }
+            flb_trace("[mp] record matched condition, processing");
+        }
+
         ret = FLB_MP_CHUNK_RECORD_OK;
     }
     else if (chunk_cobj->record_pos != NULL) {
@@ -1227,9 +1247,24 @@ int flb_mp_chunk_cobj_record_next(struct flb_mp_chunk_cobj *chunk_cobj,
             return FLB_MP_CHUNK_RECORD_EOF;
         }
 
-         record = cfl_list_entry_next(&chunk_cobj->record_pos->_head, struct flb_mp_chunk_record,
-                                      _head, &chunk_cobj->records);
-         ret = FLB_MP_CHUNK_RECORD_OK;
+        record = cfl_list_entry_next(&chunk_cobj->record_pos->_head, struct flb_mp_chunk_record,
+                                    _head, &chunk_cobj->records);
+
+        /* If there's a condition, check if the record matches */
+        if (condition != NULL && record != NULL) {
+            flb_trace("[mp] evaluating condition for next record");
+            ret = flb_condition_evaluate(condition, record);
+            flb_trace("[mp] next record condition evaluation result: %s", ret ? "TRUE" : "FALSE");
+            if (ret == FLB_FALSE) {
+                flb_trace("[mp] next record didn't match condition, skipping");
+                /* Record doesn't match the condition, set as current and try again */
+                chunk_cobj->record_pos = record;
+                return flb_mp_chunk_cobj_record_next(chunk_cobj, out_record);
+            }
+            flb_trace("[mp] next record matched condition, processing");
+        }
+
+        ret = FLB_MP_CHUNK_RECORD_OK;
     }
     else {
         if (cfl_list_size(&chunk_cobj->records) == 0) {
@@ -1238,6 +1273,21 @@ int flb_mp_chunk_cobj_record_next(struct flb_mp_chunk_cobj *chunk_cobj,
 
         /* check if we are the last in the list */
         record = cfl_list_entry_first(&chunk_cobj->records, struct flb_mp_chunk_record, _head);
+
+        /* If there's a condition, check if the record matches */
+        if (condition != NULL && record != NULL) {
+            flb_trace("[mp] evaluating condition for first record");
+            ret = flb_condition_evaluate(condition, record);
+            flb_trace("[mp] first record condition evaluation result: %s", ret ? "TRUE" : "FALSE");
+            if (ret == FLB_FALSE) {
+                flb_trace("[mp] first record didn't match condition, skipping");
+                /* Record doesn't match the condition, set as current and try again */
+                chunk_cobj->record_pos = record;
+                return flb_mp_chunk_cobj_record_next(chunk_cobj, out_record);
+            }
+            flb_trace("[mp] first record matched condition, processing");
+        }
+
         ret = FLB_MP_CHUNK_RECORD_OK;
     }
 
