@@ -294,13 +294,14 @@ static int flb_processor_unit_set_condition(struct flb_processor_unit *pu, struc
     enum flb_condition_operator cond_op;
     const char *field;
     const char *operator;
-    void *value;
+    void *value = NULL;
     int value_count;
     enum record_context_type context;
     int i;
     int j;
     int ret;
     struct cfl_variant *array_val;
+    int is_array_value = 0;
 
     flb_debug("[processor] processing condition property for processor unit '%s'", pu->name);
 
@@ -475,6 +476,9 @@ static int flb_processor_unit_set_condition(struct flb_processor_unit *pu, struc
                 flb_condition_destroy(condition);
                 return -1;
             }
+            
+            /* Mark that we've allocated an array value */
+            is_array_value = 1;
 
             for (j = 0; j < rule_val->data.as_array->entry_count; j++) {
                 array_val = rule_val->data.as_array->entries[j];
@@ -522,11 +526,12 @@ static int flb_processor_unit_set_condition(struct flb_processor_unit *pu, struc
          * flb_condition_add_rule makes its own copy of the strings in the array, 
          * so we need to free our copies whether or not the rule was added successfully.
          */
-        if (rule_val && rule_val->type == CFL_VARIANT_ARRAY) {
+        if (is_array_value) {
             for (j = 0; j < value_count; j++) {
                 flb_sds_destroy(((flb_sds_t *)value)[j]);
             }
             flb_free(value);
+            is_array_value = 0;
         }
 
         if (ret != FLB_TRUE) {
