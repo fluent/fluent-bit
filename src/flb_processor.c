@@ -283,7 +283,8 @@ struct flb_processor_unit *flb_processor_unit_create(struct flb_processor *proc,
     return pu;
 }
 
-int flb_processor_unit_set_property(struct flb_processor_unit *pu, const char *k, struct cfl_variant *v)
+/* Parse and set a condition property for a processor unit */
+static int flb_processor_unit_set_condition(struct flb_processor_unit *pu, struct cfl_variant *v)
 {
     struct cfl_variant *val;
     struct cfl_variant *rule_val;
@@ -301,239 +302,257 @@ int flb_processor_unit_set_property(struct flb_processor_unit *pu, const char *k
     int ret;
     struct cfl_variant *array_val;
 
-    /* Handle the "condition" property for processor units */
-    if (strcasecmp(k, "condition") == 0) {
-        flb_debug("[processor] processing condition property for processor unit '%s'", pu->name);
+    flb_debug("[processor] processing condition property for processor unit '%s'", pu->name);
 
-        /* Conditions must be specified as key-value maps */
-        if (v->type != CFL_VARIANT_KVLIST) {
-            flb_error("[processor] condition must be a map");
-            return -1;
-        }
+    /* Conditions must be specified as key-value maps */
+    if (v->type != CFL_VARIANT_KVLIST) {
+        flb_error("[processor] condition must be a map");
+        return -1;
+    }
 
-        kvlist = v->data.as_kvlist;
+    kvlist = v->data.as_kvlist;
 
-        /* First check for operator (AND/OR) */
-        val = cfl_kvlist_fetch(kvlist, "op");
-        if (val != NULL && val->type == CFL_VARIANT_STRING) {
-            if (strcasecmp(val->data.as_string, "and") == 0) {
-                cond_op = FLB_COND_OP_AND;
-            }
-            else if (strcasecmp(val->data.as_string, "or") == 0) {
-                cond_op = FLB_COND_OP_OR;
-            }
-            else {
-                flb_error("[processor] invalid condition operator '%s', must be 'and' or 'or'",
-                          val->data.as_string);
-                return -1;
-            }
-        }
-        else {
-            /* Default to AND if not specified */
+    /* First check for operator (AND/OR) */
+    val = cfl_kvlist_fetch(kvlist, "op");
+    if (val != NULL && val->type == CFL_VARIANT_STRING) {
+        if (strcasecmp(val->data.as_string, "and") == 0) {
             cond_op = FLB_COND_OP_AND;
         }
-
-        /* Create a condition with the specified operator */
-        condition = flb_condition_create(cond_op);
-        if (!condition) {
-            flb_error("[processor] error creating condition");
+        else if (strcasecmp(val->data.as_string, "or") == 0) {
+            cond_op = FLB_COND_OP_OR;
+        }
+        else {
+            flb_error("[processor] invalid condition operator '%s', must be 'and' or 'or'",
+                        val->data.as_string);
             return -1;
         }
+    }
+    else {
+        /* Default to AND if not specified */
+        cond_op = FLB_COND_OP_AND;
+    }
 
-        /* Look for the rules array */
-        val = cfl_kvlist_fetch(kvlist, "rules");
-        if (!val || val->type != CFL_VARIANT_ARRAY || val->data.as_array->entry_count == 0) {
-            flb_error("[processor] condition requires a non-empty 'rules' array");
+    /* Create a condition with the specified operator */
+    condition = flb_condition_create(cond_op);
+    if (!condition) {
+        flb_error("[processor] error creating condition");
+        return -1;
+    }
+
+    /* Look for the rules array */
+    val = cfl_kvlist_fetch(kvlist, "rules");
+    if (!val || val->type != CFL_VARIANT_ARRAY || val->data.as_array->entry_count == 0) {
+        flb_error("[processor] condition requires a non-empty 'rules' array");
+        flb_condition_destroy(condition);
+        return -1;
+    }
+
+    /* Process each rule in the array */
+    flb_debug("[processor] processing %zu rule(s) for condition", val->data.as_array->entry_count);
+    for (i = 0; i < val->data.as_array->entry_count; i++) {
+        rule_val = val->data.as_array->entries[i];
+
+        if (rule_val->type != CFL_VARIANT_KVLIST) {
+            flb_error("[processor] each rule must be a map");
             flb_condition_destroy(condition);
             return -1;
         }
 
-        /* Process each rule in the array */
-        flb_debug("[processor] processing %zu rule(s) for condition", val->data.as_array->entry_count);
-        for (i = 0; i < val->data.as_array->entry_count; i++) {
-            rule_val = val->data.as_array->entries[i];
+        flb_debug("[processor] processing rule #%d", i+1);
 
-            if (rule_val->type != CFL_VARIANT_KVLIST) {
-                flb_error("[processor] each rule must be a map");
+        kvlist = rule_val->data.as_kvlist;
+
+        /* Extract field */
+        rule_val = cfl_kvlist_fetch(kvlist, "field");
+        if (!rule_val || rule_val->type != CFL_VARIANT_STRING) {
+            flb_error("[processor] rule missing 'field' property");
+            flb_condition_destroy(condition);
+            return -1;
+        }
+        field = rule_val->data.as_string;
+        flb_debug("[processor] condition rule field: '%s'", field);
+
+        /* Extract operator */
+        rule_val = cfl_kvlist_fetch(kvlist, "op");
+        if (!rule_val || rule_val->type != CFL_VARIANT_STRING) {
+            flb_error("[processor] rule missing 'op' property");
+            flb_condition_destroy(condition);
+            return -1;
+        }
+        operator = rule_val->data.as_string;
+        flb_debug("[processor] condition rule operator: '%s'", operator);
+
+        /* Determine rule operator */
+        if (strcasecmp(operator, "eq") == 0) {
+            rule_op = FLB_RULE_OP_EQ;
+        }
+        else if (strcasecmp(operator, "neq") == 0) {
+            rule_op = FLB_RULE_OP_NEQ;
+        }
+        else if (strcasecmp(operator, "gt") == 0) {
+            rule_op = FLB_RULE_OP_GT;
+        }
+        else if (strcasecmp(operator, "lt") == 0) {
+            rule_op = FLB_RULE_OP_LT;
+        }
+        else if (strcasecmp(operator, "gte") == 0) {
+            rule_op = FLB_RULE_OP_GTE;
+        }
+        else if (strcasecmp(operator, "lte") == 0) {
+            rule_op = FLB_RULE_OP_LTE;
+        }
+        else if (strcasecmp(operator, "regex") == 0) {
+            rule_op = FLB_RULE_OP_REGEX;
+        }
+        else if (strcasecmp(operator, "not_regex") == 0) {
+            rule_op = FLB_RULE_OP_NOT_REGEX;
+        }
+        else if (strcasecmp(operator, "in") == 0) {
+            rule_op = FLB_RULE_OP_IN;
+        }
+        else if (strcasecmp(operator, "not_in") == 0) {
+            rule_op = FLB_RULE_OP_NOT_IN;
+        }
+        else {
+            flb_error("[processor] invalid rule operator '%s'", operator);
+            flb_condition_destroy(condition);
+            return -1;
+        }
+
+        /* Extract value */
+        rule_val = cfl_kvlist_fetch(kvlist, "value");
+        if (!rule_val) {
+            flb_error("[processor] rule missing 'value' property");
+            flb_condition_destroy(condition);
+            return -1;
+        }
+
+        /* Handle different value types */
+        value = NULL;
+        value_count = 1;
+
+        /* Check that IN and NOT_IN operators only work with array values */
+        if ((rule_op == FLB_RULE_OP_IN || rule_op == FLB_RULE_OP_NOT_IN) && 
+            rule_val->type != CFL_VARIANT_ARRAY) {
+            flb_error("[processor] 'in' and 'not_in' operators require array values, got %d type instead",
+                    rule_val->type);
+            flb_condition_destroy(condition);
+            return -1;
+        }
+
+        if (rule_val->type == CFL_VARIANT_STRING) {
+            value = rule_val->data.as_string;
+            flb_debug("[processor] condition rule value (string): %s",
+                        (char *)value);
+        }
+        else if (rule_val->type == CFL_VARIANT_INT) {
+            value = &rule_val->data.as_int64;
+            flb_debug("[processor] condition rule value (int): %lld",
+                    rule_val->data.as_int64);
+        }
+        else if (rule_val->type == CFL_VARIANT_UINT) {
+            value = &rule_val->data.as_uint64;
+            flb_debug("[processor] condition rule value (uint): %lu",
+                    (unsigned long)rule_val->data.as_uint64);
+        }
+        else if (rule_val->type == CFL_VARIANT_DOUBLE) {
+            value = &rule_val->data.as_double;
+            flb_debug("[processor] condition rule value (double): %f",
+                    rule_val->data.as_double);
+        }
+        else if (rule_val->type == CFL_VARIANT_ARRAY) {
+            /* For IN and NOT_IN operators, we need to handle arrays */
+            if (rule_op != FLB_RULE_OP_IN && rule_op != FLB_RULE_OP_NOT_IN) {
+                flb_error("[processor] array values can only be used with 'in' or 'not_in' operators");
                 flb_condition_destroy(condition);
                 return -1;
             }
 
-            flb_debug("[processor] processing rule #%d", i+1);
-
-            kvlist = rule_val->data.as_kvlist;
-
-            /* Extract field */
-            rule_val = cfl_kvlist_fetch(kvlist, "field");
-            if (!rule_val || rule_val->type != CFL_VARIANT_STRING) {
-                flb_error("[processor] rule missing 'field' property");
-                flb_condition_destroy(condition);
-                return -1;
-            }
-            field = rule_val->data.as_string;
-            flb_debug("[processor] condition rule field: '%s'", field);
-
-            /* Extract operator */
-            rule_val = cfl_kvlist_fetch(kvlist, "op");
-            if (!rule_val || rule_val->type != CFL_VARIANT_STRING) {
-                flb_error("[processor] rule missing 'op' property");
-                flb_condition_destroy(condition);
-                return -1;
-            }
-            operator = rule_val->data.as_string;
-            flb_debug("[processor] condition rule operator: '%s'", operator);
-
-            /* Determine rule operator */
-            if (strcasecmp(operator, "eq") == 0) {
-                rule_op = FLB_RULE_OP_EQ;
-            }
-            else if (strcasecmp(operator, "neq") == 0) {
-                rule_op = FLB_RULE_OP_NEQ;
-            }
-            else if (strcasecmp(operator, "gt") == 0) {
-                rule_op = FLB_RULE_OP_GT;
-            }
-            else if (strcasecmp(operator, "lt") == 0) {
-                rule_op = FLB_RULE_OP_LT;
-            }
-            else if (strcasecmp(operator, "gte") == 0) {
-                rule_op = FLB_RULE_OP_GTE;
-            }
-            else if (strcasecmp(operator, "lte") == 0) {
-                rule_op = FLB_RULE_OP_LTE;
-            }
-            else if (strcasecmp(operator, "regex") == 0) {
-                rule_op = FLB_RULE_OP_REGEX;
-            }
-            else if (strcasecmp(operator, "not_regex") == 0) {
-                rule_op = FLB_RULE_OP_NOT_REGEX;
-            }
-            else if (strcasecmp(operator, "in") == 0) {
-                rule_op = FLB_RULE_OP_IN;
-            }
-            else if (strcasecmp(operator, "not_in") == 0) {
-                rule_op = FLB_RULE_OP_NOT_IN;
-            }
-            else {
-                flb_error("[processor] invalid rule operator '%s'", operator);
+            /* Extract all string values from the array */
+            value = flb_calloc(rule_val->data.as_array->entry_count, sizeof(flb_sds_t));
+            if (!value) {
+                flb_errno();
                 flb_condition_destroy(condition);
                 return -1;
             }
 
-            /* Extract value */
-            rule_val = cfl_kvlist_fetch(kvlist, "value");
-            if (!rule_val) {
-                flb_error("[processor] rule missing 'value' property");
-                flb_condition_destroy(condition);
-                return -1;
-            }
-
-            /* Handle different value types */
-            value = NULL;
-            value_count = 1;
-
-            if (rule_val->type == CFL_VARIANT_STRING) {
-                value = rule_val->data.as_string;
-                flb_debug("[processor] condition rule value (string): %s",
-                          (char *)value);
-            }
-            else if (rule_val->type == CFL_VARIANT_INT) {
-                value = &rule_val->data.as_int64;
-                flb_debug("[processor] condition rule value (int): %lld",
-                         rule_val->data.as_int64);
-            }
-            else if (rule_val->type == CFL_VARIANT_UINT) {
-                value = &rule_val->data.as_uint64;
-                flb_debug("[processor] condition rule value (uint): %lu",
-                         (unsigned long)rule_val->data.as_uint64);
-            }
-            else if (rule_val->type == CFL_VARIANT_DOUBLE) {
-                value = &rule_val->data.as_double;
-                flb_debug("[processor] condition rule value (double): %f",
-                         rule_val->data.as_double);
-            }
-            else if (rule_val->type == CFL_VARIANT_ARRAY) {
-                /* For IN and NOT_IN operators, we need to handle arrays */
-                if (rule_op != FLB_RULE_OP_IN && rule_op != FLB_RULE_OP_NOT_IN) {
-                    flb_error("[processor] array values can only be used with 'in' or 'not_in' operators");
+            for (j = 0; j < rule_val->data.as_array->entry_count; j++) {
+                array_val = rule_val->data.as_array->entries[j];
+                if (array_val->type != CFL_VARIANT_STRING) {
+                    flb_error("[processor] array values must be strings");
+                    flb_free(value);
                     flb_condition_destroy(condition);
                     return -1;
                 }
 
-                /* Extract all string values from the array */
-                value = flb_calloc(rule_val->data.as_array->entry_count, sizeof(flb_sds_t));
-                if (!value) {
-                    flb_errno();
-                    flb_condition_destroy(condition);
-                    return -1;
-                }
+                ((flb_sds_t *)value)[j] = flb_sds_create(array_val->data.as_string);
+            }
 
-                for (j = 0; j < rule_val->data.as_array->entry_count; j++) {
-                    array_val = rule_val->data.as_array->entries[j];
-                    if (array_val->type != CFL_VARIANT_STRING) {
-                        flb_error("[processor] array values must be strings");
-                        flb_free(value);
-                        flb_condition_destroy(condition);
-                        return -1;
-                    }
+            value_count = rule_val->data.as_array->entry_count;
+        }
+        else {
+            flb_error("[processor] unsupported value type for rule");
+            flb_condition_destroy(condition);
+            return -1;
+        }
 
-                    ((flb_sds_t *)value)[j] = flb_sds_create(array_val->data.as_string);
-                }
-
-                value_count = rule_val->data.as_array->entry_count;
+        /* Determine context (body or metadata) */
+        rule_val = cfl_kvlist_fetch(kvlist, "context");
+        if (rule_val && rule_val->type == CFL_VARIANT_STRING) {
+            if (strcasecmp(rule_val->data.as_string, "metadata") == 0) {
+                context = RECORD_CONTEXT_METADATA;
             }
             else {
-                flb_error("[processor] unsupported value type for rule");
-                flb_condition_destroy(condition);
-                return -1;
-            }
-
-            /* Determine context (body or metadata) */
-            rule_val = cfl_kvlist_fetch(kvlist, "context");
-            if (rule_val && rule_val->type == CFL_VARIANT_STRING) {
-                if (strcasecmp(rule_val->data.as_string, "metadata") == 0) {
-                    context = RECORD_CONTEXT_METADATA;
-                }
-                else {
-                    context = RECORD_CONTEXT_BODY;
-                }
-            }
-            else {
-                /* Default to body context */
                 context = RECORD_CONTEXT_BODY;
             }
-
-            flb_debug("[processor] adding rule: field='%s', op=%d, context=%d",
-                    field, rule_op, context);
-
-            /* Add rule to the condition */
-            ret = flb_condition_add_rule(condition, field, rule_op, value, value_count, context);
-
-            /* Free array value if we allocated it */
-            if (rule_val && rule_val->type == CFL_VARIANT_ARRAY) {
-                for (j = 0; j < value_count; j++) {
-                    flb_sds_destroy(((flb_sds_t *)value)[j]);
-                }
-                flb_free(value);
-            }
-
-            if (ret != FLB_TRUE) {
-                flb_error("[processor] error adding rule to condition (ret=%d)", ret);
-                flb_condition_destroy(condition);
-                return -1;
-            }
-            else {
-                flb_debug("[processor] successfully added rule to condition");
-            }
+        }
+        else {
+            /* Default to body context */
+            context = RECORD_CONTEXT_BODY;
         }
 
-        /* Assign the created condition to the processor unit */
-        if (pu->condition != NULL) {
-            flb_condition_destroy(pu->condition);
-        }
-        pu->condition = condition;
+        flb_debug("[processor] adding rule: field='%s', op=%d, context=%d",
+                field, rule_op, context);
 
-        return 0;
+        /* Add rule to the condition */
+        ret = flb_condition_add_rule(condition, field, rule_op, value, value_count, context);
+
+        /* Free array value if we allocated it */
+        if (rule_val && rule_val->type == CFL_VARIANT_ARRAY) {
+            for (j = 0; j < value_count; j++) {
+                flb_sds_destroy(((flb_sds_t *)value)[j]);
+            }
+            flb_free(value);
+        }
+
+        if (ret != FLB_TRUE) {
+            flb_error("[processor] error adding rule to condition (ret=%d)", ret);
+            flb_condition_destroy(condition);
+            return -1;
+        }
+        else {
+            flb_debug("[processor] successfully added rule to condition");
+        }
+    }
+
+    /* Assign the created condition to the processor unit */
+    if (pu->condition != NULL) {
+        flb_condition_destroy(pu->condition);
+    }
+    pu->condition = condition;
+
+    return 0;
+}
+
+int flb_processor_unit_set_property(struct flb_processor_unit *pu, const char *k, struct cfl_variant *v)
+{
+    struct cfl_variant *val;
+    int i;
+    int ret;
+
+    /* Handle the "condition" property for processor units */
+    if (strcasecmp(k, "condition") == 0) {
+        return flb_processor_unit_set_condition(pu, v);
     }
 
     /* Handle normal properties */
