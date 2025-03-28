@@ -28,6 +28,9 @@
 #define FLB_MP_CHUNK_RECORD_OK     0  /* Content retrieved successfully */
 #define FLB_MP_CHUNK_RECORD_EOF    1  /* No more content to retrieve */
 
+/* Forward declaration to avoid circular dependencies */
+struct flb_condition;
+
 struct flb_mp_chunk_record {
     int modified;
     struct flb_log_event event;
@@ -43,6 +46,9 @@ struct flb_mp_chunk_cobj {
 
     struct flb_mp_chunk_record *record_pos;
     struct cfl_list records;
+
+    /* Condition for filtering records during processing */
+    struct flb_condition *condition;
 };
 
 
