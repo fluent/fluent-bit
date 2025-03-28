@@ -131,6 +131,9 @@ static struct cfl_variant *create_rule_variant(const char *field,
 {
     struct cfl_variant *variant;
     struct cfl_kvlist *kvlist;
+    struct cfl_array *array;
+    char **values;
+    int i;
 
     variant = cfl_variant_create();
     if (!variant) {
@@ -160,7 +163,7 @@ static struct cfl_variant *create_rule_variant(const char *field,
     /* Set value based on type */
     if (is_array) {
         /* Create array for IN and NOT_IN operators */
-        struct cfl_array *array = cfl_array_create(2);
+        array = cfl_array_create(2);
         if (!array) {
             cfl_kvlist_destroy(kvlist);
             cfl_variant_destroy(variant);
@@ -168,8 +171,8 @@ static struct cfl_variant *create_rule_variant(const char *field,
         }
 
         /* Add array values */
-        char **values = (char **)value;
-        for (int i = 0; i < 2; i++) {
+        values = (char **)value;
+        for (i = 0; i < 2; i++) {
             if (cfl_array_append_string(array, values[i]) != 0) {
                 cfl_array_destroy(array);
                 cfl_kvlist_destroy(kvlist);
