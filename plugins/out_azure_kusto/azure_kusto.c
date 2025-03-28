@@ -18,6 +18,7 @@
  */
 
 #include <fluent-bit/flb_http_client.h>
+#include <fluent-bit/flb_kv.h>
 #include <fluent-bit/flb_oauth2.h>
 #include <fluent-bit/flb_output_plugin.h>
 #include <fluent-bit/flb_pack.h>
@@ -34,249 +35,66 @@
 #include "azure_kusto.h"
 #include "azure_kusto_conf.h"
 #include "azure_kusto_ingest.h"
+#include "azure_msiauth.h"
 #include "azure_kusto_store.h"
 
-
-/**
- * flb_azure_imds_get_token - Retrieve an Azure IMDS token for authentication.
- *
- * This function constructs an HTTP GET request to the Azure Instance Metadata Service (IMDS)
- * to obtain an authentication token. The token is used for accessing Azure services.
- *
- * Parameters:
- *   - ctx: A pointer to the flb_azure_kusto context, which contains configuration and state
- *          information necessary for the operation.
- *   - client_id: A string representing the client ID for which the token is requested.
- *
- * Returns:
- *   - A dynamically allocated string (flb_sds_t) containing the token if the request is successful.
- *   - NULL if the request fails or if any error occurs during the process.
- *
- * The function performs the following steps:
- *   1. Constructs the request URL using the Azure IMDS endpoint, API version, and resource.
- *   2. Establishes a connection to the IMDS service using the upstream connection from the context.
- *   3. Sends an HTTP GET request with the necessary headers, including Metadata and client_id.
- *   4. Checks the HTTP response status and retrieves the token from the response payload if successful.
- *   5. Cleans up resources, including the HTTP client, connection, and URL string, before returning.
- *
- * Note:
- *   - The caller is responsible for freeing the returned token string.
- *   - The function logs debug information about the HTTP request and response.
- */
-flb_sds_t flb_azure_imds_get_token(struct flb_azure_kusto *ctx, flb_sds_t client_id)
+static int azure_kusto_get_msi_token(struct flb_azure_kusto *ctx)
 {
-    int ret;
-    flb_sds_t url;
-    flb_sds_t response = NULL;
-    struct flb_http_client *client;
-    struct flb_connection *u_conn;
-    size_t b_sent;
+    char *token;
 
-    url = flb_sds_create_size(256);
-    if (!url) {
-        flb_errno();
-        return NULL;
+    /* Retrieve access token */
+    token = flb_azure_msiauth_token_get(ctx->o);
+    if (!token) {
+        flb_plg_error(ctx->ins, "error retrieving oauth2 access token");
+        return -1;
     }
 
-    flb_sds_printf(&url, "%s?api-version=%s&resource=%s",
-                   FLB_AZURE_IMDS_ENDPOINT,
-                   FLB_AZURE_IMDS_API_VERSION,
-                   FLB_AZURE_IMDS_RESOURCE);
-
-    u_conn = flb_upstream_conn_get(ctx->imds_upstream);
-    if (!u_conn) {
-        flb_sds_destroy(url);
-        return NULL;
-    }
-
-    flb_plg_debug(ctx->ins, "[flb_azure_imds_get_token] client_id : %s", client_id);
-
-    client = flb_http_client(u_conn, FLB_HTTP_GET, url, NULL, 0, "169.254.169.254", 80, NULL, 0);
-    flb_http_add_header(client, "Metadata", 8, "true", 4);
-    flb_http_add_header(client, "client_id", 8, client_id, 36);
-
-    ret = flb_http_do(client, &b_sent);
-    if (ret != 0 || client->resp.status != 200) {
-        flb_plg_debug(ctx->ins, "[flb_azure_imds_get_token] HTTP response status  %d & payload: %.*s",client->resp.status, (int)client->resp.payload_size, client->resp.payload);
-        flb_http_client_destroy(client);
-        flb_upstream_conn_release(u_conn);
-        flb_sds_destroy(url);
-        return NULL;
-    }
-
-    flb_plg_debug(ctx->ins, "[flb_azure_imds_get_token] HTTP response status: %d & payload: %.*s", client->resp.status, (int)client->resp.payload_size, client->resp.payload);
-
-    response = flb_sds_create_len(client->resp.payload, client->resp.payload_size);
-    flb_http_client_destroy(client);
-    flb_upstream_conn_release(u_conn);
-    flb_sds_destroy(url);
-
-    return response;
+    return 0;
 }
 
-
-/**
- * azure_kusto_get_oauth2_token - Retrieve an OAuth2 token for Azure Kusto
- *
- * This function is responsible for obtaining an OAuth2 access token required
- * for authenticating requests to Azure Kusto. It supports two methods of
- * token retrieval: using the Azure Instance Metadata Service (IMDS) or
- * through a client secret flow.
- *
- * Parameters:
- *   - ctx: A pointer to the flb_azure_kusto context structure, which contains
- *          configuration and state information necessary for token retrieval.
- *
- * Returns:
- *   - 0 on success, indicating that the token was successfully retrieved and
- *     stored in the context.
- *   - -1 on failure, indicating an error occurred during the token retrieval
- *     process.
- *
- * The function performs the following steps:
- *   1. Logs the start of the token retrieval process.
- *   2. Checks if IMDS-based token retrieval is enabled:
- *      - If enabled, it attempts to retrieve a token from the Azure IMDS.
- *      - Parses the JSON response to extract the access token.
- *      - Logs and handles errors if token extraction fails.
- *   3. If IMDS is not used, it falls back to the client secret flow:
- *      - Clears any existing OAuth2 payload data.
- *      - Appends necessary parameters to the OAuth2 payload, including
- *        grant type, scope, client ID, and client secret.
- *      - Requests an OAuth2 token using the constructed payload.
- *      - Logs and handles errors if token retrieval fails.
- *   4. Logs the successful completion of the token retrieval process.
- *
- * Note:
- *   - The function assumes that the context (ctx) is properly initialized
- *     and contains valid configuration data.
- *   - The extracted access token is stored in the context's OAuth2 structure
- *     for subsequent use in authenticated requests.
- */
-
+/* Create a new oauth2 context and get a oauth2 token */
 static int azure_kusto_get_oauth2_token(struct flb_azure_kusto *ctx)
 {
-    char *token = NULL;
     int ret;
-    flb_sds_t response = NULL;
-    char *access_token = NULL;
+    char *token;
 
-    flb_plg_debug(ctx->ins, "Starting token retrieval process");
+    /* Clear any previous oauth2 payload content */
+    flb_oauth2_payload_clear(ctx->o);
 
-    /* Check if IMDS-based token retrieval is needed */
-    if (ctx->use_imds == FLB_TRUE) {
-        flb_plg_debug(ctx->ins, "Using IMDS for token retrieval");
+    ret = flb_oauth2_payload_append(ctx->o, "grant_type", 10, "client_credentials", 18);
+    if (ret == -1) {
+        flb_plg_error(ctx->ins, "error appending oauth2 params");
+        return -1;
+    }
 
-        response = flb_azure_imds_get_token(ctx, ctx->client_id);
-        if (!response) {
-            flb_plg_error(ctx->ins, "Failed to retrieve token from Azure IMDS");
-            return -1;
-        }
+    ret = flb_oauth2_payload_append(ctx->o, "scope", 5, FLB_AZURE_KUSTO_SCOPE, 39);
+    if (ret == -1) {
+        flb_plg_error(ctx->ins, "error appending oauth2 params");
+        return -1;
+    }
 
-        // Parse the JSON response to extract the access token
-        size_t access_token_len = 0;
-        char *p = strstr(response, "\"access_token\":\"");
-        if (p) {
-            p += strlen("\"access_token\":\"");
-            char *end = strstr(p, "\"");
-            if (end) {
-                access_token_len = end - p;
-                access_token = flb_malloc(access_token_len + 1);
-                if (access_token) {
-                    strncpy(access_token, p, access_token_len);
-                    access_token[access_token_len] = '\0';
-                }
-            }
-        }
+    ret = flb_oauth2_payload_append(ctx->o, "client_id", 9, ctx->client_id, -1);
+    if (ret == -1) {
+        flb_plg_error(ctx->ins, "error appending oauth2 params");
+        return -1;
+    }
 
-        flb_plg_debug(ctx->ins, "Access token extracted is %s", access_token);
+    ret = flb_oauth2_payload_append(ctx->o, "client_secret", 13, ctx->client_secret, -1);
+    if (ret == -1) {
+        flb_plg_error(ctx->ins, "error appending oauth2 params");
+        return -1;
+    }
 
-        if (!access_token) {
-            flb_plg_error(ctx->ins, "Error extracting access token from IMDS response");
-            flb_sds_destroy(response);
-            return -1;
-        }
-
-        ctx->o->access_token = flb_sds_create(access_token);
-        ctx->o->token_type = flb_sds_create("Bearer");
-        flb_free(access_token);
-
-        flb_sds_destroy(response);
-
-    } else {
-        /* Use client secret flow */
-        flb_plg_debug(ctx->ins, "Using client secret flow for token retrieval");
-
-        flb_oauth2_payload_clear(ctx->o);
-
-        ret = flb_oauth2_payload_append(ctx->o, "grant_type", 10, "client_credentials", 18);
-        if (ret == -1) {
-            flb_plg_error(ctx->ins, "Error appending oauth2 params: grant_type");
-            return -1;
-        }
-
-        ret = flb_oauth2_payload_append(ctx->o, "scope", 5, FLB_AZURE_KUSTO_SCOPE, 39);
-        if (ret == -1) {
-            flb_plg_error(ctx->ins, "Error appending oauth2 params: scope");
-            return -1;
-        }
-
-        ret = flb_oauth2_payload_append(ctx->o, "client_id", 9, ctx->client_id, -1);
-        if (ret == -1) {
-            flb_plg_error(ctx->ins, "Error appending oauth2 params: client_id");
-            return -1;
-        }
-
-        ret = flb_oauth2_payload_append(ctx->o, "client_secret", 13, ctx->client_secret, -1);
-        if (ret == -1) {
-            flb_plg_error(ctx->ins, "Error appending oauth2 params: client_secret");
-            return -1;
-        }
-
-        flb_plg_debug(ctx->ins, "Requesting oauth2 token");
-        token = flb_oauth2_token_get(ctx->o);
-        if (!token) {
-            flb_plg_error(ctx->ins, "Error retrieving oauth2 access token");
-            return -1;
-        }
+    /* Retrieve access token */
+    token = flb_oauth2_token_get(ctx->o);
+    if (!token) {
+        flb_plg_error(ctx->ins, "error retrieving oauth2 access token");
+        return -1;
     }
 
     flb_plg_debug(ctx->ins, "OAuth2 token retrieval process completed successfully");
     return 0;
 }
-
-/**
- * get_azure_kusto_token - Retrieve the OAuth2 token for Azure Kusto
- *
- * This function is responsible for obtaining a valid OAuth2 token for
- * authenticating requests to Azure Kusto. It ensures thread safety by
- * using a mutex to lock the token retrieval process, preventing race
- * conditions when accessing or modifying the token.
- *
- * The function first attempts to lock the mutex associated with the
- * token context. If the lock is successful, it checks if the current
- * token has expired. If the token is expired, it calls
- * `azure_kusto_get_oauth2_token` to refresh the token.
- *
- * After ensuring the token is valid, the function logs the token type
- * and access token for debugging purposes. It then creates a new
- * string buffer to store the token type and access token, ensuring
- * that the original token strings are not modified or freed during
- * this process.
- *
- * Finally, the function unlocks the mutex and returns the newly
- * created token string. If any errors occur during the process,
- * appropriate error messages are logged, and the function returns
- * NULL.
- *
- * Parameters:
- *   ctx - A pointer to the `flb_azure_kusto` context structure, which
- *         contains the token information and mutex.
- *
- * Returns:
- *   A newly allocated `flb_sds_t` string containing the token type and
- *   access token, or NULL if an error occurs.
- */
 
 flb_sds_t get_azure_kusto_token(struct flb_azure_kusto *ctx)
 {
@@ -289,11 +107,13 @@ flb_sds_t get_azure_kusto_token(struct flb_azure_kusto *ctx)
     }
 
     if (flb_oauth2_token_expired(ctx->o) == FLB_TRUE) {
-        ret = azure_kusto_get_oauth2_token(ctx);
+        if (ctx->managed_identity_client_id != NULL) {
+            ret = azure_kusto_get_msi_token(ctx);
+        }
+        else {
+            ret = azure_kusto_get_oauth2_token(ctx);
+        }
     }
-
-    flb_plg_debug(ctx->ins, "oauth token type is %s", ctx->o->token_type);
-    flb_plg_debug(ctx->ins, "oauth token is %s", ctx->o->access_token);
 
     /* Copy string to prevent race conditions (get_oauth2 can free the string) */
     if (ret == 0) {
@@ -353,7 +173,6 @@ flb_sds_t execute_ingest_csl_command(struct flb_azure_kusto *ctx, const char *cs
 
     if (u_conn) {
         token = get_azure_kusto_token(ctx);
-        flb_plg_debug(ctx->ins, "after get azure kusto token");
 
         if (token) {
             /* Compose request body */
@@ -1095,19 +914,8 @@ static int cb_azure_kusto_init(struct flb_output_instance *ins, struct flb_confi
     flb_plg_debug(ctx->ins, "async flag is %d", flb_stream_is_async(&ctx->u->base));
 
     /* Create oauth2 context */
-    if(ctx->use_imds == FLB_TRUE){
-        ctx->imds_upstream =
-                flb_upstream_create(config, "169.254.169.254", 80, FLB_IO_TCP, NULL);
-        if (!ctx->imds_upstream) {
-            flb_plg_error(ctx->ins, "cannot create imds upstream");
-            return -1;
-        }
-        if (ctx->buffering_enabled ==  FLB_TRUE){
-            flb_stream_disable_flags(&ctx->imds_upstream->base, FLB_IO_ASYNC);
-        }
-    }
     ctx->o =
-            flb_oauth2_create(ctx->config, ctx->oauth_url, FLB_AZURE_KUSTO_TOKEN_REFRESH);
+        flb_oauth2_create(ctx->config, ctx->oauth_url, FLB_AZURE_KUSTO_TOKEN_REFRESH);
     if (!ctx->o) {
         flb_plg_error(ctx->ins, "cannot create oauth2 context");
         return -1;
@@ -1630,13 +1438,6 @@ static int cb_azure_kusto_exit(void *data, struct flb_config *config)
         ctx->u = NULL;
     }
 
-    if (ctx->imds_upstream) {
-        flb_upstream_destroy(ctx->imds_upstream);
-        ctx->imds_upstream = NULL;
-    }
-
-
-    // Destroy the mutexes
     pthread_mutex_destroy(&ctx->resources_mutex);
     pthread_mutex_destroy(&ctx->token_mutex);
     pthread_mutex_destroy(&ctx->blob_mutex);
@@ -1647,117 +1448,120 @@ static int cb_azure_kusto_exit(void *data, struct flb_config *config)
 }
 
 static struct flb_config_map config_map[] = {
-        {FLB_CONFIG_MAP_STR, "tenant_id", (char *)NULL, 0, FLB_TRUE,
-                             offsetof(struct flb_azure_kusto, tenant_id),
-        "Set the tenant ID of the AAD application used for authentication"},
-        {FLB_CONFIG_MAP_STR, "client_id", (char *)NULL, 0, FLB_TRUE,
-                             offsetof(struct flb_azure_kusto, client_id),
-        "Set the client ID (Application ID) of the AAD application used for authentication"},
-        {FLB_CONFIG_MAP_STR, "client_secret", (char *)NULL, 0, FLB_TRUE,
-                             offsetof(struct flb_azure_kusto, client_secret),
-        "Set the client secret (Application Password) of the AAD application used for "
-        "authentication"},
-        {FLB_CONFIG_MAP_STR, "ingestion_endpoint", (char *)NULL, 0, FLB_TRUE,
-                             offsetof(struct flb_azure_kusto, ingestion_endpoint),
-        "Set the Kusto cluster's ingestion endpoint URL (e.g. "
-        "https://ingest-mycluster.eastus.kusto.windows.net)"},
-        {FLB_CONFIG_MAP_STR, "database_name", (char *)NULL, 0, FLB_TRUE,
-                             offsetof(struct flb_azure_kusto, database_name), "Set the database name"},
-        {FLB_CONFIG_MAP_STR, "table_name", (char *)NULL, 0, FLB_TRUE,
-                             offsetof(struct flb_azure_kusto, table_name), "Set the table name"},
-        {FLB_CONFIG_MAP_STR, "ingestion_mapping_reference", (char *)NULL, 0, FLB_TRUE,
-                             offsetof(struct flb_azure_kusto, ingestion_mapping_reference),
-        "Set the ingestion mapping reference"},
-        {FLB_CONFIG_MAP_STR, "log_key", FLB_AZURE_KUSTO_DEFAULT_LOG_KEY, 0, FLB_TRUE,
-                             offsetof(struct flb_azure_kusto, log_key), "The key name of event payload"},
-        {FLB_CONFIG_MAP_BOOL, "include_tag_key", "true", 0, FLB_TRUE,
-                             offsetof(struct flb_azure_kusto, include_tag_key),
-        "If enabled, tag is appended to output. "
-        "The key name is used 'tag_key' property."},
-        {FLB_CONFIG_MAP_STR, "tag_key", FLB_AZURE_KUSTO_DEFAULT_TAG_KEY, 0, FLB_TRUE,
-                             offsetof(struct flb_azure_kusto, tag_key),
-        "The key name of tag. If 'include_tag_key' is false, "
-        "This property is ignored"},
-        {FLB_CONFIG_MAP_BOOL, "include_time_key", "true", 0, FLB_TRUE,
-                             offsetof(struct flb_azure_kusto, include_time_key),
-        "If enabled, time is appended to output. "
-        "The key name is used 'time_key' property."},
-        {FLB_CONFIG_MAP_STR, "time_key", FLB_AZURE_KUSTO_DEFAULT_TIME_KEY, 0, FLB_TRUE,
-                             offsetof(struct flb_azure_kusto, time_key),
-        "The key name of the time. If 'include_time_key' is false, "
-        "This property is ignored"},
-        {FLB_CONFIG_MAP_TIME, "ingestion_endpoint_connect_timeout", FLB_AZURE_KUSTO_INGEST_ENDPOINT_CONNECTION_TIMEOUT, 0, FLB_TRUE,
-                             offsetof(struct flb_azure_kusto, ingestion_endpoint_connect_timeout),
-        "Set the ingestion endpoint connection timeout in seconds"},
-        {FLB_CONFIG_MAP_BOOL, "compression_enabled", "true", 0, FLB_TRUE,
-                             offsetof(struct flb_azure_kusto, compression_enabled), "Enable HTTP payload compression (gzip)."
-        },
-        {FLB_CONFIG_MAP_BOOL, "buffering_enabled", "false", 0, FLB_TRUE,
-                             offsetof(struct flb_azure_kusto, buffering_enabled), "Enable buffering into disk before ingesting into Azure Kusto."
-        },
-        {FLB_CONFIG_MAP_STR, "buffer_dir", "/tmp/fluent-bit/azure-kusto/", 0, FLB_TRUE,
-                             offsetof(struct flb_azure_kusto, buffer_dir), "Specifies the location of directory where the buffered data will be stored."
-        },
-        {FLB_CONFIG_MAP_TIME, "upload_timeout", "30m",
-                0, FLB_TRUE, offsetof(struct flb_azure_kusto, upload_timeout),
-        "Optionally specify a timeout for uploads. "
-        "Fluent Bit will start ingesting buffer files which have been created more than x minutes and haven't reached upload_file_size limit yet.  "
-        " Default is 30m."
-        },
-        {FLB_CONFIG_MAP_SIZE, "upload_file_size", "200M",
-                0, FLB_TRUE, offsetof(struct flb_azure_kusto, file_size),
-        "Specifies the size of files to be uploaded in MBs. Default is 200MB"
-        },
-        {FLB_CONFIG_MAP_TIME, "ingestion_resources_refresh_interval", FLB_AZURE_KUSTO_RESOURCES_LOAD_INTERVAL_SEC,0, FLB_TRUE,
-                             offsetof(struct flb_azure_kusto, ingestion_resources_refresh_interval),
-        "Set the azure kusto ingestion resources refresh interval"
-        },
-        {FLB_CONFIG_MAP_STR, "azure_kusto_buffer_key", "key",0, FLB_TRUE,
-                             offsetof(struct flb_azure_kusto, azure_kusto_buffer_key),
-        "Set the azure kusto buffer key which needs to be specified when using multiple instances of azure kusto output plugin and buffering is enabled"
-        },
-        {FLB_CONFIG_MAP_SIZE, "store_dir_limit_size", FLB_AZURE_KUSTO_BUFFER_DIR_MAX_SIZE,0, FLB_TRUE,
-                             offsetof(struct flb_azure_kusto, store_dir_limit_size),
-        "Set the max size of the buffer directory. Default is 8GB"
-        },
-        {FLB_CONFIG_MAP_BOOL, "buffer_file_delete_early", "false",0, FLB_TRUE,
-                             offsetof(struct flb_azure_kusto, buffer_file_delete_early),
-        "Whether to delete the buffered file early after successful blob creation. Default is false"
-        },
-        {FLB_CONFIG_MAP_BOOL, "unify_tag", "true",0, FLB_TRUE,
-                offsetof(struct flb_azure_kusto, unify_tag),
-        "This creates a single buffer file when the buffering mode is ON. Default is true"
-        },
-        {FLB_CONFIG_MAP_INT, "blob_uri_length", "64",0, FLB_TRUE,
-                    offsetof(struct flb_azure_kusto, blob_uri_length),
-            "Set the length of generated blob uri before ingesting to kusto. Default is 64"
-        },
-        {FLB_CONFIG_MAP_INT, "scheduler_max_retries", "3",0, FLB_TRUE,
-         offsetof(struct flb_azure_kusto, scheduler_max_retries),
-        "Set the maximum number of retries for ingestion using the scheduler. Default is 3"
-        },
-        {FLB_CONFIG_MAP_BOOL, "use_imds", "false",0, FLB_TRUE,
-                offsetof(struct flb_azure_kusto, use_imds),
-        "Whether to use IMDS to retrieve oauth token. Default is false"
-        },
-        {FLB_CONFIG_MAP_BOOL, "delete_on_max_upload_error", "false",0, FLB_TRUE,
-                offsetof(struct flb_azure_kusto, delete_on_max_upload_error),
-        "Whether to delete the buffer file on maximum upload errors. Default is false"
-        },
-        {FLB_CONFIG_MAP_TIME, "io_timeout", "60s",0, FLB_TRUE,
-         offsetof(struct flb_azure_kusto, io_timeout),
-        "HTTP IO timeout. Default is 60s"
-        },
-        /* EOF */
-        {0}};
+    {FLB_CONFIG_MAP_STR, "tenant_id", (char *)NULL, 0, FLB_TRUE,
+     offsetof(struct flb_azure_kusto, tenant_id),
+     "Set the tenant ID of the AAD application used for authentication"},
+    {FLB_CONFIG_MAP_STR, "client_id", (char *)NULL, 0, FLB_TRUE,
+     offsetof(struct flb_azure_kusto, client_id),
+     "Set the client ID (Application ID) of the AAD application used for authentication"},
+    {FLB_CONFIG_MAP_STR, "client_secret", (char *)NULL, 0, FLB_TRUE,
+     offsetof(struct flb_azure_kusto, client_secret),
+     "Set the client secret (Application Password) of the AAD application used for "
+     "authentication"},
+    {FLB_CONFIG_MAP_STR, "managed_identity_client_id", (char *)NULL, 0, FLB_TRUE,
+     offsetof(struct flb_azure_kusto, managed_identity_client_id),
+     "A managed identity client id to authenticate with. "
+     "Set to 'system' for system-assigned managed identity. "
+     "Set the MI client ID (GUID) for user-assigned managed identity."},
+    {FLB_CONFIG_MAP_STR, "ingestion_endpoint", (char *)NULL, 0, FLB_TRUE,
+     offsetof(struct flb_azure_kusto, ingestion_endpoint),
+     "Set the Kusto cluster's ingestion endpoint URL (e.g. "
+     "https://ingest-mycluster.eastus.kusto.windows.net)"},
+    {FLB_CONFIG_MAP_STR, "database_name", (char *)NULL, 0, FLB_TRUE,
+     offsetof(struct flb_azure_kusto, database_name), "Set the database name"},
+    {FLB_CONFIG_MAP_STR, "table_name", (char *)NULL, 0, FLB_TRUE,
+     offsetof(struct flb_azure_kusto, table_name), "Set the table name"},
+    {FLB_CONFIG_MAP_STR, "ingestion_mapping_reference", (char *)NULL, 0, FLB_TRUE,
+     offsetof(struct flb_azure_kusto, ingestion_mapping_reference),
+     "Set the ingestion mapping reference"},
+    {FLB_CONFIG_MAP_STR, "log_key", FLB_AZURE_KUSTO_DEFAULT_LOG_KEY, 0, FLB_TRUE,
+     offsetof(struct flb_azure_kusto, log_key), "The key name of event payload"},
+    {FLB_CONFIG_MAP_BOOL, "include_tag_key", "true", 0, FLB_TRUE,
+     offsetof(struct flb_azure_kusto, include_tag_key),
+     "If enabled, tag is appended to output. "
+     "The key name is used 'tag_key' property."},
+    {FLB_CONFIG_MAP_STR, "tag_key", FLB_AZURE_KUSTO_DEFAULT_TAG_KEY, 0, FLB_TRUE,
+     offsetof(struct flb_azure_kusto, tag_key),
+     "The key name of tag. If 'include_tag_key' is false, "
+     "This property is ignored"},
+    {FLB_CONFIG_MAP_BOOL, "include_time_key", "true", 0, FLB_TRUE,
+     offsetof(struct flb_azure_kusto, include_time_key),
+     "If enabled, time is appended to output. "
+     "The key name is used 'time_key' property."},
+    {FLB_CONFIG_MAP_STR, "time_key", FLB_AZURE_KUSTO_DEFAULT_TIME_KEY, 0, FLB_TRUE,
+     offsetof(struct flb_azure_kusto, time_key),
+     "The key name of the time. If 'include_time_key' is false, "
+     "This property is ignored"},
+    {FLB_CONFIG_MAP_TIME, "ingestion_endpoint_connect_timeout", FLB_AZURE_KUSTO_INGEST_ENDPOINT_CONNECTION_TIMEOUT, 0, FLB_TRUE,
+     offsetof(struct flb_azure_kusto, ingestion_endpoint_connect_timeout),
+    "Set the connection timeout of various kusto endpoints (kusto ingest endpoint, kusto ingestion blob endpoint, kusto ingestion queue endpoint) in seconds."
+    "The default is 60 seconds."},
+    {FLB_CONFIG_MAP_BOOL, "compression_enabled", "true", 0, FLB_TRUE,
+     offsetof(struct flb_azure_kusto, compression_enabled),
+    "Enable HTTP payload compression (gzip)."
+    "The default is true."},
+    {FLB_CONFIG_MAP_TIME, "ingestion_resources_refresh_interval", FLB_AZURE_KUSTO_RESOURCES_LOAD_INTERVAL_SEC,0, FLB_TRUE,
+     offsetof(struct flb_azure_kusto, ingestion_resources_refresh_interval),
+    "Set the azure kusto ingestion resources refresh interval"
+    "The default is 3600 seconds."},
+    {FLB_CONFIG_MAP_BOOL, "buffering_enabled", "false", 0, FLB_TRUE,
+     offsetof(struct flb_azure_kusto, buffering_enabled), "Enable buffering into disk before ingesting into Azure Kusto."
+    },
+    {FLB_CONFIG_MAP_STR, "buffer_dir", "/tmp/fluent-bit/azure-kusto/", 0, FLB_TRUE,
+     offsetof(struct flb_azure_kusto, buffer_dir), "Specifies the location of directory where the buffered data will be stored."
+    },
+    {FLB_CONFIG_MAP_TIME, "upload_timeout", "30m",
+     0, FLB_TRUE, offsetof(struct flb_azure_kusto, upload_timeout),
+    "Optionally specify a timeout for uploads. "
+    "Fluent Bit will start ingesting buffer files which have been created more than x minutes and haven't reached upload_file_size limit yet.  "
+    " Default is 30m."
+    },
+    {FLB_CONFIG_MAP_SIZE, "upload_file_size", "200M",
+     0, FLB_TRUE, offsetof(struct flb_azure_kusto, file_size),
+    "Specifies the size of files to be uploaded in MBs. Default is 200MB"
+    },
+    {FLB_CONFIG_MAP_STR, "azure_kusto_buffer_key", "key",0, FLB_TRUE,
+     offsetof(struct flb_azure_kusto, azure_kusto_buffer_key),
+    "Set the azure kusto buffer key which needs to be specified when using multiple instances of azure kusto output plugin and buffering is enabled"
+    },
+    {FLB_CONFIG_MAP_SIZE, "store_dir_limit_size", FLB_AZURE_KUSTO_BUFFER_DIR_MAX_SIZE,0, FLB_TRUE,
+     offsetof(struct flb_azure_kusto, store_dir_limit_size),
+    "Set the max size of the buffer directory. Default is 8GB"
+    },
+    {FLB_CONFIG_MAP_BOOL, "buffer_file_delete_early", "false",0, FLB_TRUE,
+     offsetof(struct flb_azure_kusto, buffer_file_delete_early),
+    "Whether to delete the buffered file early after successful blob creation. Default is false"
+    },
+    {FLB_CONFIG_MAP_BOOL, "unify_tag", "true",0, FLB_TRUE,
+     offsetof(struct flb_azure_kusto, unify_tag),
+    "This creates a single buffer file when the buffering mode is ON. Default is true"
+    },
+    {FLB_CONFIG_MAP_INT, "blob_uri_length", "64",0, FLB_TRUE,
+     offsetof(struct flb_azure_kusto, blob_uri_length),
+    "Set the length of generated blob uri before ingesting to kusto. Default is 64"
+    },
+    {FLB_CONFIG_MAP_INT, "scheduler_max_retries", "3",0, FLB_TRUE,
+     offsetof(struct flb_azure_kusto, scheduler_max_retries),
+    "Set the maximum number of retries for ingestion using the scheduler. Default is 3"
+    },
+    {FLB_CONFIG_MAP_BOOL, "delete_on_max_upload_error", "false",0, FLB_TRUE,
+     offsetof(struct flb_azure_kusto, delete_on_max_upload_error),
+    "Whether to delete the buffer file on maximum upload errors. Default is false"
+    },
+    {FLB_CONFIG_MAP_TIME, "io_timeout", "60s",0, FLB_TRUE,
+     offsetof(struct flb_azure_kusto, io_timeout),
+    "HTTP IO timeout. Default is 60s"
+    },
+    /* EOF */
+    {0}};
 
 struct flb_output_plugin out_azure_kusto_plugin = {
-        .name = "azure_kusto",
-        .description = "Send events to Kusto (Azure Data Explorer)",
-        .cb_init = cb_azure_kusto_init,
-        .cb_flush = cb_azure_kusto_flush,
-        .cb_exit = cb_azure_kusto_exit,
-        .config_map = config_map,
-        /* Plugin flags */
-        .flags = FLB_OUTPUT_NET | FLB_IO_TLS,
+    .name = "azure_kusto",
+    .description = "Send events to Kusto (Azure Data Explorer)",
+    .cb_init = cb_azure_kusto_init,
+    .cb_flush = cb_azure_kusto_flush,
+    .cb_exit = cb_azure_kusto_exit,
+    .config_map = config_map,
+    /* Plugin flags */
+    .flags = FLB_OUTPUT_NET | FLB_IO_TLS,
 };

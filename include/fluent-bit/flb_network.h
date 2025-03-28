@@ -228,4 +228,6 @@ int flb_net_socket_peer_info(flb_sockfd_t fd,
 
 size_t flb_network_address_size(struct sockaddr_storage *address);
 
+uint64_t flb_net_htonll(uint64_t value);
+
 #endif

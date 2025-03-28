@@ -155,6 +155,7 @@ struct flb_processor_plugin {
 
     int (*cb_process_traces) (struct flb_processor_instance *,
                               struct ctrace *,
+                              struct ctrace **,
                               const char *,
                               int);
 
@@ -179,6 +180,7 @@ struct flb_processor_instance {
     char *alias;                           /* alias name               */
     void *context;                         /* Instance local context   */
     void *data;
+    struct flb_processor_unit *pu;         /* processor unit linked to */
     struct flb_processor_plugin *p;        /* original plugin          */
     struct mk_list properties;             /* config properties        */
     struct mk_list *config_map;            /* configuration map        */
@@ -228,12 +230,10 @@ int flb_processor_unit_set_property(struct flb_processor_unit *pu, const char *k
 int flb_processors_load_from_config_format_group(struct flb_processor *proc, struct flb_cf_group *g);
 
 /* Processor plugin instance */
-
-struct flb_processor_instance *flb_processor_instance_create(
-                                    struct flb_config *config,
-                                    int event_type,
-                                    const char *name,
-                                    void *data);
+struct flb_processor_instance *flb_processor_instance_create(struct flb_config *config,
+                                                             struct flb_processor_unit *pu,
+                                                             int event_type,
+                                                             const char *name, void *data);
 
 void flb_processor_instance_destroy(
         struct flb_processor_instance *ins);
@@ -272,6 +272,18 @@ static inline int flb_processor_instance_config_map_set(
                     void *context)
 {
     return flb_config_map_set(&ins->properties, ins->config_map, context);
+}
+
+static inline
+struct flb_input_instance *flb_processor_get_input_instance(struct flb_processor_unit *pu)
+{
+        struct flb_processor *processor;
+        struct flb_input_instance *ins;
+
+        processor = (struct flb_processor *) pu->parent;
+        ins = (struct flb_input_instance *) processor->data;
+
+        return ins;
 }
 
 #endif

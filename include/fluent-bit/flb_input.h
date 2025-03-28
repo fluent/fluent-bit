@@ -25,6 +25,8 @@
 #include <fluent-bit/flb_coro.h>
 #include <fluent-bit/flb_config.h>
 #include <fluent-bit/flb_network.h>
+#include <fluent-bit/flb_downstream.h>
+#include <fluent-bit/flb_upstream.h>
 #include <fluent-bit/flb_mem.h>
 #include <fluent-bit/flb_str.h>
 #include <fluent-bit/flb_bits.h>
@@ -443,6 +445,9 @@ struct flb_input_instance {
     char *tls_crt_file;                  /* Certificate                  */
     char *tls_key_file;                  /* Cert Key                     */
     char *tls_key_passwd;                /* Cert Key Password            */
+    char *tls_min_version;               /* Minimum protocol version of TLS */
+    char *tls_max_version;               /* Maximum protocol version of TLS */
+    char *tls_ciphers;                   /* TLS ciphers */
 
     struct mk_list *tls_config_map;
 

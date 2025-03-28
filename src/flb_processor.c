@@ -242,7 +242,10 @@ struct flb_processor_unit *flb_processor_unit_create(struct flb_processor *proc,
         pu->unit_type = FLB_PROCESSOR_UNIT_NATIVE;
 
         /* create an instance of the processor */
-        processor_instance = flb_processor_instance_create(config, pu->event_type, unit_name, NULL);
+        processor_instance = flb_processor_instance_create(config,
+                                                           pu,
+                                                           pu->event_type,
+                                                           unit_name, NULL);
 
         if (processor_instance == NULL) {
             flb_error("[processor] error creating native processor instance %s", pu->name);
@@ -745,20 +748,36 @@ int flb_processor_run(struct flb_processor *proc,
                 }
             }
             else if (type == FLB_PROCESSOR_TRACES) {
-
                 if (p_ins->p->cb_process_traces != NULL) {
+                    tmp_buf = NULL;
+                    out_size = NULL;
                     ret = p_ins->p->cb_process_traces(p_ins,
                                                       (struct ctrace *) cur_buf,
+                                                      (struct ctrace **) &tmp_buf,
                                                       tag,
                                                       tag_len);
-
-                    if (ret != FLB_PROCESSOR_SUCCESS) {
+                    if (ret == FLB_PROCESSOR_FAILURE) {
                         release_lock(&pu->lock,
                                      FLB_PROCESSOR_LOCK_RETRY_LIMIT,
                                      FLB_PROCESSOR_LOCK_RETRY_DELAY);
 
                         return -1;
                     }
+                    else if (ret == FLB_PROCESSOR_SUCCESS) {
+                        if (tmp_buf == NULL) {
+                            /*
+                             * the processsor ran successfuly but there is no
+                             * trace output, that means that the invoked processor
+                             * will enqueue the trace through a different mechanism,
+                             * we just return saying nothing else is needed.
+                             */
+                            release_lock(&pu->lock,
+                                         FLB_PROCESSOR_LOCK_RETRY_LIMIT,
+                                         FLB_PROCESSOR_LOCK_RETRY_DELAY);
+                            return 0;
+                        }
+                    }
+
                 }
             }
             else if (type == FLB_PROCESSOR_PROFILES) {
@@ -1053,6 +1072,7 @@ const char *flb_processor_instance_get_property(
 }
 
 struct flb_processor_instance *flb_processor_instance_create(struct flb_config *config,
+                                                             struct flb_processor_unit *pu,
                                                              int event_type,
                                                              const char *name, void *data)
 {
@@ -1098,6 +1118,7 @@ struct flb_processor_instance *flb_processor_instance_create(struct flb_config *
     instance->p     = plugin;
     instance->data  = data;
     instance->log_level = -1;
+    instance->pu = pu;
 
     mk_list_init(&instance->properties);
 
@@ -1115,6 +1136,7 @@ struct flb_processor_instance *flb_processor_instance_create(struct flb_config *
         flb_processor_instance_destroy(instance);
         instance = NULL;
     }
+    flb_log_event_decoder_read_groups(instance->log_decoder, FLB_TRUE);
 
     return instance;
 }
@@ -1205,7 +1227,6 @@ int flb_processor_instance_init(
     if (!ins->cmt) {
         flb_error("[processor] could not create cmetrics context: %s",
                   name);
-
         return -1;
     }
 
@@ -1225,8 +1246,7 @@ int flb_processor_instance_init(
                          config);
 
         if (ret != 0) {
-            flb_error("[processor] failed initialize filter %s", ins->name);
-
+            flb_error("[processor] failed initialize processor %s", ins->name);
             return -1;
         }
     }

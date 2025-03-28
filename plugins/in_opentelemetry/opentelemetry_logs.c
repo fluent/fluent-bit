@@ -764,12 +764,14 @@ static int process_json_payload_resource_logs_entry(struct flb_opentelemetry *ct
         }
 
         /* resource dropped_attributers_count */
-        result = find_map_entry_by_key(resource, "droppedAttributesCount", 0, FLB_TRUE);
-        if (result >= 0) {
-            obj = resource->ptr[result].val;
-            flb_log_event_encoder_append_body_values(encoder,
-                                                     FLB_LOG_EVENT_CSTRING_VALUE("dropped_attributes_count"),
-                                                     FLB_LOG_EVENT_MSGPACK_OBJECT_VALUE(&obj));
+        if (resource) {
+            result = find_map_entry_by_key(resource, "droppedAttributesCount", 0, FLB_TRUE);
+            if (result >= 0) {
+                obj = resource->ptr[result].val;
+                flb_log_event_encoder_append_body_values(encoder,
+                                                        FLB_LOG_EVENT_CSTRING_VALUE("dropped_attributes_count"),
+                                                        FLB_LOG_EVENT_MSGPACK_OBJECT_VALUE(&obj));
+            }
         }
 
         /* close resource map */
@@ -1299,28 +1301,28 @@ static int binary_payload_to_msgpack(struct flb_opentelemetry *ctx,
             msgpack_pack_str_body(&mp_pck, "resource", 8);
 
             flb_mp_map_header_init(&mh_tmp, &mp_pck);
+            if (resource) {
+                /* look for OTel resource attributes */
+                if (resource->n_attributes > 0 && resource->attributes) {
+                    flb_mp_map_header_append(&mh_tmp);
+                    msgpack_pack_str(&mp_pck, 10);
+                    msgpack_pack_str_body(&mp_pck, "attributes", 10);
 
-            /* look for OTel resource attributes */
-            if (resource->n_attributes > 0 && resource->attributes) {
-                flb_mp_map_header_append(&mh_tmp);
-                msgpack_pack_str(&mp_pck, 10);
-                msgpack_pack_str_body(&mp_pck, "attributes", 10);
+                    ret = otel_pack_kvarray(&mp_pck,
+                                            resource->attributes,
+                                            resource->n_attributes);
+                    if (ret != 0) {
+                        return ret;
+                    }
+                }
 
-                ret = otel_pack_kvarray(&mp_pck,
-                                        resource->attributes,
-                                        resource->n_attributes);
-                if (ret != 0) {
-                    return ret;
+                if (resource->dropped_attributes_count > 0) {
+                    flb_mp_map_header_append(&mh_tmp);
+                    msgpack_pack_str(&mp_pck, 24);
+                    msgpack_pack_str_body(&mp_pck, "dropped_attributes_count", 24);
+                    msgpack_pack_uint64(&mp_pck, resource->dropped_attributes_count);
                 }
             }
-
-            if (resource->dropped_attributes_count > 0) {
-                flb_mp_map_header_append(&mh_tmp);
-                msgpack_pack_str(&mp_pck, 24);
-                msgpack_pack_str_body(&mp_pck, "dropped_attributes_count", 24);
-                msgpack_pack_uint64(&mp_pck, resource->dropped_attributes_count);
-            }
-
             flb_mp_map_header_end(&mh_tmp);
 
             if (resource_log->schema_url) {
@@ -1340,6 +1342,7 @@ static int binary_payload_to_msgpack(struct flb_opentelemetry *ctx,
 
             /* Scope */
             scope = scope_log->scope;
+
             if (scope && (scope->name || scope->version || scope->n_attributes > 0)) {
                 flb_mp_map_header_init(&mh_tmp, &mp_pck);
 
@@ -1383,6 +1386,10 @@ static int binary_payload_to_msgpack(struct flb_opentelemetry *ctx,
                 }
 
                 flb_mp_map_header_end(&mh_tmp);
+            }
+            else {
+                /* set an empty scope */
+                msgpack_pack_map(&mp_pck, 0);
             }
 
             flb_mp_map_header_end(&mh);
