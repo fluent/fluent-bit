@@ -517,7 +517,7 @@ int azure_kusto_generate_random_integer() {
 
     /* Initialize PCG random number generator */
     pcg32_random_t rng;
-    rng.state = *(uint64_t *)hash ^ additional_random; // XOR with additional random number
+    rng.state = *(uint64_t *)hash ^ additional_random; /* XOR with additional random number */
     rng.inc = *(uint64_t *)(hash + 8);
 
     /* Generate random value and scale it to desired range */
@@ -764,7 +764,8 @@ struct flb_azure_kusto *flb_azure_kusto_conf_create(struct flb_output_instance *
             flb_sds_snprintf(&ctx->oauth_url, flb_sds_alloc(ctx->oauth_url),
                             FLB_AZURE_MSIAUTH_URL_TEMPLATE, "", "");
 
-        } else {
+        }
+        else {
             /* user assigned managed identity */
             ctx->oauth_url = flb_sds_create_size(sizeof(FLB_AZURE_MSIAUTH_URL_TEMPLATE) - 1 +
                                                  sizeof("&client_id=") - 1 +

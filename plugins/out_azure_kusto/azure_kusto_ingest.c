@@ -234,7 +234,6 @@ static flb_sds_t azure_kusto_create_blob(struct flb_azure_kusto *ctx, flb_sds_t 
                 }
 
                 flb_http_client_destroy(c);
-                //c = NULL;
             }
             else {
                 flb_plg_error(ctx->ins,
@@ -562,12 +561,14 @@ static flb_sds_t azure_kusto_create_blob_id(struct flb_azure_kusto *ctx, flb_sds
                 b64tag[b64_len - 1] = '\0';
                 b64_len--;
             }
-        } else {
+        }
+        else {
             flb_plg_error(ctx->ins, "error encoding tag '%s' to base64", tag);
             return NULL;
         }
-    } else {
-        generate_random_string(generated_random_string, ctx->blob_uri_length); // Generate the random string
+    }
+    else {
+        generate_random_string(generated_random_string, ctx->blob_uri_length); /* Generate the random string */
         b64tag = generated_random_string;
         b64_len = strlen(generated_random_string);
     }
@@ -591,7 +592,8 @@ static flb_sds_t azure_kusto_create_blob_id(struct flb_azure_kusto *ctx, flb_sds
     if (blob_id) {
         flb_sds_snprintf(&blob_id, 1024, "flb__%s__%s__%s__%llu__%s__%s",
                          ctx->database_name, ctx->table_name, b64tag, ms, timestamp, uuid);
-    } else {
+    }
+    else {
         flb_plg_error(ctx->ins, "cannot create blob id buffer");
     }
 

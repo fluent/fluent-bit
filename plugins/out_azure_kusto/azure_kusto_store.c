@@ -173,7 +173,8 @@ struct azure_kusto_file *azure_kusto_store_file_get(struct flb_azure_kusto *ctx,
 
     if (!found) {
         return NULL;
-    } else {
+    }
+    else {
         return fsf->data;
     }
 }
@@ -265,13 +266,14 @@ int azure_kusto_store_buffer_put(struct flb_azure_kusto *ctx, struct azure_kusto
         }
         azure_kusto_file->fsf = fsf;
         azure_kusto_file->create_time = time(NULL);
-        azure_kusto_file->size = 0; // Initialize size to 0
+        azure_kusto_file->size = 0; /* Initialize size to 0 */
 
         /* Use fstore opaque 'data' reference to keep our context */
         fsf->data = azure_kusto_file;
         flb_sds_destroy(name);
 
-    }else {
+    }
+    else {
         fsf = azure_kusto_file->fsf;
     }
 
