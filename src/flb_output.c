@@ -42,6 +42,56 @@
 
 FLB_TLS_DEFINE(struct flb_out_flush_params, out_flush_params);
 
+struct flb_config_map output_global_properties[] = {
+    {
+        FLB_CONFIG_MAP_STR, "match", NULL,
+        0, FLB_FALSE, 0,
+        "Set a tag pattern to match the records that this output should process. "
+        "Supports exact matches or wildcards (e.g., '*')."
+    },
+#ifdef FLB_HAVE_REGEX
+    {
+        FLB_CONFIG_MAP_STR, "match_regex", NULL,
+        0, FLB_FALSE, 0,
+        "Set a regular expression to match tags for output routing. This allows more flexible matching "
+        "compared to simple wildcards."
+    },
+#endif
+    {
+        FLB_CONFIG_MAP_STR, "alias", NULL,
+        0, FLB_FALSE, 0,
+        "Sets an alias for the output instance. This is useful when using multiple instances of the same "
+        "output plugin. If no alias is set, the instance will be named using the plugin name and a sequence number."
+    },
+    {
+        FLB_CONFIG_MAP_STR, "log_level", "info",
+        0, FLB_FALSE, 0,
+        "Specifies the log level for this output plugin. If not set, the plugin "
+        "will use the global log level defined in the 'service' section. If the global "
+        "log level is also not specified, it defaults to 'info'."
+    },
+    {
+        FLB_CONFIG_MAP_TIME, "log_suppress_interval", "0",
+        0, FLB_FALSE, 0,
+        "Allows suppression of repetitive log messages from the output plugin that appear similar within a specified "
+        "time interval. Defaults to 0, meaning no suppression."
+    },
+    {
+        FLB_CONFIG_MAP_STR, "retry_limit", "1",
+        0, FLB_FALSE, 0,
+        "Set the retry limit for the output plugin when delivery fails. "
+        "Accepted values: a positive integer, 'no_limits', 'false', or 'off' to disable retry limits, "
+        "or 'no_retries' to disable retries entirely."
+    },
+
+    {0}
+};
+
+struct mk_list *flb_output_get_global_config_map(struct flb_config *config)
+{
+    return flb_config_map_create(config, output_global_properties);
+}
+
 void flb_output_prepare()
 {
     FLB_TLS_INIT(out_flush_params);
