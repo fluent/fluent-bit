@@ -297,7 +297,9 @@ int flb_processor_unit_set_property(struct flb_processor_unit *pu, const char *k
     int value_count;
     enum record_context_type context;
     int i;
+    int j;
     int ret;
+    struct cfl_variant *array_val;
 
     /* Handle the "condition" property for processor units */
     if (strcasecmp(k, "condition") == 0) {
@@ -442,8 +444,8 @@ int flb_processor_unit_set_property(struct flb_processor_unit *pu, const char *k
             }
             else if (rule_val->type == CFL_VARIANT_UINT) {
                 value = &rule_val->data.as_uint64;
-                flb_debug("[processor] condition rule value (uint): %llu",
-                         rule_val->data.as_uint64);
+                flb_debug("[processor] condition rule value (uint): %lu",
+                         (unsigned long)rule_val->data.as_uint64);
             }
             else if (rule_val->type == CFL_VARIANT_DOUBLE) {
                 value = &rule_val->data.as_double;
@@ -466,8 +468,8 @@ int flb_processor_unit_set_property(struct flb_processor_unit *pu, const char *k
                     return -1;
                 }
 
-                for (int j = 0; j < rule_val->data.as_array->entry_count; j++) {
-                    struct cfl_variant *array_val = rule_val->data.as_array->entries[j];
+                for (j = 0; j < rule_val->data.as_array->entry_count; j++) {
+                    array_val = rule_val->data.as_array->entries[j];
                     if (array_val->type != CFL_VARIANT_STRING) {
                         flb_error("[processor] array values must be strings");
                         flb_free(value);
@@ -509,7 +511,7 @@ int flb_processor_unit_set_property(struct flb_processor_unit *pu, const char *k
 
             /* Free array value if we allocated it */
             if (rule_val && rule_val->type == CFL_VARIANT_ARRAY) {
-                for (int j = 0; j < value_count; j++) {
+                for (j = 0; j < value_count; j++) {
                     flb_sds_destroy(((flb_sds_t *)value)[j]);
                 }
                 flb_free(value);
