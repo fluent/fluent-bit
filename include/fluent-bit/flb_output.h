@@ -1319,4 +1319,6 @@ int flb_output_task_flush(struct flb_task *task,
                           struct flb_output_instance *out_ins,
                           struct flb_config *config);
 
+struct mk_list *flb_output_get_global_config_map(struct flb_config *config);
+
 #endif
