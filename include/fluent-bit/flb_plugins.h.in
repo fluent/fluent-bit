@@ -28,6 +28,8 @@
 #include <fluent-bit/flb_config.h>
 #include <fluent-bit/flb_log.h>
 
+extern struct flb_output_plugin *flb_zig_native_output_plugin_init(void *);
+
 @FLB_IN_PLUGINS_DECL@
 @FLB_OUT_PLUGINS_DECL@
 @FLB_FILTER_PLUGINS_DECL@
