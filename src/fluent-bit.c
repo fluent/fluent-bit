@@ -356,6 +356,19 @@ static void help_print_property(int max, msgpack_object k, msgpack_object v)
         }
         printf("%s", type);
         printf("\n\n");
+
+        if (name != NULL) {
+            flb_sds_destroy(name);
+        }
+        if (type != NULL) {
+            flb_sds_destroy(type);
+        }
+        if (desc != NULL) {
+            flb_sds_destroy(desc);
+        }
+        if (defv != NULL) {
+            flb_sds_destroy(defv);
+        }
     }
 }
 
@@ -430,6 +443,8 @@ static void help_format_text(void *help_buf, size_t help_size)
         v = p.via.map.ptr[i].val;
         help_print_property(max, k, v);
     }
+
+    msgpack_unpacked_destroy(&result);
 }
 
 static void flb_help_plugin(int rc, int format,
