@@ -207,6 +207,36 @@ macro(FLB_PLUGIN name src deps)
   target_link_libraries(flb-plugin-${name} fluent-bit-static msgpack-c-static ${deps})
 endmacro()
 
+# FLB_ZIG_PLUGIN: used by zig plugins to standardize the process
+macro(FLB_ZIG_PLUGIN name deps)
+  find_program(ZIG_PATH zig REQUIRED)
+
+  get_property(include_dirs DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR} PROPERTY INCLUDE_DIRECTORIES)
+
+  add_custom_command(
+    OUTPUT ${CMAKE_CURRENT_BINARY_DIR}/flb-plugin-${name}.o
+    COMMAND ${CMAKE_COMMAND} -E env "FLB_ZIG_BUILD_INCLUDE_DIRECTORIES=${include_dirs}" ${ZIG_PATH} build --prefix "${CMAKE_CURRENT_BINARY_DIR}"
+    WORKING_DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR}
+    DEPENDS ${CMAKE_CURRENT_SOURCE_DIR}/build.zig
+    VERBATIM
+  )
+
+  add_custom_target(zig-build-done
+    DEPENDS ${CMAKE_CURRENT_BINARY_DIR}/flb-plugin-${name}.o
+  )
+
+  if(NOT EXISTS "${CMAKE_CURRENT_BINARY_DIR}/dummy.c")
+    file(WRITE "${CMAKE_CURRENT_BINARY_DIR}/dummy.c" "")
+  endif()
+
+  set(src
+    ${CMAKE_CURRENT_BINARY_DIR}/dummy.c
+    ${CMAKE_CURRENT_BINARY_DIR}/flb-plugin-${name}.o)
+
+  FLB_PLUGIN(${name} "${src}" "${deps}")
+
+  add_dependencies(flb-plugin-${name} zig-build-done)
+endmacro()
 
 # ======================
 #  Plugins Registration
@@ -367,7 +397,10 @@ REGISTER_OUT_PLUGIN("out_prometheus_remote_write")
 REGISTER_OUT_PLUGIN("out_s3")
 REGISTER_OUT_PLUGIN("out_vivo_exporter")
 REGISTER_OUT_PLUGIN("out_chronicle")
-REGISTER_OUT_PLUGIN("out_zig_test_1" "zig")
+
+if(FLB_ZIG)
+REGISTER_OUT_PLUGIN("out_zig_demo" "zig")
+endif()
 
 # FILTERS
 # =======

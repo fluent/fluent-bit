@@ -155,6 +155,7 @@ option(FLB_WASM                "Build with WASM runtime support"            Yes)
 option(FLB_WAMRC               "Build with WASM AOT compiler executable"    No)
 option(FLB_WASM_STACK_PROTECT  "Build with WASM runtime with strong stack protector flags" No)
 option(FLB_ENFORCE_ALIGNMENT   "Enable limited platform specific aligned memory access" No)
+option(FLB_ZIG                 "Enable zig integration"       Yes)
 
 # Native Metrics Support (cmetrics)
 option(FLB_METRICS             "Enable metrics support"       Yes)
@@ -259,13 +260,12 @@ if(FLB_ALL)
   set(FLB_OUT_WEBSOCKET   1)
 endif()
 
-set(FLB_OUT_ZIG_TEST_1  1)
-
 if(FLB_DEV)
   FLB_DEFINITION(FLB_HAVE_DEV)
 
   set(FLB_DEBUG             On)
   set(FLB_TRACE             On)
+  set(FLB_OUT_ZIG_DEMO      On)
   set(FLB_CHUNK_TRACE       On)
   set(FLB_METRICS           On)
   set(FLB_PROFILES          On)
@@ -353,6 +353,27 @@ find_package(BISON 3)
 
 if(FLEX_FOUND AND BISON_FOUND)
   set(FLB_FLEX_BISON  1)
+endif()
+
+find_program(ZIG_PATH zig)
+
+# Enable zig only when the appropriate toolchain is available
+if (FLB_ZIG)
+  set(FLB_ZIG Off)
+
+  if (ZIG_PATH)
+    execute_process(
+        COMMAND ${ZIG_PATH} version
+        OUTPUT_VARIABLE COMMAND_OUTPUT
+        OUTPUT_STRIP_TRAILING_WHITESPACE
+    )
+
+    # This is not great, improvements would be appreciated
+    if (COMMAND_OUTPUT STREQUAL "0.14.0")
+      FLB_DEFINITION(FLB_HAVE_ZIG)
+      set(FLB_ZIG On)
+    endif()
+  endif()
 endif()
 
 if(FLB_SMALL)
@@ -1254,13 +1275,6 @@ endif()
 add_subdirectory(include)
 add_subdirectory(plugins)
 add_subdirectory(src)
-
-# Zig SDK
-message(STATUS "  ${include_dirs}")
-
-set(PARENT_INCLUDE_PATHS ${CMAKE_INCLUDE_PATH})
-add_subdirectory(${FLB_PATH_LIB_ZIG_SDK} EXCLUDE_FROM_ALL)
-
 
 if(NOT FLB_SHARED_LIB)
   set(FLB_EXAMPLES OFF)

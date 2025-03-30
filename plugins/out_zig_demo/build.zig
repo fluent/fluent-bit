@@ -5,7 +5,7 @@ pub fn build(b: *std.Build) void {
     const optimize = b.standardOptimizeOption(.{});
 
     const lib = b.addObject(.{
-        .name = "flb-plugin-out_zig_test_1",
+        .name = "flb-plugin-out_zig_demo",
         .root_source_file = b.path("main.zig"),
         .target = target,
         .optimize = optimize,
@@ -13,16 +13,11 @@ pub fn build(b: *std.Build) void {
 
     lib.linkLibC();
 
-    const my_package_dep = b.dependency("zigsdk", .{});
-    lib.root_module.addImport("zigsdk", my_package_dep.module("zigsdk"));
+    const fluent_bit = b.dependency("zig_fluent_bit", .{});
+    const msgpack = b.dependency("zig_msgpack", .{});
 
-    //const msgpack = b.dependency("zig_msgpack", .{
-    //    .target = target,
-    //    .optimize = optimize,
-    //});
-
-    // add module
-    //lib.root_module.addImport("zig_msgpack", msgpack.module("msgpack"));
+    lib.root_module.addImport("zig_fluent_bit", fluent_bit.module("zig_fluent_bit"));
+    lib.root_module.addImport("zig_msgpack", msgpack.module("msgpack"));
 
     const install = b.addInstallArtifact(lib, .{
         .dest_dir = .{ .override = .{ .custom = "." } },
