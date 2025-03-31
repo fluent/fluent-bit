@@ -308,7 +308,8 @@ static int sb_append_chunk_to_segregated_backlogs(struct cio_chunk  *target_chun
     mk_list_foreach_safe(head, tmp, &context->backlogs) {
         backlog = mk_list_entry(head, struct sb_out_queue, _head);
         if (flb_routes_mask_get_bit(dummy_input_chunk.routes_mask,
-                                    backlog->ins->id)) {
+                                    backlog->ins->id,
+                                    backlog->ins->config)) {
             result = sb_append_chunk_to_segregated_backlog(target_chunk, stream,
                                                            chunk_size, backlog);
             if (result) {
