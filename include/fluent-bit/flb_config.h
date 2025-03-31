@@ -283,6 +283,11 @@ struct flb_config {
     int shutdown_by_hot_reloading;
     int hot_reloading;
 
+    /* Routing */
+    size_t route_mask_size;
+    size_t route_mask_slots;
+    uint64_t *route_empty_mask;
+
     /* Co-routines */
     unsigned int coro_stack_size;
 
