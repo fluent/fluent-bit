@@ -361,24 +361,22 @@ int flb_log_event_decoder_next(struct flb_log_event_decoder *context,
          * to determine the behavior.
          */
         if (record_type != FLB_LOG_EVENT_NORMAL) {
+            msgpack_unpacked_destroy(&context->unpacked_group_record);
+
+            if (record_type == FLB_LOG_EVENT_GROUP_START) {
+                memcpy(&context->unpacked_group_record,
+                       &context->unpacked_event,
+                       sizeof(msgpack_unpacked));
+
+                context->current_group_metadata = event->metadata;
+                context->current_group_attributes = event->body;
+            }
+            else {
+                context->current_group_metadata = NULL;
+                context->current_group_attributes = NULL;
+            }
+
             if (context->read_groups != FLB_TRUE) {
-                msgpack_unpacked_destroy(&context->unpacked_group_record);
-
-                if (record_type == FLB_LOG_EVENT_GROUP_START) {
-                    memcpy(&context->unpacked_group_record,
-                        &context->unpacked_event,
-                        sizeof(msgpack_unpacked));
-
-                    context->current_group_metadata = event->metadata;
-                    context->current_group_attributes = event->body;
-                }
-                else {
-                    msgpack_unpacked_destroy(&context->unpacked_event);
-
-                    context->current_group_metadata = NULL;
-                    context->current_group_attributes = NULL;
-                }
-
                 msgpack_unpacked_init(&context->unpacked_event);
 
                 memset(event, 0, sizeof(struct flb_log_event));
@@ -387,8 +385,8 @@ int flb_log_event_decoder_next(struct flb_log_event_decoder *context,
             }
         }
         else {
-                event->group_metadata = context->current_group_metadata;
-                event->group_attributes = context->current_group_attributes;
+            event->group_metadata = context->current_group_metadata;
+            event->group_attributes = context->current_group_attributes;
         }
     }
 
