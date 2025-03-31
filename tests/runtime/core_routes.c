@@ -79,6 +79,8 @@ void flb_test_basic_functionality_test(void)
     /* minimum flush delta */
     flb_time_msleep(1000);
 
+    delivery_counter = get_output_num();
+
     for (index = 0 ;
          index < 100 && delivery_counter < 257 ;
          index++) {
