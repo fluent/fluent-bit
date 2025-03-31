@@ -78,8 +78,7 @@ struct flb_input_chunk {
 #ifdef FLB_HAVE_CHUNK_TRACE
     struct flb_chunk_trace *trace;
 #endif /* FLB_HAVE_CHUNK_TRACE */
-    uint64_t routes_mask
-        [FLB_ROUTES_MASK_ELEMENTS]; /* track the output plugins the chunk routes to */
+    flb_route_mask_element *routes_mask; /* track the output plugins the chunk routes to */
     struct mk_list _head;
 };
 
