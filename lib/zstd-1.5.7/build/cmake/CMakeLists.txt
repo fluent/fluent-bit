@@ -37,7 +37,6 @@ project(zstd
   VERSION "${ZSTD_FULL_VERSION}"
   LANGUAGES C   # Main library is in C
             ASM # And ASM
-            CXX # Testing contributed code also utilizes CXX
   )
 
 message(STATUS "ZSTD VERSION: ${zstd_VERSION}")
@@ -170,6 +169,7 @@ if (ZSTD_BUILD_PROGRAMS)
 endif ()
 
 if (ZSTD_BUILD_TESTS)
+    enable_language(CXX)
     enable_testing()
     if (NOT ZSTD_BUILD_STATIC)
         message(SEND_ERROR "You need to build static library to build tests")
