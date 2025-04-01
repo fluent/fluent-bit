@@ -7,7 +7,7 @@ if(DEFINED PROJECT_NAME)
 endif()
 
 if(CMAKE_MINOR_VERSION LESS 12)
-  project(miniz)
+  project(miniz C)
   # see issue https://gitlab.kitware.com/cmake/cmake/merge_requests/1799
 else()
   project(miniz C)
