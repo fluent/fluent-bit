@@ -150,6 +150,7 @@ jobs:
 
   # Take the digests and produce a multi-arch manifest from them.
   call-build-container-image-manifests:
+    if: inputs.push
     permissions:
       contents: read
       packages: write
@@ -190,19 +191,19 @@ jobs:
 
       - name: Create production manifest
         run: |
-          ${{ inputs.push && '' || 'echo' }} docker buildx imagetools create $(jq -cr '.tags | map("-t " + .) | join(" ")' <<< "$DOCKER_METADATA_OUTPUT_JSON") \
+          docker buildx imagetools create $(jq -cr '.tags | map("-t " + .) | join(" ")' <<< "$DOCKER_METADATA_OUTPUT_JSON") \
             $(printf '${{ inputs.registry }}/${{ inputs.image }}@sha256:%s ' *)
         shell: bash
         working-directory: /tmp/production-digests
 
       - name: Inspect image
-        if: inputs.push
         run: |
           docker buildx imagetools inspect ${{ inputs.registry }}/${{ inputs.image }}:${{ steps.meta.outputs.version }}
         shell: bash
 
   # Take the digests and produce a multi-arch manifest from them.
   call-build-debug-container-image-manifests:
+    if: inputs.push
     permissions:
       contents: read
       packages: write
@@ -242,13 +243,12 @@ jobs:
 
       - name: Create debug manifest
         run: |
-          ${{ inputs.push && '' || 'echo' }} docker buildx imagetools create $DOCKER_PUSH_EXTRA_FLAGS $(jq -cr '.tags | map("-t " + .) | join(" ")' <<< "$DOCKER_METADATA_OUTPUT_JSON") \
+          docker buildx imagetools create $DOCKER_PUSH_EXTRA_FLAGS $(jq -cr '.tags | map("-t " + .) | join(" ")' <<< "$DOCKER_METADATA_OUTPUT_JSON") \
             $(printf '${{ inputs.registry }}/${{ inputs.image }}@sha256:%s ' *)
         shell: bash
         working-directory: /tmp/debug-digests
 
       - name: Inspect image
-        if: inputs.push
         run: |
           docker buildx imagetools inspect ${{ inputs.registry }}/${{ inputs.image }}:${{ steps.debug-meta.outputs.version }}
         shell: bash
