@@ -329,7 +329,7 @@ static int azure_kusto_format(struct flb_azure_kusto *ctx, const char *tag, int 
     msgpack_sbuffer_init(&mp_sbuf);
     msgpack_packer_init(&mp_pck, &mp_sbuf, msgpack_sbuffer_write);
 
-    msgpack_pack_array(&mp_pck, records);
+    msgpack_pack_array(&mp_pck, 1);
 
     while ((ret = flb_log_event_decoder_next(
                     &log_decoder,
@@ -373,7 +373,35 @@ static int azure_kusto_format(struct flb_azure_kusto *ctx, const char *tag, int 
 
         msgpack_pack_str(&mp_pck, flb_sds_len(ctx->log_key));
         msgpack_pack_str_body(&mp_pck, ctx->log_key, flb_sds_len(ctx->log_key));
-        msgpack_pack_object(&mp_pck, *log_event.body);
+        
+        if (log_event.group_attributes == NULL) {
+            msgpack_pack_object(&mp_pck, *log_event.body);
+        }
+        else {
+            msgpack_pack_map(&mp_pck,
+                             log_event.group_metadata->via.map.size +
+                                 log_event.group_attributes->via.map.size +
+                                 log_event.metadata->via.map.size);
+
+            for (int i = 0; i < log_event.group_metadata->via.map.size; i++)
+            {
+                msgpack_pack_object(&mp_pck, log_event.group_metadata->via.map.ptr[i].key);
+                msgpack_pack_object(&mp_pck, log_event.group_metadata->via.map.ptr[i].val);
+            }
+
+            for (int i = 0; i < log_event.group_attributes->via.map.size; i++)
+            {
+                msgpack_pack_object(&mp_pck, log_event.group_attributes->via.map.ptr[i].key);
+                msgpack_pack_object(&mp_pck, log_event.group_attributes->via.map.ptr[i].val);
+            }
+
+            for (int i = 0; i < log_event.metadata->via.map.size; i++)
+            {
+                msgpack_pack_object(&mp_pck, log_event.metadata->via.map.ptr[i].key);
+                msgpack_pack_object(&mp_pck, log_event.metadata->via.map.ptr[i].val);
+            }
+        }
+        break;
     }
 
     /* Convert from msgpack to JSON */
