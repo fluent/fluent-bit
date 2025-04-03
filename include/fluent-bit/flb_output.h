@@ -836,7 +836,7 @@ struct flb_output_flush *flb_output_flush_create(struct flb_task *task,
                     if ((serialization_buffer_offset +
                          serialized_context_size) > p_size) {
                         resized_serialization_buffer = \
-                            flb_realloc(p_buf, p_size + serialized_context_size);
+                            (char*) flb_realloc(p_buf, p_size + serialized_context_size);
 
                         if (resized_serialization_buffer == NULL) {
                             flb_errno();
@@ -937,7 +937,7 @@ struct flb_output_flush *flb_output_flush_create(struct flb_task *task,
                     if ((serialization_buffer_offset +
                          serialized_context_size) > p_size) {
                         resized_serialization_buffer = \
-                            flb_realloc(p_buf, p_size + serialized_context_size);
+                            (char*) flb_realloc(p_buf, p_size + serialized_context_size);
 
                         if (resized_serialization_buffer == NULL) {
                             flb_errno();
