@@ -294,7 +294,6 @@ static int azure_kusto_format(struct flb_azure_kusto *ctx, const char *tag, int 
                               const void *data, size_t bytes, void **out_data,
                               size_t *out_size)
 {
-    int records = 0;
     msgpack_sbuffer mp_sbuf;
     msgpack_packer mp_pck;
     /* for sub msgpack objs */
@@ -379,15 +378,8 @@ static int azure_kusto_format(struct flb_azure_kusto *ctx, const char *tag, int 
         }
         else {
             msgpack_pack_map(&mp_pck,
-                             log_event.group_metadata->via.map.size +
                                  log_event.group_attributes->via.map.size +
                                  log_event.metadata->via.map.size);
-
-            for (int i = 0; i < log_event.group_metadata->via.map.size; i++)
-            {
-                msgpack_pack_object(&mp_pck, log_event.group_metadata->via.map.ptr[i].key);
-                msgpack_pack_object(&mp_pck, log_event.group_metadata->via.map.ptr[i].val);
-            }
 
             for (int i = 0; i < log_event.group_attributes->via.map.size; i++)
             {
