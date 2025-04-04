@@ -2023,44 +2023,23 @@ cleanup:
 
 void test_string_condition_handling()
 {
-    int ret;
     struct flb_config *config = NULL;
-    struct flb_processor *proc = NULL;
     struct flb_processor_unit *pu = NULL;
     struct cfl_variant *string_condition = NULL;
+    int ret;
 
+    /* Initialize */
     config = flb_config_init();
     TEST_CHECK(config != NULL);
     if (!config) {
         goto cleanup;
     }
 
-    proc = flb_processor_create(config, "test_processor", NULL, 0);
-    TEST_CHECK(proc != NULL);
-    if (!proc) {
-        goto cleanup;
-    }
-
-    pu = flb_calloc(1, sizeof(struct flb_processor_unit));
+    pu = create_processor_unit(config);
     TEST_CHECK(pu != NULL);
     if (!pu) {
         goto cleanup;
     }
-
-    pu->parent = proc;
-    pu->event_type = FLB_PROCESSOR_LOGS;
-    pu->name = flb_sds_create("test_unit");
-    TEST_CHECK(pu->name != NULL);
-    if (!pu->name) {
-        goto cleanup;
-    }
-
-    ret = pthread_mutex_init(&pu->lock, NULL);
-    TEST_CHECK(ret == 0);
-
-    mk_list_init(&pu->unused_list);
-    /* Add to the parent's list to ensure proper cleanup */
-    mk_list_add(&pu->_head, &proc->logs);
 
     string_condition = create_string_condition_variant("key_exists mykeyname");
     TEST_CHECK(string_condition != NULL);
@@ -2071,21 +2050,11 @@ void test_string_condition_handling()
     ret = flb_processor_unit_set_property(pu, "condition", string_condition);
     TEST_CHECK(ret == 0);
 
+    /* Verify the condition was not created (string conditions are passed through) */
     TEST_CHECK(pu->condition == NULL);
 
 cleanup:
-    if (string_condition) {
-        cfl_variant_destroy(string_condition);
-    }
-
-    /* Clean up pu through processor destruction */
-    if (proc) {
-        flb_processor_destroy(proc);
-    }
-
-    if (config) {
-        flb_config_exit(config);
-    }
+    cleanup_test_resources(config, pu, string_condition, NULL);
 }
 
 void test_empty_string_value()
