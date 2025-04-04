@@ -1471,6 +1471,14 @@ int flb_output_log_check(struct flb_output_instance *ins, int l)
 int flb_output_upstream_set(struct flb_upstream *u, struct flb_output_instance *ins)
 {
     int flags = 0;
+    int ret;
+    const char *host;
+    int port;
+    char *proxy_protocol = NULL;
+    char *proxy_host = NULL;
+    char *proxy_port = NULL;
+    char *proxy_username = NULL;
+    char *proxy_password = NULL;
 
     if (!u) {
         return -1;
@@ -1528,6 +1536,56 @@ int flb_output_upstream_set(struct flb_upstream *u, struct flb_output_instance *
 
     /* Set networking options 'net.*' received through instance properties */
     memcpy(&u->base.net, &ins->net_setup, sizeof(struct flb_net_setup));
+
+    if (u->proxied_host) {
+        host = flb_strdup(u->proxied_host);
+        flb_free(u->proxied_host);
+        port = u->proxied_port;
+    }
+    else {
+        host = flb_strdup(u->tcp_host);
+        flb_free(u->tcp_host);
+        port = u->tcp_port;
+    }
+
+    /* Set upstream to the http_proxy if it is specified. */
+    if (flb_upstream_needs_proxy(host, ins->net_setup.http_proxy, ins->net_setup.no_proxy) == FLB_TRUE) {
+        flb_debug("[upstream] net_setup->http_proxy: %s->%s", ins->net_setup.http_proxy, host);
+        ret = flb_utils_proxy_url_split(ins->net_setup.http_proxy, 
+                                        &proxy_protocol,
+                                        &proxy_username, &proxy_password,
+                                        &proxy_host, &proxy_port);
+        if (ret == -1) {
+            flb_errno();
+            return -1;
+        }
+
+        if (u->proxy_username) {
+            flb_free(u->proxy_username);
+            u->proxy_username = NULL;
+        }
+
+        if (u->proxy_password) {
+            flb_free(u->proxy_password);
+            u->proxy_password = NULL;
+        }
+
+        u->tcp_host = flb_strdup(proxy_host);
+        u->tcp_port = atoi(proxy_port);
+        u->proxied_host = host;
+        u->proxied_port = port;
+
+        if (proxy_username && proxy_password) {
+            u->proxy_username = flb_strdup(proxy_username);
+            u->proxy_password = flb_strdup(proxy_password);
+        }
+
+        flb_free(proxy_protocol);
+        flb_free(proxy_host);
+        flb_free(proxy_port);
+        flb_free(proxy_username);
+        flb_free(proxy_password);
+    }
 
     return 0;
 }
