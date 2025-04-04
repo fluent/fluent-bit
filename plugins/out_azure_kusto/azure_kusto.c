@@ -294,6 +294,7 @@ static int azure_kusto_format(struct flb_azure_kusto *ctx, const char *tag, int 
                               const void *data, size_t bytes, void **out_data,
                               size_t *out_size)
 {
+    int index;
     msgpack_sbuffer mp_sbuf;
     msgpack_packer mp_pck;
     /* for sub msgpack objs */
@@ -381,16 +382,16 @@ static int azure_kusto_format(struct flb_azure_kusto *ctx, const char *tag, int 
                                  log_event.group_attributes->via.map.size +
                                  log_event.metadata->via.map.size);
 
-            for (int i = 0; i < log_event.group_attributes->via.map.size; i++)
+            for (index = 0; index < log_event.group_attributes->via.map.size; index++)
             {
-                msgpack_pack_object(&mp_pck, log_event.group_attributes->via.map.ptr[i].key);
-                msgpack_pack_object(&mp_pck, log_event.group_attributes->via.map.ptr[i].val);
+                msgpack_pack_object(&mp_pck, log_event.group_attributes->via.map.ptr[index].key);
+                msgpack_pack_object(&mp_pck, log_event.group_attributes->via.map.ptr[index].val);
             }
 
-            for (int i = 0; i < log_event.metadata->via.map.size; i++)
+            for (index = 0; index < log_event.metadata->via.map.size; index++)
             {
-                msgpack_pack_object(&mp_pck, log_event.metadata->via.map.ptr[i].key);
-                msgpack_pack_object(&mp_pck, log_event.metadata->via.map.ptr[i].val);
+                msgpack_pack_object(&mp_pck, log_event.metadata->via.map.ptr[index].key);
+                msgpack_pack_object(&mp_pck, log_event.metadata->via.map.ptr[index].val);
             }
         }
 
