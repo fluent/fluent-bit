@@ -2058,6 +2058,10 @@ void test_string_condition_handling()
     ret = pthread_mutex_init(&pu->lock, NULL);
     TEST_CHECK(ret == 0);
 
+    mk_list_init(&pu->unused_list);
+    /* Add to the parent's list to ensure proper cleanup */
+    mk_list_add(&pu->_head, &proc->logs);
+
     string_condition = create_string_condition_variant("key_exists mykeyname");
     TEST_CHECK(string_condition != NULL);
     if (!string_condition) {
@@ -2074,16 +2078,7 @@ cleanup:
         cfl_variant_destroy(string_condition);
     }
 
-    if (pu) {
-        if (pu->condition) {
-            flb_condition_destroy(pu->condition);
-        }
-        if (pu->name) {
-            flb_sds_destroy(pu->name);
-        }
-        pthread_mutex_destroy(&pu->lock);
-    }
-
+    /* Clean up pu through processor destruction */
     if (proc) {
         flb_processor_destroy(proc);
     }
