@@ -39,11 +39,13 @@ jobs:
             openssl_dir: C:\vcpkg\packages\openssl_x86-windows-static
             cmake_additional_opt: ""
             vcpkg_triplet: x86-windows-static
+            cmake_version: "3.31.6"
           - name: "Windows 64bit"
             arch: x64
             openssl_dir: C:\vcpkg\packages\openssl_x64-windows-static
             cmake_additional_opt: ""
             vcpkg_triplet: x64-windows-static
+            cmake_version: "3.31.6"
     permissions:
       contents: read
     # Default environment variables can be overridden below. To prevent library pollution - without this other random libraries may be found on the path leading to failures.
@@ -62,6 +64,7 @@ jobs:
           Copy-Item -Path C:\WinFlexBison/win_bison.exe C:\WinFlexBison/bison.exe
           Copy-Item -Path C:\WinFlexBison/win_flex.exe C:\WinFlexBison/flex.exe
           echo "C:\WinFlexBison" | Out-File -FilePath $env:GITHUB_PATH -Append
+          choco install cmake --version "${{ matrix.config.cmake_version }}" --force
         env:
           WINFLEXBISON: https://github.com/lexxmark/winflexbison/releases/download/v2.5.22/win_flex_bison-2.5.22.zip
         shell: pwsh

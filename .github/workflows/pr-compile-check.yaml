@@ -40,6 +40,8 @@ jobs:
       matrix:
         flb_option:
           - "-DFLB_PREFER_SYSTEM_LIBS=On"
+        cmake_version:
+          - "3.31.6"
         compiler:
           - gcc:
             cc: gcc
@@ -58,6 +60,11 @@ jobs:
             curl -L https://github.com/ianlancetaylor/libbacktrace/archive/8602fda.tar.gz | \
             tar --strip-components=1 -xzC /tmp/libbacktrace/ && \
             pushd /tmp/libbacktrace/build && ../configure && make && sudo make install && popd
+
+      - name: Install cmake
+        uses: jwlawson/actions-setup-cmake@v2
+        with:
+          cmake-version: "${{ matrix.cmake_version }}"
 
       - name: Checkout Fluent Bit code
         uses: actions/checkout@v4
