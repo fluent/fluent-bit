@@ -158,6 +158,8 @@ jobs:
             unit_test_option: "-DFLB_TESTS_INTERNAL=On"
             compiler_cc: gcc
             compiler_cxx: g++
+            cmake_version_max_exclusive: "4.0"
+
     steps:
       - name: Checkout Fluent Bit code
         uses: actions/checkout@v4
@@ -165,7 +167,8 @@ jobs:
       - name: Setup environment
         run: |
           sudo apt-get update
-          sudo apt-get install -y gcc-9 g++-9 clang-12 cmake flex bison libsystemd-dev gcovr libyaml-dev libbpf-dev linux-tools-common
+          sudo apt-get install -y gcc-9 g++-9 clang-12 flex bison libsystemd-dev gcovr libyaml-dev libbpf-dev linux-tools-common
+          sudo apt-get satisfy -y cmake "cmake (<< ${{ matrix.config.cmake_version_max_exclusive }})"
           sudo ln -s /usr/bin/llvm-symbolizer-12 /usr/bin/llvm-symbolizer || true
 
       - name: Build and test with arm runners
