@@ -164,7 +164,9 @@ WORKDIR /src/build
 COPY . /src/
 
 ARG BUILD_PARALLEL=1
-RUN cmake -G "'Visual Studio 16 2019'" `
+SHELL ["cmd", "/S", "/C"]
+RUN call "%MSVS_HOME%\VC\Auxiliary\Build\vcvars64.bat" && `
+    cmake -G "NMake Makefiles" `
       -DOPENSSL_ROOT_DIR='C:\dev\vcpkg\packages\openssl_x64-windows-static' `
       -DFLB_LIBYAML_DIR='C:\dev\vcpkg\packages\libyaml_x64-windows-static' `
       -DCMAKE_BUILD_TYPE=Release `
@@ -172,8 +174,10 @@ RUN cmake -G "'Visual Studio 16 2019'" `
       -DFLB_EXAMPLES=Off `
       -DFLB_DEBUG=Off `
       -DFLB_RELEASE=On `
-      ../;`
-    cmake --build . --config Release -j ${BUILD_PARALLEL};
+      ..\ && `
+    cmake --build . --config Release -j "%BUILD_PARALLEL%"
+
+SHELL ["powershell", "-Command", "$ErrorActionPreference = 'Stop'; $ProgressPreference = 'SilentlyContinue';"]
 
 # Set up config files and binaries in single /fluent-bit hierarchy for easy copy in later stage
 RUN New-Item -Path  /fluent-bit/etc/ -ItemType "directory"; `
@@ -185,7 +189,7 @@ RUN New-Item -Path  /fluent-bit/etc/ -ItemType "directory"; `
     Copy-Item -Path /src/conf/parsers_openstack.conf /fluent-bit/etc/; `
     Copy-Item -Path /src/conf/parsers_cinder.conf /fluent-bit/etc/; `
     Copy-Item -Path /src/conf/plugins.conf /fluent-bit/etc/; `
-    Copy-Item -Path /src/build/bin/Release/fluent-bit.exe /fluent-bit/bin/;
+    Copy-Item -Path /src/build/bin/fluent-bit.exe /fluent-bit/bin/;
 
 #
 # Runtime Image - Windows Server Core
