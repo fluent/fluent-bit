@@ -41,7 +41,6 @@ RUN echo "deb http://deb.debian.org/debian bookworm-backports main" >> /etc/apt/
     build-essential \
     curl \
     ca-certificates \
-    cmake \
     git \
     make \
     tar \
@@ -56,8 +55,20 @@ RUN echo "deb http://deb.debian.org/debian bookworm-backports main" >> /etc/apt/
     flex \
     bison \
     libyaml-dev \
+    gzip \
     && apt-get clean \
     && rm -rf /var/lib/apt/lists/*
+
+ENV CMAKE_HOME="/opt/cmake"
+
+ARG CMAKE_VERSION="3.31.6"
+
+RUN mkdir -p "${CMAKE_HOME}" && \
+    cmake_url="https://github.com/Kitware/CMake/releases/download/v${CMAKE_VERSION}/cmake-${CMAKE_VERSION}-linux-$(uname -m).tar.gz" && \
+    echo "Downloading CMake ${CMAKE_VERSION}: ${cmake_url} -> ${CMAKE_HOME}" && \
+    curl -jksSL "${cmake_url}" | tar -xzf - -C "${CMAKE_HOME}" --strip-components 1
+
+ENV PATH="${CMAKE_HOME}/bin:${PATH}"
 
 # Must be run from root of repo
 WORKDIR /src/fluent-bit/
@@ -254,10 +265,22 @@ RUN echo "deb http://deb.debian.org/debian bookworm-backports main" >> /etc/apt/
     net-tools mtr netcat-openbsd bridge-utils iperf ngrep \
     openssl \
     htop atop strace iotop sysstat ncdu logrotate hdparm pciutils psmisc tree pv \
-    cmake make tar flex bison \
+    make tar flex bison \
     libssl-dev libsasl2-dev libsystemd-dev/bookworm-backports zlib1g-dev libpq-dev libyaml-dev postgresql-server-dev-all \
+    gzip \
     && apt-get clean \
     && rm -rf /var/lib/apt/lists/*
+
+ENV CMAKE_HOME="/opt/cmake"
+
+ARG CMAKE_VERSION="3.31.6"
+
+RUN mkdir -p "${CMAKE_HOME}" && \
+    cmake_url="https://github.com/Kitware/CMake/releases/download/v${CMAKE_VERSION}/cmake-${CMAKE_VERSION}-linux-$(uname -m).tar.gz" && \
+    echo "Downloading CMake ${CMAKE_VERSION}: ${cmake_url} -> ${CMAKE_HOME}" && \
+    curl -jksSL "${cmake_url}" | tar -xzf - -C "${CMAKE_HOME}" --strip-components 1
+
+ENV PATH="${CMAKE_HOME}/bin:${PATH}"
 
 RUN rm -f /usr/bin/qemu-*-static
 COPY --from=builder /fluent-bit /fluent-bit
