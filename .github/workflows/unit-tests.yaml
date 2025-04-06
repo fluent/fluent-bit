@@ -51,6 +51,8 @@ jobs:
           - "-DFLB_SANITIZE_THREAD=On"
           - "-DFLB_SIMD=On"
           - "-DFLB_SIMD=Off"
+        cmake_version:
+          - "3.31.6"
         compiler:
           - gcc:
             cc: gcc
@@ -71,6 +73,11 @@ jobs:
           sudo apt-get update
           sudo apt-get install -y gcc-7 g++-7 clang-6.0 libsystemd-dev gcovr libyaml-dev libbpf-dev linux-tools-common
           sudo ln -s /usr/bin/llvm-symbolizer-6.0 /usr/bin/llvm-symbolizer || true
+
+      - name: Install cmake
+        uses: jwlawson/actions-setup-cmake@v2
+        with:
+          cmake-version: "${{ matrix.cmake_version }}"
 
       - uses: actions/checkout@v4
 
@@ -106,9 +113,16 @@ jobs:
           - "-DFLB_JEMALLOC=Off"
           - "-DFLB_SANITIZE_MEMORY=On"
           - "-DFLB_SANITIZE_THREAD=On"
+        cmake_version:
+          - "3.31.6"
     permissions:
       contents: read
     steps:
+      - name: Install cmake
+        uses: jwlawson/actions-setup-cmake@v2
+        with:
+          cmake-version: "${{ matrix.cmake_version }}"
+
       - uses: actions/checkout@v4
       - uses: actions/checkout@v4
         with:
