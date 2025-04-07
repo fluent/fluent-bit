@@ -329,7 +329,7 @@ struct cfl_variant *cfl_kvlist_fetch_s(struct cfl_kvlist *list, char *key, size_
             continue;
         }
 
-        if (strncmp(pair->key, key, key_size) == 0) {
+        if (strncasecmp(pair->key, key, key_size) == 0) {
             return pair->val;
         }
     }
