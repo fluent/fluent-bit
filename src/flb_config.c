@@ -230,10 +230,23 @@ static char *flb_config_getenv(const char *name)
 {
     char *ret;
     const char *env;
-    char *ucname = flb_calloc(1, strlen(name)+1);
-    char *lcname = flb_calloc(1, strlen(name)+1);
+    char *ucname;
+    char *lcname;
     int idx;
 
+
+    ucname = flb_calloc(1, strlen(name)+1);
+
+    if (ucname == NULL) {
+        return NULL;
+    }
+
+    lcname = flb_calloc(1, strlen(name)+1);
+
+    if (lcname == NULL) {
+        free(ucname);
+        return NULL;
+    }
 
     for (idx = 0; idx < strlen(name); idx++) {
         ucname[idx] = toupper(name[idx]);
@@ -256,6 +269,11 @@ static char *flb_config_getenv(const char *name)
     }
 
     ret = flb_malloc(strlen(env) + 1);
+
+    if (ret == NULL) {
+        return NULL;
+    }
+
     memcpy(ret, env, strlen(env)+1);
 
     return ret;
