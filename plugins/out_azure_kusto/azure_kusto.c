@@ -294,7 +294,7 @@ static int azure_kusto_format(struct flb_azure_kusto *ctx, const char *tag, int 
                               const void *data, size_t bytes, void **out_data,
                               size_t *out_size)
 {
-    int records = 0;
+    int index;
     msgpack_sbuffer mp_sbuf;
     msgpack_packer mp_pck;
     /* for sub msgpack objs */
@@ -308,11 +308,12 @@ static int azure_kusto_format(struct flb_azure_kusto *ctx, const char *tag, int 
     int                          ret;
     /* output buffer */
     flb_sds_t out_buf;
+    flb_sds_t tmp;
+    flb_sds_t json_record;
 
-    /* Create array for all records */
-    records = flb_mp_count(data, bytes);
-    if (records <= 0) {
-        flb_plg_error(ctx->ins, "error counting msgpack entries");
+    out_buf = flb_sds_create_size(bytes * 1.5);
+    if (!out_buf) {
+        flb_errno();
         return -1;
     }
 
@@ -325,15 +326,14 @@ static int azure_kusto_format(struct flb_azure_kusto *ctx, const char *tag, int 
         return -1;
     }
 
-    /* Create temporary msgpack buffer */
-    msgpack_sbuffer_init(&mp_sbuf);
-    msgpack_packer_init(&mp_pck, &mp_sbuf, msgpack_sbuffer_write);
-
-    msgpack_pack_array(&mp_pck, records);
-
     while ((ret = flb_log_event_decoder_next(
                     &log_decoder,
                     &log_event)) == FLB_EVENT_DECODER_SUCCESS) {
+
+        /* Create temporary msgpack buffer */
+        msgpack_sbuffer_init(&mp_sbuf);
+        msgpack_packer_init(&mp_pck, &mp_sbuf, msgpack_sbuffer_write);
+
         map_size = 1;
         if (ctx->include_time_key == FLB_TRUE) {
             map_size++;
@@ -373,20 +373,54 @@ static int azure_kusto_format(struct flb_azure_kusto *ctx, const char *tag, int 
 
         msgpack_pack_str(&mp_pck, flb_sds_len(ctx->log_key));
         msgpack_pack_str_body(&mp_pck, ctx->log_key, flb_sds_len(ctx->log_key));
-        msgpack_pack_object(&mp_pck, *log_event.body);
+        
+        if (log_event.group_attributes == NULL) {
+            msgpack_pack_object(&mp_pck, *log_event.body);
+        }
+        else {
+            msgpack_pack_map(&mp_pck,
+                                 log_event.group_attributes->via.map.size +
+                                 log_event.metadata->via.map.size);
+
+            for (index = 0; index < log_event.group_attributes->via.map.size; index++)
+            {
+                msgpack_pack_object(&mp_pck, log_event.group_attributes->via.map.ptr[index].key);
+                msgpack_pack_object(&mp_pck, log_event.group_attributes->via.map.ptr[index].val);
+            }
+
+            for (index = 0; index < log_event.metadata->via.map.size; index++)
+            {
+                msgpack_pack_object(&mp_pck, log_event.metadata->via.map.ptr[index].key);
+                msgpack_pack_object(&mp_pck, log_event.metadata->via.map.ptr[index].val);
+            }
+        }
+
+        /* Convert from msgpack to JSON */
+        json_record = flb_msgpack_raw_to_json_sds(mp_sbuf.data, mp_sbuf.size);
+        if (!json_record) {
+            flb_plg_error(ctx->ins, "error formatting JSON payload");
+
+            msgpack_sbuffer_destroy(&mp_sbuf);
+            flb_log_event_decoder_destroy(&log_decoder);
+            flb_sds_destroy(out_buf);
+            return -1;
+        }
+
+        tmp = flb_sds_cat(out_buf, json_record, flb_sds_len(json_record));
+        flb_sds_destroy(json_record);
+        if (!tmp) {
+            flb_errno();
+            
+            msgpack_sbuffer_destroy(&mp_sbuf);
+            flb_log_event_decoder_destroy(&log_decoder);
+            flb_sds_destroy(out_buf);
+            return -1;
+        }
+        out_buf = tmp;
+        msgpack_sbuffer_destroy(&mp_sbuf);
     }
 
-    /* Convert from msgpack to JSON */
-    out_buf = flb_msgpack_raw_to_json_sds(mp_sbuf.data, mp_sbuf.size);
-
-    /* Cleanup */
     flb_log_event_decoder_destroy(&log_decoder);
-    msgpack_sbuffer_destroy(&mp_sbuf);
-
-    if (!out_buf) {
-        flb_plg_error(ctx->ins, "error formatting JSON payload");
-        return -1;
-    }
 
     *out_data = out_buf;
     *out_size = flb_sds_len(out_buf);
