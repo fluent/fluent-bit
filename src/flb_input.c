@@ -2233,11 +2233,23 @@ int flb_input_upstream_set(struct flb_upstream *u, struct flb_input_instance *in
 
     if (u->proxied_host) {
         host = flb_strdup(u->proxied_host);
+
+        if (host == NULL) {
+            flb_errno();
+            return -1;
+        }
+
         flb_free(u->proxied_host);
         port = u->proxied_port;
     }
     else {
         host = flb_strdup(u->tcp_host);
+
+        if (host == NULL) {
+            flb_errno();
+            return -1;
+        }
+
         flb_free(u->tcp_host);
         port = u->tcp_port;
     }
@@ -2250,6 +2262,7 @@ int flb_input_upstream_set(struct flb_upstream *u, struct flb_input_instance *in
                                         &proxy_username, &proxy_password,
                                         &proxy_host, &proxy_port);
         if (ret == -1) {
+            flb_free(host);
             flb_errno();
             return -1;
         }
@@ -2265,13 +2278,31 @@ int flb_input_upstream_set(struct flb_upstream *u, struct flb_input_instance *in
         }
 
         u->tcp_host = flb_strdup(proxy_host);
+
+        if (u->tcp_host == NULL) {
+            flb_free(host);
+            flb_errno();
+            return -1;
+        }
+
         u->tcp_port = atoi(proxy_port);
         u->proxied_host = host;
         u->proxied_port = port;
 
         if (proxy_username && proxy_password) {
             u->proxy_username = flb_strdup(proxy_username);
+
+            if (u->proxy_username == NULL) {
+                flb_errno();
+                return -1;
+            }
+
             u->proxy_password = flb_strdup(proxy_password);
+
+            if (u->proxy_password == NULL) {
+                flb_errno();
+                return -1;
+            }
         }
 
         flb_free(proxy_protocol);
