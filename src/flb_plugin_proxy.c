@@ -240,9 +240,15 @@ static void flb_proxy_output_cb_destroy(struct flb_output_plugin *plugin)
         cb_unregister(proxy->def);
     }
 
+    if (plugin->name != NULL) {
+        flb_free(plugin->name);
+
+        plugin->name = NULL;
+    }
+
     if (proxy->def->proxy == FLB_PROXY_GOLANG) {
 #ifdef FLB_HAVE_PROXY_GO
-        proxy_go_output_unregister(proxy->data);
+proxy_go_output_unregister(proxy->data);
 #endif
     }
 
@@ -284,6 +290,12 @@ static void flb_proxy_input_cb_destroy(struct flb_input_plugin *plugin)
     cb_unregister = flb_plugin_proxy_symbol(proxy, "FLBPluginUnregister");
     if (cb_unregister != NULL) {
         cb_unregister(proxy->def);
+    }
+
+    if (plugin->name != NULL) {
+        flb_free(plugin->name);
+
+        plugin->name = NULL;
     }
 
     if (proxy->def->proxy == FLB_PROXY_GOLANG) {
@@ -357,6 +369,7 @@ static int flb_proxy_register_output(struct flb_plugin_proxy *proxy,
     out->proxy = proxy;
     out->flags = def->flags;
     out->name  = flb_strdup(def->name);
+
     out->description = def->description;
     mk_list_add(&out->_head, &config->out_plugins);
 
