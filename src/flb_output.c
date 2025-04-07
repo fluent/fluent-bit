@@ -1557,7 +1557,7 @@ int flb_output_upstream_set(struct flb_upstream *u, struct flb_output_instance *
 {
     int flags = 0;
     int ret;
-    const char *host;
+    char *host;
     int port;
     char *proxy_protocol = NULL;
     char *proxy_host = NULL;
