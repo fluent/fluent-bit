@@ -1,9 +1,9 @@
-cmake_minimum_required(VERSION 3.0)
+cmake_minimum_required(VERSION 3.20)
 project(chunk-io C)
 
 set(CIO_VERSION_MAJOR  1)
 set(CIO_VERSION_MINOR  5)
-set(CIO_VERSION_PATCH  2)
+set(CIO_VERSION_PATCH  3)
 set(CIO_VERSION_STR "${CIO_VERSION_MAJOR}.${CIO_VERSION_MINOR}.${CIO_VERSION_PATCH}")
 
 # CFLAGS
