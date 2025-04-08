@@ -176,7 +176,19 @@ void upstream_set_fn_ec2(struct flb_aws_provider *provider,
     flb_debug("[aws_credentials] upstream_set called on the EC2 provider");
     /* Make sure TLS is set to false before setting upstream, then reset it */
     ins->use_tls = FLB_FALSE;
+
+    /* IMDSv2 token request will timeout if hops = 1 and running within container */
+    ins->net_setup.connect_timeout = FLB_AWS_IMDS_TIMEOUT;
+    ins->net_setup.io_timeout = FLB_AWS_IMDS_TIMEOUT;
+    ins->net_setup.keepalive = FLB_FALSE; /* On timeout, the connection is broken */
+
     flb_output_upstream_set(implementation->client->upstream, ins);
+
+    /* Reset */
+    ins->net_setup.keepalive = FLB_TRUE;
+    ins->net_setup.io_timeout = 0;
+    ins->net_setup.connect_timeout = 10;
+
     ins->use_tls = FLB_TRUE;
 }
 
