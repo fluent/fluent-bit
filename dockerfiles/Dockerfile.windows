@@ -44,18 +44,6 @@ RUN $msvs_build_tools_dist_name=\"vs_buildtools.exe\"; `
       '--includeRecommended'  -NoNewWindow -Wait; `
     Remove-Item -Force \"${msvs_build_tools_dist}\";
 
-ENV MSVC_RUNTIME_VERSION="15" `
-    MSVC_RUNTIME_DOWNLOAD_URL="https://aka.ms/vs"
-RUN $msvc_runtime_dist_name=\"vc_redist.x64.exe\"; `
-    $msvc_runtime_dist=\"${env:TMP}\${msvc_runtime_dist_name}\"; `
-    $msvc_runtime_url=\"${env:MSVC_RUNTIME_DOWNLOAD_URL}/${env:MSVC_RUNTIME_VERSION}/release/${msvc_runtime_dist_name}\"; `
-    Write-Host \"Downloading Microsoft Visual C++ Redistributable...\"; `
-    Write-Host \"${msvc_runtime_url} -> ${msvc_runtime_dist}\"; `
-    Invoke-WebRequest -OutFile \"${msvc_runtime_dist}\" \"${msvc_runtime_url}\"; `
-    Write-Host \"Installing Microsoft Visual C++ runtime libraries...\"; `
-    Start-Process \"${msvc_runtime_dist}\" -ArgumentList '/install', '/quiet', '/norestart' -NoNewWindow -Wait; `
-    Remove-Item -Force \"${msvc_runtime_dist}\";
-
 ENV CMAKE_VERSION="3.31.6" `
     CMAKE_HOME="C:\cmake" `
     CMAKE_DOWNLOAD_URL="https://github.com/Kitware/CMake/releases/download"
@@ -152,12 +140,6 @@ ENV VCPKG_BUILD_TYPE=release `
 RUN vcpkg install --recurse openssl --triplet x64-windows-static; `
     vcpkg install --recurse libyaml --triplet x64-windows-static;
 
-# Technique from https://github.com/StefanScherer/dockerfiles-windows/blob/master/mongo/3.6/Dockerfile
-WORKDIR /fluent-bit/bin
-RUN Copy-Item -Path C:\Windows\System32\msvcp140.dll -Destination /fluent-bit/bin/; `
-    Copy-Item -Path C:\Windows\System32\vccorlib140.dll -Destination /fluent-bit/bin/; `
-    Copy-Item -Path C:\Windows\System32\vcruntime140.dll -Destination /fluent-bit/bin/;
-
 FROM builder-base AS builder
 
 # Build Fluent Bit from source - context must be the root of the Git repo
@@ -180,6 +162,7 @@ RUN call "%MSVS_HOME%\VC\Auxiliary\Build\vcvars64.bat" && `
 
 SHELL ["powershell", "-Command", "$ErrorActionPreference = 'Stop'; $ProgressPreference = 'SilentlyContinue';"]
 
+WORKDIR /fluent-bit/bin
 # Set up config files and binaries in single /fluent-bit hierarchy for easy copy in later stage
 RUN New-Item -Path  /fluent-bit/etc/ -ItemType "directory"; `
     Copy-Item -Path /src/conf/fluent-bit-win32.conf /fluent-bit/etc/fluent-bit.conf; `
