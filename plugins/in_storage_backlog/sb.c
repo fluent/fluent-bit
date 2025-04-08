@@ -280,18 +280,33 @@ static int sb_append_chunk_to_segregated_backlogs(struct cio_chunk  *target_chun
     int                     tag_len;
     const char *            tag_buf;
     int                     result;
+    flb_route_mask_element *dummy_routes_mask;
+
+    dummy_routes_mask = flb_calloc(context->ins->config->route_mask_slots,
+                                   sizeof(flb_route_mask_element));
+
+    if (dummy_routes_mask == NULL) {
+        flb_error("[storage backlog] could not allocate route mask elements %s/%s",
+                  stream->name, target_chunk->name);
+
+        return -1;
+    }
 
     memset(&dummy_input_chunk, 0, sizeof(struct flb_input_chunk));
+    memset(dummy_routes_mask, 0, sizeof(dummy_routes_mask));
 
     dummy_input_chunk.in    = context->ins;
     dummy_input_chunk.chunk = target_chunk;
+    dummy_input_chunk.routes_mask = dummy_routes_mask;
 
     chunk_size = cio_chunk_get_real_size(target_chunk);
 
     if (chunk_size < 0) {
         flb_warn("[storage backlog] could not get real size of chunk %s/%s",
                   stream->name, target_chunk->name);
-        return -1;
+        flb_free(dummy_routes_mask);
+
+        return -2;
     }
 
     result = flb_input_chunk_get_tag(&dummy_input_chunk, &tag_buf, &tag_len);
@@ -299,7 +314,9 @@ static int sb_append_chunk_to_segregated_backlogs(struct cio_chunk  *target_chun
         flb_error("[storage backlog] could not retrieve chunk tag from %s/%s, "
                   "removing it from the queue",
                   stream->name, target_chunk->name);
-        return -2;
+        flb_free(dummy_routes_mask);
+
+        return -3;
     }
 
     flb_routes_mask_set_by_tag(dummy_input_chunk.routes_mask, tag_buf, tag_len,
@@ -313,10 +330,14 @@ static int sb_append_chunk_to_segregated_backlogs(struct cio_chunk  *target_chun
             result = sb_append_chunk_to_segregated_backlog(target_chunk, stream,
                                                            chunk_size, backlog);
             if (result) {
-                return -3;
+                flb_free(dummy_routes_mask);
+
+                return -4;
             }
         }
     }
+
+    flb_free(dummy_routes_mask);
 
     return 0;
 }
@@ -387,7 +408,7 @@ int sb_segregate_chunks(struct flb_config *config)
                     continue;
                 }
 
-                /* 
+                /*
                  *
                  * if content size is zero, it's safe to 'delete it'.
                  */
