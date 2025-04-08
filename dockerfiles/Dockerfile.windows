@@ -160,12 +160,6 @@ RUN Remove-Item -Path C:\dev\vcpkg\downloads -Recurse -Force -ErrorAction Silent
     Remove-Item -Path $env:TEMP\* -Recurse -Force -ErrorAction SilentlyContinue; `
     Remove-Item -Path C:\Windows\Temp\* -Recurse -Force -ErrorAction SilentlyContinue;
 
-# Copy required runtime libraries
-WORKDIR /fluent-bit/bin
-RUN Copy-Item -Path C:\Windows\System32\msvcp140.dll -Destination /fluent-bit/bin/; `
-    Copy-Item -Path C:\Windows\System32\vccorlib140.dll -Destination /fluent-bit/bin/; `
-    Copy-Item -Path C:\Windows\System32\vcruntime140.dll -Destination /fluent-bit/bin/;
-
 FROM builder-base AS builder
 
 # Build Fluent Bit from source - context must be the root of the Git repo
