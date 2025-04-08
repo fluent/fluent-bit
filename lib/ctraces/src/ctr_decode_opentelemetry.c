@@ -525,11 +525,15 @@ int ctr_decode_opentelemetry_create(struct ctrace **out_ctr,
     Opentelemetry__Proto__Trace__V1__ScopeSpans *otel_scope_span;
     Opentelemetry__Proto__Trace__V1__Span *otel_span;
 
+    if (*offset >= in_size) {
+        return CTR_DECODE_OPENTELEMETRY_INSUFFICIENT_DATA;
+    }
+
     service_request = opentelemetry__proto__collector__trace__v1__export_trace_service_request__unpack(NULL,
                                                                                                       in_size - *offset,
                                                                                                       (unsigned char *) &in_buf[*offset]);
     if (service_request == NULL) {
-        return -1;
+        return CTR_DECODE_OPENTELEMETRY_CORRUPTED_DATA;
     }
 
     ctr = ctr_create(NULL);
@@ -539,7 +543,7 @@ int ctr_decode_opentelemetry_create(struct ctrace **out_ctr,
         if (otel_resource_span == NULL) {
             opentelemetry__proto__collector__trace__v1__export_trace_service_request__free_unpacked(service_request, NULL);
             ctr_destroy(ctr);
-            return -1;
+            return CTR_DECODE_OPENTELEMETRY_INVALID_PAYLOAD;
         }
 
         /* resource span */
@@ -554,12 +558,23 @@ int ctr_decode_opentelemetry_create(struct ctrace **out_ctr,
 
         for (scope_span_index = 0; scope_span_index < otel_resource_span->n_scope_spans; scope_span_index++) {
             otel_scope_span = otel_resource_span->scope_spans[scope_span_index];
+
             if (otel_scope_span == NULL) {
                 opentelemetry__proto__collector__trace__v1__export_trace_service_request__free_unpacked(service_request, NULL);
-                return -1;
+                ctr_destroy(ctr);
+
+                return CTR_DECODE_OPENTELEMETRY_INVALID_PAYLOAD;
             }
 
             scope_span = ctr_scope_span_create(resource_span);
+
+            if (scope_span == NULL) {
+                opentelemetry__proto__collector__trace__v1__export_trace_service_request__free_unpacked(service_request, NULL);
+                ctr_destroy(ctr);
+
+                return CTR_DECODE_OPENTELEMETRY_ALLOCATION_ERROR;
+            }
+
             ctr_scope_span_set_schema_url(scope_span, otel_scope_span->schema_url);
 
             if (otel_scope_span->scope != NULL) {
@@ -568,12 +583,22 @@ int ctr_decode_opentelemetry_create(struct ctrace **out_ctr,
 
             for (span_index = 0; span_index < otel_scope_span->n_spans; span_index++) {
                 otel_span = otel_scope_span->spans[span_index];
+
                 if (otel_span == NULL) {
                     opentelemetry__proto__collector__trace__v1__export_trace_service_request__free_unpacked(service_request, NULL);
-                    return -1;
+                    ctr_destroy(ctr);
+
+                    return CTR_DECODE_OPENTELEMETRY_INVALID_PAYLOAD;
                 }
 
                 span = ctr_span_create(ctr, scope_span, otel_span->name, NULL);
+
+                if (span == NULL) {
+                    opentelemetry__proto__collector__trace__v1__export_trace_service_request__free_unpacked(service_request, NULL);
+                    ctr_destroy(ctr);
+
+                    return CTR_DECODE_OPENTELEMETRY_ALLOCATION_ERROR;
+                }
 
                 /* copy data from otel span to ctraces span representation */
                 ctr_span_set_trace_id(span, otel_span->trace_id.data, otel_span->trace_id.len);
@@ -587,6 +612,7 @@ int ctr_decode_opentelemetry_create(struct ctrace **out_ctr,
                 ctr_span_kind_set(span, otel_span->kind);
                 ctr_span_start_ts(ctr, span, otel_span->start_time_unix_nano);
                 ctr_span_end_ts(ctr, span, otel_span->end_time_unix_nano);
+
                 if (otel_span->status) {
                     ctr_span_set_status(span, otel_span->status->code, otel_span->status->message);
                 }
@@ -603,10 +629,13 @@ int ctr_decode_opentelemetry_create(struct ctrace **out_ctr,
         }
     }
 
+    *offset += opentelemetry__proto__collector__trace__v1__export_trace_service_request__get_packed_size(service_request);
+
     opentelemetry__proto__collector__trace__v1__export_trace_service_request__free_unpacked(service_request, NULL);
+
     *out_ctr = ctr;
 
-    return 0;
+    return CTR_DECODE_OPENTELEMETRY_SUCCESS;
 }
 
 void ctr_decode_opentelemetry_destroy(struct ctrace *ctr)

@@ -34,6 +34,7 @@ struct ctrace_span *ctr_span_create(struct ctrace *ctx, struct ctrace_scope_span
 
     /* allocate a spanc context */
     span = calloc(1, sizeof(struct ctrace_span));
+
     if (span == NULL) {
         ctr_errno();
         return NULL;
@@ -47,15 +48,19 @@ struct ctrace_span *ctr_span_create(struct ctrace *ctx, struct ctrace_scope_span
     span->name = cfl_sds_create(name);
     if (span->name == NULL) {
         free(span);
+
         return NULL;
     }
 
     /* attributes */
     span->attr = ctr_attributes_create();
     if (span->attr == NULL) {
+        cfl_sds_destroy(span->name);
         free(span);
+
         return NULL;
     }
+
     cfl_list_init(&span->events);
     cfl_list_init(&span->links);
 
@@ -63,7 +68,7 @@ struct ctrace_span *ctr_span_create(struct ctrace *ctx, struct ctrace_scope_span
     span->dropped_attr_count = 0;
 
     /* if a parent context was given, populate the span parent id */
-    if (parent && parent->span_id) {
+    if (parent != NULL && parent->span_id != NULL) {
         ctr_span_set_parent_span_id_with_cid(span, parent->span_id);
     }
 
@@ -78,6 +83,7 @@ struct ctrace_span *ctr_span_create(struct ctrace *ctx, struct ctrace_scope_span
 
     /* always start a span by default, the start can be overriden later if needed */
     ctr_span_start(ctx, span);
+
     return span;
 }
 
