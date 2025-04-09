@@ -10,7 +10,7 @@
 #
 option(BUILD_TESTING "" OFF)
 set(CMAKE_C_FLAGS "-std=gnu99 ${CMAKE_C_FLAGS}")
-add_subdirectory(libmaxminddb EXCLUDE_FROM_ALL)
+add_subdirectory(libmaxminddb-1.12.2 EXCLUDE_FROM_ALL)
 include_directories(libmaxminddb/include/)
 
 set(src
