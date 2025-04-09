@@ -53,6 +53,10 @@ endif()
 include(GNUInstallDirs)
 include(CMakeDependentOption)
 
+# This is necessary to ensure that we link openssl statically
+set(OPENSSL_USE_STATIC_LIBS ON)
+set(OPENSSL_MSVC_STATIC_RT  ON)
+
 # For documentation
 find_package(Python3 COMPONENTS Interpreter)
 
@@ -69,7 +73,8 @@ endif()
 if(WITH_WOLFSSL)
   find_package(WolfSSL 5.7.0)
 else()
-  find_package(OpenSSL 1.1.1)
+  # Fluent Bit: This auto detection causes weird linker errors. So, it's disabled for now.
+  # find_package(OpenSSL 1.1.1)
 endif()
 find_package(Libngtcp2 1.0.0)
 if(OPENSSL_FOUND)
