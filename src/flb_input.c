@@ -313,9 +313,9 @@ struct flb_input_instance *flb_input_new(struct flb_config *config,
             instance->context = NULL;
         }
         else {
-            struct flb_plugin_proxy_context *ctx;
+            struct flb_plugin_input_proxy_context *ctx;
 
-            ctx = flb_calloc(1, sizeof(struct flb_plugin_proxy_context));
+            ctx = flb_calloc(1, sizeof(struct flb_plugin_input_proxy_context));
             if (!ctx) {
                 flb_errno();
                 flb_free(instance);
