@@ -52,6 +52,7 @@ struct flb_systemd_config {
     struct mk_list *systemd_filters;
     int pending_records;
     int read_from_tail;  /* read_from_tail option */
+    int read_since_minutes_ago;  /* read_since_minutes_ago option */
     int lowercase;
     int strip_underscores;
 
