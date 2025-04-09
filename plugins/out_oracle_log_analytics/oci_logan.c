@@ -1199,7 +1199,7 @@ static void cb_oci_logan_flush(struct flb_event_chunk *event_chunk,
                       ins, out_context,
                       config);
     if (ret != FLB_OK) {
-        flb_oci_logan_conf_destroy(ctx);
+        flb_plg_error(ctx->ins, "flush failed with code %d", ret);
         FLB_OUTPUT_RETURN(ret);
     }
     flb_plg_debug(ctx->ins, "success");
