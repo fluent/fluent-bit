@@ -82,7 +82,7 @@ static int flb_proxy_input_cb_collect(struct flb_input_instance *ins,
 #ifdef FLB_HAVE_PROXY_GO
     if (ctx->proxy->def->proxy == FLB_PROXY_GOLANG) {
         flb_trace("[GO] entering go_collect()");
-        ret = proxy_go_input_collect(ctx->proxy, &data, &len);
+        ret = proxy_go_input_collect(ctx, &data, &len);
 
         if (len == 0) {
             flb_trace("[GO] No logs are ingested");
@@ -96,7 +96,7 @@ static int flb_proxy_input_cb_collect(struct flb_input_instance *ins,
 
         flb_input_log_append(ins, NULL, 0, data, len);
 
-        ret = proxy_go_input_cleanup(ctx->proxy, data);
+        ret = proxy_go_input_cleanup(ctx, data);
         if (ret == -1) {
             flb_errno();
             return -1;
@@ -111,19 +111,10 @@ static int flb_proxy_input_cb_init(struct flb_input_instance *ins,
                                    struct flb_config *config, void *data)
 {
     int ret = -1;
-    struct flb_plugin_input_proxy_context *ctx;
-    struct flb_plugin_proxy_context *pc;
-
-    /* Allocate space for the configuration context */
-    ctx = flb_malloc(sizeof(struct flb_plugin_input_proxy_context));
-    if (!ctx) {
-        flb_errno();
-        return -1;
-    }
+    struct flb_plugin_input_proxy_context *pc;
 
     /* Before to initialize for proxy, set the proxy instance reference */
-    pc = (struct flb_plugin_proxy_context *)(ins->context);
-    ctx->proxy = pc->proxy;
+    pc = (struct flb_plugin_input_proxy_context *)(ins->context);
 
     /* Before to initialize, set the instance reference */
     pc->proxy->instance = ins;
@@ -148,7 +139,7 @@ static int flb_proxy_input_cb_init(struct flb_input_instance *ins,
     }
 
     /* Set the context */
-    flb_input_set_context(ins, ctx);
+    flb_input_set_context(ins, pc);
 
     /* Collect upon data available on timer */
     ret = flb_input_set_collector_time(ins,
@@ -160,12 +151,12 @@ static int flb_proxy_input_cb_init(struct flb_input_instance *ins,
         flb_error("Could not set collector for threaded proxy input plugin");
         goto init_error;
     }
-    ctx->coll_fd = ret;
+    pc->coll_fd = ret;
 
     return ret;
 
 init_error:
-    flb_free(ctx);
+    flb_free(pc);
 
     return -1;
 }
@@ -312,10 +303,10 @@ static int flb_proxy_input_cb_pre_run(struct flb_input_instance *ins,
                                       struct flb_config *config, void *data)
 {
     int ret = -1;
-    struct flb_plugin_proxy_context *pc;
+    struct flb_plugin_input_proxy_context *pc;
     struct flb_plugin_proxy *proxy;
 
-    pc = (struct flb_plugin_proxy_context *)(ins->context);
+    pc = (struct flb_plugin_input_proxy_context *)(ins->context);
     proxy = pc->proxy;
 
     /* pre_run */
