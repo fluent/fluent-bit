@@ -37,6 +37,8 @@ set(src
   cmt_decode_msgpack.c
   cmt_decode_statsd.c
   cmt_mpack_utils.c
+
+  # Prometheus related protobuf files
   external/remote.pb-c.c
   external/types.pb-c.c
   )
