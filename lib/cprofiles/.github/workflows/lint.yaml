@@ -11,6 +11,8 @@ jobs:
     steps:
       - uses: actions/checkout@v4
       - uses: ludeeus/action-shellcheck@master
+        with:
+          ignore_paths: cmake/**
 
   actionlint-pr:
     runs-on: ubuntu-latest
