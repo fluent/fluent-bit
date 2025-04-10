@@ -334,14 +334,14 @@ int flb_plugin_load_router(char *path, struct flb_config *config)
     if (strncmp(bname, PLUGIN_PREFIX, sizeof(PLUGIN_PREFIX) - 1) == 0) {
         ret = flb_plugin_load(path, config->dso_plugins, config);
         if (ret == -1) {
-            flb_error("[plugin] error loading DSO C plugin: %s", path);
+            flb_error("[plugin] error loading DSO C plugin at: %s", path);
             return -1;
         }
     }
     else {
 #ifdef FLB_HAVE_PROXY_GO
         if (flb_plugin_proxy_create(path, 0, config) == NULL) {
-            flb_error("[plugin] error loading proxy plugin: %s", path);
+            flb_error("[plugin] error loading proxy plugin at: %s", path);
             return -1;
         }
 #else
@@ -369,7 +369,7 @@ int flb_plugin_load_config_format(struct flb_cf *cf, struct flb_config *config)
             entry = cfl_list_entry(head_e, struct cfl_kvpair, _head);
 
             /* Load plugin with router function */
-            ret = flb_plugin_load_router(entry->key, config);
+            ret = flb_plugin_load_router(entry->val->data.as_string, config);
             if (ret == -1) {
                 flb_cf_destroy(cf);
                 return -1;
