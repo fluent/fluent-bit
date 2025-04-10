@@ -1346,6 +1346,16 @@ static int binary_payload_to_msgpack(struct flb_opentelemetry *ctx,
             if (scope && (scope->name || scope->version || scope->n_attributes > 0)) {
                 flb_mp_map_header_init(&mh_tmp, &mp_pck);
 
+                if (scope_log->schema_url && strlen(scope_log->schema_url) > 0) {
+                    flb_mp_map_header_append(&mh_tmp);
+                    msgpack_pack_str(&mp_pck, 10);
+                    msgpack_pack_str_body(&mp_pck, "schema_url", 10);
+
+                    len = strlen(scope_log->schema_url);
+                    msgpack_pack_str(&mp_pck, len);
+                    msgpack_pack_str_body(&mp_pck, scope_log->schema_url, len);
+                }
+
                 if (scope->name && strlen(scope->name) > 0) {
                     flb_mp_map_header_append(&mh_tmp);
                     msgpack_pack_str(&mp_pck, 4);
