@@ -268,6 +268,10 @@ static char *flb_config_getenv(const char *name)
         return NULL;
     }
 
+    if (env == NULL) {
+        return NULL;
+    }
+
     ret = flb_malloc(strlen(env) + 1);
 
     if (ret == NULL) {
