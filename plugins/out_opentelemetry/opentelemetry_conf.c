@@ -516,6 +516,11 @@ struct opentelemetry_context *flb_opentelemetry_context_create(struct flb_output
         flb_plg_error(ins, "failed to create record accessor for scope attributes");
     }
 
+    ctx->ra_scope_schema_url = flb_ra_create("$scope['schema_url']", FLB_FALSE);
+    if (ctx->ra_scope_schema_url == NULL) {
+        flb_plg_error(ins, "failed to create record accessor for resource schema url");
+    }
+
     /* log metadata under $otlp (set by in_opentelemetry) */
 
     ctx->ra_log_meta_otlp_observed_ts = flb_ra_create("$otlp['observed_timestamp']", FLB_FALSE);
@@ -710,6 +715,9 @@ void flb_opentelemetry_context_destroy(struct opentelemetry_context *ctx)
     }
     if (ctx->ra_scope_attr) {
         flb_ra_destroy(ctx->ra_scope_attr);
+    }
+    if (ctx->ra_scope_schema_url) {
+        flb_ra_destroy(ctx->ra_scope_schema_url);
     }
 
     if (ctx->ra_log_meta_otlp_observed_ts) {
