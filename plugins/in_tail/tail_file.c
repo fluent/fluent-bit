@@ -48,6 +48,10 @@
 #include "win32.h"
 #endif
 
+#ifdef FLB_HAVE_UNICODE_ENCODER
+#include <fluent-bit/flb_unicode.h>
+#endif
+
 #include <cfl/cfl.h>
 
 static inline void consume_bytes(char *buf, int bytes, int length)
@@ -437,9 +441,14 @@ static int process_content(struct flb_tail_file *file, size_t *bytes)
     size_t line_len;
     char *repl_line;
     size_t repl_line_len;
+    size_t original_len = 0;
     time_t now = time(NULL);
     struct flb_time out_time = {0};
     struct flb_tail_config *ctx;
+#ifdef FLB_HAVE_UNICODE_ENCODER
+    char *decoded = NULL;
+    size_t decoded_len;
+#endif
 
     ctx = (struct flb_tail_config *) file->config;
 
@@ -449,6 +458,25 @@ static int process_content(struct flb_tail_file *file, size_t *bytes)
 
     /* reset last processed bytes */
     file->last_processed_bytes = 0;
+
+#ifdef FLB_HAVE_UNICODE_ENCODER
+    if (ctx->preferred_input_encoding != FLB_UNICODE_ENCODING_UNSPECIFIED) {
+        original_len = end - data;
+        decoded = NULL;
+        ret = flb_unicode_convert(ctx->preferred_input_encoding,
+                                  data, end - data, &decoded, &decoded_len);
+        if (ret == FLB_SIMDUTF_CONNECTOR_CONVERT_OK) {
+            data = decoded;
+            end  = data + decoded_len;
+        }
+        else if (ret == FLB_UNICODE_CONVERT_NOP) {
+            flb_plg_debug(ctx->ins, "nothing to convert encoding '%.*s'", end - data, data);
+        }
+        else {
+            flb_plg_error(ctx->ins, "encoding failed '%.*s'", end - data, data);
+        }
+    }
+#endif
 
     /* Skip null characters from the head (sometimes introduced by copy-truncate log rotation) */
     while (data < end && *data == '\0') {
@@ -602,11 +630,22 @@ static int process_content(struct flb_tail_file *file, size_t *bytes)
         file->parsed = 0;
         file->last_processed_bytes += processed_bytes;
     }
+
+#ifdef FLB_HAVE_UNICODE_ENCODER
+    if (decoded) {
+        flb_free(decoded);
+        decoded = NULL;
+    }
+#endif
     file->parsed = file->buf_len;
 
     if (lines > 0) {
         /* Append buffer content to a chunk */
-        *bytes = processed_bytes;
+        if (original_len > 0) {
+            *bytes = original_len;
+        } else {
+            *bytes = processed_bytes;
+        }
 
         if (file->sl_log_event_encoder->output_length > 0) {
             flb_input_log_append_records(ctx->ins,
@@ -623,7 +662,11 @@ static int process_content(struct flb_tail_file *file, size_t *bytes)
         *bytes = file->buf_len;
     }
     else {
-        *bytes = processed_bytes;
+        if (original_len > 0) {
+            *bytes = original_len;
+        } else {
+            *bytes = processed_bytes;
+        }
     }
 
     if (ctx->ml_ctx) {

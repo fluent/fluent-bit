@@ -284,6 +284,17 @@ static void cb_stdout_flush(struct flb_event_chunk *event_chunk,
 
         while (flb_log_event_decoder_next(&log_decoder,
                                            &log_event) == FLB_EVENT_DECODER_SUCCESS) {
+
+            if (log_event.group_attributes != NULL) {
+                printf("GROUP METADATA : \n\n");
+                msgpack_object_print(stdout, *log_event.group_metadata);
+                printf("\n\n");
+
+                printf("GROUP ATTRIBUTES : \n\n");
+                msgpack_object_print(stdout, *log_event.group_attributes);
+                printf("\n\n");
+            }
+
             printf("[%zd] %s: [[", cnt++, event_chunk->tag);
 
             printf("%"PRId32".%09lu, ", (int32_t) log_event.timestamp.tm.tv_sec,

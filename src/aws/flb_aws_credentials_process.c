@@ -369,7 +369,7 @@ static int read_until_block(char* name, flb_pipefd_t fd, struct readbuf* buf)
             if (FLB_PIPE_WOULDBLOCK()) {
                 return 1;
             }
-            flb_errno();
+            flb_pipe_error();
             return -1;
         }
         else if (result == 0) {   /* EOF */
@@ -481,7 +481,7 @@ static void exec_process_child(struct process* p)
 {
     while ((dup2(p->stdin_stream, STDIN_FILENO) < 0)) {
         if (errno != EINTR) {
-            return; 
+            return;
         }
     }
     while ((dup2(p->stdout_stream[1], STDOUT_FILENO) < 0)) {
@@ -491,7 +491,7 @@ static void exec_process_child(struct process* p)
     }
     while ((dup2(p->stderr_stream, STDERR_FILENO) < 0)) {
         if (errno != EINTR) {
-            return; 
+            return;
         }
     }
 
@@ -558,7 +558,7 @@ static int read_from_process(struct process* p, struct readbuf* buf)
         return -1;
     }
 
-    flb_time_set(&timeout, 
+    flb_time_set(&timeout,
         (time_t) (CREDENTIAL_PROCESS_TIMEOUT_MS / MS_PER_SEC),
         ((long) (CREDENTIAL_PROCESS_TIMEOUT_MS % MS_PER_SEC)) * NS_PER_MS);
 

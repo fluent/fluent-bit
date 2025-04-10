@@ -8,7 +8,7 @@ set(CMAKE_POLICY_DEFAULT_CMP0069 NEW)
 # Fluent Bit Version
 set(FLB_VERSION_MAJOR  4)
 set(FLB_VERSION_MINOR  0)
-set(FLB_VERSION_PATCH  0)
+set(FLB_VERSION_PATCH  1)
 set(FLB_VERSION_STR "${FLB_VERSION_MAJOR}.${FLB_VERSION_MINOR}.${FLB_VERSION_PATCH}")
 
 set(CMAKE_POSITION_INDEPENDENT_CODE ON)
@@ -33,6 +33,24 @@ if(CMAKE_SYSTEM_NAME MATCHES "Linux")
   if (CMAKE_SYSTEM_PROCESSOR MATCHES "^(arm64|aarch64)")
     set(FLB_LINUX_ON_AARCH64 On)
     add_definitions(-DFLB_LINUX_ON_AARCH64)
+  endif()
+
+  find_program(CAT_EXEC cat)
+  if (CAT_EXEC)
+    set(RELEASE_FILE "/etc/system-release")
+    if (EXISTS ${RELEASE_FILE})
+      execute_process(COMMAND ${CAT_EXEC} ${RELEASE_FILE}
+        OUTPUT_VARIABLE CAT_SYSTEM_RELEASE
+        OUTPUT_STRIP_TRAILING_WHITESPACE
+      )
+
+      message(STATUS "##### cat /etc/system-release -- OK")
+
+      if (CAT_SYSTEM_RELEASE STREQUAL "Amazon Linux release 2 (Karoo)")
+        set(FLB_AMAZON_LINUX2 On)
+        add_definitions(-DFLB_AMAZON_LINUX2)
+      endif()
+    endif()
   endif()
 endif()
 
@@ -121,6 +139,7 @@ option(FLB_COVERAGE            "Build with code-coverage"      No)
 option(FLB_JEMALLOC            "Build with Jemalloc support"   No)
 option(FLB_REGEX               "Build with Regex support"     Yes)
 option(FLB_UTF8_ENCODER        "Build with UTF8 encoding support" Yes)
+option(FLB_UNICODE_ENCODER     "Build with Unicode (UTF-16LE, UTF-16BE) encoding support" Yes)
 option(FLB_PARSER              "Build with Parser support"    Yes)
 option(FLB_TLS                 "Build with SSL/TLS support"   Yes)
 option(FLB_BINARY              "Build executable binary"      Yes)
@@ -155,6 +174,7 @@ option(FLB_WASM                "Build with WASM runtime support"            Yes)
 option(FLB_WAMRC               "Build with WASM AOT compiler executable"    No)
 option(FLB_WASM_STACK_PROTECT  "Build with WASM runtime with strong stack protector flags" No)
 option(FLB_ENFORCE_ALIGNMENT   "Enable limited platform specific aligned memory access" No)
+option(FLB_ZIG                 "Enable zig integration"       Yes)
 
 # Native Metrics Support (cmetrics)
 option(FLB_METRICS             "Enable metrics support"       Yes)
@@ -264,6 +284,7 @@ if(FLB_DEV)
 
   set(FLB_DEBUG             On)
   set(FLB_TRACE             On)
+  set(FLB_OUT_ZIG_DEMO      On)
   set(FLB_CHUNK_TRACE       On)
   set(FLB_METRICS           On)
   set(FLB_PROFILES          On)
@@ -353,6 +374,27 @@ if(FLEX_FOUND AND BISON_FOUND)
   set(FLB_FLEX_BISON  1)
 endif()
 
+find_program(ZIG_PATH zig)
+
+# Enable zig only when the appropriate toolchain is available
+if (FLB_ZIG)
+  set(FLB_ZIG Off)
+
+  if (ZIG_PATH)
+    execute_process(
+        COMMAND ${ZIG_PATH} version
+        OUTPUT_VARIABLE COMMAND_OUTPUT
+        OUTPUT_STRIP_TRAILING_WHITESPACE
+    )
+
+    # This is not great, improvements would be appreciated
+    if (COMMAND_OUTPUT STREQUAL "0.14.0")
+      FLB_DEFINITION(FLB_HAVE_ZIG)
+      set(FLB_ZIG On)
+    endif()
+  endif()
+endif()
+
 if(FLB_SMALL)
   if(CMAKE_COMPILER_IS_GNUCC)
     set(strip_flag  " -s ")
@@ -364,6 +406,9 @@ endif()
 
 if(FLB_COVERAGE)
   set(CMAKE_C_FLAGS "${CMAKE_C_FLAGS} -g -O0 --coverage -fprofile-arcs -ftest-coverage")
+  if (FLB_UNICODE_ENCODER)
+    set(CMAKE_CXX_FLAGS "${CMAKE_C_FLAGS} -g -O0 --coverage -fprofile-arcs -ftest-coverage")
+  endif()
   set(CMAKE_BUILD_TYPE "Debug")
 endif()
 
@@ -513,6 +558,14 @@ endif()
 # tutf8e
 if(FLB_UTF8_ENCODER)
   add_subdirectory(${FLB_PATH_LIB_TUTF8E} EXCLUDE_FROM_ALL)
+endif()
+
+# simdutf
+if(FLB_UNICODE_ENCODER)
+  enable_language(CXX)
+  set (CMAKE_CXX_STANDARD 11)
+  add_subdirectory(${FLB_PATH_LIB_SIMDUTF} EXCLUDE_FROM_ALL)
+  FLB_DEFINITION(FLB_HAVE_UNICODE_ENCODER)
 endif()
 
 # snappy

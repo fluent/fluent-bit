@@ -34,6 +34,7 @@
 #define FLB_ERR_OUTPUT_INVALID       101
 #define FLB_ERR_OUTPUT_UNIQ          102
 #define FLB_ERR_FILTER_INVALID       201
+#define FLB_ERR_PROCESSOR_INVALID    202
 
 /* Parser */
 #define FLB_ERR_CFG_PARSER_FILE      300

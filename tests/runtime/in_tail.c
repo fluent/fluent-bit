@@ -26,6 +26,9 @@ Approach for this tests is basing on filter_kubernetes tests
 #include <fluent-bit/flb_time.h>
 #include <fluent-bit/flb_pthread.h>
 #include <fluent-bit/flb_compat.h>
+#ifdef FLB_HAVE_UNICODE_ENCODER
+#include <fluent-bit/flb_unicode.h>
+#endif
 #include <stdlib.h>
 #include <sys/stat.h>
 #include <sys/types.h>
@@ -308,6 +311,35 @@ void wait_with_timeout(uint32_t timeout_ms, struct tail_test_result *result, int
     }
 }
 
+void wait_num_with_timeout(uint32_t timeout_ms, int *output_num)
+{
+    struct flb_time start_time;
+    struct flb_time end_time;
+    struct flb_time diff_time;
+    uint64_t elapsed_time_flb = 0;
+
+    flb_time_get(&start_time);
+
+    while (true) {
+        *output_num = get_output_num();
+
+        if (*output_num > 0) {
+            break;
+        }
+
+        flb_time_msleep(100);
+        flb_time_get(&end_time);
+        flb_time_diff(&end_time, &start_time, &diff_time);
+        elapsed_time_flb = flb_time_to_nanosec(&diff_time) / 1000000;
+
+        if (elapsed_time_flb > timeout_ms) {
+            flb_warn("[timeout] elapsed_time: %ld", elapsed_time_flb);
+            /* Reached timeout. */
+            break;
+        }
+    }
+}
+
 static inline int64_t set_result(int64_t v)
 {
     int64_t old = __sync_lock_test_and_set(&result_time, v);
@@ -556,6 +588,136 @@ void flb_test_in_tail_dockermode_firstline_detection()
             "Docker_Mode_Parser", "docker_multiline",
             NULL);
 }
+
+#ifdef FLB_HAVE_UNICODE_ENCODER
+void do_test_unicode(char *system, const char *target, int nExpected, ...)
+{
+    int64_t ret;
+    flb_ctx_t    *ctx    = NULL;
+    int in_ffd;
+    int out_ffd;
+    va_list va;
+    char *key;
+    char *value;
+    char path[PATH_MAX];
+    int num;
+    int unused;
+
+    struct flb_lib_out_cb cb;
+
+    /* For UTF-16LE/BE encodings, there are test cases that include
+     * multibyte characters. We didn't fully support for escaping
+     * Unicode code points especially SIMD enabled situations.
+     * So, it's just counting for the consumed record(s) here.
+     */
+    cb.cb   = cb_count_msgpack;
+    cb.data = &unused;
+
+    ctx = flb_create();
+
+    ret = flb_service_set(ctx,
+                          "Log_Level", "error",
+                          NULL);
+    TEST_CHECK_(ret == 0, "setting service options");
+
+    in_ffd = flb_input(ctx, (char *) system, NULL);
+    TEST_CHECK(in_ffd >= 0);
+    TEST_CHECK(flb_input_set(ctx, in_ffd, "tag", "test", NULL) == 0);
+
+    /* Compose path based on target */
+    snprintf(path, sizeof(path) - 1, DPATH "/log/%s.log", target);
+    TEST_CHECK_(access(path, R_OK) == 0, "accessing log file: %s", path);
+
+    TEST_CHECK(flb_input_set(ctx, in_ffd,
+                             "path"          , path,
+                             "read_from_head", "true",
+                             NULL) == 0);
+
+    va_start(va, nExpected);
+    while ((key = va_arg(va, char *))) {
+        value = va_arg(va, char *);
+        TEST_CHECK(value != NULL);
+        TEST_CHECK(flb_input_set(ctx, in_ffd, key, value, NULL) == 0);
+    }
+    va_end(va);
+
+    out_ffd = flb_output(ctx, (char *) "lib", &cb);
+    TEST_CHECK(out_ffd >= 0);
+    TEST_CHECK(flb_output_set(ctx, out_ffd,
+                              "match", "test",
+                              "format", "json",
+                              NULL) == 0);
+
+    TEST_CHECK(flb_service_set(ctx, "Flush", "0.5",
+                                    "Grace", "1",
+                                    NULL) == 0);
+
+    /* Start test */
+    /* Start the engine */
+    ret = flb_start(ctx);
+    TEST_CHECK_(ret == 0, "starting engine");
+
+    /* /\* Poll for up to 5 seconds or until we got a match *\/ */
+    /* for (ret = 0; result.nMatched <= nExpected; ret++) { */
+    /*     usleep(1000); */
+    /* } */
+
+    /* waiting to flush */
+    wait_num_with_timeout(5000, &num);
+    if (!TEST_CHECK(num > 0))  {
+        TEST_MSG("no output");
+    }
+
+    ret = flb_stop(ctx);
+    TEST_CHECK_(ret == 0, "stopping engine");
+
+    if (ctx) {
+        flb_destroy(ctx);
+    }
+}
+
+void flb_test_in_tail_utf16le_c()
+{
+    do_test_unicode("tail", "unicode_c", 1,
+                    "Unicode.Encoding", "auto",
+                    NULL);
+}
+
+void flb_test_in_tail_utf16be_c()
+{
+    do_test_unicode("tail", "unicode_be_c", 1,
+                    "Unicode.Encoding", "auto",
+                    NULL);
+}
+
+void flb_test_in_tail_utf16le_j()
+{
+    do_test_unicode("tail", "unicode_j", 1,
+                    "Unicode.Encoding", "auto",
+                    NULL);
+}
+
+void flb_test_in_tail_utf16be_j()
+{
+    do_test_unicode("tail", "unicode_be_j", 1,
+                    "Unicode.Encoding", "auto",
+                    NULL);
+}
+
+void flb_test_in_tail_utf16le_subdivision_flags()
+{
+    do_test_unicode("tail", "unicode_subdivision_flags", 1,
+                    "Unicode.Encoding", "auto",
+                    NULL);
+}
+
+void flb_test_in_tail_utf16be_subdivision_flags()
+{
+    do_test_unicode("tail", "unicode_subdivision_flags_be", 1,
+                    "Unicode.Encoding", "auto",
+                    NULL);
+}
+#endif
 
 int write_long_lines(int fd) {
     ssize_t ret;
@@ -2047,6 +2209,15 @@ TEST_LIST = {
     {"db", flb_test_db},
     {"db_delete_stale_file", flb_test_db_delete_stale_file},
     {"db_compare_filename", flb_test_db_compare_filename},
+#endif
+
+#ifdef FLB_HAVE_UNICODE_ENCODER
+    {"utf16le_c", flb_test_in_tail_utf16le_c},
+    {"utf16be_c", flb_test_in_tail_utf16be_c},
+    {"utf16le_j", flb_test_in_tail_utf16le_j},
+    {"utf16be_j", flb_test_in_tail_utf16be_j},
+    {"utf16le_subdivision_flags", flb_test_in_tail_utf16le_subdivision_flags},
+    {"utf16be_subdivision_flags", flb_test_in_tail_utf16be_subdivision_flags},
 #endif
 
 #ifdef in_tail

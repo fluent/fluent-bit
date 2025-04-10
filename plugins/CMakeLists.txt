@@ -74,6 +74,18 @@ endmacro()
 
 # REGISTER_OUT_PLUGIN
 macro(REGISTER_OUT_PLUGIN name)
+  set (extra_args ${ARGN})
+
+  list(LENGTH extra_args extra_count)
+
+  if (${extra_count} GREATER 0)
+      list(GET extra_args 0 environment)
+  else ()
+    set(environment "c")
+  endif ()
+
+  string(TOUPPER ${environment} environment)
+
   string(FIND ${name} "=" pos)
   if(pos GREATER -1)
     string(REPLACE "=" ";" list ${name})
@@ -89,12 +101,22 @@ macro(REGISTER_OUT_PLUGIN name)
     set(FLB_OUT_PLUGINS_DECL "${FLB_OUT_PLUGINS_DECL}extern struct flb_output_plugin ${p_name}_plugin;\n")
 
     # C code
+    if(${environment} MATCHES "ZIG")
+    set(C_CODE          "    out = flb_zig_native_output_plugin_init(&${p_name}_plugin);\n")
+    else()
     set(C_CODE          "    out = flb_malloc(sizeof(struct flb_output_plugin));\n")
+    endif()
+
     set(C_CODE "${C_CODE}    if (!out) {\n")
     set(C_CODE "${C_CODE}        flb_errno();\n")
     set(C_CODE "${C_CODE}        return -1;\n")
     set(C_CODE "${C_CODE}    }\n")
+
+    if(${environment} MATCHES "ZIG")
+    else()
     set(C_CODE "${C_CODE}    memcpy(out, &${p_name}_plugin, sizeof(struct flb_output_plugin));\n")
+    endif()
+
     set(C_CODE "${C_CODE}    mk_list_add(&out->_head, &config->out_plugins);\n\n")
 
     set(FLB_OUT_PLUGINS_ADD "${FLB_OUT_PLUGINS_ADD}${C_CODE}")
@@ -185,6 +207,36 @@ macro(FLB_PLUGIN name src deps)
   target_link_libraries(flb-plugin-${name} fluent-bit-static msgpack-c-static ${deps})
 endmacro()
 
+# FLB_ZIG_PLUGIN: used by zig plugins to standardize the process
+macro(FLB_ZIG_PLUGIN name deps)
+  find_program(ZIG_PATH zig REQUIRED)
+
+  get_property(include_dirs DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR} PROPERTY INCLUDE_DIRECTORIES)
+
+  add_custom_command(
+    OUTPUT ${CMAKE_CURRENT_BINARY_DIR}/flb-plugin-${name}.o
+    COMMAND ${CMAKE_COMMAND} -E env "FLB_ZIG_BUILD_INCLUDE_DIRECTORIES=${include_dirs}" ${ZIG_PATH} build --prefix "${CMAKE_CURRENT_BINARY_DIR}"
+    WORKING_DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR}
+    DEPENDS ${CMAKE_CURRENT_SOURCE_DIR}/build.zig
+    VERBATIM
+  )
+
+  add_custom_target(zig-build-done
+    DEPENDS ${CMAKE_CURRENT_BINARY_DIR}/flb-plugin-${name}.o
+  )
+
+  if(NOT EXISTS "${CMAKE_CURRENT_BINARY_DIR}/dummy.c")
+    file(WRITE "${CMAKE_CURRENT_BINARY_DIR}/dummy.c" "")
+  endif()
+
+  set(src
+    ${CMAKE_CURRENT_BINARY_DIR}/dummy.c
+    ${CMAKE_CURRENT_BINARY_DIR}/flb-plugin-${name}.o)
+
+  FLB_PLUGIN(${name} "${src}" "${deps}")
+
+  add_dependencies(flb-plugin-${name} zig-build-done)
+endmacro()
 
 # ======================
 #  Plugins Registration
@@ -288,8 +340,9 @@ REGISTER_IN_PLUGIN("in_random")
 REGISTER_PROCESSOR_PLUGIN("processor_content_modifier")
 REGISTER_PROCESSOR_PLUGIN("processor_labels")
 REGISTER_PROCESSOR_PLUGIN("processor_metrics_selector")
-REGISTER_PROCESSOR_PLUGIN("processor_sql")
 REGISTER_PROCESSOR_PLUGIN("processor_opentelemetry_envelope")
+REGISTER_PROCESSOR_PLUGIN("processor_sampling")
+REGISTER_PROCESSOR_PLUGIN("processor_sql")
 
 # OUTPUTS
 # =======
@@ -345,6 +398,10 @@ REGISTER_OUT_PLUGIN("out_prometheus_remote_write")
 REGISTER_OUT_PLUGIN("out_s3")
 REGISTER_OUT_PLUGIN("out_vivo_exporter")
 REGISTER_OUT_PLUGIN("out_chronicle")
+
+if(FLB_ZIG)
+REGISTER_OUT_PLUGIN("out_zig_demo" "zig")
+endif()
 
 # FILTERS
 # =======

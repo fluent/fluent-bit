@@ -345,6 +345,14 @@ if(FLB_WASM)
   add_subdirectory(wasm)
 endif()
 
+if(FLB_UNICODE_ENCODER)
+  add_subdirectory(simdutf)
+  set(src
+    ${src}
+    "flb_unicode.c"
+    )
+endif()
+
 # WAMRC compiler
 if(FLB_WAMRC)
   add_subdirectory(wamrc)
@@ -419,6 +427,15 @@ if(FLB_UTF8_ENCODER)
 set(FLB_DEPS
   ${FLB_DEPS}
   tutf8e
+  )
+endif()
+
+# Unicode Encoding (UTF-16LE, UTF-16BE)
+if(FLB_UNICODE_ENCODER)
+set(FLB_DEPS
+  ${FLB_DEPS}
+  simdutf-static
+  flb-simdutf-connector-static
   )
 endif()
 
@@ -553,13 +570,30 @@ if(FLB_BINARY)
   endif()
 
   if(SYSTEMD_UNITDIR)
-    set(FLB_SYSTEMD_SCRIPT "${PROJECT_SOURCE_DIR}/init/${FLB_OUT_NAME}.service")
-    configure_file(
-      "${PROJECT_SOURCE_DIR}/init/systemd.in"
-      ${FLB_SYSTEMD_SCRIPT}
-      )
-    install(FILES ${FLB_SYSTEMD_SCRIPT} COMPONENT binary DESTINATION ${SYSTEMD_UNITDIR})
-    install(DIRECTORY DESTINATION ${FLB_INSTALL_CONFDIR} COMPONENT binary)
+    if (FLB_AMAZON_LINUX2)
+      set(FLB_SYSTEMD_SCRIPT "${PROJECT_SOURCE_DIR}/init/${FLB_OUT_NAME}.service")
+      configure_file(
+        "${PROJECT_SOURCE_DIR}/init/az2-systemd.in"
+        ${FLB_SYSTEMD_SCRIPT}
+        )
+      install(FILES ${FLB_SYSTEMD_SCRIPT} COMPONENT binary DESTINATION ${SYSTEMD_UNITDIR})
+      install(DIRECTORY DESTINATION ${FLB_INSTALL_CONFDIR} COMPONENT binary)
+      set(FLB_HOSTNAME_SYSTEMD_SCRIPT "${PROJECT_SOURCE_DIR}/init/sethostname.service")
+      configure_file(
+        "${PROJECT_SOURCE_DIR}/init/az2-sethostname.in"
+        ${FLB_HOSTNAME_SYSTEMD_SCRIPT}
+        )
+      install(FILES ${FLB_HOSTNAME_SYSTEMD_SCRIPT} COMPONENT binary DESTINATION ${SYSTEMD_UNITDIR})
+      install(DIRECTORY DESTINATION ${FLB_INSTALL_CONFDIR} COMPONENT binary)
+    else()
+      set(FLB_SYSTEMD_SCRIPT "${PROJECT_SOURCE_DIR}/init/${FLB_OUT_NAME}.service")
+      configure_file(
+        "${PROJECT_SOURCE_DIR}/init/systemd.in"
+        ${FLB_SYSTEMD_SCRIPT}
+        )
+      install(FILES ${FLB_SYSTEMD_SCRIPT} COMPONENT binary DESTINATION ${SYSTEMD_UNITDIR})
+      install(DIRECTORY DESTINATION ${FLB_INSTALL_CONFDIR} COMPONENT binary)
+    endif()
   elseif(IS_DIRECTORY /usr/share/upstart)
     set(FLB_UPSTART_SCRIPT "${PROJECT_SOURCE_DIR}/init/${FLB_OUT_NAME}.conf")
     configure_file(

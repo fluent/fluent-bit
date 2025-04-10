@@ -43,7 +43,9 @@ int opentelemetry_traces_process_protobuf(struct flb_opentelemetry *ctx,
                                              &offset);
     if (result == 0) {
         result = flb_input_trace_append(ctx->ins, tag, tag_len, decoded_context);
-        ctr_decode_opentelemetry_destroy(decoded_context);
+        if (result == -1) {
+            ctr_destroy(decoded_context);
+        }
     }
 
     return result;
@@ -550,6 +552,7 @@ static int process_span_status(struct flb_opentelemetry *ctx,
 {
     int ret;
     int code = 0;
+    cfl_sds_t tmp = NULL;
     char *message = NULL;
 
     if (status->type != MSGPACK_OBJECT_MAP) {
@@ -559,8 +562,28 @@ static int process_span_status(struct flb_opentelemetry *ctx,
 
     /* code */
     ret = find_map_entry_by_key(&status->via.map, "code", 0, FLB_TRUE);
-    if (ret >= 0 && status->via.map.ptr[ret].val.type == MSGPACK_OBJECT_POSITIVE_INTEGER) {
-        code = status->via.map.ptr[ret].val.via.u64;
+    if (ret >= 0 && status->via.map.ptr[ret].val.type == MSGPACK_OBJECT_STR) {
+        tmp = cfl_sds_create_len(status->via.map.ptr[ret].val.via.str.ptr,
+                                 status->via.map.ptr[ret].val.via.str.size);
+        if (!tmp) {
+            return -1;
+        }
+
+        if (strcasecmp(tmp, "UNSET") == 0) {
+            code = CTRACE_SPAN_STATUS_CODE_UNSET;
+        }
+        else if (strcasecmp(tmp, "OK") == 0) {
+            code = CTRACE_SPAN_STATUS_CODE_OK;
+        }
+        else if (strcasecmp(tmp, "ERROR") == 0) {
+            code = CTRACE_SPAN_STATUS_CODE_ERROR;
+        }
+        else {
+            flb_plg_error(ctx->ins, "status code value is invalid: %s", tmp);
+            cfl_sds_destroy(tmp);
+            return -1;
+        }
+        cfl_sds_destroy(tmp);
     }
     else {
         flb_plg_error(ctx->ins, "status code is missing");
@@ -1085,7 +1108,9 @@ static int process_json(struct flb_opentelemetry *ctx,
     ctr = process_root_msgpack(ctx, &unpacked_root.data);
     if (ctr) {
         result = flb_input_trace_append(ctx->ins, tag, tag_len, ctr);
-        ctr_destroy(ctr);
+        if (result == -1) {
+            ctr_destroy(ctr);
+        }
     }
 
     msgpack_unpacked_destroy(&unpacked_root);

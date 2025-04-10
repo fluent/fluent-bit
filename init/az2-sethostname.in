@@ -1,0 +1,12 @@
+[Unit]
+Description=Set Hostname Workaround coreos/bugs#1272
+Wants=network-online.target
+After=network-online.target
+
+[Service]
+Type=oneshot
+RemainAfterExit=yes
+ExecStart=/bin/sh -c "/usr/bin/hostnamectl set-hostname $(curl -s http://169.254.169.254/latest/meta-data/hostname)"
+
+[Install]
+WantedBy=multi-user.target

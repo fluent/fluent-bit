@@ -274,6 +274,9 @@ struct flb_config *flb_config_init()
         }
     }
 
+    /* Routing */
+    flb_routes_mask_set_size(1, config);
+
     config->cio          = NULL;
     config->storage_path = NULL;
     config->storage_input_plugin = NULL;
@@ -333,7 +336,14 @@ struct flb_config *flb_config_init()
     mk_list_init(&config->cmetrics);
     mk_list_init(&config->cf_parsers_list);
 
-    memset(&config->tasks_map, '\0', sizeof(config->tasks_map));
+    /* Task map */
+    ret = flb_config_task_map_resize(config, FLB_CONFIG_DEFAULT_TASK_MAP_SIZE);
+
+    if (ret != 0) {
+        flb_error("[config] task map resize failed");
+        flb_config_exit(config);
+        return NULL;
+    }
 
     /* Initialize multiline-parser list. We need this here, because from now
      * on we use flb_config_exit to cleanup the config, which requires
@@ -546,6 +556,10 @@ void flb_config_exit(struct flb_config *config)
         mk_list_del(&cf->_head);
         flb_cf_destroy(cf);
     }
+
+    /* release task map */
+    flb_config_task_map_resize(config, 0);
+    flb_routes_empty_mask_destroy(config);
 
     flb_free(config);
 }
@@ -969,4 +983,58 @@ int flb_config_load_config_format(struct flb_config *config, struct flb_cf *cf)
     }
 
     return 0;
+}
+
+int flb_config_task_map_resize(struct flb_config *config, size_t new_size)
+{
+    struct flb_task_map *new_task_map;
+
+    if (new_size == config->task_map_size) {
+        return 0;
+    }
+
+    if (new_size == 0) {
+        if (config->task_map != NULL) {
+            flb_free(config->task_map);
+
+            config->task_map = NULL;
+            config->task_map_size = 0;
+        }
+
+        return 0;
+    }
+
+    if (config->task_map == NULL) {
+        new_task_map = flb_calloc(new_size, sizeof(struct flb_task_map));
+    }
+    else {
+        new_task_map = flb_realloc(config->task_map, new_size * sizeof(struct flb_task_map));
+    }
+
+    if (new_task_map == NULL) {
+        flb_errno();
+
+        return -1;
+    }
+
+    if (new_size > config->task_map_size) {
+        memset(&new_task_map[config->task_map_size],
+               0,
+               (new_size - config->task_map_size) * sizeof(struct flb_task_map));
+    }
+
+    config->task_map = new_task_map;
+    config->task_map_size = new_size;
+
+    return 0;
+}
+
+int flb_config_task_map_grow(struct flb_config *config)
+{
+    if (config->task_map_size >= FLB_CONFIG_DEFAULT_TASK_MAP_SIZE_LIMIT) {
+        return -1;
+    }
+
+    return flb_config_task_map_resize(config,
+                                      config->task_map_size + FLB_CONFIG_DEFAULT_TASK_MAP_SIZE_GROWTH_SiZE);
 }

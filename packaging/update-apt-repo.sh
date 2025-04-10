@@ -32,16 +32,11 @@ APTLY_REPO_NAME="debify-$CODENAME"
 APTLY_ROOTDIR=$(mktemp -d)
 APTLY_CONFIG=$(mktemp)
 
-# The origin and label fields are free text fields that should indicate the heritage of the package repository.
-# They are used in an unattend-upgrade scenario and therefore they should be unique for each package source.
-# Further information can be found here https://wiki.debian.org/DebianRepository/Format & https://wiki.debian.org/UnattendedUpgrades
-# For fluent-bit a valid apt config entry for unattended upgrades is
-# Unattended-Upgrade::Origins-Pattern {
-#   "origin=packages.fluentbit.io,codename=${distro_codename},label=fluent-bit"
-# }
+# The origin and label fields seem to cover the base directory for the repo and codename.
+# The docs seems to suggest these fields are optional and free-form: https://wiki.debian.org/DebianRepository/Format#Origin
 # They are security checks to verify if they have changed so we match the legacy server.
-APTLY_ORIGIN="packages.fluentbit.io"
-APTLY_LABEL="fluent-bit"
+APTLY_ORIGIN=". $CODENAME"
+APTLY_LABEL=". $CODENAME"
 if [[ "$DEB_REPO" == "debian/bullseye" ]]; then
     # For Bullseye, the legacy server had a slightly different setup we try to reproduce here
     APTLY_ORIGIN="bullseye bullseye"
