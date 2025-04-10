@@ -373,14 +373,18 @@ struct flb_oci_logan *flb_oci_logan_conf_create(struct flb_output_instance *ins,
 
 
     /* Check if SSL/TLS is enabled */
-    io_flags = FLB_IO_TCP;
-    default_port = 80;
-
 #ifdef FLB_HAVE_TLS
     if (ins->use_tls == FLB_TRUE) {
         io_flags = FLB_IO_TLS;
         default_port = 443;
     }
+    else {
+        flb_plg_error(ctx->ins, "TLS must be enabled, for OCI");
+        return NULL;
+    }
+#else
+    flb_plg_error(ctx->ins, "TLS support required for for OCI");
+    return NULL;
 #endif
 
     if (ins->host.ipv6 == FLB_TRUE) {
