@@ -1,0 +1,6 @@
+{
+  "use-pod-association-enabled-fallback-env": {
+    "ServiceName": "test-service",
+    "ServiceNameSource": "Instrumentation"
+  }
+}

@@ -13,7 +13,7 @@
 			"labels": {
 				"app.kubernetes.io/name": "fluent-bit"
 			},
-			"name": "use-kubelet-enabled",
+			"name": "use-kubelet-enabled-replicaset",
 			"namespace": "options",
 			"resourceVersion": "74466568",
 			"selfLink": "/api/v1/namespaces/core/pods/base",
@@ -21,8 +21,8 @@
 			"ownerReferences": [
 			    {
 			        "apiVersion": "apps/v1",
-			        "kind": "Deployment",
-			        "name": "my-deployment",
+			        "kind": "ReplicaSet",
+			        "name": "my-replicaset",
 			        "uid": "abcd1234-5678-efgh-ijkl-9876mnopqrst",
 			        "controller": true,
 			        "blockOwnerDeletion": true
