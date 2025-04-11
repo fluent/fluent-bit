@@ -172,7 +172,7 @@ static void parse_pod_service_map(struct flb_kube *ctx, char *api_buf, size_t ap
                         flb_free(service_attributes);
                     }
                     flb_free(pod_name);
-                }else {
+                } else {
                     flb_plg_error(ctx->ins, "key and values are not string and map");
                 }
             }
