@@ -42,7 +42,7 @@ void test_compress()
 
 void test_concatenated_gzip_count()
 {
-     int ret;
+    int ret;
     int sample_len;
     char *in_data = morpheus;
     size_t in_len;
@@ -63,7 +63,7 @@ void test_concatenated_gzip_count()
     TEST_CHECK(ret == 0);
 
     border_count = flb_gzip_count(payload, flb_sds_len(payload), NULL, 0);
-    TEST_CHECK(border_count == 1);
+    TEST_CHECK(border_count == 2);
 
     flb_free(str);
     flb_sds_destroy(payload);
@@ -100,9 +100,47 @@ void test_not_overflow_for_concatenated_gzip()
     }
 }
 
+
+void test_decompress_concatenated()
+{
+    int ret;
+    char *in_data = morpheus;
+    size_t in_len = strlen(morpheus);
+    void *gz1, *gz2;
+    size_t len1, len2;
+    flb_sds_t full_payload;
+    void *out;
+    size_t out_len;
+
+    ret = flb_gzip_compress(in_data, in_len, &gz1, &len1);
+    TEST_CHECK(ret == 0);
+
+    ret = flb_gzip_compress(in_data, in_len, &gz2, &len2);
+    TEST_CHECK(ret == 0);
+
+    full_payload = flb_sds_create_len((char *)gz1, len1);
+    ret = flb_sds_cat_safe(&full_payload, gz2, len2);
+    TEST_CHECK(ret == 0);
+
+    int count = flb_gzip_count(full_payload, flb_sds_len(full_payload), NULL, 0);
+    TEST_CHECK(count == 2);
+
+    ret = flb_gzip_uncompress(full_payload, flb_sds_len(full_payload), &out, &out_len);
+    TEST_CHECK(ret == 0);
+    TEST_CHECK(out_len == 2 * in_len);
+    TEST_CHECK(memcmp(out, morpheus, in_len) == 0);
+    TEST_CHECK(memcmp((char *)out + in_len, morpheus, in_len) == 0);
+
+    flb_free(gz1);
+    flb_free(gz2);
+    flb_sds_destroy(full_payload);
+    flb_free(out);
+}
+
 TEST_LIST = {
     {"compress", test_compress},
     {"count",  test_concatenated_gzip_count},
     {"not_overflow", test_not_overflow_for_concatenated_gzip},
+    {"decompress_concatenated", test_decompress_concatenated},
     { 0 }
 };
