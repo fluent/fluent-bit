@@ -5,8 +5,11 @@
 *~
 _book/
 lib/jemalloc
+cmake-build-debug/
 tests/internal/flb_tests_internal.h
 tests/runtime/flb_tests_runtime.h
+tests/internal/cmake-build-debug/
+tests/runtime/cmake-build-debug/
 build/*
 include/fluent-bit/flb_info.h
 include/fluent-bit/flb_plugins.h
