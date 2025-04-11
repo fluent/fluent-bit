@@ -241,9 +241,8 @@ int flb_gzip_compress(void *in_data, size_t in_len,
     return 0;
 }
 
-/* Uncompress (inflate) GZip data */
-int flb_gzip_uncompress(void *in_data, size_t in_len,
-                        void **out_data, size_t *out_len)
+int flb_gzip_uncompress_member(void *in_data, size_t in_len,
+                                void **out_data, size_t *out_len)
 {
     int status;
     uint8_t *p;
@@ -292,7 +291,7 @@ int flb_gzip_uncompress(void *in_data, size_t in_len,
     if (flg & FEXTRA) {
         xlen = read_le16(start);
         if (xlen > in_len - 12) {
-            flb_error("[gzip] invalid gzip data");
+            flb_error("[gzip] invalid gzip data (FEXTRA)");
             return -1;
         }
         start += xlen + 2;
@@ -321,7 +320,7 @@ int flb_gzip_uncompress(void *in_data, size_t in_len,
     /* Check header crc if present */
     if (flg & FHCRC) {
         if (start - p > in_len - 2) {
-            flb_error("[gzip] invalid gzip data (FHRC)");
+            flb_error("[gzip] invalid gzip data (FHCRC)");
             return -1;
         }
 
@@ -414,9 +413,74 @@ int flb_gzip_uncompress(void *in_data, size_t in_len,
     return 0;
 }
 
+int flb_gzip_uncompress(void *in_data, size_t in_len,
+                        void **out_data, size_t *out_len)
+{
+    int i, ret;
+    size_t *borders = NULL;
+    size_t count = 0;
+    size_t total = 0;
+    size_t part_len = 0;
+    size_t out_len_local = 0;
+    void *out = NULL;
+    void *final_buf = NULL;
+
+    count = flb_gzip_count(in_data, in_len, NULL, 0);
+    if (count == 0) {
+        flb_error("[gzip] no valid gzip members found");
+        return -1;
+    }
+
+    borders = flb_calloc(count + 1, sizeof(size_t));
+    if (!borders) {
+        flb_errno();
+        return -1;
+    }
+
+    ret = flb_gzip_count(in_data, in_len, &borders, count);
+    if (ret != count) {
+        flb_free(borders);
+        return -1;
+    }
+
+    for (i = 0; i < count; i++) {
+        part_len = borders[i + 1] - borders[i];
+        out = NULL;
+        out_len_local = 0;
+
+        ret = flb_gzip_uncompress_member((uint8_t *)in_data + borders[i],
+                                         part_len, &out, &out_len_local);
+        if (ret != 0) {
+            flb_free(out);
+            flb_free(borders);
+            flb_free(final_buf);
+            return -1;
+        }
+
+        final_buf = flb_realloc(final_buf, total + out_len_local);
+        if (!final_buf) {
+            flb_errno();
+            flb_free(out);
+            flb_free(borders);
+            flb_errno();
+            return -1;
+        }
+
+        memcpy((uint8_t *) final_buf + total, out, out_len_local);
+        total += out_len_local;
+        flb_free(out);
+    }
+
+    flb_free(borders);
+
+    *out_data = final_buf;
+    *out_len = total;
+
+    return 0;
+}
+
 
 /* Stateful gzip decompressor */
-
 static int flb_gzip_decompressor_process_header(
             struct flb_decompression_context *context)
 {
@@ -802,7 +866,7 @@ static int vaild_os_flag(const char data)
 
 size_t flb_gzip_count(const char *data, size_t len, size_t **out_borders, size_t border_count)
 {
-    int i;
+    size_t i;
     size_t count = 0;
     const uint8_t *p;
     size_t *borders = NULL;
@@ -812,26 +876,27 @@ size_t flb_gzip_count(const char *data, size_t len, size_t **out_borders, size_t
     }
 
     p = (const uint8_t *) data;
-    /* search other gzip starting bits and method. */
-    for (i = 2; i < len &&
-                 i + 9 <= len; i++) {
-        /* A vaild gzip payloads are larger than 18 bytes. */
+
+    /* Search gzip starting bits and method */
+    for (i = 0; i + 9 <= len; i++) {
+        /* A valid gzip payload must be at least 18 bytes long */
         if (len - i < 18) {
             break;
         }
 
         if (p[i] == 0x1F && p[i+1] == 0x8B && p[i+2] == 8 &&
             vaild_os_flag(p[i+9])) {
-            if (out_borders != NULL) {
+
+            if (out_borders != NULL && count < border_count) {
                 borders[count] = i;
             }
             count++;
         }
     }
 
-    if (out_borders != NULL && border_count >= count) {
-        /* The length of the last border refers to the original length. */
-        borders[border_count] = len;
+    /* Append total length as the end boundary */
+    if (out_borders != NULL && count > 0 && border_count >= count) {
+        borders[count] = len;
     }
 
     return count;
