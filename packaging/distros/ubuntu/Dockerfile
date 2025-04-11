@@ -74,6 +74,25 @@ RUN apt-get update && \
 # ubuntu/20.04 base image
 FROM ubuntu:20.04 as ubuntu-20.04-base
 ENV DEBIAN_FRONTEND noninteractive
+SHELL ["/bin/bash", "-o", "pipefail", "-c"]
+
+# Install deps and manually build CMake 3.20
+RUN apt-get update && \
+    apt-get install -y curl ca-certificates build-essential libsystemd-dev \
+    make bash wget unzip nano vim valgrind dh-make flex bison \
+    libpq-dev postgresql-server-dev-all \
+    libsasl2-2 libsasl2-dev openssl libssl-dev libssl1.1 libcurl4-openssl-dev \
+    libyaml-dev pkg-config zlib1g-dev tar && \
+    mkdir -p /tmp/cmake && \
+    cd /tmp/cmake && \
+    curl -LO https://github.com/Kitware/CMake/releases/download/v3.20.0/cmake-3.20.0.tar.gz && \
+    tar -xzf cmake-3.20.0.tar.gz && \
+    cd cmake-3.20.0 && \
+    ./bootstrap && \
+    make -j$(nproc) && \
+    make install && \
+    cmake --version && \
+    apt-get install -y --reinstall lsb-base lsb-release
 
 # hadolint ignore=DL3008,DL3015
 RUN apt-get update && \
