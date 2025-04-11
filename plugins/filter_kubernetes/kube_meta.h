@@ -27,6 +27,7 @@ struct flb_kube;
 struct flb_kube_meta {
     int fields;
 
+    int cluster_len;
     int namespace_len;
     int podname_len;
     int cache_key_len;
@@ -34,12 +35,15 @@ struct flb_kube_meta {
     int docker_id_len;
     int container_hash_len;
     int container_image_len;
+    int workload_len;
 
+    char *cluster;
     char *namespace;
     char *podname;
     char *container_name;
     char *container_image;
     char *docker_id;
+    char *workload;
 
     char *container_hash;   /* set only on Systemd mode */
 
@@ -54,7 +58,12 @@ struct flb_kube_meta {
 #define FLB_KUBE_API_PORT 443
 #define FLB_KUBE_API_POD_FMT "/api/v1/namespaces/%s/pods/%s"
 #define FLB_KUBE_API_NAMESPACE_FMT "/api/v1/namespaces/%s"
+#define FLB_KUBE_API_CONFIGMAP_FMT "/api/v1/namespaces/%s/configmaps/%s"
 #define FLB_KUBELET_PODS "/pods"
+
+/* Constants for possible kubernetes resources */
+#define FLB_KUBE_POD "pod"
+#define FLB_KUBE_CONFIGMAP "configmap"
 
 int flb_kube_meta_init(struct flb_kube *ctx, struct flb_config *config);
 int flb_kube_meta_fetch(struct flb_kube *ctx);
@@ -63,11 +72,12 @@ int flb_kube_meta_get(struct flb_kube *ctx,
                       const char *tag, int tag_len,
                       const char *data, size_t data_size,
                       const char **out_buf, size_t *out_size,
-                      const char **namespace_out_buf, 
+                      const char **namespace_out_buf,
                       size_t *namespace_out_size,
                       struct flb_kube_meta *meta,
                       struct flb_kube_props *props,
                       struct flb_kube_meta *namespace_meta);
 int flb_kube_meta_release(struct flb_kube_meta *meta);
+int flb_kube_pod_association_init(struct flb_kube *ctx, struct flb_config *config);
 
 #endif
