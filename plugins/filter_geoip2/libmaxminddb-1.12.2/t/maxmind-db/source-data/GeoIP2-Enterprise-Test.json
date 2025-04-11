@@ -1,0 +1,1099 @@
+[
+   {
+      "::2.125.160.216/125" : {
+         "city" : {
+            "confidence" : 50,
+            "geoname_id" : 2655045,
+            "names" : {
+               "en" : "Boxford"
+            }
+         },
+         "continent" : {
+            "code" : "EU",
+            "geoname_id" : 6255148,
+            "names" : {
+               "de" : "Europa",
+               "en" : "Europe",
+               "es" : "Europa",
+               "fr" : "Europe",
+               "ja" : "ヨーロッパ",
+               "pt-BR" : "Europa",
+               "ru" : "Европа",
+               "zh-CN" : "欧洲"
+            }
+         },
+         "country" : {
+            "confidence" : 95,
+            "geoname_id" : 2635167,
+            "iso_code" : "GB",
+            "names" : {
+               "de" : "Vereinigtes Königreich",
+               "en" : "United Kingdom",
+               "es" : "Reino Unido",
+               "fr" : "Royaume-Uni",
+               "ja" : "イギリス",
+               "pt-BR" : "Reino Unido",
+               "ru" : "Великобритания",
+               "zh-CN" : "英国"
+            }
+         },
+         "location" : {
+            "accuracy_radius" : 100,
+            "latitude" : 51.75,
+            "longitude" : -1.25,
+            "time_zone" : "Europe/London"
+         },
+         "postal" : {
+            "code" : "OX1",
+            "confidence" : 20
+         },
+         "registered_country" : {
+            "geoname_id" : 3017382,
+            "is_in_european_union" : true,
+            "iso_code" : "FR",
+            "names" : {
+               "de" : "Frankreich",
+               "en" : "France",
+               "es" : "Francia",
+               "fr" : "France",
+               "ja" : "フランス共和国",
+               "pt-BR" : "França",
+               "ru" : "Франция",
+               "zh-CN" : "法国"
+            }
+         },
+         "subdivisions" : [
+            {
+               "confidence" : 70,
+               "geoname_id" : 6269131,
+               "iso_code" : "ENG",
+               "names" : {
+                  "en" : "England",
+                  "es" : "Inglaterra",
+                  "fr" : "Angleterre",
+                  "pt-BR" : "Inglaterra"
+               }
+            },
+            {
+               "geoname_id" : 3333217,
+               "iso_code" : "WBK",
+               "names" : {
+                  "en" : "West Berkshire",
+                  "ru" : "Западный Беркшир",
+                  "zh-CN" : "西伯克郡"
+               }
+            }
+         ],
+         "traits" : {
+            "static_ip_score" : 0.27
+         }
+      }
+   },
+   {
+      "::67.43.156.0/120" : {
+         "continent" : {
+            "code" : "AS",
+            "geoname_id" : 6255147,
+            "names" : {
+               "de" : "Asien",
+               "en" : "Asia",
+               "es" : "Asia",
+               "fr" : "Asie",
+               "ja" : "アジア",
+               "pt-BR" : "Ásia",
+               "ru" : "Азия",
+               "zh-CN" : "亚洲"
+            }
+         },
+         "country" : {
+            "confidence" : 99,
+            "geoname_id" : 1252634,
+            "iso_code" : "BT",
+            "names" : {
+               "de" : "Bhutan",
+               "en" : "Bhutan",
+               "es" : "Bután",
+               "fr" : "Bhutan",
+               "ja" : "ブータン王国",
+               "pt-BR" : "Butão",
+               "ru" : "Бутан",
+               "zh-CN" : "不丹"
+            }
+         },
+         "location" : {
+            "accuracy_radius" : 534,
+            "latitude" : 27.5,
+            "longitude" : 90.5,
+            "time_zone" : "Asia/Thimphu"
+         },
+         "registered_country" : {
+            "geoname_id" : 798549,
+            "is_in_european_union" : true,
+            "iso_code" : "RO",
+            "names" : {
+               "de" : "Rumänien",
+               "en" : "Romania",
+               "es" : "Rumanía",
+               "fr" : "Roumanie",
+               "ja" : "ルーマニア",
+               "pt-BR" : "Romênia",
+               "ru" : "Румыния",
+               "zh-CN" : "罗马尼亚"
+            }
+         },
+         "traits" : {
+            "autonomous_system_number" : 35908,
+            "domain" : "shoesfin.NET",
+            "is_anonymous_proxy" : true,
+            "isp" : "Loud Packet",
+            "organization" : "zudoarichikito_",
+            "static_ip_score" : 0.34,
+            "user_type" : "search_engine_spider"
+         }
+      }
+   },
+   {
+      "::74.209.24.0/116" : {
+         "city" : {
+            "confidence" : 11,
+            "geoname_id" : 5112335,
+            "names" : {
+               "en" : "Chatham"
+            }
+         },
+         "continent" : {
+            "code" : "NA",
+            "geoname_id" : 6255149,
+            "names" : {
+               "de" : "Nordamerika",
+               "en" : "North America",
+               "es" : "Norteamérica",
+               "fr" : "Amérique du Nord",
+               "ja" : "北アメリカ",
+               "pt-BR" : "América do Norte",
+               "ru" : "Северная Америка",
+               "zh-CN" : "北美洲"
+            }
+         },
+         "country" : {
+            "confidence" : 99,
+            "geoname_id" : 6252001,
+            "iso_code" : "US",
+            "names" : {
+               "de" : "USA",
+               "en" : "United States",
+               "es" : "Estados Unidos",
+               "fr" : "États-Unis",
+               "ja" : "アメリカ合衆国",
+               "pt-BR" : "Estados Unidos",
+               "ru" : "США",
+               "zh-CN" : "美国"
+            }
+         },
+         "location" : {
+            "accuracy_radius" : 27,
+            "latitude" : 42.3478,
+            "longitude" : -73.5549,
+            "metro_code" : 532,
+            "time_zone" : "America/New_York"
+         },
+         "postal" : {
+            "code" : "12037",
+            "confidence" : 11
+         },
+         "registered_country" : {
+            "geoname_id" : 6252001,
+            "iso_code" : "US",
+            "names" : {
+               "de" : "USA",
+               "en" : "United States",
+               "es" : "Estados Unidos",
+               "fr" : "États-Unis",
+               "ja" : "アメリカ合衆国",
+               "pt-BR" : "Estados Unidos",
+               "ru" : "США",
+               "zh-CN" : "美国"
+            }
+         },
+         "subdivisions" : [
+            {
+               "confidence" : 93,
+               "geoname_id" : 5128638,
+               "iso_code" : "NY",
+               "names" : {
+                  "de" : "New York",
+                  "en" : "New York",
+                  "es" : "Nueva York",
+                  "fr" : "New York",
+                  "ja" : "ニューヨーク州",
+                  "pt-BR" : "Nova Iorque",
+                  "ru" : "Нью-Йорк",
+                  "zh-CN" : "纽约州"
+               }
+            }
+         ],
+         "traits" : {
+            "autonomous_system_number" : 14671,
+            "autonomous_system_organization" : "FairPoint Communications",
+            "connection_type" : "Cable/DSL",
+            "domain" : "frpt.net",
+            "is_anonymous_proxy" : true,
+            "is_legitimate_proxy" : true,
+            "is_satellite_provider" : true,
+            "isp" : "Fairpoint Communications",
+            "organization" : "Fairpoint Communications",
+            "static_ip_score" : 0.34,
+            "user_type" : "residential"
+         }
+      }
+   },
+   {
+      "::81.2.69.160/123" : {
+         "city" : {
+            "confidence" : 42,
+            "geoname_id" : 2643743,
+            "names" : {
+               "de" : "London",
+               "en" : "London",
+               "es" : "Londres",
+               "fr" : "Londres",
+               "ja" : "ロンドン",
+               "pt-BR" : "Londres",
+               "ru" : "Лондон"
+            }
+         },
+         "continent" : {
+            "code" : "EU",
+            "geoname_id" : 6255148,
+            "names" : {
+               "de" : "Europa",
+               "en" : "Europe",
+               "es" : "Europa",
+               "fr" : "Europe",
+               "ja" : "ヨーロッパ",
+               "pt-BR" : "Europa",
+               "ru" : "Европа",
+               "zh-CN" : "欧洲"
+            }
+         },
+         "country" : {
+            "confidence" : 99,
+            "geoname_id" : 2635167,
+            "iso_code" : "GB",
+            "names" : {
+               "de" : "Vereinigtes Königreich",
+               "en" : "United Kingdom",
+               "es" : "Reino Unido",
+               "fr" : "Royaume-Uni",
+               "ja" : "イギリス",
+               "pt-BR" : "Reino Unido",
+               "ru" : "Великобритания",
+               "zh-CN" : "英国"
+            }
+         },
+         "location" : {
+            "accuracy_radius" : 100,
+            "latitude" : 51.5142,
+            "longitude" : -0.0931,
+            "time_zone" : "Europe/London"
+         },
+         "registered_country" : {
+            "geoname_id" : 6252001,
+            "iso_code" : "US",
+            "names" : {
+               "de" : "USA",
+               "en" : "United States",
+               "es" : "Estados Unidos",
+               "fr" : "États-Unis",
+               "ja" : "アメリカ合衆国",
+               "pt-BR" : "Estados Unidos",
+               "ru" : "США",
+               "zh-CN" : "美国"
+            }
+         },
+         "subdivisions" : [
+            {
+               "confidence" : 42,
+               "geoname_id" : 6269131,
+               "iso_code" : "ENG",
+               "names" : {
+                  "en" : "England",
+                  "es" : "Inglaterra",
+                  "fr" : "Angleterre",
+                  "pt-BR" : "Inglaterra"
+               }
+            }
+         ],
+         "traits" : {
+            "connection_type" : "Corporate",
+            "domain" : "in-addr.arpa",
+            "isp" : "Andrews & Arnold Ltd",
+            "organization" : "STONEHOUSE office network",
+            "static_ip_score" : 0.34,
+            "user_type" : "government"
+         }
+      }
+   },
+   {
+      "::89.160.20.112/124" : {
+         "city" : {
+            "confidence" : 51,
+            "geoname_id" : 2694762,
+            "names" : {
+               "de" : "Linköping",
+               "en" : "Linköping",
+               "fr" : "Linköping",
+               "ja" : "リンシェーピング",
+               "zh-CN" : "林雪平"
+            }
+         },
+         "continent" : {
+            "code" : "EU",
+            "geoname_id" : 6255148,
+            "names" : {
+               "de" : "Europa",
+               "en" : "Europe",
+               "es" : "Europa",
+               "fr" : "Europe",
+               "ja" : "ヨーロッパ",
+               "pt-BR" : "Europa",
+               "ru" : "Европа",
+               "zh-CN" : "欧洲"
+            }
+         },
+         "country" : {
+            "confidence" : 99,
+            "geoname_id" : 2661886,
+            "is_in_european_union" : true,
+            "iso_code" : "SE",
+            "names" : {
+               "de" : "Schweden",
+               "en" : "Sweden",
+               "es" : "Suecia",
+               "fr" : "Suède",
+               "ja" : "スウェーデン王国",
+               "pt-BR" : "Suécia",
+               "ru" : "Швеция",
+               "zh-CN" : "瑞典"
+            }
+         },
+         "location" : {
+            "accuracy_radius" : 76,
+            "latitude" : 58.4167,
+            "longitude" : 15.6167,
+            "time_zone" : "Europe/Stockholm"
+         },
+         "registered_country" : {
+            "geoname_id" : 2921044,
+            "is_in_european_union" : true,
+            "iso_code" : "DE",
+            "names" : {
+               "de" : "Deutschland",
+               "en" : "Germany",
+               "es" : "Alemania",
+               "fr" : "Allemagne",
+               "ja" : "ドイツ連邦共和国",
+               "pt-BR" : "Alemanha",
+               "ru" : "Германия",
+               "zh-CN" : "德国"
+            }
+         },
+         "subdivisions" : [
+            {
+               "confidence" : 51,
+               "geoname_id" : 2685867,
+               "iso_code" : "E",
+               "names" : {
+                  "en" : "Östergötland County",
+                  "fr" : "Comté d'Östergötland"
+               }
+            }
+         ],
+         "traits" : {
+            "autonomous_system_number" : 29518,
+            "autonomous_system_organization" : "Bredband2 AB",
+            "connection_type" : "Corporate",
+            "domain" : "bredband2.com",
+            "isp" : "Bredband2 AB",
+            "organization" : "Bevtec",
+            "static_ip_score" : 0.34,
+            "user_type" : "government"
+         }
+      }
+   },
+   {
+      "::149.101.100.0/124" : {
+         "continent" : {
+            "code" : "NA",
+            "geoname_id" : 6255149,
+            "names" : {
+               "de" : "Nordamerika",
+               "en" : "North America",
+               "es" : "América del Norte",
+               "fr" : "Amérique du Nord",
+               "ja" : "北アメリカ",
+               "pt-BR" : "América do Norte",
+               "ru" : "Северная Америка",
+               "zh-CN" : "北美洲"
+            }
+         },
+         "country" : {
+            "confidence" : 99,
+            "geoname_id" : 6252001,
+            "iso_code" : "US",
+            "names" : {
+               "de" : "USA",
+               "en" : "United States",
+               "es" : "Estados Unidos",
+               "fr" : "États-Unis",
+               "ja" : "アメリカ合衆国",
+               "pt-BR" : "Estados Unidos",
+               "ru" : "США",
+               "zh-CN" : "美国"
+            }
+         },
+         "location" : {
+            "accuracy_radius" : 1000,
+            "latitude" : 37.751,
+            "longitude" : -97.822,
+            "time_zone" : "America/Chicago"
+         },
+         "registered_country" : {
+            "geoname_id" : 2635167,
+            "iso_code" : "GB",
+            "names" : {
+               "de" : "Vereinigtes Königreich",
+               "en" : "United Kingdom",
+               "es" : "Reino Unido",
+               "fr" : "Royaume-Uni",
+               "ja" : "イギリス",
+               "pt-BR" : "Reino Unido",
+               "ru" : "Великобритания",
+               "zh-CN" : "英国"
+            }
+         },
+         "traits" : {
+            "autonomous_system_number" : 6167,
+            "autonomous_system_organization" : "CELLCO-PART",
+            "isp" : "Verizon Wireless",
+            "mobile_country_code" : "310",
+            "mobile_network_code" : "004",
+            "organization" : "Verizon Wireless"
+         }
+      }
+   },
+   {
+      "::175.16.199.0/120" : {
+         "city" : {
+            "confidence" : 50,
+            "geoname_id" : 2038180,
+            "names" : {
+               "de" : "Chángchūn",
+               "en" : "Changchun",
+               "fr" : "Changchun",
+               "ja" : "長春市",
+               "ru" : "Чанчунь",
+               "zh-CN" : "长春"
+            }
+         },
+         "continent" : {
+            "code" : "AS",
+            "geoname_id" : 6255147,
+            "names" : {
+               "de" : "Asien",
+               "en" : "Asia",
+               "es" : "Asia",
+               "fr" : "Asie",
+               "ja" : "アジア",
+               "pt-BR" : "Ásia",
+               "ru" : "Азия",
+               "zh-CN" : "亚洲"
+            }
+         },
+         "country" : {
+            "confidence" : 95,
+            "geoname_id" : 1814991,
+            "iso_code" : "CN",
+            "names" : {
+               "de" : "China",
+               "en" : "China",
+               "es" : "China",
+               "fr" : "Chine",
+               "ja" : "中国",
+               "pt-BR" : "China",
+               "ru" : "Китай",
+               "zh-CN" : "中国"
+            }
+         },
+         "location" : {
+            "accuracy_radius" : 100,
+            "latitude" : 43.88,
+            "longitude" : 125.3228,
+            "time_zone" : "Asia/Harbin"
+         },
+         "registered_country" : {
+            "geoname_id" : 1814991,
+            "iso_code" : "CN",
+            "names" : {
+               "de" : "China",
+               "en" : "China",
+               "es" : "China",
+               "fr" : "Chine",
+               "ja" : "中国",
+               "pt-BR" : "China",
+               "ru" : "Китай",
+               "zh-CN" : "中国"
+            }
+         },
+         "subdivisions" : [
+            {
+               "confidence" : 70,
+               "geoname_id" : 2036500,
+               "iso_code" : "22",
+               "names" : {
+                  "en" : "Jilin Sheng",
+                  "zh-CN" : "吉林"
+               }
+            }
+         ],
+         "traits" : {
+            "static_ip_score" : 0.63,
+            "user_type" : "residential"
+         }
+      }
+   },
+   {
+      "::202.196.224.0/116" : {
+         "continent" : {
+            "code" : "AS",
+            "geoname_id" : 6255147,
+            "names" : {
+               "de" : "Asien",
+               "en" : "Asia",
+               "es" : "Asia",
+               "fr" : "Asie",
+               "ja" : "アジア",
+               "pt-BR" : "Ásia",
+               "ru" : "Азия",
+               "zh-CN" : "亚洲"
+            }
+         },
+         "country" : {
+            "confidence" : 95,
+            "geoname_id" : 1694008,
+            "iso_code" : "PH",
+            "names" : {
+               "de" : "Philippinen",
+               "en" : "Philippines",
+               "es" : "Filipinas",
+               "fr" : "Philippines",
+               "ja" : "フィリピン共和国",
+               "pt-BR" : "Filipinas",
+               "ru" : "Филиппины",
+               "zh-CN" : "菲律宾"
+            }
+         },
+         "location" : {
+            "accuracy_radius" : 121,
+            "latitude" : 13,
+            "longitude" : 122,
+            "time_zone" : "Asia/Manila"
+         },
+         "postal" : {
+            "code" : "34021",
+            "confidence" : 20
+         },
+         "registered_country" : {
+            "geoname_id" : 1694008,
+            "iso_code" : "PH",
+            "names" : {
+               "de" : "Philippinen",
+               "en" : "Philippines",
+               "es" : "Filipinas",
+               "fr" : "Philippines",
+               "ja" : "フィリピン共和国",
+               "pt-BR" : "Filipinas",
+               "ru" : "Филиппины",
+               "zh-CN" : "菲律宾"
+            }
+         },
+         "represented_country" : {
+            "geoname_id" : 6252001,
+            "iso_code" : "US",
+            "names" : {
+               "de" : "USA",
+               "en" : "United States",
+               "es" : "Estados Unidos",
+               "fr" : "États-Unis",
+               "ja" : "アメリカ合衆国",
+               "pt-BR" : "Estados Unidos",
+               "ru" : "США",
+               "zh-CN" : "美国"
+            },
+            "type" : "military"
+         },
+         "traits" : {
+            "static_ip_score" : 1.29
+         }
+      }
+   },
+   {
+      "::216.160.83.56/125" : {
+         "city" : {
+            "confidence" : 40,
+            "geoname_id" : 5803556,
+            "names" : {
+               "en" : "Milton",
+               "ru" : "Мильтон"
+            }
+         },
+         "continent" : {
+            "code" : "NA",
+            "geoname_id" : 6255149,
+            "names" : {
+               "de" : "Nordamerika",
+               "en" : "North America",
+               "es" : "América del Norte",
+               "fr" : "Amérique du Nord",
+               "ja" : "北アメリカ",
+               "pt-BR" : "América do Norte",
+               "ru" : "Северная Америка",
+               "zh-CN" : "北美洲"
+            }
+         },
+         "country" : {
+            "confidence" : 99,
+            "geoname_id" : 6252001,
+            "iso_code" : "US",
+            "names" : {
+               "de" : "USA",
+               "en" : "United States",
+               "es" : "Estados Unidos",
+               "fr" : "États-Unis",
+               "ja" : "アメリカ合衆国",
+               "pt-BR" : "Estados Unidos",
+               "ru" : "США",
+               "zh-CN" : "美国"
+            }
+         },
+         "location" : {
+            "accuracy_radius" : 22,
+            "latitude" : 47.2513,
+            "longitude" : -122.3149,
+            "metro_code" : 819,
+            "time_zone" : "America/Los_Angeles"
+         },
+         "postal" : {
+            "code" : "98354",
+            "confidence" : 40
+         },
+         "registered_country" : {
+            "geoname_id" : 2635167,
+            "iso_code" : "GB",
+            "names" : {
+               "de" : "Vereinigtes Königreich",
+               "en" : "United Kingdom",
+               "es" : "Reino Unido",
+               "fr" : "Royaume-Uni",
+               "ja" : "イギリス",
+               "pt-BR" : "Reino Unido",
+               "ru" : "Великобритания",
+               "zh-CN" : "英国"
+            }
+         },
+         "subdivisions" : [
+            {
+               "confidence" : 99,
+               "geoname_id" : 5815135,
+               "iso_code" : "WA",
+               "names" : {
+                  "en" : "Washington",
+                  "es" : "Washington",
+                  "fr" : "État de Washington",
+                  "ja" : "ワシントン州",
+                  "ru" : "Вашингтон",
+                  "zh-CN" : "华盛顿州"
+               }
+            }
+         ],
+         "traits" : {
+            "autonomous_system_number" : 209,
+            "connection_type" : "Cable/DSL",
+            "isp" : "Century Link",
+            "organization" : "Lariat Software",
+            "static_ip_score" : 1.47,
+            "user_type" : "government"
+         }
+      }
+   },
+   {
+      "2001:480::/64" : {
+         "continent" : {
+            "code" : "AS",
+            "geoname_id" : 6255147,
+            "names" : {
+               "de" : "Asien",
+               "en" : "Asia",
+               "es" : "Asia",
+               "fr" : "Asie",
+               "ja" : "アジア",
+               "pt-BR" : "Ásia",
+               "ru" : "Азия",
+               "zh-CN" : "亚洲"
+            }
+         },
+         "country" : {
+            "geoname_id" : 1861060,
+            "iso_code" : "JP",
+            "names" : {
+               "de" : "Japan",
+               "en" : "Japan",
+               "es" : "Japón",
+               "fr" : "Japon",
+               "ja" : "日本",
+               "pt-BR" : "Japão",
+               "ru" : "Япония",
+               "zh-CN" : "日本"
+            }
+         },
+         "location" : {
+            "accuracy_radius" : 100,
+            "latitude" : 35.68536,
+            "longitude" : 139.75309,
+            "time_zone" : "Asia/Tokyo"
+         },
+         "registered_country" : {
+            "geoname_id" : 1861060,
+            "iso_code" : "JP",
+            "names" : {
+               "de" : "Japan",
+               "en" : "Japan",
+               "es" : "Japón",
+               "fr" : "Japon",
+               "ja" : "日本",
+               "pt-BR" : "Japão",
+               "ru" : "Япония",
+               "zh-CN" : "日本"
+            }
+         }
+      }
+   },
+   {
+      "214.1.1.0/24" : {
+          "traits": {
+              "is_anycast": true
+          }
+      }
+   },
+   {
+      "214.78.0.0/23" : {
+         "city" : {
+            "confidence" : 99,
+            "geoname_id" : 5391811,
+            "names" : {
+               "de" : "San Diego",
+               "en" : "San Diego",
+               "es" : "San Diego",
+               "fr" : "San Diego",
+               "ja" : "サンディエゴ",
+               "pt-BR" : "San Diego",
+               "ru" : "Сан-Диего"
+            }
+         },
+         "continent" : {
+            "code" : "NA",
+            "geoname_id" : 6255149,
+            "names" : {
+               "de" : "Nordamerika",
+               "en" : "North America",
+               "es" : "Norteamérica",
+               "fr" : "Amérique du Nord",
+               "ja" : "北アメリカ",
+               "pt-BR" : "América do Norte",
+               "ru" : "Северная Америка",
+               "zh-CN" : "北美洲"
+            }
+         },
+         "country" : {
+            "confidence" : 99,
+            "geoname_id" : 6252001,
+            "iso_code" : "US",
+            "names" : {
+               "de" : "Vereinigte Staaten",
+               "en" : "United States",
+               "es" : "Estados Unidos",
+               "fr" : "États Unis",
+               "ja" : "アメリカ",
+               "pt-BR" : "EUA",
+               "ru" : "США",
+               "zh-CN" : "美国"
+            }
+         },
+         "location" : {
+            "accuracy_radius" : 10,
+            "latitude" : 32.7449,
+            "longitude" : -117.165,
+            "metro_code" : 825,
+            "time_zone" : "America/Los_Angeles"
+         },
+         "postal" : {
+            "code" : "92103",
+            "confidence" : 90
+         },
+         "registered_country" : {
+            "geoname_id" : 6252001,
+            "iso_code" : "US",
+            "names" : {
+               "de" : "Vereinigte Staaten",
+               "en" : "United States",
+               "es" : "Estados Unidos",
+               "fr" : "États Unis",
+               "ja" : "アメリカ",
+               "pt-BR" : "EUA",
+               "ru" : "США",
+               "zh-CN" : "美国"
+            }
+         },
+         "subdivisions" : [
+            {
+               "confidence" : 99,
+               "geoname_id" : 5332921,
+               "iso_code" : "CA",
+               "names" : {
+                  "de" : "Kalifornien",
+                  "en" : "California",
+                  "es" : "California",
+                  "fr" : "Californie",
+                  "ja" : "カリフォルニア州",
+                  "pt-BR" : "Califórnia",
+                  "ru" : "Калифорния",
+                  "zh-CN" : "加州"
+               }
+            }
+         ],
+         "traits" : {
+            "autonomous_system_number" : 5972,
+            "autonomous_system_organization" : "DNIC-ASBLK-05800-06055",
+            "connection_type" : "Cable/DSL",
+            "domain" : "health.mil",
+            "isp" : "US Air Force",
+            "organization" : "US Department of Defense",
+            "user_type" : "military"
+         }
+      }
+   },
+   {
+      "214.78.120.0/22" : {
+         "city" : {
+            "geoname_id" : 5391811,
+            "names" : {
+               "de" : "San Diego",
+               "en" : "San Diego",
+               "es" : "San Diego",
+               "fr" : "San Diego",
+               "ja" : "サンディエゴ",
+               "pt-BR" : "San Diego",
+               "ru" : "Сан-Диего"
+            }
+         },
+         "continent" : {
+            "code" : "NA",
+            "geoname_id" : 6255149,
+            "names" : {
+               "de" : "Nordamerika",
+               "en" : "North America",
+               "es" : "Norteamérica",
+               "fr" : "Amérique du Nord",
+               "ja" : "北アメリカ",
+               "pt-BR" : "América do Norte",
+               "ru" : "Северная Америка",
+               "zh-CN" : "北美洲"
+            }
+         },
+         "country" : {
+            "geoname_id" : 6252001,
+            "iso_code" : "US",
+            "names" : {
+               "de" : "Vereinigte Staaten",
+               "en" : "United States",
+               "es" : "Estados Unidos",
+               "fr" : "États Unis",
+               "ja" : "アメリカ",
+               "pt-BR" : "EUA",
+               "ru" : "США",
+               "zh-CN" : "美国"
+            }
+         },
+         "location" : {
+            "accuracy_radius" : 100,
+            "latitude" : 32.7405,
+            "longitude" : -117.0935,
+            "metro_code" : 825,
+            "time_zone" : "America/Los_Angeles"
+         },
+         "postal" : {
+            "code" : "92105"
+         },
+         "registered_country" : {
+            "geoname_id" : 6252001,
+            "iso_code" : "US",
+            "names" : {
+               "de" : "Vereinigte Staaten",
+               "en" : "United States",
+               "es" : "Estados Unidos",
+               "fr" : "États Unis",
+               "ja" : "アメリカ",
+               "pt-BR" : "EUA",
+               "ru" : "США",
+               "zh-CN" : "美国"
+            }
+         },
+         "subdivisions" : [
+            {
+               "geoname_id" : 5332921,
+               "iso_code" : "CA",
+               "names" : {
+                  "de" : "Kalifornien",
+                  "en" : "California",
+                  "es" : "California",
+                  "fr" : "Californie",
+                  "ja" : "カリフォルニア州",
+                  "pt-BR" : "Califórnia",
+                  "ru" : "Калифорния",
+                  "zh-CN" : "加州"
+               }
+            }
+         ],
+         "traits" : {
+            "autonomous_system_number" : 14593,
+            "autonomous_system_organization" : "SPACEX-STARLINK",
+            "connection_type" : "Satellite",
+            "domain" : "starlinkisp.net",
+            "isp" : "Starlink",
+            "organization" : "Starlink",
+            "user_type" : "residential"
+         }
+      }
+   },
+   {
+      "2001:480:10::/49" : {
+         "city" : {
+            "confidence" : 40,
+            "geoname_id" : 5391811,
+            "names" : {
+               "de" : "San Diego",
+               "en" : "San Diego",
+               "es" : "San Diego",
+               "fr" : "San Diego",
+               "ja" : "サンディエゴ",
+               "pt-BR" : "San Diego",
+               "ru" : "Сан-Диего"
+            }
+         },
+         "continent" : {
+            "code" : "NA",
+            "geoname_id" : 6255149,
+            "names" : {
+               "de" : "Nordamerika",
+               "en" : "North America",
+               "es" : "Norteamérica",
+               "fr" : "Amérique du Nord",
+               "ja" : "北アメリカ",
+               "pt-BR" : "América do Norte",
+               "ru" : "Северная Америка",
+               "zh-CN" : "北美洲"
+            }
+         },
+         "country" : {
+            "confidence" : 99,
+            "geoname_id" : 6252001,
+            "iso_code" : "US",
+            "names" : {
+               "de" : "Vereinigte Staaten",
+               "en" : "United States",
+               "es" : "Estados Unidos",
+               "fr" : "États Unis",
+               "ja" : "アメリカ",
+               "pt-BR" : "EUA",
+               "ru" : "США",
+               "zh-CN" : "美国"
+            }
+         },
+         "location" : {
+            "accuracy_radius" : 20,
+            "latitude" : 32.7203,
+            "longitude" : -117.1552,
+            "metro_code" : 825,
+            "time_zone" : "America/Los_Angeles"
+         },
+         "postal" : {
+            "code" : "92101",
+            "confidence" : 1
+         },
+         "registered_country" : {
+            "geoname_id" : 6252001,
+            "iso_code" : "US",
+            "names" : {
+               "de" : "Vereinigte Staaten",
+               "en" : "United States",
+               "es" : "Estados Unidos",
+               "fr" : "États Unis",
+               "ja" : "アメリカ",
+               "pt-BR" : "EUA",
+               "ru" : "США",
+               "zh-CN" : "美国"
+            }
+         },
+         "subdivisions" : [
+            {
+               "confidence" : 70,
+               "geoname_id" : 5332921,
+               "iso_code" : "CA",
+               "names" : {
+                  "de" : "Kalifornien",
+                  "en" : "California",
+                  "es" : "California",
+                  "fr" : "Californie",
+                  "ja" : "カリフォルニア州",
+                  "pt-BR" : "Califórnia",
+                  "ru" : "Калифорния",
+                  "zh-CN" : "加州"
+               }
+            }
+         ],
+         "traits" : {
+            "autonomous_system_number" : 22,
+            "autonomous_system_organization" : "DNIC-AS-00022",
+            "connection_type" : "Cable/DSL",
+            "domain" : "navy.mil",
+            "isp" : "US Department of Defense",
+            "organization" : "DNIC",
+            "user_type" : "military"
+         }
+      }
+   },
+   {
+      "::212.47.235.81/128" : {
+         "traits" : {
+            "is_anonymous_proxy" : true,
+            "static_ip_score" : 1.47
+         }
+      }
+   },
+   {
+      "::212.47.235.82/128" : {
+         "traits" : {
+            "is_satellite_provider" : true,
+            "static_ip_score" : 1.47
+         }
+      }
+   },
+   {
+      "214.214.214.216/32" : {
+         "traits" : {
+            "static_ip_score" : 0.4,
+            "user_type" : "traveler"
+         }
+      }
+   }
+]
