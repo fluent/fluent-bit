@@ -50,6 +50,10 @@ static int debug_event_mask(struct flb_tail_config *ctx,
         return 0;
     }
 
+    if (ctx->disable_debug_eventlogs) {
+        return 0;
+    }
+
     if (file) {
         buf_size = file->name_len + 128;
     }
