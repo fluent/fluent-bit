@@ -414,6 +414,23 @@ int flb_input_set_processor(flb_ctx_t *ctx, int ffd, struct flb_processor *proc)
     return 0;
 }
 
+/* Retrieve the processor associated with a given input plugin. */
+int flb_input_get_processor(flb_ctx_t *ctx, int ffd,
+                            struct flb_processor **proc)
+{
+    struct flb_input_instance *i_ins;
+
+    i_ins = in_instance_get(ctx, ffd);
+    if (!i_ins) {
+        return -1;
+    }
+    if (!i_ins->processor) {
+        return -1;
+    }
+    *proc = i_ins->processor;
+    return 0;
+}
+
 int flb_input_set_test(flb_ctx_t *ctx, int ffd, char *test_name,
                        void (*in_callback) (void *, int, int, void *, size_t, void *),
                        void *in_callback_data)
@@ -676,6 +693,23 @@ int flb_output_set_processor(flb_ctx_t *ctx, int ffd, struct flb_processor *proc
 
     o_ins->processor = proc;
 
+    return 0;
+}
+
+/* Retrieve the processor associated with a given output plugin. */
+int flb_output_get_processor(flb_ctx_t *ctx, int ffd,
+                             struct flb_processor **proc)
+{
+    struct flb_output_instance *o_ins;
+
+    o_ins = out_instance_get(ctx, ffd);
+    if (!o_ins) {
+        return -1;
+    }
+    if (!o_ins->processor) {
+        return -1;
+    }
+    *proc = o_ins->processor;
     return 0;
 }
 
