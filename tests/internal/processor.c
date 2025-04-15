@@ -119,7 +119,99 @@ static void processor()
     flb_sds_destroy(hostname_prop_key);
 }
 
+static void input_processor()
+{
+    flb_ctx_t *ctx;
+    struct flb_processor *proc;
+    struct flb_processor_unit *pu;
+    struct mk_list *head;
+    int ret;
+    int in_ffd;
+    int found = 0;
+
+    ctx = flb_create();
+    TEST_CHECK(ctx != NULL);
+
+    in_ffd = flb_input(ctx, "dummy", NULL);
+    TEST_CHECK(in_ffd >= 0);
+
+    ret = flb_input_processor_unit(ctx, "logs", "opentelemetry_envelope",
+                                   in_ffd, NULL);
+    TEST_CHECK(ret == 0);
+
+    ret = flb_input_get_processor(ctx, in_ffd, &proc);
+    TEST_CHECK(ret == 0);
+    TEST_CHECK(proc != NULL);
+
+    /* Walk through logs processor units and verify one was added */
+    mk_list_foreach(head, &proc->logs) {
+        pu = mk_list_entry(head, struct flb_processor_unit, _head);
+        if (strcmp(pu->name, "opentelemetry_envelope") == 0) {
+            found++;
+            break;
+        }
+    }
+    TEST_CHECK(found == 1);
+
+    flb_destroy(ctx);
+}
+
+static void output_processor()
+{
+    flb_ctx_t *ctx;
+    struct flb_processor *proc;
+    struct flb_processor_unit *pu;
+    struct flb_processor_instance *pi;
+    struct mk_list *head;
+    const char *val;
+    int ret;
+    int out_ffd;
+    int found = 0;
+
+    ctx = flb_create();
+    TEST_CHECK(ctx != NULL);
+
+    out_ffd = flb_output(ctx, "stdout", NULL);
+    TEST_CHECK(out_ffd >= 0);
+
+    ret = flb_output_processor_unit(ctx, "metrics",
+                                    "metrics_selector", out_ffd,
+                                    "metric_name", "/storage/",
+                                    "action", "includeNULL", NULL);
+    TEST_CHECK(ret == 0);
+
+    ret = flb_output_get_processor(ctx, out_ffd, &proc);
+    TEST_CHECK(ret == 0);
+    TEST_CHECK(proc != NULL);
+
+    /* Walk through logs processor units and verify one was added */
+    mk_list_foreach(head, &proc->metrics) {
+        pu = mk_list_entry(head, struct flb_processor_unit, _head);
+        if (strcmp(pu->name, "metrics_selector") == 0) {
+            found++;
+
+            pi = (struct flb_processor_instance *) pu->ctx;
+            TEST_CHECK(pi != NULL);
+
+            val = flb_processor_instance_get_property("metric_name", pi);
+            TEST_CHECK(val != NULL);
+            TEST_CHECK(strcmp(val, "/storage/") == 0);
+
+            val = flb_processor_instance_get_property("action", pi);
+            TEST_CHECK(val != NULL);
+            TEST_CHECK(strcmp(val, "includeNULL") == 0);
+
+            break;
+        }
+    }
+    TEST_CHECK(found == 1);
+
+    flb_destroy(ctx);
+}
+
 TEST_LIST = {
     { "processor", processor },
+    {"input_processor", input_processor},
+    {"output_processor", output_processor},
     { 0 }
 };
