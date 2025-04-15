@@ -71,6 +71,9 @@ flb_sds_t flb_cf_key_translate(struct flb_cf *cf, char *key, int len)
 
     /* copy content and check if we have underscores */
     out = flb_sds_create_size(len * 2);
+    if (out == NULL) {
+        return NULL;
+    }
     flb_sds_cat_safe(&out, key, len);
 
     for (i = 0; i < len; i++) {
