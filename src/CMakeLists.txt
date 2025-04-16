@@ -200,7 +200,7 @@ if(FLB_LUAJIT)
     )
 endif()
 
-if(FLB_IN_KAFKA OR FLB_OUT_KAFKA)
+if(FLB_KAFKA)
   set(src
     ${src}
     "flb_kafka.c"
