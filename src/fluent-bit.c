@@ -1366,6 +1366,8 @@ int flb_main(int argc, char **argv)
     cf = tmp;
 #endif
 
+    flb_config_env(config);
+
     /* Check co-routine stack size */
     if (config->coro_stack_size < getpagesize()) {
         flb_cf_destroy(cf_opts);
