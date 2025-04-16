@@ -269,7 +269,11 @@ if(${CMAKE_SYSTEM_NAME} MATCHES "Linux" OR ${CMAKE_SYSTEM_NAME} MATCHES "Darwin"
 endif()
 
 REGISTER_IN_PLUGIN("in_kubernetes_events")
-REGISTER_IN_PLUGIN("in_kafka")
+
+if(FLB_KAFKA)
+  REGISTER_IN_PLUGIN("in_kafka")
+endif()
+
 REGISTER_IN_PLUGIN("in_fluentbit_metrics")
 REGISTER_IN_PLUGIN("in_prometheus_scrape")
 REGISTER_IN_PLUGIN("in_emitter")
@@ -362,7 +366,11 @@ REGISTER_OUT_PLUGIN("out_http")
 REGISTER_OUT_PLUGIN("out_influxdb")
 REGISTER_OUT_PLUGIN("out_logdna")
 REGISTER_OUT_PLUGIN("out_loki")
-REGISTER_OUT_PLUGIN("out_kafka")
+
+if(FLB_KAFKA)
+  REGISTER_OUT_PLUGIN("out_kafka")
+endif()
+
 REGISTER_OUT_PLUGIN("out_kafka_rest")
 REGISTER_OUT_PLUGIN("out_nats")
 REGISTER_OUT_PLUGIN("out_nrlogs")
