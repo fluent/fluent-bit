@@ -6,6 +6,7 @@
 int LLVMFuzzerTestOneInput(const uint8_t *data, size_t size){
     size_t off = 0;
     struct ctrace *ctr = NULL;
+    struct ctrace *ctr2 = NULL;
     size_t msgpack_text_size;
     char *msgpack_text_buffer = NULL;
 
@@ -20,5 +21,12 @@ int LLVMFuzzerTestOneInput(const uint8_t *data, size_t size){
 
         ctr_destroy(ctr);
     }
+
+    /* Target opentelemtry decoding */
+    ctr_decode_opentelemetry_create(&ctr2, data, size, &off);
+    if (ctr2 != NULL) {
+        ctr_destroy(ctr2);
+    }
+
     return 0;
 }
