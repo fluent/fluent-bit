@@ -2849,7 +2849,6 @@ static int read_config(struct flb_cf *conf, struct local_ctx *ctx,
         flb_error("[config] file '%s' is already included", cfg_file);
         flb_sds_destroy(include_dir);
         flb_sds_destroy(include_file);
-        state_destroy(state);
         return -1;
     }
 
@@ -2860,7 +2859,6 @@ static int read_config(struct flb_cf *conf, struct local_ctx *ctx,
         flb_errno();
         flb_sds_destroy(include_dir);
         flb_sds_destroy(include_file);
-        state_destroy(state);
         return -1;
     }
 
@@ -2872,7 +2870,6 @@ static int read_config(struct flb_cf *conf, struct local_ctx *ctx,
         fclose(fh);
         flb_sds_destroy(include_dir);
         flb_sds_destroy(include_file);
-        state_destroy(state);
         return -1;
     }
     ctx->level++;
