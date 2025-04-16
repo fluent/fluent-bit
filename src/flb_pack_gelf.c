@@ -136,7 +136,7 @@ static flb_sds_t flb_msgpack_gelf_value(flb_sds_t *s, int quote,
         *s = tmp;
     }
     else {
-        tmp = flb_sds_cat(*s, val, val_len);
+        tmp = flb_sds_cat_utf8(s, val, val_len);
         if (tmp == NULL) {
             return NULL;
         }
