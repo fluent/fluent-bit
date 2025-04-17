@@ -78,7 +78,8 @@ jobs:
             libyaml-dev \
             libbpf-dev \
             linux-tools-common \
-            llvm-18-tools
+            llvm-18-tools \
+            libc6-dev
 
           # Ensure llvm-symbolizer is available under a common path
           #sudo ln -sf "$(which llvm-symbolizer)" /usr/bin/llvm-symbolizer
@@ -175,7 +176,8 @@ jobs:
             libyaml-dev \
             libbpf-dev \
             linux-tools-common \
-            llvm
+            llvm \
+            libc6-dev
 
           # Ensure llvm-symbolizer is available under a common path
           sudo ln -sf "$(which llvm-symbolizer)" /usr/bin/llvm-symbolizer
@@ -242,7 +244,7 @@ jobs:
             --volume "/etc/machine-id:/etc/machine-id"
           install: |
             apt-get update
-            apt-get install -y gcc g++ libyaml-dev cmake flex bison libssl-dev libbpf-dev linux-tools-common
+            apt-get install -y gcc g++ libyaml-dev cmake flex bison libssl-dev libbpf-dev linux-tools-common libc6-dev
 
             # update-alternatives --install /usr/bin/gcc gcc /usr/bin/gcc-12 90
             # update-alternatives --install /usr/bin/g++ g++ /usr/bin/g++-12 90
