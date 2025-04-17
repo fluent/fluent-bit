@@ -40,7 +40,7 @@ docker buildx inspect --bootstrap
 ```
 4. Build Fluent Bit from the **root of the Git repo (not from this directory)**:
 ```
-docker buildx build --platform "linux/amd64,linux/arm64,linux/arm/v7,linux/s390x" --target=production -f dockerfiles/Dockerfile .
+docker buildx build --platform "linux/amd64,linux/arm64,linux/arm/v7,linux/s390x,linux/ppc64le" --target=production -f dockerfiles/Dockerfile .
 ```
 
 ## Build and test
