@@ -35,7 +35,7 @@ on:
 
 jobs:
   run-ubuntu-unit-tests:
-    runs-on: ubuntu-20.04
+    runs-on: ubuntu-24.04
     timeout-minutes: 60
     strategy:
       fail-fast: false
@@ -182,7 +182,7 @@ jobs:
     # We chain this after Linux one as there are CPU time costs for QEMU emulation
     needs:
       - run-ubuntu-unit-tests
-    runs-on: ubuntu-20.04
+    runs-on: ubuntu-24.04
     timeout-minutes: 60
     strategy:
       fail-fast: false
