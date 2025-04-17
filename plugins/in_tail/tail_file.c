@@ -868,13 +868,24 @@ static int set_file_position(struct flb_tail_config *ctx,
         return 0;
     }
 
-    /* tail... */
-    ret = lseek(file->fd, 0, SEEK_END);
-    if (ret == -1) {
-        flb_errno();
-        return -1;
+    if (file->offset > 0) {
+        ret = lseek(file->fd, file->offset, SEEK_SET);
+
+        if (ret == -1) {
+            flb_errno();
+            return -1;
+        }
     }
-    file->offset = ret;
+    else {
+        ret = lseek(file->fd, 0, SEEK_END);
+
+        if (ret == -1) {
+            flb_errno();
+            return -1;
+        }
+
+        file->offset = ret;
+    }
 
     if (file->decompression_context == NULL) {
         file->stream_offset = ret;
@@ -923,6 +934,7 @@ static int ml_flush_callback(struct flb_ml_parser *parser,
 }
 
 int flb_tail_file_append(char *path, struct stat *st, int mode,
+                         ssize_t offset,
                          struct flb_tail_config *ctx)
 {
     int fd;
@@ -1011,6 +1023,10 @@ int flb_tail_file_append(char *path, struct stat *st, int mode,
     file->mult_keys = 0;
     file->mult_flush_timeout = 0;
     file->mult_skipping = FLB_FALSE;
+
+    if (offset != -1) {
+        file->offset = offset;
+    }
 
     if (strlen(path) >= 3 &&
         strcasecmp(&path[strlen(path) - 3], ".gz") == 0) {
@@ -1894,7 +1910,7 @@ int flb_tail_file_rotated(struct flb_tail_file *file)
         ret = stat(tmp, &st);
         if (ret == 0 && st.st_ino != file->inode) {
             if (flb_tail_file_exists(&st, ctx) == FLB_FALSE) {
-                ret = flb_tail_file_append(tmp, &st, FLB_TAIL_STATIC, ctx);
+                ret = flb_tail_file_append(tmp, &st, FLB_TAIL_STATIC, -1, ctx);
                 if (ret == -1) {
                     flb_tail_scan(ctx->path_list, ctx);
                 }
