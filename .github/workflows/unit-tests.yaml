@@ -177,7 +177,8 @@ jobs:
             libbpf-dev \
             linux-tools-common \
             llvm \
-            libc6-dev
+            libc6-dev \
+            build-essential
 
           # Ensure llvm-symbolizer is available under a common path
           sudo ln -sf "$(which llvm-symbolizer)" /usr/bin/llvm-symbolizer
@@ -185,9 +186,6 @@ jobs:
       - name: Build and test with ARM runners
         run: |
           # Verify and use default available compilers (Ubuntu 24.04: GCC 13 / Clang 17)
-          sudo update-alternatives --install /usr/bin/gcc gcc /usr/bin/gcc 100
-          sudo update-alternatives --install /usr/bin/g++ g++ /usr/bin/g++ 100
-          sudo update-alternatives --install /usr/bin/clang clang /usr/bin/clang 100
 
           # Print versions for debugging
           gcc --version
