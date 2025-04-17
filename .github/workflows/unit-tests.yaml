@@ -93,10 +93,11 @@ jobs:
       - name: ${{ matrix.compiler.cc }} & ${{ matrix.compiler.cxx }} - ${{ matrix.flb_option }}
         run: |
           echo "CC = $CC, CXX = $CXX, FLB_OPT = $FLB_OPT"
-          sudo update-alternatives --install /usr/bin/gcc gcc /usr/bin/gcc-7 90
-          sudo update-alternatives --install /usr/bin/g++ g++ /usr/bin/g++-7 90
-          sudo update-alternatives --install /usr/bin/clang clang /usr/bin/clang-6.0 90
+
+          # Add journal access for test cases that need systemd-journald
           sudo usermod -a -G systemd-journal $(id -un)
+
+          # Run tests with correct environment
           sudo -E su -p $(id -un) -c "PATH=$PATH ci/scripts/run-unit-tests.sh"
         env:
           CC: ${{ matrix.compiler.cc }}
