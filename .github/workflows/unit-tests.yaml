@@ -78,10 +78,10 @@ jobs:
             libyaml-dev \
             libbpf-dev \
             linux-tools-common \
-            llvm-symbolizer
+            llvm-18-tools
 
           # Ensure llvm-symbolizer is available under a common path
-          sudo ln -sf "$(which llvm-symbolizer)" /usr/bin/llvm-symbolizer
+          #sudo ln -sf "$(which llvm-symbolizer)" /usr/bin/llvm-symbolizer
 
       - uses: actions/checkout@v4
 
