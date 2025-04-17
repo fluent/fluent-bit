@@ -30,6 +30,30 @@
 #include "tail_scan_glob.c"
 #endif
 
+void flb_tail_scan_register_ignored_file_size(struct flb_tail_config *ctx, const char *path, size_t path_length, size_t size)
+{
+    flb_hash_table_add(ctx->ignored_file_sizes, path, path_length, (void *) size, 0);
+
+}
+
+void flb_tail_scan_unregister_ignored_file_size(struct flb_tail_config *ctx, const char *path, size_t path_length)
+{
+    flb_hash_table_del(ctx->ignored_file_sizes, path);
+}
+
+ssize_t flb_tail_scan_fetch_ignored_file_size(struct flb_tail_config *ctx, const char *path, size_t path_length)
+{
+    ssize_t result;
+
+    result = (ssize_t) flb_hash_table_get_ptr(ctx->ignored_file_sizes, path, path_length);
+
+    if (result == 0) {
+        result = -1;
+    }
+
+    return result;
+}
+
 int flb_tail_scan(struct mk_list *path_list, struct flb_tail_config *ctx)
 {
     int ret;

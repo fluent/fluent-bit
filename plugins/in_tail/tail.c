@@ -396,13 +396,15 @@ static int in_tail_init(struct flb_input_instance *in,
     }
 #endif
 
-    /*
-     * After the first scan (on start time), all new files discovered needs to be
-     * read from head, so we switch the 'read_from_head' flag to true so any
-     * other file discovered after a scan or a rotation are read from the
-     * beginning.
-     */
-    ctx->read_from_head = FLB_TRUE;
+    if (ctx->read_newly_discovered_files_from_head) {
+        /*
+        * After the first scan (on start time), all new files discovered needs to be
+        * read from head, so we switch the 'read_from_head' flag to true so any
+        * other file discovered after a scan or a rotation are read from the
+        * beginning.
+        */
+        ctx->read_from_head = FLB_TRUE;
+    }
 
     /* Set plugin context */
     flb_input_set_context(in, ctx);
@@ -592,6 +594,12 @@ static struct flb_config_map config_map[] = {
      FLB_CONFIG_MAP_BOOL, "read_from_head", "false",
      0, FLB_TRUE, offsetof(struct flb_tail_config, read_from_head),
      "For new discovered files on start (without a database offset/position), read the "
+     "content from the head of the file, not tail."
+    },
+    {
+     FLB_CONFIG_MAP_BOOL, "read_newly_discovered_files_from_head", "true",
+     0, FLB_TRUE, offsetof(struct flb_tail_config, read_newly_discovered_files_from_head),
+     "For new discovered files after start (without a database offset/position), read the "
      "content from the head of the file, not tail."
     },
     {
