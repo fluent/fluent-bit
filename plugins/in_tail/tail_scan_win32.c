@@ -30,6 +30,7 @@
 #include <shlwapi.h>
 
 #include "tail.h"
+#include "tail_scan.h"
 #include "tail_file.h"
 #include "tail_signal.h"
 #include "tail_config.h"
