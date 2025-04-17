@@ -207,6 +207,22 @@ struct flb_out_http *flb_http_conf_create(struct flb_output_instance *ins,
         uri = tmp_uri;
     }
 
+    ctx->uri = flb_sds_create(uri);
+    flb_free(uri);
+    if (ctx->uri == NULL) {
+        flb_errno();
+        flb_http_conf_destroy(ctx);
+        return NULL;
+    }
+
+    ctx->uri_ra = flb_ra_create(ctx->uri, FLB_FALSE);
+    if (ctx->uri_ra == NULL) {
+        flb_errno();
+        flb_http_conf_destroy(ctx);
+        return NULL;
+    }
+    ctx->uri_ra_static = flb_ra_is_static(ctx->uri_ra);
+
     /* Output format */
     ctx->out_format = FLB_PACK_JSON_FORMAT_NONE;
     if (ctx->format) {
@@ -273,7 +289,6 @@ struct flb_out_http *flb_http_conf_create(struct flb_output_instance *ins,
     }
 
     ctx->u = upstream;
-    ctx->uri = uri;
     ctx->host = ins->host.name;
     ctx->port = ins->host.port;
 
@@ -306,7 +321,11 @@ void flb_http_conf_destroy(struct flb_out_http *ctx)
 #endif
 #endif
 
+    if (ctx->uri_ra) {
+        flb_ra_destroy(ctx->uri_ra);
+    }
+
     flb_free(ctx->proxy_host);
-    flb_free(ctx->uri);
+    flb_sds_destroy(ctx->uri);
     flb_free(ctx);
 }
