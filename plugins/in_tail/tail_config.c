@@ -279,6 +279,14 @@ struct flb_tail_config *flb_tail_config_create(struct flb_input_instance *ins,
         return NULL;
     }
 
+    /* hash table for files lookups */
+    ctx->ignored_file_sizes = flb_hash_table_create(FLB_HASH_TABLE_EVICT_NONE, 1000, 0);
+    if (ctx->ignored_file_sizes == NULL) {
+        flb_plg_error(ctx->ins, "could not create ignored file size hash table");
+        flb_tail_config_destroy(ctx);
+        return NULL;
+    }
+
 #ifdef FLB_HAVE_SQLDB
     ctx->db = NULL;
 #endif
@@ -507,10 +515,16 @@ int flb_tail_config_destroy(struct flb_tail_config *config)
     if (config->static_hash) {
         flb_hash_table_destroy(config->static_hash);
     }
+
     if (config->event_hash) {
         flb_hash_table_destroy(config->event_hash);
     }
 
+    if (config->ignored_file_sizes != NULL) {
+        flb_hash_table_destroy(config->ignored_file_sizes);
+    }
+
     flb_free(config);
+
     return 0;
 }

@@ -82,6 +82,7 @@ struct flb_tail_config {
 #endif
     int refresh_interval_sec;  /* seconds to re-scan           */
     long refresh_interval_nsec;/* nanoseconds to re-scan       */
+    int read_newly_discovered_files_from_head; /* read new files from head after startup */
     int read_from_head;        /* read new files from head     */
     int rotate_wait;           /* sec to wait on rotated files */
     int watcher_interval;      /* watcher interval             */
@@ -168,6 +169,8 @@ struct flb_tail_config {
     /* Hash: hash tables for quick acess to registered files */
     struct flb_hash_table *static_hash;
     struct flb_hash_table *event_hash;
+
+    struct flb_hash_table *ignored_file_sizes;
 
     struct flb_config *config;
 };
