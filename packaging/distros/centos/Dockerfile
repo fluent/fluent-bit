@@ -7,10 +7,10 @@ ARG BASE_BUILDER
 # Use buildkit to skip unused base images: DOCKER_BUILDKIT=1
 
 # Multiarch support
-FROM multiarch/qemu-user-static:x86_64-aarch64 as multiarch-aarch64
+FROM multiarch/qemu-user-static:x86_64-aarch64 AS multiarch-aarch64
 
 # centos/7 base image
-FROM centos:7 as centos-7-base
+FROM centos:7 AS centos-7-base
 
 ENV CMAKE_HOME="/opt/cmake"
 ARG CMAKE_VERSION="3.31.6"
@@ -41,7 +41,7 @@ ARG FLB_UNICODE_ENCODER=Off
 ENV FLB_UNICODE_ENCODER=$FLB_UNICODE_ENCODER
 
 # centos/7.arm64v8 base image
-FROM arm64v8/centos:7 as centos-7.arm64v8-base
+FROM arm64v8/centos:7 AS centos-7.arm64v8-base
 
 COPY --from=multiarch-aarch64 /usr/bin/qemu-aarch64-static /usr/bin/qemu-aarch64-static
 
@@ -79,7 +79,7 @@ ARG FLB_JEMALLOC_OPTIONS="--with-lg-page=16 --with-lg-quantum=3"
 ENV FLB_JEMALLOC_OPTIONS=$FLB_JEMALLOC_OPTIONS
 
 # centos/8 base image
-FROM centos:8 as centos-8-base
+FROM centos:8 AS centos-8-base
 
 # CentOS is now EOL so have to use the vault repos
 RUN sed -i 's/mirrorlist/#mirrorlist/g' /etc/yum.repos.d/CentOS-* && \
@@ -114,7 +114,7 @@ ARG FLB_UNICODE_ENCODER=On
 ENV FLB_UNICODE_ENCODER=$FLB_UNICODE_ENCODER
 
 # centos/8.arm64v8 base image
-FROM arm64v8/centos:8 as centos-8.arm64v8-base
+FROM arm64v8/centos:8 AS centos-8.arm64v8-base
 
 COPY --from=multiarch-aarch64 /usr/bin/qemu-aarch64-static /usr/bin/qemu-aarch64-static
 
@@ -154,7 +154,7 @@ ENV FLB_UNICODE_ENCODER=$FLB_UNICODE_ENCODER
 ARG FLB_JEMALLOC_OPTIONS="--with-lg-page=16 --with-lg-quantum=3"
 ENV FLB_JEMALLOC_OPTIONS=$FLB_JEMALLOC_OPTIONS
 
-FROM quay.io/centos/centos:stream9 as centos-9-base
+FROM quay.io/centos/centos:stream9 AS centos-9-base
 
 ENV CMAKE_HOME="/opt/cmake"
 ARG CMAKE_VERSION="3.31.6"
@@ -181,7 +181,7 @@ ARG FLB_OUT_PGSQL=On
 ENV FLB_OUT_PGSQL=$FLB_OUT_PGSQL
 
 # hadolint ignore=DL3029
-FROM --platform=arm64 quay.io/centos/centos:stream9 as centos-9.arm64v8-base
+FROM --platform=arm64 quay.io/centos/centos:stream9 AS centos-9.arm64v8-base
 
 COPY --from=multiarch-aarch64 /usr/bin/qemu-aarch64-static /usr/bin/qemu-aarch64-static
 
@@ -217,7 +217,7 @@ ENV FLB_JEMALLOC_OPTIONS=$FLB_JEMALLOC_OPTIONS
 
 # Common build for all distributions now
 # hadolint ignore=DL3006
-FROM $BASE_BUILDER as builder
+FROM $BASE_BUILDER AS builder
 
 ARG FLB_NIGHTLY_BUILD
 ENV FLB_NIGHTLY_BUILD=$FLB_NIGHTLY_BUILD

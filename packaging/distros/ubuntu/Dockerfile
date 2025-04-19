@@ -7,10 +7,10 @@ ARG BASE_BUILDER
 # Use buildkit to skip unused base images: DOCKER_BUILDKIT=1
 
 # Multiarch support
-FROM multiarch/qemu-user-static:x86_64-aarch64 as multiarch-aarch64
+FROM multiarch/qemu-user-static:x86_64-aarch64 AS multiarch-aarch64
 
 # ubuntu/16.04 base image
-FROM ubuntu:16.04 as ubuntu-16.04-base
+FROM ubuntu:16.04 AS ubuntu-16.04-base
 ENV DEBIAN_FRONTEND="noninteractive" \
     CMAKE_HOME="/opt/cmake"
 
@@ -42,7 +42,7 @@ RUN apt-get update && \
 ENV PATH="${CMAKE_HOME}/bin:${PATH}"
 
 # ubuntu/18.04 base image
-FROM ubuntu:18.04 as ubuntu-18.04-base
+FROM ubuntu:18.04 AS ubuntu-18.04-base
 ENV DEBIAN_FRONTEND="noninteractive" \
     CMAKE_HOME="/opt/cmake"
 
@@ -74,7 +74,7 @@ RUN apt-get update && \
 ENV PATH="${CMAKE_HOME}/bin:${PATH}"
 
 # ubuntu/18.04.arm64v8 base image
-FROM arm64v8/ubuntu:18.04 as ubuntu-18.04.arm64v8-base
+FROM arm64v8/ubuntu:18.04 AS ubuntu-18.04.arm64v8-base
 ENV DEBIAN_FRONTEND="noninteractive" \
     CMAKE_HOME="/opt/cmake"
 
@@ -108,7 +108,7 @@ RUN apt-get update && \
 ENV PATH="${CMAKE_HOME}/bin:${PATH}"
 
 # ubuntu/20.04 base image
-FROM ubuntu:20.04 as ubuntu-20.04-base
+FROM ubuntu:20.04 AS ubuntu-20.04-base
 ENV DEBIAN_FRONTEND="noninteractive" \
     CMAKE_HOME="/opt/cmake"
 
@@ -132,7 +132,7 @@ RUN apt-get update && \
 ENV PATH="${CMAKE_HOME}/bin:${PATH}"
 
 # ubuntu/20.04.arm64v8 base image
-FROM arm64v8/ubuntu:20.04 as ubuntu-20.04.arm64v8-base
+FROM arm64v8/ubuntu:20.04 AS ubuntu-20.04.arm64v8-base
 ENV DEBIAN_FRONTEND="noninteractive" \
     CMAKE_HOME="/opt/cmake"
 
@@ -158,7 +158,7 @@ RUN apt-get update && \
 ENV PATH="${CMAKE_HOME}/bin:${PATH}"
 
 # ubuntu/22.04 base image
-FROM ubuntu:22.04 as ubuntu-22.04-base
+FROM ubuntu:22.04 AS ubuntu-22.04-base
 ENV DEBIAN_FRONTEND="noninteractive" \
     CMAKE_HOME="/opt/cmake"
 
@@ -182,7 +182,7 @@ RUN apt-get update && \
 ENV PATH="${CMAKE_HOME}/bin:${PATH}"
 
 # ubuntu/22.04.arm64v8 base image
-FROM arm64v8/ubuntu:22.04 as ubuntu-22.04.arm64v8-base
+FROM arm64v8/ubuntu:22.04 AS ubuntu-22.04.arm64v8-base
 ENV DEBIAN_FRONTEND="noninteractive" \
     CMAKE_HOME="/opt/cmake"
 
@@ -208,7 +208,7 @@ RUN apt-get update && \
 ENV PATH="${CMAKE_HOME}/bin:${PATH}"
 
 # ubuntu/24.04 base image
-FROM ubuntu:24.04 as ubuntu-24.04-base
+FROM ubuntu:24.04 AS ubuntu-24.04-base
 ENV DEBIAN_FRONTEND="noninteractive" \
     CMAKE_HOME="/opt/cmake"
 
@@ -232,7 +232,7 @@ RUN apt-get update && \
 ENV PATH="${CMAKE_HOME}/bin:${PATH}"
 
 # ubuntu/24.04.arm64v8 base image
-FROM arm64v8/ubuntu:24.04 as ubuntu-24.04.arm64v8-base
+FROM arm64v8/ubuntu:24.04 AS ubuntu-24.04.arm64v8-base
 ENV DEBIAN_FRONTEND="noninteractive" \
     CMAKE_HOME="/opt/cmake"
 
@@ -259,7 +259,7 @@ ENV PATH="${CMAKE_HOME}/bin:${PATH}"
 
 # Common build for all distributions now
 # hadolint ignore=DL3006
-FROM $BASE_BUILDER as builder
+FROM $BASE_BUILDER AS builder
 
 ARG FLB_NIGHTLY_BUILD
 ENV FLB_NIGHTLY_BUILD=$FLB_NIGHTLY_BUILD

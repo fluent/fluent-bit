@@ -7,10 +7,10 @@ ARG BASE_BUILDER
 # Use buildkit to skip unused base images: DOCKER_BUILDKIT=1
 
 # Multiarch support
-FROM multiarch/qemu-user-static:x86_64-aarch64 as multiarch-aarch64
+FROM multiarch/qemu-user-static:x86_64-aarch64 AS multiarch-aarch64
 
 # amazonlinux/2 base image
-FROM amazonlinux:2 as amazonlinux-2-base
+FROM amazonlinux:2 AS amazonlinux-2-base
 
 ENV CMAKE_HOME="/opt/cmake"
 ARG CMAKE_VERSION="3.31.6"
@@ -33,7 +33,7 @@ RUN yum -y update && \
 ENV PATH="${CMAKE_HOME}/bin:${PATH}"
 
 # amazonlinux/2.arm64v8 base image
-FROM arm64v8/amazonlinux:2 as amazonlinux-2.arm64v8-base
+FROM arm64v8/amazonlinux:2 AS amazonlinux-2.arm64v8-base
 
 COPY --from=multiarch-aarch64 /usr/bin/qemu-aarch64-static /usr/bin/qemu-aarch64-static
 
@@ -57,7 +57,7 @@ RUN yum -y update && \
 
 ENV PATH="${CMAKE_HOME}/bin:${PATH}"
 
-FROM amazonlinux:2023 as amazonlinux-2023-base
+FROM amazonlinux:2023 AS amazonlinux-2023-base
 
 ENV CMAKE_HOME="/opt/cmake"
 ARG CMAKE_VERSION="3.31.6"
@@ -80,7 +80,7 @@ RUN yum -y update && \
 ENV PATH="${CMAKE_HOME}/bin:${PATH}"
 
 # hadolint ignore=DL3029
-FROM --platform=arm64 amazonlinux:2023 as amazonlinux-2023.arm64v8-base
+FROM --platform=arm64 amazonlinux:2023 AS amazonlinux-2023.arm64v8-base
 
 COPY --from=multiarch-aarch64 /usr/bin/qemu-aarch64-static /usr/bin/qemu-aarch64-static
 
@@ -106,7 +106,7 @@ ENV PATH="${CMAKE_HOME}/bin:${PATH}"
 
 # Common build for all distributions now
 # hadolint ignore=DL3006
-FROM $BASE_BUILDER as builder
+FROM $BASE_BUILDER AS builder
 
 ARG FLB_NIGHTLY_BUILD
 ENV FLB_NIGHTLY_BUILD=$FLB_NIGHTLY_BUILD
