@@ -56,13 +56,13 @@ jobs:
             cc: gcc
             cxx: g++
           - clang:
-            cc: clang
-            cxx: clang++
+            cc: clang-17
+            cxx: clang++-17
         exclude:
           - flb_option: "-DFLB_COVERAGE=On"
             compiler:
-              cc: clang
-              cxx: clang++
+              cc: clang-17
+              cxx: clang++-17
     permissions:
       contents: read
     steps:
@@ -71,7 +71,7 @@ jobs:
           sudo apt-get update
           sudo apt-get install -y \
             build-essential \
-            clang \
+            clang-17 \
             llvm \
             libsystemd-dev \
             gcovr \
@@ -167,7 +167,7 @@ jobs:
           sudo apt-get install -y \
             gcc \
             g++ \
-            clang \
+            clang-17 \
             cmake \
             flex \
             bison \
@@ -190,7 +190,7 @@ jobs:
           # Print versions for debugging
           gcc --version
           g++ --version
-          clang --version
+          clang-17 --version
 
           # Constrain parallelism (use 8 cores max)
           export nparallel=$(( $(getconf _NPROCESSORS_ONLN) > 8 ? 8 : $(getconf _NPROCESSORS_ONLN) ))
