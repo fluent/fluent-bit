@@ -7,10 +7,10 @@ ARG BASE_BUILDER
 # Use buildkit to skip unused base images: DOCKER_BUILDKIT=1
 
 # Multiarch support
-FROM multiarch/qemu-user-static:x86_64-aarch64 as multiarch-aarch64
+FROM multiarch/qemu-user-static:x86_64-aarch64 AS multiarch-aarch64
 
 # debian/buster base image
-FROM debian:buster-slim as debian-buster-base
+FROM debian:buster-slim AS debian-buster-base
 ENV DEBIAN_FRONTEND="noninteractive" \
     CMAKE_HOME="/opt/cmake"
 
@@ -34,7 +34,7 @@ RUN apt-get -qq update && \
 ENV PATH="${CMAKE_HOME}/bin:${PATH}"
 
 # debian/buster.arm64v8 base image
-FROM arm64v8/debian:buster-slim as debian-buster.arm64v8-base
+FROM arm64v8/debian:buster-slim AS debian-buster.arm64v8-base
 ENV DEBIAN_FRONTEND="noninteractive" \
     CMAKE_HOME="/opt/cmake"
 
@@ -60,7 +60,7 @@ RUN apt-get -qq update && \
 ENV PATH="${CMAKE_HOME}/bin:${PATH}"
 
 # debian/bullseye base image
-FROM debian:bullseye-slim as debian-bullseye-base
+FROM debian:bullseye-slim AS debian-bullseye-base
 ENV DEBIAN_FRONTEND="noninteractive" \
     CMAKE_HOME="/opt/cmake"
 
@@ -84,7 +84,7 @@ RUN apt-get -qq update && \
 ENV PATH="${CMAKE_HOME}/bin:${PATH}"
 
 # debian/bullseye.arm64v8 base image
-FROM arm64v8/debian:bullseye-slim as debian-bullseye.arm64v8-base
+FROM arm64v8/debian:bullseye-slim AS debian-bullseye.arm64v8-base
 ENV DEBIAN_FRONTEND="noninteractive" \
     CMAKE_HOME="/opt/cmake"
 
@@ -110,7 +110,7 @@ RUN apt-get -qq update && \
 ENV PATH="${CMAKE_HOME}/bin:${PATH}"
 
 # debian/bookworm base image
-FROM debian:bookworm-slim as debian-bookworm-base
+FROM debian:bookworm-slim AS debian-bookworm-base
 ENV DEBIAN_FRONTEND="noninteractive" \
     CMAKE_HOME="/opt/cmake"
 
@@ -134,7 +134,7 @@ RUN apt-get -qq update && \
 ENV PATH="${CMAKE_HOME}/bin:${PATH}"
 
 # debian/bookworm.arm64v8 base image
-FROM arm64v8/debian:bookworm-slim as debian-bookworm.arm64v8-base
+FROM arm64v8/debian:bookworm-slim AS debian-bookworm.arm64v8-base
 ENV DEBIAN_FRONTEND="noninteractive" \
     CMAKE_HOME="/opt/cmake"
 
@@ -161,7 +161,7 @@ ENV PATH="${CMAKE_HOME}/bin:${PATH}"
 
 # Common build for all distributions now
 # hadolint ignore=DL3006
-FROM $BASE_BUILDER as builder
+FROM $BASE_BUILDER AS builder
 
 ARG FLB_NIGHTLY_BUILD
 ENV FLB_NIGHTLY_BUILD=$FLB_NIGHTLY_BUILD
