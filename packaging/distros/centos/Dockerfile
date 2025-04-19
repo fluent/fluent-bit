@@ -9,42 +9,63 @@ ARG BASE_BUILDER
 # Multiarch support
 FROM multiarch/qemu-user-static:x86_64-aarch64 as multiarch-aarch64
 
+# CMake 3.20 for Centos 7
+FROM centos:7 AS cmake-3.20-installer-centos7
+WORKDIR /tmp
+RUN sed -i 's/mirrorlist/#mirrorlist/g' /etc/yum.repos.d/CentOS-* && \
+    sed -i 's|#baseurl=http://mirror.centos.org|baseurl=http://vault.centos.org|g' /etc/yum.repos.d/CentOS-* && \
+    yum clean all && yum makecache && \
+    yum install -y gcc gcc-c++ make curl tar gzip openssl11 openssl11-devel && \
+    curl -LO https://github.com/Kitware/CMake/releases/download/v3.20.0/cmake-3.20.0.tar.gz && \
+    tar -xzf cmake-3.20.0.tar.gz && cd cmake-3.20.0 && \
+    ./bootstrap -- -DCMAKE_USE_OPENSSL=OFF && \
+    make -j 4 && make install && cmake --version
+
 # centos/7 base image
 FROM centos:7 as centos-7-base
+COPY --from=cmake-3.20-installer-centos7 /usr/local /usr/local
 
 # hadolint ignore=DL3033
-RUN sed -i -e "s/^mirrorlist=http:\/\/mirrorlist.centos.org/#mirrorlist=http:\/\/mirrorlist.centos.org/g" /etc/yum.repos.d/CentOS-Base.repo && \
-    sed -i -e "s/^#baseurl=http:\/\/mirror.centos.org/baseurl=http:\/\/vault.centos.org/g" /etc/yum.repos.d/CentOS-Base.repo && \
-    yum -y update && \
-    yum install -y rpm-build curl ca-certificates gcc gcc-c++ cmake make bash \
+RUN sed -i 's/mirrorlist/#mirrorlist/g' /etc/yum.repos.d/CentOS-* && \
+    sed -i 's|#baseurl=http://mirror.centos.org|baseurl=http://vault.centos.org|g' /etc/yum.repos.d/CentOS-* && \
+    yum install -y rpm-build curl ca-certificates gcc gcc-c++ make bash \
     wget unzip systemd-devel wget flex bison \
     cyrus-sasl-lib cyrus-sasl-devel openssl openss-libs openssl-devel libcurl-devel \
-    postgresql-libs postgresql-devel postgresql-server postgresql libyaml-devel && \
-    yum install -y epel-release && \
-    yum install -y cmake3 && \
-    yum clean all
+    postgresql-libs postgresql-devel postgresql-server postgresql libyaml-devel
 
+ARG FLB_KAFKA=Off
 ARG FLB_OUT_PGSQL=On
+
 ENV FLB_OUT_PGSQL=$FLB_OUT_PGSQL
 ARG FLB_UNICODE_ENCODER=Off
 ENV FLB_UNICODE_ENCODER=$FLB_UNICODE_ENCODER
 
-# centos/7.arm64v8 base image
-FROM arm64v8/centos:7 as centos-7.arm64v8-base
-
+# CMake 3.20 for Centos 7 on Arm64
+FROM --platform=linux/arm64 arm64v8/centos:7 AS cmake-3.20-installer-centos7-arm64
 COPY --from=multiarch-aarch64 /usr/bin/qemu-aarch64-static /usr/bin/qemu-aarch64-static
+WORKDIR /tmp
+RUN sed -i 's/mirrorlist/#mirrorlist/g' /etc/yum.repos.d/CentOS-* && \
+    sed -i 's|#baseurl=http://mirror.centos.org|baseurl=http://vault.centos.org|g' /etc/yum.repos.d/CentOS-* && \
+    yum clean all && yum makecache && \
+    yum install -y gcc gcc-c++ make curl tar gzip openssl11 openssl11-devel && \
+    curl -LO https://github.com/Kitware/CMake/releases/download/v3.20.0/cmake-3.20.0.tar.gz && \
+    tar -xzf cmake-3.20.0.tar.gz && cd cmake-3.20.0 && \
+    ./bootstrap -- -DCMAKE_USE_OPENSSL=OFF && \
+    make -j 4 && make install && cmake --version
+
+# centos/7.arm64v8 base image
+FROM --platform=linux/arm64 arm64v8/centos:7 as centos-7.arm64v8-base
+COPY --from=multiarch-aarch64 /usr/bin/qemu-aarch64-static /usr/bin/qemu-aarch64-static
+COPY --from=cmake-3.20-installer-centos7-arm64 /usr/local /usr/local
 
 # hadolint ignore=DL3033
 RUN sed -i -e "s/^mirrorlist=http:\/\/mirrorlist.centos.org/#mirrorlist=http:\/\/mirrorlist.centos.org/g" /etc/yum.repos.d/CentOS-Base.repo && \
     sed -i -e "s/^#baseurl=http:\/\/mirror.centos.org/baseurl=http:\/\/vault.centos.org/g" /etc/yum.repos.d/CentOS-Base.repo && \
     yum -y update && \
-    yum install -y rpm-build curl ca-certificates gcc gcc-c++ cmake make bash \
+    yum install -y rpm-build curl ca-certificates gcc gcc-c++ make bash \
     wget unzip systemd-devel wget flex bison \
     cyrus-sasl-lib cyrus-sasl-devel openssl openss-libs openssl-devel libcurl-devel \
-    postgresql-libs postgresql-devel postgresql-server postgresql libyaml-devel && \
-    yum install -y epel-release && \
-    yum install -y cmake3 && \
-    yum clean all
+    postgresql-libs postgresql-devel postgresql-server postgresql libyaml-devel
 
 # There are no postgresql libraries available for this target
 ARG FLB_OUT_PGSQL=Off
@@ -175,12 +196,13 @@ ARG FLB_JEMALLOC=On
 ARG FLB_CHUNK_TRACE=On
 
 # cmake3 exists in every image - cmake references the older cmake2 in centos 7
-RUN cmake3 -DCMAKE_INSTALL_PREFIX="$CMAKE_INSTALL_PREFIX" \
+RUN cmake -DCMAKE_INSTALL_PREFIX="$CMAKE_INSTALL_PREFIX" \
     -DCMAKE_INSTALL_SYSCONFDIR="$CMAKE_INSTALL_SYSCONFDIR" \
     -DFLB_RELEASE="$FLB_RELEASE" \
     -DFLB_TRACE="$FLB_TRACE" \
     -DFLB_SQLDB="$FLB_SQLDB" \
     -DFLB_HTTP_SERVER="$FLB_HTTP_SERVER" \
+    -DFLB_KAFKA="$FLB_KAFKA" \
     -DFLB_OUT_KAFKA="$FLB_OUT_KAFKA" \
     -DFLB_OUT_PGSQL="$FLB_OUT_PGSQL" \
     -DFLB_NIGHTLY_BUILD="$FLB_NIGHTLY_BUILD" \
@@ -191,4 +213,4 @@ RUN cmake3 -DCMAKE_INSTALL_PREFIX="$CMAKE_INSTALL_PREFIX" \
     ../
 
 VOLUME [ "/output" ]
-CMD [ "/bin/bash", "-c", "make -j 4 && cpack3 -G RPM && cp *.rpm /output/" ]
+CMD [ "/bin/bash", "-c", "make -j 4 && cpack -G RPM && cp *.rpm /output/" ]
