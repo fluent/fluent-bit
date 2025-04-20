@@ -33,7 +33,7 @@ jobs:
 
   # Sanity check for compilation using system libraries
   pr-compile-system-libs:
-    runs-on: ubuntu-20.04
+    runs-on: ubuntu-22.04
     timeout-minutes: 60
     strategy:
       fail-fast: false
@@ -51,9 +51,9 @@ jobs:
       - name: Setup environment
         run: |
           sudo apt-get update
-          sudo apt-get install -y curl gcc-7 g++-7 clang-6.0 libsystemd-dev gcovr libyaml-dev libluajit-5.1-dev \
+          sudo apt-get install -y curl gcc-9 g++-9 clang-12 libsystemd-dev gcovr libyaml-dev libluajit-5.1-dev \
             libnghttp2-dev libjemalloc-dev
-          sudo ln -s /usr/bin/llvm-symbolizer-6.0 /usr/bin/llvm-symbolizer || true
+          sudo ln -s /usr/bin/llvm-symbolizer-12 /usr/bin/llvm-symbolizer || true
           mkdir -p /tmp/libbacktrace/build && \
             curl -L https://github.com/ianlancetaylor/libbacktrace/archive/8602fda.tar.gz | \
             tar --strip-components=1 -xzC /tmp/libbacktrace/ && \
@@ -66,9 +66,9 @@ jobs:
         run: |
           export nparallel=$(( $(getconf _NPROCESSORS_ONLN) > 8 ? 8 : $(getconf _NPROCESSORS_ONLN) ))
           echo "CC = $CC, CXX = $CXX, FLB_OPT = $FLB_OPT"
-          sudo update-alternatives --install /usr/bin/gcc gcc /usr/bin/gcc-7 90
-          sudo update-alternatives --install /usr/bin/g++ g++ /usr/bin/g++-7 90
-          sudo update-alternatives --install /usr/bin/clang clang /usr/bin/clang-6.0 90
+          sudo update-alternatives --install /usr/bin/gcc gcc /usr/bin/gcc-9 90
+          sudo update-alternatives --install /usr/bin/g++ g++ /usr/bin/g++-9 90
+          sudo update-alternatives --install /usr/bin/clang clang /usr/bin/clang-12 90
           cmake $GLOBAL_OPTS $FLB_OPT  ../
           make -j $nparallel
         working-directory: build
