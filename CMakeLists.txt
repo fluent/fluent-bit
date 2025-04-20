@@ -239,6 +239,7 @@ option(FLB_PREFER_SYSTEM_LIB_LUAJIT       "Prefer the libluajit system library" 
 option(FLB_PREFER_SYSTEM_LIB_MSGPACK      "Prefer the libmsgpack system library"      ${FLB_PREFER_SYSTEM_LIBS})
 option(FLB_PREFER_SYSTEM_LIB_NGHTTP2      "Prefer the libnghttp2 system library"      ${FLB_PREFER_SYSTEM_LIBS})
 option(FLB_PREFER_SYSTEM_LIB_SQLITE       "Prefer the libsqlite3 system library"      ${FLB_PREFER_SYSTEM_LIBS})
+option(FLB_PREFER_SYSTEM_LIB_ZSTD         "Prefer the libzstd system library"         ${FLB_PREFER_SYSTEM_LIBS})
 
 # Enable all features
 if(FLB_ALL)
@@ -539,13 +540,16 @@ add_subdirectory(${FLB_PATH_LIB_MPACK} EXCLUDE_FROM_ALL)
 add_subdirectory(${FLB_PATH_LIB_MINIZ} EXCLUDE_FROM_ALL)
 
 # Zstd (zstd)
-set(ZSTD_BUILD_STATIC ON)
-set(ZSTD_BUILD_SHARED OFF)
-set(ZSTD_BUILD_COMPRESSION ON)
-set(ZSTD_BUILD_DECOMPRESSION ON)
-set(ZSTD_BUILD_DICTBUILDER OFF)
-set(ZSTD_BUILD_DEPRECATED OFF)
-add_subdirectory(${FLB_PATH_LIB_ZSTD}/build/cmake EXCLUDE_FROM_ALL)
+if(FLB_PREFER_SYSTEM_LIB_ZSTD)
+  find_package(PkgConfig)
+  pkg_check_modules(LIBZSTD libzstd>=1.4.8)
+endif()
+if(LIBZSTD_FOUND)
+  include_directories(${LIBZSTD_INCLUDE_DIRS})
+  link_directories(${LIBZSTD_LIBRARY_DIRS})
+else()
+  include(cmake/zstd.cmake)
+endif()
 
 # ring buffer library
 add_subdirectory(${FLB_PATH_LIB_RING_BUFFER} EXCLUDE_FROM_ALL)
