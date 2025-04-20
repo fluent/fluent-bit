@@ -396,7 +396,7 @@ set(FLB_DEPS
   mpack-static
   chunkio-static
   miniz
-  libzstd_static
+  ${LIBZSTD_LIBRARIES}
 
   ${FLB_PLUGINS}
   ${FLB_PROXY_PLUGINS}
