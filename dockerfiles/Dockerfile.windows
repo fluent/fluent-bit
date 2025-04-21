@@ -18,9 +18,10 @@ FROM mcr.microsoft.com/windows/servercore:$WINDOWS_VERSION AS builder-base
 
 SHELL ["powershell", "-Command", "$ErrorActionPreference = 'Stop'; $ProgressPreference = 'SilentlyContinue';"]
 
-# Install Visual Studio Build Tools 2019
+# Install Visual Studio Build Tools 2019 (MSVS_VERSION=16) / 2022 (MSVS_VERSION=17, requires WINDOWS_VERSION=ltsc2022)
 WORKDIR /local
-ENV MSVS_BUILD_TOOLS_VERSION="16" `
+ARG MSVS_VERSION="16"
+ENV MSVS_BUILD_TOOLS_VERSION="$MSVS_VERSION" `
     MSVS_BUILD_TOOLS_DOWNLOAD_URL="https://aka.ms/vs" `
     MSVS_HOME="C:\BuildTools"
 RUN $msvs_build_tools_dist_name=\"vs_buildtools.exe\"; `
@@ -43,17 +44,6 @@ RUN $msvs_build_tools_dist_name=\"vs_buildtools.exe\"; `
       '--includeRecommended'  -NoNewWindow -Wait; `
     Remove-Item -Force \"${msvs_build_tools_dist}\";
 
-ENV MSVC_RUNTIME_VERSION="15" `
-    MSVC_RUNTIME_DOWNLOAD_URL="https://aka.ms/vs"
-RUN $msvc_runtime_dist_name=\"vc_redist.x64.exe\"; `
-    $msvc_runtime_dist=\"${env:TMP}\${msvc_runtime_dist_name}\"; `
-    $msvc_runtime_url=\"${env:MSVC_RUNTIME_DOWNLOAD_URL}/${env:MSVC_RUNTIME_VERSION}/release/${msvc_runtime_dist_name}\"; `
-    Write-Host \"Downloading Microsoft Visual C++ Redistributable...\"; `
-    Write-Host \"${msvc_runtime_url} -> ${msvc_runtime_dist}\"; `
-    Invoke-WebRequest -OutFile \"${msvc_runtime_dist}\" \"${msvc_runtime_url}\"; `
-    Write-Host \"Installing Microsoft Visual C++ runtime libraries...\"; `
-    Start-Process \"${msvc_runtime_dist}\" -ArgumentList '/install', '/quiet', '/norestart' -NoNewWindow -Wait; `
-    Remove-Item -Force \"${msvc_runtime_dist}\";
 
 ENV CMAKE_HOME="C:\cmake"
 ARG CMAKE_VERSION="3.31.6"
@@ -164,7 +154,9 @@ WORKDIR /src/build
 COPY . /src/
 
 ARG BUILD_PARALLEL=1
-RUN cmake -G "'Visual Studio 16 2019'" `
+SHELL ["cmd", "/S", "/C"]
+RUN call "%MSVS_HOME%\VC\Auxiliary\Build\vcvars64.bat" && `
+    cmake -G "NMake Makefiles" `
       -DOPENSSL_ROOT_DIR='C:\dev\vcpkg\packages\openssl_x64-windows-static' `
       -DFLB_LIBYAML_DIR='C:\dev\vcpkg\packages\libyaml_x64-windows-static' `
       -DCMAKE_BUILD_TYPE=Release `
@@ -172,9 +164,12 @@ RUN cmake -G "'Visual Studio 16 2019'" `
       -DFLB_EXAMPLES=Off `
       -DFLB_DEBUG=Off `
       -DFLB_RELEASE=On `
-      ../;`
-    cmake --build . --config Release -j ${BUILD_PARALLEL};
+      ..\ && `
+    cmake --build . --config Release -j "%BUILD_PARALLEL%"
 
+SHELL ["powershell", "-Command", "$ErrorActionPreference = 'Stop'; $ProgressPreference = 'SilentlyContinue';"]
+
+WORKDIR /fluent-bit/bin
 # Set up config files and binaries in single /fluent-bit hierarchy for easy copy in later stage
 RUN New-Item -Path  /fluent-bit/etc/ -ItemType "directory"; `
     Copy-Item -Path /src/conf/fluent-bit-win32.conf /fluent-bit/etc/fluent-bit.conf; `
@@ -185,7 +180,7 @@ RUN New-Item -Path  /fluent-bit/etc/ -ItemType "directory"; `
     Copy-Item -Path /src/conf/parsers_openstack.conf /fluent-bit/etc/; `
     Copy-Item -Path /src/conf/parsers_cinder.conf /fluent-bit/etc/; `
     Copy-Item -Path /src/conf/plugins.conf /fluent-bit/etc/; `
-    Copy-Item -Path /src/build/bin/Release/fluent-bit.exe /fluent-bit/bin/;
+    Copy-Item -Path /src/build/bin/fluent-bit.exe /fluent-bit/bin/;
 
 #
 # Runtime Image - Windows Server Core
