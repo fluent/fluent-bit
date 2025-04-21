@@ -540,11 +540,12 @@ static int truncate_log(const struct flb_cloudwatch *ctx, const char *log_buffer
  */
 void remove_key_from_nested_map(msgpack_object_map *nested_map, msgpack_packer *pk, int filtered_fields) {
     const int remaining_kv_pairs = nested_map->size - filtered_fields;
+    uint32_t j;
 
     // Pack the updated nested map into the packer, skipping keys in the remove list
     msgpack_pack_map(pk, remaining_kv_pairs);  // Initial size will adjust in the next loop
 
-    for (uint32_t j = 0; j < nested_map->size; j++) {
+    for (j = 0; j < nested_map->size; j++) {
         msgpack_object_kv nested_kv = nested_map->ptr[j];
 
         // Check if the current key is in the removal list
@@ -564,13 +565,15 @@ void remove_key_from_nested_map(msgpack_object_map *nested_map, msgpack_packer *
  * from the root and nested message pack map
  */
 void remove_unneeded_field(msgpack_object *root_map, const char *nested_map_key, msgpack_packer *pk,int root_filtered_fields, int filtered_fields) {
+    uint32_t i;
+
     if (root_map->type == MSGPACK_OBJECT_MAP) {
         msgpack_object_map root = root_map->via.map;
 
         // Prepare to pack the modified root map (size may be unchanged or reduced)
         msgpack_pack_map(pk, root.size-root_filtered_fields);
 
-        for (uint32_t i = 0; i < root.size; i++) {
+        for (i = 0; i < root.size; i++) {
             msgpack_object_kv root_kv = root.ptr[i];
 
             // Check if this key matches the nested map key (e.g., "kubernetes")
