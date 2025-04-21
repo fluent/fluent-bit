@@ -1022,17 +1022,31 @@ static char* find_fallback_environment(struct flb_cloudwatch *ctx, entity *entit
         return NULL;
     }
     char *fallback_env = NULL;
-
+    int ret;
     /*
      * Possible fallback environments:
      * 1. eks:cluster-name/namespace
      * 2. k8s:cluster-name/namespace
      */
     if (entity->attributes->platform_type != NULL && entity->attributes->cluster_name != NULL && entity->attributes->namespace != NULL) {
-        int ret = asprintf(&fallback_env, "%s:%s/%s", entity->attributes->platform_type, entity->attributes->cluster_name, entity->attributes->namespace);
-        if (ret == -1) {
+        /* Calculate required length */
+        /* Add 3 for ':' '/' and null terminator */
+        size_t len = strlen(entity->attributes->platform_type) +
+                    strlen(entity->attributes->cluster_name) +
+                    strlen(entity->attributes->namespace) + 3;
+
+        fallback_env = flb_malloc(len);
+        if (!fallback_env) {
             return NULL;
         }
+
+        /* Use snprintf for cross-platform compatibility */
+        ret = snprintf(fallback_env, len, "%s:%s/%s", entity->attributes->platform_type, entity->attributes->cluster_name, entity->attributes->namespace);
+        if (ret < 0 || ret >= len) {
+            flb_free(fallback_env);
+            return NULL;
+        }
+
         return fallback_env;
     }
     return NULL;
