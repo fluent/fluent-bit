@@ -41,7 +41,6 @@ RUN echo "deb http://deb.debian.org/debian bookworm-backports main" >> /etc/apt/
     build-essential \
     curl \
     ca-certificates \
-    cmake \
     git \
     make \
     tar \
@@ -56,6 +55,7 @@ RUN echo "deb http://deb.debian.org/debian bookworm-backports main" >> /etc/apt/
     flex \
     bison \
     libyaml-dev \
+    && apt-get satisfy -y cmake "cmake (<< 4.0)" \
     && apt-get clean \
     && rm -rf /var/lib/apt/lists/*
 
@@ -254,8 +254,9 @@ RUN echo "deb http://deb.debian.org/debian bookworm-backports main" >> /etc/apt/
     net-tools mtr netcat-openbsd bridge-utils iperf ngrep \
     openssl \
     htop atop strace iotop sysstat ncdu logrotate hdparm pciutils psmisc tree pv \
-    cmake make tar flex bison \
+    make tar flex bison \
     libssl-dev libsasl2-dev libsystemd-dev/bookworm-backports zlib1g-dev libpq-dev libyaml-dev postgresql-server-dev-all \
+    && apt-get satisfy -y cmake "cmake (<< 4.0)" \
     && apt-get clean \
     && rm -rf /var/lib/apt/lists/*
 

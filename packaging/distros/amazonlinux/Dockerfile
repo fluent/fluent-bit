@@ -7,62 +7,106 @@ ARG BASE_BUILDER
 # Use buildkit to skip unused base images: DOCKER_BUILDKIT=1
 
 # Multiarch support
-FROM multiarch/qemu-user-static:x86_64-aarch64 as multiarch-aarch64
+FROM multiarch/qemu-user-static:x86_64-aarch64 AS multiarch-aarch64
 
 # amazonlinux/2 base image
-FROM amazonlinux:2 as amazonlinux-2-base
+FROM amazonlinux:2 AS amazonlinux-2-base
+
+ENV CMAKE_HOME="/opt/cmake"
+ARG CMAKE_VERSION="3.31.6"
+ARG CMAKE_URL="https://github.com/Kitware/CMake/releases/download"
 
 # hadolint ignore=DL3033
 RUN yum -y update && \
-    yum install -y rpm-build curl ca-certificates gcc gcc-c++ cmake make bash \
+    yum install -y rpm-build curl ca-certificates gcc gcc-c++ make bash \
     wget unzip systemd-devel wget flex bison \
-    cyrus-sasl-lib cyrus-sasl-devel openssl openss-libs openssl-devel \
+    cyrus-sasl-lib cyrus-sasl-devel openssl openssl-libs openssl-devel \
     postgresql-devel postgresql-libs \
-    cmake3 libyaml-devel zlib-devel libcurl-devel && \
-    yum clean all
+    libyaml-devel zlib-devel libcurl-devel \
+    tar gzip && \
+    yum clean all && \
+    mkdir -p "${CMAKE_HOME}" && \
+    cmake_download_url="${CMAKE_URL}/v${CMAKE_VERSION}/cmake-${CMAKE_VERSION}-linux-$(uname -m).tar.gz" && \
+    echo "Downloading CMake ${CMAKE_VERSION}: ${cmake_download_url} -> ${CMAKE_HOME}" && \
+    curl -jksSL "${cmake_download_url}" | tar -xzf - -C "${CMAKE_HOME}" --strip-components 1
+
+ENV PATH="${CMAKE_HOME}/bin:${PATH}"
 
 # amazonlinux/2.arm64v8 base image
-FROM arm64v8/amazonlinux:2 as amazonlinux-2.arm64v8-base
+FROM arm64v8/amazonlinux:2 AS amazonlinux-2.arm64v8-base
 
 COPY --from=multiarch-aarch64 /usr/bin/qemu-aarch64-static /usr/bin/qemu-aarch64-static
 
-# hadolint ignore=DL3033
-RUN yum -y update && \
-    yum install -y rpm-build ca-certificates gcc gcc-c++ cmake make bash \
-    wget unzip systemd-devel wget flex bison \
-    cyrus-sasl-lib cyrus-sasl-devel openssl openss-libs openssl-devel \
-    postgresql-devel postgresql-libs \
-    cmake3 libyaml-devel zlib-devel libcurl-devel && \
-    yum clean all
-
-FROM amazonlinux:2023 as amazonlinux-2023-base
+ENV CMAKE_HOME="/opt/cmake"
+ARG CMAKE_VERSION="3.31.6"
+ARG CMAKE_URL="https://github.com/Kitware/CMake/releases/download"
 
 # hadolint ignore=DL3033
 RUN yum -y update && \
-    yum install -y rpm-build ca-certificates gcc gcc-c++ cmake make bash \
+    yum install -y rpm-build curl ca-certificates gcc gcc-c++ make bash \
     wget unzip systemd-devel wget flex bison \
     cyrus-sasl-lib cyrus-sasl-devel openssl openssl-libs openssl-devel \
     postgresql-devel postgresql-libs \
-    cmake3 libyaml-devel zlib-devel libcurl-devel && \
-    yum clean all
+    libyaml-devel zlib-devel libcurl-devel \
+    tar gzip && \
+    yum clean all && \
+    mkdir -p "${CMAKE_HOME}" && \
+    cmake_download_url="${CMAKE_URL}/v${CMAKE_VERSION}/cmake-${CMAKE_VERSION}-linux-$(uname -m).tar.gz" && \
+    echo "Downloading CMake ${CMAKE_VERSION}: ${cmake_download_url} -> ${CMAKE_HOME}" && \
+    curl -jksSL "${cmake_download_url}" | tar -xzf - -C "${CMAKE_HOME}" --strip-components 1
+
+ENV PATH="${CMAKE_HOME}/bin:${PATH}"
+
+FROM amazonlinux:2023 AS amazonlinux-2023-base
+
+ENV CMAKE_HOME="/opt/cmake"
+ARG CMAKE_VERSION="3.31.6"
+ARG CMAKE_URL="https://github.com/Kitware/CMake/releases/download"
+
+# hadolint ignore=DL3033
+RUN yum -y update && \
+    yum install -y rpm-build curl-minimal ca-certificates gcc gcc-c++ make bash \
+    wget unzip systemd-devel wget flex bison \
+    cyrus-sasl-lib cyrus-sasl-devel openssl openssl-libs openssl-devel \
+    postgresql-devel postgresql-libs \
+    libyaml-devel zlib-devel libcurl-devel \
+    tar gzip && \
+    yum clean all && \
+    mkdir -p "${CMAKE_HOME}" && \
+    cmake_download_url="${CMAKE_URL}/v${CMAKE_VERSION}/cmake-${CMAKE_VERSION}-linux-$(uname -m).tar.gz" && \
+    echo "Downloading CMake ${CMAKE_VERSION}: ${cmake_download_url} -> ${CMAKE_HOME}" && \
+    curl -jksSL "${cmake_download_url}" | tar -xzf - -C "${CMAKE_HOME}" --strip-components 1
+
+ENV PATH="${CMAKE_HOME}/bin:${PATH}"
 
 # hadolint ignore=DL3029
-FROM --platform=arm64 amazonlinux:2023 as amazonlinux-2023.arm64v8-base
+FROM --platform=arm64 amazonlinux:2023 AS amazonlinux-2023.arm64v8-base
 
 COPY --from=multiarch-aarch64 /usr/bin/qemu-aarch64-static /usr/bin/qemu-aarch64-static
 
+ENV CMAKE_HOME="/opt/cmake"
+ARG CMAKE_VERSION="3.31.6"
+ARG CMAKE_URL="https://github.com/Kitware/CMake/releases/download"
+
 # hadolint ignore=DL3033
 RUN yum -y update && \
-    yum install -y rpm-build ca-certificates gcc gcc-c++ cmake make bash \
+    yum install -y rpm-build curl-minimal ca-certificates gcc gcc-c++ make bash \
     wget unzip systemd-devel wget flex bison \
     cyrus-sasl-lib cyrus-sasl-devel openssl openssl-libs openssl-devel \
     postgresql-devel postgresql-libs \
-    cmake3 libyaml-devel zlib-devel libcurl-devel && \
-    yum clean all
+    libyaml-devel zlib-devel libcurl-devel \
+    tar gzip && \
+    yum clean all && \
+    mkdir -p "${CMAKE_HOME}" && \
+    cmake_download_url="${CMAKE_URL}/v${CMAKE_VERSION}/cmake-${CMAKE_VERSION}-linux-$(uname -m).tar.gz" && \
+    echo "Downloading CMake ${CMAKE_VERSION}: ${cmake_download_url} -> ${CMAKE_HOME}" && \
+    curl -jksSL "${cmake_download_url}" | tar -xzf - -C "${CMAKE_HOME}" --strip-components 1
+
+ENV PATH="${CMAKE_HOME}/bin:${PATH}"
 
 # Common build for all distributions now
 # hadolint ignore=DL3006
-FROM $BASE_BUILDER as builder
+FROM $BASE_BUILDER AS builder
 
 ARG FLB_NIGHTLY_BUILD
 ENV FLB_NIGHTLY_BUILD=$FLB_NIGHTLY_BUILD
@@ -86,7 +130,7 @@ ARG FLB_OUT_PGSQL=On
 ARG FLB_JEMALLOC=On
 ARG FLB_CHUNK_TRACE=On
 
-RUN cmake3 -DCMAKE_INSTALL_PREFIX="$CMAKE_INSTALL_PREFIX" \
+RUN cmake -DCMAKE_INSTALL_PREFIX="$CMAKE_INSTALL_PREFIX" \
     -DCMAKE_INSTALL_SYSCONFDIR="$CMAKE_INSTALL_SYSCONFDIR" \
     -DFLB_RELEASE="$FLB_RELEASE" \
     -DFLB_TRACE="$FLB_TRACE" \
@@ -100,4 +144,4 @@ RUN cmake3 -DCMAKE_INSTALL_PREFIX="$CMAKE_INSTALL_PREFIX" \
     ../
 
 VOLUME [ "/output" ]
-CMD [ "/bin/bash", "-c", "make -j 4 && cpack3 -G RPM && cp *.rpm /output/" ]
+CMD [ "/bin/bash", "-c", "make -j 4 && cpack -G RPM && cp *.rpm /output/" ]
