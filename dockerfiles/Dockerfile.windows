@@ -44,6 +44,7 @@ RUN $msvs_build_tools_dist_name=\"vs_buildtools.exe\"; `
       '--includeRecommended'  -NoNewWindow -Wait; `
     Remove-Item -Force \"${msvs_build_tools_dist}\";
 
+
 ENV CMAKE_HOME="C:\cmake"
 ARG CMAKE_VERSION="3.31.6"
 ARG CMAKE_URL="https://github.com/Kitware/CMake/releases/download"
@@ -139,6 +140,12 @@ ENV VCPKG_BUILD_TYPE=release `
 
 RUN vcpkg install --recurse openssl --triplet x64-windows-static; `
     vcpkg install --recurse libyaml --triplet x64-windows-static;
+
+# Technique from https://github.com/StefanScherer/dockerfiles-windows/blob/master/mongo/3.6/Dockerfile
+WORKDIR /fluent-bit/bin
+RUN Copy-Item -Path C:\Windows\System32\msvcp140.dll -Destination /fluent-bit/bin/; `
+    Copy-Item -Path C:\Windows\System32\vccorlib140.dll -Destination /fluent-bit/bin/; `
+    Copy-Item -Path C:\Windows\System32\vcruntime140.dll -Destination /fluent-bit/bin/;
 
 FROM builder-base AS builder
 
