@@ -114,6 +114,7 @@ static void parse_pod_service_map(struct flb_kube *ctx, char *api_buf, size_t ap
     char *buffer;
     size_t size;
     int root_type;
+    int i, j;
 
     /* Iterate API server msgpack and lookup specific fields */
     if (api_buf != NULL) {
@@ -130,13 +131,13 @@ static void parse_pod_service_map(struct flb_kube *ctx, char *api_buf, size_t ap
         ret = msgpack_unpack_next(&api_result, buffer, size, &off);
         if (ret == MSGPACK_UNPACK_SUCCESS) {
             api_map = api_result.data;
-            for (int i = 0; i < api_map.via.map.size; i++) {
+            for (i = 0; i < api_map.via.map.size; i++) {
                 k = api_map.via.map.ptr[i].key;
                 v = api_map.via.map.ptr[i].val;
                 if (k.type == MSGPACK_OBJECT_STR && v.type == MSGPACK_OBJECT_MAP) {
                     char *pod_name = flb_strndup(k.via.str.ptr, k.via.str.size);
                     struct service_attributes *service_attributes = flb_malloc(sizeof(struct service_attributes));
-                    for (int j = 0; j < v.via.map.size; j++) {
+                    for (j = 0; j < v.via.map.size; j++) {
                         attributeKey = v.via.map.ptr[j].key;
                         attributeValue = v.via.map.ptr[j].val;
                         if (attributeKey.type == MSGPACK_OBJECT_STR && attributeValue.type == MSGPACK_OBJECT_STR) {
