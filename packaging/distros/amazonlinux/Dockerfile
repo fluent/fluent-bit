@@ -18,10 +18,11 @@ ARG CMAKE_URL="https://github.com/Kitware/CMake/releases/download"
 
 # hadolint ignore=DL3033
 RUN yum -y update && \
-    yum install -y rpm-build curl ca-certificates gcc gcc-c++ make bash \
+    yum install -y rpm-build curl ca-certificates make bash \
+    gcc gcc-c++ \
     wget unzip systemd-devel wget flex bison \
     cyrus-sasl-lib cyrus-sasl-devel openssl openssl-libs openssl-devel \
-    postgresql-devel postgresql-libs \
+    postgresql-devel postgresql-libs glibc-devel \
     libyaml-devel zlib-devel libcurl-devel \
     tar gzip && \
     yum clean all && \
@@ -55,7 +56,10 @@ RUN yum -y update && \
     echo "Downloading CMake ${CMAKE_VERSION}: ${cmake_download_url} -> ${CMAKE_HOME}" && \
     curl -jksSL "${cmake_download_url}" | tar -xzf - -C "${CMAKE_HOME}" --strip-components 1
 
+
 ENV PATH="${CMAKE_HOME}/bin:${PATH}"
+ARG FLB_KAFKA=Off
+ENV FLB_KAFKA=$FLB_KAFKA
 
 FROM amazonlinux:2023 AS amazonlinux-2023-base
 
@@ -78,6 +82,8 @@ RUN yum -y update && \
     curl -jksSL "${cmake_download_url}" | tar -xzf - -C "${CMAKE_HOME}" --strip-components 1
 
 ENV PATH="${CMAKE_HOME}/bin:${PATH}"
+ARG FLB_KAFKA=On
+ENV FLB_KAFKA=$FLB_KAFKA
 
 # hadolint ignore=DL3029
 FROM --platform=arm64 amazonlinux:2023 AS amazonlinux-2023.arm64v8-base
@@ -103,6 +109,9 @@ RUN yum -y update && \
     curl -jksSL "${cmake_download_url}" | tar -xzf - -C "${CMAKE_HOME}" --strip-components 1
 
 ENV PATH="${CMAKE_HOME}/bin:${PATH}"
+ARG FLB_KAFKA=On
+ENV FLB_KAFKA=$FLB_KAFKA
+
 
 # Common build for all distributions now
 # hadolint ignore=DL3006
@@ -118,7 +127,7 @@ COPY . ./
 WORKDIR /tmp/fluent-bit/build/
 # CMake configuration variables
 # Unused
-ARG CFLAGS
+# ARG CFLAGS
 ARG CMAKE_INSTALL_PREFIX=/opt/fluent-bit/
 ARG CMAKE_INSTALL_SYSCONFDIR=/etc/
 ARG FLB_RELEASE=On
@@ -136,7 +145,7 @@ RUN cmake -DCMAKE_INSTALL_PREFIX="$CMAKE_INSTALL_PREFIX" \
     -DFLB_TRACE="$FLB_TRACE" \
     -DFLB_SQLDB="$FLB_SQLDB" \
     -DFLB_HTTP_SERVER="$FLB_HTTP_SERVER" \
-    -DFLB_OUT_KAFKA="$FLB_OUT_KAFKA" \
+    -DFLB_KAFKA="$FLB_KAFKA" \
     -DFLB_OUT_PGSQL="$FLB_OUT_PGSQL" \
     -DFLB_NIGHTLY_BUILD="$FLB_NIGHTLY_BUILD" \
     -DFLB_JEMALLOC="${FLB_JEMALLOC}" \
