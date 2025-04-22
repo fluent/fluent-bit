@@ -51,6 +51,7 @@ int flb_ml_parser_instance_has_data(struct flb_ml_parser_ins *ins);
 /* Built-in multiline parsers */
 struct flb_ml_parser *flb_ml_parser_docker(struct flb_config *config);
 struct flb_ml_parser *flb_ml_parser_cri(struct flb_config *config);
+struct flb_ml_parser *flb_ml_parser_cpp_absl(struct flb_config *config, char *key);
 struct flb_ml_parser *flb_ml_parser_java(struct flb_config *config, char *key);
 struct flb_ml_parser *flb_ml_parser_go(struct flb_config *config, char *key);
 struct flb_ml_parser *flb_ml_parser_ruby(struct flb_config *config, char *key);

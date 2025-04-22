@@ -3,6 +3,7 @@ set(src_multiline
   multiline/flb_ml_parser_cri.c
   multiline/flb_ml_parser_docker.c
   multiline/flb_ml_parser_python.c
+  multiline/flb_ml_parser_cpp_absl.c
   multiline/flb_ml_parser_java.c
   multiline/flb_ml_parser_go.c
   multiline/flb_ml_parser_ruby.c

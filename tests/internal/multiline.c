@@ -1,12 +1,12 @@
 /* -*- Mode: C; tab-width: 4; indent-tabs-mode: nil; c-basic-offset: 4 -*- */
 
 #include <fluent-bit/flb_info.h>
+#include <fluent-bit/flb_mem.h>
 #include <fluent-bit/flb_pack.h>
 #include <fluent-bit/flb_parser.h>
-#include <fluent-bit/flb_mem.h>
 #include <fluent-bit/multiline/flb_ml.h>
-#include <fluent-bit/multiline/flb_ml_rule.h>
 #include <fluent-bit/multiline/flb_ml_parser.h>
+#include <fluent-bit/multiline/flb_ml_rule.h>
 
 #include "flb_tests_internal.h"
 
@@ -22,129 +22,140 @@ struct expected_result {
 
 /* Docker */
 struct record_check docker_input[] = {
-  {"{\"log\": \"aa\\n\", \"stream\": \"stdout\", \"time\": \"2021-02-01T16:45:03.01231z\"}"},
-  {"{\"log\": \"aa\\n\", \"stream\": \"stderr\", \"time\": \"2021-02-01T16:45:03.01231z\"}"},
-  {"{\"log\": \"bb\", \"stream\": \"stdout\", \"time\": \"2021-02-01T16:45:03.01232z\"}"},
-  {"{\"log\": \"cc\n\", \"stream\": \"stdout\", \"time\": \"2021-02-01T16:45:03.01233z\"}"},
-  {"{\"log\": \"dd\", \"stream\": \"stderr\", \"time\": \"2021-02-01T16:45:03.01233z\"}"},
-  {"single line to force pending flush of the previous line"},
-  {"{\"log\": \"ee\\n\", \"stream\": \"stderr\", \"time\": \"2021-02-01T16:45:03.01234z\"}"},
+    {"{\"log\": \"aa\\n\", \"stream\": \"stdout\", \"time\": \"2021-02-01T16:45:03.01231z\"}"},
+    {"{\"log\": \"aa\\n\", \"stream\": \"stderr\", \"time\": \"2021-02-01T16:45:03.01231z\"}"},
+    {"{\"log\": \"bb\", \"stream\": \"stdout\", \"time\": \"2021-02-01T16:45:03.01232z\"}"},
+    {"{\"log\": \"cc\n\", \"stream\": \"stdout\", \"time\": \"2021-02-01T16:45:03.01233z\"}"},
+    {"{\"log\": \"dd\", \"stream\": \"stderr\", \"time\": \"2021-02-01T16:45:03.01233z\"}"},
+    {"single line to force pending flush of the previous line"},
+    {"{\"log\": \"ee\\n\", \"stream\": \"stderr\", \"time\": \"2021-02-01T16:45:03.01234z\"}"},
 };
 
 struct record_check docker_output[] = {
-  {"aa\n"},
-  {"aa\n"},
-  {"bbcc\n"},
-  {"dd"},
-  {"single line to force pending flush of the previous line"},
-  {"ee\n"},
+    {"aa\n"},
+    {"aa\n"},
+    {"bbcc\n"},
+    {"dd"},
+    {"single line to force pending flush of the previous line"},
+    {"ee\n"},
 };
 
 /* CRI */
 struct record_check cri_input[] = {
-  {"2019-05-07T18:57:50.904275087+00:00 stdout P 1a. some "},
-  {"2019-05-07T18:57:51.904275088+00:00 stdout P multiline "},
-  {"2019-05-07T18:57:52.904275089+00:00 stdout F log"},
-  {"2019-05-07T18:57:50.904275087+00:00 stderr P 1b. some "},
-  {"2019-05-07T18:57:51.904275088+00:00 stderr P multiline "},
-  {"2019-05-07T18:57:52.904275089+00:00 stderr F log"},
-  {"2019-05-07T18:57:53.904275090+00:00 stdout P 2a. another "},
-  {"2019-05-07T18:57:54.904275091+00:00 stdout P multiline "},
-  {"2019-05-07T18:57:55.904275092+00:00 stdout F log"},
-  {"2019-05-07T18:57:53.904275090+00:00 stderr P 2b. another "},
-  {"2019-05-07T18:57:54.904275091+00:00 stderr P multiline "},
-  {"2019-05-07T18:57:55.904275092+00:00 stderr F log"},
-  {"2019-05-07T18:57:56.904275093+00:00 stdout F 3a. non multiline 1"},
-  {"2019-05-07T18:57:57.904275094+00:00 stdout F 4a. non multiline 2"},
-  {"2019-05-07T18:57:56.904275093+00:00 stderr F 3b. non multiline 1"},
-  {"2019-05-07T18:57:57.904275094+00:00 stderr F 4b. non multiline 2"}
-};
+    {"2019-05-07T18:57:50.904275087+00:00 stdout P 1a. some "},
+    {"2019-05-07T18:57:51.904275088+00:00 stdout P multiline "},
+    {"2019-05-07T18:57:52.904275089+00:00 stdout F log"},
+    {"2019-05-07T18:57:50.904275087+00:00 stderr P 1b. some "},
+    {"2019-05-07T18:57:51.904275088+00:00 stderr P multiline "},
+    {"2019-05-07T18:57:52.904275089+00:00 stderr F log"},
+    {"2019-05-07T18:57:53.904275090+00:00 stdout P 2a. another "},
+    {"2019-05-07T18:57:54.904275091+00:00 stdout P multiline "},
+    {"2019-05-07T18:57:55.904275092+00:00 stdout F log"},
+    {"2019-05-07T18:57:53.904275090+00:00 stderr P 2b. another "},
+    {"2019-05-07T18:57:54.904275091+00:00 stderr P multiline "},
+    {"2019-05-07T18:57:55.904275092+00:00 stderr F log"},
+    {"2019-05-07T18:57:56.904275093+00:00 stdout F 3a. non multiline 1"},
+    {"2019-05-07T18:57:57.904275094+00:00 stdout F 4a. non multiline 2"},
+    {"2019-05-07T18:57:56.904275093+00:00 stderr F 3b. non multiline 1"},
+    {"2019-05-07T18:57:57.904275094+00:00 stderr F 4b. non multiline 2"}};
 
 struct record_check cri_output[] = {
-  {"1a. some multiline log"},
-  {"1b. some multiline log"},
-  {"2a. another multiline log"},
-  {"2b. another multiline log"},
-  {"3a. non multiline 1"},
-  {"4a. non multiline 2"},
-  {"3b. non multiline 1"},
-  {"4b. non multiline 2"}
-};
+    {"1a. some multiline log"},
+    {"1b. some multiline log"},
+    {"2a. another multiline log"},
+    {"2b. another multiline log"},
+    {"3a. non multiline 1"},
+    {"4a. non multiline 2"},
+    {"3b. non multiline 1"},
+    {"4b. non multiline 2"}};
 
 /* ENDSWITH */
 struct record_check endswith_input[] = {
-  {"1a. some multiline log \\"},
-  {"1b. some multiline log"},
-  {"2a. another multiline log\\"},
-  {"2b. another multiline log"},
-  {"3a. non multiline 1"},
-  {"4a. non multiline 2"}
-};
+    {"1a. some multiline log \\"},
+    {"1b. some multiline log"},
+    {"2a. another multiline log\\"},
+    {"2b. another multiline log"},
+    {"3a. non multiline 1"},
+    {"4a. non multiline 2"}};
 
 struct record_check endswith_output[] = {
-  {"1a. some multiline log \\\n1b. some multiline log\n"},
-  {"2a. another multiline log\\\n2b. another multiline log\n"},
-  {"3a. non multiline 1\n"},
-  {"4a. non multiline 2\n"}
-};
+    {"1a. some multiline log \\\n1b. some multiline log\n"},
+    {"2a. another multiline log\\\n2b. another multiline log\n"},
+    {"3a. non multiline 1\n"},
+    {"4a. non multiline 2\n"}};
 
 /* Mixed lines of Docker and CRI logs in different streams (stdout/stderr) */
 struct record_check container_mix_input[] = {
-  {"{\"log\": \"a1\\n\", \"stream\": \"stdout\", \"time\": \"2021-02-01T16:45:03.01231z\"}"},
-  {"{\"log\": \"a2\\n\", \"stream\": \"stderr\", \"time\": \"2021-02-01T16:45:03.01231z\"}"},
-  {"{\"log\": \"bb\", \"stream\": \"stdout\", \"time\": \"2021-02-01T16:45:03.01232z\"}"},
-  {"{\"log\": \"cc\", \"stream\": \"stdout\", \"time\": \"2021-02-01T16:45:03.01233z\"}"},
-  {"{\"log\": \"dd\", \"stream\": \"stderr\", \"time\": \"2021-02-01T16:45:03.01232z\"}"},
-  {"{\"log\": \"ee\n\", \"stream\": \"stderr\", \"time\": \"2021-02-01T16:45:03.01233z\"}"},
-  {"2019-05-07T18:57:52.904275089+00:00 stdout F single full"},
-  {"2019-05-07T18:57:50.904275087+00:00 stdout P 1a. some "},
-  {"2019-05-07T18:57:51.904275088+00:00 stdout P multiline "},
-  {"2019-05-07T18:57:52.904275089+00:00 stdout F log"},
-  {"2019-05-07T18:57:50.904275087+00:00 stderr P 1b. some "},
-  {"2019-05-07T18:57:51.904275088+00:00 stderr P multiline "},
-  {"2019-05-07T18:57:52.904275089+00:00 stderr F log"},
-  {"{\"log\": \"dd-out\\n\", \"stream\": \"stdout\", \"time\": \"2021-02-01T16:45:03.01234z\"}"},
-  {"{\"log\": \"dd-err\\n\", \"stream\": \"stderr\", \"time\": \"2021-02-01T16:45:03.01234z\"}"},
+    {"{\"log\": \"a1\\n\", \"stream\": \"stdout\", \"time\": \"2021-02-01T16:45:03.01231z\"}"},
+    {"{\"log\": \"a2\\n\", \"stream\": \"stderr\", \"time\": \"2021-02-01T16:45:03.01231z\"}"},
+    {"{\"log\": \"bb\", \"stream\": \"stdout\", \"time\": \"2021-02-01T16:45:03.01232z\"}"},
+    {"{\"log\": \"cc\", \"stream\": \"stdout\", \"time\": \"2021-02-01T16:45:03.01233z\"}"},
+    {"{\"log\": \"dd\", \"stream\": \"stderr\", \"time\": \"2021-02-01T16:45:03.01232z\"}"},
+    {"{\"log\": \"ee\n\", \"stream\": \"stderr\", \"time\": \"2021-02-01T16:45:03.01233z\"}"},
+    {"2019-05-07T18:57:52.904275089+00:00 stdout F single full"},
+    {"2019-05-07T18:57:50.904275087+00:00 stdout P 1a. some "},
+    {"2019-05-07T18:57:51.904275088+00:00 stdout P multiline "},
+    {"2019-05-07T18:57:52.904275089+00:00 stdout F log"},
+    {"2019-05-07T18:57:50.904275087+00:00 stderr P 1b. some "},
+    {"2019-05-07T18:57:51.904275088+00:00 stderr P multiline "},
+    {"2019-05-07T18:57:52.904275089+00:00 stderr F log"},
+    {"{\"log\": \"dd-out\\n\", \"stream\": \"stdout\", \"time\": \"2021-02-01T16:45:03.01234z\"}"},
+    {"{\"log\": \"dd-err\\n\", \"stream\": \"stderr\", \"time\": \"2021-02-01T16:45:03.01234z\"}"},
 };
 
 struct record_check container_mix_output[] = {
-  {"a1\n"},
-  {"a2\n"},
-  {"ddee\n"},
-  {"bbcc"},
-  {"single full"},
-  {"1a. some multiline log"},
-  {"1b. some multiline log"},
-  {"dd-out\n"},
-  {"dd-err\n"},
+    {"a1\n"},
+    {"a2\n"},
+    {"ddee\n"},
+    {"bbcc"},
+    {"single full"},
+    {"1a. some multiline log"},
+    {"1b. some multiline log"},
+    {"dd-out\n"},
+    {"dd-err\n"},
 };
+
+struct record_check cpp_absl_input[] = {
+    {"F0926 09:00:01.000000   12345 foo.cc:20] Check failed: 2 * x == y (6 vs. 5) oops!\n"},
+    {"I0926 09:00:03.000000   12345 foo.cc:20] Recieved some json content\n"},
+    {"name: Foo\n"},
+    {"age: 18\n"},
+    {"F01021 12:08:09.000000   12345 barr.cc:921] Recieved some error\n"},
+    {"error content foo\n"},
+    {"error content bar\n"},
+    {"error content foobar\n"},
+    {"error content foobar\n"}};
+
+struct record_check cpp_absl_output[] = {
+    {"F0926 09:00:01.000000   12345 foo.cc:20] Check failed: 2 * x == y (6 vs. 5) oops!\n"},
+    {"I0926 09:00:03.000000   12345 foo.cc:20] Recieved some json content\n"
+     "name: Foo\n"
+     "age: 18\n"},
+    {"F1021 12:08:09.000000   12345 barr.cc:921] Recieved some error\n"
+     "error content foo\n"
+     "error content bar\n"
+     "error content foobar\n"}};
 
 /* Java stacktrace detection */
 struct record_check java_input[] = {
-  {"Exception in thread \"main\" java.lang.IllegalStateException: ..null property\n"},
-  {"     at com.example.myproject.Author.getBookIds(xx.java:38)\n"},
-  {"     at com.example.myproject.Bootstrap.main(Bootstrap.java:14)\n"},
-  {"Caused by: java.lang.NullPointerException\n"},
-  {"     at com.example.myproject.Book.getId(Book.java:22)\n"},
-  {"     at com.example.myproject.Author.getBookIds(Author.java:35)\n"},
-  {"     ... 1 more\n"},
-  {"single line\n"}
-};
+    {"Exception in thread \"main\" java.lang.IllegalStateException: ..null property\n"},
+    {"     at com.example.myproject.Author.getBookIds(xx.java:38)\n"},
+    {"     at com.example.myproject.Bootstrap.main(Bootstrap.java:14)\n"},
+    {"Caused by: java.lang.NullPointerException\n"},
+    {"     at com.example.myproject.Book.getId(Book.java:22)\n"},
+    {"     at com.example.myproject.Author.getBookIds(Author.java:35)\n"},
+    {"     ... 1 more\n"},
+    {"single line\n"}};
 
 struct record_check java_output[] = {
-  {
-    "Exception in thread \"main\" java.lang.IllegalStateException: ..null property\n"
-    "     at com.example.myproject.Author.getBookIds(xx.java:38)\n"
-    "     at com.example.myproject.Bootstrap.main(Bootstrap.java:14)\n"
-    "Caused by: java.lang.NullPointerException\n"
-    "     at com.example.myproject.Book.getId(Book.java:22)\n"
-    "     at com.example.myproject.Author.getBookIds(Author.java:35)\n"
-    "     ... 1 more\n"
-  },
-  {
-    "single line\n"
-  }
-};
+    {"Exception in thread \"main\" java.lang.IllegalStateException: ..null property\n"
+     "     at com.example.myproject.Author.getBookIds(xx.java:38)\n"
+     "     at com.example.myproject.Bootstrap.main(Bootstrap.java:14)\n"
+     "Caused by: java.lang.NullPointerException\n"
+     "     at com.example.myproject.Book.getId(Book.java:22)\n"
+     "     at com.example.myproject.Author.getBookIds(Author.java:35)\n"
+     "     ... 1 more\n"},
+    {"single line\n"}};
 
 struct record_check ruby_input[] = {
     {"/app/config/routes.rb:6:in `/': divided by 0 (ZeroDivisionError)"},
@@ -153,68 +164,54 @@ struct record_check ruby_input[] = {
     {"	from /var/lib/gems/3.0.0/gems/actionpack-7.0.4/lib/action_dispatch/routing/route_set.rb:428:in `eval_block'"},
     {"	from /var/lib/gems/3.0.0/gems/actionpack-7.0.4/lib/action_dispatch/routing/route_set.rb:410:in `draw'"},
     {"	from /app/config/routes.rb:1:in `<main>'"},
-    {"hello world, not multiline\n"}
-};
+    {"hello world, not multiline\n"}};
 
 struct record_check ruby_output[] = {
-    {
-        "/app/config/routes.rb:6:in `/': divided by 0 (ZeroDivisionError)\n"
-        "	from /app/config/routes.rb:6:in `block in <main>'\n"
-        "	from /var/lib/gems/3.0.0/gems/actionpack-7.0.4/lib/action_dispatch/routing/route_set.rb:428:in `instance_exec'\n"
-        "	from /var/lib/gems/3.0.0/gems/actionpack-7.0.4/lib/action_dispatch/routing/route_set.rb:428:in `eval_block'\n"
-        "	from /var/lib/gems/3.0.0/gems/actionpack-7.0.4/lib/action_dispatch/routing/route_set.rb:410:in `draw'\n"
-        "	from /app/config/routes.rb:1:in `<main>'\n"
-    },
-    {"hello world, not multiline\n"}
-};
+    {"/app/config/routes.rb:6:in `/': divided by 0 (ZeroDivisionError)\n"
+     "	from /app/config/routes.rb:6:in `block in <main>'\n"
+     "	from /var/lib/gems/3.0.0/gems/actionpack-7.0.4/lib/action_dispatch/routing/route_set.rb:428:in `instance_exec'\n"
+     "	from /var/lib/gems/3.0.0/gems/actionpack-7.0.4/lib/action_dispatch/routing/route_set.rb:428:in `eval_block'\n"
+     "	from /var/lib/gems/3.0.0/gems/actionpack-7.0.4/lib/action_dispatch/routing/route_set.rb:410:in `draw'\n"
+     "	from /app/config/routes.rb:1:in `<main>'\n"},
+    {"hello world, not multiline\n"}};
 
 /* Python stacktrace detection */
 struct record_check python_input[] = {
-  {"Traceback (most recent call last):\n"},
-  {"  File \"/base/data/home/runtimes/python27/python27_lib/versions/third_party/webapp2-2.5.2/webapp2.py\", line 1535, in __call__\n"},
-  {"    rv = self.handle_exception(request, response, e)\n"},
-  {"  File \"/base/data/home/apps/s~nearfieldspy/1.378705245900539993/nearfieldspy.py\", line 17, in start\n"},
-  {"    return get()\n"},
-  {"  File \"/base/data/home/apps/s~nearfieldspy/1.378705245900539993/nearfieldspy.py\", line 5, in get\n"},
-  {"    raise Exception('spam', 'eggs')\n"},
-  {"Exception: ('spam', 'eggs')\n"},
-  {"hello world, not multiline\n"}
-};
+    {"Traceback (most recent call last):\n"},
+    {"  File \"/base/data/home/runtimes/python27/python27_lib/versions/third_party/webapp2-2.5.2/webapp2.py\", line 1535, in __call__\n"},
+    {"    rv = self.handle_exception(request, response, e)\n"},
+    {"  File \"/base/data/home/apps/s~nearfieldspy/1.378705245900539993/nearfieldspy.py\", line 17, in start\n"},
+    {"    return get()\n"},
+    {"  File \"/base/data/home/apps/s~nearfieldspy/1.378705245900539993/nearfieldspy.py\", line 5, in get\n"},
+    {"    raise Exception('spam', 'eggs')\n"},
+    {"Exception: ('spam', 'eggs')\n"},
+    {"hello world, not multiline\n"}};
 
 struct record_check python_output[] = {
-  {
-      "Traceback (most recent call last):\n"
-      "  File \"/base/data/home/runtimes/python27/python27_lib/versions/third_party/webapp2-2.5.2/webapp2.py\", line 1535, in __call__\n"
-      "    rv = self.handle_exception(request, response, e)\n"
-      "  File \"/base/data/home/apps/s~nearfieldspy/1.378705245900539993/nearfieldspy.py\", line 17, in start\n"
-      "    return get()\n"
-      "  File \"/base/data/home/apps/s~nearfieldspy/1.378705245900539993/nearfieldspy.py\", line 5, in get\n"
-      "    raise Exception('spam', 'eggs')\n"
-      "Exception: ('spam', 'eggs')\n"
-  },
-  {"hello world, not multiline\n"}
-};
+    {"Traceback (most recent call last):\n"
+     "  File \"/base/data/home/runtimes/python27/python27_lib/versions/third_party/webapp2-2.5.2/webapp2.py\", line 1535, in __call__\n"
+     "    rv = self.handle_exception(request, response, e)\n"
+     "  File \"/base/data/home/apps/s~nearfieldspy/1.378705245900539993/nearfieldspy.py\", line 17, in start\n"
+     "    return get()\n"
+     "  File \"/base/data/home/apps/s~nearfieldspy/1.378705245900539993/nearfieldspy.py\", line 5, in get\n"
+     "    raise Exception('spam', 'eggs')\n"
+     "Exception: ('spam', 'eggs')\n"},
+    {"hello world, not multiline\n"}};
 
 /* Custom example for Elasticsearch stacktrace */
 struct record_check elastic_input[] = {
-  {"[some weird test] IndexNotFoundException[no such index]\n"},
-  {"    at org.elasticsearch.cluster.metadata.IndexNameExpressionResolver....\n"},
-  {"    at org.elasticsearch.cluster.metadata.IndexNameExpressionResolver.java:133)\n"},
-  {"    at org.elasticsearch.action.admin.indices.delete.java:75)\n"},
-  {"another separate log line\n"}
-};
+    {"[some weird test] IndexNotFoundException[no such index]\n"},
+    {"    at org.elasticsearch.cluster.metadata.IndexNameExpressionResolver....\n"},
+    {"    at org.elasticsearch.cluster.metadata.IndexNameExpressionResolver.java:133)\n"},
+    {"    at org.elasticsearch.action.admin.indices.delete.java:75)\n"},
+    {"another separate log line\n"}};
 
 struct record_check elastic_output[] = {
-  {
-      "[some weird test] IndexNotFoundException[no such index]\n"
-      "    at org.elasticsearch.cluster.metadata.IndexNameExpressionResolver....\n"
-      "    at org.elasticsearch.cluster.metadata.IndexNameExpressionResolver.java:133)\n"
-      "    at org.elasticsearch.action.admin.indices.delete.java:75)\n"
-  },
-  {
-      "another separate log line\n"
-  }
-};
+    {"[some weird test] IndexNotFoundException[no such index]\n"
+     "    at org.elasticsearch.cluster.metadata.IndexNameExpressionResolver....\n"
+     "    at org.elasticsearch.cluster.metadata.IndexNameExpressionResolver.java:133)\n"
+     "    at org.elasticsearch.action.admin.indices.delete.java:75)\n"},
+    {"another separate log line\n"}};
 
 /* Go */
 struct record_check go_input[] = {
@@ -269,65 +266,61 @@ struct record_check go_input[] = {
     {"	/usr/local/go/src/runtime/asm_amd64.s:2337 +0x1 fp=0xc42003efe0 sp=0xc42003efd8 pc=0x44b4d1\n"},
     {"created by runtime.gcenable\n"},
     {"	/usr/local/go/src/runtime/mgc.go:216 +0x58\n"},
-    {"one more line, no multiline"}
-};
+    {"one more line, no multiline"}};
 
 struct record_check go_output[] = {
-    {
-        "panic: my panic\n"
-        "\n"
-        "goroutine 4 [running]:\n"
-        "panic(0x45cb40, 0x47ad70)\n"
-        "	/usr/local/go/src/runtime/panic.go:542 +0x46c fp=0xc42003f7b8 sp=0xc42003f710 pc=0x422f7c\n"
-        "main.main.func1(0xc420024120)\n"
-        "	foo.go:6 +0x39 fp=0xc42003f7d8 sp=0xc42003f7b8 pc=0x451339\n"
-        "runtime.goexit()\n"
-        "	/usr/local/go/src/runtime/asm_amd64.s:2337 +0x1 fp=0xc42003f7e0 sp=0xc42003f7d8 pc=0x44b4d1\n"
-        "created by main.main\n"
-        "	foo.go:5 +0x58\n"
-        "\n"
-        "goroutine 1 [chan receive]:\n"
-        "runtime.gopark(0x4739b8, 0xc420024178, 0x46fcd7, 0xc, 0xc420028e17, 0x3)\n"
-        "	/usr/local/go/src/runtime/proc.go:280 +0x12c fp=0xc420053e30 sp=0xc420053e00 pc=0x42503c\n"
-        "runtime.goparkunlock(0xc420024178, 0x46fcd7, 0xc, 0x1000f010040c217, 0x3)\n"
-        "	/usr/local/go/src/runtime/proc.go:286 +0x5e fp=0xc420053e70 sp=0xc420053e30 pc=0x42512e\n"
-        "runtime.chanrecv(0xc420024120, 0x0, 0xc420053f01, 0x4512d8)\n"
-        "	/usr/local/go/src/runtime/chan.go:506 +0x304 fp=0xc420053f20 sp=0xc420053e70 pc=0x4046b4\n"
-        "runtime.chanrecv1(0xc420024120, 0x0)\n"
-        "	/usr/local/go/src/runtime/chan.go:388 +0x2b fp=0xc420053f50 sp=0xc420053f20 pc=0x40439b\n"
-        "main.main()\n"
-        "	foo.go:9 +0x6f fp=0xc420053f80 sp=0xc420053f50 pc=0x4512ef\n"
-        "runtime.main()\n"
-        "	/usr/local/go/src/runtime/proc.go:185 +0x20d fp=0xc420053fe0 sp=0xc420053f80 pc=0x424bad\n"
-        "runtime.goexit()\n"
-        "	/usr/local/go/src/runtime/asm_amd64.s:2337 +0x1 fp=0xc420053fe8 sp=0xc420053fe0 pc=0x44b4d1\n"
-        "\n"
-        "goroutine 2 [force gc (idle)]:\n"
-        "runtime.gopark(0x4739b8, 0x4ad720, 0x47001e, 0xf, 0x14, 0x1)\n"
-        "	/usr/local/go/src/runtime/proc.go:280 +0x12c fp=0xc42003e768 sp=0xc42003e738 pc=0x42503c\n"
-        "runtime.goparkunlock(0x4ad720, 0x47001e, 0xf, 0xc420000114, 0x1)\n"
-        "	/usr/local/go/src/runtime/proc.go:286 +0x5e fp=0xc42003e7a8 sp=0xc42003e768 pc=0x42512e\n"
-        "runtime.forcegchelper()\n"
-        "	/usr/local/go/src/runtime/proc.go:238 +0xcc fp=0xc42003e7e0 sp=0xc42003e7a8 pc=0x424e5c\n"
-        "runtime.goexit()\n"
-        "	/usr/local/go/src/runtime/asm_amd64.s:2337 +0x1 fp=0xc42003e7e8 sp=0xc42003e7e0 pc=0x44b4d1\n"
-        "created by runtime.init.4\n"
-        "	/usr/local/go/src/runtime/proc.go:227 +0x35\n"
-        "\n"
-        "goroutine 3 [GC sweep wait]:\n"
-        "runtime.gopark(0x4739b8, 0x4ad7e0, 0x46fdd2, 0xd, 0x419914, 0x1)\n"
-        "	/usr/local/go/src/runtime/proc.go:280 +0x12c fp=0xc42003ef60 sp=0xc42003ef30 pc=0x42503c\n"
-        "runtime.goparkunlock(0x4ad7e0, 0x46fdd2, 0xd, 0x14, 0x1)\n"
-        "	/usr/local/go/src/runtime/proc.go:286 +0x5e fp=0xc42003efa0 sp=0xc42003ef60 pc=0x42512e\n"
-        "runtime.bgsweep(0xc42001e150)\n"
-        "	/usr/local/go/src/runtime/mgcsweep.go:52 +0xa3 fp=0xc42003efd8 sp=0xc42003efa0 pc=0x419973\n"
-        "runtime.goexit()\n"
-        "	/usr/local/go/src/runtime/asm_amd64.s:2337 +0x1 fp=0xc42003efe0 sp=0xc42003efd8 pc=0x44b4d1\n"
-        "created by runtime.gcenable\n"
-        "	/usr/local/go/src/runtime/mgc.go:216 +0x58\n"
-    },
-    {"one more line, no multiline\n"}
-};
+    {"panic: my panic\n"
+     "\n"
+     "goroutine 4 [running]:\n"
+     "panic(0x45cb40, 0x47ad70)\n"
+     "	/usr/local/go/src/runtime/panic.go:542 +0x46c fp=0xc42003f7b8 sp=0xc42003f710 pc=0x422f7c\n"
+     "main.main.func1(0xc420024120)\n"
+     "	foo.go:6 +0x39 fp=0xc42003f7d8 sp=0xc42003f7b8 pc=0x451339\n"
+     "runtime.goexit()\n"
+     "	/usr/local/go/src/runtime/asm_amd64.s:2337 +0x1 fp=0xc42003f7e0 sp=0xc42003f7d8 pc=0x44b4d1\n"
+     "created by main.main\n"
+     "	foo.go:5 +0x58\n"
+     "\n"
+     "goroutine 1 [chan receive]:\n"
+     "runtime.gopark(0x4739b8, 0xc420024178, 0x46fcd7, 0xc, 0xc420028e17, 0x3)\n"
+     "	/usr/local/go/src/runtime/proc.go:280 +0x12c fp=0xc420053e30 sp=0xc420053e00 pc=0x42503c\n"
+     "runtime.goparkunlock(0xc420024178, 0x46fcd7, 0xc, 0x1000f010040c217, 0x3)\n"
+     "	/usr/local/go/src/runtime/proc.go:286 +0x5e fp=0xc420053e70 sp=0xc420053e30 pc=0x42512e\n"
+     "runtime.chanrecv(0xc420024120, 0x0, 0xc420053f01, 0x4512d8)\n"
+     "	/usr/local/go/src/runtime/chan.go:506 +0x304 fp=0xc420053f20 sp=0xc420053e70 pc=0x4046b4\n"
+     "runtime.chanrecv1(0xc420024120, 0x0)\n"
+     "	/usr/local/go/src/runtime/chan.go:388 +0x2b fp=0xc420053f50 sp=0xc420053f20 pc=0x40439b\n"
+     "main.main()\n"
+     "	foo.go:9 +0x6f fp=0xc420053f80 sp=0xc420053f50 pc=0x4512ef\n"
+     "runtime.main()\n"
+     "	/usr/local/go/src/runtime/proc.go:185 +0x20d fp=0xc420053fe0 sp=0xc420053f80 pc=0x424bad\n"
+     "runtime.goexit()\n"
+     "	/usr/local/go/src/runtime/asm_amd64.s:2337 +0x1 fp=0xc420053fe8 sp=0xc420053fe0 pc=0x44b4d1\n"
+     "\n"
+     "goroutine 2 [force gc (idle)]:\n"
+     "runtime.gopark(0x4739b8, 0x4ad720, 0x47001e, 0xf, 0x14, 0x1)\n"
+     "	/usr/local/go/src/runtime/proc.go:280 +0x12c fp=0xc42003e768 sp=0xc42003e738 pc=0x42503c\n"
+     "runtime.goparkunlock(0x4ad720, 0x47001e, 0xf, 0xc420000114, 0x1)\n"
+     "	/usr/local/go/src/runtime/proc.go:286 +0x5e fp=0xc42003e7a8 sp=0xc42003e768 pc=0x42512e\n"
+     "runtime.forcegchelper()\n"
+     "	/usr/local/go/src/runtime/proc.go:238 +0xcc fp=0xc42003e7e0 sp=0xc42003e7a8 pc=0x424e5c\n"
+     "runtime.goexit()\n"
+     "	/usr/local/go/src/runtime/asm_amd64.s:2337 +0x1 fp=0xc42003e7e8 sp=0xc42003e7e0 pc=0x44b4d1\n"
+     "created by runtime.init.4\n"
+     "	/usr/local/go/src/runtime/proc.go:227 +0x35\n"
+     "\n"
+     "goroutine 3 [GC sweep wait]:\n"
+     "runtime.gopark(0x4739b8, 0x4ad7e0, 0x46fdd2, 0xd, 0x419914, 0x1)\n"
+     "	/usr/local/go/src/runtime/proc.go:280 +0x12c fp=0xc42003ef60 sp=0xc42003ef30 pc=0x42503c\n"
+     "runtime.goparkunlock(0x4ad7e0, 0x46fdd2, 0xd, 0x14, 0x1)\n"
+     "	/usr/local/go/src/runtime/proc.go:286 +0x5e fp=0xc42003efa0 sp=0xc42003ef60 pc=0x42512e\n"
+     "runtime.bgsweep(0xc42001e150)\n"
+     "	/usr/local/go/src/runtime/mgcsweep.go:52 +0xa3 fp=0xc42003efd8 sp=0xc42003efa0 pc=0x419973\n"
+     "runtime.goexit()\n"
+     "	/usr/local/go/src/runtime/asm_amd64.s:2337 +0x1 fp=0xc42003efe0 sp=0xc42003efd8 pc=0x44b4d1\n"
+     "created by runtime.gcenable\n"
+     "	/usr/local/go/src/runtime/mgc.go:216 +0x58\n"},
+    {"one more line, no multiline\n"}};
 
 /*
  * Issue 3817 (case: 1)
@@ -345,24 +338,16 @@ struct record_check issue_3817_1_input[] = {
     {"2021-05-17T17:35:01.184747208Z stdout F 1 cont A"},
     {"2021-05-17T17:35:01.184675702Z stdout F [DEBUG] 2 start multiline - "},
     {"2021-05-17T17:35:01.184747208Z stdout F 2 cont B"},
-    {"another isolated line"}
-};
+    {"another isolated line"}};
 
 struct record_check issue_3817_1_output[] = {
-    {
-      "[DEBUG] 1 start multiline - \n"
-      "1 cont A"
-    },
+    {"[DEBUG] 1 start multiline - \n"
+     "1 cont A"},
 
-    {
-      "[DEBUG] 2 start multiline - \n"
-      "2 cont B"
-    },
+    {"[DEBUG] 2 start multiline - \n"
+     "2 cont B"},
 
-    {
-      "another isolated line"
-    }
-};
+    {"another isolated line"}};
 
 /*
  * Flush callback is invoked every time a multiline stream has completed a multiline
@@ -370,8 +355,7 @@ struct record_check issue_3817_1_output[] = {
  */
 static int flush_callback(struct flb_ml_parser *parser,
                           struct flb_ml_stream *mst,
-                          void *data, char *buf_data, size_t buf_size)
-{
+                          void *data, char *buf_data, size_t buf_size) {
     int i;
     int ret;
     int len;
@@ -437,8 +421,7 @@ static int flush_callback(struct flb_ml_parser *parser,
     return 0;
 }
 
-static void test_parser_docker()
-{
+static void test_parser_docker() {
     int i;
     int len;
     int ret;
@@ -470,7 +453,7 @@ static void test_parser_docker()
     mlp_i = flb_ml_parser_instance_create(ml, "docker");
     TEST_CHECK(mlp_i != NULL);
 
-    ret = flb_ml_stream_create(ml, "docker", -1, flush_callback, (void *) &res,
+    ret = flb_ml_stream_create(ml, "docker", -1, flush_callback, (void *)&res,
                                &stream_id);
     TEST_CHECK(ret == 0);
 
@@ -492,8 +475,7 @@ static void test_parser_docker()
     flb_config_exit(config);
 }
 
-static void test_parser_cri()
-{
+static void test_parser_cri() {
     int i;
     int len;
     int ret;
@@ -525,7 +507,7 @@ static void test_parser_cri()
     mlp_i = flb_ml_parser_instance_create(ml, "cri");
     TEST_CHECK(mlp_i != NULL);
 
-    ret = flb_ml_stream_create(ml, "cri", -1, flush_callback, (void *) &res,
+    ret = flb_ml_stream_create(ml, "cri", -1, flush_callback, (void *)&res,
                                &stream_id);
     TEST_CHECK(ret == 0);
 
@@ -546,8 +528,7 @@ static void test_parser_cri()
     flb_config_exit(config);
 }
 
-static void test_container_mix()
-{
+static void test_container_mix() {
     int i;
     int len;
     int ret;
@@ -579,7 +560,7 @@ static void test_container_mix()
     mlp_i = flb_ml_parser_instance_create(ml, "cri");
     TEST_CHECK(mlp_i != NULL);
 
-    ret = flb_ml_stream_create(ml, "container-mix", -1, flush_callback, (void *) &res,
+    ret = flb_ml_stream_create(ml, "container-mix", -1, flush_callback, (void *)&res,
                                &stream_id);
     TEST_CHECK(ret == 0);
 
@@ -600,8 +581,65 @@ static void test_container_mix()
     flb_config_exit(config);
 }
 
-static void test_parser_java()
-{
+static void test_parser_cpp_absl() {
+    int i;
+    int len;
+    int ret;
+    int entries;
+    uint64_t stream_id;
+    msgpack_packer mp_pck;
+    msgpack_sbuffer mp_sbuf;
+    struct record_check *r;
+    struct flb_config *config;
+    struct flb_time tm;
+    struct flb_ml *ml;
+    struct flb_ml_parser_ins *mlp_i;
+    struct expected_result res = {0};
+
+    /* Expected results context */
+    res.key = "log";
+    res.out_records = cpp_absl_output;
+
+    /* initialize buffers */
+    msgpack_sbuffer_init(&mp_sbuf);
+    msgpack_packer_init(&mp_pck, &mp_sbuf, msgpack_sbuffer_write);
+
+    /* Initialize environment */
+    config = flb_config_init();
+
+    /* Create cpp_absl multiline mode */
+    ml = flb_ml_create(config, "cpp-absl-test");
+    TEST_CHECK(ml != NULL);
+
+    /* Generate an instance of multiline cpp_absl parser */
+    mlp_i = flb_ml_parser_instance_create(ml, "cpp_absl");
+    TEST_CHECK(mlp_i != NULL);
+
+    ret = flb_ml_stream_create(ml, "cpp_absl", -1, flush_callback, (void *)&res,
+                               &stream_id);
+    TEST_CHECK(ret == 0);
+
+    flb_time_get(&tm);
+
+    printf("\n");
+    entries = sizeof(cpp_absl_input) / sizeof(struct record_check);
+    for (i = 0; i < entries; i++) {
+        r = &cpp_absl_input[i];
+        len = strlen(r->buf);
+
+        /* Package as msgpack */
+        flb_time_get(&tm);
+        flb_ml_append_text(ml, stream_id, &tm, r->buf, len);
+    }
+
+    if (ml) {
+        flb_ml_destroy(ml);
+    }
+
+    flb_config_exit(config);
+}
+
+static void test_parser_java() {
     int i;
     int len;
     int ret;
@@ -633,7 +671,7 @@ static void test_parser_java()
 
     flb_ml_parser_instance_set(mlp_i, "key_content", "log");
 
-    ret = flb_ml_stream_create(ml, "java", -1, flush_callback, (void *) &res,
+    ret = flb_ml_stream_create(ml, "java", -1, flush_callback, (void *)&res,
                                &stream_id);
     TEST_CHECK(ret == 0);
 
@@ -691,8 +729,7 @@ static void test_parser_java()
     flb_config_exit(config);
 }
 
-static void test_parser_python()
-{
+static void test_parser_python() {
     int i;
     int len;
     int ret;
@@ -726,7 +763,7 @@ static void test_parser_python()
     mlp_i = flb_ml_parser_instance_create(ml, "python");
     TEST_CHECK(mlp_i != NULL);
 
-    ret = flb_ml_stream_create(ml, "python", -1, flush_callback, (void *) &res,
+    ret = flb_ml_stream_create(ml, "python", -1, flush_callback, (void *)&res,
                                &stream_id);
     TEST_CHECK(ret == 0);
 
@@ -750,8 +787,7 @@ static void test_parser_python()
     flb_config_exit(config);
 }
 
-static void test_parser_ruby()
-{
+static void test_parser_ruby() {
     int i;
     int len;
     int ret;
@@ -785,7 +821,7 @@ static void test_parser_ruby()
     mlp_i = flb_ml_parser_instance_create(ml, "ruby");
     TEST_CHECK(mlp_i != NULL);
 
-    ret = flb_ml_stream_create(ml, "ruby", -1, flush_callback, (void *) &res,
+    ret = flb_ml_stream_create(ml, "ruby", -1, flush_callback, (void *)&res,
                                &stream_id);
     TEST_CHECK(ret == 0);
 
@@ -809,8 +845,7 @@ static void test_parser_ruby()
     flb_config_exit(config);
 }
 
-static void test_issue_4949()
-{
+static void test_issue_4949() {
     int i;
     int len;
     int ret;
@@ -844,7 +879,7 @@ static void test_issue_4949()
     mlp_i = flb_ml_parser_instance_create(ml, "python");
     TEST_CHECK(mlp_i != NULL);
 
-    ret = flb_ml_stream_create(ml, "python", -1, flush_callback, (void *) &res,
+    ret = flb_ml_stream_create(ml, "python", -1, flush_callback, (void *)&res,
                                &stream_id);
     TEST_CHECK(ret == 0);
 
@@ -852,7 +887,7 @@ static void test_issue_4949()
     mlp_i = flb_ml_parser_instance_create(ml, "java");
     TEST_CHECK(mlp_i != NULL);
 
-    ret = flb_ml_stream_create(ml, "java", -1, flush_callback, (void *) &res,
+    ret = flb_ml_stream_create(ml, "java", -1, flush_callback, (void *)&res,
                                &stream_id);
     TEST_CHECK(ret == 0);
 
@@ -876,8 +911,7 @@ static void test_issue_4949()
     flb_config_exit(config);
 }
 
-static void test_parser_elastic()
-{
+static void test_parser_elastic() {
     int i;
     int len;
     int ret;
@@ -908,16 +942,16 @@ static void test_parser_elastic()
     TEST_CHECK(ml != NULL);
 
     mlp = flb_ml_parser_create(config,
-                               "elastic",            /* name      */
-                               FLB_ML_REGEX,         /* type      */
-                               NULL,                 /* match_str */
-                               FLB_FALSE,            /* negate    */
-                               1000,                 /* flush_ms  */
-                               "log",                /* key_content */
-                               NULL,                 /* key_pattern */
-                               NULL,                 /* key_group */
-                               NULL,                 /* parser ctx */
-                               NULL);                /* parser name */
+                               "elastic",    /* name      */
+                               FLB_ML_REGEX, /* type      */
+                               NULL,         /* match_str */
+                               FLB_FALSE,    /* negate    */
+                               1000,         /* flush_ms  */
+                               "log",        /* key_content */
+                               NULL,         /* key_pattern */
+                               NULL,         /* key_group */
+                               NULL,         /* parser ctx */
+                               NULL);        /* parser name */
     TEST_CHECK(mlp != NULL);
 
     mlp_i = flb_ml_parser_instance_create(ml, "elastic");
@@ -933,7 +967,7 @@ static void test_parser_elastic()
         fprintf(stderr, "error creating rule 2");
     }
 
-    ret = flb_ml_stream_create(ml, "elastic", -1, flush_callback, (void *) &res,
+    ret = flb_ml_stream_create(ml, "elastic", -1, flush_callback, (void *)&res,
                                &stream_id);
     TEST_CHECK(ret == 0);
 
@@ -989,8 +1023,7 @@ static void test_parser_elastic()
     flb_config_exit(config);
 }
 
-static void test_endswith()
-{
+static void test_endswith() {
     int i;
     int len;
     int ret;
@@ -1016,23 +1049,23 @@ static void test_endswith()
     TEST_CHECK(ml != NULL);
 
     mlp = flb_ml_parser_create(config,
-                               "endswith",           /* name      */
-                               FLB_ML_ENDSWITH,      /* type      */
-                               "\\",                 /* match_str */
-                               FLB_TRUE,             /* negate    */
-                               1000,                 /* flush_ms  */
-                               NULL,                 /* key_content */
-                               NULL,                 /* key_pattern */
-                               NULL,                 /* key_group */
-                               NULL,                 /* parser ctx */
-                               NULL);                /* parser name */
+                               "endswith",      /* name      */
+                               FLB_ML_ENDSWITH, /* type      */
+                               "\\",            /* match_str */
+                               FLB_TRUE,        /* negate    */
+                               1000,            /* flush_ms  */
+                               NULL,            /* key_content */
+                               NULL,            /* key_pattern */
+                               NULL,            /* key_group */
+                               NULL,            /* parser ctx */
+                               NULL);           /* parser name */
     TEST_CHECK(mlp != NULL);
 
     /* Generate an instance of 'endswith' custom parser parser */
     mlp_i = flb_ml_parser_instance_create(ml, "endswith");
     TEST_CHECK(mlp_i != NULL);
 
-    ret = flb_ml_stream_create(ml, "test", -1, flush_callback, (void *) &res, &stream_id);
+    ret = flb_ml_stream_create(ml, "test", -1, flush_callback, (void *)&res, &stream_id);
     TEST_CHECK(ret == 0);
 
     entries = sizeof(endswith_input) / sizeof(struct record_check);
@@ -1052,8 +1085,7 @@ static void test_endswith()
     flb_config_exit(config);
 }
 
-static void test_parser_go()
-{
+static void test_parser_go() {
     int i;
     int len;
     int ret;
@@ -1081,7 +1113,7 @@ static void test_parser_go()
     mlp_i = flb_ml_parser_instance_create(ml, "go");
     TEST_CHECK(mlp_i != NULL);
 
-    ret = flb_ml_stream_create(ml, "go", -1, flush_callback, (void *) &res, &stream_id);
+    ret = flb_ml_stream_create(ml, "go", -1, flush_callback, (void *)&res, &stream_id);
     TEST_CHECK(ret == 0);
 
     entries = sizeof(go_input) / sizeof(struct record_check);
@@ -1103,8 +1135,7 @@ static void test_parser_go()
 
 static int flush_callback_to_buf(struct flb_ml_parser *parser,
                                  struct flb_ml_stream *mst,
-                                 void *data, char *buf_data, size_t buf_size)
-{
+                                 void *data, char *buf_data, size_t buf_size) {
     msgpack_sbuffer *mp_sbuf = data;
     msgpack_sbuffer_write(mp_sbuf, buf_data, buf_size);
 
@@ -1154,11 +1185,10 @@ static void run_test(struct flb_config *config, char *test_name,
     p1 = flb_ml_parser_instance_create(ml, parser1);
     TEST_CHECK(p1 != NULL);
 
-
     /* Stream 1: use parser name (test_name) to generate the stream id */
     ret = flb_ml_stream_create(ml, test_name, -1,
                                flush_callback_to_buf,
-                               (void *) &mp_sbuf1, &stream1);
+                               (void *)&mp_sbuf1, &stream1);
     TEST_CHECK(ret == 0);
 
     /* Ingest input records into parser 1 */
@@ -1190,7 +1220,7 @@ static void run_test(struct flb_config *config, char *test_name,
     /* Stream 2 */
     ret = flb_ml_stream_create(ml, "filter_multiline", -1,
                                flush_callback,
-                               (void *) &res, &stream2);
+                               (void *)&res, &stream2);
 
     /* Ingest input records into parser 2 */
     off = 0;
@@ -1208,10 +1238,9 @@ static void run_test(struct flb_config *config, char *test_name,
     flb_ml_destroy(ml);
 }
 
-void test_issue_3817_1()
-{
+void test_issue_3817_1() {
     int ret;
-    int in_len  = sizeof(issue_3817_1_input) / sizeof(struct record_check);
+    int in_len = sizeof(issue_3817_1_input) / sizeof(struct record_check);
     int out_len = sizeof(issue_3817_1_output) / sizeof(struct record_check);
     struct flb_config *config;
     struct flb_ml_parser *mlp;
@@ -1239,16 +1268,16 @@ void test_issue_3817_1()
 
     /* Register custom parser */
     mlp = flb_ml_parser_create(config,
-                               "parser_3817",        /* name      */
-                               FLB_ML_REGEX,         /* type      */
-                               NULL,                 /* match_str */
-                               FLB_FALSE,            /* negate    */
-                               1000,                 /* flush_ms  */
-                               "log",                /* key_content */
-                               NULL,                 /* key_pattern */
-                               NULL,                 /* key_group */
-                               NULL,                 /* parser ctx */
-                               NULL);                /* parser name */
+                               "parser_3817", /* name      */
+                               FLB_ML_REGEX,  /* type      */
+                               NULL,          /* match_str */
+                               FLB_FALSE,     /* negate    */
+                               1000,          /* flush_ms  */
+                               "log",         /* key_content */
+                               NULL,          /* key_pattern */
+                               NULL,          /* key_group */
+                               NULL,          /* parser ctx */
+                               NULL);         /* parser name */
     TEST_CHECK(mlp != NULL);
 
     /* rule: start_state */
@@ -1276,8 +1305,7 @@ void test_issue_3817_1()
     flb_config_exit(config);
 }
 
-static void test_issue_4034()
-{
+static void test_issue_4034() {
     int i;
     int len;
     int ret;
@@ -1309,7 +1337,7 @@ static void test_issue_4034()
 
     flb_ml_parser_instance_set(mlp_i, "key_content", "log");
 
-    ret = flb_ml_stream_create(ml, "cri", -1, flush_callback, (void *) &res,
+    ret = flb_ml_stream_create(ml, "cri", -1, flush_callback, (void *)&res,
                                &stream_id);
     TEST_CHECK(ret == 0);
 
@@ -1368,8 +1396,7 @@ static void test_issue_4034()
     flb_config_exit(config);
 }
 
-static void test_issue_5504()
-{
+static void test_issue_5504() {
     uint64_t last_flush;
     struct flb_config *config;
     struct flb_ml *ml;
@@ -1459,20 +1486,20 @@ static void test_issue_5504()
 
 TEST_LIST = {
     /* Normal features tests */
-    { "parser_docker",  test_parser_docker},
-    { "parser_cri",     test_parser_cri},
-    { "parser_java",    test_parser_java},
-    { "parser_python",  test_parser_python},
-    { "parser_ruby",    test_parser_ruby},
-    { "parser_elastic", test_parser_elastic},
-    { "parser_go",      test_parser_go},
-    { "container_mix",  test_container_mix},
-    { "endswith",       test_endswith},
+    {"parser_docker", test_parser_docker},
+    {"parser_cri", test_parser_cri},
+    {"parser_cpp_absl", test_parser_cpp_absl},
+    {"parser_java", test_parser_java},
+    {"parser_python", test_parser_python},
+    {"parser_ruby", test_parser_ruby},
+    {"parser_elastic", test_parser_elastic},
+    {"parser_go", test_parser_go},
+    {"container_mix", test_container_mix},
+    {"endswith", test_endswith},
 
     /* Issues reported on Github */
-    { "issue_3817_1"  , test_issue_3817_1},
-    { "issue_4034"    , test_issue_4034},
-    { "issue_4949"    , test_issue_4949},
-    { "issue_5504"    , test_issue_5504},
-    { 0 }
-};
+    {"issue_3817_1", test_issue_3817_1},
+    {"issue_4034", test_issue_4034},
+    {"issue_4949", test_issue_4949},
+    {"issue_5504", test_issue_5504},
+    {0}};

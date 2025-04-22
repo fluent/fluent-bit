@@ -20,12 +20,11 @@
 #include <fluent-bit/flb_info.h>
 #include <fluent-bit/flb_log.h>
 #include <fluent-bit/multiline/flb_ml.h>
-#include <fluent-bit/multiline/flb_ml_rule.h>
-#include <fluent-bit/multiline/flb_ml_mode.h>
 #include <fluent-bit/multiline/flb_ml_group.h>
+#include <fluent-bit/multiline/flb_ml_mode.h>
+#include <fluent-bit/multiline/flb_ml_rule.h>
 
-int flb_ml_parser_init(struct flb_ml_parser *ml_parser)
-{
+int flb_ml_parser_init(struct flb_ml_parser *ml_parser) {
     int ret;
 
     ret = flb_ml_rule_init(ml_parser);
@@ -37,8 +36,7 @@ int flb_ml_parser_init(struct flb_ml_parser *ml_parser)
 }
 
 /* Create built-in multiline parsers */
-int flb_ml_parser_builtin_create(struct flb_config *config)
-{
+int flb_ml_parser_builtin_create(struct flb_config *config) {
     struct flb_ml_parser *mlp;
 
     /* Docker */
@@ -52,6 +50,13 @@ int flb_ml_parser_builtin_create(struct flb_config *config)
     mlp = flb_ml_parser_cri(config);
     if (!mlp) {
         flb_error("[multiline] could not init 'cri' built-in parser");
+        return -1;
+    }
+
+    /* cpp_absl */
+    mlp = flb_ml_parser_cpp_absl(config, NULL);
+    if (!mlp) {
+        flb_error("[multiline] could not init 'cpp_absl' built-in parser");
         return -1;
     }
 
@@ -94,8 +99,7 @@ struct flb_ml_parser *flb_ml_parser_create(struct flb_config *ctx,
                                            char *key_group,
                                            char *key_pattern,
                                            struct flb_parser *parser_ctx,
-                                           char *parser_name)
-{
+                                           char *parser_name) {
     struct flb_ml_parser *ml_parser;
 
     ml_parser = flb_calloc(1, sizeof(struct flb_ml_parser));
@@ -154,8 +158,7 @@ struct flb_ml_parser *flb_ml_parser_create(struct flb_config *ctx,
     return ml_parser;
 }
 
-struct flb_ml_parser *flb_ml_parser_get(struct flb_config *ctx, char *name)
-{
+struct flb_ml_parser *flb_ml_parser_get(struct flb_config *ctx, char *name) {
     struct mk_list *head;
     struct flb_ml_parser *ml_parser;
 
@@ -169,8 +172,7 @@ struct flb_ml_parser *flb_ml_parser_get(struct flb_config *ctx, char *name)
     return NULL;
 }
 
-int flb_ml_parser_instance_has_data(struct flb_ml_parser_ins *ins)
-{
+int flb_ml_parser_instance_has_data(struct flb_ml_parser_ins *ins) {
     struct mk_list *head;
     struct mk_list *head_group;
     struct flb_ml_stream *st;
@@ -190,8 +192,7 @@ int flb_ml_parser_instance_has_data(struct flb_ml_parser_ins *ins)
 }
 
 struct flb_ml_parser_ins *flb_ml_parser_instance_create(struct flb_ml *ml,
-                                                        char *name)
-{
+                                                        char *name) {
     int ret;
     struct flb_ml_parser_ins *ins;
     struct flb_ml_parser *parser;
@@ -225,8 +226,10 @@ struct flb_ml_parser_ins *flb_ml_parser_instance_create(struct flb_ml *ml,
     /* Append this multiline parser instance to the active multiline group */
     ret = flb_ml_group_add_parser(ml, ins);
     if (ret != 0) {
-        flb_error("[multiline] could not register parser '%s' on "
-                  "multiline '%s 'group", name, ml->name);
+        flb_error(
+            "[multiline] could not register parser '%s' on "
+            "multiline '%s 'group",
+            name, ml->name);
         flb_free(ins);
         return NULL;
     }
@@ -243,35 +246,30 @@ struct flb_ml_parser_ins *flb_ml_parser_instance_create(struct flb_ml *ml,
 }
 
 /* Override a fixed parser property for the instance only*/
-int flb_ml_parser_instance_set(struct flb_ml_parser_ins *p, char *prop, char *val)
-{
+int flb_ml_parser_instance_set(struct flb_ml_parser_ins *p, char *prop, char *val) {
     if (strcasecmp(prop, "key_content") == 0) {
         if (p->key_content) {
             flb_sds_destroy(p->key_content);
         }
         p->key_content = flb_sds_create(val);
-    }
-    else if (strcasecmp(prop, "key_pattern") == 0) {
+    } else if (strcasecmp(prop, "key_pattern") == 0) {
         if (p->key_pattern) {
             flb_sds_destroy(p->key_pattern);
         }
         p->key_pattern = flb_sds_create(val);
-    }
-    else if (strcasecmp(prop, "key_group") == 0) {
+    } else if (strcasecmp(prop, "key_group") == 0) {
         if (p->key_group) {
             flb_sds_destroy(p->key_group);
         }
         p->key_group = flb_sds_create(val);
-    }
-    else {
+    } else {
         return -1;
     }
 
     return 0;
 }
 
-int flb_ml_parser_destroy(struct flb_ml_parser *ml_parser)
-{
+int flb_ml_parser_destroy(struct flb_ml_parser *ml_parser) {
     if (!ml_parser) {
         return 0;
     }
@@ -307,8 +305,7 @@ int flb_ml_parser_destroy(struct flb_ml_parser *ml_parser)
     return 0;
 }
 
-int flb_ml_parser_instance_destroy(struct flb_ml_parser_ins *ins)
-{
+int flb_ml_parser_instance_destroy(struct flb_ml_parser_ins *ins) {
     struct mk_list *tmp;
     struct mk_list *head;
     struct flb_ml_stream *stream;
@@ -334,8 +331,7 @@ int flb_ml_parser_instance_destroy(struct flb_ml_parser_ins *ins)
     return 0;
 }
 
-void flb_ml_parser_destroy_all(struct mk_list *list)
-{
+void flb_ml_parser_destroy_all(struct mk_list *list) {
     struct mk_list *tmp;
     struct mk_list *head;
     struct flb_ml_parser *parser;
