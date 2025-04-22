@@ -59,8 +59,8 @@ jobs:
       - name: Install system libraries for this test
         run: |
           sudo apt-get update
-          sudo apt-get install -y libjemalloc-dev libluajit-5.1-dev libnghttp2-dev \
-            libsqlite3-dev libzstd-dev
+          sudo apt-get install -y libc-ares-dev libjemalloc-dev libluajit-5.1-dev \
+            libnghttp2-dev libsqlite3-dev libzstd-dev
           mkdir -p /tmp/libbacktrace/build && \
             curl -L https://github.com/ianlancetaylor/libbacktrace/archive/8602fda.tar.gz | \
             tar --strip-components=1 -xzC /tmp/libbacktrace/ && \
@@ -95,6 +95,7 @@ jobs:
           export ldd_result=$(ldd ./bin/fluent-bit)
           echo "ldd result:"
           echo "$ldd_result"
+          echo "$ldd_result" | grep libcares
           echo "$ldd_result" | grep libjemalloc
           echo "$ldd_result" | grep libluajit
           echo "$ldd_result" | grep libnghttp2
