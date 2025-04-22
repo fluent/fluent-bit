@@ -231,12 +231,11 @@ static int create_counter(struct flb_in_metrics *ctx, struct cmt_counter **count
 
     }
 
+    labels = (char *[]){id, name, image_name, interface};
     if (interface == NULL) {
-        labels = (char *[]){id, name, image_name};
         label_count = 3;
     }
     else {
-        labels = (char *[]){id, name, image_name, interface};
         label_count = 4;
     }
 
