@@ -41,6 +41,7 @@ static void handle_reload_request(mk_request_t *request, struct flb_config *conf
     msgpack_packer mp_pck;
     msgpack_sbuffer mp_sbuf;
     int http_status = 200;
+    enum ctx_signal_type ctx_signal;
 
     /* initialize buffers */
     msgpack_sbuffer_init(&mp_sbuf);
@@ -50,7 +51,6 @@ static void handle_reload_request(mk_request_t *request, struct flb_config *conf
     msgpack_pack_str(&mp_pck, 6);
     msgpack_pack_str_body(&mp_pck, "reload", 6);
 
-#ifdef FLB_SYSTEM_WINDOWS
     if (config->enable_hot_reload != FLB_TRUE) {
         msgpack_pack_str(&mp_pck, 11);
         msgpack_pack_str_body(&mp_pck, "not enabled", 11);
@@ -67,37 +67,9 @@ static void handle_reload_request(mk_request_t *request, struct flb_config *conf
         http_status =  400;
     }
     else {
-        ret = GenerateConsoleCtrlEvent(1 /* CTRL_BREAK_EVENT_1 */, 0);
-        if (ret == 0) {
-            mk_http_status(request, 500);
-            mk_http_done(request);
-            return;
-        }
-
-        msgpack_pack_str(&mp_pck, 4);
-        msgpack_pack_str_body(&mp_pck, "done", 4);
-        msgpack_pack_str(&mp_pck, 6);
-        msgpack_pack_str_body(&mp_pck, "status", 6);
-        msgpack_pack_int64(&mp_pck, ret);
-    }
-#else
-    if (config->enable_hot_reload != FLB_TRUE) {
-        msgpack_pack_str(&mp_pck, 11);
-        msgpack_pack_str_body(&mp_pck, "not enabled", 11);
-        msgpack_pack_str(&mp_pck, 6);
-        msgpack_pack_str_body(&mp_pck, "status", 6);
-        msgpack_pack_int64(&mp_pck, -1);
-    }
-    else if (config->hot_reloading == FLB_TRUE) {
-        msgpack_pack_str(&mp_pck, 11);
-        msgpack_pack_str_body(&mp_pck, "in progress", 11);
-        msgpack_pack_str(&mp_pck, 6);
-        msgpack_pack_str_body(&mp_pck, "status", 6);
-        msgpack_pack_int64(&mp_pck, -2);
-        http_status =  400;
-    }
-    else {
-        ret = kill(getpid(), SIGHUP);
+        ctx_signal = FLB_CTX_SIGNAL_RELOAD;
+        ret = flb_pipe_w(config->ch_context_signal[1], &ctx_signal,
+                         sizeof(enum ctx_signal_type));
         if (ret != 0) {
             mk_http_status(request, 500);
             mk_http_done(request);
@@ -110,8 +82,6 @@ static void handle_reload_request(mk_request_t *request, struct flb_config *conf
         msgpack_pack_str_body(&mp_pck, "status", 6);
         msgpack_pack_int64(&mp_pck, ret);
     }
-
-#endif
 
     /* Export to JSON */
     out_buf = flb_msgpack_raw_to_json_sds(mp_sbuf.data, mp_sbuf.size);
