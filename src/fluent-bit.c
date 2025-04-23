@@ -71,6 +71,7 @@ extern void win32_started(void);
 
 flb_ctx_t *ctx;
 struct flb_config *config;
+int ch_context_signal;
 volatile sig_atomic_t exit_signal = 0;
 volatile sig_atomic_t flb_bin_restarting = FLB_RELOAD_IDLE;
 
@@ -541,7 +542,11 @@ static void flb_help_plugin(int rc, int format,
 
 static void flb_signal_handler_break_loop(int signal)
 {
-    exit_signal = signal;
+    enum ctx_signal_type ctx_signal;
+
+    ctx_signal = FLB_CTX_SIGNAL_SHUTDOWN;
+    flb_pipe_w(ch_context_signal, &ctx_signal,
+               sizeof(enum ctx_signal_type));
 }
 
 static void flb_signal_exit(int signal)
@@ -603,6 +608,8 @@ static void flb_signal_handler_status_line(struct flb_cf *cf_opts)
 static void flb_signal_handler(int signal)
 {
     struct flb_cf *cf_opts = flb_cf_context_get();
+    enum ctx_signal_type ctx_signal;
+
     flb_signal_handler_status_line(cf_opts);
 
     switch (signal) {
@@ -633,12 +640,10 @@ static void flb_signal_handler(int signal)
         break;
 #ifndef FLB_HAVE_STATIC_CONF
     case SIGHUP:
-        if (flb_bin_restarting == FLB_RELOAD_IDLE) {
-            flb_bin_restarting = FLB_RELOAD_IN_PROGRESS;
-        }
-        else {
-            flb_utils_error(FLB_ERR_RELOADING_IN_PROGRESS);
-        }
+        ctx_signal = FLB_CTX_SIGNAL_RELOAD;
+        flb_pipe_w(ch_context_signal, &ctx_signal,
+                   sizeof(enum ctx_signal_type));
+
         break;
 #endif
 #endif
@@ -661,6 +666,7 @@ void flb_console_handler_set_ctx(flb_ctx_t *ctx, struct flb_cf *cf_opts)
 static BOOL WINAPI flb_console_handler(DWORD evType)
 {
     struct flb_cf *cf_opts;
+    enum ctx_signal_type ctx_signal;
 
     switch(evType) {
     case 0 /* CTRL_C_EVENT_0 */:
@@ -674,17 +680,9 @@ static BOOL WINAPI flb_console_handler(DWORD evType)
         handler_signal = 2;
         break;
     case 1 /* CTRL_BREAK_EVENT_1 */:
-        if (flb_bin_restarting == FLB_RELOAD_IDLE) {
-            flb_bin_restarting = FLB_RELOAD_IN_PROGRESS;
-            /* signal the main loop to execute reload. this is necessary since
-             * all signal handlers in win32 are executed on their own thread.
-             */
-            handler_signal = 1;
-            flb_bin_restarting = FLB_RELOAD_IDLE;
-        }
-        else {
-            flb_utils_error(FLB_ERR_RELOADING_IN_PROGRESS);
-        }
+        ctx_signal = FLB_CTX_SIGNAL_SHUTDOWN;
+        flb_pipe_w(ch_context_signal, &ctx_signal,
+                   sizeof(enum ctx_signal_type));
         break;
     }
     return 1;
@@ -1414,6 +1412,8 @@ int flb_main(int argc, char **argv)
         return ret;
     }
 
+    ch_context_signal = config->ch_context_signal[1];
+
     /* Store the current config format context from command line */
     flb_cf_context_set(cf_opts);
 
@@ -1456,13 +1456,12 @@ int flb_main(int argc, char **argv)
                         ctx = flb_context_get();
                         flb_bin_restarting = FLB_RELOAD_IDLE;
                         config = ctx->config;
-
+                        ch_context_signal = config->ch_context_signal[1];
 #ifdef FLB_HAVE_CHUNK_TRACE
                         if (trace_input != NULL) {
                             enable_trace_input(ctx, trace_input, NULL /* prefix ... */, trace_output, trace_props);
                         }
 #endif
-
                     }
                     else {
                         flb_bin_restarting = ret;
