@@ -52,9 +52,21 @@
  * pointers.
  */
 
+#define FLB_CONTEXT_EV_SIGNAL      (1 << 0) /* 1 */
+
+enum ctx_signal_type {
+    FLB_CTX_SIGNAL_RELOAD,
+    FLB_CTX_SIGNAL_SHUTDOWN,
+};
+
 /* Main struct to hold the configuration of the runtime service */
 struct flb_config {
     struct mk_event ch_event;
+
+    /* external communication channel for fluent-bit contexts */
+    struct mk_event_loop *ctx_evl;
+    flb_pipefd_t ch_context_signal[2]; /* channel to recieve context signal events */
+    struct mk_event event_context_signal;
 
     int support_mode;         /* enterprise support mode ?      */
     int is_ingestion_active;  /* date ingestion active/allowed  */
