@@ -18,15 +18,8 @@ static int cb_init(struct flb_processor_instance *ins,
                    int source_plugin_type,
                    struct flb_config *config)
 {
-    const char *dedup_key;
+    int ret;
     struct dedup_processor_ctx *ctx;
-
-    /* Retrieve the deduplication key from the configuration */
-    dedup_key = flb_processor_instance_get_property("dedup_key", ins);
-    if (!dedup_key) {
-        flb_plg_error(ins, "Missing 'dedup_key' property in configuration");
-        return FLB_PROCESSOR_FAILURE;
-    }
 
     /* Allocate context and store the deduplication key */
     ctx = flb_calloc(1, sizeof(struct dedup_processor_ctx));
@@ -36,11 +29,16 @@ static int cb_init(struct flb_processor_instance *ins,
         return FLB_PROCESSOR_FAILURE;
     }
 
-    ctx->dedup_key = flb_sds_create(dedup_key);
-    if (!ctx->dedup_key) {
-        flb_errno();
+    /* Initialize the config map */
+    ret = flb_processor_instance_config_map_set(ins, ctx);
+    if (ret == -1) {
         flb_free(ctx);
-        flb_plg_error(ins, "Failed to allocate memory for dedup_key");
+        return FLB_PROCESSOR_FAILURE;
+    }
+
+    if (ctx->dedup_key == NULL) {
+        flb_plg_error(ins, "dedup_key is not set");
+        flb_free(ctx);
         return FLB_PROCESSOR_FAILURE;
     }
 
@@ -55,11 +53,9 @@ static int cb_exit(struct flb_processor_instance *ins, void *data)
     struct dedup_processor_ctx *ctx = (struct dedup_processor_ctx *)data;
 
     if (ctx) {
-        if (ctx->dedup_key) {
-            flb_sds_destroy(ctx->dedup_key);
-        }
         flb_free(ctx);
     }
+
     return FLB_PROCESSOR_SUCCESS;
 }
 
@@ -101,7 +97,7 @@ static int process_record(struct dedup_processor_ctx *ctx,
 
     /* Check if value exists in hash table */
     ret = flb_hash_table_get(hash_table, value, value_size, &hash_val, &hash_val_size);
-    if (ret > 0) {
+    if (ret >= 0) {
         /* Duplicate found */
         return FLB_TRUE;
     }
