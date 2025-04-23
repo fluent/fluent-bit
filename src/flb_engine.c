@@ -695,6 +695,7 @@ int flb_engine_start(struct flb_config *config)
     struct flb_sched *sched;
     struct flb_net_dns dns_ctx;
     struct flb_notification *notification;
+    enum ctx_signal_type ctx_signal;
 
     /* Initialize the networking layer */
     flb_net_lib_init();
@@ -718,6 +719,29 @@ int flb_engine_start(struct flb_config *config)
         return -1;
     }
     config->evl_bktq = evl_bktq;
+
+    /*
+     * Event loop channel to send context signals.
+     *
+     */
+    /* Create the event loop and set it in the global configuration */
+    config->ctx_evl = mk_event_loop_create(8);
+    if (!config->ctx_evl) {
+        fprintf(stderr, "[log] could not create context event loop\n");
+        return -1;
+    }
+
+    ret = mk_event_channel_create(config->ctx_evl,
+                                  &config->ch_context_signal[0],
+                                  &config->ch_context_signal[1],
+                                  &config->event_context_signal);
+    if (ret == -1) {
+        flb_error("[engine] could not create context signal channel");
+        return -1;
+    }
+    /* Signal type to indicate a "context" event */
+    config->event_context_signal.type = FLB_CONTEXT_EV_SIGNAL;
+    config->event_context_signal.priority = FLB_ENGINE_PRIORITY_THREAD;
 
     /*
      * Event loop channel to ingest flush events from flb_engine_flush()
@@ -1047,8 +1071,14 @@ int flb_engine_start(struct flb_config *config)
                         flb_info("[engine] service has stopped (%i pending tasks)",
                                  ret);
                         ret = config->exit_status_code;
+
+                        ctx_signal = FLB_CTX_SIGNAL_SHUTDOWN;
+                        flb_pipe_w(config->ch_context_signal[1], &ctx_signal,
+                                   sizeof(enum ctx_signal_type));
+
                         flb_engine_shutdown(config);
                         config = NULL;
+
                         return ret;
                     }
                 }
