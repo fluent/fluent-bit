@@ -54,7 +54,7 @@ static int prepare_stmts(struct flb_blob_db *context)
     }
 
 
-    /* file destination update  */
+    /* file remote id update  */
     result = sqlite3_prepare_v2(context->db->handler,
                                 SQL_UPDATE_FILE_REMOTE_ID, -1,
                                 &context->stmt_update_file_remote_id,
@@ -171,6 +171,8 @@ static int prepare_stmts(struct flb_blob_db *context)
         return FLB_BLOB_DB_ERROR_PREPARING_STATEMENT_UPDATE_FILE_PART_UPLOADED;
     }
 
+    /* get next file part to upload */
+
     result = sqlite3_prepare_v2(context->db->handler,
                                 SQL_GET_NEXT_FILE_PART, -1,
                                 &context->stmt_get_next_file_part,
@@ -178,6 +180,8 @@ static int prepare_stmts(struct flb_blob_db *context)
     if (result != SQLITE_OK) {
         return FLB_BLOB_DB_ERROR_PREPARING_STATEMENT_GET_NEXT_FILE_PART;
     }
+
+    /* update file part upload in progress flag */
 
     result = sqlite3_prepare_v2(context->db->handler,
                                 SQL_UPDATE_FILE_PART_IN_PROGRESS, -1,
@@ -187,6 +191,8 @@ static int prepare_stmts(struct flb_blob_db *context)
         return FLB_BLOB_DB_ERROR_PREPARING_STATEMENT_UPDATE_FILE_PART_IN_PROGRESS;
     }
 
+    /* update file part delivery attempt counter */
+
     result = sqlite3_prepare_v2(context->db->handler,
                                 SQL_UPDATE_FILE_PART_DELIVERY_ATTEMPT_COUNT, -1,
                                 &context->stmt_update_file_part_delivery_attempt_count,
@@ -195,10 +201,13 @@ static int prepare_stmts(struct flb_blob_db *context)
         return FLB_BLOB_DB_ERROR_PREPARING_STATEMENT_UPDATE_FILE_DELIVERY_ATTEMPT_COUNT;
     }
 
+    /* get the oldest (fifo) file available to commit */
+
     result = sqlite3_prepare_v2(context->db->handler,
                                 SQL_GET_OLDEST_FILE_WITH_PARTS_CONCAT, -1,
                                 &context->stmt_get_oldest_file_with_parts,
                                 NULL);
+
     if (result != SQLITE_OK) {
         return FLB_BLOB_DB_ERROR_PREPARING_STATEMENT_GET_OLDEST_FILE_WITH_PARTS;
     }
@@ -279,6 +288,8 @@ int flb_blob_db_open(struct flb_blob_db *context,
 
 int flb_blob_db_close(struct flb_blob_db *context)
 {
+    int result;
+
     if (context == NULL) {
         return FLB_BLOB_DB_ERROR_INVALID_BLOB_DB_CONTEXT;
     }
@@ -313,7 +324,11 @@ int flb_blob_db_close(struct flb_blob_db *context)
 
     flb_lock_destroy(&context->global_lock);
 
-    return flb_sqldb_close(context->db);
+    result = flb_sqldb_close(context->db);
+
+    context->db = NULL;
+
+    return result;
 }
 
 int flb_blob_db_lock(struct flb_blob_db *context)
@@ -416,8 +431,7 @@ int64_t flb_blob_db_file_insert(struct flb_blob_db *context,
 }
 
 int flb_blob_db_file_delete(struct flb_blob_db *context,
-                            uint64_t id,
-                            char *path)
+                            uint64_t id)
 {
     sqlite3_stmt *statement;
     int           result;
@@ -449,7 +463,6 @@ int flb_blob_db_file_delete(struct flb_blob_db *context,
 
 int flb_blob_db_file_set_aborted_state(struct flb_blob_db *context,
                                        uint64_t id,
-                                       char *path,
                                        uint64_t state)
 {
     sqlite3_stmt *statement;
@@ -803,8 +816,7 @@ int flb_blob_db_file_get_next_aborted(struct flb_blob_db *context,
 
 
 static int flb_blob_db_file_reset_part_upload_states(struct flb_blob_db *context,
-                                                     uint64_t id,
-                                                     char *path)
+                                                     uint64_t id)
 {
     sqlite3_stmt *statement;
     int           result;
@@ -836,8 +848,7 @@ static int flb_blob_db_file_reset_part_upload_states(struct flb_blob_db *context
 }
 
 int flb_blob_db_file_reset_upload_states(struct flb_blob_db *context,
-                                         uint64_t id,
-                                         char *path)
+                                         uint64_t id)
 {
     sqlite3_stmt *statement;
     int           result;
@@ -861,7 +872,7 @@ int flb_blob_db_file_reset_upload_states(struct flb_blob_db *context,
         result = FLB_BLOB_DB_ERROR_FILE_UPLOAD_STATE_RESET;
     }
     else {
-        result = flb_blob_db_file_reset_part_upload_states(context, id, path);
+        result = flb_blob_db_file_reset_part_upload_states(context, id);
     }
 
     return result;
@@ -892,9 +903,13 @@ int flb_blob_db_file_part_insert(struct flb_blob_db *context,
         context->last_error = result;
 
         result = FLB_BLOB_DB_ERROR_FILE_PART_INSERT;
+
+        *out_id = -1;
     }
     else {
         result = FLB_BLOB_DB_SUCCESS;
+
+        *out_id = sqlite3_last_insert_rowid(context->db);
     }
 
     sqlite3_clear_bindings(statement);
@@ -1414,15 +1429,13 @@ int64_t flb_blob_db_file_insert(struct flb_blob_db *context,
 }
 
 int flb_blob_db_file_delete(struct flb_blob_db *context,
-                            uint64_t id,
-                            char *path)
+                            uint64_t id)
 {
     return FLB_BLOB_DB_ERROR_NO_BACKEND_AVAILABLE;
 }
 
 int flb_blob_db_file_set_aborted_state(struct flb_blob_db *context,
                                        uint64_t id,
-                                       char *path,
                                        uint64_t state)
 {
     return FLB_BLOB_DB_ERROR_NO_BACKEND_AVAILABLE;
@@ -1466,8 +1479,7 @@ int flb_blob_db_file_get_next_stale(struct flb_blob_db *context,
 }
 
 int flb_blob_db_file_reset_upload_states(struct flb_blob_db *context,
-                                         uint64_t id,
-                                         char *path)
+                                         uint64_t id)
 {
     return FLB_BLOB_DB_ERROR_NO_BACKEND_AVAILABLE;
 }
