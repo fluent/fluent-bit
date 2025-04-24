@@ -356,12 +356,10 @@ int64_t flb_blob_db_file_insert(struct flb_blob_db *context,
                                 size_t size);
 
 int flb_blob_db_file_delete(struct flb_blob_db *context,
-                            uint64_t id,
-                            char *path);
+                            uint64_t id);
 
 int flb_blob_db_file_set_aborted_state(struct flb_blob_db *context,
                                        uint64_t id,
-                                       char *path,
                                        uint64_t state);
 
 int flb_blob_file_change_destination(struct flb_blob_db *context,
@@ -394,8 +392,7 @@ int flb_blob_db_file_get_next_stale(struct flb_blob_db *context,
                                     int *part_count);
 
 int flb_blob_db_file_reset_upload_states(struct flb_blob_db *context,
-                                         uint64_t id,
-                                         char *path);
+                                         uint64_t id);
 
 int flb_blob_db_file_part_insert(struct flb_blob_db *context,
                                  uint64_t file_id,
