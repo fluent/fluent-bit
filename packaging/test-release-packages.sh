@@ -37,9 +37,7 @@ function check_version() {
     fi
 }
 
-APT_TARGETS=("ubuntu:18.04"
-    "ubuntu:20.04"
-    "ubuntu:22.04"
+APT_TARGETS=("ubuntu:22.04"
     "debian:10"
     "debian:11")
 
