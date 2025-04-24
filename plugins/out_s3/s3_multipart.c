@@ -521,8 +521,7 @@ int abort_multipart_upload(struct flb_s3 *ctx,
 
     s3_client = ctx->s3_client;
     if (s3_plugin_under_test() == FLB_TRUE) {
-        /* c = mock_s3_call("TEST_ABORT_MULTIPART_UPLOAD_ERROR", "AbortMultipartUpload"); */
-        c = NULL;
+        c = mock_s3_call("TEST_ABORT_MULTIPART_UPLOAD_ERROR", "AbortMultipartUpload");
     }
     else {
         c = s3_client->client_vtable->request(s3_client, FLB_HTTP_DELETE,
