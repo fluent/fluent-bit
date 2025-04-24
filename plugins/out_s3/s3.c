@@ -256,6 +256,26 @@ struct flb_http_client *mock_s3_call(char *error_env_var, char *api)
             "</InitiateMultipartUploadResult>";
             c->resp.payload_size = strlen(c->resp.payload);
         }
+        if (strcmp(api, "AbortMultipartUpload") == 0) {
+            /* mocked success response */
+            c->resp.status = 204;
+            resp =            "Date:  Mon, 1 Nov 2010 20:34:56 GMT\n"
+                              "ETag: \"b54357faf0632cce46e942fa68356b38\"\n"
+                              "Content-Length: 0\n"
+                              "Connection: keep-alive\n"
+                              "Server: AmazonS3";
+            /* since etag is in the headers, this code uses resp.data */
+            len = strlen(resp);
+            c->resp.data = flb_calloc(len + 1, sizeof(char));
+            if (!c->resp.data) {
+                flb_errno();
+                flb_free(c);
+                return NULL;
+            }
+            memcpy(c->resp.data, resp, len);
+            c->resp.data[len] = '\0';
+            c->resp.data_size = len;
+        }
         else if (strcmp(api, "UploadPart") == 0) {
             /* mocked success response */
             resp =            "Date:  Mon, 1 Nov 2010 20:34:56 GMT\n"
@@ -1966,9 +1986,9 @@ static int blob_initialize_authorization_endpoint_upstream(struct flb_s3 *contex
     return 0;
 }
 
-static int blob_fetch_pre_signed_url(struct flb_s3 *context,
-                                     flb_sds_t *result_url,
-                                     char *url)
+static int blob_request_pre_signed_url(struct flb_s3 *context,
+                                       flb_sds_t *result_url,
+                                       char *url)
 {
     int ret;
     size_t b_sent;
@@ -2144,16 +2164,75 @@ static int blob_fetch_pre_signed_url(struct flb_s3 *context,
     return ret;
 }
 
+static int blob_fetch_pre_signed_url(struct flb_s3 *context,
+                                     flb_sds_t *result_url,
+                                     char *format,
+                                     ...)
+{
+    va_list    arguments[2];
+    int        url_length;
+    int        ret;
+    flb_sds_t  url;
+    flb_sds_t  tmp;
+
+    va_start(arguments[0], format);
+    va_copy(arguments[1], arguments[0]);
+
+    url_length = vsnprintf(NULL, 0, format, arguments[0]);
+
+    va_end(arguments[0]);
+
+    if (url_length <= 0) {
+        va_end(arguments[1]);
+
+        return -1;
+    }
+
+    url = flb_sds_create_size(
+            flb_sds_len(context->authorization_endpoint_url) + url_length + 2);
+
+    if (url == NULL) {
+        va_end(arguments[1]);
+
+        return -2;
+    }
+
+    tmp = flb_sds_cat(url,
+                      context->authorization_endpoint_url,
+                      flb_sds_len(context->authorization_endpoint_url));
+
+    url_length = vsnprintf(
+                    &tmp[flb_sds_len(tmp)],
+                    flb_sds_avail(tmp),
+                    format,
+                    arguments[1]);
+
+    va_end(arguments[1]);
+
+    if (url_length <= 0) {
+        flb_sds_destroy(tmp);
+
+        return -3;
+    }
+
+    url = tmp;
+
+    flb_sds_len_set(url, flb_sds_len(url) + url_length);
+
+    ret = blob_request_pre_signed_url(context, result_url, (char *) url);
+
+    flb_sds_destroy(url);
+
+    return ret;
+}
+
 static int blob_fetch_put_object_pre_signed_url(struct flb_s3 *context,
                                                 flb_sds_t *result_url,
                                                 char *tag,
                                                 char *bucket,
                                                 char *path)
 {
-    char      *valid_path;
-    int        ret;
-    flb_sds_t  url;
-    flb_sds_t  tmp;
+    char *valid_path;
 
     valid_path = (char *) path;
 
@@ -2162,26 +2241,12 @@ static int blob_fetch_put_object_pre_signed_url(struct flb_s3 *context,
             valid_path++;
     }
 
-    url = flb_sds_create(context->authorization_endpoint_url);
-
-    if (url == NULL) {
-        return -1;
-    }
-
-    tmp = flb_sds_printf(&url, "/put_object_presigned_url/%s/%s/%s", bucket, tag, valid_path);
-
-    if (tmp != NULL) {
-        url = tmp;
-
-        ret = blob_fetch_pre_signed_url(context, result_url, (char *) url);
-    }
-    else {
-        ret = -1;
-    }
-
-    flb_sds_destroy(url);
-
-    return ret;
+    return blob_fetch_pre_signed_url(context,
+            result_url,
+            "/put_object_presigned_url/%s/%s/%s",
+            bucket,
+            tag,
+            valid_path);
 }
 
 static int blob_fetch_create_multipart_upload_pre_signed_url(struct flb_s3 *context,
@@ -2190,10 +2255,7 @@ static int blob_fetch_create_multipart_upload_pre_signed_url(struct flb_s3 *cont
                                                              char *bucket,
                                                              char *path)
 {
-    char      *valid_path;
-    int        ret;
-    flb_sds_t  url;
-    flb_sds_t  tmp;
+    char *valid_path;
 
     valid_path = (char *) path;
 
@@ -2202,40 +2264,23 @@ static int blob_fetch_create_multipart_upload_pre_signed_url(struct flb_s3 *cont
             valid_path++;
     }
 
-    url = flb_sds_create(context->authorization_endpoint_url);
-
-    if (url == NULL) {
-        return -1;
-    }
-
-    tmp = flb_sds_printf(&url, "/multipart_creation_presigned_url/%s/%s/%s", bucket, tag, valid_path);
-
-    if (tmp != NULL) {
-        url = tmp;
-
-        ret = blob_fetch_pre_signed_url(context, result_url, (char *) url);
-    }
-    else {
-        ret = -1;
-    }
-
-    flb_sds_destroy(url);
-
-    return ret;
+    return blob_fetch_pre_signed_url(context,
+            result_url,
+            "/multipart_creation_presigned_url/%s/%s/%s",
+            bucket,
+            tag,
+            valid_path);
 }
 
 static int blob_fetch_multipart_upload_pre_signed_url(struct flb_s3 *context,
-                                                             flb_sds_t *result_url,
-                                                             char *tag,
-                                                             char *bucket,
-                                                             char *path,
-                                                             char *upload_id,
-                                                             int part_number)
+                                                      flb_sds_t *result_url,
+                                                      char *tag,
+                                                      char *bucket,
+                                                      char *path,
+                                                      char *upload_id,
+                                                      int part_number)
 {
-    char      *valid_path;
-    int        ret;
-    flb_sds_t  url;
-    flb_sds_t  tmp;
+    char *valid_path;
 
     valid_path = (char *) path;
 
@@ -2244,26 +2289,14 @@ static int blob_fetch_multipart_upload_pre_signed_url(struct flb_s3 *context,
             valid_path++;
     }
 
-    url = flb_sds_create(context->authorization_endpoint_url);
-
-    if (url == NULL) {
-        return -1;
-    }
-
-    tmp = flb_sds_printf(&url, "/multipart_upload_presigned_url/%s/%s/%s/%s/%d", bucket, tag, valid_path, upload_id, part_number);
-
-    if (tmp != NULL) {
-        url = tmp;
-
-        ret = blob_fetch_pre_signed_url(context, result_url, (char *) url);
-    }
-    else {
-        ret = -1;
-    }
-
-    flb_sds_destroy(url);
-
-    return ret;
+    return blob_fetch_pre_signed_url(context,
+            result_url,
+            "/multipart_upload_presigned_url/%s/%s/%s/%s/%d",
+            bucket,
+            tag,
+            valid_path,
+            upload_id,
+            part_number);
 }
 
 static int blob_fetch_multipart_complete_pre_signed_url(struct flb_s3 *context,
@@ -2273,10 +2306,7 @@ static int blob_fetch_multipart_complete_pre_signed_url(struct flb_s3 *context,
                                                              char *path,
                                                              char *upload_id)
 {
-    char      *valid_path;
-    int        ret;
-    flb_sds_t  url;
-    flb_sds_t  tmp;
+    char *valid_path;
 
     valid_path = (char *) path;
 
@@ -2285,26 +2315,13 @@ static int blob_fetch_multipart_complete_pre_signed_url(struct flb_s3 *context,
             valid_path++;
     }
 
-    url = flb_sds_create(context->authorization_endpoint_url);
-
-    if (url == NULL) {
-        return -1;
-    }
-
-    tmp = flb_sds_printf(&url, "/multipart_complete_presigned_url/%s/%s/%s/%s", bucket, tag, valid_path, upload_id);
-
-    if (tmp != NULL) {
-        url = tmp;
-
-        ret = blob_fetch_pre_signed_url(context, result_url, (char *) url);
-    }
-    else {
-        ret = -1;
-    }
-
-    flb_sds_destroy(url);
-
-    return ret;
+    return blob_fetch_pre_signed_url(context,
+            result_url,
+            "/multipart_complete_presigned_url/%s/%s/%s/%s",
+            bucket,
+            tag,
+            valid_path,
+            upload_id);
 }
 
 static int blob_fetch_multipart_abort_pre_signed_url(struct flb_s3 *context,
@@ -2314,10 +2331,7 @@ static int blob_fetch_multipart_abort_pre_signed_url(struct flb_s3 *context,
                                                      char *path,
                                                      char *upload_id)
 {
-    char      *valid_path;
-    int        ret;
-    flb_sds_t  url;
-    flb_sds_t  tmp;
+    char *valid_path;
 
     valid_path = (char *) path;
 
@@ -2326,26 +2340,13 @@ static int blob_fetch_multipart_abort_pre_signed_url(struct flb_s3 *context,
             valid_path++;
     }
 
-    url = flb_sds_create(context->authorization_endpoint_url);
-
-    if (url == NULL) {
-        return -1;
-    }
-
-    tmp = flb_sds_printf(&url, "/multipart_upload_presigned_url/%s/%s/%s/%s", bucket, tag, valid_path, upload_id);
-
-    if (tmp != NULL) {
-        url = tmp;
-
-        ret = blob_fetch_pre_signed_url(context, result_url, (char *) url);
-    }
-    else {
-        ret = -1;
-    }
-
-    flb_sds_destroy(url);
-
-    return ret;
+    return blob_fetch_pre_signed_url(context,
+            result_url,
+            "/multipart_upload_presigned_url/%s/%s/%s/%s",
+            bucket,
+            tag,
+            valid_path,
+            upload_id);
 }
 
 static struct multipart_upload *create_blob_upload(struct flb_s3 *ctx, const char *tag,
@@ -2522,6 +2523,72 @@ static int put_blob_object(struct flb_s3 *ctx,
     return -1;
 }
 
+static int abort_blob_upload(struct flb_s3 *ctx,
+                             cfl_sds_t file_tag,
+                             cfl_sds_t file_path,
+                             cfl_sds_t file_remote_id)
+{
+    struct multipart_upload *m_upload;
+    flb_sds_t pre_signed_url;
+    int ret;
+
+    pre_signed_url = NULL;
+
+    m_upload = create_blob_upload(ctx, file_tag, cfl_sds_len(file_tag), file_path);
+
+    if (m_upload == NULL) {
+        return -1;
+    }
+
+    mk_list_del(&m_upload->_head);
+
+    m_upload->upload_id = flb_sds_create(file_remote_id);
+
+    if (m_upload->upload_id == NULL) {
+        m_upload->part_number = 0;
+
+        multipart_upload_destroy(m_upload);
+
+        flb_plg_error(ctx->ins, "Could not allocate upload id copy");
+
+        return -2;
+    }
+
+    if (ctx->authorization_endpoint_url != NULL) {
+        ret = blob_fetch_multipart_abort_pre_signed_url(ctx,
+                                                        &pre_signed_url,
+                                                        file_tag,
+                                                        ctx->bucket,
+                                                        file_path,
+                                                        m_upload->upload_id);
+
+        if (ret != 0) {
+            m_upload->part_number = 0;
+
+            multipart_upload_destroy(m_upload);
+
+            return -3;
+        }
+    }
+    else {
+        pre_signed_url = NULL;
+    }
+
+    ret = abort_multipart_upload(ctx, m_upload, pre_signed_url);
+
+    if (pre_signed_url != NULL) {
+        flb_sds_destroy(pre_signed_url);
+
+        pre_signed_url = NULL;
+    }
+
+    m_upload->part_number = 0;
+
+    multipart_upload_destroy(m_upload);
+
+    return 0;
+}
+
 static int cb_s3_upload_blob(struct flb_config *config, void *data)
 {
     int ret;
@@ -2581,9 +2648,9 @@ static int cb_s3_upload_blob(struct flb_config *config, void *data)
 
         if (ret == 1) {
             if (part_count > 1) {
-                m_upload = create_blob_upload(ctx, file_tag, cfl_sds_len(file_tag), file_path);
+                ret = abort_blob_upload(ctx, file_tag, file_path, file_remote_id);
 
-                if (m_upload == NULL) {
+                if (ret != 0) {
                     cfl_sds_destroy(file_tag);
                     cfl_sds_destroy(file_path);
                     cfl_sds_destroy(file_remote_id);
@@ -2593,60 +2660,11 @@ static int cb_s3_upload_blob(struct flb_config *config, void *data)
 
                     return -1;
                 }
-
-                mk_list_del(&m_upload->_head);
-
-                m_upload->upload_id = flb_sds_create(file_remote_id);
-
-                if (m_upload->upload_id == NULL) {
-                    cfl_sds_destroy(file_tag);
-                    cfl_sds_destroy(file_path);
-                    cfl_sds_destroy(file_remote_id);
-                    cfl_sds_destroy(file_destination);
-
-                    m_upload->part_number = 0;
-                    multipart_upload_destroy(m_upload);
-
-                    flb_plg_error(ctx->ins, "Could not allocate upload id copy");
-
-                    flb_blob_db_unlock(&ctx->blob_db);
-
-                    return -4;
-                }
-
-
-                if (ctx->authorization_endpoint_url != NULL) {
-                    ret = blob_fetch_multipart_abort_pre_signed_url(ctx,
-                                                                    &pre_signed_url,
-                                                                    file_tag,
-                                                                    ctx->bucket,
-                                                                    file_path,
-                                                                    m_upload->upload_id);
-
-                    if (ret != 0) {
-                        multipart_upload_destroy(m_upload);
-
-                        flb_blob_db_unlock(&ctx->blob_db);
-
-                        return -5;
-                    }
-                }
-                else {
-                    pre_signed_url = NULL;
-                }
-
-                ret = abort_multipart_upload(ctx, m_upload, pre_signed_url);
-
-                if (pre_signed_url != NULL) {
-                    flb_sds_destroy(pre_signed_url);
-
-                    pre_signed_url = NULL;
-                }
             }
 
             flb_blob_file_update_remote_id(&ctx->blob_db, file_id, "");
-            flb_blob_db_file_reset_upload_states(&ctx->blob_db, file_id, file_path);
-            flb_blob_db_file_set_aborted_state(&ctx->blob_db, file_id, file_path, 0);
+            flb_blob_db_file_reset_upload_states(&ctx->blob_db, file_id);
+            flb_blob_db_file_set_aborted_state(&ctx->blob_db, file_id, 0);
 
             cfl_sds_destroy(file_remote_id);
             cfl_sds_destroy(file_path);
@@ -2673,9 +2691,9 @@ static int cb_s3_upload_blob(struct flb_config *config, void *data)
 
         if (ret == 1) {
             if (part_count > 1) {
-                m_upload = create_blob_upload(ctx, file_tag, cfl_sds_len(file_tag), file_path);
+                ret = abort_blob_upload(ctx, file_tag, file_path, file_remote_id);
 
-                if (m_upload == NULL) {
+                if (ret != 0) {
                     cfl_sds_destroy(file_tag);
                     cfl_sds_destroy(file_path);
                     cfl_sds_destroy(file_remote_id);
@@ -2685,65 +2703,17 @@ static int cb_s3_upload_blob(struct flb_config *config, void *data)
 
                     return -1;
                 }
-
-                mk_list_del(&m_upload->_head);
-
-                m_upload->upload_id = flb_sds_create(file_remote_id);
-
-                if (m_upload->upload_id == NULL) {
-                    cfl_sds_destroy(file_tag);
-                    cfl_sds_destroy(file_path);
-                    cfl_sds_destroy(file_remote_id);
-                    cfl_sds_destroy(file_destination);
-
-                    m_upload->part_number = 0;
-                    multipart_upload_destroy(m_upload);
-
-                    flb_plg_error(ctx->ins, "Could not allocate upload id copy");
-
-                    flb_blob_db_unlock(&ctx->blob_db);
-
-                    return -4;
-                }
-
-                if (ctx->authorization_endpoint_url != NULL) {
-                    ret = blob_fetch_multipart_abort_pre_signed_url(ctx,
-                                                                    &pre_signed_url,
-                                                                    file_tag,
-                                                                    ctx->bucket,
-                                                                    file_path,
-                                                                    m_upload->upload_id);
-
-                    if (ret != 0) {
-                        multipart_upload_destroy(m_upload);
-
-                        flb_blob_db_unlock(&ctx->blob_db);
-
-                        return -5;
-                    }
-                }
-                else {
-                    pre_signed_url = NULL;
-                }
-
-                ret = abort_multipart_upload(ctx, m_upload, pre_signed_url);
-
-                if (pre_signed_url != NULL) {
-                    flb_sds_destroy(pre_signed_url);
-
-                    pre_signed_url = NULL;
-                }
             }
 
             if (ctx->file_delivery_attempt_limit != FLB_OUT_RETRY_UNLIMITED &&
                 file_delivery_attempts < ctx->file_delivery_attempt_limit) {
 
                 flb_blob_file_update_remote_id(&ctx->blob_db, file_id, "");
-                flb_blob_db_file_reset_upload_states(&ctx->blob_db, file_id, file_path);
-                flb_blob_db_file_set_aborted_state(&ctx->blob_db, file_id, file_path, 0);
+                flb_blob_db_file_reset_upload_states(&ctx->blob_db, file_id);
+                flb_blob_db_file_set_aborted_state(&ctx->blob_db, file_id, 0);
             }
             else {
-                ret = flb_blob_db_file_delete(&ctx->blob_db, file_id, file_path);
+                ret = flb_blob_db_file_delete(&ctx->blob_db, file_id);
 
                 notification = flb_calloc(1,
                                           sizeof(
@@ -2924,7 +2894,7 @@ static int cb_s3_upload_blob(struct flb_config *config, void *data)
             }
 
             /* remove the file entry from the database */
-            ret = flb_blob_db_file_delete(&ctx->blob_db, file_id, file_path);
+            ret = flb_blob_db_file_delete(&ctx->blob_db, file_id);
             if (ret == -1) {
                 flb_plg_error(ctx->ins, "cannot delete blob file '%s' (id=%" PRIu64 ") from the database",
                                 file_path, file_id);
@@ -2999,7 +2969,7 @@ static int cb_s3_upload_blob(struct flb_config *config, void *data)
          * to finish and then wipe the slate and start again but we don't want
          * to increment the failure count in this case.
          */
-        flb_blob_db_file_set_aborted_state(&ctx->blob_db, file_id, file_path, 1);
+        flb_blob_db_file_set_aborted_state(&ctx->blob_db, file_id, 1);
 
         cfl_sds_destroy(file_tag);
         cfl_sds_destroy(file_path);
@@ -3227,7 +3197,7 @@ static int cb_s3_upload_blob(struct flb_config *config, void *data)
 
         if (ctx->part_delivery_attempt_limit != FLB_OUT_RETRY_UNLIMITED &&
             part_delivery_attempts >= ctx->part_delivery_attempt_limit) {
-            flb_blob_db_file_set_aborted_state(&ctx->blob_db, file_id, file_path, 1);
+            flb_blob_db_file_set_aborted_state(&ctx->blob_db, file_id, 1);
         }
     }
 
