@@ -1246,14 +1246,13 @@ void flb_tail_file_remove(struct flb_tail_file *file)
         flb_log_event_encoder_destroy(file->sl_log_event_encoder);
     }
 
-    if (file->ml_log_event_encoder != NULL) {
-        flb_log_event_encoder_destroy(file->ml_log_event_encoder);
-    }
-
     /* remove the multiline.core stream */
     if (ctx->ml_ctx && file->ml_stream_id > 0) {
-        /* destroy ml stream */
         flb_ml_stream_id_destroy_all(ctx->ml_ctx, file->ml_stream_id);
+    }
+
+    if (file->ml_log_event_encoder != NULL) {
+        flb_log_event_encoder_destroy(file->ml_log_event_encoder);
     }
 
     if (file->rotated > 0) {
