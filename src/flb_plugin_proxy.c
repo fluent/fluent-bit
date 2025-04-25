@@ -240,6 +240,12 @@ static void flb_proxy_output_cb_destroy(struct flb_output_plugin *plugin)
         cb_unregister(proxy->def);
     }
 
+    if (plugin->name != NULL) {
+        flb_free(plugin->name);
+
+        plugin->name = NULL;
+    }
+
     if (proxy->def->proxy == FLB_PROXY_GOLANG) {
 #ifdef FLB_HAVE_PROXY_GO
         proxy_go_output_unregister(proxy->data);
@@ -284,6 +290,12 @@ static void flb_proxy_input_cb_destroy(struct flb_input_plugin *plugin)
     cb_unregister = flb_plugin_proxy_symbol(proxy, "FLBPluginUnregister");
     if (cb_unregister != NULL) {
         cb_unregister(proxy->def);
+    }
+
+    if (plugin->name != NULL) {
+        flb_free(plugin->name);
+
+        plugin->name = NULL;
     }
 
     if (proxy->def->proxy == FLB_PROXY_GOLANG) {
