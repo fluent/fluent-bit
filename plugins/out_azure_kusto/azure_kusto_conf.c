@@ -439,7 +439,6 @@ static flb_sds_t parse_ingestion_identity_token(struct flb_azure_kusto *ctx,
     }
 
     flb_free(tokens);
-    flb_free(t);
 
     return identity_token;
 }
