@@ -35,6 +35,11 @@
 /* refresh token every 50 minutes */
 #define FLB_AZURE_KUSTO_TOKEN_REFRESH 3000
 
+/* Authentication types */
+#define FLB_AZURE_KUSTO_AUTH_SERVICE_PRINCIPAL  0
+#define FLB_AZURE_KUSTO_AUTH_MANAGED_IDENTITY   1
+#define FLB_AZURE_KUSTO_AUTH_WORKLOAD_IDENTITY  2
+
 /* Kusto streaming inserts oauth scope */
 #define FLB_AZURE_KUSTO_SCOPE "https://help.kusto.windows.net/.default"
 
@@ -91,6 +96,11 @@ struct flb_azure_kusto {
 
     int ingestion_endpoint_connect_timeout;
     int io_timeout;
+
+    /* Authentication */
+    int auth_type;
+    char *auth_type_str;
+    char *workload_identity_token_file;
 
     /* compress payload */
     int compression_enabled;
@@ -165,5 +175,7 @@ struct flb_azure_kusto {
 
 flb_sds_t get_azure_kusto_token(struct flb_azure_kusto *ctx);
 flb_sds_t execute_ingest_csl_command(struct flb_azure_kusto *ctx, const char *csl);
+/* Add function prototype for workload identity token exchange */
+int flb_azure_workload_identity_token_get(struct flb_oauth2 *ctx, const char *token_file, const char *client_id, const char *tenant_id);
 
 #endif
