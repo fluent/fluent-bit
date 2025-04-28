@@ -540,7 +540,7 @@ int ctr_decode_opentelemetry_create(struct ctrace **out_ctr,
 
     for (resource_span_index = 0; resource_span_index < service_request->n_resource_spans; resource_span_index++) {
         otel_resource_span = service_request->resource_spans[resource_span_index];
-        if (otel_resource_span == NULL) {
+        if (otel_resource_span == NULL || otel_resource_span->resource == NULL) {
             opentelemetry__proto__collector__trace__v1__export_trace_service_request__free_unpacked(service_request, NULL);
             ctr_destroy(ctr);
             return CTR_DECODE_OPENTELEMETRY_INVALID_PAYLOAD;
