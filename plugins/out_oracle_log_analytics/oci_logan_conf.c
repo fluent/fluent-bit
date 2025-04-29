@@ -45,7 +45,6 @@ static int create_pk_context(flb_sds_t filepath, const char *key_passphrase,
     FILE *fp;
     flb_sds_t kbuffer;
 
-
     ret = stat(filepath, &st);
     if (ret == -1) {
         flb_errno();
@@ -284,10 +283,17 @@ struct flb_oci_logan *flb_oci_logan_conf_create(struct flb_output_instance *ins,
     mk_list_init(&ctx->log_event_metadata_fields);
 
     ctx->ins = ins;
-
+    
     ret = flb_output_config_map_set(ins, (void *) ctx);
     if (ret == -1) {
         flb_plg_error(ctx->ins, "configuration error");
+        flb_oci_logan_conf_destroy(ctx);
+        return NULL;
+    }
+
+    if(strcmp (ctx->auth_mode, "instance_principal") == 0){
+        // get certs and keys
+        flb_plg_error(ctx->ins, "instance principal authentication still not available");
         flb_oci_logan_conf_destroy(ctx);
         return NULL;
     }

@@ -156,6 +156,24 @@
 #include <fluent-bit/flb_hash_table.h>
 #include <monkey/mk_core/mk_list.h>
 
+
+//!added by @rghouzra
+//?to be tested
+
+#define METADATA_BASE_URL "http://169.254.169.254/opc/v2"
+#define AUTH_HEADER "Authorization: Bearer Oracle"
+#define CERT_FILE "/tmp/flb_oci_leaf_cert.pem"
+#define KEY_FILE "/tmp/flb_oci_leaf_key.pem"
+#define INTERMEDIATE_CERT_FILE "/tmp/flb_oci_intermediate_cert.pem"
+#define TOKEN_FILE "/tmp/flb_oci_token.json"
+
+
+struct oci_instance_principal_provider{
+  char *token;
+};
+
+
+
 struct metadata_obj {
     flb_sds_t key;
     flb_sds_t val;
@@ -198,6 +216,11 @@ struct flb_oci_logan {
     struct mk_list global_metadata_fields;
     struct mk_list *oci_la_metadata;
     struct mk_list log_event_metadata_fields;
+
+  // auth mode
+    char *auth_mode;
+  // instance principal
+
 
   // config_file
     flb_sds_t user;
