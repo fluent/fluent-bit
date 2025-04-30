@@ -54,6 +54,7 @@ struct flb_tail_file {
     size_t name_len;
     size_t orig_name_len;
     time_t rotated;
+    time_t last_mtime;          /* Last modification time of the file */
     int64_t pending_bytes;
     size_t stream_offset;       /* this represents the logical data offset
                                    which for compressed files could be higher

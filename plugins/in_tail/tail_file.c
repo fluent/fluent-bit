@@ -1024,6 +1024,7 @@ int flb_tail_file_append(char *path, struct stat *st, int mode,
     /* Initialize */
     file->watch_fd  = -1;
     file->fd        = fd;
+    file->last_mtime = st->st_mtime;  /* Initialize last_mtime with current mtime */
 
     /* On non-windows environments check if the original path is a link */
     ret = lstat(path, &lst);
@@ -1398,6 +1399,13 @@ static int adjust_counters(struct flb_tail_config *ctx, struct flb_tail_file *fi
         return FLB_TAIL_ERROR;
     }
 
+    /* If file hasn't changed, just return OK */
+    if (st.st_mtime == file->last_mtime) {
+        flb_plg_trace(ctx->ins, "inode=%"PRIu64" file unchanged %s",
+                      file->inode, file->name);
+        return FLB_TAIL_OK;
+    }
+
     /* Check if the file was truncated */
     if (file->offset > st.st_size) {
         offset = lseek(file->fd, 0, SEEK_SET);
@@ -1423,6 +1431,7 @@ static int adjust_counters(struct flb_tail_config *ctx, struct flb_tail_file *fi
         file->pending_bytes = (st.st_size - file->offset);
     }
 
+    file->last_mtime = st.st_mtime;
     return FLB_TAIL_OK;
 }
 
