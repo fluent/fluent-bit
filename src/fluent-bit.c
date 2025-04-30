@@ -579,24 +579,9 @@ static void flb_signal_exit(int signal)
 
 static void flb_signal_handler_status_line(struct flb_cf *cf_opts)
 {
-    int len;
-    char ts[32];
     char s[] = "[engine] caught signal (";
-    time_t now;
-    struct tm *cur;
-
-    now = time(NULL);
-    cur = localtime(&now);
-    len = snprintf(ts, sizeof(ts) - 1, "[%i/%02i/%02i %02i:%02i:%02i] ",
-                   cur->tm_year + 1900,
-                   cur->tm_mon + 1,
-                   cur->tm_mday,
-                   cur->tm_hour,
-                   cur->tm_min,
-                   cur->tm_sec);
 
     /* write signal number */
-    write(STDERR_FILENO, ts, len);
     write(STDERR_FILENO, s, sizeof(s) - 1);
 }
 
