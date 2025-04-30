@@ -97,6 +97,7 @@ struct flb_tail_config {
     int   skip_long_lines;     /* skip long lines              */
     int   skip_empty_lines;    /* skip empty lines (off)       */
     int   exit_on_eof;         /* exit fluent-bit on EOF, test */
+    size_t truncate_min_threshold; /* minimum size to detect truncation */
 #ifdef __linux__
     int   file_cache_advise;   /* Use posix_fadvise for file access */
 #endif
