@@ -640,6 +640,17 @@ struct flb_input_chunk *flb_input_chunk_map(struct flb_input_instance *in,
         return NULL;
     }
 
+    ic->routes_mask = (flb_route_mask_element *)
+                            flb_calloc(in->config->route_mask_size,
+                                       sizeof(flb_route_mask_element));
+
+    if (ic->routes_mask == NULL) {
+        flb_errno();
+        cio_chunk_close(chunk, CIO_TRUE);
+        flb_free(ic);
+        return NULL;
+    }
+
     if (ic->event_type == FLB_INPUT_LOGS) {
         /* Validate records in the chunk */
         ret = flb_mp_validate_log_chunk(buf_data, buf_size, &records, &offset);
@@ -649,6 +660,7 @@ struct flb_input_chunk *flb_input_chunk_map(struct flb_input_instance *in,
                 flb_plg_error(in,
                               "chunk validation failed, data might be corrupted. "
                               "No valid records found, the chunk will be discarded.");
+                flb_free(ic->routes_mask);
                 flb_free(ic);
                 return NULL;
             }
@@ -668,6 +680,7 @@ struct flb_input_chunk *flb_input_chunk_map(struct flb_input_instance *in,
                               "Found %d valid records, failed content starts "
                               "right after byte %lu. Cannot recover chunk,",
                               records, offset);
+                flb_free(ic->routes_mask);
                 flb_free(ic);
                 return NULL;
             }
@@ -680,6 +693,7 @@ struct flb_input_chunk *flb_input_chunk_map(struct flb_input_instance *in,
                 flb_plg_error(in,
                               "metrics chunk validation failed, data might be corrupted. "
                               "No valid records found, the chunk will be discarded.");
+                flb_free(ic->routes_mask);
                 flb_free(ic);
                 return NULL;
             }
@@ -699,6 +713,7 @@ struct flb_input_chunk *flb_input_chunk_map(struct flb_input_instance *in,
                               "Found %d valid records, failed content starts "
                               "right after byte %lu. Cannot recover chunk,",
                               records, offset);
+                flb_free(ic->routes_mask);
                 flb_free(ic);
                 return NULL;
             }
@@ -714,6 +729,7 @@ struct flb_input_chunk *flb_input_chunk_map(struct flb_input_instance *in,
         flb_plg_error(in,
                       "chunk validation failed, data might be corrupted. "
                       "No valid records found, the chunk will be discarded.");
+        flb_free(ic->routes_mask);
         flb_free(ic);
         return NULL;
     }
@@ -724,6 +740,7 @@ struct flb_input_chunk *flb_input_chunk_map(struct flb_input_instance *in,
      */
     bytes = cio_chunk_get_content_size(chunk);
     if (bytes == -1) {
+        flb_free(ic->routes_mask);
         flb_free(ic);
         return NULL;
     }
@@ -756,6 +773,7 @@ struct flb_input_chunk *flb_input_chunk_map(struct flb_input_instance *in,
     ret = flb_input_chunk_get_tag(ic, &tag_buf, &tag_len);
     if (ret == -1) {
         flb_error("[input chunk] error retrieving tag of input chunk");
+        flb_free(ic->routes_mask);
         flb_free(ic);
         return NULL;
     }
@@ -763,6 +781,7 @@ struct flb_input_chunk *flb_input_chunk_map(struct flb_input_instance *in,
     bytes = flb_input_chunk_get_real_size(ic);
     if (bytes < 0) {
         flb_warn("[input chunk] could not retrieve chunk real size");
+        flb_free(ic->routes_mask);
         flb_free(ic);
         return NULL;
     }

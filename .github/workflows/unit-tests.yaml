@@ -35,7 +35,7 @@ on:
 
 jobs:
   run-ubuntu-unit-tests:
-    runs-on: ubuntu-20.04
+    runs-on: ubuntu-22.04
     timeout-minutes: 60
     strategy:
       fail-fast: false
@@ -51,6 +51,8 @@ jobs:
           - "-DFLB_SANITIZE_THREAD=On"
           - "-DFLB_SIMD=On"
           - "-DFLB_SIMD=Off"
+        cmake_version:
+          - "3.31.6"
         compiler:
           - gcc:
             cc: gcc
@@ -69,8 +71,13 @@ jobs:
       - name: Setup environment
         run: |
           sudo apt-get update
-          sudo apt-get install -y gcc-7 g++-7 clang-6.0 libsystemd-dev gcovr libyaml-dev libbpf-dev linux-tools-common
-          sudo ln -s /usr/bin/llvm-symbolizer-6.0 /usr/bin/llvm-symbolizer || true
+          sudo apt-get install -y gcc-9 g++-9 clang-12 libsystemd-dev gcovr libyaml-dev libbpf-dev linux-tools-common
+          sudo ln -s /usr/bin/llvm-symbolizer-12 /usr/bin/llvm-symbolizer || true
+
+      - name: Install cmake
+        uses: jwlawson/actions-setup-cmake@v2
+        with:
+          cmake-version: "${{ matrix.cmake_version }}"
 
       - uses: actions/checkout@v4
 
@@ -82,9 +89,9 @@ jobs:
       - name: ${{ matrix.compiler.cc }} & ${{ matrix.compiler.cxx }} - ${{ matrix.flb_option }}
         run: |
           echo "CC = $CC, CXX = $CXX, FLB_OPT = $FLB_OPT"
-          sudo update-alternatives --install /usr/bin/gcc gcc /usr/bin/gcc-7 90
-          sudo update-alternatives --install /usr/bin/g++ g++ /usr/bin/g++-7 90
-          sudo update-alternatives --install /usr/bin/clang clang /usr/bin/clang-6.0 90
+          sudo update-alternatives --install /usr/bin/gcc gcc /usr/bin/gcc-9 90
+          sudo update-alternatives --install /usr/bin/g++ g++ /usr/bin/g++-9 90
+          sudo update-alternatives --install /usr/bin/clang clang /usr/bin/clang-12 90
           sudo usermod -a -G systemd-journal $(id -un)
           sudo -E su -p $(id -un) -c "PATH=$PATH ci/scripts/run-unit-tests.sh"
         env:
@@ -106,9 +113,16 @@ jobs:
           - "-DFLB_JEMALLOC=Off"
           - "-DFLB_SANITIZE_MEMORY=On"
           - "-DFLB_SANITIZE_THREAD=On"
+        cmake_version:
+          - "3.31.6"
     permissions:
       contents: read
     steps:
+      - name: Install cmake
+        uses: jwlawson/actions-setup-cmake@v2
+        with:
+          cmake-version: "${{ matrix.cmake_version }}"
+
       - uses: actions/checkout@v4
       - uses: actions/checkout@v4
         with:
@@ -144,6 +158,9 @@ jobs:
             unit_test_option: "-DFLB_TESTS_INTERNAL=On"
             compiler_cc: gcc
             compiler_cxx: g++
+            cmake_version: "3.31.6"
+            cmake_home: "/opt/cmake"
+
     steps:
       - name: Checkout Fluent Bit code
         uses: actions/checkout@v4
@@ -151,8 +168,19 @@ jobs:
       - name: Setup environment
         run: |
           sudo apt-get update
-          sudo apt-get install -y gcc-9 g++-9 clang-12 cmake flex bison libsystemd-dev gcovr libyaml-dev libbpf-dev linux-tools-common
+          sudo apt-get install -y gcc-9 g++-9 clang-12 flex bison libsystemd-dev gcovr libyaml-dev libbpf-dev linux-tools-common curl tar gzip
           sudo ln -s /usr/bin/llvm-symbolizer-12 /usr/bin/llvm-symbolizer || true
+          sudo mkdir -p "${CMAKE_HOME}"
+          cmake_url="https://github.com/Kitware/CMake/releases/download/v${CMAKE_VERSION}/cmake-${CMAKE_VERSION}-linux-$(uname -m).tar.gz"
+          cmake_dist="$(mktemp --suffix ".tar.gz")"
+          echo "Downloading CMake ${CMAKE_VERSION}: ${cmake_url} -> ${cmake_dist}"
+          curl -jksSL -o "${cmake_dist}" "${cmake_url}"
+          echo "Extracting CMake ${CMAKE_VERSION}: ${cmake_dist} -> ${CMAKE_HOME}"
+          sudo tar -xzf "${cmake_dist}" -C "${CMAKE_HOME}" --strip-components 1
+          rm "${cmake_dist}"
+        env:
+          CMAKE_HOME: ${{ matrix.config.cmake_home }}
+          CMAKE_VERSION: ${{ matrix.config.cmake_version }}
 
       - name: Build and test with arm runners
         run: |
@@ -169,6 +197,10 @@ jobs:
 
             echo "CC = ${{ matrix.config.compiler_cc }}, CXX = ${{ matrix.config.compiler_cxx }}, FLB_OPT = $FLB_OPT"
 
+            if [[ -n "${CMAKE_HOME}" ]]; then
+              export PATH="${CMAKE_HOME}/bin:${PATH}"
+            fi
+
             cmake ${FLB_OPT}  ../
             make -j $nparallel
             ctest -j $nparallel --build-run-dir . --output-on-failure
@@ -177,12 +209,13 @@ jobs:
           CC: ${{ matrix.config.compiler_cc }}
           CXX: ${{ matrix.config.compiler_cxx }}
           CALYPTIA_FLEET_TOKEN: ${{ secrets.CALYPTIA_FLEET_TOKEN }}
+          CMAKE_HOME: ${{ matrix.config.cmake_home }}
 
   run-qemu-ubuntu-unit-tests:
     # We chain this after Linux one as there are CPU time costs for QEMU emulation
     needs:
       - run-ubuntu-unit-tests
-    runs-on: ubuntu-20.04
+    runs-on: ubuntu-22.04
     timeout-minutes: 60
     strategy:
       fail-fast: false
@@ -206,7 +239,8 @@ jobs:
             --volume "/etc/machine-id:/etc/machine-id"
           install: |
             apt-get update
-            apt-get install -y gcc-12 g++-12 libyaml-dev cmake flex bison libssl-dev libbpf-dev linux-tools-common
+            apt-get install -y gcc-12 g++-12 libyaml-dev flex bison libssl-dev libbpf-dev linux-tools-common
+            apt-get satisfy -y cmake "cmake (<< 4.0)"
 
             update-alternatives --install /usr/bin/gcc gcc /usr/bin/gcc-12 90
             update-alternatives --install /usr/bin/g++ g++ /usr/bin/g++-12 90

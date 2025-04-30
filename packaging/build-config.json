@@ -65,26 +65,6 @@
           "type": "deb"
         },
         {
-          "target": "ubuntu/16.04",
-          "type": "deb"
-        },
-        {
-          "target": "ubuntu/18.04",
-          "type": "deb"
-        },
-        {
-          "target": "ubuntu/18.04.arm64v8",
-          "type": "deb"
-        },
-        {
-          "target": "ubuntu/20.04",
-          "type": "deb"
-        },
-        {
-          "target": "ubuntu/20.04.arm64v8",
-          "type": "deb"
-        },
-        {
           "target": "ubuntu/22.04",
           "type": "deb"
         },
@@ -98,14 +78,6 @@
         },
         {
           "target": "ubuntu/24.04.arm64v8",
-          "type": "deb"
-        },
-        {
-          "target": "raspbian/buster",
-          "type": "deb"
-        },
-        {
-          "target": "raspbian/bullseye",
           "type": "deb"
         },
         {

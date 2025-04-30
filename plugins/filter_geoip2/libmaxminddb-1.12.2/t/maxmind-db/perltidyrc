@@ -1,0 +1,18 @@
+--blank-lines-before-packages=0
+--iterations=2
+--no-outdent-long-comments
+--weld-nested-containers
+-b
+-bar
+-boc
+-ci=4
+-i=4
+-l=78
+-nolq
+-se
+-wbb="% + - * / x != == >= <= =~ !~ < > | & >= < = **= += *= &= <<= &&= -= /= |= >>= ||= .= %= ^= x="
+--character-encoding=utf8
+--valign-exclusion-list="q"
+--want-trailing-commas=m
+--add-trailing-commas
+--delete-repeated-commas

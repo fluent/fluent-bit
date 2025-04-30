@@ -30,6 +30,7 @@
 #include <shlwapi.h>
 
 #include "tail.h"
+#include "tail_scan.h"
 #include "tail_file.h"
 #include "tail_signal.h"
 #include "tail_config.h"
@@ -65,6 +66,9 @@ static int tail_register_file(const char *target, struct flb_tail_config *ctx,
     int64_t mtime;
     struct stat st;
     char path[MAX_PATH];
+    ssize_t ignored_file_size;
+
+    ignored_file_size = -1;
 
     if (_fullpath(path, target, MAX_PATH) == NULL) {
         flb_plg_error(ctx->ins, "cannot get absolute path of %s", target);
@@ -81,6 +85,13 @@ static int tail_register_file(const char *target, struct flb_tail_config *ctx,
             if ((ts - ctx->ignore_older) > mtime) {
                 flb_plg_debug(ctx->ins, "excluded=%s (ignore_older)",
                               target);
+
+                flb_tail_scan_register_ignored_file_size(
+                    ctx,
+                    path,
+                    strlen(path),
+                    st.st_size);
+
                 return -1;
             }
         }
@@ -91,7 +102,19 @@ static int tail_register_file(const char *target, struct flb_tail_config *ctx,
         return -1;
     }
 
-    return flb_tail_file_append(path, &st, FLB_TAIL_STATIC, ctx);
+    if (ctx->ignore_older > 0) {
+        ignored_file_size = flb_tail_scan_fetch_ignored_file_size(
+                                ctx,
+                                path,
+                                strlen(path));
+
+        flb_tail_scan_unregister_ignored_file_size(
+            ctx,
+            path,
+            strlen(path));
+    }
+
+    return flb_tail_file_append(path, &st, FLB_TAIL_STATIC, ignored_file_size, ctx);
 }
 
 /*
