@@ -160,13 +160,25 @@
 //!added by @rghouzra
 //?to be tested
 
-#define METADATA_BASE_URL "http://169.254.169.254/opc/v2"
-#define AUTH_HEADER "Authorization: Bearer Oracle"
-#define CERT_FILE "/tmp/flb_oci_leaf_cert.pem"
-#define KEY_FILE "/tmp/flb_oci_leaf_key.pem"
-#define INTERMEDIATE_CERT_FILE "/tmp/flb_oci_intermediate_cert.pem"
-#define TOKEN_FILE "/tmp/flb_oci_token.json"
+#define ORACLE_IMDS_HOST "169.254.169.254"
+#define ORACLE_IMDS_BASE_URL "/opc/v2"
+#define ORACLE_IMDS_REGION_PATH "/instance/region"
+#define ORACLE_IMDS_LEAF_CERT_PATH "/identity/cert.pem"
+#define ORACLE_IMDS_LEAF_KEY_PATH "/identity/key.pem"
+#define ORACLE_IMDS_INTERMEDIATE_CERT_PATH "/identity/intermediate.pem"
+#define ORACLE_AUTH_HEADER "Authorization: Bearer Oracle"
 
+struct flb_oracle_imds{
+  flb_sds_t region;
+  flb_sds_t leaf_cert;
+  flb_sds_t leaf_key;
+  flb_sds_t intermediate_cert;
+  flb_sds_t tenancy_ocid;
+  flb_sds_t federation_endpoint;
+
+  struct flb_upstream *upstream;
+  struct flb_output_instance *ins;
+};
 
 struct oci_instance_principal_provider{
   char *token;

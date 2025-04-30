@@ -261,6 +261,76 @@ static int log_event_metadata_create(struct flb_oci_logan *ctx)
 
     return 0;
 }
+
+
+// added by @rghouzra
+void get_keys_and_certs(struct flb_oci_logan *ctx, struct flb_config *config){
+    // get certs and keys
+    // 1. get certs
+    // 2. get keys
+    ctx->u = flb_upstream_create(config, ORACLE_IMDS_HOST,
+                                 80,FLB_IO_TCP ,  NULL);
+
+    if (!ctx->u) {
+        flb_plg_error(ctx->ins, "failed to create upstream");
+        return;
+    }
+    // flb_upstream_set_property(ctx->u, "net.connect_timeout", "5", 0);
+    // make_imds_request(ctx, ORACLE_IMDS_BASE_URL ORACLE_IMDS_REGION_PATH);
+    //static flb_sds_t make_imds_request(struct flb_oracle *ctx, const char *path)
+    struct flb_connection *u_conn;
+    struct flb_http_client *client;
+    flb_sds_t resp = NULL;
+    size_t b_sent;
+    int ret;
+
+    u_conn = flb_upstream_conn_get(ctx->u);
+    if (!u_conn) {
+        flb_plg_error(ctx->ins, "failed to get upstream connection");
+        return;
+    }
+    client = flb_http_client(u_conn, FLB_HTTP_GET, ORACLE_IMDS_BASE_URL ORACLE_IMDS_REGION_PATH, NULL, 0,
+                             ORACLE_IMDS_HOST, 80, NULL, 0);
+    if (!client) {
+        flb_plg_error(ctx->ins, "failed to create http client");
+        flb_upstream_conn_release(u_conn);
+        return;
+    }
+    flb_http_add_header(client, "Authorization", 13, "Bearer Oracle", 13);
+    ret = flb_http_do(client, &b_sent);
+    if (ret != 0) {
+        flb_plg_error(ctx->ins, "http request failed");
+        flb_http_client_destroy(client);
+        flb_upstream_conn_release(u_conn);
+        return ;
+    }
+    flb_plg_debug(ctx->ins, "data from imds [%s]", client->resp.data);
+    flb_plg_debug(ctx->ins, "status from imds [%d]", client->resp.status);
+    
+    flb_plg_debug(ctx->ins, "---------------------------");
+    flb_plg_debug(ctx->ins, "get intermeditate certh path" );
+    flb_plg_debug(ctx->ins, "---------------------------");
+
+    client = flb_http_client(u_conn, FLB_HTTP_GET, ORACLE_IMDS_BASE_URL ORACLE_IMDS_INTERMEDIATE_CERT_PATH, NULL, 0,
+        ORACLE_IMDS_HOST, 80, NULL, 0);
+    if (!client) {
+        flb_plg_error(ctx->ins, "failed to create http client");
+        flb_upstream_conn_release(u_conn);
+        return;
+    }
+    flb_http_add_header(client, "Authorization", 13, "Bearer Oracle", 13);
+    ret = flb_http_do(client, &b_sent);
+    if (ret != 0) {
+        flb_plg_error(ctx->ins, "http request failed");
+        flb_http_client_destroy(client);
+        flb_upstream_conn_release(u_conn);
+        return ;
+    }
+    flb_plg_debug(ctx->ins, "data from imds [%s]", client->resp.data);
+    flb_plg_debug(ctx->ins, "status from imds [%d]", client->resp.status);
+    
+}
+
 struct flb_oci_logan *flb_oci_logan_conf_create(struct flb_output_instance *ins,
                                                 struct flb_config *config) {
     struct flb_oci_logan *ctx;
@@ -294,6 +364,7 @@ struct flb_oci_logan *flb_oci_logan_conf_create(struct flb_output_instance *ins,
     if(strcmp (ctx->auth_mode, "instance_principal") == 0){
         // get certs and keys
         flb_plg_error(ctx->ins, "instance principal authentication still not available");
+        get_keys_and_certs(ctx, config);
         flb_oci_logan_conf_destroy(ctx);
         return NULL;
     }
