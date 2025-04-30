@@ -1525,108 +1525,44 @@ int fw_prot_process(struct flb_input_instance *ins, struct fw_conn *conn)
                     }
 
                     if (ret == FLB_TRUE) {
-                        size_t prev_pos = 0;
-                        size_t gzip_payloads_count = 0;
-                        size_t loop = 0;
-                        size_t *gzip_borders = NULL;
-                        const size_t original_len = len;
+                        size_t remaining = len;
 
-                        gzip_payloads_count = flb_gzip_count(data, len, NULL, 0);
-                        flb_plg_debug(ctx->ins, "concatenated gzip payload count is %zd",
-                                     gzip_payloads_count);
-                        if (gzip_payloads_count > 0) {
-                            gzip_borders = (size_t *)flb_calloc(1, sizeof(size_t) * (gzip_payloads_count + 1));
-                            if (gzip_borders == NULL) {
-                                flb_errno();
+                        while (remaining > 0) {
+                            ret = flb_gzip_uncompress_multi((void *) (data + (len - remaining)), remaining,
+                                    &gz_data, &gz_size, &remaining);
+
+                            if (ret == -1) {
+                                flb_plg_error(ctx->ins, "gzip uncompress failure");
+                                msgpack_unpacked_destroy(&result);
+                                msgpack_unpacker_free(unp);
+                                flb_sds_destroy(out_tag);
                                 return -1;
                             }
-                            if (flb_gzip_count(data, len, &gzip_borders, gzip_payloads_count) < 0) {
-                                flb_plg_error(ctx->ins,
-                                             "failed to traverse boundaries of concatenated gzip payloads");
-                                return -1;
-                            }
-                        }
 
-                    retry_uncompress:
-                        if (gzip_payloads_count > 0) {
-                            if (loop == 0) {
-                                len = gzip_borders[loop];
+                            event_type = FLB_EVENT_TYPE_LOGS;
+                            if (contain_options) {
+                                ret = get_chunk_event_type(ins, root.via.array.ptr[2]);
+                                if (ret == -1) {
+                                    msgpack_unpacked_destroy(&result);
+                                    msgpack_unpacker_free(unp);
+                                    flb_sds_destroy(out_tag);
+                                    flb_free(gz_data);
+                                    return -1;
+                                }
+                                event_type = ret;
                             }
-                            else if (gzip_borders[loop] == original_len) {
-                                len = original_len - gzip_borders[loop - 1];
-                            }
-                            else if (loop >= 1) {
-                                len = gzip_borders[loop] - gzip_borders[loop - 1];
-                            }
-                        }
-                        flb_plg_trace(ctx->ins,
-                                      "[gzip decompression] loop = %zd, len = %zd, original_len = %zd",
-                                      loop, len, original_len);
 
-                        ret = flb_gzip_uncompress((void *) (data + prev_pos), len,
-                                                  &gz_data, &gz_size);
-                        if (ret == -1) {
-                            flb_plg_error(ctx->ins, "gzip uncompress failure");
-                            msgpack_unpacked_destroy(&result);
-                            msgpack_unpacker_free(unp);
-                            flb_sds_destroy(out_tag);
-                            if (gzip_borders != NULL) {
-                                flb_free(gzip_borders);
-                            }
-                            return -1;
-                        }
-
-                        event_type = FLB_EVENT_TYPE_LOGS;
-                        if (contain_options) {
-                            ret = get_chunk_event_type(ins, root.via.array.ptr[2]);
+                            ret = append_log(ins, conn,
+                                    event_type,
+                                    out_tag, gz_data, gz_size);
                             if (ret == -1) {
                                 msgpack_unpacked_destroy(&result);
                                 msgpack_unpacker_free(unp);
                                 flb_sds_destroy(out_tag);
                                 flb_free(gz_data);
-                                if (gzip_borders != NULL) {
-                                    flb_free(gzip_borders);
-                                }
                                 return -1;
                             }
-                            event_type = ret;
-                        }
-
-                        ret = append_log(ins, conn,
-                                         event_type,
-                                         out_tag, gz_data, gz_size);
-                        if (ret == -1) {
-                            msgpack_unpacked_destroy(&result);
-                            msgpack_unpacker_free(unp);
-                            flb_sds_destroy(out_tag);
                             flb_free(gz_data);
-                            if (gzip_borders != NULL) {
-                                flb_free(gzip_borders);
-                            }
-
-                            return -1;
-                        }
-                        flb_free(gz_data);
-
-                        /* a valid payload of gzip is larger than 18 bytes. */
-                        if (gzip_payloads_count > 0) {
-                            if ((gzip_payloads_count - loop) > 0 &&
-                                (original_len - gzip_borders[loop]) >= 18) {
-                                len = original_len - gzip_borders[loop];
-                                flb_plg_debug(ctx->ins, "left unconsumed %zd byte(s)", len);
-                                prev_pos = gzip_borders[loop];
-                                loop++;
-                                goto retry_uncompress;
-                            }
-                            else {
-                                flb_plg_debug(ctx->ins, "left unconsumed %zd byte(s)",
-                                              original_len - gzip_borders[loop]);
-                            }
-                            if (loop == gzip_payloads_count) {
-                                if (gzip_borders != NULL) {
-                                    flb_free(gzip_borders);
-                                }
-                            }
                         }
                     }
                     else {
