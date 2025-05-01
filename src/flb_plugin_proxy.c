@@ -423,7 +423,7 @@ static int flb_proxy_register_input(struct flb_plugin_proxy *proxy,
     return 0;
 }
 
-int flb_proxy_custom_cb_init(struct flb_custom_instance *ins,
+int flb_proxy_custom_cb_init(struct flb_custom_instance *c_ins,
                              struct flb_config *config, void *data);
 
 static int flb_proxy_custom_cb_exit(void *custom_context, 
@@ -660,15 +660,18 @@ int flb_plugin_proxy_set(struct flb_plugin_proxy_def *def, int type,
     return 0;
 }
 
-int flb_proxy_custom_cb_init(struct flb_custom_instance *ins,
+int flb_proxy_custom_cb_init(struct flb_custom_instance *c_ins,
                              struct flb_config *config, void *data)
 {
     int ret = -1;
     struct flb_plugin_proxy_context *pc;
     struct flb_plugin_proxy *proxy;
 
-    pc = (struct flb_plugin_proxy_context *)(ins->context);
+    pc = (struct flb_plugin_proxy_context *)(c_ins->context);
     proxy = pc->proxy;
+
+    /* Before to initialize, set the instance reference */
+    pc->proxy->instance = c_ins;
 
     if (proxy->def->proxy == FLB_PROXY_GOLANG) {
 #ifdef FLB_HAVE_PROXY_GO
@@ -676,7 +679,13 @@ int flb_proxy_custom_cb_init(struct flb_custom_instance *ins,
 #endif
     }
 
-    return ret;
+    if (ret == -1) {
+        flb_error("[custom] could not initialize '%s' plugin",
+                  c_ins->p->name);
+        return -1;
+    }
+
+    return 0;
 }
 
 int flb_proxy_custom_cb_exit(void *custom_context, 

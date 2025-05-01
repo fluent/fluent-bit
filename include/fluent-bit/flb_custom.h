@@ -107,5 +107,9 @@ int flb_custom_plugin_property_check(struct flb_custom_instance *ins,
 int flb_custom_init_all(struct flb_config *config);
 void flb_custom_set_context(struct flb_custom_instance *ins, void *context);
 void flb_custom_instance_destroy(struct flb_custom_instance *ins);
+#ifdef FLB_HAVE_METRICS
+void *flb_custom_get_cmt_instance(struct flb_custom_instance *ins);
+#endif
+int flb_custom_log_check(struct flb_custom_instance *ins, int l);
 
 #endif

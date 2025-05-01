@@ -42,7 +42,7 @@
  *
  *      - name: shortname of the plugin.
  *      - description: plugin description.
- *      - type: input, output, filter, processor, custom.
+ *      - type: input, output, filter, custom, whatever.
  *      - proxy: type of proxy e.g. GOLANG
  *      - flags: optional flags, not used by Go plugins at the moment.
  *

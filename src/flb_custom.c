@@ -27,6 +27,7 @@
 #include <fluent-bit/flb_pack.h>
 #include <fluent-bit/flb_metrics.h>
 #include <fluent-bit/flb_utils.h>
+#include <fluent-bit/flb_plugin_proxy.h>
 #include <fluent-bit/flb_upstream.h>
 #include <fluent-bit/flb_downstream.h>
 #include <chunkio/chunkio.h>
@@ -182,6 +183,24 @@ struct flb_custom_instance *flb_custom_new(struct flb_config *config,
     /* format name (with instance id) */
     snprintf(instance->name, sizeof(instance->name) - 1,
              "%s.%i", plugin->name, id);
+
+    if (plugin->type == FLB_CUSTOM_PLUGIN_CORE) {
+        instance->context = NULL;
+    }
+    else {
+        struct flb_plugin_proxy_context *ctx;
+
+        ctx = flb_calloc(1, sizeof(struct flb_plugin_proxy_context));
+        if (!ctx) {
+            flb_errno();
+            flb_free(instance);
+            return NULL;
+        }
+
+        ctx->proxy = plugin->proxy;
+
+        instance->context = ctx;
+    }
 
     instance->id    = id;
     instance->alias = NULL;
@@ -351,4 +370,23 @@ void flb_custom_instance_destroy(struct flb_custom_instance *ins)
 void flb_custom_set_context(struct flb_custom_instance *ins, void *context)
 {
     ins->context = context;
+}
+
+#ifdef FLB_HAVE_METRICS
+void *flb_custom_get_cmt_instance(struct flb_custom_instance *ins)
+{
+    return (void *)ins->cmt;
+}
+#endif
+
+/* Check custom plugin's log level.
+ * Not for core plugins but for Golang plugins.
+ * Golang plugins do not have thread-local flb_worker_ctx information. */
+int flb_custom_log_check(struct flb_custom_instance *ins, int l)
+{
+    if (ins->log_level < l) {
+        return FLB_FALSE;
+    }
+
+    return FLB_TRUE;
 }
