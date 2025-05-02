@@ -145,6 +145,9 @@ struct flb_service_config service_configs[] = {
     {FLB_CONF_STORAGE_BL_MEM_LIMIT,
      FLB_CONF_TYPE_STR,
      offsetof(struct flb_config, storage_bl_mem_limit)},
+    {FLB_CONF_STORAGE_BL_FLUSH_ON_SHUTDOWN,                  
+     FLB_CONF_TYPE_BOOL,                                       
+     offsetof(struct flb_config, storage_bl_flush_on_shutdown)},
     {FLB_CONF_STORAGE_MAX_CHUNKS_UP,
      FLB_CONF_TYPE_INT,
      offsetof(struct flb_config, storage_max_chunks_up)},
@@ -287,6 +290,7 @@ struct flb_config *flb_config_init()
     config->storage_path = NULL;
     config->storage_input_plugin = NULL;
     config->storage_metrics = FLB_TRUE;
+    config->storage_bl_flush_on_shutdown = FLB_FALSE;
 
     config->sched_cap  = FLB_SCHED_CAP;
     config->sched_base = FLB_SCHED_BASE;
