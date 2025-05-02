@@ -723,7 +723,49 @@ struct flb_azure_kusto *flb_azure_kusto_conf_create(struct flb_output_instance *
         return NULL;
     }
 
-    if (ctx->tenant_id == NULL && ctx->client_id == NULL && ctx->client_secret == NULL &&
+    /* Auth method validation and setup */
+    if (strcasecmp(ctx->auth_type_str, "service_principal") == 0) {
+        ctx->auth_type = FLB_AZURE_KUSTO_AUTH_SERVICE_PRINCIPAL;
+        
+        /* Verify required parameters for Service Principal auth */
+        if (!ctx->tenant_id || !ctx->client_id || !ctx->client_secret) {
+            flb_plg_error(ins, "When using service_principal auth, tenant_id, client_id, and client_secret are required");
+            flb_azure_kusto_conf_destroy(ctx);
+            return NULL;
+        }
+    } 
+    else if (strcasecmp(ctx->auth_type_str, "managed_identity") == 0) {
+        ctx->auth_type = FLB_AZURE_KUSTO_AUTH_MANAGED_IDENTITY;
+    }
+    else if (strcasecmp(ctx->auth_type_str, "workload_identity") == 0) {
+        ctx->auth_type = FLB_AZURE_KUSTO_AUTH_WORKLOAD_IDENTITY;
+        
+        /* Verify required parameters for Workload Identity auth */
+        if (!ctx->tenant_id || !ctx->client_id) {
+            flb_plg_error(ins, "When using workload_identity auth, tenant_id and client_id are required");
+            flb_azure_kusto_conf_destroy(ctx);
+            return NULL;
+        }
+        
+        /* Set default token file path if not specified */
+        if (!ctx->workload_identity_token_file) {
+            ctx->workload_identity_token_file = flb_strdup("/var/run/secrets/azure/tokens/azure-identity-token");
+            if (!ctx->workload_identity_token_file) {
+                flb_errno();
+                flb_plg_error(ins, "Could not allocate default workload identity token path");
+                flb_azure_kusto_conf_destroy(ctx);
+                return NULL;
+            }
+        }
+    }
+    else {
+        flb_plg_error(ins, "Invalid auth_type '%s'. Valid options are: 'service_principal', 'managed_identity', or 'workload_identity'", 
+                     ctx->auth_type_str);
+        flb_azure_kusto_conf_destroy(ctx);
+        return NULL;
+    }
+
+    if (ctx->tenant_id == NULL && ctx->client_id == NULL && ctx->client_secret == NULL && 
         ctx->managed_identity_client_id == NULL && ctx->auth_type != FLB_AZURE_KUSTO_AUTH_WORKLOAD_IDENTITY) {
         flb_plg_error(ctx->ins, "Service Principal, Managed Identity, or Workload Identity is not defined");
         flb_azure_kusto_conf_destroy(ctx);

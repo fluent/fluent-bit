@@ -52,22 +52,27 @@ static int azure_kusto_get_msi_token(struct flb_azure_kusto *ctx)
     return 0;
 }
 
-/* Create a new oauth2 context and get a oauth2 token */
-static int azure_kusto_get_oauth2_token(struct flb_azure_kusto *ctx)
+static int azure_kusto_get_workload_identity_token(struct flb_azure_kusto *ctx)
 {
     int ret;
-    char *token = NULL;
-
-    /* If using workload identity, handle token exchange */
-    if (ctx->auth_type == FLB_AZURE_KUSTO_AUTH_WORKLOAD_IDENTITY) {
-        ret = flb_azure_workload_identity_token_get(ctx->o, ctx->workload_identity_token_file, ctx->client_id, ctx->tenant_id);
-        if (ret == -1) {
-            flb_plg_error(ctx->ins, "error retrieving workload identity token");
-            return -1;
-        }
-        return 0;
+    
+    ret = flb_azure_workload_identity_token_get(ctx->o, 
+                                               ctx->workload_identity_token_file,
+                                               ctx->client_id, 
+                                               ctx->tenant_id);
+    if (ret == -1) {
+        flb_plg_error(ctx->ins, "error retrieving workload identity token");
+        return -1;
     }
+    
+    flb_plg_debug(ctx->ins, "Workload identity token retrieved successfully");
+    return 0;
+}
 
+static int azure_kusto_get_service_principal_token(struct flb_azure_kusto *ctx)
+{
+    int ret;
+    
     /* Clear any previous oauth2 payload content */
     flb_oauth2_payload_clear(ctx->o);
 
@@ -96,7 +101,7 @@ static int azure_kusto_get_oauth2_token(struct flb_azure_kusto *ctx)
     }
 
     /* Retrieve access token */
-    token = flb_oauth2_token_get(ctx->o);
+    char *token = flb_oauth2_token_get(ctx->o);
     if (!token) {
         flb_plg_error(ctx->ins, "error retrieving oauth2 access token");
         return -1;
@@ -118,13 +123,13 @@ flb_sds_t get_azure_kusto_token(struct flb_azure_kusto *ctx)
 
     if (flb_oauth2_token_expired(ctx->o) == FLB_TRUE) {
         if (ctx->auth_type == FLB_AZURE_KUSTO_AUTH_WORKLOAD_IDENTITY) {
-            ret = azure_kusto_get_oauth2_token(ctx);
+            ret = azure_kusto_get_workload_identity_token(ctx);
         }
         else if (ctx->managed_identity_client_id != NULL) {
             ret = azure_kusto_get_msi_token(ctx);
         }
         else {
-            ret = azure_kusto_get_oauth2_token(ctx);
+            ret = azure_kusto_get_service_principal_token(ctx);
         }
     }
 

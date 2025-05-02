@@ -36,9 +36,11 @@
 #define FLB_AZURE_KUSTO_TOKEN_REFRESH 3000
 
 /* Authentication types */
-#define FLB_AZURE_KUSTO_AUTH_SERVICE_PRINCIPAL  0
-#define FLB_AZURE_KUSTO_AUTH_MANAGED_IDENTITY   1
-#define FLB_AZURE_KUSTO_AUTH_WORKLOAD_IDENTITY  2
+typedef enum {
+    FLB_AZURE_KUSTO_AUTH_SERVICE_PRINCIPAL,
+    FLB_AZURE_KUSTO_AUTH_MANAGED_IDENTITY,
+    FLB_AZURE_KUSTO_AUTH_WORKLOAD_IDENTITY
+} flb_azure_kusto_auth_type;
 
 /* Kusto streaming inserts oauth scope */
 #define FLB_AZURE_KUSTO_SCOPE "https://help.kusto.windows.net/.default"
@@ -175,7 +177,5 @@ struct flb_azure_kusto {
 
 flb_sds_t get_azure_kusto_token(struct flb_azure_kusto *ctx);
 flb_sds_t execute_ingest_csl_command(struct flb_azure_kusto *ctx, const char *csl);
-/* Add function prototype for workload identity token exchange */
-int flb_azure_workload_identity_token_get(struct flb_oauth2 *ctx, const char *token_file, const char *client_id, const char *tenant_id);
 
 #endif
