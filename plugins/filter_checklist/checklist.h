@@ -21,14 +21,19 @@
 #define FLB_FILTER_CHECK_H
 
 #include <fluent-bit/flb_info.h>
-#include <fluent-bit/flb_sqldb.h>
 #include <fluent-bit/flb_hash_table.h>
 #include <fluent-bit/flb_record_accessor.h>
+
+#ifdef FLB_HAVE_SQLDB
+#include <fluent-bit/flb_sqldb.h>
+#endif
 
 #define LINE_SIZE   2048
 #define CHECK_HASH_TABLE_SIZE 100000
 #define CHECK_EXACT_MATCH     0  /* exact string match */
+#ifdef FLB_HAVE_SQLDB
 #define CHECK_PARTIAL_MATCH   1  /* partial match */
+#endif
 
 /* plugin context */
 struct checklist {
@@ -41,9 +46,11 @@ struct checklist {
     struct mk_list *records;
 
     /* internal */
+#ifdef FLB_HAVE_SQLDB
     struct flb_sqldb *db;
     sqlite3_stmt *stmt_insert;
     sqlite3_stmt *stmt_check;
+#endif
     struct flb_hash_table *ht;
     struct flb_record_accessor *ra_lookup_key;
     struct flb_filter_instance *ins;
