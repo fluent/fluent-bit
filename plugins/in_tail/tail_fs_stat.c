@@ -120,14 +120,15 @@ static int tail_fs_check(struct flb_input_instance *ins,
         }
 
         /* Check if the file was truncated */
-        if (file->offset > st.st_size) {
+        if (file->offset > st.st_size || (st.st_size < file->offset && (file->offset - st.st_size) >= ctx->truncate_min_threshold)) {
             offset = lseek(file->fd, 0, SEEK_SET);
             if (offset == -1) {
                 flb_errno();
                 return -1;
             }
 
-            flb_plg_debug(ctx->ins, "file truncated %s", file->name);
+            flb_plg_debug(ctx->ins, "tail_fs_check: file truncated %s (diff: %ld bytes)", 
+                         file->name, (long)(file->offset - st.st_size));
             file->offset = offset;
             file->buf_len = 0;
             memcpy(&fst->st, &st, sizeof(struct stat));
