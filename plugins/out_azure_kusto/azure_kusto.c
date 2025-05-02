@@ -122,14 +122,18 @@ flb_sds_t get_azure_kusto_token(struct flb_azure_kusto *ctx)
     }
 
     if (flb_oauth2_token_expired(ctx->o) == FLB_TRUE) {
-        if (ctx->auth_type == FLB_AZURE_KUSTO_AUTH_WORKLOAD_IDENTITY) {
-            ret = azure_kusto_get_workload_identity_token(ctx);
-        }
-        else if (ctx->managed_identity_client_id != NULL) {
-            ret = azure_kusto_get_msi_token(ctx);
-        }
-        else {
-            ret = azure_kusto_get_service_principal_token(ctx);
+        switch (ctx->auth_type) {
+            case FLB_AZURE_KUSTO_AUTH_WORKLOAD_IDENTITY:
+                ret = azure_kusto_get_workload_identity_token(ctx);
+                break;
+            case FLB_AZURE_KUSTO_AUTH_MANAGED_IDENTITY_SYSTEM:
+            case FLB_AZURE_KUSTO_AUTH_MANAGED_IDENTITY_USER:
+                ret = azure_kusto_get_msi_token(ctx);
+                break;
+            case FLB_AZURE_KUSTO_AUTH_SERVICE_PRINCIPAL:
+            default:
+                ret = azure_kusto_get_service_principal_token(ctx);
+                break;
         }
     }
 
@@ -1409,7 +1413,7 @@ static void cb_azure_kusto_flush(struct flb_event_chunk *event_chunk,
     /* Error handling and cleanup */
     if (json) {
         flb_sds_destroy(json);
-    }
+    } 
     if (is_compressed && final_payload) {
         flb_free(final_payload);
     }
@@ -1490,16 +1494,18 @@ static struct flb_config_map config_map[] = {
      "Set the tenant ID of the AAD application used for authentication"},
     {FLB_CONFIG_MAP_STR, "client_id", (char *)NULL, 0, FLB_TRUE,
      offsetof(struct flb_azure_kusto, client_id),
-     "Set the client ID (Application ID) of the AAD application used for authentication"},
+     "Set the client ID (Application ID) of the AAD application or the user-assigned managed identity's client ID when using managed identity authentication"},
     {FLB_CONFIG_MAP_STR, "client_secret", (char *)NULL, 0, FLB_TRUE,
      offsetof(struct flb_azure_kusto, client_secret),
      "Set the client secret (Application Password) of the AAD application used for "
      "authentication"},
-    {FLB_CONFIG_MAP_STR, "managed_identity_client_id", (char *)NULL, 0, FLB_TRUE,
-     offsetof(struct flb_azure_kusto, managed_identity_client_id),
-     "A managed identity client id to authenticate with. "
-     "Set to 'system' for system-assigned managed identity. "
-     "Set the MI client ID (GUID) for user-assigned managed identity."},
+    {FLB_CONFIG_MAP_STR, "workload_identity_token_file", (char *)NULL, 0, FLB_TRUE,
+     offsetof(struct flb_azure_kusto, workload_identity_token_file),
+     "Set the token file path for workload identity authentication"},
+    {FLB_CONFIG_MAP_STR, "auth_type", "service_principal", 0, FLB_TRUE,
+     offsetof(struct flb_azure_kusto, auth_type_str),
+     "Set the authentication type: 'service_principal', 'managed_identity', or 'workload_identity'. "
+     "For managed_identity, use 'system' as client_id for system-assigned identity, or specify the managed identity's client ID"},
     {FLB_CONFIG_MAP_STR, "ingestion_endpoint", (char *)NULL, 0, FLB_TRUE,
      offsetof(struct flb_azure_kusto, ingestion_endpoint),
      "Set the Kusto cluster's ingestion endpoint URL (e.g. "
@@ -1588,14 +1594,6 @@ static struct flb_config_map config_map[] = {
     {FLB_CONFIG_MAP_TIME, "io_timeout", "60s",0, FLB_TRUE,
      offsetof(struct flb_azure_kusto, io_timeout),
     "HTTP IO timeout. Default is 60s"
-    },
-    {FLB_CONFIG_MAP_STR, "auth_type", "service_principal", 0, FLB_TRUE,
-     offsetof(struct flb_azure_kusto, auth_type_str),
-    "Authentication type: 'service_principal', 'managed_identity', or 'workload_identity'"
-    },
-    {FLB_CONFIG_MAP_STR, "workload_identity_token_file", NULL, 0, FLB_TRUE,
-        offsetof(struct flb_azure_kusto, workload_identity_token_file),
-        "Path to the workload identity token file (default: /var/run/secrets/azure/tokens/azure-identity-token)"
     },
     /* EOF */
     {0}};

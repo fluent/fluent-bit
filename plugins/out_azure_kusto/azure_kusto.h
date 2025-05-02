@@ -37,9 +37,10 @@
 
 /* Authentication types */
 typedef enum {
-    FLB_AZURE_KUSTO_AUTH_SERVICE_PRINCIPAL,
-    FLB_AZURE_KUSTO_AUTH_MANAGED_IDENTITY,
-    FLB_AZURE_KUSTO_AUTH_WORKLOAD_IDENTITY
+    FLB_AZURE_KUSTO_AUTH_SERVICE_PRINCIPAL = 0,   /* Client ID + Client Secret */
+    FLB_AZURE_KUSTO_AUTH_MANAGED_IDENTITY_SYSTEM, /* System-assigned managed identity */
+    FLB_AZURE_KUSTO_AUTH_MANAGED_IDENTITY_USER,   /* User-assigned managed identity */
+    FLB_AZURE_KUSTO_AUTH_WORKLOAD_IDENTITY        /* Workload Identity */
 } flb_azure_kusto_auth_type;
 
 /* Kusto streaming inserts oauth scope */
