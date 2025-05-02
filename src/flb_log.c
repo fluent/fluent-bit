@@ -49,11 +49,6 @@ FLB_TLS_DEFINE(struct flb_log, flb_log_ctx)
 
 #define NANOSECONDS_IN_SECOND 1000000000
 
-/* Simple structure to dispatch messages to the log collector */
-struct log_message {
-    size_t size;
-    char   msg[4096 - sizeof(size_t)];
-};
 
 static inline int64_t flb_log_consume_signal(struct flb_log *context)
 {

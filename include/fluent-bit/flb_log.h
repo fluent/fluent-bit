@@ -92,6 +92,12 @@ struct flb_log_cache {
     struct mk_list entries;         /* list for entries */
 };
 
+/* Simple structure to dispatch messages to the log collector */
+struct log_message {
+    size_t size;
+    char   msg[4096 - sizeof(size_t)];
+};
+
 /*
  * This function is used by plugins interface to check if an incoming log message
  * should be logged or not based in the log levels defined.
@@ -136,6 +142,8 @@ struct flb_log_cache_entry *flb_log_cache_get_target(struct flb_log_cache *cache
 
 int flb_log_cache_check_suppress(struct flb_log_cache *cache, char *msg_buf, size_t msg_size);
 
+void get_current_time(struct timespec *ts);
+int flb_log_construct(struct log_message *msg, int *ret_len, int type, const char *file, int line, const char *fmt, va_list *args);
 
 static inline int flb_log_suppress_check(int log_suppress_interval, const char *fmt, ...)
 {
