@@ -21,13 +21,13 @@
 #include <fluent-bit/flb_mem.h>
 #include <fluent-bit/flb_time.h>
 #include <fluent-bit/flb_ra_key.h>
-#include <fluent-bit/flb_sqldb.h>
 #include <fluent-bit/flb_log_event_decoder.h>
 #include <fluent-bit/flb_log_event_encoder.h>
 
 #include "checklist.h"
 #include <ctype.h>
 
+#ifdef FLB_HAVE_SQLDB
 static int db_init(struct checklist *ctx)
 {
     int ret;
@@ -124,6 +124,7 @@ static int db_check(struct checklist *ctx, char *buf, size_t size)
 
     return match;
 }
+#endif
 
 static int load_file_patterns(struct checklist *ctx)
 {
@@ -175,9 +176,11 @@ static int load_file_patterns(struct checklist *ctx)
         if (ctx->mode == CHECK_EXACT_MATCH) {
             ret = flb_hash_table_add(ctx->ht, buf, len, "", 0);
         }
+#ifdef FLB_HAVE_SQLDB
         else if (ctx->mode == CHECK_PARTIAL_MATCH) {
             ret = db_insert(ctx, buf, len);
         }
+#endif
 
         if (ret >= 0) {
             flb_plg_debug(ctx->ins, "file list: line=%i adds value='%s'", line, buf);
@@ -210,7 +213,13 @@ static int init_config(struct checklist *ctx)
             ctx->mode = CHECK_EXACT_MATCH;
         }
         else if (strcasecmp(tmp, "partial") == 0) {
+#ifdef FLB_HAVE_SQLDB
             ctx->mode = CHECK_PARTIAL_MATCH;
+#else
+            flb_plg_error(ctx->ins,
+                          "'mode=partial' requires FLB_HAVE_SQLDB enabled at build time");
+            return -1;
+#endif
         }
     }
 
@@ -223,12 +232,14 @@ static int init_config(struct checklist *ctx)
             return -1;
         }
     }
+#ifdef FLB_HAVE_SQLDB
     else if (ctx->mode == CHECK_PARTIAL_MATCH) {
         ret = db_init(ctx);
         if (ret < 0) {
             return -1;
         }
     }
+#endif
 
     /* record accessor pattern / key name */
     ctx->ra_lookup_key = flb_ra_create(ctx->lookup_key, FLB_TRUE);
@@ -284,6 +295,11 @@ static int cb_checklist_init(struct flb_filter_instance *ins,
     }
 
     ret = init_config(ctx);
+    if (ret == -1) {
+        flb_filter_set_context(ins, NULL);
+        flb_free(ctx);
+        return -1;
+    }
 
     return 0;
 }
@@ -504,9 +520,11 @@ static int cb_checklist_filter(const void *data, size_t bytes,
                         found = FLB_TRUE;
                     }
                 }
+#ifdef FLB_HAVE_SQLDB
                 else if (ctx->mode == CHECK_PARTIAL_MATCH) {
                     found = db_check(ctx, cmp_buf, cmp_size);
                 }
+#endif
 
                 if (cmp_buf && cmp_buf != (char *) rval->o.via.str.ptr) {
                     flb_free(cmp_buf);
@@ -592,11 +610,13 @@ static int cb_exit(void *data, struct flb_config *config)
         flb_hash_table_destroy(ctx->ht);
     }
 
+#ifdef FLB_HAVE_SQLDB
     if (ctx->db) {
         sqlite3_finalize(ctx->stmt_insert);
         sqlite3_finalize(ctx->stmt_check);
         flb_sqldb_close(ctx->db);
     }
+#endif
 
     flb_free(ctx);
     return 0;
