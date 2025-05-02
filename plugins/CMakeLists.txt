@@ -204,7 +204,7 @@ endmacro()
 macro(FLB_PLUGIN name src deps)
   add_library(flb-plugin-${name} STATIC ${src})
   add_sanitizers(flb-plugin-${name})
-  target_link_libraries(flb-plugin-${name} fluent-bit-static msgpack-c-static ${deps})
+  target_link_libraries(flb-plugin-${name} fluent-bit-static ${MSGPACK_LIBRARIES} ${deps})
 endmacro()
 
 # FLB_ZIG_PLUGIN: used by zig plugins to standardize the process

@@ -9,7 +9,7 @@ SCRIPT_DIR="$( cd "$( dirname "${BASH_SOURCE[0]}" )" >/dev/null 2>&1 && pwd )"
 # Import the signing key (if signing)
 # gpg --import <private key>
 # gpg --export -a "$GPG_KEY" > /tmp/fluentbit.key
-# rpm --import /tmp/fluentbit.key 
+# rpm --import /tmp/fluentbit.key
 
 export BASE_PATH=${BASE_PATH:-$1}
 if [[ ! -d "$BASE_PATH" ]]; then
@@ -50,13 +50,9 @@ done
 DEB_REPO_PATHS=( "debian/bookworm"
                  "debian/bullseye"
                  "debian/buster"
-                 "ubuntu/xenial"
-                 "ubuntu/bionic"
-                 "ubuntu/focal"
                  "ubuntu/jammy"
                  "ubuntu/noble"
-                 "raspbian/buster"
-                 "raspbian/bullseye" )
+                )
 
 for DEB_REPO in "${DEB_REPO_PATHS[@]}"; do
     export DEB_REPO
