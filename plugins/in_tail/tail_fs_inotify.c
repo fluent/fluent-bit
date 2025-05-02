@@ -251,7 +251,7 @@ static int tail_fs_event(struct flb_input_instance *ins,
          */
 
         /* Check if the file was truncated */
-        if (file->offset > st.st_size || (st.st_size < file->offset && (file->offset - st.st_size) >= ctx->truncate_min_threshold)) {
+        if (st.st_size < file->offset && (file->offset - st.st_size) >= ctx->truncate_min_threshold) {
             offset = lseek(file->fd, 0, SEEK_SET);
             if (offset == -1) {
                 flb_errno();
