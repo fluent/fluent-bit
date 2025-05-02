@@ -22,6 +22,7 @@
 #include <fluent-bit/flb_time.h>
 #include <fluent-bit/flb_sds.h>
 #include <fluent-bit/flb_hash.h>
+#include <fluent-bit/flb_utils.h>
 #include <fluent-bit/flb_crypto_constants.h>
 
 #include <math.h>
