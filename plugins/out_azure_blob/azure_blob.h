@@ -23,7 +23,10 @@
 #include <fluent-bit/flb_output_plugin.h>
 #include <fluent-bit/flb_upstream.h>
 #include <fluent-bit/flb_sds.h>
+
+#ifdef FLB_HAVE_SQLDB
 #include <fluent-bit/flb_sqldb.h>
+#endif
 
 /* Content-Type */
 #define AZURE_BLOB_CT          "Content-Type"
