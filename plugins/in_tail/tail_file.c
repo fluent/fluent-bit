@@ -1406,8 +1406,8 @@ static int adjust_counters(struct flb_tail_config *ctx, struct flb_tail_file *fi
             return FLB_TAIL_ERROR;
         }
 
-        flb_plg_debug(ctx->ins, "inode=%"PRIu64" file truncated %s",
-                      file->inode, file->name);
+        flb_plg_debug(ctx->ins, "adjust_counters: inode=%"PRIu64" file truncated %s (diff: %ld bytes)",
+                      file->inode, file->name, (long)(file->offset - st.st_size));
         file->offset = offset;
         file->buf_len = 0;
 
