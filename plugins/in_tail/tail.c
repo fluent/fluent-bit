@@ -626,12 +626,6 @@ static struct flb_config_map config_map[] = {
      "rotated in case some pending data is flushed."
     },
     {
-     FLB_CONFIG_MAP_SIZE, "truncate_min_threshold", "0",
-     0, FLB_TRUE, offsetof(struct flb_tail_config, truncate_min_threshold),
-     "minimum number of bytes that must be removed from a file to consider it truncated. "
-     "If set to 0, any size reduction will be considered a truncation."
-    },
-    {
      FLB_CONFIG_MAP_BOOL, "docker_mode", "false",
      0, FLB_TRUE, offsetof(struct flb_tail_config, docker_mode),
      "If enabled, the plugin will recombine split Docker log lines before "
