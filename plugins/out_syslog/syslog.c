@@ -314,7 +314,7 @@ static flb_sds_t syslog_rfc3164 (flb_sds_t *s, struct flb_time *tms,
 
     prival =  (msg->facility << 3) + msg->severity;
 
-    if (gmtime_r(&(tms->tm.tv_sec), &tm) == NULL) {
+    if (localtime_r(&(tms->tm.tv_sec), &tm) == NULL) {
         return NULL;
     }
 
