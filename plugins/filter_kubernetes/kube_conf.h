@@ -36,9 +36,9 @@
  *
  *  tag -> regex: pod name, container ID, container name, etc
  *
- * By default, we define a hash table for 256 entries.
+ * By default, we define a hash table for 1024 entries.
  */
-#define FLB_HASH_TABLE_SIZE 256
+#define FLB_HASH_TABLE_SIZE 1024
 
 /*
  * When merging nested JSON strings from Docker logs, we need a temporary
