@@ -70,7 +70,7 @@ static char *field(char *data, char *field)
 }
 #endif
 
-static uint64_t calc_kb(unsigned long amount, unsigned int unit)
+static uint64_t calc_byte(unsigned long amount, unsigned int unit)
 {
     unsigned long long bytes = amount;
 
@@ -81,8 +81,6 @@ static uint64_t calc_kb(unsigned long amount, unsigned int unit)
     if (unit > 1) {
         bytes = bytes * unit;
     }
-
-    bytes = bytes / 1024;
 
     return (uint64_t) bytes;
 }
@@ -99,18 +97,21 @@ static int mem_calc(struct flb_in_mem_info *m_info)
     }
 
     /* set values in KBs */
-    m_info->mem_total     = calc_kb(info.totalram, info.mem_unit);
+    m_info->mem_total     = calc_byte(info.totalram, info.mem_unit);
 
     /*
      * This value seems to be MemAvailable if it is supported
      * or MemFree on legacy Linux.
      */
-    m_info->mem_free      = calc_kb(info.freeram, info.mem_unit);
+    m_info->mem_free      = calc_byte(info.freeram, info.mem_unit);
 
     m_info->mem_used      = m_info->mem_total - m_info->mem_free;
 
-    m_info->swap_total    = calc_kb(info.totalswap, info.mem_unit);
-    m_info->swap_free     = calc_kb(info.freeswap, info.mem_unit);
+    m_info->mem_shard      = calc_byte(info.sharedram, info.mem_unit);
+    m_info->mem_buffer      = calc_byte(info.bufferram, info.mem_unit);
+
+    m_info->swap_total    = calc_byte(info.totalswap, info.mem_unit);
+    m_info->swap_free     = calc_byte(info.freeswap, info.mem_unit);
     m_info->swap_used     = m_info->swap_total - m_info->swap_free;
 
     return 0;
@@ -218,6 +219,12 @@ static int in_mem_collect(struct flb_input_instance *i_ins,
                 FLB_LOG_EVENT_CSTRING_VALUE("Mem.free"),
                 FLB_LOG_EVENT_UINT64_VALUE(info.mem_free),
 
+                FLB_LOG_EVENT_CSTRING_VALUE("Mem.shared"),
+                FLB_LOG_EVENT_UINT64_VALUE(info.mem_shard),
+
+                FLB_LOG_EVENT_CSTRING_VALUE("Mem.buffer"),
+                FLB_LOG_EVENT_UINT64_VALUE(info.mem_buffer),
+
                 FLB_LOG_EVENT_CSTRING_VALUE("Swap.total"),
                 FLB_LOG_EVENT_UINT64_VALUE(info.swap_total),
 
@@ -243,9 +250,9 @@ static int in_mem_collect(struct flb_input_instance *i_ins,
         proc_free(task);
     }
 
-    flb_plg_trace(ctx->ins, "memory total=%lu kb, used=%lu kb, free=%lu kb",
-                  info.mem_total, info.mem_used, info.mem_free);
-    flb_plg_trace(ctx->ins, "swap total=%lu kb, used=%lu kb, free=%lu kb",
+    flb_plg_trace(ctx->ins, "memory total=%lu bytes, used=%lu bytes, free=%lu bytes, shared=%lu bytes, buffer=%lu bytes",
+                  info.mem_total, info.mem_used, info.mem_free, info.mem_shard, info.mem_buffer);
+    flb_plg_trace(ctx->ins, "swap total=%lu bytes, used=%lu bytes, free=%lu bytes",
                   info.swap_total, info.swap_used, info.swap_free);
     ++ctx->idx;
 
