@@ -119,16 +119,21 @@ static int tail_fs_check(struct flb_input_instance *ins,
             continue;
         }
 
+        int64_t size_delta = st.st_size - file->size;
+        if (size_delta != 0) {
+            file->size = st.st_size;
+        }
+
         /* Check if the file was truncated */
-        if (st.st_size < file->offset && (file->offset - st.st_size) >= ctx->truncate_min_threshold) {
+        if (size_delta < 0) {
             offset = lseek(file->fd, 0, SEEK_SET);
             if (offset == -1) {
                 flb_errno();
                 return -1;
             }
 
-            flb_plg_debug(ctx->ins, "tail_fs_check: file truncated %s (diff: %ld bytes)", 
-                         file->name, (long)(file->offset - st.st_size));
+            flb_plg_debug(ctx->ins, "tail_fs_check: file truncated %s (diff: %"PRId64" bytes)", 
+                         file->name, size_delta);
             file->offset = offset;
             file->buf_len = 0;
             memcpy(&fst->st, &st, sizeof(struct stat));

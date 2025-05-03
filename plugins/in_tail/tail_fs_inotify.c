@@ -222,8 +222,14 @@ static int tail_fs_event(struct flb_input_instance *ins,
         flb_tail_file_remove(file);
         return 0;
     }
-    file->size = st.st_size;
-    file->pending_bytes = (file->size - file->offset);
+
+    /* Check if the file was truncated */
+    int64_t size_delta = st.st_size - file->size;
+    if (size_delta != 0) {
+        file->size = st.st_size;
+    }
+
+    file->pending_bytes = (st.st_size > file->offset) ? (st.st_size - file->offset) : 0;
 
     /* File was removed ? */
     if (ev.mask & IN_ATTRIB) {
@@ -250,16 +256,15 @@ static int tail_fs_event(struct flb_input_instance *ins,
          * we have.
          */
 
-        /* Check if the file was truncated */
-        if (st.st_size < file->offset && (file->offset - st.st_size) >= ctx->truncate_min_threshold) {
+        if (size_delta < 0) {
             offset = lseek(file->fd, 0, SEEK_SET);
             if (offset == -1) {
                 flb_errno();
                 return -1;
             }
 
-            flb_plg_debug(ctx->ins, "tail_fs_event: inode=%"PRIu64" file truncated %s (diff: %ld bytes)",
-                          file->inode, file->name, (long)(file->offset - st.st_size));
+            flb_plg_debug(ctx->ins, "tail_fs_event: inode=%"PRIu64" file truncated %s (diff: %"PRId64" bytes)",
+                          file->inode, file->name, size_delta);
             file->offset = offset;
             file->buf_len = 0;
 
