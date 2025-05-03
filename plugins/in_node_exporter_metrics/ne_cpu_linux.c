@@ -98,7 +98,7 @@ static int cpu_thermal_update(struct flb_ne *ctx, uint64_t ts)
     struct flb_slist_entry *entry;
     const char *pattern = "/devices/system/cpu/cpu[0-9]*";
     /* Status arrays */
-    uint64_t core_throttles_set[32][256];
+    uint64_t core_throttles_set[256][256];
     uint64_t package_throttles_set[32];
 
     ret = ne_utils_path_scan(ctx, ctx->path_sysfs, pattern, NE_SCAN_DIR, &list);
