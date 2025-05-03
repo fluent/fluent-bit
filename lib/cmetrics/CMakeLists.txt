@@ -100,7 +100,7 @@ include_directories(
 check_c_source_compiles("
   #include <time.h>
   int main() {
-     struct tm tm;
+     struct timespec tm;
      return timespec_get(&tm, TIME_UTC);
   }" CMT_HAVE_TIMESPEC_GET)
 if(CMT_HAVE_TIMESPEC_GET)
@@ -113,7 +113,7 @@ check_c_source_compiles("
   int main() {
      struct tm tm;
      struct timespec tms;
-     return gmtime_r(&tms.tv_sec, &tm);
+     return gmtime_r(&tms.tv_sec, &tm) != 0;
   }" CMT_HAVE_GMTIME_R)
 if(CMT_HAVE_GMTIME_R)
   CMT_DEFINITION(CMT_HAVE_GMTIME_R)
