@@ -22,7 +22,6 @@
 #include <fluent-bit/flb_fstore.h>
 #include <fluent-bit/flb_time.h>
 #include <fcntl.h>
-#include <unistd.h>
 
 /*
  * Simple and fast hashing algorithm to create keys in the local buffer
@@ -48,12 +47,10 @@ static flb_sds_t gen_store_filename(const char *tag)
     /* flb_sds_printf allocs if the incoming sds is not at least 64 bytes */
     hash_str = flb_sds_create_size(64);
     if (!hash_str) {
-        flb_errno();
         return NULL;
     }
     tmp = flb_sds_printf(&hash_str, "%lu-%lu", hash, hash2);
     if (!tmp) {
-        flb_errno();
         flb_sds_destroy(hash_str);
         return NULL;
     }
@@ -94,7 +91,7 @@ struct azure_blob_file *azure_blob_store_file_get(struct flb_azure_blob *ctx, co
         /* skip locked chunks */
         azure_blob_file = fsf->data;
         if (azure_blob_file->locked == FLB_TRUE) {
-            flb_plg_debug(ctx->ins, "File '%s' is locked, skipping", fsf->name);
+            flb_plg_debug(ctx->ins, "File '%s' is being processed by another worker, continuing search", fsf->name);
             fsf = NULL;
             continue;
         }
@@ -123,7 +120,6 @@ int azure_blob_store_buffer_put(struct flb_azure_blob *ctx, struct azure_blob_fi
     flb_sds_t name;
     struct flb_fstore_file *fsf;
     size_t space_remaining;
-    // flb_sds_t path_sds;
 
     if (ctx->store_dir_limit_size > 0 && ctx->current_buffer_size + bytes >= ctx->store_dir_limit_size) {
         flb_plg_error(ctx->ins, "Buffer is full: current_buffer_size=%zu, new_data=%zu, store_dir_limit_size=%zu bytes",
@@ -155,6 +151,7 @@ int azure_blob_store_buffer_put(struct flb_azure_blob *ctx, struct azure_blob_fi
         if (ret == -1) {
             flb_plg_warn(ctx->ins, "Deleting buffer file because metadata could not be written");
             flb_fstore_file_delete(ctx->fs, fsf);
+            flb_sds_destroy(name);
             return -1;
         }
 
@@ -164,6 +161,7 @@ int azure_blob_store_buffer_put(struct flb_azure_blob *ctx, struct azure_blob_fi
             flb_errno();
             flb_plg_warn(ctx->ins, "Deleting buffer file because azure_blob context creation failed");
             flb_fstore_file_delete(ctx->fs, fsf);
+            flb_sds_destroy(name);
             return -1;
         }
         azure_blob_file->fsf = fsf;
@@ -174,7 +172,8 @@ int azure_blob_store_buffer_put(struct flb_azure_blob *ctx, struct azure_blob_fi
         fsf->data = azure_blob_file;
         flb_sds_destroy(name);
 
-    }else {
+    }
+    else {
         fsf = azure_blob_file->fsf;
     }
 
@@ -335,7 +334,6 @@ int azure_blob_store_exit(struct flb_azure_blob *ctx)
             fsf = mk_list_entry(f_head, struct flb_fstore_file, _head);
             if (fsf->data != NULL) {
                 azure_blob_file = fsf->data;
-                //flb_sds_destroy(azure_blob_file->file_path);
                 flb_free(azure_blob_file);
             }
         }
@@ -399,25 +397,6 @@ int azure_blob_store_file_inactive(struct flb_azure_blob *ctx, struct azure_blob
     ret = flb_fstore_file_inactive(ctx->fs, fsf);
 
     return ret;
-}
-
-void azure_blob_file_cleanup(struct azure_blob_file *file)
-{
-    if (file == NULL) {
-        return;
-    }
-
-    // Free the file path if it was dynamically allocated
-    /*if (file->file_path != NULL) {
-        flb_sds_destroy(file->file_path);
-        file->file_path = NULL;
-    }*/
-
-    // If there are other dynamically allocated members, free them here
-    // For now, we only free file_path as per the given struct
-
-    // Free the azure_blob_file itself
-    //flb_free(file);
 }
 
 int azure_blob_store_file_cleanup(struct flb_azure_blob *ctx, struct azure_blob_file *azure_blob_file)

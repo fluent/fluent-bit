@@ -152,13 +152,15 @@ void generate_random_string_blob(char *str, size_t length)
 {
     const char charset[] = "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789";
     const size_t charset_size = sizeof(charset) - 1;
+    size_t i;
+    size_t index;
 
-    // Seed the random number generator with multiple sources of entropy
+    /* Seed the random number generator with multiple sources of entropy */
     unsigned int seed = (unsigned int)(time(NULL) ^ clock() ^ getpid());
     srand(seed);
 
-    for (size_t i = 0; i < length; ++i) {
-        size_t index = (size_t)rand() % charset_size;
+    for (i = 0; i < length; ++i) {
+        index = (size_t)rand() % charset_size;
         str[i] = charset[index];
     }
 
@@ -182,7 +184,6 @@ static int create_blob(struct flb_azure_blob *ctx, char *name)
         ctx->u->base.flags &= ~(FLB_IO_ASYNC);
         ctx->u->base.net.io_timeout = ctx->io_timeout;
     }
-    flb_plg_debug(ctx->ins, "create_blob -- async flag is %d", flb_stream_is_async(&ctx->u->base));
 
     /* Get upstream connection */
     u_conn = flb_upstream_conn_get(ctx->u);
@@ -344,7 +345,6 @@ static int http_send_blob(struct flb_config *config, struct flb_azure_blob *ctx,
         ctx->u->base.flags &= ~(FLB_IO_ASYNC);
         ctx->u->base.net.io_timeout = ctx->io_timeout;
     }
-    flb_plg_debug(ctx->ins, "send_blob -- async flag is %d", flb_stream_is_async(&ctx->u->base));
 
     /* Get upstream connection */
     u_conn = flb_upstream_conn_get(ctx->u);
@@ -461,10 +461,19 @@ static int send_blob(struct flb_config *config,
     flb_sds_t ref_name = NULL;
     void *payload_buf = data;
     size_t payload_size = bytes;
-    char generated_random_string[ctx->blob_uri_length + 1];
+    char *generated_random_string;
 
     ref_name = flb_sds_create_size(256);
     if (!ref_name) {
+        return FLB_RETRY;
+    }
+
+    /* Allocate memory for the random string dynamically */
+    generated_random_string = flb_malloc(ctx->blob_uri_length + 1);
+    if (!generated_random_string) {
+        flb_errno();
+        flb_plg_error(ctx->ins, "cannot allocate memory for random string");
+        flb_sds_destroy(ref_name);
         return FLB_RETRY;
     }
 
@@ -472,14 +481,13 @@ static int send_blob(struct flb_config *config,
         uri = azb_append_blob_uri(ctx, tag);
     }
     else if (blob_type == AZURE_BLOB_BLOCKBLOB) {
-        generate_random_string_blob(generated_random_string, ctx->blob_uri_length); // Generate the random string
+        generate_random_string_blob(generated_random_string, ctx->blob_uri_length); /* Generate the random string */
         if (event_type == FLB_EVENT_TYPE_LOGS) {
             block_id = azb_block_blob_id_logs(&ms);
             if (!block_id) {
                 flb_plg_error(ctx->ins, "could not generate block id");
-
+                flb_free(generated_random_string);
                 cfl_sds_destroy(ref_name);
-
                 return FLB_RETRY;
             }
             uri = azb_block_blob_uri(ctx, tag, block_id, ms, generated_random_string);
@@ -493,34 +501,13 @@ static int send_blob(struct flb_config *config,
     }
 
     if (!uri) {
+        flb_free(generated_random_string);
         if (block_id != NULL) {
             flb_free(block_id);
         }
         flb_sds_destroy(ref_name);
         return FLB_RETRY;
     }
-
-    /* Logs: Format the data (msgpack -> JSON) *//*
-    if (event_type == FLB_EVENT_TYPE_LOGS) {
-        ret = azure_blob_format(config, i_ins,
-                                ctx, NULL,
-                                FLB_EVENT_TYPE_LOGS,
-                                tag, tag_len,
-                                data, bytes,
-                                &payload_buf, &payload_size);
-        if (ret != 0) {
-            flb_sds_destroy(uri);
-            if (block_id != NULL) {
-                flb_free(block_id);
-            }
-            flb_sds_destroy(ref_name);
-            return FLB_ERROR;
-        }
-    }
-    else if (event_type == FLB_EVENT_TYPE_BLOBS) {
-        payload_buf = data;
-        payload_size = bytes;
-    }*/
 
     /* Map buffer */
     payload_buf = data;
@@ -548,6 +535,7 @@ static int send_blob(struct flb_config *config,
     }
 
     flb_sds_destroy(uri);
+    flb_free(generated_random_string);
 
     if (block_id != NULL) {
         flb_free(block_id);
@@ -568,7 +556,6 @@ static int create_container(struct flb_azure_blob *ctx, char *name)
         ctx->u->base.flags &= ~(FLB_IO_ASYNC);
         ctx->u->base.net.io_timeout = ctx->io_timeout;
     }
-    flb_plg_debug(ctx->ins, "create_container -- async flag is %d", flb_stream_is_async(&ctx->u->base));
 
     /* Get upstream connection */
     u_conn = flb_upstream_conn_get(ctx->u);
@@ -667,7 +654,6 @@ static int ensure_container(struct flb_azure_blob *ctx)
         ctx->u->base.flags &= ~(FLB_IO_ASYNC);
         ctx->u->base.net.io_timeout = ctx->io_timeout;
     }
-    flb_plg_debug(ctx->ins, "ensure_container -- async flag is %d", flb_stream_is_async(&ctx->u->base));
 
     /* Get upstream connection */
     u_conn = flb_upstream_conn_get(ctx->u);
@@ -1212,7 +1198,6 @@ static void cb_azure_blob_ingest(struct flb_config *config, void *data) {
 
     /* Log entry point and container information */
     flb_plg_debug(ctx->ins, "Running upload timer callback (cb_azure_blob_ingest)..");
-    flb_plg_debug(ctx->ins, "inside ctx : container name is %s", ctx->container_name);
 
     /* Initialize jitter for retry mechanism */
     srand(time(NULL));
@@ -1310,7 +1295,8 @@ static void cb_azure_blob_ingest(struct flb_config *config, void *data) {
             ret = azure_blob_store_file_delete(ctx, file);
             if (ret == 0) {
                 flb_plg_debug(ctx->ins, "cb_azure_blob_ingest :: deleted successfully ingested file %s", fsf->name);
-            } else {
+            }
+            else {
                 flb_plg_error(ctx->ins, "cb_azure_blob_ingest :: failed to delete ingested file %s", fsf->name);
                 if (file) {
                     azure_blob_store_file_unlock(file);
@@ -1331,7 +1317,8 @@ static void cb_azure_blob_ingest(struct flb_config *config, void *data) {
                           file->fsf->name);
             if (ctx->delete_on_max_upload_error){
                 azure_blob_store_file_delete(ctx, file);
-            }else{
+            }
+            else {
                 azure_blob_store_file_inactive(ctx, file);
             }
         }
@@ -1378,7 +1365,8 @@ static int ingest_all_chunks(struct flb_azure_blob *ctx, struct flb_config *conf
                              (char *) fsf->meta_buf, ctx->scheduler_max_retries);
                 if (ctx->delete_on_max_upload_error){
                     azure_blob_store_file_delete(ctx, chunk);
-                } else{
+                }
+                else {
                     azure_blob_store_file_inactive(ctx, chunk);
                 }
                 continue;
@@ -1450,7 +1438,8 @@ static void flush_init(void *out_context, struct flb_config *config)
                           ctx->fs->root_path);
             FLB_OUTPUT_RETURN(FLB_RETRY);
         }
-    }else{
+    }
+    else {
         flb_plg_debug(ctx->ins,
                       "Did not find any local buffered data from previous "
                       "executions to azure blob; buffer=%s",
@@ -1507,7 +1496,8 @@ static void cb_azure_blob_flush(struct flb_event_chunk *event_chunk,
 
             if (ctx->unify_tag == FLB_TRUE) {
                 tag_name = flb_sds_create("fluentbit-buffer-file-unify-tag.log");
-            } else {
+            }
+            else {
                 tag_name = event_chunk->tag;
             }
             tag_len = flb_sds_len(tag_name);
@@ -1578,7 +1568,8 @@ static void cb_azure_blob_flush(struct flb_event_chunk *event_chunk,
                     flb_plg_debug(ctx->ins, "uploaded file %s successfully", upload_file->fsf->name);
                     azure_blob_store_file_delete(ctx, upload_file);
                     goto cleanup;
-                } else {
+                }
+                else {
                     flb_plg_error(ctx->ins, "error uploading file %s", upload_file->fsf->name);
                     if (upload_file) {
                         azure_blob_store_file_unlock(upload_file);
@@ -1586,13 +1577,15 @@ static void cb_azure_blob_flush(struct flb_event_chunk *event_chunk,
                     }
                     goto error;
                 }
-            } else {
+            }
+            else {
                 /* Buffer current chunk */
                 ret = azure_blob_store_buffer_put(ctx, upload_file, tag_name, tag_len, json, json_size);
                 if (ret == 0) {
                     flb_plg_debug(ctx->ins, "buffered chunk %s", event_chunk->tag);
                     goto cleanup;
-                } else {
+                }
+                else {
                     flb_plg_error(ctx->ins, "failed to buffer chunk %s", event_chunk->tag);
                     goto error;
                 }
@@ -1621,7 +1614,8 @@ static void cb_azure_blob_flush(struct flb_event_chunk *event_chunk,
                 flb_free(final_payload);
             }
             FLB_OUTPUT_RETURN(FLB_RETRY);
-        } else {
+        }
+        else {
 
             /*
             * Azure blob requires a container. The following function validate that the container exists,
@@ -1901,75 +1895,76 @@ static struct flb_config_map config_map[] = {
     },
 
     {
-        FLB_CONFIG_MAP_BOOL, "buffering_enabled", "false",
-        0, FLB_TRUE, offsetof(struct flb_azure_blob, buffering_enabled),
-                "Enable buffering into disk before ingesting into Azure Blob."
+     FLB_CONFIG_MAP_BOOL, "buffering_enabled", "false",
+     0, FLB_TRUE, offsetof(struct flb_azure_blob, buffering_enabled),
+     "Enable buffering into disk before ingesting into Azure Blob"
     },
 
     {
-        FLB_CONFIG_MAP_STR, "buffer_dir", "/tmp/fluent-bit/azure-blob/",
-        0, FLB_TRUE, offsetof(struct flb_azure_blob, buffer_dir),
-                "Specifies the location of directory where the buffered data will be stored."
+     FLB_CONFIG_MAP_STR, "buffer_dir", "/tmp/fluent-bit/azure-blob/",
+     0, FLB_TRUE, offsetof(struct flb_azure_blob, buffer_dir),
+     "Specifies the location of directory where the buffered data will be stored"
     },
 
     {
-        FLB_CONFIG_MAP_TIME, "upload_timeout", "30m",
-            0, FLB_TRUE, offsetof(struct flb_azure_blob, upload_timeout),
-    "Optionally specify a timeout for uploads. "
-    "Fluent Bit will start ingesting buffer files which have been created more than x minutes and haven't reached upload_file_size limit yet.  "
-    " Default is 30m."
+     FLB_CONFIG_MAP_TIME, "upload_timeout", "30m",
+     0, FLB_TRUE, offsetof(struct flb_azure_blob, upload_timeout),
+     "Optionally specify a timeout for uploads. "
+           "Fluent Bit will start ingesting buffer files which have been created more than x minutes and haven't reached upload_file_size limit yet"
+           "Default is 30m."
     },
 
     {
-        FLB_CONFIG_MAP_SIZE, "upload_file_size", "200M",
-            0, FLB_TRUE, offsetof(struct flb_azure_blob, file_size),
-    "Specifies the size of files to be uploaded in MBs. Default is 200MB"
+     FLB_CONFIG_MAP_SIZE, "upload_file_size", "200M",
+     0, FLB_TRUE, offsetof(struct flb_azure_blob, file_size),
+     "Specifies the size of files to be uploaded in MBs. Default is 200MB"
     },
 
     {
-        FLB_CONFIG_MAP_STR, "azure_blob_buffer_key", "key",
-        0, FLB_TRUE, offsetof(struct flb_azure_blob, azure_blob_buffer_key),
-    "Set the azure blob buffer key which needs to be specified when using multiple instances of azure blob output plugin and buffering is enabled"
+     FLB_CONFIG_MAP_STR, "azure_blob_buffer_key", "key",
+     0, FLB_TRUE, offsetof(struct flb_azure_blob, azure_blob_buffer_key),
+     "Set the azure blob buffer key which needs to be specified when using multiple instances of azure blob output plugin and buffering is enabled"
     },
 
     {
-        FLB_CONFIG_MAP_SIZE, "store_dir_limit_size", "8G",
-        0, FLB_TRUE, offsetof(struct flb_azure_blob, store_dir_limit_size),
-    "Set the max size of the buffer directory. Default is 8GB"
+     FLB_CONFIG_MAP_SIZE, "store_dir_limit_size", "8G",
+     0, FLB_TRUE, offsetof(struct flb_azure_blob, store_dir_limit_size),
+     "Set the max size of the buffer directory. Default is 8GB"
     },
 
     {
-        FLB_CONFIG_MAP_BOOL, "buffer_file_delete_early", "false",
-        0, FLB_TRUE, offsetof(struct flb_azure_blob, buffer_file_delete_early),
-    "Whether to delete the buffered file early after successful blob creation. Default is false"
+     FLB_CONFIG_MAP_BOOL, "buffer_file_delete_early", "false",
+     0, FLB_TRUE, offsetof(struct flb_azure_blob, buffer_file_delete_early),
+     "Whether to delete the buffered file early after successful blob creation. Default is false"
     },
 
-    {   FLB_CONFIG_MAP_INT, "blob_uri_length", "64",
-        0, FLB_TRUE, offsetof(struct flb_azure_blob, blob_uri_length),
-    "Set the length of generated blob uri before ingesting to Azure Kusto. Default is 64"
-    },
-
-    {
-        FLB_CONFIG_MAP_BOOL, "unify_tag", "false",
-        0, FLB_TRUE, offsetof(struct flb_azure_blob, unify_tag),
-    "Whether to create a single buffer file when buffering mode is enabled. Default is false"
+    { 
+     FLB_CONFIG_MAP_INT, "blob_uri_length", "64",
+     0, FLB_TRUE, offsetof(struct flb_azure_blob, blob_uri_length),
+     "Set the length of generated blob uri before ingesting to Azure Kusto. Default is 64"
     },
 
     {
-        FLB_CONFIG_MAP_INT, "scheduler_max_retries", "3",
-        0, FLB_TRUE, offsetof(struct flb_azure_blob, scheduler_max_retries),
-    "Maximum number of retries for the scheduler send blob. Default is 3"
+     FLB_CONFIG_MAP_BOOL, "unify_tag", "false",
+     0, FLB_TRUE, offsetof(struct flb_azure_blob, unify_tag),
+     "Whether to create a single buffer file when buffering mode is enabled. Default is false"
     },
 
     {
-        FLB_CONFIG_MAP_BOOL, "delete_on_max_upload_error", "false",
-        0, FLB_TRUE, offsetof(struct flb_azure_blob, delete_on_max_upload_error),
-    "Whether to delete the buffer file on maximum upload errors. Default is false"
+     FLB_CONFIG_MAP_INT, "scheduler_max_retries", "3",
+     0, FLB_TRUE, offsetof(struct flb_azure_blob, scheduler_max_retries),
+     "Maximum number of retries for the scheduler send blob. Default is 3"
     },
 
     {
-        FLB_CONFIG_MAP_TIME, "io_timeout", "60s",0, FLB_TRUE, offsetof(struct flb_azure_blob, io_timeout),
-    "HTTP IO timeout. Default is 60s"
+     FLB_CONFIG_MAP_BOOL, "delete_on_max_upload_error", "false",
+     0, FLB_TRUE, offsetof(struct flb_azure_blob, delete_on_max_upload_error),
+     "Whether to delete the buffer file on maximum upload errors. Default is false"
+    },
+
+    {
+     FLB_CONFIG_MAP_TIME, "io_timeout", "60s",0, FLB_TRUE, offsetof(struct flb_azure_blob, io_timeout),
+     "HTTP IO timeout. Default is 60s"
     },
 
     /* EOF */

@@ -262,7 +262,6 @@ int azb_block_blob_put_block_list(struct flb_azure_blob *ctx, flb_sds_t uri, flb
         ctx->u->base.flags &= ~(FLB_IO_ASYNC);
         ctx->u->base.net.io_timeout = ctx->io_timeout;
     }
-    flb_plg_debug(ctx->ins, "azb_block_blob_put_block_list -- async flag is %d", flb_stream_is_async(&ctx->u->base));
 
     /* Get upstream connection */
     u_conn = flb_upstream_conn_get(ctx->u);
