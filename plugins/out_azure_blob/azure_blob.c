@@ -463,10 +463,18 @@ static int send_blob(struct flb_config *config,
     flb_sds_t ref_name = NULL;
     void *payload_buf = data;
     size_t payload_size = bytes;
-    char generated_random_string[ctx->blob_uri_length + 1];
+    char *generated_random_string;
 
     ref_name = flb_sds_create_size(256);
     if (!ref_name) {
+        return FLB_RETRY;
+    }
+
+    /* Allocate memory for the random string dynamically */
+    generated_random_string = flb_malloc(ctx->blob_uri_length + 1);
+    if (!generated_random_string) {
+        flb_plg_error(ctx->ins, "cannot allocate memory for random string");
+        flb_sds_destroy(ref_name);
         return FLB_RETRY;
     }
 
@@ -474,14 +482,13 @@ static int send_blob(struct flb_config *config,
         uri = azb_append_blob_uri(ctx, tag);
     }
     else if (blob_type == AZURE_BLOB_BLOCKBLOB) {
-        generate_random_string_blob(generated_random_string, ctx->blob_uri_length); // Generate the random string
+        generate_random_string_blob(generated_random_string, ctx->blob_uri_length); /* Generate the random string */
         if (event_type == FLB_EVENT_TYPE_LOGS) {
             block_id = azb_block_blob_id_logs(&ms);
             if (!block_id) {
                 flb_plg_error(ctx->ins, "could not generate block id");
-
+                flb_free(generated_random_string);
                 cfl_sds_destroy(ref_name);
-
                 return FLB_RETRY;
             }
             uri = azb_block_blob_uri(ctx, tag, block_id, ms, generated_random_string);
@@ -495,34 +502,13 @@ static int send_blob(struct flb_config *config,
     }
 
     if (!uri) {
+        flb_free(generated_random_string);
         if (block_id != NULL) {
             flb_free(block_id);
         }
         flb_sds_destroy(ref_name);
         return FLB_RETRY;
     }
-
-    /* Logs: Format the data (msgpack -> JSON) *//*
-    if (event_type == FLB_EVENT_TYPE_LOGS) {
-        ret = azure_blob_format(config, i_ins,
-                                ctx, NULL,
-                                FLB_EVENT_TYPE_LOGS,
-                                tag, tag_len,
-                                data, bytes,
-                                &payload_buf, &payload_size);
-        if (ret != 0) {
-            flb_sds_destroy(uri);
-            if (block_id != NULL) {
-                flb_free(block_id);
-            }
-            flb_sds_destroy(ref_name);
-            return FLB_ERROR;
-        }
-    }
-    else if (event_type == FLB_EVENT_TYPE_BLOBS) {
-        payload_buf = data;
-        payload_size = bytes;
-    }*/
 
     /* Map buffer */
     payload_buf = data;
@@ -550,6 +536,7 @@ static int send_blob(struct flb_config *config,
     }
 
     flb_sds_destroy(uri);
+    flb_free(generated_random_string);
 
     if (block_id != NULL) {
         flb_free(block_id);
