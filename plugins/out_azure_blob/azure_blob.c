@@ -152,13 +152,15 @@ void generate_random_string_blob(char *str, size_t length)
 {
     const char charset[] = "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789";
     const size_t charset_size = sizeof(charset) - 1;
+    size_t i;
+    size_t index;
 
-    // Seed the random number generator with multiple sources of entropy
+    /* Seed the random number generator with multiple sources of entropy */
     unsigned int seed = (unsigned int)(time(NULL) ^ clock() ^ getpid());
     srand(seed);
 
-    for (size_t i = 0; i < length; ++i) {
-        size_t index = (size_t)rand() % charset_size;
+    for (i = 0; i < length; ++i) {
+        index = (size_t)rand() % charset_size;
         str[i] = charset[index];
     }
 
