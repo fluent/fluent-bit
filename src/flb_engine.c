@@ -131,6 +131,15 @@ void flb_engine_reschedule_retries(struct flb_config *config)
         ins = mk_list_entry(head, struct flb_input_instance, _head);
         mk_list_foreach_safe(t_head, tmp_task, &ins->tasks) {
             task = mk_list_entry(t_head, struct flb_task, _head);
+
+            if (task->users > 0) {
+                flb_debug("[engine] retry=%p for task %i already scheduled to run, "
+                          "not re-scheduling it.",
+                          retry, task->id);
+
+                continue;
+            }
+
             mk_list_foreach_safe(rt_head, tmp_retry_task, &task->retries) {
                 retry = mk_list_entry(rt_head, struct flb_task_retry, _head);
                 flb_sched_request_invalidate(config, retry);
