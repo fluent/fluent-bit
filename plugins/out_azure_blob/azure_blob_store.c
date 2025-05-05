@@ -22,7 +22,6 @@
 #include <fluent-bit/flb_fstore.h>
 #include <fluent-bit/flb_time.h>
 #include <fcntl.h>
-#include <unistd.h>
 
 /*
  * Simple and fast hashing algorithm to create keys in the local buffer
