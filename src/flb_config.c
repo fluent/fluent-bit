@@ -795,7 +795,6 @@ static int configure_plugins_type(struct flb_config *config, struct flb_cf *cf, 
             flb_sds_destroy(name);
             return -1;
         }
-        flb_sds_destroy(name);
 
         /*
          * iterate section properties and populate instance by using specific
@@ -857,6 +856,8 @@ static int configure_plugins_type(struct flb_config *config, struct flb_cf *cf, 
                 flb_error("[config] could not configure property '%s' on "
                           "%s plugin with section name '%s'",
                           kv->key, s_type, name);
+                flb_sds_destroy(name);
+                return -1;
             }
         }
 
@@ -873,6 +874,8 @@ static int configure_plugins_type(struct flb_config *config, struct flb_cf *cf, 
                 flb_error("[config] section '%s' does not support processors", s_type);
             }
         }
+
+        flb_sds_destroy(name);
     }
 
     return 0;
