@@ -35,6 +35,14 @@
 
 #include "oci_logan.h"
 #include "oci_logan_conf.h"
+#include <openssl/evp.h>
+#include <openssl/pem.h>
+#include <openssl/bio.h>
+#include <openssl/buffer.h>
+#include <openssl/err.h>
+#include <openssl/x509v3.h>
+#include <openssl/x509.h>
+
 
 static int create_pk_context(flb_sds_t filepath, const char *key_passphrase,
                              struct flb_oci_logan *ctx)
@@ -264,72 +272,281 @@ static int log_event_metadata_create(struct flb_oci_logan *ctx)
 
 
 // added by @rghouzra
-void get_keys_and_certs(struct flb_oci_logan *ctx, struct flb_config *config){
-    // get certs and keys
-    // 1. get certs
-    // 2. get keys
-    ctx->u = flb_upstream_create(config, ORACLE_IMDS_HOST,
-                                 80,FLB_IO_TCP ,  NULL);
 
-    if (!ctx->u) {
-        flb_plg_error(ctx->ins, "failed to create upstream");
-        return;
-    }
-    // flb_upstream_set_property(ctx->u, "net.connect_timeout", "5", 0);
-    // make_imds_request(ctx, ORACLE_IMDS_BASE_URL ORACLE_IMDS_REGION_PATH);
-    //static flb_sds_t make_imds_request(struct flb_oracle *ctx, const char *path)
-    struct flb_connection *u_conn;
+static flb_sds_t make_imds_request(struct flb_oci_logan *ctx, struct flb_connection *u_conn, const char *path)
+{
     struct flb_http_client *client;
-    flb_sds_t resp = NULL;
+    flb_sds_t response = NULL;
     size_t b_sent;
     int ret;
 
-    u_conn = flb_upstream_conn_get(ctx->u);
-    if (!u_conn) {
-        flb_plg_error(ctx->ins, "failed to get upstream connection");
-        return;
-    }
-    client = flb_http_client(u_conn, FLB_HTTP_GET, ORACLE_IMDS_BASE_URL ORACLE_IMDS_REGION_PATH, NULL, 0,
+    client = flb_http_client(u_conn, FLB_HTTP_GET, path, NULL, 0,
                              ORACLE_IMDS_HOST, 80, NULL, 0);
     if (!client) {
-        flb_plg_error(ctx->ins, "failed to create http client");
-        flb_upstream_conn_release(u_conn);
-        return;
+        flb_plg_error(ctx->ins, "failed to create http client for path: %s", path);
+        return NULL;
     }
-    flb_http_add_header(client, "Authorization", 13, "Bearer Oracle", 13);
-    ret = flb_http_do(client, &b_sent);
-    if (ret != 0) {
-        flb_plg_error(ctx->ins, "http request failed");
-        flb_http_client_destroy(client);
-        flb_upstream_conn_release(u_conn);
-        return ;
-    }
-    flb_plg_debug(ctx->ins, "data from imds [%s]", client->resp.data);
-    flb_plg_debug(ctx->ins, "status from imds [%d]", client->resp.status);
-    
-    flb_plg_debug(ctx->ins, "---------------------------");
-    flb_plg_debug(ctx->ins, "get intermeditate certh path" );
-    flb_plg_debug(ctx->ins, "---------------------------");
 
-    client = flb_http_client(u_conn, FLB_HTTP_GET, ORACLE_IMDS_BASE_URL ORACLE_IMDS_INTERMEDIATE_CERT_PATH, NULL, 0,
-        ORACLE_IMDS_HOST, 80, NULL, 0);
-    if (!client) {
-        flb_plg_error(ctx->ins, "failed to create http client");
-        flb_upstream_conn_release(u_conn);
-        return;
-    }
     flb_http_add_header(client, "Authorization", 13, "Bearer Oracle", 13);
     ret = flb_http_do(client, &b_sent);
-    if (ret != 0) {
-        flb_plg_error(ctx->ins, "http request failed");
+    if (ret != 0 || client->resp.status != 200) {
+        flb_plg_error(ctx->ins, "HTTP request failed for path: %s, status: %d", path, client->resp.status);
         flb_http_client_destroy(client);
-        flb_upstream_conn_release(u_conn);
-        return ;
+        return NULL;
     }
-    flb_plg_debug(ctx->ins, "data from imds [%s]", client->resp.data);
-    flb_plg_debug(ctx->ins, "status from imds [%d]", client->resp.status);
-    
+
+    response = flb_sds_create_len(client->resp.data, client->resp.data_len);
+    flb_http_client_destroy(client);
+    return response;
 }
+
+
+
+flb_sds_t extract_tenancy_ocid_from_cert(struct flb_oci_logan *ctx, const char *cert_pem)
+{
+    BIO *bio = BIO_new_mem_buf(cert_pem, -1);
+    if (!bio) {
+        flb_plg_error(ctx->ins, "failed to create BIO for certificate");
+        return NULL;
+    }
+
+    X509 *cert = PEM_read_bio_X509(bio, NULL, NULL, NULL);
+    BIO_free(bio);
+    if (!cert) {
+        flb_plg_error(ctx->ins, "failed to parse certificate");
+        return NULL;
+    }
+
+    flb_sds_t tenancy_ocid = NULL;
+
+    X509_NAME *subject = X509_get_subject_name(cert);
+    if (subject) {
+        char buf[1024];
+        X509_NAME_oneline(subject, buf, sizeof(buf));
+        flb_plg_debug(ctx->ins, "Certificate subject: %s", buf);
+    }
+
+    int entry_count = X509_NAME_entry_count(subject);
+    for (int i = 0; i < entry_count; i++) {
+        X509_NAME_ENTRY *entry = X509_NAME_get_entry(subject, i);
+        ASN1_OBJECT *obj = X509_NAME_ENTRY_get_object(entry);
+        if (OBJ_obj2nid(obj) == NID_organizationalUnitName) {
+            ASN1_STRING *data = X509_NAME_ENTRY_get_data(entry);
+            const char *ou_str = (const char *)ASN1_STRING_get0_data(data);
+
+            flb_plg_debug(ctx->ins, "OU field: %s", ou_str);
+
+            if (strstr(ou_str, "opc-tenant:ocid1.tenancy") == ou_str) {
+                const char *ocid = strchr(ou_str, ':');
+                if (ocid && strlen(ocid + 1) > 0) {
+                    tenancy_ocid = flb_sds_create(ocid + 1);
+                    break;
+                }
+            }
+        }
+    }
+
+    X509_free(cert);
+
+    if (!tenancy_ocid) {
+        return NULL;
+    }
+
+    flb_plg_debug(ctx->ins, "extracted Tenancy OCID: %s", tenancy_ocid);
+    return tenancy_ocid;
+}
+
+
+int get_keys_and_certs(struct flb_oci_logan *ctx, struct flb_config *config)
+{
+    ctx->u = flb_upstream_create(config, ORACLE_IMDS_HOST, 80, FLB_IO_TCP, NULL);
+    if (!ctx->u) {
+        flb_plg_error(ctx->ins, "failed to create upstream");
+        return 0;
+    }
+
+    struct flb_connection *u_conn = flb_upstream_conn_get(ctx->u);
+    if (!u_conn) {
+        flb_plg_error(ctx->ins, "failed to get upstream connection");
+        return 0;
+    }
+    flb_sds_t region_resp = make_imds_request(ctx, u_conn, ORACLE_IMDS_BASE_URL ORACLE_IMDS_REGION_PATH);
+    flb_sds_t cert_resp = make_imds_request(ctx, u_conn, ORACLE_IMDS_BASE_URL ORACLE_IMDS_LEAF_CERT_PATH);
+    flb_sds_t key_resp = make_imds_request(ctx, u_conn, ORACLE_IMDS_BASE_URL ORACLE_IMDS_LEAF_KEY_PATH);
+    flb_sds_t int_cert_resp = make_imds_request(ctx, u_conn, ORACLE_IMDS_BASE_URL ORACLE_IMDS_INTERMEDIATE_CERT_PATH);
+
+    if (!region_resp) {
+        flb_plg_error(ctx->ins, "failed to get region from IMDS");
+        goto error;
+    }
+    flb_plg_debug(ctx->ins, "Region: %s", region_resp);
+    if (!cert_resp) {
+        flb_plg_error(ctx->ins, "failed to get leaf cert from IMDS");
+        goto error;
+    }
+    flb_plg_debug(ctx->ins, "Leaf Cert: %s", cert_resp);
+    if (!key_resp) {
+        flb_plg_error(ctx->ins, "failed to get leaf key from IMDS");
+        goto error;
+    }
+    flb_plg_debug(ctx->ins, "Private Key: %s", key_resp);
+
+    if (!int_cert_resp) {
+        flb_plg_error(ctx->ins, "failed to get intermediate cert from IMDS");
+        goto error;    
+    }
+    flb_plg_debug(ctx->ins, "Intermediate Cert: %s", int_cert_resp);
+    ctx->imds.region = region_resp;
+    ctx->imds.leaf_cert = cert_resp;
+    ctx->imds.leaf_key = key_resp;
+    ctx->imds.intermediate_cert = int_cert_resp;
+    ctx->imds.tenancy_ocid = extract_tenancy_ocid_from_cert(ctx, ctx->imds.leaf_cert); // still have to checkk return
+    flb_plg_debug(ctx->ins, "Tenancy OCID: %s", ctx->imds.tenancy_ocid);
+    flb_upstream_conn_release(u_conn);
+    flb_upstream_destroy(ctx->u);
+    ctx->u = NULL;
+    return 1;
+
+error:
+    if (region_resp) {
+        flb_sds_destroy(region_resp);
+    }
+    if (cert_resp) {
+        flb_sds_destroy(cert_resp);;
+    }
+    if (key_resp) {
+        flb_sds_destroy(key_resp);
+    }
+    if (int_cert_resp) {
+        flb_sds_destroy(int_cert_resp);
+    }
+    ctx->imds.intermediate_cert = NULL;
+    ctx->imds.leaf_cert = NULL;
+    ctx->imds.leaf_key = NULL;
+    ctx->imds.region = NULL;
+    flb_upstream_conn_release(u_conn);
+    flb_upstream_destroy(ctx->u);
+    ctx->u = NULL;
+    return 0;
+}
+
+char *extract_base64_from_pem(const char *pem, const char *begin, const char *end) {
+    const char *start = strstr(pem, begin);
+    if (!start) return NULL;
+    start += strlen(begin);
+    const char *stop = strstr(start, end);
+    if (!stop) return NULL;
+
+    size_t len = stop - start;
+    char *b64 = malloc(len + 1);
+    strncpy(b64, start, len);
+    b64[len] = '\0';
+
+    // Remove newlines
+    char *src = b64, *dst = b64;
+    while (*src) {
+        if (*src != '\n' && *src != '\r')
+            *dst++ = *src;
+        src++;
+    }
+    *dst = '\0';
+    return b64;
+}
+
+char *base64url_encode(const unsigned char *input, int length) {
+    BIO *b64, *bmem;
+    BUF_MEM *bptr;
+
+    b64 = BIO_new(BIO_f_base64());
+    BIO_set_flags(b64, BIO_FLAGS_BASE64_NO_NL);
+    bmem = BIO_new(BIO_s_mem());
+    b64 = BIO_push(b64, bmem);
+    BIO_write(b64, input, length);
+    BIO_flush(b64);
+    BIO_get_mem_ptr(b64, &bptr);
+
+    char *buff = malloc(bptr->length + 1);
+    memcpy(buff, bptr->data, bptr->length);
+    buff[bptr->length] = 0;
+
+    // Convert to base64url
+    for (int i = 0; i < bptr->length; ++i) {
+        if (buff[i] == '+') buff[i] = '-';
+        else if (buff[i] == '/') buff[i] = '_';
+    }
+
+    // Remove padding '='
+    for (int i = strlen(buff) - 1; i >= 0 && buff[i] == '='; --i)
+        buff[i] = '\0';
+
+    BIO_free_all(b64);
+    return buff;
+}
+
+// Load private key from PEM
+EVP_PKEY *load_private_key(const char *pem_key) {
+    BIO *bio = BIO_new_mem_buf(pem_key, -1);
+    EVP_PKEY *pkey = PEM_read_bio_PrivateKey(bio, NULL, NULL, NULL);
+    BIO_free(bio);
+    return pkey;
+}
+
+char *build_signed_jwt(const char *leaf_cert_pem, const char *inter_cert_pem,
+                       const char *private_key_pem, const char *tenancy_ocid) {
+    char *leaf_cert_b64 = extract_base64_from_pem(leaf_cert_pem, "-----BEGIN CERTIFICATE-----", "-----END CERTIFICATE-----");
+    char *inter_cert_b64 = extract_base64_from_pem(inter_cert_pem, "-----BEGIN CERTIFICATE-----", "-----END CERTIFICATE-----");
+
+    // for header
+    char header_json[2048];
+    snprintf(header_json, sizeof(header_json),
+             "{\"alg\":\"RS256\",\"typ\":\"JWT\",\"x5c\":[\"%s\",\"%s\"]}",
+             leaf_cert_b64, inter_cert_b64);
+
+    //payloadd
+    time_t now = time(NULL);
+    char payload_json[1024];
+    snprintf(payload_json, sizeof(payload_json),
+             "{\"iss\":\"%s\",\"sub\":\"%s\",\"aud\":\"oracle-cloud\","
+             "\"exp\":%ld,\"nbf\":%ld,\"iat\":%ld}",
+             tenancy_ocid, tenancy_ocid, now + 1800, now, now);
+
+    char *encoded_header = base64url_encode((unsigned char *)header_json, strlen(header_json));
+    char *encoded_payload = base64url_encode((unsigned char *)payload_json, strlen(payload_json));
+
+    char signing_input[4096];
+    snprintf(signing_input, sizeof(signing_input), "%s.%s", encoded_header, encoded_payload);
+
+    EVP_PKEY *pkey = load_private_key(private_key_pem);
+    if (!pkey) {
+        flb_plg_error(ctx->ins, "error load privkey");
+        return NULL;
+    }
+
+    unsigned char sig[512];
+    unsigned int sig_len;
+    EVP_MD_CTX *ctx = EVP_MD_CTX_new();
+    EVP_SignInit(ctx, EVP_sha256());
+    EVP_SignUpdate(ctx, signing_input, strlen(signing_input));
+    EVP_SignFinal(ctx, sig, &sig_len, pkey);
+    EVP_MD_CTX_free(ctx);
+    EVP_PKEY_free(pkey);
+
+    char *encoded_sig = base64url_encode(sig, sig_len);
+
+    char *jwt = malloc(strlen(signing_input) + strlen(encoded_sig) + 2);
+    sprintf(jwt, "%s.%s", signing_input, encoded_sig);
+
+
+    // to be updated it still have to be more readable
+    free(leaf_cert_b64);
+    free(inter_cert_b64);
+    free(encoded_header);
+    free(encoded_payload);
+    free(encoded_sig);
+
+    return jwt;
+}
+
 
 struct flb_oci_logan *flb_oci_logan_conf_create(struct flb_output_instance *ins,
                                                 struct flb_config *config) {
@@ -365,6 +582,14 @@ struct flb_oci_logan *flb_oci_logan_conf_create(struct flb_output_instance *ins,
         // get certs and keys
         flb_plg_error(ctx->ins, "instance principal authentication still not available");
         get_keys_and_certs(ctx, config);
+        // if (ctx->imds == NULL) {
+        //     flb_plg_error(ctx->ins, "failed to create imds context");
+        //     flb_oci_logan_conf_destroy(ctx);
+        //     return NULL;
+        // }
+        char *jwt = build_signed_jwt(ctx->imds.leaf_cert, ctx->imds.intermediate_cert, \
+            ctx->imds.leaf_key, ctx->imds.tenancy_ocid);
+        flb_plg_debug(ctx->ins, "jwt -> %s", jwt);
         flb_oci_logan_conf_destroy(ctx);
         return NULL;
     }
@@ -492,19 +717,17 @@ struct flb_oci_logan *flb_oci_logan_conf_create(struct flb_output_instance *ins,
                                        io_flags, ins->tls);
     }
     else {
-        /* Prepare an upstream handler */
         upstream = flb_upstream_create(config, ins->host.name, ins->host.port,
                                        io_flags, ins->tls);
     }
 
     if (!upstream) {
-        flb_plg_error(ctx->ins, "cannot create Upstream context");
+        flb_plg_error(ctx->ins, "cannot create upstream context");
         flb_oci_logan_conf_destroy(ctx);
         return NULL;
     }
     ctx->u = upstream;
 
-    /* Set instance flags into upstream */
     flb_output_upstream_set(ctx->u, ins);
 
     return ctx;

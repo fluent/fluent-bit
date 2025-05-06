@@ -232,7 +232,10 @@ struct flb_oci_logan {
   // auth mode
     char *auth_mode;
   // instance principal
-
+    struct oci_instance_principal_provider *instance_principal_provider;
+    struct flb_oracle_imds imds;
+  // to be removed
+    char *config;
 
   // config_file
     flb_sds_t user;
