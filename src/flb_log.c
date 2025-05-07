@@ -32,7 +32,6 @@
 #include <fluent-bit/flb_config.h>
 #include <fluent-bit/flb_worker.h>
 #include <fluent-bit/flb_mem.h>
-#include "cfl/cfl_time.h"
 #include "fluent-bit/flb_time.h"
 
 #ifdef WIN32
