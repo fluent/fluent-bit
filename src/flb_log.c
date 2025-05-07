@@ -47,9 +47,6 @@ extern struct flb_aws_error_reporter *error_reporter;
 
 FLB_TLS_DEFINE(struct flb_log, flb_log_ctx)
 
-#define NANOSECONDS_IN_SECOND 1000000000
-
-
 static inline int64_t flb_log_consume_signal(struct flb_log *context)
 {
     int64_t signal_value;
@@ -562,14 +559,6 @@ struct flb_log *flb_log_create(struct flb_config *config, int type,
     return log;
 }
 
-void get_current_time(struct timespec *ts)
-{
-    struct flb_time ft;
-    flb_time_get(&ft);
-    ts->tv_sec = ft.tm.tv_sec;
-    ts->tv_nsec = ft.tm.tv_nsec;
-}
-
 int flb_log_construct(struct log_message *msg, int *ret_len,
                      int type, const char *file, int line, const char *fmt, va_list *args)
 {
@@ -583,7 +572,7 @@ int flb_log_construct(struct log_message *msg, int *ret_len,
     const char *reset_color = ANSI_RESET;
     struct tm result;
     struct tm *current;
-    struct timespec ts;
+    struct flb_time now;
 
     switch (type) {
     case FLB_LOG_HELP:
@@ -629,8 +618,8 @@ int flb_log_construct(struct log_message *msg, int *ret_len,
     }
     #endif // FLB_LOG_NO_CONTROL_CHARS
 
-    get_current_time(&ts);
-    current = localtime_r(&ts.tv_sec, &result);
+    flb_time_get(&now);
+    current = localtime_r(&now.tm.tv_sec, &result);
 
     if (current == NULL) {
         return -1;
@@ -648,7 +637,7 @@ int flb_log_construct(struct log_message *msg, int *ret_len,
                    current->tm_hour,
                    current->tm_min,
                    current->tm_sec,
-                   ts.tv_nsec,
+                   now.tm.tv_nsec,
                    bold_color, reset_color,
 
                    /* type format */
