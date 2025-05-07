@@ -1240,6 +1240,7 @@ int flb_input_instance_init(struct flb_input_instance *ins,
     /* initialize processors */
     ret = flb_processor_init(ins->processor);
     if (ret == -1) {
+        flb_error("[input %s] error initializing processor, aborting startup", ins->name);
         return -1;
     }
 

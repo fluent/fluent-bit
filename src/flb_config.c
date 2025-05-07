@@ -850,10 +850,16 @@ static int configure_plugins_type(struct flb_config *config, struct flb_cf *cf, 
         processors = flb_cf_group_get(cf, s, "processors");
         if (processors) {
             if (type == FLB_CF_INPUT) {
-                flb_processors_load_from_config_format_group(((struct flb_input_instance *) ins)->processor, processors);
+                ret = flb_processors_load_from_config_format_group(((struct flb_input_instance *) ins)->processor, processors);
+                if (ret == -1) {
+                    return -1;
+                }
             }
             else if (type == FLB_CF_OUTPUT) {
-                flb_processors_load_from_config_format_group(((struct flb_output_instance *) ins)->processor, processors);
+                ret = flb_processors_load_from_config_format_group(((struct flb_output_instance *) ins)->processor, processors);
+                if (ret == -1) {
+                    return -1; 
+                }
             }
             else {
                 flb_error("[config] section '%s' does not support processors", s_type);
