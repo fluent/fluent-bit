@@ -142,7 +142,6 @@ struct flb_log_cache_entry *flb_log_cache_get_target(struct flb_log_cache *cache
 
 int flb_log_cache_check_suppress(struct flb_log_cache *cache, char *msg_buf, size_t msg_size);
 
-void get_current_time(struct timespec *ts);
 int flb_log_construct(struct log_message *msg, int *ret_len, int type, const char *file, int line, const char *fmt, va_list *args);
 
 static inline int flb_log_suppress_check(int log_suppress_interval, const char *fmt, ...)
