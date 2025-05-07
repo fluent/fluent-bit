@@ -274,7 +274,7 @@ struct flb_processor_unit *flb_processor_unit_create(struct flb_processor *proc,
                                                            unit_name, NULL);
 
         if (processor_instance == NULL) {
-            flb_error("[processor] error creating native processor instance %s", pu->name);
+            flb_error("[processor] error creating processor '%s': plugin doesn't exist or failed to initialize", unit_name);
 
             pthread_mutex_destroy(&pu->lock);
             flb_sds_destroy(pu->name);
@@ -693,6 +693,7 @@ int flb_processor_init(struct flb_processor *proc)
         ret = flb_processor_unit_init(pu);
 
         if (ret == -1) {
+            flb_error("[processor] initialization of processor unit '%s' failed", pu->name);
             return -1;
         }
         count++;
@@ -703,6 +704,7 @@ int flb_processor_init(struct flb_processor *proc)
         ret = flb_processor_unit_init(pu);
 
         if (ret == -1) {
+            flb_error("[processor] initialization of processor unit '%s' failed", pu->name);
             return -1;
         }
         count++;
@@ -713,6 +715,7 @@ int flb_processor_init(struct flb_processor *proc)
         ret = flb_processor_unit_init(pu);
 
         if (ret == -1) {
+            flb_error("[processor] initialization of processor unit '%s' failed", pu->name);
             return -1;
         }
         count++;
@@ -723,6 +726,7 @@ int flb_processor_init(struct flb_processor *proc)
         ret = flb_processor_unit_init(pu);
 
         if (ret == -1) {
+            flb_error("[processor] initialization of processor unit '%s' failed", pu->name);
             return -1;
         }
         count++;
@@ -1199,7 +1203,7 @@ static int load_from_config_format_group(struct flb_processor *proc, int type, s
         tmp = cfl_kvlist_fetch(kvlist, "name");
 
         if (!tmp) {
-            flb_error("processor configuration don't have a 'name' defined");
+            flb_error("[processor] configuration missing required 'name' field");
             return -1;
         }
 
@@ -1208,7 +1212,6 @@ static int load_from_config_format_group(struct flb_processor *proc, int type, s
         pu = flb_processor_unit_create(proc, type, name);
 
         if (!pu) {
-            flb_error("cannot create '%s' processor unit", name);
             return -1;
         }
 
@@ -1217,7 +1220,7 @@ static int load_from_config_format_group(struct flb_processor *proc, int type, s
         if (tmp) {
             ret = flb_processor_unit_set_property(pu, "condition", tmp);
             if (ret == -1) {
-                flb_error("failed to set condition for processor '%s'", name);
+                flb_error("[processor] failed to set condition for processor '%s'", name);
                 return -1;
             }
         }
