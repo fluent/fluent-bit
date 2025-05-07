@@ -21,7 +21,6 @@
 #include <fluent-bit/flb_log.h>
 #include <fluent-bit/multiline/flb_ml.h>
 #include <fluent-bit/multiline/flb_ml_rule.h>
-#include <fluent-bit/multiline/flb_ml_mode.h>
 #include <fluent-bit/multiline/flb_ml_group.h>
 
 int flb_ml_parser_init(struct flb_ml_parser *ml_parser)
