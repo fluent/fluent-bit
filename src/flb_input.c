@@ -108,6 +108,21 @@ struct flb_config_map input_global_properties[] = {
         "pause until the buffer is drained. The value is in bytes. If set to 0, the buffer limit is disabled."\
         "Note that if the plugin has enabled filesystem buffering, this limit will not apply."
     },
+    {
+        FLB_CONFIG_MAP_STR, "storage.type", "memory",
+        0, FLB_FALSE, 0,
+        "Sets the storage type for this input, one of: filesystem, memory or memrb."
+    },
+    {
+        FLB_CONFIG_MAP_BOOL, "storage.pause_on_chunks_overlimit", "false",
+        0, FLB_FALSE, 0,
+        "Enable pausing on an input when they reach their chunks limit"
+    },
+    {
+        FLB_CONFIG_MAP_BOOL, "threaded", "false",
+        0, FLB_FALSE, 0,
+        "Enable threading on an input"
+    },
 
     {0}
 };
