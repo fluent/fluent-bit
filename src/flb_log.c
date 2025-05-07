@@ -33,6 +33,7 @@
 #include <fluent-bit/flb_worker.h>
 #include <fluent-bit/flb_mem.h>
 #include "cfl/cfl_time.h"
+#include "fluent-bit/flb_time.h"
 
 #ifdef WIN32
 #include <winsock.h>
@@ -564,9 +565,10 @@ struct flb_log *flb_log_create(struct flb_config *config, int type,
 
 void get_current_time(struct timespec *ts)
 {
-    uint64_t now = cfl_time_now();
-    ts->tv_sec = now / NANOSECONDS_IN_SECOND;
-    ts->tv_nsec = now % NANOSECONDS_IN_SECOND;
+    struct flb_time ft;
+    flb_time_get(&ft);
+    ts->tv_sec = ft.tm.tv_sec;
+    ts->tv_nsec = ft.tm.tv_nsec;
 }
 
 int flb_log_construct(struct log_message *msg, int *ret_len,
