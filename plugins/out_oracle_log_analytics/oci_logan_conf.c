@@ -460,20 +460,12 @@ char *extract_base64_from_pem(const char *pem, const char *begin, const char *en
     if (!stop) {
         return NULL;
     }
-
+    fprintf(stderr, "[extract_base64_from_pem] : start->%s", stop);
+    fflush(stderr);
     size_t len = stop - start;
     char *b64 = malloc(len + 1);
     strncpy(b64, start, len);
     b64[len] = '\0';
-
-    char *src = b64, *dst = b64;
-    while (*src) {
-        if (*src != '\n' && *src != '\r') {
-            *dst++ = *src;
-        }
-        src++;
-    }
-    *dst = '\0';
     return b64;
 }
 
