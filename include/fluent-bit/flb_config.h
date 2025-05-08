@@ -54,10 +54,8 @@
 
 #define FLB_CONTEXT_EV_SIGNAL      (1 << 0) /* 1 */
 
-enum ctx_signal_type {
-    FLB_CTX_SIGNAL_RELOAD,
-    FLB_CTX_SIGNAL_SHUTDOWN,
-};
+#define FLB_CTX_SIGNAL_RELOAD   1
+#define FLB_CTX_SIGNAL_SHUTDOWN 2
 
 /* Main struct to hold the configuration of the runtime service */
 struct flb_config {

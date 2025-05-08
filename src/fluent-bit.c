@@ -542,11 +542,11 @@ static void flb_help_plugin(int rc, int format,
 
 static void flb_signal_handler_break_loop(int signal)
 {
-    enum ctx_signal_type ctx_signal;
+    uint64_t ctx_signal;
 
     ctx_signal = FLB_CTX_SIGNAL_SHUTDOWN;
     flb_pipe_w(ch_context_signal, &ctx_signal,
-               sizeof(enum ctx_signal_type));
+               sizeof(uint64_t));
 }
 
 static void flb_signal_exit(int signal)
@@ -608,7 +608,7 @@ static void flb_signal_handler_status_line(struct flb_cf *cf_opts)
 static void flb_signal_handler(int signal)
 {
     struct flb_cf *cf_opts = flb_cf_context_get();
-    enum ctx_signal_type ctx_signal;
+    uint64_t ctx_signal;
 
     flb_signal_handler_status_line(cf_opts);
 
@@ -642,7 +642,7 @@ static void flb_signal_handler(int signal)
     case SIGHUP:
         ctx_signal = FLB_CTX_SIGNAL_RELOAD;
         flb_pipe_w(ch_context_signal, &ctx_signal,
-                   sizeof(enum ctx_signal_type));
+                   sizeof(uint64_t));
 
         break;
 #endif
@@ -666,7 +666,7 @@ void flb_console_handler_set_ctx(flb_ctx_t *ctx, struct flb_cf *cf_opts)
 static BOOL WINAPI flb_console_handler(DWORD evType)
 {
     struct flb_cf *cf_opts;
-    enum ctx_signal_type ctx_signal;
+    uint64_t ctx_signal;
 
     switch(evType) {
     case 0 /* CTRL_C_EVENT_0 */:
@@ -682,7 +682,7 @@ static BOOL WINAPI flb_console_handler(DWORD evType)
     case 1 /* CTRL_BREAK_EVENT_1 */:
         ctx_signal = FLB_CTX_SIGNAL_SHUTDOWN;
         flb_pipe_w(ch_context_signal, &ctx_signal,
-                   sizeof(enum ctx_signal_type));
+                   sizeof(uint64_t));
         break;
     }
     return 1;
@@ -1002,7 +1002,7 @@ int flb_main(int argc, char **argv)
     struct flb_cf_group *group;
 
     struct mk_event *event;
-    enum ctx_signal_type ctx_signal;
+    uint64_t ctx_signal;
     int is_shutdown = 0;
 
     prog_name = argv[0];
@@ -1430,15 +1430,10 @@ int flb_main(int argc, char **argv)
 #endif
 
     while (exit_signal == 0 && is_shutdown == 0) {
-        mk_event_wait(config->ctx_evl);
-        mk_event_foreach(event, config->ctx_evl) {
-            if (exit_signal) {
-                break;
-            }
-            switch (event->type) {
-            case FLB_CONTEXT_EV_SIGNAL:
-                ret = flb_pipe_r(event->fd, &ctx_signal,
-                                 sizeof(enum ctx_signal_type));
+        mk_event_wait(config->ch_evl);
+        mk_event_foreach(event, config->ch_evl) {
+            if (event->type == FLB_CONTEXT_EV_SIGNAL) {
+                ret = flb_pipe_r(event->fd, &ctx_signal, sizeof(uint64_t));
                 if (ret <= 0) {
                     flb_error("unable to read context eventt");
                     continue;
@@ -1466,6 +1461,9 @@ int flb_main(int argc, char **argv)
                     else {
                         flb_bin_restarting = ret;
                     }
+                    break;
+                }
+                if (exit_signal || is_shutdown) {
                     break;
                 }
             }

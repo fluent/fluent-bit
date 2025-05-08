@@ -455,7 +455,7 @@ static int exists_header_fleet_config(struct flb_in_calyptia_fleet_config *ctx)
 static void *do_reload(void *data)
 {
     struct reload_ctx *reload = (struct reload_ctx *)data;
-    enum ctx_signal_type ctx_signal;
+    uint64_t ctx_signal;
     int ret;
 
     if (reload == NULL) {
@@ -475,8 +475,7 @@ static void *do_reload(void *data)
 
     ctx_signal = FLB_CTX_SIGNAL_RELOAD;
     ret = flb_pipe_w(reload->flb->config->ch_context_signal[1],
-                     &ctx_signal,
-                     sizeof(enum ctx_signal_type));
+                     &ctx_signal, sizeof(uint64_t));
     if (ret != 0) {
         flb_error("unable to signal reload");
         return NULL;
