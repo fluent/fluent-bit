@@ -16,26 +16,11 @@ pipeline:
             - name: modify
               add: hostname monox
 
-            - name: lua
-              call: append_tag
-              code: |
-                  function append_tag(tag, timestamp, record)
-                     new_record = record
-                     new_record["tag"] = tag
-                     return 1, timestamp, new_record
-                  end
-
     outputs:
       - name: stdout
         match: '*'
 
         processors:
           logs:
-            - name: lua
-              call: add_field
-              code: |
-                  function add_field(tag, timestamp, record)
-                     new_record = record
-                     new_record["output"] = "new data"
-                     return 1, timestamp, new_record
-                  end
+            - name: modify
+              add: hostname monox
