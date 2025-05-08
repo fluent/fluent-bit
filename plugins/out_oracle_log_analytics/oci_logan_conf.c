@@ -345,6 +345,28 @@ flb_sds_t extract_tenancy_ocid_from_cert(struct flb_oci_logan *ctx, const char *
             }
         }
     }
+    BIO *out = BIO_new(BIO_s_mem());
+    if (!out) {
+        flb_plg_error(ctx->ins, "failed to create BIO for printing certificate");
+        X509_free(cert);
+        return NULL;
+    }
+
+    //just for debugging should be removed after
+    X509_print(out, cert);
+
+    char *cert_info = NULL;
+    long len = BIO_get_mem_data(out, &cert_info);
+    char *copy = malloc(len + 1);
+    if (copy) {
+        memcpy(copy, cert_info, len);
+        copy[len] = '\0';
+        flb_plg_debug(ctx->ins, "full cert:\n%s", copy);
+        flb_plg_debug(ctx->ins, "eof cert");
+        free(copy);
+    }
+
+    BIO_free(out);
 
     X509_free(cert);
 
@@ -435,18 +457,20 @@ char *extract_base64_from_pem(const char *pem, const char *begin, const char *en
     if (!start) return NULL;
     start += strlen(begin);
     const char *stop = strstr(start, end);
-    if (!stop) return NULL;
+    if (!stop) {
+        return NULL;
+    }
 
     size_t len = stop - start;
     char *b64 = malloc(len + 1);
     strncpy(b64, start, len);
     b64[len] = '\0';
 
-    // Remove newlines
     char *src = b64, *dst = b64;
     while (*src) {
-        if (*src != '\n' && *src != '\r')
+        if (*src != '\n' && *src != '\r') {
             *dst++ = *src;
+        }
         src++;
     }
     *dst = '\0';
@@ -469,15 +493,18 @@ char *base64url_encode(const unsigned char *input, int length) {
     memcpy(buff, bptr->data, bptr->length);
     buff[bptr->length] = 0;
 
-    // Convert to base64url
     for (int i = 0; i < bptr->length; ++i) {
-        if (buff[i] == '+') buff[i] = '-';
-        else if (buff[i] == '/') buff[i] = '_';
+        if (buff[i] == '+') {
+            buff[i] = '-';
+        }
+        else if (buff[i] == '/') {
+            buff[i] = '_';
+        }
     }
 
-    // Remove padding '='
-    for (int i = strlen(buff) - 1; i >= 0 && buff[i] == '='; --i)
+    for (int i = strlen(buff) - 1; i >= 0 && buff[i] == '='; --i){
         buff[i] = '\0';
+    }
 
     BIO_free_all(b64);
     return buff;
@@ -518,7 +545,6 @@ char *build_signed_jwt(const char *leaf_cert_pem, const char *inter_cert_pem,
 
     EVP_PKEY *pkey = load_private_key(private_key_pem);
     if (!pkey) {
-        flb_plg_error(ctx->ins, "error load privkey");
         return NULL;
     }
 
