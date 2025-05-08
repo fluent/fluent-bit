@@ -43,7 +43,6 @@ struct flb_api *flb_api_create()
 #ifdef FLB_HAVE_METRICS
     api->output_get_cmt_instance = flb_output_get_cmt_instance;
     api->input_get_cmt_instance = flb_input_get_cmt_instance;
-    api->custom_get_cmt_instance = flb_custom_get_cmt_instance;
 #endif
 
     api->log_print = flb_log_print;

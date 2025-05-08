@@ -295,6 +295,7 @@ int proxy_go_custom_register(struct flb_plugin_proxy *proxy,
 
     plugin = flb_malloc(sizeof(struct flbgo_custom_plugin));
     if (!plugin) {
+        flb_errno();
         return -1;
     }
 
@@ -333,8 +334,8 @@ int proxy_go_custom_init(struct flb_plugin_proxy *proxy)
     /* set the API */
     plugin->api   = proxy->api;
     plugin->i_ins = proxy->instance;
-    // In order to avoid having the whole instance as part of the ABI we
-    // copy the context pointer into the plugin.
+    /* In order to avoid having the whole instance as part of the ABI we */
+    /* copy the context pointer into the plugin. */
     plugin->context = ((struct flb_custom_instance *)proxy->instance)->context;
 
     ret = plugin->cb_init(plugin);
@@ -354,7 +355,6 @@ int proxy_go_custom_destroy(struct flb_plugin_proxy_context *ctx)
     struct flbgo_custom_plugin *plugin;
 
     plugin = (struct flbgo_custom_plugin *) ctx->proxy->data;
-    flb_debug("[GO] running exit callback");
 
     if (plugin->cb_exit) {
         ret = plugin->cb_exit();

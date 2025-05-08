@@ -372,13 +372,6 @@ void flb_custom_set_context(struct flb_custom_instance *ins, void *context)
     ins->context = context;
 }
 
-#ifdef FLB_HAVE_METRICS
-void *flb_custom_get_cmt_instance(struct flb_custom_instance *ins)
-{
-    return (void *)ins->cmt;
-}
-#endif
-
 /* Check custom plugin's log level.
  * Not for core plugins but for Golang plugins.
  * Golang plugins do not have thread-local flb_worker_ctx information. */

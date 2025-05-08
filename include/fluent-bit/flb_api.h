@@ -38,7 +38,6 @@ struct flb_api {
     /* To preserve ABI, we need to add these APIs after the
      * input/output definitions. */
     const char *(*custom_get_property) (const char *, struct flb_custom_instance *);
-    void *(*custom_get_cmt_instance) (struct flb_custom_instance *);
     int (*custom_log_check) (struct flb_custom_instance *, int);
 };
 
