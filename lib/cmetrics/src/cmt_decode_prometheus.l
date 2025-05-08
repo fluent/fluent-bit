@@ -146,6 +146,9 @@
 
 ["] {
     BEGIN(INQUOTE);
+    if (context->strbuf != NULL) {
+        cfl_sds_destroy(context->strbuf);
+    }
     context->strbuf = sds_alloc(256);
 }
 
