@@ -1038,7 +1038,8 @@ static int azure_kusto_format(struct flb_azure_kusto *ctx, const char *tag, int 
         if (log_event.group_attributes != NULL) {
             msgpack_pack_map(&mp_pck,
                                  log_event.group_attributes->via.map.size +
-                                 log_event.metadata->via.map.size);
+                                 log_event.metadata->via.map.size +
+                                 log_event.body->via.map.size);
 
             for (index = 0; index < log_event.group_attributes->via.map.size; index++)
             {
@@ -1050,6 +1051,12 @@ static int azure_kusto_format(struct flb_azure_kusto *ctx, const char *tag, int 
             {
                 msgpack_pack_object(&mp_pck, log_event.metadata->via.map.ptr[index].key);
                 msgpack_pack_object(&mp_pck, log_event.metadata->via.map.ptr[index].val);
+            }
+
+            for (index = 0; index < log_event.body->via.map.size; index++)
+            {
+                msgpack_pack_object(&mp_pck, log_event.body->via.map.ptr[index].key);
+                msgpack_pack_object(&mp_pck, log_event.body->via.map.ptr[index].val);
             }
         }
         else if (log_event.body != NULL) {
