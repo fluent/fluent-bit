@@ -77,8 +77,27 @@ typedef uint32x4_t flb_vector32;
 typedef vuint8m1_t flb_vector8;
 typedef vuint32m1_t flb_vector32;
 
-#define RVV_VEC8_INST_LEN  (128 / 8)     /* 16 */
-#define RVV_VEC32_INST_LEN (128 / 8 / 4) /*  4 */
+static size_t vec8_vl_cached = 0;
+static size_t vec32_vl_cached = 0;
+
+static inline size_t flb_rvv_get_vec8_vl()
+{
+    if (vec8_vl_cached == 0) {
+        vec8_vl_cached = __riscv_vsetvl_e8m1(16);
+    }
+    return vec8_vl_cached;
+}
+
+static inline size_t flb_rvv_get_vec32_vl()
+{
+    if (vec32_vl_cached == 0) {
+        vec32_vl_cached = __riscv_vsetvl_e32m1(4);
+    }
+    return vec32_vl_cached;
+}
+
+#define RVV_VEC8_INST_LEN  flb_rvv_get_vec8_vl()  /* 16 */
+#define RVV_VEC32_INST_LEN flb_rvv_get_vec32_vl() /*  4 */
 
 #else
 /*
