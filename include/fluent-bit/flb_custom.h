@@ -31,9 +31,20 @@
 #define FLB_CUSTOM_NET_CLIENT   1   /* custom may use upstream net.* properties  */
 #define FLB_CUSTOM_NET_SERVER   2   /* custom may use downstream net.* properties  */
 
+/* Custom plugin types */
+#define FLB_CUSTOM_PLUGIN_CORE   0
+#define FLB_CUSTOM_PLUGIN_PROXY  1
+
 struct flb_custom_instance;
 
 struct flb_custom_plugin {
+    /*
+     * The type defines if this is a core-based plugin or it's handled by
+     * some specific proxy.
+     */
+    int type;
+    void *proxy;
+
     int flags;             /* Flags (not available at the moment */
     char *name;            /* Custom plugin short name           */
     char *description;     /* Description                        */
@@ -96,5 +107,6 @@ int flb_custom_plugin_property_check(struct flb_custom_instance *ins,
 int flb_custom_init_all(struct flb_config *config);
 void flb_custom_set_context(struct flb_custom_instance *ins, void *context);
 void flb_custom_instance_destroy(struct flb_custom_instance *ins);
+int flb_custom_log_check(struct flb_custom_instance *ins, int l);
 
 #endif
