@@ -1211,7 +1211,7 @@ int flb_engine_shutdown(struct flb_config *config)
         flb_hs_destroy(config->http_ctx);
     }
 #endif
-    if (config->ctx_evl) {
+    if (config->ctx_evl != NULL) {
         mk_event_channel_destroy(config->ctx_evl,
                                  config->ch_context_signal[0],
                                  config->ch_context_signal[1],
