@@ -77,5 +77,7 @@ void flb_utils_set_plugin_string_property(const char *name,
 int flb_utils_mkdir(const char *dir, int perms);
 int flb_utils_url_split_sds(const flb_sds_t in_url, flb_sds_t *out_protocol,
                             flb_sds_t *out_host, flb_sds_t *out_port, flb_sds_t *out_uri);
+void flb_civil_from_days(int z, uint *year, uint *month, uint *day);
+int flb_write_uint(char *buf, int size, uint value);
 
 #endif

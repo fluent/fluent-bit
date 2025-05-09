@@ -1880,3 +1880,41 @@ int flb_utils_mkdir(const char *dir, int perms) {
 
     return _mkdir(tmp, perms);
 }
+
+
+/* credit to https://howardhinnant.github.io/date_algorithms.html#civil_from_days */
+void flb_civil_from_days(int z, uint *year, uint *month, uint *day) 
+{
+  z += 719468;
+  const int era = (z >= 0 ? z : z - 146096) / 146097;
+  const unsigned doe = (unsigned)(z - era * 146097);          // [0, 146096]
+  const unsigned yoe = (doe - doe / 1460 + doe / 36524 - doe / 146096) / 365;  // [0, 399]
+  const int y = (int)(yoe) + era * 400;
+  const unsigned doy = doe - (365 * yoe + yoe / 4 - yoe / 100);                // [0, 365]
+  const unsigned mp = (5 * doy + 2) / 153;                                   // [0, 11]
+  const unsigned d = doy - (153 * mp + 2) / 5 + 1;                             // [1, 31]
+  const unsigned m = mp + (mp < 10 ? 3 : -9);                            // [1, 12]
+  
+  *year = y + (m <= 2);
+  *month = m;
+  *day = d;
+}
+
+int flb_write_uint(char *buf, int size, uint value)
+{
+    /* write in reverse digit order with right zero padding */
+    for (int i = 0; i < size; i++) {
+        buf[i] = (char) ((value % 10) + '0');
+        value /= 10;
+    }
+    /* reverse into correct order */
+    for (int j = 0; j < size / 2; j++) {
+        char tmp = buf[j];
+        char tmp2 = buf[size - j - 1];
+
+        buf[size - j - 1] = tmp;
+        buf[j] = tmp2;
+    }
+
+    return size;
+}

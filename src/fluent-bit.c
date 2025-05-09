@@ -580,8 +580,36 @@ static void flb_signal_exit(int signal)
 static void flb_signal_handler_status_line(struct flb_cf *cf_opts)
 {
     char s[] = "[engine] caught signal (";
+    struct timespec ts;
+    char tsbuf[32];
+    int tspos = 0;
+
+    if (clock_gettime(CLOCK_REALTIME, &ts) == 0) {
+        uint year, month, day, hh, mm, ss;
+
+        flb_civil_from_days(ts.tv_sec / 86400, &year, &month, &day);
+        hh = (uint) ((ts.tv_sec % 86400) / 3600);
+        mm = (uint) ((ts.tv_sec % 3600) / 60);
+        ss = (uint) (ts.tv_sec % 60);
+        
+        tsbuf[tspos++] = '[';
+        tspos += flb_write_uint(tsbuf + tspos, 4, year);
+        tsbuf[tspos++] = '/';
+        tspos += flb_write_uint(tsbuf + tspos, 2, month);
+        tsbuf[tspos++] = '/';
+        tspos += flb_write_uint(tsbuf + tspos, 2, day);
+        tsbuf[tspos++] = ' ';
+        tspos += flb_write_uint(tsbuf + tspos, 2, hh);
+        tsbuf[tspos++] = ':';
+        tspos += flb_write_uint(tsbuf + tspos, 2, mm);
+        tsbuf[tspos++] = ':';
+        tspos += flb_write_uint(tsbuf + tspos, 2, ss);
+        tsbuf[tspos++] = ']';
+        tsbuf[tspos++] = ' ';
+    }
 
     /* write signal number */
+    write(STDERR_FILENO, tsbuf, tspos - 1);
     write(STDERR_FILENO, s, sizeof(s) - 1);
 }
 
