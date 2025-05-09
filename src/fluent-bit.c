@@ -1448,7 +1448,7 @@ int flb_main(int argc, char **argv)
 #endif
                     }
                     else {
-                        flb_bin_restarting = ret;
+                        flb_bin_restarting = FLB_RELOAD_ABORTED;
                     }
                     break;
                 }
