@@ -41,6 +41,7 @@
 #define FLB_CONFIG_DEFAULT_TASK_MAP_SIZE  2048
 #define FLB_CONFIG_DEFAULT_TASK_MAP_SIZE_LIMIT  16384
 #define FLB_CONFIG_DEFAULT_TASK_MAP_SIZE_GROWTH_SiZE 256
+#define FLB_CONFIG_EVENT_LOOP_SIZE 8
 
 /* The reason behind FLB_CONFIG_DEFAULT_TASK_MAP_SIZE_LIMIT being set to 16384
  * is that this is largest unsigned number expressable with 14 bits which is

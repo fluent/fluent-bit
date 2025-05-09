@@ -724,7 +724,7 @@ int flb_engine_start(struct flb_config *config)
      *
      */
     /* Create the event loop and set it in the global configuration */
-    config->ctx_evl = mk_event_loop_create(8);
+    config->ctx_evl = mk_event_loop_create(FLB_CONFIG_EVENT_LOOP_SIZE);
     if (!config->ctx_evl) {
         fprintf(stderr, "[log] could not create context event loop\n");
         return -1;
