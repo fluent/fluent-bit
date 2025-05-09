@@ -992,7 +992,7 @@ int flb_main(int argc, char **argv)
 
     struct mk_event *event;
     uint64_t ctx_signal;
-    int is_shutdown = 0;
+    int is_shutdown = FLB_FALSE;
 
     prog_name = argv[0];
 
@@ -1418,7 +1418,7 @@ int flb_main(int argc, char **argv)
     }
 #endif
 
-    while (exit_signal == 0 && is_shutdown == 0) {
+    while (exit_signal == FLB_FALSE && is_shutdown == FLB_FALSE) {
         mk_event_wait(config->ch_evl);
         mk_event_foreach(event, config->ch_evl) {
             if (event->type == FLB_CONTEXT_EV_SIGNAL) {
@@ -1430,7 +1430,7 @@ int flb_main(int argc, char **argv)
 
                 switch(ctx_signal) {
                 case FLB_CTX_SIGNAL_SHUTDOWN:
-                    is_shutdown = 1;
+                    is_shutdown = FLB_TRUE;
                     break;
                 case FLB_CTX_SIGNAL_RELOAD:
                     /* reload by using same config files/path */
@@ -1452,7 +1452,7 @@ int flb_main(int argc, char **argv)
                     }
                     break;
                 }
-                if (exit_signal || is_shutdown) {
+                if (exit_signal == FLB_TRUE || is_shutdown == FLB_TRUE) {
                     break;
                 }
             }
