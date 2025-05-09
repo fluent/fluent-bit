@@ -695,7 +695,6 @@ int flb_engine_start(struct flb_config *config)
     struct flb_sched *sched;
     struct flb_net_dns dns_ctx;
     struct flb_notification *notification;
-    uint64_t ctx_signal;
 
     /* Initialize the networking layer */
     flb_net_lib_init();
@@ -1072,10 +1071,7 @@ int flb_engine_start(struct flb_config *config)
                                  ret);
                         ret = config->exit_status_code;
 
-                        ctx_signal = FLB_CTX_SIGNAL_SHUTDOWN;
-                        flb_pipe_w(config->ch_context_signal[1], &ctx_signal,
-                                   sizeof(uint64_t));
-
+                        flb_config_signal_send(config, FLB_CTX_SIGNAL_SHUTDOWN);
                         flb_engine_shutdown(config);
                         config = NULL;
 

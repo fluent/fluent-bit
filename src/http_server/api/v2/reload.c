@@ -41,7 +41,6 @@ static void handle_reload_request(mk_request_t *request, struct flb_config *conf
     msgpack_packer mp_pck;
     msgpack_sbuffer mp_sbuf;
     int http_status = 200;
-    uint64_t ctx_signal;
 
     /* initialize buffers */
     msgpack_sbuffer_init(&mp_sbuf);
@@ -67,9 +66,7 @@ static void handle_reload_request(mk_request_t *request, struct flb_config *conf
         http_status =  400;
     }
     else {
-        ctx_signal = FLB_CTX_SIGNAL_RELOAD;
-        ret = flb_pipe_w(config->ch_context_signal[1], &ctx_signal,
-                         sizeof(uint64_t));
+        ret = flb_config_signal_send(config, FLB_CTX_SIGNAL_RELOAD);
         if (ret != 0) {
             mk_http_status(request, 500);
             mk_http_done(request);

@@ -542,11 +542,7 @@ static void flb_help_plugin(int rc, int format,
 
 static void flb_signal_handler_break_loop(int signal)
 {
-    uint64_t ctx_signal;
-
-    ctx_signal = FLB_CTX_SIGNAL_SHUTDOWN;
-    flb_pipe_w(ch_context_signal, &ctx_signal,
-               sizeof(uint64_t));
+    flb_config_signal_send(config, FLB_CTX_SIGNAL_SHUTDOWN);
 }
 
 static void flb_signal_exit(int signal)
@@ -608,7 +604,6 @@ static void flb_signal_handler_status_line(struct flb_cf *cf_opts)
 static void flb_signal_handler(int signal)
 {
     struct flb_cf *cf_opts = flb_cf_context_get();
-    uint64_t ctx_signal;
 
     flb_signal_handler_status_line(cf_opts);
 
@@ -640,10 +635,7 @@ static void flb_signal_handler(int signal)
         break;
 #ifndef FLB_HAVE_STATIC_CONF
     case SIGHUP:
-        ctx_signal = FLB_CTX_SIGNAL_RELOAD;
-        flb_pipe_w(ch_context_signal, &ctx_signal,
-                   sizeof(uint64_t));
-
+        flb_config_signal_channel_send(ch_context_signal, FLB_CTX_SIGNAL_RELOAD);
         break;
 #endif
 #endif
@@ -666,7 +658,6 @@ void flb_console_handler_set_ctx(flb_ctx_t *ctx, struct flb_cf *cf_opts)
 static BOOL WINAPI flb_console_handler(DWORD evType)
 {
     struct flb_cf *cf_opts;
-    uint64_t ctx_signal;
 
     switch(evType) {
     case 0 /* CTRL_C_EVENT_0 */:
@@ -680,9 +671,7 @@ static BOOL WINAPI flb_console_handler(DWORD evType)
         handler_signal = 2;
         break;
     case 1 /* CTRL_BREAK_EVENT_1 */:
-        ctx_signal = FLB_CTX_SIGNAL_SHUTDOWN;
-        flb_pipe_w(ch_context_signal, &ctx_signal,
-                   sizeof(uint64_t));
+        flb_config_signal_channel_send(ch_context_signal, FLB_CTX_SIGNAL_SHUTDOWN);
         break;
     }
     return 1;

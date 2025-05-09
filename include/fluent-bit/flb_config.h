@@ -323,6 +323,16 @@ struct flb_config {
     int dry_run;
 };
 
+static inline int flb_config_signal_channel_send(uint64_t channel, uint64_t signal_type)
+{
+    return flb_pipe_w(channel, &signal_type, sizeof(uint64_t));
+}
+
+static inline int flb_config_signal_send(struct flb_config *config, uint64_t signal_type)
+{
+    return flb_pipe_w(config->ch_context_signal[1], &signal_type, sizeof(uint64_t));
+}
+
 #define FLB_CONFIG_LOG_LEVEL(c) (c->log->level)
 
 struct flb_config *flb_config_init();
