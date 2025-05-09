@@ -833,6 +833,27 @@ static void test_upstream_servers()
     flb_cf_destroy(cf);
 }
 
+static void test_invalid_property()
+{
+    struct flb_cf *cf;
+    struct flb_config *config;
+    int ret;
+    int i;
+    char* file_path = FLB_TESTS_CONF_PATH "/invalid_input_property.yaml";
+
+    cf = flb_cf_yaml_create(NULL, file_path, NULL, 0);
+    TEST_ASSERT(cf != NULL);
+
+    config = flb_config_init();
+    TEST_ASSERT(config != NULL);
+    
+    ret = flb_config_load_config_format(config, cf);
+    TEST_ASSERT_(ret == -1, "expected invalid property to return an error in file %s", file_path);
+
+    flb_cf_destroy(cf);
+    flb_config_exit(config);
+}
+
 TEST_LIST = {
     { "basic"    , test_basic},
     { "customs section", test_customs_section},
@@ -846,5 +867,6 @@ TEST_LIST = {
     { "stream_processor", test_stream_processor},
     { "plugins", test_plugins},
     { "upstream_servers", test_upstream_servers},
+    { "invalid_input_property", test_invalid_property},
     { 0 }
 };
