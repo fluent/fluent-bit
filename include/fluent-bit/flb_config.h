@@ -324,7 +324,7 @@ struct flb_config {
     int dry_run;
 };
 
-static inline int flb_config_signal_channel_send(uint64_t channel, uint64_t signal_type)
+static inline int flb_config_signal_channel_send(flb_pipefd_t channel, uint64_t signal_type)
 {
     return flb_pipe_w(channel, &signal_type, sizeof(uint64_t));
 }

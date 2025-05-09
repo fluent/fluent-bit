@@ -71,7 +71,7 @@ extern void win32_started(void);
 
 flb_ctx_t *ctx;
 struct flb_config *config;
-int ch_context_signal;
+flb_pipefd_t ch_context_signal;
 volatile sig_atomic_t exit_signal = 0;
 volatile sig_atomic_t flb_bin_restarting = FLB_RELOAD_IDLE;
 
