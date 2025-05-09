@@ -164,6 +164,7 @@ struct flb_config {
     /* Logging */
     char *log_file;
     struct flb_log *log;
+    struct flb_log_metrics *log_metrics_ctx; /* Global metrics for logging calls */
 
     /* Parser Conf */
     char *parsers_file;

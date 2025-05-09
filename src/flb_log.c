@@ -32,6 +32,8 @@
 #include <fluent-bit/flb_config.h>
 #include <fluent-bit/flb_worker.h>
 #include <fluent-bit/flb_mem.h>
+#include <cmetrics/cmetrics.h>
+#include <cmetrics/cmt_counter.h>
 
 #ifdef WIN32
 #include <winsock.h>
@@ -564,6 +566,28 @@ struct flb_log *flb_log_create(struct flb_config *config, int type,
     return log;
 }
 
+static inline char *flb_log_message_type_str(int type)
+{
+    switch (type) {
+    case FLB_LOG_HELP:
+        return "help";
+    case FLB_LOG_INFO:
+        return "info";
+    case FLB_LOG_WARN:
+        return "warn";
+    case FLB_LOG_ERROR:
+        return "error";
+    case FLB_LOG_DEBUG:
+        return "debug";
+    case FLB_LOG_IDEBUG:
+        return "debug";
+    case FLB_LOG_TRACE:
+        return "trace";
+    default:
+        return NULL;
+    }
+}
+
 int flb_log_construct(struct log_message *msg, int *ret_len,
                      int type, const char *file, int line, const char *fmt, va_list *args)
 {
@@ -573,7 +597,7 @@ int flb_log_construct(struct log_message *msg, int *ret_len,
     int total;
     time_t now;
     const char *header_color = NULL;
-    const char *header_title = NULL;
+    const char *header_title = flb_log_message_type_str(type);
     const char *bold_color = ANSI_BOLD;
     const char *reset_color = ANSI_RESET;
     struct tm result;
@@ -581,31 +605,24 @@ int flb_log_construct(struct log_message *msg, int *ret_len,
 
     switch (type) {
     case FLB_LOG_HELP:
-        header_title = "help";
         header_color = ANSI_CYAN;
         break;
     case FLB_LOG_INFO:
-        header_title = "info";
         header_color = ANSI_GREEN;
         break;
     case FLB_LOG_WARN:
-        header_title = "warn";
         header_color = ANSI_YELLOW;
         break;
     case FLB_LOG_ERROR:
-        header_title = "error";
         header_color = ANSI_RED;
         break;
     case FLB_LOG_DEBUG:
-        header_title = "debug";
         header_color = ANSI_YELLOW;
         break;
     case FLB_LOG_IDEBUG:
-        header_title = "debug";
         header_color = ANSI_CYAN;
         break;
     case FLB_LOG_TRACE:
-        header_title = "trace";
         header_color = ANSI_BLUE;
         break;
     }
@@ -704,8 +721,11 @@ void flb_log_print(int type, const char *file, int line, const char *fmt, ...)
     int ret;
     struct log_message msg = {0};
     va_list args;
+    char *msg_type_str = flb_log_message_type_str(type);
+    uint64_t ts = cfl_time_now();
 
     struct flb_worker *w;
+    struct flb_config *config;
 
     va_start(args, fmt);
     ret = flb_log_construct(&msg, &len, type, file, line, fmt, &args);
@@ -717,6 +737,11 @@ void flb_log_print(int type, const char *file, int line, const char *fmt, ...)
 
     w = flb_worker_get();
     if (w) {
+        config = w->config;
+        if (config && config->log_metrics_ctx) {
+            cmt_counter_inc(config->log_metrics_ctx->logs_total_counter, ts, 1, (char *[]) {msg_type_str}); // Ignoring inc error
+        }
+
         n = flb_pipe_write_all(w->log[1], &msg, sizeof(msg));
 
         if (n == -1) {
@@ -779,4 +804,76 @@ int flb_log_destroy(struct flb_log *log, struct flb_config *config)
     flb_free(log);
 
     return 0;
+}
+
+/*
+ * Create and register cmetrics for the runtime logger.
+ * The caller must free the returned struct using flb_log_metrics_destroy.
+ */
+struct flb_log_metrics *flb_log_metrics_create()
+{
+    struct flb_log_metrics *lm;
+    int i;
+    char *message_type_str;
+    uint64_t ts;
+
+    lm = flb_calloc(1, sizeof(struct flb_log_metrics));
+    if (!lm) {
+        flb_errno();
+        goto error;
+    }
+
+    lm->cmt = cmt_create();
+    if (!lm->cmt) {
+        goto error;
+    }
+
+    lm->logs_total_counter = cmt_counter_create(lm->cmt,
+                                                "fluentbit", "logger", "logs_total",
+                                                "Total number of logs",
+                                                1, (char *[]) {"message_type"});
+    if (!lm->logs_total_counter) {
+        goto error;
+    }
+
+    /*
+     * Initialize counters for all log message types to 0.
+     * This assumes types are contiguous starting at 1 (FLB_LOG_ERROR).
+     */
+    i = 1;
+    ts = cfl_time_now();
+    for (i = 1; ; i++) {
+        message_type_str = flb_log_message_type_str(i);
+        if (!message_type_str) {
+            break;
+        }
+
+        if (cmt_counter_set(lm->logs_total_counter, ts, 0, 1, (char *[]) {message_type_str}) == -1) {
+            goto error;
+        }
+    }
+
+    return lm;
+
+error:
+    if (lm && lm->logs_total_counter) {
+        cmt_counter_destroy(lm->logs_total_counter);
+    }
+
+    if (lm && lm->cmt) {
+        cmt_destroy(lm->cmt);
+    }
+
+    if (lm) {
+        flb_free(lm);
+    }
+
+    return NULL;
+}
+
+void flb_log_metrics_destroy(struct flb_log_metrics *lm)
+{
+    cmt_counter_destroy(lm->logs_total_counter);
+    cmt_destroy(lm->cmt);
+    flb_free(lm);
 }
