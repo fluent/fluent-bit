@@ -368,6 +368,7 @@ static int process_json_payload_log_records_entry(struct flb_opentelemetry *ctx,
     msgpack_object_map *log_records_entry;
     msgpack_object     *timestamp_object;
     uint64_t            timestamp_uint64;
+    char               *logs_body_key;
     msgpack_object     *metadata_object;
     msgpack_object     *body_object;
     msgpack_object     *observed_time_unix_nano = NULL;
@@ -585,14 +586,20 @@ static int process_json_payload_log_records_entry(struct flb_opentelemetry *ctx,
         body_object != NULL) {
         result = json_payload_get_wrapped_value(body_object, NULL, &body_type);
 
-        if (result != 0 || body_type == MSGPACK_OBJECT_MAP) {
+        if (result != 0 ||
+            (ctx->logs_body_key == NULL && body_type == MSGPACK_OBJECT_MAP)) {
             flb_log_event_encoder_dynamic_field_reset(&encoder->body);
         }
         else {
+            logs_body_key = ctx->logs_body_key;
+            if (ctx->logs_body_key == NULL) {
+                logs_body_key = (char *) "log";
+            }
+
             flb_log_event_encoder_append_cstring(
                  encoder,
                  FLB_LOG_EVENT_BODY,
-                 "log");
+                 logs_body_key);
         }
 
         result = json_payload_append_converted_value(
@@ -1257,6 +1264,7 @@ static int binary_payload_to_msgpack(struct flb_opentelemetry *ctx,
     int resource_logs_index;
     int scope_log_index;
     int log_record_index;
+    char *logs_body_key;
     struct flb_mp_map_header mh;
     struct flb_mp_map_header mh_tmp;
     struct flb_time tm;
@@ -1500,7 +1508,8 @@ static int binary_payload_to_msgpack(struct flb_opentelemetry *ctx,
                         ret = FLB_EVENT_ENCODER_ERROR_SERIALIZATION_FAILURE;
                     }
                     else {
-                        if (log_records[log_record_index]->body->value_case ==
+                        if (ctx->logs_body_key == NULL &&
+                            log_records[log_record_index]->body->value_case ==
                             OPENTELEMETRY__PROTO__COMMON__V1__ANY_VALUE__VALUE_KVLIST_VALUE) {
                             ret = flb_log_event_encoder_set_body_from_raw_msgpack(
                                     encoder,
@@ -1508,9 +1517,13 @@ static int binary_payload_to_msgpack(struct flb_opentelemetry *ctx,
                                     mp_sbuf.size);
                         }
                         else {
+                            logs_body_key = ctx->logs_body_key;
+                            if (logs_body_key == NULL) {
+                                logs_body_key = "message";
+                            }
                             ret = flb_log_event_encoder_append_body_values(
                                     encoder,
-                                    FLB_LOG_EVENT_CSTRING_VALUE("message"),
+                                    FLB_LOG_EVENT_CSTRING_VALUE(logs_body_key),
                                     FLB_LOG_EVENT_MSGPACK_RAW_VALUE(mp_sbuf.data, mp_sbuf.size));
                         }
                     }
