@@ -251,6 +251,12 @@ static struct flb_config_map config_map[] = {
      FLB_CONFIG_MAP_STR, "logs_metadata_key", "otlp",
      0, FLB_TRUE, offsetof(struct flb_opentelemetry, logs_metadata_key),
     },
+    {
+     FLB_CONFIG_MAP_STR, "logs_body_key", NULL,
+     0, FLB_TRUE, offsetof(struct flb_opentelemetry, logs_body_key),
+     "Key to use for the logs body. If unset, body key-value pairs will be " \
+     "used as the log record, and other types will be nested under a key."
+    },
 
     /* EOF */
     {0}
