@@ -993,6 +993,7 @@ int flb_main(int argc, char **argv)
     struct mk_event *event;
     uint64_t ctx_signal;
     int is_shutdown = FLB_FALSE;
+    int is_reload = FLB_FALSE;
 
     prog_name = argv[0];
 
@@ -1452,7 +1453,9 @@ int flb_main(int argc, char **argv)
                     }
                     break;
                 }
-                if (exit_signal == FLB_TRUE || is_shutdown == FLB_TRUE) {
+                if (exit_signal == FLB_TRUE || is_shutdown == FLB_TRUE || is_reload == FLB_TRUE) {
+                    // reset is_reload flag before re-entering the loop.
+                    is_reload = FLB_FALSE;
                     break;
                 }
             }
