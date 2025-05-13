@@ -472,7 +472,7 @@ static int process_content(struct flb_tail_file *file, size_t *bytes)
         else if (ret == FLB_UNICODE_CONVERT_NOP) {
             flb_plg_debug(ctx->ins, "nothing to convert encoding '%.*s'", end - data, data);
             /* Skip the UTF-8 BOM */
-            if (file->buf_len >= 3 && 
+            if (file->buf_len >= 3 &&
                 data[0] == '\xEF' &&
                 data[1] == '\xBB' &&
                 data[2] == '\xBF') {
