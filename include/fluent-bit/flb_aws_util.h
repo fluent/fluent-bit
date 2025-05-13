@@ -192,9 +192,13 @@ int flb_aws_is_auth_error(char *payload, size_t payload_size);
 
 int flb_read_file(const char *path, char **out_buf, size_t *out_size);
 
-//* Constructs S3 object key as per the format. */
+/* Constructs S3 object key as per the format. */
 flb_sds_t flb_get_s3_key(const char *format, time_t time, const char *tag,
                          char *tag_delimiter, uint64_t seq_index);
+
+/* Constructs S3 object key as per the blob format. */
+flb_sds_t flb_get_s3_blob_key(const char *format, const char *tag,
+                              char *tag_delimiter, const char *blob_path);
 
 /*
  * This function is an extension to strftime which can support milliseconds with %3N,
