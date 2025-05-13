@@ -28,6 +28,8 @@
 #include <fluent-bit/flb_worker.h>
 #include <fluent-bit/flb_config.h>
 #include <fluent-bit/flb_sds.h>
+#include <cmetrics/cmetrics.h>
+#include <cmetrics/cmt_counter.h>
 #include <inttypes.h>
 #include <errno.h>
 #include <stdarg.h>
@@ -90,6 +92,14 @@ struct flb_log_cache {
     int size;                       /* cache size       */
     int timeout;                    /* cache timeout    */
     struct mk_list entries;         /* list for entries */
+};
+
+/* Global metrics for logging calls. */
+struct flb_log_metrics {
+    struct cmt *cmt;
+
+    /* cmetrics */
+    struct cmt_counter *logs_total_counter; /* total number of logs (by message type) */
 };
 
 /*
@@ -232,6 +242,8 @@ static inline int flb_log_suppress_check(int log_suppress_interval, const char *
 int flb_log_worker_init(struct flb_worker *worker);
 int flb_log_worker_destroy(struct flb_worker *worker);
 int flb_errno_print(int errnum, const char *file, int line);
+struct flb_log_metrics *flb_log_metrics_create();
+void flb_log_metrics_destroy(struct flb_log_metrics *ctx);
 #ifdef WIN32
 int flb_wsa_get_last_error_print(int errnum, const char *file, int line);
 #endif
