@@ -962,14 +962,14 @@ static void cb_splunk_flush(struct flb_event_chunk *event_chunk,
     if (ctx->http_user && ctx->http_passwd) {
         flb_http_basic_auth(c, ctx->http_user, ctx->http_passwd);
     }
+    else if (ctx->auth_header) {
+        flb_http_add_header(c, "Authorization", 13,
+                            ctx->auth_header, flb_sds_len(ctx->auth_header));
+    }
     else if (metadata_auth_header) {
         flb_http_add_header(c, "Authorization", 13,
                             metadata_auth_header,
                             flb_sds_len(metadata_auth_header));
-    }
-    else if (ctx->auth_header) {
-        flb_http_add_header(c, "Authorization", 13,
-                            ctx->auth_header, flb_sds_len(ctx->auth_header));
     }
 
     /* Append Channel identifier header */
