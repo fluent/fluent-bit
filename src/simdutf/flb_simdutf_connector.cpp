@@ -215,10 +215,20 @@ int flb_simdutf_connector_convert_from_unicode(int preferred_encoding,
         return FLB_SIMDUTF_CONNECTOR_CONVERT_NOP;
     }
     else if ((encoding & simdutf::encoding_type::UTF16_LE) == simdutf::encoding_type::UTF16_LE) {
+        /* Skip the UTF-16 BOM */
+        if (length >= 2 && input[0] == '\xFF' && input[1] == '\xFE') {
+            input += 2;
+            length -= 2;
+        }
         return convert_from_unicode(flb_simdutf_connector_convert_utf16le_to_utf8,
                                     input, length, output, out_size);
     }
     else if ((encoding & simdutf::encoding_type::UTF16_BE) == simdutf::encoding_type::UTF16_BE) {
+        /* Skip the UTF-16 BOM */
+        if (length >= 2 && input[0] == '\xFE' && input[1] == '\xFF') {
+            input += 2;
+            length -= 2;
+        }
         return convert_from_unicode(flb_simdutf_connector_convert_utf16be_to_utf8,
                                     input, length, output, out_size);
     }
