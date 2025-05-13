@@ -1,0 +1,16 @@
+service:
+  log_level: debug
+
+pipeline:
+  inputs:
+    - name: dummy
+      tag: test
+      rate: 100
+      dummy: '{"message": "test message 1"}'
+      processors:
+        logs:
+          - name: chunk_dedup
+            dedup_key: message    
+  outputs:
+    - name: stdout
+      match: '*'
