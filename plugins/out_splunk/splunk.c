@@ -901,6 +901,16 @@ static void cb_splunk_flush(struct flb_event_chunk *event_chunk,
                             &buf_data, &buf_size, ctx);
     }
 
+    /* Skipping the flush if content length is 0 */
+    if (buf_size == 0) {
+        flb_plg_warn(ctx->ins, "Content length is 0, skipping flush");
+        if (buf_data) {
+            flb_sds_destroy(buf_data);
+        }
+        /* setting the ret to -1, so the next block will take care of clean up */
+        ret = -1;
+    }
+
     if (ret == -1) {
         flb_upstream_conn_release(u_conn);
         FLB_OUTPUT_RETURN(FLB_ERROR);
