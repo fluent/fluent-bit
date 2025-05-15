@@ -13,7 +13,7 @@ FROM multiarch/qemu-user-static:x86_64-aarch64 as multiarch-aarch64
 FROM almalinux:8 as almalinux-8-base
 
 # Add for the YAML development libraries
-RUN sed -i 's/enabled=0/enabled=1/g' /etc/yum.repos.d/Rocky-PowerTools.repo
+RUN sed -i 's/enabled=0/enabled=1/g' /etc/yum.repos.d/almalinux-powertools.repo
 
 # hadolint ignore=DL3033
 RUN yum -y update && \
@@ -30,7 +30,7 @@ FROM --platform=arm64 almalinux:8 as almalinux-8.arm64v8-base
 COPY --from=multiarch-aarch64 /usr/bin/qemu-aarch64-static /usr/bin/qemu-aarch64-static
 
 # Add for the YAML development libraries
-RUN sed -i 's/enabled=0/enabled=1/g' /etc/yum.repos.d/Rocky-PowerTools.repo
+RUN sed -i 's/enabled=0/enabled=1/g' /etc/yum.repos.d/almalinux-powertools.repo
 
 # hadolint ignore=DL3033
 RUN yum -y update && \
