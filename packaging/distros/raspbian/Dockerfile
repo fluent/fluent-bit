@@ -6,6 +6,9 @@ ARG BASE_BUILDER
 # Lookup the name to use below but should follow the '<distro>-base' convention with slashes replaced.
 # Use buildkit to skip unused base images: DOCKER_BUILDKIT=1
 
+# Multiarch support
+FROM multiarch/qemu-user-static:x86_64-aarch64 AS multiarch-aarch64
+
 FROM balenalib/rpi-raspbian:buster AS raspbian-buster-base
 ENV DEBIAN_FRONTEND noninteractive
 
@@ -23,13 +26,16 @@ RUN apt-get update && \
 ENV CMAKE_HOME="/opt/cmake"
 ARG CMAKE_VERSION="3.31.6"
 ARG CMAKE_URL="https://github.com/Kitware/CMake/releases/download"
+# There is no binary version to pull so build from source
 
+# hadolint ignore=DL4006
 RUN mkdir -p "${CMAKE_HOME}" && \
-    cmake_download_url="${CMAKE_URL}/v${CMAKE_VERSION}/cmake-${CMAKE_VERSION}-linux-aarch64.tar.gz" && \
+    cmake_download_url="${CMAKE_URL}/v${CMAKE_VERSION}/cmake-${CMAKE_VERSION}.tar.gz" && \
     echo "Downloading CMake ${CMAKE_VERSION}: ${cmake_download_url} -> ${CMAKE_HOME}" && \
-    curl -jksSL "${cmake_download_url}" | tar -xzf - -C "${CMAKE_HOME}" --strip-components 1
-
-ENV PATH="${CMAKE_HOME}/bin:${PATH}"
+    curl -jksSL "${cmake_download_url}" | tar -xzf - -C "${CMAKE_HOME}" --strip-components 1 && \
+    "${CMAKE_HOME}"/configure --prefix=/usr && \
+    make -C "${CMAKE_HOME}" -j 4 && \
+    make -C "${CMAKE_HOME}" install
 
 # raspbian/bullseye base image
 FROM balenalib/rpi-raspbian:bullseye AS raspbian-bullseye-base
@@ -48,12 +54,14 @@ ENV CMAKE_HOME="/opt/cmake"
 ARG CMAKE_VERSION="3.31.6"
 ARG CMAKE_URL="https://github.com/Kitware/CMake/releases/download"
 
+# hadolint ignore=DL4006
 RUN mkdir -p "${CMAKE_HOME}" && \
-    cmake_download_url="${CMAKE_URL}/v${CMAKE_VERSION}/cmake-${CMAKE_VERSION}-linux-aarch64.tar.gz" && \
+    cmake_download_url="${CMAKE_URL}/v${CMAKE_VERSION}/cmake-${CMAKE_VERSION}.tar.gz" && \
     echo "Downloading CMake ${CMAKE_VERSION}: ${cmake_download_url} -> ${CMAKE_HOME}" && \
-    curl -jksSL "${cmake_download_url}" | tar -xzf - -C "${CMAKE_HOME}" --strip-components 1
-
-ENV PATH="${CMAKE_HOME}/bin:${PATH}"
+    curl -jksSL "${cmake_download_url}" | tar -xzf - -C "${CMAKE_HOME}" --strip-components 1 && \
+    "${CMAKE_HOME}"/configure --prefix=/usr && \
+    make -C "${CMAKE_HOME}" -j 4 && \
+    make -C "${CMAKE_HOME}" install
 
 # raspbian/bookworm base image
 FROM balenalib/rpi-raspbian:bookworm AS raspbian-bookworm-base
