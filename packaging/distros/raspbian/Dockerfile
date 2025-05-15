@@ -10,16 +10,26 @@ FROM balenalib/rpi-raspbian:buster AS raspbian-buster-base
 ENV DEBIAN_FRONTEND noninteractive
 
 # Builder image so dependencies can be latest, recommended and no need to wipe
-# We pin cmake to a working version (latest 3.16 triggers cmake failures for GNU C compiler detection)
 # hadolint ignore=DL3008,DL3015
 RUN apt-get update && \
-    apt-get install -y cmake=3.13.4-1 cmake-data=3.13.4-1 \
-    curl ca-certificates build-essential \
+    apt-get install -y curl ca-certificates build-essential \
     make bash sudo wget unzip dh-make \
     libsystemd-dev zlib1g-dev flex bison \
     libssl1.1 libssl-dev libpq-dev postgresql-server-dev-all \
     libsasl2-2 libsasl2-dev libyaml-dev libcurl4-openssl-dev pkg-config && \
     apt-get install -y --reinstall lsb-base lsb-release
+
+# We need at least CMake 3.20 or higher to build the project - repos only support up to 3.16 which has a separate issue anyway
+ENV CMAKE_HOME="/opt/cmake"
+ARG CMAKE_VERSION="3.31.6"
+ARG CMAKE_URL="https://github.com/Kitware/CMake/releases/download"
+
+RUN mkdir -p "${CMAKE_HOME}" && \
+    cmake_download_url="${CMAKE_URL}/v${CMAKE_VERSION}/cmake-${CMAKE_VERSION}-linux-aarch64.tar.gz" && \
+    echo "Downloading CMake ${CMAKE_VERSION}: ${cmake_download_url} -> ${CMAKE_HOME}" && \
+    curl -jksSL "${cmake_download_url}" | tar -xzf - -C "${CMAKE_HOME}" --strip-components 1
+
+ENV PATH="${CMAKE_HOME}/bin:${PATH}"
 
 # raspbian/bullseye base image
 FROM balenalib/rpi-raspbian:bullseye AS raspbian-bullseye-base
@@ -28,11 +38,22 @@ ENV DEBIAN_FRONTEND noninteractive
 # hadolint ignore=DL3008,DL3015
 RUN apt-get update && \
     apt-get install -y curl ca-certificates build-essential \
-    cmake make bash sudo wget unzip dh-make \
+    make bash sudo wget unzip dh-make \
     libsystemd-dev zlib1g-dev flex bison \
     libssl1.1 libssl-dev libpq-dev postgresql-server-dev-all \
     libsasl2-2 libsasl2-dev libyaml-dev libcurl4-openssl-dev pkg-config && \
     apt-get install -y --reinstall lsb-base lsb-release
+
+ENV CMAKE_HOME="/opt/cmake"
+ARG CMAKE_VERSION="3.31.6"
+ARG CMAKE_URL="https://github.com/Kitware/CMake/releases/download"
+
+RUN mkdir -p "${CMAKE_HOME}" && \
+    cmake_download_url="${CMAKE_URL}/v${CMAKE_VERSION}/cmake-${CMAKE_VERSION}-linux-aarch64.tar.gz" && \
+    echo "Downloading CMake ${CMAKE_VERSION}: ${cmake_download_url} -> ${CMAKE_HOME}" && \
+    curl -jksSL "${cmake_download_url}" | tar -xzf - -C "${CMAKE_HOME}" --strip-components 1
+
+ENV PATH="${CMAKE_HOME}/bin:${PATH}"
 
 # raspbian/bookworm base image
 FROM balenalib/rpi-raspbian:bookworm AS raspbian-bookworm-base
