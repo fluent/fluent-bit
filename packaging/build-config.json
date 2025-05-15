@@ -113,14 +113,6 @@
           "type": "deb"
         },
         {
-          "target": "raspbian/buster",
-          "type": "deb"
-        },
-        {
-          "target": "raspbian/bullseye",
-          "type": "deb"
-        },
-        {
           "target": "raspbian/bookworm",
           "type": "deb"
         }

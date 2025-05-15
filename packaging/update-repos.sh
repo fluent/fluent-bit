@@ -52,6 +52,7 @@ DEB_REPO_PATHS=( "debian/bookworm"
                  "debian/buster"
                  "ubuntu/jammy"
                  "ubuntu/noble"
+                 "raspbian/bookworm"
                 )
 
 for DEB_REPO in "${DEB_REPO_PATHS[@]}"; do
