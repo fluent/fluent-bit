@@ -41,6 +41,38 @@
           "type": "rpm"
         },
         {
+          "target": "rockylinux/8",
+          "type": "rpm"
+        },
+        {
+          "target": "rockylinux/8.arm64v8",
+          "type": "rpm"
+        },
+        {
+          "target": "rockylinux/9",
+          "type": "rpm"
+        },
+        {
+          "target": "rockylinux/9.arm64v8",
+          "type": "rpm"
+        },
+        {
+          "target": "almalinux/8",
+          "type": "rpm"
+        },
+        {
+          "target": "almalinux/8.arm64v8",
+          "type": "rpm"
+        },
+        {
+          "target": "almalinux/9",
+          "type": "rpm"
+        },
+        {
+          "target": "almalinux/9.arm64v8",
+          "type": "rpm"
+        },
+        {
           "target": "debian/bookworm",
           "type": "deb"
         },
