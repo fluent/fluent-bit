@@ -1203,7 +1203,13 @@ static struct flb_input_chunk *input_chunk_get(struct flb_input_instance *in,
     }
 
     if (id >= 0) {
-        if (ic->busy == FLB_TRUE || cio_chunk_is_locked(ic->chunk)) {
+        /*
+         * If the chunk is busy, locked, or does not have room for the new
+         * data, force the creation of a new chunk.
+         */
+        if (ic->busy == FLB_TRUE || cio_chunk_is_locked(ic->chunk) ||
+            (flb_input_chunk_get_real_size(ic) + chunk_size) > \
+                in->config->storage_chunk_max_size) {
             ic = NULL;
         }
         else if (cio_chunk_is_up(ic->chunk) == CIO_FALSE) {
@@ -1741,8 +1747,8 @@ static int input_chunk_append_raw(struct flb_input_instance *in,
         real_diff = 0;
     }
 
-    /* Lock buffers where size > 2MB */
-    if (content_size > FLB_INPUT_CHUNK_FS_MAX_SIZE) {
+    /* Lock buffers where size > chunk max size */
+    if (content_size > in->config->storage_chunk_max_size) {
         cio_chunk_lock(ic->chunk);
     }
 
@@ -1809,8 +1815,8 @@ static int input_chunk_append_raw(struct flb_input_instance *in,
             content_size = cio_chunk_get_content_size(ic->chunk);
 
             /* Do we have less than 1% available ? */
-            min = (FLB_INPUT_CHUNK_FS_MAX_SIZE * 0.01);
-            if (FLB_INPUT_CHUNK_FS_MAX_SIZE - content_size < min) {
+            min = (in->config->storage_chunk_max_size * 0.01);
+            if (in->config->storage_chunk_max_size - content_size < min) {
                 cio_chunk_down(ic->chunk);
             }
         }
