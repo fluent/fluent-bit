@@ -59,7 +59,7 @@ build_script:
             $OPENSSL_DIR = "C:\tools\vcpkg\packages\openssl_x86-windows-static"
         }
         # CACHE GENERATION
-        cmake -G "NMake Makefiles" `
+        cmake -G "Ninja" `
                      -D FLB_TESTS_INTERNAL=On `
                      -D OPENSSL_ROOT_DIR=$OPENSSL_DIR `
                      -D FLB_WITHOUT_flb-rt-out_elasticsearch=On `
@@ -87,7 +87,7 @@ build_script:
         ctest --build-run-dir $PWD --output-on-failure
 
   - cpack
-  - cmake -G "NMake Makefiles" ..\
+  - cmake -G "Ninja" ..\
   - cmake --build .
   - cpack
 

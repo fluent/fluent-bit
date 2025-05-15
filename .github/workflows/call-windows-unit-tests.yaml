@@ -118,7 +118,7 @@ jobs:
 
       - name: Build unit-test for Fluent Bit packages (only for x86 and x64)
         run: |
-          cmake -G "NMake Makefiles" `
+          cmake -G "Ninja" `
             -D FLB_TESTS_INTERNAL=On `
             -D FLB_NIGHTLY_BUILD='${{ inputs.unstable }}' `
             -D OPENSSL_ROOT_DIR='${{ matrix.config.openssl_dir }}' `
