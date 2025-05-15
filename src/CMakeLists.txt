@@ -521,8 +521,10 @@ if(FLB_BINARY)
   else()
     add_executable(fluent-bit-bin fluent-bit.c flb_dump.c)
   endif()
+  if (MSVC)
+    set_target_properties(fluent-bit-bin PROPERTIES IMPORT_SUFFIX ".exe.lib")
+  endif(MSVC)
   add_sanitizers(fluent-bit-bin)
-
 
   if(FLB_STATIC_CONF)
     add_dependencies(fluent-bit-bin flb-static-conf)
