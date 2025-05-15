@@ -43,6 +43,7 @@ APT_TARGETS=("ubuntu:22.04"
 
 YUM_TARGETS=("centos:7"
     "rockylinux:8"
+    "rockylinux:9"
     "quay.io/centos/centos:stream9"
     "amazonlinux:2"
     "amazonlinux:2023")
