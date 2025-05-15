@@ -69,6 +69,7 @@ if (MSVC)
   #
   set(CMAKE_C_FLAGS "/DWIN32 /D_WINDOWS /DNDEBUG /O2 /Zi /wd4100 /wd4711 /wd5045")
   set(CMAKE_EXE_LINKER_FLAGS "/Debug /INCREMENTAL:NO")
+  set(CMAKE_SHARED_LINKER_FLAGS "/Debug /INCREMENTAL:NO")
   set(CMAKE_BUILD_TYPE None)
 
   # Use add_compile_options() to set /MT since Visual Studio
@@ -1029,12 +1030,8 @@ else()
     set(AUTOCONF_HOST_OPT "--host=${GNU_HOST}")
 endif()
 
-if(CMAKE_GENERATOR MATCHES "Ninja")
-  if(FLB_SYSTEM_WINDOWS)
-    MESSAGE(FATAL_ERROR "Building with Ninja is not supported on Windows")
-  else()
-    set(EXTERNAL_BUILD_TOOL "make")
-  endif()
+if(CMAKE_GENERATOR MATCHES "Ninja" AND NOT FLB_SYSTEM_WINDOWS)
+  set(EXTERNAL_BUILD_TOOL "make")
 else()
   set(EXTERNAL_BUILD_TOOL "$(MAKE)")
 endif()
