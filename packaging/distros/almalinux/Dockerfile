@@ -47,7 +47,7 @@ ENV FLB_JEMALLOC_OPTIONS=$FLB_JEMALLOC_OPTIONS
 FROM almalinux:9 as almalinux-9-base
 
 # Add for the YAML development libraries
-RUN sed -i 's/enabled=0/enabled=1/g' /etc/yum.repos.d/rocky-devel.repo
+RUN sed -i 's/enabled=0/enabled=1/g' /etc/yum.repos.d/almalinux-crb.repo
 
 # hadolint ignore=DL3033
 RUN yum -y update && \
@@ -64,7 +64,7 @@ FROM --platform=arm64 almalinux:9 as almalinux-9.arm64v8-base
 COPY --from=multiarch-aarch64 /usr/bin/qemu-aarch64-static /usr/bin/qemu-aarch64-static
 
 # Add for the YAML development libraries
-RUN sed -i 's/enabled=0/enabled=1/g' /etc/yum.repos.d/rocky-devel.repo
+RUN sed -i 's/enabled=0/enabled=1/g' /etc/yum.repos.d/almalinux-crb.repo
 
 # hadolint ignore=DL3033
 RUN yum -y update && \
