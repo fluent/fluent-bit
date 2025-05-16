@@ -16,7 +16,9 @@
     #include "arm.c"
   #elif defined(__aarch64__)
     #include "aarch64.c"
-  #elif defined(_ARCH_PPC)
+  #elif defined(__powerpc64__) && defined(_CALL_ELF) && _CALL_ELF == 2
+    #include "ppc64le.c"
+  #elif defined(_ARCH_PPC) && !defined(__LITTLE_ENDIAN__)
     #include "ppc.c"
   #elif defined(_WIN32)
     #include "fiber.c"
