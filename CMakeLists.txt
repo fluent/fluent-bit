@@ -67,10 +67,16 @@ if (MSVC)
   #   /wd4100 .. C4100 (unreferenced formal parameter)
   #   /wd5045 .. C5045 (Spectre mitigation)
   #
+  # Restore /OPT:REF after setting /Debug, enable /OPT:ICF for 64-bit
+  # builds per Microsoft recommended best practices.
   set(CMAKE_C_FLAGS "/DWIN32 /D_WINDOWS /DNDEBUG /O2 /Zi /wd4100 /wd4711 /wd5045")
-  set(CMAKE_EXE_LINKER_FLAGS "/Debug /INCREMENTAL:NO")
-  set(CMAKE_SHARED_LINKER_FLAGS "/Debug /INCREMENTAL:NO")
+  set(CMAKE_EXE_LINKER_FLAGS "/DEBUG /OPT:REF /INCREMENTAL:NO")
+  set(CMAKE_SHARED_LINKER_FLAGS "/DEBUG /OPT:REF /INCREMENTAL:NO")
   set(CMAKE_BUILD_TYPE None)
+  if (CMAKE_SIZEOF_VOID_P EQUAL 8)
+    set(CMAKE_EXE_LINKER_FLAGS "${CMAKE_EXE_LINKER_FLAGS} /OPT:ICF")
+    set(CMAKE_SHARED_LINKER_FLAGS "${CMAKE_SHARED_LINKER_FLAGS} /OPT:ICF")
+  endif()
 
   # Use add_compile_options() to set /MT since Visual Studio
   # Generator does not notice /MT in CMAKE_C_FLAGS.
