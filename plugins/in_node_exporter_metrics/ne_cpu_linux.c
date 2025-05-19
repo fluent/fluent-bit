@@ -107,10 +107,6 @@ static int cpu_thermal_update(struct flb_ne *ctx, uint64_t ts)
         return 0;
     }
 
-    /* Reset arrays status */
-    memset(&core_throttles_set, 0, sizeof(core_throttles_set));
-    memset(&package_throttles_set, 0, sizeof(package_throttles_set));
-
     /* Process entries */
     mk_list_foreach(head, &list) {
         entry = mk_list_entry(head, struct flb_slist_entry, _head);
