@@ -345,6 +345,11 @@ struct flb_config *flb_config_init()
     mk_list_init(&config->cmetrics);
     mk_list_init(&config->cf_parsers_list);
 
+    /* Initialize multiline-parser list. We need this here, because from now
+     * on we use flb_config_exit to cleanup the config, which requires
+     * the config->multiline_parsers list to be initialized. */
+    mk_list_init(&config->multiline_parsers);
+
     /* Task map */
     ret = flb_config_task_map_resize(config, FLB_CONFIG_DEFAULT_TASK_MAP_SIZE);
 
@@ -353,11 +358,6 @@ struct flb_config *flb_config_init()
         flb_config_exit(config);
         return NULL;
     }
-
-    /* Initialize multiline-parser list. We need this here, because from now
-     * on we use flb_config_exit to cleanup the config, which requires
-     * the config->multiline_parsers list to be initialized. */
-    mk_list_init(&config->multiline_parsers);
 
     /* Environment */
     config->env = flb_env_create();
