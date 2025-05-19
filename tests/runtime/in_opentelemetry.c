@@ -484,7 +484,7 @@ static int cb_no_check(void *chunk, size_t size, void *data)
     return 0;
 }
 
-static void flb_test_log_body()
+static void flb_test_logs_body_impl(const char *logs_body_key, char* want_log)
 {
     struct flb_lib_out_cb cb_data;
     struct test_ctx *ctx;
@@ -498,12 +498,19 @@ static void flb_test_log_body()
     clear_output_num();
 
     cb_data.cb = cb_check_log_body;
-    cb_data.data = "{\"log\":\"{\\\"message\\\":\\\"test\\\"}\"}";
+    cb_data.data = want_log;
 
     ctx = test_ctx_create(&cb_data);
     if (!TEST_CHECK(ctx != NULL)) {
         TEST_MSG("test_ctx_create failed");
         exit(EXIT_FAILURE);
+    }
+
+    if (logs_body_key != NULL) {
+        ret = flb_input_set(ctx->flb, ctx->i_ffd,
+                            "logs_body_key", logs_body_key,
+                            NULL);
+        TEST_CHECK(ret == 0);
     }
 
     ret = flb_output_set(ctx->flb, ctx->o_ffd,
@@ -550,6 +557,14 @@ static void flb_test_log_body()
     flb_http_client_destroy(c);
     flb_upstream_conn_release(ctx->httpc->u_conn);
     test_ctx_destroy(ctx);
+}
+
+static void flb_test_log_body() {
+    flb_test_logs_body_impl(NULL, "{\"log\":\"{\\\"message\\\":\\\"test\\\"}\"}");
+}
+
+static void flb_test_log_body_key() {
+    flb_test_logs_body_impl("body", "{\"body\":\"{\\\"message\\\":\\\"test\\\"}\"}");
 }
 
 void flb_test_successful_response_code(char *response_code)
@@ -722,6 +737,7 @@ TEST_LIST = {
     {"log_group_metadata"          , flb_test_log_group_metadata},
     {"log_group_body"              , flb_test_log_group_body},
     {"log_body"                    , flb_test_log_body},
+    {"log_body_key"                , flb_test_log_body_key},
     {"successful_response_code_200", flb_test_successful_response_code_200},
     {"successful_response_code_204", flb_test_successful_response_code_204},
     {"tag_from_uri_false"          , flb_test_tag_from_uri_false},
