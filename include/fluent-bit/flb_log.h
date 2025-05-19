@@ -74,6 +74,7 @@ struct flb_log {
     pthread_t tid;             /* thread ID   */
     struct flb_worker *worker; /* non-real worker reference */
     struct mk_event_loop *evl;
+    struct flb_log_metrics *metrics;
 
     /* Initialization variables */
     int pth_init;
@@ -242,8 +243,6 @@ static inline int flb_log_suppress_check(int log_suppress_interval, const char *
 int flb_log_worker_init(struct flb_worker *worker);
 int flb_log_worker_destroy(struct flb_worker *worker);
 int flb_errno_print(int errnum, const char *file, int line);
-struct flb_log_metrics *flb_log_metrics_create();
-void flb_log_metrics_destroy(struct flb_log_metrics *ctx);
 #ifdef WIN32
 int flb_wsa_get_last_error_print(int errnum, const char *file, int line);
 #endif

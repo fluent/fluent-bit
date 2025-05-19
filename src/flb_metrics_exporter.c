@@ -299,8 +299,8 @@ struct cmt *flb_me_get_cmetrics(struct flb_config *ctx)
         }
     }
 
-    if (ctx->log_metrics_ctx) {
-        ret = cmt_cat(cmt, ctx->log_metrics_ctx->cmt);
+    if (ctx->log != NULL) {
+        ret = cmt_cat(cmt, ctx->log->metrics->cmt);
         if (ret == -1) {
             flb_error("[metrics exporter] could not append global log_metrics_ctx");
             cmt_destroy(cmt);
