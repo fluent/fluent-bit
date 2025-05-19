@@ -370,6 +370,14 @@ static void input_thread(void *data)
         return;
     }
 
+    ret = flb_processor_init(ins->processor);
+    if (ret == -1) {
+        flb_error("failed initialize processors for input %s",
+                  flb_input_name(ins));
+        input_thread_instance_set_status(ins, FLB_INPUT_THREAD_ERROR);
+        return;
+    }
+
     flb_plg_debug(ins, "[thread init] initialization OK");
     input_thread_instance_set_status(ins, FLB_INPUT_THREAD_OK);
 
