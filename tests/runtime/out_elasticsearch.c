@@ -347,6 +347,47 @@ void flb_test_write_operation_upsert()
     flb_destroy(ctx);
 }
 
+void flb_test_null_index()
+{
+    int ret;
+    int size = sizeof(JSON_ES) - 1;
+    flb_ctx_t *ctx;
+    int in_ffd;
+    int out_ffd;
+    /* Create context, flush every second (some checks omitted here) */
+    ctx = flb_create();
+    flb_service_set(ctx, "flush", "1", "grace", "1", NULL);
+
+    /* Lib input mode */
+    in_ffd = flb_input(ctx, (char *) "lib", NULL);
+    flb_input_set(ctx, in_ffd, "tag", "test", NULL);
+
+    /* Elasticsearch output */
+    out_ffd = flb_output(ctx, (char *) "es", NULL);
+    flb_output_set(ctx, out_ffd,
+                   "match", "test",
+                   NULL);
+
+    /* Override defaults of index and type */
+    flb_output_set(ctx, out_ffd,
+                   "index", "",
+                   "type", "type_test",
+                   NULL);
+
+    /* Enable test mode */
+    ret = flb_output_set_test(ctx, out_ffd, "formatter",
+                              cb_check_index_type,
+                              NULL, NULL);
+
+    /* Start */
+    ret = flb_start(ctx);
+    TEST_CHECK(ret == -1);
+
+    sleep(2);
+    flb_stop(ctx);
+    flb_destroy(ctx);
+}
+
 void flb_test_index_type()
 {
     int ret;
