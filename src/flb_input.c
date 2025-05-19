@@ -1319,7 +1319,7 @@ int flb_input_instance_init(struct flb_input_instance *ins,
                 return -1;
             }
 
-            //ins->notification_channel = ins->thi->notification_channels[1];
+            ins->processor->notification_channel = ins->notification_channel;
 
             /* register the ring buffer */
             ret = flb_ring_buffer_add_event_loop(ins->rb, config->evl, FLB_INPUT_RING_BUFFER_WINDOW);
@@ -1338,10 +1338,18 @@ int flb_input_instance_init(struct flb_input_instance *ins,
             }
 
             ins->notification_channel = config->notification_channels[1];
+            ins->processor->notification_channel = ins->notification_channel;
 
             ret = p->cb_init(ins, config, ins->data);
             if (ret != 0) {
                 flb_error("failed initialize input %s",
+                          ins->name);
+                return -1;
+            }
+
+            ret = flb_processor_init(ins->processor);
+            if (ret == -1) {
+                flb_error("failed initialize processors for input %s",
                           ins->name);
                 return -1;
             }
@@ -1581,7 +1589,11 @@ static struct flb_input_collector *collector_create(int type,
         coll->evl = thi->evl;
     }
     else {
-        coll->evl = config->evl;
+        /* We need to obtain the event loop from the TLS when
+         * creating collectors for non threaded plugins running
+         * under a threaded plugin.
+         */
+        coll->evl = flb_engine_evl_get();
     }
 
     /*
