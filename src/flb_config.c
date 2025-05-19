@@ -400,14 +400,6 @@ struct flb_config *flb_config_init()
     flb_regex_init();
 #endif
 
-    /* Create internal logger metrics */
-    config->log_metrics_ctx = flb_log_metrics_create();
-    if (!config->log_metrics_ctx) {
-        flb_error("[engine] could not create log metrics");
-        flb_config_exit(config);
-        return NULL;
-    }
-
     return config;
 }
 
@@ -577,11 +569,6 @@ void flb_config_exit(struct flb_config *config)
     /* release task map */
     flb_config_task_map_resize(config, 0);
     flb_routes_empty_mask_destroy(config);
-
-    /* Destroy internal logger metrics */
-    if (config->log_metrics_ctx) {
-        flb_log_metrics_destroy(config->log_metrics_ctx);
-    }
 
     flb_free(config);
 }

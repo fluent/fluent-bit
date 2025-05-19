@@ -440,6 +440,28 @@ int flb_log_get_level_str(char *str)
     return -1;
 }
 
+static inline const char *flb_log_message_type_str(int type)
+{
+    switch (type) {
+    case FLB_LOG_HELP:
+        return "help";
+    case FLB_LOG_INFO:
+        return "info";
+    case FLB_LOG_WARN:
+        return "warn";
+    case FLB_LOG_ERROR:
+        return "error";
+    case FLB_LOG_DEBUG:
+        return "debug";
+    case FLB_LOG_IDEBUG:
+        return "debug";
+    case FLB_LOG_TRACE:
+        return "trace";
+    default:
+        return NULL;
+    }
+}
+
 int flb_log_set_file(struct flb_config *config, char *out)
 {
     struct flb_log *log = config->log;
@@ -455,6 +477,78 @@ int flb_log_set_file(struct flb_config *config, char *out)
 
     return 0;
 }
+
+
+/*
+ * Create and register cmetrics for the runtime logger.
+ * The caller must free the returned struct using flb_log_metrics_destroy.
+ */
+struct flb_log_metrics *flb_log_metrics_create()
+{
+    struct flb_log_metrics *metrics;
+    int i;
+    const char *message_type_str;
+    uint64_t ts;
+    int ret;
+
+    metrics = flb_calloc(1, sizeof(struct flb_log_metrics));
+    if (metrics == NULL) {
+        flb_errno();
+        return NULL;
+    }
+
+    metrics->cmt = cmt_create();
+    if (!metrics->cmt) {
+        flb_free(metrics);
+        return NULL;
+    }
+
+    metrics->logs_total_counter = cmt_counter_create(metrics->cmt,
+                                                     "fluentbit",
+                                                     "logger",
+                                                     "logs_total",
+                                                     "Total number of logs",
+                                                     1, (char *[]) {"message_type"});
+    if (metrics->logs_total_counter == NULL) {
+        cmt_destroy(metrics->cmt);
+        flb_free(metrics);
+        return NULL;
+    }
+
+    /*
+     * Initialize counters for all log message types to 0.
+     * This assumes types are contiguous starting at 1 (FLB_LOG_ERROR).
+     */
+    ts = cfl_time_now();
+    for (i = 1; ; i++) {
+        message_type_str = flb_log_message_type_str(i);
+        if (!message_type_str) {
+            break;
+        }
+
+        ret = cmt_counter_set(metrics->logs_total_counter,
+                              ts,
+                              0,
+                              1, (char *[]) {message_type_str});
+        if (ret == -1) {
+            cmt_counter_destroy(metrics->logs_total_counter);
+            cmt_destroy(metrics->cmt);
+            flb_free(metrics);
+            return NULL;
+        }
+    }
+
+    return metrics;
+}
+
+/* Frees the metrics instance and its associated resources. */
+void flb_log_metrics_destroy(struct flb_log_metrics *metrics)
+{
+    cmt_counter_destroy(metrics->logs_total_counter);
+    cmt_destroy(metrics->cmt);
+    flb_free(metrics);
+}
+
 
 struct flb_log *flb_log_create(struct flb_config *config, int type,
                                int level, char *out)
@@ -503,6 +597,16 @@ struct flb_log *flb_log_create(struct flb_config *config, int type,
 
     if (ret == -1) {
         fprintf(stderr, "[log] could not register event\n");
+        mk_event_loop_destroy(log->evl);
+        flb_free(log);
+        config->log = NULL;
+        return NULL;
+    }
+
+    /* Create metrics */
+    log->metrics = flb_log_metrics_create();
+    if (log->metrics == NULL) {
+        fprintf(stderr, "[log] could not create log metrics\n");
         mk_event_loop_destroy(log->evl);
         flb_free(log);
         config->log = NULL;
@@ -566,28 +670,6 @@ struct flb_log *flb_log_create(struct flb_config *config, int type,
     return log;
 }
 
-static inline char *flb_log_message_type_str(int type)
-{
-    switch (type) {
-    case FLB_LOG_HELP:
-        return "help";
-    case FLB_LOG_INFO:
-        return "info";
-    case FLB_LOG_WARN:
-        return "warn";
-    case FLB_LOG_ERROR:
-        return "error";
-    case FLB_LOG_DEBUG:
-        return "debug";
-    case FLB_LOG_IDEBUG:
-        return "debug";
-    case FLB_LOG_TRACE:
-        return "trace";
-    default:
-        return NULL;
-    }
-}
-
 int flb_log_construct(struct log_message *msg, int *ret_len,
                      int type, const char *file, int line, const char *fmt, va_list *args)
 {
@@ -597,7 +679,7 @@ int flb_log_construct(struct log_message *msg, int *ret_len,
     int total;
     time_t now;
     const char *header_color = NULL;
-    const char *header_title = flb_log_message_type_str(type);
+    const char *header_title;
     const char *bold_color = ANSI_BOLD;
     const char *reset_color = ANSI_RESET;
     struct tm result;
@@ -647,6 +729,7 @@ int flb_log_construct(struct log_message *msg, int *ret_len,
         return -1;
     }
 
+    header_title = flb_log_message_type_str(type);
     len = snprintf(msg->msg, sizeof(msg->msg) - 1,
                    "%s[%s%i/%02i/%02i %02i:%02i:%02i%s]%s [%s%5s%s] ",
                    /*      time     */                    /* type */
@@ -721,8 +804,8 @@ void flb_log_print(int type, const char *file, int line, const char *fmt, ...)
     int ret;
     struct log_message msg = {0};
     va_list args;
-    char *msg_type_str = flb_log_message_type_str(type);
-    uint64_t ts = cfl_time_now();
+    const char *msg_type_str;
+    uint64_t ts;
 
     struct flb_worker *w;
     struct flb_config *config;
@@ -738,8 +821,10 @@ void flb_log_print(int type, const char *file, int line, const char *fmt, ...)
     w = flb_worker_get();
     if (w) {
         config = w->config;
-        if (config && config->log_metrics_ctx) {
-            cmt_counter_inc(config->log_metrics_ctx->logs_total_counter, ts, 1, (char *[]) {msg_type_str}); // Ignoring inc error
+        if (config != NULL && config->log != NULL) {
+            msg_type_str = flb_log_message_type_str(type);
+            ts = cfl_time_now();
+            cmt_counter_inc(config->log->metrics->logs_total_counter, ts, 1, (char *[]) {msg_type_str}); // Ignoring inc error
         }
 
         n = flb_pipe_write_all(w->log[1], &msg, sizeof(msg));
@@ -801,79 +886,8 @@ int flb_log_destroy(struct flb_log *log, struct flb_config *config)
     }
     flb_log_worker_destroy(log->worker);
     flb_free(log->worker);
+    flb_log_metrics_destroy(log->metrics);
     flb_free(log);
 
     return 0;
-}
-
-/*
- * Create and register cmetrics for the runtime logger.
- * The caller must free the returned struct using flb_log_metrics_destroy.
- */
-struct flb_log_metrics *flb_log_metrics_create()
-{
-    struct flb_log_metrics *lm;
-    int i;
-    char *message_type_str;
-    uint64_t ts;
-
-    lm = flb_calloc(1, sizeof(struct flb_log_metrics));
-    if (!lm) {
-        flb_errno();
-        goto error;
-    }
-
-    lm->cmt = cmt_create();
-    if (!lm->cmt) {
-        goto error;
-    }
-
-    lm->logs_total_counter = cmt_counter_create(lm->cmt,
-                                                "fluentbit", "logger", "logs_total",
-                                                "Total number of logs",
-                                                1, (char *[]) {"message_type"});
-    if (!lm->logs_total_counter) {
-        goto error;
-    }
-
-    /*
-     * Initialize counters for all log message types to 0.
-     * This assumes types are contiguous starting at 1 (FLB_LOG_ERROR).
-     */
-    i = 1;
-    ts = cfl_time_now();
-    for (i = 1; ; i++) {
-        message_type_str = flb_log_message_type_str(i);
-        if (!message_type_str) {
-            break;
-        }
-
-        if (cmt_counter_set(lm->logs_total_counter, ts, 0, 1, (char *[]) {message_type_str}) == -1) {
-            goto error;
-        }
-    }
-
-    return lm;
-
-error:
-    if (lm && lm->logs_total_counter) {
-        cmt_counter_destroy(lm->logs_total_counter);
-    }
-
-    if (lm && lm->cmt) {
-        cmt_destroy(lm->cmt);
-    }
-
-    if (lm) {
-        flb_free(lm);
-    }
-
-    return NULL;
-}
-
-void flb_log_metrics_destroy(struct flb_log_metrics *lm)
-{
-    cmt_counter_destroy(lm->logs_total_counter);
-    cmt_destroy(lm->cmt);
-    flb_free(lm);
 }

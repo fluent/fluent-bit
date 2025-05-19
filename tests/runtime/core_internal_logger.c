@@ -79,7 +79,6 @@ void http_client_ctx_destroy(struct http_client_ctx *http_ctx)
 int assert_internal_log_metrics(struct http_client_ctx *http_ctx, int fail_test)
 {
     struct flb_http_client *http_client;
-    int ret;
     size_t b_sent;
     struct flb_regex *regex;
 
@@ -97,8 +96,8 @@ int assert_internal_log_metrics(struct http_client_ctx *http_ctx, int fail_test)
     TEST_ASSERT(flb_http_do(http_client, &b_sent) == 0);
 
     if (http_client->resp.status != 200 && !fail_test) {
-        ret = -1;
-        goto cleanup;
+        flb_http_client_destroy(http_client);
+        return -1;
     }
 
     TEST_MSG(http_client->resp.payload);
@@ -108,26 +107,26 @@ int assert_internal_log_metrics(struct http_client_ctx *http_ctx, int fail_test)
     }
 
     /* There be no errors logged */
-    if (!TEST_CHECK(strstr(http_client->resp.payload,
-                           "fluentbit_logger_logs_total{message_type=\"error\"} 0") != NULL)) {
+    if (!TEST_CHECK(
+            strstr(http_client->resp.payload,
+                   "fluentbit_logger_logs_total{message_type=\"error\"} 0")
+            != NULL)) {
         TEST_MSG("response payload: %s", http_client->resp.payload);
     }
 
     /* The process startup should have logged at least 1 info log */
-    regex = flb_regex_create("fluentbit_logger_logs_total\\{message_type=\"info\"\\} [1-9]+[0-9]*");
+    regex = flb_regex_create(
+        "fluentbit_logger_logs_total\\{message_type=\"info\"\\} [1-9]+[0-9]*");
     TEST_CHECK(regex != NULL);
     if (!TEST_CHECK(flb_regex_match(
             regex, http_client->resp.payload, http_client->resp.payload_size))) {
         TEST_MSG("response payload: %s\n", http_client->resp.payload);
     }
+
     flb_regex_destroy(regex);
-
-    ret = 0;
-
-cleanup:
     flb_http_client_destroy(http_client);
 
-    return ret;
+    return 0;
 }
 
 /*
