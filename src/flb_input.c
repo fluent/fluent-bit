@@ -1319,8 +1319,6 @@ int flb_input_instance_init(struct flb_input_instance *ins,
                 return -1;
             }
 
-            ins->processor->notification_channel = ins->notification_channel;
-
             /* register the ring buffer */
             ret = flb_ring_buffer_add_event_loop(ins->rb, config->evl, FLB_INPUT_RING_BUFFER_WINDOW);
             if (ret) {
@@ -1354,15 +1352,6 @@ int flb_input_instance_init(struct flb_input_instance *ins,
                 return -1;
             }
         }
-    }
-
-    ins->processor->notification_channel = ins->notification_channel;
-
-    /* initialize processors */
-    ret = flb_processor_init(ins->processor);
-    if (ret == -1) {
-        flb_error("[input %s] error initializing processor, aborting startup", ins->name);
-        return -1;
     }
 
     return 0;
