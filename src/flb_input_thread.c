@@ -370,6 +370,8 @@ static void input_thread(void *data)
         return;
     }
 
+    ins->processor->notification_channel = ins->notification_channel;
+
     ret = flb_processor_init(ins->processor);
     if (ret == -1) {
         flb_error("failed initialize processors for input %s",
