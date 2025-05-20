@@ -163,6 +163,93 @@ void flb_test_filter_parser_extract_fields()
     flb_destroy(ctx);
 }
 
+void flb_test_filter_parser_record_accessor()
+{
+    int ret;
+    int bytes;
+    char *p, *output, *expected;
+    flb_ctx_t *ctx;
+    int in_ffd;
+    int out_ffd;
+    int filter_ffd;
+    struct flb_parser *parser;
+
+    struct flb_lib_out_cb cb;
+    cb.cb   = callback_test;
+    cb.data = NULL;
+
+    clear_output();
+
+    ctx = flb_create();
+
+    /* Configure service */
+    flb_service_set(ctx, "Flush", FLUSH_INTERVAL, "Grace" "1", "Log_Level", "debug", NULL);
+
+    /* Input */
+    in_ffd = flb_input(ctx, (char *) "lib", NULL);
+    TEST_CHECK(in_ffd >= 0);
+    flb_input_set(ctx, in_ffd,
+                  "Tag", "test",
+                  NULL);
+
+    /* Parser */
+    parser = flb_parser_create("dummy_test", "regex", "^(?<INT>[^ ]+) (?<FLOAT>[^ ]+) (?<BOOL>[^ ]+) (?<STRING>.+)$",
+                               FLB_TRUE,
+                               NULL, NULL, NULL, MK_FALSE, MK_TRUE, FLB_FALSE, FLB_FALSE, NULL, 0,
+                               NULL, ctx->config);
+    TEST_CHECK(parser != NULL);
+
+    /* Filter */
+    filter_ffd = flb_filter(ctx, (char *) "parser", NULL);
+    TEST_CHECK(filter_ffd >= 0);
+    ret = flb_filter_set(ctx, filter_ffd,
+                         "Match", "test",
+                         "Key_Name", "$log['data']",
+                         "Parser", "dummy_test",
+                         "Reserve_Data", "On",
+                         "Preserve_Key", "Off",
+                         NULL);
+    TEST_CHECK(ret == 0);
+
+    /* Output */
+    out_ffd = flb_output(ctx, (char *) "lib", &cb);
+    TEST_CHECK(out_ffd >= 0);
+    flb_output_set(ctx, out_ffd,
+                   "Match", "*",
+                   "format", "json",
+                   NULL);
+
+    /* Start the engine */
+    ret = flb_start(ctx);
+    TEST_CHECK(ret == 0);
+
+    /* Ingest data */
+    p = "[1448403340,{\"log\":{\"data\":\"100 0.5 true This is an example\"},\"extra\":\"Some more data\"}]";
+    bytes = flb_lib_push(ctx, in_ffd, p, strlen(p));
+    TEST_CHECK(bytes == strlen(p));
+
+    wait_with_timeout(2000, &output); /* waiting flush and ensuring data flush */
+    TEST_CHECK_(output != NULL, "Expected output to not be NULL");
+    if (output != NULL) {
+        /* check timestamp */
+        expected = "[1448403340.000000,{";
+        TEST_CHECK_(strstr(output, expected) != NULL, "Expected output to contain '%s', got '%s'", expected, output);
+        /* check fields were extracted */
+        expected = "\"INT\":\"100\",\"FLOAT\":\"0.5\",\"BOOL\":\"true\",\"STRING\":\"This is an example\"";
+        TEST_CHECK_(strstr(output, expected) != NULL, "Expected output to contain '%s', got '%s'", expected, output);
+        /* check original nested key */
+        expected = "\"log\":{\"data\":\"100 0.5 true This is an example\"}";
+        TEST_CHECK_(strstr(output, expected) != NULL, "Expected output to contain '%s', got '%s'", expected, output);
+        /* check extra data preserved */
+        expected = "\"extra\":\"Some more data\"";
+        TEST_CHECK_(strstr(output, expected) != NULL, "Expected output to preserve extra field, got '%s'", output);
+        free(output);
+    }
+
+    flb_stop(ctx);
+    flb_destroy(ctx);
+}
+
 void flb_test_filter_parser_reserve_data_off()
 {
     int ret;
@@ -1301,6 +1388,7 @@ void flb_test_filter_parser_reserve_on_preserve_on()
 
 TEST_LIST = {
     {"filter_parser_extract_fields", flb_test_filter_parser_extract_fields },
+    {"filter_parser_record_accessor", flb_test_filter_parser_record_accessor },
     {"filter_parser_reserve_data_off", flb_test_filter_parser_reserve_data_off },
     {"filter_parser_handle_time_key", flb_test_filter_parser_handle_time_key },
     {"filter_parser_handle_time_key_with_time_zone", flb_test_filter_parser_handle_time_key_with_time_zone },
