@@ -102,6 +102,7 @@ static int configure(struct filter_parser_ctx *ctx,
     struct flb_kv *kv;
 
     ctx->key_name = NULL;
+    ctx->ra_key = NULL;
     ctx->reserve_data = FLB_FALSE;
     ctx->preserve_key = FLB_FALSE;
     mk_list_init(&ctx->parsers);
@@ -117,6 +118,15 @@ static int configure(struct filter_parser_ctx *ctx,
         return -1;
     }
     ctx->key_name_len = flb_sds_len(ctx->key_name);
+
+    if (ctx->key_name && ctx->key_name[0] == '$') {
+        ctx->ra_key = flb_ra_create(ctx->key_name, FLB_TRUE);
+        if (!ctx->ra_key) {
+            flb_plg_error(ctx->ins, "invalid record accessor pattern '%s'",
+                          ctx->key_name);
+            return -1;
+        }
+    }
 
     /* Read all Parsers */
     mk_list_foreach(head, &f_ins->properties) {
@@ -246,20 +256,11 @@ static int cb_parser_filter(const void *data, size_t bytes,
                 }
             }
 
-            /* Process the target key */
-            for (i = 0; i < map_num; i++) {
-                kv = &obj->via.map.ptr[i];
-                if (msgpackobj2char(&kv->key, &key_str, &key_len) < 0) {
-                    continue;
-                }
+            if (ctx->ra_key) {
+                struct flb_ra_value *rval;
 
-                if (key_len == ctx->key_name_len &&
-                    !strncmp(key_str, ctx->key_name, key_len)) {
-                    if (msgpackobj2char(&kv->val, &val_str, &val_len) < 0) {
-                        continue;
-                    }
-
-                    /* Lookup parser */
+                rval = flb_ra_get_value_object(ctx->ra_key, *obj);
+                if (rval && msgpackobj2char(&rval->o, &val_str, &val_len) == 0) {
                     mk_list_foreach(head, &ctx->parsers) {
                         fp = mk_list_entry(head, struct filter_parser, _head);
                         flb_time_zero(&parsed_time);
@@ -271,17 +272,53 @@ static int cb_parser_filter(const void *data, size_t bytes,
                             if (flb_time_to_nanosec(&parsed_time) != 0L) {
                                 flb_time_copy(&tm, &parsed_time);
                             }
-
-                            if (append_arr != NULL) {
-                                if (!ctx->preserve_key) {
-                                    append_arr[i] = NULL;
-                                }
-                                else if (!ctx->reserve_data) {
-                                    /* Store only the key being preserved */
-                                    append_arr[0] = kv;
-                                }
-                            }
                             break;
+                        }
+                    }
+                }
+
+                if (rval) {
+                    flb_ra_key_value_destroy(rval);
+                }
+            }
+            else {
+                /* Process the target key */
+                for (i = 0; i < map_num; i++) {
+                    kv = &obj->via.map.ptr[i];
+                    if (msgpackobj2char(&kv->key, &key_str, &key_len) < 0) {
+                        continue;
+                    }
+
+                    if (key_len == ctx->key_name_len &&
+                        !strncmp(key_str, ctx->key_name, key_len)) {
+                        if (msgpackobj2char(&kv->val, &val_str, &val_len) < 0) {
+                            continue;
+                        }
+
+                        /* Lookup parser */
+                        mk_list_foreach(head, &ctx->parsers) {
+                            fp = mk_list_entry(head, struct filter_parser, _head);
+                            flb_time_zero(&parsed_time);
+
+                            parse_ret = flb_parser_do(fp->parser, val_str, val_len,
+                                                      (void **) &out_buf, &out_size,
+                                                      &parsed_time);
+                            if (parse_ret >= 0) {
+                                if (flb_time_to_nanosec(&parsed_time) != 0L) {
+                                    flb_time_copy(&tm, &parsed_time);
+                                }
+
+                                if (append_arr != NULL) {
+                                    if (!ctx->preserve_key) {
+                                        append_arr[i] = NULL;
+                                    }
+                                    else if (!ctx->reserve_data) {
+                                        /* Store only the key being preserved */
+                                        append_arr[0] = kv;
+                                    }
+                                }
+                                break;
+                            }
                         }
                     }
                 }
@@ -413,6 +450,9 @@ static int cb_parser_exit(void *data, struct flb_config *config)
     }
 
     delete_parsers(ctx);
+    if (ctx->ra_key) {
+        flb_ra_destroy(ctx->ra_key);
+    }
     flb_free(ctx);
     return 0;
 }
