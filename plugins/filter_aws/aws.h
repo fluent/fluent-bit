@@ -27,6 +27,8 @@
 #define FLB_FILTER_AWS_AVAILABILITY_ZONE_KEY_LEN          2
 #define FLB_FILTER_AWS_INSTANCE_ID_KEY                    "ec2_instance_id"
 #define FLB_FILTER_AWS_INSTANCE_ID_KEY_LEN                15
+#define FLB_FILTER_AWS_ENTITY_INSTANCE_ID_KEY             "aws_entity_ec2_instance_id"
+#define FLB_FILTER_AWS_ENTITY_INSTANCE_ID_KEY_LEN         26
 #define FLB_FILTER_AWS_INSTANCE_TYPE_KEY                  "ec2_instance_type"
 #define FLB_FILTER_AWS_INSTANCE_TYPE_KEY_LEN              17
 #define FLB_FILTER_AWS_PRIVATE_IP_KEY                     "private_ip"
@@ -37,6 +39,8 @@
 #define FLB_FILTER_AWS_AMI_ID_KEY_LEN                     6
 #define FLB_FILTER_AWS_ACCOUNT_ID_KEY                     "account_id"
 #define FLB_FILTER_AWS_ACCOUNT_ID_KEY_LEN                 10
+#define FLB_FILTER_AWS_ENTITY_ACCOUNT_ID_KEY              "aws_entity_account_id"
+#define FLB_FILTER_AWS_ENTITY_ACCOUNT_ID_KEY_LEN          21
 #define FLB_FILTER_AWS_HOSTNAME_KEY                       "hostname"
 #define FLB_FILTER_AWS_HOSTNAME_KEY_LEN                   8
 
@@ -110,6 +114,11 @@ struct flb_filter_aws {
     /* tags_* fields are related to exposing EC2 tags in log labels
      * tags_enabled defines if EC2 tags functionality is enabled */
     int tags_enabled;
+    /*
+    * Enable entity prefix appending. This appends
+    * 'aws_entity' to relevant keys
+    */
+    int enable_entity;
 
     /* tags_fetched defines if tag keys and values were fetched successfully
      * and might be used to inject into msgpack */
