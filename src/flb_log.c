@@ -824,7 +824,14 @@ void flb_log_print(int type, const char *file, int line, const char *fmt, ...)
         if (config != NULL && config->log != NULL) {
             msg_type_str = flb_log_message_type_str(type);
             ts = cfl_time_now();
-            cmt_counter_inc(config->log->metrics->logs_total_counter, ts, 1, (char *[]) {msg_type_str}); // Ignoring inc error
+            ret = cmt_counter_inc(config->log->metrics->logs_total_counter,
+                                  ts,
+                                  1, (char *[]) {msg_type_str});
+            if (ret == -1) {
+                fprintf(stderr,
+                        "[log] failed to increment log total counter for message type '%s' (error=%d)\n",
+                        msg_type_str != NULL ? msg_type_str : "unknown", ret);
+            }
         }
 
         n = flb_pipe_write_all(w->log[1], &msg, sizeof(msg));

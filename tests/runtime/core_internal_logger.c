@@ -117,7 +117,11 @@ int assert_internal_log_metrics(struct http_client_ctx *http_ctx, int fail_test)
     /* The process startup should have logged at least 1 info log */
     regex = flb_regex_create(
         "fluentbit_logger_logs_total\\{message_type=\"info\"\\} [1-9]+[0-9]*");
-    TEST_CHECK(regex != NULL);
+    if (!TEST_CHECK(regex != NULL)) {
+        TEST_MSG("Failed to create regex for info log count check");
+        flb_http_client_destroy(http_client);
+        return -1;
+    }
     if (!TEST_CHECK(flb_regex_match(
             regex, http_client->resp.payload, http_client->resp.payload_size))) {
         TEST_MSG("response payload: %s\n", http_client->resp.payload);
@@ -164,8 +168,8 @@ static void test_internal_log_metrics()
 
     /* If the assertion fails, retry in a sleep loop since the fluent-bit's HTTP server
      * may not be ready yet */
-    for (i = 1; i <= attempt_count; i++) {
-        if (assert_internal_log_metrics(http_ctx, i == attempt_count ? FLB_TRUE : FLB_FALSE)) {
+    for (i = 0; i < attempt_count; i++) {
+        if (assert_internal_log_metrics(http_ctx, i == (attempt_count - 1)) ) {
             break;
         }
         flb_time_msleep(100);
