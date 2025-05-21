@@ -177,7 +177,7 @@ static int in_winevtlog_init(struct flb_input_instance *in,
         flb_plg_error(in, "could not initialize event encoder");
         flb_free(ctx);
 
-        return NULL;
+        return -1;
     }
 
     /* Load the config map */
