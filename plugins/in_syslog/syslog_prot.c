@@ -325,4 +325,3 @@ int syslog_prot_process_udp(struct syslog_conn *conn)
     return 0;
 }
 
-
