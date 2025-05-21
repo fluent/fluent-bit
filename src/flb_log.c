@@ -823,14 +823,19 @@ void flb_log_print(int type, const char *file, int line, const char *fmt, ...)
         config = w->config;
         if (config != NULL && config->log != NULL) {
             msg_type_str = flb_log_message_type_str(type);
+            if (msg_type_str == NULL) {
+                msg_type_str = "unknown";
+            }
+
             ts = cfl_time_now();
             ret = cmt_counter_inc(config->log->metrics->logs_total_counter,
                                   ts,
                                   1, (char *[]) {msg_type_str});
             if (ret == -1) {
+                // Not using flb_log_debug to avoid recursing into this same function.
                 fprintf(stderr,
                         "[log] failed to increment log total counter for message type '%s' (error=%d)\n",
-                        msg_type_str != NULL ? msg_type_str : "unknown", ret);
+                        msg_type_str, ret);
             }
         }
 
