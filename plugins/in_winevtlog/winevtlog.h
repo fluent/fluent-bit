@@ -23,6 +23,7 @@
 
 #include <winevt.h>
 #include <fluent-bit/flb_log_event_encoder.h>
+#include <fluent-bit/flb_input_plugin.h>
 
 struct winevtlog_session;
 
@@ -120,8 +121,8 @@ void winevtlog_pack_event(PEVT_VARIANT system, WCHAR *message,
 /*
  * Save the read offset to disk.
  */
-int winevtlog_sqlite_load(struct winevtlog_channel *ch, struct flb_sqldb *db);
-int winevtlog_sqlite_save(struct winevtlog_channel *ch, struct flb_sqldb *db);
+int winevtlog_sqlite_load(struct winevtlog_channel *ch, struct winevtlog_config *ctx, struct flb_sqldb *db);
+int winevtlog_sqlite_save(struct winevtlog_channel *ch, struct winevtlog_config *ctx, struct flb_sqldb *db);
 
 /*
  * SQL templates

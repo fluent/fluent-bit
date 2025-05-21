@@ -55,7 +55,7 @@ create_remote_handle(struct winevtlog_session *session, DWORD *error_code)
     return remote;
 }
 
-struct winevtlog_channel *winevtlog_subscribe(const char *channel, int read_existing_events,
+struct winevtlog_channel *winevtlog_subscribe(const char *channel, struct winevtlog_config *ctx,
                                               EVT_HANDLE stored_bookmark, const char *query,
                                               struct winevtlog_session *session)
 {
@@ -100,7 +100,7 @@ struct winevtlog_channel *winevtlog_subscribe(const char *channel, int read_exis
 
     if (stored_bookmark) {
         flags |= EvtSubscribeStartAfterBookmark;
-    } else if (read_existing_events) {
+    } else if (ctx->read_existing_events) {
         flags |= EvtSubscribeStartAtOldestRecord;
     } else {
         flags |= EvtSubscribeToFutureEvents;
@@ -109,7 +109,7 @@ struct winevtlog_channel *winevtlog_subscribe(const char *channel, int read_exis
     if (session != NULL) {
         remote_handle = create_remote_handle(session, &err);
         if (err != ERROR_SUCCESS) {
-            flb_error("[in_winevtlog] cannot create remote handle '%s' in %ls (%i)",
+            flb_plg_error(ctx->ins, "cannot create remote handle '%s' in %ls (%i)",
                       channel, session->server, err);
             flb_free(ch->name);
             if (ch->query != NULL) {
@@ -119,7 +119,7 @@ struct winevtlog_channel *winevtlog_subscribe(const char *channel, int read_exis
             return NULL;
         }
 
-        flb_debug("[in_winevtlog] created a remote handle for '%s' in %ls",
+        flb_plg_debug(ctx->ins, "created a remote handle for '%s' in %ls",
                   channel, session->server);
         ch->session = session;
         ch->remote = remote_handle;
@@ -132,7 +132,7 @@ struct winevtlog_channel *winevtlog_subscribe(const char *channel, int read_exis
                                     stored_bookmark, NULL, NULL, flags);
     err = GetLastError();
     if (!ch->subscription) {
-        flb_error("[in_winevtlog] cannot subscribe '%s' (%i)", channel, err);
+        flb_plg_error(ctx->ins, "cannot subscribe '%s' (%i)", channel, err);
         flb_free(ch->name);
         if (ch->query != NULL) {
             flb_free(ch->query);
@@ -163,7 +163,7 @@ struct winevtlog_channel *winevtlog_subscribe(const char *channel, int read_exis
             if (signal_event) {
                 CloseHandle(signal_event);
             }
-            flb_error("[in_winevtlog] cannot subscribe '%s' (%i)", channel, GetLastError());
+            flb_plg_error(ctx->ins, "cannot subscribe '%s' (%i)", channel, GetLastError());
             flb_free(wide_channel);
             flb_free(ch->name);
             if (ch->query != NULL) {
@@ -732,7 +732,7 @@ struct mk_list *winevtlog_open_all(const char *channels, struct winevtlog_config
 
     channel = strtok_s(tmp , ",", &state);
     while (channel) {
-        ch = winevtlog_subscribe(channel, ctx->read_existing_events, NULL, ctx->event_query,
+        ch = winevtlog_subscribe(channel, ctx, NULL, ctx->event_query,
                                  ctx->session);
         if (ch) {
             mk_list_add(&ch->_head, list);
@@ -839,7 +839,7 @@ static char* convert_wstr(wchar_t *wstr, UINT codePage)
 /*
  * Load the bookmark from SQLite DB.
  */
-int winevtlog_sqlite_load(struct winevtlog_channel *ch, struct flb_sqldb *db)
+int winevtlog_sqlite_load(struct winevtlog_channel *ch, struct winevtlog_config *ctx, struct flb_sqldb *db)
 {
     int ret;
     char query[1024];
@@ -868,7 +868,10 @@ int winevtlog_sqlite_load(struct winevtlog_channel *ch, struct flb_sqldb *db)
             bookmark = EvtCreateBookmark(bookmark_xml);
             if (bookmark) {
                 /* re-create subscription handles */
-                re_ch = winevtlog_subscribe(ch->name, FLB_FALSE, bookmark, ch->query, ch->session);
+                if (ctx) {
+                    ctx->read_existing_events = FLB_FALSE;
+                }
+                re_ch = winevtlog_subscribe(ch->name, ctx, bookmark, ch->query, ch->session);
                 if (re_ch != NULL) {
                     close_handles(ch);
 
@@ -878,12 +881,12 @@ int winevtlog_sqlite_load(struct winevtlog_channel *ch, struct flb_sqldb *db)
                     ch->session = re_ch->session;
                 }
                 else {
-                    flb_error("Failed to subscribe with bookmark XML: %s\n", record.bookmark_xml);
+                    flb_plg_error(ctx->ins, "Failed to subscribe with bookmark XML: %s\n", record.bookmark_xml);
                     ch->bookmark = EvtCreateBookmark(NULL);
                 }
             }
             else {
-                flb_error("Failed to load bookmark XML with %d\n", GetLastError());
+                flb_plg_error(ctx->ins, "Failed to load bookmark XML with %d\n", GetLastError());
                 ch->bookmark = EvtCreateBookmark(NULL);
             }
         }
@@ -897,7 +900,7 @@ int winevtlog_sqlite_load(struct winevtlog_channel *ch, struct flb_sqldb *db)
 /*
  * Save the bookmark into SQLite DB.
  */
-int winevtlog_sqlite_save(struct winevtlog_channel *ch, struct flb_sqldb *db)
+int winevtlog_sqlite_save(struct winevtlog_channel *ch, struct winevtlog_config *ctx, struct flb_sqldb *db)
 {
     int ret;
     char query[1024];
@@ -907,14 +910,14 @@ int winevtlog_sqlite_save(struct winevtlog_channel *ch, struct flb_sqldb *db)
 
     wide_bookmark_xml = render_event(ch->bookmark, EvtRenderBookmark, &used_size);
     if (wide_bookmark_xml == NULL) {
-        flb_error("failed to render bookmark with %d", GetLastError());
+        flb_plg_error(ctx->ins, "failed to render bookmark with %d", GetLastError());
         flb_free(wide_bookmark_xml);
 
         return -1;
     }
     bookmark_xml = convert_wstr(wide_bookmark_xml, CP_UTF8);
     if (bookmark_xml == NULL) {
-        flb_error("failed to convert Wider string with %d", GetLastError());
+        flb_plg_error(ctx->ins, "failed to convert Wider string with %d", GetLastError());
         flb_free(wide_bookmark_xml);
         flb_free(bookmark_xml);
 
@@ -926,7 +929,7 @@ int winevtlog_sqlite_save(struct winevtlog_channel *ch, struct flb_sqldb *db)
 
     ret = flb_sqldb_query(db, query, NULL, NULL);
     if (ret == FLB_ERROR) {
-        flb_error("failed to save db with %d", GetLastError());
+        flb_plg_error(ctx->ins, "failed to save db with %d", GetLastError());
         flb_free(wide_bookmark_xml);
         flb_free(bookmark_xml);
 

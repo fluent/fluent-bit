@@ -19,7 +19,6 @@
  */
 
 #include <fluent-bit/flb_compat.h>
-#include <fluent-bit/flb_input_plugin.h>
 #include <fluent-bit/flb_kernel.h>
 #include <fluent-bit/flb_pack.h>
 #include <fluent-bit/flb_utils.h>
@@ -36,7 +35,7 @@
 static int in_winevtlog_collect(struct flb_input_instance *ins,
                                 struct flb_config *config, void *in_context);
 
-static wchar_t* convert_to_wide(char *str)
+static wchar_t* convert_to_wide(struct winevtlog_config *ctx, char *str)
 {
     int size = 0;
     wchar_t *buf = NULL;
@@ -45,7 +44,7 @@ static wchar_t* convert_to_wide(char *str)
     size = MultiByteToWideChar(CP_UTF8, 0, str, -1, NULL, 0);
     if (size == 0) {
         err = GetLastError();
-        flb_error("[in_winevtlog] Failed MultiByteToWideChar with error code (%d)", err);
+        flb_plg_error(ctx->ins, "Failed MultiByteToWideChar with error code (%d)", err);
         return NULL;
     }
 
@@ -57,7 +56,7 @@ static wchar_t* convert_to_wide(char *str)
     size = MultiByteToWideChar(CP_UTF8, 0, str, -1, buf, size);
     if (size == 0) {
         err = GetLastError();
-        flb_error("[in_winevtlog] Failed MultiByteToWideChar with error code (%d)", err);
+        flb_plg_error(ctx->ins, "Failed MultiByteToWideChar with error code (%d)", err);
         flb_free(buf);
         return NULL;
     }
@@ -88,7 +87,7 @@ static struct winevtlog_session *in_winevtlog_session_create(struct winevtlog_co
     }
 
     if (ctx->remote_server != NULL) {
-        session->server = convert_to_wide(ctx->remote_server);
+        session->server = convert_to_wide(ctx, ctx->remote_server);
         if (session->server == NULL) {
             in_winevtlog_session_destroy(session);
             *status = WINEVTLOG_SESSION_FAILED_TO_CONVERT_WIDE;
@@ -97,7 +96,7 @@ static struct winevtlog_session *in_winevtlog_session_create(struct winevtlog_co
     }
 
     if (ctx->remote_domain != NULL) {
-        session->domain = convert_to_wide(ctx->remote_domain);
+        session->domain = convert_to_wide(ctx, ctx->remote_domain);
         if (session->domain == NULL) {
             in_winevtlog_session_destroy(session);
             *status = WINEVTLOG_SESSION_FAILED_TO_CONVERT_WIDE;
@@ -106,7 +105,7 @@ static struct winevtlog_session *in_winevtlog_session_create(struct winevtlog_co
     }
 
     if (ctx->remote_username != NULL) {
-        session->username = convert_to_wide(ctx->remote_username);
+        session->username = convert_to_wide(ctx, ctx->remote_username);
         if (session->username == NULL) {
             in_winevtlog_session_destroy(session);
             *status = WINEVTLOG_SESSION_FAILED_TO_CONVERT_WIDE;
@@ -115,7 +114,7 @@ static struct winevtlog_session *in_winevtlog_session_create(struct winevtlog_co
     }
 
     if (ctx->remote_password != NULL) {
-        session->password = convert_to_wide(ctx->remote_password);
+        session->password = convert_to_wide(ctx, ctx->remote_password);
         if (session->password == NULL) {
             in_winevtlog_session_destroy(session);
             *status = WINEVTLOG_SESSION_FAILED_TO_CONVERT_WIDE;
@@ -268,7 +267,7 @@ static int in_winevtlog_init(struct flb_input_instance *in,
 
         mk_list_foreach(head, ctx->active_channel) {
             ch = mk_list_entry(head, struct winevtlog_channel, _head);
-            winevtlog_sqlite_load(ch, ctx->db);
+            winevtlog_sqlite_load(ch, ctx, ctx->db);
             flb_plg_debug(ctx->ins, "load channel<%s time=%u>",
                           ch->name, ch->time_created);
         }
@@ -310,7 +309,7 @@ static int in_winevtlog_read_channel(struct flb_input_instance *ins,
         ch->time_updated = time(NULL);
         flb_plg_debug(ctx->ins, "save channel<%s time=%u>",
                       ch->name, ch->time_updated);
-        winevtlog_sqlite_save(ch, ctx->db);
+        winevtlog_sqlite_save(ch, ctx, ctx->db);
     }
 
     if (ctx->log_encoder->output_length > 0) {
