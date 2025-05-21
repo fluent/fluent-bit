@@ -65,7 +65,7 @@ static wchar_t* convert_to_wide(char *str)
     return buf;
 }
 
-static void in_winevtlog_session_destory(struct winevtlog_session *session);
+static void in_winevtlog_session_destroy(struct winevtlog_session *session);
 
 static struct winevtlog_session *in_winevtlog_session_create(struct winevtlog_config *ctx,
                                                              struct flb_config *config,
@@ -90,7 +90,7 @@ static struct winevtlog_session *in_winevtlog_session_create(struct winevtlog_co
     if (ctx->remote_server != NULL) {
         session->server = convert_to_wide(ctx->remote_server);
         if (session->server == NULL) {
-            in_winevtlog_session_destory(session);
+            in_winevtlog_session_destroy(session);
             *status = WINEVTLOG_SESSION_FAILED_TO_CONVERT_WIDE;
             return NULL;
         }
@@ -99,7 +99,7 @@ static struct winevtlog_session *in_winevtlog_session_create(struct winevtlog_co
     if (ctx->remote_domain != NULL) {
         session->domain = convert_to_wide(ctx->remote_domain);
         if (session->domain == NULL) {
-            in_winevtlog_session_destory(session);
+            in_winevtlog_session_destroy(session);
             *status = WINEVTLOG_SESSION_FAILED_TO_CONVERT_WIDE;
             return NULL;
         }
@@ -108,7 +108,7 @@ static struct winevtlog_session *in_winevtlog_session_create(struct winevtlog_co
     if (ctx->remote_username != NULL) {
         session->username = convert_to_wide(ctx->remote_username);
         if (session->username == NULL) {
-            in_winevtlog_session_destory(session);
+            in_winevtlog_session_destroy(session);
             *status = WINEVTLOG_SESSION_FAILED_TO_CONVERT_WIDE;
             return NULL;
         }
@@ -117,7 +117,7 @@ static struct winevtlog_session *in_winevtlog_session_create(struct winevtlog_co
     if (ctx->remote_password != NULL) {
         session->password = convert_to_wide(ctx->remote_password);
         if (session->password == NULL) {
-            in_winevtlog_session_destory(session);
+            in_winevtlog_session_destroy(session);
             *status = WINEVTLOG_SESSION_FAILED_TO_CONVERT_WIDE;
             return NULL;
         }
@@ -129,7 +129,7 @@ static struct winevtlog_session *in_winevtlog_session_create(struct winevtlog_co
     return session;
 }
 
-static void in_winevtlog_session_destory(struct winevtlog_session *session)
+static void in_winevtlog_session_destroy(struct winevtlog_session *session)
 {
     if (session->server != NULL) {
         flb_free(session->server);
@@ -192,11 +192,11 @@ static int in_winevtlog_init(struct flb_input_instance *in,
     session = in_winevtlog_session_create(ctx, config, &status);
     if (status == WINEVTLOG_SESSION_ALLOC_FAILED ||
         status == WINEVTLOG_SESSION_FAILED_TO_CONVERT_WIDE) {
-        flb_plg_error(in, "session is not created and invalid with %d", status);
+        flb_plg_error(in, "session is not created and invalid with status %d", status);
         return -1;
     }
     else if (session == NULL) {
-        flb_plg_debug(in, "session is not created. Connect to local machine.");
+        flb_plg_debug(in, "connect to local machine");
     }
     ctx->session = session;
 
@@ -364,7 +364,7 @@ static int in_winevtlog_exit(void *data, struct flb_config *config)
         flb_sqldb_close(ctx->db);
     }
     if (ctx->session) {
-        in_winevtlog_session_destory(ctx->session);
+        in_winevtlog_session_destroy(ctx->session);
     }
     flb_free(ctx);
 
