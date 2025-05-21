@@ -264,8 +264,8 @@ int syslog_prot_process(struct syslog_conn *conn)
             flb_free(out_buf);
         }
         else {
-            flb_plg_warn(ctx->ins, "error parsing log message with parser '%s'",
-                         ctx->parser->name);
+            flb_plg_warn(ctx->ins, "error parsing log message with parser '%s' from %s",
+                         ctx->parser->name, flb_connection_get_remote_address(conn->connection));
             flb_plg_debug(ctx->ins, "unparsed log message: %.*s", len, p);
         }
 
@@ -313,8 +313,8 @@ int syslog_prot_process_udp(struct syslog_conn *conn)
         flb_free(out_buf);
     }
     else {
-        flb_plg_warn(ctx->ins, "error parsing log message with parser '%s'",
-                     ctx->parser->name);
+        flb_plg_warn(ctx->ins, "error parsing log message with parser '%s' from %s",
+                     ctx->parser->name, flb_connection_get_remote_address(connection));
         flb_plg_debug(ctx->ins, "unparsed log message: %.*s",
                       (int) size, buf);
         return -1;
@@ -322,3 +322,4 @@ int syslog_prot_process_udp(struct syslog_conn *conn)
 
     return 0;
 }
+
