@@ -30,8 +30,34 @@
 static char* convert_wstr(wchar_t *wstr, UINT codePage);
 static wchar_t* convert_str(char *str);
 
+static EVT_HANDLE
+create_remote_handle(struct winevtlog_session *session, DWORD *error_code)
+{
+    EVT_HANDLE remote = NULL;
+    EVT_RPC_LOGIN credentials;
+
+    RtlZeroMemory(&credentials, sizeof(EVT_RPC_LOGIN));
+
+    credentials.Server = session->server;
+    credentials.Domain = session->domain;
+    credentials.User = session->username;
+    credentials.Password = session->password;
+    credentials.Flags = session->flags;
+
+    remote = EvtOpenSession(EvtRpcLogin, &credentials, 0, 0);
+    if (!remote) {
+        *error_code = GetLastError();
+        return remote;
+    }
+
+    SecureZeroMemory(&credentials, sizeof(EVT_RPC_LOGIN));
+
+    return remote;
+}
+
 struct winevtlog_channel *winevtlog_subscribe(const char *channel, int read_existing_events,
-                                              EVT_HANDLE stored_bookmark, const char *query)
+                                              EVT_HANDLE stored_bookmark, const char *query,
+                                              struct winevtlog_session *session)
 {
     struct winevtlog_channel *ch;
     EVT_HANDLE bookmark = NULL;
@@ -40,7 +66,9 @@ struct winevtlog_channel *winevtlog_subscribe(const char *channel, int read_exis
     DWORD flags = 0L;
     PWSTR wide_channel = NULL;
     PWSTR wide_query = NULL;
+    EVT_HANDLE remote_handle = NULL;
     void *buf;
+    DWORD err = ERROR_SUCCESS;
 
     ch = flb_calloc(1, sizeof(struct winevtlog_channel));
     if (ch == NULL) {
@@ -78,16 +106,39 @@ struct winevtlog_channel *winevtlog_subscribe(const char *channel, int read_exis
         flags |= EvtSubscribeToFutureEvents;
     }
 
+    if (session != NULL) {
+        remote_handle = create_remote_handle(session, &err);
+        if (err != ERROR_SUCCESS) {
+            flb_error("[in_winevtlog] cannot create remote handle '%s' in %ls (%i)",
+                      channel, session->server, err);
+            flb_free(ch->name);
+            if (ch->query != NULL) {
+                flb_free(ch->query);
+            }
+            flb_free(ch);
+            return NULL;
+        }
+
+        flb_debug("[in_winevtlog] created a remote handle for '%s' in %ls",
+                  channel, session->server);
+        ch->session = session;
+        ch->remote = remote_handle;
+    }
+
     /* The wide_query parameter can handle NULL as `*` for retrieving all events.
      * ref. https://learn.microsoft.com/en-us/windows/win32/api/winevt/nf-winevt-evtsubscribe
      */
-    ch->subscription = EvtSubscribe(NULL, signal_event, wide_channel, wide_query,
+    ch->subscription = EvtSubscribe(remote_handle, signal_event, wide_channel, wide_query,
                                     stored_bookmark, NULL, NULL, flags);
+    err = GetLastError();
     if (!ch->subscription) {
-        flb_error("[in_winevtlog] cannot subscribe '%s' (%i)", channel, GetLastError());
+        flb_error("[in_winevtlog] cannot subscribe '%s' (%i)", channel, err);
         flb_free(ch->name);
         if (ch->query != NULL) {
             flb_free(ch->query);
+        }
+        if (ch->remote) {
+            EvtClose(ch->remote);
         }
         flb_free(ch);
         return NULL;
@@ -105,6 +156,9 @@ struct winevtlog_channel *winevtlog_subscribe(const char *channel, int read_exis
         else {
             if (ch->subscription) {
                 EvtClose(ch->subscription);
+            }
+            if (ch->remote) {
+                EvtClose(ch->remote);
             }
             if (signal_event) {
                 CloseHandle(signal_event);
@@ -140,6 +194,10 @@ static void close_handles(struct winevtlog_channel *ch)
     if (ch->subscription) {
         EvtClose(ch->subscription);
         ch->subscription = NULL;
+    }
+    if (ch->remote) {
+        EvtClose(ch->remote);
+        ch->remote = NULL;
     }
     if (ch->signal_event) {
         CloseHandle(ch->signal_event);
@@ -674,7 +732,8 @@ struct mk_list *winevtlog_open_all(const char *channels, struct winevtlog_config
 
     channel = strtok_s(tmp , ",", &state);
     while (channel) {
-        ch = winevtlog_subscribe(channel, ctx->read_existing_events, NULL, ctx->event_query);
+        ch = winevtlog_subscribe(channel, ctx->read_existing_events, NULL, ctx->event_query,
+                                 ctx->session);
         if (ch) {
             mk_list_add(&ch->_head, list);
         }
@@ -809,13 +868,14 @@ int winevtlog_sqlite_load(struct winevtlog_channel *ch, struct flb_sqldb *db)
             bookmark = EvtCreateBookmark(bookmark_xml);
             if (bookmark) {
                 /* re-create subscription handles */
-                re_ch = winevtlog_subscribe(ch->name, FLB_FALSE, bookmark, ch->query);
+                re_ch = winevtlog_subscribe(ch->name, FLB_FALSE, bookmark, ch->query, ch->session);
                 if (re_ch != NULL) {
                     close_handles(ch);
 
                     ch->bookmark = re_ch->bookmark;
                     ch->subscription = re_ch->subscription;
                     ch->signal_event = re_ch->signal_event;
+                    ch->session = re_ch->session;
                 }
                 else {
                     flb_error("Failed to subscribe with bookmark XML: %s\n", record.bookmark_xml);
