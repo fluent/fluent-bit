@@ -25,7 +25,6 @@
 #include <fluent-bit/flb_config_map.h>
 #include <fluent-bit/flb_gzip.h>
 #include <fluent-bit/flb_base64.h>
-#include <fluent-bit/flb_sqldb.h>
 #include <fluent-bit/flb_input_blob.h>
 #include <fluent-bit/flb_log_event_decoder.h>
 #include <fluent-bit/flb_plugin.h>
@@ -34,12 +33,15 @@
 #include <msgpack.h>
 
 #include "azure_blob.h"
-#include "azure_blob_db.h"
 #include "azure_blob_uri.h"
 #include "azure_blob_conf.h"
 #include "azure_blob_appendblob.h"
 #include "azure_blob_blockblob.h"
 #include "azure_blob_http.h"
+
+#ifdef FLB_HAVE_SQLDB
+#include "azure_blob_db.h"
+#endif
 
 #define CREATE_BLOB  1337
 
@@ -151,6 +153,7 @@ static int create_blob(struct flb_azure_blob *ctx, char *name)
     return FLB_OK;
 }
 
+#ifdef FLB_HAVE_SQLDB
 static int delete_blob(struct flb_azure_blob *ctx, char *name)
 {
     int ret;
@@ -225,6 +228,7 @@ static int delete_blob(struct flb_azure_blob *ctx, char *name)
     flb_upstream_conn_release(u_conn);
     return FLB_OK;
 }
+#endif
 
 static int http_send_blob(struct flb_config *config, struct flb_azure_blob *ctx,
                           flb_sds_t ref_name,
@@ -380,11 +384,13 @@ static int send_blob(struct flb_config *config,
             uri = azb_block_blob_uri(ctx, tag, block_id, ms);
             ref_name = flb_sds_printf(&ref_name, "file=%s.%" PRIu64, name, ms);
         }
+#ifdef FLB_HAVE_SQLDB
         else if (event_type == FLB_EVENT_TYPE_BLOBS) {
             block_id = azb_block_blob_id_blob(ctx, name, part_id);
             uri = azb_block_blob_uri(ctx, name, block_id, 0);
             ref_name = flb_sds_printf(&ref_name, "file=%s:%" PRIu64, name, part_id);
         }
+#endif
     }
 
     if (!uri) {
@@ -416,10 +422,12 @@ static int send_blob(struct flb_config *config,
             return FLB_ERROR;
         }
     }
+#ifdef FLB_HAVE_SQLDB
     else if (event_type == FLB_EVENT_TYPE_BLOBS) {
         payload_buf = data;
         payload_size = bytes;
     }
+#endif
 
     ret = http_send_blob(config, ctx, ref_name, uri, block_id, event_type, payload_buf, payload_size);
     flb_plg_debug(ctx->ins, "http_send_blob()=%i", ret);
@@ -635,6 +643,7 @@ static int cb_azure_blob_init(struct flb_output_instance *ins,
     return 0;
 }
 
+#ifdef FLB_HAVE_SQLDB
 static int blob_chunk_register_parts(struct flb_azure_blob *ctx, uint64_t file_id, size_t total_size)
 {
     int ret;
@@ -1034,6 +1043,7 @@ static int azb_timer_create(struct flb_azure_blob *ctx)
 
     return 0;
 }
+#endif
 
 static void cb_azure_blob_flush(struct flb_event_chunk *event_chunk,
                                 struct flb_output_flush *out_flush,
@@ -1081,6 +1091,7 @@ static void cb_azure_blob_flush(struct flb_event_chunk *event_chunk,
             }
         }
     }
+#ifdef FLB_HAVE_SQLDB
     else if (event_chunk->type == FLB_EVENT_TYPE_BLOBS) {
         /*
          * For Blob types, we use the flush callback to enqueue the file, then cb_azb_blob_file_upload()
@@ -1091,6 +1102,7 @@ static void cb_azure_blob_flush(struct flb_event_chunk *event_chunk,
             FLB_OUTPUT_RETURN(FLB_RETRY);
         }
     }
+#endif
 
     /* FLB_RETRY, FLB_OK, FLB_ERROR */
     FLB_OUTPUT_RETURN(ret);
@@ -1129,11 +1141,13 @@ static int cb_worker_init(void *data, struct flb_config *config)
         FLB_TLS_SET(worker_info, info);
     }
 
+#ifdef FLB_HAVE_SQLDB
     ret = azb_timer_create(ctx);
     if (ret == -1) {
         flb_plg_error(ctx->ins, "failed to create upload timer");
         return -1;
     }
+#endif
 
     return 0;
 }
