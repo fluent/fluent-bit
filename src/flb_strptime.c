@@ -519,7 +519,7 @@ literal:
 					return (NULL);
 				flb_tm_gmtoff(tm) = 0;
 				tm->tm.tm_isdst = 0;
-				flb_tm_zone(tm) = "UTC";
+				flb_tm_zone(tm) = utc;
 				/* %s format does not handle timezone */
 				fields = 0xffff;         /* everything */
 			}
@@ -682,7 +682,7 @@ literal:
 					return NULL;
 				tm->tm.tm_isdst = 0;
 				flb_tm_gmtoff(tm) = 0;
-				flb_tm_zone(tm) = "GMT"; /* Original had global gmt array */
+				flb_tm_zone(tm) = gmt; /* Original had global gmt array */
 				continue;
 			case 'U':
 				if (*bp++ != 'T')
@@ -692,7 +692,7 @@ literal:
 					bp++; /* Allow "UTC" */
 				tm->tm.tm_isdst = 0;
 				flb_tm_gmtoff(tm) = 0;
-				flb_tm_zone(tm) = "UTC"; /* Original had global utc array */
+				flb_tm_zone(tm) = utc; /* Original had global utc array */
 				continue;
 			case 'Z':
 				tm->tm.tm_isdst = 0;
