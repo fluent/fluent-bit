@@ -36,6 +36,7 @@
 #include <fluent-bit/flb_metrics.h>
 #include <fluent-bit/stream_processor/flb_sp.h>
 #include <fluent-bit/flb_ring_buffer.h>
+#include <fluent-bit/flb_log_event.h>
 #include <chunkio/chunkio.h>
 #include <monkey/mk_core.h>
 
@@ -1203,7 +1204,9 @@ static struct flb_input_chunk *input_chunk_get(struct flb_input_instance *in,
     }
 
     if (id >= 0) {
-        if (ic->busy == FLB_TRUE || cio_chunk_is_locked(ic->chunk)) {
+        if (ic->busy == FLB_TRUE || cio_chunk_is_locked(ic->chunk) ||
+            (flb_input_chunk_get_real_size(ic) + chunk_size) >
+                FLB_INPUT_CHUNK_FS_MAX_SIZE) {
             ic = NULL;
         }
         else if (cio_chunk_is_up(ic->chunk) == CIO_FALSE) {
