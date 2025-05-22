@@ -882,6 +882,18 @@ if(FLB_HAVE_GMTOFF)
   FLB_DEFINITION(FLB_HAVE_GMTOFF)
 endif()
 
+# tm_zone support
+check_c_source_compiles("
+  #include <time.h>
+  int main() {
+     struct tm tm;
+     tm.tm_zone = \"GMT\";
+     return 0;
+  }" FLB_HAVE_TIME_ZONE)
+if(FLB_HAVE_TIME_ZONE)
+  FLB_DEFINITION(FLB_HAVE_TIME_ZONE)
+endif()
+
 # clock_get_time() support for macOS.
 check_c_source_compiles("
   #include <mach/clock.h>
