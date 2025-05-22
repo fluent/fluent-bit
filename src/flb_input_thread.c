@@ -620,9 +620,11 @@ int flb_input_thread_instance_init(struct flb_config *config, struct flb_input_i
     ret = input_thread_instance_get_status(ins);
     if (ret == -1) {
         flb_plg_error(ins, "unexpected error loading plugin instance");
+        return -1;
     }
     else if (ret == FLB_FALSE) {
         flb_plg_error(ins, "could not initialize threaded plugin instance");
+        return -1;
     }
     else if (ret == FLB_TRUE) {
         flb_plg_info(ins, "thread instance initialized");
