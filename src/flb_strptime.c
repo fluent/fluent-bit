@@ -520,12 +520,7 @@ literal:
 				flb_tm_gmtoff(tm) = 0;
 				tm->tm.tm_isdst = 0;
 				flb_tm_zone(tm) = "UTC";
-				for(i=0; flb_known_timezones[i].abbr != NULL; ++i) { /* Prefer "UTC" from list if available */
-					if (strcmp(flb_known_timezones[i].abbr, "UTC") == 0) {
-						flb_tm_zone(tm) = flb_known_timezones[i].abbr;
-						break;
-					}
-				}
+				/* %s format does not handle timezone */
 				fields = 0xffff;         /* everything */
 			}
 			break;
