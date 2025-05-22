@@ -48,6 +48,7 @@ set(UNIT_TESTS_FILES
   conditionals.c
   endianness.c
   task_map.c
+  strptime.c
   )
 
 # Config format
