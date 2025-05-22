@@ -34,7 +34,7 @@
 
 static int pack_nullstr(struct winevtlog_config *ctx)
 {
-    flb_log_event_encoder_append_body_cstring(ctx->log_encoder, "");
+    return flb_log_event_encoder_append_body_cstring(ctx->log_encoder, "");
 }
 
 static int pack_wstr(struct winevtlog_config *ctx, const wchar_t *wstr)
@@ -313,6 +313,8 @@ static int pack_sid(struct winevtlog_config *ctx, PSID sid, int extract_sid)
             }
 
             _snprintf_s(formatted, result_len, _TRUNCATE, "%s\\%s", domain, account);
+
+            size = strlen(formatted);
 
             if (size > 0) {
                 flb_log_event_encoder_append_body_cstring(ctx->log_encoder, formatted);
