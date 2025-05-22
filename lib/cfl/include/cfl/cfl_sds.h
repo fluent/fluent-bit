@@ -49,7 +49,6 @@ static inline void cfl_sds_len_set(cfl_sds_t s, size_t len)
 }
 
 size_t cfl_sds_avail(cfl_sds_t s);
-cfl_sds_t sds_alloc(size_t size);
 size_t cfl_sds_alloc(cfl_sds_t s);
 cfl_sds_t cfl_sds_increase(cfl_sds_t s, size_t len);
 size_t cfl_sds_len(cfl_sds_t s);
