@@ -37,6 +37,7 @@ struct filter_parser_ctx {
     int    preserve_key;
     struct mk_list parsers;
     struct flb_filter_instance *ins;
+    flb_record_accessor_t *ra_key_name;
 };
 
 #endif /* FLB_FILTER_PARSER_H */

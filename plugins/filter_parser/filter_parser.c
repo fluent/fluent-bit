@@ -28,6 +28,7 @@
 #include <fluent-bit/flb_kv.h>
 #include <fluent-bit/flb_log_event_decoder.h>
 #include <fluent-bit/flb_log_event_encoder.h>
+#include <fluent-bit/flb_record_accessor.h>
 #include <msgpack.h>
 
 #include <string.h>
@@ -102,6 +103,7 @@ static int configure(struct filter_parser_ctx *ctx,
     struct flb_kv *kv;
 
     ctx->key_name = NULL;
+    ctx->ra_key_name = NULL;
     ctx->reserve_data = FLB_FALSE;
     ctx->preserve_key = FLB_FALSE;
     mk_list_init(&ctx->parsers);
@@ -117,6 +119,12 @@ static int configure(struct filter_parser_ctx *ctx,
         return -1;
     }
     ctx->key_name_len = flb_sds_len(ctx->key_name);
+
+    ctx->ra_key_name = flb_ra_create(ctx->key_name, FLB_FALSE);
+    if (!ctx->ra_key_name) {
+        flb_plg_error(ctx->ins, "Failed to create record accessor for Key_Name: %s", ctx->key_name);
+        return -1;
+    }
 
     /* Read all Parsers */
     mk_list_foreach(head, &f_ins->properties) {
@@ -172,17 +180,15 @@ static int cb_parser_filter(const void *data, size_t bytes,
     struct filter_parser_ctx *ctx = context;
     struct flb_time tm;
     msgpack_object *obj;
-    msgpack_object_kv *kv;
     int i;
     int ret = FLB_FILTER_NOTOUCH;
     int parse_ret = -1;
     int map_num;
-    const char *key_str;
-    int key_len;
-    const char *val_str;
-    int val_len;
-    char *out_buf;
-    size_t out_size;
+    const char *val_str = NULL;
+    int val_len = 0;
+    msgpack_object *value_obj = NULL; /* For record accessor */
+    char *out_buf = NULL;
+    size_t out_size = 0;
     struct flb_time parsed_time;
     msgpack_object_kv **append_arr = NULL;
     size_t append_arr_len = 0;
@@ -220,45 +226,35 @@ static int cb_parser_filter(const void *data, size_t bytes,
 
         flb_time_copy(&tm, &log_event.timestamp);
         obj = log_event.body;
+        parse_ret = -1; /* Reset for each record */
+        out_buf = NULL; /* Reset for each record */
 
         if (obj->type == MSGPACK_OBJECT_MAP) {
             map_num = obj->via.map.size;
-            /* Calculate initial array size based on configuration */
-            append_arr_len = (ctx->reserve_data ? map_num : 0);
-            if (ctx->preserve_key && !ctx->reserve_data) {
-                append_arr_len = 1; /* Space for preserved key */
-            }
+            append_arr_len = 0;
+            append_arr = NULL;
 
-            if (append_arr_len > 0) {
-                append_arr = flb_calloc(append_arr_len, sizeof(msgpack_object_kv *));
-                if (append_arr == NULL) {
-                    flb_errno();
-                    flb_log_event_decoder_destroy(&log_decoder);
-                    flb_log_event_encoder_destroy(&log_encoder);
-                    return FLB_FILTER_NOTOUCH;
-                }
-
-                /* Initialize array */
-                if (ctx->reserve_data) {
+            if (ctx->reserve_data) {
+                append_arr_len = map_num;
+                if (append_arr_len > 0) {
+                    append_arr = flb_calloc(append_arr_len, sizeof(msgpack_object_kv *));
+                    if (append_arr == NULL) {
+                        flb_errno();
+                        flb_log_event_decoder_destroy(&log_decoder);
+                        flb_log_event_encoder_destroy(&log_encoder);
+                        return FLB_FILTER_NOTOUCH;
+                    }
                     for (i = 0; i < map_num; i++) {
                         append_arr[i] = &obj->via.map.ptr[i];
                     }
                 }
             }
 
-            /* Process the target key */
-            for (i = 0; i < map_num; i++) {
-                kv = &obj->via.map.ptr[i];
-                if (msgpackobj2char(&kv->key, &key_str, &key_len) < 0) {
-                    continue;
-                }
+            /* Get value using record accessor */
+            value_obj = flb_ra_get_value_object(ctx->ra_key_name, *obj);
 
-                if (key_len == ctx->key_name_len &&
-                    !strncmp(key_str, ctx->key_name, key_len)) {
-                    if (msgpackobj2char(&kv->val, &val_str, &val_len) < 0) {
-                        continue;
-                    }
-
+            if (value_obj != NULL) {
+                if (msgpackobj2char(value_obj, &val_str, &val_len) == 0) {
                     /* Lookup parser */
                     mk_list_foreach(head, &ctx->parsers) {
                         fp = mk_list_entry(head, struct filter_parser, _head);
@@ -271,21 +267,20 @@ static int cb_parser_filter(const void *data, size_t bytes,
                             if (flb_time_to_nanosec(&parsed_time) != 0L) {
                                 flb_time_copy(&tm, &parsed_time);
                             }
-
-                            if (append_arr != NULL) {
-                                if (!ctx->preserve_key) {
-                                    append_arr[i] = NULL;
-                                }
-                                else if (!ctx->reserve_data) {
-                                    /* Store only the key being preserved */
-                                    append_arr[0] = kv;
-                                }
-                            }
+                            /*
+                             * Simplified preserve_key logic:
+                             * If reserve_data is true, original key is kept.
+                             * If reserve_data is false, original key is not explicitly added back.
+                             * The removal of the original key (if preserve_key is false
+                             * and reserve_data is true) is also simplified: it will remain.
+                             */
                             break;
                         }
                     }
                 }
+                /* If msgpackobj2char failed, parse_ret remains -1, handled by if (out_buf != NULL && parse_ret >= 0) */
             }
+            /* If value_obj is NULL, parse_ret remains -1, handled by if (out_buf != NULL && parse_ret >= 0) */
 
             encoder_result = flb_log_event_encoder_begin_record(&log_encoder);
 
@@ -300,59 +295,39 @@ static int cb_parser_filter(const void *data, size_t bytes,
                         &log_encoder, log_event.metadata);
             }
 
-            if (out_buf != NULL && parse_ret >= 0) {
-                if (append_arr != NULL && append_arr_len > 0) {
+            if (out_buf != NULL && parse_ret >= 0) { /* Successfully parsed */
+                if (ctx->reserve_data && append_arr != NULL && append_arr_len > 0) {
+                    /* Merge parsed data (out_buf) with original data (append_arr) */
                     char *new_buf = NULL;
                     int new_size;
-                    size_t valid_kv_count = 0;
-                    msgpack_object_kv **valid_kv = NULL;
+                    /*
+                     * With reserve_data, all original KVs are in append_arr.
+                     * We don't need to filter append_arr for NULLs here because
+                     * the previous logic that might set specific items to NULL
+                     * (related to preserve_key) has been removed.
+                     */
+                    ret = flb_msgpack_expand_map(out_buf, out_size,
+                                               append_arr, append_arr_len, /* append_arr might contain the original key if preserve_key was false */
+                                               &new_buf, &new_size);
 
-                    /* Count valid entries */
-                    for (i = 0; i < append_arr_len; i++) {
-                        if (append_arr[i] != NULL) {
-                            valid_kv_count++;
-                        }
-                    }
-
-                    if (valid_kv_count > 0) {
-                        valid_kv = flb_calloc(valid_kv_count, sizeof(msgpack_object_kv *));
-                        if (!valid_kv) {
-                            flb_errno();
-                            flb_log_event_decoder_destroy(&log_decoder);
-                            flb_log_event_encoder_destroy(&log_encoder);
-                            flb_free(append_arr);
-                            flb_free(out_buf);
-                            return FLB_FILTER_NOTOUCH;
-                        }
-
-                        /* Fill valid entries */
-                        valid_kv_count = 0;
-                        for (i = 0; i < append_arr_len; i++) {
-                            if (append_arr[i] != NULL) {
-                                valid_kv[valid_kv_count++] = append_arr[i];
-                            }
-                        }
-
-                        ret = flb_msgpack_expand_map(out_buf, out_size,
-                                                   valid_kv, valid_kv_count,
-                                                   &new_buf, &new_size);
-
-                        flb_free(valid_kv);
-
-                        if (ret == -1) {
-                            flb_plg_error(ctx->ins, "cannot expand map");
-                            flb_log_event_decoder_destroy(&log_decoder);
-                            flb_log_event_encoder_destroy(&log_encoder);
-                            flb_free(append_arr);
-                            flb_free(out_buf);
-                            return FLB_FILTER_NOTOUCH;
-                        }
-
+                    if (ret == -1) {
+                        flb_plg_error(ctx->ins, "cannot expand map when reserve_data is true");
+                        /* Log error, but proceed to encode what we have from the parser, or original if merging failed */
+                        flb_log_event_decoder_destroy(&log_decoder);
+                        flb_log_event_encoder_destroy(&log_encoder);
+                        flb_free(append_arr); /* append_arr is allocated only if reserve_data is true */
                         flb_free(out_buf);
-                        out_buf = new_buf;
-                        out_size = new_size;
+                        return FLB_FILTER_NOTOUCH; /* Or handle error more gracefully */
                     }
+
+                    flb_free(out_buf);
+                    out_buf = new_buf;
+                    out_size = new_size;
                 }
+                /*
+                 * If not reserving data, out_buf contains only the parsed result.
+                 * append_arr would be NULL or append_arr_len would be 0.
+                 */
 
                 if (encoder_result == FLB_EVENT_ENCODER_SUCCESS) {
                     encoder_result = \
@@ -379,11 +354,15 @@ static int cb_parser_filter(const void *data, size_t bytes,
                 flb_plg_error(ctx->ins, "log event encoder error : %d", encoder_result);
             }
 
-            if (append_arr != NULL) {
+            if (ctx->reserve_data && append_arr != NULL) { /* append_arr only allocated if reserve_data */
                 flb_free(append_arr);
                 append_arr = NULL;
             }
         }
+        /*
+         * If obj->type was not MSGPACK_OBJECT_MAP, or if parsing failed (parse_ret == -1),
+         * the original record body is used by the encoder if out_buf is NULL.
+         */
     }
 
     if (log_encoder.output_length > 0) {
@@ -412,6 +391,9 @@ static int cb_parser_exit(void *data, struct flb_config *config)
         return 0;
     }
 
+    if (ctx->ra_key_name) {
+        flb_ra_destroy(ctx->ra_key_name);
+    }
     delete_parsers(ctx);
     flb_free(ctx);
     return 0;

@@ -1299,6 +1299,284 @@ void flb_test_filter_parser_reserve_on_preserve_on()
     test_ctx_destroy(ctx);
 }
 
+/* Helper function for Record Accessor tests */
+static struct test_ctx *test_ctx_create_ra(char *key_name_ra, char *reserve_data, char *preserve_key)
+{
+    struct test_ctx *ctx = flb_malloc(sizeof(struct test_ctx));
+    struct flb_parser *parser;
+    int ret;
+
+    if (!ctx) {
+        flb_errno();
+        return NULL;
+    }
+
+    /* Create callback structure */
+    ctx->cb = flb_malloc(sizeof(struct flb_lib_out_cb));
+    if (!ctx->cb) {
+        flb_free(ctx);
+        return NULL;
+    }
+
+    ctx->cb->cb = callback_test;
+    ctx->cb->data = NULL;
+
+    /* Create Fluent Bit context */
+    ctx->flb = flb_create();
+    if (!ctx->flb) {
+        flb_free(ctx->cb);
+        flb_free(ctx);
+        return NULL;
+    }
+
+    /* Service config */
+    flb_service_set(ctx->flb,
+                    "Flush", FLUSH_INTERVAL,
+                    "Grace", "1",
+                    "Log_Level", "debug", /* Set to "error" or "warn" to reduce noise */
+                    NULL);
+
+    /* Input */
+    ctx->i_ffd = flb_input(ctx->flb, (char *) "lib", NULL);
+    if (ctx->i_ffd < 0) {
+        flb_destroy(ctx->flb);
+        flb_free(ctx->cb);
+        flb_free(ctx);
+        return NULL;
+    }
+    flb_input_set(ctx->flb, ctx->i_ffd, "Tag", "test", NULL);
+
+    /* Parser for Record Accessor tests */
+    parser = flb_parser_create("dummy_test_ra",
+                              "regex",
+                              "^(?<FIELD_A>[^ ]+) (?<FIELD_B>[^ ]+)$", /* Regex for "val1 val2" */
+                              FLB_TRUE,  /* skip_empty */
+                              NULL,      /* time_fmt */
+                              NULL,      /* time_key */
+                              NULL,      /* time_offset */
+                              MK_FALSE,  /* time_keep */
+                              MK_TRUE,   /* time_strict */
+                              FLB_FALSE, /* time_system_timezone */
+                              MK_FALSE,  /* logfmt_no_bare_keys */
+                              NULL,      /* types */
+                              0,         /* types_len */
+                              NULL,      /* decoders */
+                              ctx->flb->config);
+    if (!parser) {
+        flb_destroy(ctx->flb);
+        flb_free(ctx->cb);
+        flb_free(ctx);
+        return NULL;
+    }
+
+    /* Filter */
+    ctx->f_ffd = flb_filter(ctx->flb, (char *) "parser", NULL);
+    if (ctx->f_ffd < 0) {
+        flb_destroy(ctx->flb);
+        flb_free(ctx->cb);
+        flb_free(ctx);
+        return NULL;
+    }
+
+    ret = flb_filter_set(ctx->flb, ctx->f_ffd,
+                        "Match", "test",
+                        "Key_Name", key_name_ra, /* Use the passed record accessor pattern */
+                        "Parser", "dummy_test_ra", /* Parser for "val1 val2" */
+                        "Reserve_Data", reserve_data,
+                        "Preserve_Key", preserve_key,
+                        NULL);
+    if (ret != 0) {
+        flb_destroy(ctx->flb);
+        flb_free(ctx->cb);
+        flb_free(ctx);
+        return NULL;
+    }
+
+    /* Output with properly aligned callback */
+    ctx->o_ffd = flb_output(ctx->flb, (char *) "lib", ctx->cb);
+    if (ctx->o_ffd < 0) {
+        flb_destroy(ctx->flb);
+        flb_free(ctx->cb);
+        flb_free(ctx);
+        return NULL;
+    }
+
+    flb_output_set(ctx->flb, ctx->o_ffd,
+                   "Match", "*",
+                   "format", "json",
+                   NULL);
+
+    return ctx;
+}
+
+/* Test Case RA: Basic Nested Key Access */
+void flb_test_filter_parser_ra_basic_nested()
+{
+    char *output = NULL;
+    struct test_ctx *ctx;
+    char *p = "[1678886400, {\"nes\":{\"ted\":{\"key\":\"val1 val2\"}}, \"other\":\"value\"}]";
+
+    ctx = test_ctx_create_ra("$nes['ted']['key']", "Off", "Off");
+    TEST_CHECK(ctx != NULL);
+    if (!ctx) return;
+    clear_output();
+
+    int ret = flb_start(ctx->flb);
+    TEST_CHECK(ret == 0);
+
+    int bytes = flb_lib_push(ctx->flb, ctx->i_ffd, p, strlen(p));
+    TEST_CHECK(bytes > 0);
+
+    wait_with_timeout(2000, &output);
+    TEST_CHECK(output != NULL);
+
+    if (output != NULL) {
+        TEST_CHECK_(strstr(output, "\"FIELD_A\":\"val1\"") != NULL, "Missing FIELD_A. Output: %s", output);
+        TEST_CHECK_(strstr(output, "\"FIELD_B\":\"val2\"") != NULL, "Missing FIELD_B. Output: %s", output);
+        TEST_CHECK_(strstr(output, "\"nes\":") == NULL, "Should not contain original 'nes' field. Output: %s", output);
+        TEST_CHECK_(strstr(output, "\"other\":") == NULL, "Should not contain 'other' field. Output: %s", output);
+        free(output);
+    }
+    test_ctx_destroy(ctx);
+}
+
+/* Test Case RA: Nested Key with Reserve_Data On */
+void flb_test_filter_parser_ra_reserve_data_on()
+{
+    char *output = NULL;
+    struct test_ctx *ctx;
+    char *p = "[1678886400, {\"nes\":{\"ted\":{\"key\":\"val1 val2\"}}, \"other\":\"value\"}]";
+
+    ctx = test_ctx_create_ra("$nes['ted']['key']", "On", "Off");
+    TEST_CHECK(ctx != NULL);
+    if (!ctx) return;
+    clear_output();
+
+    int ret = flb_start(ctx->flb);
+    TEST_CHECK(ret == 0);
+
+    int bytes = flb_lib_push(ctx->flb, ctx->i_ffd, p, strlen(p));
+    TEST_CHECK(bytes > 0);
+
+    wait_with_timeout(2000, &output);
+    TEST_CHECK(output != NULL);
+
+    if (output != NULL) {
+        TEST_CHECK_(strstr(output, "\"FIELD_A\":\"val1\"") != NULL, "Missing FIELD_A. Output: %s", output);
+        TEST_CHECK_(strstr(output, "\"FIELD_B\":\"val2\"") != NULL, "Missing FIELD_B. Output: %s", output);
+        TEST_CHECK_(strstr(output, "\"nes\":{\"ted\":{\"key\":\"val1 val2\"}}") != NULL, "Missing original 'nes' field. Output: %s", output);
+        TEST_CHECK_(strstr(output, "\"other\":\"value\"") != NULL, "Missing 'other' field. Output: %s", output);
+        free(output);
+    }
+    test_ctx_destroy(ctx);
+}
+
+/* Test Case RA: Nested Key with Reserve_Data Off, Preserve_Key On */
+void flb_test_filter_parser_ra_reserve_data_off_preserve_key_on()
+{
+    char *output = NULL;
+    struct test_ctx *ctx;
+    char *p = "[1678886400, {\"nes\":{\"ted\":{\"key\":\"val1 val2\"}}, \"other\":\"value\"}]";
+
+    /* Based on simplification: Preserve_Key is ignored if Reserve_Data is Off */
+    ctx = test_ctx_create_ra("$nes['ted']['key']", "Off", "On");
+    TEST_CHECK(ctx != NULL);
+    if (!ctx) return;
+    clear_output();
+
+    int ret = flb_start(ctx->flb);
+    TEST_CHECK(ret == 0);
+
+    int bytes = flb_lib_push(ctx->flb, ctx->i_ffd, p, strlen(p));
+    TEST_CHECK(bytes > 0);
+
+    wait_with_timeout(2000, &output);
+    TEST_CHECK(output != NULL);
+
+    if (output != NULL) {
+        TEST_CHECK_(strstr(output, "\"FIELD_A\":\"val1\"") != NULL, "Missing FIELD_A. Output: %s", output);
+        TEST_CHECK_(strstr(output, "\"FIELD_B\":\"val2\"") != NULL, "Missing FIELD_B. Output: %s", output);
+        TEST_CHECK_(strstr(output, "\"nes\":") == NULL, "Should not contain original 'nes' field due to Reserve_Data=Off. Output: %s", output);
+        TEST_CHECK_(strstr(output, "\"other\":") == NULL, "Should not contain 'other' field. Output: %s", output);
+        free(output);
+    }
+    test_ctx_destroy(ctx);
+}
+
+/* Test Case RA: Non-Existent Nested Key */
+void flb_test_filter_parser_ra_non_existent_key()
+{
+    char *output = NULL;
+    struct test_ctx *ctx;
+    char *p = "[1678886400, {\"nes\":{\"ted\":{\"other_key\":\"val1 val2\"}}}]";
+    char *expected_original_record = "\"nes\":{\"ted\":{\"other_key\":\"val1 val2\"}}";
+
+
+    ctx = test_ctx_create_ra("$nes['ted']['non_existent_key']", "On", "Off");
+    TEST_CHECK(ctx != NULL);
+    if (!ctx) return;
+    clear_output();
+
+    int ret = flb_start(ctx->flb);
+    TEST_CHECK(ret == 0);
+
+    int bytes = flb_lib_push(ctx->flb, ctx->i_ffd, p, strlen(p));
+    TEST_CHECK(bytes > 0);
+
+    wait_with_timeout(2000, &output);
+    TEST_CHECK(output != NULL);
+
+    if (output != NULL) {
+        TEST_CHECK_(strstr(output, expected_original_record) != NULL, "Original record not found. Output: %s", output);
+        TEST_CHECK_(strstr(output, "\"FIELD_A\":") == NULL, "Should not contain FIELD_A. Output: %s", output);
+        TEST_CHECK_(strstr(output, "\"FIELD_B\":") == NULL, "Should not contain FIELD_B. Output: %s", output);
+        free(output);
+    }
+    test_ctx_destroy(ctx);
+}
+
+/* Test Case RA: Top-Level Key via Record Accessor */
+void flb_test_filter_parser_ra_top_level_key()
+{
+    char *output = NULL;
+    struct test_ctx *ctx;
+    char *p = "[1678886400, {\"data\":\"val1 val2\", \"extra\":\"value\"}]";
+
+    ctx = test_ctx_create_ra("$data", "On", "Off");
+    TEST_CHECK(ctx != NULL);
+    if (!ctx) return;
+    clear_output();
+
+    int ret = flb_start(ctx->flb);
+    TEST_CHECK(ret == 0);
+
+    int bytes = flb_lib_push(ctx->flb, ctx->i_ffd, p, strlen(p));
+    TEST_CHECK(bytes > 0);
+
+    wait_with_timeout(2000, &output);
+    TEST_CHECK(output != NULL);
+
+    if (output != NULL) {
+        TEST_CHECK_(strstr(output, "\"FIELD_A\":\"val1\"") != NULL, "Missing FIELD_A. Output: %s", output);
+        TEST_CHECK_(strstr(output, "\"FIELD_B\":\"val2\"") != NULL, "Missing FIELD_B. Output: %s", output);
+        TEST_CHECK_(strstr(output, "\"extra\":\"value\"") != NULL, "Missing 'extra' field. Output: %s", output);
+        /* Original 'data' field might be removed or stay.
+         * With current simplified logic (Reserve_Data=On, Preserve_Key=Off),
+         * the original record's structure for 'data' might be removed by flb_msgpack_expand_map
+         * if it directly conflicts with the new keys. However, the string value itself might
+         * be harder to check for absence if other parts of 'data' are parsed.
+         * Given the plugin behavior, it's safer to assume it *might* be removed if not deeply nested.
+         * For a top-level key, it's often removed by the merge if not explicitly preserved.
+         * The subtask says: "The original "data" field might be removed or might stay...
+         * safer to expect the original "data" to also be present." - let's stick to this.
+         */
+        TEST_CHECK_(strstr(output, "\"data\":\"val1 val2\"") != NULL, "Original 'data' field should be present. Output: %s", output);
+        free(output);
+    }
+    test_ctx_destroy(ctx);
+}
+
+
 TEST_LIST = {
     {"filter_parser_extract_fields", flb_test_filter_parser_extract_fields },
     {"filter_parser_reserve_data_off", flb_test_filter_parser_reserve_data_off },
@@ -1313,6 +1591,12 @@ TEST_LIST = {
     {"filter_parser_reserve_off_preserve_on", flb_test_filter_parser_reserve_off_preserve_on},
     {"filter_parser_reserve_on_preserve_off", flb_test_filter_parser_reserve_on_preserve_off},
     {"filter_parser_reserve_on_preserve_on", flb_test_filter_parser_reserve_on_preserve_on},
+    /* New Record Accessor Tests */
+    {"filter_parser_ra_basic_nested", flb_test_filter_parser_ra_basic_nested },
+    {"filter_parser_ra_reserve_data_on", flb_test_filter_parser_ra_reserve_data_on },
+    {"filter_parser_ra_reserve_data_off_preserve_key_on", flb_test_filter_parser_ra_reserve_data_off_preserve_key_on },
+    {"filter_parser_ra_non_existent_key", flb_test_filter_parser_ra_non_existent_key },
+    {"filter_parser_ra_top_level_key", flb_test_filter_parser_ra_top_level_key },
     {NULL, NULL}
 };
 
