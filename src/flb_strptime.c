@@ -79,12 +79,47 @@
 
 static char gmt[] = { "GMT" };
 static char utc[] = { "UTC" };
+
 /* RFC-822/RFC-2822 */
 static const char * const nast[5] = {
        "EST",    "CST",    "MST",    "PST",    "\0\0\0"
 };
 static const char * const nadt[5] = {
        "EDT",    "CDT",    "MDT",    "PDT",    "\0\0\0"
+};
+
+/* New structure for known timezone abbreviations */
+typedef struct {
+	const char *abbr;
+	int offset_sec;
+	int is_dst;
+} flb_tz_abbr_info_t;
+
+/* New list of known timezone abbreviations */
+static const flb_tz_abbr_info_t flb_known_timezones[] = {
+	{"GMT", 0, 0}, {"UTC", 0, 0}, {"Z", 0, 0}, {"UT", 0, 0},
+	{"EST", -5*SECSPERHOUR, 0}, {"EDT", -4*SECSPERHOUR, 1},
+	{"CST", -6*SECSPERHOUR, 0}, {"CDT", -5*SECSPERHOUR, 1},
+	{"MST", -7*SECSPERHOUR, 0}, {"MDT", -6*SECSPERHOUR, 1},
+	{"PST", -8*SECSPERHOUR, 0}, {"PDT", -7*SECSPERHOUR, 1},
+	{"AKST", -9*SECSPERHOUR, 0}, {"AKDT", -8*SECSPERHOUR, 1},
+	{"HST", -10*SECSPERHOUR, 0},
+	{"WET",   0*SECSPERHOUR, 0}, {"WEST",  1*SECSPERHOUR, 1},
+	{"CET",   1*SECSPERHOUR, 0}, {"CEST",  2*SECSPERHOUR, 1},
+	{"EET",   2*SECSPERHOUR, 0}, {"EEST",  3*SECSPERHOUR, 1},
+	{"AEST", 10*SECSPERHOUR, 0}, {"AEDT", 11*SECSPERHOUR, 1},
+	{"ACST", (long)(9.5*SECSPERHOUR), 0}, {"ACDT", (long)(10.5*SECSPERHOUR), 1},
+	{"AWST",  8*SECSPERHOUR, 0},
+	{"JST",   9*SECSPERHOUR, 0},
+	{"A",   1*SECSPERHOUR, 0}, {"B",   2*SECSPERHOUR, 0}, {"C",   3*SECSPERHOUR, 0},
+	{"D",   4*SECSPERHOUR, 0}, {"E",   5*SECSPERHOUR, 0}, {"F",   6*SECSPERHOUR, 0},
+	{"G",   7*SECSPERHOUR, 0}, {"H",   8*SECSPERHOUR, 0}, {"I",   9*SECSPERHOUR, 0},
+	{"K",  10*SECSPERHOUR, 0}, {"L",  11*SECSPERHOUR, 0}, {"M",  12*SECSPERHOUR, 0},
+	{"N",  -1*SECSPERHOUR, 0}, {"O",  -2*SECSPERHOUR, 0}, {"P",  -3*SECSPERHOUR, 0},
+	{"Q",  -4*SECSPERHOUR, 0}, {"R",  -5*SECSPERHOUR, 0}, {"S",  -6*SECSPERHOUR, 0},
+	{"T",  -7*SECSPERHOUR, 0}, {"U",  -8*SECSPERHOUR, 0}, {"V",  -9*SECSPERHOUR, 0},
+	{"W", -10*SECSPERHOUR, 0}, {"X", -11*SECSPERHOUR, 0}, {"Y", -12*SECSPERHOUR, 0},
+	{NULL, 0, 0}
 };
 
 static const int mon_lengths[2][MONSPERYEAR] = {
@@ -153,6 +188,8 @@ _flb_strptime(const char *buf, const char *fmt, struct flb_tm *tm, int initializ
 		century = TM_YEAR_BASE;
 		relyear = -1;
 		fields = 0;
+		flb_tm_gmtoff(tm) = 0;
+		tm->tm.tm_isdst = -1;
 	}
 
 	bp = (const unsigned char *)buf;
@@ -404,7 +441,18 @@ literal:
 					return (NULL);
 				if (!gmtime_r((const time_t *) &i64, &tm->tm))
 					return (NULL);
-				fields = 0xffff;	 /* everything */
+				flb_tm_gmtoff(tm) = 0;
+				tm->tm.tm_isdst = 0;
+#ifdef FLB_HAVE_TIME_ZONE
+				tm->tm_zone = "UTC";
+				for(i=0; flb_known_timezones[i].abbr != NULL; ++i) { /* Prefer "UTC" from list if available */
+					if (strcmp(flb_known_timezones[i].abbr, "UTC") == 0) {
+						tm->tm_zone = flb_known_timezones[i].abbr;
+						break;
+					}
+				}
+#endif
+				fields = 0xffff;         /* everything */
 			}
 			break;
 		case 'U':	/* The week of year, beginning on sunday. */
@@ -471,35 +519,78 @@ literal:
 				return (NULL);
 			break;
 
-		case 'Z':
-			tzset();
-			if (strncmp((const char *)bp, gmt, 3) == 0) {
-				tm->tm.tm_isdst = 0;
-				flb_tm_gmtoff(tm) = 0;
-#ifdef FLB_HAVE_ZONE
-				tm->tm.tm_zone = gmt;
-#endif
-				bp += 3;
-			} else if (strncmp((const char *)bp, utc, 3) == 0) {
-				tm->tm.tm_isdst = 0;
-				flb_tm_gmtoff(tm) = 0;
-#ifdef FLB_HAVE_ZONE
-				tm->tm.tm_zone = utc;
-#endif
-				bp += 3;
-			} else {
-				ep = _find_string(bp, &i,
-						 (const char * const *)tzname,
-						  NULL, 2);
-				if (ep == NULL)
-					return (NULL);
+		case 'Z': {
+			const flb_tz_abbr_info_t *tz_info;
+			int found_in_known = 0;
+			size_t abbr_len;
 
-				tm->tm.tm_isdst = i;
-				flb_tm_gmtoff(tm) = -(timezone);
-#ifdef FLB_HAVE_ZONE
-				tm->tm.tm_zone = tzname[i];
+			for (tz_info = flb_known_timezones; tz_info->abbr != NULL; ++tz_info) {
+				abbr_len = strlen(tz_info->abbr);
+				if (strncasecmp(tz_info->abbr, (const char *)bp, abbr_len) == 0) {
+					if (!isalnum((unsigned char)bp[abbr_len])) {
+						tm->tm.tm_isdst = tz_info->is_dst;
+						flb_tm_gmtoff(tm) = tz_info->offset_sec;
+#ifdef FLB_HAVE_TIME_ZONE
+						tm->tm_zone = tz_info->abbr;
 #endif
-				bp = ep;
+						bp += abbr_len;
+						found_in_known = 1;
+						break;
+					}
+				}
+			}
+
+			if (!found_in_known) {
+				/* Fallback to original logic using system's tzname, gmt, utc */
+#if defined(_WIN32) || defined(_WIN64)
+				_tzset(); /* Windows */
+#else
+				tzset(); /* POSIX */
+#endif
+				/* Check original gmt/utc static arrays first, as per original logic */
+				if (strncmp((const char *)bp, gmt, 3) == 0) {
+					tm->tm.tm_isdst = 0;
+					flb_tm_gmtoff(tm) = 0;
+#ifdef FLB_HAVE_TIME_ZONE
+					tm->tm_zone = gmt;
+#endif
+					bp += 3;
+				} else if (strncmp((const char *)bp, utc, 3) == 0) {
+					tm->tm.tm_isdst = 0;
+					flb_tm_gmtoff(tm) = 0;
+#ifdef FLB_HAVE_TIME_ZONE
+					tm->tm_zone = utc;
+#endif
+					bp += 3;
+				} else {
+					ep = _find_string(bp, &i, (const char * const *)tzname, NULL, 2);
+					if (ep == NULL)
+						return (NULL);
+
+					tm->tm.tm_isdst = i;
+					/* 'timezone' global variable. Handled by flb_timezone() macro on FreeBSD.
+					   On Windows, _tzset sets _timezone (seconds WEST of UTC).
+					   On other POSIX, tzset sets timezone (seconds WEST of UTC). */
+#if defined(_WIN32) || defined(_WIN64)
+					long win_timezone_val;
+					_get_timezone(&win_timezone_val); /* Use a more robust way to get Windows timezone offset */
+					flb_tm_gmtoff(tm) = -(win_timezone_val);
+					/* Check _daylight and i for more accurate DST offset if needed */
+					if (_daylight && i == 1) {
+						long dst_bias = 0;
+						_get_dstbias(&dst_bias); /* dst_bias is offset FROM standard, usually negative, e.g. -3600 */
+						flb_tm_gmtoff(tm) = -(win_timezone_val + dst_bias);
+					}
+
+#else
+					flb_tm_gmtoff(tm) = -(timezone);
+#endif
+#ifdef FLB_HAVE_TIME_ZONE
+					tm->tm_zone = tzname[i];
+#endif
+					bp = ep;
+				}
+			}
 			}
 			continue;
 
@@ -520,21 +611,37 @@ literal:
 			 */
 			while (isspace(*bp))
 				bp++;
-
+			neg = 0;
 			switch (*bp++) {
 			case 'G':
 				if (*bp++ != 'M')
 					return NULL;
 				/*FALLTHROUGH*/
+				if (*bp++ != 'T')
+					return NULL;
+				tm->tm.tm_isdst = 0;
+				flb_tm_gmtoff(tm) = 0;
+#ifdef FLB_HAVE_TIME_ZONE
+				tm->tm_zone = "GMT"; /* Original had global gmt array */
+#endif
+				continue;
 			case 'U':
 				if (*bp++ != 'T')
 					return NULL;
 				/*FALLTHROUGH*/
+				if (*bp == 'C')
+					bp++; /* Allow "UTC" */
+				tm->tm.tm_isdst = 0;
+				flb_tm_gmtoff(tm) = 0;
+#ifdef FLB_HAVE_TIME_ZONE
+				tm->tm_zone = "UTC"; /* Original had global utc array */
+#endif
+				continue;
 			case 'Z':
 				tm->tm.tm_isdst = 0;
 				flb_tm_gmtoff(tm) = 0;
-#ifdef FLB_HAVE_ZONE
-				tm->tm.tm_zone = utc;
+#ifdef FLB_HAVE_TIME_ZONE
+				tm->tm_zone = utc;
 #endif
 				continue;
 			case '+':
@@ -547,9 +654,10 @@ literal:
 				--bp;
 				ep = _find_string(bp, &i, nast, NULL, 4);
 				if (ep != NULL) {
-				flb_tm_gmtoff(tm) = (-5 - i) * SECSPERHOUR;
-#ifdef FLB_HAVE_ZONE
-					tm->tm.tm_zone = (char *)nast[i];
+					flb_tm_gmtoff(tm) = (-5 - i) * SECSPERHOUR;
+					tm->tm.tm_isdst = 0;
+#ifdef FLB_HAVE_TIME_ZONE
+					tm->tm_zone = (char *)nast[i];
 #endif
 					bp = ep;
 					continue;
@@ -558,8 +666,8 @@ literal:
 				if (ep != NULL) {
 					tm->tm.tm_isdst = 1;
 					flb_tm_gmtoff(tm) = (-4 - i) * SECSPERHOUR;
-#ifdef FLB_HAVE_ZONE
-					tm->tm.tm_zone = (char *)nadt[i];
+#ifdef FLB_HAVE_TIME_ZONE
+					tm->tm_zone = (char *)nadt[i];
 #endif
 					bp = ep;
 					continue;
@@ -582,8 +690,8 @@ literal:
 				offs = -offs;
 			tm->tm.tm_isdst = 0;	/* XXX */
 			flb_tm_gmtoff(tm) = offs;
-#ifdef FLB_HAVE_ZONE
-			tm->tm.tm_zone = NULL;	/* XXX */
+#ifdef FLB_HAVE_TIME_ZONE
+			tm->tm_zone = NULL;	/* XXX */
 #endif
 			continue;
 
