@@ -32,6 +32,9 @@ struct flb_time {
 
 struct flb_tm {
     struct tm tm;
+#ifdef FLB_HAVE_TIME_ZONE
+    char *tm_zone;
+#endif
 #ifndef FLB_HAVE_GMTOFF
     long int tm_gmtoff;
 #endif
