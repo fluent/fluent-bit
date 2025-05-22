@@ -29,6 +29,7 @@
 #include <fluent-bit/flb_log_event_decoder.h>
 #include <fluent-bit/flb_log_event_encoder.h>
 #include <fluent-bit/flb_record_accessor.h>
+#include <fluent-bit/flb_ra_key.h>
 #include <msgpack.h>
 
 #include <string.h>
@@ -186,7 +187,7 @@ static int cb_parser_filter(const void *data, size_t bytes,
     int map_num;
     const char *val_str = NULL;
     int val_len = 0;
-    msgpack_object *value_obj = NULL; /* For record accessor */
+    struct flb_ra_value *ra_val_obj = NULL; /* Changed type for record accessor value */
     char *out_buf = NULL;
     size_t out_size = 0;
     struct flb_time parsed_time;
@@ -251,10 +252,10 @@ static int cb_parser_filter(const void *data, size_t bytes,
             }
 
             /* Get value using record accessor */
-            value_obj = flb_ra_get_value_object(ctx->ra_key_name, *obj);
+            ra_val_obj = flb_ra_get_value_object(ctx->ra_key_name, *obj);
 
-            if (value_obj != NULL) {
-                if (msgpackobj2char(value_obj, &val_str, &val_len) == 0) {
+            if (ra_val_obj != NULL) {
+                if (msgpackobj2char(&ra_val_obj->o, &val_str, &val_len) == 0) {
                     /* Lookup parser */
                     mk_list_foreach(head, &ctx->parsers) {
                         fp = mk_list_entry(head, struct filter_parser, _head);
@@ -278,9 +279,18 @@ static int cb_parser_filter(const void *data, size_t bytes,
                         }
                     }
                 }
-                /* If msgpackobj2char failed, parse_ret remains -1, handled by if (out_buf != NULL && parse_ret >= 0) */
+                else { /* msgpackobj2char failed */
+                    flb_ra_key_value_destroy(ra_val_obj); /* Clean up */
+                    ra_val_obj = NULL; /* Prevent further processing of this */
+                    /* parse_ret remains -1 */
+                }
             }
-            /* If value_obj is NULL, parse_ret remains -1, handled by if (out_buf != NULL && parse_ret >= 0) */
+            /* If ra_val_obj was NULL initially (key not found), parse_ret remains -1 */
+
+            /* Ensure ra_val_obj is destroyed if it was allocated and not already handled by error case */
+            if (ra_val_obj != NULL) {
+                flb_ra_key_value_destroy(ra_val_obj);
+            }
 
             encoder_result = flb_log_event_encoder_begin_record(&log_encoder);
 
