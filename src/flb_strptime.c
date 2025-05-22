@@ -588,7 +588,8 @@ literal:
 				return (NULL);
 			break;
 
-		case 'Z': {
+		case 'Z':
+		{
 			const flb_tz_abbr_info_t *tz_info;
 			int found_in_known = 0;
 			size_t abbr_len;
@@ -652,9 +653,8 @@ literal:
 					bp = ep;
 				}
 			}
-			}
 			continue;
-
+		}
 		case 'z':
 			/*
 			 * We recognize all ISO 8601 formats:
