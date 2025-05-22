@@ -140,7 +140,7 @@ jobs:
     steps:
       - uses: actions/checkout@v4
       - name: Build on ${{ matrix.os }} with ${{ matrix.compiler }}
-        uses: uraimo/run-on-arch-action@v3.0.0
+        uses: uraimo/run-on-arch-action@v3.0.1
         with:
           arch: aarch64
           distro: ubuntu_latest
