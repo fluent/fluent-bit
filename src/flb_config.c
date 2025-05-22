@@ -742,7 +742,7 @@ static int configure_plugins_type(struct flb_config *config, struct flb_cf *cf, 
 {
     int ret;
     char *tmp;
-    char *name;
+    char *name = NULL;
     char *s_type;
     struct mk_list *list;
     struct mk_list *head;
@@ -752,7 +752,7 @@ static int configure_plugins_type(struct flb_config *config, struct flb_cf *cf, 
     struct flb_cf_section *s;
     struct flb_cf_group *processors = NULL;
     int i;
-    void *ins;
+    void *ins = NULL;
 
     if (type == FLB_CF_CUSTOM) {
         s_type = "custom";
@@ -771,7 +771,7 @@ static int configure_plugins_type(struct flb_config *config, struct flb_cf *cf, 
         list = &cf->outputs;
     }
     else {
-        return -1;
+        goto error;
     }
 
     mk_list_foreach(head, list) {
@@ -780,7 +780,7 @@ static int configure_plugins_type(struct flb_config *config, struct flb_cf *cf, 
         if (!name) {
             flb_error("[config] section '%s' is missing the 'name' property",
                       s_type);
-            return -1;
+            goto error;
         }
 
         /* translate the variable */
@@ -806,10 +806,8 @@ static int configure_plugins_type(struct flb_config *config, struct flb_cf *cf, 
         if (!ins) {
             flb_error("[config] section '%s' tried to instance a plugin name "
                       "that doesn't exist", name);
-            flb_sds_destroy(name);
-            return -1;
+            goto error;
         }
-        flb_sds_destroy(name);
 
         /*
          * iterate section properties and populate instance by using specific
@@ -871,6 +869,7 @@ static int configure_plugins_type(struct flb_config *config, struct flb_cf *cf, 
                 flb_error("[config] could not configure property '%s' on "
                           "%s plugin with section name '%s'",
                           kv->key, s_type, name);
+                goto error;
             }
         }
 
@@ -880,22 +879,44 @@ static int configure_plugins_type(struct flb_config *config, struct flb_cf *cf, 
             if (type == FLB_CF_INPUT) {
                 ret = flb_processors_load_from_config_format_group(((struct flb_input_instance *) ins)->processor, processors);
                 if (ret == -1) {
-                    return -1;
+                    goto error;
                 }
             }
             else if (type == FLB_CF_OUTPUT) {
                 ret = flb_processors_load_from_config_format_group(((struct flb_output_instance *) ins)->processor, processors);
                 if (ret == -1) {
-                    return -1; 
+                    goto error;
                 }
             }
             else {
                 flb_error("[config] section '%s' does not support processors", s_type);
             }
         }
+
+        flb_sds_destroy(name);
     }
 
     return 0;
+
+error:
+    if (name != NULL) {
+        flb_sds_destroy(name);
+    }
+    if (ins != NULL) {
+        if (type == FLB_CF_CUSTOM) {
+            flb_custom_instance_destroy(ins);
+        }
+        else if (type == FLB_CF_INPUT) {
+            flb_input_instance_destroy(ins);
+        }
+        else if (type == FLB_CF_FILTER) {
+            flb_filter_instance_destroy(ins);
+        }
+        else if (type == FLB_CF_OUTPUT) {
+            flb_output_instance_destroy(ins);
+        }
+    }
+    return -1;
 }
 /* Load a struct flb_config_format context into a flb_config instance */
 int flb_config_load_config_format(struct flb_config *config, struct flb_cf *cf)
