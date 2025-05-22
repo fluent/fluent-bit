@@ -57,9 +57,13 @@
 #define FLB_METRIC_OUT_RETRY_FAILED    14       /* retries_failed */
 #define FLB_METRIC_OUT_DROPPED_RECORDS 15       /* dropped_records_total */
 #define FLB_METRIC_OUT_RETRIED_RECORDS 16       /* retried_records_total */
+#define FLB_METRIC_INPUT_CONNECTIONS_TOTAL 17
 
 /* The limitation of title name length */
 #define FLB_METRIC_LENGTH_LIMIT 1024
+
+/* Metric title strings */
+#define FLB_INPUT_CONNECTIONS_TOTAL_STR "fluentbit_input_connections_total"
 
 struct flb_metric {
     int id;

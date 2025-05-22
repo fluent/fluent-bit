@@ -254,6 +254,9 @@ flb_sds_t metrics_help_txt(char *metric_name, flb_sds_t *metric_helptxt)
     else if (strstr(metric_name, "output_retried_records")) {
         return flb_sds_cat(*metric_helptxt, " Number of retried records.\n", 28);
     }
+    else if (strstr(metric_name, "input_connections_total")) {
+        return flb_sds_cat(*metric_helptxt, " Total number of active connections for the input instance.\n", 60);
+    }
     else {
         return (flb_sds_cat(*metric_helptxt, " Fluentbit metrics.\n", 20));
     }
@@ -397,13 +400,31 @@ void cb_metrics_prometheus(mk_request_t *request, void *data)
                 }
 
                 sds_metric = flb_sds_cat(sds_metric, "fluentbit_", 10);
-                sds_metric = flb_sds_cat(sds_metric, k.via.str.ptr, k.via.str.size);
+                sds_metric = flb_sds_cat(sds_metric, k.via.str.ptr, k.via.str.size); /* e.g., "input" */
                 sds_metric = flb_sds_cat(sds_metric, "_", 1);
-                sds_metric = flb_sds_cat(sds_metric, mk.via.str.ptr, mk.via.str.size);
-                sds_metric = flb_sds_cat(sds_metric, "_total{name=\"", 13);
-                sds_metric = flb_sds_cat(sds_metric, sk.via.str.ptr, sk.via.str.size);
+
+                /* Original metric name from CMetrics, e.g., "records_total", "bytes_total", "connections_total" */
+                flb_sds_t cmt_metric_name_ptr = mk.via.str.ptr;
+                size_t cmt_metric_name_len = mk.via.str.size;
+
+                sds_metric = flb_sds_cat(sds_metric, cmt_metric_name_ptr, cmt_metric_name_len);
+
+                /*
+                 * Adjust suffix:
+                 * - If metric is "connections_total", do not add "_total".
+                 * - Otherwise, append "_total" for counters.
+                 * This logic might need to be expanded if other gauges are directly added from CMetrics.
+                 */
+                if (cmt_metric_name_len == 17 && strncmp(cmt_metric_name_ptr, "connections_total", 17) == 0) {
+                    sds_metric = flb_sds_cat(sds_metric, "{name=\"", 8);
+                }
+                else {
+                    sds_metric = flb_sds_cat(sds_metric, "_total{name=\"", 13);
+                }
+
+                sds_metric = flb_sds_cat(sds_metric, sk.via.str.ptr, sk.via.str.size); /* plugin name */
                 sds_metric = flb_sds_cat(sds_metric, "\"} ", 3);
-                sds_metric = flb_sds_cat(sds_metric, tmp, len);
+                sds_metric = flb_sds_cat(sds_metric, tmp, len); /* value */
                 sds_metric = flb_sds_cat(sds_metric, time_str, time_len);
                 sds_metric = flb_sds_cat(sds_metric, "\n", 1);
                 metrics_arr[index] = sds_metric;
@@ -429,7 +450,11 @@ void cb_metrics_prometheus(mk_request_t *request, void *data)
     null_check(tmp_sds);
     tmp_sds = flb_sds_cat(sds, metrics_arr[0], extract_metric_name_end_position(metrics_arr[0]));
     null_check(tmp_sds);
-    tmp_sds = flb_sds_cat(sds, " counter\n", 9);
+    if (strstr(metrics_arr[0], "connections_total")) {
+        tmp_sds = flb_sds_cat(sds, " gauge\n", 7);
+    } else {
+        tmp_sds = flb_sds_cat(sds, " counter\n", 9);
+    }
     null_check(tmp_sds);
 
     for (i = 0; i < num_metrics; i++) {
@@ -450,7 +475,11 @@ void cb_metrics_prometheus(mk_request_t *request, void *data)
             null_check(tmp_sds);
             tmp_sds = flb_sds_cat(sds, metrics_arr[i+1], extract_metric_name_end_position(metrics_arr[i+1]));
             null_check(tmp_sds);
-            tmp_sds = flb_sds_cat(sds, " counter\n", 9);
+            if (strstr(metrics_arr[i+1], "connections_total")) {
+                tmp_sds = flb_sds_cat(sds, " gauge\n", 7);
+            } else {
+                tmp_sds = flb_sds_cat(sds, " counter\n", 9);
+            }
             null_check(tmp_sds);
         }
     }

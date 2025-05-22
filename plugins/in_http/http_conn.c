@@ -289,6 +289,10 @@ struct http_conn *http_conn_add(struct flb_connection *connection,
     /* Link connection node to parent context list */
     mk_list_add(&conn->_head, &ctx->connections);
 
+    if (ctx->ins->cmt_connections_total) {
+        cmt_gauge_inc(ctx->ins->cmt_connections_total, 1.0, (char *[]) {(char *)flb_input_name(ctx->ins)});
+    }
+
     return conn;
 }
 
@@ -302,6 +306,10 @@ int http_conn_del(struct http_conn *conn)
      * so there's nothing to be done by the plugin
      */
     flb_downstream_conn_release(conn->connection);
+
+    if (conn->ctx->ins->cmt_connections_total) {
+        cmt_gauge_dec(conn->ctx->ins->cmt_connections_total, 1.0, (char *[]) {(char *)flb_input_name(conn->ctx->ins)});
+    }
 
     mk_list_del(&conn->_head);
 

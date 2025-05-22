@@ -844,6 +844,9 @@ void flb_input_instance_destroy(struct flb_input_instance *ins)
     /* Remove metrics */
 #ifdef FLB_HAVE_METRICS
     if (ins->cmt) {
+        if (ins->cmt_connections_total) {
+            cmt_gauge_destroy(ins->cmt_connections_total);
+        }
         cmt_destroy(ins->cmt);
     }
 
@@ -1076,6 +1079,22 @@ int flb_input_instance_init(struct flb_input_instance *ins,
         flb_error("[input] could not create cmetrics context: %s",
                   flb_input_name(ins));
         return -1;
+    }
+
+    ins->cmt_connections_total = cmt_gauge_create(ins->cmt,
+                                           "fluentbit",
+                                           "input",
+                                           "connections_total",
+                                           "Total number of active connections for the input instance.",
+                                           1, (char *[]) {"name"});
+    if (!ins->cmt_connections_total) {
+        flb_error("[input] could not create connections_total gauge metric for %s", name);
+        cmt_destroy(ins->cmt);
+        ins->cmt = NULL;
+        return -1;
+    }
+    else {
+        flb_plg_debug(ins, "registered cmt_connections_total");
     }
 
     /*

@@ -396,6 +396,9 @@ struct flb_input_instance {
     struct cmt_counter *cmt_bytes;       /* metric: input_bytes_total   */
     struct cmt_counter *cmt_records;     /* metric: input_records_total */
 
+    /* Total number of connections */
+    struct cmt_gauge   *cmt_connections_total;
+
     /* is the input instance overlimit ?: 1 or 0 */
     struct cmt_gauge   *cmt_storage_overlimit;
 

@@ -204,6 +204,10 @@ struct fw_conn *fw_conn_add(struct flb_connection *connection, struct flb_in_fw_
 
     mk_list_add(&conn->_head, &ctx->connections);
 
+    if (ctx->ins->cmt_connections_total) {
+        cmt_gauge_inc(ctx->ins->cmt_connections_total, 1.0, (char *[]) {(char *)flb_input_name(ctx->ins)});
+    }
+
     return conn;
 }
 
@@ -213,6 +217,10 @@ int fw_conn_del(struct fw_conn *conn)
      * so there's nothing to be done by the plugin
      */
     flb_downstream_conn_release(conn->connection);
+
+    if (conn->ctx->ins->cmt_connections_total) {
+        cmt_gauge_dec(conn->ctx->ins->cmt_connections_total, 1.0, (char *[]) {(char *)flb_input_name(conn->ctx->ins)});
+    }
 
     /* Release resources */
     mk_list_del(&conn->_head);

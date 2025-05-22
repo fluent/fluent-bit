@@ -211,6 +211,10 @@ struct syslog_conn *syslog_conn_add(struct flb_connection *connection,
 
     mk_list_add(&conn->_head, &ctx->connections);
 
+    if (ctx->ins->cmt_connections_total) {
+        cmt_gauge_inc(ctx->ins->cmt_connections_total, 1.0, (char *[]) {(char *)flb_input_name(ctx->ins)});
+    }
+
     return conn;
 }
 
@@ -221,6 +225,10 @@ int syslog_conn_del(struct syslog_conn *conn)
      */
     if (!conn->ctx->dgram_mode_flag) {
         flb_downstream_conn_release(conn->connection);
+    }
+
+    if (conn->ctx->ins->cmt_connections_total) {
+        cmt_gauge_dec(conn->ctx->ins->cmt_connections_total, 1.0, (char *[]) {(char *)flb_input_name(conn->ctx->ins)});
     }
 
     /* Release resources */

@@ -432,6 +432,10 @@ struct tcp_conn *tcp_conn_add(struct flb_connection *connection,
 
     mk_list_add(&conn->_head, &ctx->connections);
 
+    if (ctx->ins->cmt_connections_total) {
+        cmt_gauge_inc(ctx->ins->cmt_connections_total, 1.0, (char *[]) {(char *)flb_input_name(ctx->ins)});
+    }
+
     return conn;
 }
 
@@ -440,6 +444,10 @@ int tcp_conn_del(struct tcp_conn *conn)
     struct flb_in_tcp_config *ctx;
 
     ctx = conn->ctx;
+
+    if (ctx->ins->cmt_connections_total) {
+        cmt_gauge_dec(ctx->ins->cmt_connections_total, 1.0, (char *[]) {(char *)flb_input_name(ctx->ins)});
+    }
 
     if (ctx->format == FLB_TCP_FMT_JSON) {
         flb_pack_state_reset(&conn->pack_state);
