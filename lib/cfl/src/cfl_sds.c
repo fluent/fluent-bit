@@ -38,7 +38,7 @@ size_t cfl_sds_avail(cfl_sds_t s)
     return (size_t) (h->alloc - h->len);
 }
 
-cfl_sds_t sds_alloc(size_t size)
+static cfl_sds_t sds_alloc(size_t size)
 {
     void *buf;
     cfl_sds_t s;
