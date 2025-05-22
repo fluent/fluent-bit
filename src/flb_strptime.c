@@ -519,15 +519,13 @@ literal:
 					return (NULL);
 				flb_tm_gmtoff(tm) = 0;
 				tm->tm.tm_isdst = 0;
-#ifdef FLB_HAVE_TIME_ZONE
-				tm->tm_zone = "UTC";
+				flb_tm_zone(tm) = "UTC";
 				for(i=0; flb_known_timezones[i].abbr != NULL; ++i) { /* Prefer "UTC" from list if available */
 					if (strcmp(flb_known_timezones[i].abbr, "UTC") == 0) {
-						tm->tm_zone = flb_known_timezones[i].abbr;
+						flb_tm_zone(tm) = flb_known_timezones[i].abbr;
 						break;
 					}
 				}
-#endif
 				fields = 0xffff;         /* everything */
 			}
 			break;
@@ -606,9 +604,7 @@ literal:
 					if (!isalnum((unsigned char)bp[abbr_len])) {
 						tm->tm.tm_isdst = tz_info->is_dst;
 						flb_tm_gmtoff(tm) = tz_info->offset_sec;
-#ifdef FLB_HAVE_TIME_ZONE
-						tm->tm_zone = tz_info->abbr;
-#endif
+						flb_tm_zone(tm) = tz_info->abbr;
 						bp += abbr_len;
 						found_in_known = 1;
 						break;
@@ -627,16 +623,12 @@ literal:
 				if (strncmp((const char *)bp, gmt, 3) == 0) {
 					tm->tm.tm_isdst = 0;
 					flb_tm_gmtoff(tm) = 0;
-#ifdef FLB_HAVE_TIME_ZONE
-					tm->tm_zone = gmt;
-#endif
+					flb_tm_zone(tm) = gmt;
 					bp += 3;
 				} else if (strncmp((const char *)bp, utc, 3) == 0) {
 					tm->tm.tm_isdst = 0;
 					flb_tm_gmtoff(tm) = 0;
-#ifdef FLB_HAVE_TIME_ZONE
-					tm->tm_zone = utc;
-#endif
+					flb_tm_zone(tm) = utc;
 					bp += 3;
 				} else {
 					ep = _find_string(bp, &i, (const char * const *)tzname, NULL, 2);
@@ -661,9 +653,7 @@ literal:
 #else
 					flb_tm_gmtoff(tm) = -(timezone);
 #endif
-#ifdef FLB_HAVE_TIME_ZONE
-					tm->tm_zone = tzname[i];
-#endif
+					flb_tm_zone(tm) = tzname[i];
 					bp = ep;
 				}
 			}
@@ -697,9 +687,7 @@ literal:
 					return NULL;
 				tm->tm.tm_isdst = 0;
 				flb_tm_gmtoff(tm) = 0;
-#ifdef FLB_HAVE_TIME_ZONE
-				tm->tm_zone = "GMT"; /* Original had global gmt array */
-#endif
+				flb_tm_zone(tm) = "GMT"; /* Original had global gmt array */
 				continue;
 			case 'U':
 				if (*bp++ != 'T')
@@ -709,16 +697,12 @@ literal:
 					bp++; /* Allow "UTC" */
 				tm->tm.tm_isdst = 0;
 				flb_tm_gmtoff(tm) = 0;
-#ifdef FLB_HAVE_TIME_ZONE
-				tm->tm_zone = "UTC"; /* Original had global utc array */
-#endif
+				flb_tm_zone(tm) = "UTC"; /* Original had global utc array */
 				continue;
 			case 'Z':
 				tm->tm.tm_isdst = 0;
 				flb_tm_gmtoff(tm) = 0;
-#ifdef FLB_HAVE_TIME_ZONE
-				tm->tm_zone = utc;
-#endif
+				flb_tm_zone(tm) = utc;
 				continue;
 			case '+':
 				neg = 0;
@@ -732,9 +716,7 @@ literal:
 				if (ep != NULL) {
 					flb_tm_gmtoff(tm) = (-5 - i) * SECSPERHOUR;
 					tm->tm.tm_isdst = 0;
-#ifdef FLB_HAVE_TIME_ZONE
-					tm->tm_zone = (char *)nast[i];
-#endif
+					flb_tm_zone(tm)  = (char *)nast[i];
 					bp = ep;
 					continue;
 				}
@@ -742,9 +724,7 @@ literal:
 				if (ep != NULL) {
 					tm->tm.tm_isdst = 1;
 					flb_tm_gmtoff(tm) = (-4 - i) * SECSPERHOUR;
-#ifdef FLB_HAVE_TIME_ZONE
-					tm->tm_zone = (char *)nadt[i];
-#endif
+					flb_tm_zone(tm)  = (char *)nadt[i];
 					bp = ep;
 					continue;
 				}
@@ -766,9 +746,7 @@ literal:
 				offs = -offs;
 			tm->tm.tm_isdst = 0;	/* XXX */
 			flb_tm_gmtoff(tm) = offs;
-#ifdef FLB_HAVE_TIME_ZONE
-			tm->tm_zone = NULL;	/* XXX */
-#endif
+			flb_tm_zone(tm) = NULL;	/* XXX */
 			continue;
 
 		/*
