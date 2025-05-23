@@ -47,22 +47,25 @@ typedef uint64_t flb_route_mask_element;
 struct flb_input_instance;
 struct flb_config;
 
-int flb_routes_mask_set_by_tag(flb_route_mask_element *routes_mask, 
-                               const char *tag, 
-                               int tag_len, 
+int flb_routes_mask_set_by_tag(flb_route_mask_element *routes_mask,
+                               const char *tag,
+                               int tag_len,
                                struct flb_input_instance *in);
-int flb_routes_mask_get_bit(flb_route_mask_element *routes_mask, int value, 
-                            struct flb_config *config);
-void flb_routes_mask_set_bit(flb_route_mask_element *routes_mask, int value, 
-                             struct flb_config *config);
-void flb_routes_mask_clear_bit(flb_route_mask_element *routes_mask, int value, 
-                               struct flb_config *config);
-int flb_routes_mask_is_empty(flb_route_mask_element *routes_mask, 
-                             struct flb_config *config);
+int flb_routes_mask_get_bit(flb_route_mask_element *routes_mask, int value,
+                            struct flb_router *router);
+void flb_routes_mask_set_bit(flb_route_mask_element *routes_mask, int value,
+                             struct flb_router *router);
+                             void flb_routes_mask_clear_bit(flb_route_mask_element *routes_mask, int value,
+                             struct flb_router *router);
+int flb_routes_mask_is_empty(flb_route_mask_element *routes_mask,
+                             struct flb_router *router);
 
-int flb_routes_empty_mask_create(struct flb_config *config);
-void flb_routes_empty_mask_destroy(struct flb_config *config);
+int flb_routes_empty_mask_create(struct flb_router *router);
+void flb_routes_empty_mask_destroy(struct flb_router *router);
 
-int flb_routes_mask_set_size(size_t mask_size, struct flb_config *config);
+int flb_routes_mask_set_size(size_t mask_size, struct flb_router *router);
+size_t flb_routes_mask_get_size(struct flb_router *router);
+
+size_t flb_routes_mask_get_slots(struct flb_router *router);
 
 #endif
