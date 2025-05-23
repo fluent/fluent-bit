@@ -269,3 +269,100 @@ void flb_router_exit(struct flb_config *config)
         }
     }
 }
+
+static int router_metrics_create(struct flb_router *router)
+{
+    if (!router || !router->cmt) {
+        return -1;
+    }
+
+    /* Metrics for Logs
+     * ----------------
+     * The following metrics are used to track the number of records routed from input to output,
+     * the number of bytes routed, and the number of records and bytes dropped during routing.
+     *
+     * The metrics are defined as follows:
+     *
+     *   - flb_routing_logs_records_total: Log records routed to outputs
+     *   - flb_routing_logs_bytes_total: Total log bytes routed
+     *   - flb_routing_logs_drop_records_total: Log records dropped during routing
+     *   - flb_routing_logs_drop_bytes_total: Log bytes dropped during routing
+     *
+     */
+    router->logs_records_total = cmt_counter_create(
+                                                    router->cmt,
+                                                    "flb", "routing_logs", "records_total",
+                                                    "Total log records routed from input to output",
+                                                    2,
+                                                    (char *[]) { "input", "output" });
+    if (!router->logs_records_total) {
+        return -1;
+    }
+
+    router->logs_bytes_total = cmt_counter_create(
+                                                 router->cmt,
+                                                 "flb", "routing_logs", "bytes_total",
+                                                 "Total bytes routed from input to output (logs)",
+                                                 2,
+                                                 (char *[]) { "input", "output" });
+    if (!router->logs_bytes_total) {
+        return -1;
+    }
+
+    router->logs_drop_records_total = cmt_counter_create(
+                                                        router->cmt,
+                                                        "flb", "routing_logs", "drop_records_total",
+                                                        "Total log records dropped during routing",
+                                                        2,
+                                                        (char *[]) { "input", "output" });
+    if (!router->logs_drop_records_total) {
+        return -1;
+    }
+
+    router->logs_drop_bytes_total = cmt_counter_create(
+                                                       router->cmt,
+                                                       "flb", "routing_logs", "drop_bytes_total",
+                                                       "Total bytes dropped during routing (logs)",
+                                                       2,
+                                                       (char *[]) { "input", "output" });
+    if (!router->logs_drop_bytes_total) {
+        return -1;
+    }
+
+    return 0;
+}
+
+struct flb_router *flb_router_create(struct flb_config *config)
+{
+    struct flb_router *router;
+
+    router = flb_calloc(1, sizeof(struct flb_router));
+    if (!router) {
+        flb_errno();
+        return NULL;
+    }
+
+    /* create metrics instance */
+    router->cmt = cmt_create();
+    if (!router->cmt) {
+        flb_free(router);
+        return NULL;
+    }
+
+    if (router_metrics_create(router) != 0) {
+        flb_free(router);
+        return NULL;
+    }
+    return router;
+}
+
+void flb_router_destroy(struct flb_router *router)
+{
+    if (router->cmt) {
+        cmt_destroy(router->cmt);
+    }
+
+    flb_free(router);
+    router = NULL;
+}
+
