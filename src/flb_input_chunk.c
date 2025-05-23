@@ -162,7 +162,7 @@ static int flb_input_chunk_release_space(
 
         if (!flb_routes_mask_get_bit(old_input_chunk->routes_mask,
                                      output_plugin->id,
-                                     input_plugin->config)) {
+                                     input_plugin->config->router)) {
             continue;
         }
 
@@ -185,14 +185,14 @@ static int flb_input_chunk_release_space(
         if (release_scope == FLB_INPUT_CHUNK_RELEASE_SCOPE_LOCAL) {
             flb_routes_mask_clear_bit(old_input_chunk->routes_mask,
                                       output_plugin->id,
-                                      input_plugin->config);
+                                      input_plugin->config->router);
 
             FS_CHUNK_SIZE_DEBUG_MOD(output_plugin, old_input_chunk, chunk_size);
             output_plugin->fs_chunks_size -= chunk_size;
 
             chunk_destroy_flag = flb_routes_mask_is_empty(
                                                 old_input_chunk->routes_mask,
-                                                input_plugin->config);
+                                                input_plugin->config->router);
 
             chunk_released = FLB_TRUE;
         }
@@ -411,7 +411,7 @@ static int flb_input_chunk_safe_delete(struct flb_input_chunk *ic,
      */
     if (flb_routes_mask_get_bit(old_ic->routes_mask,
                                 o_id,
-                                ic->in->config) == 0) {
+                                ic->in->config->router) == 0) {
         return FLB_FALSE;
     }
 
@@ -516,7 +516,7 @@ int flb_input_chunk_find_space_new_data(struct flb_input_chunk *ic,
         if ((o_ins->total_limit_size == -1) || ((1 << o_ins->id) & overlimit) == 0 ||
            (flb_routes_mask_get_bit(ic->routes_mask,
                                     o_ins->id,
-                                    o_ins->config) == 0)) {
+                                    o_ins->config->router) == 0)) {
             continue;
         }
 
@@ -558,7 +558,7 @@ int flb_input_chunk_has_overlimit_routes(struct flb_input_chunk *ic,
         if ((o_ins->total_limit_size == -1) ||
             (flb_routes_mask_get_bit(ic->routes_mask,
                                      o_ins->id,
-                                     o_ins->config) == 0)) {
+                                     o_ins->config->router) == 0)) {
             continue;
         }
 
@@ -599,8 +599,7 @@ int flb_input_chunk_place_new_chunk(struct flb_input_chunk *ic, size_t chunk_siz
             }
         }
     }
-    return !flb_routes_mask_is_empty(ic->routes_mask,
-                                     i_ins->config);
+    return !flb_routes_mask_is_empty(ic->routes_mask, i_ins->config->router);
 }
 
 /* Create an input chunk using a Chunk I/O */
@@ -612,6 +611,7 @@ struct flb_input_chunk *flb_input_chunk_map(struct flb_input_instance *in,
     int tag_len;
     int has_routes;
     int ret;
+    size_t size;
     uint64_t ts;
     char *buf_data;
     size_t buf_size;
@@ -641,10 +641,9 @@ struct flb_input_chunk *flb_input_chunk_map(struct flb_input_instance *in,
         return NULL;
     }
 
-    ic->routes_mask = (flb_route_mask_element *)
-                            flb_calloc(in->config->route_mask_size,
-                                       sizeof(flb_route_mask_element));
+    size = flb_routes_mask_get_size(in->config->router);
 
+    ic->routes_mask = (flb_route_mask_element *) flb_calloc(size, sizeof(flb_route_mask_element));
     if (ic->routes_mask == NULL) {
         flb_errno();
         cio_chunk_close(chunk, CIO_TRUE);
@@ -879,6 +878,7 @@ struct flb_input_chunk *flb_input_chunk_create(struct flb_input_instance *in, in
     int err;
     int set_down = FLB_FALSE;
     int has_routes;
+    size_t size;
     char name[64];
     struct cio_chunk *chunk;
     struct flb_storage_input *storage;
@@ -943,10 +943,9 @@ struct flb_input_chunk *flb_input_chunk_create(struct flb_input_instance *in, in
 #ifdef FLB_HAVE_METRICS
     ic->total_records = 0;
 #endif
-    ic->routes_mask = (flb_route_mask_element *)
-                            flb_calloc(in->config->route_mask_size,
-                                       sizeof(flb_route_mask_element));
 
+    size = flb_routes_mask_get_size(in->config->router);
+    ic->routes_mask = (flb_route_mask_element *) flb_calloc(size, sizeof(flb_route_mask_element));
     if (ic->routes_mask == NULL) {
         flb_errno();
         cio_chunk_close(chunk, CIO_TRUE);
@@ -1008,7 +1007,7 @@ int flb_input_chunk_destroy_corrupted(struct flb_input_chunk *ic,
 
         if (flb_routes_mask_get_bit(ic->routes_mask,
                                     o_ins->id,
-                                    o_ins->config) != 0) {
+                                    o_ins->config->router) != 0) {
             if (ic->fs_counted == FLB_TRUE) {
                 FS_CHUNK_SIZE_DEBUG_MOD(o_ins, ic, -bytes);
                 o_ins->fs_chunks_size -= bytes;
@@ -1092,7 +1091,7 @@ int flb_input_chunk_destroy(struct flb_input_chunk *ic, int del)
 
         if (flb_routes_mask_get_bit(ic->routes_mask,
                                     o_ins->id,
-                                    o_ins->config) != 0) {
+                                    o_ins->config->router) != 0) {
             if (ic->fs_counted == FLB_TRUE) {
                 FS_CHUNK_SIZE_DEBUG_MOD(o_ins, ic, -bytes);
                 o_ins->fs_chunks_size -= bytes;
@@ -1250,8 +1249,8 @@ static struct flb_input_chunk *input_chunk_get(struct flb_input_instance *in,
      * that the chunk will flush to, we need to modify the routes_mask of the oldest chunks
      * (based in creation time) to get enough space for the incoming chunk.
      */
-    if (!flb_routes_mask_is_empty(ic->routes_mask, ic->in->config)
-        && flb_input_chunk_place_new_chunk(ic, chunk_size) == 0) {
+    if (!flb_routes_mask_is_empty(ic->routes_mask, ic->in->config->router) &&
+        flb_input_chunk_place_new_chunk(ic, chunk_size) == 0) {
         /*
          * If the chunk is not newly created, the chunk might already have logs inside.
          * We cannot delete (reused) chunks here.
@@ -1259,7 +1258,7 @@ static struct flb_input_chunk *input_chunk_get(struct flb_input_instance *in,
          * the chunk.
          */
         if (new_chunk ||
-            flb_routes_mask_is_empty(ic->routes_mask, ic->in->config) == FLB_TRUE) {
+            flb_routes_mask_is_empty(ic->routes_mask, ic->in->config->router) == FLB_TRUE) {
             flb_input_chunk_destroy(ic, FLB_TRUE);
         }
         return NULL;
@@ -2218,7 +2217,7 @@ void flb_input_chunk_update_output_instances(struct flb_input_chunk *ic,
 
         if (flb_routes_mask_get_bit(ic->routes_mask,
                                     o_ins->id,
-                                    o_ins->config) != 0) {
+                                    o_ins->config->router) != 0) {
             /*
              * if there is match on any index of 1's in the binary, it indicates
              * that the input chunk will flush to this output instance
