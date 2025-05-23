@@ -348,7 +348,7 @@ static int filter_context_label_key_value(struct cmt *dst, struct cmt *src,
             return -1;
         }
 
-        map = cmt_map_create(CMT_UNTYPED, &gauge->opts,
+        map = cmt_map_create(CMT_UNTYPED, &untyped->opts,
                              untyped->map->label_count,
                              labels, (void *) untyped);
         free(labels);
