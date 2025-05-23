@@ -291,10 +291,9 @@ struct flb_config {
     
     int hot_reload_watchdog_timeout_seconds;
 
-    /* Routing */
-    size_t route_mask_size;
-    size_t route_mask_slots;
-    uint64_t *route_empty_mask;
+    /* router context */
+    struct flb_router *router;
+
 #ifdef FLB_SYSTEM_WINDOWS
     /* maxstdio (Windows) */
     int win_maxstdio;
