@@ -283,10 +283,9 @@ struct flb_config {
     int shutdown_by_hot_reloading;
     int hot_reloading;
 
-    /* Routing */
-    size_t route_mask_size;
-    size_t route_mask_slots;
-    uint64_t *route_empty_mask;
+    /* router context */
+    struct flb_router *router;
+
 #ifdef FLB_SYSTEM_WINDOWS
     /* maxstdio (Windows) */
     int win_maxstdio;
