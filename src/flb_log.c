@@ -478,6 +478,16 @@ int flb_log_set_file(struct flb_config *config, char *out)
     return 0;
 }
 
+/* Frees the metrics instance and its associated resources. */
+void flb_log_metrics_destroy(struct flb_log_metrics *metrics)
+{
+    if (metrics != NULL && metrics->cmt != NULL) {
+        cmt_destroy(metrics->cmt);
+    }
+    if (metrics != NULL) {
+        flb_free(metrics);
+    }
+}
 
 /*
  * Create and register cmetrics for the runtime logger.
@@ -486,7 +496,7 @@ int flb_log_set_file(struct flb_config *config, char *out)
 struct flb_log_metrics *flb_log_metrics_create()
 {
     struct flb_log_metrics *metrics;
-    int i;
+    int log_message_type;
     const char *message_type_str;
     uint64_t ts;
     int ret;
@@ -498,8 +508,8 @@ struct flb_log_metrics *flb_log_metrics_create()
     }
 
     metrics->cmt = cmt_create();
-    if (!metrics->cmt) {
-        flb_free(metrics);
+    if (metrics->cmt == NULL) {
+        flb_log_metrics_destroy(metrics);
         return NULL;
     }
 
@@ -510,18 +520,14 @@ struct flb_log_metrics *flb_log_metrics_create()
                                                      "Total number of logs",
                                                      1, (char *[]) {"message_type"});
     if (metrics->logs_total_counter == NULL) {
-        cmt_destroy(metrics->cmt);
-        flb_free(metrics);
+        flb_log_metrics_destroy(metrics);
         return NULL;
     }
 
-    /*
-     * Initialize counters for all log message types to 0.
-     * This assumes types are contiguous starting at 1 (FLB_LOG_ERROR).
-     */
+    /* Initialize counters for log message types to 0. */
     ts = cfl_time_now();
-    for (i = 1; ; i++) {
-        message_type_str = flb_log_message_type_str(i);
+    for (log_message_type = FLB_LOG_ERROR; log_message_type <= FLB_LOG_TRACE; log_message_type++) {
+        message_type_str = flb_log_message_type_str(log_message_type);
         if (!message_type_str) {
             break;
         }
@@ -531,24 +537,13 @@ struct flb_log_metrics *flb_log_metrics_create()
                               0,
                               1, (char *[]) {message_type_str});
         if (ret == -1) {
-            cmt_counter_destroy(metrics->logs_total_counter);
-            cmt_destroy(metrics->cmt);
-            flb_free(metrics);
+            flb_log_metrics_destroy(metrics);
             return NULL;
         }
     }
 
     return metrics;
 }
-
-/* Frees the metrics instance and its associated resources. */
-void flb_log_metrics_destroy(struct flb_log_metrics *metrics)
-{
-    cmt_counter_destroy(metrics->logs_total_counter);
-    cmt_destroy(metrics->cmt);
-    flb_free(metrics);
-}
-
 
 struct flb_log *flb_log_create(struct flb_config *config, int type,
                                int level, char *out)
@@ -832,7 +827,7 @@ void flb_log_print(int type, const char *file, int line, const char *fmt, ...)
                                   ts,
                                   1, (char *[]) {msg_type_str});
             if (ret == -1) {
-                // Not using flb_log_debug to avoid recursing into this same function.
+                /* Not using flb_log_debug to avoid recursing into this same function. */
                 fprintf(stderr,
                         "[log] failed to increment log total counter for message type '%s' (error=%d)\n",
                         msg_type_str, ret);
