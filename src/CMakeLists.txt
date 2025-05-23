@@ -636,4 +636,9 @@ if(FLB_BINARY)
     COMPONENT binary
     DESTINATION ${FLB_INSTALL_CONFDIR})
 
+  install(FILES
+    "${PROJECT_SOURCE_DIR}/conf/fluent-bit"
+    COMPONENT binary
+    DESTINATION ${FLB_INSTALL_INITDIR})
+
 endif()
