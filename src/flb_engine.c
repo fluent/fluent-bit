@@ -811,15 +811,7 @@ int flb_engine_start(struct flb_config *config)
     config->notification_channels_initialized = FLB_TRUE;
     config->notification_event.type = FLB_ENGINE_EV_NOTIFICATION;
 
-    ret = flb_routes_mask_set_size(mk_list_size(&config->outputs), config);
-
-    if (ret != 0) {
-        flb_error("[engine] routing mask dimensioning failed");
-        return -1;
-    }
-
-    ret = flb_routes_mask_set_size(mk_list_size(&config->outputs), config);
-
+    ret = flb_routes_mask_set_size(mk_list_size(&config->outputs), config->router);
     if (ret != 0) {
         flb_error("[engine] routing mask dimensioning failed");
         return -1;
