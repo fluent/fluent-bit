@@ -591,7 +591,7 @@ literal:
 		case 'Z':
 		{
 			const flb_tz_abbr_info_t *tz_info;
-			int found_in_known = 0;
+			int found_in_known = FLB_FALSE;
 			size_t abbr_len;
 
 			for (tz_info = flb_known_timezones; tz_info->abbr != NULL; ++tz_info) {
@@ -602,7 +602,7 @@ literal:
 						flb_tm_gmtoff(tm) = tz_info->offset_sec;
 						flb_tm_zone(tm) = tz_info->abbr;
 						bp += abbr_len;
-						found_in_known = 1;
+						found_in_known = FLB_TRUE;
 						break;
 					}
 				}
