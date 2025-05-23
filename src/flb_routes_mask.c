@@ -23,6 +23,15 @@
 #include <fluent-bit/flb_router.h>
 #include <fluent-bit/flb_routes_mask.h>
 
+size_t flb_routes_mask_get_size(struct flb_router *router)
+{
+    return router->route_mask_size;
+}
+
+size_t flb_routes_mask_get_slots(struct flb_router *router)
+{
+    return router->route_mask_slots;
+}
 
 /*
  * Set the routes_mask for input chunk with a router_match on tag, return a
@@ -34,17 +43,17 @@ int flb_routes_mask_set_by_tag(flb_route_mask_element *routes_mask,
                                struct flb_input_instance *in)
 {
     int has_routes = 0;
+    size_t size;
     struct mk_list *o_head;
     struct flb_output_instance *o_ins;
     if (!in) {
         return 0;
     }
 
+
     /* Clear the bit field */
-    memset(routes_mask,
-           0,
-           sizeof(flb_route_mask_element) *
-           in->config->route_mask_size);
+    size = flb_routes_mask_get_size(in->config->router);
+    memset(routes_mask, 0, sizeof(flb_route_mask_element) * size);
 
     /* Find all matching routes for the given tag */
     mk_list_foreach(o_head, &in->config->outputs) {
@@ -58,7 +67,7 @@ int flb_routes_mask_set_by_tag(flb_route_mask_element *routes_mask,
                              , NULL
 #endif
                              )) {
-            flb_routes_mask_set_bit(routes_mask, o_ins->id, o_ins->config);
+            flb_routes_mask_set_bit(routes_mask, o_ins->id, o_ins->config->router);
             has_routes = 1;
         }
     }
@@ -74,12 +83,12 @@ int flb_routes_mask_set_by_tag(flb_route_mask_element *routes_mask,
  *
  */
 void flb_routes_mask_set_bit(flb_route_mask_element *routes_mask, int value,
-                             struct flb_config *config)
+                             struct flb_router *router)
 {
     int index;
     uint64_t bit;
 
-    if (value < 0 || value >= config->route_mask_slots) {
+    if (value < 0 || value >= router->route_mask_slots) {
         flb_warn("[routes_mask] Can't set bit (%d) past limits of bitfield",
                  value);
         return;
@@ -98,12 +107,12 @@ void flb_routes_mask_set_bit(flb_route_mask_element *routes_mask, int value,
  *
  */
 void flb_routes_mask_clear_bit(flb_route_mask_element *routes_mask, int value,
-                               struct flb_config *config)
+                               struct flb_router *router)
 {
     int index;
     uint64_t bit;
 
-    if (value < 0 || value >= config->route_mask_slots) {
+    if (value < 0 || value >= router->route_mask_slots) {
         flb_warn("[routes_mask] Can't set bit (%d) past limits of bitfield",
                  value);
         return;
@@ -123,12 +132,12 @@ void flb_routes_mask_clear_bit(flb_route_mask_element *routes_mask, int value,
  *
  */
 int flb_routes_mask_get_bit(flb_route_mask_element *routes_mask, int value,
-                            struct flb_config *config)
+                            struct flb_router *router)
 {
     int index;
     uint64_t bit;
 
-    if (value < 0 || value >= config->route_mask_slots) {
+    if (value < 0 || value >= router->route_mask_slots) {
         flb_warn("[routes_mask] Can't get bit (%d) past limits of bitfield",
                  value);
         return 0;
@@ -140,37 +149,36 @@ int flb_routes_mask_get_bit(flb_route_mask_element *routes_mask, int value,
 }
 
 int flb_routes_mask_is_empty(flb_route_mask_element *routes_mask,
-                             struct flb_config *config)
+                             struct flb_router *router)
 {
     return memcmp(routes_mask,
-                  config->route_empty_mask,
-                  config->route_mask_size) == 0;
+                  router->route_empty_mask,
+                  router->route_mask_size) == 0;
 }
 
-int flb_routes_empty_mask_create(struct flb_config *config)
+int flb_routes_empty_mask_create(struct flb_router *router)
 {
-    flb_routes_empty_mask_destroy(config);
+    flb_routes_empty_mask_destroy(router);
 
-    config->route_empty_mask = flb_calloc(config->route_mask_size,
+    router->route_empty_mask = flb_calloc(router->route_mask_size,
                                           sizeof(flb_route_mask_element));
 
-    if (config->route_empty_mask == NULL) {
+    if (router->route_empty_mask == NULL) {
         return -1;
     }
 
     return 0;
 }
 
-void flb_routes_empty_mask_destroy(struct flb_config *config)
+void flb_routes_empty_mask_destroy(struct flb_router *router)
 {
-    if (config->route_empty_mask != NULL) {
-        flb_free(config->route_empty_mask);
-
-        config->route_empty_mask = NULL;
+    if (router->route_empty_mask != NULL) {
+        flb_free(router->route_empty_mask);
+        router->route_empty_mask = NULL;
     }
 }
 
-int flb_routes_mask_set_size(size_t mask_size, struct flb_config *config)
+int flb_routes_mask_set_size(size_t mask_size, struct flb_router *router)
 {
     if (mask_size < 1) {
         mask_size = 1;
@@ -179,8 +187,9 @@ int flb_routes_mask_set_size(size_t mask_size, struct flb_config *config)
     mask_size = (mask_size / FLB_ROUTES_MASK_ELEMENT_BITS) +
                 (mask_size % FLB_ROUTES_MASK_ELEMENT_BITS);
 
-    config->route_mask_size = mask_size;
-    config->route_mask_slots = mask_size * FLB_ROUTES_MASK_ELEMENT_BITS;
+    router->route_mask_size = mask_size;
+    router->route_mask_slots = mask_size * FLB_ROUTES_MASK_ELEMENT_BITS;
 
-    return flb_routes_empty_mask_create(config);
+    return flb_routes_empty_mask_create(router);
 }
+
