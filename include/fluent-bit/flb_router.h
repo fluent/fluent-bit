@@ -29,6 +29,22 @@ struct flb_router_path {
     struct mk_list _head;
 };
 
+struct flb_router {
+    /* Routing masks */
+    size_t route_mask_size;
+    size_t route_mask_slots;
+    uint64_t *route_empty_mask;
+
+    /* metrics */
+    struct cmt *cmt;
+
+    /* logs routing metrics */
+    struct cmt_counter *logs_records_total;
+    struct cmt_counter *logs_bytes_total;
+    struct cmt_counter *logs_drop_records_total;
+    struct cmt_counter *logs_drop_bytes_total;
+};
+
 static inline int flb_router_match_type(int in_event_type,
                                         struct flb_output_instance *o_ins)
 {
@@ -66,3 +82,6 @@ int flb_router_match(const char *tag, int tag_len,
 int flb_router_io_set(struct flb_config *config);
 void flb_router_exit(struct flb_config *config);
 #endif
+
+int flb_router_metrics_create(struct flb_config *config, struct flb_router *router);
+struct flb_router *flb_router_create(struct flb_config *config);
