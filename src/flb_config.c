@@ -44,6 +44,7 @@
 #include <fluent-bit/flb_config_format.h>
 #include <fluent-bit/multiline/flb_ml.h>
 #include <fluent-bit/flb_bucket_queue.h>
+#include <fluent-bit/flb_router.h>
 
 const char *FLB_CONF_ENV_LOGLEVEL = "FLB_LOG_LEVEL";
 
@@ -303,6 +304,13 @@ struct flb_config *flb_config_init()
     }
 
     /* Routing */
+    config->router = flb_router_create(config);
+    if (!config->router) {
+        flb_error("[config] could not create router");
+        flb_cf_destroy(cf);
+        flb_free(config);
+        return NULL;
+    }
     flb_routes_mask_set_size(1, config->router);
 
     config->cio          = NULL;
@@ -611,8 +619,8 @@ void flb_config_exit(struct flb_config *config)
 
     /* release task map */
     flb_config_task_map_resize(config, 0);
-    flb_routes_empty_mask_destroy(config->router);
 
+    flb_router_destroy(config->router);
     flb_free(config);
 }
 
