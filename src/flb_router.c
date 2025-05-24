@@ -350,7 +350,7 @@ struct flb_router *flb_router_create(struct flb_config *config)
     }
 
     if (router_metrics_create(router) != 0) {
-        flb_free(router);
+        flb_router_destroy(router);
         return NULL;
     }
     return router;
