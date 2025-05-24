@@ -358,6 +358,8 @@ struct flb_router *flb_router_create(struct flb_config *config)
 
 void flb_router_destroy(struct flb_router *router)
 {
+    flb_routes_empty_mask_destroy(router);
+
     if (router->cmt) {
         cmt_destroy(router->cmt);
     }
