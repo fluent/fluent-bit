@@ -85,3 +85,4 @@ void flb_router_exit(struct flb_config *config);
 
 int flb_router_metrics_create(struct flb_config *config, struct flb_router *router);
 struct flb_router *flb_router_create(struct flb_config *config);
+void flb_router_destroy(struct flb_router *router);
