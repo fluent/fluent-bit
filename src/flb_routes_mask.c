@@ -113,7 +113,7 @@ void flb_routes_mask_clear_bit(flb_route_mask_element *routes_mask, int value,
     uint64_t bit;
 
     if (value < 0 || value >= router->route_mask_slots) {
-        flb_warn("[routes_mask] Can't set bit (%d) past limits of bitfield",
+        flb_warn("[routes_mask] Can't clear bit (%d) past limits of bitfield",
                  value);
         return;
     }
