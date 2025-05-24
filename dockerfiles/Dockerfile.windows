@@ -159,6 +159,7 @@ RUN call "%MSVS_HOME%\VC\Auxiliary\Build\vcvars64.bat" && `
     cmake -G "NMake Makefiles" `
       -DOPENSSL_ROOT_DIR='C:\dev\vcpkg\packages\openssl_x64-windows-static' `
       -DFLB_LIBYAML_DIR='C:\dev\vcpkg\packages\libyaml_x64-windows-static' `
+      -DFLB_SIMD=On `
       -DCMAKE_BUILD_TYPE=Release `
       -DFLB_SHARED_LIB=Off `
       -DFLB_EXAMPLES=Off `

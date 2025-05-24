@@ -75,7 +75,8 @@ ENV EXTRA_CMAKE_FLAGS=${EXTRA_CMAKE_FLAGS}
 # We do not want word splitting for EXTRA_CMAKE_FLAGS in case multiple are defined
 # hadolint ignore=SC2086
 RUN [ -n "${WAMR_BUILD_TARGET:-}" ] && EXTRA_CMAKE_FLAGS="$EXTRA_CMAKE_FLAGS -DWAMR_BUILD_TARGET=$WAMR_BUILD_TARGET"; \
-    cmake -DFLB_RELEASE=On \
+    cmake -DFLB_SIMD=On \
+    -DFLB_RELEASE=On \
     -DFLB_JEMALLOC=On \
     -DFLB_TLS=On \
     -DFLB_SHARED_LIB=Off \
