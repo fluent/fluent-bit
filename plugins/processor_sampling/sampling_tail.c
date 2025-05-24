@@ -231,9 +231,26 @@ static struct ctrace *reconcile_and_create_ctrace(struct sampling *ctx, struct s
             }
         }
 
-        /* unlink active span from it original ctrace context and link it to the active scope_span list */
+        /*
+         * Detach the span from its previous context completely and
+         * re-attach it to the new one. If we only move the local list
+         * reference (span->_head) the span would still belong to the
+         * original ctrace context which later on might lead to use after
+         * free issues when the new context is destroyed. Make sure to
+         * update all references.
+         */
+
+        /* detach from the original scope span and global list */
         cfl_list_del(&span->_head);
+        cfl_list_del(&span->_head_global);
+
+        /* update parent references */
+        span->scope_span = scope_span;
+        span->ctx = ctr;
+
+        /* link to the new scope span and ctrace context */
         cfl_list_add(&span->_head, &scope_span->spans);
+        cfl_list_add(&span->_head_global, &ctr->span_list);
 
         /* reset all the contexts */
         resource_span = NULL;
