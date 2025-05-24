@@ -280,7 +280,7 @@ struct flb_config *flb_config_init()
     }
 
     /* Routing */
-    flb_routes_mask_set_size(1, config);
+    flb_routes_mask_set_size(1, config->router);
 
     config->cio          = NULL;
     config->storage_path = NULL;
@@ -568,7 +568,7 @@ void flb_config_exit(struct flb_config *config)
 
     /* release task map */
     flb_config_task_map_resize(config, 0);
-    flb_routes_empty_mask_destroy(config);
+    flb_routes_empty_mask_destroy(config->router);
 
     flb_free(config);
 }
@@ -881,7 +881,7 @@ static int configure_plugins_type(struct flb_config *config, struct flb_cf *cf, 
             else if (type == FLB_CF_OUTPUT) {
                 ret = flb_processors_load_from_config_format_group(((struct flb_output_instance *) ins)->processor, processors);
                 if (ret == -1) {
-                    return -1; 
+                    return -1;
                 }
             }
             else {
