@@ -60,7 +60,7 @@ jobs:
         run: |
           sudo apt-get update
           sudo apt-get install -y libc-ares-dev libjemalloc-dev libluajit-5.1-dev \
-            libnghttp2-dev libsqlite3-dev libzstd-dev
+            libnghttp2-dev libsqlite3-dev libzstd-dev libmsgpack-dev
           mkdir -p /tmp/libbacktrace/build && \
             curl -L https://github.com/ianlancetaylor/libbacktrace/archive/8602fda.tar.gz | \
             tar --strip-components=1 -xzC /tmp/libbacktrace/ && \
@@ -98,6 +98,7 @@ jobs:
           echo "$ldd_result" | grep libcares
           echo "$ldd_result" | grep libjemalloc
           echo "$ldd_result" | grep libluajit
+          echo "$ldd_result" | grep libmsgpack
           echo "$ldd_result" | grep libnghttp2
           echo "$ldd_result" | grep libsqlite3
           echo "$ldd_result" | grep libzstd
