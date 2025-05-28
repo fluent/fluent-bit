@@ -299,6 +299,15 @@ struct cmt *flb_me_get_cmetrics(struct flb_config *ctx)
         }
     }
 
+    if (ctx->log != NULL) {
+        ret = cmt_cat(cmt, ctx->log->metrics->cmt);
+        if (ret != 0) {
+            flb_error("[metrics exporter] could not append global log metrics");
+            cmt_destroy(cmt);
+            return NULL;
+        }
+    }
+
     /* Pipeline metrics: input, filters, outputs */
     mk_list_foreach(head, &ctx->inputs) {
         i = mk_list_entry(head, struct flb_input_instance, _head);
