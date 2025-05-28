@@ -502,7 +502,26 @@ int flb_storage_input_create(struct cio_ctx *cio,
 
     /* storage config: get stream type */
     if (in->storage_type == -1) {
-        in->storage_type = FLB_STORAGE_MEM;
+        /* Check if global storage type is enabled and configured */
+        if (config->storage_global == FLB_TRUE && config->storage_type != NULL) {
+            if (strcasecmp(config->storage_type, "filesystem") == 0) {
+                in->storage_type = FLB_STORAGE_FS;
+            }
+            else if (strcasecmp(config->storage_type, "memory") == 0) {
+                in->storage_type = FLB_STORAGE_MEM;
+            }
+            else if (strcasecmp(config->storage_type, "memrb") == 0) {
+                in->storage_type = FLB_STORAGE_MEMRB;
+            }
+            else {
+                /* Invalid global storage type, fall back to default */
+                in->storage_type = FLB_STORAGE_MEM;
+            }
+        }
+        else {
+            /* Use default storage type */
+            in->storage_type = FLB_STORAGE_MEM;
+        }
     }
 
     if (in->storage_type == FLB_STORAGE_FS && cio->options.root_path == NULL) {
