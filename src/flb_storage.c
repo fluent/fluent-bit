@@ -502,15 +502,15 @@ int flb_storage_input_create(struct cio_ctx *cio,
 
     /* storage config: get stream type */
     if (in->storage_type == -1) {
-        /* Check if global storage type is enabled and configured */
-        if (config->storage_global == FLB_TRUE && config->storage_type != NULL) {
-            if (strcasecmp(config->storage_type, "filesystem") == 0) {
+        /* Check if storage inheritance is enabled and configured */
+        if (in->config->storage_inherit == FLB_TRUE && in->config->storage_type != NULL) {
+            if (strcasecmp(in->config->storage_type, "filesystem") == 0) {
                 in->storage_type = FLB_STORAGE_FS;
             }
-            else if (strcasecmp(config->storage_type, "memory") == 0) {
+            else if (strcasecmp(in->config->storage_type, "memory") == 0) {
                 in->storage_type = FLB_STORAGE_MEM;
             }
-            else if (strcasecmp(config->storage_type, "memrb") == 0) {
+            else if (strcasecmp(in->config->storage_type, "memrb") == 0) {
                 in->storage_type = FLB_STORAGE_MEMRB;
             }
             else {

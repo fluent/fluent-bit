@@ -157,9 +157,9 @@ struct flb_service_config service_configs[] = {
     {FLB_CONF_STORAGE_TYPE,
      FLB_CONF_TYPE_STR,
      offsetof(struct flb_config, storage_type)},
-    {FLB_CONF_STORAGE_GLOBAL,
+    {FLB_CONF_STORAGE_INHERIT,
      FLB_CONF_TYPE_BOOL,
-     offsetof(struct flb_config, storage_global)},
+     offsetof(struct flb_config, storage_inherit)},
 
     /* Coroutines */
     {FLB_CONF_STR_CORO_STACK_SIZE,
@@ -293,7 +293,7 @@ struct flb_config *flb_config_init()
     config->storage_input_plugin = NULL;
     config->storage_metrics = FLB_TRUE;
     config->storage_type = NULL;
-    config->storage_global = FLB_FALSE;
+    config->storage_inherit = FLB_FALSE;
 
     config->sched_cap  = FLB_SCHED_CAP;
     config->sched_base = FLB_SCHED_BASE;
