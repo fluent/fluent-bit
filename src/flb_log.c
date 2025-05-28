@@ -481,12 +481,13 @@ int flb_log_set_file(struct flb_config *config, char *out)
 /* Frees the metrics instance and its associated resources. */
 void flb_log_metrics_destroy(struct flb_log_metrics *metrics)
 {
-    if (metrics != NULL && metrics->cmt != NULL) {
+    if (metrics == NULL) {
+        return;
+    }
+    if (metrics->cmt != NULL) {
         cmt_destroy(metrics->cmt);
     }
-    if (metrics != NULL) {
-        flb_free(metrics);
-    }
+    flb_free(metrics);
 }
 
 /*

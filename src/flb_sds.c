@@ -33,7 +33,7 @@
 #include <stdarg.h>
 #include <ctype.h>
 
-static flb_sds_t flb_sds_alloc_internal(size_t size)
+static flb_sds_t sds_alloc(size_t size)
 {
     void *buf;
     flb_sds_t s;
@@ -60,7 +60,7 @@ flb_sds_t flb_sds_create_len(const char *str, int len)
     flb_sds_t s;
     struct flb_sds *head;
 
-    s = flb_sds_alloc_internal(len);
+    s = sds_alloc(len);
     if (!s) {
         return NULL;
     }
@@ -91,7 +91,7 @@ flb_sds_t flb_sds_create(const char *str)
 
 flb_sds_t flb_sds_create_size(size_t size)
 {
-    return flb_sds_alloc_internal(size);
+    return sds_alloc(size);
 }
 
 /* Increase SDS buffer size 'len' bytes */
