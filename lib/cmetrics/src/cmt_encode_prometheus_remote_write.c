@@ -1037,14 +1037,28 @@ int pack_complex_type(struct cmt_prometheus_remote_write_context *context,
     add_metadata = CMT_ENCODE_PROMETHEUS_REMOTE_WRITE_ADD_METADATA;
     result = CMT_ENCODE_PROMETHEUS_REMOTE_WRITE_SUCCESS;
 
-    if (map->type == CMT_SUMMARY) {
-        additional_label.name = (cfl_sds_t) "quantile";
-    }
-    else if (map->type == CMT_HISTOGRAM) {
-        additional_label.name = (cfl_sds_t) "le";
-    }
+    if (map->type == CMT_SUMMARY || map->type == CMT_HISTOGRAM) {
+        if (map->type == CMT_SUMMARY) {
+            additional_label.name = (cfl_sds_t) "quantile";
+        }
+        else if (map->type == CMT_HISTOGRAM) {
+            additional_label.name = (cfl_sds_t) "le";
+        }
 
-    cfl_list_add(&additional_label._head, &map->label_keys);
+        /*
+         * Suppress GCC/Clang warning for storing the address of a stack-allocated label in a list. We are
+         * safe here because the label is removed before function exit.
+         *
+         * This avoids a -Wdangling-pointer false positive.
+         */
+        #pragma GCC diagnostic push
+        #pragma GCC diagnostic ignored "-Wdangling-pointer"
+
+
+        cfl_list_add(&additional_label._head, &map->label_keys);
+
+        #pragma GCC diagnostic pop
+    }
 
     if (map->metric_static_set == CMT_TRUE) {
         result = pack_complex_metric_sample(context, map, &map->metric, add_metadata);
@@ -1064,8 +1078,7 @@ int pack_complex_type(struct cmt_prometheus_remote_write_context *context,
         }
     }
 
-    if (map->type == CMT_SUMMARY ||
-        map->type == CMT_HISTOGRAM) {
+    if (map->type == CMT_SUMMARY || map->type == CMT_HISTOGRAM) {
         cfl_list_del(&additional_label._head);
     }
 

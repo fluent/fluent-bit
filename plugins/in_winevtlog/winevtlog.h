@@ -23,6 +23,9 @@
 
 #include <winevt.h>
 #include <fluent-bit/flb_log_event_encoder.h>
+#include <fluent-bit/flb_input_plugin.h>
+
+struct winevtlog_session;
 
 struct winevtlog_config {
     unsigned int interval_sec;
@@ -34,6 +37,11 @@ struct winevtlog_config {
     int use_ansi;
     int ignore_missing_channels;
     flb_sds_t event_query;
+    flb_sds_t remote_server;
+    flb_sds_t remote_domain;
+    flb_sds_t remote_username;
+    flb_sds_t remote_password;
+    struct winevtlog_session *session;
 
     struct mk_list *active_channel;
     struct flb_sqldb *db;
@@ -50,15 +58,30 @@ struct winevtlog_config {
 struct winevtlog_channel {
     EVT_HANDLE subscription;
     EVT_HANDLE bookmark;
+    EVT_HANDLE remote;
     HANDLE signal_event;
     EVT_HANDLE events[SUBSCRIBE_ARRAY_SIZE];
     int count;
+    struct winevtlog_session *session;
 
     char *name;
     char *query;
     unsigned int time_updated;
     unsigned int time_created;
     struct mk_list _head;
+};
+
+#define WINEVTLOG_SESSION_CREATE_OK              0
+#define WINEVTLOG_SESSION_ALLOC_FAILED           1
+#define WINEVTLOG_SESSION_SERVER_EMPTY           2
+#define WINEVTLOG_SESSION_FAILED_TO_CONVERT_WIDE 3
+
+struct winevtlog_session {
+    PWSTR server;
+    PWSTR domain;
+    PWSTR username;
+    PWSTR password;
+    EVT_RPC_LOGIN_FLAGS flags;
 };
 
 struct winevtlog_sqlite_record {
@@ -98,8 +121,8 @@ void winevtlog_pack_event(PEVT_VARIANT system, WCHAR *message,
 /*
  * Save the read offset to disk.
  */
-int winevtlog_sqlite_load(struct winevtlog_channel *ch, struct flb_sqldb *db);
-int winevtlog_sqlite_save(struct winevtlog_channel *ch, struct flb_sqldb *db);
+int winevtlog_sqlite_load(struct winevtlog_channel *ch, struct winevtlog_config *ctx, struct flb_sqldb *db);
+int winevtlog_sqlite_save(struct winevtlog_channel *ch, struct winevtlog_config *ctx, struct flb_sqldb *db);
 
 /*
  * SQL templates

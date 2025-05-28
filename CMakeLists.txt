@@ -67,9 +67,16 @@ if (MSVC)
   #   /wd4100 .. C4100 (unreferenced formal parameter)
   #   /wd5045 .. C5045 (Spectre mitigation)
   #
+  # Restore /OPT:REF after setting /Debug, enable /OPT:ICF for 64-bit
+  # builds per Microsoft recommended best practices.
   set(CMAKE_C_FLAGS "/DWIN32 /D_WINDOWS /DNDEBUG /O2 /Zi /wd4100 /wd4711 /wd5045")
-  set(CMAKE_EXE_LINKER_FLAGS "/Debug /INCREMENTAL:NO")
+  set(CMAKE_EXE_LINKER_FLAGS "/DEBUG /OPT:REF /INCREMENTAL:NO")
+  set(CMAKE_SHARED_LINKER_FLAGS "/DEBUG /OPT:REF /INCREMENTAL:NO")
   set(CMAKE_BUILD_TYPE None)
+  if (CMAKE_SIZEOF_VOID_P EQUAL 8)
+    set(CMAKE_EXE_LINKER_FLAGS "${CMAKE_EXE_LINKER_FLAGS} /OPT:ICF")
+    set(CMAKE_SHARED_LINKER_FLAGS "${CMAKE_SHARED_LINKER_FLAGS} /OPT:ICF")
+  endif()
 
   # Use add_compile_options() to set /MT since Visual Studio
   # Generator does not notice /MT in CMAKE_C_FLAGS.
@@ -882,6 +889,18 @@ if(FLB_HAVE_GMTOFF)
   FLB_DEFINITION(FLB_HAVE_GMTOFF)
 endif()
 
+# tm_zone support
+check_c_source_compiles("
+  #include <time.h>
+  int main() {
+     struct tm tm;
+     tm.tm_zone = \"GMT\";
+     return 0;
+  }" FLB_HAVE_TIME_ZONE)
+if(FLB_HAVE_TIME_ZONE)
+  FLB_DEFINITION(FLB_HAVE_TIME_ZONE)
+endif()
+
 # clock_get_time() support for macOS.
 check_c_source_compiles("
   #include <mach/clock.h>
@@ -1029,12 +1048,8 @@ else()
     set(AUTOCONF_HOST_OPT "--host=${GNU_HOST}")
 endif()
 
-if(CMAKE_GENERATOR MATCHES "Ninja")
-  if(FLB_SYSTEM_WINDOWS)
-    MESSAGE(FATAL_ERROR "Building with Ninja is not supported on Windows")
-  else()
-    set(EXTERNAL_BUILD_TOOL "make")
-  endif()
+if(CMAKE_GENERATOR MATCHES "Ninja" AND NOT FLB_SYSTEM_WINDOWS)
+  set(EXTERNAL_BUILD_TOOL "make")
 else()
   set(EXTERNAL_BUILD_TOOL "$(MAKE)")
 endif()

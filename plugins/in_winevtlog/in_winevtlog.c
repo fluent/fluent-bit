@@ -19,7 +19,6 @@
  */
 
 #include <fluent-bit/flb_compat.h>
-#include <fluent-bit/flb_input_plugin.h>
 #include <fluent-bit/flb_kernel.h>
 #include <fluent-bit/flb_pack.h>
 #include <fluent-bit/flb_utils.h>
@@ -36,6 +35,120 @@
 static int in_winevtlog_collect(struct flb_input_instance *ins,
                                 struct flb_config *config, void *in_context);
 
+static wchar_t* convert_to_wide(struct winevtlog_config *ctx, char *str)
+{
+    int size = 0;
+    wchar_t *buf = NULL;
+    DWORD err;
+
+    size = MultiByteToWideChar(CP_UTF8, 0, str, -1, NULL, 0);
+    if (size == 0) {
+        err = GetLastError();
+        flb_plg_error(ctx->ins, "Failed MultiByteToWideChar with error code (%d)", err);
+        return NULL;
+    }
+
+    buf = flb_calloc(1, sizeof(wchar_t) * size);
+    if (buf == NULL) {
+        flb_errno();
+        return NULL;
+    }
+    size = MultiByteToWideChar(CP_UTF8, 0, str, -1, buf, size);
+    if (size == 0) {
+        err = GetLastError();
+        flb_plg_error(ctx->ins, "Failed MultiByteToWideChar with error code (%d)", err);
+        flb_free(buf);
+        return NULL;
+    }
+
+    return buf;
+}
+
+static void in_winevtlog_session_destroy(struct winevtlog_session *session);
+
+static struct winevtlog_session *in_winevtlog_session_create(struct winevtlog_config *ctx,
+                                                             struct flb_config *config,
+                                                             int *status)
+{
+    int len;
+    struct winevtlog_session *session;
+    PWSTR wtmp;
+
+    if (ctx->remote_server == NULL) {
+        *status = WINEVTLOG_SESSION_SERVER_EMPTY;
+        return NULL;
+    }
+
+    session = flb_calloc(1, sizeof(struct winevtlog_session));
+    if (session == NULL) {
+        flb_errno();
+        *status = WINEVTLOG_SESSION_ALLOC_FAILED;
+        return NULL;
+    }
+
+    if (ctx->remote_server != NULL) {
+        session->server = convert_to_wide(ctx, ctx->remote_server);
+        if (session->server == NULL) {
+            in_winevtlog_session_destroy(session);
+            *status = WINEVTLOG_SESSION_FAILED_TO_CONVERT_WIDE;
+            return NULL;
+        }
+    }
+
+    if (ctx->remote_domain != NULL) {
+        session->domain = convert_to_wide(ctx, ctx->remote_domain);
+        if (session->domain == NULL) {
+            in_winevtlog_session_destroy(session);
+            *status = WINEVTLOG_SESSION_FAILED_TO_CONVERT_WIDE;
+            return NULL;
+        }
+    }
+
+    if (ctx->remote_username != NULL) {
+        session->username = convert_to_wide(ctx, ctx->remote_username);
+        if (session->username == NULL) {
+            in_winevtlog_session_destroy(session);
+            *status = WINEVTLOG_SESSION_FAILED_TO_CONVERT_WIDE;
+            return NULL;
+        }
+    }
+
+    if (ctx->remote_password != NULL) {
+        session->password = convert_to_wide(ctx, ctx->remote_password);
+        if (session->password == NULL) {
+            in_winevtlog_session_destroy(session);
+            *status = WINEVTLOG_SESSION_FAILED_TO_CONVERT_WIDE;
+            return NULL;
+        }
+    }
+
+    session->flags = EvtRpcLoginAuthDefault;
+    *status = WINEVTLOG_SESSION_CREATE_OK;
+
+    return session;
+}
+
+static void in_winevtlog_session_destroy(struct winevtlog_session *session)
+{
+    if (session->server != NULL) {
+        flb_free(session->server);
+    }
+
+    if (session->domain != NULL) {
+        flb_free(session->domain);
+    }
+
+    if (session->username != NULL) {
+        flb_free(session->username);
+    }
+
+    if (session->password != NULL) {
+        flb_free(session->password);
+    }
+
+    flb_free(session);
+}
+
 static int in_winevtlog_init(struct flb_input_instance *in,
                              struct flb_config *config, void *data)
 {
@@ -46,6 +159,8 @@ static int in_winevtlog_init(struct flb_input_instance *in,
     struct mk_list *head;
     struct winevtlog_channel *ch;
     struct winevtlog_config *ctx;
+    struct winevtlog_session *session;
+    int status = WINEVTLOG_SESSION_CREATE_OK;
 
     /* Initialize context */
     ctx = flb_calloc(1, sizeof(struct winevtlog_config));
@@ -61,7 +176,7 @@ static int in_winevtlog_init(struct flb_input_instance *in,
         flb_plg_error(in, "could not initialize event encoder");
         flb_free(ctx);
 
-        return NULL;
+        return -1;
     }
 
     /* Load the config map */
@@ -71,6 +186,18 @@ static int in_winevtlog_init(struct flb_input_instance *in,
         flb_free(ctx);
         return -1;
     }
+
+    /* Initialize session context */
+    session = in_winevtlog_session_create(ctx, config, &status);
+    if (status == WINEVTLOG_SESSION_ALLOC_FAILED ||
+        status == WINEVTLOG_SESSION_FAILED_TO_CONVERT_WIDE) {
+        flb_plg_error(in, "session is not created and invalid with status %d", status);
+        return -1;
+    }
+    else if (session == NULL) {
+        flb_plg_debug(in, "connect to local machine");
+    }
+    ctx->session = session;
 
     /* Set up total reading size threshold */
     if (ctx->total_size_threshold >= MINIMUM_THRESHOLD_SIZE &&
@@ -140,7 +267,7 @@ static int in_winevtlog_init(struct flb_input_instance *in,
 
         mk_list_foreach(head, ctx->active_channel) {
             ch = mk_list_entry(head, struct winevtlog_channel, _head);
-            winevtlog_sqlite_load(ch, ctx->db);
+            winevtlog_sqlite_load(ch, ctx, ctx->db);
             flb_plg_debug(ctx->ins, "load channel<%s time=%u>",
                           ch->name, ch->time_created);
         }
@@ -182,7 +309,7 @@ static int in_winevtlog_read_channel(struct flb_input_instance *ins,
         ch->time_updated = time(NULL);
         flb_plg_debug(ctx->ins, "save channel<%s time=%u>",
                       ch->name, ch->time_updated);
-        winevtlog_sqlite_save(ch, ctx->db);
+        winevtlog_sqlite_save(ch, ctx, ctx->db);
     }
 
     if (ctx->log_encoder->output_length > 0) {
@@ -234,6 +361,9 @@ static int in_winevtlog_exit(void *data, struct flb_config *config)
 
     if (ctx->db) {
         flb_sqldb_close(ctx->db);
+    }
+    if (ctx->session) {
+        in_winevtlog_session_destroy(ctx->session);
     }
     flb_free(ctx);
 
@@ -295,6 +425,26 @@ static struct flb_config_map config_map[] = {
       FLB_CONFIG_MAP_SIZE, "read_limit_per_cycle", "524287",
       0, FLB_TRUE, offsetof(struct winevtlog_config, total_size_threshold),
       "Specify reading limit for collecting Windows EventLog per a cycle"
+    },
+    {
+      FLB_CONFIG_MAP_STR, "remote.server", (char *)NULL,
+      0, FLB_TRUE, offsetof(struct winevtlog_config, remote_server),
+      "Specify server name of remote access for Windows EventLog"
+    },
+    {
+      FLB_CONFIG_MAP_STR, "remote.domain", (char *)NULL,
+      0, FLB_TRUE, offsetof(struct winevtlog_config, remote_domain),
+      "Specify domain name of remote access for Windows EventLog"
+    },
+    {
+      FLB_CONFIG_MAP_STR, "remote.username", (char *)NULL,
+      0, FLB_TRUE, offsetof(struct winevtlog_config, remote_username),
+      "Specify username of remote access for Windows EventLog"
+    },
+    {
+      FLB_CONFIG_MAP_STR, "remote.password", (char *)NULL,
+      0, FLB_TRUE, offsetof(struct winevtlog_config, remote_password),
+      "Specify password of remote access for Windows EventLog"
     },
     /* EOF */
     {0}
