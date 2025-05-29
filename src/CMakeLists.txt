@@ -91,6 +91,7 @@ set(src
   flb_cfl_ra_key.c
   flb_cfl_record_accessor.c
   flb_conditionals.c
+  flb_mem.c
   )
 
 # Config format
@@ -486,8 +487,6 @@ if(FLB_SHARED_LIB)
   if (MSVC)
     set_target_properties(fluent-bit-shared
       PROPERTIES PDB_NAME fluent-bit.dll)
-    target_link_options(fluent-bit-shared
-      PUBLIC /pdb:$<TARGET_PDB_FILE:fluent-bit-shared>)
   endif()
 
   # Library install routines
@@ -521,8 +520,10 @@ if(FLB_BINARY)
   else()
     add_executable(fluent-bit-bin fluent-bit.c flb_dump.c)
   endif()
+  if (MSVC)
+    set_target_properties(fluent-bit-bin PROPERTIES IMPORT_SUFFIX ".exe.lib")
+  endif(MSVC)
   add_sanitizers(fluent-bit-bin)
-
 
   if(FLB_STATIC_CONF)
     add_dependencies(fluent-bit-bin flb-static-conf)

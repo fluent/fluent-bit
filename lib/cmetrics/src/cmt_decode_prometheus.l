@@ -45,7 +45,7 @@
 ^[ ]*#[ ]* {
     // Lines with "#" as the first non-whitespace character begin a comment
     // unless the first token is either HELP or TYPE. To handle this ambiguity,
-    // we enter the COMMENT_START state, which contains rules for selecting 
+    // we enter the COMMENT_START state, which contains rules for selecting
     // if this is a HELP/TYPE tag or just a normal comment
     BEGIN(COMMENT_START);
 }
@@ -86,7 +86,7 @@
         // separate start condition for this to handle "\\" and "\n" escapes
         // more easily.
         BEGIN(INHELPTAG);
-        context->strbuf = sds_alloc(256);
+        context->strbuf = cfl_sds_create_size(256);
     }
     else {
         // For TYPETAG we enter INTYPETAG start condition to check only valid
@@ -146,7 +146,10 @@
 
 ["] {
     BEGIN(INQUOTE);
-    context->strbuf = sds_alloc(256);
+    if (context->strbuf != NULL) {
+        cfl_sds_destroy(context->strbuf);
+    }
+    context->strbuf = cfl_sds_create_size(256);
 }
 
 <INQUOTE>[\\]["] {

@@ -299,6 +299,9 @@ static int convert_any_value(struct opentelemetry_decode_value *ctr_val,
 {
     int result;
 
+    if (val == NULL) {
+        return -1;
+    }
     switch (val->value_case) {
 
         case OPENTELEMETRY__PROTO__COMMON__V1__ANY_VALUE__VALUE_STRING_VALUE:

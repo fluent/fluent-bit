@@ -2,7 +2,7 @@
 
 /*  Fluent Bit
  *  ==========
- *  Copyright (C) 2015-2024 The Fluent Bit Authors
+ *  Copyright (C) 2015-2025 The Fluent Bit Authors
  *
  *  Licensed under the Apache License, Version 2.0 (the "License");
  *  you may not use this file except in compliance with the License.
@@ -17,29 +17,9 @@
  *  limitations under the License.
  */
 
-#ifndef FLB_FILTER_PARSER_H
-#define FLB_FILTER_PARSER_H
-
 #include <fluent-bit/flb_info.h>
-#include <fluent-bit/flb_filter.h>
-#include <fluent-bit/flb_parser.h>
-#include <fluent-bit/flb_sds.h>
-#include <fluent-bit/flb_record_accessor.h>
-#include <fluent-bit/flb_ra_key.h>
 
-struct filter_parser {
-    struct flb_parser *parser;
-    struct mk_list _head;
-};
-
-struct filter_parser_ctx {
-    flb_sds_t key_name;
-    int    key_name_len;
-    struct flb_record_accessor *ra_key;
-    int    reserve_data;
-    int    preserve_key;
-    struct mk_list parsers;
-    struct flb_filter_instance *ins;
-};
-
-#endif /* FLB_FILTER_PARSER_H */
+#ifdef FLB_HAVE_TESTS_OSSFUZZ
+int flb_malloc_p;
+int flb_malloc_mod;
+#endif

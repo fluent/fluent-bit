@@ -361,6 +361,10 @@ static int decode_data_point_labels(struct cmt *cmt,
             attribute = (Opentelemetry__Proto__Common__V1__KeyValue *)
                             value_index_list[map_label_index];
 
+            if (attribute->value == NULL) {
+                continue;
+            }
+
             if (attribute->value->value_case == OPENTELEMETRY__PROTO__COMMON__V1__ANY_VALUE__VALUE_STRING_VALUE) {
                 result = append_new_metric_label_value(metric, attribute->value->string_value, 0);
             }
