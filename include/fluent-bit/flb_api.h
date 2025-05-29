@@ -22,6 +22,7 @@
 
 #include <fluent-bit/flb_info.h>
 #include <fluent-bit/flb_output.h>
+#include <fluent-bit/flb_custom.h>
 
 struct flb_api {
     const char *(*output_get_property) (const char *, struct flb_output_instance *);
@@ -33,6 +34,11 @@ struct flb_api {
     void (*log_print) (int, const char*, int, const char*, ...);
     int (*input_log_check) (struct flb_input_instance *, int);
     int (*output_log_check) (struct flb_output_instance *, int);
+
+    /* To preserve ABI, we need to add these APIs after the
+     * input/output definitions. */
+    const char *(*custom_get_property) (const char *, struct flb_custom_instance *);
+    int (*custom_log_check) (struct flb_custom_instance *, int);
 };
 
 #ifdef FLB_CORE
