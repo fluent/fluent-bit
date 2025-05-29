@@ -529,6 +529,9 @@ void flb_config_exit(struct flb_config *config)
         flb_free(config->dns_resolver);
     }
 
+    if (config->storage_type) {
+        flb_free(config->storage_type);
+    }
     if (config->storage_path) {
         flb_free(config->storage_path);
     }
