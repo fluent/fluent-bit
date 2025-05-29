@@ -28,6 +28,7 @@
 /* Plugin Types */
 #define FLB_PROXY_INPUT_PLUGIN     1
 #define FLB_PROXY_OUTPUT_PLUGIN    2
+#define FLB_PROXY_CUSTOM_PLUGIN    3
 
 /* Proxies available */
 #define FLB_PROXY_GOLANG          11
