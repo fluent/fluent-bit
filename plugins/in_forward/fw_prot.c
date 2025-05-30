@@ -535,7 +535,6 @@ static int check_ping(struct flb_input_instance *ins,
     flb_sds_t username = NULL;
     flb_sds_t password_digest = NULL;
     size_t hostname_len = 0;
-    size_t shared_key_digest_len = 0;
     size_t password_digest_len = 0;
     char *serverside = NULL;
     size_t user_count = 0;
@@ -603,7 +602,7 @@ static int check_ping(struct flb_input_instance *ins,
     if (o.type != MSGPACK_OBJECT_STR) {
         flb_plg_error(ins, "Invalid shared_key_salt type message");
         flb_free(serverside);
-        flb_free(hostname);
+        flb_sds_destroy(hostname);
         msgpack_unpacked_destroy(&result);
         return -1;
     }
@@ -614,22 +613,21 @@ static int check_ping(struct flb_input_instance *ins,
     if (o.type != MSGPACK_OBJECT_STR) {
         flb_plg_error(ins, "Invalid shared_key_digest type message");
         flb_free(serverside);
-        flb_free(hostname);
+        flb_sds_destroy(hostname);
         msgpack_unpacked_destroy(&result);
-
         return -1;
     }
+
     shared_key_digest = flb_sds_create_len(o.via.str.ptr, o.via.str.size);
-    shared_key_digest_len = o.via.str.size;
 
     /* username */
     o = root.via.array.ptr[4];
     if (o.type != MSGPACK_OBJECT_STR) {
         flb_plg_error(ins, "Invalid username type message");
         flb_free(serverside);
-        flb_free(hostname);
-        flb_free(shared_key_salt);
-        flb_free(shared_key_digest);
+        flb_sds_destroy(hostname);
+        flb_sds_destroy(shared_key_salt);
+        flb_sds_destroy(shared_key_digest);
         msgpack_unpacked_destroy(&result);
         return -1;
     }
@@ -640,10 +638,10 @@ static int check_ping(struct flb_input_instance *ins,
     if (o.type != MSGPACK_OBJECT_STR) {
         flb_plg_error(ins, "Invalid password_digest type message");
         flb_free(serverside);
-        flb_free(hostname);
-        flb_free(shared_key_salt);
-        flb_free(shared_key_digest);
-        flb_free(username);
+        flb_sds_destroy(hostname);
+        flb_sds_destroy(shared_key_salt);
+        flb_sds_destroy(shared_key_digest);
+        flb_sds_destroy(username);
         msgpack_unpacked_destroy(&result);
         return -1;
     }
@@ -656,11 +654,11 @@ static int check_ping(struct flb_input_instance *ins,
                                            shared_key_salt, hostname, hostname_len,
                                            serverside, 128)) {
         flb_free(serverside);
-        flb_free(username);
-        flb_free(password_digest);
-        flb_free(shared_key_salt);
-        flb_free(shared_key_digest);
-        flb_free(hostname);
+        flb_sds_destroy(username);
+        flb_sds_destroy(password_digest);
+        flb_sds_destroy(shared_key_salt);
+        flb_sds_destroy(shared_key_digest);
+        flb_sds_destroy(hostname);
         flb_plg_error(ctx->ins, "failed to hash shared_key");
         return -1;
     }
