@@ -58,6 +58,12 @@ struct flb_http *http_config_create(struct flb_input_instance *ins)
 
     /* HTTP Server specifics */
     ctx->server = flb_calloc(1, sizeof(struct mk_server));
+    if (!ctx->server) {
+        flb_errno();
+        http_config_destroy(ctx);
+        return NULL;
+    }
+
     ctx->server->keep_alive = MK_TRUE;
 
     /* monkey detects server->workers == 0 as the server not being initialized at the
