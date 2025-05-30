@@ -140,7 +140,6 @@ static int in_fw_collect(struct flb_input_instance *ins,
 
     if (!config->is_ingestion_active) {
         flb_downstream_conn_release(connection);
-
         return -1;
     }
 
@@ -153,8 +152,8 @@ static int in_fw_collect(struct flb_input_instance *ins,
     flb_plg_trace(ins, "new TCP connection arrived FD=%i", connection->fd);
 
     conn = fw_conn_add(connection, ctx);
-
     if (!conn) {
+        flb_downstream_conn_release(connection);
         return -1;
     }
 
