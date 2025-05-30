@@ -173,7 +173,7 @@ int uncompress_zlib(struct flb_opentelemetry *ctx,
                     size_t input_size)
 {
     flb_plg_warn(ctx->ins, "zlib decompression is not supported");
-    return 0;
+    return -1;
 }
 
 static \
@@ -206,7 +206,7 @@ int uncompress_deflate(struct flb_opentelemetry *ctx,
                        size_t input_size)
 {
     flb_plg_warn(ctx->ins, "deflate decompression is not supported");
-    return 0;
+    return -1;
 }
 
 static \
@@ -552,7 +552,16 @@ int opentelemetry_prot_handle(struct flb_opentelemetry *ctx, struct http_conn *c
                                         &uncompressed_data,
                                         &uncompressed_data_size);
 
-    if (ret > 0) {
+    if (ret < 0) {
+        flb_sds_destroy(tag);
+        mk_mem_free(uri);
+        if (out_chunked != NULL) {
+            mk_mem_free(out_chunked);
+        }
+        send_response(conn, 400, "error: decompression error\n");
+        return -1;
+    }
+    else if (ret > 0) {
         request->data.data = uncompressed_data;
         request->data.len = uncompressed_data_size;
     }
