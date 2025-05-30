@@ -93,7 +93,7 @@ endif ()
 if (NOT MSVC)
   set (WAMR_BUILD_LIB_PTHREAD 1)
 endif ()
-set (WAMR_BUILD_REF_TYPES 0)
+set (WAMR_BUILD_REF_TYPES 1)
 
 if (NOT MSVC)
   # linker flags

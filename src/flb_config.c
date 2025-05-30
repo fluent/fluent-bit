@@ -145,6 +145,9 @@ struct flb_service_config service_configs[] = {
     {FLB_CONF_STORAGE_BL_MEM_LIMIT,
      FLB_CONF_TYPE_STR,
      offsetof(struct flb_config, storage_bl_mem_limit)},
+    {FLB_CONF_STORAGE_BL_FLUSH_ON_SHUTDOWN,                  
+     FLB_CONF_TYPE_BOOL,                                       
+     offsetof(struct flb_config, storage_bl_flush_on_shutdown)},
     {FLB_CONF_STORAGE_MAX_CHUNKS_UP,
      FLB_CONF_TYPE_INT,
      offsetof(struct flb_config, storage_max_chunks_up)},
@@ -183,6 +186,11 @@ struct flb_service_config service_configs[] = {
      offsetof(struct flb_config, enable_chunk_trace)},
 #endif
 
+#ifdef FLB_SYSTEM_WINDOWS
+    {FLB_CONF_STR_WINDOWS_MAX_STDIO,
+     FLB_CONF_TYPE_INT,
+     offsetof(struct flb_config, win_maxstdio)},
+#endif
     {FLB_CONF_STR_HOT_RELOAD,
      FLB_CONF_TYPE_BOOL,
      offsetof(struct flb_config, enable_hot_reload)},
@@ -241,6 +249,7 @@ struct flb_config *flb_config_init()
     config->verbose      = 3;
     config->grace        = 5;
     config->grace_count  = 0;
+    config->grace_input  = config->grace / 2;
     config->exit_status_code = 0;
 
     /* json */
@@ -281,6 +290,7 @@ struct flb_config *flb_config_init()
     config->storage_path = NULL;
     config->storage_input_plugin = NULL;
     config->storage_metrics = FLB_TRUE;
+    config->storage_bl_flush_on_shutdown = FLB_FALSE;
 
     config->sched_cap  = FLB_SCHED_CAP;
     config->sched_base = FLB_SCHED_BASE;
@@ -290,6 +300,10 @@ struct flb_config *flb_config_init()
     config->hot_reloaded_count = 0;
     config->shutdown_by_hot_reloading = FLB_FALSE;
     config->hot_reloading = FLB_FALSE;
+
+#ifdef FLB_SYSTEM_WINDOWS
+    config->win_maxstdio = 512;
+#endif
 
 #ifdef FLB_HAVE_SQLDB
     mk_list_init(&config->sqldb_list);
@@ -336,6 +350,11 @@ struct flb_config *flb_config_init()
     mk_list_init(&config->cmetrics);
     mk_list_init(&config->cf_parsers_list);
 
+    /* Initialize multiline-parser list. We need this here, because from now
+     * on we use flb_config_exit to cleanup the config, which requires
+     * the config->multiline_parsers list to be initialized. */
+    mk_list_init(&config->multiline_parsers);
+
     /* Task map */
     ret = flb_config_task_map_resize(config, FLB_CONFIG_DEFAULT_TASK_MAP_SIZE);
 
@@ -344,11 +363,6 @@ struct flb_config *flb_config_init()
         flb_config_exit(config);
         return NULL;
     }
-
-    /* Initialize multiline-parser list. We need this here, because from now
-     * on we use flb_config_exit to cleanup the config, which requires
-     * the config->multiline_parsers list to be initialized. */
-    mk_list_init(&config->multiline_parsers);
 
     /* Environment */
     config->env = flb_env_create();
@@ -728,7 +742,7 @@ static int configure_plugins_type(struct flb_config *config, struct flb_cf *cf, 
 {
     int ret;
     char *tmp;
-    char *name;
+    char *name = NULL;
     char *s_type;
     struct mk_list *list;
     struct mk_list *head;
@@ -738,7 +752,7 @@ static int configure_plugins_type(struct flb_config *config, struct flb_cf *cf, 
     struct flb_cf_section *s;
     struct flb_cf_group *processors = NULL;
     int i;
-    void *ins;
+    void *ins = NULL;
 
     if (type == FLB_CF_CUSTOM) {
         s_type = "custom";
@@ -757,7 +771,7 @@ static int configure_plugins_type(struct flb_config *config, struct flb_cf *cf, 
         list = &cf->outputs;
     }
     else {
-        return -1;
+        goto error;
     }
 
     mk_list_foreach(head, list) {
@@ -766,7 +780,7 @@ static int configure_plugins_type(struct flb_config *config, struct flb_cf *cf, 
         if (!name) {
             flb_error("[config] section '%s' is missing the 'name' property",
                       s_type);
-            return -1;
+            goto error;
         }
 
         /* translate the variable */
@@ -792,10 +806,8 @@ static int configure_plugins_type(struct flb_config *config, struct flb_cf *cf, 
         if (!ins) {
             flb_error("[config] section '%s' tried to instance a plugin name "
                       "that doesn't exist", name);
-            flb_sds_destroy(name);
-            return -1;
+            goto error;
         }
-        flb_sds_destroy(name);
 
         /*
          * iterate section properties and populate instance by using specific
@@ -857,6 +869,7 @@ static int configure_plugins_type(struct flb_config *config, struct flb_cf *cf, 
                 flb_error("[config] could not configure property '%s' on "
                           "%s plugin with section name '%s'",
                           kv->key, s_type, name);
+                goto error;
             }
         }
 
@@ -864,18 +877,46 @@ static int configure_plugins_type(struct flb_config *config, struct flb_cf *cf, 
         processors = flb_cf_group_get(cf, s, "processors");
         if (processors) {
             if (type == FLB_CF_INPUT) {
-                flb_processors_load_from_config_format_group(((struct flb_input_instance *) ins)->processor, processors);
+                ret = flb_processors_load_from_config_format_group(((struct flb_input_instance *) ins)->processor, processors);
+                if (ret == -1) {
+                    goto error;
+                }
             }
             else if (type == FLB_CF_OUTPUT) {
-                flb_processors_load_from_config_format_group(((struct flb_output_instance *) ins)->processor, processors);
+                ret = flb_processors_load_from_config_format_group(((struct flb_output_instance *) ins)->processor, processors);
+                if (ret == -1) {
+                    goto error;
+                }
             }
             else {
                 flb_error("[config] section '%s' does not support processors", s_type);
             }
         }
+
+        flb_sds_destroy(name);
     }
 
     return 0;
+
+error:
+    if (name != NULL) {
+        flb_sds_destroy(name);
+    }
+    if (ins != NULL) {
+        if (type == FLB_CF_CUSTOM) {
+            flb_custom_instance_destroy(ins);
+        }
+        else if (type == FLB_CF_INPUT) {
+            flb_input_instance_destroy(ins);
+        }
+        else if (type == FLB_CF_FILTER) {
+            flb_filter_instance_destroy(ins);
+        }
+        else if (type == FLB_CF_OUTPUT) {
+            flb_output_instance_destroy(ins);
+        }
+    }
+    return -1;
 }
 /* Load a struct flb_config_format context into a flb_config instance */
 int flb_config_load_config_format(struct flb_config *config, struct flb_cf *cf)

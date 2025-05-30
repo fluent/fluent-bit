@@ -28,6 +28,8 @@
 #include <fluent-bit/flb_worker.h>
 #include <fluent-bit/flb_config.h>
 #include <fluent-bit/flb_sds.h>
+#include <cmetrics/cmetrics.h>
+#include <cmetrics/cmt_counter.h>
 #include <inttypes.h>
 #include <errno.h>
 #include <stdarg.h>
@@ -72,6 +74,7 @@ struct flb_log {
     pthread_t tid;             /* thread ID   */
     struct flb_worker *worker; /* non-real worker reference */
     struct mk_event_loop *evl;
+    struct flb_log_metrics *metrics;
 
     /* Initialization variables */
     int pth_init;
@@ -90,6 +93,14 @@ struct flb_log_cache {
     int size;                       /* cache size       */
     int timeout;                    /* cache timeout    */
     struct mk_list entries;         /* list for entries */
+};
+
+/* Global metrics for logging calls. */
+struct flb_log_metrics {
+    struct cmt *cmt;
+
+    /* cmetrics */
+    struct cmt_counter *logs_total_counter; /* total number of logs (by message type) */
 };
 
 /*

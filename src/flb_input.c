@@ -108,6 +108,21 @@ struct flb_config_map input_global_properties[] = {
         "pause until the buffer is drained. The value is in bytes. If set to 0, the buffer limit is disabled."\
         "Note that if the plugin has enabled filesystem buffering, this limit will not apply."
     },
+    {
+        FLB_CONFIG_MAP_STR, "storage.type", "memory",
+        0, FLB_FALSE, 0,
+        "Sets the storage type for this input, one of: filesystem, memory or memrb."
+    },
+    {
+        FLB_CONFIG_MAP_BOOL, "storage.pause_on_chunks_overlimit", "false",
+        0, FLB_FALSE, 0,
+        "Enable pausing on an input when they reach their chunks limit"
+    },
+    {
+        FLB_CONFIG_MAP_BOOL, "threaded", "false",
+        0, FLB_FALSE, 0,
+        "Enable threading on an input"
+    },
 
     {0}
 };
@@ -1304,8 +1319,6 @@ int flb_input_instance_init(struct flb_input_instance *ins,
                 return -1;
             }
 
-            //ins->notification_channel = ins->thi->notification_channels[1];
-
             /* register the ring buffer */
             ret = flb_ring_buffer_add_event_loop(ins->rb, config->evl, FLB_INPUT_RING_BUFFER_WINDOW);
             if (ret) {
@@ -1323,6 +1336,7 @@ int flb_input_instance_init(struct flb_input_instance *ins,
             }
 
             ins->notification_channel = config->notification_channels[1];
+            ins->processor->notification_channel = ins->notification_channel;
 
             ret = p->cb_init(ins, config, ins->data);
             if (ret != 0) {
@@ -1330,15 +1344,14 @@ int flb_input_instance_init(struct flb_input_instance *ins,
                           ins->name);
                 return -1;
             }
+
+            ret = flb_processor_init(ins->processor);
+            if (ret == -1) {
+                flb_error("failed initialize processors for input %s",
+                          ins->name);
+                return -1;
+            }
         }
-    }
-
-    ins->processor->notification_channel = ins->notification_channel;
-
-    /* initialize processors */
-    ret = flb_processor_init(ins->processor);
-    if (ret == -1) {
-        return -1;
     }
 
     return 0;
@@ -1565,7 +1578,11 @@ static struct flb_input_collector *collector_create(int type,
         coll->evl = thi->evl;
     }
     else {
-        coll->evl = config->evl;
+        /* We need to obtain the event loop from the TLS when
+         * creating collectors for non threaded plugins running
+         * under a threaded plugin.
+         */
+        coll->evl = flb_engine_evl_get();
     }
 
     /*

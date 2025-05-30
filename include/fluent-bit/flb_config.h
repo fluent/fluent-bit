@@ -67,9 +67,10 @@ struct flb_config {
      * shutdown when all remaining tasks are flushed
      */
     int grace;
-    int grace_count;          /* Count of grace shutdown tries  */
-    flb_pipefd_t flush_fd;    /* Timer FD associated to flush   */
-    int convert_nan_to_null;  /* convert null to nan ?          */
+    int grace_count;          /* Count of grace shutdown tries              */
+    int grace_input;          /* Shutdown grace to keep inputs ingesting    */
+    flb_pipefd_t flush_fd;    /* Timer FD associated to flush               */
+    int convert_nan_to_null;  /* Convert null to nan ?                      */
 
     int daemon;               /* Run as a daemon ?              */
     flb_pipefd_t shutdown_fd; /* Shutdown FD, 5 seconds         */
@@ -243,6 +244,7 @@ struct flb_config {
     int   storage_max_chunks_up;    /* max number of chunks 'up' in memory */
     int   storage_del_bad_chunks;   /* delete irrecoverable chunks */
     char *storage_bl_mem_limit;     /* storage backlog memory limit */
+    int   storage_bl_flush_on_shutdown; /* enable/disable backlog chunks flush on shutdown */
     struct flb_storage_metrics *storage_metrics_ctx; /* storage metrics context */
     int   storage_trim_files;       /* enable/disable file trimming */
 
@@ -287,6 +289,10 @@ struct flb_config {
     size_t route_mask_size;
     size_t route_mask_slots;
     uint64_t *route_empty_mask;
+#ifdef FLB_SYSTEM_WINDOWS
+    /* maxstdio (Windows) */
+    int win_maxstdio;
+#endif
 
     /* Co-routines */
     unsigned int coro_stack_size;
@@ -373,6 +379,9 @@ enum conf_type {
 #define FLB_CONF_STR_HOT_RELOAD        "Hot_Reload"
 #define FLB_CONF_STR_HOT_RELOAD_ENSURE_THREAD_SAFETY  "Hot_Reload.Ensure_Thread_Safety"
 
+/* Set up maxstdio (Windows) */
+#define FLB_CONF_STR_WINDOWS_MAX_STDIO "windows.maxstdio"
+
 /* DNS */
 #define FLB_CONF_DNS_MODE              "dns.mode"
 #define FLB_CONF_DNS_RESOLVER          "dns.resolver"
@@ -385,6 +394,8 @@ enum conf_type {
 #define FLB_CONF_STORAGE_METRICS       "storage.metrics"
 #define FLB_CONF_STORAGE_CHECKSUM      "storage.checksum"
 #define FLB_CONF_STORAGE_BL_MEM_LIMIT  "storage.backlog.mem_limit"
+#define FLB_CONF_STORAGE_BL_FLUSH_ON_SHUTDOWN \
+                                       "storage.backlog.flush_on_shutdown" 
 #define FLB_CONF_STORAGE_MAX_CHUNKS_UP "storage.max_chunks_up"
 #define FLB_CONF_STORAGE_DELETE_IRRECOVERABLE_CHUNKS \
                                        "storage.delete_irrecoverable_chunks"

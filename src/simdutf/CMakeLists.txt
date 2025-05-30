@@ -7,3 +7,6 @@ set(src
 
 add_library(flb-simdutf-connector-static STATIC ${src})
 target_link_libraries(flb-simdutf-connector-static simdutf-static)
+if(FLB_JEMALLOC)
+  target_link_libraries(flb-simdutf-connector-static ${JEMALLOC_LIBRARIES})
+endif()

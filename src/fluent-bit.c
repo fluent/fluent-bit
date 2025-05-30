@@ -1067,6 +1067,9 @@ int flb_main(int argc, char **argv)
         { "http_port",       required_argument, NULL, 'P' },
 #endif
         { "enable-hot-reload",     no_argument, NULL, 'Y' },
+#ifdef FLB_SYSTEM_WINDOWS
+        { "windows_maxstdio",      required_argument, NULL, 'M' },
+#endif
 #ifdef FLB_HAVE_CHUNK_TRACE
         { "enable-chunk-trace",    no_argument, NULL, 'Z' },
         { "trace",                 required_argument, NULL, FLB_LONG_TRACE },
@@ -1104,7 +1107,7 @@ int flb_main(int argc, char **argv)
 
     /* Parse the command line options */
     while ((opt = getopt_long(argc, argv,
-                              "b:c:dDf:C:i:m:o:R:r:F:p:e:"
+                              "b:c:dDf:C:i:m:M:o:R:r:F:p:e:"
                               "t:T:l:vw:qVhJL:HP:s:SWYZ",
                               long_opts, NULL)) != -1) {
 
@@ -1159,6 +1162,12 @@ int flb_main(int argc, char **argv)
                 flb_cf_section_property_add(cf_opts, s->properties, "match", 0, optarg, 0);
             }
             break;
+#ifdef FLB_SYSTEM_WINDOWS
+        case 'M':
+            flb_cf_section_property_add(cf_opts, service->properties,
+                                        "windows.maxstdio", 0, optarg, 0);
+            break;
+#endif
         case 'o':
             s = flb_cf_section_create(cf_opts, "output", 0);
             if (!s) {
@@ -1391,6 +1400,18 @@ int flb_main(int argc, char **argv)
 #endif
 
 #ifdef FLB_SYSTEM_WINDOWS
+    /* Validate specified maxstdio */
+    if (config->win_maxstdio >= 512 && config->win_maxstdio <= 2048) {
+        _setmaxstdio(config->win_maxstdio);
+    }
+    else {
+        fprintf(stderr,
+                "windows.maxstdio is invalid. From 512 to 2048 is vaild but got %d\n",
+                config->win_maxstdio);
+        flb_free(cfg_file);
+        flb_cf_destroy(cf_opts);
+        exit(EXIT_FAILURE);
+    }
     win32_started();
 #endif
 

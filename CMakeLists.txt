@@ -8,7 +8,7 @@ set(CMAKE_POLICY_DEFAULT_CMP0069 NEW)
 # Fluent Bit Version
 set(FLB_VERSION_MAJOR  4)
 set(FLB_VERSION_MINOR  0)
-set(FLB_VERSION_PATCH  2)
+set(FLB_VERSION_PATCH  3)
 set(FLB_VERSION_STR "${FLB_VERSION_MAJOR}.${FLB_VERSION_MINOR}.${FLB_VERSION_PATCH}")
 
 set(CMAKE_POSITION_INDEPENDENT_CODE ON)
@@ -67,9 +67,16 @@ if (MSVC)
   #   /wd4100 .. C4100 (unreferenced formal parameter)
   #   /wd5045 .. C5045 (Spectre mitigation)
   #
+  # Restore /OPT:REF after setting /Debug, enable /OPT:ICF for 64-bit
+  # builds per Microsoft recommended best practices.
   set(CMAKE_C_FLAGS "/DWIN32 /D_WINDOWS /DNDEBUG /O2 /Zi /wd4100 /wd4711 /wd5045")
-  set(CMAKE_EXE_LINKER_FLAGS "/Debug /INCREMENTAL:NO")
+  set(CMAKE_EXE_LINKER_FLAGS "/DEBUG /OPT:REF /INCREMENTAL:NO")
+  set(CMAKE_SHARED_LINKER_FLAGS "/DEBUG /OPT:REF /INCREMENTAL:NO")
   set(CMAKE_BUILD_TYPE None)
+  if (CMAKE_SIZEOF_VOID_P EQUAL 8)
+    set(CMAKE_EXE_LINKER_FLAGS "${CMAKE_EXE_LINKER_FLAGS} /OPT:ICF")
+    set(CMAKE_SHARED_LINKER_FLAGS "${CMAKE_SHARED_LINKER_FLAGS} /OPT:ICF")
+  endif()
 
   # Use add_compile_options() to set /MT since Visual Studio
   # Generator does not notice /MT in CMAKE_C_FLAGS.
@@ -120,6 +127,19 @@ include(cmake/platform_feature_checks.cmake)
 set(CMAKE_MODULE_PATH "${PROJECT_SOURCE_DIR}/cmake/sanitizers-cmake/cmake" ${CMAKE_MODULE_PATH})
 find_package(Sanitizers)
 
+# Check for CXX support
+include(CheckLanguage)
+check_language(CXX)
+
+# Enable CXX features if CXX is available
+if(CMAKE_CXX_COMPILER)
+  message(STATUS "CXX compiler found, enable simdutf.")
+  set(FLB_USE_SIMDUTF Yes)
+else()
+  message(STATUS "CXX compiler not found, disable simdutf.")
+  set(FLB_USE_SIMDUTF No)
+endif()
+
 # Output paths
 set(FLB_ROOT "${CMAKE_CURRENT_SOURCE_DIR}")
 set(CMAKE_RUNTIME_OUTPUT_DIRECTORY "${CMAKE_CURRENT_BINARY_DIR}/bin")
@@ -139,7 +159,7 @@ option(FLB_COVERAGE            "Build with code-coverage"      No)
 option(FLB_JEMALLOC            "Build with Jemalloc support"   No)
 option(FLB_REGEX               "Build with Regex support"     Yes)
 option(FLB_UTF8_ENCODER        "Build with UTF8 encoding support" Yes)
-option(FLB_UNICODE_ENCODER     "Build with Unicode (UTF-16LE, UTF-16BE) encoding support" Yes)
+option(FLB_UNICODE_ENCODER     "Build with Unicode (UTF-16LE, UTF-16BE) encoding support" ${FLB_USE_SIMDUTF})
 option(FLB_PARSER              "Build with Parser support"    Yes)
 option(FLB_TLS                 "Build with SSL/TLS support"   Yes)
 option(FLB_BINARY              "Build executable binary"      Yes)
@@ -523,7 +543,11 @@ add_subdirectory(${FLB_PATH_LIB_FLUENT_OTEL} EXCLUDE_FROM_ALL)
 # MsgPack options
 if(FLB_PREFER_SYSTEM_LIB_MSGPACK)
   find_package(PkgConfig)
+  # Try msgpack first (Ubuntu/Debian), then msgpack-c (Arch Linux)
   pkg_check_modules(MSGPACK msgpack>=4.0.0)
+  if(NOT MSGPACK_FOUND)
+    pkg_check_modules(MSGPACK msgpack-c>=4.0.0)
+  endif()
 endif()
 if(MSGPACK_FOUND)
   include_directories(${MSGPACK_INCLUDE_DIRS})
@@ -869,6 +893,18 @@ if(FLB_HAVE_GMTOFF)
   FLB_DEFINITION(FLB_HAVE_GMTOFF)
 endif()
 
+# tm_zone support
+check_c_source_compiles("
+  #include <time.h>
+  int main() {
+     struct tm tm;
+     tm.tm_zone = \"GMT\";
+     return 0;
+  }" FLB_HAVE_TIME_ZONE)
+if(FLB_HAVE_TIME_ZONE)
+  FLB_DEFINITION(FLB_HAVE_TIME_ZONE)
+endif()
+
 # clock_get_time() support for macOS.
 check_c_source_compiles("
   #include <mach/clock.h>
@@ -1016,12 +1052,8 @@ else()
     set(AUTOCONF_HOST_OPT "--host=${GNU_HOST}")
 endif()
 
-if(CMAKE_GENERATOR MATCHES "Ninja")
-  if(FLB_SYSTEM_WINDOWS)
-    MESSAGE(FATAL_ERROR "Building with Ninja is not supported on Windows")
-  else()
-    set(EXTERNAL_BUILD_TOOL "make")
-  endif()
+if(CMAKE_GENERATOR MATCHES "Ninja" AND NOT FLB_SYSTEM_WINDOWS)
+  set(EXTERNAL_BUILD_TOOL "make")
 else()
   set(EXTERNAL_BUILD_TOOL "$(MAKE)")
 endif()
