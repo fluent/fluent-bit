@@ -683,7 +683,7 @@ static void cb_azure_kusto_ingest(struct flb_config *config, void *data)
             /* Delete the file after successful ingestion */
             ret = azure_kusto_store_file_delete(ctx, file);
             if (ret == 0) {
-                flb_plg_debug(ctx->ins, "scheduler_kusto_ingest :: deleted successfully ingested file %s", fsf->name);
+                flb_plg_debug(ctx->ins, "scheduler_kusto_ingest :: deleted successfully ingested file");
             }
             else {
                 flb_plg_error(ctx->ins, "scheduler_kusto_ingest :: failed to delete ingested file %s", fsf->name);
