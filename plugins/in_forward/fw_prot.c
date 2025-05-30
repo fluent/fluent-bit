@@ -491,7 +491,10 @@ static int user_authentication(struct flb_input_instance *ins,
 
     mk_list_foreach_safe(head, tmp, &ctx->users) {
         user = mk_list_entry(head, struct flb_in_fw_user, _head);
-        if (strncmp(user->name, username, strlen(user->name)) != 0) {
+        if (flb_sds_len(user->name) != flb_sds_len(username)) {
+            continue;
+        }
+        if (strncmp(user->name, username, flb_sds_len(user->name)) != 0) {
             continue;
         }
 
@@ -500,6 +503,10 @@ static int user_authentication(struct flb_input_instance *ins,
         }
 
         userauth_digest = flb_calloc(128, sizeof(char));
+        if (!userauth_digest) {
+            flb_errno();
+            return FLB_FALSE;
+        }
 
         if (flb_secure_forward_password_digest(ins, conn,
                                                username, user->password,
@@ -542,6 +549,10 @@ static int check_ping(struct flb_input_instance *ins,
     struct flb_in_fw_config *ctx = conn->ctx;
 
     serverside = flb_calloc(128, sizeof(char));
+    if (!serverside) {
+        flb_errno();
+        return -1;
+    }
 
     /* Wait for client PING */
     ret = secure_forward_read(ins, conn->connection, buf, sizeof(buf) - 1, &out_len);
