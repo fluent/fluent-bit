@@ -1418,16 +1418,21 @@ static int adjust_counters(struct flb_tail_config *ctx, struct flb_tail_file *fi
         return FLB_TAIL_ERROR;
     }
 
-    /* Check if the file was truncated */
-    if (file->offset > st.st_size) {
+    int64_t size_delta = st.st_size - file->size;
+    if (size_delta != 0) {
+        file->size = st.st_size;
+    }
+
+    /* Check if the file was truncated by comparing current size with previous size */
+    if (size_delta < 0) {
         offset = lseek(file->fd, 0, SEEK_SET);
         if (offset == -1) {
             flb_errno();
             return FLB_TAIL_ERROR;
         }
 
-        flb_plg_debug(ctx->ins, "inode=%"PRIu64" file truncated %s",
-                      file->inode, file->name);
+        flb_plg_debug(ctx->ins, "adjust_counters: inode=%"PRIu64" file truncated %s (diff: %"PRId64" bytes)",
+                      file->inode, file->name, size_delta);
         file->offset = offset;
         file->buf_len = 0;
 
@@ -1439,8 +1444,8 @@ static int adjust_counters(struct flb_tail_config *ctx, struct flb_tail_file *fi
 #endif
     }
     else {
-        file->size = st.st_size;
-        file->pending_bytes = (st.st_size - file->offset);
+        // Avoid negative pending_bytes when fstat() has stale data and size < offset
+        file->pending_bytes = (st.st_size > file->offset) ? (st.st_size - file->offset) : 0;
     }
 
     return FLB_TAIL_OK;
