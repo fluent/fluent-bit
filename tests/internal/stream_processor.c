@@ -815,6 +815,7 @@ static void test_conv_from_str_to_num()
 
     config = flb_config_init();
     config->evl = mk_event_loop_create(256);
+    flb_engine_evl_init();
     flb_engine_evl_set(config->evl);
 
     ret = flb_storage_create(config);
