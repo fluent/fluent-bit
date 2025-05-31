@@ -198,8 +198,11 @@ static int in_kafka_collect(struct flb_input_instance *ins,
 
         rd_kafka_message_destroy(rkm);
 
-        /* TO-DO: commit the record based on `ret` */
-        rd_kafka_commit(ctx->kafka.rk, NULL, 0);
+        if (!ctx->enable_auto_commit) {
+            if (ret == FLB_EVENT_ENCODER_SUCCESS) {
+              rd_kafka_commit(ctx->kafka.rk, NULL, 0);
+            }
+        }
 
         /* Break from the loop when reaching the limit of polling if available */
         if (ctx->polling_threshold != FLB_IN_KAFKA_UNLIMITED &&
@@ -453,6 +456,11 @@ static struct flb_config_map config_map[] = {
     "This option only takes effect when running in a dedicated thread (i.e., when 'threaded' is enabled). "
     "Using a higher timeout (e.g., 1.5x - 2x 'rdkafka.fetch.wait.max.ms') "
     "can improve efficiency by leveraging Kafka's batching mechanism."
+   },
+   {
+    FLB_CONFIG_MAP_BOOL, "enable_auto_commit", FLB_IN_KAFKA_ENABLE_AUTO_COMMIT,
+    0, FLB_TRUE, offsetof(struct flb_in_kafka_config, enable_auto_commit),
+    "Rely on kafka auto-commit and commit messages in batches"
    },
    /* EOF */
    {0}
