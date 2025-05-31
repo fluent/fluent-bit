@@ -34,6 +34,7 @@
 #include <fluent-bit/flb_upstream.h>
 #include <fluent-bit/flb_downstream.h>
 #include <fluent-bit/tls/flb_tls.h>
+#include <fluent-bit/flb_processor.h>
 
 #include <signal.h>
 #include <stdarg.h>
@@ -329,6 +330,72 @@ int flb_input_set(flb_ctx_t *ctx, int ffd, ...)
     return 0;
 }
 
+static int flb_processor_event_type_get(const char *event_type)
+{
+    if (strcasecmp(event_type, "logs") == 0) {
+        return FLB_PROCESSOR_LOGS;
+    }
+    else if (strcasecmp(event_type, "metrics") == 0) {
+        return FLB_PROCESSOR_METRICS;
+    }
+    else if (strcasecmp(event_type, "traces") == 0) {
+        return FLB_PROCESSOR_TRACES;
+    }
+    else if (strcasecmp(event_type, "profiles") == 0) {
+        return FLB_PROCESSOR_PROFILES;
+    }
+    else {
+        return -1;
+    }
+}
+
+/* Create a single processor unit for the input processor */
+int flb_input_processor_unit(flb_ctx_t *ctx, const char *event_type,
+                             const char *processor_unit_name, int ffd, ...)
+{
+    int ret;
+    int type;
+    struct flb_input_instance *i_ins;
+    struct flb_processor *proc;
+    struct flb_processor_unit *pu;
+    char *key;
+    char *value;
+    va_list va;
+
+    i_ins = in_instance_get(ctx, ffd);
+    if (!i_ins) {
+        return -1;
+    }
+    proc = i_ins->processor;
+    if (!proc) {
+        return -1;
+    }
+    type = flb_processor_event_type_get(event_type);
+    if (type == -1) {
+        return -1;
+    }
+    pu = flb_processor_unit_create(proc, type, processor_unit_name);
+    va_start(va, ffd);
+    while ((key = va_arg(va, char *))) {
+        value = va_arg(va, char *);
+        if (!value) {
+            /* Wrong parameter */
+            va_end(va);
+            return -1;
+        }
+        struct cfl_variant cfl_value = {
+            .type = CFL_VARIANT_STRING,
+            .data.as_string = value,
+        };
+        ret = flb_processor_unit_set_property(pu, key, &cfl_value);
+        if (ret != 0) {
+            va_end(va);
+            return -1;
+        }
+    }
+    return 0;
+}
+
 int flb_input_set_processor(flb_ctx_t *ctx, int ffd, struct flb_processor *proc)
 {
     struct flb_input_instance *i_ins;
@@ -344,6 +411,23 @@ int flb_input_set_processor(flb_ctx_t *ctx, int ffd, struct flb_processor *proc)
 
     i_ins->processor = proc;
 
+    return 0;
+}
+
+/* Retrieve the processor associated with a given input plugin. */
+int flb_input_get_processor(flb_ctx_t *ctx, int ffd,
+                            struct flb_processor **proc)
+{
+    struct flb_input_instance *i_ins;
+
+    i_ins = in_instance_get(ctx, ffd);
+    if (!i_ins) {
+        return -1;
+    }
+    if (!i_ins->processor) {
+        return -1;
+    }
+    *proc = i_ins->processor;
     return 0;
 }
 
@@ -545,6 +629,55 @@ int flb_output_set(flb_ctx_t *ctx, int ffd, ...)
     return 0;
 }
 
+/* Create a single processor unit for the input processor */
+int flb_output_processor_unit(flb_ctx_t *ctx, const char *event_type,
+                              const char *processor_unit_name, int ffd, ...)
+{
+    int ret;
+    int type;
+    struct flb_output_instance *o_ins;
+    struct flb_processor *proc;
+    struct flb_processor_unit *pu;
+    char *key;
+    char *value;
+    va_list va;
+
+    o_ins = out_instance_get(ctx, ffd);
+    if (!o_ins) {
+        return -1;
+    }
+    proc = o_ins->processor;
+    if (!proc) {
+        return -1;
+    }
+    type = flb_processor_event_type_get(event_type);
+    if (type == -1) {
+        return -1;
+    }
+    pu = flb_processor_unit_create(proc, type, processor_unit_name);
+    va_start(va, ffd);
+    while ((key = va_arg(va, char *))) {
+        value = va_arg(va, char *);
+        if (!value) {
+            /* Wrong parameter */
+            va_end(va);
+            return -1;
+        }
+
+        struct cfl_variant cfl_value = {
+            .type = CFL_VARIANT_STRING,
+            .data.as_string = value,
+        };
+
+        ret = flb_processor_unit_set_property(pu, key, &cfl_value);
+        if (ret != 0) {
+            va_end(va);
+            return -1;
+        }
+    }
+    return 0;
+}
+
 int flb_output_set_processor(flb_ctx_t *ctx, int ffd, struct flb_processor *proc)
 {
     struct flb_output_instance *o_ins;
@@ -560,6 +693,23 @@ int flb_output_set_processor(flb_ctx_t *ctx, int ffd, struct flb_processor *proc
 
     o_ins->processor = proc;
 
+    return 0;
+}
+
+/* Retrieve the processor associated with a given output plugin. */
+int flb_output_get_processor(flb_ctx_t *ctx, int ffd,
+                             struct flb_processor **proc)
+{
+    struct flb_output_instance *o_ins;
+
+    o_ins = out_instance_get(ctx, ffd);
+    if (!o_ins) {
+        return -1;
+    }
+    if (!o_ins->processor) {
+        return -1;
+    }
+    *proc = o_ins->processor;
     return 0;
 }
 
