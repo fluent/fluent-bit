@@ -15,10 +15,8 @@ include(GNUInstallDirs)
 # Set default compiler options
 if (NOT CMAKE_SYSTEM_NAME MATCHES "Windows")
 set(CMAKE_C_FLAGS "${CMAKE_C_FLAGS} -std=gnu99 -Wall -Wextra")
-set(CMAKE_C_FLAGS "${CMAKE_C_FLAGS} -D__FILENAME__='\"$$(subst ${CMAKE_SOURCE_DIR}/,,$$(abspath \$$<))\"'")
-else()
-set(CMAKE_C_FLAGS "${CMAKE_C_FLAGS} -D__FILENAME__=__FILE__")
 endif()
+set(CMAKE_C_FLAGS "${CMAKE_C_FLAGS} -D__FILENAME__=__FILE__")
 
 # Monkey Version
 set(MK_VERSION_MAJOR  1)
