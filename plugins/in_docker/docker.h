@@ -89,7 +89,7 @@ struct flb_docker;
 
 struct cgroup_api {
     int cgroup_version;
-    struct mk_list* (*get_active_docker_ids) ();
+    struct mk_list* (*get_active_container_ids) ();
     char*           (*get_container_name) (struct flb_docker *, char *);
     cpu_snapshot*   (*get_cpu_snapshot)   (struct flb_docker *, char *);
     mem_snapshot*   (*get_mem_snapshot)   (struct flb_docker *, char *);
