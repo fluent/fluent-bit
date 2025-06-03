@@ -399,6 +399,62 @@ void test_hash_exists()
     flb_hash_table_destroy(ht);
 }
 
+/* Ensure long keys hashed case-insensitively do not leak memory */
+void test_case_insensitive_long_key()
+{
+    int i;
+    int ret;
+    char key[128];
+    struct flb_hash_table *ht;
+
+    memset(key, 'A', sizeof(key) - 1);
+    key[sizeof(key) - 1] = '\0';
+
+    ht = flb_hash_table_create(FLB_HASH_TABLE_EVICT_NONE, 8, -1);
+    TEST_CHECK(ht != NULL);
+
+    flb_hash_table_set_case_sensitivity(ht, FLB_FALSE);
+
+    for (i = 0; i < 10; i++) {
+        ret = flb_hash_table_add(ht, key, strlen(key), "val", 3);
+        TEST_CHECK(ret >= 0);
+        ret = flb_hash_table_del(ht, key);
+        TEST_CHECK(ret == 0);
+    }
+
+    flb_hash_table_destroy(ht);
+}
+
+/* Deleting a short key should not remove a longer key with the same prefix */
+void test_delete_shared_prefix()
+{
+    int ret;
+    const char *out;
+    size_t out_size;
+    struct flb_hash_table *ht;
+
+    ht = flb_hash_table_create(FLB_HASH_TABLE_EVICT_NONE, 8, -1);
+    TEST_CHECK(ht != NULL);
+
+    ret = flb_hash_table_add(ht, "prefix", 6, "short", 5);
+    TEST_CHECK(ret >= 0);
+    ret = flb_hash_table_add(ht, "prefix-long", 11, "long", 4);
+    TEST_CHECK(ret >= 0);
+
+    ret = flb_hash_table_del(ht, "prefix");
+    TEST_CHECK(ret == 0);
+
+    ret = flb_hash_table_get(ht, "prefix-long", 11, (void *)&out, &out_size);
+    TEST_CHECK(ret >= 0);
+    TEST_CHECK(out_size == 4);
+    TEST_CHECK(strncmp(out, "long", out_size) == 0);
+
+    ret = flb_hash_table_get(ht, "prefix", 6, (void *)&out, &out_size);
+    TEST_CHECK(ret == -1);
+
+    flb_hash_table_destroy(ht);
+}
+
 TEST_LIST = {
     { "zero_size", test_create_zero },
     { "single",    test_single },
@@ -411,5 +467,7 @@ TEST_LIST = {
     { "older_eviction", test_older_eviction },
     { "pointer", test_pointer },
     { "hash_exists", test_hash_exists},
+    { "case_insensitive_long_key", test_case_insensitive_long_key },
+    { "delete_shared_prefix", test_delete_shared_prefix },
     { 0 }
 };
