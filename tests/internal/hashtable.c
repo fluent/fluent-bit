@@ -425,6 +425,26 @@ void test_case_insensitive_long_key()
     flb_hash_table_destroy(ht);
 }
 
+void test_case_insensitive_short_key()
+{
+    int ret;
+    char key[32];
+    struct flb_hash_table *ht;
+
+    memset(key, 'A', sizeof(key));
+
+    ht = flb_hash_table_create(FLB_HASH_TABLE_EVICT_NONE, 8, -1);
+    TEST_CHECK(ht != NULL);
+
+    flb_hash_table_set_case_sensitivity(ht, FLB_FALSE);
+
+    /* This should allocate instead of using the stack buffer */
+    ret = flb_hash_table_add(ht, key, sizeof(key), "val", 3);
+    TEST_CHECK(ret >= 0);
+    flb_hash_table_destroy(ht);
+}
+
+
 /* Deleting a short key should not remove a longer key with the same prefix */
 void test_delete_shared_prefix()
 {
@@ -467,6 +487,7 @@ TEST_LIST = {
     { "older_eviction", test_older_eviction },
     { "pointer", test_pointer },
     { "hash_exists", test_hash_exists},
+    { "case_insensitive_short_key", test_case_insensitive_short_key },
     { "case_insensitive_long_key", test_case_insensitive_long_key },
     { "delete_shared_prefix", test_delete_shared_prefix },
     { 0 }
