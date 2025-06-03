@@ -170,7 +170,7 @@ static int in_kafka_collect(struct flb_input_instance *ins,
          *    - Optimize for throughput by allowing Kafka's internal batching.
          *    - Align with 'fetch.wait.max.ms' (default: 500ms) to maximize batch efficiency.
          *    - Set timeout slightly higher than 'fetch.wait.max.ms' (e.g., 1.5x - 2x) to
-         *      ensure it does not interfere with Kafka’s fetch behavior, while still
+         *      ensure it does not interfere with Kafka's fetch behavior, while still
          *      keeping the consumer responsive.
          */
         if (ctx->ins->flags & FLB_INPUT_THREADED) {
@@ -261,6 +261,15 @@ static int in_kafka_init(struct flb_input_instance *ins,
     kafka_conf = flb_kafka_conf_create(&ctx->kafka, &ins->properties, 1);
     if (!kafka_conf) {
         flb_plg_error(ins, "Could not initialize kafka config object");
+        goto init_error;
+    }
+
+    /* Set enable.auto.commit based on plugin's enable_auto_commit setting */
+    res = rd_kafka_conf_set(kafka_conf, "enable.auto.commit",
+                           ctx->enable_auto_commit ? "true" : "false",
+                           errstr, sizeof(errstr));
+    if (res != RD_KAFKA_CONF_OK) {
+        flb_plg_error(ins, "Failed to set enable.auto.commit: %s", errstr);
         goto init_error;
     }
 
