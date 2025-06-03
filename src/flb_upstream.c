@@ -722,15 +722,14 @@ struct flb_connection *flb_upstream_conn_get(struct flb_upstream *u)
          *   - if keepalive is disabled, the connection is moved to 'drop_queue' then is
          *     closed and destroyed.
          *
-         * Based on the logic described above, to limit the number of total connections
-         * in the worker, we only need to count the number of connections linked into
-         * the 'busy_queue' list because if there are connections available 'av_queue' it
-         * won't create a one.
+         * To enforce a limit in the number of connections, we must count count all the
+         * queues since they represent open connections.
          */
 
-        /* Count the number of relevant connections */
         flb_stream_acquire_lock(&u->base, FLB_TRUE);
-        total_connections = mk_list_size(&uq->busy_queue);
+        total_connections = mk_list_size(&uq->busy_queue) +
+                            mk_list_size(&uq->av_queue) +
+                            mk_list_size(&uq->destroy_queue);
         flb_stream_release_lock(&u->base);
 
         if (total_connections >= u->base.net.max_worker_connections) {
