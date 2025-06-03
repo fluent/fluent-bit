@@ -37,7 +37,7 @@ Fluent Bit runs on x86_64, x86, arm32v7, and arm64v8 architectures.
   - Extensibility
     - Write any input, filter or output plugin in C language
     - Write [Filters in Lua](https://docs.fluentbit.io/manual/filter/lua) or [Output plugins in Golang](https://docs.fluentbit.io/manual/development/golang-output-plugins)
-- [Monitoring](https://docs.fluentbit.io/manual/administration/monitoring): expose internal metrics over HTTP in JSON and [Prometheus](https://prometheus.io/) format
+- [Monitoring](https://docs.fluentbit.io/manual/administration/monitoring): expose internal metrics, including Fluent Bit process CPU and memory usage, over HTTP in JSON and [Prometheus](https://prometheus.io/) format
 - [Stream Processing](https://docs.fluentbit.io/manual/stream-processing/introduction): Perform data selection and transformation using simple SQL queries
   - Create new streams of data using query results
   - Aggregation Windows
