@@ -28,12 +28,13 @@
 
 #include <cfl/cfl.h>
 
-static inline char *convert_string_to_lowercase(
-                        char  *output_buffer,
-                        char *input_buffer,
-                        size_t length)
+static inline char *convert_string_to_lowercase(char  *output_buffer, char *input_buffer, size_t length)
 {
     size_t index;
+
+    if (input_buffer == NULL) {
+        return NULL;
+    }
 
     if (output_buffer == NULL) {
         output_buffer = flb_calloc(1, length + 1);
@@ -47,23 +48,21 @@ static inline char *convert_string_to_lowercase(
         for (index = 0 ; index < length ; index++) {
             output_buffer[index] = tolower(input_buffer[index]);
         }
-
     }
 
     return output_buffer;
 }
 
-static inline int flb_hash_table_compute_key_hash(
-                    uint64_t *hash,
-                    char *key, size_t key_len,
-                    int case_sensitivity)
+static inline int flb_hash_table_compute_key_hash(uint64_t *hash, char *key, size_t key_len, int case_sensitivity)
 {
+    int converted_key_allocated = FLB_FALSE;
     char  local_caseless_key_buffer[64];
     char *converted_key = key;
 
     if (!case_sensitivity) {
-        if (key_len > (sizeof(local_caseless_key_buffer) - 1)) {
+        if (key_len >= (sizeof(local_caseless_key_buffer) - 1)) {
             converted_key = convert_string_to_lowercase(NULL, key, key_len);
+            converted_key_allocated = FLB_TRUE;
         }
         else {
             converted_key = convert_string_to_lowercase(local_caseless_key_buffer,
@@ -76,8 +75,7 @@ static inline int flb_hash_table_compute_key_hash(
     }
 
     *hash = cfl_hash_64bits(converted_key, key_len);
-
-    if (!case_sensitivity && converted_key != key) {
+    if (converted_key_allocated) {
         flb_free(converted_key);
     }
 
@@ -447,7 +445,6 @@ int flb_hash_table_add(struct flb_hash_table *ht, const char *key, int key_len,
     /*
      * Below is just code to handle the creation of a new entry in the table
      */
-
     ret = flb_hash_table_compute_key_hash(
             &hash,
             (char *) key, key_len,
