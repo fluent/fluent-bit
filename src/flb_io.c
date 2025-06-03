@@ -110,11 +110,9 @@ int flb_io_net_connect(struct flb_connection *connection,
     int async = FLB_FALSE;
     flb_sockfd_t fd = -1;
     int flags = flb_connection_get_flags(connection);
-    // struct flb_upstream *u = u_conn->u;
 
     if (connection->fd > 0) {
         flb_socket_close(connection->fd);
-
         connection->fd = -1;
         connection->event.fd = -1;
     }
@@ -146,9 +144,10 @@ int flb_io_net_connect(struct flb_connection *connection,
                       connection->upstream->tcp_host,
                       connection->upstream->tcp_port);
 
-          flb_socket_close(fd);
-
-          return -1;
+            flb_socket_close(fd);
+            connection->fd = -1;
+            connection->event.fd = -1;
+            return -1;
         }
         flb_debug("[http_client] flb_http_client_proxy_connect connection #%i connected to %s:%i.",
                   connection->fd,
@@ -163,7 +162,8 @@ int flb_io_net_connect(struct flb_connection *connection,
 
         if (ret == -1) {
             flb_socket_close(fd);
-
+            connection->fd = -1;
+            connection->event.fd = -1;
             return -1;
         }
     }
