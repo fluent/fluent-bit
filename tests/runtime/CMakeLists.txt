@@ -233,6 +233,7 @@ if(FLB_IN_LIB)
     FLB_RT_TEST(FLB_OUT_FILE              "out_file.c")
   endif()
   FLB_RT_TEST(FLB_OUT_S3                "out_s3.c")
+  FLB_RT_TEST(FLB_OUT_GCS               "out_gcs.c")
   FLB_RT_TEST(FLB_OUT_TD                "out_td.c")
   FLB_RT_TEST(FLB_OUT_INFLUXDB          "out_influxdb.c")
 

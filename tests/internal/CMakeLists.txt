@@ -50,6 +50,9 @@ set(UNIT_TESTS_FILES
   task_map.c
   strptime.c
   storage_inherit.c
+  gcs_config.c
+  gcs_format.c
+  gcs_auth.c
 )
 
 # Config format
