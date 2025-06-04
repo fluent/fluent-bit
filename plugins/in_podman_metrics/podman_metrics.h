@@ -30,7 +30,7 @@
 
 #include "podman_metrics_config.h"
 
-static int collect_container_data(struct flb_in_metrics *ctx);
+static int collect_container_data(struct flb_in_metrics *ctx, int gather_only);
 static int add_container_to_list(struct flb_in_metrics *ctx, flb_sds_t id, flb_sds_t name, flb_sds_t image_name);
 static int destroy_container_list(struct flb_in_metrics *ctx);
 
@@ -77,6 +77,11 @@ static struct flb_config_map config_map[] = {
      FLB_CONFIG_MAP_STR, "path.procfs", PROCFS_PATH,
      0, FLB_TRUE, offsetof(struct flb_in_metrics, procfs_path),
      "Path to proc subsystem directory"
+    },
+    {
+     FLB_CONFIG_MAP_BOOL, "remove_stale_counters", "false",
+     0, FLB_TRUE, offsetof(struct flb_in_metrics, remove_stale_counters),
+     "Remove counters for removed containers"
     },
 
     /* EOF */
