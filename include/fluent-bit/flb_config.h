@@ -247,6 +247,8 @@ struct flb_config {
     int   storage_bl_flush_on_shutdown; /* enable/disable backlog chunks flush on shutdown */
     struct flb_storage_metrics *storage_metrics_ctx; /* storage metrics context */
     int   storage_trim_files;       /* enable/disable file trimming */
+    char *storage_type;             /* global storage type */
+    int   storage_inherit;          /* apply storage type to inputs */
 
     /* Embedded SQL Database support (SQLite3) */
 #ifdef FLB_HAVE_SQLDB
@@ -400,6 +402,8 @@ enum conf_type {
 #define FLB_CONF_STORAGE_DELETE_IRRECOVERABLE_CHUNKS \
                                        "storage.delete_irrecoverable_chunks"
 #define FLB_CONF_STORAGE_TRIM_FILES    "storage.trim_files"
+#define FLB_CONF_STORAGE_TYPE          "storage.type"
+#define FLB_CONF_STORAGE_INHERIT       "storage.inherit"
 
 /* Coroutines */
 #define FLB_CONF_STR_CORO_STACK_SIZE "Coro_Stack_Size"
