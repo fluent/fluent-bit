@@ -409,6 +409,7 @@ static int mmap_file(struct cio_ctx *ctx, struct cio_chunk *ch, size_t size)
 
         cio_log_debug(ctx, "%s:%s adjusting size OK", ch->st->name, ch->name);
     }
+    cf->alloc_size = size;
 
     cf->alloc_size = size;
 
