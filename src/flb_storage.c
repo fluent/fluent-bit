@@ -502,7 +502,34 @@ int flb_storage_input_create(struct cio_ctx *cio,
 
     /* storage config: get stream type */
     if (in->storage_type == -1) {
-        in->storage_type = FLB_STORAGE_MEM;
+        /* Check if storage inheritance is enabled and configured */
+        if (in->config->storage_inherit == FLB_TRUE && in->config->storage_type != NULL) {
+            if (strcasecmp(in->config->storage_type, "filesystem") == 0) {
+                in->storage_type = FLB_STORAGE_FS;
+            }
+            else if (strcasecmp(in->config->storage_type, "memory") == 0) {
+                in->storage_type = FLB_STORAGE_MEM;
+            }
+            else if (strcasecmp(in->config->storage_type, "memrb") == 0) {
+                in->storage_type = FLB_STORAGE_MEMRB;
+            }
+            else {
+                /* Invalid global storage type, fall back to default */
+                flb_warn("[storage] input '%s': invalid global storage type '%s', using default 'memory'",
+                         flb_input_name(in), in->config->storage_type);
+                in->storage_type = FLB_STORAGE_MEM;
+            }
+        }
+        else if (in->config->storage_inherit == FLB_TRUE && in->config->storage_type == NULL) {
+            /* Storage inheritance enabled but no global storage type configured */
+            flb_warn("[storage] input '%s': storage inheritance enabled but no global storage type configured, using default 'memory'",
+                     flb_input_name(in));
+            in->storage_type = FLB_STORAGE_MEM;
+        }
+        else {
+            /* Use default storage type */
+            in->storage_type = FLB_STORAGE_MEM;
+        }
     }
 
     if (in->storage_type == FLB_STORAGE_FS && cio->options.root_path == NULL) {
