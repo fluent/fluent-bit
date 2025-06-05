@@ -200,7 +200,7 @@ static int in_kafka_collect(struct flb_input_instance *ins,
 
         if (!ctx->enable_auto_commit) {
             if (ret == FLB_EVENT_ENCODER_SUCCESS) {
-              rd_kafka_commit(ctx->kafka.rk, NULL, 0);
+                rd_kafka_commit(ctx->kafka.rk, NULL, 0);
             }
         }
 
