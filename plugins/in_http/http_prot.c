@@ -778,7 +778,7 @@ static int http_prot_uncompress(struct flb_http *ctx,
     return 0;
 }
 
-static int  process_payload(struct flb_http *ctx, struct http_conn *conn,
+static int process_payload(struct flb_http *ctx, struct http_conn *conn,
                            flb_sds_t tag,
                            struct mk_http_session *session,
                            struct mk_http_request *request)
@@ -1003,12 +1003,14 @@ int http_prot_handle(struct flb_http *ctx, struct http_conn *conn,
 
     if (request->method != MK_METHOD_POST) {
         flb_sds_destroy(tag);
+        mk_mem_free(uri);
         send_response(conn, 400, "error: invalid HTTP method\n");
         return -1;
     }
 
     ret = process_payload(ctx, conn, tag, session, request);
     flb_sds_destroy(tag);
+    mk_mem_free(uri);
 
     if (ret == 0) {
         send_response(conn, ctx->successful_response_code, NULL);
