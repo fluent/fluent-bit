@@ -34,6 +34,7 @@
 
 #define HTTP_CONTENT_JSON       0
 #define HTTP_CONTENT_URLENCODED 1
+#define HTTP_HEALTH_ENDPOINT    "/health"
 
 static inline char hex2nibble(char c)
 {
@@ -95,7 +96,7 @@ cfl_sds_t get_health_message()
              tm_time.tm_year + 1900, tm_time.tm_mon + 1, tm_time.tm_mday,
              tm_time.tm_hour, tm_time.tm_min, tm_time.tm_sec, tm.tm.tv_nsec);
 
-    msg = cfl_sds_create_size(256);
+    msg = cfl_sds_create_size(512);
     if (!msg) {
         return NULL;
     }
@@ -103,10 +104,11 @@ cfl_sds_t get_health_message()
     cfl_sds_printf(&msg,
                   "{\n"
                   "  \"status\": \"ok\",\n"
-                  "  \"message\": \"I can only show you the door. You're the one that has to walk through it.\",\n"
+                  "  \"version\": \"%s\",\n"
+                  "  \"git_hash\": \"%s\",\n"
                   "  \"timestamp\": \"%s\"\n"
                   "}\n",
-                  time_str);
+                  FLB_VERSION_STR, FLB_GIT_HASH, time_str);
 
     return msg;
 }
@@ -990,7 +992,7 @@ int http_prot_handle(struct flb_http *ctx, struct http_conn *conn,
         request->_content_length.data = NULL;
     }
 
-    if (request->method == MK_METHOD_GET && strcmp(uri, "/health") == 0) {
+    if (request->method == MK_METHOD_GET && strcmp(uri, HTTP_HEALTH_ENDPOINT) == 0 && ctx->enable_health_endpoint) {
         flb_sds_destroy(tag);
         mk_mem_free(uri);
         health = get_health_message();
@@ -1324,7 +1326,7 @@ int http_prot_handle_ng(struct flb_http_request *request,
         return -1;
     }
 
-    if (request->method == HTTP_METHOD_GET && strcmp(request->path, "/health") == 0) {
+    if (request->method == HTTP_METHOD_GET && strcmp(request->path, HTTP_HEALTH_ENDPOINT) == 0 && ctx->enable_health_endpoint) {
         flb_sds_destroy(tag);
         health = get_health_message();
         send_response_ng(response, 200, health);
