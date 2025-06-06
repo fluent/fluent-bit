@@ -464,6 +464,13 @@ if(FLB_STREAM_PROCESSOR)
     )
 endif()
 
+# Unicode Conversions
+add_subdirectory(unicode)
+  set(FLB_DEPS
+    ${FLB_DEPS}
+    flb-conv
+    )
+
 if (MSVC)
 set(flb_rc_files
   ${CMAKE_CURRENT_BINARY_DIR}/version.rc
