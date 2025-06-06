@@ -595,7 +595,7 @@ static inline int unpack_cfl_variant(mpack_reader_t *reader,
     if (value_type == mpack_type_str) {
         result = unpack_cfl_variant_string(reader, value);
     }
-    else if (value_type == mpack_type_str) {
+    else if (value_type == mpack_type_bool) {
         result = unpack_cfl_variant_boolean(reader, value);
     }
     else if (value_type == mpack_type_int) {
