@@ -362,6 +362,7 @@ enum {
     ACUTEST_FLAG_RUN_ = 1 << 0,
     ACUTEST_FLAG_SUCCESS_ = 1 << 1,
     ACUTEST_FLAG_FAILURE_ = 1 << 2,
+    ACUTEST_FLAG_PARALLELIZE_ = 1 << 3,
 };
 
 extern const struct acutest_test_ acutest_list_[];
@@ -887,6 +888,16 @@ acutest_list_names_(void)
     printf("Unit tests:\n");
     for(test = &acutest_list_[0]; test->func != NULL; test++)
         printf("  %s\n", test->name);
+}
+
+static void
+acutest_parallelize_all_()
+{
+    int i;
+
+    for (i = 0; acutest_list_[i].name; i++) {
+        acutest_test_data_[i].flags |= ACUTEST_FLAG_PARALLELIZE_;
+    }
 }
 
 static void
@@ -1456,6 +1467,7 @@ static const ACUTEST_CMDLINE_OPTION_ acutest_cmdline_options_[] = {
     { 'h',  "help",         'h', 0 },
     {  0,   "worker",       'w', ACUTEST_CMDLINE_OPTFLAG_REQUIREDARG_ },  /* internal */
     { 'x',  "xml-output",   'x', ACUTEST_CMDLINE_OPTFLAG_REQUIREDARG_ },
+    { 'P',  "parallelize",  'P', 0 },
     {  0,   NULL,            0,  0 }
 };
 
@@ -1555,6 +1567,10 @@ acutest_cmdline_callback_(int id, const char* arg)
                 fprintf(stderr, "Unable to open '%s': %s\n", arg, strerror(errno));
                 acutest_exit_(2);
             }
+            break;
+
+        case 'P':
+            acutest_parallelize_all_();
             break;
 
         case 0:
@@ -1670,6 +1686,18 @@ acutest_AmIBeingDebugged(void)
 }
 #endif
 
+struct thread_args {
+     const struct acutest_test_* test;
+     int index;
+     int master_index;
+};
+
+static void *acutest_run_thread_(struct thread_args *args)
+{
+    acutest_run_(args->test, args->index, args->master_index);
+    return NULL;
+}
+
 int
 main(int argc, char** argv)
 {
@@ -1760,13 +1788,44 @@ main(int argc, char** argv)
             printf("1..%d\n", (int) acutest_count_);
     }
 
+    int parallel_tests_count = 0;
+    int parallel_tests_index = 0;
+    pthread_t *pths;
+    pthread_t *pth;
+
+    for(i = 0; acutest_list_[i].func != NULL; i++) {
+        int run_parallel = (acutest_test_data_[i].flags & (ACUTEST_FLAG_RUN_ | ACUTEST_FLAG_PARALLELIZE_));
+        if (acutest_skip_mode_) /* Run all tests except those listed. */
+            run_parallel = !run_parallel;
+        if(run_parallel == (ACUTEST_FLAG_RUN_ | ACUTEST_FLAG_PARALLELIZE_))
+            parallel_tests_count++;
+    }
+    pths = calloc(parallel_tests_count, sizeof(pthread_t));
+
     int index = acutest_worker_index_;
     for(i = 0; acutest_list_[i].func != NULL; i++) {
         int run = (acutest_test_data_[i].flags & ACUTEST_FLAG_RUN_);
         if (acutest_skip_mode_) /* Run all tests except those listed. */
             run = !run;
-        if(run)
-            acutest_run_(&acutest_list_[i], index++, i);
+        if(run) {
+            if (acutest_test_data_[i].flags & ACUTEST_FLAG_PARALLELIZE_) {
+                pth = &pths[parallel_tests_index++];
+
+                struct thread_args *args = calloc(1, sizeof(struct thread_args));
+                args->test = &acutest_list_[i];
+                args->index = index++;
+                args->master_index = i;
+
+                pthread_create(pth, NULL, acutest_run_thread_, args);
+            }
+            else {
+                acutest_run_(&acutest_list_[i], index++, i);
+            }
+        }
+    }
+
+    for (i = 0; i < parallel_tests_count; i++) {
+        pthread_join(pths[i], NULL);
     }
 
     /* Write a summary */
