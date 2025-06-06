@@ -40,50 +40,56 @@ int flb_ml_parser_init(struct flb_ml_parser *ml_parser)
 int flb_ml_parser_builtin_create(struct flb_config *config)
 {
     struct flb_ml_parser *mlp;
+    int ret = -1;
 
     /* Docker */
     mlp = flb_ml_parser_docker(config);
     if (!mlp) {
         flb_error("[multiline] could not init 'docker' built-in parser");
-        return -1;
+        goto error;
     }
 
     /* CRI */
     mlp = flb_ml_parser_cri(config);
     if (!mlp) {
         flb_error("[multiline] could not init 'cri' built-in parser");
-        return -1;
+        goto error;
     }
 
     /* Java */
     mlp = flb_ml_parser_java(config, NULL);
     if (!mlp) {
         flb_error("[multiline] could not init 'java' built-in parser");
-        return -1;
+        goto error;
     }
 
     /* Go */
     mlp = flb_ml_parser_go(config, NULL);
     if (!mlp) {
         flb_error("[multiline] could not init 'go' built-in parser");
-        return -1;
+        goto error;
     }
 
     /* Ruby */
     mlp = flb_ml_parser_ruby(config, NULL);
     if (!mlp) {
         flb_error("[multiline] could not init 'ruby' built-in parser");
-        return -1;
+        goto error;
     }
 
     /* Python */
     mlp = flb_ml_parser_python(config, NULL);
     if (!mlp) {
         flb_error("[multiline] could not init 'python' built-in parser");
-        return -1;
+        goto error;
     }
 
-    return 0;
+    ret = 0;
+    return ret;
+
+error:
+    flb_ml_parser_destroy_all(&config->multiline_parsers);
+    return ret;
 }
 
 struct flb_ml_parser *flb_ml_parser_create(struct flb_config *ctx,
