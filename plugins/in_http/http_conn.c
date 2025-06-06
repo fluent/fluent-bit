@@ -56,6 +56,7 @@ static int http_conn_event(void *data)
 {
     int status;
     size_t size;
+    size_t sent;
     ssize_t available;
     ssize_t bytes;
     size_t request_len;
@@ -63,6 +64,9 @@ static int http_conn_event(void *data)
     struct http_conn *conn;
     struct mk_event *event;
     struct flb_http *ctx;
+    char *request_too_large = "HTTP/1.1 413 Request Entity Too Large\r\n" \
+                              "Content-Length: 0\r\n" \
+                              "Connection: close\r\n\r\n";
 
     connection = (struct flb_connection *) data;
 
@@ -79,6 +83,9 @@ static int http_conn_event(void *data)
                 flb_plg_trace(ctx->ins,
                               "fd=%i incoming data exceed limit (%zu KB)",
                               event->fd, (ctx->buffer_max_size / 1024));
+
+                flb_io_net_write(conn->connection,
+                                 (void *) request_too_large, strlen(request_too_large), &sent);
                 http_conn_del(conn);
                 return -1;
             }

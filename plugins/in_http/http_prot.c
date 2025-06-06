@@ -129,6 +129,14 @@ static int send_response(struct http_conn *conn, int http_status, char *message)
                        FLB_VERSION_STR,
                        context->success_headers_str);
     }
+    else if (http_status == 413) {
+        flb_sds_printf(&out,
+                       "HTTP/1.1 413 Request Entity Too Large\r\n"
+                       "Server: Fluent Bit v%s\r\n"
+                       "Content-Length: %i\r\n\r\n%s",
+                       FLB_VERSION_STR,
+                       len, message ? message : "");
+    }
     else if (http_status == 400) {
         flb_sds_printf(&out,
                        "HTTP/1.1 400 Bad Request\r\n"
@@ -1006,6 +1014,9 @@ static int send_response_ng(struct flb_http_response *response,
     }
     else if (http_status == 400) {
         flb_http_response_set_message(response, "Bad Request");
+    }
+    else if (http_status == 413) {
+        flb_http_response_set_message(response, "Payload Too Large");
     }
 
     if (http_status == 200 ||
