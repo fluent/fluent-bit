@@ -18,6 +18,7 @@
  */
 
 #include <fluent-bit/flb_mem.h>
+#include <string.h>
 
 #include <fluent-bit/http_server/flb_http_server.h>
 
@@ -28,8 +29,12 @@
 
 static int flb_http_server_session_read(struct flb_http_server_session *session)
 {
-    unsigned char input_buffer[1024];
+    size_t sent;
     ssize_t result;
+    unsigned char input_buffer[1024];
+    char *request_too_large = "HTTP/1.1 413 Request Entity Too Large\r\n"
+                              "Content-Length: 0\r\n"
+                              "Connection: close\r\n\r\n";
 
     result = flb_io_net_read(session->connection,
                              (void *) &input_buffer,
@@ -43,7 +48,11 @@ static int flb_http_server_session_read(struct flb_http_server_session *session)
                                                       input_buffer,
                                                       result);
 
-    if (result < 0) {
+    if (result == HTTP_SERVER_BUFFER_LIMIT_EXCEEDED) {
+        flb_io_net_write(session->connection, (void *) request_too_large, strlen(request_too_large), &sent);
+        return -1;
+    }
+    else if (result < 0) {
         return -1;
     }
 
@@ -328,6 +337,7 @@ int flb_http_server_init(struct flb_http_server *session,
     session->system_context = system_context;
 
     session->downstream = NULL;
+    session->buffer_max_size = HTTP_SERVER_MAXIMUM_BUFFER_SIZE;
 
     cfl_list_init(&session->clients);
 
@@ -417,6 +427,17 @@ int flb_http_server_destroy(struct flb_http_server *server)
     }
 
     return 0;
+}
+
+void flb_http_server_set_buffer_max_size(struct flb_http_server *server,
+                                         size_t size)
+{
+    server->buffer_max_size = size;
+}
+
+size_t flb_http_server_get_buffer_max_size(struct flb_http_server *server)
+{
+    return server->buffer_max_size;
 }
 
 /* HTTP SESSION */
@@ -517,8 +538,14 @@ int flb_http_server_session_ingest(struct flb_http_server_session *session,
                             unsigned char *buffer,
                             size_t length)
 {
-    cfl_sds_t resized_buffer;
     int       result;
+    size_t    max_size;
+    cfl_sds_t resized_buffer;
+
+    max_size = flb_http_server_get_buffer_max_size(session->parent);
+    if (session->parent != NULL && cfl_sds_len(session->incoming_data) + length > max_size) {
+        return HTTP_SERVER_BUFFER_LIMIT_EXCEEDED;
+    }
 
     if (session->version == HTTP_PROTOCOL_VERSION_AUTODETECT ||
         session->version <= HTTP_PROTOCOL_VERSION_11) {
