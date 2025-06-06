@@ -239,6 +239,8 @@ RUN echo "deb http://deb.debian.org/debian bookworm-backports main" >> /etc/apt/
     libpsl5 \
     libbrotli1 \
     libsasl2-2 \
+    libsasl2-modules-gssapi-mit \
+    krb5-user \
     pkg-config \
     libpq5 \
     libsystemd0/bookworm-backports \
