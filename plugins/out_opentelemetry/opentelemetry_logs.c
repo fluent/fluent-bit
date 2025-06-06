@@ -1172,6 +1172,8 @@ start_resource:
         if (ret == -1) {
             /* the only possible fail path is a problem with a memory allocation, let's suggest a FLB_RETRY */
             ret = FLB_RETRY;
+            flb_free(log_record);
+            log_records[log_record_count] = NULL;
             break;
         }
 
@@ -1180,6 +1182,11 @@ start_resource:
         if (ret == -1) {
             /* as before, it can only fail on a memory allocation */
             ret = FLB_RETRY;
+            if (log_record->body) {
+                otlp_any_value_destroy(log_record->body);
+            }
+            flb_free(log_record);
+            log_records[log_record_count] = NULL;
             break;
         }
 
