@@ -43,6 +43,13 @@ if(FLB_UNICODE_ENCODER)
     PERMISSIONS OWNER_READ OWNER_WRITE GROUP_READ WORLD_READ)
 endif()
 
+# flb_conv
+file(GLOB headers "fluent-bit/unicode/*.h")
+install(FILES ${headers}
+  DESTINATION ${FLB_INSTALL_INCLUDEDIR}/fluent-bit/unicode/
+  COMPONENT headers
+  PERMISSIONS OWNER_READ OWNER_WRITE GROUP_READ WORLD_READ)
+
 install(FILES "../lib/monkey/include/monkey/mk_core.h"
     DESTINATION ${FLB_INSTALL_INCLUDEDIR}/monkey/
     COMPONENT headers-extra
