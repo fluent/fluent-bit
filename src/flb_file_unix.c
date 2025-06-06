@@ -78,7 +78,7 @@ static char *expand_tilde(const char *path,
         else {
             dir = getenv("HOME");
             if (!dir) {
-                return path;
+                return flb_strdup(path);
             }
         }
 
