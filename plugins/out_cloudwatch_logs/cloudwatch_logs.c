@@ -195,17 +195,24 @@ static int cb_cloudwatch_init(struct flb_output_instance *ins,
     }
 
     tmp = flb_output_get_property("metric_namespace", ins);
-    if (tmp)
-    {
+    if (tmp) {
         flb_plg_info(ctx->ins, "Metric Namespace=%s", tmp);
         ctx->metric_namespace = flb_sds_create(tmp);
     }
 
     tmp = flb_output_get_property("metric_dimensions", ins);
-    if (tmp)
-    {
+    if (tmp) {
         flb_plg_info(ctx->ins, "Metric Dimensions=%s", tmp);
         ctx->metric_dimensions = flb_utils_split(tmp, ';', 256);
+    }
+
+    tmp = flb_output_get_property("metric_storage_resolution", ins);
+    if (tmp) {
+        flb_plg_info(ctx->ins, "Metric Storage Resolution=%s", tmp);
+        ctx->metric_storage_resolution = atoi(tmp);
+    } else {
+        /* Default to 60s storage resolution as does CloudWatch if not specified */
+        ctx->metric_storage_resolution = 60;
     }
 
     ctx->create_group = FLB_FALSE;
@@ -674,6 +681,12 @@ static struct flb_config_map config_map[] = {
      "dimensions, put the values as a comma seperated string. If you want to put "
      "list of lists, use the list as semicolon seperated strings. If your value "
      "is 'd1,d2;d3', we will consider it as [[d1, d2],[d3]]."
+    },
+
+    {
+     FLB_CONFIG_MAP_STR, "metric_storage_resolution", NULL,
+     0, FLB_FALSE, 0,
+     "Metric storage resolution for CloudWatch EMF logs"
     },
 
     {
