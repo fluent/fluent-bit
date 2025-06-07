@@ -17,6 +17,9 @@
  *  limitations under the License.
  */
 
+#define _GNU_SOURCE
+#include <string.h>
+
 #include <fluent-bit/flb_compat.h>
 #include <fluent-bit/flb_info.h>
 #include <fluent-bit/flb_output.h>
@@ -41,7 +44,6 @@
 
 #include <monkey/mk_core.h>
 #include <msgpack.h>
-#include <string.h>
 #include <stdio.h>
 
 #ifndef FLB_SYSTEM_WINDOWS
