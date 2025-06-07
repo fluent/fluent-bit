@@ -126,6 +126,8 @@ static int in_opentelemetry_init(struct flb_input_instance *ins,
             return -1;
         }
 
+        flb_http_server_set_buffer_max_size(&ctx->http_server, ctx->buffer_max_size);
+
         ctx->http_server.request_callback = opentelemetry_prot_handle_ng;
 
         flb_input_downstream_set(ctx->http_server.downstream, ctx->ins);
