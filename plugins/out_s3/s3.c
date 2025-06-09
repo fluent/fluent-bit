@@ -1719,6 +1719,7 @@ static void s3_upload_queue(struct flb_config *config, void *out_context)
         ret = send_upload_request(ctx, NULL, upload_contents->upload_file,
                                   upload_contents->m_upload_file,
                                   upload_contents->tag, upload_contents->tag_len);
+        flb_plg_debug(ctx->ins, "send_upload_request returned %d", ret);
         if (ret < 0) {
             goto exit;
         }

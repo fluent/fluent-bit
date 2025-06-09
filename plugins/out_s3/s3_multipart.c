@@ -468,6 +468,8 @@ int complete_multipart_upload(struct flb_s3 *ctx,
         if (c->resp.payload != NULL) {
             flb_plg_debug(ctx->ins, "Raw CompleteMultipartUpload response: %s",
                           c->resp.payload);
+        } else {
+            flb_plg_debug(ctx->ins, "Raw CompleteMultipartUpload was NULL");
         }
         flb_http_client_destroy(c);
     }
