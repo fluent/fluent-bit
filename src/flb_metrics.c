@@ -28,6 +28,13 @@
 #include <fluent-bit/flb_utils.h>
 #include <fluent-bit/flb_metrics.h>
 #include <msgpack.h>
+#ifdef FLB_SYSTEM_WINDOWS
+#include <windows.h>
+#include <psapi.h>
+#else
+#include <sys/resource.h>
+#include <unistd.h>
+#endif
 
 static int id_exists(int id, struct flb_metrics *metrics)
 {
@@ -352,6 +359,97 @@ static int attach_hot_reload_info(struct flb_config *ctx, struct cmt *cmt, uint6
     return 0;
 }
 
+static int attach_process_cpu_usage(struct flb_config *ctx, struct cmt *cmt,
+                                    uint64_t ts, char *hostname)
+{
+    double val;
+    struct cmt_gauge *g;
+
+#ifdef FLB_SYSTEM_WINDOWS
+    FILETIME creation_time;
+    FILETIME exit_time;
+    FILETIME kernel_time;
+    FILETIME user_time;
+    ULARGE_INTEGER kt;
+    ULARGE_INTEGER ut;
+
+    if (!GetProcessTimes(GetCurrentProcess(), &creation_time, &exit_time,
+                         &kernel_time, &user_time)) {
+        return -1;
+    }
+
+    kt.LowPart  = kernel_time.dwLowDateTime;
+    kt.HighPart = kernel_time.dwHighDateTime;
+    ut.LowPart  = user_time.dwLowDateTime;
+    ut.HighPart = user_time.dwHighDateTime;
+
+    val = ((double) (kt.QuadPart + ut.QuadPart)) / 10000000.0;
+#else
+    struct rusage ru;
+
+    if (getrusage(RUSAGE_SELF, &ru) == -1) {
+        return -1;
+    }
+    val = (double) ru.ru_utime.tv_sec + ((double) ru.ru_utime.tv_usec / 1e6) +
+          (double) ru.ru_stime.tv_sec + ((double) ru.ru_stime.tv_usec / 1e6);
+#endif
+
+    g = cmt_gauge_create(cmt, "fluentbit", "", "process_cpu_seconds_total",
+                         "Total user and system CPU time spent in seconds.",
+                         1, (char *[]) {"hostname"});
+    if (!g) {
+        return -1;
+    }
+
+    cmt_gauge_set(g, ts, val, 1, (char *[]) {hostname});
+
+    return 0;
+}
+
+static int attach_process_memory_usage(struct flb_config *ctx, struct cmt *cmt,
+                                       uint64_t ts, char *hostname)
+{
+    double val;
+    struct cmt_gauge *g;
+
+#ifdef FLB_SYSTEM_WINDOWS
+    PROCESS_MEMORY_COUNTERS pmc;
+
+    if (!GetProcessMemoryInfo(GetCurrentProcess(), &pmc, sizeof(pmc))) {
+        return -1;
+    }
+
+    val = (double) pmc.WorkingSetSize;
+#else
+    long rss = 0;
+    long page_size = sysconf(_SC_PAGE_SIZE);
+    FILE *fp = fopen("/proc/self/statm", "r");
+
+    if (!fp) {
+        return -1;
+    }
+
+    if (fscanf(fp, "%*s %ld", &rss) != 1) {
+        fclose(fp);
+        return -1;
+    }
+    fclose(fp);
+
+    val = (double) rss * (double) page_size;
+#endif
+
+    g = cmt_gauge_create(cmt, "fluentbit", "", "process_resident_memory_bytes",
+                         "Resident memory size in bytes.",
+                         1, (char *[]) {"hostname"});
+    if (!g) {
+        return -1;
+    }
+
+    cmt_gauge_set(g, ts, val, 1, (char *[]) {hostname});
+
+    return 0;
+}
+
 /* Append internal Fluent Bit metrics to context */
 int flb_metrics_fluentbit_add(struct flb_config *ctx, struct cmt *cmt)
 {
@@ -371,6 +469,8 @@ int flb_metrics_fluentbit_add(struct flb_config *ctx, struct cmt *cmt)
     /* Attach metrics to cmetrics context */
     attach_uptime(ctx, cmt, ts, hostname);
     attach_process_start_time_seconds(ctx, cmt, ts, hostname);
+    attach_process_cpu_usage(ctx, cmt, ts, hostname);
+    attach_process_memory_usage(ctx, cmt, ts, hostname);
     attach_build_info(ctx, cmt, ts, hostname);
     attach_hot_reload_info(ctx, cmt, ts, hostname);
 
