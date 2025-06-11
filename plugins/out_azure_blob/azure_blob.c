@@ -100,18 +100,22 @@ static flb_sds_t cb_azb_msgpack_extract_log_key(void *out_context, const char *d
 
             /* Convert value based on its type */
             if (rval->type == FLB_RA_STRING) {
-                out_buf = flb_sds_create_len(rval->o.via.str.ptr, rval->o.via.str.size);
+                out_buf = flb_sds_create_size(rval->o.via.str.size + 1);
+                if (out_buf) {
+                    flb_sds_copy(out_buf, rval->o.via.str.ptr, rval->o.via.str.size);
+                    flb_sds_cat(out_buf, "\n", 1);
+                }
             }
             else if (rval->type == FLB_RA_FLOAT) {
                 out_buf = flb_sds_create_size(64);
                 if (out_buf) {
-                    flb_sds_printf(&out_buf, "%f", rval->val.f64);
+                    flb_sds_printf(&out_buf, "%f\n", rval->val.f64);
                 }
             }
             else if (rval->type == FLB_RA_INT) {
                 out_buf = flb_sds_create_size(64);
                 if (out_buf) {
-                    flb_sds_printf(&out_buf, "%" PRId64, rval->val.i64);
+                    flb_sds_printf(&out_buf, "%" PRId64 "\n", rval->val.i64);
                 }
             }
             else {
@@ -131,11 +135,13 @@ static flb_sds_t cb_azb_msgpack_extract_log_key(void *out_context, const char *d
             flb_ra_key_value_destroy(rval);
             rval = NULL;
 
+            /* Successfully found and processed log_key, exit loop */
             break;
         }
         else if (ret == MSGPACK_UNPACK_CONTINUE) {
-            /* Continue unpacking */
-            continue;
+            /* Buffer exhausted or truncated data, stop processing */
+            flb_plg_debug(ctx->ins, "msgpack unpack needs more data or data truncated");
+            break;
         }
         else if (ret == MSGPACK_UNPACK_PARSE_ERROR) {
             flb_errno();
@@ -144,7 +150,7 @@ static flb_sds_t cb_azb_msgpack_extract_log_key(void *out_context, const char *d
         }
         else {
             flb_errno();
-            flb_plg_error(ctx->ins, "unexpected msgpack unpack return code");
+            flb_plg_error(ctx->ins, "unexpected msgpack unpack return code %d", ret);
             break;
         }
     }
