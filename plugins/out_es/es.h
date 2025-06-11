@@ -54,6 +54,7 @@ struct flb_elasticsearch {
     /* HTTP Auth */
     char *http_user;
     char *http_passwd;
+    char *http_api_key;
 
     /* Elastic Cloud Auth */
     char *cloud_user;
