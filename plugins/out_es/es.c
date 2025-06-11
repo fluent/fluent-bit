@@ -36,6 +36,7 @@
 #include "es.h"
 #include "es_conf.h"
 #include "es_bulk.h"
+#include "fluent-bit/flb_sds.h"
 #include "murmur3.h"
 
 struct flb_output_plugin out_es_plugin;
@@ -884,6 +885,11 @@ static void cb_es_flush(struct flb_event_chunk *event_chunk,
     }
     else if (ctx->cloud_user && ctx->cloud_passwd) {
         flb_http_basic_auth(c, ctx->cloud_user, ctx->cloud_passwd);
+    }
+    else if (ctx->http_api_key) {
+        flb_sds_t header_value = flb_sds_cat(flb_sds_create("ApiKey "), ctx->http_api_key, strlen(ctx->http_api_key));
+        flb_http_add_header(c, "Authorization", 11, header_value, strlen(header_value));
+        flb_sds_destroy(header_value);
     }
 
 #ifdef FLB_HAVE_AWS
