@@ -64,6 +64,9 @@ void flb_plugins_unregister(struct flb_config *config)
 
     mk_list_foreach_safe(head, tmp, &config->custom_plugins) {
         custom = mk_list_entry(head, struct flb_custom_plugin, _head);
+        if(custom->cb_destroy) {
+            custom->cb_destroy(custom);
+        }
         mk_list_del(&custom->_head);
         flb_free(custom);
     }

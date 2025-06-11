@@ -683,7 +683,7 @@ static void cb_azure_kusto_ingest(struct flb_config *config, void *data)
             /* Delete the file after successful ingestion */
             ret = azure_kusto_store_file_delete(ctx, file);
             if (ret == 0) {
-                flb_plg_debug(ctx->ins, "scheduler_kusto_ingest :: deleted successfully ingested file %s", fsf->name);
+                flb_plg_debug(ctx->ins, "scheduler_kusto_ingest :: deleted successfully ingested file");
             }
             else {
                 flb_plg_error(ctx->ins, "scheduler_kusto_ingest :: failed to delete ingested file %s", fsf->name);
@@ -959,6 +959,7 @@ static int azure_kusto_format(struct flb_azure_kusto *ctx, const char *tag, int 
                               const void *data, size_t bytes, void **out_data,
                               size_t *out_size)
 {
+    int index;
     int records = 0;
     msgpack_sbuffer mp_sbuf;
     msgpack_packer mp_pck;
@@ -1034,7 +1035,28 @@ static int azure_kusto_format(struct flb_azure_kusto *ctx, const char *tag, int 
         msgpack_pack_str(&mp_pck, flb_sds_len(ctx->log_key));
         msgpack_pack_str_body(&mp_pck, ctx->log_key, flb_sds_len(ctx->log_key));
 
-        if (log_event.body != NULL) {
+        if (log_event.group_attributes != NULL && log_event.body != NULL) {
+            msgpack_pack_map(&mp_pck,
+                                 log_event.group_attributes->via.map.size +
+                                 log_event.metadata->via.map.size +
+                                 log_event.body->via.map.size);
+
+            for (index = 0; index < log_event.group_attributes->via.map.size; index++) { 
+                msgpack_pack_object(&mp_pck, log_event.group_attributes->via.map.ptr[index].key);
+                msgpack_pack_object(&mp_pck, log_event.group_attributes->via.map.ptr[index].val);
+            }
+
+            for (index = 0; index < log_event.metadata->via.map.size; index++) {
+                msgpack_pack_object(&mp_pck, log_event.metadata->via.map.ptr[index].key);
+                msgpack_pack_object(&mp_pck, log_event.metadata->via.map.ptr[index].val);
+            }
+
+            for (index = 0; index < log_event.body->via.map.size; index++) {
+                msgpack_pack_object(&mp_pck, log_event.body->via.map.ptr[index].key);
+                msgpack_pack_object(&mp_pck, log_event.body->via.map.ptr[index].val);
+            }
+        }
+        else if (log_event.body != NULL) {
             msgpack_pack_object(&mp_pck, *log_event.body);
         }
         else {

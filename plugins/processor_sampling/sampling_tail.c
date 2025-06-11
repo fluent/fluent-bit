@@ -57,6 +57,10 @@ static struct flb_config_map settings_config_map[] = {
     {0}
 };
 
+static struct cfl_array *copy_array(struct cfl_array *array);
+static struct cfl_variant *copy_variant(struct cfl_variant *val);
+static struct cfl_kvlist *copy_kvlist(struct cfl_kvlist *kv);
+
 /* delete a list ctrace entry */
 static void list_ctrace_delete_entry(struct sampling *ctx, struct sampling_ctrace_entry *ctrace_entry)
 {
@@ -92,11 +96,114 @@ static void list_ctrace_delete_all(struct sampling *ctx, struct sampling_setting
     }
 }
 
+static struct cfl_kvlist *copy_kvlist(struct cfl_kvlist *kv)
+{
+    struct cfl_kvlist *kvlist = NULL;
+    struct cfl_kvpair *pair;
+    struct cfl_variant *v;
+    struct cfl_list *head;
+
+    kvlist = cfl_kvlist_create();
+    if (!kvlist) {
+        return NULL;
+    }
+
+    cfl_list_foreach(head, &kv->list) {
+        pair = cfl_list_entry(head, struct cfl_kvpair, _head);
+        v = copy_variant(pair->val);
+        if (!v) {
+            cfl_kvlist_destroy(kvlist);
+            return NULL;
+        }
+        cfl_kvlist_insert(kvlist, pair->key, v);
+    }
+
+    return kvlist;
+}
+
+static struct cfl_variant *copy_variant(struct cfl_variant *val)
+{
+    struct cfl_kvlist *kvlist;
+    struct cfl_array *array;
+    struct cfl_variant *var = NULL;
+
+    switch (val->type) {
+    case CFL_VARIANT_STRING:
+        var = cfl_variant_create_from_string_s(val->data.as_string,
+                                               cfl_variant_size_get(val),
+                                               CFL_FALSE);
+        break;
+    case CFL_VARIANT_BYTES:
+        var = cfl_variant_create_from_bytes(val->data.as_bytes,
+                                            cfl_variant_size_get(val),
+                                            CFL_FALSE);
+        break;
+    case CFL_VARIANT_BOOL:
+        var = cfl_variant_create_from_bool(val->data.as_bool);
+        break;
+    case CFL_VARIANT_INT:
+        var = cfl_variant_create_from_int64(val->data.as_int64);
+        break;
+    case CFL_VARIANT_UINT:
+        var = cfl_variant_create_from_uint64(val->data.as_uint64);
+        break;
+    case CFL_VARIANT_DOUBLE:
+        var = cfl_variant_create_from_double(val->data.as_double);
+        break;
+    case CFL_VARIANT_NULL:
+        var = cfl_variant_create_from_null();
+        break;
+    case CFL_VARIANT_ARRAY:
+        array = copy_array(val->data.as_array);
+        if (!array) {
+            return NULL;
+        }
+        var = cfl_variant_create_from_array(array);
+        break;
+    case CFL_VARIANT_KVLIST:
+        kvlist = copy_kvlist(val->data.as_kvlist);
+        if (!kvlist) {
+            return NULL;
+        }
+        var = cfl_variant_create_from_kvlist(kvlist);
+        break;
+    default:
+        var = NULL;
+    }
+
+    return var;
+}
+
+static struct cfl_array *copy_array(struct cfl_array *array)
+{
+    int i;
+    struct cfl_array *copy;
+    struct cfl_variant *v ;
+
+    copy = cfl_array_create(array->entry_count);
+    if (!copy) {
+        return NULL;
+    }
+
+    for (i = 0; i < array->entry_count; i++) {
+        v = copy_variant(array->entries[i]);
+        if (!v) {
+            cfl_array_destroy(copy);
+            return NULL;
+        }
+        cfl_array_append(copy, v);
+    }
+
+    return copy;
+}
+
 struct ctrace_attributes *copy_attributes(struct sampling *ctx, struct ctrace_attributes *attr)
 {
     int ret = -1;
     struct cfl_list *head;
     struct cfl_kvpair *pair;
+    struct cfl_array *array;
+    struct cfl_kvlist *kvlist;
     struct ctrace_attributes *attr_copy;
 
     attr_copy = ctr_attributes_create();
@@ -120,10 +227,29 @@ struct ctrace_attributes *copy_attributes(struct sampling *ctx, struct ctrace_at
             ret = ctr_attributes_set_double(attr_copy, pair->key, pair->val->data.as_double);
         }
         else if (pair->val->type == CFL_VARIANT_ARRAY) {
-            ret = ctr_attributes_set_array(attr_copy, pair->key, pair->val->data.as_array);
+            array = copy_array(pair->val->data.as_array);
+            if (!array) {
+                flb_plg_error(ctx->ins, "could not copy array attribute");
+                ctr_attributes_destroy(attr_copy);
+                return NULL;
+            }
+
+            ret = ctr_attributes_set_array(attr_copy, pair->key, array);
+            if (ret != 0) {
+                cfl_array_destroy(array);
+            }
         }
         else if (pair->val->type == CFL_VARIANT_KVLIST) {
-            ret = ctr_attributes_set_kvlist(attr_copy, pair->key, pair->val->data.as_kvlist);
+            kvlist = copy_kvlist(pair->val->data.as_kvlist);
+            if (!kvlist) {
+                flb_plg_error(ctx->ins, "could not copy kvlist attribute");
+                ctr_attributes_destroy(attr_copy);
+                return NULL;
+            }
+            ret = ctr_attributes_set_kvlist(attr_copy, pair->key, kvlist);
+            if (ret != 0) {
+                cfl_kvlist_destroy(kvlist);
+            }
         }
         else {
             flb_plg_error(ctx->ins, "unsupported attribute type %i", pair->val->type);
@@ -231,9 +357,26 @@ static struct ctrace *reconcile_and_create_ctrace(struct sampling *ctx, struct s
             }
         }
 
-        /* unlink active span from it original ctrace context and link it to the active scope_span list */
+        /*
+         * Detach the span from its previous context completely and
+         * re-attach it to the new one. If we only move the local list
+         * reference (span->_head) the span would still belong to the
+         * original ctrace context which later on might lead to use after
+         * free issues when the new context is destroyed. Make sure to
+         * update all references.
+         */
+
+        /* detach from the original scope span and global list */
         cfl_list_del(&span->_head);
+        cfl_list_del(&span->_head_global);
+
+        /* update parent references */
+        span->scope_span = scope_span;
+        span->ctx = ctr;
+
+        /* link to the new scope span and ctrace context */
         cfl_list_add(&span->_head, &scope_span->spans);
+        cfl_list_add(&span->_head_global, &ctr->span_list);
 
         /* reset all the contexts */
         resource_span = NULL;

@@ -38,6 +38,15 @@
 #include "lua_config.h"
 #include "mpack/mpack.h"
 
+/* helper to rollback encoder buffer to previous offset */
+static inline void encoder_rollback(struct flb_log_event_encoder *enc,
+                                    size_t offset)
+{
+    enc->buffer.size = offset;
+    enc->output_buffer = enc->buffer.data;
+    enc->output_length = offset;
+}
+
 static int cb_lua_pre_run(struct flb_filter_instance *f_ins,
                           struct flb_config *config, void *data)
 {
@@ -413,6 +422,60 @@ static int cb_lua_filter_mpack(const void *data, size_t bytes,
 
 #else
 
+static int pack_group_start(struct lua_filter *ctx,
+                            struct flb_log_event_encoder *log_encoder,
+                            struct flb_log_event *log_event)
+
+{
+    int ret;
+
+    ret = flb_log_event_encoder_group_init(log_encoder);
+    if (ret != FLB_EVENT_ENCODER_SUCCESS) {
+        flb_plg_error(ctx->ins, "Log event encoder error : %d", ret);
+        return -1;
+    }
+
+    if (log_event->metadata != NULL) {
+        ret = flb_log_event_encoder_set_metadata_from_msgpack_object(log_encoder,
+                                                                     log_event->metadata);
+        if (ret != FLB_EVENT_ENCODER_SUCCESS) {
+            flb_plg_error(ctx->ins, "Log event encoder error : %d", ret);
+            return -1;
+        }
+    }
+
+    if (log_event->body != NULL) {
+        ret = flb_log_event_encoder_set_body_from_msgpack_object(log_encoder,
+                                                                 log_event->body);
+        if (ret != FLB_EVENT_ENCODER_SUCCESS) {
+            flb_plg_error(ctx->ins, "Log event encoder error : %d", ret);
+            return -1;
+        }
+    }
+
+    ret = flb_log_event_encoder_group_header_end(log_encoder);
+    if (ret != FLB_EVENT_ENCODER_SUCCESS) {
+        flb_plg_error(ctx->ins, "Log event encoder error : %d", ret);
+        return -1;
+    }
+
+    return 0;
+}
+
+static int pack_group_end(struct lua_filter *ctx,
+                          struct flb_log_event_encoder *log_encoder)
+{
+    int ret;
+
+    ret = flb_log_event_encoder_group_end(log_encoder);
+    if (ret != FLB_EVENT_ENCODER_SUCCESS) {
+        flb_plg_error(ctx->ins, "Log event encoder error : %d", ret);
+        return -1;
+    }
+
+    return 0;
+}
+
 static int pack_record(struct lua_filter *ctx,
                        struct flb_log_event_encoder *log_encoder,
                        struct flb_time *ts,
@@ -444,10 +507,10 @@ static int pack_record(struct lua_filter *ctx,
     return ret;
 }
 
-static int pack_result (struct lua_filter *ctx, struct flb_time *ts,
-                        msgpack_object *metadata,
-                        struct flb_log_event_encoder *log_encoder,
-                        char *data, size_t bytes)
+static int pack_result(struct lua_filter *ctx, struct flb_time *ts,
+                       msgpack_object *metadata,
+                       struct flb_log_event_encoder *log_encoder,
+                       char *data, size_t bytes)
 {
     int ret;
     size_t index = 0;
@@ -517,6 +580,7 @@ static int cb_lua_filter(const void *data, size_t bytes,
                          struct flb_config *config)
 {
     int ret;
+    int record_type;
     double ts = 0;
     struct flb_time t_orig;
     struct flb_time t;
@@ -529,13 +593,16 @@ static int cb_lua_filter(const void *data, size_t bytes,
     struct flb_log_event_encoder log_encoder;
     struct flb_log_event_decoder log_decoder;
     struct flb_log_event log_event;
+    size_t group_offset = 0;
+    int group_active = FLB_FALSE;
+    int group_has_records = FLB_FALSE;
 
     (void) f_ins;
     (void) i_ins;
     (void) config;
 
+    /* initialize the decoder */
     ret = flb_log_event_decoder_init(&log_decoder, (char *) data, bytes);
-
     if (ret != FLB_EVENT_DECODER_SUCCESS) {
         flb_plg_error(ctx->ins,
                       "Log event decoder initialization error : %d", ret);
@@ -543,21 +610,61 @@ static int cb_lua_filter(const void *data, size_t bytes,
         return FLB_FILTER_NOTOUCH;
     }
 
+    /* enable group reads */
+    flb_log_event_decoder_read_groups(&log_decoder, FLB_TRUE);
+
+    /* initialize the encoder */
     ret = flb_log_event_encoder_init(&log_encoder,
                                      FLB_LOG_EVENT_FORMAT_DEFAULT);
 
     if (ret != FLB_EVENT_ENCODER_SUCCESS) {
-        flb_plg_error(ctx->ins,
-                      "Log event encoder initialization error : %d", ret);
-
+        flb_plg_error(ctx->ins, "Log event encoder initialization error : %d", ret);
         flb_log_event_decoder_destroy(&log_decoder);
-
         return FLB_FILTER_NOTOUCH;
     }
 
     while ((ret = flb_log_event_decoder_next(
                     &log_decoder,
                     &log_event)) == FLB_EVENT_DECODER_SUCCESS) {
+
+        /* Check if the record is special (group) or a normal one */
+        ret = flb_log_event_decoder_get_record_type(&log_event, &record_type);
+        if (ret != 0) {
+            flb_plg_error(ctx->ins, "record has invalid event type");
+            continue;
+        }
+
+        /* Handle group definitions */
+        if (record_type == FLB_LOG_EVENT_GROUP_START) {
+            group_offset = log_encoder.buffer.size;
+            group_active = FLB_TRUE;
+            group_has_records = FLB_FALSE;
+
+            ret = pack_group_start(ctx, &log_encoder, &log_event);
+            if (ret != FLB_EVENT_ENCODER_SUCCESS) {
+                flb_log_event_decoder_destroy(&log_decoder);
+                flb_log_event_encoder_destroy(&log_encoder);
+                return FLB_FILTER_NOTOUCH;
+            }
+            continue;
+        }
+        else if (record_type == FLB_LOG_EVENT_GROUP_END) {
+            if (group_active && !group_has_records) {
+                encoder_rollback(&log_encoder, group_offset);
+                group_active = FLB_FALSE;
+                continue;
+            }
+
+            ret = pack_group_end(ctx, &log_encoder);
+            if (ret != FLB_EVENT_ENCODER_SUCCESS) {
+                flb_log_event_decoder_destroy(&log_decoder);
+                flb_log_event_encoder_destroy(&log_encoder);
+                return FLB_FILTER_NOTOUCH;
+            }
+            group_active = FLB_FALSE;
+            continue;
+        }
+
         msgpack_sbuffer_init(&data_sbuf);
         msgpack_packer_init(&data_pck, &data_sbuf, msgpack_sbuffer_write);
 
@@ -658,6 +765,9 @@ static int cb_lua_filter(const void *data, size_t bytes,
 
                 return FLB_FILTER_NOTOUCH;
             }
+            if (group_active) {
+                group_has_records = FLB_TRUE;
+            }
         }
         else { /* Unexpected return code, keep original content */
             /* Code 0 means Keep record, so we don't emit the warning */
@@ -676,6 +786,9 @@ static int cb_lua_filter(const void *data, size_t bytes,
                 flb_plg_error(ctx->ins,
                               "Log event encoder error : %d", ret);
             }
+            else if (group_active) {
+                group_has_records = FLB_TRUE;
+            }
         }
 
         msgpack_sbuffer_destroy(&data_sbuf);
@@ -686,12 +799,20 @@ static int cb_lua_filter(const void *data, size_t bytes,
     }
 
     if (ret == FLB_EVENT_ENCODER_SUCCESS) {
-        *out_buf   = log_encoder.output_buffer;
-        *out_bytes = log_encoder.output_length;
+        if (log_encoder.output_length > 0) {
+            *out_buf   = log_encoder.output_buffer;
+            *out_bytes = log_encoder.output_length;
 
-        ret = FLB_FILTER_MODIFIED;
+            ret = FLB_FILTER_MODIFIED;
 
-        flb_log_event_encoder_claim_internal_buffer_ownership(&log_encoder);
+            flb_log_event_encoder_claim_internal_buffer_ownership(&log_encoder);
+        }
+        else {
+            *out_buf = NULL;
+            *out_bytes = 0;
+
+            ret = FLB_FILTER_MODIFIED;
+        }
     }
     else {
         flb_plg_error(ctx->ins,

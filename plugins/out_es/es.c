@@ -627,6 +627,11 @@ static int cb_es_init(struct flb_output_instance *ins,
         return -1;
     }
 
+    if (ctx->index == NULL && ctx->logstash_format == FLB_FALSE && ctx->generate_id == FLB_FALSE) {
+        flb_plg_error(ins, "cannot initialize plugin, index is not set and logstash_format and generate_id are both off");
+        return -1;
+    }
+
     flb_plg_debug(ctx->ins, "host=%s port=%i uri=%s index=%s type=%s",
                   ins->host.name, ins->host.port, ctx->uri,
                   ctx->index, ctx->type);
@@ -937,7 +942,7 @@ static void cb_es_flush(struct flb_event_chunk *event_chunk,
                     /*
                      * If trace_error is set, trace the actual
                      * response from Elasticsearch explaining the problem.
-                     * Trace_Output can be used to see the request. 
+                     * Trace_Output can be used to see the request.
                      */
                     if (pack_size < 4000) {
                         flb_plg_debug(ctx->ins, "error caused by: Input\n%.*s\n",

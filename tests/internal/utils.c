@@ -369,6 +369,14 @@ void test_write_str_special_bytes()
             "\\u4f60\\u597d\\u4e16\\u754c",
             FLB_TRUE
         },
+        /*
+         * Escaped leading hex (two hex, one valid unicode)
+         */
+        {
+            "你好我来自一个汉字文化影响的地方", 48,
+            "\\u4f60\\u597d\\u6211\\u6765\\u81ea\\u4e00\\u4e2a\\u6c49\\u5b57\\u6587\\u5316\\u5f71\\u54cd\\u7684\\u5730\\u65b9",
+            FLB_TRUE
+        },
         {
             "\xC3\xA1\x0A", 3,  /* UTF-8 encoding of á and newline */
             "\\u00e1\\n",       /* Expected escaped output */

@@ -491,7 +491,10 @@ static int user_authentication(struct flb_input_instance *ins,
 
     mk_list_foreach_safe(head, tmp, &ctx->users) {
         user = mk_list_entry(head, struct flb_in_fw_user, _head);
-        if (strncmp(user->name, username, strlen(user->name)) != 0) {
+        if (flb_sds_len(user->name) != flb_sds_len(username)) {
+            continue;
+        }
+        if (strncmp(user->name, username, flb_sds_len(user->name)) != 0) {
             continue;
         }
 
@@ -500,6 +503,10 @@ static int user_authentication(struct flb_input_instance *ins,
         }
 
         userauth_digest = flb_calloc(128, sizeof(char));
+        if (!userauth_digest) {
+            flb_errno();
+            return FLB_FALSE;
+        }
 
         if (flb_secure_forward_password_digest(ins, conn,
                                                username, user->password,
@@ -535,7 +542,6 @@ static int check_ping(struct flb_input_instance *ins,
     flb_sds_t username = NULL;
     flb_sds_t password_digest = NULL;
     size_t hostname_len = 0;
-    size_t shared_key_digest_len = 0;
     size_t password_digest_len = 0;
     char *serverside = NULL;
     size_t user_count = 0;
@@ -543,6 +549,10 @@ static int check_ping(struct flb_input_instance *ins,
     struct flb_in_fw_config *ctx = conn->ctx;
 
     serverside = flb_calloc(128, sizeof(char));
+    if (!serverside) {
+        flb_errno();
+        return -1;
+    }
 
     /* Wait for client PING */
     ret = secure_forward_read(ins, conn->connection, buf, sizeof(buf) - 1, &out_len);
@@ -603,7 +613,7 @@ static int check_ping(struct flb_input_instance *ins,
     if (o.type != MSGPACK_OBJECT_STR) {
         flb_plg_error(ins, "Invalid shared_key_salt type message");
         flb_free(serverside);
-        flb_free(hostname);
+        flb_sds_destroy(hostname);
         msgpack_unpacked_destroy(&result);
         return -1;
     }
@@ -614,22 +624,21 @@ static int check_ping(struct flb_input_instance *ins,
     if (o.type != MSGPACK_OBJECT_STR) {
         flb_plg_error(ins, "Invalid shared_key_digest type message");
         flb_free(serverside);
-        flb_free(hostname);
+        flb_sds_destroy(hostname);
         msgpack_unpacked_destroy(&result);
-
         return -1;
     }
+
     shared_key_digest = flb_sds_create_len(o.via.str.ptr, o.via.str.size);
-    shared_key_digest_len = o.via.str.size;
 
     /* username */
     o = root.via.array.ptr[4];
     if (o.type != MSGPACK_OBJECT_STR) {
         flb_plg_error(ins, "Invalid username type message");
         flb_free(serverside);
-        flb_free(hostname);
-        flb_free(shared_key_salt);
-        flb_free(shared_key_digest);
+        flb_sds_destroy(hostname);
+        flb_sds_destroy(shared_key_salt);
+        flb_sds_destroy(shared_key_digest);
         msgpack_unpacked_destroy(&result);
         return -1;
     }
@@ -640,10 +649,10 @@ static int check_ping(struct flb_input_instance *ins,
     if (o.type != MSGPACK_OBJECT_STR) {
         flb_plg_error(ins, "Invalid password_digest type message");
         flb_free(serverside);
-        flb_free(hostname);
-        flb_free(shared_key_salt);
-        flb_free(shared_key_digest);
-        flb_free(username);
+        flb_sds_destroy(hostname);
+        flb_sds_destroy(shared_key_salt);
+        flb_sds_destroy(shared_key_digest);
+        flb_sds_destroy(username);
         msgpack_unpacked_destroy(&result);
         return -1;
     }
@@ -656,11 +665,11 @@ static int check_ping(struct flb_input_instance *ins,
                                            shared_key_salt, hostname, hostname_len,
                                            serverside, 128)) {
         flb_free(serverside);
-        flb_free(username);
-        flb_free(password_digest);
-        flb_free(shared_key_salt);
-        flb_free(shared_key_digest);
-        flb_free(hostname);
+        flb_sds_destroy(username);
+        flb_sds_destroy(password_digest);
+        flb_sds_destroy(shared_key_salt);
+        flb_sds_destroy(shared_key_digest);
+        flb_sds_destroy(hostname);
         flb_plg_error(ctx->ins, "failed to hash shared_key");
         return -1;
     }

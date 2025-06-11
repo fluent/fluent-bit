@@ -19,7 +19,11 @@
  */
 
 #include <fluent-bit.h>
+#include <fluent-bit/flb_pack.h>
 #include <fluent-bit/flb_time.h>
+#include <fluent-bit/flb_log_event.h>
+#include <fluent-bit/flb_log_event_decoder.h>
+
 #include <sys/types.h>
 #include <sys/stat.h>
 #include <fcntl.h>
@@ -55,6 +59,13 @@ char *get_output(void)
     pthread_mutex_unlock(&result_mutex);
 
     return val;
+}
+
+void set_output_num(int num)
+{
+    pthread_mutex_lock(&result_mutex);
+    num_output = num;
+    pthread_mutex_unlock(&result_mutex);
 }
 
 static void clear_output_num()
@@ -116,6 +127,75 @@ int callback_cat(void* data, size_t size, void* cb_data)
         pthread_mutex_unlock(&result_mutex);
     }
     return 0;
+}
+
+/* --- helpers for group validation --- */
+static char *get_group_metadata(void *chunk, size_t size)
+{
+    int ret;
+    char *json;
+    struct flb_log_event log_event;
+    struct flb_log_event_decoder log_decoder;
+
+    ret = flb_log_event_decoder_init(&log_decoder, chunk, size);
+    TEST_CHECK(ret == FLB_EVENT_DECODER_SUCCESS);
+
+    flb_log_event_decoder_read_groups(&log_decoder, FLB_TRUE);
+
+    ret = flb_log_event_decoder_next(&log_decoder, &log_event);
+    if (ret != FLB_EVENT_DECODER_SUCCESS) {
+        return NULL;
+    }
+
+    json = flb_msgpack_to_json_str(1024, log_event.metadata);
+    flb_log_event_decoder_destroy(&log_decoder);
+    return json;
+}
+
+static char *get_group_body(void *chunk, size_t size)
+{
+    int ret;
+    char *json;
+    struct flb_log_event log_event;
+    struct flb_log_event_decoder log_decoder;
+
+    ret = flb_log_event_decoder_init(&log_decoder, chunk, size);
+    TEST_CHECK(ret == FLB_EVENT_DECODER_SUCCESS);
+
+    flb_log_event_decoder_read_groups(&log_decoder, FLB_TRUE);
+
+    ret = flb_log_event_decoder_next(&log_decoder, &log_event);
+    if (ret != FLB_EVENT_DECODER_SUCCESS) {
+        return NULL;
+    }
+
+    json = flb_msgpack_to_json_str(1024, log_event.body);
+    flb_log_event_decoder_destroy(&log_decoder);
+    return json;
+}
+
+static char *get_log_body(void *chunk, size_t size)
+{
+    int ret;
+    char *json;
+    struct flb_log_event log_event;
+    struct flb_log_event_decoder log_decoder;
+
+    ret = flb_log_event_decoder_init(&log_decoder, chunk, size);
+    TEST_CHECK(ret == FLB_EVENT_DECODER_SUCCESS);
+
+    flb_log_event_decoder_read_groups(&log_decoder, FLB_TRUE);
+
+    /* 0: group header */
+    flb_log_event_decoder_next(&log_decoder, &log_event);
+
+    /* 1: record */
+    flb_log_event_decoder_next(&log_decoder, &log_event);
+
+    json = flb_msgpack_to_json_str(1024, log_event.body);
+
+    flb_log_event_decoder_destroy(&log_decoder);
+    return json;
 }
 
 void delete_script()
@@ -968,6 +1048,293 @@ void flb_test_invalid_metatable(void)
     flb_destroy(ctx);
 }
 
+/* validate group handling with processors and Lua filter */
+static int cb_check_group(void *chunk, size_t size, void *data)
+{
+    int num = get_output_num();
+    char *json;
+
+    json = get_group_metadata(chunk, size);
+    TEST_CHECK(json != NULL);
+    if (json) {
+        TEST_CHECK(strcmp(json, "{\"schema\":\"otlp\",\"resource_id\":0,\"scope_id\":0}") == 0);
+        flb_free(json);
+    }
+
+    json = get_group_body(chunk, size);
+    TEST_CHECK(json != NULL);
+    if (json) {
+        TEST_CHECK(strstr(json, "\"my_res_attr\":\"my_value\"") != NULL);
+        TEST_CHECK(strstr(json, "\"my_scope_attr\":\"my_value\"") != NULL);
+        flb_free(json);
+    }
+
+    json = get_log_body(chunk, size);
+    TEST_CHECK(json != NULL);
+    if (json) {
+        TEST_CHECK(strstr(json, "Hello, Fluent Bit!") != NULL);
+        TEST_CHECK(strstr(json, "This is a new field from Lua") != NULL);
+        flb_free(json);
+    }
+
+    set_output_num(num + 1);
+    return 0;
+}
+
+/* validate group handling with processors and Lua filter */
+static int cb_check_group_no_modified(void *chunk, size_t size, void *data)
+{
+    int num = get_output_num();
+    char *json;
+
+    json = get_group_metadata(chunk, size);
+    TEST_CHECK(json != NULL);
+    if (json) {
+        TEST_CHECK(strcmp(json, "{\"schema\":\"otlp\",\"resource_id\":0,\"scope_id\":0}") == 0);
+        flb_free(json);
+    }
+
+    json = get_group_body(chunk, size);
+    TEST_CHECK(json != NULL);
+    if (json) {
+        TEST_CHECK(strstr(json, "\"my_res_attr\":\"my_value\"") != NULL);
+        TEST_CHECK(strstr(json, "\"my_scope_attr\":\"my_value\"") != NULL);
+        flb_free(json);
+    }
+
+    json = get_log_body(chunk, size);
+    TEST_CHECK(json != NULL);
+    if (json) {
+        TEST_CHECK(strstr(json, "Hello, Fluent Bit!") != NULL);
+        flb_free(json);
+    }
+
+    set_output_num(num + 1);
+    return 0;
+}
+
+void flb_test_group_lua_processor_no_modified(void)
+{
+    int ret;
+    flb_ctx_t *ctx;
+    int in_ffd;
+    int out_ffd;
+    struct flb_processor *proc;
+    struct flb_processor_unit *pu;
+    struct flb_lib_out_cb cb_data;
+    const char *script = "function noop(tag, timestamp, record)\n"\
+                        "  return 0, timestamp, record\n"\
+                        "end";
+
+    clear_output_num();
+
+    cb_data.cb = cb_check_group_no_modified;
+    cb_data.data = NULL;
+
+    ctx = flb_create();
+    flb_service_set(ctx, "flush", FLUSH_INTERVAL, "grace", "1", NULL);
+
+    /* Input */
+    in_ffd = flb_input(ctx, (char *) "dummy", NULL);
+    TEST_CHECK(in_ffd >= 0);
+    flb_input_set(ctx, in_ffd, "tag", "test", NULL);
+    flb_input_set(ctx, in_ffd, "dummy", "{\"message\": \"Hello, Fluent Bit!\"}", NULL);
+    flb_input_set(ctx, in_ffd, "metadata", "{\"record_meta\": \"ok\"}", NULL);
+
+    /* Output */
+    out_ffd = flb_output(ctx, (char *) "lib", (void *) &cb_data);
+    TEST_CHECK(out_ffd >= 0);
+    flb_output_set(ctx, out_ffd,
+                   "match", "*",
+                   "data_mode", "chunk",
+                   NULL);
+
+    /* Processor pipeline */
+    proc = flb_processor_create(ctx->config, "unit_test", NULL, 0);
+    TEST_CHECK(proc != NULL);
+
+    pu = flb_processor_unit_create(proc, FLB_PROCESSOR_LOGS, "opentelemetry_envelope");
+    TEST_CHECK(pu != NULL);
+
+    pu = flb_processor_unit_create(proc, FLB_PROCESSOR_LOGS, "content_modifier");
+    TEST_CHECK(pu != NULL);
+    flb_processor_unit_set_property_str(pu, "context", "otel_resource_attributes");
+    flb_processor_unit_set_property_str(pu, "action", "insert");
+    flb_processor_unit_set_property_str(pu, "key", "my_res_attr");
+    flb_processor_unit_set_property_str(pu, "value", "my_value");
+
+    pu = flb_processor_unit_create(proc, FLB_PROCESSOR_LOGS, "content_modifier");
+    TEST_CHECK(pu != NULL);
+    flb_processor_unit_set_property_str(pu, "context", "otel_scope_attributes");
+    flb_processor_unit_set_property_str(pu, "action", "insert");
+    flb_processor_unit_set_property_str(pu, "key", "my_scope_attr");
+    flb_processor_unit_set_property_str(pu, "value", "my_value");
+
+    pu = flb_processor_unit_create(proc, FLB_PROCESSOR_LOGS, "lua");
+    TEST_CHECK(pu != NULL);
+    flb_processor_unit_set_property_str(pu, "time_as_table", "true");
+    flb_processor_unit_set_property_str(pu, "call", "noop");
+    flb_processor_unit_set_property_str(pu, "code", script);
+
+    ret = flb_input_set_processor(ctx, in_ffd, proc);
+    TEST_CHECK(ret == 0);
+
+    ret = flb_start(ctx);
+    TEST_CHECK(ret == 0);
+
+    flb_time_msleep(3000);
+
+    ret = get_output_num();
+    TEST_CHECK(ret > 0);
+
+    flb_stop(ctx);
+    flb_destroy(ctx);
+}
+
+void flb_test_group_lua_processor_modified(void)
+{
+    int ret;
+    flb_ctx_t *ctx;
+    int in_ffd;
+    int out_ffd;
+    struct flb_processor *proc;
+    struct flb_processor_unit *pu;
+    struct flb_lib_out_cb cb_data;
+    const char *script = "function noop(tag, timestamp, record)\n"\
+                        "  record[\"new_field\"] = 'This is a new field from Lua'\n"\
+                        "  return 1, timestamp, record\n"\
+                        "end";
+
+    clear_output_num();
+
+    cb_data.cb = cb_check_group;
+    cb_data.data = NULL;
+
+    ctx = flb_create();
+    flb_service_set(ctx, "flush", FLUSH_INTERVAL, "grace", "1", NULL);
+
+    /* Input */
+    in_ffd = flb_input(ctx, (char *) "dummy", NULL);
+    TEST_CHECK(in_ffd >= 0);
+    flb_input_set(ctx, in_ffd, "tag", "test", NULL);
+    flb_input_set(ctx, in_ffd, "dummy", "{\"message\": \"Hello, Fluent Bit!\"}", NULL);
+    flb_input_set(ctx, in_ffd, "metadata", "{\"record_meta\": \"ok\"}", NULL);
+
+    /* Output */
+    out_ffd = flb_output(ctx, (char *) "lib", (void *) &cb_data);
+    TEST_CHECK(out_ffd >= 0);
+    flb_output_set(ctx, out_ffd,
+                   "match", "*",
+                   "data_mode", "chunk",
+                   NULL);
+
+    /* Processor pipeline */
+    proc = flb_processor_create(ctx->config, "unit_test", NULL, 0);
+    TEST_CHECK(proc != NULL);
+
+    pu = flb_processor_unit_create(proc, FLB_PROCESSOR_LOGS, "opentelemetry_envelope");
+    TEST_CHECK(pu != NULL);
+
+    pu = flb_processor_unit_create(proc, FLB_PROCESSOR_LOGS, "content_modifier");
+    TEST_CHECK(pu != NULL);
+    flb_processor_unit_set_property_str(pu, "context", "otel_resource_attributes");
+    flb_processor_unit_set_property_str(pu, "action", "insert");
+    flb_processor_unit_set_property_str(pu, "key", "my_res_attr");
+    flb_processor_unit_set_property_str(pu, "value", "my_value");
+
+    pu = flb_processor_unit_create(proc, FLB_PROCESSOR_LOGS, "content_modifier");
+    TEST_CHECK(pu != NULL);
+    flb_processor_unit_set_property_str(pu, "context", "otel_scope_attributes");
+    flb_processor_unit_set_property_str(pu, "action", "insert");
+    flb_processor_unit_set_property_str(pu, "key", "my_scope_attr");
+    flb_processor_unit_set_property_str(pu, "value", "my_value");
+
+    pu = flb_processor_unit_create(proc, FLB_PROCESSOR_LOGS, "lua");
+    TEST_CHECK(pu != NULL);
+    flb_processor_unit_set_property_str(pu, "time_as_table", "true");
+    flb_processor_unit_set_property_str(pu, "call", "noop");
+    flb_processor_unit_set_property_str(pu, "code", script);
+
+    ret = flb_input_set_processor(ctx, in_ffd, proc);
+    TEST_CHECK(ret == 0);
+
+    ret = flb_start(ctx);
+    TEST_CHECK(ret == 0);
+
+    flb_time_msleep(3000);
+
+    ret = get_output_num();
+    TEST_CHECK(ret > 0);
+
+    flb_stop(ctx);
+    flb_destroy(ctx);
+}
+
+/* validate empty group handling when Lua filter drops all records */
+void flb_test_group_lua_drop(void)
+{
+    int ret;
+    flb_ctx_t *ctx;
+    int in_ffd;
+    int out_ffd;
+    struct flb_processor *proc;
+    struct flb_processor_unit *pu;
+    struct flb_lib_out_cb cb_data;
+    const char *script = "function noop(tag, ts, record)\n"\
+                        "  return -1, ts, record\n"\
+                        "end";
+
+    clear_output_num();
+
+    cb_data.cb = cb_count_msgpack_events;
+    cb_data.data = NULL;
+
+    ctx = flb_create();
+    flb_service_set(ctx, "flush", FLUSH_INTERVAL, "grace", "1", NULL);
+
+    /* Input */
+    in_ffd = flb_input(ctx, (char *) "dummy", NULL);
+    TEST_CHECK(in_ffd >= 0);
+    flb_input_set(ctx, in_ffd, "tag", "test", NULL);
+    flb_input_set(ctx, in_ffd, "dummy", "{\"message\": \"Hello, Fluent Bit!\"}", NULL);
+    flb_input_set(ctx, in_ffd, "metadata", "{\"record_meta\": \"ok\"}", NULL);
+
+    /* Output */
+    out_ffd = flb_output(ctx, (char *) "lib", (void *) &cb_data);
+    TEST_CHECK(out_ffd >= 0);
+    flb_output_set(ctx, out_ffd,
+                   "match", "*",
+                   "data_mode", "chunk",
+                   NULL);
+
+    /* Processor pipeline */
+    proc = flb_processor_create(ctx->config, "unit_test", NULL, 0);
+    TEST_CHECK(proc != NULL);
+
+    pu = flb_processor_unit_create(proc, FLB_PROCESSOR_LOGS, "opentelemetry_envelope");
+    TEST_CHECK(pu != NULL);
+
+    pu = flb_processor_unit_create(proc, FLB_PROCESSOR_LOGS, "lua");
+    TEST_CHECK(pu != NULL);
+    flb_processor_unit_set_property_str(pu, "time_as_table", "true");
+    flb_processor_unit_set_property_str(pu, "call", "noop");
+    flb_processor_unit_set_property_str(pu, "code", script);
+
+    ret = flb_input_set_processor(ctx, in_ffd, proc);
+    TEST_CHECK(ret == 0);
+
+    ret = flb_start(ctx);
+    TEST_CHECK(ret == 0);
+
+    flb_time_msleep(3000);
+
+    ret = get_output_num();
+    TEST_CHECK(ret == 0);
+
+    flb_stop(ctx);
+    flb_destroy(ctx);
+}
+
 TEST_LIST = {
     {"hello_world",  flb_test_helloworld},
     {"append_tag",   flb_test_append_tag},
@@ -980,5 +1347,8 @@ TEST_LIST = {
     {"split_record", flb_test_split_record},
     {"empty_array", flb_test_empty_array},
     {"invalid_metatable", flb_test_invalid_metatable},
+    {"group_lua_processor_modified", flb_test_group_lua_processor_modified},
+    {"group_lua_processor_no_modified", flb_test_group_lua_processor_no_modified},
+    {"group_lua_drop", flb_test_group_lua_drop},
     {NULL, NULL}
 };

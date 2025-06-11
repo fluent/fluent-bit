@@ -129,6 +129,14 @@ static int send_response(struct http_conn *conn, int http_status, char *message)
                        FLB_VERSION_STR,
                        context->success_headers_str);
     }
+    else if (http_status == 413) {
+        flb_sds_printf(&out,
+                       "HTTP/1.1 413 Request Entity Too Large\r\n"
+                       "Server: Fluent Bit v%s\r\n"
+                       "Content-Length: %i\r\n\r\n%s",
+                       FLB_VERSION_STR,
+                       len, message ? message : "");
+    }
     else if (http_status == 400) {
         flb_sds_printf(&out,
                        "HTTP/1.1 400 Bad Request\r\n"
@@ -187,7 +195,7 @@ static flb_sds_t tag_key(struct flb_http *ctx, msgpack_object *map)
                 val = (kv+j)->val;
                 if (val.type == MSGPACK_OBJECT_BIN) {
                     val_str  = (char *) val.via.bin.ptr;
-                    val_str_size = val.via.str.size;
+                    val_str_size = val.via.bin.size;
                     found = FLB_TRUE;
                     break;
                 }
@@ -1005,7 +1013,10 @@ static int send_response_ng(struct flb_http_response *response,
         flb_http_response_set_message(response, "No Content");
     }
     else if (http_status == 400) {
-        flb_http_response_set_message(response, "Forbidden");
+        flb_http_response_set_message(response, "Bad Request");
+    }
+    else if (http_status == 413) {
+        flb_http_response_set_message(response, "Payload Too Large");
     }
 
     if (http_status == 200 ||

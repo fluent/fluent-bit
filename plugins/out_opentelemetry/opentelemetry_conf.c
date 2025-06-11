@@ -199,6 +199,9 @@ static int check_proxy(struct flb_output_instance *ins,
             return -1;
         }
 
+        if (ctx->proxy_host) {
+            flb_free(ctx->proxy_host);
+        }
         ctx->proxy_host = host;
         ctx->proxy_port = atoi(port);
         ctx->proxy = tmp;
@@ -274,6 +277,7 @@ struct opentelemetry_context *flb_opentelemetry_context_create(struct flb_output
     /* Parse 'add_label' */
     ret = config_add_labels(ins, ctx);
     if (ret == -1) {
+        flb_opentelemetry_context_destroy(ctx);
         return NULL;
     }
 

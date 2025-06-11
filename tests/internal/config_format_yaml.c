@@ -1,6 +1,8 @@
 /* -*- Mode: C; tab-width: 4; indent-tabs-mode: nil; c-basic-offset: 4 -*- */
 
 #include <fluent-bit/flb_info.h>
+#include <fluent-bit/flb_input.h>
+#include <fluent-bit/flb_output.h>
 #include <fluent-bit/flb_mem.h>
 #include <fluent-bit/flb_kv.h>
 #include <fluent-bit/flb_str.h>
@@ -833,6 +835,34 @@ static void test_upstream_servers()
     flb_cf_destroy(cf);
 }
 
+static void test_invalid_property()
+{
+    char* test_cases[] = {
+        FLB_TESTS_CONF_PATH "/invalid_input_property.yaml",
+        FLB_TESTS_CONF_PATH "/invalid_output_property.yaml",
+        NULL,
+    };
+
+    struct flb_cf *cf;
+    struct flb_config *config;
+    int ret;
+    int i;
+
+    for (i = 0; test_cases[i] != NULL; i++) {
+        cf = flb_cf_yaml_create(NULL, test_cases[i], NULL, 0);
+        TEST_ASSERT(cf != NULL);
+
+        config = flb_config_init();
+        TEST_ASSERT(config != NULL);
+
+        ret = flb_config_load_config_format(config, cf);
+        TEST_ASSERT_(ret == -1, "expected invalid property to return an error in file %s", test_cases[i]);
+
+        flb_config_exit(config);
+        flb_cf_destroy(cf);
+    }
+}
+
 TEST_LIST = {
     { "basic"    , test_basic},
     { "customs section", test_customs_section},
@@ -846,5 +876,6 @@ TEST_LIST = {
     { "stream_processor", test_stream_processor},
     { "plugins", test_plugins},
     { "upstream_servers", test_upstream_servers},
+    { "invalid_input_property", test_invalid_property},
     { 0 }
 };

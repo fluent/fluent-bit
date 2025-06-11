@@ -427,13 +427,16 @@ static int process_append(struct flb_ml_parser_ins *parser_i,
             msgpack_unpacked_init(&result);
             ret = msgpack_unpack_next(&result, buf, size, &off);
             if (ret != MSGPACK_UNPACK_SUCCESS) {
+                msgpack_unpacked_destroy(&result);
                 return -1;
             }
             full_map = &result.data;
             unpacked = FLB_TRUE;
         }
         else if (full_map->type != MSGPACK_OBJECT_MAP) {
-            msgpack_unpacked_destroy(&result);
+            if (unpacked) {
+                msgpack_unpacked_destroy(&result);
+            }
             return -1;
         }
     }

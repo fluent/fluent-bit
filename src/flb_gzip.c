@@ -890,14 +890,14 @@ static int flb_gzip_decompressor_process_body_chunk(
         return FLB_DECOMPRESSOR_FAILURE;
     }
 
-    processed_bytes  = context->input_buffer_length;;
+    processed_bytes  = context->input_buffer_length;
     processed_bytes -= inner_context->miniz_stream.avail_in;
 
     *output_length  -= inner_context->miniz_stream.avail_out;
 
 #ifdef FLB_DECOMPRESSOR_ERASE_DECOMPRESSED_DATA
     if (processed_bytes > 0) {
-        memset(context->read_buffer, processed_bytes);
+        memset(context->read_buffer, 0, processed_bytes);
     }
 #endif
 

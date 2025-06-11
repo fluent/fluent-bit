@@ -124,6 +124,10 @@ struct flb_log_event_decoder *flb_log_event_decoder_create(
 
     context = (struct flb_log_event_decoder *) \
         flb_calloc(1, sizeof(struct flb_log_event_decoder));
+    if (!context) {
+        flb_errno();
+        return NULL;
+    }
 
     result = flb_log_event_decoder_init(context,
                                         input_buffer,
