@@ -36,6 +36,7 @@
 #include "es.h"
 #include "es_conf.h"
 #include "es_bulk.h"
+#include "fluent-bit/flb_log.h"
 #include "fluent-bit/flb_sds.h"
 #include "murmur3.h"
 
@@ -887,9 +888,27 @@ static void cb_es_flush(struct flb_event_chunk *event_chunk,
         flb_http_basic_auth(c, ctx->cloud_user, ctx->cloud_passwd);
     }
     else if (ctx->http_api_key) {
-        flb_sds_t header_value = flb_sds_cat(flb_sds_create("ApiKey "), ctx->http_api_key, strlen(ctx->http_api_key));
-        flb_http_add_header(c, "Authorization", 11, header_value, strlen(header_value));
-        flb_sds_destroy(header_value);
+        flb_sds_t header_buffer;
+        flb_sds_t header_line;
+
+        header_buffer = flb_sds_create_size(strlen(ctx->http_api_key) + 64);
+
+        if (header_buffer == NULL) {
+            flb_error("[out_es] failed to create header buffer");
+        } else
+        {
+            header_line = flb_sds_printf(&header_buffer, "ApiKey %s", ctx->http_api_key);
+
+            if (header_line != NULL) {
+                flb_http_add_header(c,
+                                    "Authorization",
+                                    strlen("Authorization"),
+                                    header_line,
+                                    flb_sds_len(header_line));
+            }
+
+            flb_sds_destroy(header_buffer);
+        }
     }
 
 #ifdef FLB_HAVE_AWS
@@ -1294,7 +1313,11 @@ static struct flb_config_map config_map[] = {
      0, FLB_TRUE, offsetof(struct flb_elasticsearch, trace_error),
      "When enabled print the Elasticsearch exception to stderr (for diag only)"
     },
-
+    [35]={
+        .type=FLB_CONFIG_MAP_STR, "http_api_key", NULL,
+        0, FLB_TRUE, offsetof(struct flb_elasticsearch, http_api_key),
+        "API key for Elasticsearch"
+    },
     /* EOF */
     {0}
 };
