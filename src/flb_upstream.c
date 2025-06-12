@@ -530,6 +530,7 @@ static int prepare_destroy_conn(struct flb_connection *u_conn)
     /* Add node to destroy queue */
     mk_list_add(&u_conn->_head, &uq->destroy_queue);
 
+
     flb_upstream_decrement_total_connections_count(u);
 
     /*
@@ -555,8 +556,13 @@ static inline int prepare_destroy_conn_safe(struct flb_connection *u_conn)
 
 static int destroy_conn(struct flb_connection *u_conn)
 {
-    /* Delay the destruction of busy connections */
-    if (u_conn->busy_flag) {
+    /*
+     * Delay the destruction if the connection is still marked busy or
+     * if there are pending events referencing it (e.g. queued in the
+     * priority bucket queue).
+     */
+    if (u_conn->busy_flag ||
+        u_conn->event._priority_head.prev != NULL) {
         return 0;
     }
 
@@ -614,8 +620,9 @@ static struct flb_connection *create_conn(struct flb_upstream *u)
         flb_debug("[upstream] connection #%i failed to %s:%i",
                   conn->fd, u->tcp_host, u->tcp_port);
 
-        prepare_destroy_conn_safe(conn);
+        /* allow the connection to be destroyed immediately */
         conn->busy_flag = FLB_FALSE;
+        prepare_destroy_conn_safe(conn);
 
         return NULL;
     }
@@ -647,16 +654,19 @@ int flb_upstream_destroy(struct flb_upstream *u)
 
     mk_list_foreach_safe(head, tmp, &uq->av_queue) {
         u_conn = mk_list_entry(head, struct flb_connection, _head);
+        u_conn->busy_flag = FLB_FALSE;
         prepare_destroy_conn(u_conn);
     }
 
     mk_list_foreach_safe(head, tmp, &uq->busy_queue) {
         u_conn = mk_list_entry(head, struct flb_connection, _head);
+        u_conn->busy_flag = FLB_FALSE;
         prepare_destroy_conn(u_conn);
     }
 
     mk_list_foreach_safe(head, tmp, &uq->destroy_queue) {
         u_conn = mk_list_entry(head, struct flb_connection, _head);
+        u_conn->busy_flag = FLB_FALSE;
         destroy_conn(u_conn);
     }
 
@@ -723,9 +733,14 @@ struct flb_connection *flb_upstream_conn_get(struct flb_upstream *u)
 
             flb_stream_release_lock(&u->base);
 
+            /* mark connection as busy so it won't be freed until released */
+            conn->busy_flag = FLB_TRUE;
+
             err = flb_socket_error(conn->fd);
 
             if (!FLB_EINPROGRESS(err) && err != 0) {
+                /* allow immediate cleanup on failure */
+                conn->busy_flag = FLB_FALSE;
                 flb_debug("[upstream] KA connection #%i is in a failed state "
                           "to: %s:%i, cleaning up",
                           conn->fd, u->tcp_host, u->tcp_port);
@@ -801,6 +816,8 @@ struct flb_connection *flb_upstream_conn_get(struct flb_upstream *u)
     }
 
     if (conn != NULL) {
+        /* newly created connections return in an idle state; mark busy */
+        conn->busy_flag = FLB_TRUE;
         flb_connection_reset_io_timeout(conn);
         flb_upstream_increment_busy_connections_count(u);
     }
@@ -830,6 +847,9 @@ int flb_upstream_conn_release(struct flb_connection *conn)
     struct flb_upstream *u = conn->upstream;
     struct flb_upstream_queue *uq;
 
+    /* allow pending destroy to free this connection once we're done */
+    conn->busy_flag = FLB_FALSE;
+
     flb_upstream_decrement_busy_connections_count(u);
 
     uq = flb_upstream_queue_get(u);
@@ -857,6 +877,18 @@ int flb_upstream_conn_release(struct flb_connection *conn)
          * notified if the 'available keepalive connection' gets disconnected by
          * the remote endpoint we need to add it again.
          */
+        /*
+         * Ensure the event is not registered before we add it back. In some
+         * error paths the previous handler might not have removed the event
+         * from the loop which would cause epoll_ctl(ADD) to fail with
+         * EEXIST.  Remove it here if still registered and then reset the
+         * structure state.
+         */
+        if (MK_EVENT_IS_REGISTERED((&conn->event))) {
+            mk_event_del(conn->evl, &conn->event);
+        }
+
+        MK_EVENT_NEW(&conn->event);
         conn->event.handler = cb_upstream_conn_ka_dropped;
 
         ret = mk_event_add(conn->evl,
