@@ -477,6 +477,12 @@ static int net_connect_sync(int fd, const struct sockaddr *addr, socklen_t addrl
                       fd, host, port);
             goto exit_error;
         }
+
+        /* check the connection status */
+        socket_errno = flb_socket_error(fd);
+        if (socket_errno != 0) {
+            goto exit_error;
+        }
     }
 
     /*
