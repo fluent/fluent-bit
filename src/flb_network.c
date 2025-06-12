@@ -670,6 +670,12 @@ static void flb_net_dns_lookup_context_drop(struct flb_dns_lookup_context *looku
     if (!lookup_context->dropped) {
         lookup_context->dropped = FLB_TRUE;
 
+        if (lookup_context->ares_socket_registered) {
+            mk_event_del(lookup_context->event_loop,
+                         &lookup_context->response_event);
+            lookup_context->ares_socket_registered = FLB_FALSE;
+        }
+
         mk_list_del(&lookup_context->_head);
         mk_list_add(&lookup_context->_head, &lookup_context->dns_ctx->lookups_drop);
 
