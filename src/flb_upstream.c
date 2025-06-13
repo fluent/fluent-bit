@@ -685,6 +685,7 @@ int flb_upstream_conn_recycle(struct flb_connection *conn, int val)
 {
     if (val == FLB_TRUE || val == FLB_FALSE) {
         conn->recycle = val;
+        return 0;
     }
 
     return -1;
