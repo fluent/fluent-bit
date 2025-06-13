@@ -705,7 +705,7 @@ static int cb_s3_init(struct flb_output_instance *ins,
          */
         ctx->upload_chunk_size = ctx->file_size;
         if (ctx->file_size > MAX_FILE_SIZE_PUT_OBJECT) {
-            flb_plg_error(ctx->ins, "Max total_file_size is 50M when use_put_object is enabled");
+            flb_plg_error(ctx->ins, "Max total_file_size is %s bytes when use_put_object is enabled", MAX_FILE_SIZE_STR_PUT_OBJECT);
             return -1;
         }
     }
