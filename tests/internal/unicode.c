@@ -64,8 +64,7 @@ void test_generic_conversions_sjis()
         TEST_MSG("SJIS to UTF-8 conversion failed.");
         return;
     }
-    printf("UTF-8: %s", utf8_output);
-    if (!TEST_CHECK(strncmp((char *)utf8_output, "こんにちは", utf8_len) == 0)) {
+    if (!TEST_CHECK(strncmp((char *)utf8_output, "\xe3\x81\x93\xe3\x82\x93\xe3\x81\xab\xe3\x81\xa1\xe3\x81\xaf", utf8_len) == 0)) {
         TEST_MSG("conversion check failed");
         return;
     }
@@ -88,7 +87,7 @@ void test_generic_conversions_sjis()
 void test_generic_conversions_gbk()
 {
     const char *gbk_input = "\xc4\xe3\xba\xc3"; // "你好" (Nǐ hǎo) in GBK
-    const char *utf8_equivalent = "你好";
+    const char *utf8_equivalent = "\xE4\xBD\xA0\xE5\xA5\xBD";
     unsigned char *utf8_output = NULL;
     unsigned char *gbk_output = NULL;
 
@@ -119,7 +118,7 @@ void test_generic_conversions_gbk()
 void test_generic_conversions_big5()
 {
     const char *big5_input = "\xa4\xa4\xa4\xe5"; // "中文" (Zhōngwén) in Big5
-    const char *utf8_equivalent = "中文";
+    const char *utf8_equivalent = "\xE4\xB8\xAD\xE6\x96\x87";
     unsigned char *utf8_output = NULL;
     unsigned char *big5_output = NULL;
 
