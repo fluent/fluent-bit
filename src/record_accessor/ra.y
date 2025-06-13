@@ -19,7 +19,7 @@
 #include "ra_parser.h"
 #include "ra_lex.h"
 
-extern int flb_ra_lex();
+extern int flb_ra_lex(YYSTYPE * yylval_param , yyscan_t yyscanner);
 
 void flb_ra_error(struct flb_ra_parser *rp, const char *query, void *scanner,
                   const char *str)
