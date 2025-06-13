@@ -1338,8 +1338,10 @@ size_t flb_input_chunk_set_limits(struct flb_input_instance *in)
         in->mem_buf_status = FLB_INPUT_RUNNING;
         if (in->p->cb_resume) {
             flb_input_resume(in);
-            flb_info("[input] %s resume (mem buf overlimit)",
-                      flb_input_name(in));
+            flb_info("[input] %s resume (mem buf overlimit - buf size %zuB now below limit %zuB)",
+                      flb_input_name(in),
+                      in->mem_chunks_size,
+                      in->mem_buf_limit);
         }
     }
     if (flb_input_chunk_is_storage_overlimit(in) == FLB_FALSE &&
@@ -1363,7 +1365,7 @@ size_t flb_input_chunk_set_limits(struct flb_input_instance *in)
  * If the number of bytes in use by the chunks are over the imposed limit
  * by configuration, pause the instance.
  */
-static inline int flb_input_chunk_protect(struct flb_input_instance *i)
+static inline int flb_input_chunk_protect(struct flb_input_instance *i, size_t just_written_size)
 {
     struct flb_storage_input *storage = i->storage;
 
@@ -1395,8 +1397,12 @@ static inline int flb_input_chunk_protect(struct flb_input_instance *i)
          * The plugin is using 'memory' buffering only and already reached
          * it limit, just pause the ingestion.
          */
-        flb_warn("[input] %s paused (mem buf overlimit)",
-                 flb_input_name(i));
+        flb_warn("[input] %s paused (mem buf overlimit - event of size %zuB exceeded limit %zu to %zuB)",
+                 flb_input_name(i),
+                 just_written_size,
+                 i->mem_buf_limit,
+                 i->mem_chunks_size
+                );
         flb_input_pause(i);
         i->mem_buf_status = FLB_INPUT_PAUSED;
         return FLB_TRUE;
@@ -1832,7 +1838,7 @@ static int input_chunk_append_raw(struct flb_input_instance *in,
     }
 #endif /* FLB_HAVE_CHUNK_TRACE */
 
-    flb_input_chunk_protect(in);
+    flb_input_chunk_protect(in, final_data_size);
     return 0;
 }
 
