@@ -1631,10 +1631,17 @@ static flb_sds_t get_fleet_id_from_header(struct flb_in_calyptia_fleet_config *c
     flb_sds_t fleet_id;
     flb_sds_t name;
     struct flb_cf *cf_hdr;
+    flb_sds_t cfgheadername;
 
 
     if (exists_header_fleet_config(ctx)) {
-        cf_hdr = flb_cf_create_from_file(NULL, hdr_fleet_config_filename(ctx));
+        cfgheadername = hdr_fleet_config_filename(ctx);
+        if (cfgheadername == NULL) {
+            return NULL;
+        }
+
+        cf_hdr = flb_cf_create_from_file(NULL, cfgheadername);
+        flb_sds_destroy(cfgheadername);
 
         if (cf_hdr == NULL) {
             flb_cf_destroy(cf_hdr);
