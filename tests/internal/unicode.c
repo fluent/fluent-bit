@@ -1,4 +1,4 @@
-#include <fluent-bit/flb_unicode.h>
+﻿#include <fluent-bit/flb_unicode.h>
 
 #include "flb_tests_internal.h"
 
