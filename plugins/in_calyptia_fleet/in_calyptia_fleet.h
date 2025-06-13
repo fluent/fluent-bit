@@ -26,7 +26,6 @@
 struct flb_in_calyptia_fleet_config {
     /* Time interval check */
     int interval_sec;
-    int interval_nsec;
 
     /* maximum http buffer size */
     int max_http_buffer_size;

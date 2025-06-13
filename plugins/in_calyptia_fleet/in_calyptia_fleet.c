@@ -56,7 +56,7 @@
 #endif
 
 #define DEFAULT_INTERVAL_SEC  "15"
-#define DEFAULT_INTERVAL_NSEC "0"
+#define MINIMUM_INTERVAL_SEC  5
 
 #define DEFAULT_MAX_HTTP_BUFFER_SIZE "10485760"
 
@@ -2249,15 +2249,20 @@ static int in_calyptia_fleet_init(struct flb_input_instance *in,
     }
 
     /* Log initial interval values */
-    flb_plg_debug(ctx->ins, "initial collector interval: sec=%d nsec=%d",
-                  ctx->interval_sec, ctx->interval_nsec);
+    flb_plg_debug(ctx->ins, "initial collector interval: sec=%d",
+                  ctx->interval_sec);
 
-    if (ctx->interval_sec <= 0 && ctx->interval_nsec <= 0) {
+    if (ctx->interval_sec <= 0) {
         /* Illegal settings. Override them. */
         ctx->interval_sec = atoi(DEFAULT_INTERVAL_SEC);
-        ctx->interval_nsec = atoi(DEFAULT_INTERVAL_NSEC);
-        flb_plg_info(ctx->ins, "invalid interval settings, using defaults: sec=%d nsec=%d",
-                    ctx->interval_sec, ctx->interval_nsec);
+        flb_plg_info(ctx->ins, "invalid interval setting, using defaults: sec=%d",
+                    ctx->interval_sec);
+    }
+
+    if (ctx->interval_sec < MINIMUM_INTERVAL_SEC) {
+        flb_plg_warn(ctx->ins, "enforcing the minimum of %d seconds for the refresh interval",
+                            MINIMUM_INTERVAL_SEC);
+        ctx->interval_sec = MINIMUM_INTERVAL_SEC;
     }
 
     /* Set the context */
@@ -2289,7 +2294,7 @@ static int in_calyptia_fleet_init(struct flb_input_instance *in,
     ret = flb_input_set_collector_time(in,
                                        in_calyptia_fleet_collect,
                                        ctx->interval_sec,
-                                       ctx->interval_nsec,
+                                       0,
                                        config);
 
     if (ret == -1) {
@@ -2300,8 +2305,8 @@ static int in_calyptia_fleet_init(struct flb_input_instance *in,
     }
 
     ctx->collect_fd = ret;
-    flb_plg_info(ctx->ins, "fleet collector initialized with interval: %d sec %d nsec",
-                 ctx->interval_sec, ctx->interval_nsec);
+    flb_plg_info(ctx->ins, "fleet collector initialized with interval: %d sec",
+                 ctx->interval_sec);
 
     return 0;
 }
@@ -2377,11 +2382,6 @@ static struct flb_config_map config_map[] = {
       FLB_CONFIG_MAP_INT, "interval_sec", DEFAULT_INTERVAL_SEC,
       0, FLB_TRUE, offsetof(struct flb_in_calyptia_fleet_config, interval_sec),
       "Set the collector interval"
-    },
-    {
-      FLB_CONFIG_MAP_INT, "interval_nsec", DEFAULT_INTERVAL_NSEC,
-      0, FLB_TRUE, offsetof(struct flb_in_calyptia_fleet_config, interval_nsec),
-      "Set the collector interval (nanoseconds)"
     },
     {
      FLB_CONFIG_MAP_BOOL, "fleet_config_legacy_format", "true",
