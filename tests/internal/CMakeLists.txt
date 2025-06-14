@@ -50,6 +50,7 @@ set(UNIT_TESTS_FILES
   task_map.c
   strptime.c
   storage_inherit.c
+  unicode.c
 )
 
 # Config format
