@@ -89,6 +89,10 @@ struct flb_out_http *flb_http_conf_create(struct flb_output_instance *ins,
         }
     }
 
+    if (ctx->log_response_payload && !ctx->log_2xx_oks) {
+        flb_plg_warn(ctx->ins, "log_response_payload is enabled but log_2xx_oks is disabled - response payloads from 2xx reponses won't be logged");
+    }
+
     /*
      * Check if a Proxy have been set, if so the Upstream manager will use
      * the Proxy end-point and then we let the HTTP client know about it, so
