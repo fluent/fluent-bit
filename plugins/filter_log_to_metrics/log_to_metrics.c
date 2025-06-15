@@ -44,7 +44,7 @@ static char kubernetes_label_keys[NUMBER_OF_KUBERNETES_LABELS][16] =
         "namespace_name",
         "pod_name",
         "container_name",
-        "docker_id",
+        "container_id",
         "pod_id"
     };
 
