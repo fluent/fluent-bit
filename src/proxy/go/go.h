@@ -29,7 +29,7 @@ struct flbgo_output_plugin {
     void *o_ins;
     struct flb_plugin_proxy_context *context;
 
-    int (*cb_init)();
+    int (*cb_init)(struct flbgo_output_plugin *);
     int (*cb_flush)(const void *, size_t, const char *);
     int (*cb_flush_ctx)(void *, const void *, size_t, char *);
     int (*cb_exit)();
@@ -42,7 +42,7 @@ struct flbgo_input_plugin {
     void *i_ins;
     struct flb_plugin_proxy_context *context;
 
-    int (*cb_init)();
+    int (*cb_init)(struct flbgo_input_plugin *);
     int (*cb_collect)(void **, size_t *);
     int (*cb_cleanup)(void *);
     int (*cb_exit)();
@@ -54,7 +54,7 @@ struct flbgo_custom_plugin {
     void *i_ins;
     struct flb_plugin_proxy_context *context;
 
-    int (*cb_init)();
+    int (*cb_init)(struct flbgo_custom_plugin *);
     int (*cb_exit)();
 };
 
