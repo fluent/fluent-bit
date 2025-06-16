@@ -31,7 +31,7 @@
 #define MEMORY_POOL_MINIMUM_SIZE sizeof(void *)
 
 struct flb_avro_fields {
-    flb_sds_t schema_id;
+    int schema_id;
     flb_sds_t schema_str;
 };
 
