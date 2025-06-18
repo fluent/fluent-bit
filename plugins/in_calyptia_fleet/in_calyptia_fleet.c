@@ -857,6 +857,7 @@ static struct flb_http_client *fleet_http_do(struct flb_in_calyptia_fleet_config
     size_t b_sent;
     struct flb_connection *u_conn;
     struct flb_http_client *client;
+    flb_sds_t config_version;
 
     if (ctx == NULL || url == NULL) {
         return NULL;
@@ -877,6 +878,13 @@ static struct flb_http_client *fleet_http_do(struct flb_in_calyptia_fleet_config
     }
 
     flb_http_buffer_size(client, ctx->max_http_buffer_size);
+
+    config_version = flb_sds_create_size(32);
+    flb_sds_printf(&config_version, "%ld", ctx->config_timestamp);
+    flb_http_add_header(client,
+                         FLEET_HEADERS_CONFIG_VERSION, sizeof(FLEET_HEADERS_CONFIG_VERSION) -1,
+                         config_version, flb_sds_len(config_version));
+    flb_sds_destroy(config_version);
 
     flb_http_add_header(client,
                         CALYPTIA_HEADERS_PROJECT, sizeof(CALYPTIA_HEADERS_PROJECT) - 1,
