@@ -924,8 +924,6 @@ int otel_process_logs(struct flb_event_chunk *event_chunk,
     int max_scopes;
     int max_resources;
     int native_otel = FLB_FALSE;
-    int64_t prev_group_resource_id = -1;
-    int64_t prev_group_scope_id = -1;
     int64_t resource_id = -1;
     int64_t scope_id = -1;
     int64_t tmp_resource_id = -1;
@@ -996,11 +994,6 @@ int otel_process_logs(struct flb_event_chunk *event_chunk,
             /* flag this as a native otel schema */
             native_otel = FLB_TRUE;
 
-            if (resource_id == -1 && prev_group_resource_id >= 0 && prev_group_resource_id == tmp_resource_id) {
-                /* continue with the previous resource */
-                resource_id = prev_group_resource_id;
-                scope_id = prev_group_scope_id;
-            }
 
             /* if we have a new resource_id, start a new resource context */
             if (resource_id != tmp_resource_id) {
@@ -1055,8 +1048,9 @@ start_resource:
                     resource_log->n_scope_logs = 0;
                 }
 
-                /* update the current resource_id */
+                /* update the current resource_id and reset scope_id */
                 resource_id = tmp_resource_id;
+                scope_id = -1;
             }
 
             if (scope_id != tmp_scope_id) {
@@ -1126,8 +1120,6 @@ start_resource:
         else if (record_type == FLB_LOG_EVENT_GROUP_END) {
             /* do nothing */
             ret = FLB_OK;
-            prev_group_resource_id = resource_id;
-            prev_group_scope_id = scope_id;
             resource_id = -1;
             scope_id = -1;
             native_otel = FLB_FALSE;
