@@ -335,6 +335,7 @@ endif()
 
 # Proxy interfaces
 add_subdirectory(proxy)
+add_subdirectory(opentelemetry)
 
 set(FLB_PROXY_PLUGINS "")
 if(FLB_PROXY_GO)
@@ -388,6 +389,7 @@ set(FLB_DEPS
   ${FLB_DEPS}
   cfl-static
   fluent-otel-proto
+  flb-opentelemetry-utils
   cprofiles-static
   cmetrics-static
   ctraces-static
@@ -455,6 +457,10 @@ if(FLB_RECORD_ACCESSOR)
     flb-ra-parser
     )
 endif()
+
+set(FLB_DEPS
+  ${FLB_DEPS}
+  )
 
 # Stream Processor
 if(FLB_STREAM_PROCESSOR)
