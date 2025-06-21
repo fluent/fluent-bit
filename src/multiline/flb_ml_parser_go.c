@@ -75,6 +75,15 @@ struct flb_ml_parser *flb_ml_parser_go(struct flb_config *config, char *key)
     }
 
     ret = rule(mlp,
+               "start_state",
+               "/\\bfatal error: /",
+               "go_after_panic", NULL);
+    if (ret != 0) {
+        rule_error(mlp);
+        return NULL;
+    }
+
+    ret = rule(mlp,
                "go_after_panic",
                "/^$/",
                "go_goroutine", NULL);
