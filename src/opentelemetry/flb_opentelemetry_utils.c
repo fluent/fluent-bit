@@ -47,29 +47,31 @@ int flb_otel_utils_find_map_entry_by_key(msgpack_object_map *map,
     match_count = 0;
 
     for (index = 0 ; index < (int) map->size ; index++) {
+        if (map->ptr[index].key.type != MSGPACK_OBJECT_STR) {
+            continue;
+        }
+
         if (key_len != map->ptr[index].key.via.str.size) {
             continue;
         }
 
-        if (map->ptr[index].key.type == MSGPACK_OBJECT_STR) {
-            if (case_insensitive) {
-                result = strncasecmp(map->ptr[index].key.via.str.ptr,
-                                     key,
-                                     map->ptr[index].key.via.str.size);
-            }
-            else {
-                result = strncmp(map->ptr[index].key.via.str.ptr,
+        if (case_insensitive) {
+            result = strncasecmp(map->ptr[index].key.via.str.ptr,
                                  key,
                                  map->ptr[index].key.via.str.size);
+        }
+        else {
+            result = strncmp(map->ptr[index].key.via.str.ptr,
+                             key,
+                             map->ptr[index].key.via.str.size);
+        }
+
+        if (result == 0) {
+            if (match_count == match_index) {
+                return index;
             }
 
-            if (result == 0) {
-                if (match_count == match_index) {
-                    return index;
-                }
-
-                match_count++;
-            }
+            match_count++;
         }
     }
 
@@ -181,6 +183,10 @@ int flb_otel_utils_hex_to_id(char *str, int len, unsigned char *out_buf, int out
     int low;
 
     if (len % 2 != 0) {
+        return -1;
+    }
+
+    if (out_size < len / 2) {
         return -1;
     }
 

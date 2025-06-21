@@ -958,6 +958,8 @@ int flb_opentelemetry_logs_json_to_msgpack(struct flb_log_event_encoder *encoder
         if (release_encoder) {
             flb_log_event_encoder_destroy(local_log_encoder);
         }
+        msgpack_unpacked_destroy(&unpacked_root);
+        flb_free(msgpack_body);
         return -1;
     }
 
