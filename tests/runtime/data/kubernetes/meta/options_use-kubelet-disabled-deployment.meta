@@ -1,0 +1,126 @@
+{
+    "apiVersion": "v1",
+    "kind": "Pod",
+    "metadata": {
+        "annotations": {
+            "prometheus.io/path": "/api/v1/metrics/prometheus",
+            "prometheus.io/port": "2020",
+            "prometheus.io/scrape": "true"
+        },
+        "creationTimestamp": "2019-04-03T09:29:00Z",
+        "labels": {
+            "app.kubernetes.io/name": "fluent-bit"
+        },
+        "name": "use-kubelet-disabled-deployment",
+        "namespace": "options",
+        "resourceVersion": "74466568",
+        "selfLink": "/api/v1/namespaces/core/pods/base",
+        "uid": "e9f2963f-55f2-11e9-84c5-02e422b8a84a",
+        "ownerReferences": [
+            {
+                "apiVersion": "apps/v1",
+                "kind": "ReplicaSet",
+                "name": "my-deployment-bcg289",
+                "uid": "abcd1234-5678-efgh-ijkl-9876mnopqrst",
+                "controller": true,
+                "blockOwnerDeletion": true
+            }
+        ]
+    },
+    "spec": {
+        "containers": [
+            {
+                "image": "fluent/fluent-bit",
+                "imagePullPolicy": "Always",
+                "name": "fluent-bit",
+                "resources": {},
+                "stdin": true,
+                "stdinOnce": true,
+                "terminationMessagePath": "/dev/termination-log",
+                "terminationMessagePolicy": "File",
+                "tty": true,
+                "volumeMounts": [
+                    {
+                        "mountPath": "/var/run/secrets/kubernetes.io/serviceaccount",
+                        "name": "default-token-9ffht",
+                        "readOnly": true
+                    }
+                ]
+            }
+        ],
+        "dnsPolicy": "ClusterFirst",
+        "nodeName": "ip-10-49-18-80.eu-west-1.compute.internal",
+        "restartPolicy": "Never",
+        "schedulerName": "default-scheduler",
+        "securityContext": {},
+        "serviceAccount": "default",
+        "serviceAccountName": "default",
+        "terminationGracePeriodSeconds": 30,
+        "tolerations": [
+            {
+                "effect": "NoExecute",
+                "key": "node.kubernetes.io/not-ready",
+                "operator": "Exists",
+                "tolerationSeconds": 300
+            },
+            {
+                "effect": "NoExecute",
+                "key": "node.kubernetes.io/unreachable",
+                "operator": "Exists",
+                "tolerationSeconds": 300
+            }
+        ],
+        "volumes": [
+            {
+                "name": "default-token-9ffht",
+                "secret": {
+                    "defaultMode": 420,
+                    "secretName": "default-token-9ffht"
+                }
+            }
+        ]
+    },
+    "status": {
+        "conditions": [
+            {
+                "lastProbeTime": null,
+                "lastTransitionTime": "2019-04-03T09:29:00Z",
+                "status": "True",
+                "type": "Initialized"
+            },
+            {
+                "lastProbeTime": null,
+                "lastTransitionTime": "2019-04-03T09:29:06Z",
+                "status": "True",
+                "type": "Ready"
+            },
+            {
+                "lastProbeTime": null,
+                "lastTransitionTime": "2019-04-03T09:29:00Z",
+                "status": "True",
+                "type": "PodScheduled"
+            }
+        ],
+        "containerStatuses": [
+            {
+                "containerID": "docker://c9898099f6d235126d564ed38a020007ea7a6fac6e25e718de683c9dd0076c16",
+                "image": "fluent/fluent-bit:latest",
+                "imageID": "docker-pullable://fluent/fluent-bit@sha256:7ac0fd3569af866e9a6a22eb592744200d2dbe098cf066162453f8d0b06c531f",
+                "lastState": {},
+                "name": "fluent-bit",
+                "ready": true,
+                "restartCount": 0,
+                "state": {
+                    "running": {
+                        "startedAt": "2019-04-03T09:29:05Z"
+                    }
+                }
+            }
+        ],
+        "hostIP": "10.49.18.80",
+        "phase": "Running",
+        "podIP": "100.116.192.42",
+        "qosClass": "BestEffort",
+        "startTime": "2019-04-03T09:29:00Z"
+    }
+}
