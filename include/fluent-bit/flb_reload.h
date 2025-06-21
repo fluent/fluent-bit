@@ -35,5 +35,6 @@
 int flb_reload_property_check_all(struct flb_config *config);
 int flb_reload_reconstruct_cf(struct flb_cf *src_cf, struct flb_cf *dest_cf);
 int flb_reload(flb_ctx_t *ctx, struct flb_cf *cf_opts);
+int flb_reload_signal_reload(struct flb_config *config);
 
 #endif
