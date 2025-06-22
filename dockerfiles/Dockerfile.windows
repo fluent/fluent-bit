@@ -23,7 +23,7 @@ RUN Remove-Item -Path $env:TEMP\* -Recurse -Force -ErrorAction SilentlyContinue;
     Remove-Item -Path C:\Windows\Temp\* -Recurse -Force -ErrorAction SilentlyContinue; `
     New-Item -ItemType Directory -Path $env:TEMP -Force -ErrorAction SilentlyContinue;
 
-# Install Visual Studio Build Tools 2019 (MSVS_VERSION=16) / 2022 (MSVS_VERSION=17, requires WINDOWS_VERSION=ltsc2022)
+# Install Visual Studio Build Tools 2019 (MSVS_VERSION=16) / 2022 (MSVS_VERSION=17)
 WORKDIR /local
 ARG MSVS_VERSION="17"
 ENV MSVS_BUILD_TOOLS_VERSION="$MSVS_VERSION" `
