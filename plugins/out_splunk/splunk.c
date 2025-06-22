@@ -183,32 +183,23 @@ static int pack_otel_data(struct flb_splunk *ctx,
     }
 
     source_map  = local_msgpack_map_lookup(group_attributes, "resource");
-
     if (source_map != NULL) {
         source_map  = local_msgpack_map_lookup(source_map, "attributes");
 
         if (source_map != NULL) {
             source_map_resource_attributes = FLB_TRUE;
-            value = local_msgpack_map_lookup(source_map,
-                                            "host.name");
+            value = local_msgpack_map_lookup(source_map, "host.name");
 
             if (value != NULL) {
                 flb_mp_map_header_append(mh_pck);
-
                 local_msgpack_pack_cstr(mp_pck, "host");
-
                 msgpack_pack_object(mp_pck, *value);
-            }
-            else {
-                return -2;
             }
         }
     }
 
     flb_mp_map_header_append(mh_pck);
-
     local_msgpack_pack_cstr(mp_pck, "fields");
-
     flb_mp_map_header_init(&mh_tmp, mp_pck);
 
     /* check if we have resource attributes to pack */
@@ -235,9 +226,6 @@ static int pack_otel_data(struct flb_splunk *ctx,
 
             msgpack_pack_object(mp_pck, *value);
         }
-        else {
-            return -2;
-        }
 
         value = local_msgpack_map_lookup(source_map,
                                          "severity_text");
@@ -245,13 +233,9 @@ static int pack_otel_data(struct flb_splunk *ctx,
         if (value != NULL &&
             value->type == MSGPACK_OBJECT_STR) {
             flb_mp_map_header_append(&mh_tmp);
-
             local_msgpack_pack_cstr(mp_pck, "otel.log.severity.text");
 
             msgpack_pack_object(mp_pck, *value);
-        }
-        else {
-            return -3;
         }
 
         source_map  = local_msgpack_map_lookup(source_map, "attributes");
@@ -468,6 +452,7 @@ static int pack_map(struct flb_splunk *ctx, msgpack_packer *mp_pck,
                                 record_attributes);
 
         if (result != 0) {
+            flb_plg_error(ctx->ins, "failed to pack otel data");
             return -1;
         }
 
