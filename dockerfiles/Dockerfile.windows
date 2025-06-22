@@ -18,7 +18,7 @@ FROM mcr.microsoft.com/windows/servercore:$WINDOWS_VERSION AS builder-base
 
 SHELL ["powershell", "-Command", "$ErrorActionPreference = 'Stop'; $ProgressPreference = 'SilentlyContinue';"]
 
-# Install Visual Studio Build Tools 2019 (MSVS_VERSION=16) / 2022 (MSVS_VERSION=17, requires WINDOWS_VERSION=ltsc2022)
+# Install Visual Studio Build Tools 2019 (MSVS_VERSION=16) / 2022 (MSVS_VERSION=17)
 WORKDIR /local
 ARG MSVS_VERSION="16"
 ENV MSVS_BUILD_TOOLS_VERSION="$MSVS_VERSION" `
