@@ -61,6 +61,9 @@ struct flb_http {
     struct mk_server *server;
 
     int collector_id;
+
+    /* Health endpoint configuration */
+    int enable_health_endpoint;
 };
 
 
