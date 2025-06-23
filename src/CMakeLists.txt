@@ -348,10 +348,6 @@ endif()
 
 if(FLB_UNICODE_ENCODER)
   add_subdirectory(simdutf)
-  set(src
-    ${src}
-    "flb_unicode.c"
-    )
 endif()
 
 # WAMRC compiler
@@ -463,6 +459,17 @@ if(FLB_STREAM_PROCESSOR)
     flb-sp
     )
 endif()
+
+# Unicode Conversions
+add_subdirectory(unicode)
+set(FLB_DEPS
+  ${FLB_DEPS}
+  flb-conv
+  )
+set(src
+  ${src}
+  flb_unicode.c
+  )
 
 if (MSVC)
 set(flb_rc_files
