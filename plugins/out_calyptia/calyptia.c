@@ -33,6 +33,7 @@
 #include <cmetrics/cmt_encode_influx.h>
 
 flb_sds_t custom_calyptia_pipeline_config_get(struct flb_config *ctx);
+static void calyptia_ctx_destroy(struct flb_calyptia *ctx);
 
 static int get_io_flags(struct flb_output_instance *ins)
 {
@@ -733,21 +734,20 @@ static struct flb_calyptia *config_init(struct flb_output_instance *ins,
     /* Load the config map */
     ret = flb_output_config_map_set(ins, (void *) ctx);
     if (ret == -1) {
-        flb_free(ctx);
+        calyptia_ctx_destroy(ctx);
         return NULL;
     }
 
     ctx->metrics_endpoint = flb_sds_create_size(256);
     if (!ctx->metrics_endpoint) {
-        flb_free(ctx);
+        calyptia_ctx_destroy(ctx);
         return NULL;
     }
 
 #ifdef FLB_HAVE_CHUNK_TRACE
     ctx->trace_endpoint = flb_sds_create_size(256);
     if (!ctx->trace_endpoint) {
-        flb_sds_destroy(ctx->metrics_endpoint);
-        flb_free(ctx);
+        calyptia_ctx_destroy(ctx);
         return NULL;
     }
 #endif
@@ -755,13 +755,14 @@ static struct flb_calyptia *config_init(struct flb_output_instance *ins,
     /* api_key */
     if (!ctx->api_key) {
         flb_plg_error(ctx->ins, "configuration 'api_key' is missing");
-        flb_free(ctx);
+        calyptia_ctx_destroy(ctx);
         return NULL;
     }
 
     /* parse 'add_label' */
     ret = config_add_labels(ins, ctx);
     if (ret == -1) {
+        calyptia_ctx_destroy(ctx);
         return NULL;
     }
 
@@ -775,6 +776,8 @@ static struct flb_calyptia *config_init(struct flb_output_instance *ins,
     if (ctx->store_path) {
         ret = store_init(ctx);
         if (ret == -1) {
+            flb_output_set_context(ins, NULL);
+            calyptia_ctx_destroy(ctx);
             return NULL;
         }
     }
@@ -782,6 +785,8 @@ static struct flb_calyptia *config_init(struct flb_output_instance *ins,
     /* the machine-id is provided by custom calyptia, which invokes this plugin. */
     if (!ctx->machine_id) {
         flb_plg_error(ctx->ins, "machine_id has not been set");
+        flb_output_set_context(ins, NULL);
+        calyptia_ctx_destroy(ctx);
         return NULL;
     }
 
@@ -793,6 +798,8 @@ static struct flb_calyptia *config_init(struct flb_output_instance *ins,
                                  ctx->cloud_host, ctx->cloud_port,
                                  flags, ctx->ins->tls);
     if (!ctx->u) {
+        flb_output_set_context(ins, NULL);
+        calyptia_ctx_destroy(ctx);
         return NULL;
     }
 
@@ -878,12 +885,10 @@ static void debug_payload(struct flb_calyptia *ctx, void *data, size_t bytes)
     cmt_destroy(cmt);
 }
 
-static int cb_calyptia_exit(void *data, struct flb_config *config)
+static void calyptia_ctx_destroy(struct flb_calyptia *ctx)
 {
-    struct flb_calyptia *ctx = data;
-
     if (!ctx) {
-        return 0;
+        return;
     }
 
     if (ctx->u) {
@@ -910,7 +915,7 @@ static int cb_calyptia_exit(void *data, struct flb_config *config)
     if (ctx->trace_endpoint) {
         flb_sds_destroy(ctx->trace_endpoint);
     }
-#endif /* FLB_HAVE_CHUNK_TRACE */
+#endif
 
     if (ctx->fs) {
         flb_fstore_destroy(ctx->fs);
@@ -918,7 +923,12 @@ static int cb_calyptia_exit(void *data, struct flb_config *config)
 
     flb_kv_release(&ctx->kv_labels);
     flb_free(ctx);
+}
 
+static int cb_calyptia_exit(void *data, struct flb_config *config)
+{
+    (void) config;
+    calyptia_ctx_destroy((struct flb_calyptia *) data);
     return 0;
 }
 
