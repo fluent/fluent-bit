@@ -30,6 +30,7 @@
 
 #include "nghttp2_hd.h"
 #include "nghttp2_net.h"
+#include <arpa/inet.h>
 
 size_t nghttp2_hd_huff_encode_count(const uint8_t *src, size_t len) {
   size_t i;
