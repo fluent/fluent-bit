@@ -283,7 +283,10 @@
     #define ACUTEST_UNIX_       1
     #include <errno.h>
     #include <libgen.h>
+    #include <sys/syscall.h>
+    #include <fcntl.h>
     #include <unistd.h>
+    #include <poll.h>
     #include <sys/types.h>
     #include <sys/wait.h>
     #include <signal.h>
@@ -1143,6 +1146,7 @@ acutest_run_(const struct acutest_test_* test, int index, int master_index)
         } else {
             /* Parent: Wait until child terminates and analyze its exit code. */
             waitpid(pid, &exit_code, 0);
+            printf("EXITCODE=%d\n", WEXITSTATUS(exit_code));
             if(WIFEXITED(exit_code)) {
                 switch(WEXITSTATUS(exit_code)) {
                     case 0:   failed = 0; break;   /* test has passed. */
@@ -1167,6 +1171,174 @@ acutest_run_(const struct acutest_test_* test, int index, int master_index)
             } else {
                 acutest_error_("Test ended in an unexpected way [%d].", exit_code);
             }
+        }
+
+#elif defined(ACUTEST_WIN_)
+
+        char buffer[512] = {0};
+        STARTUPINFOA startupInfo;
+        PROCESS_INFORMATION processInfo;
+        DWORD exitCode;
+
+        /* Windows has no fork(). So we propagate all info into the child
+         * through a command line arguments. */
+        _snprintf(buffer, sizeof(buffer)-1,
+                 "%s --worker=%d %s --no-exec --no-summary %s --verbose=%d --color=%s -- \"%s\"",
+                 acutest_argv0_, index, acutest_timer_ ? "--time" : "",
+                 acutest_tap_ ? "--tap" : "", acutest_verbose_level_,
+                 acutest_colorize_ ? "always" : "never",
+                 test->name);
+        memset(&startupInfo, 0, sizeof(startupInfo));
+        startupInfo.cb = sizeof(STARTUPINFO);
+        if(CreateProcessA(NULL, buffer, NULL, NULL, FALSE, 0, NULL, NULL, &startupInfo, &processInfo)) {
+            WaitForSingleObject(processInfo.hProcess, INFINITE);
+            GetExitCodeProcess(processInfo.hProcess, &exitCode);
+            CloseHandle(processInfo.hThread);
+            CloseHandle(processInfo.hProcess);
+            failed = (exitCode != 0);
+            if(exitCode > 1) {
+                switch(exitCode) {
+                    case 3:             acutest_error_("Aborted."); break;
+                    case 0xC0000005:    acutest_error_("Access violation."); break;
+                    default:            acutest_error_("Test ended in an unexpected way [%lu].", exitCode); break;
+                }
+            }
+        } else {
+            acutest_error_("Cannot create unit test subprocess [%ld].", GetLastError());
+            failed = 1;
+        }
+
+#else
+
+        /* A platform where we don't know how to run child process. */
+        failed = (acutest_do_run_(test, index) != 0);
+
+#endif
+
+    } else {
+        /* Child processes suppressed through --no-exec. */
+        failed = (acutest_do_run_(test, index) != 0);
+    }
+    acutest_timer_get_time_(&end);
+
+    acutest_current_test_ = NULL;
+
+    acutest_stat_run_units_++;
+    if(failed)
+        acutest_stat_failed_units_++;
+
+    acutest_set_success_(master_index, !failed);
+    acutest_set_duration_(master_index, acutest_timer_diff_(start, end));
+}
+
+struct fd_pair {
+    long fd[2];
+};
+
+/* Trigger the unit test. If possible (and not suppressed) it starts a child
+ * process who calls acutest_do_run_(), otherwise it calls acutest_do_run_()
+ * directly. */
+static void
+acutest_run_background_(const struct acutest_test_* test, int index, int master_index)
+{
+    int failed = 1;
+    acutest_timer_type_ start, end;
+
+    acutest_current_test_ = test;
+    acutest_test_already_logged_ = 0;
+    acutest_timer_get_time_(&start);
+
+    // we always use exec when parallelizing.
+    if(1) {
+
+#if defined(ACUTEST_UNIX_)
+
+        pid_t pid;
+        int exit_code;
+        int logfds[2] = { 0 };
+        char *buf = NULL;
+        int bsize = 512;
+        int boff = 0;
+        int rc;
+        struct pollfd polls[1] = { 0 };
+
+        /* Make sure the child starts with empty I/O buffers. */
+        fflush(stdout);
+        fflush(stderr);
+
+        pipe(&logfds);
+        //acutest_colored_printf_(ACUTEST_COLOR_DEFAULT_, "FORKING BACKGROUND PROC\n");
+        pid = fork();
+        if(pid == (pid_t)-1) {
+            acutest_error_("Cannot fork. %s [%d]", strerror(errno), errno);
+            failed = 1;
+        } else if(pid == 0) {
+            /* Child: Do the test. */
+            acutest_worker_ = 1;
+            close(STDOUT_FILENO);
+            close(STDERR_FILENO);
+            dup2(logfds[1], STDOUT_FILENO);
+            dup2(logfds[1], STDERR_FILENO);
+            failed = (acutest_do_run_(test, index) != 0);
+            acutest_exit_(failed ? 1 : 0);
+        } else {
+            /* Parent: Wait until child terminates and analyze its exit code. */
+            buf = flb_calloc(1, bsize);
+            fcntl(logfds[0], F_SETFL, O_NONBLOCK);
+            polls[0].fd = logfds[0];
+            polls[0].events = POLLIN;
+
+            while (1) {
+                rc = poll(polls, 1, 1);
+                if (rc <= 0) {
+                    //printf("poll=%d\n", rc);
+                    if (waitpid(pid, &exit_code, WNOHANG) != -1) {
+                        break;
+                    }
+                    continue;
+                }
+                if (polls[0].revents) {
+                    polls[0].revents=0;
+                    do {
+                        rc = read(polls[0].fd, buf+boff, bsize-boff);
+                        if (rc < 0) {
+                            break;
+                        }
+                        boff += rc;
+                        if (boff == bsize) {
+                            buf = realloc(buf, bsize + 512);
+                            bsize += 512;
+                        }
+                    } while (1);
+                }
+            }
+
+            if(WIFEXITED(exit_code)) {
+                switch(WEXITSTATUS(exit_code)) {
+                    case 0:   failed = 0; break;   /* test has passed. */
+                    case 1:   /* noop */ break;    /* "normal" failure. */
+                    default:  acutest_error_("Unexpected exit code [%d]", WEXITSTATUS(exit_code));
+                }
+            } else if(WIFSIGNALED(exit_code)) {
+                char tmp[32];
+                const char* signame;
+                switch(WTERMSIG(exit_code)) {
+                    case SIGINT:  signame = "SIGINT"; break;
+                    case SIGHUP:  signame = "SIGHUP"; break;
+                    case SIGQUIT: signame = "SIGQUIT"; break;
+                    case SIGABRT: signame = "SIGABRT"; break;
+                    case SIGKILL: signame = "SIGKILL"; break;
+                    case SIGSEGV: signame = "SIGSEGV"; break;
+                    case SIGILL:  signame = "SIGILL"; break;
+                    case SIGTERM: signame = "SIGTERM"; break;
+                    default:      sprintf(tmp, "signal %d", WTERMSIG(exit_code)); signame = tmp; break;
+                }
+                acutest_error_("Test interrupted by %s.", signame);
+            } else {
+                acutest_error_("Test ended in an unexpected way [%d].", exit_code);
+            }
+            write(STDOUT_FILENO, buf, boff);
+            free(buf);
         }
 
 #elif defined(ACUTEST_WIN_)
@@ -1571,6 +1743,7 @@ acutest_cmdline_callback_(int id, const char* arg)
 
         case 'P':
             acutest_parallelize_all_();
+            
             break;
 
         case 0:
@@ -1694,7 +1867,7 @@ struct thread_args {
 
 static void *acutest_run_thread_(struct thread_args *args)
 {
-    acutest_run_(args->test, args->index, args->master_index);
+    acutest_run_background_(args->test, args->index, args->master_index);
     return NULL;
 }
 
@@ -1800,7 +1973,9 @@ main(int argc, char** argv)
         if(run_parallel == (ACUTEST_FLAG_RUN_ | ACUTEST_FLAG_PARALLELIZE_))
             parallel_tests_count++;
     }
-    pths = calloc(parallel_tests_count, sizeof(pthread_t));
+    if (parallel_tests_count > 0) {
+        pths = calloc(parallel_tests_count, sizeof(pthread_t));
+    }
 
     int index = acutest_worker_index_;
     for(i = 0; acutest_list_[i].func != NULL; i++) {
