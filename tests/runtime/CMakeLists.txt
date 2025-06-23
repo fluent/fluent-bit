@@ -91,9 +91,16 @@ if (FLB_CUSTOM_CALYPTIA)
             ${CALYPTIA_TEST_LINK_LIBS}
         )
 
-        add_test(NAME ${TEST_TARGET}
-                 COMMAND ${CMAKE_RUNTIME_OUTPUT_DIRECTORY}/${TEST_TARGET}
-                 WORKING_DIRECTORY ${CMAKE_HOME_DIRECTORY}/build)
+        message(STATUS "Add test: ${TEST_NAME}")
+        if (TEST_NAME STREQUAL "out_stackdriver" OR TEST_NAME STREQUAL "filter_kubernetes")
+          add_test(NAME ${TEST_TARGET}
+                   COMMAND ${CMAKE_RUNTIME_OUTPUT_DIRECTORY}/${TEST_TARGET} --exec=always -P
+                   WORKING_DIRECTORY ${CMAKE_HOME_DIRECTORY}/build)
+        else()
+          add_test(NAME ${TEST_TARGET}
+                   COMMAND ${CMAKE_RUNTIME_OUTPUT_DIRECTORY}/${TEST_TARGET}
+                   WORKING_DIRECTORY ${CMAKE_HOME_DIRECTORY}/build)
+        endif()
 
         set_tests_properties(${TEST_TARGET} PROPERTIES LABELS "runtime")
         add_dependencies(${TEST_TARGET} fluent-bit-static)
@@ -134,9 +141,16 @@ if(FLB_IN_EBPF)
         )
 
         # Add test
-        add_test(NAME ${TEST_TARGET}
-                COMMAND ${CMAKE_RUNTIME_OUTPUT_DIRECTORY}/${TEST_TARGET}
-                WORKING_DIRECTORY ${CMAKE_HOME_DIRECTORY}/build)
+        message(STATUS "Add test: ${TEST_NAME}")
+        if (TEST_NAME STREQUAL "out_stackdriver" OR TEST_NAME STREQUAL "filter_kubernetes")
+          add_test(NAME ${TEST_TARGET}
+                   COMMAND ${CMAKE_RUNTIME_OUTPUT_DIRECTORY}/${TEST_TARGET} --exec=always -P
+                   WORKING_DIRECTORY ${CMAKE_HOME_DIRECTORY}/build)
+        else()
+          add_test(NAME ${TEST_TARGET}
+                   COMMAND ${CMAKE_RUNTIME_OUTPUT_DIRECTORY}/${TEST_TARGET}
+                   WORKING_DIRECTORY ${CMAKE_HOME_DIRECTORY}/build)
+        endif()
 
         # Set test properties
         set_tests_properties(${TEST_TARGET} PROPERTIES LABELS "runtime")
@@ -285,9 +299,18 @@ foreach(source_file ${CHECK_PROGRAMS})
       if(FLB_AVRO_ENCODER)
         target_link_libraries(${source_file_we} avro-static jansson)
       endif()
-    add_test(NAME ${source_file_we}
-            COMMAND ${CMAKE_RUNTIME_OUTPUT_DIRECTORY}/${source_file_we}
-            WORKING_DIRECTORY ${CMAKE_HOME_DIRECTORY}/build)
+
+    message(STATUS "Add test: ${source_file_we}")
+    if (source_file_we STREQUAL "flb-rt-out_stackdriver" OR TEST_NAME STREQUAL "flb-rt-filter_kubernetes")
+      add_test(NAME ${source_file_we}
+               COMMAND ${CMAKE_RUNTIME_OUTPUT_DIRECTORY}/${source_file_we} --exec=always -P
+               WORKING_DIRECTORY ${CMAKE_HOME_DIRECTORY}/build)
+    else()
+      add_test(NAME ${source_file_we}
+               COMMAND ${CMAKE_RUNTIME_OUTPUT_DIRECTORY}/${TEST_TARGET}
+               WORKING_DIRECTORY ${CMAKE_HOME_DIRECTORY}/build)
+    endif()
+
     set_tests_properties(${source_file_we} PROPERTIES LABELS "runtime")
     set_property(TARGET ${source_file_we} APPEND_STRING PROPERTY COMPILE_FLAGS "-D${o_source_file_we}")
   endif()
