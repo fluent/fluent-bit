@@ -223,6 +223,7 @@ jobs:
         arch:
           - s390x
           - riscv64
+          - ppc64le
     steps:
       - name: Checkout Fluent Bit code
         uses: actions/checkout@v4
