@@ -94,6 +94,16 @@ static int cb_kinesis_init(struct flb_output_instance *ins,
         ctx->time_key_format = DEFAULT_TIME_KEY_FORMAT;
     }
 
+    tmp = flb_output_get_property("compression", ins);
+    if (tmp) {
+        ret = flb_aws_compression_get_type(tmp);
+        if (ret == -1) {
+            flb_plg_error(ctx->ins, "unknown compression: %s", tmp);
+            goto error;
+        }
+        ctx->compression = ret;
+    }
+
     tmp = flb_output_get_property("log_key", ins);
     if (tmp) {
         ctx->log_key = tmp;
@@ -494,6 +504,15 @@ static struct flb_config_map config_map[] = {
      "Instead, it enables an immediate retry with no delay for networking "
      "errors, which may help improve throughput when there are transient/random "
      "networking issues."
+    },
+
+    {
+     FLB_CONFIG_MAP_STR, "compression", NULL,
+     0, FLB_FALSE, 0,
+    "Compression type for log records. Each log record is individually compressed "
+    "and sent to Kinesis. 'gzip' and 'arrow' are the supported values. "
+    "'arrow' is only an available if Apache Arrow was enabled at compile time. "
+    "Defaults to no compression."
     },
 
     {
