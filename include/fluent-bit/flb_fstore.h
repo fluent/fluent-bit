@@ -40,6 +40,7 @@ struct flb_fstore_file {
     struct cio_chunk *chunk;        /* chunk context */
     struct cio_stream *stream;      /* parent stream that owns this file */
     struct mk_list _head;           /* link to parent flb_fstore->files */
+    struct mk_list _cache_head;     /* link to flb_fstore->files_up cache */
 };
 
 struct flb_fstore_stream {
@@ -55,6 +56,8 @@ struct flb_fstore {
     char *root_path;
     struct cio_ctx *cio;            /* Chunk I/O context */
     struct mk_list streams;
+    struct mk_list files_up;        /* list of files that are up. last is oldest */
+    int files_up_counter;
 };
 
 struct flb_fstore *flb_fstore_create(char *path, int store_type);
@@ -63,7 +66,9 @@ int flb_fstore_destroy(struct flb_fstore *fs);
 
 struct flb_fstore_stream *flb_fstore_stream_create(struct flb_fstore *fs,
                                                    char *stream_name);
-void flb_fstore_stream_destroy(struct flb_fstore_stream *stream, int delete);
+void flb_fstore_stream_destroy(struct flb_fstore *fs,
+                               struct flb_fstore_stream *stream,
+                               int delete);
 
 int flb_fstore_file_meta_set(struct flb_fstore *fs,
                              struct flb_fstore_file *fsf,
@@ -80,7 +85,9 @@ int flb_fstore_file_content_copy(struct flb_fstore *fs,
                                  struct flb_fstore_file *fsf,
                                  void **out_buf, size_t *out_size);
 
-int flb_fstore_file_append(struct flb_fstore_file *fsf, void *data, size_t size);
+int flb_fstore_file_append(struct flb_fstore *fs,
+                           struct flb_fstore_file *fsf,
+                           void *data, size_t size);
 struct flb_fstore_file *flb_fstore_file_get(struct flb_fstore *fs,
                                             struct flb_fstore_stream *fs_stream,
                                             char *name, size_t size);
