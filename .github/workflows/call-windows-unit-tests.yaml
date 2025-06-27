@@ -36,14 +36,14 @@ jobs:
         config:
           - name: "Windows 32bit"
             arch: x86
-            openssl_dir: C:\vcpkg\packages\openssl_x86-windows-static
             cmake_additional_opt: ""
             vcpkg_triplet: x86-windows-static
+            cmake_version: "3.31.6"
           - name: "Windows 64bit"
             arch: x64
-            openssl_dir: C:\vcpkg\packages\openssl_x64-windows-static
             cmake_additional_opt: ""
             vcpkg_triplet: x64-windows-static
+            cmake_version: "3.31.6"
     permissions:
       contents: read
     # Default environment variables can be overridden below. To prevent library pollution - without this other random libraries may be found on the path leading to failures.
@@ -62,6 +62,7 @@ jobs:
           Copy-Item -Path C:\WinFlexBison/win_bison.exe C:\WinFlexBison/bison.exe
           Copy-Item -Path C:\WinFlexBison/win_flex.exe C:\WinFlexBison/flex.exe
           echo "C:\WinFlexBison" | Out-File -FilePath $env:GITHUB_PATH -Append
+          choco install cmake --version "${{ matrix.config.cmake_version }}" --force
         env:
           WINFLEXBISON: https://github.com/lexxmark/winflexbison/releases/download/v2.5.22/win_flex_bison-2.5.22.zip
         shell: pwsh
@@ -88,10 +89,10 @@ jobs:
         uses: actions/cache/restore@v4
         with:
           path: |
-            C:\vcpkg\packages
-          key: ${{ runner.os }}-${{ matrix.config.arch }}-wintest-vcpkg-${{ steps.get-date.outputs.date }}
+            C:\vcpkg\installed
+          key: ${{ runner.os }}-${{ matrix.config.arch }}-wintest-vcpkg-installed-${{ steps.get-date.outputs.date }}
           restore-keys: |
-            ${{ runner.os }}-${{ matrix.config.arch }}-wintest-vcpkg-
+            ${{ runner.os }}-${{ matrix.config.arch }}-wintest-vcpkg-installed-
           enableCrossOsArchive: false
 
       - name: Build openssl with vcpkg
@@ -104,12 +105,17 @@ jobs:
           C:\vcpkg\vcpkg install --recurse libyaml --triplet ${{ matrix.config.vcpkg_triplet }}
         shell: cmd
 
+      - name: Upgrade any outdated vcpkg packages
+        run: |
+          C:\vcpkg\vcpkg upgrade --no-dry-run
+        shell: cmd
+
       - name: Save packages of vcpkg
         id: save-vcpkg-sources
         uses: actions/cache/save@v4
         with:
           path: |
-            C:\vcpkg\packages
+            C:\vcpkg\installed
           key: ${{ steps.cache-unit-test-vcpkg-sources.outputs.cache-primary-key }}
           enableCrossOsArchive: false
 
@@ -118,9 +124,9 @@ jobs:
           cmake -G "NMake Makefiles" `
             -D FLB_TESTS_INTERNAL=On `
             -D FLB_NIGHTLY_BUILD='${{ inputs.unstable }}' `
-            -D OPENSSL_ROOT_DIR='${{ matrix.config.openssl_dir }}' `
+            -D OPENSSL_ROOT_DIR='C:\vcpkg\installed\${{ matrix.config.vcpkg_triplet }}' `
             ${{ matrix.config.cmake_additional_opt }} `
-            -D FLB_LIBYAML_DIR=C:\vcpkg\packages\libyaml_${{ matrix.config.vcpkg_triplet }} `
+            -D FLB_LIBYAML_DIR='C:\vcpkg\installed\${{ matrix.config.vcpkg_triplet }}' `
             -D FLB_WITHOUT_flb-rt-out_elasticsearch=On `
             -D FLB_WITHOUT_flb-rt-out_td=On `
             -D FLB_WITHOUT_flb-rt-out_forward=On `

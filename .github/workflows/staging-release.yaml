@@ -267,7 +267,7 @@ jobs:
       run: |
         mkdir -p "packaging/releases/$DISTRO"
         aws s3 sync "s3://${{ secrets.AWS_S3_BUCKET_RELEASE }}/$DISTRO" "packaging/releases/$DISTRO" --no-progress
-        aws s3 sync "s3://${{ secrets.AWS_S3_BUCKET_STAGING }}/$DISTRO" "packaging/releases/$DISTRO" --no-progress
+        aws s3 sync "s3://${{ secrets.AWS_S3_BUCKET_STAGING }}/${{ github.event.inputs.version }}/$DISTRO" "packaging/releases/$DISTRO" --no-progress
       env:
         AWS_ACCESS_KEY_ID: ${{ secrets.AWS_ACCESS_KEY_ID }}
         AWS_SECRET_ACCESS_KEY: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
@@ -315,7 +315,7 @@ jobs:
     - name: JSON schema
       continue-on-error: true
       run: |
-        aws s3 sync "s3://${AWS_STAGING_S3_BUCKET}/${VERSION}" "s3://${AWS_RELEASE_S3_BUCKET}/${VERSION}" --no-progress
+        aws s3 sync "s3://${AWS_STAGING_S3_BUCKET}/${VERSION}" "s3://${AWS_RELEASE_S3_BUCKET}/${VERSION}" --no-progress --exclude "*" --include "*.json"
       env:
           VERSION: ${{ github.event.inputs.version }}
           AWS_REGION: "us-east-1"
@@ -419,7 +419,7 @@ jobs:
         shell: bash
 
       - name: Promote container images from staging to GHCR.io
-        if: ${{ startsWith(github.event.inputs.version, '2.') || startsWith(github.event.inputs.version, '3.') || ! startsWith(matrix.tag, 'latest') }}
+        if: ${{ ! startsWith(matrix.tag, 'latest') }}
         run: |
           docker run --rm  \
             quay.io/skopeo/stable:latest \
@@ -502,8 +502,8 @@ jobs:
           TAG: ${{ steps.get-tag.outputs.tag }}
 
   staging-release-images-latest-tags:
-    # Only update latest tags for 3.2 releases
-    if: startsWith(github.event.inputs.version, '3.2')
+    # Only update latest tags for 4.0 releases
+    if: startsWith(github.event.inputs.version, '4.')
     name: Release latest Linux container images
     runs-on: ubuntu-latest
     needs:
@@ -631,7 +631,7 @@ jobs:
       GHCR_RELEASE_IMAGE_NAME: ghcr.io/${{ github.event.inputs.github-image || github.repository }}
     steps:
       - name: Install cosign
-        uses: sigstore/cosign-installer@v2
+        uses: sigstore/cosign-installer@v3
 
       - name: Login to Docker Hub
         uses: docker/login-action@v3
@@ -652,7 +652,7 @@ jobs:
         # The key needs to cope with newlines
         run: |
           echo -e "${COSIGN_PRIVATE_KEY}" > /tmp/my_cosign.key
-          cosign sign --key /tmp/my_cosign.key --recursive \
+          cosign sign --key /tmp/my_cosign.key --recursive --yes \
             -a "repo=${{ github.repository }}" \
             -a "workflow=${{ github.workflow }}" \
             -a "release=${{ github.event.inputs.version }}" \
@@ -815,9 +815,21 @@ jobs:
           target_commitish: '3.1'
           make_latest: false
 
-      - name: Release 3.2 and latest
+      - name: Release 3.2 - not latest
         uses: softprops/action-gh-release@v2
         if: startsWith(inputs.version, '3.2')
+        with:
+          body: "https://fluentbit.io/announcements/v${{ inputs.version }}/"
+          draft: false
+          generate_release_notes: true
+          name: "Fluent Bit ${{ inputs.version }}"
+          tag_name: v${{ inputs.version }}
+          target_commitish: '3.2'
+          make_latest: false
+
+      - name: Release 4.0 and latest
+        uses: softprops/action-gh-release@v2
+        if: startsWith(inputs.version, '4.0')
         with:
           body: "https://fluentbit.io/announcements/v${{ inputs.version }}/"
           draft: false
@@ -926,8 +938,16 @@ jobs:
           ref: 3.1
           token: ${{ secrets.GH_PA_TOKEN }}
 
-      - name: Release 3.2 and latest
+      - name: Release 3.2 - not latest
         if: startsWith(inputs.version, '3.2')
+        uses: actions/checkout@v4
+        with:
+          repository: fluent/fluent-bit-docs
+          token: ${{ secrets.GH_PA_TOKEN }}
+          ref: 3.2
+
+      - name: Release 4.0 and latest
+        if: startsWith(inputs.version, '4.0')
         uses: actions/checkout@v4
         with:
           repository: fluent/fluent-bit-docs
@@ -976,6 +996,7 @@ jobs:
         run: |
           echo "Pull Request Number - ${{ steps.cpr.outputs.pull-request-number }}"
           echo "Pull Request URL - ${{ steps.cpr.outputs.pull-request-url }}"
+        shell: bash
 
   staging-release-create-version-update-pr:
     name: Create version update PR for new release
@@ -1021,6 +1042,12 @@ jobs:
         if: startsWith(inputs.version, '3.2')
         uses: actions/checkout@v4
         with:
+          ref: 3.2
+
+      - name: Release 4.0
+        if: startsWith(inputs.version, '4.0')
+        uses: actions/checkout@v4
+        with:
           ref: master
 
       # Get the new version to use
@@ -1058,3 +1085,4 @@ jobs:
         run: |
           echo "Pull Request Number - ${{ steps.cpr.outputs.pull-request-number }}"
           echo "Pull Request URL - ${{ steps.cpr.outputs.pull-request-url }}"
+        shell: bash

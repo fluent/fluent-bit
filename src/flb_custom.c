@@ -27,6 +27,9 @@
 #include <fluent-bit/flb_pack.h>
 #include <fluent-bit/flb_metrics.h>
 #include <fluent-bit/flb_utils.h>
+#include <fluent-bit/flb_plugin_proxy.h>
+#include <fluent-bit/flb_upstream.h>
+#include <fluent-bit/flb_downstream.h>
 #include <chunkio/chunkio.h>
 
 static inline int instance_id(struct flb_config *config)
@@ -78,6 +81,16 @@ int flb_custom_set_property(struct flb_custom_instance *ins,
             return -1;
         }
         ins->log_level = ret;
+    }
+    else if (strncasecmp("net.", k, 4) == 0 && tmp) {
+        kv = flb_kv_item_create(&ins->net_properties, (char *) k, NULL);
+        if (!kv) {
+            if (tmp) {
+                flb_sds_destroy(tmp);
+            }
+            return -1;
+        }
+        kv->val = tmp;
     }
     else {
         /*
@@ -140,6 +153,7 @@ struct flb_custom_instance *flb_custom_new(struct flb_config *config,
     struct mk_list *head;
     struct flb_custom_plugin *plugin;
     struct flb_custom_instance *instance = NULL;
+    struct flb_plugin_proxy_context *ctx;
 
     if (!custom) {
         return NULL;
@@ -171,6 +185,22 @@ struct flb_custom_instance *flb_custom_new(struct flb_config *config,
     snprintf(instance->name, sizeof(instance->name) - 1,
              "%s.%i", plugin->name, id);
 
+    if (plugin->type == FLB_CUSTOM_PLUGIN_CORE) {
+        instance->context = NULL;
+    }
+    else {
+        ctx = flb_calloc(1, sizeof(struct flb_plugin_proxy_context));
+        if (!ctx) {
+            flb_errno();
+            flb_free(instance);
+            return NULL;
+        }
+
+        ctx->proxy = plugin->proxy;
+
+        instance->context = ctx;
+    }
+
     instance->id    = id;
     instance->alias = NULL;
     instance->p     = plugin;
@@ -178,6 +208,7 @@ struct flb_custom_instance *flb_custom_new(struct flb_config *config,
     instance->log_level = -1;
 
     mk_list_init(&instance->properties);
+    mk_list_init(&instance->net_properties);
     mk_list_add(&instance->_head, &config->customs);
 
     return instance;
@@ -212,6 +243,28 @@ int flb_custom_plugin_property_check(struct flb_custom_instance *ins,
             return -1;
         }
         ins->config_map = config_map;
+
+        if ((p->flags & FLB_CUSTOM_NET_CLIENT) && (p->flags & FLB_CUSTOM_NET_SERVER)) {
+                flb_error("[custom] cannot configure upstream and downstream "
+                          "in the same custom plugin: '%s'",
+                          p->name);
+        }
+        if (p->flags & FLB_CUSTOM_NET_CLIENT) {
+                ins->net_config_map = flb_upstream_get_config_map(config);
+                if (ins->net_config_map == NULL) {
+                        flb_error("[custom] unable to load upstream properties: '%s'",
+                                  p->name);
+                        return -1;
+                }
+        }
+        else if (p->flags & FLB_CUSTOM_NET_SERVER) {
+                ins->net_config_map = flb_downstream_get_config_map(config);
+                if (ins->net_config_map == NULL) {
+                        flb_error("[custom] unable to load downstream properties: '%s'",
+                                  p->name);
+                        return -1;
+                }
+        }
 
         /* Validate incoming properties against config map */
         ret = flb_config_map_properties_check(ins->p->name,
@@ -290,9 +343,14 @@ void flb_custom_instance_destroy(struct flb_custom_instance *ins)
     if (ins->config_map) {
         flb_config_map_destroy(ins->config_map);
     }
+    /* destroy net config map */
+    if (ins->net_config_map) {
+        flb_config_map_destroy(ins->net_config_map);
+    }
 
     /* release properties */
     flb_kv_release(&ins->properties);
+    flb_kv_release(&ins->net_properties);
 
     if (ins->alias) {
         flb_sds_destroy(ins->alias);
@@ -311,4 +369,16 @@ void flb_custom_instance_destroy(struct flb_custom_instance *ins)
 void flb_custom_set_context(struct flb_custom_instance *ins, void *context)
 {
     ins->context = context;
+}
+
+/* Check custom plugin's log level.
+ * Not for core plugins but for Golang plugins.
+ * Golang plugins do not have thread-local flb_worker_ctx information. */
+int flb_custom_log_check(struct flb_custom_instance *ins, int l)
+{
+    if (ins->log_level < l) {
+        return FLB_FALSE;
+    }
+
+    return FLB_TRUE;
 }

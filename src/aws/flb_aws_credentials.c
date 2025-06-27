@@ -581,7 +581,7 @@ static struct flb_aws_provider *standard_chain_create(struct flb_config
         }
     }
 
-    sub_provider = flb_ecs_provider_create(config, generator);
+    sub_provider = flb_http_provider_create(config, generator);
     if (sub_provider) {
         /* ECS Provider will fail creation if we are not running in ECS */
         mk_list_add(&sub_provider->_head, &implementation->sub_providers);

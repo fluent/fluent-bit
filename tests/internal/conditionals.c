@@ -1,4 +1,4 @@
-#include <fluent-bit/flb_info.h>
+﻿#include <fluent-bit/flb_info.h>
 #include <fluent-bit/flb_log.h>
 #include <fluent-bit/flb_mem.h>
 #include <fluent-bit/flb_sds.h>
@@ -1166,6 +1166,635 @@ void test_condition_numeric_edge_cases()
     destroy_test_record(record_data);
 }
 
+void test_condition_not_regex()
+{
+    struct test_record *record_data;
+    struct flb_condition *cond;
+    int result;
+
+    /* Test non-matching regex (should return true) */
+    record_data = create_test_record("path", "/other/endpoint");
+    TEST_CHECK(record_data != NULL);
+
+    cond = flb_condition_create(FLB_COND_OP_AND);
+    TEST_CHECK(cond != NULL);
+
+    TEST_CHECK(flb_condition_add_rule(cond, "$path", FLB_RULE_OP_NOT_REGEX,
+                                    "^/api/.*$", 0, RECORD_CONTEXT_BODY) == FLB_TRUE);
+
+    result = flb_condition_evaluate(cond, &record_data->chunk);
+    TEST_CHECK(result == FLB_TRUE);
+
+    flb_condition_destroy(cond);
+    destroy_test_record(record_data);
+
+    /* Test matching regex (should return false) */
+    record_data = create_test_record("path", "/api/v1/users");
+    TEST_CHECK(record_data != NULL);
+
+    cond = flb_condition_create(FLB_COND_OP_AND);
+    TEST_CHECK(cond != NULL);
+
+    TEST_CHECK(flb_condition_add_rule(cond, "$path", FLB_RULE_OP_NOT_REGEX,
+                                    "^/api/.*$", 0, RECORD_CONTEXT_BODY) == FLB_TRUE);
+
+    result = flb_condition_evaluate(cond, &record_data->chunk);
+    TEST_CHECK(result == FLB_FALSE);
+
+    flb_condition_destroy(cond);
+    destroy_test_record(record_data);
+
+    /* Test empty string (should return true since it doesn't match) */
+    record_data = create_test_record("path", "");
+    TEST_CHECK(record_data != NULL);
+
+    cond = flb_condition_create(FLB_COND_OP_AND);
+    TEST_CHECK(cond != NULL);
+
+    TEST_CHECK(flb_condition_add_rule(cond, "$path", FLB_RULE_OP_NOT_REGEX,
+                                    "^/api/.*$", 0, RECORD_CONTEXT_BODY) == FLB_TRUE);
+
+    result = flb_condition_evaluate(cond, &record_data->chunk);
+    TEST_CHECK(result == FLB_TRUE);
+
+    flb_condition_destroy(cond);
+    destroy_test_record(record_data);
+
+    /* Test complex pattern with metacharacters */
+    record_data = create_test_record("path", "/static/image.jpg");
+    TEST_CHECK(record_data != NULL);
+
+    cond = flb_condition_create(FLB_COND_OP_AND);
+    TEST_CHECK(cond != NULL);
+
+    TEST_CHECK(flb_condition_add_rule(cond, "$path", FLB_RULE_OP_NOT_REGEX,
+                                    "^/api/v[0-9]+/.*\\.(json|xml)$", 0, RECORD_CONTEXT_BODY) == FLB_TRUE);
+
+    result = flb_condition_evaluate(cond, &record_data->chunk);
+    TEST_CHECK(result == FLB_TRUE);
+
+    flb_condition_destroy(cond);
+    destroy_test_record(record_data);
+
+    /* Test invalid regex pattern (should fail at rule creation) */
+    cond = flb_condition_create(FLB_COND_OP_AND);
+    TEST_CHECK(cond != NULL);
+
+    TEST_CHECK(flb_condition_add_rule(cond, "$path", FLB_RULE_OP_NOT_REGEX,
+                                    "[invalid", 0, RECORD_CONTEXT_BODY) == FLB_FALSE);
+
+    flb_condition_destroy(cond);
+}
+
+void test_condition_not_regex_multiple()
+{
+    struct test_record *record_data;
+    struct flb_condition *cond;
+    int result;
+
+    /* Test multiple NOT_REGEX with AND */
+    record_data = create_test_record_with_meta("path", "/static/image.jpg",
+                                             "user_agent", "Mozilla/5.0");
+    TEST_CHECK(record_data != NULL);
+
+    cond = flb_condition_create(FLB_COND_OP_AND);
+    TEST_CHECK(cond != NULL);
+
+    /* Should NOT match /api/ paths AND NOT match bot user agents */
+    TEST_CHECK(flb_condition_add_rule(cond, "$path", FLB_RULE_OP_NOT_REGEX,
+                                    "^/api/.*$", 0, RECORD_CONTEXT_BODY) == FLB_TRUE);
+    TEST_CHECK(flb_condition_add_rule(cond, "$user_agent", FLB_RULE_OP_NOT_REGEX,
+                                    ".*[Bb]ot.*", 0, RECORD_CONTEXT_METADATA) == FLB_TRUE);
+
+    result = flb_condition_evaluate(cond, &record_data->chunk);
+    TEST_CHECK(result == FLB_TRUE);  /* Both conditions should be true */
+
+    flb_condition_destroy(cond);
+    destroy_test_record(record_data);
+
+    /* Test NOT_REGEX with OR and other operators */
+    record_data = create_test_record_with_meta("path", "/user/123",
+                                             "method", "POST");
+    TEST_CHECK(record_data != NULL);
+
+    cond = flb_condition_create(FLB_COND_OP_OR);
+    TEST_CHECK(cond != NULL);
+
+    /* Should match if either:
+     * - path does NOT match admin pattern, OR
+     * - method equals GET
+     */
+    TEST_CHECK(flb_condition_add_rule(cond, "$path", FLB_RULE_OP_NOT_REGEX,
+                                    "^/admin/.*$", 0, RECORD_CONTEXT_BODY) == FLB_TRUE);
+    TEST_CHECK(flb_condition_add_rule(cond, "$method", FLB_RULE_OP_EQ,
+                                    "GET", 0, RECORD_CONTEXT_METADATA) == FLB_TRUE);
+
+    result = flb_condition_evaluate(cond, &record_data->chunk);
+    TEST_CHECK(result == FLB_TRUE);  /* First condition is true */
+
+    flb_condition_destroy(cond);
+    destroy_test_record(record_data);
+
+    /* Test complex combination of rules */
+    record_data = create_test_record_with_meta("url", "/api/users/123",
+                                             "status", "404");
+    TEST_CHECK(record_data != NULL);
+
+    cond = flb_condition_create(FLB_COND_OP_AND);
+    TEST_CHECK(cond != NULL);
+
+    /* Match ALL of:
+     * - url is an API call (does not NOT match /api/)
+     * - status is an error (not 2xx or 3xx)
+     * - url does NOT match static content
+     */
+    TEST_CHECK(flb_condition_add_rule(cond, "$url", FLB_RULE_OP_NOT_REGEX,
+                                    "^/(?!api/).*$", 0, RECORD_CONTEXT_BODY) == FLB_TRUE);
+    TEST_CHECK(flb_condition_add_rule(cond, "$status", FLB_RULE_OP_NOT_REGEX,
+                                    "^[23]\\d{2}$", 0, RECORD_CONTEXT_METADATA) == FLB_TRUE);
+    TEST_CHECK(flb_condition_add_rule(cond, "$url", FLB_RULE_OP_NOT_REGEX,
+                                    "\\.(jpg|png|gif|css|js)$", 0, RECORD_CONTEXT_BODY) == FLB_TRUE);
+
+    result = flb_condition_evaluate(cond, &record_data->chunk);
+    TEST_CHECK(result == FLB_TRUE);  /* All conditions should be true */
+
+    flb_condition_destroy(cond);
+    destroy_test_record(record_data);
+
+    /* Test NOT_REGEX with different contexts */
+    record_data = create_test_record_with_meta("message", "Error occurred",
+                                             "log_level", "ERROR");
+    TEST_CHECK(record_data != NULL);
+
+    cond = flb_condition_create(FLB_COND_OP_AND);
+    TEST_CHECK(cond != NULL);
+
+    /* Match when:
+     * - Message contains "Error" in body
+     * - Log level in metadata is NOT debug or info
+     */
+    TEST_CHECK(flb_condition_add_rule(cond, "$message", FLB_RULE_OP_REGEX,
+                                    "Error", 0, RECORD_CONTEXT_BODY) == FLB_TRUE);
+    TEST_CHECK(flb_condition_add_rule(cond, "$log_level", FLB_RULE_OP_NOT_REGEX,
+                                    "^(DEBUG|INFO)$", 0, RECORD_CONTEXT_METADATA) == FLB_TRUE);
+
+    result = flb_condition_evaluate(cond, &record_data->chunk);
+    TEST_CHECK(result == FLB_TRUE);
+
+    flb_condition_destroy(cond);
+    destroy_test_record(record_data);
+
+    /* Test NOT_REGEX with IN and numeric comparisons */
+    record_data = create_test_record_with_meta("path", "/user/profile",
+                                             "response_time", "150");
+    TEST_CHECK(record_data != NULL);
+
+    cond = flb_condition_create(FLB_COND_OP_AND);
+    TEST_CHECK(cond != NULL);
+
+    const char *paths[] = {"/admin", "/internal", "/system"};
+    double threshold = 200.0;
+
+    /* Match when:
+     * - Path is NOT in restricted list
+     * - Path does NOT match metrics pattern
+     * - Response time is under threshold
+     */
+    TEST_CHECK(flb_condition_add_rule(cond, "$path", FLB_RULE_OP_NOT_IN,
+                                    (void *)paths, 3, RECORD_CONTEXT_BODY) == FLB_TRUE);
+    TEST_CHECK(flb_condition_add_rule(cond, "$path", FLB_RULE_OP_NOT_REGEX,
+                                    "^/metrics/.*$", 0, RECORD_CONTEXT_BODY) == FLB_TRUE);
+    TEST_CHECK(flb_condition_add_rule(cond, "$response_time", FLB_RULE_OP_LT,
+                                    &threshold, 0, RECORD_CONTEXT_METADATA) == FLB_TRUE);
+
+    result = flb_condition_evaluate(cond, &record_data->chunk);
+    TEST_CHECK(result == FLB_TRUE);
+
+    flb_condition_destroy(cond);
+    destroy_test_record(record_data);
+}
+
+void test_condition_not_regex_border_cases()
+{
+    struct test_record *record_data;
+    struct flb_condition *cond;
+    int result;
+
+    /* Test with Unicode characters */
+    record_data = create_test_record("path", "/api/üser/测试");
+    TEST_CHECK(record_data != NULL);
+
+    cond = flb_condition_create(FLB_COND_OP_AND);
+    TEST_CHECK(cond != NULL);
+
+    TEST_CHECK(flb_condition_add_rule(cond, "$path", FLB_RULE_OP_NOT_REGEX,
+                                    "^/api/[a-z]+/[a-z]+$", 0, RECORD_CONTEXT_BODY) == FLB_TRUE);
+
+    result = flb_condition_evaluate(cond, &record_data->chunk);
+    TEST_CHECK(result == FLB_TRUE);  /* Should be true since Unicode chars don't match [a-z] */
+
+    flb_condition_destroy(cond);
+    destroy_test_record(record_data);
+
+    /* Test with very long input string */
+    char *long_string = flb_malloc(1024);
+    TEST_CHECK(long_string != NULL);
+    memset(long_string, 'a', 1023);
+    long_string[1023] = '\0';
+
+    record_data = create_test_record("path", long_string);
+    TEST_CHECK(record_data != NULL);
+
+    cond = flb_condition_create(FLB_COND_OP_AND);
+    TEST_CHECK(cond != NULL);
+
+    TEST_CHECK(flb_condition_add_rule(cond, "$path", FLB_RULE_OP_NOT_REGEX,
+                                    "^a{1024}$", 0, RECORD_CONTEXT_BODY) == FLB_TRUE);
+
+    result = flb_condition_evaluate(cond, &record_data->chunk);
+    TEST_CHECK(result == FLB_TRUE);  /* Should be true since string is 1023 'a's, not 1024 */
+
+    flb_condition_destroy(cond);
+    destroy_test_record(record_data);
+    flb_free(long_string);
+
+    /* Test with only whitespace characters */
+    record_data = create_test_record("path", "   \t   \n   ");
+    TEST_CHECK(record_data != NULL);
+
+    cond = flb_condition_create(FLB_COND_OP_AND);
+    TEST_CHECK(cond != NULL);
+
+    TEST_CHECK(flb_condition_add_rule(cond, "$path", FLB_RULE_OP_NOT_REGEX,
+                                    "^\\s+$", 0, RECORD_CONTEXT_BODY) == FLB_TRUE);
+
+    result = flb_condition_evaluate(cond, &record_data->chunk);
+    TEST_CHECK(result == FLB_FALSE);  /* Should be false since pattern matches whitespace */
+
+    flb_condition_destroy(cond);
+    destroy_test_record(record_data);
+
+    /* Test anchored pattern with longer string */
+    record_data = create_test_record("path", "beforeafter");
+    TEST_CHECK(record_data != NULL);
+
+    cond = flb_condition_create(FLB_COND_OP_AND);
+    TEST_CHECK(cond != NULL);
+
+    TEST_CHECK(flb_condition_add_rule(cond, "$path", FLB_RULE_OP_NOT_REGEX,
+                                    "^before$", 0, RECORD_CONTEXT_BODY) == FLB_TRUE);
+
+    result = flb_condition_evaluate(cond, &record_data->chunk);
+    TEST_CHECK(result == FLB_TRUE);  /* Should be true since "beforeafter" doesn't match "^before$" */
+
+    flb_condition_destroy(cond);
+    destroy_test_record(record_data);
+
+    /* Test with backslash characters */
+    record_data = create_test_record("path", "C:\\Windows\\System32\\");
+    TEST_CHECK(record_data != NULL);
+
+    cond = flb_condition_create(FLB_COND_OP_AND);
+    TEST_CHECK(cond != NULL);
+
+    TEST_CHECK(flb_condition_add_rule(cond, "$path", FLB_RULE_OP_NOT_REGEX,
+                                    "^[A-Z]:\\\\.*$", 0, RECORD_CONTEXT_BODY) == FLB_TRUE);
+
+    result = flb_condition_evaluate(cond, &record_data->chunk);
+    TEST_CHECK(result == FLB_FALSE);  /* Should be false since pattern matches Windows path */
+
+    flb_condition_destroy(cond);
+    destroy_test_record(record_data);
+
+    /* Test with repeated pattern */
+    record_data = create_test_record("path", "aaaaa");
+    TEST_CHECK(record_data != NULL);
+
+    cond = flb_condition_create(FLB_COND_OP_AND);
+    TEST_CHECK(cond != NULL);
+
+    TEST_CHECK(flb_condition_add_rule(cond, "$path", FLB_RULE_OP_NOT_REGEX,
+                                    "a{4}b", 0, RECORD_CONTEXT_BODY) == FLB_TRUE);
+
+    result = flb_condition_evaluate(cond, &record_data->chunk);
+    TEST_CHECK(result == FLB_TRUE);  /* Should be true since pattern doesn't match */
+
+    flb_condition_destroy(cond);
+    destroy_test_record(record_data);
+
+    /* Test with empty pattern - should fail at creation */
+    cond = flb_condition_create(FLB_COND_OP_AND);
+    TEST_CHECK(cond != NULL);
+
+    TEST_CHECK(flb_condition_add_rule(cond, "$path", FLB_RULE_OP_NOT_REGEX,
+                                    "", 0, RECORD_CONTEXT_BODY) == FLB_FALSE);
+
+    flb_condition_destroy(cond);
+
+    /* Test with pattern containing only anchors */
+    record_data = create_test_record("path", "");
+    TEST_CHECK(record_data != NULL);
+
+    cond = flb_condition_create(FLB_COND_OP_AND);
+    TEST_CHECK(cond != NULL);
+
+    TEST_CHECK(flb_condition_add_rule(cond, "$path", FLB_RULE_OP_NOT_REGEX,
+                                    "^$", 0, RECORD_CONTEXT_BODY) == FLB_TRUE);
+
+    result = flb_condition_evaluate(cond, &record_data->chunk);
+    TEST_CHECK(result == FLB_FALSE);  /* Should be false since empty string matches ^$ */
+
+    flb_condition_destroy(cond);
+    destroy_test_record(record_data);
+
+    /* Test with non-ASCII pattern */
+    record_data = create_test_record("path", "测试");
+    TEST_CHECK(record_data != NULL);
+
+    cond = flb_condition_create(FLB_COND_OP_AND);
+    TEST_CHECK(cond != NULL);
+
+    TEST_CHECK(flb_condition_add_rule(cond, "$path", FLB_RULE_OP_NOT_REGEX,
+                                    "^[a-zA-Z]+$", 0, RECORD_CONTEXT_BODY) == FLB_TRUE);
+
+    result = flb_condition_evaluate(cond, &record_data->chunk);
+    TEST_CHECK(result == FLB_TRUE);  /* Should be true since non-ASCII doesn't match [a-zA-Z] */
+
+    flb_condition_destroy(cond);
+    destroy_test_record(record_data);
+}
+
+void test_condition_gte_lte()
+{
+    struct test_record *record_data;
+    struct flb_condition *cond;
+    int result;
+    double val;
+
+    /* Test GTE with equal CPU value */
+    record_data = create_test_record_numeric("cpu_usage", 80.0);
+    TEST_CHECK(record_data != NULL);
+
+    cond = flb_condition_create(FLB_COND_OP_AND);
+    TEST_CHECK(cond != NULL);
+
+    val = 80.0;
+    TEST_CHECK(flb_condition_add_rule(cond, "$cpu_usage", FLB_RULE_OP_GTE,
+                                    &val, 0, RECORD_CONTEXT_BODY) == FLB_TRUE);
+
+    result = flb_condition_evaluate(cond, &record_data->chunk);
+    TEST_CHECK(result == FLB_TRUE);
+
+    flb_condition_destroy(cond);
+    destroy_test_record(record_data);
+
+    /* Test GTE with higher CPU usage */
+    record_data = create_test_record_numeric("cpu_usage", 95.0);
+    TEST_CHECK(record_data != NULL);
+
+    cond = flb_condition_create(FLB_COND_OP_AND);
+    TEST_CHECK(cond != NULL);
+
+    val = 80.0;
+    TEST_CHECK(flb_condition_add_rule(cond, "$cpu_usage", FLB_RULE_OP_GTE,
+                                    &val, 0, RECORD_CONTEXT_BODY) == FLB_TRUE);
+
+    result = flb_condition_evaluate(cond, &record_data->chunk);
+    TEST_CHECK(result == FLB_TRUE);
+
+    flb_condition_destroy(cond);
+    destroy_test_record(record_data);
+
+    /* Test GTE with lower CPU usage */
+    record_data = create_test_record_numeric("cpu_usage", 75.0);
+    TEST_CHECK(record_data != NULL);
+
+    cond = flb_condition_create(FLB_COND_OP_AND);
+    TEST_CHECK(cond != NULL);
+
+    val = 80.0;
+    TEST_CHECK(flb_condition_add_rule(cond, "$cpu_usage", FLB_RULE_OP_GTE,
+                                    &val, 0, RECORD_CONTEXT_BODY) == FLB_TRUE);
+
+    result = flb_condition_evaluate(cond, &record_data->chunk);
+    TEST_CHECK(result == FLB_FALSE);
+
+    flb_condition_destroy(cond);
+    destroy_test_record(record_data);
+
+    /* Test LTE with equal memory value */
+    record_data = create_test_record_numeric("memory_usage", 2048.0);
+    TEST_CHECK(record_data != NULL);
+
+    cond = flb_condition_create(FLB_COND_OP_AND);
+    TEST_CHECK(cond != NULL);
+
+    val = 2048.0;
+    TEST_CHECK(flb_condition_add_rule(cond, "$memory_usage", FLB_RULE_OP_LTE,
+                                    &val, 0, RECORD_CONTEXT_BODY) == FLB_TRUE);
+
+    result = flb_condition_evaluate(cond, &record_data->chunk);
+    TEST_CHECK(result == FLB_TRUE);
+
+    flb_condition_destroy(cond);
+    destroy_test_record(record_data);
+
+    /* Test LTE with lower memory usage */
+    record_data = create_test_record_numeric("memory_usage", 1024.0);
+    TEST_CHECK(record_data != NULL);
+
+    cond = flb_condition_create(FLB_COND_OP_AND);
+    TEST_CHECK(cond != NULL);
+
+    val = 2048.0;
+    TEST_CHECK(flb_condition_add_rule(cond, "$memory_usage", FLB_RULE_OP_LTE,
+                                    &val, 0, RECORD_CONTEXT_BODY) == FLB_TRUE);
+
+    result = flb_condition_evaluate(cond, &record_data->chunk);
+    TEST_CHECK(result == FLB_TRUE);
+
+    flb_condition_destroy(cond);
+    destroy_test_record(record_data);
+
+    /* Test LTE with higher memory usage */
+    record_data = create_test_record_numeric("memory_usage", 3072.0);
+    TEST_CHECK(record_data != NULL);
+
+    cond = flb_condition_create(FLB_COND_OP_AND);
+    TEST_CHECK(cond != NULL);
+
+    val = 2048.0;
+    TEST_CHECK(flb_condition_add_rule(cond, "$memory_usage", FLB_RULE_OP_LTE,
+                                    &val, 0, RECORD_CONTEXT_BODY) == FLB_TRUE);
+
+    result = flb_condition_evaluate(cond, &record_data->chunk);
+    TEST_CHECK(result == FLB_FALSE);
+
+    flb_condition_destroy(cond);
+    destroy_test_record(record_data);
+}
+
+void test_condition_gte_lte_multiple()
+{
+    struct test_record *record_data;
+    struct flb_condition *cond;
+    int result;
+    double val1, val2;
+
+    /* Test multiple GTE/LTE with AND (pod ready condition) */
+    record_data = create_test_record_numeric("ready_replicas", 3.0);
+    TEST_CHECK(record_data != NULL);
+
+    cond = flb_condition_create(FLB_COND_OP_AND);
+    TEST_CHECK(cond != NULL);
+
+    val1 = 2.0;  /* minimum replicas */
+    val2 = 5.0;  /* maximum replicas */
+    TEST_CHECK(flb_condition_add_rule(cond, "$ready_replicas", FLB_RULE_OP_GTE,
+                                    &val1, 0, RECORD_CONTEXT_BODY) == FLB_TRUE);
+    TEST_CHECK(flb_condition_add_rule(cond, "$ready_replicas", FLB_RULE_OP_LTE,
+                                    &val2, 0, RECORD_CONTEXT_BODY) == FLB_TRUE);
+
+    result = flb_condition_evaluate(cond, &record_data->chunk);
+    TEST_CHECK(result == FLB_TRUE);  /* 3 replicas is within [2, 5] */
+
+    flb_condition_destroy(cond);
+    destroy_test_record(record_data);
+
+    /* Test GTE/LTE with OR (resource request check) */
+    record_data = create_test_record_numeric("requested_cpu", 1.5);
+    TEST_CHECK(record_data != NULL);
+
+    cond = flb_condition_create(FLB_COND_OP_OR);
+    TEST_CHECK(cond != NULL);
+
+    val1 = 2.0;  /* CPU threshold */
+    val2 = 1.0;  /* Minimum CPU */
+    TEST_CHECK(flb_condition_add_rule(cond, "$requested_cpu", FLB_RULE_OP_GTE,
+                                    &val1, 0, RECORD_CONTEXT_BODY) == FLB_TRUE);
+    TEST_CHECK(flb_condition_add_rule(cond, "$requested_cpu", FLB_RULE_OP_LTE,
+                                    &val2, 0, RECORD_CONTEXT_BODY) == FLB_TRUE);
+
+    result = flb_condition_evaluate(cond, &record_data->chunk);
+    TEST_CHECK(result == FLB_FALSE);  /* 1.5 CPU is neither >= 2.0 nor <= 1.0 */
+
+    flb_condition_destroy(cond);
+    destroy_test_record(record_data);
+
+    /* Test combined with other operators */
+    record_data = create_test_record_with_meta("restart_count", "5",
+                                             "namespace", "production");
+    TEST_CHECK(record_data != NULL);
+
+    cond = flb_condition_create(FLB_COND_OP_AND);
+    TEST_CHECK(cond != NULL);
+
+    val1 = 3.0;  /* restart threshold */
+    TEST_CHECK(flb_condition_add_rule(cond, "$restart_count", FLB_RULE_OP_GTE,
+                                    &val1, 0, RECORD_CONTEXT_BODY) == FLB_TRUE);
+    TEST_CHECK(flb_condition_add_rule(cond, "$namespace", FLB_RULE_OP_EQ,
+                                    "production", 0, RECORD_CONTEXT_METADATA) == FLB_TRUE);
+
+    result = flb_condition_evaluate(cond, &record_data->chunk);
+    TEST_CHECK(result == FLB_TRUE);
+
+    flb_condition_destroy(cond);
+    destroy_test_record(record_data);
+}
+
+void test_condition_gte_lte_border_cases()
+{
+    struct test_record *record_data;
+    struct flb_condition *cond;
+    int result;
+    double val;
+
+    /* Test with non-numeric string */
+    record_data = create_test_record("pod_status", "CrashLoopBackOff");
+    TEST_CHECK(record_data != NULL);
+
+    cond = flb_condition_create(FLB_COND_OP_AND);
+    TEST_CHECK(cond != NULL);
+
+    val = 1.0;
+    TEST_CHECK(flb_condition_add_rule(cond, "$pod_status", FLB_RULE_OP_GTE,
+                                    &val, 0, RECORD_CONTEXT_BODY) == FLB_TRUE);
+
+    result = flb_condition_evaluate(cond, &record_data->chunk);
+    TEST_CHECK(result == FLB_FALSE);
+
+    flb_condition_destroy(cond);
+    destroy_test_record(record_data);
+
+    /* Test with very small resource difference */
+    record_data = create_test_record_numeric("cpu_limit", 1.0000001);
+    TEST_CHECK(record_data != NULL);
+
+    cond = flb_condition_create(FLB_COND_OP_AND);
+    TEST_CHECK(cond != NULL);
+
+    val = 1.0;
+    TEST_CHECK(flb_condition_add_rule(cond, "$cpu_limit", FLB_RULE_OP_GTE,
+                                    &val, 0, RECORD_CONTEXT_BODY) == FLB_TRUE);
+
+    result = flb_condition_evaluate(cond, &record_data->chunk);
+    TEST_CHECK(result == FLB_TRUE);
+
+    flb_condition_destroy(cond);
+    destroy_test_record(record_data);
+
+    /* Test with negative resource request (invalid but should handle) */
+    record_data = create_test_record_numeric("memory_request", -128.0);
+    TEST_CHECK(record_data != NULL);
+
+    cond = flb_condition_create(FLB_COND_OP_AND);
+    TEST_CHECK(cond != NULL);
+
+    val = -256.0;
+    TEST_CHECK(flb_condition_add_rule(cond, "$memory_request", FLB_RULE_OP_GTE,
+                                    &val, 0, RECORD_CONTEXT_BODY) == FLB_TRUE);
+
+    result = flb_condition_evaluate(cond, &record_data->chunk);
+    TEST_CHECK(result == FLB_TRUE);
+
+    flb_condition_destroy(cond);
+    destroy_test_record(record_data);
+
+    /* Test with zero replicas */
+    record_data = create_test_record_numeric("current_replicas", 0.0);
+    TEST_CHECK(record_data != NULL);
+
+    cond = flb_condition_create(FLB_COND_OP_AND);
+    TEST_CHECK(cond != NULL);
+
+    val = 0.0;
+    TEST_CHECK(flb_condition_add_rule(cond, "$current_replicas", FLB_RULE_OP_GTE,
+                                    &val, 0, RECORD_CONTEXT_BODY) == FLB_TRUE);
+
+    result = flb_condition_evaluate(cond, &record_data->chunk);
+    TEST_CHECK(result == FLB_TRUE);
+
+    flb_condition_destroy(cond);
+    destroy_test_record(record_data);
+
+    /* Test scaling down to zero */
+    record_data = create_test_record_numeric("desired_replicas", -0.0);
+    TEST_CHECK(record_data != NULL);
+
+    cond = flb_condition_create(FLB_COND_OP_AND);
+    TEST_CHECK(cond != NULL);
+
+    val = 0.0;
+    TEST_CHECK(flb_condition_add_rule(cond, "$desired_replicas", FLB_RULE_OP_LTE,
+                                    &val, 0, RECORD_CONTEXT_BODY) == FLB_TRUE);
+
+    result = flb_condition_evaluate(cond, &record_data->chunk);
+    TEST_CHECK(result == FLB_TRUE);
+
+    flb_condition_destroy(cond);
+    destroy_test_record(record_data);
+}
+
 TEST_LIST = {
     {"equals", test_condition_equals},
     {"not_equals", test_condition_not_equals},
@@ -1174,6 +1803,9 @@ TEST_LIST = {
     {"in", test_condition_in},
     {"not_in", test_condition_not_in},
     {"regex", test_condition_regex},
+    {"not_regex", test_condition_not_regex},
+    {"not_regex_border_cases", test_condition_not_regex_border_cases},
+    {"not_regex_multiple", test_condition_not_regex_multiple},  /* Added new test */
     {"and", test_condition_and},
     {"or", test_condition_or},
     {"empty", test_condition_empty},
@@ -1181,5 +1813,8 @@ TEST_LIST = {
     {"metadata", test_condition_metadata},
     {"missing_values", test_condition_missing_values},
     {"border_cases", test_condition_border_cases},
+    {"gte_lte", test_condition_gte_lte},
+    {"gte_lte_multiple", test_condition_gte_lte_multiple},
+    {"gte_lte_border_cases", test_condition_gte_lte_border_cases},
     {NULL, NULL}
 };

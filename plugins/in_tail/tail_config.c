@@ -36,6 +36,10 @@
 #include "tail_multiline.h"
 #endif
 
+#ifdef FLB_HAVE_UNICODE_ENCODER
+#include <fluent-bit/flb_unicode.h>
+#endif
+
 static int multiline_load_parsers(struct flb_tail_config *ctx)
 {
     struct mk_list *head;
@@ -73,6 +77,18 @@ static int multiline_load_parsers(struct flb_tail_config *ctx)
     return 0;
 }
 
+static void adjust_buffer_for_2bytes_alignments(struct flb_tail_config *ctx)
+{
+    if ((ctx->buf_max_size - 1) % 2) {
+        ctx->buf_max_size++;
+        flb_plg_info(ctx->ins, "adjusted buf_max_size to %zd", ctx->buf_max_size);
+    }
+    if ((ctx->buf_chunk_size - 1) % 2) {
+        ctx->buf_chunk_size++;
+        flb_plg_info(ctx->ins, "adjusted buf_chunk_size to %zd", ctx->buf_chunk_size);
+    }
+}
+
 struct flb_tail_config *flb_tail_config_create(struct flb_input_instance *ins,
                                                struct flb_config *config)
 {
@@ -94,6 +110,9 @@ struct flb_tail_config *flb_tail_config_create(struct flb_input_instance *ins,
     ctx->skip_long_lines = FLB_FALSE;
 #ifdef FLB_HAVE_SQLDB
     ctx->db_sync = 1;  /* sqlite sync 'normal' */
+#endif
+#ifdef FLB_HAVE_UNICODE_ENCODER
+    ctx->preferred_input_encoding = FLB_UNICODE_ENCODING_UNSPECIFIED;
 #endif
 
     /* Load the config map */
@@ -178,6 +197,31 @@ struct flb_tail_config *flb_tail_config_create(struct flb_input_instance *ins,
         return NULL;
     }
 
+#ifdef FLB_HAVE_UNICODE_ENCODER
+    tmp = flb_input_get_property("unicode.encoding", ins);
+    if (tmp) {
+        if (strcasecmp(tmp, "auto") == 0) {
+            ctx->preferred_input_encoding = FLB_UNICODE_ENCODING_AUTO;
+            adjust_buffer_for_2bytes_alignments(ctx);
+        }
+        else if (strcasecmp(tmp, "utf-16le") == 0 ||
+                 strcasecmp(tmp, "utf16-le") == 0) {
+            ctx->preferred_input_encoding = FLB_UNICODE_ENCODING_UTF16_LE;
+            adjust_buffer_for_2bytes_alignments(ctx);
+        }
+        else if (strcasecmp(tmp, "utf-16be") == 0 ||
+                 strcasecmp(tmp, "utf16-be") == 0) {
+            ctx->preferred_input_encoding = FLB_UNICODE_ENCODING_UTF16_BE;
+            adjust_buffer_for_2bytes_alignments(ctx);
+        }
+        else {
+            flb_plg_error(ctx->ins, "invalid encoding 'unicode.encoding' value");
+            flb_free(ctx);
+            return NULL;
+        }
+    }
+#endif
+
 #ifdef FLB_HAVE_PARSER
     /* Config: multi-line support */
     if (ctx->multiline == FLB_TRUE) {
@@ -231,6 +275,14 @@ struct flb_tail_config *flb_tail_config_create(struct flb_input_instance *ins,
     ctx->event_hash = flb_hash_table_create(FLB_HASH_TABLE_EVICT_NONE, 1000, 0);
     if (!ctx->event_hash) {
         flb_plg_error(ctx->ins, "could not create event hash");
+        flb_tail_config_destroy(ctx);
+        return NULL;
+    }
+
+    /* hash table for files lookups */
+    ctx->ignored_file_sizes = flb_hash_table_create(FLB_HASH_TABLE_EVICT_NONE, 1000, 0);
+    if (ctx->ignored_file_sizes == NULL) {
+        flb_plg_error(ctx->ins, "could not create ignored file size hash table");
         flb_tail_config_destroy(ctx);
         return NULL;
     }
@@ -463,10 +515,16 @@ int flb_tail_config_destroy(struct flb_tail_config *config)
     if (config->static_hash) {
         flb_hash_table_destroy(config->static_hash);
     }
+
     if (config->event_hash) {
         flb_hash_table_destroy(config->event_hash);
     }
 
+    if (config->ignored_file_sizes != NULL) {
+        flb_hash_table_destroy(config->ignored_file_sizes);
+    }
+
     flb_free(config);
+
     return 0;
 }

@@ -2,7 +2,7 @@
 
 The [CProfiles](https://github.com/fluent/cprofiles) provides a simple API to create and manage profiles for monitoring and observability purposes, the internal data structure is based on OpenTelemetry Profiles schema (v1/development):
 
-- https://github.com/open-telemetry/opentelemetry-proto/blob/main/opentelemetry/proto/profiles/v1development/profiles.proto
+- <https://github.com/open-telemetry/opentelemetry-proto/blob/main/opentelemetry/proto/profiles/v1development/profiles.proto>
 
 ## Build
 
@@ -33,7 +33,7 @@ make
 
 For now you can try out the unit test that compiles when dev mode is enabled: `tests/cprof-test-profile`:
 
-```
+```text
 --- profile debug
 Profile Duration: 0 nanoseconds
 

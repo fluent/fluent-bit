@@ -97,9 +97,6 @@ static int cpu_thermal_update(struct flb_ne *ctx, uint64_t ts)
     struct mk_list list;
     struct flb_slist_entry *entry;
     const char *pattern = "/devices/system/cpu/cpu[0-9]*";
-    /* Status arrays */
-    uint64_t core_throttles_set[32][256];
-    uint64_t package_throttles_set[32];
 
     ret = ne_utils_path_scan(ctx, ctx->path_sysfs, pattern, NE_SCAN_DIR, &list);
     if (ret != 0) {
@@ -109,10 +106,6 @@ static int cpu_thermal_update(struct flb_ne *ctx, uint64_t ts)
     if (mk_list_size(&list) == 0) {
         return 0;
     }
-
-    /* Reset arrays status */
-    memset(&core_throttles_set, 0, sizeof(core_throttles_set));
-    memset(&package_throttles_set, 0, sizeof(package_throttles_set));
 
     /* Process entries */
     mk_list_foreach(head, &list) {
@@ -136,12 +129,6 @@ static int cpu_thermal_update(struct flb_ne *ctx, uint64_t ts)
             continue;
         }
 
-        /* Only update this kv pair once */
-        if (core_throttles_set[physical_package_id][core_id] != 0) {
-            continue;
-        }
-        core_throttles_set[physical_package_id][core_id] = 1;
-
         /* Package Metric: node_cpu_core_throttles_total */
         ret = ne_utils_file_read_uint64(ctx->path_sysfs,
                                         entry->str,
@@ -161,12 +148,6 @@ static int cpu_thermal_update(struct flb_ne *ctx, uint64_t ts)
                             (double) core_throttle_count,
                             2, (char *[]) {tmp1, tmp2});
         }
-
-        /* Only update this entry once */
-        if (package_throttles_set[physical_package_id] != 0) {
-            continue;
-        }
-        package_throttles_set[physical_package_id] = 1;
 
         /* Package Metric: node_cpu_package_throttles_total */
         ret = ne_utils_file_read_uint64(ctx->path_sysfs,

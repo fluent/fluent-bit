@@ -496,7 +496,7 @@ int flb_utils_timer_consume(flb_pipefd_t fd)
 
     ret = flb_pipe_r(fd, &val, sizeof(val));
     if (ret == -1) {
-        flb_errno();
+        flb_pipe_error();
         return -1;
     }
 
@@ -517,7 +517,7 @@ int flb_utils_pipe_byte_consume(flb_pipefd_t fd)
 
     ret = flb_pipe_r(fd, &val, sizeof(val));
     if (ret == -1) {
-        flb_errno();
+        flb_pipe_error();
         return -1;
     }
 
@@ -801,6 +801,7 @@ int flb_utils_write_str(char *buf, int *off, size_t size, const char *str, size_
     off_t offset = 0;
     char tmp[16];
     char *p;
+    const size_t inst_len = FLB_SIMD_VEC8_INST_LEN;
 
     /* to encode codepoints > 0xFFFF */
     uint16_t high;
@@ -816,10 +817,10 @@ int flb_utils_write_str(char *buf, int *off, size_t size, const char *str, size_
     p = buf + *off;
 
     /* align length to the nearest multiple of the vector size for safe SIMD processing */
-    vlen = str_len & ~(sizeof(flb_vector8) - 1);
+    vlen = str_len & ~(inst_len - 1);
     for (i = 0;;) {
         /* SIMD optimization: Process chunk of input string */
-        for (; i < vlen; i += sizeof(flb_vector8)) {
+        for (; i < vlen; i += inst_len) {
             flb_vector8 chunk;
             flb_vector8_load(&chunk, (const uint8_t *)&str[i]);
 
@@ -829,9 +830,11 @@ int flb_utils_write_str(char *buf, int *off, size_t size, const char *str, size_
              * in a char-by-char basis. Otherwise the do a bulk copy
              */
             if (flb_vector8_has_le(chunk, (unsigned char) 0x1F) ||
-                flb_vector8_has(chunk, (unsigned char)    '"') ||
-                flb_vector8_has(chunk, (unsigned char)    '\\')) {
+                flb_vector8_has(chunk, (unsigned char) '"')    ||
+                flb_vector8_has(chunk, (unsigned char) '\\')  ||
+                flb_vector8_is_highbit_set(chunk)) {
                 break;
+
             }
         }
 
@@ -851,7 +854,7 @@ int flb_utils_write_str(char *buf, int *off, size_t size, const char *str, size_
         }
 
         /* Process remaining characters one by one */
-        for (b = 0; b < sizeof(flb_vector8); b++) {
+        for (b = 0; b < inst_len; b++) {
             if (i >= str_len) {
                 /* all characters has been processed */
                 goto done;
@@ -1135,13 +1138,27 @@ int flb_utils_write_str_buf(const char *str, size_t str_len, char **out, size_t 
 static char *flb_copy_host(const char *string, int pos_init, int pos_end)
 {
     if (string[pos_init] == '[') {            /* IPv6 */
-        if (string[pos_end-1] != ']')
+        if (string[pos_end-1] != ']') {
             return NULL;
-
+        }
         return mk_string_copy_substr(string, pos_init + 1, pos_end - 1);
     }
-    else
+    else {
         return mk_string_copy_substr(string, pos_init, pos_end);
+    }
+}
+
+static char *flb_utils_copy_host_sds(const char *string, int pos_init, int pos_end)
+{
+    if (string[pos_init] == '[') {            /* IPv6 */
+        if (string[pos_end-1] != ']') {
+            return NULL;
+        }
+        return flb_sds_create_len(string + pos_init + 1, pos_end - 1);
+    }
+    else {
+        return flb_sds_create_len(string + pos_init, pos_end);
+    }
 }
 
 int flb_utils_url_split(const char *in_url, char **out_protocol,
@@ -1234,6 +1251,135 @@ int flb_utils_url_split(const char *in_url, char **out_protocol,
  error:
     if (protocol) {
         flb_free(protocol);
+    }
+
+    return -1;
+}
+
+int flb_utils_url_split_sds(const flb_sds_t in_url, flb_sds_t *out_protocol,
+                            flb_sds_t *out_host, flb_sds_t *out_port, flb_sds_t *out_uri)
+{
+    int i;
+    flb_sds_t protocol = NULL;
+    flb_sds_t host = NULL;
+    flb_sds_t port = NULL;
+    flb_sds_t uri = NULL;
+    char *p = NULL;
+    char *tmp = NULL;
+    char *sep = NULL;
+
+    /* Protocol */
+    p = strstr(in_url, "://");
+    if (!p) {
+        return -1;
+    }
+    if (p == in_url) {
+        return -1;
+    }
+
+    protocol = flb_sds_create_len(in_url, p - in_url);
+    if (!protocol) {
+        flb_errno();
+        return -1;
+    }
+
+    /* Advance position after protocol */
+    p += 3;
+
+    /* Check for first '/' */
+    sep = strchr(p, '/');
+    tmp = strchr(p, ':');
+
+    /* Validate port separator is found before the first slash */
+    if (sep && tmp) {
+        if (tmp > sep) {
+            tmp = NULL;
+        }
+    }
+
+    if (tmp) {
+        host = flb_utils_copy_host_sds(p, 0, tmp - p);
+        if (!host) {
+            flb_errno();
+            goto error;
+        }
+        p = tmp + 1;
+
+        /* Look for an optional URI */
+        tmp = strchr(p, '/');
+        if (tmp) {
+            port = flb_sds_create_len(p, tmp - p);
+            uri = flb_sds_create(tmp);
+        }
+        else {
+            port = flb_sds_create_len(p, strlen(p));
+            uri = flb_sds_create("/");
+        }
+    }
+    else {
+        tmp = strchr(p, '/');
+        if (tmp) {
+            host = flb_utils_copy_host_sds(p, 0, tmp - p);
+            uri = flb_sds_create(tmp);
+        }
+        else {
+            host = flb_utils_copy_host_sds(p, 0, strlen(p));
+            uri = flb_sds_create("/");
+        }
+    }
+
+    if (!port) {
+        if (strcmp(protocol, "http") == 0) {
+            port = flb_sds_create("80");
+        }
+        else if (strcmp(protocol, "https") == 0) {
+            port = flb_sds_create("443");
+        }
+    }
+
+    if (!host) {
+        flb_errno();
+        goto error;
+    }
+
+    if (!port) {
+        flb_errno();
+        goto error;
+    }
+    else {
+        /* check that port is a number */
+        for (i = 0; i < flb_sds_len(port); i++) {
+            if (!isdigit(port[i])) {
+                goto error;
+            }
+        }
+
+    }
+
+    if (!uri) {
+        flb_errno();
+        goto error;
+    }
+
+    *out_protocol = protocol;
+    *out_host = host;
+    *out_port = port;
+    *out_uri = uri;
+
+    return 0;
+
+ error:
+    if (protocol) {
+        flb_sds_destroy(protocol);
+    }
+    if (host) {
+        flb_sds_destroy(host);
+    }
+    if (port) {
+        flb_sds_destroy(port);
+    }
+    if (uri) {
+        flb_sds_destroy(uri);
     }
 
     return -1;

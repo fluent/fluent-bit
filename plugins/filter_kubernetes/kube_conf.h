@@ -74,6 +74,7 @@ struct flb_kube {
     int cache_use_docker_id;
     int labels;
     int annotations;
+    int owner_references;
     int namespace_labels;
     int namespace_annotations;
     int namespace_metadata_only;

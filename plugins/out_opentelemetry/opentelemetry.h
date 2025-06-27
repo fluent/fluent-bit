@@ -45,7 +45,7 @@ struct opentelemetry_body_key {
 /* Plugin context */
 struct opentelemetry_context {
     int   enable_http2_flag;
-    char *enable_http2;
+    flb_sds_t enable_http2;
     int   enable_grpc_flag;
 
     /* HTTP Auth */
@@ -156,8 +156,11 @@ struct opentelemetry_context {
     /* instance context */
     struct flb_output_instance *ins;
 
-    /* Compression mode (gzip) */
+    /* compression: gzip */
     int compress_gzip;
+
+    /* compression: zstd */
+    int compress_zstd;
 
     /* FLB/OTLP Record accessor patterns */
     struct flb_record_accessor *ra_meta_schema;
@@ -169,6 +172,7 @@ struct opentelemetry_context {
     struct flb_record_accessor *ra_scope_name;
     struct flb_record_accessor *ra_scope_version;
     struct flb_record_accessor *ra_scope_attr;
+    struct flb_record_accessor *ra_scope_schema_url;
 
     /* log: metadata components coming from OTLP */
     struct flb_record_accessor *ra_log_meta_otlp_observed_ts;

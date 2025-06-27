@@ -33,48 +33,89 @@ jobs:
 
   # Sanity check for compilation using system libraries
   pr-compile-system-libs:
-    runs-on: ubuntu-20.04
+    runs-on: ${{ matrix.os.version }}
     timeout-minutes: 60
     strategy:
       fail-fast: false
       matrix:
         flb_option:
           - "-DFLB_PREFER_SYSTEM_LIBS=On"
+        cmake_version:
+          - "3.31.6"
         compiler:
-          - gcc
-          - clang
+          - gcc:
+            cc: gcc
+            cxx: g++
+          - clang:
+            cc: clang
+            cxx: clang++
+        os:
+          - version: ubuntu-22.04
+            clang: "clang-12"
+          - version: ubuntu-24.04
+            clang: "clang-14"
+
     steps:
-      - name: Setup environment
+      - name: Setup environment for ${{ matrix.os.version }} with ${{ matrix.os.clang }}
         run: |
           sudo apt-get update
-          sudo apt-get install -y curl gcc-7 g++-7 clang-6.0 libsystemd-dev gcovr libyaml-dev libluajit-5.1-dev \
-            libnghttp2-dev libjemalloc-dev
-          sudo ln -s /usr/bin/llvm-symbolizer-6.0 /usr/bin/llvm-symbolizer || true
+          sudo apt-get install -y curl gcc-9 g++-9 ${CLANG_PKG} libsystemd-dev gcovr libyaml-dev
+          sudo ln -s /usr/bin/llvm-symbolizer-12 /usr/bin/llvm-symbolizer || true
+        env:
+          CLANG_PKG: ${{ matrix.os.clang }}
+
+      - name: Install system libraries for this test
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y libc-ares-dev libjemalloc-dev libluajit-5.1-dev \
+            libnghttp2-dev libsqlite3-dev libzstd-dev libmsgpack-dev
           mkdir -p /tmp/libbacktrace/build && \
             curl -L https://github.com/ianlancetaylor/libbacktrace/archive/8602fda.tar.gz | \
             tar --strip-components=1 -xzC /tmp/libbacktrace/ && \
             pushd /tmp/libbacktrace/build && ../configure && make && sudo make install && popd
 
+      - name: Install cmake
+        uses: jwlawson/actions-setup-cmake@v2
+        with:
+          cmake-version: "${{ matrix.cmake_version }}"
+
       - name: Checkout Fluent Bit code
         uses: actions/checkout@v4
 
-      - name: ${{ matrix.compiler }} - ${{ matrix.flb_option }}
+      - name: ${{ matrix.compiler.cc }} & ${{ matrix.compiler.cxx }} - ${{ matrix.flb_option }}
         run: |
           export nparallel=$(( $(getconf _NPROCESSORS_ONLN) > 8 ? 8 : $(getconf _NPROCESSORS_ONLN) ))
           echo "CC = $CC, CXX = $CXX, FLB_OPT = $FLB_OPT"
-          sudo update-alternatives --install /usr/bin/gcc gcc /usr/bin/gcc-7 90
-          sudo update-alternatives --install /usr/bin/g++ g++ /usr/bin/g++-7 90
-          sudo update-alternatives --install /usr/bin/clang clang /usr/bin/clang-6.0 90
+          sudo update-alternatives --install /usr/bin/gcc gcc /usr/bin/gcc-9 90
+          sudo update-alternatives --install /usr/bin/g++ g++ /usr/bin/g++-9 90
+          sudo update-alternatives --install /usr/bin/clang clang /usr/bin/${CLANG_PKG} 90
           cmake $GLOBAL_OPTS $FLB_OPT  ../
           make -j $nparallel
         working-directory: build
         env:
-          CC: ${{ matrix.compiler }}
-          CXX: ${{ matrix.compiler }}
+          CC: ${{ matrix.compiler.cc }}
+          CXX: ${{ matrix.compiler.cxx }}
           FLB_OPT: ${{ matrix.flb_option }}
           GLOBAL_OPTS: "-DFLB_JEMALLOC=On -DFLB_SHARED_LIB=Off -DFLB_DEBUG=On -DFLB_ALL=On -DFLB_EXAMPLES=Off"
+          CLANG_PKG: ${{ matrix.os.clang }}
 
       - name: Display dependencies w/ ldd
         run: |
-          ldd ./bin/fluent-bit
+          export ldd_result=$(ldd ./bin/fluent-bit)
+          echo "ldd result:"
+          echo "$ldd_result"
+          echo "$ldd_result" | grep libcares
+          echo "$ldd_result" | grep libjemalloc
+          echo "$ldd_result" | grep libluajit
+          echo "$ldd_result" | grep libnghttp2
+          echo "$ldd_result" | grep libsqlite3
+          echo "$ldd_result" | grep libzstd
+        working-directory: build
+
+      - name: Display dependencies w/ ldd for libmsgpack
+        if: matrix.os.version == 'ubuntu-24.04'
+        run: |
+          export ldd_result=$(ldd ./bin/fluent-bit)
+          echo "ldd result:"
+          echo "$ldd_result" | grep libmsgpack
         working-directory: build

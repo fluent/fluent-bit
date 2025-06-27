@@ -808,6 +808,34 @@ static int set_resource_schema_url(struct flb_record_accessor *ra,
     return 0;
 }
 
+static int set_scope_schema_url(struct flb_record_accessor *ra,
+                                msgpack_object *map,
+                                Opentelemetry__Proto__Logs__V1__ScopeLogs *scope_log)
+{
+
+    struct flb_ra_value *ra_val;
+
+    ra_val = flb_ra_get_value_object(ra, *map);
+    if (ra_val == NULL) {
+        return -1;
+    }
+
+    if (ra_val->o.type != MSGPACK_OBJECT_STR) {
+        flb_ra_key_value_destroy(ra_val);
+        return -1;
+    }
+
+    scope_log->schema_url = flb_sds_create_len(ra_val->o.via.str.ptr,
+                                               ra_val->o.via.str.size);
+    flb_ra_key_value_destroy(ra_val);
+
+    if (!scope_log->schema_url) {
+        return -1;
+    }
+
+    return 0;
+}
+
 static int set_scope_name(struct flb_record_accessor *ra,
                          msgpack_object *map,
                          Opentelemetry__Proto__Common__V1__InstrumentationScope *scope)
@@ -921,6 +949,8 @@ int otel_process_logs(struct flb_event_chunk *event_chunk,
         flb_plg_error(ctx->ins, "could not initialize record decoder");
         return -1;
     }
+
+    flb_log_event_decoder_read_groups(decoder, FLB_TRUE);
 
     log_record_count = 0;
     opentelemetry__proto__collector__logs__v1__export_logs_service_request__init(&export_logs);
@@ -1077,6 +1107,9 @@ start_resource:
 
                 /* group body: $scope['attributes'] */
                 set_scope_attributes(ctx->ra_scope_attr, event.body, scope_log->scope);
+
+                /* group body: $scope['schema_url'] */
+                set_scope_schema_url(ctx->ra_scope_schema_url, event.body, scope_log);
             }
 
             ret = FLB_OK;
@@ -1139,6 +1172,8 @@ start_resource:
         if (ret == -1) {
             /* the only possible fail path is a problem with a memory allocation, let's suggest a FLB_RETRY */
             ret = FLB_RETRY;
+            flb_free(log_record);
+            log_records[log_record_count] = NULL;
             break;
         }
 
@@ -1147,6 +1182,11 @@ start_resource:
         if (ret == -1) {
             /* as before, it can only fail on a memory allocation */
             ret = FLB_RETRY;
+            if (log_record->body) {
+                otlp_any_value_destroy(log_record->body);
+            }
+            flb_free(log_record);
+            log_records[log_record_count] = NULL;
             break;
         }
 

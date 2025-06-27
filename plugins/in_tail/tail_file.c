@@ -48,6 +48,10 @@
 #include "win32.h"
 #endif
 
+#ifdef FLB_HAVE_UNICODE_ENCODER
+#include <fluent-bit/flb_unicode.h>
+#endif
+
 #include <cfl/cfl.h>
 
 static inline void consume_bytes(char *buf, int bytes, int length)
@@ -437,9 +441,14 @@ static int process_content(struct flb_tail_file *file, size_t *bytes)
     size_t line_len;
     char *repl_line;
     size_t repl_line_len;
+    size_t original_len = 0;
     time_t now = time(NULL);
     struct flb_time out_time = {0};
     struct flb_tail_config *ctx;
+#ifdef FLB_HAVE_UNICODE_ENCODER
+    char *decoded = NULL;
+    size_t decoded_len;
+#endif
 
     ctx = (struct flb_tail_config *) file->config;
 
@@ -449,6 +458,33 @@ static int process_content(struct flb_tail_file *file, size_t *bytes)
 
     /* reset last processed bytes */
     file->last_processed_bytes = 0;
+
+#ifdef FLB_HAVE_UNICODE_ENCODER
+    if (ctx->preferred_input_encoding != FLB_UNICODE_ENCODING_UNSPECIFIED) {
+        original_len = end - data;
+        decoded = NULL;
+        ret = flb_unicode_convert(ctx->preferred_input_encoding,
+                                  data, end - data, &decoded, &decoded_len);
+        if (ret == FLB_SIMDUTF_CONNECTOR_CONVERT_OK) {
+            data = decoded;
+            end  = data + decoded_len;
+        }
+        else if (ret == FLB_UNICODE_CONVERT_NOP) {
+            flb_plg_debug(ctx->ins, "nothing to convert encoding '%.*s'", end - data, data);
+            /* Skip the UTF-8 BOM */
+            if (file->buf_len >= 3 &&
+                data[0] == '\xEF' &&
+                data[1] == '\xBB' &&
+                data[2] == '\xBF') {
+                data += 3;
+                processed_bytes += 3;
+            }
+        }
+        else {
+            flb_plg_error(ctx->ins, "encoding failed '%.*s'", end - data, data);
+        }
+    }
+#endif
 
     /* Skip null characters from the head (sometimes introduced by copy-truncate log rotation) */
     while (data < end && *data == '\0') {
@@ -602,11 +638,22 @@ static int process_content(struct flb_tail_file *file, size_t *bytes)
         file->parsed = 0;
         file->last_processed_bytes += processed_bytes;
     }
+
+#ifdef FLB_HAVE_UNICODE_ENCODER
+    if (decoded) {
+        flb_free(decoded);
+        decoded = NULL;
+    }
+#endif
     file->parsed = file->buf_len;
 
     if (lines > 0) {
         /* Append buffer content to a chunk */
-        *bytes = processed_bytes;
+        if (original_len > 0) {
+            *bytes = original_len;
+        } else {
+            *bytes = processed_bytes;
+        }
 
         if (file->sl_log_event_encoder->output_length > 0) {
             flb_input_log_append_records(ctx->ins,
@@ -623,7 +670,11 @@ static int process_content(struct flb_tail_file *file, size_t *bytes)
         *bytes = file->buf_len;
     }
     else {
-        *bytes = processed_bytes;
+        if (original_len > 0) {
+            *bytes = original_len;
+        } else {
+            *bytes = processed_bytes;
+        }
     }
 
     if (ctx->ml_ctx) {
@@ -868,13 +919,24 @@ static int set_file_position(struct flb_tail_config *ctx,
         return 0;
     }
 
-    /* tail... */
-    ret = lseek(file->fd, 0, SEEK_END);
-    if (ret == -1) {
-        flb_errno();
-        return -1;
+    if (file->offset > 0) {
+        ret = lseek(file->fd, file->offset, SEEK_SET);
+
+        if (ret == -1) {
+            flb_errno();
+            return -1;
+        }
     }
-    file->offset = ret;
+    else {
+        ret = lseek(file->fd, 0, SEEK_END);
+
+        if (ret == -1) {
+            flb_errno();
+            return -1;
+        }
+
+        file->offset = ret;
+    }
 
     if (file->decompression_context == NULL) {
         file->stream_offset = ret;
@@ -923,6 +985,7 @@ static int ml_flush_callback(struct flb_ml_parser *parser,
 }
 
 int flb_tail_file_append(char *path, struct stat *st, int mode,
+                         ssize_t offset,
                          struct flb_tail_config *ctx)
 {
     int fd;
@@ -1011,6 +1074,10 @@ int flb_tail_file_append(char *path, struct stat *st, int mode,
     file->mult_keys = 0;
     file->mult_flush_timeout = 0;
     file->mult_skipping = FLB_FALSE;
+
+    if (offset != -1) {
+        file->offset = offset;
+    }
 
     if (strlen(path) >= 3 &&
         strcasecmp(&path[strlen(path) - 3], ".gz") == 0) {
@@ -1246,14 +1313,13 @@ void flb_tail_file_remove(struct flb_tail_file *file)
         flb_log_event_encoder_destroy(file->sl_log_event_encoder);
     }
 
-    if (file->ml_log_event_encoder != NULL) {
-        flb_log_event_encoder_destroy(file->ml_log_event_encoder);
-    }
-
     /* remove the multiline.core stream */
     if (ctx->ml_ctx && file->ml_stream_id > 0) {
-        /* destroy ml stream */
         flb_ml_stream_id_destroy_all(ctx->ml_ctx, file->ml_stream_id);
+    }
+
+    if (file->ml_log_event_encoder != NULL) {
+        flb_log_event_encoder_destroy(file->ml_log_event_encoder);
     }
 
     if (file->rotated > 0) {
@@ -1894,7 +1960,7 @@ int flb_tail_file_rotated(struct flb_tail_file *file)
         ret = stat(tmp, &st);
         if (ret == 0 && st.st_ino != file->inode) {
             if (flb_tail_file_exists(&st, ctx) == FLB_FALSE) {
-                ret = flb_tail_file_append(tmp, &st, FLB_TAIL_STATIC, ctx);
+                ret = flb_tail_file_append(tmp, &st, FLB_TAIL_STATIC, -1, ctx);
                 if (ret == -1) {
                     flb_tail_scan(ctx->path_list, ctx);
                 }
@@ -1914,6 +1980,7 @@ static int check_purge_deleted_file(struct flb_tail_config *ctx,
                                     struct flb_tail_file *file, time_t ts)
 {
     int ret;
+    int64_t mtime;
     struct stat st;
 
     ret = fstat(file->fd, &st);
@@ -1935,6 +2002,18 @@ static int check_purge_deleted_file(struct flb_tail_config *ctx,
         /* Remove file from the monitored list */
         flb_tail_file_remove(file);
         return FLB_TRUE;
+    }
+
+    if (ctx->ignore_older > 0 && ctx->ignore_active_older_files) {
+        mtime = flb_tail_stat_mtime(&st);
+        if (mtime > 0) {
+            if ((ts - ctx->ignore_older) > mtime) {
+                flb_plg_debug(ctx->ins, "purge: monitored file (ignore older): %s",
+                              file->name);
+                flb_tail_file_remove(file);
+                return FLB_TRUE;
+            }
+        }
     }
 
     return FLB_FALSE;

@@ -34,6 +34,11 @@ on:
         type: string
         required: false
         default: ""
+      push:
+        description: Optionally push the images to the registry, defaults to true but for forks we cannot do this in PRs.
+        type: boolean
+        required: false
+        default: true
     secrets:
       token:
         description: The Github token or similar to authenticate with for the registry.
@@ -98,9 +103,6 @@ jobs:
           ref: ${{ inputs.ref }}
           token: ${{ secrets.token }}
 
-      - name: Set up QEMU
-        uses: docker/setup-qemu-action@v3
-
       - name: Set up Docker Buildx
         uses: docker/setup-buildx-action@v3
 
@@ -119,11 +121,12 @@ jobs:
           file: ./dockerfiles/Dockerfile
           context: .
           target: ${{ matrix.target }}
-          outputs: type=image,name=${{ inputs.registry }}/${{ inputs.image }},push-by-digest=true,name-canonical=true,push=true
+          outputs: type=image,name=${{ inputs.registry }}/${{ inputs.image }},push-by-digest=true,name-canonical=true,push=${{ inputs.push }}
           platforms: linux/${{ matrix.platform }}
           # Must be disabled to provide legacy format images from the registry
           provenance: false
-          push: true
+          # This is configured in outputs above
+          push: ${{ inputs.push }}
           load: false
           build-args: |
             FLB_NIGHTLY_BUILD=${{ inputs.unstable }}
@@ -147,6 +150,7 @@ jobs:
 
   # Take the digests and produce a multi-arch manifest from them.
   call-build-container-image-manifests:
+    if: inputs.push
     permissions:
       contents: read
       packages: write
@@ -199,6 +203,7 @@ jobs:
 
   # Take the digests and produce a multi-arch manifest from them.
   call-build-debug-container-image-manifests:
+    if: inputs.push
     permissions:
       contents: read
       packages: write
@@ -238,7 +243,7 @@ jobs:
 
       - name: Create debug manifest
         run: |
-          docker buildx imagetools create $(jq -cr '.tags | map("-t " + .) | join(" ")' <<< "$DOCKER_METADATA_OUTPUT_JSON") \
+          docker buildx imagetools create $DOCKER_PUSH_EXTRA_FLAGS $(jq -cr '.tags | map("-t " + .) | join(" ")' <<< "$DOCKER_METADATA_OUTPUT_JSON") \
             $(printf '${{ inputs.registry }}/${{ inputs.image }}@sha256:%s ' *)
         shell: bash
         working-directory: /tmp/debug-digests
@@ -249,6 +254,7 @@ jobs:
         shell: bash
 
   call-build-images-generate-schema:
+    if: inputs.push
     needs:
       - call-build-images-meta
       - call-build-container-image-manifests
@@ -279,6 +285,7 @@ jobs:
           if-no-files-found: error
 
   call-build-images-scan:
+    if: inputs.push
     needs:
       - call-build-images-meta
       - call-build-container-image-manifests
@@ -314,6 +321,7 @@ jobs:
           exit-level: WARN
 
   call-build-images-sign:
+    if: inputs.push
     needs:
       - call-build-images-meta
       - call-build-container-image-manifests
@@ -393,6 +401,9 @@ jobs:
         with:
           ref: ${{ inputs.ref }}
 
+      # - name: Set up Docker Buildx
+      #   uses: docker/setup-buildx-action@v3
+
       - name: Log in to the Container registry
         uses: docker/login-action@v3
         with:
@@ -400,9 +411,23 @@ jobs:
           username: ${{ inputs.username }}
           password: ${{ secrets.token }}
 
+      - name: Pull the last release image to speed up the build with a cache
+        continue-on-error: true
+        run: |
+          VERSION=$(gh release list --json tagName,isLatest --jq '.[] | select(.isLatest)|.tagName | sub("^v"; "")')
+          echo VERSION="$VERSION"
+          docker pull ${{ inputs.registry }}/${{ inputs.image }}:windows-${{ matrix.windows-base-version }}-$VERSION
+        shell: bash
+        env:
+          GH_TOKEN: ${{ secrets.token }}
+
       - name: Build the production images
         run: |
           docker build -t ${{ inputs.registry }}/${{ inputs.image }}:windows-${{ matrix.windows-base-version }}-${{ inputs.version }} --build-arg FLB_NIGHTLY_BUILD=${{ inputs.unstable }} --build-arg WINDOWS_VERSION=ltsc${{ matrix.windows-base-version }} -f ./dockerfiles/Dockerfile.windows .
+
+      - name: Push the production images
+        if: inputs.push
+        run: |
           docker push ${{ inputs.registry }}/${{ inputs.image }}:windows-${{ matrix.windows-base-version }}-${{ inputs.version }}
 
         # We cannot use this action as it requires privileged mode

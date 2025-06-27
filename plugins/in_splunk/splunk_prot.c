@@ -1043,7 +1043,7 @@ static int validate_auth_header_ng(struct flb_splunk *ctx, struct flb_http_reque
         mk_list_foreach_safe(head, tmp, &ctx->auth_tokens) {
             splunk_token = mk_list_entry(head, struct flb_splunk_tokens, _head);
             if (strlen(auth_header) != splunk_token->length) {
-                return SPLUNK_AUTH_UNAUTHORIZED;
+                continue;
             }
 
             if (strncasecmp(splunk_token->header,

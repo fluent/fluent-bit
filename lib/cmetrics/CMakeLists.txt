@@ -1,12 +1,12 @@
-cmake_minimum_required(VERSION 3.0)
+cmake_minimum_required(VERSION 3.20)
 project(cmetrics C)
 set(CMAKE_POSITION_INDEPENDENT_CODE ON)
 set(CMAKE_EXPORT_COMPILE_COMMANDS ON)
 
 # CMetrics Version
-set(CMT_VERSION_MAJOR  0)
-set(CMT_VERSION_MINOR  9)
-set(CMT_VERSION_PATCH  9)
+set(CMT_VERSION_MAJOR  1)
+set(CMT_VERSION_MINOR  0)
+set(CMT_VERSION_PATCH  3)
 set(CMT_VERSION_STR "${CMT_VERSION_MAJOR}.${CMT_VERSION_MINOR}.${CMT_VERSION_PATCH}")
 
 # Include helpers

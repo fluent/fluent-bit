@@ -26,6 +26,12 @@
 #include <fluent-bit/flb_sds.h>
 #include <fluent-bit/flb_upstream_ha.h>
 
+#include <fluent-bit/flb_scheduler.h>
+#include <fluent-bit/flb_utils.h>
+#include <fluent-bit/flb_time.h>
+#include <sys/stat.h>
+#include <fcntl.h>
+
 /* refresh token every 50 minutes */
 #define FLB_AZURE_KUSTO_TOKEN_REFRESH 3000
 
@@ -53,6 +59,15 @@
 
 #define FLB_AZURE_KUSTO_INGEST_ENDPOINT_CONNECTION_TIMEOUT "60"
 
+#define FLB_AZURE_KUSTO_BUFFER_DIR_MAX_SIZE "8G"  /* 8GB buffer directory size */
+#define UPLOAD_TIMER_MAX_WAIT 180000
+#define UPLOAD_TIMER_MIN_WAIT 18000
+#define MAX_FILE_SIZE         4000000000 /* 4GB */
+
+#define FLB_AZURE_IMDS_ENDPOINT "/metadata/identity/oauth2/token"
+#define FLB_AZURE_IMDS_API_VERSION "2018-02-01"
+#define FLB_AZURE_IMDS_RESOURCE "https://api.kusto.windows.net/"
+
 
 struct flb_azure_kusto_resources {
     struct flb_upstream_ha *blob_ha;
@@ -60,7 +75,7 @@ struct flb_azure_kusto_resources {
     flb_sds_t identity_token;
 
     /* used to reload resouces after some time */
-    time_t load_time;
+    uint64_t load_time;
 };
 
 struct flb_azure_kusto {
@@ -68,12 +83,14 @@ struct flb_azure_kusto {
     flb_sds_t tenant_id;
     flb_sds_t client_id;
     flb_sds_t client_secret;
+    flb_sds_t managed_identity_client_id;
     flb_sds_t ingestion_endpoint;
     flb_sds_t database_name;
     flb_sds_t table_name;
     flb_sds_t ingestion_mapping_reference;
 
     int ingestion_endpoint_connect_timeout;
+    int io_timeout;
 
     /* compress payload */
     int compression_enabled;
@@ -87,13 +104,16 @@ struct flb_azure_kusto {
     int include_time_key;
     flb_sds_t time_key;
 
-    /* --- internal data --- */
+    flb_sds_t azure_kusto_buffer_key;
 
-    flb_sds_t ingestion_mgmt_endpoint;
+    /* --- internal data --- */
 
     /* oauth2 context */
     flb_sds_t oauth_url;
     struct flb_oauth2 *o;
+
+    int timer_created;
+    int timer_ms;
 
     /* mutex for acquiring oauth tokens */
     pthread_mutex_t token_mutex;
@@ -106,8 +126,35 @@ struct flb_azure_kusto {
 
     pthread_mutex_t blob_mutex;
 
+    pthread_mutex_t buffer_mutex;
+
+    int buffering_enabled;
+
+    size_t file_size;
+    time_t upload_timeout;
+    time_t retry_time;
+
+    int buffer_file_delete_early;
+    int unify_tag;
+    int blob_uri_length;
+    int scheduler_max_retries;
+    int delete_on_max_upload_error;
+
+    int has_old_buffers;
+    size_t store_dir_limit_size;
+    /* track the total amount of buffered data */
+    size_t current_buffer_size;
+    flb_sds_t buffer_dir;
+    char *store_dir;
+    struct flb_fstore *fs;
+    struct flb_fstore_stream *stream_active;  /* default active stream */
+    struct flb_fstore_stream *stream_upload;
+
+
     /* Upstream connection to the backend server */
     struct flb_upstream *u;
+
+    struct flb_upstream *imds_upstream;
 
     /* Fluent Bit context */
     struct flb_config *config;

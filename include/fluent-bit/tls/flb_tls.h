@@ -77,6 +77,11 @@ struct flb_tls_backend {
     /* Additional settings */
     int (*context_alpn_set) (void *, const char *);
 
+    /* TLS Protocol version */
+    int (*set_minmax_proto) (struct flb_tls *tls, const char *, const char *);
+    /* TLS Ciphers */
+    int (*set_ciphers) (struct flb_tls *tls, const char *);
+
     /* Session management */
     void *(*session_create) (struct flb_tls *, int);
     int (*session_destroy) (void *);
@@ -119,6 +124,9 @@ int flb_tls_set_alpn(struct flb_tls *tls, const char *alpn);
 int flb_tls_set_verify_hostname(struct flb_tls *tls, int verify_hostname);
 
 int flb_tls_load_system_certificates(struct flb_tls *tls);
+int flb_tls_set_minmax_proto(struct flb_tls *tls,
+                             const char *min_version, const char *max_version);
+int flb_tls_set_ciphers(struct flb_tls *tls, const char *ciphers);
 
 struct mk_list *flb_tls_get_config_map(struct flb_config *config);
 

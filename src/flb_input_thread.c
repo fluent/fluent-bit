@@ -105,7 +105,7 @@ static inline int handle_input_thread_event(flb_pipefd_t fd, struct flb_config *
 
     bytes = flb_pipe_r(fd, &val, sizeof(val));
     if (bytes == -1) {
-        flb_errno();
+        flb_pipe_error();
         return -1;
     }
 
@@ -370,6 +370,16 @@ static void input_thread(void *data)
         return;
     }
 
+    ins->processor->notification_channel = ins->notification_channel;
+
+    ret = flb_processor_init(ins->processor);
+    if (ret == -1) {
+        flb_error("failed initialize processors for input %s",
+                  flb_input_name(ins));
+        input_thread_instance_set_status(ins, FLB_INPUT_THREAD_ERROR);
+        return;
+    }
+
     flb_plg_debug(ins, "[thread init] initialization OK");
     input_thread_instance_set_status(ins, FLB_INPUT_THREAD_OK);
 
@@ -426,7 +436,7 @@ static void input_thread(void *data)
                 /* Read the coroutine reference */
                 ret = flb_pipe_r(event->fd, &output_flush, sizeof(struct flb_output_flush *));
                 if (ret <= 0 || output_flush == 0) {
-                    flb_errno();
+                    flb_pipe_error();
                     continue;
                 }
 
@@ -510,6 +520,10 @@ int flb_input_thread_instance_pause(struct flb_input_instance *ins)
     uint64_t val;
     struct flb_input_thread_instance *thi = ins->thi;
 
+    if (thi == NULL) {
+        return 0;
+    }
+
     flb_plg_debug(ins, "thread pause instance");
 
     /* compose message to pause the thread */
@@ -518,7 +532,7 @@ int flb_input_thread_instance_pause(struct flb_input_instance *ins)
 
     ret = flb_pipe_w(thi->ch_parent_events[1], &val, sizeof(val));
     if (ret <= 0) {
-        flb_errno();
+        flb_pipe_error();
         return -1;
     }
 
@@ -535,6 +549,10 @@ int flb_input_thread_instance_resume(struct flb_input_instance *ins)
     uint64_t val;
     struct flb_input_thread_instance *thi = ins->thi;
 
+    if (thi == NULL) {
+        return 0;
+    }
+
     flb_plg_debug(ins, "thread resume instance");
 
     /* compose message to resume the thread */
@@ -543,7 +561,7 @@ int flb_input_thread_instance_resume(struct flb_input_instance *ins)
 
     ret = flb_pipe_w(thi->ch_parent_events[1], &val, sizeof(val));
     if (ret <= 0) {
-        flb_errno();
+        flb_pipe_error();
         return -1;
     }
 
@@ -557,6 +575,10 @@ int flb_input_thread_instance_exit(struct flb_input_instance *ins)
     struct flb_input_thread_instance *thi = ins->thi;
     pthread_t tid;
 
+    if (thi == NULL) {
+        return 0;
+    }
+
     memcpy(&tid, &thi->th->tid, sizeof(pthread_t));
 
     /* compose message to pause the thread */
@@ -565,7 +587,7 @@ int flb_input_thread_instance_exit(struct flb_input_instance *ins)
 
     ret = flb_pipe_w(thi->ch_parent_events[1], &val, sizeof(val));
     if (ret <= 0) {
-        flb_errno();
+        flb_pipe_error();
         return -1;
     }
 
@@ -608,9 +630,11 @@ int flb_input_thread_instance_init(struct flb_config *config, struct flb_input_i
     ret = input_thread_instance_get_status(ins);
     if (ret == -1) {
         flb_plg_error(ins, "unexpected error loading plugin instance");
+        return -1;
     }
     else if (ret == FLB_FALSE) {
         flb_plg_error(ins, "could not initialize threaded plugin instance");
+        return -1;
     }
     else if (ret == FLB_TRUE) {
         flb_plg_info(ins, "thread instance initialized");
@@ -731,7 +755,7 @@ int flb_input_thread_collectors_signal_start(struct flb_input_instance *ins)
 
     ret = flb_pipe_w(thi->ch_parent_events[1], &val, sizeof(uint64_t));
     if (ret <= 0) {
-        flb_errno();
+        flb_pipe_error();
         return -1;
     }
 
@@ -749,7 +773,7 @@ int flb_input_thread_collectors_signal_wait(struct flb_input_instance *ins)
     thi = ins->thi;
     bytes = flb_pipe_r(thi->ch_parent_events[0], &val, sizeof(uint64_t));
     if (bytes <= 0) {
-        flb_errno();
+        flb_pipe_error();
         return -1;
     }
 

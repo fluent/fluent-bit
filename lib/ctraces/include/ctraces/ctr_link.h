@@ -28,6 +28,7 @@ struct ctrace_link {
 	cfl_sds_t trace_state;            /* trace_state           */
     struct ctrace_attributes *attr;   /* attributes */
     uint32_t dropped_attr_count;      /* number of attributes that were discarded */
+    uint32_t flags;                   /* flags */
 
     /* --- INTERNAL --- */
     struct cfl_list _head;            /* link to 'struct span->links' list */
@@ -44,6 +45,7 @@ struct ctrace_link *ctr_link_create_with_cid(struct ctrace_span *span,
 int ctr_link_set_trace_state(struct ctrace_link *link, char *trace_state);
 int ctr_link_set_attributes(struct ctrace_link *link, struct ctrace_attributes *attr);
 void ctr_link_set_dropped_attr_count(struct ctrace_link *link, uint32_t count);
+void ctr_link_set_flags(struct ctrace_link *link, uint32_t flags);
 
 void ctr_link_destroy(struct ctrace_link *link);
 

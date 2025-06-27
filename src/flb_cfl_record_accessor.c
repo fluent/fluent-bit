@@ -673,7 +673,7 @@ static flb_sds_t cfl_ra_translate_keymap(struct flb_ra_parser *rp, flb_sds_t buf
         }
     }
     else if (crv->type == FLB_CFL_RA_STRING) {
-        tmp = flb_sds_cat(buf, crv->val.string, flb_sds_len(crv->val.string));
+        tmp = flb_sds_cat(buf, crv->val.string, crv->v.size);
     }
     else if (crv->type == FLB_CFL_RA_NULL) {
         tmp = flb_sds_cat(buf, "null", 4);

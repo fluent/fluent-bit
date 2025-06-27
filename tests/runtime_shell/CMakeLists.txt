@@ -13,6 +13,8 @@ set(UNIT_TESTS_SH
   in_syslog_udp_plaintext_expect.sh
   in_syslog_uds_dgram_plaintext_expect.sh
   in_syslog_uds_stream_plaintext_expect.sh
+  processor_conditional.sh
+  processor_invalid.sh
   )
 
 # Prepare list of unit tests

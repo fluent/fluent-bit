@@ -302,6 +302,13 @@ static void flb_loki_kv_exit(struct flb_loki *ctx)
         mk_list_del(&kv->_head);
         flb_loki_kv_destroy(kv);
     }
+    mk_list_foreach_safe(head, tmp, &ctx->structured_metadata_map_keys_list) {
+        kv = mk_list_entry(head, struct flb_loki_kv, _head);
+
+        /* unlink and destroy */
+        mk_list_del(&kv->_head);
+        flb_loki_kv_destroy(kv);
+    }
 }
 
 /* Pack a label key, it also perform sanitization of the characters */
@@ -416,6 +423,93 @@ static void pack_kv(struct flb_loki *ctx,
     }
 }
 
+/*
+ * Similar to pack_kv above, except will only use msgpack_objects of type
+ * MSGPACK_OBJECT_MAP, and will iterate over the keys adding each entry as a
+ * separate item. Non-string map values are serialised to JSON, as Loki requires
+ * all values to be strings.
+*/
+static void pack_maps(struct flb_loki *ctx,
+                        msgpack_packer *mp_pck,
+                        char *tag, int tag_len,
+                        msgpack_object *map,
+                        struct flb_mp_map_header *mh,
+                        struct mk_list *list)
+{
+    struct mk_list *head;
+    struct flb_loki_kv *kv;
+
+    msgpack_object *start_key;
+    msgpack_object *out_key;
+    msgpack_object *out_val;
+
+    msgpack_object_map accessed_map;
+    uint32_t accessed_map_index;
+    msgpack_object_kv accessed_map_kv;
+
+    char *accessed_map_val_json;
+
+    mk_list_foreach(head, list) {
+        /* get the flb_loki_kv for this iteration of the loop */
+        kv = mk_list_entry(head, struct flb_loki_kv, _head);
+
+        /* record accessor key/value pair */
+        if (kv->ra_key != NULL && kv->ra_val == NULL) {
+
+            /* try to get the value for the record accessor */
+            if (flb_ra_get_kv_pair(kv->ra_key, *map, &start_key, &out_key, &out_val)
+                == 0) {
+
+                /*
+                 * we require the value to be a map, or it doesn't make sense as
+                 * this is adding a map's key / values
+                 */
+                if (out_val->type != MSGPACK_OBJECT_MAP || out_val->via.map.size <= 0) {
+                    flb_plg_debug(ctx->ins, "No valid map data found for key %s",
+                                  kv->ra_key->pattern);
+                }
+                else {
+                    accessed_map = out_val->via.map;
+
+                    /* for each entry in the accessed map... */
+                    for (accessed_map_index = 0; accessed_map_index < accessed_map.size;
+                         accessed_map_index++) {
+
+                        /* get the entry */
+                        accessed_map_kv = accessed_map.ptr[accessed_map_index];
+
+                        /* Pack the key and value */
+                        flb_mp_map_header_append(mh);
+
+                        pack_label_key(mp_pck, (char*) accessed_map_kv.key.via.str.ptr,
+                                       accessed_map_kv.key.via.str.size);
+
+                        /* If the value is a string, just pack it... */
+                        if (accessed_map_kv.val.type == MSGPACK_OBJECT_STR) {
+                            msgpack_pack_str_with_body(mp_pck,
+                                                       accessed_map_kv.val.via.str.ptr,
+                                                       accessed_map_kv.val.via.str.size);
+                        }
+                        /*
+                         * ...otherwise convert value to JSON string, as Loki always
+                         * requires a string value
+                         */
+                        else {
+                            accessed_map_val_json = flb_msgpack_to_json_str(1024,
+                                &accessed_map_kv.val);
+                            if (accessed_map_val_json) {
+                                msgpack_pack_str_with_body(mp_pck, accessed_map_val_json,
+                                                         strlen(accessed_map_val_json));
+                                flb_free(accessed_map_val_json);
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    }
+}
+
 static flb_sds_t pack_structured_metadata(struct flb_loki *ctx,
                                           msgpack_packer *mp_pck,
                                           char *tag, int tag_len,
@@ -424,7 +518,17 @@ static flb_sds_t pack_structured_metadata(struct flb_loki *ctx,
     struct flb_mp_map_header mh;
     /* Initialize dynamic map header */
     flb_mp_map_header_init(&mh, mp_pck);
-    pack_kv(ctx, mp_pck, tag, tag_len, map, &mh, &ctx->structured_metadata_list);
+    if (ctx->structured_metadata_map_keys) {
+        pack_maps(ctx, mp_pck, tag, tag_len, map, &mh,
+                  &ctx->structured_metadata_map_keys_list);
+    }
+    /*
+     * explicit structured_metadata entries override
+     * structured_metadata_map_keys entries
+     * */
+    if (ctx->structured_metadata) {
+        pack_kv(ctx, mp_pck, tag, tag_len, map, &mh, &ctx->structured_metadata_list);
+    }
     flb_mp_map_header_end(&mh);
     return 0;
 }
@@ -788,11 +892,34 @@ static int parse_labels(struct flb_loki *ctx)
 
     flb_loki_kv_init(&ctx->labels_list);
     flb_loki_kv_init(&ctx->structured_metadata_list);
+    flb_loki_kv_init(&ctx->structured_metadata_map_keys_list);
 
     if (ctx->structured_metadata) {
         ret = parse_kv(ctx, ctx->structured_metadata, &ctx->structured_metadata_list, &ra_used);
         if (ret == -1) {
             return -1;
+        }
+    }
+
+    /* Append structured metadata map keys set in the configuration */
+    if (ctx->structured_metadata_map_keys) {
+        mk_list_foreach(head, ctx->structured_metadata_map_keys) {
+            entry = mk_list_entry(head, struct flb_slist_entry, _head);
+            if (entry->str[0] != '$') {
+                flb_plg_error(ctx->ins,
+                              "invalid structured metadata map key, the name must start "
+                              "with '$'");
+                return -1;
+            }
+
+            ret = flb_loki_kv_append(ctx, &ctx->structured_metadata_map_keys_list,
+                                     entry->str, NULL);
+            if (ret == -1) {
+                return -1;
+            }
+            else if (ret > 0) {
+                ra_used++;
+            }
         }
     }
 
@@ -971,6 +1098,7 @@ static struct flb_loki *loki_config_create(struct flb_output_instance *ins,
     ctx->ins = ins;
     flb_loki_kv_init(&ctx->labels_list);
     flb_loki_kv_init(&ctx->structured_metadata_list);
+    flb_loki_kv_init(&ctx->structured_metadata_map_keys_list);
 
     /* Register context with plugin instance */
     flb_output_set_context(ins, ctx);
@@ -1539,12 +1667,13 @@ static flb_sds_t loki_compose_payload(struct flb_loki *ctx,
         while ((ret = flb_log_event_decoder_next(
                         &log_decoder,
                         &log_event)) == FLB_EVENT_DECODER_SUCCESS) {
-            msgpack_pack_array(&mp_pck, ctx->structured_metadata ? 3 : 2);
+            msgpack_pack_array(&mp_pck, ctx->structured_metadata ||
+                               ctx->structured_metadata_map_keys ? 3 : 2);
 
             /* Append the timestamp */
             pack_timestamp(&mp_pck, &log_event.timestamp);
             pack_record(ctx, &mp_pck, log_event.body, dynamic_tenant_id);
-            if (ctx->structured_metadata) {
+            if (ctx->structured_metadata || ctx->structured_metadata_map_keys) {
                 pack_structured_metadata(ctx, &mp_pck, tag, tag_len, NULL);
             }
         }
@@ -1575,12 +1704,13 @@ static flb_sds_t loki_compose_payload(struct flb_loki *ctx,
             msgpack_pack_str_body(&mp_pck, "values", 6);
             msgpack_pack_array(&mp_pck, 1);
 
-            msgpack_pack_array(&mp_pck, ctx->structured_metadata ? 3 : 2);
+            msgpack_pack_array(&mp_pck, ctx->structured_metadata ||
+                               ctx->structured_metadata_map_keys ? 3 : 2);
 
             /* Append the timestamp */
             pack_timestamp(&mp_pck, &log_event.timestamp);
             pack_record(ctx, &mp_pck, log_event.body, dynamic_tenant_id);
-            if (ctx->structured_metadata) {
+            if (ctx->structured_metadata || ctx->structured_metadata_map_keys) {
                 pack_structured_metadata(ctx, &mp_pck, tag, tag_len, log_event.body);
             }
         }
@@ -1904,6 +2034,13 @@ static struct flb_config_map config_map[] = {
      FLB_CONFIG_MAP_CLIST, "structured_metadata", NULL,
      0, FLB_TRUE, offsetof(struct flb_loki, structured_metadata),
      "optional structured metadata fields for API requests."
+    },
+    
+    {
+     FLB_CONFIG_MAP_CLIST, "structured_metadata_map_keys", NULL,
+     0, FLB_TRUE, offsetof(struct flb_loki, structured_metadata_map_keys),
+     "optional structured metadata fields, as derived dynamically from configured maps "
+     "keys, for API requests."
     },
 
     {

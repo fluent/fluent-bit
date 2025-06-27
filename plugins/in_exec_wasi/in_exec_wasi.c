@@ -69,7 +69,7 @@ static int in_exec_wasi_collect(struct flb_input_instance *ins,
         ret = flb_pipe_r(ctx->ch_manager[0], &val, sizeof(val));
         if (ret == -1) {
             fclose(stdoutp);
-            flb_errno();
+            flb_pipe_error();
             return -1;
         }
     }
@@ -404,7 +404,7 @@ static int in_exec_wasi_prerun(struct flb_input_instance *ins,
     /* Kick the oneshot execution */
     ret = flb_pipe_w(ctx->ch_manager[1], &val, sizeof(val));
     if (ret == -1) {
-        flb_errno();
+        flb_pipe_error();
         return -1;
     }
     return 0;

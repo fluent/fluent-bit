@@ -1,5 +1,3 @@
-cmake_minimum_required(VERSION 3.0)
-
 # Define source files for the main plugin
 file(GLOB_RECURSE src
     "in_ebpf.c"

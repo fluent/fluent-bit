@@ -755,8 +755,8 @@ static struct flb_ra_parser* get_ra_parser(struct flb_record_accessor *ra)
  * If 'record accessor' pattern matches an entry in the 'map', set the
  * reference in 'out_key' and 'out_val' for the entries in question.
  *
- * Returns FLB_TRUE if the pattern matched a kv pair, otherwise it returns
- * FLB_FALSE.
+ * Returns 0 if the pattern matched a kv pair, otherwise it returns
+ * -1.
  */
 int flb_ra_get_kv_pair(struct flb_record_accessor *ra, msgpack_object map,
                        msgpack_object **start_key,
@@ -766,7 +766,7 @@ int flb_ra_get_kv_pair(struct flb_record_accessor *ra, msgpack_object map,
 
     rp = get_ra_parser(ra);
     if (rp == NULL) {
-        return FLB_FALSE;
+        return -1;
     }
 
     return flb_ra_key_value_get(rp->key->name, map, rp->key->subkeys,

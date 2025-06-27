@@ -29,6 +29,7 @@
 
 #ifdef FLB_SYSTEM_WINDOWS
 #define poll WSAPoll
+#include <winsock2.h>
 #else
 #include <sys/poll.h>
 #endif
@@ -63,6 +64,32 @@
 
 static pthread_once_t local_thread_net_dns_ctx_init = PTHREAD_ONCE_INIT;
 FLB_TLS_DEFINE(struct flb_net_dns, flb_net_dns_ctx);
+
+/* Defines an async DNS lookup context */
+struct flb_dns_lookup_context {
+    struct mk_event              response_event;                  /* c-ares socket event */
+    int                          ares_socket_registered;
+    struct ares_socket_functions ares_socket_functions;
+    int                         *udp_timeout_detected;
+    int                          ares_socket_created;
+    int                          ares_socket_type;
+    void                        *ares_channel;
+    int                         *result_code;
+    struct mk_event_loop        *event_loop;
+    struct flb_coro             *coroutine;
+    struct flb_sched_timer      *udp_timer;
+    int                          finished;
+    int                          dropped;
+    struct flb_net_dns          *dns_ctx;
+    struct addrinfo            **result;
+    /* result is a synthetized result, don't call freeaddrinfo on it */
+    struct mk_list               _head;
+};
+
+#define FLB_DNS_LOOKUP_CONTEXT_FOR_EVENT(event) \
+    ((struct flb_dns_lookup_context *) \
+        &((uint8_t *) event)[-offsetof(struct flb_dns_lookup_context, response_event)])
+
 
 /*
  * Initialize thread-local-storage, every worker thread has it owns
@@ -1810,7 +1837,7 @@ flb_sockfd_t flb_net_accept(flb_sockfd_t server_fd)
     struct sockaddr_storage sock_addr = { 0 };
     socklen_t socket_size = sizeof(sock_addr);
 
-    /* 
+    /*
      * sock_addr used to be a sockaddr struct, but this was too
      * small of a structure to handle IPV6 addresses (#9053).
      * This would cause accept() to not accept the connection (with no error),
@@ -2290,4 +2317,16 @@ int flb_net_socket_peer_info(flb_sockfd_t fd,
                                        str_output_buffer,
                                        str_output_buffer_size,
                                        str_output_data_size);
+}
+
+uint64_t flb_net_htonll(uint64_t value)
+{
+#if defined(_WIN32)
+    /* use windows system provided htonll */
+    return htonll(value);
+#elif __BYTE_ORDER == __LITTLE_ENDIAN
+    return ((uint64_t) htonl(value & 0xFFFFFFFF) << 32) | htonl(value >> 32);
+#else
+    return value;
+#endif
 }

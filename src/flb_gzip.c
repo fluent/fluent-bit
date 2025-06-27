@@ -25,6 +25,16 @@
 #include <miniz/miniz.h>
 #include <stdbool.h>
 
+/* Size to allocate for gzip decompression when we dont know the size. */
+#define FLB_GZIP_BUFFER_SIZE 1024 * 1024
+
+/*
+ * Maximum number of buffers to create during decompression.
+ * Maximum decompression size is roughly FLB_GZIP_BUFFER_SIZE * FLB_GZIP_MAX_BUFFERS
+ * depending on how efficiently mz_inflate fills the buffers we provide it.
+ */
+#define FLB_GZIP_MAX_BUFFERS 100
+
 #define FLB_GZIP_HEADER_OFFSET 10
 #define FLB_GZIP_HEADER_SIZE   FLB_GZIP_HEADER_OFFSET
 
@@ -241,7 +251,6 @@ int flb_gzip_compress(void *in_data, size_t in_len,
     return 0;
 }
 
-/* Uncompress (inflate) GZip data */
 int flb_gzip_uncompress(void *in_data, size_t in_len,
                         void **out_data, size_t *out_len)
 {
@@ -292,7 +301,7 @@ int flb_gzip_uncompress(void *in_data, size_t in_len,
     if (flg & FEXTRA) {
         xlen = read_le16(start);
         if (xlen > in_len - 12) {
-            flb_error("[gzip] invalid gzip data");
+            flb_error("[gzip] invalid gzip data (FEXTRA)");
             return -1;
         }
         start += xlen + 2;
@@ -321,7 +330,7 @@ int flb_gzip_uncompress(void *in_data, size_t in_len,
     /* Check header crc if present */
     if (flg & FHCRC) {
         if (start - p > in_len - 2) {
-            flb_error("[gzip] invalid gzip data (FHRC)");
+            flb_error("[gzip] invalid gzip data (FHCRC)");
             return -1;
         }
 
@@ -414,9 +423,262 @@ int flb_gzip_uncompress(void *in_data, size_t in_len,
     return 0;
 }
 
+int flb_gzip_uncompress_multi(void *in_data, size_t in_len,
+                              void **out_data, size_t *out_len, size_t *in_remaining)
+{
+    int status;
+    uint8_t *p;
+    void *out_buf;
+    size_t i;
+    void *buffers[FLB_GZIP_MAX_BUFFERS];
+    size_t buffer_lengths[FLB_GZIP_MAX_BUFFERS];
+    int buffer_index = 0;
+    size_t out_size = 0;
+    size_t out_index = 0;
+    void *zip_data;
+    size_t zip_len;
+    unsigned char flg;
+    unsigned int xlen, hcrc;
+    unsigned int dlen, crc;
+    mz_ulong crc_out;
+    mz_stream stream;
+    const unsigned char *start;
+
+    /* Minimal length: header + crc32 */
+    if (in_len < 18) {
+        flb_error("[gzip] unexpected content length");
+        return -1;
+    }
+
+    /* Magic bytes */
+    p = in_data;
+    if (p[0] != 0x1F || p[1] != 0x8B) {
+        flb_error("[gzip] invalid magic bytes");
+        return -1;
+    }
+
+    if (p[2] != 8) {
+        flb_error("[gzip] invalid method");
+        return -1;
+    }
+
+    /* Flag byte */
+    flg = p[3];
+
+    /* Reserved bits */
+    if (flg & 0xE0) {
+        flb_error("[gzip] invalid flag");
+        return -1;
+    }
+
+    /* Skip base header of 10 bytes */
+    start = p + FLB_GZIP_HEADER_OFFSET;
+
+    /* Skip extra data if present */
+    if (flg & FEXTRA) {
+        xlen = read_le16(start);
+        if (xlen > in_len - 12) {
+            flb_error("[gzip] invalid gzip data (FEXTRA)");
+            return -1;
+        }
+        start += xlen + 2;
+    }
+
+    /* Skip file name if present */
+    if (flg & FNAME) {
+        do {
+            if (start - p >= in_len) {
+                flb_error("[gzip] invalid gzip data (FNAME)");
+                return -1;
+            }
+        } while (*start++);
+    }
+
+    /* Skip file comment if present */
+    if (flg & FCOMMENT) {
+        do {
+            if (start - p >= in_len) {
+                flb_error("[gzip] invalid gzip data (FCOMMENT)");
+                return -1;
+            }
+        } while (*start++);
+    }
+
+    /* Check header crc if present */
+    if (flg & FHCRC) {
+        if (start - p > in_len - 2) {
+            flb_error("[gzip] invalid gzip data (FHCRC)");
+            return -1;
+        }
+
+        hcrc = read_le16(start);
+        crc = mz_crc32(MZ_CRC32_INIT, p, start - p) & 0x0000FFFF;
+        if (hcrc != crc) {
+            flb_error("[gzip] invalid gzip header CRC");
+            return -1;
+        }
+        start += 2;
+    }
+
+    /* Decompress data */
+    if ((p + in_len) - p < 8) {
+        flb_error("[gzip] invalid gzip CRC32 checksum");
+        return -1;
+    }
+
+    /* There may be multiple concatenated gzip so we cant skip to the end to get the decompressed size use fixed size buffers and loop until MZ_STREAM_END */
+    buffers[0] = flb_malloc(FLB_GZIP_BUFFER_SIZE);
+
+    if (!buffers[0]) {
+        flb_errno();
+        return -1;
+    }
+
+    /* Ensure size is above 0 */
+    if (((p + in_len) - start - 8) <= 0) {
+        flb_free(buffers[0]);
+        return -1;
+    }
+
+    /* Map zip content */
+    zip_data = (uint8_t *) start;
+    zip_len = (p + in_len) - start - 8;
+
+    memset(&stream, 0, sizeof(stream));
+    stream.next_in = zip_data;
+    stream.avail_in = zip_len;
+    stream.next_out = buffers[0];
+    stream.avail_out = FLB_GZIP_BUFFER_SIZE;
+
+    status = mz_inflateInit2(&stream, -Z_DEFAULT_WINDOW_BITS);
+    if (status != MZ_OK) {
+        flb_free(buffers[0]);
+        return -1;
+    }
+
+    do {
+        status = mz_inflate(&stream, MZ_SYNC_FLUSH);
+
+        if (status == MZ_OK) {
+            /* Out of space in our buffer. Create a new one. */
+            buffer_lengths[buffer_index] = FLB_GZIP_BUFFER_SIZE - stream.avail_out;
+            buffer_index++;
+
+            if (buffer_index >= FLB_GZIP_MAX_BUFFERS) {
+                flb_error("[gzip] maximum decompression size reached (~100 MB)");
+
+                mz_inflateEnd(&stream);
+                for (i = 0; i <= buffer_index; i++) {
+                    flb_free(buffers[i]);
+                }
+                return -1;
+            }
+
+            buffers[buffer_index] = flb_malloc(FLB_GZIP_BUFFER_SIZE);
+
+            if (!buffers[buffer_index]) {
+                flb_errno();
+
+                mz_inflateEnd(&stream);
+                for (i = 0; i < buffer_index; i++) {
+                    flb_free(buffers[i]);
+                }
+                return -1;
+            }
+
+            stream.next_out = buffers[buffer_index];
+            stream.avail_out = FLB_GZIP_BUFFER_SIZE;
+
+        }
+        else if (status == MZ_STREAM_END) {
+            /* Successfully completed */
+            buffer_lengths[buffer_index] = FLB_GZIP_BUFFER_SIZE - stream.avail_out;
+            break;
+
+        }
+        else {
+            flb_error("[gzip] inflate error");
+            mz_inflateEnd(&stream);
+            for (i = 0; i <= buffer_index; i++) {
+                flb_free(buffers[i]);
+            }
+            return -1;
+        }
+    } while (true);
+
+    start += zip_len - stream.avail_in;
+
+    if (start + 8 - p > in_len) {
+        mz_inflateEnd(&stream);
+        for (i = 0; i <= buffer_index; i++) {
+            flb_free(buffers[i]);
+        }
+        flb_error("[gzip] invalid footer");
+        return -1;
+    }
+
+    /* Compute the decompressed size */
+    out_size = 0;
+    for (i = 0; i <= buffer_index; i++) {
+        out_size += buffer_lengths[i];
+    }
+
+    /* Get CRC32 checksum of original data */
+    crc = read_le32(start);
+
+    /* Get the exepected decompressed size % 2^32 */
+    dlen = read_le32(start + 4);
+
+    if (out_size != dlen) {
+        mz_inflateEnd(&stream);
+        for (i = 0; i <= buffer_index; i++) {
+            flb_free(buffers[i]);
+        }
+        flb_error("[gzip] invalid gzip data size");
+        return -1;
+    }
+
+    /* terminate the stream, it's not longer required */
+    mz_inflateEnd(&stream);
+
+    /* transfer data from the buffers to the output buffer */
+    out_buf = flb_malloc(out_size);
+    if (!out_buf) {
+        flb_errno();
+        for (i = 0; i <= buffer_index; i++) {
+            flb_free(buffers[i]);
+        }
+        return -1;
+    }
+
+    out_index = 0;
+    for (i = 0; i <= buffer_index; i++) {
+        memcpy(((char *) out_buf) + out_index, buffers[i], buffer_lengths[i]);
+        out_index += buffer_lengths[i];
+        flb_free(buffers[i]);
+    }
+
+    /* Validate message CRC vs inflated data CRC */
+    crc_out = mz_crc32(MZ_CRC32_INIT, out_buf, dlen);
+    if (crc_out != crc) {
+        flb_free(out_buf);
+        flb_error("[gzip] invalid GZip checksum (CRC32)");
+        return -1;
+    }
+
+    /* set the uncompressed data */
+    *out_len = dlen;
+    *out_data = out_buf;
+
+    if (in_remaining) {
+        *in_remaining = in_len - (start + 8 - p);
+    }
+
+    return 0;
+}
+
 
 /* Stateful gzip decompressor */
-
 static int flb_gzip_decompressor_process_header(
             struct flb_decompression_context *context)
 {
@@ -628,14 +890,14 @@ static int flb_gzip_decompressor_process_body_chunk(
         return FLB_DECOMPRESSOR_FAILURE;
     }
 
-    processed_bytes  = context->input_buffer_length;;
+    processed_bytes  = context->input_buffer_length;
     processed_bytes -= inner_context->miniz_stream.avail_in;
 
     *output_length  -= inner_context->miniz_stream.avail_out;
 
 #ifdef FLB_DECOMPRESSOR_ERASE_DECOMPRESSED_DATA
     if (processed_bytes > 0) {
-        memset(context->read_buffer, processed_bytes);
+        memset(context->read_buffer, 0, processed_bytes);
     }
 #endif
 
@@ -771,68 +1033,4 @@ int flb_is_http_session_gzip_compressed(struct mk_http_session *session)
     }
 
     return gzip_compressed;
-}
-
-static int vaild_os_flag(const char data)
-{
-    uint8_t p;
-
-    p = (uint8_t)data;
-    if (p == 0x00 || /* Fat Filesystem       */
-        p == 0x01 || /* Amiga                */
-        p == 0x02 || /* VMS                  */
-        p == 0x03 || /* Unix                 */
-        p == 0x04 || /* VM/CMS               */
-        p == 0x05 || /* Atari TOS            */
-        p == 0x06 || /* HPFS Filesystem (OS/2, NT) */
-        p == 0x07 || /* Macintosh            */
-        p == 0x08 || /* Z-System             */
-        p == 0x09 || /* CP/M                 */
-        p == 0x0a || /* TOPS-20              */
-        p == 0x0b || /* NTFS filesystem (NT) */
-        p == 0x0c || /* QDOS                 */
-        p == 0x0d || /* Acorn RISCOS         */
-        p == 0xff)   /* Unknown              */ {
-
-        return FLB_TRUE;
-    }
-
-    return FLB_FALSE;
-}
-
-size_t flb_gzip_count(const char *data, size_t len, size_t **out_borders, size_t border_count)
-{
-    int i;
-    size_t count = 0;
-    const uint8_t *p;
-    size_t *borders = NULL;
-
-    if (out_borders != NULL) {
-        borders = *out_borders;
-    }
-
-    p = (const uint8_t *) data;
-    /* search other gzip starting bits and method. */
-    for (i = 2; i < len &&
-                 i + 9 <= len; i++) {
-        /* A vaild gzip payloads are larger than 18 bytes. */
-        if (len - i < 18) {
-            break;
-        }
-
-        if (p[i] == 0x1F && p[i+1] == 0x8B && p[i+2] == 8 &&
-            vaild_os_flag(p[i+9])) {
-            if (out_borders != NULL) {
-                borders[count] = i;
-            }
-            count++;
-        }
-    }
-
-    if (out_borders != NULL && border_count >= count) {
-        /* The length of the last border refers to the original length. */
-        borders[border_count] = len;
-    }
-
-    return count;
 }

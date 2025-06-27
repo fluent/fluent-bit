@@ -25,6 +25,7 @@ endmacro()
 
 # Core
 FLB_RT_CORE_TEST(FLB_COROUTINE_TIMEOUT    "core-timeout.c")
+FLB_RT_CORE_TEST(FLB_INTERNAL_LOGGER      "core_internal_logger.c")
 
 FLB_RT_TEST(FLB_CHUNK_TRACE "core_chunk_trace.c")
 
@@ -197,8 +198,10 @@ endif()
 if(FLB_IN_LIB)
   FLB_RT_TEST(FLB_OUT_LIB              "core_engine.c")
   FLB_RT_TEST(FLB_OUT_LIB              "core_log.c")
+  FLB_RT_TEST(FLB_OUT_LIB              "core_routes.c")
   FLB_RT_TEST(FLB_OUT_LIB              "config_map_opts.c")
   FLB_RT_TEST(FLB_OUT_COUNTER          "out_counter.c")
+  FLB_RT_TEST(FLB_OUT_AZURE_KUSTO      "out_azure_kusto.c")
   FLB_RT_TEST(FLB_OUT_DATADOG          "out_datadog.c")
   FLB_RT_TEST(FLB_OUT_SKYWALKING       "out_skywalking.c")
   FLB_RT_TEST(FLB_OUT_ES               "out_elasticsearch.c")
@@ -237,6 +240,10 @@ endif()
 
 if (FLB_PROCESSOR_METRICS_SELECTOR)
   FLB_RT_TEST(FLB_PROCESSOR_METRICS_SELECTOR "processor_metrics_selector.c")
+endif()
+
+if (FLB_PROCESSOR_LABELS)
+  FLB_RT_TEST(FLB_PROCESSOR_LABELS "processor_labels.c")
 endif()
 
 if (FLB_PROCESSOR_CONTENT_MODIFIER)

@@ -32,6 +32,13 @@
 #include <fluent-bit/flb_config.h>
 #include <fluent-bit/flb_worker.h>
 #include <fluent-bit/flb_mem.h>
+#include <cmetrics/cmetrics.h>
+#include <cmetrics/cmt_counter.h>
+
+#ifdef WIN32
+#include <winsock.h>
+#include <winbase.h>
+#endif
 
 #ifdef FLB_HAVE_AWS_ERROR_REPORTER
 #include <fluent-bit/aws/flb_aws_error_reporter.h>
@@ -47,19 +54,43 @@ struct log_message {
     char   msg[4096 - sizeof(size_t)];
 };
 
-static inline int consume_byte(flb_pipefd_t fd)
+static inline int64_t flb_log_consume_signal(struct flb_log *context)
 {
-    int ret;
-    uint64_t val;
+    int64_t signal_value;
+    int     result;
 
-    /* We need to consume the byte */
-    ret = flb_pipe_r(fd, &val, sizeof(val));
-    if (ret <= 0) {
-        flb_errno();
+    result = flb_pipe_r(context->ch_mng[0],
+                        &signal_value,
+                        sizeof(signal_value));
+
+    if (result <= 0) {
+        flb_pipe_error();
+
         return -1;
     }
 
-    return 0;
+    return signal_value;
+}
+
+static inline int flb_log_enqueue_signal(struct flb_log *context,
+                                         int64_t signal_value)
+{
+    int result;
+
+    result = flb_pipe_w(context->ch_mng[1],
+                        &signal_value,
+                        sizeof(signal_value));
+
+    if (result <= 0) {
+        flb_pipe_error();
+
+        result = 1;
+    }
+    else {
+        result = 0;
+    }
+
+    return result;
 }
 
 static inline int log_push(struct log_message *msg, struct flb_log *log)
@@ -95,15 +126,17 @@ static inline int log_read(flb_pipefd_t fd, struct flb_log *log)
      * we can trust we will always get a full message on each read(2).
      */
     bytes = flb_pipe_read_all(fd, &msg, sizeof(struct log_message));
+
     if (bytes <= 0) {
-        flb_errno();
         return -1;
     }
     if (msg.size > sizeof(msg.msg)) {
         fprintf(stderr, "[log] message too long: %zi > %zi",
                 msg.size, sizeof(msg.msg));
+
         return -1;
     }
+
     log_push(&msg, log);
 
     return bytes;
@@ -115,6 +148,7 @@ static void log_worker_collector(void *data)
     int run = FLB_TRUE;
     struct mk_event *event = NULL;
     struct flb_log *log = data;
+    int64_t signal_value;
 
     FLB_TLS_INIT(flb_log_ctx);
     FLB_TLS_SET(flb_log_ctx, log);
@@ -129,13 +163,31 @@ static void log_worker_collector(void *data)
 
     while (run) {
         mk_event_wait(log->evl);
+
         mk_event_foreach(event, log->evl) {
             if (event->type == FLB_LOG_EVENT) {
                 log_read(event->fd, log);
             }
             else if (event->type == FLB_LOG_MNG) {
-                consume_byte(event->fd);
-                run = FLB_FALSE;
+                signal_value = flb_log_consume_signal(log);
+
+                if (signal_value == FLB_LOG_MNG_TERMINATION_SIGNAL) {
+                    run = FLB_FALSE;
+                }
+                else if (signal_value == FLB_LOG_MNG_REFRESH_SIGNAL) {
+                    /* This signal is only used to
+                     * break the loop when a new client is
+                     * added in order to prevent a deadlock
+                     * that happens if the newly added pipes capacity
+                     * is exceeded during the initialization process
+                     * of a threaded input plugin which causes write
+                     * to block (until the logger thread consumes
+                     * the buffered data) which in turn keeps the
+                     * thread from triggering the status set
+                     * condition which causes the main thread to
+                     * lock indefinitely as described in issue 9667.
+                     */
+                }
             }
         }
     }
@@ -326,18 +378,35 @@ int flb_log_worker_init(struct flb_worker *worker)
     /* Register the read-end of the pipe (log[0]) into the event loop */
     ret = mk_event_add(log->evl, worker->log[0],
                        FLB_LOG_EVENT, MK_EVENT_READ, &worker->event);
+
     if (ret == -1) {
         flb_pipe_destroy(worker->log);
+
+        return -1;
+    }
+
+    ret = flb_log_enqueue_signal(log, FLB_LOG_MNG_REFRESH_SIGNAL);
+
+    if (ret == -1) {
+        mk_event_del(log->evl, &worker->event);
+
+        flb_pipe_destroy(worker->log);
+
         return -1;
     }
 
     /* Log cache to reduce noise */
     cache = flb_log_cache_create(10, FLB_LOG_CACHE_ENTRIES);
     if (!cache) {
+        mk_event_del(log->evl, &worker->event);
+
         flb_pipe_destroy(worker->log);
+
         return -1;
     }
+
     worker->log_cache = cache;
+
     return 0;
 }
 
@@ -371,6 +440,28 @@ int flb_log_get_level_str(char *str)
     return -1;
 }
 
+static inline const char *flb_log_message_type_str(int type)
+{
+    switch (type) {
+    case FLB_LOG_HELP:
+        return "help";
+    case FLB_LOG_INFO:
+        return "info";
+    case FLB_LOG_WARN:
+        return "warn";
+    case FLB_LOG_ERROR:
+        return "error";
+    case FLB_LOG_DEBUG:
+        return "debug";
+    case FLB_LOG_IDEBUG:
+        return "debug";
+    case FLB_LOG_TRACE:
+        return "trace";
+    default:
+        return NULL;
+    }
+}
+
 int flb_log_set_file(struct flb_config *config, char *out)
 {
     struct flb_log *log = config->log;
@@ -385,6 +476,74 @@ int flb_log_set_file(struct flb_config *config, char *out)
     }
 
     return 0;
+}
+
+/* Frees the metrics instance and its associated resources. */
+void flb_log_metrics_destroy(struct flb_log_metrics *metrics)
+{
+    if (metrics == NULL) {
+        return;
+    }
+    if (metrics->cmt != NULL) {
+        cmt_destroy(metrics->cmt);
+    }
+    flb_free(metrics);
+}
+
+/*
+ * Create and register cmetrics for the runtime logger.
+ * The caller must free the returned struct using flb_log_metrics_destroy.
+ */
+struct flb_log_metrics *flb_log_metrics_create()
+{
+    struct flb_log_metrics *metrics;
+    int log_message_type;
+    const char *message_type_str;
+    uint64_t ts;
+    int ret;
+
+    metrics = flb_calloc(1, sizeof(struct flb_log_metrics));
+    if (metrics == NULL) {
+        flb_errno();
+        return NULL;
+    }
+
+    metrics->cmt = cmt_create();
+    if (metrics->cmt == NULL) {
+        flb_log_metrics_destroy(metrics);
+        return NULL;
+    }
+
+    metrics->logs_total_counter = cmt_counter_create(metrics->cmt,
+                                                     "fluentbit",
+                                                     "logger",
+                                                     "logs_total",
+                                                     "Total number of logs",
+                                                     1, (char *[]) {"message_type"});
+    if (metrics->logs_total_counter == NULL) {
+        flb_log_metrics_destroy(metrics);
+        return NULL;
+    }
+
+    /* Initialize counters for log message types to 0. */
+    ts = cfl_time_now();
+    for (log_message_type = FLB_LOG_ERROR; log_message_type <= FLB_LOG_TRACE; log_message_type++) {
+        message_type_str = flb_log_message_type_str(log_message_type);
+        if (!message_type_str) {
+            break;
+        }
+
+        ret = cmt_counter_set(metrics->logs_total_counter,
+                              ts,
+                              0,
+                              1, (char *[]) {message_type_str});
+        if (ret == -1) {
+            flb_log_metrics_destroy(metrics);
+            return NULL;
+        }
+    }
+
+    return metrics;
 }
 
 struct flb_log *flb_log_create(struct flb_config *config, int type,
@@ -431,8 +590,19 @@ struct flb_log *flb_log_create(struct flb_config *config, int type,
     /* Register channel manager into the event loop */
     ret = mk_event_add(log->evl, log->ch_mng[0],
                        FLB_LOG_MNG, MK_EVENT_READ, &log->event);
+
     if (ret == -1) {
         fprintf(stderr, "[log] could not register event\n");
+        mk_event_loop_destroy(log->evl);
+        flb_free(log);
+        config->log = NULL;
+        return NULL;
+    }
+
+    /* Create metrics */
+    log->metrics = flb_log_metrics_create();
+    if (log->metrics == NULL) {
+        fprintf(stderr, "[log] could not create log metrics\n");
         mk_event_loop_destroy(log->evl);
         flb_free(log);
         config->log = NULL;
@@ -505,7 +675,7 @@ int flb_log_construct(struct log_message *msg, int *ret_len,
     int total;
     time_t now;
     const char *header_color = NULL;
-    const char *header_title = NULL;
+    const char *header_title;
     const char *bold_color = ANSI_BOLD;
     const char *reset_color = ANSI_RESET;
     struct tm result;
@@ -513,31 +683,24 @@ int flb_log_construct(struct log_message *msg, int *ret_len,
 
     switch (type) {
     case FLB_LOG_HELP:
-        header_title = "help";
         header_color = ANSI_CYAN;
         break;
     case FLB_LOG_INFO:
-        header_title = "info";
         header_color = ANSI_GREEN;
         break;
     case FLB_LOG_WARN:
-        header_title = "warn";
         header_color = ANSI_YELLOW;
         break;
     case FLB_LOG_ERROR:
-        header_title = "error";
         header_color = ANSI_RED;
         break;
     case FLB_LOG_DEBUG:
-        header_title = "debug";
         header_color = ANSI_YELLOW;
         break;
     case FLB_LOG_IDEBUG:
-        header_title = "debug";
         header_color = ANSI_CYAN;
         break;
     case FLB_LOG_TRACE:
-        header_title = "trace";
         header_color = ANSI_BLUE;
         break;
     }
@@ -562,6 +725,7 @@ int flb_log_construct(struct log_message *msg, int *ret_len,
         return -1;
     }
 
+    header_title = flb_log_message_type_str(type);
     len = snprintf(msg->msg, sizeof(msg->msg) - 1,
                    "%s[%s%i/%02i/%02i %02i:%02i:%02i%s]%s [%s%5s%s] ",
                    /*      time     */                    /* type */
@@ -636,8 +800,11 @@ void flb_log_print(int type, const char *file, int line, const char *fmt, ...)
     int ret;
     struct log_message msg = {0};
     va_list args;
+    const char *msg_type_str;
+    uint64_t ts;
 
     struct flb_worker *w;
+    struct flb_config *config;
 
     va_start(args, fmt);
     ret = flb_log_construct(&msg, &len, type, file, line, fmt, &args);
@@ -649,7 +816,27 @@ void flb_log_print(int type, const char *file, int line, const char *fmt, ...)
 
     w = flb_worker_get();
     if (w) {
+        config = w->config;
+        if (config != NULL && config->log != NULL) {
+            msg_type_str = flb_log_message_type_str(type);
+            if (msg_type_str == NULL) {
+                msg_type_str = "unknown";
+            }
+
+            ts = cfl_time_now();
+            ret = cmt_counter_inc(config->log->metrics->logs_total_counter,
+                                  ts,
+                                  1, (char *[]) {msg_type_str});
+            if (ret == -1) {
+                /* Not using flb_log_debug to avoid recursing into this same function. */
+                fprintf(stderr,
+                        "[log] failed to increment log total counter for message type '%s' (error=%d)\n",
+                        msg_type_str, ret);
+            }
+        }
+
         n = flb_pipe_write_all(w->log[1], &msg, sizeof(msg));
+
         if (n == -1) {
             fprintf(stderr, "%s", (char *) msg.msg);
             perror("write");
@@ -676,15 +863,26 @@ int flb_errno_print(int errnum, const char *file, int line)
 
     strerror_r(errnum, buf, sizeof(buf) - 1);
     flb_error("[%s:%i errno=%i] %s", file, line, errnum, buf);
-    return 0;
+    return errnum;
 }
+
+#ifdef WIN32
+int flb_wsa_get_last_error_print(int errnum, const char *file, int line)
+{
+    char buf[256];
+    FormatMessage(FORMAT_MESSAGE_FROM_SYSTEM | FORMAT_MESSAGE_IGNORE_INSERTS,
+                  NULL, errnum, MAKELANGID(LANG_NEUTRAL, SUBLANG_DEFAULT),
+                  buf, sizeof(buf), NULL);
+    flb_error("[%s:%i WSAGetLastError=%i] %s", file, line, errnum, buf);
+    return errnum;
+}
+#endif
 
 int flb_log_destroy(struct flb_log *log, struct flb_config *config)
 {
-    uint64_t val = FLB_TRUE;
-
     /* Signal the child worker, stop working */
-    flb_pipe_w(log->ch_mng[1], &val, sizeof(val));
+    flb_log_enqueue_signal(log, FLB_LOG_MNG_TERMINATION_SIGNAL);
+
     pthread_join(log->tid, NULL);
 
     /* Release resources */
@@ -696,6 +894,7 @@ int flb_log_destroy(struct flb_log *log, struct flb_config *config)
     }
     flb_log_worker_destroy(log->worker);
     flb_free(log->worker);
+    flb_log_metrics_destroy(log->metrics);
     flb_free(log);
 
     return 0;

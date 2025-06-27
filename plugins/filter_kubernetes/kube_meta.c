@@ -1122,6 +1122,7 @@ static int merge_pod_meta(struct flb_kube_meta *meta, struct flb_kube *ctx,
     int have_uid = -1;
     int have_labels = -1;
     int have_annotations = -1;
+    int have_owner_references = -1;
     int have_nodename = -1;
     int have_podip = -1;
     size_t off = 0;
@@ -1228,15 +1229,20 @@ static int merge_pod_meta(struct flb_kube_meta *meta, struct flb_kube *ctx,
                             map_size++;
                         }
                     }
-
                     else if (size == 11 && strncmp(ptr, "annotations", 11) == 0) {
                         have_annotations = i;
                         if (ctx->annotations == FLB_TRUE) {
                             map_size++;
                         }
                     }
+                    else if (size == 15 && strncmp(ptr, "ownerReferences", 15) == 0) {
+                        have_owner_references = i;
+                        if (ctx->owner_references == FLB_TRUE) {
+                            map_size++;
+                        }
+                    }
 
-                    if (have_uid >= 0 && have_labels >= 0 && have_annotations >= 0) {
+                    if (have_uid >= 0 && have_labels >= 0 && have_annotations >= 0 && have_owner_references >= 0) {
                         break;
                     }
                 }
@@ -1312,6 +1318,14 @@ static int merge_pod_meta(struct flb_kube_meta *meta, struct flb_kube *ctx,
     if (have_annotations >= 0 && ctx->annotations == FLB_TRUE) {
         k = meta_val.via.map.ptr[have_annotations].key;
         v = meta_val.via.map.ptr[have_annotations].val;
+
+        msgpack_pack_object(&mp_pck, k);
+        msgpack_pack_object(&mp_pck, v);
+    }
+
+    if (have_owner_references >= 0 && ctx->owner_references == FLB_TRUE) {
+        k = meta_val.via.map.ptr[have_owner_references].key;
+        v = meta_val.via.map.ptr[have_owner_references].val;
 
         msgpack_pack_object(&mp_pck, k);
         msgpack_pack_object(&mp_pck, v);

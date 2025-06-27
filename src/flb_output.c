@@ -42,6 +42,56 @@
 
 FLB_TLS_DEFINE(struct flb_out_flush_params, out_flush_params);
 
+struct flb_config_map output_global_properties[] = {
+    {
+        FLB_CONFIG_MAP_STR, "match", NULL,
+        0, FLB_FALSE, 0,
+        "Set a tag pattern to match the records that this output should process. "
+        "Supports exact matches or wildcards (e.g., '*')."
+    },
+#ifdef FLB_HAVE_REGEX
+    {
+        FLB_CONFIG_MAP_STR, "match_regex", NULL,
+        0, FLB_FALSE, 0,
+        "Set a regular expression to match tags for output routing. This allows more flexible matching "
+        "compared to simple wildcards."
+    },
+#endif
+    {
+        FLB_CONFIG_MAP_STR, "alias", NULL,
+        0, FLB_FALSE, 0,
+        "Sets an alias for the output instance. This is useful when using multiple instances of the same "
+        "output plugin. If no alias is set, the instance will be named using the plugin name and a sequence number."
+    },
+    {
+        FLB_CONFIG_MAP_STR, "log_level", "info",
+        0, FLB_FALSE, 0,
+        "Specifies the log level for this output plugin. If not set, the plugin "
+        "will use the global log level defined in the 'service' section. If the global "
+        "log level is also not specified, it defaults to 'info'."
+    },
+    {
+        FLB_CONFIG_MAP_TIME, "log_suppress_interval", "0",
+        0, FLB_FALSE, 0,
+        "Allows suppression of repetitive log messages from the output plugin that appear similar within a specified "
+        "time interval. Defaults to 0, meaning no suppression."
+    },
+    {
+        FLB_CONFIG_MAP_STR, "retry_limit", "1",
+        0, FLB_FALSE, 0,
+        "Set the retry limit for the output plugin when delivery fails. "
+        "Accepted values: a positive integer, 'no_limits', 'false', or 'off' to disable retry limits, "
+        "or 'no_retries' to disable retries entirely."
+    },
+
+    {0}
+};
+
+struct mk_list *flb_output_get_global_config_map(struct flb_config *config)
+{
+    return flb_config_map_create(config, output_global_properties);
+}
+
 void flb_output_prepare()
 {
     FLB_TLS_INIT(out_flush_params);
@@ -114,6 +164,15 @@ static void flb_output_free_properties(struct flb_output_instance *ins)
     }
     if (ins->tls_key_passwd) {
         flb_sds_destroy(ins->tls_key_passwd);
+    }
+    if (ins->tls_min_version) {
+        flb_sds_destroy(ins->tls_min_version);
+    }
+    if (ins->tls_max_version) {
+        flb_sds_destroy(ins->tls_max_version);
+    }
+    if (ins->tls_ciphers) {
+        flb_sds_destroy(ins->tls_ciphers);
     }
 #endif
 }
@@ -348,7 +407,7 @@ int flb_output_task_flush(struct flb_task *task,
         ret = flb_pipe_w(config->ch_self_events[1], &out_flush,
                         sizeof(struct flb_output_flush*));
         if (ret == -1) {
-            flb_errno();
+            flb_pipe_error();
             flb_output_flush_destroy(out_flush);
             flb_task_users_dec(task, FLB_FALSE);
 
@@ -907,6 +966,15 @@ int flb_output_set_property(struct flb_output_instance *ins,
     else if (prop_key_check("tls.key_passwd", k, len) == 0) {
         flb_utils_set_plugin_string_property("tls.key_passwd", &ins->tls_key_passwd, tmp);
     }
+    else if (prop_key_check("tls.min_version", k, len) == 0) {
+        flb_utils_set_plugin_string_property("tls.min_version", &ins->tls_min_version, tmp);
+    }
+    else if (prop_key_check("tls.max_version", k, len) == 0) {
+        flb_utils_set_plugin_string_property("tls.max_version", &ins->tls_max_version, tmp);
+    }
+    else if (prop_key_check("tls.ciphers", k, len) == 0) {
+        flb_utils_set_plugin_string_property("tls.ciphers", &ins->tls_ciphers, tmp);
+    }
 #endif
     else if (prop_key_check("storage.total_limit_size", k, len) == 0 && tmp) {
         if (strcasecmp(tmp, "off") == 0 ||
@@ -1271,6 +1339,26 @@ int flb_output_init_all(struct flb_config *config)
                     return -1;
                 }
             }
+
+            if (ins->tls_min_version != NULL || ins->tls_max_version != NULL) {
+                ret = flb_tls_set_minmax_proto(ins->tls, ins->tls_min_version, ins->tls_max_version);
+                if (ret != 0) {
+                    flb_error("[output %s] error setting up minmax protocol version of TLS",
+                              ins->name);
+                    flb_output_instance_destroy(ins);
+                    return -1;
+                }
+            }
+
+            if (ins->tls_ciphers != NULL) {
+                ret = flb_tls_set_ciphers(ins->tls, ins->tls_ciphers);
+                if (ret != 0) {
+                    flb_error("[output %s] error setting up TLS ciphers up to TLSv1.2",
+                              ins->name);
+                    flb_output_instance_destroy(ins);
+                    return -1;
+                }
+            }
         }
 #endif
         /*
@@ -1340,6 +1428,7 @@ int flb_output_init_all(struct flb_config *config)
         /* initialize processors */
         ret = flb_processor_init(ins->processor);
         if (ret == -1) {
+            flb_error("[output %s] error initializing processor, aborting startup", ins->name);
             return -1;
         }
     }

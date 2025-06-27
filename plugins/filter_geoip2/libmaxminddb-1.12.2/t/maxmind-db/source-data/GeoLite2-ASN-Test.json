@@ -1,0 +1,4120 @@
+[
+   {
+      "1.0.0.0/24" : {
+         "autonomous_system_number" : 15169,
+         "autonomous_system_organization" : "Google Inc."
+      }
+   },
+   {
+      "1.128.0.0/11" : {
+         "autonomous_system_number" : 1221,
+         "autonomous_system_organization" : "Telstra Pty Ltd"
+      }
+   },
+   {
+      "12.81.92.0/22" : {
+         "autonomous_system_number" : 7018,
+         "autonomous_system_organization" : "AT&T Services"
+      }
+   },
+   {
+      "12.81.96.0/19" : {
+         "autonomous_system_number" : 7018
+      }
+   },
+   {
+      "12.81.128.0/17" : {
+         "autonomous_system_number" : 7018
+      }
+   },
+   {
+      "12.82.0.0/15" : {
+         "autonomous_system_number" : 7018
+      }
+   },
+   {
+      "12.84.0.0/15" : {
+         "autonomous_system_number" : 7018
+      }
+   },
+   {
+      "12.86.0.0/16" : {
+         "autonomous_system_number" : 7018
+      }
+   },
+   {
+      "12.87.0.0/18" : {
+         "autonomous_system_number" : 7018
+      }
+   },
+   {
+      "12.87.64.0/19" : {
+         "autonomous_system_number" : 7018
+      }
+   },
+   {
+      "12.87.96.0/20" : {
+         "autonomous_system_number" : 7018
+      }
+   },
+   {
+      "12.87.112.0/22" : {
+         "autonomous_system_number" : 7018
+      }
+   },
+   {
+      "12.87.116.0/23" : {
+         "autonomous_system_number" : 7018
+      }
+   },
+   {
+      "12.87.118.0/23" : {
+         "autonomous_system_number" : 7018
+      }
+   },
+   {
+      "12.87.120.0/21" : {
+         "autonomous_system_number" : 7018
+      }
+   },
+   {
+      "12.87.128.0/17" : {
+         "autonomous_system_number" : 7018
+      }
+   },
+   {
+      "12.88.0.0/13" : {
+         "autonomous_system_number" : 7018
+      }
+   },
+   {
+      "12.96.0.0/20" : {
+         "autonomous_system_number" : 7018
+      }
+   },
+   {
+      "12.96.16.0/24" : {
+         "autonomous_system_number" : 7018
+      }
+   },
+   {
+      "15.0.0.0/8" : {
+         "autonomous_system_number" : 71,
+         "autonomous_system_organization" : "Hewlett-Packard Company"
+      }
+   },
+   {
+      "16.0.0.0/8" : {
+         "autonomous_system_number" : 71,
+         "autonomous_system_organization" : "Hewlett-Packard Company"
+      }
+   },
+   {
+      "18.0.0.0/8" : {
+         "autonomous_system_number" : 3,
+         "autonomous_system_organization" : "Massachusetts Institute of Technology"
+      }
+   },
+   {
+      "23.32.0.0/11" : {
+         "autonomous_system_number" : 35994,
+         "autonomous_system_organization" : "Akamai Technologies, Inc."
+      }
+   },
+   {
+      "23.192.0.0/11" : {
+         "autonomous_system_number" : 35994,
+         "autonomous_system_organization" : "Akamai Technologies, Inc."
+      }
+   },
+   {
+      "27.192.0.0/11" : {
+         "autonomous_system_number" : 4837,
+         "autonomous_system_organization" : "CNCGROUP China169 Backbone"
+      }
+   },
+   {
+      "31.64.0.0/10" : {
+         "autonomous_system_number" : 12576,
+         "autonomous_system_organization" : "Orange Personal Communications Services"
+      }
+   },
+   {
+      "31.224.0.0/11" : {
+         "autonomous_system_number" : 3320,
+         "autonomous_system_organization" : "Deutsche Telekom AG"
+      }
+   },
+   {
+      "35.0.0.0/9" : {
+         "autonomous_system_number" : 237,
+         "autonomous_system_organization" : "Merit Network Inc."
+      }
+   },
+   {
+      "35.128.0.0/11" : {
+         "autonomous_system_number" : 237,
+         "autonomous_system_organization" : "Merit Network Inc."
+      }
+   },
+   {
+      "36.192.0.0/11" : {
+         "autonomous_system_number" : 9394,
+         "autonomous_system_organization" : "China TieTong Telecommunications Corporation"
+      }
+   },
+   {
+      "38.0.0.0/10" : {
+         "autonomous_system_number" : 174,
+         "autonomous_system_organization" : "Cogent Communications"
+      }
+   },
+   {
+      "38.64.0.0/13" : {
+         "autonomous_system_number" : 174,
+         "autonomous_system_organization" : "Cogent Communications"
+      }
+   },
+   {
+      "38.72.0.0/16" : {
+         "autonomous_system_number" : 174,
+         "autonomous_system_organization" : "Cogent Communications"
+      }
+   },
+   {
+      "38.73.0.0/17" : {
+         "autonomous_system_number" : 174,
+         "autonomous_system_organization" : "Cogent Communications"
+      }
+   },
+   {
+      "38.73.128.0/23" : {
+         "autonomous_system_number" : 174,
+         "autonomous_system_organization" : "Cogent Communications"
+      }
+   },
+   {
+      "38.73.130.0/24" : {
+         "autonomous_system_number" : 174,
+         "autonomous_system_organization" : "Cogent Communications"
+      }
+   },
+   {
+      "38.73.131.0/24" : {
+         "autonomous_system_number" : 174,
+         "autonomous_system_organization" : "Cogent Communications"
+      }
+   },
+   {
+      "38.73.132.0/23" : {
+         "autonomous_system_number" : 174,
+         "autonomous_system_organization" : "Cogent Communications"
+      }
+   },
+   {
+      "38.73.134.0/23" : {
+         "autonomous_system_number" : 174,
+         "autonomous_system_organization" : "Cogent Communications"
+      }
+   },
+   {
+      "38.73.136.0/21" : {
+         "autonomous_system_number" : 174,
+         "autonomous_system_organization" : "Cogent Communications"
+      }
+   },
+   {
+      "38.73.144.0/20" : {
+         "autonomous_system_number" : 174,
+         "autonomous_system_organization" : "Cogent Communications"
+      }
+   },
+   {
+      "38.73.160.0/19" : {
+         "autonomous_system_number" : 174,
+         "autonomous_system_organization" : "Cogent Communications"
+      }
+   },
+   {
+      "38.73.192.0/18" : {
+         "autonomous_system_number" : 174,
+         "autonomous_system_organization" : "Cogent Communications"
+      }
+   },
+   {
+      "38.74.0.0/15" : {
+         "autonomous_system_number" : 174,
+         "autonomous_system_organization" : "Cogent Communications"
+      }
+   },
+   {
+      "38.76.0.0/14" : {
+         "autonomous_system_number" : 174,
+         "autonomous_system_organization" : "Cogent Communications"
+      }
+   },
+   {
+      "38.80.0.0/12" : {
+         "autonomous_system_number" : 174,
+         "autonomous_system_organization" : "Cogent Communications"
+      }
+   },
+   {
+      "38.96.0.0/13" : {
+         "autonomous_system_number" : 174,
+         "autonomous_system_organization" : "Cogent Communications"
+      }
+   },
+   {
+      "38.104.0.0/16" : {
+         "autonomous_system_number" : 174,
+         "autonomous_system_organization" : "Cogent Communications"
+      }
+   },
+   {
+      "38.105.0.0/26" : {
+         "autonomous_system_number" : 174,
+         "autonomous_system_organization" : "Cogent Communications"
+      }
+   },
+   {
+      "38.105.0.64/27" : {
+         "autonomous_system_number" : 174,
+         "autonomous_system_organization" : "Cogent Communications"
+      }
+   },
+   {
+      "38.105.0.96/27" : {
+         "autonomous_system_number" : 174,
+         "autonomous_system_organization" : "Cogent Communications"
+      }
+   },
+   {
+      "38.105.0.128/25" : {
+         "autonomous_system_number" : 174,
+         "autonomous_system_organization" : "Cogent Communications"
+      }
+   },
+   {
+      "38.105.1.0/24" : {
+         "autonomous_system_number" : 174,
+         "autonomous_system_organization" : "Cogent Communications"
+      }
+   },
+   {
+      "38.105.2.0/23" : {
+         "autonomous_system_number" : 174,
+         "autonomous_system_organization" : "Cogent Communications"
+      }
+   },
+   {
+      "38.105.4.0/22" : {
+         "autonomous_system_number" : 174,
+         "autonomous_system_organization" : "Cogent Communications"
+      }
+   },
+   {
+      "38.105.8.0/21" : {
+         "autonomous_system_number" : 174,
+         "autonomous_system_organization" : "Cogent Communications"
+      }
+   },
+   {
+      "38.105.16.0/20" : {
+         "autonomous_system_number" : 174,
+         "autonomous_system_organization" : "Cogent Communications"
+      }
+   },
+   {
+      "38.105.32.0/19" : {
+         "autonomous_system_number" : 174,
+         "autonomous_system_organization" : "Cogent Communications"
+      }
+   },
+   {
+      "38.105.64.0/18" : {
+         "autonomous_system_number" : 174,
+         "autonomous_system_organization" : "Cogent Communications"
+      }
+   },
+   {
+      "38.105.128.0/17" : {
+         "autonomous_system_number" : 174,
+         "autonomous_system_organization" : "Cogent Communications"
+      }
+   },
+   {
+      "38.106.0.0/15" : {
+         "autonomous_system_number" : 174,
+         "autonomous_system_organization" : "Cogent Communications"
+      }
+   },
+   {
+      "38.108.0.0/18" : {
+         "autonomous_system_number" : 174,
+         "autonomous_system_organization" : "Cogent Communications"
+      }
+   },
+   {
+      "38.108.64.0/20" : {
+         "autonomous_system_number" : 174,
+         "autonomous_system_organization" : "Cogent Communications"
+      }
+   },
+   {
+      "38.108.80.0/28" : {
+         "autonomous_system_number" : 174,
+         "autonomous_system_organization" : "Cogent Communications"
+      }
+   },
+   {
+      "38.108.80.16/29" : {
+         "autonomous_system_number" : 174,
+         "autonomous_system_organization" : "Cogent Communications"
+      }
+   },
+   {
+      "38.108.80.24/30" : {
+         "autonomous_system_number" : 174,
+         "autonomous_system_organization" : "Cogent Communications"
+      }
+   },
+   {
+      "38.108.80.28/31" : {
+         "autonomous_system_number" : 174,
+         "autonomous_system_organization" : "Cogent Communications"
+      }
+   },
+   {
+      "38.108.80.30/32" : {
+         "autonomous_system_number" : 174,
+         "autonomous_system_organization" : "Cogent Communications"
+      }
+   },
+   {
+      "38.108.80.31/32" : {
+         "autonomous_system_number" : 174,
+         "autonomous_system_organization" : "Cogent Communications"
+      }
+   },
+   {
+      "38.108.80.32/27" : {
+         "autonomous_system_number" : 174,
+         "autonomous_system_organization" : "Cogent Communications"
+      }
+   },
+   {
+      "38.108.80.64/26" : {
+         "autonomous_system_number" : 174,
+         "autonomous_system_organization" : "Cogent Communications"
+      }
+   },
+   {
+      "38.108.80.128/25" : {
+         "autonomous_system_number" : 174,
+         "autonomous_system_organization" : "Cogent Communications"
+      }
+   },
+   {
+      "38.108.81.0/24" : {
+         "autonomous_system_number" : 174,
+         "autonomous_system_organization" : "Cogent Communications"
+      }
+   },
+   {
+      "38.108.82.0/23" : {
+         "autonomous_system_number" : 174,
+         "autonomous_system_organization" : "Cogent Communications"
+      }
+   },
+   {
+      "38.108.84.0/22" : {
+         "autonomous_system_number" : 174,
+         "autonomous_system_organization" : "Cogent Communications"
+      }
+   },
+   {
+      "38.108.88.0/21" : {
+         "autonomous_system_number" : 174,
+         "autonomous_system_organization" : "Cogent Communications"
+      }
+   },
+   {
+      "38.108.96.0/19" : {
+         "autonomous_system_number" : 174,
+         "autonomous_system_organization" : "Cogent Communications"
+      }
+   },
+   {
+      "38.108.128.0/17" : {
+         "autonomous_system_number" : 174,
+         "autonomous_system_organization" : "Cogent Communications"
+      }
+   },
+   {
+      "38.109.0.0/16" : {
+         "autonomous_system_number" : 174,
+         "autonomous_system_organization" : "Cogent Communications"
+      }
+   },
+   {
+      "38.110.0.0/19" : {
+         "autonomous_system_number" : 174,
+         "autonomous_system_organization" : "Cogent Communications"
+      }
+   },
+   {
+      "38.110.32.0/20" : {
+         "autonomous_system_number" : 174,
+         "autonomous_system_organization" : "Cogent Communications"
+      }
+   },
+   {
+      "38.110.48.0/22" : {
+         "autonomous_system_number" : 174,
+         "autonomous_system_organization" : "Cogent Communications"
+      }
+   },
+   {
+      "38.110.52.0/22" : {
+         "autonomous_system_number" : 174,
+         "autonomous_system_organization" : "Cogent Communications"
+      }
+   },
+   {
+      "38.110.56.0/21" : {
+         "autonomous_system_number" : 174,
+         "autonomous_system_organization" : "Cogent Communications"
+      }
+   },
+   {
+      "38.110.64.0/18" : {
+         "autonomous_system_number" : 174,
+         "autonomous_system_organization" : "Cogent Communications"
+      }
+   },
+   {
+      "38.110.128.0/17" : {
+         "autonomous_system_number" : 174,
+         "autonomous_system_organization" : "Cogent Communications"
+      }
+   },
+   {
+      "38.111.0.0/16" : {
+         "autonomous_system_number" : 174,
+         "autonomous_system_organization" : "Cogent Communications"
+      }
+   },
+   {
+      "38.112.0.0/12" : {
+         "autonomous_system_number" : 174,
+         "autonomous_system_organization" : "Cogent Communications"
+      }
+   },
+   {
+      "38.128.0.0/9" : {
+         "autonomous_system_number" : 174,
+         "autonomous_system_organization" : "Cogent Communications"
+      }
+   },
+   {
+      "39.32.0.0/11" : {
+         "autonomous_system_number" : 45595,
+         "autonomous_system_organization" : "Pakistan Telecom Company Limited"
+      }
+   },
+   {
+      "39.64.0.0/11" : {
+         "autonomous_system_number" : 4837,
+         "autonomous_system_organization" : "CNCGROUP China169 Backbone"
+      }
+   },
+   {
+      "39.192.0.0/10" : {
+         "autonomous_system_number" : 23693,
+         "autonomous_system_organization" : "PT. Telekomunikasi Selular"
+      }
+   },
+   {
+      "44.0.0.0/8" : {
+         "autonomous_system_number" : 7377,
+         "autonomous_system_organization" : "University of California at San Diego"
+      }
+   },
+   {
+      "49.64.0.0/11" : {
+         "autonomous_system_number" : 4134,
+         "autonomous_system_organization" : "Chinanet"
+      }
+   },
+   {
+      "50.128.0.0/9" : {
+         "autonomous_system_number" : 7922,
+         "autonomous_system_organization" : "Comcast Cable Communications, Inc."
+      }
+   },
+   {
+      "53.0.0.0/8" : {
+         "autonomous_system_number" : 31399,
+         "autonomous_system_organization" : "Daimler Autonomous System"
+      }
+   },
+   {
+      "55.0.0.0/8" : {
+         "autonomous_system_number" : 721,
+         "autonomous_system_organization" : "DoD Network Information Center"
+      }
+   },
+   {
+      "57.0.0.0/8" : {
+         "autonomous_system_number" : 2647,
+         "autonomous_system_organization" : "SITA"
+      }
+   },
+   {
+      "59.0.0.0/11" : {
+         "autonomous_system_number" : 4766,
+         "autonomous_system_organization" : "Korea Telecom"
+      }
+   },
+   {
+      "60.64.0.0/10" : {
+         "autonomous_system_number" : 17676,
+         "autonomous_system_organization" : "Softbank BB Corp."
+      }
+   },
+   {
+      "60.128.0.0/11" : {
+         "autonomous_system_number" : 17676,
+         "autonomous_system_organization" : "Softbank BB Corp."
+      }
+   },
+   {
+      "64.17.248.0/22" : {
+         "autonomous_system_number" : 33224
+      }
+   },
+   {
+      "64.17.252.0/23" : {
+         "autonomous_system_number" : 33224
+      }
+   },
+   {
+      "64.17.254.0/25" : {
+         "autonomous_system_number" : 33224
+      }
+   },
+   {
+      "64.17.254.128/26" : {
+         "autonomous_system_number" : 33224
+      }
+   },
+   {
+      "64.17.254.192/28" : {
+         "autonomous_system_number" : 33224
+      }
+   },
+   {
+      "64.17.254.208/29" : {
+         "autonomous_system_number" : 33224
+      }
+   },
+   {
+      "64.17.254.216/29" : {
+         "autonomous_system_number" : 33224
+      }
+   },
+   {
+      "64.17.254.224/27" : {
+         "autonomous_system_number" : 33224
+      }
+   },
+   {
+      "64.17.255.0/24" : {
+         "autonomous_system_number" : 33224
+      }
+   },
+   {
+      "65.23.96.0/20" : {
+         "autonomous_system_number" : 11456
+      }
+   },
+   {
+      "65.23.112.0/21" : {
+         "autonomous_system_number" : 11456
+      }
+   },
+   {
+      "65.23.120.0/24" : {
+         "autonomous_system_number" : 11456
+      }
+   },
+   {
+      "65.23.121.0/25" : {
+         "autonomous_system_number" : 11456
+      }
+   },
+   {
+      "65.23.121.128/26" : {
+         "autonomous_system_number" : 11456
+      }
+   },
+   {
+      "65.23.121.192/28" : {
+         "autonomous_system_number" : 11456
+      }
+   },
+   {
+      "65.23.121.208/29" : {
+         "autonomous_system_number" : 11456
+      }
+   },
+   {
+      "65.23.121.216/30" : {
+         "autonomous_system_number" : 11456
+      }
+   },
+   {
+      "65.23.121.220/32" : {
+         "autonomous_system_number" : 11456
+      }
+   },
+   {
+      "65.23.121.221/32" : {
+         "autonomous_system_number" : 11456
+      }
+   },
+   {
+      "65.23.121.222/31" : {
+         "autonomous_system_number" : 11456
+      }
+   },
+   {
+      "65.23.121.224/27" : {
+         "autonomous_system_number" : 11456
+      }
+   },
+   {
+      "65.23.122.0/23" : {
+         "autonomous_system_number" : 11456
+      }
+   },
+   {
+      "65.23.124.0/22" : {
+         "autonomous_system_number" : 11456
+      }
+   },
+   {
+      "65.115.241.0/24" : {
+         "autonomous_system_number" : 209
+      }
+   },
+   {
+      "65.115.242.0/23" : {
+         "autonomous_system_number" : 209
+      }
+   },
+   {
+      "65.115.244.0/22" : {
+         "autonomous_system_number" : 209
+      }
+   },
+   {
+      "65.115.248.0/21" : {
+         "autonomous_system_number" : 209
+      }
+   },
+   {
+      "65.116.0.0/23" : {
+         "autonomous_system_number" : 209
+      }
+   },
+   {
+      "65.116.2.0/24" : {
+         "autonomous_system_number" : 209
+      }
+   },
+   {
+      "65.116.3.0/26" : {
+         "autonomous_system_number" : 209
+      }
+   },
+   {
+      "65.116.3.64/28" : {
+         "autonomous_system_number" : 209
+      }
+   },
+   {
+      "65.116.3.80/31" : {
+         "autonomous_system_number" : 209
+      }
+   },
+   {
+      "65.116.3.82/32" : {
+         "autonomous_system_number" : 209
+      }
+   },
+   {
+      "65.116.3.83/32" : {
+         "autonomous_system_number" : 209
+      }
+   },
+   {
+      "65.116.3.84/30" : {
+         "autonomous_system_number" : 209
+      }
+   },
+   {
+      "65.116.3.88/29" : {
+         "autonomous_system_number" : 209
+      }
+   },
+   {
+      "65.116.3.96/27" : {
+         "autonomous_system_number" : 209
+      }
+   },
+   {
+      "65.116.3.128/25" : {
+         "autonomous_system_number" : 209
+      }
+   },
+   {
+      "65.116.4.0/22" : {
+         "autonomous_system_number" : 209
+      }
+   },
+   {
+      "65.116.8.0/22" : {
+         "autonomous_system_number" : 209
+      }
+   },
+   {
+      "65.116.12.0/23" : {
+         "autonomous_system_number" : 209
+      }
+   },
+   {
+      "65.128.0.0/11" : {
+         "autonomous_system_number" : 209,
+         "autonomous_system_organization" : "Qwest Communications Company, LLC"
+      }
+   },
+   {
+      "65.192.0.0/11" : {
+         "autonomous_system_number" : 701,
+         "autonomous_system_organization" : "MCI Communications Services, Inc. d/b/a Verizon Business"
+      }
+   },
+   {
+      "66.92.0.0/17" : {
+         "autonomous_system_number" : 23504
+      }
+   },
+   {
+      "66.92.128.0/19" : {
+         "autonomous_system_number" : 23504
+      }
+   },
+   {
+      "66.92.160.0/20" : {
+         "autonomous_system_number" : 23504
+      }
+   },
+   {
+      "66.92.176.0/22" : {
+         "autonomous_system_number" : 23504
+      }
+   },
+   {
+      "66.92.180.0/24" : {
+         "autonomous_system_number" : 23504
+      }
+   },
+   {
+      "66.92.181.0/25" : {
+         "autonomous_system_number" : 23504
+      }
+   },
+   {
+      "66.92.181.128/26" : {
+         "autonomous_system_number" : 23504
+      }
+   },
+   {
+      "66.92.181.192/27" : {
+         "autonomous_system_number" : 23504
+      }
+   },
+   {
+      "66.92.181.224/28" : {
+         "autonomous_system_number" : 23504
+      }
+   },
+   {
+      "66.92.181.240/28" : {
+         "autonomous_system_number" : 23504
+      }
+   },
+   {
+      "66.92.182.0/23" : {
+         "autonomous_system_number" : 23504
+      }
+   },
+   {
+      "66.92.184.0/21" : {
+         "autonomous_system_number" : 23504
+      }
+   },
+   {
+      "66.92.192.0/18" : {
+         "autonomous_system_number" : 23504
+      }
+   },
+   {
+      "66.93.0.0/16" : {
+         "autonomous_system_number" : 23504
+      }
+   },
+   {
+      "67.43.149.0/24" : {
+         "autonomous_system_number" : 35908
+      }
+   },
+   {
+      "67.43.150.0/23" : {
+         "autonomous_system_number" : 35908
+      }
+   },
+   {
+      "67.43.152.0/22" : {
+         "autonomous_system_number" : 35908
+      }
+   },
+   {
+      "67.43.156.0/26" : {
+         "autonomous_system_number" : 35908
+      }
+   },
+   {
+      "67.43.156.64/26" : {
+         "autonomous_system_number" : 35908
+      }
+   },
+   {
+      "67.43.156.128/26" : {
+         "autonomous_system_number" : 35908
+      }
+   },
+   {
+      "67.43.156.192/26" : {
+         "autonomous_system_number" : 35908
+      }
+   },
+   {
+      "67.43.157.0/24" : {
+         "autonomous_system_number" : 35908
+      }
+   },
+   {
+      "67.43.158.0/23" : {
+         "autonomous_system_number" : 35908
+      }
+   },
+   {
+      "67.160.0.0/11" : {
+         "autonomous_system_number" : 7922,
+         "autonomous_system_organization" : "Comcast Cable Communications, Inc."
+      }
+   },
+   {
+      "69.218.35.0/24" : {
+         "autonomous_system_number" : 7132
+      }
+   },
+   {
+      "69.218.36.0/22" : {
+         "autonomous_system_number" : 7132
+      }
+   },
+   {
+      "69.218.40.0/21" : {
+         "autonomous_system_number" : 7132
+      }
+   },
+   {
+      "69.218.48.0/20" : {
+         "autonomous_system_number" : 7132
+      }
+   },
+   {
+      "69.218.64.0/18" : {
+         "autonomous_system_number" : 7132
+      }
+   },
+   {
+      "69.218.128.0/18" : {
+         "autonomous_system_number" : 7132
+      }
+   },
+   {
+      "69.218.192.0/19" : {
+         "autonomous_system_number" : 7132
+      }
+   },
+   {
+      "69.218.224.0/20" : {
+         "autonomous_system_number" : 7132
+      }
+   },
+   {
+      "69.218.240.0/21" : {
+         "autonomous_system_number" : 7132
+      }
+   },
+   {
+      "69.218.248.0/23" : {
+         "autonomous_system_number" : 7132
+      }
+   },
+   {
+      "69.218.250.0/24" : {
+         "autonomous_system_number" : 7132
+      }
+   },
+   {
+      "69.218.251.0/28" : {
+         "autonomous_system_number" : 7132
+      }
+   },
+   {
+      "69.218.251.16/28" : {
+         "autonomous_system_number" : 7132
+      }
+   },
+   {
+      "69.218.251.32/27" : {
+         "autonomous_system_number" : 7132
+      }
+   },
+   {
+      "69.218.251.64/26" : {
+         "autonomous_system_number" : 7132
+      }
+   },
+   {
+      "69.218.251.128/25" : {
+         "autonomous_system_number" : 7132
+      }
+   },
+   {
+      "69.218.252.0/22" : {
+         "autonomous_system_number" : 7132
+      }
+   },
+   {
+      "69.219.0.0/18" : {
+         "autonomous_system_number" : 7132
+      }
+   },
+   {
+      "69.219.64.0/20" : {
+         "autonomous_system_number" : 7132
+      }
+   },
+   {
+      "69.219.80.0/22" : {
+         "autonomous_system_number" : 7132
+      }
+   },
+   {
+      "70.46.21.0/24" : {
+         "autonomous_system_number" : 11456
+      }
+   },
+   {
+      "70.46.22.0/23" : {
+         "autonomous_system_number" : 11456
+      }
+   },
+   {
+      "70.46.24.0/21" : {
+         "autonomous_system_number" : 11456
+      }
+   },
+   {
+      "70.46.32.0/19" : {
+         "autonomous_system_number" : 11456
+      }
+   },
+   {
+      "70.46.64.0/19" : {
+         "autonomous_system_number" : 11456
+      }
+   },
+   {
+      "70.46.96.0/20" : {
+         "autonomous_system_number" : 11456
+      }
+   },
+   {
+      "70.46.112.0/21" : {
+         "autonomous_system_number" : 11456
+      }
+   },
+   {
+      "70.46.120.0/23" : {
+         "autonomous_system_number" : 11456
+      }
+   },
+   {
+      "70.46.122.0/24" : {
+         "autonomous_system_number" : 11456
+      }
+   },
+   {
+      "70.46.123.0/25" : {
+         "autonomous_system_number" : 11456
+      }
+   },
+   {
+      "70.46.123.128/28" : {
+         "autonomous_system_number" : 11456
+      }
+   },
+   {
+      "70.46.123.144/32" : {
+         "autonomous_system_number" : 11456
+      }
+   },
+   {
+      "70.46.123.145/32" : {
+         "autonomous_system_number" : 11456
+      }
+   },
+   {
+      "70.46.123.146/31" : {
+         "autonomous_system_number" : 11456
+      }
+   },
+   {
+      "70.46.123.148/30" : {
+         "autonomous_system_number" : 11456
+      }
+   },
+   {
+      "70.46.123.152/29" : {
+         "autonomous_system_number" : 11456
+      }
+   },
+   {
+      "70.46.123.160/27" : {
+         "autonomous_system_number" : 11456
+      }
+   },
+   {
+      "70.46.123.192/26" : {
+         "autonomous_system_number" : 11456
+      }
+   },
+   {
+      "70.46.124.0/22" : {
+         "autonomous_system_number" : 11456
+      }
+   },
+   {
+      "70.46.128.0/17" : {
+         "autonomous_system_number" : 11456
+      }
+   },
+   {
+      "70.160.0.0/11" : {
+         "autonomous_system_number" : 22773,
+         "autonomous_system_organization" : "Cox Communications Inc."
+      }
+   },
+   {
+      "70.192.0.0/11" : {
+         "autonomous_system_number" : 6167,
+         "autonomous_system_organization" : "Cellco Partnership DBA Verizon Wireless"
+      }
+   },
+   {
+      "70.224.0.0/11" : {
+         "autonomous_system_number" : 7018,
+         "autonomous_system_organization" : "AT&T Services, Inc."
+      }
+   },
+   {
+      "71.96.0.0/11" : {
+         "autonomous_system_number" : 701,
+         "autonomous_system_organization" : "MCI Communications Services, Inc. d/b/a Verizon Business"
+      }
+   },
+   {
+      "71.128.0.0/14" : {
+         "autonomous_system_number" : 7018,
+         "autonomous_system_organization" : "AT&T Services, Inc."
+      }
+   },
+   {
+      "71.132.0.0/15" : {
+         "autonomous_system_number" : 7018,
+         "autonomous_system_organization" : "AT&T Services, Inc."
+      }
+   },
+   {
+      "71.134.0.0/18" : {
+         "autonomous_system_number" : 7018,
+         "autonomous_system_organization" : "AT&T Services, Inc."
+      }
+   },
+   {
+      "71.134.64.0/21" : {
+         "autonomous_system_number" : 7018,
+         "autonomous_system_organization" : "AT&T Services, Inc."
+      }
+   },
+   {
+      "71.134.72.0/22" : {
+         "autonomous_system_number" : 7018,
+         "autonomous_system_organization" : "AT&T Services, Inc."
+      }
+   },
+   {
+      "71.134.76.0/23" : {
+         "autonomous_system_number" : 7018,
+         "autonomous_system_organization" : "AT&T Services, Inc."
+      }
+   },
+   {
+      "71.134.78.0/23" : {
+         "autonomous_system_number" : 7132,
+         "autonomous_system_organization" : "AT&T Services, Inc."
+      }
+   },
+   {
+      "71.134.80.0/20" : {
+         "autonomous_system_number" : 7132,
+         "autonomous_system_organization" : "AT&T Services, Inc."
+      }
+   },
+   {
+      "71.134.96.0/19" : {
+         "autonomous_system_number" : 7132,
+         "autonomous_system_organization" : "AT&T Services, Inc."
+      }
+   },
+   {
+      "71.134.128.0/17" : {
+         "autonomous_system_number" : 7132,
+         "autonomous_system_organization" : "AT&T Services, Inc."
+      }
+   },
+   {
+      "71.135.0.0/16" : {
+         "autonomous_system_number" : 7132,
+         "autonomous_system_organization" : "AT&T Services, Inc."
+      }
+   },
+   {
+      "71.136.0.0/15" : {
+         "autonomous_system_number" : 7132,
+         "autonomous_system_organization" : "AT&T Services, Inc."
+      }
+   },
+   {
+      "71.138.0.0/18" : {
+         "autonomous_system_number" : 7132,
+         "autonomous_system_organization" : "AT&T Services, Inc."
+      }
+   },
+   {
+      "71.138.64.0/19" : {
+         "autonomous_system_number" : 7132,
+         "autonomous_system_organization" : "AT&T Services, Inc."
+      }
+   },
+   {
+      "71.138.96.0/21" : {
+         "autonomous_system_number" : 7132,
+         "autonomous_system_organization" : "AT&T Services, Inc."
+      }
+   },
+   {
+      "71.138.104.0/25" : {
+         "autonomous_system_number" : 7132,
+         "autonomous_system_organization" : "AT&T Services, Inc."
+      }
+   },
+   {
+      "71.138.104.128/26" : {
+         "autonomous_system_number" : 7132,
+         "autonomous_system_organization" : "AT&T Services, Inc."
+      }
+   },
+   {
+      "71.138.104.192/27" : {
+         "autonomous_system_number" : 7132,
+         "autonomous_system_organization" : "AT&T Services, Inc."
+      }
+   },
+   {
+      "71.138.104.224/28" : {
+         "autonomous_system_number" : 7132,
+         "autonomous_system_organization" : "AT&T Services, Inc."
+      }
+   },
+   {
+      "71.138.104.240/29" : {
+         "autonomous_system_number" : 7132,
+         "autonomous_system_organization" : "AT&T Services, Inc."
+      }
+   },
+   {
+      "71.138.104.248/29" : {
+         "autonomous_system_number" : 7132,
+         "autonomous_system_organization" : "AT&T Services, Inc."
+      }
+   },
+   {
+      "71.138.105.0/24" : {
+         "autonomous_system_number" : 7132,
+         "autonomous_system_organization" : "AT&T Services, Inc."
+      }
+   },
+   {
+      "71.138.106.0/23" : {
+         "autonomous_system_number" : 7132,
+         "autonomous_system_organization" : "AT&T Services, Inc."
+      }
+   },
+   {
+      "71.138.108.0/22" : {
+         "autonomous_system_number" : 7132,
+         "autonomous_system_organization" : "AT&T Services, Inc."
+      }
+   },
+   {
+      "71.138.112.0/20" : {
+         "autonomous_system_number" : 7132,
+         "autonomous_system_organization" : "AT&T Services, Inc."
+      }
+   },
+   {
+      "71.138.128.0/17" : {
+         "autonomous_system_number" : 7132,
+         "autonomous_system_organization" : "AT&T Services, Inc."
+      }
+   },
+   {
+      "71.139.0.0/16" : {
+         "autonomous_system_number" : 7132,
+         "autonomous_system_organization" : "AT&T Services, Inc."
+      }
+   },
+   {
+      "71.140.0.0/17" : {
+         "autonomous_system_number" : 7132,
+         "autonomous_system_organization" : "AT&T Services, Inc."
+      }
+   },
+   {
+      "71.140.128.0/18" : {
+         "autonomous_system_number" : 7132,
+         "autonomous_system_organization" : "AT&T Services, Inc."
+      }
+   },
+   {
+      "71.140.192.0/22" : {
+         "autonomous_system_number" : 7132,
+         "autonomous_system_organization" : "AT&T Services, Inc."
+      }
+   },
+   {
+      "71.140.196.0/23" : {
+         "autonomous_system_number" : 7132,
+         "autonomous_system_organization" : "AT&T Services, Inc."
+      }
+   },
+   {
+      "71.140.198.0/23" : {
+         "autonomous_system_number" : 7018,
+         "autonomous_system_organization" : "AT&T Services, Inc."
+      }
+   },
+   {
+      "71.140.200.0/21" : {
+         "autonomous_system_number" : 7018,
+         "autonomous_system_organization" : "AT&T Services, Inc."
+      }
+   },
+   {
+      "71.140.208.0/20" : {
+         "autonomous_system_number" : 7018,
+         "autonomous_system_organization" : "AT&T Services, Inc."
+      }
+   },
+   {
+      "71.140.224.0/19" : {
+         "autonomous_system_number" : 7018,
+         "autonomous_system_organization" : "AT&T Services, Inc."
+      }
+   },
+   {
+      "71.141.0.0/16" : {
+         "autonomous_system_number" : 7018,
+         "autonomous_system_organization" : "AT&T Services, Inc."
+      }
+   },
+   {
+      "71.142.0.0/15" : {
+         "autonomous_system_number" : 7018,
+         "autonomous_system_organization" : "AT&T Services, Inc."
+      }
+   },
+   {
+      "71.144.0.0/12" : {
+         "autonomous_system_number" : 7018,
+         "autonomous_system_organization" : "AT&T Services, Inc."
+      }
+   },
+   {
+      "72.96.0.0/11" : {
+         "autonomous_system_number" : 6167,
+         "autonomous_system_organization" : "Cellco Partnership DBA Verizon Wireless"
+      }
+   },
+   {
+      "72.192.0.0/12" : {
+         "autonomous_system_number" : 22773,
+         "autonomous_system_organization" : "Cox Communications Inc."
+      }
+   },
+   {
+      "72.208.0.0/14" : {
+         "autonomous_system_number" : 22773,
+         "autonomous_system_organization" : "Cox Communications Inc."
+      }
+   },
+   {
+      "72.212.0.0/15" : {
+         "autonomous_system_number" : 22773,
+         "autonomous_system_organization" : "Cox Communications Inc."
+      }
+   },
+   {
+      "72.214.0.0/22" : {
+         "autonomous_system_number" : 22773,
+         "autonomous_system_organization" : "Cox Communications Inc."
+      }
+   },
+   {
+      "72.214.4.0/23" : {
+         "autonomous_system_number" : 22773,
+         "autonomous_system_organization" : "Cox Communications Inc."
+      }
+   },
+   {
+      "72.214.6.0/26" : {
+         "autonomous_system_number" : 22773,
+         "autonomous_system_organization" : "Cox Communications Inc."
+      }
+   },
+   {
+      "72.214.6.64/29" : {
+         "autonomous_system_number" : 22773,
+         "autonomous_system_organization" : "Cox Communications Inc."
+      }
+   },
+   {
+      "72.214.6.72/32" : {
+         "autonomous_system_number" : 22773,
+         "autonomous_system_organization" : "Cox Communications Inc."
+      }
+   },
+   {
+      "72.214.6.73/32" : {
+         "autonomous_system_number" : 22773,
+         "autonomous_system_organization" : "Cox Communications Inc."
+      }
+   },
+   {
+      "72.214.6.74/31" : {
+         "autonomous_system_number" : 22773,
+         "autonomous_system_organization" : "Cox Communications Inc."
+      }
+   },
+   {
+      "72.214.6.76/30" : {
+         "autonomous_system_number" : 22773,
+         "autonomous_system_organization" : "Cox Communications Inc."
+      }
+   },
+   {
+      "72.214.6.80/28" : {
+         "autonomous_system_number" : 22773,
+         "autonomous_system_organization" : "Cox Communications Inc."
+      }
+   },
+   {
+      "72.214.6.96/27" : {
+         "autonomous_system_number" : 22773,
+         "autonomous_system_organization" : "Cox Communications Inc."
+      }
+   },
+   {
+      "72.214.6.128/25" : {
+         "autonomous_system_number" : 22773,
+         "autonomous_system_organization" : "Cox Communications Inc."
+      }
+   },
+   {
+      "72.214.7.0/24" : {
+         "autonomous_system_number" : 22773,
+         "autonomous_system_organization" : "Cox Communications Inc."
+      }
+   },
+   {
+      "72.214.8.0/21" : {
+         "autonomous_system_number" : 22773,
+         "autonomous_system_organization" : "Cox Communications Inc."
+      }
+   },
+   {
+      "72.214.16.0/20" : {
+         "autonomous_system_number" : 22773,
+         "autonomous_system_organization" : "Cox Communications Inc."
+      }
+   },
+   {
+      "72.214.32.0/19" : {
+         "autonomous_system_number" : 22773,
+         "autonomous_system_organization" : "Cox Communications Inc."
+      }
+   },
+   {
+      "72.214.64.0/18" : {
+         "autonomous_system_number" : 22773,
+         "autonomous_system_organization" : "Cox Communications Inc."
+      }
+   },
+   {
+      "72.214.128.0/17" : {
+         "autonomous_system_number" : 22773,
+         "autonomous_system_organization" : "Cox Communications Inc."
+      }
+   },
+   {
+      "72.215.0.0/16" : {
+         "autonomous_system_number" : 22773,
+         "autonomous_system_organization" : "Cox Communications Inc."
+      }
+   },
+   {
+      "72.216.0.0/13" : {
+         "autonomous_system_number" : 22773,
+         "autonomous_system_organization" : "Cox Communications Inc."
+      }
+   },
+   {
+      "73.0.0.0/8" : {
+         "autonomous_system_number" : 7922,
+         "autonomous_system_organization" : "Comcast Cable Communications, Inc."
+      }
+   },
+   {
+      "74.0.32.0/19" : {
+         "autonomous_system_number" : 18566
+      }
+   },
+   {
+      "74.0.64.0/18" : {
+         "autonomous_system_number" : 18566
+      }
+   },
+   {
+      "74.0.128.0/21" : {
+         "autonomous_system_number" : 18566
+      }
+   },
+   {
+      "74.0.136.0/24" : {
+         "autonomous_system_number" : 18566
+      }
+   },
+   {
+      "74.0.137.0/25" : {
+         "autonomous_system_number" : 18566
+      }
+   },
+   {
+      "74.0.137.128/26" : {
+         "autonomous_system_number" : 18566
+      }
+   },
+   {
+      "74.0.137.192/31" : {
+         "autonomous_system_number" : 18566
+      }
+   },
+   {
+      "74.0.137.194/32" : {
+         "autonomous_system_number" : 18566
+      }
+   },
+   {
+      "74.0.137.195/32" : {
+         "autonomous_system_number" : 18566
+      }
+   },
+   {
+      "74.0.137.196/30" : {
+         "autonomous_system_number" : 18566
+      }
+   },
+   {
+      "74.0.137.200/29" : {
+         "autonomous_system_number" : 18566
+      }
+   },
+   {
+      "74.0.137.208/28" : {
+         "autonomous_system_number" : 18566
+      }
+   },
+   {
+      "74.0.137.224/27" : {
+         "autonomous_system_number" : 18566
+      }
+   },
+   {
+      "74.0.138.0/23" : {
+         "autonomous_system_number" : 18566
+      }
+   },
+   {
+      "74.0.140.0/22" : {
+         "autonomous_system_number" : 18566
+      }
+   },
+   {
+      "74.0.144.0/20" : {
+         "autonomous_system_number" : 18566
+      }
+   },
+   {
+      "74.0.160.0/21" : {
+         "autonomous_system_number" : 18566
+      }
+   },
+   {
+      "74.160.0.0/11" : {
+         "autonomous_system_number" : 6389,
+         "autonomous_system_organization" : "BellSouth.net Inc."
+      }
+   },
+   {
+      "74.224.0.0/11" : {
+         "autonomous_system_number" : 6389,
+         "autonomous_system_organization" : "BellSouth.net Inc."
+      }
+   },
+   {
+      "75.0.0.0/11" : {
+         "autonomous_system_number" : 7018,
+         "autonomous_system_organization" : "AT&T Services, Inc."
+      }
+   },
+   {
+      "75.77.40.0/21" : {
+         "autonomous_system_number" : 11456
+      }
+   },
+   {
+      "75.77.48.0/20" : {
+         "autonomous_system_number" : 11456
+      }
+   },
+   {
+      "75.77.64.0/18" : {
+         "autonomous_system_number" : 11456
+      }
+   },
+   {
+      "75.77.128.0/18" : {
+         "autonomous_system_number" : 11456
+      }
+   },
+   {
+      "75.77.192.0/20" : {
+         "autonomous_system_number" : 11456
+      }
+   },
+   {
+      "75.77.208.0/23" : {
+         "autonomous_system_number" : 11456
+      }
+   },
+   {
+      "75.77.210.0/24" : {
+         "autonomous_system_number" : 11456
+      }
+   },
+   {
+      "75.77.211.0/25" : {
+         "autonomous_system_number" : 11456
+      }
+   },
+   {
+      "75.77.211.128/26" : {
+         "autonomous_system_number" : 11456
+      }
+   },
+   {
+      "75.77.211.192/28" : {
+         "autonomous_system_number" : 11456
+      }
+   },
+   {
+      "75.77.211.208/30" : {
+         "autonomous_system_number" : 11456
+      }
+   },
+   {
+      "75.77.211.212/30" : {
+         "autonomous_system_number" : 11456
+      }
+   },
+   {
+      "75.77.211.216/29" : {
+         "autonomous_system_number" : 11456
+      }
+   },
+   {
+      "75.77.211.224/27" : {
+         "autonomous_system_number" : 11456
+      }
+   },
+   {
+      "75.77.212.0/22" : {
+         "autonomous_system_number" : 11456
+      }
+   },
+   {
+      "75.77.216.0/21" : {
+         "autonomous_system_number" : 11456
+      }
+   },
+   {
+      "75.77.224.0/19" : {
+         "autonomous_system_number" : 11456
+      }
+   },
+   {
+      "75.192.0.0/10" : {
+         "autonomous_system_number" : 6167,
+         "autonomous_system_organization" : "Cellco Partnership DBA Verizon Wireless"
+      }
+   },
+   {
+      "76.96.0.0/11" : {
+         "autonomous_system_number" : 7922,
+         "autonomous_system_organization" : "Comcast Cable Communications, Inc."
+      }
+   },
+   {
+      "76.128.0.0/11" : {
+         "autonomous_system_number" : 7922,
+         "autonomous_system_organization" : "Comcast Cable Communications, Inc."
+      }
+   },
+   {
+      "76.224.0.0/11" : {
+         "autonomous_system_number" : 7018,
+         "autonomous_system_organization" : "AT&T Services, Inc."
+      }
+   },
+   {
+      "77.128.0.0/11" : {
+         "autonomous_system_number" : 15557,
+         "autonomous_system_organization" : "Societe Francaise du Radiotelephone S.A"
+      }
+   },
+   {
+      "78.26.64.0/22" : {
+         "autonomous_system_number" : 28929,
+         "autonomous_system_organization" : "ASDASD srl"
+      }
+   },
+   {
+      "78.26.68.0/23" : {
+         "autonomous_system_number" : 28929,
+         "autonomous_system_organization" : "ASDASD srl"
+      }
+   },
+   {
+      "78.26.70.0/25" : {
+         "autonomous_system_number" : 28929,
+         "autonomous_system_organization" : "ASDASD srl"
+      }
+   },
+   {
+      "78.26.70.128/26" : {
+         "autonomous_system_number" : 28929,
+         "autonomous_system_organization" : "ASDASD srl"
+      }
+   },
+   {
+      "78.26.70.192/28" : {
+         "autonomous_system_number" : 28929,
+         "autonomous_system_organization" : "ASDASD srl"
+      }
+   },
+   {
+      "78.26.70.208/29" : {
+         "autonomous_system_number" : 28929,
+         "autonomous_system_organization" : "ASDASD srl"
+      }
+   },
+   {
+      "78.26.70.216/29" : {
+         "autonomous_system_number" : 28929,
+         "autonomous_system_organization" : "ASDASD srl"
+      }
+   },
+   {
+      "78.26.70.224/27" : {
+         "autonomous_system_number" : 28929,
+         "autonomous_system_organization" : "ASDASD srl"
+      }
+   },
+   {
+      "78.26.71.0/24" : {
+         "autonomous_system_number" : 28929,
+         "autonomous_system_organization" : "ASDASD srl"
+      }
+   },
+   {
+      "78.26.72.0/21" : {
+         "autonomous_system_number" : 28929,
+         "autonomous_system_organization" : "ASDASD srl"
+      }
+   },
+   {
+      "78.26.80.0/20" : {
+         "autonomous_system_number" : 28929,
+         "autonomous_system_organization" : "ASDASD srl"
+      }
+   },
+   {
+      "78.26.96.0/20" : {
+         "autonomous_system_number" : 28929,
+         "autonomous_system_organization" : "ASDASD srl"
+      }
+   },
+   {
+      "78.26.112.0/21" : {
+         "autonomous_system_number" : 28929,
+         "autonomous_system_organization" : "ASDASD srl"
+      }
+   },
+   {
+      "78.26.120.0/22" : {
+         "autonomous_system_number" : 28929,
+         "autonomous_system_organization" : "ASDASD srl"
+      }
+   },
+   {
+      "78.26.124.0/23" : {
+         "autonomous_system_number" : 28929,
+         "autonomous_system_organization" : "ASDASD srl"
+      }
+   },
+   {
+      "78.192.0.0/10" : {
+         "autonomous_system_number" : 12322,
+         "autonomous_system_organization" : "Free SAS"
+      }
+   },
+   {
+      "79.192.0.0/10" : {
+         "autonomous_system_number" : 3320,
+         "autonomous_system_organization" : "Deutsche Telekom AG"
+      }
+   },
+   {
+      "80.128.0.0/11" : {
+         "autonomous_system_number" : 3320,
+         "autonomous_system_organization" : "Deutsche Telekom AG"
+      }
+   },
+   {
+      "81.128.0.0/11" : {
+         "autonomous_system_number" : 2856,
+         "autonomous_system_organization" : "BTnet UK Regional network"
+      }
+   },
+   {
+      "82.99.0.0/20" : {
+         "autonomous_system_number" : 12552,
+         "autonomous_system_organization" : "IP-Only"
+      }
+   },
+   {
+      "82.99.16.0/24" : {
+         "autonomous_system_number" : 12552,
+         "autonomous_system_organization" : "IP-Only"
+      }
+   },
+   {
+      "82.99.17.0/26" : {
+         "autonomous_system_number" : 12552,
+         "autonomous_system_organization" : "IP-Only"
+      }
+   },
+   {
+      "82.99.17.64/27" : {
+         "autonomous_system_number" : 12552,
+         "autonomous_system_organization" : "IP-Only"
+      }
+   },
+   {
+      "82.99.17.96/27" : {
+         "autonomous_system_number" : 12552,
+         "autonomous_system_organization" : "IP-Only"
+      }
+   },
+   {
+      "82.99.17.128/25" : {
+         "autonomous_system_number" : 12552,
+         "autonomous_system_organization" : "IP-Only"
+      }
+   },
+   {
+      "82.99.18.0/23" : {
+         "autonomous_system_number" : 12552,
+         "autonomous_system_organization" : "IP-Only"
+      }
+   },
+   {
+      "82.99.20.0/22" : {
+         "autonomous_system_number" : 12552,
+         "autonomous_system_organization" : "IP-Only"
+      }
+   },
+   {
+      "82.99.24.0/21" : {
+         "autonomous_system_number" : 12552,
+         "autonomous_system_organization" : "IP-Only"
+      }
+   },
+   {
+      "82.99.32.0/19" : {
+         "autonomous_system_number" : 12552,
+         "autonomous_system_organization" : "IP-Only"
+      }
+   },
+   {
+      "83.206.10.0/23" : {
+         "autonomous_system_number" : 3215,
+         "autonomous_system_organization" : "France Telecom - Orange"
+      }
+   },
+   {
+      "83.206.12.0/22" : {
+         "autonomous_system_number" : 3215,
+         "autonomous_system_organization" : "France Telecom - Orange"
+      }
+   },
+   {
+      "83.206.16.0/20" : {
+         "autonomous_system_number" : 3215,
+         "autonomous_system_organization" : "France Telecom - Orange"
+      }
+   },
+   {
+      "83.206.32.0/22" : {
+         "autonomous_system_number" : 3215,
+         "autonomous_system_organization" : "France Telecom - Orange"
+      }
+   },
+   {
+      "83.206.36.0/25" : {
+         "autonomous_system_number" : 3215,
+         "autonomous_system_organization" : "France Telecom - Orange"
+      }
+   },
+   {
+      "83.206.36.128/26" : {
+         "autonomous_system_number" : 3215,
+         "autonomous_system_organization" : "France Telecom - Orange"
+      }
+   },
+   {
+      "83.206.36.192/27" : {
+         "autonomous_system_number" : 3215,
+         "autonomous_system_organization" : "France Telecom - Orange"
+      }
+   },
+   {
+      "83.206.36.224/29" : {
+         "autonomous_system_number" : 3215,
+         "autonomous_system_organization" : "France Telecom - Orange"
+      }
+   },
+   {
+      "83.206.36.232/29" : {
+         "autonomous_system_number" : 3215,
+         "autonomous_system_organization" : "France Telecom - Orange"
+      }
+   },
+   {
+      "83.206.36.240/28" : {
+         "autonomous_system_number" : 3215,
+         "autonomous_system_organization" : "France Telecom - Orange"
+      }
+   },
+   {
+      "83.206.37.0/24" : {
+         "autonomous_system_number" : 3215,
+         "autonomous_system_organization" : "France Telecom - Orange"
+      }
+   },
+   {
+      "83.206.38.0/23" : {
+         "autonomous_system_number" : 3215,
+         "autonomous_system_organization" : "France Telecom - Orange"
+      }
+   },
+   {
+      "83.206.40.0/21" : {
+         "autonomous_system_number" : 3215,
+         "autonomous_system_organization" : "France Telecom - Orange"
+      }
+   },
+   {
+      "83.206.48.0/20" : {
+         "autonomous_system_number" : 3215,
+         "autonomous_system_organization" : "France Telecom - Orange"
+      }
+   },
+   {
+      "83.206.64.0/23" : {
+         "autonomous_system_number" : 3215,
+         "autonomous_system_organization" : "France Telecom - Orange"
+      }
+   },
+   {
+      "84.128.0.0/10" : {
+         "autonomous_system_number" : 3320,
+         "autonomous_system_organization" : "Deutsche Telekom AG"
+      }
+   },
+   {
+      "85.88.0.0/23" : {
+         "autonomous_system_number" : 33984,
+         "autonomous_system_organization" : "Surfplanet GmbH"
+      }
+   },
+   {
+      "85.88.2.0/25" : {
+         "autonomous_system_number" : 33984,
+         "autonomous_system_organization" : "Surfplanet GmbH"
+      }
+   },
+   {
+      "85.88.2.128/26" : {
+         "autonomous_system_number" : 33984,
+         "autonomous_system_organization" : "Surfplanet GmbH"
+      }
+   },
+   {
+      "85.88.2.192/27" : {
+         "autonomous_system_number" : 33984,
+         "autonomous_system_organization" : "Surfplanet GmbH"
+      }
+   },
+   {
+      "85.88.2.224/27" : {
+         "autonomous_system_number" : 33984,
+         "autonomous_system_organization" : "Surfplanet GmbH"
+      }
+   },
+   {
+      "85.88.3.0/24" : {
+         "autonomous_system_number" : 33984,
+         "autonomous_system_organization" : "Surfplanet GmbH"
+      }
+   },
+   {
+      "85.88.4.0/22" : {
+         "autonomous_system_number" : 33984,
+         "autonomous_system_organization" : "Surfplanet GmbH"
+      }
+   },
+   {
+      "85.88.8.0/21" : {
+         "autonomous_system_number" : 33984,
+         "autonomous_system_organization" : "Surfplanet GmbH"
+      }
+   },
+   {
+      "85.88.16.0/20" : {
+         "autonomous_system_number" : 33984,
+         "autonomous_system_organization" : "Surfplanet GmbH"
+      }
+   },
+   {
+      "87.128.0.0/10" : {
+         "autonomous_system_number" : 3320,
+         "autonomous_system_organization" : "Deutsche Telekom AG"
+      }
+   },
+   {
+      "89.80.0.0/13" : {
+         "autonomous_system_number" : 5410,
+         "autonomous_system_organization" : "Bouygues Telecom ISP"
+      }
+   },
+   {
+      "89.88.0.0/14" : {
+         "autonomous_system_number" : 5410,
+         "autonomous_system_organization" : "Bouygues Telecom ISP"
+      }
+   },
+   {
+      "89.92.0.0/17" : {
+         "autonomous_system_number" : 5410,
+         "autonomous_system_organization" : "Bouygues Telecom ISP"
+      }
+   },
+   {
+      "89.92.128.0/18" : {
+         "autonomous_system_number" : 5410,
+         "autonomous_system_organization" : "Bouygues Telecom ISP"
+      }
+   },
+   {
+      "89.92.192.0/20" : {
+         "autonomous_system_number" : 5410,
+         "autonomous_system_organization" : "Bouygues Telecom ISP"
+      }
+   },
+   {
+      "89.92.208.0/22" : {
+         "autonomous_system_number" : 5410,
+         "autonomous_system_organization" : "Bouygues Telecom ISP"
+      }
+   },
+   {
+      "89.92.212.0/23" : {
+         "autonomous_system_number" : 5410,
+         "autonomous_system_organization" : "Bouygues Telecom ISP"
+      }
+   },
+   {
+      "89.92.214.0/23" : {
+         "autonomous_system_number" : 5410,
+         "autonomous_system_organization" : "Bouygues Telecom ISP"
+      }
+   },
+   {
+      "89.92.216.0/21" : {
+         "autonomous_system_number" : 5410,
+         "autonomous_system_organization" : "Bouygues Telecom ISP"
+      }
+   },
+   {
+      "89.92.224.0/19" : {
+         "autonomous_system_number" : 5410,
+         "autonomous_system_organization" : "Bouygues Telecom ISP"
+      }
+   },
+   {
+      "89.93.0.0/16" : {
+         "autonomous_system_number" : 5410,
+         "autonomous_system_organization" : "Bouygues Telecom ISP"
+      }
+   },
+   {
+      "89.94.0.0/15" : {
+         "autonomous_system_number" : 5410,
+         "autonomous_system_organization" : "Bouygues Telecom ISP"
+      }
+   },
+   {
+      "89.160.0.0/20" : {
+         "autonomous_system_number" : 29518,
+         "autonomous_system_organization" : "Bredband2 AB"
+      }
+   },
+   {
+      "89.160.16.0/22" : {
+         "autonomous_system_number" : 29518,
+         "autonomous_system_organization" : "Bredband2 AB"
+      }
+   },
+   {
+      "89.160.20.0/26" : {
+         "autonomous_system_number" : 29518,
+         "autonomous_system_organization" : "Bredband2 AB"
+      }
+   },
+   {
+      "89.160.20.64/27" : {
+         "autonomous_system_number" : 29518,
+         "autonomous_system_organization" : "Bredband2 AB"
+      }
+   },
+   {
+      "89.160.20.96/28" : {
+         "autonomous_system_number" : 29518,
+         "autonomous_system_organization" : "Bredband2 AB"
+      }
+   },
+   {
+      "89.160.20.112/29" : {
+         "autonomous_system_number" : 29518,
+         "autonomous_system_organization" : "Bredband2 AB"
+      }
+   },
+   {
+      "89.160.20.120/29" : {
+         "autonomous_system_number" : 29518,
+         "autonomous_system_organization" : "Bredband2 AB"
+      }
+   },
+   {
+      "89.160.20.128/25" : {
+         "autonomous_system_number" : 29518,
+         "autonomous_system_organization" : "Bredband2 AB"
+      }
+   },
+   {
+      "89.160.21.0/24" : {
+         "autonomous_system_number" : 29518,
+         "autonomous_system_organization" : "Bredband2 AB"
+      }
+   },
+   {
+      "89.160.22.0/23" : {
+         "autonomous_system_number" : 29518,
+         "autonomous_system_organization" : "Bredband2 AB"
+      }
+   },
+   {
+      "89.160.24.0/21" : {
+         "autonomous_system_number" : 29518,
+         "autonomous_system_organization" : "Bredband2 AB"
+      }
+   },
+   {
+      "89.160.32.0/19" : {
+         "autonomous_system_number" : 29518,
+         "autonomous_system_organization" : "Bredband2 AB"
+      }
+   },
+   {
+      "89.160.64.0/18" : {
+         "autonomous_system_number" : 29518,
+         "autonomous_system_organization" : "Bredband2 AB"
+      }
+   },
+   {
+      "91.0.0.0/10" : {
+         "autonomous_system_number" : 3320,
+         "autonomous_system_organization" : "Deutsche Telekom AG"
+      }
+   },
+   {
+      "93.192.0.0/10" : {
+         "autonomous_system_number" : 3320,
+         "autonomous_system_organization" : "Deutsche Telekom AG"
+      }
+   },
+   {
+      "96.128.0.0/10" : {
+         "autonomous_system_number" : 7922,
+         "autonomous_system_organization" : "Comcast Cable Communications, Inc."
+      }
+   },
+   {
+      "97.0.0.0/10" : {
+         "autonomous_system_number" : 6167,
+         "autonomous_system_organization" : "Cellco Partnership DBA Verizon Wireless"
+      }
+   },
+   {
+      "97.128.0.0/9" : {
+         "autonomous_system_number" : 6167,
+         "autonomous_system_organization" : "Cellco Partnership DBA Verizon Wireless"
+      }
+   },
+   {
+      "98.192.0.0/10" : {
+         "autonomous_system_number" : 7922,
+         "autonomous_system_organization" : "Comcast Cable Communications, Inc."
+      }
+   },
+   {
+      "104.64.0.0/10" : {
+         "autonomous_system_number" : 35994,
+         "autonomous_system_organization" : "Akamai Technologies, Inc."
+      }
+   },
+   {
+      "111.0.0.0/10" : {
+         "autonomous_system_number" : 9808,
+         "autonomous_system_organization" : "Guangdong Mobile Communication Co.Ltd."
+      }
+   },
+   {
+      "112.0.0.0/10" : {
+         "autonomous_system_number" : 9808,
+         "autonomous_system_organization" : "Guangdong Mobile Communication Co.Ltd."
+      }
+   },
+   {
+      "117.128.0.0/10" : {
+         "autonomous_system_number" : 9808,
+         "autonomous_system_organization" : "Guangdong Mobile Communication Co.Ltd."
+      }
+   },
+   {
+      "120.192.0.0/10" : {
+         "autonomous_system_number" : 9808,
+         "autonomous_system_organization" : "Guangdong Mobile Communication Co.Ltd."
+      }
+   },
+   {
+      "126.0.0.0/8" : {
+         "autonomous_system_number" : 17676,
+         "autonomous_system_organization" : "Softbank BB Corp."
+      }
+   },
+   {
+      "132.0.0.0/10" : {
+         "autonomous_system_number" : 721,
+         "autonomous_system_organization" : "DoD Network Information Center"
+      }
+   },
+   {
+      "142.217.208.0/22" : {
+         "autonomous_system_number" : 35911
+      }
+   },
+   {
+      "142.217.212.0/23" : {
+         "autonomous_system_number" : 35911
+      }
+   },
+   {
+      "142.217.214.0/24" : {
+         "autonomous_system_number" : 35911
+      }
+   },
+   {
+      "142.217.215.0/24" : {
+         "autonomous_system_number" : 35911
+      }
+   },
+   {
+      "142.217.216.0/21" : {
+         "autonomous_system_number" : 35911
+      }
+   },
+   {
+      "142.217.224.0/21" : {
+         "autonomous_system_number" : 35911
+      }
+   },
+   {
+      "142.217.232.0/22" : {
+         "autonomous_system_number" : 35911
+      }
+   },
+   {
+      "142.217.236.0/23" : {
+         "autonomous_system_number" : 35911
+      }
+   },
+   {
+      "142.217.238.0/24" : {
+         "autonomous_system_number" : 35911
+      }
+   },
+   {
+      "145.128.0.0/10" : {
+         "autonomous_system_number" : 1103,
+         "autonomous_system_organization" : "SURFnet, The Netherlands"
+      }
+   },
+   {
+      "149.101.100.0/28" : {
+         "autonomous_system_number" : 6167,
+         "autonomous_system_organization" : "CELLCO-PART"
+      }
+   },
+   {
+      "172.128.0.0/10" : {
+         "autonomous_system_number" : 1668,
+         "autonomous_system_organization" : "AOL Transit Data Network"
+      }
+   },
+   {
+      "174.192.0.0/10" : {
+         "autonomous_system_number" : 6167,
+         "autonomous_system_organization" : "Cellco Partnership DBA Verizon Wireless"
+      }
+   },
+   {
+      "176.128.0.0/10" : {
+         "autonomous_system_number" : 12844,
+         "autonomous_system_organization" : "Bouygues Telecom"
+      }
+   },
+   {
+      "180.0.0.0/10" : {
+         "autonomous_system_number" : 4713,
+         "autonomous_system_organization" : "NTT Communications Corporation"
+      }
+   },
+   {
+      "183.0.0.0/10" : {
+         "autonomous_system_number" : 4134,
+         "autonomous_system_organization" : "Chinanet"
+      }
+   },
+   {
+      "183.192.0.0/10" : {
+         "autonomous_system_number" : 9808,
+         "autonomous_system_organization" : "Guangdong Mobile Communication Co.Ltd."
+      }
+   },
+   {
+      "208.110.194.0/23" : {
+         "autonomous_system_number" : 11025
+      }
+   },
+   {
+      "208.110.196.0/22" : {
+         "autonomous_system_number" : 11025
+      }
+   },
+   {
+      "208.110.200.0/21" : {
+         "autonomous_system_number" : 11025
+      }
+   },
+   {
+      "208.110.208.0/21" : {
+         "autonomous_system_number" : 11025
+      }
+   },
+   {
+      "208.110.216.0/24" : {
+         "autonomous_system_number" : 11025
+      }
+   },
+   {
+      "208.110.217.0/26" : {
+         "autonomous_system_number" : 11025
+      }
+   },
+   {
+      "208.110.217.64/27" : {
+         "autonomous_system_number" : 11025
+      }
+   },
+   {
+      "208.110.217.96/29" : {
+         "autonomous_system_number" : 11025
+      }
+   },
+   {
+      "208.110.217.104/31" : {
+         "autonomous_system_number" : 11025
+      }
+   },
+   {
+      "208.110.217.106/32" : {
+         "autonomous_system_number" : 11025
+      }
+   },
+   {
+      "208.110.217.107/32" : {
+         "autonomous_system_number" : 11025
+      }
+   },
+   {
+      "208.110.217.108/30" : {
+         "autonomous_system_number" : 11025
+      }
+   },
+   {
+      "208.110.217.112/31" : {
+         "autonomous_system_number" : 11025
+      }
+   },
+   {
+      "208.110.217.114/31" : {
+         "autonomous_system_number" : 11025
+      }
+   },
+   {
+      "208.110.217.116/30" : {
+         "autonomous_system_number" : 11025
+      }
+   },
+   {
+      "208.110.217.120/29" : {
+         "autonomous_system_number" : 11025
+      }
+   },
+   {
+      "208.110.217.128/25" : {
+         "autonomous_system_number" : 11025
+      }
+   },
+   {
+      "208.110.218.0/23" : {
+         "autonomous_system_number" : 11025
+      }
+   },
+   {
+      "208.110.220.0/22" : {
+         "autonomous_system_number" : 11025
+      }
+   },
+   {
+      "208.192.0.0/10" : {
+         "autonomous_system_number" : 701,
+         "autonomous_system_organization" : "MCI Communications Services, Inc. d/b/a Verizon Business"
+      }
+   },
+   {
+      "214.0.0.0/8" : {
+         "autonomous_system_number" : 721,
+         "autonomous_system_organization" : "DoD Network Information Center"
+      }
+   },
+   {
+      "215.0.0.0/9" : {
+         "autonomous_system_number" : 721,
+         "autonomous_system_organization" : "DoD Network Information Center"
+      }
+   },
+   {
+      "216.83.161.0/24" : {
+         "autonomous_system_number" : 7381,
+         "autonomous_system_organization" : "SunGard Availability Services USA"
+      }
+   },
+   {
+      "216.83.162.0/23" : {
+         "autonomous_system_number" : 7381,
+         "autonomous_system_organization" : "SunGard Availability Services USA"
+      }
+   },
+   {
+      "216.83.164.0/22" : {
+         "autonomous_system_number" : 7381,
+         "autonomous_system_organization" : "SunGard Availability Services USA"
+      }
+   },
+   {
+      "216.83.168.0/23" : {
+         "autonomous_system_number" : 7381,
+         "autonomous_system_organization" : "SunGard Availability Services USA"
+      }
+   },
+   {
+      "216.83.170.0/24" : {
+         "autonomous_system_number" : 7381,
+         "autonomous_system_organization" : "SunGard Availability Services USA"
+      }
+   },
+   {
+      "216.83.171.0/25" : {
+         "autonomous_system_number" : 7381,
+         "autonomous_system_organization" : "SunGard Availability Services USA"
+      }
+   },
+   {
+      "216.83.171.128/26" : {
+         "autonomous_system_number" : 7381,
+         "autonomous_system_organization" : "SunGard Availability Services USA"
+      }
+   },
+   {
+      "216.83.171.192/27" : {
+         "autonomous_system_number" : 7381,
+         "autonomous_system_organization" : "SunGard Availability Services USA"
+      }
+   },
+   {
+      "216.83.171.224/27" : {
+         "autonomous_system_number" : 7381,
+         "autonomous_system_organization" : "SunGard Availability Services USA"
+      }
+   },
+   {
+      "216.83.172.0/22" : {
+         "autonomous_system_number" : 7381,
+         "autonomous_system_organization" : "SunGard Availability Services USA"
+      }
+   },
+   {
+      "216.83.176.0/20" : {
+         "autonomous_system_number" : 7381,
+         "autonomous_system_organization" : "SunGard Availability Services USA"
+      }
+   },
+   {
+      "216.160.26.0/23" : {
+         "autonomous_system_number" : 209
+      }
+   },
+   {
+      "216.160.28.0/22" : {
+         "autonomous_system_number" : 209
+      }
+   },
+   {
+      "216.160.32.0/19" : {
+         "autonomous_system_number" : 209
+      }
+   },
+   {
+      "216.160.64.0/20" : {
+         "autonomous_system_number" : 209
+      }
+   },
+   {
+      "216.160.80.0/23" : {
+         "autonomous_system_number" : 209
+      }
+   },
+   {
+      "216.160.82.0/24" : {
+         "autonomous_system_number" : 209
+      }
+   },
+   {
+      "216.160.83.0/27" : {
+         "autonomous_system_number" : 209
+      }
+   },
+   {
+      "216.160.83.32/28" : {
+         "autonomous_system_number" : 209
+      }
+   },
+   {
+      "216.160.83.48/29" : {
+         "autonomous_system_number" : 209
+      }
+   },
+   {
+      "216.160.83.56/29" : {
+         "autonomous_system_number" : 209
+      }
+   },
+   {
+      "216.160.83.64/26" : {
+         "autonomous_system_number" : 209
+      }
+   },
+   {
+      "216.160.83.128/25" : {
+         "autonomous_system_number" : 209
+      }
+   },
+   {
+      "216.160.84.0/22" : {
+         "autonomous_system_number" : 209
+      }
+   },
+   {
+      "216.160.88.0/21" : {
+         "autonomous_system_number" : 209
+      }
+   },
+   {
+      "216.160.96.0/19" : {
+         "autonomous_system_number" : 209
+      }
+   },
+   {
+      "216.160.128.0/18" : {
+         "autonomous_system_number" : 209
+      }
+   },
+   {
+      "216.160.192.0/21" : {
+         "autonomous_system_number" : 209
+      }
+   },
+   {
+      "216.160.200.0/22" : {
+         "autonomous_system_number" : 209
+      }
+   },
+   {
+      "216.160.204.0/23" : {
+         "autonomous_system_number" : 209
+      }
+   },
+   {
+      "216.160.206.0/24" : {
+         "autonomous_system_number" : 209
+      }
+   },
+   {
+      "219.0.0.0/10" : {
+         "autonomous_system_number" : 17676,
+         "autonomous_system_organization" : "Softbank BB Corp."
+      }
+   },
+   {
+      "220.0.0.0/10" : {
+         "autonomous_system_number" : 17676,
+         "autonomous_system_organization" : "Softbank BB Corp."
+      }
+   },
+   {
+      "222.229.128.0/17" : {
+         "autonomous_system_number" : 2519,
+         "autonomous_system_organization" : "JPNIC"
+      }
+   },
+   {
+      "222.230.0.0/17" : {
+         "autonomous_system_number" : 2519,
+         "autonomous_system_organization" : "JPNIC"
+      }
+   },
+   {
+      "222.230.128.0/21" : {
+         "autonomous_system_number" : 2519,
+         "autonomous_system_organization" : "JPNIC"
+      }
+   },
+   {
+      "222.230.136.0/23" : {
+         "autonomous_system_number" : 2519,
+         "autonomous_system_organization" : "JPNIC"
+      }
+   },
+   {
+      "222.230.138.0/23" : {
+         "autonomous_system_number" : 2519,
+         "autonomous_system_organization" : "JPNIC"
+      }
+   },
+   {
+      "222.230.140.0/22" : {
+         "autonomous_system_number" : 2519,
+         "autonomous_system_organization" : "JPNIC"
+      }
+   },
+   {
+      "222.230.144.0/20" : {
+         "autonomous_system_number" : 2519,
+         "autonomous_system_organization" : "JPNIC"
+      }
+   },
+   {
+      "222.230.160.0/19" : {
+         "autonomous_system_number" : 2519,
+         "autonomous_system_organization" : "JPNIC"
+      }
+   },
+   {
+      "222.230.192.0/18" : {
+         "autonomous_system_number" : 2519,
+         "autonomous_system_organization" : "JPNIC"
+      }
+   },
+   {
+      "2001:1700::/27" : {
+         "autonomous_system_number" : 6730,
+         "autonomous_system_organization" : "Sunrise Communications AG"
+      }
+   },
+   {
+      "2001:1c00::/23" : {
+         "autonomous_system_number" : 9143,
+         "autonomous_system_organization" : "Ziggo B.V."
+      }
+   },
+   {
+      "2001:2000::/20" : {
+         "autonomous_system_number" : 1299,
+         "autonomous_system_organization" : "TeliaSonera International Carrier"
+      }
+   },
+   {
+      "2001:4540::/27" : {
+         "autonomous_system_number" : 9924,
+         "autonomous_system_organization" : "Taiwan Fixed Network, Telco and Network Service Provider."
+      }
+   },
+   {
+      "2001:4580::/26" : {
+         "autonomous_system_number" : 4780,
+         "autonomous_system_organization" : "Digital United Inc."
+      }
+   },
+   {
+      "2001:4600::/24" : {
+         "autonomous_system_number" : 2119,
+         "autonomous_system_organization" : "Telenor Norge AS"
+      }
+   },
+   {
+      "2001:5000::/24" : {
+         "autonomous_system_number" : 1273,
+         "autonomous_system_organization" : "Cable and Wireless Worldwide plc"
+      }
+   },
+   {
+      "2001:5100::/24" : {
+         "autonomous_system_number" : 2529,
+         "autonomous_system_organization" : "Now maintained by Cable & Wireless Worldwide"
+      }
+   },
+   {
+      "2001:5200::/23" : {
+         "autonomous_system_number" : 1273,
+         "autonomous_system_organization" : "Cable and Wireless Worldwide plc"
+      }
+   },
+   {
+      "2001:5400::/22" : {
+         "autonomous_system_number" : 1273,
+         "autonomous_system_organization" : "Cable and Wireless Worldwide plc"
+      }
+   },
+   {
+      "2001:8000::/20" : {
+         "autonomous_system_number" : 1221,
+         "autonomous_system_organization" : "Telstra Pty Ltd"
+      }
+   },
+   {
+      "2001:b000::/21" : {
+         "autonomous_system_number" : 17419,
+         "autonomous_system_organization" : "HiNet IPv6 Service Network.,"
+      }
+   },
+   {
+      "2003::/19" : {
+         "autonomous_system_number" : 3320,
+         "autonomous_system_organization" : "Deutsche Telekom AG"
+      }
+   },
+   {
+      "2400::/20" : {
+         "autonomous_system_number" : 4766,
+         "autonomous_system_organization" : "Korea Telecom"
+      }
+   },
+   {
+      "2400:1000::/20" : {
+         "autonomous_system_number" : 237,
+         "autonomous_system_organization" : "Merit Network Inc."
+      }
+   },
+   {
+      "2400:2000::/20" : {
+         "autonomous_system_number" : 17676,
+         "autonomous_system_organization" : "Softbank BB Corp."
+      }
+   },
+   {
+      "2400:3000::/20" : {
+         "autonomous_system_number" : 237,
+         "autonomous_system_organization" : "Merit Network Inc."
+      }
+   },
+   {
+      "2400:4000::/22" : {
+         "autonomous_system_number" : 4713,
+         "autonomous_system_organization" : "NTT Communications Corporation"
+      }
+   },
+   {
+      "2400:4400::/22" : {
+         "autonomous_system_number" : 237,
+         "autonomous_system_organization" : "Merit Network Inc."
+      }
+   },
+   {
+      "2400:4800::/21" : {
+         "autonomous_system_number" : 237,
+         "autonomous_system_organization" : "Merit Network Inc."
+      }
+   },
+   {
+      "2400:5000::/20" : {
+         "autonomous_system_number" : 237,
+         "autonomous_system_organization" : "Merit Network Inc."
+      }
+   },
+   {
+      "2400:6000::/19" : {
+         "autonomous_system_number" : 237,
+         "autonomous_system_organization" : "Merit Network Inc."
+      }
+   },
+   {
+      "2400:8000::/17" : {
+         "autonomous_system_number" : 237,
+         "autonomous_system_organization" : "Merit Network Inc."
+      }
+   },
+   {
+      "2401::/17" : {
+         "autonomous_system_number" : 237,
+         "autonomous_system_organization" : "Merit Network Inc."
+      }
+   },
+   {
+      "2401:8000::/26" : {
+         "autonomous_system_number" : 9919,
+         "autonomous_system_organization" : "New Century InfoComm Tech Co., Ltd."
+      }
+   },
+   {
+      "2401:8040::/26" : {
+         "autonomous_system_number" : 237,
+         "autonomous_system_organization" : "Merit Network Inc."
+      }
+   },
+   {
+      "2401:8080::/25" : {
+         "autonomous_system_number" : 237,
+         "autonomous_system_organization" : "Merit Network Inc."
+      }
+   },
+   {
+      "2401:8100::/24" : {
+         "autonomous_system_number" : 237,
+         "autonomous_system_organization" : "Merit Network Inc."
+      }
+   },
+   {
+      "2401:8200::/23" : {
+         "autonomous_system_number" : 237,
+         "autonomous_system_organization" : "Merit Network Inc."
+      }
+   },
+   {
+      "2401:8400::/22" : {
+         "autonomous_system_number" : 237,
+         "autonomous_system_organization" : "Merit Network Inc."
+      }
+   },
+   {
+      "2401:8800::/21" : {
+         "autonomous_system_number" : 237,
+         "autonomous_system_organization" : "Merit Network Inc."
+      }
+   },
+   {
+      "2401:9000::/20" : {
+         "autonomous_system_number" : 237,
+         "autonomous_system_organization" : "Merit Network Inc."
+      }
+   },
+   {
+      "2401:a000::/19" : {
+         "autonomous_system_number" : 237,
+         "autonomous_system_organization" : "Merit Network Inc."
+      }
+   },
+   {
+      "2401:c000::/18" : {
+         "autonomous_system_number" : 237,
+         "autonomous_system_organization" : "Merit Network Inc."
+      }
+   },
+   {
+      "2402::/16" : {
+         "autonomous_system_number" : 237,
+         "autonomous_system_organization" : "Merit Network Inc."
+      }
+   },
+   {
+      "2403::/17" : {
+         "autonomous_system_number" : 237,
+         "autonomous_system_organization" : "Merit Network Inc."
+      }
+   },
+   {
+      "2403:8000::/20" : {
+         "autonomous_system_number" : 237,
+         "autonomous_system_organization" : "Merit Network Inc."
+      }
+   },
+   {
+      "2403:9000::/21" : {
+         "autonomous_system_number" : 237,
+         "autonomous_system_organization" : "Merit Network Inc."
+      }
+   },
+   {
+      "2403:9800::/24" : {
+         "autonomous_system_number" : 237,
+         "autonomous_system_organization" : "Merit Network Inc."
+      }
+   },
+   {
+      "2403:9900::/24" : {
+         "autonomous_system_number" : 17676,
+         "autonomous_system_organization" : "Softbank BB Corp."
+      }
+   },
+   {
+      "2403:9a00::/23" : {
+         "autonomous_system_number" : 237,
+         "autonomous_system_organization" : "Merit Network Inc."
+      }
+   },
+   {
+      "2403:9c00::/22" : {
+         "autonomous_system_number" : 237,
+         "autonomous_system_organization" : "Merit Network Inc."
+      }
+   },
+   {
+      "2403:a000::/19" : {
+         "autonomous_system_number" : 237,
+         "autonomous_system_organization" : "Merit Network Inc."
+      }
+   },
+   {
+      "2403:c000::/18" : {
+         "autonomous_system_number" : 237,
+         "autonomous_system_organization" : "Merit Network Inc."
+      }
+   },
+   {
+      "2404::/26" : {
+         "autonomous_system_number" : 17709,
+         "autonomous_system_organization" : "Eastern Broadband Telecom Co.,Ltd"
+      }
+   },
+   {
+      "2404:40::/26" : {
+         "autonomous_system_number" : 237,
+         "autonomous_system_organization" : "Merit Network Inc."
+      }
+   },
+   {
+      "2404:80::/25" : {
+         "autonomous_system_number" : 237,
+         "autonomous_system_organization" : "Merit Network Inc."
+      }
+   },
+   {
+      "2404:100::/24" : {
+         "autonomous_system_number" : 237,
+         "autonomous_system_organization" : "Merit Network Inc."
+      }
+   },
+   {
+      "2404:200::/23" : {
+         "autonomous_system_number" : 237,
+         "autonomous_system_organization" : "Merit Network Inc."
+      }
+   },
+   {
+      "2404:400::/22" : {
+         "autonomous_system_number" : 237,
+         "autonomous_system_organization" : "Merit Network Inc."
+      }
+   },
+   {
+      "2404:800::/21" : {
+         "autonomous_system_number" : 237,
+         "autonomous_system_organization" : "Merit Network Inc."
+      }
+   },
+   {
+      "2404:1000::/20" : {
+         "autonomous_system_number" : 237,
+         "autonomous_system_organization" : "Merit Network Inc."
+      }
+   },
+   {
+      "2404:2000::/19" : {
+         "autonomous_system_number" : 237,
+         "autonomous_system_organization" : "Merit Network Inc."
+      }
+   },
+   {
+      "2404:4000::/18" : {
+         "autonomous_system_number" : 237,
+         "autonomous_system_organization" : "Merit Network Inc."
+      }
+   },
+   {
+      "2404:8000::/17" : {
+         "autonomous_system_number" : 237,
+         "autonomous_system_organization" : "Merit Network Inc."
+      }
+   },
+   {
+      "2405::/16" : {
+         "autonomous_system_number" : 237,
+         "autonomous_system_organization" : "Merit Network Inc."
+      }
+   },
+   {
+      "2406::/15" : {
+         "autonomous_system_number" : 237,
+         "autonomous_system_organization" : "Merit Network Inc."
+      }
+   },
+   {
+      "2408::/22" : {
+         "autonomous_system_number" : 55817,
+         "autonomous_system_organization" : "Nippon Telegraph and Telephone Corporation PF Labs"
+      }
+   },
+   {
+      "2408:400::/22" : {
+         "autonomous_system_number" : 237,
+         "autonomous_system_organization" : "Merit Network Inc."
+      }
+   },
+   {
+      "2408:800::/21" : {
+         "autonomous_system_number" : 237,
+         "autonomous_system_organization" : "Merit Network Inc."
+      }
+   },
+   {
+      "2408:1000::/20" : {
+         "autonomous_system_number" : 237,
+         "autonomous_system_organization" : "Merit Network Inc."
+      }
+   },
+   {
+      "2408:2000::/19" : {
+         "autonomous_system_number" : 237,
+         "autonomous_system_organization" : "Merit Network Inc."
+      }
+   },
+   {
+      "2408:4000::/18" : {
+         "autonomous_system_number" : 237,
+         "autonomous_system_organization" : "Merit Network Inc."
+      }
+   },
+   {
+      "2408:8000::/17" : {
+         "autonomous_system_number" : 237,
+         "autonomous_system_organization" : "Merit Network Inc."
+      }
+   },
+   {
+      "2409::/23" : {
+         "autonomous_system_number" : 55391,
+         "autonomous_system_organization" : "INTERNET MULTIFEED CO."
+      }
+   },
+   {
+      "2409:200::/23" : {
+         "autonomous_system_number" : 55392,
+         "autonomous_system_organization" : "INTERNET MULTIFEED CO."
+      }
+   },
+   {
+      "2409:400::/22" : {
+         "autonomous_system_number" : 237,
+         "autonomous_system_organization" : "Merit Network Inc."
+      }
+   },
+   {
+      "2409:800::/21" : {
+         "autonomous_system_number" : 237,
+         "autonomous_system_organization" : "Merit Network Inc."
+      }
+   },
+   {
+      "2409:1000::/20" : {
+         "autonomous_system_number" : 237,
+         "autonomous_system_organization" : "Merit Network Inc."
+      }
+   },
+   {
+      "2409:2000::/19" : {
+         "autonomous_system_number" : 237,
+         "autonomous_system_organization" : "Merit Network Inc."
+      }
+   },
+   {
+      "2409:4000::/18" : {
+         "autonomous_system_number" : 237,
+         "autonomous_system_organization" : "Merit Network Inc."
+      }
+   },
+   {
+      "2409:8000::/17" : {
+         "autonomous_system_number" : 237,
+         "autonomous_system_organization" : "Merit Network Inc."
+      }
+   },
+   {
+      "240a::/16" : {
+         "autonomous_system_number" : 237,
+         "autonomous_system_organization" : "Merit Network Inc."
+      }
+   },
+   {
+      "240b::/22" : {
+         "autonomous_system_number" : 2516,
+         "autonomous_system_organization" : "KDDI KDDI CORPORATION"
+      }
+   },
+   {
+      "240b:400::/22" : {
+         "autonomous_system_number" : 237,
+         "autonomous_system_organization" : "Merit Network Inc."
+      }
+   },
+   {
+      "240b:800::/21" : {
+         "autonomous_system_number" : 237,
+         "autonomous_system_organization" : "Merit Network Inc."
+      }
+   },
+   {
+      "240b:1000::/20" : {
+         "autonomous_system_number" : 237,
+         "autonomous_system_organization" : "Merit Network Inc."
+      }
+   },
+   {
+      "240b:2000::/19" : {
+         "autonomous_system_number" : 237,
+         "autonomous_system_organization" : "Merit Network Inc."
+      }
+   },
+   {
+      "240b:4000::/18" : {
+         "autonomous_system_number" : 237,
+         "autonomous_system_organization" : "Merit Network Inc."
+      }
+   },
+   {
+      "240b:8000::/17" : {
+         "autonomous_system_number" : 237,
+         "autonomous_system_organization" : "Merit Network Inc."
+      }
+   },
+   {
+      "240c::/16" : {
+         "autonomous_system_number" : 237,
+         "autonomous_system_organization" : "Merit Network Inc."
+      }
+   },
+   {
+      "240d::/27" : {
+         "autonomous_system_number" : 2527,
+         "autonomous_system_organization" : "So-net Entertainment Corporation"
+      }
+   },
+   {
+      "240d:20::/27" : {
+         "autonomous_system_number" : 237,
+         "autonomous_system_organization" : "Merit Network Inc."
+      }
+   },
+   {
+      "240d:40::/26" : {
+         "autonomous_system_number" : 237,
+         "autonomous_system_organization" : "Merit Network Inc."
+      }
+   },
+   {
+      "240d:80::/25" : {
+         "autonomous_system_number" : 237,
+         "autonomous_system_organization" : "Merit Network Inc."
+      }
+   },
+   {
+      "240d:100::/24" : {
+         "autonomous_system_number" : 237,
+         "autonomous_system_organization" : "Merit Network Inc."
+      }
+   },
+   {
+      "240d:200::/23" : {
+         "autonomous_system_number" : 237,
+         "autonomous_system_organization" : "Merit Network Inc."
+      }
+   },
+   {
+      "240d:400::/22" : {
+         "autonomous_system_number" : 237,
+         "autonomous_system_organization" : "Merit Network Inc."
+      }
+   },
+   {
+      "240d:800::/21" : {
+         "autonomous_system_number" : 237,
+         "autonomous_system_organization" : "Merit Network Inc."
+      }
+   },
+   {
+      "240d:1000::/20" : {
+         "autonomous_system_number" : 237,
+         "autonomous_system_organization" : "Merit Network Inc."
+      }
+   },
+   {
+      "240d:2000::/19" : {
+         "autonomous_system_number" : 237,
+         "autonomous_system_organization" : "Merit Network Inc."
+      }
+   },
+   {
+      "240d:4000::/18" : {
+         "autonomous_system_number" : 237,
+         "autonomous_system_organization" : "Merit Network Inc."
+      }
+   },
+   {
+      "240d:8000::/17" : {
+         "autonomous_system_number" : 237,
+         "autonomous_system_organization" : "Merit Network Inc."
+      }
+   },
+   {
+      "240e::/24" : {
+         "autonomous_system_number" : 4134,
+         "autonomous_system_organization" : "Chinanet"
+      }
+   },
+   {
+      "240e:100::/24" : {
+         "autonomous_system_number" : 237,
+         "autonomous_system_organization" : "Merit Network Inc."
+      }
+   },
+   {
+      "240e:200::/23" : {
+         "autonomous_system_number" : 237,
+         "autonomous_system_organization" : "Merit Network Inc."
+      }
+   },
+   {
+      "240e:400::/22" : {
+         "autonomous_system_number" : 237,
+         "autonomous_system_organization" : "Merit Network Inc."
+      }
+   },
+   {
+      "240e:800::/21" : {
+         "autonomous_system_number" : 237,
+         "autonomous_system_organization" : "Merit Network Inc."
+      }
+   },
+   {
+      "240e:1000::/20" : {
+         "autonomous_system_number" : 237,
+         "autonomous_system_organization" : "Merit Network Inc."
+      }
+   },
+   {
+      "240e:2000::/19" : {
+         "autonomous_system_number" : 237,
+         "autonomous_system_organization" : "Merit Network Inc."
+      }
+   },
+   {
+      "240e:4000::/18" : {
+         "autonomous_system_number" : 237,
+         "autonomous_system_organization" : "Merit Network Inc."
+      }
+   },
+   {
+      "240e:8000::/17" : {
+         "autonomous_system_number" : 237,
+         "autonomous_system_organization" : "Merit Network Inc."
+      }
+   },
+   {
+      "240f::/24" : {
+         "autonomous_system_number" : 2516,
+         "autonomous_system_organization" : "KDDI KDDI CORPORATION"
+      }
+   },
+   {
+      "240f:100::/24" : {
+         "autonomous_system_number" : 237,
+         "autonomous_system_organization" : "Merit Network Inc."
+      }
+   },
+   {
+      "240f:200::/23" : {
+         "autonomous_system_number" : 237,
+         "autonomous_system_organization" : "Merit Network Inc."
+      }
+   },
+   {
+      "240f:400::/22" : {
+         "autonomous_system_number" : 237,
+         "autonomous_system_organization" : "Merit Network Inc."
+      }
+   },
+   {
+      "240f:800::/21" : {
+         "autonomous_system_number" : 237,
+         "autonomous_system_organization" : "Merit Network Inc."
+      }
+   },
+   {
+      "240f:1000::/20" : {
+         "autonomous_system_number" : 237,
+         "autonomous_system_organization" : "Merit Network Inc."
+      }
+   },
+   {
+      "240f:2000::/19" : {
+         "autonomous_system_number" : 237,
+         "autonomous_system_organization" : "Merit Network Inc."
+      }
+   },
+   {
+      "240f:4000::/18" : {
+         "autonomous_system_number" : 237,
+         "autonomous_system_organization" : "Merit Network Inc."
+      }
+   },
+   {
+      "240f:8000::/17" : {
+         "autonomous_system_number" : 237,
+         "autonomous_system_organization" : "Merit Network Inc."
+      }
+   },
+   {
+      "2600::/21" : {
+         "autonomous_system_number" : 237,
+         "autonomous_system_organization" : "Merit Network Inc."
+      }
+   },
+   {
+      "2600:800::/27" : {
+         "autonomous_system_number" : 701,
+         "autonomous_system_organization" : "MCI Communications Services, Inc. d/b/a Verizon Business"
+      }
+   },
+   {
+      "2600:820::/27" : {
+         "autonomous_system_number" : 237,
+         "autonomous_system_organization" : "Merit Network Inc."
+      }
+   },
+   {
+      "2600:840::/26" : {
+         "autonomous_system_number" : 237,
+         "autonomous_system_organization" : "Merit Network Inc."
+      }
+   },
+   {
+      "2600:880::/25" : {
+         "autonomous_system_number" : 237,
+         "autonomous_system_organization" : "Merit Network Inc."
+      }
+   },
+   {
+      "2600:900::/24" : {
+         "autonomous_system_number" : 237,
+         "autonomous_system_organization" : "Merit Network Inc."
+      }
+   },
+   {
+      "2600:a00::/23" : {
+         "autonomous_system_number" : 237,
+         "autonomous_system_organization" : "Merit Network Inc."
+      }
+   },
+   {
+      "2600:c00::/22" : {
+         "autonomous_system_number" : 237,
+         "autonomous_system_organization" : "Merit Network Inc."
+      }
+   },
+   {
+      "2600:1000::/22" : {
+         "autonomous_system_number" : 237,
+         "autonomous_system_organization" : "Merit Network Inc."
+      }
+   },
+   {
+      "2600:1400::/27" : {
+         "autonomous_system_number" : 31377,
+         "autonomous_system_organization" : "Akamai International B.V."
+      }
+   },
+   {
+      "2600:1420::/27" : {
+         "autonomous_system_number" : 237,
+         "autonomous_system_organization" : "Merit Network Inc."
+      }
+   },
+   {
+      "2600:1440::/26" : {
+         "autonomous_system_number" : 237,
+         "autonomous_system_organization" : "Merit Network Inc."
+      }
+   },
+   {
+      "2600:1480::/25" : {
+         "autonomous_system_number" : 237,
+         "autonomous_system_organization" : "Merit Network Inc."
+      }
+   },
+   {
+      "2600:1500::/24" : {
+         "autonomous_system_number" : 237,
+         "autonomous_system_organization" : "Merit Network Inc."
+      }
+   },
+   {
+      "2600:1600::/23" : {
+         "autonomous_system_number" : 237,
+         "autonomous_system_organization" : "Merit Network Inc."
+      }
+   },
+   {
+      "2600:1800::/21" : {
+         "autonomous_system_number" : 237,
+         "autonomous_system_organization" : "Merit Network Inc."
+      }
+   },
+   {
+      "2600:2000::/19" : {
+         "autonomous_system_number" : 237,
+         "autonomous_system_organization" : "Merit Network Inc."
+      }
+   },
+   {
+      "2600:4000::/20" : {
+         "autonomous_system_number" : 237,
+         "autonomous_system_organization" : "Merit Network Inc."
+      }
+   },
+   {
+      "2600:5000::/22" : {
+         "autonomous_system_number" : 237,
+         "autonomous_system_organization" : "Merit Network Inc."
+      }
+   },
+   {
+      "2600:5400::/27" : {
+         "autonomous_system_number" : 19108,
+         "autonomous_system_organization" : "Suddenlink Communications"
+      }
+   },
+   {
+      "2600:5420::/27" : {
+         "autonomous_system_number" : 237,
+         "autonomous_system_organization" : "Merit Network Inc."
+      }
+   },
+   {
+      "2600:5440::/26" : {
+         "autonomous_system_number" : 237,
+         "autonomous_system_organization" : "Merit Network Inc."
+      }
+   },
+   {
+      "2600:5480::/25" : {
+         "autonomous_system_number" : 237,
+         "autonomous_system_organization" : "Merit Network Inc."
+      }
+   },
+   {
+      "2600:5500::/24" : {
+         "autonomous_system_number" : 237,
+         "autonomous_system_organization" : "Merit Network Inc."
+      }
+   },
+   {
+      "2600:5600::/23" : {
+         "autonomous_system_number" : 237,
+         "autonomous_system_organization" : "Merit Network Inc."
+      }
+   },
+   {
+      "2600:5800::/21" : {
+         "autonomous_system_number" : 237,
+         "autonomous_system_organization" : "Merit Network Inc."
+      }
+   },
+   {
+      "2600:6000::/20" : {
+         "autonomous_system_number" : 237,
+         "autonomous_system_organization" : "Merit Network Inc."
+      }
+   },
+   {
+      "2600:7000::/24" : {
+         "autonomous_system_number" : 6939,
+         "autonomous_system_organization" : "Hurricane Electric, Inc."
+      }
+   },
+   {
+      "2600:7100::/24" : {
+         "autonomous_system_number" : 237,
+         "autonomous_system_organization" : "Merit Network Inc."
+      }
+   },
+   {
+      "2600:7200::/23" : {
+         "autonomous_system_number" : 237,
+         "autonomous_system_organization" : "Merit Network Inc."
+      }
+   },
+   {
+      "2600:7400::/22" : {
+         "autonomous_system_number" : 237,
+         "autonomous_system_organization" : "Merit Network Inc."
+      }
+   },
+   {
+      "2600:7800::/21" : {
+         "autonomous_system_number" : 237,
+         "autonomous_system_organization" : "Merit Network Inc."
+      }
+   },
+   {
+      "2600:8000::/17" : {
+         "autonomous_system_number" : 237,
+         "autonomous_system_organization" : "Merit Network Inc."
+      }
+   },
+   {
+      "2601::/16" : {
+         "autonomous_system_number" : 237,
+         "autonomous_system_organization" : "Merit Network Inc."
+      }
+   },
+   {
+      "2602::/24" : {
+         "autonomous_system_number" : 209,
+         "autonomous_system_organization" : "NOVARTIS-DMZ-US"
+      }
+   },
+   {
+      "2602:100::/24" : {
+         "autonomous_system_number" : 237,
+         "autonomous_system_organization" : "Merit Network Inc."
+      }
+   },
+   {
+      "2602:200::/24" : {
+         "autonomous_system_number" : 237,
+         "autonomous_system_organization" : "Merit Network Inc."
+      }
+   },
+   {
+      "2602:300::/24" : {
+         "autonomous_system_number" : 7018,
+         "autonomous_system_organization" : "AT&T Services, Inc."
+      }
+   },
+   {
+      "2602:400::/22" : {
+         "autonomous_system_number" : 237,
+         "autonomous_system_organization" : "Merit Network Inc."
+      }
+   },
+   {
+      "2602:800::/21" : {
+         "autonomous_system_number" : 237,
+         "autonomous_system_organization" : "Merit Network Inc."
+      }
+   },
+   {
+      "2602:1000::/20" : {
+         "autonomous_system_number" : 237,
+         "autonomous_system_organization" : "Merit Network Inc."
+      }
+   },
+   {
+      "2602:2000::/19" : {
+         "autonomous_system_number" : 237,
+         "autonomous_system_organization" : "Merit Network Inc."
+      }
+   },
+   {
+      "2602:4000::/18" : {
+         "autonomous_system_number" : 237,
+         "autonomous_system_organization" : "Merit Network Inc."
+      }
+   },
+   {
+      "2602:8000::/17" : {
+         "autonomous_system_number" : 237,
+         "autonomous_system_organization" : "Merit Network Inc."
+      }
+   },
+   {
+      "2603::/16" : {
+         "autonomous_system_number" : 237,
+         "autonomous_system_organization" : "Merit Network Inc."
+      }
+   },
+   {
+      "2604::/14" : {
+         "autonomous_system_number" : 237,
+         "autonomous_system_organization" : "Merit Network Inc."
+      }
+   },
+   {
+      "2608::/13" : {
+         "autonomous_system_number" : 237,
+         "autonomous_system_organization" : "Merit Network Inc."
+      }
+   },
+   {
+      "2800::/19" : {
+         "autonomous_system_number" : 237,
+         "autonomous_system_organization" : "Merit Network Inc."
+      }
+   },
+   {
+      "2800:2000::/20" : {
+         "autonomous_system_number" : 10318,
+         "autonomous_system_organization" : "S.A."
+      }
+   },
+   {
+      "2800:3000::/20" : {
+         "autonomous_system_number" : 237,
+         "autonomous_system_organization" : "Merit Network Inc."
+      }
+   },
+   {
+      "2800:4000::/18" : {
+         "autonomous_system_number" : 237,
+         "autonomous_system_organization" : "Merit Network Inc."
+      }
+   },
+   {
+      "2800:8000::/17" : {
+         "autonomous_system_number" : 237,
+         "autonomous_system_organization" : "Merit Network Inc."
+      }
+   },
+   {
+      "2801::/16" : {
+         "autonomous_system_number" : 237,
+         "autonomous_system_organization" : "Merit Network Inc."
+      }
+   },
+   {
+      "2802::/15" : {
+         "autonomous_system_number" : 237,
+         "autonomous_system_organization" : "Merit Network Inc."
+      }
+   },
+   {
+      "2804::/15" : {
+         "autonomous_system_number" : 237,
+         "autonomous_system_organization" : "Merit Network Inc."
+      }
+   },
+   {
+      "2806::/20" : {
+         "autonomous_system_number" : 237,
+         "autonomous_system_organization" : "Merit Network Inc."
+      }
+   },
+   {
+      "2806:1000::/24" : {
+         "autonomous_system_number" : 8151,
+         "autonomous_system_organization" : "Uninet S.A. de C.V."
+      }
+   },
+   {
+      "2806:1100::/24" : {
+         "autonomous_system_number" : 237,
+         "autonomous_system_organization" : "Merit Network Inc."
+      }
+   },
+   {
+      "2806:1200::/23" : {
+         "autonomous_system_number" : 237,
+         "autonomous_system_organization" : "Merit Network Inc."
+      }
+   },
+   {
+      "2806:1400::/22" : {
+         "autonomous_system_number" : 237,
+         "autonomous_system_organization" : "Merit Network Inc."
+      }
+   },
+   {
+      "2806:1800::/21" : {
+         "autonomous_system_number" : 237,
+         "autonomous_system_organization" : "Merit Network Inc."
+      }
+   },
+   {
+      "2806:2000::/19" : {
+         "autonomous_system_number" : 237,
+         "autonomous_system_organization" : "Merit Network Inc."
+      }
+   },
+   {
+      "2806:4000::/18" : {
+         "autonomous_system_number" : 237,
+         "autonomous_system_organization" : "Merit Network Inc."
+      }
+   },
+   {
+      "2806:8000::/17" : {
+         "autonomous_system_number" : 237,
+         "autonomous_system_organization" : "Merit Network Inc."
+      }
+   },
+   {
+      "2807::/16" : {
+         "autonomous_system_number" : 237,
+         "autonomous_system_organization" : "Merit Network Inc."
+      }
+   },
+   {
+      "2808::/13" : {
+         "autonomous_system_number" : 237,
+         "autonomous_system_organization" : "Merit Network Inc."
+      }
+   },
+   {
+      "2a00::/22" : {
+         "autonomous_system_number" : 3209,
+         "autonomous_system_organization" : "Vodafone GmbH"
+      }
+   },
+   {
+      "2a00:800::/25" : {
+         "autonomous_system_number" : 1257,
+         "autonomous_system_organization" : "TELE2"
+      }
+   },
+   {
+      "2a00:2000::/23" : {
+         "autonomous_system_number" : 5400,
+         "autonomous_system_organization" : "British Telecommunications plc"
+      }
+   },
+   {
+      "2a00:2200::/24" : {
+         "autonomous_system_number" : 5400,
+         "autonomous_system_organization" : "British Telecommunications plc"
+      }
+   },
+   {
+      "2a00:2300::/25" : {
+         "autonomous_system_number" : 5400,
+         "autonomous_system_organization" : "British Telecommunications plc"
+      }
+   },
+   {
+      "2a00:2380::/25" : {
+         "autonomous_system_number" : 2856,
+         "autonomous_system_organization" : "BTnet UK Regional network"
+      }
+   },
+   {
+      "2a01:2e0::/28" : {
+         "autonomous_system_number" : 8374,
+         "autonomous_system_organization" : "Polkomtel Sp. z o.o."
+      }
+   },
+   {
+      "2a01:800::/24" : {
+         "autonomous_system_number" : 3209,
+         "autonomous_system_organization" : "Vodafone GmbH"
+      }
+   },
+   {
+      "2a01:c00::/26" : {
+         "autonomous_system_number" : 13184,
+         "autonomous_system_organization" : "Telefonica Germany GmbH & Co.OHG"
+      }
+   },
+   {
+      "2a01:e00::/26" : {
+         "autonomous_system_number" : 12322,
+         "autonomous_system_organization" : "Free SAS"
+      }
+   },
+   {
+      "2a01:1000::/21" : {
+         "autonomous_system_number" : 5617,
+         "autonomous_system_organization" : "Telekomunikacja Polska S.A."
+      }
+   },
+   {
+      "2a01:2000::/20" : {
+         "autonomous_system_number" : 3269,
+         "autonomous_system_organization" : "Telecom Italia S.p.a."
+      }
+   },
+   {
+      "2a01:c000::/19" : {
+         "autonomous_system_number" : 5511,
+         "autonomous_system_organization" : "Orange S.A."
+      }
+   },
+   {
+      "2a02:1200::/27" : {
+         "autonomous_system_number" : 3303,
+         "autonomous_system_organization" : "Swisscom (Switzerland) Ltd"
+      }
+   },
+   {
+      "2a02:1400::/26" : {
+         "autonomous_system_number" : 2119,
+         "autonomous_system_organization" : "Telenor Norge AS"
+      }
+   },
+   {
+      "2a02:1800::/24" : {
+         "autonomous_system_number" : 6848,
+         "autonomous_system_organization" : "Telenet N.V."
+      }
+   },
+   {
+      "2a02:2e00::/27" : {
+         "autonomous_system_number" : 12715,
+         "autonomous_system_organization" : "Jazz Telecom S.A."
+      }
+   },
+   {
+      "2a02:3000::/23" : {
+         "autonomous_system_number" : 6805,
+         "autonomous_system_organization" : "Telefonica Germany GmbH & Co.OHG"
+      }
+   },
+   {
+      "2a02:8100::/27" : {
+         "autonomous_system_number" : 31334,
+         "autonomous_system_organization" : "Kabel Deutschland Vertrieb und Service GmbH"
+      }
+   },
+   {
+      "2a02:8200::/27" : {
+         "autonomous_system_number" : 9145,
+         "autonomous_system_organization" : "EWE TEL GmbH"
+      }
+   },
+   {
+      "2a02:8400::/25" : {
+         "autonomous_system_number" : 15557,
+         "autonomous_system_organization" : "Societe Francaise du Radiotelephone S.A"
+      }
+   },
+   {
+      "2a02:9000::/23" : {
+         "autonomous_system_number" : 3352,
+         "autonomous_system_organization" : "TELEFONICA DE ESPANA"
+      }
+   },
+   {
+      "2a02:a000::/26" : {
+         "autonomous_system_number" : 5432,
+         "autonomous_system_organization" : "Belgacom regional ASN"
+      }
+   },
+   {
+      "2a02:a200::/27" : {
+         "autonomous_system_number" : 6830,
+         "autonomous_system_organization" : "Liberty Global Operations B.V."
+      }
+   },
+   {
+      "2a02:a300::/27" : {
+         "autonomous_system_number" : 6830,
+         "autonomous_system_organization" : "Liberty Global Operations B.V."
+      }
+   },
+   {
+      "2a02:a400::/26" : {
+         "autonomous_system_number" : 1136,
+         "autonomous_system_organization" : "KPN Internet Solutions"
+      }
+   },
+   {
+      "2a02:a440::/26" : {
+         "autonomous_system_number" : 8737,
+         "autonomous_system_organization" : "Koninklijke KPN N.V."
+      }
+   },
+   {
+      "2a02:a800::/26" : {
+         "autonomous_system_number" : 6739,
+         "autonomous_system_organization" : "Cableuropa - ONO"
+      }
+   },
+   {
+      "2a02:aa00::/27" : {
+         "autonomous_system_number" : 6830,
+         "autonomous_system_organization" : "Liberty Global Operations B.V."
+      }
+   },
+   {
+      "2a04:2400::/27" : {
+         "autonomous_system_number" : 6830,
+         "autonomous_system_organization" : "Liberty Global Operations B.V."
+      }
+   },
+   {
+      "2c00::/13" : {
+         "autonomous_system_number" : 237,
+         "autonomous_system_organization" : "Merit Network Inc."
+      }
+   },
+   {
+      "2c08::/14" : {
+         "autonomous_system_number" : 237,
+         "autonomous_system_organization" : "Merit Network Inc."
+      }
+   },
+   {
+      "2c0c::/15" : {
+         "autonomous_system_number" : 237,
+         "autonomous_system_organization" : "Merit Network Inc."
+      }
+   },
+   {
+      "2c0e::/20" : {
+         "autonomous_system_number" : 24863,
+         "autonomous_system_organization" : "LINKdotNET"
+      }
+   },
+   {
+      "2c0e:1000::/20" : {
+         "autonomous_system_number" : 237,
+         "autonomous_system_organization" : "Merit Network Inc."
+      }
+   },
+   {
+      "2c0e:2000::/19" : {
+         "autonomous_system_number" : 237,
+         "autonomous_system_organization" : "Merit Network Inc."
+      }
+   },
+   {
+      "2c0e:4000::/18" : {
+         "autonomous_system_number" : 237,
+         "autonomous_system_organization" : "Merit Network Inc."
+      }
+   },
+   {
+      "2c0e:8000::/17" : {
+         "autonomous_system_number" : 237,
+         "autonomous_system_organization" : "Merit Network Inc."
+      }
+   },
+   {
+      "2c0f::/17" : {
+         "autonomous_system_number" : 237,
+         "autonomous_system_organization" : "Merit Network Inc."
+      }
+   },
+   {
+      "2c0f:8000::/18" : {
+         "autonomous_system_number" : 237,
+         "autonomous_system_organization" : "Merit Network Inc."
+      }
+   },
+   {
+      "2c0f:c000::/19" : {
+         "autonomous_system_number" : 237,
+         "autonomous_system_organization" : "Merit Network Inc."
+      }
+   },
+   {
+      "2c0f:e000::/20" : {
+         "autonomous_system_number" : 237,
+         "autonomous_system_organization" : "Merit Network Inc."
+      }
+   },
+   {
+      "2c0f:f000::/21" : {
+         "autonomous_system_number" : 237,
+         "autonomous_system_organization" : "Merit Network Inc."
+      }
+   },
+   {
+      "2c0f:f800::/22" : {
+         "autonomous_system_number" : 237,
+         "autonomous_system_organization" : "Merit Network Inc."
+      }
+   },
+   {
+      "2c0f:fc00::/27" : {
+         "autonomous_system_number" : 3741,
+         "autonomous_system_organization" : "IS"
+      }
+   },
+   {
+      "2c0f:fc20::/27" : {
+         "autonomous_system_number" : 237,
+         "autonomous_system_organization" : "Merit Network Inc."
+      }
+   },
+   {
+      "2c0f:fc40::/26" : {
+         "autonomous_system_number" : 237,
+         "autonomous_system_organization" : "Merit Network Inc."
+      }
+   },
+   {
+      "2c0f:fc80::/25" : {
+         "autonomous_system_number" : 237,
+         "autonomous_system_organization" : "Merit Network Inc."
+      }
+   },
+   {
+      "2c0f:fd00::/24" : {
+         "autonomous_system_number" : 237,
+         "autonomous_system_organization" : "Merit Network Inc."
+      }
+   },
+   {
+      "2c0f:fe00::/24" : {
+         "autonomous_system_number" : 237,
+         "autonomous_system_organization" : "Merit Network Inc."
+      }
+   },
+   {
+      "2c0f:ff00::/26" : {
+         "autonomous_system_number" : 237,
+         "autonomous_system_organization" : "Merit Network Inc."
+      }
+   },
+   {
+      "2c0f:ff40::/26" : {
+         "autonomous_system_number" : 10474,
+         "autonomous_system_organization" : "MWEB-10474"
+      }
+   },
+   {
+      "2c0f:ff80::/25" : {
+         "autonomous_system_number" : 237,
+         "autonomous_system_organization" : "Merit Network Inc."
+      }
+   }
+]

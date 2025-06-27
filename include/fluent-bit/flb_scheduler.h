@@ -234,7 +234,7 @@ static FLB_INLINE void flb_sched_timer_cb_coro_return()
     val = FLB_BITS_U64_SET(FLB_SCHED_TIMER_CORO_RETURN, stc->id);
     n = flb_pipe_w(sched->ch_events[1], &val, sizeof(val));
     if (n == -1) {
-        flb_errno();
+        flb_pipe_error();
     }
 
     flb_coro_yield(coro, FLB_TRUE);

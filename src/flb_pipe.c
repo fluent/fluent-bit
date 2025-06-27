@@ -96,7 +96,7 @@ void flb_pipe_destroy(flb_pipefd_t pipefd[2])
 
 int flb_pipe_close(flb_pipefd_t fd)
 {
-    /* 
+    /*
      *  when chunk file is destroyed, the fd for file will be -1, we should avoid
      *  deleting chunk file with fd -1
      */
@@ -140,7 +140,7 @@ ssize_t flb_pipe_read_all(int fd, void *buf, size_t count)
         }
         else if (bytes == 0) {
             /* Broken pipe ? */
-            flb_errno();
+            flb_pipe_error();
             return -1;
         }
         total += bytes;
@@ -172,7 +172,7 @@ ssize_t flb_pipe_write_all(int fd, const void *buf, size_t count)
         }
         else if (bytes == 0) {
             /* Broken pipe ? */
-            flb_errno();
+            flb_pipe_error();
             return -1;
         }
         total += bytes;

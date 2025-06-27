@@ -199,6 +199,9 @@ static int check_proxy(struct flb_output_instance *ins,
             return -1;
         }
 
+        if (ctx->proxy_host) {
+            flb_free(ctx->proxy_host);
+        }
         ctx->proxy_host = host;
         ctx->proxy_port = atoi(port);
         ctx->proxy = tmp;
@@ -274,6 +277,13 @@ struct opentelemetry_context *flb_opentelemetry_context_create(struct flb_output
     /* Parse 'add_label' */
     ret = config_add_labels(ins, ctx);
     if (ret == -1) {
+        flb_opentelemetry_context_destroy(ctx);
+        return NULL;
+    }
+
+    ret = check_proxy(ins, ctx, host, port, protocol, logs_uri);
+    if (ret == -1) {
+        flb_opentelemetry_context_destroy(ctx);
         return NULL;
     }
 
@@ -283,7 +293,7 @@ struct opentelemetry_context *flb_opentelemetry_context_create(struct flb_output
         return NULL;
     }
 
-    ret = check_proxy(ins, ctx, host, port, protocol, logs_uri);
+    ret = check_proxy(ins, ctx, host, port, protocol, traces_uri);
     if (ret == -1) {
         flb_opentelemetry_context_destroy(ctx);
         return NULL;
@@ -404,6 +414,13 @@ struct opentelemetry_context *flb_opentelemetry_context_create(struct flb_output
         if (strcasecmp(tmp, "gzip") == 0) {
             ctx->compress_gzip = FLB_TRUE;
         }
+        else if (strcasecmp(tmp, "zstd") == 0) {
+            ctx->compress_zstd = FLB_TRUE;
+        }
+        else {
+            flb_plg_error(ctx->ins, "Unknown compression method %s", tmp);
+            return NULL;
+        }
     }
 
     ctx->ra_observed_timestamp_metadata = flb_ra_create((char*)ctx->logs_observed_timestamp_metadata_key,
@@ -489,7 +506,7 @@ struct opentelemetry_context *flb_opentelemetry_context_create(struct flb_output
         flb_plg_error(ins, "failed to create record accessor for resource attributes");
     }
 
-    ctx->ra_resource_schema_url = flb_ra_create("$schema_url", FLB_FALSE);
+    ctx->ra_resource_schema_url = flb_ra_create("$resource['schema_url']", FLB_FALSE);
     if (ctx->ra_resource_schema_url == NULL) {
         flb_plg_error(ins, "failed to create record accessor for resource schema url");
     }
@@ -507,6 +524,11 @@ struct opentelemetry_context *flb_opentelemetry_context_create(struct flb_output
     ctx->ra_scope_attr = flb_ra_create("$scope['attributes']", FLB_FALSE);
     if (ctx->ra_scope_attr == NULL) {
         flb_plg_error(ins, "failed to create record accessor for scope attributes");
+    }
+
+    ctx->ra_scope_schema_url = flb_ra_create("$scope['schema_url']", FLB_FALSE);
+    if (ctx->ra_scope_schema_url == NULL) {
+        flb_plg_error(ins, "failed to create record accessor for resource schema url");
     }
 
     /* log metadata under $otlp (set by in_opentelemetry) */
@@ -560,17 +582,35 @@ struct opentelemetry_context *flb_opentelemetry_context_create(struct flb_output
 
     ctx->enable_http2_flag = FLB_TRUE;
 
+    /* if gRPC has been enabled, auto-enable HTTP/2 to make end-user life easier */
+    if (ctx->enable_grpc_flag && !flb_utils_bool(ctx->enable_http2)) {
+        flb_plg_info(ctx->ins, "gRPC enabled, HTTP/2 has been auto-enabled");
+        flb_sds_destroy(ctx->enable_http2);
+        ctx->enable_http2 = flb_sds_create("on");
+    }
+
+    /*
+     * 'force' aims to be used for plaintext communication when HTTP/2 is set. Note that
+     * moving forward it wont be necessary since we are now setting some special defaults
+     * in case of gRPC is enabled (which is the only case where HTTP/2 is mandatory).
+     */
     if (strcasecmp(ctx->enable_http2, "force") == 0) {
         http_protocol_version = HTTP_PROTOCOL_VERSION_20;
     }
     else if (flb_utils_bool(ctx->enable_http2)) {
-        http_protocol_version = HTTP_PROTOCOL_VERSION_AUTODETECT;
+        if (!ins->use_tls) {
+            http_protocol_version = HTTP_PROTOCOL_VERSION_20;
+        }
+        else {
+            http_protocol_version = HTTP_PROTOCOL_VERSION_AUTODETECT;
+        }
     }
     else {
         http_protocol_version = HTTP_PROTOCOL_VERSION_11;
 
         ctx->enable_http2_flag = FLB_FALSE;
     }
+
 
     ret = flb_http_client_ng_init(&ctx->http_client,
                                   NULL,
@@ -685,6 +725,9 @@ void flb_opentelemetry_context_destroy(struct opentelemetry_context *ctx)
     }
     if (ctx->ra_scope_attr) {
         flb_ra_destroy(ctx->ra_scope_attr);
+    }
+    if (ctx->ra_scope_schema_url) {
+        flb_ra_destroy(ctx->ra_scope_schema_url);
     }
 
     if (ctx->ra_log_meta_otlp_observed_ts) {

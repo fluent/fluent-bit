@@ -82,10 +82,14 @@ struct flb_tail_config {
 #endif
     int refresh_interval_sec;  /* seconds to re-scan           */
     long refresh_interval_nsec;/* nanoseconds to re-scan       */
+    int read_newly_discovered_files_from_head; /* read new files from head after startup */
     int read_from_head;        /* read new files from head     */
     int rotate_wait;           /* sec to wait on rotated files */
     int watcher_interval;      /* watcher interval             */
-    int ignore_older;          /* ignore fields older than X seconds        */
+    int ignore_older;          /* ignore fields older than X seconds */
+    int ignore_active_older_files; /* ignore files that exceed the ignore
+                                    * older limit even if they are already
+                                    * being ingested */
     time_t last_pending;       /* last time a 'pending signal' was emitted' */
     struct mk_list *path_list; /* list of paths to scan (glob) */
     flb_sds_t path_key;        /* key name of file path        */
@@ -121,6 +125,10 @@ struct flb_tail_config {
 
     /* Parser / Format */
     struct flb_parser *parser;
+
+#ifdef FLB_HAVE_UNICODE_ENCODER
+    int preferred_input_encoding;
+#endif
 
     /* Multiline */
     int multiline;             /* multiline enabled ?  */
@@ -161,6 +169,8 @@ struct flb_tail_config {
     /* Hash: hash tables for quick acess to registered files */
     struct flb_hash_table *static_hash;
     struct flb_hash_table *event_hash;
+
+    struct flb_hash_table *ignored_file_sizes;
 
     struct flb_config *config;
 };

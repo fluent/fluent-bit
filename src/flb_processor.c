@@ -29,7 +29,32 @@
 #include <fluent-bit/flb_mp_chunk.h>
 #include <fluent-bit/flb_log_event_decoder.h>
 #include <fluent-bit/flb_log_event_encoder.h>
+#include <fluent-bit/flb_conditionals.h>
 #include <cfl/cfl.h>
+
+struct flb_config_map processor_global_properties[] = {
+    {
+        FLB_CONFIG_MAP_STR, "alias", NULL,
+        0, FLB_FALSE, 0,
+        "Sets an alias for the processor instance. This is useful when using multiple instances of the same "
+        "processor plugin. If no alias is set, the instance will be named using the plugin name and a sequence number."
+    },
+    {
+        FLB_CONFIG_MAP_STR, "log_level", "info",
+        0, FLB_FALSE, 0,
+        "Specifies the log level for this processor plugin. If not set, the plugin "
+        "will use the global log level defined in the 'service' section. If the global "
+        "log level is also not specified, it defaults to 'info'."
+    },
+
+    {0}
+};
+
+struct mk_list *flb_processor_get_global_config_map(struct flb_config *config)
+{
+    return flb_config_map_create(config, processor_global_properties);
+}
+
 
 static int acquire_lock(pthread_mutex_t *lock,
                         size_t retry_limit,
@@ -181,6 +206,7 @@ struct flb_processor_unit *flb_processor_unit_create(struct flb_processor *proc,
     pu->parent = proc;
     pu->event_type = event_type;
     pu->name = flb_sds_create(unit_name);
+    pu->condition = NULL;
 
     if (!pu->name) {
         flb_free(pu);
@@ -242,10 +268,13 @@ struct flb_processor_unit *flb_processor_unit_create(struct flb_processor *proc,
         pu->unit_type = FLB_PROCESSOR_UNIT_NATIVE;
 
         /* create an instance of the processor */
-        processor_instance = flb_processor_instance_create(config, pu->event_type, unit_name, NULL);
+        processor_instance = flb_processor_instance_create(config,
+                                                           pu,
+                                                           pu->event_type,
+                                                           unit_name, NULL);
 
         if (processor_instance == NULL) {
-            flb_error("[processor] error creating native processor instance %s", pu->name);
+            flb_error("[processor] error creating processor '%s': plugin doesn't exist or failed to initialize", unit_name);
 
             pthread_mutex_destroy(&pu->lock);
             flb_sds_destroy(pu->name);
@@ -278,19 +307,293 @@ struct flb_processor_unit *flb_processor_unit_create(struct flb_processor *proc,
     return pu;
 }
 
+/* Parse and set a condition property for a processor unit */
+static int flb_processor_unit_set_condition(struct flb_processor_unit *pu, struct cfl_variant *v)
+{
+    struct cfl_variant *val;
+    struct cfl_variant *rule_val;
+    struct cfl_kvlist *kvlist;
+    struct flb_condition *condition;
+    enum flb_rule_operator rule_op;
+    enum flb_condition_operator cond_op;
+    const char *field;
+    const char *operator;
+    void *value = NULL;
+    int value_count;
+    enum record_context_type context;
+    int i;
+    int j;
+    int ret;
+    struct cfl_variant *array_val;
+    int is_array_value = 0;
+
+    flb_debug("[processor] processing condition property for processor unit '%s'", pu->name);
+
+    /* Conditions must be specified as key-value maps */
+    if (v->type != CFL_VARIANT_KVLIST) {
+        flb_error("[processor] condition must be a map");
+        return -1;
+    }
+
+    kvlist = v->data.as_kvlist;
+
+    /* First check for operator (AND/OR) */
+    val = cfl_kvlist_fetch(kvlist, "op");
+    if (val != NULL && val->type == CFL_VARIANT_STRING) {
+        if (strcasecmp(val->data.as_string, "and") == 0) {
+            cond_op = FLB_COND_OP_AND;
+        }
+        else if (strcasecmp(val->data.as_string, "or") == 0) {
+            cond_op = FLB_COND_OP_OR;
+        }
+        else {
+            flb_error("[processor] invalid condition operator '%s', must be 'and' or 'or'",
+                        val->data.as_string);
+            return -1;
+        }
+    }
+    else {
+        /* Default to AND if not specified */
+        cond_op = FLB_COND_OP_AND;
+    }
+
+    /* Create a condition with the specified operator */
+    condition = flb_condition_create(cond_op);
+    if (!condition) {
+        flb_error("[processor] error creating condition");
+        return -1;
+    }
+
+    /* Look for the rules array */
+    val = cfl_kvlist_fetch(kvlist, "rules");
+    if (!val || val->type != CFL_VARIANT_ARRAY || val->data.as_array->entry_count == 0) {
+        flb_error("[processor] condition requires a non-empty 'rules' array");
+        flb_condition_destroy(condition);
+        return -1;
+    }
+
+    /* Process each rule in the array */
+    flb_debug("[processor] processing %zu rule(s) for condition", val->data.as_array->entry_count);
+    for (i = 0; i < val->data.as_array->entry_count; i++) {
+        rule_val = val->data.as_array->entries[i];
+
+        if (rule_val->type != CFL_VARIANT_KVLIST) {
+            flb_error("[processor] each rule must be a map");
+            flb_condition_destroy(condition);
+            return -1;
+        }
+
+        flb_debug("[processor] processing rule #%d", i+1);
+
+        kvlist = rule_val->data.as_kvlist;
+
+        /* Extract field */
+        rule_val = cfl_kvlist_fetch(kvlist, "field");
+        if (!rule_val || rule_val->type != CFL_VARIANT_STRING) {
+            flb_error("[processor] rule missing 'field' property");
+            flb_condition_destroy(condition);
+            return -1;
+        }
+        field = rule_val->data.as_string;
+        flb_debug("[processor] condition rule field: '%s'", field);
+
+        /* Extract operator */
+        rule_val = cfl_kvlist_fetch(kvlist, "op");
+        if (!rule_val || rule_val->type != CFL_VARIANT_STRING) {
+            flb_error("[processor] rule missing 'op' property");
+            flb_condition_destroy(condition);
+            return -1;
+        }
+        operator = rule_val->data.as_string;
+        flb_debug("[processor] condition rule operator: '%s'", operator);
+
+        /* Determine rule operator */
+        if (strcasecmp(operator, "eq") == 0) {
+            rule_op = FLB_RULE_OP_EQ;
+        }
+        else if (strcasecmp(operator, "neq") == 0) {
+            rule_op = FLB_RULE_OP_NEQ;
+        }
+        else if (strcasecmp(operator, "gt") == 0) {
+            rule_op = FLB_RULE_OP_GT;
+        }
+        else if (strcasecmp(operator, "lt") == 0) {
+            rule_op = FLB_RULE_OP_LT;
+        }
+        else if (strcasecmp(operator, "gte") == 0) {
+            rule_op = FLB_RULE_OP_GTE;
+        }
+        else if (strcasecmp(operator, "lte") == 0) {
+            rule_op = FLB_RULE_OP_LTE;
+        }
+        else if (strcasecmp(operator, "regex") == 0) {
+            rule_op = FLB_RULE_OP_REGEX;
+        }
+        else if (strcasecmp(operator, "not_regex") == 0) {
+            rule_op = FLB_RULE_OP_NOT_REGEX;
+        }
+        else if (strcasecmp(operator, "in") == 0) {
+            rule_op = FLB_RULE_OP_IN;
+        }
+        else if (strcasecmp(operator, "not_in") == 0) {
+            rule_op = FLB_RULE_OP_NOT_IN;
+        }
+        else {
+            flb_error("[processor] invalid rule operator '%s'", operator);
+            flb_condition_destroy(condition);
+            return -1;
+        }
+
+        /* Extract value */
+        rule_val = cfl_kvlist_fetch(kvlist, "value");
+        if (!rule_val) {
+            flb_error("[processor] rule missing 'value' property");
+            flb_condition_destroy(condition);
+            return -1;
+        }
+
+        /* Handle different value types */
+        value = NULL;
+        value_count = 1;
+
+        /* Check that IN and NOT_IN operators only work with array values */
+        if ((rule_op == FLB_RULE_OP_IN || rule_op == FLB_RULE_OP_NOT_IN) &&
+            rule_val->type != CFL_VARIANT_ARRAY) {
+            flb_error("[processor] 'in' and 'not_in' operators require array values, got %d type instead",
+                    rule_val->type);
+            flb_condition_destroy(condition);
+            return -1;
+        }
+
+        if (rule_val->type == CFL_VARIANT_STRING) {
+            value = rule_val->data.as_string;
+            flb_debug("[processor] condition rule value (string): %s",
+                        (char *)value);
+        }
+        else if (rule_val->type == CFL_VARIANT_INT) {
+            value = &rule_val->data.as_int64;
+            flb_debug("[processor] condition rule value (int): %lld",
+                    rule_val->data.as_int64);
+        }
+        else if (rule_val->type == CFL_VARIANT_UINT) {
+            value = &rule_val->data.as_uint64;
+            flb_debug("[processor] condition rule value (uint): %lu",
+                    (unsigned long)rule_val->data.as_uint64);
+        }
+        else if (rule_val->type == CFL_VARIANT_DOUBLE) {
+            value = &rule_val->data.as_double;
+            flb_debug("[processor] condition rule value (double): %f",
+                    rule_val->data.as_double);
+        }
+        else if (rule_val->type == CFL_VARIANT_ARRAY) {
+            /* For IN and NOT_IN operators, we need to handle arrays */
+            if (rule_op != FLB_RULE_OP_IN && rule_op != FLB_RULE_OP_NOT_IN) {
+                flb_error("[processor] array values can only be used with 'in' or 'not_in' operators");
+                flb_condition_destroy(condition);
+                return -1;
+            }
+
+            /* Extract all string values from the array */
+            value = flb_calloc(rule_val->data.as_array->entry_count, sizeof(flb_sds_t));
+            if (!value) {
+                flb_errno();
+                flb_condition_destroy(condition);
+                return -1;
+            }
+
+            /* Mark that we've allocated an array value */
+            is_array_value = 1;
+
+            for (j = 0; j < rule_val->data.as_array->entry_count; j++) {
+                array_val = rule_val->data.as_array->entries[j];
+                if (array_val->type != CFL_VARIANT_STRING) {
+                    flb_error("[processor] array values must be strings");
+                    flb_free(value);
+                    flb_condition_destroy(condition);
+                    return -1;
+                }
+
+                ((flb_sds_t *)value)[j] = flb_sds_create(array_val->data.as_string);
+            }
+
+            value_count = rule_val->data.as_array->entry_count;
+        }
+        else {
+            flb_error("[processor] unsupported value type for rule");
+            flb_condition_destroy(condition);
+            return -1;
+        }
+
+        /* Determine context (body or metadata) */
+        rule_val = cfl_kvlist_fetch(kvlist, "context");
+        if (rule_val && rule_val->type == CFL_VARIANT_STRING) {
+            if (strcasecmp(rule_val->data.as_string, "metadata") == 0) {
+                context = RECORD_CONTEXT_METADATA;
+            }
+            else {
+                context = RECORD_CONTEXT_BODY;
+            }
+        }
+        else {
+            /* Default to body context */
+            context = RECORD_CONTEXT_BODY;
+        }
+
+        flb_debug("[processor] adding rule: field='%s', op=%d, context=%d",
+                field, rule_op, context);
+
+        /* Add rule to the condition */
+        ret = flb_condition_add_rule(condition, field, rule_op, value, value_count, context);
+
+        /*
+         * Free array value if we allocated it. For 'in' and 'not_in' operators,
+         * flb_condition_add_rule makes its own copy of the strings in the array,
+         * so we need to free our copies whether or not the rule was added successfully.
+         */
+        if (is_array_value) {
+            for (j = 0; j < value_count; j++) {
+                flb_sds_destroy(((flb_sds_t *)value)[j]);
+            }
+            flb_free(value);
+            is_array_value = 0;
+        }
+
+        if (ret != FLB_TRUE) {
+            flb_error("[processor] error adding rule to condition (ret=%d)", ret);
+            flb_condition_destroy(condition);
+            return -1;
+        }
+        else {
+            flb_debug("[processor] successfully added rule to condition");
+        }
+    }
+
+    /* Assign the created condition to the processor unit */
+    if (pu->condition != NULL) {
+        flb_condition_destroy(pu->condition);
+    }
+    pu->condition = condition;
+
+    return 0;
+}
+
 int flb_processor_unit_set_property(struct flb_processor_unit *pu, const char *k, struct cfl_variant *v)
 {
     struct cfl_variant *val;
     int i;
     int ret;
 
-    if (pu->unit_type == FLB_PROCESSOR_UNIT_FILTER) {
+    /* Handle the "condition" property for processor units */
+    if (strcasecmp(k, "condition") == 0) {
+        return flb_processor_unit_set_condition(pu, v);
+    }
 
+    /* Handle normal properties */
+    if (pu->unit_type == FLB_PROCESSOR_UNIT_FILTER) {
         if (v->type == CFL_VARIANT_STRING) {
             return flb_filter_set_property(pu->ctx, k, v->data.as_string);
         }
         else if (v->type == CFL_VARIANT_ARRAY) {
-
             for (i = 0; i < v->data.as_array->entry_count; i++) {
                 val = v->data.as_array->entries[i];
                 ret = flb_filter_set_property(pu->ctx, k, val->data.as_string);
@@ -306,6 +609,26 @@ int flb_processor_unit_set_property(struct flb_processor_unit *pu, const char *k
     return flb_processor_instance_set_property(
             (struct flb_processor_instance *) pu->ctx,
             k, v);
+}
+
+int flb_processor_unit_set_property_str(struct flb_processor_unit *pu, const char *k, const char *v)
+{
+    int ret;
+    struct cfl_variant *val;
+
+    if (!pu || !k || !v) {
+        return -1;
+    }
+
+    val = cfl_variant_create_from_string((char *) v);
+    if (!val) {
+        return -1;
+    }
+
+    ret = flb_processor_unit_set_property(pu, k, val);
+    cfl_variant_destroy(val);
+
+    return ret;
 }
 
 void flb_processor_unit_destroy(struct flb_processor_unit *pu)
@@ -327,6 +650,11 @@ void flb_processor_unit_destroy(struct flb_processor_unit *pu)
     }
 
     pthread_mutex_destroy(&pu->lock);
+
+    /* Free the condition if it exists */
+    if (pu->condition) {
+        flb_condition_destroy(pu->condition);
+    }
 
     flb_sds_destroy(pu->name);
     flb_free(pu);
@@ -385,6 +713,7 @@ int flb_processor_init(struct flb_processor *proc)
         ret = flb_processor_unit_init(pu);
 
         if (ret == -1) {
+            flb_error("[processor] initialization of processor unit '%s' failed", pu->name);
             return -1;
         }
         count++;
@@ -395,6 +724,7 @@ int flb_processor_init(struct flb_processor *proc)
         ret = flb_processor_unit_init(pu);
 
         if (ret == -1) {
+            flb_error("[processor] initialization of processor unit '%s' failed", pu->name);
             return -1;
         }
         count++;
@@ -405,6 +735,7 @@ int flb_processor_init(struct flb_processor *proc)
         ret = flb_processor_unit_init(pu);
 
         if (ret == -1) {
+            flb_error("[processor] initialization of processor unit '%s' failed", pu->name);
             return -1;
         }
         count++;
@@ -415,6 +746,7 @@ int flb_processor_init(struct flb_processor *proc)
         ret = flb_processor_unit_init(pu);
 
         if (ret == -1) {
+            flb_error("[processor] initialization of processor unit '%s' failed", pu->name);
             return -1;
         }
         count++;
@@ -648,12 +980,24 @@ int flb_processor_run(struct flb_processor *proc,
                         }
                     }
 
+                    /* Set the processor condition if it exists */
+                    if (pu->condition) {
+                        flb_debug("[processor] setting condition for chunk processing (pu=%s)", pu->name);
+                        chunk_cobj->condition = pu->condition;
+                    }
+                    else {
+                        flb_debug("[processor] no condition set for processor unit (pu=%s)", pu->name);
+                    }
+
                     /* Invoke processor plugin callback */
                     ret = p_ins->p->cb_process_logs(p_ins, chunk_cobj, tag, tag_len);
                     if (ret != FLB_PROCESSOR_SUCCESS) {
                         flb_warn("[processor] failed to process chunk");
                     }
                     chunk_cobj->record_pos = NULL;
+
+                    /* Clear the condition after processing */
+                    chunk_cobj->condition = NULL;
                     finalize = FLB_FALSE;
 
                     /* is this processing_unit the last one from the list ? */
@@ -745,20 +1089,36 @@ int flb_processor_run(struct flb_processor *proc,
                 }
             }
             else if (type == FLB_PROCESSOR_TRACES) {
-
                 if (p_ins->p->cb_process_traces != NULL) {
+                    tmp_buf = NULL;
+                    out_size = NULL;
                     ret = p_ins->p->cb_process_traces(p_ins,
                                                       (struct ctrace *) cur_buf,
+                                                      (struct ctrace **) &tmp_buf,
                                                       tag,
                                                       tag_len);
-
-                    if (ret != FLB_PROCESSOR_SUCCESS) {
+                    if (ret == FLB_PROCESSOR_FAILURE) {
                         release_lock(&pu->lock,
                                      FLB_PROCESSOR_LOCK_RETRY_LIMIT,
                                      FLB_PROCESSOR_LOCK_RETRY_DELAY);
 
                         return -1;
                     }
+                    else if (ret == FLB_PROCESSOR_SUCCESS) {
+                        if (tmp_buf == NULL) {
+                            /*
+                             * the processsor ran successfuly but there is no
+                             * trace output, that means that the invoked processor
+                             * will enqueue the trace through a different mechanism,
+                             * we just return saying nothing else is needed.
+                             */
+                            release_lock(&pu->lock,
+                                         FLB_PROCESSOR_LOCK_RETRY_LIMIT,
+                                         FLB_PROCESSOR_LOCK_RETRY_DELAY);
+                            return 0;
+                        }
+                    }
+
                 }
             }
             else if (type == FLB_PROCESSOR_PROFILES) {
@@ -863,7 +1223,7 @@ static int load_from_config_format_group(struct flb_processor *proc, int type, s
         tmp = cfl_kvlist_fetch(kvlist, "name");
 
         if (!tmp) {
-            flb_error("processor configuration don't have a 'name' defined");
+            flb_error("[processor] configuration missing required 'name' field");
             return -1;
         }
 
@@ -872,15 +1232,25 @@ static int load_from_config_format_group(struct flb_processor *proc, int type, s
         pu = flb_processor_unit_create(proc, type, name);
 
         if (!pu) {
-            flb_error("cannot create '%s' processor unit", name);
             return -1;
         }
 
-        /* iterate list of properties and set each one (skip name) */
+        /* Handle condition property first if it exists */
+        tmp = cfl_kvlist_fetch(kvlist, "condition");
+        if (tmp) {
+            ret = flb_processor_unit_set_property(pu, "condition", tmp);
+            if (ret == -1) {
+                flb_error("[processor] failed to set condition for processor '%s'", name);
+                return -1;
+            }
+        }
+
+        /* iterate list of properties and set each one (skip name and condition) */
         cfl_list_foreach_safe(head, tmp2, &kvlist->list) {
             pair = cfl_list_entry(head, struct cfl_kvpair, _head);
 
-            if (strcmp(pair->key, "name") == 0) {
+            if (strcmp(pair->key, "name") == 0 ||
+                strcmp(pair->key, "condition") == 0) {
                 continue;
             }
 
@@ -996,6 +1366,20 @@ int flb_processor_instance_set_property(struct flb_processor_instance *ins,
     cfl_sds_t tmp = NULL;
 
     len = strlen(k);
+
+    /* Special handling for condition property */
+    if (prop_key_check("condition", k, len) == 0) {
+        /* When condition is passed to a processor instance, forward it to the parent processor unit */
+        if (ins->pu) {
+            ret = flb_processor_unit_set_property(ins->pu, k, v);
+            if (ret == -1) {
+                flb_error("[processor] error setting condition for processor unit");
+                return -1;
+            }
+            return 0;
+        }
+    }
+
     if (v->type == CFL_VARIANT_STRING) {
         tmp = flb_env_var_translate(ins->config->env, v->data.as_string);
 
@@ -1053,6 +1437,7 @@ const char *flb_processor_instance_get_property(
 }
 
 struct flb_processor_instance *flb_processor_instance_create(struct flb_config *config,
+                                                             struct flb_processor_unit *pu,
                                                              int event_type,
                                                              const char *name, void *data)
 {
@@ -1098,6 +1483,7 @@ struct flb_processor_instance *flb_processor_instance_create(struct flb_config *
     instance->p     = plugin;
     instance->data  = data;
     instance->log_level = -1;
+    instance->pu = pu;
 
     mk_list_init(&instance->properties);
 
@@ -1115,6 +1501,7 @@ struct flb_processor_instance *flb_processor_instance_create(struct flb_config *
         flb_processor_instance_destroy(instance);
         instance = NULL;
     }
+    flb_log_event_decoder_read_groups(instance->log_decoder, FLB_TRUE);
 
     return instance;
 }
@@ -1146,6 +1533,21 @@ int flb_processor_instance_check_properties(
     int ret = 0;
     struct mk_list *config_map;
     struct flb_processor_plugin *p = ins->p;
+    struct mk_list *head;
+    struct mk_list *tmp;
+    struct flb_kv *kv;
+    int has_condition = FLB_FALSE;
+
+    /* Check if there's a condition property and temporarily remove it */
+    mk_list_foreach_safe(head, tmp, &ins->properties) {
+        kv = mk_list_entry(head, struct flb_kv, _head);
+
+        if (strcasecmp(kv->key, "condition") == 0) {
+            has_condition = FLB_TRUE;
+            mk_list_del(&kv->_head);
+            break;
+        }
+    }
 
     if (p->config_map) {
         /*
@@ -1157,6 +1559,12 @@ int flb_processor_instance_check_properties(
         if (!config_map) {
             flb_error("[native processor] error loading config map for '%s' plugin",
                       p->name);
+
+            /* Put the condition property back */
+            if (has_condition) {
+                mk_list_add(&kv->_head, &ins->properties);
+            }
+
             return -1;
         }
         ins->config_map = config_map;
@@ -1166,14 +1574,22 @@ int flb_processor_instance_check_properties(
                                               &ins->properties,
                                               ins->config_map);
 
-        if (ret == -1) {
+        /* Put the condition property back */
+        if (has_condition) {
+            mk_list_add(&kv->_head, &ins->properties);
+        }
 
+        if (ret == -1) {
             if (config->program_name) {
                 flb_helper("try the command: %s -F %s -h\n",
                            config->program_name, ins->p->name);
             }
             return -1;
         }
+    }
+    else if (has_condition) {
+        /* Put the condition property back if no config map */
+        mk_list_add(&kv->_head, &ins->properties);
     }
 
     return 0;
@@ -1205,7 +1621,6 @@ int flb_processor_instance_init(
     if (!ins->cmt) {
         flb_error("[processor] could not create cmetrics context: %s",
                   name);
-
         return -1;
     }
 
@@ -1225,8 +1640,7 @@ int flb_processor_instance_init(
                          config);
 
         if (ret != 0) {
-            flb_error("[processor] failed initialize filter %s", ins->name);
-
+            flb_error("[processor] failed initialize processor %s", ins->name);
             return -1;
         }
     }

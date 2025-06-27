@@ -190,6 +190,12 @@ static int flb_custom_propery_check_all(struct flb_config *config)
             flb_config_map_destroy(ins->config_map);
             ins->config_map = NULL;
         }
+
+        /* destroy net config map (will be recreated at flb_start) */
+        if (ins->net_config_map) {
+            flb_config_map_destroy(ins->net_config_map);
+            ins->net_config_map = NULL;
+        }
     }
 
     return 0;

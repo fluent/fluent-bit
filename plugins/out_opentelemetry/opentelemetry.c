@@ -32,6 +32,7 @@
 
 #include <cmetrics/cmetrics.h>
 #include <fluent-bit/flb_gzip.h>
+#include <fluent-bit/flb_zstd.h>
 #include <cmetrics/cmt_encode_opentelemetry.h>
 
 #include <ctraces/ctraces.h>
@@ -47,6 +48,27 @@ extern void cmt_encode_opentelemetry_destroy(cfl_sds_t text);
 #include "opentelemetry.h"
 #include "opentelemetry_conf.h"
 #include "opentelemetry_utils.h"
+
+static int is_http_status_code_retrayable(int http_code)
+{
+    /*
+     * Retrayable HTTP code according to OTLP spec:
+     *
+     * https://opentelemetry.io/docs/specs/otlp/#retryable-response-codes
+     */
+    if (http_code == 429 || http_code == 502 ||
+        http_code == 503 || http_code == 504) {
+        /*
+         * a note on HTTP status 500, the document says: "All other 4xx or 5xx
+         * response status codes MUST NOT be retried." -- I personally think
+         * 500 should be retried in case a proxy fails, but let's honor the docs
+         * for now.
+         */
+        return FLB_TRUE;
+    }
+
+    return FLB_FALSE;
+}
 
 int opentelemetry_legacy_post(struct opentelemetry_context *ctx,
                               const void *body, size_t body_len,
@@ -88,6 +110,17 @@ int opentelemetry_legacy_post(struct opentelemetry_context *ctx,
         }
         else {
             flb_plg_error(ctx->ins, "cannot gzip payload, disabling compression");
+        }
+    }
+    else if (ctx->compress_zstd) {
+        ret = flb_zstd_compress((void *) body, body_len,
+                                &final_body, &final_body_len);
+
+        if (ret == 0) {
+            compressed = FLB_TRUE;
+        }
+        else {
+            flb_plg_error(ctx->ins, "cannot zstd payload, disabling compression");
         }
     }
     else {
@@ -151,8 +184,16 @@ int opentelemetry_legacy_post(struct opentelemetry_context *ctx,
     }
 
     if (compressed) {
-        flb_http_set_content_encoding_gzip(c);
+        if (ctx->compress_gzip) {
+            flb_http_set_content_encoding_gzip(c);
+        }
+        else if (ctx->compress_zstd) {
+            flb_http_set_content_encoding_zstd(c);
+        }
     }
+
+    /* Map debug callbacks */
+    flb_http_client_debug(c, ctx->ins->callback);
 
     ret = flb_http_do(c, &b_sent);
 
@@ -183,7 +224,13 @@ int opentelemetry_legacy_post(struct opentelemetry_context *ctx,
                               ctx->host, ctx->port, c->resp.status);
             }
 
-            out_ret = FLB_RETRY;
+            /* Retryable status codes according to OTLP spec */
+            if (is_http_status_code_retrayable(c->resp.status) == FLB_TRUE) {
+                out_ret = FLB_RETRY;
+            }
+            else {
+                out_ret = FLB_ERROR;
+            }
         }
         else {
             if (ctx->log_response_payload && c->resp.payload != NULL && c->resp.payload_size > 2) {
@@ -264,6 +311,7 @@ int opentelemetry_post(struct opentelemetry_context *ctx,
 
     if (request->protocol_version == HTTP_PROTOCOL_VERSION_20 &&
         ctx->enable_grpc_flag) {
+
         grpc_body = cfl_sds_create_size(body_len + 5);
 
         if (grpc_body == NULL) {
@@ -325,6 +373,9 @@ int opentelemetry_post(struct opentelemetry_context *ctx,
         if (ctx->compress_gzip == FLB_TRUE) {
             compression_algorithm = "gzip";
         }
+        else if (ctx->compress_zstd == FLB_TRUE) {
+            compression_algorithm = "zstd";
+        }
 
         result = flb_http_request_set_parameters(request,
                         FLB_HTTP_CLIENT_ARGUMENT_URI(http_uri),
@@ -361,10 +412,9 @@ int opentelemetry_post(struct opentelemetry_context *ctx,
     }
 
     response = flb_http_client_request_execute(request);
-
     if (response == NULL) {
-        flb_debug("http request execution error");
-
+        flb_plg_warn(ctx->ins, "error performing HTTP request, remote host=%s:%i connection error",
+                     ctx->host, ctx->port);
         flb_http_client_request_destroy(request, FLB_TRUE);
 
         return FLB_RETRY;
@@ -381,7 +431,6 @@ int opentelemetry_post(struct opentelemetry_context *ctx,
      * - 205: Reset content
      *
      */
-
     if (response->status < 200 || response->status > 205) {
         if (ctx->log_response_payload &&
             response->body != NULL &&
@@ -401,13 +450,18 @@ int opentelemetry_post(struct opentelemetry_context *ctx,
                           response->status);
         }
 
-        out_ret = FLB_RETRY;
+        if (is_http_status_code_retrayable(response->status) == FLB_TRUE) {
+            out_ret = FLB_RETRY;
+        }
+        else {
+            out_ret = FLB_ERROR;
+        }
     }
     else {
         if (ctx->log_response_payload &&
             response->body != NULL &&
             cfl_sds_len(response->body) > 0) {
-            flb_plg_info(ctx->ins, "%s:%i, HTTP status=%i\n%s",
+            flb_plg_info(ctx->ins, "%s:%i, HTTP status=%i%s",
                             ctx->host, ctx->port,
                             response->status, response->body);
         }
@@ -757,6 +811,12 @@ static int cb_opentelemetry_init(struct flb_output_instance *ins,
 
     flb_output_set_context(ins, ctx);
 
+    /*
+     * This plugin instance uses the HTTP client interface, let's register
+     * it debugging callbacks.
+     */
+    flb_output_set_http_debug_callbacks(ins);
+
     return 0;
 }
 
@@ -792,7 +852,7 @@ static struct flb_config_map config_map[] = {
      "Adds a custom label to the metrics use format: 'add_label name value'"
     },
     {
-     FLB_CONFIG_MAP_STR, "http2", "on",
+     FLB_CONFIG_MAP_STR, "http2", "off",
      0, FLB_TRUE, offsetof(struct opentelemetry_context, enable_http2),
      "Enable, disable or force HTTP/2 usage. Accepted values : on, off, force"
     },
@@ -840,7 +900,7 @@ static struct flb_config_map config_map[] = {
     {
      FLB_CONFIG_MAP_STR, "compress", NULL,
      0, FLB_FALSE, 0,
-     "Set payload compression mechanism. Option available is 'gzip'"
+     "Set payload compression mechanism. Options available are 'gzip' and 'zstd'."
     },
     /*
      * Logs Properties

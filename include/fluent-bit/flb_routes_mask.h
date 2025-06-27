@@ -34,32 +34,35 @@
  *
  * A value of 1 in the bitfield means that output plugin is selected
  * and a value of zero means that output is deselected.
- *
- * The size of the bitmask array limits the number of output plugins
- * The router can route to. For example: with a value of 4 using
- * 64-bit integers the bitmask can represent up to 256 output plugins
  */
-#define FLB_ROUTES_MASK_ELEMENTS		4
+
+typedef uint64_t flb_route_mask_element;
 
 /*
  * How many bits are in each element of the bitmask array
  */
-#define FLB_ROUTES_MASK_ELEMENT_BITS 	(sizeof(uint64_t) * CHAR_BIT)
-
-/*
- * The maximum number of routes that can be stored in the array
- */
-#define FLB_ROUTES_MASK_MAX_VALUE		(FLB_ROUTES_MASK_ELEMENTS * FLB_ROUTES_MASK_ELEMENT_BITS)
-
+#define FLB_ROUTES_MASK_ELEMENT_BITS (sizeof(flb_route_mask_element) * CHAR_BIT)
 
 /* forward declaration */
 struct flb_input_instance;
+struct flb_config;
 
+int flb_routes_mask_set_by_tag(flb_route_mask_element *routes_mask, 
+                               const char *tag, 
+                               int tag_len, 
+                               struct flb_input_instance *in);
+int flb_routes_mask_get_bit(flb_route_mask_element *routes_mask, int value, 
+                            struct flb_config *config);
+void flb_routes_mask_set_bit(flb_route_mask_element *routes_mask, int value, 
+                             struct flb_config *config);
+void flb_routes_mask_clear_bit(flb_route_mask_element *routes_mask, int value, 
+                               struct flb_config *config);
+int flb_routes_mask_is_empty(flb_route_mask_element *routes_mask, 
+                             struct flb_config *config);
 
-int flb_routes_mask_set_by_tag(uint64_t *routes_mask, const char *tag, int tag_len, struct flb_input_instance *in);
-int flb_routes_mask_get_bit(uint64_t *routes_mask, int value);
-void flb_routes_mask_set_bit(uint64_t *routes_mask, int value);
-void flb_routes_mask_clear_bit(uint64_t *routes_mask, int value);
-int flb_routes_mask_is_empty(uint64_t *routes_mask);
+int flb_routes_empty_mask_create(struct flb_config *config);
+void flb_routes_empty_mask_destroy(struct flb_config *config);
+
+int flb_routes_mask_set_size(size_t mask_size, struct flb_config *config);
 
 #endif

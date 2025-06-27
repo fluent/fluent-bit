@@ -289,7 +289,9 @@ void flb_test_kinesis_invalid_port(void)
     ret = flb_start(ctx);
     TEST_CHECK(ret != 0);  // Expect failure
 
-    flb_stop(ctx);
+    if (ret == 0) {
+        flb_stop(ctx);
+    }
     flb_destroy(ctx);
 }
 

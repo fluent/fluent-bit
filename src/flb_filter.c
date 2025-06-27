@@ -33,6 +33,47 @@
 #include <fluent-bit/flb_chunk_trace.h>
 #endif /* FLB_HAVE_CHUNK_TRACE */
 
+struct flb_config_map filter_global_properties[] = {
+    {
+        FLB_CONFIG_MAP_STR, "match", NULL,
+        0, FLB_FALSE, 0,
+        "Set a tag pattern to match the records that this filter should process. "
+        "Supports exact matches or wildcards (e.g., '*')."
+    },
+    {
+        FLB_CONFIG_MAP_STR, "match_regex", NULL,
+        0, FLB_FALSE, 0,
+        "Set a regular expression to match tags for filtering. This allows more flexible matching "
+        "compared to simple wildcards."
+    },
+    {
+        FLB_CONFIG_MAP_STR, "alias", NULL,
+        0, FLB_FALSE, 0,
+        "Sets an alias for the filter instance. This is useful when using multiple instances of the same "
+        "filter plugin. If no alias is set, the instance will be named using the plugin name and a sequence number."
+    },
+    {
+        FLB_CONFIG_MAP_STR, "log_level", "info",
+        0, FLB_FALSE, 0,
+        "Specifies the log level for this filter plugin. If not set, the plugin "
+        "will use the global log level defined in the 'service' section. If the global "
+        "log level is also not specified, it defaults to 'info'."
+    },
+    {
+        FLB_CONFIG_MAP_TIME, "log_suppress_interval", "0",
+        0, FLB_FALSE, 0,
+        "Allows suppression of repetitive log messages from the filter plugin that appear similar within a specified "
+        "time interval. Defaults to 0, meaning no suppression."
+    },
+
+    {0}
+};
+
+struct mk_list *flb_filter_get_global_config_map(struct flb_config *config)
+{
+    return flb_config_map_create(config, filter_global_properties);
+}
+
 static inline int instance_id(struct flb_config *config)
 {
     struct flb_filter_instance *entry;
