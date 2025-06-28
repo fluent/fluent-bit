@@ -1168,6 +1168,7 @@ if(FLB_REGEX)
     FLB_DEFINITION_VAL(ONIG_EXTERN "extern")
   endif()
   add_subdirectory(${FLB_PATH_LIB_ONIGMO} EXCLUDE_FROM_ALL)
+  target_include_directories(onigmo-static INTERFACE ${FLB_PATH_ROOT_SOURCE}/${FLB_PATH_LIB_ONIGMO})
 endif()
 
 # tutf8e (UTF8 Encoding)
