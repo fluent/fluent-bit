@@ -213,7 +213,7 @@ static flb_sds_t build_presigned_query(struct flb_aws_msk_iam *ctx,
         goto error;
     }
 
-    credential = flb_sds_printf(&credential, "%s/%s/%s/kafka/aws4_request",
+    credential = flb_sds_printf(&credential, "%s/%s/%s/kafka-cluster/aws4_request",
                             creds->access_key_id, datestamp, ctx->region);
     if (!credential) {
         goto error;
@@ -317,7 +317,7 @@ static flb_sds_t build_presigned_query(struct flb_aws_msk_iam *ctx,
     }
 
     string_to_sign = flb_sds_printf(&string_to_sign,
-                                    "AWS4-HMAC-SHA256\n%s\n%s/%s/kafka/aws4_request\n%s",
+                                    "AWS4-HMAC-SHA256\n%s\n%s/%s/kafka-cluster/aws4_request\n%s",
                                     amzdate, datestamp, ctx->region, hexhash);
     if (!string_to_sign) {
         goto error;
@@ -352,7 +352,7 @@ static flb_sds_t build_presigned_query(struct flb_aws_msk_iam *ctx,
         goto error;
     }
 
-    if (hmac_sha256_sign(key_service, key_region, klen, (unsigned char *) "kafka", 5) != 0) {
+    if (hmac_sha256_sign(key_service, key_region, klen, (unsigned char *) "kafka-cluster", 13) != 0) {
         flb_error("[msk_iam] build_presigned_query: failed to sign service");
         goto error;
     }
