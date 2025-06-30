@@ -171,7 +171,7 @@ static int in_kafka_collect(struct flb_input_instance *ins,
          *    - Optimize for throughput by allowing Kafka's internal batching.
          *    - Align with 'fetch.wait.max.ms' (default: 500ms) to maximize batch efficiency.
          *    - Set timeout slightly higher than 'fetch.wait.max.ms' (e.g., 1.5x - 2x) to
-         *      ensure it does not interfere with Kafka’s fetch behavior, while still
+         *      ensure it does not interfere with Kafka's fetch behavior, while still
          *      keeping the consumer responsive.
          */
         if (ctx->ins->flags & FLB_INPUT_THREADED) {
@@ -293,7 +293,7 @@ static int in_kafka_init(struct flb_input_instance *ins,
         ctx->polling_threshold = FLB_IN_KAFKA_UNLIMITED;
     }
 
-    if (ctx->aws_msk_iam_cluster_arn && ctx->sasl_mechanism &&
+    if (ctx->aws_msk_iam && ctx->aws_msk_iam_cluster_arn && ctx->sasl_mechanism &&
         strcasecmp(ctx->sasl_mechanism, "OAUTHBEARER") == 0) {
         ctx->msk_iam = flb_aws_msk_iam_register_oauth_cb(config,
                                                          kafka_conf,
@@ -375,7 +375,13 @@ init_error:
         rd_kafka_topic_partition_list_destroy(kafka_topics);
     }
     if (ctx->kafka.rk) {
+        struct flb_msk_iam_cb *cb;
+
+        cb = rd_kafka_opaque(ctx->kafka.rk);
         rd_kafka_destroy(ctx->kafka.rk);
+        if (cb) {
+            flb_free(cb);
+        }
     }
     else if (kafka_conf) {
         /* conf is already destroyed when rd_kafka is initialized */
@@ -490,6 +496,11 @@ static struct flb_config_map config_map[] = {
    FLB_CONFIG_MAP_STR, "aws_msk_iam_cluster_arn", (char *)NULL,
    0, FLB_TRUE, offsetof(struct flb_in_kafka_config, aws_msk_iam_cluster_arn),
    "ARN of the MSK cluster when using AWS IAM authentication"
+  },
+  {
+    FLB_CONFIG_MAP_BOOL, "aws_msk_iam", "false",
+    0, FLB_TRUE, offsetof(struct flb_in_kafka_config, aws_msk_iam),
+    "Enable AWS MSK IAM authentication"
   },
   /* EOF */
   {0}

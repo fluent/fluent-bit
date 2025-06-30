@@ -56,6 +56,8 @@ struct flb_in_kafka_config {
 
     /* SASL mechanism configured in rdkafka.sasl.mechanism */
     flb_sds_t sasl_mechanism;
+
+    int aws_msk_iam;
 };
 
 #endif
