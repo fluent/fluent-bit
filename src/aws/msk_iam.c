@@ -413,6 +413,7 @@ struct flb_aws_msk_iam *flb_aws_msk_iam_register_oauth_cb(struct flb_config *con
         flb_free(ctx);
         return NULL;
     }
+    flb_info("[msk_iam] using provider: %s", ctx->provider->name);
 
     ctx->provider->provider_vtable->init(ctx->provider);
 
