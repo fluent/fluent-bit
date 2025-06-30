@@ -12,6 +12,7 @@ struct flb_aws_msk_iam;
 struct flb_msk_iam_cb {
     void *plugin_ctx;                 /* in_kafka or out_kafka context       */
     struct flb_aws_msk_iam *iam;      /* token generator state               */
+    char *broker_host;                /* actual broker host for MSK Serverless (dynamically allocated) */
 };
 
 /*

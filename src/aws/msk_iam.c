@@ -43,7 +43,6 @@ struct flb_aws_msk_iam {
     flb_sds_t cluster_arn;
 };
 
-
 /* Utility functions copied from flb_signv4.c */
 static int to_encode(char c)
 {
@@ -125,7 +124,6 @@ static int hmac_sha256_sign(unsigned char out[32],
     return 0;
 }
 
-
 static char *extract_region(const char *arn)
 {
     const char *p;
@@ -163,13 +161,6 @@ static char *extract_region(const char *arn)
     return out;
 }
 
-
-/* Key fixes for the AWS MSK IAM implementation */
-
-
-
-
-/* CRITICAL FIX: Uncomment and fix the build_presigned_query function */
 static flb_sds_t build_presigned_query(struct flb_aws_msk_iam *ctx,
                                        const char *host,
                                        time_t now)
@@ -412,7 +403,6 @@ error:
     return NULL;
 }
 
-/* CRITICAL FIX: Enhanced callback with better debugging */
 static void oauthbearer_token_refresh_cb(rd_kafka_t *rk,
                                          const char *oauthbearer_config,
                                          void *opaque)
@@ -430,15 +420,12 @@ static void oauthbearer_token_refresh_cb(rd_kafka_t *rk,
 
     (void) oauthbearer_config;
 
-    /* CRITICAL: Add lots of debugging to see if callback is called */
     flb_info("[msk_iam] *** OAuth bearer token refresh callback INVOKED ***");
     printf("[msk_iam] *** OAuth bearer token refresh callback INVOKED ***\n");
-    fflush(stdout);
 
     cb = rd_kafka_opaque(rk);
     if (!cb || !cb->iam) {
         flb_error("[msk_iam] callback invoked with no context");
-        printf("[msk_iam] callback invoked with no context\n");
         rd_kafka_oauthbearer_set_token_failure(rk, "no context");
         return;
     }
@@ -450,10 +437,20 @@ static void oauthbearer_token_refresh_cb(rd_kafka_t *rk,
         return;
     }
 
-    /* Use correct host format for MSK Serverless vs regular MSK */
-    snprintf(host, sizeof(host), "kafka.%s.amazonaws.com", ctx->region);
+    /* CRITICAL FIX: For MSK Serverless, determine the correct host format */
+    /* Check if this is serverless based on cluster ARN ending with -s3 */
+    if (strstr(ctx->cluster_arn, "-s3") != NULL) {
+        /* MSK Serverless - use the serverless format */
+        snprintf(host, sizeof(host), "kafka-serverless.%s.amazonaws.com", ctx->region);
+        flb_info("[msk_iam] Detected MSK Serverless cluster, using host: %s", host);
+        printf("[msk_iam] Detected MSK Serverless cluster, using host: %s\n", host);
+    } else {
+        /* Regular MSK */
+        snprintf(host, sizeof(host), "kafka.%s.amazonaws.com", ctx->region);
+        flb_info("[msk_iam] Detected regular MSK cluster, using host: %s", host);
+        printf("[msk_iam] Detected regular MSK cluster, using host: %s\n", host);
+    }
 
-    flb_info("[msk_iam] requesting token for region: %s, host: %s", ctx->region, host);
     printf("[msk_iam] requesting token for region: %s, host: %s\n", ctx->region, host);
 
     token = build_presigned_query(ctx, host, time(NULL));
@@ -463,7 +460,6 @@ static void oauthbearer_token_refresh_cb(rd_kafka_t *rk,
         return;
     }
 
-    /* Create a copy for librdkafka */
     token_copy = strdup(token);
     if (!token_copy) {
         flb_error("[msk_iam] failed to duplicate token string");
@@ -471,7 +467,6 @@ static void oauthbearer_token_refresh_cb(rd_kafka_t *rk,
         goto cleanup;
     }
 
-    /* Get credentials for principal */
     creds = ctx->provider->provider_vtable->get_credentials(ctx->provider);
     if (!creds || !creds->access_key_id) {
         flb_error("[msk_iam] failed to retrieve AWS credentials for principal");
@@ -480,21 +475,21 @@ static void oauthbearer_token_refresh_cb(rd_kafka_t *rk,
     }
 
     now = (int64_t)time(NULL);
-    md_lifetime_ms = (now + 900) * 1000; /* 15 minutes expiry */
+    md_lifetime_ms = (now + 900) * 1000;
 
-    flb_info("[msk_iam] setting OAuth token with principal: %s", creds->access_key_id);
     printf("[msk_iam] setting OAuth token with principal: %s\n", creds->access_key_id);
-    printf("[msk_iam] token: %.100s...\n", token_copy);
+    /* Show full token for debugging - CRITICAL for troubleshooting */
+    printf("[msk_iam] Full token: %s\n", token_copy);
 
     err = rd_kafka_oauthbearer_set_token(
         rk,
-        token_copy,                          /* token_value */
-        md_lifetime_ms,                      /* md_lifetime_ms */
-        creds->access_key_id,               /* md_principal_name */
-        NULL,                               /* extensions */
-        0,                                  /* extension_size */
-        errstr,                             /* errstr */
-        sizeof(errstr)                      /* errstr_size */
+        token_copy,
+        md_lifetime_ms,
+        creds->access_key_id,
+        NULL,
+        0,
+        errstr,
+        sizeof(errstr)
     );
 
     if (err != RD_KAFKA_RESP_ERR_NO_ERROR) {
@@ -516,7 +511,7 @@ cleanup:
     /* Note: Don't free token_copy - librdkafka manages it */
 }
 
-/* CRITICAL FIX: Ensure initial token is set */
+/* Fixed function signature - removed broker_host parameter */
 struct flb_aws_msk_iam *flb_aws_msk_iam_register_oauth_cb(struct flb_config *config,
                                                           rd_kafka_conf_t *kconf,
                                                           const char *cluster_arn,
@@ -593,7 +588,7 @@ struct flb_aws_msk_iam *flb_aws_msk_iam_register_oauth_cb(struct flb_config *con
     cb->plugin_ctx = owner;
     cb->iam = ctx;
 
-    /* CRITICAL: Set the callback and opaque BEFORE any Kafka operations */
+    /* Set the callback and opaque BEFORE any Kafka operations */
     rd_kafka_conf_set_oauthbearer_token_refresh_cb(kconf, oauthbearer_token_refresh_cb);
     rd_kafka_conf_set_opaque(kconf, cb);
 
@@ -601,7 +596,6 @@ struct flb_aws_msk_iam *flb_aws_msk_iam_register_oauth_cb(struct flb_config *con
 
     return ctx;
 }
-
 
 void flb_aws_msk_iam_destroy(struct flb_aws_msk_iam *ctx)
 {
@@ -624,4 +618,3 @@ void flb_aws_msk_iam_cb_destroy(struct flb_msk_iam_cb *cb)
     flb_aws_msk_iam_destroy(cb->iam);
     flb_free(cb);
 }
-

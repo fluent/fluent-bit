@@ -298,10 +298,28 @@ static int in_kafka_init(struct flb_input_instance *ins,
         strcasecmp(ctx->sasl_mechanism, "OAUTHBEARER") == 0) {
         flb_info("[ED] registering MSK IAM authentication with cluster ARN: %s",
                  ctx->aws_msk_iam_cluster_arn);
-        ctx->msk_iam = flb_aws_msk_iam_register_oauth_cb(config,
-                                                         kafka_conf,
-                                                         ctx->aws_msk_iam_cluster_arn,
-                                                         ctx);
+        /* MSK IAM: Extract first broker host for Serverless */
+        char *first_broker = NULL;
+        if (ctx->kafka.brokers) {
+            char *comma = strchr(ctx->kafka.brokers, ',');
+            size_t len = comma ? (size_t)(comma - ctx->kafka.brokers) : strlen(ctx->kafka.brokers);
+            first_broker = flb_malloc(len + 1);
+            if (first_broker) {
+                memcpy(first_broker, ctx->kafka.brokers, len);
+                first_broker[len] = '\0';
+                /* Remove port if present */
+                char *colon = strchr(first_broker, ':');
+                if (colon) *colon = '\0';
+            }
+        }
+        ctx->msk_iam = flb_aws_msk_iam_register_oauth_cb(
+            config,
+            kafka_conf,
+            ctx->aws_msk_iam_cluster_arn,
+            first_broker ? first_broker : ctx->kafka.brokers,
+            ctx
+        );
+        if (first_broker) flb_free(first_broker);
         if (!ctx->msk_iam) {
             flb_plg_error(ins, "failed to setup MSK IAM authentication");
         }
