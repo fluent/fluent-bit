@@ -368,10 +368,19 @@ static void oauthbearer_token_refresh_cb(rd_kafka_t *rk,
     printf("[msk_iam] oauthbearer_token_refresh_cb: retrieved token: '%s'\n", token);
     char *b = strdup(token);
 
-    err = rd_kafka_oauthbearer_set_token(rk, b /* token */,
-                                         ((int64_t)time(NULL) + 900) * 1000,
-                                         NULL, NULL, 0,
-                                         errstr, sizeof(errstr));
+const char *principal = "admin"; // or whatever is appropriate for your setup
+
+    err = rd_kafka_oauthbearer_set_token(
+        rk,
+        b,                                   // token_value
+        ((int64_t)time(NULL) + 900) * 1000,  // md_lifetime_ms
+        principal,                           // md_principal_name (MANDATORY)
+        NULL,                                // extensions
+        0,                                   // extension_size
+        errstr,                              // errstr
+        sizeof(errstr)                       // errstr_size
+    );
+
     if (err != RD_KAFKA_RESP_ERR_NO_ERROR) {
         flb_error("[msk_iam] rd_kafka_oauthbearer_set_token failed: %s", errstr);
     }
