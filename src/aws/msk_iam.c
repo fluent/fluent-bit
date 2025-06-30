@@ -152,6 +152,11 @@ static flb_sds_t build_presigned_query(struct flb_aws_msk_iam *ctx,
     flb_sds_t tmp;
     flb_sds_t session_token_enc = NULL;
 
+    if (!ctx || !ctx->region || strlen(ctx->region) == 0) {
+        flb_error("[msk_iam] build_presigned_query: region is not set or invalid");
+        return NULL;
+    }
+
     creds = ctx->provider->provider_vtable->get_credentials(ctx->provider);
     if (!creds) {
         return NULL;
@@ -319,6 +324,11 @@ static void oauthbearer_token_refresh_cb(rd_kafka_t *rk,
     }
 
     ctx = cb->iam;
+    if (!ctx->region || strlen(ctx->region) == 0) {
+        flb_error("[msk_iam] oauthbearer_token_refresh_cb: region is not set or invalid");
+        rd_kafka_oauthbearer_set_token_failure(rk, "region not set");
+        return;
+    }
     snprintf(host, sizeof(host) - 1, "sts.%s.amazonaws.com", ctx->region);
 
     printf("[msk_iam] oauthbearer_token_refresh_cb: requesting token from region %s\n", ctx->region);
