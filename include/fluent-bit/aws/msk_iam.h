@@ -8,12 +8,13 @@
 
 struct flb_aws_msk_iam;
 
-/* Wrapper for storing plugin context and MSK IAM state */
 struct flb_msk_iam_cb {
-    void *plugin_ctx;                 /* in_kafka or out_kafka context       */
-    struct flb_aws_msk_iam *iam;      /* token generator state               */
-    char *broker_host;                /* actual broker host for MSK Serverless (dynamically allocated) */
+    void *plugin_ctx;
+    struct flb_aws_msk_iam *iam;
+    char *broker_host;  /* Store the actual broker hostname */
 };
+
+/* Wrapper for storing plugin context and MSK IAM state */
 
 /*
  * Register the oauthbearer refresh callback for MSK IAM authentication.
@@ -22,6 +23,7 @@ struct flb_msk_iam_cb {
 struct flb_aws_msk_iam *flb_aws_msk_iam_register_oauth_cb(struct flb_config *config,
                                                           rd_kafka_conf_t *kconf,
                                                           const char *cluster_arn,
+                                                        //   const char *broker_host,
                                                           void *owner);
 
 /* Destroy MSK IAM context */

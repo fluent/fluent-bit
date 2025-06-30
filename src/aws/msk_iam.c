@@ -24,6 +24,7 @@ struct flb_aws_msk_iam {
     flb_sds_t cluster_arn;
 };
 
+
 /* Utility functions copied from flb_signv4.c */
 static int to_encode(char c)
 {
@@ -180,6 +181,7 @@ static flb_sds_t build_presigned_query(struct flb_aws_msk_iam *ctx,
         return NULL;
     }
 
+    /* CRITICAL: Log BEFORE starting canonical request construction */
     flb_info("[msk_iam] build_presigned_query: generating token for host: %s, region: %s",
              host, ctx->region);
 
@@ -195,12 +197,14 @@ static flb_sds_t build_presigned_query(struct flb_aws_msk_iam *ctx,
         return NULL;
     }
 
+    /* CRITICAL: Log BEFORE starting canonical request construction */
     flb_info("[msk_iam] build_presigned_query: using access key: %.10s...", creds->access_key_id);
 
     gmtime_r(&now, &gm);
     strftime(amzdate, sizeof(amzdate) - 1, "%Y%m%dT%H%M%SZ", &gm);
     strftime(datestamp, sizeof(datestamp) - 1, "%Y%m%d", &gm);
 
+    /* CRITICAL: Log BEFORE starting canonical request construction */
     flb_info("[msk_iam] build_presigned_query: timestamp: %s, date: %s", amzdate, datestamp);
 
     /* Build credential string */
@@ -215,6 +219,7 @@ static flb_sds_t build_presigned_query(struct flb_aws_msk_iam *ctx,
         goto error;
     }
 
+    /* CRITICAL: Log BEFORE starting canonical request construction */
     flb_info("[msk_iam] build_presigned_query: credential scope: %s", credential);
 
     credential_enc = uri_encode_params(credential, flb_sds_len(credential));
@@ -239,6 +244,7 @@ static flb_sds_t build_presigned_query(struct flb_aws_msk_iam *ctx,
 
     /* Add session token if present (before SignedHeaders alphabetically) */
     if (creds->session_token && flb_sds_len(creds->session_token) > 0) {
+        /* CRITICAL: Log BEFORE encoding - NO LOGGING DURING ENCODING */
         flb_info("[msk_iam] build_presigned_query: adding session token (length: %zu)",
                  flb_sds_len(creds->session_token));
 
@@ -249,6 +255,7 @@ static flb_sds_t build_presigned_query(struct flb_aws_msk_iam *ctx,
             goto error;
         }
 
+        /* CRITICAL: Log AFTER encoding but BEFORE canonical request */
         flb_info("[msk_iam] build_presigned_query: encoded session token length: %zu",
                  flb_sds_len(session_token_enc));
 
@@ -268,6 +275,7 @@ static flb_sds_t build_presigned_query(struct flb_aws_msk_iam *ctx,
     }
     query = tmp;
 
+    /* CRITICAL: Log BEFORE canonical request construction - NO MORE LOGGING UNTIL AFTER HASH */
     flb_info("[msk_iam] build_presigned_query: query string length: %zu", flb_sds_len(query));
 
     /* Build canonical request - INCREASED BUFFER SIZE significantly */
@@ -276,6 +284,7 @@ static flb_sds_t build_presigned_query(struct flb_aws_msk_iam *ctx,
         goto error;
     }
 
+    /* CRITICAL: NO LOGGING BETWEEN HERE AND HASH CALCULATION */
     canonical = flb_sds_printf(&canonical,
                                "GET\n/\n%s\nhost:%s\n\nhost\nUNSIGNED-PAYLOAD",
                                query, host);
@@ -284,16 +293,7 @@ static flb_sds_t build_presigned_query(struct flb_aws_msk_iam *ctx,
         goto error;
     }
 
-    flb_info("[msk_iam] build_presigned_query: canonical request length: %zu", flb_sds_len(canonical));
-
-    /* Debug: Print first and last parts of canonical request to avoid log spam */
-    flb_info("[msk_iam] canonical request first 200 chars: %.200s", canonical);
-    if (flb_sds_len(canonical) > 200) {
-        size_t len = flb_sds_len(canonical);
-        flb_info("[msk_iam] canonical request last 200 chars: %s", canonical + len - 200);
-    }
-
-    /* Hash canonical request */
+    /* Hash canonical request IMMEDIATELY - NO LOGGING BETWEEN CONSTRUCTION AND HASH */
     if (flb_hash_simple(FLB_HASH_SHA256, (unsigned char *) canonical,
                         flb_sds_len(canonical), sha256_buf,
                         sizeof(sha256_buf)) != FLB_CRYPTO_SUCCESS) {
@@ -306,6 +306,8 @@ static flb_sds_t build_presigned_query(struct flb_aws_msk_iam *ctx,
         goto error;
     }
 
+    /* NOW it's safe to log again */
+    flb_info("[msk_iam] build_presigned_query: canonical request length: %zu", flb_sds_len(canonical));
     flb_info("[msk_iam] build_presigned_query: canonical request hash: %s", hexhash);
 
     /* Build string to sign - INCREASED BUFFER SIZE */
@@ -321,7 +323,7 @@ static flb_sds_t build_presigned_query(struct flb_aws_msk_iam *ctx,
         goto error;
     }
 
-    flb_info("[msk_iam] build_presigned_query: string to sign: %s", string_to_sign);
+    flb_info("[msk_iam] build_presigned_query: string to sign created");
 
     /* Derive signing key */
     flb_sds_t key;
@@ -461,10 +463,16 @@ static void oauthbearer_token_refresh_cb(rd_kafka_t *rk,
         snprintf(host, sizeof(host), "kafka-serverless.%s.amazonaws.com", ctx->region);
         flb_info("[msk_iam] Detected MSK Serverless cluster, using host: %s", host);
     } else {
-        /* Regular MSK cluster */
-        strncpy(host, cb->broker_host, sizeof(host) - 1);
-        host[sizeof(host) - 1] = '\0';
-        flb_info("[msk_iam] Detected regular MSK cluster, using host: %s", host);
+        /* Regular MSK cluster - use your existing broker_host mechanism */
+        if (cb->broker_host && strlen(cb->broker_host) > 0) {
+            strncpy(host, cb->broker_host, sizeof(host) - 1);
+            host[sizeof(host) - 1] = '\0';
+            flb_info("[msk_iam] Detected regular MSK cluster, using broker host: %s", host);
+        } else {
+            /* Fallback to generic endpoint if broker host not available */
+            snprintf(host, sizeof(host), "kafka.%s.amazonaws.com", ctx->region);
+            flb_info("[msk_iam] No broker host available, using generic host: %s", host);
+        }
     }
 
     flb_info("[msk_iam] requesting token for region: %s, host: %s", ctx->region, host);
@@ -524,7 +532,7 @@ cleanup:
     /* Note: Don't free token_copy - librdkafka manages it */
 }
 
-/* Fixed function signature - removed broker_host parameter */
+/* Keep original function signature to match header file */
 struct flb_aws_msk_iam *flb_aws_msk_iam_register_oauth_cb(struct flb_config *config,
                                                           rd_kafka_conf_t *kconf,
                                                           const char *cluster_arn,
