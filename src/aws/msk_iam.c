@@ -458,10 +458,111 @@ static void oauthbearer_token_refresh_cb(rd_kafka_t *rk,
         return;
     }
 
+    /* Resolve correct hostname for signing */
+    if (cb->broker_host && strlen(cb->broker_host) > 0) {
+        strncpy(host, cb->broker_host, sizeof(host) - 1);
+        host[sizeof(host) - 1] = '\0';
+        flb_info("[msk_iam] Using broker hostname for signing: %s", host);
+    } else {
+        snprintf(host, sizeof(host), "kafka.%s.amazonaws.com", ctx->region);
+        flb_warn("[msk_iam] broker_host not set, using fallback: %s", host);
+    }
+
+    flb_info("[msk_iam] requesting token for region: %s, host: %s", ctx->region, host);
+
+    token = build_presigned_query(ctx, host, time(NULL));
+    if (!token) {
+        flb_error("[msk_iam] failed to generate MSK IAM token");
+        rd_kafka_oauthbearer_set_token_failure(rk, "token generation failed");
+        return;
+    }
+
+    token_copy = strdup(token);
+    if (!token_copy) {
+        flb_error("[msk_iam] failed to duplicate token string");
+        rd_kafka_oauthbearer_set_token_failure(rk, "memory allocation failed");
+        goto cleanup;
+    }
+
+    creds = ctx->provider->provider_vtable->get_credentials(ctx->provider);
+    if (!creds || !creds->access_key_id) {
+        flb_error("[msk_iam] failed to retrieve AWS credentials for principal");
+        rd_kafka_oauthbearer_set_token_failure(rk, "credential retrieval failed");
+        goto cleanup;
+    }
+
+    now = (int64_t)time(NULL);
+    md_lifetime_ms = (now + 900) * 1000;
+
+    flb_info("[msk_iam] setting OAuth token with principal: %s", creds->access_key_id);
+    flb_info("[msk_iam] token length: %zu", strlen(token_copy));
+
+    err = rd_kafka_oauthbearer_set_token(
+        rk,
+        token_copy,
+        md_lifetime_ms,
+        creds->access_key_id,
+        NULL,
+        0,
+        errstr,
+        sizeof(errstr)
+    );
+
+    if (err != RD_KAFKA_RESP_ERR_NO_ERROR) {
+        flb_error("[msk_iam] failed to set OAuth bearer token: %s", errstr);
+        rd_kafka_oauthbearer_set_token_failure(rk, errstr);
+    } else {
+        flb_info("[msk_iam] OAuth bearer token successfully set");
+    }
+
+cleanup:
+    if (creds) {
+        flb_aws_credentials_destroy(creds);
+    }
+    if (token) {
+        flb_sds_destroy(token);
+    }
+    // token_copy is managed by librdkafka
+}
+
+static void oauthbearer_token_refresh_cb_old(rd_kafka_t *rk,
+                                         const char *oauthbearer_config,
+                                         void *opaque)
+{
+    struct flb_msk_iam_cb *cb;
+    struct flb_aws_msk_iam *ctx;
+    struct flb_aws_credentials *creds = NULL;
+    flb_sds_t token = NULL;
+    char *token_copy = NULL;
+    char host[256];
+    rd_kafka_resp_err_t err;
+    char errstr[512];
+    int64_t now;
+    int64_t md_lifetime_ms;
+
+    (void) oauthbearer_config;
+
+    flb_info("[msk_iam] *** OAuth bearer token refresh callback INVOKED ***");
+
+    cb = rd_kafka_opaque(rk);
+    if (!cb || !cb->iam) {
+        flb_error("[msk_iam] callback invoked with no context");
+        rd_kafka_oauthbearer_set_token_failure(rk, "no context");
+        return;
+    }
+
+    ctx = cb->iam;
+    if (!ctx->region || flb_sds_len(ctx->region) == 0) {
+        flb_error("[msk_iam] region is not set or invalid");
+        rd_kafka_oauthbearer_set_token_failure(rk, "region not set");
+        return;
+    }
+
     /* Determine the correct hostname based on cluster type */
     if (ctx->cluster_arn && strstr(ctx->cluster_arn, "-s3") != NULL) {
         /* MSK Serverless cluster - use the generic serverless endpoint */
         snprintf(host, sizeof(host), "kafka-serverless.%s.amazonaws.com", ctx->region);
+        cb->broker_host = flb_strdup("boot-53h6572i.c3.kafka-serverless.us-east-2.amazonaws.com");  // add this line
         flb_info("[msk_iam] Detected MSK Serverless cluster, using host: %s", host);
     } else {
         /* Regular MSK cluster - use your existing broker_host mechanism */
