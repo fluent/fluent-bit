@@ -437,19 +437,25 @@ static void oauthbearer_token_refresh_cb(rd_kafka_t *rk,
         return;
     }
 
-    /* CRITICAL FIX: For MSK Serverless, determine the correct host format */
-    /* Check if this is serverless based on cluster ARN ending with -s3 */
-    if (strstr(ctx->cluster_arn, "-s3") != NULL) {
-        /* MSK Serverless - use the serverless format */
+    /* TEMPORARY FIX: Force serverless hostname for testing */
+    snprintf(host, sizeof(host), "kafka-serverless.%s.amazonaws.com", ctx->region);
+    flb_info("[msk_iam] FORCED MSK Serverless host: %s", host);
+    printf("[msk_iam] FORCED MSK Serverless host: %s\n", host);
+
+    /* ORIGINAL CODE WITH DEBUG (commented for testing)
+    flb_info("[msk_iam] Checking cluster ARN for serverless: %s", ctx->cluster_arn);
+    printf("[msk_iam] Checking cluster ARN for serverless: %s\n", ctx->cluster_arn);
+
+    if (ctx->cluster_arn && strstr(ctx->cluster_arn, "-s3") != NULL) {
         snprintf(host, sizeof(host), "kafka-serverless.%s.amazonaws.com", ctx->region);
         flb_info("[msk_iam] Detected MSK Serverless cluster, using host: %s", host);
         printf("[msk_iam] Detected MSK Serverless cluster, using host: %s\n", host);
     } else {
-        /* Regular MSK */
         snprintf(host, sizeof(host), "kafka.%s.amazonaws.com", ctx->region);
         flb_info("[msk_iam] Detected regular MSK cluster, using host: %s", host);
         printf("[msk_iam] Detected regular MSK cluster, using host: %s\n", host);
     }
+    */
 
     printf("[msk_iam] requesting token for region: %s, host: %s\n", ctx->region, host);
 
