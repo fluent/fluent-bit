@@ -235,6 +235,7 @@ static flb_sds_t build_presigned_query(struct flb_aws_msk_iam *ctx,
 
     /* Build query parameters in ALPHABETICAL ORDER per AWS SigV4 spec */
     query = flb_sds_printf(&query,
+                           "Action=GetCallerIdentity&Version=2011-06-15&"
                            "X-Amz-Algorithm=AWS4-HMAC-SHA256&X-Amz-Credential=%s"
                            "&X-Amz-Date=%s&X-Amz-Expires=900",
                            credential_enc, amzdate);
