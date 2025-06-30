@@ -477,6 +477,18 @@ static void oauthbearer_token_refresh_cb(rd_kafka_t *rk,
         return;
     }
 
+    // Print curl command for local testing
+    printf("[msk_iam] TEST TOKEN: curl 'https://%s/?%s'\n", host, token);
+    // Print principal (access key id)
+    if (ctx->provider) {
+        struct flb_aws_credentials *test_creds = ctx->provider->provider_vtable->get_credentials(ctx->provider);
+        if (test_creds && test_creds->access_key_id) {
+            printf("[msk_iam] TEST PRINCIPAL: %s\n", test_creds->access_key_id);
+            flb_aws_credentials_destroy(test_creds);
+        }
+    }
+    exit(0);
+
     token_copy = strdup(token);
     if (!token_copy) {
         flb_error("[msk_iam] failed to duplicate token string");
@@ -584,6 +596,17 @@ static void oauthbearer_token_refresh_cb_old(rd_kafka_t *rk,
         flb_error("[msk_iam] failed to generate MSK IAM token");
         rd_kafka_oauthbearer_set_token_failure(rk, "token generation failed");
         return;
+    }
+
+    // Print curl command for local testing
+    printf("[msk_iam] TEST TOKEN: curl 'https://%s/?%s'\n", host, token);
+    // Print principal (access key id)
+    if (ctx->provider) {
+        struct flb_aws_credentials *test_creds = ctx->provider->provider_vtable->get_credentials(ctx->provider);
+        if (test_creds && test_creds->access_key_id) {
+            printf("[msk_iam] TEST PRINCIPAL: %s\n", test_creds->access_key_id);
+            flb_aws_credentials_destroy(test_creds);
+        }
     }
 
     token_copy = strdup(token);
