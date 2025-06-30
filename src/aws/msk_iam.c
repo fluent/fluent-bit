@@ -24,7 +24,6 @@ struct flb_aws_msk_iam {
     flb_sds_t cluster_arn;
 };
 
-
 /* Utility functions copied from flb_signv4.c */
 static int to_encode(char c)
 {
@@ -143,9 +142,9 @@ static char *extract_region(const char *arn)
     return out;
 }
 
-static flb_sds_t build_presigned_query(struct flb_aws_msk_iam *ctx,
-                                       const char *host,
-                                       time_t now)
+static flb_sds_t build_sasl_payload(struct flb_aws_msk_iam *ctx,
+                                    const char *host,
+                                    time_t now)
 {
     struct flb_aws_credentials *creds;
     struct tm gm;
@@ -164,50 +163,48 @@ static flb_sds_t build_presigned_query(struct flb_aws_msk_iam *ctx,
     unsigned char key_signing[32];
     unsigned char sig[32];
     flb_sds_t hexsig = NULL;
-    flb_sds_t token = NULL;
+    flb_sds_t payload = NULL;
     int len;
     int klen = 32;
     flb_sds_t tmp;
     flb_sds_t session_token_enc = NULL;
+    flb_sds_t action_enc = NULL;
 
     /* Add validation */
     if (!ctx || !ctx->region || flb_sds_len(ctx->region) == 0) {
-        flb_error("[msk_iam] build_presigned_query: region is not set or invalid");
+        flb_error("[msk_iam] build_sasl_payload: region is not set or invalid");
         return NULL;
     }
 
     if (!host || strlen(host) == 0) {
-        flb_error("[msk_iam] build_presigned_query: host is required");
+        flb_error("[msk_iam] build_sasl_payload: host is required");
         return NULL;
     }
 
-    /* CRITICAL: Log BEFORE starting canonical request construction */
-    flb_info("[msk_iam] build_presigned_query: generating token for host: %s, region: %s",
+    flb_info("[msk_iam] build_sasl_payload: generating payload for host: %s, region: %s",
              host, ctx->region);
 
     creds = ctx->provider->provider_vtable->get_credentials(ctx->provider);
     if (!creds) {
-        flb_error("[msk_iam] build_presigned_query: failed to get credentials");
+        flb_error("[msk_iam] build_sasl_payload: failed to get credentials");
         return NULL;
     }
 
     if (!creds->access_key_id || !creds->secret_access_key) {
-        flb_error("[msk_iam] build_presigned_query: incomplete credentials");
+        flb_error("[msk_iam] build_sasl_payload: incomplete credentials");
         flb_aws_credentials_destroy(creds);
         return NULL;
     }
 
-    /* CRITICAL: Log BEFORE starting canonical request construction */
-    flb_info("[msk_iam] build_presigned_query: using access key: %.10s...", creds->access_key_id);
+    flb_info("[msk_iam] build_sasl_payload: using access key: %.10s...", creds->access_key_id);
 
     gmtime_r(&now, &gm);
     strftime(amzdate, sizeof(amzdate) - 1, "%Y%m%dT%H%M%SZ", &gm);
     strftime(datestamp, sizeof(datestamp) - 1, "%Y%m%d", &gm);
 
-    /* CRITICAL: Log BEFORE starting canonical request construction */
-    flb_info("[msk_iam] build_presigned_query: timestamp: %s, date: %s", amzdate, datestamp);
+    flb_info("[msk_iam] build_sasl_payload: timestamp: %s, date: %s", amzdate, datestamp);
 
-    /* Build credential string */
+    /* Build credential string - CRITICAL: Use "kafka-cluster" */
     credential = flb_sds_create_size(256);
     if (!credential) {
         goto error;
@@ -219,49 +216,52 @@ static flb_sds_t build_presigned_query(struct flb_aws_msk_iam *ctx,
         goto error;
     }
 
-    /* CRITICAL: Log BEFORE starting canonical request construction */
-    flb_info("[msk_iam] build_presigned_query: credential scope: %s", credential);
+    flb_info("[msk_iam] build_sasl_payload: credential scope: %s", credential);
 
     credential_enc = uri_encode_params(credential, flb_sds_len(credential));
     if (!credential_enc) {
         goto error;
     }
 
-    /* Build initial query string - INCREASED BUFFER SIZE significantly for large session tokens */
-    query = flb_sds_create_size(8192);  /* Increased from 2048 to handle very large session tokens */
+    /* CRITICAL: Encode the action parameter */
+    action_enc = uri_encode_params("kafka-cluster:Connect", strlen("kafka-cluster:Connect"));
+    if (!action_enc) {
+        goto error;
+    }
+
+    /* Build query string with ACTION parameter first (alphabetical order) */
+    query = flb_sds_create_size(8192);
     if (!query) {
         goto error;
     }
 
-    /* Build query parameters in ALPHABETICAL ORDER per AWS SigV4 spec */
+    /* CRITICAL: Action must be FIRST in alphabetical order */
     query = flb_sds_printf(&query,
-                           "X-Amz-Algorithm=AWS4-HMAC-SHA256&X-Amz-Credential=%s"
+                           "Action=%s&X-Amz-Algorithm=AWS4-HMAC-SHA256&X-Amz-Credential=%s"
                            "&X-Amz-Date=%s&X-Amz-Expires=900",
-                           credential_enc, amzdate);
+                           action_enc, credential_enc, amzdate);
     if (!query) {
         goto error;
     }
 
     /* Add session token if present (before SignedHeaders alphabetically) */
     if (creds->session_token && flb_sds_len(creds->session_token) > 0) {
-        /* CRITICAL: Log BEFORE encoding - NO LOGGING DURING ENCODING */
-        flb_info("[msk_iam] build_presigned_query: adding session token (length: %zu)",
+        flb_info("[msk_iam] build_sasl_payload: adding session token (length: %zu)",
                  flb_sds_len(creds->session_token));
 
         session_token_enc = uri_encode_params(creds->session_token,
                                               flb_sds_len(creds->session_token));
         if (!session_token_enc) {
-            flb_error("[msk_iam] build_presigned_query: failed to encode session token");
+            flb_error("[msk_iam] build_sasl_payload: failed to encode session token");
             goto error;
         }
 
-        /* CRITICAL: Log AFTER encoding but BEFORE canonical request */
-        flb_info("[msk_iam] build_presigned_query: encoded session token length: %zu",
+        flb_info("[msk_iam] build_sasl_payload: encoded session token length: %zu",
                  flb_sds_len(session_token_enc));
 
         tmp = flb_sds_printf(&query, "&X-Amz-Security-Token=%s", session_token_enc);
         if (!tmp) {
-            flb_error("[msk_iam] build_presigned_query: failed to append session token to query");
+            flb_error("[msk_iam] build_sasl_payload: failed to append session token to query");
             goto error;
         }
         query = tmp;
@@ -270,36 +270,33 @@ static flb_sds_t build_presigned_query(struct flb_aws_msk_iam *ctx,
     /* Add SignedHeaders LAST (alphabetically after Security-Token) */
     tmp = flb_sds_printf(&query, "&X-Amz-SignedHeaders=host");
     if (!tmp) {
-        flb_error("[msk_iam] build_presigned_query: failed to append SignedHeaders");
+        flb_error("[msk_iam] build_sasl_payload: failed to append SignedHeaders");
         goto error;
     }
     query = tmp;
 
-    /* CRITICAL: Log BEFORE canonical request construction - NO MORE LOGGING UNTIL AFTER HASH */
-    flb_info("[msk_iam] build_presigned_query: query string length: %zu", flb_sds_len(query));
+    flb_info("[msk_iam] build_sasl_payload: query string length: %zu", flb_sds_len(query));
 
-    /* Build canonical request - INCREASED BUFFER SIZE significantly */
-    canonical = flb_sds_create_size(16384);  /* Increased from 2048 to handle large query strings */
+    /* Build canonical request */
+    canonical = flb_sds_create_size(16384);
     if (!canonical) {
         goto error;
     }
 
-    /* CRITICAL: NO LOGGING BETWEEN HERE AND HASH CALCULATION */
+    /* CRITICAL: MSK IAM canonical request format - only host header */
     canonical = flb_sds_printf(&canonical,
-                                "GET\n/\n%s\nhost:%s\nx-amz-date:%s\nx-amz-security-token:%s\n\n"
-                                "host;x-amz-date;x-amz-security-token\nUNSIGNED-PAYLOAD",
-                                query, host, amzdate, creds->session_token);
-
+                               "GET\n/\n%s\nhost:%s\n\nhost\nUNSIGNED-PAYLOAD",
+                               query, host);
     if (!canonical) {
-        flb_error("[msk_iam] build_presigned_query: failed to build canonical request");
+        flb_error("[msk_iam] build_sasl_payload: failed to build canonical request");
         goto error;
     }
 
-    /* Hash canonical request IMMEDIATELY - NO LOGGING BETWEEN CONSTRUCTION AND HASH */
+    /* Hash canonical request immediately */
     if (flb_hash_simple(FLB_HASH_SHA256, (unsigned char *) canonical,
                         flb_sds_len(canonical), sha256_buf,
                         sizeof(sha256_buf)) != FLB_CRYPTO_SUCCESS) {
-        flb_error("[msk_iam] build_presigned_query: failed to hash canonical request");
+        flb_error("[msk_iam] build_sasl_payload: failed to hash canonical request");
         goto error;
     }
 
@@ -308,12 +305,11 @@ static flb_sds_t build_presigned_query(struct flb_aws_msk_iam *ctx,
         goto error;
     }
 
-    /* NOW it's safe to log again */
-    flb_info("[msk_iam] build_presigned_query: canonical request length: %zu", flb_sds_len(canonical));
-    flb_info("[msk_iam] build_presigned_query: canonical request hash: %s", hexhash);
+    flb_info("[msk_iam] build_sasl_payload: canonical request length: %zu", flb_sds_len(canonical));
+    flb_info("[msk_iam] build_sasl_payload: canonical request hash: %s", hexhash);
 
-    /* Build string to sign - INCREASED BUFFER SIZE */
-    string_to_sign = flb_sds_create_size(2048);  /* Increased from 1024 */
+    /* Build string to sign - CRITICAL: Use "kafka-cluster" */
+    string_to_sign = flb_sds_create_size(2048);
     if (!string_to_sign) {
         goto error;
     }
@@ -325,7 +321,7 @@ static flb_sds_t build_presigned_query(struct flb_aws_msk_iam *ctx,
         goto error;
     }
 
-    flb_info("[msk_iam] build_presigned_query: string to sign created");
+    flb_info("[msk_iam] build_sasl_payload: string to sign created");
 
     /* Derive signing key */
     flb_sds_t key;
@@ -342,7 +338,7 @@ static flb_sds_t build_presigned_query(struct flb_aws_msk_iam *ctx,
     len = strlen(datestamp);
     if (hmac_sha256_sign(key_date, (unsigned char *) key, flb_sds_len(key),
                          (unsigned char *) datestamp, len) != 0) {
-        flb_error("[msk_iam] build_presigned_query: failed to sign date");
+        flb_error("[msk_iam] build_sasl_payload: failed to sign date");
         flb_sds_destroy(key);
         goto error;
     }
@@ -350,24 +346,25 @@ static flb_sds_t build_presigned_query(struct flb_aws_msk_iam *ctx,
 
     len = strlen(ctx->region);
     if (hmac_sha256_sign(key_region, key_date, klen, (unsigned char *) ctx->region, len) != 0) {
-        flb_error("[msk_iam] build_presigned_query: failed to sign region");
+        flb_error("[msk_iam] build_sasl_payload: failed to sign region");
         goto error;
     }
 
+    /* CRITICAL: Use "kafka-cluster" for service */
     if (hmac_sha256_sign(key_service, key_region, klen, (unsigned char *) "kafka-cluster", 13) != 0) {
-        flb_error("[msk_iam] build_presigned_query: failed to sign service");
+        flb_error("[msk_iam] build_sasl_payload: failed to sign service");
         goto error;
     }
 
     if (hmac_sha256_sign(key_signing, key_service, klen,
                         (unsigned char *) "aws4_request", 12) != 0) {
-        flb_error("[msk_iam] build_presigned_query: failed to create signing key");
+        flb_error("[msk_iam] build_sasl_payload: failed to create signing key");
         goto error;
     }
 
     if (hmac_sha256_sign(sig, key_signing, klen,
                          (unsigned char *) string_to_sign, flb_sds_len(string_to_sign)) != 0) {
-        flb_error("[msk_iam] build_presigned_query: failed to sign request");
+        flb_error("[msk_iam] build_sasl_payload: failed to sign request");
         goto error;
     }
 
@@ -376,23 +373,23 @@ static flb_sds_t build_presigned_query(struct flb_aws_msk_iam *ctx,
         goto error;
     }
 
-    flb_info("[msk_iam] build_presigned_query: signature: %s", hexsig);
+    flb_info("[msk_iam] build_sasl_payload: signature: %s", hexsig);
 
     /* Append signature to query */
-    tmp = flb_sds_printf(&query, "&X-Amz-Signature=%s;x-amz-date;x-amz-security-token", hexsig);
+    tmp = flb_sds_printf(&query, "&X-Amz-Signature=%s", hexsig);
     if (!tmp) {
         goto error;
     }
     query = tmp;
 
-    /* Return a copy of the query as the token */
-    token = flb_sds_create(query);
-    if (!token) {
-        flb_error("[msk_iam] build_presigned_query: failed to create token copy");
+    /* CRITICAL: Return the query string as the SASL payload, not a URL */
+    payload = flb_sds_create(query);
+    if (!payload) {
+        flb_error("[msk_iam] build_sasl_payload: failed to create payload copy");
         goto error;
     }
 
-    flb_info("[msk_iam] build_presigned_query: generated token length: %zu", flb_sds_len(token));
+    flb_info("[msk_iam] build_sasl_payload: generated payload length: %zu", flb_sds_len(payload));
 
     /* Clean up */
     flb_sds_destroy(credential);
@@ -402,14 +399,15 @@ static flb_sds_t build_presigned_query(struct flb_aws_msk_iam *ctx,
     flb_sds_destroy(string_to_sign);
     flb_sds_destroy(hexsig);
     flb_sds_destroy(query);
+    flb_sds_destroy(action_enc);
     if (session_token_enc) {
         flb_sds_destroy(session_token_enc);
     }
     flb_aws_credentials_destroy(creds);
-    return token;
+    return payload;
 
 error:
-    flb_error("[msk_iam] build_presigned_query: error occurred during token generation");
+    flb_error("[msk_iam] build_sasl_payload: error occurred during payload generation");
     flb_sds_destroy(credential);
     flb_sds_destroy(credential_enc);
     flb_sds_destroy(canonical);
@@ -417,6 +415,7 @@ error:
     flb_sds_destroy(string_to_sign);
     flb_sds_destroy(hexsig);
     flb_sds_destroy(query);
+    flb_sds_destroy(action_enc);
     if (session_token_enc) {
         flb_sds_destroy(session_token_enc);
     }
@@ -433,8 +432,8 @@ static void oauthbearer_token_refresh_cb(rd_kafka_t *rk,
     struct flb_msk_iam_cb *cb;
     struct flb_aws_msk_iam *ctx;
     struct flb_aws_credentials *creds = NULL;
-    flb_sds_t token = NULL;
-    char *token_copy = NULL;
+    flb_sds_t payload = NULL;
+    char *payload_copy = NULL;
     char host[256];
     rd_kafka_resp_err_t err;
     char errstr[512];
@@ -459,165 +458,53 @@ static void oauthbearer_token_refresh_cb(rd_kafka_t *rk,
         return;
     }
 
-    /* Resolve correct hostname for signing */
-    if (cb->broker_host && strlen(cb->broker_host) > 0) {
-        strncpy(host, cb->broker_host, sizeof(host) - 1);
-        host[sizeof(host) - 1] = '\0';
-        flb_info("[msk_iam] Using broker hostname for signing: %s", host);
-    } else {
-        snprintf(host, sizeof(host), "kafka.%s.amazonaws.com", ctx->region);
-        flb_warn("[msk_iam] broker_host not set, using fallback: %s", host);
-    }
-
-    flb_info("[msk_iam] requesting token for region: %s, host: %s", ctx->region, host);
-
-    token = build_presigned_query(ctx, host, time(NULL));
-    if (!token) {
-        flb_error("[msk_iam] failed to generate MSK IAM token");
-        rd_kafka_oauthbearer_set_token_failure(rk, "token generation failed");
-        return;
-    }
-
-    // Print curl command for local testing
-    sleep(1);
-    printf("[msk_iam] TEST TOKEN:\ncurl \"https://%s/?%s\"\n", host, token);
-    // Print principal (access key id)
-    if (ctx->provider) {
-        struct flb_aws_credentials *test_creds = ctx->provider->provider_vtable->get_credentials(ctx->provider);
-        if (test_creds && test_creds->access_key_id) {
-            printf("[msk_iam] TEST PRINCIPAL: %s\n", test_creds->access_key_id);
-            flb_aws_credentials_destroy(test_creds);
-        }
-    }
-
-    token_copy = strdup(token);
-    if (!token_copy) {
-        flb_error("[msk_iam] failed to duplicate token string");
-        rd_kafka_oauthbearer_set_token_failure(rk, "memory allocation failed");
-        goto cleanup;
-    }
-
-    creds = ctx->provider->provider_vtable->get_credentials(ctx->provider);
-    if (!creds || !creds->access_key_id) {
-        flb_error("[msk_iam] failed to retrieve AWS credentials for principal");
-        rd_kafka_oauthbearer_set_token_failure(rk, "credential retrieval failed");
-        goto cleanup;
-    }
-
-    now = (int64_t)time(NULL);
-    md_lifetime_ms = (now + 900) * 1000;
-
-    flb_info("[msk_iam] setting OAuth token with principal: %s", creds->access_key_id);
-    flb_info("[msk_iam] token length: %zu", strlen(token_copy));
-
-    err = rd_kafka_oauthbearer_set_token(
-        rk,
-        token_copy,
-        md_lifetime_ms,
-        creds->access_key_id,
-        NULL,
-        0,
-        errstr,
-        sizeof(errstr)
-    );
-
-    if (err != RD_KAFKA_RESP_ERR_NO_ERROR) {
-        flb_error("[msk_iam] failed to set OAuth bearer token: %s", errstr);
-        rd_kafka_oauthbearer_set_token_failure(rk, errstr);
-    } else {
-        flb_info("[msk_iam] OAuth bearer token successfully set");
-    }
-
-cleanup:
-    if (creds) {
-        flb_aws_credentials_destroy(creds);
-    }
-    if (token) {
-        flb_sds_destroy(token);
-    }
-    // token_copy is managed by librdkafka
-}
-
-static void oauthbearer_token_refresh_cb_old(rd_kafka_t *rk,
-                                         const char *oauthbearer_config,
-                                         void *opaque)
-{
-    struct flb_msk_iam_cb *cb;
-    struct flb_aws_msk_iam *ctx;
-    struct flb_aws_credentials *creds = NULL;
-    flb_sds_t token = NULL;
-    char *token_copy = NULL;
-    char host[256];
-    rd_kafka_resp_err_t err;
-    char errstr[512];
-    int64_t now;
-    int64_t md_lifetime_ms;
-
-    (void) oauthbearer_config;
-
-    flb_info("[msk_iam] *** OAuth bearer token refresh callback INVOKED ***");
-
-    cb = rd_kafka_opaque(rk);
-    if (!cb || !cb->iam) {
-        flb_error("[msk_iam] callback invoked with no context");
-        rd_kafka_oauthbearer_set_token_failure(rk, "no context");
-        return;
-    }
-
-    ctx = cb->iam;
-    if (!ctx->region || flb_sds_len(ctx->region) == 0) {
-        flb_error("[msk_iam] region is not set or invalid");
-        rd_kafka_oauthbearer_set_token_failure(rk, "region not set");
-        return;
-    }
-
-    /* Determine the correct hostname based on cluster type */
+    /* FIXED: Correct hostname detection for MSK Serverless */
     if (ctx->cluster_arn && strstr(ctx->cluster_arn, "-s3") != NULL) {
-        /* MSK Serverless cluster - use the generic serverless endpoint */
+        /* MSK Serverless cluster - use the serverless endpoint format */
         snprintf(host, sizeof(host), "kafka-serverless.%s.amazonaws.com", ctx->region);
-        cb->broker_host = flb_strdup("boot-53h6572i.c3.kafka-serverless.us-east-2.amazonaws.com");  // add this line
         flb_info("[msk_iam] Detected MSK Serverless cluster, using host: %s", host);
     } else {
-        /* Regular MSK cluster - use your existing broker_host mechanism */
+        /* Regular MSK cluster - use broker hostname if available */
         if (cb->broker_host && strlen(cb->broker_host) > 0) {
             strncpy(host, cb->broker_host, sizeof(host) - 1);
             host[sizeof(host) - 1] = '\0';
             flb_info("[msk_iam] Detected regular MSK cluster, using broker host: %s", host);
         } else {
-            /* Fallback to generic endpoint if broker host not available */
+            /* Fallback to generic endpoint */
             snprintf(host, sizeof(host), "kafka.%s.amazonaws.com", ctx->region);
-            flb_info("[msk_iam] No broker host available, using generic host: %s", host);
+            flb_warn("[msk_iam] broker_host not set, using fallback: %s", host);
         }
     }
 
-    flb_info("[msk_iam] requesting token for region: %s, host: %s", ctx->region, host);
+    flb_info("[msk_iam] requesting SASL payload for region: %s, host: %s", ctx->region, host);
 
-    token = build_presigned_query(ctx, host, time(NULL));
-    if (!token) {
-        flb_error("[msk_iam] failed to generate MSK IAM token");
-        rd_kafka_oauthbearer_set_token_failure(rk, "token generation failed");
+    payload = build_sasl_payload(ctx, host, time(NULL));
+    if (!payload) {
+        flb_error("[msk_iam] failed to generate MSK IAM SASL payload");
+        rd_kafka_oauthbearer_set_token_failure(rk, "payload generation failed");
         return;
     }
 
-    // Print curl command for local testing
-    printf("[msk_iam] TEST TOKEN: curl 'https://%s/?%s'\n", host, token);
-    // Print principal (access key id)
-    if (ctx->provider) {
-        struct flb_aws_credentials *test_creds = ctx->provider->provider_vtable->get_credentials(ctx->provider);
-        if (test_creds && test_creds->access_key_id) {
-            printf("[msk_iam] TEST PRINCIPAL: %s\n", test_creds->access_key_id);
-            flb_aws_credentials_destroy(test_creds);
-        }
+    /* Debug output - this is now a SASL payload, not a URL */
+    printf("[msk_iam] SASL PAYLOAD: %s\n", payload);
+
+    /* Print principal */
+    creds = ctx->provider->provider_vtable->get_credentials(ctx->provider);
+    if (creds && creds->access_key_id) {
+        printf("[msk_iam] PRINCIPAL: %s\n", creds->access_key_id);
     }
 
-    token_copy = strdup(token);
-    if (!token_copy) {
-        flb_error("[msk_iam] failed to duplicate token string");
+    payload_copy = strdup(payload);
+    if (!payload_copy) {
+        flb_error("[msk_iam] failed to duplicate payload string");
         rd_kafka_oauthbearer_set_token_failure(rk, "memory allocation failed");
         goto cleanup;
     }
 
-    creds = ctx->provider->provider_vtable->get_credentials(ctx->provider);
+    if (!creds) {
+        creds = ctx->provider->provider_vtable->get_credentials(ctx->provider);
+    }
+
     if (!creds || !creds->access_key_id) {
         flb_error("[msk_iam] failed to retrieve AWS credentials for principal");
         rd_kafka_oauthbearer_set_token_failure(rk, "credential retrieval failed");
@@ -628,11 +515,11 @@ static void oauthbearer_token_refresh_cb_old(rd_kafka_t *rk,
     md_lifetime_ms = (now + 900) * 1000;
 
     flb_info("[msk_iam] setting OAuth token with principal: %s", creds->access_key_id);
-    flb_info("[msk_iam] token length: %zu", strlen(token_copy));
+    flb_info("[msk_iam] payload length: %zu", strlen(payload_copy));
 
     err = rd_kafka_oauthbearer_set_token(
         rk,
-        token_copy,
+        payload_copy,
         md_lifetime_ms,
         creds->access_key_id,
         NULL,
@@ -652,10 +539,10 @@ cleanup:
     if (creds) {
         flb_aws_credentials_destroy(creds);
     }
-    if (token) {
-        flb_sds_destroy(token);
+    if (payload) {
+        flb_sds_destroy(payload);
     }
-    /* Note: Don't free token_copy - librdkafka manages it */
+    /* Note: Don't free payload_copy - librdkafka manages it */
 }
 
 /* Keep original function signature to match header file */
@@ -734,6 +621,7 @@ struct flb_aws_msk_iam *flb_aws_msk_iam_register_oauth_cb(struct flb_config *con
     }
     cb->plugin_ctx = owner;
     cb->iam = ctx;
+    cb->broker_host = NULL;  /* Initialize to NULL, will be set by calling code if needed */
 
     /* Set the callback and opaque BEFORE any Kafka operations */
     rd_kafka_conf_set_oauthbearer_token_refresh_cb(kconf, oauthbearer_token_refresh_cb);
@@ -761,6 +649,9 @@ void flb_aws_msk_iam_cb_destroy(struct flb_msk_iam_cb *cb)
 {
     if (!cb) {
         return;
+    }
+    if (cb->broker_host) {
+        flb_free(cb->broker_host);
     }
     flb_aws_msk_iam_destroy(cb->iam);
     flb_free(cb);
