@@ -1,0 +1,5 @@
+{
+    "auto_create_topics": "true",
+    "num_partitions": 4,
+    "replication_factor": 3,
+}

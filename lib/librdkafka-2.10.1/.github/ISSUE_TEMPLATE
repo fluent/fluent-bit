@@ -1,0 +1,34 @@
+Read the FAQ first: https://github.com/confluentinc/librdkafka/wiki/FAQ
+
+Do NOT create issues for questions, use the discussion forum: https://github.com/confluentinc/librdkafka/discussions
+
+
+
+Description
+===========
+<your issue description goes here>
+
+
+How to reproduce
+================
+<your steps how to reproduce goes here, or remove section if not relevant>
+
+
+**IMPORTANT**: Always try to reproduce the issue on the latest released version (see https://github.com/confluentinc/librdkafka/releases), if it can't be reproduced on the latest version the issue has been fixed.
+
+
+Checklist
+=========
+
+**IMPORTANT**: We will close issues where the checklist has not been completed.
+
+Please provide the following information:
+
+ - [x] librdkafka version (release number or git tag): `<REPLACE with e.g., v0.10.5 or a git sha. NOT "latest" or "current">`
+ - [ ] Apache Kafka version: `<REPLACE with e.g., 0.10.2.3>`
+ - [ ] librdkafka client configuration: `<REPLACE with e.g., message.timeout.ms=123, auto.reset.offset=earliest, ..>`
+ - [ ] Operating system: `<REPLACE with e.g., Centos 5 (x64)>`
+ - [ ] Provide logs (with `debug=..` as necessary) from librdkafka
+ - [ ] Provide broker log excerpts
+ - [ ] Critical issue
+

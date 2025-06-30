@@ -1,0 +1,15 @@
+*.test
+test.conf
+test-runner
+core
+vgcore.*
+core.*
+stats_*.json
+test_report_*.json
+test_suite_*.json
+.\#*
+*.pyc
+# sqlite3 db:
+rdktests
+*.log
+*.png

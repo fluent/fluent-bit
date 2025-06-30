@@ -1,0 +1,19 @@
+
+# Print rd_kafka_msgq_t
+define dump_msgq
+   set $rkmq = $arg0
+   set $rkm = $rkmq.rkmq_msgs.tqh_first
+   set $exp_msgid = 0
+   set $cnt = 0
+   while $rkm != 0
+     set $msgid = $rkm.rkm_u.producer.msgid
+     printf "#%d ((rd_kafka_msgq_t *)%p) msgid %llu\n", $cnt, $rkm, $msgid
+     if $exp_msgid != 0 && $exp_msgid != $msgid
+       printf " ^ WARNING: expected msgid %llu, not %llu\n", $exp_msgid, $msgid
+     end
+     set $exp_msgid = $msgid + 1
+     set $rkm = $rkm.rkm_link.tqe_next
+     set $cnt++
+   end
+end
+
