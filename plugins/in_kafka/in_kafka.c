@@ -260,6 +260,7 @@ static int in_kafka_init(struct flb_input_instance *ins,
     conf = flb_input_get_property("rdkafka.sasl.mechanism", ins);
     if (conf) {
         ctx->sasl_mechanism = flb_sds_create(conf);
+        flb_info("[ED] SASL mechanism configured: %s", ctx->sasl_mechanism);
     }
 
     kafka_conf = flb_kafka_conf_create(&ctx->kafka, &ins->properties, 1);
@@ -295,6 +296,8 @@ static int in_kafka_init(struct flb_input_instance *ins,
 
     if (ctx->aws_msk_iam && ctx->aws_msk_iam_cluster_arn && ctx->sasl_mechanism &&
         strcasecmp(ctx->sasl_mechanism, "OAUTHBEARER") == 0) {
+        flb_info("[ED] registering MSK IAM authentication with cluster ARN: %s",
+                 ctx->aws_msk_iam_cluster_arn);
         ctx->msk_iam = flb_aws_msk_iam_register_oauth_cb(config,
                                                          kafka_conf,
                                                          ctx->aws_msk_iam_cluster_arn,
@@ -304,8 +307,7 @@ static int in_kafka_init(struct flb_input_instance *ins,
         }
     }
 
-    ctx->kafka.rk = rd_kafka_new(RD_KAFKA_CONSUMER, kafka_conf, errstr,
-            sizeof(errstr));
+    ctx->kafka.rk = rd_kafka_new(RD_KAFKA_CONSUMER, kafka_conf, errstr, sizeof(errstr));
 
     /* Create Kafka consumer handle */
     if (!ctx->kafka.rk) {
