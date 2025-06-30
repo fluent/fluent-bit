@@ -326,6 +326,9 @@ static int in_kafka_init(struct flb_input_instance *ins,
         goto init_error;
     }
 
+    /* Trigger initial token refresh for OAUTHBEARER */
+    rd_kafka_poll(ctx->kafka.rk, 0);
+
     conf = flb_input_get_property("topics", ins);
     if (!conf) {
         flb_plg_error(ins, "config: no topics specified");
