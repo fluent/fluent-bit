@@ -24,7 +24,6 @@ struct flb_aws_msk_iam {
     flb_sds_t cluster_arn;
 };
 
-/* Callback structure to hold context and broker information */
 
 /* Utility functions copied from flb_signv4.c */
 static int to_encode(char c)
@@ -148,6 +147,14 @@ static flb_sds_t build_msk_iam_payload(struct flb_aws_msk_iam *ctx,
                                        const char *host,
                                        time_t now)
 {
+    /*
+     * CRITICAL: Based on AWS MSK IAM Java implementation, the OAuth token must be:
+     * 1. A complete presigned URL (https://host/?query_params)
+     * 2. Base64 URL encoded
+     *
+     * The Java code shows: Base64.getUrlDecoder().decode(tokenBytes)
+     * which means the token passed to OAuth is the Base64 URL encoded presigned URL.
+     */
     struct flb_aws_credentials *creds;
     struct tm gm;
     char amzdate[32];
@@ -171,6 +178,10 @@ static flb_sds_t build_msk_iam_payload(struct flb_aws_msk_iam *ctx,
     flb_sds_t tmp;
     flb_sds_t session_token_enc = NULL;
     flb_sds_t action_enc = NULL;
+    flb_sds_t presigned_url = NULL;
+    size_t actual_encoded_len;
+    size_t url_len;
+    size_t encoded_len;
 
     /* Add validation */
     if (!ctx || !ctx->region || flb_sds_len(ctx->region) == 0) {
@@ -383,14 +394,59 @@ static flb_sds_t build_msk_iam_payload(struct flb_aws_msk_iam *ctx,
     }
     query = tmp;
 
-    /* Return the query string as the SASL payload */
-    payload = flb_sds_create(query);
-    if (!payload) {
-        flb_error("[msk_iam] build_msk_iam_payload: failed to create payload copy");
+    /* Build the complete presigned URL */
+    presigned_url = flb_sds_create_size(16384);
+    if (!presigned_url) {
         goto error;
     }
 
-    flb_info("[msk_iam] build_msk_iam_payload: generated payload length: %zu", flb_sds_len(payload));
+    presigned_url = flb_sds_printf(&presigned_url, "https://%s/?%s", host, query);
+    if (!presigned_url) {
+        goto error;
+    }
+
+    flb_info("[msk_iam] build_msk_iam_payload: presigned URL: %s", presigned_url);
+
+    /* Base64 URL encode the presigned URL */
+    url_len = flb_sds_len(presigned_url);
+    encoded_len = ((url_len + 2) / 3) * 4 + 1; /* Base64 encoding size + null terminator */
+
+    payload = flb_sds_create_size(encoded_len);
+    if (!payload) {
+        flb_sds_destroy(presigned_url);
+        goto error;
+    }
+
+    /* Use flb_base64_encode with correct signature:
+     * int flb_base64_encode(unsigned char *dst, size_t dlen, size_t *olen, const unsigned char *src, size_t slen)
+     */
+    int encode_result = flb_base64_encode((unsigned char*)payload, encoded_len, &actual_encoded_len,
+                                         (const unsigned char*)presigned_url, url_len);
+    if (encode_result == -1) {
+        flb_error("[msk_iam] build_msk_iam_payload: failed to base64 encode URL");
+        goto error;
+    }
+
+    /* Update the SDS length to match actual encoded length */
+    flb_sds_len_set(payload, actual_encoded_len);
+
+    /* Convert to Base64 URL encoding (replace + with -, / with _, remove padding =) */
+    char *p = payload;
+    while (*p) {
+        if (*p == '+') *p = '-';
+        else if (*p == '/') *p = '_';
+        p++;
+    }
+
+    /* Remove padding */
+    size_t final_len = flb_sds_len(payload);
+    while (final_len > 0 && payload[final_len-1] == '=') {
+        final_len--;
+    }
+    flb_sds_len_set(payload, final_len);
+    payload[final_len] = '\0';
+
+    flb_info("[msk_iam] build_msk_iam_payload: generated base64url encoded payload length: %zu", flb_sds_len(payload));
 
     /* Clean up */
     flb_sds_destroy(credential);
@@ -401,6 +457,7 @@ static flb_sds_t build_msk_iam_payload(struct flb_aws_msk_iam *ctx,
     flb_sds_destroy(hexsig);
     flb_sds_destroy(query);
     flb_sds_destroy(action_enc);
+    flb_sds_destroy(presigned_url);
     if (session_token_enc) {
         flb_sds_destroy(session_token_enc);
     }
@@ -417,6 +474,8 @@ error:
     flb_sds_destroy(hexsig);
     flb_sds_destroy(query);
     flb_sds_destroy(action_enc);
+    flb_sds_destroy(payload);
+    flb_sds_destroy(presigned_url);
     if (session_token_enc) {
         flb_sds_destroy(session_token_enc);
     }
@@ -487,7 +546,7 @@ static void oauthbearer_token_refresh_cb(rd_kafka_t *rk,
     }
 
     /* Debug output */
-    printf("[msk_iam] SASL PAYLOAD: %s\n", payload);
+    printf("[msk_iam] BASE64URL ENCODED TOKEN: %s\n", payload);
 
     /* Print principal */
     creds = ctx->provider->provider_vtable->get_credentials(ctx->provider);
