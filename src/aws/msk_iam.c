@@ -407,6 +407,11 @@ static char *extract_region(const char *arn)
     if (!p) {
         return NULL;
     }
+    p = strchr(p + 1, ':');
+    if (!p) {
+        return NULL;
+    }
+
     r = p + 1;
     p = strchr(r, ':');
     if (!p) {
