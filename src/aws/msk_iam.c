@@ -22,13 +22,11 @@
 #include <fluent-bit/flb_sds.h>
 #include <fluent-bit/flb_mem.h>
 #include <fluent-bit/flb_utils.h>
+#include <fluent-bit/flb_base64.h>
 #include <fluent-bit/flb_hash.h>
 #include <fluent-bit/flb_hmac.h>
 #include <fluent-bit/flb_aws_credentials.h>
-#include <fluent-bit/flb_output_plugin.h>
-#include <fluent-bit/flb_input_plugin.h>
-#include "../../plugins/out_kafka/kafka_config.h"
-#include "../../plugins/in_kafka/in_kafka.h"
+#include <fluent-bit/flb_signv4.h>
 #include <rdkafka.h>
 
 #include <stdio.h>
@@ -38,11 +36,13 @@
 
 #include <fluent-bit/aws/msk_iam.h>
 
+/* Wrapper for storing plugin context and MSK IAM state */
 struct flb_aws_msk_iam {
     struct flb_aws_provider *provider;
     flb_sds_t region;
     flb_sds_t cluster_arn;
 };
+
 
 /* Utility functions copied from flb_signv4.c */
 static int to_encode(char c)
@@ -125,43 +125,6 @@ static int hmac_sha256_sign(unsigned char out[32],
     return 0;
 }
 
-static flb_sds_t base64_url_encode(const char *data, size_t len)
-{
-    size_t olen;
-    size_t out_size;
-    unsigned char *buf;
-    flb_sds_t out;
-    size_t i, j;
-
-    out_size = (len * 2) + 4;
-    buf = flb_malloc(out_size);
-    if (!buf) {
-        return NULL;
-    }
-
-    if (flb_base64_encode(buf, out_size - 1, &olen,
-                          (const unsigned char *) data, len) != 0) {
-        flb_free(buf);
-        return NULL;
-    }
-
-    for (i = 0, j = 0; i < olen && buf[i] != '='; i++) {
-        if (buf[i] == '+') {
-            buf[j++] = '-';
-        }
-        else if (buf[i] == '/') {
-            buf[j++] = '_';
-        }
-        else {
-            buf[j++] = buf[i];
-        }
-    }
-
-    out = flb_sds_create_len((char *)buf, j);
-    flb_free(buf);
-    return out;
-}
-
 static flb_sds_t build_presigned_query(struct flb_aws_msk_iam *ctx,
                                        const char *host,
                                        time_t now)
@@ -177,7 +140,6 @@ static flb_sds_t build_presigned_query(struct flb_aws_msk_iam *ctx,
     unsigned char sha256_buf[32];
     flb_sds_t hexhash = NULL;
     flb_sds_t string_to_sign = NULL;
-    flb_sds_t signature = NULL;
     unsigned char key_date[32];
     unsigned char key_region[32];
     unsigned char key_service[32];
@@ -185,10 +147,10 @@ static flb_sds_t build_presigned_query(struct flb_aws_msk_iam *ctx,
     unsigned char sig[32];
     flb_sds_t hexsig = NULL;
     flb_sds_t token = NULL;
-    flb_sds_t final_req = NULL;
     int len;
     int klen = 32;
     flb_sds_t tmp;
+    flb_sds_t session_token_enc = NULL;
 
     creds = ctx->provider->provider_vtable->get_credentials(ctx->provider);
     if (!creds) {
@@ -199,6 +161,7 @@ static flb_sds_t build_presigned_query(struct flb_aws_msk_iam *ctx,
     strftime(amzdate, sizeof(amzdate) - 1, "%Y%m%dT%H%M%SZ", &gm);
     strftime(datestamp, sizeof(datestamp) - 1, "%Y%m%d", &gm);
 
+    /* Build credential string */
     credential = flb_sds_printf(NULL, "%s/%s/%s/sts/aws4_request",
                                 creds->access_key_id, datestamp, ctx->region);
     if (!credential) {
@@ -209,6 +172,7 @@ static flb_sds_t build_presigned_query(struct flb_aws_msk_iam *ctx,
         goto error;
     }
 
+    /* Build initial query string */
     query = flb_sds_printf(NULL,
                            "Action=GetCallerIdentity&Version=2011-06-15"
                            "&X-Amz-Algorithm=AWS4-HMAC-SHA256&X-Amz-Credential=%s"
@@ -218,20 +182,23 @@ static flb_sds_t build_presigned_query(struct flb_aws_msk_iam *ctx,
         goto error;
     }
 
+    /* Add session token if present */
     if (creds->session_token) {
-        flb_sds_t st = uri_encode_params(creds->session_token,
-                                         flb_sds_len(creds->session_token));
-        if (!st) {
+        session_token_enc = uri_encode_params(creds->session_token,
+                                              flb_sds_len(creds->session_token));
+        if (!session_token_enc) {
             goto error;
         }
-        tmp = flb_sds_printf(&query, "&X-Amz-Security-Token=%s", st);
-        flb_sds_destroy(st);
+        tmp = flb_sds_printf(&query, "&X-Amz-Security-Token=%s", session_token_enc);
         if (!tmp) {
             goto error;
         }
+        flb_sds_destroy(session_token_enc);
+        session_token_enc = NULL;
         query = tmp;
     }
 
+    /* Build canonical request */
     canonical = flb_sds_printf(NULL,
                                "GET\n/\n%s\nhost:%s\n\nhost\nUNSIGNED-PAYLOAD",
                                query, host);
@@ -239,6 +206,7 @@ static flb_sds_t build_presigned_query(struct flb_aws_msk_iam *ctx,
         goto error;
     }
 
+    /* Hash canonical request */
     if (flb_hash_simple(FLB_HASH_SHA256, (unsigned char *) canonical,
                         flb_sds_len(canonical), sha256_buf,
                         sizeof(sha256_buf)) != FLB_CRYPTO_SUCCESS) {
@@ -250,6 +218,7 @@ static flb_sds_t build_presigned_query(struct flb_aws_msk_iam *ctx,
         goto error;
     }
 
+    /* Build string to sign */
     string_to_sign = flb_sds_printf(NULL,
                                     "AWS4-HMAC-SHA256\n%s\n%s/%s/sts/aws4_request\n%s",
                                     amzdate, datestamp, ctx->region, hexhash);
@@ -257,50 +226,63 @@ static flb_sds_t build_presigned_query(struct flb_aws_msk_iam *ctx,
         goto error;
     }
 
-    /* signing key */
+    /* Derive signing key */
     flb_sds_t key = flb_sds_printf(NULL, "AWS4%s", creds->secret_access_key);
     if (!key) {
         goto error;
     }
     len = strlen(datestamp);
-    hmac_sha256_sign(key_date, (unsigned char *) key, flb_sds_len(key),
-                     (unsigned char *) datestamp, len);
+    if (hmac_sha256_sign(key_date, (unsigned char *) key, flb_sds_len(key),
+                         (unsigned char *) datestamp, len) != 0) {
+        flb_sds_destroy(key);
+        goto error;
+    }
     flb_sds_destroy(key);
 
     len = strlen(ctx->region);
-    hmac_sha256_sign(key_region, key_date, klen, (unsigned char *) ctx->region, len);
+    if (hmac_sha256_sign(key_region, key_date, klen, (unsigned char *) ctx->region, len) != 0) {
+        goto error;
+    }
 
-    hmac_sha256_sign(key_service, key_region, klen, (unsigned char *) "sts", 3);
+    if (hmac_sha256_sign(key_service, key_region, klen, (unsigned char *) "sts", 3) != 0) {
+        goto error;
+    }
 
-    hmac_sha256_sign(key_signing, key_service, klen,
-                     (unsigned char *) "aws4_request", 12);
+    if (hmac_sha256_sign(key_signing, key_service, klen,
+                         (unsigned char *) "aws4_request", 12) != 0) {
+        goto error;
+    }
 
-    hmac_sha256_sign(sig, key_signing, klen,
-                     (unsigned char *) string_to_sign, flb_sds_len(string_to_sign));
+    if (hmac_sha256_sign(sig, key_signing, klen,
+                         (unsigned char *) string_to_sign, flb_sds_len(string_to_sign)) != 0) {
+        goto error;
+    }
 
     hexsig = sha256_to_hex(sig);
     if (!hexsig) {
         goto error;
     }
 
+    /* Append signature to query */
     tmp = flb_sds_printf(&query, "&X-Amz-Signature=%s", hexsig);
     if (!tmp) {
         goto error;
     }
     query = tmp;
 
-    final_req = flb_sds_printf(NULL,
-                               "GET\n/\n%s\nhost:%s\n\nhost\nUNSIGNED-PAYLOAD",
-                               query, host);
-    if (!final_req) {
-        goto error;
-    }
+    /* Return a copy of the query as the token */
+    token = flb_sds_create(query);
 
-    token = base64_url_encode(final_req, flb_sds_len(final_req));
-    flb_sds_destroy(final_req);
-    if (!token) {
-        goto error;
-    }
+    /* Clean up */
+    flb_sds_destroy(credential);
+    flb_sds_destroy(credential_enc);
+    flb_sds_destroy(canonical);
+    flb_sds_destroy(hexhash);
+    flb_sds_destroy(string_to_sign);
+    flb_sds_destroy(hexsig);
+    flb_sds_destroy(query); /* Only destroy the temporary, not the returned token */
+    flb_aws_credentials_destroy(creds);
+    return token;
 
 error:
     flb_sds_destroy(credential);
@@ -310,8 +292,9 @@ error:
     flb_sds_destroy(string_to_sign);
     flb_sds_destroy(hexsig);
     flb_sds_destroy(query);
+    flb_sds_destroy(session_token_enc);
     flb_aws_credentials_destroy(creds);
-    return token;
+    return NULL;
 }
 
 static void oauthbearer_token_refresh_cb(rd_kafka_t *rk,
@@ -327,8 +310,9 @@ static void oauthbearer_token_refresh_cb(rd_kafka_t *rk,
 
     (void) oauthbearer_config;
 
-    cb = opaque ? (struct flb_msk_iam_cb *) opaque : rd_kafka_opaque(rk);
+    cb = rd_kafka_opaque(rk);
     if (!cb || !cb->iam) {
+        printf("oauthbearer_token_refresh_cb called with no context\n");
         rd_kafka_oauthbearer_set_token_failure(rk, "no context");
         return;
     }
@@ -336,66 +320,40 @@ static void oauthbearer_token_refresh_cb(rd_kafka_t *rk,
     ctx = cb->iam;
     snprintf(host, sizeof(host) - 1, "sts.%s.amazonaws.com", ctx->region);
 
+    printf("oauthbearer_token_refresh_cb: requesting token from region %s\n",
+           ctx->region);
     token = build_presigned_query(ctx, host, time(NULL));
     if (!token) {
-        if (rd_kafka_type(rk) == RD_KAFKA_PRODUCER) {
-            flb_plg_error(((struct flb_out_kafka *)cb->plugin_ctx)->ins,
-                          "failed to generate MSK IAM token");
-        }
-        else {
-            flb_plg_error(((struct flb_in_kafka_config *)cb->plugin_ctx)->ins,
-                          "failed to generate MSK IAM token");
-        }
+        flb_error("failed to generate MSK IAM token");
         rd_kafka_oauthbearer_set_token_failure(rk, "token error");
         return;
     }
 
-    const char *ext[2];
-
-    ext[0] = "aud";
-    ext[1] = ctx->cluster_arn;
+    printf("oauthbearer_token_refresh_cb: retrieved token\n");
 
     err = rd_kafka_oauthbearer_set_token(rk, token,
                                          ((int64_t)time(NULL) + 900) * 1000,
-                                         NULL, ext, 2,
+                                         NULL, NULL, 0,
                                          errstr, sizeof(errstr));
     if (err != RD_KAFKA_RESP_ERR_NO_ERROR) {
-        if (rd_kafka_type(rk) == RD_KAFKA_PRODUCER) {
-            flb_plg_error(((struct flb_out_kafka *)cb->plugin_ctx)->ins,
-                          "rd_kafka_oauthbearer_set_token failed: %s", errstr);
-        }
-        else {
-            flb_plg_error(((struct flb_in_kafka_config *)cb->plugin_ctx)->ins,
-                          "rd_kafka_oauthbearer_set_token failed: %s", errstr);
-        }
+        flb_error("rd_kafka_oauthbearer_set_token failed: %s", errstr);
     }
     else {
-        if (rd_kafka_type(rk) == RD_KAFKA_PRODUCER) {
-            flb_plg_debug(((struct flb_out_kafka *)cb->plugin_ctx)->ins,
-                          "MSK IAM token refreshed");
-        }
-        else {
-            flb_plg_debug(((struct flb_in_kafka_config *)cb->plugin_ctx)->ins,
-                          "MSK IAM token refreshed");
-        }
+        flb_debug("MSK IAM token refreshed");
     }
 
     flb_sds_destroy(token);
 }
 
-static flb_sds_t extract_region(const char *arn)
+static char *extract_region(const char *arn)
 {
     const char *p;
     const char *r;
     size_t len;
-    flb_sds_t out;
+    char *out;
 
     /* arn:partition:service:region:... */
     p = strchr(arn, ':');
-    if (!p) {
-        return NULL;
-    }
-    p = strchr(p + 1, ':');
     if (!p) {
         return NULL;
     }
@@ -409,10 +367,12 @@ static flb_sds_t extract_region(const char *arn)
         return NULL;
     }
     len = p - r;
-    out = flb_sds_create_len(r, len);
+    out = flb_malloc(len + 1);
     if (!out) {
         return NULL;
     }
+    memcpy(out, r, len);
+    out[len] = '\0';
     return out;
 }
 
@@ -423,7 +383,6 @@ struct flb_aws_msk_iam *flb_aws_msk_iam_register_oauth_cb(struct flb_config *con
 {
     struct flb_aws_msk_iam *ctx;
     struct flb_msk_iam_cb *cb;
-    char errstr[128];
 
     if (!cluster_arn) {
         return NULL;
@@ -459,13 +418,12 @@ struct flb_aws_msk_iam *flb_aws_msk_iam_register_oauth_cb(struct flb_config *con
         flb_aws_msk_iam_destroy(ctx);
         return NULL;
     }
-
     cb->plugin_ctx = owner;
     cb->iam = ctx;
 
-    rd_kafka_conf_set_opaque(kconf, cb);
     rd_kafka_conf_set_oauthbearer_token_refresh_cb(kconf,
                                                    oauthbearer_token_refresh_cb);
+    rd_kafka_conf_set_opaque(kconf, cb);
 
     return ctx;
 }
@@ -482,3 +440,13 @@ void flb_aws_msk_iam_destroy(struct flb_aws_msk_iam *ctx)
     flb_sds_destroy(ctx->cluster_arn);
     flb_free(ctx);
 }
+
+void flb_aws_msk_iam_cb_destroy(struct flb_msk_iam_cb *cb)
+{
+    if (!cb) {
+        return;
+    }
+    flb_aws_msk_iam_destroy(cb->iam);
+    flb_free(cb);
+}
+
