@@ -384,6 +384,8 @@ struct flb_aws_msk_iam *flb_aws_msk_iam_register_oauth_cb(struct flb_config *con
     struct flb_aws_msk_iam *ctx;
     struct flb_msk_iam_cb *cb;
 
+    flb_info("[ED] entered flb_aws_msk_iam_register_oauth_cb with cluster ARN: %s",
+             cluster_arn);
     if (!cluster_arn) {
         return NULL;
     }
@@ -396,6 +398,7 @@ struct flb_aws_msk_iam *flb_aws_msk_iam_register_oauth_cb(struct flb_config *con
     ctx->cluster_arn = flb_sds_create(cluster_arn);
     ctx->region = extract_region(cluster_arn);
     if (!ctx->region) {
+        flb_error("[msk_iam] failed to extract region from cluster ARN: %s", cluster_arn);
         flb_free(ctx);
         return NULL;
     }
