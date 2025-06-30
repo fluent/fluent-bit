@@ -168,6 +168,10 @@ static flb_sds_t build_presigned_query(struct flb_aws_msk_iam *ctx,
 
     /* Build credential string */
     credential = flb_sds_create_size(128);
+    if (!credential) {
+        goto error;
+    }
+
     credential = flb_sds_printf(&credential, "%s/%s/%s/sts/aws4_request",
                                 creds->access_key_id, datestamp, ctx->region);
     if (!credential) {
@@ -375,7 +379,7 @@ static void oauthbearer_token_refresh_cb(rd_kafka_t *rk,
         flb_debug("[msk_iam] MSK IAM token refreshed");
     }
 
-    flb_sds_destroy(token);
+    //flb_sds_destroy(token);
 }
 
 static char *extract_region(const char *arn)
