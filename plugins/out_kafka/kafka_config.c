@@ -179,6 +179,17 @@ struct flb_out_kafka *flb_out_kafka_create(struct flb_output_instance *ins,
         if (!ctx->msk_iam) {
             flb_plg_error(ctx->ins, "failed to setup MSK IAM authentication");
         }
+        else {
+            rd_kafka_conf_res_t res;
+
+            res = rd_kafka_conf_set(ctx->conf, "sasl.oauthbearer.config",
+                                    "principal=admin", errstr, sizeof(errstr));
+            if (res != RD_KAFKA_CONF_OK) {
+                flb_plg_error(ctx->ins,
+                             "failed to set sasl.oauthbearer.config: %s",
+                             errstr);
+            }
+        }
     }
 
     /* Kafka Producer */

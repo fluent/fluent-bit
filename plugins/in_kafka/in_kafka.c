@@ -305,6 +305,17 @@ static int in_kafka_init(struct flb_input_instance *ins,
         if (!ctx->msk_iam) {
             flb_plg_error(ins, "failed to setup MSK IAM authentication");
         }
+        else {
+            rd_kafka_conf_res_t res;
+
+            res = rd_kafka_conf_set(kafka_conf, "sasl.oauthbearer.config",
+                                    "principal=admin", errstr, sizeof(errstr));
+            if (res != RD_KAFKA_CONF_OK) {
+                flb_plg_error(ins,
+                             "failed to set sasl.oauthbearer.config: %s",
+                             errstr);
+            }
+        }
     }
 
     ctx->kafka.rk = rd_kafka_new(RD_KAFKA_CONSUMER, kafka_conf, errstr, sizeof(errstr));
