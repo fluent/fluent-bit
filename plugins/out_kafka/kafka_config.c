@@ -26,6 +26,7 @@
 #include "kafka_config.h"
 #include "kafka_topic.h"
 #include "kafka_callbacks.h"
+#include <fluent-bit/aws/msk_iam.h>
 
 struct flb_out_kafka *flb_out_kafka_create(struct flb_output_instance *ins,
                                            struct flb_config *config)
@@ -164,6 +165,15 @@ struct flb_out_kafka *flb_out_kafka_create(struct flb_output_instance *ins,
         ctx->gelf_fields.level_key = flb_sds_create(tmp);
     }
 
+    if (ctx->aws_msk_iam_cluster_arn) {
+        ctx->msk_iam = flb_aws_msk_iam_register_oauth_cb(config,
+                                                         ctx->conf,
+                                                         ctx->aws_msk_iam_cluster_arn);
+        if (!ctx->msk_iam) {
+            flb_plg_error(ctx->ins, "failed to setup MSK IAM authentication");
+        }
+    }
+
     /* Kafka Producer */
     ctx->kafka.rk = rd_kafka_new(RD_KAFKA_PRODUCER, ctx->conf,
                                  errstr, sizeof(errstr));
@@ -248,6 +258,11 @@ int flb_out_kafka_destroy(struct flb_out_kafka *ctx)
     flb_sds_destroy(ctx->gelf_fields.short_message_key);
     flb_sds_destroy(ctx->gelf_fields.full_message_key);
     flb_sds_destroy(ctx->gelf_fields.level_key);
+
+    if (ctx->msk_iam) {
+        flb_aws_msk_iam_destroy(ctx->msk_iam);
+    }
+    flb_sds_destroy(ctx->aws_msk_iam_cluster_arn);
 
 #ifdef FLB_HAVE_AVRO_ENCODER
     // avro

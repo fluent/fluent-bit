@@ -34,6 +34,7 @@
 #include "fluent-bit/flb_mem.h"
 #include "in_kafka.h"
 #include "rdkafka.h"
+#include <fluent-bit/aws/msk_iam.h>
 
 static int try_json(struct flb_log_event_encoder *log_encoder,
                     rd_kafka_message_t *rkm)
@@ -286,6 +287,15 @@ static int in_kafka_init(struct flb_input_instance *ins,
         ctx->polling_threshold = FLB_IN_KAFKA_UNLIMITED;
     }
 
+    if (ctx->aws_msk_iam_cluster_arn) {
+        ctx->msk_iam = flb_aws_msk_iam_register_oauth_cb(config,
+                                                         kafka_conf,
+                                                         ctx->aws_msk_iam_cluster_arn);
+        if (!ctx->msk_iam) {
+            flb_plg_error(ins, "failed to setup MSK IAM authentication");
+        }
+    }
+
     ctx->kafka.rk = rd_kafka_new(RD_KAFKA_CONSUMER, kafka_conf, errstr,
             sizeof(errstr));
 
@@ -398,6 +408,10 @@ static int in_kafka_exit(void *in_context, struct flb_config *config)
     if (ctx->log_encoder){
         flb_log_event_encoder_destroy(ctx->log_encoder);
     }
+    if (ctx->msk_iam) {
+        flb_aws_msk_iam_destroy(ctx->msk_iam);
+    }
+    flb_sds_destroy(ctx->aws_msk_iam_cluster_arn);
 
     flb_free(ctx);
 
@@ -447,15 +461,20 @@ static struct flb_config_map config_map[] = {
     "Set the maximum size of chunk"
    },
    {
-    FLB_CONFIG_MAP_INT, "poll_timeout_ms", "1",
-    0, FLB_TRUE, offsetof(struct flb_in_kafka_config, poll_timeout_ms),
-    "Set the timeout in milliseconds for Kafka consumer poll operations. "
-    "This option only takes effect when running in a dedicated thread (i.e., when 'threaded' is enabled). "
-    "Using a higher timeout (e.g., 1.5x - 2x 'rdkafka.fetch.wait.max.ms') "
-    "can improve efficiency by leveraging Kafka's batching mechanism."
-   },
-   /* EOF */
-   {0}
+   FLB_CONFIG_MAP_INT, "poll_timeout_ms", "1",
+   0, FLB_TRUE, offsetof(struct flb_in_kafka_config, poll_timeout_ms),
+   "Set the timeout in milliseconds for Kafka consumer poll operations. "
+   "This option only takes effect when running in a dedicated thread (i.e., when 'threaded' is enabled). "
+   "Using a higher timeout (e.g., 1.5x - 2x 'rdkafka.fetch.wait.max.ms') "
+   "can improve efficiency by leveraging Kafka's batching mechanism."
+  },
+  {
+   FLB_CONFIG_MAP_STR, "aws_msk_iam_cluster_arn", (char *)NULL,
+   0, FLB_TRUE, offsetof(struct flb_in_kafka_config, aws_msk_iam_cluster_arn),
+   "ARN of the MSK cluster when using AWS IAM authentication"
+  },
+  /* EOF */
+  {0}
 };
 
 /* Plugin reference */

@@ -22,6 +22,7 @@
 #include <fluent-bit/flb_pack.h>
 #include <fluent-bit/flb_utils.h>
 #include <fluent-bit/flb_log_event_decoder.h>
+#include <fluent-bit/aws/msk_iam.h>
 
 #include "kafka_config.h"
 #include "kafka_topic.h"
@@ -670,6 +671,11 @@ static struct flb_config_map config_map[] = {
     "By default, the whole log record will be sent to Kafka. "
     "If you specify a key name with this option, then only the value of "
     "that key will be sent to Kafka."
+   },
+   {
+    FLB_CONFIG_MAP_STR, "aws_msk_iam_cluster_arn", NULL,
+    0, FLB_TRUE, offsetof(struct flb_out_kafka, aws_msk_iam_cluster_arn),
+    "ARN of the MSK cluster when using AWS IAM authentication"
    },
    /* EOF */
    {0}
