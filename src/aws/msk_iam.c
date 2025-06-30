@@ -462,7 +462,8 @@ static void oauthbearer_token_refresh_cb(rd_kafka_t *rk,
         flb_info("[msk_iam] Detected MSK Serverless cluster, using host: %s", host);
     } else {
         /* Regular MSK cluster */
-        snprintf(host, sizeof(host), "kafka.%s.amazonaws.com", ctx->region);
+        strncpy(host, cb->broker_host, sizeof(host) - 1);
+        host[sizeof(host) - 1] = '\0';
         flb_info("[msk_iam] Detected regular MSK cluster, using host: %s", host);
     }
 
