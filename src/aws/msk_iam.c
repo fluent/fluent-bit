@@ -379,10 +379,13 @@ static void oauthbearer_token_refresh_cb(rd_kafka_t *rk,
     }
     const char *principal = creds->access_key_id;
 
+    int64_t now = (int64_t)time(NULL);
+    int64_t md_lifetime_ms = (now + 900) * 1000;
+
     err = rd_kafka_oauthbearer_set_token(
         rk,
         b,                                   // token_value
-        ((int64_t)time(NULL) + 900),  // md_lifetime_ms
+        md_lifetime_ms,                      // md_lifetime_ms (milliseconds since epoch)
         principal,                           // md_principal_name (MANDATORY)
         NULL,                                // extensions
         0,                                   // extension_size
