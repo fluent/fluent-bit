@@ -274,7 +274,7 @@ static flb_sds_t build_presigned_query(struct flb_aws_msk_iam *ctx,
 
     flb_info("[msk_iam] build_presigned_query: query string: %s", query);
 
-    /* Build canonical request */
+    /* Build canonical request - ADD DEBUGGING */
     canonical = flb_sds_create_size(512);
     if (!canonical) {
         goto error;
@@ -288,6 +288,9 @@ static flb_sds_t build_presigned_query(struct flb_aws_msk_iam *ctx,
     }
 
     flb_info("[msk_iam] build_presigned_query: canonical request created");
+    /* DEBUG: Print the exact canonical request */
+    printf("[msk_iam] CANONICAL REQUEST:\n%s\n", canonical);
+    printf("[msk_iam] CANONICAL REQUEST END\n");
 
     /* Hash canonical request */
     if (flb_hash_simple(FLB_HASH_SHA256, (unsigned char *) canonical,
@@ -316,6 +319,9 @@ static flb_sds_t build_presigned_query(struct flb_aws_msk_iam *ctx,
     }
 
     flb_info("[msk_iam] build_presigned_query: string to sign created");
+    /* DEBUG: Print the exact string to sign */
+    printf("[msk_iam] STRING TO SIGN:\n%s\n", string_to_sign);
+    printf("[msk_iam] STRING TO SIGN END\n");
 
     /* Derive signing key */
     flb_sds_t key;
