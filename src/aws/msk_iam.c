@@ -235,7 +235,6 @@ static flb_sds_t build_presigned_query(struct flb_aws_msk_iam *ctx,
 
     /* Build query parameters in ALPHABETICAL ORDER per AWS SigV4 spec */
     query = flb_sds_printf(&query,
-                           "Action=GetCallerIdentity&Version=2011-06-15&"
                            "X-Amz-Algorithm=AWS4-HMAC-SHA256&X-Amz-Credential=%s"
                            "&X-Amz-Date=%s&X-Amz-Expires=900",
                            credential_enc, amzdate);
@@ -287,8 +286,10 @@ static flb_sds_t build_presigned_query(struct flb_aws_msk_iam *ctx,
 
     /* CRITICAL: NO LOGGING BETWEEN HERE AND HASH CALCULATION */
     canonical = flb_sds_printf(&canonical,
-                               "GET\n/\n%s\nhost:%s\n\nhost\nUNSIGNED-PAYLOAD",
-                               query, host);
+                                "GET\n/\n%s\nhost:%s\nx-amz-date:%s\nx-amz-security-token:%s\n\n"
+                                "host;x-amz-date;x-amz-security-token\nUNSIGNED-PAYLOAD",
+                                query, host, amzdate, creds->session_token);
+
     if (!canonical) {
         flb_error("[msk_iam] build_presigned_query: failed to build canonical request");
         goto error;
@@ -378,7 +379,7 @@ static flb_sds_t build_presigned_query(struct flb_aws_msk_iam *ctx,
     flb_info("[msk_iam] build_presigned_query: signature: %s", hexsig);
 
     /* Append signature to query */
-    tmp = flb_sds_printf(&query, "&X-Amz-Signature=%s", hexsig);
+    tmp = flb_sds_printf(&query, "&X-Amz-Signature=%s;x-amz-date;x-amz-security-token", hexsig);
     if (!tmp) {
         goto error;
     }
