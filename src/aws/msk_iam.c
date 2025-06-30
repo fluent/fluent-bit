@@ -424,6 +424,7 @@ static char *extract_region(const char *arn)
     }
     memcpy(out, r, len);
     out[len] = '\0';
+
     return out;
 }
 
@@ -453,6 +454,7 @@ struct flb_aws_msk_iam *flb_aws_msk_iam_register_oauth_cb(struct flb_config *con
         flb_free(ctx);
         return NULL;
     }
+    flb_info("[ED] extracted region from cluster ARN: %s", ctx->region);
 
     ctx->provider = flb_standard_chain_provider_create(config, NULL,
                                                        ctx->region, NULL, NULL,
