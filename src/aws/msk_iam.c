@@ -310,9 +310,10 @@ static void oauthbearer_token_refresh_cb(rd_kafka_t *rk,
 
     (void) oauthbearer_config;
 
+    printf("[msk_iam] oauthbearer_token_refresh_cb invoked\n");
     cb = rd_kafka_opaque(rk);
     if (!cb || !cb->iam) {
-        printf("oauthbearer_token_refresh_cb called with no context\n");
+        printf("[msk_iam] oauthbearer_token_refresh_cb called with no context\n");
         rd_kafka_oauthbearer_set_token_failure(rk, "no context");
         return;
     }
@@ -320,26 +321,25 @@ static void oauthbearer_token_refresh_cb(rd_kafka_t *rk,
     ctx = cb->iam;
     snprintf(host, sizeof(host) - 1, "sts.%s.amazonaws.com", ctx->region);
 
-    printf("oauthbearer_token_refresh_cb: requesting token from region %s\n",
-           ctx->region);
+    printf("[msk_iam] oauthbearer_token_refresh_cb: requesting token from region %s\n", ctx->region);
     token = build_presigned_query(ctx, host, time(NULL));
     if (!token) {
-        flb_error("failed to generate MSK IAM token");
+        flb_error("[msk_iam] failed to generate MSK IAM token");
         rd_kafka_oauthbearer_set_token_failure(rk, "token error");
         return;
     }
 
-    printf("oauthbearer_token_refresh_cb: retrieved token\n");
+    printf("[msk_iam] oauthbearer_token_refresh_cb: retrieved token: %.80s...\n", token);
 
     err = rd_kafka_oauthbearer_set_token(rk, token,
                                          ((int64_t)time(NULL) + 900) * 1000,
                                          NULL, NULL, 0,
                                          errstr, sizeof(errstr));
     if (err != RD_KAFKA_RESP_ERR_NO_ERROR) {
-        flb_error("rd_kafka_oauthbearer_set_token failed: %s", errstr);
+        flb_error("[msk_iam] rd_kafka_oauthbearer_set_token failed: %s", errstr);
     }
     else {
-        flb_debug("MSK IAM token refreshed");
+        flb_debug("[msk_iam] MSK IAM token refreshed");
     }
 
     flb_sds_destroy(token);
