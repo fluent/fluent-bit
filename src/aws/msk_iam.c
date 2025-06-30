@@ -22,11 +22,9 @@
 #include <fluent-bit/flb_sds.h>
 #include <fluent-bit/flb_mem.h>
 #include <fluent-bit/flb_utils.h>
-#include <fluent-bit/flb_base64.h>
 #include <fluent-bit/flb_hash.h>
 #include <fluent-bit/flb_hmac.h>
 #include <fluent-bit/flb_aws_credentials.h>
-#include <fluent-bit/flb_signv4.h>
 #include <fluent-bit/flb_output_plugin.h>
 #include <fluent-bit/flb_input_plugin.h>
 #include "../../plugins/out_kafka/kafka_config.h"
@@ -127,6 +125,43 @@ static int hmac_sha256_sign(unsigned char out[32],
     return 0;
 }
 
+static flb_sds_t base64_url_encode(const char *data, size_t len)
+{
+    size_t olen;
+    size_t out_size;
+    unsigned char *buf;
+    flb_sds_t out;
+    size_t i, j;
+
+    out_size = (len * 2) + 4;
+    buf = flb_malloc(out_size);
+    if (!buf) {
+        return NULL;
+    }
+
+    if (flb_base64_encode(buf, out_size - 1, &olen,
+                          (const unsigned char *) data, len) != 0) {
+        flb_free(buf);
+        return NULL;
+    }
+
+    for (i = 0, j = 0; i < olen && buf[i] != '='; i++) {
+        if (buf[i] == '+') {
+            buf[j++] = '-';
+        }
+        else if (buf[i] == '/') {
+            buf[j++] = '_';
+        }
+        else {
+            buf[j++] = buf[i];
+        }
+    }
+
+    out = flb_sds_create_len((char *)buf, j);
+    flb_free(buf);
+    return out;
+}
+
 static flb_sds_t build_presigned_query(struct flb_aws_msk_iam *ctx,
                                        const char *host,
                                        time_t now)
@@ -150,6 +185,7 @@ static flb_sds_t build_presigned_query(struct flb_aws_msk_iam *ctx,
     unsigned char sig[32];
     flb_sds_t hexsig = NULL;
     flb_sds_t token = NULL;
+    flb_sds_t final_req = NULL;
     int len;
     int klen = 32;
     flb_sds_t tmp;
@@ -253,7 +289,18 @@ static flb_sds_t build_presigned_query(struct flb_aws_msk_iam *ctx,
     }
     query = tmp;
 
-    token = flb_sds_create(query);
+    final_req = flb_sds_printf(NULL,
+                               "GET\n/\n%s\nhost:%s\n\nhost\nUNSIGNED-PAYLOAD",
+                               query, host);
+    if (!final_req) {
+        goto error;
+    }
+
+    token = base64_url_encode(final_req, flb_sds_len(final_req));
+    flb_sds_destroy(final_req);
+    if (!token) {
+        goto error;
+    }
 
 error:
     flb_sds_destroy(credential);
@@ -303,9 +350,14 @@ static void oauthbearer_token_refresh_cb(rd_kafka_t *rk,
         return;
     }
 
+    const char *ext[2];
+
+    ext[0] = "aud";
+    ext[1] = ctx->cluster_arn;
+
     err = rd_kafka_oauthbearer_set_token(rk, token,
                                          ((int64_t)time(NULL) + 900) * 1000,
-                                         NULL, NULL, 0,
+                                         NULL, ext, 2,
                                          errstr, sizeof(errstr));
     if (err != RD_KAFKA_RESP_ERR_NO_ERROR) {
         if (rd_kafka_type(rk) == RD_KAFKA_PRODUCER) {
@@ -331,15 +383,19 @@ static void oauthbearer_token_refresh_cb(rd_kafka_t *rk,
     flb_sds_destroy(token);
 }
 
-static char *extract_region(const char *arn)
+static flb_sds_t extract_region(const char *arn)
 {
     const char *p;
     const char *r;
     size_t len;
-    char *out;
+    flb_sds_t out;
 
     /* arn:partition:service:region:... */
     p = strchr(arn, ':');
+    if (!p) {
+        return NULL;
+    }
+    p = strchr(p + 1, ':');
     if (!p) {
         return NULL;
     }
@@ -353,12 +409,10 @@ static char *extract_region(const char *arn)
         return NULL;
     }
     len = p - r;
-    out = flb_malloc(len + 1);
+    out = flb_sds_create_len(r, len);
     if (!out) {
         return NULL;
     }
-    memcpy(out, r, len);
-    out[len] = '\0';
     return out;
 }
 

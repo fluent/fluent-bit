@@ -256,6 +256,12 @@ static int in_kafka_init(struct flb_input_instance *ins,
         return -1;
     }
 
+    /* Retrieve SASL mechanism if configured */
+    conf = flb_input_get_property("rdkafka.sasl.mechanism", ins);
+    if (conf) {
+        ctx->sasl_mechanism = flb_sds_create(conf);
+    }
+
     kafka_conf = flb_kafka_conf_create(&ctx->kafka, &ins->properties, 1);
     if (!kafka_conf) {
         flb_plg_error(ins, "Could not initialize kafka config object");
@@ -287,7 +293,8 @@ static int in_kafka_init(struct flb_input_instance *ins,
         ctx->polling_threshold = FLB_IN_KAFKA_UNLIMITED;
     }
 
-    if (ctx->aws_msk_iam_cluster_arn) {
+    if (ctx->aws_msk_iam_cluster_arn && ctx->sasl_mechanism &&
+        strcasecmp(ctx->sasl_mechanism, "OAUTHBEARER") == 0) {
         ctx->msk_iam = flb_aws_msk_iam_register_oauth_cb(config,
                                                          kafka_conf,
                                                          ctx->aws_msk_iam_cluster_arn,
@@ -374,6 +381,7 @@ init_error:
         /* conf is already destroyed when rd_kafka is initialized */
         rd_kafka_conf_destroy(kafka_conf);
     }
+    flb_sds_destroy(ctx->sasl_mechanism);
     flb_free(ctx);
 
     return -1;
@@ -421,6 +429,7 @@ static int in_kafka_exit(void *in_context, struct flb_config *config)
         flb_aws_msk_iam_destroy(ctx->msk_iam);
     }
     flb_sds_destroy(ctx->aws_msk_iam_cluster_arn);
+    flb_sds_destroy(ctx->sasl_mechanism);
 
     flb_free(ctx);
 

@@ -28,7 +28,6 @@
 #include <fluent-bit/flb_http_client.h>
 #include <fluent-bit/flb_http_client_debug.h>
 #include <fluent-bit/flb_utils.h>
-#include <fluent-bit/flb_base64.h>
 #include <fluent-bit/tls/flb_tls.h>
 
 static inline size_t http2_lower_value(size_t left_value, size_t right_value);

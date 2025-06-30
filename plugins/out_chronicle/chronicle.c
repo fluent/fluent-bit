@@ -26,7 +26,6 @@
 #include <fluent-bit/flb_base64.h>
 #include <fluent-bit/flb_hash.h>
 #include <fluent-bit/flb_crypto.h>
-#include <fluent-bit/flb_signv4.h>
 #include <fluent-bit/flb_kv.h>
 #include <fluent-bit/flb_log_event_encoder.h>
 #include <fluent-bit/flb_log_event_decoder.h>

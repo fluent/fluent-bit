@@ -20,7 +20,6 @@
 #include <fluent-bit/flb_output_plugin.h>
 #include <fluent-bit/flb_http_client.h>
 #include <fluent-bit/flb_oauth2.h>
-#include <fluent-bit/flb_base64.h>
 #include <fluent-bit/flb_crypto.h>
 #include <fluent-bit/flb_gzip.h>
 #include <fluent-bit/flb_hmac.h>

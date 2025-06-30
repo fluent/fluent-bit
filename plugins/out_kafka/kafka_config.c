@@ -56,10 +56,17 @@ struct flb_out_kafka *flb_out_kafka_create(struct flb_output_instance *ins,
         return NULL;
     }
 
+    /* Retrieve SASL mechanism if configured */
+    tmp = flb_output_get_property("rdkafka.sasl.mechanism", ins);
+    if (tmp) {
+        ctx->sasl_mechanism = flb_sds_create(tmp);
+    }
+
     /* rdkafka config context */
     ctx->conf = flb_kafka_conf_create(&ctx->kafka, &ins->properties, 0);
     if (!ctx->conf) {
         flb_plg_error(ctx->ins, "error creating context");
+        flb_sds_destroy(ctx->sasl_mechanism);
         flb_free(ctx);
         return NULL;
     }
@@ -163,7 +170,8 @@ struct flb_out_kafka *flb_out_kafka_create(struct flb_output_instance *ins,
         ctx->gelf_fields.level_key = flb_sds_create(tmp);
     }
 
-    if (ctx->aws_msk_iam_cluster_arn) {
+    if (ctx->aws_msk_iam_cluster_arn && ctx->sasl_mechanism &&
+        strcasecmp(ctx->sasl_mechanism, "OAUTHBEARER") == 0) {
         ctx->msk_iam = flb_aws_msk_iam_register_oauth_cb(config,
                                                          ctx->conf,
                                                          ctx->aws_msk_iam_cluster_arn,
@@ -268,6 +276,7 @@ int flb_out_kafka_destroy(struct flb_out_kafka *ctx)
         flb_aws_msk_iam_destroy(ctx->msk_iam);
     }
     flb_sds_destroy(ctx->aws_msk_iam_cluster_arn);
+    flb_sds_destroy(ctx->sasl_mechanism);
 
 #ifdef FLB_HAVE_AVRO_ENCODER
     // avro

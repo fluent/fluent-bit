@@ -22,7 +22,6 @@
 #include <fluent-bit/flb_utils.h>
 #include <fluent-bit/flb_http_client.h>
 #include <fluent-bit/flb_record_accessor.h>
-#include <fluent-bit/flb_signv4.h>
 #include <fluent-bit/flb_aws_credentials.h>
 
 #include "opensearch.h"

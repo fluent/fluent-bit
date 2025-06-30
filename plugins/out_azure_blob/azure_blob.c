@@ -24,7 +24,6 @@
 #include <fluent-bit/flb_pack.h>
 #include <fluent-bit/flb_config_map.h>
 #include <fluent-bit/flb_gzip.h>
-#include <fluent-bit/flb_base64.h>
 #include <fluent-bit/flb_sqldb.h>
 #include <fluent-bit/flb_input_blob.h>
 #include <fluent-bit/flb_log_event_decoder.h>

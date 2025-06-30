@@ -28,7 +28,6 @@
 #include <fluent-bit/flb_output.h>
 #include <fluent-bit/flb_chunk_trace.h>
 #include <fluent-bit/flb_pack.h>
-#include <fluent-bit/flb_base64.h>
 #include <fluent-bit/flb_storage.h>
 #include <fluent-bit/flb_router.h>
 #include <fluent-bit/flb_kv.h>

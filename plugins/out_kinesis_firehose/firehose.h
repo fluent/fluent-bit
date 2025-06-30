@@ -25,7 +25,6 @@
 #include <fluent-bit/flb_aws_credentials.h>
 #include <fluent-bit/flb_http_client.h>
 #include <fluent-bit/flb_aws_util.h>
-#include <fluent-bit/flb_signv4.h>
 
 #define DEFAULT_TIME_KEY_FORMAT "%Y-%m-%dT%H:%M:%S"
 

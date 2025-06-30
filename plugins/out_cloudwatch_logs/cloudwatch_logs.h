@@ -25,7 +25,6 @@
 #include <fluent-bit/flb_aws_credentials.h>
 #include <fluent-bit/flb_http_client.h>
 #include <fluent-bit/flb_aws_util.h>
-#include <fluent-bit/flb_signv4.h>
 
 #include <fluent-bit/flb_record_accessor.h>
 #include <fluent-bit/record_accessor/flb_ra_parser.h>
