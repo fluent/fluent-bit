@@ -172,7 +172,7 @@ static flb_sds_t build_presigned_query(struct flb_aws_msk_iam *ctx,
         goto error;
     }
 
-    credential = flb_sds_printf(&credential, "%s/%s/%s/kafka/aws4_request",
+    credential = flb_sds_printf(&credential, "%s/%s/%s/sts/aws4_request",
                             creds->access_key_id, datestamp, ctx->region);
     if (!credential) {
         goto error;
@@ -274,7 +274,7 @@ static flb_sds_t build_presigned_query(struct flb_aws_msk_iam *ctx,
         goto error;
     }
 
-    if (hmac_sha256_sign(key_service, key_region, klen, (unsigned char *) "kafka", 5) != 0) {
+    if (hmac_sha256_sign(key_service, key_region, klen, (unsigned char *) "sts", 3) != 0) {
         goto error;
     }
 
