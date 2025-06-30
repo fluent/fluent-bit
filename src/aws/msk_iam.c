@@ -437,10 +437,10 @@ static void oauthbearer_token_refresh_cb(rd_kafka_t *rk,
         return;
     }
 
-    /* TEMPORARY FIX: Force serverless hostname for testing */
-    snprintf(host, sizeof(host), "kafka-serverless.%s.amazonaws.com", ctx->region);
-    flb_info("[msk_iam] FORCED MSK Serverless host: %s", host);
-    printf("[msk_iam] FORCED MSK Serverless host: %s\n", host);
+    /* BACK TO BASICS: Test exact broker hostname for MSK Serverless */
+    snprintf(host, sizeof(host), "boot-53h6572i.c3.kafka-serverless.%s.amazonaws.com", ctx->region);
+    flb_info("[msk_iam] Using exact broker hostname: %s", host);
+    printf("[msk_iam] Using exact broker hostname: %s\n", host);
 
     /* ORIGINAL CODE WITH DEBUG (commented for testing)
     flb_info("[msk_iam] Checking cluster ARN for serverless: %s", ctx->cluster_arn);
