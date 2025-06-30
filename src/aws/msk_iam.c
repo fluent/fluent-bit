@@ -1,22 +1,3 @@
-/* -*- Mode: C; tab-width: 4; indent-tabs-mode: nil; c-basic-offset: 4 -*- */
-
-/*  Fluent Bit
- *  ==========
- *  Copyright (C) 2015-2024 The Fluent Bit Authors
- *
- *  Licensed under the Apache License, Version 2.0 (the "License");
- *  you may not use this file except in compliance with the License.
- *  You may obtain a copy of the License at
- *
- *      http://www.apache.org/licenses/LICENSE-2.0
- *
- *  Unless required by applicable law or agreed to in writing, software
- *  distributed under the License is distributed on an "AS IS" BASIS,
- *  WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
- *  See the License for the specific language governing permissions and
- *  limitations under the License.
- */
-
 #include <fluent-bit/flb_info.h>
 #include <fluent-bit/flb_log.h>
 #include <fluent-bit/flb_sds.h>
@@ -61,7 +42,7 @@ static flb_sds_t uri_encode_params(const char *uri, size_t len)
     flb_sds_t buf = NULL;
     flb_sds_t tmp = NULL;
 
-    buf = flb_sds_create_size(len * 2);
+    buf = flb_sds_create_size(len * 3 + 1);  /* Increased multiplier for safety */
     if (!buf) {
         return NULL;
     }
@@ -92,7 +73,7 @@ static flb_sds_t sha256_to_hex(unsigned char *sha256)
     flb_sds_t hex;
     flb_sds_t tmp;
 
-    hex = flb_sds_create_size(64);
+    hex = flb_sds_create_size(65);  /* 64 + 1 for null terminator */
     if (!hex) {
         return NULL;
     }
@@ -223,7 +204,7 @@ static flb_sds_t build_presigned_query(struct flb_aws_msk_iam *ctx,
     flb_info("[msk_iam] build_presigned_query: timestamp: %s, date: %s", amzdate, datestamp);
 
     /* Build credential string */
-    credential = flb_sds_create_size(128);
+    credential = flb_sds_create_size(256);
     if (!credential) {
         goto error;
     }
@@ -241,13 +222,13 @@ static flb_sds_t build_presigned_query(struct flb_aws_msk_iam *ctx,
         goto error;
     }
 
-    /* Build initial query string - INCREASE BUFFER SIZE for session token */
-    query = flb_sds_create_size(2048);  /* DOUBLED from 256 to handle large session tokens */
+    /* Build initial query string - INCREASED BUFFER SIZE significantly for large session tokens */
+    query = flb_sds_create_size(8192);  /* Increased from 2048 to handle very large session tokens */
     if (!query) {
         goto error;
     }
 
-    /* CRITICAL FIX: Build query parameters in ALPHABETICAL ORDER per AWS SigV4 spec */
+    /* Build query parameters in ALPHABETICAL ORDER per AWS SigV4 spec */
     query = flb_sds_printf(&query,
                            "X-Amz-Algorithm=AWS4-HMAC-SHA256&X-Amz-Credential=%s"
                            "&X-Amz-Date=%s&X-Amz-Expires=900",
@@ -258,32 +239,39 @@ static flb_sds_t build_presigned_query(struct flb_aws_msk_iam *ctx,
 
     /* Add session token if present (before SignedHeaders alphabetically) */
     if (creds->session_token && flb_sds_len(creds->session_token) > 0) {
-        flb_info("[msk_iam] build_presigned_query: adding session token");
+        flb_info("[msk_iam] build_presigned_query: adding session token (length: %zu)",
+                 flb_sds_len(creds->session_token));
+
         session_token_enc = uri_encode_params(creds->session_token,
                                               flb_sds_len(creds->session_token));
         if (!session_token_enc) {
+            flb_error("[msk_iam] build_presigned_query: failed to encode session token");
             goto error;
         }
+
+        flb_info("[msk_iam] build_presigned_query: encoded session token length: %zu",
+                 flb_sds_len(session_token_enc));
+
         tmp = flb_sds_printf(&query, "&X-Amz-Security-Token=%s", session_token_enc);
         if (!tmp) {
+            flb_error("[msk_iam] build_presigned_query: failed to append session token to query");
             goto error;
         }
-        flb_sds_destroy(session_token_enc);
-        session_token_enc = NULL;
         query = tmp;
     }
 
     /* Add SignedHeaders LAST (alphabetically after Security-Token) */
     tmp = flb_sds_printf(&query, "&X-Amz-SignedHeaders=host");
     if (!tmp) {
+        flb_error("[msk_iam] build_presigned_query: failed to append SignedHeaders");
         goto error;
     }
     query = tmp;
 
-    flb_info("[msk_iam] build_presigned_query: query string: %s", query);
+    flb_info("[msk_iam] build_presigned_query: query string length: %zu", flb_sds_len(query));
 
-    /* Build canonical request - INCREASE BUFFER SIZE */
-    canonical = flb_sds_create_size(2048);  /* DOUBLED from 512 to handle large query strings */
+    /* Build canonical request - INCREASED BUFFER SIZE significantly */
+    canonical = flb_sds_create_size(16384);  /* Increased from 2048 to handle large query strings */
     if (!canonical) {
         goto error;
     }
@@ -292,13 +280,18 @@ static flb_sds_t build_presigned_query(struct flb_aws_msk_iam *ctx,
                                "GET\n/\n%s\nhost:%s\n\nhost\nUNSIGNED-PAYLOAD",
                                query, host);
     if (!canonical) {
+        flb_error("[msk_iam] build_presigned_query: failed to build canonical request");
         goto error;
     }
 
-    flb_info("[msk_iam] build_presigned_query: canonical request created");
-    /* DEBUG: Print the exact canonical request */
-    printf("[msk_iam] CANONICAL REQUEST:\n%s\n", canonical);
-    printf("[msk_iam] CANONICAL REQUEST END\n");
+    flb_info("[msk_iam] build_presigned_query: canonical request length: %zu", flb_sds_len(canonical));
+
+    /* Debug: Print first and last parts of canonical request to avoid log spam */
+    flb_info("[msk_iam] canonical request first 200 chars: %.200s", canonical);
+    if (flb_sds_len(canonical) > 200) {
+        size_t len = flb_sds_len(canonical);
+        flb_info("[msk_iam] canonical request last 200 chars: %s", canonical + len - 200);
+    }
 
     /* Hash canonical request */
     if (flb_hash_simple(FLB_HASH_SHA256, (unsigned char *) canonical,
@@ -313,8 +306,10 @@ static flb_sds_t build_presigned_query(struct flb_aws_msk_iam *ctx,
         goto error;
     }
 
-    /* Build string to sign - INCREASE BUFFER SIZE */
-    string_to_sign = flb_sds_create_size(1024);  /* DOUBLED from 512 */
+    flb_info("[msk_iam] build_presigned_query: canonical request hash: %s", hexhash);
+
+    /* Build string to sign - INCREASED BUFFER SIZE */
+    string_to_sign = flb_sds_create_size(2048);  /* Increased from 1024 */
     if (!string_to_sign) {
         goto error;
     }
@@ -326,10 +321,7 @@ static flb_sds_t build_presigned_query(struct flb_aws_msk_iam *ctx,
         goto error;
     }
 
-    flb_info("[msk_iam] build_presigned_query: string to sign created");
-    /* DEBUG: Print the exact string to sign */
-    printf("[msk_iam] STRING TO SIGN:\n%s\n", string_to_sign);
-    printf("[msk_iam] STRING TO SIGN END\n");
+    flb_info("[msk_iam] build_presigned_query: string to sign: %s", string_to_sign);
 
     /* Derive signing key */
     flb_sds_t key;
@@ -380,6 +372,8 @@ static flb_sds_t build_presigned_query(struct flb_aws_msk_iam *ctx,
         goto error;
     }
 
+    flb_info("[msk_iam] build_presigned_query: signature: %s", hexsig);
+
     /* Append signature to query */
     tmp = flb_sds_printf(&query, "&X-Amz-Signature=%s", hexsig);
     if (!tmp) {
@@ -389,8 +383,12 @@ static flb_sds_t build_presigned_query(struct flb_aws_msk_iam *ctx,
 
     /* Return a copy of the query as the token */
     token = flb_sds_create(query);
+    if (!token) {
+        flb_error("[msk_iam] build_presigned_query: failed to create token copy");
+        goto error;
+    }
 
-    flb_info("[msk_iam] build_presigned_query: generated token: %.100s...", token);
+    flb_info("[msk_iam] build_presigned_query: generated token length: %zu", flb_sds_len(token));
 
     /* Clean up */
     flb_sds_destroy(credential);
@@ -400,6 +398,9 @@ static flb_sds_t build_presigned_query(struct flb_aws_msk_iam *ctx,
     flb_sds_destroy(string_to_sign);
     flb_sds_destroy(hexsig);
     flb_sds_destroy(query);
+    if (session_token_enc) {
+        flb_sds_destroy(session_token_enc);
+    }
     flb_aws_credentials_destroy(creds);
     return token;
 
@@ -412,8 +413,12 @@ error:
     flb_sds_destroy(string_to_sign);
     flb_sds_destroy(hexsig);
     flb_sds_destroy(query);
-    flb_sds_destroy(session_token_enc);
-    flb_aws_credentials_destroy(creds);
+    if (session_token_enc) {
+        flb_sds_destroy(session_token_enc);
+    }
+    if (creds) {
+        flb_aws_credentials_destroy(creds);
+    }
     return NULL;
 }
 
@@ -435,7 +440,6 @@ static void oauthbearer_token_refresh_cb(rd_kafka_t *rk,
     (void) oauthbearer_config;
 
     flb_info("[msk_iam] *** OAuth bearer token refresh callback INVOKED ***");
-    printf("[msk_iam] *** OAuth bearer token refresh callback INVOKED ***\n");
 
     cb = rd_kafka_opaque(rk);
     if (!cb || !cb->iam) {
@@ -451,27 +455,18 @@ static void oauthbearer_token_refresh_cb(rd_kafka_t *rk,
         return;
     }
 
-    /* BACK TO BASICS: Test exact broker hostname for MSK Serverless */
-    snprintf(host, sizeof(host), "boot-53h6572i.c3.kafka-serverless.%s.amazonaws.com", ctx->region);
-    flb_info("[msk_iam] Using exact broker hostname: %s", host);
-    printf("[msk_iam] Using exact broker hostname: %s\n", host);
-
-    /* ORIGINAL CODE WITH DEBUG (commented for testing)
-    flb_info("[msk_iam] Checking cluster ARN for serverless: %s", ctx->cluster_arn);
-    printf("[msk_iam] Checking cluster ARN for serverless: %s\n", ctx->cluster_arn);
-
+    /* Determine the correct hostname based on cluster type */
     if (ctx->cluster_arn && strstr(ctx->cluster_arn, "-s3") != NULL) {
+        /* MSK Serverless cluster - use the generic serverless endpoint */
         snprintf(host, sizeof(host), "kafka-serverless.%s.amazonaws.com", ctx->region);
         flb_info("[msk_iam] Detected MSK Serverless cluster, using host: %s", host);
-        printf("[msk_iam] Detected MSK Serverless cluster, using host: %s\n", host);
     } else {
+        /* Regular MSK cluster */
         snprintf(host, sizeof(host), "kafka.%s.amazonaws.com", ctx->region);
         flb_info("[msk_iam] Detected regular MSK cluster, using host: %s", host);
-        printf("[msk_iam] Detected regular MSK cluster, using host: %s\n", host);
     }
-    */
 
-    printf("[msk_iam] requesting token for region: %s, host: %s\n", ctx->region, host);
+    flb_info("[msk_iam] requesting token for region: %s, host: %s", ctx->region, host);
 
     token = build_presigned_query(ctx, host, time(NULL));
     if (!token) {
@@ -497,9 +492,8 @@ static void oauthbearer_token_refresh_cb(rd_kafka_t *rk,
     now = (int64_t)time(NULL);
     md_lifetime_ms = (now + 900) * 1000;
 
-    printf("[msk_iam] setting OAuth token with principal: %s\n", creds->access_key_id);
-    /* Show full token for debugging - CRITICAL for troubleshooting */
-    printf("[msk_iam] Full token: %s\n", token_copy);
+    flb_info("[msk_iam] setting OAuth token with principal: %s", creds->access_key_id);
+    flb_info("[msk_iam] token length: %zu", strlen(token_copy));
 
     err = rd_kafka_oauthbearer_set_token(
         rk,
@@ -514,11 +508,9 @@ static void oauthbearer_token_refresh_cb(rd_kafka_t *rk,
 
     if (err != RD_KAFKA_RESP_ERR_NO_ERROR) {
         flb_error("[msk_iam] failed to set OAuth bearer token: %s", errstr);
-        printf("[msk_iam] failed to set OAuth bearer token: %s\n", errstr);
         rd_kafka_oauthbearer_set_token_failure(rk, errstr);
     } else {
         flb_info("[msk_iam] OAuth bearer token successfully set");
-        printf("[msk_iam] OAuth bearer token successfully set\n");
     }
 
 cleanup:
