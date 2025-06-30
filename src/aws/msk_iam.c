@@ -247,15 +247,16 @@ static flb_sds_t build_presigned_query(struct flb_aws_msk_iam *ctx,
         goto error;
     }
 
+    /* CRITICAL FIX: Build query parameters in ALPHABETICAL ORDER per AWS SigV4 spec */
     query = flb_sds_printf(&query,
                            "X-Amz-Algorithm=AWS4-HMAC-SHA256&X-Amz-Credential=%s"
-                           "&X-Amz-Date=%s&X-Amz-Expires=900&X-Amz-SignedHeaders=host",
+                           "&X-Amz-Date=%s&X-Amz-Expires=900",
                            credential_enc, amzdate);
     if (!query) {
         goto error;
     }
 
-    /* Add session token if present */
+    /* Add session token if present (before SignedHeaders alphabetically) */
     if (creds->session_token && flb_sds_len(creds->session_token) > 0) {
         flb_info("[msk_iam] build_presigned_query: adding session token");
         session_token_enc = uri_encode_params(creds->session_token,
@@ -271,6 +272,13 @@ static flb_sds_t build_presigned_query(struct flb_aws_msk_iam *ctx,
         session_token_enc = NULL;
         query = tmp;
     }
+
+    /* Add SignedHeaders LAST (alphabetically after Security-Token) */
+    tmp = flb_sds_printf(&query, "&X-Amz-SignedHeaders=host");
+    if (!tmp) {
+        goto error;
+    }
+    query = tmp;
 
     flb_info("[msk_iam] build_presigned_query: query string: %s", query);
 
