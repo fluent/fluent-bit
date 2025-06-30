@@ -172,8 +172,8 @@ static flb_sds_t build_presigned_query(struct flb_aws_msk_iam *ctx,
         goto error;
     }
 
-    credential = flb_sds_printf(&credential, "%s/%s/%s/sts/aws4_request",
-                                creds->access_key_id, datestamp, ctx->region);
+    credential = flb_sds_printf(&credential, "%s/%s/%s/kafka/aws4_request",
+                            creds->access_key_id, datestamp, ctx->region);
     if (!credential) {
         goto error;
     }
@@ -189,8 +189,7 @@ static flb_sds_t build_presigned_query(struct flb_aws_msk_iam *ctx,
     }
 
     query = flb_sds_printf(&query,
-                           "Action=GetCallerIdentity&Version=2011-06-15"
-                           "&X-Amz-Algorithm=AWS4-HMAC-SHA256&X-Amz-Credential=%s"
+                           "X-Amz-Algorithm=AWS4-HMAC-SHA256&X-Amz-Credential=%s"
                            "&X-Amz-Date=%s&X-Amz-Expires=900&X-Amz-SignedHeaders=host",
                            credential_enc, amzdate);
     if (!query) {
@@ -245,7 +244,7 @@ static flb_sds_t build_presigned_query(struct flb_aws_msk_iam *ctx,
     }
 
     string_to_sign = flb_sds_printf(&string_to_sign,
-                                    "AWS4-HMAC-SHA256\n%s\n%s/%s/sts/aws4_request\n%s",
+                                    "AWS4-HMAC-SHA256\n%s\n%s/%s/kafka/aws4_request\n%s",
                                     amzdate, datestamp, ctx->region, hexhash);
     if (!string_to_sign) {
         goto error;
@@ -275,12 +274,12 @@ static flb_sds_t build_presigned_query(struct flb_aws_msk_iam *ctx,
         goto error;
     }
 
-    if (hmac_sha256_sign(key_service, key_region, klen, (unsigned char *) "sts", 3) != 0) {
+    if (hmac_sha256_sign(key_service, key_region, klen, (unsigned char *) "kafka", 5) != 0) {
         goto error;
     }
 
     if (hmac_sha256_sign(key_signing, key_service, klen,
-                         (unsigned char *) "aws4_request", 12) != 0) {
+                        (unsigned char *) "aws4_request", 12) != 0) {
         goto error;
     }
 
@@ -355,7 +354,7 @@ static void oauthbearer_token_refresh_cb(rd_kafka_t *rk,
         rd_kafka_oauthbearer_set_token_failure(rk, "region not set");
         return;
     }
-    snprintf(host, sizeof(host) - 1, "sts.%s.amazonaws.com", ctx->region);
+    snprintf(host, sizeof(host) - 1, "kafka.%s.amazonaws.com", ctx->region);
 
     printf("[msk_iam] oauthbearer_token_refresh_cb: requesting token from region %s\n", ctx->region);
     token = build_presigned_query(ctx, host, time(NULL));
@@ -368,12 +367,22 @@ static void oauthbearer_token_refresh_cb(rd_kafka_t *rk,
     printf("[msk_iam] oauthbearer_token_refresh_cb: retrieved token: '%s'\n", token);
     char *b = strdup(token);
 
-const char *principal = "admin"; // or whatever is appropriate for your setup
+    /* Retrieve credentials again to get the principal (access_key_id) */
+    struct flb_aws_credentials *creds = ctx->provider->provider_vtable->get_credentials(ctx->provider);
+    if (!creds || !creds->access_key_id) {
+        flb_error("[msk_iam] failed to retrieve AWS credentials for principal");
+        rd_kafka_oauthbearer_set_token_failure(rk, "principal error");
+        flb_sds_destroy(token);
+        free(b);
+        if (creds) { flb_aws_credentials_destroy(creds); }
+        return;
+    }
+    const char *principal = creds->access_key_id;
 
     err = rd_kafka_oauthbearer_set_token(
         rk,
         b,                                   // token_value
-        ((int64_t)time(NULL) + 900) * 1000,  // md_lifetime_ms
+        ((int64_t)time(NULL) + 900),  // md_lifetime_ms
         principal,                           // md_principal_name (MANDATORY)
         NULL,                                // extensions
         0,                                   // extension_size
@@ -388,7 +397,9 @@ const char *principal = "admin"; // or whatever is appropriate for your setup
         flb_debug("[msk_iam] MSK IAM token refreshed");
     }
 
+    flb_aws_credentials_destroy(creds);
     //flb_sds_destroy(token);
+    //free(b);
 }
 
 static char *extract_region(const char *arn)
