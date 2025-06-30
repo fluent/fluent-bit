@@ -361,7 +361,7 @@ static void oauthbearer_token_refresh_cb(rd_kafka_t *rk,
         return;
     }
 
-    printf("[msk_iam] oauthbearer_token_refresh_cb: retrieved token: %.80s...\n", token);
+    printf("[msk_iam] oauthbearer_token_refresh_cb: retrieved token: '%s'\n", token);
 
     err = rd_kafka_oauthbearer_set_token(rk, token,
                                          ((int64_t)time(NULL) + 900) * 1000,
