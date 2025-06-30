@@ -478,6 +478,7 @@ static void oauthbearer_token_refresh_cb(rd_kafka_t *rk,
     }
 
     // Print curl command for local testing
+    sleep(2);
     printf("[msk_iam] TEST TOKEN:\ncurl 'https://%s/?%s\n'\n", host, token);
     // Print principal (access key id)
     if (ctx->provider) {
