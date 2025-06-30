@@ -167,7 +167,8 @@ static flb_sds_t build_presigned_query(struct flb_aws_msk_iam *ctx,
     strftime(datestamp, sizeof(datestamp) - 1, "%Y%m%d", &gm);
 
     /* Build credential string */
-    credential = flb_sds_printf(NULL, "%s/%s/%s/sts/aws4_request",
+    credential = flb_sds_create_size(128);
+    credential = flb_sds_printf(&credential, "%s/%s/%s/sts/aws4_request",
                                 creds->access_key_id, datestamp, ctx->region);
     if (!credential) {
         goto error;
@@ -178,7 +179,12 @@ static flb_sds_t build_presigned_query(struct flb_aws_msk_iam *ctx,
     }
 
     /* Build initial query string */
-    query = flb_sds_printf(NULL,
+    query = flb_sds_create_size(256);
+    if (!query) {
+        goto error;
+    }
+
+    query = flb_sds_printf(&query,
                            "Action=GetCallerIdentity&Version=2011-06-15"
                            "&X-Amz-Algorithm=AWS4-HMAC-SHA256&X-Amz-Credential=%s"
                            "&X-Amz-Date=%s&X-Amz-Expires=900&X-Amz-SignedHeaders=host",
@@ -204,7 +210,12 @@ static flb_sds_t build_presigned_query(struct flb_aws_msk_iam *ctx,
     }
 
     /* Build canonical request */
-    canonical = flb_sds_printf(NULL,
+    canonical = flb_sds_create_size(512);
+    if (!canonical) {
+        goto error;
+    }
+
+    canonical = flb_sds_printf(&canonical,
                                "GET\n/\n%s\nhost:%s\n\nhost\nUNSIGNED-PAYLOAD",
                                query, host);
     if (!canonical) {
@@ -224,7 +235,12 @@ static flb_sds_t build_presigned_query(struct flb_aws_msk_iam *ctx,
     }
 
     /* Build string to sign */
-    string_to_sign = flb_sds_printf(NULL,
+    string_to_sign = flb_sds_create_size(512);
+    if (!string_to_sign) {
+        goto error;
+    }
+
+    string_to_sign = flb_sds_printf(&string_to_sign,
                                     "AWS4-HMAC-SHA256\n%s\n%s/%s/sts/aws4_request\n%s",
                                     amzdate, datestamp, ctx->region, hexhash);
     if (!string_to_sign) {
@@ -232,7 +248,13 @@ static flb_sds_t build_presigned_query(struct flb_aws_msk_iam *ctx,
     }
 
     /* Derive signing key */
-    flb_sds_t key = flb_sds_printf(NULL, "AWS4%s", creds->secret_access_key);
+    flb_sds_t key;
+    key = flb_sds_create_size(128);
+    if (!key) {
+        goto error;
+    }
+
+    key = flb_sds_printf(&key, "AWS4%s", creds->secret_access_key);
     if (!key) {
         goto error;
     }
