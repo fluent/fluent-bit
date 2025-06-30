@@ -271,7 +271,7 @@ static void oauthbearer_token_refresh_cb(rd_kafka_t *rk,
                                          const char *oauthbearer_config,
                                          void *opaque)
 {
-    struct flb_out_kafka *out_ctx;
+    struct flb_msk_iam_cb *cb;
     struct flb_aws_msk_iam *ctx;
     flb_sds_t token = NULL;
     char host[256];
@@ -280,18 +280,25 @@ static void oauthbearer_token_refresh_cb(rd_kafka_t *rk,
 
     (void) oauthbearer_config;
 
-    out_ctx = rd_kafka_opaque(rk);
-    if (!out_ctx || !out_ctx->msk_iam) {
+    cb = opaque ? (struct flb_msk_iam_cb *) opaque : rd_kafka_opaque(rk);
+    if (!cb || !cb->iam) {
         rd_kafka_oauthbearer_set_token_failure(rk, "no context");
         return;
     }
 
-    ctx = out_ctx->msk_iam;
+    ctx = cb->iam;
     snprintf(host, sizeof(host) - 1, "sts.%s.amazonaws.com", ctx->region);
 
     token = build_presigned_query(ctx, host, time(NULL));
     if (!token) {
-        flb_plg_error(out_ctx->ins, "failed to generate MSK IAM token");
+        if (rd_kafka_type(rk) == RD_KAFKA_PRODUCER) {
+            flb_plg_error(((struct flb_out_kafka *)cb->plugin_ctx)->ins,
+                          "failed to generate MSK IAM token");
+        }
+        else {
+            flb_plg_error(((struct flb_in_kafka_config *)cb->plugin_ctx)->ins,
+                          "failed to generate MSK IAM token");
+        }
         rd_kafka_oauthbearer_set_token_failure(rk, "token error");
         return;
     }
@@ -301,11 +308,24 @@ static void oauthbearer_token_refresh_cb(rd_kafka_t *rk,
                                          NULL, NULL, 0,
                                          errstr, sizeof(errstr));
     if (err != RD_KAFKA_RESP_ERR_NO_ERROR) {
-        flb_plg_error(out_ctx->ins, "rd_kafka_oauthbearer_set_token failed: %s",
-                       errstr);
+        if (rd_kafka_type(rk) == RD_KAFKA_PRODUCER) {
+            flb_plg_error(((struct flb_out_kafka *)cb->plugin_ctx)->ins,
+                          "rd_kafka_oauthbearer_set_token failed: %s", errstr);
+        }
+        else {
+            flb_plg_error(((struct flb_in_kafka_config *)cb->plugin_ctx)->ins,
+                          "rd_kafka_oauthbearer_set_token failed: %s", errstr);
+        }
     }
     else {
-        flb_plg_debug(out_ctx->ins, "MSK IAM token refreshed");
+        if (rd_kafka_type(rk) == RD_KAFKA_PRODUCER) {
+            flb_plg_debug(((struct flb_out_kafka *)cb->plugin_ctx)->ins,
+                          "MSK IAM token refreshed");
+        }
+        else {
+            flb_plg_debug(((struct flb_in_kafka_config *)cb->plugin_ctx)->ins,
+                          "MSK IAM token refreshed");
+        }
     }
 
     flb_sds_destroy(token);
@@ -344,9 +364,11 @@ static char *extract_region(const char *arn)
 
 struct flb_aws_msk_iam *flb_aws_msk_iam_register_oauth_cb(struct flb_config *config,
                                                           rd_kafka_conf_t *kconf,
-                                                          const char *cluster_arn)
+                                                          const char *cluster_arn,
+                                                          void *owner)
 {
     struct flb_aws_msk_iam *ctx;
+    struct flb_msk_iam_cb *cb;
     char errstr[128];
 
     if (!cluster_arn) {
@@ -378,10 +400,19 @@ struct flb_aws_msk_iam *flb_aws_msk_iam_register_oauth_cb(struct flb_config *con
 
     ctx->provider->provider_vtable->init(ctx->provider);
 
+    cb = flb_calloc(1, sizeof(struct flb_msk_iam_cb));
+    if (!cb) {
+        flb_aws_msk_iam_destroy(ctx);
+        return NULL;
+    }
+
+    cb->plugin_ctx = owner;
+    cb->iam = ctx;
+
+    rd_kafka_conf_set_opaque(kconf, cb);
     rd_kafka_conf_set_oauthbearer_token_refresh_cb(kconf,
                                                    oauthbearer_token_refresh_cb);
 
-    /* store context pointer via oauth opaque will come from rd_kafka_opaque */
     return ctx;
 }
 

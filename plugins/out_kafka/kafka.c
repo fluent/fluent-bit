@@ -30,7 +30,8 @@
 void cb_kafka_msg(rd_kafka_t *rk, const rd_kafka_message_t *rkmessage,
                   void *opaque)
 {
-    struct flb_out_kafka *ctx = (struct flb_out_kafka *) opaque;
+    struct flb_msk_iam_cb *cb = (struct flb_msk_iam_cb *) opaque;
+    struct flb_out_kafka *ctx = cb ? (struct flb_out_kafka *) cb->plugin_ctx : NULL;
 
     if (rkmessage->err) {
         flb_plg_warn(ctx->ins, "message delivery failed: %s",
@@ -46,9 +47,11 @@ void cb_kafka_msg(rd_kafka_t *rk, const rd_kafka_message_t *rkmessage,
 void cb_kafka_logger(const rd_kafka_t *rk, int level,
                      const char *fac, const char *buf)
 {
+    struct flb_msk_iam_cb *cb;
     struct flb_out_kafka *ctx;
 
-    ctx = (struct flb_out_kafka *) rd_kafka_opaque(rk);
+    cb = (struct flb_msk_iam_cb *) rd_kafka_opaque(rk);
+    ctx = cb ? (struct flb_out_kafka *) cb->plugin_ctx : NULL;
 
     if (level <= FLB_KAFKA_LOG_ERR) {
         flb_plg_error(ctx->ins, "%s: %s",

@@ -64,8 +64,6 @@ struct flb_out_kafka *flb_out_kafka_create(struct flb_output_instance *ins,
         return NULL;
     }
 
-    /* Set our global opaque data (plugin context*/
-    rd_kafka_conf_set_opaque(ctx->conf, ctx);
 
     /* Callback: message delivery */
     rd_kafka_conf_set_dr_msg_cb(ctx->conf, cb_kafka_msg);
@@ -168,7 +166,8 @@ struct flb_out_kafka *flb_out_kafka_create(struct flb_output_instance *ins,
     if (ctx->aws_msk_iam_cluster_arn) {
         ctx->msk_iam = flb_aws_msk_iam_register_oauth_cb(config,
                                                          ctx->conf,
-                                                         ctx->aws_msk_iam_cluster_arn);
+                                                         ctx->aws_msk_iam_cluster_arn,
+                                                         ctx);
         if (!ctx->msk_iam) {
             flb_plg_error(ctx->ins, "failed to setup MSK IAM authentication");
         }
@@ -242,7 +241,13 @@ int flb_out_kafka_destroy(struct flb_out_kafka *ctx)
     flb_kafka_topic_destroy_all(ctx);
 
     if (ctx->kafka.rk) {
+        struct flb_msk_iam_cb *cb;
+
+        cb = rd_kafka_opaque(ctx->kafka.rk);
         rd_kafka_destroy(ctx->kafka.rk);
+        if (cb) {
+            flb_free(cb);
+        }
     }
 
     if (ctx->topic_key) {

@@ -290,7 +290,8 @@ static int in_kafka_init(struct flb_input_instance *ins,
     if (ctx->aws_msk_iam_cluster_arn) {
         ctx->msk_iam = flb_aws_msk_iam_register_oauth_cb(config,
                                                          kafka_conf,
-                                                         ctx->aws_msk_iam_cluster_arn);
+                                                         ctx->aws_msk_iam_cluster_arn,
+                                                         ctx);
         if (!ctx->msk_iam) {
             flb_plg_error(ins, "failed to setup MSK IAM authentication");
         }
@@ -402,7 +403,15 @@ static int in_kafka_exit(void *in_context, struct flb_config *config)
     }
 
     ctx = in_context;
-    rd_kafka_destroy(ctx->kafka.rk);
+    if (ctx->kafka.rk) {
+        struct flb_msk_iam_cb *cb;
+
+        cb = rd_kafka_opaque(ctx->kafka.rk);
+        rd_kafka_destroy(ctx->kafka.rk);
+        if (cb) {
+            flb_free(cb);
+        }
+    }
     flb_free(ctx->kafka.brokers);
 
     if (ctx->log_encoder){
