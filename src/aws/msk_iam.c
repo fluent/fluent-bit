@@ -241,8 +241,8 @@ static flb_sds_t build_presigned_query(struct flb_aws_msk_iam *ctx,
         goto error;
     }
 
-    /* Build initial query string */
-    query = flb_sds_create_size(256);
+    /* Build initial query string - INCREASE BUFFER SIZE for session token */
+    query = flb_sds_create_size(2048);  /* DOUBLED from 256 to handle large session tokens */
     if (!query) {
         goto error;
     }
@@ -274,8 +274,8 @@ static flb_sds_t build_presigned_query(struct flb_aws_msk_iam *ctx,
 
     flb_info("[msk_iam] build_presigned_query: query string: %s", query);
 
-    /* Build canonical request - ADD DEBUGGING */
-    canonical = flb_sds_create_size(512);
+    /* Build canonical request - INCREASE BUFFER SIZE */
+    canonical = flb_sds_create_size(2048);  /* DOUBLED from 512 to handle large query strings */
     if (!canonical) {
         goto error;
     }
@@ -305,8 +305,8 @@ static flb_sds_t build_presigned_query(struct flb_aws_msk_iam *ctx,
         goto error;
     }
 
-    /* Build string to sign */
-    string_to_sign = flb_sds_create_size(512);
+    /* Build string to sign - INCREASE BUFFER SIZE */
+    string_to_sign = flb_sds_create_size(1024);  /* DOUBLED from 512 */
     if (!string_to_sign) {
         goto error;
     }
