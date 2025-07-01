@@ -39,6 +39,7 @@ struct flb_out_kafka *flb_out_kafka_create(struct flb_output_instance *ins,
     struct mk_list *topics;
     struct flb_split_entry *entry;
     struct flb_out_kafka *ctx;
+    rd_kafka_conf_res_t res;
 
     /* Configuration context */
     ctx = flb_calloc(1, sizeof(struct flb_out_kafka));
@@ -141,7 +142,7 @@ struct flb_out_kafka *flb_out_kafka_create(struct flb_output_instance *ins,
     ctx->timestamp_format = FLB_JSON_DATE_DOUBLE;
     if (ctx->timestamp_format_str) {
         if (strcasecmp(ctx->timestamp_format_str, "iso8601") == 0) {
-            ctx->timestamp_format = FLB_JSON_DATE_ISO8601;
+        ctx->timestamp_format = FLB_JSON_DATE_ISO8601;
         }
         else if (strcasecmp(ctx->timestamp_format_str, "iso8601_ns") == 0) {
             ctx->timestamp_format = FLB_JSON_DATE_ISO8601_NS;
@@ -180,8 +181,6 @@ struct flb_out_kafka *flb_out_kafka_create(struct flb_output_instance *ins,
             flb_plg_error(ctx->ins, "failed to setup MSK IAM authentication");
         }
         else {
-            rd_kafka_conf_res_t res;
-
             res = rd_kafka_conf_set(ctx->conf, "sasl.oauthbearer.config",
                                     "principal=admin", errstr, sizeof(errstr));
             if (res != RD_KAFKA_CONF_OK) {
