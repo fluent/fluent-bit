@@ -208,7 +208,7 @@ static flb_sds_t build_msk_iam_payload_stateless(struct flb_aws_msk_iam *config,
 
     if (temp_provider->provider_vtable->init(temp_provider) != 0) {
         flb_error("[aws_msk_iam] build_msk_iam_payload_stateless: failed to initialize AWS credentials provider");
-        temp_provider->provider_vtable->destroy(temp_provider);
+        flb_aws_provider_destroy(temp_provider);
         return NULL;
     }
 
@@ -223,7 +223,7 @@ static flb_sds_t build_msk_iam_payload_stateless(struct flb_aws_msk_iam *config,
     if (!creds->access_key_id || !creds->secret_access_key) {
         flb_error("[aws_msk_iam] build_msk_iam_payload_stateless: incomplete credentials");
         flb_aws_credentials_destroy(creds);
-        temp_provider->provider_vtable->destroy(temp_provider);
+        flb_aws_provider_destroy(temp_provider);
         return NULL;
     }
 
@@ -756,9 +756,6 @@ struct flb_aws_msk_iam *flb_aws_msk_iam_register_oauth_cb(struct flb_config *con
     }
 
     flb_info("[aws_msk_iam] extracted region: %s", ctx->region);
-
-    /* NO persistent AWS provider creation! */
-    flb_info("[aws_msk_iam] using stateless AWS provider approach");
 
     /* Set the callback and opaque */
     rd_kafka_conf_set_oauthbearer_token_refresh_cb(kconf, oauthbearer_token_refresh_cb);
