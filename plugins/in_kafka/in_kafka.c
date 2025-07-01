@@ -435,12 +435,12 @@ static int in_kafka_exit(void *in_context, struct flb_config *config)
 
     ctx = in_context;
     if (ctx->kafka.rk) {
-        struct flb_msk_iam_cb *cb;
+        struct flb_msk_iam_cb *msk_iam_cb;
 
-        cb = rd_kafka_opaque(ctx->kafka.rk);
+        msk_iam_cb = rd_kafka_opaque(ctx->kafka.rk);
         rd_kafka_destroy(ctx->kafka.rk);
-        if (cb) {
-            flb_free(cb);
+        if (msk_iam_cb) {
+            flb_aws_msk_iam_destroy(msk_iam_cb);
         }
     }
     flb_free(ctx->kafka.brokers);
@@ -450,8 +450,8 @@ static int in_kafka_exit(void *in_context, struct flb_config *config)
     }
     /* Destroy MSK IAM context after Kafka handle is destroyed */
     if (ctx->msk_iam) {
-        flb_aws_msk_iam_destroy(ctx->msk_iam);
-        ctx->msk_iam = NULL;
+        // flb_aws_msk_iam_destroy(ctx->msk_iam);
+        // ctx->msk_iam = NULL;
     }
     flb_sds_destroy(ctx->aws_msk_iam_cluster_arn);
     flb_sds_destroy(ctx->sasl_mechanism);
