@@ -324,6 +324,7 @@ static flb_sds_t build_msk_iam_payload_stateless(struct flb_aws_msk_iam *config,
                               query, host, empty_payload_hex);
 
     flb_sds_destroy(empty_payload_hex);
+    empty_payload_hex = NULL;  /* Prevent double-free */
     if (!canonical) {
         flb_error("[aws_msk_iam] build_msk_iam_payload_stateless: failed to build canonical request");
         goto error;
@@ -370,10 +371,12 @@ static flb_sds_t build_msk_iam_payload_stateless(struct flb_aws_msk_iam *config,
     if (hmac_sha256_sign(key_date, (unsigned char *) key, flb_sds_len(key),
                         (unsigned char *) datestamp, len) != 0) {
         flb_error("[aws_msk_iam] build_msk_iam_payload_stateless: failed to sign date");
-        flb_sds_destroy(key);
         goto error;
     }
+
+    /* Clean up key immediately after use - prevent double-free */
     flb_sds_destroy(key);
+    key = NULL;
 
     len = strlen(config->region);
     if (hmac_sha256_sign(key_region, key_date, 32, (unsigned char *) config->region, len) != 0) {
@@ -427,7 +430,6 @@ static flb_sds_t build_msk_iam_payload_stateless(struct flb_aws_msk_iam *config,
 
     payload = flb_sds_create_size(encoded_len);
     if (!payload) {
-        flb_sds_destroy(presigned_url);
         goto error;
     }
 
@@ -518,8 +520,7 @@ static flb_sds_t build_msk_iam_payload_stateless(struct flb_aws_msk_iam *config,
     flb_sds_len_set(payload, final_len);
     payload[final_len] = '\0';
 
-error:
-    /* Clean up everything including temporary AWS provider */
+    /* Clean up before successful return */
     flb_sds_destroy(credential);
     flb_sds_destroy(credential_enc);
     flb_sds_destroy(canonical);
@@ -529,7 +530,6 @@ error:
     flb_sds_destroy(query);
     flb_sds_destroy(action_enc);
     flb_sds_destroy(presigned_url);
-    flb_sds_destroy(key);
     if (session_token_enc) {
         flb_sds_destroy(session_token_enc);
     }
@@ -541,6 +541,53 @@ error:
     }
 
     return payload;
+
+error:
+    /* Clean up everything - check for NULL to prevent double-free */
+    if (credential) {
+        flb_sds_destroy(credential);
+    }
+    if (credential_enc) {
+        flb_sds_destroy(credential_enc);
+    }
+    if (canonical) {
+        flb_sds_destroy(canonical);
+    }
+    if (hexhash) {
+        flb_sds_destroy(hexhash);
+    }
+    if (string_to_sign) {
+        flb_sds_destroy(string_to_sign);
+    }
+    if (hexsig) {
+        flb_sds_destroy(hexsig);
+    }
+    if (query) {
+        flb_sds_destroy(query);
+    }
+    if (action_enc) {
+        flb_sds_destroy(action_enc);
+    }
+    if (presigned_url) {
+        flb_sds_destroy(presigned_url);
+    }
+    if (key) {  /* Only destroy if not already destroyed */
+        flb_sds_destroy(key);
+    }
+    if (payload) {
+        flb_sds_destroy(payload);
+    }
+    if (session_token_enc) {
+        flb_sds_destroy(session_token_enc);
+    }
+    if (creds) {
+        flb_aws_credentials_destroy(creds);
+    }
+    if (temp_provider) {
+        temp_provider->provider_vtable->destroy(temp_provider);
+    }
+
+    return NULL;
 }
 
 
