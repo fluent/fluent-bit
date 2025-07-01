@@ -409,8 +409,8 @@ static flb_sds_t build_msk_iam_payload(struct flb_aws_msk_iam *ctx,
         goto error;
     }
 
-    encode_result = flb_base64_encode((unsigned char*)payload, encoded_len, &actual_encoded_len,
-                                         (const unsigned char*)presigned_url, url_len);
+    encode_result = flb_base64_encode((unsigned char*) payload, encoded_len, &actual_encoded_len,
+                                      (const unsigned char*) presigned_url, url_len);
     if (encode_result == -1) {
         flb_error("[msk_iam] build_msk_iam_payload: failed to base64 encode URL");
         goto error;
@@ -437,7 +437,9 @@ static flb_sds_t build_msk_iam_payload(struct flb_aws_msk_iam *ctx,
     flb_sds_len_set(payload, len);
     payload[len] = '\0';
 
+
     /* Build the complete presigned URL */
+    flb_sds_destroy(presigned_url);
     presigned_url = flb_sds_create_size(16384);
     if (!presigned_url) {
         goto error;
