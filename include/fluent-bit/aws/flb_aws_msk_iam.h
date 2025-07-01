@@ -23,6 +23,7 @@
 #include <fluent-bit/flb_aws_credentials.h>
 #include <fluent-bit/flb_config.h>
 #include <fluent-bit/flb_sds.h>
+#include <fluent-bit/flb_kafka.h>
 #include <rdkafka.h>
 
 struct flb_aws_msk_iam;
@@ -39,7 +40,8 @@ struct flb_msk_iam_cb {
  */
 struct flb_aws_msk_iam *flb_aws_msk_iam_register_oauth_cb(struct flb_config *config,
                                                           rd_kafka_conf_t *kconf,
-                                                          const char *cluster_arn);
+                                                          const char *cluster_arn,
+                                                          struct flb_kafka_opaque *opaque);
 void flb_aws_msk_iam_destroy(struct flb_aws_msk_iam *ctx);
 
 #endif

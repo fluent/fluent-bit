@@ -51,13 +51,13 @@ struct flb_in_kafka_config {
     size_t polling_threshold;
     int poll_timeout_ms;
 
+    struct flb_kafka_opaque *opaque;
     flb_sds_t aws_msk_iam_cluster_arn;
     struct flb_aws_msk_iam *msk_iam;
 
     /* SASL mechanism configured in rdkafka.sasl.mechanism */
-    flb_sds_t sasl_mechanism;
-
     int aws_msk_iam;
+    flb_sds_t sasl_mechanism;
 };
 
 #endif

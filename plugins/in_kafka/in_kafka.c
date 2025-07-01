@@ -295,13 +295,20 @@ static int in_kafka_init(struct flb_input_instance *ins,
         ctx->polling_threshold = FLB_IN_KAFKA_UNLIMITED;
     }
 
+    ctx->opaque = flb_kafka_opaque_create();
+    if (!ctx->opaque) {
+        flb_plg_error(ins, "failed to create kafka opaque context");
+        goto init_error;
+    }
+
     if (ctx->aws_msk_iam && ctx->aws_msk_iam_cluster_arn && ctx->sasl_mechanism &&
         strcasecmp(ctx->sasl_mechanism, "OAUTHBEARER") == 0) {
         flb_plg_info(ins, "registering MSK IAM authentication with cluster ARN: %s",
                      ctx->aws_msk_iam_cluster_arn);
         ctx->msk_iam = flb_aws_msk_iam_register_oauth_cb(config,
                                                          kafka_conf,
-                                                         ctx->aws_msk_iam_cluster_arn);
+                                                         ctx->aws_msk_iam_cluster_arn,
+                                                         ctx->opaque);
         if (!ctx->msk_iam) {
             flb_plg_error(ins, "failed to setup MSK IAM authentication");
         }
@@ -441,6 +448,10 @@ static int in_kafka_exit(void *in_context, struct flb_config *config)
 
     if (ctx->msk_iam) {
         flb_aws_msk_iam_destroy(ctx->msk_iam);
+    }
+
+    if (ctx->opaque) {
+        flb_kafka_opaque_destroy(ctx->opaque);
     }
 
     flb_sds_destroy(ctx->sasl_mechanism);

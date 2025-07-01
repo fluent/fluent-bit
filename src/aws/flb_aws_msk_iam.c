@@ -6,6 +6,7 @@
 #include <fluent-bit/flb_base64.h>
 #include <fluent-bit/flb_hash.h>
 #include <fluent-bit/flb_hmac.h>
+#include <fluent-bit/flb_kafka.h>
 #include <fluent-bit/flb_aws_credentials.h>
 #include <fluent-bit/aws/flb_aws_msk_iam.h>
 
@@ -551,11 +552,22 @@ static void oauthbearer_token_refresh_cb(rd_kafka_t *rk,
     size_t suffix_len;
     struct flb_aws_msk_iam *ctx;
     struct flb_aws_credentials *creds = NULL;
+    struct flb_kafka_opaque *kafka_opaque;
     (void) oauthbearer_config;
+
+
+    kafka_opaque = (struct flb_kafka_opaque *) opaque;
+    if (!kafka_opaque || !kafka_opaque->msk_iam_ctx) {
+        flb_error("[aws_msk_iam] oauthbearer_token_refresh_cb: invalid opaque context");
+        return;
+    }
 
     flb_debug("[aws_msk_iam] running OAuth bearer token refresh callback");
 
-    ctx = opaque;
+    /* get the msk_iam context */
+    ctx = kafka_opaque->msk_iam_ctx;
+
+    /* validate region (mandatory) */
     if (!ctx->region || flb_sds_len(ctx->region) == 0) {
         flb_error("[aws_msk_iam] region is not set or invalid");
         rd_kafka_oauthbearer_set_token_failure(rk, "region not set");
@@ -641,7 +653,8 @@ cleanup:
 /* Keep original function signature to match header file */
 struct flb_aws_msk_iam *flb_aws_msk_iam_register_oauth_cb(struct flb_config *config,
                                                           rd_kafka_conf_t *kconf,
-                                                          const char *cluster_arn)
+                                                          const char *cluster_arn,
+                                                          struct flb_kafka_opaque *opaque)
 {
     struct flb_aws_msk_iam *ctx;
     char *region_str;
@@ -713,7 +726,9 @@ struct flb_aws_msk_iam *flb_aws_msk_iam_register_oauth_cb(struct flb_config *con
 
     /* Set the callback and opaque BEFORE any Kafka operations */
     rd_kafka_conf_set_oauthbearer_token_refresh_cb(kconf, oauthbearer_token_refresh_cb);
-    rd_kafka_conf_set_opaque(kconf, ctx);
+
+    flb_kafka_opaque_set(opaque, NULL, ctx);
+    rd_kafka_conf_set_opaque(kconf, opaque);
 
     flb_info("[aws_msk_iam] OAuth callback registered successfully");
 

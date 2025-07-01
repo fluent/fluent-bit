@@ -128,6 +128,8 @@ struct flb_out_kafka {
     flb_sds_t aws_msk_iam_cluster_arn;
     struct flb_aws_msk_iam *msk_iam;
 
+    struct flb_kafka_opaque *opaque;
+
     /* SASL mechanism configured in rdkafka.sasl.mechanism */
     flb_sds_t sasl_mechanism;
 

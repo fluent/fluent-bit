@@ -172,11 +172,21 @@ struct flb_out_kafka *flb_out_kafka_create(struct flb_output_instance *ins,
         ctx->gelf_fields.level_key = flb_sds_create(tmp);
     }
 
+    /* create opaque context */
+    ctx->opaque = flb_kafka_opaque_create();
+    if (!ctx->opaque) {
+        flb_plg_error(ctx->ins, "failed to create opaque context");
+        flb_out_kafka_destroy(ctx);
+        return NULL;
+    }
+
     if (ctx->aws_msk_iam_cluster_arn && ctx->sasl_mechanism &&
         strcasecmp(ctx->sasl_mechanism, "OAUTHBEARER") == 0) {
+
         ctx->msk_iam = flb_aws_msk_iam_register_oauth_cb(config,
                                                          ctx->conf,
-                                                         ctx->aws_msk_iam_cluster_arn);
+                                                         ctx->aws_msk_iam_cluster_arn,
+                                                         ctx->opaque);
         if (!ctx->msk_iam) {
             flb_plg_error(ctx->ins, "failed to setup MSK IAM authentication");
         }
