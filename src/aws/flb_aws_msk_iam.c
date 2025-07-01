@@ -410,17 +410,28 @@ static flb_sds_t build_msk_iam_payload(struct flb_aws_msk_iam *ctx,
     }
 
     /* Use flb_base64_encode for Base64 URL encoding */
-    encode_result = flb_base64_encode((unsigned char *) presigned_url, url_len,
-                                      &actual_encoded_len,
-                                      (const unsigned char *) presigned_url, url_len);
+    // encode_result = flb_base64_encode((unsigned char *) presigned_url, url_len,
+    //                                   &actual_encoded_len,
+    //                                   (const unsigned char *) presigned_url, url_len);
+    // if (encode_result == -1) {
+    //     flb_error("[aws_msk_iam] build_msk_iam_payload: failed to base64 encode URL");
+    //     flb_sds_destroy(presigned_url);
+    //     goto error;
+    // }
+
+    // /* Update the SDS length to match actual encoded length */
+    // flb_sds_len_set(payload, actual_encoded_len);
+
+    encode_result = flb_base64_encode((unsigned char*)payload, encoded_len, &actual_encoded_len,
+                                         (const unsigned char*)presigned_url, url_len);
     if (encode_result == -1) {
-        flb_error("[aws_msk_iam] build_msk_iam_payload: failed to base64 encode URL");
-        flb_sds_destroy(presigned_url);
+        flb_error("[msk_iam] build_msk_iam_payload: failed to base64 encode URL");
         goto error;
     }
 
     /* Update the SDS length to match actual encoded length */
     flb_sds_len_set(payload, actual_encoded_len);
+
 
     /* Convert to Base64 URL encoding (replace + with -, / with _, remove padding =) */
     p = payload;
