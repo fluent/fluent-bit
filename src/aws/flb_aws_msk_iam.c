@@ -666,9 +666,6 @@ static void oauthbearer_token_refresh_cb(rd_kafka_t *rk,
     if (temp_provider) {
         if (temp_provider->provider_vtable->init(temp_provider) == 0) {
             creds = temp_provider->provider_vtable->get_credentials(temp_provider);
-            if (creds && creds->access_key_id) {
-                printf("[aws_msk_iam] PRINCIPAL: %s\n", creds->access_key_id);
-            }
         }
     }
 

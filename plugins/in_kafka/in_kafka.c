@@ -398,6 +398,7 @@ init_error:
         struct flb_msk_iam_cb *cb;
 
         cb = rd_kafka_opaque(ctx->kafka.rk);
+        rd_kafka_consumer_close(ctx->kafka.rk);
         rd_kafka_destroy(ctx->kafka.rk);
         if (cb) {
             flb_free(cb);
@@ -438,6 +439,7 @@ static int in_kafka_exit(void *in_context, struct flb_config *config)
 
     ctx = in_context;
     if (ctx->kafka.rk) {
+        rd_kafka_consumer_close(ctx->kafka.rk);
         rd_kafka_destroy(ctx->kafka.rk);
     }
     flb_free(ctx->kafka.brokers);
