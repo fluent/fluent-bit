@@ -459,6 +459,7 @@ static flb_sds_t build_msk_iam_payload(struct flb_aws_msk_iam *ctx,
     url_len = flb_sds_len(presigned_url);
     encoded_len = ((url_len + 2) / 3) * 4 + 1; /* Base64 encoding size + null terminator */
 
+    flb_sds_destroy(payload);
     payload = flb_sds_create_size(encoded_len);
     if (!payload) {
         goto error;
@@ -537,11 +538,8 @@ static void oauthbearer_token_refresh_cb(rd_kafka_t *rk,
                                          const char *oauthbearer_config,
                                          void *opaque)
 {
-    struct flb_aws_msk_iam *ctx;
-    struct flb_aws_credentials *creds = NULL;
-    flb_sds_t payload = NULL;
-    char *payload_copy = NULL;
     char host[256];
+    flb_sds_t payload = NULL;
     rd_kafka_resp_err_t err;
     char errstr[512];
     int64_t now;
@@ -549,6 +547,8 @@ static void oauthbearer_token_refresh_cb(rd_kafka_t *rk,
     const char *s3_suffix = "-s3";
     size_t arn_len;
     size_t suffix_len;
+    struct flb_aws_msk_iam *ctx;
+    struct flb_aws_credentials *creds = NULL;
     (void) oauthbearer_config;
 
     flb_debug("[aws_msk_iam] running OAuth bearer token refresh callback");
@@ -595,13 +595,6 @@ static void oauthbearer_token_refresh_cb(rd_kafka_t *rk,
         printf("[aws_msk_iam] PRINCIPAL: %s\n", creds->access_key_id);
     }
 
-    payload_copy = strdup(payload);
-    if (!payload_copy) {
-        flb_error("[aws_msk_iam] failed to duplicate payload string");
-        rd_kafka_oauthbearer_set_token_failure(rk, "memory allocation failed");
-        goto cleanup;
-    }
-
     if (!creds) {
         creds = ctx->provider->provider_vtable->get_credentials(ctx->provider);
     }
@@ -618,7 +611,7 @@ static void oauthbearer_token_refresh_cb(rd_kafka_t *rk,
 
     err = rd_kafka_oauthbearer_set_token(
                                          rk,
-                                         payload_copy,
+                                         payload,
                                          md_lifetime_ms,
                                          creds->access_key_id,
                                          NULL,
