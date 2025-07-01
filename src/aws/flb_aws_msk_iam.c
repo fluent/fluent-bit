@@ -694,8 +694,9 @@ static void oauthbearer_token_refresh_cb(rd_kafka_t *rk,
         flb_aws_credentials_destroy(creds);
     }
     if (temp_provider) {
-        temp_provider->provider_vtable->destroy(temp_provider);
+        flb_aws_provider_destroy(temp_provider);
     }
+
     if (payload) {
         flb_sds_destroy(payload);
     }
