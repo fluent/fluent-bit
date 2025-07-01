@@ -403,45 +403,37 @@ static flb_sds_t build_msk_iam_payload(struct flb_aws_msk_iam *ctx,
     url_len = flb_sds_len(presigned_url);
     encoded_len = ((url_len + 2) / 3) * 4 + 1; /* Base64 encoding size + null terminator */
 
-    /* Allocate one extra byte for null terminator */
-    payload = flb_sds_create_size(encoded_len + 1);
-    if (!payload) {
+    /* Allocate a regular buffer for the base64-encoded string */
+    char *b64_buf = flb_malloc(encoded_len + 1);
+    if (!b64_buf) {
         goto error;
     }
-
-    encode_result = flb_base64_encode((unsigned char*) payload, encoded_len, &actual_encoded_len,
+    encode_result = flb_base64_encode((unsigned char*) b64_buf, encoded_len, &actual_encoded_len,
                                       (const unsigned char *) presigned_url, url_len);
     if (encode_result == -1) {
+        flb_free(b64_buf);
         flb_error("[aws_msk_iam] build_msk_iam_payload: failed to base64 encode URL");
         goto error;
     }
-
-    /* Update the SDS length to match actual encoded length */
-    flb_sds_len_set(payload, actual_encoded_len);
-    /* Always null-terminate within bounds */
-    payload[actual_encoded_len] = '\0';
+    b64_buf[actual_encoded_len] = '\0';
 
     /* Convert to Base64 URL encoding AND remove padding (RawURLEncoding like Go) */
-    p = payload;
-    while (*p) {
-        if (*p == '+') {
-            *p = '-';
-        }
-        else if (*p == '/') {
-            *p = '_';
-        }
-        p++;
+    for (size_t i = 0; i < actual_encoded_len; i++) {
+        if (b64_buf[i] == '+') b64_buf[i] = '-';
+        else if (b64_buf[i] == '/') b64_buf[i] = '_';
     }
-
     /* Remove ALL padding (RawURLEncoding) */
-    final_len = flb_sds_len(payload);
-    while (final_len > 0 && payload[final_len-1] == '=') {
-        final_len--;
+    while (actual_encoded_len > 0 && b64_buf[actual_encoded_len-1] == '=') {
+        actual_encoded_len--;
     }
-    flb_sds_len_set(payload, final_len);
-    /* Always null-terminate within bounds */
-    payload[final_len] = '\0';
+    b64_buf[actual_encoded_len] = '\0';
 
+    /* Now create the SDS string from the buffer */
+    payload = flb_sds_create_len(b64_buf, actual_encoded_len);
+    flb_free(b64_buf);
+    if (!payload) {
+        goto error;
+    }
 
     /* Clean up */
     flb_sds_destroy(credential);
