@@ -450,6 +450,7 @@ static int in_kafka_exit(void *in_context, struct flb_config *config)
     }
     if (ctx->msk_iam) {
         flb_aws_msk_iam_destroy(ctx->msk_iam);
+        ctx->msk_iam = NULL;
     }
     flb_sds_destroy(ctx->aws_msk_iam_cluster_arn);
     flb_sds_destroy(ctx->sasl_mechanism);
