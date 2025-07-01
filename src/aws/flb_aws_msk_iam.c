@@ -726,12 +726,6 @@ void flb_aws_msk_iam_destroy(struct flb_aws_msk_iam *ctx)
         return;
     }
     if (ctx->provider) {
-        /*
-         * Destroy the credentials provider and free all associated
-         * resources. Using flb_aws_provider_destroy() ensures the
-         * provider implementation along with the provider structure
-         * itself are released.
-         */
         flb_aws_provider_destroy(ctx->provider);
     }
     flb_sds_destroy(ctx->region);
