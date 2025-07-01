@@ -167,6 +167,7 @@ static flb_sds_t build_msk_iam_payload(struct flb_aws_msk_iam *ctx,
     flb_sds_t session_token_enc = NULL;
     flb_sds_t action_enc = NULL;
     flb_sds_t presigned_url = NULL;
+    flb_sds_t empty_payload_hex = NULL;
     char amzdate[32];
     char datestamp[16];
     unsigned char sha256_buf[32];
@@ -292,7 +293,7 @@ static flb_sds_t build_msk_iam_payload(struct flb_aws_msk_iam *ctx,
         goto error;
     }
 
-    flb_sds_t empty_payload_hex = sha256_to_hex(empty_payload_hash);
+    empty_payload_hex = sha256_to_hex(empty_payload_hash);
     if (!empty_payload_hex) {
         goto error;
     }
@@ -345,8 +346,7 @@ static flb_sds_t build_msk_iam_payload(struct flb_aws_msk_iam *ctx,
     }
 
     len = strlen(datestamp);
-    if (hmac_sha256_sign(key_date, (unsigned char *) key, flb_sds_len(key),
-                         (unsigned char *) datestamp, len) != 0) {
+    if (hmac_sha256_sign(key_date, (unsigned char *) key, flb_sds_len(key), (unsigned char *) datestamp, len) != 0) {
         flb_error("[aws_msk_iam] build_msk_iam_payload: failed to sign date");
         flb_sds_destroy(key);
         goto error;
@@ -380,8 +380,6 @@ static flb_sds_t build_msk_iam_payload(struct flb_aws_msk_iam *ctx,
     if (!hexsig) {
         goto error;
     }
-
-    flb_info("[aws_msk_iam] build_msk_iam_payload: signature: %s", hexsig);
 
     /* Append signature to query */
     tmp = flb_sds_printf(&query, "&X-Amz-Signature=%s", hexsig);
@@ -427,8 +425,12 @@ static flb_sds_t build_msk_iam_payload(struct flb_aws_msk_iam *ctx,
     /* Convert to Base64 URL encoding (replace + with -, / with _, remove padding =) */
     p = payload;
     while (*p) {
-        if (*p == '+') *p = '-';
-        else if (*p == '/') *p = '_';
+        if (*p == '+') {
+            *p = '-';
+        }
+        else if (*p == '/') {
+            *p = '_';
+        }
         p++;
     }
 
@@ -458,8 +460,6 @@ static flb_sds_t build_msk_iam_payload(struct flb_aws_msk_iam *ctx,
     }
     presigned_url = tmp;
 
-    flb_info("[aws_msk_iam] build_msk_iam_payload: presigned URL length: %zu", flb_sds_len(presigned_url));
-
     /* Base64 URL encode the presigned URL (RawURLEncoding - no padding like Go) */
     url_len = flb_sds_len(presigned_url);
     encoded_len = ((url_len + 2) / 3) * 4 + 1; /* Base64 encoding size + null terminator */
@@ -482,8 +482,12 @@ static flb_sds_t build_msk_iam_payload(struct flb_aws_msk_iam *ctx,
     /* Convert to Base64 URL encoding AND remove padding (RawURLEncoding like Go) */
     p = payload;
     while (*p) {
-        if (*p == '+') *p = '-';
-        else if (*p == '/') *p = '_';
+        if (*p == '+') {
+            *p = '-';
+        }
+        else if (*p == '/') {
+            *p = '_';
+        }
         p++;
     }
 
@@ -547,7 +551,9 @@ static void oauthbearer_token_refresh_cb(rd_kafka_t *rk,
     char errstr[512];
     int64_t now;
     int64_t md_lifetime_ms;
-
+    const char *s3_suffix = "-s3";
+    size_t arn_len;
+    size_t suffix_len;
     (void) oauthbearer_config;
 
     flb_debug("[aws_msk_iam] running OAuth bearer token refresh callback");
@@ -559,12 +565,21 @@ static void oauthbearer_token_refresh_cb(rd_kafka_t *rk,
         return;
     }
 
-    /* FIXED: Use generic kafka endpoint, not specific broker hostname */
-    if (ctx->cluster_arn && strstr(ctx->cluster_arn, "-s3") != NULL) {
-        /* MSK Serverless cluster - use generic serverless endpoint */
-        snprintf(host, sizeof(host), "kafka-serverless.%s.amazonaws.com", ctx->region);
-        flb_info("[aws_msk_iam] MSK Serverless cluster, using generic endpoint: %s", host);
-    } else {
+    if (ctx->cluster_arn) {
+        arn_len = strlen(ctx->cluster_arn);
+        suffix_len = strlen(s3_suffix);
+        if (arn_len >= suffix_len && strcmp(ctx->cluster_arn + arn_len - suffix_len, s3_suffix) == 0) {
+            /* MSK Serverless cluster - use generic serverless endpoint */
+            snprintf(host, sizeof(host), "kafka-serverless.%s.amazonaws.com", ctx->region);
+            flb_info("[aws_msk_iam] MSK Serverless cluster, using generic endpoint: %s", host);
+        }
+        else {
+            /* Regular MSK cluster - use generic endpoint */
+            snprintf(host, sizeof(host), "kafka.%s.amazonaws.com", ctx->region);
+            flb_info("[aws_msk_iam] Regular MSK cluster, using generic endpoint: %s", host);
+        }
+    }
+    else {
         /* Regular MSK cluster - use generic endpoint */
         snprintf(host, sizeof(host), "kafka.%s.amazonaws.com", ctx->region);
         flb_info("[aws_msk_iam] Regular MSK cluster, using generic endpoint: %s", host);
