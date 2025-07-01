@@ -7,6 +7,7 @@
 #include <rdkafka.h>
 
 struct flb_aws_msk_iam;
+struct flb_msk_iam_cb;
 
 struct flb_msk_iam_cb {
     void *plugin_ctx;
