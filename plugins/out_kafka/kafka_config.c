@@ -175,8 +175,7 @@ struct flb_out_kafka *flb_out_kafka_create(struct flb_output_instance *ins,
         strcasecmp(ctx->sasl_mechanism, "OAUTHBEARER") == 0) {
         ctx->msk_iam = flb_aws_msk_iam_register_oauth_cb(config,
                                                          ctx->conf,
-                                                         ctx->aws_msk_iam_cluster_arn,
-                                                         ctx);
+                                                         ctx->aws_msk_iam_cluster_arn);
         if (!ctx->msk_iam) {
             flb_plg_error(ctx->ins, "failed to setup MSK IAM authentication");
         }

@@ -611,8 +611,7 @@ static void oauthbearer_token_refresh_cb(rd_kafka_t *rk,
     now = time(NULL);
     md_lifetime_ms = (now + 900) * 1000;
 
-    err = rd_kafka_oauthbearer_set_token(
-                                         rk,
+    err = rd_kafka_oauthbearer_set_token(rk,
                                          payload,
                                          md_lifetime_ms,
                                          creds->access_key_id,
@@ -637,15 +636,12 @@ cleanup:
     if (payload) {
         flb_sds_destroy(payload);
     }
-
-    /* note: don't free payload_copy - librdkafka manages it */
 }
 
 /* Keep original function signature to match header file */
 struct flb_aws_msk_iam *flb_aws_msk_iam_register_oauth_cb(struct flb_config *config,
                                                           rd_kafka_conf_t *kconf,
-                                                          const char *cluster_arn,
-                                                          void *owner)
+                                                          const char *cluster_arn)
 {
     struct flb_aws_msk_iam *ctx;
     char *region_str;
@@ -659,7 +655,7 @@ struct flb_aws_msk_iam *flb_aws_msk_iam_register_oauth_cb(struct flb_config *con
 
     ctx = flb_calloc(1, sizeof(struct flb_aws_msk_iam));
     if (!ctx) {
-        flb_error("[aws_msk_iam] failed to allocate context");
+        flb_errno();
         return NULL;
     }
 
@@ -691,6 +687,13 @@ struct flb_aws_msk_iam *flb_aws_msk_iam_register_oauth_cb(struct flb_config *con
     }
 
     flb_info("[aws_msk_iam] extracted region: %s", ctx->region);
+
+    if (ctx->provider) {
+        printf("[aws_msk_iam] provider already exists\n");
+    }
+    else {
+        printf("[aws_msk_iam] creating provider\n");
+    }
 
     ctx->provider = flb_standard_chain_provider_create(config, NULL,
                                                        ctx->region, NULL, NULL,

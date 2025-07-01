@@ -39,8 +39,7 @@ struct flb_msk_iam_cb {
  */
 struct flb_aws_msk_iam *flb_aws_msk_iam_register_oauth_cb(struct flb_config *config,
                                                           rd_kafka_conf_t *kconf,
-                                                          const char *cluster_arn,
-                                                          void *owner);
+                                                          const char *cluster_arn);
 void flb_aws_msk_iam_destroy(struct flb_aws_msk_iam *ctx);
 
 #endif
