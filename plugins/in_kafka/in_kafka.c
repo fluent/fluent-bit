@@ -448,6 +448,7 @@ static int in_kafka_exit(void *in_context, struct flb_config *config)
     if (ctx->log_encoder){
         flb_log_event_encoder_destroy(ctx->log_encoder);
     }
+    /* Destroy MSK IAM context after Kafka handle is destroyed */
     if (ctx->msk_iam) {
         flb_aws_msk_iam_destroy(ctx->msk_iam);
         ctx->msk_iam = NULL;
