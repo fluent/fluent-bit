@@ -325,7 +325,7 @@ static int in_kafka_init(struct flb_input_instance *ins,
     }
 
     /* Trigger initial token refresh for OAUTHBEARER */
-    //rd_kafka_poll(ctx->kafka.rk, 0);
+    rd_kafka_poll(ctx->kafka.rk, 0);
 
     conf = flb_input_get_property("topics", ins);
     if (!conf) {
@@ -450,7 +450,6 @@ static int in_kafka_exit(void *in_context, struct flb_config *config)
         // flb_aws_msk_iam_destroy(ctx->msk_iam);
         // ctx->msk_iam = NULL;
     }
-    flb_sds_destroy(ctx->aws_msk_iam_cluster_arn);
     flb_sds_destroy(ctx->sasl_mechanism);
 
     flb_free(ctx);
