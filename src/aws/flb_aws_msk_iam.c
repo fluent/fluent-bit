@@ -216,7 +216,7 @@ static flb_sds_t build_msk_iam_payload_stateless(struct flb_aws_msk_iam *config,
     creds = temp_provider->provider_vtable->get_credentials(temp_provider);
     if (!creds) {
         flb_error("[aws_msk_iam] build_msk_iam_payload_stateless: failed to get credentials");
-        temp_provider->provider_vtable->destroy(temp_provider);
+        flb_aws_provider_destroy(temp_provider);
         return NULL;
     }
 
@@ -537,7 +537,7 @@ static flb_sds_t build_msk_iam_payload_stateless(struct flb_aws_msk_iam *config,
         flb_aws_credentials_destroy(creds);
     }
     if (temp_provider) {
-        temp_provider->provider_vtable->destroy(temp_provider);
+        flb_aws_provider_destroy(temp_provider);
     }
 
     return payload;
@@ -584,7 +584,7 @@ error:
         flb_aws_credentials_destroy(creds);
     }
     if (temp_provider) {
-        temp_provider->provider_vtable->destroy(temp_provider);
+        flb_aws_provider_destroy(temp_provider);
     }
 
     return NULL;
