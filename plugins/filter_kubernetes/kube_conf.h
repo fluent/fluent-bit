@@ -71,7 +71,7 @@ struct kube_meta;
 struct flb_kube {
     /* Configuration parameters */
     int use_journal;
-    int cache_use_docker_id;
+    int cache_use_container_id;
     int labels;
     int annotations;
     int owner_references;

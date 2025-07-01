@@ -1002,11 +1002,11 @@ static struct flb_config_map config_map[] = {
      0, FLB_TRUE, offsetof(struct flb_kube, dns_wait_time),
      "dns interval between network status checks"
     },
-    /* Fetch K8s meta when docker_id has changed */
+    /* Fetch K8s meta when container_id has changed */
     {
-     FLB_CONFIG_MAP_BOOL, "cache_use_docker_id", "false",
-     0, FLB_TRUE, offsetof(struct flb_kube, cache_use_docker_id),
-     "fetch K8s meta when docker_id is changed"
+     FLB_CONFIG_MAP_BOOL, "cache_use_container_id", "false",
+     0, FLB_TRUE, offsetof(struct flb_kube, cache_use_container_id),
+     "fetch K8s meta when container_id is changed"
     },
 
     {

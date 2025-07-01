@@ -408,7 +408,7 @@ static mem_snapshot *get_docker_mem_snapshot(struct flb_docker *ctx, char *id)
 int in_docker_set_cgroup_api_v1(struct cgroup_api *api)
 {
     api->cgroup_version = 1;
-    api->get_active_docker_ids = get_active_dockers;
+    api->get_active_container_ids = get_active_dockers;
     api->get_container_name = get_container_name;
     api->get_cpu_snapshot = get_docker_cpu_snapshot;
     api->get_mem_snapshot = get_docker_mem_snapshot;

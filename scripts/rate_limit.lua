@@ -11,11 +11,11 @@
 
 local counter = {}
 local time = 0
-local group_key = "docker_id" -- Used to group logs. Groups are rate limited independently.
+local group_key = "container_id" -- Used to group logs. Groups are rate limited independently.
 local group_bucket_period_s = 60 -- This is the period of of time in seconds over which group_bucket_limit applies.
 local group_bucket_limit = 6000 -- Maximum number logs allowed per groups over the period of group_bucket_period_s.
 
--- with above values, each and every containers running on the kubernetes will have a limit of 6000 logs for every 60 seconds since contianers have unique kubernetes.docker_id value
+-- with above values, each and every containers running on the kubernetes will have a limit of 6000 logs for every 60 seconds since contianers have unique kubernetes.container_id value
 
 local function get_current_time(timestamp)
     return math.floor(timestamp / group_bucket_period_s)

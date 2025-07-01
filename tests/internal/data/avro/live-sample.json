@@ -18,7 +18,7 @@
       },
       "host": "wedddd.dkdk.qqqq.com",
       "container_name": "tb1",
-      "docker_id": "50bfc67d-cd3c-410d-9369-8bda8f33b1c7",
+      "container_id": "50bfc67d-cd3c-410d-9369-8bda8f33b1c7",
       "container_hash": "qqqq.corp.qqqq.com/ai/centos/tf1.15.0-py3.7-horovod@sha256:68b6885f6d1d3fd87ce425a2b2aa687440b9578740d60996912a816ae67be85e",
       "container_image": "qqqq.corp.qqqq.com/ai/centos/tf1.15.0-py3.7-horovod:1.2"
     }
