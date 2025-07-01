@@ -26,7 +26,7 @@
 #include <fluent-bit/flb_input_thread.h>
 #include <fluent-bit/flb_kafka.h>
 #include <fluent-bit/flb_log_event_encoder.h>
-#include <fluent-bit/aws/msk_iam.h>
+#include <fluent-bit/aws/flb_aws_msk_iam.h>
 
 
 #define FLB_IN_KAFKA_DEFAULT_POLL_MS       "500"

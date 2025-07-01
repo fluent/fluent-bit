@@ -27,7 +27,7 @@
 #endif
 
 #include <fluent-bit/flb_kafka.h>
-#include <fluent-bit/aws/msk_iam.h>
+#include <fluent-bit/aws/flb_aws_msk_iam.h>
 
 #define FLB_KAFKA_FMT_JSON            0
 #define FLB_KAFKA_FMT_MSGP            1

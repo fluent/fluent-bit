@@ -25,6 +25,8 @@
 #include <fluent-bit/flb_parser.h>
 #include <fluent-bit/flb_error.h>
 #include <fluent-bit/flb_utils.h>
+#include <fluent-bit/aws/flb_aws_msk_iam.h>
+
 #include <mpack/mpack.h>
 #include <stddef.h>
 #include <stdio.h>
@@ -34,7 +36,6 @@
 #include "fluent-bit/flb_mem.h"
 #include "in_kafka.h"
 #include "rdkafka.h"
-#include <fluent-bit/aws/msk_iam.h>
 
 static int try_json(struct flb_log_event_encoder *log_encoder,
                     rd_kafka_message_t *rkm)

@@ -15,7 +15,7 @@ set(src
   "flb_aws_imds.c"
   "flb_aws_credentials_http.c"
   "flb_aws_credentials_profile.c"
-  "msk_iam.c"
+  "flb_aws_msk_iam.c"
   )
 
 if(FLB_HAVE_AWS_CREDENTIAL_PROCESS)

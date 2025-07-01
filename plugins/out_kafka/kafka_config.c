@@ -22,11 +22,12 @@
 #include <fluent-bit/flb_mem.h>
 #include <fluent-bit/flb_kv.h>
 #include <fluent-bit/flb_utils.h>
+#include <fluent-bit/aws/flb_aws_msk_iam.h>
 
 #include "kafka_config.h"
 #include "kafka_topic.h"
 #include "kafka_callbacks.h"
-#include <fluent-bit/aws/msk_iam.h>
+
 
 struct flb_out_kafka *flb_out_kafka_create(struct flb_output_instance *ins,
                                            struct flb_config *config)

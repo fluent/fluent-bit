@@ -22,7 +22,7 @@
 #include <fluent-bit/flb_pack.h>
 #include <fluent-bit/flb_utils.h>
 #include <fluent-bit/flb_log_event_decoder.h>
-#include <fluent-bit/aws/msk_iam.h>
+#include <fluent-bit/aws/flb_aws_msk_iam.h>
 
 #include "kafka_config.h"
 #include "kafka_topic.h"

@@ -7,6 +7,8 @@
 #include <fluent-bit/flb_hash.h>
 #include <fluent-bit/flb_hmac.h>
 #include <fluent-bit/flb_aws_credentials.h>
+#include <fluent-bit/aws/flb_aws_msk_iam.h>
+
 #include <fluent-bit/flb_signv4.h>
 #include <rdkafka.h>
 
@@ -15,7 +17,6 @@
 #include <string.h>
 #include <time.h>
 
-#include <fluent-bit/aws/msk_iam.h>
 
 /* Wrapper for storing plugin context and MSK IAM state */
 struct flb_aws_msk_iam {
@@ -146,73 +147,71 @@ static flb_sds_t build_msk_iam_payload(struct flb_aws_msk_iam *ctx,
                                        const char *host,
                                        time_t now)
 {
-    /*
-     * CRITICAL: Based on AWS MSK IAM Java implementation, the OAuth token must be:
-     * 1. A complete presigned URL (https://host/?query_params)
-     * 2. Base64 URL encoded
-     *
-     * The Java code shows: Base64.getUrlDecoder().decode(tokenBytes)
-     * which means the token passed to OAuth is the Base64 URL encoded presigned URL.
-     */
-    struct flb_aws_credentials *creds;
-    struct tm gm;
-    char amzdate[32];
-    char datestamp[16];
+    int encode_result;
+    char *p;
+    size_t len;
+    size_t url_len;
+    size_t encoded_len;
+    size_t actual_encoded_len;
+    size_t final_len;
     flb_sds_t credential = NULL;
     flb_sds_t credential_enc = NULL;
     flb_sds_t query = NULL;
     flb_sds_t canonical = NULL;
-    unsigned char sha256_buf[32];
     flb_sds_t hexhash = NULL;
     flb_sds_t string_to_sign = NULL;
+    flb_sds_t hexsig = NULL;
+    flb_sds_t payload = NULL;
+    flb_sds_t key = NULL;
+    flb_sds_t tmp = NULL;
+    flb_sds_t session_token_enc = NULL;
+    flb_sds_t action_enc = NULL;
+    flb_sds_t presigned_url = NULL;
+    char amzdate[32];
+    char datestamp[16];
+    unsigned char sha256_buf[32];
     unsigned char key_date[32];
     unsigned char key_region[32];
     unsigned char key_service[32];
     unsigned char key_signing[32];
     unsigned char sig[32];
-    flb_sds_t hexsig = NULL;
-    flb_sds_t payload = NULL;
-    size_t url_len, encoded_len, actual_encoded_len, final_len, len;
-    int encode_result;
-    char *p;
-    flb_sds_t tmp;
-    flb_sds_t session_token_enc = NULL;
-    flb_sds_t action_enc = NULL;
-    flb_sds_t presigned_url = NULL;
+    unsigned char empty_payload_hash[32];
+    struct tm gm;
+    struct flb_aws_credentials *creds;
 
     /* Add validation */
     if (!ctx || !ctx->region || flb_sds_len(ctx->region) == 0) {
-        flb_error("[msk_iam] build_msk_iam_payload: region is not set or invalid");
+        flb_error("[aws_msk_iam] build_msk_iam_payload: region is not set or invalid");
         return NULL;
     }
 
     if (!host || strlen(host) == 0) {
-        flb_error("[msk_iam] build_msk_iam_payload: host is required");
+        flb_error("[aws_msk_iam] build_msk_iam_payload: host is required");
         return NULL;
     }
 
-    flb_info("[msk_iam] build_msk_iam_payload: generating payload for host: %s, region: %s",
+    flb_info("[aws_msk_iam] build_msk_iam_payload: generating payload for host: %s, region: %s",
              host, ctx->region);
 
     creds = ctx->provider->provider_vtable->get_credentials(ctx->provider);
     if (!creds) {
-        flb_error("[msk_iam] build_msk_iam_payload: failed to get credentials");
+        flb_error("[aws_msk_iam] build_msk_iam_payload: failed to get credentials");
         return NULL;
     }
 
     if (!creds->access_key_id || !creds->secret_access_key) {
-        flb_error("[msk_iam] build_msk_iam_payload: incomplete credentials");
+        flb_error("[aws_msk_iam] build_msk_iam_payload: incomplete credentials");
         flb_aws_credentials_destroy(creds);
         return NULL;
     }
 
-    flb_info("[msk_iam] build_msk_iam_payload: using access key: %.10s...", creds->access_key_id);
+    flb_info("[aws_msk_iam] build_msk_iam_payload: using access key: %.10s...", creds->access_key_id);
 
     gmtime_r(&now, &gm);
     strftime(amzdate, sizeof(amzdate) - 1, "%Y%m%dT%H%M%SZ", &gm);
     strftime(datestamp, sizeof(datestamp) - 1, "%Y%m%d", &gm);
 
-    flb_info("[msk_iam] build_msk_iam_payload: timestamp: %s, date: %s", amzdate, datestamp);
+    flb_info("[aws_msk_iam] build_msk_iam_payload: timestamp: %s, date: %s", amzdate, datestamp);
 
     /* Build credential string */
     credential = flb_sds_create_size(256);
@@ -226,15 +225,13 @@ static flb_sds_t build_msk_iam_payload(struct flb_aws_msk_iam *ctx,
         goto error;
     }
 
-    flb_info("[msk_iam] build_msk_iam_payload: credential scope: %s", credential);
-
     credential_enc = uri_encode_params(credential, flb_sds_len(credential));
     if (!credential_enc) {
         goto error;
     }
 
     /* CRITICAL: Encode the action parameter */
-    action_enc = uri_encode_params("kafka-cluster:Connect", strlen("kafka-cluster:Connect"));
+    action_enc = uri_encode_params("kafka-cluster:Connect", 21);
     if (!action_enc) {
         goto error;
     }
@@ -245,7 +242,7 @@ static flb_sds_t build_msk_iam_payload(struct flb_aws_msk_iam *ctx,
         goto error;
     }
 
-    /* CRITICAL: Action must be FIRST in alphabetical order */
+    /* note: Action must be FIRST in alphabetical order */
     query = flb_sds_printf(&query,
                            "Action=%s&X-Amz-Algorithm=AWS4-HMAC-SHA256&X-Amz-Credential=%s"
                            "&X-Amz-Date=%s&X-Amz-Expires=900",
@@ -256,22 +253,19 @@ static flb_sds_t build_msk_iam_payload(struct flb_aws_msk_iam *ctx,
 
     /* Add session token if present (before SignedHeaders alphabetically) */
     if (creds->session_token && flb_sds_len(creds->session_token) > 0) {
-        flb_info("[msk_iam] build_msk_iam_payload: adding session token (length: %zu)",
+        flb_info("[aws_msk_iam] build_msk_iam_payload: adding session token (length: %zu)",
                  flb_sds_len(creds->session_token));
 
         session_token_enc = uri_encode_params(creds->session_token,
                                               flb_sds_len(creds->session_token));
         if (!session_token_enc) {
-            flb_error("[msk_iam] build_msk_iam_payload: failed to encode session token");
+            flb_error("[aws_msk_iam] build_msk_iam_payload: failed to encode session token");
             goto error;
         }
 
-        flb_info("[msk_iam] build_msk_iam_payload: encoded session token length: %zu",
-                 flb_sds_len(session_token_enc));
-
         tmp = flb_sds_printf(&query, "&X-Amz-Security-Token=%s", session_token_enc);
         if (!tmp) {
-            flb_error("[msk_iam] build_msk_iam_payload: failed to append session token to query");
+            flb_error("[aws_msk_iam] build_msk_iam_payload: failed to append session token to query");
             goto error;
         }
         query = tmp;
@@ -280,12 +274,10 @@ static flb_sds_t build_msk_iam_payload(struct flb_aws_msk_iam *ctx,
     /* Add SignedHeaders LAST (alphabetically after Security-Token) */
     tmp = flb_sds_printf(&query, "&X-Amz-SignedHeaders=host");
     if (!tmp) {
-        flb_error("[msk_iam] build_msk_iam_payload: failed to append SignedHeaders");
+        flb_error("[aws_msk_iam] build_msk_iam_payload: failed to append SignedHeaders");
         goto error;
     }
     query = tmp;
-
-    flb_info("[msk_iam] build_msk_iam_payload: query string length: %zu", flb_sds_len(query));
 
     /* Build canonical request */
     canonical = flb_sds_create_size(16384);
@@ -294,10 +286,9 @@ static flb_sds_t build_msk_iam_payload(struct flb_aws_msk_iam *ctx,
     }
 
     /* CRITICAL: MSK IAM canonical request format - use SHA256 of empty string, not UNSIGNED-PAYLOAD */
-    unsigned char empty_payload_hash[32];
     if (flb_hash_simple(FLB_HASH_SHA256, (unsigned char *) "", 0, empty_payload_hash,
                         sizeof(empty_payload_hash)) != FLB_CRYPTO_SUCCESS) {
-        flb_error("[msk_iam] build_msk_iam_payload: failed to hash empty payload");
+        flb_error("[aws_msk_iam] build_msk_iam_payload: failed to hash empty payload");
         goto error;
     }
 
@@ -312,7 +303,7 @@ static flb_sds_t build_msk_iam_payload(struct flb_aws_msk_iam *ctx,
 
     flb_sds_destroy(empty_payload_hex);
     if (!canonical) {
-        flb_error("[msk_iam] build_msk_iam_payload: failed to build canonical request");
+        flb_error("[aws_msk_iam] build_msk_iam_payload: failed to build canonical request");
         goto error;
     }
 
@@ -320,7 +311,7 @@ static flb_sds_t build_msk_iam_payload(struct flb_aws_msk_iam *ctx,
     if (flb_hash_simple(FLB_HASH_SHA256, (unsigned char *) canonical,
                         flb_sds_len(canonical), sha256_buf,
                         sizeof(sha256_buf)) != FLB_CRYPTO_SUCCESS) {
-        flb_error("[msk_iam] build_msk_iam_payload: failed to hash canonical request");
+        flb_error("[aws_msk_iam] build_msk_iam_payload: failed to hash canonical request");
         goto error;
     }
 
@@ -328,9 +319,6 @@ static flb_sds_t build_msk_iam_payload(struct flb_aws_msk_iam *ctx,
     if (!hexhash) {
         goto error;
     }
-
-    flb_info("[msk_iam] build_msk_iam_payload: canonical request length: %zu", flb_sds_len(canonical));
-    flb_info("[msk_iam] build_msk_iam_payload: canonical request hash: %s", hexhash);
 
     /* Build string to sign */
     string_to_sign = flb_sds_create_size(2048);
@@ -345,10 +333,7 @@ static flb_sds_t build_msk_iam_payload(struct flb_aws_msk_iam *ctx,
         goto error;
     }
 
-    flb_info("[msk_iam] build_msk_iam_payload: string to sign created");
-
     /* Derive signing key */
-    flb_sds_t key;
     key = flb_sds_create_size(128);
     if (!key) {
         goto error;
@@ -362,7 +347,7 @@ static flb_sds_t build_msk_iam_payload(struct flb_aws_msk_iam *ctx,
     len = strlen(datestamp);
     if (hmac_sha256_sign(key_date, (unsigned char *) key, flb_sds_len(key),
                          (unsigned char *) datestamp, len) != 0) {
-        flb_error("[msk_iam] build_msk_iam_payload: failed to sign date");
+        flb_error("[aws_msk_iam] build_msk_iam_payload: failed to sign date");
         flb_sds_destroy(key);
         goto error;
     }
@@ -370,24 +355,24 @@ static flb_sds_t build_msk_iam_payload(struct flb_aws_msk_iam *ctx,
 
     len = strlen(ctx->region);
     if (hmac_sha256_sign(key_region, key_date, 32, (unsigned char *) ctx->region, len) != 0) {
-        flb_error("[msk_iam] build_msk_iam_payload: failed to sign region");
+        flb_error("[aws_msk_iam] build_msk_iam_payload: failed to sign region");
         goto error;
     }
 
     if (hmac_sha256_sign(key_service, key_region, 32, (unsigned char *) "kafka-cluster", 13) != 0) {
-        flb_error("[msk_iam] build_msk_iam_payload: failed to sign service");
+        flb_error("[aws_msk_iam] build_msk_iam_payload: failed to sign service");
         goto error;
     }
 
     if (hmac_sha256_sign(key_signing, key_service, 32,
                         (unsigned char *) "aws4_request", 12) != 0) {
-        flb_error("[msk_iam] build_msk_iam_payload: failed to create signing key");
+        flb_error("[aws_msk_iam] build_msk_iam_payload: failed to create signing key");
         goto error;
     }
 
     if (hmac_sha256_sign(sig, key_signing, 32,
                          (unsigned char *) string_to_sign, flb_sds_len(string_to_sign)) != 0) {
-        flb_error("[msk_iam] build_msk_iam_payload: failed to sign request");
+        flb_error("[aws_msk_iam] build_msk_iam_payload: failed to sign request");
         goto error;
     }
 
@@ -396,7 +381,7 @@ static flb_sds_t build_msk_iam_payload(struct flb_aws_msk_iam *ctx,
         goto error;
     }
 
-    flb_info("[msk_iam] build_msk_iam_payload: signature: %s", hexsig);
+    flb_info("[aws_msk_iam] build_msk_iam_payload: signature: %s", hexsig);
 
     /* Append signature to query */
     tmp = flb_sds_printf(&query, "&X-Amz-Signature=%s", hexsig);
@@ -416,8 +401,6 @@ static flb_sds_t build_msk_iam_payload(struct flb_aws_msk_iam *ctx,
         goto error;
     }
 
-    flb_info("[msk_iam] build_msk_iam_payload: presigned URL: %s", presigned_url);
-
     /* Base64 URL encode the presigned URL */
     url_len = flb_sds_len(presigned_url);
     encoded_len = ((url_len + 2) / 3) * 4 + 1; /* Base64 encoding size + null terminator */
@@ -429,11 +412,11 @@ static flb_sds_t build_msk_iam_payload(struct flb_aws_msk_iam *ctx,
     }
 
     /* Use flb_base64_encode for Base64 URL encoding */
-    encode_result = flb_base64_encode((unsigned char*) presigned_url, url_len,
-                                         &actual_encoded_len,
-                                         (const unsigned char *) presigned_url, url_len);
+    encode_result = flb_base64_encode((unsigned char *) presigned_url, url_len,
+                                      &actual_encoded_len,
+                                      (const unsigned char *) presigned_url, url_len);
     if (encode_result == -1) {
-        flb_error("[msk_iam] build_msk_iam_payload: failed to base64 encode URL");
+        flb_error("[aws_msk_iam] build_msk_iam_payload: failed to base64 encode URL");
         flb_sds_destroy(presigned_url);
         goto error;
     }
@@ -475,7 +458,7 @@ static flb_sds_t build_msk_iam_payload(struct flb_aws_msk_iam *ctx,
     }
     presigned_url = tmp;
 
-    flb_info("[msk_iam] build_msk_iam_payload: presigned URL length: %zu", flb_sds_len(presigned_url));
+    flb_info("[aws_msk_iam] build_msk_iam_payload: presigned URL length: %zu", flb_sds_len(presigned_url));
 
     /* Base64 URL encode the presigned URL (RawURLEncoding - no padding like Go) */
     url_len = flb_sds_len(presigned_url);
@@ -486,15 +469,10 @@ static flb_sds_t build_msk_iam_payload(struct flb_aws_msk_iam *ctx,
         goto error;
     }
 
-    /* Use flb_base64_encode with correct signature:
-     * int flb_base64_encode(unsigned char *dst, size_t dlen, size_t *olen, const unsigned char *src, size_t slen)
-     */
-
-
     encode_result = flb_base64_encode((unsigned char*) payload, encoded_len, &actual_encoded_len,
                                       (const unsigned char *) presigned_url, url_len);
     if (encode_result == -1) {
-        flb_error("[msk_iam] build_msk_iam_payload: failed to base64 encode URL");
+        flb_error("[aws_msk_iam] build_msk_iam_payload: failed to base64 encode URL");
         goto error;
     }
 
@@ -517,7 +495,6 @@ static flb_sds_t build_msk_iam_payload(struct flb_aws_msk_iam *ctx,
     flb_sds_len_set(payload, final_len);
     payload[final_len] = '\0';
 
-    flb_info("[msk_iam] build_msk_iam_payload: generated base64url encoded payload length: %zu", flb_sds_len(payload));
 
     /* Clean up */
     flb_sds_destroy(credential);
@@ -536,7 +513,7 @@ static flb_sds_t build_msk_iam_payload(struct flb_aws_msk_iam *ctx,
     return payload;
 
 error:
-    flb_error("[msk_iam] build_msk_iam_payload: error occurred during payload generation");
+    flb_error("[aws_msk_iam] build_msk_iam_payload: error occurred during payload generation");
     flb_sds_destroy(credential);
     flb_sds_destroy(credential_enc);
     flb_sds_destroy(canonical);
@@ -547,6 +524,7 @@ error:
     flb_sds_destroy(action_enc);
     flb_sds_destroy(payload);
     flb_sds_destroy(presigned_url);
+
     if (session_token_enc) {
         flb_sds_destroy(session_token_enc);
     }
@@ -572,11 +550,11 @@ static void oauthbearer_token_refresh_cb(rd_kafka_t *rk,
 
     (void) oauthbearer_config;
 
-    flb_info("[msk_iam] *** OAuth bearer token refresh callback INVOKED ***");
+    flb_debug("[aws_msk_iam] running OAuth bearer token refresh callback");
 
     ctx = opaque;
     if (!ctx->region || flb_sds_len(ctx->region) == 0) {
-        flb_error("[msk_iam] region is not set or invalid");
+        flb_error("[aws_msk_iam] region is not set or invalid");
         rd_kafka_oauthbearer_set_token_failure(rk, "region not set");
         return;
     }
@@ -585,31 +563,31 @@ static void oauthbearer_token_refresh_cb(rd_kafka_t *rk,
     if (ctx->cluster_arn && strstr(ctx->cluster_arn, "-s3") != NULL) {
         /* MSK Serverless cluster - use generic serverless endpoint */
         snprintf(host, sizeof(host), "kafka-serverless.%s.amazonaws.com", ctx->region);
-        flb_info("[msk_iam] MSK Serverless cluster, using generic endpoint: %s", host);
+        flb_info("[aws_msk_iam] MSK Serverless cluster, using generic endpoint: %s", host);
     } else {
         /* Regular MSK cluster - use generic endpoint */
         snprintf(host, sizeof(host), "kafka.%s.amazonaws.com", ctx->region);
-        flb_info("[msk_iam] Regular MSK cluster, using generic endpoint: %s", host);
+        flb_info("[aws_msk_iam] Regular MSK cluster, using generic endpoint: %s", host);
     }
 
-    flb_info("[msk_iam] requesting MSK IAM payload for region: %s, host: %s", ctx->region, host);
+    flb_info("[aws_msk_iam] requesting MSK IAM payload for region: %s, host: %s", ctx->region, host);
 
     payload = build_msk_iam_payload(ctx, host, time(NULL));
     if (!payload) {
-        flb_error("[msk_iam] failed to generate MSK IAM payload");
+        flb_error("[aws_msk_iam] failed to generate MSK IAM payload");
         rd_kafka_oauthbearer_set_token_failure(rk, "payload generation failed");
         return;
     }
 
-    /* Print principal */
+    /* aws provider credentials */
     creds = ctx->provider->provider_vtable->get_credentials(ctx->provider);
     if (creds && creds->access_key_id) {
-        printf("[msk_iam] PRINCIPAL: %s\n", creds->access_key_id);
+        printf("[aws_msk_iam] PRINCIPAL: %s\n", creds->access_key_id);
     }
 
     payload_copy = strdup(payload);
     if (!payload_copy) {
-        flb_error("[msk_iam] failed to duplicate payload string");
+        flb_error("[aws_msk_iam] failed to duplicate payload string");
         rd_kafka_oauthbearer_set_token_failure(rk, "memory allocation failed");
         goto cleanup;
     }
@@ -619,33 +597,32 @@ static void oauthbearer_token_refresh_cb(rd_kafka_t *rk,
     }
 
     if (!creds || !creds->access_key_id) {
-        flb_error("[msk_iam] failed to retrieve AWS credentials for principal");
+        flb_error("[aws_msk_iam] failed to retrieve AWS credentials for principal");
         rd_kafka_oauthbearer_set_token_failure(rk, "credential retrieval failed");
         goto cleanup;
     }
 
-    now = (int64_t)time(NULL);
+
+    now = time(NULL);
     md_lifetime_ms = (now + 900) * 1000;
 
-    flb_info("[msk_iam] setting OAuth token with principal: %s", creds->access_key_id);
-    flb_info("[msk_iam] payload length: %zu", strlen(payload_copy));
-
     err = rd_kafka_oauthbearer_set_token(
-        rk,
-        payload_copy,
-        md_lifetime_ms,
-        creds->access_key_id,
-        NULL,
-        0,
-        errstr,
-        sizeof(errstr)
-    );
+                                         rk,
+                                         payload_copy,
+                                         md_lifetime_ms,
+                                         creds->access_key_id,
+                                         NULL,
+                                         0,
+                                         errstr,
+                                         sizeof(errstr)
+                                        );
 
     if (err != RD_KAFKA_RESP_ERR_NO_ERROR) {
-        flb_error("[msk_iam] failed to set OAuth bearer token: %s", errstr);
+        flb_error("[aws_msk_iam] failed to set OAuth bearer token: %s", errstr);
         rd_kafka_oauthbearer_set_token_failure(rk, errstr);
-    } else {
-        flb_info("[msk_iam] OAuth bearer token successfully set");
+    }
+    else {
+        flb_info("[aws_msk_iam] OAuth bearer token successfully set");
     }
 
 cleanup:
@@ -655,7 +632,8 @@ cleanup:
     if (payload) {
         flb_sds_destroy(payload);
     }
-    /* Note: Don't free payload_copy - librdkafka manages it */
+
+    /* note: don't free payload_copy - librdkafka manages it */
 }
 
 /* Keep original function signature to match header file */
@@ -667,22 +645,22 @@ struct flb_aws_msk_iam *flb_aws_msk_iam_register_oauth_cb(struct flb_config *con
     struct flb_aws_msk_iam *ctx;
     char *region_str;
 
-    flb_info("[msk_iam] registering OAuth callback with cluster ARN: %s", cluster_arn);
+    flb_info("[aws_msk_iam] registering OAuth callback with cluster ARN: %s", cluster_arn);
 
     if (!cluster_arn) {
-        flb_error("[msk_iam] cluster ARN is required");
+        flb_error("[aws_msk_iam] cluster ARN is required");
         return NULL;
     }
 
     ctx = flb_calloc(1, sizeof(struct flb_aws_msk_iam));
     if (!ctx) {
-        flb_error("[msk_iam] failed to allocate context");
+        flb_error("[aws_msk_iam] failed to allocate context");
         return NULL;
     }
 
     ctx->cluster_arn = flb_sds_create(cluster_arn);
     if (!ctx->cluster_arn) {
-        flb_error("[msk_iam] failed to create cluster ARN string");
+        flb_error("[aws_msk_iam] failed to create cluster ARN string");
         flb_free(ctx);
         return NULL;
     }
@@ -690,7 +668,7 @@ struct flb_aws_msk_iam *flb_aws_msk_iam_register_oauth_cb(struct flb_config *con
     /* Fix region extraction */
     region_str = extract_region(cluster_arn);
     if (!region_str || strlen(region_str) == 0) {
-        flb_error("[msk_iam] failed to extract region from cluster ARN: %s", cluster_arn);
+        flb_error("[aws_msk_iam] failed to extract region from cluster ARN: %s", cluster_arn);
         flb_sds_destroy(ctx->cluster_arn);
         flb_free(ctx);
         if (region_str) flb_free(region_str);
@@ -701,26 +679,26 @@ struct flb_aws_msk_iam *flb_aws_msk_iam_register_oauth_cb(struct flb_config *con
     flb_free(region_str);
 
     if (!ctx->region) {
-        flb_error("[msk_iam] failed to create region string");
+        flb_error("[aws_msk_iam] failed to create region string");
         flb_sds_destroy(ctx->cluster_arn);
         flb_free(ctx);
         return NULL;
     }
 
-    flb_info("[msk_iam] extracted region: %s", ctx->region);
+    flb_info("[aws_msk_iam] extracted region: %s", ctx->region);
 
     ctx->provider = flb_standard_chain_provider_create(config, NULL,
                                                        ctx->region, NULL, NULL,
                                                        flb_aws_client_generator(),
                                                        NULL);
     if (!ctx->provider) {
-        flb_error("[msk_iam] failed to create AWS credentials provider");
+        flb_error("[aws_msk_iam] failed to create AWS credentials provider");
         flb_aws_msk_iam_destroy(ctx);
         return NULL;
     }
 
     if (ctx->provider->provider_vtable->init(ctx->provider) != 0) {
-        flb_error("[msk_iam] failed to initialize AWS credentials provider");
+        flb_error("[aws_msk_iam] failed to initialize AWS credentials provider");
         flb_aws_msk_iam_destroy(ctx);
         return NULL;
     }
@@ -729,7 +707,7 @@ struct flb_aws_msk_iam *flb_aws_msk_iam_register_oauth_cb(struct flb_config *con
     rd_kafka_conf_set_oauthbearer_token_refresh_cb(kconf, oauthbearer_token_refresh_cb);
     rd_kafka_conf_set_opaque(kconf, ctx);
 
-    flb_info("[msk_iam] OAuth callback registered successfully");
+    flb_info("[aws_msk_iam] OAuth callback registered successfully");
 
     return ctx;
 }
