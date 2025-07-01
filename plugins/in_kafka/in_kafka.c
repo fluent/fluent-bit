@@ -244,7 +244,7 @@ static int in_kafka_init(struct flb_input_instance *ins,
     char conf_val[16];
 
     /* Allocate space for the configuration context */
-    ctx = flb_malloc(sizeof(struct flb_in_kafka_config));
+    ctx = flb_calloc(1, sizeof(struct flb_in_kafka_config));
     if (!ctx) {
         return -1;
     }
@@ -261,7 +261,7 @@ static int in_kafka_init(struct flb_input_instance *ins,
     conf = flb_input_get_property("rdkafka.sasl.mechanism", ins);
     if (conf) {
         ctx->sasl_mechanism = flb_sds_create(conf);
-        flb_info("[ED] SASL mechanism configured: %s", ctx->sasl_mechanism);
+        flb_plg_info(ins, "SASL mechanism configured: %s", ctx->sasl_mechanism);
     }
 
     kafka_conf = flb_kafka_conf_create(&ctx->kafka, &ins->properties, 1);
@@ -297,8 +297,8 @@ static int in_kafka_init(struct flb_input_instance *ins,
 
     if (ctx->aws_msk_iam && ctx->aws_msk_iam_cluster_arn && ctx->sasl_mechanism &&
         strcasecmp(ctx->sasl_mechanism, "OAUTHBEARER") == 0) {
-        flb_info("[ED] registering MSK IAM authentication with cluster ARN: %s",
-                 ctx->aws_msk_iam_cluster_arn);
+        flb_plg_info(ins, "registering MSK IAM authentication with cluster ARN: %s",
+                     ctx->aws_msk_iam_cluster_arn);
         ctx->msk_iam = flb_aws_msk_iam_register_oauth_cb(config,
                                                          kafka_conf,
                                                          ctx->aws_msk_iam_cluster_arn,
@@ -307,8 +307,6 @@ static int in_kafka_init(struct flb_input_instance *ins,
             flb_plg_error(ins, "failed to setup MSK IAM authentication");
         }
         else {
-            rd_kafka_conf_res_t res;
-
             res = rd_kafka_conf_set(kafka_conf, "sasl.oauthbearer.config",
                                     "principal=admin", errstr, sizeof(errstr));
             if (res != RD_KAFKA_CONF_OK) {
@@ -318,7 +316,6 @@ static int in_kafka_init(struct flb_input_instance *ins,
             }
         }
     }
-
     ctx->kafka.rk = rd_kafka_new(RD_KAFKA_CONSUMER, kafka_conf, errstr, sizeof(errstr));
 
     /* Create Kafka consumer handle */
