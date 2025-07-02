@@ -257,6 +257,7 @@ static int in_kafka_init(struct flb_input_instance *ins,
         return -1;
     }
 
+#ifdef FLB_HAVE_AWS_MSK_IAM
     /*
      * When MSK IAM auth is enabled, default the required
      * security settings so users don't need to specify them.
@@ -278,13 +279,18 @@ static int in_kafka_init(struct flb_input_instance *ins,
         }
     }
     else {
+#endif
+
         /* Retrieve SASL mechanism if configured */
         conf = flb_input_get_property("rdkafka.sasl.mechanism", ins);
         if (conf) {
             ctx->sasl_mechanism = flb_sds_create(conf);
             flb_plg_info(ins, "SASL mechanism configured: %s", ctx->sasl_mechanism);
         }
+
+#ifdef FLB_HAVE_AWS_MSK_IAM
     }
+#endif
 
     kafka_conf = flb_kafka_conf_create(&ctx->kafka, &ins->properties, 1);
     if (!kafka_conf) {
@@ -325,6 +331,7 @@ static int in_kafka_init(struct flb_input_instance *ins,
     flb_kafka_opaque_set(ctx->opaque, ctx, NULL);
     rd_kafka_conf_set_opaque(kafka_conf, ctx->opaque);
 
+#ifdef FLB_HAVE_AWS_MSK_IAM
     if (ctx->aws_msk_iam && ctx->aws_msk_iam_cluster_arn && ctx->sasl_mechanism &&
         strcasecmp(ctx->sasl_mechanism, "OAUTHBEARER") == 0) {
         flb_plg_info(ins, "registering MSK IAM authentication with cluster ARN: %s",
@@ -346,6 +353,8 @@ static int in_kafka_init(struct flb_input_instance *ins,
             }
         }
     }
+#endif
+
     ctx->kafka.rk = rd_kafka_new(RD_KAFKA_CONSUMER, kafka_conf, errstr, sizeof(errstr));
 
     /* Create Kafka consumer handle */
@@ -469,9 +478,11 @@ static int in_kafka_exit(void *in_context, struct flb_config *config)
         flb_log_event_encoder_destroy(ctx->log_encoder);
     }
 
+#ifdef FLB_HAVE_AWS_MSK_IAM
     if (ctx->msk_iam) {
         flb_aws_msk_iam_destroy(ctx->msk_iam);
     }
+#endif
 
     if (ctx->opaque) {
         flb_kafka_opaque_destroy(ctx->opaque);
@@ -534,6 +545,8 @@ static struct flb_config_map config_map[] = {
    "Using a higher timeout (e.g., 1.5x - 2x 'rdkafka.fetch.wait.max.ms') "
    "can improve efficiency by leveraging Kafka's batching mechanism."
   },
+
+#ifdef FLB_HAVE_AWS_MSK_IAM
   {
    FLB_CONFIG_MAP_STR, "aws_msk_iam_cluster_arn", (char *)NULL,
    0, FLB_TRUE, offsetof(struct flb_in_kafka_config, aws_msk_iam_cluster_arn),
@@ -544,6 +557,8 @@ static struct flb_config_map config_map[] = {
     0, FLB_TRUE, offsetof(struct flb_in_kafka_config, aws_msk_iam),
     "Enable AWS MSK IAM authentication"
   },
+#endif
+
   /* EOF */
   {0}
 };
