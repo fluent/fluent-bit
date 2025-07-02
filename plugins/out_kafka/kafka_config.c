@@ -297,7 +297,7 @@ int flb_out_kafka_destroy(struct flb_out_kafka *ctx)
     if (ctx->msk_iam) {
         flb_aws_msk_iam_destroy(ctx->msk_iam);
     }
-    flb_sds_destroy(ctx->aws_msk_iam_cluster_arn);
+
     flb_sds_destroy(ctx->sasl_mechanism);
 
 #ifdef FLB_HAVE_AVRO_ENCODER
