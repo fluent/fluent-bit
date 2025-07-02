@@ -58,10 +58,31 @@ struct flb_out_kafka *flb_out_kafka_create(struct flb_output_instance *ins,
         return NULL;
     }
 
-    /* Retrieve SASL mechanism if configured */
-    tmp = flb_output_get_property("rdkafka.sasl.mechanism", ins);
-    if (tmp) {
-        ctx->sasl_mechanism = flb_sds_create(tmp);
+    /*
+     * When MSK IAM auth is enabled, default the required
+     * security settings so users don't need to specify them.
+     */
+    if (ctx->aws_msk_iam && ctx->aws_msk_iam_cluster_arn) {
+        tmp = flb_output_get_property("rdkafka.security.protocol", ins);
+        if (!tmp) {
+            flb_output_set_property(ins, "rdkafka.security.protocol", "SASL_SSL");
+        }
+
+        tmp = flb_output_get_property("rdkafka.sasl.mechanism", ins);
+        if (!tmp) {
+            flb_output_set_property(ins, "rdkafka.sasl.mechanism", "OAUTHBEARER");
+            ctx->sasl_mechanism = flb_sds_create("OAUTHBEARER");
+        }
+        else {
+            ctx->sasl_mechanism = flb_sds_create(tmp);
+        }
+    }
+    else {
+        /* Retrieve SASL mechanism if configured */
+        tmp = flb_output_get_property("rdkafka.sasl.mechanism", ins);
+        if (tmp) {
+            ctx->sasl_mechanism = flb_sds_create(tmp);
+        }
     }
 
     /* rdkafka config context */
@@ -184,7 +205,7 @@ struct flb_out_kafka *flb_out_kafka_create(struct flb_output_instance *ins,
     flb_kafka_opaque_set(ctx->opaque, ctx, NULL);
     rd_kafka_conf_set_opaque(ctx->conf, ctx->opaque);
 
-    if (ctx->aws_msk_iam_cluster_arn && ctx->sasl_mechanism &&
+    if (ctx->aws_msk_iam && ctx->aws_msk_iam_cluster_arn && ctx->sasl_mechanism &&
         strcasecmp(ctx->sasl_mechanism, "OAUTHBEARER") == 0) {
 
         ctx->msk_iam = flb_aws_msk_iam_register_oauth_cb(config,

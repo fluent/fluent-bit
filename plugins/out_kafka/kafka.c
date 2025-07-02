@@ -681,6 +681,11 @@ static struct flb_config_map config_map[] = {
     0, FLB_TRUE, offsetof(struct flb_out_kafka, aws_msk_iam_cluster_arn),
     "ARN of the MSK cluster when using AWS IAM authentication"
    },
+   {
+    FLB_CONFIG_MAP_BOOL, "aws_msk_iam", "false",
+    0, FLB_TRUE, offsetof(struct flb_out_kafka, aws_msk_iam),
+    "Enable AWS MSK IAM authentication"
+   },
    /* EOF */
    {0}
 };
