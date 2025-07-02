@@ -47,6 +47,7 @@ parts:
         - libsystemd-dev
         - flex
         - bison
+        - pkg-config
         - valgrind
         - libssl-dev
         - libpq5
