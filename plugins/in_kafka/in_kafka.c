@@ -25,6 +25,8 @@
 #include <fluent-bit/flb_parser.h>
 #include <fluent-bit/flb_error.h>
 #include <fluent-bit/flb_utils.h>
+#include <fluent-bit/aws/flb_aws_msk_iam.h>
+
 #include <mpack/mpack.h>
 #include <stddef.h>
 #include <stdio.h>
@@ -170,7 +172,7 @@ static int in_kafka_collect(struct flb_input_instance *ins,
          *    - Optimize for throughput by allowing Kafka's internal batching.
          *    - Align with 'fetch.wait.max.ms' (default: 500ms) to maximize batch efficiency.
          *    - Set timeout slightly higher than 'fetch.wait.max.ms' (e.g., 1.5x - 2x) to
-         *      ensure it does not interfere with Kafka’s fetch behavior, while still
+         *      ensure it does not interfere with Kafka's fetch behavior, while still
          *      keeping the consumer responsive.
          */
         if (ctx->ins->flags & FLB_INPUT_THREADED) {
@@ -242,7 +244,7 @@ static int in_kafka_init(struct flb_input_instance *ins,
     char conf_val[16];
 
     /* Allocate space for the configuration context */
-    ctx = flb_malloc(sizeof(struct flb_in_kafka_config));
+    ctx = flb_calloc(1, sizeof(struct flb_in_kafka_config));
     if (!ctx) {
         return -1;
     }
@@ -253,6 +255,13 @@ static int in_kafka_init(struct flb_input_instance *ins,
         flb_plg_error(ins, "unable to load configuration.");
         flb_free(ctx);
         return -1;
+    }
+
+    /* Retrieve SASL mechanism if configured */
+    conf = flb_input_get_property("rdkafka.sasl.mechanism", ins);
+    if (conf) {
+        ctx->sasl_mechanism = flb_sds_create(conf);
+        flb_plg_info(ins, "SASL mechanism configured: %s", ctx->sasl_mechanism);
     }
 
     kafka_conf = flb_kafka_conf_create(&ctx->kafka, &ins->properties, 1);
@@ -286,14 +295,45 @@ static int in_kafka_init(struct flb_input_instance *ins,
         ctx->polling_threshold = FLB_IN_KAFKA_UNLIMITED;
     }
 
-    ctx->kafka.rk = rd_kafka_new(RD_KAFKA_CONSUMER, kafka_conf, errstr,
-            sizeof(errstr));
+    ctx->opaque = flb_kafka_opaque_create();
+    if (!ctx->opaque) {
+        flb_plg_error(ins, "failed to create kafka opaque context");
+        goto init_error;
+    }
+    flb_kafka_opaque_set(ctx->opaque, ctx, NULL);
+    rd_kafka_conf_set_opaque(kafka_conf, ctx->opaque);
+
+    if (ctx->aws_msk_iam && ctx->aws_msk_iam_cluster_arn && ctx->sasl_mechanism &&
+        strcasecmp(ctx->sasl_mechanism, "OAUTHBEARER") == 0) {
+        flb_plg_info(ins, "registering MSK IAM authentication with cluster ARN: %s",
+                     ctx->aws_msk_iam_cluster_arn);
+        ctx->msk_iam = flb_aws_msk_iam_register_oauth_cb(config,
+                                                         kafka_conf,
+                                                         ctx->aws_msk_iam_cluster_arn,
+                                                         ctx->opaque);
+        if (!ctx->msk_iam) {
+            flb_plg_error(ins, "failed to setup MSK IAM authentication");
+        }
+        else {
+            res = rd_kafka_conf_set(kafka_conf, "sasl.oauthbearer.config",
+                                    "principal=admin", errstr, sizeof(errstr));
+            if (res != RD_KAFKA_CONF_OK) {
+                flb_plg_error(ins,
+                             "failed to set sasl.oauthbearer.config: %s",
+                             errstr);
+            }
+        }
+    }
+    ctx->kafka.rk = rd_kafka_new(RD_KAFKA_CONSUMER, kafka_conf, errstr, sizeof(errstr));
 
     /* Create Kafka consumer handle */
     if (!ctx->kafka.rk) {
         flb_plg_error(ins, "Failed to create new consumer: %s", errstr);
         goto init_error;
     }
+
+    /* Trigger initial token refresh for OAUTHBEARER */
+    rd_kafka_poll(ctx->kafka.rk, 0);
 
     conf = flb_input_get_property("topics", ins);
     if (!conf) {
@@ -357,12 +397,17 @@ init_error:
         rd_kafka_topic_partition_list_destroy(kafka_topics);
     }
     if (ctx->kafka.rk) {
+        rd_kafka_consumer_close(ctx->kafka.rk);
         rd_kafka_destroy(ctx->kafka.rk);
+    }
+    if (ctx->opaque) {
+        flb_kafka_opaque_destroy(ctx->opaque);
     }
     else if (kafka_conf) {
         /* conf is already destroyed when rd_kafka is initialized */
         rd_kafka_conf_destroy(kafka_conf);
     }
+    flb_sds_destroy(ctx->sasl_mechanism);
     flb_free(ctx);
 
     return -1;
@@ -392,12 +437,25 @@ static int in_kafka_exit(void *in_context, struct flb_config *config)
     }
 
     ctx = in_context;
-    rd_kafka_destroy(ctx->kafka.rk);
+    if (ctx->kafka.rk) {
+        rd_kafka_consumer_close(ctx->kafka.rk);
+        rd_kafka_destroy(ctx->kafka.rk);
+    }
     flb_free(ctx->kafka.brokers);
 
     if (ctx->log_encoder){
         flb_log_event_encoder_destroy(ctx->log_encoder);
     }
+
+    if (ctx->msk_iam) {
+        flb_aws_msk_iam_destroy(ctx->msk_iam);
+    }
+
+    if (ctx->opaque) {
+        flb_kafka_opaque_destroy(ctx->opaque);
+    }
+
+    flb_sds_destroy(ctx->sasl_mechanism);
 
     flb_free(ctx);
 
@@ -447,15 +505,25 @@ static struct flb_config_map config_map[] = {
     "Set the maximum size of chunk"
    },
    {
-    FLB_CONFIG_MAP_INT, "poll_timeout_ms", "1",
-    0, FLB_TRUE, offsetof(struct flb_in_kafka_config, poll_timeout_ms),
-    "Set the timeout in milliseconds for Kafka consumer poll operations. "
-    "This option only takes effect when running in a dedicated thread (i.e., when 'threaded' is enabled). "
-    "Using a higher timeout (e.g., 1.5x - 2x 'rdkafka.fetch.wait.max.ms') "
-    "can improve efficiency by leveraging Kafka's batching mechanism."
-   },
-   /* EOF */
-   {0}
+   FLB_CONFIG_MAP_INT, "poll_timeout_ms", "1",
+   0, FLB_TRUE, offsetof(struct flb_in_kafka_config, poll_timeout_ms),
+   "Set the timeout in milliseconds for Kafka consumer poll operations. "
+   "This option only takes effect when running in a dedicated thread (i.e., when 'threaded' is enabled). "
+   "Using a higher timeout (e.g., 1.5x - 2x 'rdkafka.fetch.wait.max.ms') "
+   "can improve efficiency by leveraging Kafka's batching mechanism."
+  },
+  {
+   FLB_CONFIG_MAP_STR, "aws_msk_iam_cluster_arn", (char *)NULL,
+   0, FLB_TRUE, offsetof(struct flb_in_kafka_config, aws_msk_iam_cluster_arn),
+   "ARN of the MSK cluster when using AWS IAM authentication"
+  },
+  {
+    FLB_CONFIG_MAP_BOOL, "aws_msk_iam", "false",
+    0, FLB_TRUE, offsetof(struct flb_in_kafka_config, aws_msk_iam),
+    "Enable AWS MSK IAM authentication"
+  },
+  /* EOF */
+  {0}
 };
 
 /* Plugin reference */
