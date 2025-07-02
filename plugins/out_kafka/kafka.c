@@ -23,6 +23,7 @@
 #include <fluent-bit/flb_utils.h>
 #include <fluent-bit/flb_log_event_decoder.h>
 #include <fluent-bit/aws/flb_aws_msk_iam.h>
+#include <fluent-bit/flb_kafka.h>
 
 #include "kafka_config.h"
 #include "kafka_topic.h"
@@ -30,8 +31,8 @@
 void cb_kafka_msg(rd_kafka_t *rk, const rd_kafka_message_t *rkmessage,
                   void *opaque)
 {
-    struct flb_msk_iam_cb *cb = (struct flb_msk_iam_cb *) opaque;
-    struct flb_out_kafka *ctx = cb ? (struct flb_out_kafka *) cb->plugin_ctx : NULL;
+    struct flb_kafka_opaque *op = (struct flb_kafka_opaque *) opaque;
+    struct flb_out_kafka *ctx = op ? (struct flb_out_kafka *) op->ptr : NULL;
 
     if (rkmessage->err) {
         flb_plg_warn(ctx->ins, "message delivery failed: %s",
@@ -47,11 +48,11 @@ void cb_kafka_msg(rd_kafka_t *rk, const rd_kafka_message_t *rkmessage,
 void cb_kafka_logger(const rd_kafka_t *rk, int level,
                      const char *fac, const char *buf)
 {
-    struct flb_msk_iam_cb *cb;
+    struct flb_kafka_opaque *op;
     struct flb_out_kafka *ctx;
 
-    cb = (struct flb_msk_iam_cb *) rd_kafka_opaque(rk);
-    ctx = cb ? (struct flb_out_kafka *) cb->plugin_ctx : NULL;
+    op = (struct flb_kafka_opaque *) rd_kafka_opaque(rk);
+    ctx = op ? (struct flb_out_kafka *) op->ptr : NULL;
 
     if (level <= FLB_KAFKA_LOG_ERR) {
         flb_plg_error(ctx->ins, "%s: %s",

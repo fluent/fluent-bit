@@ -172,13 +172,17 @@ struct flb_out_kafka *flb_out_kafka_create(struct flb_output_instance *ins,
         ctx->gelf_fields.level_key = flb_sds_create(tmp);
     }
 
-    /* create opaque context */
+    /* create and setup opaque context */
     ctx->opaque = flb_kafka_opaque_create();
     if (!ctx->opaque) {
         flb_plg_error(ctx->ins, "failed to create opaque context");
         flb_out_kafka_destroy(ctx);
         return NULL;
     }
+
+    /* store the plugin context so callbacks can log properly */
+    flb_kafka_opaque_set(ctx->opaque, ctx, NULL);
+    rd_kafka_conf_set_opaque(ctx->conf, ctx->opaque);
 
     if (ctx->aws_msk_iam_cluster_arn && ctx->sasl_mechanism &&
         strcasecmp(ctx->sasl_mechanism, "OAUTHBEARER") == 0) {
@@ -269,13 +273,11 @@ int flb_out_kafka_destroy(struct flb_out_kafka *ctx)
     flb_kafka_topic_destroy_all(ctx);
 
     if (ctx->kafka.rk) {
-        struct flb_msk_iam_cb *cb;
-
-        cb = rd_kafka_opaque(ctx->kafka.rk);
         rd_kafka_destroy(ctx->kafka.rk);
-        if (cb) {
-            flb_free(cb);
-        }
+    }
+
+    if (ctx->opaque) {
+        flb_kafka_opaque_destroy(ctx->opaque);
     }
 
     if (ctx->topic_key) {
