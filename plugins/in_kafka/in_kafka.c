@@ -257,11 +257,33 @@ static int in_kafka_init(struct flb_input_instance *ins,
         return -1;
     }
 
-    /* Retrieve SASL mechanism if configured */
-    conf = flb_input_get_property("rdkafka.sasl.mechanism", ins);
-    if (conf) {
-        ctx->sasl_mechanism = flb_sds_create(conf);
-        flb_plg_info(ins, "SASL mechanism configured: %s", ctx->sasl_mechanism);
+    /*
+     * When MSK IAM auth is enabled, default the required
+     * security settings so users don't need to specify them.
+     */
+    if (ctx->aws_msk_iam && ctx->aws_msk_iam_cluster_arn) {
+        conf = flb_input_get_property("rdkafka.security.protocol", ins);
+        if (!conf) {
+            flb_input_set_property(ins, "rdkafka.security.protocol", "SASL_SSL");
+        }
+
+        conf = flb_input_get_property("rdkafka.sasl.mechanism", ins);
+        if (!conf) {
+            flb_input_set_property(ins, "rdkafka.sasl.mechanism", "OAUTHBEARER");
+            ctx->sasl_mechanism = flb_sds_create("OAUTHBEARER");
+        }
+        else {
+            ctx->sasl_mechanism = flb_sds_create(conf);
+            flb_plg_info(ins, "SASL mechanism configured: %s", ctx->sasl_mechanism);
+        }
+    }
+    else {
+        /* Retrieve SASL mechanism if configured */
+        conf = flb_input_get_property("rdkafka.sasl.mechanism", ins);
+        if (conf) {
+            ctx->sasl_mechanism = flb_sds_create(conf);
+            flb_plg_info(ins, "SASL mechanism configured: %s", ctx->sasl_mechanism);
+        }
     }
 
     kafka_conf = flb_kafka_conf_create(&ctx->kafka, &ins->properties, 1);
