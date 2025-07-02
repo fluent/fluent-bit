@@ -676,6 +676,8 @@ static struct flb_config_map config_map[] = {
     "If you specify a key name with this option, then only the value of "
     "that key will be sent to Kafka."
    },
+
+#ifdef FLB_HAVE_AWS_MSK_IAM
    {
     FLB_CONFIG_MAP_STR, "aws_msk_iam_cluster_arn", NULL,
     0, FLB_TRUE, offsetof(struct flb_out_kafka, aws_msk_iam_cluster_arn),
@@ -686,6 +688,8 @@ static struct flb_config_map config_map[] = {
     0, FLB_TRUE, offsetof(struct flb_out_kafka, aws_msk_iam),
     "Enable AWS MSK IAM authentication"
    },
+#endif
+
    /* EOF */
    {0}
 };
