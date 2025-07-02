@@ -27,6 +27,7 @@
 #endif
 
 #include <fluent-bit/flb_kafka.h>
+#include <fluent-bit/aws/flb_aws_msk_iam.h>
 
 #define FLB_KAFKA_FMT_JSON            0
 #define FLB_KAFKA_FMT_MSGP            1
@@ -123,6 +124,14 @@ struct flb_out_kafka {
     // flb_sds_t avro_schema_id;
     struct flb_avro_fields avro_fields;
 #endif
+
+    flb_sds_t aws_msk_iam_cluster_arn;
+    struct flb_aws_msk_iam *msk_iam;
+
+    struct flb_kafka_opaque *opaque;
+
+    /* SASL mechanism configured in rdkafka.sasl.mechanism */
+    flb_sds_t sasl_mechanism;
 
 };
 
