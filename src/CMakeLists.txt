@@ -549,6 +549,9 @@ if(FLB_BINARY)
 
   target_link_libraries(fluent-bit-bin fluent-bit-static ${CMAKE_THREAD_LIBS_INIT})
 
+  # KAFKA SPECIFIC
+  target_link_libraries(fluent-bit-bin sasl2 ssl crypto)
+
   set_target_properties(fluent-bit-bin
     PROPERTIES
     OUTPUT_NAME ${FLB_OUT_NAME}
