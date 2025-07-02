@@ -550,7 +550,12 @@ if(FLB_BINARY)
   target_link_libraries(fluent-bit-bin fluent-bit-static ${CMAKE_THREAD_LIBS_INIT})
 
   # KAFKA SPECIFIC
-  target_link_libraries(fluent-bit-bin sasl2 ssl crypto)
+  if(FLB_SASL_ENABLED)
+    target_link_libraries(fluent-bit-bin sasl2)
+  endif()
+  if(OPENSSL_FOUND)
+    target_link_libraries(fluent-bit-bin ssl crypto)
+  endif()
 
   set_target_properties(fluent-bit-bin
     PROPERTIES
