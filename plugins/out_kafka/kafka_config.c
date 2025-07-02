@@ -58,6 +58,7 @@ struct flb_out_kafka *flb_out_kafka_create(struct flb_output_instance *ins,
         return NULL;
     }
 
+#ifdef FLB_HAVE_AWS_MSK_IAM
     /*
      * When MSK IAM auth is enabled, default the required
      * security settings so users don't need to specify them.
@@ -78,12 +79,16 @@ struct flb_out_kafka *flb_out_kafka_create(struct flb_output_instance *ins,
         }
     }
     else {
+#endif
         /* Retrieve SASL mechanism if configured */
         tmp = flb_output_get_property("rdkafka.sasl.mechanism", ins);
         if (tmp) {
             ctx->sasl_mechanism = flb_sds_create(tmp);
         }
+
+#ifdef FLB_HAVE_AWS_MSK_IAM
     }
+#endif
 
     /* rdkafka config context */
     ctx->conf = flb_kafka_conf_create(&ctx->kafka, &ins->properties, 0);
@@ -205,6 +210,7 @@ struct flb_out_kafka *flb_out_kafka_create(struct flb_output_instance *ins,
     flb_kafka_opaque_set(ctx->opaque, ctx, NULL);
     rd_kafka_conf_set_opaque(ctx->conf, ctx->opaque);
 
+#ifdef FLB_HAVE_AWS_MSK_IAM
     if (ctx->aws_msk_iam && ctx->aws_msk_iam_cluster_arn && ctx->sasl_mechanism &&
         strcasecmp(ctx->sasl_mechanism, "OAUTHBEARER") == 0) {
 
@@ -225,6 +231,7 @@ struct flb_out_kafka *flb_out_kafka_create(struct flb_output_instance *ins,
             }
         }
     }
+#endif
 
     /* Kafka Producer */
     ctx->kafka.rk = rd_kafka_new(RD_KAFKA_PRODUCER, ctx->conf,
@@ -315,9 +322,11 @@ int flb_out_kafka_destroy(struct flb_out_kafka *ctx)
     flb_sds_destroy(ctx->gelf_fields.full_message_key);
     flb_sds_destroy(ctx->gelf_fields.level_key);
 
+#ifdef FLB_HAVE_AWS_MSK_IAM
     if (ctx->msk_iam) {
         flb_aws_msk_iam_destroy(ctx->msk_iam);
     }
+#endif
 
     flb_sds_destroy(ctx->sasl_mechanism);
 
