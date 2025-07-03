@@ -411,20 +411,6 @@ static int check_conditions(struct sampling *ctx, struct trace_entry *t_entry)
     return FLB_FALSE;
 }
 
-static void trace_entry_delete_spans(struct trace_entry *t_entry)
-{
-    struct cfl_list *tmp;
-    struct cfl_list *head;
-    struct trace_span *t_span;
-
-    cfl_list_foreach_safe(head, tmp, &t_entry->span_list) {
-        t_span = cfl_list_entry(head, struct trace_span, _head);
-        cfl_list_del(&t_span->_head);
-        ctr_span_destroy(t_span->span);
-        flb_free(t_span);
-    }
-}
-
 static int reconcile_and_dispatch_traces(struct sampling *ctx, struct sampling_settings *settings)
 {
     int ret;
@@ -451,11 +437,8 @@ static int reconcile_and_dispatch_traces(struct sampling *ctx, struct sampling_s
          */
         ret = check_conditions(ctx, t_entry);
         if (ret == FLB_FALSE) {
-            /* t_entry has many t_spans, since the spans will be discarded is safe to remove it original ctr_span reference  */
-            trace_entry_delete_spans(t_entry);
-
-            /* remove the trace entry */
-            sampling_span_registry_delete_entry(ctx, settings->span_reg, t_entry, FLB_FALSE);
+            /* discard the trace and delete all associated spans */
+            sampling_span_registry_delete_entry(ctx, settings->span_reg, t_entry, FLB_TRUE);
             continue;
         }
 
