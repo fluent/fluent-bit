@@ -235,14 +235,14 @@ void sampling_config_destroy(struct flb_config *config, struct sampling *ctx)
         return;
     }
 
-    if (ctx->sampling_conditions) {
-        sampling_conditions_destroy(ctx->sampling_conditions);
-    }
-
     if (ctx->plugin) {
         if (ctx->plugin->cb_exit) {
             ctx->plugin->cb_exit(config, ctx->plugin_context);
         }
+    }
+
+    if (ctx->sampling_conditions) {
+        sampling_conditions_destroy(ctx->sampling_conditions);
     }
 
     flb_kv_release(&ctx->plugin_settings_properties);
