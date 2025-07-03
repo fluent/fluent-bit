@@ -61,7 +61,7 @@ flb_utf8_to_gbk(const unsigned char *src, unsigned char **dest,
 
 struct flb_unicode_converter gbk_converter = {
     .name = "GBK",
-    .aliases = {NULL},
+    .aliases = {"CP936", NULL},
     .desc = "GBK encoding converter",
     .encoding = FLB_GBK,
     .max_width = 3,
