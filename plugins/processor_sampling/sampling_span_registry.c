@@ -46,7 +46,8 @@ struct sampling_span_registry *sampling_span_registry_create(uint64_t max_traces
     return reg;
 }
 
-static void sampling_span_registry_delete_traces(struct sampling *ctx, struct sampling_span_registry *reg)
+static void sampling_span_registry_delete_traces(struct sampling *ctx,
+                                                 struct sampling_span_registry *reg)
 {
     struct cfl_list *head;
     struct cfl_list *tmp;
@@ -54,14 +55,7 @@ static void sampling_span_registry_delete_traces(struct sampling *ctx, struct sa
 
     cfl_list_foreach_safe(head, tmp, &reg->trace_list) {
         t_entry = cfl_list_entry(head, struct trace_entry, _head);
-        cfl_list_del(&t_entry->_head);
-        cfl_list_del(&t_entry->_head_complete);
-
-        /* free the trace_entry */
-        cfl_sds_destroy(t_entry->hex_trace_id);
-
-        ctr_id_destroy(t_entry->trace_id);
-        flb_free(t_entry);
+        sampling_span_registry_delete_entry(ctx, reg, t_entry, FLB_TRUE);
     }
 }
 
@@ -88,9 +82,14 @@ int sampling_span_registry_delete_entry(struct sampling *ctx, struct sampling_sp
     struct trace_span *t_span;
 
     /* remove from the hash table */
-    ret = flb_hash_table_del_ptr(reg->ht, ctr_id_get_buf(t_entry->trace_id), ctr_id_get_len(t_entry->trace_id), t_entry);
+    ret = flb_hash_table_del_ptr(reg->ht,
+                                 ctr_id_get_buf(t_entry->trace_id),
+                                 ctr_id_get_len(t_entry->trace_id),
+                                 t_entry);
     if (ret == -1) {
-        flb_plg_error(ctx->ins, "failed to delete trace entry from buffer");
+        if (ctx != NULL) {
+            flb_plg_error(ctx->ins, "failed to delete trace entry from buffer");
+        }
         return -1;
     }
 
