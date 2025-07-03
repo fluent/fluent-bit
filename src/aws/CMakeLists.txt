@@ -17,13 +17,17 @@ set(src
   "flb_aws_credentials_profile.c"
   )
 
-if(FLB_KAFKA AND FLB_HAVE_KAFKA_SASL)
+message(STATUS "=== AWS Credentials ===")
+
+# AWS MSK IAM - use the definition from root CMakeLists.txt
+if(DEFINED FLB_HAVE_AWS_MSK_IAM)
   set(src
     ${src}
     "flb_aws_msk_iam.c"
     )
+  message(STATUS "- AWS MSK IAM authentication: ENABLED")
 else()
-  FLB_DEFINITION(FLB_HAVE_AWS_MSK_IAM)
+  message(STATUS "- AWS MSK IAM authentication: DISABLED")
 endif()
 
 if(FLB_HAVE_AWS_CREDENTIAL_PROCESS)
@@ -31,10 +35,20 @@ if(FLB_HAVE_AWS_CREDENTIAL_PROCESS)
     ${src}
     "flb_aws_credentials_process.c"
     )
+  message(STATUS "- AWS Credential Process: ENABLED")
+else()
+  message(STATUS "- AWS Credential Process: DISABLED")
 endif()
+
+message(STATUS "===========================")
 
 add_library(flb-aws STATIC ${src})
 target_link_libraries(flb-aws flb-aws-compress)
+
+# Link rdkafka when MSK IAM is enabled
+if(DEFINED FLB_HAVE_AWS_MSK_IAM AND KAFKA_LIBRARIES)
+  target_link_libraries(flb-aws ${KAFKA_LIBRARIES})
+endif()
 
 if(FLB_JEMALLOC)
   target_link_libraries(flb-aws ${JEMALLOC_LIBRARIES})
