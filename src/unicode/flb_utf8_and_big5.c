@@ -60,7 +60,7 @@ flb_utf8_to_big5(const unsigned char *src, unsigned char **dest,
 }
 struct flb_unicode_converter big5_converter = {
     .name = "BIG5",
-    .aliases = {NULL},
+    .aliases = {"CP950", NULL},
     .desc = "BIG5 encoding converter",
     .encoding = FLB_BIG5,
     .max_width = 3,
