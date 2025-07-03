@@ -704,47 +704,12 @@ struct flb_connection *flb_upstream_conn_get(struct flb_upstream *u)
               u->base.net.keepalive_idle_timeout,
               u->base.net.max_worker_connections);
 
-
-    /* If the upstream is limited by max connections, check current state */
-    if (u->base.net.max_worker_connections > 0) {
-        /*
-         * Connections are linked to one of these lists:
-         *
-         *  - av_queue  : connections ready to be used (available)
-         *  - busy_queue: connections that are busy (someone is using them)
-         *  - drop_queue: connections in the cleanup phase (to be drop)
-         *
-         * Fluent Bit don't create connections ahead of time, just on demand. When
-         * a connection is created is placed into the busy_queue, when is not longer
-         * needed one of these things happen:
-         *
-         *   - if keepalive is enabled (default), the connection is moved to the 'av_queue'.
-         *   - if keepalive is disabled, the connection is moved to 'drop_queue' then is
-         *     closed and destroyed.
-         *
-         * To enforce a limit in the number of connections, we must count count all the
-         * queues since they represent open connections.
-         */
-
-        flb_stream_acquire_lock(&u->base, FLB_TRUE);
-        total_connections = mk_list_size(&uq->busy_queue) +
-                            mk_list_size(&uq->av_queue) +
-                            mk_list_size(&uq->destroy_queue);
-        flb_stream_release_lock(&u->base);
-
-        if (total_connections >= u->base.net.max_worker_connections) {
-            flb_debug("[upstream] max worker connections=%i reached to: %s:%i, cannot connect",
-                      u->base.net.max_worker_connections, u->tcp_host, u->tcp_port);
-            return NULL;
-        }
-    }
-
     conn = NULL;
 
     /*
-     * If we are in keepalive mode, iterate list of available connections,
-     * take a little of time to do some cleanup and assign a connection. If no
-     * entries exists, just create a new one.
+     * If we are in keepalive mode, iterate the list of available connections,
+     * take a little time to do some cleanup and assign a connection. If no
+     * entries exist, continue with the next condition.
      */
     if (u->base.net.keepalive) {
         mk_list_foreach_safe(head, tmp, &uq->av_queue) {
@@ -791,10 +756,47 @@ struct flb_connection *flb_upstream_conn_get(struct flb_upstream *u)
     }
 
     /*
-     * There are no keepalive connections available or keepalive is disabled
-     * so we need to create a new one.
+     * If no reusable connection is found, then check the total connection limit
+     * and create a new connection if allowed.
      */
+
     if (conn == NULL) {
+        /* If the upstream is limited by max connections, check current state */
+        if (u->base.net.max_worker_connections > 0) {
+            /*
+             * Connections are linked to one of these lists:
+             *
+             *  - av_queue  : connections ready to be used (available)
+             *  - busy_queue: busy connections (someone is using them)
+             *  - destroy_queue: connections in the cleanup phase (to be dropped)
+             *
+             * Fluent Bit doesn't create connections ahead of time, just on demand. When
+             * a connection is created, it's placed into the busy_queue, when it is no longer
+             * needed one of these things happens:
+             *
+             *   - if keepalive is enabled (default), the connection is moved to the 'av_queue'.
+             *   - if keepalive is disabled, the connection is moved to 'destroy_queue', then is
+             *     closed and destroyed.
+             *
+             *   * Note: If a connection is in error, it's moved to the destroy_queue despite the
+             *           keepalive setting.
+             *
+             * To enforce a limit on the number of connections, we must count all the
+             * queues since they represent open connections.
+             */
+
+            flb_stream_acquire_lock(&u->base, FLB_TRUE);
+            total_connections = mk_list_size(&uq->busy_queue) +
+                                mk_list_size(&uq->av_queue) +
+                                mk_list_size(&uq->destroy_queue);
+            flb_stream_release_lock(&u->base);
+
+            if (total_connections >= u->base.net.max_worker_connections) {
+                flb_debug("[upstream] max worker connections=%i reached to: %s:%i, cannot connect",
+                          u->base.net.max_worker_connections, u->tcp_host, u->tcp_port);
+                return NULL;
+            }
+        }
         conn = create_conn(u);
     }
 
