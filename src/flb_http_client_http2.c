@@ -366,7 +366,8 @@ static ssize_t http2_data_source_read_callback(nghttp2_session *session,
     }
     else {
         if (content_length > 0) {
-            memcpy(buf, stream->request.body, content_length);
+            memcpy(buf,
+                   &stream->request.body[body_offset], content_length);
 
             stream->request.body_read_offset += content_length;
         }

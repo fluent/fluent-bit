@@ -126,6 +126,8 @@ static int in_opentelemetry_init(struct flb_input_instance *ins,
             return -1;
         }
 
+        flb_http_server_set_buffer_max_size(&ctx->http_server, ctx->buffer_max_size);
+
         ctx->http_server.request_callback = opentelemetry_prot_handle_ng;
 
         flb_input_downstream_set(ctx->http_server.downstream, ctx->ins);
@@ -250,6 +252,12 @@ static struct flb_config_map config_map[] = {
     {
      FLB_CONFIG_MAP_STR, "logs_metadata_key", "otlp",
      0, FLB_TRUE, offsetof(struct flb_opentelemetry, logs_metadata_key),
+    },
+    {
+     FLB_CONFIG_MAP_STR, "logs_body_key", NULL,
+     0, FLB_TRUE, offsetof(struct flb_opentelemetry, logs_body_key),
+     "Key to use for the logs body. If unset, body key-value pairs will be " \
+     "used as the log record, and other types will be nested under a key."
     },
 
     /* EOF */

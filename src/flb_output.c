@@ -1428,6 +1428,7 @@ int flb_output_init_all(struct flb_config *config)
         /* initialize processors */
         ret = flb_processor_init(ins->processor);
         if (ret == -1) {
+            flb_error("[output %s] error initializing processor, aborting startup", ins->name);
             return -1;
         }
     }

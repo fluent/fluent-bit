@@ -140,7 +140,6 @@ static int in_fw_collect(struct flb_input_instance *ins,
 
     if (!config->is_ingestion_active) {
         flb_downstream_conn_release(connection);
-
         return -1;
     }
 
@@ -153,8 +152,8 @@ static int in_fw_collect(struct flb_input_instance *ins,
     flb_plg_trace(ins, "new TCP connection arrived FD=%i", connection->fd);
 
     conn = fw_conn_add(connection, ctx);
-
     if (!conn) {
+        flb_downstream_conn_release(connection);
         return -1;
     }
 
@@ -358,7 +357,9 @@ static int in_fw_init(struct flb_input_instance *ins,
 
 static void in_fw_pause(void *data, struct flb_config *config)
 {
+    int ret;
     struct flb_in_fw_config *ctx = data;
+
     if (config->is_running == FLB_TRUE) {
         /*
          * This is the case when we are not in a shutdown phase, but
@@ -367,11 +368,20 @@ static void in_fw_pause(void *data, struct flb_config *config)
          * and wait for the ingestion to resume.
          */
         flb_input_collector_pause(ctx->coll_fd, ctx->ins);
-        if (pthread_mutex_lock(&ctx->conn_mutex)) {
-            fw_conn_del_all(ctx);
-            ctx->is_paused = FLB_TRUE;
+
+        ret = pthread_mutex_lock(&ctx->conn_mutex);
+        if (ret != 0) {
+            flb_plg_error(ctx->ins, "cannot lock collector mutex");
+            return;
         }
-        pthread_mutex_unlock(&ctx->conn_mutex);
+
+        fw_conn_del_all(ctx);
+        ctx->is_paused = FLB_TRUE;
+        ret = pthread_mutex_unlock(&ctx->conn_mutex);
+        if (ret != 0) {
+            flb_plg_error(ctx->ins, "cannot unlock collector mutex");
+            return;
+        }
     }
 
     /*
@@ -388,13 +398,24 @@ static void in_fw_pause(void *data, struct flb_config *config)
 }
 
 static void in_fw_resume(void *data, struct flb_config *config) {
+    int ret;
     struct flb_in_fw_config *ctx = data;
+
     if (config->is_running == FLB_TRUE) {
         flb_input_collector_resume(ctx->coll_fd, ctx->ins);
-        if (pthread_mutex_lock(&ctx->conn_mutex)) {
-            ctx->is_paused = FLB_FALSE;
+
+        ret = pthread_mutex_lock(&ctx->conn_mutex);
+        if (ret != 0) {
+            flb_plg_error(ctx->ins, "cannot lock collector mutex");
+            return;
         }
-        pthread_mutex_unlock(&ctx->conn_mutex);
+
+        ctx->is_paused = FLB_FALSE;
+        ret = pthread_mutex_unlock(&ctx->conn_mutex);
+        if (ret != 0) {
+            flb_plg_error(ctx->ins, "cannot unlock collector mutex");
+            return;
+        }
     }
 }
 

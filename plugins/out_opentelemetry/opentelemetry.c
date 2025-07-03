@@ -49,6 +49,27 @@ extern void cmt_encode_opentelemetry_destroy(cfl_sds_t text);
 #include "opentelemetry_conf.h"
 #include "opentelemetry_utils.h"
 
+static int is_http_status_code_retrayable(int http_code)
+{
+    /*
+     * Retrayable HTTP code according to OTLP spec:
+     *
+     * https://opentelemetry.io/docs/specs/otlp/#retryable-response-codes
+     */
+    if (http_code == 429 || http_code == 502 ||
+        http_code == 503 || http_code == 504) {
+        /*
+         * a note on HTTP status 500, the document says: "All other 4xx or 5xx
+         * response status codes MUST NOT be retried." -- I personally think
+         * 500 should be retried in case a proxy fails, but let's honor the docs
+         * for now.
+         */
+        return FLB_TRUE;
+    }
+
+    return FLB_FALSE;
+}
+
 int opentelemetry_legacy_post(struct opentelemetry_context *ctx,
                               const void *body, size_t body_len,
                               const char *tag, int tag_len,
@@ -203,7 +224,13 @@ int opentelemetry_legacy_post(struct opentelemetry_context *ctx,
                               ctx->host, ctx->port, c->resp.status);
             }
 
-            out_ret = FLB_RETRY;
+            /* Retryable status codes according to OTLP spec */
+            if (is_http_status_code_retrayable(c->resp.status) == FLB_TRUE) {
+                out_ret = FLB_RETRY;
+            }
+            else {
+                out_ret = FLB_ERROR;
+            }
         }
         else {
             if (ctx->log_response_payload && c->resp.payload != NULL && c->resp.payload_size > 2) {
@@ -423,7 +450,12 @@ int opentelemetry_post(struct opentelemetry_context *ctx,
                           response->status);
         }
 
-        out_ret = FLB_RETRY;
+        if (is_http_status_code_retrayable(response->status) == FLB_TRUE) {
+            out_ret = FLB_RETRY;
+        }
+        else {
+            out_ret = FLB_ERROR;
+        }
     }
     else {
         if (ctx->log_response_payload &&

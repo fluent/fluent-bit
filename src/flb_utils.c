@@ -830,9 +830,11 @@ int flb_utils_write_str(char *buf, int *off, size_t size, const char *str, size_
              * in a char-by-char basis. Otherwise the do a bulk copy
              */
             if (flb_vector8_has_le(chunk, (unsigned char) 0x1F) ||
-                flb_vector8_has(chunk, (unsigned char)    '"') ||
-                flb_vector8_has(chunk, (unsigned char)    '\\')) {
+                flb_vector8_has(chunk, (unsigned char) '"')    ||
+                flb_vector8_has(chunk, (unsigned char) '\\')  ||
+                flb_vector8_is_highbit_set(chunk)) {
                 break;
+
             }
         }
 

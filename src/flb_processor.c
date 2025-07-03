@@ -274,7 +274,7 @@ struct flb_processor_unit *flb_processor_unit_create(struct flb_processor *proc,
                                                            unit_name, NULL);
 
         if (processor_instance == NULL) {
-            flb_error("[processor] error creating native processor instance %s", pu->name);
+            flb_error("[processor] error creating processor '%s': plugin doesn't exist or failed to initialize", unit_name);
 
             pthread_mutex_destroy(&pu->lock);
             flb_sds_destroy(pu->name);
@@ -457,7 +457,7 @@ static int flb_processor_unit_set_condition(struct flb_processor_unit *pu, struc
         value_count = 1;
 
         /* Check that IN and NOT_IN operators only work with array values */
-        if ((rule_op == FLB_RULE_OP_IN || rule_op == FLB_RULE_OP_NOT_IN) && 
+        if ((rule_op == FLB_RULE_OP_IN || rule_op == FLB_RULE_OP_NOT_IN) &&
             rule_val->type != CFL_VARIANT_ARRAY) {
             flb_error("[processor] 'in' and 'not_in' operators require array values, got %d type instead",
                     rule_val->type);
@@ -500,7 +500,7 @@ static int flb_processor_unit_set_condition(struct flb_processor_unit *pu, struc
                 flb_condition_destroy(condition);
                 return -1;
             }
-            
+
             /* Mark that we've allocated an array value */
             is_array_value = 1;
 
@@ -545,9 +545,9 @@ static int flb_processor_unit_set_condition(struct flb_processor_unit *pu, struc
         /* Add rule to the condition */
         ret = flb_condition_add_rule(condition, field, rule_op, value, value_count, context);
 
-        /* 
-         * Free array value if we allocated it. For 'in' and 'not_in' operators, 
-         * flb_condition_add_rule makes its own copy of the strings in the array, 
+        /*
+         * Free array value if we allocated it. For 'in' and 'not_in' operators,
+         * flb_condition_add_rule makes its own copy of the strings in the array,
          * so we need to free our copies whether or not the rule was added successfully.
          */
         if (is_array_value) {
@@ -609,6 +609,26 @@ int flb_processor_unit_set_property(struct flb_processor_unit *pu, const char *k
     return flb_processor_instance_set_property(
             (struct flb_processor_instance *) pu->ctx,
             k, v);
+}
+
+int flb_processor_unit_set_property_str(struct flb_processor_unit *pu, const char *k, const char *v)
+{
+    int ret;
+    struct cfl_variant *val;
+
+    if (!pu || !k || !v) {
+        return -1;
+    }
+
+    val = cfl_variant_create_from_string((char *) v);
+    if (!val) {
+        return -1;
+    }
+
+    ret = flb_processor_unit_set_property(pu, k, val);
+    cfl_variant_destroy(val);
+
+    return ret;
 }
 
 void flb_processor_unit_destroy(struct flb_processor_unit *pu)
@@ -693,6 +713,7 @@ int flb_processor_init(struct flb_processor *proc)
         ret = flb_processor_unit_init(pu);
 
         if (ret == -1) {
+            flb_error("[processor] initialization of processor unit '%s' failed", pu->name);
             return -1;
         }
         count++;
@@ -703,6 +724,7 @@ int flb_processor_init(struct flb_processor *proc)
         ret = flb_processor_unit_init(pu);
 
         if (ret == -1) {
+            flb_error("[processor] initialization of processor unit '%s' failed", pu->name);
             return -1;
         }
         count++;
@@ -713,6 +735,7 @@ int flb_processor_init(struct flb_processor *proc)
         ret = flb_processor_unit_init(pu);
 
         if (ret == -1) {
+            flb_error("[processor] initialization of processor unit '%s' failed", pu->name);
             return -1;
         }
         count++;
@@ -723,6 +746,7 @@ int flb_processor_init(struct flb_processor *proc)
         ret = flb_processor_unit_init(pu);
 
         if (ret == -1) {
+            flb_error("[processor] initialization of processor unit '%s' failed", pu->name);
             return -1;
         }
         count++;
@@ -1199,7 +1223,7 @@ static int load_from_config_format_group(struct flb_processor *proc, int type, s
         tmp = cfl_kvlist_fetch(kvlist, "name");
 
         if (!tmp) {
-            flb_error("processor configuration don't have a 'name' defined");
+            flb_error("[processor] configuration missing required 'name' field");
             return -1;
         }
 
@@ -1208,7 +1232,6 @@ static int load_from_config_format_group(struct flb_processor *proc, int type, s
         pu = flb_processor_unit_create(proc, type, name);
 
         if (!pu) {
-            flb_error("cannot create '%s' processor unit", name);
             return -1;
         }
 
@@ -1217,7 +1240,7 @@ static int load_from_config_format_group(struct flb_processor *proc, int type, s
         if (tmp) {
             ret = flb_processor_unit_set_property(pu, "condition", tmp);
             if (ret == -1) {
-                flb_error("failed to set condition for processor '%s'", name);
+                flb_error("[processor] failed to set condition for processor '%s'", name);
                 return -1;
             }
         }

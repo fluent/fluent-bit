@@ -13,7 +13,7 @@
 # docker buildx build --platform "linux/amd64,linux/arm64,linux/arm/v7,linux/s390x" -f ./dockerfiles/Dockerfile.multiarch --build-arg FLB_TARBALL=https://github.com/fluent/fluent-bit/archive/v1.8.11.tar.gz ./dockerfiles/
 
 # Set this to the current release version: it gets done so as part of the release.
-ARG RELEASE_VERSION=4.0.2
+ARG RELEASE_VERSION=4.0.4
 
 # For multi-arch builds - assumption is running on an AMD64 host
 FROM multiarch/qemu-user-static:x86_64-arm AS qemu-arm32
@@ -75,7 +75,8 @@ ENV EXTRA_CMAKE_FLAGS=${EXTRA_CMAKE_FLAGS}
 # We do not want word splitting for EXTRA_CMAKE_FLAGS in case multiple are defined
 # hadolint ignore=SC2086
 RUN [ -n "${WAMR_BUILD_TARGET:-}" ] && EXTRA_CMAKE_FLAGS="$EXTRA_CMAKE_FLAGS -DWAMR_BUILD_TARGET=$WAMR_BUILD_TARGET"; \
-    cmake -DFLB_RELEASE=On \
+    cmake -DFLB_SIMD=On \
+    -DFLB_RELEASE=On \
     -DFLB_JEMALLOC=On \
     -DFLB_TLS=On \
     -DFLB_SHARED_LIB=Off \

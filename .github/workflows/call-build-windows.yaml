@@ -82,19 +82,16 @@ jobs:
         config:
           - name: "Windows 32bit"
             arch: x86
-            openssl_dir: C:\vcpkg\packages\openssl_x86-windows-static
             cmake_additional_opt: ""
             vcpkg_triplet: x86-windows-static
             cmake_version: "3.31.6"
           - name: "Windows 64bit"
             arch: x64
-            openssl_dir: C:\vcpkg\packages\openssl_x64-windows-static
             cmake_additional_opt: ""
             vcpkg_triplet: x64-windows-static
             cmake_version: "3.31.6"
           - name: "Windows 64bit (Arm64)"
             arch: amd64_arm64
-            openssl_dir: C:\vcpkg\packages\openssl_arm64-windows-static
             cmake_additional_opt: "-DCMAKE_SYSTEM_NAME=Windows -DCMAKE_SYSTEM_VERSION=10.0 -DCMAKE_SYSTEM_PROCESSOR=ARM64"
             vcpkg_triplet: arm64-windows-static
             cmake_version: "3.31.6"
@@ -143,10 +140,10 @@ jobs:
         uses: actions/cache/restore@v4
         with:
           path: |
-            C:\vcpkg\packages
-          key: ${{ runner.os }}-${{ matrix.config.arch }}-vcpkg-${{ steps.get-date.outputs.date }}
+            C:\vcpkg\installed
+          key: ${{ runner.os }}-${{ matrix.config.arch }}-vcpkg-installed-${{ steps.get-date.outputs.date }}
           restore-keys: |
-            ${{ runner.os }}-${{ matrix.config.arch }}-vcpkg-
+            ${{ runner.os }}-${{ matrix.config.arch }}-vcpkg-installed-
           enableCrossOsArchive: false
 
       - name: Build openssl with vcpkg
@@ -159,12 +156,17 @@ jobs:
           C:\vcpkg\vcpkg install --recurse libyaml --triplet ${{ matrix.config.vcpkg_triplet }}
         shell: cmd
 
+      - name: Upgrade any outdated vcpkg packages
+        run: |
+          C:\vcpkg\vcpkg upgrade --no-dry-run
+        shell: cmd
+
       - name: Save packages of vcpkg
         id: save-vcpkg-sources
         uses: actions/cache/save@v4
         with:
           path: |
-            C:\vcpkg\packages
+            C:\vcpkg\installed
           key: ${{ steps.cache-vcpkg-sources.outputs.cache-primary-key }}
           enableCrossOsArchive: false
 
@@ -174,7 +176,7 @@ jobs:
         # This is only supposed to be a workaround for now so can be easily removed later.
         if: ${{ matrix.config.arch != 'amd64_arm64' || needs.call-build-windows-get-meta.outputs.armSupported == 'true' }}
         run: |
-          cmake -G "NMake Makefiles" -DFLB_NIGHTLY_BUILD='${{ inputs.unstable }}' -DOPENSSL_ROOT_DIR='${{ matrix.config.openssl_dir }}' ${{ matrix.config.cmake_additional_opt }} -DFLB_LIBYAML_DIR=C:\vcpkg\packages\libyaml_${{ matrix.config.vcpkg_triplet }} ../
+          cmake -G "NMake Makefiles" -DFLB_NIGHTLY_BUILD='${{ inputs.unstable }}' -DOPENSSL_ROOT_DIR='C:\vcpkg\installed\${{ matrix.config.vcpkg_triplet }}' ${{ matrix.config.cmake_additional_opt }} -DFLB_LIBYAML_DIR='C:\vcpkg\installed\${{ matrix.config.vcpkg_triplet }}' ../
           cmake --build .
           cpack
         working-directory: build

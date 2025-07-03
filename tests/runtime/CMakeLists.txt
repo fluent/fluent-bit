@@ -25,6 +25,7 @@ endmacro()
 
 # Core
 FLB_RT_CORE_TEST(FLB_COROUTINE_TIMEOUT    "core-timeout.c")
+FLB_RT_CORE_TEST(FLB_INTERNAL_LOGGER      "core_internal_logger.c")
 
 FLB_RT_TEST(FLB_CHUNK_TRACE "core_chunk_trace.c")
 

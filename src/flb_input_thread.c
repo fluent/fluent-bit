@@ -370,6 +370,16 @@ static void input_thread(void *data)
         return;
     }
 
+    ins->processor->notification_channel = ins->notification_channel;
+
+    ret = flb_processor_init(ins->processor);
+    if (ret == -1) {
+        flb_error("failed initialize processors for input %s",
+                  flb_input_name(ins));
+        input_thread_instance_set_status(ins, FLB_INPUT_THREAD_ERROR);
+        return;
+    }
+
     flb_plg_debug(ins, "[thread init] initialization OK");
     input_thread_instance_set_status(ins, FLB_INPUT_THREAD_OK);
 
@@ -620,9 +630,11 @@ int flb_input_thread_instance_init(struct flb_config *config, struct flb_input_i
     ret = input_thread_instance_get_status(ins);
     if (ret == -1) {
         flb_plg_error(ins, "unexpected error loading plugin instance");
+        return -1;
     }
     else if (ret == FLB_FALSE) {
         flb_plg_error(ins, "could not initialize threaded plugin instance");
+        return -1;
     }
     else if (ret == FLB_TRUE) {
         flb_plg_info(ins, "thread instance initialized");

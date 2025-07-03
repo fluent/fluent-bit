@@ -232,6 +232,7 @@ struct flb_processor_unit *flb_processor_unit_create(struct flb_processor *proc,
                                                      const char *unit_name);
 void flb_processor_unit_destroy(struct flb_processor_unit *pu);
 int flb_processor_unit_set_property(struct flb_processor_unit *pu, const char *k, struct cfl_variant *v);
+int flb_processor_unit_set_property_str(struct flb_processor_unit *pu, const char *k, const char *v);
 
 int flb_processors_load_from_config_format_group(struct flb_processor *proc, struct flb_cf_group *g);
 

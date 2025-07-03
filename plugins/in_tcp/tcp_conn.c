@@ -228,7 +228,7 @@ static ssize_t parse_payload_none(struct tcp_conn *conn)
                 break;
             }
 
-            consumed += len + 1;
+            consumed += len + sep_len;
             buf += len + sep_len;
         }
         else {

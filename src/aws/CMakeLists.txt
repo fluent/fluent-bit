@@ -17,6 +17,15 @@ set(src
   "flb_aws_credentials_profile.c"
   )
 
+if(FLB_KAFKA AND FLB_HAVE_KAFKA_SASL)
+  set(src
+    ${src}
+    "flb_aws_msk_iam.c"
+    )
+else()
+  FLB_DEFINITION(FLB_HAVE_AWS_MSK_IAM)
+endif()
+
 if(FLB_HAVE_AWS_CREDENTIAL_PROCESS)
   set(src
     ${src}

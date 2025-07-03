@@ -857,6 +857,7 @@ static struct flb_http_client *fleet_http_do(struct flb_in_calyptia_fleet_config
     size_t b_sent;
     struct flb_connection *u_conn;
     struct flb_http_client *client;
+    flb_sds_t config_version;
 
     if (ctx == NULL || url == NULL) {
         return NULL;
@@ -877,6 +878,13 @@ static struct flb_http_client *fleet_http_do(struct flb_in_calyptia_fleet_config
     }
 
     flb_http_buffer_size(client, ctx->max_http_buffer_size);
+
+    config_version = flb_sds_create_size(32);
+    flb_sds_printf(&config_version, "%ld", ctx->config_timestamp);
+    flb_http_add_header(client,
+                         FLEET_HEADERS_CONFIG_VERSION, sizeof(FLEET_HEADERS_CONFIG_VERSION) -1,
+                         config_version, flb_sds_len(config_version));
+    flb_sds_destroy(config_version);
 
     flb_http_add_header(client,
                         CALYPTIA_HEADERS_PROJECT, sizeof(CALYPTIA_HEADERS_PROJECT) - 1,
@@ -1617,10 +1625,17 @@ static flb_sds_t get_fleet_id_from_header(struct flb_in_calyptia_fleet_config *c
     flb_sds_t fleet_id;
     flb_sds_t name;
     struct flb_cf *cf_hdr;
+    flb_sds_t cfgheadername;
 
 
     if (exists_header_fleet_config(ctx)) {
-        cf_hdr = flb_cf_create_from_file(NULL, hdr_fleet_config_filename(ctx));
+        cfgheadername = hdr_fleet_config_filename(ctx);
+        if (cfgheadername == NULL) {
+            return NULL;
+        }
+
+        cf_hdr = flb_cf_create_from_file(NULL, cfgheadername);
+        flb_sds_destroy(cfgheadername);
 
         if (cf_hdr == NULL) {
             return NULL;

@@ -23,6 +23,8 @@
 #include <fluent-bit/flb_sds.h>
 #include <fluent-bit/flb_reload.h>
 
+#define FLEET_HEADERS_CONFIG_VERSION "Fleet-Config-Version"
+
 struct flb_in_calyptia_fleet_config {
     /* Time interval check */
     int interval_sec;

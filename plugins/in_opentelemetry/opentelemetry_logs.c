@@ -368,6 +368,7 @@ static int process_json_payload_log_records_entry(struct flb_opentelemetry *ctx,
     msgpack_object_map *log_records_entry;
     msgpack_object     *timestamp_object;
     uint64_t            timestamp_uint64;
+    char               *logs_body_key;
     msgpack_object     *metadata_object;
     msgpack_object     *body_object;
     msgpack_object     *observed_time_unix_nano = NULL;
@@ -585,14 +586,20 @@ static int process_json_payload_log_records_entry(struct flb_opentelemetry *ctx,
         body_object != NULL) {
         result = json_payload_get_wrapped_value(body_object, NULL, &body_type);
 
-        if (result != 0 || body_type == MSGPACK_OBJECT_MAP) {
+        if (result != 0 ||
+            (ctx->logs_body_key == NULL && body_type == MSGPACK_OBJECT_MAP)) {
             flb_log_event_encoder_dynamic_field_reset(&encoder->body);
         }
         else {
+            logs_body_key = ctx->logs_body_key;
+            if (ctx->logs_body_key == NULL) {
+                logs_body_key = (char *) "log";
+            }
+
             flb_log_event_encoder_append_cstring(
                  encoder,
                  FLB_LOG_EVENT_BODY,
-                 "log");
+                 logs_body_key);
         }
 
         result = json_payload_append_converted_value(
@@ -682,12 +689,14 @@ static int process_json_payload_resource_logs_entry(struct flb_opentelemetry *ct
     int ret;
     int result;
     size_t index;
-    msgpack_object       obj;
+    msgpack_object       *obj;
     msgpack_object_map   *resource = NULL;
     msgpack_object       *resource_attr = NULL;
     msgpack_object_map   *resource_logs_entry = NULL;
+    msgpack_object       *resource_schema_url = NULL;
     msgpack_object       *scope = NULL;
     msgpack_object_array *scope_logs;
+    msgpack_object       *scope_schema_url = NULL;
 
     if (resource_logs_object->type != MSGPACK_OBJECT_MAP) {
         flb_plg_error(ctx->ins, "unexpected resourceLogs entry type");
@@ -697,22 +706,37 @@ static int process_json_payload_resource_logs_entry(struct flb_opentelemetry *ct
     /* get 'resource' and resource['attributes'] */
     result = find_map_entry_by_key(&resource_logs_object->via.map, "resource", 0, FLB_TRUE);
     if (result >= 0) {
-        obj = resource_logs_object->via.map.ptr[result].val;
-        if (obj.type == MSGPACK_OBJECT_MAP) {
-            resource = &obj.via.map;
+        obj = &resource_logs_object->via.map.ptr[result].val;
+        if (obj->type == MSGPACK_OBJECT_MAP) {
+            resource = &obj->via.map;
+
+            /* attributes */
             result = find_map_entry_by_key(resource, "attributes", 0, FLB_TRUE);
             if (result >= 0) {
-                obj = resource->ptr[result].val;
-                if (obj.type == MSGPACK_OBJECT_ARRAY) {
-                    resource_attr = &obj;
+                obj = &resource->ptr[result].val;
+                if (obj->type == MSGPACK_OBJECT_ARRAY) {
+                    resource_attr = &resource->ptr[result].val;
                 }
             }
         }
     }
 
     resource_logs_entry = &resource_logs_object->via.map;
-    result = find_map_entry_by_key(resource_logs_entry, "scopeLogs", 0, FLB_TRUE);
 
+    /* schemaUrl */
+    result = find_map_entry_by_key(resource_logs_entry, "schemaUrl", 0, FLB_TRUE);
+    if (result == -1) {
+        result = find_map_entry_by_key(resource_logs_entry, "schema_url", 0, FLB_TRUE);
+    }
+    if (result >= 0) {
+        obj = &resource_logs_entry->ptr[result].val;
+        if (obj->type == MSGPACK_OBJECT_STR) {
+            resource_schema_url = &resource_logs_entry->ptr[result].val;
+        }
+    }
+
+    /* scopeLogs */
+    result = find_map_entry_by_key(resource_logs_entry, "scopeLogs", 0, FLB_TRUE);
     if (result == -1) {
         result = find_map_entry_by_key(resource_logs_entry, "scope_logs", 0, FLB_TRUE);
         if (result == -1) {
@@ -767,24 +791,42 @@ static int process_json_payload_resource_logs_entry(struct flb_opentelemetry *ct
         if (resource) {
             result = find_map_entry_by_key(resource, "droppedAttributesCount", 0, FLB_TRUE);
             if (result >= 0) {
-                obj = resource->ptr[result].val;
+                obj = &resource->ptr[result].val;
                 flb_log_event_encoder_append_body_values(encoder,
                                                         FLB_LOG_EVENT_CSTRING_VALUE("dropped_attributes_count"),
-                                                        FLB_LOG_EVENT_MSGPACK_OBJECT_VALUE(&obj));
+                                                        FLB_LOG_EVENT_MSGPACK_OBJECT_VALUE(obj));
             }
+        }
+
+        if (resource_schema_url) {
+            flb_log_event_encoder_append_body_values(encoder,
+                                                    FLB_LOG_EVENT_CSTRING_VALUE("schema_url"),
+                                                    FLB_LOG_EVENT_MSGPACK_OBJECT_VALUE(resource_schema_url));
         }
 
         /* close resource map */
         flb_log_event_encoder_body_commit_map(encoder);
 
+        /* scope schemaUrl */
+        result = find_map_entry_by_key(&scope_logs->ptr[index].via.map, "schemaUrl", 0, FLB_TRUE);
+        if (result == -1) {
+            result = find_map_entry_by_key(&scope_logs->ptr[index].via.map, "schema_url", 0, FLB_TRUE);
+        }
+        if (result >= 0) {
+            obj = &scope_logs->ptr[index].via.map.ptr[result].val;
+            if (obj->type == MSGPACK_OBJECT_STR) {
+                scope_schema_url = &scope_logs->ptr[index].via.map.ptr[result].val;
+            }
+        }
+
         /* scope metadata */
         scope = NULL;
-        obj = scope_logs->ptr[index];
-        if (obj.type == MSGPACK_OBJECT_MAP) {
-            result = find_map_entry_by_key(&obj.via.map, "scope", 0, FLB_TRUE);
+        obj = &scope_logs->ptr[index];
+        if (obj->type == MSGPACK_OBJECT_MAP) {
+            result = find_map_entry_by_key(&obj->via.map, "scope", 0, FLB_TRUE);
             if (result >= 0) {
-                if (obj.via.map.ptr[result].val.type == MSGPACK_OBJECT_MAP) {
-                    scope = &obj.via.map.ptr[result].val;
+                if (obj->via.map.ptr[result].val.type == MSGPACK_OBJECT_MAP) {
+                    scope = &scope_logs->ptr[index].via.map.ptr[result].val;
                 }
             }
         }
@@ -804,38 +846,45 @@ static int process_json_payload_resource_logs_entry(struct flb_opentelemetry *ct
             /* scope name */
             result = find_map_entry_by_key(&scope->via.map, "name", 0, FLB_TRUE);
             if (result >= 0) {
-                obj = scope->via.map.ptr[result].val;
-                if (obj.type == MSGPACK_OBJECT_STR) {
+                obj = &scope->via.map.ptr[result].val;
+                if (obj->type == MSGPACK_OBJECT_STR) {
                     flb_log_event_encoder_append_body_values(encoder,
                                                              FLB_LOG_EVENT_CSTRING_VALUE("name"),
-                                                             FLB_LOG_EVENT_MSGPACK_OBJECT_VALUE(&obj));
+                                                             FLB_LOG_EVENT_MSGPACK_OBJECT_VALUE(obj));
                 }
             }
 
             /* scope version */
             result = find_map_entry_by_key(&scope->via.map, "version", 0, FLB_TRUE);
             if (result >= 0) {
-                obj = scope->via.map.ptr[result].val;
-                if (obj.type == MSGPACK_OBJECT_STR) {
+                obj = &scope->via.map.ptr[result].val;
+                if (obj->type == MSGPACK_OBJECT_STR) {
                     flb_log_event_encoder_append_body_values(encoder,
                                                             FLB_LOG_EVENT_CSTRING_VALUE("version"),
-                                                            FLB_LOG_EVENT_MSGPACK_OBJECT_VALUE(&obj));
+                                                            FLB_LOG_EVENT_MSGPACK_OBJECT_VALUE(obj));
                 }
             }
 
             /* scope attributes */
             result = find_map_entry_by_key(&scope->via.map, "attributes", 0, FLB_TRUE);
             if (result >= 0) {
-                obj = scope->via.map.ptr[result].val;
-                if (obj.type == MSGPACK_OBJECT_ARRAY) {
+                obj = &scope->via.map.ptr[result].val;
+                if (obj->type == MSGPACK_OBJECT_ARRAY) {
                     flb_log_event_encoder_append_body_string(encoder, "attributes", 10);
                     result = json_payload_append_converted_kvlist(encoder,
                                                                 FLB_LOG_EVENT_BODY,
-                                                                &obj);
+                                                                obj);
                     if (result != 0) {
                         return -2;
                     }
                 }
+            }
+
+            /* scope schemaUrl */
+            if (scope_schema_url) {
+                flb_log_event_encoder_append_body_values(encoder,
+                                                        FLB_LOG_EVENT_CSTRING_VALUE("schema_url"),
+                                                        FLB_LOG_EVENT_MSGPACK_OBJECT_VALUE(scope_schema_url));
             }
 
             flb_log_event_encoder_commit_map(encoder, FLB_LOG_EVENT_BODY);
@@ -891,8 +940,8 @@ static int process_json_payload_root(struct flb_opentelemetry *ctx,
 
     resource_logs = &root->ptr[result].val.via.array;
 
-    result = 0;
 
+    result = 0;
     for (index = 0 ; index < resource_logs->size ; index++) {
         result = process_json_payload_resource_logs_entry(
                     ctx,
@@ -1215,6 +1264,7 @@ static int binary_payload_to_msgpack(struct flb_opentelemetry *ctx,
     int resource_logs_index;
     int scope_log_index;
     int log_record_index;
+    char *logs_body_key;
     struct flb_mp_map_header mh;
     struct flb_mp_map_header mh_tmp;
     struct flb_time tm;
@@ -1262,6 +1312,7 @@ static int binary_payload_to_msgpack(struct flb_opentelemetry *ctx,
 
     for (resource_logs_index = 0; resource_logs_index < input_logs->n_resource_logs; resource_logs_index++) {
         resource_log = resource_logs[resource_logs_index];
+
         resource = resource_log->resource;
         scope_logs = resource_log->scope_logs;
 
@@ -1322,18 +1373,18 @@ static int binary_payload_to_msgpack(struct flb_opentelemetry *ctx,
                     msgpack_pack_str_body(&mp_pck, "dropped_attributes_count", 24);
                     msgpack_pack_uint64(&mp_pck, resource->dropped_attributes_count);
                 }
+
+                if (resource_log->schema_url) {
+                    flb_mp_map_header_append(&mh_tmp);
+                    msgpack_pack_str(&mp_pck, 10);
+                    msgpack_pack_str_body(&mp_pck, "schema_url", 10);
+
+                    len = strlen(resource_log->schema_url);
+                    msgpack_pack_str(&mp_pck, len);
+                    msgpack_pack_str_body(&mp_pck, resource_log->schema_url, len);
+                }
             }
             flb_mp_map_header_end(&mh_tmp);
-
-            if (resource_log->schema_url) {
-                flb_mp_map_header_append(&mh);
-                msgpack_pack_str(&mp_pck, 10);
-                msgpack_pack_str_body(&mp_pck, "schema_url", 10);
-
-                len = strlen(resource_log->schema_url);
-                msgpack_pack_str(&mp_pck, len);
-                msgpack_pack_str_body(&mp_pck, resource_log->schema_url, len);
-            }
 
             /* scope */
             flb_mp_map_header_append(&mh);
@@ -1457,7 +1508,8 @@ static int binary_payload_to_msgpack(struct flb_opentelemetry *ctx,
                         ret = FLB_EVENT_ENCODER_ERROR_SERIALIZATION_FAILURE;
                     }
                     else {
-                        if (log_records[log_record_index]->body->value_case ==
+                        if (ctx->logs_body_key == NULL &&
+                            log_records[log_record_index]->body->value_case ==
                             OPENTELEMETRY__PROTO__COMMON__V1__ANY_VALUE__VALUE_KVLIST_VALUE) {
                             ret = flb_log_event_encoder_set_body_from_raw_msgpack(
                                     encoder,
@@ -1465,9 +1517,13 @@ static int binary_payload_to_msgpack(struct flb_opentelemetry *ctx,
                                     mp_sbuf.size);
                         }
                         else {
+                            logs_body_key = ctx->logs_body_key;
+                            if (logs_body_key == NULL) {
+                                logs_body_key = "message";
+                            }
                             ret = flb_log_event_encoder_append_body_values(
                                     encoder,
-                                    FLB_LOG_EVENT_CSTRING_VALUE("message"),
+                                    FLB_LOG_EVENT_CSTRING_VALUE(logs_body_key),
                                     FLB_LOG_EVENT_MSGPACK_RAW_VALUE(mp_sbuf.data, mp_sbuf.size));
                         }
                     }

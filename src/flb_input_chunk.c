@@ -1861,6 +1861,11 @@ static int append_to_ring_buffer(struct flb_input_instance *ins,
     int retry_limit = 10;
     struct input_chunk_raw *cr;
 
+    if (buf_size == 0) {
+        flb_plg_debug(ins, "skip ingesting data with 0 bytes");
+        return -1;
+    }
+
     cr = flb_calloc(1, sizeof(struct input_chunk_raw));
     if (!cr) {
         flb_errno();
