@@ -186,7 +186,6 @@ static int dd_remap_ecs_task_arn(const char *tag_name,
     flb_sds_t buf;
     char *remain;
     char *split;
-    char *task_arn;
     int ret;
 
     buf = flb_sds_create_len(attr_value.via.str.ptr, attr_value.via.str.size);
@@ -214,22 +213,57 @@ static int dd_remap_ecs_task_arn(const char *tag_name,
         }
     }
 
-    task_arn = strstr(buf, ECS_TASK_PREFIX);
-    if (task_arn != NULL) {
-        /* parse out the task_arn */
-        task_arn += strlen(ECS_TASK_PREFIX);
-        ret = dd_remap_append_kv_to_ddtags(tag_name, task_arn, strlen(task_arn), dd_tags_buf);
-    }
-    else {
-        /*
-         * if the input is invalid, not in the form of "XXXXXXXXtask/"task-arn
-         * then we preverse the original value under tag "task_arn".
-         */
-        ret = dd_remap_append_kv_to_ddtags(tag_name, buf, strlen(buf), dd_tags_buf);
-    }
+    /*
+     * Use the full task ARN for compatibility with Datadog products
+     * that expect the complete ARN format
+     */
+    ret = dd_remap_append_kv_to_ddtags(tag_name, buf, strlen(buf), dd_tags_buf);
     flb_sds_destroy(buf);
     if (ret < 0) {
          return -1;
+    }
+
+    return 0;
+}
+
+/* remapping function for ecs_task_id - extracts just the task ID from the ARN */
+static int dd_remap_ecs_task_id(const char *tag_name,
+                                 msgpack_object attr_value, flb_sds_t *dd_tags_buf)
+{
+    flb_sds_t buf = NULL;
+    char *task_id = NULL;
+    int i;
+    int last_slash = 0;
+    int id_start = 0;
+    int ret;
+
+    buf = flb_sds_create_len(attr_value.via.str.ptr, attr_value.via.str.size);
+    if (!buf) {
+        flb_errno();
+        return -1;
+    }
+
+    /* Find the last slash in the ARN */
+    for (i = 0; i < strlen(buf); i++) {
+        if (buf[i] == '/') {
+            last_slash = i;
+        }
+    }
+
+    if (last_slash == 0 || last_slash >= strlen(buf) - 2) {
+        /* If we can't find a valid slash, use the original value */
+        ret = dd_remap_append_kv_to_ddtags(tag_name, buf, strlen(buf), dd_tags_buf);
+        flb_sds_destroy(buf);
+        return ret;
+    }
+
+    id_start = last_slash + 1;
+    task_id = buf + id_start;
+
+    ret = dd_remap_append_kv_to_ddtags(tag_name, task_id, strlen(task_id), dd_tags_buf);
+    flb_sds_destroy(buf);
+    if (ret < 0) {
+        return -1;
     }
 
     return 0;
@@ -247,7 +281,8 @@ const struct dd_attr_tag_remapping remapping[] = {
     {"container_image", "container_image", dd_remap_move_to_tags},
     {"ecs_cluster", "cluster_name", dd_remap_ecs_cluster},
     {"ecs_task_definition", "ecs_task_definition", dd_remap_ecs_task_definition},
-    {"ecs_task_arn", "task_arn", dd_remap_ecs_task_arn}
+    {"ecs_task_arn", "task_arn", dd_remap_ecs_task_arn},
+    {"ecs_task_arn", "task_id", dd_remap_ecs_task_id}
 };
 
 /*
