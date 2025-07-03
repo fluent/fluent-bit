@@ -55,13 +55,6 @@ else()
   message(STATUS "Kafka OAuth Bearer: DISABLED")
 endif()
 
-if(FLB_KAFKA_MSK_IAM_ENABLED)
-  FLB_DEFINITION(FLB_HAVE_KAFKA_MSK_IAM)
-  message(STATUS "AWS MSK IAM authentication: ENABLED")
-else()
-  message(STATUS "AWS MSK IAM authentication: DISABLED (requires libsasl2)")
-endif()
-
 # Disable Curl on macOS (if needed)
 if (FLB_SYSTEM_MACOS)
   FLB_OPTION(WITH_CURL Off)
