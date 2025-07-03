@@ -34,7 +34,7 @@ void test_generic_converters_alias()
 {
     const char *encoding_names[] = {
       "SJIS",
-      "CP866", "CP874", "CP932", "Windows-31J", "CP949", "CP1250", "CP1251", "CP1252", "CP1253",
+      "CP866", "CP874", "CP932", "CP936", "CP950", "Windows-31J", "CP949", "CP1250", "CP1251", "CP1252", "CP1253",
       "CP1254", "CP1255", "CP1256",
       NULL
     };
