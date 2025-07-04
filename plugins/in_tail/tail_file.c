@@ -48,9 +48,7 @@
 #include "win32.h"
 #endif
 
-#ifdef FLB_HAVE_UNICODE_ENCODER
 #include <fluent-bit/flb_unicode.h>
-#endif
 
 #include <cfl/cfl.h>
 
@@ -445,8 +443,8 @@ static int process_content(struct flb_tail_file *file, size_t *bytes)
     time_t now = time(NULL);
     struct flb_time out_time = {0};
     struct flb_tail_config *ctx;
-#ifdef FLB_HAVE_UNICODE_ENCODER
     char *decoded = NULL;
+#ifdef FLB_HAVE_UNICODE_ENCODER
     size_t decoded_len;
 #endif
 
