@@ -36,9 +36,7 @@
 #include "tail_multiline.h"
 #endif
 
-#ifdef FLB_HAVE_UNICODE_ENCODER
 #include <fluent-bit/flb_unicode.h>
-#endif
 
 static int multiline_load_parsers(struct flb_tail_config *ctx)
 {
