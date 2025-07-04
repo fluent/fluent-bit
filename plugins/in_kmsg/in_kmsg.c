@@ -143,9 +143,9 @@ static inline int process_line(const char *line,
     }
     p++;
 
-    val = strtol(p, &end, 10);
-    if ((errno == ERANGE && (val == INT_MAX || val == INT_MIN))
-        || (errno != 0 && val == 0)) {
+    val = strtoll(p, &end, 10);
+    if ((errno == ERANGE && (val == LONG_MAX || val == LONG_MIN || val == LLONG_MAX || val == LLONG_MIN))
+         || (errno != 0 && val == 0)) {
         goto fail;
     }
 
@@ -153,8 +153,8 @@ static inline int process_line(const char *line,
     p = ++end;
 
     /* Timestamp */
-    val = strtol(p, &end, 10);
-    if ((errno == ERANGE && (val == INT_MAX || val == INT_MIN))
+    val = strtoll(p, &end, 10);
+    if ((errno == ERANGE && (val == LONG_MAX || val == LONG_MIN || val == LLONG_MAX || val == LLONG_MIN))
         || (errno != 0 && val == 0)) {
         goto fail;
     }
