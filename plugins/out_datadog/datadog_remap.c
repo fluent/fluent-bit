@@ -196,7 +196,7 @@ static int dd_remap_ecs_task_arn(const char *tag_name,
      * Use the full task ARN for compatibility with Datadog products
      * that expect the complete ARN format
      */
-    ret = dd_remap_append_kv_to_ddtags(tag_name, buf, strlen(buf), dd_tags_buf);
+    ret = dd_remap_append_kv_to_ddtags(tag_name, buf, flb_sds_len(buf), dd_tags_buf);
     flb_sds_destroy(buf);
     if (ret < 0) {
          return -1;
