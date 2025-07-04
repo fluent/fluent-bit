@@ -129,6 +129,8 @@ struct flb_tail_config {
 #ifdef FLB_HAVE_UNICODE_ENCODER
     int preferred_input_encoding;
 #endif
+    int generic_input_encoding_type;
+    const char *generic_input_encoding_name;
 
     /* Multiline */
     int multiline;             /* multiline enabled ?  */

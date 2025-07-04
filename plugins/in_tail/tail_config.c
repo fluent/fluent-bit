@@ -114,6 +114,7 @@ struct flb_tail_config *flb_tail_config_create(struct flb_input_instance *ins,
 #ifdef FLB_HAVE_UNICODE_ENCODER
     ctx->preferred_input_encoding = FLB_UNICODE_ENCODING_UNSPECIFIED;
 #endif
+    ctx->generic_input_encoding_type = FLB_GENERIC_UNSPECIFIED; /* Default is unspecified */
 
     /* Load the config map */
     ret = flb_input_config_map_set(ins, (void *) ctx);
@@ -221,6 +222,20 @@ struct flb_tail_config *flb_tail_config_create(struct flb_input_instance *ins,
         }
     }
 #endif
+
+    tmp = flb_input_get_property("generic.encoding", ins);
+    if (tmp) {
+        ret = flb_unicode_generic_select_encoding_type(tmp);
+        if (ret != FLB_GENERIC_UNSPECIFIED) {
+            ctx->generic_input_encoding_type = ret;
+            ctx->generic_input_encoding_name = tmp;
+        }
+        else {
+            flb_plg_error(ctx->ins, "invalid encoding 'generic.encoding' value %s", tmp);
+            flb_free(ctx);
+            return NULL;
+        }
+    }
 
 #ifdef FLB_HAVE_PARSER
     /* Config: multi-line support */
