@@ -592,6 +592,18 @@ int flb_conv_supported_encoding(const char *encoding_name)
     return flb_conv_select_converter(encoding_name) != NULL;
 }
 
+int flb_conv_select_encoding_type(const char *encoding_name)
+{
+    struct flb_unicode_converter *conv;
+    conv = flb_conv_select_converter(encoding_name);
+
+    if (conv) {
+        return conv->encoding;
+    }
+
+    return FLB_CONV_ENCODING_UNSPECIFIED;
+}
+
 int flb_conv_convert_to_utf8(const char *encoding_name,
                              const unsigned char *src, unsigned char **dest,
                              size_t len, bool no_error)

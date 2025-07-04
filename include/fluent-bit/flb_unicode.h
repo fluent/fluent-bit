@@ -41,6 +41,7 @@ enum flb_unicode_generic_enc_type {
     FLB_GENERIC_GBK            = FLB_GBK,            /* GBK (Windows-936) */
     FLB_GENERIC_UHC            = FLB_UHC,            /* UHC (Windows-949) */
     FLB_GENERIC_GB18030        = FLB_GB18030,        /* GB18030 */
+    FLB_GENERIC_UNSPECIFIED    = FLB_CONV_ENCODING_UNSPECIFIED, /* Unspecified */
     _FLB_GENERIC_LAST_ENCODING_ /* mark only */
 };
 
@@ -77,6 +78,7 @@ int flb_unicode_convert(int preferred_encoding, const char *input, size_t length
 int flb_unicode_validate(const char *record, size_t size);
 
 int flb_unicode_generic_supported_encoding(const char *encoding_name);
+int flb_unicode_generic_select_encoding_type(const char *encoding_name);
 int flb_unicode_generic_convert_to_utf8(const char *encoding_name,
                                         const unsigned char *input, unsigned char **output, size_t length);
 int flb_unicode_generic_convert_from_utf8(const char *encoding_name,
