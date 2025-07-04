@@ -50,6 +50,80 @@ void test_generic_converters_alias()
     }
 }
 
+struct test_enc_types {
+    char *name;
+    int type;
+};
+
+void test_generic_encoding_types()
+{
+    int encoding_type;
+    const char *encoding_name;
+    int i;
+    struct test_enc_types encodings[] = {
+        {"ShiftJIS", FLB_GENERIC_SJIS},
+        {"GB18030",  FLB_GENERIC_GB18030},
+        {"UHC",      FLB_GENERIC_UHC},
+        {"Big5",     FLB_GENERIC_BIG5},
+        {"Win866",   FLB_GENERIC_WIN866},
+        {"Win874",   FLB_GENERIC_WIN874},
+        {"Win1250",  FLB_GENERIC_WIN1250},
+        {"Win1251",  FLB_GENERIC_WIN1251},
+        {"Win1252",  FLB_GENERIC_WIN1252},
+        {"Win1253",  FLB_GENERIC_WIN1253},
+        {"Win1254",  FLB_GENERIC_WIN1254},
+        {"Win1255",  FLB_GENERIC_WIN1255},
+        {"Win1256",  FLB_GENERIC_WIN1256},
+        {"GBK",      FLB_GENERIC_GBK},
+        {NULL,       FLB_GENERIC_UNSPECIFIED},
+    };
+
+    for (i = 0; encodings[i].name != NULL; i++) {
+        encoding_type = flb_unicode_generic_select_encoding_type(encodings[i].name);
+        if (TEST_CHECK(encoding_type == encodings[i].type)) {
+            TEST_MSG("supported encoding type selection %d check failed with %s",
+                     encoding_type,
+                     encodings[i].name);
+        }
+    }
+
+    encoding_name = "Nonexisitent";
+    encoding_type = flb_unicode_generic_select_encoding_type(encoding_name);
+    if (!TEST_CHECK(encoding_type == FLB_GENERIC_UNSPECIFIED)) {
+        TEST_MSG("supported converter check unexpectedly succeeded with %s", encoding_name);
+        return;
+    }
+}
+
+void test_generic_alias_encoding_types()
+{
+    int encoding_type;
+    int i;
+    struct test_enc_types encodings[] = {
+        {"SJIS",   FLB_GENERIC_SJIS},
+        {"CP866",  FLB_GENERIC_WIN866},
+        {"CP874",  FLB_GENERIC_WIN874},
+        {"CP932",  FLB_GENERIC_SJIS},
+        {"CP936",  FLB_GENERIC_GBK},
+        {"CP950",  FLB_GENERIC_BIG5},
+        {"CP1250", FLB_GENERIC_WIN1250},
+        {"CP1251", FLB_GENERIC_WIN1251},
+        {"CP1252", FLB_GENERIC_WIN1252},
+        {"CP1253", FLB_GENERIC_WIN1253},
+        {"CP1254", FLB_GENERIC_WIN1254},
+        {"CP1255", FLB_GENERIC_WIN1255},
+        {"CP1256", FLB_GENERIC_WIN1256},
+        {NULL,     FLB_GENERIC_UNSPECIFIED},
+    };
+
+    for (i = 0; encodings[i].name != NULL; i++) {
+        encoding_type = flb_unicode_generic_select_encoding_type(encodings[i].name);
+        if (!TEST_CHECK(encoding_type == encodings[i].type)) {
+            TEST_MSG("supported converter check failed with %s", encodings[i].name);
+        }
+    }
+}
+
 void test_generic_conversions_sjis()
 {
     /* "こんにちは" in SJIS */
@@ -277,6 +351,8 @@ void test_all_generic_conversions()
 TEST_LIST = {
     { "generic_converters", test_generic_converters },
     { "generic_converters_alias", test_generic_converters_alias },
+    { "generic_encoding_types", test_generic_encoding_types },
+    { "generic_alias_encoding_types", test_generic_alias_encoding_types },
     { "generic_conversions_sjis", test_generic_conversions_sjis },
     { "generic_conversions_gbk", test_generic_conversions_gbk },
     { "generic_conversions_big5", test_generic_conversions_big5 },

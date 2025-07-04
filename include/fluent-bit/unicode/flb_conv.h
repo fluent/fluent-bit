@@ -32,6 +32,9 @@
 #define FLB_CONV_ALLOCATION_FAILED   -2
 #define FLB_CONV_CONVERSION_FAILED   -3
 
+/* Unspecified encoding type */
+#define FLB_CONV_ENCODING_UNSPECIFIED -1
+
 struct flb_unicode_converter {
     const char *name;
     const char *aliases[FLB_CONV_MAX_ALIAS_LENGTH];
@@ -50,6 +53,7 @@ struct flb_unicode_converter {
 
 struct flb_unicode_converter *flb_conv_select_converter(const char *encoding_name);
 int flb_conv_supported_encoding(const char *encoding_name);
+int flb_conv_select_encoding_type(const char *encoding_name);
 int flb_conv_convert_to_utf8(const char *encoding_name,
                              const unsigned char *src, unsigned char **dest,
                              size_t len, bool no_error);
