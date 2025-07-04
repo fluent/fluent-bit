@@ -36,6 +36,7 @@
 #include <sys/stat.h>
 #include <sys/time.h>
 #include <inttypes.h>
+#include <time.h>
 
 #include "in_kmsg.h"
 
@@ -143,7 +144,7 @@ static inline int process_line(const char *line,
     }
     p++;
 
-    val = strtol(p, &end, 10);
+    val = strtoul(p, &end, 10);
     if ((errno == ERANGE && (val == INT_MAX || val == INT_MIN))
         || (errno != 0 && val == 0)) {
         goto fail;
@@ -153,7 +154,7 @@ static inline int process_line(const char *line,
     p = ++end;
 
     /* Timestamp */
-    val = strtol(p, &end, 10);
+    val = strtoul(p, &end, 10);
     if ((errno == ERANGE && (val == INT_MAX || val == INT_MIN))
         || (errno != 0 && val == 0)) {
         goto fail;
