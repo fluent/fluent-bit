@@ -826,6 +826,15 @@ static struct flb_config_map config_map[] = {
      "Currently, UTF-16LE, UTF-16BE, auto are supported.",
     },
 #endif
+    {
+     FLB_CONFIG_MAP_STR, "generic.encoding", NULL,
+     0, FLB_FALSE, 0,
+     "specify the preferred input encoding for converting to UTF-8. "
+     "Currently, the following encodings are supported: "
+     "ShiftJIS, UHC, GBK, GB18030, Big5, "
+     "Win866, Win874, "
+     "Win1250, Win1251, Win1252, Win2513, Win1254, Win1255, WIn1256",
+    },
     /* EOF */
     {0}
 };
