@@ -589,6 +589,159 @@ void flb_test_in_tail_dockermode_firstline_detection()
             NULL);
 }
 
+void do_test_generic_enctype(char *system, const char *target, const char *enc, int tExpected, int nExpected, ...)
+{
+    int64_t ret;
+    flb_ctx_t    *ctx    = NULL;
+    int in_ffd;
+    int out_ffd;
+    va_list va;
+    char *key;
+    char *value;
+    char path[PATH_MAX];
+    struct tail_test_result result = {0};
+
+    result.nMatched = 0;
+    result.target = target;
+
+    struct flb_lib_out_cb cb;
+    cb.cb   = cb_check_result;
+    cb.data = &result;
+
+    /* initialize */
+    set_result(0);
+
+    ctx = flb_create();
+
+    ret = flb_service_set(ctx,
+                          "Log_Level", "error",
+                          "Parsers_File", DPATH "/parsers.conf",
+                          NULL);
+    TEST_CHECK_(ret == 0, "setting service options");
+
+    in_ffd = flb_input(ctx, (char *) system, NULL);
+    TEST_CHECK(in_ffd >= 0);
+    TEST_CHECK(flb_input_set(ctx, in_ffd, "tag", "test", NULL) == 0);
+
+    /* Compose path based on target */
+    snprintf(path, sizeof(path) - 1, DPATH "/log/%s.log", target);
+    TEST_CHECK_(access(path, R_OK) == 0, "accessing log file: %s", path);
+
+    TEST_CHECK(flb_input_set(ctx, in_ffd,
+                             "path"          , path,
+                             "generic.encoding", enc,
+                             "read_from_head", "true",
+                             NULL) == 0);
+
+    va_start(va, nExpected);
+    while ((key = va_arg(va, char *))) {
+        value = va_arg(va, char *);
+        TEST_CHECK(value != NULL);
+        TEST_CHECK(flb_input_set(ctx, in_ffd, key, value, NULL) == 0);
+    }
+    va_end(va);
+
+    out_ffd = flb_output(ctx, (char *) "lib", &cb);
+    TEST_CHECK(out_ffd >= 0);
+    TEST_CHECK(flb_output_set(ctx, out_ffd,
+                              "match", "test",
+                              "format", "json",
+                              NULL) == 0);
+
+    TEST_CHECK(flb_service_set(ctx, "Flush", "0.5",
+                                    "Grace", "1",
+                                    NULL) == 0);
+
+    /* Start test */
+    /* Start the engine */
+    ret = flb_start(ctx);
+    TEST_CHECK_(ret == 0, "starting engine");
+
+    /* Poll for up to 5 seconds or until we got a match */
+    for (ret = 0; ret < tExpected && result.nMatched < nExpected; ret++) {
+        usleep(1000);
+    }
+
+    /* Wait until matching nExpected results */
+    wait_with_timeout(5000, &result, nExpected);
+
+    TEST_CHECK(result.nMatched == nExpected);
+    TEST_MSG("result.nMatched: %i\nnExpected: %i", result.nMatched, nExpected);
+
+    ret = flb_stop(ctx);
+    TEST_CHECK_(ret == 0, "stopping engine");
+
+    if (ctx) {
+        flb_destroy(ctx);
+    }
+}
+
+void flb_test_in_tail_generic_enc_big5()
+{
+    do_test_generic_enctype("tail", "generic_enc_big5", "BIG5",
+                            20000, 10, NULL);
+}
+
+void flb_test_in_tail_generic_enc_gb18030()
+{
+    do_test_generic_enctype("tail", "generic_enc_gb18030", "GB18030",
+                            20000, 12, NULL);
+}
+
+void flb_test_in_tail_generic_enc_gbk()
+{
+    do_test_generic_enctype("tail", "generic_enc_gbk", "GBK",
+                            20000, 11, NULL);
+}
+
+void flb_test_in_tail_generic_enc_sjis()
+{
+    do_test_generic_enctype("tail", "generic_enc_sjis", "ShiftJIS",
+                            20000, 11, NULL);
+}
+
+void flb_test_in_tail_generic_enc_win1250()
+{
+    do_test_generic_enctype("tail", "generic_enc_win1250", "WIN1250",
+                            20000, 6, NULL);
+}
+
+void flb_test_in_tail_generic_enc_win1251()
+{
+    do_test_generic_enctype("tail", "generic_enc_win1251", "WIN1251",
+                            20000, 9, NULL);
+}
+
+void flb_test_in_tail_generic_enc_win1252()
+{
+    do_test_generic_enctype("tail", "generic_enc_win1252", "WIN1252",
+                            20000, 14, NULL);
+}
+
+void flb_test_in_tail_generic_enc_win1253()
+{
+    do_test_generic_enctype("tail", "generic_enc_win1253", "WIN1253",
+                            20000, 8, NULL);
+}
+
+void flb_test_in_tail_generic_enc_win1254()
+{
+    do_test_generic_enctype("tail", "generic_enc_win1254", "WIN1254",
+                            20000, 13, NULL);
+}
+
+void flb_test_in_tail_generic_enc_win1255()
+{
+    do_test_generic_enctype("tail", "generic_enc_win1255", "WIN1255",
+                            20000, 8, NULL);
+}
+
+void flb_test_in_tail_generic_enc_win1256()
+{
+    do_test_generic_enctype("tail", "generic_enc_win1256", "WIN1256",
+                            20000, 8, NULL);
+}
+
 #ifdef FLB_HAVE_UNICODE_ENCODER
 void do_test_unicode(char *system, const char *target, int nExpected, ...)
 {
@@ -2227,6 +2380,17 @@ TEST_LIST = {
     {"in_tail_dockermode_splitted_multiple_lines",  flb_test_in_tail_dockermode_splitted_multiple_lines},
     {"in_tail_dockermode_firstline_detection",      flb_test_in_tail_dockermode_firstline_detection},
     {"in_tail_multiline_json_and_regex",            flb_test_in_tail_multiline_json_and_regex},
+    {"in_tail_generic_enc_big5",                    flb_test_in_tail_generic_enc_big5},
+    {"in_tail_generic_enc_gb18030",                 flb_test_in_tail_generic_enc_gb18030},
+    {"in_tail_generic_enc_gbk",                     flb_test_in_tail_generic_enc_gbk},
+    {"in_tail_generic_enc_sjis",                    flb_test_in_tail_generic_enc_sjis},
+    {"in_tail_generic_enc_win1250",                 flb_test_in_tail_generic_enc_win1250},
+    {"in_tail_generic_enc_win1251",                 flb_test_in_tail_generic_enc_win1251},
+    {"in_tail_generic_enc_win1252",                 flb_test_in_tail_generic_enc_win1252},
+    {"in_tail_generic_enc_win1253",                 flb_test_in_tail_generic_enc_win1253},
+    {"in_tail_generic_enc_win1254",                 flb_test_in_tail_generic_enc_win1254},
+    {"in_tail_generic_enc_win1255",                 flb_test_in_tail_generic_enc_win1255},
+    {"in_tail_generic_enc_win1256",                 flb_test_in_tail_generic_enc_win1256},
 #endif
     {NULL, NULL}
 };
