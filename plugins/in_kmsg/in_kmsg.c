@@ -165,6 +165,15 @@ static inline int process_line(const char *line,
 
     flb_time_set(&ts, ctx->boot_time.tv_sec + tv.tv_sec, tv.tv_usec * 1000);
 
+    /* Format syslog timestamp: "Jul 03 10:31:53" */
+    time_t real_time = ctx->boot_time.tv_sec + tv.tv_sec;
+    struct tm tm_info;
+    char syslog_ts[32];
+
+    localtime_r(&real_time, &tm_info);
+    strftime(syslog_ts, sizeof(syslog_ts), "%b %d %H:%M:%S", &tm_info);
+    int syslog_ts_len = strlen(syslog_ts);
+
     /* Now process the human readable message */
     p = strchr(p, ';');
     if (!p) {
@@ -197,8 +206,14 @@ static inline int process_line(const char *line,
                 FLB_LOG_EVENT_CSTRING_VALUE("usec"),
                 FLB_LOG_EVENT_UINT64_VALUE(tv.tv_usec),
 
-                FLB_LOG_EVENT_CSTRING_VALUE("msg"),
-                FLB_LOG_EVENT_STRING_VALUE((char *) p, line_len - 1));
+                FLB_LOG_EVENT_CSTRING_VALUE("ident"),
+                FLB_LOG_EVENT_STRING_VALUE("kernel", 6),
+
+                FLB_LOG_EVENT_CSTRING_VALUE("message"),
+                FLB_LOG_EVENT_STRING_VALUE((char *) p, line_len - 1),
+
+                FLB_LOG_EVENT_CSTRING_VALUE("time"),
+                FLB_LOG_EVENT_STRING_VALUE(syslog_ts, syslog_ts_len));
     }
 
     if (ret == FLB_EVENT_ENCODER_SUCCESS) {
