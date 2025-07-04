@@ -47,6 +47,11 @@ int flb_unicode_generic_supported_encoding(const char *encoding_name)
     return flb_conv_supported_encoding(encoding_name);
 }
 
+int flb_unicode_generic_select_encoding_type(const char *encoding_name)
+{
+    return flb_conv_select_encoding_type(encoding_name);
+}
+
 int flb_unicode_generic_convert_to_utf8(const char *encoding_name,
                                         const unsigned char *input, unsigned char **output, size_t length)
 {
