@@ -48,9 +48,7 @@
 #include "win32.h"
 #endif
 
-#ifdef FLB_HAVE_UNICODE_ENCODER
 #include <fluent-bit/flb_unicode.h>
-#endif
 
 #include <cfl/cfl.h>
 
@@ -445,8 +443,8 @@ static int process_content(struct flb_tail_file *file, size_t *bytes)
     time_t now = time(NULL);
     struct flb_time out_time = {0};
     struct flb_tail_config *ctx;
-#ifdef FLB_HAVE_UNICODE_ENCODER
     char *decoded = NULL;
+#ifdef FLB_HAVE_UNICODE_ENCODER
     size_t decoded_len;
 #endif
 
@@ -485,6 +483,20 @@ static int process_content(struct flb_tail_file *file, size_t *bytes)
         }
     }
 #endif
+    if (ctx->generic_input_encoding_type != FLB_GENERIC_UNSPECIFIED) {
+        original_len = end - data;
+        decoded = NULL;
+        ret = flb_unicode_generic_convert_to_utf8(ctx->generic_input_encoding_name,
+                                                  (unsigned char*)data, (unsigned char**)&decoded,
+                                                  end - data);
+        if (ret > 0) {
+            data = decoded;
+            end  = data + strlen(decoded);
+        }
+        else {
+            flb_plg_error(ctx->ins, "encoding failed '%.*s' with status %d", end - data, data, ret);
+        }
+    }
 
     /* Skip null characters from the head (sometimes introduced by copy-truncate log rotation) */
     while (data < end && *data == '\0') {
