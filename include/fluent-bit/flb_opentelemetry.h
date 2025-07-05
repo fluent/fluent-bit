@@ -45,12 +45,16 @@
 #define FLB_OTEL_LOGS_ERR_UNEXPECTED_LOGRECORDS_TYPE         17
 #define FLB_OTEL_LOGS_ERR_ENCODER_FAILURE                    18
 #define FLB_OTEL_LOGS_ERR_APPEND_BODY_FAILURE                19
+#define FLB_OTEL_LOGS_ERR_INVALID_TRACE_ID                   20
+#define FLB_OTEL_LOGS_ERR_INVALID_SPAN_ID                    21
+
 
 /*
  * This is not specifically an error but a way to specify why no
  * data was ingested
  */
 #define FLB_OTEL_LOGS_ERR_EMPTY_PAYLOAD                      100
+
 
 struct flb_otel_error_map {
     const char *name;
@@ -76,6 +80,8 @@ static struct flb_otel_error_map otel_error_map[] = {
     {"FLB_OTEL_LOGS_ERR_UNEXPECTED_LOGRECORDS_TYPE",         FLB_OTEL_LOGS_ERR_UNEXPECTED_LOGRECORDS_TYPE},
     {"FLB_OTEL_LOGS_ERR_ENCODER_FAILURE",                    FLB_OTEL_LOGS_ERR_ENCODER_FAILURE},
     {"FLB_OTEL_LOGS_ERR_APPEND_BODY_FAILURE",                FLB_OTEL_LOGS_ERR_APPEND_BODY_FAILURE},
+    {"FLB_OTEL_LOGS_ERR_INVALID_TRACE_ID",                   FLB_OTEL_LOGS_ERR_INVALID_TRACE_ID},
+    {"FLB_OTEL_LOGS_ERR_INVALID_SPAN_ID",                    FLB_OTEL_LOGS_ERR_INVALID_SPAN_ID},
     {"GENERIC_ERROR",                                        FLB_OTEL_LOGS_ERR_GENERIC_ERROR},
 
     /* ---- */
@@ -83,7 +89,7 @@ static struct flb_otel_error_map otel_error_map[] = {
     {NULL, 0}
 };
 
-static inline const char *flb_otel_error_msg(int err_code)
+static inline const char *flb_opentelemetry_error_to_string(int err_code)
 {
     int i;
 
@@ -95,7 +101,7 @@ static inline const char *flb_otel_error_msg(int err_code)
     return "Unknown error code";
 }
 
-static inline int flb_otel_error_code(const char *err_msg)
+static inline int flb_opentelemetry_error_code(const char *err_msg)
 {
     int i;
 
@@ -111,15 +117,39 @@ int flb_opentelemetry_logs_json_to_msgpack(struct flb_log_event_encoder *encoder
                                            const char *body, size_t len,
                                            int *error_status);
 
+/* OpenTelemetry utils */
 int flb_otel_utils_find_map_entry_by_key(msgpack_object_map *map,
                                          char *key,
                                          size_t match_index,
                                          int case_insensitive);
+
 int flb_otel_utils_json_payload_get_wrapped_value(msgpack_object *wrapper,
-                                                  msgpack_object **value,
-                                                  int *type);
-int flb_otel_utils_hex_to_id(char *str, int len, unsigned char *out_buf,
-                             int out_size);
+                                         msgpack_object **value,
+                                         int            *type);
+
+int flb_otel_utils_json_payload_append_converted_value(struct flb_log_event_encoder *encoder,
+                                                       int target_field,
+                                                       msgpack_object *object);
+
+int flb_otel_utils_json_payload_append_unwrapped_value(struct flb_log_event_encoder *encoder,
+                                                       int target_field,
+                                                       msgpack_object *object,
+                                                       int *encoder_result);
+
+int flb_otel_utils_json_payload_append_converted_map(struct flb_log_event_encoder *encoder,
+                                                     int target_field,
+                                                     msgpack_object *object);
+
+int flb_otel_utils_json_payload_append_converted_array(struct flb_log_event_encoder *encoder,
+                                                       int target_field,
+                                                       msgpack_object *object);
+
+int flb_otel_utils_json_payload_append_converted_kvlist(struct flb_log_event_encoder *encoder,
+                                                        int target_field,
+                                                        msgpack_object *object);
+
+int flb_otel_utils_hex_to_id(const char *str, int len, unsigned char *out_buf, int out_size);
+
 uint64_t flb_otel_utils_convert_string_number_to_u64(char *str, size_t len);
 
 #endif

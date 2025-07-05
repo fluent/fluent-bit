@@ -509,7 +509,7 @@
       }]
     },
     "expected_error": {
-      "code": "FLB_OTEL_LOGS_ERR_UNEXPECTED_TIMESTAMP_TYPE"
+      "code": "FLB_OTEL_LOGS_ERR_INVALID_TRACE_ID"
     }
   },
 
@@ -526,7 +526,7 @@
       }]
     },
     "expected_error": {
-      "code": "FLB_OTEL_LOGS_ERR_UNEXPECTED_TIMESTAMP_TYPE"
+      "code": "FLB_OTEL_LOGS_ERR_INVALID_SPAN_ID"
     }
   },
 
@@ -543,7 +543,7 @@
       }]
     },
     "expected_error": {
-      "code": "FLB_OTEL_LOGS_ERR_UNEXPECTED_TIMESTAMP_TYPE"
+      "code": "FLB_OTEL_LOGS_ERR_INVALID_TRACE_ID"
     }
   },
 
@@ -560,7 +560,7 @@
       }]
     },
     "expected_error": {
-      "code": "FLB_OTEL_LOGS_ERR_UNEXPECTED_TIMESTAMP_TYPE"
+      "code": "FLB_OTEL_LOGS_ERR_INVALID_SPAN_ID"
     }
   },
 
@@ -578,7 +578,7 @@
       }]
     },
     "expected_error": {
-      "code": "FLB_OTEL_LOGS_ERR_UNEXPECTED_TIMESTAMP_TYPE"
+      "code": "FLB_OTEL_LOGS_ERR_INVALID_TRACE_ID"
     }
   },
 
@@ -596,7 +596,7 @@
       }]
     },
     "expected_error": {
-      "code": "FLB_OTEL_LOGS_ERR_UNEXPECTED_TIMESTAMP_TYPE"
+      "code": "FLB_OTEL_LOGS_ERR_INVALID_SPAN_ID"
     }
   },
 
@@ -1102,7 +1102,7 @@
       }]
     },
     "expected_error": {
-      "code": "FLB_OTEL_LOGS_ERR_UNEXPECTED_TIMESTAMP_TYPE"
+      "code": "FLB_OTEL_LOGS_ERR_INVALID_TRACE_ID"
     }
   },
 

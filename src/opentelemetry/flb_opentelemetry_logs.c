@@ -36,8 +36,10 @@ static int process_json_payload_log_records_entry(
     size_t logs_metadata_key_len,
     const char *logs_body_key)
 {
+    int                 i;
     int                 result;
     int                 body_type;
+    unsigned char       tmp_id[32];
     char                timestamp_str[32];
     msgpack_object_map *log_records_entry;
     msgpack_object     *timestamp_object;
@@ -56,7 +58,9 @@ static int process_json_payload_log_records_entry(
     }
 
     if (log_records_object->type != MSGPACK_OBJECT_MAP) {
-        if (error_status) *error_status = FLB_OTEL_LOGS_ERR_UNEXPECTED_LOGRECORDS_ENTRY_TYPE;
+        if (error_status) {
+            *error_status = FLB_OTEL_LOGS_ERR_UNEXPECTED_LOGRECORDS_ENTRY_TYPE;
+        }
         return -FLB_OTEL_LOGS_ERR_UNEXPECTED_LOGRECORDS_ENTRY_TYPE;
     }
 
@@ -97,7 +101,7 @@ static int process_json_payload_log_records_entry(
             }
 
             /* validate that the string only contains digits */
-            for (size_t i = 0; i < strlen(timestamp_str); i++) {
+            for (i = 0; i < strlen(timestamp_str); i++) {
                 if (!isdigit((unsigned char) timestamp_str[i])) {
                     if (error_status) {
                         *error_status = FLB_OTEL_LOGS_ERR_UNEXPECTED_TIMESTAMP_TYPE;
@@ -109,7 +113,9 @@ static int process_json_payload_log_records_entry(
             timestamp_uint64 = strtoull(timestamp_str, NULL, 10);
         }
         else {
-            if (error_status) *error_status = FLB_OTEL_LOGS_ERR_UNEXPECTED_TIMESTAMP_TYPE;
+            if (error_status) {
+                *error_status = FLB_OTEL_LOGS_ERR_UNEXPECTED_TIMESTAMP_TYPE;
+            }
             return -FLB_OTEL_LOGS_ERR_UNEXPECTED_TIMESTAMP_TYPE;
         }
 
@@ -156,54 +162,60 @@ static int process_json_payload_log_records_entry(
         trace_id = &log_records_entry->ptr[result].val;
     }
 
+    /* trace_id must be a 32 char hex string */
+    if (trace_id != NULL) {
+        if (trace_id->type != MSGPACK_OBJECT_STR) {
+            if (error_status) {
+                *error_status = FLB_OTEL_LOGS_ERR_INVALID_TRACE_ID;
+            }
+            return -FLB_OTEL_LOGS_ERR_INVALID_TRACE_ID;
+        }
+
+        if (trace_id->via.str.size != 32) {
+            if (error_status) {
+                *error_status = FLB_OTEL_LOGS_ERR_INVALID_TRACE_ID;
+            }
+            return -FLB_OTEL_LOGS_ERR_INVALID_TRACE_ID;
+        }
+
+        /* Validate hex format */
+        for (i = 0; i < 32; i++) {
+            if (!isxdigit(trace_id->via.str.ptr[i])) {
+                if (error_status) {
+                     *error_status = FLB_OTEL_LOGS_ERR_INVALID_TRACE_ID;
+                }
+                return -FLB_OTEL_LOGS_ERR_INVALID_TRACE_ID;
+            }
+        }
+    }
+
     /* spanId */
     result = flb_otel_utils_find_map_entry_by_key(log_records_entry, "spanId", 0, FLB_TRUE);
     if (result >= 0) {
         span_id = &log_records_entry->ptr[result].val;
     }
 
-    /* Validate trace_id and span_id before processing */
-    if (trace_id != NULL && (trace_id->type == MSGPACK_OBJECT_STR || trace_id->type == MSGPACK_OBJECT_BIN)) {
-        /* Validate trace_id: must be 32 hex characters (16 bytes) */
-        if (trace_id->type == MSGPACK_OBJECT_STR) {
-            if (trace_id->via.str.size != 32) {
-                if (error_status) *error_status = FLB_OTEL_LOGS_ERR_UNEXPECTED_TIMESTAMP_TYPE;
-                return -FLB_OTEL_LOGS_ERR_UNEXPECTED_TIMESTAMP_TYPE;
+    if (span_id != NULL) {
+        if (span_id->type != MSGPACK_OBJECT_STR) {
+            if (error_status) {
+                *error_status = FLB_OTEL_LOGS_ERR_INVALID_SPAN_ID;
             }
-            /* Validate hex format */
-            for (int i = 0; i < 32; i++) {
-                if (!isxdigit(trace_id->via.str.ptr[i])) {
-                    if (error_status) *error_status = FLB_OTEL_LOGS_ERR_UNEXPECTED_TIMESTAMP_TYPE;
-                    return -FLB_OTEL_LOGS_ERR_UNEXPECTED_TIMESTAMP_TYPE;
-                }
-            }
+            return -FLB_OTEL_LOGS_ERR_INVALID_SPAN_ID;
         }
-        else if (trace_id->type == MSGPACK_OBJECT_BIN) {
-            if (trace_id->via.bin.size != 16) {
-                if (error_status) *error_status = FLB_OTEL_LOGS_ERR_UNEXPECTED_TIMESTAMP_TYPE;
-                return -FLB_OTEL_LOGS_ERR_UNEXPECTED_TIMESTAMP_TYPE;
-            }
-        }
-    }
 
-    if (span_id != NULL && (span_id->type == MSGPACK_OBJECT_STR || span_id->type == MSGPACK_OBJECT_BIN)) {
-        /* Validate span_id: must be 16 hex characters (8 bytes) */
-        if (span_id->type == MSGPACK_OBJECT_STR) {
-            if (span_id->via.str.size != 16) {
-                if (error_status) *error_status = FLB_OTEL_LOGS_ERR_UNEXPECTED_TIMESTAMP_TYPE;
-                return -FLB_OTEL_LOGS_ERR_UNEXPECTED_TIMESTAMP_TYPE;
+        if (span_id->via.str.size != 16) {
+            if (error_status) {
+                *error_status = FLB_OTEL_LOGS_ERR_INVALID_SPAN_ID;
             }
-            /* Validate hex format */
-            for (int i = 0; i < 16; i++) {
-                if (!isxdigit(span_id->via.str.ptr[i])) {
-                    if (error_status) *error_status = FLB_OTEL_LOGS_ERR_UNEXPECTED_TIMESTAMP_TYPE;
-                    return -FLB_OTEL_LOGS_ERR_UNEXPECTED_TIMESTAMP_TYPE;
-                }
-            }
+            return -FLB_OTEL_LOGS_ERR_INVALID_SPAN_ID;
         }
-        else if (span_id->type == MSGPACK_OBJECT_BIN) {
-            if (span_id->via.bin.size != 8) {
-                if (error_status) *error_status = FLB_OTEL_LOGS_ERR_UNEXPECTED_TIMESTAMP_TYPE;
+
+        /* Validate hex format */
+        for (i = 0; i < 16; i++) {
+            if (!isxdigit(span_id->via.str.ptr[i])) {
+                if (error_status) {
+                    *error_status = FLB_OTEL_LOGS_ERR_INVALID_SPAN_ID;
+                }
                 return -FLB_OTEL_LOGS_ERR_UNEXPECTED_TIMESTAMP_TYPE;
             }
         }
@@ -216,7 +228,9 @@ static int process_json_payload_log_records_entry(
     }
     else {
         if (log_records_entry->ptr[result].val.type != MSGPACK_OBJECT_MAP) {
-            if (error_status) *error_status = FLB_OTEL_LOGS_ERR_UNEXPECTED_BODY_TYPE;
+            if (error_status) {
+                *error_status = FLB_OTEL_LOGS_ERR_UNEXPECTED_BODY_TYPE;
+            }
             return -FLB_OTEL_LOGS_ERR_UNEXPECTED_BODY_TYPE;
         }
         body_object = &log_records_entry->ptr[result].val;
@@ -234,13 +248,6 @@ static int process_json_payload_log_records_entry(
 
     result = flb_log_event_encoder_begin_map(encoder, FLB_LOG_EVENT_METADATA);
 
-    // flb_log_event_encoder_append_string(encoder,
-    //                                     FLB_LOG_EVENT_METADATA,
-    //                                     (char *) logs_metadata_key,
-    //                                     logs_metadata_key_len);
-        // flb_log_event_encoder_begin_map(encoder, FLB_LOG_EVENT_METADATA);
-        // flb_log_event_encoder_commit_map(encoder, FLB_LOG_EVENT_METADATA);
-
     if (observed_time_unix_nano != NULL && observed_time_unix_nano->type == MSGPACK_OBJECT_STR) {
         memset(timestamp_str, 0, sizeof(timestamp_str));
         if (observed_time_unix_nano->via.str.size < sizeof(timestamp_str)) {
@@ -253,7 +260,7 @@ static int process_json_payload_log_records_entry(
                     observed_time_unix_nano->via.str.ptr,
                     sizeof(timestamp_str) - 1);
         }
-        for (size_t i = 0; i < strlen(timestamp_str); i++) {
+        for (i = 0; i < strlen(timestamp_str); i++) {
             if (!isdigit((unsigned char) timestamp_str[i])) {
                 timestamp_str[0] = '\0';
                 break;
@@ -286,16 +293,18 @@ static int process_json_payload_log_records_entry(
         result = flb_otel_utils_json_payload_append_converted_kvlist(encoder, FLB_LOG_EVENT_METADATA, metadata_object);
     }
 
-    if (trace_id != NULL && (trace_id->type == MSGPACK_OBJECT_STR || trace_id->type == MSGPACK_OBJECT_BIN)) {
+    if (trace_id != NULL) {
+        flb_otel_utils_hex_to_id(trace_id->via.str.ptr, trace_id->via.str.size, tmp_id, 32);
         flb_log_event_encoder_append_metadata_values(encoder,
                                                         FLB_LOG_EVENT_STRING_VALUE("trace_id", 8),
-                                                        FLB_LOG_EVENT_MSGPACK_OBJECT_VALUE(trace_id));
+                                                        FLB_LOG_EVENT_BINARY_VALUE(tmp_id, 32));
     }
 
-    if (span_id != NULL && (span_id->type == MSGPACK_OBJECT_STR || span_id->type == MSGPACK_OBJECT_BIN)) {
+    if (span_id != NULL) {
+        flb_otel_utils_hex_to_id(span_id->via.str.ptr, span_id->via.str.size, tmp_id, 16);
         flb_log_event_encoder_append_metadata_values(encoder,
                                                         FLB_LOG_EVENT_STRING_VALUE("span_id", 7),
-                                                        FLB_LOG_EVENT_MSGPACK_OBJECT_VALUE(span_id));
+                                                        FLB_LOG_EVENT_BINARY_VALUE(tmp_id, 16));
     }
 
     result = flb_log_event_encoder_commit_map(encoder, FLB_LOG_EVENT_METADATA);
@@ -320,7 +329,9 @@ static int process_json_payload_log_records_entry(
                                                                     FLB_LOG_EVENT_BODY,
                                                                     body_object);
         if (result != FLB_EVENT_ENCODER_SUCCESS) {
-            if (error_status) *error_status = FLB_OTEL_LOGS_ERR_APPEND_BODY_FAILURE;
+            if (error_status) {
+                *error_status = FLB_OTEL_LOGS_ERR_APPEND_BODY_FAILURE;
+            }
             flb_log_event_encoder_rollback_record(encoder);
             return -FLB_OTEL_LOGS_ERR_APPEND_BODY_FAILURE;
         }
@@ -332,7 +343,9 @@ static int process_json_payload_log_records_entry(
         result = flb_log_event_encoder_commit_record(encoder);
     }
     else {
-        if (error_status) *error_status = FLB_OTEL_LOGS_ERR_ENCODER_FAILURE;
+        if (error_status) {
+            *error_status = FLB_OTEL_LOGS_ERR_ENCODER_FAILURE;
+        }
         flb_log_event_encoder_rollback_record(encoder);
         return -FLB_OTEL_LOGS_ERR_ENCODER_FAILURE;
     }
@@ -356,7 +369,9 @@ static int process_json_payload_scope_logs_entry(
     }
 
     if (scope_logs_object->type != MSGPACK_OBJECT_MAP) {
-        if (error_status) *error_status = FLB_OTEL_LOGS_ERR_UNEXPECTED_SCOPELOGS_TYPE;
+        if (error_status) {
+            *error_status = FLB_OTEL_LOGS_ERR_UNEXPECTED_SCOPELOGS_TYPE;
+        }
         return -FLB_OTEL_LOGS_ERR_UNEXPECTED_SCOPELOGS_TYPE;
     }
 
@@ -371,7 +386,9 @@ static int process_json_payload_scope_logs_entry(
     }
 
     if (scope_logs_entry->ptr[result].val.type != MSGPACK_OBJECT_ARRAY) {
-        if (error_status) *error_status = FLB_OTEL_LOGS_ERR_UNEXPECTED_LOGRECORDS_TYPE;
+        if (error_status) {
+            *error_status = FLB_OTEL_LOGS_ERR_UNEXPECTED_LOGRECORDS_TYPE;
+        }
         return -FLB_OTEL_LOGS_ERR_UNEXPECTED_LOGRECORDS_TYPE;
     }
 
@@ -839,28 +856,6 @@ int flb_opentelemetry_logs_json_to_msgpack(struct flb_log_event_encoder *encoder
         encoder->output_length = encoder->buffer.size;
     }
 
-    // printf("encoder output_length => %zu\n", encoder->output_length);
-
-    // {
-    //     /* Print the contents of encoder->buffer.data as msgpack to stdout */
-    //     msgpack_unpacked print_unpacked;
-    //     size_t print_offset = 0;
-    //     msgpack_unpacked_init(&print_unpacked);
-
-    //     while (msgpack_unpack_next(&print_unpacked,
-    //                                encoder->buffer.data,
-    //                                encoder->buffer.size,
-    //                                &print_offset)) {
-    //         msgpack_object_print(stdout, print_unpacked.data);
-    //         fputc('\n', stdout);
-    //     }
-
-    //     msgpack_unpacked_destroy(&print_unpacked);
-    // }
-
-    flb_pack_print(encoder->output_buffer,
-                    encoder->output_length
-    );
     flb_log_event_encoder_destroy(&local_log_encoder);
 
     return result;

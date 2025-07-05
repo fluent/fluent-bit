@@ -617,9 +617,6 @@ void test_opentelemetry_cases()
                         flb_free(expect_group_body);
                         flb_free(expect_log_meta);
                         flb_free(expect_log_body);
-                        flb_log_event_encoder_destroy(&enc);
-                        flb_free(input_json);
-                        flb_free(case_name);
                         continue;
                     }
                     free_test_output(actual_output);
@@ -683,7 +680,7 @@ void test_opentelemetry_cases()
             TEST_CHECK(code_obj->via.str.size < sizeof(tmp));
             memcpy(tmp, code_obj->via.str.ptr, code_obj->via.str.size);
             tmp[code_obj->via.str.size] = '\0';
-            exp_code = flb_otel_error_code(tmp);
+            exp_code = flb_opentelemetry_error_code(tmp);
 
             /* try to encode it */
             ret = flb_opentelemetry_logs_json_to_msgpack(&enc, input_json, strlen(input_json), &error_status);
@@ -691,7 +688,7 @@ void test_opentelemetry_cases()
             TEST_CHECK_(error_status == exp_code,
                         "expected error code=%i, returned error_status=%i (%s)",
                         exp_code, error_status,
-                        flb_otel_error_msg(error_status));
+                        flb_opentelemetry_error_to_string(error_status));
             if (error_status != exp_code) {
                 break;
             }
@@ -700,7 +697,7 @@ void test_opentelemetry_cases()
              * check that 'error_status' matches the expected error code from the JSON
              * file, convert the numeric error code into it string representation name
              */
-            error_str = (char *) flb_otel_error_msg(error_status);
+            error_str = (char *) flb_opentelemetry_error_to_string(error_status);
             TEST_CHECK(error_str != NULL);
 
             memcpy(tmp, code_obj->via.str.ptr, code_obj->via.str.size);

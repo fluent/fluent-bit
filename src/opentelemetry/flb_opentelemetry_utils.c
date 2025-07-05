@@ -482,8 +482,8 @@ static int hex_to_int(char ch)
     return -1;
 }
 
-/* convert an hex string to the expected id (16 bytes) */
-int flb_otel_utils_hex_to_id(char *str, int len, unsigned char *out_buf, int out_size)
+/* convert an hex string to the expected id in out_size bytes */
+int flb_otel_utils_hex_to_id(const char *str, int len, unsigned char *out_buf, int out_size)
 {
     int i;
     int high;
