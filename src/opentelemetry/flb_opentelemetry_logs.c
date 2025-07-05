@@ -95,7 +95,18 @@ static int process_json_payload_log_records_entry(
                         timestamp_object->via.str.ptr,
                         sizeof(timestamp_str) - 1);
             }
-            timestamp_uint64 = strtoul(timestamp_str, NULL, 10);
+
+            /* validate that the string only contains digits */
+            for (size_t i = 0; i < strlen(timestamp_str); i++) {
+                if (!isdigit((unsigned char) timestamp_str[i])) {
+                    if (error_status) {
+                        *error_status = FLB_OTEL_LOGS_ERR_UNEXPECTED_TIMESTAMP_TYPE;
+                    }
+                    return -FLB_OTEL_LOGS_ERR_UNEXPECTED_TIMESTAMP_TYPE;
+                }
+            }
+
+            timestamp_uint64 = strtoull(timestamp_str, NULL, 10);
         }
         else {
             if (error_status) *error_status = FLB_OTEL_LOGS_ERR_UNEXPECTED_TIMESTAMP_TYPE;
@@ -242,11 +253,20 @@ static int process_json_payload_log_records_entry(
                     observed_time_unix_nano->via.str.ptr,
                     sizeof(timestamp_str) - 1);
         }
-        timestamp_uint64 = strtoul(timestamp_str, NULL, 10);
+        for (size_t i = 0; i < strlen(timestamp_str); i++) {
+            if (!isdigit((unsigned char) timestamp_str[i])) {
+                timestamp_str[0] = '\0';
+                break;
+            }
+        }
 
-        flb_log_event_encoder_append_metadata_values(encoder,
+        if (strlen(timestamp_str) > 0) {
+            timestamp_uint64 = strtoull(timestamp_str, NULL, 10);
+
+            flb_log_event_encoder_append_metadata_values(encoder,
                                                         FLB_LOG_EVENT_STRING_VALUE("observed_timestamp", 18),
                                                         FLB_LOG_EVENT_INT64_VALUE(timestamp_uint64));
+        }
     }
 
     if (severity_number != NULL) {

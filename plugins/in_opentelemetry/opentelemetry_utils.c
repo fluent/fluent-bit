@@ -203,10 +203,17 @@ int hex_to_id(char *str, int len, unsigned char *out_buf, int out_size)
 uint64_t convert_string_number_to_u64(char *str, size_t len)
 {
     uint64_t val;
+    size_t i;
     char tmp[32];
 
     if (len > sizeof(tmp) - 1) {
         return 0;
+    }
+
+    for (i = 0; i < len; i++) {
+        if (!isdigit((unsigned char) str[i])) {
+            return 0;
+        }
     }
 
     memcpy(tmp, str, len);
