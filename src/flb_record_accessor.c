@@ -525,10 +525,12 @@ static flb_sds_t ra_translate_string(struct flb_ra_parser *rp, flb_sds_t buf)
 static flb_sds_t ra_translate_keymap(struct flb_ra_parser *rp, flb_sds_t buf,
                                      msgpack_object map, int *found)
 {
+    int i;
     int len;
     char *js;
     char str[32];
-    flb_sds_t tmp = NULL;
+    const char *p;
+    flb_sds_t hex = NULL;
     struct flb_ra_value *v;
 
     /* Lookup key or subkey value */
@@ -537,7 +539,7 @@ static flb_sds_t ra_translate_keymap(struct flb_ra_parser *rp, flb_sds_t buf,
       return buf;
     }
 
-    v = flb_ra_key_to_value(rp->key->name, map, rp->key->subkeys);
+    v = flb_ra_key_to_value_ext(rp->key->name, map, rp->key->subkeys, FLB_TRUE);
     if (!v) {
         *found = FLB_FALSE;
         return buf;
@@ -554,41 +556,66 @@ static flb_sds_t ra_translate_keymap(struct flb_ra_parser *rp, flb_sds_t buf,
             js = flb_msgpack_to_json_str(1024, &v->o);
             if (js) {
                 len = strlen(js);
-                tmp = flb_sds_cat(buf, js, len);
+                flb_sds_cat_safe(&buf, js, len);
                 flb_free(js);
             }
         }
         else if (v->o.type == MSGPACK_OBJECT_BOOLEAN) {
             if (v->val.boolean) {
-                tmp = flb_sds_cat(buf, "true", 4);
+                flb_sds_cat_safe(&buf, "true", 4);
             }
             else {
-                tmp = flb_sds_cat(buf, "false", 5);
+                flb_sds_cat_safe(&buf, "false", 5);
             }
         }
     }
     else if (v->type == FLB_RA_INT) {
         len = snprintf(str, sizeof(str) - 1, "%" PRId64, v->val.i64);
-        tmp = flb_sds_cat(buf, str, len);
+        flb_sds_cat_safe(&buf, str, len);
     }
     else if (v->type == FLB_RA_FLOAT) {
         len = snprintf(str, sizeof(str) - 1, "%f", v->val.f64);
         if (len >= sizeof(str)) {
-            tmp = flb_sds_cat(buf, str, sizeof(str)-1);
+            flb_sds_cat_safe(&buf, str, sizeof(str)-1);
         }
         else {
-            tmp = flb_sds_cat(buf, str, len);
+            flb_sds_cat_safe(&buf, str, len);
         }
     }
     else if (v->type == FLB_RA_STRING) {
-        tmp = flb_sds_cat(buf, v->val.string, flb_sds_len(v->val.string));
+        if (v->storage == FLB_RA_REF) {
+            flb_sds_cat_safe(&buf, v->val.ref.buf, v->val.ref.len);
+        }
+        else {
+            flb_sds_cat_safe(&buf, v->val.string, flb_sds_len(v->val.string));
+        }
+    }
+    else if (v->type == FLB_RA_BINARY) {
+        if (v->storage == FLB_RA_REF) {
+            p = v->val.ref.buf;
+            len = v->val.ref.len;
+        }
+        else {
+            p = v->val.binary;
+            len = flb_sds_len(v->val.binary);
+        }
+
+        hex = flb_sds_create_size(len * 2);
+        if (hex) {
+            for (i = 0; i < len; i++) {
+                hex = flb_sds_printf(&hex, "%02x",
+                                     (unsigned char) p[i]);
+            }
+            flb_sds_cat_safe(&buf, hex, flb_sds_len(hex));
+            flb_sds_destroy(hex);
+        }
     }
     else if (v->type == FLB_RA_NULL) {
-        tmp = flb_sds_cat(buf, "null", 4);
+        flb_sds_cat_safe(&buf, "null", 4);
     }
 
     flb_ra_key_value_destroy(v);
-    return tmp;
+    return buf;
 }
 
 /*
@@ -783,7 +810,20 @@ struct flb_ra_value *flb_ra_get_value_object(struct flb_record_accessor *ra,
         return NULL;
     }
 
-    return flb_ra_key_to_value(rp->key->name, map, rp->key->subkeys);
+    return flb_ra_key_to_value_ext(rp->key->name, map, rp->key->subkeys, FLB_TRUE);
+}
+
+struct flb_ra_value *flb_ra_get_value_object_ref(struct flb_record_accessor *ra,
+                                                 msgpack_object map)
+{
+    struct flb_ra_parser *rp;
+
+    rp = get_ra_parser(ra);
+    if (rp == NULL) {
+        return NULL;
+    }
+
+    return flb_ra_key_to_value_ext(rp->key->name, map, rp->key->subkeys, FLB_FALSE);
 }
 
 /**
