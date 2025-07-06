@@ -2220,6 +2220,7 @@ static const unsigned char BIN_DATA[4] = {0x01, 0x02, 0x03, 0x04};
 
 static void build_ra_map(msgpack_sbuffer *sbuf, const char **bin_ptr)
 {
+    int i;
     msgpack_packer pck;
 
     msgpack_sbuffer_init(sbuf);
@@ -2240,7 +2241,7 @@ static void build_ra_map(msgpack_sbuffer *sbuf, const char **bin_ptr)
 
     if (bin_ptr) {
         *bin_ptr = NULL;
-        for (size_t i = 0; i + sizeof(BIN_DATA) <= sbuf->size; i++) {
+        for (i = 0; i + sizeof(BIN_DATA) <= sbuf->size; i++) {
             if (memcmp(sbuf->data + i, BIN_DATA, sizeof(BIN_DATA)) == 0) {
                 *bin_ptr = sbuf->data + i;
                 break;
@@ -2349,6 +2350,7 @@ static void cb_ra_string_copy()
 
 static void cb_ra_string_ref()
 {
+    int i;
     msgpack_sbuffer sbuf;
     const char *dummy;
     msgpack_unpacked result;
@@ -2362,7 +2364,7 @@ static void cb_ra_string_ref()
     build_ra_map(&sbuf, &dummy);
 
     expected = NULL;
-    for (size_t i = 0; i + 3 <= sbuf.size; i++) {
+    for (i = 0; i + 3 <= sbuf.size; i++) {
         if (memcmp(sbuf.data + i, "abc", 3) == 0) {
             expected = sbuf.data + i;
             break;
