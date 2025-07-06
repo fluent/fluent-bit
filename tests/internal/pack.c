@@ -1030,6 +1030,21 @@ void test_json_date_epoch_ms()
     test_json_date("123456789123", FLB_PACK_JSON_DATE_EPOCH_MS);
 }
 
+void test_json_invalid()
+{
+    const char *malformed_json = "{\"key1\": \"value1\", \"key2\": "; // incomplete JSON
+    char *buffer = NULL;
+    size_t size = 0;
+    int root_type = 0;
+    int ret;
+
+    ret = flb_pack_json(malformed_json, strlen(malformed_json), &buffer, &size, &root_type, NULL);
+
+    /* we expect this to fail and buffer == NULL */
+    TEST_CHECK(ret != 0);
+    TEST_CHECK(buffer == NULL);
+}
+
 TEST_LIST = {
     /* JSON maps iteration */
     { "json_pack"          , test_json_pack },
@@ -1047,6 +1062,7 @@ TEST_LIST = {
     { "json_date_java_sql" , test_json_date_java_sql},
     { "json_date_epoch" , test_json_date_epoch},
     { "json_date_epoch_ms" , test_json_date_epoch_ms},
+    { "json_invalid",        test_json_invalid},
 
     /* Mixed bytes, check JSON encoding */
     { "utf8_to_json", test_utf8_to_json},

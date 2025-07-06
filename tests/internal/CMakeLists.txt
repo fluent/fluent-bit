@@ -51,6 +51,7 @@ set(UNIT_TESTS_FILES
   strptime.c
   storage_inherit.c
   unicode.c
+  opentelemetry.c
 )
 
 # Config format
@@ -161,6 +162,7 @@ set(UNIT_TESTS_DATA
   data/parser/regex.conf
   data/input_chunk/log/a_thousand_plus_one_bytes.log
   data/input_chunk/log/test_buffer_valid.log
+  data/opentelemetry/test_cases.json
   )
 
 set(FLB_TESTS_DATA_PATH ${CMAKE_CURRENT_SOURCE_DIR}/)
