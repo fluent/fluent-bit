@@ -26,6 +26,7 @@
 #include <fluent-bit/flb_sds.h>
 #include <fluent-bit/flb_sds_list.h>
 #include <fluent-bit/flb_record_accessor.h>
+#include <fluent-bit/flb_ra_key.h>
 #include <fluent-bit/record_accessor/flb_ra_parser.h>
 #include <msgpack.h>
 
@@ -2213,6 +2214,179 @@ void cb_nested_failure_recovery()
     flb_free(out_buf);
 }
 
+/* --- binary/reference record accessor tests --- */
+
+static const unsigned char BIN_DATA[4] = {0x01, 0x02, 0x03, 0x04};
+
+static void build_ra_map(msgpack_sbuffer *sbuf, const char **bin_ptr)
+{
+    msgpack_packer pck;
+
+    msgpack_sbuffer_init(sbuf);
+    msgpack_packer_init(&pck, sbuf, msgpack_sbuffer_write);
+
+    /* map {"bin": <bin>, "str": "abc"} */
+    msgpack_pack_map(&pck, 2);
+
+    msgpack_pack_str(&pck, 3);
+    msgpack_pack_str_body(&pck, "bin", 3);
+    msgpack_pack_bin(&pck, sizeof(BIN_DATA));
+    msgpack_pack_bin_body(&pck, BIN_DATA, sizeof(BIN_DATA));
+
+    msgpack_pack_str(&pck, 3);
+    msgpack_pack_str_body(&pck, "str", 3);
+    msgpack_pack_str(&pck, 3);
+    msgpack_pack_str_body(&pck, "abc", 3);
+
+    if (bin_ptr) {
+        *bin_ptr = NULL;
+        for (size_t i = 0; i + sizeof(BIN_DATA) <= sbuf->size; i++) {
+            if (memcmp(sbuf->data + i, BIN_DATA, sizeof(BIN_DATA)) == 0) {
+                *bin_ptr = sbuf->data + i;
+                break;
+            }
+        }
+    }
+}
+
+static void destroy_sbuf(msgpack_sbuffer *sbuf)
+{
+    msgpack_sbuffer_destroy(sbuf);
+}
+
+static void cb_ra_binary_copy()
+{
+    msgpack_sbuffer sbuf;
+    const char *dummy;
+    msgpack_unpacked result;
+    msgpack_object map;
+    struct flb_record_accessor *ra;
+    struct flb_ra_value *val;
+    size_t off = 0, len;
+    const char *buf;
+
+    build_ra_map(&sbuf, &dummy);
+
+    msgpack_unpacked_init(&result);
+    TEST_CHECK(msgpack_unpack_next(&result, sbuf.data, sbuf.size, &off) == MSGPACK_UNPACK_SUCCESS);
+    map = result.data;
+
+    ra = flb_ra_create("bin", FLB_TRUE);
+    TEST_CHECK(ra != NULL);
+    val = flb_ra_get_value_object(ra, map);
+    TEST_CHECK(val != NULL && val->type == FLB_RA_BINARY && val->storage == FLB_RA_COPY);
+    buf = flb_ra_value_buffer(val, &len);
+    TEST_CHECK(len == sizeof(BIN_DATA));
+    TEST_CHECK(memcmp(buf, BIN_DATA, sizeof(BIN_DATA)) == 0);
+
+    flb_ra_key_value_destroy(val);
+    flb_ra_destroy(ra);
+    msgpack_unpacked_destroy(&result);
+    destroy_sbuf(&sbuf);
+}
+
+static void cb_ra_binary_ref()
+{
+    msgpack_sbuffer sbuf;
+    const char *bin_in_map;
+    msgpack_unpacked result;
+    msgpack_object map;
+    struct flb_record_accessor *ra;
+    struct flb_ra_value *val;
+    size_t off = 0, len;
+    const char *buf;
+
+    build_ra_map(&sbuf, &bin_in_map);
+
+    msgpack_unpacked_init(&result);
+    TEST_CHECK(msgpack_unpack_next(&result, sbuf.data, sbuf.size, &off) == MSGPACK_UNPACK_SUCCESS);
+    map = result.data;
+
+    ra = flb_ra_create("bin", FLB_TRUE);
+    TEST_CHECK(ra != NULL);
+    val = flb_ra_get_value_object_ref(ra, map);
+    TEST_CHECK(val != NULL && val->type == FLB_RA_BINARY && val->storage == FLB_RA_REF);
+    buf = flb_ra_value_buffer(val, &len);
+    TEST_CHECK(len == sizeof(BIN_DATA));
+    TEST_CHECK(memcmp(buf, BIN_DATA, sizeof(BIN_DATA)) == 0);
+    TEST_CHECK(buf == bin_in_map);
+
+    flb_ra_key_value_destroy(val);
+    flb_ra_destroy(ra);
+    msgpack_unpacked_destroy(&result);
+    destroy_sbuf(&sbuf);
+}
+
+static void cb_ra_string_copy()
+{
+    msgpack_sbuffer sbuf;
+    const char *dummy;
+    msgpack_unpacked result;
+    msgpack_object map;
+    struct flb_record_accessor *ra;
+    struct flb_ra_value *val;
+    size_t off = 0, len;
+    const char *buf;
+
+    build_ra_map(&sbuf, &dummy);
+
+    msgpack_unpacked_init(&result);
+    TEST_CHECK(msgpack_unpack_next(&result, sbuf.data, sbuf.size, &off) == MSGPACK_UNPACK_SUCCESS);
+    map = result.data;
+
+    ra = flb_ra_create("str", FLB_TRUE);
+    TEST_CHECK(ra != NULL);
+    val = flb_ra_get_value_object(ra, map);
+    TEST_CHECK(val != NULL && val->type == FLB_RA_STRING && val->storage == FLB_RA_COPY);
+    buf = flb_ra_value_buffer(val, &len);
+    TEST_CHECK(len == 3 && strncmp(buf, "abc", 3) == 0);
+
+    flb_ra_key_value_destroy(val);
+    flb_ra_destroy(ra);
+    msgpack_unpacked_destroy(&result);
+    destroy_sbuf(&sbuf);
+}
+
+static void cb_ra_string_ref()
+{
+    msgpack_sbuffer sbuf;
+    const char *dummy;
+    msgpack_unpacked result;
+    msgpack_object map;
+    struct flb_record_accessor *ra;
+    struct flb_ra_value *val;
+    size_t off = 0, len;
+    const char *buf;
+    const char *expected;
+
+    build_ra_map(&sbuf, &dummy);
+
+    expected = NULL;
+    for (size_t i = 0; i + 3 <= sbuf.size; i++) {
+        if (memcmp(sbuf.data + i, "abc", 3) == 0) {
+            expected = sbuf.data + i;
+            break;
+        }
+    }
+
+    msgpack_unpacked_init(&result);
+    TEST_CHECK(msgpack_unpack_next(&result, sbuf.data, sbuf.size, &off) == MSGPACK_UNPACK_SUCCESS);
+    map = result.data;
+
+    ra = flb_ra_create("str", FLB_TRUE);
+    TEST_CHECK(ra != NULL);
+    val = flb_ra_get_value_object_ref(ra, map);
+    TEST_CHECK(val != NULL && val->type == FLB_RA_STRING && val->storage == FLB_RA_REF);
+    buf = flb_ra_value_buffer(val, &len);
+    TEST_CHECK(len == 3 && strncmp(buf, "abc", 3) == 0);
+    TEST_CHECK(buf == expected);
+
+    flb_ra_key_value_destroy(val);
+    flb_ra_destroy(ra);
+    msgpack_unpacked_destroy(&result);
+    destroy_sbuf(&sbuf);
+}
+
 TEST_LIST = {
     { "keys"            , cb_keys},
     { "dash_key"        , cb_dash_key},
@@ -2246,5 +2420,9 @@ TEST_LIST = {
     { "nonexistent_key_access", cb_nonexistent_key_access },
     { "wrong_type_access", cb_wrong_type_access },
     { "nested_failure_recovery", cb_nested_failure_recovery },
+    { "ra_binary_copy", cb_ra_binary_copy },
+    { "ra_binary_ref", cb_ra_binary_ref },
+    { "ra_string_copy", cb_ra_string_copy },
+    { "ra_string_ref", cb_ra_string_ref },
     { NULL }
 };
