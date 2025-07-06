@@ -160,7 +160,7 @@ static char *tokens_to_msgpack(struct flb_pack_state *state,
     int arr_size;
     int records = 0;
     const char *p;
-    char *buf;
+    char *buf = NULL;
     const jsmntok_t *t;
     msgpack_packer pck;
     msgpack_sbuffer sbuf;
@@ -181,7 +181,8 @@ static char *tokens_to_msgpack(struct flb_pack_state *state,
         t = &tokens[i];
 
         if (t->start == -1 || t->end == -1 || (t->start == 0 && t->end == 0)) {
-            break;
+            msgpack_sbuffer_destroy(&sbuf);
+            return NULL;
         }
 
         if (t->parent == -1) {
@@ -198,7 +199,10 @@ static char *tokens_to_msgpack(struct flb_pack_state *state,
             msgpack_pack_array(&pck, t->size);
             break;
         case JSMN_STRING:
-            pack_string_token(state, js + t->start, flen, &pck);
+            if (pack_string_token(state, js + t->start, flen, &pck) < 0) {
+                msgpack_sbuffer_destroy(&sbuf);
+                return NULL;
+            }
             break;
         case JSMN_PRIMITIVE:
             p = js + t->start;
@@ -285,6 +289,9 @@ static int pack_json_to_msgpack(const char *js, size_t len, char **buffer,
     ret = 0;
 
  flb_pack_json_end:
+    if (ret != 0 && buf) {
+        flb_free(buf);
+    }
     flb_pack_state_reset(&state);
     return ret;
 }
@@ -479,11 +486,11 @@ static int pack_print_fluent_record(size_t cnt, msgpack_unpacked result)
     flb_time_pop_from_msgpack(&tms, &result, &obj);
     flb_metadata_pop_from_msgpack(&metadata, &result, &obj);
 
-    fprintf(stdout, "[%zd] [%"PRId32".%09lu, ", cnt, (int32_t) tms.tm.tv_sec, tms.tm.tv_nsec);
+    fprintf(stdout, "[%zd] [[%"PRId32".%09lu, ", cnt, (int32_t) tms.tm.tv_sec, tms.tm.tv_nsec);
 
     msgpack_object_print(stdout, *metadata);
 
-    fprintf(stdout, ", ");
+    fprintf(stdout, "], ");
 
     msgpack_object_print(stdout, *obj);
 
