@@ -266,6 +266,13 @@ int flb_log_event_encoder_dynamic_field_init(
 void flb_log_event_encoder_dynamic_field_destroy(
     struct flb_log_event_encoder_dynamic_field *field)
 {
+    /*
+     * Ensure any outstanding scopes are cleaned up before releasing the
+     * underlying buffer. Otherwise these allocations would leak if the
+     * caller did not properly flush or rollback all scopes.
+     */
+    flb_log_event_encoder_dynamic_field_reset(field);
+
     msgpack_sbuffer_destroy(&field->buffer);
 
     field->initialized = FLB_FALSE;
