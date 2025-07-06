@@ -107,6 +107,13 @@ if(FLB_HAVE_LIBYAML)
     )
 endif()
 
+# OpenTelemetry Helpers
+set(src
+  ${src}
+  opentelemetry/flb_opentelemetry_logs.c
+  opentelemetry/flb_opentelemetry_utils.c
+)
+
 # Multiline subsystem
 add_subdirectory(multiline)
 set(src
@@ -451,6 +458,10 @@ if(FLB_RECORD_ACCESSOR)
     flb-ra-parser
     )
 endif()
+
+set(FLB_DEPS
+  ${FLB_DEPS}
+  )
 
 # Stream Processor
 if(FLB_STREAM_PROCESSOR)
