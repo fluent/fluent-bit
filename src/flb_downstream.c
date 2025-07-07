@@ -34,10 +34,16 @@
 
 /* Config map for Downstream networking setup */
 struct flb_config_map downstream_net[] = {
-    {
+    { 
      FLB_CONFIG_MAP_BOOL, "net.share_port", "false",
      0, FLB_TRUE, offsetof(struct flb_net_setup, share_port),
      "Allow multiple plugins to bind to the same port"
+    },
+
+    {
+     FLB_CONFIG_MAP_INT, "net.backlog", STR(FLB_NETWORK_DEFAULT_BACKLOG_SIZE),
+     0, FLB_TRUE, offsetof(struct flb_net_setup, backlog),
+     "Set the backlog size for listening sockets"
     },
 
     {
@@ -122,7 +128,9 @@ int flb_downstream_setup(struct flb_downstream *stream,
     snprintf(port_string, sizeof(port_string), "%u", port);
 
     if (transport == FLB_TRANSPORT_TCP) {
-        stream->server_fd = flb_net_server(port_string, host, net_setup->share_port);
+        stream->server_fd = flb_net_server(port_string, host,
+                                           net_setup->backlog,
+                                           net_setup->share_port);
     }
     else if (transport == FLB_TRANSPORT_UDP) {
         stream->server_fd = flb_net_server_udp(port_string, host, net_setup->share_port);
@@ -130,13 +138,13 @@ int flb_downstream_setup(struct flb_downstream *stream,
     else if (transport == FLB_TRANSPORT_UNIX_STREAM) {
         stream->server_fd = flb_net_server_unix(host,
                                                 FLB_TRUE,
-                                                FLB_NETWORK_DEFAULT_BACKLOG_SIZE,
+                                                net_setup->backlog,
                                                 net_setup->share_port);
     }
     else if (transport == FLB_TRANSPORT_UNIX_DGRAM) {
         stream->server_fd = flb_net_server_unix(host,
                                                 FLB_FALSE,
-                                                FLB_NETWORK_DEFAULT_BACKLOG_SIZE,
+                                                net_setup->backlog,
                                                 net_setup->share_port);
     }
 
