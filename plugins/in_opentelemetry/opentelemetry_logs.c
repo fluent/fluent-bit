@@ -547,7 +547,7 @@ static int binary_payload_to_msgpack(struct flb_opentelemetry *ctx,
                         else {
                             logs_body_key = ctx->logs_body_key;
                             if (logs_body_key == NULL) {
-                                logs_body_key = "message";
+                                logs_body_key = "log";
                             }
                             ret = flb_log_event_encoder_append_body_values(
                                     encoder,
@@ -646,6 +646,7 @@ int opentelemetry_process_logs(struct flb_opentelemetry *ctx,
     else {
         ret = flb_opentelemetry_logs_json_to_msgpack(encoder,
                                                      (const char *) payload, payload_size,
+                                                     ctx->logs_body_key,
                                                      &error_status);
         if (ret != 0) {
             /* we are printing the error for now, let's see what is the user's preference later */
