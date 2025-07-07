@@ -36,7 +36,6 @@
 #include "fluent-bit/flb_mem.h"
 #include "lua.h"
 #include "lua_config.h"
-#include "mpack/mpack.h"
 
 /* helper to rollback encoder buffer to previous offset */
 static inline void encoder_rollback(struct flb_log_event_encoder *enc,
@@ -826,11 +825,7 @@ struct flb_filter_plugin filter_lua_plugin = {
     .description  = "Lua Scripting Filter",
     .cb_pre_run   = cb_lua_pre_run,
     .cb_init      = cb_lua_init,
-#ifdef FLB_FILTER_LUA_USE_MPACK
-    .cb_filter    = cb_lua_filter_mpack,
-#else
     .cb_filter    = cb_lua_filter,
-#endif
     .cb_exit      = cb_lua_exit,
     .config_map   = config_map,
     .flags        = 0
