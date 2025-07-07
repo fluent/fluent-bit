@@ -19,7 +19,7 @@
 #include "sql_expression.h"
 #include "parser/sql_parser.h"
 
-extern int yylex();
+extern int yylex(YYSTYPE * yylval_param , yyscan_t yyscanner);
 
 void yyerror (struct sql_query *query, void *scanner, const char *str)
 {
