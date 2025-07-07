@@ -31,10 +31,10 @@
 static int process_json_payload_log_records_entry(
     struct flb_log_event_encoder *encoder,
     msgpack_object *log_records_object,
-    int *error_status,
     const char *logs_metadata_key,
     size_t logs_metadata_key_len,
-    const char *logs_body_key)
+    const char *logs_body_key,
+    int *error_status)
 {
     int                 i;
     int                 result;
@@ -356,6 +356,7 @@ static int process_json_payload_log_records_entry(
 static int process_json_payload_scope_logs_entry(
         struct flb_log_event_encoder *encoder,
         msgpack_object *scope_logs_object,
+        const char *logs_body_key,
         int *error_status)
 {
     msgpack_object_map   *scope_logs_entry;
@@ -401,15 +402,10 @@ static int process_json_payload_scope_logs_entry(
         result = process_json_payload_log_records_entry(
                     encoder,
                     &log_records->ptr[index],
-                    &entry_status,
                     FLB_OTEL_LOGS_METADATA_KEY,
                     sizeof(FLB_OTEL_LOGS_METADATA_KEY) - 1,
-                    /*
-                      * This last parameter used to be for logs_body_key inside
-                      * in_opentelemetry, however it seems not being used, passing
-                      * NULL for now.
-                      */
-                    NULL);
+                    logs_body_key,
+                    &entry_status);
         if (result < 0 && error_status) {
             *error_status = entry_status;
             return result;
@@ -422,6 +418,7 @@ static int process_json_payload_scope_logs_entry(
 static int process_json_payload_resource_logs_entry (struct flb_log_event_encoder *encoder,
                                                      size_t resource_logs_index,
                                                      msgpack_object *resource_logs_object,
+                                                     const char *logs_body_key,
                                                      int *error_status)
 {
     int ret;
@@ -674,6 +671,7 @@ static int process_json_payload_resource_logs_entry (struct flb_log_event_encode
         result = process_json_payload_scope_logs_entry(
                                                       tmp_encoder,
                                                       &scope_logs->ptr[index],
+                                                      logs_body_key,
                                                       error_status);
         size_after = tmp_encoder->buffer.size;
 
@@ -706,6 +704,7 @@ static int process_json_payload_resource_logs_entry (struct flb_log_event_encode
 
 static int process_json_payload_root(struct flb_log_event_encoder *encoder,
                                      msgpack_object *root_object,
+                                     const char *logs_body_key,
                                      int *error_status)
 {
     msgpack_object_array *resource_logs;
@@ -756,6 +755,7 @@ static int process_json_payload_root(struct flb_log_event_encoder *encoder,
                     encoder,
                     index,
                     &resource_logs->ptr[index],
+                    logs_body_key,
                     error_status);
         if (result < 0) {
             /* error_status should already be set by callee */
@@ -786,6 +786,7 @@ static int process_json_payload_root(struct flb_log_event_encoder *encoder,
  */
 int flb_opentelemetry_logs_json_to_msgpack(struct flb_log_event_encoder *encoder,
                                            const char *body, size_t len,
+                                           const char *logs_body_key,
                                            int *error_status)
 {
     int              result;
@@ -834,6 +835,7 @@ int flb_opentelemetry_logs_json_to_msgpack(struct flb_log_event_encoder *encoder
     /* decode OTLP/JSON as raw messagepack and do the proper encoding (groups, name-to-lowercase, etc) */
     result = process_json_payload_root(&local_log_encoder,
                                        &unpacked_root.data,
+                                       logs_body_key,
                                        error_status);
 
     if (result < 0) {
