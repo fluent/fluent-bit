@@ -115,6 +115,7 @@ static inline int flb_opentelemetry_error_code(const char *err_msg)
 
 int flb_opentelemetry_logs_json_to_msgpack(struct flb_log_event_encoder *encoder,
                                            const char *body, size_t len,
+                                           const char *logs_body_key,
                                            int *error_status);
 
 /* OpenTelemetry utils */
