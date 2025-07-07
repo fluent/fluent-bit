@@ -34,7 +34,7 @@
 
 /* Config map for Downstream networking setup */
 struct flb_config_map downstream_net[] = {
-    { 
+    {
      FLB_CONFIG_MAP_BOOL, "net.share_port", "false",
      0, FLB_TRUE, offsetof(struct flb_net_setup, share_port),
      "Allow multiple plugins to bind to the same port"
@@ -443,7 +443,7 @@ int flb_downstream_conn_timeouts(struct mk_list *list)
             drop = FLB_FALSE;
 
             /* Connect timeouts */
-            if (connection->net->connect_timeout > 0 &&
+            if (connection->net->accept_timeout > 0 &&
                 connection->ts_connect_timeout > 0 &&
                 connection->ts_connect_timeout <= now) {
                 drop = FLB_TRUE;
