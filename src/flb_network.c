@@ -151,6 +151,7 @@ void flb_net_setup_init(struct flb_net_setup *net)
     net->connect_timeout = 10;
     net->io_timeout = 0; /* Infinite time */
     net->source_address = NULL;
+    net->backlog = FLB_NETWORK_DEFAULT_BACKLOG_SIZE;
 }
 
 int flb_net_host_set(const char *plugin_name, struct flb_net_host *host, const char *address)
@@ -1629,7 +1630,8 @@ int flb_net_tcp_fd_connect(flb_sockfd_t fd, const char *host, unsigned long port
     return ret;
 }
 
-flb_sockfd_t flb_net_server(const char *port, const char *listen_addr, int share_port)
+flb_sockfd_t flb_net_server(const char *port, const char *listen_addr,
+                            int backlog, int share_port)
 {
     flb_sockfd_t fd = -1;
     int ret;
@@ -1662,7 +1664,7 @@ flb_sockfd_t flb_net_server(const char *port, const char *listen_addr, int share
         flb_net_socket_tcp_nodelay(fd);
         flb_net_socket_reset(fd);
 
-        ret = flb_net_bind(fd, rp->ai_addr, rp->ai_addrlen, 128);
+        ret = flb_net_bind(fd, rp->ai_addr, rp->ai_addrlen, backlog);
         if(ret == -1) {
             flb_warn("Cannot listen on %s port %s", listen_addr, port);
             flb_socket_close(fd);
