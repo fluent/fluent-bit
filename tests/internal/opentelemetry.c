@@ -599,7 +599,7 @@ void test_opentelemetry_cases()
             }
 
             /* try to encode the OTLP JSON as messagepack */
-            ret = flb_opentelemetry_logs_json_to_msgpack(&enc, input_json, strlen(input_json), &error_status);
+            ret = flb_opentelemetry_logs_json_to_msgpack(&enc, input_json, strlen(input_json), NULL, &error_status);
             TEST_CHECK_(ret == 0, "case %s", case_name);
 
             if (empty_payload == FLB_FALSE) {
@@ -686,7 +686,7 @@ void test_opentelemetry_cases()
             exp_code = flb_opentelemetry_error_code(tmp);
 
             /* try to encode it */
-            ret = flb_opentelemetry_logs_json_to_msgpack(&enc, input_json, strlen(input_json), &error_status);
+            ret = flb_opentelemetry_logs_json_to_msgpack(&enc, input_json, strlen(input_json), NULL, &error_status);
             TEST_CHECK_(ret < 0, "test case '%s' should fail", case_name);
             TEST_CHECK_(error_status == exp_code,
                         "expected error code=%i, returned error_status=%i (%s)",
