@@ -18,7 +18,7 @@
 #include "sql_parser.h"
 #include "sql_lex.h"
 
-extern int yylex();
+extern int yylex(YYSTYPE * yylval_param , yyscan_t yyscanner);
 
 void yyerror(struct flb_sp_cmd *cmd, const char *query, void *scanner, const char *str)
 {
