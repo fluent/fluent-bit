@@ -86,6 +86,35 @@ static int get_output_num()
     return ret;
 }
 
+void wait_for_output_num(uint32_t timeout_ms, int *output_num)
+{
+    struct flb_time start_time;
+    struct flb_time end_time;
+    struct flb_time diff_time;
+    uint64_t elapsed_time_flb = 0;
+
+    flb_time_get(&start_time);
+
+    while (true) {
+        *output_num = get_output_num();
+
+        if (*output_num > 0) {
+            break;
+        }
+
+        flb_time_msleep(100);
+        flb_time_get(&end_time);
+        flb_time_diff(&end_time, &start_time, &diff_time);
+        elapsed_time_flb = flb_time_to_nanosec(&diff_time) / 1000000;
+
+        if (elapsed_time_flb > timeout_ms) {
+            flb_warn("[timeout] elapsed_time: %ld", elapsed_time_flb);
+            /* Reached timeout. */
+            break;
+        }
+    }
+}
+
 static int cb_count_msgpack_events(void *record, size_t size, void *data)
 {
     msgpack_unpacked result;
@@ -1125,6 +1154,7 @@ void flb_test_invalid_metatable()
 void flb_test_metadata_single_record()
 {
     int ret;
+    int num;
     flb_ctx_t *ctx;
     int in_ffd;
     int out_ffd;
@@ -1169,10 +1199,11 @@ void flb_test_metadata_single_record()
     ret = flb_start(ctx);
     TEST_CHECK(ret == 0);
 
-    flb_time_msleep(2000);
-
-    ret = get_output_num();
-    TEST_CHECK(ret > 0);
+    /* waiting to flush */
+    wait_for_output_num(3000, &num);
+    if (!TEST_CHECK(num > 0))  {
+        TEST_MSG("no outputs");
+    }
 
     flb_stop(ctx);
     flb_destroy(ctx);
@@ -1181,6 +1212,7 @@ void flb_test_metadata_single_record()
 void flb_test_metadata_array(void)
 {
     int ret;
+    int num;
     flb_ctx_t *ctx;
     int in_ffd;
     int out_ffd;
@@ -1222,10 +1254,11 @@ void flb_test_metadata_array(void)
     ret = flb_start(ctx);
     TEST_CHECK(ret == 0);
 
-    flb_time_msleep(2000);
-
-    ret = get_output_num();
-    TEST_CHECK(ret == 2);
+    /* waiting to flush */
+    wait_for_output_num(3000, &num);
+    if (!TEST_CHECK(num == 2))  {
+        TEST_MSG("no intended outputs. Expected 2 actual %d", num);
+    }
 
     flb_stop(ctx);
     flb_destroy(ctx);
