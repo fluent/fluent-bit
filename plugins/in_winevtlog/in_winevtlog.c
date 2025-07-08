@@ -237,10 +237,15 @@ static int in_winevtlog_init(struct flb_input_instance *in,
 
     ctx->active_channel = winevtlog_open_all(tmp, ctx);
     if (!ctx->active_channel) {
-        flb_plg_error(ctx->ins, "failed to open channels");
-        flb_log_event_encoder_destroy(ctx->log_encoder);
-        flb_free(ctx);
-        return -1;
+        if (ctx->ignore_missing_channels) {
+            flb_plg_debug(ctx->ins, "failed to open and no subscribed channels");
+        }
+        else {
+            flb_plg_error(ctx->ins, "failed to open and no subscribed channels. Subscribe at least one");
+            flb_log_event_encoder_destroy(ctx->log_encoder);
+            flb_free(ctx);
+            return -1;
+        }
     }
 
     /* Initialize SQLite DB (optional) */
