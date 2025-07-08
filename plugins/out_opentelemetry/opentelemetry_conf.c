@@ -318,10 +318,10 @@ struct opentelemetry_context *flb_opentelemetry_context_create(struct flb_output
     if (ctx->proxy) {
         flb_plg_trace(ctx->ins, "Upstream Proxy=%s:%i",
                       ctx->proxy_host, ctx->proxy_port);
-        upstream = flb_upstream_create(config,
-                                       ctx->proxy_host,
-                                       ctx->proxy_port,
-                                       io_flags, ins->tls);
+        upstream = flb_upstream_create_bypass_proxy(config,
+                                                    ctx->proxy_host,
+                                                    ctx->proxy_port,
+                                                    io_flags, ins->tls);
     }
     else {
         upstream = flb_upstream_create(config,

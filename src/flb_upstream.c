@@ -280,10 +280,10 @@ void flb_upstream_init()
     FLB_TLS_INIT(flb_upstream_list_key);
 }
 
-/* Creates a new upstream context */
-struct flb_upstream *flb_upstream_create(struct flb_config *config,
-                                         const char *host, int port, int flags,
-                                         struct flb_tls *tls)
+/* Creates a new upstream context, potentially bypassing the system proxy */
+static struct flb_upstream *flb_upstream_create_internal(struct flb_config *config,
+                                                         const char *host, int port, int flags,
+                                                         struct flb_tls *tls, int bypass_system_proxy)
 {
     int ret;
     char *proxy_protocol = NULL;
@@ -309,8 +309,8 @@ struct flb_upstream *flb_upstream_create(struct flb_config *config,
                      config,
                      NULL);
 
-    /* Set upstream to the http_proxy if it is specified. */
-    if (flb_upstream_needs_proxy(host, config->http_proxy, config->no_proxy) == FLB_TRUE) {
+    /* Set upstream to the http_proxy if it is specified and not bypassed. */
+    if (!bypass_system_proxy && flb_upstream_needs_proxy(host, config->http_proxy, config->no_proxy) == FLB_TRUE) {
         flb_debug("[upstream] config->http_proxy: %s", config->http_proxy);
         ret = flb_utils_proxy_url_split(config->http_proxy, &proxy_protocol,
                                         &proxy_username, &proxy_password,
@@ -354,6 +354,22 @@ struct flb_upstream *flb_upstream_create(struct flb_config *config,
     mk_list_add(&u->base._head, &config->upstreams);
 
     return u;
+}
+
+/* Creates a new upstream context */
+struct flb_upstream *flb_upstream_create(struct flb_config *config,
+                                         const char *host, int port, int flags,
+                                         struct flb_tls *tls)
+{
+    return flb_upstream_create_internal(config, host, port, flags, tls, 0);
+}
+
+/* Creates a new upstream context, bypasing the system proxy */
+struct flb_upstream *flb_upstream_create_bypass_proxy(struct flb_config *config,
+                                                      const char *host, int port, int flags,
+                                                      struct flb_tls *tls)
+{
+    return flb_upstream_create_internal(config, host, port, flags, tls, 1);
 }
 
 /*
