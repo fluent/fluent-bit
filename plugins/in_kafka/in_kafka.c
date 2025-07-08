@@ -200,8 +200,11 @@ static int in_kafka_collect(struct flb_input_instance *ins,
 
         rd_kafka_message_destroy(rkm);
 
-        /* TO-DO: commit the record based on `ret` */
-        rd_kafka_commit(ctx->kafka.rk, NULL, 0);
+        if (!ctx->enable_auto_commit) {
+            if (ret == FLB_EVENT_ENCODER_SUCCESS) {
+                rd_kafka_commit(ctx->kafka.rk, NULL, 0);
+            }
+        }
 
         /* Break from the loop when reaching the limit of polling if available */
         if (ctx->polling_threshold != FLB_IN_KAFKA_UNLIMITED &&
@@ -295,6 +298,15 @@ static int in_kafka_init(struct flb_input_instance *ins,
     kafka_conf = flb_kafka_conf_create(&ctx->kafka, &ins->properties, 1);
     if (!kafka_conf) {
         flb_plg_error(ins, "Could not initialize kafka config object");
+        goto init_error;
+    }
+
+    /* Set enable.auto.commit based on plugin's enable_auto_commit setting */
+    res = rd_kafka_conf_set(kafka_conf, "enable.auto.commit",
+                           ctx->enable_auto_commit ? "true" : "false",
+                           errstr, sizeof(errstr));
+    if (res != RD_KAFKA_CONF_OK) {
+        flb_plg_error(ins, "Failed to set enable.auto.commit: %s", errstr);
         goto init_error;
     }
 
@@ -538,12 +550,17 @@ static struct flb_config_map config_map[] = {
     "Set the maximum size of chunk"
    },
    {
-   FLB_CONFIG_MAP_INT, "poll_timeout_ms", "1",
-   0, FLB_TRUE, offsetof(struct flb_in_kafka_config, poll_timeout_ms),
-   "Set the timeout in milliseconds for Kafka consumer poll operations. "
-   "This option only takes effect when running in a dedicated thread (i.e., when 'threaded' is enabled). "
-   "Using a higher timeout (e.g., 1.5x - 2x 'rdkafka.fetch.wait.max.ms') "
-   "can improve efficiency by leveraging Kafka's batching mechanism."
+    FLB_CONFIG_MAP_INT, "poll_timeout_ms", "1",
+    0, FLB_TRUE, offsetof(struct flb_in_kafka_config, poll_timeout_ms),
+    "Set the timeout in milliseconds for Kafka consumer poll operations. "
+    "This option only takes effect when running in a dedicated thread (i.e., when 'threaded' is enabled). "
+    "Using a higher timeout (e.g., 1.5x - 2x 'rdkafka.fetch.wait.max.ms') "
+    "can improve efficiency by leveraging Kafka's batching mechanism."
+  },
+  {
+    FLB_CONFIG_MAP_BOOL, "enable_auto_commit", FLB_IN_KAFKA_ENABLE_AUTO_COMMIT,
+    0, FLB_TRUE, offsetof(struct flb_in_kafka_config, enable_auto_commit),
+    "Rely on kafka auto-commit and commit messages in batches"
   },
 
 #ifdef FLB_HAVE_AWS_MSK_IAM
