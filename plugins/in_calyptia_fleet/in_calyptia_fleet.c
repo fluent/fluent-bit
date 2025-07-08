@@ -469,13 +469,9 @@ static void *do_reload(void *data)
     }
     reload->flb->config->conf_path_file = reload->cfg_path;
 
-    flb_free(reload);
     sleep(5);
-#ifndef FLB_SYSTEM_WINDOWS
-    kill(getpid(), SIGHUP);
-#else
-    GenerateConsoleCtrlEvent(1 /* CTRL_BREAK_EVENT_1 */, 0);
-#endif
+    flb_reload_signal_reload(reload->flb->config);
+    flb_free(reload);
     return NULL;
 }
 

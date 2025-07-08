@@ -72,7 +72,7 @@ extern void win32_started(void);
 flb_ctx_t *ctx;
 struct flb_config *config;
 volatile sig_atomic_t exit_signal = 0;
-volatile sig_atomic_t flb_bin_restarting = FLB_RELOAD_IDLE;
+pthread_mutex_t reload_mtx;
 
 #ifdef FLB_HAVE_LIBBACKTRACE
 struct flb_stacktrace flb_st;
@@ -633,11 +633,14 @@ static void flb_signal_handler(int signal)
         break;
 #ifndef FLB_HAVE_STATIC_CONF
     case SIGHUP:
-        if (flb_bin_restarting == FLB_RELOAD_IDLE) {
-            flb_bin_restarting = FLB_RELOAD_IN_PROGRESS;
-        }
-        else {
-            flb_utils_error(FLB_ERR_RELOADING_IN_PROGRESS);
+        if (pthread_mutex_trylock(&reload_mtx) == 0) {
+            if (config->service_is_restarting == FLB_RELOAD_IDLE) {
+                config->service_is_restarting = FLB_RELOAD_IN_PROGRESS;
+            }
+            else {
+                flb_utils_error(FLB_ERR_RELOADING_IN_PROGRESS);
+            }
+            pthread_mutex_unlock(&reload_mtx);
         }
         break;
 #endif
@@ -674,16 +677,19 @@ static BOOL WINAPI flb_console_handler(DWORD evType)
         handler_signal = 2;
         break;
     case 1 /* CTRL_BREAK_EVENT_1 */:
-        if (flb_bin_restarting == FLB_RELOAD_IDLE) {
-            flb_bin_restarting = FLB_RELOAD_IN_PROGRESS;
-            /* signal the main loop to execute reload. this is necessary since
-             * all signal handlers in win32 are executed on their own thread.
-             */
-            handler_signal = 1;
-            flb_bin_restarting = FLB_RELOAD_IDLE;
-        }
-        else {
-            flb_utils_error(FLB_ERR_RELOADING_IN_PROGRESS);
+        if (pthread_mutex_trylock(&reload_mtx) == 0) {
+            if (config->service_is_restarting == FLB_RELOAD_IDLE) {
+                config->service_is_restarting = FLB_RELOAD_IN_PROGRESS;
+                /* signal the main loop to execute reload. this is necessary since
+                * all signal handlers in win32 are executed on their own thread.
+                */
+                handler_signal = 1;
+                config->service_is_restarting = FLB_RELOAD_IDLE;
+            }
+            else {
+                flb_utils_error(FLB_ERR_RELOADING_IN_PROGRESS);
+            }
+            pthread_mutex_unlock(&reload_mtx);
         }
         break;
     }
@@ -1446,6 +1452,8 @@ int flb_main(int argc, char **argv)
     }
 #endif
 
+    pthread_mutex_init(&reload_mtx, NULL);
+
     while (ctx->status == FLB_LIB_OK && exit_signal == 0) {
         sleep(1);
 
@@ -1466,30 +1474,35 @@ int flb_main(int argc, char **argv)
 #ifdef FLB_SYSTEM_WINDOWS
         flb_console_handler_set_ctx(ctx, cf_opts);
 #endif
-        if (flb_bin_restarting == FLB_RELOAD_IN_PROGRESS) {
+        pthread_mutex_lock(&reload_mtx);
+        if (config->service_is_restarting == FLB_RELOAD_IN_PROGRESS) {
             /* reload by using same config files/path */
             ret = flb_reload(ctx, cf_opts);
             if (ret == 0) {
                 ctx = flb_context_get();
-                flb_bin_restarting = FLB_RELOAD_IDLE;
+                config = ctx->config;
+                config->service_is_restarting = FLB_RELOAD_IDLE;
             }
             else {
-                flb_bin_restarting = ret;
+                config->service_is_restarting = ret;
             }
         }
 
-        if (flb_bin_restarting == FLB_RELOAD_HALTED) {
+        if (config->service_is_restarting == FLB_RELOAD_HALTED) {
             sleep(1);
-            flb_bin_restarting = FLB_RELOAD_IDLE;
+            config->service_is_restarting = FLB_RELOAD_IDLE;
         }
+        pthread_mutex_unlock(&reload_mtx);
     }
 
     if (exit_signal) {
         flb_signal_exit(exit_signal);
     }
-    if (flb_bin_restarting != FLB_RELOAD_ABORTED) {
+    pthread_mutex_lock(&reload_mtx);
+    if (config->service_is_restarting != FLB_RELOAD_ABORTED) {
         ret = ctx->config->exit_status_code;
     }
+    pthread_mutex_unlock(&reload_mtx);
 
     cf_opts = flb_cf_context_get();
 
@@ -1511,13 +1524,15 @@ int flb_main(int argc, char **argv)
      }
 #endif
 
-     if (flb_bin_restarting == FLB_RELOAD_ABORTED) {
+    pthread_mutex_lock(&reload_mtx);
+    if (config->service_is_restarting == FLB_RELOAD_ABORTED) {
          fprintf(stderr, "reloading is aborted and exit\n");
-     }
-     else {
-         flb_stop(ctx);
-         flb_destroy(ctx);
-     }
+    }
+    else {
+        flb_stop(ctx);
+        flb_destroy(ctx);
+    }
+    pthread_mutex_unlock(&reload_mtx);
 
     return ret;
 }

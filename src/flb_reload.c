@@ -390,12 +390,14 @@ int flb_reload(flb_ctx_t *ctx, struct flb_cf *cf_opts)
 
     if (ctx == NULL) {
         flb_error("[reload] given flb context is NULL");
+        ctx->config->hot_reloaded_failures_count++;
         return FLB_RELOAD_INVALID_CONTEXT;
     }
 
     old_config = ctx->config;
     if (old_config->enable_hot_reload != FLB_TRUE) {
         flb_warn("[reload] hot reloading is not enabled");
+        old_config->hot_reloaded_failures_count++;
         return FLB_RELOAD_NOT_ENABLED;
     }
 
@@ -410,6 +412,7 @@ int flb_reload(flb_ctx_t *ctx, struct flb_cf *cf_opts)
      */
     new_cf = flb_cf_create();
     if (!new_cf) {
+        old_config->hot_reloaded_failures_count++;
         return FLB_RELOAD_HALTED;
     }
 
@@ -427,6 +430,7 @@ int flb_reload(flb_ctx_t *ctx, struct flb_cf *cf_opts)
             }
             flb_cf_destroy(new_cf);
             flb_error("[reload] reconstruct cf failed");
+            old_config->hot_reloaded_failures_count++;
             return FLB_RELOAD_HALTED;
         }
     }
@@ -440,6 +444,7 @@ int flb_reload(flb_ctx_t *ctx, struct flb_cf *cf_opts)
         flb_cf_destroy(new_cf);
         flb_error("[reload] creating flb context is failed. Reloading is halted");
 
+        old_config->hot_reloaded_failures_count++;
         return FLB_RELOAD_HALTED;
     }
 
@@ -468,6 +473,10 @@ int flb_reload(flb_ctx_t *ctx, struct flb_cf *cf_opts)
 
         if (!new_cf) {
             flb_sds_destroy(file);
+            flb_destroy(new_ctx);
+
+            old_config->hot_reloading = FLB_FALSE;
+            old_config->hot_reloaded_failures_count++;
 
             return FLB_RELOAD_HALTED;
         }
@@ -482,6 +491,10 @@ int flb_reload(flb_ctx_t *ctx, struct flb_cf *cf_opts)
             }
             flb_cf_destroy(new_cf);
             flb_destroy(new_ctx);
+
+            old_config->hot_reloading = FLB_FALSE;
+            old_config->hot_reloaded_failures_count++;
+
             flb_error("[reload] reloaded config is invalid. Reloading is halted");
 
             return FLB_RELOAD_HALTED;
@@ -495,6 +508,9 @@ int flb_reload(flb_ctx_t *ctx, struct flb_cf *cf_opts)
         flb_cf_destroy(new_cf);
         flb_destroy(new_ctx);
 
+        old_config->hot_reloading = FLB_FALSE;
+        old_config->hot_reloaded_failures_count++;
+
         flb_error("[reload] reloaded config format is invalid. Reloading is halted");
 
         return FLB_RELOAD_HALTED;
@@ -506,6 +522,9 @@ int flb_reload(flb_ctx_t *ctx, struct flb_cf *cf_opts)
         flb_sds_destroy(file);
         flb_cf_destroy(new_cf);
         flb_destroy(new_ctx);
+
+        old_config->hot_reloading = FLB_FALSE;
+        old_config->hot_reloaded_failures_count++;
 
         flb_error("[reload] reloaded config is invalid. Reloading is halted");
 
@@ -534,6 +553,8 @@ int flb_reload(flb_ctx_t *ctx, struct flb_cf *cf_opts)
 
     if (ret != 0) {
         flb_destroy(new_ctx);
+        old_config->hot_reloading = FLB_FALSE;
+        old_config->hot_reloaded_failures_count++;
 
         flb_error("[reload] loaded configuration contains error(s). Reloading is aborted");
 
@@ -545,5 +566,24 @@ int flb_reload(flb_ctx_t *ctx, struct flb_cf *cf_opts)
     flb_debug("[reload] hot reloaded %d time(s)", reloaded_count);
     new_config->hot_reloading = FLB_FALSE;
 
+    return 0;
+}
+
+/* flb_reload_signal_reload signals the `flb_config` to reload the fluent-bit context.
+ * It will use whatever method is most reliable on the given platform.
+ */
+int flb_reload_signal_reload(struct flb_config *config)
+{
+#ifndef FLB_SYSTEM_WINDOWS
+    kill(getpid(), SIGHUP);
+#else
+    /* using the refactor that placed  `service_is_restarting` inside 
+     * `flb_config` to use it as a messaging mechanism instead of
+     * GenerateConsoleCtrlEvent to overcome the fact that windows
+     * services do not have a console and therefore cannot
+     * react to console events or handle them (fixes sc-112185).
+     */
+    config->service_is_restarting = FLB_RELOAD_IN_PROGRESS;
+#endif
     return 0;
 }
