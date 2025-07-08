@@ -668,7 +668,11 @@ static int unpack_metric(mpack_reader_t *reader,
 
     if (decode_context->map->type == CMT_HISTOGRAM) {
         histogram = decode_context->map->parent;
-
+        if (histogram == NULL || histogram->buckets == NULL) {
+            free(metric);
+            cmt_errno();
+            return CMT_DECODE_MSGPACK_ALLOCATION_ERROR;
+        }
         metric->hist_buckets = calloc(histogram->buckets->count + 1, sizeof(uint64_t));
 
         if (metric->hist_buckets == NULL) {
