@@ -92,7 +92,14 @@ static int http_post(struct prometheus_remote_write_context *ctx,
                         payload_buf, payload_size,
                         ctx->host, ctx->port,
                         ctx->proxy, 0);
-
+    if (!c) {
+        flb_upstream_conn_release(u_conn);
+        if (payload_buf != body) {
+            flb_free(payload_buf);
+        }
+        flb_plg_error(ctx->ins, "cannot create HTTP client");
+        return FLB_RETRY;
+    }
 
     if (c->proxy.host) {
         flb_plg_debug(ctx->ins, "[http_client] proxy host: %s port: %i",
@@ -337,7 +344,15 @@ static void cb_prom_flush(struct flb_event_chunk *event_chunk,
         diff = off;
 
         /* concat buffer */
-        flb_sds_cat_safe(&buf, encoded_chunk, flb_sds_len(encoded_chunk));
+        if (flb_sds_cat_safe(&buf, encoded_chunk,
+                             flb_sds_len(encoded_chunk)) != 0) {
+            flb_plg_error(ctx->ins,
+                          "could not concatenate remote write payload");
+            cmt_encode_prometheus_remote_write_destroy(encoded_chunk);
+            cmt_destroy(cmt);
+            result = FLB_ERROR;
+            goto exit;
+        }
 
         /* release */
         cmt_encode_prometheus_remote_write_destroy(encoded_chunk);

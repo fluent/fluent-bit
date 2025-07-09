@@ -97,6 +97,7 @@ struct prometheus_remote_write_context *flb_prometheus_remote_write_context_crea
     /* Parse 'add_label' */
     ret = config_add_labels(ins, ctx);
     if (ret == -1) {
+        flb_free(ctx);
         return NULL;
     }
 
