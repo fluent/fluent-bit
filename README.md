@@ -62,24 +62,7 @@ Our official project documentation for [installation](https://docs.fluentbit.io/
 
 #### Build from Scratch
 
-If you aim to build Fluent Bit from sources, you can go ahead and start with the following commands.
-
-```bash
-cd build
-cmake ..
-make
-bin/fluent-bit -i cpu -o stdout -f 1
-```
-
-If you are interested into more details, please refer to the [Build & Install](https://docs.fluentbit.io/manual/installation/sources/build-and-install) section.
-
-#### Requirements
-
-- CMake >= 3.0
-- Flex
-- Bison
-- YAML library/headers
-- OpenSSL library/headers
+See the [Build and Install](https://docs.fluentbit.io/manual/installation/sources/build-and-install) section of our official documentation for the latest requirements and build instructions.
 
 #### Linux Packages
 
