@@ -44,10 +44,16 @@ pthread_once_t initialization_guard = PTHREAD_ONCE_INIT;
 
 FLB_TLS_DEFINE(struct flb_loki_dynamic_tenant_id_entry,
                thread_local_tenant_id);
+struct flb_loki_remove_mpa_entry {
+    struct flb_mp_accessor *mpa;
+    struct cfl_list _head;
+};
+FLB_TLS_DEFINE(struct flb_loki_remove_mpa_entry, thread_local_remove_mpa);
 
 void initialize_thread_local_storage()
 {
     FLB_TLS_INIT(thread_local_tenant_id);
+    FLB_TLS_INIT(thread_local_remove_mpa);
 }
 
 static struct flb_loki_dynamic_tenant_id_entry *dynamic_tenant_id_create() {
@@ -71,6 +77,43 @@ static void dynamic_tenant_id_destroy(struct flb_loki_dynamic_tenant_id_entry *e
             flb_sds_destroy(entry->value);
 
             entry->value = NULL;
+        }
+
+        if (!cfl_list_entry_is_orphan(&entry->_head)) {
+            cfl_list_del(&entry->_head);
+        }
+
+        flb_free(entry);
+    }
+}
+
+static struct flb_loki_remove_mpa_entry *remove_mpa_entry_create(struct flb_loki *ctx)
+{
+    struct flb_loki_remove_mpa_entry *entry;
+
+    entry = flb_calloc(1, sizeof(struct flb_loki_remove_mpa_entry));
+    if (!entry) {
+        flb_errno();
+        return NULL;
+    }
+
+    entry->mpa = flb_mp_accessor_create(&ctx->remove_keys_derived);
+    if (!entry->mpa) {
+        flb_free(entry);
+        return NULL;
+    }
+
+    cfl_list_entry_init(&entry->_head);
+
+    return entry;
+}
+
+static void remove_mpa_entry_destroy(struct flb_loki_remove_mpa_entry *entry)
+{
+    if (entry) {
+        if (entry->mpa) {
+            flb_mp_accessor_destroy(entry->mpa);
+            entry->mpa = NULL;
         }
 
         if (!cfl_list_entry_is_orphan(&entry->_head)) {
@@ -1371,7 +1414,8 @@ static int get_tenant_id_from_record(struct flb_loki *ctx, msgpack_object *map,
 
 static int pack_record(struct flb_loki *ctx,
                        msgpack_packer *mp_pck, msgpack_object *rec,
-                       flb_sds_t *dynamic_tenant_id)
+                       flb_sds_t *dynamic_tenant_id,
+                       struct flb_mp_accessor *remove_mpa)
 {
     int i;
     int skip = 0;
@@ -1397,8 +1441,8 @@ static int pack_record(struct flb_loki *ctx,
 
     /* Remove keys in remove_keys */
     msgpack_unpacked_init(&mp_buffer);
-    if (ctx->remove_mpa) {
-        ret = flb_mp_accessor_keys_remove(ctx->remove_mpa, rec,
+    if (remove_mpa) {
+        ret = flb_mp_accessor_keys_remove(remove_mpa, rec,
                                           (void *) &tmp_sbuf_data, &tmp_sbuf_size);
         if (ret == FLB_TRUE) {
             ret = msgpack_unpack_next(&mp_buffer, tmp_sbuf_data, tmp_sbuf_size, &off);
@@ -1564,6 +1608,15 @@ static int cb_loki_init(struct flb_output_instance *ins,
     }
 
     cfl_list_init(&ctx->dynamic_tenant_list);
+    result = pthread_mutex_init(&ctx->remove_mpa_list_lock, NULL);
+    if (result != 0) {
+        flb_errno();
+        flb_plg_error(ins, "cannot initialize remove_mpa list lock");
+        loki_config_destroy(ctx);
+        return -1;
+    }
+
+    cfl_list_init(&ctx->remove_mpa_list);
 
     /*
      * This plugin instance uses the HTTP client interface, let's register
@@ -1581,7 +1634,8 @@ static flb_sds_t loki_compose_payload(struct flb_loki *ctx,
                                       int total_records,
                                       char *tag, int tag_len,
                                       const void *data, size_t bytes,
-                                      flb_sds_t *dynamic_tenant_id)
+                                      flb_sds_t *dynamic_tenant_id,
+                                      struct flb_mp_accessor *remove_mpa)
 {
     // int mp_ok = MSGPACK_UNPACK_SUCCESS;
     // size_t off = 0;
@@ -1672,7 +1726,7 @@ static flb_sds_t loki_compose_payload(struct flb_loki *ctx,
 
             /* Append the timestamp */
             pack_timestamp(&mp_pck, &log_event.timestamp);
-            pack_record(ctx, &mp_pck, log_event.body, dynamic_tenant_id);
+            pack_record(ctx, &mp_pck, log_event.body, dynamic_tenant_id, remove_mpa);
             if (ctx->structured_metadata || ctx->structured_metadata_map_keys) {
                 pack_structured_metadata(ctx, &mp_pck, tag, tag_len, NULL);
             }
@@ -1709,7 +1763,7 @@ static flb_sds_t loki_compose_payload(struct flb_loki *ctx,
 
             /* Append the timestamp */
             pack_timestamp(&mp_pck, &log_event.timestamp);
-            pack_record(ctx, &mp_pck, log_event.body, dynamic_tenant_id);
+            pack_record(ctx, &mp_pck, log_event.body, dynamic_tenant_id, remove_mpa);
             if (ctx->structured_metadata || ctx->structured_metadata_map_keys) {
                 pack_structured_metadata(ctx, &mp_pck, tag, tag_len, log_event.body);
             }
@@ -1752,12 +1806,29 @@ static void cb_loki_flush(struct flb_event_chunk *event_chunk,
     struct flb_connection *u_conn;
     struct flb_http_client *c;
     struct flb_loki_dynamic_tenant_id_entry *dynamic_tenant_id;
+    struct flb_loki_remove_mpa_entry *remove_mpa_entry;
     struct mk_list *head;
     struct flb_config_map_val *mv;
     struct flb_slist_entry *key = NULL;
     struct flb_slist_entry *val = NULL;
 
     dynamic_tenant_id = FLB_TLS_GET(thread_local_tenant_id);
+
+    remove_mpa_entry = FLB_TLS_GET(thread_local_remove_mpa);
+
+    if (remove_mpa_entry == NULL) {
+        remove_mpa_entry = remove_mpa_entry_create(ctx);
+        if (!remove_mpa_entry) {
+            flb_plg_error(ctx->ins, "cannot allocate remove_mpa entry");
+            FLB_OUTPUT_RETURN(FLB_RETRY);
+        }
+
+        FLB_TLS_SET(thread_local_remove_mpa, remove_mpa_entry);
+
+        pthread_mutex_lock(&ctx->remove_mpa_list_lock);
+        cfl_list_add(&remove_mpa_entry->_head, &ctx->remove_mpa_list);
+        pthread_mutex_unlock(&ctx->remove_mpa_list_lock);
+    }
 
     if (dynamic_tenant_id == NULL) {
         dynamic_tenant_id = dynamic_tenant_id_create();
@@ -1784,7 +1855,8 @@ static void cb_loki_flush(struct flb_event_chunk *event_chunk,
                                    (char *) event_chunk->tag,
                                    flb_sds_len(event_chunk->tag),
                                    event_chunk->data, event_chunk->size,
-                                   &dynamic_tenant_id->value);
+                                   &dynamic_tenant_id->value,
+                                   remove_mpa_entry->mpa);
 
     if (!payload) {
         flb_plg_error(ctx->ins, "cannot compose request payload");
@@ -1982,6 +2054,21 @@ static void release_dynamic_tenant_ids(struct cfl_list *dynamic_tenant_list)
     }
 }
 
+static void release_remove_mpa_entries(struct cfl_list *remove_mpa_list)
+{
+    struct cfl_list                    *iterator;
+    struct cfl_list                    *backup;
+    struct flb_loki_remove_mpa_entry   *entry;
+
+    cfl_list_foreach_safe(iterator, backup, remove_mpa_list) {
+        entry = cfl_list_entry(iterator,
+                               struct flb_loki_remove_mpa_entry,
+                               _head);
+
+        remove_mpa_entry_destroy(entry);
+    }
+}
+
 static int cb_loki_exit(void *data, struct flb_config *config)
 {
     struct flb_loki *ctx = data;
@@ -1995,6 +2082,12 @@ static int cb_loki_exit(void *data, struct flb_config *config)
     release_dynamic_tenant_ids(&ctx->dynamic_tenant_list);
 
     pthread_mutex_unlock(&ctx->dynamic_tenant_list_lock);
+
+    pthread_mutex_lock(&ctx->remove_mpa_list_lock);
+
+    release_remove_mpa_entries(&ctx->remove_mpa_list);
+
+    pthread_mutex_unlock(&ctx->remove_mpa_list_lock);
 
     loki_config_destroy(ctx);
 
@@ -2147,7 +2240,8 @@ static int cb_loki_format_test(struct flb_config *config,
 
     payload = loki_compose_payload(ctx, total_records,
                                    (char *) tag, tag_len, data, bytes,
-                                   &dynamic_tenant_id);
+                                   &dynamic_tenant_id,
+                                   ctx->remove_mpa);
     if (payload == NULL) {
         if (dynamic_tenant_id != NULL) {
             flb_sds_destroy(dynamic_tenant_id);
