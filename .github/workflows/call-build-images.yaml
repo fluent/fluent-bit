@@ -390,8 +390,8 @@ jobs:
       fail-fast: true
       matrix:
         windows-base-version:
-          - '2019'
           - '2022'
+          - '2025'
     permissions:
       contents: read
       packages: write
@@ -443,4 +443,4 @@ jobs:
         #   load: false
         #   build-args: |
         #     FLB_NIGHTLY_BUILD=${{ inputs.unstable }}
-        #     WINDOWS_VERSION=ltsc2019
+        #     WINDOWS_VERSION=ltsc2022
