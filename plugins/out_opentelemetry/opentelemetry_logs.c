@@ -392,7 +392,9 @@ static int append_v1_logs_metadata_and_fields(struct opentelemetry_context *ctx,
     int severity_text_set = FLB_FALSE;
     int severity_number_set = FLB_FALSE;
     int trace_flags_set = FLB_FALSE;
+    size_t attr_count = 0;
     struct flb_ra_value *ra_val;
+    Opentelemetry__Proto__Common__V1__KeyValue **attrs = NULL;
 
     if (ctx == NULL || event == NULL || log_record == NULL) {
         return -1;
@@ -519,10 +521,21 @@ static int append_v1_logs_metadata_and_fields(struct opentelemetry_context *ctx,
     ra_val = flb_ra_get_value_object(ctx->ra_log_meta_otlp_attr, *event->metadata);
     if (ra_val != NULL) {
         if (ra_val->o.type == MSGPACK_OBJECT_MAP) {
-            if (log_record->attributes != NULL) {
-                otlp_kvarray_destroy(log_record->attributes, log_record->n_attributes);
+            attr_count = 0;
+            attrs = msgpack_map_to_otlp_kvarray(&ra_val->o, &attr_count);
+            if (attrs) {
+                if (log_record->attributes != NULL) {
+                    if (otlp_kvarray_append(&log_record->attributes,
+                                            &log_record->n_attributes,
+                                            attrs, attr_count) != 0) {
+                        otlp_kvarray_destroy(attrs, attr_count);
+                    }
+                }
+                else {
+                    log_record->attributes = attrs;
+                    log_record->n_attributes = attr_count;
+                }
             }
-            log_record->attributes = msgpack_map_to_otlp_kvarray(&ra_val->o, &log_record->n_attributes);
         }
         flb_ra_key_value_destroy(ra_val);
     }
@@ -530,10 +543,21 @@ static int append_v1_logs_metadata_and_fields(struct opentelemetry_context *ctx,
         ra_val = flb_ra_get_value_object(ctx->ra_attributes_metadata, *event->metadata);
         if (ra_val != NULL) {
             if (ra_val->o.type == MSGPACK_OBJECT_MAP) {
-                if (log_record->attributes != NULL) {
-                    otlp_kvarray_destroy(log_record->attributes, log_record->n_attributes);
+                attr_count = 0;
+                attrs = msgpack_map_to_otlp_kvarray(&ra_val->o, &attr_count);
+                if (attrs) {
+                    if (log_record->attributes != NULL) {
+                        if (otlp_kvarray_append(&log_record->attributes,
+                                                &log_record->n_attributes,
+                                                attrs, attr_count) != 0) {
+                            otlp_kvarray_destroy(attrs, attr_count);
+                        }
+                    }
+                    else {
+                        log_record->attributes = attrs;
+                        log_record->n_attributes = attr_count;
+                    }
                 }
-                log_record->attributes = msgpack_map_to_otlp_kvarray(&ra_val->o, &log_record->n_attributes);
             }
             flb_ra_key_value_destroy(ra_val);
         }

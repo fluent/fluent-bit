@@ -167,6 +167,33 @@ void otlp_kvarray_destroy(Opentelemetry__Proto__Common__V1__KeyValue **kvarray, 
     }
 }
 
+int otlp_kvarray_append(Opentelemetry__Proto__Common__V1__KeyValue ***base,
+                        size_t *base_count,
+                        Opentelemetry__Proto__Common__V1__KeyValue **extra,
+                        size_t extra_count)
+{
+    size_t new_count;
+    Opentelemetry__Proto__Common__V1__KeyValue **tmp;
+
+    if (extra == NULL || extra_count == 0) {
+        return 0;
+    }
+
+    new_count = *base_count + extra_count;
+    tmp = flb_realloc(*base, new_count * sizeof(Opentelemetry__Proto__Common__V1__KeyValue *));
+    if (!tmp) {
+        return -1;
+    }
+
+    *base = tmp;
+    memcpy(*base + *base_count, extra,
+           extra_count * sizeof(Opentelemetry__Proto__Common__V1__KeyValue *));
+    *base_count = new_count;
+    flb_free(extra);
+
+    return 0;
+}
+
 void otlp_kvpair_destroy(Opentelemetry__Proto__Common__V1__KeyValue *kvpair)
 {
     if (kvpair == NULL) {
