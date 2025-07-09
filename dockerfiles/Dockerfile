@@ -10,7 +10,7 @@
 # docker buildx rm builder
 # docker buildx create --name builder --use
 # docker buildx inspect --bootstrap
-# docker buildx build --platform "linux/amd64,linux/arm64,linux/arm/v7,linux/s390x" -f ./dockerfiles/Dockerfile.multiarch --build-arg FLB_TARBALL=https://github.com/fluent/fluent-bit/archive/v1.8.11.tar.gz ./dockerfiles/
+# docker buildx build --platform "linux/amd64,linux/arm64,linux/arm/v7,linux/s390x,linux/ppc64le" -f ./dockerfiles/Dockerfile.multiarch --build-arg FLB_TARBALL=https://github.com/fluent/fluent-bit/archive/v1.8.11.tar.gz ./dockerfiles/
 
 # Set this to the current release version: it gets done so as part of the release.
 ARG RELEASE_VERSION=4.0.4
