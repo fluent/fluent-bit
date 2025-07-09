@@ -52,7 +52,7 @@ struct flb_event_chunk {
 struct flb_event_chunk *flb_event_chunk_create(int type,
                                                int total_events,
                                                char *tag_buf, int tag_len,
-                                               char *buf_data, size_t buf_size);
+                                               void *buf_data, size_t buf_size);
 
 int flb_event_chunk_update(struct flb_event_chunk *evc,
                            char *buf_data, size_t buf_size);
