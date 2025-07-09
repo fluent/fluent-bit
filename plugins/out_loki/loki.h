@@ -100,6 +100,9 @@ struct flb_loki {
     struct cfl_list dynamic_tenant_list;
     pthread_mutex_t dynamic_tenant_list_lock;
 
+    struct cfl_list remove_mpa_list;
+    pthread_mutex_t remove_mpa_list_lock;
+
     /* Upstream Context */
     struct flb_upstream *u;
 
