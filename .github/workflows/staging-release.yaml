@@ -575,8 +575,8 @@ jobs:
       fail-fast: false
       matrix:
         tag: [
-          "windows-2019-${{ github.event.inputs.version }}",
-          "windows-2022-${{ github.event.inputs.version }}"
+          "windows-2022-${{ github.event.inputs.version }}",
+          "windows-2025-${{ github.event.inputs.version }}"
         ]
     steps:
       - name: Login to GitHub Container Registry
