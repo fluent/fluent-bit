@@ -1522,9 +1522,22 @@ int flb_main(int argc, char **argv)
     return ret;
 }
 
+void flb_invalid_parameter_handler(const wchar_t* expression,
+    const wchar_t* function,
+    const wchar_t* file,
+    unsigned int line,
+    uintptr_t pReserved)
+{
+    flb_debug("Invalid parameter detected in function %s. File: %s Line: %d", function, file, line);
+    flb_debug("Expression: %s", expression);
+}
+
 int main(int argc, char **argv)
 {
 #ifdef FLB_SYSTEM_WINDOWS
+    _set_invalid_parameter_handler(flb_invalid_parameter_handler);
+    _set_thread_local_invalid_parameter_handler(flb_invalid_parameter_handler);
+
     return win32_main(argc, argv);
 #else
     return flb_main(argc, argv);
