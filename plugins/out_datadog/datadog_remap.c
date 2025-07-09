@@ -184,31 +184,6 @@ static int dd_remap_ecs_task_arn(const char *tag_name,
                                   msgpack_object attr_value, flb_sds_t *dd_tags_buf)
 {
     flb_sds_t buf;
-    int ret;
-
-    buf = flb_sds_create_len(attr_value.via.str.ptr, attr_value.via.str.size);
-    if (!buf) {
-        flb_errno();
-        return -1;
-    }
-
-    /*
-     * Use the full task ARN for compatibility with Datadog products
-     * that expect the complete ARN format
-     */
-    ret = dd_remap_append_kv_to_ddtags(tag_name, buf, flb_sds_len(buf), dd_tags_buf);
-    flb_sds_destroy(buf);
-    if (ret < 0) {
-         return -1;
-    }
-
-    return 0;
-}
-/* remapping function for ecs_task_id */
-static int dd_remap_ecs_task_id(const char *tag_name,
-                                  msgpack_object attr_value, flb_sds_t *dd_tags_buf)
-{
-    flb_sds_t buf;
     char *remain;
     char *split;
     char *task_arn;
@@ -219,11 +194,17 @@ static int dd_remap_ecs_task_id(const char *tag_name,
         flb_errno();
         return -1;
     }
-
     /*
-     * if the input is invalid, not in the form of "arn:aws:ecs:region:XXXX"
-     * then we won't add the "region" in the dd_tags.
-     */
+    * Use the full task ARN for compatibility with Datadog products
+    * that expect the complete ARN format
+    */
+    ret = dd_remap_append_kv_to_ddtags("task_arn", buf, flb_sds_len(buf), dd_tags_buf);
+    if (ret < 0) {
+        flb_sds_destroy(buf);
+        return -1;
+    }
+
+    // --- Begin task_id logic --
     if ((strlen(buf) > strlen(ECS_ARN_PREFIX)) &&
         (strncmp(buf, ECS_ARN_PREFIX, strlen(ECS_ARN_PREFIX)) == 0)) {
 
@@ -241,17 +222,15 @@ static int dd_remap_ecs_task_id(const char *tag_name,
 
     task_arn = strstr(buf, ECS_TASK_PREFIX);
     if (task_arn != NULL) {
-        /* parse out the task_arn */
         task_arn += strlen(ECS_TASK_PREFIX);
-        ret = dd_remap_append_kv_to_ddtags(tag_name, task_arn, strlen(task_arn), dd_tags_buf);
+        ret = dd_remap_append_kv_to_ddtags("task_id", task_arn, strlen(task_arn), dd_tags_buf);
     }
     else {
-        /*
-         * if the input is invalid, not in the form of "XXXXXXXXtask/"task-arn
-         * then we preverse the original value under tag "task_arn".
-         */
-        ret = dd_remap_append_kv_to_ddtags(tag_name, buf, strlen(buf), dd_tags_buf);
+        // If invalid, preserve the original value under task_id
+        ret = dd_remap_append_kv_to_ddtags("task_id", buf, strlen(buf), dd_tags_buf);
     }
+    // --- End task_id logic ---
+
     flb_sds_destroy(buf);
     if (ret < 0) {
          return -1;
@@ -259,6 +238,7 @@ static int dd_remap_ecs_task_id(const char *tag_name,
 
     return 0;
 }
+
 /*
  * Statically defines the set of remappings rules in the form of
  * 1) original attr name 2) remapped tag name 3) remapping functions
@@ -271,8 +251,7 @@ const struct dd_attr_tag_remapping remapping[] = {
     {"container_image", "container_image", dd_remap_move_to_tags},
     {"ecs_cluster", "cluster_name", dd_remap_ecs_cluster},
     {"ecs_task_definition", "ecs_task_definition", dd_remap_ecs_task_definition},
-    {"ecs_task_arn", "task_arn", dd_remap_ecs_task_arn},
-    {"ecs_task_arn", "task_id", dd_remap_ecs_task_id}
+    {"ecs_task_arn", "task_arn", dd_remap_ecs_task_arn}
 };
 
 /*
