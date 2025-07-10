@@ -589,7 +589,7 @@ jobs:
       - name: Check the image exists
         # Use manifest inspect rather than pulling the image so the Windows host version does not need to match the container image
         run: |
-          docker manifest inspect "$STAGING_IMAGE_NAME:$TAG" > /dev/null
+          docker manifest inspect "$STAGING_IMAGE_NAME:$TAG"
         env:
           TAG: ${{ matrix.tag }}
         shell: bash
