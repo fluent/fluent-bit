@@ -52,7 +52,8 @@ set(UNIT_TESTS_FILES
   storage_inherit.c
   unicode.c
   opentelemetry.c
-)
+  upstream_proxy.c
+  )
 
 # Config format
 set(UNIT_TESTS_FILES
