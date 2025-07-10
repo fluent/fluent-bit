@@ -13,3 +13,5 @@ Fluent Bit is developed and supported by many individuals and companies.  The fo
 | [Cedric Lamoriniere](https://github.com/clamoriniere) | Datadog Output Plugin    | [Datadog](https://www.datadoghq.com/)             |
 | [Jonathan Gonzalez V.](https://github.com/sxd)        | PostgreSQL Output Plugin | [2ndQuadrant](https://www.2ndquadrant.com/en/)    |
 | [Jorge Niedbalski](https://github.com/niedbalski)     | CI && Containers         | [Personal Blog](https://niedbalski.dev/)                 |
+| [Paige Cruz](https://github.com/paigerduty)           | Website                  | [Chronosphere](https://chronosphere.io/)          |
+| [Eric D. Schabell](https://github.com/eschabell)      | Documentation            | [Chronosphere](https://chronosphere.io/)          |
