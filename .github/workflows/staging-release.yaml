@@ -587,8 +587,9 @@ jobs:
           password: ${{ secrets.GITHUB_TOKEN }}
 
       - name: Check the image exists
+        # Use manifest inspect rather than pulling the image so the Windows host version does not need to match the container image
         run: |
-          docker pull "$STAGING_IMAGE_NAME:$TAG"
+          docker manifest inspect "$STAGING_IMAGE_NAME:$TAG" > /dev/null
         env:
           TAG: ${{ matrix.tag }}
         shell: bash
