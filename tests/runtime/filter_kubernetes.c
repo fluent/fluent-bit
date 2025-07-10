@@ -56,6 +56,7 @@ void wait_with_timeout(uint32_t timeout_ms, struct kube_test_result *result, int
 /* Test target mode */
 #define KUBE_TAIL     0
 #define KUBE_SYSTEMD  1
+#define KUBE_POD_ASSOCIATION 2
 
 #ifdef FLB_HAVE_SYSTEMD
 int flb_test_systemd_send(void);
@@ -67,6 +68,45 @@ char kube_test_id[64];
 #define KUBE_PORT        "8002"
 #define KUBE_URL         "http://" KUBE_IP ":" KUBE_PORT
 #define DPATH            FLB_TESTS_DATA_PATH "/data/kubernetes"
+
+// Helper function to clear the file
+static void clear_file(const char *filename) {
+    FILE *file;
+
+    // Open the file in "w" mode to empty it
+    file = fopen(filename, "w");
+    if (file == NULL) {
+        perror("Error opening file to clear content");
+        return;
+    }
+
+    // Close the file to complete truncation
+    fclose(file);
+}
+
+// Helper function to write to the file with the specified content
+static void write_log_to_file(const char *filename) {
+    FILE *file;
+    char log_entry[512];
+
+    // Log message to write
+    const char *log_template = "{\"log\":\"Fluent Bit is logging\\n\",\"stream\":\"stdout\",\"time\":\"2019-04-01T17:58:33.598656444Z\"}";
+
+    // Open the file for appending
+    file = fopen(filename, "a");
+    if (file == NULL) {
+        perror("Error opening file");
+        return;
+    }
+    // Format the final log entry with the current time
+    snprintf(log_entry, sizeof(log_entry), log_template);
+
+    // Write the log entry to the file
+    fprintf(file, "%s\n", log_entry);
+
+    // Close the file
+    fclose(file);
+}
 
 static int file_to_buf(const char *path, char **out_buf, size_t *out_size)
 {
@@ -243,12 +283,12 @@ static void kube_test(const char *target, int type, const char *suffix, int nExp
     ret = flb_service_set(ctx.flb,
                           "Flush", "1",
                           "Grace", "1",
-                          "Log_Level", "error",
+                          "Log_Level", "debug",
                           "Parsers_File", DPATH "/parsers.conf",
                           NULL);
     TEST_CHECK_(ret == 0, "setting service options");
 
-    if (type == KUBE_TAIL) {
+    if (type == KUBE_TAIL || type == KUBE_POD_ASSOCIATION) {
         /* Compose path based on target */
         snprintf(path, sizeof(path) - 1, DPATH "/log/%s.log", target);
         TEST_CHECK_(access(path, R_OK) == 0, "accessing log file: %s", path);
@@ -299,7 +339,7 @@ static void kube_test(const char *target, int type, const char *suffix, int nExp
     }
     va_end(va);
 
-    if (type == KUBE_TAIL) {
+    if (type == KUBE_TAIL || type == KUBE_POD_ASSOCIATION) {
         ret = flb_filter_set(ctx.flb, filter_ffd,
                              "Regex_Parser", "kubernetes-tag",
                              "Kube_Tag_Prefix", "kube.",
@@ -356,9 +396,12 @@ static void kube_test(const char *target, int type, const char *suffix, int nExp
     }
 #endif
 
-    /* Poll for up to 2 seconds or until we got a match */
-    for (ret = 0; ret < 2000 && result.nMatched == 0; ret++) {
+    /* Poll for up to 3 seconds or until we got a match */
+    for (ret = 0; ret < 3000 && result.nMatched != nExpected; ret++) {
         usleep(1000);
+        if (ret == 2000 && type == KUBE_POD_ASSOCIATION) {
+            write_log_to_file(path);
+        }
     }
 
     /* Wait until matching nExpected results */
@@ -441,10 +484,75 @@ static void flb_test_options_use_kubelet_enabled_json()
     flb_test_options_use_kubelet_enabled("options_use-kubelet-enabled_fluent-bit", NULL, 1);
 }
 
+#define flb_test_pod_to_service_map_use_kubelet_true(target, suffix, nExpected, platform) \
+    kube_test("options/" target, KUBE_POD_ASSOCIATION, suffix, nExpected, \
+                "use_pod_association", "true", \
+                "use_kubelet", "true", \
+                "kubelet_port", "8002", \
+                "Pod_Service_Preload_Cache_Dir", DPATH "/servicemap/" target, \
+                "pod_association_host_server_ca_file", "/tst/ca.crt", \
+                "pod_association_host_client_cert_file", "/tst/client.crt", \
+                "pod_association_host_client_key_file", "/tst/client.key", \
+                "set_platform", platform, \
+                NULL); \
+
+#define flb_test_pod_to_service_map_use_kubelet_false(target, suffix, nExpected, platform) \
+    kube_test("options/" target, KUBE_POD_ASSOCIATION, suffix, nExpected, \
+                "use_pod_association", "true", \
+                "use_kubelet", "false", \
+                "kubelet_port", "8002", \
+                "Pod_Service_Preload_Cache_Dir", DPATH "/servicemap/" target, \
+                "pod_association_host_server_ca_file", "/tst/ca.crt", \
+                "pod_association_host_client_cert_file", "/tst/client.crt", \
+                "pod_association_host_client_key_file", "/tst/client.key", \
+                "set_platform", platform, \
+                NULL); \
+
+static void flb_test_options_use_kubelet_enabled_replicaset_json()
+{
+    flb_test_pod_to_service_map_use_kubelet_true("options_use-kubelet-enabled-replicaset_fluent-bit", NULL, 1, NULL);
+}
+
+static void flb_test_options_use_kubelet_enabled_deployment_json()
+{
+    flb_test_pod_to_service_map_use_kubelet_true("options_use-kubelet-enabled-deployment_fluent-bit", NULL, 1, NULL);
+}
+
+static void flb_test_options_use_kubelet_enabled_daemonset_json()
+{
+    flb_test_pod_to_service_map_use_kubelet_true("options_use-kubelet-enabled-daemonset_fluent-bit", NULL, 1, NULL);
+}
+
+static void flb_test_options_use_kubelet_enabled_pod_json()
+{
+    flb_test_pod_to_service_map_use_kubelet_true("options_use-kubelet-enabled-pod_fluent-bit", NULL, 1, NULL);
+}
+
 static void flb_test_options_use_kubelet_disabled_json()
 {
     flb_test_options_use_kubelet_disabled("options_use-kubelet-disabled_fluent-bit", NULL, 1);
 }
+
+static void flb_test_options_use_kubelet_disabled_replicaset_json()
+{
+    flb_test_pod_to_service_map_use_kubelet_false("options_use-kubelet-disabled-replicaset_fluent-bit", NULL, 1, NULL);
+}
+
+static void flb_test_options_use_kubelet_disabled_deployment_json()
+{
+    flb_test_pod_to_service_map_use_kubelet_false("options_use-kubelet-disabled-deployment_fluent-bit", NULL, 1, NULL);
+}
+
+static void flb_test_options_use_kubelet_disabled_daemonset_json()
+{
+    flb_test_pod_to_service_map_use_kubelet_false("options_use-kubelet-disabled-daemonset_fluent-bit", NULL, 1, NULL);
+}
+
+static void flb_test_options_use_kubelet_disabled_pod_json()
+{
+    flb_test_pod_to_service_map_use_kubelet_false("options_use-kubelet-disabled-pod_fluent-bit", NULL, 1, NULL);
+}
+
 
 #define flb_test_options_merge_log_enabled(target, suffix, nExpected) \
     kube_test("options/" target, KUBE_TAIL, suffix, nExpected, \
@@ -926,6 +1034,11 @@ static void flb_test_annotations_exclude_multiple_4_container_4_stderr()
     flb_test_annotations_exclude("annotations-exclude_multiple-4_container-4", "stderr", 1);
 }
 
+static void kube_options_use_pod_association_enabled()
+{
+    flb_test_pod_to_service_map_use_kubelet_true("options_use-pod-association-enabled_fluent-bit", NULL, 1, NULL);
+}
+
 #ifdef FLB_HAVE_SYSTEMD
 #define CONTAINER_NAME "CONTAINER_NAME=k8s_kairosdb_kairosdb-914055854-b63vq_default_d6c53deb-05a4-11e8-a8c4-080027435fb7_23"
 #include <systemd/sd-journal.h>
@@ -1012,97 +1125,106 @@ static void flb_test_systemd_logs()
 #endif
 
 TEST_LIST = {
-    {"kube_core_base", flb_test_core_base},
-    {"kube_core_no_meta", flb_test_core_no_meta},
-    {"kube_core_unescaping_text", flb_test_core_unescaping_text},
-    {"kube_core_unescaping_json", flb_test_core_unescaping_json},
-    {"kube_core_base_with_namespace_labels_and_annotations", flb_test_core_base_with_namespace_labels_and_annotations},
-    {"kube_core_base_with_owner_references", flb_test_core_base_with_owner_references},
-    {"kube_options_use-kubelet_enabled_json", flb_test_options_use_kubelet_enabled_json},
-    {"kube_options_use-kubelet_disabled_json", flb_test_options_use_kubelet_disabled_json},
-    {"kube_options_merge_log_enabled_text", flb_test_options_merge_log_enabled_text},
-    {"kube_options_merge_log_enabled_json", flb_test_options_merge_log_enabled_json},
-    {"kube_options_merge_log_enabled_invalid_json", flb_test_options_merge_log_enabled_invalid_json},
-    {"kube_options_merge_log_disabled_json", flb_test_options_merge_log_disabled_json},
-    {"kube_options_merge_log_trim_enabled_json", flb_test_options_merge_log_trim_enabled_json},
-    {"kube_options_merge_log_trim_disabled_json", flb_test_options_merge_log_trim_disabled_json},
-    {"kube_options_merge_log_key_json", flb_test_options_merge_log_key_json},
-    {"kube_options_keep_log_enabled_json", flb_test_options_keep_log_enabled_json},
-    {"kube_options_keep_log_disabled_json", flb_test_options_keep_log_disabled_json},
-    {"kube_options_k8s_logging_parser_disabled_text_stdout", flb_test_options_k8s_logging_parser_disabled_text_stdout},
-    {"kube_options_k8s_logging_parser_disabled_text_stderr", flb_test_options_k8s_logging_parser_disabled_text_stderr},
-    {"kube_options_k8s_logging_exclude_disabled_text_stdout", flb_test_options_k8s_logging_exclude_disabled_text_stdout},
-    {"kube_options_k8s_logging_exclude_disabled_text_stderr", flb_test_options_k8s_logging_exclude_disabled_text_stderr},
-    {"kube_annotations_invalid_text", flb_test_annotations_invalid_text},
-    {"kube_annotations_parser_regex_with_time_text", flb_test_annotations_parser_regex_with_time_text},
-    {"kube_annotations_parser_regex_with_time_invalid_text_1", flb_test_annotations_parser_regex_with_time_invalid_text_1},
-    {"kube_annotations_parser_json_with_time_json", flb_test_annotations_parser_json_with_time_json},
-    {"kube_annotations_parser_json_with_time_invalid_json_1", flb_test_annotations_parser_json_with_time_invalid_json_1},
-    {"kube_annotations_parser_invalid_text_stdout", flb_test_annotations_parser_invalid_text_stdout},
-    {"kube_annotations_parser_invalid_text_stderr", flb_test_annotations_parser_invalid_text_stderr},
-    {"kube_annotations_parser_stdout_text_stdout", flb_test_annotations_parser_stdout_text_stdout},
-    {"kube_annotations_parser_stdout_text_stderr", flb_test_annotations_parser_stdout_text_stderr},
-    {"kube_annotations_parser_stderr_text_stdout", flb_test_annotations_parser_stderr_text_stdout},
-    {"kube_annotations_parser_stderr_text_stderr", flb_test_annotations_parser_stderr_text_stderr},
-    {"kube_annotations_parser_multiple_1_container_1_stdout", flb_test_annotations_parser_multiple_1_container_1_stdout},
-    {"kube_annotations_parser_multiple_1_container_1_stderr", flb_test_annotations_parser_multiple_1_container_1_stderr},
-    {"kube_annotations_parser_multiple_1_container_2_stdout", flb_test_annotations_parser_multiple_1_container_2_stdout},
-    {"kube_annotations_parser_multiple_1_container_2_stderr", flb_test_annotations_parser_multiple_1_container_2_stderr},
-    {"kube_annotations_parser_multiple_1_container_3_stdout", flb_test_annotations_parser_multiple_1_container_3_stdout},
-    {"kube_annotations_parser_multiple_1_container_3_stderr", flb_test_annotations_parser_multiple_1_container_3_stderr},
-    {"kube_annotations_parser_multiple_1_container_4_stdout", flb_test_annotations_parser_multiple_1_container_4_stdout},
-    {"kube_annotations_parser_multiple_1_container_4_stderr", flb_test_annotations_parser_multiple_1_container_4_stderr},
-    {"kube_annotations_parser_multiple_1_container_5_stdout", flb_test_annotations_parser_multiple_1_container_5_stdout},
-    {"kube_annotations_parser_multiple_1_container_5_stderr", flb_test_annotations_parser_multiple_1_container_5_stderr},
-    {"kube_annotations_parser_multiple_2_container_1_stdout", flb_test_annotations_parser_multiple_2_container_1_stdout},
-    {"kube_annotations_parser_multiple_2_container_1_stderr", flb_test_annotations_parser_multiple_2_container_1_stderr},
-    {"kube_annotations_parser_multiple_2_container_2_stdout", flb_test_annotations_parser_multiple_2_container_2_stdout},
-    {"kube_annotations_parser_multiple_2_container_2_stderr", flb_test_annotations_parser_multiple_2_container_2_stderr},
-    {"kube_annotations_parser_multiple_2_container_3_stdout", flb_test_annotations_parser_multiple_2_container_3_stdout},
-    {"kube_annotations_parser_multiple_2_container_3_stderr", flb_test_annotations_parser_multiple_2_container_3_stderr},
-    {"kube_annotations_parser_multiple_2_container_4_stdout", flb_test_annotations_parser_multiple_2_container_4_stdout},
-    {"kube_annotations_parser_multiple_2_container_4_stderr", flb_test_annotations_parser_multiple_2_container_4_stderr},
-    {"kube_annotations_parser_multiple_2_container_5_stdout", flb_test_annotations_parser_multiple_2_container_5_stdout},
-    {"kube_annotations_parser_multiple_2_container_5_stderr", flb_test_annotations_parser_multiple_2_container_5_stderr},
-    {"kube_annotations_exclude_default_text", flb_test_annotations_exclude_default_text},
-    {"kube_annotations_exclude_invalid_text_stdout", flb_test_annotations_exclude_invalid_text_stdout},
-    {"kube_annotations_exclude_invalid_text_stderr", flb_test_annotations_exclude_invalid_text_stderr},
-    {"kube_annotations_exclude_stdout_text_stdout", flb_test_annotations_exclude_stdout_text_stdout},
-    {"kube_annotations_exclude_stdout_text_stderr", flb_test_annotations_exclude_stdout_text_stderr},
-    {"kube_annotations_exclude_stderr_text_stdout", flb_test_annotations_exclude_stderr_text_stdout},
-    {"kube_annotations_exclude_stderr_text_stderr", flb_test_annotations_exclude_stderr_text_stderr},
-    {"kube_annotations_exclude_multiple_1_container_1_stdout", flb_test_annotations_exclude_multiple_1_container_1_stdout},
-    {"kube_annotations_exclude_multiple_1_container_1_stderr", flb_test_annotations_exclude_multiple_1_container_1_stderr},
-    {"kube_annotations_exclude_multiple_1_container_2_stdout", flb_test_annotations_exclude_multiple_1_container_2_stdout},
-    {"kube_annotations_exclude_multiple_1_container_2_stderr", flb_test_annotations_exclude_multiple_1_container_2_stderr},
-    {"kube_annotations_exclude_multiple_1_container_3_stdout", flb_test_annotations_exclude_multiple_1_container_3_stdout},
-    {"kube_annotations_exclude_multiple_1_container_3_stderr", flb_test_annotations_exclude_multiple_1_container_3_stderr},
-    {"kube_annotations_exclude_multiple_1_container_4_stdout", flb_test_annotations_exclude_multiple_1_container_4_stdout},
-    {"kube_annotations_exclude_multiple_1_container_4_stderr", flb_test_annotations_exclude_multiple_1_container_4_stderr},
-    {"kube_annotations_exclude_multiple_2_container_1_stdout", flb_test_annotations_exclude_multiple_2_container_1_stdout},
-    {"kube_annotations_exclude_multiple_2_container_1_stderr", flb_test_annotations_exclude_multiple_2_container_1_stderr},
-    {"kube_annotations_exclude_multiple_2_container_2_stdout", flb_test_annotations_exclude_multiple_2_container_2_stdout},
-    {"kube_annotations_exclude_multiple_2_container_2_stderr", flb_test_annotations_exclude_multiple_2_container_2_stderr},
-    {"kube_annotations_exclude_multiple_2_container_3_stdout", flb_test_annotations_exclude_multiple_2_container_3_stdout},
-    {"kube_annotations_exclude_multiple_2_container_3_stderr", flb_test_annotations_exclude_multiple_2_container_3_stderr},
-    {"kube_annotations_exclude_multiple_2_container_4_stdout", flb_test_annotations_exclude_multiple_2_container_4_stdout},
-    {"kube_annotations_exclude_multiple_2_container_4_stderr", flb_test_annotations_exclude_multiple_2_container_4_stderr},
-    {"kube_annotations_exclude_multiple_3_container_1_stdout", flb_test_annotations_exclude_multiple_3_container_1_stdout},
-    {"kube_annotations_exclude_multiple_3_container_1_stderr", flb_test_annotations_exclude_multiple_3_container_1_stderr},
-    {"kube_annotations_exclude_multiple_3_container_2_stdout", flb_test_annotations_exclude_multiple_3_container_2_stdout},
-    {"kube_annotations_exclude_multiple_3_container_2_stderr", flb_test_annotations_exclude_multiple_3_container_2_stderr},
-    {"kube_annotations_exclude_multiple_3_container_3_stdout", flb_test_annotations_exclude_multiple_3_container_3_stdout},
-    {"kube_annotations_exclude_multiple_3_container_3_stderr", flb_test_annotations_exclude_multiple_3_container_3_stderr},
-    {"kube_annotations_exclude_multiple_3_container_4_stdout", flb_test_annotations_exclude_multiple_3_container_4_stdout},
-    {"kube_annotations_exclude_multiple_3_container_4_stderr", flb_test_annotations_exclude_multiple_3_container_4_stderr},
-    {"kube_annotations_exclude_multiple_4_container_1_stdout", flb_test_annotations_exclude_multiple_4_container_1_stdout},
-    {"kube_annotations_exclude_multiple_4_container_1_stderr", flb_test_annotations_exclude_multiple_4_container_1_stderr},
-    {"kube_annotations_exclude_multiple_4_container_2_stdout", flb_test_annotations_exclude_multiple_4_container_2_stdout},
-    {"kube_annotations_exclude_multiple_4_container_2_stderr", flb_test_annotations_exclude_multiple_4_container_2_stderr},
-    {"kube_annotations_exclude_multiple_4_container_3_stdout", flb_test_annotations_exclude_multiple_4_container_3_stdout},
-    {"kube_annotations_exclude_multiple_4_container_3_stderr", flb_test_annotations_exclude_multiple_4_container_3_stderr},
-    {"kube_annotations_exclude_multiple_4_container_4_stdout", flb_test_annotations_exclude_multiple_4_container_4_stdout},
-    {"kube_annotations_exclude_multiple_4_container_4_stderr", flb_test_annotations_exclude_multiple_4_container_4_stderr},
+    // {"kube_core_base", flb_test_core_base},
+    // {"kube_core_no_meta", flb_test_core_no_meta},
+    // {"kube_core_unescaping_text", flb_test_core_unescaping_text},
+    // {"kube_core_unescaping_json", flb_test_core_unescaping_json},
+    // {"kube_core_base_with_namespace_labels_and_annotations", flb_test_core_base_with_namespace_labels_and_annotations},
+    // {"kube_core_base_with_owner_references", flb_test_core_base_with_owner_references},
+    {"kube_options_use_pod_association_enabled", kube_options_use_pod_association_enabled},
+    // {"kube_options_use-kubelet_enabled_json", flb_test_options_use_kubelet_enabled_json},
+    // {"kube_options_use-kubelet_enabled_replicateset_json", flb_test_options_use_kubelet_enabled_replicaset_json},
+    // {"kube_options_use-kubelet_enabled_deployment_json", flb_test_options_use_kubelet_enabled_deployment_json},
+    // {"kube_options_use-kubelet_enabled_daemonset_json", flb_test_options_use_kubelet_enabled_daemonset_json},
+    // {"kube_options_use-kubelet_enabled_pod_json", flb_test_options_use_kubelet_enabled_pod_json},
+    // {"kube_options_use-kubelet_disabled_json", flb_test_options_use_kubelet_disabled_json},
+//     {"kube_options_use-kubelet_disabled_replicaset_json", flb_test_options_use_kubelet_disabled_replicaset_json},
+//     {"kube_options_use-kubelet_disabled_deployment_json", flb_test_options_use_kubelet_disabled_deployment_json},
+//     {"kube_options_use-kubelet_disabled_daemonset_json", flb_test_options_use_kubelet_disabled_daemonset_json},
+// {"kube_options_use-kubelet_disabled_pod_json", flb_test_options_use_kubelet_disabled_pod_json},
+    // {"kube_options_merge_log_enabled_text", flb_test_options_merge_log_enabled_text},
+    // {"kube_options_merge_log_enabled_json", flb_test_options_merge_log_enabled_json},
+    // {"kube_options_merge_log_enabled_invalid_json", flb_test_options_merge_log_enabled_invalid_json},
+    // {"kube_options_merge_log_disabled_json", flb_test_options_merge_log_disabled_json},
+    // {"kube_options_merge_log_trim_enabled_json", flb_test_options_merge_log_trim_enabled_json},
+    // {"kube_options_merge_log_trim_disabled_json", flb_test_options_merge_log_trim_disabled_json},
+    // {"kube_options_merge_log_key_json", flb_test_options_merge_log_key_json},
+    // {"kube_options_keep_log_enabled_json", flb_test_options_keep_log_enabled_json},
+    // {"kube_options_keep_log_disabled_json", flb_test_options_keep_log_disabled_json},
+    // {"kube_options_k8s_logging_parser_disabled_text_stdout", flb_test_options_k8s_logging_parser_disabled_text_stdout},
+    // {"kube_options_k8s_logging_parser_disabled_text_stderr", flb_test_options_k8s_logging_parser_disabled_text_stderr},
+    // {"kube_options_k8s_logging_exclude_disabled_text_stdout", flb_test_options_k8s_logging_exclude_disabled_text_stdout},
+    // {"kube_options_k8s_logging_exclude_disabled_text_stderr", flb_test_options_k8s_logging_exclude_disabled_text_stderr},
+    // {"kube_annotations_invalid_text", flb_test_annotations_invalid_text},
+    // {"kube_annotations_parser_regex_with_time_text", flb_test_annotations_parser_regex_with_time_text},
+    // {"kube_annotations_parser_regex_with_time_invalid_text_1", flb_test_annotations_parser_regex_with_time_invalid_text_1},
+    // {"kube_annotations_parser_json_with_time_json", flb_test_annotations_parser_json_with_time_json},
+    // {"kube_annotations_parser_json_with_time_invalid_json_1", flb_test_annotations_parser_json_with_time_invalid_json_1},
+    // {"kube_annotations_parser_invalid_text_stdout", flb_test_annotations_parser_invalid_text_stdout},
+    // {"kube_annotations_parser_invalid_text_stderr", flb_test_annotations_parser_invalid_text_stderr},
+    // {"kube_annotations_parser_stdout_text_stdout", flb_test_annotations_parser_stdout_text_stdout},
+    // {"kube_annotations_parser_stdout_text_stderr", flb_test_annotations_parser_stdout_text_stderr},
+    // {"kube_annotations_parser_stderr_text_stdout", flb_test_annotations_parser_stderr_text_stdout},
+    // {"kube_annotations_parser_stderr_text_stderr", flb_test_annotations_parser_stderr_text_stderr},
+    // {"kube_annotations_parser_multiple_1_container_1_stdout", flb_test_annotations_parser_multiple_1_container_1_stdout},
+    // {"kube_annotations_parser_multiple_1_container_1_stderr", flb_test_annotations_parser_multiple_1_container_1_stderr},
+    // {"kube_annotations_parser_multiple_1_container_2_stdout", flb_test_annotations_parser_multiple_1_container_2_stdout},
+    // {"kube_annotations_parser_multiple_1_container_2_stderr", flb_test_annotations_parser_multiple_1_container_2_stderr},
+    // {"kube_annotations_parser_multiple_1_container_3_stdout", flb_test_annotations_parser_multiple_1_container_3_stdout},
+    // {"kube_annotations_parser_multiple_1_container_3_stderr", flb_test_annotations_parser_multiple_1_container_3_stderr},
+    // {"kube_annotations_parser_multiple_1_container_4_stdout", flb_test_annotations_parser_multiple_1_container_4_stdout},
+    // {"kube_annotations_parser_multiple_1_container_4_stderr", flb_test_annotations_parser_multiple_1_container_4_stderr},
+    // {"kube_annotations_parser_multiple_1_container_5_stdout", flb_test_annotations_parser_multiple_1_container_5_stdout},
+    // {"kube_annotations_parser_multiple_1_container_5_stderr", flb_test_annotations_parser_multiple_1_container_5_stderr},
+    // {"kube_annotations_parser_multiple_2_container_1_stdout", flb_test_annotations_parser_multiple_2_container_1_stdout},
+    // {"kube_annotations_parser_multiple_2_container_1_stderr", flb_test_annotations_parser_multiple_2_container_1_stderr},
+    // {"kube_annotations_parser_multiple_2_container_2_stdout", flb_test_annotations_parser_multiple_2_container_2_stdout},
+    // {"kube_annotations_parser_multiple_2_container_2_stderr", flb_test_annotations_parser_multiple_2_container_2_stderr},
+    // {"kube_annotations_parser_multiple_2_container_3_stdout", flb_test_annotations_parser_multiple_2_container_3_stdout},
+    // {"kube_annotations_parser_multiple_2_container_3_stderr", flb_test_annotations_parser_multiple_2_container_3_stderr},
+    // {"kube_annotations_parser_multiple_2_container_4_stdout", flb_test_annotations_parser_multiple_2_container_4_stdout},
+    // {"kube_annotations_parser_multiple_2_container_4_stderr", flb_test_annotations_parser_multiple_2_container_4_stderr},
+    // {"kube_annotations_parser_multiple_2_container_5_stdout", flb_test_annotations_parser_multiple_2_container_5_stdout},
+    // {"kube_annotations_parser_multiple_2_container_5_stderr", flb_test_annotations_parser_multiple_2_container_5_stderr},
+    // {"kube_annotations_exclude_default_text", flb_test_annotations_exclude_default_text},
+    // {"kube_annotations_exclude_invalid_text_stdout", flb_test_annotations_exclude_invalid_text_stdout},
+    // {"kube_annotations_exclude_invalid_text_stderr", flb_test_annotations_exclude_invalid_text_stderr},
+    // {"kube_annotations_exclude_stdout_text_stdout", flb_test_annotations_exclude_stdout_text_stdout},
+    // {"kube_annotations_exclude_stdout_text_stderr", flb_test_annotations_exclude_stdout_text_stderr},
+    // {"kube_annotations_exclude_stderr_text_stdout", flb_test_annotations_exclude_stderr_text_stdout},
+    // {"kube_annotations_exclude_stderr_text_stderr", flb_test_annotations_exclude_stderr_text_stderr},
+    // {"kube_annotations_exclude_multiple_1_container_1_stdout", flb_test_annotations_exclude_multiple_1_container_1_stdout},
+    // {"kube_annotations_exclude_multiple_1_container_1_stderr", flb_test_annotations_exclude_multiple_1_container_1_stderr},
+    // {"kube_annotations_exclude_multiple_1_container_2_stdout", flb_test_annotations_exclude_multiple_1_container_2_stdout},
+    // {"kube_annotations_exclude_multiple_1_container_2_stderr", flb_test_annotations_exclude_multiple_1_container_2_stderr},
+    // {"kube_annotations_exclude_multiple_1_container_3_stdout", flb_test_annotations_exclude_multiple_1_container_3_stdout},
+    // {"kube_annotations_exclude_multiple_1_container_3_stderr", flb_test_annotations_exclude_multiple_1_container_3_stderr},
+    // {"kube_annotations_exclude_multiple_1_container_4_stdout", flb_test_annotations_exclude_multiple_1_container_4_stdout},
+    // {"kube_annotations_exclude_multiple_1_container_4_stderr", flb_test_annotations_exclude_multiple_1_container_4_stderr},
+    // {"kube_annotations_exclude_multiple_2_container_1_stdout", flb_test_annotations_exclude_multiple_2_container_1_stdout},
+    // {"kube_annotations_exclude_multiple_2_container_1_stderr", flb_test_annotations_exclude_multiple_2_container_1_stderr},
+    // {"kube_annotations_exclude_multiple_2_container_2_stdout", flb_test_annotations_exclude_multiple_2_container_2_stdout},
+    // {"kube_annotations_exclude_multiple_2_container_2_stderr", flb_test_annotations_exclude_multiple_2_container_2_stderr},
+    // {"kube_annotations_exclude_multiple_2_container_3_stdout", flb_test_annotations_exclude_multiple_2_container_3_stdout},
+    // {"kube_annotations_exclude_multiple_2_container_3_stderr", flb_test_annotations_exclude_multiple_2_container_3_stderr},
+    // {"kube_annotations_exclude_multiple_2_container_4_stdout", flb_test_annotations_exclude_multiple_2_container_4_stdout},
+    // {"kube_annotations_exclude_multiple_2_container_4_stderr", flb_test_annotations_exclude_multiple_2_container_4_stderr},
+    // {"kube_annotations_exclude_multiple_3_container_1_stdout", flb_test_annotations_exclude_multiple_3_container_1_stdout},
+    // {"kube_annotations_exclude_multiple_3_container_1_stderr", flb_test_annotations_exclude_multiple_3_container_1_stderr},
+    // {"kube_annotations_exclude_multiple_3_container_2_stdout", flb_test_annotations_exclude_multiple_3_container_2_stdout},
+    // {"kube_annotations_exclude_multiple_3_container_2_stderr", flb_test_annotations_exclude_multiple_3_container_2_stderr},
+    // {"kube_annotations_exclude_multiple_3_container_3_stdout", flb_test_annotations_exclude_multiple_3_container_3_stdout},
+    // {"kube_annotations_exclude_multiple_3_container_3_stderr", flb_test_annotations_exclude_multiple_3_container_3_stderr},
+    // {"kube_annotations_exclude_multiple_3_container_4_stdout", flb_test_annotations_exclude_multiple_3_container_4_stdout},
+    // {"kube_annotations_exclude_multiple_3_container_4_stderr", flb_test_annotations_exclude_multiple_3_container_4_stderr},
+    // {"kube_annotations_exclude_multiple_4_container_1_stdout", flb_test_annotations_exclude_multiple_4_container_1_stdout},
+    // {"kube_annotations_exclude_multiple_4_container_1_stderr", flb_test_annotations_exclude_multiple_4_container_1_stderr},
+    // {"kube_annotations_exclude_multiple_4_container_2_stdout", flb_test_annotations_exclude_multiple_4_container_2_stdout},
+    // {"kube_annotations_exclude_multiple_4_container_2_stderr", flb_test_annotations_exclude_multiple_4_container_2_stderr},
+    // {"kube_annotations_exclude_multiple_4_container_3_stdout", flb_test_annotations_exclude_multiple_4_container_3_stdout},
+    // {"kube_annotations_exclude_multiple_4_container_3_stderr", flb_test_annotations_exclude_multiple_4_container_3_stderr},
+    // {"kube_annotations_exclude_multiple_4_container_4_stdout", flb_test_annotations_exclude_multiple_4_container_4_stdout},
+    // {"kube_annotations_exclude_multiple_4_container_4_stderr", flb_test_annotations_exclude_multiple_4_container_4_stderr},
 #ifdef FLB_HAVE_SYSTEMD
     {"kube_systemd_logs", flb_test_systemd_logs},
 #endif
