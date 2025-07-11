@@ -406,11 +406,19 @@ static int mkpath(struct flb_output_instance *ins, const char *dir)
         return -1;
     }
 
+    p = parent_path;
+
+    /* Skip the drive letter if present (e.g., "C:") */
+    if (p[1] == ':') {
+        p += 2;
+    }
+
     /* Normalize all forward slashes to backslashes */
-    for (p = parent_path; *p; ++p) {
+    while (*p != '\0') {
         if (*p == '/') {
             *p = '\\';
         }
+        p++;
     }
 
     flb_plg_debug(ins, "starting to create directory %s", parent_path);
