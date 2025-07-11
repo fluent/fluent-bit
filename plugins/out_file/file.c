@@ -378,6 +378,7 @@ static int mkpath(struct flb_output_instance *ins, const char *dir)
     char parent_path[MAX_PATH];
     DWORD err;
     char *p;
+    char *sep;
 #endif
     int ret;
 
@@ -422,8 +423,8 @@ static int mkpath(struct flb_output_instance *ins, const char *dir)
     }
 
     flb_plg_debug(ins, "starting to create directory %s", parent_path);
-    p = strstr(parent_path, FLB_PATH_SEPARATOR);
-    if (p != NULL && PathRemoveFileSpecA(parent_path)) {
+    sep = strstr(parent_path, FLB_PATH_SEPARATOR);
+    if (sep != NULL && PathRemoveFileSpecA(parent_path)) {
         flb_plg_debug(ins, "creating directory (recursive) %s", parent_path);
         ret = mkpath(ins, parent_path);
         if (ret != 0) {
