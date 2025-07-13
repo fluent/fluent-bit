@@ -1092,8 +1092,9 @@ static struct flb_dns_lookup_context *flb_net_dns_lookup_context_create(
 
     optmask = ARES_OPT_FLAGS;
 
+    opts.flags = ARES_FLAG_EDNS;
     if (dns_mode == FLB_DNS_USE_TCP) {
-        opts.flags = ARES_FLAG_USEVC;
+        opts.flags |= ARES_FLAG_USEVC;
     }
 
     *result = ares_init_options((ares_channel *) &lookup_context->ares_channel,
