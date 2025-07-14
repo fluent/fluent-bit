@@ -56,6 +56,10 @@ struct tls_context {
     SSL_CTX *ctx;
     int mode;
     char *alpn;
+#if defined(FLB_SYSTEM_WINDOWS)
+    char *certstore_name;
+    int use_enterprise_store;
+#endif
     pthread_mutex_t mutex;
 };
 
@@ -291,6 +295,7 @@ static int windows_load_system_certificates(struct tls_context *ctx)
     const unsigned char *win_cert_data;
     X509_STORE *ossl_store = SSL_CTX_get_cert_store(ctx->ctx);
     X509 *ossl_cert;
+    char *certstore_name = "Root";
 
     /* Check if OpenSSL certificate store is available */
     if (!ossl_store) {
@@ -298,8 +303,23 @@ static int windows_load_system_certificates(struct tls_context *ctx)
         return -1;
     }
 
-    /* Open the Windows system certificate store */
-    win_store = CertOpenSystemStoreA(0, "Root");
+    if (ctx->certstore_name) {
+        certstore_name = ctx->certstore_name;
+    }
+
+    if (ctx->use_enterprise_store) {
+        /* Open the Windows system enterprise certificate store */
+        win_store = CertOpenStore(CERT_STORE_PROV_SYSTEM,
+                                  0,
+                                  0,
+                                  CERT_SYSTEM_STORE_LOCAL_MACHINE_ENTERPRISE,
+                                  certstore_name);
+    }
+    else {
+        /* Open the Windows system certificate store */
+        win_store = CertOpenSystemStoreA(0, certstore_name);
+    }
+
     if (win_store == NULL) {
         flb_error("[tls] cannot open windows certificate store: %lu", GetLastError());
         return -1;
