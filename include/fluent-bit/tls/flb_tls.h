@@ -101,6 +101,10 @@ struct flb_tls {
     char *vhost;                      /* Virtual hostname for SNI  */
     int mode;                         /* Client or Server          */
     int verify_hostname;              /* Verify hostname           */
+#if defined(FLB_SYSTEM_WINDOWS)
+    char *certstore_name;             /* Windows CertStore Name    */
+    int use_enterprise_store;         /* Use Enterprise store or not */
+#endif
 
     /* Bakend library for TLS */
     void *ctx;                        /* TLS context created */
@@ -122,6 +126,10 @@ int flb_tls_destroy(struct flb_tls *tls);
 int flb_tls_set_alpn(struct flb_tls *tls, const char *alpn);
 
 int flb_tls_set_verify_hostname(struct flb_tls *tls, int verify_hostname);
+#if defined(FLB_SYSTEM_WINDOWS)
+int flb_tls_set_certstore_name(struct flb_tls *tls, const char *certstore_name);
+int flb_tls_set_use_enterprise_store(struct flb_tls *tls, int use_enterprise);
+#endif
 
 int flb_tls_load_system_certificates(struct flb_tls *tls);
 int flb_tls_set_minmax_proto(struct flb_tls *tls,
