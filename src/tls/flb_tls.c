@@ -216,6 +216,10 @@ struct flb_tls *flb_tls_create(int mode,
     tls->debug = debug;
     tls->mode = mode;
     tls->verify_hostname = FLB_FALSE;
+#if defined(FLB_SYSTEM_WINDOWS)
+    tls->certstore_name = NULL;
+    tls->use_enterprise_store = FLB_FALSE;
+#endif
 
     if (vhost != NULL) {
         tls->vhost = flb_strdup(vhost);
@@ -261,6 +265,12 @@ int flb_tls_destroy(struct flb_tls *tls)
         flb_free(tls->vhost);
     }
 
+#if defined(FLB_SYSTEM_WINDOWS)
+    if (tls->certstore_name) {
+        flb_free(tls->certstore_name);
+    }
+#endif
+
     flb_free(tls);
 
     return 0;
@@ -285,6 +295,34 @@ int flb_tls_set_verify_hostname(struct flb_tls *tls, int verify_hostname)
 
     return 0;
 }
+
+#if defined(FLB_SYSTEM_WINDOWS)
+int flb_tls_set_certstore_name(struct flb_tls *tls, const char *certstore_name)
+{
+    if (!tls) {
+        return -1;
+    }
+
+    if (tls->certstore_name) {
+        flb_free(tls->certstore_name);
+    }
+
+    tls->certstore_name = flb_strdup(certstore_name);
+
+    return 0;
+}
+
+int flb_tls_set_use_enterprise_store(struct flb_tls *tls, int use_enterprise)
+{
+    if (!tls) {
+        return -1;
+    }
+
+    tls->use_enterprise_store = !!use_enterprise;
+
+    return 0;
+}
+#endif
 
 int flb_tls_net_read(struct flb_tls_session *session, void *buf, size_t len)
 {
