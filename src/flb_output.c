@@ -83,6 +83,16 @@ struct flb_config_map output_global_properties[] = {
         "Accepted values: a positive integer, 'no_limits', 'false', or 'off' to disable retry limits, "
         "or 'no_retries' to disable retries entirely."
     },
+    {
+        FLB_CONFIG_MAP_STR, "tls.windows.certstore_name", NULL,
+        0, FLB_FALSE, 0,
+        "Sets the certstore name on an output (Windows)"
+    },
+    {
+        FLB_CONFIG_MAP_STR, "tls.windows.use_enterprise_store", NULL,
+        0, FLB_FALSE, 0,
+        "Sets whether using enterprise certstore or not on an output (Windows)"
+    },
 
     {0}
 };
@@ -174,6 +184,11 @@ static void flb_output_free_properties(struct flb_output_instance *ins)
     if (ins->tls_ciphers) {
         flb_sds_destroy(ins->tls_ciphers);
     }
+# if defined(FLB_SYSTEM_WINDOWS)
+    if (ins->tls_win_certstore_name) {
+        flb_sds_destroy(ins->tls_win_certstore_name);
+    }
+# endif
 #endif
 }
 
@@ -751,6 +766,10 @@ struct flb_output_instance *flb_output_new(struct flb_config *config,
     instance->tls_crt_file          = NULL;
     instance->tls_key_file          = NULL;
     instance->tls_key_passwd        = NULL;
+# if defined(FLB_SYSTEM_WINDOWS)
+    instance->tls_win_certstore_name = NULL;
+    instance->tls_win_use_enterprise_certstore = FLB_FALSE;
+# endif
 #endif
 
     if (plugin->flags & FLB_OUTPUT_NET) {
@@ -975,6 +994,15 @@ int flb_output_set_property(struct flb_output_instance *ins,
     else if (prop_key_check("tls.ciphers", k, len) == 0) {
         flb_utils_set_plugin_string_property("tls.ciphers", &ins->tls_ciphers, tmp);
     }
+#  if defined(FLB_SYSTEM_WINDOWS)
+    else if (prop_key_check("tls.windows.certstore_name", k, len) == 0 && tmp) {
+        flb_utils_set_plugin_string_property("tls.windows.certstore_name", &ins->tls_win_certstore_name, tmp);
+    }
+    else if (prop_key_check("tls.windows.use_enterprise_store", k, len) == 0 && tmp) {
+        ins->tls_win_use_enterprise_certstore = flb_utils_bool(tmp);
+        flb_sds_destroy(tmp);
+    }
+#  endif
 #endif
     else if (prop_key_check("storage.total_limit_size", k, len) == 0 && tmp) {
         if (strcasecmp(tmp, "off") == 0 ||
@@ -1359,6 +1387,36 @@ int flb_output_init_all(struct flb_config *config)
                     return -1;
                 }
             }
+
+# if defined (FLB_SYSTEM_WINDOWS)
+            if (ins->tls_win_use_enterprise_certstore) {
+                ret = flb_tls_set_use_enterprise_store(ins->tls, ins->tls_win_use_enterprise_certstore);
+                if (ret == -1) {
+                    flb_error("[input %s] error set up to use enterprise certstore in TLS context",
+                              ins->name);
+
+                    return -1;
+                }
+            }
+
+            if (ins->tls_win_certstore_name) {
+                ret = flb_tls_set_certstore_name(ins->tls, ins->tls_win_certstore_name);
+                if (ret == -1) {
+                    flb_error("[output %s] error specify certstore name in TLS context",
+                              ins->name);
+
+                    return -1;
+                }
+
+                ret = flb_tls_load_system_certificates(ins->tls);
+                if (ret == -1) {
+                    flb_error("[output %s] error set up to load certstore with a user-defined name in TLS context",
+                              ins->name);
+
+                    return -1;
+                }
+            }
+# endif
         }
 #endif
         /*
