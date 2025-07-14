@@ -168,7 +168,51 @@ static void test_ctx_destroy(struct test_ctx *ctx)
 }
 
 #ifdef FLB_HAVE_METRICS
-char *basic_expected_strs[] = {"\"uptime\"", "\"records_total\"", "\"bytes_total\"", "\"proc_records_total\"", "\"proc_bytes_total\"", "\"errors_total\"", "\"retries_total\"", "\"retries_failed_total\"", "\"dropped_records_total\"", "\"retried_records_total\""};
+char *basic_expected_strs[] = {"\"uptime\"", "\"records_total\"", "\"bytes_total\"", "\"proc_records_total\"", "\"proc_bytes_total\"", "\"errors_total\"", "\"retries_total\"", "\"retries_failed_total\"", "\"dropped_records_total\"", "\"retried_records_total\"", "\"process_cpu_seconds_total\"", "\"process_resident_memory_bytes\""};
+
+static double get_metric_value(const char *json, const char *name)
+{
+    char search[128];
+    char *p;
+
+    /* locate metric entry by name */
+    snprintf(search, sizeof(search), "\"name\":\"%s\"", name);
+    p = strstr(json, search);
+    if (!p) {
+        return -1.0;
+    }
+
+    /* find the value field after the name */
+    p = strstr(p, "\"value\":");
+    if (!p) {
+        return -1.0;
+    }
+    p += strlen("\"value\":");
+    return atof(p);
+}
+
+static int cb_check_metric_values(void *record, size_t size, void *data)
+{
+    char *result = (char *) record;
+    double cpu;
+    double mem;
+
+
+    cpu = get_metric_value(result, "process_cpu_seconds_total");
+    mem = get_metric_value(result, "process_resident_memory_bytes");
+
+    if (!TEST_CHECK(cpu >= 0)) {
+        TEST_MSG("invalid cpu seconds value");
+    }
+
+    if (!TEST_CHECK(mem > 0)) {
+        TEST_MSG("invalid memory value");
+    }
+
+    set_output_num(get_output_num() + 1);
+    flb_free(record);
+    return 0;
+}
 
 static void test_basic(void)
 {
@@ -216,11 +260,52 @@ static void test_basic(void)
 
     test_ctx_destroy(ctx);
 }
+
+static void test_values(void)
+{
+    struct flb_lib_out_cb cb_data;
+    struct test_ctx *ctx;
+    int ret;
+    int num;
+
+    clear_output_num();
+
+    cb_data.cb = cb_check_metric_values;
+    cb_data.data = NULL;
+
+    ctx = test_ctx_create(&cb_data);
+    if (!TEST_CHECK(ctx != NULL)) {
+        TEST_MSG("test_ctx_create failed");
+        exit(EXIT_FAILURE);
+    }
+
+    ret = flb_input_set(ctx->flb, ctx->i_ffd,
+                        "scrape_interval", "1",
+                        NULL);
+    TEST_CHECK(ret == 0);
+
+    ret = flb_output_set(ctx->flb, ctx->o_ffd,
+                         "format", "json",
+                         NULL);
+    TEST_CHECK(ret == 0);
+
+    ret = flb_start(ctx->flb);
+    TEST_CHECK(ret == 0);
+
+    wait_with_timeout(3000, &num);
+
+    if (!TEST_CHECK(num > 0)) {
+        TEST_MSG("no outputs");
+    }
+
+    test_ctx_destroy(ctx);
+}
 #endif
 
 TEST_LIST = {
 #ifdef FLB_HAVE_METRICS
     {"basic", test_basic},
+    {"values", test_values},
 #endif
     {NULL, NULL}
 };
