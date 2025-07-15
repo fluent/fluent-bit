@@ -1400,6 +1400,8 @@ int flb_output_init_all(struct flb_config *config)
             }
 
             if (ins->tls_win_certstore_name) {
+                flb_debug("[output %s] starting to load %s certstore in TLS context",
+                          ins->name, ins->tls_win_certstore_name);
                 ret = flb_tls_set_certstore_name(ins->tls, ins->tls_win_certstore_name);
                 if (ret == -1) {
                     flb_error("[output %s] error specify certstore name in TLS context",
@@ -1408,6 +1410,8 @@ int flb_output_init_all(struct flb_config *config)
                     return -1;
                 }
 
+                flb_debug("[output %s] attempting to load %s certstore in TLS context",
+                          ins->name, ins->tls_win_certstore_name);
                 ret = flb_tls_load_system_certificates(ins->tls);
                 if (ret == -1) {
                     flb_error("[output %s] error set up to load certstore with a user-defined name in TLS context",
