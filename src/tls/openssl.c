@@ -372,7 +372,8 @@ static int windows_load_system_certificates(struct tls_context *ctx)
         return -1;
     }
 
-    flb_debug("[tls] successfully loaded certificates from windows system store.");
+    flb_debug("[tls] successfully loaded certificates from windows system %s store.", 
+              certstore_name);
     return 0;
 }
 #endif
