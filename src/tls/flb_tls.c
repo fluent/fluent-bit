@@ -299,26 +299,18 @@ int flb_tls_set_verify_hostname(struct flb_tls *tls, int verify_hostname)
 #if defined(FLB_SYSTEM_WINDOWS)
 int flb_tls_set_certstore_name(struct flb_tls *tls, const char *certstore_name)
 {
-    if (!tls) {
-        return -1;
+    if (tls) {
+        return tls->api->set_certstore_name(tls, certstore_name);
     }
-
-    if (tls->certstore_name) {
-        flb_free(tls->certstore_name);
-    }
-
-    tls->certstore_name = flb_strdup(certstore_name);
 
     return 0;
 }
 
 int flb_tls_set_use_enterprise_store(struct flb_tls *tls, int use_enterprise)
 {
-    if (!tls) {
-        return -1;
+    if (tls) {
+        return tls->api->set_use_enterprise_store(tls, use_enterprise);
     }
-
-    tls->use_enterprise_store = !!use_enterprise;
 
     return 0;
 }
