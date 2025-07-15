@@ -92,6 +92,11 @@ struct flb_tls_backend {
     int (*net_write) (struct flb_tls_session *, const void *data,
                       size_t len);
     int (*net_handshake) (struct flb_tls *, char *, void *);
+
+#if defined(FLB_SYSTEM_WINDOWS)
+    int (*set_certstore_name)(struct flb_tls *tls, const char *certstore_name);
+    int (*set_use_enterprise_store)(struct flb_tls *tls, int use_enterprise);
+#endif
 };
 
 /* Main TLS context */
