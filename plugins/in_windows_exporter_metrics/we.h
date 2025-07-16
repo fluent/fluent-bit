@@ -229,6 +229,22 @@ struct we_wmi_process_counters {
     int                    operational;
 };
 
+struct we_wmi_tcp_counters {
+    int                          operational;
+    struct wmi_query_spec       *v4_info;
+    struct wmi_query_spec       *v6_info;
+    
+    struct cmt_counter          *connection_failures;
+    struct cmt_gauge            *connections_active;
+    struct cmt_counter          *connections_established;
+    struct cmt_counter          *connections_passive;
+    struct cmt_counter          *connections_reset;
+    struct cmt_gauge            *segments_per_sec;
+    struct cmt_gauge            *segments_received_per_sec;
+    struct cmt_gauge            *segments_retransmitted_per_sec;
+    struct cmt_gauge            *segments_sent_per_sec;
+};
+
 struct we_os_counters {
     struct cmt_gauge *info;
     struct cmt_gauge *users;
@@ -303,6 +319,7 @@ struct flb_we {
     int wmi_memory_scrape_interval;
     int wmi_paging_file_scrape_interval;
     int wmi_process_scrape_interval;
+    int wmi_tcp_scrape_interval;
 
     int coll_cpu_fd;                                    /* collector fd (cpu)    */
     int coll_net_fd;                                    /* collector fd (net)  */
@@ -318,6 +335,7 @@ struct flb_we {
     int coll_wmi_memory_fd;                             /* collector fd (wmi_memory)    */
     int coll_wmi_paging_file_fd;                        /* collector fd (wmi_paging_file) */
     int coll_wmi_process_fd;                            /* collector fd (wmi_process) */
+    int coll_wmi_tcp_fd;                                /* collector fd (wmi_tcp) */
 
     /*
      * Metrics Contexts
@@ -338,6 +356,7 @@ struct flb_we {
     struct we_wmi_memory_counters *wmi_memory;
     struct we_wmi_paging_file_counters *wmi_paging_file;
     struct we_wmi_process_counters *wmi_process;
+    struct we_wmi_tcp_counters *wmi_tcp;
 };
 
 typedef int (*collector_cb)(struct flb_we *);
