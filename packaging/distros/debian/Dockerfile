@@ -17,6 +17,11 @@ ENV DEBIAN_FRONTEND="noninteractive" \
 ARG CMAKE_VERSION="3.31.6"
 ARG CMAKE_URL="https://github.com/Kitware/CMake/releases/download"
 
+# Patch to archive.debian.org
+# https://lists.debian.org/debian-devel-announce/2025/06/msg00001.html
+RUN sed -i s/deb.debian.org/archive.debian.org/g /etc/apt/sources.list && \
+    sed -i s/security.debian.org/archive.debian.org/g /etc/apt/sources.list
+
 # hadolint ignore=DL3008,DL3015
 RUN apt-get -qq update && \
     apt-get install -y curl ca-certificates build-essential \
@@ -42,6 +47,11 @@ COPY --from=multiarch-aarch64 /usr/bin/qemu-aarch64-static /usr/bin/qemu-aarch64
 
 ARG CMAKE_VERSION="3.31.6"
 ARG CMAKE_URL="https://github.com/Kitware/CMake/releases/download"
+
+# Patch to archive.debian.org
+# https://lists.debian.org/debian-devel-announce/2025/06/msg00001.html
+RUN sed -i s/deb.debian.org/archive.debian.org/g /etc/apt/sources.list && \
+    sed -i s/security.debian.org/archive.debian.org/g /etc/apt/sources.list
 
 # hadolint ignore=DL3008,DL3015
 RUN apt-get -qq update && \
