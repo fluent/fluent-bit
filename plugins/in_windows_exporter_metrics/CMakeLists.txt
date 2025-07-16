@@ -9,6 +9,7 @@ set(src
   we_wmi.c
   we_util.c
   we_metric.c
+  we_cache.c
   we_perflib.c
   we_wmi_thermalzone.c
   we_wmi_cpu_info.c
