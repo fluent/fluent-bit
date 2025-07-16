@@ -236,7 +236,7 @@ int we_wmi_memory_init(struct flb_we *ctx)
     }
     ctx->wmi_memory->pool_nonpaged_bytes = g;
 
-    g = cmt_gauge_create(ctx->cmt, "windows", "memory", "pool_nonpaged_allocs_total",
+    g = cmt_gauge_create(ctx->cmt, "windows", "memory", "pool_paged_allocs_total",
                          "Number of bytes of allocated space in paged pool (PoolPagedAllocs)",
                          0, NULL);
 
