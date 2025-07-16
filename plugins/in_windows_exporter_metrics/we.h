@@ -115,6 +115,14 @@ struct we_logical_disk_counters {
     char                            *query;
 };
 
+struct we_cache_counters {
+    struct we_perflib_metric_source *metric_sources;
+    struct we_perflib_metric_spec   *metric_specs;
+    int                              operational;
+    struct flb_hash_table           *metrics;
+    char                            *query;
+};
+
 struct wmi_query_spec;
 
 struct we_wmi_thermal_counters {
@@ -284,6 +292,7 @@ struct flb_we {
     int logical_disk_scrape_interval;
     int cs_scrape_interval;
     int os_scrape_interval;
+    int cache_scrape_interval;
     int wmi_thermalzone_scrape_interval;
     int wmi_cpu_info_scrape_interval;
     int wmi_logon_scrape_interval;
@@ -298,6 +307,7 @@ struct flb_we {
     int coll_logical_disk_fd;                           /* collector fd (logical_disk) */
     int coll_cs_fd;                                     /* collector fd (cs) */
     int coll_os_fd;                                     /* collector fd (os)    */
+    int coll_cache_fd;                                  /* collector fd (cache)    */
     int coll_wmi_thermalzone_fd;                        /* collector fd (wmi_thermalzone) */
     int coll_wmi_cpu_info_fd;                           /* collector fd (wmi_cpu_info) */
     int coll_wmi_logon_fd;                              /* collector fd (wmi_logon)    */
@@ -317,6 +327,7 @@ struct flb_we {
     struct we_logical_disk_counters logical_disk;
     struct we_cs_counters cs;
     struct we_os_counters *os;
+    struct we_cache_counters cache;
     struct we_wmi_thermal_counters *wmi_thermals;
     struct we_wmi_cpu_info_counters *wmi_cpu_info;
     struct we_wmi_logon_counters *wmi_logon;
