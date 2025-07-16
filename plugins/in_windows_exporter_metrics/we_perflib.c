@@ -492,6 +492,8 @@ static int we_perflib_process_object_type(
     perflib_object->counter_count = perf_object->NumCounters;
     perflib_object->instance_count = perf_object->NumInstances;
 
+    perflib_object->total_byte_length = perf_object->TotalByteLength;
+    perflib_object->definition_length = perf_object->DefinitionLength;
 
     perflib_object->instances = flb_hash_table_create(
                                                       FLB_HASH_TABLE_EVICT_NONE,
@@ -795,10 +797,56 @@ static int we_perflib_process_instances(struct we_perflib_context *context,
 {
     struct we_perflib_instance *perflib_instance;
     size_t                      instance_index;
+    size_t                      total_instance_data_size;
+    PERF_COUNTER_BLOCK         *first_counter_block;
     int                         result;
     int                         offset;
 
     offset = 0;
+
+    /* Calculate the total size of all instance and counter data blocks */
+    total_instance_data_size = perflib_object->total_byte_length -
+                               perflib_object->definition_length;
+
+    /*
+     * If the total size of instance data is exactly equal to the
+     * size of the first counter block, we can infer this is a single-instance
+     * object that lacks a PERF_INSTANCE_DEFINITION block.
+     */
+    if (perflib_object->instance_count == PERF_NO_INSTANCES) {
+        first_counter_block = (PERF_COUNTER_BLOCK *)input_data_block;
+
+        if (first_counter_block->ByteLength == total_instance_data_size) {
+            /* Path for special single-instance objects like "Cache" and "System" */
+            perflib_instance = we_perflib_create_instance(perflib_object->counter_count);
+            if (perflib_instance == NULL) {
+                return -1;
+            }
+
+            perflib_instance->name = flb_strdup("_Total");
+            perflib_instance->parent = perflib_object;
+
+            result = we_perflib_process_counters(context, perflib_object,
+                                                 perflib_instance, input_data_block);
+
+            if (result < 0) {
+                we_perflib_destroy_instance(perflib_instance);
+                return -1;
+            }
+            offset += result;
+
+            result = flb_hash_table_add(perflib_object->instances,
+                                        perflib_instance->name, strlen(perflib_instance->name),
+                                        perflib_instance, 0);
+
+            if (result < 0) {
+                we_perflib_destroy_instance(perflib_instance);
+                return -2;
+            }
+
+            return offset;
+        }
+    }
 
     for (instance_index = 0 ;
          instance_index < perflib_object->instance_count ;
