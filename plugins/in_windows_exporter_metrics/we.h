@@ -82,6 +82,8 @@ struct we_perflib_object {
     int64_t           hundred_ns_time;
     size_t            counter_count;
     size_t            instance_count;
+    size_t            total_byte_length;
+    size_t            definition_length;
     struct flb_hash_table *instances;
     struct mk_list    counter_definitions;
 };
