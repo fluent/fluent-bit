@@ -34,6 +34,7 @@
 #include "we_net.h"
 #include "we_logical_disk.h"
 #include "we_cs.h"
+#include "we_cache.h"
 
 /* wmi collectors */
 #include "we_wmi_cpu_info.h"
@@ -91,6 +92,16 @@ static int we_timer_cs_metrics_cb(struct flb_input_instance *ins,
     struct flb_ne *ctx = in_context;
 
     we_cs_update(ctx);
+
+    return 0;
+}
+
+static int we_timer_cache_metrics_cb(struct flb_input_instance *ins,
+                                     struct flb_config *config, void *in_context)
+{
+    struct flb_ne *ctx = in_context;
+
+    we_cache_update(ctx);
 
     return 0;
 }
@@ -262,6 +273,13 @@ static void we_cs_update_cb(char *name, void *p1, void *p2)
     we_cs_update(ctx);
 }
 
+static void we_cache_update_cb(char *name, void *p1, void *p2)
+{
+    struct flb_we *ctx = p1;
+
+    we_cache_update(ctx);
+}
+
 static void we_wmi_thermalzone_update_cb(char *name, void *p1, void *p2)
 {
     struct flb_we *ctx = p1;
@@ -337,6 +355,7 @@ struct flb_we_callback ne_callbacks[] = {
     { "net", we_net_update_cb },
     { "logical_disk", we_logical_disk_update_cb },
     { "cs", we_cs_update_cb },
+    { "cache", we_cache_update_cb },
     { "thermalzone", we_wmi_thermalzone_update_cb },
     { "logon", we_wmi_logon_update_cb },
     { "system", we_wmi_system_update_cb },
@@ -373,6 +392,7 @@ static int in_we_init(struct flb_input_instance *in,
     ctx->coll_logical_disk_fd = -1;
     ctx->coll_cs_fd = -1;
     ctx->coll_os_fd = -1;
+    ctx->coll_cache_fd = -1;
     ctx->coll_wmi_thermalzone_fd = -1;
     ctx->coll_wmi_cpu_info_fd = -1;
     ctx->coll_wmi_logon_fd = -1;
@@ -586,10 +606,35 @@ static int in_we_init(struct flb_input_instance *in,
                         return -1;
                     }
                 }
+                else if (strncmp(entry->str, "cache", 5) == 0) {
+                    if (ctx->cache_scrape_interval == 0) {
+                        flb_plg_debug(ctx->ins, "enabled metrics %s", entry->str);
+                        metric_idx = 6;
+                    }
+                    else {
+                        /* Create the cache collector */
+                        ret = flb_input_set_collector_time(in,
+                                                           we_timer_cache_metrics_cb,
+                                                           ctx->cache_scrape_interval, 0,
+                                                           config);
+                        if (ret == -1) {
+                            flb_plg_error(ctx->ins,
+                                          "could not set cache collector for Windows Exporter Metrics plugin");
+                            return -1;
+                        }
+                        ctx->coll_cache_fd = ret;
+                    }
+
+                    /* Initialize cache metric collectors */
+                    ret = we_cache_init(ctx);
+                    if (ret) {
+                        return -1;
+                    }
+                }
                 else if (strncmp(entry->str, "thermalzone", 11) == 0) {
                     if (ctx->wmi_thermalzone_scrape_interval == 0) {
                         flb_plg_debug(ctx->ins, "enabled metrics %s", entry->str);
-                        metric_idx = 6;
+                        metric_idx = 7;
                     }
                     else {
                         /* Create the thermalzone collector */
@@ -614,7 +659,7 @@ static int in_we_init(struct flb_input_instance *in,
                 else if (strncmp(entry->str, "logon", 5) == 0) {
                     if (ctx->wmi_logon_scrape_interval == 0) {
                         flb_plg_debug(ctx->ins, "enabled metrics %s", entry->str);
-                        metric_idx = 7;
+                        metric_idx = 8;
                     }
                     else {
                         /* Create the logon collector */
@@ -639,7 +684,7 @@ static int in_we_init(struct flb_input_instance *in,
                 else if (strncmp(entry->str, "system", 6) == 0) {
                     if (ctx->wmi_logon_scrape_interval == 0) {
                         flb_plg_debug(ctx->ins, "enabled metrics %s", entry->str);
-                        metric_idx = 8;
+                        metric_idx = 9;
                     }
                     else {
                         /* Create the logon collector */
@@ -664,7 +709,7 @@ static int in_we_init(struct flb_input_instance *in,
                 else if (strncmp(entry->str, "service", 7) == 0) {
                     if (ctx->wmi_service_scrape_interval == 0) {
                         flb_plg_debug(ctx->ins, "enabled metrics %s", entry->str);
-                        metric_idx = 9;
+                        metric_idx = 10;
                     }
                     else {
                         /* Create the service collector */
@@ -689,7 +734,7 @@ static int in_we_init(struct flb_input_instance *in,
                 else if (strncmp(entry->str, "memory", 6) == 0) {
                     if (ctx->wmi_memory_scrape_interval == 0) {
                         flb_plg_debug(ctx->ins, "enabled metrics %s", entry->str);
-                        metric_idx = 10;
+                        metric_idx = 11;
                     }
                     else {
                         /* Create the memory collector */
@@ -714,7 +759,7 @@ static int in_we_init(struct flb_input_instance *in,
                 else if (strncmp(entry->str, "paging_file", 11) == 0) {
                     if (ctx->wmi_paging_file_scrape_interval == 0) {
                         flb_plg_debug(ctx->ins, "enabled metrics %s", entry->str);
-                        metric_idx = 11;
+                        metric_idx = 12;
                     }
                     else {
                         /* Create the paging_file collector */
@@ -739,7 +784,7 @@ static int in_we_init(struct flb_input_instance *in,
                 else if (strncmp(entry->str, "process", 7) == 0) {
                     if (ctx->wmi_process_scrape_interval == 0) {
                         flb_plg_debug(ctx->ins, "enabled metrics %s", entry->str);
-                        metric_idx = 12;
+                        metric_idx = 13;
                     }
                     else {
                         /* Create the process collector */
@@ -822,6 +867,9 @@ static int in_we_exit(void *data, struct flb_config *config)
                 else if (strncmp(entry->str, "cs", 2) == 0) {
                     we_cs_exit(ctx);
                 }
+                else if (strncmp(entry->str, "cache", 5) == 0) {
+                    we_cache_exit(ctx);
+                }
                 else if (strncmp(entry->str, "thermalzone", 11) == 0) {
                     we_wmi_thermalzone_exit(ctx);
                 }
@@ -867,6 +915,9 @@ static int in_we_exit(void *data, struct flb_config *config)
     }
     if (ctx->coll_os_fd != -1) {
         we_os_exit(ctx);
+    }
+    if (ctx->coll_cache_fd != -1) {
+        we_cache_exit(ctx);
     }
     if (ctx->coll_wmi_thermalzone_fd != -1) {
         we_wmi_thermalzone_exit(ctx);
@@ -920,6 +971,9 @@ static void in_we_pause(void *data, struct flb_config *config)
     if (ctx->coll_os_fd != -1) {
         flb_input_collector_pause(ctx->coll_os_fd, ctx->ins);
     }
+    if (ctx->coll_cache_fd != -1) {
+        flb_input_collector_pause(ctx->coll_cache_fd, ctx->ins);
+    }
     if (ctx->coll_wmi_thermalzone_fd != -1) {
         flb_input_collector_pause(ctx->coll_wmi_thermalzone_fd, ctx->ins);
     }
@@ -970,6 +1024,9 @@ static void in_we_resume(void *data, struct flb_config *config)
     }
     if (ctx->coll_os_fd != -1) {
         flb_input_collector_resume(ctx->coll_os_fd, ctx->ins);
+    }
+    if (ctx->coll_cache_fd != -1) {
+        flb_input_collector_resume(ctx->coll_cache_fd, ctx->ins);
     }
     if (ctx->coll_wmi_thermalzone_fd != -1) {
         flb_input_collector_resume(ctx->coll_wmi_thermalzone_fd, ctx->ins);
@@ -1036,6 +1093,12 @@ static struct flb_config_map config_map[] = {
     },
 
     {
+     FLB_CONFIG_MAP_TIME, "collector.cache.scrape_interval", "0",
+     0, FLB_TRUE, offsetof(struct flb_we, cache_scrape_interval),
+     "scrape interval to collect cache metrics from the node."
+    },
+
+    {
      FLB_CONFIG_MAP_TIME, "collector.thermalzone.scrape_interval", "0",
      0, FLB_TRUE, offsetof(struct flb_we, wmi_thermalzone_scrape_interval),
      "scrape interval to collect thermalzone metrics from the node."
@@ -1082,7 +1145,7 @@ static struct flb_config_map config_map[] = {
 
     {
      FLB_CONFIG_MAP_CLIST, "metrics",
-     "cpu,cpu_info,os,net,logical_disk,cs,thermalzone,logon,system,service",
+     "cpu,cpu_info,os,net,logical_disk,cs,cache,thermalzone,logon,system,service",
      0, FLB_TRUE, offsetof(struct flb_we, metrics),
      "Comma separated list of keys to enable metrics."
     },
