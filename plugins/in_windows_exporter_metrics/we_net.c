@@ -79,6 +79,10 @@ struct we_perflib_metric_source net_metric_sources[] = {
                                  "Current Bandwidth",
                                  NULL),
 
+        WE_PERFLIB_METRIC_SOURCE("output_queue_length_packets",
+                                 "Output Queue Length",
+                                 NULL),
+
         WE_PERFLIB_TERMINATOR_SOURCE()
     };
 
@@ -130,6 +134,10 @@ struct we_perflib_metric_spec net_metric_specs[] = {
         WE_PERFLIB_GAUGE_SPEC("current_bandwidth_bits",
                                 "Current Bandwidth /bits",
                                 "nic"),
+
+        WE_PERFLIB_GAUGE_SPEC("output_queue_length_packets",
+                              "A length of output queue packets",
+                              "nic"),
 
         WE_PERFLIB_TERMINATOR_SPEC()
     };
