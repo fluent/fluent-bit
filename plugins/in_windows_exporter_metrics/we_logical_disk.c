@@ -89,6 +89,14 @@ struct we_perflib_metric_source logical_disk_metric_sources[] = {
                                  "Avg. Disk sec/Transfer",
                                  NULL),
 
+        WE_PERFLIB_METRIC_SOURCE("avg_read_requests_queued",
+                                 "Avg. Disk Read Queue Length",
+                                 NULL),
+
+        WE_PERFLIB_METRIC_SOURCE("avg_write_requests_queued",
+                                 "Avg. Disk Write Queue Length",
+                                 NULL),
+
         WE_PERFLIB_TERMINATOR_SOURCE()
     };
 
@@ -148,6 +156,14 @@ struct we_perflib_metric_spec logical_disk_metric_specs[] = {
         WE_PERFLIB_COUNTER_SPEC("read_write_latency_seconds_total",
                                 "Average latency, in seconds, to transfer operations on the disk",
                                 "volume"),
+
+        WE_PERFLIB_GAUGE_SPEC("avg_read_requests_queued",
+                              "Average number of read requests that were queued for the selected disk during the sample interval",
+                              "volume"),
+
+        WE_PERFLIB_GAUGE_SPEC("avg_write_requests_queued",
+                              "Average number of write requests that were queued for the selected disk during the sample interval",
+                              "volume"),
 
         WE_PERFLIB_TERMINATOR_SPEC()
     };
