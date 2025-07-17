@@ -742,6 +742,7 @@ int flb_input_set_property(struct flb_input_instance *ins,
         ret = atoi(tmp);
         flb_sds_destroy(tmp);
         if (ret <= 0 || ret > 100) {
+            flb_error("[input] thread.ring_buffer.window must be between 1 and 100");
             return -1;
         }
         ins->ring_buffer_window = (uint8_t) ret;
