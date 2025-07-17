@@ -56,16 +56,20 @@ pthread_key_t libco_in_param_key;
 #define protcmp(a, b)  strncasecmp(a, b, strlen(a))
 
 /*
- * Ring buffer size: we make space for 512 entries that each input instance can
- * use to enqueue data. Note that this value is fixed and only affect input plugins
- * which runs in threaded mode (separate thread)
+ * Ring buffer capacity: by default we make space for 1024 entries that each
+ * input instance can use to enqueue data. The capacity can be customized per
+ * input instance through the 'thread.ring_buffer.capacity' property. The value
+ * represents the number of slots and is converted to bytes when the ring buffer
+ * is created. This affects only input plugins running in threaded mode.
  *
  * Ring buffer window: the current window size is set to 5% which means that the
- * ring buffer will emit a flush request whenever there are 51 records or more
- * awaiting to be consumed.
+ * ring buffer will emit a flush request whenever the window threshold is reached.
+ * The window percentage can be tuned per input instance using the
+ * 'thread.ring_buffer.window' property.
  */
 
-#define FLB_INPUT_RING_BUFFER_SIZE   (sizeof(void *) * 1024)
+#define FLB_INPUT_RING_BUFFER_CAPACITY 1024
+#define FLB_INPUT_RING_BUFFER_SIZE   (sizeof(void *) * FLB_INPUT_RING_BUFFER_CAPACITY)
 #define FLB_INPUT_RING_BUFFER_WINDOW (5)
 
 /* config map to register options available for all input plugins */
@@ -122,6 +126,16 @@ struct flb_config_map input_global_properties[] = {
         FLB_CONFIG_MAP_BOOL, "threaded", "false",
         0, FLB_FALSE, 0,
         "Enable threading on an input"
+    },
+    {
+        FLB_CONFIG_MAP_INT, "thread.ring_buffer.capacity", "0",
+        0, FLB_FALSE, 0,
+        "Set custom ring buffer capacity when the input runs in threaded mode"
+    },
+    {
+        FLB_CONFIG_MAP_INT, "thread.ring_buffer.window", "0",
+        0, FLB_FALSE, 0,
+        "Set custom ring buffer window percentage for threaded inputs"
     },
 
     {0}
@@ -404,8 +418,12 @@ struct flb_input_instance *flb_input_new(struct flb_config *config,
 
         }
 
+        /* set default ring buffer size and window */
+        instance->ring_buffer_size = FLB_INPUT_RING_BUFFER_SIZE;
+        instance->ring_buffer_window = FLB_INPUT_RING_BUFFER_WINDOW;
+
         /* allocate a ring buffer */
-        instance->rb = flb_ring_buffer_create(FLB_INPUT_RING_BUFFER_SIZE);
+        instance->rb = flb_ring_buffer_create(instance->ring_buffer_size);
         if (!instance->rb) {
             flb_error("instance %s could not initialize ring buffer",
                       flb_input_name(instance));
@@ -703,6 +721,30 @@ int flb_input_set_property(struct flb_input_instance *ins,
         }
 
         ins->is_threaded = enabled;
+    }
+    else if (prop_key_check("thread.ring_buffer.capacity", k, len) == 0 && tmp) {
+        ret = atoi(tmp);
+        flb_sds_destroy(tmp);
+        if (ret <= 0) {
+            return -1;
+        }
+        ins->ring_buffer_size = (size_t) ret * sizeof(void *);
+        if (ins->rb) {
+            flb_ring_buffer_destroy(ins->rb);
+            ins->rb = flb_ring_buffer_create(ins->ring_buffer_size);
+            if (!ins->rb) {
+                flb_error("instance %s could not initialize ring buffer", flb_input_name(ins));
+                return -1;
+            }
+        }
+    }
+    else if (prop_key_check("thread.ring_buffer.window", k, len) == 0 && tmp) {
+        ret = atoi(tmp);
+        flb_sds_destroy(tmp);
+        if (ret <= 0 || ret > 100) {
+            return -1;
+        }
+        ins->ring_buffer_window = (uint8_t) ret;
     }
     else if (prop_key_check("storage.pause_on_chunks_overlimit", k, len) == 0 && tmp) {
         ret = flb_utils_bool(tmp);
@@ -1320,7 +1362,7 @@ int flb_input_instance_init(struct flb_input_instance *ins,
             }
 
             /* register the ring buffer */
-            ret = flb_ring_buffer_add_event_loop(ins->rb, config->evl, FLB_INPUT_RING_BUFFER_WINDOW);
+            ret = flb_ring_buffer_add_event_loop(ins->rb, config->evl, ins->ring_buffer_window);
             if (ret) {
                 flb_error("failed while registering ring buffer events on input %s",
                           ins->name);
