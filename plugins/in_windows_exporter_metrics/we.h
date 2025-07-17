@@ -115,6 +115,8 @@ struct we_logical_disk_counters {
     int                              operational;
     struct flb_hash_table           *metrics;
     char                            *query;
+    struct cmt_gauge                *size_bytes;
+    struct cmt_gauge                *free_bytes;
 };
 
 struct we_cache_counters {
