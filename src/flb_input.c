@@ -128,12 +128,12 @@ struct flb_config_map input_global_properties[] = {
         "Enable threading on an input"
     },
     {
-        FLB_CONFIG_MAP_INT, "thread.ring_buffer.capacity", "0",
+        FLB_CONFIG_MAP_INT, "thread.ring_buffer.capacity", STR(FLB_INPUT_RING_BUFFER_CAPACITY),
         0, FLB_FALSE, 0,
         "Set custom ring buffer capacity when the input runs in threaded mode"
     },
     {
-        FLB_CONFIG_MAP_INT, "thread.ring_buffer.window", "0",
+        FLB_CONFIG_MAP_INT, "thread.ring_buffer.window", STR(FLB_INPUT_RING_BUFFER_WINDOW),
         0, FLB_FALSE, 0,
         "Set custom ring buffer window percentage for threaded inputs"
     },
