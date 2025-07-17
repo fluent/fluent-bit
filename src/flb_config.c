@@ -205,6 +205,11 @@ struct flb_service_config service_configs[] = {
      FLB_CONF_TYPE_BOOL,
      offsetof(struct flb_config, ensure_thread_safety_on_hot_reloading)},
 
+     /* OpenSSL Providers */
+     { FLB_CONF_STR_OPENSSL_PROVIDERS,
+     FLB_CONF_TYPE_STR,
+     offsetof(struct flb_config, openssl_providers) },
+
     {NULL, FLB_CONF_TYPE_OTHER, 0} /* end of array */
 };
 
@@ -307,6 +312,8 @@ struct flb_config *flb_config_init()
     config->hot_reloaded_count = 0;
     config->shutdown_by_hot_reloading = FLB_FALSE;
     config->hot_reloading = FLB_FALSE;
+
+    config->openssl_providers = NULL;
 
 #ifdef FLB_SYSTEM_WINDOWS
     config->win_maxstdio = 512;
@@ -567,6 +574,10 @@ void flb_config_exit(struct flb_config *config)
 
     if (config->cf_main) {
         flb_cf_destroy(config->cf_main);
+    }
+
+    if (config->openssl_providers) {
+        flb_free(config->openssl_providers);
     }
 
     /* cf_opts' lifetime should differ from config's lifetime.
