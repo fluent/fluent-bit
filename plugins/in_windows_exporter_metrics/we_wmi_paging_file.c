@@ -45,29 +45,29 @@ int we_wmi_paging_file_init(struct flb_we *ctx)
     }
     ctx->wmi_paging_file->operational = FLB_FALSE;
 
-    g = cmt_gauge_create(ctx->cmt, "windows", "paging_file", "allocated_base_size_megabytes",
-                         "The value indicates the actual amount of disk space allocated "\
-                         "for use with this page file (AllocatedBaseSize)",
-                         0, NULL);
+    g = cmt_gauge_create(ctx->cmt, "windows", "paging_file", "limit_megabytes",
+                         "Number of bytes that can be stored in the operating system paging files. " \
+                         "0 (zero) indicates that there are no paging files",
+                         1, (char *[]) {"file"});
 
     if (!g) {
         return -1;
     }
-    ctx->wmi_paging_file->allocated_base_size_megabytes = g;
+    ctx->wmi_paging_file->limit_megabytes = g;
 
-    g = cmt_gauge_create(ctx->cmt, "windows", "paging_file", "current_usage_megabytes",
-                         "The value indicates how much of the total reserved page file " \
-                         "is currently in use (CurrentUsage)",
-                         0, NULL);
+    g = cmt_gauge_create(ctx->cmt, "windows", "paging_file", "free_megabytes",
+                         "Number of bytes that can be mapped into the operating system paging files " \
+                         "without causing any other pages to be swapped out",
+                         1, (char *[]) {"file"});
 
     if (!g) {
         return -1;
     }
-    ctx->wmi_paging_file->current_usage_megabytes = g;
+    ctx->wmi_paging_file->free_megabytes = g;
 
     g = cmt_gauge_create(ctx->cmt, "windows", "paging_file", "peak_usage_megabytes",
                          "The value indicates the highest use page file (PeakUsage)",
-                         0, NULL);
+                         1, (char *[]) {"file"});
 
     if (!g) {
         return -1;
@@ -112,6 +112,8 @@ int we_wmi_paging_file_update(struct flb_we *ctx)
     IWbemClassObject *class_obj = NULL;
     ULONG ret = 0;
     double val = 0;
+    double limit_val = 0;
+    char *paging_file = NULL;
 
     if (!ctx->wmi_paging_file->operational) {
         flb_plg_error(ctx->ins, "paging_file collector not yet in operational state");
@@ -136,16 +138,27 @@ int we_wmi_paging_file_update(struct flb_we *ctx)
             break;
         }
 
-        val = we_wmi_get_property_value(ctx, "AllocatedBaseSize", class_obj);
-        cmt_gauge_set(ctx->wmi_paging_file->allocated_base_size_megabytes, timestamp, val, 0, NULL);
+        paging_file = we_wmi_get_property_str_value(ctx, "Name", class_obj);
+        if (!paging_file) {
+            continue;
+        }
 
+        limit_val = we_wmi_get_property_value(ctx, "AllocatedBaseSize", class_obj);
+        cmt_gauge_set(ctx->wmi_paging_file->limit_megabytes,
+                      timestamp, limit_val, 1, (char *[]){ paging_file });
+
+        /* Calculate Free megabytes */
         val = we_wmi_get_property_value(ctx, "CurrentUsage", class_obj);
-        cmt_gauge_set(ctx->wmi_paging_file->current_usage_megabytes, timestamp, val, 0, NULL);
+        val = limit_val - val;
+        cmt_gauge_set(ctx->wmi_paging_file->free_megabytes,
+                      timestamp, val, 1, (char *[]){ paging_file });
 
         val = we_wmi_get_property_value(ctx, "PeakUsage", class_obj);
-        cmt_gauge_set(ctx->wmi_paging_file->peak_usage_megabytes, timestamp, val, 0, NULL);
+        cmt_gauge_set(ctx->wmi_paging_file->peak_usage_megabytes,
+                      timestamp, val, 1, (char *[]){ paging_file });
 
         class_obj->lpVtbl->Release(class_obj);
+        flb_free(paging_file);
     }
 
     enumerator->lpVtbl->Release(enumerator);
