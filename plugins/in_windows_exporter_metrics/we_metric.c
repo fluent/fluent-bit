@@ -201,6 +201,10 @@ void we_deinitialize_perflib_metric_sources(struct we_perflib_metric_source *sou
     for (source_index = 0 ;
          sources[source_index].name != NULL;
          source_index++) {
+        if (sources[source_index].name != NULL) {
+            flb_free(sources[source_index].name);
+        }
+
         if (sources[source_index].label_set_size) {
             flb_sds_destroy(sources[source_index].label_set[0]);
             flb_free(sources[source_index].label_set);
@@ -215,10 +219,11 @@ int we_initialize_perflib_metric_sources(
 {
     size_t                           source_array_size;
     struct we_perflib_metric_source *source_array_copy;
-    struct we_perflib_metric_spec   *source_entry;
+    struct we_perflib_metric_source *source_entry;
     size_t                           source_index;
     size_t                           source_count;
     int                              result;
+    char                            *flag_ptr;
 
     if (out_sources == NULL) {
         return -1;
@@ -241,7 +246,7 @@ int we_initialize_perflib_metric_sources(
     source_array_size  = sizeof(struct we_perflib_metric_source);
     source_array_size *= (source_count + 1);
 
-    source_array_copy = (struct we_perflib_metric_spec *) flb_calloc(1, source_array_size);
+    source_array_copy = (struct we_perflib_metric_source *) flb_calloc(1, source_array_size);
 
     if (source_array_copy == NULL) {
         return -4;
@@ -251,6 +256,23 @@ int we_initialize_perflib_metric_sources(
 
     for (source_index = 0 ; source_index < source_count; source_index++) {
         source_entry = &source_array_copy[source_index];
+
+        source_entry->name = flb_strdup(source_entry->name);
+        if (source_entry->name == NULL) {
+            /* Handle memory allocation failure */
+            we_deinitialize_perflib_metric_sources(source_array_copy);
+            flb_free(source_array_copy);
+            return -1; /* Or appropriate error code */
+        }
+
+        /* Now it is safe to search and modify the writable copy */
+        source_entry->use_secondary_value = FLB_FALSE;
+        flag_ptr = strstr(source_entry->name, ",secondvalue");
+
+        if (flag_ptr != NULL) {
+            source_entry->use_secondary_value = FLB_TRUE;
+            *flag_ptr = '\0'; /* This now modifies the heap copy, not read-only memory */
+        }
 
         result = we_expand_perflib_metric_source_labels(source_entry);
 

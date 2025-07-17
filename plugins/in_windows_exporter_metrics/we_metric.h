@@ -43,6 +43,7 @@ struct we_perflib_metric_source {
     char                          *raw_label_set;
     char                         **label_set;
     size_t                         label_set_size;
+    int                            use_secondary_value;
 };
 
 #define WE_PERFLIB_SPEC(type_, name_, description_, raw_label_set_) \
