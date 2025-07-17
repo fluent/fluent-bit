@@ -176,6 +176,7 @@ option(FLB_MTRACE              "Enable mtrace support"         No)
 option(FLB_POSIX_TLS           "Force POSIX thread storage"    No)
 option(FLB_INOTIFY             "Enable inotify support"       Yes)
 option(FLB_SQLDB               "Enable SQL embedded DB"       Yes)
+option(FLB_PROCESSOR_DEDUP     "Enable deduplication processor" Yes)
 option(FLB_HTTP_SERVER         "Enable HTTP Server"           Yes)
 option(FLB_BACKTRACE           "Enable stacktrace support"    Yes)
 option(FLB_LUAJIT              "Enable Lua Scripting support" Yes)
@@ -1167,6 +1168,18 @@ if(FLB_BACKTRACE)
     set(LIBBACKTRACE_LIBRARIES "libbacktrace")
   endif()
   FLB_DEFINITION(FLB_HAVE_LIBBACKTRACE)
+endif()
+
+# RocksDB (Deduplication Backend)
+# ================================
+if(FLB_PROCESSOR_DEDUP)
+  # Check if Windows - deduplication is not supported on Windows
+  if(FLB_SYSTEM_WINDOWS)
+    message(FATAL_ERROR "Record deduplication (FLB_PROCESSOR_DEDUP) is not supported on Windows platform")
+  endif()
+  FLB_DEFINITION(FLB_HAVE_RECORD_DEDUP)
+  # Use vendored RocksDB from lib/rocksdb
+  include(cmake/rocksdb_vendored.cmake)
 endif()
 
 # Onigmo (Regex Engine) options

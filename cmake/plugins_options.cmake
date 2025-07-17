@@ -72,6 +72,7 @@ DEFINE_OPTION(FLB_PROCESSOR_METRICS_SELECTOR  "Enable metrics selector processor
 DEFINE_OPTION(FLB_PROCESSOR_OPENTELEMETRY_ENVELOPE "Enable OpenTelemetry envelope processor" ON)
 DEFINE_OPTION(FLB_PROCESSOR_SQL               "Enable SQL processor"                         ON)
 DEFINE_OPTION(FLB_PROCESSOR_SAMPLING          "Enable sampling processor"                    ON)
+DEFINE_OPTION(FLB_PROCESSOR_DEDUP          "Enable record deduplication processor"                    ON)
 
 # Filters
 # =======

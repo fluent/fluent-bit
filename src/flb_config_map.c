@@ -476,6 +476,31 @@ int flb_config_map_properties_check(char *context_name,
             continue;
         }
 
+        /* Check for known global properties from any plugin type */
+        /* Input global properties */
+        if (strcasecmp(kv->key, "tag") == 0 ||
+            strcasecmp(kv->key, "log_level") == 0 ||
+            strcasecmp(kv->key, "log_suppress_interval") == 0 ||
+            strcasecmp(kv->key, "routable") == 0 ||
+            strcasecmp(kv->key, "alias") == 0 ||
+            strcasecmp(kv->key, "mem_buf_limit") == 0 ||
+            strcasecmp(kv->key, "storage.type") == 0 ||
+            strcasecmp(kv->key, "storage.pause_on_chunks_overlimit") == 0 ||
+            strcasecmp(kv->key, "threaded") == 0 ||
+            strcasecmp(kv->key, "listen") == 0 ||
+            strcasecmp(kv->key, "host") == 0 ||
+            strcasecmp(kv->key, "port") == 0 ||
+            strcasecmp(kv->key, "ipv6") == 0 ||
+            strncasecmp(kv->key, "net.", 4) == 0 ||
+            strncasecmp(kv->key, "tls", 3) == 0 ||
+            /* Filter/Output global properties */
+            strcasecmp(kv->key, "match") == 0 ||
+            strcasecmp(kv->key, "match_regex") == 0 ||
+            0) {
+            /* Skip validation for known global properties */
+            continue;
+        }
+
         /* Lookup the key into the provided map */
         mk_list_foreach(m_head, map) {
             m = mk_list_entry(m_head, struct flb_config_map, _head);

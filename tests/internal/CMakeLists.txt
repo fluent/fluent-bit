@@ -68,6 +68,13 @@ if(FLB_HAVE_LIBYAML)
       )
 endif()
 
+if(FLB_PROCESSOR_DEDUP)
+  set(UNIT_TESTS_FILES
+      ${UNIT_TESTS_FILES}
+      record_dedup.c
+      )
+endif()
+
 if (NOT WIN32)
   set(UNIT_TESTS_FILES
     ${UNIT_TESTS_FILES}

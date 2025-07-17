@@ -357,6 +357,14 @@ if(FLB_UNICODE_ENCODER)
   add_subdirectory(simdutf)
 endif()
 
+# Record Deduplication
+if(FLB_PROCESSOR_DEDUP)
+  set(src
+    ${src}
+    "flb_record_dedup.c"
+    )
+endif()
+
 # WAMRC compiler
 if(FLB_WAMRC)
   add_subdirectory(wamrc)
@@ -440,6 +448,14 @@ set(FLB_DEPS
   ${FLB_DEPS}
   simdutf-static
   flb-simdutf-connector-static
+  )
+endif()
+
+# Record Deduplication (RocksDB)
+if(FLB_PROCESSOR_DEDUP)
+set(FLB_DEPS
+  ${FLB_DEPS}
+  ${ROCKSDB_TARGET}
   )
 endif()
 
@@ -528,6 +544,20 @@ endif(MSVC)
 
 if(FLB_JEMALLOC)
   target_link_libraries(fluent-bit-static ${JEMALLOC_LIBRARIES})
+endif()
+
+# Link RocksDB for record deduplication
+if(FLB_PROCESSOR_DEDUP)
+  # Debug: Check if target exists
+  if(ROCKSDB_TARGET)
+    message(STATUS "RocksDB target found, linking...")
+    target_link_libraries(fluent-bit-static ${ROCKSDB_TARGET})
+    if(FLB_SHARED_LIB)
+      target_link_libraries(fluent-bit-shared ${ROCKSDB_TARGET})
+    endif()
+  else()
+    message(WARNING "RocksDB target not found!")
+  endif()
 endif()
 
 # Binary / Executable

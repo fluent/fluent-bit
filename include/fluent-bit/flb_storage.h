@@ -85,4 +85,5 @@ int flb_storage_metrics_update(struct flb_config *config, struct flb_storage_met
 
 void flb_storage_chunk_count(struct flb_config *ctx, int *mem_chunks, int *fs_chunks);
 
+
 #endif

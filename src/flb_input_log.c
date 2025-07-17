@@ -24,6 +24,7 @@
 #include <fluent-bit/flb_input_plugin.h>
 #include <fluent-bit/flb_processor.h>
 
+
 static int input_log_append(struct flb_input_instance *ins,
                             size_t processor_starting_stage,
                             size_t records,
@@ -68,10 +69,11 @@ static int input_log_append(struct flb_input_instance *ins,
         }
     }
 
+
     ret = flb_input_chunk_append_raw(ins, FLB_INPUT_LOGS, records,
                                      tag, tag_len, out_buf, out_size);
 
-
+    /* Only free if processor created a new buffer */
     if (processor_is_active && buf != out_buf) {
         flb_free(out_buf);
     }

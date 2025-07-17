@@ -24,6 +24,7 @@
 #include <fluent-bit/flb_scheduler.h>
 #include <fluent-bit/flb_utils.h>
 #include <fluent-bit/flb_http_server.h>
+#include <limits.h>
 
 static struct cmt *metrics_context_create(struct flb_storage_metrics *sm)
 {
@@ -588,8 +589,10 @@ int flb_storage_input_create(struct cio_ctx *cio,
     si->type = in->storage_type;
     in->storage = si;
 
+
     return 0;
 }
+
 
 void flb_storage_input_destroy(struct flb_input_instance *in)
 {
@@ -733,6 +736,7 @@ int flb_storage_create(struct flb_config *ctx)
 
     /* print storage info */
     print_storage_info(ctx, cio);
+
 
     return 0;
 }

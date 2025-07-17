@@ -123,7 +123,6 @@ struct flb_config_map input_global_properties[] = {
         0, FLB_FALSE, 0,
         "Enable threading on an input"
     },
-
     {0}
 };
 
@@ -392,6 +391,7 @@ struct flb_input_instance *flb_input_new(struct flb_config *config,
         instance->tls_key_file          = NULL;
         instance->tls_key_passwd        = NULL;
 #endif
+
 
         /* Plugin requires a co-routine context ? */
         if (plugin->flags & FLB_INPUT_CORO) {
@@ -903,6 +903,7 @@ void flb_input_instance_destroy(struct flb_input_instance *ins)
 
     /* delete storage context */
     flb_storage_input_destroy(ins);
+
 
     mk_list_del(&ins->_head);
 

@@ -34,6 +34,8 @@
 #include <fluent-bit/flb_storage.h>
 #include <fluent-bit/flb_metrics.h>
 #include <fluent-bit/flb_metrics_exporter.h>
+#include <fluent-bit/flb_processor.h>
+#include <fluent-bit/flb_processor_plugin.h>
 
 static int collect_inputs(msgpack_sbuffer *mp_sbuf, msgpack_packer *mp_pck,
                           struct flb_config *ctx)
@@ -330,7 +332,20 @@ struct cmt *flb_me_get_cmetrics(struct flb_config *ctx)
                     return NULL;
                 }
             }
+            else if (pu->unit_type == FLB_PROCESSOR_UNIT_NATIVE) {
+                struct flb_processor_instance *pi = (struct flb_processor_instance *) pu->ctx;
+                if (pi->cmt) {
+                    ret = cmt_cat(cmt, pi->cmt);
+                    if (ret == -1) {
+                        flb_error("[metrics exporter] could not append metrics from processor %s",
+                                  flb_processor_instance_get_name(pi));
+                        cmt_destroy(cmt);
+                        return NULL;
+                    }
+                }
+            }
         }
+
     }
 
     mk_list_foreach(head, &ctx->filters) {
@@ -363,6 +378,18 @@ struct cmt *flb_me_get_cmetrics(struct flb_config *ctx)
                     flb_error("[metrics exporter] could not append metrics from %s", flb_filter_name(pf));
                     cmt_destroy(cmt);
                     return NULL;
+                }
+            }
+            else if (pu->unit_type == FLB_PROCESSOR_UNIT_NATIVE) {
+                struct flb_processor_instance *pi = (struct flb_processor_instance *) pu->ctx;
+                if (pi->cmt) {
+                    ret = cmt_cat(cmt, pi->cmt);
+                    if (ret == -1) {
+                        flb_error("[metrics exporter] could not append metrics from processor %s",
+                                  flb_processor_instance_get_name(pi));
+                        cmt_destroy(cmt);
+                        return NULL;
+                    }
                 }
             }
         }

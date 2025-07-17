@@ -857,6 +857,7 @@ int flb_engine_start(struct flb_config *config)
         return -1;
     }
 
+
     /* Initialize filter plugins */
     ret = flb_filter_init_all(config);
     if (ret == -1) {
@@ -984,7 +985,7 @@ int flb_engine_start(struct flb_config *config)
 
     config->grace_input  = config->grace / 2;
     flb_info("[engine] Shutdown Grace Period=%d, Shutdown Input Grace Period=%d", config->grace, config->grace_input);
-    
+
     while (1) {
         rb_flush_flag = FLB_FALSE;
 
@@ -1062,10 +1063,10 @@ int flb_engine_start(struct flb_config *config)
                     if (ret > 0 && (config->grace_count < config->grace || config->grace == -1)) {
                         if (config->grace_count == 1) {
                             flb_task_running_print(config);
-                            /*                                                                               
+                            /*
                             * If storage.backlog.shutdown_flush is enabled, attempt to flush pending
-                            * filesystem chunks during shutdown. This is particularly useful in scenarios   
-                            * where Fluent Bit cannot restart to ensure buffered data is not lost.                                             
+                            * filesystem chunks during shutdown. This is particularly useful in scenarios
+                            * where Fluent Bit cannot restart to ensure buffered data is not lost.
                             */
                             if (config->storage_bl_flush_on_shutdown) {
                                 ret = sb_segregate_chunks(config);
