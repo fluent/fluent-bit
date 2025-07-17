@@ -379,6 +379,8 @@ struct flb_input_instance {
      * in the ring buffer.
      */
     struct flb_ring_buffer *rb;
+    size_t ring_buffer_size;           /* ring buffer size */
+    uint8_t ring_buffer_window;        /* ring buffer window percentage */
 
     /* List of upstreams */
     struct mk_list upstreams;
