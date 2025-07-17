@@ -203,9 +203,9 @@ struct we_wmi_memory_counters {
 
 struct we_wmi_paging_file_counters {
     struct wmi_query_spec *info;
-    struct cmt_gauge      *allocated_base_size_megabytes;
-    struct cmt_gauge      *current_usage_megabytes;
+    struct cmt_gauge      *limit_megabytes;
     struct cmt_gauge      *peak_usage_megabytes;
+    struct cmt_gauge      *free_megabytes;
     int                    operational;
 };
 
