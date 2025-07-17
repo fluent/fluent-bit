@@ -151,6 +151,10 @@ struct we_perflib_metric_source full_metric_sources[] = {
                                  "% Processor Performance",
                                  NULL),
 
+        WE_PERFLIB_METRIC_SOURCE("processor_rtc_total",
+                                 "% Processor Utility,secondvalue",
+                                 NULL),
+
         WE_PERFLIB_TERMINATOR_SOURCE()
     };
 
@@ -217,6 +221,11 @@ struct we_perflib_metric_spec full_metric_specs[] =
         WE_PERFLIB_COUNTER_SPEC("processor_mperf_total",
                                 "Processor MPerf is the number of TSC ticks " \
                                 "incremented while executing instructions",
+                                "core"),
+
+        WE_PERFLIB_COUNTER_SPEC("processor_rtc_total",
+                                "Processor RTC represents the number of RTC ticks " \
+                                "made since the system booted.",
                                 "core"),
 
         WE_PERFLIB_TERMINATOR_SPEC()
