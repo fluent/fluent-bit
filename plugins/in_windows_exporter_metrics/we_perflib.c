@@ -24,9 +24,14 @@
 #include "we_metric.h"
 #include "we_perflib.h"
 
-double we_perflib_get_adjusted_counter_value(struct we_perflib_counter *counter)
+double we_perflib_get_adjusted_counter_value(struct we_perflib_counter *counter,
+                                             struct we_perflib_metric_source *source)
 {
     double result;
+
+    if (source->use_secondary_value) {
+        return (double) counter->secondary_value.as_qword;
+    }
 
     result = (double) counter->primary_value.as_qword;
 
@@ -625,6 +630,7 @@ static int we_perflib_process_counter(
                     struct we_perflib_counter            **out_counter)
 {
     struct we_perflib_counter *perflib_instance_counter;
+    uint32_t counter_type = counter_definition->type;
 
     perflib_instance_counter = we_perflib_create_counter(counter_definition);
 
@@ -635,6 +641,18 @@ static int we_perflib_process_counter(
     memcpy(&perflib_instance_counter->primary_value,
            &input_data_block[counter_definition->offset],
            counter_definition->size);
+
+    if (counter_type == PERF_AVERAGE_BULK ||
+        counter_type == PERF_RAW_FRACTION ||
+        counter_type == PERF_100NSEC_TIMER_INV ||
+        counter_type == PERF_COUNTER_TIMER_INV ||
+        counter_type == PERF_100NSEC_MULTI_TIMER_INV ||
+        counter_type == PERF_COUNTER_MULTI_TIMER_INV) {
+
+        memcpy(&perflib_instance_counter->secondary_value,
+               &input_data_block[counter_definition->offset + counter_definition->size],
+               sizeof(union we_perflib_value));
+    }
 
     if (counter_definition->size > sizeof(union we_perflib_value)) {
         we_perflib_destroy_counter(perflib_instance_counter);
@@ -1024,12 +1042,12 @@ int we_perflib_update_counters(struct flb_we                   *ctx,
 
                 if (metric_source->parent->type == CMT_COUNTER) {
                     cmt_counter_set(metric_entry, timestamp,
-                                    we_perflib_get_adjusted_counter_value(counter),
+                                    we_perflib_get_adjusted_counter_value(counter, metric_source),
                                     metric_label_count, metric_label_list);
                 }
                 else if (metric_source->parent->type == CMT_GAUGE) {
                     cmt_gauge_set(metric_entry, timestamp,
-                                  we_perflib_get_adjusted_counter_value(counter),
+                                  we_perflib_get_adjusted_counter_value(counter, metric_source),
                                   metric_label_count, metric_label_list);
                 }
             }
