@@ -19,6 +19,10 @@
 
 #include <stdio.h>
 #include <stdlib.h>
+#ifdef FLB_USE_OPENSSL_STORE
+#include <ctype.h>
+#include <string.h>
+#endif
 
 #include <fluent-bit/flb_info.h>
 #include <fluent-bit/flb_str.h>
@@ -29,6 +33,10 @@
 #include <openssl/ssl.h>
 #include <openssl/err.h>
 #include <openssl/opensslv.h>
+#include <openssl/provider.h>
+#ifdef FLB_USE_OPENSSL_STORE
+#include <openssl/store.h>
+#endif
 #include <openssl/x509v3.h>
 
 #ifdef FLB_SYSTEM_MACOS
@@ -49,6 +57,13 @@
  *       MMNNFFPPS    N = minor  P = patch
  */
 #define OPENSSL_1_1_0 0x010100000L
+#define OPENSSL_3_0   0x030000000L
+
+#define MAX_OPENSSL_PROVIDERS 4
+struct openssl_provider_support {
+    int current_provider;
+    OSSL_PROVIDER* provider[MAX_OPENSSL_PROVIDERS];
+};
 
 /* OpenSSL library context */
 struct tls_context {
@@ -57,6 +72,10 @@ struct tls_context {
     int mode;
     char *alpn;
     pthread_mutex_t mutex;
+#ifdef FLB_USE_OPENSSL_STORE
+    X509 *store_cert;
+    EVP_PKEY *store_pkey;
+#endif
 };
 
 struct tls_session {
@@ -67,8 +86,89 @@ struct tls_session {
     struct tls_context *parent;    /* parent struct tls_context ref */
 };
 
+/* List of providers to load and activate for OpenSSL */
+static struct openssl_provider_support openssl_providers;
+
+static void openssl_providers_reset(void) 
+{
+    flb_idebug("[tls] resetting providers");
+    for (int i = 0; i < MAX_OPENSSL_PROVIDERS; i++)
+        if (openssl_providers.provider[i]) {
+            OSSL_PROVIDER_unload(openssl_providers.provider[i]);
+            openssl_providers.provider[i] = NULL;
+        }
+    openssl_providers.current_provider = 0;
+}
+
+static bool openssl_provider_loaded(const char* provider)
+{
+    const char* name = NULL;
+
+    if (!provider) {
+        return false;
+    }
+    for (int i = 0; i < MAX_OPENSSL_PROVIDERS; i++) {
+        if (openssl_providers.provider[i]) {
+            name = OSSL_PROVIDER_get0_name(openssl_providers.provider[i]);
+            if (name && strcmp(name, provider) == 0) {
+                return true;
+            }
+        }
+    }
+    return false;
+}
+
+bool openssl_providers_loaded(const char* providers)
+{
+    const char* delim = ";";
+    char* provider_list = NULL;
+    char* provider = NULL;
+    bool all_providers_loaded = true;
+
+    if (!providers) {
+        return true;
+    }
+
+    provider_list = flb_strdup(providers);
+    provider = strtok(provider_list, delim);
+    while (provider && all_providers_loaded) {
+        all_providers_loaded = openssl_provider_loaded(provider);
+        provider = strtok(NULL, delim);
+    }
+
+    flb_free(provider_list);
+    return all_providers_loaded;
+}
+
+static void openssl_load_provider(const char* provider)
+{
+    if(!provider) {
+        return;
+    }
+
+    flb_idebug("[tls] loading provider '%s'", provider);
+    if (openssl_provider_loaded(provider)) {
+        flb_idebug("[tls] - provider already loaded");
+        return; 
+    }
+
+    if (openssl_providers.current_provider >= MAX_OPENSSL_PROVIDERS) {
+        flb_error("[tls] - too many providers loaded");
+        return;
+    }
+
+    openssl_providers.provider[openssl_providers.current_provider] = OSSL_PROVIDER_load(NULL, provider);
+    if (!openssl_providers.provider[openssl_providers.current_provider]) {
+        flb_error("[tls] failed to load provider - %s", ERR_error_string(ERR_get_error(), NULL));
+        return;
+    }
+    openssl_providers.current_provider++;
+    return;
+}
+
 static int tls_init(void)
 {
+    flb_idebug("[tls] init");
 /*
  * Explicit initialization is needed for older versions of
  * OpenSSL (before v1.1.0).
@@ -81,7 +181,47 @@ static int tls_init(void)
     SSL_library_init();
 #endif
 
+    /* Initialise the Providers Struct */
+    openssl_providers.current_provider = 0;
+    for (int i = 0; i < MAX_OPENSSL_PROVIDERS; i++) {
+        openssl_providers.provider[i] = NULL;
+    }
+
     return 0;
+}
+
+static void tls_configure(struct flb_config* config)
+{
+    int ret;
+    const char* delim = ";";
+    char* provider_list;
+    const char* provider;
+
+    if (!config) {
+        return;
+    }
+#if OPENSSL_VERSION_NUMBER >= OPENSSL_3_0
+
+    openssl_providers_reset(); /* Could be a reconfig - start from scratch */
+
+    if (!config->openssl_providers) {
+        return;
+    }
+    /* Load configured OpenSSL providers */
+    provider_list = flb_strdup(config->openssl_providers);
+    provider = strtok(provider_list, delim);
+    while (provider) {
+        openssl_load_provider(provider);
+        provider = strtok(NULL, delim);
+    }
+    flb_free(provider_list);
+
+#endif
+}
+
+static void tls_cleanup(void)
+{
+    openssl_providers_reset();
 }
 
 static void tls_info_callback(const SSL *s, int where, int ret)
@@ -142,9 +282,19 @@ static void tls_context_destroy(void *ctx_backend)
 
     SSL_CTX_free(ctx->ctx);
 
+#ifdef FLB_USE_OPENSSL_STORE    
+    if (ctx->store_cert != NULL) {
+        X509_free(ctx->store_cert);
+        ctx->store_cert = NULL;
+    }
+    if (ctx->store_pkey != NULL) {
+        EVP_PKEY_free(ctx->store_pkey);
+        ctx->store_pkey = NULL;
+    }
+#endif
+
     if (ctx->alpn != NULL) {
         flb_free(ctx->alpn);
-
         ctx->alpn = NULL;
     }
 
@@ -507,6 +657,149 @@ static void ssl_key_logger(const SSL *ssl, const char *line)
 }
 #endif
 
+#if defined(FLB_USE_OPENSSL_STORE) && (OPENSSL_VERSION_NUMBER >= OPENSSL_3_0)
+
+/* Checks if the given path *could* be a URI, i.e it starts with something ending in a :
+   that matches the RFC 3986 definition */
+static bool could_be_uri(const char* path) 
+{
+    const char* colon = NULL;
+    unsigned char ch;
+
+    /* If the path is empty or doesn't start with a character */
+    if (!path ||
+        !isalpha((unsigned char)path[0])) {
+        return false;
+    }
+
+    /* Check for a colon in the path */
+    colon = strchr(path, ':');
+    if (!colon || colon == path) {
+        return false;
+    }
+
+    /* Check that the scheme is RFC 3986 compliant-ish */
+    for (const char* current = path; current < colon; ++current) {
+        ch = (unsigned char)*current;
+        if (!isalnum(ch) &&  ch != '+' &&  ch != '-' && ch != '.') {
+            return false;
+        }
+    }
+
+    return true;  /* Could be a URI */
+}
+
+/* This function will return true if the item requested was read (or attempted to be 
+   read) from the given store, or false if it is not. A false indicates the item was 
+   most likely *not* a valid store item from the requested store.
+   
+   *arg will be set to the item if successfully decoded, or NULL otherwise. A NULL 
+   indicates a problem in retrieving the item in the correct form from the store. */
+static bool openssl_provider_get_item(void** arg, const char *store_uri, 
+                                      const char* provider_query, 
+                                      bool (*get_item)(OSSL_STORE_INFO*, void**))
+{
+    bool gotItem = false;
+    OSSL_STORE_CTX* store = NULL;
+    OSSL_STORE_INFO* info = NULL;
+
+    if (!arg || !store_uri || !provider_query || !get_item ||
+        !could_be_uri(store_uri)) {
+        flb_debug("[tls] Invalid arguments provided to openssl_provider_get_item");
+        return false;
+    }
+
+    flb_debug("[tls] Loading store item; query: %s, uri: %s, arg: %p", 
+              provider_query, store_uri, *arg);
+    store = OSSL_STORE_open_ex(store_uri, NULL, provider_query, 
+                               NULL, NULL, NULL, NULL, NULL);
+    if (!store) {
+        flb_debug("[tls] Failed to load store %s", store_uri);
+        return false;
+    }
+
+    info = OSSL_STORE_load(store);
+    if(!info) {
+        flb_debug("[tls] Failed to retrieve store info %s", store_uri);
+        OSSL_STORE_close(store);
+        return false;
+    }
+
+    gotItem = get_item(info, arg);
+    
+    OSSL_STORE_INFO_free(info);
+    OSSL_STORE_close(store);
+
+    return gotItem;
+}
+
+/* This function will return true if the cert requested was read (or attempted to be
+   read) from the given store, or false if it is not.
+
+   *arg will be set to the certificate if successfully decoded, or NULL otherwise. */
+static bool openssl_provider_get_certificate(OSSL_STORE_INFO* store_info, void** arg)
+{
+    X509** cert = NULL;
+    const unsigned char* p = NULL;
+    unsigned char* buf = NULL;
+    int item_type = 0;
+    int len = 0;
+
+    if (!store_info || !arg) {
+        return false;
+    }
+    cert = (X509**)arg;
+
+    item_type = OSSL_STORE_INFO_get_type(store_info);
+    if (item_type != OSSL_STORE_INFO_CERT) {
+        flb_debug("[tls] Store Item is not a Certificate %d", item_type);
+        return false;
+    }
+
+    /* Serialise and De - Serialise to remove the provider query. Seems to interfere with 
+       the signature later on */
+    len = i2d_X509(OSSL_STORE_INFO_get0_CERT(store_info), &buf);
+    if (len < 0) {
+        flb_error("[tls] Couldn't serialise to DER %d", item_type);
+        return false;
+    }
+    p = buf;
+
+    *cert = d2i_X509(NULL, &p, len);
+    OPENSSL_free(buf);
+
+    return true;
+}
+
+/* This function will return true if the key pointer requested was read (or attempted to
+   be read) from the given store, or false if it is not.
+
+   *arg will be set to the key pointer if successfully decoded, or NULL otherwise. */
+static bool openssl_provider_get_private_key(OSSL_STORE_INFO* store_info, void** arg)
+{
+    EVP_PKEY** key = NULL;
+    int item_type = 0;
+
+    if (!store_info || !arg) {
+        return false;
+    }
+
+    key = (EVP_PKEY**)arg;
+
+    item_type = OSSL_STORE_INFO_get_type(store_info);
+    if (item_type != OSSL_STORE_INFO_PKEY)
+    {
+        flb_debug("[tls] Store Item is not a Private Key %d", item_type);
+        return false;
+    }
+
+    *key = OSSL_STORE_INFO_get1_PKEY(store_info);
+
+    return true;
+}
+
+#endif
+
 static void *tls_context_create(int verify,
                                 int debug,
                                 int mode,
@@ -515,7 +808,8 @@ static void *tls_context_create(int verify,
                                 const char *ca_file,
                                 const char *crt_file,
                                 const char *key_file,
-                                const char *key_passwd)
+                                const char *key_passwd,
+                                const char *provider_query)
 {
     int ret;
     SSL_CTX *ssl_ctx;
@@ -578,6 +872,10 @@ static void *tls_context_create(int verify,
     ctx->mode = mode;
     ctx->alpn = NULL;
     ctx->debug_level = debug;
+#ifdef FLB_USE_OPENSSL_STORE
+    ctx->store_cert = NULL;
+    ctx->store_pkey = NULL;
+#endif
     pthread_mutex_init(&ctx->mutex, NULL);
 
     /* Verify peer: by default OpenSSL always verify peer */
@@ -613,28 +911,68 @@ static void *tls_context_create(int verify,
 
     /* crt_file */
     if (crt_file) {
-        ret = SSL_CTX_use_certificate_chain_file(ssl_ctx, crt_file);
-        if (ret != 1) {
-            ERR_error_string_n(ERR_get_error(), err_buf, sizeof(err_buf)-1);
-            flb_error("[tls] crt_file '%s' %lu: %s",
-                      crt_file, ERR_get_error(), err_buf);
-            goto error;
+#ifdef FLB_USE_OPENSSL_STORE
+        /* Try and open this as a store item first */
+        if (openssl_provider_get_item((void**)&ctx->store_cert, crt_file,
+                                      provider_query, openssl_provider_get_certificate)) {
+            ret = SSL_CTX_use_certificate(ctx->ctx, ctx->store_cert);
+            if (ret != 1) {
+                ERR_error_string_n(ERR_get_error(), err_buf, sizeof(err_buf) - 1);
+                flb_error("[tls] crt_store '%s' %lu: %s",
+                           crt_file, ERR_get_error(), err_buf);
+                goto error;
+            }
         }
+        else {
+            /* Fall back to handling this as a file*/
+            ctx->store_cert = NULL;
+#endif
+            ret = SSL_CTX_use_certificate_chain_file(ssl_ctx, crt_file);
+            if (ret != 1) {
+                ERR_error_string_n(ERR_get_error(), err_buf, sizeof(err_buf) - 1);
+                flb_error("[tls] crt_file '%s' %lu: %s",
+                           crt_file, ERR_get_error(), err_buf);
+                goto error;
+            }
+
+#ifdef FLB_USE_OPENSSL_STORE
+        }
+#endif
     }
 
     /* key_file */
     if (key_file) {
         if (key_passwd) {
             SSL_CTX_set_default_passwd_cb_userdata(ssl_ctx,
-                                                   (void *) key_passwd);
+                                                   (void*)key_passwd);
         }
-        ret = SSL_CTX_use_PrivateKey_file(ssl_ctx, key_file,
-                                          SSL_FILETYPE_PEM);
-        if (ret != 1) {
-            ERR_error_string_n(ERR_get_error(), err_buf, sizeof(err_buf)-1);
-            flb_error("[tls] key_file '%s' %lu: %s",
-                      crt_file, ERR_get_error(), err_buf);
+#ifdef FLB_USE_OPENSSL_STORE
+        /* Try and open this as a store item if we had no key password */
+        else if (openssl_provider_get_item((void**)&ctx->store_pkey, key_file,
+                                           provider_query, openssl_provider_get_private_key)) {
+            ret = SSL_CTX_use_PrivateKey(ctx->ctx, ctx->store_pkey);
+
+            if (ret != 1) {
+                ERR_error_string_n(ERR_get_error(), err_buf, sizeof(err_buf) - 1);
+                flb_error("[tls] key_store '%s' %lu: %s",
+                           key_file, ERR_get_error(), err_buf);
+                goto error;
+            }
         }
+        else {
+            ctx->store_pkey = NULL;
+
+#endif
+            ret = SSL_CTX_use_PrivateKey_file(ssl_ctx, key_file,
+                                              SSL_FILETYPE_PEM);
+            if (ret != 1) {
+                ERR_error_string_n(ERR_get_error(), err_buf, sizeof(err_buf) - 1);
+                flb_error("[tls] key_file '%s' %lu: %s",
+                           key_file, ERR_get_error(), err_buf);
+            }
+#ifdef FLB_USE_OPENSSL_STORE
+        }
+#endif
 
         /* Make sure the key and certificate file match */
         if (SSL_CTX_check_private_key(ssl_ctx) != 1) {
