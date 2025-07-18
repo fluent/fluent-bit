@@ -1045,6 +1045,64 @@ void test_json_invalid()
     TEST_CHECK(buffer == NULL);
 }
 
+void test_json_pack_large_uint64()
+{
+    int i;
+    int ret;
+    int type;
+    size_t off;
+    char *out_buf = NULL;
+    size_t out_size;
+    msgpack_unpacked result;
+    msgpack_object root;
+    msgpack_object val;
+    char *p_in;
+    size_t len_in = 0;
+    uint64_t expected = 0;
+
+    struct {
+        const char *json_str;
+        uint64_t expected_val;
+    } test_cases[] = {
+        {"{\"key\": 9223372036854775808}", 9223372036854775808ULL},
+        {"{\"key\": 18446744073709551615}", 18446744073709551615ULL}
+    };
+
+    for (i = 0; i < sizeof(test_cases) / sizeof(test_cases[0]); i++) {
+        p_in = test_cases[i].json_str;
+        len_in = strlen(p_in);
+        expected = test_cases[i].expected_val;
+
+        ret = flb_pack_json(p_in, len_in, &out_buf, &out_size, &type, NULL);
+        TEST_CHECK(ret == 0);
+        if (!TEST_CHECK(out_buf != NULL)) {
+            continue;
+        }
+
+        off = 0;
+        msgpack_unpacked_init(&result);
+        ret = msgpack_unpack_next(&result, out_buf, out_size, &off);
+        TEST_CHECK(ret == MSGPACK_UNPACK_SUCCESS);
+
+        root = result.data;
+        TEST_CHECK(root.type == MSGPACK_OBJECT_MAP);
+
+        val = root.via.map.ptr[0].val;
+        if (!TEST_CHECK(val.type == MSGPACK_OBJECT_POSITIVE_INTEGER)) {
+            TEST_MSG("Test %d: Type mismatch, expected POSITIVE_INTEGER, got %d", i, val.type);
+        }
+
+        if (!TEST_CHECK(val.via.u64 == expected)) {
+            TEST_MSG("Test %d: Value mismatch.\nExpected: %"PRIu64"\nGot:      %"PRIu64,
+                     i, expected, val.via.u64);
+        }
+
+        msgpack_unpacked_destroy(&result);
+        flb_free(out_buf);
+        out_buf = NULL;
+    }
+}
+
 TEST_LIST = {
     /* JSON maps iteration */
     { "json_pack"          , test_json_pack },
@@ -1063,6 +1121,7 @@ TEST_LIST = {
     { "json_date_epoch" , test_json_date_epoch},
     { "json_date_epoch_ms" , test_json_date_epoch_ms},
     { "json_invalid",        test_json_invalid},
+    { "json_pack_large_uint64", test_json_pack_large_uint64},
 
     /* Mixed bytes, check JSON encoding */
     { "utf8_to_json", test_utf8_to_json},
