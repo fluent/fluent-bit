@@ -109,7 +109,7 @@ static int network_init(struct k8s_events *ctx, struct flb_config *config)
                                   ctx->tls_vhost,
                                   ctx->tls_ca_path,
                                   ctx->tls_ca_file,
-                                  NULL, NULL, NULL);
+                                  NULL, NULL, NULL, NULL);
         if (!ctx->tls) {
             return -1;
         }
