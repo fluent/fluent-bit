@@ -47,6 +47,13 @@ static int in_tcp_collect(struct flb_input_instance *in,
         return -1;
     }
 
+    if (ctx->is_paused) {
+        flb_plg_trace(ctx->ins, "TCP connection will be closed FD=%i",
+                      connection->fd);
+        flb_downstream_conn_release(connection);
+        return -1;
+    }
+
     flb_plg_trace(ctx->ins, "new TCP connection arrived FD=%i", connection->fd);
 
     conn = tcp_conn_add(connection, ctx);
@@ -80,6 +87,7 @@ static int in_tcp_init(struct flb_input_instance *in,
     ctx->collector_id = -1;
     ctx->ins = in;
     mk_list_init(&ctx->connections);
+    ctx->is_paused = FLB_FALSE;
 
     /* Set the context */
     flb_input_set_context(in, ctx);
@@ -145,6 +153,27 @@ static int in_tcp_exit(void *data, struct flb_config *config)
     return 0;
 }
 
+static void in_tcp_pause(void *data, struct flb_config *config)
+{
+    struct flb_in_tcp_config *ctx = data;
+
+    if (config->is_running == FLB_TRUE) {
+        flb_input_collector_pause(ctx->collector_id, ctx->ins);
+        tcp_conn_release_all(ctx);
+        ctx->is_paused = FLB_TRUE;
+    }
+}
+
+static void in_tcp_resume(void *data, struct flb_config *config)
+{
+    struct flb_in_tcp_config *ctx = data;
+
+    if (config->is_running == FLB_TRUE) {
+        flb_input_collector_resume(ctx->collector_id, ctx->ins);
+        ctx->is_paused = FLB_FALSE;
+    }
+}
+
 static struct flb_config_map config_map[] = {
     {
      FLB_CONFIG_MAP_STR, "format", (char *)NULL,
@@ -183,6 +212,8 @@ struct flb_input_plugin in_tcp_plugin = {
     .cb_pre_run   = NULL,
     .cb_collect   = in_tcp_collect,
     .cb_flush_buf = NULL,
+    .cb_pause     = in_tcp_pause,
+    .cb_resume    = in_tcp_resume,
     .cb_exit      = in_tcp_exit,
     .config_map   = config_map,
     .flags        = FLB_INPUT_NET_SERVER | FLB_IO_OPT_TLS
