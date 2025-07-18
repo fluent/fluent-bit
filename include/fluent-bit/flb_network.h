@@ -99,6 +99,9 @@ struct flb_net_setup {
 
     /* maximum number of allowed active TCP connections */
     int max_worker_connections;
+
+    /* If true, ignore HTTP_PROXY, NO_PROXY, etc. */
+    int proxy_env_ignore;
 };
 
 /* Defines a host service and it properties */
