@@ -55,5 +55,6 @@ struct tcp_conn {
 
 struct tcp_conn *tcp_conn_add(struct flb_connection *connection, struct flb_in_tcp_config *ctx);
 int tcp_conn_del(struct tcp_conn *conn);
+void tcp_conn_release_all(struct flb_in_tcp_config *ctx);
 
 #endif

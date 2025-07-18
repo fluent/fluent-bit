@@ -46,6 +46,7 @@ struct flb_in_tcp_config {
     struct mk_list connections;        /* List of active connections  */
     struct flb_input_instance *ins;    /* Input plugin instace        */
     struct flb_log_event_encoder *log_encoder;
+    int is_paused;                     /* Plugin is paused            */
 };
 
 #endif
