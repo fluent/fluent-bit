@@ -206,6 +206,22 @@ static inline flb_vector8 flb_vector8_eq(const flb_vector8 v1, const flb_vector8
 }
 #endif /* ! FLB_SIMD_NONE */
 
+/*
+ * Return the bitwise OR of two vectors.
+ */
+static inline flb_vector8 flb_vector8_or(const flb_vector8 v1, const flb_vector8 v2)
+{
+#ifdef FLB_SIMD_SSE2
+    return _mm_or_si128(v1, v2);
+#elif defined(FLB_SIMD_NEON)
+    return vorrq_u8(v1, v2);
+#elif defined(FLB_SIMD_RVV)
+    return __riscv_vor_vv_u8m1(v1, v2, RVV_VEC8_INST_LEN);
+#else
+    return v1 | v2;
+#endif
+}
+
 #ifndef FLB_SIMD_NONE
 static inline flb_vector32 flb_vector32_eq(const flb_vector32 v1, const flb_vector32 v2)
 {
