@@ -369,6 +369,7 @@ struct flb_output_instance {
     char *tls_min_version;               /* Minimum protocol version of TLS */
     char *tls_max_version;               /* Maximum protocol version of TLS */
     char *tls_ciphers;                   /* TLS ciphers */
+    char *tls_provider_query;            /* OpenSSL Provider Query */
 #endif
 
     /*
