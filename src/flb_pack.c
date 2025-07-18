@@ -41,6 +41,7 @@
 #include <msgpack.h>
 #include <math.h>
 #include <jsmn/jsmn.h>
+#include <fluent-bit/flb_simd.h>
 
 #define try_to_write_str  flb_utils_write_str
 
@@ -52,6 +53,370 @@ static int flb_pack_set_null_as_nan(int b) {
     }
     return convert_nan_to_null;
 }
+
+#ifdef FLB_HAVE_SIMD
+/* SIMD accelerated helpers derived from jsmn */
+
+static inline void jsmn_fill_token(jsmntok_t *token, const jsmntype_t type,
+                                   const int start, const int end)
+{
+    token->type  = type;
+    token->start = start;
+    token->end   = end;
+    token->size  = 0;
+}
+
+static inline jsmntok_t *jsmn_simd_alloc_token(jsmn_parser *parser,
+                                               jsmntok_t *tokens,
+                                               const size_t num_tokens)
+{
+    jsmntok_t *tok;
+
+    if (parser->toknext >= num_tokens) {
+        return NULL;
+    }
+
+    tok = &tokens[parser->toknext++];
+
+#if defined(FLB_SIMD_SSE2)
+    __m128i zero = _mm_setzero_si128();
+    _mm_storeu_si128((__m128i *) tok, zero);
+#elif defined(FLB_SIMD_NEON)
+    uint8x16_t zero = vdupq_n_u8(0);
+    vst1q_u8((uint8_t *) tok, zero);
+#elif defined(FLB_SIMD_RVV)
+    flb_vector8 zero = flb_vector8_broadcast(0);
+    __riscv_vse8_v_u8m1((unsigned char *) tok, zero, RVV_VEC8_INST_LEN);
+#else
+    memset(tok, 0, sizeof(flb_vector8));
+#endif
+
+    tok->start = -1;
+    tok->end = -1;
+    tok->size = 0;
+#ifdef JSMN_PARENT_LINKS
+    tok->parent = -1;
+#endif
+
+    return tok;
+}
+
+static inline int jsmn_simd_parse_primitive(jsmn_parser *parser, const char *js,
+                                           const size_t len, jsmntok_t *tokens,
+                                           const size_t num_tokens)
+{
+    jsmntok_t *token;
+    int start = parser->pos;
+
+    for (; parser->pos < len && js[parser->pos] != '\0'; parser->pos++) {
+        switch (js[parser->pos]) {
+#ifndef JSMN_STRICT
+        case ':':
+#endif
+        case '\t':
+        case '\r':
+        case '\n':
+        case ' ':
+        case ',':
+        case ']':
+        case '}':
+            goto found;
+        default:
+            break;
+        }
+        if (js[parser->pos] < 32 || js[parser->pos] >= 127) {
+            parser->pos = start;
+            return JSMN_ERROR_INVAL;
+        }
+    }
+#ifdef JSMN_STRICT
+    parser->pos = start;
+    return JSMN_ERROR_PART;
+#endif
+
+found:
+    if (tokens == NULL) {
+        parser->pos--;
+        return 0;
+    }
+    token = jsmn_simd_alloc_token(parser, tokens, num_tokens);
+    if (token == NULL) {
+        parser->pos = start;
+        return JSMN_ERROR_NOMEM;
+    }
+    jsmn_fill_token(token, JSMN_PRIMITIVE, start, parser->pos);
+#ifdef JSMN_PARENT_LINKS
+    token->parent = parser->toksuper;
+#endif
+    parser->pos--;
+    return 0;
+}
+
+static inline int jsmn_simd_parse_string(jsmn_parser *parser, const char *js,
+                                         const size_t len, jsmntok_t *tokens,
+                                         const size_t num_tokens)
+{
+    jsmntok_t *token;
+    int start = parser->pos;
+
+    parser->pos++;
+
+    while (parser->pos + FLB_SIMD_VEC8_INST_LEN <= len) {
+        flb_vector8 chunk;
+
+        flb_vector8_load(&chunk, (const uint8_t *) (js + parser->pos));
+
+        if (flb_vector8_has(chunk, (unsigned char) '"') ||
+            flb_vector8_has(chunk, (unsigned char) '\\')) {
+            break;
+        }
+
+        parser->pos += FLB_SIMD_VEC8_INST_LEN;
+    }
+
+    for (; parser->pos < len && js[parser->pos] != '\0'; parser->pos++) {
+        char c = js[parser->pos];
+
+        if (c == '"') {
+            if (tokens == NULL) {
+                return 0;
+            }
+            token = jsmn_simd_alloc_token(parser, tokens, num_tokens);
+            if (token == NULL) {
+                parser->pos = start;
+                return JSMN_ERROR_NOMEM;
+            }
+            jsmn_fill_token(token, JSMN_STRING, start + 1, parser->pos);
+#ifdef JSMN_PARENT_LINKS
+            token->parent = parser->toksuper;
+#endif
+            return 0;
+        }
+
+        if (c == '\\' && parser->pos + 1 < len) {
+            int i;
+
+            parser->pos++;
+            switch (js[parser->pos]) {
+            case '"':
+            case '/':
+            case '\\':
+            case 'b':
+            case 'f':
+            case 'r':
+            case 'n':
+            case 't':
+                break;
+            case 'u':
+                parser->pos++;
+                for (i = 0; i < 4 && parser->pos < len && js[parser->pos] != '\0'; i++) {
+                    if (!((js[parser->pos] >= 48 && js[parser->pos] <= 57) ||
+                          (js[parser->pos] >= 65 && js[parser->pos] <= 70) ||
+                          (js[parser->pos] >= 97 && js[parser->pos] <= 102))) {
+                        parser->pos = start;
+                        return JSMN_ERROR_INVAL;
+                    }
+                    parser->pos++;
+                }
+                parser->pos--;
+                break;
+            default:
+                parser->pos = start;
+                return JSMN_ERROR_INVAL;
+            }
+        }
+    }
+
+    parser->pos = start;
+    return JSMN_ERROR_PART;
+}
+
+static inline int jsmn_parse_simd(jsmn_parser *parser, const char *js,
+                                  const size_t len, jsmntok_t *tokens,
+                                  const unsigned int num_tokens)
+{
+    int r;
+    int i;
+    jsmntok_t *token;
+    int count = parser->toknext;
+
+    for (; parser->pos < len && js[parser->pos] != '\0'; parser->pos++) {
+        char c;
+        jsmntype_t type;
+
+        c = js[parser->pos];
+        switch (c) {
+        case '{':
+        case '[':
+            count++;
+            if (tokens == NULL) {
+                break;
+            }
+            token = jsmn_simd_alloc_token(parser, tokens, num_tokens);
+            if (token == NULL) {
+                return JSMN_ERROR_NOMEM;
+            }
+            if (parser->toksuper != -1) {
+                jsmntok_t *t = &tokens[parser->toksuper];
+#ifdef JSMN_STRICT
+                if (t->type == JSMN_OBJECT) {
+                    return JSMN_ERROR_INVAL;
+                }
+#endif
+                t->size++;
+#ifdef JSMN_PARENT_LINKS
+                token->parent = parser->toksuper;
+#endif
+            }
+            token->type = (c == '{' ? JSMN_OBJECT : JSMN_ARRAY);
+            token->start = parser->pos;
+            parser->toksuper = parser->toknext - 1;
+            break;
+        case '}':
+        case ']':
+            if (tokens == NULL) {
+                break;
+            }
+            type = (c == '}' ? JSMN_OBJECT : JSMN_ARRAY);
+#ifdef JSMN_PARENT_LINKS
+            if (parser->toknext < 1) {
+                return JSMN_ERROR_INVAL;
+            }
+            token = &tokens[parser->toknext - 1];
+            for (;;) {
+                if (token->start != -1 && token->end == -1) {
+                    if (token->type != type) {
+                        return JSMN_ERROR_INVAL;
+                    }
+                    token->end = parser->pos + 1;
+                    parser->toksuper = token->parent;
+                    break;
+                }
+                if (token->parent == -1) {
+                    if (token->type != type || parser->toksuper == -1) {
+                        return JSMN_ERROR_INVAL;
+                    }
+                    break;
+                }
+                token = &tokens[token->parent];
+            }
+#else
+            for (i = parser->toknext - 1; i >= 0; i--) {
+                token = &tokens[i];
+                if (token->start != -1 && token->end == -1) {
+                    if (token->type != type) {
+                        return JSMN_ERROR_INVAL;
+                    }
+                    parser->toksuper = -1;
+                    token->end = parser->pos + 1;
+                    break;
+                }
+            }
+            if (i == -1) {
+                return JSMN_ERROR_INVAL;
+            }
+            for (; i >= 0; i--) {
+                token = &tokens[i];
+                if (token->start != -1 && token->end == -1) {
+                    parser->toksuper = i;
+                    break;
+                }
+            }
+#endif
+            break;
+        case '"':
+            r = jsmn_simd_parse_string(parser, js, len, tokens, num_tokens);
+            if (r < 0) {
+                return r;
+            }
+            count++;
+            if (parser->toksuper != -1 && tokens != NULL) {
+                tokens[parser->toksuper].size++;
+            }
+            break;
+        case '\t':
+        case '\r':
+        case '\n':
+        case ' ':
+            break;
+        case ':':
+            parser->toksuper = parser->toknext - 1;
+            break;
+        case ',':
+            if (tokens != NULL && parser->toksuper != -1 &&
+                tokens[parser->toksuper].type != JSMN_ARRAY &&
+                tokens[parser->toksuper].type != JSMN_OBJECT) {
+#ifdef JSMN_PARENT_LINKS
+                parser->toksuper = tokens[parser->toksuper].parent;
+#else
+                for (i = parser->toknext - 1; i >= 0; i--) {
+                    if (tokens[i].type == JSMN_ARRAY || tokens[i].type == JSMN_OBJECT) {
+                        if (tokens[i].start != -1 && tokens[i].end == -1) {
+                            parser->toksuper = i;
+                            break;
+                        }
+                    }
+                }
+#endif
+            }
+            break;
+#ifdef JSMN_STRICT
+        case '-':
+        case '0':
+        case '1':
+        case '2':
+        case '3':
+        case '4':
+        case '5':
+        case '6':
+        case '7':
+        case '8':
+        case '9':
+        case 't':
+        case 'f':
+        case 'n':
+            if (tokens != NULL && parser->toksuper != -1) {
+                const jsmntok_t *t = &tokens[parser->toksuper];
+                if (t->type == JSMN_OBJECT ||
+                    (t->type == JSMN_STRING && t->size != 0)) {
+                    return JSMN_ERROR_INVAL;
+                }
+            }
+#else
+        default:
+#endif
+            r = jsmn_simd_parse_primitive(parser, js, len, tokens, num_tokens);
+            if (r < 0) {
+                return r;
+            }
+            count++;
+            if (parser->toksuper != -1 && tokens != NULL) {
+                tokens[parser->toksuper].size++;
+            }
+            break;
+#ifdef JSMN_STRICT
+        default:
+            return JSMN_ERROR_INVAL;
+#endif
+        }
+    }
+
+    if (tokens != NULL) {
+        for (i = parser->toknext - 1; i >= 0; i--) {
+            if (tokens[i].start != -1 && tokens[i].end == -1) {
+                return JSMN_ERROR_PART;
+            }
+        }
+    }
+
+    return count;
+}
+
+static inline void jsmn_simd_init(jsmn_parser *parser)
+{
+    jsmn_init(parser);
+}
+#endif /* FLB_HAVE_SIMD */
 
 int flb_json_tokenise(const char *js, size_t len,
                       struct flb_pack_state *state)
@@ -96,6 +461,47 @@ int flb_json_tokenise(const char *js, size_t len,
     state->tokens_count += ret;
     return 0;
 }
+
+#ifdef FLB_HAVE_SIMD
+int flb_json_tokenise_simd(const char *js, size_t len,
+                           struct flb_pack_state *state)
+{
+    int ret;
+    int new_tokens = 256;
+    size_t old_size;
+    size_t new_size;
+    void *tmp;
+
+    ret = jsmn_parse_simd(&state->parser, js, len,
+                          state->tokens, state->tokens_size);
+    while (ret == JSMN_ERROR_NOMEM) {
+        old_size = state->tokens_size * sizeof(jsmntok_t);
+        new_size = old_size + (sizeof(jsmntok_t) * new_tokens);
+        tmp = flb_realloc(state->tokens, new_size);
+        if (!tmp) {
+            flb_errno();
+            return -1;
+        }
+        state->tokens = tmp;
+        state->tokens_size += new_tokens;
+
+        ret = jsmn_parse_simd(&state->parser, js, len,
+                              state->tokens, state->tokens_size);
+    }
+
+    if (ret == JSMN_ERROR_INVAL) {
+        return FLB_ERR_JSON_INVAL;
+    }
+
+    if (ret == JSMN_ERROR_PART) {
+        flb_trace("[json tokenise simd] incomplete");
+        return FLB_ERR_JSON_PART;
+    }
+
+    state->tokens_count += ret;
+    return 0;
+}
+#endif /* FLB_HAVE_SIMD */
 
 static inline int is_float(const char *buf, int len)
 {
@@ -328,6 +734,59 @@ static int pack_json_to_msgpack(const char *js, size_t len, char **buffer,
     return ret;
 }
 
+#ifdef FLB_HAVE_SIMD
+static int pack_json_to_msgpack_simd(const char *js, size_t len, char **buffer,
+                                     size_t *size, int *root_type, int *records,
+                                     size_t *consumed)
+{
+    int ret = -1;
+    int n_records;
+    int out;
+    int last;
+    char *buf = NULL;
+    struct flb_pack_state state;
+
+    ret = flb_pack_state_init(&state);
+    if (ret != 0) {
+        return -1;
+    }
+    ret = flb_json_tokenise_simd(js, len, &state);
+    if (ret != 0) {
+        ret = -1;
+        goto flb_pack_json_simd_end;
+    }
+
+    if (state.tokens_count == 0) {
+        ret = -1;
+        goto flb_pack_json_simd_end;
+    }
+
+    buf = tokens_to_msgpack(&state, js, &out, &last, &n_records);
+    if (!buf) {
+        ret = -1;
+        goto flb_pack_json_simd_end;
+    }
+
+    *root_type = state.tokens[0].type;
+    *size = out;
+    *buffer = buf;
+    *records = n_records;
+
+    if (consumed != NULL) {
+        *consumed = last;
+    }
+
+    ret = 0;
+
+ flb_pack_json_simd_end:
+    if (ret != 0 && buf) {
+        flb_free(buf);
+    }
+    flb_pack_state_reset(&state);
+    return ret;
+}
+#endif /* FLB_HAVE_SIMD */
+
 /* Pack unlimited serialized JSON messages into msgpack */
 int flb_pack_json(const char *js, size_t len, char **buffer, size_t *size,
                   int *root_type, size_t *consumed)
@@ -336,6 +795,16 @@ int flb_pack_json(const char *js, size_t len, char **buffer, size_t *size,
 
     return pack_json_to_msgpack(js, len, buffer, size, root_type, &records, consumed);
 }
+
+#ifdef FLB_HAVE_SIMD
+int flb_pack_json_simd(const char *js, size_t len, char **buffer, size_t *size,
+                       int *root_type, size_t *consumed)
+{
+    int records;
+
+    return pack_json_to_msgpack_simd(js, len, buffer, size, root_type, &records, consumed);
+}
+#endif /* FLB_HAVE_SIMD */
 
 /*
  * Pack unlimited serialized JSON messages into msgpack, finally it writes on
@@ -346,6 +815,14 @@ int flb_pack_json_recs(const char *js, size_t len, char **buffer, size_t *size,
 {
     return pack_json_to_msgpack(js, len, buffer, size, root_type, out_records, consumed);
 }
+
+#ifdef FLB_HAVE_SIMD
+int flb_pack_json_recs_simd(const char *js, size_t len, char **buffer, size_t *size,
+                            int *root_type, int *out_records, size_t *consumed)
+{
+    return pack_json_to_msgpack_simd(js, len, buffer, size, root_type, out_records, consumed);
+}
+#endif /* FLB_HAVE_SIMD */
 
 /* Initialize a JSON packer state */
 int flb_pack_state_init(struct flb_pack_state *s)

@@ -74,12 +74,23 @@ struct flb_pack_state {
 
 int flb_pack_init(struct flb_config *config);
 int flb_json_tokenise(const char *js, size_t len, struct flb_pack_state *state);
+#ifdef FLB_HAVE_SIMD
+int flb_json_tokenise_simd(const char *js, size_t len, struct flb_pack_state *state);
+#endif
 
 
 int flb_pack_json(const char *js, size_t len, char **buffer, size_t *size,
                   int *root_type, size_t *consumed);
+#ifdef FLB_HAVE_SIMD
+int flb_pack_json_simd(const char *js, size_t len, char **buffer, size_t *size,
+                       int *root_type, size_t *consumed);
+#endif
 int flb_pack_json_recs(const char *js, size_t len, char **buffer, size_t *size,
                        int *root_type, int *out_records, size_t *consumed);
+#ifdef FLB_HAVE_SIMD
+int flb_pack_json_recs_simd(const char *js, size_t len, char **buffer, size_t *size,
+                            int *root_type, int *out_records, size_t *consumed);
+#endif
 
 int flb_pack_state_init(struct flb_pack_state *s);
 void flb_pack_state_reset(struct flb_pack_state *s);
