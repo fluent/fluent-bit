@@ -1592,6 +1592,35 @@ int flb_output_upstream_set(struct flb_upstream *u, struct flb_output_instance *
     /* Set networking options 'net.*' received through instance properties */
     memcpy(&u->base.net, &ins->net_setup, sizeof(struct flb_net_setup));
 
+    /*
+     * If the Upstream was created using a proxy from the environment but the
+     * final configuration asks to ignore environment proxy variables, restore
+     * the original destination host information.
+     */
+    if (u->base.net.proxy_env_ignore == FLB_TRUE && u->proxied_host) {
+        flb_free(u->tcp_host);
+        u->tcp_host = flb_strdup(u->proxied_host);
+        u->tcp_port = u->proxied_port;
+
+        flb_free(u->proxied_host);
+        u->proxied_host = NULL;
+        u->proxied_port = 0;
+
+        /*
+         * Credentials are only set when the connection was configured via environment
+         * variables. Since we just reverted the upstream to the destination configured
+         * by the plugin, drop any credentials that may have been parsed.
+         */
+        if (u->proxy_username) {
+            flb_free(u->proxy_username);
+            u->proxy_username = NULL;
+        }
+        if (u->proxy_password) {
+            flb_free(u->proxy_password);
+            u->proxy_password = NULL;
+        }
+    }
+
     return 0;
 }
 
