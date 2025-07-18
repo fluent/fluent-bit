@@ -649,6 +649,9 @@ add_subdirectory(${FLB_PATH_LIB_CHUNKIO} EXCLUDE_FROM_ALL)
 FLB_DEFINITION(JSMN_PARENT_LINKS)
 FLB_DEFINITION(JSMN_STRICT)
 add_subdirectory(${FLB_PATH_LIB_JSMN})
+
+add_subdirectory(${FLB_PATH_LIB_YYJSON} EXCLUDE_FROM_ALL)
+
 # Runtime Tests (filter_kubernetes) requires HTTP Server
 if(FLB_TESTS_RUNTIME)
   FLB_OPTION(FLB_HTTP_SERVER  ON)
