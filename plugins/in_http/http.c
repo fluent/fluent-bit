@@ -49,6 +49,13 @@ static int in_http_collect(struct flb_input_instance *ins,
         return -1;
     }
 
+    if (ctx->is_paused) {
+        flb_plg_trace(ctx->ins, "TCP connection will be closed FD=%i",
+                      connection->fd);
+        flb_downstream_conn_release(connection);
+        return -1;
+    }
+
     flb_plg_trace(ctx->ins, "new TCP connection arrived FD=%i",
                   connection->fd);
 
@@ -79,6 +86,7 @@ static int in_http_init(struct flb_input_instance *ins,
     }
 
     ctx->collector_id = -1;
+    ctx->is_paused = FLB_FALSE;
 
     /* Populate context with config map defaults and incoming properties */
     ret = flb_input_config_map_set(ins, (void *) ctx);
@@ -199,6 +207,27 @@ static int in_http_exit(void *data, struct flb_config *config)
     return 0;
 }
 
+static void in_http_pause(void *data, struct flb_config *config)
+{
+    struct flb_http *ctx = data;
+
+    if (config->is_running == FLB_TRUE) {
+        flb_input_collector_pause(ctx->collector_id, ctx->ins);
+        http_conn_release_all(ctx);
+        ctx->is_paused = FLB_TRUE;
+    }
+}
+
+static void in_http_resume(void *data, struct flb_config *config)
+{
+    struct flb_http *ctx = data;
+
+    if (config->is_running == FLB_TRUE) {
+        flb_input_collector_resume(ctx->collector_id, ctx->ins);
+        ctx->is_paused = FLB_FALSE;
+    }
+}
+
 /* Configuration properties map */
 static struct flb_config_map config_map[] = {
     {
@@ -249,8 +278,8 @@ struct flb_input_plugin in_http_plugin = {
     .cb_pre_run   = NULL,
     .cb_collect   = in_http_collect,
     .cb_flush_buf = NULL,
-    .cb_pause     = NULL,
-    .cb_resume    = NULL,
+    .cb_pause     = in_http_pause,
+    .cb_resume    = in_http_resume,
     .cb_exit      = in_http_exit,
     .config_map   = config_map,
     .flags        = FLB_INPUT_NET_SERVER | FLB_IO_OPT_TLS
