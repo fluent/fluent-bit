@@ -196,6 +196,7 @@ option(FLB_WASM_STACK_PROTECT  "Build with WASM runtime with strong stack protec
 option(FLB_ENFORCE_ALIGNMENT   "Enable limited platform specific aligned memory access" No)
 option(FLB_KAFKA               "Enable Kafka support"         Yes)
 option(FLB_ZIG                 "Enable zig integration"       Yes)
+option(FLB_FILTER_LOOKUP       "Enable filter lookup support" Yes)
 
 # Native Metrics Support (cmetrics)
 option(FLB_METRICS             "Enable metrics support"       Yes)
