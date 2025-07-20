@@ -1,6 +1,6 @@
 /*  Fluent Bit
  *  ==========
- *  Copyright (C) 2015-2024 The Fluent Bit Authors
+ *  Copyright (C) 2015-2025 The Fluent Bit Authors
  *
  *  Licensed under the Apache License, Version 2.0 (the "License");
  *  you may not use this file except in compliance with the License.
@@ -17,7 +17,6 @@
 
 #include <fluent-bit/flb_filter_plugin.h>
 #include <fluent-bit/flb_mem.h>
-
 #include <fluent-bit/flb_time.h>
 #include <fluent-bit/flb_hash_table.h>
 #include <fluent-bit/flb_config_map.h>
@@ -25,6 +24,8 @@
 #include <fluent-bit/flb_log_event_encoder.h>
 #include <fluent-bit/flb_ra_key.h>
 #include <fluent-bit/flb_record_accessor.h>
+#include <fluent-bit/flb_metrics.h>
+#include <cfl/cfl_time.h>
 #include <monkey/mk_core/mk_list.h>
 #include <msgpack.h>
 #include <string.h>
@@ -32,22 +33,40 @@
 #include <ctype.h>
 #include <unistd.h>
 #include <stdlib.h>
+#include <stdbool.h>
+#include <errno.h>
+
+#include "lookup.h"
+
+/* Macro to increment records metrics */
+#ifdef FLB_HAVE_METRICS
+#define INCREMENT_SKIPPED_METRIC(ctx, ins) do { \
+    uint64_t ts = cfl_time_now(); \
+    cmt_counter_add(ctx->cmt_skipped, ts, 1, 1, (char *[]) {(char*)flb_filter_name(ins)}); \
+    flb_metrics_sum(FLB_LOOKUP_METRIC_SKIPPED, 1, ins->metrics); \
+} while(0)
+
+#define INCREMENT_MATCHED_METRIC(ctx, ins) do { \
+    uint64_t ts = cfl_time_now(); \
+    cmt_counter_add(ctx->cmt_matched, ts, 1, 1, (char *[]) {(char*)flb_filter_name(ins)}); \
+    flb_metrics_sum(FLB_LOOKUP_METRIC_MATCHED, 1, ins->metrics); \
+} while(0)
+
+#define INCREMENT_PROCESSED_METRIC(ctx, ins) do { \
+    uint64_t ts = cfl_time_now(); \
+    cmt_counter_add(ctx->cmt_processed, ts, 1, 1, (char *[]) {(char*)flb_filter_name(ins)}); \
+    flb_metrics_sum(FLB_LOOKUP_METRIC_PROCESSED, 1, ins->metrics); \
+} while(0)
+#else
+#define INCREMENT_SKIPPED_METRIC(ctx, ins) do { } while(0)
+#define INCREMENT_MATCHED_METRIC(ctx, ins) do { } while(0)
+#define INCREMENT_PROCESSED_METRIC(ctx, ins) do { } while(0)
+#endif
 
 
 struct val_node {
     struct mk_list _head;
     void *val;
-};
-
-struct lookup_ctx {
-    struct flb_filter_instance *ins;
-    char *file;
-    char *lookup_key;
-    char *result_key;
-    struct flb_hash_table *ht;
-    struct flb_record_accessor *ra_lookup_key;
-    int ignore_case;
-    struct mk_list val_list;
 };
 
 /*
@@ -100,40 +119,168 @@ static int normalize_and_trim(const char *input, size_t len, int ignore_case, ch
     }
 }
 
+/* Dynamic buffer structure for growing strings */
+struct dynamic_buffer {
+    char *data;
+    size_t len;
+    size_t capacity;
+};
+
+/* Initialize a dynamic buffer */
+static int dynbuf_init(struct dynamic_buffer *buf, size_t initial_capacity)
+{
+    buf->data = flb_malloc(initial_capacity);
+    if (!buf->data) {
+        return -1;
+    }
+    buf->len = 0;
+    buf->capacity = initial_capacity;
+    buf->data[0] = '\0';
+    return 0;
+}
+
+/* Append a character to dynamic buffer, growing if necessary */
+static int dynbuf_append_char(struct dynamic_buffer *buf, char c)
+{
+    /* Ensure we have space for the character plus null terminator */
+    if (buf->len + 1 >= buf->capacity) {
+        size_t new_capacity = buf->capacity * 2;
+        char *new_data = flb_realloc(buf->data, new_capacity);
+        if (!new_data) {
+            return -1;
+        }
+        buf->data = new_data;
+        buf->capacity = new_capacity;
+    }
+    buf->data[buf->len++] = c;
+    buf->data[buf->len] = '\0';
+    return 0;
+}
+
+/* Free dynamic buffer */
+static void dynbuf_destroy(struct dynamic_buffer *buf)
+{
+    if (buf && buf->data) {
+        flb_free(buf->data);
+        buf->data = NULL;
+        buf->len = 0;
+        buf->capacity = 0;
+    }
+}
+
+/* Read a line of arbitrary length from file using dynamic allocation */
+static char *read_line_dynamic(FILE *fp, size_t *line_length)
+{
+    size_t capacity = 256;  /* Initial capacity */
+    size_t len = 0;
+    char *line = flb_malloc(capacity);
+    int c;
+    
+    if (!line) {
+        return NULL;
+    }
+    
+    while ((c = fgetc(fp)) != EOF) {
+        /* Check if we need to grow the buffer */
+        if (len + 1 >= capacity) {
+            size_t new_capacity = capacity * 2;
+            char *new_line = flb_realloc(line, new_capacity);
+            if (!new_line) {
+                flb_free(line);
+                return NULL;
+            }
+            line = new_line;
+            capacity = new_capacity;
+        }
+        
+        /* Add character to buffer */
+        line[len++] = c;
+        
+        /* Check for end of line */
+        if (c == '\n') {
+            break;
+        }
+    }
+    
+    /* If we read nothing and hit EOF, return NULL */
+    if (len == 0 && c == EOF) {
+        flb_free(line);
+        return NULL;
+    }
+    
+    /* Null terminate the string */
+    if (len >= capacity) {
+        char *new_line = flb_realloc(line, len + 1);
+        if (!new_line) {
+            flb_free(line);
+            return NULL;
+        }
+        line = new_line;
+    }
+    line[len] = '\0';
+    
+    /* Remove trailing \r\n characters */
+    while (len > 0 && (line[len - 1] == '\n' || line[len - 1] == '\r')) {
+        line[--len] = '\0';
+    }
+    
+    if (line_length) {
+        *line_length = len;
+    }
+    
+    return line;
+}
+
 static int load_csv(struct lookup_ctx *ctx)
 {
     FILE *fp;
-    char line[4096];
     int line_num = 1;
     fp = fopen(ctx->file, "r");
     if (!fp) {
-        flb_plg_error(ctx->ins, "cannot open CSV file: %s", ctx->file);
+        flb_plg_error(ctx->ins, "cannot open CSV file '%s': %s", ctx->file, strerror(errno));
         return -1;
     }
     /* Initialize value list if not already */
     mk_list_init(&ctx->val_list);
-    /* Skip header */
-    if (!fgets(line, sizeof(line), fp)) {
+    
+    /* Skip header using dynamic line reading */
+    char *header_line = read_line_dynamic(fp, NULL);
+    if (!header_line) {
         flb_plg_error(ctx->ins, "empty CSV file: %s", ctx->file);
         fclose(fp);
         return -1;
     }
-    while (fgets(line, sizeof(line), fp)) {
-        line[strcspn(line, "\r\n")] = '\0';
-        if (strlen(line) == 0) {
+    flb_free(header_line);  /* Free the header line as we don't need it */
+    
+    char *line;
+    size_t line_length;
+    while ((line = read_line_dynamic(fp, &line_length)) != NULL) {
+        if (line_length == 0) {
+            flb_free(line);
             line_num++;
             continue;
         }
 
-        /* Handle quotes in CSV files */
+        /* Handle quotes in CSV files using dynamic buffers */
         char *p = line;
-        char key[2048];
-        char val[2048];
-        size_t key_len = 0, val_len = 0;
-        key[0] = '\0';
-        val[0] = '\0';
-    int in_quotes = 0;
+        struct dynamic_buffer key_buf, val_buf;
+        int in_quotes = 0;
         int field = 0; /* 0=key, 1=val */
+
+        /* Initialize dynamic buffers */
+        if (dynbuf_init(&key_buf, 256) != 0) {
+            flb_plg_debug(ctx->ins, "Failed to initialize key buffer for line %d", line_num);
+            flb_free(line);
+            line_num++;
+            continue;
+        }
+        if (dynbuf_init(&val_buf, 256) != 0) {
+            flb_plg_debug(ctx->ins, "Failed to initialize value buffer for line %d", line_num);
+            dynbuf_destroy(&key_buf);
+            flb_free(line);
+            line_num++;
+            continue;
+        }
 
         /* Parse key from first column (and handle quotes) */
         while (*p && (field == 0)) {
@@ -146,7 +293,14 @@ static int load_csv(struct lookup_ctx *ctx)
                 if (*p == '"') {
                     if (*(p+1) == '"') {
                         /* Escaped quote */
-                        if (key_len < sizeof(key)-1) key[key_len++] = '"';
+                        if (dynbuf_append_char(&key_buf, '"') != 0) {
+                            flb_plg_debug(ctx->ins, "Buffer allocation failed for line %d", line_num);
+                            dynbuf_destroy(&key_buf);
+                            dynbuf_destroy(&val_buf);
+                            flb_free(line);
+                            line_num++;
+                            goto next_line;
+                        }
                         p += 2;
                         continue;
                     } else {
@@ -155,7 +309,14 @@ static int load_csv(struct lookup_ctx *ctx)
                         continue;
                     }
                 }
-                if (key_len < sizeof(key)-1) key[key_len++] = *p;
+                if (dynbuf_append_char(&key_buf, *p) != 0) {
+                    flb_plg_debug(ctx->ins, "Buffer allocation failed for line %d", line_num);
+                    dynbuf_destroy(&key_buf);
+                    dynbuf_destroy(&val_buf);
+                    flb_free(line);
+                    line_num++;
+                    goto next_line;
+                }
                 p++;
                 continue;
             }
@@ -164,10 +325,16 @@ static int load_csv(struct lookup_ctx *ctx)
                 p++;
                 break;
             }
-            if (key_len < sizeof(key)-1) key[key_len++] = *p;
+            if (dynbuf_append_char(&key_buf, *p) != 0) {
+                flb_plg_debug(ctx->ins, "Buffer allocation failed for line %d", line_num);
+                dynbuf_destroy(&key_buf);
+                dynbuf_destroy(&val_buf);
+                flb_free(line);
+                line_num++;
+                goto next_line;
+            }
             p++;
         }
-        key[key_len] = '\0';
 
         /* Parse value from second column (handle quotes) */
         in_quotes = 0;
@@ -181,7 +348,14 @@ static int load_csv(struct lookup_ctx *ctx)
                 if (*p == '"') {
                     if (*(p+1) == '"') {
                         // Escaped quote
-                        if (val_len < sizeof(val)-1) val[val_len++] = '"';
+                        if (dynbuf_append_char(&val_buf, '"') != 0) {
+                            flb_plg_error(ctx->ins, "Failed to append to value buffer for line %d", line_num);
+                            dynbuf_destroy(&key_buf);
+                            dynbuf_destroy(&val_buf);
+                            flb_free(line);
+                            line_num++;
+                            goto next_line;
+                        }
                         p += 2;
                         continue;
                     } else {
@@ -190,7 +364,14 @@ static int load_csv(struct lookup_ctx *ctx)
                         continue;
                     }
                 }
-                if (val_len < sizeof(val)-1) val[val_len++] = *p;
+                if (dynbuf_append_char(&val_buf, *p) != 0) {
+                    flb_plg_error(ctx->ins, "Failed to append to value buffer for line %d", line_num);
+                    dynbuf_destroy(&key_buf);
+                    dynbuf_destroy(&val_buf);
+                    flb_free(line);
+                    line_num++;
+                    goto next_line;
+                }
                 p++;
                 continue;
             }
@@ -198,37 +379,56 @@ static int load_csv(struct lookup_ctx *ctx)
                 /* Ignore extra fields */
                 break;
             }
-            if (val_len < sizeof(val)-1) val[val_len++] = *p;
+            if (dynbuf_append_char(&val_buf, *p) != 0) {
+                flb_plg_error(ctx->ins, "Failed to append to value buffer for line %d", line_num);
+                dynbuf_destroy(&key_buf);
+                dynbuf_destroy(&val_buf);
+                flb_free(line);
+                line_num++;
+                goto next_line;
+            }
             p++;
         }
-
-        val[val_len] = '\0';
 
         /* Check for unmatched quote: if in_quotes is set, log warning and skip line */
         if (in_quotes) {
             flb_plg_warn(ctx->ins, "Unmatched quote in line %d, skipping", line_num);
+            dynbuf_destroy(&key_buf);
+            dynbuf_destroy(&val_buf);
+            flb_free(line);
             line_num++;
             continue;
         }
 
         /* Normalize and trim key */
         char *key_ptr = NULL;
-        int key_ptr_allocated = normalize_and_trim(key, strlen(key), ctx->ignore_case, &key_ptr, &key_len);
+        size_t key_len = 0;
+        int key_ptr_allocated = normalize_and_trim(key_buf.data, key_buf.len, ctx->ignore_case, &key_ptr, &key_len);
         if (key_ptr_allocated < 0) {
+            dynbuf_destroy(&key_buf);
+            dynbuf_destroy(&val_buf);
+            flb_free(line);
             line_num++;
             continue;
         }
         /* Normalize and trim value */
         char *val_ptr = NULL;
-        int val_ptr_allocated = normalize_and_trim(val, strlen(val), 0, &val_ptr, &val_len);
+        size_t val_len = 0;
+        int val_ptr_allocated = normalize_and_trim(val_buf.data, val_buf.len, 0, &val_ptr, &val_len);
         if (val_ptr_allocated < 0) {
             if (key_ptr_allocated) flb_free(key_ptr);
+            dynbuf_destroy(&key_buf);
+            dynbuf_destroy(&val_buf);
+            flb_free(line);
             line_num++;
             continue;
         }
-        if (key_len == 0 || val_len == 0 || key_len > sizeof(key) || val_len > sizeof(val)) {
+        if (key_len == 0 || val_len == 0) {
             if (key_ptr_allocated) flb_free(key_ptr);
             if (val_ptr_allocated) flb_free(val_ptr);
+            dynbuf_destroy(&key_buf);
+            dynbuf_destroy(&val_buf);
+            flb_free(line);
             line_num++;
             continue;
         }
@@ -237,6 +437,9 @@ static int load_csv(struct lookup_ctx *ctx)
         if (!val_heap) {
             if (key_ptr_allocated) flb_free(key_ptr);
             if (val_ptr_allocated) flb_free(val_ptr);
+            dynbuf_destroy(&key_buf);
+            dynbuf_destroy(&val_buf);
+            flb_free(line);
             line_num++;
             continue;
         }
@@ -248,6 +451,9 @@ static int load_csv(struct lookup_ctx *ctx)
             flb_plg_warn(ctx->ins, "Failed to add key '%.*s' (duplicate or error), skipping", (int)key_len, key_ptr);
             if (key_ptr_allocated) flb_free(key_ptr);
             if (val_ptr_allocated) flb_free(val_ptr);
+            dynbuf_destroy(&key_buf);
+            dynbuf_destroy(&val_buf);
+            flb_free(line);
             line_num++;
             continue;
         }
@@ -263,7 +469,15 @@ static int load_csv(struct lookup_ctx *ctx)
         /* Do not free val_heap; hash table owns it now */
         if (key_ptr_allocated) flb_free(key_ptr);
         if (val_ptr_allocated) flb_free(val_ptr);
+        dynbuf_destroy(&key_buf);
+        dynbuf_destroy(&val_buf);
+        flb_free(line);
         line_num++;
+        continue;
+
+        next_line:
+        /* Label for error handling - cleanup already done in error paths */
+        continue;
     }
     fclose(fp);
     return 0;
@@ -286,6 +500,29 @@ static int cb_lookup_init(struct flb_filter_instance *ins,
     }
     ctx->ins = ins;
 
+#ifdef FLB_HAVE_METRICS
+    /* Initialize CMT metrics */
+    ctx->cmt_processed = cmt_counter_create(ins->cmt,
+                                            "fluentbit", "filter", "lookup_processed_records_total",
+                                            "Total number of processed records",
+                                            1, (char *[]) {"name"});
+
+    ctx->cmt_matched = cmt_counter_create(ins->cmt,
+                                          "fluentbit", "filter", "lookup_matched_records_total",
+                                          "Total number of matched records",
+                                          1, (char *[]) {"name"});
+
+    ctx->cmt_skipped = cmt_counter_create(ins->cmt,
+                                          "fluentbit", "filter", "lookup_skipped_records_total",
+                                          "Total number of skipped records due to errors",
+                                          1, (char *[]) {"name"});
+
+    /* Add to old metrics system */
+    flb_metrics_add(FLB_LOOKUP_METRIC_PROCESSED, "processed_records_total", ins->metrics);
+    flb_metrics_add(FLB_LOOKUP_METRIC_MATCHED, "matched_records_total", ins->metrics);
+    flb_metrics_add(FLB_LOOKUP_METRIC_SKIPPED, "skipped_records_total", ins->metrics);
+#endif
+
     /*
      * Populate context fields from config_map. This sets file, lookup_key,
      * result_key, and ignore_case from the configuration.
@@ -302,21 +539,13 @@ static int cb_lookup_init(struct flb_filter_instance *ins,
      */
     if (!ctx->file || !ctx->lookup_key || !ctx->result_key) {
         flb_plg_error(ins, "missing required config: file, lookup_key, result_key");
-        if (ctx->file) flb_free(ctx->file);
-        if (ctx->lookup_key) flb_free(ctx->lookup_key);
-        if (ctx->result_key) flb_free(ctx->result_key);
-        flb_free(ctx);
-        return -1;
+        goto error;
     }
 
     /* Check file existence and readability */
     if (access(ctx->file, R_OK) != 0) {
-        flb_plg_error(ins, "CSV file '%s' does not exist or is not readable", ctx->file);
-        if (ctx->file) flb_free(ctx->file);
-        if (ctx->lookup_key) flb_free(ctx->lookup_key);
-        if (ctx->result_key) flb_free(ctx->result_key);
-        flb_free(ctx);
-        return -1;
+        flb_plg_error(ins, "CSV file '%s' does not exist or is not readable: %s", ctx->file, strerror(errno));
+        goto error;
     }
 
     /*
@@ -326,47 +555,45 @@ static int cb_lookup_init(struct flb_filter_instance *ins,
     ctx->ht = flb_hash_table_create(FLB_HASH_TABLE_EVICT_NONE, 1024, -1);
     if (!ctx->ht) {
         flb_plg_error(ins, "could not create hash table");
-        if (ctx->file) flb_free(ctx->file);
-        if (ctx->lookup_key) flb_free(ctx->lookup_key);
-        if (ctx->result_key) flb_free(ctx->result_key);
-        flb_free(ctx);
-        return -1;
+        goto error;
     }
 
     /* Initialize record accessor for lookup_key */
     ctx->ra_lookup_key = flb_ra_create(ctx->lookup_key, FLB_TRUE);
     if (!ctx->ra_lookup_key) {
         flb_plg_error(ins, "invalid lookup_key pattern: %s", ctx->lookup_key);
-        flb_hash_table_destroy(ctx->ht);
-        if (ctx->file) flb_free(ctx->file);
-        if (ctx->lookup_key) flb_free(ctx->lookup_key);
-        if (ctx->result_key) flb_free(ctx->result_key);
-        flb_free(ctx);
-        return -1;
+        goto error;
     }
 
     /* Load CSV data into hash table. */
     ret = load_csv(ctx);
     if (ret < 0) {
-        flb_ra_destroy(ctx->ra_lookup_key);
-        flb_hash_table_destroy(ctx->ht);
-        if (ctx->file) flb_free(ctx->file);
-        if (ctx->lookup_key) flb_free(ctx->lookup_key);
-        if (ctx->result_key) flb_free(ctx->result_key);
-        flb_free(ctx);
-        return -1;
+        goto error;
     }
-    flb_plg_info(ins, "Loaded %d entries from CSV", (int)ctx->ht->total_count);
+    flb_plg_info(ins, "Loaded %d entries from CSV file '%s'", (int)ctx->ht->total_count, ctx->file);
+    flb_plg_info(ins, "Lookup filter initialized: lookup_key='%s', result_key='%s', ignore_case=%s", 
+                 ctx->lookup_key, ctx->result_key, ctx->ignore_case ? "true" : "false");
 
     /* Store context for use in filter and exit callbacks. */
     flb_filter_set_context(ins, ctx);
     return 0;
+
+error:
+    if (ctx->ra_lookup_key) {
+        flb_ra_destroy(ctx->ra_lookup_key);
+    }
+    if (ctx->ht) {
+        flb_hash_table_destroy(ctx->ht);
+    }
+    flb_free(ctx);
+    return -1;
 }
 
 static int emit_original_record(
     struct flb_log_event_encoder *log_encoder,
     struct flb_log_event *log_event,
     struct flb_filter_instance *ins,
+    struct lookup_ctx *ctx,
     int rec_num)
 {
     int ret = flb_log_event_encoder_begin_record(log_encoder);
@@ -384,6 +611,9 @@ static int emit_original_record(
     } else {
         flb_log_event_encoder_rollback_record(log_encoder);
         flb_plg_warn(ins, "Record %d: failed to encode original record, skipping", rec_num);
+        if (ctx) {
+            INCREMENT_SKIPPED_METRIC(ctx, ins);
+        }
     }
     return ret;
 }
@@ -413,8 +643,9 @@ static int cb_lookup_filter(const void *data, size_t bytes,
     char *lookup_val_str = NULL;
     size_t lookup_val_len = 0;
     int lookup_val_allocated = 0;
+    bool any_modified = false;  /* Track if any records were modified */
 
-    /* Defensive: ensure context is valid */
+    /* Ensure context is valid */
     if (!ctx) {
         flb_plg_error(ins, "lookup filter context is NULL");
         return FLB_FILTER_NOTOUCH;
@@ -438,50 +669,28 @@ static int cb_lookup_filter(const void *data, size_t bytes,
     /* Process each log event in the input batch */
     while ((ret = flb_log_event_decoder_next(&log_decoder, &log_event)) == FLB_EVENT_DECODER_SUCCESS) {
         rec_num++;
+        INCREMENT_PROCESSED_METRIC(ctx, ins);
         lookup_val_str = NULL;
         lookup_val_len = 0;
         lookup_val_allocated = 0;
+        char *dynamic_val_buf = NULL; /* Track dynamic buffer for numeric conversions */
 
-        /* Defensive: if body is not a map, emit original record and log debug */
+        /* Helper macro to clean up dynamic buffer and allocated lookup strings */
+        #define CLEANUP_DYNAMIC_BUFFERS() do { \
+            if (dynamic_val_buf) { \
+                flb_free(dynamic_val_buf); \
+                dynamic_val_buf = NULL; \
+            } \
+            if (lookup_val_allocated && lookup_val_str) { \
+                flb_free(lookup_val_str); \
+                lookup_val_str = NULL; \
+            } \
+        } while(0)
+
+        /* If body is not a map, emit original record and log debug */
         if (!log_event.body || log_event.body->type != MSGPACK_OBJECT_MAP) {
             flb_plg_debug(ins, "Record %d: body is not a map (type=%d), emitting original", rec_num, log_event.body ? log_event.body->type : -1);
-            emit_original_record(&log_encoder, &log_event, ins, rec_num);
-            continue;
-        }
-
-        /*
-         * Pre-scan for lookup_key to check for non-string types (array/map)
-         * that the record accessor cannot handle, to prevent 'cannot process key value'
-         * errors from flooding logs.
-         *
-         * This is a simple check for top-level keys and will not handle nested
-         * record accessor patterns. A more robust solution would require parsing
-         * the accessor pattern, which is beyond the scope of this simple fix.
-         */
-        char *key_to_find = ctx->lookup_key;
-        size_t key_len = strlen(key_to_find);
-        if (key_to_find[0] == '$') {
-            key_to_find++;
-            key_len--;
-        }
-
-        int key_found = 0;
-        int key_type = -1;
-        msgpack_object_map *map = &log_event.body->via.map;
-        for (int i = 0; i < map->size; i++) {
-            msgpack_object_kv *kv = &map->ptr[i];
-            if (kv->key.type == MSGPACK_OBJECT_STR &&
-                kv->key.via.str.size == key_len &&
-                strncmp(kv->key.via.str.ptr, key_to_find, key_len) == 0) {
-                key_found = 1;
-                key_type = kv->val.type;
-                break;
-            }
-        }
-
-        if (key_found && (key_type == MSGPACK_OBJECT_ARRAY || key_type == MSGPACK_OBJECT_MAP)) {
-            flb_plg_debug(ins, "Record %d: lookup_key '%s' has type array/map, skipping to avoid ra error", rec_num, ctx->lookup_key);
-            emit_original_record(&log_encoder, &log_event, ins, rec_num);
+            emit_original_record(&log_encoder, &log_event, ins, ctx, rec_num);
             continue;
         }
 
@@ -489,7 +698,7 @@ static int cb_lookup_filter(const void *data, size_t bytes,
         struct flb_ra_value *rval = flb_ra_get_value_object(ctx->ra_lookup_key, *log_event.body);
         if (!rval) {
             /* Key not found, emit original record */
-            emit_original_record(&log_encoder, &log_event, ins, rec_num);
+            emit_original_record(&log_encoder, &log_event, ins, ctx, rec_num);
             continue;
         }
 
@@ -498,66 +707,118 @@ static int cb_lookup_filter(const void *data, size_t bytes,
             lookup_val_allocated = normalize_and_trim((char *)rval->o.via.str.ptr, rval->o.via.str.size, ctx->ignore_case, &lookup_val_str, &lookup_val_len);
             if (lookup_val_allocated < 0) {
                 flb_plg_warn(ins, "Record %d: malloc failed for normalize_and_trim (string), skipping", rec_num);
+                INCREMENT_SKIPPED_METRIC(ctx, ins);
                 lookup_val_str = NULL;
                 lookup_val_len = 0;
             }
         }
         else {
-            /* Non-string value: convert to string using direct formatting */
-            char val_buf[64];
-            int printed = 0;
+            /* Non-string value: convert to string using two-pass dynamic allocation */
+            int required_size = 0;
+            
+            /* First pass: determine required buffer size */
             switch (rval->type) {
                 case FLB_RA_BOOL:
-                    printed = snprintf(val_buf, sizeof(val_buf), "%s", rval->o.via.boolean ? "true" : "false");
+                    required_size = snprintf(NULL, 0, "%s", rval->o.via.boolean ? "true" : "false");
                     break;
                 case FLB_RA_INT:
-                    printed = snprintf(val_buf, sizeof(val_buf), "%" PRId64, rval->o.via.i64);
+                    required_size = snprintf(NULL, 0, "%" PRId64, rval->o.via.i64);
                     break;
                 case FLB_RA_FLOAT:
-                    printed = snprintf(val_buf, sizeof(val_buf), "%f", rval->o.via.f64);
+                    required_size = snprintf(NULL, 0, "%f", rval->o.via.f64);
                     break;
                 case FLB_RA_NULL:
-                    printed = snprintf(val_buf, sizeof(val_buf), "null");
+                    required_size = snprintf(NULL, 0, "null");
                     break;
-                case 5: /* ARRAY */
-                case 6: /* MAP */
+                case 5:
+                case 6:
                     flb_plg_debug(ins, "Record %d: complex type (ARRAY/MAP) from record accessor, skipping conversion", rec_num);
+                    CLEANUP_DYNAMIC_BUFFERS();
                     flb_ra_key_value_destroy(rval);
-                    emit_original_record(&log_encoder, &log_event, ins, rec_num);
+                    emit_original_record(&log_encoder, &log_event, ins, ctx, rec_num);
                     continue;
                 default:
                     flb_plg_debug(ins, "Record %d: unsupported type %d, skipping conversion", rec_num, rval->type);
+                    CLEANUP_DYNAMIC_BUFFERS();
                     flb_ra_key_value_destroy(rval);
-                    emit_original_record(&log_encoder, &log_event, ins, rec_num);
+                    emit_original_record(&log_encoder, &log_event, ins, ctx, rec_num);
                     continue;
             }
-            if (printed > 0 && printed < (int)sizeof(val_buf)) {
-                char *val_ptr = val_buf;
-                size_t val_len = printed;
-                lookup_val_allocated = normalize_and_trim(val_ptr, val_len, ctx->ignore_case, &lookup_val_str, &lookup_val_len);
-                if (lookup_val_allocated < 0) {
-                    flb_plg_warn(ins, "Record %d: malloc failed for normalize_and_trim (non-string), skipping", rec_num);
-                    lookup_val_str = NULL;
-                    lookup_val_len = 0;
-                }
-                flb_plg_debug(ins, "Record %d: lookup value for key '%s' is non-string, converted to '%s'", rec_num, ctx->lookup_key, lookup_val_str);
-            } else {
-                flb_plg_debug(ins, "Record %d: lookup value for key '%s' is non-string and could not be converted, emitting original", rec_num, ctx->lookup_key);
+            
+            if (required_size < 0) {
+                flb_plg_debug(ins, "Record %d: snprintf sizing failed for type %d, skipping conversion", rec_num, rval->type);
+                CLEANUP_DYNAMIC_BUFFERS();
                 flb_ra_key_value_destroy(rval);
-                emit_original_record(&log_encoder, &log_event, ins, rec_num);
+                emit_original_record(&log_encoder, &log_event, ins, ctx, rec_num);
                 continue;
             }
+            
+            /* Allocate buffer with required size plus null terminator */
+            dynamic_val_buf = flb_malloc(required_size + 1);
+            if (!dynamic_val_buf) {
+                flb_plg_warn(ins, "Record %d: malloc failed for dynamic value buffer (size %d), skipping", rec_num, required_size + 1);
+                INCREMENT_SKIPPED_METRIC(ctx, ins);
+                CLEANUP_DYNAMIC_BUFFERS();
+                flb_ra_key_value_destroy(rval);
+                emit_original_record(&log_encoder, &log_event, ins, ctx, rec_num);
+                continue;
+            }
+            
+            /* Second pass: write to allocated buffer */
+            int printed = 0;
+            switch (rval->type) {
+                case FLB_RA_BOOL:
+                    printed = snprintf(dynamic_val_buf, required_size + 1, "%s", rval->o.via.boolean ? "true" : "false");
+                    break;
+                case FLB_RA_INT:
+                    printed = snprintf(dynamic_val_buf, required_size + 1, "%" PRId64, rval->o.via.i64);
+                    break;
+                case FLB_RA_FLOAT:
+                    printed = snprintf(dynamic_val_buf, required_size + 1, "%f", rval->o.via.f64);
+                    break;
+                case FLB_RA_NULL:
+                    printed = snprintf(dynamic_val_buf, required_size + 1, "null");
+                    break;
+            }
+            
+            if (printed < 0 || printed != required_size) {
+                flb_plg_debug(ins, "Record %d: snprintf formatting failed (expected %d, got %d), skipping conversion", rec_num, required_size, printed);
+                CLEANUP_DYNAMIC_BUFFERS();
+                flb_ra_key_value_destroy(rval);
+                emit_original_record(&log_encoder, &log_event, ins, ctx, rec_num);
+                continue;
+            }
+            
+            /* Use the dynamically allocated buffer for normalization */
+            lookup_val_allocated = normalize_and_trim(dynamic_val_buf, printed, ctx->ignore_case, &lookup_val_str, &lookup_val_len);
+            if (lookup_val_allocated < 0) {
+                flb_plg_warn(ins, "Record %d: malloc failed for normalize_and_trim (non-string), skipping", rec_num);
+                INCREMENT_SKIPPED_METRIC(ctx, ins);
+                CLEANUP_DYNAMIC_BUFFERS();
+                flb_ra_key_value_destroy(rval);
+                emit_original_record(&log_encoder, &log_event, ins, ctx, rec_num);
+                continue;
+            }
+            
+            flb_plg_debug(ins, "Record %d: lookup value for key '%s' is non-string, converted to '%s'", rec_num, ctx->lookup_key, lookup_val_str ? lookup_val_str : "NULL");
+            
+            /* 
+             * If normalize_and_trim allocated a new buffer (lookup_val_allocated > 0), 
+             * we can free the dynamic buffer now. Otherwise, lookup_val_str points
+             * into dynamic_val_buf and we must delay freeing it.
+             */
+            if (lookup_val_allocated > 0) {
+                flb_free(dynamic_val_buf);
+                dynamic_val_buf = NULL;
+            }
+            /* Note: dynamic_val_buf will be freed later if still allocated */
         }
 
-        /*
-         * If lookup value is missing or empty, emit the original record unchanged.
-         */
+        /* If lookup value is missing or empty, emit the original record unchanged. */
         if (!lookup_val_str || lookup_val_len == 0) {
-            if (lookup_val_allocated) {
-                flb_free(lookup_val_str);
-            }
+            CLEANUP_DYNAMIC_BUFFERS();
             flb_ra_key_value_destroy(rval);
-            emit_original_record(&log_encoder, &log_event, ins, rec_num);
+            emit_original_record(&log_encoder, &log_event, ins, ctx, rec_num);
             continue;
         }
 
@@ -566,32 +827,41 @@ static int cb_lookup_filter(const void *data, size_t bytes,
          * If not found, emit the original record unchanged.
          */
         int ht_get_ret = flb_hash_table_get(ctx->ht, lookup_val_str, lookup_val_len, &found_val, &found_len);
-        /* Free normalization buffer if allocated */
-        if (lookup_val_allocated) {
-            flb_free(lookup_val_str);
-            lookup_val_str = NULL;
-        }
-        flb_ra_key_value_destroy(rval);
         
         if (ht_get_ret < 0 || !found_val || found_len == 0) {
             /* Not found, emit original record */
-            emit_original_record(&log_encoder, &log_event, ins, rec_num);
+            CLEANUP_DYNAMIC_BUFFERS();
+            flb_ra_key_value_destroy(rval);
+            emit_original_record(&log_encoder, &log_event, ins, ctx, rec_num);
             continue;
         }
+
+        /* Match found - increment counter */
+        INCREMENT_MATCHED_METRIC(ctx, ins);
+        any_modified = true;  /* Mark that we have modified records */
+        
+        flb_plg_trace(ins, "Record %d: Found match for '%.*s' -> '%.*s'", 
+                     rec_num, (int)lookup_val_len, lookup_val_str, (int)found_len, (char*)found_val);
+        
+        /* Free normalization buffer if allocated (after using it in trace) */
+        CLEANUP_DYNAMIC_BUFFERS();
+        flb_ra_key_value_destroy(rval);
 
         /* Begin new record */
         ret = flb_log_event_encoder_begin_record(&log_encoder);
         if (ret != FLB_EVENT_ENCODER_SUCCESS) {
             flb_plg_warn(ins, "Record %d: failed to begin new record, emitting original", rec_num);
-            emit_original_record(&log_encoder, &log_event, ins, rec_num);
+            INCREMENT_SKIPPED_METRIC(ctx, ins);
+            emit_original_record(&log_encoder, &log_event, ins, ctx, rec_num);
             continue;
         }
 
         ret = flb_log_event_encoder_set_timestamp(&log_encoder, &log_event.timestamp);
         if (ret != FLB_EVENT_ENCODER_SUCCESS) {
             flb_plg_warn(ins, "Record %d: failed to set timestamp, emitting original", rec_num);
+            INCREMENT_SKIPPED_METRIC(ctx, ins);
             flb_log_event_encoder_rollback_record(&log_encoder);
-            emit_original_record(&log_encoder, &log_event, ins, rec_num);
+            emit_original_record(&log_encoder, &log_event, ins, ctx, rec_num);
             continue;
         }
 
@@ -599,8 +869,9 @@ static int cb_lookup_filter(const void *data, size_t bytes,
             ret = flb_log_event_encoder_set_metadata_from_msgpack_object(&log_encoder, log_event.metadata);
             if (ret != FLB_EVENT_ENCODER_SUCCESS) {
                 flb_plg_warn(ins, "Record %d: failed to set metadata, emitting original", rec_num);
+                INCREMENT_SKIPPED_METRIC(ctx, ins);
                 flb_log_event_encoder_rollback_record(&log_encoder);
-                emit_original_record(&log_encoder, &log_event, ins, rec_num);
+                emit_original_record(&log_encoder, &log_event, ins, ctx, rec_num);
                 continue;
             }
         }
@@ -620,8 +891,9 @@ static int cb_lookup_filter(const void *data, size_t bytes,
                     FLB_LOG_EVENT_MSGPACK_OBJECT_VALUE(&kv->val));
                 if (ret != FLB_EVENT_ENCODER_SUCCESS) {
                     flb_plg_warn(ins, "Record %d: failed to append key/value, emitting original", rec_num);
+                    INCREMENT_SKIPPED_METRIC(ctx, ins);
                     flb_log_event_encoder_rollback_record(&log_encoder);
-                    emit_original_record(&log_encoder, &log_event, ins, rec_num);
+                    emit_original_record(&log_encoder, &log_event, ins, ctx, rec_num);
                     continue;
                 }
             }
@@ -631,33 +903,38 @@ static int cb_lookup_filter(const void *data, size_t bytes,
         ret = flb_log_event_encoder_append_body_string(&log_encoder, ctx->result_key, strlen(ctx->result_key));
         if (ret != FLB_EVENT_ENCODER_SUCCESS) {
             flb_plg_warn(ins, "Record %d: failed to append result_key, emitting original", rec_num);
+            INCREMENT_SKIPPED_METRIC(ctx, ins);
             flb_log_event_encoder_rollback_record(&log_encoder);
-            emit_original_record(&log_encoder, &log_event, ins, rec_num);
+            emit_original_record(&log_encoder, &log_event, ins, ctx, rec_num);
             continue;
         }
 
         ret = flb_log_event_encoder_append_body_string(&log_encoder, (char *)found_val, found_len);
         if (ret != FLB_EVENT_ENCODER_SUCCESS) {
             flb_plg_warn(ins, "Record %d: failed to append found_val, emitting original", rec_num);
+            INCREMENT_SKIPPED_METRIC(ctx, ins);
             flb_log_event_encoder_rollback_record(&log_encoder);
-            emit_original_record(&log_encoder, &log_event, ins, rec_num);
+            emit_original_record(&log_encoder, &log_event, ins, ctx, rec_num);
             continue;
         }
 
         ret = flb_log_event_encoder_commit_record(&log_encoder);
         if (ret != FLB_EVENT_ENCODER_SUCCESS) {
             flb_plg_warn(ins, "Record %d: failed to commit record, emitting original", rec_num);
+            INCREMENT_SKIPPED_METRIC(ctx, ins);
             flb_log_event_encoder_rollback_record(&log_encoder);
-            emit_original_record(&log_encoder, &log_event, ins, rec_num);
+            emit_original_record(&log_encoder, &log_event, ins, ctx, rec_num);
             continue;
         }
     }
 
+    #undef CLEANUP_DYNAMIC_BUFFERS
+
     /*
      * If any records were modified, return the new buffer.
-     * Otherwise, indicate no change.
+     * Otherwise, indicate no change to avoid unnecessary buffer copy.
      */
-    if (log_encoder.output_length > 0) {
+    if (any_modified) {
         *out_buf = log_encoder.output_buffer;
         *out_bytes = log_encoder.output_length;
         flb_log_event_encoder_claim_internal_buffer_ownership(&log_encoder);
@@ -675,6 +952,7 @@ static int cb_lookup_exit(void *data, struct flb_config *config)
 {
     struct lookup_ctx *ctx = data;
     if (!ctx) return 0;
+    
     /* Free all allocated values tracked in val_list */
     struct mk_list *tmp;
     struct mk_list *head;
@@ -687,9 +965,6 @@ static int cb_lookup_exit(void *data, struct flb_config *config)
     }
     if (ctx->ra_lookup_key) flb_ra_destroy(ctx->ra_lookup_key);
     if (ctx->ht) flb_hash_table_destroy(ctx->ht);
-    if (ctx->file) flb_free(ctx->file);
-    if (ctx->lookup_key) flb_free(ctx->lookup_key);
-    if (ctx->result_key) flb_free(ctx->result_key);
     flb_free(ctx);
     return 0;
 }
