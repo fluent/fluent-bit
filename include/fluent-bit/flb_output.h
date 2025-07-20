@@ -370,6 +370,11 @@ struct flb_output_instance {
     char *tls_max_version;               /* Maximum protocol version of TLS */
     char *tls_ciphers;                   /* TLS ciphers */
     char *tls_provider_query;            /* OpenSSL Provider Query */
+
+# if defined(FLB_SYSTEM_WINDOWS)
+    char *tls_win_certstore_name;            /* CertStore Name (Windows) */
+    int tls_win_use_enterprise_certstore;    /* Use enterprise CertStore */
+# endif
 #endif
 
     /*

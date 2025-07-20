@@ -82,6 +82,8 @@ struct we_perflib_object {
     int64_t           hundred_ns_time;
     size_t            counter_count;
     size_t            instance_count;
+    size_t            total_byte_length;
+    size_t            definition_length;
     struct flb_hash_table *instances;
     struct mk_list    counter_definitions;
 };
@@ -108,6 +110,16 @@ struct we_net_counters {
 };
 
 struct we_logical_disk_counters {
+    struct we_perflib_metric_source *metric_sources;
+    struct we_perflib_metric_spec   *metric_specs;
+    int                              operational;
+    struct flb_hash_table           *metrics;
+    char                            *query;
+    struct cmt_gauge                *size_bytes;
+    struct cmt_gauge                *free_bytes;
+};
+
+struct we_cache_counters {
     struct we_perflib_metric_source *metric_sources;
     struct we_perflib_metric_spec   *metric_specs;
     int                              operational;
@@ -193,9 +205,9 @@ struct we_wmi_memory_counters {
 
 struct we_wmi_paging_file_counters {
     struct wmi_query_spec *info;
-    struct cmt_gauge      *allocated_base_size_megabytes;
-    struct cmt_gauge      *current_usage_megabytes;
+    struct cmt_gauge      *limit_megabytes;
     struct cmt_gauge      *peak_usage_megabytes;
+    struct cmt_gauge      *free_megabytes;
     int                    operational;
 };
 
@@ -217,6 +229,22 @@ struct we_wmi_process_counters {
     struct cmt_gauge      *working_set_peak_bytes;
     struct cmt_gauge      *working_set_bytes;
     int                    operational;
+};
+
+struct we_wmi_tcp_counters {
+    int                          operational;
+    struct wmi_query_spec       *v4_info;
+    struct wmi_query_spec       *v6_info;
+    
+    struct cmt_counter          *connection_failures;
+    struct cmt_gauge            *connections_active;
+    struct cmt_counter          *connections_established;
+    struct cmt_counter          *connections_passive;
+    struct cmt_counter          *connections_reset;
+    struct cmt_gauge            *segments_per_sec;
+    struct cmt_gauge            *segments_received_per_sec;
+    struct cmt_gauge            *segments_retransmitted_per_sec;
+    struct cmt_gauge            *segments_sent_per_sec;
 };
 
 struct we_os_counters {
@@ -284,6 +312,7 @@ struct flb_we {
     int logical_disk_scrape_interval;
     int cs_scrape_interval;
     int os_scrape_interval;
+    int cache_scrape_interval;
     int wmi_thermalzone_scrape_interval;
     int wmi_cpu_info_scrape_interval;
     int wmi_logon_scrape_interval;
@@ -292,12 +321,14 @@ struct flb_we {
     int wmi_memory_scrape_interval;
     int wmi_paging_file_scrape_interval;
     int wmi_process_scrape_interval;
+    int wmi_tcp_scrape_interval;
 
     int coll_cpu_fd;                                    /* collector fd (cpu)    */
     int coll_net_fd;                                    /* collector fd (net)  */
     int coll_logical_disk_fd;                           /* collector fd (logical_disk) */
     int coll_cs_fd;                                     /* collector fd (cs) */
     int coll_os_fd;                                     /* collector fd (os)    */
+    int coll_cache_fd;                                  /* collector fd (cache)    */
     int coll_wmi_thermalzone_fd;                        /* collector fd (wmi_thermalzone) */
     int coll_wmi_cpu_info_fd;                           /* collector fd (wmi_cpu_info) */
     int coll_wmi_logon_fd;                              /* collector fd (wmi_logon)    */
@@ -306,6 +337,7 @@ struct flb_we {
     int coll_wmi_memory_fd;                             /* collector fd (wmi_memory)    */
     int coll_wmi_paging_file_fd;                        /* collector fd (wmi_paging_file) */
     int coll_wmi_process_fd;                            /* collector fd (wmi_process) */
+    int coll_wmi_tcp_fd;                                /* collector fd (wmi_tcp) */
 
     /*
      * Metrics Contexts
@@ -317,6 +349,7 @@ struct flb_we {
     struct we_logical_disk_counters logical_disk;
     struct we_cs_counters cs;
     struct we_os_counters *os;
+    struct we_cache_counters cache;
     struct we_wmi_thermal_counters *wmi_thermals;
     struct we_wmi_cpu_info_counters *wmi_cpu_info;
     struct we_wmi_logon_counters *wmi_logon;
@@ -325,6 +358,7 @@ struct flb_we {
     struct we_wmi_memory_counters *wmi_memory;
     struct we_wmi_paging_file_counters *wmi_paging_file;
     struct we_wmi_process_counters *wmi_process;
+    struct we_wmi_tcp_counters *wmi_tcp;
 };
 
 typedef int (*collector_cb)(struct flb_we *);
