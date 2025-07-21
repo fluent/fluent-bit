@@ -23,7 +23,11 @@
 #include <sys/types.h>
 #include <sys/stat.h>
 #include <fcntl.h>
+#ifndef _WIN32
 #include <unistd.h>
+#else
+#include <io.h>
+#endif
 #include <string.h>
 #include <stdlib.h>
 #include <stdio.h>
@@ -89,7 +93,7 @@ static void test_ctx_destroy(struct test_ctx *ctx)
 {
     TEST_CHECK(ctx != NULL);
 
-    sleep(1);
+    flb_time_msleep(1000);
     flb_stop(ctx->flb);
     flb_destroy(ctx->flb);
     flb_free(ctx);
@@ -97,7 +101,11 @@ static void test_ctx_destroy(struct test_ctx *ctx)
 
 void delete_csv_file()
 {
+#ifdef _WIN32
+    _unlink(TMP_CSV_PATH);
+#else
     unlink(TMP_CSV_PATH);
+#endif
 }
 
 int create_csv_file(char *csv_content)
@@ -342,7 +350,7 @@ void flb_test_lookup_large_numbers(void)
     struct test_ctx *ctx;
     struct flb_lib_out_cb cb_data;
     char large_number_str[64];
-    snprintf(large_number_str, sizeof(large_number_str), "%" PRId64, LLONG_MAX);
+    snprintf(large_number_str, sizeof(large_number_str), "%lld", (long long)LLONG_MAX);
     
     char csv_content[256];
     snprintf(csv_content, sizeof(csv_content),
@@ -351,7 +359,7 @@ void flb_test_lookup_large_numbers(void)
         "456,Small Number\n", large_number_str);
     
     char input[128];
-    snprintf(input, sizeof(input), "[0, {\"big_number\": %" PRId64 "}]", LLONG_MAX);
+    snprintf(input, sizeof(input), "[0, {\"big_number\": %lld}]", (long long)LLONG_MAX);
 
     cb_data.cb = cb_check_result_json;
     cb_data.data = "\"number_desc\":\"Very Large Number\"";
@@ -516,8 +524,11 @@ void flb_test_lookup_long_csv_lines(void)
     fprintf(fp, "long_key,");
     
     /* Write a very long value (> 4096 chars) */
-    for (int i = 0; i < 100; i++) {
-        fprintf(fp, "This is a very long value that exceeds the original 4096 character buffer limit to test dynamic line reading functionality. ");
+    {
+        int i;
+        for (i = 0; i < 100; i++) {
+            fprintf(fp, "This is a very long value that exceeds the original 4096 character buffer limit to test dynamic line reading functionality. ");
+        }
     }
     fprintf(fp, "\n");
     fprintf(fp, "short_key,Short Value\n");
@@ -649,9 +660,12 @@ void flb_test_dynamic_buffer(void)
     
     /* Test appending characters that will cause growth */
     const char *test_str = "This is a test string that is longer than the initial capacity";
-    for (size_t i = 0; test_str[i]; i++) {
-        ret = dynbuf_append_char(&buf, test_str[i]);
-        TEST_CHECK(ret == 0);
+    {
+        size_t i;
+        for (i = 0; test_str[i]; i++) {
+            ret = dynbuf_append_char(&buf, test_str[i]);
+            TEST_CHECK(ret == 0);
+        }
     }
     
     TEST_CHECK(strcmp(buf.data, test_str) == 0);
@@ -735,8 +749,11 @@ void flb_test_lookup_large_csv(void)
     fprintf(fp, "key,value\n");
     
     /* Write 10,000 test entries */
-    for (int i = 1; i <= 10000; i++) {
-        fprintf(fp, "user%d,User %d\n", i, i);
+    {
+        int i;
+        for (i = 1; i <= 10000; i++) {
+            fprintf(fp, "user%d,User %d\n", i, i);
+        }
     }
     fclose(fp);
 
@@ -907,13 +924,13 @@ void flb_test_lookup_metrics_matched(void)
     TEST_CHECK(skipped == 0);
     
     if (processed != 3) {
-        TEST_MSG("Expected processed=3, got %" PRIu64, processed);
+        TEST_MSG("Expected processed=3, got %llu", (unsigned long long)processed);
     }
     if (matched != 2) {
-        TEST_MSG("Expected matched=2, got %" PRIu64, matched);
+        TEST_MSG("Expected matched=2, got %llu", (unsigned long long)matched);
     }
     if (skipped != 0) {
-        TEST_MSG("Expected skipped=0, got %" PRIu64, skipped);
+        TEST_MSG("Expected skipped=0, got %llu", (unsigned long long)skipped);
     }
 
     delete_csv_file();
@@ -962,19 +979,24 @@ void flb_test_lookup_metrics_processed(void)
     /* Send 20 matching records and 10 non-matching records */
     const int matching_count = 20;
     const int non_matching_count = 10;
-    
-    for (int i = 0; i < matching_count; i++) {
-        char input[256];
-        snprintf(input, sizeof(input), "[0, {\"test_key\": \"match_key\", \"seq\": %d}]", i);
-        bytes = flb_lib_push(ctx->flb, ctx->i_ffd, input, strlen(input));
-        TEST_CHECK(bytes == strlen(input));
+    {
+        int i;
+        for (i = 0; i < matching_count; i++) {
+            char input[256];
+            snprintf(input, sizeof(input), "[0, {\"test_key\": \"match_key\", \"seq\": %d}]", i);
+            bytes = flb_lib_push(ctx->flb, ctx->i_ffd, input, strlen(input));
+            TEST_CHECK(bytes == strlen(input));
+        }
     }
     
-    for (int i = 0; i < non_matching_count; i++) {
-        char input[256];
-        snprintf(input, sizeof(input), "[0, {\"test_key\": \"no_match_%d\", \"seq\": %d}]", i, i);
-        bytes = flb_lib_push(ctx->flb, ctx->i_ffd, input, strlen(input));
-        TEST_CHECK(bytes == strlen(input));
+    {
+        int i;
+        for (i = 0; i < non_matching_count; i++) {
+            char input[256];
+            snprintf(input, sizeof(input), "[0, {\"test_key\": \"no_match_%d\", \"seq\": %d}]", i, i);
+            bytes = flb_lib_push(ctx->flb, ctx->i_ffd, input, strlen(input));
+            TEST_CHECK(bytes == strlen(input));
+        }
     }
     
     flb_time_msleep(3000); /* Give more time for processing large volume */
@@ -989,13 +1011,13 @@ void flb_test_lookup_metrics_processed(void)
     TEST_CHECK(skipped == 0);
     
     if (processed != matching_count + non_matching_count) {
-        TEST_MSG("Expected processed=%d, got %" PRIu64, matching_count + non_matching_count, processed);
+        TEST_MSG("Expected processed=%d, got %llu", matching_count + non_matching_count, (unsigned long long)processed);
     }
     if (matched != matching_count) {
-        TEST_MSG("Expected matched=%d, got %" PRIu64, matching_count, matched);
+        TEST_MSG("Expected matched=%d, got %llu", matching_count, (unsigned long long)matched);
     }
     if (skipped != 0) {
-        TEST_MSG("Expected skipped=0, got %" PRIu64, skipped);
+        TEST_MSG("Expected skipped=0, got %llu", (unsigned long long)skipped);
     }
 
     delete_csv_file();
