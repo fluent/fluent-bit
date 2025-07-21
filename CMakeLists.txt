@@ -164,6 +164,7 @@ option(FLB_PARSER              "Build with Parser support"    Yes)
 option(FLB_TLS                 "Build with SSL/TLS support"   Yes)
 option(FLB_BINARY              "Build executable binary"      Yes)
 option(FLB_EXAMPLES            "Build examples"               Yes)
+option(FLB_BENCHMARKS          "Build benchmarks"             No)
 option(FLB_SHARED_LIB          "Build shared library"         Yes)
 option(FLB_VALGRIND            "Enable Valgrind support"       No)
 option(FLB_TRACE               "Enable trace mode"             No)
@@ -1388,6 +1389,10 @@ endif()
 
 if(FLB_EXAMPLES)
   add_subdirectory(examples)
+endif()
+
+if(FLB_BENCHMARKS)
+  add_subdirectory(benchmarks)
 endif()
 
 if(FLB_TESTS_RUNTIME)

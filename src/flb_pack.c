@@ -41,6 +41,7 @@
 #include <msgpack.h>
 #include <math.h>
 #include <jsmn/jsmn.h>
+#include <yyjson.h>
 
 #define try_to_write_str  flb_utils_write_str
 
@@ -184,6 +185,125 @@ static inline int pack_string_token(struct flb_pack_state *state,
     msgpack_pack_str_body(pck, out_buf, out_len);
 
     return out_len;
+}
+
+/* Convert a yyjson value to msgpack */
+static void yyjson_val_to_msgpack(yyjson_val *val, msgpack_packer *pck)
+{
+    size_t idx, max;
+    yyjson_val *key;
+    yyjson_val *tmp;
+    const char *k;
+    size_t klen;
+
+    switch (yyjson_get_type(val)) {
+    case YYJSON_TYPE_OBJ:
+        msgpack_pack_map(pck, yyjson_obj_size(val));
+        yyjson_obj_foreach(val, idx, max, key, tmp) {
+            k = yyjson_get_str(key);
+            klen = yyjson_get_len(key);
+            msgpack_pack_str(pck, klen);
+            msgpack_pack_str_body(pck, k, klen);
+            yyjson_val_to_msgpack(tmp, pck);
+        }
+        break;
+    case YYJSON_TYPE_ARR:
+        msgpack_pack_array(pck, yyjson_arr_size(val));
+        yyjson_arr_foreach(val, idx, max, tmp) {
+            yyjson_val_to_msgpack(tmp, pck);
+        }
+        break;
+    case YYJSON_TYPE_STR:
+        msgpack_pack_str(pck, yyjson_get_len(val));
+        msgpack_pack_str_body(pck, yyjson_get_str(val), yyjson_get_len(val));
+        break;
+    case YYJSON_TYPE_BOOL:
+        if (yyjson_get_bool(val)) {
+            msgpack_pack_true(pck);
+        }
+        else {
+            msgpack_pack_false(pck);
+        }
+        break;
+    case YYJSON_TYPE_NULL:
+        msgpack_pack_nil(pck);
+        break;
+    case YYJSON_TYPE_NUM:
+        if (yyjson_is_int(val)) {
+            if (yyjson_is_sint(val)) {
+                msgpack_pack_int64(pck, yyjson_get_sint(val));
+            }
+            else {
+                msgpack_pack_uint64(pck, yyjson_get_uint(val));
+            }
+        }
+        else {
+            msgpack_pack_double(pck, yyjson_get_real(val));
+        }
+        break;
+    default:
+        msgpack_pack_nil(pck);
+    }
+}
+
+static inline int yyjson_root_type(yyjson_val *val)
+{
+    switch (yyjson_get_type(val)) {
+    case YYJSON_TYPE_OBJ:
+        return JSMN_OBJECT;
+    case YYJSON_TYPE_ARR:
+        return JSMN_ARRAY;
+    case YYJSON_TYPE_STR:
+        return JSMN_STRING;
+    default:
+        return JSMN_PRIMITIVE;
+    }
+}
+
+static int pack_json_to_msgpack_yyjson(const char *js, size_t len, char **buffer,
+                                       size_t *size, int *root_type, int *records,
+                                       size_t *consumed)
+{
+    yyjson_read_err err;
+    yyjson_doc *doc;
+    yyjson_val *root;
+    msgpack_sbuffer sbuf;
+    msgpack_packer pck;
+
+    doc = yyjson_read_opts((char *) js, len,
+                           YYJSON_READ_STOP_WHEN_DONE,
+                           NULL, &err);
+    if (!doc) {
+        printf("fail on read opts: code=%d, msg=%s, pos=%zu\n", err.code, err.msg, err.pos);
+        return -1;
+    }
+
+    root = yyjson_doc_get_root(doc);
+    if (!root) {
+        printf("fail on get root\n");
+        yyjson_doc_free(doc);
+        return -1;
+    }
+    printf("read bytes: %zu\n", err.pos);
+
+    msgpack_sbuffer_init(&sbuf);
+    msgpack_packer_init(&pck, &sbuf, msgpack_sbuffer_write);
+    yyjson_val_to_msgpack(root, &pck);
+
+    *buffer = sbuf.data;
+    *size = sbuf.size;
+    if (root_type) {
+        *root_type = yyjson_root_type(root);
+    }
+    if (records) {
+        *records = 1;
+    }
+    if (consumed) {
+        *consumed = len;
+    }
+
+    yyjson_doc_free(doc);
+    return 0;
 }
 
 /* Receive a tokenized JSON message and convert it to MsgPack */
@@ -333,7 +453,6 @@ int flb_pack_json(const char *js, size_t len, char **buffer, size_t *size,
                   int *root_type, size_t *consumed)
 {
     int records;
-
     return pack_json_to_msgpack(js, len, buffer, size, root_type, &records, consumed);
 }
 
@@ -345,6 +464,21 @@ int flb_pack_json_recs(const char *js, size_t len, char **buffer, size_t *size,
                        int *root_type, int *out_records, size_t *consumed)
 {
     return pack_json_to_msgpack(js, len, buffer, size, root_type, out_records, consumed);
+}
+
+/* Pack a JSON message using yyjson */
+int flb_pack_json_yyjson(const char *js, size_t len, char **buffer, size_t *size,
+                         int *root_type, size_t *consumed)
+{
+    int records;
+
+    return pack_json_to_msgpack_yyjson(js, len, buffer, size, root_type, &records, consumed);
+}
+
+int flb_pack_json_recs_yyjson(const char *js, size_t len, char **buffer, size_t *size,
+                              int *root_type, int *out_records, size_t *consumed)
+{
+    return pack_json_to_msgpack_yyjson(js, len, buffer, size, root_type, out_records, consumed);
 }
 
 /* Initialize a JSON packer state */

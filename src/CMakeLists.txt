@@ -16,6 +16,7 @@ set(src
   flb_hash_table.c
   flb_help.c
   flb_pack.c
+  flb_pack_json.c
   flb_pack_gelf.c
   flb_sds.c
   flb_sds_list.c

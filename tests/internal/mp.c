@@ -104,9 +104,10 @@ void test_accessor_keys_remove()
         "                       \"extra\": false\""
         "}}]}";
 
+    printf("input: %s\n", json);
     /* Convert to msgpack */
     len = strlen(json);
-    ret = flb_pack_json(json, len, &buf, &size, &type, NULL);
+    ret = flb_pack_json_yyjson(json, len, &buf, &size, &type, NULL);
     TEST_CHECK(ret == 0);
     if (ret == -1) {
         exit(EXIT_FAILURE);

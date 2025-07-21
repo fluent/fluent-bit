@@ -80,6 +80,11 @@ int flb_pack_json(const char *js, size_t len, char **buffer, size_t *size,
                   int *root_type, size_t *consumed);
 int flb_pack_json_recs(const char *js, size_t len, char **buffer, size_t *size,
                        int *root_type, int *out_records, size_t *consumed);
+int flb_pack_json_yyjson(const char *js, size_t len, char **buffer, size_t *size,
+                         int *root_type, size_t *consumed);
+int flb_pack_json_recs_yyjson(const char *js, size_t len, char **buffer,
+                              size_t *size, int *root_type, int *out_records,
+                              size_t *consumed);
 
 int flb_pack_state_init(struct flb_pack_state *s);
 void flb_pack_state_reset(struct flb_pack_state *s);
