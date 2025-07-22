@@ -1237,6 +1237,34 @@ int flb_input_instance_init(struct flb_input_instance *ins,
         cmt_counter_set(ins->cmt_memrb_dropped_bytes, ts, 0, 1, (char *[]) {name});
     }
 
+    /* fluentbit_input_ring_buffer_writes_total */
+    ins->cmt_ring_buffer_writes = \
+        cmt_counter_create(ins->cmt,
+                            "fluentbit", "input",
+                            "ring_buffer_writes_total",
+                            "Number of ring buffer writes.",
+                            1, (char *[]) {"name"});
+    cmt_gauge_set(ins->cmt_ring_buffer_writes, ts, 0, 1, (char *[]) {name});
+
+    /* fluentbit_input_ring_buffer_retries_total */
+    ins->cmt_ring_buffer_retries = \
+        cmt_counter_create(ins->cmt,
+                            "fluentbit", "input",
+                            "ring_buffer_retries_total",
+                            "Number of ring buffer retries.",
+                            1, (char *[]) {"name"});
+    cmt_counter_set(ins->cmt_ring_buffer_retries, ts, 0, 1, (char *[]) {name});
+
+
+    /* fluentbit_input_ring_buffer_retry_failures_total */
+    ins->cmt_ring_buffer_retry_failures = \
+        cmt_counter_create(ins->cmt,
+                            "fluentbit", "input",
+                            "ring_buffer_retry_failures_total",
+                            "Number of ring buffer retry failures.",
+                            1, (char *[]) {"name"});
+    cmt_counter_set(ins->cmt_ring_buffer_retry_failures, ts, 0, 1, (char *[]) {name});
+
     /* OLD Metrics */
     ins->metrics = flb_metrics_create(name);
     if (ins->metrics) {
