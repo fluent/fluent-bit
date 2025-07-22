@@ -64,6 +64,12 @@ jobs:
           echo "cron_branch=master" >> $GITHUB_ENV
         shell: bash
 
+      - name: 4.0 run
+        if: github.event_name == 'schedule' && github.event.schedule=='0 24 * * *'
+        run: |
+          echo "cron_branch=4.0" >> $GITHUB_ENV
+        shell: bash
+
       - name: Output the branch to use
         id: branch
         run: |
