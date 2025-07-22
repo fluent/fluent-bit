@@ -1913,6 +1913,10 @@ retry:
     if (retries >= retry_limit) {
         flb_plg_error(ins, "could not enqueue records into the ring buffer");
         destroy_chunk_raw(cr);
+
+        /* update failed retries counter */
+        cmt_counter_add(ins->cmt_ring_buffer_retry_failures, cfl_time_now(),
+                        1, 1, (char *[]) {(char *) flb_input_name(ins)});
         return -1;
     }
 
@@ -1922,11 +1926,21 @@ retry:
         flb_plg_debug(ins, "failed buffer write, retries=%i\n",
                       retries);
 
+        /* if the ring buffer is full, we need to retry, update the counters */
+        cmt_counter_add(ins->cmt_ring_buffer_retries, cfl_time_now(),
+                        1, 1, (char *[]) {(char *) flb_input_name(ins)});
+
+
         /* sleep for 100000 microseconds (100 milliseconds) */
         usleep(100000);
         retries++;
+
         goto retry;
     }
+
+    /* update successful writes */
+    cmt_counter_add(ins->cmt_ring_buffer_writes, cfl_time_now(),
+                    1, 1, (char *[]) {(char *) flb_input_name(ins)});
 
     return 0;
 }
