@@ -189,17 +189,17 @@ static int pack_systemtime(struct winevtlog_config *ctx, SYSTEMTIME *st)
     CHAR buf[64];
     size_t len = 0;
     _locale_t locale;
-    TIME_ZONE_INFORMATION tzi;
+    DYNAMIC_TIME_ZONE_INFORMATION dtzi;
     SYSTEMTIME st_local;
 
-    GetTimeZoneInformation(&tzi);
+    GetDynamicTimeZoneInformation(&dtzi);
 
     locale = _get_current_locale();
     if (locale == NULL) {
         return -1;
     }
     if (st != NULL) {
-        SystemTimeToTzSpecificLocalTime(&tzi, st, &st_local);
+        SystemTimeToTzSpecificLocalTimeEx(&dtzi, st, &st_local);
 
         struct tm tm = {st_local.wSecond,
                         st_local.wMinute,
