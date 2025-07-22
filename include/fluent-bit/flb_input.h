@@ -426,6 +426,11 @@ struct flb_input_instance {
     struct cmt_counter *cmt_memrb_dropped_chunks;
     struct cmt_counter *cmt_memrb_dropped_bytes;
 
+    /* ring buffer 'write' metrics */
+    struct cmt_counter *cmt_ring_buffer_writes;
+    struct cmt_counter *cmt_ring_buffer_retries;
+    struct cmt_counter *cmt_ring_buffer_retry_failures;
+
     /*
      * Indexes for generated chunks: simple hash tables that keeps the latest
      * available chunks for writing data operations. This optimizes the
