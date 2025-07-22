@@ -183,9 +183,6 @@ static inline int pack_line(struct flb_syslog *ctx,
     }
 
     if (result == FLB_EVENT_ENCODER_SUCCESS) {
-        flb_input_log_append(ctx->ins, NULL, 0,
-                             ctx->log_encoder->output_buffer,
-                             ctx->log_encoder->output_length);
         result = 0;
     }
     else {
@@ -193,8 +190,6 @@ static inline int pack_line(struct flb_syslog *ctx,
 
         result = -1;
     }
-
-    flb_log_event_encoder_reset(ctx->log_encoder);
 
     if (modified_data_buffer != NULL) {
         flb_free(modified_data_buffer);
@@ -220,6 +215,8 @@ int syslog_prot_process(struct syslog_conn *conn)
 
     eof = conn->buf_data;
     end = conn->buf_data + conn->buf_len;
+
+    flb_log_event_encoder_reset(ctx->log_encoder);
 
     /* Always parse while some remaining bytes exists */
     while (eof < end) {
@@ -281,6 +278,12 @@ int syslog_prot_process(struct syslog_conn *conn)
         conn->buf_data[conn->buf_len] = '\0';
     }
 
+    if (ctx->log_encoder->output_length > 0) {
+        flb_input_log_append(ctx->ins, NULL, 0,
+                             ctx->log_encoder->output_buffer,
+                             ctx->log_encoder->output_length);
+    }
+
     return 0;
 }
 
@@ -300,6 +303,8 @@ int syslog_prot_process_udp(struct syslog_conn *conn)
     ctx = conn->ctx;
     connection = conn->connection;
 
+    flb_log_event_encoder_reset(ctx->log_encoder);
+
     ret = flb_parser_do(ctx->parser, buf, size,
                         &out_buf, &out_size, &out_time);
     if (ret >= 0) {
@@ -318,6 +323,12 @@ int syslog_prot_process_udp(struct syslog_conn *conn)
         flb_plg_debug(ctx->ins, "unparsed log message: %.*s",
                       (int) size, buf);
         return -1;
+    }
+
+    if (ctx->log_encoder->output_length > 0) {
+        flb_input_log_append(ctx->ins, NULL, 0,
+                             ctx->log_encoder->output_buffer,
+                             ctx->log_encoder->output_length);
     }
 
     return 0;
