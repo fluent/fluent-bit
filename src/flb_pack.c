@@ -269,40 +269,82 @@ static int pack_json_to_msgpack_yyjson(const char *js, size_t len, char **buffer
     yyjson_val *root;
     msgpack_sbuffer sbuf;
     msgpack_packer pck;
+    int count_records = 0;
+    char *start;
+    char *end;
+    size_t read_bytes;
 
-    doc = yyjson_read_opts((char *) js, len,
-                           YYJSON_READ_STOP_WHEN_DONE,
-                           NULL, &err);
-    if (!doc) {
-        printf("fail on read opts: code=%d, msg=%s, pos=%zu\n", err.code, err.msg, err.pos);
+    char *insitu_buf = malloc(len + YYJSON_PADDING_SIZE);
+    memcpy(insitu_buf, js, len);
+    memset(insitu_buf + len, 0, YYJSON_PADDING_SIZE);
+
+    start = insitu_buf; //(char *) js;
+    end = start + len;
+
+    if (start >= end) {
         return -1;
     }
 
-    root = yyjson_doc_get_root(doc);
-    if (!root) {
-        printf("fail on get root\n");
-        yyjson_doc_free(doc);
-        return -1;
-    }
-    printf("read bytes: %zu\n", err.pos);
+    size_t pool_size = yyjson_read_max_memory_usage(len, 0);
+    void *pool_buf = malloc(pool_size);
+    yyjson_alc alc;
+    yyjson_alc_pool_init(&alc, pool_buf, pool_size);
 
     msgpack_sbuffer_init(&sbuf);
     msgpack_packer_init(&pck, &sbuf, msgpack_sbuffer_write);
-    yyjson_val_to_msgpack(root, &pck);
+
+    while (end > start) {
+        doc = yyjson_read_opts(start, end - start,
+                               YYJSON_READ_STOP_WHEN_DONE | YYJSON_READ_INSITU,
+                               &alc, &err);
+        if (!doc) {
+            printf("fail on read opts: code=%d, msg=%s, pos=%zu\n",
+                   err.code, err.msg, err.pos);
+            break;
+        }
+
+        read_bytes = yyjson_doc_get_read_size(doc);
+        if (read_bytes == 0) {
+            printf("no JSON object found\n");
+            yyjson_doc_free(doc);
+            break;
+        }
+
+        root = yyjson_doc_get_root(doc);
+        if (!root) {
+            printf("fail on get root\n");
+            yyjson_doc_free(doc);
+            return -1;
+        }
+
+        yyjson_val_to_msgpack(root, &pck);
+        yyjson_doc_free(doc);
+        count_records++;
+
+        /* adjust the start pointer to the next JSON object */
+        start += read_bytes;
+
+        /* skip whitespace or special characters between objects */
+        while (start < end && (*start == ' ' || *start == '\t' ||
+               *start == '\n' || *start == '\r')) {
+            start++;
+        }
+    }
 
     *buffer = sbuf.data;
     *size = sbuf.size;
+
     if (root_type) {
         *root_type = yyjson_root_type(root);
     }
     if (records) {
-        *records = 1;
+        *records = count_records;
     }
     if (consumed) {
-        *consumed = len;
+        *consumed = start - (char *) js;
     }
 
-    yyjson_doc_free(doc);
+    //yyjson_doc_free(doc);
     return 0;
 }
 
