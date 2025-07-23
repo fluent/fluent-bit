@@ -192,6 +192,8 @@ static int pack_systemtime(struct winevtlog_config *ctx, SYSTEMTIME *st)
     DYNAMIC_TIME_ZONE_INFORMATION dtzi;
     SYSTEMTIME st_local;
 
+    _tzset();
+
     GetDynamicTimeZoneInformation(&dtzi);
 
     locale = _get_current_locale();
@@ -233,6 +235,8 @@ static int pack_filetime(struct winevtlog_config *ctx, ULONGLONG filetime)
     FILETIME ft, ft_local;
     SYSTEMTIME st;
     _locale_t locale;
+
+    _tzset();
 
     locale = _get_current_locale();
     if (locale == NULL) {
