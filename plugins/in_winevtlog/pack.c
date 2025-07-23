@@ -190,9 +190,10 @@ static int pack_systemtime(struct winevtlog_config *ctx, SYSTEMTIME *st)
     size_t len = 0;
     _locale_t locale;
     TIME_ZONE_INFORMATION tzi;
+    DWORD tztype = 0;
     SYSTEMTIME st_local;
 
-    GetTimeZoneInformation(&tzi);
+    tztype = GetTimeZoneInformation(&tzi);
 
     locale = _get_current_locale();
     if (locale == NULL) {
@@ -200,7 +201,6 @@ static int pack_systemtime(struct winevtlog_config *ctx, SYSTEMTIME *st)
     }
     if (st != NULL) {
         SystemTimeToTzSpecificLocalTime(&tzi, st, &st_local);
-
         struct tm tm = {st_local.wSecond,
                         st_local.wMinute,
                         st_local.wHour,
@@ -208,6 +208,20 @@ static int pack_systemtime(struct winevtlog_config *ctx, SYSTEMTIME *st)
                         st_local.wMonth-1,
                         st_local.wYear-1900,
                         st_local.wDayOfWeek, 0, 0};
+
+        switch (tztype) {
+        case TIME_ZONE_ID_DAYLIGHT:
+            tm.tm_isdst = 1;
+            break;
+        case TIME_ZONE_ID_STANDARD:
+            tm.tm_isdst = 0;
+            break;
+        case TIME_ZONE_ID_UNKNOWN:
+        default:
+            tm.tm_isdst = -1;
+            break;
+        }
+
         len = _strftime_l(buf, 64, FORMAT_ISO8601, &tm, locale);
         if (len == 0) {
             flb_errno();
@@ -233,6 +247,10 @@ static int pack_filetime(struct winevtlog_config *ctx, ULONGLONG filetime)
     FILETIME ft, ft_local;
     SYSTEMTIME st;
     _locale_t locale;
+    TIME_ZONE_INFORMATION tzi;
+    DWORD tztype = 0;
+
+    tztype = GetTimeZoneInformation(&tzi);
 
     locale = _get_current_locale();
     if (locale == NULL) {
@@ -244,6 +262,20 @@ static int pack_filetime(struct winevtlog_config *ctx, ULONGLONG filetime)
     FileTimeToLocalFileTime(&ft, &ft_local);
     if (FileTimeToSystemTime(&ft_local, &st)) {
         struct tm tm = {st.wSecond, st.wMinute, st.wHour, st.wDay, st.wMonth-1, st.wYear-1900, st.wDayOfWeek, 0, 0};
+        
+        switch (tztype) {
+        case TIME_ZONE_ID_DAYLIGHT:
+            tm.tm_isdst = 1;
+            break;
+        case TIME_ZONE_ID_STANDARD:
+            tm.tm_isdst = 0;
+            break;
+        case TIME_ZONE_ID_UNKNOWN:
+        default:
+            tm.tm_isdst = -1;
+            break;
+        }
+
         len = _strftime_l(buf, 64, FORMAT_ISO8601, &tm, locale);
         if (len == 0) {
             flb_errno();
