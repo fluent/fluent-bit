@@ -45,6 +45,7 @@ DEFINE_OPTION(FLB_IN_PROCESS_EXPORTER_METRICS "Enable process exporter metrics i
 DEFINE_OPTION(FLB_IN_PROC                     "Enable Process input plugin"                  ON)
 DEFINE_OPTION(FLB_IN_PROMETHEUS_REMOTE_WRITE  "Enable prometheus remote write input plugin"  ON)
 DEFINE_OPTION(FLB_IN_PROMETHEUS_SCRAPE        "Enable Prometheus Scrape input plugin"        ON)
+DEFINE_OPTION(FLB_IN_PROMETHEUS_TEXTFILE      "Enable Prometheus textfile input plugin"      ON)
 DEFINE_OPTION(FLB_IN_RANDOM                   "Enable random input plugin"                   ON)
 DEFINE_OPTION(FLB_IN_SERIAL                   "Enable Serial input plugin"                   ON)
 DEFINE_OPTION(FLB_IN_SPLUNK                   "Enable Splunk HTTP HEC input plugin"          ON)

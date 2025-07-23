@@ -276,6 +276,7 @@ endif()
 
 REGISTER_IN_PLUGIN("in_fluentbit_metrics")
 REGISTER_IN_PLUGIN("in_prometheus_scrape")
+REGISTER_IN_PLUGIN("in_prometheus_textfile")
 REGISTER_IN_PLUGIN("in_emitter")
 REGISTER_IN_PLUGIN("in_tail")
 REGISTER_IN_PLUGIN("in_dummy")
