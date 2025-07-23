@@ -18,7 +18,7 @@ FROM mcr.microsoft.com/windows/servercore:$WINDOWS_VERSION AS builder-base
 
 SHELL ["powershell", "-Command", "$ErrorActionPreference = 'Stop'; $ProgressPreference = 'SilentlyContinue';"]
 
-# Install Visual Studio Build Tools 2019 (MSVS_VERSION=16) / 2022 (MSVS_VERSION=17, requires WINDOWS_VERSION=ltsc2022)
+# Install Visual Studio Build Tools 2019 (MSVS_VERSION=16) / 2022 (MSVS_VERSION=17)
 WORKDIR /local
 ARG MSVS_VERSION="16"
 ENV MSVS_BUILD_TOOLS_VERSION="$MSVS_VERSION" `
@@ -43,7 +43,6 @@ RUN $msvs_build_tools_dist_name=\"vs_buildtools.exe\"; `
       '--add Microsoft.VisualStudio.Workload.VCTools', `
       '--includeRecommended'  -NoNewWindow -Wait; `
     Remove-Item -Force \"${msvs_build_tools_dist}\";
-
 
 ENV CMAKE_HOME="C:\cmake"
 ARG CMAKE_VERSION="3.31.6"
@@ -140,12 +139,6 @@ ENV VCPKG_BUILD_TYPE=release `
 
 RUN vcpkg install --recurse openssl --triplet x64-windows-static; `
     vcpkg install --recurse libyaml --triplet x64-windows-static;
-
-# Technique from https://github.com/StefanScherer/dockerfiles-windows/blob/master/mongo/3.6/Dockerfile
-WORKDIR /fluent-bit/bin
-RUN Copy-Item -Path C:\Windows\System32\msvcp140.dll -Destination /fluent-bit/bin/; `
-    Copy-Item -Path C:\Windows\System32\vccorlib140.dll -Destination /fluent-bit/bin/; `
-    Copy-Item -Path C:\Windows\System32\vcruntime140.dll -Destination /fluent-bit/bin/;
 
 FROM builder-base AS builder
 
