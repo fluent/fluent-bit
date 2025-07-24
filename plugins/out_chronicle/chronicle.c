@@ -373,7 +373,7 @@ static int check_chronicle_log_type(struct flb_chronicle *ctx, struct flb_config
 {
     int ret;
     size_t b_sent;
-    flb_sds_t token;
+    flb_sds_t token = NULL;
     struct flb_connection *u_conn;
     struct flb_http_client *c;
 
@@ -493,21 +493,23 @@ static int cb_chronicle_init(struct flb_output_instance *ins,
     }
     flb_output_upstream_set(ctx->u, ins);
 
-    /* Get or renew the OAuth2 token */
-    token = get_google_token(ctx);
+    if (ins->test_mode == FLB_FALSE) {
+        /* Get or renew the OAuth2 token */
+        token = get_google_token(ctx);
 
-    if (!token) {
-        flb_plg_warn(ctx->ins, "token retrieval failed");
-    }
-    else {
-        flb_sds_destroy(token);
-    }
+        if (!token) {
+            flb_plg_warn(ctx->ins, "token retrieval failed");
+        }
+        else {
+            flb_sds_destroy(token);
+        }
 
-    ret = check_chronicle_log_type(ctx, config);
-    if (ret != 0) {
-        flb_plg_error(ctx->ins, "Validate log_type failed. '%s' is not supported. ret = %d",
-                      ctx->log_type, ret);
-        return -1;
+        ret = check_chronicle_log_type(ctx, config);
+        if (ret != 0) {
+            flb_plg_error(ctx->ins, "Validate log_type failed. '%s' is not supported. ret = %d",
+                          ctx->log_type, ret);
+            return -1;
+        }
     }
 
     return 0;
@@ -607,6 +609,8 @@ static flb_sds_t flb_pack_msgpack_extract_log_key(void *out_context, uint64_t by
     if (log_key_found == FLB_FALSE) {
         flb_plg_error(ctx->ins, "Could not find log_key '%s' in record",
                       ctx->log_key);
+        flb_free(val_buf);
+        return NULL;
     }
 
     /* If nothing was read, destroy buffer */
@@ -684,6 +688,7 @@ static int chronicle_format(const void *data, size_t bytes,
     msgpack_packer mp_pck;
     flb_sds_t log_text = NULL;
     int log_text_size;
+    char *json_str;
 
     array_size = count_mp_with_threshold(last_offset, threshold, log_decoder, ctx);
 
@@ -764,11 +769,29 @@ static int chronicle_format(const void *data, size_t bytes,
         msgpack_pack_str_body(&mp_pck, "log_text", 8);
         if (ctx->log_key != NULL) {
             log_text = flb_pack_msgpack_extract_log_key(ctx, bytes, log_event);
+            if (log_text == NULL) {
+                flb_plg_error(ctx->ins, "log_key extraction failed, skipping record");
+                msgpack_sbuffer_destroy(&mp_sbuf);
+                return -1;
+            }
             log_text_size = flb_sds_len(log_text);
         }
         else {
-            log_text = flb_msgpack_to_json_str(alloc_size, log_event.body);
-            log_text_size = strlen(log_text);
+            json_str = flb_msgpack_to_json_str(alloc_size, log_event.body);
+            if (json_str == NULL) {
+                flb_plg_error(ctx->ins, "Could not convert record to json string");
+                msgpack_sbuffer_destroy(&mp_sbuf);
+                return -1;
+            }
+            log_text = flb_sds_create(json_str);
+            flb_free(json_str); /* free the original buffer */
+
+            if (log_text == NULL) {
+                flb_plg_error(ctx->ins, "Could not create sds string for log");
+                msgpack_sbuffer_destroy(&mp_sbuf);
+                return -1;
+            }
+            log_text_size = flb_sds_len(log_text);
         }
 
         if (log_text == NULL) {
@@ -778,12 +801,7 @@ static int chronicle_format(const void *data, size_t bytes,
         msgpack_pack_str(&mp_pck, log_text_size);
         msgpack_pack_str_body(&mp_pck, log_text, log_text_size);
 
-        if (ctx->log_key != NULL) {
-            flb_sds_destroy(log_text);
-        }
-        else {
-            flb_free(log_text);
-        }
+        flb_sds_destroy(log_text);
         /* timestamp */
         msgpack_pack_str(&mp_pck, 10);
         msgpack_pack_str_body(&mp_pck, "ts_rfc3339", 10);
@@ -825,6 +843,36 @@ static int chronicle_format(const void *data, size_t bytes,
     return 0;
 }
 
+static int cb_chronicle_format_test(struct flb_config *config,
+                                    struct flb_input_instance *ins,
+                                    void *plugin_context,
+                                    void *flush_ctx,
+                                    int event_type,
+                                    const char *tag, int tag_len,
+                                    const void *data, size_t bytes,
+                                    void **out_data, size_t *out_size)
+{
+    struct flb_chronicle *ctx = plugin_context;
+    struct flb_log_event_decoder log_decoder;
+    int ret;
+    size_t out_offset;
+
+    ret = flb_log_event_decoder_init(&log_decoder, (char *) data, bytes);
+    if (ret != FLB_EVENT_DECODER_SUCCESS) {
+        flb_plg_error(ctx->ins, "log event decoder init error");
+        return -1;
+    }
+
+    ret = chronicle_format(data, bytes, tag, tag_len,
+                           (char **)out_data, out_size,
+                           0, bytes, &out_offset,
+                           &log_decoder, ctx);
+
+    flb_log_event_decoder_destroy(&log_decoder);
+    return ret;
+}
+
+
 static void cb_chronicle_flush(struct flb_event_chunk *event_chunk,
                               struct flb_output_flush *out_flush,
                               struct flb_input_instance *i_ins,
@@ -859,13 +907,15 @@ static void cb_chronicle_flush(struct flb_event_chunk *event_chunk,
         FLB_OUTPUT_RETURN(FLB_RETRY);
     }
 
-    /* Get or renew Token */
-    token = get_google_token(ctx);
+    if (ctx->ins->test_mode == FLB_FALSE) {
+        /* Get or renew Token */
+        token = get_google_token(ctx);
 
-    if (!token) {
-        flb_plg_error(ctx->ins, "cannot retrieve oauth2 token");
-        flb_upstream_conn_release(u_conn);
-        FLB_OUTPUT_RETURN(FLB_RETRY);
+        if (!token) {
+            flb_plg_error(ctx->ins, "cannot retrieve oauth2 token");
+            flb_upstream_conn_release(u_conn);
+            FLB_OUTPUT_RETURN(FLB_RETRY);
+        }
     }
 
     flb_plg_trace(ctx->ins, "msgpack payload size is %zu", event_chunk->size);
@@ -906,7 +956,8 @@ static void cb_chronicle_flush(struct flb_event_chunk *event_chunk,
                                event_chunk->tag, flb_sds_len(event_chunk->tag),
                                &payload_buf, &payload_size,
                                offset, threshold, &out_offset,
-                               &log_decoder, ctx);
+                               &log_decoder,
+                               ctx);
         if (ret != 0) {
             flb_upstream_conn_release(u_conn);
             flb_sds_destroy(token);
@@ -1019,6 +1070,7 @@ static int cb_chronicle_exit(void *data, struct flb_config *config)
     if (ctx->u) {
         flb_upstream_destroy(ctx->u);
     }
+    pthread_mutex_destroy(&ctx->token_mutex);
 
     flb_chronicle_conf_destroy(ctx);
     return 0;
@@ -1078,6 +1130,9 @@ struct flb_output_plugin out_chronicle_plugin = {
     .cb_flush     = cb_chronicle_flush,
     .cb_exit      = cb_chronicle_exit,
     .config_map   = config_map,
+
+    /* Test*/
+    .test_formatter.callback = cb_chronicle_format_test,
     /* Plugin flags */
     .flags          = FLB_OUTPUT_NET | FLB_IO_TLS,
 };
