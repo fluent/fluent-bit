@@ -518,7 +518,7 @@ static flb_sds_t flb_pack_msgpack_extract_log_key(void *out_context, uint64_t by
     int i;
     int map_size;
     int check = FLB_FALSE;
-    int log_key_missing = 0;
+    int log_key_found = FLB_FALSE;
     int ret;
     struct flb_chronicle *ctx = out_context;
     char *val_buf;
@@ -544,6 +544,7 @@ static flb_sds_t flb_pack_msgpack_extract_log_key(void *out_context, uint64_t by
     map = *log_event.body;
 
     if (map.type != MSGPACK_OBJECT_MAP) {
+        flb_free(val_buf);
         return NULL;
     }
 
@@ -567,6 +568,7 @@ static flb_sds_t flb_pack_msgpack_extract_log_key(void *out_context, uint64_t by
 
         if (check == FLB_TRUE) {
             if (strncmp(ctx->log_key, key_str, key_str_size) == 0) {
+                log_key_found = FLB_TRUE;
 
                 /*
                  * Copy contents of value into buffer. Necessary to copy
@@ -599,14 +601,12 @@ static flb_sds_t flb_pack_msgpack_extract_log_key(void *out_context, uint64_t by
                 break;
             }
         }
-
-        /* If log_key was not found in the current record, mark log key as missing */
-        log_key_missing++;
     }
 
-    if (log_key_missing > 0) {
-        flb_plg_error(ctx->ins, "Could not find log_key '%s' in %d records",
-                      ctx->log_key, log_key_missing);
+    /* Check the flag *after* the loop. If it's still false, the key was never found. */
+    if (log_key_found == FLB_FALSE) {
+        flb_plg_error(ctx->ins, "Could not find log_key '%s' in record",
+                      ctx->log_key);
     }
 
     /* If nothing was read, destroy buffer */
