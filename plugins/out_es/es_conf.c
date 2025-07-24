@@ -143,6 +143,7 @@ struct flb_elasticsearch *flb_es_conf_create(struct flb_output_instance *ins,
 #endif
     char *cloud_port_char;
     char *cloud_host = NULL;
+    char *http_api_key = NULL;
     int cloud_host_port = 0;
     int cloud_port = FLB_ES_DEFAULT_HTTPS_PORT;
     struct flb_uri *uri = ins->host.uri;
