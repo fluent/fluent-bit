@@ -25,6 +25,7 @@
 #include <fluent-bit/flb_bucket_queue.h>
 #include <fluent-bit/flb_event_loop.h>
 #include <fluent-bit/flb_time.h>
+#include <fluent-bit/flb_lib.h>
 #include <fluent-bit/flb_info.h>
 #include <fluent-bit/flb_bits.h>
 
@@ -241,6 +242,7 @@ static inline int handle_output_event(uint64_t ts,
     int retry_seconds;
     uint32_t type;
     uint32_t key;
+    double latency_seconds;
     char *name;
     struct flb_task *task;
     struct flb_task_retry *retry;
@@ -304,6 +306,13 @@ static inline int handle_output_event(uint64_t ts,
 
         cmt_counter_add(ins->cmt_proc_bytes, ts, task->event_chunk->size,
                         1, (char *[]) {name});
+
+        /* latency histogram */
+        if (ins->cmt_latency) {
+            latency_seconds = flb_time_now() - ((struct flb_input_chunk *) task->ic)->create_time;
+            cmt_histogram_observe(ins->cmt_latency, ts, latency_seconds, 2,
+                                  (char *[]) {(char *) flb_input_name(task->i_ins), name});
+        }
 
         /* [OLD API] Update metrics */
 #ifdef FLB_HAVE_METRICS
@@ -984,7 +993,7 @@ int flb_engine_start(struct flb_config *config)
 
     config->grace_input  = config->grace / 2;
     flb_info("[engine] Shutdown Grace Period=%d, Shutdown Input Grace Period=%d", config->grace, config->grace_input);
-    
+
     while (1) {
         rb_flush_flag = FLB_FALSE;
 
@@ -1062,10 +1071,10 @@ int flb_engine_start(struct flb_config *config)
                     if (ret > 0 && (config->grace_count < config->grace || config->grace == -1)) {
                         if (config->grace_count == 1) {
                             flb_task_running_print(config);
-                            /*                                                                               
+                            /*
                             * If storage.backlog.shutdown_flush is enabled, attempt to flush pending
-                            * filesystem chunks during shutdown. This is particularly useful in scenarios   
-                            * where Fluent Bit cannot restart to ensure buffered data is not lost.                                             
+                            * filesystem chunks during shutdown. This is particularly useful in scenarios
+                            * where Fluent Bit cannot restart to ensure buffered data is not lost.
                             */
                             if (config->storage_bl_flush_on_shutdown) {
                                 ret = sb_segregate_chunks(config);
