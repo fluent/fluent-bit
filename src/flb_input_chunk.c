@@ -30,6 +30,7 @@
 #include <fluent-bit/flb_input_plugin.h>
 #include <fluent-bit/flb_storage.h>
 #include <fluent-bit/flb_time.h>
+#include <fluent-bit/flb_lib.h>
 #include <fluent-bit/flb_router.h>
 #include <fluent-bit/flb_task.h>
 #include <fluent-bit/flb_routes_mask.h>
@@ -938,6 +939,7 @@ struct flb_input_chunk *flb_input_chunk_create(struct flb_input_instance *in, in
     ic->in = in;
     ic->stream_off = 0;
     ic->task = NULL;
+    ic->create_time = flb_time_now();
 #ifdef FLB_HAVE_METRICS
     ic->total_records = 0;
 #endif
