@@ -1741,7 +1741,7 @@ static int flb_kubelet_network_init(struct flb_kube *ctx, struct flb_config *con
                                 ctx->tls_vhost,
                                 ctx->tls_ca_path,
                                 ctx->tls_ca_file,
-                                NULL, NULL, NULL);
+                                NULL, NULL, NULL, NULL);
         if (!ctx->kubelet_tls) {
             return -1;
         }
@@ -1794,7 +1794,7 @@ static int flb_kube_network_init(struct flb_kube *ctx, struct flb_config *config
                                   ctx->tls_vhost,
                                   ctx->tls_ca_path,
                                   ctx->tls_ca_file,
-                                  NULL, NULL, NULL);
+                                  NULL, NULL, NULL, NULL);
         if (!ctx->tls) {
             return -1;
         }
