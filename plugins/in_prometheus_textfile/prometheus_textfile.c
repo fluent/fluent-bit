@@ -17,9 +17,6 @@
  *  limitations under the License.
  */
 
-#include <glob.h>
-#include <sys/stat.h>
-
 #include <fluent-bit/flb_info.h>
 #include <fluent-bit/flb_input.h>
 #include <fluent-bit/flb_input_plugin.h>
@@ -29,14 +26,195 @@
 #include <fluent-bit/flb_time.h>
 
 #include <cmetrics/cmt_decode_prometheus.h>
-
 #include "prometheus_textfile.h"
+
+#include <sys/stat.h>
+/* Glob support */
+#ifndef _MSC_VER
+#include <glob.h>
+#endif
+
+#ifdef _WIN32
+#include <Windows.h>
+#include <strsafe.h>
+#define PATH_MAX MAX_PATH
+#endif
+
+#ifndef _WIN32
+static struct cfl_array *read_glob(const char *path)
+{
+    int ret = -1;
+    int ret_glb = -1;
+    glob_t glb;
+    size_t idx;
+    struct cfl_array *list;
+
+    ret_glb = glob(path, GLOB_NOSORT, NULL, &glb);
+
+    if (ret_glb != 0) {
+        switch(ret_glb){
+        case GLOB_NOSPACE:
+            flb_warn("[%s] glob: [%s] no space", __FUNCTION__, path);
+            break;
+        case GLOB_NOMATCH:
+            flb_warn("[%s] glob: [%s] no match", __FUNCTION__, path);
+            break;
+        case GLOB_ABORTED:
+            flb_warn("[%s] glob: [%s] aborted", __FUNCTION__, path);
+            break;
+        default:
+            flb_warn("[%s] glob: [%s] other error", __FUNCTION__, path);
+        }
+        return NULL;
+    }
+
+    list = cfl_array_create(glb.gl_pathc);
+    for (idx = 0; idx < glb.gl_pathc; idx++) {
+        ret = cfl_array_append_string(list, glb.gl_pathv[idx]);
+        if (ret < 0) {
+            cfl_array_destroy(list);
+            globfree(&glb);
+            return NULL;
+        }
+    }
+
+    globfree(&glb);
+    return list;
+}
+#else
+static char *dirname(char *path)
+{
+    char *ptr;
+
+    ptr = strrchr(path, '\\');
+
+    if (ptr == NULL) {
+        return path;
+    }
+    *ptr++='\0';
+    return path;
+}
+
+static struct cfl_array *read_glob_win(const char *path, struct cfl_array *list)
+{
+    char *star, *p0, *p1;
+    char pattern[MAX_PATH];
+    char buf[MAX_PATH];
+    int ret;
+    struct stat st;
+    HANDLE hnd;
+    WIN32_FIND_DATA data;
+
+    if (strlen(path) > MAX_PATH - 1) {
+        flb_error("path too long: %s", path);
+        return NULL;
+    }
+
+    star = strchr(path, '*');
+    if (star == NULL) {
+        flb_error("path has no wild card: %s", path);
+        return NULL;
+    }
+
+    /*
+     * C:\data\tmp\input_*.conf
+     *            0<-----|
+     */
+    p0 = star;
+    while (path <= p0 && *p0 != '\\') {
+        p0--;
+    }
+
+    /*
+     * C:\data\tmp\input_*.conf
+     *                   |---->1
+     */
+    p1 = star;
+    while (*p1 && *p1 != '\\') {
+        p1++;
+    }
+
+    memcpy(pattern, path, (p1 - path));
+    pattern[p1 - path] = '\0';
+
+    hnd = FindFirstFileA(pattern, &data);
+
+    if (hnd == INVALID_HANDLE_VALUE) {
+        flb_error("unable to open valid handle for: %s", path);
+        return NULL;
+    }
+
+    if (list == NULL) {
+        list = cfl_array_create(3);
+
+        if (list == NULL) {
+            flb_error("unable to allocate array");
+            FindClose(hnd);
+            return NULL;
+        }
+
+        /* cfl_array_resizable is hardcoded to return 0. */
+        if (cfl_array_resizable(list, FLB_TRUE) != 0) {
+            flb_error("unable to make array resizable");
+            FindClose(hnd);
+            cfl_array_destroy(list);
+            return NULL;
+        }
+    }
+
+    do {
+        /* Ignore the current and parent dirs */
+        if (!strcmp(".", data.cFileName) || !strcmp("..", data.cFileName)) {
+            continue;
+        }
+
+        /* Avoid an infinite loop */
+        if (strchr(data.cFileName, '*')) {
+            continue;
+        }
+
+        /* Create a path (prefix + filename + suffix) */
+        memcpy(buf, path, p0 - path + 1);
+        buf[p0 - path + 1] = '\0';
+
+        if (FAILED(StringCchCatA(buf, MAX_PATH, data.cFileName))) {
+            continue;
+        }
+
+        if (FAILED(StringCchCatA(buf, MAX_PATH, p1))) {
+            continue;
+        }
+
+        if (strchr(p1, '*')) {
+            if (read_glob_win(path, list) == NULL) {
+                cfl_array_destroy(list);
+                FindClose(hnd);
+                return NULL;
+            }
+            continue;
+        }
+
+        ret = stat(buf, &st);
+
+        if (ret == 0 && (st.st_mode & S_IFMT) == S_IFREG) {
+            cfl_array_append_string(list, buf);
+        }
+    } while (FindNextFileA(hnd, &data) != 0);
+
+    FindClose(hnd);
+    return list;
+}
+
+static struct cfl_array *read_glob(const char *path)
+{
+    return read_glob_win(path, NULL);
+}
+#endif
 
 static int collect_metrics(struct prom_textfile *ctx)
 {
     int i;
     int ret;
-    glob_t globbuf;
     char errbuf[256];
     struct stat st;
     struct mk_list *head;
@@ -44,6 +222,7 @@ static int collect_metrics(struct prom_textfile *ctx)
     struct cmt *cmt = NULL;
     struct cmt_decode_prometheus_parse_opts opts = {0};
     flb_sds_t content;
+    struct cfl_array *files;
 
     /* cmetrics prometheus decoder options */
     opts.default_timestamp = cfl_time_now();
@@ -54,23 +233,26 @@ static int collect_metrics(struct prom_textfile *ctx)
     mk_list_foreach(head, ctx->path_list) {
         entry = mk_list_entry(head, struct flb_slist_entry, _head);
 
-        globbuf.gl_pathc = 0;
-        globbuf.gl_pathv = NULL;
-
-        ret = glob(entry->str, 0, NULL, &globbuf);
-        if (ret != 0) {
-            globfree(&globbuf);
+        files = read_glob(entry->str);
+        if (!files) {
+            flb_plg_error(ctx->ins, "error reading glob pattern: %s", entry->str);
+            continue;
+        }
+        if (files->entry_count == 0) {
+            flb_plg_debug(ctx->ins, "no files found for glob pattern: %s", entry->str);
+            cfl_array_destroy(files);
             continue;
         }
 
-        for (i = 0; i < globbuf.gl_pathc; i++) {
-            ret = stat(globbuf.gl_pathv[i], &st);
+        /* iterate files */
+        for (i = 0; i < files->entry_count; i++) {
+            ret = stat(files->entries[i]->data.as_string, &st);
 
             /* only process regular files */
             if (ret == 0 && S_ISREG(st.st_mode)) {
-                content = flb_file_read(globbuf.gl_pathv[i]);
+                content = flb_file_read(files->entries[i]->data.as_string);
                 if (!content) {
-                    flb_plg_debug(ctx->ins, "cannot read %s", globbuf.gl_pathv[i]);
+                    flb_plg_debug(ctx->ins, "cannot read %s", files->entries[i]->data.as_string);
                     continue;
                 }
 
@@ -80,6 +262,7 @@ static int collect_metrics(struct prom_textfile *ctx)
                 }
 
                 cmt = NULL;
+                memset(errbuf, 0, sizeof(errbuf));
                 ret = cmt_decode_prometheus_create(&cmt,
                                                    content,
                                                    flb_sds_len(content),
@@ -90,14 +273,18 @@ static int collect_metrics(struct prom_textfile *ctx)
                     flb_input_metrics_append(ctx->ins, NULL, 0, cmt);
                     cmt_decode_prometheus_destroy(cmt);
                 }
+                else {
+                    flb_plg_error(ctx->ins, "error parsing file %s: '%s'",
+                                  files->entries[i]->data.as_string, errbuf);
+                    continue;
+                }
             }
             else if (ret != 0) {
-                flb_plg_error(ctx->ins, "error parsing %s: %s",
-                              globbuf.gl_pathv[i], errbuf);
+                flb_plg_error(ctx->ins, "cannot read '%s'", files->entries[i]->data.as_string);
                 continue;
             }
         }
-        globfree(&globbuf);
+        cfl_array_destroy(files);
     }
 
     return 0;
