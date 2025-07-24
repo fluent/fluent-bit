@@ -108,7 +108,7 @@ static inline int cat_histogram_values(struct cmt_metric *metric_dst, struct cmt
         }
     }
 
-    for (i = 0; i < histogram->buckets->count; i++) {
+    for (i = 0; i <= histogram->buckets->count; i++) {
         /* histogram buckets are always integers, no need to convert them */
         metric_dst->hist_buckets[i] += metric_src->hist_buckets[i];
     }
