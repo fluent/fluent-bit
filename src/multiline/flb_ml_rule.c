@@ -417,8 +417,6 @@ int flb_ml_rule_process(struct flb_ml_parser *ml_parser,
 
             /* Copy full map content in stream buffer */
             flb_ml_register_context(group, tm, full_map);
-
-            return 0;
         }
     }
 
