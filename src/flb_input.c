@@ -2007,7 +2007,6 @@ int flb_input_collector_destroy(struct flb_input_collector *coll)
     if (coll->type == FLB_COLLECT_TIME) {
         if (coll->fd_timer > 0) {
             mk_event_timeout_destroy(config->evl, &coll->event);
-            mk_event_closesocket(coll->fd_timer);
         }
     }
     else {
@@ -2022,7 +2021,6 @@ int flb_input_collector_destroy(struct flb_input_collector *coll)
 int flb_input_collector_pause(int coll_id, struct flb_input_instance *in)
 {
     int ret;
-    flb_pipefd_t fd;
     struct flb_input_collector *coll;
 
     coll = get_collector(coll_id, in);
@@ -2043,10 +2041,8 @@ int flb_input_collector_pause(int coll_id, struct flb_input_instance *in)
          * Note: Invalidate fd_timer first in case closing a socket
          * invokes another event.
          */
-        fd = coll->fd_timer;
         coll->fd_timer = -1;
         mk_event_timeout_destroy(coll->evl, &coll->event);
-        mk_event_closesocket(fd);
     }
     else if (coll->type & (FLB_COLLECT_FD_SERVER | FLB_COLLECT_FD_EVENT)) {
         ret = mk_event_del(coll->evl, &coll->event);
