@@ -491,7 +491,7 @@ static int process_append(struct flb_ml_parser_ins *parser_i,
     if (ret == FLB_FALSE) {
         return -1;
     }
-    return 0;
+    return ret;
 }
 
 static int ml_append_try_parser_type_text(struct flb_ml_parser_ins *parser,
