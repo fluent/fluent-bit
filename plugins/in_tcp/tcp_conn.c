@@ -458,3 +458,15 @@ int tcp_conn_del(struct tcp_conn *conn)
 
     return 0;
 }
+
+void tcp_conn_release_all(struct flb_in_tcp_config *ctx)
+{
+    struct mk_list *tmp;
+    struct mk_list *head;
+    struct tcp_conn *conn;
+
+    mk_list_foreach_safe(head, tmp, &ctx->connections) {
+        conn = mk_list_entry(head, struct tcp_conn, _head);
+        tcp_conn_del(conn);
+    }
+}
