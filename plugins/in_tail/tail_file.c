@@ -596,6 +596,9 @@ static int process_content(struct flb_tail_file *file, size_t *bytes)
                                      &out_time,
                                      line,
                                      line_len);
+            if (ret == FLB_MULTILINE_TRUNCATED) {
+                flb_plg_warn(ctx->ins, "multiline message truncated due to buffer limit");
+            }
             goto go_next;
         }
         else if (ctx->docker_mode) {
