@@ -111,12 +111,11 @@ struct record_check container_mix_output[] = {
   {"a1\n"},
   {"a2\n"},
   {"ddee\n"},
-  {"bbcc"},
+  {"bbccdd-out\n"},
+  {"dd-err\n"},
   {"single full"},
   {"1a. some multiline log"},
   {"1b. some multiline log"},
-  {"dd-out\n"},
-  {"dd-err\n"},
 };
 
 /* Java stacktrace detection */
@@ -392,6 +391,10 @@ static int flush_callback(struct flb_ml_parser *parser,
 
     fprintf(stdout, "%s----------- EOF -----------%s\n",
             ANSI_YELLOW, ANSI_RESET);
+
+    if (!res) {
+        return 0;
+    }
 
     /* Validate content */
     msgpack_unpacked_init(&result);
@@ -1457,6 +1460,36 @@ static void test_issue_5504()
 #endif
 }
 
+static void test_buffer_limit_truncation()
+{
+    int ret;
+    uint64_t stream_id;
+    struct flb_config *config;
+    struct flb_ml *ml;
+    struct flb_ml_parser_ins *mlp_i;
+    struct flb_time tm;
+
+    config = flb_config_init();
+    config->multiline_buffer_limit = 32;
+
+    ml = flb_ml_create(config, "limit-test");
+    TEST_CHECK(ml != NULL);
+
+    mlp_i = flb_ml_parser_instance_create(ml, "docker");
+    TEST_CHECK(mlp_i != NULL);
+
+    ret = flb_ml_stream_create(ml, "test", -1, flush_callback, NULL, &stream_id);
+    TEST_CHECK(ret == 0);
+
+    flb_time_get(&tm);
+    ret = flb_ml_append_text(ml, stream_id, &tm,
+                             "0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZ", 36);
+    TEST_CHECK(ret == FLB_MULTILINE_TRUNCATED);
+
+    flb_ml_destroy(ml);
+    flb_config_exit(config);
+}
+
 TEST_LIST = {
     /* Normal features tests */
     { "parser_docker",  test_parser_docker},
@@ -1468,6 +1501,7 @@ TEST_LIST = {
     { "parser_go",      test_parser_go},
     { "container_mix",  test_container_mix},
     { "endswith",       test_endswith},
+    { "buffer_limit_truncation", test_buffer_limit_truncation},
 
     /* Issues reported on Github */
     { "issue_3817_1"  , test_issue_3817_1},
