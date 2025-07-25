@@ -145,6 +145,7 @@ struct flb_config {
 
     /* Multiline core parser definitions */
     struct mk_list multiline_parsers;
+    size_t multiline_buffer_limit; /* limit for multiline concatenated data */
 
     /* Outputs instances */
     struct mk_list outputs;             /* list of output plugins   */
@@ -413,6 +414,9 @@ enum conf_type {
 
 /* Coroutines */
 #define FLB_CONF_STR_CORO_STACK_SIZE "Coro_Stack_Size"
+
+/* Multiline */
+#define FLB_CONF_STR_MULTILINE_BUFFER_LIMIT "multiline_buffer_limit"
 
 /* Scheduler */
 #define FLB_CONF_STR_SCHED_CAP        "scheduler.cap"
