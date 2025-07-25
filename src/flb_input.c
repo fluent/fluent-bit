@@ -1244,7 +1244,7 @@ int flb_input_instance_init(struct flb_input_instance *ins,
                             "ring_buffer_writes_total",
                             "Number of ring buffer writes.",
                             1, (char *[]) {"name"});
-    cmt_gauge_set(ins->cmt_ring_buffer_writes, ts, 0, 1, (char *[]) {name});
+    cmt_counter_set(ins->cmt_ring_buffer_writes, ts, 0, 1, (char *[]) {name});
 
     /* fluentbit_input_ring_buffer_retries_total */
     ins->cmt_ring_buffer_retries = \
