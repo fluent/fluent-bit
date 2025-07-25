@@ -169,6 +169,10 @@ struct flb_service_config service_configs[] = {
      FLB_CONF_TYPE_INT,
      offsetof(struct flb_config, coro_stack_size)},
 
+    {FLB_CONF_STR_MULTILINE_BUFFER_LIMIT,
+     FLB_CONF_TYPE_INT,
+     offsetof(struct flb_config, multiline_buffer_limit)},
+
     /* Scheduler */
     {FLB_CONF_STR_SCHED_CAP,
      FLB_CONF_TYPE_INT,
@@ -362,6 +366,7 @@ struct flb_config *flb_config_init()
      * on we use flb_config_exit to cleanup the config, which requires
      * the config->multiline_parsers list to be initialized. */
     mk_list_init(&config->multiline_parsers);
+    config->multiline_buffer_limit = FLB_ML_BUFFER_LIMIT_DEFAULT;
 
     /* Task map */
     ret = flb_config_task_map_resize(config, FLB_CONFIG_DEFAULT_TASK_MAP_SIZE);
