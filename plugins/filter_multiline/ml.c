@@ -820,7 +820,11 @@ static int cb_ml_filter(const void *data, size_t bytes,
                FLB_EVENT_DECODER_SUCCESS) {
             ret = flb_ml_append_event(ctx->m, ctx->stream_id, &event);
 
-            if (ret != 0) {
+            if (ret == FLB_MULTILINE_TRUNCATED) {
+                flb_plg_warn(ctx->ins,
+                             "multiline message truncated due to buffer limit");
+            }
+            else if (ret != FLB_MULTILINE_OK) {
                 flb_plg_debug(ctx->ins,
                               "could not append object from tag: %s", tag);
             }
@@ -871,7 +875,11 @@ static int cb_ml_filter(const void *data, size_t bytes,
                FLB_EVENT_DECODER_SUCCESS) {
             ret = flb_ml_append_event(ctx->m, stream->stream_id, &event);
 
-            if (ret != 0) {
+            if (ret == FLB_MULTILINE_TRUNCATED) {
+                flb_plg_warn(ctx->ins,
+                             "multiline message truncated due to buffer limit");
+            }
+            else if (ret != FLB_MULTILINE_OK) {
                 flb_plg_debug(ctx->ins,
                               "could not append object from tag: %s", tag);
             }
