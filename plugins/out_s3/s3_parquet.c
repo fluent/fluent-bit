@@ -511,6 +511,9 @@ error:
     if (parquet_cmd != NULL) {
         flb_sds_destroy(parquet_cmd);
     }
+    if (parquet_buf != NULL) {
+        flb_sds_destroy(parquet_buf);
+    }
     if (path_buf != NULL) {
         flb_sds_destroy(path_buf);
     }
@@ -671,15 +674,8 @@ int flb_s3_parquet_compress(struct flb_s3 *ctx,
     }
 
     /* Teardown for temporary files */
-    if (unlink(infile) != 0) {
-        ret = -6;
-        flb_plg_warn(ctx->ins, "unlink %s is failed", infile);
-    }
-    if (unlink(outfile) != 0) {
-        ret = -6;
-        flb_plg_warn(ctx->ins, "unlink %s is failed", outfile);
-    }
-
+    unlink(infile);
+    unlink(outfile);
     fclose(read_ptr);
 
     *payload_buf = parquet_buf;
@@ -694,10 +690,15 @@ error:
         fclose(write_ptr);
     }
     if (read_ptr != NULL) {
+        unlink(infile);
+        unlink(outfile);
         fclose(read_ptr);
     }
     if (parquet_cmd != NULL) {
         flb_sds_destroy(parquet_cmd);
+    }
+    if (parquet_buf != NULL) {
+        flb_sds_destroy(parquet_buf);
     }
 
     return ret;

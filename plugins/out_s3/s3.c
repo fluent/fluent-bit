@@ -705,123 +705,82 @@ static int cb_s3_init(struct flb_output_instance *ins,
     if (ctx->compression == FLB_AWS_COMPRESS_PARQUET) {
         cmdp = flb_popen(DEFAULT_PARQUET_COMMAND_CHECK, "r");
         if (cmdp == NULL) {
-            flb_plg_error(ctx->ins, "command %s failed", DEFAULT_PARQUET_COMMAND_CHECK);
-            return -1;
+            flb_plg_error(ctx->ins, "command %s failed. Is 'columnify' installed and in your PATH?",
+                          DEFAULT_PARQUET_COMMAND_CHECK);
+            goto on_error;
         }
         flb_pclose(cmdp);
 
+        /* parquet.compression */
         tmp = flb_output_get_property("parquet.compression", ins);
         if (tmp != NULL) {
-            if (strncasecmp(tmp, "uncompressed", 12) == 0 ||
-                strncasecmp(tmp, "snappy", 6) == 0 ||
-                strncasecmp(tmp, "gzip", 4) == 0 ||
-                strncasecmp(tmp, "zstd", 4) == 0) {
-                flb_plg_info(ctx->ins, "parquet.compression format is %s", tmp);
-            }
-            else if (strncasecmp(tmp, "lzo", 3) == 0 ||
-                strncasecmp(tmp, "brotli", 6) == 0 ||
-                strncasecmp(tmp, "lz4", 3) == 0) {
-                flb_plg_info(ctx->ins, "unsupported parquet.compression format %s", tmp);
-            }
-            else {
-                flb_plg_error(ctx->ins, "unknown parquet.compression format %s", tmp);
-                return -1;
+            if (strncasecmp(tmp, "uncompressed", 12) != 0 &&
+                strncasecmp(tmp, "snappy", 6) != 0 &&
+                strncasecmp(tmp, "gzip", 4) != 0 &&
+                strncasecmp(tmp, "zstd", 4) != 0) {
+                flb_plg_error(ctx->ins, "unsupported or unknown parquet.compression format %s", tmp);
+                goto on_error;
             }
             for (i = 0; i < strlen(tmp); i++) {
                 buf[i] = toupper(tmp[i]);
             }
-
             ctx->parquet_compression = flb_sds_create_len(buf, strlen(buf));
-            if (ctx->parquet_compression == NULL) {
-                flb_plg_error(ctx->ins, "Failed to create parquet compression type");
-                flb_errno();
-                return -1;
-            }
         }
         else {
-            ctx->parquet_compression = \
-                    flb_sds_create(DEFAULT_PARQUET_COMPRESSION_FORMAT_UPCASES);
-            if (ctx->parquet_compression == NULL) {
-                flb_plg_error(ctx->ins, "Failed to create parquet compression type");
-                flb_errno();
-                return -1;
-            }
-            flb_plg_debug(ctx->ins, "parquet.compression format is %s",
-                          DEFAULT_PARQUET_COMPRESSION_FORMAT_UPCASES);
+            ctx->parquet_compression = flb_sds_create(DEFAULT_PARQUET_COMPRESSION_FORMAT_UPCASES);
+        }
+        if (!ctx->parquet_compression) {
+            flb_plg_error(ctx->ins, "failed to allocate parquet.compression");
+            goto on_error;
         }
 
+        /* parquet.record_type */
         tmp = flb_output_get_property("parquet.record_type", ins);
         if (!tmp) {
-            flb_plg_info(ctx->ins, "parquet.record_type format is %s",
-                         DEFAULT_PARQUET_RECORD_TYPE);
-            ctx->parquet_record_type = \
-                    flb_sds_create(DEFAULT_PARQUET_RECORD_TYPE);
-            if (ctx->parquet_record_type == NULL) {
-                flb_plg_error(ctx->ins, "Failed to create parquet record type");
-                flb_errno();
-                return -1;
-            }
+            ctx->parquet_record_type = flb_sds_create(DEFAULT_PARQUET_RECORD_TYPE);
         }
         else {
             if (strncasecmp(tmp, "json", 4) == 0) {
-                tmp = "jsonl"; /* json should be interpreted as jsonl */
-                flb_plg_info(ctx->ins, "parquet.record_type format is %s", tmp);
+                tmp = "jsonl";
             }
-            else if (strncasecmp(tmp, "msgpack", 7) == 0 ||
-                strncasecmp(tmp, "jsonl", 5) == 0) {
-                flb_plg_info(ctx->ins, "parquet.record_type format is %s", tmp);
-            }
-            else {
+            else if (strncasecmp(tmp, "msgpack", 7) != 0 && strncasecmp(tmp, "jsonl", 5) != 0) {
                 flb_plg_error(ctx->ins, "unknown parquet.record_type format %s", tmp);
-                return -1;
+                goto on_error;
             }
-            ctx->parquet_record_type = flb_sds_create_len(tmp, strlen(tmp));
-            if (ctx->parquet_record_type == NULL) {
-                flb_plg_error(ctx->ins, "Failed to create parquet record type");
-                flb_errno();
-                return -1;
-            }
+            ctx->parquet_record_type = flb_sds_create(tmp);
+        }
+        if (!ctx->parquet_record_type) {
+            flb_plg_error(ctx->ins, "failed to allocate parquet.record_type");
+            goto on_error;
         }
 
+        /* parquet.schema_type */
         tmp = flb_output_get_property("parquet.schema_type", ins);
         if (!tmp) {
-            flb_plg_info(ctx->ins, "parquet.schema_type format is %s",
-                         DEFAULT_PARQUET_SCHEMA_TYPE);
-            ctx->parquet_schema_type = \
-                    flb_sds_create(DEFAULT_PARQUET_SCHEMA_TYPE);
-            if (ctx->parquet_schema_type == NULL) {
-                flb_plg_error(ctx->ins, "Failed to create parquet schema type");
-                flb_errno();
-                return -1;
-            }
+            ctx->parquet_schema_type = flb_sds_create(DEFAULT_PARQUET_SCHEMA_TYPE);
         }
         else {
-            if (strncasecmp(tmp, "avro", 4) == 0 ||
-                strncasecmp(tmp, "bigquery", 8) == 0) {
-                flb_plg_info(ctx->ins, "parquet.schema_type format is %s", tmp);
-            }
-            else {
+            if (strncasecmp(tmp, "avro", 4) != 0 && strncasecmp(tmp, "bigquery", 8) != 0) {
                 flb_plg_error(ctx->ins, "unknown parquet.schema_type format %s", tmp);
-                return -1;
+                goto on_error;
             }
-            ctx->parquet_schema_type = flb_sds_create_len(tmp, strlen(tmp));
-            if (ctx->parquet_schema_type == NULL) {
-                flb_plg_error(ctx->ins, "Failed to create parquet schema type");
-                flb_errno();
-                return -1;
-            }
+            ctx->parquet_schema_type = flb_sds_create(tmp);
+        }
+        if (!ctx->parquet_schema_type) {
+            flb_plg_error(ctx->ins, "failed to allocate parquet.schema_type");
+            goto on_error;
         }
 
+        /* parquet.schema_file */
         tmp = flb_output_get_property("parquet.schema_file", ins);
         if (!tmp) {
-            flb_plg_error(ctx->ins, "parquet.schema_file is missing");
-            return -1;
+            flb_plg_error(ctx->ins, "parquet.schema_file is a required property for parquet format");
+            goto on_error;
         }
-        ctx->parquet_schema_file = flb_sds_create_len(tmp, strlen(tmp));
-        if (ctx->parquet_schema_file == NULL) {
-            flb_plg_error(ctx->ins, "Failed to create parquet schema file");
-            flb_errno();
-            return -1;
+        ctx->parquet_schema_file = flb_sds_create(tmp);
+        if (!ctx->parquet_schema_file) {
+            flb_plg_error(ctx->ins, "failed to allocate parquet.schema_file");
+            goto on_error;
         }
     }
 
@@ -1135,6 +1094,12 @@ static int cb_s3_init(struct flb_output_instance *ins,
     ctx->provider->provider_vtable->upstream_set(ctx->provider, ctx->ins);
 
     return 0;
+
+on_error:
+    if (ctx) {
+        s3_context_destroy(ctx);
+    }
+    return -1;
 }
 
 /*
