@@ -1135,7 +1135,7 @@ static int upload_data(struct flb_s3 *ctx, struct s3_file *chunk,
 
     if (ctx->compression == FLB_AWS_COMPRESS_PARQUET) {
         ret = flb_s3_parquet_compress(ctx, body, body_size, &payload_buf, &payload_size);
-        if (ret == -1) {
+        if (ret <= -1) {
             flb_plg_error(ctx->ins, "Failed to compress data with %s", DEFAULT_PARQUET_COMMAND);
             return FLB_RETRY;
         }
@@ -1243,6 +1243,9 @@ multipart:
             if (ctx->compression == FLB_AWS_COMPRESS_GZIP) {
                 flb_free(payload_buf);
             }
+            else if (ctx->compression == FLB_AWS_COMPRESS_PARQUET) {
+                flb_sds_destroy(payload_buf);
+            }
             return FLB_RETRY;
         }
     }
@@ -1257,6 +1260,9 @@ multipart:
             if (ctx->compression == FLB_AWS_COMPRESS_GZIP) {
                 flb_free(payload_buf);
             }
+            else if (ctx->compression == FLB_AWS_COMPRESS_PARQUET) {
+                flb_sds_destroy(payload_buf);
+            }
             return FLB_RETRY;
         }
         m_upload->upload_state = MULTIPART_UPLOAD_STATE_CREATED;
@@ -1266,6 +1272,9 @@ multipart:
     if (ret < 0) {
         if (ctx->compression == FLB_AWS_COMPRESS_GZIP) {
             flb_free(payload_buf);
+        }
+        else if (ctx->compression == FLB_AWS_COMPRESS_PARQUET) {
+            flb_sds_destroy(payload_buf);
         }
         m_upload->upload_errors += 1;
         /* re-add chunk to list */
@@ -1283,6 +1292,9 @@ multipart:
     }
     if (ctx->compression == FLB_AWS_COMPRESS_GZIP) {
         flb_free(payload_buf);
+    }
+    else if (ctx->compression == FLB_AWS_COMPRESS_PARQUET) {
+        flb_sds_destroy(payload_buf);
     }
     if (m_upload->bytes >= ctx->file_size) {
         size_check = FLB_TRUE;
@@ -1372,7 +1384,7 @@ static int put_all_chunks(struct flb_s3 *ctx)
 
             if (ctx->compression == FLB_AWS_COMPRESS_PARQUET) {
                 ret = flb_s3_parquet_compress(ctx, buffer, buffer_size, &payload_buf, &payload_size);
-                if (ret == -1) {
+                if (ret <= -1) {
                     flb_plg_error(ctx->ins, "Failed to compress data with %s", DEFAULT_PARQUET_COMMAND);
                     return FLB_RETRY;
                 }
