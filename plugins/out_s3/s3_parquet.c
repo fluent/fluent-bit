@@ -504,9 +504,11 @@ int flb_s3_parquet_compress(struct flb_s3 *ctx,
 error:
     if (wh != NULL) {
         CloseHandle(wh);
+        DeleteFileA((LPTSTR)in_temp_file);
     }
     if (rh != NULL) {
         CloseHandle(rh);
+        DeleteFileA((LPTSTR)out_temp_file);
     }
     if (parquet_cmd != NULL) {
         flb_sds_destroy(parquet_cmd);
@@ -686,11 +688,13 @@ int flb_s3_parquet_compress(struct flb_s3 *ctx,
     return 0;
 
 error:
+    if (infile[0] != '\0') {
+        unlink(infile);
+    }
     if (write_ptr != NULL) {
         fclose(write_ptr);
     }
     if (read_ptr != NULL) {
-        unlink(infile);
         unlink(outfile);
         fclose(read_ptr);
     }
