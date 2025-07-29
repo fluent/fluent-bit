@@ -241,10 +241,10 @@ struct we_wmi_tcp_counters {
     struct cmt_counter          *connections_established;
     struct cmt_counter          *connections_passive;
     struct cmt_counter          *connections_reset;
-    struct cmt_gauge            *segments_per_sec;
-    struct cmt_gauge            *segments_received_per_sec;
-    struct cmt_gauge            *segments_retransmitted_per_sec;
-    struct cmt_gauge            *segments_sent_per_sec;
+    struct cmt_gauge            *segments_total;
+    struct cmt_gauge            *segments_received_total;
+    struct cmt_gauge            *segments_retransmitted_total;
+    struct cmt_gauge            *segments_sent_total;
 };
 
 struct we_os_counters {
