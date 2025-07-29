@@ -1419,6 +1419,14 @@ int flb_ml_flush_stream_group(struct flb_ml_parser *ml_parser,
                                                FLB_TRUE);
         }
 
+        /* If the buffer was truncated, append the marker to the metadata */
+        if (ret == FLB_EVENT_ENCODER_SUCCESS && group->truncated) {
+            ret = flb_log_event_encoder_append_metadata_values(
+                    &mst->ml->log_event_encoder,
+                    FLB_LOG_EVENT_CSTRING_VALUE("multiline_truncated"),
+                    FLB_LOG_EVENT_BOOLEAN_VALUE(FLB_TRUE));
+        }
+
         if (ret == FLB_EVENT_ENCODER_SUCCESS) {
             ret = flb_log_event_encoder_set_body_from_raw_msgpack(
                     &mst->ml->log_event_encoder,
@@ -1457,6 +1465,7 @@ int flb_ml_flush_stream_group(struct flb_ml_parser *ml_parser,
 
     msgpack_sbuffer_destroy(&mp_sbuf);
     flb_sds_len_set(group->buf, 0);
+    group->truncated = FLB_FALSE;
 
     /* Update last flush time */
     group->last_flush = time_ms_now();

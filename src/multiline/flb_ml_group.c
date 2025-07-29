@@ -97,12 +97,14 @@ int flb_ml_group_cat(struct flb_ml_stream_group *group,
     limit = group->stream->ml->buffer_limit;
     if (limit > 0) {
         if (flb_sds_len(group->buf) >= limit) {
+            group->truncated = FLB_TRUE;
             return FLB_MULTILINE_TRUNCATED;
         }
 
         avail = limit - flb_sds_len(group->buf);
         if (len > avail) {
             len = avail;
+            group->truncated = FLB_TRUE;
             status = FLB_MULTILINE_TRUNCATED;
         }
     }
