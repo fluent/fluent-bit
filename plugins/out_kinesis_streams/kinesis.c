@@ -137,7 +137,7 @@ static int cb_kinesis_init(struct flb_output_instance *ins,
     }
     else {
         flb_plg_error(ins, "Invalid port number: %d. Must be between %d and %d",
-                      ins->host.port, 0, (uint16_t)-1);
+                      ins->host.port, 1, UINT16_MAX);
         goto error;
     }
 
