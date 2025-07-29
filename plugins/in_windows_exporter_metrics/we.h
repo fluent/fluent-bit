@@ -236,6 +236,7 @@ struct we_wmi_tcp_counters {
     struct wmi_query_spec       *v4_info;
     struct wmi_query_spec       *v6_info;
     
+    struct cmt_gauge            *connections_state;
     struct cmt_counter          *connection_failures;
     struct cmt_gauge            *connections_active;
     struct cmt_counter          *connections_established;

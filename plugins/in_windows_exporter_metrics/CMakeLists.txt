@@ -25,6 +25,7 @@ set(src
 set(libs
   wbemuuid
   netapi32
+  iphlpapi
 )
 
 FLB_PLUGIN(in_windows_exporter_metrics "${src}" "${libs}")
