@@ -86,12 +86,12 @@
     }
   },
 
-  "scope_kvlist_error": {
+  "scope_kvlist_empty_value": {
     "input": {
       "resourceLogs": [{
         "scopeLogs": [{
           "scope": {
-            "attributes": [{"key": "only-key"}]
+            "attributes": [{"key": "empty-key"}]
           },
           "logRecords": [{
             "timeUnixNano": "1",
@@ -100,8 +100,33 @@
         }]
       }]
     },
-    "expected_error": {
-      "code": "FLB_OTEL_LOGS_ERR_SCOPE_KVLIST"
+    "expected": {
+      "group_metadata": {"schema":"otlp","resource_id":0,"scope_id":0},
+      "group_body": {"resource":{}, "scope":{"attributes":{"empty-key":""}}},
+      "log_metadata": {"otlp":{}},
+      "log_body": {"log": "test"}
+    }
+  },
+
+  "scope_kvlist_wrong_value_type": {
+    "input": {
+      "resourceLogs": [{
+        "scopeLogs": [{
+          "scope": {
+            "attributes": [{"key": "empty-key"}]
+          },
+          "logRecords": [{
+            "timeUnixNano": "1",
+            "body": {"stringValue": "test"}
+          }]
+        }]
+      }]
+    },
+    "expected": {
+      "group_metadata": {"schema":"otlp","resource_id":0,"scope_id":0},
+      "group_body": {"resource":{}, "scope":{"attributes":{"empty-key":""}}},
+      "log_metadata": {"otlp":{}},
+      "log_body": {"log": "test"}
     }
   },
 
@@ -926,7 +951,7 @@
             "scope": {
               "name": "invalid-scope",
               "attributes": [
-                {"key": "incomplete-kv-pair"}
+                {"key": "incomplete-kv-pair", "value": "wrong value"}
               ]
             },
             "logRecords": [
@@ -1174,6 +1199,31 @@
     "expected_error": {
       "code": "FLB_OTEL_LOGS_ERR_UNEXPECTED_LOGRECORDS_TYPE"
     }
-  }
+  },
 
+  "issue_10648_string_with_null_value": {
+    "input": {
+      "resourceLogs": [{
+        "scopeLogs": [{
+          "logRecords": [{
+            "timeUnixNano": "1722904465173450100",
+            "body": {
+              "kvlistValue": {
+                "values": [
+                  {"key": "test_key", "value": {"stringValue": null}},
+                  {"key": "normal_key", "value": {"stringValue": "normal_value"}}
+                ]
+              }
+            }
+          }]
+        }]
+      }]
+    },
+    "expected": {
+      "group_metadata": {"schema":"otlp","resource_id":0,"scope_id":0},
+      "group_body": {"resource":{}},
+      "log_metadata": {"otlp":{}},
+      "log_body": {"test_key": "", "normal_key": "normal_value"}
+    }
+  }
 }

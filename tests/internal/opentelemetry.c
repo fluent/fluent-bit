@@ -628,12 +628,24 @@ void test_opentelemetry_cases()
                     /* Fall back to legacy format validation */
                     meta_json = get_group_metadata(enc.output_buffer, enc.output_length);
                     TEST_CHECK(strcmp(meta_json, expect_group_meta) == 0);
+                    if (strcmp(meta_json, expect_group_meta) != 0) {
+                        TEST_MSG("group metadata mismatch: expected '%s', got '%s'",
+                                 expect_group_meta, meta_json);
+                    }
 
                     body_json = get_group_body(enc.output_buffer, enc.output_length);
                     TEST_CHECK(strcmp(body_json, expect_group_body) == 0);
+                    if (strcmp(body_json, expect_group_body) != 0) {
+                        TEST_MSG("group body mismatch: expected '%s', got '%s'",
+                                 expect_group_body, body_json);
+                    }
 
                     log_json = get_log_body(enc.output_buffer, enc.output_length);
                     TEST_CHECK(strcmp(log_json, expect_log_body) == 0);
+                    if (strcmp(log_json, expect_log_body) != 0) {
+                        TEST_MSG("log body mismatch: expected '%s', got '%s'",
+                                 expect_log_body, log_json);
+                    }
                 }
                 else {
                     TEST_CHECK_(0, "extended format validation failed: %s", case_name);
@@ -693,6 +705,7 @@ void test_opentelemetry_cases()
                         exp_code, error_status,
                         flb_opentelemetry_error_to_string(error_status));
             if (error_status != exp_code) {
+
                 flb_log_event_encoder_destroy(&enc);
                 flb_free(input_json);
                 flb_free(case_name);
