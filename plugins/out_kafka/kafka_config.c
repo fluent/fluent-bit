@@ -308,14 +308,6 @@ int flb_out_kafka_destroy(struct flb_out_kafka *ctx)
         flb_kafka_opaque_destroy(ctx->opaque);
     }
 
-    if (ctx->topic_key) {
-        flb_free(ctx->topic_key);
-    }
-
-    if (ctx->message_key_field) {
-        flb_free(ctx->message_key_field);
-    }
-
     flb_sds_destroy(ctx->gelf_fields.timestamp_key);
     flb_sds_destroy(ctx->gelf_fields.host_key);
     flb_sds_destroy(ctx->gelf_fields.short_message_key);
