@@ -113,6 +113,7 @@ struct flb_ml_stream_group {
     msgpack_sbuffer mp_sbuf;    /* temporary msgpack buffer              */
     msgpack_packer mp_pck;      /* temporary msgpack packer              */
     struct flb_time mp_time;    /* multiline time parsed from first line */
+    int truncated;              /* was the buffer truncated?         */
 
     /* parent stream reference */
     struct flb_ml_stream *stream;
