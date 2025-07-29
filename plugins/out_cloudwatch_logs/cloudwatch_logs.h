@@ -30,8 +30,10 @@
 #include <fluent-bit/flb_record_accessor.h>
 #include <fluent-bit/record_accessor/flb_ra_parser.h>
 
-/* Entity object used for associating the telemetry
- * in the PutLogEvent call*/
+/*
+ * Entity object used for associating the telemetry
+ * in the PutLogEvent call
+ */
 typedef struct entity {
     struct entity_key_attributes *key_attributes;
     struct entity_attributes *attributes;
@@ -42,8 +44,10 @@ typedef struct entity {
     int root_filter_count;
 }entity;
 
-/* KeyAttributes used for CloudWatch Entity object
- * in the PutLogEvent call*/
+/*
+ * KeyAttributes used for CloudWatch Entity object
+ * in the PutLogEvent call
+ */
 typedef struct entity_key_attributes {
     char *type;
     char *name;
@@ -51,8 +55,10 @@ typedef struct entity_key_attributes {
     char *account_id;
 }entity_key_attributes;
 
-/* Attributes used for CloudWatch Entity object
- * in the PutLogEvent call*/
+/*
+ * Attributes used for CloudWatch Entity object
+ * in the PutLogEvent call
+ */
 typedef struct entity_attributes {
     char *platform_type;
     char *cluster_name;
@@ -200,7 +206,8 @@ struct flb_cloudwatch {
     /* Plugin output instance reference */
     struct flb_output_instance *ins;
 
-    /* Checks if kubernete filter is enabled
+    /*
+     * Checks if kubernete filter is enabled
      * So the plugin knows when to scrape for Entity
      */
 

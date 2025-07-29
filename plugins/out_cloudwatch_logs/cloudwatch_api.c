@@ -199,7 +199,9 @@ static inline int try_to_write(char *buf, int *off, size_t left,
     return FLB_TRUE;
 }
 
-static int entity_add_key_attributes(struct flb_cloudwatch *ctx, struct cw_flush *buf, struct log_stream *stream, int *offset) {
+static int entity_add_key_attributes(struct flb_cloudwatch *ctx, struct cw_flush *buf,
+                                     struct log_stream *stream, int *offset)
+{
     char ts[KEY_ATTRIBUTES_MAX_LEN];
     if (!try_to_write(buf->out_buf, offset, buf->out_buf_size,
                       "\"keyAttributes\":{",0)) {
@@ -209,24 +211,30 @@ static int entity_add_key_attributes(struct flb_cloudwatch *ctx, struct cw_flush
                         "\"Type\":\"Service\"",0)) {
         goto error;
     }
-    if(stream->entity->key_attributes->name != NULL && strlen(stream->entity->key_attributes->name) != 0) {
-        if (!snprintf(ts,KEY_ATTRIBUTES_MAX_LEN, ",%s%s%s","\"Name\":\"",stream->entity->key_attributes->name,"\"")) {
+    if(stream->entity->key_attributes->name != NULL &&
+       strlen(stream->entity->key_attributes->name) != 0) {
+        if (!snprintf(ts,KEY_ATTRIBUTES_MAX_LEN, ",%s%s%s",
+            "\"Name\":\"",stream->entity->key_attributes->name,"\"")) {
             goto error;
         }
         if (!try_to_write(buf->out_buf, offset, buf->out_buf_size,ts,0)) {
             goto error;
         }
     }
-    if(stream->entity->key_attributes->environment != NULL && strlen(stream->entity->key_attributes->environment) != 0) {
-        if (!snprintf(ts,KEY_ATTRIBUTES_MAX_LEN, ",%s%s%s","\"Environment\":\"",stream->entity->key_attributes->environment,"\"")) {
+    if(stream->entity->key_attributes->environment != NULL &&
+       strlen(stream->entity->key_attributes->environment) != 0) {
+        if (!snprintf(ts,KEY_ATTRIBUTES_MAX_LEN, ",%s%s%s",
+            "\"Environment\":\"",stream->entity->key_attributes->environment,"\"")) {
             goto error;
         }
         if (!try_to_write(buf->out_buf, offset, buf->out_buf_size,ts,0)) {
             goto error;
         }
     }
-    if(stream->entity->key_attributes->account_id != NULL && strlen(stream->entity->key_attributes->account_id) != 0) {
-        if (!snprintf(ts,KEY_ATTRIBUTES_MAX_LEN, ",%s%s%s","\"AwsAccountId\":\"",stream->entity->key_attributes->account_id,"\"")) {
+    if(stream->entity->key_attributes->account_id != NULL &&
+       strlen(stream->entity->key_attributes->account_id) != 0) {
+        if (!snprintf(ts,KEY_ATTRIBUTES_MAX_LEN, ",%s%s%s",
+            "\"AwsAccountId\":\"",stream->entity->key_attributes->account_id,"\"")) {
             goto error;
         }
         if (!try_to_write(buf->out_buf, offset, buf->out_buf_size,ts,0)) {
@@ -242,38 +250,29 @@ error:
     return -1;
 }
 
-static int entity_add_attributes(struct flb_cloudwatch *ctx, struct cw_flush *buf, struct log_stream *stream,int *offset) {
+static int entity_add_attributes(struct flb_cloudwatch *ctx, struct cw_flush *buf,
+                                 struct log_stream *stream,int *offset)
+{
     char ts[ATTRIBUTES_MAX_LEN];
     if (!try_to_write(buf->out_buf, offset, buf->out_buf_size,
                       "\"attributes\":{",
                       0)) {
         goto error;
     }
-    if (stream->entity->attributes->platform_type != NULL && strlen(stream->entity->attributes->platform_type) != 0) {
+    if (stream->entity->attributes->platform_type != NULL &&
+        strlen(stream->entity->attributes->platform_type) != 0) {
         if (strcmp(stream->entity->attributes->platform_type, "eks") == 0) {
-            if (!snprintf(ts,ATTRIBUTES_MAX_LEN, "%s%s%s","\"PlatformType\":\"","AWS::EKS","\"")) {
+            if (!snprintf(ts,ATTRIBUTES_MAX_LEN, "%s%s%s",
+                "\"PlatformType\":\"","AWS::EKS","\"")) {
                 goto error;
             }
             if (!try_to_write(buf->out_buf, offset, buf->out_buf_size,ts,0)) {
                 goto error;
             }
-            if(stream->entity->attributes->cluster_name != NULL && strlen(stream->entity->attributes->cluster_name) != 0) {
-                if (!snprintf(ts,ATTRIBUTES_MAX_LEN, ",%s%s%s","\"EKS.Cluster\":\"",stream->entity->attributes->cluster_name,"\"")) {
-                    goto error;
-                }
-                if (!try_to_write(buf->out_buf, offset, buf->out_buf_size,ts,0)) {
-                    goto error;
-                }
-            }
-        } else if (strcmp(stream->entity->attributes->platform_type, "k8s") == 0) {
-            if (!snprintf(ts,ATTRIBUTES_MAX_LEN, "%s%s%s","\"PlatformType\":\"","K8s","\"")) {
-                goto error;
-            }
-            if (!try_to_write(buf->out_buf, offset, buf->out_buf_size,ts,0)) {
-                goto error;
-            }
-            if(stream->entity->attributes->cluster_name != NULL && strlen(stream->entity->attributes->cluster_name) != 0) {
-                if (!snprintf(ts,ATTRIBUTES_MAX_LEN, ",%s%s%s","\"K8s.Cluster\":\"",stream->entity->attributes->cluster_name,"\"")) {
+            if(stream->entity->attributes->cluster_name != NULL &&
+               strlen(stream->entity->attributes->cluster_name) != 0) {
+                if (!snprintf(ts,ATTRIBUTES_MAX_LEN, ",%s%s%s",
+                    "\"EKS.Cluster\":\"",stream->entity->attributes->cluster_name,"\"")) {
                     goto error;
                 }
                 if (!try_to_write(buf->out_buf, offset, buf->out_buf_size,ts,0)) {
@@ -281,48 +280,79 @@ static int entity_add_attributes(struct flb_cloudwatch *ctx, struct cw_flush *bu
                 }
             }
         }
-    } else {
-        if (!snprintf(ts,ATTRIBUTES_MAX_LEN, "%s%s%s","\"PlatformType\":\"","Generic","\"")) {
+        else if (strcmp(stream->entity->attributes->platform_type, "k8s") == 0) {
+            if (!snprintf(ts,ATTRIBUTES_MAX_LEN, "%s%s%s",
+                "\"PlatformType\":\"","K8s","\"")) {
+                goto error;
+            }
+            if (!try_to_write(buf->out_buf, offset, buf->out_buf_size,ts,0)) {
+                goto error;
+            }
+            if(stream->entity->attributes->cluster_name != NULL &&
+               strlen(stream->entity->attributes->cluster_name) != 0) {
+                if (!snprintf(ts,ATTRIBUTES_MAX_LEN, ",%s%s%s",
+                    "\"K8s.Cluster\":\"",stream->entity->attributes->cluster_name,"\"")) {
+                    goto error;
+                }
+                if (!try_to_write(buf->out_buf, offset, buf->out_buf_size,ts,0)) {
+                    goto error;
+                }
+            }
+        }
+    }
+    else {
+        if (!snprintf(ts,ATTRIBUTES_MAX_LEN, "%s%s%s",
+            "\"PlatformType\":\"","Generic","\"")) {
             goto error;
         }
         if (!try_to_write(buf->out_buf, offset, buf->out_buf_size,ts,0)) {
             goto error;
         }
     }
-    if(stream->entity->attributes->namespace != NULL && strlen(stream->entity->attributes->namespace) != 0) {
-        if (!snprintf(ts,ATTRIBUTES_MAX_LEN, ",%s%s%s","\"K8s.Namespace\":\"",stream->entity->attributes->namespace,"\"")) {
+    if(stream->entity->attributes->namespace != NULL &&
+       strlen(stream->entity->attributes->namespace) != 0) {
+        if (!snprintf(ts,ATTRIBUTES_MAX_LEN, ",%s%s%s",
+            "\"K8s.Namespace\":\"",stream->entity->attributes->namespace,"\"")) {
             goto error;
         }
         if (!try_to_write(buf->out_buf, offset, buf->out_buf_size,ts,0)) {
             goto error;
         }
     }
-    if(stream->entity->attributes->node != NULL && strlen(stream->entity->attributes->node) != 0) {
-        if (!snprintf(ts,ATTRIBUTES_MAX_LEN, ",%s%s%s","\"K8s.Node\":\"",buf->current_stream->entity->attributes->node,"\"")) {
+    if(stream->entity->attributes->node != NULL &&
+       strlen(stream->entity->attributes->node) != 0) {
+        if (!snprintf(ts,ATTRIBUTES_MAX_LEN, ",%s%s%s",
+            "\"K8s.Node\":\"",buf->current_stream->entity->attributes->node,"\"")) {
             goto error;
         }
         if (!try_to_write(buf->out_buf, offset, buf->out_buf_size,ts,0)) {
             goto error;
         }
     }
-    if(stream->entity->attributes->workload != NULL && strlen(stream->entity->attributes->workload) != 0) {
-        if (!snprintf(ts,ATTRIBUTES_MAX_LEN, ",%s%s%s","\"K8s.Workload\":\"",buf->current_stream->entity->attributes->workload,"\"")) {
+    if(stream->entity->attributes->workload != NULL &&
+       strlen(stream->entity->attributes->workload) != 0) {
+        if (!snprintf(ts,ATTRIBUTES_MAX_LEN, ",%s%s%s",
+            "\"K8s.Workload\":\"",buf->current_stream->entity->attributes->workload,"\"")) {
             goto error;
         }
         if (!try_to_write(buf->out_buf, offset, buf->out_buf_size,ts,0)) {
             goto error;
         }
     }
-    if(stream->entity->attributes->instance_id != NULL && strlen(stream->entity->attributes->instance_id) != 0) {
-        if (!snprintf(ts,ATTRIBUTES_MAX_LEN, ",%s%s%s","\"EC2.InstanceId\":\"",buf->current_stream->entity->attributes->instance_id,"\"")) {
+    if(stream->entity->attributes->instance_id != NULL &&
+       strlen(stream->entity->attributes->instance_id) != 0) {
+        if (!snprintf(ts,ATTRIBUTES_MAX_LEN, ",%s%s%s",
+            "\"EC2.InstanceId\":\"",buf->current_stream->entity->attributes->instance_id,"\"")) {
             goto error;
         }
         if (!try_to_write(buf->out_buf, offset, buf->out_buf_size,ts,0)) {
             goto error;
         }
     }
-    if(stream->entity->attributes->name_source != NULL && strlen(stream->entity->attributes->name_source) != 0) {
-        if (!snprintf(ts,ATTRIBUTES_MAX_LEN, ",%s%s%s","\"AWS.ServiceNameSource\":\"",buf->current_stream->entity->attributes->name_source,"\"")) {
+    if(stream->entity->attributes->name_source != NULL &&
+       strlen(stream->entity->attributes->name_source) != 0) {
+        if (!snprintf(ts,ATTRIBUTES_MAX_LEN, ",%s%s%s",
+            "\"AWS.ServiceNameSource\":\"",buf->current_stream->entity->attributes->name_source,"\"")) {
             goto error;
         }
         if (!try_to_write(buf->out_buf, offset, buf->out_buf_size,ts,0)) {
@@ -370,10 +400,16 @@ static int init_put_payload(struct flb_cloudwatch *ctx, struct cw_flush *buf,
                       "\",", 2)) {
         goto error;
     }
-    // If we are missing the service name, the entity will get rejected by the frontend anyway
-    // so do not emit entity unless service name is filled. If we are missing account ID
-    // it is considered not having sufficient information for entity therefore we should drop the entity.
-    if(ctx->add_entity && stream->entity != NULL && stream->entity->key_attributes != NULL && stream->entity->key_attributes->name != NULL && stream->entity->key_attributes->account_id != NULL) {
+    /*
+     * If we are missing the service name, the entity will get rejected by the frontend
+     * anyway so do not emit entity unless service name is filled. If we are missing
+     * account ID, it is considered not having sufficient information for entity
+     * therefore we should drop the entity.
+     */
+    if(ctx->add_entity && stream->entity != NULL &&
+       stream->entity->key_attributes != NULL &&
+       stream->entity->key_attributes->name != NULL &&
+       stream->entity->key_attributes->account_id != NULL) {
         if (!try_to_write(buf->out_buf, offset, buf->out_buf_size,
                       "\"entity\":{", 10)) {
             goto error;
@@ -540,23 +576,28 @@ static int truncate_log(const struct flb_cloudwatch *ctx, const char *log_buffer
  * Helper function to remove keys prefixed with aws_entity
  * from a message pack map
  */
-void remove_key_from_nested_map(msgpack_object_map *nested_map, msgpack_packer *pk, int filtered_fields) {
+void remove_key_from_nested_map(msgpack_object_map *nested_map, msgpack_packer *pk,
+                                int filtered_fields)
+{
     const int remaining_kv_pairs = nested_map->size - filtered_fields;
     uint32_t j;
 
-    // Pack the updated nested map into the packer, skipping keys in the remove list
-    msgpack_pack_map(pk, remaining_kv_pairs);  // Initial size will adjust in the next loop
+    /* Pack the updated nested map into the packer, skipping keys in the remove list */
+    msgpack_pack_map(pk, remaining_kv_pairs);
 
     for (j = 0; j < nested_map->size; j++) {
         msgpack_object_kv nested_kv = nested_map->ptr[j];
 
-        // Check if the current key is in the removal list
-        if (nested_kv.key.type == MSGPACK_OBJECT_STR && nested_kv.key.via.str.size > AWS_ENTITY_PREFIX_LEN && strncmp(nested_kv.key.via.str.ptr, AWS_ENTITY_PREFIX, AWS_ENTITY_PREFIX_LEN) == 0) {
-            // Skip the key in the remove list
+        /* Check if the current key is in the removal list */
+        if (nested_kv.key.type == MSGPACK_OBJECT_STR &&
+            nested_kv.key.via.str.size > AWS_ENTITY_PREFIX_LEN &&
+            strncmp(nested_kv.key.via.str.ptr,
+                    AWS_ENTITY_PREFIX, AWS_ENTITY_PREFIX_LEN) == 0) {
+            /* Skip the key in the remove list */
             continue;
         }
 
-        // Pack the remaining key-value pairs into the packer
+        /* Pack the remaining key-value pairs into the packer */
         msgpack_pack_object(pk, nested_kv.key);
         msgpack_pack_object(pk, nested_kv.val);
     }
@@ -566,32 +607,38 @@ void remove_key_from_nested_map(msgpack_object_map *nested_map, msgpack_packer *
  * Main function to remove keys prefixed with aws_entity
  * from the root and nested message pack map
  */
-void remove_unneeded_field(msgpack_object *root_map, const char *nested_map_key, msgpack_packer *pk,int root_filtered_fields, int filtered_fields) {
+void remove_unneeded_field(msgpack_object *root_map, const char *nested_map_key,
+                           msgpack_packer *pk,int root_filtered_fields, int filtered_fields)
+{
     uint32_t i;
 
     if (root_map->type == MSGPACK_OBJECT_MAP) {
         msgpack_object_map root = root_map->via.map;
 
-        // Prepare to pack the modified root map (size may be unchanged or reduced)
+        /* Prepare to pack the modified root map (size may be unchanged or reduced) */
         msgpack_pack_map(pk, root.size-root_filtered_fields);
 
         for (i = 0; i < root.size; i++) {
             msgpack_object_kv root_kv = root.ptr[i];
 
-            // Check if this key matches the nested map key (e.g., "kubernetes")
+            /* Check if this key matches the nested map key (e.g., "kubernetes") */
             if (filtered_fields > 0 &&
                 root_kv.key.type == MSGPACK_OBJECT_STR &&
-                strncmp(root_kv.key.via.str.ptr, nested_map_key, root_kv.key.via.str.size) == 0 &&
+                strncmp(root_kv.key.via.str.ptr,
+                        nested_map_key, root_kv.key.via.str.size) == 0 &&
                 root_kv.val.type == MSGPACK_OBJECT_MAP) {
 
-                // Pack the nested map key
                 msgpack_pack_object(pk, root_kv.key);
 
-                // Remove the unneeded key from the nested map
                 remove_key_from_nested_map(&root_kv.val.via.map, pk,filtered_fields);
-            } else if (root_filtered_fields > 0 && root_kv.key.type == MSGPACK_OBJECT_STR && root_kv.key.via.str.size > AWS_ENTITY_PREFIX_LEN && strncmp(root_kv.key.via.str.ptr, AWS_ENTITY_PREFIX, AWS_ENTITY_PREFIX_LEN) == 0) {
-            } else {
-                // Pack other key-value pairs unchanged
+            }
+            else if (root_filtered_fields > 0 &&
+                     root_kv.key.type == MSGPACK_OBJECT_STR &&
+                     root_kv.key.via.str.size > AWS_ENTITY_PREFIX_LEN &&
+                     strncmp(root_kv.key.via.str.ptr,
+                             AWS_ENTITY_PREFIX, AWS_ENTITY_PREFIX_LEN) == 0) {
+            }
+            else {
                 msgpack_pack_object(pk, root_kv.key);
                 msgpack_pack_object(pk, root_kv.val);
             }
@@ -1019,7 +1066,8 @@ int pack_emf_payload(struct flb_cloudwatch *ctx,
     return 0;
 }
 
-static char* find_fallback_environment(struct flb_cloudwatch *ctx, entity *entity) {
+static char* find_fallback_environment(struct flb_cloudwatch *ctx, entity *entity)
+{
     if(!ctx->add_entity || entity == NULL) {
         return NULL;
     }
@@ -1030,9 +1078,13 @@ static char* find_fallback_environment(struct flb_cloudwatch *ctx, entity *entit
      * 1. eks:cluster-name/namespace
      * 2. k8s:cluster-name/namespace
      */
-    if (entity->attributes->platform_type != NULL && entity->attributes->cluster_name != NULL && entity->attributes->namespace != NULL) {
-        /* Calculate required length */
-        /* Add 3 for ':' '/' and null terminator */
+    if (entity->attributes->platform_type != NULL &&
+        entity->attributes->cluster_name != NULL &&
+        entity->attributes->namespace != NULL) {
+        /*
+         * Calculate required length
+         * Add 3 for ':' '/' and null terminator
+         */
         size_t len = strlen(entity->attributes->platform_type) +
                     strlen(entity->attributes->cluster_name) +
                     strlen(entity->attributes->namespace) + 3;
@@ -1043,7 +1095,9 @@ static char* find_fallback_environment(struct flb_cloudwatch *ctx, entity *entit
         }
 
         /* Use snprintf for cross-platform compatibility */
-        ret = snprintf(fallback_env, len, "%s:%s/%s", entity->attributes->platform_type, entity->attributes->cluster_name, entity->attributes->namespace);
+        ret = snprintf(fallback_env, len, "%s:%s/%s",
+            entity->attributes->platform_type, entity->attributes->cluster_name,
+            entity->attributes->namespace);
         if (ret < 0 || ret >= len) {
             flb_free(fallback_env);
             return NULL;
@@ -1054,7 +1108,9 @@ static char* find_fallback_environment(struct flb_cloudwatch *ctx, entity *entit
     return NULL;
 }
 
-void parse_entity(struct flb_cloudwatch *ctx, entity *entity, msgpack_object map, int map_size) {
+void parse_entity(struct flb_cloudwatch *ctx, entity *entity,
+                  msgpack_object map, int map_size)
+{
     int i,j;
     msgpack_object key, kube_key;
     msgpack_object val, kube_val;
@@ -1069,7 +1125,8 @@ void parse_entity(struct flb_cloudwatch *ctx, entity *entity, msgpack_object map
                 for (j=0; j < val_map_size; j++) {
                     kube_key = val.via.map.ptr[j].key;
                     kube_val = val.via.map.ptr[j].val;
-                    if(strncmp(kube_key.via.str.ptr, "aws_entity_service_name", kube_key.via.str.size) == 0) {
+                    if(strncmp(kube_key.via.str.ptr,
+                               "aws_entity_service_name", kube_key.via.str.size) == 0) {
                         if(!entity->service_name_found) {
                             entity->filter_count++;
                             entity->service_name_found++;
@@ -1077,8 +1134,11 @@ void parse_entity(struct flb_cloudwatch *ctx, entity *entity, msgpack_object map
                         if(entity->key_attributes->name != NULL) {
                             flb_free(entity->key_attributes->name);
                         }
-                        entity->key_attributes->name = flb_strndup(kube_val.via.str.ptr, kube_val.via.str.size);
-                    } else if(strncmp(kube_key.via.str.ptr, "aws_entity_environment", kube_key.via.str.size) == 0) {
+                        entity->key_attributes->name = flb_strndup(kube_val.via.str.ptr,
+                                                                   kube_val.via.str.size);
+                    }
+                    else if(strncmp(kube_key.via.str.ptr, "aws_entity_environment",
+                                       kube_key.via.str.size) == 0) {
                         if(!entity->environment_found) {
                             entity->filter_count++;
                             entity->environment_found++;
@@ -1086,32 +1146,49 @@ void parse_entity(struct flb_cloudwatch *ctx, entity *entity, msgpack_object map
                         if(entity->key_attributes->environment != NULL) {
                             flb_free(entity->key_attributes->environment);
                         }
-                        entity->key_attributes->environment = flb_strndup(kube_val.via.str.ptr, kube_val.via.str.size);
-                    } else if(strncmp(kube_key.via.str.ptr, "namespace_name", kube_key.via.str.size) == 0) {
+                        entity->key_attributes->environment = flb_strndup(kube_val.via.str.ptr,
+                                                                          kube_val.via.str.size);
+                    }
+                    else if(strncmp(kube_key.via.str.ptr, "namespace_name",
+                                       kube_key.via.str.size) == 0) {
                         if(entity->attributes->namespace != NULL) {
                             flb_free(entity->attributes->namespace);
                         }
-                       entity->attributes->namespace = flb_strndup(kube_val.via.str.ptr, kube_val.via.str.size);
-                    } else if(strncmp(kube_key.via.str.ptr, "host", kube_key.via.str.size) == 0) {
+                       entity->attributes->namespace = flb_strndup(kube_val.via.str.ptr,
+                                                                   kube_val.via.str.size);
+                    }
+                    else if(strncmp(kube_key.via.str.ptr, "host",
+                                       kube_key.via.str.size) == 0) {
                         if(entity->attributes->node != NULL) {
                             flb_free(entity->attributes->node);
                         }
-                        entity->attributes->node = flb_strndup(kube_val.via.str.ptr, kube_val.via.str.size);
-                    } else if(strncmp(kube_key.via.str.ptr, "aws_entity_cluster", kube_key.via.str.size) == 0) {
+                        entity->attributes->node = flb_strndup(kube_val.via.str.ptr,
+                                                               kube_val.via.str.size);
+                    }
+                    else if(strncmp(kube_key.via.str.ptr, "aws_entity_cluster",
+                                       kube_key.via.str.size) == 0) {
                         if(entity->attributes->cluster_name == NULL) {
                             entity->filter_count++;
-                        } else {
+                        }
+                        else {
                             flb_free(entity->attributes->cluster_name);
                         }
-                        entity->attributes->cluster_name = flb_strndup(kube_val.via.str.ptr, kube_val.via.str.size);
-                    } else if(strncmp(kube_key.via.str.ptr, "aws_entity_workload", kube_key.via.str.size) == 0) {
+                        entity->attributes->cluster_name = flb_strndup(kube_val.via.str.ptr,
+                                                                       kube_val.via.str.size);
+                    }
+                    else if(strncmp(kube_key.via.str.ptr, "aws_entity_workload",
+                                       kube_key.via.str.size) == 0) {
                         if(entity->attributes->workload == NULL) {
                             entity->filter_count++;
-                        } else {
+                        }
+                        else {
                             flb_free(entity->attributes->workload);
                         }
-                        entity->attributes->workload = flb_strndup(kube_val.via.str.ptr, kube_val.via.str.size);
-                    } else if(strncmp(kube_key.via.str.ptr, "aws_entity_name_source", kube_key.via.str.size) == 0) {
+                        entity->attributes->workload = flb_strndup(kube_val.via.str.ptr,
+                                                                   kube_val.via.str.size);
+                    }
+                    else if(strncmp(kube_key.via.str.ptr, "aws_entity_name_source",
+                                       kube_key.via.str.size) == 0) {
                         if(!entity->name_source_found) {
                             entity->filter_count++;
                             entity->name_source_found++;
@@ -1119,37 +1196,50 @@ void parse_entity(struct flb_cloudwatch *ctx, entity *entity, msgpack_object map
                         if(entity->attributes->name_source != NULL) {
                             flb_free(entity->attributes->name_source);
                         }
-                        entity->attributes->name_source = flb_strndup(kube_val.via.str.ptr, kube_val.via.str.size);
-                    } else if(strncmp(kube_key.via.str.ptr, "aws_entity_platform", kube_key.via.str.size) == 0) {
+                        entity->attributes->name_source = flb_strndup(kube_val.via.str.ptr,
+                                                                      kube_val.via.str.size);
+                    }
+                    else if(strncmp(kube_key.via.str.ptr, "aws_entity_platform",
+                                       kube_key.via.str.size) == 0) {
                         if(entity->attributes->platform_type == NULL) {
                             entity->filter_count++;
-                        } else {
+                        }
+                        else {
                             flb_free(entity->attributes->platform_type);
                         }
-                        entity->attributes->platform_type = flb_strndup(kube_val.via.str.ptr, kube_val.via.str.size);
+                        entity->attributes->platform_type = flb_strndup(kube_val.via.str.ptr,
+                                                                        kube_val.via.str.size);
                     }
                 }
             }
         }
-        if(strncmp(key.via.str.ptr, "aws_entity_ec2_instance_id",key.via.str.size ) == 0 ) {
+        if(strncmp(key.via.str.ptr, "aws_entity_ec2_instance_id",
+                      key.via.str.size ) == 0 ) {
             if(entity->attributes->instance_id == NULL) {
                 entity->root_filter_count++;
-            } else {
+            }
+            else {
                 flb_free(entity->attributes->instance_id);
             }
-            entity->attributes->instance_id = flb_strndup(val.via.str.ptr, val.via.str.size);
+            entity->attributes->instance_id = flb_strndup(val.via.str.ptr,
+                                                          val.via.str.size);
         }
         if(strncmp(key.via.str.ptr, "aws_entity_account_id",key.via.str.size ) == 0 ) {
             if(entity->key_attributes->account_id == NULL) {
                 entity->root_filter_count++;
-            } else {
+            }
+            else {
                 flb_free(entity->key_attributes->account_id);
             }
-            entity->key_attributes->account_id = flb_strndup(val.via.str.ptr, val.via.str.size);
+            entity->key_attributes->account_id = flb_strndup(val.via.str.ptr,
+                                                             val.via.str.size);
         }
     }
-    if(entity->key_attributes->name == NULL && entity->attributes->name_source == NULL &&entity->attributes->workload != NULL) {
-        entity->key_attributes->name = flb_strndup(entity->attributes->workload, strlen(entity->attributes->workload));
+    if(entity->key_attributes->name == NULL &&
+       entity->attributes->name_source == NULL &&
+       entity->attributes->workload != NULL) {
+        entity->key_attributes->name = flb_strndup(entity->attributes->workload,
+                                                 strlen(entity->attributes->workload));
         entity->attributes->name_source = flb_strndup("K8sWorkload", 11);
     }
     if(entity->key_attributes->environment == NULL) {
@@ -1157,7 +1247,9 @@ void parse_entity(struct flb_cloudwatch *ctx, entity *entity, msgpack_object map
     }
 }
 
-void update_or_create_entity(struct flb_cloudwatch *ctx, struct log_stream *stream, const msgpack_object map) {
+void update_or_create_entity(struct flb_cloudwatch *ctx, struct log_stream *stream,
+                             const msgpack_object map)
+{
         if(stream->entity == NULL) {
             stream->entity = flb_malloc(sizeof(entity));
             if (stream->entity == NULL) {
@@ -1267,15 +1359,17 @@ static int process_log_events(struct flb_cloudwatch *ctx, const char *input_plug
         }
         if(ctx->kubernete_metadata_enabled && ctx->add_entity) {
             update_or_create_entity(ctx,stream,map);
-            // Prepare a buffer to pack the modified map
-            if(stream->entity != NULL && (stream->entity->root_filter_count > 0 || stream->entity->filter_count > 0)) {
+            if(stream->entity != NULL &&
+               (stream->entity->root_filter_count > 0 ||
+               stream->entity->filter_count > 0)) {
                 msgpack_packer pk;
                 msgpack_packer_init(&pk, &filtered_sbuf, msgpack_sbuffer_write);
-                remove_unneeded_field(&map, "kubernetes",&pk,stream->entity->root_filter_count, stream->entity->filter_count);
+                remove_unneeded_field(&map, "kubernetes",&pk,
+                       stream->entity->root_filter_count, stream->entity->filter_count);
 
-                // Now, unpack the modified data into a new msgpack_object
                 size_t modified_offset = 0;
-                if (msgpack_unpack_next(&modified_unpacked, filtered_sbuf.data, filtered_sbuf.size, &modified_offset)) {
+                if (msgpack_unpack_next(&modified_unpacked, filtered_sbuf.data,
+                                        filtered_sbuf.size, &modified_offset)) {
                     map = modified_unpacked.data;
                 }
             }

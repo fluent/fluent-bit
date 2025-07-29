@@ -539,7 +539,8 @@ static int cb_cloudwatch_exit(void *data, struct flb_config *config)
     return 0;
 }
 
-void entity_destroy(entity *entity) {
+void entity_destroy(entity *entity)
+{
     if(entity->attributes) {
         flb_free(entity->attributes->cluster_name);
         flb_free(entity->attributes->instance_id);
