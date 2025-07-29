@@ -88,40 +88,40 @@ int we_wmi_tcp_init(struct flb_we *ctx)
     ctx->wmi_tcp->connections_reset = c;
 
     g = cmt_gauge_create(ctx->cmt, "windows", "tcp",
-                         "segments_per_sec",
+                         "segments_total",
                          "Total TCP segments sent or received per second.",
                          1, &label);
     if (!g) { 
         return -1; 
     }
-    ctx->wmi_tcp->segments_per_sec = g;
+    ctx->wmi_tcp->segments_total = g;
 
     g = cmt_gauge_create(ctx->cmt, "windows", "tcp",
-                         "segments_received_per_sec",
+                         "segments_total",
                          "TCP segments received per second.",
                          1, &label);
     if (!g) { 
         return -1; 
     }
-    ctx->wmi_tcp->segments_received_per_sec = g;
+    ctx->wmi_tcp->segments_received_total = g;
 
     g = cmt_gauge_create(ctx->cmt, "windows", "tcp",
-                         "segments_retransmitted_per_sec",
+                         "segments_retransmitted_total",
                          "TCP segments retransmitted per second.",
                          1, &label);
     if (!g) { 
         return -1; 
     }
-    ctx->wmi_tcp->segments_retransmitted_per_sec = g;
+    ctx->wmi_tcp->segments_retransmitted_total = g;
     
     g = cmt_gauge_create(ctx->cmt, "windows", "tcp",
-                         "segments_sent_per_sec",
+                         "segments_sent_total",
                          "TCP segments sent per second.",
                          1, &label);
     if (!g) { 
         return -1; 
     }
-    ctx->wmi_tcp->segments_sent_per_sec = g;
+    ctx->wmi_tcp->segments_sent_total = g;
 
     /* NOTE: Once we tried to use perflib to obtain those of metrics for TCPv4 and TCPv6,
      * there is no way to process the correct metrics.
@@ -200,16 +200,16 @@ int we_wmi_tcp_update(struct flb_we *ctx)
             cmt_counter_set(ctx->wmi_tcp->connections_reset, timestamp, val, 1, &ipv4_label);
 
             val = we_wmi_get_property_value(ctx, "SegmentsPersec", class_obj);
-            cmt_gauge_set(ctx->wmi_tcp->segments_per_sec, timestamp, val, 1, &ipv4_label);
+            cmt_gauge_set(ctx->wmi_tcp->segments_total, timestamp, val, 1, &ipv4_label);
 
             val = we_wmi_get_property_value(ctx, "SegmentsReceivedPersec", class_obj);
-            cmt_gauge_set(ctx->wmi_tcp->segments_received_per_sec, timestamp, val, 1, &ipv4_label);
+            cmt_gauge_set(ctx->wmi_tcp->segments_received_total, timestamp, val, 1, &ipv4_label);
 
             val = we_wmi_get_property_value(ctx, "SegmentsRetransmittedPersec", class_obj);
-            cmt_gauge_set(ctx->wmi_tcp->segments_retransmitted_per_sec, timestamp, val, 1, &ipv4_label);
+            cmt_gauge_set(ctx->wmi_tcp->segments_retransmitted_total, timestamp, val, 1, &ipv4_label);
 
             val = we_wmi_get_property_value(ctx, "SegmentsSentPersec", class_obj);
-            cmt_gauge_set(ctx->wmi_tcp->segments_sent_per_sec, timestamp, val, 1, &ipv4_label);
+            cmt_gauge_set(ctx->wmi_tcp->segments_sent_total, timestamp, val, 1, &ipv4_label);
 
             class_obj->lpVtbl->Release(class_obj);
         }
@@ -235,16 +235,16 @@ int we_wmi_tcp_update(struct flb_we *ctx)
             cmt_counter_set(ctx->wmi_tcp->connections_reset, timestamp, val, 1, &ipv6_label);
 
             val = we_wmi_get_property_value(ctx, "SegmentsPersec", class_obj);
-            cmt_gauge_set(ctx->wmi_tcp->segments_per_sec, timestamp, val, 1, &ipv6_label);
+            cmt_gauge_set(ctx->wmi_tcp->segments_total, timestamp, val, 1, &ipv6_label);
 
             val = we_wmi_get_property_value(ctx, "SegmentsReceivedPersec", class_obj);
-            cmt_gauge_set(ctx->wmi_tcp->segments_received_per_sec, timestamp, val, 1, &ipv6_label);
+            cmt_gauge_set(ctx->wmi_tcp->segments_received_total, timestamp, val, 1, &ipv6_label);
 
             val = we_wmi_get_property_value(ctx, "SegmentsRetransmittedPersec", class_obj);
-            cmt_gauge_set(ctx->wmi_tcp->segments_retransmitted_per_sec, timestamp, val, 1, &ipv6_label);
+            cmt_gauge_set(ctx->wmi_tcp->segments_retransmitted_total, timestamp, val, 1, &ipv6_label);
 
             val = we_wmi_get_property_value(ctx, "SegmentsSentPersec", class_obj);
-            cmt_gauge_set(ctx->wmi_tcp->segments_sent_per_sec, timestamp, val, 1, &ipv6_label);
+            cmt_gauge_set(ctx->wmi_tcp->segments_sent_total, timestamp, val, 1, &ipv6_label);
 
             class_obj->lpVtbl->Release(class_obj);
         }
