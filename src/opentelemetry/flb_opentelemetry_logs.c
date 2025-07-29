@@ -548,6 +548,13 @@ static int process_json_payload_resource_logs_entry (struct flb_log_event_encode
             result = flb_otel_utils_json_payload_append_converted_kvlist(tmp_encoder,
                                                                          FLB_LOG_EVENT_BODY,
                                                                          resource_attr);
+            if (result < 0) {
+                if (error_status) {
+                    *error_status = FLB_OTEL_RESOURCE_INVALID_ATTRIBUTE;
+                }
+                flb_log_event_encoder_destroy(tmp_encoder);
+                return -FLB_OTEL_RESOURCE_INVALID_ATTRIBUTE;
+            }
         }
 
         /* resource dropped_attributers_count */

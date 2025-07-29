@@ -76,10 +76,10 @@ int flb_otel_utils_json_payload_get_wrapped_value(msgpack_object *wrapper,
                                                   msgpack_object **value,
                                                   int            *type)
 {
-    int                 internal_type;
-    msgpack_object     *kv_value;
-    msgpack_object_str *kv_key;
-    msgpack_object_map *map;
+    int internal_type;
+    msgpack_object     *kv_value = NULL;
+    msgpack_object_str *kv_key = NULL;
+    msgpack_object_map *map = NULL;
 
     if (wrapper->type != MSGPACK_OBJECT_MAP) {
         return -1;
@@ -95,26 +95,62 @@ int flb_otel_utils_json_payload_get_wrapped_value(msgpack_object *wrapper,
             kv_key = &map->ptr[0].key.via.str;
 
             if (strncasecmp(kv_key->ptr, "stringValue",  kv_key->size) == 0) {
+                if (kv_value->type == MSGPACK_OBJECT_NIL) {
+                    internal_type = MSGPACK_OBJECT_NIL;
+                }
+                else if (kv_value->type != MSGPACK_OBJECT_STR) {
+                    /* If the value is not a string, we cannot process it */
+                    return -2;
+                }
                 internal_type = MSGPACK_OBJECT_STR;
             }
             else if (strncasecmp(kv_key->ptr, "boolValue",  kv_key->size) == 0) {
+                if (kv_value->type != MSGPACK_OBJECT_BOOLEAN) {
+                    /* If the value is not a boolean, we cannot process it */
+                    return -2;
+                }
                 internal_type = MSGPACK_OBJECT_BOOLEAN;
             }
             else if (strncasecmp(kv_key->ptr, "intValue",  kv_key->size) == 0) {
+                if (kv_value->type != MSGPACK_OBJECT_POSITIVE_INTEGER &&
+                    kv_value->type != MSGPACK_OBJECT_NEGATIVE_INTEGER) {
+                    /* If the value is not an integer, we cannot process it */
+                    return -2;
+                }
                 internal_type = MSGPACK_OBJECT_POSITIVE_INTEGER;
             }
             else if (strncasecmp(kv_key->ptr, "doubleValue",  kv_key->size) == 0) {
+                if (kv_value->type != MSGPACK_OBJECT_FLOAT32 &&
+                    kv_value->type != MSGPACK_OBJECT_FLOAT64) {
+                    /* If the value is not a float, we cannot process it */
+                    return -2;
+                }
                 internal_type = MSGPACK_OBJECT_FLOAT;
             }
             else if (strncasecmp(kv_key->ptr, "bytesValue",  kv_key->size) == 0) {
+                if (kv_value->type != MSGPACK_OBJECT_BIN) {
+                    /* If the value is not binary, we cannot process it */
+                    return -2;
+                }
                 internal_type = MSGPACK_OBJECT_BIN;
             }
             else if (strncasecmp(kv_key->ptr, "arrayValue",  kv_key->size) == 0) {
+                if (kv_value->type != MSGPACK_OBJECT_ARRAY) {
+                    /* If the value is not an array, we cannot process it */
+                    return -2;
+                }
                 internal_type = MSGPACK_OBJECT_ARRAY;
             }
             else if (strncasecmp(kv_key->ptr, "kvlistValue",  kv_key->size) == 0) {
+                if (kv_value->type != MSGPACK_OBJECT_MAP) {
+                    /* If the value is not a map, we cannot process it */
+                    return -2;
+                }
                 internal_type = MSGPACK_OBJECT_MAP;
             }
+        }
+        else {
+            printf("Unsupported key type: %d\n", map->ptr[0].key.type);
         }
     }
 
@@ -191,6 +227,7 @@ int flb_otel_utils_json_payload_append_converted_value(
             break;
 
         case MSGPACK_OBJECT_STR:
+            /* If the string is empty or null, append an empty string */
             result = flb_log_event_encoder_append_string(
                         encoder,
                         target_field,
@@ -198,7 +235,13 @@ int flb_otel_utils_json_payload_append_converted_value(
                         object->via.str.size);
 
             break;
-
+        case MSGPACK_OBJECT_NIL:
+            /* Append a null value */
+            result = flb_log_event_encoder_append_string(
+                        encoder,
+                        target_field,
+                        "", 0);
+            break;
         case MSGPACK_OBJECT_BIN:
             result = flb_log_event_encoder_append_binary(
                         encoder,
@@ -221,7 +264,6 @@ int flb_otel_utils_json_payload_append_converted_value(
                         object);
 
             break;
-
         default:
             break;
     }
@@ -336,6 +378,9 @@ int flb_otel_utils_json_payload_append_converted_map(
     if (result == 0 && encoder_result == FLB_EVENT_ENCODER_SUCCESS) {
         return result;
     }
+    else if (result != 0) {
+        return result;
+    }
 
     result = flb_log_event_encoder_begin_map(encoder, target_field);
 
@@ -436,7 +481,10 @@ int flb_otel_utils_json_payload_append_converted_kvlist(
             }
 
             if (value_index == -1) {
-                result = FLB_EVENT_ENCODER_ERROR_INVALID_ARGUMENT;
+                /*
+                 * if value is missing basically is 'unset' and handle as Empty() in OTel world, in
+                 * this case we just pack an empty string value
+                 */
             }
 
             if (result == FLB_EVENT_ENCODER_SUCCESS) {
@@ -447,10 +495,26 @@ int flb_otel_utils_json_payload_append_converted_kvlist(
             }
 
             if (result == FLB_EVENT_ENCODER_SUCCESS) {
-                result = flb_otel_utils_json_payload_append_converted_value(
-                            encoder,
-                            target_field,
-                            &entry->ptr[value_index].val);
+                /* if the value is not set, register an empty string as value */
+                if (value_index == -1) {
+                    result = flb_log_event_encoder_append_string(
+                                encoder,
+                                target_field,
+                                "", 0);
+                }
+                else {
+                    /* expected value must come in a map */
+                    if (entry->ptr[value_index].val.type != MSGPACK_OBJECT_MAP) {
+                        result = -1;
+                        break;
+                    }
+                    else {
+                        result = flb_otel_utils_json_payload_append_converted_value(
+                                    encoder,
+                                    target_field,
+                                    &entry->ptr[value_index].val);
+                    }
+                }
             }
         }
     }
