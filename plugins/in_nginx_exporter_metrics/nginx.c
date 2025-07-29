@@ -2271,7 +2271,7 @@ static int nginx_init(struct flb_input_instance *ins,
     }
     ctx->coll_id = flb_input_set_collector_time(ins,
                                                 nginx_collect,
-                                                1,
+                                                ctx->scrape_interval,
                                                 0, config);
     ret = 0;
  nginx_init_end:
@@ -2339,6 +2339,11 @@ static struct flb_config_map config_map[] = {
      FLB_CONFIG_MAP_STR, "status_url", DEFAULT_STATUS_URL,
      0, FLB_TRUE, offsetof(struct nginx_ctx, status_url),
      "Define URL of stub status handler"
+    },
+    {
+     FLB_CONFIG_MAP_TIME, "scrape_interval", "5s",
+     0, FLB_TRUE, offsetof(struct nginx_ctx, scrape_interval),
+     "Scrape interval to collect metrics from NGINX."
     },
     {
      FLB_CONFIG_MAP_BOOL, "nginx_plus", "true",
