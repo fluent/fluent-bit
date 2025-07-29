@@ -30,8 +30,6 @@
 #define DEFAULT_TIME_KEY_FORMAT "%Y-%m-%dT%H:%M:%S"
 
 #define FLB_KINESIS_DEFAULT_HTTPS_PORT    443
-#define FLB_KINESIS_MIN_PORT              1
-#define FLB_KINESIS_MAX_PORT              65535
 
 /* buffers used for each flush */
 struct flush {
@@ -91,7 +89,7 @@ struct flb_firehose {
     const char *log_key;
     const char *external_id;
     char *sts_endpoint;
-    int port;
+    uint16_t port;
     char *profile;
     int custom_endpoint;
     int retry_requests;
