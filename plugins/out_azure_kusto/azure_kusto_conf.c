@@ -89,7 +89,7 @@ static struct flb_upstream_node *flb_upstream_node_create_url(struct flb_azure_k
                         NULL, sds_host, sds_port, FLB_TRUE, ctx->ins->tls->verify,
                         ctx->ins->tls->verify_hostname,
                         ctx->ins->tls->debug, ctx->ins->tls->vhost, NULL, NULL, NULL,
-                        NULL, NULL, kv, config);
+                        NULL, NULL, NULL, kv, config);
 
                     if (!node) {
                         flb_plg_error(ctx->ins, "error creating resource upstream node");
