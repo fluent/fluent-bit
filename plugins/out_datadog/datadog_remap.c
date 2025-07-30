@@ -187,6 +187,7 @@ static int dd_remap_ecs_task_arn(const char *tag_name,
     char *remain;
     char *split;
     char *task_arn;
+    char *task_id;
     int ret;
 
     buf = flb_sds_create_len(attr_value.via.str.ptr, attr_value.via.str.size);
@@ -198,7 +199,7 @@ static int dd_remap_ecs_task_arn(const char *tag_name,
     * Use the full task ARN for compatibility with Datadog products
     * that expect the complete ARN format
     */
-    ret = dd_remap_append_kv_to_ddtags("task_arn", buf, flb_sds_len(buf), dd_tags_buf);
+    ret = dd_remap_append_kv_to_ddtags(tag_name, buf, flb_sds_len(buf), dd_tags_buf);
     if (ret < 0) {
         flb_sds_destroy(buf);
         return -1;
@@ -220,10 +221,10 @@ static int dd_remap_ecs_task_arn(const char *tag_name,
         }
     }
 
-    task_arn = strstr(buf, ECS_TASK_PREFIX);
-    if (task_arn != NULL) {
-        task_arn += strlen(ECS_TASK_PREFIX);
-        ret = dd_remap_append_kv_to_ddtags("task_id", task_arn, strlen(task_arn), dd_tags_buf);
+    task_id = strstr(buf, ECS_TASK_PREFIX);
+    if (task_id != NULL) {
+        task_id += strlen(ECS_TASK_PREFIX);
+        ret = dd_remap_append_kv_to_ddtags("task_id", task_id, strlen(task_id), dd_tags_buf);
     }
     else {
         // If invalid, preserve the original value under task_id
