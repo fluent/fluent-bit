@@ -41,6 +41,7 @@
 #define FLB_CONFIG_DEFAULT_TASK_MAP_SIZE  2048
 #define FLB_CONFIG_DEFAULT_TASK_MAP_SIZE_LIMIT  16384
 #define FLB_CONFIG_DEFAULT_TASK_MAP_SIZE_GROWTH_SiZE 256
+#define FLB_CONFIG_EVENT_LOOP_SIZE 8
 
 /* The reason behind FLB_CONFIG_DEFAULT_TASK_MAP_SIZE_LIMIT being set to 16384
  * is that this is largest unsigned number expressable with 14 bits which is
@@ -52,9 +53,19 @@
  * pointers.
  */
 
+#define FLB_CONTEXT_EV_SIGNAL      (1 << 0) /* 1 */
+
+#define FLB_CTX_SIGNAL_RELOAD   1
+#define FLB_CTX_SIGNAL_SHUTDOWN 2
+
 /* Main struct to hold the configuration of the runtime service */
 struct flb_config {
     struct mk_event ch_event;
+
+    /* external communication channel for fluent-bit contexts */
+    struct mk_event_loop *ctx_evl;
+    flb_pipefd_t ch_context_signal[2]; /* channel to recieve context signal events */
+    struct mk_event event_context_signal;
 
     int support_mode;         /* enterprise support mode ?      */
     int is_ingestion_active;  /* date ingestion active/allowed  */
@@ -320,6 +331,16 @@ struct flb_config {
 
     int dry_run;
 };
+
+static inline int flb_config_signal_channel_send(flb_pipefd_t channel, uint64_t signal_type)
+{
+    return flb_pipe_w(channel, &signal_type, sizeof(uint64_t));
+}
+
+static inline int flb_config_signal_send(struct flb_config *config, uint64_t signal_type)
+{
+    return flb_pipe_w(config->ch_context_signal[1], &signal_type, sizeof(uint64_t));
+}
 
 #define FLB_CONFIG_LOG_LEVEL(c) (c->log->level)
 

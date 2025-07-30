@@ -71,6 +71,7 @@ extern void win32_started(void);
 
 flb_ctx_t *ctx;
 struct flb_config *config;
+flb_pipefd_t ch_context_signal;
 volatile sig_atomic_t exit_signal = 0;
 volatile sig_atomic_t flb_bin_restarting = FLB_RELOAD_IDLE;
 
@@ -541,7 +542,7 @@ static void flb_help_plugin(int rc, int format,
 
 static void flb_signal_handler_break_loop(int signal)
 {
-    exit_signal = signal;
+    flb_config_signal_send(config, FLB_CTX_SIGNAL_SHUTDOWN);
 }
 
 static void flb_signal_exit(int signal)
@@ -603,6 +604,7 @@ static void flb_signal_handler_status_line(struct flb_cf *cf_opts)
 static void flb_signal_handler(int signal)
 {
     struct flb_cf *cf_opts = flb_cf_context_get();
+
     flb_signal_handler_status_line(cf_opts);
 
     switch (signal) {
@@ -633,12 +635,7 @@ static void flb_signal_handler(int signal)
         break;
 #ifndef FLB_HAVE_STATIC_CONF
     case SIGHUP:
-        if (flb_bin_restarting == FLB_RELOAD_IDLE) {
-            flb_bin_restarting = FLB_RELOAD_IN_PROGRESS;
-        }
-        else {
-            flb_utils_error(FLB_ERR_RELOADING_IN_PROGRESS);
-        }
+        flb_config_signal_channel_send(ch_context_signal, FLB_CTX_SIGNAL_RELOAD);
         break;
 #endif
 #endif
@@ -674,17 +671,7 @@ static BOOL WINAPI flb_console_handler(DWORD evType)
         handler_signal = 2;
         break;
     case 1 /* CTRL_BREAK_EVENT_1 */:
-        if (flb_bin_restarting == FLB_RELOAD_IDLE) {
-            flb_bin_restarting = FLB_RELOAD_IN_PROGRESS;
-            /* signal the main loop to execute reload. this is necessary since
-             * all signal handlers in win32 are executed on their own thread.
-             */
-            handler_signal = 1;
-            flb_bin_restarting = FLB_RELOAD_IDLE;
-        }
-        else {
-            flb_utils_error(FLB_ERR_RELOADING_IN_PROGRESS);
-        }
+        flb_config_signal_channel_send(ch_context_signal, FLB_CTX_SIGNAL_SHUTDOWN);
         break;
     }
     return 1;
@@ -1002,6 +989,11 @@ int flb_main(int argc, char **argv)
     struct flb_cf_section *section;
     struct flb_cf *cf_opts;
     struct flb_cf_group *group;
+
+    struct mk_event *event;
+    uint64_t ctx_signal;
+    int is_shutdown = FLB_FALSE;
+    int is_reload = FLB_FALSE;
 
     prog_name = argv[0];
 
@@ -1431,6 +1423,8 @@ int flb_main(int argc, char **argv)
         return ret;
     }
 
+    ch_context_signal = config->ch_context_signal[1];
+
     /* Store the current config format context from command line */
     flb_cf_context_set(cf_opts);
 
@@ -1446,41 +1440,46 @@ int flb_main(int argc, char **argv)
     }
 #endif
 
-    while (ctx->status == FLB_LIB_OK && exit_signal == 0) {
-        sleep(1);
+    while (exit_signal == FLB_FALSE && is_shutdown == FLB_FALSE) {
+        mk_event_wait(config->ch_evl);
+        mk_event_foreach(event, config->ch_evl) {
+            if (event->type == FLB_CONTEXT_EV_SIGNAL) {
+                ret = flb_pipe_r(event->fd, &ctx_signal, sizeof(uint64_t));
+                if (ret <= 0) {
+                    flb_error("unable to read context eventt");
+                    continue;
+                }
 
-#ifdef FLB_SYSTEM_WINDOWS
-        if (handler_signal == 1) {
-            handler_signal = 0;
-            flb_reload(ctx, cf_opts);
-        }
-        else if (handler_signal == 2){
-            handler_signal = 0;
-            break;
-        }
+                switch(ctx_signal) {
+                case FLB_CTX_SIGNAL_SHUTDOWN:
+                    is_shutdown = FLB_TRUE;
+                    break;
+                case FLB_CTX_SIGNAL_RELOAD:
+                    /* reload by using same config files/path */
+                    flb_bin_restarting == FLB_RELOAD_IN_PROGRESS;
+                    ret = flb_reload(ctx, cf_opts);
+                    if (ret == 0) {
+                        ctx = flb_context_get();
+                        flb_bin_restarting = FLB_RELOAD_IDLE;
+                        config = ctx->config;
+                        ch_context_signal = config->ch_context_signal[1];
+#ifdef FLB_HAVE_CHUNK_TRACE
+                        if (trace_input != NULL) {
+                            enable_trace_input(ctx, trace_input, NULL /* prefix ... */, trace_output, trace_props);
+                        }
 #endif
-
-        /* set the context again before checking the status again */
-        ctx = flb_context_get();
-
-#ifdef FLB_SYSTEM_WINDOWS
-        flb_console_handler_set_ctx(ctx, cf_opts);
-#endif
-        if (flb_bin_restarting == FLB_RELOAD_IN_PROGRESS) {
-            /* reload by using same config files/path */
-            ret = flb_reload(ctx, cf_opts);
-            if (ret == 0) {
-                ctx = flb_context_get();
-                flb_bin_restarting = FLB_RELOAD_IDLE;
+                    }
+                    else {
+                        flb_bin_restarting = FLB_RELOAD_ABORTED;
+                    }
+                    break;
+                }
+                if (exit_signal == FLB_TRUE || is_shutdown == FLB_TRUE || is_reload == FLB_TRUE) {
+                    // reset is_reload flag before re-entering the loop.
+                    is_reload = FLB_FALSE;
+                    break;
+                }
             }
-            else {
-                flb_bin_restarting = ret;
-            }
-        }
-
-        if (flb_bin_restarting == FLB_RELOAD_HALTED) {
-            sleep(1);
-            flb_bin_restarting = FLB_RELOAD_IDLE;
         }
     }
 
