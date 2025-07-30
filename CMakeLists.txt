@@ -449,7 +449,12 @@ endif()
 
 if(FLB_COMPILER_STRICT_POINTER_TYPES)
   if(CMAKE_C_COMPILER_ID MATCHES "GNU|Clang|AppleClang")
-    set(CMAKE_C_FLAGS "${CMAKE_C_FLAGS} -Werror=incompatible-pointer-types")
+    add_compile_options(-Werror=incompatible-pointer-types)
+  endif()
+  # Currently, AppleClang has more struct rules when using -Werror=incompatible-pointer-types.
+  # We still permit to discarding const qualifiers warnings.
+  if(CMAKE_C_COMPILER_ID MATCHES "AppleClang")
+    add_compile_options(-Wno-incompatible-pointer-types-discards-qualifiers)
   endif()
 endif()
 
