@@ -628,7 +628,7 @@ static inline int key_exists_in_map(msgpack_object key, msgpack_object map, int 
 }
 
 static int msgpack2json(char *buf, int *off, size_t left,
-                        const msgpack_object *o)
+                        const msgpack_object *o, int escape_unicode)
 {
     int i;
     int dup;
@@ -682,7 +682,7 @@ static int msgpack2json(char *buf, int *off, size_t left,
     case MSGPACK_OBJECT_STR:
         if (try_to_write(buf, off, left, "\"", 1) &&
             (o->via.str.size > 0 ?
-             try_to_write_str(buf, off, left, o->via.str.ptr, o->via.str.size)
+             try_to_write_str(buf, off, left, o->via.str.ptr, o->via.str.size, escape_unicode)
              : 1/* nothing to do */) &&
             try_to_write(buf, off, left, "\"", 1)) {
             ret = FLB_TRUE;
@@ -692,7 +692,7 @@ static int msgpack2json(char *buf, int *off, size_t left,
     case MSGPACK_OBJECT_BIN:
         if (try_to_write(buf, off, left, "\"", 1) &&
             (o->via.bin.size > 0 ?
-             try_to_write_str(buf, off, left, o->via.bin.ptr, o->via.bin.size)
+             try_to_write_str(buf, off, left, o->via.bin.ptr, o->via.bin.size, escape_unicode)
               : 1 /* nothing to do */) &&
             try_to_write(buf, off, left, "\"", 1)) {
             ret = FLB_TRUE;
@@ -729,12 +729,12 @@ static int msgpack2json(char *buf, int *off, size_t left,
         }
         if (loop != 0) {
             msgpack_object* p = o->via.array.ptr;
-            if (!msgpack2json(buf, off, left, p)) {
+            if (!msgpack2json(buf, off, left, p, escape_unicode)) {
                 goto msg2json_end;
             }
             for (i=1; i<loop; i++) {
                 if (!try_to_write(buf, off, left, ",", 1) ||
-                    !msgpack2json(buf, off, left, p+i)) {
+                    !msgpack2json(buf, off, left, p+i, escape_unicode)) {
                     goto msg2json_end;
                 }
             }
@@ -770,9 +770,9 @@ static int msgpack2json(char *buf, int *off, size_t left,
                 }
 
                 if (
-                    !msgpack2json(buf, off, left, &(p+i)->key) ||
+                        !msgpack2json(buf, off, left, &(p+i)->key, escape_unicode) ||
                     !try_to_write(buf, off, left, ":", 1)  ||
-                    !msgpack2json(buf, off, left, &(p+i)->val) ) {
+                        !msgpack2json(buf, off, left, &(p+i)->val, escape_unicode) ) {
                     goto msg2json_end;
                 }
                 packed++;
@@ -800,7 +800,7 @@ static int msgpack2json(char *buf, int *off, size_t left,
  *  @return success   ? a number characters filled : negative value
  */
 int flb_msgpack_to_json(char *json_str, size_t json_size,
-                        const msgpack_object *obj)
+                        const msgpack_object *obj, int escape_unicode)
 {
     int ret = -1;
     int off = 0;
@@ -809,12 +809,12 @@ int flb_msgpack_to_json(char *json_str, size_t json_size,
         return -1;
     }
 
-    ret = msgpack2json(json_str, &off, json_size - 1, obj);
+    ret = msgpack2json(json_str, &off, json_size - 1, obj, escape_unicode);
     json_str[off] = '\0';
     return ret ? off: ret;
 }
 
-flb_sds_t flb_msgpack_raw_to_json_sds(const void *in_buf, size_t in_size)
+flb_sds_t flb_msgpack_raw_to_json_sds(const void *in_buf, size_t in_size, int escape_unicode)
 {
     int ret;
     size_t off = 0;
@@ -849,7 +849,7 @@ flb_sds_t flb_msgpack_raw_to_json_sds(const void *in_buf, size_t in_size)
 
     root = &result.data;
     while (1) {
-        ret = flb_msgpack_to_json(out_buf, out_size, root);
+        ret = flb_msgpack_to_json(out_buf, out_size, root, escape_unicode);
         if (ret <= 0) {
             realloc_size *= 2;
             tmp_buf = flb_sds_increase(out_buf, realloc_size);
@@ -959,7 +959,7 @@ static int msgpack_pack_formatted_datetime(flb_sds_t out_buf, char time_formatte
 
 flb_sds_t flb_pack_msgpack_to_json_format(const char *data, uint64_t bytes,
                                           int json_format, int date_format,
-                                          flb_sds_t date_key)
+                                          flb_sds_t date_key, int escape_unicode)
 {
     int i;
     int ret;
@@ -1166,7 +1166,7 @@ flb_sds_t flb_pack_msgpack_to_json_format(const char *data, uint64_t bytes,
             json_format == FLB_PACK_JSON_FORMAT_STREAM) {
 
             /* Encode current record into JSON in a temporary variable */
-            out_js = flb_msgpack_raw_to_json_sds(tmp_sbuf.data, tmp_sbuf.size);
+            out_js = flb_msgpack_raw_to_json_sds(tmp_sbuf.data, tmp_sbuf.size, FLB_TRUE);
             if (!out_js) {
                 flb_sds_destroy(out_buf);
                 msgpack_sbuffer_destroy(&tmp_sbuf);
@@ -1222,7 +1222,7 @@ flb_sds_t flb_pack_msgpack_to_json_format(const char *data, uint64_t bytes,
 
     /* Format to JSON */
     if (json_format == FLB_PACK_JSON_FORMAT_JSON) {
-        out_buf = flb_msgpack_raw_to_json_sds(tmp_sbuf.data, tmp_sbuf.size);
+        out_buf = flb_msgpack_raw_to_json_sds(tmp_sbuf.data, tmp_sbuf.size, escape_unicode);
         msgpack_sbuffer_destroy(&tmp_sbuf);
         if (!out_buf) {
             return NULL;
@@ -1247,7 +1247,7 @@ flb_sds_t flb_pack_msgpack_to_json_format(const char *data, uint64_t bytes,
  *  @param  data     The msgpack_unpacked data.
  *  @return success  ? allocated json str ptr : NULL
  */
-char *flb_msgpack_to_json_str(size_t size, const msgpack_object *obj)
+char *flb_msgpack_to_json_str(size_t size, const msgpack_object *obj, int escape_unicode)
 {
     int ret;
     char *buf = NULL;
@@ -1268,7 +1268,7 @@ char *flb_msgpack_to_json_str(size_t size, const msgpack_object *obj)
     }
 
     while (1) {
-        ret = flb_msgpack_to_json(buf, size, obj);
+        ret = flb_msgpack_to_json(buf, size, obj, escape_unicode);
         if (ret <= 0) {
             /* buffer is small. retry.*/
             size *= 2;
