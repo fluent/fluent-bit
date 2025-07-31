@@ -93,7 +93,7 @@ static int endpoint_root(struct flb_hs *hs)
     flb_utils_split_free(list);
 
     /* export as JSON */
-    out_buf = flb_msgpack_raw_to_json_sds(mp_sbuf.data, mp_sbuf.size);
+    out_buf = flb_msgpack_raw_to_json_sds(mp_sbuf.data, mp_sbuf.size, FLB_TRUE);
     msgpack_sbuffer_destroy(&mp_sbuf);
 
     if (out_buf) {
