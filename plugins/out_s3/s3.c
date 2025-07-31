@@ -3347,7 +3347,7 @@ static void cb_s3_upload(struct flb_config *config, void *data)
 }
 
 static flb_sds_t flb_pack_msgpack_extract_log_key(void *out_context, const char *data,
-                                                  uint64_t bytes)
+                                                  uint64_t bytes, struct flb_config *config)
 {
     int i;
     int records = 0;
@@ -3454,7 +3454,8 @@ static flb_sds_t flb_pack_msgpack_extract_log_key(void *out_context, const char 
                     }
                     else {
                         ret = flb_msgpack_to_json(val_buf + val_offset,
-                                                  msgpack_size - val_offset, &val);
+                                                  msgpack_size - val_offset, &val,
+                                                  config->json_escape_unicode);
                         if (ret < 0) {
                             break;
                         }
@@ -3754,14 +3755,16 @@ static void cb_s3_flush(struct flb_event_chunk *event_chunk,
     if (ctx->log_key) {
         chunk = flb_pack_msgpack_extract_log_key(ctx,
                                                  event_chunk->data,
-                                                 event_chunk->size);
+                                                 event_chunk->size,
+                                                 config);
     }
     else {
         chunk = flb_pack_msgpack_to_json_format(event_chunk->data,
                                                 event_chunk->size,
                                                 FLB_PACK_JSON_FORMAT_LINES,
                                                 ctx->json_date_format,
-                                                ctx->date_key);
+                                                ctx->date_key,
+                                                config->json_escape_unicode);
     }
     if (chunk == NULL) {
         flb_plg_error(ctx->ins, "Could not marshal msgpack to output string");
