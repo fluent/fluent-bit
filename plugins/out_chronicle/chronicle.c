@@ -515,7 +515,9 @@ static int cb_chronicle_init(struct flb_output_instance *ins,
     return 0;
 }
 
-static flb_sds_t flb_pack_msgpack_extract_log_key(void *out_context, uint64_t bytes, struct flb_log_event log_event)
+static flb_sds_t flb_pack_msgpack_extract_log_key(void *out_context, uint64_t bytes,
+                                                  struct flb_log_event log_event,
+                                                  struct flb_config *config)
 {
     int i;
     int map_size;
@@ -591,7 +593,8 @@ static flb_sds_t flb_pack_msgpack_extract_log_key(void *out_context, uint64_t by
                 }
                 else {
                     ret = flb_msgpack_to_json(val_buf + val_offset,
-                                              msgpack_size - val_offset, &val);
+                                              msgpack_size - val_offset, &val,
+                                              config->json_escape_unicode);
                     if (ret < 0) {
                         break;
                     }
@@ -677,7 +680,8 @@ static int chronicle_format(const void *data, size_t bytes,
                             size_t last_offset,
                             size_t threshold, size_t *out_offset,
                             struct flb_log_event_decoder *log_decoder,
-                            struct flb_chronicle *ctx)
+                            struct flb_chronicle *ctx,
+                            struct flb_config *config)
 {
     int len;
     int ret;
@@ -722,7 +726,7 @@ static int chronicle_format(const void *data, size_t bytes,
         last_off = off;
 
         if (ctx->log_key != NULL) {
-            log_text = flb_pack_msgpack_extract_log_key(ctx, bytes, log_event);
+            log_text = flb_pack_msgpack_extract_log_key(ctx, bytes, log_event, config);
             if (log_text == NULL) {
                 flb_plg_error(ctx->ins, "log_key extraction failed, skipping record");
                 continue;
@@ -730,7 +734,8 @@ static int chronicle_format(const void *data, size_t bytes,
             log_text_size = flb_sds_len(log_text);
         }
         else {
-            json_str = flb_msgpack_to_json_str(alloc_size, log_event.body);
+            json_str = flb_msgpack_to_json_str(alloc_size, log_event.body,
+                                               config->json_escape_unicode);
             if (json_str == NULL) {
                 flb_plg_error(ctx->ins, "Could not convert record to json string");
                 msgpack_sbuffer_destroy(&mp_sbuf);
@@ -865,7 +870,8 @@ static int chronicle_format(const void *data, size_t bytes,
     }
 
     /* Convert from msgpack to JSON */
-    out_buf = flb_msgpack_raw_to_json_sds(mp_sbuf.data, mp_sbuf.size);
+    out_buf = flb_msgpack_raw_to_json_sds(mp_sbuf.data, mp_sbuf.size,
+                                          config->json_escape_unicode);
     msgpack_sbuffer_destroy(&mp_sbuf);
 
     if (!out_buf) {
@@ -903,7 +909,7 @@ static int cb_chronicle_format_test(struct flb_config *config,
     ret = chronicle_format(data, bytes, tag, tag_len,
                            (char **)out_data, out_size,
                            0, bytes, &out_offset,
-                           &log_decoder, ctx);
+                           &log_decoder, ctx, config);
 
     flb_log_event_decoder_destroy(&log_decoder);
     return ret;
@@ -994,7 +1000,7 @@ static void cb_chronicle_flush(struct flb_event_chunk *event_chunk,
                                &payload_buf, &payload_size,
                                offset, threshold, &out_offset,
                                &log_decoder,
-                               ctx);
+                               ctx, config);
         if (ret != 0) {
             flb_upstream_conn_release(u_conn);
             flb_sds_destroy(token);
