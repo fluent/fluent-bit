@@ -177,6 +177,7 @@ static int in_opentelemetry_init(struct flb_input_instance *ins,
         ctx->successful_response_code = 201;
     }
 
+    ctx->is_running = FLB_TRUE;
     return 0;
 }
 
@@ -193,6 +194,36 @@ static int in_opentelemetry_exit(void *data, struct flb_config *config)
     }
 
     return 0;
+}
+
+static void in_opentelemetry_pause(void *data, struct flb_config *config)
+{
+    struct flb_opentelemetry *ctx = data;
+    (void) config;
+
+    if (ctx->is_running) {
+        printf("pausing http server\n");
+        flb_http_server_stop(&ctx->http_server);
+        ctx->is_running = FLB_FALSE;
+    }
+}
+
+static void in_opentelemetry_resume(void *data, struct flb_config *config)
+
+{
+    struct flb_opentelemetry *ctx = data;
+    (void) config;
+
+    if (!ctx->is_running) {
+        if (ctx->enable_http2) {
+            flb_http_server_start(&ctx->http_server);
+            ctx->is_running = FLB_TRUE;
+        }
+        else {
+
+        }
+        ctx->is_running = FLB_TRUE;
+    }
 }
 
 /* Configuration properties map */
@@ -272,8 +303,8 @@ struct flb_input_plugin in_opentelemetry_plugin = {
     .cb_pre_run   = NULL,
     .cb_collect   = in_opentelemetry_collect,
     .cb_flush_buf = NULL,
-    .cb_pause     = NULL,
-    .cb_resume    = NULL,
+    .cb_pause     = in_opentelemetry_pause,
+    .cb_resume    = in_opentelemetry_resume,
     .cb_exit      = in_opentelemetry_exit,
     .config_map   = config_map,
     .flags        = FLB_INPUT_NET_SERVER | FLB_IO_OPT_TLS

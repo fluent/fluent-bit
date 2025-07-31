@@ -31,6 +31,7 @@
 #define HTTP_BUFFER_CHUNK_SIZE  "512K"
 
 struct flb_opentelemetry {
+    int is_running;
     int successful_response_code;
     flb_sds_t listen;
     flb_sds_t tcp_port;
