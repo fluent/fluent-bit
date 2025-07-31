@@ -105,7 +105,7 @@ static void cb_mq_storage_metrics(mk_mq_t *queue, void *data, size_t size)
     }
 
     /* Convert msgpack to JSON */
-    out_data = flb_msgpack_raw_to_json_sds(data, size);
+    out_data = flb_msgpack_raw_to_json_sds(data, size, FLB_TRUE);
     if (!out_data) {
         return;
     }
