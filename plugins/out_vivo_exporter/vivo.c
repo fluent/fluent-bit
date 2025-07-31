@@ -27,7 +27,7 @@
 #include "vivo_http.h"
 #include "vivo_stream.h"
 
-static flb_sds_t format_logs(struct flb_event_chunk *event_chunk)
+static flb_sds_t format_logs(struct flb_event_chunk *event_chunk, struct flb_config *config)
 {
     struct flb_log_event_decoder log_decoder;
     struct flb_log_event log_event;
@@ -102,7 +102,8 @@ static flb_sds_t format_logs(struct flb_event_chunk *event_chunk)
         }
 
         /* Concatenate by using break lines */
-        out_js = flb_msgpack_raw_to_json_sds(tmp_sbuf.data, tmp_sbuf.size);
+        out_js = flb_msgpack_raw_to_json_sds(tmp_sbuf.data, tmp_sbuf.size,
+                                             config->json_escape_unicode);
         if (!out_js) {
             flb_sds_destroy(out_buf);
             msgpack_sbuffer_destroy(&tmp_sbuf);
@@ -130,14 +131,15 @@ static flb_sds_t format_logs(struct flb_event_chunk *event_chunk)
 }
 
 static int logs_event_chunk_append(struct vivo_exporter *ctx,
-                                  struct flb_event_chunk *event_chunk)
+                                   struct flb_event_chunk *event_chunk,
+                                   struct flb_config *config)
 {
     size_t len;
     flb_sds_t json;
     struct vivo_stream_entry *entry;
 
 
-    json = format_logs(event_chunk);
+    json = format_logs(event_chunk, config);
     if (!json) {
         flb_plg_error(ctx->ins, "cannot convert logs chunk to JSON");
         return -1;
@@ -159,14 +161,16 @@ static int logs_event_chunk_append(struct vivo_exporter *ctx,
 
 static int metrics_traces_event_chunk_append(struct vivo_exporter *ctx,
                                              struct vivo_stream *vs,
-                                             struct flb_event_chunk *event_chunk)
+                                             struct flb_event_chunk *event_chunk,
+                                             struct flb_config *config)
 {
     size_t len;
     flb_sds_t json;
     struct vivo_stream_entry *entry;
 
     /* Convert msgpack to readable JSON format */
-    json = flb_msgpack_raw_to_json_sds(event_chunk->data, event_chunk->size);
+    json = flb_msgpack_raw_to_json_sds(event_chunk->data, event_chunk->size,
+                                       config->json_escape_unicode);
     if (!json) {
         flb_plg_error(ctx->ins, "cannot convert metrics chunk to JSON");
         return -1;
@@ -264,14 +268,14 @@ static void cb_vivo_flush(struct flb_event_chunk *event_chunk,
 
 #ifdef FLB_HAVE_METRICS
     if (event_chunk->type == FLB_EVENT_TYPE_METRICS) {
-        ret = metrics_traces_event_chunk_append(ctx, ctx->stream_metrics, event_chunk);
+        ret = metrics_traces_event_chunk_append(ctx, ctx->stream_metrics, event_chunk, config);
     }
 #endif
     if (event_chunk->type == FLB_EVENT_TYPE_LOGS) {
-        ret = logs_event_chunk_append(ctx, event_chunk);
+        ret = logs_event_chunk_append(ctx, event_chunk, config);
     }
     else if (event_chunk->type == FLB_EVENT_TYPE_TRACES) {
-        ret = metrics_traces_event_chunk_append(ctx, ctx->stream_traces, event_chunk);
+        ret = metrics_traces_event_chunk_append(ctx, ctx->stream_traces, event_chunk, config);
     }
 
     if (ret == 0) {
