@@ -215,8 +215,8 @@ static int entity_add_key_attributes(struct flb_cloudwatch *ctx, struct cw_flush
     }
     if(stream->entity->key_attributes->name != NULL &&
        strlen(stream->entity->key_attributes->name) != 0) {
-        if (!snprintf(ts,KEY_ATTRIBUTES_MAX_LEN, ",%s%s%s",
-            "\"Name\":\"",stream->entity->key_attributes->name,"\"")) {
+        if (snprintf(ts,KEY_ATTRIBUTES_MAX_LEN, ",%s%s%s",
+            "\"Name\":\"",stream->entity->key_attributes->name,"\"") < 0) {
             goto error;
         }
         if (!try_to_write(buf->out_buf, offset, buf->out_buf_size,ts,0)) {
@@ -225,8 +225,8 @@ static int entity_add_key_attributes(struct flb_cloudwatch *ctx, struct cw_flush
     }
     if(stream->entity->key_attributes->environment != NULL &&
        strlen(stream->entity->key_attributes->environment) != 0) {
-        if (!snprintf(ts,KEY_ATTRIBUTES_MAX_LEN, ",%s%s%s",
-            "\"Environment\":\"",stream->entity->key_attributes->environment,"\"")) {
+        if (snprintf(ts,KEY_ATTRIBUTES_MAX_LEN, ",%s%s%s",
+            "\"Environment\":\"",stream->entity->key_attributes->environment,"\"") < 0) {
             goto error;
         }
         if (!try_to_write(buf->out_buf, offset, buf->out_buf_size,ts,0)) {
@@ -235,8 +235,8 @@ static int entity_add_key_attributes(struct flb_cloudwatch *ctx, struct cw_flush
     }
     if(stream->entity->key_attributes->account_id != NULL &&
        strlen(stream->entity->key_attributes->account_id) != 0) {
-        if (!snprintf(ts,KEY_ATTRIBUTES_MAX_LEN, ",%s%s%s",
-            "\"AwsAccountId\":\"",stream->entity->key_attributes->account_id,"\"")) {
+        if (snprintf(ts,KEY_ATTRIBUTES_MAX_LEN, ",%s%s%s",
+            "\"AwsAccountId\":\"",stream->entity->key_attributes->account_id,"\"") < 0) {
             goto error;
         }
         if (!try_to_write(buf->out_buf, offset, buf->out_buf_size,ts,0)) {
@@ -264,8 +264,8 @@ static int entity_add_attributes(struct flb_cloudwatch *ctx, struct cw_flush *bu
     if (stream->entity->attributes->platform_type != NULL &&
         strlen(stream->entity->attributes->platform_type) != 0) {
         if (strcmp(stream->entity->attributes->platform_type, "eks") == 0) {
-            if (!snprintf(ts,ATTRIBUTES_MAX_LEN, "%s%s%s",
-                "\"PlatformType\":\"","AWS::EKS","\"")) {
+            if (snprintf(ts,ATTRIBUTES_MAX_LEN, "%s%s%s",
+                "\"PlatformType\":\"","AWS::EKS","\"") < 0) {
                 goto error;
             }
             if (!try_to_write(buf->out_buf, offset, buf->out_buf_size,ts,0)) {
@@ -273,8 +273,8 @@ static int entity_add_attributes(struct flb_cloudwatch *ctx, struct cw_flush *bu
             }
             if(stream->entity->attributes->cluster_name != NULL &&
                strlen(stream->entity->attributes->cluster_name) != 0) {
-                if (!snprintf(ts,ATTRIBUTES_MAX_LEN, ",%s%s%s",
-                    "\"EKS.Cluster\":\"",stream->entity->attributes->cluster_name,"\"")) {
+                if (snprintf(ts,ATTRIBUTES_MAX_LEN, ",%s%s%s",
+                    "\"EKS.Cluster\":\"",stream->entity->attributes->cluster_name,"\"") < 0) {
                     goto error;
                 }
                 if (!try_to_write(buf->out_buf, offset, buf->out_buf_size,ts,0)) {
@@ -283,8 +283,8 @@ static int entity_add_attributes(struct flb_cloudwatch *ctx, struct cw_flush *bu
             }
         }
         else if (strcmp(stream->entity->attributes->platform_type, "k8s") == 0) {
-            if (!snprintf(ts,ATTRIBUTES_MAX_LEN, "%s%s%s",
-                "\"PlatformType\":\"","K8s","\"")) {
+            if (snprintf(ts,ATTRIBUTES_MAX_LEN, "%s%s%s",
+                "\"PlatformType\":\"","K8s","\"") < 0) {
                 goto error;
             }
             if (!try_to_write(buf->out_buf, offset, buf->out_buf_size,ts,0)) {
@@ -292,8 +292,8 @@ static int entity_add_attributes(struct flb_cloudwatch *ctx, struct cw_flush *bu
             }
             if(stream->entity->attributes->cluster_name != NULL &&
                strlen(stream->entity->attributes->cluster_name) != 0) {
-                if (!snprintf(ts,ATTRIBUTES_MAX_LEN, ",%s%s%s",
-                    "\"K8s.Cluster\":\"",stream->entity->attributes->cluster_name,"\"")) {
+                if (snprintf(ts,ATTRIBUTES_MAX_LEN, ",%s%s%s",
+                    "\"K8s.Cluster\":\"",stream->entity->attributes->cluster_name,"\"") < 0) {
                     goto error;
                 }
                 if (!try_to_write(buf->out_buf, offset, buf->out_buf_size,ts,0)) {
@@ -303,8 +303,8 @@ static int entity_add_attributes(struct flb_cloudwatch *ctx, struct cw_flush *bu
         }
     }
     else {
-        if (!snprintf(ts,ATTRIBUTES_MAX_LEN, "%s%s%s",
-            "\"PlatformType\":\"","Generic","\"")) {
+        if (snprintf(ts,ATTRIBUTES_MAX_LEN, "%s%s%s",
+            "\"PlatformType\":\"","Generic","\"") < 0) {
             goto error;
         }
         if (!try_to_write(buf->out_buf, offset, buf->out_buf_size,ts,0)) {
@@ -313,8 +313,8 @@ static int entity_add_attributes(struct flb_cloudwatch *ctx, struct cw_flush *bu
     }
     if(stream->entity->attributes->namespace != NULL &&
        strlen(stream->entity->attributes->namespace) != 0) {
-        if (!snprintf(ts,ATTRIBUTES_MAX_LEN, ",%s%s%s",
-            "\"K8s.Namespace\":\"",stream->entity->attributes->namespace,"\"")) {
+        if (snprintf(ts,ATTRIBUTES_MAX_LEN, ",%s%s%s",
+            "\"K8s.Namespace\":\"",stream->entity->attributes->namespace,"\"") < 0) {
             goto error;
         }
         if (!try_to_write(buf->out_buf, offset, buf->out_buf_size,ts,0)) {
@@ -323,8 +323,8 @@ static int entity_add_attributes(struct flb_cloudwatch *ctx, struct cw_flush *bu
     }
     if(stream->entity->attributes->node != NULL &&
        strlen(stream->entity->attributes->node) != 0) {
-        if (!snprintf(ts,ATTRIBUTES_MAX_LEN, ",%s%s%s",
-            "\"K8s.Node\":\"",stream->entity->attributes->node,"\"")) {
+        if (snprintf(ts,ATTRIBUTES_MAX_LEN, ",%s%s%s",
+            "\"K8s.Node\":\"",stream->entity->attributes->node,"\"") < 0) {
             goto error;
         }
         if (!try_to_write(buf->out_buf, offset, buf->out_buf_size,ts,0)) {
@@ -333,8 +333,8 @@ static int entity_add_attributes(struct flb_cloudwatch *ctx, struct cw_flush *bu
     }
     if(stream->entity->attributes->workload != NULL &&
        strlen(stream->entity->attributes->workload) != 0) {
-        if (!snprintf(ts,ATTRIBUTES_MAX_LEN, ",%s%s%s",
-            "\"K8s.Workload\":\"",stream->entity->attributes->workload,"\"")) {
+        if (snprintf(ts,ATTRIBUTES_MAX_LEN, ",%s%s%s",
+            "\"K8s.Workload\":\"",stream->entity->attributes->workload,"\"") < 0) {
             goto error;
         }
         if (!try_to_write(buf->out_buf, offset, buf->out_buf_size,ts,0)) {
@@ -343,8 +343,8 @@ static int entity_add_attributes(struct flb_cloudwatch *ctx, struct cw_flush *bu
     }
     if(stream->entity->attributes->instance_id != NULL &&
        strlen(stream->entity->attributes->instance_id) != 0) {
-        if (!snprintf(ts,ATTRIBUTES_MAX_LEN, ",%s%s%s",
-            "\"EC2.InstanceId\":\"",stream->entity->attributes->instance_id,"\"")) {
+        if (snprintf(ts,ATTRIBUTES_MAX_LEN, ",%s%s%s",
+            "\"EC2.InstanceId\":\"",stream->entity->attributes->instance_id,"\"") < 0) {
             goto error;
         }
         if (!try_to_write(buf->out_buf, offset, buf->out_buf_size,ts,0)) {
@@ -353,8 +353,8 @@ static int entity_add_attributes(struct flb_cloudwatch *ctx, struct cw_flush *bu
     }
     if(stream->entity->attributes->name_source != NULL &&
        strlen(stream->entity->attributes->name_source) != 0) {
-        if (!snprintf(ts,ATTRIBUTES_MAX_LEN, ",%s%s%s",
-            "\"AWS.ServiceNameSource\":\"",stream->entity->attributes->name_source,"\"")) {
+        if (snprintf(ts,ATTRIBUTES_MAX_LEN, ",%s%s%s",
+            "\"AWS.ServiceNameSource\":\"",stream->entity->attributes->name_source,"\"") < 0) {
             goto error;
         }
         if (!try_to_write(buf->out_buf, offset, buf->out_buf_size,ts,0)) {
@@ -457,7 +457,7 @@ static int write_event(struct flb_cloudwatch *ctx, struct cw_flush *buf,
 {
     char ts[50];
 
-    if (!snprintf(ts, 50, "%llu", event->timestamp)) {
+    if (snprintf(ts, 50, "%llu", event->timestamp) < 0) {
         goto error;
     }
 
