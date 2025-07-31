@@ -114,7 +114,7 @@ static void handle_reload_request(mk_request_t *request, struct flb_config *conf
 #endif
 
     /* Export to JSON */
-    out_buf = flb_msgpack_raw_to_json_sds(mp_sbuf.data, mp_sbuf.size);
+    out_buf = flb_msgpack_raw_to_json_sds(mp_sbuf.data, mp_sbuf.size, FLB_TRUE);
     msgpack_sbuffer_destroy(&mp_sbuf);
     if (!out_buf) {
         mk_http_status(request, 400);
@@ -148,7 +148,7 @@ static void handle_get_reload_status(mk_request_t *request, struct flb_config *c
     msgpack_pack_int64(&mp_pck, config->hot_reloaded_count);
 
     /* Export to JSON */
-    out_buf = flb_msgpack_raw_to_json_sds(mp_sbuf.data, mp_sbuf.size);
+    out_buf = flb_msgpack_raw_to_json_sds(mp_sbuf.data, mp_sbuf.size, FLB_TRUE);
     msgpack_sbuffer_destroy(&mp_sbuf);
     if (!out_buf) {
         mk_http_status(request, 400);
