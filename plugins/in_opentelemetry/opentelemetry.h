@@ -57,6 +57,7 @@ struct flb_opentelemetry {
     struct mk_list connections;        /* linked list of connections */
 
     struct mk_server *server;
+    int is_paused;                     /* Plugin is paused */
 };
 
 
