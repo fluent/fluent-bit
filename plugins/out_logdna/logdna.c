@@ -131,7 +131,8 @@ static int record_append_primary_keys(struct flb_logdna *ctx,
 
 static flb_sds_t logdna_compose_payload(struct flb_logdna *ctx,
                                         const void *data, size_t bytes,
-                                        const char *tag, int tag_len)
+                                        const char *tag, int tag_len,
+                                        struct flb_config *config)
 {
     int ret;
     int len;
@@ -192,7 +193,7 @@ static flb_sds_t logdna_compose_payload(struct flb_logdna *ctx,
         msgpack_pack_str(&mp_pck, 4);
         msgpack_pack_str_body(&mp_pck, "line", 4);
 
-        line_json = flb_msgpack_to_json_str(1024, log_event.body);
+        line_json = flb_msgpack_to_json_str(1024, log_event.body, config->json_escape_unicode);
         len = strlen(line_json);
         msgpack_pack_str(&mp_pck, len);
         msgpack_pack_str_body(&mp_pck, line_json, len);
@@ -204,7 +205,8 @@ static flb_sds_t logdna_compose_payload(struct flb_logdna *ctx,
 
     flb_log_event_decoder_destroy(&log_decoder);
 
-    json = flb_msgpack_raw_to_json_sds(mp_sbuf.data, mp_sbuf.size);
+    json = flb_msgpack_raw_to_json_sds(mp_sbuf.data, mp_sbuf.size,
+                                       config->json_escape_unicode);
     msgpack_sbuffer_destroy(&mp_sbuf);
 
     return json;
@@ -382,7 +384,8 @@ static void cb_logdna_flush(struct flb_event_chunk *event_chunk,
                                      event_chunk->data,
                                      event_chunk->size,
                                      event_chunk->tag,
-                                     flb_sds_len(event_chunk->tag));
+                                     flb_sds_len(event_chunk->tag),
+                                     config);
     if (!payload) {
         flb_plg_error(ctx->ins, "cannot compose request payload");
         FLB_OUTPUT_RETURN(FLB_RETRY);
