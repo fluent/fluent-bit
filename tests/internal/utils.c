@@ -203,13 +203,19 @@ void test_url_split()
 }
 
 /* test case loop for flb_utils_write_str */
-static void write_str_test_cases_w_buf_size(struct write_str_case *cases, int buf_size);
+static void write_str_test_cases_w_buf_size(struct write_str_case *cases, int buf_size,
+                                            int escape_unicode);
 static void write_str_test_cases(struct write_str_case *cases) {
-    write_str_test_cases_w_buf_size(cases, 100);
+    write_str_test_cases_w_buf_size(cases, 100, FLB_TRUE);
+}
+
+static void write_raw_str_test_cases(struct write_str_case *cases) {
+    write_str_test_cases_w_buf_size(cases, 100, FLB_FALSE);
 }
 
 /* test case loop for flb_utils_write_str */
-static void write_str_test_cases_w_buf_size(struct write_str_case *cases, int buf_size)
+static void write_str_test_cases_w_buf_size(struct write_str_case *cases, int buf_size,
+                                            int escape_unicode)
 {
     char *buf = flb_calloc(buf_size + 1, sizeof(char));
     int size = buf_size + 1;
@@ -220,7 +226,8 @@ static void write_str_test_cases_w_buf_size(struct write_str_case *cases, int bu
     while (!(tcase->input == 0 && tcase->output == 0)) {
         memset(buf, 0, size);
         off = 0;
-        ret = flb_utils_write_str(buf, &off, buf_size, tcase->input, tcase->input_len, FLB_TRUE);
+        ret = flb_utils_write_str(buf, &off, buf_size, tcase->input, tcase->input_len,
+                                  escape_unicode);
 
         if(!TEST_CHECK(ret == tcase->ret)) {
             TEST_MSG("Input string: %s", tcase->input);
@@ -388,6 +395,46 @@ void test_write_str_special_bytes()
     write_str_test_cases(cases);
 }
 
+void test_write_raw_str_special_bytes()
+{
+    struct write_str_case cases[] = {
+        /*
+         * Input: "你好世界" (12 bytes)
+         * Output: "你好世界" (raw)
+         */
+        {
+            "\xE4\xBD\xA0\xE5\xA5\xBD\xE4\xB8\x96\xE7\x95\x8C", 12,
+            "\xE4\xBD\xA0\xE5\xA5\xBD\xE4\xB8\x96\xE7\x95\x8C",
+            FLB_TRUE
+        },
+        /*
+         * Input: "你好我来自一个汉字文化影响的地方" (48 bytes)
+         * Output: "你好我来自一个汉字文化影响的地方" (raw)
+         */
+        {
+            "\xE4\xBD\xA0\xE5\xA5\xBD\xE6\x88\x91\xE6\x9D\xA5\xE8\x87\xAA" \
+            "\xE4\xB8\x80\xE4\xB8\xAA\xE6\xB1\x89\xE5\xAD\x97\xE6\x96\x87" \
+            "\xE5\x8C\x96\xE5\xBD\xB1\xE5\x93\x8D\xE7\x9A\x84\xE5\x9C\xB0" \
+            "\xE6\x96\xB9",
+            48,
+            "\xE4\xBD\xA0\xE5\xA5\xBD\xE6\x88\x91\xE6\x9D\xA5\xE8\x87\xAA" \
+            "\xE4\xB8\x80\xE4\xB8\xAA\xE6\xB1\x89\xE5\xAD\x97\xE6\x96\x87" \
+            "\xE5\x8C\x96\xE5\xBD\xB1\xE5\x93\x8D\xE7\x9A\x84\xE5\x9C\xB0" \
+            "\xE6\x96\xB9",
+            FLB_TRUE
+        },
+        /* Test string with a quote */
+        {
+            "\"hello\"", 7,
+            "\\\"hello\\\"",
+            FLB_TRUE
+        },
+        { 0 }
+    };
+
+    write_raw_str_test_cases(cases);
+}
+
 void test_write_str_invalid_leading_byte_case_2()
 {
 
@@ -472,7 +519,7 @@ void test_write_str_buffer_overrun()
         },
         { 0 }
     };
-    write_str_test_cases_w_buf_size(cases, 5);
+    write_str_test_cases_w_buf_size(cases, 5, FLB_TRUE);
 }
 
 struct proxy_url_check {
@@ -810,6 +857,7 @@ TEST_LIST = {
     { "url_split_sds", test_url_split_sds },
     { "write_str", test_write_str },
     { "write_str_special_bytes", test_write_str_special_bytes },
+    { "write_raw_str_special_bytes", test_write_raw_str_special_bytes },
     { "test_write_str_invalid_trailing_bytes", test_write_str_invalid_trailing_bytes },
     { "test_write_str_invalid_leading_byte", test_write_str_invalid_leading_byte },
     { "test_write_str_edge_cases", test_write_str_edge_cases },
