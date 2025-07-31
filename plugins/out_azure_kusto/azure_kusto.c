@@ -979,7 +979,8 @@ static int cb_azure_kusto_init(struct flb_output_instance *ins, struct flb_confi
      */
 static int azure_kusto_format(struct flb_azure_kusto *ctx, const char *tag, int tag_len,
                               const void *data, size_t bytes, void **out_data,
-                              size_t *out_size)
+                              size_t *out_size,
+                              struct flb_config *config)
 {
     int index;
     int records = 0;
@@ -1086,7 +1087,8 @@ static int azure_kusto_format(struct flb_azure_kusto *ctx, const char *tag, int 
             msgpack_pack_str_body(&mp_pck, "log_attribute_missing", 20);
         }
 
-        flb_sds_t json_record = flb_msgpack_raw_to_json_sds(mp_sbuf.data, mp_sbuf.size);
+        flb_sds_t json_record = flb_msgpack_raw_to_json_sds(mp_sbuf.data, mp_sbuf.size,
+                                                            config->json_escape_unicode);
         if (!json_record) {
             flb_plg_error(ctx->ins, "error converting msgpack to JSON");
             flb_sds_destroy(out_buf);
@@ -1256,7 +1258,8 @@ static void cb_azure_kusto_flush(struct flb_event_chunk *event_chunk,
 
         /* Reformat msgpack to JSON payload */
         ret = azure_kusto_format(ctx, tag_name, tag_name_len, event_chunk->data,
-                                 event_chunk->size, (void **)&json, &json_size);
+                                 event_chunk->size, (void **)&json, &json_size,
+                                 config);
         if (ret != 0) {
             flb_plg_error(ctx->ins, "cannot reformat data into json");
             ret = FLB_RETRY;
@@ -1367,7 +1370,8 @@ static void cb_azure_kusto_flush(struct flb_event_chunk *event_chunk,
 
         /* Reformat msgpack data to JSON payload */
         ret = azure_kusto_format(ctx, event_chunk->tag, tag_len, event_chunk->data,
-                                 event_chunk->size, (void **)&json, &json_size);
+                                 event_chunk->size, (void **)&json, &json_size,
+                                 config);
         if (ret != 0) {
             flb_plg_error(ctx->ins, "cannot reformat data into json");
             ret = FLB_RETRY;
