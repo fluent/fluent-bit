@@ -91,15 +91,17 @@ int flb_pack_json_valid(const char *json, size_t len);
 
 flb_sds_t flb_pack_msgpack_to_json_format(const char *data, uint64_t bytes,
                                           int json_format, int date_format,
-                                          flb_sds_t date_key);
+                                          flb_sds_t date_key, int escape_unicode);
 int flb_pack_to_json_format_type(const char *str);
 int flb_pack_to_json_date_type(const char *str);
 
 void flb_pack_print(const char *data, size_t bytes);
 int flb_msgpack_to_json(char *json_str, size_t str_len,
-                        const msgpack_object *obj);
-char* flb_msgpack_to_json_str(size_t size, const msgpack_object *obj);
-flb_sds_t flb_msgpack_raw_to_json_sds(const void *in_buf, size_t in_size);
+                        const msgpack_object *obj,
+                        int escape_unicode);
+char* flb_msgpack_to_json_str(size_t size, const msgpack_object *obj,
+                              int escape_unicode);
+flb_sds_t flb_msgpack_raw_to_json_sds(const void *in_buf, size_t in_size, int escape_unicode);
 
 int flb_pack_time_now(msgpack_packer *pck);
 int flb_msgpack_expand_map(char *map_data, size_t map_size,
