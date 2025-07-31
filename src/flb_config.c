@@ -145,8 +145,8 @@ struct flb_service_config service_configs[] = {
     {FLB_CONF_STORAGE_BL_MEM_LIMIT,
      FLB_CONF_TYPE_STR,
      offsetof(struct flb_config, storage_bl_mem_limit)},
-    {FLB_CONF_STORAGE_BL_FLUSH_ON_SHUTDOWN,                  
-     FLB_CONF_TYPE_BOOL,                                       
+    {FLB_CONF_STORAGE_BL_FLUSH_ON_SHUTDOWN,
+     FLB_CONF_TYPE_BOOL,
      offsetof(struct flb_config, storage_bl_flush_on_shutdown)},
     {FLB_CONF_STORAGE_MAX_CHUNKS_UP,
      FLB_CONF_TYPE_INT,
@@ -176,6 +176,11 @@ struct flb_service_config service_configs[] = {
     {FLB_CONF_STR_SCHED_BASE,
      FLB_CONF_TYPE_INT,
      offsetof(struct flb_config, sched_base)},
+
+    /* Escape UNicode inside of JSON */
+    {FLB_CONF_UNICODE_STR_JSON_ESCAPE,
+     FLB_CONF_TYPE_INT,
+     offsetof(struct flb_config, json_escape_unicode)},
 
 #ifdef FLB_HAVE_STREAM_PROCESSOR
     {FLB_CONF_STR_STREAMS_FILE,
@@ -305,6 +310,7 @@ struct flb_config *flb_config_init()
     config->storage_bl_flush_on_shutdown = FLB_FALSE;
     config->sched_cap  = FLB_SCHED_CAP;
     config->sched_base = FLB_SCHED_BASE;
+    config->json_escape_unicode = FLB_TRUE;
 
     /* reload */
     config->ensure_thread_safety_on_hot_reloading = FLB_TRUE;

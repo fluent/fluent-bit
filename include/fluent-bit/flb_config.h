@@ -321,6 +321,8 @@ struct flb_config {
     struct flb_task_map *task_map;
     size_t task_map_size;
 
+    int json_escape_unicode;
+
     int dry_run;
 };
 
@@ -415,5 +417,8 @@ enum conf_type {
 /* Scheduler */
 #define FLB_CONF_STR_SCHED_CAP        "scheduler.cap"
 #define FLB_CONF_STR_SCHED_BASE       "scheduler.base"
+
+/* json escape */
+#define FLB_CONF_UNICODE_STR_JSON_ESCAPE "json.escape_unicode"
 
 #endif
