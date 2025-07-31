@@ -376,7 +376,8 @@ static void help_format_json(void *help_buf, size_t help_size)
 {
     flb_sds_t json;
 
-    json = flb_msgpack_raw_to_json_sds(help_buf, help_size);
+    /* Keep backward compatibility to format help */
+    json = flb_msgpack_raw_to_json_sds(help_buf, help_size, FLB_TRUE);
     printf("%s\n", json);
     flb_sds_destroy(json);
 }
