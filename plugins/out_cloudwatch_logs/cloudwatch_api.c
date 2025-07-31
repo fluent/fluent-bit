@@ -324,7 +324,7 @@ static int entity_add_attributes(struct flb_cloudwatch *ctx, struct cw_flush *bu
     if(stream->entity->attributes->node != NULL &&
        strlen(stream->entity->attributes->node) != 0) {
         if (!snprintf(ts,ATTRIBUTES_MAX_LEN, ",%s%s%s",
-            "\"K8s.Node\":\"",buf->current_stream->entity->attributes->node,"\"")) {
+            "\"K8s.Node\":\"",stream->entity->attributes->node,"\"")) {
             goto error;
         }
         if (!try_to_write(buf->out_buf, offset, buf->out_buf_size,ts,0)) {
@@ -334,7 +334,7 @@ static int entity_add_attributes(struct flb_cloudwatch *ctx, struct cw_flush *bu
     if(stream->entity->attributes->workload != NULL &&
        strlen(stream->entity->attributes->workload) != 0) {
         if (!snprintf(ts,ATTRIBUTES_MAX_LEN, ",%s%s%s",
-            "\"K8s.Workload\":\"",buf->current_stream->entity->attributes->workload,"\"")) {
+            "\"K8s.Workload\":\"",stream->entity->attributes->workload,"\"")) {
             goto error;
         }
         if (!try_to_write(buf->out_buf, offset, buf->out_buf_size,ts,0)) {
@@ -344,7 +344,7 @@ static int entity_add_attributes(struct flb_cloudwatch *ctx, struct cw_flush *bu
     if(stream->entity->attributes->instance_id != NULL &&
        strlen(stream->entity->attributes->instance_id) != 0) {
         if (!snprintf(ts,ATTRIBUTES_MAX_LEN, ",%s%s%s",
-            "\"EC2.InstanceId\":\"",buf->current_stream->entity->attributes->instance_id,"\"")) {
+            "\"EC2.InstanceId\":\"",stream->entity->attributes->instance_id,"\"")) {
             goto error;
         }
         if (!try_to_write(buf->out_buf, offset, buf->out_buf_size,ts,0)) {
@@ -354,7 +354,7 @@ static int entity_add_attributes(struct flb_cloudwatch *ctx, struct cw_flush *bu
     if(stream->entity->attributes->name_source != NULL &&
        strlen(stream->entity->attributes->name_source) != 0) {
         if (!snprintf(ts,ATTRIBUTES_MAX_LEN, ",%s%s%s",
-            "\"AWS.ServiceNameSource\":\"",buf->current_stream->entity->attributes->name_source,"\"")) {
+            "\"AWS.ServiceNameSource\":\"",stream->entity->attributes->name_source,"\"")) {
             goto error;
         }
         if (!try_to_write(buf->out_buf, offset, buf->out_buf_size,ts,0)) {
