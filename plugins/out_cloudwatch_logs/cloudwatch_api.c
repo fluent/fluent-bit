@@ -1221,12 +1221,17 @@ void update_or_create_entity(struct flb_cloudwatch *ctx, struct log_stream *stre
 
             stream->entity->key_attributes = flb_malloc(sizeof(entity_key_attributes));
             if (stream->entity->key_attributes == NULL) {
+                flb_free(stream->entity);
+                stream->entity = NULL;
                 return;
             }
             memset(stream->entity->key_attributes, 0, sizeof(entity_key_attributes));
 
             stream->entity->attributes = flb_malloc(sizeof(entity_attributes));
             if (stream->entity->attributes == NULL) {
+                flb_free(stream->entity->key_attributes);
+                flb_free(stream->entity);
+                stream->entity = NULL;
                 return;
             }
             memset(stream->entity->attributes, 0, sizeof(entity_attributes));
