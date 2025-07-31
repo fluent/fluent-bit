@@ -187,8 +187,8 @@ static struct test_output *parse_test_output(void *chunk, size_t size)
         if (record_type == FLB_LOG_EVENT_GROUP_START) {
             /* Group header */
             if (group_idx < output->group_count) {
-                output->groups[group_idx].metadata = flb_msgpack_to_json_str(1024, event.metadata);
-                output->groups[group_idx].body = flb_msgpack_to_json_str(1024, event.body);
+                output->groups[group_idx].metadata = flb_msgpack_to_json_str(1024, event.metadata, FLB_TRUE);
+                output->groups[group_idx].body = flb_msgpack_to_json_str(1024, event.body, FLB_TRUE);
 
                 /* Allocate records for this group */
                 if (output->groups[group_idx].record_count > 0) {
@@ -209,8 +209,8 @@ static struct test_output *parse_test_output(void *chunk, size_t size)
             /* Log record within a group */
             if (group_idx < output->group_count &&
                 record_idx < output->groups[group_idx].record_count) {
-                output->groups[group_idx].records[record_idx].metadata = flb_msgpack_to_json_str(1024, event.metadata);
-                output->groups[group_idx].records[record_idx].body = flb_msgpack_to_json_str(1024, event.body);
+                output->groups[group_idx].records[record_idx].metadata = flb_msgpack_to_json_str(1024, event.metadata, FLB_TRUE);
+                output->groups[group_idx].records[record_idx].body = flb_msgpack_to_json_str(1024, event.body, FLB_TRUE);
                 record_idx++;
             }
         }
@@ -308,7 +308,7 @@ static int validate_extended_output(struct test_output *actual, msgpack_object *
         /* Validate group metadata */
         ret = flb_otel_utils_find_map_entry_by_key(&group_obj->via.map, "metadata", 0, FLB_TRUE);
         if (ret >= 0) {
-            expected_meta = flb_msgpack_to_json_str(256, &group_obj->via.map.ptr[ret].val);
+            expected_meta = flb_msgpack_to_json_str(256, &group_obj->via.map.ptr[ret].val, FLB_TRUE);
             if (strcmp(expected_meta, actual->groups[i].metadata) != 0) {
                 printf("Group %zu metadata mismatch:\nExpected: %s\nGot: %s\n",
                        i, expected_meta, actual->groups[i].metadata);
@@ -321,7 +321,7 @@ static int validate_extended_output(struct test_output *actual, msgpack_object *
         /* Validate group body */
         ret = flb_otel_utils_find_map_entry_by_key(&group_obj->via.map, "body", 0, FLB_TRUE);
         if (ret >= 0) {
-            expected_body = flb_msgpack_to_json_str(256, &group_obj->via.map.ptr[ret].val);
+            expected_body = flb_msgpack_to_json_str(256, &group_obj->via.map.ptr[ret].val, FLB_TRUE);
             if (strcmp(expected_body, actual->groups[i].body) != 0) {
                 printf("Group %zu body mismatch:\nExpected: %s\nGot: %s\n",
                        i, expected_body, actual->groups[i].body);
@@ -359,7 +359,7 @@ static int validate_extended_output(struct test_output *actual, msgpack_object *
                 /* Validate record metadata */
                 ret = flb_otel_utils_find_map_entry_by_key(&record_obj->via.map, "metadata", 0, FLB_TRUE);
                 if (ret >= 0) {
-                    expected_meta = flb_msgpack_to_json_str(256, &record_obj->via.map.ptr[ret].val);
+                    expected_meta = flb_msgpack_to_json_str(256, &record_obj->via.map.ptr[ret].val, FLB_TRUE);
                     if (strcmp(expected_meta, actual->groups[i].records[j].metadata) != 0) {
                         printf("Group %zu record %zu metadata mismatch:\nExpected: %s\nGot: %s\n",
                                i, j, expected_meta, actual->groups[i].records[j].metadata);
@@ -372,7 +372,7 @@ static int validate_extended_output(struct test_output *actual, msgpack_object *
                 /* Validate record body */
                 ret = flb_otel_utils_find_map_entry_by_key(&record_obj->via.map, "body", 0, FLB_TRUE);
                 if (ret >= 0) {
-                    expected_body = flb_msgpack_to_json_str(256, &record_obj->via.map.ptr[ret].val);
+                    expected_body = flb_msgpack_to_json_str(256, &record_obj->via.map.ptr[ret].val, FLB_TRUE);
                     if (strcmp(expected_body, actual->groups[i].records[j].body) != 0) {
                         printf("Group %zu record %zu body mismatch:\nExpected: %s\nGot: %s\n",
                                i, j, expected_body, actual->groups[i].records[j].body);
@@ -568,7 +568,7 @@ void test_opentelemetry_cases()
 
         ret = flb_otel_utils_find_map_entry_by_key(&case_obj->via.map, "input", 0, FLB_TRUE);
         TEST_CHECK(ret >= 0);
-        input_json = flb_msgpack_to_json_str(1024, &case_obj->via.map.ptr[ret].val);
+        input_json = flb_msgpack_to_json_str(1024, &case_obj->via.map.ptr[ret].val, FLB_TRUE);
         TEST_CHECK(input_json != NULL);
 
         ret = flb_log_event_encoder_init(&enc, FLB_LOG_EVENT_FORMAT_FLUENT_BIT_V2);
@@ -602,22 +602,22 @@ void test_opentelemetry_cases()
             if (empty_payload == FLB_FALSE && has_groups == FLB_FALSE) {
                 ret = flb_otel_utils_find_map_entry_by_key(&expected->via.map, "group_metadata", 0, FLB_TRUE);
                 TEST_CHECK(ret >= 0);
-                expect_group_meta = flb_msgpack_to_json_str(256, &expected->via.map.ptr[ret].val);
+                expect_group_meta = flb_msgpack_to_json_str(256, &expected->via.map.ptr[ret].val, FLB_TRUE);
                 TEST_CHECK(expect_group_meta != NULL);
 
                 ret = flb_otel_utils_find_map_entry_by_key(&expected->via.map, "group_body", 0, FLB_TRUE);
                 TEST_CHECK(ret >= 0);
-                expect_group_body = flb_msgpack_to_json_str(256, &expected->via.map.ptr[ret].val);
+                expect_group_body = flb_msgpack_to_json_str(256, &expected->via.map.ptr[ret].val, FLB_TRUE);
                 TEST_CHECK(expect_group_body != NULL);
 
                 ret = flb_otel_utils_find_map_entry_by_key(&expected->via.map, "log_metadata", 0, FLB_TRUE);
                 TEST_CHECK(ret >= 0);
-                expect_log_meta = flb_msgpack_to_json_str(256, &expected->via.map.ptr[ret].val);
+                expect_log_meta = flb_msgpack_to_json_str(256, &expected->via.map.ptr[ret].val, FLB_TRUE);
                 TEST_CHECK(expect_log_meta != NULL);
 
                 ret = flb_otel_utils_find_map_entry_by_key(&expected->via.map, "log_body", 0, FLB_TRUE);
                 TEST_CHECK(ret >= 0);
-                expect_log_body = flb_msgpack_to_json_str(256, &expected->via.map.ptr[ret].val);
+                expect_log_body = flb_msgpack_to_json_str(256, &expected->via.map.ptr[ret].val, FLB_TRUE);
                 TEST_CHECK(expect_log_body != NULL);
             }
 
