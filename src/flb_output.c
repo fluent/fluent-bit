@@ -42,6 +42,11 @@
 
 FLB_TLS_DEFINE(struct flb_out_flush_params, out_flush_params);
 
+/* Histogram buckets for output latency in seconds */
+static const double output_latency_buckets[] = {
+    0.5, 1.0, 1.5, 2.5, 5.0, 10.0, 20.0, 30.0
+};
+
 struct flb_config_map output_global_properties[] = {
     {
         FLB_CONFIG_MAP_STR, "match", NULL,
@@ -1179,6 +1184,7 @@ int flb_output_init_all(struct flb_config *config)
     struct flb_output_instance *ins;
     struct flb_output_plugin *p;
     uint64_t ts;
+    struct cmt_histogram_buckets *buckets;
 
     /* Retrieve the plugin reference */
     mk_list_foreach_safe(head, tmp, &config->outputs) {
@@ -1319,6 +1325,22 @@ int flb_output_init_all(struct flb_config *config)
                       ts,
                       100.0,
                       1, (char *[]) {name});
+
+        /* fluentbit_output_latency_seconds */
+        buckets = cmt_histogram_buckets_create_size((double *) output_latency_buckets,
+                                                    sizeof(output_latency_buckets) / sizeof(double));
+        if (!buckets) {
+            flb_error("could not create latency histogram buckets for %s", name);
+            return -1;
+        }
+
+        ins->cmt_latency = cmt_histogram_create(ins->cmt,
+                                                "fluentbit",
+                                                "output",
+                                                "latency_seconds",
+                                                "End-to-end latency in seconds",
+                                                buckets,
+                                                2, (char *[]) {"input", "output"});
 
         /* old API */
         ins->metrics = flb_metrics_create(name);
