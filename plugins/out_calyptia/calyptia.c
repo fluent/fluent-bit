@@ -311,7 +311,7 @@ static flb_sds_t get_agent_metadata(struct flb_calyptia *ctx)
     flb_mp_map_header_end(&mh);
 
     /* convert to json */
-    meta = flb_msgpack_raw_to_json_sds(mp_sbuf.data, mp_sbuf.size);
+    meta = flb_msgpack_raw_to_json_sds(mp_sbuf.data, mp_sbuf.size, FLB_TRUE); /* could be ASCII */
     msgpack_sbuffer_destroy(&mp_sbuf);
 
     return meta;
@@ -532,7 +532,7 @@ static int store_session_get(struct flb_calyptia *ctx,
     }
 
     /* decode */
-    json = flb_msgpack_raw_to_json_sds(buf, size);
+    json = flb_msgpack_raw_to_json_sds(buf, size, FLB_TRUE); /* TODO: could be ASCII? */
     flb_free(buf);
     if (!json) {
         return -1;
@@ -1029,7 +1029,8 @@ static void cb_calyptia_flush(struct flb_event_chunk *event_chunk,
                                             event_chunk->size,
                                             FLB_PACK_JSON_FORMAT_STREAM,
                                             FLB_PACK_JSON_DATE_DOUBLE,
-                                            NULL);
+                                            NULL,
+                                            FLB_TRUE); /* Trace is ASCII */
         if (json == NULL) {
             flb_upstream_conn_release(u_conn);
             FLB_OUTPUT_RETURN(FLB_RETRY);
