@@ -54,7 +54,8 @@ static int cb_azure_logs_ingestion_init(struct flb_output_instance *ins,
     allocates sds string */
 static int az_li_format(const void *in_buf, size_t in_bytes,
                         char **out_buf, size_t *out_size,
-                        struct flb_az_li *ctx)
+                        struct flb_az_li *ctx,
+                        struct flb_config *config)
 {
     int i;
     int array_size = 0;
@@ -141,7 +142,8 @@ static int az_li_format(const void *in_buf, size_t in_bytes,
         msgpack_sbuffer_destroy(&tmp_sbuf);
     }
 
-    record = flb_msgpack_raw_to_json_sds(mp_sbuf.data, mp_sbuf.size);
+    record = flb_msgpack_raw_to_json_sds(mp_sbuf.data, mp_sbuf.size,
+                                         config->json_escape_unicode);
     if (!record) {
         flb_errno();
         msgpack_sbuffer_destroy(&mp_sbuf);
@@ -266,7 +268,8 @@ static void cb_azure_logs_ingestion_flush(struct flb_event_chunk *event_chunk,
 
     /* Convert binary logs into a JSON payload */
     ret = az_li_format(event_chunk->data, event_chunk->size,
-                       &json_payload, &json_payload_size, ctx);
+                       &json_payload, &json_payload_size, ctx,
+                       config);
     if (ret == -1) {
         flb_upstream_conn_release(u_conn);
         FLB_OUTPUT_RETURN(FLB_ERROR);
