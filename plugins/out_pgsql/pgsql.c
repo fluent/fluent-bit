@@ -271,7 +271,8 @@ static void cb_pgsql_flush(struct flb_event_chunk *event_chunk,
                                            event_chunk->size,
                                            FLB_PACK_JSON_FORMAT_JSON,
                                            FLB_PACK_JSON_DATE_DOUBLE,
-                                           ctx->timestamp_key);
+                                           ctx->timestamp_key,
+                                           config->json_escape_unicode);
     if (json == NULL) {
         flb_errno();
         flb_plg_error(ctx->ins,
