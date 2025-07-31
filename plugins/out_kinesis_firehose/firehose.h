@@ -29,6 +29,8 @@
 
 #define DEFAULT_TIME_KEY_FORMAT "%Y-%m-%dT%H:%M:%S"
 
+#define FLB_KINESIS_DEFAULT_HTTPS_PORT    443
+
 /* buffers used for each flush */
 struct flush {
     /* temporary buffer for storing the serialized event messages */
@@ -87,6 +89,7 @@ struct flb_firehose {
     const char *log_key;
     const char *external_id;
     char *sts_endpoint;
+    uint16_t port;
     char *profile;
     int custom_endpoint;
     int retry_requests;
