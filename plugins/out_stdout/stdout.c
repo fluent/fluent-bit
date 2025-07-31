@@ -257,7 +257,8 @@ static void cb_stdout_flush(struct flb_event_chunk *event_chunk,
                                                event_chunk->size,
                                                ctx->out_format,
                                                ctx->json_date_format,
-                                               ctx->date_key);
+                                               ctx->date_key,
+                                               config->json_escape_unicode);
         write(STDOUT_FILENO, json, flb_sds_len(json));
         flb_sds_destroy(json);
 
