@@ -328,11 +328,11 @@ static int template_output(FILE *fp, struct flb_time *tm, msgpack_object *obj,
 }
 
 
-static int plain_output(FILE *fp, msgpack_object *obj, size_t alloc_size)
+static int plain_output(FILE *fp, msgpack_object *obj, size_t alloc_size, int escape_unicode)
 {
     char *buf;
 
-    buf = flb_msgpack_to_json_str(alloc_size, obj);
+    buf = flb_msgpack_to_json_str(alloc_size, obj, escape_unicode);
     if (buf) {
         fprintf(fp, "%s" NEWLINE,
                 buf);
@@ -616,7 +616,8 @@ static void cb_file_flush(struct flb_event_chunk *event_chunk,
 
         switch (ctx->format){
         case FLB_OUT_FILE_FMT_JSON:
-            buf = flb_msgpack_to_json_str(alloc_size, log_event.body);
+            buf = flb_msgpack_to_json_str(alloc_size, log_event.body,
+                                          config->json_escape_unicode);
             if (buf) {
                 fprintf(fp, "%s: [%"PRIu64".%09lu, %s]" NEWLINE,
                         event_chunk->tag,
@@ -648,7 +649,7 @@ static void cb_file_flush(struct flb_event_chunk *event_chunk,
                         log_event.body, ctx);
             break;
         case FLB_OUT_FILE_FMT_PLAIN:
-            plain_output(fp, log_event.body, alloc_size);
+            plain_output(fp, log_event.body, alloc_size, config->json_escape_unicode);
 
             break;
         case FLB_OUT_FILE_FMT_TEMPLATE:
