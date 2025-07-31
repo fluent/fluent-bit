@@ -32,7 +32,7 @@ static void cb_check_cfl_variant_properties(void *ctx, int ffd,
     char *result = NULL;
 
     /* Convert from msgpack to JSON */
-    output = flb_msgpack_raw_to_json_sds(res_data, res_size);
+    output = flb_msgpack_raw_to_json_sds(res_data, res_size, FLB_TRUE);
     TEST_CHECK(output != NULL);
 
     result = strstr(output, "\"MESSAGE\":\"test native message with multiple values\"");
