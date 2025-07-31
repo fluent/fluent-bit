@@ -220,7 +220,7 @@ static void write_str_test_cases_w_buf_size(struct write_str_case *cases, int bu
     while (!(tcase->input == 0 && tcase->output == 0)) {
         memset(buf, 0, size);
         off = 0;
-        ret = flb_utils_write_str(buf, &off, buf_size, tcase->input, tcase->input_len);
+        ret = flb_utils_write_str(buf, &off, buf_size, tcase->input, tcase->input_len, FLB_TRUE);
 
         if(!TEST_CHECK(ret == tcase->ret)) {
             TEST_MSG("Input string: %s", tcase->input);
@@ -262,30 +262,30 @@ void test_write_str()
     char jp_expected_output[] = "\\u3042";
 
     off = 0;
-    ret = flb_utils_write_str(buf, &off, size, "a", 1);
+    ret = flb_utils_write_str(buf, &off, size, "a", 1, FLB_TRUE);
     TEST_CHECK(ret == FLB_TRUE);
     TEST_CHECK(memcmp(buf, "a", off) == 0);
 
     off = 0;
-    ret = flb_utils_write_str(buf, &off, size, "\n", 1);
+    ret = flb_utils_write_str(buf, &off, size, "\n", 1, FLB_TRUE);
     TEST_CHECK(ret == FLB_TRUE);
     TEST_CHECK(memcmp(buf, "\\n", off) == 0);
 
     off = 0;
-    ret = flb_utils_write_str(buf, &off, size, "\xe3\x81\x82", 3);
+    ret = flb_utils_write_str(buf, &off, size, "\xe3\x81\x82", 3, FLB_TRUE);
     TEST_CHECK(ret == FLB_TRUE);
     TEST_CHECK(memcmp(buf, jp_expected_output, off) == 0);
 
     /* Truncated bytes: 'buf' should not be touched and off == 0 */
     off = 0;
-    ret = flb_utils_write_str(buf, &off, size, "\xe3\x81\x82\xe3", 1);
+    ret = flb_utils_write_str(buf, &off, size, "\xe3\x81\x82\xe3", 1, FLB_TRUE);
     TEST_CHECK(ret == FLB_TRUE);
     TEST_CHECK(off == 0);
     TEST_CHECK(memcmp(buf, jp_expected_output, off) == 0);
 
     /* Error: buffer too small */
     off = 0;
-    ret = flb_utils_write_str(buf, &off, size, "aaaaaaaaaaa", 11);
+    ret = flb_utils_write_str(buf, &off, size, "aaaaaaaaaaa", 11, FLB_TRUE);
     TEST_CHECK(ret == FLB_FALSE);
 }
 
