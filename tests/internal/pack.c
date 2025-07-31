@@ -283,7 +283,7 @@ void test_json_dup_keys()
     out_json = flb_pack_msgpack_to_json_format(out_buf, out_size,
                                                FLB_PACK_JSON_FORMAT_LINES,
                                                FLB_PACK_JSON_DATE_EPOCH,
-                                               d);
+                                               d, FLB_TRUE);
     TEST_CHECK(out_json != NULL);
 
     TEST_CHECK(strncmp(out_json, data_out, flb_sds_len(out_json)) == 0);
@@ -497,7 +497,7 @@ void test_utf8_to_json()
 
         json_size = strlen(file_json);
 
-        out_buf = flb_msgpack_raw_to_json_sds(file_msgp, msgp_size);
+        out_buf = flb_msgpack_raw_to_json_sds(file_msgp, msgp_size, FLB_TRUE);
         TEST_CHECK(out_buf != NULL);
         out_size = flb_sds_len(out_buf);
 
@@ -718,7 +718,7 @@ void test_json_pack_bug1278()
         msgpack_pack_str_body(&mp_pck, p_in, len);
 
         /* Pack raw string as JSON */
-        json = flb_msgpack_raw_to_json_sds(mp_sbuf.data, mp_sbuf.size);
+        json = flb_msgpack_raw_to_json_sds(mp_sbuf.data, mp_sbuf.size, FLB_TRUE);
 
         /* Compare expected JSON output */
         ret = strcmp(p_out, json);
@@ -799,7 +799,7 @@ void test_json_pack_nan()
     msgpack_sbuffer_destroy(&mp_sbuf);
 
     // convert msgpack to json
-    ret = flb_msgpack_to_json(&json_str[0], sizeof(json_str), &obj);
+    ret = flb_msgpack_to_json(&json_str[0], sizeof(json_str), &obj, FLB_TRUE);
     TEST_CHECK(ret >= 0);
 
     p = strstr(&json_str[0], "nan");
@@ -810,7 +810,7 @@ void test_json_pack_nan()
     // convert. nan -> null
     memset(&json_str[0], 0, sizeof(json_str));
     flb_pack_init(&config);
-    ret = flb_msgpack_to_json(&json_str[0], sizeof(json_str), &obj);
+    ret = flb_msgpack_to_json(&json_str[0], sizeof(json_str), &obj, FLB_TRUE);
     TEST_CHECK(ret >= 0);
 
     p = strstr(&json_str[0], "null");
@@ -1025,7 +1025,7 @@ void test_json_date(char* expect, int date_format)
 
     ret = flb_pack_msgpack_to_json_format((const char*)&input_msgpack[0], sizeof(input_msgpack),
                                           FLB_PACK_JSON_FORMAT_JSON, date_format,
-                                          json_key);
+                                          json_key, FLB_TRUE);
     if (!TEST_CHECK(ret != NULL)) {
         TEST_MSG("flb_pack_msgpack_to_json_format failed");
         flb_sds_destroy(json_key);
