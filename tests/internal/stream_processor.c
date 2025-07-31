@@ -886,7 +886,7 @@ static void test_conv_from_str_to_num()
         goto test_conv_from_str_to_num_end;
     }
 
-    ret = flb_msgpack_to_json(&json[0], sizeof(json), &result.data);
+    ret = flb_msgpack_to_json(&json[0], sizeof(json), &result.data, FLB_TRUE);
     if (!TEST_CHECK(ret > 0)) {
         TEST_MSG("flb_msgpack_to_json failed");
         msgpack_unpacked_destroy(&result);
