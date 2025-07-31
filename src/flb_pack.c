@@ -1166,7 +1166,7 @@ flb_sds_t flb_pack_msgpack_to_json_format(const char *data, uint64_t bytes,
             json_format == FLB_PACK_JSON_FORMAT_STREAM) {
 
             /* Encode current record into JSON in a temporary variable */
-            out_js = flb_msgpack_raw_to_json_sds(tmp_sbuf.data, tmp_sbuf.size, FLB_TRUE);
+            out_js = flb_msgpack_raw_to_json_sds(tmp_sbuf.data, tmp_sbuf.size, escape_unicode);
             if (!out_js) {
                 flb_sds_destroy(out_buf);
                 msgpack_sbuffer_destroy(&tmp_sbuf);
