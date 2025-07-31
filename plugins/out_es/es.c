@@ -559,7 +559,8 @@ static int elasticsearch_format(struct flb_config *config,
         }
 
         /* Convert msgpack to JSON */
-        out_buf = flb_msgpack_raw_to_json_sds(tmp_sbuf.data, tmp_sbuf.size);
+        out_buf = flb_msgpack_raw_to_json_sds(tmp_sbuf.data, tmp_sbuf.size,
+                                              config->json_escape_unicode);
         msgpack_sbuffer_destroy(&tmp_sbuf);
         if (!out_buf) {
             flb_log_event_decoder_destroy(&log_decoder);
