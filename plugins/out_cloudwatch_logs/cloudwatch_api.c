@@ -41,6 +41,7 @@
 #include <fluent-bit/flb_utils.h>
 #include <fluent-bit/flb_intermediate_metric.h>
 #include <fluent-bit/flb_metrics.h>
+#include "fluent-bit/flb_ra_key.h"
 
 #include <monkey/mk_core.h>
 #include <msgpack.h>
@@ -51,6 +52,7 @@
 #endif
 
 #include "cloudwatch_api.h"
+
 
 #define ERR_CODE_ALREADY_EXISTS         "ResourceAlreadyExistsException"
 #define ERR_CODE_NOT_FOUND              "ResourceNotFoundException"
@@ -1108,141 +1110,101 @@ static char* find_fallback_environment(struct flb_cloudwatch *ctx, entity *entit
     return NULL;
 }
 
+/*
+ * Entity fields can change during stream lifecycle due to service name
+ * changes. The found_flag ensures filter_count accurately reflects
+ * which fields need filtering, preventing aws_entity fields from remaining
+ * in log messages when fallback values are used.
+ */
+static void set_entity_field(char **field, struct flb_ra_value *val,
+                             int *filter_count, int *found_flag)
+{
+    if (!val || val->type != FLB_RA_STRING) {
+        return;
+    }
+    
+    if (found_flag && !*found_flag) {
+        if (filter_count) {
+            (*filter_count)++;
+        }
+        (*found_flag)++;
+    }
+    else if (!found_flag && *field == NULL && filter_count) {
+        (*filter_count)++;
+    }
+    
+    if (*field) {
+        flb_free(*field);
+    }
+    
+    if (val->storage == FLB_RA_REF) {
+        *field = flb_strndup(val->val.ref.buf, val->val.ref.len);
+    }
+    else {
+        *field = flb_strndup(val->val.string, flb_sds_len(val->val.string));
+    }
+}
+
 void parse_entity(struct flb_cloudwatch *ctx, entity *entity,
                   msgpack_object map, int map_size)
 {
-    int i,j;
-    msgpack_object key, kube_key;
-    msgpack_object val, kube_val;
+    struct flb_record_accessor *ra;
+    struct flb_ra_value *val;
+    int i;
 
-    int val_map_size;
-    for(i=0; i < map_size; i++) {
-        key = map.via.map.ptr[i].key;
-        val = map.via.map.ptr[i].val;
-        if(strncmp(key.via.str.ptr, "kubernetes",10 ) == 0 ) {
-            if (val.type == MSGPACK_OBJECT_MAP) {
-                val_map_size = val.via.map.size;
-                for (j=0; j < val_map_size; j++) {
-                    kube_key = val.via.map.ptr[j].key;
-                    kube_val = val.via.map.ptr[j].val;
-                    if(strncmp(kube_key.via.str.ptr,
-                               "aws_entity_service_name", kube_key.via.str.size) == 0) {
-                        if(!entity->service_name_found) {
-                            entity->filter_count++;
-                            entity->service_name_found++;
-                        }
-                        if(entity->key_attributes->name != NULL) {
-                            flb_free(entity->key_attributes->name);
-                        }
-                        entity->key_attributes->name = flb_strndup(kube_val.via.str.ptr,
-                                                                   kube_val.via.str.size);
-                    }
-                    else if(strncmp(kube_key.via.str.ptr, "aws_entity_environment",
-                                       kube_key.via.str.size) == 0) {
-                        if(!entity->environment_found) {
-                            entity->filter_count++;
-                            entity->environment_found++;
-                        }
-                        if(entity->key_attributes->environment != NULL) {
-                            flb_free(entity->key_attributes->environment);
-                        }
-                        entity->key_attributes->environment = flb_strndup(kube_val.via.str.ptr,
-                                                                          kube_val.via.str.size);
-                    }
-                    else if(strncmp(kube_key.via.str.ptr, "namespace_name",
-                                       kube_key.via.str.size) == 0) {
-                        if(entity->attributes->namespace != NULL) {
-                            flb_free(entity->attributes->namespace);
-                        }
-                       entity->attributes->namespace = flb_strndup(kube_val.via.str.ptr,
-                                                                   kube_val.via.str.size);
-                    }
-                    else if(strncmp(kube_key.via.str.ptr, "host",
-                                       kube_key.via.str.size) == 0) {
-                        if(entity->attributes->node != NULL) {
-                            flb_free(entity->attributes->node);
-                        }
-                        entity->attributes->node = flb_strndup(kube_val.via.str.ptr,
-                                                               kube_val.via.str.size);
-                    }
-                    else if(strncmp(kube_key.via.str.ptr, "aws_entity_cluster",
-                                       kube_key.via.str.size) == 0) {
-                        if(entity->attributes->cluster_name == NULL) {
-                            entity->filter_count++;
-                        }
-                        else {
-                            flb_free(entity->attributes->cluster_name);
-                        }
-                        entity->attributes->cluster_name = flb_strndup(kube_val.via.str.ptr,
-                                                                       kube_val.via.str.size);
-                    }
-                    else if(strncmp(kube_key.via.str.ptr, "aws_entity_workload",
-                                       kube_key.via.str.size) == 0) {
-                        if(entity->attributes->workload == NULL) {
-                            entity->filter_count++;
-                        }
-                        else {
-                            flb_free(entity->attributes->workload);
-                        }
-                        entity->attributes->workload = flb_strndup(kube_val.via.str.ptr,
-                                                                   kube_val.via.str.size);
-                    }
-                    else if(strncmp(kube_key.via.str.ptr, "aws_entity_name_source",
-                                       kube_key.via.str.size) == 0) {
-                        if(!entity->name_source_found) {
-                            entity->filter_count++;
-                            entity->name_source_found++;
-                        }
-                        if(entity->attributes->name_source != NULL) {
-                            flb_free(entity->attributes->name_source);
-                        }
-                        entity->attributes->name_source = flb_strndup(kube_val.via.str.ptr,
-                                                                      kube_val.via.str.size);
-                    }
-                    else if(strncmp(kube_key.via.str.ptr, "aws_entity_platform",
-                                       kube_key.via.str.size) == 0) {
-                        if(entity->attributes->platform_type == NULL) {
-                            entity->filter_count++;
-                        }
-                        else {
-                            flb_free(entity->attributes->platform_type);
-                        }
-                        entity->attributes->platform_type = flb_strndup(kube_val.via.str.ptr,
-                                                                        kube_val.via.str.size);
-                    }
-                }
-            }
+    struct {
+        const char *path;
+        char **field;
+        int *filter_count;
+        int *found_flag;
+    } field_map[] = {
+        {"$kubernetes['aws_entity_service_name']", &entity->key_attributes->name,
+         &entity->filter_count, &entity->service_name_found},
+        {"$kubernetes['aws_entity_environment']", &entity->key_attributes->environment,
+         &entity->filter_count, &entity->environment_found},
+        {"$kubernetes['namespace_name']", &entity->attributes->namespace,
+         NULL, NULL},
+        {"$kubernetes['host']", &entity->attributes->node, NULL, NULL},
+        {"$kubernetes['aws_entity_cluster']", &entity->attributes->cluster_name,
+         &entity->filter_count, NULL},
+        {"$kubernetes['aws_entity_workload']", &entity->attributes->workload,
+         &entity->filter_count, NULL},
+        {"$kubernetes['aws_entity_name_source']", &entity->attributes->name_source,
+         &entity->filter_count, &entity->name_source_found},
+        {"$kubernetes['aws_entity_platform']", &entity->attributes->platform_type,
+         &entity->filter_count, NULL},
+        {"$aws_entity_ec2_instance_id", &entity->attributes->instance_id,
+         &entity->root_filter_count, NULL},
+        {"$aws_entity_account_id", &entity->key_attributes->account_id,
+         &entity->root_filter_count, NULL},
+        {NULL, NULL, NULL, NULL}
+    };
+    
+    for (i = 0; field_map[i].path; i++) {
+        ra = flb_ra_create(field_map[i].path, FLB_FALSE);
+        if (!ra) {
+            continue;
         }
-        if(strncmp(key.via.str.ptr, "aws_entity_ec2_instance_id",
-                      key.via.str.size ) == 0 ) {
-            if(entity->attributes->instance_id == NULL) {
-                entity->root_filter_count++;
-            }
-            else {
-                flb_free(entity->attributes->instance_id);
-            }
-            entity->attributes->instance_id = flb_strndup(val.via.str.ptr,
-                                                          val.via.str.size);
+        
+        val = flb_ra_get_value_object(ra, map);
+        if (val) {
+            set_entity_field(field_map[i].field, val, field_map[i].filter_count,
+                           field_map[i].found_flag);
+            flb_ra_key_value_destroy(val);
         }
-        if(strncmp(key.via.str.ptr, "aws_entity_account_id",key.via.str.size ) == 0 ) {
-            if(entity->key_attributes->account_id == NULL) {
-                entity->root_filter_count++;
-            }
-            else {
-                flb_free(entity->key_attributes->account_id);
-            }
-            entity->key_attributes->account_id = flb_strndup(val.via.str.ptr,
-                                                             val.via.str.size);
-        }
+        
+        flb_ra_destroy(ra);
     }
-    if(entity->key_attributes->name == NULL &&
-       entity->attributes->name_source == NULL &&
-       entity->attributes->workload != NULL) {
+    
+    if (entity->key_attributes->name == NULL &&
+        entity->attributes->name_source == NULL &&
+        entity->attributes->workload != NULL) {
         entity->key_attributes->name = flb_strndup(entity->attributes->workload,
                                                  strlen(entity->attributes->workload));
         entity->attributes->name_source = flb_strndup("K8sWorkload", 11);
     }
-    if(entity->key_attributes->environment == NULL) {
+    
+    if (entity->key_attributes->environment == NULL) {
         entity->key_attributes->environment = find_fallback_environment(ctx, entity);
     }
 }
