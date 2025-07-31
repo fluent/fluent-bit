@@ -477,7 +477,8 @@ static void pack_maps(struct flb_loki *ctx,
                         char *tag, int tag_len,
                         msgpack_object *map,
                         struct flb_mp_map_header *mh,
-                        struct mk_list *list)
+                        struct mk_list *list,
+                        struct flb_config *config)
 {
     struct mk_list *head;
     struct flb_loki_kv *kv;
@@ -539,7 +540,8 @@ static void pack_maps(struct flb_loki *ctx,
                          */
                         else {
                             accessed_map_val_json = flb_msgpack_to_json_str(1024,
-                                &accessed_map_kv.val);
+                                                                            &accessed_map_kv.val,
+                                                                            config->json_escape_unicode);
                             if (accessed_map_val_json) {
                                 msgpack_pack_str_with_body(mp_pck, accessed_map_val_json,
                                                          strlen(accessed_map_val_json));
@@ -556,14 +558,16 @@ static void pack_maps(struct flb_loki *ctx,
 static flb_sds_t pack_structured_metadata(struct flb_loki *ctx,
                                           msgpack_packer *mp_pck,
                                           char *tag, int tag_len,
-                                          msgpack_object *map)
+                                          msgpack_object *map,
+                                          struct flb_config *config)
 {
     struct flb_mp_map_header mh;
     /* Initialize dynamic map header */
     flb_mp_map_header_init(&mh, mp_pck);
     if (ctx->structured_metadata_map_keys) {
         pack_maps(ctx, mp_pck, tag, tag_len, map, &mh,
-                  &ctx->structured_metadata_map_keys_list);
+                  &ctx->structured_metadata_map_keys_list,
+                  config);
     }
     /*
      * explicit structured_metadata entries override
@@ -1415,7 +1419,8 @@ static int get_tenant_id_from_record(struct flb_loki *ctx, msgpack_object *map,
 static int pack_record(struct flb_loki *ctx,
                        msgpack_packer *mp_pck, msgpack_object *rec,
                        flb_sds_t *dynamic_tenant_id,
-                       struct flb_mp_accessor *remove_mpa)
+                       struct flb_mp_accessor *remove_mpa,
+                       struct flb_config *config)
 {
     int i;
     int skip = 0;
@@ -1506,7 +1511,7 @@ static int pack_record(struct flb_loki *ctx,
     }
 
     if (ctx->out_line_format == FLB_LOKI_FMT_JSON) {
-        line = flb_msgpack_to_json_str(size_hint, rec);
+        line = flb_msgpack_to_json_str(size_hint, rec, config->json_escape_unicode);
         if (!line) {
             if (tmp_sbuf_data) {
                 flb_free(tmp_sbuf_data);
@@ -1635,7 +1640,8 @@ static flb_sds_t loki_compose_payload(struct flb_loki *ctx,
                                       char *tag, int tag_len,
                                       const void *data, size_t bytes,
                                       flb_sds_t *dynamic_tenant_id,
-                                      struct flb_mp_accessor *remove_mpa)
+                                      struct flb_mp_accessor *remove_mpa,
+                                      struct flb_config *config)
 {
     // int mp_ok = MSGPACK_UNPACK_SUCCESS;
     // size_t off = 0;
@@ -1726,9 +1732,9 @@ static flb_sds_t loki_compose_payload(struct flb_loki *ctx,
 
             /* Append the timestamp */
             pack_timestamp(&mp_pck, &log_event.timestamp);
-            pack_record(ctx, &mp_pck, log_event.body, dynamic_tenant_id, remove_mpa);
+            pack_record(ctx, &mp_pck, log_event.body, dynamic_tenant_id, remove_mpa, config);
             if (ctx->structured_metadata || ctx->structured_metadata_map_keys) {
-                pack_structured_metadata(ctx, &mp_pck, tag, tag_len, NULL);
+                pack_structured_metadata(ctx, &mp_pck, tag, tag_len, NULL, config);
             }
         }
     }
@@ -1763,16 +1769,17 @@ static flb_sds_t loki_compose_payload(struct flb_loki *ctx,
 
             /* Append the timestamp */
             pack_timestamp(&mp_pck, &log_event.timestamp);
-            pack_record(ctx, &mp_pck, log_event.body, dynamic_tenant_id, remove_mpa);
+            pack_record(ctx, &mp_pck, log_event.body, dynamic_tenant_id, remove_mpa, config);
             if (ctx->structured_metadata || ctx->structured_metadata_map_keys) {
-                pack_structured_metadata(ctx, &mp_pck, tag, tag_len, log_event.body);
+                pack_structured_metadata(ctx, &mp_pck, tag, tag_len, log_event.body, config);
             }
         }
     }
 
     flb_log_event_decoder_destroy(&log_decoder);
 
-    json = flb_msgpack_raw_to_json_sds(mp_sbuf.data, mp_sbuf.size);
+    json = flb_msgpack_raw_to_json_sds(mp_sbuf.data, mp_sbuf.size,
+                                       config->json_escape_unicode);
 
     msgpack_sbuffer_destroy(&mp_sbuf);
 
@@ -1856,7 +1863,8 @@ static void cb_loki_flush(struct flb_event_chunk *event_chunk,
                                    flb_sds_len(event_chunk->tag),
                                    event_chunk->data, event_chunk->size,
                                    &dynamic_tenant_id->value,
-                                   remove_mpa_entry->mpa);
+                                   remove_mpa_entry->mpa,
+                                   config);
 
     if (!payload) {
         flb_plg_error(ctx->ins, "cannot compose request payload");
@@ -2128,7 +2136,7 @@ static struct flb_config_map config_map[] = {
      0, FLB_TRUE, offsetof(struct flb_loki, structured_metadata),
      "optional structured metadata fields for API requests."
     },
-    
+
     {
      FLB_CONFIG_MAP_CLIST, "structured_metadata_map_keys", NULL,
      0, FLB_TRUE, offsetof(struct flb_loki, structured_metadata_map_keys),
@@ -2241,7 +2249,8 @@ static int cb_loki_format_test(struct flb_config *config,
     payload = loki_compose_payload(ctx, total_records,
                                    (char *) tag, tag_len, data, bytes,
                                    &dynamic_tenant_id,
-                                   ctx->remove_mpa);
+                                   ctx->remove_mpa,
+                                   config);
     if (payload == NULL) {
         if (dynamic_tenant_id != NULL) {
             flb_sds_destroy(dynamic_tenant_id);
