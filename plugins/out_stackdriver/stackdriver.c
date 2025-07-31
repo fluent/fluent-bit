@@ -1697,7 +1697,8 @@ static int pack_payload(int insert_id_extracted,
 static flb_sds_t stackdriver_format(struct flb_stackdriver *ctx,
                                     int total_records,
                                     const char *tag, int tag_len,
-                                    const void *data, size_t bytes)
+                                    const void *data, size_t bytes,
+                                    struct flb_config *config)
 {
     int len;
     int ret;
@@ -2576,7 +2577,8 @@ static flb_sds_t stackdriver_format(struct flb_stackdriver *ctx,
     flb_log_event_decoder_destroy(&log_decoder);
 
     /* Convert from msgpack to JSON */
-    out_buf = flb_msgpack_raw_to_json_sds(mp_sbuf.data, mp_sbuf.size);
+    out_buf = flb_msgpack_raw_to_json_sds(mp_sbuf.data, mp_sbuf.size,
+                                          config->json_escape_unicode);
     msgpack_sbuffer_destroy(&mp_sbuf);
 
     if (!out_buf) {
@@ -2604,7 +2606,7 @@ static int stackdriver_format_test(struct flb_config *config,
     total_records = flb_mp_count(data, bytes);
 
     payload = stackdriver_format(ctx, total_records,
-                                (char *) tag, tag_len, data, bytes);
+                                (char *) tag, tag_len, data, bytes, config);
     if (payload == NULL) {
         return -1;
     }
@@ -2877,7 +2879,8 @@ static void cb_stackdriver_flush(struct flb_event_chunk *event_chunk,
     payload_buf = stackdriver_format(ctx,
                                      event_chunk->total_events,
                                      event_chunk->tag, flb_sds_len(event_chunk->tag),
-                                     event_chunk->data, event_chunk->size);
+                                     event_chunk->data, event_chunk->size,
+                                     config);
     if (!payload_buf) {
 #ifdef FLB_HAVE_METRICS
         cmt_counter_inc(ctx->cmt_failed_requests,
