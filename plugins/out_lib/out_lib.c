@@ -167,7 +167,8 @@ static void out_lib_flush(struct flb_event_chunk *event_chunk,
 #ifdef FLB_HAVE_METRICS
             if (event_chunk->type == FLB_EVENT_TYPE_METRICS) {
                 alloc_size = (off - last_off) + 4096;
-                buf = flb_msgpack_to_json_str(alloc_size, &result.data);
+                buf = flb_msgpack_to_json_str(alloc_size, &result.data,
+                                              config->json_escape_unicode);
                 if (buf == NULL) {
                     msgpack_unpacked_destroy(&result);
                     FLB_OUTPUT_RETURN(FLB_ERROR);
@@ -181,7 +182,8 @@ static void out_lib_flush(struct flb_event_chunk *event_chunk,
             alloc_size = (off - last_off) + 128;
 
             flb_time_pop_from_msgpack(&tm, &result, &obj);
-            buf = flb_msgpack_to_json_str(alloc_size, obj);
+            buf = flb_msgpack_to_json_str(alloc_size, obj,
+                                          config->json_escape_unicode);
             if (!buf) {
                 msgpack_unpacked_destroy(&result);
                 FLB_OUTPUT_RETURN(FLB_ERROR);
