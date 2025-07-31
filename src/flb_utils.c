@@ -1096,72 +1096,118 @@ done:
     return FLB_TRUE;
 }
 
-/* Safely copies raw UTF-8 strings, only escaping essential characters. */
+/* Safely copies raw UTF-8 strings, only escaping essential characters.
+ * This version correctly implements the repeating SIMD fast path for performance.
+ */
 static int flb_utils_write_str_raw(char *buf, int *off, size_t size,
                                    const char *str, size_t str_len)
 {
-    int i = 0;
-    int copypos = 0;
+    int i, b, vlen, len, utf_len, copypos = 0;
     size_t available;
     char *p;
     off_t offset = 0;
+    const size_t inst_len = FLB_SIMD_VEC8_INST_LEN;
+    uint32_t c;
+    char *seq = NULL;
 
     available = size - *off;
     p = buf + *off;
 
-    for (i = 0; i < str_len; i++) {
-        uint32_t c = (uint32_t) str[i];
-        int len = 0;
-        char *seq = NULL;
+    /* align length to the nearest multiple of the vector size for safe SIMD processing */
+    vlen = str_len & ~(inst_len - 1);
 
-        /* Handle essential escapes for JSON validity */
-        if (c < 128 && json_escape_table[c].seq) {
-            seq = json_escape_table[c].seq;
-            len = json_escape_table[c].seq[1] == 'u' ? 6 : 2;
+    for (i = 0;;) {
+        /*
+         * Process chunks of the input string using SIMD instructions.
+         * This loop continues as long as it finds "safe" ASCII characters.
+         */
+        for (; i < vlen; i += inst_len) {
+            flb_vector8 chunk;
+            flb_vector8_load(&chunk, (const uint8_t *)&str[i]);
+
+            /* If a special character is found, break and switch to the slow path */
+            if (flb_vector8_has_le(chunk, (unsigned char) 0x1F) ||
+                flb_vector8_has(chunk, (unsigned char) '"')    ||
+                flb_vector8_has(chunk, (unsigned char) '\\')   ||
+                flb_vector8_is_highbit_set(chunk)) {
+                break;
+            }
         }
 
-        if (seq) {
-            if (available < len) {
+        /* Copy the 'safe' chunk processed by the SIMD loop so far */
+        if (copypos < i) {
+            if (available < i - copypos) {
                 return FLB_FALSE;
             }
-            memcpy(p, seq, len);
-            p += len;
-            offset += len;
-            available -= len;
+            memcpy(p, &str[copypos], i - copypos);
+            p += i - copypos;
+            offset += i - copypos;
+            available -= (i - copypos);
+            copypos = i;
         }
-        else if (c < 0x80) { /* Regular ASCII */
-            if (available < 1) {
-                return FLB_FALSE;
-            }
-            *p++ = c;
-            offset++;
-            available--;
-        }
-        else { /* Multibyte UTF-8 sequence */
-            int utf_len = flb_utf8_len(&str[i]);
 
-            if (utf_len == 0 || i + utf_len > str_len) { /* Invalid/truncated sequence */
-                if (available < 3) {
+        /*
+         * Process the next 16-byte chunk character by character.
+         * This loop runs only for a chunk that contains special characters.
+         */
+        for (b = 0; b < inst_len; b++) {
+            if (i >= str_len) {
+                goto done;
+            }
+
+            c = (uint32_t) str[i];
+            len = 0;
+            seq = NULL;
+
+            /* Handle essential escapes for JSON validity */
+            if (c < 128 && json_escape_table[c].seq) {
+                seq = json_escape_table[c].seq;
+                len = json_escape_table[c].seq[1] == 'u' ? 6 : 2;
+                if (available < len) {
                     return FLB_FALSE;
                 }
-                memcpy(p, "\xEF\xBF\xBD", 3); /* Standard replacement character */
-                p += 3;
-                offset += 3;
-                available -= 3;
+                memcpy(p, seq, len);
+                p += len;
+                offset += len;
+                available -= len;
             }
-            else { /* Valid sequence, copy raw */
-                if (available < utf_len) {
+            else if (c < 0x80) { /* Regular ASCII */
+                if (available < 1) {
                     return FLB_FALSE;
                 }
-                memcpy(p, &str[i], utf_len);
-                p += utf_len;
-                offset += utf_len;
-                available -= utf_len;
-                i += utf_len - 1; /* Advance loop counter */
+                *p++ = c;
+                offset++;
+                available--;
             }
+            else { /* Multibyte UTF-8 sequence */
+                utf_len = flb_utf8_len(&str[i]);
+
+                if (utf_len == 0 || i + utf_len > str_len) { /* Invalid/truncated */
+                    if (available < 3) {
+                        return FLB_FALSE;
+                    }
+                    memcpy(p, "\xEF\xBF\xBD", 3); /* Standard replacement character */
+                    p += 3;
+                    offset += 3;
+                    available -= 3;
+                }
+                else { /* Valid sequence, copy raw */
+                    if (available < utf_len) {
+                        return FLB_FALSE;
+                    }
+                    memcpy(p, &str[i], utf_len);
+                    p += utf_len;
+                    offset += utf_len;
+                    available -= utf_len;
+                    i += utf_len - 1; /* Advance loop counter by extra bytes */
+                }
+            }
+            i++;
         }
+        copypos = i;
     }
 
+done:
     *off += offset;
     return FLB_TRUE;
 }
