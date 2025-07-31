@@ -455,7 +455,7 @@ static void cb_cloudwatch_flush(struct flb_event_chunk *event_chunk,
     }
 
     event_count = process_and_send(ctx, i_ins->p->name, buf, event_chunk->tag, event_chunk->data, event_chunk->size,
-                                   event_chunk->type);
+                                   event_chunk->type, config);
     if (event_count < 0) {
         flb_plg_error(ctx->ins, "Failed to send events");
         cw_flush_destroy(buf);
