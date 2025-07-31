@@ -788,7 +788,7 @@ static const struct escape_seq json_escape_table[128] = {
  * to escape special characters and convert utf-8 byte characters to string
  * representation.
  */
-int flb_utils_write_str(char *buf, int *off, size_t size, const char *str, size_t str_len)
+static int flb_utils_write_str_escaped(char *buf, int *off, size_t size, const char *str, size_t str_len)
 {
     int i, b, ret, len, hex_bytes, utf_sequence_length, utf_sequence_number;
     int processed_bytes = 0;
@@ -1096,7 +1096,93 @@ done:
     return FLB_TRUE;
 }
 
-int flb_utils_write_str_buf(const char *str, size_t str_len, char **out, size_t *out_size)
+/* Safely copies raw UTF-8 strings, only escaping essential characters. */
+static int flb_utils_write_str_raw(char *buf, int *off, size_t size,
+                                   const char *str, size_t str_len)
+{
+    int i = 0;
+    int copypos = 0;
+    size_t available;
+    char *p;
+    off_t offset = 0;
+
+    available = size - *off;
+    p = buf + *off;
+
+    for (i = 0; i < str_len; i++) {
+        uint32_t c = (uint32_t) str[i];
+        int len = 0;
+        char *seq = NULL;
+
+        /* Handle essential escapes for JSON validity */
+        if (c < 128 && json_escape_table[c].seq) {
+            seq = json_escape_table[c].seq;
+            len = json_escape_table[c].seq[1] == 'u' ? 6 : 2;
+        }
+
+        if (seq) {
+            if (available < len) {
+                return FLB_FALSE;
+            }
+            memcpy(p, seq, len);
+            p += len;
+            offset += len;
+            available -= len;
+        }
+        else if (c < 0x80) { /* Regular ASCII */
+            if (available < 1) {
+                return FLB_FALSE;
+            }
+            *p++ = c;
+            offset++;
+            available--;
+        }
+        else { /* Multibyte UTF-8 sequence */
+            int utf_len = flb_utf8_len(&str[i]);
+
+            if (utf_len == 0 || i + utf_len > str_len) { /* Invalid/truncated sequence */
+                if (available < 3) {
+                    return FLB_FALSE;
+                }
+                memcpy(p, "\xEF\xBF\xBD", 3); /* Standard replacement character */
+                p += 3;
+                offset += 3;
+                available -= 3;
+            }
+            else { /* Valid sequence, copy raw */
+                if (available < utf_len) {
+                    return FLB_FALSE;
+                }
+                memcpy(p, &str[i], utf_len);
+                p += utf_len;
+                offset += utf_len;
+                available -= utf_len;
+                i += utf_len - 1; /* Advance loop counter */
+            }
+        }
+    }
+
+    *off += offset;
+    return FLB_TRUE;
+}
+
+/*
+ * This is the wrapper public function for acting as a wrapper and calls the
+ * appropriate specialized function based on the escape_unicode flag.
+ */
+int flb_utils_write_str(char *buf, int *off, size_t size, const char *str, size_t str_len,
+                        int escape_unicode)
+{
+    if (escape_unicode == FLB_TRUE) {
+        return flb_utils_write_str_escaped(buf, off, size, str, str_len);
+    }
+    else {
+        return flb_utils_write_str_raw(buf, off, size, str, str_len);
+    }
+}
+
+int flb_utils_write_str_buf(const char *str, size_t str_len, char **out, size_t *out_size,
+                            int escape_unicode)
 {
     int ret;
     int off;
@@ -1113,7 +1199,7 @@ int flb_utils_write_str_buf(const char *str, size_t str_len, char **out, size_t 
 
     while (1) {
         off = 0;
-        ret = flb_utils_write_str(buf, &off, s, str, str_len);
+        ret = flb_utils_write_str(buf, &off, s, str, str_len, escape_unicode);
         if (ret == FLB_FALSE) {
             s += 256;
             tmp = flb_realloc(buf, s);
