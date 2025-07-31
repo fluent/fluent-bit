@@ -36,7 +36,8 @@
 void kinesis_flush_destroy(struct flush *buf);
 
 int process_and_send_to_kinesis(struct flb_kinesis *ctx, struct flush *buf,
-                                const char *data, size_t bytes);
+                                const char *data, size_t bytes,
+                                struct flb_config *config);
 
 int put_records(struct flb_kinesis *ctx, struct flush *buf,
                      size_t payload_size, int num_records);
