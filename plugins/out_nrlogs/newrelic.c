@@ -142,7 +142,8 @@ static int package_record(struct flb_time *ts, msgpack_object *map,
 }
 
 static flb_sds_t newrelic_compose_payload(struct flb_newrelic *ctx,
-                                          const void *data, size_t bytes)
+                                          const void *data, size_t bytes,
+                                          struct flb_config *config)
 {
     int total_records;
     flb_sds_t json;
@@ -232,7 +233,8 @@ static flb_sds_t newrelic_compose_payload(struct flb_newrelic *ctx,
 
     flb_log_event_decoder_destroy(&log_decoder);
 
-    json = flb_msgpack_raw_to_json_sds(mp_sbuf.data, mp_sbuf.size);
+    json = flb_msgpack_raw_to_json_sds(mp_sbuf.data, mp_sbuf.size,
+                                       config->json_escape_unicode);
 
     msgpack_sbuffer_destroy(&mp_sbuf);
 
@@ -368,7 +370,8 @@ static void cb_newrelic_flush(struct flb_event_chunk *event_chunk,
 
     /* Format the data to the expected Newrelic Payload */
     payload = newrelic_compose_payload(ctx,
-                                       event_chunk->data, event_chunk->size);
+                                       event_chunk->data, event_chunk->size,
+                                       config);
     if (!payload) {
         flb_plg_error(ctx->ins, "cannot compose request payload");
         FLB_OUTPUT_RETURN(FLB_RETRY);
