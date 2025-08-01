@@ -874,6 +874,7 @@ struct flb_ml *flb_ml_create(struct flb_config *ctx, char *name)
     }
 
     ml->config = ctx;
+    ml->buffer_limit = ml->config->multiline_buffer_limit;
     ml->last_flush = time_ms_now();
     mk_list_init(&ml->groups);
 
