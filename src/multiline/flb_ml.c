@@ -213,6 +213,7 @@ static int package_content(struct flb_ml_stream *mst,
 {
     int len;
     int ret;
+    int truncated = FLB_FALSE;
     int rule_match = FLB_FALSE;
     int processed = FLB_FALSE;
     int type;
@@ -259,11 +260,13 @@ static int package_content(struct flb_ml_stream *mst,
                                   stream_group, full_map, buf, size, tm,
                                   val_content, val_pattern);
         if (ret == -1) {
-            processed = FLB_FALSE;
+            return -1;
         }
-        else {
-            processed = FLB_TRUE;
+
+        if (ret == FLB_MULTILINE_TRUNCATED) {
+            truncated = FLB_TRUE;
         }
+        processed = FLB_TRUE;
     }
     else if (type == FLB_ML_ENDSWITH) {
         len = flb_sds_len(parser->match_str);
@@ -338,6 +341,10 @@ static int package_content(struct flb_ml_stream *mst,
 
     if (processed && metadata != NULL) {
         msgpack_pack_object(&stream_group->mp_md_pck, *metadata);
+    }
+
+    if (truncated) {
+        return FLB_MULTILINE_TRUNCATED;
     }
 
     return processed;
