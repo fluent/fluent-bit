@@ -56,6 +56,10 @@ struct tls_context {
     SSL_CTX *ctx;
     int mode;
     char *alpn;
+#if defined(FLB_SYSTEM_WINDOWS)
+    char *certstore_name;
+    int use_enterprise_store;
+#endif
     pthread_mutex_t mutex;
 };
 
@@ -147,6 +151,14 @@ static void tls_context_destroy(void *ctx_backend)
 
         ctx->alpn = NULL;
     }
+
+#if defined(FLB_SYSTEM_WINDOWS)
+    if (ctx->certstore_name != NULL) {
+        flb_free(ctx->certstore_name);
+
+        ctx->certstore_name = NULL;
+    }
+#endif
 
     pthread_mutex_unlock(&ctx->mutex);
 
@@ -291,6 +303,7 @@ static int windows_load_system_certificates(struct tls_context *ctx)
     const unsigned char *win_cert_data;
     X509_STORE *ossl_store = SSL_CTX_get_cert_store(ctx->ctx);
     X509 *ossl_cert;
+    char *certstore_name = "Root";
 
     /* Check if OpenSSL certificate store is available */
     if (!ossl_store) {
@@ -298,8 +311,23 @@ static int windows_load_system_certificates(struct tls_context *ctx)
         return -1;
     }
 
-    /* Open the Windows system certificate store */
-    win_store = CertOpenSystemStoreA(0, "Root");
+    if (ctx->certstore_name) {
+        certstore_name = ctx->certstore_name;
+    }
+
+    if (ctx->use_enterprise_store) {
+        /* Open the Windows system enterprise certificate store */
+        win_store = CertOpenStore(CERT_STORE_PROV_SYSTEM,
+                                  0,
+                                  0,
+                                  CERT_SYSTEM_STORE_LOCAL_MACHINE_ENTERPRISE,
+                                  certstore_name);
+    }
+    else {
+        /* Open the Windows system certificate store */
+        win_store = CertOpenSystemStoreA(0, certstore_name);
+    }
+
     if (win_store == NULL) {
         flb_error("[tls] cannot open windows certificate store: %lu", GetLastError());
         return -1;
@@ -352,7 +380,8 @@ static int windows_load_system_certificates(struct tls_context *ctx)
         return -1;
     }
 
-    flb_debug("[tls] successfully loaded certificates from windows system store.");
+    flb_debug("[tls] successfully loaded certificates from windows system %s store.", 
+              certstore_name);
     return 0;
 }
 #endif
@@ -767,6 +796,34 @@ static int tls_set_ciphers(struct flb_tls *tls, const char *ciphers)
     return 0;
 }
 
+#if defined(FLB_SYSTEM_WINDOWS)
+static int tls_set_certstore_name(struct flb_tls *tls, const char *certstore_name)
+{
+    struct tls_context *ctx = tls->ctx;
+
+    pthread_mutex_lock(&ctx->mutex);
+
+    ctx->certstore_name = flb_strdup(certstore_name);
+
+    pthread_mutex_unlock(&ctx->mutex);
+
+    return 0;
+}
+
+static int tls_set_use_enterprise_store(struct flb_tls *tls, int use_enterprise)
+{
+    struct tls_context *ctx = tls->ctx;
+
+    pthread_mutex_lock(&ctx->mutex);
+
+    ctx->use_enterprise_store = !!use_enterprise;
+
+    pthread_mutex_unlock(&ctx->mutex);
+
+    return 0;
+}
+#endif
+
 static void *tls_session_create(struct flb_tls *tls,
                                 int fd)
 {
@@ -1166,4 +1223,8 @@ static struct flb_tls_backend tls_openssl = {
     .net_read             = tls_net_read,
     .net_write            = tls_net_write,
     .net_handshake        = tls_net_handshake,
+#if defined(FLB_SYSTEM_WINDOWS)
+    .set_certstore_name   = tls_set_certstore_name,
+    .set_use_enterprise_store = tls_set_use_enterprise_store,
+#endif
 };

@@ -379,6 +379,8 @@ struct flb_input_instance {
      * in the ring buffer.
      */
     struct flb_ring_buffer *rb;
+    size_t ring_buffer_size;           /* ring buffer size */
+    uint8_t ring_buffer_window;        /* ring buffer window percentage */
 
     /* List of upstreams */
     struct mk_list upstreams;
@@ -423,6 +425,11 @@ struct flb_input_instance {
     /* memory ring buffer (memrb) metrics */
     struct cmt_counter *cmt_memrb_dropped_chunks;
     struct cmt_counter *cmt_memrb_dropped_bytes;
+
+    /* ring buffer 'write' metrics */
+    struct cmt_counter *cmt_ring_buffer_writes;
+    struct cmt_counter *cmt_ring_buffer_retries;
+    struct cmt_counter *cmt_ring_buffer_retry_failures;
 
     /*
      * Indexes for generated chunks: simple hash tables that keeps the latest

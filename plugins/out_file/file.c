@@ -45,6 +45,12 @@
 #define NEWLINE "\n"
 #endif
 
+#ifdef FLB_SYSTEM_WINDOWS
+#define FLB_PATH_SEPARATOR "\\"
+#else
+#define FLB_PATH_SEPARATOR "/"
+#endif
+
 struct flb_file_conf {
     const char *out_path;
     const char *out_file;
@@ -368,7 +374,12 @@ static int mkpath(struct flb_output_instance *ins, const char *dir)
 #ifdef FLB_SYSTEM_MACOS
     char *parent_dir = NULL;
 #endif
-
+#ifdef FLB_SYSTEM_WINDOWS
+    char parent_path[MAX_PATH];
+    DWORD err;
+    char *p;
+    char *sep;
+#endif
     int ret;
 
     if (!dir) {
@@ -391,15 +402,48 @@ static int mkpath(struct flb_output_instance *ins, const char *dir)
     }
 
 #ifdef FLB_SYSTEM_WINDOWS
-    char path[MAX_PATH];
-
-    if (_fullpath(path, dir, MAX_PATH) == NULL) {
+    if (strncpy_s(parent_path, MAX_PATH, dir, _TRUNCATE) != 0) {
+        flb_plg_error(ins, "path is too long: %s", dir);
         return -1;
     }
 
-    if (SHCreateDirectoryExA(NULL, path, NULL) != ERROR_SUCCESS) {
-        return -1;
+    p = parent_path;
+
+    /* Skip the drive letter if present (e.g., "C:") */
+    if (p[1] == ':') {
+        p += 2;
     }
+
+    /* Normalize all forward slashes to backslashes */
+    while (*p != '\0') {
+        if (*p == '/') {
+            *p = '\\';
+        }
+        p++;
+    }
+
+    flb_plg_debug(ins, "processing path '%s'", parent_path);
+    sep = strstr(parent_path, FLB_PATH_SEPARATOR);
+    if (sep != NULL && PathRemoveFileSpecA(parent_path)) {
+        flb_plg_debug(ins, "creating directory (recursive) %s", parent_path);
+        ret = mkpath(ins, parent_path);
+        if (ret != 0) {
+            /* If creating the parent failed, we cannot continue. */
+            return -1;
+        }
+    }
+
+    flb_plg_debug(ins, "attempting to create final directory '%s'", dir);
+    if (!CreateDirectoryA(dir, NULL)) {
+        err = GetLastError();
+
+        if (err != ERROR_ALREADY_EXISTS) {
+            flb_plg_error(ins, "could not create directory '%s' (error=%lu)",
+                          dir, err);
+            return -1;
+        }
+    }
+
     return 0;
 #elif FLB_SYSTEM_MACOS
     dup_dir = strdup(dir);
@@ -471,11 +515,11 @@ static void cb_file_flush(struct flb_event_chunk *event_chunk,
     /* Set the right output file */
     if (ctx->out_path) {
         if (ctx->out_file) {
-            snprintf(out_file, PATH_MAX - 1, "%s/%s",
+            snprintf(out_file, PATH_MAX - 1, "%s" FLB_PATH_SEPARATOR "%s",
                      ctx->out_path, ctx->out_file);
         }
         else {
-            snprintf(out_file, PATH_MAX - 1, "%s/%s",
+            snprintf(out_file, PATH_MAX - 1, "%s" FLB_PATH_SEPARATOR "%s",
                      ctx->out_path, event_chunk->tag);
         }
     }

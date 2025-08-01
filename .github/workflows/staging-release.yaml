@@ -565,7 +565,7 @@ jobs:
   staging-release-images-windows:
     name: Release Windows images
     # Cannot be done by Skopeo on a Linux runner unfortunately
-    runs-on: windows-latest
+    runs-on: ${{ matrix.runs_on }}
     needs:
       - staging-release-version-check
     environment: release
@@ -574,10 +574,11 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        tag: [
-          "windows-2022-${{ github.event.inputs.version }}",
-          "windows-2025-${{ github.event.inputs.version }}"
-        ]
+        include:
+          - tag: "windows-2022-${{ github.event.inputs.version }}"
+            runs_on: windows-latest
+          - tag: "windows-2025-${{ github.event.inputs.version }}"
+            runs_on: windows-2025
     steps:
       - name: Login to GitHub Container Registry
         uses: docker/login-action@v3
