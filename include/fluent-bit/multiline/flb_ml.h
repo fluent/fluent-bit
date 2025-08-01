@@ -57,7 +57,7 @@
 
 /* Return codes */
 #define FLB_MULTILINE_OK         0
-#define FLB_MULTILINE_TRUNCATED  1
+#define FLB_MULTILINE_TRUNCATED  2
 
 /* Maximum number of groups per stream */
 #define FLB_ML_MAX_GROUPS       6
