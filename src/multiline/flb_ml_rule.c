@@ -23,6 +23,7 @@
 
 #include <fluent-bit/multiline/flb_ml.h>
 #include <fluent-bit/multiline/flb_ml_rule.h>
+#include <fluent-bit/multiline/flb_ml_group.h>
 
 struct to_state {
     struct flb_ml_rule *rule;
@@ -379,14 +380,18 @@ int flb_ml_rule_process(struct flb_ml_parser *ml_parser,
                     flb_sds_cat_safe(&group->buf, "\n", 1);
                 }
                 else {
-                    flb_sds_cat_safe(&group->buf, buf_data, buf_size);
+                    ret = flb_ml_group_cat(group, buf_data, buf_size);
+                    if (ret == FLB_MULTILINE_TRUNCATED) {
+                        rule = st->rule;
+                        group->rule_to_state = rule;
+                        return ret;
+                    }
                 }
                 rule = st->rule;
                 break;
             }
             rule = NULL;
         }
-
     }
 
     if (!rule) {
@@ -402,7 +407,10 @@ int flb_ml_rule_process(struct flb_ml_parser *ml_parser,
             group->rule_to_state = rule;
 
             /* concatenate the data */
-            flb_sds_cat_safe(&group->buf, buf_data, buf_size);
+            ret = flb_ml_group_cat(group, buf_data, buf_size);
+            if (ret == FLB_MULTILINE_TRUNCATED) {
+                return ret;
+            }
 
             /* Copy full map content in stream buffer */
             flb_ml_register_context(group, tm, full_map);
