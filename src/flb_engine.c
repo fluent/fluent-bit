@@ -1036,11 +1036,6 @@ int flb_engine_start(struct flb_config *config)
                     event->priority = FLB_ENGINE_PRIORITY_SHUTDOWN;
                 }
                 else if (ret == FLB_ENGINE_SHUTDOWN) {
-                    if (config->shutdown_fd > 0) {
-                        mk_event_timeout_destroy(config->evl,
-                                                 &config->event_shutdown);
-                    }
-
                     /* Increase the grace counter */
                     config->grace_count++;
 
@@ -1105,6 +1100,12 @@ int flb_engine_start(struct flb_config *config)
                                  tasks);
                         ret = config->exit_status_code;
                         flb_engine_shutdown(config);
+
+                        if (config->shutdown_fd > 0) {
+                            mk_event_timeout_destroy(config->evl,
+                                                     &config->event_shutdown);
+                        }
+
                         config = NULL;
                         return ret;
                     }
