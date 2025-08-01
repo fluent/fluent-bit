@@ -382,8 +382,11 @@ int flb_ml_rule_process(struct flb_ml_parser *ml_parser,
                 else {
                     ret = flb_ml_group_cat(group, buf_data, buf_size);
                     if (ret == FLB_MULTILINE_TRUNCATED) {
-                        rule = st->rule;
-                        group->rule_to_state = rule;
+                        /* Buffer is full. Flush immediately to send the truncated record. */
+                        flb_ml_flush_stream_group(ml_parser, mst, group, FLB_FALSE);
+
+                        /* Reset state so no more lines are appended to this record. */
+                        group->rule_to_state = NULL;
                         return ret;
                     }
                 }
