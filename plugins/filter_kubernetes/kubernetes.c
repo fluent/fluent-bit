@@ -136,7 +136,7 @@ static void parse_pod_service_map(struct flb_kube *ctx, char *api_buf, size_t ap
                 v = api_map.via.map.ptr[i].val;
                 if (k.type == MSGPACK_OBJECT_STR && v.type == MSGPACK_OBJECT_MAP) {
                     char *pod_name = flb_strndup(k.via.str.ptr, k.via.str.size);
-                    struct service_attributes *service_attributes = flb_malloc(sizeof(struct service_attributes));
+                    struct service_attributes *service_attributes = flb_calloc(1, sizeof(struct service_attributes));
                     for (j = 0; j < v.via.map.size; j++) {
                         attributeKey = v.via.map.ptr[j].key;
                         attributeValue = v.via.map.ptr[j].val;
@@ -1024,6 +1024,19 @@ static int cb_kube_exit(void *data, struct flb_config *config)
     struct flb_kube *ctx;
 
     ctx = data;
+    
+    if (ctx->pod_hash_table) {
+        struct mk_list *head, *tmp;
+        struct flb_hash_table_entry *entry;
+        
+        mk_list_foreach_safe(head, tmp, &ctx->pod_hash_table->entries) {
+            entry = mk_list_entry(head, struct flb_hash_table_entry, _head_parent);
+            if (entry->val) {
+                flb_free(entry->val);
+            }
+        }
+    }
+    
     flb_kube_conf_destroy(ctx);
     if (background_thread) {
         pthread_cancel(background_thread);
