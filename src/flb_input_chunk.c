@@ -38,6 +38,7 @@
 #include <fluent-bit/flb_ring_buffer.h>
 #include <chunkio/chunkio.h>
 #include <monkey/mk_core.h>
+#include <cmetrics/cmt_histogram.h>
 
 
 #ifdef FLB_HAVE_CHUNK_TRACE
@@ -1672,7 +1673,8 @@ static int input_chunk_append_raw(struct flb_input_instance *in,
         /* fluentbit_input_bytes_total */
         cmt_counter_add(in->cmt_bytes, ts, buf_size,
                         1, (char *[]) {(char *) flb_input_name(in)});
-
+        cmt_histogram_observe(in->cmt_record_sizes, ts, buf_size,
+                              1, (char *[]){(char *) flb_input_name(in)});
         /* OLD api */
         flb_metrics_sum(FLB_METRIC_N_RECORDS, ic->added_records, in->metrics);
         flb_metrics_sum(FLB_METRIC_N_BYTES, buf_size, in->metrics);
