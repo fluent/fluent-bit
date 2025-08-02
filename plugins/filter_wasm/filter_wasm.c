@@ -104,7 +104,7 @@ static int cb_wasm_filter(const void *data, size_t bytes,
         switch(ctx->event_format) {
         case FLB_FILTER_WASM_FMT_JSON:
             /* Encode as JSON from msgpack */
-            buf = flb_msgpack_to_json_str(alloc_size, log_event.body);
+            buf = flb_msgpack_to_json_str(alloc_size, log_event.body, config->json_escape_unicode);
 
             if (buf) {
                 /* Execute WASM program */

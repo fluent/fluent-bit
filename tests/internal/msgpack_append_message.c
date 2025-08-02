@@ -53,7 +53,7 @@ static inline int process_pack(char *pack, size_t size)
                                                        MSGPACK_OBJECT_STR);
             TEST_CHECK(ret == 0);
 
-            out_buf = flb_msgpack_raw_to_json_sds(appended_buffer, appended_size);
+            out_buf = flb_msgpack_raw_to_json_sds(appended_buffer, appended_size, FLB_TRUE);
             TEST_CHECK(out_buf != NULL);
             p = strstr(out_buf, "\"expanding\":\"injected\"");
             if (!TEST_CHECK(p != NULL)) {
