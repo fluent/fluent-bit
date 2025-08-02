@@ -170,7 +170,7 @@ int we_os_update(struct flb_we *ctx)
     DWORD caption_len = sizeof(caption), build_len = sizeof(build_number);
     uint64_t timestamp = 0;
     char label_caption[90];
-    TIME_ZONE_INFORMATION tzi;
+    DYNAMIC_TIME_ZONE_INFORMATION dtzi;
     DWORD tztype = 0;
     char *displaytz;
 
@@ -223,21 +223,23 @@ int we_os_update(struct flb_we *ctx)
 
     cmt_gauge_set(ctx->os->time, timestamp, (double)timestamp/1000000000L, 0, NULL);
 
-    tztype = GetTimeZoneInformation(&tzi);
+    _tzset();
+
+    tztype = GetDynamicTimeZoneInformation(&dtzi);
     switch (tztype) {
     case TIME_ZONE_ID_STANDARD:
-        displaytz = we_convert_wstr(tzi.StandardName, CP_UTF8);
+        displaytz = we_convert_wstr(dtzi.StandardName, CP_UTF8);
         cmt_gauge_set(ctx->os->tz, timestamp, 1.0, 1, (char *[]) {displaytz});
         flb_free(displaytz);
         break;
     case TIME_ZONE_ID_DAYLIGHT:
-        displaytz = we_convert_wstr(tzi.DaylightName, CP_UTF8);
+        displaytz = we_convert_wstr(dtzi.DaylightName, CP_UTF8);
         cmt_gauge_set(ctx->os->tz, timestamp, 1.0, 1, (char *[]) {displaytz});
         flb_free(displaytz);
         break;
     case TIME_ZONE_ID_UNKNOWN:
         /* The current timezone does not use daylight saving time. */
-        displaytz = we_convert_wstr(tzi.StandardName, CP_UTF8);
+        displaytz = we_convert_wstr(dtzi.StandardName, CP_UTF8);
         cmt_gauge_set(ctx->os->tz, timestamp, 1.0, 1, (char *[]) {displaytz});
         flb_free(displaytz);
         break;
