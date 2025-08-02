@@ -35,14 +35,25 @@ struct flb_sqldb *flb_sqldb_open(const char *path, const char *desc,
     struct flb_sqldb *db;
     sqlite3 *sdb = NULL;
 
-    db = flb_malloc(sizeof(struct flb_sqldb));
-    if (!db) {
+    db = flb_calloc(1, sizeof(struct flb_sqldb));
+
+    if (db == NULL) {
         flb_errno();
+
         return NULL;
     }
+
     db->parent = NULL;
     db->shared = FLB_FALSE;
     db->users  = 0;
+
+    ret = flb_lock_init(&db->lock);
+
+    if (ret != 0) {
+        flb_free(db);
+
+        return NULL;
+    }
 
     /*
      * The database handler can be shared across different instances of
@@ -75,16 +86,41 @@ struct flb_sqldb *flb_sqldb_open(const char *path, const char *desc,
     }
     else {
         ret = sqlite3_open(path, &sdb);
+
         if (ret) {
             flb_error("[sqldb] cannot open database %s", path);
+
+            flb_lock_destroy(&db->lock);
             flb_free(db);
+
             return NULL;
+
         }
         db->handler = sdb;
     }
 
     db->path = flb_strdup(path);
+
+    if (db->path == NULL) {
+        flb_lock_destroy(&db->lock);
+        sqlite3_close(sdb);
+        flb_free(db);
+
+        return NULL;
+    }
+
+
     db->desc = flb_strdup(desc);
+
+    if (db->desc == NULL) {
+        flb_lock_destroy(&db->lock);
+        flb_free(db->path);
+        sqlite3_close(sdb);
+        flb_free(db);
+
+        return NULL;
+    }
+
     mk_list_add(&db->_head, &config->sqldb_list);
 
     return db;
@@ -102,9 +138,11 @@ int flb_sqldb_close(struct flb_sqldb *db)
         sqlite3_exec(db->handler, "COMMIT;", NULL, NULL, NULL);
         sqlite3_close(db->handler);
     }
+
     mk_list_del(&db->_head);
     flb_free(db->path);
     flb_free(db->desc);
+    flb_lock_destroy(&db->lock);
     flb_free(db);
 
     return 0;
@@ -130,4 +168,18 @@ int flb_sqldb_query(struct flb_sqldb *db, const char *sql,
 int64_t flb_sqldb_last_id(struct flb_sqldb *db)
 {
     return sqlite3_last_insert_rowid(db->handler);
+}
+
+int flb_sqldb_lock(struct flb_sqldb *db)
+{
+    return flb_lock_acquire(&db->lock,
+                            FLB_LOCK_INFINITE_RETRY_LIMIT,
+                            FLB_LOCK_DEFAULT_RETRY_DELAY);
+}
+
+int flb_sqldb_unlock(struct flb_sqldb *db)
+{
+    return flb_lock_release(&db->lock,
+                            FLB_LOCK_INFINITE_RETRY_LIMIT,
+                            FLB_LOCK_DEFAULT_RETRY_DELAY);
 }
