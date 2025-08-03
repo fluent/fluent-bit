@@ -648,7 +648,7 @@ static int process_content(struct flb_tail_file *file, size_t *bytes)
         processed_bytes += len + 1;
         lines++;
         file->parsed = 0;
-        file->last_processed_bytes += processed_bytes;
+        file->last_processed_bytes = processed_bytes;
     }
 
     if (decoded) {
@@ -1643,6 +1643,7 @@ int flb_tail_file_chunk(struct flb_tail_file *file)
 
         /* Adjust the file offset and buffer */
         file->stream_offset += processed_bytes;
+        file->last_processed_bytes = 0;
         consume_bytes(file->buf_data, processed_bytes, file->buf_len);
         file->buf_len -= processed_bytes;
         file->buf_data[file->buf_len] = '\0';
