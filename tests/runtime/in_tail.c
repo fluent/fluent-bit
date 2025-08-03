@@ -1426,7 +1426,7 @@ void flb_test_multiline_offset_key()
         exit(EXIT_FAILURE);
     }
 
-    ret = flb_service_set(ctx, "Parsers_File", DPATH "/parsers_multiline.conf", NULL);
+    ret = flb_service_set(ctx->flb, "Parsers_File", DPATH "/parsers_multiline.conf", NULL);
     TEST_CHECK(ret == 0);
 
     ret = flb_input_set(ctx->flb, ctx->o_ffd,
