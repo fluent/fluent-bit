@@ -21,6 +21,7 @@
 #include <stdlib.h>
 #include <signal.h>
 #include <stddef.h>
+#include <string.h>
 
 #include <monkey/mk_core.h>
 #include <fluent-bit/flb_info.h>
@@ -41,7 +42,13 @@
 #include <fluent-bit/flb_http_server.h>
 #include <fluent-bit/flb_plugin.h>
 #include <fluent-bit/flb_utils.h>
+#include <fluent-bit/flb_error.h>
 #include <fluent-bit/flb_config_format.h>
+#include <fluent-bit/config_format/flb_cf.h>
+#include <fluent-bit/config_format/flb_cf_fluentbit.h>
+#ifdef FLB_HAVE_LIBYAML
+#include <fluent-bit/config_format/flb_cf_yaml.h>
+#endif
 #include <fluent-bit/multiline/flb_ml.h>
 #include <fluent-bit/flb_bucket_queue.h>
 
@@ -145,8 +152,8 @@ struct flb_service_config service_configs[] = {
     {FLB_CONF_STORAGE_BL_MEM_LIMIT,
      FLB_CONF_TYPE_STR,
      offsetof(struct flb_config, storage_bl_mem_limit)},
-    {FLB_CONF_STORAGE_BL_FLUSH_ON_SHUTDOWN,                  
-     FLB_CONF_TYPE_BOOL,                                       
+    {FLB_CONF_STORAGE_BL_FLUSH_ON_SHUTDOWN,
+     FLB_CONF_TYPE_BOOL,
      offsetof(struct flb_config, storage_bl_flush_on_shutdown)},
     {FLB_CONF_STORAGE_MAX_CHUNKS_UP,
      FLB_CONF_TYPE_INT,
@@ -879,7 +886,7 @@ static int configure_plugins_type(struct flb_config *config, struct flb_cf *cf, 
                 flb_error("[config] could not configure property '%s' on "
                           "%s plugin with section name '%s'",
                           kv->key, s_type, name);
-                goto error;
+                return FLB_ERR_CFG_FILE_INVALID_PROPERTY;
             }
         }
 
@@ -1019,18 +1026,29 @@ int flb_config_load_config_format(struct flb_config *config, struct flb_cf *cf)
     if (ret == -1) {
         return -1;
     }
-
+    else if (ret == FLB_ERR_CFG_FILE_INVALID_PROPERTY) {
+        return FLB_ERR_CFG_FILE_INVALID_PROPERTY;
+    }
     ret = configure_plugins_type(config, cf, FLB_CF_INPUT);
     if (ret == -1) {
         return -1;
+    }
+    else if (ret == FLB_ERR_CFG_FILE_INVALID_PROPERTY) {
+        return FLB_ERR_CFG_FILE_INVALID_PROPERTY;
     }
     ret = configure_plugins_type(config, cf, FLB_CF_FILTER);
     if (ret == -1) {
         return -1;
     }
+    else if (ret == FLB_ERR_CFG_FILE_INVALID_PROPERTY) {
+        return FLB_ERR_CFG_FILE_INVALID_PROPERTY;
+    }
     ret = configure_plugins_type(config, cf, FLB_CF_OUTPUT);
     if (ret == -1) {
         return -1;
+    }
+    else if (ret == FLB_ERR_CFG_FILE_INVALID_PROPERTY) {
+        return FLB_ERR_CFG_FILE_INVALID_PROPERTY;
     }
 
     return 0;
@@ -1088,4 +1106,141 @@ int flb_config_task_map_grow(struct flb_config *config)
 
     return flb_config_task_map_resize(config,
                                       config->task_map_size + FLB_CONFIG_DEFAULT_TASK_MAP_SIZE_GROWTH_SiZE);
+}
+
+static int flb_config_load_remote(struct flb_config *config, const char *path)
+{
+    int ret;
+    int http_code;
+    int response_size;
+    flb_sds_t response_body = NULL;
+    struct flb_cf *cf = NULL;
+    char *ptr;
+
+    flb_info("loading remote YAML configuration from: %s", path);
+
+    /* Make HTTP request to get configuration */
+    ret = flb_http_client_get_content(config, path, &response_body, &http_code, &response_size);
+    if (ret == -1) {
+        if (response_body != NULL) {
+            flb_error("failed to load remote config from %s, http_code: %d, response_body:\n'%s'\n",
+                      path, http_code, response_body);
+            flb_sds_destroy(response_body);
+        }
+        else {
+            flb_error("failed to load remote config from %s, http_code: %d", path, http_code);
+        }
+        return -1;
+    }
+
+    /* Check HTTP status code */
+    if (http_code != 200) {
+        flb_error("failed to load remote config from %s, http_code: %d", path, http_code);
+        if (response_body != NULL) {
+            flb_error("response body: %s", response_body);
+            flb_sds_destroy(response_body);
+        }
+        return -1;
+    }
+
+    /* Remote configuration only supports YAML format */
+    ptr = strrchr(path, '.');
+    if (!ptr) {
+        flb_error("remote configuration URL must have a .yaml or .yml extension: %s", path);
+        flb_sds_destroy(response_body);
+        return -1;
+    }
+
+    if (strcasecmp(ptr, ".yaml") == 0 || strcasecmp(ptr, ".yml") == 0) {
+        /* Create YAML configuration from response body */
+        cf = flb_cf_yaml_create(NULL, (char *) path, response_body, flb_sds_len(response_body));
+
+    }
+    else {
+        flb_error("remote configuration only supports YAML format (.yaml/.yml), got: %s", path);
+        flb_sds_destroy(response_body);
+        return -1;
+    }
+
+    /* Clean up response body */
+    flb_sds_destroy(response_body);
+
+    if (!cf) {
+        flb_error("failed to parse remote YAML configuration from %s", path);
+        return -1;
+    }
+
+    /* Free the original cf_main if it exists */
+    if (config->cf_main) {
+        flb_cf_destroy(config->cf_main);
+    }
+
+    /* Load the configuration into the main config */
+    ret = flb_config_load_config_format(config, cf);
+    if (ret != 0) {
+        if (ret == FLB_ERR_CFG_FILE_INVALID_PROPERTY) {
+            flb_error("failed to load remote YAML configuration format from %s", path);
+            flb_cf_destroy(cf);
+            return FLB_ERR_CFG_FILE_INVALID_PROPERTY;
+        }
+        flb_error("failed to load remote YAML configuration format from %s", path);
+        flb_cf_destroy(cf);
+        return -1;
+    }
+
+    /* Set the main configuration format context */
+    config->cf_main = cf;
+
+    flb_info("successfully loaded remote YAML configuration from %s", path);
+    return 0;
+}
+
+static int flb_config_load_local(struct flb_config *config, const char *path)
+{
+    struct flb_cf *cf = NULL;
+    int ret;
+
+    /* Create configuration from local file */
+    cf = flb_cf_create_from_file(NULL, (char *) path);
+    if (!cf) {
+        flb_error("failed to load local configuration from %s", path);
+        return -1;
+    }
+
+    /* Free the original cf_main if it exists */
+    if (config->cf_main) {
+        flb_cf_destroy(config->cf_main);
+    }
+
+    /* Load the configuration into the main config */
+    ret = flb_config_load_config_format(config, cf);
+    if (ret != 0) {
+        if (ret == FLB_ERR_CFG_FILE_INVALID_PROPERTY) {
+            flb_error("failed to load local configuration format from %s", path);
+            flb_cf_destroy(cf);
+            return FLB_ERR_CFG_FILE_INVALID_PROPERTY;
+        }
+        flb_error("failed to load local configuration format from %s", path);
+        flb_cf_destroy(cf);
+        return -1;
+    }
+
+    /* Set the main configuration format context */
+    config->cf_main = cf;
+
+    flb_info("successfully loaded local configuration from %s", path);
+    return 0;
+}
+
+int flb_config_load_path(struct flb_config *config, const char *path)
+{
+    /* check if the path is local or remote */
+    if (strncmp(path, "http://", 7) == 0 || strncmp(path, "https://", 8) == 0) {
+        /* remote path */
+        return flb_config_load_remote(config, path);
+    }
+    else {
+        /* local path */
+        return flb_config_load_local(config, path);
+    }
 }

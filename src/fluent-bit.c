@@ -1077,7 +1077,7 @@ int flb_main(int argc, char **argv)
         { "trace-output",          required_argument, NULL, FLB_LONG_TRACE_OUTPUT },
         { "trace-output-property", required_argument, NULL, FLB_LONG_TRACE_OUTPUT_PROPERTY },
 #endif
-        { "disable-thread-safety-on-hot-reload", no_argument, NULL, 'W' },
+        { "disable-thread-safety-on-hot-reloading", no_argument, NULL, 'W' },
         { NULL, 0, NULL, 0 }
     };
 
@@ -1341,10 +1341,42 @@ int flb_main(int argc, char **argv)
     /* Validate config file */
 #ifndef FLB_HAVE_STATIC_CONF
     if (cfg_file) {
-        if (access(cfg_file, R_OK) != 0) {
-            flb_free(cfg_file);
-            flb_cf_destroy(cf_opts);
-            flb_utils_error(FLB_ERR_CFG_FILE);
+        int ret;
+        /* Check if this is a remote URL */
+        if (strncmp(cfg_file, "http://", 7) == 0 || strncmp(cfg_file, "https://", 8) == 0) {
+            /* Remote configuration - load it */
+            ret = flb_config_load_path(config, cfg_file);
+            if (ret != 0) {
+                flb_free(cfg_file);
+                flb_cf_destroy(cf_opts);
+                if (ret == FLB_ERR_CFG_FILE_INVALID_PROPERTY) {
+                    flb_utils_error(FLB_ERR_CFG_FILE_INVALID_PROPERTY);
+                }
+                flb_utils_error(FLB_ERR_CFG_FILE);
+            }
+            /* Update cf to point to the loaded configuration */
+            cf = config->cf_main;
+            /* Set the configuration root path for relative includes */
+            flb_service_conf_path_set(config, ".");
+        }
+        else {
+            /* Local file - load it */
+            ret = flb_config_load_path(config, cfg_file);
+            if (ret != 0) {
+                flb_free(cfg_file);
+                flb_cf_destroy(cf_opts);
+                if (ret == FLB_ERR_CFG_FILE_INVALID_PROPERTY) {
+                    flb_utils_error(FLB_ERR_CFG_FILE_INVALID_PROPERTY);
+                }
+                flb_utils_error(FLB_ERR_CFG_FILE);
+            }
+            if (access(cfg_file, R_OK) != 0) {
+                flb_free(cfg_file);
+                flb_cf_destroy(cf_opts);
+                flb_utils_error(FLB_ERR_CFG_FILE);
+            }
+            /* Update cf to point to the loaded configuration */
+            cf = config->cf_main;
         }
     }
 
@@ -1355,12 +1387,17 @@ int flb_main(int argc, char **argv)
         exit(EXIT_FAILURE);
     }
 
-    /* Load the service configuration file */
-    tmp = service_configure(cf, config, cfg_file);
-    flb_free(cfg_file);
-    if (!tmp) {
-        flb_cf_destroy(cf_opts);
-        flb_utils_error(FLB_ERR_CFG_FILE_STOP);
+    /* Load the service configuration file (only for local files) */
+    if (cfg_file && (strncmp(cfg_file, "http://", 7) != 0 && strncmp(cfg_file, "https://", 8) != 0)) {
+        tmp = service_configure(cf, config, cfg_file);
+        flb_free(cfg_file);
+        if (!tmp) {
+            flb_cf_destroy(cf_opts);
+            flb_utils_error(FLB_ERR_CFG_FILE_STOP);
+        }
+    } else {
+        /* For remote configurations, the config is already loaded */
+        flb_free(cfg_file);
     }
 #else
     tmp = service_configure(cf, config, "fluent-bit.conf");

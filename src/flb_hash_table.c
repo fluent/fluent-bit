@@ -474,6 +474,7 @@ int flb_hash_table_add(struct flb_hash_table *ht, const char *key, int key_len,
     /* store or reference the value */
     ret = entry_set_value(entry, val, val_size);
     if (ret == -1) {
+        flb_free(entry->key);
         flb_free(entry);
         return -1;
     }

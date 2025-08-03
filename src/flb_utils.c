@@ -80,6 +80,9 @@ void flb_utils_error(int err)
     case FLB_ERR_CFG_FILE_STOP:
         msg = "configuration file contains errors";
         break;
+    case FLB_ERR_CFG_FILE_INVALID_PROPERTY:
+        msg = "configuration file contains invalid plugin properties";
+        break;
     case FLB_ERR_CFG_FLUSH:
         msg = "invalid flush value";
         break;

@@ -466,6 +466,9 @@ struct flb_http_request *flb_http_client_request_builder_unsafe(
     struct flb_http_client_ng *client,
     ...);
 
+int flb_http_client_get_content(struct flb_config *config, const char *url,
+                                flb_sds_t *response_body, int *http_code, int *response_size);
+
 #define flb_http_client_request_builder(client, ...) \
             flb_http_client_request_builder_unsafe( \
                 client, \

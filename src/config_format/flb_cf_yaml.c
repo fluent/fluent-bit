@@ -243,8 +243,9 @@ static struct parser_state *state_create(struct file_state *parent, struct file_
 static void state_destroy(struct parser_state *s);
 
 
-static int read_config(struct flb_cf *cf, struct local_ctx *ctx,
-                       struct file_state *parent, char *cfg_file);
+static int read_config(struct flb_cf *conf, struct local_ctx *ctx,
+                       struct file_state *parent, char *cfg_file,
+                       char *yaml_buf, size_t yaml_size);
 
 static char *state_str(enum state val)
 {
@@ -518,8 +519,8 @@ static int read_glob(struct flb_cf *conf, struct local_ctx *ctx,
     }
 
     for (idx = 0; idx < glb.gl_pathc; idx++) {
-        ret = read_config(conf, ctx, state->file, glb.gl_pathv[idx]);
-
+        ret = read_config(conf, ctx, state->file, glb.gl_pathv[idx],
+                          NULL, 0);
         if (ret < 0) {
             break;
         }
@@ -931,7 +932,7 @@ static int consume_event(struct flb_cf *conf, struct local_ctx *ctx,
                 ret = read_glob(conf, ctx, state, value);
             }
             else {
-                ret = read_config(conf, ctx, state->file, value);
+                ret = read_config(conf, ctx, state->file, value, NULL, 0);
             }
 
             if (ret == -1) {
@@ -2776,7 +2777,8 @@ static struct parser_state *state_create(struct file_state *parent, struct file_
 }
 
 static int read_config(struct flb_cf *conf, struct local_ctx *ctx,
-                       struct file_state *parent, char *cfg_file)
+                       struct file_state *parent, char *cfg_file,
+                       char *yaml_buf, size_t yaml_size)
 {
     int ret;
     int status;
@@ -2786,104 +2788,129 @@ static int read_config(struct flb_cf *conf, struct local_ctx *ctx,
     flb_sds_t include_file = NULL;
     yaml_parser_t parser;
     yaml_event_t event;
-    FILE *fh;
+    FILE *fh = NULL;
     struct file_state fstate;
+    int use_buffer = (yaml_buf != NULL && yaml_size > 0);
 
-    if (parent && cfg_file[0] != '/') {
+    if (use_buffer) {
+        /* Use provided buffer - create a virtual file state */
+        fstate.name = flb_sds_create("buffer");
+        fstate.path = flb_sds_create(".");
+        fstate.parent = parent;
 
-        include_dir = flb_sds_create_size(strlen(cfg_file) + strlen(parent->path));
-
-        if (include_dir == NULL) {
-            flb_error("unable to create filename");
+        if (!fstate.name || !fstate.path) {
+            flb_error("unable to create buffer file state");
             return -1;
         }
+    } else {
+        /* Use file path - resolve relative paths */
+        if (parent && cfg_file[0] != '/') {
+            include_dir = flb_sds_create_size(strlen(cfg_file) + strlen(parent->path));
+
+            if (include_dir == NULL) {
+                flb_error("unable to create filename");
+                return -1;
+            }
 
 #ifdef _WIN32
 #define PATH_CONCAT_TEMPLATE "%s\\%s"
 #else
 #define PATH_CONCAT_TEMPLATE "%s/%s"
 #endif
-        if (flb_sds_printf(&include_dir, PATH_CONCAT_TEMPLATE, parent->path, cfg_file) == NULL) {
-            flb_error("unable to create full filename");
-            return -1;
-        }
+            if (flb_sds_printf(&include_dir, PATH_CONCAT_TEMPLATE, parent->path, cfg_file) == NULL) {
+                flb_error("unable to create full filename");
+                return -1;
+            }
 #undef PATH_CONCAT_TEMPLATE
+        }
+        else {
+            include_dir = flb_sds_create(cfg_file);
 
-    }
-    else {
+            if (include_dir == NULL) {
+                flb_error("unable to create filename");
+                return -1;
+            }
+        }
 
-        include_dir = flb_sds_create(cfg_file);
+        include_file = flb_sds_create(include_dir);
 
-        if (include_dir == NULL) {
-            flb_error("unable to create filename");
+        if (include_file == NULL) {
+            flb_error("unable to create include filename");
+            flb_sds_destroy(include_dir);
+            return -1;
+        }
+
+        fstate.name = basename(include_dir);
+        fstate.path = dirname(include_dir);
+        fstate.parent = parent;
+
+        /* check if this file has been included before */
+        ret = is_file_included(ctx, include_file);
+
+        if (ret) {
+            flb_error("[config] file '%s' is already included", cfg_file);
+            flb_sds_destroy(include_dir);
+            flb_sds_destroy(include_file);
+            return -1;
+        }
+
+        flb_debug("============ %s ============", cfg_file);
+        fh = fopen(include_file, "r");
+
+        if (!fh) {
+            flb_errno();
+            flb_sds_destroy(include_dir);
+            flb_sds_destroy(include_file);
+            return -1;
+        }
+
+        /* add file to the list of included files */
+        ret = flb_slist_add(&ctx->includes, include_file);
+
+        if (ret == -1) {
+            flb_error("[config] could not register file %s", cfg_file);
+            fclose(fh);
+            flb_sds_destroy(include_dir);
+            flb_sds_destroy(include_file);
             return -1;
         }
     }
 
-    include_file = flb_sds_create(include_dir);
-
-    if (include_file == NULL) {
-        flb_error("unable to create include filename");
-        flb_sds_destroy(include_dir);
-        return -1;
-    }
-
-    fstate.name = basename(include_dir);
-    fstate.path = dirname(include_dir);
-
-    fstate.parent = parent;
+    ctx->level++;
 
     state = state_start(ctx, &fstate);
 
     if (!state) {
-        flb_error("unable to push initial include file state: %s", cfg_file);
-        flb_sds_destroy(include_dir);
-        flb_sds_destroy(include_file);
+        flb_error("unable to push initial include file state: %s",
+                  use_buffer ? "buffer" : cfg_file);
+        if (!use_buffer) {
+            flb_sds_destroy(include_dir);
+            flb_sds_destroy(include_file);
+            fclose(fh);
+        } else {
+            flb_sds_destroy(fstate.name);
+            flb_sds_destroy(fstate.path);
+        }
         return -1;
     }
-
-    /* check if this file has been included before */
-    ret = is_file_included(ctx, include_file);
-
-    if (ret) {
-        flb_error("[config] file '%s' is already included", cfg_file);
-        flb_sds_destroy(include_dir);
-        flb_sds_destroy(include_file);
-        return -1;
-    }
-
-    flb_debug("============ %s ============", cfg_file);
-    fh = fopen(include_file, "r");
-
-    if (!fh) {
-        flb_errno();
-        flb_sds_destroy(include_dir);
-        flb_sds_destroy(include_file);
-        return -1;
-    }
-
-    /* add file to the list of included files */
-    ret = flb_slist_add(&ctx->includes, include_file);
-
-    if (ret == -1) {
-        flb_error("[config] could not register file %s", cfg_file);
-        fclose(fh);
-        flb_sds_destroy(include_dir);
-        flb_sds_destroy(include_file);
-        return -1;
-    }
-    ctx->level++;
 
     yaml_parser_initialize(&parser);
-    yaml_parser_set_input_file(&parser, fh);
+
+    if (use_buffer) {
+        /* Parse from buffer */
+        yaml_parser_set_input_string(&parser, (unsigned char *)yaml_buf, yaml_size);
+    } else {
+        /* Parse from file */
+        yaml_parser_set_input_file(&parser, fh);
+    }
 
     do {
         status = yaml_parser_parse(&parser, &event);
 
         if (status == YAML_FAILURE) {
             if (parser.problem) {
-                flb_error("[config] invalid YAML in file %s at line %zu, column %zu: %s",
-                          cfg_file,
+                flb_error("[config] invalid YAML in %s at line %zu, column %zu: %s",
+                          use_buffer ? "buffer" : cfg_file,
                           parser.problem_mark.line + 1,
                           parser.problem_mark.column + 1,
                           parser.problem);
@@ -2895,8 +2922,8 @@ static int read_config(struct flb_cf *conf, struct local_ctx *ctx,
                 }
             }
             else {
-                flb_error("[config] invalid YAML format in file %s at line %zu, column %zu",
-                          cfg_file,
+                flb_error("[config] invalid YAML format in %s at line %zu, column %zu",
+                          use_buffer ? "buffer" : cfg_file,
                           parser.problem_mark.line + 1,
                           parser.problem_mark.column + 1);
 
@@ -2938,11 +2965,18 @@ done:
         state = state_pop(ctx);
     }
 
-    fclose(fh);
+    if (fh) {
+        fclose(fh);
+    }
     ctx->level--;
 
-    flb_sds_destroy(include_file);
-    flb_sds_destroy(include_dir);
+    if (!use_buffer) {
+        flb_sds_destroy(include_file);
+        flb_sds_destroy(include_dir);
+    } else {
+        flb_sds_destroy(fstate.name);
+        flb_sds_destroy(fstate.path);
+    }
 
     return code;
 }
@@ -2974,11 +3008,8 @@ struct flb_cf *flb_cf_yaml_create(struct flb_cf *conf, char *file_path,
         if (!conf) {
             return NULL;
         }
-        flb_cf_set_origin_format(conf, FLB_CF_YAML);
     }
-    else {
-        flb_cf_set_origin_format(conf, FLB_CF_YAML);
-    }
+    flb_cf_set_origin_format(conf, FLB_CF_YAML);
 
     /* initialize the parser state */
     ret = local_init(&ctx);
@@ -2988,8 +3019,8 @@ struct flb_cf *flb_cf_yaml_create(struct flb_cf *conf, char *file_path,
         return NULL;
     }
 
-    /* process the entry poing config file */
-    ret = read_config(conf, &ctx, NULL, file_path);
+    /* process the configuration from file or buffer */
+    ret = read_config(conf, &ctx, NULL, file_path, buf, size);
 
     if (ret == -1) {
         flb_cf_destroy(conf);

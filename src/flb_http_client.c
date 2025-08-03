@@ -2648,3 +2648,153 @@ struct flb_http_request *flb_http_client_request_builder_unsafe(
 
     return request;
 }
+
+/*
+ * Simple HTTP client interface to retrieve the content from a URL.
+ */
+int flb_http_client_get_content(struct flb_config *config, const char *url,
+                                flb_sds_t *response_body, int *http_code, int *response_size)
+{
+    int ret;
+    int port;
+    int release_context = FLB_FALSE;
+    size_t b_sent;
+    char *protocol = NULL;
+    char *host = NULL;
+    char *port_str = NULL;
+    char *uri = NULL;
+    int io_flags = FLB_IO_TCP;
+    flb_sds_t out = NULL;
+    struct flb_config *flb = NULL;
+    struct mk_event_loop *evl = NULL;
+    struct flb_upstream *u = NULL;
+    struct flb_connection *u_conn = NULL;
+    struct flb_http_client *c = NULL;
+    struct flb_tls *tls = NULL;
+    struct flb_net_dns dns_ctx = {0};
+
+    if (!url) {
+        return -1;
+    }
+
+    if (!config) {
+        flb = flb_config_init();
+        if (!flb) {
+            return -1;
+        }
+        release_context = FLB_TRUE;
+        flb_net_lib_init();
+        flb_net_ctx_init(&dns_ctx);
+        flb_net_dns_ctx_init();
+        flb_net_dns_ctx_set(&dns_ctx);
+
+        evl = mk_event_loop_create(8);
+        if (!evl) {
+            goto cleanup;
+        }
+        flb->evl = evl;
+    }
+    else {
+        flb = config;
+    }
+
+    ret = flb_utils_url_split(url, &protocol, &host, &port_str, &uri);
+    if (ret != 0) {
+        goto cleanup;
+    }
+
+    if (!host || !port_str || !uri) {
+        goto cleanup;
+    }
+
+    port = atoi(port_str);
+    if (port <= 0) {
+        goto cleanup;
+    }
+
+    if (protocol && strcasecmp(protocol, "https") == 0) {
+        io_flags = FLB_IO_TLS;
+
+        flb_tls_init();
+        tls = flb_tls_create(FLB_TLS_CLIENT_MODE, FLB_TRUE, 0,
+                             host, NULL, NULL, NULL, NULL, NULL);
+        if (!tls) {
+            goto cleanup;
+        }
+
+        flb_tls_set_verify_hostname(tls, FLB_TRUE);
+
+        ret = flb_tls_load_system_certificates(tls);
+        if (ret != 0) {
+            goto cleanup;
+        }
+    }
+
+    if (!config) {
+        goto cleanup;
+    }
+
+    u = flb_upstream_create(flb, host, port, io_flags, tls);
+    if (!u) {
+        goto cleanup;
+    }
+
+    /* use blocking mode so we do not depend on coroutines */
+    flb_stream_disable_async_mode(&u->base);
+
+    u_conn = flb_upstream_conn_get(u);
+    if (!u_conn) {
+        goto cleanup;
+    }
+
+    c = flb_http_client(u_conn, FLB_HTTP_GET, uri,
+                        NULL, 0, host, port, NULL, 0);
+    if (!c) {
+        goto cleanup;
+    }
+
+    ret = flb_http_do(c, &b_sent);
+    if (ret == 0) {
+        *http_code = c->resp.status;
+        if (c->resp.status == 200 && c->resp.payload_size > 0) {
+            *response_body = flb_sds_create_len(c->resp.payload, c->resp.payload_size);
+        }
+    }
+
+cleanup:
+    if (c) {
+        flb_http_client_destroy(c);
+    }
+    if (u_conn) {
+        flb_upstream_conn_release(u_conn);
+    }
+    if (u) {
+        flb_upstream_destroy(u);
+    }
+    if (evl) {
+        mk_event_loop_destroy(evl);
+    }
+
+    if (release_context) {
+        flb_config_exit(flb);
+    }
+
+    if (tls) {
+        flb_tls_destroy(tls);
+    }
+    if (protocol) {
+        flb_free(protocol);
+    }
+    if (host) {
+        flb_free(host);
+    }
+    if (port_str) {
+        flb_free(port_str);
+    }
+    if (uri) {
+        flb_free(uri);
+    }
+
+    return 0;
+}
+
