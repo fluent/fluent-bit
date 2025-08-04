@@ -25,10 +25,11 @@
 
 #define FLB_MULTILINE_MEM_BUF_LIMIT_DEFAULT  "10M"
 #define FLB_MULTILINE_METRIC_EMITTED         200
+#define FLB_MULTILINE_METRIC_TRUNCATED       201
 #define FLB_MULTILINE_MODE_PARTIAL_MESSAGE   "partial_message"
 #define FLB_MULTILINE_MODE_PARSER            "parser"
 
-/* 
+/*
  * input instance + tag is the unique identifier
  * for a multiline stream
  * TODO: implement clean up of streams that haven't been used recently
@@ -77,6 +78,7 @@ struct ml_ctx {
 
 #ifdef FLB_HAVE_METRICS
     struct cmt_counter *cmt_emitted;
+    struct cmt_counter *cmt_truncated;
 #endif
 };
 
