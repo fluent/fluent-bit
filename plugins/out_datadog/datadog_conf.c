@@ -103,6 +103,11 @@ struct flb_out_datadog *flb_datadog_conf_create(struct flb_output_instance *ins,
     tmp = flb_output_get_property("site", ins);
     if (tmp){
         ctx->site = flb_sds_create(tmp);
+        if (!ctx->site) {
+            flb_plg_error(ctx->ins, "failed to allocate memory for site parameter");
+            flb_datadog_conf_destroy(ctx);
+            return NULL;
+        }
         flb_plg_debug(ctx->ins, "site parameter set to: %s", ctx->site);
     } else {
         flb_plg_debug(ctx->ins, "no site parameter found");
@@ -158,10 +163,7 @@ struct flb_out_datadog *flb_datadog_conf_create(struct flb_output_instance *ins,
                 flb_datadog_conf_destroy(ctx);
                 return NULL;
             }
-            flb_plg_debug(ctx->ins, "created base hostname: %s", tmp_sds);
-            flb_plg_debug(ctx->ins, "about to concatenate site: %s (length: %zu)", ctx->site, flb_sds_len(ctx->site));
             tmp_sds = flb_sds_cat(tmp_sds, (const char *)ctx->site, flb_sds_len(ctx->site));
-            flb_plg_debug(ctx->ins, "after concatenation: %s", tmp_sds);
             ctx->host = tmp_sds;
             flb_plg_debug(ctx->ins, "host constructed from site: %s", ctx->host);
         } else {
