@@ -1480,7 +1480,7 @@ static void test_buffer_limit_truncation()
 
     config = flb_config_init();
     /* The buffer limit is for the concatenated 'log' content, not the full JSON */
-    config->multiline_buffer_limit = 80;
+    config->multiline_buffer_limit = "80";
 
     /* Use the dummy 'docker' parser for JSON extraction */
     p = flb_parser_get("docker", config);
