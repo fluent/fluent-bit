@@ -883,7 +883,7 @@ struct flb_ml *flb_ml_create(struct flb_config *ctx, char *name)
     }
 
     ml->config = ctx;
-    limit = flb_utils_size_to_bytes(ml->config->multiline_buffer_limit);
+    limit = flb_utils_size_to_binary_bytes(ml->config->multiline_buffer_limit);
     if (limit > 0) {
         ml->buffer_limit = (size_t)limit;
     }
