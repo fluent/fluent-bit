@@ -53,7 +53,8 @@
 #define FLB_ML_BUF_SIZE         1024*4
 
 /* Default limit for concatenated multiline messages: 2MB */
-#define FLB_ML_BUFFER_LIMIT_DEFAULT  (1024 * 1024 * 2)
+#define FLB_ML_BUFFER_LIMIT_DEFAULT_STR "2MB"
+#define FLB_ML_BUFFER_LIMIT_DEFAULT     (1024 * 1024 * 2)
 
 /* Return codes */
 #define FLB_MULTILINE_OK         0
