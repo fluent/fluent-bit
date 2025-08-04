@@ -607,6 +607,92 @@ int64_t flb_utils_size_to_bytes(const char *size)
     return (int64_t)val;
 }
 
+int64_t flb_utils_size_to_binary_bytes(const char *size)
+{
+    int i;
+    int len;
+    int plen = 0;
+    double val;
+    char tmp[4] = {0};
+    int64_t KiB = 1024;
+    int64_t MiB = 1024 * KiB;
+    int64_t GiB = 1024 * MiB;
+
+    if (!size) {
+        return -1;
+    }
+
+    if (strcasecmp(size, "false") == 0) {
+        return 0;
+    }
+
+    len = strlen(size);
+    val = atof(size);
+
+    if (len == 0) {
+        return -1;
+    }
+
+    for (i = len - 1; i >= 0; i--) {
+        if (isalpha(size[i])) {
+            plen++;
+        }
+        else {
+            break;
+        }
+    }
+
+    if (plen == 0) {
+        return (int64_t)val;
+    }
+    else if (plen > 3) {
+        return -1;
+    }
+
+    for (i = 0; i < plen; i++) {
+        tmp[i] = toupper(size[len - plen + i]);
+    }
+
+    if (plen == 2) {
+        if (tmp[1] != 'B') {
+            return -1;
+        }
+    }
+    if (plen == 3) {
+        if (tmp[1] != 'I' || tmp[2] != 'B') {
+            return -1;
+        }
+    }
+
+    if (tmp[0] == 'K') {
+        /* set upper bound (2**64/KiB)/2 to avoid overflows */
+        if (val >= 9223372036854775.0 || val <= -9223372036854774.0)
+        {
+            return -1;
+        }
+        return (int64_t)(val * KiB);
+    }
+    else if (tmp[0] == 'M') {
+        /* set upper bound (2**64/MiB)/2 to avoid overflows */
+        if (val >= 9223372036854.0 || val <= -9223372036853.0) {
+            return -1;
+        }
+        return (int64_t)(val * MiB);
+    }
+    else if (tmp[0] == 'G') {
+        /* set upper bound (2**64/GiB)/2 to avoid overflows */
+        if (val >= 9223372036.0 || val <= -9223372035.0) {
+            return -1;
+        }
+        return (int64_t)(val * GiB);
+    }
+    else {
+        return -1;
+    }
+
+    return (int64_t)val;
+}
+
 int64_t flb_utils_hex2int(char *hex, int len)
 {
     int i = 0;
