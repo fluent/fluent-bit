@@ -1349,6 +1349,7 @@ int flb_main(int argc, char **argv)
             if (ret != 0) {
                 flb_free(cfg_file);
                 flb_cf_destroy(cf_opts);
+                flb_config_exit(config);
                 if (ret == FLB_ERR_CFG_FILE_INVALID_PROPERTY) {
                     flb_utils_error(FLB_ERR_CFG_FILE_INVALID_PROPERTY);
                 }
@@ -1365,6 +1366,7 @@ int flb_main(int argc, char **argv)
             if (ret != 0) {
                 flb_free(cfg_file);
                 flb_cf_destroy(cf_opts);
+                flb_config_exit(config);
                 if (ret == FLB_ERR_CFG_FILE_INVALID_PROPERTY) {
                     flb_utils_error(FLB_ERR_CFG_FILE_INVALID_PROPERTY);
                 }
