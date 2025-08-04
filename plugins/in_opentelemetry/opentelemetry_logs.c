@@ -142,6 +142,11 @@ static int otlp_pack_any_value(msgpack_packer *mp_pck,
 
     result = -2;
 
+    if (body == NULL) {
+        msgpack_pack_nil(mp_pck);
+        return 0;
+    }
+
     switch(body->value_case){
         case OPENTELEMETRY__PROTO__COMMON__V1__ANY_VALUE__VALUE_STRING_VALUE:
             result = otel_pack_string(mp_pck, body->string_value);
@@ -537,6 +542,7 @@ static int binary_payload_to_msgpack(struct flb_opentelemetry *ctx,
                     }
                     else {
                         if (ctx->logs_body_key == NULL &&
+                            log_records[log_record_index]->body != NULL &&
                             log_records[log_record_index]->body->value_case ==
                             OPENTELEMETRY__PROTO__COMMON__V1__ANY_VALUE__VALUE_KVLIST_VALUE) {
                             ret = flb_log_event_encoder_set_body_from_raw_msgpack(
