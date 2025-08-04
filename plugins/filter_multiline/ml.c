@@ -369,18 +369,24 @@ static int cb_ml_init(struct flb_filter_instance *ins,
                                             "fluentbit", "filter", "emit_records_total",
                                             "Total number of emitted records",
                                             1, (char *[]) {"name"});
+
+        /* OLD api */
+        flb_metrics_add(FLB_MULTILINE_METRIC_EMITTED,
+                        "emit_records", ctx->ins->metrics);
+#endif
+    }
+        /* Register a metric to count the number of emitted records */
+        /* Truncated metrics always should be existing. */
+#ifdef FLB_HAVE_METRICS
         ctx->cmt_truncated = cmt_counter_create(ins->cmt,
                                                 "fluentbit", "filter", "emit_truncated_total",
                                                 "Total number of truncated occurence of multiline",
                                                 1, (char *[]) {"name"});
 
         /* OLD api */
-        flb_metrics_add(FLB_MULTILINE_METRIC_EMITTED,
-                        "emit_records", ctx->ins->metrics);
         flb_metrics_add(FLB_MULTILINE_METRIC_TRUNCATED,
                         "emit_truncated", ctx->ins->metrics);
 #endif
-    }
 
     mk_list_init(&ctx->ml_streams);
     mk_list_init(&ctx->split_message_packers);
@@ -845,16 +851,6 @@ static int cb_ml_filter(const void *data, size_t bytes,
             else if (ret != FLB_MULTILINE_OK) {
                 flb_plg_debug(ctx->ins,
                               "could not append object from tag: %s", tag);
-            }
-            else if (ret == FLB_MULTILINE_OK) {
-#ifdef FLB_HAVE_METRICS
-                name = (char *) flb_filter_name(ctx->ins);
-                ts = cfl_time_now();
-                cmt_counter_inc(ctx->cmt_emitted, ts, 1, (char *[]) {name});
-
-                /* old api */
-                flb_metrics_sum(FLB_MULTILINE_METRIC_EMITTED, 1, ctx->ins->metrics);
-#endif
             }
         }
 
