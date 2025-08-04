@@ -41,6 +41,7 @@
 #define FLB_TAIL_METRIC_F_OPENED  100  /* number of opened files  */
 #define FLB_TAIL_METRIC_F_CLOSED  101  /* number of closed files  */
 #define FLB_TAIL_METRIC_F_ROTATED 102  /* number of rotated files */
+#define FLB_TAIL_METRIC_M_TRUNCATED 103  /* number of truncated occurrences of multiline */
 #endif
 
 struct flb_tail_config {
@@ -167,6 +168,7 @@ struct flb_tail_config {
     struct cmt_counter *cmt_files_opened;
     struct cmt_counter *cmt_files_closed;
     struct cmt_counter *cmt_files_rotated;
+    struct cmt_counter *cmt_multiline_truncated;
 
     /* Hash: hash tables for quick acess to registered files */
     struct flb_hash_table *static_hash;

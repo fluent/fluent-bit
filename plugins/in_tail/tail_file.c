@@ -481,6 +481,11 @@ static int process_content(struct flb_tail_file *file, size_t *bytes)
 #ifdef FLB_HAVE_UNICODE_ENCODER
     size_t decoded_len;
 #endif
+#ifdef FLB_HAVE_METRICS
+    uint64_t ts;
+    char *name;
+#endif
+
 
     ctx = (struct flb_tail_config *) file->config;
 
@@ -598,6 +603,14 @@ static int process_content(struct flb_tail_file *file, size_t *bytes)
                                      line_len);
             if (ret == FLB_MULTILINE_TRUNCATED) {
                 flb_plg_warn(ctx->ins, "multiline message truncated due to buffer limit");
+#ifdef FLB_HAVE_METRICS
+                name = (char *) flb_input_name(ctx->ins);
+                ts = cfl_time_now();
+                cmt_counter_inc(ctx->cmt_multiline_truncated, ts, 1, (char *[]) {name});
+
+                /* Old api */
+                flb_metrics_sum(FLB_TAIL_METRIC_M_TRUNCATED, 1, ctx->ins->metrics);
+#endif
             }
             goto go_next;
         }
