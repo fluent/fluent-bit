@@ -24,6 +24,7 @@
 #include <fluent-bit/flb_time.h>
 #include <fluent-bit/flb_pack.h>
 #include <fluent-bit/flb_scheduler.h>
+#include <fluent-bit/flb_utils.h>
 #include <fluent-bit/multiline/flb_ml.h>
 #include <fluent-bit/multiline/flb_ml_rule.h>
 #include <fluent-bit/multiline/flb_ml_group.h>
@@ -867,6 +868,7 @@ int flb_ml_append_event(struct flb_ml *ml, uint64_t stream_id,
 struct flb_ml *flb_ml_create(struct flb_config *ctx, char *name)
 {
     int            result;
+    size_t         limit = 0;
     struct flb_ml *ml;
 
     ml = flb_calloc(1, sizeof(struct flb_ml));
@@ -881,7 +883,13 @@ struct flb_ml *flb_ml_create(struct flb_config *ctx, char *name)
     }
 
     ml->config = ctx;
-    ml->buffer_limit = ml->config->multiline_buffer_limit;
+    limit = flb_utils_size_to_bytes(ml->config->multiline_buffer_limit);
+    if (limit > 0) {
+        ml->buffer_limit = (size_t)limit;
+    }
+    else {
+        ml->buffer_limit = FLB_ML_BUFFER_LIMIT_DEFAULT;
+    }
     ml->last_flush = time_ms_now();
     mk_list_init(&ml->groups);
 

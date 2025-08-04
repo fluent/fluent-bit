@@ -145,7 +145,7 @@ struct flb_config {
 
     /* Multiline core parser definitions */
     struct mk_list multiline_parsers;
-    size_t multiline_buffer_limit; /* limit for multiline concatenated data */
+    char *multiline_buffer_limit; /* limit for multiline concatenated data */
 
     /* Outputs instances */
     struct mk_list outputs;             /* list of output plugins   */
