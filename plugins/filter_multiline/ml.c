@@ -369,10 +369,16 @@ static int cb_ml_init(struct flb_filter_instance *ins,
                                             "fluentbit", "filter", "emit_records_total",
                                             "Total number of emitted records",
                                             1, (char *[]) {"name"});
+        ctx->cmt_truncated = cmt_counter_create(ins->cmt,
+                                                "fluentbit", "filter", "emit_truncated_total",
+                                                "Total number of truncated occurence of multiline",
+                                                1, (char *[]) {"name"});
 
         /* OLD api */
         flb_metrics_add(FLB_MULTILINE_METRIC_EMITTED,
                         "emit_records", ctx->ins->metrics);
+        flb_metrics_add(FLB_MULTILINE_METRIC_TRUNCATED,
+                        "emit_truncated", ctx->ins->metrics);
 #endif
     }
 
@@ -780,6 +786,10 @@ static int cb_ml_filter(const void *data, size_t bytes,
     struct flb_log_event         event;
     int                          ret;
     struct ml_ctx               *ctx;
+#ifdef FLB_HAVE_METRICS
+    uint64_t ts;
+    char *name;
+#endif
 
     (void) f_ins;
     (void) config;
@@ -823,10 +833,28 @@ static int cb_ml_filter(const void *data, size_t bytes,
             if (ret == FLB_MULTILINE_TRUNCATED) {
                 flb_plg_warn(ctx->ins,
                              "multiline message truncated due to buffer limit");
+#ifdef FLB_HAVE_METRICS
+                name = (char *) flb_filter_name(ctx->ins);
+                ts = cfl_time_now();
+                cmt_counter_inc(ctx->cmt_truncated, ts, 1, (char *[]) {name});
+
+                /* old api */
+                flb_metrics_sum(FLB_MULTILINE_METRIC_TRUNCATED, 1, ctx->ins->metrics);
+#endif
             }
             else if (ret != FLB_MULTILINE_OK) {
                 flb_plg_debug(ctx->ins,
                               "could not append object from tag: %s", tag);
+            }
+            else if (ret == FLB_MULTILINE_OK) {
+#ifdef FLB_HAVE_METRICS
+                name = (char *) flb_filter_name(ctx->ins);
+                ts = cfl_time_now();
+                cmt_counter_inc(ctx->cmt_emitted, ts, 1, (char *[]) {name});
+
+                /* old api */
+                flb_metrics_sum(FLB_MULTILINE_METRIC_EMITTED, 1, ctx->ins->metrics);
+#endif
             }
         }
 
@@ -878,10 +906,28 @@ static int cb_ml_filter(const void *data, size_t bytes,
             if (ret == FLB_MULTILINE_TRUNCATED) {
                 flb_plg_warn(ctx->ins,
                              "multiline message truncated due to buffer limit");
+#ifdef FLB_HAVE_METRICS
+                name = (char *) flb_filter_name(ctx->ins);
+                ts = cfl_time_now();
+                cmt_counter_inc(ctx->cmt_truncated, ts, 1, (char *[]) {name});
+
+                /* old api */
+                flb_metrics_sum(FLB_MULTILINE_METRIC_TRUNCATED, 1, ctx->ins->metrics);
+#endif
             }
             else if (ret != FLB_MULTILINE_OK) {
                 flb_plg_debug(ctx->ins,
                               "could not append object from tag: %s", tag);
+            }
+            else if (ret == FLB_MULTILINE_OK) {
+#ifdef FLB_HAVE_METRICS
+                name = (char *) flb_filter_name(ctx->ins);
+                ts = cfl_time_now();
+                cmt_counter_inc(ctx->cmt_emitted, ts, 1, (char *[]) {name});
+
+                /* old api */
+                flb_metrics_sum(FLB_MULTILINE_METRIC_EMITTED, 1, ctx->ins->metrics);
+#endif
             }
         }
 
