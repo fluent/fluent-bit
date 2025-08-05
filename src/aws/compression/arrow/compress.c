@@ -11,6 +11,7 @@
 #ifdef FLB_HAVE_ARROW_PARQUET
 #include <parquet-glib/parquet-glib.h>
 #endif
+#include <fluent-bit/flb_log.h>
 #include <inttypes.h>
 
 /*
@@ -186,6 +187,7 @@ static GArrowResizableBuffer* table_to_parquet_buffer(GArrowTable *table)
                                                       &error);
         g_object_unref(schema);
         if (writer == NULL) {
+            flb_error("[aws][compress] Failed to create parquet writer: %s", error->message);
             g_error_free(error);
             g_object_unref(buffer);
             g_object_unref(sink);
@@ -197,6 +199,7 @@ static GArrowResizableBuffer* table_to_parquet_buffer(GArrowTable *table)
         /* Write the entire table to the Parquet file buffer */
         success = gparquet_arrow_file_writer_write_table(writer, table, n_rows, &error);
         if (!success) {
+            flb_error("[aws][compress] Failed to write table to parquet buffer: %s", error->message);
             g_error_free(error);
             g_object_unref(buffer);
             g_object_unref(sink);
@@ -231,12 +234,14 @@ int out_s3_compress_parquet(void *json, size_t size, void **out_buf, size_t *out
 
         table = parse_json((uint8_t *) json, size);
         if (table == NULL) {
+            flb_error("[aws][compress] Failed to parse JSON into Arrow Table for Parquet conversion");
             return -1;
         }
 
         buffer = table_to_parquet_buffer(table);
         g_object_unref(table);
         if (buffer == NULL) {
+            flb_error("[aws][compress] Failed to convert Arrow Table into Parquet buffer");
             return -1;
         }
 
