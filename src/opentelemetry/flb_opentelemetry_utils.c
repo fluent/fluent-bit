@@ -451,6 +451,9 @@ int flb_otel_utils_json_payload_append_converted_kvlist(
     int                   value_index;
     int                   key_index;
     int                   result;
+    int                   pack_null_value = FLB_FALSE;
+    int                   pack_string_value = FLB_FALSE;
+    int                   pack_value = FLB_FALSE;
     size_t                index;
     msgpack_object_array *array;
     msgpack_object_map   *entry;
@@ -476,8 +479,22 @@ int flb_otel_utils_json_payload_append_converted_kvlist(
                 result = FLB_EVENT_ENCODER_ERROR_INVALID_ARGUMENT;
             }
 
+            value_index = -1;
+            pack_null_value = FLB_FALSE;
+            pack_string_value = FLB_FALSE;
+            pack_value = FLB_FALSE;
+
             if (result == FLB_EVENT_ENCODER_SUCCESS) {
                 value_index = flb_otel_utils_find_map_entry_by_key(entry, "value", 0, FLB_TRUE);
+
+                if (value_index >= 0 &&
+                    entry->ptr[value_index].val.type == MSGPACK_OBJECT_MAP &&
+                    entry->ptr[value_index].val.via.map.size == 0) {
+                    /*
+                     * if value is an empty map it represents an unset value, pack as NULL
+                     */
+                    pack_null_value = FLB_TRUE;
+                }
             }
 
             if (value_index == -1) {
@@ -485,6 +502,10 @@ int flb_otel_utils_json_payload_append_converted_kvlist(
                  * if value is missing basically is 'unset' and handle as Empty() in OTel world, in
                  * this case we just pack an empty string value
                  */
+                pack_string_value = FLB_TRUE;
+            }
+            else if (!pack_null_value) {
+                pack_value = FLB_TRUE;
             }
 
             if (result == FLB_EVENT_ENCODER_SUCCESS) {
@@ -495,14 +516,18 @@ int flb_otel_utils_json_payload_append_converted_kvlist(
             }
 
             if (result == FLB_EVENT_ENCODER_SUCCESS) {
-                /* if the value is not set, register an empty string as value */
-                if (value_index == -1) {
+                if (pack_null_value) {
+                    /* pack NULL for unset values (empty maps) */
+                    result = flb_log_event_encoder_append_null(encoder, target_field);
+                }
+                else if (pack_string_value) {
+                    /* if the value is not set, register an empty string as value */
                     result = flb_log_event_encoder_append_string(
                                 encoder,
                                 target_field,
                                 "", 0);
                 }
-                else {
+                else if (pack_value) {
                     /* expected value must come in a map */
                     if (entry->ptr[value_index].val.type != MSGPACK_OBJECT_MAP) {
                         result = -1;
