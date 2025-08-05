@@ -176,6 +176,11 @@ static int otlp_pack_any_value(msgpack_packer *mp_pck,
             result = otel_pack_bytes(mp_pck, body->bytes_value);
             break;
 
+        case OPENTELEMETRY__PROTO__COMMON__V1__ANY_VALUE__VALUE__NOT_SET:
+            /* treat an unset value as null */
+            result = msgpack_pack_nil(mp_pck);
+            break;
+
         default:
             break;
     }
