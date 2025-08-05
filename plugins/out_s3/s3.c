@@ -652,9 +652,11 @@ static int cb_s3_init(struct flb_output_instance *ins,
             flb_plg_error(ctx->ins, "unknown compression: %s", tmp);
             return -1;
         }
-        if (ctx->use_put_object == FLB_FALSE && ctx->compression == FLB_AWS_COMPRESS_ARROW) {
+        if (ctx->use_put_object == FLB_FALSE &&
+            (ctx->compression == FLB_AWS_COMPRESS_ARROW ||
+             ctx->compression == FLB_AWS_COMPRESS_PARQUET)) {
             flb_plg_error(ctx->ins,
-                          "use_put_object must be enabled when Apache Arrow is enabled");
+                          "use_put_object must be enabled when Apache Arrow or Parquet is enabled");
             return -1;
         }
         ctx->compression = ret;
@@ -679,7 +681,7 @@ static int cb_s3_init(struct flb_output_instance *ins,
             flb_plg_error(ctx->ins, "upload_chunk_size must be at least 5,242,880 bytes");
             return -1;
         }
-        if (ctx->compression == FLB_AWS_COMPRESS_GZIP) {
+        if (ctx->compression != FLB_AWS_COMPRESS_NONE) {
             if(ctx->upload_chunk_size > MAX_CHUNKED_UPLOAD_COMPRESS_SIZE) {
                 flb_plg_error(ctx->ins, "upload_chunk_size in compressed multipart upload cannot exceed 5GB");
                 return -1;
@@ -1003,7 +1005,7 @@ static int upload_data(struct flb_s3 *ctx, struct s3_file *chunk,
         file_first_log_time = chunk->first_log_time;
     }
 
-    if (ctx->compression == FLB_AWS_COMPRESS_GZIP) {
+    if (ctx->compression != FLB_AWS_COMPRESS_NONE) {
         /* Map payload */
         ret = flb_aws_compression_compress(ctx->compression, body, body_size, &payload_buf, &payload_size);
         if (ret == -1) {
@@ -1046,7 +1048,9 @@ static int upload_data(struct flb_s3 *ctx, struct s3_file *chunk,
             goto multipart;
         }
         else {
-            if (ctx->use_put_object == FLB_FALSE && ctx->compression == FLB_AWS_COMPRESS_GZIP) {
+            if (ctx->use_put_object == FLB_FALSE &&
+                (ctx->compression == FLB_AWS_COMPRESS_ARROW ||
+                 ctx->compression == FLB_AWS_COMPRESS_PARQUET)) {
                 flb_plg_info(ctx->ins, "Pre-compression upload_chunk_size= %zu, After compression, chunk is only %zu bytes, "
                                        "the chunk was too small, using PutObject to upload", preCompress_size, body_size);
             }
@@ -1068,7 +1072,7 @@ put_object:
      * remove chunk from buffer list
      */
     ret = s3_put_object(ctx, tag, file_first_log_time, body, body_size);
-    if (ctx->compression == FLB_AWS_COMPRESS_GZIP) {
+    if (ctx->compression != FLB_AWS_COMPRESS_NONE) {
         flb_free(payload_buf);
     }
     if (ret < 0) {
@@ -1095,7 +1099,7 @@ multipart:
             if (chunk) {
                 s3_store_file_unlock(chunk);
             }
-            if (ctx->compression == FLB_AWS_COMPRESS_GZIP) {
+            if (ctx->compression != FLB_AWS_COMPRESS_NONE) {
                 flb_free(payload_buf);
             }
             return FLB_RETRY;
@@ -1109,7 +1113,7 @@ multipart:
             if (chunk) {
                 s3_store_file_unlock(chunk);
             }
-            if (ctx->compression == FLB_AWS_COMPRESS_GZIP) {
+            if (ctx->compression != FLB_AWS_COMPRESS_NONE) {
                 flb_free(payload_buf);
             }
             return FLB_RETRY;
@@ -1119,7 +1123,7 @@ multipart:
 
     ret = upload_part(ctx, m_upload, body, body_size);
     if (ret < 0) {
-        if (ctx->compression == FLB_AWS_COMPRESS_GZIP) {
+        if (ctx->compression != FLB_AWS_COMPRESS_NONE) {
             flb_free(payload_buf);
         }
         m_upload->upload_errors += 1;
@@ -1136,7 +1140,7 @@ multipart:
         s3_store_file_delete(ctx, chunk);
         chunk = NULL;
     }
-    if (ctx->compression == FLB_AWS_COMPRESS_GZIP) {
+    if (ctx->compression != FLB_AWS_COMPRESS_NONE) {
         flb_free(payload_buf);
     }
     if (m_upload->bytes >= ctx->file_size) {
@@ -2371,8 +2375,8 @@ static struct flb_config_map config_map[] = {
     {
      FLB_CONFIG_MAP_STR, "compression", NULL,
      0, FLB_FALSE, 0,
-    "Compression type for S3 objects. 'gzip' and 'arrow' are the supported values. "
-    "'arrow' is only an available if Apache Arrow was enabled at compile time. "
+    "Compression type for S3 objects. 'gzip', 'arrow' and 'parquet' are the supported values. "
+    "'arrow' and 'parquet' are only available if Apache Arrow was enabled at compile time. "
     "Defaults to no compression. "
     "If 'gzip' is selected, the Content-Encoding HTTP Header will be set to 'gzip'."
     },
