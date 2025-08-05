@@ -1245,6 +1245,14 @@ else()
   set(FLB_ARROW OFF)
 endif()
 
+# Additional prerequisites for Apache Parquet
+pkg_check_modules(ARROW_GLIB_PARQUET QUIET parquet-glib)
+if(FLB_ARROW AND ARROW_GLIB_PARQUET_FOUND)
+  FLB_DEFINITION(FLB_HAVE_ARROW_PARQUET)
+else()
+  message(STATUS "Arrow GLib Parquet not found. Disabling parquet compression for AWS module")
+endif()
+
 # EBPF Support
 # ============
 if (FLB_IN_EBPF)
