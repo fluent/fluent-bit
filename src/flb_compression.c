@@ -206,7 +206,7 @@ struct flb_decompression_context *flb_decompression_context_create(int algorithm
     }
 
     context->input_buffer_size = input_buffer_size;
-    context->read_buffer = context->read_buffer;
+    context->read_buffer = context->input_buffer;
     context->algorithm = algorithm;
     if (algorithm == FLB_COMPRESSION_ALGORITHM_GZIP) {
         context->state = FLB_DECOMPRESSOR_STATE_EXPECTING_HEADER;
