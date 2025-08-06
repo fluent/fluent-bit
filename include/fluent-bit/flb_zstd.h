@@ -22,6 +22,7 @@
 
 #include <fluent-bit/flb_info.h>
 #include <zstd.h>
+#include <zstd_errors.h>
 
 struct flb_decompression_context;
 
