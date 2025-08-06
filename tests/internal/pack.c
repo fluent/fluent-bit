@@ -977,12 +977,29 @@ void test_json_pack_empty_array()
     int root_type;
     size_t out_size;
     char *out_buf;
-    char json[] =
-        "{\"resourceLogs\":[{\"resource\":{},\"scopeLogs\":[{\"scope\":{},"
-        "\"logRecords\":[{\"body\":{\"test\":{\"values\":[]}}}]}]}]}";
+    char *json = "{\"resourceLogs\":[{\"resource\":{},\"scopeLogs\":[{\"scope\":{},\"logRecords\":[{\"observedTimeUnixNano\":\"1754059282910920618\",\"body\":{\"kvlistValue\":{\"values\":[{\"key\":\"a\",\"value\":{\"kvlistValue\":{\"values\":[{\"key\":\"b\",\"value\":{\"kvlistValue\":{\"values\":[{\"key\":\"c\",\"value\":{\"kvlistValue\":{\"values\":[{\"key\":\"d\",\"value\":{\"arrayValue\":{\"values\":[{\"kvlistValue\":{\"values\":[{\"key\":\"e\",\"value\":{\"kvlistValue\":{\"values\":[{\"key\":\"f\",\"value\":{\"stringValue\":\"g\"}}]}}}]}}]}}}]}}}]}}}]}}}]}}}]}]}]}";
 
-    ret = flb_pack_json(json, strlen(json), &out_buf, &out_size, &root_type, NULL);
+    ret = flb_pack_json( (char*) json, strlen((char *) json), &out_buf, &out_size, &root_type, NULL);
     TEST_CHECK(ret == 0);
+
+    if (ret != 0) {
+        printf("flb_pack_json failed: %d\n", ret);
+        exit(EXIT_FAILURE);
+    }
+
+    /* unpack just to validate the msgpack buffer */
+    msgpack_unpacked result;
+    msgpack_object obj;
+    size_t off = 0;
+    msgpack_unpacked_init(&result);
+    off = 0;
+    TEST_CHECK(msgpack_unpack_next(&result, out_buf, out_size, &off) == MSGPACK_UNPACK_SUCCESS);
+
+    printf("\nmsgpack---:\n");
+    msgpack_object_print(stdout, result.data);
+    printf("\n");
+
+    msgpack_unpacked_destroy(&result);
 
     flb_free(out_buf);
 }

@@ -1251,5 +1251,76 @@
       "log_metadata": {"otlp":{}},
       "log_body": {"empty_map_key": null, "normal_key": "normal_value", "missing_value_key": ""}
     }
+  },
+  "arrayvalue_wrapped_map": {
+    "input": {
+      "resourceLogs": [{
+        "scopeLogs": [{
+          "logRecords": [{
+            "timeUnixNano": "1640995200000000000",
+            "body": {
+              "kvlistValue": {
+                "values": [{
+                  "key": "a",
+                  "value": {
+                    "kvlistValue": {
+                      "values": [{
+                        "key": "d",
+                        "value": {
+                          "arrayValue": {
+                            "values": [{
+                              "kvlistValue": {
+                                "values": [{
+                                  "key": "e",
+                                  "value": {"stringValue": "g"}
+                                }]
+                              }
+                            }]
+                          }
+                        }
+                      }]
+                    }
+                  }
+                }]
+              }
+            }
+          }]
+        }]
+      }]
+    },
+    "expected": {
+      "group_metadata": {"schema":"otlp","resource_id":0,"scope_id":0},
+      "group_body": {"resource":{}},
+      "log_metadata": {"otlp":{}},
+      "log_body": {"a":{"d":[{"e":"g"}]}}
+    }
+  },
+  "unwrapped_plain_map": {
+    "input": {
+      "resourceLogs": [{
+        "scopeLogs": [{
+          "logRecords": [{
+            "timeUnixNano": "1640995200000000000",
+            "body": {
+              "kvlistValue": {
+                "values": [{
+                  "key": "plain",
+                  "value": {
+                    "key1": {"stringValue": "v1"},
+                    "key2": {"intValue": 2}
+                  }
+                }]
+              }
+            }
+          }]
+        }]
+      }]
+    },
+    "expected": {
+      "group_metadata": {"schema":"otlp","resource_id":0,"scope_id":0},
+      "group_body": {"resource":{}},
+      "log_metadata": {"otlp":{}},
+      "log_body": {"plain": {"key1": "v1", "key2": 2}}
+    }
   }
 }
