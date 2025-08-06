@@ -970,6 +970,23 @@ void test_json_pack_bug5336()
     }
 }
 
+/* Ensure empty arrays inside nested objects are handled */
+void test_json_pack_empty_array()
+{
+    int ret;
+    int root_type;
+    size_t out_size;
+    char *out_buf;
+    char json[] =
+        "{\"resourceLogs\":[{\"resource\":{},\"scopeLogs\":[{\"scope\":{},"
+        "\"logRecords\":[{\"body\":{\"test\":{\"values\":[]}}}]}]}]}";
+
+    ret = flb_pack_json(json, strlen(json), &out_buf, &out_size, &root_type, NULL);
+    TEST_CHECK(ret == 0);
+
+    flb_free(out_buf);
+}
+
 const char input_msgpack[] = {0x92,/* array 2 */
                             0xd7, 0x00, /* event time*/
                             0x07, 0x5b, 0xcd, 0x15, /* second = 123456789 = 1973/11/29 21:33:09 */
@@ -1115,6 +1132,7 @@ TEST_LIST = {
     { "json_pack_bug1278"  , test_json_pack_bug1278},
     { "json_pack_nan"      , test_json_pack_nan},
     { "json_pack_bug5336"  , test_json_pack_bug5336},
+    { "json_pack_empty_array", test_json_pack_empty_array},
     { "json_date_iso8601" , test_json_date_iso8601},
     { "json_date_double" , test_json_date_double},
     { "json_date_java_sql" , test_json_date_java_sql},
