@@ -24,6 +24,9 @@
 #include <fluent-bit/flb_compression.h>
 #include <fluent-bit/flb_zstd.h>
 
+struct flb_zstd_decompression_context {
+    ZSTD_DCtx *dctx;
+};
 
 #define FLB_ZSTD_DEFAULT_CHUNK 64 * 1024  /* 64 KB buffer */
 
@@ -162,3 +165,101 @@ size_t flb_zstd_uncompress(void *in_data, size_t in_len, void **out_data, size_t
     return 0;
 }
 
+int flb_zstd_decompressor_dispatch(struct flb_decompression_context *context,
+                                   void *output_buffer,
+                                   size_t *output_length)
+{
+    struct flb_zstd_decompression_context *zstd_ctx;
+    size_t compressed_frame_size;
+    size_t decompressed_size;
+    size_t original_output_length;
+    size_t error_code;
+
+    if (context == NULL || context->inner_context == NULL || output_length == NULL) {
+        return FLB_DECOMPRESSOR_FAILURE;
+    }
+
+    zstd_ctx = (struct flb_zstd_decompression_context *) context->inner_context;
+    original_output_length = *output_length;
+    *output_length = 0;
+
+    if (context->input_buffer_length == 0) {
+        return FLB_DECOMPRESSOR_SUCCESS;
+    }
+
+    compressed_frame_size = ZSTD_findFrameCompressedSize(context->read_buffer,
+                                                         context->input_buffer_length);
+
+    error_code = ZSTD_getErrorCode(compressed_frame_size);
+
+    /*
+     * Distinguish between recoverable and fatal errors.
+     * If we get srcSize_wrong, it just means we need more data to find the
+     * end of the frame. This is expected in a streaming scenario.
+     */
+    if (error_code == ZSTD_error_srcSize_wrong) {
+        /* Not an error, just need more data. Return success with 0 bytes produced. */
+        return FLB_DECOMPRESSOR_SUCCESS;
+    }
+
+    /* Check for any other, truly fatal error from finding the frame. */
+    if (ZSTD_isError(compressed_frame_size)) {
+        flb_error("[zstd] frame is corrupted: %s",
+                  ZSTD_getErrorName(compressed_frame_size));
+        context->state = FLB_DECOMPRESSOR_STATE_FAILED;
+        return FLB_DECOMPRESSOR_FAILURE;
+    }
+
+    /* We have a full frame. Decompress it in one shot using the robust API. */
+    decompressed_size = ZSTD_decompressDCtx(zstd_ctx->dctx,
+                                            output_buffer,
+                                            original_output_length,
+                                            context->read_buffer,
+                                            compressed_frame_size);
+
+    if (ZSTD_isError(decompressed_size)) {
+        flb_error("[zstd] decompression failed: %s",
+                  ZSTD_getErrorName(decompressed_size));
+        context->state = FLB_DECOMPRESSOR_STATE_FAILED;
+        return FLB_DECOMPRESSOR_FAILURE;
+    }
+
+    /* Success. Update our pointers and report the decompressed size. */
+    context->read_buffer         += compressed_frame_size;
+    context->input_buffer_length -= compressed_frame_size;
+    *output_length = decompressed_size;
+
+    return FLB_DECOMPRESSOR_SUCCESS;
+}
+
+void *flb_zstd_decompression_context_create(void)
+{
+    struct flb_zstd_decompression_context *context;
+
+    context = flb_calloc(1, sizeof(struct flb_zstd_decompression_context));
+
+    if (context == NULL) {
+        flb_errno();
+    }
+
+    context->dctx = ZSTD_createDCtx();
+    if (context->dctx == NULL) {
+        flb_error("[zstd] could not create decompression context");
+        flb_free(context);
+        return NULL;
+    }
+
+    return (void *) context;
+}
+
+void flb_zstd_decompression_context_destroy(void *context)
+{
+    struct flb_zstd_decompression_context *zstd_ctx = context;
+
+    if (zstd_ctx != NULL) {
+        if (zstd_ctx->dctx != NULL) {
+            ZSTD_freeDCtx(zstd_ctx->dctx);
+        }
+        flb_free(zstd_ctx);
+    }
+}
