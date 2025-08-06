@@ -135,8 +135,9 @@ int flb_otel_utils_json_payload_get_wrapped_value(msgpack_object *wrapper,
                 internal_type = MSGPACK_OBJECT_BIN;
             }
             else if (strncasecmp(kv_key->ptr, "arrayValue",  kv_key->size) == 0) {
-                if (kv_value->type != MSGPACK_OBJECT_ARRAY) {
-                    /* If the value is not an array, we cannot process it */
+                if (kv_value->type != MSGPACK_OBJECT_ARRAY &&
+                    kv_value->type != MSGPACK_OBJECT_MAP) {
+                    /* If the value is not an array or map, we cannot process it */
                     return -2;
                 }
                 internal_type = MSGPACK_OBJECT_ARRAY;
@@ -233,7 +234,6 @@ int flb_otel_utils_json_payload_append_converted_value(
                         target_field,
                         (char *) object->via.str.ptr,
                         object->via.str.size);
-
             break;
         case MSGPACK_OBJECT_NIL:
             /* Append a null value */
@@ -262,7 +262,6 @@ int flb_otel_utils_json_payload_append_converted_value(
                         encoder,
                         target_field,
                         object);
-
             break;
         default:
             break;
@@ -375,11 +374,8 @@ int flb_otel_utils_json_payload_append_converted_map(
                 object,
                 &encoder_result);
 
-    if (result == 0 && encoder_result == FLB_EVENT_ENCODER_SUCCESS) {
-        return result;
-    }
-    else if (result != 0) {
-        return result;
+    if (result == 0) {
+        return encoder_result;
     }
 
     result = flb_log_event_encoder_begin_map(encoder, target_field);
