@@ -173,7 +173,7 @@ jobs:
             raw,latest
 
       - name: Download production digests
-        uses: actions/download-artifact@v4
+        uses: actions/download-artifact@v5
         with:
           pattern: production-digests-*
           path: /tmp/production-digests
@@ -225,7 +225,7 @@ jobs:
             raw,latest-debug
 
       - name: Download debug digests
-        uses: actions/download-artifact@v4
+        uses: actions/download-artifact@v5
         with:
           pattern: debug-digests-*
           path: /tmp/debug-digests
