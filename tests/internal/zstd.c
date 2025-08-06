@@ -3,6 +3,7 @@
 #include <fluent-bit/flb_info.h>
 #include <fluent-bit/flb_mem.h>
 #include <fluent-bit/flb_zstd.h>
+#include <fluent-bit/flb_compression.h>
 #include "flb_tests_internal.h"
 
 /* try a small string */
@@ -163,6 +164,159 @@ static void test_decompress_unknown_size()
     flb_free(decompressed_data);
 }
 
+static void append_to_context(struct flb_decompression_context *ctx, const void *data, size_t size)
+{
+    uint8_t *append_ptr;
+    size_t available_space;
+
+    available_space = flb_decompression_context_get_available_space(ctx);
+
+    if (size > available_space) {
+        size_t required_size = ctx->input_buffer_length + size;
+        flb_decompression_context_resize_buffer(ctx, required_size);
+    }
+
+    /* Get pointer to the write location */
+    append_ptr = flb_decompression_context_get_append_buffer(ctx);
+    TEST_CHECK(append_ptr != NULL);
+
+    /* Copy the data */
+    memcpy(append_ptr, data, size);
+
+    ctx->input_buffer_length += size;
+}
+
+static void *compress_with_checksum(const void *original_data, size_t original_len,
+                                    size_t *compressed_len)
+{
+    ZSTD_CCtx* cctx;
+    void *compressed_buffer;
+    size_t bound;
+    size_t ret;
+
+    /* Create a compression context */
+    cctx = ZSTD_createCCtx();
+    TEST_CHECK(cctx != NULL);
+
+    /*
+     * THIS IS THE KEY: Explicitly enable content checksums in the frame.
+     */
+    ret = ZSTD_CCtx_setParameter(cctx, ZSTD_c_checksumFlag, 1);
+    TEST_CHECK(!ZSTD_isError(ret));
+
+    /* Compress the data */
+    bound = ZSTD_compressBound(original_len);
+    compressed_buffer = flb_malloc(bound);
+    TEST_CHECK(compressed_buffer != NULL);
+
+    *compressed_len = ZSTD_compress2(cctx,
+                                     compressed_buffer, bound,
+                                     original_data, original_len);
+
+    TEST_CHECK(!ZSTD_isError(*compressed_len));
+
+    ZSTD_freeCCtx(cctx);
+
+    return compressed_buffer;
+}
+
+void test_zstd_streaming_decompress_multi_chunk(void)
+{
+    struct flb_decompression_context *ctx;
+    char   *output_buf;
+    size_t output_len;
+    size_t total_written = 0;
+    int    ret;
+    size_t chunk1_size = 0;
+    size_t chunk2_size = 0;
+    size_t chunk3_size = 0;
+    char  *original_text = "zstd streaming is a feature that must be tested with multiple, uneven chunks!";
+    size_t original_len;
+    void  *compressed_buf = NULL;
+    size_t compressed_len = 0;
+
+    original_len = strlen(original_text);
+    compressed_buf = compress_with_checksum(original_text, original_len, &compressed_len);
+    TEST_CHECK(compressed_buf != NULL);
+
+    ctx = flb_decompression_context_create(FLB_COMPRESSION_ALGORITHM_ZSTD, compressed_len);
+    TEST_CHECK(ctx != NULL);
+    output_buf = flb_malloc(original_len + 1);
+
+    chunk1_size = compressed_len / 3;
+    chunk2_size = compressed_len / 2;
+    chunk3_size = compressed_len - chunk1_size - chunk2_size;
+
+    append_to_context(ctx, compressed_buf, chunk1_size);
+    output_len = original_len;
+    ret = flb_decompress(ctx, output_buf, &output_len);
+    TEST_CHECK(ret == FLB_DECOMPRESSOR_SUCCESS);
+    total_written += output_len;
+
+    append_to_context(ctx, (char *)compressed_buf + chunk1_size, chunk2_size);
+    output_len = original_len - total_written;
+    ret = flb_decompress(ctx, output_buf + total_written, &output_len);
+    TEST_CHECK(ret == FLB_DECOMPRESSOR_SUCCESS);
+    total_written += output_len;
+
+    append_to_context(ctx, (char *)compressed_buf + chunk1_size + chunk2_size, chunk3_size);
+    output_len = original_len - total_written;
+    ret = flb_decompress(ctx, output_buf + total_written, &output_len);
+    TEST_CHECK(ret == FLB_DECOMPRESSOR_SUCCESS);
+    total_written += output_len;
+
+    TEST_CHECK(total_written == original_len);
+    TEST_CHECK(memcmp(original_text, output_buf, original_len) == 0);
+
+    flb_free(compressed_buf);
+    flb_free(output_buf);
+    flb_decompression_context_destroy(ctx);
+}
+
+/* In tests/internal/zstd.c */
+
+void test_zstd_streaming_decompress_corrupted_data(void)
+{
+    struct flb_decompression_context *ctx;
+    char   *output_buf;
+    size_t  output_len;
+    int     ret;
+    char   *original_text = "this test ensures corrupted data with a checksum fails";
+    size_t  original_len = strlen(original_text);
+    void   *compressed_buf = NULL;
+    size_t  compressed_len = 0;
+    char   *corrupted_input;
+
+    compressed_buf = compress_with_checksum(original_text, original_len, &compressed_len);
+    TEST_CHECK(compressed_buf != NULL);
+
+    ctx = flb_decompression_context_create(FLB_COMPRESSION_ALGORITHM_ZSTD, compressed_len);
+    TEST_CHECK(ctx != NULL);
+
+    /* Create a corrupted copy of the input */
+    corrupted_input = flb_malloc(compressed_len);
+    TEST_CHECK(corrupted_input != NULL);
+    memcpy(corrupted_input, compressed_buf, compressed_len);
+    /* Corrupt a byte in the middle */
+    corrupted_input[compressed_len / 2]++;
+
+    append_to_context(ctx, corrupted_input, compressed_len);
+
+    output_buf = flb_malloc(original_len + 1);
+    output_len = original_len;
+
+    ret = flb_decompress(ctx, output_buf, &output_len);
+
+    TEST_CHECK(ret == FLB_DECOMPRESSOR_FAILURE);
+    TEST_CHECK(ctx->state == FLB_DECOMPRESSOR_STATE_FAILED);
+
+    flb_free(compressed_buf);
+    flb_free(corrupted_input);
+    flb_free(output_buf);
+    flb_decompression_context_destroy(ctx);
+}
+
+
 TEST_LIST = {
     { "compress_small_string",          test_compress_small_string },
     { "decompress_small_string",        test_decompress_small_string },
@@ -170,5 +324,7 @@ TEST_LIST = {
     { "decompress_invalid_data",        test_decompress_invalid_data },
     { "compress_decompress_large_data", test_compress_decompress_large_data },
     { "decompress_unknown_size",        test_decompress_unknown_size },
+    { "streaming_decompress_multi_chunk", test_zstd_streaming_decompress_multi_chunk },
+    { "streaming_decompress_corrupted_data", test_zstd_streaming_decompress_corrupted_data },
     { NULL, NULL }
 };
