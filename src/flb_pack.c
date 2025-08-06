@@ -79,6 +79,9 @@ int flb_json_tokenise(const char *js, size_t len,
         state->tokens = tmp;
         state->tokens_size += new_tokens;
 
+        /* Reset parser to reprocess the JSON data from the beginning */
+        jsmn_init(&state->parser);
+
         ret = jsmn_parse(&state->parser, js, len,
                          state->tokens, state->tokens_size);
     }
