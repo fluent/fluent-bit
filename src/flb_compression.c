@@ -21,6 +21,7 @@
 #include <fluent-bit/flb_mem.h>
 #include <fluent-bit/flb_log.h>
 #include <fluent-bit/flb_gzip.h>
+#include <fluent-bit/flb_zstd.h>
 #include <fluent-bit/flb_compression.h>
 
 static size_t flb_decompression_context_get_read_buffer_offset(
@@ -131,7 +132,12 @@ void flb_decompression_context_destroy(struct flb_decompression_context *context
         }
 
         if (context->inner_context != NULL) {
-            flb_gzip_decompression_context_destroy(context->inner_context);
+            if (context->algorithm == FLB_COMPRESSION_ALGORITHM_GZIP) {
+                flb_gzip_decompression_context_destroy(context->inner_context);
+            }
+            else if (context->algorithm == FLB_COMPRESSION_ALGORITHM_ZSTD) {
+                flb_zstd_decompression_context_destroy(context->inner_context);
+            }
 
             context->inner_context = NULL;
         }
@@ -178,6 +184,9 @@ struct flb_decompression_context *flb_decompression_context_create(int algorithm
     if (algorithm == FLB_COMPRESSION_ALGORITHM_GZIP) {
         context->inner_context = flb_gzip_decompression_context_create();
     }
+    else if (algorithm == FLB_COMPRESSION_ALGORITHM_ZSTD) {
+        context->inner_context = flb_zstd_decompression_context_create();
+    }
     else {
         flb_error("invalid compression algorithm : %d", algorithm);
 
@@ -199,7 +208,12 @@ struct flb_decompression_context *flb_decompression_context_create(int algorithm
     context->input_buffer_size = input_buffer_size;
     context->read_buffer = context->read_buffer;
     context->algorithm = algorithm;
-    context->state = FLB_DECOMPRESSOR_STATE_EXPECTING_HEADER;
+    if (algorithm == FLB_COMPRESSION_ALGORITHM_GZIP) {
+        context->state = FLB_DECOMPRESSOR_STATE_EXPECTING_HEADER;
+    }
+    else if (algorithm == FLB_COMPRESSION_ALGORITHM_ZSTD) {
+        context->state = FLB_DECOMPRESSOR_STATE_EXPECTING_BODY;
+    }
 
     return context;
 }
@@ -211,6 +225,12 @@ int flb_decompress(struct flb_decompression_context *context,
     if (context != NULL) {
         if (context->algorithm == FLB_COMPRESSION_ALGORITHM_GZIP) {
             return flb_gzip_decompressor_dispatch(context,
+                                                  output_buffer,
+                                                  output_length);
+
+        }
+        else if (context->algorithm == FLB_COMPRESSION_ALGORITHM_ZSTD) {
+            return flb_zstd_decompressor_dispatch(context,
                                                   output_buffer,
                                                   output_length);
 
