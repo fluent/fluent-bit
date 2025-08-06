@@ -217,7 +217,7 @@ static char *tokens_to_msgpack(struct flb_pack_state *state,
     for (i = 0; i < arr_size ; i++) {
         t = &tokens[i];
 
-        if (t->start == -1 || t->end == -1 || (t->start == 0 && t->end == 0)) {
+        if (t->start < 0 || t->end <= 0) {
             msgpack_sbuffer_destroy(&sbuf);
             return NULL;
         }
