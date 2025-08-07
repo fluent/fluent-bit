@@ -136,6 +136,12 @@ struct flb_config_map upstream_net[] = {
      "Set the maximum number of active TCP connections that can be used per worker thread."
     },
 
+    {
+     FLB_CONFIG_MAP_BOOL, "net.proxy_env_ignore", "false",
+     0, FLB_TRUE, offsetof(struct flb_net_setup, proxy_env_ignore),
+     "Ignore proxy environment variables when connecting"
+    },
+
     /* EOF */
     {0}
 };
