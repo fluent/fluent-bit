@@ -1438,6 +1438,23 @@ int flb_output_upstream_set(struct flb_upstream *u, struct flb_output_instance *
         mk_list_add(&u->base._head, &ins->upstreams);
     }
 
+    /* Restore direct connection if proxy env variables should be ignored */
+    if (ins->net_setup.proxy_env_ignore == FLB_TRUE && u->proxied_host) {
+        flb_free(u->tcp_host);
+        u->tcp_host = u->proxied_host;
+        u->tcp_port = u->proxied_port;
+        u->proxied_host = NULL;
+        u->proxied_port = 0;
+        if (u->proxy_username) {
+            flb_free(u->proxy_username);
+            u->proxy_username = NULL;
+        }
+        if (u->proxy_password) {
+            flb_free(u->proxy_password);
+            u->proxy_password = NULL;
+        }
+    }
+
     /* Set networking options 'net.*' received through instance properties */
     memcpy(&u->base.net, &ins->net_setup, sizeof(struct flb_net_setup));
 
