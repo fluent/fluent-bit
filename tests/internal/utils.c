@@ -36,6 +36,8 @@ struct url_check url_checks[] = {
     {0, "https://fluentbit.io:1234/", "https", "fluentbit.io", "1234", "/"},
     {0, "https://fluentbit.io:1234/v", "https", "fluentbit.io", "1234", "/v"},
     {-1, "://", NULL, NULL, NULL, NULL},
+    {0, "http://[fd00:ec2::23]/v1/credentials", "http", "fd00:ec2::23", "80", "/v1/credentials"},
+    {0, "https://[::192.9.5.5]:1234/v", "https", "::192.9.5.5", "1234", "/v"}
 };
 
 void test_url_split_sds()
