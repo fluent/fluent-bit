@@ -4037,6 +4037,12 @@ static struct flb_config_map config_map[] = {
     "A standard MIME type for the S3 object; this will be set "
     "as the Content-Type HTTP header."
     },
+    {
+     FLB_CONFIG_MAP_BOOL, "vhost_style_urls", "false",
+     0, FLB_TRUE, offsetof(struct flb_s3, vhost_style_urls),
+     "Force the use of vhost-style S3 urls. "
+     "https://docs.aws.amazon.com/AmazonS3/latest/userguide/VirtualHosting.html"
+    },
 
     {
      FLB_CONFIG_MAP_STR, "store_dir", "/tmp/fluent-bit/s3",
