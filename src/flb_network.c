@@ -124,6 +124,7 @@ void flb_net_setup_init(struct flb_net_setup *net)
     net->connect_timeout = 10;
     net->io_timeout = 0; /* Infinite time */
     net->source_address = NULL;
+    net->proxy_env_ignore = FLB_FALSE;
 }
 
 int flb_net_host_set(const char *plugin_name, struct flb_net_host *host, const char *address)
