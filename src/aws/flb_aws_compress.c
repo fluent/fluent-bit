@@ -55,6 +55,13 @@ static const struct compression_option compression_options[] = {
         &out_s3_compress_arrow
     },
 #endif
+#ifdef FLB_HAVE_ARROW_PARQUET
+    {
+        FLB_AWS_COMPRESS_PARQUET,
+        "parquet",
+        &out_s3_compress_parquet
+    },
+#endif
     { 0 }
 };
 
