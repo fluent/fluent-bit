@@ -189,6 +189,9 @@ struct fw_conn *fw_conn_add(struct flb_connection *connection, struct flb_in_fw_
     conn->buf_size = ctx->buffer_chunk_size;
     conn->in       = ctx->ins;
 
+    conn->compression_type = FLB_COMPRESSION_ALGORITHM_NONE;
+    conn->d_ctx = NULL;
+
     /* Register instance into the event loop */
     ret = mk_event_add(flb_engine_evl_get(),
                        connection->fd,
@@ -218,6 +221,11 @@ int fw_conn_del(struct fw_conn *conn)
 
     /* Release resources */
     mk_list_del(&conn->_head);
+
+    /* Release decompression context if it exists */
+    if (conn->d_ctx) {
+        flb_decompression_context_destroy(conn->d_ctx);
+    }
 
     if (conn->helo != NULL) {
         if (conn->helo->nonce != NULL) {
