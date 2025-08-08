@@ -90,7 +90,7 @@ static void cb_plugins(mk_request_t *request, void *data)
     }
 
     /* Export to JSON */
-    out_buf = flb_msgpack_raw_to_json_sds(mp_sbuf.data, mp_sbuf.size);
+    out_buf = flb_msgpack_raw_to_json_sds(mp_sbuf.data, mp_sbuf.size, FLB_TRUE);
     msgpack_sbuffer_destroy(&mp_sbuf);
 
     mk_http_status(request, 200);

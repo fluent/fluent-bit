@@ -471,7 +471,7 @@ error:
     }
 
     /* Export to JSON */
-    out_buf = flb_msgpack_raw_to_json_sds(mp_sbuf.data, mp_sbuf.size);
+    out_buf = flb_msgpack_raw_to_json_sds(mp_sbuf.data, mp_sbuf.size, FLB_TRUE);
     if (out_buf == NULL) {
         mk_http_status(request, 503);
         mk_http_done(request);
@@ -638,7 +638,7 @@ unpack_error:
     }
 
     /* Export to JSON */
-    out_buf = flb_msgpack_raw_to_json_sds(mp_sbuf.data, mp_sbuf.size);
+    out_buf = flb_msgpack_raw_to_json_sds(mp_sbuf.data, mp_sbuf.size, FLB_TRUE);
     if (out_buf == NULL) {
         out_buf = flb_sds_create("serialization error");
     }

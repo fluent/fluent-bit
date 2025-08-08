@@ -185,7 +185,7 @@ static char *get_group_metadata(void *chunk, size_t size)
         return NULL;
     }
 
-    ret = flb_msgpack_to_json(out_buf, out_size, log_event.metadata);
+    ret = flb_msgpack_to_json(out_buf, out_size, log_event.metadata, FLB_TRUE);
     if (ret < 0) {
         flb_sds_destroy(out_buf);
         flb_log_event_decoder_destroy(&log_decoder);
@@ -221,7 +221,7 @@ static char *get_group_body(void *chunk, size_t size)
         return NULL;
     }
 
-    ret = flb_msgpack_to_json(out_buf, out_size, log_event.body);
+    ret = flb_msgpack_to_json(out_buf, out_size, log_event.body, FLB_TRUE);
     if (ret < 0) {
         flb_sds_destroy(out_buf);
         flb_log_event_decoder_destroy(&log_decoder);
@@ -252,7 +252,7 @@ static char *get_log_body(void *chunk, size_t size)
         return NULL;
     }
 
-    ret = flb_msgpack_to_json(out_buf, out_size, log_event.body);
+    ret = flb_msgpack_to_json(out_buf, out_size, log_event.body, FLB_TRUE);
     if (ret < 0) {
         flb_sds_destroy(out_buf);
         flb_log_event_decoder_destroy(&log_decoder);
@@ -286,7 +286,7 @@ static char *get_record_metadata(void *chunk, size_t size)
         return NULL;
     }
 
-    ret = flb_msgpack_to_json(out_buf, out_size, log_event.metadata);
+    ret = flb_msgpack_to_json(out_buf, out_size, log_event.metadata, FLB_TRUE);
     if (ret < 0) {
         flb_sds_destroy(out_buf);
         flb_log_event_decoder_destroy(&log_decoder);
@@ -1365,8 +1365,8 @@ static int cb_check_metadata_array(void *chunk, size_t size, void *data)
     TEST_CHECK(ret == FLB_EVENT_DECODER_SUCCESS);
 
     while ((ret = flb_log_event_decoder_next(&dec, &log_event)) == FLB_EVENT_DECODER_SUCCESS) {
-        char *meta = flb_msgpack_to_json_str(256, log_event.metadata);
-        char *body = flb_msgpack_to_json_str(256, log_event.body);
+        char *meta = flb_msgpack_to_json_str(256, log_event.metadata, FLB_TRUE);
+        char *body = flb_msgpack_to_json_str(256, log_event.body, FLB_TRUE);
 
         TEST_CHECK(meta != NULL && body != NULL);
         if (meta && body) {

@@ -378,7 +378,8 @@ static int truncate_log(const struct flb_cloudwatch *ctx, const char *log_buffer
  * which means a send must occur
  */
 int process_event(struct flb_cloudwatch *ctx, struct cw_flush *buf,
-                  const msgpack_object *obj, struct flb_time *tms)
+                  const msgpack_object *obj, struct flb_time *tms,
+                  struct flb_config *config)
 {
     size_t written;
     int ret;
@@ -389,8 +390,8 @@ int process_event(struct flb_cloudwatch *ctx, struct cw_flush *buf,
 
     tmp_buf_ptr = buf->tmp_buf + buf->tmp_buf_offset;
     ret = flb_msgpack_to_json(tmp_buf_ptr,
-                                  buf->tmp_buf_size - buf->tmp_buf_offset,
-                                  obj);
+                              buf->tmp_buf_size - buf->tmp_buf_offset,
+                              obj, config->json_escape_unicode);
     if (ret <= 0) {
         /*
          * failure to write to buffer,
@@ -424,7 +425,8 @@ int process_event(struct flb_cloudwatch *ctx, struct cw_flush *buf,
         }
         offset = 0;
         if (!flb_utils_write_str(buf->event_buf, &offset, size,
-                                 tmp_buf_ptr, written)) {
+                                 tmp_buf_ptr, written,
+                                 config->json_escape_unicode)) {
             return -1;
         }
         written = offset;
@@ -551,7 +553,8 @@ retry:
   */
 int add_event(struct flb_cloudwatch *ctx, struct cw_flush *buf,
               struct log_stream *stream,
-              const msgpack_object *obj, struct flb_time *tms)
+              const msgpack_object *obj, struct flb_time *tms,
+              struct flb_config *config)
 {
     int ret;
     struct cw_event *event;
@@ -572,7 +575,7 @@ retry_add_event:
         reset_flush_buf(ctx, buf);
     }
 
-    ret = process_event(ctx, buf, obj, tms);
+    ret = process_event(ctx, buf, obj, tms, config);
     if (ret < 0) {
         return -1;
     }
@@ -788,7 +791,7 @@ int pack_emf_payload(struct flb_cloudwatch *ctx,
 
 static int process_log_events(struct flb_cloudwatch *ctx, const char *input_plugin,
                               struct cw_flush *buf, flb_sds_t tag,
-                              const char *data, size_t bytes)
+                              const char *data, size_t bytes, struct flb_config *config)
 {
     int i = 0;
     size_t map_size;
@@ -880,7 +883,8 @@ static int process_log_events(struct flb_cloudwatch *ctx, const char *input_plug
                         found = FLB_TRUE;
                         val = (kv+j)->val;
                         ret = add_event(ctx, buf, stream, &val,
-                                        &log_event.timestamp);
+                                        &log_event.timestamp,
+                                        config);
                         if (ret < 0 ) {
                             goto error;
                         }
@@ -957,14 +961,14 @@ static int process_log_events(struct flb_cloudwatch *ctx, const char *input_plug
                 goto error;
             }
             ret = add_event(ctx, buf, stream, &emf_payload,
-                            &log_event.timestamp);
+                            &log_event.timestamp, config);
 
             msgpack_unpacked_destroy(&mp_emf_result);
             msgpack_sbuffer_destroy(&mp_sbuf);
 
         } else {
             ret = add_event(ctx, buf, stream, &map,
-                            &log_event.timestamp);
+                            &log_event.timestamp, config);
         }
 
         if (ret < 0 ) {
@@ -988,7 +992,7 @@ error:
 
 static int process_metric_events(struct flb_cloudwatch *ctx, const char *input_plugin,
                                  struct cw_flush *buf, flb_sds_t tag,
-                                 const char *data, size_t bytes)
+                                 const char *data, size_t bytes, struct flb_config *config)
 {
     int i = 0;
     int ret;
@@ -1027,7 +1031,7 @@ static int process_metric_events(struct flb_cloudwatch *ctx, const char *input_p
 
             flb_time_get(&tm);
             ret = add_event(ctx, buf, stream, &map,
-                            &tm);
+                            &tm, config);
 
             if (ret < 0 ) {
                 goto cmt_error;
@@ -1056,7 +1060,8 @@ cmt_error:
  */
 int process_and_send(struct flb_cloudwatch *ctx, const char *input_plugin,
                      struct cw_flush *buf, flb_sds_t tag,
-                     const char *data, size_t bytes, int event_type)
+                     const char *data, size_t bytes, int event_type,
+                     struct flb_config *config)
 {
     int ret;
     int i = 0;
@@ -1064,12 +1069,14 @@ int process_and_send(struct flb_cloudwatch *ctx, const char *input_plugin,
     if (event_type == FLB_EVENT_TYPE_LOGS) {
         i = process_log_events(ctx, input_plugin,
                                buf, tag,
-                               data, bytes);
+                               data, bytes,
+                               config);
     }
     else if (event_type == FLB_EVENT_TYPE_METRICS) {
         i = process_metric_events(ctx, input_plugin,
                                   buf, tag,
-                                  data, bytes);
+                                  data, bytes,
+                                  config);
     }
     /* send any remaining events */
     ret = send_log_events(ctx, buf);
