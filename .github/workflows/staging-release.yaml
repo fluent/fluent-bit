@@ -1050,6 +1050,12 @@ jobs:
         if: startsWith(inputs.version, '4.0')
         uses: actions/checkout@v4
         with:
+          ref: 4.0
+
+      - name: Release 4.1
+        if: startsWith(inputs.version, '4.1')
+        uses: actions/checkout@v4
+        with:
           ref: master
 
       # Get the new version to use
