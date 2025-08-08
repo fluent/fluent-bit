@@ -595,8 +595,10 @@ jobs:
           TAG: ${{ matrix.tag }}
         shell: bash
 
+        # Pulling the actual image with tag is needed here.
       - name: Promote container images from staging to GHCR.io
         run: |
+          docker pull "$STAGING_IMAGE_NAME:$TAG"
           docker tag "$STAGING_IMAGE_NAME:$TAG" "$RELEASE_IMAGE_NAME:$TAG"
           docker push "$RELEASE_IMAGE_NAME:$TAG"
         env:
