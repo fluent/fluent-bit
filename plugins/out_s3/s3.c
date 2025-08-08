@@ -1548,7 +1548,10 @@ static int s3_put_object(struct flb_s3 *ctx, const char *tag, time_t file_first_
         append_random = FLB_TRUE;
         len += 16;
     }
-    len += strlen(ctx->bucket + 1);
+
+    if (ctx->vhost_style_urls == FLB_FALSE) {
+        len += strlen(ctx->bucket + 1);
+    }
 
     uri = flb_sds_create_size(len);
 
@@ -1563,12 +1566,21 @@ static int s3_put_object(struct flb_s3 *ctx, const char *tag, time_t file_first_
         /* only use 8 chars of the random string */
         random_alphanumeric[8] = '\0';
 
-        tmp = flb_sds_printf(&uri, "/%s%s-object%s", ctx->bucket, s3_key,
-                             random_alphanumeric);
+        if (ctx->vhost_style_urls == FLB_TRUE) {
+            tmp = flb_sds_printf(&uri, "%s-object%s", s3_key,
+                                 random_alphanumeric);
+        } else {
+            tmp = flb_sds_printf(&uri, "/%s%s-object%s", ctx->bucket, s3_key,
+                                 random_alphanumeric);
+        }
         flb_free(random_alphanumeric);
     }
     else {
-        tmp = flb_sds_printf(&uri, "/%s%s", ctx->bucket, s3_key);
+        if (ctx->vhost_style_urls == FLB_TRUE) {
+            tmp = flb_sds_printf(&uri, "%s", s3_key);
+        } else {
+            tmp = flb_sds_printf(&uri, "/%s%s", ctx->bucket, s3_key);
+        }
     }
 
     if (!tmp) {
@@ -1622,10 +1634,14 @@ static int s3_put_object(struct flb_s3 *ctx, const char *tag, time_t file_first_
         flb_plg_debug(ctx->ins, "PutObject http status=%d", c->resp.status);
         if (c->resp.status == 200) {
             /*
-             * URI contains bucket name, so we must advance over it
+             * URI may contain bucket name, so we must advance over it
              * to print the object key
              */
-            final_key = uri + strlen(ctx->bucket) + 1;
+            if (ctx->vhost_style_urls == FLB_TRUE) {
+                final_key = uri;
+            } else {
+                final_key = uri + strlen(ctx->bucket) + 1;
+            }
             flb_plg_info(ctx->ins, "Successfully uploaded object %s", final_key);
             flb_sds_destroy(uri);
             flb_http_client_destroy(c);
