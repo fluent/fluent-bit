@@ -20,10 +20,11 @@
 #ifndef FLB_MACROS_H
 #define FLB_MACROS_H
 
+#include <stdbool.h>
 #include <monkey/mk_core.h>
 
-#define FLB_FALSE  0
-#define FLB_TRUE   !FLB_FALSE
+#define FLB_FALSE  false
+#define FLB_TRUE   true
 
 /* Return values */
 #define FLB_ERROR   0
