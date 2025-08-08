@@ -592,6 +592,9 @@ static int init_endpoint(struct flb_s3 *ctx) {
     struct flb_split_entry *tok;
     struct mk_list *split;
     int list_size;
+    flb_sds_t url;
+    flb_sds_t tmp_sds;
+    size_t len;
 
     tmp = flb_output_get_property("endpoint", ctx->ins);
     if (tmp) {
@@ -642,6 +645,32 @@ static int init_endpoint(struct flb_s3 *ctx) {
             flb_plg_error(ctx->ins,  "Could not construct S3 endpoint");
             return -1;
         }
+    }
+
+    if (ctx->vhost_style_urls == FLB_TRUE) {
+        // Add 1 because we need an extra dot
+        len = strlen(ctx->endpoint) + strlen(ctx->bucket) + 1;
+        url = flb_sds_create_size(len);
+        tmp_sds = flb_sds_printf(&url, "%s.%s", ctx->bucket, ctx->endpoint);
+        if (!tmp_sds) {
+            flb_sds_destroy(url);
+            flb_plg_error(ctx->ins, "Could not construct vhost-style S3 endpoint");
+            return -1;
+        }
+        url = tmp_sds;
+
+        // Free the old one since we no longer need it
+        if (ctx->free_endpoint == FLB_TRUE) {
+            flb_free(ctx->endpoint);
+        }
+
+        ctx->endpoint = flb_strndup(url, flb_sds_len(url));
+        flb_sds_destroy(url);
+        if (ctx->endpoint == NULL) {
+            flb_plg_error(ctx->ins, "error duplicating endpoint string");
+            return -1;
+        }
+        flb_plg_info(ctx->ins, "New endpoint: %s", ctx->endpoint);
     }
 
     return 0;
