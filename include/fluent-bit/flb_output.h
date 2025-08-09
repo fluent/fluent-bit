@@ -813,6 +813,7 @@ struct flb_output_flush *flb_output_flush_create(struct flb_task *task,
                             evc->size,
                             &chunk_offset)) == CMT_DECODE_MSGPACK_SUCCESS) {
 
+                cmt_out_context = NULL;
                 ret = flb_processor_run(o_ins->processor,
                                         0,
                                         FLB_PROCESSOR_METRICS,
@@ -831,7 +832,7 @@ struct flb_output_flush *flb_output_flush_create(struct flb_task *task,
                         encode_context = metrics_context;
                     }
 
-                    /* if the cmetrics context lack of time series just skip it */
+                    /* if the cmetrics context lacks time series just skip it */
                     if (flb_metrics_is_empty(encode_context)) {
                         if (encode_context != metrics_context) {
                             cmt_destroy(encode_context);
@@ -887,6 +888,16 @@ struct flb_output_flush *flb_output_flush_create(struct flb_task *task,
 
                     cmt_encode_msgpack_destroy(serialized_context_buffer);
                 }
+                else {
+                    cmt_destroy(metrics_context);
+                    if (cmt_out_context != NULL && cmt_out_context != metrics_context) {
+                        cmt_destroy(cmt_out_context);
+                    }
+                    flb_coro_destroy(coro);
+                    flb_free(out_flush);
+                    flb_free(p_buf);
+                    return NULL;
+                }
             }
 
             if (serialization_buffer_offset == 0) {
@@ -904,6 +915,7 @@ struct flb_output_flush *flb_output_flush_create(struct flb_task *task,
                                                     0);
             }
             else {
+                p_size = serialization_buffer_offset;
                 out_flush->processed_event_chunk = flb_event_chunk_create(
                                                     evc->type,
                                                     0,
