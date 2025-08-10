@@ -33,7 +33,7 @@
 /* Default enabled metrics */
 
 #ifdef __linux__
-#define NE_DEFAULT_ENABLED_METRICS "cpu,cpufreq,meminfo,diskstats,filesystem,uname,stat,time,loadavg,vmstat,netdev,filefd,systemd,nvme,thermal_zone"
+#define NE_DEFAULT_ENABLED_METRICS "cpu,cpufreq,meminfo,diskstats,filesystem,uname,stat,time,loadavg,vmstat,netdev,sockstat,filefd,systemd,nvme,thermal_zone"
 #elif __APPLE__
 #define NE_DEFAULT_ENABLED_METRICS "cpu,loadavg,meminfo,diskstats,uname,netdev"
 #endif
@@ -139,6 +139,28 @@ struct flb_ne {
     struct cmt_gauge *darwin_collisions;
     struct cmt_gauge *darwin_noproto;
 #endif
+
+    /* sockstat_linux */
+    struct cmt_gauge *sockstat_sockets_used;
+    struct cmt_gauge *sockstat_TCP_alloc;
+    struct cmt_gauge *sockstat_TCP_inuse;
+    struct cmt_gauge *sockstat_TCP_mem;
+    struct cmt_gauge *sockstat_TCP_mem_bytes;
+    struct cmt_gauge *sockstat_TCP_orphan;
+    struct cmt_gauge *sockstat_TCP_tw;
+    struct cmt_gauge *sockstat_UDP_inuse;
+    struct cmt_gauge *sockstat_UDP_mem;
+    struct cmt_gauge *sockstat_UDP_mem_bytes;
+    struct cmt_gauge *sockstat_UDPLITE_inuse;
+    struct cmt_gauge *sockstat_RAW_inuse;
+    struct cmt_gauge *sockstat_FRAG_inuse;
+    struct cmt_gauge *sockstat_FRAG_memory;
+    struct cmt_gauge *sockstat_TCP6_inuse;
+    struct cmt_gauge *sockstat_UDP6_inuse;
+    struct cmt_gauge *sockstat_UDPLITE6_inuse;
+    struct cmt_gauge *sockstat_RAW6_inuse;
+    struct cmt_gauge *sockstat_FRAG6_inuse;
+    struct cmt_gauge *sockstat_FRAG6_memory;
 
     /* time */
     struct cmt_gauge *time;
