@@ -45,6 +45,7 @@
 #include "ne_processes.h"
 #include "ne_nvme.h"
 #include "ne_thermalzone.h"
+#include "ne_hwmon.h"
 
 /*
  * Update the metrics, this function is invoked every time 'scrape_interval'
@@ -200,6 +201,7 @@ static int in_ne_init(struct flb_input_instance *in,
     mk_list_add(&processes_collector._head, &ctx->collectors);
     mk_list_add(&nvme_collector._head, &ctx->collectors);
     mk_list_add(&thermalzone_collector._head, &ctx->collectors);
+    mk_list_add(&hwmon_collector._head, &ctx->collectors);
 
     mk_list_foreach(head, &ctx->collectors) {
         coll = mk_list_entry(head, struct flb_ne_collector, _head);
@@ -429,6 +431,12 @@ static struct flb_config_map config_map[] = {
     },
 
     {
+     FLB_CONFIG_MAP_TIME, "collector.hwmon.scrape_interval", "0",
+     0, FLB_FALSE, 0,
+     "scrape interval to collect hwmon metrics from the node."
+    },
+
+    {
      FLB_CONFIG_MAP_CLIST, "metrics",
      NE_DEFAULT_ENABLED_METRICS,
      0, FLB_TRUE, offsetof(struct flb_ne, metrics),
@@ -502,6 +510,31 @@ static struct flb_config_map config_map[] = {
      FLB_CONFIG_MAP_STR, "diskstats.ignore_device_regex", IGNORED_DEVICES,
      0, FLB_TRUE, offsetof(struct flb_ne, dt_regex_skip_devices_text),
      "ignore regular expression for disk devices"
+    },
+
+    /* hwmon specific settings */
+    {
+     FLB_CONFIG_MAP_STR, "collector.hwmon.chip-include", NULL,
+     0, FLB_TRUE, offsetof(struct flb_ne, hwmon_chip_regex_include_text),
+     "regex of chips to include"
+    },
+
+    {
+     FLB_CONFIG_MAP_STR, "collector.hwmon.chip-exclude", NULL,
+     0, FLB_TRUE, offsetof(struct flb_ne, hwmon_chip_regex_exclude_text),
+     "regex of chips to exclude"
+    },
+
+    {
+     FLB_CONFIG_MAP_STR, "collector.hwmon.sensor-include", NULL,
+     0, FLB_TRUE, offsetof(struct flb_ne, hwmon_sensor_regex_include_text),
+     "regex of sensors to include"
+    },
+
+    {
+     FLB_CONFIG_MAP_STR, "collector.hwmon.sensor-exclude", NULL,
+     0, FLB_TRUE, offsetof(struct flb_ne, hwmon_sensor_regex_exclude_text),
+     "regex of sensors to exclude"
     },
     /* EOF */
     {0}
