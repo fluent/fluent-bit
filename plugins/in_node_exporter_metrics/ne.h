@@ -33,7 +33,7 @@
 /* Default enabled metrics */
 
 #ifdef __linux__
-#define NE_DEFAULT_ENABLED_METRICS "cpu,cpufreq,meminfo,diskstats,filesystem,uname,stat,time,loadavg,vmstat,netdev,sockstat,filefd,systemd,nvme,thermal_zone"
+#define NE_DEFAULT_ENABLED_METRICS "cpu,cpufreq,meminfo,diskstats,filesystem,uname,stat,time,loadavg,vmstat,netdev,sockstat,filefd,systemd,nvme,thermal_zone,hwmon"
 #elif __APPLE__
 #define NE_DEFAULT_ENABLED_METRICS "cpu,loadavg,meminfo,diskstats,uname,netdev"
 #endif
@@ -233,6 +233,22 @@ struct flb_ne {
     struct cmt_gauge   *thermalzone_temp;
     struct cmt_gauge   *cooling_device_cur_state;
     struct cmt_gauge   *cooling_device_max_state;
+
+    /* hwmon */
+    struct cmt_gauge   *hwmon_temp_celsius;
+    struct cmt_gauge   *hwmon_temp_max_celsius;
+    struct cmt_gauge   *hwmon_temp_crit_celsius;
+    struct cmt_gauge   *hwmon_in_volts;
+    struct cmt_gauge   *hwmon_fan_rpm;
+    struct cmt_gauge   *hwmon_power_watts;
+    flb_sds_t           hwmon_chip_regex_include_text;
+    flb_sds_t           hwmon_chip_regex_exclude_text;
+    flb_sds_t           hwmon_sensor_regex_include_text;
+    flb_sds_t           hwmon_sensor_regex_exclude_text;
+    struct flb_regex   *hwmon_chip_regex_include;
+    struct flb_regex   *hwmon_chip_regex_exclude;
+    struct flb_regex   *hwmon_sensor_regex_include;
+    struct flb_regex   *hwmon_sensor_regex_exclude;
 };
 
 struct flb_ne_collector {
