@@ -27,6 +27,7 @@ DEFINE_OPTION(FLB_IN_EXEC                     "Enable Exec input plugin"        
 DEFINE_OPTION(FLB_IN_EXEC_WASI                "Enable Exec WASI input plugin"                ON)
 DEFINE_OPTION(FLB_IN_FLUENTBIT_METRICS        "Enable Fluent Bit metrics plugin"             ON)
 DEFINE_OPTION(FLB_IN_FORWARD                  "Enable Forward input plugin"                  ON)
+DEFINE_OPTION(FLB_IN_GPU_METRICS              "Enable GPU metrics input plugin"              ON)
 DEFINE_OPTION(FLB_IN_HEAD                     "Enable Head input plugin"                     ON)
 DEFINE_OPTION(FLB_IN_HEALTH                   "Enable Health input plugin"                   ON)
 DEFINE_OPTION(FLB_IN_HTTP                     "Enable HTTP input plugin"                     ON)

@@ -262,6 +262,7 @@ if(${CMAKE_SYSTEM_NAME} MATCHES "Linux")
   REGISTER_IN_PLUGIN("in_podman_metrics")
   REGISTER_IN_PLUGIN("in_process_exporter_metrics")
   REGISTER_IN_PLUGIN("in_ebpf")
+  REGISTER_IN_PLUGIN("in_gpu_metrics")
 endif()
 
 if(${CMAKE_SYSTEM_NAME} MATCHES "Linux" OR ${CMAKE_SYSTEM_NAME} MATCHES "Darwin")
