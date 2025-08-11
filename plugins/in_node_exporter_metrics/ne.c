@@ -434,6 +434,12 @@ static struct flb_config_map config_map[] = {
     },
 
     {
+     FLB_CONFIG_MAP_STR, "path.rootfs", "/",
+     0, FLB_TRUE, offsetof(struct flb_ne, path_rootfs),
+     "rootfs mount point"
+    },
+
+    {
      FLB_CONFIG_MAP_STR, "path.procfs", "/proc",
      0, FLB_TRUE, offsetof(struct flb_ne, path_procfs),
      "procfs mount point"

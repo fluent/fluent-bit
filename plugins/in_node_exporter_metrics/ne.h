@@ -48,6 +48,7 @@
 
 struct flb_ne {
     /* configuration */
+    flb_sds_t path_rootfs;
     flb_sds_t path_procfs;
     flb_sds_t path_sysfs;
     flb_sds_t path_textfile;
