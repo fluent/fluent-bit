@@ -910,6 +910,14 @@ static void cb_splunk_flush(struct flb_event_chunk *event_chunk,
     payload_buf = buf_data;
     payload_size = buf_size;
 
+    /* If the payload is empty, skip the HTTP request to avoid a 400 error*/
+    if (payload_size == 0) {
+        flb_plg_debug(ctx->ins, "empty payload detected, skipping HTTP request");
+        flb_sds_destroy(buf_data);
+        flb_upstream_conn_release(u_conn);
+        FLB_OUTPUT_RETURN(FLB_OK);
+    }
+
     /* Should we compress the payload ? */
     if (ctx->compress_gzip == FLB_TRUE) {
         ret = flb_gzip_compress((void *) buf_data, buf_size,
