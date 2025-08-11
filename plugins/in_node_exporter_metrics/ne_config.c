@@ -24,6 +24,8 @@ struct flb_ne *flb_ne_config_create(struct flb_input_instance *ins,
                                     struct flb_config *config)
 {
     int ret;
+    int root_len;
+    flb_sds_t tmp;
     struct flb_ne *ctx;
 
     ctx = flb_calloc(1, sizeof(struct flb_ne));
@@ -41,6 +43,59 @@ struct flb_ne *flb_ne_config_create(struct flb_input_instance *ins,
     }
 
     /* mount points */
+    flb_plg_info(ins, "path.rootfs = %s", ctx->path_rootfs);
+
+    if (ctx->path_rootfs && strcmp(ctx->path_rootfs, "/") != 0) {
+        root_len = strlen(ctx->path_rootfs);
+        if (root_len > 1 && ctx->path_rootfs[root_len - 1] == '/') {
+            root_len--;
+        }
+
+        /* Compose procfs path */
+        tmp = flb_sds_create_size(1024);
+        if (tmp) {
+            if (ctx->path_procfs[0] == '/') {
+                tmp = flb_sds_printf(&tmp, "%.*s%s", root_len, ctx->path_rootfs, ctx->path_procfs);
+            }
+            else {
+                tmp = flb_sds_printf(&tmp, "%.*s/%s", root_len, ctx->path_rootfs, ctx->path_procfs);
+            }
+            if (tmp) {
+                ctx->path_procfs = tmp;
+            }
+        }
+
+        /* Compose sysfs path */
+        tmp = flb_sds_create_size(1024);
+        if (tmp) {
+            if (ctx->path_sysfs[0] == '/') {
+                tmp = flb_sds_printf(&tmp, "%.*s%s", root_len, ctx->path_rootfs, ctx->path_sysfs);
+            }
+            else {
+                tmp = flb_sds_printf(&tmp, "%.*s/%s", root_len, ctx->path_rootfs, ctx->path_sysfs);
+            }
+            if (tmp) {
+                ctx->path_sysfs = tmp;
+            }
+        }
+
+        /* Compose textfile path if any */
+        if (ctx->path_textfile) {
+            tmp = flb_sds_create_size(1024);
+            if (tmp) {
+                if (ctx->path_textfile[0] == '/') {
+                    tmp = flb_sds_printf(&tmp, "%.*s%s", root_len, ctx->path_rootfs, ctx->path_textfile);
+                }
+                else {
+                    tmp = flb_sds_printf(&tmp, "%.*s/%s", root_len, ctx->path_rootfs, ctx->path_textfile);
+                }
+                if (tmp) {
+                    ctx->path_textfile = tmp;
+                }
+            }
+        }
+    }
+
     flb_plg_info(ins, "path.procfs = %s", ctx->path_procfs);
     flb_plg_info(ins, "path.sysfs  = %s", ctx->path_sysfs);
 

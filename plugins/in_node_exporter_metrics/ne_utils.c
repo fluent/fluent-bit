@@ -196,9 +196,9 @@ int ne_utils_file_read_lines(const char *mount, const char *path, struct mk_list
 /*
  * Read a file and store the first line as a string.
  */
-int ne_utils_file_read_sds(const char *mount, 
-                           const char *path, 
-                           const char *join_a, 
+int ne_utils_file_read_sds(const char *mount,
+                           const char *path,
+                           const char *join_a,
                            const char *join_b,
                            flb_sds_t *str)
 {

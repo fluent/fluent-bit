@@ -85,6 +85,7 @@ static int stat_update(struct flb_ne *ctx)
     mk_list_init(&list);
     ret = ne_utils_file_read_lines(ctx->path_procfs, "/stat", &list);
     if (ret == -1) {
+        flb_plg_error(ctx->ins, "failed to read %s/stat", ctx->path_procfs);
         return -1;
     }
 
