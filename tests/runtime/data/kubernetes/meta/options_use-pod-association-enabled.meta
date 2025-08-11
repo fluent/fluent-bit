@@ -13,21 +13,11 @@
 			"labels": {
 				"app.kubernetes.io/name": "fluent-bit"
 			},
-			"name": "use-kubelet-enabled",
+			"name": "use-pod-association-enabled",
 			"namespace": "options",
 			"resourceVersion": "74466568",
 			"selfLink": "/api/v1/namespaces/core/pods/base",
-			"uid": "e9f2963f-55f2-11e9-84c5-02e422b8a84a",
-			"ownerReferences": [
-			    {
-			        "apiVersion": "apps/v1",
-			        "kind": "Deployment",
-			        "name": "my-deployment",
-			        "uid": "abcd1234-5678-efgh-ijkl-9876mnopqrst",
-			        "controller": true,
-			        "blockOwnerDeletion": true
-			    }
-			]
+			"uid": "e9f2963f-55f2-11e9-84c5-02e422b8a84a"
 		},
 		"spec": {
 			"containers": [{
