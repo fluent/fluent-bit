@@ -60,7 +60,7 @@ jobs:
       contents: read
     steps:
       - name: Checkout code
-        uses: actions/checkout@v4
+        uses: actions/checkout@v5
         with:
           ref: ${{ inputs.ref }}
           path: source
@@ -87,7 +87,7 @@ jobs:
       # Pick up latest master version
       - name: Checkout code for action
         if: inputs.environment == 'staging'
-        uses: actions/checkout@v4
+        uses: actions/checkout@v5
         with:
           path: action-support
 
@@ -115,7 +115,7 @@ jobs:
     continue-on-error: ${{ inputs.ignore_failing_targets || false }}
     steps:
       - name: Checkout code
-        uses: actions/checkout@v4
+        uses: actions/checkout@v5
         with:
           ref: ${{ inputs.ref }}
 
@@ -194,7 +194,7 @@ jobs:
       # Pick up latest master version
       - name: Checkout code for action
         if: inputs.environment == 'staging'
-        uses: actions/checkout@v4
+        uses: actions/checkout@v5
         with:
           path: action-support
 
@@ -229,7 +229,7 @@ jobs:
           DEBIAN_FRONTEND: noninteractive
 
       - name: Checkout code for repo metadata construction - always latest
-        uses: actions/checkout@v4
+        uses: actions/checkout@v5
 
       - name: Import GPG key for signing
         id: import_gpg
