@@ -804,7 +804,7 @@ static int ec2_metadata_group_should_fetch(struct flb_filter_aws *ctx,
 
     interval = now - group->last_fetch_attempt;
 
-    if (group->last_fetch_attempt > 0 && 
+    if (group->last_fetch_attempt > 0 &&
         interval < required_interval) {
         return FLB_FALSE;
     }

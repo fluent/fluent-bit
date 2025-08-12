@@ -35,8 +35,18 @@
 /* number of characters needed to 'end' a PutLogEvents payload */
 #define PUT_LOG_EVENTS_FOOTER_LEN      4
 
+// https://docs.aws.amazon.com/applicationsignals/latest/APIReference/API_Service.html
+/* Maxinum number of character limits including both the KeyAttributes key and its value  */
+#define KEY_ATTRIBUTES_MAX_LEN 1100
+/* Maxinum number of character limits including both the Attributes key and its value */
+#define ATTRIBUTES_MAX_LEN 300
+
 /* 256KiB minus 26 bytes for the event */
 #define MAX_EVENT_LEN      262118
+
+/* Prefix used for entity fields only */
+#define AWS_ENTITY_PREFIX "aws_entity"
+#define AWS_ENTITY_PREFIX_LEN 10
 
 #include "cloudwatch_logs.h"
 

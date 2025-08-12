@@ -34,11 +34,254 @@
 
 #include <stdio.h>
 #include <msgpack.h>
+#include <fcntl.h>
+#include <sys/stat.h>
 
 /* Merge status used by merge_log_handler() */
 #define MERGE_NONE        0 /* merge unescaped string in temporary buffer */
 #define MERGE_PARSED      1 /* merge parsed string (log_buf)             */
 #define MERGE_MAP         2 /* merge direct binary object (v)            */
+
+struct task_args {
+    struct flb_kube *ctx;
+    char *api_server_url;
+};
+
+pthread_mutex_t metadata_mutex;
+pthread_t background_thread;
+struct task_args *task_args = {0};
+struct mk_event_loop *evl;
+
+/*
+ * If a file exists called service.map, load it and use it.
+ * If not, fall back to API. This is primarily for unit tests purposes,
+ */
+static int get_pod_service_file_info(struct flb_kube *ctx, char **buffer) {
+
+    int fd = -1;
+    char *payload = NULL;
+    size_t payload_size = 0;
+    struct stat sb;
+    int packed = -1;
+    int ret;
+    char uri[1024];
+
+    if (ctx->pod_service_preload_cache_path) {
+
+        ret = snprintf(uri, sizeof(uri) - 1, "%s.map",
+                       ctx->pod_service_preload_cache_path);
+        if (ret > 0) {
+            fd = open(uri, O_RDONLY, 0);
+            if (fd != -1) {
+                if (fstat(fd, &sb) == 0) {
+                    payload = flb_malloc(sb.st_size);
+                    if (!payload) {
+                        flb_errno();
+                    }
+                    else {
+                        ret = read(fd, payload, sb.st_size);
+                        if (ret == sb.st_size) {
+                            payload_size = ret;
+                        }
+                    }
+                }
+                close(fd);
+            }
+        }
+
+        if (payload_size) {
+            *buffer=payload;
+            packed = payload_size;
+            flb_plg_debug(ctx->ins, "pod to service map content is: %s", buffer);
+        }
+    }
+
+    return packed;
+}
+
+static void parse_pod_service_map(struct flb_kube *ctx, char *api_buf, size_t api_size)
+{
+    if(ctx->hash_table == NULL || ctx->pod_hash_table == NULL) {
+        return;
+    }
+    flb_plg_debug(ctx->ins, "started parsing pod to service map");
+
+    size_t off = 0;
+    int ret;
+    msgpack_unpacked api_result;
+    msgpack_object api_map;
+    msgpack_object k,v, attributeKey, attributeValue;
+    char *buffer;
+    size_t size;
+    int root_type;
+    int i, j;
+
+    /* Iterate API server msgpack and lookup specific fields */
+    if (api_buf != NULL) {
+        ret = flb_pack_json(api_buf, api_size,
+                        &buffer, &size, &root_type, NULL);
+
+        if (ret < 0) {
+            flb_plg_warn(ctx->ins, "Could not parse json response = %s",
+                     api_buf);
+            flb_free(buffer);
+            return;
+        }
+        msgpack_unpacked_init(&api_result);
+        ret = msgpack_unpack_next(&api_result, buffer, size, &off);
+        if (ret == MSGPACK_UNPACK_SUCCESS) {
+            api_map = api_result.data;
+            for (i = 0; i < api_map.via.map.size; i++) {
+                k = api_map.via.map.ptr[i].key;
+                v = api_map.via.map.ptr[i].val;
+                if (k.type == MSGPACK_OBJECT_STR && v.type == MSGPACK_OBJECT_MAP) {
+                    char *pod_name = flb_strndup(k.via.str.ptr, k.via.str.size);
+                    struct service_attributes *service_attributes = flb_malloc(sizeof(struct service_attributes));
+                    for (j = 0; j < v.via.map.size; j++) {
+                        attributeKey = v.via.map.ptr[j].key;
+                        attributeValue = v.via.map.ptr[j].val;
+                        if (attributeKey.type == MSGPACK_OBJECT_STR && attributeValue.type == MSGPACK_OBJECT_STR) {
+                            char *attributeKeyString = flb_strndup(attributeKey.via.str.ptr, attributeKey.via.str.size);
+                            if(strcmp(attributeKeyString, "ServiceName") == 0 && attributeValue.via.str.size < KEY_ATTRIBUTES_MAX_LEN) {
+                                strncpy(service_attributes->name, attributeValue.via.str.ptr, attributeValue.via.str.size);
+                                service_attributes->name[attributeValue.via.str.size] = '\0';
+                                service_attributes->name_len = attributeValue.via.str.size;
+                                service_attributes->fields++;
+                            }
+                            if(strcmp(attributeKeyString, "Environment") == 0 && attributeValue.via.str.size < KEY_ATTRIBUTES_MAX_LEN) {
+                                strncpy(service_attributes->environment, attributeValue.via.str.ptr,attributeValue.via.str.size);
+                                service_attributes->environment[attributeValue.via.str.size] = '\0';
+                                service_attributes->environment_len = attributeValue.via.str.size;
+                                service_attributes->fields++;
+                            }
+                            if(strcmp(attributeKeyString, "ServiceNameSource") == 0 && attributeValue.via.str.size < SERVICE_NAME_SOURCE_MAX_LEN) {
+                                strncpy(service_attributes->name_source, attributeValue.via.str.ptr,attributeValue.via.str.size);
+                                service_attributes->name_source[attributeValue.via.str.size] = '\0';
+                                service_attributes->name_source_len = attributeValue.via.str.size;
+                                service_attributes->fields++;
+                            }
+                            flb_free(attributeKeyString);
+                        }
+                    }
+                    if (service_attributes->name[0] != '\0' || service_attributes->environment[0] != '\0') {
+                        pthread_mutex_lock(&metadata_mutex);
+                        flb_hash_table_add(ctx->pod_hash_table,
+                                pod_name,k.via.str.size,
+                                service_attributes, 0);
+                        pthread_mutex_unlock(&metadata_mutex);
+                    } else {
+                        flb_free(service_attributes);
+                    }
+                    flb_free(pod_name);
+                } else {
+                    flb_plg_error(ctx->ins, "key and values are not string and map");
+                }
+            }
+        }
+    }
+
+    flb_plg_debug(ctx->ins, "ended parsing pod to service map" );
+
+    msgpack_unpacked_destroy(&api_result);
+    flb_free(buffer);
+}
+
+static int fetch_pod_service_map(struct flb_kube *ctx, char *api_server_url) {
+    if(!ctx->use_pod_association) {
+        return -1;
+    }
+    int ret;
+    struct flb_http_client *c;
+    size_t b_sent;
+    struct flb_upstream_conn *u_conn;
+    char *buffer = {0};
+
+    flb_plg_debug(ctx->ins, "fetch pod to service map");
+
+    ret = get_pod_service_file_info(ctx, &buffer);
+    if (ret > 0 && buffer != NULL) {
+        parse_pod_service_map(ctx, buffer, ret);
+        flb_free(buffer);
+    }
+    else {
+        /* Get upstream context and connection */
+        /* if block handles the TLS certificates update, as the Fluent-bit connection gets net timeout error, it destroys the upstream
+         * On the next call to fetch_pod_service_map, it creates a new pod association upstream with latest TLS certs */
+        if (!ctx->pod_association_upstream) {
+            flb_plg_debug(ctx->ins, "[kubernetes] upstream object for pod association is NULL. Making a new one now");
+            ret = flb_kube_pod_association_init(ctx,ctx->config);
+            if( ret == -1) {
+                return -1;
+            }
+        }
+
+        u_conn = flb_upstream_conn_get(ctx->pod_association_upstream);
+        if (!u_conn) {
+            flb_plg_error(ctx->ins, "[kubernetes] no upstream connections available to %s:%i",
+                          ctx->pod_association_upstream->tcp_host, ctx->pod_association_upstream->tcp_port);
+            flb_upstream_destroy(ctx->pod_association_upstream);
+            flb_tls_destroy(ctx->pod_association_tls);
+            ctx->pod_association_upstream = NULL;
+            ctx->pod_association_tls = NULL;
+            return -1;
+        }
+
+        /* Create HTTP client */
+        c = flb_http_client(u_conn, FLB_HTTP_GET,
+                            api_server_url,
+                            NULL, 0, ctx->pod_association_host,
+                            ctx->pod_association_port, NULL, 0);
+
+        if (!c) {
+            flb_error("[kubernetes] could not create HTTP client");
+            flb_upstream_conn_release(u_conn);
+            flb_upstream_destroy(ctx->pod_association_upstream);
+            flb_tls_destroy(ctx->pod_association_tls);
+            ctx->pod_association_upstream = NULL;
+            ctx->pod_association_tls = NULL;
+            return -1;
+        }
+
+        /* Perform HTTP request */
+        ret = flb_http_do(c, &b_sent);
+        flb_plg_debug(ctx->ins, "Request (uri = %s) http_do=%i, "
+                      "HTTP Status: %i",
+                      api_server_url, ret, c->resp.status);
+
+        if (ret != 0 || c->resp.status != 200) {
+            if (c->resp.payload_size > 0) {
+                flb_plg_debug(ctx->ins, "HTTP response : %s",
+                              c->resp.payload);
+            }
+            flb_http_client_destroy(c);
+            flb_upstream_conn_release(u_conn);
+            return -1;
+        }
+
+        /* Parse response data */
+        if (c->resp.payload != NULL) {
+            flb_plg_debug(ctx->ins, "HTTP response payload : %s",
+                                  c->resp.payload);
+            parse_pod_service_map(ctx, c->resp.payload, c->resp.payload_size);
+        }
+
+        /* Cleanup */
+        flb_http_client_destroy(c);
+        flb_upstream_conn_release(u_conn);
+    }
+    return 0;
+}
+
+void *update_pod_service_map(void *arg) {
+    while (1) {
+        flb_engine_evl_init();
+        evl = mk_event_loop_create(256);
+        flb_engine_evl_set(evl);
+        fetch_pod_service_map(task_args->ctx,task_args->api_server_url);
+        flb_plg_debug(task_args->ctx->ins, "Updating pod to service map after %d seconds", task_args->ctx->pod_service_map_refresh_interval);
+        sleep(task_args->ctx->pod_service_map_refresh_interval);
+    }
+}
 
 static int get_stream(msgpack_object_map map)
 {
@@ -208,13 +451,31 @@ static int cb_kube_init(struct flb_filter_instance *f_ins,
      */
     flb_kube_meta_init(ctx, config);
 
+/*
+ * Init separate thread for calling pod to
+ * service map
+ */
+    pthread_mutex_init(&metadata_mutex, NULL);
+
+    if (ctx->use_pod_association) {
+        task_args = malloc(sizeof(struct task_args));
+        task_args->ctx = ctx;
+        task_args->api_server_url = ctx->pod_association_endpoint;
+        // Start the background thread
+        if (pthread_create(&background_thread, NULL, update_pod_service_map, NULL) != 0) {
+            flb_error("Failed to create background thread");
+            background_thread = NULL;
+            free(task_args);
+        }
+    }
+
     return 0;
 }
 
 static int pack_map_content(struct flb_log_event_encoder *log_encoder,
                             msgpack_object source_map,
                             const char *kube_buf, size_t kube_size,
-                            const char *namespace_kube_buf, 
+                            const char *namespace_kube_buf,
                             size_t namespace_kube_size,
                             struct flb_time *time_lookup,
                             struct flb_parser *parser,
@@ -521,7 +782,7 @@ static int pack_map_content(struct flb_log_event_encoder *log_encoder,
 
         off = 0;
         msgpack_unpacked_init(&result);
-        msgpack_unpack_next(&result, namespace_kube_buf, 
+        msgpack_unpack_next(&result, namespace_kube_buf,
                             namespace_kube_size, &off);
 
         if (ret == FLB_EVENT_ENCODER_SUCCESS) {
@@ -764,7 +1025,16 @@ static int cb_kube_exit(void *data, struct flb_config *config)
 
     ctx = data;
     flb_kube_conf_destroy(ctx);
+    if (background_thread) {
+        pthread_cancel(background_thread);
+        pthread_join(background_thread, NULL);
+    }
+    pthread_mutex_destroy(&metadata_mutex);
 
+    flb_free(task_args);
+    if (evl) {
+        mk_event_loop_destroy(evl);
+    }
     return 0;
 }
 
@@ -1062,10 +1332,109 @@ static struct flb_config_map config_map[] = {
     {
      FLB_CONFIG_MAP_TIME, "kube_meta_namespace_cache_ttl", "15m",
      0, FLB_TRUE, offsetof(struct flb_kube, kube_meta_namespace_cache_ttl),
-     "configurable TTL for K8s cached namespace metadata. " 
+     "configurable TTL for K8s cached namespace metadata. "
      "By default, it is set to 15m and cached entries will be evicted after 15m."
      "Setting this to 0 will disable the cache TTL and "
      "will evict entries once the cache reaches capacity."
+    },
+
+    /*
+     * Enable pod to service name association logics
+     * This can be configured with endpoint that returns a response with the corresponding
+     * podname in relation to the service name. For example, if there is a pod named "petclinic-12345"
+     * then in order to associate a service name to pod "petclinic-12345", the JSON response to the endpoint
+     * must follow the below patterns
+     * {
+     *   "petclinic-12345": {
+     *      "ServiceName":"petclinic",
+     *      "Environment":"default"
+     *   }
+     * }
+     */
+    {
+    FLB_CONFIG_MAP_BOOL, "use_pod_association", "false",
+    0, FLB_TRUE, offsetof(struct flb_kube, use_pod_association),
+    "use custom endpoint to get pod to service name mapping"
+    },
+   /*
+    * The host used for pod to service name association , default is 127.0.0.1
+    * Will only check when "use_pod_association" config is set to true
+    */
+    {
+       FLB_CONFIG_MAP_STR, "pod_association_host", "cloudwatch-agent.amazon-cloudwatch",
+       0, FLB_TRUE, offsetof(struct flb_kube, pod_association_host),
+       "host to connect with when performing pod to service name association"
+    },
+    /*
+    * The endpoint used for pod to service name association, default is /kubernetes/pod-to-service-env-map
+    * Will only check when "use_pod_association" config is set to true
+    */
+    {
+        FLB_CONFIG_MAP_STR, "pod_association_endpoint", "/kubernetes/pod-to-service-env-map",
+        0, FLB_TRUE, offsetof(struct flb_kube, pod_association_endpoint),
+        "endpoint to connect with when performing pod to service name association"
+    },
+      /*
+       * The port for pod to service name association endpoint, default is 4311
+       * Will only check when "use_pod_association" config is set to true
+       */
+    {
+          FLB_CONFIG_MAP_INT, "pod_association_port", "4311",
+          0, FLB_TRUE, offsetof(struct flb_kube, pod_association_port),
+          "port to connect with when performing pod to service name association"
+    },
+    {
+        FLB_CONFIG_MAP_INT, "pod_service_map_ttl", "0",
+        0, FLB_TRUE, offsetof(struct flb_kube, pod_service_map_ttl),
+        "configurable TTL for pod to service map storage. "
+         "By default, it is set to 0 which means TTL for cache entries is disabled and "
+         "cache entries are evicted at random when capacity is reached. "
+         "In order to enable this option, you should set the number to a time interval. "
+         "For example, set this value to 60 or 60s and cache entries "
+         "which have been created more than 60s will be evicted"
+    },
+    {
+        FLB_CONFIG_MAP_INT, "pod_service_map_refresh_interval", "60",
+        0, FLB_TRUE, offsetof(struct flb_kube, pod_service_map_refresh_interval),
+        "Refresh interval for the pod to service map storage."
+            "By default, it is set to refresh every 60 seconds"
+    },
+    {
+        FLB_CONFIG_MAP_STR, "pod_service_preload_cache_dir", NULL,
+        0, FLB_TRUE, offsetof(struct flb_kube, pod_service_preload_cache_path),
+        "set directory with pod to service map files"
+    },
+    {
+    FLB_CONFIG_MAP_STR, "pod_association_host_server_ca_file", "/etc/amazon-cloudwatch-observability-agent-server-cert/tls-ca.crt",
+    0, FLB_TRUE, offsetof(struct flb_kube, pod_association_host_server_ca_file),
+    "TLS CA certificate path for communication with agent server"
+    },
+    {
+    FLB_CONFIG_MAP_STR, "pod_association_host_client_cert_file", "/etc/amazon-cloudwatch-observability-agent-client-cert/client.crt",
+    0, FLB_TRUE, offsetof(struct flb_kube, pod_association_host_client_cert_file),
+    "Client Certificate path for enabling mTLS on calls to agent server"
+    },
+    {
+    FLB_CONFIG_MAP_STR, "pod_association_host_client_key_file", "/etc/amazon-cloudwatch-observability-agent-client-cert/client.key",
+    0, FLB_TRUE, offsetof(struct flb_kube, pod_association_host_client_key_file),
+    "Client Certificate Key path for enabling mTLS on calls to agent server"
+    },
+    {
+    FLB_CONFIG_MAP_INT, "pod_association_host_tls_debug", "0",
+    0, FLB_TRUE, offsetof(struct flb_kube, pod_association_host_tls_debug),
+    "set TLS debug level: 0 (no debug), 1 (error), "
+    "2 (state change), 3 (info) and 4 (verbose)"
+    },
+    {
+    FLB_CONFIG_MAP_BOOL, "pod_association_host_tls_verify", "true",
+    0, FLB_TRUE, offsetof(struct flb_kube, pod_association_host_tls_verify),
+    "enable or disable verification of TLS peer certificate"
+    },
+    {
+    FLB_CONFIG_MAP_STR, "set_platform", NULL,
+    0, FLB_TRUE, offsetof(struct flb_kube, set_platform),
+    "Set the platform that kubernetes is in. Possible values are k8s and eks"
+        "This should only be used for testing purpose"
     },
     /* EOF */
     {0}
