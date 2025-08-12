@@ -65,7 +65,7 @@ jobs:
         RELEASE_VERSION: ${{ github.event.inputs.version }}
 
     - name: Checkout repository
-      uses: actions/checkout@v4
+      uses: actions/checkout@v5
 
   staging-release-generate-package-matrix:
     name: Get package matrix
@@ -75,7 +75,7 @@ jobs:
       rpm-build-matrix: ${{ steps.get-matrix.outputs.rpm-build-matrix }}
     steps:
       - name: Checkout repository
-        uses: actions/checkout@v4
+        uses: actions/checkout@v5
 
       - name: Setup runner
         run: |
@@ -111,7 +111,7 @@ jobs:
       fail-fast: false
     steps:
     - name: Checkout code
-      uses: actions/checkout@v4
+      uses: actions/checkout@v5
 
     - name: Setup runner
       run: |
@@ -184,7 +184,7 @@ jobs:
       fail-fast: false
     steps:
     - name: Checkout code
-      uses: actions/checkout@v4
+      uses: actions/checkout@v5
 
     - name: Setup runner
       run: |
@@ -335,7 +335,7 @@ jobs:
       contents: read
     steps:
     - name: Checkout code
-      uses: actions/checkout@v4
+      uses: actions/checkout@v5
 
     - name: Sync packages from buckets on S3
       run: |
@@ -729,7 +729,7 @@ jobs:
       - staging-release-yum-packages
     steps:
       - name: Checkout code
-        uses: actions/checkout@v4
+        uses: actions/checkout@v5
 
       - name: Test release packages
         run: |
@@ -751,7 +751,7 @@ jobs:
       - staging-release-images
     steps:
       - name: Checkout code
-        uses: actions/checkout@v4
+        uses: actions/checkout@v5
 
       - name: Test containers
         run: |
@@ -904,7 +904,7 @@ jobs:
     steps:
       - name: Release 2.0 - not latest
         if: startsWith(inputs.version, '2.0')
-        uses: actions/checkout@v4
+        uses: actions/checkout@v5
         with:
           repository: fluent/fluent-bit-docs
           ref: 2.0
@@ -912,7 +912,7 @@ jobs:
 
       - name: Release 2.1 - not latest
         if: startsWith(inputs.version, '2.1')
-        uses: actions/checkout@v4
+        uses: actions/checkout@v5
         with:
           repository: fluent/fluent-bit-docs
           ref: 2.1
@@ -920,7 +920,7 @@ jobs:
 
       - name: Release 2.2 - not latest
         if: startsWith(inputs.version, '2.2')
-        uses: actions/checkout@v4
+        uses: actions/checkout@v5
         with:
           repository: fluent/fluent-bit-docs
           ref: 2.2
@@ -928,7 +928,7 @@ jobs:
 
       - name: Release 3.0 - not latest
         if: startsWith(inputs.version, '3.0')
-        uses: actions/checkout@v4
+        uses: actions/checkout@v5
         with:
           repository: fluent/fluent-bit-docs
           ref: 3.0
@@ -936,7 +936,7 @@ jobs:
 
       - name: Release 3.1 - not latest
         if: startsWith(inputs.version, '3.1')
-        uses: actions/checkout@v4
+        uses: actions/checkout@v5
         with:
           repository: fluent/fluent-bit-docs
           ref: 3.1
@@ -944,7 +944,7 @@ jobs:
 
       - name: Release 3.2 - not latest
         if: startsWith(inputs.version, '3.2')
-        uses: actions/checkout@v4
+        uses: actions/checkout@v5
         with:
           repository: fluent/fluent-bit-docs
           token: ${{ secrets.GH_PA_TOKEN }}
@@ -952,7 +952,7 @@ jobs:
 
       - name: Release 4.0 and latest
         if: startsWith(inputs.version, '4.0')
-        uses: actions/checkout@v4
+        uses: actions/checkout@v5
         with:
           repository: fluent/fluent-bit-docs
           token: ${{ secrets.GH_PA_TOKEN }}
@@ -1014,43 +1014,43 @@ jobs:
     steps:
       - name: Release 2.0
         if: startsWith(inputs.version, '2.0')
-        uses: actions/checkout@v4
+        uses: actions/checkout@v5
         with:
           ref: 2.0
 
       - name: Release 2.1
         if: startsWith(inputs.version, '2.1')
-        uses: actions/checkout@v4
+        uses: actions/checkout@v5
         with:
           ref: 2.1
 
       - name: Release 2.2
         if: startsWith(inputs.version, '2.2')
-        uses: actions/checkout@v4
+        uses: actions/checkout@v5
         with:
           ref: 2.2
 
       - name: Release 3.0
         if: startsWith(inputs.version, '3.0')
-        uses: actions/checkout@v4
+        uses: actions/checkout@v5
         with:
           ref: 3.0
 
       - name: Release 3.1
         if: startsWith(inputs.version, '3.1')
-        uses: actions/checkout@v4
+        uses: actions/checkout@v5
         with:
           ref: 3.1
 
       - name: Release 3.2
         if: startsWith(inputs.version, '3.2')
-        uses: actions/checkout@v4
+        uses: actions/checkout@v5
         with:
           ref: 3.2
 
       - name: Release 4.0
         if: startsWith(inputs.version, '4.0')
-        uses: actions/checkout@v4
+        uses: actions/checkout@v5
         with:
           ref: master
 
