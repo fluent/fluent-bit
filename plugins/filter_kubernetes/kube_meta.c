@@ -2126,8 +2126,8 @@ static int flb_kube_network_init(struct flb_kube *ctx, struct flb_config *config
 int flb_kube_meta_init(struct flb_kube *ctx, struct flb_config *config)
 {
     int ret;
-    char *meta_buf, *config_buf = NULL;
-    size_t meta_size, config_size;
+    char *meta_buf;
+    size_t meta_size;
 
     if (ctx->dummy_meta == FLB_TRUE) {
         flb_plg_warn(ctx->ins, "using Dummy Metadata");
@@ -2201,9 +2201,6 @@ int flb_kube_meta_init(struct flb_kube *ctx, struct flb_config *config)
         }
         flb_plg_info(ctx->ins, "connectivity OK");
         flb_free(meta_buf);
-        if(config_buf) {
-            flb_free(config_buf);
-        }
     }
     else {
         flb_plg_info(ctx->ins, "Fluent Bit not running in a POD");
