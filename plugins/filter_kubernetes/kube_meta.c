@@ -2120,9 +2120,6 @@ static int flb_kube_network_init(struct flb_kube *ctx, struct flb_config *config
 
     kubelet_network_init_ret = flb_kubelet_network_init(ctx, config);
     return kubelet_network_init_ret;
-
-
-    return 0;
 }
 
 /* Initialize local context */
