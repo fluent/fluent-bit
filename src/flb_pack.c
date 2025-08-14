@@ -64,6 +64,7 @@ int flb_json_tokenise(const char *js, size_t len,
 
     ret = jsmn_parse(&state->parser, js, len,
                      state->tokens, state->tokens_size);
+
     while (ret == JSMN_ERROR_NOMEM) {
         /* Get current size of the array in bytes */
         old_size = state->tokens_size * sizeof(jsmntok_t);
@@ -79,12 +80,10 @@ int flb_json_tokenise(const char *js, size_t len,
         state->tokens = tmp;
         state->tokens_size += new_tokens;
 
-        /* Reset parser to reprocess the JSON data from the beginning */
-        jsmn_init(&state->parser);
-
         ret = jsmn_parse(&state->parser, js, len,
                          state->tokens, state->tokens_size);
     }
+
 
     if (ret == JSMN_ERROR_INVAL) {
         return FLB_ERR_JSON_INVAL;
@@ -96,7 +95,8 @@ int flb_json_tokenise(const char *js, size_t len,
         return FLB_ERR_JSON_PART;
     }
 
-    state->tokens_count += ret;
+    /* always use jsmn_parser.toknext to count tokens */
+    state->tokens_count = state->parser.toknext;
     return 0;
 }
 
