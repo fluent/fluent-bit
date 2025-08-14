@@ -39,6 +39,9 @@ int flb_kube_regex_init(struct flb_kube *ctx)
     if (!ctx->regex) {
         return -1;
     }
+    if (!ctx->deploymentRegex) {
+        return -1;
+    }
 
     return 0;
 }
