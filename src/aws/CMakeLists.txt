@@ -16,6 +16,7 @@ set(src
   "flb_aws_credentials_http.c"
   "flb_aws_credentials_profile.c"
   "flb_aws_aggregation.c"
+  "flb_aws_credentials_iot.c"
   )
 
 message(STATUS "=== AWS Credentials ===")

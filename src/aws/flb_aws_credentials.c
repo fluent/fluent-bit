@@ -51,14 +51,14 @@ static struct flb_aws_provider *standard_chain_create(struct flb_config
                                                       int eks_irsa,
                                                       char *profile);
 
-
 /*
  * The standard credential provider chain:
  * 1. Environment variables
- * 2. Shared credentials file (AWS Profile)
- * 3. EKS OIDC
- * 4. EC2 IMDS
+ * 2. IoT credentials endpoint (AWS_IOT_* env vars / Greengrass V2 config)
+ * 3. Shared credentials file (AWS Profile)
+ * 4. EKS OIDC
  * 5. ECS HTTP credentials endpoint
+ * 6. EC2 IMDS
  *
  * This provider will evaluate each provider in order, returning the result
  * from the first provider that returns valid credentials.
@@ -565,6 +565,28 @@ static struct flb_aws_provider *standard_chain_create(struct flb_config
     flb_debug("[aws_credentials] Initialized Env Provider in standard chain");
 
     mk_list_add(&sub_provider->_head, &implementation->sub_providers);
+
+    /*
+     * IoT Provider - placed after environment provider but before profile provider.
+     *
+     * Rationale for this position in the credential chain:
+     * 1. Standard AWS_ACCESS_KEY_ID/AWS_SECRET_ACCESS_KEY env vars take precedence
+     *    (handled by env provider above) - explicit credentials always win.
+     * 2. IoT-specific env vars (AWS_IOT_*) or Greengrass V2 config indicate the user
+     *    explicitly wants IoT credentials on devices like AWS Greengrass.
+     * 3. IoT provider comes before profile/EKS/ECS/EC2 because when IoT config
+     *    is present, the device is specifically configured for IoT credentials.
+     *
+     * Configuration sources (in priority order):
+     * - AWS_IOT_* environment variables (explicit)
+     * - AWS_IOT_GREENGRASS_V2_CONFIG_PATH -> config.yaml (Greengrass V2)
+     * - GG_ROOT_CA_PATH fallback for CA certificate
+     */
+    sub_provider = flb_iot_provider_create(config, generator);
+    if (sub_provider) {
+        mk_list_add(&sub_provider->_head, &implementation->sub_providers);
+        flb_debug("[aws_credentials] Initialized IoT Provider in standard chain");
+    }
 
     flb_debug("[aws_credentials] creating profile %s provider", profile);
     sub_provider = flb_profile_provider_create(profile);
