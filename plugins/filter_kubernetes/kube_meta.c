@@ -496,19 +496,17 @@ int get_api_server_configmap(struct flb_kube *ctx,
     *out_buf = NULL;
     *out_size = 0;
 
-    if (packed == -1) {
 
-        ret = snprintf(uri, sizeof(uri) - 1, FLB_KUBE_API_CONFIGMAP_FMT, namespace,
-                       configmap);
+    ret = snprintf(uri, sizeof(uri) - 1, FLB_KUBE_API_CONFIGMAP_FMT, namespace,
+                   configmap);
 
-        if (ret == -1) {
-            return -1;
-        }
-        flb_plg_debug(ctx->ins,
-                      "Send out request to API Server for configmap information");
-        packed = get_meta_info_from_request(ctx, namespace, FLB_KUBE_CONFIGMAP, configmap,
-                                &buf, &size, &root_type, uri, false);
+    if (ret < 0) {
+        return -1;
     }
+    flb_plg_debug(ctx->ins,
+                  "Send out request to API Server for configmap information");
+    packed = get_meta_info_from_request(ctx, namespace, FLB_KUBE_CONFIGMAP, configmap,
+                            &buf, &size, &root_type, uri, false);
 
     /* validate pack */
     if (packed == -1) {
