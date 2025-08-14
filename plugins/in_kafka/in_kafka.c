@@ -157,6 +157,7 @@ static int in_kafka_collect(struct flb_input_instance *ins,
                             struct flb_config *config, void *in_context)
 {
     int ret;
+    int append_ret;
     struct flb_in_kafka_config *ctx = in_context;
     rd_kafka_message_t *rkm;
 
@@ -200,12 +201,6 @@ static int in_kafka_collect(struct flb_input_instance *ins,
 
         rd_kafka_message_destroy(rkm);
 
-        if (!ctx->enable_auto_commit) {
-            if (ret == FLB_EVENT_ENCODER_SUCCESS) {
-                rd_kafka_commit(ctx->kafka.rk, NULL, 0);
-            }
-        }
-
         /* Break from the loop when reaching the limit of polling if available */
         if (ctx->polling_threshold != FLB_IN_KAFKA_UNLIMITED &&
             ctx->log_encoder->output_length > ctx->polling_threshold + 512) {
@@ -215,11 +210,24 @@ static int in_kafka_collect(struct flb_input_instance *ins,
 
     if (ret == FLB_EVENT_ENCODER_SUCCESS) {
         if (ctx->log_encoder->output_length > 0) {
-            flb_input_log_append(ins, NULL, 0,
-                                 ctx->log_encoder->output_buffer,
-                                 ctx->log_encoder->output_length);
+            append_ret = flb_input_log_append(ins, NULL, 0,
+                                              ctx->log_encoder->output_buffer,
+                                              ctx->log_encoder->output_length);
+
+            if (append_ret == 0) {
+                if (!ctx->enable_auto_commit) {
+                    rd_kafka_commit(ctx->kafka.rk, NULL, 0);
+                }
+                ret = 0;
+            }
+            else {
+                flb_plg_error(ins, "failed to append records");
+                ret = -1;
+            }
         }
-        ret = 0;
+        else {
+            ret = 0;
+        }
     }
     else {
         flb_plg_error(ins, "Error encoding record : %d", ret);
