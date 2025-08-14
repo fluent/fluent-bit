@@ -225,6 +225,11 @@ struct flb_aws_provider *flb_eks_provider_create(struct flb_config *config,
                                                  flb_aws_client_generator
                                                  *generator);
 
+/*
+ * IoT Provider
+ */
+struct flb_aws_provider *flb_iot_provider_create(struct flb_config *config,
+                                                 struct flb_aws_client_generator *generator);
 
 /*
  * STS Assume Role Provider.
