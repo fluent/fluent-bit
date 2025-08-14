@@ -804,18 +804,6 @@ static int cb_kube_exit(void *data, struct flb_config *config)
 
     ctx = data;
     
-    if (ctx->pod_hash_table) {
-        struct mk_list *head, *tmp;
-        struct flb_hash_table_entry *entry;
-        
-        mk_list_foreach_safe(head, tmp, &ctx->pod_hash_table->entries) {
-            entry = mk_list_entry(head, struct flb_hash_table_entry, _head_parent);
-            if (entry->val) {
-                flb_free(entry->val);
-            }
-        }
-    }
-    
     flb_kube_conf_destroy(ctx);
     if (background_thread) {
         pthread_cancel(background_thread);
