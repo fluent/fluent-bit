@@ -811,7 +811,9 @@ static int cb_kube_exit(void *data, struct flb_config *config)
     }
     pthread_mutex_destroy(&metadata_mutex);
 
-    flb_free(task_args);
+    if (task_args) {
+        flb_free(task_args);
+    }
     if (evl) {
         mk_event_loop_destroy(evl);
     }
