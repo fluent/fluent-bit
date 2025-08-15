@@ -65,6 +65,8 @@ struct flb_plugin_proxy_context {
 
 struct flb_plugin_input_proxy_context {
     int coll_fd;
+    /* This context is set by the remote init and is passed to remote collect */
+    void *remote_context;
     /* A proxy ptr is needed to store the proxy type/lang (OUTPUT/GOLANG) */
     struct flb_plugin_proxy *proxy;
 };
