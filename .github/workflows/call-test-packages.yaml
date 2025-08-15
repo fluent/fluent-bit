@@ -37,7 +37,7 @@ jobs:
         distro: [ amazonlinux2022, amazonlinux2, centos7, centos8, debian10, debian11, ubuntu1804, ubuntu2004, ubuntu2204 ]
     steps:
     - name: Checkout repository
-      uses: actions/checkout@v4
+      uses: actions/checkout@v5
 
     - name: Get the version
       id: get_version
