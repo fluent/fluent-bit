@@ -270,14 +270,12 @@ int determine_platform(struct flb_kube *ctx) {
 /* Gather pods list information from Kubelet */
 void get_cluster_from_environment(struct flb_kube *ctx,struct flb_kube_meta *meta)
 {
-    if(meta->cluster == NULL) {
+    if (meta->cluster == NULL) {
         char* cluster_name = getenv("CLUSTER_NAME");
-        if(cluster_name) {
+        if (cluster_name) {
             meta->cluster = strdup(cluster_name);
             meta->cluster_len = strlen(cluster_name);
             meta->fields++;
-        } else {
-            free(cluster_name);
         }
         flb_plg_debug(ctx->ins, "Cluster name is %s.", meta->cluster);
     }
