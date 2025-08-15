@@ -37,6 +37,18 @@ jobs:
       version: ${{ steps.formatted_version.outputs.replaced }}
     steps:
 
+      - name: Free up disk space
+        run: |
+          echo "Before cleanup:"
+          df -h
+          docker system prune -af
+          rm -rf /usr/share/dotnet
+          rm -rf /usr/local/lib/android
+          rm -rf /opt/ghc
+          echo "After cleanup:"
+          df -h
+        shell: bash
+
       - run: |
           echo "Version: ${{ inputs.version || github.ref_name }}"
         shell: bash
