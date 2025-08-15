@@ -1,7 +1,6 @@
 #ifndef KUBERNETES_AWS_H
 #define KUBERNETES_AWS_H
 
-#include <pthread.h>
 #include "kube_conf.h"
 
 int fetch_pod_service_map(struct flb_kube *ctx, char *api_server_url, pthread_mutex_t *mutex);
