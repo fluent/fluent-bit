@@ -240,6 +240,7 @@ void *flb_zstd_decompression_context_create(void)
 
     if (context == NULL) {
         flb_errno();
+        return NULL;
     }
 
     context->dctx = ZSTD_createDCtx();
