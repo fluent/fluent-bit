@@ -265,17 +265,5 @@ void flb_kube_conf_destroy(struct flb_kube *ctx)
     }
 #endif
 
-    if (ctx->pod_hash_table) {
-        struct mk_list *head, *tmp;
-        struct flb_hash_table_entry *entry;
-
-        mk_list_foreach_safe(head, tmp, &ctx->pod_hash_table->entries) {
-            entry = mk_list_entry(head, struct flb_hash_table_entry, _head_parent);
-            if (entry->val) {
-                flb_free(entry->val);
-            }
-        }
-    }
-
     flb_free(ctx);
 }

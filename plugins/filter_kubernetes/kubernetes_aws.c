@@ -87,7 +87,7 @@ static void parse_pod_service_map(struct flb_kube *ctx, char *api_buf, size_t ap
     msgpack_unpacked api_result;
     msgpack_object api_map;
     msgpack_object k,v, attributeKey, attributeValue;
-    char *buffer;
+    char *buffer = NULL;
     size_t size;
     int root_type;
     int i, j;
@@ -100,7 +100,9 @@ static void parse_pod_service_map(struct flb_kube *ctx, char *api_buf, size_t ap
         if (ret < 0) {
             flb_plg_warn(ctx->ins, "Could not parse json response = %s",
                      api_buf);
-            flb_free(buffer);
+            if (buffer) {
+                flb_free(buffer);
+            }
             return;
         }
         msgpack_unpacked_init(&api_result);
@@ -142,8 +144,9 @@ static void parse_pod_service_map(struct flb_kube *ctx, char *api_buf, size_t ap
                     if (service_attributes->name[0] != '\0' || service_attributes->environment[0] != '\0') {
                         pthread_mutex_lock(mutex);
                         flb_hash_table_add(ctx->pod_hash_table,
-                                pod_name,k.via.str.size,
-                                service_attributes, 0);
+                                           pod_name, k.via.str.size,
+                                           service_attributes, sizeof(struct service_attributes));
+                        flb_free(service_attributes);
                         pthread_mutex_unlock(mutex);
                     } else {
                         flb_free(service_attributes);
@@ -159,7 +162,9 @@ static void parse_pod_service_map(struct flb_kube *ctx, char *api_buf, size_t ap
     flb_plg_debug(ctx->ins, "ended parsing pod to service map" );
 
     msgpack_unpacked_destroy(&api_result);
-    flb_free(buffer);
+    if (buffer) {
+        flb_free(buffer);
+    }
 }
 
 int fetch_pod_service_map(struct flb_kube *ctx, char *api_server_url, pthread_mutex_t *mutex) {
