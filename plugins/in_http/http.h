@@ -61,6 +61,7 @@ struct flb_http {
     struct mk_server *server;
 
     int collector_id;
+    int is_paused;                     /* Plugin is paused */
 };
 
 
