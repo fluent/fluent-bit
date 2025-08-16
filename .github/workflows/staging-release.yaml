@@ -502,7 +502,9 @@ jobs:
           TAG: ${{ steps.get-tag.outputs.tag }}
 
   staging-release-images-latest-tags:
-    # Only update latest tags for 4.0 releases
+    # NOTE: Before releasing 4.1, we need to change '4.' to '4.1'
+    # Meanwhile, we need to release 4.0 series as stable releases.
+    # Only update latest tags for 4. releases
     if: startsWith(github.event.inputs.version, '4.')
     name: Release latest Linux container images
     runs-on: ubuntu-latest
@@ -829,9 +831,20 @@ jobs:
           target_commitish: '3.2'
           make_latest: false
 
-      - name: Release 4.0 and latest
+      - name: Release 4.0 - not latest
         uses: softprops/action-gh-release@v2
         if: startsWith(inputs.version, '4.0')
+        with:
+          body: "https://fluentbit.io/announcements/v${{ inputs.version }}/"
+          draft: false
+          generate_release_notes: true
+          name: "Fluent Bit ${{ inputs.version }}"
+          tag_name: v${{ inputs.version }}
+          make_latest: true
+
+      - name: Release 4.1 and latest
+        uses: softprops/action-gh-release@v2
+        if: startsWith(inputs.version, '4.1')
         with:
           body: "https://fluentbit.io/announcements/v${{ inputs.version }}/"
           draft: false
@@ -948,8 +961,15 @@ jobs:
           token: ${{ secrets.GH_PA_TOKEN }}
           ref: 3.2
 
-      - name: Release 4.0 and latest
+      - name: Release 4.0 - not latest
         if: startsWith(inputs.version, '4.0')
+        uses: actions/checkout@v4
+        with:
+          repository: fluent/fluent-bit-docs
+          token: ${{ secrets.GH_PA_TOKEN }}
+
+      - name: Release 4.1 and latest
+        if: startsWith(inputs.version, '4.1')
         uses: actions/checkout@v4
         with:
           repository: fluent/fluent-bit-docs
