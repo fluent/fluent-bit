@@ -91,6 +91,7 @@ set(src
   flb_cfl_ra_key.c
   flb_cfl_record_accessor.c
   flb_conditionals.c
+  flb_blob_db.c
   flb_mem.c
   flb_blob_db.c
   )
