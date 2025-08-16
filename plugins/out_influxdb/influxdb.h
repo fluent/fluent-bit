@@ -56,6 +56,10 @@ struct flb_influxdb {
     char *seq_name;
     int seq_len;
 
+    /* prefix */
+    char *prefix;
+    int prefix_len;
+
     /* auto_tags: on/off */
     int auto_tags;
 
