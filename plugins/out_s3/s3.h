@@ -120,6 +120,7 @@ struct flb_s3 {
     int send_content_md5;
     int static_file_path;
     int compression;
+    int enable_content_encoding_header;
     int port;
     int insecure;
     size_t store_dir_limit_size;
