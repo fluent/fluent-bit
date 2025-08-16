@@ -375,6 +375,7 @@ static int flb_azure_blob_apply_remote_configuration(struct flb_azure_blob *cont
                                  NULL,
                                  NULL,
                                  NULL,
+                                 NULL,
                                  NULL);
 
     if (tls_context == NULL) {

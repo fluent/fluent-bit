@@ -196,6 +196,7 @@ option(FLB_WASM_STACK_PROTECT  "Build with WASM runtime with strong stack protec
 option(FLB_ENFORCE_ALIGNMENT   "Enable limited platform specific aligned memory access" No)
 option(FLB_KAFKA               "Enable Kafka support"         Yes)
 option(FLB_ZIG                 "Enable zig integration"       Yes)
+option(FLB_OPENSSL_STORE       "Enable OpenSSL Store Support for TLS"       No)
 
 # Native Metrics Support (cmetrics)
 option(FLB_METRICS             "Enable metrics support"       Yes)
@@ -417,6 +418,15 @@ if (FLB_ZIG)
       set(FLB_ZIG On)
     endif()
   endif()
+endif()
+
+# Ensure OpenSSL Store support is available if TLS is enabled
+if (FLB_OPENSSL_STORE)
+  if(NOT FLB_TLS)
+    message(FATAL_ERROR "FLB_ENABLE_OPENSSL_STORE requires FLB_TLS to be enabled.")
+  endif()
+  message(STATUS "OpenSSL Store defined")
+  add_definitions(-DFLB_USE_OPENSSL_STORE=1)
 endif()
 
 if(FLB_SMALL)
