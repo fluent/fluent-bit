@@ -97,6 +97,10 @@
           "type": "deb"
         },
         {
+          "target": "ubuntu/20.04",
+          "type": "deb"
+        },
+        {
           "target": "ubuntu/22.04",
           "type": "deb"
         },
