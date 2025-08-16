@@ -3,6 +3,7 @@
 #include <fluent-bit/flb_info.h>
 #include <fluent-bit/flb_mem.h>
 #include <fluent-bit/flb_parser.h>
+#include <fluent-bit/flb_pack.h>
 #include <fluent-bit/flb_error.h>
 #include <fluent-bit/flb_str.h>
 #include <fluent-bit/flb_sds.h>
@@ -14,6 +15,7 @@
 /* Parsers configuration */
 #define JSON_PARSERS  FLB_TESTS_DATA_PATH "/data/parser/json.conf"
 #define REGEX_PARSERS FLB_TESTS_DATA_PATH "/data/parser/regex.conf"
+#define LTSV_PARSERS FLB_TESTS_DATA_PATH "/data/parser/ltsv.conf"
 
 /* Templates */
 #define JSON_FMT_01  "{\"key001\": 12345, \"key002\": 0.99, \"time\": \"%s\"}"
@@ -123,6 +125,16 @@ int flb_parser_regex_do(struct flb_parser *parser,
                         void **out_buf, size_t *out_size,
                         struct flb_time *out_time);
 
+int flb_parser_ltsv_do(struct flb_parser *parser,
+                        char *buf, size_t length,
+                        void **out_buf, size_t *out_size,
+                        struct flb_time *out_time);
+
+int flb_parser_tskv_do(struct flb_parser *parser,
+                        char *buf, size_t length,
+                        void **out_buf, size_t *out_size,
+                        struct flb_time *out_time);
+
 /* Parse timezone string and get the offset */
 void test_parser_tzone_offset()
 {
@@ -164,6 +176,14 @@ static void load_regex_parsers(struct flb_config *config)
     int ret;
 
     ret = flb_parser_conf_file(REGEX_PARSERS, config);
+    TEST_CHECK(ret == 0);
+}
+
+static void load_ltsv_parsers(struct flb_config *config)
+{
+    int ret;
+
+    ret = flb_parser_conf_file(LTSV_PARSERS, config);
     TEST_CHECK(ret == 0);
 }
 
@@ -513,8 +533,138 @@ void test_mysql_unquoted()
 
     flb_parser_exit(config);
     flb_config_exit(config);
+}
 
+typedef int (*parser_func)(struct flb_parser *parser,
+                        char *buf, size_t length,
+                        void **out_buf, size_t *out_size,
+                        struct flb_time *out_time);
 
+int parse_log_to_msgpack(struct flb_parser* p, const char* source, parser_func func, msgpack_unpacked* unpacked) {
+    void *out_buf = NULL;
+    size_t out_size = 0;
+    struct flb_time out_time = { 0 };
+    int ret = 0;
+
+    int parsing_result = func(p, (char*)source, strlen(source), &out_buf, &out_size, &out_time);
+    if (parsing_result < 0 || out_buf == NULL) {
+        ret = -1;
+        goto exit;
+    }
+
+    size_t off = 0;
+    msgpack_unpacked_init(unpacked);
+    msgpack_unpack_return unpack_result = msgpack_unpack(out_buf, out_size, &off, unpacked->zone, &unpacked->data);
+    if (unpack_result != MSGPACK_UNPACK_SUCCESS) {
+        ret = -1;
+    }
+
+exit:
+    if (out_buf != NULL) {
+        flb_free(out_buf);
+    }
+    return ret;
+}
+
+int parse_json_to_msgpack(const char* source, msgpack_unpacked* unpacked) {
+    char *out_buf = NULL;
+    size_t out_size = 0;
+    int root_type;
+    int ret = 0;
+
+    int parsing_result = flb_pack_json(source, strlen(source), &out_buf, &out_size, &root_type);
+    if (parsing_result != 0 || out_buf == NULL) {
+        ret = -1;
+        goto exit;
+    }
+
+    size_t off = 0;
+    msgpack_unpacked_init(unpacked);
+    msgpack_unpack_return unpack_result = msgpack_unpack(out_buf, out_size, &off, unpacked->zone, &unpacked->data);
+    if (unpack_result != MSGPACK_UNPACK_SUCCESS) {
+        ret = -1;
+    }
+
+exit:
+    if (out_buf != NULL) {
+        flb_free(out_buf);
+    }
+    return ret;
+}
+
+// Parses both source and json to msgpack and compares them
+void check_log_and_json_equal(struct flb_parser* p, const char* source, parser_func func, const char* json) {
+    msgpack_unpacked unpacked;
+    if (!TEST_CHECK(parse_log_to_msgpack(p, source, func, &unpacked) == 0)) {
+        return;
+    }
+
+    msgpack_unpacked unpacked_json;
+    if (!TEST_CHECK(parse_json_to_msgpack(json, &unpacked_json) == 0)) {
+        return;
+    }
+
+    if (!msgpack_object_equal(unpacked.data, unpacked_json.data)) {
+        char buf1[1024];
+        char buf2[1024];
+        msgpack_object_print_buffer(buf1, sizeof(buf1), unpacked.data);
+        msgpack_object_print_buffer(buf2, sizeof(buf2), unpacked_json.data);
+        TEST_CHECK_(false, "%s != %s", buf1, buf2);
+    }
+
+    msgpack_unpacked_destroy(&unpacked);
+    msgpack_unpacked_destroy(&unpacked_json);
+}
+
+void check_ltsv_and_json_equal(struct flb_parser* p, const char* source, const char* json) {
+    check_log_and_json_equal(p, source, flb_parser_ltsv_do, json);
+}
+
+void check_tskv_and_json_equal(struct flb_parser* p, const char* source, const char* json) {
+    check_log_and_json_equal(p, source, flb_parser_tskv_do, json);
+}
+
+void test_ltsv() {
+    struct flb_parser *p;
+    struct flb_config *config;
+
+    config = flb_config_init();
+
+    load_ltsv_parsers(config);
+
+    p = flb_parser_get("ltsv", config);
+    if (!TEST_CHECK(p != NULL)) {
+        return;
+    }
+
+    check_ltsv_and_json_equal(p, "a:b\tc:d", "{\"a\":\"b\",\"c\":\"d\"}");
+    check_ltsv_and_json_equal(p, "a:very long string with whitespace\tc:d", "{\"a\":\"very long string with whitespace\",\"c\":\"d\"}");
+    check_ltsv_and_json_equal(p, "a:b:c\tc:d", "{\"a\":\"b:c\",\"c\":\"d\"}");
+
+    flb_parser_exit(config);
+    flb_config_exit(config);
+}
+
+void test_tskv() {
+    struct flb_parser *p;
+    struct flb_config *config;
+
+    config = flb_config_init();
+
+    load_ltsv_parsers(config);
+
+    p = flb_parser_get("tskv", config);
+    if (!TEST_CHECK(p != NULL)) {
+        return;
+    }
+
+    check_tskv_and_json_equal(p, "a=b\tc=d", "{\"a\":\"b\",\"c\":\"d\"}");
+    check_tskv_and_json_equal(p, "tskv\ta=b\tc=d", "{\"a\":\"b\",\"c\":\"d\"}");
+    check_tskv_and_json_equal(p, "a=very long string with whitespace\tc=d", "{\"a\":\"very long string with whitespace\",\"c\":\"d\"}");
+    check_tskv_and_json_equal(p, "a=b=c\tc=d", "{\"a\":\"b:c\",\"c\":\"d\"}");
+
+    flb_parser_exit(config);
+    flb_config_exit(config);
 }
 
 
@@ -524,5 +674,7 @@ TEST_LIST = {
     { "json_time_lookup", test_json_parser_time_lookup},
     { "regex_time_lookup", test_regex_parser_time_lookup},
     { "mysql_unquoted" , test_mysql_unquoted },
+    { "ltsv_tests", test_ltsv },
+    { "tskv_tests", test_tskv },
     { 0 }
 };
