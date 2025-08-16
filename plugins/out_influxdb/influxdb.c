@@ -216,7 +216,8 @@ static int influxdb_format(struct flb_config *config,
             /* is this a string ? */
             if (quote == FLB_TRUE) {
                 ret = flb_utils_write_str_buf(val, val_len,
-                                              &str, &str_size);
+                                              &str, &str_size,
+                                              config->json_escape_unicode);
                 if (ret == -1) {
                     flb_errno();
                     goto error;

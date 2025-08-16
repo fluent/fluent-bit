@@ -98,7 +98,7 @@ static char *get_group_metadata(void *chunk, size_t size)
         return NULL;
     }
 
-    json = flb_msgpack_to_json_str(1024, log_event.metadata);
+    json = flb_msgpack_to_json_str(1024, log_event.metadata, FLB_TRUE);
     flb_log_event_decoder_destroy(&log_decoder);
     return json;
 }
@@ -121,7 +121,7 @@ static char *get_group_body(void *chunk, size_t size)
         return NULL;
     }
 
-    json = flb_msgpack_to_json_str(1024, log_event.body);
+    json = flb_msgpack_to_json_str(1024, log_event.body, FLB_TRUE);
     flb_log_event_decoder_destroy(&log_decoder);
     return json;
 }
@@ -146,7 +146,7 @@ static char *get_log_body(void *chunk, size_t size)
     flb_log_event_decoder_next(&log_decoder, &log_event);
 
     /* convert log body to json */
-    json = flb_msgpack_to_json_str(1024, log_event.body);
+    json = flb_msgpack_to_json_str(1024, log_event.body, FLB_TRUE);
 
     flb_log_event_decoder_destroy(&log_decoder);
     return json;

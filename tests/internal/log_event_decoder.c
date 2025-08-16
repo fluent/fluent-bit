@@ -180,7 +180,7 @@ void decode_object()
         return;
     }
 
-    json = flb_msgpack_to_json_str(4096, event.body);
+    json = flb_msgpack_to_json_str(4096, event.body, FLB_TRUE);
     if (!TEST_CHECK(json != NULL)) {
         TEST_MSG("flb_msgpack_to_json_str error");
         return;
@@ -250,7 +250,7 @@ void decoder_next()
         return;
     }
 
-    json = flb_msgpack_to_json_str(4096, event.body);
+    json = flb_msgpack_to_json_str(4096, event.body, FLB_TRUE);
     if (!TEST_CHECK(json != NULL)) {
         TEST_MSG("flb_msgpack_to_json_str error");
         return;
