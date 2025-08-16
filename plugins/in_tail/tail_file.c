@@ -648,7 +648,7 @@ static int process_content(struct flb_tail_file *file, size_t *bytes)
         processed_bytes += len + 1;
         lines++;
         file->parsed = 0;
-        file->last_processed_bytes += processed_bytes;
+        file->last_processed_bytes = processed_bytes;
     }
 
 #ifdef FLB_HAVE_UNICODE_ENCODER
