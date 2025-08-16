@@ -505,7 +505,7 @@ static int store_session_set(struct flb_calyptia *ctx, char *buf, size_t size)
     }
 
     /* store content */
-    ret = flb_fstore_file_append(ctx->fs_file, mp_buf, mp_size);
+    ret = flb_fstore_file_append(ctx->fs, ctx->fs_file, mp_buf, mp_size);
     if (ret == -1) {
         flb_plg_error(ctx->ins, "could not store session information");
         flb_free(mp_buf);
