@@ -690,9 +690,11 @@ static int flb_gzip_decompressor_process_header(
 
     /* Minimal length: header + crc32 */
     if (context->input_buffer_length < FLB_GZIP_HEADER_SIZE) {
-        flb_error("[gzip] unexpected content length");
-
-        return FLB_DECOMPRESSOR_FAILURE;
+        /*
+         * This is not a fatal error; it's the expected condition when waiting
+         * for more data. Return INSUFFICIENT_DATA without logging an error.
+         */
+        return FLB_DECOMPRESSOR_INSUFFICIENT_DATA;
     }
 
     memcpy(&inner_context->gzip_header,
