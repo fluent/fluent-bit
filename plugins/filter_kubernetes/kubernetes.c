@@ -56,6 +56,11 @@ void *update_pod_service_map(void *arg)
 {
     flb_engine_evl_init();
     evl = mk_event_loop_create(256);
+    if (evl == NULL) {
+        flb_plg_error(task_args->ctx->ins,
+                      "Failed to create event loop for pod service map");
+        return NULL;
+    }
     flb_engine_evl_set(evl);
     while (1) {
         fetch_pod_service_map(task_args->ctx,task_args->api_server_url,&metadata_mutex);
