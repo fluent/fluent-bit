@@ -23,6 +23,8 @@
 #include <fluent-bit/flb_time.h>
 #include <fluent-bit/flb_pack.h>
 #include <fluent-bit/flb_socket.h>
+#include <fluent-bit/flb_gzip.h>
+#include <fluent-bit/flb_pack.h>
 #include <sys/types.h>
 #include <sys/stat.h>
 #ifdef FLB_HAVE_UNIX_SOCKET
@@ -565,6 +567,117 @@ void flb_test_unix_perm()
 }
 #endif /* FLB_HAVE_UNIX_SOCKET */
 
+/*
+ * Creates a forward-protocol-compliant, Gzip-compressed MessagePack payload.
+ * The final structure is: [tag, compressed_events, {options}]
+ */
+static int create_simple_json_gzip(msgpack_sbuffer *sbuf)
+{
+    int ret;
+    char *event_buf;
+    size_t event_size;
+    char *compressed_buf;
+    size_t compressed_size;
+    int root_type;
+    msgpack_packer pck;
+
+    char *tag = "test";
+    char event_json[] = "[1234567890,{\"test\":\"msg\"}]";
+
+    ret = flb_pack_json(event_json, strlen(event_json),
+                        &event_buf, &event_size, &root_type, NULL);
+    if (!TEST_CHECK(ret == 0)) {
+        return -1;
+    }
+
+    ret = flb_gzip_compress(event_buf, event_size,
+                            (void **)&compressed_buf, &compressed_size);
+    if (!TEST_CHECK(ret == 0)) {
+        flb_free(event_buf);
+        return -1;
+    }
+    flb_free(event_buf);
+
+    /* Create temporary msgpack buffer */
+    msgpack_packer_init(&pck, sbuf, msgpack_sbuffer_write);
+
+    msgpack_pack_array(&pck, 3);
+    msgpack_pack_str_with_body(&pck, tag, strlen(tag));
+    msgpack_pack_bin_with_body(&pck, compressed_buf, compressed_size);
+    msgpack_pack_map(&pck, 2);
+    msgpack_pack_str_with_body(&pck, "compressed", 10);
+    msgpack_pack_str_with_body(&pck, "gzip", 4);
+    msgpack_pack_str_with_body(&pck, "size", 4);
+    msgpack_pack_uint64(&pck, event_size);
+
+    flb_free(compressed_buf);
+
+    return 0;
+}
+
+void flb_test_forward_gzip()
+{
+    struct flb_lib_out_cb cb_data;
+    struct test_ctx *ctx;
+    flb_sockfd_t fd;
+    int ret;
+    int num;
+    ssize_t w_size;
+
+    char *buf;
+    size_t size;
+
+    msgpack_sbuffer sbuf;
+
+    clear_output_num();
+
+    cb_data.cb = cb_check_result_json;
+    cb_data.data = "\"test\":\"msg\"";
+
+    ctx = test_ctx_create(&cb_data);
+    if (!TEST_CHECK(ctx != NULL)) {
+        TEST_MSG("test_ctx_create failed");
+        exit(EXIT_FAILURE);
+    }
+
+    ret = flb_output_set(ctx->flb, ctx->o_ffd,
+                         "match", "test",
+                         "format", "json",
+                         NULL);
+    TEST_CHECK(ret == 0);
+
+    ret = flb_start(ctx->flb);
+    TEST_CHECK(ret == 0);
+
+    fd = connect_tcp(NULL, -1);
+    if (!TEST_CHECK(fd >= 0)) {
+        exit(EXIT_FAILURE);
+    }
+
+    msgpack_sbuffer_init(&sbuf);
+    create_simple_json_gzip(&sbuf);
+
+    w_size = send(fd, sbuf.data, sbuf.size, 0);
+    if (!TEST_CHECK(w_size == sbuf.size)) {
+        TEST_MSG("failed to send, errno=%d", errno);
+        flb_socket_close(fd);
+        msgpack_sbuffer_destroy(&sbuf);
+        exit(EXIT_FAILURE);
+    }
+
+    msgpack_sbuffer_destroy(&sbuf);
+
+    flb_time_msleep(1500);
+
+    num = get_output_num();
+    if (!TEST_CHECK(num > 0))  {
+        TEST_MSG("no outputs");
+    }
+
+    flb_socket_close(fd);
+    test_ctx_destroy(ctx);
+}
+
 
 TEST_LIST = {
     {"forward", flb_test_forward},
@@ -574,6 +687,6 @@ TEST_LIST = {
     {"unix_path", flb_test_unix_path},
     {"unix_perm", flb_test_unix_perm},
 #endif
+    {"forward_gzip", flb_test_forward_gzip},
     {NULL, NULL}
 };
-
