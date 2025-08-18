@@ -52,7 +52,8 @@ pthread_t background_thread;
 struct task_args *task_args = {0};
 struct mk_event_loop *evl;
 
-void *update_pod_service_map(void *arg) {
+void *update_pod_service_map(void *arg)
+{
     while (1) {
         flb_engine_evl_init();
         evl = mk_event_loop_create(256);

@@ -244,7 +244,7 @@ void flb_kube_conf_destroy(struct flb_kube *ctx)
         flb_upstream_destroy(ctx->kube_api_upstream);
     }
 
-    if(ctx->pod_association_tls) {
+    if (ctx->pod_association_tls) {
         flb_tls_destroy(ctx->pod_association_tls);
     }
 

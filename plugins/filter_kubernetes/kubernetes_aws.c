@@ -32,8 +32,8 @@
  * If a file exists called service.map, load it and use it.
  * If not, fall back to API. This is primarily for unit tests purposes,
  */
-static int get_pod_service_file_info(struct flb_kube *ctx, char **buffer) {
-
+static int get_pod_service_file_info(struct flb_kube *ctx, char **buffer)
+{
     int fd = -1;
     char *payload = NULL;
     size_t payload_size = 0;
@@ -75,9 +75,10 @@ static int get_pod_service_file_info(struct flb_kube *ctx, char **buffer) {
     return packed;
 }
 
-static void parse_pod_service_map(struct flb_kube *ctx, char *api_buf, size_t api_size, pthread_mutex_t *mutex)
+static void parse_pod_service_map(struct flb_kube *ctx, char *api_buf,
+                                  size_t api_size, pthread_mutex_t *mutex)
 {
-    if(ctx->hash_table == NULL || ctx->pod_hash_table == NULL) {
+    if (ctx->hash_table == NULL || ctx->pod_hash_table == NULL) {
         return;
     }
     flb_plg_debug(ctx->ins, "started parsing pod to service map");
@@ -86,7 +87,7 @@ static void parse_pod_service_map(struct flb_kube *ctx, char *api_buf, size_t ap
     int ret;
     msgpack_unpacked api_result;
     msgpack_object api_map;
-    msgpack_object k,v, attributeKey, attributeValue;
+    msgpack_object k, v, attributeKey, attributeValue;
     char *buffer = NULL;
     size_t size;
     int root_type;
@@ -120,19 +121,22 @@ static void parse_pod_service_map(struct flb_kube *ctx, char *api_buf, size_t ap
                         attributeValue = v.via.map.ptr[j].val;
                         if (attributeKey.type == MSGPACK_OBJECT_STR && attributeValue.type == MSGPACK_OBJECT_STR) {
                             char *attributeKeyString = flb_strndup(attributeKey.via.str.ptr, attributeKey.via.str.size);
-                            if(strcmp(attributeKeyString, "ServiceName") == 0 && attributeValue.via.str.size < KEY_ATTRIBUTES_MAX_LEN) {
+                            if (strcmp(attributeKeyString, "ServiceName") == 0 &&
+                                      attributeValue.via.str.size < KEY_ATTRIBUTES_MAX_LEN) {
                                 strncpy(service_attributes->name, attributeValue.via.str.ptr, attributeValue.via.str.size);
                                 service_attributes->name[attributeValue.via.str.size] = '\0';
                                 service_attributes->name_len = attributeValue.via.str.size;
                                 service_attributes->fields++;
                             }
-                            if(strcmp(attributeKeyString, "Environment") == 0 && attributeValue.via.str.size < KEY_ATTRIBUTES_MAX_LEN) {
+                            if (strcmp(attributeKeyString, "Environment") == 0 &&
+                                      attributeValue.via.str.size < KEY_ATTRIBUTES_MAX_LEN) {
                                 strncpy(service_attributes->environment, attributeValue.via.str.ptr,attributeValue.via.str.size);
                                 service_attributes->environment[attributeValue.via.str.size] = '\0';
                                 service_attributes->environment_len = attributeValue.via.str.size;
                                 service_attributes->fields++;
                             }
-                            if(strcmp(attributeKeyString, "ServiceNameSource") == 0 && attributeValue.via.str.size < SERVICE_NAME_SOURCE_MAX_LEN) {
+                            if (strcmp(attributeKeyString, "ServiceNameSource") == 0 &&
+                                      attributeValue.via.str.size < SERVICE_NAME_SOURCE_MAX_LEN) {
                                 strncpy(service_attributes->name_source, attributeValue.via.str.ptr,attributeValue.via.str.size);
                                 service_attributes->name_source[attributeValue.via.str.size] = '\0';
                                 service_attributes->name_source_len = attributeValue.via.str.size;
@@ -148,11 +152,13 @@ static void parse_pod_service_map(struct flb_kube *ctx, char *api_buf, size_t ap
                                            service_attributes, sizeof(struct service_attributes));
                         flb_free(service_attributes);
                         pthread_mutex_unlock(mutex);
-                    } else {
+                    }
+                    else {
                         flb_free(service_attributes);
                     }
                     flb_free(pod_name);
-                } else {
+                }
+                else {
                     flb_plg_error(ctx->ins, "key and values are not string and map");
                 }
             }
@@ -167,8 +173,10 @@ static void parse_pod_service_map(struct flb_kube *ctx, char *api_buf, size_t ap
     }
 }
 
-int fetch_pod_service_map(struct flb_kube *ctx, char *api_server_url, pthread_mutex_t *mutex) {
-    if(!ctx->use_pod_association) {
+int fetch_pod_service_map(struct flb_kube *ctx, char *api_server_url,
+                          pthread_mutex_t *mutex)
+{
+    if (!ctx->use_pod_association) {
         return -1;
     }
     int ret;
@@ -185,13 +193,17 @@ int fetch_pod_service_map(struct flb_kube *ctx, char *api_server_url, pthread_mu
         flb_free(buffer);
     }
     else {
-        /* Get upstream context and connection */
-        /* if block handles the TLS certificates update, as the Fluent-bit connection gets net timeout error, it destroys the upstream
-         * On the next call to fetch_pod_service_map, it creates a new pod association upstream with latest TLS certs */
+        /*
+         * if block handles the TLS certificates update, as the Fluent-bit connection
+         * gets net timeout error, it destroys the upstream. On the next call to
+         * fetch_pod_service_map, it creates a new pod association upstream with
+         * latest TLS certs
+         */
         if (!ctx->pod_association_upstream) {
-            flb_plg_debug(ctx->ins, "[kubernetes] upstream object for pod association is NULL. Making a new one now");
+            flb_plg_debug(ctx->ins, "[kubernetes] upstream object for pod association"
+                                    " is NULL. Making a new one now");
             ret = flb_kube_pod_association_init(ctx,ctx->config);
-            if( ret == -1) {
+            if (ret == -1) {
                 return -1;
             }
         }
@@ -199,7 +211,8 @@ int fetch_pod_service_map(struct flb_kube *ctx, char *api_server_url, pthread_mu
         u_conn = flb_upstream_conn_get(ctx->pod_association_upstream);
         if (!u_conn) {
             flb_plg_error(ctx->ins, "[kubernetes] no upstream connections available to %s:%i",
-                          ctx->pod_association_upstream->tcp_host, ctx->pod_association_upstream->tcp_port);
+                          ctx->pod_association_upstream->tcp_host,
+                          ctx->pod_association_upstream->tcp_port);
             flb_upstream_destroy(ctx->pod_association_upstream);
             flb_tls_destroy(ctx->pod_association_tls);
             ctx->pod_association_upstream = NULL;
@@ -254,7 +267,8 @@ int fetch_pod_service_map(struct flb_kube *ctx, char *api_server_url, pthread_mu
 }
 
 /* Determine platform: check aws-auth configmap first, then JWT token */
-int determine_platform(struct flb_kube *ctx) {
+int determine_platform(struct flb_kube *ctx)
+{
     int ret;
     char *config_buf;
     size_t config_size;
@@ -268,7 +282,7 @@ int determine_platform(struct flb_kube *ctx) {
 }
 
 /* Gather pods list information from Kubelet */
-void get_cluster_from_environment(struct flb_kube *ctx,struct flb_kube_meta *meta)
+void get_cluster_from_environment(struct flb_kube *ctx, struct flb_kube_meta *meta)
 {
     if (meta->cluster == NULL) {
         char* cluster_name = getenv("CLUSTER_NAME");
@@ -280,5 +294,3 @@ void get_cluster_from_environment(struct flb_kube *ctx,struct flb_kube_meta *met
         flb_plg_debug(ctx->ins, "Cluster name is %s.", meta->cluster);
     }
 }
-
-
