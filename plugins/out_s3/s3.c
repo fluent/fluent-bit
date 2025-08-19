@@ -162,7 +162,7 @@ int create_headers(struct flb_s3 *ctx, char *body_md5,
     if (ctx->content_type != NULL) {
         headers_len++;
     }
-    if (ctx->compression == FLB_AWS_COMPRESS_GZIP) {
+    if (ctx->compression == FLB_AWS_COMPRESS_GZIP && ctx->enable_content_encoding_header) {
         headers_len++;
     }
     if (ctx->canned_acl != NULL) {
@@ -192,7 +192,7 @@ int create_headers(struct flb_s3 *ctx, char *body_md5,
         s3_headers[n].val_len = strlen(ctx->content_type);
         n++;
     }
-    if (ctx->compression == FLB_AWS_COMPRESS_GZIP) {
+    if (ctx->compression == FLB_AWS_COMPRESS_GZIP && ctx->enable_content_encoding_header) {
         s3_headers[n] = content_encoding_header;
         n++;
     }
@@ -3995,6 +3995,11 @@ static struct flb_config_map config_map[] = {
     "'arrow' is only an available if Apache Arrow was enabled at compile time. "
     "Defaults to no compression. "
     "If 'gzip' is selected, the Content-Encoding HTTP Header will be set to 'gzip'."
+    },
+    {
+     FLB_CONFIG_MAP_BOOL, "enable_content_encoding_header", "true",
+     0, FLB_TRUE, offsetof(struct flb_s3, enable_content_encoding_header),
+    "Set to false to disable the Content-Encoding: gzip header."
     },
     {
      FLB_CONFIG_MAP_STR, "content_type", NULL,
