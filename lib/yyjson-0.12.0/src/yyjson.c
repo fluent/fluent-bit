@@ -4657,7 +4657,8 @@ read_double:
  *============================================================================*/
 
 /** Read unicode escape sequence. */
-static_inline bool read_uni_esc(u8 **src_ptr, u8 **dst_ptr, const char **msg) {
+static_inline bool read_uni_esc(u8 **src_ptr, u8 **dst_ptr,
+                                const char **msg, yyjson_read_flag flg) {
 #define return_err(_end, _msg) *msg = _msg; *src_ptr = _end; return false
 
     u8 *src = *src_ptr;
@@ -4667,6 +4668,15 @@ static_inline bool read_uni_esc(u8 **src_ptr, u8 **dst_ptr, const char **msg) {
 
     src += 2; /* skip `\u` */
     if (unlikely(!hex_load_4(src, &hi))) {
+        if (has_rflag(flg, YYJSON_READ_REPLACE_INVALID_UNICODE, 1)) {
+            usize cnt = 0;
+            while (cnt < 4 && char_is_hex(src[cnt])) cnt++;
+            src += cnt;
+            *dst++ = 0xEF; *dst++ = 0xBF; *dst++ = 0xBD;
+            *src_ptr = src;
+            *dst_ptr = dst;
+            return true;
+        }
         return_err(src - 2, "invalid escaped sequence in string");
     }
     src += 4; /* skip hex */
@@ -4682,18 +4692,83 @@ static_inline bool read_uni_esc(u8 **src_ptr, u8 **dst_ptr, const char **msg) {
         } else {
             *dst++ = (u8)hi;
         }
-    } else {
+    } else if ((hi & 0xFC00) == 0xD800) {
         /* a non-BMP character, represented as a surrogate pair */
-        if (unlikely((hi & 0xFC00) != 0xD800)) {
-            return_err(src - 6, "invalid high surrogate in string");
-        }
         if (unlikely(!byte_match_2(src, "\\u"))) {
+            if (has_rflag(flg, YYJSON_READ_REPLACE_INVALID_UNICODE, 1)) {
+                *dst++ = 0xEF; *dst++ = 0xBF; *dst++ = 0xBD;
+                *src_ptr = src;
+                *dst_ptr = dst;
+                return true;
+            }
+            if (has_allow(INVALID_SURROGATE)) {
+                if (hi >= 0x800) {
+                    *dst++ = (u8)(0xE0 | (hi >> 12));
+                    *dst++ = (u8)(0x80 | ((hi >> 6) & 0x3F));
+                    *dst++ = (u8)(0x80 | (hi & 0x3F));
+                } else if (hi >= 0x80) {
+                    *dst++ = (u8)(0xC0 | (hi >> 6));
+                    *dst++ = (u8)(0x80 | (hi & 0x3F));
+                } else {
+                    *dst++ = (u8)hi;
+                }
+                *src_ptr = src;
+                *dst_ptr = dst;
+                return true;
+            }
             return_err(src - 6, "no low surrogate in string");
         }
         if (unlikely(!hex_load_4(src + 2, &lo))) {
+            if (has_rflag(flg, YYJSON_READ_REPLACE_INVALID_UNICODE, 1)) {
+                usize cnt = 0;
+                src += 2; /* skip \u */
+                while (cnt < 4 && char_is_hex(src[cnt])) cnt++;
+                src += cnt;
+                *dst++ = 0xEF; *dst++ = 0xBF; *dst++ = 0xBD;
+                *src_ptr = src;
+                *dst_ptr = dst;
+                return true;
+            }
+            if (has_allow(INVALID_SURROGATE)) {
+                if (hi >= 0x800) {
+                    *dst++ = (u8)(0xE0 | (hi >> 12));
+                    *dst++ = (u8)(0x80 | ((hi >> 6) & 0x3F));
+                    *dst++ = (u8)(0x80 | (hi & 0x3F));
+                } else if (hi >= 0x80) {
+                    *dst++ = (u8)(0xC0 | (hi >> 6));
+                    *dst++ = (u8)(0x80 | (hi & 0x3F));
+                } else {
+                    *dst++ = (u8)hi;
+                }
+                *src_ptr = src;
+                *dst_ptr = dst;
+                return true;
+            }
             return_err(src - 6, "invalid escape in string");
         }
         if (unlikely((lo & 0xFC00) != 0xDC00)) {
+            if (has_rflag(flg, YYJSON_READ_REPLACE_INVALID_UNICODE, 1)) {
+                src += 6;
+                *dst++ = 0xEF; *dst++ = 0xBF; *dst++ = 0xBD;
+                *src_ptr = src;
+                *dst_ptr = dst;
+                return true;
+            }
+            if (has_allow(INVALID_SURROGATE)) {
+                if (hi >= 0x800) {
+                    *dst++ = (u8)(0xE0 | (hi >> 12));
+                    *dst++ = (u8)(0x80 | ((hi >> 6) & 0x3F));
+                    *dst++ = (u8)(0x80 | (hi & 0x3F));
+                } else if (hi >= 0x80) {
+                    *dst++ = (u8)(0xC0 | (hi >> 6));
+                    *dst++ = (u8)(0x80 | (hi & 0x3F));
+                } else {
+                    *dst++ = (u8)hi;
+                }
+                *src_ptr = src;
+                *dst_ptr = dst;
+                return true;
+            }
             return_err(src - 6, "invalid low surrogate in string");
         }
         uni = ((((u32)hi - 0xD800) << 10) |
@@ -4703,6 +4778,26 @@ static_inline bool read_uni_esc(u8 **src_ptr, u8 **dst_ptr, const char **msg) {
         *dst++ = (u8)(0x80 | ((uni >> 6) & 0x3F));
         *dst++ = (u8)(0x80 | (uni & 0x3F));
         src += 6;
+    } else { /* low surrogate without preceding high surrogate */
+        if (has_rflag(flg, YYJSON_READ_REPLACE_INVALID_UNICODE, 1)) {
+            *dst++ = 0xEF; *dst++ = 0xBF; *dst++ = 0xBD;
+            *src_ptr = src;
+            *dst_ptr = dst;
+            return true;
+        }
+        if (!has_allow(INVALID_SURROGATE)) {
+            return_err(src - 6, "invalid low surrogate in string");
+        }
+        if (hi >= 0x800) {
+            *dst++ = (u8)(0xE0 | (hi >> 12));
+            *dst++ = (u8)(0x80 | ((hi >> 6) & 0x3F));
+            *dst++ = (u8)(0x80 | (hi & 0x3F));
+        } else if (hi >= 0x80) {
+            *dst++ = (u8)(0xC0 | (hi >> 6));
+            *dst++ = (u8)(0x80 | (hi & 0x3F));
+        } else {
+            *dst++ = (u8)hi;
+        }
     }
     *src_ptr = src;
     *dst_ptr = dst;
@@ -4855,6 +4950,12 @@ skip_utf8:
         }
 #endif
         if (unlikely(pos == src)) {
+            if (has_rflag(flg, YYJSON_READ_REPLACE_INVALID_UNICODE, 1)) {
+                dst = src;
+                *dst++ = 0xEF; *dst++ = 0xBF; *dst++ = 0xBD;
+                ++src;
+                goto copy_utf8;
+            }
             if (has_allow(INVALID_UNICODE)) ++src;
             else return_err(src, "invalid UTF-8 encoding in string");
         }
@@ -4876,7 +4977,7 @@ copy_escape:
             case 't':  *dst++ = '\t'; src++; break;
             case 'u':
                 src--;
-                if (!read_uni_esc(&src, &dst, msg)) return_err(src, *msg);
+                if (!read_uni_esc(&src, &dst, msg, flg)) return_err(src, *msg);
                 break;
             default: {
                 if (has_allow(EXT_ESCAPE)) {
@@ -4935,11 +5036,17 @@ copy_escape:
         if (con) con[0] = con[1] = NULL;
         return true;
     } else {
-        if (!has_allow(INVALID_UNICODE)) {
-            return_err(src, "unexpected control character in string");
+        if (has_rflag(flg, YYJSON_READ_REPLACE_INVALID_UNICODE, 1)) {
+            if (src >= eof) return_err(src, "unclosed string");
+            *dst++ = 0xEF; *dst++ = 0xBF; *dst++ = 0xBD;
+            src++;
+        } else {
+            if (!has_allow(INVALID_UNICODE)) {
+                return_err(src, "unexpected control character in string");
+            }
+            if (src >= eof) return_err(src, "unclosed string");
+            *dst++ = *src++;
         }
-        if (src >= eof) return_err(src, "unclosed string");
-        *dst++ = *src++;
     }
 
 copy_ascii:
@@ -5027,6 +5134,11 @@ copy_utf8:
         }
 #endif
         if (unlikely(pos == src)) {
+            if (has_rflag(flg, YYJSON_READ_REPLACE_INVALID_UNICODE, 1)) {
+                *dst++ = 0xEF; *dst++ = 0xBF; *dst++ = 0xBD;
+                ++src;
+                goto copy_utf8;
+            }
             if (!has_allow(INVALID_UNICODE)) {
                 return_err(src, MSG_ERR_UTF8);
             }
@@ -5131,7 +5243,7 @@ skip_utf8:
     dst = src;
 copy_escape:
     if (byte_match_2(src, "\\u")) {
-        if (!read_uni_esc(&src, &dst, msg)) return_err(src, *msg);
+        if (!read_uni_esc(&src, &dst, msg, flg)) return_err(src, *msg);
     } else {
         if (!char_is_id_next(*src)) return_suc(dst, src);
         return_err(src, "unexpected character in key");
@@ -5183,10 +5295,17 @@ copy_utf8:
             dst += 4; src += 4;
         } else {
 #if !YYJSON_DISABLE_UTF8_VALIDATION
-            if (!has_allow(INVALID_UNICODE)) return_err(src, MSG_ERR_UTF8);
+            if (!has_allow(INVALID_UNICODE) &&
+                !has_rflag(flg, YYJSON_READ_REPLACE_INVALID_UNICODE, 1))
+                return_err(src, MSG_ERR_UTF8);
 #endif
-            *dst = *src;
-            dst += 1; src += 1;
+            if (has_rflag(flg, YYJSON_READ_REPLACE_INVALID_UNICODE, 1)) {
+                *dst++ = 0xEF; *dst++ = 0xBF; *dst++ = 0xBD;
+                src += 1;
+            } else {
+                *dst = *src;
+                dst += 1; src += 1;
+            }
         }
     }
     if (char_is_id_ascii(*src)) goto copy_ascii;
@@ -6206,6 +6325,13 @@ yyjson_doc *yyjson_read_opts(char *dat, usize len,
     }
     memset(eof, 0, YYJSON_PADDING_SIZE);
 
+    /* replacement has highest precedence: tolerate and replace all invalid
+       sequences so that the final output is always valid UTF-8 */
+    if (has_rflag(flg, YYJSON_READ_REPLACE_INVALID_UNICODE, 1)) {
+        flg |= YYJSON_READ_ALLOW_INVALID_UNICODE;
+        flg |= YYJSON_READ_ALLOW_INVALID_SURROGATE;
+    }
+
     if (has_allow(BOM)) {
         if (len >= 3 && is_utf8_bom(cur)) cur += 3;
     }
@@ -6488,6 +6614,8 @@ yyjson_incr_state *yyjson_incr_new(char *buf, size_t buf_len,
     flg &= ~YYJSON_READ_JSON5;
     flg &= ~YYJSON_READ_ALLOW_BOM;
     flg &= ~YYJSON_READ_ALLOW_INVALID_UNICODE;
+    flg &= ~YYJSON_READ_ALLOW_INVALID_SURROGATE;
+    flg &= ~YYJSON_READ_REPLACE_INVALID_UNICODE;
 
     if (unlikely(!buf)) return NULL;
     if (unlikely(buf_len >= USIZE_MAX - YYJSON_PADDING_SIZE)) return NULL;
