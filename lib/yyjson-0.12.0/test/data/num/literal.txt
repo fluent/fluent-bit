@@ -1,0 +1,34 @@
+# ==============================================================================
+# NaN and Infinity literals
+
+NAN
+NaN
+Nan
+naN
+nan
+
+INF
+Inf
+inF
+inf
+
+INFINITY
+Infinity
+infINITY
+infinity
+
+-NAN
+-NaN
+-Nan
+-naN
+-nan
+
+-INF
+-Inf
+-inF
+-inf
+
+-INFINITY
+-Infinity
+-infINITY
+-infinity
