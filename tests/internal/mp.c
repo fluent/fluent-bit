@@ -101,12 +101,12 @@ void test_accessor_keys_remove()
         "    {\"a\": false, "
         "     \"annotations\": { "
         "                       \"fluentbit.io/tag\": \"thetag\","
-        "                       \"extra\": false\""
+        "                       \"extra\": false"
         "}}]}";
 
     /* Convert to msgpack */
     len = strlen(json);
-    ret = flb_pack_json(json, len, &buf, &size, &type, NULL);
+    ret = flb_pack_json_yyjson(json, len, &buf, &size, &type, NULL);
     TEST_CHECK(ret == 0);
     if (ret == -1) {
         exit(EXIT_FAILURE);
@@ -173,12 +173,12 @@ void test_keys_remove_subkey_key()
         "    {\"a\": false, "
         "     \"annotations\": { "
         "                       \"fluentbit.io/tag\": \"thetag\","
-        "                       \"extra\": false\""
+        "                       \"extra\": false"
         "}}]}";
 
     /* Convert to msgpack */
     len = strlen(json);
-    ret = flb_pack_json(json, len, &buf, &size, &type, NULL);
+    ret = flb_pack_json_yyjson(json, len, &buf, &size, &type, NULL);
     TEST_CHECK(ret == 0);
     if (ret == -1) {
         exit(EXIT_FAILURE);
@@ -267,7 +267,7 @@ void test_remove_sibling_subkeys()
 
     /* Convert to msgpack */
     len = strlen(json);
-    ret = flb_pack_json(json, len, &buf, &size, &type, NULL);
+    ret = flb_pack_json_yyjson(json, len, &buf, &size, &type, NULL);
     TEST_CHECK(ret == 0);
     if (ret == -1) {
         exit(EXIT_FAILURE);
@@ -362,12 +362,12 @@ void remove_subkey_keys(char *list[], int list_size, int index_start)
         "    {\"a\": false, "
         "     \"annotations\": { "
         "                       \"fluentbit.io/tag\": \"thetag\","
-        "                       \"extra\": false\""
+        "                       \"extra\": false"
         "}}]}";
 
     /* Convert to msgpack */
     len = strlen(json);
-    ret = flb_pack_json(json, len, &buf, &size, &type, NULL);
+    ret = flb_pack_json_yyjson(json, len, &buf, &size, &type, NULL);
     TEST_CHECK(ret == 0);
     if (ret == -1) {
         exit(EXIT_FAILURE);
@@ -478,12 +478,12 @@ void test_object_to_cfl_to_msgpack()
         "    {\"a\": false, "
         "     \"annotations\": { "
         "                       \"fluentbit.io/tag\": \"thetag\","
-        "                       \"extra\": false\""
+        "                       \"extra\": false"
         "}}]}";
 
     /* Convert to msgpack */
     len = strlen(json);
-    ret = flb_pack_json(json, len, &buf, &size, &type, NULL);
+    ret = flb_pack_json_yyjson(json, len, &buf, &size, &type, NULL);
     TEST_CHECK(ret == 0);
     if (ret == -1) {
         exit(EXIT_FAILURE);
