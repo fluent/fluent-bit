@@ -396,16 +396,36 @@ void cb_metrics_prometheus(mk_request_t *request, void *data)
                     goto error;
                 }
 
-                sds_metric = flb_sds_cat(sds_metric, "fluentbit_", 10);
-                sds_metric = flb_sds_cat(sds_metric, k.via.str.ptr, k.via.str.size);
-                sds_metric = flb_sds_cat(sds_metric, "_", 1);
-                sds_metric = flb_sds_cat(sds_metric, mk.via.str.ptr, mk.via.str.size);
-                sds_metric = flb_sds_cat(sds_metric, "_total{name=\"", 13);
-                sds_metric = flb_sds_cat(sds_metric, sk.via.str.ptr, sk.via.str.size);
-                sds_metric = flb_sds_cat(sds_metric, "\"} ", 3);
-                sds_metric = flb_sds_cat(sds_metric, tmp, len);
-                sds_metric = flb_sds_cat(sds_metric, time_str, time_len);
-                sds_metric = flb_sds_cat(sds_metric, "\n", 1);
+                if (flb_sds_cat_safe(&sds_metric, "fluentbit_", 10) == -1) {
+                    goto error;
+                }
+                if (flb_sds_cat_safe(&sds_metric, k.via.str.ptr, k.via.str.size) == -1) {
+                    goto error;
+                }
+                if (flb_sds_cat_safe(&sds_metric, "_", 1) == -1) {
+                    goto error;
+                }
+                if (flb_sds_cat_safe(&sds_metric, mk.via.str.ptr, mk.via.str.size) == -1) {
+                    goto error;
+                }
+                if (flb_sds_cat_safe(&sds_metric, "_total{name=\"", 13) == -1) {
+                    goto error;
+                }
+                if (flb_sds_cat_safe(&sds_metric, sk.via.str.ptr, sk.via.str.size) == -1) {
+                    goto error;
+                }
+                if (flb_sds_cat_safe(&sds_metric, "\"} ", 3) == -1) {
+                    goto error;
+                }
+                if (flb_sds_cat_safe(&sds_metric, tmp, len) == -1) {
+                    goto error;
+                }
+                if (flb_sds_cat_safe(&sds_metric, time_str, time_len) == -1) {
+                    goto error;
+                }
+                if (flb_sds_cat_safe(&sds_metric, "\n", 1) == -1) {
+                    goto error;
+                }
                 metrics_arr[index] = sds_metric;
                 index++;
             }
