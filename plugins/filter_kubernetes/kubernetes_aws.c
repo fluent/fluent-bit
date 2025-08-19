@@ -270,7 +270,7 @@ int fetch_pod_service_map(struct flb_kube *ctx, char *api_server_url,
     return 0;
 }
 
-/* Determine platform: check aws-auth configmap first, then JWT token */
+/* Determine platform by checking aws-auth configmap */
 int determine_platform(struct flb_kube *ctx)
 {
     int ret;
@@ -294,7 +294,7 @@ void get_cluster_from_environment(struct flb_kube *ctx, struct flb_kube_meta *me
             meta->cluster = strdup(cluster_name);
             meta->cluster_len = strlen(cluster_name);
             meta->fields++;
+            flb_plg_debug(ctx->ins, "Cluster name is %s.", meta->cluster);
         }
-        flb_plg_debug(ctx->ins, "Cluster name is %s.", meta->cluster);
     }
 }
