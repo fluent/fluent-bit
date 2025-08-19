@@ -1,0 +1,18 @@
+# ==============================================================================
+# NaN and Infinity literals (positive sign)
+
++NAN
++NaN
++Nan
++naN
++nan
+
++INF
++Inf
++inF
++inf
+
++INFINITY
++Infinity
++infINITY
++infinity
