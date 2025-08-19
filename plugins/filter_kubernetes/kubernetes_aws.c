@@ -150,8 +150,16 @@ static void parse_pod_service_map(struct flb_kube *ctx, char *api_buf,
             continue;
         }
         char *pod_name = flb_strndup(k.via.str.ptr, k.via.str.size);
+        if (!pod_name) {
+            flb_free(pod_name);
+            continue;
+        }
         struct service_attributes *attrs = flb_calloc(1, sizeof(struct service_attributes));
-        
+        if (!attrs) {
+            flb_errno();
+            flb_free(pod_name);
+            continue;
+        }
         extract_service_attribute(&v, "$ServiceName", attrs->name, 
                                 KEY_ATTRIBUTES_MAX_LEN, &attrs->name_len, &attrs->fields);
         extract_service_attribute(&v, "$Environment", attrs->environment, 
