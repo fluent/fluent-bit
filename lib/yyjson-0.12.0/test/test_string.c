@@ -1450,6 +1450,39 @@ static void test_unquoted_key(void) {
     }, YYJSON_READ_ALLOW_INVALID_UNICODE);
 }
 
+/*----------------------------------------------------------------------------*/
+/* MARK: - Invalid Unicode Flags                                               */
+/*----------------------------------------------------------------------------*/
+
+static void test_invalid_unicode_flags(void) {
+#if !YYJSON_DISABLE_READER
+    /* unpaired surrogate */
+    char inv_sur_hi[8 + YYJSON_PADDING_SIZE];
+    memcpy(inv_sur_hi, "\"\\uD83D\"", 8);
+    memset(inv_sur_hi + 8, 0, YYJSON_PADDING_SIZE);
+    yyjson_doc *doc = yyjson_read(inv_sur_hi, 8, 0);
+    yy_assert(!doc);
+
+    doc = yyjson_read(inv_sur_hi, 8, YYJSON_READ_ALLOW_INVALID_SURROGATE);
+    yy_assert(doc);
+    yyjson_val *val = yyjson_doc_get_root(doc);
+    const char *str = yyjson_get_str(val);
+    yy_assert(str && (u8)str[0] == 0xED && (u8)str[1] == 0xA0 &&
+              (u8)str[2] == 0xBD && str[3] == '\0');
+    yyjson_doc_free(doc);
+
+    doc = yyjson_read(inv_sur_hi, 8,
+                      YYJSON_READ_ALLOW_INVALID_SURROGATE |
+                      YYJSON_READ_REPLACE_INVALID_UNICODE);
+    yy_assert(doc);
+    val = yyjson_doc_get_root(doc);
+    str = yyjson_get_str(val);
+    yy_assert(str && (u8)str[0] == 0xEF && (u8)str[1] == 0xBF &&
+              (u8)str[2] == 0xBD && str[3] == '\0');
+    yyjson_doc_free(doc);
+#endif
+}
+
 
 
 /*==============================================================================
@@ -1460,5 +1493,6 @@ yy_test_case(test_string) {
     test_read_write();
     test_extended_escape();
     test_single_quoted_string();
+    test_invalid_unicode_flags();
     test_unquoted_key();
 }
