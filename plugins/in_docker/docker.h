@@ -59,7 +59,7 @@
 #define DOCKER_CGROUP_V2_CPU_USAGE_TEMPLATE DOCKER_CGROUP_V2_CPU_USAGE_KEY" %lu"
 
 #define DOCKER_CONFIG_JSON    "config.v2.json"
-#define DOCKER_NAME_ARG       "\"Name\""
+#define DOCKER_NAME_ARG       "\"Name\":\"/"
 #define DEFAULT_INTERVAL_SEC  "1"
 #define DEFAULT_INTERVAL_NSEC "0"
 
