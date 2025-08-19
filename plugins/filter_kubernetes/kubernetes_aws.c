@@ -21,6 +21,8 @@
 #include <sys/stat.h>
 #include <fluent-bit/flb_base64.h>
 #include <fluent-bit/flb_jsmn.h>
+#include <fluent-bit/flb_record_accessor.h>
+#include <fluent-bit/flb_ra_key.h>
 
 #include "kube_conf.h"
 #include "kube_meta.h"
@@ -75,6 +77,33 @@ static int get_pod_service_file_info(struct flb_kube *ctx, char **buffer)
     return packed;
 }
 
+static void extract_service_attribute(msgpack_object *attr_map, const char *key_name, 
+                                      char *dest, int max_len, int *dest_len, int *fields)
+{
+    struct flb_record_accessor *ra;
+    struct flb_ra_value *val;
+    const char *str_val;
+    size_t str_len;
+    
+    ra = flb_ra_create((char *)key_name, FLB_FALSE);
+    if (!ra) {
+        return;
+    }
+    
+    val = flb_ra_get_value_object(ra, *attr_map);
+    if (val && val->type == FLB_RA_STRING) {
+        str_val = flb_ra_value_buffer(val, &str_len);
+        if (str_val && str_len < max_len) {
+            memcpy(dest, str_val, str_len);
+            dest[str_len] = '\0';
+            *dest_len = str_len;
+            (*fields)++;
+        }
+        flb_ra_key_value_destroy(val);
+    }
+    flb_ra_destroy(ra);
+}
+
 static void parse_pod_service_map(struct flb_kube *ctx, char *api_buf,
                                   size_t api_size, pthread_mutex_t *mutex)
 {
@@ -86,87 +115,62 @@ static void parse_pod_service_map(struct flb_kube *ctx, char *api_buf,
     size_t off = 0;
     int ret;
     msgpack_unpacked api_result;
-    msgpack_object api_map;
-    msgpack_object k, v, attributeKey, attributeValue;
+    msgpack_object api_map, k, v;
     char *buffer = NULL;
     size_t size;
     int root_type;
-    int i, j;
+    int i;
 
-    /* Iterate API server msgpack and lookup specific fields */
-    if (api_buf != NULL) {
-        ret = flb_pack_json(api_buf, api_size,
-                        &buffer, &size, &root_type, NULL);
-
-        if (ret < 0) {
-            flb_plg_warn(ctx->ins, "Could not parse json response = %s",
-                     api_buf);
-            if (buffer) {
-                flb_free(buffer);
-            }
-            return;
-        }
-        msgpack_unpacked_init(&api_result);
-        ret = msgpack_unpack_next(&api_result, buffer, size, &off);
-        if (ret == MSGPACK_UNPACK_SUCCESS) {
-            api_map = api_result.data;
-            for (i = 0; i < api_map.via.map.size; i++) {
-                k = api_map.via.map.ptr[i].key;
-                v = api_map.via.map.ptr[i].val;
-                if (k.type == MSGPACK_OBJECT_STR && v.type == MSGPACK_OBJECT_MAP) {
-                    char *pod_name = flb_strndup(k.via.str.ptr, k.via.str.size);
-                    struct service_attributes *service_attributes = flb_calloc(1, sizeof(struct service_attributes));
-                    for (j = 0; j < v.via.map.size; j++) {
-                        attributeKey = v.via.map.ptr[j].key;
-                        attributeValue = v.via.map.ptr[j].val;
-                        if (attributeKey.type == MSGPACK_OBJECT_STR && attributeValue.type == MSGPACK_OBJECT_STR) {
-                            char *attributeKeyString = flb_strndup(attributeKey.via.str.ptr, attributeKey.via.str.size);
-                            if (strcmp(attributeKeyString, "ServiceName") == 0 &&
-                                      attributeValue.via.str.size < KEY_ATTRIBUTES_MAX_LEN) {
-                                strncpy(service_attributes->name, attributeValue.via.str.ptr, attributeValue.via.str.size);
-                                service_attributes->name[attributeValue.via.str.size] = '\0';
-                                service_attributes->name_len = attributeValue.via.str.size;
-                                service_attributes->fields++;
-                            }
-                            if (strcmp(attributeKeyString, "Environment") == 0 &&
-                                      attributeValue.via.str.size < KEY_ATTRIBUTES_MAX_LEN) {
-                                strncpy(service_attributes->environment, attributeValue.via.str.ptr,attributeValue.via.str.size);
-                                service_attributes->environment[attributeValue.via.str.size] = '\0';
-                                service_attributes->environment_len = attributeValue.via.str.size;
-                                service_attributes->fields++;
-                            }
-                            if (strcmp(attributeKeyString, "ServiceNameSource") == 0 &&
-                                      attributeValue.via.str.size < SERVICE_NAME_SOURCE_MAX_LEN) {
-                                strncpy(service_attributes->name_source, attributeValue.via.str.ptr,attributeValue.via.str.size);
-                                service_attributes->name_source[attributeValue.via.str.size] = '\0';
-                                service_attributes->name_source_len = attributeValue.via.str.size;
-                                service_attributes->fields++;
-                            }
-                            flb_free(attributeKeyString);
-                        }
-                    }
-                    if (service_attributes->name[0] != '\0' || service_attributes->environment[0] != '\0') {
-                        pthread_mutex_lock(mutex);
-                        flb_hash_table_add(ctx->pod_hash_table,
-                                           pod_name, k.via.str.size,
-                                           service_attributes, sizeof(struct service_attributes));
-                        flb_free(service_attributes);
-                        pthread_mutex_unlock(mutex);
-                    }
-                    else {
-                        flb_free(service_attributes);
-                    }
-                    flb_free(pod_name);
-                }
-                else {
-                    flb_plg_error(ctx->ins, "key and values are not string and map");
-                }
-            }
-        }
+    if (api_buf == NULL) {
+        return;
     }
 
-    flb_plg_debug(ctx->ins, "ended parsing pod to service map" );
+    ret = flb_pack_json(api_buf, api_size, &buffer, &size, &root_type, NULL);
+    if (ret < 0) {
+        flb_plg_warn(ctx->ins, "Could not parse json response = %s", api_buf);
+        if (buffer) {
+            flb_free(buffer);
+        }
+        return;
+    }
 
+    msgpack_unpacked_init(&api_result);
+    ret = msgpack_unpack_next(&api_result, buffer, size, &off);
+    if (ret != MSGPACK_UNPACK_SUCCESS) {
+        goto cleanup;
+    }
+
+    api_map = api_result.data;
+    for (i = 0; i < api_map.via.map.size; i++) {
+        k = api_map.via.map.ptr[i].key;
+        v = api_map.via.map.ptr[i].val;
+        
+        if (k.type != MSGPACK_OBJECT_STR || v.type != MSGPACK_OBJECT_MAP) {
+            flb_plg_error(ctx->ins, "key and values are not string and map");
+            continue;
+        }
+        char *pod_name = flb_strndup(k.via.str.ptr, k.via.str.size);
+        struct service_attributes *attrs = flb_calloc(1, sizeof(struct service_attributes));
+        
+        extract_service_attribute(&v, "$ServiceName", attrs->name, 
+                                KEY_ATTRIBUTES_MAX_LEN, &attrs->name_len, &attrs->fields);
+        extract_service_attribute(&v, "$Environment", attrs->environment, 
+                                KEY_ATTRIBUTES_MAX_LEN, &attrs->environment_len, &attrs->fields);
+        extract_service_attribute(&v, "$ServiceNameSource", attrs->name_source, 
+                                SERVICE_NAME_SOURCE_MAX_LEN, &attrs->name_source_len, &attrs->fields);
+        if (attrs->name[0] != '\0' || attrs->environment[0] != '\0') {
+            pthread_mutex_lock(mutex);
+            flb_hash_table_add(ctx->pod_hash_table, pod_name, k.via.str.size,
+                             attrs, sizeof(struct service_attributes));
+            pthread_mutex_unlock(mutex);
+        }
+        
+        flb_free(attrs);
+        flb_free(pod_name);
+    }
+
+cleanup:
+    flb_plg_debug(ctx->ins, "ended parsing pod to service map");
     msgpack_unpacked_destroy(&api_result);
     if (buffer) {
         flb_free(buffer);
