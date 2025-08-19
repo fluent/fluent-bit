@@ -760,14 +760,13 @@ static const yyjson_read_flag YYJSON_READ_ALLOW_INF_AND_NAN         = 1 << 4;
     inf/nan literal is also read as raw with `ALLOW_INF_AND_NAN` flag. */
 static const yyjson_read_flag YYJSON_READ_NUMBER_AS_RAW             = 1 << 5;
 
-/** Allow reading invalid unicode when parsing string values (non-standard).
-    Invalid characters will be allowed to appear in the string values, but
-    invalid escape sequences will still be reported as errors.
-    This flag does not affect the performance of correctly encoded strings.
+/** Allow reading raw invalid UTF-8 bytes in strings (non-standard).
+    This flag only affects raw bytes; `\uXXXX` escapes still require valid
+    surrogate pairs unless `YYJSON_READ_ALLOW_INVALID_SURROGATE` is also set.
+    Invalid escape sequences will still be reported as errors.
 
-    @warning Strings in JSON values may contain incorrect encoding when this
-    option is used, you need to handle these strings carefully to avoid security
-    risks. */
+    @warning Strings may contain ill-formed UTF-8 when this option is used,
+    you need to handle these strings carefully to avoid security risks. */
 static const yyjson_read_flag YYJSON_READ_ALLOW_INVALID_UNICODE     = 1 << 6;
 
 /** Read big numbers as raw strings. These big numbers include integers that
@@ -809,6 +808,22 @@ static const yyjson_read_flag YYJSON_READ_ALLOW_SINGLE_QUOTED_STR   = 1 << 12;
     This extends the ECMAScript IdentifierName rule by allowing any
     non-whitespace character with code point above `U+007F`. */
 static const yyjson_read_flag YYJSON_READ_ALLOW_UNQUOTED_KEY        = 1 << 13;
+
+/** Replace invalid unicode code units with replacement character `U+FFFD`
+    when parsing string values (non-standard).
+    This flag implicitly enables `YYJSON_READ_ALLOW_INVALID_UNICODE` and
+    `YYJSON_READ_ALLOW_INVALID_SURROGATE`, so malformed input is tolerated
+    and replaced without needing those flags.
+    Note: when compiled with `YYJSON_DISABLE_UTF8_VALIDATION=ON`, invalid
+    UTF-8 byte sequences are not detected and therefore not replaced. */
+static const yyjson_read_flag YYJSON_READ_REPLACE_INVALID_UNICODE   = 1 << 14;
+
+/** Allow unpaired surrogate code units in `\uXXXX` escapes (non-standard).
+    Raw invalid UTF-8 bytes are unaffected; use
+    `YYJSON_READ_ALLOW_INVALID_UNICODE` for that. When combined with
+    `YYJSON_READ_REPLACE_INVALID_UNICODE`, the surrogates are replaced with
+    `U+FFFD`. */
+static const yyjson_read_flag YYJSON_READ_ALLOW_INVALID_SURROGATE   = 1 << 15;
 
 /** Allow JSON5 format, see: [https://json5.org].
     This flag supports all JSON5 features with some additional extensions:
