@@ -41,6 +41,7 @@
 #include <msgpack.h>
 #include <math.h>
 #include <jsmn/jsmn.h>
+#include <yyjson.h>
 
 #define try_to_write_str  flb_utils_write_str
 
@@ -184,6 +185,200 @@ static inline int pack_string_token(struct flb_pack_state *state,
     msgpack_pack_str_body(pck, out_buf, out_len);
 
     return out_len;
+}
+
+/* Convert a yyjson value to msgpack */
+static void yyjson_val_to_msgpack(yyjson_val *val, msgpack_packer *pck)
+{
+    size_t idx, max;
+    yyjson_val *key;
+    yyjson_val *tmp;
+    const char *k;
+    size_t klen;
+
+    switch (yyjson_get_type(val)) {
+    case YYJSON_TYPE_OBJ:
+        msgpack_pack_map(pck, yyjson_obj_size(val));
+        yyjson_obj_foreach(val, idx, max, key, tmp) {
+            k = yyjson_get_str(key);
+            klen = yyjson_get_len(key);
+            msgpack_pack_str(pck, klen);
+            msgpack_pack_str_body(pck, k, klen);
+            yyjson_val_to_msgpack(tmp, pck);
+        }
+        break;
+    case YYJSON_TYPE_ARR:
+        msgpack_pack_array(pck, yyjson_arr_size(val));
+        yyjson_arr_foreach(val, idx, max, tmp) {
+            yyjson_val_to_msgpack(tmp, pck);
+        }
+        break;
+    case YYJSON_TYPE_STR:
+        msgpack_pack_str(pck, yyjson_get_len(val));
+        msgpack_pack_str_body(pck, yyjson_get_str(val), yyjson_get_len(val));
+        break;
+    case YYJSON_TYPE_BOOL:
+        if (yyjson_get_bool(val)) {
+            msgpack_pack_true(pck);
+        }
+        else {
+            msgpack_pack_false(pck);
+        }
+        break;
+    case YYJSON_TYPE_NULL:
+        msgpack_pack_nil(pck);
+        break;
+    case YYJSON_TYPE_NUM:
+        if (yyjson_is_int(val)) {
+            if (yyjson_is_sint(val)) {
+                msgpack_pack_int64(pck, yyjson_get_sint(val));
+            }
+            else {
+                msgpack_pack_uint64(pck, yyjson_get_uint(val));
+            }
+        }
+        else {
+            msgpack_pack_double(pck, yyjson_get_real(val));
+        }
+        break;
+    default:
+        msgpack_pack_nil(pck);
+    }
+}
+
+static inline int yyjson_root_type(yyjson_val *val)
+{
+    switch (yyjson_get_type(val)) {
+    case YYJSON_TYPE_OBJ:
+        return JSMN_OBJECT;
+    case YYJSON_TYPE_ARR:
+        return JSMN_ARRAY;
+    case YYJSON_TYPE_STR:
+        return JSMN_STRING;
+    default:
+        return JSMN_PRIMITIVE;
+    }
+}
+
+static int pack_json_to_msgpack_yyjson(const char *js, size_t len, char **buffer,
+                                       size_t *size, int *root_type, int *records,
+                                       size_t *consumed)
+{
+    int count_records = 0;
+    size_t read_bytes;
+    yyjson_read_err err;
+    yyjson_doc *doc = NULL;
+    yyjson_val *root;
+    msgpack_sbuffer sbuf;
+    msgpack_packer pck;
+    char *start, *end, *insitu_buf;
+
+    if (!js || !buffer || !size) {
+        return -1;
+    }
+
+    /*
+     * This is the tricky part, if we want to take advantage of SIMD we need to add
+     * padding to the buffer (INSITU), otherwise trusting the caller it's a bit risky.
+     *
+     * An extra optimization would be to provide a specific API for callers who are aware about
+     * padding and buffer states, or use a pool allocator. While this is a good optimization,
+     * it's not a priority for now, we are already gaining around 50% perf improvement with this
+     * implementation compared to the previous one.
+     */
+    insitu_buf = flb_malloc(len + YYJSON_PADDING_SIZE);
+    if (!insitu_buf) {
+        flb_errno();
+        return -1;
+    }
+    memcpy(insitu_buf, js, len);
+    memset(insitu_buf + len, 0, YYJSON_PADDING_SIZE);
+
+    start = insitu_buf;
+    end   = insitu_buf + len;
+
+    msgpack_sbuffer_init(&sbuf);
+    msgpack_packer_init(&pck, &sbuf, msgpack_sbuffer_write);
+
+    while (start < end) {
+        /* Skip leading whitespace/newlines between JSON values */
+        while (start < end && (*start == ' ' || *start == '\t' ||
+                               *start == '\n' || *start == '\r')) {
+            start++;
+        }
+        if (start >= end) {
+            /* only whitespace remains */
+            break;
+        }
+
+        doc = yyjson_read_opts(start, (size_t)(end - start),
+                               YYJSON_READ_STOP_WHEN_DONE | YYJSON_READ_INSITU |
+                               YYJSON_READ_ALLOW_INVALID_UNICODE | YYJSON_READ_REPLACE_INVALID_UNICODE,
+                               NULL, &err);
+        if (!doc) {
+            /* If we already parsed something, treat trailing junk/whitespace as done */
+            if (count_records > 0) {
+                break;
+            }
+            flb_debug("[yyjson->msgpack] read error code=%d msg=%s pos=%zu",
+                      err.code, err.msg, err.pos);
+            msgpack_sbuffer_clear(&sbuf);
+            msgpack_sbuffer_destroy(&sbuf);
+            flb_free(insitu_buf);
+            return -1;
+        }
+
+        read_bytes = yyjson_doc_get_read_size(doc);
+        if (read_bytes == 0) {
+            yyjson_doc_free(doc);
+            doc = NULL;
+            /* No progress; if nothing parsed yet, error; else stop */
+            if (count_records == 0) {
+                msgpack_sbuffer_clear(&sbuf);
+                msgpack_sbuffer_destroy(&sbuf);
+                flb_free(insitu_buf);
+                return -1;
+            }
+            break;
+        }
+
+        root = yyjson_doc_get_root(doc);
+        if (!root) {
+            yyjson_doc_free(doc);
+            doc = NULL;
+            msgpack_sbuffer_clear(&sbuf);
+            msgpack_sbuffer_destroy(&sbuf);
+            flb_free(insitu_buf);
+            return -1;
+        }
+
+        yyjson_val_to_msgpack(root, &pck);
+
+        if (root_type && count_records == 0) {
+            *root_type = yyjson_root_type(root);
+        }
+
+        yyjson_doc_free(doc);
+        doc = NULL;
+        count_records++;
+
+        /* Move to the next value in the stream */
+        start += read_bytes;
+    }
+
+    if (records) {
+        *records = count_records;
+    }
+    if (consumed) {
+        *consumed = (size_t) (start - insitu_buf);
+    }
+
+    /* caller owns and must free with the same allocator */
+    *buffer = sbuf.data;
+    *size   = sbuf.size;
+
+    flb_free(insitu_buf);
+    return 0;
 }
 
 /* Receive a tokenized JSON message and convert it to MsgPack */
@@ -333,7 +528,6 @@ int flb_pack_json(const char *js, size_t len, char **buffer, size_t *size,
                   int *root_type, size_t *consumed)
 {
     int records;
-
     return pack_json_to_msgpack(js, len, buffer, size, root_type, &records, consumed);
 }
 
@@ -345,6 +539,21 @@ int flb_pack_json_recs(const char *js, size_t len, char **buffer, size_t *size,
                        int *root_type, int *out_records, size_t *consumed)
 {
     return pack_json_to_msgpack(js, len, buffer, size, root_type, out_records, consumed);
+}
+
+/* Pack a JSON message using yyjson */
+int flb_pack_json_yyjson(const char *js, size_t len, char **buffer, size_t *size,
+                         int *root_type, size_t *consumed)
+{
+    int records;
+
+    return pack_json_to_msgpack_yyjson(js, len, buffer, size, root_type, &records, consumed);
+}
+
+int flb_pack_json_recs_yyjson(const char *js, size_t len, char **buffer, size_t *size,
+                              int *root_type, int *out_records, size_t *consumed)
+{
+    return pack_json_to_msgpack_yyjson(js, len, buffer, size, root_type, out_records, consumed);
 }
 
 /* Initialize a JSON packer state */
