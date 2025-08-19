@@ -5,6 +5,7 @@
 #include <fluent-bit/flb_pack.h>
 #include <fluent-bit/flb_error.h>
 #include <fluent-bit/flb_str.h>
+#include <fluent-bit/flb_pack.h>
 #include <monkey/mk_core.h>
 
 #include <sys/types.h>
@@ -56,7 +57,7 @@ void test_json_pack()
 
     len = strlen(data);
 
-    ret = flb_pack_json(data, len, &out_buf, &out_size, &root_type, NULL);
+    ret = flb_pack_json_yyjson(data, len, &out_buf, &out_size, &root_type, NULL);
     TEST_CHECK(ret == 0);
 
     flb_free(data);
@@ -273,7 +274,7 @@ void test_json_dup_keys()
     TEST_CHECK(data_out != NULL);
 
     /* Pack raw JSON as msgpack */
-    ret = flb_pack_json(data_in, len_in, &out_buf, &out_size, &type, NULL);
+    ret = flb_pack_json_yyjson(data_in, len_in, &out_buf, &out_size, &type, NULL);
     TEST_CHECK(ret == 0);
 
     d = flb_sds_create("date");
@@ -554,7 +555,7 @@ void test_json_pack_surrogate_pairs()
         p_unescaped = data_unescaped[i];
 
         /* Pack raw JSON as msgpack */
-        ret = flb_pack_json(p_in, len_in, &out_buf, &out_size, &type, NULL);
+        ret = flb_pack_json_yyjson(p_in, len_in, &out_buf, &out_size, &type, NULL);
         TEST_CHECK(ret == 0);
 
         /* Unpack 'text' value and compare it to the original raw */
@@ -624,14 +625,28 @@ void test_json_pack_surrogate_pairs_with_replacement()
         p_unescaped = data_unescaped[i];
 
         /* Pack raw JSON as msgpack */
-        ret = flb_pack_json(p_in, len_in, &out_buf, &out_size, &type, NULL);
+        ret = flb_pack_json_yyjson(p_in, len_in, &out_buf, &out_size, &type, NULL);
         TEST_CHECK(ret == 0);
+        printf("\nret ==> %i\n", ret);
+        fflush(stdout);
 
         /* Unpack 'text' value and compare it to the original raw */
         off = 0;
         msgpack_unpacked_init(&result);
         ret = msgpack_unpack_next(&result, out_buf, out_size, &off);
         TEST_CHECK(ret == MSGPACK_UNPACK_SUCCESS);
+
+        if (ret != MSGPACK_UNPACK_SUCCESS) {
+            printf("failed unpacking msgpack\n");
+            flb_free(out_buf);
+            continue;
+        }
+
+        /* print the unpacked data */
+        printf("unpacked data---:\n");
+        msgpack_object_print(stdout, result.data);
+        printf("\n\n");
+        fflush(stdout);
 
         /* Check parent type is a map */
         root = result.data;
@@ -732,7 +747,7 @@ void test_json_pack_bug1278()
         }
         /* Put JSON string in a map and convert it to msgpack */
         snprintf(tmp, sizeof(tmp) -1 , "{\"log\": %s}", json);
-        ret = flb_pack_json(tmp, strlen(tmp), &out_buf, &out_size, &type, NULL);
+        ret = flb_pack_json_yyjson(tmp, strlen(tmp), &out_buf, &out_size, &type, NULL);
         TEST_CHECK(ret == 0);
         if (ret != 0) {
             printf("failed packaging to JSON\n");
@@ -1038,7 +1053,7 @@ void test_json_invalid()
     int root_type = 0;
     int ret;
 
-    ret = flb_pack_json(malformed_json, strlen(malformed_json), &buffer, &size, &root_type, NULL);
+    ret = flb_pack_json_yyjson(malformed_json, strlen(malformed_json), &buffer, &size, &root_type, NULL);
 
     /* we expect this to fail and buffer == NULL */
     TEST_CHECK(ret != 0);
@@ -1073,7 +1088,7 @@ void test_json_pack_large_uint64()
         len_in = strlen(p_in);
         expected = test_cases[i].expected_val;
 
-        ret = flb_pack_json(p_in, len_in, &out_buf, &out_size, &type, NULL);
+        ret = flb_pack_json_yyjson(p_in, len_in, &out_buf, &out_size, &type, NULL);
         TEST_CHECK(ret == 0);
         if (!TEST_CHECK(out_buf != NULL)) {
             continue;
@@ -1103,6 +1118,46 @@ void test_json_pack_large_uint64()
     }
 }
 
+void test_json_pack_jsmn_yyjson()
+{
+    int ret;
+    char *out_buf;
+    size_t out_size;
+    char *data_in;
+    size_t len_in;
+    int type;
+    char *json;
+
+    json =
+        "{\"key1\": \"something\", "
+        "\"kubernetes\": "
+        "   [true, "
+        "    false, "
+        "    {\"a\": false, "
+        "     \"annotations\": { "
+        "                       \"fluentbit.io/tag\": \"thetag\","
+        "                       \"extra\": false"
+        "}}]}";
+
+    /* Use the defined JSON string */
+    data_in = json;
+    len_in = strlen(json);
+
+    /* Pack raw JSON as msgpack */
+    ret = flb_pack_json_yyjson(data_in, len_in, &out_buf, &out_size, &type, NULL);
+    TEST_CHECK(ret == 0);
+    if (ret != 0) {
+        TEST_MSG("flb_pack_json_yyjson failed: %d", ret);
+        exit(EXIT_FAILURE);
+    }
+
+    /* Validate output buffer */
+    TEST_CHECK(out_buf != NULL);
+    TEST_CHECK(out_size > 0);
+
+    flb_free(out_buf);
+}
+
 TEST_LIST = {
     /* JSON maps iteration */
     { "json_pack"          , test_json_pack },
@@ -1126,7 +1181,7 @@ TEST_LIST = {
     /* Mixed bytes, check JSON encoding */
     { "utf8_to_json", test_utf8_to_json},
     { "json_pack_surrogate_pairs", test_json_pack_surrogate_pairs},
-    { "json_pack_surrogate_pairs_with_replacement",
-      test_json_pack_surrogate_pairs_with_replacement},
+    { "json_pack_surrogate_pairs_with_replacement", test_json_pack_surrogate_pairs_with_replacement},
+    { "json_pack_jsmn_yyjson", test_json_pack_jsmn_yyjson},
     { 0 }
 };
