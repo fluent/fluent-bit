@@ -742,6 +742,29 @@ int flb_engine_start(struct flb_config *config)
     config->evl_bktq = evl_bktq;
 
     /*
+     * Event loop channel to send context signals.
+     *
+     */
+    /* Create the event loop and set it in the global configuration */
+    config->ctx_evl = mk_event_loop_create(FLB_CONFIG_EVENT_LOOP_SIZE);
+    if (!config->ctx_evl) {
+        fprintf(stderr, "[log] could not create context event loop\n");
+        return -1;
+    }
+
+    ret = mk_event_channel_create(config->ctx_evl,
+                                  &config->ch_context_signal[0],
+                                  &config->ch_context_signal[1],
+                                  &config->event_context_signal);
+    if (ret == -1) {
+        flb_error("[engine] could not create context signal channel");
+        return -1;
+    }
+    /* Signal type to indicate a "context" event */
+    config->event_context_signal.type = FLB_CONTEXT_EV_SIGNAL;
+    config->event_context_signal.priority = FLB_ENGINE_PRIORITY_THREAD;
+
+    /*
      * Event loop channel to ingest flush events from flb_engine_flush()
      *
      *  - FLB engine uses 'ch_self_events[1]' to dispatch tasks to self
@@ -1108,6 +1131,8 @@ int flb_engine_start(struct flb_config *config)
                         flb_info("[engine] service has stopped (%i pending tasks)",
                                  tasks);
                         ret = config->exit_status_code;
+
+                        flb_config_signal_send(config, FLB_CTX_SIGNAL_SHUTDOWN);
                         flb_engine_shutdown(config);
 
                         if (config->shutdown_fd > 0) {
@@ -1116,6 +1141,7 @@ int flb_engine_start(struct flb_config *config)
                         }
 
                         config = NULL;
+
                         return ret;
                     }
                 }
@@ -1253,6 +1279,15 @@ int flb_engine_shutdown(struct flb_config *config)
         flb_hs_destroy(config->http_ctx);
     }
 #endif
+    if (config->ctx_evl != NULL) {
+        mk_event_channel_destroy(config->ctx_evl,
+                                 config->ch_context_signal[0],
+                                 config->ch_context_signal[1],
+                                 &config->event_context_signal);
+        mk_event_loop_destroy(config->ctx_evl);
+        config->ctx_evl = NULL;
+    }
+
     if (config->evl) {
         mk_event_channel_destroy(config->evl,
                                  config->ch_self_events[0],
