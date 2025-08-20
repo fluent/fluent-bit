@@ -214,6 +214,9 @@ option(FLB_CUSTOM_CALYPTIA     "Enable Calyptia Support"      Yes)
 # Config formats
 option(FLB_CONFIG_YAML         "Enable YAML config format"    Yes)
 
+option(FLB_BENCHMARKS          "Enable benchmarks"             No)
+
+
 # List of plugins available and defaults for each option
 include(cmake/plugins_options.cmake)
 
@@ -318,6 +321,7 @@ if(FLB_DEV)
   set(FLB_HTTP_SERVER       On)
   set(FLB_HTTP_CLIENT_DEBUG On)
   set(FLB_TESTS_INTERNAL    On)
+  set(FLB_BENCHMARKS        On)
 endif()
 
 if(FLB_TRACE)
@@ -587,6 +591,9 @@ endif()
 
 # ring buffer library
 add_subdirectory(${FLB_PATH_LIB_RING_BUFFER} EXCLUDE_FROM_ALL)
+
+# yyson
+add_subdirectory(${FLB_PATH_LIB_YYJSON} EXCLUDE_FROM_ALL)
 
 # Avro
 if(FLB_AVRO_ENCODER)
@@ -1065,6 +1072,10 @@ if (NOT DEFINED FLB_MSGPACK_TO_JSON_REALLOC_BUFFER_SIZE)
   FLB_DEFINITION_VAL(FLB_MSGPACK_TO_JSON_REALLOC_BUFFER_SIZE 0.10)
 else()
   FLB_DEFINITION_VAL(FLB_MSGPACK_TO_JSON_REALLOC_BUFFER_SIZE ${FLB_MSGPACK_TO_JSON_REALLOC_BUFFER_SIZE})
+endif()
+
+if (FLB_BENCHMARKS)
+  add_subdirectory(benchmarks)
 endif()
 
 # Build tools/xxd-c
