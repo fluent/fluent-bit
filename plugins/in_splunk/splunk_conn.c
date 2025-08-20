@@ -27,6 +27,41 @@
 static void splunk_conn_request_init(struct mk_http_session *session,
                                      struct mk_http_request *request);
 
+static void splunk_conn_session_init(struct mk_http_session *session,
+                                   struct mk_server *server,
+                                   int client_fd);
+
+static int splunk_conn_buffer_realloc(struct flb_splunk *ctx,
+                                          struct splunk_conn *conn,
+                                          size_t size)
+{
+    char *tmp;
+
+    flb_plg_trace(ctx->ins, "realloc buffer %i -> %zu bytes",
+                  (int)conn->buf_size, size);
+
+    /* Perform realloc */
+    tmp = flb_realloc(conn->buf_data, size);
+    if (!tmp) {
+        flb_errno();
+        flb_plg_error(ctx->ins, "could not perform realloc for size %zu", size);
+        return -1;
+    }
+
+    /* Update buffer info */
+    conn->buf_data = tmp;
+    conn->buf_size = size;
+    /* Keep NULL termination */
+    conn->buf_data[conn->buf_len] = '\0';
+
+    /* Reset parser state */
+    mk_http_parser_init(&conn->session.parser);
+
+    flb_plg_trace(ctx->ins, "realloc completed successfully size=%zu", size);
+    return 0;
+}
+
+
 static int splunk_conn_event(void *data)
 {
     int ret;
@@ -34,7 +69,6 @@ static int splunk_conn_event(void *data)
     size_t size;
     ssize_t available;
     ssize_t bytes;
-    char *tmp;
     size_t request_len;
     struct flb_connection *connection;
     struct splunk_conn *conn;
@@ -42,11 +76,8 @@ static int splunk_conn_event(void *data)
     struct flb_splunk *ctx;
 
     connection = (struct flb_connection *) data;
-
     conn = connection->user_data;
-
     ctx = conn->ctx;
-
     event = &connection->event;
 
     if (event->mask & MK_EVENT_READ) {
@@ -61,16 +92,15 @@ static int splunk_conn_event(void *data)
             }
 
             size = conn->buf_size + ctx->buffer_chunk_size;
-            tmp = flb_realloc(conn->buf_data, size);
-            if (!tmp) {
+            ret = splunk_conn_buffer_realloc(ctx, conn, size);
+            if (ret == -1) {
                 flb_errno();
+                splunk_conn_del(conn);
                 return -1;
             }
             flb_plg_trace(ctx->ins, "fd=%i buffer realloc %i -> %zu",
                           event->fd, conn->buf_size, size);
 
-            conn->buf_data = tmp;
-            conn->buf_size = size;
             available = (conn->buf_size - conn->buf_len) - 1;
         }
 
@@ -163,8 +193,8 @@ static int splunk_conn_event(void *data)
     }
 
     return 0;
-
 }
+
 
 static void splunk_conn_session_init(struct mk_http_session *session,
                                      struct mk_server *server,

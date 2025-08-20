@@ -23,7 +23,6 @@
  */
 
 #include <Windows.h>
-#include <shlwapi.h>
 
 #include "dirent.h"
 
@@ -75,11 +74,30 @@ static char *create_pattern(const char *path)
     return buf;
 }
 
+/**
+ * @brief Checks if a given path string refers to an existing directory.
+ * @param pszPath The null-terminated string that contains the path.
+ * @return Returns TRUE if the path is a directory, otherwise FALSE.
+ */
+BOOL path_is_directory(LPCSTR pszPath) {
+    DWORD dwAttrib = GetFileAttributesA(pszPath);
+
+    if (dwAttrib == INVALID_FILE_ATTRIBUTES) {
+        return FALSE;
+    }
+
+    if (dwAttrib & FILE_ATTRIBUTE_DIRECTORY) {
+        return TRUE;
+    }
+
+    return FALSE;
+}
+
 struct CIO_WIN32_DIR *cio_win32_opendir(const char *path)
 {
     struct CIO_WIN32_DIR *d;
 
-    if (!PathIsDirectoryA(path)) {
+    if (!path_is_directory(path)) {
         return NULL;
     }
 

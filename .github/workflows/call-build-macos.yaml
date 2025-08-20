@@ -74,10 +74,12 @@ jobs:
       fail-fast: false
       matrix:
         config:
-          - name: "Normal macOS-latest runner (Intel)"
-            runner: macos-12
           - name: "Apple Silicon macOS runner"
             runner: macos-14
+            cmake_version: "3.31.6"
+          - name: "Intel macOS runner"
+            runner: macos-14-large
+            cmake_version: "3.31.6"
 
     steps:
       - name: Checkout repository
@@ -89,6 +91,11 @@ jobs:
         run: |
           brew update
           brew install bison flex libyaml openssl pkgconfig || true
+
+      - name: Install cmake
+        uses: jwlawson/actions-setup-cmake@v2
+        with:
+          cmake-version: "${{ matrix.config.cmake_version }}"
 
       - name: Build Fluent Bit packages
         run: |
@@ -121,8 +128,6 @@ jobs:
       fail-fast: false
       matrix:
         config:
-          - name: "Normal macOS-latest package (Intel)"
-            os: macos-12
           - name: "Apple Silicon macOS package"
             os: macos-14
 

@@ -347,6 +347,37 @@ int flb_input_set_processor(flb_ctx_t *ctx, int ffd, struct flb_processor *proc)
     return 0;
 }
 
+int flb_input_set_test(flb_ctx_t *ctx, int ffd, char *test_name,
+                       void (*in_callback) (void *, int, int, void *, size_t, void *),
+                       void *in_callback_data)
+{
+    struct flb_input_instance *i_ins;
+
+    i_ins = in_instance_get(ctx, ffd);
+    if (!i_ins) {
+        return -1;
+    }
+
+    /*
+     * Enabling a test, set the output instance in 'test' mode, so no real
+     * flush callback is invoked, only the desired implemented test.
+     */
+
+    /* Formatter test */
+    if (strcmp(test_name, "formatter") == 0) {
+        i_ins->test_mode = FLB_TRUE;
+        i_ins->test_formatter.rt_ctx = ctx;
+        i_ins->test_formatter.rt_ffd = ffd;
+        i_ins->test_formatter.rt_in_callback = in_callback;
+        i_ins->test_formatter.rt_data = in_callback_data;
+    }
+    else {
+        return -1;
+    }
+
+    return 0;
+}
+
 int flb_output_set_http_test(flb_ctx_t *ctx, int ffd, char *test_name,
                              void (*out_response) (void *, int, int, void *, size_t, void *),
                              void *out_callback_data)
@@ -668,6 +699,41 @@ int flb_lib_free(void* data)
     return 0;
 }
 
+static int flb_input_run_formatter(flb_ctx_t *ctx, struct flb_input_instance *i_ins,
+                                   const void *data, size_t len)
+{
+    int ret;
+    void *out_buf = NULL;
+    size_t out_size = 0;
+    struct flb_test_in_formatter *itf;
+
+    if (!i_ins) {
+        return -1;
+    }
+
+    itf = &i_ins->test_formatter;
+
+    /* Invoke the input plugin formatter test callback */
+    ret = itf->callback(ctx->config,
+                        i_ins,
+                        i_ins->context,
+                        data, len,
+                        &out_buf, &out_size);
+
+    /* Call the runtime test callback checker */
+    if (itf->rt_in_callback) {
+        itf->rt_in_callback(itf->rt_ctx,
+                            itf->rt_ffd,
+                            ret,
+                            out_buf, out_size,
+                            itf->rt_data);
+    }
+    else {
+        flb_free(out_buf);
+    }
+
+    return 0;
+}
 
 static int flb_output_run_response(flb_ctx_t *ctx, struct flb_output_instance *o_ins,
                                    int status, const void *data, size_t len)
@@ -720,10 +786,16 @@ int flb_lib_push(flb_ctx_t *ctx, int ffd, const void *data, size_t len)
         return -1;
     }
 
-    ret = flb_pipe_w(i_ins->channel[1], data, len);
-    if (ret == -1) {
-        flb_errno();
-        return -1;
+    /* If input's test_formatter is registered, priorize to run it. */
+    if (i_ins->test_formatter.callback != NULL) {
+        ret = flb_input_run_formatter(ctx, i_ins, data, len);
+    }
+    else {
+        ret = flb_pipe_w(i_ins->channel[1], data, len);
+        if (ret == -1) {
+            flb_pipe_error();
+            return -1;
+        }
     }
     return ret;
 }

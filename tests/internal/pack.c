@@ -294,6 +294,7 @@ void test_json_dup_keys()
     flb_free(data_out);
 }
 
+/* https://github.com/fluent/fluent-bit/issues/342 */
 void test_json_pack_bug342()
 {
     int i = 0;
@@ -518,6 +519,146 @@ void test_utf8_to_json()
     }
 
     utf8_tests_destroy(n_tests);
+}
+
+void test_json_pack_surrogate_pairs()
+{
+    int i;
+    int ret;
+    int len;
+    int type;
+    int items;
+    char *p_in;
+    char *p_unescaped;
+    size_t len_in;
+    char *out_buf;
+    size_t out_size;
+    char *data_in[] = {
+        "{\"text\":\"\\ud83e\\udd17\"}",
+        "{\"text\":\"thinking...\\ud83e\\uddd0\"}",
+        "{\"text\":\"\\ud83e\\udee1\"}",
+    };
+    char *data_unescaped[] = {
+        "🤗",
+        "thinking...🧐",
+        "🫡",
+    };
+    msgpack_unpacked result;
+    msgpack_object root;
+    msgpack_object val;
+    size_t off = 0;
+
+    items = sizeof(data_in) / sizeof(char *);
+    for (i = 0; i < items; i++) {
+        p_in = data_in[i];
+        len_in = strlen(p_in);
+        p_unescaped = data_unescaped[i];
+
+        /* Pack raw JSON as msgpack */
+        ret = flb_pack_json(p_in, len_in, &out_buf, &out_size, &type, NULL);
+        TEST_CHECK(ret == 0);
+
+        /* Unpack 'text' value and compare it to the original raw */
+        off = 0;
+        msgpack_unpacked_init(&result);
+        ret = msgpack_unpack_next(&result, out_buf, out_size, &off);
+        TEST_CHECK(ret == MSGPACK_UNPACK_SUCCESS);
+
+        /* Check parent type is a map */
+        root = result.data;
+        TEST_CHECK(root.type == MSGPACK_OBJECT_MAP);
+
+        /* Get map value */
+        val = root.via.map.ptr[0].val;
+        TEST_CHECK(val.type == MSGPACK_OBJECT_STR);
+
+        /* Compare bytes length */
+        len = strlen(p_unescaped);
+        TEST_CHECK(len == val.via.str.size);
+        if (len != val.via.str.size) {
+            printf("failed comparing string length\n");
+        }
+
+        /* Compare raw bytes */
+        ret = memcmp(val.via.str.ptr, p_unescaped, len);
+        TEST_CHECK(ret == 0);
+        if (ret != 0) {
+            printf("failed comparing to original value\n");
+        }
+
+        msgpack_unpacked_destroy(&result);
+        flb_free(out_buf);
+    }
+}
+
+void test_json_pack_surrogate_pairs_with_replacement()
+{
+    int i;
+    int ret;
+    int len;
+    int type;
+    int items;
+    char *p_in;
+    char *p_unescaped;
+    size_t len_in;
+    char *out_buf;
+    size_t out_size;
+    char *data_in[] = {
+        "{\"text\":\"\\fddd,\"}",
+        "{\"text\":\"\\udee1,\"}",
+        "{\"text\":\"\\ud83e,|,\"}",
+    };
+    char *data_unescaped[] = {
+        "\fddd,",
+        "�,",
+        "�,|,",
+    };
+    msgpack_unpacked result;
+    msgpack_object root;
+    msgpack_object val;
+    size_t off = 0;
+
+    items = sizeof(data_in) / sizeof(char *);
+    for (i = 0; i < items; i++) {
+        p_in = data_in[i];
+        len_in = strlen(p_in);
+        p_unescaped = data_unescaped[i];
+
+        /* Pack raw JSON as msgpack */
+        ret = flb_pack_json(p_in, len_in, &out_buf, &out_size, &type, NULL);
+        TEST_CHECK(ret == 0);
+
+        /* Unpack 'text' value and compare it to the original raw */
+        off = 0;
+        msgpack_unpacked_init(&result);
+        ret = msgpack_unpack_next(&result, out_buf, out_size, &off);
+        TEST_CHECK(ret == MSGPACK_UNPACK_SUCCESS);
+
+        /* Check parent type is a map */
+        root = result.data;
+        TEST_CHECK(root.type == MSGPACK_OBJECT_MAP);
+
+        /* Get map value */
+        val = root.via.map.ptr[0].val;
+        TEST_CHECK(val.type == MSGPACK_OBJECT_STR);
+
+        /* Compare bytes length */
+        len = strlen(p_unescaped);
+        TEST_CHECK(len == val.via.str.size);
+        if (len != val.via.str.size) {
+            printf("failed comparing string length\n");
+        }
+
+        /* Compare raw bytes */
+        ret = memcmp(val.via.str.ptr, p_unescaped, len);
+        TEST_CHECK(ret == 0);
+        if (ret != 0) {
+            printf("failed comparing to original value\n");
+        }
+
+        msgpack_unpacked_destroy(&result);
+        flb_free(out_buf);
+    }
 }
 
 void test_json_pack_bug1278()
@@ -830,6 +971,40 @@ void test_json_pack_bug5336()
     }
 }
 
+/* Ensure empty arrays inside nested objects are handled */
+void test_json_pack_empty_array()
+{
+    int ret;
+    int root_type;
+    size_t out_size;
+    char *out_buf;
+    char *json = "{\"resourceLogs\":[{\"resource\":{},\"scopeLogs\":[{\"scope\":{},\"logRecords\":[{\"observedTimeUnixNano\":\"1754059282910920618\",\"body\":{\"kvlistValue\":{\"values\":[{\"key\":\"a\",\"value\":{\"kvlistValue\":{\"values\":[{\"key\":\"b\",\"value\":{\"kvlistValue\":{\"values\":[{\"key\":\"c\",\"value\":{\"kvlistValue\":{\"values\":[{\"key\":\"d\",\"value\":{\"arrayValue\":{\"values\":[{\"kvlistValue\":{\"values\":[{\"key\":\"e\",\"value\":{\"kvlistValue\":{\"values\":[{\"key\":\"f\",\"value\":{\"stringValue\":\"g\"}}]}}}]}}]}}}]}}}]}}}]}}}]}}}]}]}]}";
+
+    ret = flb_pack_json( (char*) json, strlen((char *) json), &out_buf, &out_size, &root_type, NULL);
+    TEST_CHECK(ret == 0);
+
+    if (ret != 0) {
+        printf("flb_pack_json failed: %d\n", ret);
+        exit(EXIT_FAILURE);
+    }
+
+    /* unpack just to validate the msgpack buffer */
+    msgpack_unpacked result;
+
+    size_t off = 0;
+    msgpack_unpacked_init(&result);
+    off = 0;
+    TEST_CHECK(msgpack_unpack_next(&result, out_buf, out_size, &off) == MSGPACK_UNPACK_SUCCESS);
+
+    printf("\nmsgpack---:\n");
+    msgpack_object_print(stdout, result.data);
+    printf("\n");
+
+    msgpack_unpacked_destroy(&result);
+
+    flb_free(out_buf);
+}
+
 const char input_msgpack[] = {0x92,/* array 2 */
                             0xd7, 0x00, /* event time*/
                             0x07, 0x5b, 0xcd, 0x15, /* second = 123456789 = 1973/11/29 21:33:09 */
@@ -890,6 +1065,123 @@ void test_json_date_epoch_ms()
     test_json_date("123456789123", FLB_PACK_JSON_DATE_EPOCH_MS);
 }
 
+void test_json_invalid()
+{
+    const char *malformed_json = "{\"key1\": \"value1\", \"key2\": "; // incomplete JSON
+    char *buffer = NULL;
+    size_t size = 0;
+    int root_type = 0;
+    int ret;
+
+    ret = flb_pack_json(malformed_json, strlen(malformed_json), &buffer, &size, &root_type, NULL);
+
+    /* we expect this to fail and buffer == NULL */
+    TEST_CHECK(ret != 0);
+    TEST_CHECK(buffer == NULL);
+}
+
+void test_json_pack_large_uint64()
+{
+    int i;
+    int ret;
+    int type;
+    size_t off;
+    char *out_buf = NULL;
+    size_t out_size;
+    msgpack_unpacked result;
+    msgpack_object root;
+    msgpack_object val;
+    char *p_in;
+    size_t len_in = 0;
+    uint64_t expected = 0;
+
+    struct {
+        const char *json_str;
+        uint64_t expected_val;
+    } test_cases[] = {
+        {"{\"key\": 9223372036854775808}", 9223372036854775808ULL},
+        {"{\"key\": 18446744073709551615}", 18446744073709551615ULL}
+    };
+
+    for (i = 0; i < sizeof(test_cases) / sizeof(test_cases[0]); i++) {
+        p_in = (char *) test_cases[i].json_str;
+        len_in = strlen(p_in);
+        expected = test_cases[i].expected_val;
+
+        ret = flb_pack_json(p_in, len_in, &out_buf, &out_size, &type, NULL);
+        TEST_CHECK(ret == 0);
+        if (!TEST_CHECK(out_buf != NULL)) {
+            continue;
+        }
+
+        off = 0;
+        msgpack_unpacked_init(&result);
+        ret = msgpack_unpack_next(&result, out_buf, out_size, &off);
+        TEST_CHECK(ret == MSGPACK_UNPACK_SUCCESS);
+
+        root = result.data;
+        TEST_CHECK(root.type == MSGPACK_OBJECT_MAP);
+
+        val = root.via.map.ptr[0].val;
+        if (!TEST_CHECK(val.type == MSGPACK_OBJECT_POSITIVE_INTEGER)) {
+            TEST_MSG("Test %d: Type mismatch, expected POSITIVE_INTEGER, got %d", i, val.type);
+        }
+
+        if (!TEST_CHECK(val.via.u64 == expected)) {
+            TEST_MSG("Test %d: Value mismatch.\nExpected: %"PRIu64"\nGot:      %"PRIu64,
+                     i, expected, val.via.u64);
+        }
+
+        msgpack_unpacked_destroy(&result);
+        flb_free(out_buf);
+        out_buf = NULL;
+    }
+}
+
+void test_json_pack_token_count_overflow()
+{
+    int i;
+    flb_sds_t json = NULL;
+    struct flb_pack_state state;
+    int ret;
+
+    flb_pack_state_init(&state);
+
+    /* Create a JSON array big enough to trigger realloc in flb_json_tokenise */
+    json = flb_sds_create("[");
+    for (i = 0; i < 300; i++) {
+        if (i > 0) {
+            flb_sds_cat_safe(&json, ",", 1);
+        }
+        json = flb_sds_printf(&json, "%d", i);
+    }
+    flb_sds_cat_safe(&json, "]", 1);
+
+    if (!TEST_CHECK(json != NULL)) {
+        TEST_MSG("Failed to allocate JSON string");
+        exit(1);
+    }
+
+    /* First parse: forces realloc at least once (because by default we have space for 256 tokens) */
+    ret = flb_json_tokenise(json, flb_sds_len(json), &state);
+    TEST_CHECK(ret == 0);
+    printf("\nFirst parse: tokens_count=%d\n", state.tokens_count);
+
+    /* Second parse with the same JSON and same state — should be ~301, but will be doubled if bug exists */
+    ret = flb_json_tokenise(json, flb_sds_len(json), &state);
+    TEST_CHECK(ret == 0);
+    printf("Second parse: tokens_count=%d (BUG if > ~301)\n", state.tokens_count);
+
+    TEST_CHECK(state.tokens_count == 301);
+    if (state.tokens_count != 301) {
+        TEST_MSG("tokens_count=%d (BUG if > ~301)\n", state.tokens_count);
+        exit(1);
+    }
+
+    flb_sds_destroy(json);
+    flb_pack_state_reset(&state);
+}
+
 TEST_LIST = {
     /* JSON maps iteration */
     { "json_pack"          , test_json_pack },
@@ -902,13 +1194,19 @@ TEST_LIST = {
     { "json_pack_bug1278"  , test_json_pack_bug1278},
     { "json_pack_nan"      , test_json_pack_nan},
     { "json_pack_bug5336"  , test_json_pack_bug5336},
+    { "json_pack_empty_array", test_json_pack_empty_array},
     { "json_date_iso8601" , test_json_date_iso8601},
     { "json_date_double" , test_json_date_double},
     { "json_date_java_sql" , test_json_date_java_sql},
     { "json_date_epoch" , test_json_date_epoch},
     { "json_date_epoch_ms" , test_json_date_epoch_ms},
+    { "json_invalid",        test_json_invalid},
+    { "json_pack_large_uint64", test_json_pack_large_uint64},
 
     /* Mixed bytes, check JSON encoding */
     { "utf8_to_json", test_utf8_to_json},
+    { "json_pack_surrogate_pairs", test_json_pack_surrogate_pairs},
+    { "json_pack_surrogate_pairs_with_replacement", test_json_pack_surrogate_pairs_with_replacement},
+    { "json_pack_token_count_overflow", test_json_pack_token_count_overflow},
     { 0 }
 };

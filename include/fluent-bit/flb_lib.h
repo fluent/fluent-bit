@@ -57,6 +57,10 @@ FLB_EXPORT int flb_output(flb_ctx_t *ctx, const char *output, struct flb_lib_out
 FLB_EXPORT int flb_output_set_processor(flb_ctx_t *ctx, int ffd, struct flb_processor *proc);
 FLB_EXPORT int flb_filter(flb_ctx_t *ctx, const char *filter, void *data);
 FLB_EXPORT int flb_input_set(flb_ctx_t *ctx, int ffd, ...);
+FLB_EXPORT int flb_input_set_test(flb_ctx_t *ctx, int ffd, char *test_name,
+                                  void (*in_callback) (void *, int, int,
+                                                       void *, size_t, void *),
+                                  void *in_callback_data);
 FLB_EXPORT int flb_input_property_check(flb_ctx_t *ctx, int ffd, char *key, char *val);
 FLB_EXPORT int flb_output_property_check(flb_ctx_t *ctx, int ffd, char *key, char *val);
 FLB_EXPORT int flb_filter_property_check(flb_ctx_t *ctx, int ffd, char *key, char *val);

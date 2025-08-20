@@ -63,6 +63,7 @@ struct flb_in_fw_config {
     flb_sds_t shared_key;        /* shared key                   */
     flb_sds_t self_hostname;     /* hostname used in certificate  */
     struct mk_list users;        /* username and password pairs  */
+    int empty_shared_key;        /* use an empty string as shared key */
 
     int coll_fd;
     struct flb_downstream *downstream; /* Client manager          */
@@ -71,6 +72,8 @@ struct flb_in_fw_config {
 
     struct flb_log_event_decoder *log_decoder;
     struct flb_log_event_encoder *log_encoder;
+
+    pthread_mutex_t conn_mutex;
 
     /* Plugin is paused */
     int is_paused;

@@ -1,5 +1,3 @@
-cmake_minimum_required(VERSION 3.0)
-
 # Define source files for the main plugin
 file(GLOB_RECURSE src
     "in_ebpf.c"
@@ -112,7 +110,7 @@ foreach(TRACE_C_FILE ${TRACE_C_FILES})
 endforeach()
 
 # Create a custom target specifically for generating eBPF skeletons
-add_custom_target(generate_skeletons DEPENDS ${TRACE_SKEL_HEADERS})
+add_custom_target(flb-ebpf-generate_skeletons DEPENDS ${TRACE_SKEL_HEADERS})
 
 # Create a custom target to compile all eBPF programs (all trace bpf.c files)
 add_custom_target(compile_ebpf ALL DEPENDS ${TRACE_OBJ_FILES} ${TRACE_SKEL_HEADERS})

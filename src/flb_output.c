@@ -42,6 +42,71 @@
 
 FLB_TLS_DEFINE(struct flb_out_flush_params, out_flush_params);
 
+/* Histogram buckets for output latency in seconds */
+static const double output_latency_buckets[] = {
+    0.5, 1.0, 1.5, 2.5, 5.0, 10.0, 20.0, 30.0
+};
+
+struct flb_config_map output_global_properties[] = {
+    {
+        FLB_CONFIG_MAP_STR, "match", NULL,
+        0, FLB_FALSE, 0,
+        "Set a tag pattern to match the records that this output should process. "
+        "Supports exact matches or wildcards (e.g., '*')."
+    },
+#ifdef FLB_HAVE_REGEX
+    {
+        FLB_CONFIG_MAP_STR, "match_regex", NULL,
+        0, FLB_FALSE, 0,
+        "Set a regular expression to match tags for output routing. This allows more flexible matching "
+        "compared to simple wildcards."
+    },
+#endif
+    {
+        FLB_CONFIG_MAP_STR, "alias", NULL,
+        0, FLB_FALSE, 0,
+        "Sets an alias for the output instance. This is useful when using multiple instances of the same "
+        "output plugin. If no alias is set, the instance will be named using the plugin name and a sequence number."
+    },
+    {
+        FLB_CONFIG_MAP_STR, "log_level", "info",
+        0, FLB_FALSE, 0,
+        "Specifies the log level for this output plugin. If not set, the plugin "
+        "will use the global log level defined in the 'service' section. If the global "
+        "log level is also not specified, it defaults to 'info'."
+    },
+    {
+        FLB_CONFIG_MAP_TIME, "log_suppress_interval", "0",
+        0, FLB_FALSE, 0,
+        "Allows suppression of repetitive log messages from the output plugin that appear similar within a specified "
+        "time interval. Defaults to 0, meaning no suppression."
+    },
+    {
+        FLB_CONFIG_MAP_STR, "retry_limit", "1",
+        0, FLB_FALSE, 0,
+        "Set the retry limit for the output plugin when delivery fails. "
+        "Accepted values: a positive integer, 'no_limits', 'false', or 'off' to disable retry limits, "
+        "or 'no_retries' to disable retries entirely."
+    },
+    {
+        FLB_CONFIG_MAP_STR, "tls.windows.certstore_name", NULL,
+        0, FLB_FALSE, 0,
+        "Sets the certstore name on an output (Windows)"
+    },
+    {
+        FLB_CONFIG_MAP_STR, "tls.windows.use_enterprise_store", NULL,
+        0, FLB_FALSE, 0,
+        "Sets whether using enterprise certstore or not on an output (Windows)"
+    },
+
+    {0}
+};
+
+struct mk_list *flb_output_get_global_config_map(struct flb_config *config)
+{
+    return flb_config_map_create(config, output_global_properties);
+}
+
 void flb_output_prepare()
 {
     FLB_TLS_INIT(out_flush_params);
@@ -115,6 +180,20 @@ static void flb_output_free_properties(struct flb_output_instance *ins)
     if (ins->tls_key_passwd) {
         flb_sds_destroy(ins->tls_key_passwd);
     }
+    if (ins->tls_min_version) {
+        flb_sds_destroy(ins->tls_min_version);
+    }
+    if (ins->tls_max_version) {
+        flb_sds_destroy(ins->tls_max_version);
+    }
+    if (ins->tls_ciphers) {
+        flb_sds_destroy(ins->tls_ciphers);
+    }
+# if defined(FLB_SYSTEM_WINDOWS)
+    if (ins->tls_win_certstore_name) {
+        flb_sds_destroy(ins->tls_win_certstore_name);
+    }
+# endif
 #endif
 }
 
@@ -348,7 +427,7 @@ int flb_output_task_flush(struct flb_task *task,
         ret = flb_pipe_w(config->ch_self_events[1], &out_flush,
                         sizeof(struct flb_output_flush*));
         if (ret == -1) {
-            flb_errno();
+            flb_pipe_error();
             flb_output_flush_destroy(out_flush);
             flb_task_users_dec(task, FLB_FALSE);
 
@@ -692,6 +771,10 @@ struct flb_output_instance *flb_output_new(struct flb_config *config,
     instance->tls_crt_file          = NULL;
     instance->tls_key_file          = NULL;
     instance->tls_key_passwd        = NULL;
+# if defined(FLB_SYSTEM_WINDOWS)
+    instance->tls_win_certstore_name = NULL;
+    instance->tls_win_use_enterprise_certstore = FLB_FALSE;
+# endif
 #endif
 
     if (plugin->flags & FLB_OUTPUT_NET) {
@@ -907,6 +990,24 @@ int flb_output_set_property(struct flb_output_instance *ins,
     else if (prop_key_check("tls.key_passwd", k, len) == 0) {
         flb_utils_set_plugin_string_property("tls.key_passwd", &ins->tls_key_passwd, tmp);
     }
+    else if (prop_key_check("tls.min_version", k, len) == 0) {
+        flb_utils_set_plugin_string_property("tls.min_version", &ins->tls_min_version, tmp);
+    }
+    else if (prop_key_check("tls.max_version", k, len) == 0) {
+        flb_utils_set_plugin_string_property("tls.max_version", &ins->tls_max_version, tmp);
+    }
+    else if (prop_key_check("tls.ciphers", k, len) == 0) {
+        flb_utils_set_plugin_string_property("tls.ciphers", &ins->tls_ciphers, tmp);
+    }
+#  if defined(FLB_SYSTEM_WINDOWS)
+    else if (prop_key_check("tls.windows.certstore_name", k, len) == 0 && tmp) {
+        flb_utils_set_plugin_string_property("tls.windows.certstore_name", &ins->tls_win_certstore_name, tmp);
+    }
+    else if (prop_key_check("tls.windows.use_enterprise_store", k, len) == 0 && tmp) {
+        ins->tls_win_use_enterprise_certstore = flb_utils_bool(tmp);
+        flb_sds_destroy(tmp);
+    }
+#  endif
 #endif
     else if (prop_key_check("storage.total_limit_size", k, len) == 0 && tmp) {
         if (strcasecmp(tmp, "off") == 0 ||
@@ -1083,6 +1184,7 @@ int flb_output_init_all(struct flb_config *config)
     struct flb_output_instance *ins;
     struct flb_output_plugin *p;
     uint64_t ts;
+    struct cmt_histogram_buckets *buckets;
 
     /* Retrieve the plugin reference */
     mk_list_foreach_safe(head, tmp, &config->outputs) {
@@ -1224,6 +1326,22 @@ int flb_output_init_all(struct flb_config *config)
                       100.0,
                       1, (char *[]) {name});
 
+        /* fluentbit_output_latency_seconds */
+        buckets = cmt_histogram_buckets_create_size((double *) output_latency_buckets,
+                                                    sizeof(output_latency_buckets) / sizeof(double));
+        if (!buckets) {
+            flb_error("could not create latency histogram buckets for %s", name);
+            return -1;
+        }
+
+        ins->cmt_latency = cmt_histogram_create(ins->cmt,
+                                                "fluentbit",
+                                                "output",
+                                                "latency_seconds",
+                                                "End-to-end latency in seconds",
+                                                buckets,
+                                                2, (char *[]) {"input", "output"});
+
         /* old API */
         ins->metrics = flb_metrics_create(name);
         if (ins->metrics) {
@@ -1271,6 +1389,60 @@ int flb_output_init_all(struct flb_config *config)
                     return -1;
                 }
             }
+
+            if (ins->tls_min_version != NULL || ins->tls_max_version != NULL) {
+                ret = flb_tls_set_minmax_proto(ins->tls, ins->tls_min_version, ins->tls_max_version);
+                if (ret != 0) {
+                    flb_error("[output %s] error setting up minmax protocol version of TLS",
+                              ins->name);
+                    flb_output_instance_destroy(ins);
+                    return -1;
+                }
+            }
+
+            if (ins->tls_ciphers != NULL) {
+                ret = flb_tls_set_ciphers(ins->tls, ins->tls_ciphers);
+                if (ret != 0) {
+                    flb_error("[output %s] error setting up TLS ciphers up to TLSv1.2",
+                              ins->name);
+                    flb_output_instance_destroy(ins);
+                    return -1;
+                }
+            }
+
+# if defined (FLB_SYSTEM_WINDOWS)
+            if (ins->tls_win_use_enterprise_certstore) {
+                ret = flb_tls_set_use_enterprise_store(ins->tls, ins->tls_win_use_enterprise_certstore);
+                if (ret == -1) {
+                    flb_error("[input %s] error set up to use enterprise certstore in TLS context",
+                              ins->name);
+
+                    return -1;
+                }
+            }
+
+            if (ins->tls_win_certstore_name) {
+                flb_debug("[output %s] starting to load %s certstore in TLS context",
+                          ins->name, ins->tls_win_certstore_name);
+                ret = flb_tls_set_certstore_name(ins->tls, ins->tls_win_certstore_name);
+                if (ret == -1) {
+                    flb_error("[output %s] error specify certstore name in TLS context",
+                              ins->name);
+
+                    return -1;
+                }
+
+                flb_debug("[output %s] attempting to load %s certstore in TLS context",
+                          ins->name, ins->tls_win_certstore_name);
+                ret = flb_tls_load_system_certificates(ins->tls);
+                if (ret == -1) {
+                    flb_error("[output %s] error set up to load certstore with a user-defined name in TLS context",
+                              ins->name);
+
+                    return -1;
+                }
+            }
+# endif
         }
 #endif
         /*
@@ -1340,6 +1512,7 @@ int flb_output_init_all(struct flb_config *config)
         /* initialize processors */
         ret = flb_processor_init(ins->processor);
         if (ret == -1) {
+            flb_error("[output %s] error initializing processor, aborting startup", ins->name);
             return -1;
         }
     }
@@ -1440,6 +1613,35 @@ int flb_output_upstream_set(struct flb_upstream *u, struct flb_output_instance *
 
     /* Set networking options 'net.*' received through instance properties */
     memcpy(&u->base.net, &ins->net_setup, sizeof(struct flb_net_setup));
+
+    /*
+     * If the Upstream was created using a proxy from the environment but the
+     * final configuration asks to ignore environment proxy variables, restore
+     * the original destination host information.
+     */
+    if (u->base.net.proxy_env_ignore == FLB_TRUE && u->proxied_host) {
+        flb_free(u->tcp_host);
+        u->tcp_host = flb_strdup(u->proxied_host);
+        u->tcp_port = u->proxied_port;
+
+        flb_free(u->proxied_host);
+        u->proxied_host = NULL;
+        u->proxied_port = 0;
+
+        /*
+         * Credentials are only set when the connection was configured via environment
+         * variables. Since we just reverted the upstream to the destination configured
+         * by the plugin, drop any credentials that may have been parsed.
+         */
+        if (u->proxy_username) {
+            flb_free(u->proxy_username);
+            u->proxy_username = NULL;
+        }
+        if (u->proxy_password) {
+            flb_free(u->proxy_password);
+            u->proxy_password = NULL;
+        }
+    }
 
     return 0;
 }

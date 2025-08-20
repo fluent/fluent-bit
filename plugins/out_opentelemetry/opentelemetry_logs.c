@@ -27,8 +27,6 @@
 #include <fluent-bit/flb_ra_key.h>
 #include <fluent-bit/flb_gzip.h>
 
-
-//#include <cfl/cfl.h>
 #include <fluent-otel-proto/fluent-otel.h>
 
 #include "opentelemetry.h"
@@ -82,26 +80,6 @@ static int hex_to_id(char *str, int len, unsigned char *out_buf, int out_size)
 }
 
 /* https://opentelemetry.io/docs/specs/otel/logs/data-model/#field-severitynumber */
-static int is_valid_severity_text(const char *str, size_t str_len)
-{
-    if (str_len == 5) {
-        if (strncmp("TRACE", str, 5) == 0 ||
-            strncmp("DEBUG", str, 5) == 0 ||
-            strncmp("ERROR", str, 5) == 0 ||
-            strncmp("FATAL", str, 5) == 0) {
-            return FLB_TRUE;
-        }
-    }
-    else if (str_len == 4) {
-        if (strncmp("INFO", str, 4) == 0||
-            strncmp("WARN", str, 4) == 0) {
-            return FLB_TRUE;
-        }
-    }
-    return FLB_FALSE;
-}
-
-/* https://opentelemetry.io/docs/specs/otel/logs/data-model/#field-severitynumber */
 static int is_valid_severity_number(uint64_t val)
 {
     if (val >= 1 && val <= 24) {
@@ -109,7 +87,6 @@ static int is_valid_severity_number(uint64_t val)
     }
     return FLB_FALSE;
 }
-
 
 /*
  * From a group record, extract it metadata and validate if it has a valid OTLP schema and check that
@@ -415,7 +392,9 @@ static int append_v1_logs_metadata_and_fields(struct opentelemetry_context *ctx,
     int severity_text_set = FLB_FALSE;
     int severity_number_set = FLB_FALSE;
     int trace_flags_set = FLB_FALSE;
+    size_t attr_count = 0;
     struct flb_ra_value *ra_val;
+    Opentelemetry__Proto__Common__V1__KeyValue **attrs = NULL;
 
     if (ctx == NULL || event == NULL || log_record == NULL) {
         return -1;
@@ -495,9 +474,7 @@ static int append_v1_logs_metadata_and_fields(struct opentelemetry_context *ctx,
     /* SeverityText */
     ra_val = flb_ra_get_value_object(ctx->ra_log_meta_otlp_severity_text, *event->metadata);
     if (ra_val != NULL) {
-        if (ra_val->o.type == MSGPACK_OBJECT_STR &&
-            is_valid_severity_text(ra_val->o.via.str.ptr, ra_val->o.via.str.size)) {
-
+        if (ra_val->o.type == MSGPACK_OBJECT_STR) {
             log_record->severity_text = flb_calloc(1, ra_val->o.via.str.size + 1);
             if (log_record->severity_text) {
                 strncpy(log_record->severity_text, ra_val->o.via.str.ptr, ra_val->o.via.str.size);
@@ -510,8 +487,7 @@ static int append_v1_logs_metadata_and_fields(struct opentelemetry_context *ctx,
     if (!severity_text_set && ctx->ra_severity_text_metadata) {
         ra_val = flb_ra_get_value_object(ctx->ra_severity_text_metadata, *event->metadata);
         if (ra_val != NULL) {
-            if (ra_val->o.type == MSGPACK_OBJECT_STR &&
-                is_valid_severity_text(ra_val->o.via.str.ptr, ra_val->o.via.str.size)) {
+            if (ra_val->o.type == MSGPACK_OBJECT_STR) {
                 log_record->severity_text = flb_calloc(1, ra_val->o.via.str.size + 1);
                 if (log_record->severity_text) {
                     strncpy(log_record->severity_text, ra_val->o.via.str.ptr, ra_val->o.via.str.size);
@@ -525,8 +501,7 @@ static int append_v1_logs_metadata_and_fields(struct opentelemetry_context *ctx,
     if (!severity_text_set && ctx->ra_severity_text_message) {
         ra_val = flb_ra_get_value_object(ctx->ra_severity_text_message, *event->body);
         if (ra_val != NULL) {
-            if (ra_val->o.type == MSGPACK_OBJECT_STR &&
-                is_valid_severity_text(ra_val->o.via.str.ptr, ra_val->o.via.str.size)) {
+            if (ra_val->o.type == MSGPACK_OBJECT_STR) {
                 log_record->severity_text = flb_calloc(1, ra_val->o.via.str.size + 1);
                 if (log_record->severity_text) {
                     strncpy(log_record->severity_text, ra_val->o.via.str.ptr, ra_val->o.via.str.size);
@@ -546,10 +521,21 @@ static int append_v1_logs_metadata_and_fields(struct opentelemetry_context *ctx,
     ra_val = flb_ra_get_value_object(ctx->ra_log_meta_otlp_attr, *event->metadata);
     if (ra_val != NULL) {
         if (ra_val->o.type == MSGPACK_OBJECT_MAP) {
-            if (log_record->attributes != NULL) {
-                otlp_kvarray_destroy(log_record->attributes, log_record->n_attributes);
+            attr_count = 0;
+            attrs = msgpack_map_to_otlp_kvarray(&ra_val->o, &attr_count);
+            if (attrs) {
+                if (log_record->attributes != NULL) {
+                    if (otlp_kvarray_append(&log_record->attributes,
+                                            &log_record->n_attributes,
+                                            attrs, attr_count) != 0) {
+                        otlp_kvarray_destroy(attrs, attr_count);
+                    }
+                }
+                else {
+                    log_record->attributes = attrs;
+                    log_record->n_attributes = attr_count;
+                }
             }
-            log_record->attributes = msgpack_map_to_otlp_kvarray(&ra_val->o, &log_record->n_attributes);
         }
         flb_ra_key_value_destroy(ra_val);
     }
@@ -557,10 +543,21 @@ static int append_v1_logs_metadata_and_fields(struct opentelemetry_context *ctx,
         ra_val = flb_ra_get_value_object(ctx->ra_attributes_metadata, *event->metadata);
         if (ra_val != NULL) {
             if (ra_val->o.type == MSGPACK_OBJECT_MAP) {
-                if (log_record->attributes != NULL) {
-                    otlp_kvarray_destroy(log_record->attributes, log_record->n_attributes);
+                attr_count = 0;
+                attrs = msgpack_map_to_otlp_kvarray(&ra_val->o, &attr_count);
+                if (attrs) {
+                    if (log_record->attributes != NULL) {
+                        if (otlp_kvarray_append(&log_record->attributes,
+                                                &log_record->n_attributes,
+                                                attrs, attr_count) != 0) {
+                            otlp_kvarray_destroy(attrs, attr_count);
+                        }
+                    }
+                    else {
+                        log_record->attributes = attrs;
+                        log_record->n_attributes = attr_count;
+                    }
                 }
-                log_record->attributes = msgpack_map_to_otlp_kvarray(&ra_val->o, &log_record->n_attributes);
             }
             flb_ra_key_value_destroy(ra_val);
         }
@@ -835,6 +832,34 @@ static int set_resource_schema_url(struct flb_record_accessor *ra,
     return 0;
 }
 
+static int set_scope_schema_url(struct flb_record_accessor *ra,
+                                msgpack_object *map,
+                                Opentelemetry__Proto__Logs__V1__ScopeLogs *scope_log)
+{
+
+    struct flb_ra_value *ra_val;
+
+    ra_val = flb_ra_get_value_object(ra, *map);
+    if (ra_val == NULL) {
+        return -1;
+    }
+
+    if (ra_val->o.type != MSGPACK_OBJECT_STR) {
+        flb_ra_key_value_destroy(ra_val);
+        return -1;
+    }
+
+    scope_log->schema_url = flb_sds_create_len(ra_val->o.via.str.ptr,
+                                               ra_val->o.via.str.size);
+    flb_ra_key_value_destroy(ra_val);
+
+    if (!scope_log->schema_url) {
+        return -1;
+    }
+
+    return 0;
+}
+
 static int set_scope_name(struct flb_record_accessor *ra,
                          msgpack_object *map,
                          Opentelemetry__Proto__Common__V1__InstrumentationScope *scope)
@@ -923,8 +948,6 @@ int otel_process_logs(struct flb_event_chunk *event_chunk,
     int max_scopes;
     int max_resources;
     int native_otel = FLB_FALSE;
-    int64_t prev_group_resource_id = -1;
-    int64_t prev_group_scope_id = -1;
     int64_t resource_id = -1;
     int64_t scope_id = -1;
     int64_t tmp_resource_id = -1;
@@ -948,6 +971,8 @@ int otel_process_logs(struct flb_event_chunk *event_chunk,
         flb_plg_error(ctx->ins, "could not initialize record decoder");
         return -1;
     }
+
+    flb_log_event_decoder_read_groups(decoder, FLB_TRUE);
 
     log_record_count = 0;
     opentelemetry__proto__collector__logs__v1__export_logs_service_request__init(&export_logs);
@@ -993,11 +1018,6 @@ int otel_process_logs(struct flb_event_chunk *event_chunk,
             /* flag this as a native otel schema */
             native_otel = FLB_TRUE;
 
-            if (resource_id == -1 && prev_group_resource_id >= 0 && prev_group_resource_id == tmp_resource_id) {
-                /* continue with the previous resource */
-                resource_id = prev_group_resource_id;
-                scope_id = prev_group_scope_id;
-            }
 
             /* if we have a new resource_id, start a new resource context */
             if (resource_id != tmp_resource_id) {
@@ -1052,8 +1072,9 @@ start_resource:
                     resource_log->n_scope_logs = 0;
                 }
 
-                /* update the current resource_id */
+                /* update the current resource_id and reset scope_id */
                 resource_id = tmp_resource_id;
+                scope_id = -1;
             }
 
             if (scope_id != tmp_scope_id) {
@@ -1104,6 +1125,9 @@ start_resource:
 
                 /* group body: $scope['attributes'] */
                 set_scope_attributes(ctx->ra_scope_attr, event.body, scope_log->scope);
+
+                /* group body: $scope['schema_url'] */
+                set_scope_schema_url(ctx->ra_scope_schema_url, event.body, scope_log);
             }
 
             ret = FLB_OK;
@@ -1120,8 +1144,6 @@ start_resource:
         else if (record_type == FLB_LOG_EVENT_GROUP_END) {
             /* do nothing */
             ret = FLB_OK;
-            prev_group_resource_id = resource_id;
-            prev_group_scope_id = scope_id;
             resource_id = -1;
             scope_id = -1;
             native_otel = FLB_FALSE;
@@ -1166,6 +1188,8 @@ start_resource:
         if (ret == -1) {
             /* the only possible fail path is a problem with a memory allocation, let's suggest a FLB_RETRY */
             ret = FLB_RETRY;
+            flb_free(log_record);
+            log_records[log_record_count] = NULL;
             break;
         }
 
@@ -1174,6 +1198,11 @@ start_resource:
         if (ret == -1) {
             /* as before, it can only fail on a memory allocation */
             ret = FLB_RETRY;
+            if (log_record->body) {
+                otlp_any_value_destroy(log_record->body);
+            }
+            flb_free(log_record);
+            log_records[log_record_count] = NULL;
             break;
         }
 

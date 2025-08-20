@@ -1243,7 +1243,7 @@ static int cb_stackdriver_init(struct flb_output_instance *ins,
     pthread_mutex_init(&ctx->token_mutex, NULL);
 
     /* Create Upstream context for Stackdriver Logging (no oauth2 service) */
-    ctx->u = flb_upstream_create_url(config, FLB_STD_WRITE_URL,
+    ctx->u = flb_upstream_create_url(config, ctx->cloud_logging_write_url,
                                      io_flags, ins->tls);
     ctx->metadata_u = flb_upstream_create_url(config, ctx->metadata_server,
                                               FLB_IO_TCP, NULL);
@@ -3240,6 +3240,11 @@ static struct flb_config_map config_map[] = {
       FLB_CONFIG_MAP_BOOL, "test_log_entry_format", "false",
       0, FLB_TRUE, offsetof(struct flb_stackdriver, test_log_entry_format),
       "Test log entry format"
+    },
+    {
+      FLB_CONFIG_MAP_STR, "cloud_logging_base_url", (char *)NULL,
+      0, FLB_TRUE, offsetof(struct flb_stackdriver, cloud_logging_base_url),
+      "The base Cloud Logging API URL to use for the /v2/entries:write API request. Default: https://logging.googleapis.com"
     },
     /* EOF */
     {0}

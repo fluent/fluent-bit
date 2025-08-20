@@ -34,6 +34,10 @@ fi
 machine_id_file="$(mktemp)"
 < /dev/urandom tr -dc 'a-zA-Z0-9' | fold -w 32 | head -n 1 > "${machine_id_file}"
 
+cmake_version="${CMAKE_VERSION:-"3.31.6"}"
+cmake_url="${CMAKE_URL:-"https://github.com/Kitware/CMake/releases/download"}"
+cmake_home="/opt/cmake"
+
 exit_code=0
 # Run the action we want on it but using an in-container build directory to prevent various permissions errors and files locally
 "$CONTAINER_RUNTIME" run --rm -t -w "/tmp/source" -v "${SOURCE_DIR}:/source:ro" \
@@ -44,6 +48,18 @@ exit_code=0
     -e INPUT_PRE_COMMAND="cp -R /source /tmp" \
     -e INPUT_WORKING-DIRECTORY="/tmp/source" \
     lpenz/ghaction-cmake:0.19 \
+    sh -c "\
+        cmake_install_script=\"\$(mktemp --suffix '.sh')\" && \
+        cmake_download_url=$(printf "%q" "${cmake_url}/v${cmake_version}/cmake-${cmake_version}")\"-linux-\$(uname -m).sh\" && \
+        echo \"Downloading CMake: \${cmake_download_url} -> \${cmake_install_script}\" && \
+        curl -jksSL -o \"\${cmake_install_script}\" \"\${cmake_download_url}\" && \
+        mkdir -p $(printf "%q" "${cmake_home}") && \
+        echo \"Installing CMake: \${cmake_install_script} -> \"$(printf "%q" "${cmake_home}") && \
+        sh \"\${cmake_install_script}\" --skip-license --exclude-subdir --prefix=$(printf "%q" "${cmake_home}") && \
+        rm -f \"\${cmake_install_script}\" && \
+        export PATH=\"$(printf "%q" "${cmake_home}/bin"):\${PATH}\" && \
+        cmake --version && \
+        entrypoint" \
     || exit_code=$?
 
 rm -f "${machine_id_file}"

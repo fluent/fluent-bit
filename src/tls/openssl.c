@@ -56,6 +56,10 @@ struct tls_context {
     SSL_CTX *ctx;
     int mode;
     char *alpn;
+#if defined(FLB_SYSTEM_WINDOWS)
+    char *certstore_name;
+    int use_enterprise_store;
+#endif
     pthread_mutex_t mutex;
 };
 
@@ -147,6 +151,14 @@ static void tls_context_destroy(void *ctx_backend)
 
         ctx->alpn = NULL;
     }
+
+#if defined(FLB_SYSTEM_WINDOWS)
+    if (ctx->certstore_name != NULL) {
+        flb_free(ctx->certstore_name);
+
+        ctx->certstore_name = NULL;
+    }
+#endif
 
     pthread_mutex_unlock(&ctx->mutex);
 
@@ -291,6 +303,7 @@ static int windows_load_system_certificates(struct tls_context *ctx)
     const unsigned char *win_cert_data;
     X509_STORE *ossl_store = SSL_CTX_get_cert_store(ctx->ctx);
     X509 *ossl_cert;
+    char *certstore_name = "Root";
 
     /* Check if OpenSSL certificate store is available */
     if (!ossl_store) {
@@ -298,8 +311,23 @@ static int windows_load_system_certificates(struct tls_context *ctx)
         return -1;
     }
 
-    /* Open the Windows system certificate store */
-    win_store = CertOpenSystemStoreA(0, "Root");
+    if (ctx->certstore_name) {
+        certstore_name = ctx->certstore_name;
+    }
+
+    if (ctx->use_enterprise_store) {
+        /* Open the Windows system enterprise certificate store */
+        win_store = CertOpenStore(CERT_STORE_PROV_SYSTEM,
+                                  0,
+                                  0,
+                                  CERT_SYSTEM_STORE_LOCAL_MACHINE_ENTERPRISE,
+                                  certstore_name);
+    }
+    else {
+        /* Open the Windows system certificate store */
+        win_store = CertOpenSystemStoreA(0, certstore_name);
+    }
+
     if (win_store == NULL) {
         flb_error("[tls] cannot open windows certificate store: %lu", GetLastError());
         return -1;
@@ -352,7 +380,8 @@ static int windows_load_system_certificates(struct tls_context *ctx)
         return -1;
     }
 
-    flb_debug("[tls] successfully loaded certificates from windows system store.");
+    flb_debug("[tls] successfully loaded certificates from windows system %s store.", 
+              certstore_name);
     return 0;
 }
 #endif
@@ -650,6 +679,150 @@ static void *tls_context_create(int verify,
     tls_context_destroy(ctx);
     return NULL;
 }
+
+#if !defined(TLS1_3_VERSION)
+#  define TLS1_3_VERSION 0x0304
+#endif
+
+struct tls_proto_def {
+    char *name;
+    int ver;
+};
+
+struct tls_proto_options {
+    int ver;
+    int no_opt;
+};
+
+static int parse_proto_version(const char *proto_ver)
+{
+    int i;
+    struct tls_proto_def defs[] = {
+        { "SSLv2", SSL2_VERSION },
+        { "SSLv3", SSL3_VERSION },
+        { "TLSv1", TLS1_VERSION },
+        { "TLSv1.1", TLS1_1_VERSION },
+        { "TLSv1.2", TLS1_2_VERSION },
+#if defined(TLS1_3_VERSION)
+        { "TLSv1.3", TLS1_3_VERSION },
+#endif
+        { NULL, 0 },
+    };
+
+    if (proto_ver == NULL) {
+        return 0;
+    }
+
+    for (i = 0; i < sizeof(defs) / sizeof(struct tls_proto_def); i++) {
+        if (strncasecmp(defs[i].name, proto_ver, strlen(proto_ver)) == 0) {
+            return defs[i].ver;
+        }
+    }
+
+    return -1;
+}
+
+#if defined(TLS1_3_VERSION)
+#define DEFAULT_MAX_VERSION TLS1_3_VERSION
+#else
+#define DEFAULT_MAX_VERSION TLS1_2_VERSION
+#endif
+
+static int tls_set_minmax_proto(struct flb_tls *tls,
+                                const char *min_version,
+                                const char *max_version)
+{
+    int i;
+    unsigned long sum = 0, opts = 0;
+    int min = TLS1_1_VERSION;
+    int max = DEFAULT_MAX_VERSION;
+    int val = -1;
+    struct tls_context *ctx = tls->ctx;
+
+    struct tls_proto_options tls_options[] = {
+        { SSL2_VERSION, SSL_OP_NO_SSLv2 },
+        { SSL3_VERSION, SSL_OP_NO_SSLv3 },
+        { TLS1_VERSION, SSL_OP_NO_TLSv1 },
+        { TLS1_1_VERSION, SSL_OP_NO_TLSv1_1 },
+        { TLS1_2_VERSION, SSL_OP_NO_TLSv1_2 },
+#if defined(TLS1_3_VERSION) && defined(SSL_OP_NO_TLSv1_3)
+        { TLS1_3_VERSION, SSL_OP_NO_TLSv1_3 },
+#endif
+    };
+
+    if (!ctx) {
+        return -1;
+    }
+
+    val = parse_proto_version(min_version);
+    if (val >= 0) {
+        min = val;
+    }
+
+    val = parse_proto_version(max_version);
+    if (val >= 0) {
+        max = val;
+    }
+
+    pthread_mutex_lock(&ctx->mutex);
+
+    for (i = 0; i < sizeof(tls_options) / sizeof(struct tls_proto_options); i++) {
+        sum |= tls_options[i].no_opt;
+        if ((min && min > tls_options[i].ver) ||
+            (max && max < tls_options[i].ver)) {
+            opts |= tls_options[i].no_opt;
+        }
+    }
+    SSL_CTX_clear_options(ctx->ctx, sum);
+    SSL_CTX_set_options(ctx->ctx, opts);
+
+    pthread_mutex_unlock(&ctx->mutex);
+
+    return 0;
+}
+
+static int tls_set_ciphers(struct flb_tls *tls, const char *ciphers)
+{
+    struct tls_context *ctx = tls->ctx;
+
+    pthread_mutex_lock(&ctx->mutex);
+
+    if (!SSL_CTX_set_cipher_list(ctx->ctx, ciphers)) {
+        return -1;
+    }
+
+    pthread_mutex_unlock(&ctx->mutex);
+
+    return 0;
+}
+
+#if defined(FLB_SYSTEM_WINDOWS)
+static int tls_set_certstore_name(struct flb_tls *tls, const char *certstore_name)
+{
+    struct tls_context *ctx = tls->ctx;
+
+    pthread_mutex_lock(&ctx->mutex);
+
+    ctx->certstore_name = flb_strdup(certstore_name);
+
+    pthread_mutex_unlock(&ctx->mutex);
+
+    return 0;
+}
+
+static int tls_set_use_enterprise_store(struct flb_tls *tls, int use_enterprise)
+{
+    struct tls_context *ctx = tls->ctx;
+
+    pthread_mutex_lock(&ctx->mutex);
+
+    ctx->use_enterprise_store = !!use_enterprise;
+
+    pthread_mutex_unlock(&ctx->mutex);
+
+    return 0;
+}
+#endif
 
 static void *tls_session_create(struct flb_tls *tls,
                                 int fd)
@@ -1043,9 +1216,15 @@ static struct flb_tls_backend tls_openssl = {
     .context_destroy      = tls_context_destroy,
     .context_alpn_set     = tls_context_alpn_set,
     .session_alpn_get     = tls_session_alpn_get,
+    .set_minmax_proto     = tls_set_minmax_proto,
+    .set_ciphers          = tls_set_ciphers,
     .session_create       = tls_session_create,
     .session_destroy      = tls_session_destroy,
     .net_read             = tls_net_read,
     .net_write            = tls_net_write,
     .net_handshake        = tls_net_handshake,
+#if defined(FLB_SYSTEM_WINDOWS)
+    .set_certstore_name   = tls_set_certstore_name,
+    .set_use_enterprise_store = tls_set_use_enterprise_store,
+#endif
 };

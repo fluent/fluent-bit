@@ -18,12 +18,12 @@ jobs:
       matrix:
         format: [ rpm, deb ]
     steps:
-      - uses: actions/checkout@v3
-      - uses: uraimo/run-on-arch-action@v2.5.0
+      - uses: actions/checkout@v4
+      - uses: uraimo/run-on-arch-action@v3.0.1
         name: Build the ${{matrix.format}} packages
         with:
           arch: aarch64
-          distro: ubuntu20.04
+          distro: ubuntu_latest
           run: |
             apt-get update && \
             apt-get install -y --no-install-recommends \
@@ -31,12 +31,12 @@ jobs:
             cmake \
             file \
             rpm \
-            make 
+            make
             cmake .
             echo ${{ matrix.format }} | awk '{print toupper($0)}' | xargs -I{} cpack -G {}
 
       - name: Store the master package artifacts
-        uses: actions/upload-artifact@v3
+        uses: actions/upload-artifact@v4
         with:
           name: ${{ matrix.format }}-arm64
           path: |
@@ -51,14 +51,14 @@ jobs:
 
     runs-on: [ ubuntu-latest ]
     steps:
-      - uses: actions/checkout@v3
+      - uses: actions/checkout@v4
       - name: Build the ${{matrix.format}} packages
         run:  |
           cmake .
           echo ${{ matrix.format }} | awk '{print toupper($0)}' | xargs -I{} cpack -G {}
 
       - name: Store the master package artifacts
-        uses: actions/upload-artifact@v3
+        uses: actions/upload-artifact@v4
         with:
           name: ${{ matrix.format }}-amd64
           path: |
@@ -74,7 +74,7 @@ jobs:
       contents: write
     steps:
       - name: Download all artefacts
-        uses: actions/download-artifact@v3
+        uses: actions/download-artifact@v4
         with:
           path: artifacts/
 
@@ -94,7 +94,7 @@ jobs:
             artifacts/**/*
 
       - name: Release on tag
-        uses: softprops/action-gh-release@v1
+        uses: softprops/action-gh-release@v2
         if: startsWith(github.ref, 'refs/tags/')
         with:
           generate_release_notes: true

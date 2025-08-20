@@ -1,0 +1,215 @@
+# Copyright (C) 2019 Intel Corporation.  All rights reserved.
+# SPDX-License-Identifier: Apache-2.0 WITH LLVM-exception
+
+name: the binary release processes
+
+on:
+  workflow_dispatch:
+    inputs:
+      require_confirmation:
+        description: "If the process requires a confirmation"
+        type: boolean
+        required: false
+        default: false
+
+# Cancel any in-flight jobs for the same PR/branch so there's only one active
+# at a time
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  create_tag:
+    uses: ./.github/workflows/create_tag.yml
+
+  create_release:
+    needs: [create_tag]
+    runs-on: ubuntu-latest
+    outputs:
+      upload_url: ${{ steps.create_release.outputs.upload_url }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: prepare the release note
+        run: |
+          extract_result="$(python3 ./.github/scripts/extract_from_release_notes.py RELEASE_NOTES.md)"
+          echo "RELEASE_NOTE<<EOF" >> $GITHUB_ENV
+          echo "${extract_result}" >> $GITHUB_ENV
+          echo "EOF"               >> $GITHUB_ENV
+
+      - name: create a release
+        id: create_release
+        uses: actions/create-release@v1
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        with:
+          tag_name: ${{ needs.create_tag.outputs.new_tag }}
+          release_name: ${{ needs.create_tag.outputs.new_tag }}
+          prerelease: ${{ inputs.require_confirmation || needs.create_tag.outputs.minor_version }}
+          draft: false
+          body: ${{ env.RELEASE_NOTE }}
+
+  #
+  # LLVM_LIBRARIES
+  build_llvm_libraries_on_ubuntu_2004:
+    needs: [create_tag, create_release]
+    uses: ./.github/workflows/build_llvm_libraries.yml
+    with:
+      os: "ubuntu-20.04"
+      arch: "AArch64 ARM Mips RISCV X86"
+
+  build_llvm_libraries_on_ubuntu_2204:
+    needs: [create_tag, create_release]
+    uses: ./.github/workflows/build_llvm_libraries.yml
+    with:
+      os: "ubuntu-22.04"
+      arch: "AArch64 ARM Mips RISCV X86"
+
+  build_llvm_libraries_on_macos:
+    needs: [create_tag, create_release]
+    uses: ./.github/workflows/build_llvm_libraries.yml
+    with:
+      os: "macos-13"
+      arch: "AArch64 ARM Mips RISCV X86"
+
+  #
+  # WAMRC
+  release_wamrc_on_ubuntu_2004:
+    needs: [create_tag, create_release, build_llvm_libraries_on_ubuntu_2004]
+    uses: ./.github/workflows/build_wamrc.yml
+    with:
+      llvm_cache_key: ${{ needs.build_llvm_libraries_on_ubuntu_2004.outputs.cache_key }}
+      release: true
+      runner: ubuntu-20.04
+      upload_url: ${{ needs.create_release.outputs.upload_url }}
+      ver_num: ${{ needs.create_tag.outputs.new_ver}}
+
+  release_wamrc_on_ubuntu_2204:
+    needs: [create_tag, create_release, build_llvm_libraries_on_ubuntu_2204 ]
+    uses: ./.github/workflows/build_wamrc.yml
+    with:
+      llvm_cache_key: ${{ needs.build_llvm_libraries_on_ubuntu_2204.outputs.cache_key }}
+      release: true
+      runner: ubuntu-22.04
+      upload_url: ${{ needs.create_release.outputs.upload_url }}
+      ver_num: ${{ needs.create_tag.outputs.new_ver }}
+
+  release_wamrc_on_ubuntu_macos:
+    needs: [create_tag, create_release, build_llvm_libraries_on_macos]
+    uses: ./.github/workflows/build_wamrc.yml
+    with:
+      llvm_cache_key: ${{ needs.build_llvm_libraries_on_macos.outputs.cache_key }}
+      release: true
+      runner: macos-13
+      upload_url: ${{ needs.create_release.outputs.upload_url }}
+      ver_num: ${{ needs.create_tag.outputs.new_ver }}
+
+  #
+  # IWASM
+  release_iwasm_on_ubuntu_2004:
+    needs: [create_tag, create_release, build_llvm_libraries_on_ubuntu_2004]
+    uses: ./.github/workflows/build_iwasm_release.yml
+    with:
+      cwd: product-mini/platforms/linux
+      llvm_cache_key: ${{ needs.build_llvm_libraries_on_ubuntu_2004.outputs.cache_key }}
+      runner: ubuntu-20.04
+      upload_url: ${{ needs.create_release.outputs.upload_url }}
+      ver_num: ${{ needs.create_tag.outputs.new_ver}}
+
+  release_iwasm_on_ubuntu_2204:
+    needs: [create_tag, create_release, build_llvm_libraries_on_ubuntu_2204]
+    uses: ./.github/workflows/build_iwasm_release.yml
+    with:
+      cwd: product-mini/platforms/linux
+      llvm_cache_key: ${{ needs.build_llvm_libraries_on_ubuntu_2204.outputs.cache_key }}
+      runner: ubuntu-22.04
+      upload_url: ${{ needs.create_release.outputs.upload_url }}
+      ver_num: ${{ needs.create_tag.outputs.new_ver}}
+
+  release_iwasm_on_macos:
+    needs: [create_tag, create_release, build_llvm_libraries_on_macos]
+    uses: ./.github/workflows/build_iwasm_release.yml
+    with:
+      cwd: product-mini/platforms/darwin
+      llvm_cache_key: ${{ needs.build_llvm_libraries_on_macos.outputs.cache_key }}
+      runner: macos-13
+      upload_url: ${{ needs.create_release.outputs.upload_url }}
+      ver_num: ${{ needs.create_tag.outputs.new_ver}}
+
+  #
+  # WAMR_SDK
+  release_wamr_sdk_on_ubuntu_2004:
+    needs: [create_tag, create_release]
+    uses: ./.github/workflows/build_wamr_sdk.yml
+    with:
+      config_file: wamr_config_ubuntu_release.cmake
+      runner: ubuntu-20.04
+      upload_url: ${{ needs.create_release.outputs.upload_url }}
+      ver_num: ${{ needs.create_tag.outputs.new_ver}}
+      wasi_sdk_url: https://github.com/WebAssembly/wasi-sdk/releases/download/wasi-sdk-19/wasi-sdk-19.0-linux.tar.gz
+
+  release_wamr_sdk_on_ubuntu_2204:
+    needs: [create_tag, create_release]
+    uses: ./.github/workflows/build_wamr_sdk.yml
+    with:
+      config_file: wamr_config_ubuntu_release.cmake
+      runner: ubuntu-22.04
+      upload_url: ${{ needs.create_release.outputs.upload_url }}
+      ver_num: ${{ needs.create_tag.outputs.new_ver}}
+      wasi_sdk_url: https://github.com/WebAssembly/wasi-sdk/releases/download/wasi-sdk-19/wasi-sdk-19.0-linux.tar.gz
+
+  release_wamr_sdk_on_macos:
+    needs: [create_tag, create_release]
+    uses: ./.github/workflows/build_wamr_sdk.yml
+    with:
+      config_file: wamr_config_macos_release.cmake
+      runner: macos-13
+      upload_url: ${{ needs.create_release.outputs.upload_url }}
+      ver_num: ${{ needs.create_tag.outputs.new_ver}}
+      wasi_sdk_url: https://github.com/WebAssembly/wasi-sdk/releases/download/wasi-sdk-19/wasi-sdk-19.0-macos.tar.gz
+
+  #
+  # vscode extension cross-platform
+  release_wamr_ide_vscode_ext:
+    needs: [create_tag, create_release]
+    uses: ./.github/workflows/build_wamr_vscode_ext.yml
+    secrets: inherit
+    with:
+      upload_url: ${{ needs.create_release.outputs.upload_url }}
+      ver_num: ${{ needs.create_tag.outputs.new_ver }}
+
+  #
+  # vscode extension docker images package
+  release_wamr_ide_docker_images_package:
+    needs: [create_tag, create_release]
+    uses: ./.github/workflows/build_docker_images.yml
+    with:
+      upload_url: ${{ needs.create_release.outputs.upload_url }}
+      ver_num: ${{ needs.create_tag.outputs.new_ver }}
+
+  #
+  # WAMR_LLDB
+  release_wamr_lldb_on_ubuntu_2004:
+    needs: [create_tag, create_release]
+    uses: ./.github/workflows/build_wamr_lldb.yml
+    with:
+      runner: ubuntu-20.04
+      upload_url: ${{ needs.create_release.outputs.upload_url }}
+      ver_num: ${{ needs.create_tag.outputs.new_ver}}
+
+  release_wamr_lldb_on_ubuntu_2204:
+    needs: [create_tag, create_release]
+    uses: ./.github/workflows/build_wamr_lldb.yml
+    with:
+      runner: ubuntu-22.04
+      upload_url: ${{ needs.create_release.outputs.upload_url }}
+      ver_num: ${{ needs.create_tag.outputs.new_ver}}
+
+  release_wamr_lldb_on_macos_universal:
+    needs: [create_tag, create_release]
+    uses: ./.github/workflows/build_wamr_lldb.yml
+    with:
+      runner: macos-13
+      arch: universal
+      upload_url: ${{ needs.create_release.outputs.upload_url }}
+      ver_num: ${{ needs.create_tag.outputs.new_ver}}

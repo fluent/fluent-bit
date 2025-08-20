@@ -80,6 +80,24 @@ struct flb_config_map tls_configmap[] = {
      "Enable or disable to verify hostname"
     },
 
+    {
+     FLB_CONFIG_MAP_STR, "tls.min_version", NULL,
+     0, FLB_FALSE, 0,
+     "Specify the minimum version of TLS"
+    },
+
+    {
+     FLB_CONFIG_MAP_STR, "tls.max_version", NULL,
+     0, FLB_FALSE, 0,
+     "Specify the maximum version of TLS"
+    },
+
+    {
+     FLB_CONFIG_MAP_STR, "tls.ciphers", NULL,
+     0, FLB_FALSE, 0,
+     "Specify TLS ciphers up to TLSv1.2"
+    },
+
     /* EOF */
     {0}
 };
@@ -198,6 +216,10 @@ struct flb_tls *flb_tls_create(int mode,
     tls->debug = debug;
     tls->mode = mode;
     tls->verify_hostname = FLB_FALSE;
+#if defined(FLB_SYSTEM_WINDOWS)
+    tls->certstore_name = NULL;
+    tls->use_enterprise_store = FLB_FALSE;
+#endif
 
     if (vhost != NULL) {
         tls->vhost = flb_strdup(vhost);
@@ -207,6 +229,25 @@ struct flb_tls *flb_tls_create(int mode,
     tls->api = &tls_openssl;
 
     return tls;
+}
+
+int flb_tls_set_minmax_proto(struct flb_tls *tls,
+                             const char *min_version, const char *max_version)
+{
+    if (tls->ctx) {
+        return tls->api->set_minmax_proto(tls, min_version, max_version);
+    }
+
+    return 0;
+}
+
+int flb_tls_set_ciphers(struct flb_tls *tls, const char *ciphers)
+{
+    if (tls->ctx) {
+        return tls->api->set_ciphers(tls, ciphers);
+    }
+
+    return 0;
 }
 
 int flb_tls_init()
@@ -223,6 +264,12 @@ int flb_tls_destroy(struct flb_tls *tls)
     if (tls->vhost != NULL) {
         flb_free(tls->vhost);
     }
+
+#if defined(FLB_SYSTEM_WINDOWS)
+    if (tls->certstore_name) {
+        flb_free(tls->certstore_name);
+    }
+#endif
 
     flb_free(tls);
 
@@ -248,6 +295,26 @@ int flb_tls_set_verify_hostname(struct flb_tls *tls, int verify_hostname)
 
     return 0;
 }
+
+#if defined(FLB_SYSTEM_WINDOWS)
+int flb_tls_set_certstore_name(struct flb_tls *tls, const char *certstore_name)
+{
+    if (tls) {
+        return tls->api->set_certstore_name(tls, certstore_name);
+    }
+
+    return 0;
+}
+
+int flb_tls_set_use_enterprise_store(struct flb_tls *tls, int use_enterprise)
+{
+    if (tls) {
+        return tls->api->set_use_enterprise_store(tls, use_enterprise);
+    }
+
+    return 0;
+}
+#endif
 
 int flb_tls_net_read(struct flb_tls_session *session, void *buf, size_t len)
 {

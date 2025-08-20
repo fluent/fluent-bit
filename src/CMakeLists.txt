@@ -12,6 +12,7 @@ set(src
   flb_env.c
   flb_file.c
   flb_uri.c
+  flb_utf8.c
   flb_hash_table.c
   flb_help.c
   flb_pack.c
@@ -27,6 +28,7 @@ set(src
   flb_input_log.c
   flb_input_metric.c
   flb_input_trace.c
+  flb_input_profiles.c
   flb_input_blob.c
   flb_input_thread.c
   flb_filter.c
@@ -62,6 +64,7 @@ set(src
   flb_plugin.c
   flb_gzip.c
   flb_snappy.c
+  flb_zstd.c
   flb_compression.c
   flb_http_common.c
   flb_http_client_http1.c
@@ -85,6 +88,11 @@ set(src
   flb_msgpack_append_message.c
   flb_notification.c
   flb_lock.c
+  flb_cfl_ra_key.c
+  flb_cfl_record_accessor.c
+  flb_conditionals.c
+  flb_mem.c
+  flb_blob_db.c
   )
 
 # Config format
@@ -99,6 +107,13 @@ if(FLB_HAVE_LIBYAML)
     config_format/flb_cf_yaml.c
     )
 endif()
+
+# OpenTelemetry Helpers
+set(src
+  ${src}
+  opentelemetry/flb_opentelemetry_logs.c
+  opentelemetry/flb_opentelemetry_utils.c
+)
 
 # Multiline subsystem
 add_subdirectory(multiline)
@@ -194,7 +209,7 @@ if(FLB_LUAJIT)
     )
 endif()
 
-if(FLB_IN_KAFKA OR FLB_OUT_KAFKA)
+if(FLB_KAFKA)
   set(src
     ${src}
     "flb_kafka.c"
@@ -239,7 +254,7 @@ if(FLB_SQLDB)
     )
   set(extra_libs
     ${extra_libs}
-    "sqlite3")
+    ${SQLITE_LIBRARIES})
 endif()
 
 if(FLB_STATIC_CONF)
@@ -339,6 +354,10 @@ if(FLB_WASM)
   add_subdirectory(wasm)
 endif()
 
+if(FLB_UNICODE_ENCODER)
+  add_subdirectory(simdutf)
+endif()
+
 # WAMRC compiler
 if(FLB_WAMRC)
   add_subdirectory(wamrc)
@@ -378,10 +397,11 @@ set(FLB_DEPS
   ctraces-static
   mk_core
   jsmn
-  msgpack-c-static
+  ${MSGPACK_LIBRARIES}
   mpack-static
   chunkio-static
   miniz
+  ${LIBZSTD_LIBRARIES}
 
   ${FLB_PLUGINS}
   ${FLB_PROXY_PLUGINS}
@@ -415,6 +435,15 @@ set(FLB_DEPS
   )
 endif()
 
+# Unicode Encoding (UTF-16LE, UTF-16BE)
+if(FLB_UNICODE_ENCODER)
+set(FLB_DEPS
+  ${FLB_DEPS}
+  simdutf-static
+  flb-simdutf-connector-static
+  )
+endif()
+
 # AWS specific
 if(FLB_AWS)
   set(FLB_DEPS
@@ -431,6 +460,10 @@ if(FLB_RECORD_ACCESSOR)
     )
 endif()
 
+set(FLB_DEPS
+  ${FLB_DEPS}
+  )
+
 # Stream Processor
 if(FLB_STREAM_PROCESSOR)
   set(FLB_DEPS
@@ -438,6 +471,17 @@ if(FLB_STREAM_PROCESSOR)
     flb-sp
     )
 endif()
+
+# Unicode Conversions
+add_subdirectory(unicode)
+set(FLB_DEPS
+  ${FLB_DEPS}
+  flb-conv
+  )
+set(src
+  ${src}
+  flb_unicode.c
+  )
 
 if (MSVC)
 set(flb_rc_files
@@ -462,8 +506,6 @@ if(FLB_SHARED_LIB)
   if (MSVC)
     set_target_properties(fluent-bit-shared
       PROPERTIES PDB_NAME fluent-bit.dll)
-    target_link_options(fluent-bit-shared
-      PUBLIC /pdb:$<TARGET_PDB_FILE:fluent-bit-shared>)
   endif()
 
   # Library install routines
@@ -497,11 +539,18 @@ if(FLB_BINARY)
   else()
     add_executable(fluent-bit-bin fluent-bit.c flb_dump.c)
   endif()
+  if (MSVC)
+    set_target_properties(fluent-bit-bin PROPERTIES IMPORT_SUFFIX ".exe.lib")
+  endif(MSVC)
   add_sanitizers(fluent-bit-bin)
-
 
   if(FLB_STATIC_CONF)
     add_dependencies(fluent-bit-bin flb-static-conf)
+  endif()
+
+  # in_ebpf
+  if(FLB_IN_EBPF)
+    add_dependencies(fluent-bit-bin flb-ebpf-generate_skeletons)
   endif()
 
   if(FLB_REGEX)
@@ -518,6 +567,11 @@ if(FLB_BINARY)
   endif()
 
   target_link_libraries(fluent-bit-bin fluent-bit-static ${CMAKE_THREAD_LIBS_INIT})
+
+  # KAFKA SPECIFIC
+  if(FLB_SASL_ENABLED)
+    target_link_libraries(fluent-bit-bin sasl2)
+  endif()
 
   set_target_properties(fluent-bit-bin
     PROPERTIES
@@ -541,13 +595,30 @@ if(FLB_BINARY)
   endif()
 
   if(SYSTEMD_UNITDIR)
-    set(FLB_SYSTEMD_SCRIPT "${PROJECT_SOURCE_DIR}/init/${FLB_OUT_NAME}.service")
-    configure_file(
-      "${PROJECT_SOURCE_DIR}/init/systemd.in"
-      ${FLB_SYSTEMD_SCRIPT}
-      )
-    install(FILES ${FLB_SYSTEMD_SCRIPT} COMPONENT binary DESTINATION ${SYSTEMD_UNITDIR})
-    install(DIRECTORY DESTINATION ${FLB_INSTALL_CONFDIR} COMPONENT binary)
+    if (FLB_AMAZON_LINUX2)
+      set(FLB_SYSTEMD_SCRIPT "${PROJECT_SOURCE_DIR}/init/${FLB_OUT_NAME}.service")
+      configure_file(
+        "${PROJECT_SOURCE_DIR}/init/az2-systemd.in"
+        ${FLB_SYSTEMD_SCRIPT}
+        )
+      install(FILES ${FLB_SYSTEMD_SCRIPT} COMPONENT binary DESTINATION ${SYSTEMD_UNITDIR})
+      install(DIRECTORY DESTINATION ${FLB_INSTALL_CONFDIR} COMPONENT binary)
+      set(FLB_HOSTNAME_SYSTEMD_SCRIPT "${PROJECT_SOURCE_DIR}/init/sethostname.service")
+      configure_file(
+        "${PROJECT_SOURCE_DIR}/init/az2-sethostname.in"
+        ${FLB_HOSTNAME_SYSTEMD_SCRIPT}
+        )
+      install(FILES ${FLB_HOSTNAME_SYSTEMD_SCRIPT} COMPONENT binary DESTINATION ${SYSTEMD_UNITDIR})
+      install(DIRECTORY DESTINATION ${FLB_INSTALL_CONFDIR} COMPONENT binary)
+    else()
+      set(FLB_SYSTEMD_SCRIPT "${PROJECT_SOURCE_DIR}/init/${FLB_OUT_NAME}.service")
+      configure_file(
+        "${PROJECT_SOURCE_DIR}/init/systemd.in"
+        ${FLB_SYSTEMD_SCRIPT}
+        )
+      install(FILES ${FLB_SYSTEMD_SCRIPT} COMPONENT binary DESTINATION ${SYSTEMD_UNITDIR})
+      install(DIRECTORY DESTINATION ${FLB_INSTALL_CONFDIR} COMPONENT binary)
+    endif()
   elseif(IS_DIRECTORY /usr/share/upstart)
     set(FLB_UPSTART_SCRIPT "${PROJECT_SOURCE_DIR}/init/${FLB_OUT_NAME}.conf")
     configure_file(

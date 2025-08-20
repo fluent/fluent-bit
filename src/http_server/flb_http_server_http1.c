@@ -69,16 +69,10 @@ static void dummy_mk_http_request_init(struct mk_http_session *session,
 
 static int http1_evict_request(struct flb_http1_server_session *session)
 {
-    uintptr_t session_buffer_upper_bound;
-    uintptr_t session_buffer_lower_bound;
     size_t    session_buffer_length;
     cfl_sds_t session_buffer;
-    size_t    content_length;
     size_t    request_length;
-    uintptr_t request_end;
 
-    request_end = 0;
-    content_length = 0;
     session_buffer = session->parent->incoming_data;
 
     if (session_buffer == NULL) {
@@ -87,46 +81,28 @@ static int http1_evict_request(struct flb_http1_server_session *session)
 
     session_buffer_length = cfl_sds_len(session_buffer);
 
-    if (session->inner_request.data.data != NULL) {
-        content_length = session->inner_request.data.len;
+    request_length = mk_http_parser_request_size(&session->inner_parser,
+                                                 session_buffer,
+                                                 session_buffer_length);
 
-        request_end  = (uintptr_t) session->inner_request.data.data;
-        request_end += content_length;
+    if (request_length == -1 ||
+        request_length > session_buffer_length) {
+        cfl_sds_set_len(session_buffer, 0);
+
+        return -1;
+    }
+
+    if ((session_buffer_length - request_length) > 0) {
+        session_buffer_length -= request_length;
+
+        memmove(session_buffer,
+                &session_buffer[request_length],
+                session_buffer_length);
+
+        session_buffer[session_buffer_length] = '\0';
     }
     else {
-        request_end = (uintptr_t) strstr(session_buffer,
-                                         "\r\n\r\n");
-
-        if(request_end != 0) {
-            request_end += 4;
-        }
-    }
-
-    if (request_end != 0) {
-        session_buffer_lower_bound = (uintptr_t) session_buffer;
-        session_buffer_upper_bound = (uintptr_t) &session_buffer[session_buffer_length];
-
-        if (request_end < session_buffer_lower_bound ||
-            request_end > session_buffer_upper_bound) {
-            return -1;
-        }
-
-        request_length = (size_t) (request_end - session_buffer_lower_bound);
-
-        if (request_length == session_buffer_length) {
-            session_buffer_length = 0;
-        }
-        else {
-            session_buffer_length -= request_length;
-
-            memmove(session_buffer,
-                    &session_buffer[request_length],
-                    session_buffer_length);
-
-            session_buffer[session_buffer_length] = '\0';
-        }
-
-        cfl_sds_set_len(session_buffer, session_buffer_length);
+        cfl_sds_set_len(session_buffer, 0);
     }
 
     return 0;

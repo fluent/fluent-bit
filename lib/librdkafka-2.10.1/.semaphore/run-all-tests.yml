@@ -1,0 +1,77 @@
+version: v1.0
+name: run-all-tests
+
+agent:
+  machine:
+    type: s1-prod-ubuntu24-04-amd64-1
+
+execution_time_limit:
+  hours: 3
+
+global_job_config:
+  prologue:
+    commands:
+      - checkout
+      - '[[ -z "$GIT_REF" ]] || git checkout $GIT_REF'
+      - wget -O rapidjson-dev.deb https://launchpad.net/ubuntu/+archive/primary/+files/rapidjson-dev_1.1.0+dfsg2-3_all.deb
+      - sudo dpkg -i rapidjson-dev.deb
+      - sudo apt update
+      - sudo apt remove -y needrestart
+      - sudo apt install -y valgrind
+      - python3 -m pip install -U pip
+      - python3 -m pip -V
+      - (cd tests && python3 -m pip install -r requirements.txt)
+      - ./configure --install-deps --enable-werror --enable-devel
+      - make -j all
+      - make -j -C tests build
+      - sem-version java 17
+
+blocks:
+  - name: "Run all tests (x86_64)"
+    dependencies: []
+    task:
+      agent:
+        machine:
+          type: s1-prod-ubuntu24-04-amd64-2
+      prologue:
+        commands:
+          - if [[ "$TEST_ARCHES" != *"x86_64"* ]]; then exit 0; fi
+      jobs:
+        - name: "PLAINTEXT cluster (x86_64)"
+          env_vars:
+            - name: TEST_SSL
+              value: "False"
+          commands:
+            - if [[ "$TEST_TYPE" != *"plaintext"* ]]; then exit 0; fi
+            - ./tests/run-all-tests.sh 
+        - name: "SSL cluster (x86_64)"
+          env_vars:
+            - name: TEST_SSL
+              value: "True"
+          commands:
+            - if [[ "$TEST_TYPE" != *"ssl"* ]]; then exit 0; fi
+            - ./tests/run-all-tests.sh
+  - name: "Run all tests (aarch64)"
+    dependencies: []
+    task:
+      agent:
+        machine:
+          type: s1-prod-ubuntu24-04-arm64-2
+      prologue:
+        commands:
+          - if [[ "$TEST_ARCHES" != *"aarch64"* ]]; then exit 0; fi
+      jobs:
+        - name: "PLAINTEXT cluster (aarch64)"
+          env_vars:
+            - name: TEST_SSL
+              value: "False"
+          commands:
+            - if [[ "$TEST_TYPE" != *"plaintext"* ]]; then exit 0; fi
+            - ./tests/run-all-tests.sh
+        - name: "SSL cluster (aarch64)"
+          env_vars:
+            - name: TEST_SSL
+              value: "True"
+          commands:
+            - if [[ "$TEST_TYPE" != *"ssl"* ]]; then exit 0; fi
+            - ./tests/run-all-tests.sh

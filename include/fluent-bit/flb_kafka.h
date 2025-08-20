@@ -35,9 +35,21 @@ struct flb_kafka {
     char *brokers;
 };
 
+struct flb_kafka_opaque {
+    /* generic purpose opaque pointer */
+    void *ptr;
+
+    /* used only by AWS MSK IAM interface*/
+    void *msk_iam_ctx;
+};
+
 rd_kafka_conf_t *flb_kafka_conf_create(struct flb_kafka *kafka,
                                        struct mk_list *properties,
                                        int with_group_id);
 rd_kafka_topic_partition_list_t *flb_kafka_parse_topics(const char *topics_str);
+
+struct flb_kafka_opaque *flb_kafka_opaque_create();
+void flb_kafka_opaque_destroy(struct flb_kafka_opaque *opaque);
+void flb_kafka_opaque_set(struct flb_kafka_opaque *opaque, void *ptr, void *msk_iam_ctx);
 
 #endif

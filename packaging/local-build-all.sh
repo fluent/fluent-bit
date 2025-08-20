@@ -24,9 +24,10 @@ rm -rf "${PACKAGING_OUTPUT_DIR:?}/*"
 
 # Iterate over each target and attempt to build it.
 # Verify that an RPM or DEB is created.
-jq -cr '.linux_targets[]' "$JSON_FILE_NAME" | while read -r DISTRO
+jq -cr '.linux_targets[] | .target' "$JSON_FILE_NAME" | while read -r DISTRO
+
 do
-    echo "$DISTRO"
+    echo "DISTRO: $DISTRO"
     FLB_OUT_DIR="$PACKAGING_OUTPUT_DIR" /bin/bash "$SCRIPT_DIR"/build.sh -d "$DISTRO" "$@"
     if [[ -z $(find "${SCRIPT_DIR}/packages/$DISTRO/$PACKAGING_OUTPUT_DIR/" -type f \( -iname "*-bit-*.rpm" -o -iname "*-bit-*.deb" \) | head -n1) ]]; then
         echo "Unable to find any binary packages in: ${SCRIPT_DIR}/packages/$DISTRO/$PACKAGING_OUTPUT_DIR"

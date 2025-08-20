@@ -34,7 +34,7 @@
 
 static int pack_nullstr(struct winevtlog_config *ctx)
 {
-    flb_log_event_encoder_append_body_cstring(ctx->log_encoder, "");
+    return flb_log_event_encoder_append_body_cstring(ctx->log_encoder, "");
 }
 
 static int pack_wstr(struct winevtlog_config *ctx, const wchar_t *wstr)
@@ -189,17 +189,19 @@ static int pack_systemtime(struct winevtlog_config *ctx, SYSTEMTIME *st)
     CHAR buf[64];
     size_t len = 0;
     _locale_t locale;
-    TIME_ZONE_INFORMATION tzi;
+    DYNAMIC_TIME_ZONE_INFORMATION dtzi;
     SYSTEMTIME st_local;
 
-    GetTimeZoneInformation(&tzi);
+    _tzset();
+
+    GetDynamicTimeZoneInformation(&dtzi);
 
     locale = _get_current_locale();
     if (locale == NULL) {
         return -1;
     }
     if (st != NULL) {
-        SystemTimeToTzSpecificLocalTime(&tzi, st, &st_local);
+        SystemTimeToTzSpecificLocalTimeEx(&dtzi, st, &st_local);
 
         struct tm tm = {st_local.wSecond,
                         st_local.wMinute,
@@ -207,7 +209,7 @@ static int pack_systemtime(struct winevtlog_config *ctx, SYSTEMTIME *st)
                         st_local.wDay,
                         st_local.wMonth-1,
                         st_local.wYear-1900,
-                        st_local.wDayOfWeek, 0, 0};
+                        st_local.wDayOfWeek, 0, -1};
         len = _strftime_l(buf, 64, FORMAT_ISO8601, &tm, locale);
         if (len == 0) {
             flb_errno();
@@ -234,6 +236,8 @@ static int pack_filetime(struct winevtlog_config *ctx, ULONGLONG filetime)
     SYSTEMTIME st;
     _locale_t locale;
 
+    _tzset();
+
     locale = _get_current_locale();
     if (locale == NULL) {
         return -1;
@@ -243,7 +247,7 @@ static int pack_filetime(struct winevtlog_config *ctx, ULONGLONG filetime)
     ft.dwLowDateTime = timestamp.LowPart;
     FileTimeToLocalFileTime(&ft, &ft_local);
     if (FileTimeToSystemTime(&ft_local, &st)) {
-        struct tm tm = {st.wSecond, st.wMinute, st.wHour, st.wDay, st.wMonth-1, st.wYear-1900, st.wDayOfWeek, 0, 0};
+        struct tm tm = {st.wSecond, st.wMinute, st.wHour, st.wDay, st.wMonth-1, st.wYear-1900, st.wDayOfWeek, 0, -1};
         len = _strftime_l(buf, 64, FORMAT_ISO8601, &tm, locale);
         if (len == 0) {
             flb_errno();
@@ -313,6 +317,8 @@ static int pack_sid(struct winevtlog_config *ctx, PSID sid, int extract_sid)
             }
 
             _snprintf_s(formatted, result_len, _TRUNCATE, "%s\\%s", domain, account);
+
+            size = strlen(formatted);
 
             if (size > 0) {
                 flb_log_event_encoder_append_body_cstring(ctx->log_encoder, formatted);

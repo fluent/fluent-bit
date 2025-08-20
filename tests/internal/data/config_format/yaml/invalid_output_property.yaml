@@ -1,0 +1,5 @@
+pipeline:
+  outputs:
+    - name: stdout
+      match: '*'
+      log_level: thisdoesnotexist

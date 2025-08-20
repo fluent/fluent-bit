@@ -22,10 +22,12 @@
 #include <fluent-bit/flb_mem.h>
 #include <fluent-bit/flb_kv.h>
 #include <fluent-bit/flb_utils.h>
+#include <fluent-bit/aws/flb_aws_msk_iam.h>
 
 #include "kafka_config.h"
 #include "kafka_topic.h"
 #include "kafka_callbacks.h"
+
 
 struct flb_out_kafka *flb_out_kafka_create(struct flb_output_instance *ins,
                                            struct flb_config *config)
@@ -37,6 +39,7 @@ struct flb_out_kafka *flb_out_kafka_create(struct flb_output_instance *ins,
     struct mk_list *topics;
     struct flb_split_entry *entry;
     struct flb_out_kafka *ctx;
+    rd_kafka_conf_res_t res;
 
     /* Configuration context */
     ctx = flb_calloc(1, sizeof(struct flb_out_kafka));
@@ -55,16 +58,47 @@ struct flb_out_kafka *flb_out_kafka_create(struct flb_output_instance *ins,
         return NULL;
     }
 
+#ifdef FLB_HAVE_AWS_MSK_IAM
+    /*
+     * When MSK IAM auth is enabled, default the required
+     * security settings so users don't need to specify them.
+     */
+    if (ctx->aws_msk_iam && ctx->aws_msk_iam_cluster_arn) {
+        tmp = flb_output_get_property("rdkafka.security.protocol", ins);
+        if (!tmp) {
+            flb_output_set_property(ins, "rdkafka.security.protocol", "SASL_SSL");
+        }
+
+        tmp = flb_output_get_property("rdkafka.sasl.mechanism", ins);
+        if (!tmp) {
+            flb_output_set_property(ins, "rdkafka.sasl.mechanism", "OAUTHBEARER");
+            ctx->sasl_mechanism = flb_sds_create("OAUTHBEARER");
+        }
+        else {
+            ctx->sasl_mechanism = flb_sds_create(tmp);
+        }
+    }
+    else {
+#endif
+        /* Retrieve SASL mechanism if configured */
+        tmp = flb_output_get_property("rdkafka.sasl.mechanism", ins);
+        if (tmp) {
+            ctx->sasl_mechanism = flb_sds_create(tmp);
+        }
+
+#ifdef FLB_HAVE_AWS_MSK_IAM
+    }
+#endif
+
     /* rdkafka config context */
     ctx->conf = flb_kafka_conf_create(&ctx->kafka, &ins->properties, 0);
     if (!ctx->conf) {
         flb_plg_error(ctx->ins, "error creating context");
+        flb_sds_destroy(ctx->sasl_mechanism);
         flb_free(ctx);
         return NULL;
     }
 
-    /* Set our global opaque data (plugin context*/
-    rd_kafka_conf_set_opaque(ctx->conf, ctx);
 
     /* Callback: message delivery */
     rd_kafka_conf_set_dr_msg_cb(ctx->conf, cb_kafka_msg);
@@ -134,7 +168,7 @@ struct flb_out_kafka *flb_out_kafka_create(struct flb_output_instance *ins,
     ctx->timestamp_format = FLB_JSON_DATE_DOUBLE;
     if (ctx->timestamp_format_str) {
         if (strcasecmp(ctx->timestamp_format_str, "iso8601") == 0) {
-            ctx->timestamp_format = FLB_JSON_DATE_ISO8601;
+        ctx->timestamp_format = FLB_JSON_DATE_ISO8601;
         }
         else if (strcasecmp(ctx->timestamp_format_str, "iso8601_ns") == 0) {
             ctx->timestamp_format = FLB_JSON_DATE_ISO8601_NS;
@@ -163,6 +197,41 @@ struct flb_out_kafka *flb_out_kafka_create(struct flb_output_instance *ins,
     if (tmp) {
         ctx->gelf_fields.level_key = flb_sds_create(tmp);
     }
+
+    /* create and setup opaque context */
+    ctx->opaque = flb_kafka_opaque_create();
+    if (!ctx->opaque) {
+        flb_plg_error(ctx->ins, "failed to create opaque context");
+        flb_out_kafka_destroy(ctx);
+        return NULL;
+    }
+
+    /* store the plugin context so callbacks can log properly */
+    flb_kafka_opaque_set(ctx->opaque, ctx, NULL);
+    rd_kafka_conf_set_opaque(ctx->conf, ctx->opaque);
+
+#ifdef FLB_HAVE_AWS_MSK_IAM
+    if (ctx->aws_msk_iam && ctx->aws_msk_iam_cluster_arn && ctx->sasl_mechanism &&
+        strcasecmp(ctx->sasl_mechanism, "OAUTHBEARER") == 0) {
+
+        ctx->msk_iam = flb_aws_msk_iam_register_oauth_cb(config,
+                                                         ctx->conf,
+                                                         ctx->aws_msk_iam_cluster_arn,
+                                                         ctx->opaque);
+        if (!ctx->msk_iam) {
+            flb_plg_error(ctx->ins, "failed to setup MSK IAM authentication");
+        }
+        else {
+            res = rd_kafka_conf_set(ctx->conf, "sasl.oauthbearer.config",
+                                    "principal=admin", errstr, sizeof(errstr));
+            if (res != RD_KAFKA_CONF_OK) {
+                flb_plg_error(ctx->ins,
+                             "failed to set sasl.oauthbearer.config: %s",
+                             errstr);
+            }
+        }
+    }
+#endif
 
     /* Kafka Producer */
     ctx->kafka.rk = rd_kafka_new(RD_KAFKA_PRODUCER, ctx->conf,
@@ -235,12 +304,8 @@ int flb_out_kafka_destroy(struct flb_out_kafka *ctx)
         rd_kafka_destroy(ctx->kafka.rk);
     }
 
-    if (ctx->topic_key) {
-        flb_free(ctx->topic_key);
-    }
-
-    if (ctx->message_key_field) {
-        flb_free(ctx->message_key_field);
+    if (ctx->opaque) {
+        flb_kafka_opaque_destroy(ctx->opaque);
     }
 
     flb_sds_destroy(ctx->gelf_fields.timestamp_key);
@@ -248,6 +313,14 @@ int flb_out_kafka_destroy(struct flb_out_kafka *ctx)
     flb_sds_destroy(ctx->gelf_fields.short_message_key);
     flb_sds_destroy(ctx->gelf_fields.full_message_key);
     flb_sds_destroy(ctx->gelf_fields.level_key);
+
+#ifdef FLB_HAVE_AWS_MSK_IAM
+    if (ctx->msk_iam) {
+        flb_aws_msk_iam_destroy(ctx->msk_iam);
+    }
+#endif
+
+    flb_sds_destroy(ctx->sasl_mechanism);
 
 #ifdef FLB_HAVE_AVRO_ENCODER
     // avro

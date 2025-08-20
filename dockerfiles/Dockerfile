@@ -13,7 +13,7 @@
 # docker buildx build --platform "linux/amd64,linux/arm64,linux/arm/v7,linux/s390x" -f ./dockerfiles/Dockerfile.multiarch --build-arg FLB_TARBALL=https://github.com/fluent/fluent-bit/archive/v1.8.11.tar.gz ./dockerfiles/
 
 # Set this to the current release version: it gets done so as part of the release.
-ARG RELEASE_VERSION=3.2.3
+ARG RELEASE_VERSION=4.0.5
 
 # For multi-arch builds - assumption is running on an AMD64 host
 FROM multiarch/qemu-user-static:x86_64-arm AS qemu-arm32
@@ -41,11 +41,11 @@ RUN echo "deb http://deb.debian.org/debian bookworm-backports main" >> /etc/apt/
     build-essential \
     curl \
     ca-certificates \
-    cmake \
     git \
     make \
     tar \
     libssl-dev \
+    libcurl4-openssl-dev \
     libsasl2-dev \
     pkg-config \
     libsystemd-dev/bookworm-backports \
@@ -55,6 +55,7 @@ RUN echo "deb http://deb.debian.org/debian bookworm-backports main" >> /etc/apt/
     flex \
     bison \
     libyaml-dev \
+    && apt-get satisfy -y cmake "cmake (<< 4.0)" \
     && apt-get clean \
     && rm -rf /var/lib/apt/lists/*
 
@@ -65,7 +66,17 @@ COPY . ./
 # We split the builder setup out so people can target it or use as a base image without doing a full build.
 FROM builder-base AS builder
 WORKDIR /src/fluent-bit/build/
-RUN cmake -DFLB_RELEASE=On \
+
+# Required to be set to ARMV7 for that target
+ARG WAMR_BUILD_TARGET
+ARG EXTRA_CMAKE_FLAGS
+ENV EXTRA_CMAKE_FLAGS=${EXTRA_CMAKE_FLAGS}
+
+# We do not want word splitting for EXTRA_CMAKE_FLAGS in case multiple are defined
+# hadolint ignore=SC2086
+RUN [ -n "${WAMR_BUILD_TARGET:-}" ] && EXTRA_CMAKE_FLAGS="$EXTRA_CMAKE_FLAGS -DWAMR_BUILD_TARGET=$WAMR_BUILD_TARGET"; \
+    cmake -DFLB_SIMD=On \
+    -DFLB_RELEASE=On \
     -DFLB_JEMALLOC=On \
     -DFLB_TLS=On \
     -DFLB_SHARED_LIB=Off \
@@ -78,7 +89,11 @@ RUN cmake -DFLB_RELEASE=On \
     -DFLB_NIGHTLY_BUILD="$FLB_NIGHTLY_BUILD" \
     -DFLB_LOG_NO_CONTROL_CHARS=On \
     -DFLB_CHUNK_TRACE="$FLB_CHUNK_TRACE" \
+    $EXTRA_CMAKE_FLAGS \
     ..
+
+ARG CFLAGS="-v"
+ENV CFLAGS=${CFLAGS}
 
 RUN make -j "$(getconf _NPROCESSORS_ONLN)"
 RUN install bin/fluent-bit /fluent-bit/bin/
@@ -111,6 +126,12 @@ RUN echo "deb http://deb.debian.org/debian bookworm-backports main" >> /etc/apt/
     apt-get update && \
     apt-get download \
     libssl3 \
+    libcurl4 \
+    libnghttp2-14 \
+    librtmp1 \
+    libssh2-1 \
+    libpsl5 \
+    libbrotli1 \
     libsasl2-2 \
     pkg-config \
     libpq5 \
@@ -212,6 +233,12 @@ RUN echo "deb http://deb.debian.org/debian bookworm-backports main" >> /etc/apt/
     apt-get update && \
     apt-get install -y --no-install-recommends \
     libssl3 \
+    libcurl4 \
+    libnghttp2-14 \
+    librtmp1 \
+    libssh2-1 \
+    libpsl5 \
+    libbrotli1 \
     libsasl2-2 \
     pkg-config \
     libpq5 \
@@ -228,8 +255,9 @@ RUN echo "deb http://deb.debian.org/debian bookworm-backports main" >> /etc/apt/
     net-tools mtr netcat-openbsd bridge-utils iperf ngrep \
     openssl \
     htop atop strace iotop sysstat ncdu logrotate hdparm pciutils psmisc tree pv \
-    cmake make tar flex bison \
+    make tar flex bison \
     libssl-dev libsasl2-dev libsystemd-dev/bookworm-backports zlib1g-dev libpq-dev libyaml-dev postgresql-server-dev-all \
+    && apt-get satisfy -y cmake "cmake (<< 4.0)" \
     && apt-get clean \
     && rm -rf /var/lib/apt/lists/*
 

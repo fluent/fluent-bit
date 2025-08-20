@@ -1,0 +1,1326 @@
+{
+
+  "scopeLogs_missing": {
+    "input": {"resourceLogs": [{}]},
+    "expected_error": {
+      "code":"FLB_OTEL_LOGS_ERR_SCOPELOGS_MISSING"
+    },
+    "log": null
+  },
+
+  "scopeLogs_wrong_type": {
+    "input": {"resourceLogs": [{"scopeLogs": {}}]},
+    "expected_error": {
+      "code": "FLB_OTEL_LOGS_ERR_UNEXPECTED_SCOPELOGS_TYPE"
+    }
+  },
+
+  "empty_logrecords_allowed": {
+    "input": {"resourceLogs": [{"scopeLogs": [{}]}]},
+    "expected": {
+      "empty_payload": true
+    }
+  },
+
+  "logRecords_wrong_type": {
+    "input": {"resourceLogs": [{"scopeLogs": [{"logRecords": {}}]}]},
+    "expected_error": {
+      "code": "FLB_OTEL_LOGS_ERR_UNEXPECTED_LOGRECORDS_TYPE"
+    }
+  },
+
+  "logRecords_entry_wrong_type": {
+    "input": {"resourceLogs": [{"scopeLogs": [{"logRecords": [1]}]}]},
+    "expected_error": {
+      "code": "FLB_OTEL_LOGS_ERR_UNEXPECTED_LOGRECORDS_ENTRY_TYPE"
+    }
+  },
+
+  "missing_timestamp": {
+    "input": {"resourceLogs": [{"scopeLogs": [{"logRecords": [{}]}]}]},
+    "expected_error": {
+      "code": "FLB_OTEL_LOGS_ERR_MISSING_TIMESTAMP"
+    }
+  },
+
+  "unexpected_timestamp_type": {
+    "input": {"resourceLogs": [{"scopeLogs": [{"logRecords": [{"timeUnixNano": {}}]}]}]},
+    "expected_error": {
+      "code": "FLB_OTEL_LOGS_ERR_UNEXPECTED_TIMESTAMP_TYPE"
+    }
+  },
+
+  "unexpected_attributes_type": {
+    "input": {
+      "resourceLogs": [{
+        "scopeLogs": [{
+          "logRecords": [{
+            "timeUnixNano": "1",
+            "attributes": {
+              "http.status_code": "500",
+              "retryable": true
+            },
+            "body": {"stringValue": "test"}
+          }]
+        }]
+      }]
+    },
+    "expected_error": {
+      "code": "FLB_OTEL_LOGS_ERR_UNEXPECTED_ATTRIBUTES_TYPE"
+    }
+  },
+
+  "unexpected_body_type": {
+    "input": {
+      "resourceLogs": [{
+        "scopeLogs": [{
+          "logRecords": [{
+            "timeUnixNano": "1",
+            "body": []
+          }]
+        }]
+      }]
+    },
+    "expected_error": {
+      "code": "FLB_OTEL_LOGS_ERR_UNEXPECTED_BODY_TYPE"
+    }
+  },
+
+  "scope_kvlist_empty_value": {
+    "input": {
+      "resourceLogs": [{
+        "scopeLogs": [{
+          "scope": {
+            "attributes": [{"key": "empty-key"}]
+          },
+          "logRecords": [{
+            "timeUnixNano": "1",
+            "body": {"stringValue": "test"}
+          }]
+        }]
+      }]
+    },
+    "expected": {
+      "group_metadata": {"schema":"otlp","resource_id":0,"scope_id":0},
+      "group_body": {"resource":{}, "scope":{"attributes":{"empty-key":""}}},
+      "log_metadata": {"otlp":{}},
+      "log_body": {"log": "test"}
+    }
+  },
+
+  "scope_kvlist_wrong_value_type": {
+    "input": {
+      "resourceLogs": [{
+        "scopeLogs": [{
+          "scope": {
+            "attributes": [{"key": "empty-key"}]
+          },
+          "logRecords": [{
+            "timeUnixNano": "1",
+            "body": {"stringValue": "test"}
+          }]
+        }]
+      }]
+    },
+    "expected": {
+      "group_metadata": {"schema":"otlp","resource_id":0,"scope_id":0},
+      "group_body": {"resource":{}, "scope":{"attributes":{"empty-key":""}}},
+      "log_metadata": {"otlp":{}},
+      "log_body": {"log": "test"}
+    }
+  },
+
+  "unexpected_root_object_type": {
+    "input": "not_an_object",
+    "expected_error": {
+      "code": "FLB_OTEL_LOGS_ERR_UNEXPECTED_ROOT_OBJECT_TYPE"
+    }
+  },
+
+  "resourceLogs_missing": {
+    "input": {},
+    "expected_error": {
+      "code": "FLB_OTEL_LOGS_ERR_RESOURCELOGS_MISSING"
+    }
+  },
+
+  "resourceLogs_wrong_type": {
+    "input": {"resourceLogs": "not_an_array"},
+    "expected_error": {
+      "code": "FLB_OTEL_LOGS_ERR_UNEXPECTED_RESOURCELOGS_TYPE"
+    }
+  },
+
+  "resourceLogs_entry_wrong_type": {
+    "input": {"resourceLogs": ["not_an_object"]},
+    "expected_error": {
+      "code": "FLB_OTEL_LOGS_ERR_UNEXPECTED_RESOURCELOGS_ENTRY_TYPE"
+    }
+  },
+
+  "empty_resourceLogs": {
+    "input": {"resourceLogs": []},
+    "expected": {
+      "empty_payload": true
+    }
+  },
+
+  "valid_basic_log": {
+    "input": {
+      "resourceLogs": [{
+        "scopeLogs": [{
+          "logRecords": [{
+            "timeUnixNano": "1640995200000000000",
+            "body": {"stringValue": "test log message"}
+          }]
+        }]
+      }]
+    },
+    "expected": {
+      "group_metadata": {"schema":"otlp","resource_id":0,"scope_id":0},
+      "group_body": {"resource":{}},
+      "log_metadata": {"otlp":{}},
+      "log_body": {"log": "test log message"}
+    }
+  },
+
+  "valid_log_with_observed_timestamp": {
+    "input": {
+      "resourceLogs": [{
+        "scopeLogs": [{
+          "logRecords": [{
+            "timeUnixNano": "1640995200000000000",
+            "observedTimeUnixNano": "1640995201000000000",
+            "body": {"stringValue": "test log with observed timestamp"}
+          }]
+        }]
+      }]
+    },
+    "expected": {
+      "group_metadata": {"schema":"otlp","resource_id":0,"scope_id":0},
+      "group_body": {"resource":{}},
+      "log_metadata": {"otlp":{"observed_timestamp":1640995201000000000}},
+      "log_body": {"log": "test log with observed timestamp"}
+    }
+  },
+
+  "valid_log_with_severity": {
+    "input": {
+      "resourceLogs": [{
+        "scopeLogs": [{
+          "logRecords": [{
+            "timeUnixNano": "1640995200000000000",
+            "severityNumber": 9,
+            "severityText": "INFO",
+            "body": {"stringValue": "test log with severity"}
+          }]
+        }]
+      }]
+    },
+    "expected": {
+      "group_metadata": {"schema":"otlp","resource_id":0,"scope_id":0},
+      "group_body": {"resource":{}},
+      "log_metadata": {"otlp":{"severity_number":9,"severity_text":"INFO"}},
+      "log_body": {"log": "test log with severity"}
+    }
+  },
+
+  "valid_log_with_attributes": {
+    "input": {
+      "resourceLogs": [{
+        "scopeLogs": [{
+          "logRecords": [{
+            "timeUnixNano": "1640995200000000000",
+            "attributes": [
+              {"key": "http.status_code", "value": {"intValue": 200}},
+              {"key": "retryable", "value": {"boolValue": false}}
+            ],
+            "body": {"stringValue": "test log with attributes"}
+          }]
+        }]
+      }]
+    },
+    "expected": {
+      "group_metadata": {"schema":"otlp","resource_id":0,"scope_id":0},
+      "group_body": {"resource":{}},
+      "log_metadata": {"otlp":{"attributes":{"http.status_code":200,"retryable":false}}},
+      "log_body": {"log": "test log with attributes"}
+    }
+  },
+
+  "valid_log_with_trace_span": {
+    "input": {
+      "resourceLogs": [{
+        "scopeLogs": [{
+          "logRecords": [{
+            "timeUnixNano": "1640995200000000000",
+            "traceId": "5B8EFFF798038103D269B633813FC60C",
+            "spanId": "EEE19B7EC3C1B174",
+            "body": {"stringValue": "test log with trace and span"}
+          }]
+        }]
+      }]
+    },
+    "expected": {
+      "group_metadata": {"schema":"otlp","resource_id":0,"scope_id":0},
+      "group_body": {"resource":{}},
+      "log_metadata": {"otlp":{"trace_id":"5B8EFFF798038103D269B633813FC60C","span_id":"EEE19B7EC3C1B174"}},
+      "log_body": {"log": "test log with trace and span"}
+    }
+  },
+
+  "valid_log_with_resource": {
+    "input": {
+      "resourceLogs": [{
+        "resource": {
+          "attributes": [
+            {"key": "service.name", "value": {"stringValue": "test-service"}},
+            {"key": "service.version", "value": {"stringValue": "1.0.0"}}
+          ],
+          "droppedAttributesCount": 0
+        },
+        "scopeLogs": [{
+          "logRecords": [{
+            "timeUnixNano": "1640995200000000000",
+            "body": {"stringValue": "test log with resource"}
+          }]
+        }]
+      }]
+    },
+    "expected": {
+      "group_metadata": {"schema":"otlp","resource_id":0,"scope_id":0},
+      "group_body": {"resource":{"attributes":{"service.name":"test-service","service.version":"1.0.0"},"dropped_attributes_count":0}},
+      "log_metadata": {"otlp":{}},
+      "log_body": {"log": "test log with resource"}
+    }
+  },
+
+  "valid_log_with_scope": {
+    "input": {
+      "resourceLogs": [{
+        "scopeLogs": [{
+          "scope": {
+            "name": "test-scope",
+            "version": "1.0.0",
+            "attributes": [
+              {"key": "scope.attr", "value": {"stringValue": "scope-value"}}
+            ]
+          },
+          "logRecords": [{
+            "timeUnixNano": "1640995200000000000",
+            "body": {"stringValue": "test log with scope"}
+          }]
+        }]
+      }]
+    },
+    "expected": {
+      "group_metadata": {"schema":"otlp","resource_id":0,"scope_id":0},
+      "group_body": {"resource":{},"scope":{"name":"test-scope","version":"1.0.0","attributes":{"scope.attr":"scope-value"}}},
+      "log_metadata": {"otlp":{}},
+      "log_body": {"log": "test log with scope"}
+    }
+  },
+
+  "valid_log_with_schema_urls": {
+    "input": {
+      "resourceLogs": [{
+        "resource": {
+          "attributes": [
+            {"key": "service.name", "value": {"stringValue": "test-service"}}
+          ]
+        },
+        "schemaUrl": "https://opentelemetry.io/schemas/1.9.0",
+        "scopeLogs": [{
+          "scope": {
+            "name": "test-scope"
+          },
+          "schemaUrl": "https://opentelemetry.io/schemas/1.9.0",
+          "logRecords": [{
+            "timeUnixNano": "1640995200000000000",
+            "body": {"stringValue": "test log with schema URLs"}
+          }]
+        }]
+      }]
+    },
+    "expected": {
+      "group_metadata": {"schema":"otlp","resource_id":0,"scope_id":0},
+      "group_body": {"resource":{"attributes":{"service.name":"test-service"},"schema_url":"https://opentelemetry.io/schemas/1.9.0"},"scope":{"name":"test-scope","schema_url":"https://opentelemetry.io/schemas/1.9.0"}},
+      "log_metadata": {"otlp":{}},
+      "log_body": {"log": "test log with schema URLs"}
+    }
+  },
+
+  "timestamp_as_integer": {
+    "input": {
+      "resourceLogs": [{
+        "scopeLogs": [{
+          "logRecords": [{
+            "timeUnixNano": 1640995200000000000,
+            "body": {"stringValue": "test log with integer timestamp"}
+          }]
+        }]
+      }]
+    },
+    "expected": {
+      "group_metadata": {"schema":"otlp","resource_id":0,"scope_id":0},
+      "group_body": {"resource":{}},
+      "log_metadata": {"otlp":{}},
+      "log_body": {"log": "test log with integer timestamp"}
+    }
+  },
+
+  "multiple_log_records": {
+    "input": {
+      "resourceLogs": [{
+        "scopeLogs": [{
+          "logRecords": [
+            {
+              "timeUnixNano": "1640995200000000000",
+              "body": {"stringValue": "first log message"}
+            },
+            {
+              "timeUnixNano": "1640995201000000000",
+              "body": {"stringValue": "second log message"}
+            }
+          ]
+        }]
+      }]
+    },
+    "expected": {
+      "group_metadata": {"schema":"otlp","resource_id":0,"scope_id":0},
+      "group_body": {"resource":{}},
+      "log_metadata": {"otlp":{}},
+      "log_body": {"log": "first log message"}
+    }
+  },
+
+  "multiple_scope_logs": {
+    "input": {
+      "resourceLogs": [{
+        "scopeLogs": [
+          {
+            "logRecords": [{
+              "timeUnixNano": "1640995200000000000",
+              "body": {"stringValue": "log from first scope"}
+            }]
+          },
+          {
+            "logRecords": [{
+              "timeUnixNano": "1640995201000000000",
+              "body": {"stringValue": "log from second scope"}
+            }]
+          }
+        ]
+      }]
+    },
+    "expected": {
+      "group_metadata": {"schema":"otlp","resource_id":0,"scope_id":0},
+      "group_body": {"resource":{}},
+      "log_metadata": {"otlp":{}},
+      "log_body": {"log": "log from first scope"}
+    }
+  },
+
+  "multiple_resource_logs": {
+    "input": {
+      "resourceLogs": [
+        {
+          "scopeLogs": [{
+            "logRecords": [{
+              "timeUnixNano": "1640995200000000000",
+              "body": {"stringValue": "log from first resource"}
+            }]
+          }]
+        },
+        {
+          "scopeLogs": [{
+            "logRecords": [{
+              "timeUnixNano": "1640995201000000000",
+              "body": {"stringValue": "log from second resource"}
+            }]
+          }]
+        }
+      ]
+    },
+    "expected": {
+      "group_metadata": {"schema":"otlp","resource_id":0,"scope_id":0},
+      "group_body": {"resource":{}},
+      "log_metadata": {"otlp":{}},
+      "log_body": {"log": "log from first resource"}
+    }
+  },
+
+  "body_with_different_types": {
+    "input": {
+      "resourceLogs": [{
+        "scopeLogs": [{
+          "logRecords": [
+            {
+              "timeUnixNano": "1640995200000000000",
+              "body": {"stringValue": "string body"}
+            },
+            {
+              "timeUnixNano": "1640995201000000000",
+              "body": {"intValue": 42}
+            },
+            {
+              "timeUnixNano": "1640995202000000000",
+              "body": {"doubleValue": 3.14}
+            },
+            {
+              "timeUnixNano": "1640995203000000000",
+              "body": {"boolValue": true}
+            }
+          ]
+        }]
+      }]
+    },
+    "expected": {
+      "group_metadata": {"schema":"otlp","resource_id":0,"scope_id":0},
+      "group_body": {"resource":{}},
+      "log_metadata": {"otlp":{}},
+      "log_body": {"log": "string body"}
+    }
+  },
+
+  "scope_with_malformed_attributes": {
+    "input": {
+      "resourceLogs": [{
+        "scopeLogs": [{
+          "scope": {
+            "attributes": "not_an_array"
+          },
+          "logRecords": [{
+            "timeUnixNano": "1",
+            "body": {"stringValue": "test"}
+          }]
+        }]
+      }]
+    },
+    "expected_error": {
+      "code": "FLB_OTEL_LOGS_ERR_SCOPE_KVLIST"
+    }
+  },
+
+  "resource_with_malformed_attributes": {
+    "input": {
+      "resourceLogs": [{
+        "resource": {
+          "attributes": "not_an_array"
+        },
+        "scopeLogs": [{
+          "logRecords": [{
+            "timeUnixNano": "1",
+            "body": {"stringValue": "test"}
+          }]
+        }]
+      }]
+    },
+    "expected_error": {
+      "code": "FLB_OTEL_LOGS_ERR_UNEXPECTED_ATTRIBUTES_TYPE"
+    }
+  },
+
+  "invalid_trace_id_length": {
+    "input": {
+      "resourceLogs": [{
+        "scopeLogs": [{
+          "logRecords": [{
+            "timeUnixNano": "1640995200000000000",
+            "traceId": "1234567890abcdef",
+            "body": {"stringValue": "test log with invalid trace_id length"}
+          }]
+        }]
+      }]
+    },
+    "expected_error": {
+      "code": "FLB_OTEL_LOGS_ERR_INVALID_TRACE_ID"
+    }
+  },
+
+  "invalid_span_id_length": {
+    "input": {
+      "resourceLogs": [{
+        "scopeLogs": [{
+          "logRecords": [{
+            "timeUnixNano": "1640995200000000000",
+            "spanId": "12345678",
+            "body": {"stringValue": "test log with invalid span_id length"}
+          }]
+        }]
+      }]
+    },
+    "expected_error": {
+      "code": "FLB_OTEL_LOGS_ERR_INVALID_SPAN_ID"
+    }
+  },
+
+  "invalid_trace_id_format": {
+    "input": {
+      "resourceLogs": [{
+        "scopeLogs": [{
+          "logRecords": [{
+            "timeUnixNano": "1640995200000000000",
+            "traceId": "invalid-hex-format-not-32-chars",
+            "body": {"stringValue": "test log with invalid trace_id format"}
+          }]
+        }]
+      }]
+    },
+    "expected_error": {
+      "code": "FLB_OTEL_LOGS_ERR_INVALID_TRACE_ID"
+    }
+  },
+
+  "invalid_span_id_format": {
+    "input": {
+      "resourceLogs": [{
+        "scopeLogs": [{
+          "logRecords": [{
+            "timeUnixNano": "1640995200000000000",
+            "spanId": "invalid-hex",
+            "body": {"stringValue": "test log with invalid span_id format"}
+          }]
+        }]
+      }]
+    },
+    "expected_error": {
+      "code": "FLB_OTEL_LOGS_ERR_INVALID_SPAN_ID"
+    }
+  },
+
+  "base64_encoded_trace_span": {
+    "input": {
+      "resourceLogs": [{
+        "scopeLogs": [{
+          "logRecords": [{
+            "timeUnixNano": "1640995200000000000",
+            "traceId": "xBPVtf6jZXMl/2YzIMf9EA==",
+            "spanId": "d2UbvVzgzpk=",
+            "body": {"stringValue": "test log with base64 encoded trace and span"}
+          }]
+        }]
+      }]
+    },
+    "expected_error": {
+      "code": "FLB_OTEL_LOGS_ERR_INVALID_TRACE_ID"
+    }
+  },
+
+  "mixed_encoding_formats": {
+    "input": {
+      "resourceLogs": [{
+        "scopeLogs": [{
+          "logRecords": [{
+            "timeUnixNano": "1640995200000000000",
+            "traceId": "5B8EFFF798038103D269B633813FC60C",
+            "spanId": "d2UbvVzgzpk=",
+            "body": {"stringValue": "test log with mixed hex and base64 encoding"}
+          }]
+        }]
+      }]
+    },
+    "expected_error": {
+      "code": "FLB_OTEL_LOGS_ERR_INVALID_SPAN_ID"
+    }
+  },
+
+  "multiple_groups_multiple_records": {
+    "input": {
+      "resourceLogs": [
+        {
+          "resource": {
+            "attributes": [
+              {"key": "service.name", "value": {"stringValue": "service-1"}}
+            ]
+          },
+          "scopeLogs": [
+            {
+              "scope": {
+                "name": "scope-1",
+                "version": "1.0.0"
+              },
+              "logRecords": [
+                {
+                  "timeUnixNano": "1640995200000000000",
+                  "body": {"stringValue": "first log from service-1 scope-1"}
+                },
+                {
+                  "timeUnixNano": "1640995201000000000",
+                  "body": {"stringValue": "second log from service-1 scope-1"}
+                }
+              ]
+            },
+            {
+              "scope": {
+                "name": "scope-2",
+                "version": "2.0.0"
+              },
+              "logRecords": [
+                {
+                  "timeUnixNano": "1640995202000000000",
+                  "body": {"stringValue": "first log from service-1 scope-2"}
+                }
+              ]
+            }
+          ]
+        },
+        {
+          "resource": {
+            "attributes": [
+              {"key": "service.name", "value": {"stringValue": "service-2"}}
+            ]
+          },
+          "scopeLogs": [
+            {
+              "scope": {
+                "name": "scope-3",
+                "version": "3.0.0"
+              },
+              "logRecords": [
+                {
+                  "timeUnixNano": "1640995203000000000",
+                  "body": {"stringValue": "first log from service-2 scope-3"}
+                },
+                {
+                  "timeUnixNano": "1640995204000000000",
+                  "body": {"stringValue": "second log from service-2 scope-3"}
+                },
+                {
+                  "timeUnixNano": "1640995205000000000",
+                  "body": {"stringValue": "third log from service-2 scope-3"}
+                }
+              ]
+            }
+          ]
+        }
+      ]
+    },
+    "expected": {
+      "groups": [
+        {
+          "metadata": {"schema":"otlp","resource_id":0,"scope_id":0},
+          "body": {
+            "resource": {
+              "attributes": {"service.name":"service-1"}
+            },
+            "scope": {
+              "name": "scope-1",
+              "version": "1.0.0"
+            }
+          },
+          "records": [
+            {
+              "metadata": {"otlp":{}},
+              "body": {"log": "first log from service-1 scope-1"}
+            },
+            {
+              "metadata": {"otlp":{}},
+              "body": {"log": "second log from service-1 scope-1"}
+            }
+          ]
+        },
+        {
+          "metadata": {"schema":"otlp","resource_id":0,"scope_id":1},
+          "body": {
+            "resource": {
+              "attributes": {"service.name":"service-1"}
+            },
+            "scope": {
+              "name": "scope-2",
+              "version": "2.0.0"
+            }
+          },
+          "records": [
+            {
+              "metadata": {"otlp":{}},
+              "body": {"log": "first log from service-1 scope-2"}
+            }
+          ]
+        },
+        {
+          "metadata": {"schema":"otlp","resource_id":1,"scope_id":0},
+          "body": {
+            "resource": {
+              "attributes": {"service.name":"service-2"}
+            },
+            "scope": {
+              "name": "scope-3",
+              "version": "3.0.0"
+            }
+          },
+          "records": [
+            {
+              "metadata": {"otlp":{}},
+              "body": {"log": "first log from service-2 scope-3"}
+            },
+            {
+              "metadata": {"otlp":{}},
+              "body": {"log": "second log from service-2 scope-3"}
+            },
+            {
+              "metadata": {"otlp":{}},
+              "body": {"log": "third log from service-2 scope-3"}
+            }
+          ]
+        }
+      ]
+    }
+  },
+
+  "multiple_groups_second_group_fails": {
+    "input": {
+      "resourceLogs": [
+        {
+          "resource": {
+            "attributes": [
+              {"key": "service.name", "value": {"stringValue": "service-1"}}
+            ]
+          },
+          "scopeLogs": [{
+            "scope": {
+              "name": "scope-1",
+              "version": "1.0.0"
+            },
+            "logRecords": [
+              {
+                "timeUnixNano": "1640995200000000000",
+                "body": {"stringValue": "valid log from service-1"}
+              }
+            ]
+          }]
+        },
+        {
+          "resource": {
+            "attributes": [
+              {"key": "service.name", "value": {"stringValue": "service-2"}}
+            ]
+          },
+          "scopeLogs": [{
+            "scope": {
+              "attributes": "invalid_attributes_not_array"
+            },
+            "logRecords": [
+              {
+                "timeUnixNano": "1640995201000000000",
+                "body": {"stringValue": "this should not be processed"}
+              }
+            ]
+          }]
+        }
+      ]
+    },
+    "expected_error": {
+      "code": "FLB_OTEL_LOGS_ERR_SCOPE_KVLIST"
+    }
+  },
+
+  "multiple_records_middle_record_fails": {
+    "input": {
+      "resourceLogs": [{
+        "resource": {
+          "attributes": [
+            {"key": "service.name", "value": {"stringValue": "test-service"}}
+          ]
+        },
+        "scopeLogs": [{
+          "scope": {
+            "name": "test-scope",
+            "version": "1.0.0"
+          },
+          "logRecords": [
+            {
+              "timeUnixNano": "1640995200000000000",
+              "body": {"stringValue": "first valid log"}
+            },
+            {
+              "timeUnixNano": "1640995201000000000",
+              "body": {"stringValue": "second valid log"}
+            },
+            {
+              "timeUnixNano": "1640995202000000000",
+              "attributes": "invalid_attributes_not_array",
+              "body": {"stringValue": "this log has invalid attributes"}
+            },
+            {
+              "timeUnixNano": "1640995203000000000",
+              "body": {"stringValue": "fourth log that should not be reached"}
+            }
+          ]
+        }]
+      }]
+    },
+    "expected_error": {
+      "code": "FLB_OTEL_LOGS_ERR_UNEXPECTED_ATTRIBUTES_TYPE"
+    }
+  },
+
+  "complex_nested_structure_deep_failure": {
+    "input": {
+      "resourceLogs": [
+        {
+          "resource": {
+            "attributes": [
+              {"key": "service.name", "value": {"stringValue": "service-1"}},
+              {"key": "service.version", "value": {"stringValue": "1.0.0"}},
+              {"key": "deployment.environment", "value": {"stringValue": "production"}}
+            ],
+            "droppedAttributesCount": 0
+          },
+          "schemaUrl": "https://opentelemetry.io/schemas/1.9.0",
+          "scopeLogs": [
+            {
+              "scope": {
+                "name": "scope-1",
+                "version": "1.0.0",
+                "attributes": [
+                  {"key": "library.name", "value": {"stringValue": "test-lib"}}
+                ]
+              },
+              "schemaUrl": "https://opentelemetry.io/schemas/1.9.0",
+              "logRecords": [
+                {
+                  "timeUnixNano": "1640995200000000000",
+                  "severityNumber": 9,
+                  "severityText": "INFO",
+                  "attributes": [
+                    {"key": "http.method", "value": {"stringValue": "GET"}},
+                    {"key": "http.status_code", "value": {"intValue": 200}}
+                  ],
+                  "traceId": "5B8EFFF798038103D269B633813FC60C",
+                  "spanId": "EEE19B7EC3C1B174",
+                  "body": {"stringValue": "complex valid log"}
+                }
+              ]
+            },
+            {
+              "scope": {
+                "name": "scope-2",
+                "version": "2.0.0",
+                "attributes": [
+                  {"key": "library.name", "value": {"stringValue": "another-lib"}}
+                ]
+              },
+              "logRecords": [
+                {
+                  "timeUnixNano": "invalid_timestamp_type_object",
+                  "body": {"stringValue": "this log has invalid timestamp"}
+                }
+              ]
+            }
+          ]
+        }
+      ]
+    },
+    "expected_error": {
+      "code": "FLB_OTEL_LOGS_ERR_UNEXPECTED_TIMESTAMP_TYPE"
+    }
+  },
+
+  "multiple_scopes_second_scope_fails": {
+    "input": {
+      "resourceLogs": [{
+        "resource": {
+          "attributes": [
+            {"key": "service.name", "value": {"stringValue": "test-service"}},
+            {"key": "service.version", "value": {"stringValue": "1.0.0"}}
+          ],
+          "droppedAttributesCount": 0
+        },
+        "scopeLogs": [
+          {
+            "scope": {
+              "name": "valid-scope",
+              "version": "1.0.0",
+              "attributes": [
+                {"key": "scope.attr", "value": {"stringValue": "valid-value"}}
+              ]
+            },
+            "logRecords": [
+              {
+                "timeUnixNano": "1640995200000000000",
+                "body": {"stringValue": "valid log from first scope"}
+              },
+              {
+                "timeUnixNano": "1640995201000000000",
+                "body": {"stringValue": "another valid log from first scope"}
+              }
+            ]
+          },
+          {
+            "scope": {
+              "name": "invalid-scope",
+              "attributes": [
+                {"key": "incomplete-kv-pair", "value": "wrong value"}
+              ]
+            },
+            "logRecords": [
+              {
+                "timeUnixNano": "1640995202000000000",
+                "body": {"stringValue": "this should not be processed"}
+              }
+            ]
+          }
+        ]
+      }]
+    },
+    "expected_error": {
+      "code": "FLB_OTEL_LOGS_ERR_SCOPE_KVLIST"
+    }
+  },
+
+  "resource_valid_scope_missing": {
+    "input": {
+      "resourceLogs": [{
+        "resource": {
+          "attributes": [
+            {"key": "service.name", "value": {"stringValue": "test-service"}},
+            {"key": "service.version", "value": {"stringValue": "1.0.0"}},
+            {"key": "deployment.environment", "value": {"stringValue": "staging"}}
+          ],
+          "droppedAttributesCount": 0
+        },
+        "schemaUrl": "https://opentelemetry.io/schemas/1.9.0"
+      }]
+    },
+    "expected_error": {
+      "code": "FLB_OTEL_LOGS_ERR_SCOPELOGS_MISSING"
+    }
+  },
+
+  "multiple_records_no_timestamp_after_valid_ones": {
+    "input": {
+      "resourceLogs": [{
+        "resource": {
+          "attributes": [
+            {"key": "service.name", "value": {"stringValue": "test-service"}}
+          ]
+        },
+        "scopeLogs": [{
+          "scope": {
+            "name": "test-scope"
+          },
+          "logRecords": [
+            {
+              "timeUnixNano": "1640995200000000000",
+              "severityNumber": 9,
+              "severityText": "INFO",
+              "attributes": [
+                {"key": "user.id", "value": {"stringValue": "user123"}},
+                {"key": "action", "value": {"stringValue": "login"}}
+              ],
+              "body": {"stringValue": "User login successful"}
+            },
+            {
+              "timeUnixNano": "1640995201000000000",
+              "severityNumber": 5,
+              "severityText": "DEBUG",
+              "body": {"stringValue": "Processing user session"}
+            },
+            {
+              "severityNumber": 13,
+              "severityText": "ERROR",
+              "body": {"stringValue": "This log is missing timestamp"}
+            }
+          ]
+        }]
+      }]
+    },
+    "expected_error": {
+      "code": "FLB_OTEL_LOGS_ERR_MISSING_TIMESTAMP"
+    }
+  },
+
+  "large_structure_fails_at_resource_attributes": {
+    "input": {
+      "resourceLogs": [
+        {
+          "resource": {
+            "attributes": "this_should_be_an_array_not_string",
+            "droppedAttributesCount": 0
+          },
+          "schemaUrl": "https://opentelemetry.io/schemas/1.9.0",
+          "scopeLogs": [
+            {
+              "scope": {
+                "name": "scope-1",
+                "version": "1.0.0",
+                "attributes": [
+                  {"key": "library.name", "value": {"stringValue": "test-lib"}}
+                ]
+              },
+              "logRecords": [
+                {
+                  "timeUnixNano": "1640995200000000000",
+                  "body": {"stringValue": "this log should not be processed"}
+                },
+                {
+                  "timeUnixNano": "1640995201000000000",
+                  "body": {"stringValue": "neither should this one"}
+                }
+              ]
+            },
+            {
+              "scope": {
+                "name": "scope-2",
+                "version": "2.0.0"
+              },
+              "logRecords": [
+                {
+                  "timeUnixNano": "1640995202000000000",
+                  "body": {"stringValue": "or this one"}
+                }
+              ]
+            }
+          ]
+        },
+        {
+          "resource": {
+            "attributes": [
+              {"key": "service.name", "value": {"stringValue": "service-2"}}
+            ]
+          },
+          "scopeLogs": [{
+            "logRecords": [
+              {
+                "timeUnixNano": "1640995203000000000",
+                "body": {"stringValue": "this entire resource should not be reached"}
+              }
+            ]
+          }]
+        }
+      ]
+    },
+    "expected_error": {
+      "code": "FLB_OTEL_LOGS_ERR_UNEXPECTED_ATTRIBUTES_TYPE"
+    }
+  },
+
+  "mixed_valid_invalid_trace_span_ids": {
+    "input": {
+      "resourceLogs": [{
+        "scopeLogs": [{
+          "logRecords": [
+            {
+              "timeUnixNano": "1640995200000000000",
+              "traceId": "5B8EFFF798038103D269B633813FC60C",
+              "spanId": "EEE19B7EC3C1B174",
+              "body": {"stringValue": "valid trace and span IDs"}
+            },
+            {
+              "timeUnixNano": "1640995201000000000",
+              "traceId": "5B8EFFF798038103D269B633813FC60C",
+              "spanId": "EEE19B7EC3C1B174",
+              "attributes": [
+                {"key": "operation", "value": {"stringValue": "database_query"}}
+              ],
+              "body": {"stringValue": "another valid log with trace context"}
+            },
+            {
+              "timeUnixNano": "1640995202000000000",
+              "traceId": "invalid_trace_id_length",
+              "spanId": "EEE19B7EC3C1B174",
+              "body": {"stringValue": "this has invalid trace ID"}
+            }
+          ]
+        }]
+      }]
+    },
+    "expected_error": {
+      "code": "FLB_OTEL_LOGS_ERR_INVALID_TRACE_ID"
+    }
+  },
+
+  "partial_group_processing_body_type_failure": {
+    "input": {
+      "resourceLogs": [
+        {
+          "resource": {
+            "attributes": [
+              {"key": "service.name", "value": {"stringValue": "service-1"}},
+              {"key": "environment", "value": {"stringValue": "production"}}
+            ]
+          },
+          "scopeLogs": [{
+            "scope": {
+              "name": "instrumentation-library",
+              "version": "1.2.3"
+            },
+            "logRecords": [
+              {
+                "timeUnixNano": "1640995200000000000",
+                "severityNumber": 9,
+                "body": {"stringValue": "valid log entry"}
+              },
+              {
+                "timeUnixNano": "1640995201000000000",
+                "body": ["this", "should", "be", "a", "map", "not", "array"]
+              }
+            ]
+          }]
+        }
+      ]
+    },
+    "expected_error": {
+      "code": "FLB_OTEL_LOGS_ERR_UNEXPECTED_BODY_TYPE"
+    }
+  },
+
+  "multiple_resources_first_succeeds_second_fails_logrecords": {
+    "input": {
+      "resourceLogs": [
+        {
+          "resource": {
+            "attributes": [
+              {"key": "service.name", "value": {"stringValue": "valid-service"}}
+            ]
+          },
+          "scopeLogs": [{
+            "logRecords": [
+              {
+                "timeUnixNano": "1640995200000000000",
+                "body": {"stringValue": "valid log from first resource"}
+              }
+            ]
+          }]
+        },
+        {
+          "resource": {
+            "attributes": [
+              {"key": "service.name", "value": {"stringValue": "another-service"}}
+            ]
+          },
+          "scopeLogs": [{
+            "logRecords": "this_should_be_array_not_string"
+          }]
+        }
+      ]
+    },
+    "expected_error": {
+      "code": "FLB_OTEL_LOGS_ERR_UNEXPECTED_LOGRECORDS_TYPE"
+    }
+  },
+
+  "issue_10648_string_with_null_value": {
+    "input": {
+      "resourceLogs": [{
+        "scopeLogs": [{
+          "logRecords": [{
+            "timeUnixNano": "1722904465173450100",
+            "body": {
+              "kvlistValue": {
+                "values": [
+                  {"key": "test_key", "value": {"stringValue": null}},
+                  {"key": "normal_key", "value": {"stringValue": "normal_value"}}
+                ]
+              }
+            }
+          }]
+        }]
+      }]
+    },
+    "expected": {
+      "group_metadata": {"schema":"otlp","resource_id":0,"scope_id":0},
+      "group_body": {"resource":{}},
+      "log_metadata": {"otlp":{}},
+      "log_body": {"test_key": "", "normal_key": "normal_value"}
+    }
+  },
+  "issue_10672_empty_map_as_null": {
+    "input": {
+      "resourceLogs": [{
+        "scopeLogs": [{
+          "logRecords": [{
+            "timeUnixNano": "1722904465173450100",
+            "body": {
+              "kvlistValue": {
+                "values": [
+                  {"key": "empty_map_key", "value": {}},
+                  {"key": "normal_key", "value": {"stringValue": "normal_value"}},
+                  {"key": "missing_value_key"}
+                ]
+              }
+            }
+          }]
+        }]
+      }]
+    },
+    "expected": {
+      "group_metadata": {"schema":"otlp","resource_id":0,"scope_id":0},
+      "group_body": {"resource":{}},
+      "log_metadata": {"otlp":{}},
+      "log_body": {"empty_map_key": null, "normal_key": "normal_value", "missing_value_key": ""}
+    }
+  },
+  "arrayvalue_wrapped_map": {
+    "input": {
+      "resourceLogs": [{
+        "scopeLogs": [{
+          "logRecords": [{
+            "timeUnixNano": "1640995200000000000",
+            "body": {
+              "kvlistValue": {
+                "values": [{
+                  "key": "a",
+                  "value": {
+                    "kvlistValue": {
+                      "values": [{
+                        "key": "d",
+                        "value": {
+                          "arrayValue": {
+                            "values": [{
+                              "kvlistValue": {
+                                "values": [{
+                                  "key": "e",
+                                  "value": {"stringValue": "g"}
+                                }]
+                              }
+                            }]
+                          }
+                        }
+                      }]
+                    }
+                  }
+                }]
+              }
+            }
+          }]
+        }]
+      }]
+    },
+    "expected": {
+      "group_metadata": {"schema":"otlp","resource_id":0,"scope_id":0},
+      "group_body": {"resource":{}},
+      "log_metadata": {"otlp":{}},
+      "log_body": {"a":{"d":[{"e":"g"}]}}
+    }
+  },
+  "unwrapped_plain_map": {
+    "input": {
+      "resourceLogs": [{
+        "scopeLogs": [{
+          "logRecords": [{
+            "timeUnixNano": "1640995200000000000",
+            "body": {
+              "kvlistValue": {
+                "values": [{
+                  "key": "plain",
+                  "value": {
+                    "key1": {"stringValue": "v1"},
+                    "key2": {"intValue": 2}
+                  }
+                }]
+              }
+            }
+          }]
+        }]
+      }]
+    },
+    "expected": {
+      "group_metadata": {"schema":"otlp","resource_id":0,"scope_id":0},
+      "group_body": {"resource":{}},
+      "log_metadata": {"otlp":{}},
+      "log_body": {"plain": {"key1": "v1", "key2": 2}}
+    }
+  }
+}

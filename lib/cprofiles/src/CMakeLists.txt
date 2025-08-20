@@ -13,12 +13,15 @@ set(src
   cprof_sample.c
   cprof_scope_profiles.c
   cprof_decode_opentelemetry.c
+  cprof_encode_opentelemetry.c
   cprof_encode_text.c
+  cprof_encode_msgpack.c
+  cprof_decode_msgpack.c
+  cprof_mpack_utils.c
   )
 
 set(src
   ${src}
-
   )
 
 # Static Library

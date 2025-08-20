@@ -824,7 +824,11 @@ struct flb_http_client *flb_http_client(struct flb_connection *u_conn,
         c->flags |= FLB_HTTP_11;
     }
 
-    add_host_and_content_length(c);
+    ret = add_host_and_content_length(c);
+    if (ret != 0) {
+        flb_http_client_destroy(c);
+        return NULL;
+    }
 
     /* Check proxy data */
     if (proxy) {
@@ -1110,6 +1114,28 @@ int flb_http_set_content_encoding_gzip(struct flb_http_client *c)
                               FLB_HTTP_HEADER_CONTENT_ENCODING,
                               sizeof(FLB_HTTP_HEADER_CONTENT_ENCODING) - 1,
                               "gzip", 4);
+    return ret;
+}
+
+int flb_http_set_content_encoding_zstd(struct flb_http_client *c)
+{
+    int ret;
+
+    ret = flb_http_add_header(c,
+                              FLB_HTTP_HEADER_CONTENT_ENCODING,
+                              sizeof(FLB_HTTP_HEADER_CONTENT_ENCODING) - 1,
+                              "zstd", 4);
+    return ret;
+}
+
+int flb_http_set_content_encoding_snappy(struct flb_http_client *c)
+{
+    int ret;
+
+    ret = flb_http_add_header(c,
+                              FLB_HTTP_HEADER_CONTENT_ENCODING,
+                              sizeof(FLB_HTTP_HEADER_CONTENT_ENCODING) - 1,
+                              "snappy", 6);
     return ret;
 }
 

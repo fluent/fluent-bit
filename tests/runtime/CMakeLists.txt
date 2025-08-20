@@ -25,6 +25,8 @@ endmacro()
 
 # Core
 FLB_RT_CORE_TEST(FLB_COROUTINE_TIMEOUT    "core-timeout.c")
+FLB_RT_CORE_TEST(FLB_INTERNAL_LOGGER      "core_internal_logger.c")
+FLB_RT_CORE_TEST(FLB_DOWNSTREAM_ACCEPT_TIMEOUT "core_accept_timeout.c")
 
 FLB_RT_TEST(FLB_CHUNK_TRACE "core_chunk_trace.c")
 
@@ -57,7 +59,11 @@ if(FLB_OUT_LIB)
   FLB_RT_TEST(FLB_IN_TCP          "in_tcp.c")
   FLB_RT_TEST(FLB_IN_FORWARD       "in_forward.c")
   FLB_RT_TEST(FLB_IN_FLUENTBIT_METRICS "in_fluentbit_metrics.c")
+  FLB_RT_TEST(FLB_IN_PROMETHEUS_TEXTFILE "in_prometheus_textfile.c")
   FLB_RT_TEST(FLB_IN_KUBERNETES_EVENTS "in_kubernetes_events.c")
+  if (FLB_IN_SYSTEMD)
+    FLB_RT_TEST(FLB_IN_SYSTEMD        "in_systemd.c")
+  endif ()
 endif()
 
 if (FLB_CUSTOM_CALYPTIA)
@@ -70,6 +76,7 @@ if (FLB_CUSTOM_CALYPTIA)
         "custom_calyptia_test.c"
         "custom_calyptia_registration_retry_test.c"
         "custom_calyptia_input_test.c"
+        "in_calyptia_fleet_test.c"
     )
 
     foreach(TEST_SOURCE ${CALYPTIA_TESTS})
@@ -79,6 +86,7 @@ if (FLB_CUSTOM_CALYPTIA)
         add_executable(${TEST_TARGET}
             ${TEST_SOURCE}
             "../../plugins/custom_calyptia/calyptia.c"
+            "../../plugins/in_calyptia_fleet/in_calyptia_fleet.c"
         )
 
         target_link_libraries(${TEST_TARGET}
@@ -110,7 +118,7 @@ if(FLB_IN_EBPF)
     # Function to create eBPF handler tests
     function(add_ebpf_handler_test name source_file handler_file)
         set(TEST_TARGET "flb-rt-in_ebpf_${name}_handler")
-        
+
         # Add executable
         add_executable(${TEST_TARGET}
             ${source_file}
@@ -192,8 +200,10 @@ endif()
 if(FLB_IN_LIB)
   FLB_RT_TEST(FLB_OUT_LIB              "core_engine.c")
   FLB_RT_TEST(FLB_OUT_LIB              "core_log.c")
+  FLB_RT_TEST(FLB_OUT_LIB              "core_routes.c")
   FLB_RT_TEST(FLB_OUT_LIB              "config_map_opts.c")
   FLB_RT_TEST(FLB_OUT_COUNTER          "out_counter.c")
+  FLB_RT_TEST(FLB_OUT_AZURE_KUSTO      "out_azure_kusto.c")
   FLB_RT_TEST(FLB_OUT_DATADOG          "out_datadog.c")
   FLB_RT_TEST(FLB_OUT_SKYWALKING       "out_skywalking.c")
   FLB_RT_TEST(FLB_OUT_ES               "out_elasticsearch.c")
@@ -227,11 +237,16 @@ if(FLB_IN_LIB)
   FLB_RT_TEST(FLB_OUT_S3                "out_s3.c")
   FLB_RT_TEST(FLB_OUT_TD                "out_td.c")
   FLB_RT_TEST(FLB_OUT_INFLUXDB          "out_influxdb.c")
+  FLB_RT_TEST(FLB_OUT_CHRONICLE         "out_chronicle.c")
 
 endif()
 
 if (FLB_PROCESSOR_METRICS_SELECTOR)
   FLB_RT_TEST(FLB_PROCESSOR_METRICS_SELECTOR "processor_metrics_selector.c")
+endif()
+
+if (FLB_PROCESSOR_LABELS)
+  FLB_RT_TEST(FLB_PROCESSOR_LABELS "processor_labels.c")
 endif()
 
 if (FLB_PROCESSOR_CONTENT_MODIFIER)

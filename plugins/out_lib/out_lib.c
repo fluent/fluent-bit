@@ -48,12 +48,15 @@ static int configure(struct flb_out_lib_config *ctx,
         }
     }
 
-    tmp = flb_output_get_property("max_records", ins);
-    if (tmp) {
-        ctx->max_records = atoi(tmp);
+    if (strcasecmp(ctx->data_mode_str, "single_record") == 0) {
+        ctx->data_mode = FLB_DATA_MODE_SINGLE_RECORD;
+    }
+    else if (strcasecmp(ctx->data_mode_str, "chunk") == 0) {
+        ctx->data_mode = FLB_DATA_MODE_CHUNK;
     }
     else {
-        ctx->max_records = 0;
+        flb_plg_error(ctx->ins, "Invalid data_mode: %s", ctx->data_mode_str);
+        return -1;
     }
 
     return 0;
@@ -84,6 +87,8 @@ static int out_lib_init(struct flb_output_instance *ins,
         return -1;
     }
     ctx->ins = ins;
+
+    flb_output_config_map_set(ins, (void *) ctx);
 
     if (cb_data) {
         /* Set user callback and data */
@@ -125,6 +130,16 @@ static void out_lib_flush(struct flb_event_chunk *event_chunk,
     (void) i_ins;
     (void) config;
 
+    /*
+     * if the plugin is configured with data_mode = 'chunk', we pass the chunk
+     * as a reference to the callback function.
+     */
+    if (ctx->data_mode == FLB_DATA_MODE_CHUNK) {
+        ctx->cb_func(event_chunk->data, event_chunk->size, ctx->cb_data);
+        FLB_OUTPUT_RETURN(FLB_OK);
+    }
+
+    /* Everything else here is for data_mode = 'single_record' */
     msgpack_unpacked_init(&result);
     while (msgpack_unpack_next(&result,
                                event_chunk->data,
@@ -187,6 +202,7 @@ static void out_lib_flush(struct flb_event_chunk *event_chunk,
             flb_free(buf);
             data_for_user = out_buf;
             data_size = len;
+
 #ifdef FLB_HAVE_METRICS
             }
 #endif
@@ -211,6 +227,30 @@ static int out_lib_exit(void *data, struct flb_config *config)
     return 0;
 }
 
+/* Configuration properties map */
+static struct flb_config_map config_map[] = {
+    {
+     FLB_CONFIG_MAP_STR, "format", NULL,
+     0, FLB_FALSE, 0,
+     "Specifies the data format to be printed. Supported formats are "
+     "'msgpack' or 'json', json_lines and json_stream."
+    },
+
+    {
+     FLB_CONFIG_MAP_INT, "max_records", NULL,
+     0, FLB_TRUE, offsetof(struct flb_out_lib_config, max_records),
+     "Specifies the maximum number of log records to be printed."
+    },
+
+    {
+     FLB_CONFIG_MAP_STR, "data_mode", "single_record",
+     0, FLB_TRUE, offsetof(struct flb_out_lib_config, data_mode_str),
+    },
+
+    /* EOF */
+    {0}
+};
+
 struct flb_output_plugin out_lib_plugin = {
     .name         = "lib",
     .description  = "Library mode Output",
@@ -219,4 +259,5 @@ struct flb_output_plugin out_lib_plugin = {
     .cb_exit      = out_lib_exit,
     .event_type   = FLB_OUTPUT_LOGS | FLB_OUTPUT_METRICS,
     .flags        = 0,
+    .config_map   = config_map
 };

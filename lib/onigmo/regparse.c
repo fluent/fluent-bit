@@ -501,8 +501,10 @@ onig_print_names(FILE* fp, regex_t* reg)
 #  endif /* ONIG_DEBUG */
 
 static int
-i_free_name_entry(UChar* key, NameEntry* e, void* arg ARG_UNUSED)
+i_free_name_entry(st_data_t vkey, st_data_t ve, st_data_t arg_data ARG_UNUSED, int existing ARG_UNUSED)
 {
+  NameEntry* e = (NameEntry*)ve;
+  UChar* key = (UChar*)vkey;
   xfree(e->name);
   if (IS_NOT_NULL(e->back_refs)) xfree(e->back_refs);
   xfree(key);
@@ -558,8 +560,12 @@ typedef struct {
 } INamesArg;
 
 static int
-i_names(UChar* key ARG_UNUSED, NameEntry* e, INamesArg* arg)
+i_names(st_data_t key_data ARG_UNUSED, st_data_t value_data, st_data_t arg_data, int existing ARG_UNUSED)
 {
+  /* Cast back to original types */
+  NameEntry* e = (NameEntry*)value_data;
+  INamesArg* arg = (INamesArg*)arg_data;
+
   int r = (*(arg->func))(e->name,
 			 e->name + e->name_len,
 			 e->back_num,
@@ -585,16 +591,18 @@ onig_foreach_name(regex_t* reg,
     narg.reg  = reg;
     narg.arg  = arg;
     narg.enc  = reg->enc; /* should be pattern encoding. */
-    onig_st_foreach(t, i_names, (HashDataType )&narg);
+    onig_st_foreach(t, i_names, (st_data_t)&narg);
   }
   return narg.ret;
 }
 
 static int
-i_renumber_name(UChar* key ARG_UNUSED, NameEntry* e, GroupNumRemap* map)
+i_renumber_name(st_data_t key_data ARG_UNUSED, st_data_t ve, st_data_t vmap, int existing ARG_UNUSED)
 {
   int i;
 
+  NameEntry* e = (NameEntry*)ve;
+  GroupNumRemap* map = (GroupNumRemap*)vmap;
   if (e->back_num > 1) {
     for (i = 0; i < e->back_num; i++) {
       e->back_refs[i] = map[e->back_refs[i]].new_val;
@@ -613,7 +621,7 @@ onig_renumber_name_table(regex_t* reg, GroupNumRemap* map)
   NameTable* t = (NameTable* )reg->name_table;
 
   if (IS_NOT_NULL(t)) {
-    onig_st_foreach(t, i_renumber_name, (HashDataType )map);
+    onig_st_foreach(t, i_renumber_name, (st_data_t)map);
   }
   return 0;
 }

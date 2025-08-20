@@ -22,6 +22,10 @@
 #include <fluent-bit/flb_error.h>
 #include <fluent-bit/flb_pack.h>
 
+#include <fluent-bit/flb_gzip.h>
+#include <fluent-bit/flb_zstd.h>
+#include <fluent-bit/flb_snappy.h>
+
 #include <monkey/monkey.h>
 #include <monkey/mk_core.h>
 
@@ -125,6 +129,14 @@ static int send_response(struct http_conn *conn, int http_status, char *message)
                        FLB_VERSION_STR,
                        context->success_headers_str);
     }
+    else if (http_status == 413) {
+        flb_sds_printf(&out,
+                       "HTTP/1.1 413 Request Entity Too Large\r\n"
+                       "Server: Fluent Bit v%s\r\n"
+                       "Content-Length: %i\r\n\r\n%s",
+                       FLB_VERSION_STR,
+                       len, message ? message : "");
+    }
     else if (http_status == 400) {
         flb_sds_printf(&out,
                        "HTTP/1.1 400 Bad Request\r\n"
@@ -183,7 +195,7 @@ static flb_sds_t tag_key(struct flb_http *ctx, msgpack_object *map)
                 val = (kv+j)->val;
                 if (val.type == MSGPACK_OBJECT_BIN) {
                     val_str  = (char *) val.via.bin.ptr;
-                    val_str_size = val.via.str.size;
+                    val_str_size = val.via.bin.size;
                     found = FLB_TRUE;
                     break;
                 }
@@ -510,6 +522,226 @@ split_error:
     return ret;
 }
 
+
+/*
+ * We use two backends for HTTP parsing and it depends on the version of the
+ * protocol:
+ *
+ * http/1.x: we use Monkey HTTP parser: struct mk_http_session.parser
+ */
+static int http_header_lookup(int version, void *ptr, char *key,
+                              char **val, size_t *val_len)
+{
+    int key_len;
+
+    /* HTTP/1.1 */
+    struct mk_list *head;
+    struct mk_http_session *session;
+    struct mk_http_request *request_11;
+    struct mk_http_header *header;
+
+    /* HTTP/2.0 */
+    char *value;
+    struct flb_http_request *request_20;
+
+    if (!key) {
+        return -1;
+    }
+
+    key_len = strlen(key);
+    if (key_len <= 0) {
+        return -1;
+    }
+
+    if (version <= HTTP_PROTOCOL_VERSION_11) {
+        if (!ptr) {
+            return -1;
+        }
+
+        request_11 = (struct mk_http_request *) ptr;
+        session = request_11->session;
+        mk_list_foreach(head, &session->parser.header_list) {
+            header = mk_list_entry(head, struct mk_http_header, _head);
+            if (header->key.len == key_len &&
+                strncasecmp(header->key.data, key, key_len) == 0) {
+                *val = header->val.data;
+                *val_len = header->val.len;
+                return 0;
+            }
+        }
+        return -1;
+    }
+    else if (version == HTTP_PROTOCOL_VERSION_20) {
+        request_20 = ptr;
+        if (!request_20) {
+            return -1;
+        }
+
+        value = flb_http_request_get_header(request_20, key);
+        if (!value) {
+            return -1;
+        }
+
+        *val = value;
+        *val_len = strlen(value);
+        return 0;
+    }
+
+    return -1;
+}
+
+
+static \
+int uncompress_zlib(struct flb_http *ctx,
+                    char **output_buffer,
+                    size_t *output_size,
+                    char *input_buffer,
+                    size_t input_size)
+{
+    flb_plg_warn(ctx->ins, "zlib decompression is not supported");
+    return 0;
+}
+
+static \
+int uncompress_zstd(struct flb_http *ctx,
+                    char **output_buffer,
+                    size_t *output_size,
+                    char *input_buffer,
+                    size_t input_size)
+{
+    int ret;
+
+    ret = flb_zstd_uncompress(input_buffer,
+                              input_size,
+                              (void *) output_buffer,
+                              output_size);
+
+    if (ret != 0) {
+        flb_plg_error(ctx->ins, "zstd decompression failed");
+        return -1;
+    }
+
+    return 1;
+}
+
+static \
+int uncompress_deflate(struct flb_http *ctx,
+                       char **output_buffer,
+                       size_t *output_size,
+                       char *input_buffer,
+                       size_t input_size)
+{
+    flb_plg_warn(ctx->ins, "deflate decompression is not supported");
+    return 0;
+}
+
+static \
+int uncompress_snappy(struct flb_http *ctx,
+                      char **output_buffer,
+                      size_t *output_size,
+                      char *input_buffer,
+                      size_t input_size)
+{
+    int ret;
+
+    ret = flb_snappy_uncompress_framed_data(input_buffer,
+                                            input_size,
+                                            output_buffer,
+                                            output_size);
+
+    if (ret != 0) {
+        flb_plg_error(ctx->ins, "snappy decompression failed");
+        return -1;
+    }
+
+    return 1;
+}
+
+static \
+int uncompress_gzip(struct flb_http *ctx,
+                    char **output_buffer,
+                    size_t *output_size,
+                    char *input_buffer,
+                    size_t input_size)
+{
+    int ret;
+
+    ret = flb_gzip_uncompress(input_buffer,
+                              input_size,
+                              (void *) output_buffer,
+                              output_size);
+
+    if (ret == -1) {
+        flb_error("[opentelemetry] gzip decompression failed");
+
+        return -1;
+    }
+
+    return 1;
+}
+
+/* Used for HTTP/1.1 */
+static int http_prot_uncompress(struct flb_http *ctx,
+                                struct mk_http_request *request,
+                                char **output_buffer,
+                                size_t *output_size)
+{
+    int ret = 0;
+    char *body;
+    size_t body_size;
+    char *encoding;
+    size_t encoding_len;
+
+    *output_buffer = NULL;
+    *output_size = 0;
+
+    /* get the Content-Encoding */
+    ret = http_header_lookup(HTTP_PROTOCOL_VERSION_11,
+                             request,
+                             "Content-Encoding",
+                             &encoding, &encoding_len);
+
+    /* FYI: no encoding was found, assume no payload compression */
+    if (ret < 0) {
+        return 0;
+    }
+
+    /* set the payload pointers */
+    body = request->data.data;
+    body_size = request->data.len;
+
+    if (strncasecmp(encoding, "gzip", 4) == 0 && encoding_len == 4) {
+        return uncompress_gzip(ctx,
+                               output_buffer, output_size,
+                               body, body_size);
+    }
+    else if (strncasecmp(encoding, "zlib", 4) == 0 && encoding_len == 4) {
+        return uncompress_zlib(ctx,
+                               output_buffer, output_size,
+                               body, body_size);
+    }
+    else if (strncasecmp(encoding, "zstd", 4) == 0 && encoding_len == 4) {
+        return uncompress_zstd(ctx,
+                               output_buffer, output_size,
+                               body, body_size);
+    }
+    else if (strncasecmp(encoding, "snappy", 6) == 0 && encoding_len == 6) {
+        return uncompress_snappy(ctx,
+                                 output_buffer, output_size,
+                                 body, body_size);
+    }
+    else if (strncasecmp(encoding, "deflate", 7) == 0 && encoding_len == 7) {
+        return uncompress_deflate(ctx,
+                                  output_buffer, output_size,
+                                  body, body_size);
+    }
+    else {
+        return -2;
+    }
+
+    return 0;
+}
+
 static int process_payload(struct flb_http *ctx, struct http_conn *conn,
                            flb_sds_t tag,
                            struct mk_http_session *session,
@@ -522,6 +754,8 @@ static int process_payload(struct flb_http *ctx, struct http_conn *conn,
     char *out_chunked = NULL;
     size_t out_chunked_size;
     struct mk_http_header *header;
+    char *uncompressed_data = NULL;
+    size_t uncompressed_data_size = 0;
 
     header = &session->parser.headers[MK_HEADER_CONTENT_TYPE];
     if (header->key.data == NULL) {
@@ -571,12 +805,29 @@ static int process_payload(struct flb_http *ctx, struct http_conn *conn,
         request->data.len = out_chunked_size;
     }
 
+   /*
+     * HTTP/1.x can have the payload compressed, we try to detect based on the
+     * Content-Encoding header.
+     */
+    ret = http_prot_uncompress(ctx,
+                               request,
+                               &uncompressed_data,
+                               &uncompressed_data_size);
+
+    if (ret > 0) {
+        request->data.data = uncompressed_data;
+        request->data.len = uncompressed_data_size;
+    }
 
     if (type == HTTP_CONTENT_JSON) {
         ret = parse_payload_json(ctx, tag, request->data.data, request->data.len);
     }
     else if (type == HTTP_CONTENT_URLENCODED) {
         ret = parse_payload_urlencoded(ctx, tag, request->data.data, request->data.len);
+    }
+
+    if (uncompressed_data != NULL) {
+        flb_free(uncompressed_data);
     }
 
     if (out_chunked) {
@@ -762,7 +1013,10 @@ static int send_response_ng(struct flb_http_response *response,
         flb_http_response_set_message(response, "No Content");
     }
     else if (http_status == 400) {
-        flb_http_response_set_message(response, "Forbidden");
+        flb_http_response_set_message(response, "Bad Request");
+    }
+    else if (http_status == 413) {
+        flb_http_response_set_message(response, "Payload Too Large");
     }
 
     if (http_status == 200 ||

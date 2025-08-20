@@ -4,6 +4,7 @@ configure_file(
   )
 
 set(UNIT_TESTS_SH
+  custom_calyptia.sh
   in_dummy_expect.sh
   in_tail_expect.sh
   in_http_tls_expect.sh
@@ -12,6 +13,8 @@ set(UNIT_TESTS_SH
   in_syslog_udp_plaintext_expect.sh
   in_syslog_uds_dgram_plaintext_expect.sh
   in_syslog_uds_stream_plaintext_expect.sh
+  processor_conditional.sh
+  processor_invalid.sh
   )
 
 # Prepare list of unit tests

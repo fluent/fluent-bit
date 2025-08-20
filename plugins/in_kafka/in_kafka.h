@@ -26,12 +26,14 @@
 #include <fluent-bit/flb_input_thread.h>
 #include <fluent-bit/flb_kafka.h>
 #include <fluent-bit/flb_log_event_encoder.h>
+#include <fluent-bit/aws/flb_aws_msk_iam.h>
 
 
 #define FLB_IN_KAFKA_DEFAULT_POLL_MS       "500"
 #define FLB_IN_KAFKA_DEFAULT_FORMAT        "none"
 #define FLB_IN_KAFKA_UNLIMITED             (size_t)-1
 #define FLB_IN_KAFKA_BUFFER_MAX_SIZE       "4M"
+#define FLB_IN_KAFKA_ENABLE_AUTO_COMMIT    "false"
 
 enum {
     FLB_IN_KAFKA_FORMAT_NONE,
@@ -48,6 +50,18 @@ struct flb_in_kafka_config {
     int coll_fd;
     size_t buffer_max_size;          /* Maximum size of chunk allocation */
     size_t polling_threshold;
+    int poll_timeout_ms;
+    bool enable_auto_commit;
+    struct flb_kafka_opaque *opaque;
+
+#ifdef FLB_HAVE_AWS_MSK_IAM
+    flb_sds_t aws_msk_iam_cluster_arn;
+    struct flb_aws_msk_iam *msk_iam;
+#endif
+
+    /* SASL mechanism configured in rdkafka.sasl.mechanism */
+    int aws_msk_iam;
+    flb_sds_t sasl_mechanism;
 };
 
 #endif

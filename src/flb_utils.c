@@ -496,7 +496,7 @@ int flb_utils_timer_consume(flb_pipefd_t fd)
 
     ret = flb_pipe_r(fd, &val, sizeof(val));
     if (ret == -1) {
-        flb_errno();
+        flb_pipe_error();
         return -1;
     }
 
@@ -517,7 +517,7 @@ int flb_utils_pipe_byte_consume(flb_pipefd_t fd)
 
     ret = flb_pipe_r(fd, &val, sizeof(val));
     if (ret == -1) {
-        flb_errno();
+        flb_pipe_error();
         return -1;
     }
 
@@ -788,18 +788,24 @@ static const struct escape_seq json_escape_table[128] = {
  * to escape special characters and convert utf-8 byte characters to string
  * representation.
  */
-
 int flb_utils_write_str(char *buf, int *off, size_t size, const char *str, size_t str_len)
 {
     int i, b, ret, len, hex_bytes, utf_sequence_length, utf_sequence_number;
+    int processed_bytes = 0;
     int is_valid, copypos = 0, vlen;
-    uint32_t codepoint, state = 0;
-    char tmp[16];
-    size_t available;
     uint32_t c;
-    char *p;
+    uint32_t codepoint = 0;
+    uint32_t state = 0;
+    size_t available;
     uint8_t *s;
     off_t offset = 0;
+    char tmp[16];
+    char *p;
+    const size_t inst_len = FLB_SIMD_VEC8_INST_LEN;
+
+    /* to encode codepoints > 0xFFFF */
+    uint16_t high;
+    uint16_t low;
 
     available = size - *off;
 
@@ -811,10 +817,10 @@ int flb_utils_write_str(char *buf, int *off, size_t size, const char *str, size_
     p = buf + *off;
 
     /* align length to the nearest multiple of the vector size for safe SIMD processing */
-    vlen = str_len & ~(sizeof(flb_vector8) - 1);
+    vlen = str_len & ~(inst_len - 1);
     for (i = 0;;) {
         /* SIMD optimization: Process chunk of input string */
-        for (; i < vlen; i += sizeof(flb_vector8)) {
+        for (; i < vlen; i += inst_len) {
             flb_vector8 chunk;
             flb_vector8_load(&chunk, (const uint8_t *)&str[i]);
 
@@ -824,9 +830,11 @@ int flb_utils_write_str(char *buf, int *off, size_t size, const char *str, size_
              * in a char-by-char basis. Otherwise the do a bulk copy
              */
             if (flb_vector8_has_le(chunk, (unsigned char) 0x1F) ||
-                flb_vector8_has(chunk, (unsigned char)    '"') ||
-                flb_vector8_has(chunk, (unsigned char)    '\\')) {
+                flb_vector8_has(chunk, (unsigned char) '"')    ||
+                flb_vector8_has(chunk, (unsigned char) '\\')  ||
+                flb_vector8_is_highbit_set(chunk)) {
                 break;
+
             }
         }
 
@@ -846,7 +854,7 @@ int flb_utils_write_str(char *buf, int *off, size_t size, const char *str, size_
         }
 
         /* Process remaining characters one by one */
-        for (b = 0; b < sizeof(flb_vector8); b++) {
+        for (b = 0; b < inst_len; b++) {
             if (i >= str_len) {
                 /* all characters has been processed */
                 goto done;
@@ -906,31 +914,40 @@ int flb_utils_write_str(char *buf, int *off, size_t size, const char *str, size_
                 /* decode UTF-8 sequence */
                 state = FLB_UTF8_ACCEPT;
                 codepoint = 0;
+                processed_bytes = 0;
 
                 for (b = 0; b < hex_bytes; b++) {
                     s = (unsigned char *) &str[i + b];
                     ret = flb_utf8_decode(&state, &codepoint, *s);
-                    if (ret == 0) {
+                    processed_bytes++;
+
+                    if (ret == FLB_UTF8_ACCEPT) {
+                        /* check if all required bytes for the sequence are processed */
+                        if (processed_bytes == hex_bytes) {
+                            break;
+                        }
+                    }
+                    else if (ret == FLB_UTF8_REJECT) {
+                        flb_warn("[pack] Invalid UTF-8 bytes found, skipping.");
                         break;
                     }
                 }
 
-                if (state != FLB_UTF8_ACCEPT) {
-                    flb_warn("[pack] Invalid UTF-8 bytes found, skipping.");
-                }
-                else {
-
+                if (state == FLB_UTF8_ACCEPT) {
                     len = snprintf(tmp, sizeof(tmp), "\\u%.4x", codepoint);
                     if (available < len) {
-                        return FLB_FALSE;  // Not enough space
+                        return FLB_FALSE;
                     }
                     memcpy(p, tmp, len);
                     p += len;
                     offset += len;
                     available -= len;
                 }
+                else {
+                    flb_warn("[pack] Invalid UTF-8 bytes found, skipping.");
+                }
 
-                i += hex_bytes;
+                i += processed_bytes;
             }
             /* Handle sequences beyond 0xFFFF */
             else if (c > 0xFFFF) {
@@ -942,26 +959,27 @@ int flb_utils_write_str(char *buf, int *off, size_t size, const char *str, size_
                     break;
                 }
 
+                state = FLB_UTF8_ACCEPT;
+                codepoint = 0;
                 is_valid = FLB_TRUE;
+
+                /* Decode the sequence */
                 for (utf_sequence_number = 0; utf_sequence_number < utf_sequence_length; utf_sequence_number++) {
-                    /* Leading characters must start with bits 11 */
-                    if (utf_sequence_number == 0 && ((str[i] & 0xC0) != 0xC0)) {
-                        /* Invalid unicode character. replace */
-                        flb_debug("[pack] unexpected UTF-8 leading byte, "
-                                  "substituting character with replacement character");
-                        tmp[utf_sequence_number] = str[i];
-                        i++; /* Consume invalid leading byte */
-                        utf_sequence_length = utf_sequence_number + 1;
-                        is_valid = FLB_FALSE;
-                        break;
-                    }
-                    /* Trailing characters must start with bits 10 */
-                    else if (utf_sequence_number > 0 && ((str[i] & 0xC0) != 0x80)) {
-                        /* Invalid unicode character. replace */
-                        flb_debug("[pack] unexpected UTF-8 continuation byte, "
-                                "substituting character with replacement character");
-                        /* This byte, i, is the start of the next unicode character */
-                        utf_sequence_length = utf_sequence_number;
+                    ret = flb_utf8_decode(&state, &codepoint, (uint8_t) str[i]);
+
+                    if (ret == FLB_UTF8_REJECT) {
+                        /* Handle invalid leading byte */
+                        if (utf_sequence_number == 0) {
+                            flb_debug("[pack] unexpected UTF-8 leading byte, substituting character");
+                            tmp[utf_sequence_number] = str[i];
+                            utf_sequence_length = utf_sequence_number + 1; /* Process only this invalid byte */
+                            i++; /* Consume invalid byte */
+                        }
+                        /* Handle invalid continuation byte */
+                        else {
+                            flb_debug("[pack] unexpected UTF-8 continuation byte, substituting character");
+                            utf_sequence_length = utf_sequence_number; /* Adjust length */
+                        }
                         is_valid = FLB_FALSE;
                         break;
                     }
@@ -974,13 +992,29 @@ int flb_utils_write_str(char *buf, int *off, size_t size, const char *str, size_
 
                 if (is_valid) {
                     if (available < utf_sequence_length) {
-                        return FLB_FALSE;  // Not enough space
+                        /* not enough space */
+                        return FLB_FALSE;
                     }
 
-                    encoded_to_buf(p, tmp, utf_sequence_length);
-                    p += utf_sequence_length;
-                    offset += utf_sequence_length;
-                    available -= utf_sequence_length;
+                    /* Handle codepoints beyond BMP (requires surrogate pairs in UTF-16) */
+                    if (codepoint > 0xFFFF) {
+                        high = 0xD800 + ((codepoint - 0x10000) >> 10);
+                        low = 0xDC00 + ((codepoint - 0x10000) & 0x3FF);
+
+                        len = snprintf(tmp, sizeof(tmp), "\\u%.4x\\u%.4x", high, low);
+                    }
+                    else {
+                        len = snprintf(tmp, sizeof(tmp), "\\u%.4x", codepoint);
+                    }
+
+                    if (available < len) {
+                        /* not enough space */
+                        return FLB_FALSE;
+                    }
+                    memcpy(p, tmp, len);
+                    p += len;
+                    offset += len;
+                    available -= len;
                 }
                 else {
                     if (available < utf_sequence_length * 3) {
@@ -1037,8 +1071,9 @@ int flb_utils_write_str(char *buf, int *off, size_t size, const char *str, size_
                         available -= 3;
                     }
                 }
+
             }
-            else {
+             else {
                 if (available < 1) {
                     /*  no space for a single byte */
                     return FLB_FALSE;
@@ -1103,13 +1138,27 @@ int flb_utils_write_str_buf(const char *str, size_t str_len, char **out, size_t 
 static char *flb_copy_host(const char *string, int pos_init, int pos_end)
 {
     if (string[pos_init] == '[') {            /* IPv6 */
-        if (string[pos_end-1] != ']')
+        if (string[pos_end-1] != ']') {
             return NULL;
-
+        }
         return mk_string_copy_substr(string, pos_init + 1, pos_end - 1);
     }
-    else
+    else {
         return mk_string_copy_substr(string, pos_init, pos_end);
+    }
+}
+
+static char *flb_utils_copy_host_sds(const char *string, int pos_init, int pos_end)
+{
+    if (string[pos_init] == '[') {            /* IPv6 */
+        if (string[pos_end-1] != ']') {
+            return NULL;
+        }
+        return flb_sds_create_len(string + pos_init + 1, pos_end - 1);
+    }
+    else {
+        return flb_sds_create_len(string + pos_init, pos_end);
+    }
 }
 
 int flb_utils_url_split(const char *in_url, char **out_protocol,
@@ -1202,6 +1251,135 @@ int flb_utils_url_split(const char *in_url, char **out_protocol,
  error:
     if (protocol) {
         flb_free(protocol);
+    }
+
+    return -1;
+}
+
+int flb_utils_url_split_sds(const flb_sds_t in_url, flb_sds_t *out_protocol,
+                            flb_sds_t *out_host, flb_sds_t *out_port, flb_sds_t *out_uri)
+{
+    int i;
+    flb_sds_t protocol = NULL;
+    flb_sds_t host = NULL;
+    flb_sds_t port = NULL;
+    flb_sds_t uri = NULL;
+    char *p = NULL;
+    char *tmp = NULL;
+    char *sep = NULL;
+
+    /* Protocol */
+    p = strstr(in_url, "://");
+    if (!p) {
+        return -1;
+    }
+    if (p == in_url) {
+        return -1;
+    }
+
+    protocol = flb_sds_create_len(in_url, p - in_url);
+    if (!protocol) {
+        flb_errno();
+        return -1;
+    }
+
+    /* Advance position after protocol */
+    p += 3;
+
+    /* Check for first '/' */
+    sep = strchr(p, '/');
+    tmp = strchr(p, ':');
+
+    /* Validate port separator is found before the first slash */
+    if (sep && tmp) {
+        if (tmp > sep) {
+            tmp = NULL;
+        }
+    }
+
+    if (tmp) {
+        host = flb_utils_copy_host_sds(p, 0, tmp - p);
+        if (!host) {
+            flb_errno();
+            goto error;
+        }
+        p = tmp + 1;
+
+        /* Look for an optional URI */
+        tmp = strchr(p, '/');
+        if (tmp) {
+            port = flb_sds_create_len(p, tmp - p);
+            uri = flb_sds_create(tmp);
+        }
+        else {
+            port = flb_sds_create_len(p, strlen(p));
+            uri = flb_sds_create("/");
+        }
+    }
+    else {
+        tmp = strchr(p, '/');
+        if (tmp) {
+            host = flb_utils_copy_host_sds(p, 0, tmp - p);
+            uri = flb_sds_create(tmp);
+        }
+        else {
+            host = flb_utils_copy_host_sds(p, 0, strlen(p));
+            uri = flb_sds_create("/");
+        }
+    }
+
+    if (!port) {
+        if (strcmp(protocol, "http") == 0) {
+            port = flb_sds_create("80");
+        }
+        else if (strcmp(protocol, "https") == 0) {
+            port = flb_sds_create("443");
+        }
+    }
+
+    if (!host) {
+        flb_errno();
+        goto error;
+    }
+
+    if (!port) {
+        flb_errno();
+        goto error;
+    }
+    else {
+        /* check that port is a number */
+        for (i = 0; i < flb_sds_len(port); i++) {
+            if (!isdigit(port[i])) {
+                goto error;
+            }
+        }
+
+    }
+
+    if (!uri) {
+        flb_errno();
+        goto error;
+    }
+
+    *out_protocol = protocol;
+    *out_host = host;
+    *out_port = port;
+    *out_uri = uri;
+
+    return 0;
+
+ error:
+    if (protocol) {
+        flb_sds_destroy(protocol);
+    }
+    if (host) {
+        flb_sds_destroy(host);
+    }
+    if (port) {
+        flb_sds_destroy(port);
+    }
+    if (uri) {
+        flb_sds_destroy(uri);
     }
 
     return -1;
@@ -1481,6 +1659,7 @@ int flb_utils_get_machine_id(char **out_id, size_t *out_size)
     char *id;
     size_t bytes;
     char *uuid;
+    int fallback = FLB_FALSE;
 
 #ifdef __linux__
     char *dbus_var = "/var/lib/dbus/machine-id";
@@ -1490,6 +1669,11 @@ int flb_utils_get_machine_id(char **out_id, size_t *out_size)
     if (access(dbus_var, F_OK) == 0) { /* check if the file exists first */
         ret = machine_id_read_and_sanitize(dbus_var, &id, &bytes);
         if (ret == 0) {
+            if (bytes == 0) {
+                /* guid is somewhat corrupted */
+                fallback = FLB_TRUE;
+                goto fallback;
+            }
             *out_id = id;
             *out_size = bytes;
             return 0;
@@ -1500,6 +1684,11 @@ int flb_utils_get_machine_id(char **out_id, size_t *out_size)
     if (access(dbus_etc, F_OK) == 0) { /* check if the file exists first */
         ret = machine_id_read_and_sanitize(dbus_etc, &id, &bytes);
         if (ret == 0) {
+            if (bytes == 0) {
+                /* guid is somewhat corrupted */
+                fallback = FLB_TRUE;
+                goto fallback;
+            }
             *out_id = id;
             *out_size = bytes;
             return 0;
@@ -1595,6 +1784,8 @@ int flb_utils_get_machine_id(char **out_id, size_t *out_size)
     }
 #endif
 
+fallback:
+
     flb_warn("falling back on random machine UUID");
 
     /* generate a random uuid */
@@ -1607,6 +1798,9 @@ int flb_utils_get_machine_id(char **out_id, size_t *out_size)
     if (ret == 0) {
         *out_id = uuid;
         *out_size = strlen(uuid);
+        if (fallback == FLB_TRUE) {
+            return 2;
+        }
         return 0;
     }
 

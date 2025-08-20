@@ -1,11 +1,11 @@
-cmake_minimum_required(VERSION 3.0)
+cmake_minimum_required(VERSION 3.20)
 project(cprofiles C)
 set(CMAKE_POSITION_INDEPENDENT_CODE ON)
 set(CMAKE_EXPORT_COMPILE_COMMANDS ON)
 
 # CMetrics Version
 set(CPROF_VERSION_MAJOR  0)
-set(CPROF_VERSION_MINOR  0)
+set(CPROF_VERSION_MINOR  1)
 set(CPROF_VERSION_PATCH  1)
 set(CPROF_VERSION_STR "${CPROF_VERSION_MAJOR}.${CPROF_VERSION_MINOR}.${CPROF_VERSION_PATCH}")
 
@@ -55,14 +55,6 @@ endif()
 # Bundled libraries
 include(cmake/libraries.cmake)
 include(cmake/headers.cmake)
-
-set(CMAKE_MODULE_PATH "${PROJECT_SOURCE_DIR}/cmake/sanitizers-cmake/cmake" ${CMAKE_MODULE_PATH})
-find_package(Sanitizers)
-
-if(SANITIZE_ADDRESS)
-  CPROF_DEFINITION(CPROF_HAVE_SANITIZE_ADDRESS)
-endif()
-
 
 # Include headers and dependency headers
 include_directories(
@@ -146,13 +138,15 @@ endif()
 # Configure header files
 configure_file(
   "${PROJECT_SOURCE_DIR}/include/cprofiles/cprof_info.h.in"
-  "${PROJECT_SOURCE_DIR}/include/cprofiles/cprof_info.h"
+  "${PROJECT_BINARY_DIR}/include/cprofiles/cprof_info.h"
   )
 
 configure_file(
   "${PROJECT_SOURCE_DIR}/include/cprofiles/cprof_version.h.in"
-  "${PROJECT_SOURCE_DIR}/include/cprofiles/cprof_version.h"
+  "${PROJECT_BINARY_DIR}/include/cprofiles/cprof_version.h"
   )
+
+include_directories("${PROJECT_BINARY_DIR}/include/")
 
 # Installation Directories
 # ========================
@@ -223,7 +217,7 @@ endif()
 # fluent-otel-proto
 if (NOT CPROF_HAVE_FLUENT_OTEL_PROTO)
   include_directories(${CMAKE_CURRENT_SOURCE_DIR}/${CPROF_PATH_LIB_FLUENT_OTEL_PROTO}/include)
-  CPROF_OPTION(FLUENT_PROTO_METRICS   "on")
+  CPROF_OPTION(FLUENT_PROTO_PROFILES "on")
   CPROF_OPTION(FLUENT_PROTO_EXAMPLES "off")
   add_subdirectory(lib/fluent-otel-proto)
   CPROF_DEFINITION(CPROF_HAVE_FLUENT_OTEL_PROTO)
@@ -353,7 +347,6 @@ if(CPROF_SYSTEM_MACOS)
 
   if (CPACK_GENERATOR MATCHES "productbuild")
     set(CPACK_SET_DESTDIR "ON")
-    configure_file(cpack/macos/welcome.txt.cmakein ${CMAKE_CURRENT_SOURCE_DIR}/welcome.txt)
     configure_file(LICENSE ${CMAKE_CURRENT_SOURCE_DIR}/LICENSE.txt)
     find_program(CONVERTER textutil)
     if (NOT CONVERTER)
@@ -363,7 +356,6 @@ if(CPROF_SYSTEM_MACOS)
       execute_process(COMMAND ${CONVERTER} -convert html "${CMAKE_CURRENT_SOURCE_DIR}/README.md" -output "${CMAKE_CURRENT_SOURCE_DIR}/README.html")
     endif()
     set(CPACK_PACKAGE_FILE_NAME "${CMETRICS_PKG}")
-    set(CPACK_RESOURCE_FILE_WELCOME ${CMAKE_CURRENT_SOURCE_DIR}/welcome.txt)
     set(CPACK_RESOURCE_FILE_LICENSE ${CMAKE_CURRENT_SOURCE_DIR}/LICENSE.txt)
     set(CPACK_RESOURCE_FILE_README ${CMAKE_CURRENT_SOURCE_DIR}/README.html)
     set(CPACK_PRODUCTBUILD_IDENTIFIER "com.calyptia.${CPACK_PACKAGE_NAME}")
@@ -371,6 +363,6 @@ if(CPROF_SYSTEM_MACOS)
 endif()
 
 # Create tarball
-# add_custom_target(tarball COMMAND "bash" "${CMAKE_CURRENT_SOURCE_DIR}/create-submoduled-tarball.sh" "cprofiles-${CPROF_VERSION_STR}")
+add_custom_target(cprofiles_tarball COMMAND "bash" "${CMAKE_CURRENT_SOURCE_DIR}/create-submoduled-tarball.sh" "cprofiles-${CPROF_VERSION_STR}")
 
 include(CPack)
