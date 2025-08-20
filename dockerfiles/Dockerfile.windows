@@ -11,19 +11,25 @@
 # - dockerfiles/Dockerfile.windows
 #
 
-ARG WINDOWS_VERSION=ltsc2019
+ARG WINDOWS_VERSION=ltsc2025
 
 # Builder Image - Windows Server Core
 FROM mcr.microsoft.com/windows/servercore:$WINDOWS_VERSION AS builder-base
 
 SHELL ["powershell", "-Command", "$ErrorActionPreference = 'Stop'; $ProgressPreference = 'SilentlyContinue';"]
 
+# Clean up any existing temp files and create fresh temp directory
+RUN Remove-Item -Path $env:TEMP\* -Recurse -Force -ErrorAction SilentlyContinue; `
+    Remove-Item -Path C:\Windows\Temp\* -Recurse -Force -ErrorAction SilentlyContinue; `
+    New-Item -ItemType Directory -Path $env:TEMP -Force -ErrorAction SilentlyContinue;
+
 # Install Visual Studio Build Tools 2019 (MSVS_VERSION=16) / 2022 (MSVS_VERSION=17, requires WINDOWS_VERSION=ltsc2022)
 WORKDIR /local
-ARG MSVS_VERSION="16"
+ARG MSVS_VERSION="17"
 ENV MSVS_BUILD_TOOLS_VERSION="$MSVS_VERSION" `
     MSVS_BUILD_TOOLS_DOWNLOAD_URL="https://aka.ms/vs" `
     MSVS_HOME="C:\BuildTools"
+
 RUN $msvs_build_tools_dist_name=\"vs_buildtools.exe\"; `
     $msvs_build_tools_dist=\"${env:TMP}\${msvs_build_tools_dist_name}\"; `
     $msvs_build_tools_channel=\"C:\local\VisualStudio.chman\"; `
@@ -42,8 +48,8 @@ RUN $msvs_build_tools_dist_name=\"vs_buildtools.exe\"; `
       \"--installChannelUri ${msvs_build_tools_channel}\", `
       '--add Microsoft.VisualStudio.Workload.VCTools', `
       '--includeRecommended'  -NoNewWindow -Wait; `
-    Remove-Item -Force \"${msvs_build_tools_dist}\";
-
+    Remove-Item -Force \"${msvs_build_tools_dist}\"; `
+    Remove-Item -Path \"${msvs_build_tools_channel}\" -Force;
 
 ENV CMAKE_HOME="C:\cmake"
 ARG CMAKE_VERSION="3.31.6"
@@ -98,7 +104,7 @@ RUN $win_flex_bison_dist_base_name=\"win_flex_bison-${env:WIN_FLEX_BISON_VERSION
     Write-Host \"Copying...\"; `
     Write-Host \"${env:WIN_FLEX_BISON_HOME}\win_flex.exe -> ${env:WIN_FLEX_BISON_HOME}\flex.exe\"; `
     Copy-Item -Path \"${env:WIN_FLEX_BISON_HOME}\win_flex.exe\" \"${env:WIN_FLEX_BISON_HOME}\flex.exe\"; `
-    $env:PATH=\"${env:PATH}${env:WIN_FLEX_BISON_HOME}\"; `
+    $env:PATH=\"${env:PATH};${env:WIN_FLEX_BISON_HOME}\"; `
     Write-Host \"Setting PATH...\"; `
     Write-Host \"${env:PATH}\"; `
     [Environment]::SetEnvironmentVariable(\"PATH\", \"${env:PATH}\", [EnvironmentVariableTarget]::Machine);
@@ -127,7 +133,7 @@ RUN $vcpkg_dist_base_name=\"vcpkg-${env:VCPKG_VERSION}\"; `
     Write-Host \"Moving vcpkg...\"; `
     Write-Host \"${vcpkg_temp_dir} -> ${vcpkg_home_dir}\"; `
     [System.IO.Directory]::Move(\"${vcpkg_temp_dir}\", \"${vcpkg_home_dir}\"); `
-    $env:PATH=\"${env:PATH}${vcpkg_home_dir}\"; `
+    $env:PATH=\"${env:PATH};${vcpkg_home_dir}\"; `
     Write-Host \"Setting PATH...\"; `
     Write-Host \"${env:PATH}\"; `
     [Environment]::SetEnvironmentVariable(\"PATH\", \"${env:PATH}\", [EnvironmentVariableTarget]::Machine); `
@@ -138,10 +144,23 @@ RUN $vcpkg_dist_base_name=\"vcpkg-${env:VCPKG_VERSION}\"; `
 ENV VCPKG_BUILD_TYPE=release `
     VCPKG_LIBRARY_LINKAGE=static
 
+# Install dependencies and clean temporary files to save space
 RUN vcpkg install --recurse openssl --triplet x64-windows-static; `
-    vcpkg install --recurse libyaml --triplet x64-windows-static;
+    Remove-Item -Path $env:TEMP\* -Recurse -Force -ErrorAction SilentlyContinue; `
+    Remove-Item -Path C:\dev\vcpkg\buildtrees -Recurse -Force -ErrorAction SilentlyContinue; `
+    Remove-Item -Path C:\dev\vcpkg\downloads\tools\* -Recurse -Force -ErrorAction SilentlyContinue;
 
-# Technique from https://github.com/StefanScherer/dockerfiles-windows/blob/master/mongo/3.6/Dockerfile
+RUN vcpkg install --recurse libyaml --triplet x64-windows-static; `
+    Remove-Item -Path $env:TEMP\* -Recurse -Force -ErrorAction SilentlyContinue; `
+    Remove-Item -Path C:\dev\vcpkg\buildtrees -Recurse -Force -ErrorAction SilentlyContinue;
+
+# Final vcpkg cleanup to remove all build artifacts and save space
+RUN Remove-Item -Path C:\dev\vcpkg\downloads -Recurse -Force -ErrorAction SilentlyContinue; `
+    Remove-Item -Path C:\dev\vcpkg\buildtrees -Recurse -Force -ErrorAction SilentlyContinue; `
+    Remove-Item -Path $env:TEMP\* -Recurse -Force -ErrorAction SilentlyContinue; `
+    Remove-Item -Path C:\Windows\Temp\* -Recurse -Force -ErrorAction SilentlyContinue;
+
+# Copy required runtime libraries
 WORKDIR /fluent-bit/bin
 RUN Copy-Item -Path C:\Windows\System32\msvcp140.dll -Destination /fluent-bit/bin/; `
     Copy-Item -Path C:\Windows\System32\vccorlib140.dll -Destination /fluent-bit/bin/; `
@@ -206,6 +225,7 @@ LABEL org.opencontainers.image.title="Fluent Bit" `
     org.opencontainers.image.source="https://github.com/fluent/fluent-bit" `
     org.opencontainers.image.revision=$IMAGE_SOURCE_REVISION
 
+# Copy only the built artifacts from builder stage
 COPY --from=builder /fluent-bit /fluent-bit
 
 RUN setx /M PATH "%PATH%;C:\fluent-bit\bin"
