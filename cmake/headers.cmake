@@ -35,7 +35,7 @@ include_directories(
   ${FLB_PATH_ROOT_SOURCE}/${FLB_PATH_LIB_CTRACES}/include
   ${FLB_PATH_ROOT_SOURCE}/${FLB_PATH_LIB_CPROFILES}/include
   ${FLB_PATH_ROOT_SOURCE}/${FLB_PATH_LIB_RING_BUFFER}/lwrb/src/include
-
+  ${FLB_PATH_ROOT_SOURCE}/${FLB_PATH_LIB_YYJSON}/src
   ${FLB_PATH_ROOT_BINARY_DIR}/${FLB_PATH_LIB_JANSSON}/include
   ${FLB_PATH_ROOT_BINARY_DIR}/lib/cmetrics
   ${FLB_PATH_ROOT_BINARY_DIR}/lib/cprofiles/include
