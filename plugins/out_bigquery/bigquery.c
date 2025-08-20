@@ -847,7 +847,8 @@ static int cb_bigquery_init(struct flb_output_instance *ins,
 static int bigquery_format(const void *data, size_t bytes,
                            const char *tag, size_t tag_len,
                            char **out_data, size_t *out_size,
-                           struct flb_bigquery *ctx)
+                           struct flb_bigquery *ctx,
+                           struct flb_config *config)
 {
     int array_size = 0;
     flb_sds_t out_buf;
@@ -937,7 +938,8 @@ static int bigquery_format(const void *data, size_t bytes,
     }
 
     /* Convert from msgpack to JSON */
-    out_buf = flb_msgpack_raw_to_json_sds(mp_sbuf.data, mp_sbuf.size);
+    out_buf = flb_msgpack_raw_to_json_sds(mp_sbuf.data, mp_sbuf.size,
+                                          config->json_escape_unicode);
 
     flb_log_event_decoder_destroy(&log_decoder);
     msgpack_sbuffer_destroy(&mp_sbuf);
@@ -996,7 +998,7 @@ static void cb_bigquery_flush(struct flb_event_chunk *event_chunk,
     /* Reformat msgpack to bigquery JSON payload */
     ret = bigquery_format(event_chunk->data, event_chunk->size,
                           event_chunk->tag, flb_sds_len(event_chunk->tag),
-                          &payload_buf, &payload_size, ctx);
+                          &payload_buf, &payload_size, ctx, config);
     if (ret != 0) {
         flb_upstream_conn_release(u_conn);
         flb_sds_destroy(token);
