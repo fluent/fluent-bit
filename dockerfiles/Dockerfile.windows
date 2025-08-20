@@ -16,6 +16,8 @@ ARG WINDOWS_VERSION=ltsc2019
 # Builder Image - Windows Server Core
 FROM mcr.microsoft.com/windows/servercore:$WINDOWS_VERSION AS builder-base
 
+ENV WINDOWS_VERSION="$WINDOWS_VERSION"
+
 SHELL ["powershell", "-Command", "$ErrorActionPreference = 'Stop'; $ProgressPreference = 'SilentlyContinue';"]
 
 # Install Visual Studio Build Tools 2019 (MSVS_VERSION=16) / 2022 (MSVS_VERSION=17, requires WINDOWS_VERSION=ltsc2022)
@@ -29,6 +31,9 @@ RUN $msvs_build_tools_dist_name=\"vs_buildtools.exe\"; `
     $msvs_build_tools_channel=\"C:\local\VisualStudio.chman\"; `
     $msvs_build_tools_dist_url=\"${env:MSVS_BUILD_TOOLS_DOWNLOAD_URL}/${env:MSVS_BUILD_TOOLS_VERSION}/release/${msvs_build_tools_dist_name}\"; `
     $msvs_build_tools_channel_url=\"${env:MSVS_BUILD_TOOLS_DOWNLOAD_URL}/${env:MSVS_BUILD_TOOLS_VERSION}/release/channel\"; `
+    # Bydefault includeRecommended is absent when using ltsc2025
+    $includeRecommended=\"--includeRecommended\"; `
+    if (\"${env:WINDOWS_VERSION}\" -eq \"ltsc2025\") { $includeRecommended=\"\" }; `
     Write-Host \"Downloading Visual Studio Build Tools...\"; `
     Write-Host \"${msvs_build_tools_dist_url} -> ${msvs_build_tools_dist}\"; `
     Write-Host \"${msvs_build_tools_channel_url} -> ${msvs_build_tools_channel}\"; `
@@ -41,7 +46,10 @@ RUN $msvs_build_tools_dist_name=\"vs_buildtools.exe\"; `
       \"--channelUri ${msvs_build_tools_channel}\", `
       \"--installChannelUri ${msvs_build_tools_channel}\", `
       '--add Microsoft.VisualStudio.Workload.VCTools', `
-      '--includeRecommended'  -NoNewWindow -Wait; `
+      '--add Microsoft.VisualStudio.Component.Windows10SDK.19041', `
+      '--add Microsoft.VisualStudio.Component.VC.CMake.Project', `
+      $includeRecommended `
+      -NoNewWindow -Wait; `
     Remove-Item -Force \"${msvs_build_tools_dist}\";
 
 
