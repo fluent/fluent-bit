@@ -582,8 +582,10 @@ static struct flb_config_map config_map[] = {
      "Date key name for output."
     },
     {
-    FLB_CONFIG_MAP_STR, "site", NULL, 0, FLB_FALSE, offsetof(struct flb_out_datadog, site),
-    "DataDog site for telemetry data (e.g., 'datadoghq.eu', 'datadoghq.com', 'us3.datadoghq.com'). The plugin will construct the full hostname by prepending 'http-intake.logs.' to this value."
+    FLB_CONFIG_MAP_STR, "site", NULL, 0, FLB_TRUE, offsetof(struct flb_out_datadog, site),
+    "DataDog site for telemetry data (e.g., 'datadoghq.eu', 'datadoghq.com', 'us3.datadoghq.com'). "
+    "The plugin will construct the full hostname by prepending 'http-intake.logs.' to this value. "
+    "This parameter is required."
     },
     /* EOF */
     {0}

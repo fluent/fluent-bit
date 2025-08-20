@@ -99,17 +99,11 @@ struct flb_out_datadog *flb_datadog_conf_create(struct flb_output_instance *ins,
         return NULL;
     }
 
-    /* Parse site parameter early so it's available for host construction */
-    tmp = flb_output_get_property("site", ins);
-    if (tmp){
-        ctx->site = flb_sds_create(tmp);
-        if (!ctx->site) {
-            flb_plg_error(ctx->ins, "failed to allocate memory for site parameter");
-            flb_datadog_conf_destroy(ctx);
-            return NULL;
-        }
+    /* Site parameter is now handled by config map */
+    if (ctx->site) {
         flb_plg_debug(ctx->ins, "site parameter set to: %s", ctx->site);
-    } else {
+    } 
+    else {
         flb_plg_debug(ctx->ins, "no site parameter found");
     }
 
@@ -166,7 +160,8 @@ struct flb_out_datadog *flb_datadog_conf_create(struct flb_output_instance *ins,
             tmp_sds = flb_sds_cat(tmp_sds, (const char *)ctx->site, flb_sds_len(ctx->site));
             ctx->host = tmp_sds;
             flb_plg_debug(ctx->ins, "host constructed from site: %s", ctx->host);
-        } else {
+        } 
+        else {
             flb_plg_debug(ctx->ins, "no site specified, using default host");
             /* No site specified, use default */
             tmp_sds = flb_sds_create(FLB_DATADOG_DEFAULT_HOST);
@@ -262,9 +257,6 @@ int flb_datadog_conf_destroy(struct flb_out_datadog *ctx)
     }
     if (ctx->upstream) {
         flb_upstream_destroy(ctx->upstream);
-    }
-    if (ctx->site){
-        flb_sds_destroy(ctx->site);
     }
     flb_free(ctx);
 
