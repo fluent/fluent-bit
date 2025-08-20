@@ -1088,10 +1088,6 @@ static int elasticsearch_response_test(struct flb_config *config,
         flb_plg_warn(ctx->ins, "http_do=%i URI=%s", ret, ec->uri);
         goto error;
     }
-    if (ret != 0) {
-        flb_plg_warn(ctx->ins, "http_do=%i URI=%s", ret, ec->uri);
-        goto error;
-    }
     else {
         /* The request was issued successfully, validate the 'error' field */
         flb_plg_debug(ctx->ins, "HTTP Status=%i URI=%s", c->resp.status, ec->uri);
