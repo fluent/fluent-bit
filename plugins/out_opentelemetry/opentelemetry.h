@@ -24,6 +24,12 @@
 #include <fluent-bit/flb_record_accessor.h>
 #include <fluent-bit/flb_ra_key.h>
 #include <fluent-bit/flb_http_client.h>
+#ifdef FLB_HAVE_SIGNV4
+#ifdef FLB_HAVE_AWS
+#include <fluent-bit/flb_aws_credentials.h>
+#define FLB_OPENTELEMETRY_AWS_CREDENTIAL_PREFIX "aws_"
+#endif
+#endif
 
 #define FLB_OPENTELEMETRY_CONTENT_TYPE_HEADER_NAME "Content-Type"
 #define FLB_OPENTELEMETRY_MIME_PROTOBUF_LITERAL    "application/x-protobuf"
@@ -51,6 +57,16 @@ struct opentelemetry_context {
     /* HTTP Auth */
     char *http_user;
     char *http_passwd;
+
+    /* AWS Auth */
+#ifdef FLB_HAVE_SIGNV4
+#ifdef FLB_HAVE_AWS
+    int has_aws_auth;
+    struct flb_aws_provider *aws_provider;
+    const char *aws_region;
+    const char *aws_service;
+#endif
+#endif
 
     /* Proxy */
     const char *proxy;
