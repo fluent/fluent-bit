@@ -1460,7 +1460,7 @@ static int s3_put_object(struct flb_s3 *ctx, const char *tag, time_t file_first_
     char final_body_md5[25];
 
     s3_key = flb_get_s3_key(ctx->s3_key_format, file_first_log_time, tag,
-                            ctx->tag_delimiters, ctx->seq_index);
+                            ctx->tag_delimiters, ctx->seq_index, ctx->time_offset);
     if (!s3_key) {
         flb_plg_error(ctx->ins, "Failed to construct S3 Object Key for %s", tag);
         return -1;
@@ -1648,7 +1648,7 @@ static struct multipart_upload *create_upload(struct flb_s3 *ctx, const char *ta
         return NULL;
     }
     s3_key = flb_get_s3_key(ctx->s3_key_format, file_first_log_time, tag,
-                            ctx->tag_delimiters, ctx->seq_index);
+                            ctx->tag_delimiters, ctx->seq_index, ctx->time_offset);
     if (!s3_key) {
         flb_plg_error(ctx->ins, "Failed to construct S3 Object Key for %s", tag);
         flb_free(m_upload);
@@ -4032,6 +4032,14 @@ static struct flb_config_map config_map[] = {
     "for file names. Adding $INDEX will prevent random string being added to end of key"
     "when $UUID is not provided. See the in depth examples and tutorial in the "
     "documentation."
+    },
+
+    {
+     FLB_CONFIG_MAP_STR, "time_offset", "+0000",
+     0, FLB_TRUE, offsetof(struct flb_s3, time_offset),
+     "Time offset to apply to the s3 key format. This is useful when the s3 key format is "
+     "in a different timezone than the S3 bucket. The format is +HHMM or -HHMM. "
+     "Default is +0000."
     },
 
     {
