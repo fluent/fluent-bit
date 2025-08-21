@@ -680,8 +680,8 @@ int flb_upstream_destroy(struct flb_upstream *u)
     flb_free(u->proxied_host);
     flb_free(u->proxy_username);
     flb_free(u->proxy_password);
-    
-    if (u->base._head.next != NULL && u->base._head.prev != NULL) {
+
+    if (mk_list_is_set(&u->base._head) == 0) {
         mk_list_del(&u->base._head);
     }
     
