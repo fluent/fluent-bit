@@ -79,6 +79,10 @@ static struct flb_ml_stream_group *stream_group_create(struct flb_ml_stream *mst
     msgpack_sbuffer_init(&group->mp_sbuf);
     msgpack_packer_init(&group->mp_pck, &group->mp_sbuf, msgpack_sbuffer_write);
 
+    group->truncated = FLB_FALSE;
+    /* parent stream reference */
+    group->stream = mst;
+
     mk_list_add(&group->_head, &mst->groups);
 
     return group;

@@ -20,6 +20,7 @@
 #include <fluent-bit/flb_info.h>
 #include <fluent-bit/flb_mem.h>
 #include <fluent-bit/flb_log.h>
+#include <fluent-bit/flb_sds.h>
 #include <fluent-bit/multiline/flb_ml.h>
 #include <fluent-bit/multiline/flb_ml_parser.h>
 
@@ -83,4 +84,39 @@ void flb_ml_group_destroy(struct flb_ml_group *group)
 
     mk_list_del(&group->_head);
     flb_free(group);
+}
+
+int flb_ml_group_cat(struct flb_ml_stream_group *group,
+                     const char *data, size_t len)
+{
+    size_t avail;
+    size_t limit;
+    int    ret;
+    int    status = FLB_MULTILINE_OK;
+
+    limit = group->stream->ml->buffer_limit;
+    if (limit > 0) {
+        if (flb_sds_len(group->buf) >= limit) {
+            group->truncated = FLB_TRUE;
+            return FLB_MULTILINE_TRUNCATED;
+        }
+
+        avail = limit - flb_sds_len(group->buf);
+        if (len > avail) {
+            len = avail;
+            group->truncated = FLB_TRUE;
+            status = FLB_MULTILINE_TRUNCATED;
+        }
+    }
+
+    if (len == 0) {
+        return status;
+    }
+
+    ret = flb_sds_cat_safe(&group->buf, data, len);
+    if (ret == -1) {
+        return -1;
+    }
+
+    return status;
 }
