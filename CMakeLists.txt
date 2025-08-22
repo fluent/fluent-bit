@@ -606,6 +606,9 @@ endif()
 
 # simdutf
 if(FLB_UNICODE_ENCODER)
+  if (NOT FLB_USE_SIMDUTF)
+    message(FATAL_ERROR "FLB_UNICODE_ENCODER requires FLB_USE_SIMDUTF")
+  endif()
   enable_language(CXX)
   set (CMAKE_CXX_STANDARD 11)
   add_subdirectory(${FLB_PATH_LIB_SIMDUTF} EXCLUDE_FROM_ALL)
