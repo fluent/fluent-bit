@@ -132,12 +132,14 @@ include(CheckLanguage)
 check_language(CXX)
 
 # Enable CXX features if CXX is available
-if(CMAKE_CXX_COMPILER)
-  message(STATUS "CXX compiler found, enable simdutf.")
-  set(FLB_USE_SIMDUTF Yes)
-else()
-  message(STATUS "CXX compiler not found, disable simdutf.")
-  set(FLB_USE_SIMDUTF No)
+if (NOT DEFINED FLB_USE_SIMDUTF)
+  if(CMAKE_CXX_COMPILER)
+    message(STATUS "CXX compiler found, enable simdutf.")
+    set(FLB_USE_SIMDUTF Yes)
+  else()
+    message(STATUS "CXX compiler not found, disable simdutf.")
+    set(FLB_USE_SIMDUTF No)
+  endif()
 endif()
 
 # Output paths
@@ -597,7 +599,7 @@ if(FLB_UTF8_ENCODER)
 endif()
 
 # simdutf
-if(FLB_UNICODE_ENCODER)
+if(FLB_UNICODE_ENCODER AND FLB_USE_SIMDUTF)
   enable_language(CXX)
   set (CMAKE_CXX_STANDARD 11)
   add_subdirectory(${FLB_PATH_LIB_SIMDUTF} EXCLUDE_FROM_ALL)
