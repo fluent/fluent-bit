@@ -1154,7 +1154,7 @@ static char *flb_utils_copy_host_sds(const char *string, int pos_init, int pos_e
         if (string[pos_end-1] != ']') {
             return NULL;
         }
-        return flb_sds_create_len(string + pos_init + 1, pos_end - 1);
+        return flb_sds_create_len(string + pos_init + 1, pos_end - 2);
     }
     else {
         return flb_sds_create_len(string + pos_init, pos_end);
@@ -1171,6 +1171,7 @@ int flb_utils_url_split(const char *in_url, char **out_protocol,
     char *p;
     char *tmp;
     char *sep;
+    char *bracket = NULL;
 
     /* Protocol */
     p = strstr(in_url, "://");
@@ -1192,7 +1193,14 @@ int flb_utils_url_split(const char *in_url, char **out_protocol,
 
     /* Check for first '/' */
     sep = strchr(p, '/');
-    tmp = strchr(p, ':');
+    if (p[0] == '[') {
+        bracket = strchr(p, ']');
+    }
+    if (bracket) {
+        tmp = strchr(bracket, ':');
+    } else {
+        tmp = strchr(p, ':');
+    }
 
     /* Validate port separator is found before the first slash */
     if (sep && tmp) {
@@ -1267,6 +1275,7 @@ int flb_utils_url_split_sds(const flb_sds_t in_url, flb_sds_t *out_protocol,
     char *p = NULL;
     char *tmp = NULL;
     char *sep = NULL;
+    char *bracket = NULL;
 
     /* Protocol */
     p = strstr(in_url, "://");
@@ -1288,7 +1297,14 @@ int flb_utils_url_split_sds(const flb_sds_t in_url, flb_sds_t *out_protocol,
 
     /* Check for first '/' */
     sep = strchr(p, '/');
-    tmp = strchr(p, ':');
+    if (p[0] == '[') {
+        bracket = strchr(p, ']');
+    }
+    if (bracket) {
+        tmp = strchr(bracket, ':');
+    } else {
+        tmp = strchr(p, ':');
+    }
 
     /* Validate port separator is found before the first slash */
     if (sep && tmp) {
