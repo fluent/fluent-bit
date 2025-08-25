@@ -651,12 +651,11 @@ static int process_content(struct flb_tail_file *file, size_t *bytes)
         file->last_processed_bytes += processed_bytes;
     }
 
-#ifdef FLB_HAVE_UNICODE_ENCODER
     if (decoded) {
         flb_free(decoded);
         decoded = NULL;
     }
-#endif
+
     file->parsed = file->buf_len;
 
     if (lines > 0) {
