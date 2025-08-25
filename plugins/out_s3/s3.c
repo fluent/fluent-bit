@@ -1170,9 +1170,7 @@ static int upload_data(struct flb_s3 *ctx, struct s3_file *chunk,
             goto multipart;
         }
         else {
-            if (ctx->use_put_object == FLB_FALSE &&
-                (ctx->compression == FLB_AWS_COMPRESS_ARROW ||
-                 ctx->compression == FLB_AWS_COMPRESS_PARQUET)) {
+            if (ctx->use_put_object == FLB_FALSE && ctx->compression == FLB_AWS_COMPRESS_GZIP) {
                 flb_plg_info(ctx->ins, "Pre-compression upload_chunk_size= %zu, After compression, chunk is only %zu bytes, "
                                        "the chunk was too small, using PutObject to upload", preCompress_size, body_size);
             }
