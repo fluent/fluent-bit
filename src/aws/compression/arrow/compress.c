@@ -12,6 +12,7 @@
 #include <parquet-glib/parquet-glib.h>
 #endif
 #include <fluent-bit/flb_log.h>
+#include <fluent-bit/flb_mem.h>
 #include <inttypes.h>
 
 /*
@@ -258,8 +259,9 @@ int out_s3_compress_parquet(void *json, size_t size, void **out_buf, size_t *out
             return -1;
         }
 
-        buf = malloc(len);
+        buf = flb_malloc(len);
         if (buf == NULL) {
+            flb_errno();
             g_object_unref(buffer);
             g_bytes_unref(bytes);
             return -1;
