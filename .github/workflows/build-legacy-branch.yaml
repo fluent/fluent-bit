@@ -17,7 +17,7 @@ jobs:
       contents: read
     steps:
       - name: Checkout code
-        uses: actions/checkout@v4
+        uses: actions/checkout@v5
         with:
           ref: ${{ inputs.ref }}
 
@@ -53,7 +53,7 @@ jobs:
       packages: write
     steps:
       - name: Checkout the docker build repo for legacy builds
-        uses: actions/checkout@v4
+        uses: actions/checkout@v5
         with:
           repository: fluent/fluent-bit-docker-image
           ref: "1.8" # Fixed to this branch
