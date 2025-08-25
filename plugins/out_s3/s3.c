@@ -704,8 +704,8 @@ static int cb_s3_init(struct flb_output_instance *ins,
             return -1;
         }
         if (ctx->use_put_object == FLB_FALSE &&
-            (ctx->compression == FLB_AWS_COMPRESS_ARROW ||
-             ctx->compression == FLB_AWS_COMPRESS_PARQUET)) {
+            (ret == FLB_AWS_COMPRESS_ARROW ||
+             ret == FLB_AWS_COMPRESS_PARQUET)) {
             flb_plg_error(ctx->ins,
                           "use_put_object must be enabled when Apache Arrow or Parquet is enabled");
             return -1;
@@ -1132,8 +1132,13 @@ static int upload_data(struct flb_s3 *ctx, struct s3_file *chunk,
         ret = flb_aws_compression_compress(ctx->compression, body, body_size, &payload_buf, &payload_size);
         if (ret == -1) {
             flb_plg_error(ctx->ins, "Failed to compress data");
+            if (chunk != NULL) {
+                s3_store_file_unlock(chunk);
+                chunk->failures += 1;
+            }
             return FLB_RETRY;
-        } else {
+        }
+        else {
             preCompress_size = body_size;
             body = (void *) payload_buf;
             body_size = payload_size;
