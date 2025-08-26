@@ -909,7 +909,7 @@ int flb_blob_db_file_part_insert(struct flb_blob_db *context,
     else {
         result = FLB_BLOB_DB_SUCCESS;
 
-        *out_id = sqlite3_last_insert_rowid(context->db);
+        *out_id = flb_sqldb_last_id(context->db);
     }
 
     sqlite3_clear_bindings(statement);
