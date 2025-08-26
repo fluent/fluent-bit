@@ -119,6 +119,9 @@ struct flb_tls {
 
 int flb_tls_init();
 
+void flb_tls_configure(struct flb_config* config);
+void flb_tls_cleanup(void);
+
 struct flb_tls *flb_tls_create(int mode,
                                int verify,
                                int debug,
