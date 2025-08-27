@@ -286,6 +286,7 @@ struct flb_config {
     unsigned int hot_reloaded_count;
     int shutdown_by_hot_reloading;
     int hot_reloading;
+    int hot_reload_succeeded;
 
     /* Routing */
     size_t route_mask_size;
