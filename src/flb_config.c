@@ -307,6 +307,7 @@ struct flb_config *flb_config_init()
     config->hot_reloaded_count = 0;
     config->shutdown_by_hot_reloading = FLB_FALSE;
     config->hot_reloading = FLB_FALSE;
+    config->hot_reload_succeeded = FLB_FALSE;
 
 #ifdef FLB_SYSTEM_WINDOWS
     config->win_maxstdio = 512;

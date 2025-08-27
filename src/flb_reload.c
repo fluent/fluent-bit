@@ -549,6 +549,7 @@ int flb_reload(flb_ctx_t *ctx, struct flb_cf *cf_opts)
     new_config->hot_reloaded_count = reloaded_count;
     flb_debug("[reload] hot reloaded %d time(s)", reloaded_count);
     new_config->hot_reloading = FLB_FALSE;
+    new_config->hot_reload_succeeded = FLB_TRUE;
 
     return 0;
 }
