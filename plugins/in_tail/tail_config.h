@@ -167,6 +167,8 @@ struct flb_tail_config {
     struct cmt_counter *cmt_files_opened;
     struct cmt_counter *cmt_files_closed;
     struct cmt_counter *cmt_files_rotated;
+    struct cmt_counter *cmt_files_abandoned;
+    struct cmt_counter *cmt_bytes_abandoned;
 
     /* Hash: hash tables for quick acess to registered files */
     struct flb_hash_table *static_hash;

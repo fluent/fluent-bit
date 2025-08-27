@@ -1316,6 +1316,11 @@ void flb_tail_file_remove(struct flb_tail_file *file)
     flb_plg_debug(ctx->ins, "inode=%"PRIu64" removing file name %s",
                   file->inode, file->name);
 
+    if (file->pending_bytes > 0) {
+        flb_plg_warn(ctx->ins, "inode=%"PRIu64" abandoning file name %s with %d pending bytes",
+                     file->inode, file->name, file->pending_bytes);
+    }
+
     if (file->decompression_context != NULL) {
         flb_decompression_context_destroy(file->decompression_context);
     }
@@ -1375,6 +1380,11 @@ void flb_tail_file_remove(struct flb_tail_file *file)
     name = (char *) flb_input_name(ctx->ins);
     ts = cfl_time_now();
     cmt_counter_inc(ctx->cmt_files_closed, ts, 1, (char *[]) {name});
+
+    if (file->pending_bytes > 0) {
+        cmt_counter_inc(ctx->cmt_files_abandoned, ts, 1, (char *[]) {name});
+        cmt_counter_add(ctx->cmt_bytes_abandoned, ts, file->pending_bytes, 1, (char *[]) {name});
+    }
 
     /* old api */
     flb_metrics_sum(FLB_TAIL_METRIC_F_CLOSED, 1, ctx->ins->metrics);
