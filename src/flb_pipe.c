@@ -54,8 +54,22 @@
 
 int flb_pipe_create(flb_pipefd_t pipefd[2])
 {
+    struct linger sl = {1, 0}; /* l_onoff = 1, l_linger = 0 */
+
     if (evutil_socketpair(AF_UNIX, SOCK_STREAM, 0, pipefd) == -1) {
         perror("socketpair");
+        return -1;
+    }
+
+    if (setsockopt(pipefd[0], SOL_SOCKET, SO_LINGER, (const char*)&sl, sizeof(sl)) == -1) {
+        perror("setsockopt linger failed on pipefd[0]");
+        flb_pipe_destroy(pipefd);
+        return -1;
+    }
+
+    if (setsockopt(pipefd[1], SOL_SOCKET, SO_LINGER, (const char*)&sl, sizeof(sl)) == -1) {
+        perror("setsockopt linger failed on pipefd[1]");
+        flb_pipe_destroy(pipefd);
         return -1;
     }
 
