@@ -479,6 +479,18 @@ struct flb_tail_config *flb_tail_config_create(struct flb_input_instance *ins,
                                                 "Total number of rotated files",
                                                 1, (char *[]) {"name"});
 
+    ctx->cmt_files_abandoned = cmt_counter_create(ins->cmt,
+                                               "fluentbit", "input",
+                                               "files_abandoned_total",
+                                               "Total number of abandoned files",
+                                               1, (char *[]) {"name"});
+
+    ctx->cmt_bytes_abandoned = cmt_counter_create(ins->cmt,
+                                               "fluentbit", "input",
+                                               "bytes_abandoned_total",
+                                               "Total number of pending bytes in abandoned files",
+                                               1, (char *[]) {"name"});
+
     /* OLD metrics */
     flb_metrics_add(FLB_TAIL_METRIC_F_OPENED,
                     "files_opened", ctx->ins->metrics);
