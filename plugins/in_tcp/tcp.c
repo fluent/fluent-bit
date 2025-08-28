@@ -42,9 +42,8 @@ static int in_tcp_collect(struct flb_input_instance *in,
     connection = flb_downstream_conn_get(ctx->downstream);
 
     if (connection == NULL) {
-        flb_plg_error(ctx->ins, "could not accept new connection");
-
-        return -1;
+        /* connection dropped (e.g. paused) */
+        return 0;
     }
 
     flb_plg_trace(ctx->ins, "new TCP connection arrived FD=%i", connection->fd);
@@ -145,6 +144,37 @@ static int in_tcp_exit(void *data, struct flb_config *config)
     return 0;
 }
 
+static void in_tcp_pause(void *data, struct flb_config *config)
+{
+    struct flb_in_tcp_config *ctx = data;
+    struct mk_list *head;
+    struct mk_list *tmp;
+    struct tcp_conn *conn;
+
+    (void) config;
+
+    flb_downstream_pause(ctx->downstream);
+
+    mk_list_foreach_safe(head, tmp, &ctx->connections) {
+        conn = mk_list_entry(head, struct tcp_conn, _head);
+        if (conn->busy) {
+            conn->pending_close = FLB_TRUE;
+            continue;
+        }
+
+        tcp_conn_del(conn);
+    }
+}
+
+static void in_tcp_resume(void *data, struct flb_config *config)
+{
+    struct flb_in_tcp_config *ctx = data;
+
+    (void) config;
+
+    flb_downstream_resume(ctx->downstream);
+}
+
 static struct flb_config_map config_map[] = {
     {
      FLB_CONFIG_MAP_STR, "format", (char *)NULL,
@@ -183,6 +213,8 @@ struct flb_input_plugin in_tcp_plugin = {
     .cb_pre_run   = NULL,
     .cb_collect   = in_tcp_collect,
     .cb_flush_buf = NULL,
+    .cb_pause     = in_tcp_pause,
+    .cb_resume    = in_tcp_resume,
     .cb_exit      = in_tcp_exit,
     .config_map   = config_map,
     .flags        = FLB_INPUT_NET_SERVER | FLB_IO_OPT_TLS
