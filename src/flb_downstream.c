@@ -283,6 +283,18 @@ struct flb_connection *flb_downstream_conn_get(struct flb_downstream *stream)
 
     transport = stream->base.transport;
 
+    if (stream->paused) {
+        if (transport != FLB_TRANSPORT_UDP &&
+            transport != FLB_TRANSPORT_UNIX_DGRAM) {
+            connection_fd = flb_net_accept(stream->server_fd);
+            if (connection_fd >= 0) {
+                flb_socket_close(connection_fd);
+            }
+        }
+
+        return NULL;
+    }
+
     if (transport == FLB_TRANSPORT_UDP ||
         transport == FLB_TRANSPORT_UNIX_DGRAM ) {
         if (stream->dgram_connection != NULL) {
@@ -355,6 +367,20 @@ struct flb_connection *flb_downstream_conn_get(struct flb_downstream *stream)
     }
 
     return connection;
+}
+
+void flb_downstream_pause(struct flb_downstream *stream)
+{
+    if (stream) {
+        stream->paused = FLB_TRUE;
+    }
+}
+
+void flb_downstream_resume(struct flb_downstream *stream)
+{
+    if (stream) {
+        stream->paused = FLB_FALSE;
+    }
 }
 
 void flb_downstream_destroy(struct flb_downstream *stream)
