@@ -81,7 +81,8 @@ static int cb_nats_init(struct flb_output_instance *ins, struct flb_config *conf
 static int msgpack_to_json(struct flb_out_nats_config *ctx,
                            const void *data, size_t bytes,
                            const char *tag, int tag_len,
-                           char **out_json, size_t *out_size)
+                           char **out_json, size_t *out_size,
+                           struct flb_config *config)
 {
     int i;
     int map_size;
@@ -138,7 +139,7 @@ static int msgpack_to_json(struct flb_out_nats_config *ctx,
 
     flb_log_event_decoder_destroy(&log_decoder);
 
-    out_buf = flb_msgpack_raw_to_json_sds(mp_sbuf.data, mp_sbuf.size);
+    out_buf = flb_msgpack_raw_to_json_sds(mp_sbuf.data, mp_sbuf.size, config->json_escape_unicode);
     msgpack_sbuffer_destroy(&mp_sbuf);
 
     if (!out_buf) {
@@ -186,7 +187,7 @@ static void cb_nats_flush(struct flb_event_chunk *event_chunk,
     ret = msgpack_to_json(ctx,
                           event_chunk->data, event_chunk->size,
                           event_chunk->tag, flb_sds_len(event_chunk->tag),
-                          &json_msg, &json_len);
+                          &json_msg, &json_len, config);
     if (ret == -1) {
         flb_upstream_conn_release(u_conn);
         FLB_OUTPUT_RETURN(FLB_ERROR);

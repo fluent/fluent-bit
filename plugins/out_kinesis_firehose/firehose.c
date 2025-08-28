@@ -363,7 +363,7 @@ static void cb_firehose_flush(struct flb_event_chunk *event_chunk,
     }
 
     ret = process_and_send_records(ctx, buf,
-                                   event_chunk->data, event_chunk->size);
+                                   event_chunk->data, event_chunk->size, config);
     if (ret < 0) {
         flb_plg_error(ctx->ins, "Failed to send records");
         flush_destroy(buf);
