@@ -23,6 +23,7 @@
 
 #include <fluent-bit/aws/flb_aws_compress.h>
 #include <fluent-bit/flb_gzip.h>
+#include <fluent-bit/flb_zstd.h>
 
 #include <stdint.h>
 
@@ -47,6 +48,11 @@ static const struct compression_option compression_options[] = {
         FLB_AWS_COMPRESS_GZIP,
         "gzip",
         &flb_gzip_compress
+    },
+    {
+        FLB_AWS_COMPRESS_ZSTD,
+        "zstd",
+        &flb_zstd_compress
     },
 #ifdef FLB_HAVE_ARROW
     {
