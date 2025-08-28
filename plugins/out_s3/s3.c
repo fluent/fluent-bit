@@ -31,6 +31,7 @@
 #include <fluent-bit/flb_scheduler.h>
 #include <fluent-bit/flb_plugin.h>
 #include <fluent-bit/flb_gzip.h>
+#include <fluent-bit/flb_zstd.h>
 #include <fluent-bit/flb_base64.h>
 #include <fluent-bit/flb_log_event_decoder.h>
 #include <fluent-bit/flb_input_blob.h>
@@ -88,6 +89,13 @@ static struct flb_aws_header content_encoding_header = {
     .key = "Content-Encoding",
     .key_len = 16,
     .val = "gzip",
+    .val_len = 4,
+};
+
+static struct flb_aws_header zstd_content_encoding_header = {
+    .key = "Content-Encoding",
+    .key_len = 16,
+    .val = "zstd",
     .val_len = 4,
 };
 
@@ -162,7 +170,7 @@ int create_headers(struct flb_s3 *ctx, char *body_md5,
     if (ctx->content_type != NULL) {
         headers_len++;
     }
-    if (ctx->compression == FLB_AWS_COMPRESS_GZIP) {
+    if (ctx->compression == FLB_AWS_COMPRESS_GZIP || ctx->compression == FLB_AWS_COMPRESS_ZSTD) {
         headers_len++;
     }
     if (ctx->canned_acl != NULL) {
@@ -194,6 +202,9 @@ int create_headers(struct flb_s3 *ctx, char *body_md5,
     }
     if (ctx->compression == FLB_AWS_COMPRESS_GZIP) {
         s3_headers[n] = content_encoding_header;
+        n++;
+    } else if(ctx->compression == FLB_AWS_COMPRESS_ZSTD){
+        s3_headers[n] = zstd_content_encoding_header;
         n++;
     }
     if (ctx->canned_acl != NULL) {
@@ -1175,7 +1186,7 @@ static int upload_data(struct flb_s3 *ctx, struct s3_file *chunk,
             goto multipart;
         }
         else {
-            if (ctx->use_put_object == FLB_FALSE && ctx->compression == FLB_AWS_COMPRESS_GZIP) {
+            if ((ctx->use_put_object == FLB_FALSE && (ctx->compression == FLB_AWS_COMPRESS_GZIP || ctx->compression == FLB_AWS_COMPRESS_ZSTD))) {
                 flb_plg_info(ctx->ins, "Pre-compression upload_chunk_size= %zu, After compression, chunk is only %zu bytes, "
                                        "the chunk was too small, using PutObject to upload", preCompress_size, body_size);
             }
@@ -3998,10 +4009,11 @@ static struct flb_config_map config_map[] = {
     {
      FLB_CONFIG_MAP_STR, "compression", NULL,
      0, FLB_FALSE, 0,
-    "Compression type for S3 objects. 'gzip', 'arrow' and 'parquet' are the supported values. "
+    "Compression type for S3 objects. 'gzip', 'arrow', 'parquet' and 'zstd' are the supported values. "
     "'arrow' and 'parquet' are only available if Apache Arrow was enabled at compile time. "
     "Defaults to no compression. "
     "If 'gzip' is selected, the Content-Encoding HTTP Header will be set to 'gzip'."
+    "If 'zstd' is selected, the Content-Encoding HTTP Header will be set to 'zstd'."
     },
     {
      FLB_CONFIG_MAP_STR, "content_type", NULL,
