@@ -4,6 +4,7 @@
 #include <fluent-bit/flb_mem.h>
 #include <fluent-bit/flb_utils.h>
 #include <fluent-bit/flb_gzip.h>
+#include <fluent-bit/flb_zstd.h>
 
 #include <fluent-bit/aws/flb_aws_compress.h>
 #include "flb_tests_internal.h"
@@ -53,6 +54,22 @@ void test_compression_gzip()
     flb_aws_compress_test_cases(cases);
 }
 
+void test_compression_zstd()
+{
+    struct flb_aws_test_case cases[] =
+    {
+        {
+            "zstd",
+            "hello hello hello hello hello hello",
+            "KLUv/SAjZQAAMGhlbGxvIAEAuUsR",
+            0
+        },
+        { 0 }
+    };
+
+    flb_aws_compress_test_cases(cases);
+}
+
 void test_b64_truncated_gzip()
 {
 struct flb_aws_test_case cases[] =
@@ -68,6 +85,22 @@ struct flb_aws_test_case cases[] =
 
     flb_aws_compress_truncate_b64_test_cases__gzip_decode(cases,
         41);
+}
+
+void test_b64_truncated_zstd()
+{
+struct flb_aws_test_case cases[] =
+    {
+        {
+            "zstd",
+            "hello hello hello hello hello hello",
+            "hello hello hello hello hello hello",
+            0 /* Expected ret */
+        },
+        { 0 }
+    };
+
+    flb_aws_compress_truncate_b64_test_cases__zstd_decode(cases,41);
 }
 
 void test_b64_truncated_gzip_truncation()
@@ -202,7 +235,9 @@ struct flb_aws_test_case cases[] =
 
 TEST_LIST = {
     { "test_compression_gzip", test_compression_gzip },
+    { "test_compression_zstd", test_compression_zstd },
     { "test_b64_truncated_gzip", test_b64_truncated_gzip },
+    { "test_b64_truncated_zstd", test_b64_truncated_zstd },
     { "test_b64_truncated_gzip_truncation", test_b64_truncated_gzip_truncation },
     { "test_b64_truncated_gzip_truncation_buffer_too_small",
       test_b64_truncated_gzip_truncation_buffer_too_small },
@@ -229,6 +264,14 @@ static void flb_aws_compress_truncate_b64_test_cases__gzip_decode(
 {
    flb_aws_compress_general_test_cases(FLB_AWS_COMPRESS_TEST_TYPE_B64_TRUNCATE,
                                       cases, max_out_len, &flb_gzip_uncompress);
+}
+
+static void flb_aws_compress_truncate_b64_test_cases__zstd_decode(
+                                                        struct flb_aws_test_case *cases,
+                                                        size_t max_out_len)
+{
+   flb_aws_compress_general_test_cases(FLB_AWS_COMPRESS_TEST_TYPE_B64_TRUNCATE,
+                                      cases, max_out_len, &flb_zstd_uncompress);
 }
 
 /* General test case loop flb_aws_compress */
