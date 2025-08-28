@@ -108,6 +108,9 @@ struct flb_azure_kusto {
     /* compress payload */
     int compression_enabled;
 
+    /* streaming ingestion mode */
+    int streaming_ingestion_enabled;
+
     int ingestion_resources_refresh_interval;
 
     /* records configuration */

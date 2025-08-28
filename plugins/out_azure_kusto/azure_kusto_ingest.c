@@ -517,6 +517,163 @@ static int azure_kusto_enqueue_ingestion(struct flb_azure_kusto *ctx, flb_sds_t 
     return ret;
 }
 
+int azure_kusto_streaming_ingestion(struct flb_azure_kusto *ctx, flb_sds_t tag,
+                                    size_t tag_len, flb_sds_t payload, size_t payload_size)
+{
+    int ret = -1;
+    struct flb_connection *u_conn;
+    struct flb_http_client *c;
+    flb_sds_t uri = NULL;
+    flb_sds_t token = NULL;
+    size_t resp_size;
+    time_t now;
+    struct tm tm;
+    char tmp[64];
+    int len;
+
+    flb_plg_info(ctx->ins, "[STREAMING_INGESTION] Starting streaming ingestion for tag: %.*s", (int)tag_len, tag);
+    flb_plg_info(ctx->ins, "[STREAMING_INGESTION] Payload size: %zu bytes", payload_size);
+    flb_plg_info(ctx->ins, "[STREAMING_INGESTION] Target database: %s, table: %s", 
+                 ctx->database_name ? ctx->database_name : "NULL", 
+                 ctx->table_name ? ctx->table_name : "NULL");
+    flb_plg_info(ctx->ins, "[STREAMING_INGESTION] Compression enabled: %s", 
+                 ctx->compression_enabled ? "true" : "false");
+
+    now = time(NULL);
+    gmtime_r(&now, &tm);
+    len = strftime(tmp, sizeof(tmp) - 1, "%a, %d %b %Y %H:%M:%S GMT", &tm);
+    flb_plg_debug(ctx->ins, "[STREAMING_INGESTION] Request timestamp: %s", tmp);
+
+    /* Get upstream connection to the main Kusto engine (not ingestion endpoint) */
+    flb_plg_debug(ctx->ins, "[STREAMING_INGESTION] Getting upstream connection to endpoint: %s", 
+                  ctx->ingestion_endpoint ? ctx->ingestion_endpoint : "NULL");
+    u_conn = flb_upstream_conn_get(ctx->u);
+    if (!u_conn) {
+        flb_plg_error(ctx->ins, "[STREAMING_INGESTION] ERROR: Failed to get upstream connection");
+        return -1;
+    }
+    flb_plg_debug(ctx->ins, "[STREAMING_INGESTION] Successfully obtained upstream connection");
+
+    /* Get authentication token */
+    flb_plg_debug(ctx->ins, "[STREAMING_INGESTION] Retrieving OAuth2 authentication token");
+    token = get_azure_kusto_token(ctx);
+    if (!token) {
+        flb_plg_error(ctx->ins, "[STREAMING_INGESTION] ERROR: Failed to retrieve OAuth2 token");
+        flb_upstream_conn_release(u_conn);
+        return -1;
+    }
+    flb_plg_debug(ctx->ins, "[STREAMING_INGESTION] Successfully obtained OAuth2 token (length: %zu)", 
+                  flb_sds_len(token));
+
+    /* Build the streaming ingestion URI: /v1/rest/ingest/{database}/{table}?streamFormat=MultiJSON */
+    uri = flb_sds_create_size(256);
+    if (!uri) {
+        flb_plg_error(ctx->ins, "[STREAMING_INGESTION] ERROR: Failed to create URI buffer");
+        flb_sds_destroy(token);
+        flb_upstream_conn_release(u_conn);
+        return -1;
+    }
+
+    /* Create the streaming ingestion URI */
+    if (ctx->ingestion_mapping_reference) {
+        flb_sds_snprintf(&uri, flb_sds_alloc(uri),
+                         "/v1/rest/ingest/%s/%s?streamFormat=MultiJSON&mappingName=%s",
+                         ctx->database_name, ctx->table_name, ctx->ingestion_mapping_reference);
+        flb_plg_info(ctx->ins, "[STREAMING_INGESTION] Using ingestion mapping: %s", 
+                     ctx->ingestion_mapping_reference);
+    } else {
+        flb_sds_snprintf(&uri, flb_sds_alloc(uri),
+                         "/v1/rest/ingest/%s/%s?streamFormat=MultiJSON",
+                         ctx->database_name, ctx->table_name);
+        flb_plg_debug(ctx->ins, "[STREAMING_INGESTION] No ingestion mapping specified");
+    }
+
+    flb_plg_info(ctx->ins, "[STREAMING_INGESTION] Request URI: %s", uri);
+
+    /* Create HTTP client for streaming ingestion */
+    flb_plg_debug(ctx->ins, "[STREAMING_INGESTION] Creating HTTP client for POST request");
+    c = flb_http_client(u_conn, FLB_HTTP_POST, uri, payload, payload_size, 
+                        NULL, 0, NULL, 0);
+
+    if (c) {
+        flb_plg_debug(ctx->ins, "[STREAMING_INGESTION] Adding HTTP headers");
+        
+        /* Add required headers for streaming ingestion */
+        flb_http_add_header(c, "User-Agent", 10, "Fluent-Bit", 10);
+        flb_http_add_header(c, "Accept", 6, "application/json", 16);
+        flb_http_add_header(c, "Authorization", 13, token, flb_sds_len(token));
+        flb_http_add_header(c, "x-ms-date", 9, tmp, len);
+        flb_http_add_header(c, "x-ms-client-version", 19, FLB_VERSION_STR, strlen(FLB_VERSION_STR));
+        flb_http_add_header(c, "x-ms-app", 8, "Kusto.Fluent-Bit", 16);
+        flb_http_add_header(c, "x-ms-user", 9, "Kusto.Fluent-Bit", 16);
+
+        /* Set Content-Type based on whether compression is enabled */
+        if (ctx->compression_enabled) {
+            flb_http_add_header(c, "Content-Type", 12, "application/json", 16);
+            flb_http_add_header(c, "Content-Encoding", 16, "gzip", 4);
+            flb_plg_debug(ctx->ins, "[STREAMING_INGESTION] Headers set for compressed payload");
+        } else {
+            flb_http_add_header(c, "Content-Type", 12, "application/json; charset=utf-8", 31);
+            flb_plg_debug(ctx->ins, "[STREAMING_INGESTION] Headers set for uncompressed payload");
+        }
+
+        /* Log payload sample for debugging (first 200 characters) */
+        if (payload_size > 0) {
+            size_t sample_len = payload_size > 200 ? 200 : payload_size;
+            flb_plg_debug(ctx->ins, "[STREAMING_INGESTION] Payload sample (first %zu chars): %.*s%s",
+                          sample_len, (int)sample_len, (char*)payload, 
+                          payload_size > 200 ? "..." : "");
+        }
+
+        /* Send the HTTP request */
+        flb_plg_info(ctx->ins, "[STREAMING_INGESTION] Sending HTTP POST request to Kusto engine");
+        ret = flb_http_do(c, &resp_size);
+        
+        flb_plg_info(ctx->ins, "[STREAMING_INGESTION] HTTP request completed - http_do result: %i, HTTP Status: %i, Response size: %zu", 
+                     ret, c->resp.status, resp_size);
+
+        if (ret == 0) {
+            /* Check for successful HTTP status codes */
+            if (c->resp.status == 200 || c->resp.status == 204) {
+                flb_plg_info(ctx->ins, "[STREAMING_INGESTION] SUCCESS: Streaming ingestion completed successfully for tag: %.*s", 
+                           (int)tag_len, tag);
+                ret = 0;
+            } else {
+                ret = -1;
+                flb_plg_error(ctx->ins, "[STREAMING_INGESTION] ERROR: HTTP request failed with status: %i", 
+                            c->resp.status);
+
+                if (c->resp.payload_size > 0) {
+                    flb_plg_error(ctx->ins, "[STREAMING_INGESTION] Error response body (size: %zu): %.*s",
+                                c->resp.payload_size, (int)c->resp.payload_size, c->resp.payload);
+                } else {
+                    flb_plg_error(ctx->ins, "[STREAMING_INGESTION] No error response body received");
+                }
+            }
+        } else {
+            flb_plg_error(ctx->ins, "[STREAMING_INGESTION] ERROR: HTTP request failed at transport level (ret: %i)", ret);
+        }
+
+        flb_plg_debug(ctx->ins, "[STREAMING_INGESTION] Destroying HTTP client");
+        flb_http_client_destroy(c);
+    } else {
+        flb_plg_error(ctx->ins, "[STREAMING_INGESTION] ERROR: Failed to create HTTP client context");
+    }
+
+    /* Cleanup */
+    flb_plg_debug(ctx->ins, "[STREAMING_INGESTION] Cleaning up resources");
+    if (uri) {
+        flb_sds_destroy(uri);
+    }
+    if (token) {
+        flb_sds_destroy(token);
+    }
+    flb_upstream_conn_release(u_conn);
+
+    flb_plg_info(ctx->ins, "[STREAMING_INGESTION] Streaming ingestion completed with result: %i", ret);
+    return ret;
+}
+
 /* Function to generate a random alphanumeric string */
 void generate_random_string(char *str, size_t length)
 {
