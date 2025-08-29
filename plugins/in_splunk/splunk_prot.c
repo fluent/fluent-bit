@@ -134,6 +134,13 @@ static int send_json_message_response(struct splunk_conn *conn, int http_status,
                        "Content-Length: %i\r\n\r\n%s",
                        len, message);
     }
+    else if (http_status == 400) {
+        flb_sds_printf(&out,
+                       "HTTP/1.1 400 Bad Request\r\n"
+                       "Content-Type: application/json\r\n"
+                       "Content-Length: %i\r\n\r\n%s",
+                       len, message);
+    }
 
     /* We should check this operations result */
     flb_io_net_write(conn->connection,
@@ -593,7 +600,7 @@ static int process_hec_payload(struct flb_splunk *ctx, struct splunk_conn *conn,
     }
 
     if (request->data.len <= 0 && !mk_http_parser_is_content_chunked(&session->parser)) {
-        send_response(conn, 400, "error: no payload found\n");
+        send_json_message_response(conn, 400, "{\"text\":\"No data\",\"code\":5}");
         return -2;
     }
 
@@ -659,7 +666,7 @@ static int process_hec_raw_payload(struct flb_splunk *ctx, struct splunk_conn *c
     }
 
     if (request->data.len <= 0 && !mk_http_parser_is_content_chunked(&session->parser)) {
-        send_response(conn, 400, "2 error: no payload found\n");
+        send_json_message_response(conn, 400, "{\"text\":\"No data\",\"code\":5}");
         return -1;
     }
 
@@ -1096,7 +1103,7 @@ static int process_hec_payload_ng(struct flb_http_request *request,
     }
 
     if (request->body == NULL || cfl_sds_len(request->body) <= 0) {
-        send_response_ng(response, 400, "error: no payload found\n");
+        send_json_message_response_ng(response, 400, "{\"text\":\"No data\",\"code\":5}");
 
         return -1;
     }
@@ -1132,7 +1139,7 @@ static int process_hec_raw_payload_ng(struct flb_http_request *request,
     }
 
     if (request->body == NULL || cfl_sds_len(request->body) == 0) {
-        send_response_ng(response, 400, "error: no payload found\n");
+        send_json_message_response_ng(response, 400, "{\"text\":\"No data\",\"code\":5}");
 
         return -1;
     }
