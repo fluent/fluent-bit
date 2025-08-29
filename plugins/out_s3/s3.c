@@ -216,8 +216,9 @@ int create_headers(struct flb_s3 *ctx, char *body_md5,
     if (ctx->compression == FLB_AWS_COMPRESS_GZIP || ctx->compression == FLB_AWS_COMPRESS_ZSTD) {
         encoding_header = get_content_encoding_header(ctx->compression);
 
-        if(encoding_header == NULL){
+        if (encoding_header == NULL) {
             flb_errno();
+            flb_free(s3_headers);
             return -1;
         }
         s3_headers[n] = *encoding_header;
