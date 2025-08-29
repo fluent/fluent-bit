@@ -369,6 +369,12 @@ static int cb_ml_init(struct flb_filter_instance *ins,
                                             "fluentbit", "filter", "emit_records_total",
                                             "Total number of emitted records",
                                             1, (char *[]) {"name"});
+        if (!ctx->cmt_emitted) {
+            flb_errno();
+            flb_free(ctx);
+
+            return -1;
+        }
 
         /* OLD api */
         flb_metrics_add(FLB_MULTILINE_METRIC_EMITTED,
@@ -382,6 +388,12 @@ static int cb_ml_init(struct flb_filter_instance *ins,
                                                 "fluentbit", "filter", "emit_truncated_total",
                                                 "Total number of truncated occurence of multiline",
                                                 1, (char *[]) {"name"});
+        if (!ctx->cmt_truncated) {
+            flb_errno();
+            flb_free(ctx);
+
+            return -1;
+        }
 
         /* OLD api */
         flb_metrics_add(FLB_MULTILINE_METRIC_TRUNCATED,
