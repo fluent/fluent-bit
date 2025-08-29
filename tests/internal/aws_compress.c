@@ -36,6 +36,9 @@ static void flb_aws_compress_test_cases(struct flb_aws_test_case *cases);
 static void flb_aws_compress_truncate_b64_test_cases__gzip_decode(
                                                     struct flb_aws_test_case *cases,
                                                     size_t max_out_len);
+static void flb_aws_compress_truncate_b64_test_cases__zstd_decode(
+                                                    struct flb_aws_test_case *cases,
+                                                    size_t max_out_len);
 
 /** ------ Test Cases ------ **/
 void test_compression_gzip()
