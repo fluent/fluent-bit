@@ -83,12 +83,15 @@ void do_create(flb_ctx_t *ctx, char *system, ...)
                                     NULL) == 0);
 }
 
-void do_destroy(flb_ctx_t *ctx) {
-    flb_stop(ctx);
+void do_destroy(flb_ctx_t *ctx, int ret) {
+    if (ret == 0) {
+        flb_stop(ctx);
+    }
     flb_destroy(ctx);
 }
 
 void flb_test_ipm_regular() {
+    int ret;
     flb_ctx_t *ctx = flb_create();
     do_create(ctx,
             "podman_metrics",
@@ -97,14 +100,16 @@ void flb_test_ipm_regular() {
             "path.sysfs", DPATH_PODMAN_REGULAR,
             "path.procfs", DPATH_PODMAN_REGULAR,
             NULL);
-    TEST_CHECK(flb_start(ctx) == 0);
+    ret = flb_start(ctx);
+    TEST_CHECK(ret == 0);
     sleep(1);
     TEST_CHECK(check_metric(ctx, "usage_bytes") == 0);
     TEST_CHECK(check_metric(ctx, "receive_bytes_total") == 0);
-    do_destroy(ctx);
+    do_destroy(ctx, ret);
 }
 
 void flb_test_ipm_reversed() {
+    int ret;
     flb_ctx_t *ctx = flb_create();
     do_create(ctx,
             "podman_metrics",
@@ -113,14 +118,16 @@ void flb_test_ipm_reversed() {
             "path.sysfs", DPATH_PODMAN_REVERSED,
             "path.procfs", DPATH_PODMAN_REVERSED,
             NULL);
-    TEST_CHECK(flb_start(ctx) == 0);
+    ret = flb_start(ctx);
+    TEST_CHECK(ret == 0);
     sleep(1);
     TEST_CHECK(check_metric(ctx, "usage_bytes") == 0);
     TEST_CHECK(check_metric(ctx, "receive_bytes_total") == 0);
-    do_destroy(ctx);
+    do_destroy(ctx, ret);
 }
 
 void flb_test_ipm_garbage_config() {
+    int ret;
     flb_ctx_t *ctx = flb_create();
     do_create(ctx,
             "podman_metrics",
@@ -129,11 +136,13 @@ void flb_test_ipm_garbage_config() {
             "path.sysfs", DPATH_PODMAN_GARBAGE_CONFIG,
             "path.procfs", DPATH_PODMAN_GARBAGE_CONFIG,
             NULL);
-    TEST_CHECK(flb_start(ctx) != 0);
-    do_destroy(ctx);
+    ret = flb_start(ctx);
+    TEST_CHECK(ret != 0);
+    do_destroy(ctx, ret);
 }
 
 void flb_test_ipm_no_config() {
+    int ret;
     flb_ctx_t *ctx = flb_create();
     do_create(ctx,
             "podman_metrics",
@@ -142,11 +151,13 @@ void flb_test_ipm_no_config() {
             "path.sysfs", DPATH_PODMAN_NO_CONFIG,
             "path.procfs", DPATH_PODMAN_NO_CONFIG,
             NULL);
-    TEST_CHECK(flb_start(ctx) != 0);
-    do_destroy(ctx);
+    ret = flb_start(ctx);
+    TEST_CHECK(ret != 0);
+    do_destroy(ctx, ret);
 }
 
 void flb_test_ipm_no_sysfs() {
+    int ret;
     flb_ctx_t *ctx = flb_create();
     do_create(ctx,
             "podman_metrics",
@@ -155,14 +166,16 @@ void flb_test_ipm_no_sysfs() {
             "path.sysfs", DPATH_PODMAN_NO_SYSFS,
             "path.procfs", DPATH_PODMAN_NO_SYSFS,
             NULL);
-    TEST_CHECK(flb_start(ctx) == 0);
+    ret = flb_start(ctx);
+    TEST_CHECK(ret == 0);
     sleep(1);
     TEST_CHECK(check_metric(ctx, "usage_bytes") != 0);
     TEST_CHECK(check_metric(ctx, "receive_bytes_total") != 0);
-    do_destroy(ctx);
+    do_destroy(ctx, ret);
 }
 
 void flb_test_ipm_no_proc() {
+    int ret;
     flb_ctx_t *ctx = flb_create();
     do_create(ctx,
             "podman_metrics",
@@ -171,14 +184,16 @@ void flb_test_ipm_no_proc() {
             "path.sysfs", DPATH_PODMAN_NO_PROC,
             "path.procfs", DPATH_PODMAN_NO_PROC,
             NULL);
-    TEST_CHECK(flb_start(ctx) == 0);
+    ret = flb_start(ctx);
+    TEST_CHECK(ret == 0);
     sleep(1);
     TEST_CHECK(check_metric(ctx, "usage_bytes") == 0);
     TEST_CHECK(check_metric(ctx, "receive_bytes_total") != 0);
-    do_destroy(ctx);
+    do_destroy(ctx, ret);
 }
 
 void flb_test_ipm_garbage() {
+    int ret;
     flb_ctx_t *ctx = flb_create();
     do_create(ctx,
             "podman_metrics",
@@ -187,14 +202,16 @@ void flb_test_ipm_garbage() {
             "path.sysfs", DPATH_PODMAN_GARBAGE,
             "path.procfs", DPATH_PODMAN_GARBAGE,
             NULL);
-    TEST_CHECK(flb_start(ctx) == 0);
+    ret = flb_start(ctx);
+    TEST_CHECK(ret == 0);
     sleep(1);
     TEST_CHECK(check_metric(ctx, "usage_bytes") != 0);
     TEST_CHECK(check_metric(ctx, "receive_bytes_total") != 0);
-    do_destroy(ctx);
+    do_destroy(ctx, ret);
 }
 
 void flb_test_ipm_cgroupv2() {
+    int ret;
     flb_ctx_t *ctx = flb_create();
     do_create(ctx,
             "podman_metrics",
@@ -203,11 +220,12 @@ void flb_test_ipm_cgroupv2() {
             "path.sysfs", DPATH_PODMAN_CGROUP_V2,
             "path.procfs", DPATH_PODMAN_CGROUP_V2,
             NULL);
-    TEST_CHECK(flb_start(ctx) == 0);
+    ret = flb_start(ctx);
+    TEST_CHECK(ret == 0);
     sleep(1);
     TEST_CHECK(check_metric(ctx, "usage_bytes") == 0);
     TEST_CHECK(check_metric(ctx, "receive_bytes_total") == 0);
-    do_destroy(ctx);
+    do_destroy(ctx, ret);
 }
 
 TEST_LIST = {
