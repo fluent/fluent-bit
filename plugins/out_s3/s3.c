@@ -85,19 +85,31 @@ static void remove_from_queue(struct upload_queue *entry);
 
 static int blob_initialize_authorization_endpoint_upstream(struct flb_s3 *context);
 
-static struct flb_aws_header content_encoding_header = {
-    .key = "Content-Encoding",
-    .key_len = 16,
-    .val = "gzip",
-    .val_len = 4,
-};
-
-static struct flb_aws_header zstd_content_encoding_header = {
-    .key = "Content-Encoding",
-    .key_len = 16,
-    .val = "zstd",
-    .val_len = 4,
-};
+static struct flb_aws_header *get_content_encoding_header(int compression_type)
+{
+    static struct flb_aws_header gzip_header = {
+        .key = "Content-Encoding",
+        .key_len = 16,
+        .val = "gzip",
+        .val_len = 4,
+    };
+    
+    static struct flb_aws_header zstd_header = {
+        .key = "Content-Encoding",
+        .key_len = 16,
+        .val = "zstd",
+        .val_len = 4,
+    };
+    
+    switch (compression_type) {
+        case FLB_AWS_COMPRESS_GZIP:
+            return &gzip_header;
+        case FLB_AWS_COMPRESS_ZSTD:
+            return &zstd_header;
+        default:
+            return NULL;
+    }
+}
 
 static struct flb_aws_header content_type_header = {
     .key = "Content-Type",
@@ -166,6 +178,7 @@ int create_headers(struct flb_s3 *ctx, char *body_md5,
     int n = 0;
     int headers_len = 0;
     struct flb_aws_header *s3_headers = NULL;
+    struct flb_aws_header *encoding_header = NULL;
 
     if (ctx->content_type != NULL) {
         headers_len++;
@@ -200,11 +213,14 @@ int create_headers(struct flb_s3 *ctx, char *body_md5,
         s3_headers[n].val_len = strlen(ctx->content_type);
         n++;
     }
-    if (ctx->compression == FLB_AWS_COMPRESS_GZIP) {
-        s3_headers[n] = content_encoding_header;
-        n++;
-    } else if(ctx->compression == FLB_AWS_COMPRESS_ZSTD){
-        s3_headers[n] = zstd_content_encoding_header;
+    if (ctx->compression == FLB_AWS_COMPRESS_GZIP || ctx->compression == FLB_AWS_COMPRESS_ZSTD) {
+        encoding_header = get_content_encoding_header(ctx->compression);
+
+        if(encoding_header == NULL){
+            flb_errno();
+            return -1;
+        }
+        s3_headers[n] = *encoding_header;
         n++;
     }
     if (ctx->canned_acl != NULL) {
