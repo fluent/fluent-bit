@@ -31,7 +31,6 @@
 #include <fluent-bit/flb_scheduler.h>
 #include <fluent-bit/flb_plugin.h>
 #include <fluent-bit/flb_gzip.h>
-#include <fluent-bit/flb_zstd.h>
 #include <fluent-bit/flb_base64.h>
 #include <fluent-bit/flb_log_event_decoder.h>
 #include <fluent-bit/flb_input_blob.h>
