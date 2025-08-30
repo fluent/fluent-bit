@@ -838,7 +838,8 @@ static int cb_s3_init(struct flb_output_instance *ins,
                                          ins->tls_ca_file,
                                          ins->tls_crt_file,
                                          ins->tls_key_file,
-                                         ins->tls_key_passwd);
+                                         ins->tls_key_passwd, 
+                                         ins->tls_provider_query);
         if (!ctx->client_tls) {
             flb_plg_error(ctx->ins, "Failed to create tls context");
             return -1;
@@ -854,7 +855,8 @@ static int cb_s3_init(struct flb_output_instance *ins,
                                        ins->tls_ca_file,
                                        ins->tls_crt_file,
                                        ins->tls_key_file,
-                                       ins->tls_key_passwd);
+                                       ins->tls_key_passwd, 
+                                       ins->tls_provider_query);
     if (!ctx->provider_tls) {
         flb_errno();
         return -1;
@@ -888,7 +890,8 @@ static int cb_s3_init(struct flb_output_instance *ins,
                                                ins->tls_ca_file,
                                                ins->tls_crt_file,
                                                ins->tls_key_file,
-                                               ins->tls_key_passwd);
+                                               ins->tls_key_passwd, 
+                                               ins->tls_provider_query);
 
         if (!ctx->sts_provider_tls) {
             flb_errno();

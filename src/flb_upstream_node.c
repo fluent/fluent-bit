@@ -38,6 +38,7 @@ struct flb_upstream_node *flb_upstream_node_create(flb_sds_t name, flb_sds_t hos
                                                    const char *tls_crt_file,
                                                    const char *tls_key_file,
                                                    const char *tls_key_passwd,
+                                                   const char* tls_provider_query,
                                                    struct flb_hash_table *ht,
                                                    struct flb_config *config)
 {
@@ -121,6 +122,12 @@ struct flb_upstream_node *flb_upstream_node_create(flb_sds_t name, flb_sds_t hos
         flb_upstream_node_destroy(node);
         return NULL;
     }
+
+    node->tls_provider_query = flb_sds_create(tls_provider_query);
+    if (!node->tls_provider_query) {
+        flb_upstream_node_destroy(node);
+        return NULL;
+    }
 #endif
 
     /* hash table */
@@ -137,7 +144,8 @@ struct flb_upstream_node *flb_upstream_node_create(flb_sds_t name, flb_sds_t hos
                                    tls_ca_file,
                                    tls_crt_file,
                                    tls_key_file,
-                                   tls_key_passwd);
+                                   tls_key_passwd, 
+                                   tls_provider_query);
         if (!node->tls) {
             flb_error("[upstream_node] error initializing TLS context "
                       "on node '%s'", name);
@@ -215,6 +223,7 @@ void flb_upstream_node_destroy(struct flb_upstream_node *node)
     flb_sds_destroy(node->tls_crt_file);
     flb_sds_destroy(node->tls_key_file);
     flb_sds_destroy(node->tls_key_passwd);
+    flb_sds_destroy(node->tls_provider_query);
     if (node->tls) {
         flb_tls_destroy(node->tls);
     }
