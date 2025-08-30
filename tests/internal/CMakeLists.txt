@@ -153,6 +153,13 @@ if(FLB_LUAJIT)
     )
 endif()
 
+if(FLB_PROCESSOR_LOG_SAMPLING)
+  set(UNIT_TESTS_FILES
+    ${UNIT_TESTS_FILES}
+    log_sampling.c
+    )
+endif()
+
 set(UNIT_TESTS_DATA
   data/tls/certificate.pem
   data/tls/private_key.pem
