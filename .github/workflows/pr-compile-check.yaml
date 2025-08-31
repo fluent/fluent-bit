@@ -135,6 +135,7 @@ jobs:
         run: |
           sudo apt-get update
           sudo apt-get install -y bison cmake flex gcc libssl-dev libyaml-dev
+          sudo apt-get install -y libzstd-dev
 
       - name: Install cmake
         uses: jwlawson/actions-setup-cmake@v2
@@ -148,6 +149,6 @@ jobs:
         run: |
           export CXX=/bin/false
           export nparallel=$(( $(getconf _NPROCESSORS_ONLN) > 8 ? 8 : $(getconf _NPROCESSORS_ONLN) ))
-          cmake ../
+          cmake -DFLB_PREFER_SYSTEM_LIB_ZSTD=ON ../
           make -j $nparallel
         working-directory: build
