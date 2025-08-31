@@ -135,7 +135,7 @@ jobs:
         run: |
           sudo apt-get update
           sudo apt-get install -y bison cmake flex gcc libssl-dev libyaml-dev
-          sudo apt-get install -y libzstd-dev
+          sudo apt-get install -y libzstd-dev librdkafka-dev
 
       - name: Install cmake
         uses: jwlawson/actions-setup-cmake@v2
@@ -149,6 +149,6 @@ jobs:
         run: |
           export CXX=/bin/false
           export nparallel=$(( $(getconf _NPROCESSORS_ONLN) > 8 ? 8 : $(getconf _NPROCESSORS_ONLN) ))
-          cmake -DFLB_PREFER_SYSTEM_LIB_ZSTD=ON ../
+          cmake -DFLB_PREFER_SYSTEM_LIB_ZSTD=ON -DFLB_PREFER_SYSTEM_LIB_KAFKA=ON ../
           make -j $nparallel
         working-directory: build
