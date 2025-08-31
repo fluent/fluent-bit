@@ -49,6 +49,7 @@
 
 struct worker_info {
     int active_upload;
+    struct flb_sched_timer *timer;
 };
 
 FLB_TLS_DEFINE(struct worker_info, worker_info);
@@ -887,7 +888,18 @@ static void cb_azb_blob_file_upload(struct flb_config *config, void *out_context
     struct worker_info *info;
     struct flb_blob_delivery_notification *notification;
 
+    if (!config->is_running || config->is_shutting_down) {
+        flb_sched_timer_cb_coro_return();
+    }
+
     info = FLB_TLS_GET(worker_info);
+    if (info == NULL) {
+        /* shouldn't happen, but just in case */
+        if (ctx != NULL && ctx->ins != NULL) {
+            flb_plg_warn(ctx->ins, "[worker: file upload] invalid null worker_info");
+        }
+        flb_sched_timer_cb_coro_return();
+    }
 
     if (info->active_upload) {
         flb_plg_trace(ctx->ins, "[worker: file upload] upload already in progress...");
@@ -1150,7 +1162,7 @@ static void cb_azb_blob_file_upload(struct flb_config *config, void *out_context
     flb_sched_timer_cb_coro_return();
 }
 
-static int azb_timer_create(struct flb_azure_blob *ctx)
+static int azb_timer_create(struct flb_azure_blob *ctx, struct flb_sched_timer **timer)
 {
     int ret;
     int64_t ms;
@@ -1162,7 +1174,7 @@ static int azb_timer_create(struct flb_azure_blob *ctx)
     ms = ctx->upload_parts_timeout * 1000;
 
     ret = flb_sched_timer_coro_cb_create(sched, FLB_SCHED_TIMER_CB_PERM, ms,
-                                         cb_azb_blob_file_upload, ctx, NULL);
+                                         cb_azb_blob_file_upload, ctx, timer);
     if (ret == -1) {
         flb_plg_error(ctx->ins, "failed to create upload timer");
         return -1;
@@ -1724,10 +1736,11 @@ static int cb_worker_init(void *data, struct flb_config *config)
             return -1;
         }
         info->active_upload = FLB_FALSE;
+        info->timer = NULL;
         FLB_TLS_SET(worker_info, info);
     }
 
-    ret = azb_timer_create(ctx);
+    ret = azb_timer_create(ctx, &info->timer);
     if (ret == -1) {
         flb_plg_error(ctx->ins, "failed to create upload timer");
         return -1;
@@ -1742,12 +1755,17 @@ static int cb_worker_exit(void *data, struct flb_config *config)
     struct worker_info *info;
     struct flb_azure_blob *ctx = data;
 
-    flb_plg_info(ctx->ins, "initializing worker");
+    flb_plg_info(ctx->ins, "exiting worker");
 
     info = FLB_TLS_GET(worker_info);
     if (info != NULL) {
-        flb_free(info);
+        /* set the TLS before freeing */
         FLB_TLS_SET(worker_info, NULL);
+
+        if (info->timer != NULL) {
+            flb_sched_timer_cb_destroy(info->timer);
+        }
+        flb_free(info);
     }
 
     return 0;
