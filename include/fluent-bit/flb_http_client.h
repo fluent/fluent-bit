@@ -27,6 +27,7 @@
 #include <fluent-bit/flb_http_common.h>
 #include <fluent-bit/flb_http_client_http1.h>
 #include <fluent-bit/flb_http_client_http2.h>
+#include <time.h>
 
 #define HTTP_CLIENT_TEMPORARY_BUFFER_SIZE (1024 * 64)
 
@@ -245,6 +246,13 @@ struct flb_http_client {
     /* Response */
     struct flb_http_client_response resp;
 
+    /* State tracking */
+    time_t ts_start;
+    time_t last_read_ts;
+
+    int response_timeout;
+    int read_idle_timeout;
+
     /* Tests */
     int test_mode;
     struct flb_test_http_response test_response;
@@ -373,6 +381,8 @@ int flb_http_set_keepalive(struct flb_http_client *c);
 int flb_http_set_content_encoding_gzip(struct flb_http_client *c);
 int flb_http_set_content_encoding_zstd(struct flb_http_client *c);
 int flb_http_set_content_encoding_snappy(struct flb_http_client *c);
+int flb_http_set_read_idle_timeout(struct flb_http_client *c, int timeout);
+int flb_http_set_response_timeout(struct flb_http_client *c, int timeout);
 
 int flb_http_set_callback_context(struct flb_http_client *c,
                                   struct flb_callback *cb_ctx);
