@@ -243,7 +243,7 @@ static int check_connection(struct flb_http_client *c)
     buf = flb_malloc(len + 1);
     if (!buf) {
         flb_errno();
-        return -1;
+        return FLB_HTTP_ERROR;
     }
 
     memcpy(buf, header, len);
@@ -263,6 +263,19 @@ static int check_connection(struct flb_http_client *c)
 static inline void consume_bytes(char *buf, int bytes, int length)
 {
     memmove(buf, buf + bytes, length - bytes);
+}
+
+static inline void http_client_response_reset(struct flb_http_client *c)
+{
+    c->resp.data_len = 0;
+    c->resp.status = 0;
+    c->resp.content_length = -1;
+    c->resp.chunked_encoding = FLB_FALSE;
+    c->resp.connection_close = -1;
+    c->resp.headers_end = NULL;
+    c->resp.payload = NULL;
+    c->resp.payload_size = 0;
+    c->resp.chunk_processed_end = NULL;
 }
 
 static int process_chunked_data(struct flb_http_client *c)
@@ -1418,7 +1431,7 @@ int flb_http_do_request(struct flb_http_client *c, size_t *bytes)
     *bytes = (bytes_header + bytes_body);
 
     /* prep c->resp for incoming data */
-    c->resp.data_len = 0;
+    http_client_response_reset(c);
 
     /* at this point we've sent our request so we expect more data in response*/
     return FLB_HTTP_MORE;
@@ -1534,17 +1547,25 @@ int flb_http_do(struct flb_http_client *c, size_t *bytes)
 
     /* Read the server response, we need at least 19 bytes */
     while (ret == FLB_HTTP_MORE || ret == FLB_HTTP_CHUNK_AVAILABLE) {
-        /* flb_http_do does not consume any bytes during processing
+        /*
+         * flb_http_do does not consume any bytes during processing
          * so we always pass 0 consumed_bytes because we fetch until
          * the end chunk before returning to the caller
          */
-
         ret = flb_http_get_response_data(c, 0);
+    }
+
+
+    if (ret != FLB_HTTP_OK) {
+        return ret;
     }
 
     /* Check 'Connection' response header */
     ret = check_connection(c);
-    if (ret == FLB_HTTP_OK) {
+    if (ret == FLB_HTTP_ERROR) {
+        return ret;
+    }
+    else if (ret == FLB_HTTP_OK) {
         /*
          * If the server replied that the connection will be closed
          * and our Upstream connection is in keepalive mode, we must
@@ -1558,6 +1579,9 @@ int flb_http_do(struct flb_http_client *c, size_t *bytes)
                       c->u_conn->upstream->tcp_port,
                       c->u_conn->fd);
         }
+    }
+    else if (ret == FLB_HTTP_NOT_FOUND) {
+        /* Connection header not found, continue normally */
     }
 
 #ifdef FLB_HAVE_HTTP_CLIENT_DEBUG
