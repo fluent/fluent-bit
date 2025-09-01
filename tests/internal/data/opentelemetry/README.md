@@ -136,7 +136,7 @@ For error cases, use the `expected_error` field:
   "test_case_name": {
     "input": { ... },
     "expected_error": {
-      "code": "FLB_OTEL_LOGS_ERR_MISSING_TIMESTAMP"
+      "code": "FLB_OTEL_LOGS_ERR_UNEXPECTED_LOGRECORDS_ENTRY_TYPE"
     }
   }
 }
