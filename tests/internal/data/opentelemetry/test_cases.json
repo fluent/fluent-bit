@@ -1255,6 +1255,29 @@
       "log_body": {"a":{"d":[{"e":"g"}]}}
     }
   },
+  "resource_attribute_intvalue_string": {
+    "input": {
+      "resourceLogs": [{
+        "resource": {
+          "attributes": [
+            {"key": "resourceVersion", "value": {"intValue": "1"}}
+          ]
+        },
+        "scopeLogs": [{
+          "logRecords": [{
+            "timeUnixNano": "1640995200000000000",
+            "body": {"stringValue": "test log"}
+          }]
+        }]
+      }]
+    },
+    "expected": {
+      "group_metadata": {"schema":"otlp","resource_id":0,"scope_id":0},
+      "group_body": {"resource":{"attributes":{"resourceVersion":1}}},
+      "log_metadata": {"otlp":{}},
+      "log_body": {"log": "test log"}
+    }
+  },
   "unwrapped_plain_map": {
     "input": {
       "resourceLogs": [{
