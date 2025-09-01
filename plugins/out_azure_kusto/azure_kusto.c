@@ -943,6 +943,54 @@ static int cb_azure_kusto_init(struct flb_output_instance *ins, struct flb_confi
         return -1;
     }
 
+    /*
+     * Create upstream context for Kusto Cluster endpoint (for streaming ingestion)
+     * Convert ingestion endpoint to cluster endpoint by removing "ingest-" prefix
+     */
+    if (ctx->streaming_ingestion_enabled == FLB_TRUE) {
+        flb_sds_t cluster_endpoint = NULL;
+        
+        /* Check if ingestion endpoint contains "ingest-" prefix */
+        if (strstr(ctx->ingestion_endpoint, "ingest-") != NULL) {
+            /* Create cluster endpoint by removing "ingest-" prefix */
+            cluster_endpoint = flb_sds_create(ctx->ingestion_endpoint);
+            if (!cluster_endpoint) {
+                flb_plg_error(ctx->ins, "failed to create cluster endpoint string");
+                return -1;
+            }
+            
+            /* Replace "ingest-" with empty string to get cluster endpoint */
+            char *ingest_pos = strstr(cluster_endpoint, "ingest-");
+            if (ingest_pos) {
+                /* Move the rest of the string to remove "ingest-" */
+                memmove(ingest_pos, ingest_pos + 7, strlen(ingest_pos + 7) + 1);
+                flb_sds_len_set(cluster_endpoint, flb_sds_len(cluster_endpoint) - 7);
+            }
+            
+            flb_plg_info(ctx->ins, "Creating cluster upstream connection to: %s", cluster_endpoint);
+            
+            /* Create upstream connection to cluster endpoint */
+            ctx->u_cluster = flb_upstream_create_url(config, cluster_endpoint, io_flags, ins->tls);
+            if (!ctx->u_cluster) {
+                flb_plg_error(ctx->ins, "cluster upstream creation failed for endpoint: %s", cluster_endpoint);
+                flb_sds_destroy(cluster_endpoint);
+                return -1;
+            }
+            
+            flb_sds_destroy(cluster_endpoint);
+        } else {
+            flb_plg_warn(ctx->ins, "ingestion endpoint does not contain 'ingest-' prefix, using as cluster endpoint");
+            /* Use ingestion endpoint directly as cluster endpoint */
+            ctx->u_cluster = flb_upstream_create_url(config, ctx->ingestion_endpoint, io_flags, ins->tls);
+            if (!ctx->u_cluster) {
+                flb_plg_error(ctx->ins, "cluster upstream creation failed");
+                return -1;
+            }
+        }
+        
+        flb_plg_info(ctx->ins, "Cluster upstream connection created successfully for streaming ingestion");
+    }
+
     flb_plg_debug(ctx->ins, "async flag is %d", flb_stream_is_async(&ctx->u->base));
 
     /* Create oauth2 context */
@@ -1527,6 +1575,11 @@ static int cb_azure_kusto_exit(void *data, struct flb_config *config)
     if (ctx->u) {
         flb_upstream_destroy(ctx->u);
         ctx->u = NULL;
+    }
+
+    if (ctx->u_cluster) {
+        flb_upstream_destroy(ctx->u_cluster);
+        ctx->u_cluster = NULL;
     }
 
     pthread_mutex_destroy(&ctx->resources_mutex);

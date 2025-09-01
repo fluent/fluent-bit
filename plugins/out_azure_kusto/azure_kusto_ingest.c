@@ -544,12 +544,16 @@ int azure_kusto_streaming_ingestion(struct flb_azure_kusto *ctx, flb_sds_t tag,
     len = strftime(tmp, sizeof(tmp) - 1, "%a, %d %b %Y %H:%M:%S GMT", &tm);
     flb_plg_debug(ctx->ins, "[STREAMING_INGESTION] Request timestamp: %s", tmp);
 
-    /* Get upstream connection to the main Kusto engine (not ingestion endpoint) */
-    flb_plg_debug(ctx->ins, "[STREAMING_INGESTION] Getting upstream connection to endpoint: %s", 
-                  ctx->ingestion_endpoint ? ctx->ingestion_endpoint : "NULL");
-    u_conn = flb_upstream_conn_get(ctx->u);
+    /* Get upstream connection to the main Kusto cluster endpoint (for streaming ingestion) */
+    flb_plg_debug(ctx->ins, "[STREAMING_INGESTION] Getting upstream connection to cluster endpoint");
+    if (!ctx->u_cluster) {
+        flb_plg_error(ctx->ins, "[STREAMING_INGESTION] ERROR: Cluster upstream not available - streaming ingestion requires cluster endpoint");
+        return -1;
+    }
+    
+    u_conn = flb_upstream_conn_get(ctx->u_cluster);
     if (!u_conn) {
-        flb_plg_error(ctx->ins, "[STREAMING_INGESTION] ERROR: Failed to get upstream connection");
+        flb_plg_error(ctx->ins, "[STREAMING_INGESTION] ERROR: Failed to get cluster upstream connection");
         return -1;
     }
     flb_plg_debug(ctx->ins, "[STREAMING_INGESTION] Successfully obtained upstream connection");
