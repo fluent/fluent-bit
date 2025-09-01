@@ -531,7 +531,7 @@ int azure_kusto_streaming_ingestion(struct flb_azure_kusto *ctx, flb_sds_t tag,
     char tmp[64];
     int len;
 
-    flb_plg_info(ctx->ins, "[STREAMING_INGESTION] Starting for tag: %.*s, payload: %zu bytes, db: %s, table: %s, compression: %s", 
+    flb_plg_info(ctx->ins, "[STREAMING_INGESTION] Starting for tag: %.*s, payload: %zu bytes, db: %s, table: %s, compression: %s",
                  (int)tag_len, tag, payload_size, ctx->database_name, ctx->table_name, ctx->compression_enabled ? "enabled" : "disabled");
 
     now = time(NULL);
@@ -544,7 +544,7 @@ int azure_kusto_streaming_ingestion(struct flb_azure_kusto *ctx, flb_sds_t tag,
         flb_plg_error(ctx->ins, "[STREAMING_INGESTION] ERROR: cluster upstream not available - streaming ingestion requires cluster endpoint");
         return -1;
     }
-    
+
     flb_plg_debug(ctx->ins, "[STREAMING_INGESTION] Getting upstream connection to cluster endpoint");
     u_conn = flb_upstream_conn_get(ctx->u_cluster);
     if (!u_conn) {
@@ -588,7 +588,7 @@ int azure_kusto_streaming_ingestion(struct flb_azure_kusto *ctx, flb_sds_t tag,
 
     /* Create HTTP client for streaming ingestion */
     flb_plg_debug(ctx->ins, "[STREAMING_INGESTION] Creating HTTP client for POST request");
-    c = flb_http_client(u_conn, FLB_HTTP_POST, uri, payload, payload_size, 
+    c = flb_http_client(u_conn, FLB_HTTP_POST, uri, payload, payload_size,
                         NULL, 0, NULL, 0);
 
     if (c) {
@@ -600,7 +600,7 @@ int azure_kusto_streaming_ingestion(struct flb_azure_kusto *ctx, flb_sds_t tag,
         flb_http_add_header(c, "x-ms-client-version", 19, FLB_VERSION_STR, strlen(FLB_VERSION_STR));
         flb_http_add_header(c, "x-ms-app", 8, "Kusto.Fluent-Bit", 16);
         flb_http_add_header(c, "x-ms-user", 9, "Kusto.Fluent-Bit", 16);
-        
+
         /* Set Content-Type based on whether compression is enabled */
         if (ctx->compression_enabled) {
             flb_http_add_header(c, "Content-Type", 12, "application/json", 16);
@@ -616,7 +616,7 @@ int azure_kusto_streaming_ingestion(struct flb_azure_kusto *ctx, flb_sds_t tag,
 
         /* Send the HTTP request */
         ret = flb_http_do(c, &resp_size);
-        
+
         flb_plg_info(ctx->ins, "[STREAMING_INGESTION] HTTP request completed - http_do result: %d, HTTP Status: %i, Response size: %zu", ret, c->resp.status, resp_size);
 
         if (ret == 0) {
