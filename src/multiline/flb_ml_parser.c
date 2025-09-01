@@ -62,11 +62,11 @@ struct flb_ml_parser *flb_ml_parser_create_params(struct flb_config *ctx,
 
     /* name/type */
     ml_parser->name = flb_sds_create(p->name);
-    ml_parser->type = p->type;
     if (!ml_parser->name) {
         flb_free(ml_parser);
         return NULL;
     }
+    ml_parser->type = p->type;
 
     /* ENDSWITH/EQ optimization string */
     if (p->match_str) {
@@ -92,9 +92,8 @@ struct flb_ml_parser *flb_ml_parser_create_params(struct flb_config *ctx,
     ml_parser->negate   = p->negate;
     ml_parser->flush_ms = (p->flush_ms > 0) ? p->flush_ms : FLB_ML_FLUSH_TIMEOUT;
 
-    /* prepare rules list & link into registry */
+    /* prepare rules list */
     mk_list_init(&ml_parser->regex_rules);
-    mk_list_add(&ml_parser->_head, &ctx->multiline_parsers);
 
     /* optional keys */
     if (p->key_content) {
@@ -121,6 +120,9 @@ struct flb_ml_parser *flb_ml_parser_create_params(struct flb_config *ctx,
 
     /* keep back-pointer to config for later rule init */
     ml_parser->config = ctx;
+
+    /* link into registry after all initialization succeeds */
+    mk_list_add(&ml_parser->_head, &ctx->multiline_parsers);
 
     return ml_parser;
 }
