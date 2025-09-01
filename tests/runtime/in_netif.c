@@ -69,12 +69,14 @@ static struct test_ctx *test_ctx_create(struct flb_lib_out_cb *data)
     return ctx;
 }
 
-static void test_ctx_destroy(struct test_ctx *ctx)
+static void test_ctx_destroy(struct test_ctx *ctx, int ret)
 {
     TEST_CHECK(ctx != NULL);
 
     sleep(1);
-    flb_stop(ctx->flb);
+    if (ret == 0) {
+        flb_stop(ctx->flb);
+    }
     flb_destroy(ctx->flb);
     flb_free(ctx);
 }
@@ -226,7 +228,7 @@ static void flb_test_normal()
         TEST_MSG("expect: >=1 got: %d", got);
     }
 
-    test_ctx_destroy(ctx);
+    test_ctx_destroy(ctx, ret);
 }
 
 static void flb_test_no_interface()
@@ -251,7 +253,7 @@ static void flb_test_no_interface()
     ret = flb_start(ctx->flb);
     TEST_CHECK(ret != 0);
 
-    test_ctx_destroy(ctx);
+    test_ctx_destroy(ctx, ret);
 }
 
 static void flb_test_invalid_interface()
@@ -285,7 +287,7 @@ static void flb_test_invalid_interface()
     ret = flb_start(ctx->flb);
     TEST_CHECK(ret != 0);
 
-    test_ctx_destroy(ctx);
+    test_ctx_destroy(ctx, ret);
 }
 
 static void flb_test_verbose()
@@ -338,7 +340,7 @@ static void flb_test_verbose()
         TEST_MSG("expect: >10 got: %d", got);
     }
 
-    test_ctx_destroy(ctx);
+    test_ctx_destroy(ctx, ret);
 }
 
 TEST_LIST = {
