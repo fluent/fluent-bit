@@ -1489,10 +1489,16 @@ static void test_buffer_limit_truncation()
     ml = flb_ml_create(config, "limit-test");
     TEST_CHECK(ml != NULL);
 
-    mlp = flb_ml_parser_create(config, "test-concat", FLB_ML_REGEX,
-                               NULL, FLB_FALSE, 1000,
-                               "log", NULL, NULL,
-                               p, "docker");
+    /* --- New params-based initializer --- */
+    struct flb_ml_parser_params params = flb_ml_parser_params_default("test-concat");
+    params.type        = FLB_ML_REGEX;
+    params.negate      = FLB_FALSE;
+    params.flush_ms    = 1000;
+    params.key_content = "log";
+    params.parser_ctx  = p;        /* immediate single-line parser */
+    params.parser_name = "docker"; /* for delayed resolution if needed */
+
+    mlp = flb_ml_parser_create_params(config, &params);
     TEST_CHECK(mlp != NULL);
 
     /* Define rules that will always match the test data */
@@ -1519,8 +1525,7 @@ static void test_buffer_limit_truncation()
 
     /*
      * Append the second line. This will match the 'cont' state and concatenate.
-     * The concatenation will exceed the limit
-     * and correctly trigger the truncation logic.
+     * The concatenation will exceed the limit and correctly trigger truncation.
      */
     ret = flb_ml_append_text(ml, stream_id, &tm, line2, strlen(line2));
     TEST_CHECK(ret == FLB_MULTILINE_TRUNCATED);
