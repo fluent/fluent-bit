@@ -21,6 +21,7 @@
 #include <fluent-bit/flb_sds.h>
 #include <fluent-bit/flb_pack.h>
 #include <fluent-bit/flb_log_event_encoder.h>
+#include <fluent-bit/flb_time.h>
 #include <fluent-bit/flb_opentelemetry.h>
 #include <ctype.h>
 
@@ -73,13 +74,9 @@ static int process_json_payload_log_records_entry(
         result = flb_otel_utils_find_map_entry_by_key(log_records_entry, "observedTimeUnixNano", 0, FLB_TRUE);
     }
 
-    /* we need a timestamp... */
+    /* fallback to current time if both timestamp fields are missing */
     if (result == -1) {
-        if (error_status) {
-            *error_status = FLB_OTEL_LOGS_ERR_MISSING_TIMESTAMP;
-        }
-        return -FLB_OTEL_LOGS_ERR_MISSING_TIMESTAMP;
-
+        flb_time_get(&timestamp);
     }
     else {
         timestamp_object = &log_records_entry->ptr[result].val;
