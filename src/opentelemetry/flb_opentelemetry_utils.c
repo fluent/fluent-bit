@@ -113,16 +113,18 @@ int flb_otel_utils_json_payload_get_wrapped_value(msgpack_object *wrapper,
             }
             else if (strncasecmp(kv_key->ptr, "intValue",  kv_key->size) == 0) {
                 if (kv_value->type != MSGPACK_OBJECT_POSITIVE_INTEGER &&
-                    kv_value->type != MSGPACK_OBJECT_NEGATIVE_INTEGER) {
-                    /* If the value is not an integer, we cannot process it */
+                    kv_value->type != MSGPACK_OBJECT_NEGATIVE_INTEGER &&
+                    kv_value->type != MSGPACK_OBJECT_STR) {
+                    /* If the value is not an integer or string, we cannot process it */
                     return -2;
                 }
                 internal_type = MSGPACK_OBJECT_POSITIVE_INTEGER;
             }
             else if (strncasecmp(kv_key->ptr, "doubleValue",  kv_key->size) == 0) {
                 if (kv_value->type != MSGPACK_OBJECT_FLOAT32 &&
-                    kv_value->type != MSGPACK_OBJECT_FLOAT64) {
-                    /* If the value is not a float, we cannot process it */
+                    kv_value->type != MSGPACK_OBJECT_FLOAT64 &&
+                    kv_value->type != MSGPACK_OBJECT_STR) {
+                    /* If the value is not a float or string, we cannot process it */
                     return -2;
                 }
                 internal_type = MSGPACK_OBJECT_FLOAT;
