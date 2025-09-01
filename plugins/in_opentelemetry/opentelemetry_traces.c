@@ -93,24 +93,46 @@ static int process_attribute(struct ctrace_attributes *attr,
         break;
     case MSGPACK_OBJECT_POSITIVE_INTEGER:
     case MSGPACK_OBJECT_NEGATIVE_INTEGER:
-        if (value->type != MSGPACK_OBJECT_POSITIVE_INTEGER &&
-            value->type != MSGPACK_OBJECT_NEGATIVE_INTEGER) {
+        if (value->type == MSGPACK_OBJECT_STR) {
+            value_str = flb_sds_create_len(value->via.str.ptr, value->via.str.size);
+            if (value_str == NULL) {
+                flb_sds_destroy(key_str);
+                return -1;
+            }
+            value_int = strtoll(value_str, NULL, 10);
+            flb_sds_destroy(value_str);
+        }
+        else if (value->type == MSGPACK_OBJECT_POSITIVE_INTEGER ||
+                 value->type == MSGPACK_OBJECT_NEGATIVE_INTEGER) {
+            value_int = value->via.i64;
+        }
+        else {
             flb_sds_destroy(key_str);
             return -1;
         }
 
-        value_int = value->via.i64;
         ret = ctr_attributes_set_int64(attr, key_str, value_int);
         break;
     case MSGPACK_OBJECT_FLOAT32:
     case MSGPACK_OBJECT_FLOAT64:
-        if (value->type != MSGPACK_OBJECT_FLOAT32 &&
-            value->type != MSGPACK_OBJECT_FLOAT64) {
+        if (value->type == MSGPACK_OBJECT_STR) {
+            value_str = flb_sds_create_len(value->via.str.ptr, value->via.str.size);
+            if (value_str == NULL) {
+                flb_sds_destroy(key_str);
+                return -1;
+            }
+            value_double = strtod(value_str, NULL);
+            flb_sds_destroy(value_str);
+        }
+        else if (value->type == MSGPACK_OBJECT_FLOAT32 ||
+                 value->type == MSGPACK_OBJECT_FLOAT64) {
+            value_double = value->via.f64;
+        }
+        else {
             flb_sds_destroy(key_str);
             return -1;
         }
 
-        value_double = value->via.f64;
         ret = ctr_attributes_set_double(attr, key_str, value_double);
         break;
     case MSGPACK_OBJECT_BOOLEAN:
