@@ -1503,15 +1503,17 @@ int flb_http_get_response_data(struct flb_http_client *c, size_t bytes_consumed)
         }
         now = time(NULL);
 
-        if (c->response_timeout > 0 &&
-            (now - c->ts_start) > c->response_timeout) {
-            flb_error("[http_client] response timeout reached");
+        if (c->response_timeout > 0 && (now - c->ts_start) > c->response_timeout) {
+            flb_error("[http_client] response timeout reached (elapsed=%lds, limit=%ds)",
+                      (long)(now - c->ts_start), c->response_timeout);
+            flb_upstream_conn_recycle(c->u_conn, FLB_FALSE);
             return FLB_HTTP_ERROR;
         }
 
-        if (c->read_idle_timeout > 0 &&
-            (now - c->last_read_ts) > c->read_idle_timeout) {
-            flb_error("[http_client] read idle timeout reached");
+        if (c->read_idle_timeout > 0 &&  (now - c->last_read_ts) > c->read_idle_timeout) {
+            flb_error("[http_client] read idle timeout reached (idle=%lds, limit=%ds)",
+                      (long)(now - c->last_read_ts), c->read_idle_timeout);
+            flb_upstream_conn_recycle(c->u_conn, FLB_FALSE);
             return FLB_HTTP_ERROR;
         }
 
