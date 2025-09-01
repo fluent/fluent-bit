@@ -475,6 +475,27 @@ void test_json_payload_get_wrapped_value()
 
     msgpack_sbuffer_destroy(&sbuf);
     msgpack_unpacked_destroy(&up);
+
+    /* Test integer value provided as a string */
+    msgpack_sbuffer_init(&sbuf);
+    msgpack_packer_init(&pck, &sbuf, msgpack_sbuffer_write);
+
+    msgpack_pack_map(&pck, 1);
+    msgpack_pack_str(&pck, 8);
+    msgpack_pack_str_body(&pck, "intValue", 8);
+    msgpack_pack_str(&pck, 1);
+    msgpack_pack_str_body(&pck, "1", 1);
+
+    msgpack_unpacked_init(&up);
+    msgpack_unpack_next(&up, sbuf.data, sbuf.size, NULL);
+
+    ret = flb_otel_utils_json_payload_get_wrapped_value(&up.data, &val, &type);
+    TEST_CHECK(ret == 0);
+    TEST_CHECK(type == MSGPACK_OBJECT_POSITIVE_INTEGER);
+    TEST_CHECK(val->type == MSGPACK_OBJECT_STR);
+
+    msgpack_sbuffer_destroy(&sbuf);
+    msgpack_unpacked_destroy(&up);
 }
 
 #define OTEL_TEST_CASES_PATH      FLB_TESTS_DATA_PATH "/data/opentelemetry/test_cases.json"
