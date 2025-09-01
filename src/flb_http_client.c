@@ -44,6 +44,7 @@
 #include <fluent-bit/flb_utils.h>
 #include <fluent-bit/flb_base64.h>
 #include <fluent-bit/tls/flb_tls.h>
+#include <time.h>
 #include <fluent-bit/flb_signv4_ng.h>
 
 void flb_http_client_debug(struct flb_http_client *c,
@@ -1139,6 +1140,18 @@ int flb_http_set_content_encoding_snappy(struct flb_http_client *c)
     return ret;
 }
 
+int flb_http_set_read_idle_timeout(struct flb_http_client *c, int timeout)
+{
+    c->read_idle_timeout = timeout;
+    return 0;
+}
+
+int flb_http_set_response_timeout(struct flb_http_client *c, int timeout)
+{
+    c->response_timeout = timeout;
+    return 0;
+}
+
 int flb_http_set_callback_context(struct flb_http_client *c,
                                   struct flb_callback *cb_ctx)
 {
@@ -1417,6 +1430,10 @@ int flb_http_do_request(struct flb_http_client *c, size_t *bytes)
     /* number of sent bytes */
     *bytes = (bytes_header + bytes_body);
 
+    /* Initialize timeout tracking */
+    c->ts_start = time(NULL);
+    c->last_read_ts = c->ts_start;
+
     /* prep c->resp for incoming data */
     c->resp.data_len = 0;
 
@@ -1440,6 +1457,7 @@ int flb_http_get_response_data(struct flb_http_client *c, size_t bytes_consumed)
     int r_bytes;
     ssize_t available;
     size_t out_size;
+    time_t now;
 
     /* If the caller has consumed some of the payload (via bytes_consumed)
      * we consume those bytes off the payload
@@ -1483,6 +1501,19 @@ int flb_http_get_response_data(struct flb_http_client *c, size_t bytes_consumed)
             }
             available = flb_http_buffer_available(c) - 1;
         }
+        now = time(NULL);
+
+        if (c->response_timeout > 0 &&
+            (now - c->ts_start) > c->response_timeout) {
+            flb_error("[http_client] response timeout reached");
+            return FLB_HTTP_ERROR;
+        }
+
+        if (c->read_idle_timeout > 0 &&
+            (now - c->last_read_ts) > c->read_idle_timeout) {
+            flb_error("[http_client] read idle timeout reached");
+            return FLB_HTTP_ERROR;
+        }
 
         r_bytes = flb_io_net_read(c->u_conn,
                                   c->resp.data + c->resp.data_len,
@@ -1497,6 +1528,10 @@ int flb_http_get_response_data(struct flb_http_client *c, size_t bytes_consumed)
         if (r_bytes >= 0) {
             c->resp.data_len += r_bytes;
             c->resp.data[c->resp.data_len] = '\0';
+
+            if (r_bytes > 0) {
+                c->last_read_ts = now;
+            }
 
             ret = process_data(c);
             if (ret == FLB_HTTP_ERROR) {
