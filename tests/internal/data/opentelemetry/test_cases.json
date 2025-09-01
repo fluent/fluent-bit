@@ -37,9 +37,12 @@
   },
 
   "missing_timestamp": {
-    "input": {"resourceLogs": [{"scopeLogs": [{"logRecords": [{}]}]}]},
-    "expected_error": {
-      "code": "FLB_OTEL_LOGS_ERR_MISSING_TIMESTAMP"
+    "input": {"resourceLogs": [{"scopeLogs": [{"logRecords": [{"body": {"stringValue": "test"}}]}]}]},
+    "expected": {
+      "group_metadata": {"schema":"otlp","resource_id":0,"scope_id":0},
+      "group_body": {"resource":{}},
+      "log_metadata": {"otlp":{}},
+      "log_body": {"log": "test"}
     }
   },
 
@@ -985,49 +988,6 @@
     },
     "expected_error": {
       "code": "FLB_OTEL_LOGS_ERR_SCOPELOGS_MISSING"
-    }
-  },
-
-  "multiple_records_no_timestamp_after_valid_ones": {
-    "input": {
-      "resourceLogs": [{
-        "resource": {
-          "attributes": [
-            {"key": "service.name", "value": {"stringValue": "test-service"}}
-          ]
-        },
-        "scopeLogs": [{
-          "scope": {
-            "name": "test-scope"
-          },
-          "logRecords": [
-            {
-              "timeUnixNano": "1640995200000000000",
-              "severityNumber": 9,
-              "severityText": "INFO",
-              "attributes": [
-                {"key": "user.id", "value": {"stringValue": "user123"}},
-                {"key": "action", "value": {"stringValue": "login"}}
-              ],
-              "body": {"stringValue": "User login successful"}
-            },
-            {
-              "timeUnixNano": "1640995201000000000",
-              "severityNumber": 5,
-              "severityText": "DEBUG",
-              "body": {"stringValue": "Processing user session"}
-            },
-            {
-              "severityNumber": 13,
-              "severityText": "ERROR",
-              "body": {"stringValue": "This log is missing timestamp"}
-            }
-          ]
-        }]
-      }]
-    },
-    "expected_error": {
-      "code": "FLB_OTEL_LOGS_ERR_MISSING_TIMESTAMP"
     }
   },
 
