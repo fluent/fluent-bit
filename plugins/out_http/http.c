@@ -193,6 +193,15 @@ static int http_post(struct flb_out_http *ctx,
      */
     c->cb_ctx = ctx->ins->callback;
 
+    flb_http_set_response_timeout(c, ctx->response_timeout);
+
+    if (ctx->read_idle_timeout > 0) {
+        flb_http_set_read_idle_timeout(c, ctx->read_idle_timeout);
+    }
+    else {
+        flb_http_set_read_idle_timeout(c, ctx->ins->net_setup.io_timeout);
+    }
+
     /* Append headers */
     if (headers) {
         append_headers(c, headers);
@@ -677,6 +686,16 @@ static struct flb_config_map config_map[] = {
      FLB_CONFIG_MAP_BOOL, "log_response_payload", "true",
      0, FLB_TRUE, offsetof(struct flb_out_http, log_response_payload),
      "Specify if the response paylod should be logged or not"
+    },
+    {
+     FLB_CONFIG_MAP_TIME, "http.response_timeout", "60s",
+     0, FLB_TRUE, offsetof(struct flb_out_http, response_timeout),
+     "Set maximum time to wait for a server response"
+    },
+    {
+     FLB_CONFIG_MAP_TIME, "http.read_idle_timeout", "0s",
+     0, FLB_TRUE, offsetof(struct flb_out_http, read_idle_timeout),
+     "Set maximum allowed time between two consecutive reads"
     },
     {
      FLB_CONFIG_MAP_STR, "http_user", NULL,
