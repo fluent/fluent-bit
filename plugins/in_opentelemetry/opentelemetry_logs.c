@@ -21,6 +21,7 @@
 #include <fluent-bit/flb_sds.h>
 #include <fluent-bit/flb_pack.h>
 #include <fluent-bit/flb_log_event_encoder.h>
+#include <fluent-bit/flb_time.h>
 #include <fluent-bit/flb_opentelemetry.h>
 #include <fluent-otel-proto/fluent-otel.h>
 
@@ -217,10 +218,12 @@ static int otel_pack_v1_metadata(struct flb_opentelemetry *ctx,
 
     flb_mp_map_header_init(&mh, mp_pck);
 
-    flb_mp_map_header_append(&mh);
-    msgpack_pack_str(mp_pck, 18);
-    msgpack_pack_str_body(mp_pck, "observed_timestamp", 18);
-    msgpack_pack_uint64(mp_pck, log_record->observed_time_unix_nano);
+    if (log_record->observed_time_unix_nano != 0) {
+        flb_mp_map_header_append(&mh);
+        msgpack_pack_str(mp_pck, 18);
+        msgpack_pack_str_body(mp_pck, "observed_timestamp", 18);
+        msgpack_pack_uint64(mp_pck, log_record->observed_time_unix_nano);
+    }
 
     /* Value of 0 indicates unknown or missing timestamp. */
     if (log_record->time_unix_nano != 0) {
@@ -514,8 +517,13 @@ static int binary_payload_to_msgpack(struct flb_opentelemetry *ctx,
                         flb_time_from_uint64(&tm, log_records[log_record_index]->time_unix_nano);
                         ret = flb_log_event_encoder_set_timestamp(encoder, &tm);
                     }
+                    else if (log_records[log_record_index]->observed_time_unix_nano > 0) {
+                        flb_time_from_uint64(&tm, log_records[log_record_index]->observed_time_unix_nano);
+                        ret = flb_log_event_encoder_set_timestamp(encoder, &tm);
+                    }
                     else {
-                        ret = flb_log_event_encoder_set_current_timestamp(encoder);
+                        flb_time_get(&tm);
+                        ret = flb_log_event_encoder_set_timestamp(encoder, &tm);
                     }
                 }
 
