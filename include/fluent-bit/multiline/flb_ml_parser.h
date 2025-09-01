@@ -23,6 +23,40 @@
 #include <fluent-bit/flb_info.h>
 #include <fluent-bit/flb_parser.h>
 
+/* fwd decl */
+struct flb_config;
+
+/*
+ * Size based parameter bag for creating multiline parsers.
+ * - Call flb_ml_parser_params_default(name) to obtain defaults,
+ *   then tweak only the fields you need before passing to v2.
+ */
+struct flb_ml_parser_params {
+    uint16_t size;      /* sizeof(struct flb_ml_parser_params) */
+
+    /* creation parameters (mirror of old positional args) */
+    char *name;
+    int   type;         /* FLB_ML_REGEX / FLB_ML_ENDSWITH / FLB_ML_EQ */
+    char *match_str;    /* used for ENDSWITH/EQ; NULL for REGEX */
+    int   negate;       /* 0/1 */
+    int   flush_ms;     /* default: FLB_ML_FLUSH_TIMEOUT */
+    char *key_content;
+    char *key_group;
+    char *key_pattern;
+    struct flb_parser *parser_ctx; /* immediate */
+    char *parser_name;             /* delayed init */
+
+    /* for future toggles */
+    uint32_t flags;
+};
+
+/* Fill sane defaults */
+struct flb_ml_parser_params flb_ml_parser_params_default(const char *name);
+
+/* New initializer with params */
+struct flb_ml_parser *flb_ml_parser_create_params(struct flb_config *ctx,
+                                                  const struct flb_ml_parser_params *p);
+
 int flb_ml_parser_init(struct flb_ml_parser *ml_parser);
 
 int flb_ml_parser_builtin_create(struct flb_config *config);
