@@ -574,17 +574,17 @@ int azure_kusto_streaming_ingestion(struct flb_azure_kusto *ctx, flb_sds_t tag,
         return -1;
     }
 
-    /* Create the streaming ingestion URI - table name goes in headers, not URL path */
+    /* Create the streaming ingestion URI - both database and table are required in URL path per ADX API spec */
     if (ctx->ingestion_mapping_reference) {
         flb_sds_snprintf(&uri, flb_sds_alloc(uri),
-                         "/v1/rest/ingest/%s?streamFormat=MultiJSON&mappingName=%s",
-                         ctx->database_name, ctx->ingestion_mapping_reference);
+                         "/v1/rest/ingest/%s/%s?streamFormat=MultiJSON&mappingName=%s",
+                         ctx->database_name, ctx->table_name, ctx->ingestion_mapping_reference);
         flb_plg_info(ctx->ins, "[STREAMING_INGESTION] Using ingestion mapping: %s", 
                      ctx->ingestion_mapping_reference);
     } else {
         flb_sds_snprintf(&uri, flb_sds_alloc(uri),
-                         "/v1/rest/ingest/%s?streamFormat=MultiJSON",
-                         ctx->database_name);
+                         "/v1/rest/ingest/%s/%s?streamFormat=MultiJSON",
+                         ctx->database_name, ctx->table_name);
         flb_plg_debug(ctx->ins, "[STREAMING_INGESTION] No ingestion mapping specified");
     }
 
@@ -607,9 +607,7 @@ int azure_kusto_streaming_ingestion(struct flb_azure_kusto *ctx, flb_sds_t tag,
         flb_http_add_header(c, "x-ms-app", 8, "Kusto.Fluent-Bit", 16);
         flb_http_add_header(c, "x-ms-user", 9, "Kusto.Fluent-Bit", 16);
         
-        /* Add table name as header (required for streaming ingestion) */
-        flb_http_add_header(c, "Table", 5, ctx->table_name, flb_sds_len(ctx->table_name));
-        flb_plg_debug(ctx->ins, "[STREAMING_INGESTION] Added Table header: %s", ctx->table_name);
+        /* Note: Table name is now included in URL path, no need for Table header */
 
         /* Set Content-Type based on whether compression is enabled */
         if (ctx->compression_enabled) {
