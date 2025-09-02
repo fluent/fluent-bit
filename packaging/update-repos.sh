@@ -50,6 +50,7 @@ done
 DEB_REPO_PATHS=( "debian/bookworm"
                  "debian/bullseye"
                  "debian/buster"
+                 "debian/trixie"
                  "ubuntu/jammy"
                  "ubuntu/noble"
                  "raspbian/bookworm"

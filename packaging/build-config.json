@@ -97,6 +97,14 @@
           "type": "deb"
         },
         {
+          "target": "debian/trixie",
+          "type": "deb"
+        },
+        {
+          "target": "debian/trixie.arm64v8",
+          "type": "deb"
+        },
+        {
           "target": "ubuntu/22.04",
           "type": "deb"
         },

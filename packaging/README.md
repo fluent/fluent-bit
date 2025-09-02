@@ -21,6 +21,8 @@ The [`distros`](./distros/) directory contains OCI container definitions used to
 | CentOS        |   8                       | arm64v8 | centos/8.arm64v8         |
 | CentOS        |   7                       | x86_64  | centos/7                 |
 | CentOS        |   7                       | arm64v8 | centos/7.arm64v8         |
+| Debian        |   13                      | x86_64  | debian/trixie            |
+| Debian        |   13                      | arm64v8 | debian/trixie.arm64v8    |
 | Debian        |   12                      | x86_64  | debian/bookworm          |
 | Debian        |   12                      | arm64v8 | debian/bookworm.arm64v8  |
 | Debian        |   11                      | x86_64  | debian/bullseye          |
