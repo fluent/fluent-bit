@@ -198,21 +198,6 @@ static int tls_context_server_alpn_select_callback(SSL *ssl,
     return result;
 }
 
-static int tls_context_client_alpn_select_callback(SSL *ssl,
-                                                   unsigned char **out,
-                                                   unsigned char *outlen,
-                                                   const unsigned char *in,
-                                                   unsigned int inlen,
-                                                   void *arg)
-{
-    return tls_context_server_alpn_select_callback(ssl,
-                                                   (const unsigned char **) out,
-                                                   outlen,
-                                                   in,
-                                                   inlen,
-                                                   arg);
-}
-
 int tls_context_alpn_set(void *ctx_backend, const char *alpn)
 {
     size_t              wire_format_alpn_index;
@@ -283,10 +268,15 @@ int tls_context_alpn_set(void *ctx_backend, const char *alpn)
                 ctx);
         }
         else {
-            SSL_CTX_set_next_proto_select_cb(
-                ctx->ctx,
-                tls_context_client_alpn_select_callback,
-                ctx);
+            if (ctx->alpn == NULL) {
+                return -1;
+            }
+            if (SSL_CTX_set_alpn_protos(
+                ctx->ctx, 
+                (const unsigned char *) &ctx->alpn[1], 
+                (unsigned int) ctx->alpn[0]) != 0) {
+                return -1;
+            }
         }
     }
 
