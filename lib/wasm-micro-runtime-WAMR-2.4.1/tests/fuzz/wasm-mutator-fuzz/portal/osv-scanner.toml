@@ -1,0 +1,59 @@
+# GHSA-67hx-6x53-jw92
+[[PackageOverrides]]
+name = "@babel/traverse"
+ecosystem = "npm"
+ignore = true
+reason = "Accepted known vulnerabilities for testing purposes"
+
+# GHSA-67hx-6x53-jw92
+[[PackageOverrides]]
+name = "babel-traverse"
+ecosystem = "npm"
+ignore = true
+reason = "Accepted known vulnerabilities for testing purposes"
+
+# GHSA-9c47-m6qq-7p4h	
+[[PackageOverrides]]
+name = "json5"
+ecosystem = "npm"
+ignore = true
+reason = "Dependency not critical for security"
+
+# GHSA-7fh5-64p2-3v2j
+[[PackageOverrides]]
+name = "postcss"
+ecosystem = "npm"
+ignore = true
+reason = "Vulnerabilities do not affect current use case"
+
+# GHSA-gcx4-mw62-g8wm
+[[PackageOverrides]]
+name = "rollup"
+ecosystem = "npm"
+ignore = true
+reason = "Legacy build tool under controlled environment"
+
+# GHSA-c2qf-rxjj-qqgw
+[[PackageOverrides]]
+name = "semver"
+ecosystem = "npm"
+ignore = true
+reason = "Version parsing is managed securely"
+
+# GHSA-353f-5xf4-qw67
+# GHSA-c24v-8rfc-w8vw
+# GHSA-8jhw-289h-jh2g
+# GHSA-64vr-g452-qvp3
+# GHSA-9cwx-2883-4wfx
+[[PackageOverrides]]
+name = "vite"
+ecosystem = "npm"
+ignore = true
+reason = "Development server not exposed to untrusted networks"
+
+# GHSA-mwcw-c2x4-8c55
+[[PackageOverrides]]
+name = "nanoid"
+ecosystem = "npm"
+ignore = true
+reason = "Accepted known vulnerabilities for testing purposes"

@@ -1,0 +1,20 @@
+#
+# Copyright 2024 Sony Semiconductor Solutions Corporation.
+#
+# SPDX-License-Identifier: Apache-2.0 WITH LLVM-exception
+#
+
+from building import *
+import re
+
+Import('rtconfig')
+
+cwd     = GetCurrentDir()
+src     = Split('''
+posix_file.c
+''')
+CPPPATH = [cwd]
+
+group = DefineGroup('iwasm_common_posix', src, depend = [''], CPPPATH = CPPPATH)
+
+Return('group')
