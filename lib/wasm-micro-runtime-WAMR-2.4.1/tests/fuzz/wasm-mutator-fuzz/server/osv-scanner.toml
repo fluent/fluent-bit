@@ -1,0 +1,32 @@
+# GHSA-m2qf-hxjv-5gpq / PYSEC-2023-62
+[[PackageOverrides]]
+name = "Flask"
+ecosystem = "PyPI"
+ignore = true
+reason = "Accepted known vulnerabilities for testing purposes"
+
+# GHSA-m2qf-hxjv-5gpq / PYSEC-2023-62
+[[PackageOverrides]]
+name = "flask"
+ecosystem = "PyPI"
+ignore = true
+reason = "Accepted known vulnerabilities for testing purposes"
+
+# GHSA-84pr-m4jr-85g5
+# GHSA-hxwh-jpp2-84pm / PYSEC-2024-71
+[[PackageOverrides]]
+name = "flask-cors"
+ecosystem = "PyPI"
+ignore = true
+reason = "Accepted known vulnerabilities for testing purposes"
+
+# GHSA-2g68-c3qc-8985
+# GHSA-hrfv-mqp8-q5rw / PYSEC-2023-221
+# GHSA-px8h-6qxv-m22q / PYSEC-2023-57
+# GHSA-xg9f-g7g7-2323 / PYSEC-2023-58
+# PYSEC-2022-203
+[[PackageOverrides]]
+name = "werkzeug"
+ecosystem = "PyPI"
+ignore = true
+reason = "Accepted known vulnerabilities for testing purposes"
