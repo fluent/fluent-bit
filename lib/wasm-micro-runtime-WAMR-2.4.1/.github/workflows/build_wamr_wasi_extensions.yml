@@ -1,0 +1,57 @@
+# Copyright (C) 2019 Intel Corporation.  All rights reserved.
+# SPDX-License-Identifier: Apache-2.0 WITH LLVM-exception
+
+name: build wamr_wasi_extensions release
+
+on:
+  workflow_call:
+    inputs:
+      upload_url:
+        description: upload binary assets to the URL of release
+        type: string
+        required: false
+      ver_num:
+        description: a semantic version number. it is required when `release` is true.
+        type: string
+        required: false
+
+permissions:
+  contents: read
+
+jobs:
+  build_wamr_wasi_extensions:
+    runs-on: ${{ matrix.os }}
+    permissions:
+      contents: write # for uploading release artifacts
+    strategy:
+      matrix:
+        os: [ubuntu-22.04]
+    steps:
+      - name: checkout
+        uses: actions/checkout@v4
+
+      - name: install-wasi-sdk-wabt
+        uses: ./.github/actions/install-wasi-sdk-wabt
+        with:
+          os: ${{ matrix.os }}
+
+      - name: Build wamr-wasi-extensions
+        run: |
+          mkdir dist
+          ./build_libs.sh $(pwd)/dist/wamr-wasi-extensions
+        working-directory: wamr-wasi-extensions
+
+      - name: Compress the binary
+        run: |
+          zip -r wamr-wasi-extensions-${{ inputs.ver_num }}.zip wamr-wasi-extensions
+        working-directory: wamr-wasi-extensions/dist
+
+      - name: Upload release zip
+        uses: actions/upload-release-asset@v1
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        with:
+          upload_url: ${{ inputs.upload_url }}
+          asset_path: wamr-wasi-extensions/dist/wamr-wasi-extensions-${{ inputs.ver_num }}.zip
+          asset_name: wamr-wasi-extensions-${{ inputs.ver_num }}.zip
+          asset_content_type: application/zip

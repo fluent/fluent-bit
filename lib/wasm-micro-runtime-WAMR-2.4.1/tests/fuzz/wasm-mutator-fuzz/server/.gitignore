@@ -1,0 +1,4 @@
+data.db
+Dockerfile copy*
+migrations/
+app/test.py

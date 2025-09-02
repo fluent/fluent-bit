@@ -1,0 +1,59 @@
+# Copyright (C) 2019 Intel Corporation.  All rights reserved.
+# SPDX-License-Identifier: Apache-2.0 WITH LLVM-exception
+
+FROM ubuntu:20.04 AS base
+
+ENV DEBIAN_FRONTEND=noninteractive
+
+# hadolint ignore=DL3008,DL3009
+RUN apt-get update \
+  && apt-get install -y --no-install-recommends\
+       ca-certificates cmake build-essential git wget
+
+WORKDIR /usr/local/share/ca-certificates/cacert.org
+RUN wget -qP /usr/local/share/ca-certificates/cacert.org http://www.cacert.org/certs/root.crt http://www.cacert.org/certs/class3.crt \
+  && update-ca-certificates
+
+# need a newer cmake
+RUN apt-get purge -y cmake
+
+ARG CMAKE_VER=3.27.0
+RUN wget https://github.com/Kitware/CMake/releases/download/v${CMAKE_VER}/cmake-${CMAKE_VER}-Linux-x86_64.sh \
+  -q -O /tmp/cmake-install.sh \
+  && chmod u+x /tmp/cmake-install.sh \
+  && mkdir /opt/cmake-${CMAKE_VER} \
+  && /tmp/cmake-install.sh --skip-license --prefix=/opt/cmake-${CMAKE_VER} \
+  && rm /tmp/cmake-install.sh \
+  && ln -s /opt/cmake-${CMAKE_VER}/bin/* /usr/local/bin
+
+WORKDIR /home/wamr
+COPY . .
+RUN git config --global http.sslCAinfo /etc/ssl/certs/ca-certificates.crt
+
+WORKDIR /home/wamr/product-mini/platforms/linux
+RUN rm -rf build \
+  && cmake -S . -B build \
+       -DWAMR_BUILD_WASI_NN=1 -DWAMR_BUILD_WASI_NN_TFLITE=1\
+       -DWAMR_BUILD_WASI_NN_ENABLE_GPU=1 \
+  && cmake --build build -j "$(grep -c ^processor /proc/cpuinfo)"
+
+FROM nvidia/cuda:11.3.0-runtime-ubuntu20.04
+
+# hadolint ignore=DL3008
+RUN apt-get update && apt-get install -y --no-install-recommends \
+    ocl-icd-libopencl1 \
+    ocl-icd-opencl-dev \
+    clinfo && \
+    rm -rf /var/lib/apt/lists/*
+
+RUN mkdir -p /etc/OpenCL/vendors && \
+    echo "libnvidia-opencl.so.1" > /etc/OpenCL/vendors/nvidia.icd
+
+ENV NVIDIA_VISIBLE_DEVICES=all
+ENV NVIDIA_DRIVER_CAPABILITIES=compute,utility
+
+COPY --from=base /home/wamr/product-mini/platforms/linux/build/iwasm /usr/bin
+COPY --from=base /home/wamr/product-mini/platforms/linux/build/lib*.so /usr/lib
+ENV LD_LIBRARY_PATH=/usr/lib
+
+ENTRYPOINT [ "iwasm" ]

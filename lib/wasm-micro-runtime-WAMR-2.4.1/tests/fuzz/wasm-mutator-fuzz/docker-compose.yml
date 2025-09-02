@@ -1,0 +1,29 @@
+# yaml configuration
+services:
+  web:
+    platform: linux/amd64
+    container_name: fuzz_web
+    build:
+      context: ./portal
+      dockerfile: Dockerfile
+      args:
+        - proxy=${proxy}
+    volumes:
+      - "./portal:/portal"
+    ports:
+      - "${portal_port}:80"
+  server:
+    build:
+      context: ../../..
+      dockerfile: ./tests/fuzz/wasm-mutator-fuzz/server/Dockerfile
+      args:
+        - proxy=${proxy}
+    ports:
+      - "${server_port}:16667"
+    container_name: fuzz_server
+    volumes:
+      - "./server/app/data.db:/wamr-test/tests/fuzz/wasm-mutator-fuzz/server/app/data.db"
+      - "./workspace:/wamr-test/tests/fuzz/wasm-mutator-fuzz/workspace"
+    environment:
+      - "TZ=Asia/Shanghai"
+    restart: on-failure

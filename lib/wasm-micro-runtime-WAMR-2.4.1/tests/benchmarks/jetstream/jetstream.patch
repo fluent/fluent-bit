@@ -1,0 +1,63 @@
+diff --git a/benchmarks/JetStream2/wasm/HashSet.cpp b/benchmarks/JetStream2/wasm/HashSet.cpp
+index eca979b0..d1bf4d3d 100644
+--- a/benchmarks/JetStream2/wasm/HashSet.cpp
++++ b/benchmarks/JetStream2/wasm/HashSet.cpp
+@@ -22,8 +22,10 @@
+ 
+ #include <algorithm>
+ #include <memory>
++#include <limits>
+ #include <stdio.h>
+ #include <stdlib.h>
++#include <string.h>
+ #include <sys/time.h>
+ 
+ // Compile with: xcrun clang++ -o HashSet HashSet.cpp -O2 -W -framework Foundation -licucore -std=c++11 -fvisibility=hidden -DNDEBUG=1
+@@ -76,7 +78,7 @@ template<typename ToType, typename FromType>
+ inline ToType bitwise_cast(FromType from)
+ {
+     typename std::remove_const<ToType>::type to { };
+-    std::memcpy(&to, &from, sizeof(to));
++    memcpy(&to, &from, sizeof(to));
+     return to;
+ }
+ 
+diff --git a/benchmarks/JetStream2/wasm/TSF/gpc_code_gen_util.c b/benchmarks/JetStream2/wasm/TSF/gpc_code_gen_util.c
+index 56220fa7..7e3a365b 100644
+--- a/benchmarks/JetStream2/wasm/TSF/gpc_code_gen_util.c
++++ b/benchmarks/JetStream2/wasm/TSF/gpc_code_gen_util.c
+@@ -34,6 +34,8 @@
+ #include <errno.h>
+ #include <dirent.h>
+ 
++int readdir_r(DIR *dirp, struct dirent *entry, struct dirent **result);
++
+ /* code generation debugging */
+ 
+ /* NOTE: It is now the case that the count may be incremented multiple times,
+diff --git a/benchmarks/JetStream2/wasm/TSF/tsf_internal.h b/benchmarks/JetStream2/wasm/TSF/tsf_internal.h
+index 225a248b..ae39d3d3 100644
+--- a/benchmarks/JetStream2/wasm/TSF/tsf_internal.h
++++ b/benchmarks/JetStream2/wasm/TSF/tsf_internal.h
+@@ -429,6 +429,7 @@ struct tsf_fsdb {
+ #endif
+             tsf_fsdb_connection_t *connection;
+ #endif
++            uint32_t __padding;
+         } remote;
+     } u;
+     tsf_limits_t *limits;
+diff --git a/benchmarks/JetStream2/wasm/TSF/tsf_ir_speed.c b/benchmarks/JetStream2/wasm/TSF/tsf_ir_speed.c
+index dd75c43e..79435c42 100644
+--- a/benchmarks/JetStream2/wasm/TSF/tsf_ir_speed.c
++++ b/benchmarks/JetStream2/wasm/TSF/tsf_ir_speed.c
+@@ -63,6 +63,9 @@ static void writeTest(const char *filename,
+         Program_t *program;
+         unsigned elementIndex;
+ 
++        if (!(programIndex % 100))
++            printf("##programIndex: %u\n", programIndex);
++
+         CS(program = tsf_region_create(sizeof(Program_t)));
+         
+         program->globals.len = numDecls + numDefns;

@@ -1,0 +1,101 @@
+# Copyright (C) 2019 Intel Corporation.  All rights reserved.
+# SPDX-License-Identifier: Apache-2.0 WITH LLVM-exception
+name: build wamrc
+
+on:
+  workflow_call:
+    inputs:
+      arch:
+        description: arch of the release
+        type: string
+        required: false
+        default: x86_64
+      llvm_cache_key:
+        description: the cache key of llvm libraries
+        type: string
+        required: true
+      release:
+        description: it is a part of the release process
+        type: boolean
+        required: true
+      runner:
+        description: OS of compilation
+        type: string
+        required: true
+      upload_url:
+        description: upload binary assets to the URL of release
+        type: string
+        required: false
+      ver_num:
+        description: a semantic version number. it is required when `release` is true.
+        type: string
+        required: false
+
+permissions:
+  contents: read
+
+jobs:
+  build:
+    runs-on: ${{ inputs.runner }}
+    permissions:
+      contents: write # for uploading release artifacts
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: get cached LLVM libraries
+        id: retrieve_llvm_libs
+        uses: actions/cache@v4
+        with:
+          path: |
+            ./core/deps/llvm/build/bin
+            ./core/deps/llvm/build/include
+            ./core/deps/llvm/build/lib
+            ./core/deps/llvm/build/libexec
+            ./core/deps/llvm/build/share
+          key: ${{ inputs.llvm_cache_key }}
+          fail-on-cache-miss: true
+
+      - name: generate wamrc binary release
+        run: |
+          cmake -S . -B build
+          cmake --build build --config Release --parallel 4
+        working-directory: wamr-compiler
+
+      - name: Compress the binary on Windows
+        if: inputs.runner == 'windows-latest' && inputs.release
+        run: |
+          tar -czf wamrc-${{ inputs.ver_num }}-${{ inputs.runner }}.tar.gz wamrc.exe
+          Compress-Archive -Path wamrc.exe -DestinationPath wamrc-${{ inputs.ver_num }}-${{ inputs.runner }}.zip
+          mv wamrc-${{ inputs.ver_num }}-${{ inputs.runner }}.* ../
+        working-directory: wamr-compiler/build/Release
+
+      - name: compress the binary on non-Windows
+        if: inputs.runner != 'windows-latest' && inputs.release
+        run: |
+          # Follow the symlink to the actual binary file
+          tar --dereference -czf wamrc-${{ inputs.ver_num }}-${{ inputs.runner }}.tar.gz wamrc
+          zip wamrc-${{ inputs.ver_num }}-${{ inputs.runner }}.zip wamrc
+        working-directory: wamr-compiler/build
+
+      - name: upload release tar.gz
+        if: inputs.release
+        uses: actions/upload-release-asset@v1
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        with:
+          upload_url: ${{ inputs.upload_url }}
+          asset_path: wamr-compiler/build/wamrc-${{ inputs.ver_num }}-${{ inputs.runner }}.tar.gz
+          asset_name: wamrc-${{ inputs.ver_num }}-${{ inputs.arch }}-${{ inputs.runner }}.tar.gz
+          asset_content_type: application/x-gzip
+
+      - name: upload release zip
+        if: inputs.release
+        uses: actions/upload-release-asset@v1
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        with:
+          upload_url: ${{ inputs.upload_url }}
+          asset_path: wamr-compiler/build/wamrc-${{ inputs.ver_num }}-${{ inputs.runner }}.zip
+          asset_name: wamrc-${{ inputs.ver_num }}-${{ inputs.arch }}-${{ inputs.runner }}.zip
+          asset_content_type: application/zip
