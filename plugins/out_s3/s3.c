@@ -617,6 +617,10 @@ static int cb_s3_init(struct flb_output_instance *ins,
     ctx->retry_time = 0;
     ctx->upload_queue_success = FLB_FALSE;
 
+    if(ctx->ins->retry_limit < 0) {
+        ctx->ins->retry_limit = MAX_UPLOAD_ERRORS;
+    }
+
     /* Export context */
     flb_output_set_context(ins, ctx);
 
@@ -1367,11 +1371,10 @@ static int put_all_chunks(struct flb_s3 *ctx)
                 continue;
             }
 
-            if (chunk->failures >= MAX_UPLOAD_ERRORS) {
+            if (chunk->failures >= ctx->ins->retry_limit) {
                 flb_plg_warn(ctx->ins,
-                             "Chunk for tag %s failed to send %i times, "
-                             "will not retry",
-                             (char *) fsf->meta_buf, MAX_UPLOAD_ERRORS);
+                             "Chunk for tag %s failed to send %d/%d times, will not retry",
+                             (char *) fsf->meta_buf, chunk->failures, ctx->ins->retry_limit);
                 flb_fstore_file_inactive(ctx->fs, fsf);
                 continue;
             }
@@ -1656,7 +1659,7 @@ static struct multipart_upload *get_upload(struct flb_s3 *ctx,
         if (tmp_upload->upload_state == MULTIPART_UPLOAD_STATE_COMPLETE_IN_PROGRESS) {
             continue;
         }
-        if (tmp_upload->upload_errors >= MAX_UPLOAD_ERRORS) {
+        if (tmp_upload->upload_errors >= ctx->ins->retry_limit) {
             tmp_upload->upload_state = MULTIPART_UPLOAD_STATE_COMPLETE_IN_PROGRESS;
             flb_plg_error(ctx->ins, "Upload for %s has reached max upload errors",
                           tmp_upload->s3_key);
@@ -1902,7 +1905,7 @@ static void s3_upload_queue(struct flb_config *config, void *out_context)
 
             /* If retry limit was reached, discard file and remove file from queue */
             upload_contents->retry_counter++;
-            if (upload_contents->retry_counter >= MAX_UPLOAD_ERRORS) {
+            if (upload_contents->retry_counter >= ctx->ins->retry_limit) {
                 flb_plg_warn(ctx->ins, "Chunk file failed to send %d times, will not "
                              "retry", upload_contents->retry_counter);
                 s3_store_file_inactive(ctx, upload_contents->upload_file);
@@ -3303,6 +3306,13 @@ static void cb_s3_upload(struct flb_config *config, void *data)
         if (ret != FLB_OK) {
             flb_plg_error(ctx->ins, "Could not send chunk with tag %s",
                           (char *) fsf->meta_buf);
+            if(chunk->failures >= ctx->ins->retry_limit){
+                flb_plg_warn(ctx->ins,
+                             "Chunk for tag %s failed to send %d/%d times, will not retry",
+                             (char *) fsf->meta_buf, chunk->failures, ctx->ins->retry_limit);
+                flb_fstore_file_inactive(ctx->fs, fsf);
+                continue;
+            }
         }
     }
 
@@ -3311,7 +3321,7 @@ static void cb_s3_upload(struct flb_config *config, void *data)
         m_upload = mk_list_entry(head, struct multipart_upload, _head);
         complete = FLB_FALSE;
 
-        if (m_upload->complete_errors >= MAX_UPLOAD_ERRORS) {
+        if (m_upload->complete_errors >= ctx->ins->retry_limit) {
             flb_plg_error(ctx->ins,
                           "Upload for %s has reached max completion errors, "
                           "plugin will give up", m_upload->s3_key);
@@ -3823,10 +3833,10 @@ static void cb_s3_flush(struct flb_event_chunk *event_chunk,
                         m_upload_file, file_first_log_time);
     }
 
-    /* Discard upload_file if it has failed to upload MAX_UPLOAD_ERRORS times */
-    if (upload_file != NULL && upload_file->failures >= MAX_UPLOAD_ERRORS) {
-        flb_plg_warn(ctx->ins, "File with tag %s failed to send %d times, will not "
-                     "retry", event_chunk->tag, MAX_UPLOAD_ERRORS);
+    /* Discard upload_file if it has failed to upload retry_limit times */
+    if (upload_file != NULL && upload_file->failures >= ctx->ins->retry_limit) {
+        flb_plg_warn(ctx->ins, "File with tag %s failed to send %d/%d times, will not retry",
+                     event_chunk->tag, upload_file->failures, ctx->ins->retry_limit);
         s3_store_file_inactive(ctx, upload_file);
         upload_file = NULL;
     }
