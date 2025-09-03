@@ -264,7 +264,7 @@ jobs:
 
       - name: Get the GKE Kubeconfig
         if: matrix.cloud == 'gke'
-        uses: 'google-github-actions/get-gke-credentials@v2'
+        uses: 'google-github-actions/get-gke-credentials@v3'
         with:
           cluster_name: ${{ needs.call-run-terraform-setup.outputs.gke-cluster-name }}
           location: ${{ needs.call-run-terraform-setup.outputs.gke-cluster-zone }}
