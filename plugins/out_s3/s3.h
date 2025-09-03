@@ -48,6 +48,8 @@
 
 #define DEFAULT_UPLOAD_TIMEOUT 3600
 
+#define MAX_UPLOAD_ERRORS 5
+
 /*
  * If we see repeated errors on an upload/chunk, we will discard it
  * This saves us from scenarios where something goes wrong and an upload can
@@ -56,8 +58,9 @@
  *
  * The same is done for chunks, just to be safe, even though realistically
  * I can't think of a reason why a chunk could become unsendable.
+ *
+ * The retry limit is now configurable via the retry_limit parameter.
  */
-#define MAX_UPLOAD_ERRORS 5
 
 struct upload_queue {
     struct s3_file *upload_file;
@@ -96,7 +99,7 @@ struct multipart_upload {
 
     struct mk_list _head;
 
-    /* see note for MAX_UPLOAD_ERRORS */
+    /* see note for retry_limit configuration */
     int upload_errors;
     int complete_errors;
 };
