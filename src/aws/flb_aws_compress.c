@@ -52,7 +52,7 @@ static const struct compression_option compression_options[] = {
     {
         FLB_AWS_COMPRESS_ZSTD,
         "zstd",
-        &flb_zstd_compress
+        (int *)&flb_zstd_compress
     },
 #ifdef FLB_HAVE_ARROW
     {
