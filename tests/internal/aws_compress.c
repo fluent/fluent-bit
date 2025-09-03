@@ -274,7 +274,7 @@ static void flb_aws_compress_truncate_b64_test_cases__zstd_decode(
                                                         size_t max_out_len)
 {
    flb_aws_compress_general_test_cases(FLB_AWS_COMPRESS_TEST_TYPE_B64_TRUNCATE,
-                                      cases, max_out_len, &flb_zstd_uncompress);
+                                      cases, max_out_len, (int *)&flb_zstd_uncompress);
 }
 
 /* General test case loop flb_aws_compress */
