@@ -930,7 +930,7 @@ static struct flb_http_client *fleet_http_do(struct flb_in_calyptia_fleet_config
     flb_http_buffer_size(client, ctx->max_http_buffer_size);
 
     config_version = flb_sds_create_size(32);
-    flb_sds_printf(&config_version, "%ld", ctx->config_timestamp);
+    flb_sds_printf(&config_version, "%lld", (long long)ctx->config_timestamp);
     flb_http_add_header(client,
                          FLEET_HEADERS_CONFIG_VERSION, sizeof(FLEET_HEADERS_CONFIG_VERSION) -1,
                          config_version, flb_sds_len(config_version));
@@ -1853,16 +1853,16 @@ int get_calyptia_fleet_config(struct flb_in_calyptia_fleet_config *ctx)
     if (ret == 1) {
         if (ctx->config_timestamp > 0) {
             if (ctx->config_timestamp < time_last_modified) {
-                flb_plg_info(ctx->ins, "fleet API returned config with newer timestamp than current config (%ld -> %ld)", ctx->config_timestamp, time_last_modified);
+                flb_plg_info(ctx->ins, "fleet API returned config with newer timestamp than current config (%lld -> %lld)", (long long)ctx->config_timestamp, (long long)time_last_modified);
             }
             else if (ctx->config_timestamp == time_last_modified) {
-                flb_plg_debug(ctx->ins, "fleet API returned config with same timestamp as current config (%ld)", time_last_modified);
+                flb_plg_debug(ctx->ins, "fleet API returned config with same timestamp as current config (%lld)", (long long)time_last_modified);
             }
             else {
-                flb_plg_warn(ctx->ins, "fleet API returned config with earlier timestamp than current config (%ld -> %ld)", ctx->config_timestamp, time_last_modified);
+                flb_plg_warn(ctx->ins, "fleet API returned config with earlier timestamp than current config (%lld -> %lld)", (long long)ctx->config_timestamp, (long long)time_last_modified);
             }
         } else {
-            flb_plg_info(ctx->ins, "fleet API returned new config (none -> %ld)", time_last_modified);
+            flb_plg_info(ctx->ins, "fleet API returned new config (none -> %lld)", (long long)time_last_modified);
         }
         get_calyptia_files(ctx, time_last_modified);
 
@@ -1949,7 +1949,7 @@ static flb_sds_t fleet_gendir(struct flb_in_calyptia_fleet_config *ctx, time_t t
         return NULL;
     }
 
-    if (flb_sds_printf(&fleetcurdir, "%s" PATH_SEPARATOR "%ld", fleetdir, timestamp) == NULL) {
+    if (flb_sds_printf(&fleetcurdir, "%s" PATH_SEPARATOR "%lld", fleetdir, (long long)timestamp) == NULL) {
         flb_sds_destroy(fleetdir);
         flb_sds_destroy(fleetcurdir);
         return NULL;
