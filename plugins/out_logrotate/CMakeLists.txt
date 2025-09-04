@@ -1,4 +1,5 @@
 set(src
   logrotate.c)
 
-FLB_PLUGIN(out_logrotate "${src}" "")
+find_package(ZLIB REQUIRED)
+FLB_PLUGIN(out_logrotate "${src}" "${ZLIB_LIBRARIES}")

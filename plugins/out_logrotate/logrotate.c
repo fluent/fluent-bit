@@ -36,6 +36,11 @@
 #include <string.h>
 #include <time.h>
 #include <miniz/miniz.h>
+#include <limits.h>     /* PATH_MAX */
+#include <inttypes.h>   /* PRIu64 */
+#ifndef FLB_SYSTEM_WINDOWS
+#include <libgen.h>     /* dirname */
+#endif
 
 #ifdef FLB_SYSTEM_WINDOWS
 #include <Shlobj.h>
@@ -465,7 +470,7 @@ static int mkpath(struct flb_output_instance *ins, const char *dir)
 
     return 0;
 #elif FLB_SYSTEM_MACOS
-    dup_dir = strdup(dir);
+    dup_dir = flb_strdup(dir);
     if (!dup_dir) {
         return -1;
     }
@@ -479,27 +484,27 @@ static int mkpath(struct flb_output_instance *ins, const char *dir)
         if (S_ISDIR (st.st_mode)) {
             flb_plg_debug(ins, "creating directory %s", dup_dir);
             ret = mkdir(dup_dir, 0755);
-            free(dup_dir);
+            flb_free(dup_dir);
             return ret;
         }
     }
 
     ret = mkpath(ins, dirname(dup_dir));
     if (ret != 0) {
-        free(dup_dir);
+        flb_free(dup_dir);
         return ret;
     }
     flb_plg_debug(ins, "creating directory %s", dup_dir);
     ret = mkdir(dup_dir, 0755);
-    free(dup_dir);
+    flb_free(dup_dir);
     return ret;
 #else
-    dup_dir = strdup(dir);
+    dup_dir = flb_strdup(dir);
     if (!dup_dir) {
         return -1;
     }
     ret = mkpath(ins, dirname(dup_dir));
-    free(dup_dir);
+    flb_free(dup_dir);
     if (ret != 0) {
         return ret;
     }
@@ -517,9 +522,9 @@ static int should_rotate_file(struct flb_logrotate_conf *ctx)
 /* Function to update file size counter using current file position */
 static void update_file_size_counter(struct flb_logrotate_conf *ctx, FILE *fp)
 {
-    long current_pos = ftell(fp);
-    if (current_pos >= 0) {
-        ctx->current_file_size = (size_t)current_pos;
+    struct stat st;
+    if (fstat(fileno(fp), &st) == 0 && st.st_size >= 0) {
+        ctx->current_file_size = (size_t) st.st_size;
     }
 }
 
@@ -527,8 +532,13 @@ static void update_file_size_counter(struct flb_logrotate_conf *ctx, FILE *fp)
 static void generate_timestamp(char *timestamp, size_t size)
 {
     time_t now = time(NULL);
-    struct tm *tm_info = localtime(&now);
-    strftime(timestamp, size, "%Y%m%d_%H%M%S", tm_info);
+    struct tm tm_info;
+#ifdef FLB_SYSTEM_WINDOWS
+    localtime_s(&tm_info, &now);
+#else
+    localtime_r(&now, &tm_info);
+#endif
+    strftime(timestamp, size, "%Y%m%d_%H%M%S", &tm_info);
 }
 
 /* Helper function to write gzip header (based on flb_gzip.c) */
@@ -619,7 +629,7 @@ static int gzip_compress_file(const char *input_filename, const char *output_fil
         goto cleanup;
     }
 
-    /* Process file in chunks */
+    /* Process file in chunks (ensure Z_FINISH is always issued) */
     do {
         bytes_read = fread(input_buffer, 1, GZIP_CHUNK_SIZE, src_fp);
         if (bytes_read > 0) {
@@ -631,7 +641,7 @@ static int gzip_compress_file(const char *input_filename, const char *output_fil
             strm.next_in = (Bytef *)input_buffer;
             strm.avail_in = bytes_read;
             
-            /* Determine flush mode */
+            /* Determine flush mode based on EOF after this read */
             flush = feof(src_fp) ? Z_FINISH : Z_NO_FLUSH;
 
             /* Compress chunk */
@@ -869,7 +879,7 @@ static void cb_logrotate_flush(struct flb_event_chunk *event_chunk,
     /* Check if file needs rotation based on current size counter */
     if (should_rotate_file(ctx)) {
         /* Extract directory and base filename for cleanup */
-        out_file_copy = strdup(out_file);
+        out_file_copy = flb_strdup(out_file);
         if (out_file_copy) {
 #ifdef FLB_SYSTEM_WINDOWS
             PathRemoveFileSpecA(out_file_copy);
@@ -879,7 +889,7 @@ static void cb_logrotate_flush(struct flb_event_chunk *event_chunk,
             strncpy(directory, dirname(out_file_copy), PATH_MAX - 1);
             directory[PATH_MAX - 1] = '\0';
 #endif
-            free(out_file_copy);
+            flb_free(out_file_copy);
         }
 
         /* Get base filename for cleanup */
@@ -903,7 +913,7 @@ static void cb_logrotate_flush(struct flb_event_chunk *event_chunk,
     /* Open output file with default name as the Tag */
     fp = fopen(out_file, "ab+");
     if (ctx->mkdir == FLB_TRUE && fp == NULL && errno == ENOENT) {
-        out_file_copy = strdup(out_file);
+        out_file_copy = flb_strdup(out_file);
         if (out_file_copy) {
 #ifdef FLB_SYSTEM_WINDOWS
             PathRemoveFileSpecA(out_file_copy);
@@ -911,7 +921,7 @@ static void cb_logrotate_flush(struct flb_event_chunk *event_chunk,
 #else
             ret = mkpath(ctx->ins, dirname(out_file_copy));
 #endif
-            free(out_file_copy);
+            flb_free(out_file_copy);
             if (ret == 0) {
                 fp = fopen(out_file, "ab+");
             }
