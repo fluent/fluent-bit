@@ -152,7 +152,10 @@ static int case_header_lookup(struct flb_http_client *cli,
     return 0;
 }
 
-
+/**
+ * Generates the base fleet directory for the given context.
+ * Returns the fleet directory if successful, otherwise NULL.
+ */
 static flb_sds_t generate_base_fleet_directory(struct flb_in_calyptia_fleet_config *ctx, flb_sds_t *fleet_dir)
 {
     if (fleet_dir == NULL) {
@@ -243,7 +246,7 @@ static flb_sds_t fleet_config_ref_filename(struct flb_in_calyptia_fleet_config *
 static flb_sds_t fleet_config_deref(struct flb_in_calyptia_fleet_config *ctx,
                                     const char *ref_name)
 {
-    flb_sds_t ref_filename ;
+    flb_sds_t ref_filename;
     flb_sds_t config_path = NULL;
     FILE *ref_file_ptr;
     char line[PATH_MAX];
@@ -289,8 +292,8 @@ static flb_sds_t fleet_config_deref(struct flb_in_calyptia_fleet_config *ctx,
  * overwritten. This returns FLB_TRUE if successful, FLB_FALSE otherwise.
  */
 static int fleet_config_set_ref(struct flb_in_calyptia_fleet_config *ctx,
-                                char *ref_name,
-                                char *config_path)
+                                const char *ref_name,
+                                const char *config_path)
 {
     flb_sds_t ref_filename;
     FILE *ref_file_ptr;
@@ -1403,15 +1406,14 @@ static int delete_dir(const char *path)
     }
     return ret;
 }
- /**
-  * Deletes config files and directories that are referenced (directly or
-  * indirectly) by the ref at the value returned by the function pointed to
-  * by config_filename_func, and also deletes the reference file itself.
-  *
-  * Returns FLB_TRUE if successful, otherwise FLB_FALSE.
-  */
- static int calyptia_config_delete_by_ref(struct flb_in_calyptia_fleet_config *ctx,
-                                          char *ref_name)
+
+/**
+ * Dereferences the config file from the ref_name and deletes all files and
+ * directories for that config.
+ * Returns FLB_TRUE if successful, otherwise FLB_FALSE.
+*/
+static int calyptia_config_delete_by_ref(struct flb_in_calyptia_fleet_config *ctx,
+                                         const char *ref_name)
 {
     struct cfl_array *confs;
     flb_sds_t config_path;
