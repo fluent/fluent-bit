@@ -1066,6 +1066,7 @@ int flb_engine_start(struct flb_config *config)
                      * If grace period is set to -1, keep trying to shut down until all
                      * tasks and retries get flushed.
                      */
+
                     tasks = 0;
                     mem_chunks = 0;
                     fs_chunks = 0;
@@ -1080,8 +1081,16 @@ int flb_engine_start(struct flb_config *config)
                     if (tasks > 0) {
                         flb_task_running_print(config);
                     }
+                    
 
                     ret = tasks + mem_chunks + fs_chunks;
+                    /* Hot reload safety timeout: prevent infinite hangs even with grace = -1 */
+                    if (ret > 0 && config->shutdown_by_hot_reloading && config->grace == -1 && config->grace_count >= 300) {
+                        flb_error("[engine] hot reload timeout exceeded (300s), crashing to prevent "
+                                  "indefinite hang");
+                        flb_task_running_print(config);
+                        abort();
+                    }
                     if (ret > 0 && (config->grace_count < config->grace || config->grace == -1)) {
                         if (config->grace_count == 1) {
                             /*
