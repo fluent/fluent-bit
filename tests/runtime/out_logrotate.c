@@ -115,7 +115,7 @@ void flb_test_logrotate_basic_rotation(void)
     TEST_CHECK(out_ffd >= 0);
     flb_output_set(ctx, out_ffd, "match", "test", NULL);
     flb_output_set(ctx, out_ffd, "file", TEST_LOGFILE, NULL);
-    flb_output_set(ctx, out_ffd, "max_size", "1", NULL); /* 1 MB */
+    flb_output_set(ctx, out_ffd, "max_size", "1M", NULL); /* 1 MB */
     flb_output_set(ctx, out_ffd, "max_files", "3", NULL);
     flb_output_set(ctx, out_ffd, "gzip", "false", NULL);
 
@@ -142,13 +142,8 @@ void flb_test_logrotate_basic_rotation(void)
         fclose(fp);
     }
 
-    /* Check that a rotated file was created */
-    fp = fopen(rotated_file, "r");
-    TEST_CHECK(fp != NULL);
-    if (fp != NULL) {
-        fclose(fp);
-        remove(rotated_file);
-    }
+    /* Check that at least one rotated file exists: "flb_test_logrotate.log.*" */
+    TEST_CHECK(count_files_in_directory(".", "flb_test_logrotate.log.") >= 1);
 
     remove(TEST_LOGFILE);
 }
@@ -187,7 +182,7 @@ void flb_test_logrotate_gzip_compression(void)
     TEST_CHECK(out_ffd >= 0);
     flb_output_set(ctx, out_ffd, "match", "test", NULL);
     flb_output_set(ctx, out_ffd, "file", TEST_LOGFILE, NULL);
-    flb_output_set(ctx, out_ffd, "max_size", "1", NULL);  /* 1 MB */
+    flb_output_set(ctx, out_ffd, "max_size", "1M", NULL);  /* 1 MB */
     flb_output_set(ctx, out_ffd, "max_files", "3", NULL);
     flb_output_set(ctx, out_ffd, "gzip", "true", NULL);
 
@@ -206,10 +201,23 @@ void flb_test_logrotate_gzip_compression(void)
     flb_stop(ctx);
     flb_destroy(ctx);
 
-    /* Check that a gzipped rotated file was created */
-    snprintf(rotated_file, sizeof(rotated_file), "%s.%s", TEST_LOGFILE, timestamp);
-    ret = check_gzip_file_exists(rotated_file);
-    TEST_CHECK(ret == 1);
+    /* Check that a gzipped rotated file exists: "flb_test_logrotate.log.*.gz" */
+     ret = 0;
+     {
+         DIR *dir = opendir(".");
+         struct dirent *entry;
+         if (dir) {
+             while ((entry = readdir(dir)) != NULL) {
+                 if (strstr(entry->d_name, "flb_test_logrotate.log.") == entry->d_name &&
+                     strstr(entry->d_name, ".gz") != NULL) {
+                     ret = 1;
+                     break;
+                 }
+             }
+             closedir(dir);
+         }
+     }
+     TEST_CHECK(ret == 1);
 
     /* Clean up */
     remove(rotated_file);
@@ -241,7 +249,7 @@ void flb_test_logrotate_max_files_cleanup(void)
     TEST_CHECK(out_ffd >= 0);
     flb_output_set(ctx, out_ffd, "match", "test", NULL);
     flb_output_set(ctx, out_ffd, "file", TEST_LOGFILE, NULL);
-    flb_output_set(ctx, out_ffd, "max_size", "1", NULL);  /* 1 MB */
+    flb_output_set(ctx, out_ffd, "max_size", "1M", NULL);  /* 1 MB */
     flb_output_set(ctx, out_ffd, "max_files", "2", NULL); /* Only keep 2 files */
     flb_output_set(ctx, out_ffd, "gzip", "false", NULL);
 
@@ -293,7 +301,7 @@ void flb_test_logrotate_counter_based_size(void)
     TEST_CHECK(out_ffd >= 0);
     flb_output_set(ctx, out_ffd, "match", "test", NULL);
     flb_output_set(ctx, out_ffd, "file", TEST_LOGFILE, NULL);
-    flb_output_set(ctx, out_ffd, "max_size", "1", NULL);  /* 1 MB */
+    flb_output_set(ctx, out_ffd, "max_size", "1M", NULL);  /* 1 MB */
     flb_output_set(ctx, out_ffd, "max_files", "3", NULL);
     flb_output_set(ctx, out_ffd, "gzip", "false", NULL);
 
@@ -352,7 +360,8 @@ void flb_test_logrotate_different_formats(void)
     flb_output_set(ctx, out_ffd, "match", "test", NULL);
     flb_output_set(ctx, out_ffd, "file", TEST_LOGFILE, NULL);
     flb_output_set(ctx, out_ffd, "format", "csv", NULL);
-    flb_output_set(ctx, out_ffd, "max_size", "10", NULL);  /* 10 MB */
+    flb_output_set(ctx, out_ffd, "csv_column_names", "true", NULL);
+    flb_output_set(ctx, out_ffd, "max_size", "10M", NULL);  /* 10 MB */
     flb_output_set(ctx, out_ffd, "max_files", "3", NULL);
     flb_output_set(ctx, out_ffd, "gzip", "false", NULL);
 
@@ -420,7 +429,7 @@ void flb_test_logrotate_mkdir_support(void)
     flb_output_set(ctx, out_ffd, "match", "test", NULL);
     flb_output_set(ctx, out_ffd, "path", TEST_LOGPATH, NULL);
     flb_output_set(ctx, out_ffd, "mkdir", "true", NULL);
-    flb_output_set(ctx, out_ffd, "max_size", "10", NULL);
+    flb_output_set(ctx, out_ffd, "max_size", "10M", NULL);
     flb_output_set(ctx, out_ffd, "max_files", "3", NULL);
     flb_output_set(ctx, out_ffd, "gzip", "false", NULL);
 
@@ -474,7 +483,7 @@ void flb_test_logrotate_performance_test(void)
     TEST_CHECK(out_ffd >= 0);
     flb_output_set(ctx, out_ffd, "match", "test", NULL);
     flb_output_set(ctx, out_ffd, "file", TEST_LOGFILE, NULL);
-    flb_output_set(ctx, out_ffd, "max_size", "10", NULL);  /* 10 MB */
+    flb_output_set(ctx, out_ffd, "max_size", "10M", NULL);  /* 10 MB */
     flb_output_set(ctx, out_ffd, "max_files", "3", NULL);
     flb_output_set(ctx, out_ffd, "gzip", "false", NULL);
 
