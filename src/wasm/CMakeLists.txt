@@ -107,6 +107,12 @@ set (WASM_BUILD_MODULE_INST_CONTEXT 1)
 set (WASM_BUILD_MEMORY64 1)
 set (WASM_BUILD_EXTENDED_CONST_EXPR 1)
 set (WASM_BUILD_GC 1)
+# This is only effective on Windows.
+if (FLB_SYSTEM_WINDOWS)
+  if (NOT DEFINED WAMR_ENABLE_HW_BOUND_CHECK)
+    set (WAMR_DISABLE_HW_BOUND_CHECK 1)
+  endif ()
+endif()
 
 if (NOT MSVC)
   # linker flags
