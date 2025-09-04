@@ -70,6 +70,7 @@ DEFINE_OPTION(FLB_IN_EBPF                     "Enable Linux eBPF input plugin"  
 # ==========
 DEFINE_OPTION(FLB_PROCESSOR_CONTENT_MODIFIER  "Enable content modifier processor"            ON)
 DEFINE_OPTION(FLB_PROCESSOR_LABELS            "Enable metrics label manipulation processor"  ON)
+DEFINE_OPTION(FLB_PROCESSOR_LOG_SAMPLING      "Enable log sampling processor"                ON)
 DEFINE_OPTION(FLB_PROCESSOR_METRICS_SELECTOR  "Enable metrics selector processor"            ON)
 DEFINE_OPTION(FLB_PROCESSOR_OPENTELEMETRY_ENVELOPE "Enable OpenTelemetry envelope processor" ON)
 DEFINE_OPTION(FLB_PROCESSOR_SQL               "Enable SQL processor"                         ON)
