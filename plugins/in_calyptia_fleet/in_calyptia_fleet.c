@@ -1384,7 +1384,7 @@ static int delete_dir(const char *path)
     files = read_glob(glob_pattern);
     flb_sds_destroy(glob_pattern);
     if (files != NULL) {
-        for (idx = 0; idx < ((ssize_t)files->entry_count); idx++) {
+        for (idx = 0; idx < files->entry_count; idx++) {
             if (stat(files->entries[idx]->data.as_string, &st) == 0) {
                 if (S_ISDIR(st.st_mode)) {
                     if (delete_dir(files->entries[idx]->data.as_string) != FLB_TRUE) {
