@@ -251,7 +251,8 @@ static int cb_cloudwatch_init(struct flb_output_instance *ins,
                                    ins->tls_ca_file,
                                    ins->tls_crt_file,
                                    ins->tls_key_file,
-                                   ins->tls_key_passwd);
+                                   ins->tls_key_passwd,
+                                   ins->verifier_ins);
 
     if (!ctx->cred_tls) {
         flb_plg_error(ctx->ins, "Failed to create tls context");
@@ -266,7 +267,8 @@ static int cb_cloudwatch_init(struct flb_output_instance *ins,
                                      ins->tls_ca_file,
                                      ins->tls_crt_file,
                                      ins->tls_key_file,
-                                     ins->tls_key_passwd);
+                                     ins->tls_key_passwd,
+                                     ins->verifier_ins);
     if (!ctx->client_tls) {
         flb_plg_error(ctx->ins, "Failed to create tls context");
         goto error;
@@ -302,7 +304,8 @@ static int cb_cloudwatch_init(struct flb_output_instance *ins,
                                       ins->tls_ca_file,
                                       ins->tls_crt_file,
                                       ins->tls_key_file,
-                                      ins->tls_key_passwd);
+                                      ins->tls_key_passwd,
+                                      ins->verifier_ins);
         if (!ctx->sts_tls) {
             flb_errno();
             goto error;
