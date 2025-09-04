@@ -296,7 +296,8 @@ static int fleet_config_set_ref(struct flb_in_calyptia_fleet_config *ctx,
                                 const char *config_path)
 {
     flb_sds_t ref_filename;
-    FILE *ref_file_ptr;
+    flb_sds_t temp_filename;
+    FILE *temp_file_ptr;
     size_t to_write;
     size_t written;
 
@@ -314,25 +315,49 @@ static int fleet_config_set_ref(struct flb_in_calyptia_fleet_config *ctx,
         return FLB_FALSE;
     }
 
-    ref_file_ptr = fopen(ref_filename, "w");
-    if (ref_file_ptr == NULL) {
-        flb_plg_error(ctx->ins, "fleet_config_set_ref: unable to open reference file for writing: %s", ref_filename);
+    /* First write to a temporary file in case the write wholly or partially fails */
+    temp_filename = flb_sds_create_size(flb_sds_len(ref_filename) + 5);
+    if (temp_filename == NULL) {
+        flb_plg_error(ctx->ins, "fleet_config_set_ref: unable to create temp filename");
         flb_sds_destroy(ref_filename);
+        return FLB_FALSE;
+    }
+    temp_filename = flb_sds_printf(&temp_filename, "%s.tmp", ref_filename);
+
+    temp_file_ptr = fopen(temp_filename, "w");
+    if (temp_file_ptr == NULL) {
+        flb_plg_error(ctx->ins, "fleet_config_set_ref: unable to open temp file for writing: %s", temp_filename);
+        flb_sds_destroy(ref_filename);
+        flb_sds_destroy(temp_filename);
         return FLB_FALSE;
     }
 
     to_write = strlen(config_path);
-    written = fwrite(config_path, 1, to_write, ref_file_ptr);
+    written = fwrite(config_path, 1, to_write, temp_file_ptr);
     if (written != to_write) {
-        flb_plg_error(ctx->ins, "fleet_config_set_ref: unable to write to reference file: %s", ref_filename);
-        fclose(ref_file_ptr);
+        flb_plg_error(ctx->ins, "fleet_config_set_ref: unable to write to temp file: %s", temp_filename);
+        fclose(temp_file_ptr);
+        unlink(temp_filename);
         flb_sds_destroy(ref_filename);
+        flb_sds_destroy(temp_filename);
         return FLB_FALSE;
     }
 
-    (void) fputc('\n', ref_file_ptr);
-    fclose(ref_file_ptr);
+    (void) fputc('\n', temp_file_ptr);
+    fclose(temp_file_ptr);
+
+    /* Rename the temporary file to the ref file */
+    if (rename(temp_filename, ref_filename) != 0) {
+        flb_plg_error(ctx->ins, "fleet_config_set_ref: unable to rename temp file to ref file: %s -> %s",
+                      temp_filename, ref_filename);
+        unlink(temp_filename);
+        flb_sds_destroy(ref_filename);
+        flb_sds_destroy(temp_filename);
+        return FLB_FALSE;
+    }
+
     flb_sds_destroy(ref_filename);
+    flb_sds_destroy(temp_filename);
 
     return FLB_TRUE;
 }
@@ -1875,7 +1900,7 @@ int get_calyptia_fleet_config(struct flb_in_calyptia_fleet_config *ctx)
         }
 
         if (execute_reload(ctx, cfgname) == FLB_FALSE) {
-            calyptia_config_rollback(ctx, cfgname);
+            calyptia_config_rollback(ctx);
             flb_sds_destroy(cfgname);
             return -1;
         }
