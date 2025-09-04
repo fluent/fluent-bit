@@ -545,23 +545,6 @@ static int exists_new_fleet_config(struct flb_in_calyptia_fleet_config *ctx)
     return ret;
 }
 
-static int exists_cur_fleet_config(struct flb_in_calyptia_fleet_config *ctx)
-{
-    flb_sds_t cfgcurname;
-    int ret = FLB_FALSE;
-
-
-    cfgcurname = fleet_config_deref(ctx, "cur");
-    if (cfgcurname == NULL) {
-        return FLB_FALSE;
-    }
-
-    ret = access(cfgcurname, F_OK) == 0 ? FLB_TRUE : FLB_FALSE;
-
-    flb_sds_destroy(cfgcurname);
-    return ret;
-}
-
 static int exists_old_fleet_config(struct flb_in_calyptia_fleet_config *ctx)
 {
     int ret = FLB_FALSE;
@@ -1475,9 +1458,9 @@ static int calyptia_config_delete_by_ref(struct flb_in_calyptia_fleet_config *ct
 
     /* Safely truncate at the extension and append "*" */
     flb_sds_len_set(config_path, ext - config_path);
-    config_path = flb_sds_cat(config_path, "*", 1);
-    if (config_path == NULL) {
+    if (flb_sds_cat_safe(&config_path, "*", 1) != 0) {
         flb_plg_error(ctx->ins, "failed to modify config path for glob pattern");
+        flb_sds_destroy(config_path);
         return FLB_FALSE;
     }
 
@@ -1540,7 +1523,7 @@ static int calyptia_config_add(struct flb_in_calyptia_fleet_config *ctx,
     }
 
     /* Set the new ref file to the new config */
-    if (fleet_config_set_ref(ctx, "new", (char *)cfgname) == FLB_FALSE) {
+    if (fleet_config_set_ref(ctx, "new", cfgname) == FLB_FALSE) {
         flb_plg_error(ctx->ins, "unable to create new configuration reference.");
         flb_sds_destroy(current_config);
         return FLB_FALSE;
@@ -1567,14 +1550,7 @@ static int calyptia_config_commit(struct flb_in_calyptia_fleet_config *ctx)
         return FLB_FALSE;
     }
 
-    /* Delete the old config and its ref file */
-    if (exists_old_fleet_config(ctx) == FLB_TRUE) {
-        if (calyptia_config_delete_by_ref(ctx, "old") == FLB_FALSE) { 
-            flb_plg_error(ctx->ins, "unable to delete old configuration by ref");
-            return FLB_FALSE;
-        }
-    }
-
+    /* Set the current ref to the new config */
     config_path = fleet_config_deref(ctx, "new");
     if (config_path == NULL) {
         flb_plg_error(ctx->ins, "unable to get new configuration by ref");
@@ -1585,6 +1561,14 @@ static int calyptia_config_commit(struct flb_in_calyptia_fleet_config *ctx)
         flb_plg_error(ctx->ins, "unable to set current configuration by ref");
         flb_sds_destroy(config_path);
         return FLB_FALSE;
+    }
+
+    /* Delete the old config and its ref file */
+    if (exists_old_fleet_config(ctx) == FLB_TRUE) {
+        if (calyptia_config_delete_by_ref(ctx, "old") == FLB_FALSE) {
+            flb_plg_error(ctx->ins, "unable to delete old configuration by ref");
+            return FLB_FALSE;
+        }
     }
 
     /* Delete the new ref file (but not the config files it points to) */
@@ -1602,8 +1586,7 @@ static int calyptia_config_commit(struct flb_in_calyptia_fleet_config *ctx)
     return FLB_TRUE;
 }
 
-static int calyptia_config_rollback(struct flb_in_calyptia_fleet_config *ctx,
-                                    const char *cfgname)
+static int calyptia_config_rollback(struct flb_in_calyptia_fleet_config *ctx)
 {
     flb_sds_t old_config_path = NULL;
     flb_sds_t old_ref_filename = NULL;
@@ -1616,14 +1599,10 @@ static int calyptia_config_rollback(struct flb_in_calyptia_fleet_config *ctx,
         }
     }
 
-    if (exists_old_fleet_config(ctx) == FLB_FALSE) {
-        flb_plg_error(ctx->ins, "no old configuration to rollback");
-        return FLB_FALSE;
-    }
-
     /* Get the old config path */
     old_config_path = fleet_config_deref(ctx, "old");
     if (old_config_path == NULL) {
+        flb_plg_error(ctx->ins, "no old configuration to rollback");
         return FLB_FALSE;
     }
 
