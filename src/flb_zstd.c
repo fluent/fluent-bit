@@ -27,7 +27,7 @@
 
 #define FLB_ZSTD_DEFAULT_CHUNK 64 * 1024  /* 64 KB buffer */
 
-size_t flb_zstd_compress(void *in_data, size_t in_len, void **out_data, size_t *out_len)
+int flb_zstd_compress(void *in_data, size_t in_len, void **out_data, size_t *out_len)
 {
     void *buf;
     size_t size;
@@ -127,7 +127,7 @@ static int zstd_uncompress_unknown_size(void *in_data, size_t in_len, void **out
     return 0;
 }
 
-size_t flb_zstd_uncompress(void *in_data, size_t in_len, void **out_data, size_t *out_len)
+int flb_zstd_uncompress(void *in_data, size_t in_len, void **out_data, size_t *out_len)
 {
     int ret;
     void *buf;

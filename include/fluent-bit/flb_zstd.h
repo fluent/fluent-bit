@@ -23,7 +23,7 @@
 #include <fluent-bit/flb_info.h>
 #include <zstd.h>
 
-size_t flb_zstd_compress(void *in_data, size_t in_len, void **out_data, size_t *out_len);
-size_t flb_zstd_uncompress(void *in_data, size_t in_len, void **out_data, size_t *out_len);
+int flb_zstd_compress(void *in_data, size_t in_len, void **out_data, size_t *out_len);
+int flb_zstd_uncompress(void *in_data, size_t in_len, void **out_data, size_t *out_len);
 
 #endif
