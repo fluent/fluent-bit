@@ -161,6 +161,10 @@ static flb_sds_t generate_base_fleet_directory(struct flb_in_calyptia_fleet_conf
     flb_sds_t tmp;
     flb_sds_t fleet_dir;
 
+    if (ctx == NULL) {
+        return NULL;
+    }
+
     tmp = flb_sds_create_size(CALYPTIA_MAX_DIR_SIZE);
     if (tmp == NULL) {
         return NULL;
@@ -324,13 +328,18 @@ static int fleet_config_set_ref(struct flb_in_calyptia_fleet_config *ctx,
     }
 
     /* First write to a temporary file in case the write wholly or partially fails */
-    temp_filename = flb_sds_create_size(flb_sds_len(ref_filename) + 5);
+    temp_filename = flb_sds_create_size(flb_sds_len(ref_filename) + 5 /* add space for ".tmp"*/);
     if (temp_filename == NULL) {
         flb_plg_error(ctx->ins, "fleet_config_set_ref: unable to create temp filename");
         flb_sds_destroy(ref_filename);
         return FLB_FALSE;
     }
-    temp_filename = flb_sds_printf(&temp_filename, "%s.tmp", ref_filename);
+    if (flb_sds_printf(&temp_filename, "%s.tmp", ref_filename) == NULL) {
+        flb_plg_error(ctx->ins, "fleet_config_set_ref: unable to create temp filename");
+        flb_sds_destroy(ref_filename);
+        flb_sds_destroy(temp_filename);
+        return FLB_FALSE;
+    }
 
     temp_file_ptr = fopen(temp_filename, "w");
     if (temp_file_ptr == NULL) {
@@ -658,6 +667,7 @@ static int execute_reload(struct flb_in_calyptia_fleet_config *ctx, flb_sds_t cf
     pthread_t pth;
     pthread_attr_t ptha;
     flb_ctx_t *flb = flb_context_get();
+    int ret;
 
     if (parse_config_name_timestamp(ctx, cfg_path, &ctx->config_timestamp) != FLB_TRUE) {
         return FLB_FALSE;
@@ -701,11 +711,33 @@ static int execute_reload(struct flb_in_calyptia_fleet_config *ctx, flb_sds_t cf
         flb_plg_error(ctx->ins, "unable to change to configuration directory");
     }
 
-    pthread_attr_init(&ptha);
-    pthread_attr_setdetachstate(&ptha, PTHREAD_CREATE_DETACHED);
-    pthread_create(&pth, &ptha, do_reload, reload);
+    if (pthread_attr_init(&ptha) != 0) {
+        flb_plg_error(ctx->ins, "unable to initialize pthread attributes");
+        goto thread_error;
+    }
+
+    if (pthread_attr_setdetachstate(&ptha, PTHREAD_CREATE_DETACHED) != 0) {
+        flb_plg_error(ctx->ins, "unable to set pthread detach state");
+        goto thread_error;
+    }
+
+    ret = pthread_create(&pth, &ptha, do_reload, reload);
+    pthread_attr_destroy(&ptha);  /* Always destroy attributes after use */
+    if (ret != 0) {
+        flb_plg_error(ctx->ins, "pthread_create error creating reload thread: %d", ret);
+        goto thread_error;
+    }
 
     return FLB_TRUE;
+
+thread_error:
+    if (ctx->collect_fd > 0) {
+        flb_input_collector_resume(ctx->collect_fd, ctx->ins);
+    }
+
+    flb_sds_destroy(reload->cfg_path);
+    flb_free(reload);
+    return FLB_FALSE;
 }
 
 static msgpack_object *msgpack_lookup_map_key(msgpack_object *obj, const char *keyname)
@@ -1469,7 +1501,7 @@ static int calyptia_config_delete_by_ref(struct flb_in_calyptia_fleet_config *ct
     if (confs == NULL) {
         flb_plg_warn(ctx->ins, "config glob did not return any files: %s", config_path);
         flb_sds_destroy(config_path);
-        return FLB_FALSE;
+        return FLB_TRUE;
     }
     for (idx = 0; idx < confs->entry_count; idx++) {
         entry_path = confs->entries[idx]->data.as_string;
@@ -1825,7 +1857,7 @@ int get_calyptia_fleet_config(struct flb_in_calyptia_fleet_config *ctx)
         ctx->fleet_url = flb_sds_create_size(CALYPTIA_MAX_DIR_SIZE);
 
         if (ctx->fleet_url == NULL) {
-            return -1;
+            return FLB_FALSE;
         }
 
         if (ctx->fleet_config_legacy_format) {
@@ -1840,7 +1872,7 @@ int get_calyptia_fleet_config(struct flb_in_calyptia_fleet_config *ctx)
         ctx->fleet_files_url = flb_sds_create_size(CALYPTIA_MAX_DIR_SIZE);
 
         if (ctx->fleet_files_url == NULL) {
-            return -1;
+            return FLB_FALSE;
         }
 
         flb_sds_printf(&ctx->fleet_files_url, CALYPTIA_ENDPOINT_FLEET_FILES, ctx->fleet_id);
@@ -1884,19 +1916,19 @@ int get_calyptia_fleet_config(struct flb_in_calyptia_fleet_config *ctx)
         if (calyptia_config_add(ctx, cfgname) == FLB_FALSE) {
             flb_plg_error(ctx->ins, "unable to add config: %s", cfgname);
             flb_sds_destroy(cfgname);
-            return -1;
+            return FLB_FALSE;
         }
 
         if (execute_reload(ctx, cfgname) == FLB_FALSE) {
             calyptia_config_rollback(ctx);
             flb_sds_destroy(cfgname);
-            return -1;
+            return FLB_FALSE;
         }
 
         flb_sds_destroy(cfgname);
     }
 
-    return 0;
+    return FLB_TRUE;
 }
 
 /* cb_collect callback */
@@ -1914,7 +1946,9 @@ static int in_calyptia_fleet_collect(struct flb_input_instance *ins,
          }
     }
 
-    ret = get_calyptia_fleet_config(ctx);
+    if (get_calyptia_fleet_config(ctx) != FLB_TRUE) {
+        ret = -1;
+    }
 
 fleet_id_error:
     FLB_INPUT_RETURN(ret);
@@ -1996,11 +2030,10 @@ static int fleet_cur_chdir(struct flb_in_calyptia_fleet_config *ctx)
     int ret;
 
     fleetcurdir = fleet_gendir(ctx, ctx->config_timestamp);
-    flb_plg_info(ctx->ins, "changing to config dir: %s", fleetcurdir);
-
     if (fleetcurdir == NULL) {
         return -1;
     }
+    flb_plg_info(ctx->ins, "changing to config dir: %s", fleetcurdir);
 
     ret = chdir(fleetcurdir);
     flb_sds_destroy(fleetcurdir);
