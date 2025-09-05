@@ -72,9 +72,9 @@ struct reload_ctx {
 
 flb_sds_t fleet_config_filename(struct flb_in_calyptia_fleet_config *ctx, char *fname);
 
-#define new_fleet_config_filename(a) fleet_config_filename((a), "new")
-#define cur_fleet_config_filename(a) fleet_config_filename((a), "cur")
-#define old_fleet_config_filename(a) fleet_config_filename((a), "old")
+#define legacy_new_fleet_config_filename(a) fleet_config_filename((a), "new")
+#define legacy_cur_fleet_config_filename(a) fleet_config_filename((a), "cur")
+#define legacy_old_fleet_config_filename(a) fleet_config_filename((a), "old")
 #define hdr_fleet_config_filename(a) fleet_config_filename((a), "header")
 
 int get_calyptia_fleet_config(struct flb_in_calyptia_fleet_config *ctx);
