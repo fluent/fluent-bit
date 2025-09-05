@@ -43,6 +43,7 @@ struct event_type {
 
     int interval_sec;
     int interval_nsec;
+    struct flb_input_instance *ins;
 };
 
 static struct ctrace_id *create_random_span_id()
@@ -405,6 +406,7 @@ static int cb_event_type_init(struct flb_input_instance *ins,
         flb_errno();
         return -1;
     }
+    ctx->ins = ins;
 
     ret = flb_input_config_map_set(ins, (void *) ctx);
     if (ret == -1) {
@@ -451,6 +453,20 @@ static int cb_event_type_exit(void *data, struct flb_config *config)
     return 0;
 }
 
+static void cb_event_type_pause(void *data, struct flb_config *config)
+{
+    struct event_type *ctx = data;
+
+    flb_input_collector_pause(ctx->coll_fd, ctx->ins);
+}
+
+static void cb_event_type_resume(void *data, struct flb_config *config)
+{
+    struct event_type *ctx = data;
+
+    flb_input_collector_resume(ctx->coll_fd, ctx->ins);
+}
+
 /* Configuration properties map */
 static struct flb_config_map config_map[] = {
     {
@@ -480,8 +496,8 @@ struct flb_input_plugin in_event_type_plugin = {
     .cb_pre_run   = NULL,
     .cb_collect   = NULL,
     .cb_flush_buf = NULL,
-    .cb_pause     = NULL,
-    .cb_resume    = NULL,
+    .cb_pause     = cb_event_type_pause,
+    .cb_resume    = cb_event_type_resume,
     .cb_exit      = cb_event_type_exit,
     .config_map   = config_map,
     .flags        = FLB_INPUT_CORO | FLB_INPUT_THREADED
