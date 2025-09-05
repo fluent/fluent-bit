@@ -189,6 +189,15 @@ struct flb_kube *flb_kube_conf_create(struct flb_filter_instance *ins,
         flb_plg_info(ctx->ins, "https=%i host=%s port=%i",
                      ctx->api_https, ctx->api_host, ctx->api_port);
     }
+
+    ctx->aws_pod_service_hash_table = flb_hash_table_create_with_ttl(ctx->aws_pod_service_map_ttl,
+                                       FLB_HASH_TABLE_EVICT_OLDER,
+                                       FLB_HASH_TABLE_SIZE,
+                                       FLB_HASH_TABLE_SIZE);
+    if (!ctx->aws_pod_service_hash_table) {
+        flb_kube_conf_destroy(ctx);
+        return NULL;
+    }
     return ctx;
 }
 
@@ -206,6 +215,10 @@ void flb_kube_conf_destroy(struct flb_kube *ctx)
         flb_hash_table_destroy(ctx->namespace_hash_table);
     }
 
+    if (ctx->aws_pod_service_hash_table) {
+        flb_hash_table_destroy(ctx->aws_pod_service_hash_table);
+    }
+
     if (ctx->merge_log == FLB_TRUE) {
         flb_free(ctx->unesc_buf);
     }
@@ -213,6 +226,9 @@ void flb_kube_conf_destroy(struct flb_kube *ctx)
     /* Destroy regex content only if a parser was not defined */
     if (ctx->parser == NULL && ctx->regex) {
         flb_regex_destroy(ctx->regex);
+    }
+    if (ctx->deploymentRegex) {
+        flb_regex_destroy(ctx->deploymentRegex);
     }
 
     flb_free(ctx->api_host);
@@ -226,6 +242,18 @@ void flb_kube_conf_destroy(struct flb_kube *ctx)
     }
     if (ctx->kube_api_upstream) {
         flb_upstream_destroy(ctx->kube_api_upstream);
+    }
+
+    if (ctx->aws_pod_association_tls) {
+        flb_tls_destroy(ctx->aws_pod_association_tls);
+    }
+
+    if (ctx->aws_pod_association_upstream) {
+        flb_upstream_destroy(ctx->aws_pod_association_upstream);
+    }
+
+    if (ctx->platform) {
+        flb_free(ctx->platform);
     }
 
 #ifdef FLB_HAVE_TLS
