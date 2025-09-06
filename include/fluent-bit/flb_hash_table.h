@@ -89,4 +89,6 @@ int flb_hash_table_del(struct flb_hash_table *ht, const char *key);
 int flb_hash_table_del_ptr(struct flb_hash_table *ht, const char *key, int key_len,
                            void *ptr);
 
+void flb_hash_table_clear(struct flb_hash_table *ht);
+
 #endif

@@ -672,3 +672,30 @@ int flb_hash_table_del(struct flb_hash_table *ht, const char *key)
     flb_hash_table_entry_free(ht, entry);
     return 0;
 }
+
+void flb_hash_table_clear(struct flb_hash_table *ht)
+{
+    int i;
+    struct mk_list *tmp;
+    struct mk_list *head;
+    struct flb_hash_table_entry *entry;
+    struct flb_hash_table_chain *table;
+    time_t expiration;
+
+    if (ht->cache_ttl <= 0) {
+        return;
+    }
+
+    for (i = 0; i < ht->size; i++) {
+        table = &ht->table[i];
+        mk_list_foreach_safe(head, tmp, &table->chains) {
+            entry = mk_list_entry(head, struct flb_hash_table_entry, _head);
+            
+            expiration = entry->created + ht->cache_ttl;
+
+            if (time(NULL) > expiration) {
+                flb_hash_table_entry_free(ht, entry);
+            }
+        }
+    }
+}
