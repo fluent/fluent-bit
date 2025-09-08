@@ -490,7 +490,7 @@ static ssize_t parse_hec_payload_json(struct flb_splunk *ctx, flb_sds_t tag,
     return 0;
 }
 
-static int validate_auth_header(struct flb_splunk *ctx, struct mk_http_request *request)
+static int validate_auth_header(struct flb_splunk *ctx, struct mk_http_request *request, struct flb_splunk_tokens **matched_token_out)
 {
     int ret = 0;
     struct mk_list *head;
@@ -524,6 +524,7 @@ static int validate_auth_header(struct flb_splunk *ctx, struct mk_http_request *
                         authorization,
                         splunk_token->length) == 0) {
                 flb_sds_destroy(authorization);
+                *matched_token_out = splunk_token;
 
                 return SPLUNK_AUTH_SUCCESS;
             }
@@ -723,6 +724,8 @@ int splunk_prot_handle(struct flb_splunk *ctx, struct splunk_conn *conn,
     off_t diff;
     flb_sds_t tag;
     struct mk_http_header *header;
+    struct flb_splunk_tokens *matched_token = NULL;
+    flb_sds_t tag_from_token = NULL;
 
     if (request->uri.data[0] != '/') {
         send_response(conn, 400, "error: invalid request\n");
@@ -825,7 +828,7 @@ int splunk_prot_handle(struct flb_splunk *ctx, struct splunk_conn *conn,
 
     /* Under services/collector endpoints are required for
      * authentication if provided splunk_token */
-    ret = validate_auth_header(ctx, request);
+    ret = validate_auth_header(ctx, request, &matched_token);
     if (ret < 0){
         send_response(conn, 401, "error: unauthorized\n");
         if (ret == SPLUNK_AUTH_MISSING_CRED) {
@@ -841,6 +844,12 @@ int splunk_prot_handle(struct flb_splunk *ctx, struct splunk_conn *conn,
         return -1;
     }
 
+    /* Tokens can be configured to map to a particular tag */
+    if (matched_token != NULL && matched_token->map_to_tag != NULL) {
+        tag_from_token = matched_token->map_to_tag;
+        tag = tag_from_token;
+    }
+
     /* If the request contains chunked transfer encoded data, decode it */\
     if (mk_http_parser_is_content_chunked(&session->parser)) {
         ret = mk_http_parser_chunked_decode(&session->parser,
@@ -852,7 +861,10 @@ int splunk_prot_handle(struct flb_splunk *ctx, struct splunk_conn *conn,
             flb_plg_error(ctx->ins, "failed to decode chunked data");
             send_response(conn, 400, "error: invalid chunked data\n");
 
-            flb_sds_destroy(tag);
+            /* Free the tag only if it was a temporarily-allocated/calculated one */
+            if (tag_from_token == NULL) {
+                flb_sds_destroy(tag);
+            }
             mk_mem_free(uri);
 
             return -1;
@@ -898,7 +910,10 @@ int splunk_prot_handle(struct flb_splunk *ctx, struct splunk_conn *conn,
 
             ret = process_hec_payload(ctx, conn, tag, session, request);
             if (ret == -2) {
-                flb_sds_destroy(tag);
+                /* Free the tag only if it was a temporarily-allocated/calculated one */
+                if (tag_from_token == NULL) {
+                    flb_sds_destroy(tag);
+                }
                 mk_mem_free(uri);
 
                 if (out_chunked) {
@@ -918,7 +933,10 @@ int splunk_prot_handle(struct flb_splunk *ctx, struct splunk_conn *conn,
         else {
             send_response(conn, 400, "error: invalid HTTP endpoint\n");
 
-            flb_sds_destroy(tag);
+            /* Free the tag only if it was a temporarily-allocated/calculated one */
+            if (tag_from_token == NULL) {
+                flb_sds_destroy(tag);
+            }
             mk_mem_free(uri);
 
             if (out_chunked) {
@@ -933,7 +951,10 @@ int splunk_prot_handle(struct flb_splunk *ctx, struct splunk_conn *conn,
     else {
         /* HEAD, PUT, PATCH, and DELETE methods are prohibited to use.*/
 
-        flb_sds_destroy(tag);
+        /* Free the tag only if it was a temporarily-allocated/calculated one */
+        if (tag_from_token == NULL) {
+            flb_sds_destroy(tag);
+        }
         mk_mem_free(uri);
 
         if (out_chunked) {
@@ -946,7 +967,10 @@ int splunk_prot_handle(struct flb_splunk *ctx, struct splunk_conn *conn,
         return -1;
     }
 
-    flb_sds_destroy(tag);
+    /* Free the tag only if it was a temporarily-allocated/calculated one */
+    if (tag_from_token == NULL) {
+        flb_sds_destroy(tag);
+    }
     mk_mem_free(uri);
 
     if (out_chunked) {
@@ -1041,7 +1065,7 @@ static int send_json_message_response_ng(struct flb_http_response *response,
     return 0;
 }
 
-static int validate_auth_header_ng(struct flb_splunk *ctx, struct flb_http_request *request)
+static int validate_auth_header_ng(struct flb_splunk *ctx, struct flb_http_request *request, struct flb_splunk_tokens **matched_token_out)
 {
     struct mk_list *tmp;
     struct mk_list *head;
@@ -1068,6 +1092,7 @@ static int validate_auth_header_ng(struct flb_splunk *ctx, struct flb_http_reque
             if (strncasecmp(splunk_token->header,
                         auth_header,
                         splunk_token->length) == 0) {
+                *matched_token_out = splunk_token;
                 return SPLUNK_AUTH_SUCCESS;
             }
         }
@@ -1166,6 +1191,8 @@ int splunk_prot_handle_ng(struct flb_http_request *request,
     struct flb_splunk *context;
     int                ret = -1;
     flb_sds_t          tag;
+    struct flb_splunk_tokens *matched_token = NULL;
+    flb_sds_t          tag_from_token = NULL;
 
     context = (struct flb_splunk *) response->stream->user_data;
 
@@ -1195,7 +1222,7 @@ int splunk_prot_handle_ng(struct flb_http_request *request,
 
     /* Under services/collector endpoints are required for
      * authentication if provided splunk_token */
-    ret = validate_auth_header_ng(context, request);
+    ret = validate_auth_header_ng(context, request, &matched_token);
 
     if (ret < 0) {
         send_response_ng(response, 401, "error: unauthorized\n");
@@ -1220,10 +1247,16 @@ int splunk_prot_handle_ng(struct flb_http_request *request,
         return -1;
     }
 
-    tag = flb_sds_create(context->ins->tag);
-
-    if (tag == NULL) {
-        return -1;
+    /* Tokens can be configured to map to a particular tag */
+    if (matched_token != NULL && matched_token->map_to_tag != NULL) {
+        tag_from_token = matched_token->map_to_tag;
+        tag = tag_from_token;
+    }
+    else {
+        tag = flb_sds_create(context->ins->tag);
+        if (tag == NULL) {
+            return -1;
+        }
     }
 
     if (strcasecmp(request->path, "/services/collector/raw/1.0") == 0 ||
@@ -1265,7 +1298,9 @@ int splunk_prot_handle_ng(struct flb_http_request *request,
         send_response_ng(response, 400, "error: invalid HTTP endpoint\n");
         ret = -1;
     }
-
-    flb_sds_destroy(tag);
+    /* Free the tag only if it was a temporarily-allocated/calculated one */
+    if (tag_from_token == NULL) {
+        flb_sds_destroy(tag);
+    }
     return ret;
 }
