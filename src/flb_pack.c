@@ -168,7 +168,7 @@ static inline int is_float(const char *buf, int len)
         flb_vector8 vE   = flb_vector8_broadcast((uint8_t)'E');
         flb_vector8 v;
         char c;
-        char *q;
+        const char *q;
         size_t i;
 
         while ((size_t)(end - p) >= vlen) {
@@ -187,8 +187,12 @@ static inline int is_float(const char *buf, int len)
                     c = p[i];
                     if (c == 'e' || c == 'E') {
                         q = p + i + 1;
-                        if (q < end && (*q == '+' || *q == '-')) {
-                            return 1; /* e- / e+ / E- / E+ */
+                        if (q < end) {
+                            char next = *q;
+                            if (next == '+' || next == '-' ||
+                                (unsigned)(next - '0') <= 9) {
+                                return 1;
+                            }
                         }
                         /* Not signed exponent here; fall through to precise check below.
                            Set p at the e/E position so the scalar loop sees it. */
@@ -211,9 +215,12 @@ scalar_check:
         if (*p == '.') {
             return 1;
         }
-        if ((*p == 'e' || *p == 'E') &&
-            (p + 1) < end && (p[1] == '-' || p[1] == '+')) {
-            return 1;
+        if ((*p == 'e' || *p == 'E') && (p + 1) < end) {
+            char next = p[1];
+            if (next == '-' || next == '+' ||
+                (unsigned)(next - '0') <= 9) {
+                return 1;
+            }
         }
         p++;
     }
