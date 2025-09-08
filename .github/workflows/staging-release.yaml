@@ -1056,7 +1056,7 @@ jobs:
 
       - name: Release 4.1
         if: startsWith(inputs.version, '4.1')
-        uses: actions/checkout@v4
+        uses: actions/checkout@v5
         with:
           ref: master
 
