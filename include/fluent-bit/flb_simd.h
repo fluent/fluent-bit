@@ -45,7 +45,7 @@
 typedef __m128i flb_vector8;
 typedef __m128i flb_vector32;
 
-#elif defined(__aarch64__) && defined(__ARM_NEON)
+#elif defined(__aarch64__) || defined(_M_ARM64) || defined(_M_ARM64EC)
 /*
  * We use the Neon instructions if the compiler provides access to them (as
  * indicated by __ARM_NEON) and we are on aarch64.  While Neon support is
@@ -54,7 +54,16 @@ typedef __m128i flb_vector32;
  * could not realistically use it there without a run-time check, which seems
  * not worth the trouble for now.
  */
-#include <arm_neon.h>
+#ifndef __ARM_NEON
+	#define __ARM_NEON 1
+#endif
+#if __has_include(<arm_neon.h>)
+	#include <arm_neon.h>
+#elif __has_include(<arm64_neon.h>)
+	#include <arm64_neon.h>
+#else
+	#error "NEON intrinsics header not found on this toolchain"
+#endif
 #define FLB_SIMD_NEON
 typedef uint8x16_t flb_vector8;
 typedef uint32x4_t flb_vector32;
