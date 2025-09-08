@@ -42,7 +42,11 @@ static int pack_wstr(struct winevtlog_config *ctx, const wchar_t *wstr)
     int size;
     char *buf;
     UINT code_page = CP_UTF8;
-    LPCSTR defaultChar = L" ";
+    const char *defaultChar = " ";
+
+    if (!wstr) {
+        return -1;
+    }
 
     if (ctx->use_ansi) {
         code_page = CP_ACP;
@@ -110,6 +114,9 @@ static int pack_binary(struct winevtlog_config *ctx, PBYTE bin, size_t length)
 static int pack_guid(struct winevtlog_config *ctx, const GUID *guid)
 {
     LPOLESTR p = NULL;
+    if (!guid) {
+        return -1;
+    }
 
     if (FAILED(StringFromCLSID(guid, &p))) {
         return -1;
@@ -639,14 +646,24 @@ void winevtlog_pack_event(PEVT_VARIANT system, WCHAR *message,
     /* ActivityID */
     ret = flb_log_event_encoder_append_body_cstring(ctx->log_encoder, "ActivityID");
 
-    if (pack_guid(ctx, system[EvtSystemActivityID].GuidVal)) {
+    if (EvtVarTypeNull != system[EvtSystemActivityID].Type) {
+        if (pack_guid(ctx, system[EvtSystemActivityID].GuidVal)) {
+            pack_nullstr(ctx);
+        }
+    }
+    else {
         pack_nullstr(ctx);
     }
 
     /* Related ActivityID */
     ret = flb_log_event_encoder_append_body_cstring(ctx->log_encoder, "RelatedActivityID");
 
-    if (pack_guid(ctx, system[EvtSystemRelatedActivityID].GuidVal)) {
+    if (EvtVarTypeNull != system[EvtSystemRelatedActivityID].Type) {
+        if (pack_guid(ctx, system[EvtSystemRelatedActivityID].GuidVal)) {
+            pack_nullstr(ctx);
+        }
+    }
+    else {
         pack_nullstr(ctx);
     }
 
