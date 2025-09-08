@@ -296,17 +296,6 @@ static int in_systemd_collect(struct flb_input_instance *ins,
         }
     }
 
-    if (ctx->lowercase == FLB_TRUE) {
-        ret = sd_journal_get_data_threshold(ctx->j, &ctx->threshold);
-        if (ret != 0) {
-            flb_plg_error(ctx->ins,
-                          "error setting up systemd data. "
-                          "sd_journal_get_data_threshold() return value '%i'",
-                          ret);
-            return FLB_SYSTEMD_ERROR;
-        }
-    }
-
     while ((ret_j = sd_journal_next(ctx->j)) > 0) {
         /* If the tag is composed dynamically, gather the Systemd Unit name */
         if (ctx->dynamic_tag) {
