@@ -29,6 +29,7 @@
 #include <fluent-bit/flb_time.h>
 #include <fluent-bit/flb_pack.h>
 #include <fluent-bit/flb_unescape.h>
+#include <fluent-bit/flb_simd.h>
 
 #include <fluent-bit/flb_log_event_encoder.h>
 #include <fluent-bit/flb_log_event_decoder.h>
@@ -52,6 +53,59 @@ static int flb_pack_set_null_as_nan(int b) {
         convert_nan_to_null = b;
     }
     return convert_nan_to_null;
+}
+
+/* -----------------------------------------------------------------------------
+ * SIMD helpers
+ * -----------------------------------------------------------------------------
+ *
+ * json_find_escapable_simd:
+ *   Returns a pointer to the first byte in s[0..n) that requires JSON string
+ *   escaping (any of '"' or '\' or control chars < 0x20). If none, returns NULL.
+ *
+ *   Fast-path skips whole vector-width blocks when there is no match. On hit,
+ *   it falls back to a short scalar check within the block to find the exact
+ *   offending index. Works with SSE2 / NEON / RVV through flb_simd.h.
+ */
+static inline const char *json_find_escapable_simd(const char *s, size_t n)
+{
+    const char *p = s;
+    uint8_t c;
+#ifdef FLB_HAVE_SIMD
+    const size_t vlen = FLB_SIMD_VEC8_INST_LEN;
+    flb_vector8 dq = flb_vector8_broadcast((uint8_t)'"');
+    flb_vector8 bs = flb_vector8_broadcast((uint8_t)'\\');
+    size_t i;
+
+    while (n >= vlen) {
+        flb_vector8 v; 
+        flb_vector8_load(&v, (const uint8_t*)p);
+        /* If neither '"' nor '\' appears in this block, it is very likely
+         * safe; control chars are rare, handle them in the fallback check. */
+        bool has_dq = flb_vector8_is_highbit_set(flb_vector8_eq(v, dq));
+        bool has_bs = flb_vector8_is_highbit_set(flb_vector8_eq(v, bs));
+        if (has_dq || has_bs) {
+            /* Narrow down to the exact position in this block */
+            for (i = 0; i < vlen; i++) {
+                c = (uint8_t)p[i];
+                if (c == '"' || c == '\\' || c < 0x20) {
+                    return p + i;
+                }
+            }
+        }
+        p += vlen;
+        n -= vlen;
+    }
+#endif
+    /* Scalar tail / generic fallback, also checks control chars */
+    while (n--) {
+        c = (uint8_t)*p;
+        if (c == '"' || c == '\\' || c < 0x20) {
+            return p;
+        }
+        p++;
+    }
+    return NULL;
 }
 
 int flb_json_tokenise(const char *js, size_t len,
@@ -106,11 +160,59 @@ static inline int is_float(const char *buf, int len)
     const char *end = buf + len;
     const char *p = buf;
 
-    while (p <= end) {
-        if ((*p == 'e' || *p == 'E') && p < end && (*(p + 1) == '-' || *(p + 1) == '+')) {
+#ifdef FLB_HAVE_SIMD
+    {
+        const size_t vlen = FLB_SIMD_VEC8_INST_LEN;
+        flb_vector8 vdot = flb_vector8_broadcast((uint8_t)'.');
+        flb_vector8 ve   = flb_vector8_broadcast((uint8_t)'e');
+        flb_vector8 vE   = flb_vector8_broadcast((uint8_t)'E');
+        flb_vector8 v;
+        char c;
+        char *q;
+        size_t i;
+
+        while ((size_t)(end - p) >= vlen) {
+            flb_vector8_load(&v, (const uint8_t *)p);
+
+            /* If the block contains '.', it's definitely a float */
+            if (flb_vector8_is_highbit_set(flb_vector8_eq(v, vdot))) {
+                return 1;
+            }
+
+            /* If the block contains 'e' or 'E', check the immediate next char. */
+            if (flb_vector8_is_highbit_set(flb_vector8_eq(v, ve)) ||
+                flb_vector8_is_highbit_set(flb_vector8_eq(v, vE))) {
+                /* Narrow inside this vector to the first e/E and verify next char */
+                for (i = 0; i < vlen; i++) {
+                    c = p[i];
+                    if (c == 'e' || c == 'E') {
+                        q = p + i + 1;
+                        if (q < end && (*q == '+' || *q == '-')) {
+                            return 1; /* e- / e+ / E- / E+ */
+                        }
+                        /* Not signed exponent here; fall through to precise check below.
+                           Set p at the e/E position so the scalar loop sees it. */
+                        p += i;
+                        goto scalar_check;
+                    }
+                }
+                /* Should not reach (we had a mask), but continue safely */
+            }
+
+            /* No candidates in this block; skip it entirely */
+            p += vlen;
+        }
+    }
+#endif
+
+scalar_check:
+    /* Precise scalar check for the remaining tail (and for cases we broke early). */
+    while (p < end) {
+        if (*p == '.') {
             return 1;
         }
-        else if (*p == '.') {
+        if ((*p == 'e' || *p == 'E') &&
+            (p + 1) < end && (p[1] == '-' || p[1] == '+')) {
             return 1;
         }
         p++;
@@ -166,6 +268,16 @@ static inline int pack_string_token(struct flb_pack_state *state,
     char *tmp;
     char *out_buf;
 
+    /* Fast path: if the JSON string does not contain '"' or '\' or any control
+     * chars (<0x20), we can pack it as-is without unescaping. */
+    const char *bad = json_find_escapable_simd(str, (size_t)len);
+    if (bad == NULL) {
+        msgpack_pack_str(pck, len);
+        msgpack_pack_str_body(pck, str, len);
+        return len;
+    }
+
+    /* Slow path: unescape into a temporary buffer as before. */
     if (state->buf_size < len + 1) {
         s = len + 1;
         tmp = flb_realloc(state->buf_data, s);
@@ -173,17 +285,15 @@ static inline int pack_string_token(struct flb_pack_state *state,
             flb_errno();
             return -1;
         }
-        else {
-            state->buf_data = tmp;
-            state->buf_size = s;
-        }
+        state->buf_data = tmp;
+        state->buf_size = s;
     }
     out_buf = state->buf_data;
 
-    /* Always decode any UTF-8 or special characters */
+    /* Always decode UTF-8 escape sequences and specials when needed */
     out_len = flb_unescape_string_utf8(str, len, out_buf);
 
-    /* Pack decoded text */
+    /* Pack the decoded text */
     msgpack_pack_str(pck, out_len);
     msgpack_pack_str_body(pck, out_buf, out_len);
 
