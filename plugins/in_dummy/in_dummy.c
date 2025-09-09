@@ -296,7 +296,7 @@ static int configure(struct flb_dummy *ctx,
     int ret = -1;
     int root_type;
     const char *msg;
-    flb_sds_t resolved_msg;
+    flb_sds_t resolved_msg = NULL;
 
     ctx->ref_metadata_msgpack = NULL;
     ctx->ref_body_msgpack = NULL;
@@ -354,14 +354,22 @@ static int configure(struct flb_dummy *ctx,
     if (msg == NULL) {
         msg = DEFAULT_DUMMY_MESSAGE;
     }
-    flb_plg_info(ctx->ins, "received dummy property: %s", msg);
     ctx->body_template = flb_strdup(msg);
+    if (!ctx->body_template) {
+        flb_errno();
+        flb_plg_error(ctx->ins, "failed to duplicate body template");
+        return -1;
+    }
 
     /* Validate the template by parsing it once (with environment variables resolved) */
     resolved_msg = flb_env_var_translate(in->config->env, msg);
     if (!resolved_msg || flb_sds_len(resolved_msg) == 0) {
         flb_plg_warn(ctx->ins, "environment variable resolution failed for dummy message, using default");
         resolved_msg = flb_sds_create(DEFAULT_DUMMY_MESSAGE);
+        if (!resolved_msg) {
+            flb_plg_error(ctx->ins, "failed to create default body template");
+            return -1;
+        }
     }
 
     ret = flb_pack_json(resolved_msg,
@@ -395,6 +403,11 @@ static int configure(struct flb_dummy *ctx,
         msg = DEFAULT_DUMMY_METADATA;
     }
     ctx->metadata_template = flb_strdup(msg);
+    if (!ctx->metadata_template) {
+        flb_errno();
+        flb_plg_error(ctx->ins, "failed to duplicate metadata template");
+        return -1;
+    }
 
     /* Validate the template by parsing it once (with environment variables resolved) */
     resolved_msg = flb_env_var_translate(in->config->env, msg);
