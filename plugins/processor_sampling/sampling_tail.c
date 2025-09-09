@@ -502,7 +502,7 @@ static int cb_init(struct flb_config *config, struct sampling *ctx)
         return -1;
     }
 
-    ret = flb_config_map_set(&ctx->plugin_settings_properties, ctx->plugin_config_map, (void *) settings);
+    ret = flb_config_map_set(config, &ctx->plugin_settings_properties, ctx->plugin_config_map, (void *) settings);
     if (ret == -1) {
         flb_free(settings);
         return -1;
