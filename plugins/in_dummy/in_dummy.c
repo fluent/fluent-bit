@@ -365,6 +365,9 @@ static int configure(struct flb_dummy *ctx,
     /* Validate the template by parsing it once (with environment variables resolved) */
     resolved_msg = flb_env_var_translate(in->config->env, msg);
     if (!resolved_msg || flb_sds_len(resolved_msg) == 0) {
+        if (resolved_msg) {
+            flb_sds_destroy(resolved_msg);
+        }
         flb_plg_warn(ctx->ins, "environment variable resolution failed for dummy message, using default");
         resolved_msg = flb_sds_create(DEFAULT_DUMMY_MESSAGE);
         if (!resolved_msg) {
@@ -413,6 +416,9 @@ static int configure(struct flb_dummy *ctx,
     /* Validate the template by parsing it once (with environment variables resolved) */
     resolved_msg = flb_env_var_translate(in->config->env, msg);
     if (!resolved_msg || flb_sds_len(resolved_msg) == 0) {
+        if (resolved_msg) {
+            flb_sds_destroy(resolved_msg);
+        }
         flb_plg_warn(ctx->ins, "environment variable resolution failed for metadata, using default");
         resolved_msg = flb_sds_create(DEFAULT_DUMMY_METADATA);
     }
