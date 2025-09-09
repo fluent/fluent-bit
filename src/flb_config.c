@@ -1019,6 +1019,7 @@ int flb_config_load_config_format(struct flb_config *config, struct flb_cf *cf)
 {
     int ret;
     flb_debug("[config] starting configuration loading");
+    struct flb_cf_env_var *env_var;
     struct flb_kv *kv;
     struct mk_list *head;
     struct cfl_kvpair *ckv;
@@ -1027,10 +1028,13 @@ int flb_config_load_config_format(struct flb_config *config, struct flb_cf *cf)
 
     /* Process config environment vars */
     mk_list_foreach(head, &cf->env) {
-        kv = mk_list_entry(head, struct flb_kv, _head);
-        ret = flb_env_set(config->env, kv->key, kv->val);
+        env_var = mk_list_entry(head, struct flb_cf_env_var, _head);
+        ret = flb_env_set_extended(config->env,
+                                   env_var->name, env_var->value,
+                                   env_var->uri,
+                                   env_var->refresh_interval);
         if (ret == -1) {
-            flb_error("could not set config environment variable '%s'", kv->key);
+            flb_error("could not set config environment variable '%s'", env_var->name);
             return -1;
         }
     }
