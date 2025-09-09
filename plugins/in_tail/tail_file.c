@@ -34,6 +34,7 @@
 #include <fluent-bit/flb_regex.h>
 #include <fluent-bit/flb_hash_table.h>
 #endif
+#include <fluent-bit/flb_simd.h>
 
 #include "tail.h"
 #include "tail_file.h"
@@ -423,6 +424,39 @@ static int ml_stream_buffer_flush(struct flb_tail_config *ctx, struct flb_tail_f
     return 0;
 }
 
+/* Skip leading '\0' quickly. Returns new data pointer and bumps processed_bytes. */
+static FLB_INLINE const char *flb_skip_leading_zeros_simd(const char *data, const char *end, size_t *processed_bytes)
+{
+#ifdef FLB_HAVE_SIMD
+    const size_t vlen = FLB_SIMD_VEC8_INST_LEN;
+
+    while ((size_t)(end - data) >= vlen) {
+        size_t i;
+        flb_vector8 v;
+        flb_vector8_load(&v, (const uint8_t *)data);
+
+        if (!flb_vector8_has(v, (uint8_t)'\0')) {
+            return data;
+        }
+
+        for (i = 0; i < vlen; i++) {
+            if (data[i] != '\0') {
+                *processed_bytes += i;
+                return data + i;
+            }
+        }
+
+        data += vlen;
+        *processed_bytes += vlen;
+    }
+#endif
+    while (data < end && *data == '\0') {
+        data++;
+        (*processed_bytes)++;
+    }
+    return data;
+}
+
 static int process_content(struct flb_tail_file *file, size_t *bytes)
 {
     size_t len;
@@ -499,9 +533,8 @@ static int process_content(struct flb_tail_file *file, size_t *bytes)
     }
 
     /* Skip null characters from the head (sometimes introduced by copy-truncate log rotation) */
-    while (data < end && *data == '\0') {
-        data++;
-        processed_bytes++;
+    if (data < end) {
+        data = (char *)flb_skip_leading_zeros_simd(data, end, &processed_bytes);
     }
 
     while (data < end && (p = memchr(data, '\n', end - data))) {
