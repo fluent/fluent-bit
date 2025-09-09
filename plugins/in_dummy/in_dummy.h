@@ -56,6 +56,10 @@ struct flb_dummy {
     char *ref_body_msgpack;
     size_t ref_body_msgpack_size;
 
+    /* Store original JSON templates for dynamic re-parsing */
+    char *body_template;
+    char *metadata_template;
+
     struct flb_log_event_encoder *encoder;
 
     struct flb_input_instance *ins;
