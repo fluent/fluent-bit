@@ -155,8 +155,6 @@ struct flb_cf_env_var *flb_cf_env_var_add(struct flb_cf *cf,
                                           char *uri, size_t uri_len,
                                           int refresh_interval);
 
-#define flb_cf_env_property_add(cf, name, name_len, value, value_len) \
-    flb_cf_env_var_add(cf, name, name_len, value, value_len, NULL, 0, 0)
 
 /* metas */
 struct flb_kv *flb_cf_meta_property_add(struct flb_cf *cf, char *meta, int len);

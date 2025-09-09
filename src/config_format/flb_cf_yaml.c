@@ -1801,8 +1801,13 @@ static int consume_event(struct flb_cf *conf, struct local_ctx *ctx,
             }
             break;
         case YAML_SEQUENCE_START_EVENT:
-            state = state_push(ctx, STATE_ENV_LIST);
+            if (state->section != SECTION_ENV) {
+                flb_error("env list is only allowed in env section");
+                yaml_error_event(ctx, state, event);
+                return YAML_FAILURE;
+            }
 
+            state = state_push(ctx, STATE_ENV_LIST);
             if (state == NULL) {
                 flb_error("unable to allocate state");
                 return YAML_FAILURE;
@@ -1870,9 +1875,10 @@ static int consume_event(struct flb_cf *conf, struct local_ctx *ctx,
 
             /* Check if the incoming k/v pair set a config environment variable */
             if (state->section == SECTION_ENV) {
-                keyval = flb_cf_env_property_add(conf,
-                                                 state->key, flb_sds_len(state->key),
-                                                 value, strlen(value));
+                keyval = flb_cf_env_var_add(conf,
+                                            state->key, flb_sds_len(state->key),
+                                            value, strlen(value),
+                                            NULL, 0, 0);
 
                 if (keyval == NULL) {
                     flb_error("unable to add key value");
