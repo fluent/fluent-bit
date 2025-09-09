@@ -51,6 +51,7 @@
 #define FLB_CONFIG_MAP_VARIANT   50   /* variant that wraps a kvlist or array */
 
 #define FLB_CONFIG_MAP_MULT       1
+#define FLB_CONFIG_MAP_DYNAMIC_ENV 2    /* flag: resolve environment variables at runtime */
 
 struct flb_config_map_val {
     union {
@@ -108,6 +109,12 @@ struct mk_list *flb_config_map_create(struct flb_config *config,
                                       struct flb_config_map *map);
 void flb_config_map_destroy(struct mk_list *list);
 int flb_config_map_expected_values(int type);
-int flb_config_map_set(struct mk_list *properties, struct mk_list *map, void *context);
+int flb_config_map_set(struct flb_config *config, struct mk_list *properties, struct mk_list *map, void *context);
+
+/* Helper function to check if a config map entry has dynamic environment resolution */
+static inline int flb_config_map_has_dynamic_env(struct flb_config_map *map)
+{
+    return (map->flags & FLB_CONFIG_MAP_DYNAMIC_ENV) != 0;
+}
 
 #endif
