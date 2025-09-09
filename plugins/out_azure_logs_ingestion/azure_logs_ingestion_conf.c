@@ -25,6 +25,7 @@
 
 #include "azure_logs_ingestion.h"
 #include "azure_logs_ingestion_conf.h"
+#include "azure_logs_ingestion_msiauth.h"
 
 struct flb_az_li* flb_az_li_ctx_create(struct flb_output_instance *ins,
                                         struct flb_config *config)
@@ -54,21 +55,34 @@ struct flb_az_li* flb_az_li_ctx_create(struct flb_output_instance *ins,
         return NULL;
     }
 
-    /* config: 'client_id' */
-    if (!ctx->client_id) {
-        flb_plg_error(ins, "property 'client_id' is not defined");
-        flb_az_li_ctx_destroy(ctx);
-        return NULL;
+    /* Auth method validation and setup */
+    if (strcasecmp(ctx->auth_type_str, "service_principal") == 0) {
+        ctx->auth_type = FLB_AZ_LI_AUTH_SERVICE_PRINCIPAL;
+
+        /* Verify required parameters for Service Principal auth */
+        if (!ctx->tenant_id || !ctx->client_id || !ctx->client_secret) {
+            flb_plg_error(ins, "When using service_principal auth, tenant_id, client_id, and client_secret are required");
+            flb_az_li_ctx_destroy(ctx);
+            return NULL;
+        }
     }
-    /* config: 'tenant_id' */
-    if (!ctx->tenant_id) {
-        flb_plg_error(ins, "property 'tenant_id' is not defined");
-        flb_az_li_ctx_destroy(ctx);
-        return NULL;
+    else if (strcasecmp(ctx->auth_type_str, "managed_identity") == 0) {
+        /* Check if client_id indicates system-assigned or user-assigned managed identity */
+        if (!ctx->client_id) {
+            flb_plg_error(ins, "When using managed_identity auth, client_id must be set to 'system' for system-assigned or the managed identity client ID");
+            flb_az_li_ctx_destroy(ctx);
+            return NULL;
+        }
+
+        if (strcasecmp(ctx->client_id, "system") == 0) {
+            ctx->auth_type = FLB_AZ_LI_AUTH_MANAGED_IDENTITY_SYSTEM;
+        } else {
+            ctx->auth_type = FLB_AZ_LI_AUTH_MANAGED_IDENTITY_USER;
+        }
     }
-    /* config: 'client_secret' */
-    if (!ctx->client_secret) {
-        flb_plg_error(ins, "property 'client_secret' is not defined");
+    else {
+        flb_plg_error(ins, "Invalid auth_type '%s'. Valid options are: 'service_principal', 'managed_identity', or 'workload_identity'", 
+                     ctx->auth_type_str);
         flb_az_li_ctx_destroy(ctx);
         return NULL;
     }
@@ -91,16 +105,43 @@ struct flb_az_li* flb_az_li_ctx_create(struct flb_output_instance *ins,
         return NULL;
     }
 
-    /* Allocate and set auth url */
-    ctx->auth_url = flb_sds_create_size(sizeof(FLB_AZ_LI_AUTH_URL_TMPLT) - 1 +
-                                        flb_sds_len(ctx->tenant_id));
-    if (!ctx->auth_url) {
-        flb_errno();
-        flb_az_li_ctx_destroy(ctx);
-        return NULL;
+    /* Allocate and set auth url based on authentication method */
+    if (ctx->auth_type == FLB_AZ_LI_AUTH_MANAGED_IDENTITY_SYSTEM) {
+        /* System-assigned managed identity */
+        ctx->auth_url = flb_sds_create_size(sizeof(FLB_AZ_LI_MSIAUTH_URL_TEMPLATE) - 1);
+        if (!ctx->auth_url) {
+            flb_errno();
+            flb_az_li_ctx_destroy(ctx);
+            return NULL;
+        }
+        flb_sds_snprintf(&ctx->auth_url, flb_sds_alloc(ctx->auth_url),
+                        FLB_AZ_LI_MSIAUTH_URL_TEMPLATE, "", "");
     }
-    flb_sds_snprintf(&ctx->auth_url, flb_sds_alloc(ctx->auth_url),
-                    FLB_AZ_LI_AUTH_URL_TMPLT, ctx->tenant_id);
+    else if (ctx->auth_type == FLB_AZ_LI_AUTH_MANAGED_IDENTITY_USER) {
+        /* User-assigned managed identity */
+        ctx->auth_url = flb_sds_create_size(sizeof(FLB_AZ_LI_MSIAUTH_URL_TEMPLATE) - 1 +
+                                           sizeof("&client_id=") - 1 +
+                                           flb_sds_len(ctx->client_id));
+        if (!ctx->auth_url) {
+            flb_errno();
+            flb_az_li_ctx_destroy(ctx);
+            return NULL;
+        }
+        flb_sds_snprintf(&ctx->auth_url, flb_sds_alloc(ctx->auth_url),
+                        FLB_AZ_LI_MSIAUTH_URL_TEMPLATE, "&client_id=", ctx->client_id);
+    }
+    else {
+        /* Service principal authentication */
+        ctx->auth_url = flb_sds_create_size(sizeof(FLB_AZ_LI_AUTH_URL_TMPLT) - 1 +
+                                            flb_sds_len(ctx->tenant_id));
+        if (!ctx->auth_url) {
+            flb_errno();
+            flb_az_li_ctx_destroy(ctx);
+            return NULL;
+        }
+        flb_sds_snprintf(&ctx->auth_url, flb_sds_alloc(ctx->auth_url),
+                        FLB_AZ_LI_AUTH_URL_TMPLT, ctx->tenant_id);
+    }
 
     /* Allocate and set dce full url */
     ctx->dce_u_url = flb_sds_create_size(sizeof(FLB_AZ_LI_DCE_URL_TMPLT) - 1 +
