@@ -278,7 +278,7 @@ static inline int flb_processor_instance_config_map_set(
                     struct flb_processor_instance *ins,
                     void *context)
 {
-    return flb_config_map_set(&ins->properties, ins->config_map, context);
+    return flb_config_map_set(ins->config, &ins->properties, ins->config_map, context);
 }
 
 static inline
