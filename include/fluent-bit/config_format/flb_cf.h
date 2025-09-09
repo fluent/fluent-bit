@@ -90,8 +90,8 @@ struct flb_cf {
     /* global service */
     struct flb_cf_section *service;
 
-    /* config environment variables (env section, availble on YAML) */
-    struct mk_list env;
+    /* config environment variables (env section, available on YAML) */
+    struct mk_list env;            /* list of struct flb_cf_env_var */
 
     /* meta commands (used by fluentbit classic mode) */
     struct mk_list metas;
@@ -141,9 +141,22 @@ void flb_cf_destroy(struct flb_cf *cf);
 int flb_cf_set_origin_format(struct flb_cf *cf, int format);
 void flb_cf_dump(struct flb_cf *cf);
 
-struct flb_kv *flb_cf_env_property_add(struct flb_cf *cf,
-                                       char *k_buf, size_t k_len,
-                                       char *v_buf, size_t v_len);
+struct flb_cf_env_var {
+    flb_sds_t name;
+    flb_sds_t value;
+    flb_sds_t uri;
+    int refresh_interval;
+    struct mk_list _head;
+};
+
+struct flb_cf_env_var *flb_cf_env_var_add(struct flb_cf *cf,
+                                          char *name, size_t name_len,
+                                          char *value, size_t value_len,
+                                          char *uri, size_t uri_len,
+                                          int refresh_interval);
+
+#define flb_cf_env_property_add(cf, name, name_len, value, value_len) \
+    flb_cf_env_var_add(cf, name, name_len, value, value_len, NULL, 0, 0)
 
 /* metas */
 struct flb_kv *flb_cf_meta_property_add(struct flb_cf *cf, char *meta, int len);
