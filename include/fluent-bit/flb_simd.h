@@ -77,8 +77,13 @@ typedef __m128i flb_vector32;
   #endif
 #endif
 
-typedef uint8x16_t  flb_vector8;
-typedef uint32x4_t  flb_vector32;
+#if defined(FLB_SIMD_NEON)
+  typedef uint8x16_t  flb_vector8;
+  typedef uint32x4_t  flb_vector32;
+#else
+  #define FLB_SIMD_NONE
+  typedef uint64_t flb_vector8;
+#endif
 
 #elif defined(__riscv) && (__riscv_v_intrinsic >= 11000)
 /*
