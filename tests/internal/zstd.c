@@ -220,56 +220,91 @@ static void *compress_with_checksum(const void *original_data, size_t original_l
     return compressed_buffer;
 }
 
+/*
+ * This test validates that the flb_decompress API can seamlessly handle
+ * three or more independent Zstd frames concatenated into a single buffer.
+ */
 void test_zstd_streaming_decompress_multi_chunk(void)
 {
-    struct flb_decompression_context *ctx;
-    char   *output_buf;
+    int ret = 0;
+    const char *original1 = "This is the first payload.";
+    const char *original2 = "This is the second, slightly longer payload.";
+    const char *original3 = "And this is the final, third payload.";
+    size_t original1_len = strlen(original1);
+    size_t original2_len = strlen(original2);
+    size_t original3_len = strlen(original3);
+    size_t max_original_len;
+
+    void *compressed1 = NULL, *compressed2 = NULL, *compressed3 = NULL;
+    size_t compressed1_len = 0, compressed2_len = 0, compressed3_len = 0;
+
+    char *concatenated_buffer = NULL;
+    size_t concatenated_len = 0;
+
+    char *output_buffer = NULL;
     size_t output_len;
-    size_t total_written = 0;
-    int    ret;
-    size_t chunk1_size = 0;
-    size_t chunk2_size = 0;
-    size_t chunk3_size = 0;
-    char  *original_text = "zstd streaming is a feature that must be tested with multiple, uneven chunks!";
-    size_t original_len;
-    void  *compressed_buf = NULL;
-    size_t compressed_len = 0;
 
-    original_len = strlen(original_text);
-    compressed_buf = compress_with_checksum(original_text, original_len, &compressed_len);
-    TEST_CHECK(compressed_buf != NULL);
+    struct flb_decompression_context *ctx;
 
-    ctx = flb_decompression_context_create(FLB_COMPRESSION_ALGORITHM_ZSTD, compressed_len);
+    flb_zstd_compress((void *)original1, original1_len, &compressed1, &compressed1_len);
+    TEST_CHECK(compressed1 != NULL);
+
+    flb_zstd_compress((void *)original2, original2_len, &compressed2, &compressed2_len);
+    TEST_CHECK(compressed2 != NULL);
+
+    flb_zstd_compress((void *)original3, original3_len, &compressed3, &compressed3_len);
+    TEST_CHECK(compressed3 != NULL);
+
+    concatenated_len = compressed1_len + compressed2_len + compressed3_len;
+    concatenated_buffer = flb_malloc(concatenated_len);
+    TEST_CHECK(concatenated_buffer != NULL);
+
+    memcpy(concatenated_buffer, compressed1, compressed1_len);
+    memcpy(concatenated_buffer + compressed1_len, compressed2, compressed2_len);
+    memcpy(concatenated_buffer + compressed1_len + compressed2_len, compressed3, compressed3_len);
+
+    flb_free(compressed1);
+    flb_free(compressed2);
+    flb_free(compressed3);
+
+    /* Create context and append the entire concatenated buffer */
+    ctx = flb_decompression_context_create(FLB_COMPRESSION_ALGORITHM_ZSTD, 0);
     TEST_CHECK(ctx != NULL);
-    output_buf = flb_malloc(original_len + 1);
 
-    chunk1_size = compressed_len / 3;
-    chunk2_size = compressed_len / 2;
-    chunk3_size = compressed_len - chunk1_size - chunk2_size;
+    append_to_context(ctx, concatenated_buffer, concatenated_len);
 
-    append_to_context(ctx, compressed_buf, chunk1_size);
-    output_len = original_len;
-    ret = flb_decompress(ctx, output_buf, &output_len);
+    /* Allocate an output buffer large enough for the biggest payload */
+    max_original_len = original1_len;
+    if (original2_len > max_original_len) max_original_len = original2_len;
+    if (original3_len > max_original_len) max_original_len = original3_len;
+    output_buffer = flb_malloc(max_original_len);
+    TEST_CHECK(output_buffer != NULL);
+
+    output_len = original1_len;
+    ret = flb_decompress(ctx, output_buffer, &output_len);
     TEST_CHECK(ret == FLB_DECOMPRESSOR_SUCCESS);
-    total_written += output_len;
+    TEST_CHECK(output_len == original1_len);
+    TEST_CHECK(memcmp(original1, output_buffer, original1_len) == 0);
 
-    append_to_context(ctx, (char *)compressed_buf + chunk1_size, chunk2_size);
-    output_len = original_len - total_written;
-    ret = flb_decompress(ctx, output_buf + total_written, &output_len);
+    output_len = original2_len;
+    ret = flb_decompress(ctx, output_buffer, &output_len);
     TEST_CHECK(ret == FLB_DECOMPRESSOR_SUCCESS);
-    total_written += output_len;
+    TEST_CHECK(output_len == original2_len);
+    TEST_CHECK(memcmp(original2, output_buffer, original2_len) == 0);
 
-    append_to_context(ctx, (char *)compressed_buf + chunk1_size + chunk2_size, chunk3_size);
-    output_len = original_len - total_written;
-    ret = flb_decompress(ctx, output_buf + total_written, &output_len);
+    output_len = original3_len;
+    ret = flb_decompress(ctx, output_buffer, &output_len);
     TEST_CHECK(ret == FLB_DECOMPRESSOR_SUCCESS);
-    total_written += output_len;
+    TEST_CHECK(output_len == original3_len);
+    TEST_CHECK(memcmp(original3, output_buffer, original3_len) == 0);
 
-    TEST_CHECK(total_written == original_len);
-    TEST_CHECK(memcmp(original_text, output_buf, original_len) == 0);
+    output_len = 1; /* Ask for one byte */
+    ret = flb_decompress(ctx, output_buffer, &output_len);
+    TEST_CHECK(ret == FLB_DECOMPRESSOR_SUCCESS);
+    TEST_CHECK(output_len == 0); /* Should produce 0 bytes */
 
-    flb_free(compressed_buf);
-    flb_free(output_buf);
+    flb_free(concatenated_buffer);
+    flb_free(output_buffer);
     flb_decompression_context_destroy(ctx);
 }
 
