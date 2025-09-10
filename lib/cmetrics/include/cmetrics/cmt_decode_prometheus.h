@@ -20,6 +20,10 @@
 #ifndef CMT_DECODE_PROMETHEUS_H
 #define CMT_DECODE_PROMETHEUS_H
 
+#include <cmetrics/cmt_info.h>
+
+#ifdef CMT_HAVE_PROMETHEUS_TEXT_DECODER
+
 #include <stdbool.h>
 
 #include <cmetrics/cmetrics.h>
@@ -109,5 +113,7 @@ int cmt_decode_prometheus_create(
         size_t in_size,
         struct cmt_decode_prometheus_parse_opts *opts);
 void cmt_decode_prometheus_destroy(struct cmt *cmt);
+
+#endif /* CMT_HAVE_PROMETHEUS_TEXT_DECODER */
 
 #endif

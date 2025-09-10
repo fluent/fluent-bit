@@ -14,7 +14,7 @@ set(UNIT_TESTS_FILES
   filter.c
   )
 
-if (CMT_BUILD_PROMETHEUS_DECODER)
+if (CMT_BUILD_PROMETHEUS_TEXT_DECODER)
     set(UNIT_TESTS_FILES
         ${UNIT_TESTS_FILES}
         prometheus_lexer.c

@@ -174,6 +174,7 @@ static int split_metric_name(struct cmt_decode_prometheus_context *context,
     *subsystem = strchr(*ns, '_');
     if (!(*subsystem)) {
         *name = *ns;
+        *subsystem = "";
         *ns = "";
     }
     else {
