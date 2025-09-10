@@ -81,7 +81,7 @@ struct flb_az_li* flb_az_li_ctx_create(struct flb_output_instance *ins,
         }
     }
     else {
-        flb_plg_error(ins, "Invalid auth_type '%s'. Valid options are: 'service_principal', 'managed_identity', or 'workload_identity'", 
+        flb_plg_error(ins, "Invalid auth_type '%s'. Valid options are: 'service_principal' or 'managed_identity'",
                      ctx->auth_type_str);
         flb_az_li_ctx_destroy(ctx);
         return NULL;
