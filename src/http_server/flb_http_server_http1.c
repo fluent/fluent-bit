@@ -18,6 +18,7 @@
  */
 
 #include <fluent-bit/http_server/flb_http_server.h>
+#include <string.h>
 
 /* PRIVATE */
 
@@ -55,16 +56,6 @@ static void dummy_mk_http_request_init(struct mk_http_session *session,
     memset(request, 0, sizeof(struct mk_http_request));
 
     mk_http_request_init(session, request, session->server);
-
-    request->in_headers.type        = MK_STREAM_IOV;
-    request->in_headers.dynamic     = MK_FALSE;
-    request->in_headers.cb_consumed = NULL;
-    request->in_headers.cb_finished = NULL;
-    request->in_headers.stream      = &request->stream;
-
-    mk_list_add(&request->in_headers._head, &request->stream.inputs);
-
-    request->session = session;
 }
 
 static int http1_evict_request(struct flb_http1_server_session *session)
@@ -464,6 +455,7 @@ int flb_http1_server_session_init(struct flb_http1_server_session *session,
 
     dummy_mk_http_session_init(&session->inner_session, &session->inner_server);
 
+    memset(&session->inner_request, 0, sizeof(struct mk_http_request));
     dummy_mk_http_request_init(&session->inner_session, &session->inner_request);
 
     mk_http_parser_init(&session->inner_parser);
