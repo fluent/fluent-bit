@@ -1229,6 +1229,18 @@ error:
     return -1;
 }
 
+static int sniff_magic(const uint8_t *p, size_t n) {
+    if (n >= 2 && p[0]==0x1f && p[1]==0x8b) {
+        return FLB_COMPRESSION_ALGORITHM_GZIP;
+    }
+    if (n >= 4 && (uint8_t)p[0]==0x28 && (uint8_t)p[1]==0xb5 &&
+                  (uint8_t)p[2]==0x2f && (uint8_t)p[3]==0xfd) {
+        return FLB_COMPRESSION_ALGORITHM_ZSTD;
+    }
+
+    return FLB_COMPRESSION_ALGORITHM_NONE;
+}
+
 int fw_prot_process(struct flb_input_instance *ins, struct fw_conn *conn)
 {
     int ret;
@@ -1525,7 +1537,21 @@ int fw_prot_process(struct flb_input_instance *ins, struct fw_conn *conn)
 
                     /* Initialize decompressor on first compressed chunk */
                     if (conn->d_ctx == NULL && contain_options) {
-                        int type = get_compression_type(root.via.array.ptr[2]);
+                        int opt_type = contain_options ? get_compression_type(root.via.array.ptr[2]) : FLB_COMPRESSION_ALGORITHM_NONE;
+                        int sniff = sniff_magic((const uint8_t *)data, len);
+                        int type = opt_type;
+
+                        if (sniff != FLB_COMPRESSION_ALGORITHM_NONE &&
+                            opt_type != FLB_COMPRESSION_ALGORITHM_NONE &&
+                            sniff != opt_type) {
+                            flb_plg_warn(ctx->ins, "compressed=%s but magic says %s; using magic",
+                                         opt_type == FLB_COMPRESSION_ALGORITHM_ZSTD ? "zstd" : "gzip",
+                                         sniff    == FLB_COMPRESSION_ALGORITHM_ZSTD ? "zstd" : "gzip");
+                            type = sniff;
+                        }
+                        else if (opt_type == FLB_COMPRESSION_ALGORITHM_NONE) {
+                            type = sniff;
+                        }
                         if (type > 0) {
                             conn->compression_type = type;
                             conn->d_ctx = flb_decompression_context_create(
