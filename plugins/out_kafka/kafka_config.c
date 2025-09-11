@@ -22,6 +22,7 @@
 #include <fluent-bit/flb_mem.h>
 #include <fluent-bit/flb_kv.h>
 #include <fluent-bit/flb_utils.h>
+#include <fluent-bit/flb_output.h>
 
 #include "kafka_config.h"
 #include "kafka_topic.h"
@@ -214,7 +215,7 @@ struct flb_out_kafka *flb_out_kafka_create(struct flb_output_instance *ins,
     /* Metrics */
 #ifdef FLB_HAVE_METRICS
     ctx->cmt_kafka_errors = cmt_counter_create(ctx->ins->cmt, "fluentbit", "output", "kafka_errors_total", "Number of kafka errors processing queued messages", 1, (char*[]) {"name"});
-    cmt_counter_set(ctx->cmt_kafka_errors, cfl_time_now(), 0, 1, (char *[]){ctx->ins->alias});
+    cmt_counter_set(ctx->cmt_kafka_errors, cfl_time_now(), 0, 1, (char *[]){flb_output_name(ctx->ins)});
 #endif
 
     flb_plg_info(ctx->ins, "brokers='%s' topics='%s'", ctx->kafka.brokers, tmp);
