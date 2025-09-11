@@ -101,17 +101,22 @@ int flb_engine_dispatch_retry(struct flb_task_retry *retry,
 static void test_run_formatter(struct flb_config *config,
                                struct flb_input_instance *i_ins,
                                struct flb_output_instance *o_ins,
-                               struct flb_task *task,
-                               void *flush_ctx)
+                               struct flb_task *task)
 {
     int ret;
     void *out_buf = NULL;
     size_t out_size = 0;
     struct flb_test_out_formatter *otf;
     struct flb_event_chunk *evc;
+    void *flush_ctx;
 
     otf = &o_ins->test_formatter;
     evc = task->event_chunk;
+
+    flush_ctx = otf->flush_ctx;
+    if (otf->flush_ctx_callback) {
+        flush_ctx = otf->flush_ctx_callback(config, i_ins, o_ins->context, flush_ctx);
+    }
 
     /* Invoke the output plugin formatter test callback */
     ret = otf->callback(config,
@@ -176,9 +181,7 @@ static int tasks_start(struct flb_input_instance *in,
                 out->test_formatter.callback != NULL) {
 
                 /* Run the formatter test */
-                test_run_formatter(config, in, out,
-                                   task,
-                                   out->test_formatter.flush_ctx);
+                test_run_formatter(config, in, out, task);
 
                 /* Remove the route */
                 mk_list_del(&route->_head);
