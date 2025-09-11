@@ -150,7 +150,24 @@ struct flb_cf *flb_cf_create()
 
 void flb_cf_destroy(struct flb_cf *cf)
 {
-    flb_kv_release(&cf->env);
+    struct flb_cf_env_var *ev;
+    struct mk_list *tmp;
+    struct mk_list *head;
+
+    mk_list_foreach_safe(head, tmp, &cf->env) {
+        ev = mk_list_entry(head, struct flb_cf_env_var, _head);
+        if (ev->name) {
+            flb_sds_destroy(ev->name);
+        }
+        if (ev->value) {
+            flb_sds_destroy(ev->value);
+        }
+        if (ev->uri) {
+            flb_sds_destroy(ev->uri);
+        }
+        flb_free(ev);
+    }
+    mk_list_init(&cf->env);
     flb_kv_release(&cf->metas);
     flb_cf_section_destroy_all(cf);
     flb_free(cf);
@@ -421,41 +438,69 @@ struct cfl_variant * flb_cf_section_property_get(struct flb_cf *cf, struct flb_c
     return cfl_kvlist_fetch(s->properties, key);
 }
 
-struct flb_kv *flb_cf_env_property_add(struct flb_cf *cf,
-                                       char *k_buf, size_t k_len,
-                                       char *v_buf, size_t v_len)
+struct flb_cf_env_var *flb_cf_env_var_add(struct flb_cf *cf,
+                                          char *name, size_t name_len,
+                                          char *value, size_t value_len,
+                                          char *uri, size_t uri_len,
+                                          int refresh_interval)
 {
-    int ret;
-    struct flb_kv *kv;
+    struct flb_cf_env_var *ev;
 
-    if (k_len == 0) {
-        k_len = strlen(k_buf);
+    if (name_len == 0 && name) {
+        name_len = strlen(name);
     }
-    if (v_len == 0) {
-        v_len = strlen(v_buf);
+    if (value_len == 0 && value) {
+        value_len = strlen(value);
+    }
+    if (uri_len == 0 && uri) {
+        uri_len = strlen(uri);
     }
 
-    kv = flb_kv_item_create_len(&cf->env, k_buf, k_len, v_buf, v_len);
-    if (!kv) {
+    ev = flb_calloc(1, sizeof(struct flb_cf_env_var));
+    if (!ev) {
         return NULL;
     }
 
-    /* sanitize key and value by removing empty spaces */
-    ret = flb_sds_trim(kv->key);
-    if (ret == -1) {
-        flb_cf_error_set(cf, FLB_CF_ERROR_KV_INVALID_KEY);
-        flb_kv_item_destroy(kv);
-        return NULL;
+    if (name) {
+        ev->name = flb_sds_create_len(name, name_len);
+        if (!ev->name) {
+            flb_free(ev);
+            return NULL;
+        }
     }
 
-    ret = flb_sds_trim(kv->val);
-    if (ret == -1) {
-        flb_cf_error_set(cf, FLB_CF_ERROR_KV_INVALID_VAL);
-        flb_kv_item_destroy(kv);
-        return NULL;
+    if (value) {
+        ev->value = flb_sds_create_len(value, value_len);
+        if (!ev->value) {
+            if (ev->name) {
+                flb_sds_destroy(ev->name);
+            }
+            flb_free(ev);
+            return NULL;
+        }
     }
 
-    return kv;
+    if (uri) {
+        ev->uri = flb_sds_create_len(uri, uri_len);
+        if (!ev->uri) {
+            if (ev->name) {
+                flb_sds_destroy(ev->name);
+            }
+            if (ev->value) {
+                flb_sds_destroy(ev->value);
+            }
+            if (ev->uri) {
+                flb_sds_destroy(ev->uri);
+            }
+            flb_free(ev);
+            return NULL;
+        }
+    }
+
+    ev->refresh_interval = refresh_interval;
+    mk_list_add(&ev->_head, &cf->env);
+
+    return ev;
 }
 
 static struct flb_kv *meta_property_add(struct flb_cf *cf,
@@ -827,7 +872,7 @@ static void dump_section(struct flb_cf_section *s)
 static void dump_env(struct mk_list *list)
 {
     struct mk_list *head;
-    struct flb_kv *kv;
+    struct flb_cf_env_var *ev;
 
     if (mk_list_size(list) == 0) {
         return;
@@ -836,8 +881,16 @@ static void dump_env(struct mk_list *list)
     printf("> env:\n");
 
     mk_list_foreach(head, list) {
-        kv = mk_list_entry(head, struct flb_kv, _head);
-        printf("    - %-15s: %s\n", kv->key, kv->val);
+        ev = mk_list_entry(head, struct flb_cf_env_var, _head);
+        if (ev->uri) {
+            printf("    - %-15s: %s\n", ev->name, ev->uri);
+        }
+        else if (ev->value) {
+            printf("    - %-15s: %s\n", ev->name, ev->value);
+        }
+        else {
+            printf("    - %-15s: (null)\n", ev->name);
+        }
     }
 }
 

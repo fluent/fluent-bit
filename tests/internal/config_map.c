@@ -204,7 +204,7 @@ void test_create()
     TEST_CHECK(map != NULL);
 
     /* Populate default values only */
-    ret = flb_config_map_set(&properties, map, &ctx);
+    ret = flb_config_map_set(config, &properties, map, &ctx);
     TEST_CHECK(ret == 0);
 
     TEST_CHECK(ctx.boolean == 1);
@@ -255,7 +255,7 @@ void test_override_defaults()
     flb_kv_item_create(&properties, "test_slist", "abc def ghi jkl m n o");
 
     /* Populate default values only */
-    ret = flb_config_map_set(&properties, map, &ctx);
+    ret = flb_config_map_set(config, &properties, map, &ctx);
     TEST_CHECK(ret == 0);
 
     TEST_CHECK(ctx.boolean == 0);
@@ -346,7 +346,7 @@ void test_multiple()
     ret = flb_config_map_properties_check("test", &prop, map);
     TEST_CHECK(ret == 0);
 
-    ret = flb_config_map_set(&prop, map, &ctx);
+    ret = flb_config_map_set(config, &prop, map, &ctx);
     TEST_CHECK(ret == 0);
 
     i = 0;
@@ -396,7 +396,7 @@ void test_special_properties()
     flb_kv_init(&prop);
     flb_kv_item_create(&prop, "condition", "{\"op\": \"and\", \"rules\": [{\"field\": \"$level\", \"op\": \"eq\", \"value\": \"error\"}]}");
     flb_kv_item_create(&prop, "active", "true");
-    
+
     /* Add a regular property too */
     flb_kv_item_create(&prop, "boolean", "true");
 
@@ -408,7 +408,7 @@ void test_special_properties()
     TEST_CHECK(ret == 0);
 
     /* Test that normal properties are still set correctly */
-    ret = flb_config_map_set(&prop, map, &ctx);
+    ret = flb_config_map_set(config, &prop, map, &ctx);
     TEST_CHECK(ret == 0);
     TEST_CHECK(ctx.boolean == 1);
 

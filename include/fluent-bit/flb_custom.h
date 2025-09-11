@@ -93,7 +93,7 @@ struct flb_custom_instance {
 static inline int flb_custom_config_map_set(struct flb_custom_instance *ins,
                                             void *context)
 {
-    return flb_config_map_set(&ins->properties, ins->config_map, context);
+    return flb_config_map_set(ins->config, &ins->properties, ins->config_map, context);
 }
 
 int flb_custom_set_property(struct flb_custom_instance *ins,

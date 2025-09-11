@@ -24,6 +24,8 @@
 #include <fluent-bit/flb_mem.h>
 #include <fluent-bit/flb_kv.h>
 #include <fluent-bit/flb_slist.h>
+#include <fluent-bit/flb_env.h>
+#include <fluent-bit/flb_utils.h>
 
 #include <cfl/cfl.h>
 #include <cfl/cfl_sds.h>
@@ -172,6 +174,9 @@ enum state {
 
     /* environment variables */
     STATE_ENV,
+    STATE_ENV_LIST,
+    STATE_ENV_LIST_KEY,
+    STATE_ENV_LIST_VAL,
 
 
     STATE_STOP            /* end state */
@@ -214,6 +219,8 @@ struct parser_state {
     int allocation_flags;
 
     struct file_state *file;
+
+    struct flb_cf_env_var *env_var;
 
     struct cfl_list _head;
 };
@@ -297,6 +304,12 @@ static char *state_str(enum state val)
         return "processor";
     case STATE_ENV:
         return "env";
+    case STATE_ENV_LIST:
+        return "env-list";
+    case STATE_ENV_LIST_KEY:
+        return "env-list-key";
+    case STATE_ENV_LIST_VAL:
+        return "env-list-val";
     case STATE_PARSER:
         return "parser";
     case STATE_MULTILINE_PARSER:
@@ -817,7 +830,7 @@ static int consume_event(struct flb_cf *conf, struct local_ctx *ctx,
     enum status status;
     int ret;
     char *value;
-    struct flb_kv *keyval;
+    struct flb_cf_env_var *keyval;
     char *last_included;
 
     last_included = state_get_last(ctx);
@@ -849,6 +862,113 @@ static int consume_event(struct flb_cf *conf, struct local_ctx *ctx,
             state->state = STATE_STOP;
             break;
         default:
+            yaml_error_event(ctx, state, event);
+            return YAML_FAILURE;
+        }
+        break;
+
+    case STATE_ENV_LIST:
+        switch (event->type) {
+        case YAML_MAPPING_START_EVENT:
+            state = state_push(ctx, STATE_ENV_LIST_KEY);
+            if (state == NULL) {
+                flb_error("unable to allocate state");
+                return YAML_FAILURE;
+            }
+            state->env_var = flb_calloc(1, sizeof(struct flb_cf_env_var));
+            if (!state->env_var) {
+                flb_error("unable to allocate env var");
+                return YAML_FAILURE;
+            }
+            state->env_var->refresh_interval = 0;
+            break;
+        case YAML_SEQUENCE_END_EVENT:
+            state = state_pop(ctx);
+            if (state == NULL) {
+                flb_error("no state left");
+                return YAML_FAILURE;
+            }
+            state = state_pop(ctx);
+            if (state == NULL) {
+                flb_error("no state left");
+                return YAML_FAILURE;
+            }
+            break;
+        default:
+            yaml_error_event(ctx, state, event);
+            return YAML_FAILURE;
+        }
+        break;
+
+    case STATE_ENV_LIST_KEY:
+        switch(event->type) {
+        case YAML_SCALAR_EVENT:
+        {
+            char *tmp_value;
+            struct parser_state *parent = state;
+
+            tmp_value = (char *) event->data.scalar.value;
+            state = state_push_key(ctx, STATE_ENV_LIST_VAL, tmp_value);
+            if (state == NULL) {
+                flb_error("unable to allocate state");
+                return YAML_FAILURE;
+            }
+            state->env_var = parent->env_var;
+            break;
+        }
+        case YAML_MAPPING_END_EVENT:
+            if (state->env_var && state->env_var->name) {
+                mk_list_add(&state->env_var->_head, &conf->env);
+            }
+            else if (state->env_var) {
+                if (state->env_var->name) {
+                    flb_sds_destroy(state->env_var->name);
+                }
+                if (state->env_var->value) {
+                    flb_sds_destroy(state->env_var->value);
+                }
+                if (state->env_var->uri) {
+                    flb_sds_destroy(state->env_var->uri);
+                }
+                flb_free(state->env_var);
+            }
+            state = state_pop(ctx);
+            if (state == NULL) {
+                flb_error("no state left");
+                return YAML_FAILURE;
+            }
+            break;
+        default:
+            yaml_error_event(ctx, state, event);
+            return YAML_FAILURE;
+        }
+        break;
+
+    case STATE_ENV_LIST_VAL:
+        if (event->type == YAML_SCALAR_EVENT) {
+            value = (char *) event->data.scalar.value;
+            if (strcasecmp(state->key, "name") == 0) {
+                state->env_var->name = flb_sds_create(value);
+            }
+            else if (strcasecmp(state->key, "value") == 0) {
+                state->env_var->value = flb_sds_create(value);
+            }
+            else if (strcasecmp(state->key, "uri") == 0) {
+                state->env_var->uri = flb_sds_create(value);
+            }
+            else if (strcasecmp(state->key, "refresh_interval") == 0) {
+                state->env_var->refresh_interval = flb_utils_time_to_seconds(value);
+            }
+            else {
+                if (!state->env_var->name) {
+                    state->env_var->name = flb_sds_create(state->key);
+                    state->env_var->value = flb_sds_create(value);
+                }
+            }
+
+            state = state_pop(ctx);
+        }
+        else {
             yaml_error_event(ctx, state, event);
             return YAML_FAILURE;
         }
@@ -1680,6 +1800,19 @@ static int consume_event(struct flb_cf *conf, struct local_ctx *ctx,
                 return YAML_FAILURE;
             }
             break;
+        case YAML_SEQUENCE_START_EVENT:
+            if (state->section != SECTION_ENV) {
+                flb_error("env list is only allowed in env section");
+                yaml_error_event(ctx, state, event);
+                return YAML_FAILURE;
+            }
+
+            state = state_push(ctx, STATE_ENV_LIST);
+            if (state == NULL) {
+                flb_error("unable to allocate state");
+                return YAML_FAILURE;
+            }
+            break;
         case YAML_MAPPING_END_EVENT:
             state = state_pop(ctx);
 
@@ -1742,9 +1875,10 @@ static int consume_event(struct flb_cf *conf, struct local_ctx *ctx,
 
             /* Check if the incoming k/v pair set a config environment variable */
             if (state->section == SECTION_ENV) {
-                keyval = flb_cf_env_property_add(conf,
-                                                 state->key, flb_sds_len(state->key),
-                                                 value, strlen(value));
+                keyval = flb_cf_env_var_add(conf,
+                                            state->key, flb_sds_len(state->key),
+                                            value, strlen(value),
+                                            NULL, 0, 0);
 
                 if (keyval == NULL) {
                     flb_error("unable to add key value");

@@ -145,8 +145,8 @@ struct flb_service_config service_configs[] = {
     {FLB_CONF_STORAGE_BL_MEM_LIMIT,
      FLB_CONF_TYPE_STR,
      offsetof(struct flb_config, storage_bl_mem_limit)},
-    {FLB_CONF_STORAGE_BL_FLUSH_ON_SHUTDOWN,                  
-     FLB_CONF_TYPE_BOOL,                                       
+    {FLB_CONF_STORAGE_BL_FLUSH_ON_SHUTDOWN,
+     FLB_CONF_TYPE_BOOL,
      offsetof(struct flb_config, storage_bl_flush_on_shutdown)},
     {FLB_CONF_STORAGE_MAX_CHUNKS_UP,
      FLB_CONF_TYPE_INT,
@@ -932,6 +932,7 @@ error:
 int flb_config_load_config_format(struct flb_config *config, struct flb_cf *cf)
 {
     int ret;
+    struct flb_cf_env_var *env_var;
     struct flb_kv *kv;
     struct mk_list *head;
     struct cfl_kvpair *ckv;
@@ -940,10 +941,13 @@ int flb_config_load_config_format(struct flb_config *config, struct flb_cf *cf)
 
     /* Process config environment vars */
     mk_list_foreach(head, &cf->env) {
-        kv = mk_list_entry(head, struct flb_kv, _head);
-        ret = flb_env_set(config->env, kv->key, kv->val);
+        env_var = mk_list_entry(head, struct flb_cf_env_var, _head);
+        ret = flb_env_set_extended(config->env,
+                                   env_var->name, env_var->value,
+                                   env_var->uri,
+                                   env_var->refresh_interval);
         if (ret == -1) {
-            flb_error("could not set config environment variable '%s'", kv->key);
+            flb_error("could not set config environment variable '%s'", env_var->name);
             return -1;
         }
     }
