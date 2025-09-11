@@ -205,6 +205,10 @@ struct flb_service_config service_configs[] = {
      FLB_CONF_TYPE_BOOL,
      offsetof(struct flb_config, ensure_thread_safety_on_hot_reloading)},
 
+    {FLB_CONF_STR_HOT_RELOAD_TIMEOUT,
+     FLB_CONF_TYPE_INT,
+     offsetof(struct flb_config, hot_reload_watchdog_timeout_seconds)},
+
     {NULL, FLB_CONF_TYPE_OTHER, 0} /* end of array */
 };
 
@@ -308,6 +312,7 @@ struct flb_config *flb_config_init()
     config->shutdown_by_hot_reloading = FLB_FALSE;
     config->hot_reloading = FLB_FALSE;
     config->hot_reload_succeeded = FLB_FALSE;
+    config->hot_reload_watchdog_timeout_seconds = 0;
 
 #ifdef FLB_SYSTEM_WINDOWS
     config->win_maxstdio = 512;

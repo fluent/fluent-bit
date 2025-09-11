@@ -287,6 +287,8 @@ struct flb_config {
     int shutdown_by_hot_reloading;
     int hot_reloading;
     int hot_reload_succeeded;
+    
+    int hot_reload_watchdog_timeout_seconds;
 
     /* Routing */
     size_t route_mask_size;
@@ -381,6 +383,7 @@ enum conf_type {
 
 #define FLB_CONF_STR_HOT_RELOAD        "Hot_Reload"
 #define FLB_CONF_STR_HOT_RELOAD_ENSURE_THREAD_SAFETY  "Hot_Reload.Ensure_Thread_Safety"
+#define FLB_CONF_STR_HOT_RELOAD_TIMEOUT "Hot_Reload.Timeout"
 
 /* Set up maxstdio (Windows) */
 #define FLB_CONF_STR_WINDOWS_MAX_STDIO "windows.maxstdio"
