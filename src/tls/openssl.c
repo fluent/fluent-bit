@@ -1192,8 +1192,16 @@ static int tls_net_handshake(struct flb_tls *tls,
                 }
             }
             else {
-                ERR_error_string_n(ret, err_buf, sizeof(err_buf)-1);
-                flb_error("[tls] error: %s", err_buf);
+                /* Get the actual OpenSSL error from queue instead of SSL_get_error() classification */
+                unsigned long err_code = ERR_peek_last_error();
+                if (err_code != 0) {
+                    ERR_error_string_n(err_code, err_buf, sizeof(err_buf)-1);
+                    flb_error("[tls] error: %s", err_buf);
+                }
+                else {
+                    /* No OpenSSL error in queue, log the SSL error classification */
+                    flb_error("[tls] unknown SSL error (class: %d)", ret);
+                }
             }
 
             pthread_mutex_unlock(&ctx->mutex);
