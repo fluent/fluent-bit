@@ -94,6 +94,16 @@ void mk_http_request_init(struct mk_http_session *session,
                   session->channel,
                   NULL,
                   NULL, NULL, NULL);
+
+    /* Initialize headers input stream */
+    request->in_headers.type        = MK_STREAM_IOV;
+    request->in_headers.dynamic     = MK_FALSE;
+    request->in_headers.cb_consumed = NULL;
+    request->in_headers.cb_finished = NULL;
+    request->in_headers.buffer      = NULL;
+    request->in_headers.bytes_total = 0;
+    request->in_headers.stream      = &request->stream;
+    mk_list_add(&request->in_headers._head, &request->stream.inputs);
 }
 
 static inline int mk_http_point_header(mk_ptr_t *h,
@@ -721,14 +731,6 @@ int mk_http_init(struct mk_http_session *cs, struct mk_http_request *sr,
     }
 
     ret_file = mk_file_get_info(sr->real_path.data, &sr->file_info, MK_FILE_READ);
-
-    /* Manually set the headers input streams */
-    sr->in_headers.type        = MK_STREAM_IOV;
-    sr->in_headers.dynamic     = MK_FALSE;
-    sr->in_headers.cb_consumed = NULL;
-    sr->in_headers.cb_finished = NULL;
-    sr->in_headers.stream      = &sr->stream;
-    mk_list_add(&sr->in_headers._head, &sr->stream.inputs);
 
     /* Plugin Stage 30: look for handlers for this request */
     if (sr->stage30_blocked == MK_FALSE) {
