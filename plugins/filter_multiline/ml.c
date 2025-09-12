@@ -864,6 +864,18 @@ static int cb_ml_filter(const void *data, size_t bytes,
                 flb_plg_debug(ctx->ins,
                               "could not append object from tag: %s", tag);
             }
+            else if (ret == FLB_MULTILINE_OK) {
+#ifdef FLB_HAVE_METRICS
+                name = (char *) flb_filter_name(ctx->ins);
+                ts = cfl_time_now();
+                if (ctx->cmt_emitted) {
+                    cmt_counter_inc(ctx->cmt_emitted, ts, 1, (char *[]) {name});
+                }
+
+                /* old api */
+                flb_metrics_sum(FLB_MULTILINE_METRIC_EMITTED, 1, ctx->ins->metrics);
+#endif
+            }
         }
 
         flb_log_event_decoder_destroy(&decoder);
