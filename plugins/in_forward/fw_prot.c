@@ -1555,10 +1555,8 @@ int fw_prot_process(struct flb_input_instance *ins, struct fw_conn *conn)
                                                 FLB_DECOMPRESSION_BUFFER_SIZE);
                             if (!conn->d_ctx) {
                                 flb_plg_error(ctx->ins, "failed to create decompression context");
-                                msgpack_unpacked_destroy(&result);
-                                flb_sds_destroy(out_tag);
-                                msgpack_unpacker_free(unp);
-                                return -1;
+
+                                goto cleanup_msgpack;
                             }
                         }
                     }
@@ -1576,7 +1574,8 @@ int fw_prot_process(struct flb_input_instance *ins, struct fw_conn *conn)
                             required_size = conn->d_ctx->input_buffer_length + len;
                             if (flb_decompression_context_resize_buffer(conn->d_ctx, required_size) != 0) {
                                 flb_plg_error(ctx->ins, "cannot resize decompression buffer");
-                                return -1;
+
+                                goto cleanup_decompress;
                             }
                         }
                         append_ptr = flb_decompression_context_get_append_buffer(conn->d_ctx);
@@ -1586,7 +1585,8 @@ int fw_prot_process(struct flb_input_instance *ins, struct fw_conn *conn)
                         decomp_buf = flb_malloc(ctx->buffer_chunk_size);
                         if (!decomp_buf) {
                             flb_errno();
-                            return -1;
+
+                            goto cleanup_decompress;
                         }
 
                         do {
@@ -1597,10 +1597,8 @@ int fw_prot_process(struct flb_input_instance *ins, struct fw_conn *conn)
                                 if (decomp_len > 0) {
                                     flb_plg_error(ctx->ins, "decompression failed, data may be corrupt");
                                     flb_free(decomp_buf);
-                                    msgpack_unpacked_destroy(&result);
-                                    msgpack_unpacker_free(unp);
-                                    flb_sds_destroy(out_tag);
-                                    return -1;
+
+                                    goto cleanup_decompress;
                                 }
                                 break;
                             }
@@ -1608,10 +1606,8 @@ int fw_prot_process(struct flb_input_instance *ins, struct fw_conn *conn)
                             if (decomp_len > 0) {
                                 if (append_log(ins, conn, event_type, out_tag, decomp_buf, decomp_len) == -1) {
                                     flb_free(decomp_buf);
-                                    msgpack_unpacked_destroy(&result);
-                                    msgpack_unpacker_free(unp);
-                                    flb_sds_destroy(out_tag);
-                                    return -1;
+
+                                    goto cleanup_decompress;
                                 }
                             }
                         } while (decomp_len > 0);
@@ -1624,7 +1620,7 @@ int fw_prot_process(struct flb_input_instance *ins, struct fw_conn *conn)
                     }
                     else {
                         if (append_log(ins, conn, event_type, out_tag, data, len) == -1) {
-                            return -1;
+                            goto cleanup_msgpack;
                         }
                     }
                 }
@@ -1638,10 +1634,7 @@ int fw_prot_process(struct flb_input_instance *ins, struct fw_conn *conn)
             else {
                 flb_plg_warn(ctx->ins, "invalid data format, type=%i",
                              entry.type);
-                msgpack_unpacked_destroy(&result);
-                flb_sds_destroy(out_tag);
-                msgpack_unpacker_free(unp);
-                return -1;
+                goto cleanup_msgpack;
             }
 
             ret = msgpack_unpacker_next(unp, &result);
@@ -1668,4 +1661,16 @@ int fw_prot_process(struct flb_input_instance *ins, struct fw_conn *conn)
     };
 
     return 0;
+
+cleanup_decompress:
+    flb_decompression_context_destroy(conn->d_ctx);
+    conn->d_ctx = NULL;
+    conn->compression_type = FLB_COMPRESSION_ALGORITHM_NONE;
+    /* FALLTHRU */
+cleanup_msgpack:
+    msgpack_unpacked_destroy(&result);
+    msgpack_unpacker_free(unp);
+    flb_sds_destroy(out_tag);
+
+    return -1;
 }
