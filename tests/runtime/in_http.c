@@ -29,6 +29,7 @@
 
 #define JSON_CONTENT_TYPE "application/json"
 #define JSON_CHARSET_CONTENT_TYPE "application/json; charset=utf-8"
+#define PLAINTEXT_CONTENT_TYPE "text/plain"
 
 struct http_client_ctx {
     struct flb_upstream      *u;
@@ -278,6 +279,240 @@ void flb_test_http()
     flb_upstream_conn_release(ctx->httpc->u_conn);
     test_ctx_destroy(ctx);
 }
+
+void flb_test_plaintext_legacy()
+{
+    struct flb_lib_out_cb cb_data;
+    struct test_ctx *ctx;
+    struct flb_http_client *c;
+    int ret;
+    int num;
+    size_t b_sent;
+    int trys;
+    char buf[] = "[Fri Dec 16 01:46:23 2005] [error] [client 1.2.3.4] Directory index forbidden by rule: /home/test/\n"
+                 "[Fri Dec 16 01:54:34 2005] [error] [client 1.2.3.4] Directory index forbidden by rule: /apache/web-data/test2\n"
+                 "[Fri Dec 16 02:25:55 2005] [error] [client 1.2.3.4] Client sent malformed Host header\n"
+                 "[Mon Dec 19 23:02:01 2005] [error] [client 1.2.3.4] user test: authentication failure for \"/~dcid/test1\": Password Mismatch;\n";
+
+    clear_output_num();
+
+    cb_data.cb = cb_check_result_json;
+    cb_data.data = "[error] [client 1.2.3.4]";
+
+    ctx = test_ctx_create(&cb_data);
+    if (!TEST_CHECK(ctx != NULL)) {
+        TEST_MSG("test_ctx_create failed");
+        exit(EXIT_FAILURE);
+    }
+
+    flb_input_set(ctx->flb, ctx->i_ffd, "http2", "off", NULL);
+
+    ret = flb_output_set(ctx->flb, ctx->o_ffd,
+                         "match", "*",
+                         "format", "json",
+                         NULL);
+    TEST_CHECK(ret == 0);
+
+    /* Start the engine */
+    ret = flb_start(ctx->flb);
+    TEST_CHECK(ret == 0);
+
+    ctx->httpc = http_client_ctx_create();
+    TEST_CHECK(ctx->httpc != NULL);
+
+    c = flb_http_client(ctx->httpc->u_conn, FLB_HTTP_POST, "/", buf, sizeof(buf),
+                        "127.0.0.1", 9880, NULL, 0);
+    ret = flb_http_add_header(c, FLB_HTTP_HEADER_CONTENT_TYPE, strlen(FLB_HTTP_HEADER_CONTENT_TYPE),
+                              PLAINTEXT_CONTENT_TYPE, strlen(PLAINTEXT_CONTENT_TYPE));
+    TEST_CHECK(ret == 0);
+    if (!TEST_CHECK(c != NULL)) {
+        TEST_MSG("http_client failed");
+        exit(EXIT_FAILURE);
+    }
+
+    ret = flb_http_do(c, &b_sent);
+    if (!TEST_CHECK(ret == 0)) {
+        TEST_MSG("ret error. ret=%d\n", ret);
+    }
+    else if (!TEST_CHECK(b_sent > 0)){
+        TEST_MSG("b_sent size error. b_sent = %lu\n", b_sent);
+    }
+    else if (!TEST_CHECK(c->resp.status == 201)) {
+        TEST_MSG("http response code error. expect: 201, got: %d\n", c->resp.status);
+    }
+
+    /* waiting to flush */
+    for (trys = 0, num = get_output_num(); trys < 3 && num < 4; trys++, num = get_output_num()) {
+        flb_time_msleep(1000);
+    }
+
+    num = get_output_num();
+    if (!TEST_CHECK(num > 0))  {
+        TEST_MSG("no outputs");
+    }
+    if (!TEST_CHECK(num >= 4))  {
+        TEST_MSG("too few outputs");
+    }
+    if (!TEST_CHECK(num < 5))  {
+        TEST_MSG("too many outputs");
+    }
+    flb_http_client_destroy(c);
+    flb_upstream_conn_release(ctx->httpc->u_conn);
+    test_ctx_destroy(ctx);
+}
+
+void flb_test_plaintext()
+{
+    struct flb_lib_out_cb cb_data;
+    struct test_ctx *ctx;
+    struct flb_http_client *c;
+    int ret;
+    int num;
+    size_t b_sent;
+    int trys;
+    char buf[] = "[Fri Dec 16 01:46:23 2005] [error] [client 1.2.3.4] Directory index forbidden by rule: /home/test/\n"
+                 "[Fri Dec 16 01:54:34 2005] [error] [client 1.2.3.4] Directory index forbidden by rule: /apache/web-data/test2\n"
+                 "[Fri Dec 16 02:25:55 2005] [error] [client 1.2.3.4] Client sent malformed Host header\n"
+                 "[Mon Dec 19 23:02:01 2005] [error] [client 1.2.3.4] user test: authentication failure for \"/~dcid/test1\": Password Mismatch;\n";
+
+    clear_output_num();
+
+    cb_data.cb = cb_check_result_json;
+    cb_data.data = "[error] [client 1.2.3.4]";
+
+    ctx = test_ctx_create(&cb_data);
+    if (!TEST_CHECK(ctx != NULL)) {
+        TEST_MSG("test_ctx_create failed");
+        exit(EXIT_FAILURE);
+    }
+
+    ret = flb_output_set(ctx->flb, ctx->o_ffd,
+                         "match", "*",
+                         "format", "json",
+                         NULL);
+    TEST_CHECK(ret == 0);
+
+    /* Start the engine */
+    ret = flb_start(ctx->flb);
+    TEST_CHECK(ret == 0);
+
+    ctx->httpc = http_client_ctx_create();
+    TEST_CHECK(ctx->httpc != NULL);
+
+    c = flb_http_client(ctx->httpc->u_conn, FLB_HTTP_POST, "/", buf, sizeof(buf),
+                        "127.0.0.1", 9880, NULL, 0);
+    ret = flb_http_add_header(c, FLB_HTTP_HEADER_CONTENT_TYPE, strlen(FLB_HTTP_HEADER_CONTENT_TYPE),
+                              PLAINTEXT_CONTENT_TYPE, strlen(PLAINTEXT_CONTENT_TYPE));
+    TEST_CHECK(ret == 0);
+    if (!TEST_CHECK(c != NULL)) {
+        TEST_MSG("http_client failed");
+        exit(EXIT_FAILURE);
+    }
+
+    ret = flb_http_do(c, &b_sent);
+    if (!TEST_CHECK(ret == 0)) {
+        TEST_MSG("ret error. ret=%d\n", ret);
+    }
+    else if (!TEST_CHECK(b_sent > 0)){
+        TEST_MSG("b_sent size error. b_sent = %lu\n", b_sent);
+    }
+    else if (!TEST_CHECK(c->resp.status == 201)) {
+        TEST_MSG("http response code error. expect: 201, got: %d\n", c->resp.status);
+    }
+
+    /* waiting to flush */
+    for (trys = 0, num = get_output_num(); trys < 3 && num < 4; trys++, num = get_output_num()) {
+        flb_time_msleep(1000);
+    }
+
+    num = get_output_num();
+    if (!TEST_CHECK(num > 0))  {
+        TEST_MSG("no outputs");
+    }
+    if (!TEST_CHECK(num >= 4))  {
+        TEST_MSG("too few outputs");
+    }
+    if (!TEST_CHECK(num < 5))  {
+        TEST_MSG("too many outputs");
+    }
+    flb_http_client_destroy(c);
+    flb_upstream_conn_release(ctx->httpc->u_conn);
+    test_ctx_destroy(ctx);
+}
+
+void flb_test_plaintext_nonl()
+{
+    struct flb_lib_out_cb cb_data;
+    struct test_ctx *ctx;
+    struct flb_http_client *c;
+    int ret;
+    int num;
+    size_t b_sent;
+    int trys;
+    char buf[] = "[Fri Dec 16 01:46:23 2005] [error] [client 1.2.3.4] Directory index forbidden by rule: /home/test/";
+
+    clear_output_num();
+
+    cb_data.cb = cb_check_result_json;
+    cb_data.data = "[error] [client 1.2.3.4]";
+
+    ctx = test_ctx_create(&cb_data);
+    if (!TEST_CHECK(ctx != NULL)) {
+        TEST_MSG("test_ctx_create failed");
+        exit(EXIT_FAILURE);
+    }
+
+    ret = flb_output_set(ctx->flb, ctx->o_ffd,
+                         "match", "*",
+                         "format", "json",
+                         NULL);
+    TEST_CHECK(ret == 0);
+
+    /* Start the engine */
+    ret = flb_start(ctx->flb);
+    TEST_CHECK(ret == 0);
+
+    ctx->httpc = http_client_ctx_create();
+    TEST_CHECK(ctx->httpc != NULL);
+
+    c = flb_http_client(ctx->httpc->u_conn, FLB_HTTP_POST, "/", buf, sizeof(buf),
+                        "127.0.0.1", 9880, NULL, 0);
+    ret = flb_http_add_header(c, FLB_HTTP_HEADER_CONTENT_TYPE, strlen(FLB_HTTP_HEADER_CONTENT_TYPE),
+                              PLAINTEXT_CONTENT_TYPE, strlen(PLAINTEXT_CONTENT_TYPE));
+    TEST_CHECK(ret == 0);
+    if (!TEST_CHECK(c != NULL)) {
+        TEST_MSG("http_client failed");
+        exit(EXIT_FAILURE);
+    }
+
+    ret = flb_http_do(c, &b_sent);
+    if (!TEST_CHECK(ret == 0)) {
+        TEST_MSG("ret error. ret=%d\n", ret);
+    }
+    else if (!TEST_CHECK(b_sent > 0)){
+        TEST_MSG("b_sent size error. b_sent = %lu\n", b_sent);
+    }
+    else if (!TEST_CHECK(c->resp.status == 201)) {
+        TEST_MSG("http response code error. expect: 201, got: %d\n", c->resp.status);
+    }
+
+    /* waiting to flush */
+    for (trys = 0, num = get_output_num(); trys < 3 && num < 1; trys++, num = get_output_num()) {
+        flb_time_msleep(1000);
+    }
+
+    num = get_output_num();
+    if (!TEST_CHECK(num >= 1))  {
+        TEST_MSG("too few num outputs");
+    }
+    if (!TEST_CHECK(num < 2))  {
+        TEST_MSG("too many num outputs");
+    }
+    flb_http_client_destroy(c);
+    flb_upstream_conn_release(ctx->httpc->u_conn);
+    test_ctx_destroy(ctx);
+}
+
 void flb_test_http_successful_response_code(char *response_code)
 {
     struct flb_lib_out_cb cb_data;
@@ -673,6 +908,9 @@ void flb_test_http_tag_key_with_array_input()
 
 TEST_LIST = {
     {"http", flb_test_http},
+    {"plaintext_legacy", flb_test_plaintext_legacy},
+    {"plaintext", flb_test_plaintext},
+    {"plaintext_nonl", flb_test_plaintext_nonl},
     {"successful_response_code_200", flb_test_http_successful_response_code_200},
     {"successful_response_code_204", flb_test_http_successful_response_code_204},
     {"failure_response_code_400_bad_json", flb_test_http_failure_400_bad_json},
