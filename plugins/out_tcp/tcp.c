@@ -55,7 +55,8 @@ static int cb_tcp_init(struct flb_output_instance *ins,
 static int compose_payload(struct flb_out_tcp *ctx,
                            const char *tag, int tag_len,
                            const void *in_data, size_t in_size,
-                           void **out_payload, size_t *out_size)
+                           void **out_payload, size_t *out_size,
+                           struct flb_config *config)
 {
     int ret;
     flb_sds_t buf = NULL;
@@ -126,7 +127,8 @@ static int compose_payload(struct flb_out_tcp *ctx,
                                            in_size,
                                            ctx->out_format,
                                            ctx->json_date_format,
-                                           ctx->date_key);
+                                           ctx->date_key,
+                                           config->json_escape_unicode);
     if (!json) {
         flb_plg_error(ctx->ins, "error formatting JSON payload");
         return FLB_ERROR;
@@ -164,7 +166,8 @@ static void cb_tcp_flush(struct flb_event_chunk *event_chunk,
     ret = compose_payload(ctx,
                           event_chunk->tag, flb_sds_len(event_chunk->tag),
                           event_chunk->data, event_chunk->size,
-                          &out_payload, &out_size);
+                          &out_payload, &out_size,
+                          config);
     if (ret != FLB_OK) {
         flb_upstream_conn_release(u_conn);
         return FLB_OUTPUT_RETURN(ret);
@@ -244,7 +247,7 @@ static int cb_tcp_format_test(struct flb_config *config,
     struct flb_out_tcp *ctx = plugin_context;
     int ret;
 
-    ret = compose_payload(ctx, tag, tag_len, data, bytes, out_data, out_size);
+    ret = compose_payload(ctx, tag, tag_len, data, bytes, out_data, out_size, config);
     if (ret != FLB_OK) {
         flb_error("ret=%d", ret);
         return -1;
