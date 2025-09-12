@@ -1254,8 +1254,6 @@ int fw_prot_process(struct flb_input_instance *ins, struct fw_conn *conn)
     flb_sds_t out_tag = NULL;
     size_t bytes;
     size_t recv_len;
-    size_t gz_size;
-    void *gz_data;
     msgpack_object tag;
     msgpack_object entry;
     msgpack_object map;
@@ -1264,8 +1262,6 @@ int fw_prot_process(struct flb_input_instance *ins, struct fw_conn *conn)
     msgpack_unpacked result;
     msgpack_unpacker *unp;
     size_t all_used = 0;
-    const char *payload_data = NULL;
-    size_t payload_len = 0;
     struct flb_in_fw_config *ctx = conn->ctx;
 
     /*
