@@ -1148,15 +1148,29 @@ static int tls_net_handshake(struct flb_tls *tls,
     }
 
     if (ret != 1) {
+        int ssl_ret = ret;
         ret = SSL_get_error(session->ssl, ret);
         if (ret != SSL_ERROR_WANT_READ &&
             ret != SSL_ERROR_WANT_WRITE) {
-            ret = SSL_get_error(session->ssl, ret);
-            /* The SSL_ERROR_SYSCALL with errno value of 0 indicates unexpected
-             *  EOF from the peer. This is fixed in OpenSSL 3.0.
-             */
-
-            if (ret == 0) {
+            /* Handle SSL_ERROR_SYSCALL according to OpenSSL documentation */
+            if (ret == SSL_ERROR_SYSCALL) {
+                unsigned long err_code = ERR_get_error();
+                if (err_code == 0) {
+                    /* No error in queue, check original return value */
+                    if (ssl_ret == 0) {
+                        flb_error("[tls] error: unexpected EOF");
+                    }
+                    else {
+                        flb_error("[tls] syscall error: %s", strerror(errno));
+                    }
+                }
+                else {
+                    ERR_error_string_n(err_code, err_buf, sizeof(err_buf)-1);
+                    flb_error("[tls] syscall error: %s", err_buf);
+                }
+            }
+            else if (ret == 0) {
+                /* Original logic for SSL_get_error() == 0 case */
                 ssl_code = SSL_get_verify_result(session->ssl);
                 if (ssl_code != X509_V_OK) {
                     /* Refer to: https://x509errors.org/ */
@@ -1164,11 +1178,20 @@ static int tls_net_handshake(struct flb_tls *tls,
                     flb_error("[tls] certificate verification failed, reason: %s (X509 code: %ld)", x509_err, ssl_code);
                 }
                 else {
-                    flb_error("[tls] error: unexpected EOF");
+                    flb_error("[tls] error: unknown SSL error");
                 }
-            } else {
-                ERR_error_string_n(ret, err_buf, sizeof(err_buf)-1);
-                flb_error("[tls] error: %s", err_buf);
+            }
+            else {
+                /* Get the actual OpenSSL error from queue instead of SSL_get_error() classification */
+                unsigned long err_code = ERR_peek_last_error();
+                if (err_code != 0) {
+                    ERR_error_string_n(err_code, err_buf, sizeof(err_buf)-1);
+                    flb_error("[tls] error: %s", err_buf);
+                }
+                else {
+                    /* No OpenSSL error in queue, log the SSL error classification */
+                    flb_error("[tls] unknown SSL error (class: %d)", ret);
+                }
             }
 
             pthread_mutex_unlock(&ctx->mutex);
