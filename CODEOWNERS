@@ -92,7 +92,7 @@
 /.devcontainer                  @patrick-stephens @niedbalski @edsiper
 
 # Calyptia Fleet
-/include/fluent-bit/calyptia/       @pwhelan @patrick-stephens @niedbalski
-/plugins/custom_calyptia/       @pwhelan @patrick-stephens @niedbalski
-/plugins/custom_calyptia/       @pwhelan @patrick-stephens @niedbalski
-/plugins/out_calyptia/     @pwhelan @patrick-stephens @niedbalski
+/include/fluent-bit/calyptia/ @pwhelan @patrick-stephens @niedbalski @alecholmes
+/plugins/custom_calyptia/     @pwhelan @patrick-stephens @niedbalski @alecholmes
+/plugins/custom_calyptia/     @pwhelan @patrick-stephens @niedbalski @alecholmes
+/plugins/out_calyptia/        @pwhelan @patrick-stephens @niedbalski @alecholmes
