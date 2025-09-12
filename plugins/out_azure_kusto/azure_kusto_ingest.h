@@ -26,4 +26,7 @@
 int azure_kusto_queued_ingestion(struct flb_azure_kusto *ctx, flb_sds_t tag,
                                  size_t tag_len, flb_sds_t payload, size_t payload_size, struct azure_kusto_file *upload_file);
 
+int azure_kusto_streaming_ingestion(struct flb_azure_kusto *ctx, flb_sds_t tag,
+                                    size_t tag_len, flb_sds_t payload, size_t payload_size);
+
 #endif
