@@ -1233,8 +1233,8 @@ static int sniff_magic(const uint8_t *p, size_t n) {
     if (n >= 2 && p[0]==0x1f && p[1]==0x8b) {
         return FLB_COMPRESSION_ALGORITHM_GZIP;
     }
-    if (n >= 4 && (uint8_t)p[0]==0x28 && (uint8_t)p[1]==0xb5 &&
-                  (uint8_t)p[2]==0x2f && (uint8_t)p[3]==0xfd) {
+    if (n >= 4 && p[0]==0x28 && p[1]==0xb5 &&
+                  p[2]==0x2f && p[3]==0xfd) {
         return FLB_COMPRESSION_ALGORITHM_ZSTD;
     }
 
