@@ -69,7 +69,8 @@ struct flb_tls_backend {
     void *(*context_create) (int, int, int,
                              const char *, const char *,
                              const char *, const char *,
-                             const char *, const char *);
+                             const char *, const char *,
+                             const char *);
 
     /* destroy backend context */
     void (*context_destroy) (void *);
@@ -118,13 +119,17 @@ struct flb_tls {
 
 int flb_tls_init();
 
+void flb_tls_configure(struct flb_config* config);
+void flb_tls_cleanup(void);
+
 struct flb_tls *flb_tls_create(int mode,
                                int verify,
                                int debug,
                                const char *vhost,
                                const char *ca_path,
                                const char *ca_file, const char *crt_file,
-                               const char *key_file, const char *key_passwd);
+                               const char *key_file, const char *key_passwd,
+                               const char *additional_data);
 
 int flb_tls_destroy(struct flb_tls *tls);
 
