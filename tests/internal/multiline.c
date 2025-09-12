@@ -1480,7 +1480,10 @@ static void test_buffer_limit_truncation()
 
     config = flb_config_init();
     /* The buffer limit is for the concatenated 'log' content, not the full JSON */
-    config->multiline_buffer_limit = "80";
+    if (config->multiline_buffer_limit) {
+        flb_free(config->multiline_buffer_limit);
+    }
+    config->multiline_buffer_limit = flb_strdup("80");
 
     /* This parser will trigger on any content, ensuring concatenation. */
     ml = flb_ml_create(config, "limit-test");
