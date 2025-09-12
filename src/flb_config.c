@@ -366,7 +366,12 @@ struct flb_config *flb_config_init()
      * on we use flb_config_exit to cleanup the config, which requires
      * the config->multiline_parsers list to be initialized. */
     mk_list_init(&config->multiline_parsers);
-    config->multiline_buffer_limit = FLB_ML_BUFFER_LIMIT_DEFAULT_STR;
+    config->multiline_buffer_limit = flb_strdup(FLB_ML_BUFFER_LIMIT_DEFAULT_STR);
+    if (config->multiline_buffer_limit == NULL) {
+        flb_errno();
+        flb_config_exit(config);
+        return NULL;
+    }
 
     /* Task map */
     ret = flb_config_task_map_resize(config, FLB_CONFIG_DEFAULT_TASK_MAP_SIZE);
@@ -471,6 +476,12 @@ void flb_config_exit(struct flb_config *config)
         if (config->ch_notif[0] != config->ch_notif[1]) {
             mk_event_closesocket(config->ch_notif[1]);
         }
+    }
+
+    /* free heap-owned multiline_buffer_limit if set */
+    if (config->multiline_buffer_limit) {
+        flb_free(config->multiline_buffer_limit);
+        config->multiline_buffer_limit = NULL;
     }
 
     if (config->env) {
