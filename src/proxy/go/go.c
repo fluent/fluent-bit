@@ -185,6 +185,7 @@ int proxy_go_input_register(struct flb_plugin_proxy *proxy,
      *
      * - FLBPluginInit
      * - FLBPluginInputCallback
+     * - FLBPluginInputCallbackCtx
      * - FLBPluginExit
      *
      * note: registration callback FLBPluginRegister() is resolved by the
@@ -199,7 +200,9 @@ int proxy_go_input_register(struct flb_plugin_proxy *proxy,
     }
 
     plugin->cb_collect = flb_plugin_proxy_symbol(proxy, "FLBPluginInputCallback");
+    plugin->cb_collect_ctx = flb_plugin_proxy_symbol(proxy, "FLBPluginInputCallbackCtx");
     plugin->cb_cleanup = flb_plugin_proxy_symbol(proxy, "FLBPluginInputCleanupCallback");
+    plugin->cb_cleanup_ctx = flb_plugin_proxy_symbol(proxy, "FLBPluginInputCleanupCallbackCtx");
     plugin->cb_exit  = flb_plugin_proxy_symbol(proxy, "FLBPluginExit");
     plugin->name     = flb_strdup(def->name);
 
@@ -231,27 +234,35 @@ int proxy_go_input_init(struct flb_plugin_proxy *proxy)
     return ret;
 }
 
-int proxy_go_input_collect(struct flb_plugin_proxy *ctx,
+int proxy_go_input_collect(struct flb_plugin_input_proxy_context *ctx,
                            void **collected_data, size_t *len)
 {
     int ret;
     void *data = NULL;
-    struct flbgo_input_plugin *plugin = ctx->data;
+    struct flbgo_input_plugin *plugin = ctx->proxy->data;
 
-    ret = plugin->cb_collect(&data, len);
+    if (plugin->cb_collect_ctx) {
+        ret = plugin->cb_collect_ctx(ctx->remote_context, &data, len);
+    }
+    else {
+        ret = plugin->cb_collect(&data, len);
+    }
 
     *collected_data = data;
 
     return ret;
 }
 
-int proxy_go_input_cleanup(struct flb_plugin_proxy *ctx,
+int proxy_go_input_cleanup(struct flb_plugin_input_proxy_context *ctx,
                            void *allocated_data)
 {
     int ret = 0;
-    struct flbgo_input_plugin *plugin = ctx->data;
+    struct flbgo_input_plugin *plugin = ctx->proxy->data;
 
-    if (plugin->cb_cleanup) {
+    if (plugin->cb_cleanup_ctx) {
+        ret = plugin->cb_cleanup_ctx(ctx->remote_context, allocated_data);
+    }
+    else if (plugin->cb_cleanup) {
         ret = plugin->cb_cleanup(allocated_data);
     }
     else {
