@@ -194,7 +194,7 @@ int LLVMFuzzerTestOneInput(const uint8_t *data, size_t size)
                 /* Assign one of the config maps */
                 map = flb_config_map_create(config, configs[i]);
                 if (map) {
-                    if (flb_config_map_set(&prop, map, &ctx) != -1) {
+                    if (flb_config_map_set(config, &prop, map, &ctx) != -1) {
                         flb_config_map_properties_check(fuzz_str3, &prop, map);
                     }
                     flb_config_map_destroy(map);

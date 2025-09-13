@@ -721,7 +721,7 @@ static inline int flb_input_config_map_set(struct flb_input_instance *ins,
 
     /* Process normal properties */
     if (ins->config_map) {
-        ret = flb_config_map_set(&ins->properties, ins->config_map, context);
+        ret = flb_config_map_set(ins->config, &ins->properties, ins->config_map, context);
 
         if (ret == -1) {
             return -1;
@@ -730,7 +730,7 @@ static inline int flb_input_config_map_set(struct flb_input_instance *ins,
 
     /* Net properties */
     if (ins->net_config_map) {
-        ret = flb_config_map_set(&ins->net_properties, ins->net_config_map,
+        ret = flb_config_map_set(ins->config, &ins->net_properties, ins->net_config_map,
                                  &ins->net_setup);
         if (ret == -1) {
             return -1;

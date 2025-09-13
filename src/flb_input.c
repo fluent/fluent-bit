@@ -565,6 +565,7 @@ int flb_input_set_property(struct flb_input_instance *ins,
     struct flb_kv *kv;
 
     len = strlen(k);
+    /* Resolve environment variables in the provided value */
     tmp = flb_env_var_translate(ins->config->env, v);
     if (tmp) {
         if (flb_sds_len(tmp) == 0) {

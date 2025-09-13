@@ -301,16 +301,23 @@ struct mk_list *flb_config_map_create(struct flb_config *config,
              */
             flb_env_warn_unused(config->env, FLB_FALSE);
 
-            /* Translate the value */
-            env = flb_env_var_translate(config->env, m->def_value);
-            if (env == NULL) {
-                flb_errno();
-                flb_sds_destroy(new->name);
-                flb_free(new);
-                flb_config_map_destroy(list);
-                return NULL;
+            /* Translate the value only if not marked as dynamic */
+            if (m->flags & FLB_CONFIG_MAP_DYNAMIC_ENV) {
+                /* For dynamic env vars, store the raw template */
+                new->def_value = flb_sds_create(m->def_value);
             }
-            new->def_value = env;
+            else {
+                /* For static env vars, resolve them now */
+                env = flb_env_var_translate(config->env, m->def_value);
+                if (env == NULL) {
+                    flb_errno();
+                    flb_sds_destroy(new->name);
+                    flb_free(new);
+                    flb_config_map_destroy(list);
+                    return NULL;
+                }
+                new->def_value = env;
+            }
             flb_env_warn_unused(config->env, FLB_TRUE);
         }
 
@@ -579,7 +586,7 @@ int flb_config_map_expected_values(int type)
  * Function used by plugins that needs to populate their context structure with the
  * configuration properties already mapped.
  */
-int flb_config_map_set(struct mk_list *properties, struct mk_list *map, void *context)
+int flb_config_map_set(struct flb_config *config, struct mk_list *properties, struct mk_list *map, void *context)
 {
     int ret;
     int len;
@@ -597,6 +604,7 @@ int flb_config_map_set(struct mk_list *properties, struct mk_list *map, void *co
     struct mk_list *list;
     struct flb_config_map *m = NULL;
     struct flb_config_map_val *entry = NULL;
+    flb_sds_t resolved;
 
     base = context;
 
@@ -712,7 +720,20 @@ int flb_config_map_set(struct mk_list *properties, struct mk_list *map, void *co
 
             /* Populate value */
             if (m->type == FLB_CONFIG_MAP_STR) {
-                entry->val.str = flb_sds_create(kv->val);
+                if (m->flags & FLB_CONFIG_MAP_DYNAMIC_ENV) {
+                    /* For dynamic env vars, store the raw template */
+                    entry->val.str = flb_sds_create(kv->val);
+                }
+                else {
+                    /* For static env vars, resolve them now */
+                    resolved = flb_env_var_translate(config->env, kv->val);
+                    if (resolved) {
+                        entry->val.str = resolved;
+                    }
+                    else {
+                        entry->val.str = flb_sds_create(kv->val);
+                    }
+                }
             }
             else if (m->type == FLB_CONFIG_MAP_INT) {
                 entry->val.i_num = atoi(kv->val);
@@ -775,7 +796,20 @@ int flb_config_map_set(struct mk_list *properties, struct mk_list *map, void *co
             /* Direct write to user context */
             if (m->type == FLB_CONFIG_MAP_STR) {
                 m_str = (char **) (base + m->offset);
-                *m_str = kv->val;
+                if (m->flags & FLB_CONFIG_MAP_DYNAMIC_ENV) {
+                    /* For dynamic env vars, store the raw template */
+                    *m_str = flb_sds_create(kv->val);
+                }
+                else {
+                    /* For static env vars, resolve them now */
+                    resolved = flb_env_var_translate(config->env, kv->val);
+                    if (resolved) {
+                        *m_str = resolved;
+                    }
+                     else {
+                        *m_str = flb_sds_create(kv->val);
+                    }
+                }
             }
             else if (m->type == FLB_CONFIG_MAP_INT) {
                 m_i_num = (int *) (base + m->offset);
