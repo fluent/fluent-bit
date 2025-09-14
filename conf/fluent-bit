@@ -22,7 +22,7 @@ start_fluent_bit() {
 	#   0 if daemon has been started
 	#   1 if daemon was already running
 	#   2 if daemon could not be started
-	start-stop-daemon --start --quiet --exec $DAEMON 2>/dev/null || return 2
+	start-stop-daemon --start --quiet --exec $DAEMON -c $CONFFILE 2>/dev/null || return 2
 }
 
 test_config() {
