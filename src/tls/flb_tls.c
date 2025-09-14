@@ -98,6 +98,12 @@ struct flb_config_map tls_configmap[] = {
      "Specify TLS ciphers up to TLSv1.2"
     },
 
+    {
+     FLB_CONFIG_MAP_STR, "tls.provider_query", NULL,
+     0, FLB_FALSE, 0,
+     "OpenSSL Provider Query to use for TLS operations"
+     },
+
     /* EOF */
     {0}
 };
@@ -188,7 +194,8 @@ struct flb_tls *flb_tls_create(int mode,
                                const char *ca_file,
                                const char *crt_file,
                                const char *key_file,
-                               const char *key_passwd)
+                               const char *key_passwd,
+                               const char *additional_data)
 {
     void *backend;
     struct flb_tls *tls;
@@ -199,7 +206,8 @@ struct flb_tls *flb_tls_create(int mode,
 
     backend = tls_context_create(verify, debug, mode,
                                  vhost, ca_path, ca_file,
-                                 crt_file, key_file, key_passwd);
+                                 crt_file, key_file, key_passwd,
+                                 additional_data);
     if (!backend) {
         flb_error("[tls] could not create TLS backend");
         return NULL;
@@ -255,6 +263,14 @@ int flb_tls_init()
     return tls_init();
 }
 
+void flb_tls_configure(struct flb_config* config)
+{
+    if (!config) {
+        return;
+    }
+    tls_configure(config);
+}
+
 int flb_tls_destroy(struct flb_tls *tls)
 {
     if (tls->ctx) {
@@ -274,6 +290,11 @@ int flb_tls_destroy(struct flb_tls *tls)
     flb_free(tls);
 
     return 0;
+}
+
+void flb_tls_cleanup(void)
+{
+    tls_cleanup();
 }
 
 int flb_tls_set_alpn(struct flb_tls *tls, const char *alpn)

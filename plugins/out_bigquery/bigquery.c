@@ -695,7 +695,8 @@ static int cb_bigquery_init(struct flb_output_instance *ins,
                                       ins->tls_ca_file,
                                       ins->tls_crt_file,
                                       ins->tls_key_file,
-                                      ins->tls_key_passwd);
+                                      ins->tls_key_passwd,
+                                      ins->tls_provider_query);
 
         if (!ctx->aws_tls) {
             flb_plg_error(ctx->ins, "Failed to create TLS context");
@@ -734,7 +735,8 @@ static int cb_bigquery_init(struct flb_output_instance *ins,
                                           ins->tls_ca_file,
                                           ins->tls_crt_file,
                                           ins->tls_key_file,
-                                          ins->tls_key_passwd);
+                                          ins->tls_key_passwd,
+                                          ins->tls_provider_query);
 
         if (!ctx->aws_sts_tls) {
             flb_plg_error(ctx->ins, "Failed to create TLS context");
@@ -765,7 +767,8 @@ static int cb_bigquery_init(struct flb_output_instance *ins,
                                              ins->tls_ca_file,
                                              ins->tls_crt_file,
                                              ins->tls_key_file,
-                                             ins->tls_key_passwd);
+                                             ins->tls_key_passwd,
+                                             ins->tls_provider_query);
 
         if (!ctx->google_sts_tls) {
             flb_plg_error(ctx->ins, "Failed to create TLS context");
@@ -793,7 +796,8 @@ static int cb_bigquery_init(struct flb_output_instance *ins,
                                              ins->tls_ca_file,
                                              ins->tls_crt_file,
                                              ins->tls_key_file,
-                                             ins->tls_key_passwd);
+                                             ins->tls_key_passwd,
+                                             ins->tls_provider_query);
 
         if (!ctx->google_iam_tls) {
             flb_plg_error(ctx->ins, "Failed to create TLS context");

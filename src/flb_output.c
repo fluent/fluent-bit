@@ -189,6 +189,9 @@ static void flb_output_free_properties(struct flb_output_instance *ins)
     if (ins->tls_ciphers) {
         flb_sds_destroy(ins->tls_ciphers);
     }
+    if (ins->tls_provider_query) {
+        flb_sds_destroy(ins->tls_provider_query);
+    }
 # if defined(FLB_SYSTEM_WINDOWS)
     if (ins->tls_win_certstore_name) {
         flb_sds_destroy(ins->tls_win_certstore_name);
@@ -771,6 +774,8 @@ struct flb_output_instance *flb_output_new(struct flb_config *config,
     instance->tls_crt_file          = NULL;
     instance->tls_key_file          = NULL;
     instance->tls_key_passwd        = NULL;
+    instance->tls_provider_query    = NULL;
+
 # if defined(FLB_SYSTEM_WINDOWS)
     instance->tls_win_certstore_name = NULL;
     instance->tls_win_use_enterprise_certstore = FLB_FALSE;
@@ -998,6 +1003,9 @@ int flb_output_set_property(struct flb_output_instance *ins,
     }
     else if (prop_key_check("tls.ciphers", k, len) == 0) {
         flb_utils_set_plugin_string_property("tls.ciphers", &ins->tls_ciphers, tmp);
+    }
+    else if (prop_key_check("tls.provider_query", k, len) == 0) {
+        flb_utils_set_plugin_string_property("tls.provider_query", &ins->tls_provider_query, tmp);
     }
 #  if defined(FLB_SYSTEM_WINDOWS)
     else if (prop_key_check("tls.windows.certstore_name", k, len) == 0 && tmp) {
@@ -1372,7 +1380,8 @@ int flb_output_init_all(struct flb_config *config)
                                       ins->tls_ca_file,
                                       ins->tls_crt_file,
                                       ins->tls_key_file,
-                                      ins->tls_key_passwd);
+                                      ins->tls_key_passwd,
+                                      ins->tls_provider_query);
             if (!ins->tls) {
                 flb_error("[output %s] error initializing TLS context",
                           ins->name);

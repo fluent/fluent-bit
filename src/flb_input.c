@@ -405,6 +405,7 @@ struct flb_input_instance *flb_input_new(struct flb_config *config,
         instance->tls_crt_file          = NULL;
         instance->tls_key_file          = NULL;
         instance->tls_key_passwd        = NULL;
+        instance->tls_provider_query    = NULL;
 #endif
 
         /* Plugin requires a co-routine context ? */
@@ -686,6 +687,9 @@ int flb_input_set_property(struct flb_input_instance *ins,
     else if (prop_key_check("tls.ciphers", k, len) == 0) {
         flb_utils_set_plugin_string_property("tls.ciphers", &ins->tls_ciphers, tmp);
     }
+    else if (prop_key_check("tls.provider_query", k, len) == 0) {
+        flb_utils_set_plugin_string_property("tls.provider_query", &ins->tls_provider_query, tmp);
+    }
 #endif
     else if (prop_key_check("storage.type", k, len) == 0 && tmp) {
         /* Set the storage type */
@@ -867,6 +871,10 @@ void flb_input_instance_destroy(struct flb_input_instance *ins)
 
     if (ins->tls_ciphers) {
         flb_sds_destroy(ins->tls_ciphers);
+    }
+
+    if (ins->tls_provider_query) {
+        flb_sds_destroy(ins->tls_provider_query);
     }
 
     /* release the tag if any */
@@ -1313,7 +1321,8 @@ int flb_input_instance_init(struct flb_input_instance *ins,
                                   ins->tls_ca_file,
                                   ins->tls_crt_file,
                                   ins->tls_key_file,
-                                  ins->tls_key_passwd);
+                                  ins->tls_key_passwd,
+                                  ins->tls_provider_query);
 
         if (ins->tls == NULL) {
             flb_error("[input %s] error initializing TLS context",

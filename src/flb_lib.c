@@ -120,7 +120,7 @@ static inline struct flb_filter_instance *filter_instance_get(flb_ctx_t *ctx,
     return NULL;
 }
 
-void flb_init_env()
+void flb_init_env(void)
 {
     flb_tls_init();
     flb_coro_init();
@@ -133,6 +133,11 @@ void flb_init_env()
 
     /* libraries */
     cmt_initialize();
+}
+
+void flb_configure_env(struct flb_config* config)
+{
+    flb_tls_configure(config);
 }
 
 flb_ctx_t *flb_create()
@@ -864,6 +869,8 @@ int static do_start(flb_ctx_t *ctx)
 
     flb_debug("[lib] context set: %p", ctx);
 
+    flb_configure_env(ctx->config);
+
     /* set context as the last active one */
 
     /* spawn worker thread */
@@ -980,6 +987,8 @@ int flb_stop(flb_ctx_t *ctx)
         flb_errno();
     }
     flb_debug("[lib] Fluent Bit engine stopped");
+
+    flb_tls_cleanup();
 
     return ret;
 }
