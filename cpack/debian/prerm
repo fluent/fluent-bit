@@ -1,6 +1,10 @@
 #!/bin/sh
 set -e
 
-if [ -x "/etc/init.d/fluent-bit" ] && [ "$1" = remove ]; then
-	invoke-rc.d fluent-bit stop || exit 1
-fi
+case "$1" in
+  remove|upgrade|deconfigure)
+    if [ -x "/etc/init.d/fluent-bit" ]; then
+      invoke-rc.d fluent-bit stop || true
+    fi
+    ;;
+esac
