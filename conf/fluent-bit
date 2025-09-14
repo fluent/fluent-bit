@@ -13,6 +13,7 @@
 PATH=/opt/fluent-bit/bin/:/usr/local/sbin:/usr/local/bin:/sbin:/bin:/usr/sbin:/usr/bin
 DAEMON=/opt/fluent-bit/bin/fluent-bit
 NAME=fluent-bit
+CONFFILE=${CONFFILE:-/etc/fluent-bit/fluent-bit.conf}
 
 start_fluent_bit() {
 	# Start the daemon/service
@@ -26,7 +27,7 @@ start_fluent_bit() {
 
 test_config() {
 	# Test the fluent_bit configuration
-	$DAEMON --dry-run -c /etc/fluent-bit/fluent-bit.conf
+	$DAEMON --dry-run -c $CONFFILE
 }
 
 stop_fluent_bit() {
