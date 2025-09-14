@@ -26,7 +26,7 @@ start_fluent_bit() {
 }
 
 test_config() {
-	# Test the fluent_bit configuration
+	# Test the fluent-bit configuration
 	$DAEMON --dry-run -c $CONFFILE
 }
 
@@ -49,7 +49,7 @@ case "$1" in
 		;;
 	restart)
 
-		# Check configuration before stopping fluent_bit
+		# Check configuration before stopping fluent-bit
 		if ! test_config; then
 			exit $?
 		fi
