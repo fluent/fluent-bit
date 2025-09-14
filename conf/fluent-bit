@@ -38,7 +38,7 @@ stop_fluent_bit() {
 	#   1 if daemon was already stopped
 	#   2 if daemon could not be stopped
 	#   other if a failure occurred
-	start-stop-daemon --stop --quiet --name $NAME
+	start-stop-daemon --stop --quiet --exec "$DAEMON" --retry=TERM/5/KILL/5 --oknodo
 }
 
 case "$1" in
