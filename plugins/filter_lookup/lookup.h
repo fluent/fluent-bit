@@ -25,16 +25,19 @@
 #include <monkey/mk_core/mk_list.h>
 #include <stdint.h>
 
-/* Metric constants */
-#define FLB_LOOKUP_METRIC_PROCESSED     200
-#define FLB_LOOKUP_METRIC_MATCHED       201
-#define FLB_LOOKUP_METRIC_SKIPPED       202
+/* Metric ID enumeration */
+enum flb_lookup_metrics {
+    FLB_LOOKUP_METRIC_PROCESSED = 200,
+    FLB_LOOKUP_METRIC_MATCHED   = 201,
+    FLB_LOOKUP_METRIC_SKIPPED   = 202
+};
 
 struct lookup_ctx {
     struct flb_filter_instance *ins;
     char *file;
     char *lookup_key;
     char *result_key;
+    size_t result_key_len;  /* Precomputed length of result_key for hot path optimization */
     struct flb_hash_table *ht;
     struct flb_record_accessor *ra_lookup_key;
     int ignore_case;

@@ -45,26 +45,29 @@
 /* Macro to increment records metrics */
 #ifdef FLB_HAVE_METRICS
 #define INCREMENT_SKIPPED_METRIC(ctx, ins) do { \
-    uint64_t ts = cfl_time_now(); \
-    static char* labels_array[1]; \
-    labels_array[0] = (char*)flb_filter_name(ins); \
-    cmt_counter_add(ctx->cmt_skipped, ts, 1, 1, labels_array); \
+    if (ctx->cmt_skipped) { \
+        uint64_t ts = cfl_time_now(); \
+        char* labels_array[1] = {(char*)flb_filter_name(ins)}; \
+        cmt_counter_add(ctx->cmt_skipped, ts, 1, 1, labels_array); \
+    } \
     flb_metrics_sum(FLB_LOOKUP_METRIC_SKIPPED, 1, ins->metrics); \
 } while(0)
 
 #define INCREMENT_MATCHED_METRIC(ctx, ins) do { \
-    uint64_t ts = cfl_time_now(); \
-    static char* labels_array[1]; \
-    labels_array[0] = (char*)flb_filter_name(ins); \
-    cmt_counter_add(ctx->cmt_matched, ts, 1, 1, labels_array); \
+    if (ctx->cmt_matched) { \
+        uint64_t ts = cfl_time_now(); \
+        char* labels_array[1] = {(char*)flb_filter_name(ins)}; \
+        cmt_counter_add(ctx->cmt_matched, ts, 1, 1, labels_array); \
+    } \
     flb_metrics_sum(FLB_LOOKUP_METRIC_MATCHED, 1, ins->metrics); \
 } while(0)
 
 #define INCREMENT_PROCESSED_METRIC(ctx, ins) do { \
-    uint64_t ts = cfl_time_now(); \
-    static char* labels_array[1]; \
-    labels_array[0] = (char*)flb_filter_name(ins); \
-    cmt_counter_add(ctx->cmt_processed, ts, 1, 1, labels_array); \
+    if (ctx->cmt_processed) { \
+        uint64_t ts = cfl_time_now(); \
+        char* labels_array[1] = {(char*)flb_filter_name(ins)}; \
+        cmt_counter_add(ctx->cmt_processed, ts, 1, 1, labels_array); \
+    } \
     flb_metrics_sum(FLB_LOOKUP_METRIC_PROCESSED, 1, ins->metrics); \
 } while(0)
 #else
@@ -84,20 +87,26 @@ struct val_node {
  */
 static int normalize_and_trim(const char *input, size_t len, int ignore_case, char **output, size_t *out_len)
 {
+    const char *start;
+    const char *end;
+    size_t n;
+    char *buf;
+    size_t j;
+    
     if (!input || len == 0) {
         *output = NULL;
         *out_len = 0;
         return 0;
     }
     /* Trim leading whitespace */
-    const char *start = input;
-    size_t n = len;
+    start = input;
+    n = len;
     while (n > 0 && isspace((unsigned char)*start)) {
         start++;
         n--;
     }
     /* Trim trailing whitespace */
-    const char *end = start + n;
+    end = start + n;
     while (n > 0 && isspace((unsigned char)*(end - 1))) {
         end--;
         n--;
@@ -108,8 +117,6 @@ static int normalize_and_trim(const char *input, size_t len, int ignore_case, ch
         return 0;
     }
     if (ignore_case) {
-        char *buf;
-        size_t j;
         buf = flb_malloc(n + 1);
         if (!buf) {
             *output = NULL;
@@ -153,10 +160,13 @@ static int dynbuf_init(struct dynamic_buffer *buf, size_t initial_capacity)
 /* Append a character to dynamic buffer, growing if necessary */
 static int dynbuf_append_char(struct dynamic_buffer *buf, char c)
 {
+    size_t new_capacity;
+    char *new_data;
+    
     /* Ensure we have space for the character plus null terminator */
     if (buf->len + 1 >= buf->capacity) {
-        size_t new_capacity = buf->capacity * 2;
-        char *new_data = flb_realloc(buf->data, new_capacity);
+        new_capacity = buf->capacity * 2;
+        new_data = flb_realloc(buf->data, new_capacity);
         if (!new_data) {
             return -1;
         }
@@ -182,11 +192,18 @@ static void dynbuf_destroy(struct dynamic_buffer *buf)
 /* Read a line of arbitrary length from file using dynamic allocation */
 static char *read_line_dynamic(FILE *fp, size_t *line_length)
 {
-    size_t capacity = 256;  /* Initial capacity */
-    size_t len = 0;
-    char *line = flb_malloc(capacity);
+    size_t capacity;
+    size_t len;
+    char *line;
     int c;
+    size_t new_capacity;
+    char *new_line;
     
+    /* Initialize variables after declaration */
+    capacity = 256;  /* Initial capacity */
+    len = 0;
+    
+    line = flb_malloc(capacity);
     if (!line) {
         return NULL;
     }
@@ -194,8 +211,8 @@ static char *read_line_dynamic(FILE *fp, size_t *line_length)
     while ((c = fgetc(fp)) != EOF) {
         /* Check if we need to grow the buffer */
         if (len + 1 >= capacity) {
-            size_t new_capacity = capacity * 2;
-            char *new_line = flb_realloc(line, new_capacity);
+            new_capacity = capacity * 2;
+            new_line = flb_realloc(line, new_capacity);
             if (!new_line) {
                 flb_free(line);
                 return NULL;
@@ -221,7 +238,7 @@ static char *read_line_dynamic(FILE *fp, size_t *line_length)
     
     /* Null terminate the string */
     if (len >= capacity) {
-        char *new_line = flb_realloc(line, len + 1);
+        new_line = flb_realloc(line, len + 1);
         if (!new_line) {
             flb_free(line);
             return NULL;
@@ -246,6 +263,7 @@ static int load_csv(struct lookup_ctx *ctx)
 {
     FILE *fp;
     int line_num = 1;
+    int loaded_entries = 0;  /* Track loaded entries count */
     char *header_line;
     char *line;
     size_t line_length;
@@ -362,6 +380,16 @@ static int load_csv(struct lookup_ctx *ctx)
             p++;
         }
 
+        /* Check for unmatched quote after key parsing */
+        if (in_quotes) {
+            flb_plg_error(ctx->ins, "Unmatched opening quote in key at line %d, skipping malformed line", line_num);
+            dynbuf_destroy(&key_buf);
+            dynbuf_destroy(&val_buf);
+            flb_free(line);
+            line_num++;
+            goto next_line;
+        }
+
         /* Parse value from second column (handle quotes) */
         in_quotes = 0;
         while (*p && (field == 1)) {
@@ -471,9 +499,30 @@ static int load_csv(struct lookup_ctx *ctx)
         }
         memcpy(val_heap, val_ptr, val_len);
         val_heap[val_len] = '\0';
+        
+        /* Allocate and initialize val_node first to track allocated value for cleanup */
+        node = flb_malloc(sizeof(struct val_node));
+        if (!node) {
+            flb_free(val_heap);
+            flb_plg_warn(ctx->ins, "Failed to allocate val_node for value cleanup, skipping");
+            if (key_ptr_allocated) flb_free(key_ptr);
+            if (val_ptr_allocated) flb_free(val_ptr);
+            dynbuf_destroy(&key_buf);
+            dynbuf_destroy(&val_buf);
+            flb_free(line);
+            line_num++;
+            continue;
+        }
+        node->val = val_heap;
+        mk_list_add(&node->_head, &ctx->val_list);
+        
+        /* Now add to hash table - if this fails, val_heap is still tracked in val_list */
         ret = flb_hash_table_add(ctx->ht, key_ptr, key_len, val_heap, val_len);
         if (ret < 0) {
+            /* Remove from val_list and free the node since hash table add failed */
+            mk_list_del(&node->_head);
             flb_free(val_heap);
+            flb_free(node);
             flb_plg_warn(ctx->ins, "Failed to add key '%.*s' (duplicate or error), skipping", (int)key_len, key_ptr);
             if (key_ptr_allocated) flb_free(key_ptr);
             if (val_ptr_allocated) flb_free(val_ptr);
@@ -483,15 +532,8 @@ static int load_csv(struct lookup_ctx *ctx)
             line_num++;
             continue;
         }
-        /* Track allocated value for later cleanup */
-        node = flb_malloc(sizeof(struct val_node));
-        if (node) {
-            node->val = val_heap;
-            mk_list_add(&node->_head, &ctx->val_list);
-        } else {
-            /* If malloc fails, value will leak, but plugin will still function */
-            flb_plg_warn(ctx->ins, "Failed to allocate val_node for value cleanup, value will leak");
-        }
+        /* Successfully loaded entry */
+        loaded_entries++;
         /* Do not free val_heap; hash table owns it now */
         if (key_ptr_allocated) flb_free(key_ptr);
         if (val_ptr_allocated) flb_free(val_ptr);
@@ -506,7 +548,7 @@ static int load_csv(struct lookup_ctx *ctx)
         continue;
     }
     fclose(fp);
-    return 0;
+    return loaded_entries;  /* Return count of successfully loaded entries */
 }
 
 static int cb_lookup_init(struct flb_filter_instance *ins,
@@ -534,16 +576,25 @@ static int cb_lookup_init(struct flb_filter_instance *ins,
                                                 "fluentbit", "filter", "lookup_processed_records_total",
                                                 "Total number of processed records",
                                                 1, labels_name);
+        if (!ctx->cmt_processed) {
+            flb_plg_warn(ins, "failed to create processed_records_total counter");
+        }
 
         ctx->cmt_matched = cmt_counter_create(ins->cmt,
                                               "fluentbit", "filter", "lookup_matched_records_total",
                                               "Total number of matched records",
                                               1, labels_name);
+        if (!ctx->cmt_matched) {
+            flb_plg_warn(ins, "failed to create matched_records_total counter");
+        }
 
         ctx->cmt_skipped = cmt_counter_create(ins->cmt,
                                               "fluentbit", "filter", "lookup_skipped_records_total",
                                               "Total number of skipped records due to errors",
                                               1, labels_name);
+        if (!ctx->cmt_skipped) {
+            flb_plg_warn(ins, "failed to create skipped_records_total counter");
+        }
     }
 
     /* Add to old metrics system */
@@ -570,6 +621,9 @@ static int cb_lookup_init(struct flb_filter_instance *ins,
         flb_plg_error(ins, "missing required config: file, lookup_key, result_key");
         goto error;
     }
+
+    /* Precompute result_key length for hot path optimization */
+    ctx->result_key_len = strlen(ctx->result_key);
 
     /* Check file existence and readability */
 #ifdef _WIN32
@@ -603,7 +657,7 @@ static int cb_lookup_init(struct flb_filter_instance *ins,
     if (ret < 0) {
         goto error;
     }
-    flb_plg_info(ins, "Loaded %zu entries from CSV file '%s'", (size_t)ctx->ht->total_count, ctx->file);
+    flb_plg_info(ins, "Loaded %d entries from CSV file '%s'", ret, ctx->file);
     flb_plg_info(ins, "Lookup filter initialized: lookup_key='%s', result_key='%s', ignore_case=%s", 
                  ctx->lookup_key, ctx->result_key, ctx->ignore_case ? "true" : "false");
 
@@ -758,26 +812,35 @@ static int cb_lookup_filter(const void *data, size_t bytes,
             /* First pass: determine required buffer size */
             switch (rval->type) {
                 case FLB_RA_BOOL:
+                    /* Check if this boolean was converted from a MAP type */
+                    if (rval->o.type == MSGPACK_OBJECT_MAP) {
+                        flb_plg_debug(ins, "Record %d: MAP type from record accessor, skipping conversion", rec_num);
+                        CLEANUP_DYNAMIC_BUFFERS();
+                        flb_ra_key_value_destroy(rval);
+                        emit_original_record(&log_encoder, &log_event, ins, ctx, rec_num);
+                        continue;
+                    }
                     required_size = snprintf(NULL, 0, "%s", rval->o.via.boolean ? "true" : "false");
                     break;
                 case FLB_RA_INT:
                     required_size = snprintf(NULL, 0, "%" PRId64, rval->o.via.i64);
                     break;
                 case FLB_RA_FLOAT:
-                    required_size = snprintf(NULL, 0, "%f", rval->o.via.f64);
+                    required_size = snprintf(NULL, 0, "%.15g", rval->o.via.f64);
                     break;
                 case FLB_RA_NULL:
                     required_size = snprintf(NULL, 0, "null");
                     break;
-                case 5:
-                case 6:
-                    flb_plg_debug(ins, "Record %d: complex type (ARRAY/MAP) from record accessor, skipping conversion", rec_num);
-                    CLEANUP_DYNAMIC_BUFFERS();
-                    flb_ra_key_value_destroy(rval);
-                    emit_original_record(&log_encoder, &log_event, ins, ctx, rec_num);
-                    continue;
                 default:
-                    flb_plg_debug(ins, "Record %d: unsupported type %d, skipping conversion", rec_num, rval->type);
+                    /* Check for ARRAY type that might not be properly handled by RA */
+                    if (rval->o.type == MSGPACK_OBJECT_ARRAY) {
+                        flb_plg_debug(ins, "Record %d: ARRAY type from record accessor, skipping conversion", rec_num);
+                        CLEANUP_DYNAMIC_BUFFERS();
+                        flb_ra_key_value_destroy(rval);
+                        emit_original_record(&log_encoder, &log_event, ins, ctx, rec_num);
+                        continue;
+                    }
+                    flb_plg_debug(ins, "Record %d: unsupported type %d (msgpack type %d), skipping conversion", rec_num, rval->type, rval->o.type);
                     CLEANUP_DYNAMIC_BUFFERS();
                     flb_ra_key_value_destroy(rval);
                     emit_original_record(&log_encoder, &log_event, ins, ctx, rec_num);
@@ -807,13 +870,14 @@ static int cb_lookup_filter(const void *data, size_t bytes,
             printed = 0;
             switch (rval->type) {
                 case FLB_RA_BOOL:
+                    /* Note: MAP types are converted to boolean, but we already handled them in first pass */
                     printed = snprintf(dynamic_val_buf, required_size + 1, "%s", rval->o.via.boolean ? "true" : "false");
                     break;
                 case FLB_RA_INT:
                     printed = snprintf(dynamic_val_buf, required_size + 1, "%" PRId64, rval->o.via.i64);
                     break;
                 case FLB_RA_FLOAT:
-                    printed = snprintf(dynamic_val_buf, required_size + 1, "%f", rval->o.via.f64);
+                    printed = snprintf(dynamic_val_buf, required_size + 1, "%.15g", rval->o.via.f64);
                     break;
                 case FLB_RA_NULL:
                     printed = snprintf(dynamic_val_buf, required_size + 1, "null");
@@ -921,8 +985,8 @@ static int cb_lookup_filter(const void *data, size_t bytes,
             for (i = 0; i < log_event.body->via.map.size; i++) {
                 msgpack_object_kv *kv = &log_event.body->via.map.ptr[i];
                 if (kv->key.type == MSGPACK_OBJECT_STR &&
-                    kv->key.via.str.size == strlen(ctx->result_key) &&
-                    strncmp(kv->key.via.str.ptr, ctx->result_key, kv->key.via.str.size) == 0) {
+                    kv->key.via.str.size == ctx->result_key_len &&
+                    memcmp(kv->key.via.str.ptr, ctx->result_key, ctx->result_key_len) == 0) {
                     continue;
                 }
                 ret = flb_log_event_encoder_append_body_values(&log_encoder, 
