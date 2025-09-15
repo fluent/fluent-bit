@@ -42,11 +42,9 @@ struct flb_az_li* flb_az_li_ctx_create(struct flb_output_instance *ins,
         return NULL;
     }
 
-    /* Set the conext in output_instance so that we can retrieve it later */
+    /* Set the context in output_instance so that we can retrieve it later */
     ctx->ins = ins;
     ctx->config = config;
-    /* Set context */
-    flb_output_set_context(ins, ctx);
 
     /* Load config map */
     ret = flb_output_config_map_set(ins, (void *) ctx);
@@ -56,7 +54,18 @@ struct flb_az_li* flb_az_li_ctx_create(struct flb_output_instance *ins,
     }
 
     /* Auth method validation and setup */
-    if (strcasecmp(ctx->auth_type_str, "service_principal") == 0) {
+    if (!ctx->auth_type_str || strlen(ctx->auth_type_str) == 0) {
+        /* Default to service_principal if auth_type_str is NULL or empty */
+        ctx->auth_type = FLB_AZ_LI_AUTH_SERVICE_PRINCIPAL;
+
+        /* Verify required parameters for Service Principal auth */
+        if (!ctx->tenant_id || !ctx->client_id || !ctx->client_secret) {
+            flb_plg_error(ins, "When using service_principal auth, tenant_id, client_id, and client_secret are required");
+            flb_az_li_ctx_destroy(ctx);
+            return NULL;
+        }
+    }
+    else if (strcasecmp(ctx->auth_type_str, "service_principal") == 0) {
         ctx->auth_type = FLB_AZ_LI_AUTH_SERVICE_PRINCIPAL;
 
         /* Verify required parameters for Service Principal auth */
@@ -181,6 +190,9 @@ struct flb_az_li* flb_az_li_ctx_create(struct flb_output_instance *ins,
 
     flb_plg_info(ins, "dce_url='%s', dcr='%s', table='%s', stream='Custom-%s'",
                 ctx->dce_url, ctx->dcr_id, ctx->table_name, ctx->table_name);
+
+    /* Set context only after all validation and initialization is complete */
+    flb_output_set_context(ins, ctx);
 
     return ctx;
 }
