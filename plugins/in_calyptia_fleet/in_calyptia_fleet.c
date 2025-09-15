@@ -1172,6 +1172,9 @@ static int get_calyptia_file(struct flb_in_calyptia_fleet_config *ctx,
     int fbit_last_modified_len;
     time_t last_modified;
     flb_sds_t fname;
+    flb_ctx_t *flb_ctx;
+    int is_newer;
+    int not_using_fleet;
 
     if (ctx == NULL || url == NULL) {
         return -1;
@@ -1193,19 +1196,30 @@ static int get_calyptia_file(struct flb_in_calyptia_fleet_config *ctx,
         // Assuming this is the base Fleet config file
         flb_strptime(fbit_last_modified, "%a, %d %B %Y %H:%M:%S GMT", &tm_last_modified);
         last_modified = mktime(&tm_last_modified.tm);
-
-        /* Check if there are existing files with timestamps >= new timestamp */
-        if (check_timestamp_is_newer(ctx, last_modified) == FLB_FALSE) {
+    
+        /* Check if there are existing files with timestamps >= new timestamp
+        * OR if we're not currently using a fleet config (first run scenario)
+        */
+        flb_ctx = flb_context_get();
+        is_newer = check_timestamp_is_newer(ctx, last_modified);
+        not_using_fleet = (flb_ctx && flb_ctx->config && is_fleet_config(ctx, flb_ctx->config) == FLB_FALSE);
+        
+        if (is_newer == FLB_FALSE && not_using_fleet == FLB_FALSE) {
             flb_plg_debug(ctx->ins, "not creating file with timestamp %lld since it is not newer than existing files",
                          (long long)last_modified);
             ret = -1;
             goto client_error;
         }
         else {
-            flb_plg_info(ctx->ins, "creating config file with timestamp %lld",
-                         (long long)last_modified);
+            if (not_using_fleet) {
+                flb_plg_info(ctx->ins, "creating config file with timestamp %lld (not currently using fleet config)",
+                                (long long)last_modified);
+            }
+            else {
+                flb_plg_info(ctx->ins, "creating config file with timestamp %lld",
+                                (long long)last_modified);
+            }
         }
-
         fname = time_fleet_config_filename(ctx, last_modified);
     }
     else {
