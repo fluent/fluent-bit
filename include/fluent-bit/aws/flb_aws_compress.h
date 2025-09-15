@@ -21,9 +21,11 @@
 #define FLB_AWS_COMPRESS
 
 #include <sys/types.h>
-#define FLB_AWS_COMPRESS_NONE  0
-#define FLB_AWS_COMPRESS_GZIP  1
-#define FLB_AWS_COMPRESS_ARROW 2
+#define FLB_AWS_COMPRESS_NONE    0
+#define FLB_AWS_COMPRESS_GZIP    1
+#define FLB_AWS_COMPRESS_ARROW   2
+#define FLB_AWS_COMPRESS_PARQUET 3
+#define FLB_AWS_COMPRESS_ZSTD    4
 
 /*
  * Get compression type from compression keyword. The return value is used to identify

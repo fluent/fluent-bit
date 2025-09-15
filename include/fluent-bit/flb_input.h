@@ -25,6 +25,8 @@
 #include <fluent-bit/flb_coro.h>
 #include <fluent-bit/flb_config.h>
 #include <fluent-bit/flb_network.h>
+#include <fluent-bit/flb_downstream.h>
+#include <fluent-bit/flb_upstream.h>
 #include <fluent-bit/flb_mem.h>
 #include <fluent-bit/flb_str.h>
 #include <fluent-bit/flb_bits.h>
@@ -39,6 +41,7 @@
 #include <fluent-bit/flb_input_log.h>
 #include <fluent-bit/flb_input_metric.h>
 #include <fluent-bit/flb_input_trace.h>
+#include <fluent-bit/flb_input_profiles.h>
 #include <fluent-bit/flb_config_format.h>
 #include <fluent-bit/flb_processor.h>
 
@@ -74,6 +77,71 @@
 #define FLB_INPUT_PAUSED      0
 
 struct flb_input_instance;
+
+/*
+ * Tests callbacks
+ * ===============
+ */
+struct flb_test_in_formatter {
+    /*
+     * Runtime Library Mode
+     * ====================
+     * When the runtime library enable the test formatter mode, it needs to
+     * keep a reference of the context and other information:
+     *
+     * - rt_ctx : context created by flb_create()
+     *
+     * - rt_ffd : this plugin assigned 'integer' created by flb_output()
+     *
+     * - rt_in_calback: intermediary function to receive the results of
+     *                  the formatter plugin test function.
+     *
+     * - rt_data: opaque data type for rt_step_callback()
+     */
+
+    /* runtime library context */
+    void *rt_ctx;
+
+    /* runtime library: assigned plugin integer */
+    int rt_ffd;
+
+    /* optional format context */
+    void *format_ctx;
+
+    /*
+     * "runtime step callback": this function pointer is used by Fluent Bit
+     * library mode to reference a test function that must retrieve the
+     * results of 'callback'. Consider this an intermediary function to
+     * transfer the results to the runtime test.
+     *
+     * This function is private and should not be set manually in the plugin
+     * code, it's set on src/flb_lib.c .
+     */
+    void (*rt_in_callback) (void *, int, int, void *, size_t, void *);
+
+    /*
+     * opaque data type passed by the runtime library to be used on
+     * rt_step_test().
+     */
+    void *rt_data;
+
+    /*
+     * Callback
+     * =========
+     * "Formatter callback": it references the plugin function that performs
+     * data formatting (msgpack -> local data). This entry is mostly to
+     * expose the plugin local function.
+     */
+    int (*callback) (/* Fluent Bit context */
+                     struct flb_config *,
+                     /* plugin that ingested the records */
+                     struct flb_input_instance *,
+                     void *,         /* plugin instance context */
+                     const void *,   /* incoming unformatted data */
+                     size_t,         /* incoming unformatted size */
+                     void **,        /* output buffer      */
+                     size_t *);      /* output buffer size */
+};
 
 struct flb_input_plugin {
     /*
@@ -138,6 +206,9 @@ struct flb_input_plugin {
     /* Destroy */
     void (*cb_destroy) (struct flb_input_plugin *);
 
+    /* Tests */
+    struct flb_test_in_formatter test_formatter;
+
     void *instance;
 
     struct mk_list _head;
@@ -177,6 +248,7 @@ struct flb_input_instance {
     int runs_in_coroutine;               /* instance runs in coroutine ? */
     char name[32];                       /* numbered name (cpu -> cpu.0) */
     char *alias;                         /* alias name for the instance  */
+    int test_mode;                       /* running tests? (default:off) */
     void *context;                       /* plugin configuration context */
     flb_pipefd_t ch_events[2];           /* channel for events           */
     struct flb_input_plugin *p;          /* original plugin              */
@@ -294,6 +366,8 @@ struct flb_input_instance {
     struct flb_metrics *metrics;         /* metrics                    */
 #endif
 
+    /* Tests */
+    struct flb_test_in_formatter test_formatter;
 
     /* is the plugin running in a separate thread ? */
     int is_threaded;
@@ -305,6 +379,8 @@ struct flb_input_instance {
      * in the ring buffer.
      */
     struct flb_ring_buffer *rb;
+    size_t ring_buffer_size;           /* ring buffer size */
+    uint8_t ring_buffer_window;        /* ring buffer window percentage */
 
     /* List of upstreams */
     struct mk_list upstreams;
@@ -350,6 +426,11 @@ struct flb_input_instance {
     struct cmt_counter *cmt_memrb_dropped_chunks;
     struct cmt_counter *cmt_memrb_dropped_bytes;
 
+    /* ring buffer 'write' metrics */
+    struct cmt_counter *cmt_ring_buffer_writes;
+    struct cmt_counter *cmt_ring_buffer_retries;
+    struct cmt_counter *cmt_ring_buffer_retry_failures;
+
     /*
      * Indexes for generated chunks: simple hash tables that keeps the latest
      * available chunks for writing data operations. This optimizes the
@@ -358,6 +439,7 @@ struct flb_input_instance {
     struct flb_hash_table *ht_log_chunks;
     struct flb_hash_table *ht_metric_chunks;
     struct flb_hash_table *ht_trace_chunks;
+    struct flb_hash_table *ht_profile_chunks;
 
     /* TLS settings */
     int use_tls;                         /* bool, try to use TLS for I/O */
@@ -370,6 +452,9 @@ struct flb_input_instance {
     char *tls_crt_file;                  /* Certificate                  */
     char *tls_key_file;                  /* Cert Key                     */
     char *tls_key_passwd;                /* Cert Key Password            */
+    char *tls_min_version;               /* Minimum protocol version of TLS */
+    char *tls_max_version;               /* Maximum protocol version of TLS */
+    char *tls_ciphers;                   /* TLS ciphers */
 
     struct mk_list *tls_config_map;
 
@@ -598,7 +683,7 @@ static FLB_INLINE void flb_input_return(struct flb_coro *coro) {
     val = FLB_BITS_U64_SET(FLB_ENGINE_IN_CORO, ins->id);
     n = flb_pipe_w(ins->ch_events[1], (void *) &val, sizeof(val));
     if (n == -1) {
-        flb_errno();
+        flb_pipe_error();
     }
 
     flb_input_coro_prepare_destroy(input_coro);
@@ -654,6 +739,8 @@ static inline int flb_input_config_map_set(struct flb_input_instance *ins,
 
     return ret;
 }
+
+struct mk_list *flb_input_get_global_config_map(struct flb_config *config);
 
 int flb_input_register_all(struct flb_config *config);
 struct flb_input_instance *flb_input_new(struct flb_config *config,

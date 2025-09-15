@@ -27,62 +27,27 @@
 static void http_conn_request_init(struct mk_http_session *session,
                                    struct mk_http_request *request);
 
-static void check_and_reassign_ptr(char **ptr, const char *old, char *new)
-{
-    if (ptr == NULL) {
-        return;
-    }
-
-    if (*ptr == NULL) {
-        return;
-    }
-
-    *ptr = new + (*ptr - old);
-}
-
-static int http_conn_realloc(struct flb_http *ctx,
-                               struct http_conn *conn,
-                               size_t size)
+static int http_conn_buffer_realloc(struct flb_http *ctx, struct http_conn *conn, size_t size)
 {
     char *tmp;
-    int idx;
-    struct mk_http_header *header;
 
-
+    /* Perform realloc */
     tmp = flb_realloc(conn->buf_data, size);
     if (!tmp) {
         flb_errno();
+        flb_plg_error(ctx->ins, "could not perform realloc for size %zu", size);
         return -1;
     }
-    flb_plg_trace(ctx->ins, "buffer realloc %i -> %zu",
-                    conn->buf_size, size);
 
-    check_and_reassign_ptr(&conn->request.method_p.data, conn->buf_data, tmp);
-    check_and_reassign_ptr(&conn->request.uri.data, conn->buf_data, tmp);
-    check_and_reassign_ptr(&conn->request.uri_processed.data, conn->buf_data, tmp);
-    check_and_reassign_ptr(&conn->request.protocol_p.data, conn->buf_data, tmp);
-    check_and_reassign_ptr(&conn->request.body.data, conn->buf_data, tmp);
-    check_and_reassign_ptr(&conn->request._content_length.data, conn->buf_data, tmp);
-    check_and_reassign_ptr(&conn->request.content_type.data, conn->buf_data, tmp);
-    check_and_reassign_ptr(&conn->request.connection.data, conn->buf_data, tmp);
-    check_and_reassign_ptr(&conn->request.host.data, conn->buf_data, tmp);
-    check_and_reassign_ptr(&conn->request.host_port.data, conn->buf_data, tmp);
-    check_and_reassign_ptr(&conn->request.if_modified_since.data, conn->buf_data, tmp);
-    check_and_reassign_ptr(&conn->request.last_modified_since.data, conn->buf_data, tmp);
-    check_and_reassign_ptr(&conn->request.range.data, conn->buf_data, tmp);
-    check_and_reassign_ptr(&conn->request.data.data, conn->buf_data, tmp);
-    check_and_reassign_ptr(&conn->request.real_path.data, conn->buf_data, tmp);
-    check_and_reassign_ptr(&conn->request.query_string.data, conn->buf_data, tmp);
-
-    for (idx = conn->session.parser.header_min; idx <= conn->session.parser.header_max && idx >= 0; idx++) {
-        header = &conn->session.parser.headers[idx];
-
-        check_and_reassign_ptr(&header->key.data, conn->buf_data, tmp);
-        check_and_reassign_ptr(&header->val.data, conn->buf_data, tmp);
-    }
-
+    /* Update buffer info */
     conn->buf_data = tmp;
     conn->buf_size = size;
+
+    /* Keep NULL termination */
+    conn->buf_data[conn->buf_len] = '\0';
+
+    /* Reset parser state */
+    mk_http_parser_init(&conn->session.parser);
 
     return 0;
 }
@@ -91,6 +56,7 @@ static int http_conn_event(void *data)
 {
     int status;
     size_t size;
+    size_t sent;
     ssize_t available;
     ssize_t bytes;
     size_t request_len;
@@ -98,6 +64,9 @@ static int http_conn_event(void *data)
     struct http_conn *conn;
     struct mk_event *event;
     struct flb_http *ctx;
+    char *request_too_large = "HTTP/1.1 413 Request Entity Too Large\r\n" \
+                              "Content-Length: 0\r\n" \
+                              "Connection: close\r\n\r\n";
 
     connection = (struct flb_connection *) data;
 
@@ -114,13 +83,17 @@ static int http_conn_event(void *data)
                 flb_plg_trace(ctx->ins,
                               "fd=%i incoming data exceed limit (%zu KB)",
                               event->fd, (ctx->buffer_max_size / 1024));
+
+                flb_io_net_write(conn->connection,
+                                 (void *) request_too_large, strlen(request_too_large), &sent);
                 http_conn_del(conn);
                 return -1;
             }
 
             size = conn->buf_size + ctx->buffer_chunk_size;
-            if (http_conn_realloc(ctx, conn, size) == -1) {
+            if (http_conn_buffer_realloc(ctx, conn, size) == -1) {
                 flb_errno();
+                http_conn_del(conn);
                 return -1;
             }
             flb_plg_trace(ctx->ins, "fd=%i buffer realloc %i -> %zu",

@@ -42,6 +42,9 @@ extern "C" {
 #include <fluent-bit/flb_engine.h>
 #include <fluent-bit/flb_lib.h>
 
+/* External plugins */
+#define FLB_PUBLIC __attribute__((visibility("default")))
+
 #ifdef __cplusplus
 }
 #endif

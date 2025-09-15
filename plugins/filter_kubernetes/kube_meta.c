@@ -1122,7 +1122,9 @@ static int merge_pod_meta(struct flb_kube_meta *meta, struct flb_kube *ctx,
     int have_uid = -1;
     int have_labels = -1;
     int have_annotations = -1;
+    int have_owner_references = -1;
     int have_nodename = -1;
+    int have_podip = -1;
     size_t off = 0;
     msgpack_sbuffer mp_sbuf;
     msgpack_packer mp_pck;
@@ -1227,15 +1229,20 @@ static int merge_pod_meta(struct flb_kube_meta *meta, struct flb_kube *ctx,
                             map_size++;
                         }
                     }
-
                     else if (size == 11 && strncmp(ptr, "annotations", 11) == 0) {
                         have_annotations = i;
                         if (ctx->annotations == FLB_TRUE) {
                             map_size++;
                         }
                     }
+                    else if (size == 15 && strncmp(ptr, "ownerReferences", 15) == 0) {
+                        have_owner_references = i;
+                        if (ctx->owner_references == FLB_TRUE) {
+                            map_size++;
+                        }
+                    }
 
-                    if (have_uid >= 0 && have_labels >= 0 && have_annotations >= 0) {
+                    if (have_uid >= 0 && have_labels >= 0 && have_annotations >= 0 && have_owner_references >= 0) {
                         break;
                     }
                 }
@@ -1248,6 +1255,19 @@ static int merge_pod_meta(struct flb_kube_meta *meta, struct flb_kube *ctx,
                     if (k.via.str.size == 8 &&
                         strncmp(k.via.str.ptr, "nodeName", 8) == 0) {
                         have_nodename = i;
+                        map_size++;
+                        break;
+                    }
+                }
+            }
+
+            /* Process status map value for podIP */
+            if (status_found == FLB_TRUE) {
+                for (i = 0; i < status_val.via.map.size; i++) {
+                    k = status_val.via.map.ptr[i].key;
+                    if (k.via.str.size == 5 &&
+                        strncmp(k.via.str.ptr, "podIP", 5) == 0) {
+                        have_podip = i;
                         map_size++;
                         break;
                     }
@@ -1303,11 +1323,27 @@ static int merge_pod_meta(struct flb_kube_meta *meta, struct flb_kube *ctx,
         msgpack_pack_object(&mp_pck, v);
     }
 
+    if (have_owner_references >= 0 && ctx->owner_references == FLB_TRUE) {
+        k = meta_val.via.map.ptr[have_owner_references].key;
+        v = meta_val.via.map.ptr[have_owner_references].val;
+
+        msgpack_pack_object(&mp_pck, k);
+        msgpack_pack_object(&mp_pck, v);
+    }
+
     if (have_nodename >= 0) {
         v = spec_val.via.map.ptr[have_nodename].val;
 
         msgpack_pack_str(&mp_pck, 4);
         msgpack_pack_str_body(&mp_pck, "host", 4);
+        msgpack_pack_object(&mp_pck, v);
+    }
+
+    if (have_podip >= 0) {
+        v = status_val.via.map.ptr[have_podip].val;
+
+        msgpack_pack_str(&mp_pck, 6);
+        msgpack_pack_str_body(&mp_pck, "pod_ip", 6);
         msgpack_pack_object(&mp_pck, v);
     }
 

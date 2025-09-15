@@ -73,7 +73,7 @@ cat /etc/yum.repos.d/fluent-bit.repo
 $INSTALL_CMD_PREFIX yum -y $YUM_PARAMETERS install $INSTALL_PACKAGE_NAME$YUM_VERSION
 SCRIPT
     ;;
-    centos|centoslinux|rhel|redhatenterpriselinuxserver|fedora|rocky|almalinux)
+    centos|centoslinux|rhel|redhatenterpriselinuxserver|fedora)
         # We need variable expansion and non-expansion on the URL line to pick up the base URL.
         # Therefore we combine things with sed to handle it.
         $SUDO sh <<SCRIPT
@@ -83,6 +83,43 @@ cat << EOF > /etc/yum.repos.d/fluent-bit.repo
 name = Fluent Bit
 # Legacy server style
 baseurl = $RELEASE_URL/centos/VERSION_SUBSTR
+gpgcheck=1
+repo_gpgcheck=1
+gpgkey=$RELEASE_KEY
+enabled=1
+EOF
+sed -i 's|VERSION_SUBSTR|\$releasever/|g' /etc/yum.repos.d/fluent-bit.repo
+cat /etc/yum.repos.d/fluent-bit.repo
+$INSTALL_CMD_PREFIX yum -y $YUM_PARAMETERS install $INSTALL_PACKAGE_NAME$YUM_VERSION
+SCRIPT
+    ;;
+    # For Rocky and AlmaLinux, we provide new repos now CentOS no longer tracks downstream.
+    almalinux)
+        $SUDO sh <<SCRIPT
+rpm --import $RELEASE_KEY
+cat << EOF > /etc/yum.repos.d/fluent-bit.repo
+[fluent-bit]
+name = Fluent Bit
+# Legacy server style
+baseurl = $RELEASE_URL/$OS/VERSION_SUBSTR
+gpgcheck=1
+repo_gpgcheck=1
+gpgkey=$RELEASE_KEY
+enabled=1
+EOF
+sed -i 's|VERSION_SUBSTR|\$releasever/|g' /etc/yum.repos.d/fluent-bit.repo
+cat /etc/yum.repos.d/fluent-bit.repo
+$INSTALL_CMD_PREFIX yum -y $YUM_PARAMETERS install $INSTALL_PACKAGE_NAME$YUM_VERSION
+SCRIPT
+    ;;
+    rocky|rockylinux)
+        $SUDO sh <<SCRIPT
+rpm --import $RELEASE_KEY
+cat << EOF > /etc/yum.repos.d/fluent-bit.repo
+[fluent-bit]
+name = Fluent Bit
+# Legacy server style
+baseurl = $RELEASE_URL/rockylinux/VERSION_SUBSTR
 gpgcheck=1
 repo_gpgcheck=1
 gpgkey=$RELEASE_KEY

@@ -361,7 +361,7 @@ struct flb_aws_provider *flb_managed_chain_provider_create(struct flb_output_ins
     key_max_len = key_prefix_len + 12; /* max length of
                                               "region", "sts_endpoint", "role_arn",
                                               "external_id" */
-    
+
     /* Evaluate full config keys */
     config_key_region = flb_sds_create_len(config_key_prefix, key_max_len);
     strcpy(config_key_region + key_prefix_len, "region");
@@ -462,10 +462,10 @@ struct flb_aws_provider *flb_managed_chain_provider_create(struct flb_output_ins
     /* initialize credentials in sync mode */
     aws_provider->provider_vtable->sync(aws_provider);
     aws_provider->provider_vtable->init(aws_provider);
-    
+
     /* set back to async */
     aws_provider->provider_vtable->async(aws_provider);
-    
+
     /* store dependencies in aws_provider for managed cleanup */
     aws_provider->base_aws_provider = base_aws_provider;
     aws_provider->cred_tls = cred_tls;
@@ -509,6 +509,9 @@ cleanup:
     }
     if (session_name) {
         flb_free(session_name);
+    }
+    if (config_key_profile) {
+        flb_sds_destroy(config_key_profile);
     }
 
     return aws_provider;
@@ -581,7 +584,7 @@ static struct flb_aws_provider *standard_chain_create(struct flb_config
         }
     }
 
-    sub_provider = flb_ecs_provider_create(config, generator);
+    sub_provider = flb_http_provider_create(config, generator);
     if (sub_provider) {
         /* ECS Provider will fail creation if we are not running in ECS */
         mk_list_add(&sub_provider->_head, &implementation->sub_providers);
@@ -838,9 +841,9 @@ time_t flb_aws_cred_expiration(const char *timestamp)
 }
 
 /*
- * Fluent Bit is now multi-threaded and asynchonous with coros. 
+ * Fluent Bit is now multi-threaded and asynchonous with coros.
  * The trylock prevents deadlock, and protects the provider
- * when a cred refresh happens. The refresh frees and 
+ * when a cred refresh happens. The refresh frees and
  * sets the shared cred cache, a double free could occur
  * if two threads do it at the same exact time.
  */

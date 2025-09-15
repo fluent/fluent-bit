@@ -88,6 +88,7 @@ struct flb_http_server_session;
 
 struct flb_http_request {
     int                               protocol_version;
+    cfl_sds_t                         authority;
     int                               method;
     cfl_sds_t                         path;
     cfl_sds_t                         host;

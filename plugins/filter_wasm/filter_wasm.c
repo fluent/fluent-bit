@@ -55,10 +55,11 @@ static int cb_wasm_filter(const void *data, size_t bytes,
     char *json_buf = NULL;
     size_t json_size;
     int root_type;
-    struct flb_wasm *wasm = NULL;
+    /* Get the persistent WASM instance from the filter context. */
+    struct flb_filter_wasm *ctx = filter_context;
+    struct flb_wasm *wasm = ctx->wasm;
     size_t buf_size;
 
-    struct flb_filter_wasm *ctx = filter_context;
     struct flb_log_event_encoder log_encoder;
     struct flb_log_event_decoder log_decoder;
     struct flb_log_event log_event;
@@ -66,6 +67,12 @@ static int cb_wasm_filter(const void *data, size_t bytes,
     (void) f_ins;
     (void) i_ins;
     (void) config;
+
+    /* Safeguard in case initialization failed. */
+    if (!wasm) {
+        flb_plg_error(ctx->ins, "WASM instance is not available, skipping.");
+        return FLB_FILTER_NOTOUCH;
+    }
 
     ret = flb_log_event_decoder_init(&log_decoder, (char *) data, bytes);
 
@@ -86,13 +93,6 @@ static int cb_wasm_filter(const void *data, size_t bytes,
         flb_log_event_decoder_destroy(&log_decoder);
 
         return FLB_FILTER_NOTOUCH;
-    }
-
-    wasm = flb_wasm_instantiate(config, ctx->wasm_path, ctx->accessible_dir_list,
-                                ctx->wasm_conf);
-    if (wasm == NULL) {
-        flb_plg_debug(ctx->ins, "instantiate wasm [%s] failed", ctx->wasm_path);
-        goto on_error;
     }
 
     while ((ret = flb_log_event_decoder_next(
@@ -117,8 +117,8 @@ static int cb_wasm_filter(const void *data, size_t bytes,
             }
             else {
                 flb_plg_error(ctx->ins, "encode as JSON from msgpack is failed");
-
-                goto on_error;
+                /* Go to on_error without destroying the persistent wasm instance */
+                goto on_error_without_wasm_destroy;
             }
             break;
         case FLB_FILTER_WASM_FMT_MSGPACK:
@@ -127,8 +127,8 @@ static int cb_wasm_filter(const void *data, size_t bytes,
                                                (void **)&buf, &buf_size);
             if (ret < 0) {
                 flb_plg_error(ctx->ins, "format msgpack is failed");
-
-                goto on_error;
+                /* Go to on_error without destroying the persistent wasm instance */
+                goto on_error_without_wasm_destroy;
             }
 
             /* Execute WASM program */
@@ -227,9 +227,6 @@ static int cb_wasm_filter(const void *data, size_t bytes,
         }
     }
 
-    /* Teardown WASM context */
-    flb_wasm_destroy(wasm);
-
     *out_buf   = log_encoder.output_buffer;
     *out_bytes = log_encoder.output_length;
 
@@ -240,14 +237,10 @@ static int cb_wasm_filter(const void *data, size_t bytes,
 
     return FLB_FILTER_MODIFIED;
 
-on_error:
+/* A new error handler that doesn't destroy the persistent wasm instance */
+on_error_without_wasm_destroy:
     flb_log_event_decoder_destroy(&log_decoder);
     flb_log_event_encoder_destroy(&log_encoder);
-
-    if (wasm != NULL) {
-        flb_wasm_destroy(wasm);
-    }
-
     return FLB_FILTER_NOTOUCH;
 }
 
@@ -313,6 +306,7 @@ static int cb_wasm_pre_run(struct flb_filter_instance *f_ins,
     /* Check accessibility for the wasm path */
     ret = access(ctx->wasm_path, R_OK);
     if (ret != 0) {
+        flb_plg_error(f_ins, "cannot access wasm program at %s", ctx->wasm_path);
         goto pre_run_error;
     }
 
@@ -341,6 +335,9 @@ static int cb_wasm_init(struct flb_filter_instance *f_ins,
     if (!ctx) {
         return -1;
     }
+    /* Initialize wasm pointer to NULL */
+    ctx->wasm = NULL;
+
 
     /* Initialize exec config */
     ret = filter_wasm_config_read(ctx, f_ins, config);
@@ -378,13 +375,31 @@ static int cb_wasm_init(struct flb_filter_instance *f_ins,
         wasm_conf->stack_size = ctx->wasm_stack_size;
     }
 
-    /* Set context */
+    /* Set context before instantiating */
     flb_filter_set_context(f_ins, ctx);
+
+    /* Instantiate the WASM module once and store it in the context */
+    ctx->wasm = flb_wasm_instantiate(config, ctx->wasm_path,
+                                     ctx->accessible_dir_list,
+                                     ctx->wasm_conf);
+
+    if (ctx->wasm == NULL) {
+        flb_plg_error(ctx->ins, "failed to instantiate wasm program: %s",
+                      ctx->wasm_path);
+        goto init_error;
+    }
+
     return 0;
 
 init_error:
-    delete_wasm_config(ctx);
-
+    if (ctx) {
+        if (ctx->wasm_conf) {
+            flb_wasm_config_destroy(ctx->wasm_conf);
+            ctx->wasm_conf = NULL;
+        }
+        delete_wasm_config(ctx);
+    }
+    flb_filter_set_context(f_ins, NULL);
     return -1;
 }
 
@@ -392,8 +407,18 @@ static int cb_wasm_exit(void *data, struct flb_config *config)
 {
     struct flb_filter_wasm *ctx = data;
 
-    flb_wasm_config_destroy(ctx->wasm_conf);
-    flb_wasm_destroy_all(config);
+    if (!ctx) {
+        return 0;
+    }
+
+    /* Destroy the single, persistent WASM instance */
+    if (ctx->wasm) {
+        flb_wasm_destroy(ctx->wasm);
+    }
+    /* Destroy the WASM configuration */
+    if (ctx->wasm_conf) {
+        flb_wasm_config_destroy(ctx->wasm_conf);
+    }
     delete_wasm_config(ctx);
     return 0;
 }

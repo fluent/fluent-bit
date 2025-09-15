@@ -10,23 +10,23 @@ This source source tree provides an example of WASM program with WASI mode.
 
 ## How to build
 
-Add `wasm32-wasi` target for Rust toolchain:
+Add `wasm32-wasip1` target for Rust toolchain:
 
 ```console
-$ rustup target add wasm32-wasi
+$ rustup target add wasm32-wasip1
 ```
 
 Then, execute _cargo build_ as follows:
 
 ```console
-$ cargo build --target wasm32-wasi --release
+$ cargo build --target wasm32-wasip1 --release
 ```
 
-Finally, under target/wasm32-wasi/release directory, `*.wasm` file will be created:
+Finally, under target/wasm32-wasip1/release directory, `*.wasm` file will be created:
 
 ```console
-$ ls target/wasm32-wasi/release/*.wasm
-target/wasm32-wasi/release/wasi_serde_json.wasm
+$ ls target/wasm32-wasip1/release/*.wasm
+target/wasm32-wasip1/release/wasi_serde_json.wasm
 ```
 
 ## How to confirm WASI integration

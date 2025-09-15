@@ -11,67 +11,185 @@
 # - dockerfiles/Dockerfile.windows
 #
 
-ARG WINDOWS_VERSION=ltsc2019
+ARG WINDOWS_VERSION=ltsc2025
 
 # Builder Image - Windows Server Core
-FROM mcr.microsoft.com/windows/servercore:$WINDOWS_VERSION AS builder
-
-RUN setx /M PATH "%PATH%;C:\BuildTools\Common7\IDE\CommonExtensions\Microsoft\CMake\CMake\bin;C:\WinFlexBison;C:\dev\vcpkg"
+FROM mcr.microsoft.com/windows/servercore:$WINDOWS_VERSION AS builder-base
 
 SHELL ["powershell", "-Command", "$ErrorActionPreference = 'Stop'; $ProgressPreference = 'SilentlyContinue';"]
+
+# Clean up any existing temp files and create fresh temp directory
+RUN Remove-Item -Path $env:TEMP\* -Recurse -Force -ErrorAction SilentlyContinue; `
+    Remove-Item -Path C:\Windows\Temp\* -Recurse -Force -ErrorAction SilentlyContinue; `
+    New-Item -ItemType Directory -Path $env:TEMP -Force -ErrorAction SilentlyContinue;
+
+# Install Visual Studio Build Tools 2019 (MSVS_VERSION=16) / 2022 (MSVS_VERSION=17, requires WINDOWS_VERSION=ltsc2022)
 WORKDIR /local
+ARG MSVS_VERSION="17"
+ENV MSVS_BUILD_TOOLS_VERSION="$MSVS_VERSION" `
+    MSVS_BUILD_TOOLS_DOWNLOAD_URL="https://aka.ms/vs" `
+    MSVS_HOME="C:\BuildTools"
 
-# Install Visual Studio 2019
-ADD https://aka.ms/vs/16/release/vs_buildtools.exe /local/vs_buildtools.exe
-ADD https://aka.ms/vs/16/release/channel /local/VisualStudio.chman
+RUN $msvs_build_tools_dist_name=\"vs_buildtools.exe\"; `
+    $msvs_build_tools_dist=\"${env:TMP}\${msvs_build_tools_dist_name}\"; `
+    $msvs_build_tools_channel=\"C:\local\VisualStudio.chman\"; `
+    $msvs_build_tools_dist_url=\"${env:MSVS_BUILD_TOOLS_DOWNLOAD_URL}/${env:MSVS_BUILD_TOOLS_VERSION}/release/${msvs_build_tools_dist_name}\"; `
+    $msvs_build_tools_channel_url=\"${env:MSVS_BUILD_TOOLS_DOWNLOAD_URL}/${env:MSVS_BUILD_TOOLS_VERSION}/release/channel\"; `
+    Write-Host \"Downloading Visual Studio Build Tools...\"; `
+    Write-Host \"${msvs_build_tools_dist_url} -> ${msvs_build_tools_dist}\"; `
+    Write-Host \"${msvs_build_tools_channel_url} -> ${msvs_build_tools_channel}\"; `
+    Invoke-WebRequest -OutFile \"${msvs_build_tools_dist}\" \"${msvs_build_tools_dist_url}\"; `
+    Invoke-WebRequest -OutFile \"${msvs_build_tools_channel}\" \"${msvs_build_tools_channel_url}\"; `
+    Write-Host \"Installing Visual Studio Build Tools into ${env:MSVS_HOME}...\"; `
+    Start-Process \"${msvs_build_tools_dist}\" `
+      -ArgumentList '--quiet ', '--wait ', '--norestart ', '--nocache', `
+      \"--installPath ${env:MSVS_HOME}\", `
+      \"--channelUri ${msvs_build_tools_channel}\", `
+      \"--installChannelUri ${msvs_build_tools_channel}\", `
+      '--add Microsoft.VisualStudio.Workload.VCTools', `
+      '--includeRecommended'  -NoNewWindow -Wait; `
+    Remove-Item -Force \"${msvs_build_tools_dist}\"; `
+    Remove-Item -Path \"${msvs_build_tools_channel}\" -Force;
 
-RUN Start-Process /local/vs_buildtools.exe `
-    -ArgumentList '--quiet ', '--wait ', '--norestart ', '--nocache', `
-    '--installPath C:\BuildTools', `
-    '--channelUri C:\local\VisualStudio.chman', `
-    '--installChannelUri C:\local\VisualStudio.chman', `
-    '--add Microsoft.VisualStudio.Workload.VCTools', `
-    '--includeRecommended'  -NoNewWindow -Wait;
+ENV CMAKE_HOME="C:\cmake"
+ARG CMAKE_VERSION="3.31.6"
+ARG CMAKE_URL="https://github.com/Kitware/CMake/releases/download"
 
-ADD https://github.com/lexxmark/winflexbison/releases/download/v2.5.22/win_flex_bison-2.5.22.zip /local/win_flex_bison.zip
+RUN if ([System.Version] \"${env:CMAKE_VERSION}\" -ge [System.Version] \"3.20.0\") { `
+      $cmake_dist_base_name=\"cmake-${env:CMAKE_VERSION}-windows-x86_64\" `
+    } else { `
+      if ([System.Version] \"${env:CMAKE_VERSION}\" -ge [System.Version] \"3.6.0\") { `
+        $cmake_dist_base_name=\"cmake-${env:CMAKE_VERSION}-win64-x64\" `
+      } else { `
+        $cmake_dist_base_name=\"cmake-${env:CMAKE_VERSION}-win32-x86\" `
+      } `
+    }; `
+    $cmake_dist_name=\"${cmake_dist_base_name}.zip\"; `
+    $cmake_dist=\"${env:TMP}\${cmake_dist_name}\"; `
+    $cmake_download_url=\"${env:CMAKE_URL}/v${env:CMAKE_VERSION}/${cmake_dist_name}\"; `
+    Write-Host \"Downloading CMake...\"; `
+    Write-Host \"${cmake_download_url} -> ${cmake_dist}\"; `
+    Invoke-WebRequest -OutFile \"${cmake_dist}\" \"${cmake_download_url}\"; `
+    $cmake_temp_dir=\"${env:TMP}\${cmake_dist_base_name}\"; `
+    Write-Host \"Extracting CMake...\"; `
+    Write-Host \"${cmake_dist} -> ${cmake_temp_dir}\"; `
+    Expand-Archive \"${cmake_dist}\" -Destination \"${env:TMP}\"; `
+    Remove-Item -Force \"${cmake_dist}\"; `
+    Write-Host \"Moving CMake...\"; `
+    Write-Host \"${cmake_temp_dir} -> ${env:CMAKE_HOME}\"; `
+    [System.IO.Directory]::Move(\"${cmake_temp_dir}\", \"${env:CMAKE_HOME}\"); `
+    $env:PATH=\"${env:PATH};${env:CMAKE_HOME}\bin\"; `
+    Write-Host \"Setting PATH...\"; `
+    Write-Host \"${env:PATH}\"; `
+    [Environment]::SetEnvironmentVariable(\"PATH\", \"${env:PATH}\", [EnvironmentVariableTarget]::Machine);
 
-RUN Expand-Archive /local/win_flex_bison.zip -Destination /WinFlexBison; `
-    Copy-Item -Path /WinFlexBison/win_bison.exe /WinFlexBison/bison.exe; `
-    Copy-Item -Path /WinFlexBison/win_flex.exe /WinFlexBison/flex.exe;
+ENV WIN_FLEX_BISON_VERSION="2.5.22" `
+    WIN_FLEX_BISON_HOME="C:\WinFlexBison" `
+    WIN_FLEX_BISON_DOWNLOAD_URL="https://github.com/lexxmark/winflexbison/releases/download"
 
-# Technique from https://github.com/StefanScherer/dockerfiles-windows/blob/master/mongo/3.6/Dockerfile
-WORKDIR /local
-ADD https://aka.ms/vs/15/release/vc_redist.x64.exe /local/vc_redist.x64.exe
+RUN $win_flex_bison_dist_base_name=\"win_flex_bison-${env:WIN_FLEX_BISON_VERSION}\"; `
+    $win_flex_bison_dist_name=\"${win_flex_bison_dist_base_name}.zip\"; `
+    $win_flex_bison_dist=\"${env:TMP}\${win_flex_bison_dist_name}\"; `
+    $win_flex_bison_url=\"${env:WIN_FLEX_BISON_DOWNLOAD_URL}/v${env:WIN_FLEX_BISON_VERSION}/${win_flex_bison_dist_name}\"; `
+    Write-Host \"Downloading WinFlexBison...\"; `
+    Write-Host \"${win_flex_bison_url} -> ${win_flex_bison_dist}\"; `
+    Invoke-WebRequest -OutFile \"${win_flex_bison_dist}\" \"${win_flex_bison_url}\"; `
+    Write-Host \"Extracting WinFlexBison...\"; `
+    Write-Host \"${win_flex_bison_dist} -> ${env:WIN_FLEX_BISON_HOME}\"; `
+    Expand-Archive \"${win_flex_bison_dist}\" -Destination \"${env:WIN_FLEX_BISON_HOME}\"; `
+    Remove-Item -Force \"${win_flex_bison_dist}\"; `
+    Write-Host \"Copying...\"; `
+    Write-Host \"${env:WIN_FLEX_BISON_HOME}\win_bison.exe -> ${env:WIN_FLEX_BISON_HOME}\bison.exe\"; `
+    Copy-Item -Path \"${env:WIN_FLEX_BISON_HOME}\win_bison.exe\" \"${env:WIN_FLEX_BISON_HOME}\bison.exe\"; `
+    Write-Host \"Copying...\"; `
+    Write-Host \"${env:WIN_FLEX_BISON_HOME}\win_flex.exe -> ${env:WIN_FLEX_BISON_HOME}\flex.exe\"; `
+    Copy-Item -Path \"${env:WIN_FLEX_BISON_HOME}\win_flex.exe\" \"${env:WIN_FLEX_BISON_HOME}\flex.exe\"; `
+    $env:PATH=\"${env:PATH};${env:WIN_FLEX_BISON_HOME}\"; `
+    Write-Host \"Setting PATH...\"; `
+    Write-Host \"${env:PATH}\"; `
+    [Environment]::SetEnvironmentVariable(\"PATH\", \"${env:PATH}\", [EnvironmentVariableTarget]::Machine);
 
-WORKDIR /fluent-bit/bin/
-RUN Start-Process /local/vc_redist.x64.exe -ArgumentList '/install', '/quiet', '/norestart' -NoNewWindow -Wait; `
-    Copy-Item -Path /Windows/System32/msvcp140.dll -Destination /fluent-bit/bin/; `
-    Copy-Item -Path /Windows/System32/vccorlib140.dll -Destination /fluent-bit/bin/; `
-    Copy-Item -Path /Windows/System32/vcruntime140.dll -Destination /fluent-bit/bin/;
-
-ENV VCPKG_VERSION=2024.05.24
 # https://github.com/microsoft/vcpkg/blob/2024.05.24/scripts/bootstrap.ps1
-ENV VCPKG_ROOT=/dev/vcpkg
+ENV VCPKG_VERSION=2024.05.24 `
+    VCPKG_DOWNLOAD_URL="https://github.com/microsoft/vcpkg/archive/refs/tags" `
+    VCPKG_DISABLE_METRICS="ON" `
+    VCPKG_ROOT=/dev/vcpkg
 
 WORKDIR /dev
 
-RUN `
-    Invoke-WebRequest -OutFile /dev/vcpkg.zip https://github.com/microsoft/vcpkg/archive/refs/tags/${ENV:VCPKG_VERSION}.zip; `
-    Expand-Archive /dev/vcpkg.zip -Destination /dev; `
-    Remove-Item -Force /dev/vcpkg.zip; `
-    Rename-Item -Path /dev/vcpkg-${ENV:VCPKG_VERSION} -NewName vcpkg; `
-    /dev/vcpkg/bootstrap-vcpkg.bat;
+RUN $vcpkg_dist_base_name=\"vcpkg-${env:VCPKG_VERSION}\"; `
+    $vcpkg_dist=\"${env:TMP}\${vcpkg_dist_base_name}.zip\"; `
+    $vcpkg_url=\"${env:VCPKG_DOWNLOAD_URL}/${env:VCPKG_VERSION}.zip\"; `
+    Write-Host \"Downloading vcpkg...\"; `
+    Write-Host \"${vcpkg_url} -> ${vcpkg_dist}\"; `
+    Invoke-WebRequest -OutFile \"${vcpkg_dist}\" \"${vcpkg_url}\"; `
+    $vcpkg_temp_dir=\"${env:TMP}\${vcpkg_dist_base_name}\"; `
+    Write-Host \"Extracting vcpkg...\"; `
+    Write-Host \"${vcpkg_dist} -> ${vcpkg_temp_dir}\"; `
+    Expand-Archive \"${vcpkg_dist}\" -Destination \"${env:TMP}\"; `
+    Remove-Item -Force \"${vcpkg_dist}\"; `
+    $vcpkg_home_dir=\"${env:VCPKG_ROOT}\" -replace \"/\", \"\\\"; `
+    $vcpkg_home_dir=\"C:${vcpkg_home_dir}\"; `
+    Write-Host \"Moving vcpkg...\"; `
+    Write-Host \"${vcpkg_temp_dir} -> ${vcpkg_home_dir}\"; `
+    [System.IO.Directory]::Move(\"${vcpkg_temp_dir}\", \"${vcpkg_home_dir}\"); `
+    $env:PATH=\"${env:PATH};${vcpkg_home_dir}\"; `
+    Write-Host \"Setting PATH...\"; `
+    Write-Host \"${env:PATH}\"; `
+    [Environment]::SetEnvironmentVariable(\"PATH\", \"${env:PATH}\", [EnvironmentVariableTarget]::Machine); `
+    Write-Host \"Bootstrapping vcpkg...\"; `
+    & \"${vcpkg_home_dir}\bootstrap-vcpkg.bat\";
 
+# Ensure we only attempt to build release and static linking
+ENV VCPKG_BUILD_TYPE=release `
+    VCPKG_LIBRARY_LINKAGE=static
+
+# Install dependencies and clean temporary files to save space
 RUN vcpkg install --recurse openssl --triplet x64-windows-static; `
-    vcpkg install --recurse libyaml --triplet x64-windows-static;
+    Remove-Item -Path $env:TEMP\* -Recurse -Force -ErrorAction SilentlyContinue; `
+    Remove-Item -Path C:\dev\vcpkg\buildtrees -Recurse -Force -ErrorAction SilentlyContinue; `
+    Remove-Item -Path C:\dev\vcpkg\downloads\tools\* -Recurse -Force -ErrorAction SilentlyContinue;
+
+RUN vcpkg install --recurse libyaml --triplet x64-windows-static; `
+    Remove-Item -Path $env:TEMP\* -Recurse -Force -ErrorAction SilentlyContinue; `
+    Remove-Item -Path C:\dev\vcpkg\buildtrees -Recurse -Force -ErrorAction SilentlyContinue;
+
+# Final vcpkg cleanup to remove all build artifacts and save space
+RUN Remove-Item -Path C:\dev\vcpkg\downloads -Recurse -Force -ErrorAction SilentlyContinue; `
+    Remove-Item -Path C:\dev\vcpkg\buildtrees -Recurse -Force -ErrorAction SilentlyContinue; `
+    Remove-Item -Path $env:TEMP\* -Recurse -Force -ErrorAction SilentlyContinue; `
+    Remove-Item -Path C:\Windows\Temp\* -Recurse -Force -ErrorAction SilentlyContinue;
+
+# Copy required runtime libraries
+WORKDIR /fluent-bit/bin
+RUN Copy-Item -Path C:\Windows\System32\msvcp140.dll -Destination /fluent-bit/bin/; `
+    Copy-Item -Path C:\Windows\System32\vccorlib140.dll -Destination /fluent-bit/bin/; `
+    Copy-Item -Path C:\Windows\System32\vcruntime140.dll -Destination /fluent-bit/bin/;
+
+FROM builder-base AS builder
 
 # Build Fluent Bit from source - context must be the root of the Git repo
 WORKDIR /src/build
 COPY . /src/
 
-RUN cmake -G "'Visual Studio 16 2019'" -DOPENSSL_ROOT_DIR='C:\dev\vcpkg\packages\openssl_x64-windows-static' -DFLB_LIBYAML_DIR='C:\dev\vcpkg\packages\libyaml_x64-windows-static' -DCMAKE_BUILD_TYPE=Release ../;`
-    cmake --build . --config Release;
+ARG BUILD_PARALLEL=1
+SHELL ["cmd", "/S", "/C"]
+RUN call "%MSVS_HOME%\VC\Auxiliary\Build\vcvars64.bat" && `
+    cmake -G "NMake Makefiles" `
+      -DOPENSSL_ROOT_DIR='C:\dev\vcpkg\packages\openssl_x64-windows-static' `
+      -DFLB_LIBYAML_DIR='C:\dev\vcpkg\packages\libyaml_x64-windows-static' `
+      -DFLB_SIMD=On `
+      -DCMAKE_BUILD_TYPE=Release `
+      -DFLB_SHARED_LIB=Off `
+      -DFLB_EXAMPLES=Off `
+      -DFLB_DEBUG=Off `
+      -DFLB_RELEASE=On `
+      ..\ && `
+    cmake --build . --config Release -j "%BUILD_PARALLEL%"
 
+SHELL ["powershell", "-Command", "$ErrorActionPreference = 'Stop'; $ProgressPreference = 'SilentlyContinue';"]
+
+WORKDIR /fluent-bit/bin
 # Set up config files and binaries in single /fluent-bit hierarchy for easy copy in later stage
 RUN New-Item -Path  /fluent-bit/etc/ -ItemType "directory"; `
     Copy-Item -Path /src/conf/fluent-bit-win32.conf /fluent-bit/etc/fluent-bit.conf; `
@@ -82,8 +200,8 @@ RUN New-Item -Path  /fluent-bit/etc/ -ItemType "directory"; `
     Copy-Item -Path /src/conf/parsers_openstack.conf /fluent-bit/etc/; `
     Copy-Item -Path /src/conf/parsers_cinder.conf /fluent-bit/etc/; `
     Copy-Item -Path /src/conf/plugins.conf /fluent-bit/etc/; `
-    Copy-Item -Path /src/build/bin/Release/fluent-bit.exe /fluent-bit/bin/; `
-    Copy-Item -Path /src/build/bin/Release/fluent-bit.dll /fluent-bit/bin/;
+    Copy-Item -Path /src/build/bin/fluent-bit.exe /fluent-bit/bin/;
+
 #
 # Runtime Image - Windows Server Core
 #
@@ -107,6 +225,7 @@ LABEL org.opencontainers.image.title="Fluent Bit" `
     org.opencontainers.image.source="https://github.com/fluent/fluent-bit" `
     org.opencontainers.image.revision=$IMAGE_SOURCE_REVISION
 
+# Copy only the built artifacts from builder stage
 COPY --from=builder /fluent-bit /fluent-bit
 
 RUN setx /M PATH "%PATH%;C:\fluent-bit\bin"

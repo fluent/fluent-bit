@@ -22,6 +22,7 @@
 #include <fluent-bit/flb_input_chunk.h>
 #include <fluent-bit/flb_input_metric.h>
 #include <fluent-bit/flb_input_plugin.h>
+#include <cfl/cfl.h>
 
 static int input_metrics_append(struct flb_input_instance *ins,
                                 size_t processor_starting_stage,
@@ -33,6 +34,7 @@ static int input_metrics_append(struct flb_input_instance *ins,
     size_t mt_size;
     int processor_is_active;
     struct cmt *out_context = NULL;
+    struct cmt *encode_context;
 
     processor_is_active = flb_processor_is_active(ins->processor);
     if (processor_is_active) {
@@ -60,29 +62,31 @@ static int input_metrics_append(struct flb_input_instance *ins,
         }
     }
 
-
-    if (out_context != NULL) {
-        /* Convert metrics to msgpack */
-        ret = cmt_encode_msgpack_create(out_context, &mt_buf, &mt_size);
-
-        if (out_context != cmt) {
-            cmt_destroy(out_context);
-        }
-
-        if (ret != 0) {
-            flb_plg_error(ins, "could not encode metrics");
-
-            return -1;
-        }
+    if (out_context) {
+        encode_context = out_context;
     }
     else {
-        /* Convert metrics to msgpack */
-        ret = cmt_encode_msgpack_create(cmt, &mt_buf, &mt_size);
-        if (ret != 0) {
-            flb_plg_error(ins, "could not encode metrics");
-            return -1;
+        encode_context = cmt;
+    }
 
+    /* Drop the context if it contains no metrics */
+    if (encode_context == NULL || flb_metrics_is_empty(encode_context)) {
+        if (out_context && out_context != cmt) {
+            cmt_destroy(out_context);
         }
+        return 0;
+    }
+
+    /* Convert metrics to msgpack */
+    ret = cmt_encode_msgpack_create(encode_context, &mt_buf, &mt_size);
+
+    if (out_context && out_context != cmt) {
+        cmt_destroy(out_context);
+    }
+
+    if (ret != 0) {
+        flb_plg_error(ins, "could not encode metrics");
+        return -1;
     }
 
     /* Append packed metrics */

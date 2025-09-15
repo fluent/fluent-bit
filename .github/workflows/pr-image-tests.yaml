@@ -21,7 +21,7 @@ jobs:
         # We do not push and this allows simpler workflow running for forks too
       steps:
         - name: Checkout code
-          uses: actions/checkout@v4
+          uses: actions/checkout@v5
 
         - name: Set up Docker Buildx
           uses: docker/setup-buildx-action@v3
@@ -72,7 +72,7 @@ jobs:
         contents: read
       steps:
       - name: Checkout code
-        uses: actions/checkout@v4
+        uses: actions/checkout@v5
 
       - name: Build the classic test image
         # We only want to confirm it builds with classic mode, nothing else
@@ -83,20 +83,20 @@ jobs:
           DOCKER_BUILDKIT: 0
         shell: bash
     pr-image-tests-build-windows-images:
-      name: PR - Docker windows build test, windows 2019 and 2022
+      name: PR - Docker windows build test, windows 2022 and 2025
       runs-on: windows-${{ matrix.windows-base-version }}
       strategy:
         fail-fast: true
         matrix:
           windows-base-version:
             # https://github.com/fluent/fluent-bit/blob/1d366594a889624ec3003819fe18588aac3f17cd/dockerfiles/Dockerfile.windows#L3
-            - '2019'
             - '2022'
+            - '2025'
       permissions:
         contents: read
       steps:
         - name: Checkout repository
-          uses: actions/checkout@v4
+          uses: actions/checkout@v5
 
         - name: Extract metadata from Github
           id: meta

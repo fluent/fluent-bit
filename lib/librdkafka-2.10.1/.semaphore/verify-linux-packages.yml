@@ -1,0 +1,41 @@
+version: v1.0
+name: verify-linux-packages
+
+agent:
+  machine:
+    type: s1-prod-ubuntu24-04-amd64-1
+
+execution_time_limit:
+  hours: 2
+
+global_job_config:
+  prologue:
+    commands:
+      - checkout
+  env_vars:
+    - name: REPOSITORY_BASE_URL
+      value: "https://packages.confluent.io"
+
+blocks:
+  - name: "Verify Linux packages (x86_64)"
+    dependencies: []
+    task:
+      agent:
+        machine:
+          type: s1-prod-ubuntu24-04-amd64-2
+      jobs:
+        - name: "Verify packages"
+          commands:
+            - cd packaging/cp
+            - ./verify-packages.sh ${REPOSITORY_BASE_URL} linux/amd64 ${LIBRDKAFKA_VERSION}
+  - name: "Verify Linux packages (aarch64)"
+    dependencies: []
+    task:
+      agent:
+        machine:
+          type: s1-prod-ubuntu24-04-arm64-2
+      jobs:
+        - name: "Verify packages"
+          commands:
+            - cd packaging/cp
+            - ./verify-packages.sh ${REPOSITORY_BASE_URL} linux/arm64 ${LIBRDKAFKA_VERSION}

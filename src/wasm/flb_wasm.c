@@ -168,6 +168,8 @@ struct flb_wasm *flb_wasm_instantiate(struct flb_config *config, const char *was
 
     if (!wasm_runtime_full_init(&wasm_args)) {
         flb_error("Init runtime environment failed.");
+        flb_free(fw);
+
         return NULL;
     }
 
@@ -262,7 +264,7 @@ char *flb_wasm_call_function_format_json(struct flb_wasm *fw, const char *functi
                              fw->record_buffer, record_len};
     size_t args_size = sizeof(func_args) / sizeof(uint32_t);
 
-    if (!(func = wasm_runtime_lookup_function(fw->module_inst, function_name, NULL))) {
+    if (!(func = wasm_runtime_lookup_function(fw->module_inst, function_name))) {
         flb_error("The %s wasm function is not found.", function_name);
         return NULL;
     }
@@ -343,7 +345,7 @@ char *flb_wasm_call_function_format_msgpack(struct flb_wasm *fw, const char *fun
                              fw->record_buffer, records_len};
     size_t args_size = sizeof(func_args) / sizeof(uint32_t);
 
-    if (!(func = wasm_runtime_lookup_function(fw->module_inst, function_name, NULL))) {
+    if (!(func = wasm_runtime_lookup_function(fw->module_inst, function_name))) {
         flb_error("The %s wasm function is not found.", function_name);
         return NULL;
     }
@@ -374,14 +376,7 @@ char *flb_wasm_call_function_format_msgpack(struct flb_wasm *fw, const char *fun
 int flb_wasm_call_wasi_main(struct flb_wasm *fw)
 {
 #if WASM_ENABLE_LIBC_WASI != 0
-    wasm_function_inst_t func = NULL;
-
-    if (!(func = wasm_runtime_lookup_wasi_start_function(fw->module_inst))) {
-        flb_error("The wasi mode main function is not found.");
-        return -1;
-    }
-
-    return wasm_runtime_call_wasm(fw->exec_env, func, 0, NULL);
+    return wasm_application_execute_main(fw->module_inst, 0, NULL);
 #else
     return -1;
 #endif

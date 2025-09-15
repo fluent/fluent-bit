@@ -1,0 +1,27 @@
+(module
+  (type $st (sub (struct)))
+  (type $st' (sub (struct (field i32))))
+  (type $at (array i8))
+  (type $st-sub1 (sub $st (struct)))
+  (type $st-sub2 (sub $st (struct)))
+  (type $st'-sub1 (sub $st' (struct (field i32))))
+  (type $st'-sub2 (sub $st' (struct (field i32))))
+
+  (table 20 (ref null eq))
+
+  (func (export "init")
+    (table.set (i32.const 0) (ref.null eq))
+    (table.set (i32.const 1) (ref.null i31))
+    (table.set (i32.const 2) (ref.i31 (i32.const 7)))
+    (table.set (i32.const 3) (ref.i31 (i32.const 7)))
+    (table.set (i32.const 4) (ref.i31 (i32.const 8)))
+    (table.set (i32.const 5) (struct.new_default $st))
+    (table.set (i32.const 6) (struct.new_default $st))
+    (table.set (i32.const 7) (array.new_default $at (i32.const 0)))
+    (table.set (i32.const 8) (array.new_default $at (i32.const 0)))
+  )
+
+  (func (export "eq") (param $i i32) (param $j i32) (result i32)
+    (ref.eq (table.get (local.get $i)) (table.get (local.get $j)))
+  )
+)

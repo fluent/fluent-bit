@@ -36,6 +36,7 @@
 #include <sys/stat.h>
 #include <sys/time.h>
 #include <inttypes.h>
+#include <time.h>
 
 #include "in_kmsg.h"
 
@@ -113,6 +114,7 @@ static inline int process_line(const char *line,
     struct timeval tv;       /* time value                  */
     int line_len;
     uint64_t val;
+    long pri_val;
     const char *p = line;
     char *end = NULL;
     struct flb_time ts;
@@ -122,14 +124,14 @@ static inline int process_line(const char *line,
     ctx->buffer_id++;
 
     errno = 0;
-    val = strtol(p, &end, 10);
-    if ((errno == ERANGE && (val == INT_MAX || val == INT_MIN))
-        || (errno != 0 && val == 0)) {
+    pri_val = strtol(p, &end, 10);
+    if ((errno == ERANGE && (pri_val == INT_MAX || pri_val == INT_MIN))
+        || (errno != 0 && pri_val == 0)) {
         goto fail;
     }
 
     /* Priority */
-    priority = FLB_KLOG_PRI(val);
+    priority = FLB_KLOG_PRI(pri_val);
 
     if (priority > ctx->prio_level) {
         /* Drop line */
@@ -143,8 +145,9 @@ static inline int process_line(const char *line,
     }
     p++;
 
-    val = strtol(p, &end, 10);
-    if ((errno == ERANGE && (val == INT_MAX || val == INT_MIN))
+    errno = 0;
+    val = strtoull(p, &end, 10);
+    if ((errno == ERANGE && val == ULLONG_MAX)
         || (errno != 0 && val == 0)) {
         goto fail;
     }
@@ -153,8 +156,8 @@ static inline int process_line(const char *line,
     p = ++end;
 
     /* Timestamp */
-    val = strtol(p, &end, 10);
-    if ((errno == ERANGE && (val == INT_MAX || val == INT_MIN))
+    val = strtoull(p, &end, 10);
+    if ((errno == ERANGE && val == ULLONG_MAX)
         || (errno != 0 && val == 0)) {
         goto fail;
     }

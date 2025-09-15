@@ -28,6 +28,7 @@
 
 #include <ctraces/ctraces.h>
 #include <cmetrics/cmetrics.h>
+#include <cprofiles/cprofiles.h>
 
 /* Processor plugin result values */
 #define FLB_PROCESSOR_SUCCESS        0
@@ -37,6 +38,7 @@
 #define FLB_PROCESSOR_LOGS           1
 #define FLB_PROCESSOR_METRICS        2
 #define FLB_PROCESSOR_TRACES         4
+#define FLB_PROCESSOR_PROFILES       8
 
 /* Type of processor unit: 'pipeline filter' or 'native unit' */
 #define FLB_PROCESSOR_UNIT_NATIVE    0
@@ -62,6 +64,7 @@ struct flb_input_instance;
 struct flb_log_event_decoder;
 struct flb_log_event_encoder;
 struct flb_processor_instance;
+struct flb_condition;
 
 struct flb_processor_unit {
     int event_type;
@@ -74,6 +77,11 @@ struct flb_processor_unit {
      * contains the filter instance context.
      */
     void *ctx;
+
+    /* Conditional processing: if set, determines if the processor should
+     * be applied to a specific record
+     */
+    struct flb_condition *condition;
 
     /* This lock is meant to cover the case where two output plugin
      * worker threads flb_output_flush_create calls overlap which
@@ -93,7 +101,7 @@ struct flb_processor_unit {
      */
     struct mk_list unused_list;
 
-    /* link to struct flb_processor->(logs, metrics, traces) list */
+    /* link to struct flb_processor->(logs, metrics, traces, profiles) list */
     struct mk_list _head;
 
     /* link to parent processor */
@@ -110,6 +118,7 @@ struct flb_processor {
     struct mk_list logs;
     struct mk_list metrics;
     struct mk_list traces;
+    struct mk_list profiles;
 
     size_t stage_count;
     /*
@@ -152,6 +161,12 @@ struct flb_processor_plugin {
 
     int (*cb_process_traces) (struct flb_processor_instance *,
                               struct ctrace *,
+                              struct ctrace **,
+                              const char *,
+                              int);
+
+    int (*cb_process_profiles) (struct flb_processor_instance *,
+                              struct cprof *,
                               const char *,
                               int);
 
@@ -171,6 +186,7 @@ struct flb_processor_instance {
     char *alias;                           /* alias name               */
     void *context;                         /* Instance local context   */
     void *data;
+    struct flb_processor_unit *pu;         /* processor unit linked to */
     struct flb_processor_plugin *p;        /* original plugin          */
     struct mk_list properties;             /* config properties        */
     struct mk_list *config_map;            /* configuration map        */
@@ -216,16 +232,15 @@ struct flb_processor_unit *flb_processor_unit_create(struct flb_processor *proc,
                                                      char *unit_name);
 void flb_processor_unit_destroy(struct flb_processor_unit *pu);
 int flb_processor_unit_set_property(struct flb_processor_unit *pu, const char *k, struct cfl_variant *v);
+int flb_processor_unit_set_property_str(struct flb_processor_unit *pu, const char *k, const char *v);
 
 int flb_processors_load_from_config_format_group(struct flb_processor *proc, struct flb_cf_group *g);
 
 /* Processor plugin instance */
-
-struct flb_processor_instance *flb_processor_instance_create(
-                                    struct flb_config *config,
-                                    int event_type,
-                                    const char *name,
-                                    void *data);
+struct flb_processor_instance *flb_processor_instance_create(struct flb_config *config,
+                                                             struct flb_processor_unit *pu,
+                                                             int event_type,
+                                                             const char *name, void *data);
 
 void flb_processor_instance_destroy(
         struct flb_processor_instance *ins);
@@ -265,5 +280,19 @@ static inline int flb_processor_instance_config_map_set(
 {
     return flb_config_map_set(&ins->properties, ins->config_map, context);
 }
+
+static inline
+struct flb_input_instance *flb_processor_get_input_instance(struct flb_processor_unit *pu)
+{
+        struct flb_processor *processor;
+        struct flb_input_instance *ins;
+
+        processor = (struct flb_processor *) pu->parent;
+        ins = (struct flb_input_instance *) processor->data;
+
+        return ins;
+}
+
+struct mk_list *flb_processor_get_global_config_map(struct flb_config *config);
 
 #endif

@@ -1,0 +1,129 @@
+# Copyright (C) 2019 Intel Corporation.  All rights reserved.
+# SPDX-License-Identifier: Apache-2.0 WITH LLVM-exception
+
+name: compilation on zephyr
+
+on:
+  # will be triggered on PR events
+  pull_request:
+    types:
+      - opened
+      - synchronize
+    paths:
+      - ".github/**"
+      - "build-scripts/**"
+      - "core/**"
+      - "!core/deps/**"
+      - "product-mini/platforms/common/**"
+      - "product-mini/platforms/zephyr/**"
+      - "samples/**"
+      - "!samples/workload/**"
+      - "tests/wamr-test-suites/**"
+      - "wamr-compiler/**"
+  # will be triggered on push events
+  push:
+    branches:
+      - main
+      - "dev/**"
+    paths:
+      - ".github/**"
+      - "build-scripts/**"
+      - "core/**"
+      - "!core/deps/**"
+      - "product-mini/platforms/common/**"
+      - "product-mini/platforms/zephyr/**"
+      - "samples/**"
+      - "!samples/workload/**"
+      - "tests/wamr-test-suites/**"
+      - "wamr-compiler/**"
+  # allow to be triggered manually
+  workflow_dispatch:
+
+# Cancel any in-flight jobs for the same PR/branch so there's only one active
+# at a time
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  # FOR SETUP
+  ZEPHYR_SDK_VERSION: "0.16.9"
+  ZEPHYR_VERSION: "v3.7.0"
+  # FOR BUILD
+
+permissions:
+  contents: read
+
+jobs:
+  smoke_test:
+    runs-on: ubuntu-22.04
+    container:
+      # For Zephyr 3.7 LTS, use the v0.26-branch or the latest v0.26.x release Docker image.
+      # ci require a larger runner to avoid "no space left on device"
+      image: ghcr.io/zephyrproject-rtos/ci-base:v0.26-branch
+      options: --user root
+
+    steps:
+      # https://docs.zephyrproject.org/latest/develop/application/index.html#zephyr-workspace-application
+      # zephyrproject/       --> CI ROOT
+      # ├─── .west/
+      # │    └─── config
+      # ├─── bootloader/
+      # ├─── zephyr/         --> Zephyr source code
+      # ├─── zephyr-sdk/
+      # ├─── modules/
+      # │    |─── wasm-micro-runtime   --> WAMR source code
+      # ├─── tools/
+      # ├─── vendor/
+      # └─── application/    --> DUMMY. keep west_lite.yml here
+
+      - name: Checkout code
+        uses: actions/checkout@v3
+        with:
+          path: modules/wasm-micro-runtime
+
+      - name: Prepare Zephyr environment
+        shell: bash
+        run: |
+          mkdir -p application
+          cp modules/wasm-micro-runtime/product-mini/platforms/zephyr/simple/west_lite.yml application/west_lite.yml
+
+      - name: Setup Zephyr project
+        uses: zephyrproject-rtos/action-zephyr-setup@v1
+        with:
+          app-path: application
+          manifest-file-name: west_lite.yml
+          sdk-version: ${{ env.ZEPHYR_SDK_VERSION }}
+          toolchains: arc-zephyr-elf:arc64-zephyr-elf
+
+      - name: Build a sample application(simple)
+        shell: bash
+        run: |
+          pushd product-mini/platforms/zephyr/simple
+          west build . -b qemu_arc/qemu_arc_hs  -p always -- -DWAMR_BUILD_TARGET=ARC
+          popd
+
+          # west build -t run will fork several processes, which will cause the job to hang.
+          # run in the background and kill it after 5 seconds
+          .github/scripts/run_qemu_arc.sh \
+            ../../zephyr-sdk \
+            product-mini/platforms/zephyr/simple/build/zephyr/zephyr.elf &
+          sleep 5
+          pkill qemu-system-arc
+        working-directory: modules/wasm-micro-runtime
+
+      - name: Build a sample application(user-mode)
+        shell: bash
+        run: |
+          pushd product-mini/platforms/zephyr/user-mode
+          west build . -b qemu_arc/qemu_arc_hs -p always -- -DWAMR_BUILD_TARGET=ARC
+          popd
+
+          # west build -t run will fork several processes, which will cause the job to hang.
+          # run in the background and kill it after 5 seconds
+          .github/scripts/run_qemu_arc.sh \
+            ../../zephyr-sdk \
+            product-mini/platforms/zephyr/user-mode/build/zephyr/zephyr.elf &
+          sleep 5
+          pkill qemu-system-arc
+        working-directory: modules/wasm-micro-runtime

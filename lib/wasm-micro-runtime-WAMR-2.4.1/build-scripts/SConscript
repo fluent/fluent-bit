@@ -1,0 +1,56 @@
+#
+# Copyright (c) 2021, RT-Thread Development Team
+#
+# SPDX-License-Identifier: Apache-2.0 WITH LLVM-exception
+#
+
+import os
+from building import *
+
+cwd  = GetCurrentDir()
+objs = []
+
+WAMR_ROOT_DIR = os.path.join(cwd, "..")
+SHARED_DIR    = os.path.join(WAMR_ROOT_DIR, 'core', 'shared')
+IWASM_DIR     = os.path.join(WAMR_ROOT_DIR, 'core', 'iwasm')
+DEPS_DIR      = os.path.join(WAMR_ROOT_DIR, 'core', 'deps')
+
+if GetDepend(['WAMR_BUILD_INTERP']):
+    script_path = os.path.join(IWASM_DIR, 'interpreter', 'SConscript')
+    objs += SConscript(script_path)
+
+if GetDepend(['WAMR_BUILD_AOT']):
+    script_path = os.path.join(IWASM_DIR, 'aot', 'SConscript')
+    objs += SConscript(script_path)
+    if GetDepend(['WAMR_BUILD_JIT']):
+        script_path = os.path.join(IWASM_DIR, 'compilation', 'SConscript')
+        objs += SConscript(script_path)
+
+if GetDepend(['WAMR_BUILD_LIBC_BUILTIN']):
+    objs += SConscript(os.path.join(IWASM_DIR, 'libraries', 'libc-builtin', 'SConscript'))
+
+if GetDepend(['WAMR_BUILD_LIBC_WASI']):
+    objs += SConscript(os.path.join(IWASM_DIR, 'libraries', 'libc-wasi', 'SConscript'))
+    objs += SConscript(os.path.join(SHARED_DIR, 'platform', 'common', 'posix', 'SConscript'))
+    objs += SConscript(os.path.join(SHARED_DIR, 'platform', 'common', 'libc-util', 'SConscript'))
+
+if GetDepend(['WAMR_BUILD_LIB_PTHREAD']):
+    objs += SConscript(os.path.join(IWASM_DIR, 'libraries', 'lib-pthread', 'SConscript'))
+
+if GetDepend(['WAMR_BUILD_THREAD_MGR']):
+    objs += SConscript(os.path.join(IWASM_DIR, 'libraries', 'thread-mgr', 'SConscript'))
+
+if GetDepend(['WAMR_BUILD_LIBC_EMCC']):
+    objs += SConscript(os.path.join(IWASM_DIR, 'libraries', 'libc-emmc', 'SConscript'))
+
+if GetDepend(['WAMR_BUILD_LIB_WASI_THREADS']):
+    objs += SConscript(os.path.join(IWASM_DIR, 'libraries', 'lib-wasi-threads', 'SConscript'))
+
+objs += SConscript(os.path.join(cwd, 'SConscript_config'));
+
+objs += SConscript(os.path.join(SHARED_DIR, 'platform', 'rt-thread', 'SConscript'))
+objs += SConscript(os.path.join(SHARED_DIR, 'mem-alloc', 'SConscript'))
+objs += SConscript(os.path.join(IWASM_DIR, 'common', 'SConscript'))
+objs += SConscript(os.path.join(SHARED_DIR, 'utils', 'SConscript'))
+
+Return('objs')

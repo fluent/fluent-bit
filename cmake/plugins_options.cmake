@@ -27,6 +27,7 @@ DEFINE_OPTION(FLB_IN_EXEC                     "Enable Exec input plugin"        
 DEFINE_OPTION(FLB_IN_EXEC_WASI                "Enable Exec WASI input plugin"                ON)
 DEFINE_OPTION(FLB_IN_FLUENTBIT_METRICS        "Enable Fluent Bit metrics plugin"             ON)
 DEFINE_OPTION(FLB_IN_FORWARD                  "Enable Forward input plugin"                  ON)
+DEFINE_OPTION(FLB_IN_GPU_METRICS              "Enable GPU metrics input plugin"              ON)
 DEFINE_OPTION(FLB_IN_HEAD                     "Enable Head input plugin"                     ON)
 DEFINE_OPTION(FLB_IN_HEALTH                   "Enable Health input plugin"                   ON)
 DEFINE_OPTION(FLB_IN_HTTP                     "Enable HTTP input plugin"                     ON)
@@ -45,6 +46,7 @@ DEFINE_OPTION(FLB_IN_PROCESS_EXPORTER_METRICS "Enable process exporter metrics i
 DEFINE_OPTION(FLB_IN_PROC                     "Enable Process input plugin"                  ON)
 DEFINE_OPTION(FLB_IN_PROMETHEUS_REMOTE_WRITE  "Enable prometheus remote write input plugin"  ON)
 DEFINE_OPTION(FLB_IN_PROMETHEUS_SCRAPE        "Enable Prometheus Scrape input plugin"        ON)
+DEFINE_OPTION(FLB_IN_PROMETHEUS_TEXTFILE      "Enable Prometheus textfile input plugin"      ON)
 DEFINE_OPTION(FLB_IN_RANDOM                   "Enable random input plugin"                   ON)
 DEFINE_OPTION(FLB_IN_SERIAL                   "Enable Serial input plugin"                   ON)
 DEFINE_OPTION(FLB_IN_SPLUNK                   "Enable Splunk HTTP HEC input plugin"          ON)
@@ -69,8 +71,9 @@ DEFINE_OPTION(FLB_IN_EBPF                     "Enable Linux eBPF input plugin"  
 DEFINE_OPTION(FLB_PROCESSOR_CONTENT_MODIFIER  "Enable content modifier processor"            ON)
 DEFINE_OPTION(FLB_PROCESSOR_LABELS            "Enable metrics label manipulation processor"  ON)
 DEFINE_OPTION(FLB_PROCESSOR_METRICS_SELECTOR  "Enable metrics selector processor"            ON)
+DEFINE_OPTION(FLB_PROCESSOR_OPENTELEMETRY_ENVELOPE "Enable OpenTelemetry envelope processor" ON)
 DEFINE_OPTION(FLB_PROCESSOR_SQL               "Enable SQL processor"                         ON)
-DEFINE_OPTION(FLB_PROCESSOR_OPENTELEMETRY_ENVELOPE "Enable OpenTelemetry envelope processor"  ON)
+DEFINE_OPTION(FLB_PROCESSOR_SAMPLING          "Enable sampling processor"                    ON)
 
 # Filters
 # =======
@@ -84,7 +87,6 @@ DEFINE_OPTION(FLB_FILTER_GREP                 "Enable grep filter"              
 DEFINE_OPTION(FLB_FILTER_KUBERNETES           "Enable kubernetes filter"                     ON)
 DEFINE_OPTION(FLB_FILTER_LOG_TO_METRICS       "Enable log-derived metrics filter"            ON)
 DEFINE_OPTION(FLB_FILTER_LUA                  "Enable Lua scripting filter"                  ON)
-DEFINE_OPTION(FLB_FILTER_LUA_USE_MPACK        "Enable mpack on the lua filter"               OFF)
 DEFINE_OPTION(FLB_FILTER_MODIFY               "Enable modify filter"                         ON)
 DEFINE_OPTION(FLB_FILTER_MULTILINE            "Enable multiline filter"                      ON)
 DEFINE_OPTION(FLB_FILTER_NEST                 "Enable nest filter"                           ON)

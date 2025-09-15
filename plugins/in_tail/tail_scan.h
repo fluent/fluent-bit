@@ -26,4 +26,8 @@ int flb_tail_scan(struct mk_list *path, struct flb_tail_config *ctx);
 int flb_tail_scan_callback(struct flb_input_instance *ins,
                            struct flb_config *config, void *context);
 
+void flb_tail_scan_register_ignored_file_size(struct flb_tail_config *ctx, const char *path, size_t path_length, size_t size);
+void flb_tail_scan_unregister_ignored_file_size(struct flb_tail_config *ctx, const char *path, size_t path_length);
+ssize_t flb_tail_scan_fetch_ignored_file_size(struct flb_tail_config *ctx, const char *path, size_t path_length);
+
 #endif

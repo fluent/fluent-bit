@@ -7,23 +7,35 @@ FROM centos:7
 RUN sed -i -e "s/^mirrorlist=http:\/\/mirrorlist.centos.org/#mirrorlist=http:\/\/mirrorlist.centos.org/g" /etc/yum.repos.d/CentOS-Base.repo && \
     sed -i -e "s/^#baseurl=http:\/\/mirror.centos.org/baseurl=http:\/\/vault.centos.org/g" /etc/yum.repos.d/CentOS-Base.repo && \
     yum -y update && \
-    yum install -y rpm-build curl ca-certificates gcc gcc-c++ cmake make bash \
-    wget unzip systemd-devel wget flex bison \
-    cyrus-sasl-lib cyrus-sasl-devel openssl openss-libs openssl-devel \
-    postgresql-libs postgresql-devel postgresql-server postgresql libyaml-devel && \
-    yum install -y epel-release && \
-    yum install -y cmake3
+    yum install -y rpm-build curl ca-certificates gcc gcc-c++ make bash \
+    wget unzip systemd-devel flex bison \
+    cyrus-sasl-lib cyrus-sasl-devel openssl openssl-libs openssl-devel libcurl-devel \
+    postgresql-libs postgresql-devel postgresql-server postgresql libyaml-devel \
+    tar gzip
+
+ENV CMAKE_HOME="/opt/cmake"
+
+ARG CMAKE_VERSION="3.31.6"
+ARG CMAKE_URL="https://github.com/Kitware/CMake/releases/download"
+
+RUN mkdir -p "${CMAKE_HOME}" && \
+    cmake_download_url="${CMAKE_URL}/v${CMAKE_VERSION}/cmake-${CMAKE_VERSION}-linux-$(uname -m).tar.gz" && \
+    echo "Downloading CMake ${CMAKE_VERSION}: ${cmake_download_url} -> ${CMAKE_HOME}" && \
+    curl -jksSL "${cmake_download_url}" | tar -xzf - -C "${CMAKE_HOME}" --strip-components 1
+
+ENV PATH="${CMAKE_HOME}/bin:${PATH}"
 
 COPY . /src/
 WORKDIR /src/build
 
-RUN cmake3 -DCMAKE_INSTALL_PREFIX=/opt/fluent-bit/ -DCMAKE_INSTALL_SYSCONFDIR=/etc/ \
-    -DFLB_RELEASE=On -DFLB_TRACE=On \
+RUN cmake -DCMAKE_INSTALL_PREFIX=/opt/fluent-bit/ -DCMAKE_INSTALL_SYSCONFDIR=/etc/ \
+    -DFLB_SIMD=On -DFLB_RELEASE=On -DFLB_TRACE=On \
     -DFLB_TESTS_INTERNAL=On -DFLB_TESTS_RUNTIME=On \
     -DFLB_SQLDB=On -DFLB_HTTP_SERVER=On \
-    -DFLB_OUT_KAFKA=On \
+    -DFLB_KAFKA=off \
     -DFLB_JEMALLOC=On \
     -DFLB_CHUNK_TRACE=On \
-    -DFLB_OUT_PGSQL=On ../
+    -DFLB_OUT_PGSQL=On \
+    -DFLB_UNICODE_ENCODER=Off ../
 
 RUN make -j "$(getconf _NPROCESSORS_ONLN)"

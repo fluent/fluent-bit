@@ -26,6 +26,7 @@
 #include <fluent-bit/flb_sds.h>
 #include <fluent-bit/flb_sds_list.h>
 #include <fluent-bit/flb_record_accessor.h>
+#include <fluent-bit/flb_ra_key.h>
 #include <fluent-bit/record_accessor/flb_ra_parser.h>
 #include <msgpack.h>
 
@@ -742,7 +743,7 @@ void cb_update_key()
     flb_ra_destroy(ra);
     flb_free(out_buf);
 }
-  
+
 void cb_dash_key()
 {
     int len;
@@ -1702,6 +1703,692 @@ void cb_issue_7330_single_char()
     }
 }
 
+void cb_direct_array_access()
+{
+    int len;
+    int ret;
+    int type;
+    size_t off = 0;
+    char *out_buf;
+    size_t out_size;
+    char *json;
+    char *fmt;
+    char *fmt_out;
+    flb_sds_t str;
+    msgpack_unpacked result;
+    msgpack_object map;
+    struct flb_record_accessor *ra;
+
+    /* Sample JSON with direct array */
+    json = "{\"array\": [\"a\", \"b\", \"c\"]}";
+
+    /* Convert to msgpack */
+    len = strlen(json);
+    ret = flb_pack_json(json, len, &out_buf, &out_size, &type, NULL);
+    TEST_CHECK(ret == 0);
+    if (ret == -1) {
+        exit(EXIT_FAILURE);
+    }
+
+    /* Formatter for direct array access */
+    fmt = flb_sds_create("$array[0]");
+    fmt_out = "a";
+
+    ra = flb_ra_create(fmt, FLB_FALSE);
+    TEST_CHECK(ra != NULL);
+    if (!ra) {
+        exit(EXIT_FAILURE);
+    }
+
+    /* Unpack msgpack object */
+    msgpack_unpacked_init(&result);
+    msgpack_unpack_next(&result, out_buf, out_size, &off);
+    map = result.data;
+
+    /* Do translation */
+    str = flb_ra_translate(ra, NULL, -1, map, NULL);
+    TEST_CHECK(str != NULL);
+    if (!str) {
+        exit(EXIT_FAILURE);
+    }
+
+    TEST_CHECK(flb_sds_len(str) == strlen(fmt_out));
+    TEST_CHECK(memcmp(str, fmt_out, strlen(fmt_out)) == 0);
+    printf("== direct array access test ==\n== input ==\n%s\n== output ==\n%s\n", str, fmt_out);
+
+    flb_sds_destroy(str);
+    flb_sds_destroy(fmt);
+    flb_ra_destroy(ra);
+    flb_free(out_buf);
+    msgpack_unpacked_destroy(&result);
+}
+
+void cb_nested_array_access()
+{
+    int len;
+    int ret;
+    int type;
+    size_t off = 0;
+    char *out_buf;
+    size_t out_size;
+    char *json;
+    char *fmt;
+    char *fmt_out;
+    flb_sds_t str;
+    msgpack_unpacked result;
+    msgpack_object map;
+    struct flb_record_accessor *ra;
+
+    /* Sample JSON with nested arrays */
+    json = "{\"matrix\": [[1, 2, 3], [4, 5, 6], [7, 8, 9]]}";
+
+    /* Convert to msgpack */
+    len = strlen(json);
+    ret = flb_pack_json(json, len, &out_buf, &out_size, &type, NULL);
+    TEST_CHECK(ret == 0);
+    if (ret == -1) {
+        exit(EXIT_FAILURE);
+    }
+
+    /* Formatter for nested array access */
+    fmt = flb_sds_create("$matrix[1][2]");  /* Should access the value 6 */
+    fmt_out = "6";
+
+    ra = flb_ra_create(fmt, FLB_FALSE);
+    TEST_CHECK(ra != NULL);
+    if (!ra) {
+        exit(EXIT_FAILURE);
+    }
+
+    /* Unpack msgpack object */
+    msgpack_unpacked_init(&result);
+    msgpack_unpack_next(&result, out_buf, out_size, &off);
+    map = result.data;
+
+    /* Do translation */
+    str = flb_ra_translate(ra, NULL, -1, map, NULL);
+    TEST_CHECK(str != NULL);
+    if (!str) {
+        exit(EXIT_FAILURE);
+    }
+
+    TEST_CHECK(flb_sds_len(str) == strlen(fmt_out));
+    TEST_CHECK(memcmp(str, fmt_out, strlen(fmt_out)) == 0);
+    printf("== nested array access test ==\n== input ==\n%s\n== output ==\n%s\n", str, fmt_out);
+
+    flb_sds_destroy(str);
+    flb_sds_destroy(fmt);
+    flb_ra_destroy(ra);
+    flb_free(out_buf);
+    msgpack_unpacked_destroy(&result);
+}
+
+void cb_mixed_array_map_access()
+{
+    int len;
+    int ret;
+    int type;
+    size_t off = 0;
+    char *out_buf;
+    size_t out_size;
+    char *json;
+    char *fmt;
+    char *fmt_out;
+    flb_sds_t str;
+    msgpack_unpacked result;
+    msgpack_object map;
+    struct flb_record_accessor *ra;
+
+    /* Sample JSON with array containing maps */
+    json = "{\"records\": [{\"name\": \"John\", \"age\": 30}, {\"name\": \"Jane\", \"age\": 25}]}";
+
+    /* Convert to msgpack */
+    len = strlen(json);
+    ret = flb_pack_json(json, len, &out_buf, &out_size, &type, NULL);
+    TEST_CHECK(ret == 0);
+    if (ret == -1) {
+        exit(EXIT_FAILURE);
+    }
+
+    /* Formatter for mixed array+map access */
+    fmt = flb_sds_create("$records[1]['name']");  /* Should access "Jane" */
+    fmt_out = "Jane";
+
+    ra = flb_ra_create(fmt, FLB_FALSE);
+    TEST_CHECK(ra != NULL);
+    if (!ra) {
+        exit(EXIT_FAILURE);
+    }
+
+    /* Unpack msgpack object */
+    msgpack_unpacked_init(&result);
+    msgpack_unpack_next(&result, out_buf, out_size, &off);
+    map = result.data;
+
+    /* Do translation */
+    str = flb_ra_translate(ra, NULL, -1, map, NULL);
+    TEST_CHECK(str != NULL);
+    if (!str) {
+        exit(EXIT_FAILURE);
+    }
+
+    TEST_CHECK(flb_sds_len(str) == strlen(fmt_out));
+    TEST_CHECK(memcmp(str, fmt_out, strlen(fmt_out)) == 0);
+    printf("== mixed array+map access test ==\n== input ==\n%s\n== output ==\n%s\n", str, fmt_out);
+
+    flb_sds_destroy(str);
+    flb_sds_destroy(fmt);
+    flb_ra_destroy(ra);
+    flb_free(out_buf);
+    msgpack_unpacked_destroy(&result);
+}
+
+void cb_direct_array_element_access()
+{
+    int len;
+    int ret;
+    int type;
+    size_t off = 0;
+    char *out_buf;
+    size_t out_size;
+    char *json;
+    char *fmt;
+    char *fmt_out;
+    flb_sds_t str;
+    msgpack_unpacked result;
+    msgpack_object map;
+    struct flb_record_accessor *ra;
+
+    /* Sample JSON with direct array - matches the example in the issue */
+    json = "{\"array\": [\"a\", \"b\", \"c\"]}";
+
+    /* Convert to msgpack */
+    len = strlen(json);
+    ret = flb_pack_json(json, len, &out_buf, &out_size, &type, NULL);
+    TEST_CHECK(ret == 0);
+    if (ret == -1) {
+        exit(EXIT_FAILURE);
+    }
+
+    /* Formatter for accessing the second element in the array */
+    fmt = flb_sds_create("$array[1]");  /* Should access the value "b" */
+    fmt_out = "b";
+
+    ra = flb_ra_create(fmt, FLB_FALSE);
+    TEST_CHECK(ra != NULL);
+    if (!ra) {
+        exit(EXIT_FAILURE);
+    }
+
+    /* Unpack msgpack object */
+    msgpack_unpacked_init(&result);
+    msgpack_unpack_next(&result, out_buf, out_size, &off);
+    map = result.data;
+
+    /* Do translation */
+    str = flb_ra_translate(ra, NULL, -1, map, NULL);
+    TEST_CHECK(str != NULL);
+    if (!str) {
+        exit(EXIT_FAILURE);
+    }
+
+    TEST_CHECK(flb_sds_len(str) == strlen(fmt_out));
+    TEST_CHECK(memcmp(str, fmt_out, strlen(fmt_out)) == 0);
+    printf("== direct array element access test ==\n== input ==\n%s\n== output ==\n%s\n", str, fmt_out);
+
+    flb_sds_destroy(str);
+    flb_sds_destroy(fmt);
+    flb_ra_destroy(ra);
+    flb_free(out_buf);
+    msgpack_unpacked_destroy(&result);
+}
+
+void cb_array_index_overflow()
+{
+    int len;
+    int ret;
+    int type;
+    size_t off = 0;
+    char *out_buf;
+    size_t out_size;
+    char *json;
+    flb_sds_t fmt;
+    flb_sds_t str;
+    msgpack_unpacked result;
+    msgpack_object map;
+    struct flb_record_accessor *ra;
+
+    /* Sample JSON with array */
+    json = "{\"array\": [\"a\", \"b\", \"c\"]}";
+
+    /* Convert to msgpack */
+    len = strlen(json);
+    ret = flb_pack_json(json, len, &out_buf, &out_size, &type, NULL);
+    TEST_CHECK(ret == 0);
+    if (ret == -1) {
+        exit(EXIT_FAILURE);
+    }
+
+    /* Formatter with out-of-bounds index */
+    fmt = flb_sds_create("$array[99]");  /* Access beyond array bounds */
+
+    ra = flb_ra_create(fmt, FLB_FALSE);
+    TEST_CHECK(ra != NULL);
+    if (!ra) {
+        exit(EXIT_FAILURE);
+    }
+
+    /* Unpack msgpack object */
+    msgpack_unpacked_init(&result);
+    msgpack_unpack_next(&result, out_buf, out_size, &off);
+    map = result.data;
+
+    /* Do translation - should return empty string for out-of-bounds */
+    str = flb_ra_translate(ra, NULL, -1, map, NULL);
+
+    if (str) {
+        TEST_CHECK(flb_sds_len(str) == 0);
+        flb_sds_destroy(str);
+    }
+
+    flb_sds_destroy(fmt);
+    flb_ra_destroy(ra);
+    flb_free(out_buf);
+    msgpack_unpacked_destroy(&result);
+}
+
+void cb_nonexistent_key_access()
+{
+    int len;
+    int ret;
+    int type;
+    size_t off = 0;
+    char *out_buf;
+    size_t out_size;
+    char *json;
+    flb_sds_t fmt;
+    flb_sds_t str;
+    msgpack_unpacked result;
+    msgpack_object map;
+    struct flb_record_accessor *ra;
+
+    /* Sample JSON */
+    json = "{\"key1\": \"value1\", \"key2\": {\"nested\": \"value2\"}}";
+
+    /* Convert to msgpack */
+    len = strlen(json);
+    ret = flb_pack_json(json, len, &out_buf, &out_size, &type, NULL);
+    TEST_CHECK(ret == 0);
+    if (ret == -1) {
+        exit(EXIT_FAILURE);
+    }
+
+    /* Formatter for nonexistent key */
+    fmt = flb_sds_create("$nonexistent_key");
+
+    ra = flb_ra_create(fmt, FLB_FALSE);
+    TEST_CHECK(ra != NULL);
+    if (!ra) {
+        exit(EXIT_FAILURE);
+    }
+
+    /* Unpack msgpack object */
+    msgpack_unpacked_init(&result);
+    msgpack_unpack_next(&result, out_buf, out_size, &off);
+    map = result.data;
+
+    /* Do translation - should return empty string for nonexistent key */
+    str = flb_ra_translate(ra, NULL, -1, map, NULL);
+
+    if (str) {
+        TEST_CHECK(flb_sds_len(str) == 0);
+        flb_sds_destroy(str);
+    }
+
+    flb_sds_destroy(fmt);
+    flb_ra_destroy(ra);
+    flb_free(out_buf);
+    msgpack_unpacked_destroy(&result);
+}
+
+void cb_wrong_type_access()
+{
+    int len;
+    int ret;
+    int type;
+    size_t off = 0;
+    char *out_buf;
+    size_t out_size;
+    char *json;
+    flb_sds_t fmt;
+    flb_sds_t str;
+    msgpack_unpacked result;
+    msgpack_object map;
+    struct flb_record_accessor *ra;
+
+    /* Sample JSON with mixed types */
+    json = "{\"string\": \"text\", \"number\": 123, \"bool\": true, \"array\": [1,2,3]}";
+
+    /* Convert to msgpack */
+    len = strlen(json);
+    ret = flb_pack_json(json, len, &out_buf, &out_size, &type, NULL);
+    TEST_CHECK(ret == 0);
+    if (ret == -1) {
+        exit(EXIT_FAILURE);
+    }
+
+    /* Array access on string - returns original string value */
+    fmt = flb_sds_create("$string[0]");
+
+    ra = flb_ra_create(fmt, FLB_FALSE);
+    TEST_CHECK(ra != NULL);
+    if (!ra) {
+        exit(EXIT_FAILURE);
+    }
+
+    msgpack_unpacked_init(&result);
+    msgpack_unpack_next(&result, out_buf, out_size, &off);
+    map = result.data;
+
+    str = flb_ra_translate(ra, NULL, -1, map, NULL);
+
+    if (str) {
+        TEST_CHECK(flb_sds_len(str) > 0);
+        TEST_CHECK(memcmp(str, "text", 4) == 0);
+        flb_sds_destroy(str);
+    }
+
+    flb_sds_destroy(fmt);
+    flb_ra_destroy(ra);
+    msgpack_unpacked_destroy(&result);
+
+    /* Map access on number - returns number as string */
+    fmt = flb_sds_create("$number['key']");
+
+    ra = flb_ra_create(fmt, FLB_FALSE);
+    TEST_CHECK(ra != NULL);
+    if (!ra) {
+        exit(EXIT_FAILURE);
+    }
+
+    off = 0;
+    msgpack_unpacked_init(&result);
+    msgpack_unpack_next(&result, out_buf, out_size, &off);
+    map = result.data;
+
+    str = flb_ra_translate(ra, NULL, -1, map, NULL);
+
+    if (str) {
+        TEST_CHECK(flb_sds_len(str) > 0);
+        TEST_CHECK(memcmp(str, "123", 3) == 0);
+        flb_sds_destroy(str);
+    }
+
+    flb_sds_destroy(fmt);
+    flb_ra_destroy(ra);
+    msgpack_unpacked_destroy(&result);
+
+    flb_free(out_buf);
+}
+
+void cb_nested_failure_recovery()
+{
+    int len;
+    int ret;
+    int type;
+    size_t off = 0;
+    char *out_buf;
+    size_t out_size;
+    char *json;
+    flb_sds_t fmt;
+    char *fmt_out;
+    flb_sds_t str;
+    msgpack_unpacked result;
+    msgpack_object map;
+    struct flb_record_accessor *ra;
+
+    /* Sample JSON with nested structure */
+    json = "{\"level1\": {\"level2\": {\"valid\": \"found\"}}}";
+
+    /* Convert to msgpack */
+    len = strlen(json);
+    ret = flb_pack_json(json, len, &out_buf, &out_size, &type, NULL);
+    TEST_CHECK(ret == 0);
+    if (ret == -1) {
+        exit(EXIT_FAILURE);
+    }
+
+    /* Test invalid intermediate path */
+    fmt = flb_sds_create("$level1['nonexistent']['key']");
+
+    ra = flb_ra_create(fmt, FLB_FALSE);
+    TEST_CHECK(ra != NULL);
+    if (!ra) {
+        exit(EXIT_FAILURE);
+    }
+
+    msgpack_unpacked_init(&result);
+    msgpack_unpack_next(&result, out_buf, out_size, &off);
+    map = result.data;
+
+    str = flb_ra_translate(ra, NULL, -1, map, NULL);
+
+    if (str) {
+        TEST_CHECK(flb_sds_len(str) == 0);
+        flb_sds_destroy(str);
+    }
+
+    flb_sds_destroy(fmt);
+    flb_ra_destroy(ra);
+    msgpack_unpacked_destroy(&result);
+
+    /* Test valid nested path */
+    fmt = flb_sds_create("$level1['level2']['valid']");
+    fmt_out = "found";
+
+    ra = flb_ra_create(fmt, FLB_FALSE);
+    TEST_CHECK(ra != NULL);
+    if (!ra) {
+        exit(EXIT_FAILURE);
+    }
+
+    off = 0;
+    msgpack_unpacked_init(&result);
+    msgpack_unpack_next(&result, out_buf, out_size, &off);
+    map = result.data;
+
+    str = flb_ra_translate(ra, NULL, -1, map, NULL);
+    TEST_CHECK(str != NULL);
+    if (!str) {
+        exit(EXIT_FAILURE);
+    }
+
+    TEST_CHECK(flb_sds_len(str) == strlen(fmt_out));
+    TEST_CHECK(memcmp(str, fmt_out, strlen(fmt_out)) == 0);
+
+    flb_sds_destroy(str);
+    flb_sds_destroy(fmt);
+    flb_ra_destroy(ra);
+    msgpack_unpacked_destroy(&result);
+
+    flb_free(out_buf);
+}
+
+/* --- binary/reference record accessor tests --- */
+
+static const unsigned char BIN_DATA[4] = {0x01, 0x02, 0x03, 0x04};
+
+static void build_ra_map(msgpack_sbuffer *sbuf, const char **bin_ptr)
+{
+    int i;
+    msgpack_packer pck;
+
+    msgpack_sbuffer_init(sbuf);
+    msgpack_packer_init(&pck, sbuf, msgpack_sbuffer_write);
+
+    /* map {"bin": <bin>, "str": "abc"} */
+    msgpack_pack_map(&pck, 2);
+
+    msgpack_pack_str(&pck, 3);
+    msgpack_pack_str_body(&pck, "bin", 3);
+    msgpack_pack_bin(&pck, sizeof(BIN_DATA));
+    msgpack_pack_bin_body(&pck, BIN_DATA, sizeof(BIN_DATA));
+
+    msgpack_pack_str(&pck, 3);
+    msgpack_pack_str_body(&pck, "str", 3);
+    msgpack_pack_str(&pck, 3);
+    msgpack_pack_str_body(&pck, "abc", 3);
+
+    if (bin_ptr) {
+        *bin_ptr = NULL;
+        for (i = 0; i + sizeof(BIN_DATA) <= sbuf->size; i++) {
+            if (memcmp(sbuf->data + i, BIN_DATA, sizeof(BIN_DATA)) == 0) {
+                *bin_ptr = sbuf->data + i;
+                break;
+            }
+        }
+    }
+}
+
+static void destroy_sbuf(msgpack_sbuffer *sbuf)
+{
+    msgpack_sbuffer_destroy(sbuf);
+}
+
+static void cb_ra_binary_copy()
+{
+    msgpack_sbuffer sbuf;
+    const char *dummy;
+    msgpack_unpacked result;
+    msgpack_object map;
+    struct flb_record_accessor *ra;
+    struct flb_ra_value *val;
+    size_t off = 0, len;
+    const char *buf;
+
+    build_ra_map(&sbuf, &dummy);
+
+    msgpack_unpacked_init(&result);
+    TEST_CHECK(msgpack_unpack_next(&result, sbuf.data, sbuf.size, &off) == MSGPACK_UNPACK_SUCCESS);
+    map = result.data;
+
+    ra = flb_ra_create("bin", FLB_TRUE);
+    TEST_CHECK(ra != NULL);
+    val = flb_ra_get_value_object(ra, map);
+    TEST_CHECK(val != NULL && val->type == FLB_RA_BINARY && val->storage == FLB_RA_COPY);
+    buf = flb_ra_value_buffer(val, &len);
+    TEST_CHECK(len == sizeof(BIN_DATA));
+    TEST_CHECK(memcmp(buf, BIN_DATA, sizeof(BIN_DATA)) == 0);
+
+    flb_ra_key_value_destroy(val);
+    flb_ra_destroy(ra);
+    msgpack_unpacked_destroy(&result);
+    destroy_sbuf(&sbuf);
+}
+
+static void cb_ra_binary_ref()
+{
+    msgpack_sbuffer sbuf;
+    const char *bin_in_map;
+    msgpack_unpacked result;
+    msgpack_object map;
+    struct flb_record_accessor *ra;
+    struct flb_ra_value *val;
+    size_t off = 0, len;
+    const char *buf;
+
+    build_ra_map(&sbuf, &bin_in_map);
+
+    msgpack_unpacked_init(&result);
+    TEST_CHECK(msgpack_unpack_next(&result, sbuf.data, sbuf.size, &off) == MSGPACK_UNPACK_SUCCESS);
+    map = result.data;
+
+    ra = flb_ra_create("bin", FLB_TRUE);
+    TEST_CHECK(ra != NULL);
+    val = flb_ra_get_value_object_ref(ra, map);
+    TEST_CHECK(val != NULL && val->type == FLB_RA_BINARY && val->storage == FLB_RA_REF);
+    buf = flb_ra_value_buffer(val, &len);
+    TEST_CHECK(len == sizeof(BIN_DATA));
+    TEST_CHECK(memcmp(buf, BIN_DATA, sizeof(BIN_DATA)) == 0);
+    TEST_CHECK(buf == bin_in_map);
+
+    flb_ra_key_value_destroy(val);
+    flb_ra_destroy(ra);
+    msgpack_unpacked_destroy(&result);
+    destroy_sbuf(&sbuf);
+}
+
+static void cb_ra_string_copy()
+{
+    msgpack_sbuffer sbuf;
+    const char *dummy;
+    msgpack_unpacked result;
+    msgpack_object map;
+    struct flb_record_accessor *ra;
+    struct flb_ra_value *val;
+    size_t off = 0, len;
+    const char *buf;
+
+    build_ra_map(&sbuf, &dummy);
+
+    msgpack_unpacked_init(&result);
+    TEST_CHECK(msgpack_unpack_next(&result, sbuf.data, sbuf.size, &off) == MSGPACK_UNPACK_SUCCESS);
+    map = result.data;
+
+    ra = flb_ra_create("str", FLB_TRUE);
+    TEST_CHECK(ra != NULL);
+    val = flb_ra_get_value_object(ra, map);
+    TEST_CHECK(val != NULL && val->type == FLB_RA_STRING && val->storage == FLB_RA_COPY);
+    buf = flb_ra_value_buffer(val, &len);
+    TEST_CHECK(len == 3 && strncmp(buf, "abc", 3) == 0);
+
+    flb_ra_key_value_destroy(val);
+    flb_ra_destroy(ra);
+    msgpack_unpacked_destroy(&result);
+    destroy_sbuf(&sbuf);
+}
+
+static void cb_ra_string_ref()
+{
+    int i;
+    msgpack_sbuffer sbuf;
+    const char *dummy;
+    msgpack_unpacked result;
+    msgpack_object map;
+    struct flb_record_accessor *ra;
+    struct flb_ra_value *val;
+    size_t off = 0, len;
+    const char *buf;
+    const char *expected;
+
+    build_ra_map(&sbuf, &dummy);
+
+    expected = NULL;
+    for (i = 0; i + 3 <= sbuf.size; i++) {
+        if (memcmp(sbuf.data + i, "abc", 3) == 0) {
+            expected = sbuf.data + i;
+            break;
+        }
+    }
+
+    msgpack_unpacked_init(&result);
+    TEST_CHECK(msgpack_unpack_next(&result, sbuf.data, sbuf.size, &off) == MSGPACK_UNPACK_SUCCESS);
+    map = result.data;
+
+    ra = flb_ra_create("str", FLB_TRUE);
+    TEST_CHECK(ra != NULL);
+    val = flb_ra_get_value_object_ref(ra, map);
+    TEST_CHECK(val != NULL && val->type == FLB_RA_STRING && val->storage == FLB_RA_REF);
+    buf = flb_ra_value_buffer(val, &len);
+    TEST_CHECK(len == 3 && strncmp(buf, "abc", 3) == 0);
+    TEST_CHECK(buf == expected);
+
+    flb_ra_key_value_destroy(val);
+    flb_ra_destroy(ra);
+    msgpack_unpacked_destroy(&result);
+    destroy_sbuf(&sbuf);
+}
+
 TEST_LIST = {
     { "keys"            , cb_keys},
     { "dash_key"        , cb_dash_key},
@@ -1727,5 +2414,17 @@ TEST_LIST = {
     { "issue_5936_last_array"      , cb_issue_5936_last_array},
     { "ra_create_str_from_list", cb_ra_create_str_from_list},
     { "issue_7330_single_character"  , cb_issue_7330_single_char},
+    { "direct_array_access", cb_direct_array_access },
+    { "nested_array_access", cb_nested_array_access },
+    { "mixed_array_map_access", cb_mixed_array_map_access },
+    { "direct_array_element_access", cb_direct_array_element_access },
+    { "array_index_overflow", cb_array_index_overflow },
+    { "nonexistent_key_access", cb_nonexistent_key_access },
+    { "wrong_type_access", cb_wrong_type_access },
+    { "nested_failure_recovery", cb_nested_failure_recovery },
+    { "ra_binary_copy", cb_ra_binary_copy },
+    { "ra_binary_ref", cb_ra_binary_ref },
+    { "ra_string_copy", cb_ra_string_copy },
+    { "ra_string_ref", cb_ra_string_ref },
     { NULL }
 };

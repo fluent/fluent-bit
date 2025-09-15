@@ -58,6 +58,8 @@ int flb_ra_get_kv_pair(struct flb_record_accessor *ra, msgpack_object map,
 
 struct flb_ra_value *flb_ra_get_value_object(struct flb_record_accessor *ra,
                                              msgpack_object map);
+struct flb_ra_value *flb_ra_get_value_object_ref(struct flb_record_accessor *ra,
+                                                 msgpack_object map);
 int flb_ra_append_kv_pair(struct flb_record_accessor *ra, msgpack_object map,
                           void **out_map, size_t *out_size, msgpack_object *in_val);
 int flb_ra_update_kv_pair(struct flb_record_accessor *ra, msgpack_object map,

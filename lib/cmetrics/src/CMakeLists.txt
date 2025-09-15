@@ -37,21 +37,26 @@ set(src
   cmt_decode_msgpack.c
   cmt_decode_statsd.c
   cmt_mpack_utils.c
+
+  # Prometheus related protobuf files
   external/remote.pb-c.c
   external/types.pb-c.c
   )
 
-if (${CMAKE_C_COMPILER_ID} STREQUAL "Clang")
-  set(PLATFORM_SPECIFIC_ATOMIC_MODULE cmt_atomic_clang.c)
-elseif (${CMAKE_C_COMPILER_ID} MATCHES "AppleClang")
-  set(PLATFORM_SPECIFIC_ATOMIC_MODULE cmt_atomic_clang.c)
-elseif (${CMAKE_C_COMPILER_ID} STREQUAL "GNU")
-  set(PLATFORM_SPECIFIC_ATOMIC_MODULE cmt_atomic_gcc.c)
-elseif (${CMAKE_C_COMPILER_ID} STREQUAL "MSVC")
+
+if (MSVC)
   set(PLATFORM_SPECIFIC_ATOMIC_MODULE cmt_atomic_msvc.c)
+elseif("${CMAKE_C_COMPILER_ID}" STREQUAL "Clang")
+  set(PLATFORM_SPECIFIC_ATOMIC_MODULE cmt_atomic_clang.c)
+elseif("${CMAKE_C_COMPILER_ID}" MATCHES "AppleClang")
+  set(PLATFORM_SPECIFIC_ATOMIC_MODULE cmt_atomic_clang.c)
+elseif("${CMAKE_C_COMPILER_ID}" STREQUAL "GNU")
+  set(PLATFORM_SPECIFIC_ATOMIC_MODULE cmt_atomic_gcc.c)
 else()
   set(PLATFORM_SPECIFIC_ATOMIC_MODULE cmt_atomic_generic.c)
 endif()
+
+message(STATUS "Compiler: ${CMAKE_C_COMPILER_ID}, Platform: ${CMAKE_SYSTEM_NAME}")
 
 set(src
   ${src}

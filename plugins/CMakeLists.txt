@@ -74,6 +74,18 @@ endmacro()
 
 # REGISTER_OUT_PLUGIN
 macro(REGISTER_OUT_PLUGIN name)
+  set (extra_args ${ARGN})
+
+  list(LENGTH extra_args extra_count)
+
+  if (${extra_count} GREATER 0)
+      list(GET extra_args 0 environment)
+  else ()
+    set(environment "c")
+  endif ()
+
+  string(TOUPPER ${environment} environment)
+
   string(FIND ${name} "=" pos)
   if(pos GREATER -1)
     string(REPLACE "=" ";" list ${name})
@@ -89,12 +101,22 @@ macro(REGISTER_OUT_PLUGIN name)
     set(FLB_OUT_PLUGINS_DECL "${FLB_OUT_PLUGINS_DECL}extern struct flb_output_plugin ${p_name}_plugin;\n")
 
     # C code
+    if(${environment} MATCHES "ZIG")
+    set(C_CODE          "    out = flb_zig_native_output_plugin_init(&${p_name}_plugin);\n")
+    else()
     set(C_CODE          "    out = flb_malloc(sizeof(struct flb_output_plugin));\n")
+    endif()
+
     set(C_CODE "${C_CODE}    if (!out) {\n")
     set(C_CODE "${C_CODE}        flb_errno();\n")
     set(C_CODE "${C_CODE}        return -1;\n")
     set(C_CODE "${C_CODE}    }\n")
+
+    if(${environment} MATCHES "ZIG")
+    else()
     set(C_CODE "${C_CODE}    memcpy(out, &${p_name}_plugin, sizeof(struct flb_output_plugin));\n")
+    endif()
+
     set(C_CODE "${C_CODE}    mk_list_add(&out->_head, &config->out_plugins);\n\n")
 
     set(FLB_OUT_PLUGINS_ADD "${FLB_OUT_PLUGINS_ADD}${C_CODE}")
@@ -182,9 +204,39 @@ endmacro()
 macro(FLB_PLUGIN name src deps)
   add_library(flb-plugin-${name} STATIC ${src})
   add_sanitizers(flb-plugin-${name})
-  target_link_libraries(flb-plugin-${name} fluent-bit-static msgpack-c-static ${deps})
+  target_link_libraries(flb-plugin-${name} fluent-bit-static ${MSGPACK_LIBRARIES} ${deps})
 endmacro()
 
+# FLB_ZIG_PLUGIN: used by zig plugins to standardize the process
+macro(FLB_ZIG_PLUGIN name deps)
+  find_program(ZIG_PATH zig REQUIRED)
+
+  get_property(include_dirs DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR} PROPERTY INCLUDE_DIRECTORIES)
+
+  add_custom_command(
+    OUTPUT ${CMAKE_CURRENT_BINARY_DIR}/flb-plugin-${name}.o
+    COMMAND ${CMAKE_COMMAND} -E env "FLB_ZIG_BUILD_INCLUDE_DIRECTORIES=${include_dirs}" ${ZIG_PATH} build --prefix "${CMAKE_CURRENT_BINARY_DIR}"
+    WORKING_DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR}
+    DEPENDS ${CMAKE_CURRENT_SOURCE_DIR}/build.zig
+    VERBATIM
+  )
+
+  add_custom_target(zig-build-done
+    DEPENDS ${CMAKE_CURRENT_BINARY_DIR}/flb-plugin-${name}.o
+  )
+
+  if(NOT EXISTS "${CMAKE_CURRENT_BINARY_DIR}/dummy.c")
+    file(WRITE "${CMAKE_CURRENT_BINARY_DIR}/dummy.c" "")
+  endif()
+
+  set(src
+    ${CMAKE_CURRENT_BINARY_DIR}/dummy.c
+    ${CMAKE_CURRENT_BINARY_DIR}/flb-plugin-${name}.o)
+
+  FLB_PLUGIN(${name} "${src}" "${deps}")
+
+  add_dependencies(flb-plugin-${name} zig-build-done)
+endmacro()
 
 # ======================
 #  Plugins Registration
@@ -210,6 +262,7 @@ if(${CMAKE_SYSTEM_NAME} MATCHES "Linux")
   REGISTER_IN_PLUGIN("in_podman_metrics")
   REGISTER_IN_PLUGIN("in_process_exporter_metrics")
   REGISTER_IN_PLUGIN("in_ebpf")
+  REGISTER_IN_PLUGIN("in_gpu_metrics")
 endif()
 
 if(${CMAKE_SYSTEM_NAME} MATCHES "Linux" OR ${CMAKE_SYSTEM_NAME} MATCHES "Darwin")
@@ -217,9 +270,14 @@ if(${CMAKE_SYSTEM_NAME} MATCHES "Linux" OR ${CMAKE_SYSTEM_NAME} MATCHES "Darwin"
 endif()
 
 REGISTER_IN_PLUGIN("in_kubernetes_events")
-REGISTER_IN_PLUGIN("in_kafka")
+
+if(FLB_KAFKA)
+  REGISTER_IN_PLUGIN("in_kafka")
+endif()
+
 REGISTER_IN_PLUGIN("in_fluentbit_metrics")
 REGISTER_IN_PLUGIN("in_prometheus_scrape")
+REGISTER_IN_PLUGIN("in_prometheus_textfile")
 REGISTER_IN_PLUGIN("in_emitter")
 REGISTER_IN_PLUGIN("in_tail")
 REGISTER_IN_PLUGIN("in_dummy")
@@ -288,8 +346,9 @@ REGISTER_IN_PLUGIN("in_random")
 REGISTER_PROCESSOR_PLUGIN("processor_content_modifier")
 REGISTER_PROCESSOR_PLUGIN("processor_labels")
 REGISTER_PROCESSOR_PLUGIN("processor_metrics_selector")
-REGISTER_PROCESSOR_PLUGIN("processor_sql")
 REGISTER_PROCESSOR_PLUGIN("processor_opentelemetry_envelope")
+REGISTER_PROCESSOR_PLUGIN("processor_sampling")
+REGISTER_PROCESSOR_PLUGIN("processor_sql")
 
 # OUTPUTS
 # =======
@@ -309,7 +368,11 @@ REGISTER_OUT_PLUGIN("out_http")
 REGISTER_OUT_PLUGIN("out_influxdb")
 REGISTER_OUT_PLUGIN("out_logdna")
 REGISTER_OUT_PLUGIN("out_loki")
-REGISTER_OUT_PLUGIN("out_kafka")
+
+if(FLB_KAFKA)
+  REGISTER_OUT_PLUGIN("out_kafka")
+endif()
+
 REGISTER_OUT_PLUGIN("out_kafka_rest")
 REGISTER_OUT_PLUGIN("out_nats")
 REGISTER_OUT_PLUGIN("out_nrlogs")
@@ -345,6 +408,10 @@ REGISTER_OUT_PLUGIN("out_prometheus_remote_write")
 REGISTER_OUT_PLUGIN("out_s3")
 REGISTER_OUT_PLUGIN("out_vivo_exporter")
 REGISTER_OUT_PLUGIN("out_chronicle")
+
+if(FLB_ZIG)
+REGISTER_OUT_PLUGIN("out_zig_demo" "zig")
+endif()
 
 # FILTERS
 # =======

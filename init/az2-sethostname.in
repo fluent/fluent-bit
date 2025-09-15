@@ -1,0 +1,21 @@
+[Unit]
+Description=Set Hostname Workaround coreos/bugs#1272 with EC2 IMDSv2 support
+Wants=network-online.target
+After=network-online.target
+
+[Service]
+Type=oneshot
+RemainAfterExit=yes
+
+ExecStartPre=/bin/sh -c 'curl -sX PUT "http://169.254.169.254/latest/api/token" \
+  -H "X-aws-ec2-metadata-token-ttl-seconds: 21600" > /run/imds_token'
+
+ExecStartPre=/bin/sh -c 'curl -s "http://169.254.169.254/latest/meta-data/hostname" \
+  -H "X-aws-ec2-metadata-token: $(cat /run/imds_token)" > /run/ec2_hostname'
+
+ExecStart=/bin/sh -c '/usr/bin/hostnamectl set-hostname "$(cat /run/ec2_hostname)"'
+
+ExecStartPost=/bin/sh -c 'rm -f /run/imds_token /run/ec2_hostname'
+
+[Install]
+WantedBy=multi-user.target

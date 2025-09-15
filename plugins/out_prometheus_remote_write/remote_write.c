@@ -446,7 +446,7 @@ static struct flb_config_map config_map[] = {
     {
      FLB_CONFIG_MAP_BOOL, "log_response_payload", "true",
      0, FLB_TRUE, offsetof(struct prometheus_remote_write_context, log_response_payload),
-     "Specify if the response paylod should be logged or not"
+     "Specify if the response payload should be logged or not"
     },
     /* EOF */
     {0}

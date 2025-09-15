@@ -120,6 +120,8 @@ struct flb_filter_instance {
     struct flb_config *config;
 };
 
+struct mk_list *flb_filter_get_global_config_map(struct flb_config *config);
+
 static inline int flb_filter_config_map_set(struct flb_filter_instance *ins,
                                             void *context)
 {

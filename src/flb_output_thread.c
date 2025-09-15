@@ -71,7 +71,7 @@ static inline int handle_output_event(struct flb_config *config,
 
     bytes = flb_pipe_r(fd, &val, sizeof(val));
     if (bytes == -1) {
-        flb_errno();
+        flb_pipe_error();
         return -1;
     }
 
@@ -97,7 +97,7 @@ static inline int handle_output_event(struct flb_config *config,
      */
     ret = flb_pipe_w(ch_parent, &val, sizeof(val));
     if (ret == -1) {
-        flb_errno();
+        flb_pipe_error();
         return -1;
     }
 
@@ -289,7 +289,7 @@ static void output_thread(void *data)
                 /* Read the task reference */
                 n = flb_pipe_r(event->fd, &task, sizeof(struct flb_task *));
                 if (n <= 0) {
-                    flb_errno();
+                    flb_pipe_error();
                     continue;
                 }
                 /*
@@ -450,7 +450,7 @@ int flb_output_thread_pool_flush(struct flb_task *task,
     n = flb_pipe_w(th_ins->ch_parent_events[1], &task, sizeof(struct flb_task*));
 
     if (n == -1) {
-        flb_errno();
+        flb_pipe_error();
         return -1;
     }
 
@@ -631,7 +631,7 @@ void flb_output_thread_pool_destroy(struct flb_output_instance *ins)
         th_ins = th->params.data;
         n = flb_pipe_w(th_ins->ch_parent_events[1], &stop, sizeof(stop));
         if (n < 0) {
-            flb_errno();
+            flb_pipe_error();
             flb_plg_error(th_ins->ins, "could not signal worker thread");
             flb_free(th_ins);
             continue;

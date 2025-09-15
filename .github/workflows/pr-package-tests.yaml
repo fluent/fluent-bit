@@ -34,6 +34,26 @@ jobs:
       - name: Debug event output
         uses: hmarr/debug-action@v3
 
+  pr-container-builds:
+    name: PR - container builds
+    needs:
+      - pr-package-test-build-get-meta
+      - pr-package-test-build-generate-matrix
+    uses: ./.github/workflows/call-build-images.yaml
+    with:
+      version: pr-${{ github.event.number }}
+      ref: ${{ github.ref }}
+      registry: ghcr.io
+      username: ${{ github.actor }}
+      image: ${{ github.repository }}/pr
+      unstable: ${{ needs.pr-package-test-build-get-meta.outputs.date }}
+      # We do not push as forks cannot get a token with the right permissions
+      push: false
+    secrets:
+      token: ${{ secrets.GITHUB_TOKEN }}
+      cosign_private_key: ${{ secrets.COSIGN_PRIVATE_KEY }}
+      cosign_private_key_password: ${{ secrets.COSIGN_PASSWORD }}
+
   pr-package-test-build-generate-matrix:
     name: PR - packages build matrix
     needs:
@@ -45,7 +65,7 @@ jobs:
       contents: read
     steps:
       - name: Checkout repository, always latest for action
-        uses: actions/checkout@v4
+        uses: actions/checkout@v5
 
       # Set up the list of target to build so we can pass the JSON to the reusable job
       - uses: ./.github/actions/generate-package-build-matrix

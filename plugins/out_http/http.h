@@ -85,12 +85,20 @@ struct flb_out_http {
 
     /* Compression mode (gzip) */
     int compress_gzip;
+    int compress_snappy;
+    int compress_zstd;
 
     /* Allow duplicated headers */
     int allow_dup_headers;
 
     /* Log the response paylod */
     int log_response_payload;
+
+    /* Response timeout */
+    int response_timeout;
+
+    /* Read idle timeout */
+    int read_idle_timeout;
 
     /* Upstream connection to the backend server */
     struct flb_upstream *u;

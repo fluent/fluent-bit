@@ -190,8 +190,8 @@ The container images are available here (the tag refers to the branch):
 
 * [ghcr.io/fluent/fluent-bit/unstable:2.1](ghcr.io/fluent/fluent-bit/unstable:2.1)
 * [ghcr.io/fluent/fluent-bit/unstable:master](ghcr.io/fluent/fluent-bit/unstable:master)
-* [ghcr.io/fluent/fluent-bit/unstable:windows-2019-2.1](ghcr.io/fluent/fluent-bit/unstable:windows-2019-2.1)
-* [ghcr.io/fluent/fluent-bit/unstable:windows-2019-master](ghcr.io/fluent/fluent-bit/unstable:windows-2019-master)
+* [ghcr.io/fluent/fluent-bit/unstable:windows-2022-2.1](ghcr.io/fluent/fluent-bit/unstable:windows-2022-2.1)
+* [ghcr.io/fluent/fluent-bit/unstable:windows-2022-master](ghcr.io/fluent/fluent-bit/unstable:windows-2022-master)
 
 The Linux, macOS and Windows packages are available to download from the specific workflow run.
 

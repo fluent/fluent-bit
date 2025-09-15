@@ -196,9 +196,9 @@ int ne_utils_file_read_lines(const char *mount, const char *path, struct mk_list
 /*
  * Read a file and store the first line as a string.
  */
-int ne_utils_file_read_sds(const char *mount, 
-                           const char *path, 
-                           const char *join_a, 
+int ne_utils_file_read_sds(const char *mount,
+                           const char *path,
+                           const char *join_a,
                            const char *join_b,
                            flb_sds_t *str)
 {
@@ -302,7 +302,7 @@ int ne_utils_path_scan(struct flb_ne *ctx, const char *mount, const char *path,
             flb_plg_error(ctx->ins, "no memory space available");
             return -1;
         case GLOB_ABORTED:
-            flb_plg_error(ctx->ins, "read error, check permissions: %s", path);
+            flb_plg_error(ctx->ins, "read error, check permissions: %s", real_path);
             return -1;;
         case GLOB_NOMATCH:
             ret = stat(path, &st);

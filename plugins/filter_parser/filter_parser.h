@@ -24,6 +24,8 @@
 #include <fluent-bit/flb_filter.h>
 #include <fluent-bit/flb_parser.h>
 #include <fluent-bit/flb_sds.h>
+#include <fluent-bit/flb_record_accessor.h>
+#include <fluent-bit/flb_ra_key.h>
 
 struct filter_parser {
     struct flb_parser *parser;
@@ -33,6 +35,7 @@ struct filter_parser {
 struct filter_parser_ctx {
     flb_sds_t key_name;
     int    key_name_len;
+    struct flb_record_accessor *ra_key;
     int    reserve_data;
     int    preserve_key;
     struct mk_list parsers;

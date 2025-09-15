@@ -30,13 +30,17 @@
 /* JSON Helper version: current '1' */
 #define FLB_HELP_SCHEMA_VERSION "1"
 
-#define FLB_HELP_PLUGIN_CUSTOM   0
-#define FLB_HELP_PLUGIN_INPUT    1
-#define FLB_HELP_PLUGIN_OUTPUT   2
-#define FLB_HELP_PLUGIN_FILTER   3
+enum help_plugin_type {
+    FLB_HELP_PLUGIN_CUSTOM = 0,
+    FLB_HELP_PLUGIN_INPUT,
+    FLB_HELP_PLUGIN_PROCESSOR,
+    FLB_HELP_PLUGIN_FILTER,
+    FLB_HELP_PLUGIN_OUTPUT,
+};
 
 int flb_help_custom(struct flb_custom_instance *ins, void **out_buf, size_t *out_size);
 int flb_help_input(struct flb_input_instance *ins, void **out_buf, size_t *out_size);
+int flb_help_processor(struct flb_processor_instance *ins, void **out_buf, size_t *out_size);
 int flb_help_filter(struct flb_filter_instance *ins, void **out_buf, size_t *out_size);
 int flb_help_output(struct flb_output_instance *ins, void **out_buf, size_t *out_size);
 

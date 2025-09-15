@@ -1371,6 +1371,8 @@ static inline int apply_modifying_rules(
 
     if (!msgpack_unpacker_init(&unpacker, initial_buffer_size)) {
         flb_plg_error(ctx->ins, "Unable to allocate memory for unpacker, aborting");
+        msgpack_unpacked_destroy(&unpacked);
+        msgpack_sbuffer_destroy(&sbuffer);
         return -1;
     }
 
@@ -1388,8 +1390,10 @@ static inline int apply_modifying_rules(
             if (msgpack_unpacker_buffer_capacity(&unpacker) < new_buffer_size) {
                 if (!msgpack_unpacker_reserve_buffer
                     (&unpacker, new_buffer_size)) {
-                    flb_plg_error(ctx->ins, "Unable to re-allocate memory for "
-                                  "unpacker, aborting");
+                    flb_plg_error(ctx->ins, "Unable to re-allocate memory for unpacker, aborting");
+                    msgpack_unpacked_destroy(&unpacked);
+                    msgpack_unpacker_destroy(&unpacker);
+                    msgpack_sbuffer_destroy(&sbuffer);
                     return -1;
                 }
             }
@@ -1503,7 +1507,7 @@ static int cb_modify_filter(const void *data, size_t bytes,
     if (ret != FLB_EVENT_DECODER_SUCCESS) {
         flb_plg_error(ctx->ins,
                       "Log event decoder initialization error : %d", ret);
-
+        flb_log_event_decoder_destroy(&log_decoder);
         return FLB_FILTER_NOTOUCH;
     }
 
@@ -1515,6 +1519,7 @@ static int cb_modify_filter(const void *data, size_t bytes,
                       "Log event encoder initialization error : %d", ret);
 
         flb_log_event_decoder_destroy(&log_decoder);
+        flb_log_event_encoder_destroy(&log_encoder);
 
         return FLB_FILTER_NOTOUCH;
     }
@@ -1525,7 +1530,12 @@ static int cb_modify_filter(const void *data, size_t bytes,
         modifications =
             apply_modifying_rules(&log_encoder, &log_event, ctx);
 
-        if (modifications == 0) {
+        if (modifications < 0) {
+            flb_plg_error(ctx->ins, "Error applying modify rules");
+            ret = FLB_FILTER_NOTOUCH;
+            break;
+        }
+        else if (modifications == 0) {
             /* not matched, so copy original event. */
             ret = flb_log_event_encoder_emit_raw_record(
                              &log_encoder,

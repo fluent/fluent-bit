@@ -8,7 +8,7 @@ jobs:
     runs-on: ubuntu-latest
     name: PR - Hadolint
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
         # Ignores do not work: https://github.com/reviewdog/action-hadolint/issues/35 is resolved
       - uses: reviewdog/action-hadolint@v1
         with:
@@ -19,7 +19,7 @@ jobs:
     runs-on: ubuntu-latest
     name: PR - Shellcheck
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
       - uses: ludeeus/action-shellcheck@master
         with:
           ignore_paths: cmake/sanitizers-cmake lib plugins tests
@@ -28,7 +28,7 @@ jobs:
     runs-on: ubuntu-latest
     name: PR - Actionlint
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
       - run: |
           echo "::add-matcher::.github/actionlint-matcher.json"
           bash <(curl https://raw.githubusercontent.com/rhysd/actionlint/main/scripts/download-actionlint.bash)

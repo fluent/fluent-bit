@@ -376,11 +376,54 @@ void test_multiple()
     flb_config_exit(config);
 }
 
+/* Test that special properties like 'condition' are properly handled */
+void test_special_properties()
+{
+    int ret;
+    struct context ctx;
+    struct mk_list *map;
+    struct mk_list prop;
+    struct flb_config *config;
+
+    config = flb_config_init();
+    if (!config) {
+        exit(1);
+    }
+
+    memset(&ctx, '\0', sizeof(struct context));
+
+    /* Create properties with 'condition' and 'active' special properties */
+    flb_kv_init(&prop);
+    flb_kv_item_create(&prop, "condition", "{\"op\": \"and\", \"rules\": [{\"field\": \"$level\", \"op\": \"eq\", \"value\": \"error\"}]}");
+    flb_kv_item_create(&prop, "active", "true");
+    
+    /* Add a regular property too */
+    flb_kv_item_create(&prop, "boolean", "true");
+
+    map = flb_config_map_create(config, config_map);
+    TEST_CHECK(map != NULL);
+
+    /* This should succeed despite 'condition' not being in the config_map */
+    ret = flb_config_map_properties_check("test", &prop, map);
+    TEST_CHECK(ret == 0);
+
+    /* Test that normal properties are still set correctly */
+    ret = flb_config_map_set(&prop, map, &ctx);
+    TEST_CHECK(ret == 0);
+    TEST_CHECK(ctx.boolean == 1);
+
+    flb_config_map_destroy(map);
+    flb_kv_release(&prop);
+
+    flb_config_exit(config);
+}
+
 TEST_LIST = {
-    { "helper"           , test_helper},
-    { "create"           , test_create},
-    { "override_defaults", test_override_defaults},
-    { "no_multiple"      , test_no_multiple},
-    { "multiple"         , test_multiple},
+    { "helper"            , test_helper},
+    { "create"            , test_create},
+    { "override_defaults" , test_override_defaults},
+    { "no_multiple"       , test_no_multiple},
+    { "multiple"          , test_multiple},
+    { "special_properties", test_special_properties},
     { 0 }
 };

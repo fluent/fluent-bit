@@ -72,6 +72,11 @@ void flb_log_event_decoder_reset(struct flb_log_event_decoder *context,
     context->buffer = input_buffer;
     context->length = input_length;
     context->last_result = FLB_EVENT_DECODER_ERROR_INSUFFICIENT_DATA;
+    context->current_group_metadata = NULL;
+    context->current_group_attributes = NULL;
+
+    msgpack_unpacked_destroy(&context->unpacked_group_record);
+    msgpack_unpacked_init(&context->unpacked_group_record);
 
     msgpack_unpacked_destroy(&context->unpacked_event);
     msgpack_unpacked_init(&context->unpacked_event);
@@ -103,7 +108,7 @@ int flb_log_event_decoder_init(struct flb_log_event_decoder *context,
 
     context->dynamically_allocated = FLB_FALSE;
     context->initialized = FLB_TRUE;
-    context->read_groups = FLB_TRUE;
+    context->read_groups = FLB_FALSE;
 
     flb_log_event_decoder_reset(context, input_buffer, input_length);
 
@@ -119,6 +124,10 @@ struct flb_log_event_decoder *flb_log_event_decoder_create(
 
     context = (struct flb_log_event_decoder *) \
         flb_calloc(1, sizeof(struct flb_log_event_decoder));
+    if (!context) {
+        flb_errno();
+        return NULL;
+    }
 
     result = flb_log_event_decoder_init(context,
                                         input_buffer,
@@ -141,6 +150,12 @@ void flb_log_event_decoder_destroy(struct flb_log_event_decoder *context)
 
     if (context != NULL) {
         if (context->initialized) {
+            if (context->unpacked_group_record.zone ==
+                context->unpacked_event.zone) {
+                msgpack_unpacked_init(&context->unpacked_event);
+            }
+
+            msgpack_unpacked_destroy(&context->unpacked_group_record);
             msgpack_unpacked_destroy(&context->unpacked_empty_map);
             msgpack_unpacked_destroy(&context->unpacked_event);
         }
@@ -180,12 +195,12 @@ int flb_log_event_decoder_decode_timestamp(msgpack_object *input,
             return FLB_EVENT_DECODER_ERROR_WRONG_TIMESTAMP_TYPE;
         }
 
-        output->tm.tv_sec  = 
+        output->tm.tv_sec  =
             (int32_t) FLB_UINT32_TO_HOST_BYTE_ORDER(
                         FLB_ALIGNED_DWORD_READ(
                             (unsigned char *) &input->via.ext.ptr[0]));
 
-        output->tm.tv_nsec  = 
+        output->tm.tv_nsec  =
             (int32_t) FLB_UINT32_TO_HOST_BYTE_ORDER(
                         FLB_ALIGNED_DWORD_READ(
                             (unsigned char *) &input->via.ext.ptr[4]));
@@ -316,6 +331,11 @@ int flb_log_event_decoder_next(struct flb_log_event_decoder *context,
         return context->last_result;
     }
 
+    if (context->unpacked_group_record.zone ==
+        context->unpacked_event.zone) {
+        msgpack_unpacked_init(&context->unpacked_event);
+    }
+
     previous_offset = context->offset;
     result = msgpack_unpack_next(&context->unpacked_event,
                                  context->buffer,
@@ -340,16 +360,45 @@ int flb_log_event_decoder_next(struct flb_log_event_decoder *context,
         /* get log event type */
         ret = flb_log_event_decoder_get_record_type(event, &record_type);
         if (ret != 0) {
+            context->current_group_metadata = NULL;
+            context->current_group_attributes = NULL;
+
             context->last_result = FLB_EVENT_DECODER_ERROR_DESERIALIZATION_FAILURE;
             return context->last_result;
         }
 
-        /*
-         * if we hava a group type record and the caller don't want groups, just
-         * skip this record and move to the next one.
+        /* Meta records such as the group opener and closer are identified by negative
+         * timestamp values. In these cases we track the current group metadata and
+         * attributes in order to transparently provide them through the log_event
+         * structure but we also want to allow the client code raw access to such
+         * records which is why the read_groups decoder context property is used
+         * to determine the behavior.
          */
-        if (record_type != FLB_LOG_EVENT_NORMAL && !context->read_groups) {
-            return flb_log_event_decoder_next(context, event);
+        if (record_type != FLB_LOG_EVENT_NORMAL) {
+            msgpack_unpacked_destroy(&context->unpacked_group_record);
+
+            if (record_type == FLB_LOG_EVENT_GROUP_START) {
+                memcpy(&context->unpacked_group_record,
+                       &context->unpacked_event,
+                       sizeof(msgpack_unpacked));
+
+                context->current_group_metadata = event->metadata;
+                context->current_group_attributes = event->body;
+            }
+            else {
+                context->current_group_metadata = NULL;
+                context->current_group_attributes = NULL;
+            }
+
+            if (context->read_groups != FLB_TRUE) {
+                memset(event, 0, sizeof(struct flb_log_event));
+
+                return flb_log_event_decoder_next(context, event);
+            }
+        }
+        else {
+            event->group_metadata = context->current_group_metadata;
+            event->group_attributes = context->current_group_attributes;
         }
     }
 

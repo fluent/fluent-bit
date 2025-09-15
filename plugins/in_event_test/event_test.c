@@ -26,6 +26,7 @@
 #include <fluent-bit/flb_pack.h>
 #include <fluent-bit/flb_upstream.h>
 #include <fluent-bit/flb_time_utils.h>
+#include <fluent-bit/flb_network.h>
 
 #define STATUS_OK        1
 #define STATUS_ERROR     0
@@ -287,7 +288,9 @@ static int cb_event_test_init(struct flb_input_instance *ins,
     ut->coll_id = ret;
 
     /* unit test 2: collector_socket */
-    fd = flb_net_server(SERVER_PORT, SERVER_IFACE, FLB_FALSE);
+    fd = flb_net_server(SERVER_PORT, SERVER_IFACE,
+                        FLB_NETWORK_DEFAULT_BACKLOG_SIZE,
+                        FLB_FALSE);
     if (fd < 0) {
         flb_errno();
         config_destroy(ctx);

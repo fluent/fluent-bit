@@ -411,6 +411,18 @@ static void flb_test_core_base_with_namespace_labels_and_annotations()
     flb_test_namespace_labels_and_annotations("core_base-with-namespace-labels-and-annotations_fluent-bit", NULL, 1);
 }
 
+#define flb_test_owner_references(target, suffix, nExpected) \
+    kube_test("core/" target, KUBE_TAIL, suffix, nExpected, \
+              "Labels", "Off", \
+              "Annotations", "Off", \
+              "Owner_References", "On", \
+              NULL); \
+
+static void flb_test_core_base_with_owner_references()
+{
+    flb_test_owner_references("core_base-with-owner-references_fluent-bit", NULL, 1);
+}
+
 #define flb_test_options_use_kubelet_enabled(target, suffix, nExpected) \
     kube_test("options/" target, KUBE_TAIL, suffix, nExpected, \
               "use_kubelet", "true", \
@@ -1005,6 +1017,7 @@ TEST_LIST = {
     {"kube_core_unescaping_text", flb_test_core_unescaping_text},
     {"kube_core_unescaping_json", flb_test_core_unescaping_json},
     {"kube_core_base_with_namespace_labels_and_annotations", flb_test_core_base_with_namespace_labels_and_annotations},
+    {"kube_core_base_with_owner_references", flb_test_core_base_with_owner_references},
     {"kube_options_use-kubelet_enabled_json", flb_test_options_use_kubelet_enabled_json},
     {"kube_options_use-kubelet_disabled_json", flb_test_options_use_kubelet_disabled_json},
     {"kube_options_merge_log_enabled_text", flb_test_options_merge_log_enabled_text},

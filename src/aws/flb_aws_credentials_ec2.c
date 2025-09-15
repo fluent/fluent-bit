@@ -49,7 +49,7 @@ struct flb_aws_provider_ec2 {
 
     /* upstream connection to IMDS */
     struct flb_aws_client *client;
-    
+
     /* IMDS interface */
     struct flb_aws_imds *imds_interface;
 };
@@ -171,13 +171,24 @@ void async_fn_ec2(struct flb_aws_provider *provider) {
 
 void upstream_set_fn_ec2(struct flb_aws_provider *provider,
                          struct flb_output_instance *ins) {
+
     struct flb_aws_provider_ec2 *implementation = provider->implementation;
 
     flb_debug("[aws_credentials] upstream_set called on the EC2 provider");
+
     /* Make sure TLS is set to false before setting upstream, then reset it */
     ins->use_tls = FLB_FALSE;
     flb_output_upstream_set(implementation->client->upstream, ins);
     ins->use_tls = FLB_TRUE;
+
+    /*
+     * flb_output_upstream_set() overwrites u->base.net with the instance
+     * network configuration, since EC2 IMDS upstreams require a finite timeout, we need
+     * to restore the values configured during provider creation.
+     */
+    implementation->client->upstream->base.net.connect_timeout = FLB_AWS_IMDS_TIMEOUT;
+    implementation->client->upstream->base.net.io_timeout = FLB_AWS_IMDS_TIMEOUT;
+    implementation->client->upstream->base.net.keepalive = FLB_FALSE;
 }
 
 void destroy_fn_ec2(struct flb_aws_provider *provider) {

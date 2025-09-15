@@ -518,7 +518,7 @@ static int pack_map_content(struct flb_log_event_encoder *log_encoder,
         ret = flb_log_event_encoder_append_body_cstring(
                 log_encoder,
                 "kubernetes_namespace");
-        
+
         off = 0;
         msgpack_unpacked_init(&result);
         msgpack_unpack_next(&result, namespace_kube_buf, 
@@ -907,6 +907,13 @@ static struct flb_config_map config_map[] = {
      FLB_CONFIG_MAP_BOOL, "annotations", "true",
      0, FLB_TRUE, offsetof(struct flb_kube, annotations),
      "include Kubernetes annotations on every record"
+    },
+
+    /* Include Kubernetes OwnerReferences in the final record ? */
+    {
+     FLB_CONFIG_MAP_BOOL, "owner_references", "false",
+     0, FLB_TRUE, offsetof(struct flb_kube, owner_references),
+     "include Kubernetes owner references on every record"
     },
 
     /* Include Kubernetes Namespace Labels in the final record ? */

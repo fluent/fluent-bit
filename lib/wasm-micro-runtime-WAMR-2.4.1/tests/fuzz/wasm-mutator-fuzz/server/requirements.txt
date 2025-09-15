@@ -1,0 +1,11 @@
+Flask==1.1.4
+Flask_SQLAlchemy==2.5.1
+flask-migrate==2.7.0
+flask-script==2.0.6
+flask-cors==3.0.10
+flask-caching==2.0.0
+werkzeug==1.0.1
+markupsafe==2.0.1
+flask-apscheduler==1.12.4
+psutil==5.9.2
+SQLAlchemy==1.4.39

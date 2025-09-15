@@ -7,12 +7,14 @@ set(src
   ne_stat.c
   ne_vmstat.c
   ne_netdev.c
+  ne_sockstat.c
   ne_time.c
   ne_loadavg.c
   ne_filefd.c
   ne_textfile.c
   ne_processes.c
   ne_nvme.c
+  ne_hwmon.c
   ne_utils.c
   ne_config.c
   ne_systemd.c

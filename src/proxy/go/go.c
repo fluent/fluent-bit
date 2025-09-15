@@ -21,6 +21,7 @@
 #include <fluent-bit/flb_config.h>
 #include <fluent-bit/flb_plugin_proxy.h>
 #include <fluent-bit/flb_output.h>
+#include <fluent-bit/flb_custom.h>
 #include "./go.h"
 
 /*
@@ -41,7 +42,7 @@
  *
  *      - name: shortname of the plugin.
  *      - description: plugin description.
- *      - type: input, output, filter, whatever.
+ *      - type: input, output, filter, custom, whatever.
  *      - proxy: type of proxy e.g. GOLANG
  *      - flags: optional flags, not used by Go plugins at the moment.
  *
@@ -224,7 +225,6 @@ int proxy_go_input_init(struct flb_plugin_proxy *proxy)
     if (ret <= 0) {
         flb_error("[go proxy]: plugin '%s' failed to initialize",
                   plugin->name);
-        flb_free(plugin);
         return -1;
     }
 
@@ -286,3 +286,87 @@ void proxy_go_input_unregister(void *data) {
     flb_free(plugin->name);
     flb_free(plugin);
 }
+
+int proxy_go_custom_register(struct flb_plugin_proxy *proxy,
+                            struct flb_plugin_proxy_def *def)
+{
+    struct flbgo_custom_plugin *plugin;
+
+    plugin = flb_malloc(sizeof(struct flbgo_custom_plugin));
+    if (!plugin) {
+        flb_errno();
+        return -1;
+    }
+
+    /*
+     * Lookup the entry point function:
+     *
+     * - FLBPluginInit
+     * - FLBPluginExit
+     *
+     * note: registration callback FLBPluginRegister() is resolved by the
+     * parent proxy interface.
+     */
+
+    plugin->cb_init  = flb_plugin_proxy_symbol(proxy, "FLBPluginInit");
+    if (!plugin->cb_init) {
+        flb_error("[go proxy]: could not load FLBPluginInit symbol");
+        flb_free(plugin);
+        return -1;
+    }
+
+    plugin->cb_exit  = flb_plugin_proxy_symbol(proxy, "FLBPluginExit");
+
+    plugin->name = flb_strdup(def->name);
+
+    /* This Go plugin context is an opaque data for the parent proxy */
+    proxy->data = plugin;
+
+    return 0;
+}
+
+int proxy_go_custom_init(struct flb_plugin_proxy *proxy)
+{
+    int ret = 0;
+    struct flbgo_custom_plugin *plugin = proxy->data;
+
+    /* set the API */
+    plugin->api   = proxy->api;
+    plugin->i_ins = proxy->instance;
+    /* In order to avoid having the whole instance as part of the ABI we */
+    /* copy the context pointer into the plugin. */
+    plugin->context = ((struct flb_custom_instance *)proxy->instance)->context;
+
+    ret = plugin->cb_init(plugin);
+    if (ret <= 0) {
+        flb_error("[go proxy]: plugin '%s' failed to initialize",
+                  plugin->name);
+        flb_free(plugin);
+        return -1;
+    }
+
+    return ret;
+}
+
+int proxy_go_custom_destroy(struct flb_plugin_proxy_context *ctx)
+{
+    int ret = 0;
+    struct flbgo_custom_plugin *plugin;
+
+    plugin = (struct flbgo_custom_plugin *) ctx->proxy->data;
+
+    if (plugin->cb_exit) {
+        ret = plugin->cb_exit();
+    }
+
+    return ret;
+}
+
+void proxy_go_custom_unregister(void *data) {
+    struct flbgo_custom_plugin *plugin;
+
+    plugin = (struct flbgo_custom_plugin *) data;
+    flb_free(plugin->name);
+    flb_free(plugin);
+}
+

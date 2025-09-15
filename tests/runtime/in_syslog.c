@@ -540,7 +540,9 @@ void flb_test_syslog_unknown_mode()
         exit(EXIT_FAILURE);
     }
 
-    test_ctx_destroy(ctx);
+    /* free ctx directly to avoid calling flb_stop */
+    flb_destroy(ctx->flb);
+    flb_free(ctx);
 }
 
 void flb_test_syslog_unix_perm()

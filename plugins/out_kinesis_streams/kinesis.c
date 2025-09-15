@@ -127,18 +127,17 @@ static int cb_kinesis_init(struct flb_output_instance *ins,
      * @param ctx The Kinesis output plugin context.
      */
     flb_plg_debug(ins, "Retrieved port from ins->host.port: %d", ins->host.port);
-    
-    if (ins->host.port >= FLB_KINESIS_MIN_PORT && ins->host.port <= FLB_KINESIS_MAX_PORT) {
-        ctx->port = ins->host.port;
-        flb_plg_debug(ins, "Setting port to: %d", ctx->port);
-    }
-    else if (ins->host.port == 0) {
+
+    if (ins->host.port == 0) {
         ctx->port = FLB_KINESIS_DEFAULT_HTTPS_PORT;
         flb_plg_debug(ins, "Port not set. Using default HTTPS port: %d", ctx->port);
     }
+    else if (ins->host.port == (ctx->port = (uint16_t)ins->host.port)) {
+        flb_plg_debug(ins, "Setting port to: %d", ctx->port);
+    }
     else {
-        flb_plg_error(ins, "Invalid port number: %d. Must be between %d and %d", 
-                      ins->host.port, FLB_KINESIS_MIN_PORT, FLB_KINESIS_MAX_PORT);
+        flb_plg_error(ins, "Invalid port number: %d. Must be between %d and %d",
+                      ins->host.port, 1, UINT16_MAX);
         goto error;
     }
 

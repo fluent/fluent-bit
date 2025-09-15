@@ -28,6 +28,8 @@
 #include <fluent-bit/flb_worker.h>
 #include <fluent-bit/flb_config.h>
 #include <fluent-bit/flb_sds.h>
+#include <cmetrics/cmetrics.h>
+#include <cmetrics/cmt_counter.h>
 #include <inttypes.h>
 #include <errno.h>
 #include <stdarg.h>
@@ -54,6 +56,11 @@ extern FLB_TLS_DEFINE(struct flb_log, flb_log_ctx)
 #define FLB_LOG_EVENT    MK_EVENT_NOTIFICATION
 #define FLB_LOG_MNG      1024
 
+
+#define FLB_LOG_MNG_TERMINATION_SIGNAL 1
+#define FLB_LOG_MNG_REFRESH_SIGNAL     2
+
+
 #define FLB_LOG_CACHE_ENTRIES        10
 #define FLB_LOG_CACHE_TEXT_BUF_SIZE  1024
 
@@ -67,6 +74,7 @@ struct flb_log {
     pthread_t tid;             /* thread ID   */
     struct flb_worker *worker; /* non-real worker reference */
     struct mk_event_loop *evl;
+    struct flb_log_metrics *metrics;
 
     /* Initialization variables */
     int pth_init;
@@ -85,6 +93,14 @@ struct flb_log_cache {
     int size;                       /* cache size       */
     int timeout;                    /* cache timeout    */
     struct mk_list entries;         /* list for entries */
+};
+
+/* Global metrics for logging calls. */
+struct flb_log_metrics {
+    struct cmt *cmt;
+
+    /* cmetrics */
+    struct cmt_counter *logs_total_counter; /* total number of logs (by message type) */
 };
 
 /*
@@ -227,11 +243,20 @@ static inline int flb_log_suppress_check(int log_suppress_interval, const char *
 int flb_log_worker_init(struct flb_worker *worker);
 int flb_log_worker_destroy(struct flb_worker *worker);
 int flb_errno_print(int errnum, const char *file, int line);
+#ifdef WIN32
+int flb_wsa_get_last_error_print(int errnum, const char *file, int line);
+#endif
 
 #ifdef __FLB_FILENAME__
 #define flb_errno() flb_errno_print(errno, __FLB_FILENAME__, __LINE__)
+#ifdef WIN32
+#define flb_wsa_get_last_error() flb_wsa_get_last_error_print(WSAGetLastError(), __FLB_FILENAME__, __LINE__)
+#endif
 #else
 #define flb_errno() flb_errno_print(errno, __FILE__, __LINE__)
+#ifdef WIN32
+#define flb_wsa_get_last_error() flb_wsa_get_last_error_print(WSAGetLastError(), __FILE__, __LINE__)
+#endif
 #endif
 
 #endif

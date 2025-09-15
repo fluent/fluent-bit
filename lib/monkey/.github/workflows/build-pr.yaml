@@ -1,0 +1,69 @@
+name: Build PR(s)
+on:
+  push:
+    branches:
+      - master
+  pull_request:
+    branches:
+      - master
+    types: [opened, edited, synchronize]
+jobs:
+  build-windows:
+    name: Build sources on ${{ matrix.config.arch }} for ${{ matrix.config.os }}
+    runs-on: ${{ matrix.config.os }}
+    strategy:
+      max-parallel: 48
+      fail-fast: false
+      matrix:
+        config:
+          - name: "Windows 64bit"
+            arch: x64
+            cmake_additional_opt: ""
+            os: windows-latest
+          - name: "Windows 64bit (ARM)"
+            arch: amd64_arm64
+            cmake_additional_opt: "-G \"NMake Makefiles\" -DCMAKE_SYSTEM_NAME=Windows -DCMAKE_SYSTEM_VERSION=10.0 -DCMAKE_SYSTEM_PROCESSOR=ARM64"
+            os: windows-latest
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v3
+        with:
+          ref: ${{ inputs.ref }}
+
+      - name: Set up with Developer Command Prompt for Microsoft Visual C++
+        uses: ilammy/msvc-dev-cmd@v1
+        with:
+          arch: ${{ matrix.config.arch }}
+
+      - name: Build on ${{ matrix.os }} with vs-2019
+        run: |
+          mkdir build
+          cd build
+          cmake -DMK_DEBUG=On -DMK_WITHOUT_BIN=On -DMK_WITHOUT_CONF=On -DMK_LIB_ONLY=On ${{ matrix.config.cmake_additional_opt }} ..\
+          cmake --build . --config Release
+
+  build-unix:
+    name: Build sources on amd64 for ${{ matrix.os }} - ${{ matrix.compiler }}
+    runs-on: ${{ matrix.os }}
+    strategy:
+      max-parallel: 48
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, macos-latest]
+        compiler: [ gcc, clang ]
+        exclude:
+          - os: windows-latest
+            compiler: gcc
+          - os: windows-latest
+            compiler: clang
+    steps:
+      - uses: actions/checkout@v2
+      - name: Build on ${{ matrix.os }} with ${{ matrix.compiler }}
+        run: |
+          mkdir build
+          cd build
+          echo "CC = $CC, CXX = $CXX"
+          cmake -DMK_DEBUG=On -DMK_WITHOUT_BIN=On -DMK_WITHOUT_CONF=On -DMK_LIB_ONLY=On ../
+          cmake --build .
+        env:
+          CC: ${{ matrix.compiler }}

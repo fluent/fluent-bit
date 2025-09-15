@@ -273,7 +273,7 @@ static inline void otlp_kvpair_destroy(Opentelemetry__Proto__Common__V1__KeyValu
 {
     if (kvpair != NULL) {
         if (kvpair->key != NULL) {
-            cfl_sds_destroy(kvpair->key);
+            free(kvpair->key);
         }
 
         if (kvpair->value != NULL) {
@@ -323,7 +323,7 @@ static inline void otlp_any_value_destroy(Opentelemetry__Proto__Common__V1__AnyV
     if (value != NULL) {
         if (value->value_case == OPENTELEMETRY__PROTO__COMMON__V1__ANY_VALUE__VALUE_STRING_VALUE) {
             if (value->string_value != NULL) {
-                cfl_sds_destroy(value->string_value);
+                free(value->string_value);
             }
         }
         else if (value->value_case == OPENTELEMETRY__PROTO__COMMON__V1__ANY_VALUE__VALUE_ARRAY_VALUE) {
@@ -494,19 +494,21 @@ static inline Opentelemetry__Proto__Common__V1__KeyValue *cfl_variant_kvpair_to_
     pair = otlp_kvpair_value_initialize();
 
     if (pair != NULL) {
-        pair->key = cfl_sds_create(input_pair->key);
+        pair->key = strdup(input_pair->key);
 
         if (pair->key != NULL) {
             pair->value = cfl_variant_to_otlp_any_value(input_pair->val);
 
             if (pair->value == NULL) {
-                cfl_sds_destroy(pair->key);
+                free(pair->key);
+
                 pair->key = NULL;
             }
         }
 
         if (pair->key == NULL) {
             free(pair);
+
             pair = NULL;
         }
     }
@@ -647,9 +649,11 @@ static inline Opentelemetry__Proto__Common__V1__AnyValue *cfl_variant_string_to_
     result = otlp_any_value_initialize(CFL_VARIANT_STRING, 0);
 
     if (result != NULL) {
-        result->string_value = cfl_sds_create(value->data.as_string);
+        result->string_value = strdup(value->data.as_string);
+
         if (result->string_value == NULL) {
             otlp_any_value_destroy(result);
+
             result = NULL;
         }
     }
@@ -1057,49 +1061,50 @@ static Opentelemetry__Proto__Common__V1__InstrumentationScope *
         return NULL;
     }
 
-    /* cmetrics: retrieve attributes and metadata fields */
     attributes = fetch_metadata_kvlist_key(scope_root, "attributes");
     metadata = fetch_metadata_kvlist_key(scope_root, "metadata");
 
-    /* create scope */
+    if (cfl_kvlist_count(attributes) == 0 &&
+        cfl_kvlist_count(metadata) == 0) {
+        return NULL;
+    }
+
     scope = calloc(1, sizeof(Opentelemetry__Proto__Common__V1__InstrumentationScope));
     if (scope == NULL) {
         *error_detection_flag = CMT_TRUE;
+
         return NULL;
     }
+
     opentelemetry__proto__common__v1__instrumentation_scope__init(scope);
 
-    /* attributes */
-    if (attributes && cfl_kvlist_count(attributes) > 0) {
-        scope->attributes = cfl_kvlist_to_otlp_kvpair_list(attributes);
+    scope->attributes = cfl_kvlist_to_otlp_kvpair_list(attributes);
 
-        if (scope->attributes == NULL) {
-            *error_detection_flag = CMT_TRUE;
-        }
-
-        scope->n_attributes = cfl_kvlist_count(attributes);
+    if (scope->attributes == NULL) {
+        *error_detection_flag = CMT_TRUE;
     }
 
-    /* scope metadata */
-    if (metadata) {
-        if (!(*error_detection_flag)) {
-            scope->dropped_attributes_count = (uint32_t) fetch_metadata_int64_key(
-                                                                metadata,
-                                                                "dropped_attributes_count",
-                                                                error_detection_flag);
-        }
+    scope->n_attributes = cfl_kvlist_count(attributes);
 
-        if (!(*error_detection_flag)) {
-            scope->name = fetch_metadata_string_key(metadata, "name", error_detection_flag);
-        }
-
-        if (!(*error_detection_flag)) {
-            scope->version = fetch_metadata_string_key(metadata, "version", error_detection_flag);
-        }
+    if (!(*error_detection_flag)) {
+        scope->dropped_attributes_count = (uint32_t) fetch_metadata_int64_key(
+                                                            metadata,
+                                                            "dropped_attributes_count",
+                                                            error_detection_flag);
     }
 
-    if (*error_detection_flag && scope != NULL) {
+    if (!(*error_detection_flag)) {
+        scope->name = fetch_metadata_string_key(metadata, "name", error_detection_flag);
+    }
+
+    if (!(*error_detection_flag)) {
+        scope->version = fetch_metadata_string_key(metadata, "version", error_detection_flag);
+    }
+
+    if (*error_detection_flag &&
+        scope != NULL) {
         destroy_instrumentation_scope(scope);
+
         scope = NULL;
     }
 
@@ -1200,11 +1205,13 @@ static void destroy_attribute(Opentelemetry__Proto__Common__V1__KeyValue *attrib
 {
     if (attribute != NULL) {
         if (attribute->value != NULL) {
-            if (attribute->value->value_case == OPENTELEMETRY__PROTO__COMMON__V1__ANY_VALUE__VALUE_STRING_VALUE) {
+            if (attribute->value->value_case == \
+                OPENTELEMETRY__PROTO__COMMON__V1__ANY_VALUE__VALUE_STRING_VALUE) {
                 if (is_string_releaseable(attribute->value->string_value)) {
                     cfl_sds_destroy(attribute->value->string_value);
                 }
             }
+
             free(attribute->value);
         }
 
@@ -1588,7 +1595,31 @@ static Opentelemetry__Proto__Metrics__V1__HistogramDataPoint *
     data_point->count = count;
     data_point->n_bucket_counts = bucket_count;
 
+
+    /*
+     * In the OpenTelemetry Metrics protobuf definition, the `sum` field in HistogramDataPoint is
+     * marked as `optional`:
+     *
+     *   https://github.com/open-telemetry/opentelemetry-proto/blob/main/opentelemetry/proto/metrics/v1/metrics.proto#L456
+     *
+     * While `optional` is supported in proto3, the `protobuf-c` project does not handle proto3
+     * optional scalar fields using `has_*` booleans like the main protobuf implementations.
+     *
+     * Instead, `protobuf-c` represents optional fields internally using a synthetic `oneof`.
+     * This means that in the generated C code, the optional `sum` field is placed inside a union,
+     * and its presence is tracked using a corresponding `_sum_case` enum field.
+     *
+     * To correctly serialize the `sum` field, both the `sum` value and its `_sum_case` must be set:
+     *
+     *     data_point->sum = some_value;
+     *     data_point->_sum_case = OPENTELEMETRY__PROTO__METRICS__V1__HISTOGRAM_DATA_POINT___SUM_SUM;
+     *
+     * Failing to set `_sum_case` will result in the `sum` field being silently omitted from the
+     * serialized output.
+     */
     data_point->sum = sum;
+    data_point->_sum_case = OPENTELEMETRY__PROTO__METRICS__V1__HISTOGRAM_DATA_POINT___SUM_SUM;
+
 
     if (bucket_count > 0) {
         data_point->bucket_counts = calloc(bucket_count, sizeof(uint64_t));
@@ -1611,7 +1642,7 @@ static Opentelemetry__Proto__Metrics__V1__HistogramDataPoint *
     data_point->n_explicit_bounds = boundary_count;
 
     if (boundary_count > 0) {
-        data_point->explicit_bounds = calloc(boundary_count, sizeof(uint64_t));
+        data_point->explicit_bounds = calloc(boundary_count, sizeof(double));
 
         if (data_point->explicit_bounds == NULL) {
             cmt_errno();

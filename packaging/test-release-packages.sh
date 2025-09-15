@@ -37,14 +37,15 @@ function check_version() {
     fi
 }
 
-APT_TARGETS=("ubuntu:18.04"
-    "ubuntu:20.04"
-    "ubuntu:22.04"
+APT_TARGETS=("ubuntu:22.04"
     "debian:10"
     "debian:11")
 
 YUM_TARGETS=("centos:7"
+    "almalinux:8"
+    "almalinux:9"
     "rockylinux:8"
+    "rockylinux:9"
     "quay.io/centos/centos:stream9"
     "amazonlinux:2"
     "amazonlinux:2023")

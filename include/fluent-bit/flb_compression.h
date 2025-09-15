@@ -26,6 +26,7 @@
 
 #define FLB_COMPRESSION_ALGORITHM_NONE                    0
 #define FLB_COMPRESSION_ALGORITHM_GZIP                    1
+#define FLB_COMPRESSION_ALGORITHM_ZSTD                    2
 
 #define FLB_DECOMPRESSOR_STATE_FAILED                    -1
 #define FLB_DECOMPRESSOR_STATE_EXPECTING_HEADER           0

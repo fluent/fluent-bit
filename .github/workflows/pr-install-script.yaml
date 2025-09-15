@@ -19,7 +19,7 @@ jobs:
     timeout-minutes: 30
     steps:
       - name: Checkout Fluent Bit code
-        uses: actions/checkout@v4
+        uses: actions/checkout@v5
 
       - name: Run install tests
         run: |

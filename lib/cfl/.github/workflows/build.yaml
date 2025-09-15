@@ -17,7 +17,7 @@ jobs:
       matrix:
         os: [windows-latest, windows-2019]
     steps:
-      - uses: actions/checkout@v3
+      - uses: actions/checkout@v4
       - name: Build on ${{ matrix.os }} with vs-2019
         run: |
           .\scripts\win_build.bat
@@ -33,9 +33,9 @@ jobs:
       matrix:
         os: [windows-latest, windows-2019]
     steps:
-      - uses: actions/checkout@v3
+      - uses: actions/checkout@v4
       - name: Get dependencies w/ chocolatey
-        uses: crazy-max/ghaction-chocolatey@v2
+        uses: crazy-max/ghaction-chocolatey@v3
         with:
           args: install -y cmake --installargs 'ADD_CMAKE_TO_PATH=System'
       - uses: msys2/setup-msys2@v2
@@ -67,17 +67,37 @@ jobs:
           sed -i -e "s/^mirrorlist=http:\/\/mirrorlist.centos.org/#mirrorlist=http:\/\/mirrorlist.centos.org/g" /etc/yum.repos.d/CentOS-Base.repo
           sed -i -e "s/^#baseurl=http:\/\/mirror.centos.org/baseurl=http:\/\/vault.centos.org/g" /etc/yum.repos.d/CentOS-Base.repo
           yum -y update
-          yum install -y ca-certificates cmake gcc gcc-c++ make wget
+          yum install -y ca-certificates gcc gcc-c++ git make wget
           yum install -y epel-release
-          yum install -y cmake3
         shell: bash
 
-      - uses: actions/checkout@v3
+      - name: Install CMake 3.20.0
+        run: |
+          CMAKE_VERSION=3.20.0
+          wget https://github.com/Kitware/CMake/releases/download/v${CMAKE_VERSION}/cmake-${CMAKE_VERSION}-linux-x86_64.sh
+          chmod +x cmake-${CMAKE_VERSION}-linux-x86_64.sh
+          ./cmake-${CMAKE_VERSION}-linux-x86_64.sh --skip-license --prefix=/usr/local
+          ln -sf /usr/local/bin/cmake /usr/bin/cmake
+          cmake --version
+
+      - name: Clone repo without submodules (1.8.3 version of Git)
+        run: |
+          git clone https://github.com/fluent/cfl.git
+        shell: bash
+
+      - name: Check out the branch (1.8.3 version of Git)
+        env:
+          BRANCH_NAME: ${{ github.head_ref }}
+        run: |
+          git checkout "$BRANCH_NAME"
+        shell: bash
+        working-directory: cfl
 
       - name: Run compilation
         run: |
-          cmake3 -DCFL_DEV=on .
+          cmake -DCFL_DEV=on .
           make
+        working-directory: cfl
 
   build-debian:
     name: Debian Buster build to confirm no issues once used downstream
@@ -87,14 +107,26 @@ jobs:
       - name: Set up base image dependencies
         run: |
           apt-get update
-          apt-get install -y build-essential cmake make
-        shell: bash
+          apt-get install -y build-essential wget make gcc g++
 
-      - uses: actions/checkout@v3
+      - name: Install CMake 3.20.0
+        run: |
+          CMAKE_VERSION=3.20.0
+          wget https://github.com/Kitware/CMake/releases/download/v${CMAKE_VERSION}/cmake-${CMAKE_VERSION}-linux-x86_64.sh
+          chmod +x cmake-${CMAKE_VERSION}-linux-x86_64.sh
+          ./cmake-${CMAKE_VERSION}-linux-x86_64.sh --skip-license --prefix=/usr/local
+
+          # Ensure the new CMake is found first
+          export PATH="/usr/local/bin:$PATH"
+
+          # Confirm CMake installation
+          /usr/local/bin/cmake --version
+
+      - uses: actions/checkout@v4
 
       - name: Run compilation
         run: |
-          cmake -DCFL_DEV=on .
+          /usr/local/bin/cmake -DCFL_DEV=on .
           make
 
   build-unix-arm64:
@@ -106,19 +138,19 @@ jobs:
         os: [ubuntu-latest]
         compiler: [ gcc, clang ]
     steps:
-      - uses: actions/checkout@v3
+      - uses: actions/checkout@v4
       - name: Build on ${{ matrix.os }} with ${{ matrix.compiler }}
-        uses: uraimo/run-on-arch-action@v2.5.0
+        uses: uraimo/run-on-arch-action@v3.0.1
         with:
           arch: aarch64
-          distro: ubuntu20.04
+          distro: ubuntu_latest
           run: |
             apt-get update && \
             apt-get install -y --no-install-recommends \
             build-essential \
             cmake \
             file \
-            make 
+            make
             export CC=${{ env.compiler }}
             cmake -DCFL_TESTS=On .
             make all
@@ -135,7 +167,7 @@ jobs:
         os: [ubuntu-latest, macos-latest]
         compiler: [ gcc, clang ]
     steps:
-      - uses: actions/checkout@v3
+      - uses: actions/checkout@v4
       - name: Build on ${{ matrix.os }} with ${{ matrix.compiler }}
         run: |
           echo "CC = $CC, CXX = $CXX"
@@ -161,13 +193,60 @@ jobs:
       contents: read
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v3
+      - uses: actions/checkout@v4
         with:
           submodules: true
+          dependencies_debian: 'wget'
 
-      - uses: docker://lpenz/ghaction-cmake:0.19
+      - name: Install CMake 3.20.0
+        run: |
+          CMAKE_VERSION=3.20.0
+          wget https://github.com/Kitware/CMake/releases/download/v${CMAKE_VERSION}/cmake-${CMAKE_VERSION}-linux-x86_64.sh
+          chmod +x cmake-${CMAKE_VERSION}-linux-x86_64.sh
+
+          # Create a writable temporary directory
+          mkdir -p /tmp/cmake
+
+          # Install CMake to /tmp/cmake
+          ./cmake-${CMAKE_VERSION}-linux-x86_64.sh --skip-license --prefix=/tmp/cmake
+
+          # Add CMake to the PATH
+          echo 'export PATH=/tmp/cmake/bin:$PATH' >> ~/.bashrc
+          source ~/.bashrc
+
+          # Verify installation
+          /tmp/cmake/bin/cmake --version
+
+      - uses: actions/checkout@v4
         with:
           preset: ${{ matrix.preset }}
-          # dependencies_debian: ''
+
           cmakeflags: '-DCFL_TESTS=On -DCFL_DEV=on .'
-          build_command: make all
+          build_command: /tmp/cmake/bin/cmake && make all
+
+  # this job provides the single required status for PRs to be merged into main.
+  # instead of updating the protected branch status in github, developers can update the needs section below
+  # to require additional status checks to protect main.
+  # the job uses the alls-green action to get around the github issue that treats a "skipped" required status check
+  # as passed. github will skip a job if an upstream needed job fails, which would defeat the purpose of this required
+  # status check.
+  test-required-checks-complete:
+    # note: this step always has to run in order to check if the dependent jobs passed. by default github skips running a job
+    # if the needed jobs upstream failed.
+    if: always()
+    needs:
+      - build-windows
+      - build-msys2
+      - build-centos
+      - build-debian
+      - build-unix-arm64
+      - build-unix-amd64
+      - build-analysis-tests
+    name: Required checks complete
+    runs-on: ubuntu-latest
+    permissions: {}
+    steps:
+    - name: Decide whether the needed jobs succeeded or failed
+      uses: re-actors/alls-green@release/v1
+      with:
+        jobs: ${{ toJSON(needs) }}

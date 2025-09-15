@@ -65,6 +65,7 @@ static struct prom_scrape *prom_scrape_create(struct flb_input_instance *ins,
 
     if (!upstream) {
         flb_plg_error(ins, "upstream initialization error");
+        flb_free(ctx);
         return NULL;
     }
     ctx->upstream = upstream;

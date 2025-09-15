@@ -40,7 +40,7 @@
 /* Status code */
 #define CTRACE_SPAN_STATUS_CODE_UNSET  0
 #define CTRACE_SPAN_STATUS_CODE_OK     1
-#define CTRACE_SPAN_STAUTS_CODE_ERROR  2
+#define CTRACE_SPAN_STATUS_CODE_ERROR  2
 
 struct ctrace_span_status {
     int code;
@@ -68,6 +68,7 @@ struct ctrace_span {
     struct ctrace_id *span_id;        /* the unique span ID    */
     struct ctrace_id *parent_span_id; /* any parent ? a NULL means a root span */
     cfl_sds_t trace_state;            /* trace state */
+    int32_t flags;                    /* flags */
 
     cfl_sds_t name;                   /* user-name assigned */
 
@@ -83,6 +84,8 @@ struct ctrace_span {
 
     struct cfl_list links;            /* links */
     uint32_t dropped_links_count;     /* number of links that were discarded */
+
+    cfl_sds_t schema_url;             /* schema URL */
 
     struct ctrace_span_status status; /* status code */
 
@@ -105,8 +108,13 @@ struct ctrace_span *ctr_span_create(struct ctrace *ctx, struct ctrace_scope_span
 
 void ctr_span_destroy(struct ctrace_span *span);
 
+/* Span fields */
 int ctr_span_set_status(struct ctrace_span *span, int code, char *message);
 void ctr_span_set_dropped_events_count(struct ctrace_span *span, uint32_t count);
+void ctr_span_set_dropped_links_count(struct ctrace_span *span, uint32_t count);
+int ctr_span_set_trace_state(struct ctrace_span *span, char *state, int len);
+int ctr_span_set_flags(struct ctrace_span *span, uint32_t flags);
+void ctr_span_set_schema_url(struct ctrace_span *span, char *url);
 
 /* span IDs */
 int ctr_span_set_trace_id(struct ctrace_span *span, void *buf, size_t len);
@@ -117,6 +125,7 @@ int ctr_span_set_parent_span_id(struct ctrace_span *span, void *buf, size_t len)
 int ctr_span_set_parent_span_id_with_cid(struct ctrace_span *span, struct ctrace_id *cid);
 
 /* attributes */
+int ctr_span_set_attributes(struct ctrace_span *span, struct ctrace_attributes *attr);
 int ctr_span_set_attribute_string(struct ctrace_span *span, char *key, char *value);
 int ctr_span_set_attribute_bool(struct ctrace_span *span, char *key, int b);
 int ctr_span_set_attribute_int64(struct ctrace_span *span, char *key, int64_t value);
@@ -142,6 +151,7 @@ char *ctr_span_kind_string(struct ctrace_span *span);
 /* events */
 struct ctrace_span_event *ctr_span_event_add(struct ctrace_span *span, char *name);
 struct ctrace_span_event *ctr_span_event_add_ts(struct ctrace_span *span, char *name, uint64_t ts);
+int ctr_span_event_set_attributes(struct ctrace_span_event *event, struct ctrace_attributes *attr);
 void ctr_span_event_set_dropped_attributes_count(struct ctrace_span_event *event, uint32_t count);
 void ctr_span_event_delete(struct ctrace_span_event *event);
 

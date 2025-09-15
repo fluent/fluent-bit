@@ -19,7 +19,6 @@
 
 #include <cmetrics/cmt_decode_msgpack.h>
 #include <cmetrics/cmt_decode_opentelemetry.h>
-#include <cmetrics/cmt_decode_prometheus.h>
 
 
 int
@@ -36,7 +35,7 @@ LLVMFuzzerTestOneInput(const uint8_t * data, size_t size)
         return 0;
     }
 
-    decider = data[0] % 3;
+    decider = data[0] % 2;
 
     /* Adjust data pointer since the first byte is used */
     data += 1;
@@ -50,21 +49,12 @@ LLVMFuzzerTestOneInput(const uint8_t * data, size_t size)
             cmt_decode_opentelemetry_destroy (&decoded_contexts);
         }
     }
-    else if (decider == 1) {
+    else {
         result = cmt_decode_msgpack_create(&cmt, (char *) data, size, &off);
         if (result == 0) {
             cmt_destroy(cmt);
         }
     }
-    else if (decider == 2) {
-        if (size == 0) {
-            return 0;
-        }
-        struct cmt_decode_prometheus_parse_opts opts;
-        result = cmt_decode_prometheus_create(&cmt, data, size, &opts);
-        if (result == CMT_DECODE_PROMETHEUS_SUCCESS) {
-            cmt_decode_prometheus_destroy(cmt);
-        }
-    }
+
     return 0;
 }

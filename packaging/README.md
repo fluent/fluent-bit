@@ -27,6 +27,8 @@ The [`distros`](./distros/) directory contains OCI container definitions used to
 | Debian        |   11                      | arm64v8 | debian/bullseye.arm64v8  |
 | Debian        |   10                      | x86_64  | debian/buster            |
 | Debian        |   10                      | arm64v8 | debian/buster.arm64v8    |
+| Ubuntu        |   24.04 / Noble Numbat    | x86_64  | ubuntu/24.04             |
+| Ubuntu        |   24.04 / Noble Numbat    | arm64v8 | ubuntu/24.04.arm64v8     |
 | Ubuntu        |   22.04 / Jammy Jellyfish | x86_64  | ubuntu/22.04             |
 | Ubuntu        |   22.04 / Jammy Jellyfish | arm64v8 | ubuntu/22.04.arm64v8     |
 | Ubuntu        |   20.04 / Focal Fossa     | x86_64  | ubuntu/20.04             |
@@ -34,6 +36,7 @@ The [`distros`](./distros/) directory contains OCI container definitions used to
 | Ubuntu        |   18.04 / Bionic Beaver   | x86_64  | ubuntu/18.04             |
 | Ubuntu        |   18.04 / Bionic Beaver   | arm64v8 | ubuntu/18.04.arm64v8     |
 | Ubuntu        |   16.04 / Xenial Xerus    | x86_64  | ubuntu/16.04             |
+| Raspbian      |   12 / Bookworm           | arm32v7 | raspbian/bookworm        |
 | Raspbian      |   11 / Bullseye           | arm32v7 | raspbian/bullseye        |
 | Raspbian      |   10 / Buster             | arm32v7 | raspbian/buster          |
 

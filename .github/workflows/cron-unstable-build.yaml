@@ -13,7 +13,8 @@ on:
   # Run nightly build at this time, bit of trial and error but this seems good.
   schedule:
     - cron: "0 6 * * *" # master build
-    - cron: "0 12 * * *" # 3.0 build
+    - cron: "0 12 * * *" # 3.2 build
+    - cron: "0 18 * * *" # master build
 
 # We do not want a new unstable build to run whilst we are releasing the current unstable build.
 concurrency: unstable-build-release
@@ -54,7 +55,19 @@ jobs:
       - name: 3.0 run
         if: github.event_name == 'schedule' && github.event.schedule=='0 12 * * *'
         run: |
-          echo "cron_branch=3.0" >> $GITHUB_ENV
+          echo "cron_branch=3.2" >> $GITHUB_ENV
+        shell: bash
+
+      - name: master run
+        if: github.event_name == 'schedule' && github.event.schedule=='0 18 * * *'
+        run: |
+          echo "cron_branch=master" >> $GITHUB_ENV
+        shell: bash
+
+      - name: 4.0 run
+        if: github.event_name == 'schedule' && github.event.schedule=='0 24 * * *'
+        run: |
+          echo "cron_branch=4.0" >> $GITHUB_ENV
         shell: bash
 
       - name: Output the branch to use
@@ -94,7 +107,7 @@ jobs:
       contents: read
     steps:
       - name: Checkout repository, always latest for action
-        uses: actions/checkout@v4
+        uses: actions/checkout@v5
 
       # Set up the list of target to build so we can pass the JSON to the reusable job
       - uses: ./.github/actions/generate-package-build-matrix
@@ -156,11 +169,11 @@ jobs:
     steps:
       # Required to make a release later
       - name: Checkout repository
-        uses: actions/checkout@v4
+        uses: actions/checkout@v5
 
       - name: Download all artefacts
         continue-on-error: true
-        uses: actions/download-artifact@v4
+        uses: actions/download-artifact@v5
         with:
           path: artifacts/
 

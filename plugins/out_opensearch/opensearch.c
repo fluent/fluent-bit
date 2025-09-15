@@ -687,6 +687,11 @@ static int cb_opensearch_init(struct flb_output_instance *ins,
         return -1;
     }
 
+    if (ctx->index == NULL && ctx->logstash_format == FLB_FALSE && ctx->generate_id == FLB_FALSE) {
+        flb_plg_error(ins, "cannot initialize plugin, index is not set and logstash_format and generate_id are both off");
+        return -1;
+    }
+
     flb_plg_debug(ctx->ins, "host=%s port=%i uri=%s index=%s type=%s",
                   ins->host.name, ins->host.port, ctx->uri,
                   ctx->index, ctx->type);

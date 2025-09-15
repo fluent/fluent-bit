@@ -502,7 +502,7 @@ static int read_config(struct flb_cf *cf, struct local_ctx *ctx,
      * workaround to retrieve the lines.
      */
     size_t off = 0;
-    while (static_fgets(buf, FLB_CF_BUF_SIZE, in_data, &off)) {
+    while (static_fgets(buf, FLB_DEFAULT_CF_BUF_SIZE, in_data, &off)) {
 #else
     /* normal mode, read lines into a buffer */
     /* note that we use "fgets_ptr" so we can continue reading after realloc */
@@ -518,10 +518,15 @@ static int read_config(struct flb_cf *cf, struct local_ctx *ctx,
             /* after a successful line read, restore "fgets_ptr" to point to the
              * beginning of buffer */
             fgets_ptr = buf;
-        } else if (feof(f)) {
+        }
+#ifndef FLB_HAVE_STATIC_CONF
+        /* When using static conf build, FILE pointer is absent and
+         * always as NULL. */
+        else if (feof(f)) {
             /* handle EOF without a newline(CRLF or LF) */
             fgets_ptr = buf;
         }
+#endif
 #ifndef FLB_HAVE_STATIC_CONF
         else {
             /* resize the line buffer */

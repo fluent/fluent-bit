@@ -45,7 +45,7 @@
 typedef __m128i flb_vector8;
 typedef __m128i flb_vector32;
 
-#elif defined(__aarch64__) && defined(__ARM_NEON)
+#elif defined(__aarch64__) || defined(_M_ARM64) || defined(_M_ARM64EC)
 /*
  * We use the Neon instructions if the compiler provides access to them (as
  * indicated by __ARM_NEON) and we are on aarch64.  While Neon support is
@@ -54,10 +54,76 @@ typedef __m128i flb_vector32;
  * could not realistically use it there without a run-time check, which seems
  * not worth the trouble for now.
  */
-#include <arm_neon.h>
-#define FLB_SIMD_NEON
-typedef uint8x16_t flb_vector8;
-typedef uint32x4_t flb_vector32;
+/* portable include detection: avoid __has_include on old GCC (CentOS 7) */
+/* Prefer feature macro if present. The latter branch is mainly for MSVC C++ compiler. */
+#if defined(__ARM_NEON) || defined(__ARM_NEON__)
+  #include <arm_neon.h>
+  #define FLB_SIMD_NEON
+#else
+  /* Use __has_include only if the preprocessor supports it */
+  #if defined(__has_include)
+    #if __has_include(<arm_neon.h>)
+      #include <arm_neon.h>
+      #define FLB_SIMD_NEON
+    #elif __has_include(<arm64_neon.h>)
+      #include <arm64_neon.h>
+      #define FLB_SIMD_NEON
+    #endif
+  #endif
+  /* Fallback for old GCC on aarch64 where arm_neon.h normally exists */
+  #ifndef FLB_SIMD_NEON
+    #include <arm_neon.h>
+    #define FLB_SIMD_NEON
+  #endif
+#endif
+
+#if defined(FLB_SIMD_NEON)
+  typedef uint8x16_t  flb_vector8;
+  typedef uint32x4_t  flb_vector32;
+#else
+  #define FLB_SIMD_NONE
+  typedef uint64_t flb_vector8;
+#endif
+
+#elif defined(__riscv) && (__riscv_v_intrinsic >= 11000)
+/*
+ * We use RVV (RISC-V "Vector") instructions if the compiler provides
+ * access to them (as indicated by __riscv_v_intrinsic) and using with
+ * -march=rv64gcv_zba flag. RVV extension is currently optional for
+ * risc-v processors. If the processors can handle this RVV
+ * intrinsics, this extension is able to use on that platform.
+ * However, there is a few RISC-V prosessors to support RVV
+ * extensions.
+ * If there is no RISC-V processor which supports RVV extensions,
+ * qemu-riscv with -cpu rv64,v=true,zba=true,vlen=128 flags could be
+ * able to emulate such extensions.
+ */
+#include <riscv_vector.h>
+#define FLB_SIMD_RVV
+typedef vuint8m1_t flb_vector8;
+typedef vuint32m1_t flb_vector32;
+
+static size_t vec8_vl_cached = 0;
+static size_t vec32_vl_cached = 0;
+
+static inline size_t flb_rvv_get_vec8_vl()
+{
+    if (vec8_vl_cached == 0) {
+        vec8_vl_cached = __riscv_vsetvl_e8m1(16);
+    }
+    return vec8_vl_cached;
+}
+
+static inline size_t flb_rvv_get_vec32_vl()
+{
+    if (vec32_vl_cached == 0) {
+        vec32_vl_cached = __riscv_vsetvl_e32m1(4);
+    }
+    return vec32_vl_cached;
+}
+
+#define RVV_VEC8_INST_LEN  flb_rvv_get_vec8_vl()  /* 16 */
+#define RVV_VEC32_INST_LEN flb_rvv_get_vec32_vl() /*  4 */
 
 #else
 /*
@@ -79,6 +145,15 @@ typedef uint64_t flb_vector8;
 typedef uint8_t flb_vector8;
 #endif /* FLB_SIMD_DISABLED */
 
+/* RVV's instruction length is flexible and not fixed width.
+ * We assumed that VLEN which is the fundamental intsruction length is 128.
+ */
+#if defined(FLB_SIMD_RVV)
+#define FLB_SIMD_VEC8_INST_LEN RVV_VEC8_INST_LEN
+#else
+#define FLB_SIMD_VEC8_INST_LEN sizeof(flb_vector8)
+#endif
+
 /* element-wise comparisons to a scalar */
 static inline bool flb_vector8_has(const flb_vector8 v, const uint8_t c);
 static inline bool flb_vector8_has_zero(const flb_vector8 v);
@@ -94,6 +169,8 @@ static inline void flb_vector8_load(flb_vector8 *v, const uint8_t *s)
 	*v = _mm_loadu_si128((const __m128i *) s);
 #elif defined(FLB_SIMD_NEON)
 	*v = vld1q_u8(s);
+#elif defined(FLB_SIMD_RVV)
+	*v = __riscv_vle8_v_u8m1(s, RVV_VEC8_INST_LEN);
 #else
 	memset(v, 0, sizeof(flb_vector8));
 #endif
@@ -129,6 +206,8 @@ static inline flb_vector8 flb_vector8_ssub(const flb_vector8 v1, const flb_vecto
 	return _mm_subs_epu8(v1, v2);
 #elif defined(FLB_SIMD_NEON)
 	return vqsubq_u8(v1, v2);
+#elif defined(FLB_SIMD_RVV)
+	return __riscv_vssubu_vv_u8m1(v1, v2, RVV_VEC8_INST_LEN);
 #endif
 }
 #endif /* ! FLB_SIMD_NONE */
@@ -144,6 +223,11 @@ static inline flb_vector8 flb_vector8_eq(const flb_vector8 v1, const flb_vector8
 	return _mm_cmpeq_epi8(v1, v2);
 #elif defined(FLB_SIMD_NEON)
 	return vceqq_u8(v1, v2);
+#elif defined(FLB_SIMD_RVV)
+	vbool8_t ret = __riscv_vmseq_vv_u8m1_b8(v1, v2, RVV_VEC8_INST_LEN);
+	return __riscv_vmerge_vvm_u8m1(__riscv_vmv_v_x_u8m1(0, RVV_VEC8_INST_LEN),
+								   __riscv_vmv_v_x_u8m1(UINT8_MAX, RVV_VEC8_INST_LEN),
+								   ret, RVV_VEC8_INST_LEN);
 #endif
 }
 #endif /* ! FLB_SIMD_NONE */
@@ -155,6 +239,11 @@ static inline flb_vector32 flb_vector32_eq(const flb_vector32 v1, const flb_vect
 	return _mm_cmpeq_epi32(v1, v2);
 #elif defined(FLB_SIMD_NEON)
 	return vceqq_u32(v1, v2);
+#elif defined(FLB_SIMD_RVV)
+	vbool32_t ret = __riscv_vmseq_vv_u32m1_b32(v1, v2, RVV_VEC32_INST_LEN);
+	return __riscv_vmerge_vvm_u32m1(__riscv_vmv_v_x_u32m1(0, RVV_VEC32_INST_LEN),
+									__riscv_vmv_v_x_u32m1(UINT32_MAX, RVV_VEC32_INST_LEN),
+									ret, RVV_VEC32_INST_LEN);
 #endif
 }
 #endif /* ! FLB_SIMD_NONE */
@@ -168,6 +257,8 @@ static inline flb_vector8 flb_vector8_broadcast(const uint8_t c)
 	return _mm_set1_epi8(c);
 #elif defined(FLB_SIMD_NEON)
 	return vdupq_n_u8(c);
+#elif defined(FLB_SIMD_RVV)
+	return __riscv_vmv_v_x_u8m1(c, RVV_VEC8_INST_LEN);
 #else
 	return ~UINT64CONST(0) / 0xFF * c;
 #endif
@@ -182,6 +273,10 @@ static inline bool flb_vector8_is_highbit_set(const flb_vector8 v)
 	return _mm_movemask_epi8(v) != 0;
 #elif defined(FLB_SIMD_NEON)
 	return vmaxvq_u8(v) > 0x7F;
+#elif defined(FLB_SIMD_RVV)
+	return __riscv_vmv_x_s_u8m1_u8(__riscv_vredmaxu_vs_u8m1_u8m1(v,
+                                                                 __riscv_vmv_v_x_u8m1(0, RVV_VEC8_INST_LEN),
+                                                                 RVV_VEC8_INST_LEN));
 #else
 	return v & flb_vector8_broadcast(0x80);
 #endif
@@ -249,6 +344,8 @@ static inline char *flb_simd_info()
 			return "SSE2";
 		#elif defined(FLB_SIMD_NEON)
 			return "NEON";
+		#elif defined(FLB_SIMD_RVV)
+			return "RVV";
 		#elif defined(FLB_SIMD_NONE)
 			return "none";
 		#else

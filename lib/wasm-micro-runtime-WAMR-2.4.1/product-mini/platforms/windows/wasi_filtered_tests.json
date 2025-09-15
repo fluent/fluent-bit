@@ -1,0 +1,23 @@
+{
+    "WASI Rust tests": {
+        "poll_oneoff_stdio": "Not implemented"
+    },
+    "WASI threads proposal": {
+        "wasi_threads_exit_main_wasi_read": "Blocking ops not implemented",
+        "wasi_threads_exit_nonmain_wasi_read": "Blocking ops not implemented",
+        "wasi_threads_return_main_wasi_read": "Blocking ops not implemented",
+        "wasi_threads_return_main_wasi": "Blocking ops not implemented",
+        "wasi_threads_exit_nonmain_wasi": "Blocking ops not implemented",
+        "wasi_threads_exit_main_wasi": "Blocking ops not implemented"
+    },
+    "WAMR lib-socket tests": {
+        "nslookup": "Not implemented",
+        "tcp_udp": "Not implemented"
+    },
+    "lib-wasi-threads tests": {
+        "nonmain_proc_exit_sleep": "poll_oneoff not implemented",
+        "main_proc_exit_sleep": "poll_oneoff not implemented",
+        "main_trap_sleep": "poll_oneoff not implemented",
+        "nonmain_trap_sleep": "poll_oneoff not implemented"
+    }
+}

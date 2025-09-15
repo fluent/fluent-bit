@@ -30,6 +30,9 @@
 #include <fluent-bit/flb_pack.h>
 #include <fluent-bit/flb_unescape.h>
 
+#include <fluent-bit/flb_log_event_encoder.h>
+#include <fluent-bit/flb_log_event_decoder.h>
+
 /* cmetrics */
 #include <cmetrics/cmetrics.h>
 #include <cmetrics/cmt_decode_msgpack.h>
@@ -61,6 +64,7 @@ int flb_json_tokenise(const char *js, size_t len,
 
     ret = jsmn_parse(&state->parser, js, len,
                      state->tokens, state->tokens_size);
+
     while (ret == JSMN_ERROR_NOMEM) {
         /* Get current size of the array in bytes */
         old_size = state->tokens_size * sizeof(jsmntok_t);
@@ -80,6 +84,7 @@ int flb_json_tokenise(const char *js, size_t len,
                          state->tokens, state->tokens_size);
     }
 
+
     if (ret == JSMN_ERROR_INVAL) {
         return FLB_ERR_JSON_INVAL;
     }
@@ -90,7 +95,8 @@ int flb_json_tokenise(const char *js, size_t len,
         return FLB_ERR_JSON_PART;
     }
 
-    state->tokens_count += ret;
+    /* always use jsmn_parser.toknext to count tokens */
+    state->tokens_count = state->parser.toknext;
     return 0;
 }
 
@@ -100,7 +106,7 @@ static inline int is_float(const char *buf, int len)
     const char *p = buf;
 
     while (p <= end) {
-        if (*p == 'e' && p < end && *(p + 1) == '-') {
+        if ((*p == 'e' || *p == 'E') && p < end && (*(p + 1) == '-' || *(p + 1) == '+')) {
             return 1;
         }
         else if (*p == '.') {
@@ -110,6 +116,43 @@ static inline int is_float(const char *buf, int len)
     }
 
     return 0;
+}
+
+static inline void pack_numeric_token(msgpack_packer *pck, const char *p, int flen)
+{
+    long long val;
+    unsigned long long u_val;
+
+    if (is_float(p, flen)) {
+        msgpack_pack_double(pck, strtod(p, NULL));
+        return;
+    }
+
+    errno = 0;
+
+    if (*p == '-') {
+        val = strtoll(p, NULL, 10);
+
+        if (errno == ERANGE) {
+            msgpack_pack_double(pck, strtod(p, NULL));
+        }
+        else {
+            msgpack_pack_int64(pck, val);
+        }
+    }
+    else {
+        u_val = strtoull(p, NULL, 10);
+
+        if (errno == ERANGE) {
+            msgpack_pack_double(pck, strtod(p, NULL));
+        }
+        else if (u_val <= LLONG_MAX) {
+            msgpack_pack_int64(pck, (long long)u_val);
+        }
+        else {
+            msgpack_pack_uint64(pck, u_val);
+        }
+    }
 }
 
 /* Sanitize incoming JSON string */
@@ -157,7 +200,7 @@ static char *tokens_to_msgpack(struct flb_pack_state *state,
     int arr_size;
     int records = 0;
     const char *p;
-    char *buf;
+    char *buf = NULL;
     const jsmntok_t *t;
     msgpack_packer pck;
     msgpack_sbuffer sbuf;
@@ -177,8 +220,9 @@ static char *tokens_to_msgpack(struct flb_pack_state *state,
     for (i = 0; i < arr_size ; i++) {
         t = &tokens[i];
 
-        if (t->start == -1 || t->end == -1 || (t->start == 0 && t->end == 0)) {
-            break;
+        if (t->start < 0 || t->end <= 0) {
+            msgpack_sbuffer_destroy(&sbuf);
+            return NULL;
         }
 
         if (t->parent == -1) {
@@ -195,7 +239,10 @@ static char *tokens_to_msgpack(struct flb_pack_state *state,
             msgpack_pack_array(&pck, t->size);
             break;
         case JSMN_STRING:
-            pack_string_token(state, js + t->start, flen, &pck);
+            if (pack_string_token(state, js + t->start, flen, &pck) < 0) {
+                msgpack_sbuffer_destroy(&sbuf);
+                return NULL;
+            }
             break;
         case JSMN_PRIMITIVE:
             p = js + t->start;
@@ -209,12 +256,7 @@ static char *tokens_to_msgpack(struct flb_pack_state *state,
                 msgpack_pack_nil(&pck);
             }
             else {
-                if (is_float(p, flen)) {
-                    msgpack_pack_double(&pck, atof(p));
-                }
-                else {
-                    msgpack_pack_int64(&pck, atoll(p));
-                }
+                pack_numeric_token(&pck, p, flen);
             }
             break;
         case JSMN_UNDEFINED:
@@ -282,6 +324,9 @@ static int pack_json_to_msgpack(const char *js, size_t len, char **buffer,
     ret = 0;
 
  flb_pack_json_end:
+    if (ret != 0 && buf) {
+        flb_free(buf);
+    }
     flb_pack_state_reset(&state);
     return ret;
 }
@@ -476,11 +521,11 @@ static int pack_print_fluent_record(size_t cnt, msgpack_unpacked result)
     flb_time_pop_from_msgpack(&tms, &result, &obj);
     flb_metadata_pop_from_msgpack(&metadata, &result, &obj);
 
-    fprintf(stdout, "[%zd] [%"PRId32".%09lu, ", cnt, (int32_t) tms.tm.tv_sec, tms.tm.tv_nsec);
+    fprintf(stdout, "[%zd] [[%"PRId32".%09lu, ", cnt, (int32_t) tms.tm.tv_sec, tms.tm.tv_nsec);
 
     msgpack_object_print(stdout, *metadata);
 
-    fprintf(stdout, ", ");
+    fprintf(stdout, "], ");
 
     msgpack_object_print(stdout, *obj);
 
@@ -917,23 +962,21 @@ flb_sds_t flb_pack_msgpack_to_json_format(const char *data, uint64_t bytes,
                                           flb_sds_t date_key)
 {
     int i;
-    int ok = MSGPACK_UNPACK_SUCCESS;
-    int records = 0;
-    int map_size;
-    size_t off = 0;
+    int ret;
     char time_formatted[38];
     flb_sds_t out_tmp;
     flb_sds_t out_js;
     flb_sds_t out_buf = NULL;
-    msgpack_unpacked result;
-    msgpack_object root;
-    msgpack_object map;
     msgpack_sbuffer tmp_sbuf;
     msgpack_packer tmp_pck;
-    msgpack_object *obj;
     msgpack_object *k;
     msgpack_object *v;
     struct flb_time tms;
+    struct flb_log_event_decoder log_decoder;
+    struct flb_log_event log_event;
+    struct flb_mp_map_header mh_array;
+    struct flb_mp_map_header mh_map;
+    struct flb_mp_map_header mh_internal;
 
     /* For json lines and streams mode we need a pre-allocated buffer */
     if (json_format == FLB_PACK_JSON_FORMAT_LINES ||
@@ -949,6 +992,15 @@ flb_sds_t flb_pack_msgpack_to_json_format(const char *data, uint64_t bytes,
     msgpack_sbuffer_init(&tmp_sbuf);
     msgpack_packer_init(&tmp_pck, &tmp_sbuf, msgpack_sbuffer_write);
 
+    ret = flb_log_event_decoder_init(&log_decoder, (char *) data, bytes);
+    if (ret != FLB_EVENT_DECODER_SUCCESS) {
+        flb_error("Log event decoder initialization error : %d", ret);
+        if (out_buf) {
+            flb_sds_destroy(out_buf);
+        }
+        return NULL;
+    }
+
     /*
      * If the format is the original msgpack style of one big array,
      * registrate the array, otherwise is not necessary. FYI, original format:
@@ -960,43 +1012,25 @@ flb_sds_t flb_pack_msgpack_to_json_format(const char *data, uint64_t bytes,
      * ]
      */
     if (json_format == FLB_PACK_JSON_FORMAT_JSON) {
-        records = flb_mp_count(data, bytes);
-        if (records <= 0) {
-            msgpack_sbuffer_destroy(&tmp_sbuf);
-            return NULL;
-        }
-        msgpack_pack_array(&tmp_pck, records);
+        /* register the array. Note must be finalized with flb_mp_map_header_end() */
+        flb_mp_array_header_init(&mh_array, &tmp_pck);
     }
 
-    msgpack_unpacked_init(&result);
-    while (msgpack_unpack_next(&result, data, bytes, &off) == ok) {
-        /* Each array must have two entries: time and record */
-        root = result.data;
-        if (root.type != MSGPACK_OBJECT_ARRAY) {
-            continue;
+    /* Iterate log records */
+    while ((ret = flb_log_event_decoder_next(&log_decoder, &log_event)) == FLB_EVENT_DECODER_SUCCESS) {
+        if (json_format == FLB_PACK_JSON_FORMAT_JSON) {
+            /* register a new entry for the array entry */
+            flb_mp_array_header_append(&mh_array);
         }
-        if (root.via.array.size != 2) {
-            continue;
-        }
+        tms = log_event.timestamp;
 
-        /* Unpack time */
-        flb_time_pop_from_msgpack(&tms, &result, &obj);
+        /* initialize the map for the record key/values */
+        flb_mp_map_header_init(&mh_map, &tmp_pck);
 
-        /* Get the record/map */
-        map = root.via.array.ptr[1];
-        if (map.type != MSGPACK_OBJECT_MAP) {
-            continue;
-        }
-        map_size = map.via.map.size;
-
+        /* date key */
         if (date_key != NULL) {
-            msgpack_pack_map(&tmp_pck, map_size + 1);
-        }
-        else {
-            msgpack_pack_map(&tmp_pck, map_size);
-        }
+            flb_mp_array_header_append(&mh_map);
 
-        if (date_key != NULL) {
             /* Append date key */
             msgpack_pack_str(&tmp_pck, flb_sds_len(date_key));
             msgpack_pack_str_body(&tmp_pck, date_key, flb_sds_len(date_key));
@@ -1011,7 +1045,7 @@ flb_sds_t flb_pack_msgpack_to_json_format(const char *data, uint64_t bytes,
                                                     FLB_PACK_JSON_DATE_JAVA_SQL_TIMESTAMP_FMT, ".%06" PRIu64)) {
                     flb_sds_destroy(out_buf);
                     msgpack_sbuffer_destroy(&tmp_sbuf);
-                    msgpack_unpacked_destroy(&result);
+                    flb_log_event_decoder_destroy(&log_decoder);
                     return NULL;
                 }
                 break;
@@ -1020,7 +1054,7 @@ flb_sds_t flb_pack_msgpack_to_json_format(const char *data, uint64_t bytes,
                                                     FLB_PACK_JSON_DATE_ISO8601_FMT, ".%06" PRIu64 "Z")) {
                     flb_sds_destroy(out_buf);
                     msgpack_sbuffer_destroy(&tmp_sbuf);
-                    msgpack_unpacked_destroy(&result);
+                    flb_log_event_decoder_destroy(&log_decoder);
                     return NULL;
                 }
                 break;
@@ -1033,12 +1067,77 @@ flb_sds_t flb_pack_msgpack_to_json_format(const char *data, uint64_t bytes,
             }
         }
 
-        /* Append remaining keys/values */
-        for (i = 0; i < map_size; i++) {
-            k = &map.via.map.ptr[i].key;
-            v = &map.via.map.ptr[i].val;
-            msgpack_pack_object(&tmp_pck, *k);
-            msgpack_pack_object(&tmp_pck, *v);
+        /* register __internal__ data that comes from the group information */
+        if ((log_event.group_attributes && log_event.group_attributes->type == MSGPACK_OBJECT_MAP && log_event.group_attributes->via.map.size > 0) ||
+            (log_event.metadata && log_event.metadata->type == MSGPACK_OBJECT_MAP && log_event.metadata->via.map.size > 0)) {
+
+            flb_mp_map_header_append(&mh_map);
+            msgpack_pack_str(&tmp_pck, 12);
+            msgpack_pack_str_body(&tmp_pck, "__internal__", 12);
+
+            flb_mp_map_header_init(&mh_internal, &tmp_pck);
+
+            /*
+             * group metadata: the JSON export of this record do not aim to be re-assembled into a Fluent pipeline,
+             * actually it is a generic JSON representation of the log record. For this reason, we need to add the group
+             * metadata to the JSON output.
+             *
+             * Just leaving this code commented as a reference...
+             */
+
+            /*
+             * if (log_event.group_metadata != NULL) {
+             *    flb_mp_map_header_append(&mh_internal);
+             *    msgpack_pack_str(&tmp_pck, 14);
+             *    msgpack_pack_str_body(&tmp_pck, "group_metadata", 14);
+             *    msgpack_pack_object(&tmp_pck, *log_event.group_metadata);
+             * }
+             */
+
+            /* Append group attributes */
+            if (log_event.group_attributes != NULL) {
+                flb_mp_map_header_append(&mh_internal);
+                msgpack_pack_str(&tmp_pck, 16);
+                msgpack_pack_str_body(&tmp_pck, "group_attributes", 16);
+                msgpack_pack_object(&tmp_pck, *log_event.group_attributes);
+            }
+
+            /* log/record metadata if exists */
+            if (log_event.metadata != NULL) {
+                flb_mp_map_header_append(&mh_internal);
+                msgpack_pack_str(&tmp_pck, 12);
+                msgpack_pack_str_body(&tmp_pck, "log_metadata", 12);
+                msgpack_pack_object(&tmp_pck, *log_event.metadata);
+            }
+
+            /* finalize the internal map */
+            flb_mp_map_header_end(&mh_internal);
+        }
+
+        /* Append keys/values from the log body */
+        if (log_event.body != NULL) {
+            if (log_event.body->type == MSGPACK_OBJECT_MAP) {
+                for (i = 0; i < log_event.body->via.map.size; i++) {
+                    flb_mp_map_header_append(&mh_map);
+                    k = &log_event.body->via.map.ptr[i].key;
+                    v = &log_event.body->via.map.ptr[i].val;
+
+                    /* Append key/value */
+                    msgpack_pack_object(&tmp_pck, *k);
+                    msgpack_pack_object(&tmp_pck, *v);
+                }
+
+                flb_mp_map_header_end(&mh_map);
+            }
+            else {
+                /* for any other data type, nest the content inside log */
+                flb_mp_map_header_append(&mh_map);
+                msgpack_pack_str(&tmp_pck, 4);
+                msgpack_pack_str_body(&tmp_pck, "log", 3);
+                msgpack_pack_object(&tmp_pck, *log_event.body);
+
+                flb_mp_map_header_end(&mh_map);
+            }
         }
 
         /*
@@ -1071,7 +1170,7 @@ flb_sds_t flb_pack_msgpack_to_json_format(const char *data, uint64_t bytes,
             if (!out_js) {
                 flb_sds_destroy(out_buf);
                 msgpack_sbuffer_destroy(&tmp_sbuf);
-                msgpack_unpacked_destroy(&result);
+                flb_log_event_decoder_destroy(&log_decoder);
                 return NULL;
             }
 
@@ -1084,7 +1183,7 @@ flb_sds_t flb_pack_msgpack_to_json_format(const char *data, uint64_t bytes,
                 flb_sds_destroy(out_js);
                 flb_sds_destroy(out_buf);
                 msgpack_sbuffer_destroy(&tmp_sbuf);
-                msgpack_unpacked_destroy(&result);
+                flb_log_event_decoder_destroy(&log_decoder);
                 return NULL;
             }
 
@@ -1102,7 +1201,7 @@ flb_sds_t flb_pack_msgpack_to_json_format(const char *data, uint64_t bytes,
                 if (!out_tmp) {
                     flb_sds_destroy(out_buf);
                     msgpack_sbuffer_destroy(&tmp_sbuf);
-                    msgpack_unpacked_destroy(&result);
+                    flb_log_event_decoder_destroy(&log_decoder);
                     return NULL;
                 }
                 if (out_tmp != out_buf) {
@@ -1113,14 +1212,18 @@ flb_sds_t flb_pack_msgpack_to_json_format(const char *data, uint64_t bytes,
         }
     }
 
-    /* Release the unpacker */
-    msgpack_unpacked_destroy(&result);
+    /* destroy the decoder */
+    flb_log_event_decoder_destroy(&log_decoder);
+
+    /* finalize the main array */
+    if (json_format == FLB_PACK_JSON_FORMAT_JSON) {
+        flb_mp_array_header_end(&mh_array);
+    }
 
     /* Format to JSON */
     if (json_format == FLB_PACK_JSON_FORMAT_JSON) {
         out_buf = flb_msgpack_raw_to_json_sds(tmp_sbuf.data, tmp_sbuf.size);
         msgpack_sbuffer_destroy(&tmp_sbuf);
-
         if (!out_buf) {
             return NULL;
         }

@@ -12,7 +12,7 @@ endif()
 
 include_directories(
   ${FLB_PATH_ROOT_SOURCE}/${FLB_PATH_LIB_CARES}/include
-  ${CMAKE_CURRENT_BINARY_DIR}/${FLB_PATH_LIB_CARES}
+  ${FLB_PATH_ROOT_BINARY_DIR}/${FLB_PATH_LIB_CARES}
 )
 
 add_subdirectory(${FLB_PATH_LIB_CARES})# EXCLUDE_FROM_ALL)

@@ -151,6 +151,7 @@ cfl_sds_t cm_utils_variant_convert_to_json(struct cfl_variant *value)
     mpack_writer_destroy(&writer);
 
     json_result = flb_msgpack_raw_to_json_sds(data, size);
+    MPACK_FREE(data);
 
     return json_result;
 }
@@ -162,6 +163,7 @@ int cm_utils_variant_convert(struct cfl_variant *input_value,
     int ret;
     int errno_backup;
     int64_t as_int;
+    uint64_t as_uint;
     double as_double;
     char buf[64];
     char *str = NULL;
@@ -214,20 +216,57 @@ int cm_utils_variant_convert(struct cfl_variant *input_value,
                 str = input_value->data.as_string;
             }
 
-            as_int = strtoimax(str, &converstion_canary, 10);
-            if (errno == ERANGE || errno == EINVAL) {
-                errno = errno_backup;
+            /* signed integer */
+            if (str[0] == '-') {
+                as_int = strtoimax(str, &converstion_canary, 10);
+                if (errno == ERANGE || errno == EINVAL || *converstion_canary != '\0') {
+                    errno = errno_backup;
+                    if (tmp) {
+                        cfl_variant_destroy(tmp);
+                    }
+                    return CFL_FALSE;
+                }
+
                 if (tmp) {
                     cfl_variant_destroy(tmp);
                 }
-                return CFL_FALSE;
-            }
 
-            if (tmp) {
-                cfl_variant_destroy(tmp);
-            }
+                if (as_int < INT_MIN || as_int > INT_MAX) {
+                    return CFL_FALSE;
+                }
 
-            tmp = cfl_variant_create_from_int64(as_int);
+                tmp = cfl_variant_create_from_int64(as_int);
+            }
+            else {
+                /* unsigned integer */
+                as_uint = strtoumax(str, &converstion_canary, 10);
+                if (errno == ERANGE || errno == EINVAL || *converstion_canary != '\0') {
+                    errno = errno_backup;
+                    if (tmp) {
+                        cfl_variant_destroy(tmp);
+                    }
+                    return CFL_FALSE;
+                }
+
+                if (tmp) {
+                    cfl_variant_destroy(tmp);
+                }
+
+                if (as_uint <= INT_MAX) {
+                    as_int = (int64_t) as_uint;
+                    tmp = cfl_variant_create_from_int64(as_int);
+                }
+                else if (as_uint <= UINT_MAX) {
+                    tmp = cfl_variant_create_from_int64((int64_t) as_uint);
+                }
+                else {
+                    /* out of range for both `int` and `unsigned int` */
+                    if (tmp) {
+                        cfl_variant_destroy(tmp);
+                    }
+                    return CFL_FALSE;
+                }
+            }
         }
         else if (output_type == CFL_VARIANT_DOUBLE) {
             errno = 0;
@@ -288,7 +327,34 @@ int cm_utils_variant_convert(struct cfl_variant *input_value,
             tmp = cfl_variant_create_from_bool(as_int);
         }
         else if (output_type == CFL_VARIANT_INT) {
-            /* same type, do nothing */
+            tmp = cfl_variant_create_from_int64(input_value->data.as_int64);
+        }
+        else if (output_type == CFL_VARIANT_DOUBLE) {
+            as_double = (double) input_value->data.as_int64;
+            tmp = cfl_variant_create_from_double(as_double);
+        }
+        else {
+            return CFL_FALSE;
+        }
+    }
+    /* input: uint */
+    else if (input_value->type == CFL_VARIANT_UINT) {
+        if (output_type == CFL_VARIANT_STRING || output_type == CFL_VARIANT_BYTES) {
+            ret = snprintf(buf, sizeof(buf), "%" PRIu64, input_value->data.as_uint64);
+            if (ret < 0 || ret >= sizeof(buf)) {
+                return CFL_FALSE;
+            }
+            tmp = cfl_variant_create_from_string_s(buf, ret, CFL_FALSE);
+        }
+        else if (output_type == CFL_VARIANT_BOOL) {
+            as_int = CFL_FALSE;
+            if (input_value->data.as_uint64 != 0) {
+                as_int = CFL_TRUE;
+            }
+            tmp = cfl_variant_create_from_bool(as_int);
+        }
+        else if (output_type == CFL_VARIANT_INT) {
+            tmp = cfl_variant_create_from_uint64(input_value->data.as_uint64);
         }
         else if (output_type == CFL_VARIANT_DOUBLE) {
             as_double = (double) input_value->data.as_int64;
@@ -322,7 +388,7 @@ int cm_utils_variant_convert(struct cfl_variant *input_value,
             tmp = cfl_variant_create_from_int64(as_int);
         }
         else if (output_type == CFL_VARIANT_DOUBLE) {
-            as_double = input_value->data.as_int64;
+            as_double = input_value->data.as_double;
             tmp = cfl_variant_create_from_double(as_double);
         }
         else {
@@ -343,6 +409,32 @@ int cm_utils_variant_convert(struct cfl_variant *input_value,
         }
         else if (output_type == CFL_VARIANT_DOUBLE) {
             tmp = cfl_variant_create_from_double(0);
+        }
+        else {
+            return CFL_FALSE;
+        }
+    }
+    else if (input_value->type == CFL_VARIANT_BOOL) {
+        if (output_type == CFL_VARIANT_STRING ||
+            output_type == CFL_VARIANT_BYTES) {
+
+            if (input_value->data.as_bool == CFL_TRUE) {
+                tmp = cfl_variant_create_from_string_s("true", 4, CFL_FALSE);
+            }
+            else {
+                tmp = cfl_variant_create_from_string_s("false", 5, CFL_FALSE);
+            }
+        }
+        else if (output_type == CFL_VARIANT_BOOL) {
+            tmp = cfl_variant_create_from_bool(input_value->data.as_bool);
+        }
+        else if (output_type == CFL_VARIANT_INT) {
+            as_int = input_value->data.as_bool;
+            tmp = cfl_variant_create_from_int64(as_int);
+        }
+        else if (output_type == CFL_VARIANT_DOUBLE) {
+            as_double = (double) input_value->data.as_bool;
+            tmp = cfl_variant_create_from_double(as_double);
         }
         else {
             return CFL_FALSE;

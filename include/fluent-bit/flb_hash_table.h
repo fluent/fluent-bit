@@ -57,6 +57,7 @@ struct flb_hash_table {
     int max_entries;
     int total_count;
     int cache_ttl;
+    int case_sensitivity;
     size_t size;
     struct mk_list entries;
     struct flb_hash_table_chain *table;
@@ -66,6 +67,8 @@ struct flb_hash_table *flb_hash_table_create(int evict_mode, size_t size, int ma
 struct flb_hash_table *flb_hash_table_create_with_ttl(int cache_ttl, int evict_mode,
                                                       size_t size, int max_entries);
 void flb_hash_table_destroy(struct flb_hash_table *ht);
+
+void flb_hash_table_set_case_sensitivity(struct flb_hash_table *ht, int status);
 
 int flb_hash_table_add(struct flb_hash_table *ht,
                        const char *key, int key_len,

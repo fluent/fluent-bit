@@ -65,7 +65,7 @@ jobs:
         RELEASE_VERSION: ${{ github.event.inputs.version }}
 
     - name: Checkout repository
-      uses: actions/checkout@v4
+      uses: actions/checkout@v5
 
   staging-release-generate-package-matrix:
     name: Get package matrix
@@ -75,7 +75,7 @@ jobs:
       rpm-build-matrix: ${{ steps.get-matrix.outputs.rpm-build-matrix }}
     steps:
       - name: Checkout repository
-        uses: actions/checkout@v4
+        uses: actions/checkout@v5
 
       - name: Setup runner
         run: |
@@ -111,7 +111,7 @@ jobs:
       fail-fast: false
     steps:
     - name: Checkout code
-      uses: actions/checkout@v4
+      uses: actions/checkout@v5
 
     - name: Setup runner
       run: |
@@ -172,7 +172,7 @@ jobs:
 
   staging-release-apt-packages:
     name: S3 - update APT packages bucket
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-22.04
     environment: release
     needs:
       - staging-release-version-check
@@ -184,7 +184,7 @@ jobs:
       fail-fast: false
     steps:
     - name: Checkout code
-      uses: actions/checkout@v4
+      uses: actions/checkout@v5
 
     - name: Setup runner
       run: |
@@ -267,7 +267,7 @@ jobs:
       run: |
         mkdir -p "packaging/releases/$DISTRO"
         aws s3 sync "s3://${{ secrets.AWS_S3_BUCKET_RELEASE }}/$DISTRO" "packaging/releases/$DISTRO" --no-progress
-        aws s3 sync "s3://${{ secrets.AWS_S3_BUCKET_STAGING }}/$DISTRO" "packaging/releases/$DISTRO" --no-progress
+        aws s3 sync "s3://${{ secrets.AWS_S3_BUCKET_STAGING }}/${{ github.event.inputs.version }}/$DISTRO" "packaging/releases/$DISTRO" --no-progress
       env:
         AWS_ACCESS_KEY_ID: ${{ secrets.AWS_ACCESS_KEY_ID }}
         AWS_SECRET_ACCESS_KEY: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
@@ -315,7 +315,7 @@ jobs:
     - name: JSON schema
       continue-on-error: true
       run: |
-        aws s3 sync "s3://${AWS_STAGING_S3_BUCKET}/${VERSION}" "s3://${AWS_RELEASE_S3_BUCKET}/${VERSION}" --no-progress
+        aws s3 sync "s3://${AWS_STAGING_S3_BUCKET}/${VERSION}" "s3://${AWS_RELEASE_S3_BUCKET}/${VERSION}" --no-progress --exclude "*" --include "*.json"
       env:
           VERSION: ${{ github.event.inputs.version }}
           AWS_REGION: "us-east-1"
@@ -327,7 +327,7 @@ jobs:
 
   staging-release-source-s3:
     name: S3 - update source bucket
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-22.04
     environment: release
     needs:
       - staging-release-version-check
@@ -335,7 +335,7 @@ jobs:
       contents: read
     steps:
     - name: Checkout code
-      uses: actions/checkout@v4
+      uses: actions/checkout@v5
 
     - name: Sync packages from buckets on S3
       run: |
@@ -419,7 +419,7 @@ jobs:
         shell: bash
 
       - name: Promote container images from staging to GHCR.io
-        if: ${{ startsWith(github.event.inputs.version, '2.') || startsWith(github.event.inputs.version, '3.') || ! startsWith(matrix.tag, 'latest') }}
+        if: ${{ ! startsWith(matrix.tag, 'latest') }}
         run: |
           docker run --rm  \
             quay.io/skopeo/stable:latest \
@@ -502,9 +502,8 @@ jobs:
           TAG: ${{ steps.get-tag.outputs.tag }}
 
   staging-release-images-latest-tags:
-    # Only update latest tags for 3.1 releases
-    if: startsWith(github.event.inputs.version, '3.1')
-    # if: startsWith(github.event.inputs.version, '4.0')
+    # Only update latest tags for 4.0 releases
+    if: startsWith(github.event.inputs.version, '4.')
     name: Release latest Linux container images
     runs-on: ubuntu-latest
     needs:
@@ -566,7 +565,7 @@ jobs:
   staging-release-images-windows:
     name: Release Windows images
     # Cannot be done by Skopeo on a Linux runner unfortunately
-    runs-on: windows-latest
+    runs-on: ${{ matrix.runs_on }}
     needs:
       - staging-release-version-check
     environment: release
@@ -575,10 +574,11 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        tag: [
-          "windows-2019-${{ github.event.inputs.version }}",
-          "windows-2022-${{ github.event.inputs.version }}"
-        ]
+        include:
+          - tag: "windows-2022-${{ github.event.inputs.version }}"
+            runs_on: windows-latest
+          - tag: "windows-2025-${{ github.event.inputs.version }}"
+            runs_on: windows-2025
     steps:
       - name: Login to GitHub Container Registry
         uses: docker/login-action@v3
@@ -588,14 +588,17 @@ jobs:
           password: ${{ secrets.GITHUB_TOKEN }}
 
       - name: Check the image exists
+        # Use manifest inspect rather than pulling the image so the Windows host version does not need to match the container image
         run: |
-          docker pull "$STAGING_IMAGE_NAME:$TAG"
+          docker manifest inspect "$STAGING_IMAGE_NAME:$TAG"
         env:
           TAG: ${{ matrix.tag }}
         shell: bash
 
+        # Pulling the actual image with tag is needed here.
       - name: Promote container images from staging to GHCR.io
         run: |
+          docker pull "$STAGING_IMAGE_NAME:$TAG"
           docker tag "$STAGING_IMAGE_NAME:$TAG" "$RELEASE_IMAGE_NAME:$TAG"
           docker push "$RELEASE_IMAGE_NAME:$TAG"
         env:
@@ -632,7 +635,7 @@ jobs:
       GHCR_RELEASE_IMAGE_NAME: ghcr.io/${{ github.event.inputs.github-image || github.repository }}
     steps:
       - name: Install cosign
-        uses: sigstore/cosign-installer@v2
+        uses: sigstore/cosign-installer@v3
 
       - name: Login to Docker Hub
         uses: docker/login-action@v3
@@ -653,7 +656,7 @@ jobs:
         # The key needs to cope with newlines
         run: |
           echo -e "${COSIGN_PRIVATE_KEY}" > /tmp/my_cosign.key
-          cosign sign --key /tmp/my_cosign.key --recursive \
+          cosign sign --key /tmp/my_cosign.key --recursive --yes \
             -a "repo=${{ github.repository }}" \
             -a "workflow=${{ github.workflow }}" \
             -a "release=${{ github.event.inputs.version }}" \
@@ -726,7 +729,7 @@ jobs:
       - staging-release-yum-packages
     steps:
       - name: Checkout code
-        uses: actions/checkout@v4
+        uses: actions/checkout@v5
 
       - name: Test release packages
         run: |
@@ -748,7 +751,7 @@ jobs:
       - staging-release-images
     steps:
       - name: Checkout code
-        uses: actions/checkout@v4
+        uses: actions/checkout@v5
 
       - name: Test containers
         run: |
@@ -804,8 +807,7 @@ jobs:
           target_commitish: '3.0'
           make_latest: false
 
-      - name: Release 3.1 and latest
-        # TODO: change to 3.1 branch once 4.0 series is ready
+      - name: Release 3.1 - not latest
         uses: softprops/action-gh-release@v2
         if: startsWith(inputs.version, '3.1')
         with:
@@ -814,18 +816,31 @@ jobs:
           generate_release_notes: true
           name: "Fluent Bit ${{ inputs.version }}"
           tag_name: v${{ inputs.version }}
-          make_latest: true
+          target_commitish: '3.1'
+          make_latest: false
 
-      # - name: Release 4.0 and latest
-      #   uses: softprops/action-gh-release@v2
-      #   if: startsWith(inputs.version, '4.0')
-      #   with:
-      #     body: "https://fluentbit.io/announcements/v${{ inputs.version }}/"
-      #     draft: false
-      #     generate_release_notes: true
-      #     name: "Fluent Bit ${{ inputs.version }}"
-      #     tag_name: v${{ inputs.version }}
-      #     make_latest: true
+      - name: Release 3.2 - not latest
+        uses: softprops/action-gh-release@v2
+        if: startsWith(inputs.version, '3.2')
+        with:
+          body: "https://fluentbit.io/announcements/v${{ inputs.version }}/"
+          draft: false
+          generate_release_notes: true
+          name: "Fluent Bit ${{ inputs.version }}"
+          tag_name: v${{ inputs.version }}
+          target_commitish: '3.2'
+          make_latest: false
+
+      - name: Release 4.0 and latest
+        uses: softprops/action-gh-release@v2
+        if: startsWith(inputs.version, '4.0')
+        with:
+          body: "https://fluentbit.io/announcements/v${{ inputs.version }}/"
+          draft: false
+          generate_release_notes: true
+          name: "Fluent Bit ${{ inputs.version }}"
+          tag_name: v${{ inputs.version }}
+          make_latest: true
 
   staging-release-windows-checksums:
     name: Get Windows checksums for new release
@@ -889,7 +904,7 @@ jobs:
     steps:
       - name: Release 2.0 - not latest
         if: startsWith(inputs.version, '2.0')
-        uses: actions/checkout@v4
+        uses: actions/checkout@v5
         with:
           repository: fluent/fluent-bit-docs
           ref: 2.0
@@ -897,7 +912,7 @@ jobs:
 
       - name: Release 2.1 - not latest
         if: startsWith(inputs.version, '2.1')
-        uses: actions/checkout@v4
+        uses: actions/checkout@v5
         with:
           repository: fluent/fluent-bit-docs
           ref: 2.1
@@ -905,7 +920,7 @@ jobs:
 
       - name: Release 2.2 - not latest
         if: startsWith(inputs.version, '2.2')
-        uses: actions/checkout@v4
+        uses: actions/checkout@v5
         with:
           repository: fluent/fluent-bit-docs
           ref: 2.2
@@ -913,26 +928,34 @@ jobs:
 
       - name: Release 3.0 - not latest
         if: startsWith(inputs.version, '3.0')
-        uses: actions/checkout@v4
+        uses: actions/checkout@v5
         with:
           repository: fluent/fluent-bit-docs
           ref: 3.0
           token: ${{ secrets.GH_PA_TOKEN }}
 
-      - name: Release 3.1 and latest
-        # TODO: change to 3.1 branch once 4.0 series is ready
+      - name: Release 3.1 - not latest
         if: startsWith(inputs.version, '3.1')
-        uses: actions/checkout@v4
+        uses: actions/checkout@v5
+        with:
+          repository: fluent/fluent-bit-docs
+          ref: 3.1
+          token: ${{ secrets.GH_PA_TOKEN }}
+
+      - name: Release 3.2 - not latest
+        if: startsWith(inputs.version, '3.2')
+        uses: actions/checkout@v5
         with:
           repository: fluent/fluent-bit-docs
           token: ${{ secrets.GH_PA_TOKEN }}
+          ref: 3.2
 
-      # - name: Release 4.0 and latest
-      #   if: startsWith(inputs.version, '4.0')
-      #   uses: actions/checkout@v4
-      #   with:
-      #     repository: fluent/fluent-bit-docs
-      #     token: ${{ secrets.GH_PA_TOKEN }}
+      - name: Release 4.0 and latest
+        if: startsWith(inputs.version, '4.0')
+        uses: actions/checkout@v5
+        with:
+          repository: fluent/fluent-bit-docs
+          token: ${{ secrets.GH_PA_TOKEN }}
 
       - name: Ensure we have the script we need
         run: |
@@ -977,6 +1000,7 @@ jobs:
         run: |
           echo "Pull Request Number - ${{ steps.cpr.outputs.pull-request-number }}"
           echo "Pull Request URL - ${{ steps.cpr.outputs.pull-request-url }}"
+        shell: bash
 
   staging-release-create-version-update-pr:
     name: Create version update PR for new release
@@ -990,37 +1014,49 @@ jobs:
     steps:
       - name: Release 2.0
         if: startsWith(inputs.version, '2.0')
-        uses: actions/checkout@v4
+        uses: actions/checkout@v5
         with:
           ref: 2.0
 
       - name: Release 2.1
         if: startsWith(inputs.version, '2.1')
-        uses: actions/checkout@v4
+        uses: actions/checkout@v5
         with:
           ref: 2.1
 
       - name: Release 2.2
         if: startsWith(inputs.version, '2.2')
-        uses: actions/checkout@v4
+        uses: actions/checkout@v5
         with:
           ref: 2.2
 
       - name: Release 3.0
         if: startsWith(inputs.version, '3.0')
-        uses: actions/checkout@v4
+        uses: actions/checkout@v5
         with:
           ref: 3.0
 
       - name: Release 3.1
         if: startsWith(inputs.version, '3.1')
-        uses: actions/checkout@v4
+        uses: actions/checkout@v5
         with:
           ref: 3.1
 
+      - name: Release 3.2
+        if: startsWith(inputs.version, '3.2')
+        uses: actions/checkout@v5
+        with:
+          ref: 3.2
+
       - name: Release 4.0
         if: startsWith(inputs.version, '4.0')
-        uses: actions/checkout@v4
+        uses: actions/checkout@v5
+        with:
+          ref: 4.0
+
+      - name: Release 4.1
+        if: startsWith(inputs.version, '4.1')
+        uses: actions/checkout@v5
         with:
           ref: master
 
@@ -1059,3 +1095,4 @@ jobs:
         run: |
           echo "Pull Request Number - ${{ steps.cpr.outputs.pull-request-number }}"
           echo "Pull Request URL - ${{ steps.cpr.outputs.pull-request-url }}"
+        shell: bash

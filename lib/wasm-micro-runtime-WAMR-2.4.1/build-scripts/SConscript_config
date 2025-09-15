@@ -1,0 +1,138 @@
+#
+# Copyright (c) 2021, RT-Thread Development Team
+#
+# SPDX-License-Identifier: Apache-2.0 WITH LLVM-exception
+#
+
+import os
+import re
+
+from building import *
+
+Import('rtconfig')
+
+src  = []
+objs = []
+cwd  = GetCurrentDir()
+
+IWASM_INC_DIR = os.path.join(cwd, '..', 'core', 'iwasm', 'include')
+
+CPPPATH = [IWASM_INC_DIR]
+
+if rtconfig.BUILD == 'debug':
+    CPPDEFINES = ['BH_DEBUG=1']
+else:
+    CPPDEFINES = ['BH_DEBUG=0']
+
+if rtconfig.ARCH == 'arm':
+    if re.match('^cortex-m.*', rtconfig.CPU):
+        print('[WAMR] using thumbv4t')
+        CPPDEFINES += ['BUILD_TARGET_THUMB']
+        CPPDEFINES += ['RTT_WAMR_BUILD_TARGET_THUMB']
+    elif re.match('^cortex-a.*', rtconfig.CPU):
+        print('[WAMR] using armv7')
+        CPPDEFINES += ['BUILD_TARGET_ARM']
+        CPPDEFINES += ['RTT_WAMR_BUILD_TARGET_ARMV7']
+    elif re.match('^cortex-r.*', rtconfig.CPU):
+        print('[WAMR] using armv7')
+        CPPDEFINES += ['BUILD_TARGET_ARM']
+        CPPDEFINES += ['RTT_WAMR_BUILD_TARGET_ARMV7']
+    elif rtconfig.CPU == 'armv6':
+        print('[WAMR] using armv6')
+        CPPDEFINES += ['BUILD_TARGET_ARM']
+        CPPDEFINES += ['RTT_WAMR_BUILD_TARGET_ARMV6']
+    elif re.match('^arm9*', rtconfig.CPU):
+        print('[WAMR] using armv4')
+        CPPDEFINES += ['BUILD_TARGET_ARM']
+        CPPDEFINES += ['RTT_WAMR_BUILD_TARGET_ARMV4']
+elif rtconfig.ARCH == 'ia32':
+   CPPDEFINES += ['BUILD_TARGET_X86_32', 'RTT_WAMR_BUILD_TARGET_X86_32']
+else:
+    print("[WAMR] unknown arch", rtconfig.ARCH)
+
+if GetDepend(['WAMR_BUILD_INTERP']):
+    CPPDEFINES += ['WASM_ENABLE_INTERP=1']
+    if GetDepend(['WAMR_BUILD_FAST_INTERP']):
+        CPPDEFINES += ['WASM_ENABLE_FAST_INTERP=1']
+        print("[WAMR] fast interpreter was enabled")
+    else:
+        CPPDEFINES += ['WASM_ENABLE_FAST_INTERP=0']
+        print("[WAMR] fast interpreter was disabled")
+else:
+    CPPDEFINES += ['WASM_ENABLE_INTERP=0']
+
+CPPDEFINES += ['WASM_ENABLE_JIT=0']
+
+if GetDepend(['WAMR_BUILD_MULTI_MODULE']):
+    CPPDEFINES += ['WASM_ENABLE_MULTI_MODULE=1']
+else:
+    CPPDEFINES += ['WASM_ENABLE_MULTI_MODULE=0']
+
+if GetDepend(['WAMR_BUILD_SPEC_TEST']):
+    CPPDEFINES += ['WASM_ENABLE_SPEC_TEST=1']
+    print("[WAMR] spec test compatible mode was enabled")
+
+if GetDepend(['WAMR_BUILD_BULK_MEMORY']):
+    CPPDEFINES += ['WASM_ENABLE_BULK_MEMORY=1']
+    print("[WAMR] Bulk memory feature was enabled")
+else:
+    CPPDEFINES += ['WASM_ENABLE_BULK_MEMORY=0']
+
+if GetDepend(['WAMR_BUILD_SHARED_MEMORY']):
+    CPPDEFINES += ['WASM_ENABLE_SHARED_MEMORY=1']
+    print("[WAMR] Shared memory enabled")
+else:
+    CPPDEFINES += ['WASM_ENABLE_SHARED_MEMORY=0']
+
+if GetDepend(['WAMR_BUILD_MINI_LOADER']):
+    CPPDEFINES += ['WASM_ENABLE_MINI_LOADER=1']
+    print("[WAMR] mini loader enabled")
+else:
+    CPPDEFINES += ['WASM_ENABLE_MINI_LOADER=0']
+
+if GetDepend(['WAMR_DISABLE_HW_BOUND_CHECK']):
+    CPPDEFINES += ['WASM_DISABLE_HW_BOUND_CHECK=1']
+    CPPDEFINES += ['WASM_DISABLE_STACK_HW_BOUND_CHECK=1']
+    print("[WAMR] Hardware boundary check disabled")
+
+if GetDepend(['WAMR_BUILD_SIMD']):
+    CPPDEFINES += ['WASM_ENABLE_SIMD=1']
+    print('[WAMR] SIMD enabled')
+
+if GetDepend(['WAMR_BUILD_MEMORY_PROFILING']):
+    CPPDEFINES += ['WASM_ENABLE_MEMORY_PROFILING=1']
+    print('[WAMR] Memory profiling enabled')
+
+if GetDepend(['WAMR_BUILD_CUSTOM_NAME_SECTION']):
+    CPPDEFINES += ['WASM_ENABLE_CUSTOM_NAME_SECTION=1']
+    print('[WAMR] Custom name section enabled')
+
+if GetDepend(['WAMR_BUILD_TAIL_CALL']):
+    CPPDEFINES += ['WASM_ENABLE_TAIL_CALL=1']
+    print('[WAMR] Tail call enabled')
+
+if GetDepend(['WAMR_BUILD_THREAD_MGR']):
+    CPPDEFINES += ['WASM_ENABLE_THREAD_MGR=1']
+    print('[WAMR] Thread manager enabled')
+
+if GetDepend(['WAMR_BUILD_LIBC_WASI']):
+    CPPDEFINES += ['WASM_ENABLE_LIBC_WASI=1']
+    CPPDEFINES += ['WASM_ENABLE_MODULE_INST_CONTEXT=1']
+    print('[WAMR] Libc wasi enabled')
+
+if GetDepend(['WAMR_BUILD_LIB_WASI_THREADS']):
+    CPPDEFINES += ['WASM_ENABLE_LIB_WASI_THREADS=1']
+    print('[WAMR] Lib wasi threads enabled')
+
+if GetDepend(['WAMR_BUILD_REF_TYPES']):
+    CPPDEFINES += ['WASM_ENABLE_REF_TYPES=1']
+    print('[WAMR] enable ref types')
+
+CPPDEFINES += ['BH_MALLOC=wasm_runtime_malloc']
+CPPDEFINES += ['BH_FREE=wasm_runtime_free']
+
+LIBS = ['m']
+
+group = DefineGroup('wamr', src, depend = ['PKG_USING_WAMR'], CPPPATH = CPPPATH, CPPDEFINES = CPPDEFINES, LIBS = LIBS)
+
+Return('group')

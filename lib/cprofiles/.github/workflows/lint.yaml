@@ -1,0 +1,34 @@
+name: Lint PRs
+on:
+  pull_request:
+  workflow_dispatch:
+
+jobs:
+
+  shellcheck-pr:
+    runs-on: ubuntu-latest
+    name: PR - Shellcheck
+    steps:
+      - uses: actions/checkout@v4
+      - uses: ludeeus/action-shellcheck@master
+        with:
+          ignore_paths: cmake/**
+
+  actionlint-pr:
+    runs-on: ubuntu-latest
+    name: PR - Actionlint
+    steps:
+      - uses: actions/checkout@v4
+      - run: |
+          echo "::add-matcher::.github/actionlint-matcher.json"
+          bash <(curl https://raw.githubusercontent.com/rhysd/actionlint/main/scripts/download-actionlint.bash)
+          ./actionlint -color -shellcheck=
+        shell: bash
+
+  docslint-pr:
+    runs-on: ubuntu-latest
+    name: PR - Markdownlint
+    steps:
+      - uses: actions/checkout@v4
+      - name: Run markdownlint
+        uses: actionshub/markdownlint@v3.1.4
