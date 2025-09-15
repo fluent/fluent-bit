@@ -19,7 +19,9 @@
 
 #include <fluent-bit.h>
 #include <fluent-bit/flb_time.h>
+#ifdef FLB_HAVE_METRICS
 #include <fluent-bit/flb_metrics.h>
+#endif
 #include <sys/types.h>
 #include <sys/stat.h>
 #include <fcntl.h>
@@ -128,18 +130,77 @@ static int cb_check_result_json(void *record, size_t size, void *data)
     char *p;
     char *expected;
     char *result;
+    char *scratch_buffer;
 
     expected = (char *) data;
     result = (char *) record;
 
-    p = strstr(result, expected);
+    /* Create null-terminated scratch buffer to safely use strstr() */
+    scratch_buffer = flb_malloc(size + 1);
+    if (!scratch_buffer) {
+        flb_error("Failed to allocate scratch buffer for string comparison");
+        flb_free(record);
+        return -1;
+    }
+    
+    memcpy(scratch_buffer, result, size);
+    scratch_buffer[size] = '\0';
+
+    p = strstr(scratch_buffer, expected);
     TEST_CHECK(p != NULL);
 
     if (p == NULL) {
         flb_error("Expected to find: '%s' in result '%s'",
-                  expected, result);
+                  expected, scratch_buffer);
     }
 
+    flb_free(scratch_buffer);
+    flb_free(record);
+    return 0;
+}
+
+/* Callback to check expected results and ensure specific field is absent */
+static int cb_check_result_and_absence(void *record, size_t size, void *data)
+{
+    char *p;
+    char *expected;
+    char *absent_field;
+    char *result;
+    char *scratch_buffer;
+    char **test_data = (char **) data; /* Array: [0] = expected, [1] = absent_field */
+
+    expected = test_data[0];
+    absent_field = test_data[1];
+    result = (char *) record;
+
+    /* Create null-terminated scratch buffer to safely use strstr() */
+    scratch_buffer = flb_malloc(size + 1);
+    if (!scratch_buffer) {
+        flb_error("Failed to allocate scratch buffer for string comparison");
+        flb_free(record);
+        return -1;
+    }
+    
+    memcpy(scratch_buffer, result, size);
+    scratch_buffer[size] = '\0';
+
+    /* Check that expected field exists */
+    p = strstr(scratch_buffer, expected);
+    TEST_CHECK(p != NULL);
+    if (p == NULL) {
+        flb_error("Expected to find: '%s' in result '%s'",
+                  expected, scratch_buffer);
+    }
+
+    /* Check that absent field does NOT exist */
+    p = strstr(scratch_buffer, absent_field);
+    TEST_CHECK(p == NULL);
+    if (p != NULL) {
+        flb_error("Expected field '%s' to be absent, but found it in result '%s'",
+                  absent_field, scratch_buffer);
+    }
+
+    flb_free(scratch_buffer);
     flb_free(record);
     return 0;
 }
@@ -458,10 +519,14 @@ void flb_test_lookup_no_match(void)
         "user1,John Doe\n"
         "user2,Jane Smith\n";
     char *input = "[0, {\"user_id\": \"user999\", \"other_field\": \"test\"}]";
+    
+    /* Test data: [0] = expected field, [1] = field that should be absent */
+    char *test_data[2];
+    test_data[0] = "\"other_field\":\"test\"";     /* Should exist */
+    test_data[1] = "\"user_name\"";                /* Should NOT exist */
 
-    /* Should NOT contain the result_key since no match was found */
-    cb_data.cb = cb_check_result_json;
-    cb_data.data = "\"other_field\":\"test\"";
+    cb_data.cb = cb_check_result_and_absence;
+    cb_data.data = test_data;
 
     ctx = test_ctx_create(&cb_data);
     if (!TEST_CHECK(ctx != NULL)) {
@@ -831,6 +896,7 @@ void flb_test_lookup_nested_array_keys(void)
     test_ctx_destroy(ctx);
 }
 
+#ifdef FLB_HAVE_METRICS
 /* Custom callback to capture metrics and verify counts */
 static int cb_check_metrics(void *record, size_t size, void *data)
 {
@@ -857,7 +923,9 @@ static uint64_t get_filter_metric(struct test_ctx *ctx, int metric_id)
     }
     return 0;
 }
+#endif
 
+#ifdef FLB_HAVE_METRICS
 /* Test metrics with matched records */
 void flb_test_lookup_metrics_matched(void)
 {
@@ -872,7 +940,7 @@ void flb_test_lookup_metrics_matched(void)
         "user3,Bob Wilson\n";
     char *input1 = "[0, {\"user_id\": \"user1\"}]";
     char *input2 = "[0, {\"user_id\": \"user2\"}]";
-    char *input3 = "[0, {\"user_id\": \"unknown\"}]"; // No match
+    char *input3 = "[0, {\"user_id\": \"unknown\"}]"; /* No match */
 
     cb_data.cb = cb_check_metrics;
     cb_data.data = NULL;
@@ -915,9 +983,9 @@ void flb_test_lookup_metrics_matched(void)
     flb_time_msleep(2000);
 
     /* Check metrics: should have 3 processed, 2 matched, 0 skipped */
-    uint64_t processed = get_filter_metric(ctx, 200); // FLB_LOOKUP_METRIC_PROCESSED
-    uint64_t matched = get_filter_metric(ctx, 201);   // FLB_LOOKUP_METRIC_MATCHED  
-    uint64_t skipped = get_filter_metric(ctx, 202);   // FLB_LOOKUP_METRIC_SKIPPED
+    uint64_t processed = get_filter_metric(ctx, 200); /* FLB_LOOKUP_METRIC_PROCESSED */
+    uint64_t matched = get_filter_metric(ctx, 201);   /* FLB_LOOKUP_METRIC_MATCHED */
+    uint64_t skipped = get_filter_metric(ctx, 202);   /* FLB_LOOKUP_METRIC_SKIPPED */
     
     TEST_CHECK(processed == 3);
     TEST_CHECK(matched == 2);
@@ -936,7 +1004,9 @@ void flb_test_lookup_metrics_matched(void)
     delete_csv_file();
     test_ctx_destroy(ctx);
 }
+#endif
 
+#ifdef FLB_HAVE_METRICS
 /* Test metrics with large volume to verify counter accuracy */
 void flb_test_lookup_metrics_processed(void)
 {
@@ -1023,6 +1093,7 @@ void flb_test_lookup_metrics_processed(void)
     delete_csv_file();
     test_ctx_destroy(ctx);
 }
+#endif
 
 TEST_LIST = {
     {"basic_lookup", flb_test_lookup_basic},
@@ -1038,7 +1109,9 @@ TEST_LIST = {
     {"nested_keys", flb_test_lookup_nested_keys},
     {"large_csv", flb_test_lookup_large_csv},
     {"nested_array_keys", flb_test_lookup_nested_array_keys},
+#ifdef FLB_HAVE_METRICS
     {"metrics_matched", flb_test_lookup_metrics_matched},
     {"metrics_processed", flb_test_lookup_metrics_processed},
+#endif
     {NULL, NULL}
 };
