@@ -123,8 +123,12 @@ struct flb_az_li* flb_az_li_ctx_create(struct flb_output_instance *ins,
             flb_az_li_ctx_destroy(ctx);
             return NULL;
         }
-        flb_sds_snprintf(&ctx->auth_url, flb_sds_alloc(ctx->auth_url),
-                        FLB_AZ_LI_MSIAUTH_URL_TEMPLATE, "", "");
+        if (flb_sds_snprintf(&ctx->auth_url, flb_sds_alloc(ctx->auth_url),
+                             FLB_AZ_LI_MSIAUTH_URL_TEMPLATE, "", "") < 0) {
+            flb_plg_error(ins, "failed to build auth URL for system-assigned managed identity");
+            flb_az_li_ctx_destroy(ctx);
+            return NULL;
+        }
     }
     else if (ctx->auth_type == FLB_AZ_LI_AUTH_MANAGED_IDENTITY_USER) {
         /* User-assigned managed identity */
@@ -136,8 +140,12 @@ struct flb_az_li* flb_az_li_ctx_create(struct flb_output_instance *ins,
             flb_az_li_ctx_destroy(ctx);
             return NULL;
         }
-        flb_sds_snprintf(&ctx->auth_url, flb_sds_alloc(ctx->auth_url),
-                        FLB_AZ_LI_MSIAUTH_URL_TEMPLATE, "&client_id=", ctx->client_id);
+        if (flb_sds_snprintf(&ctx->auth_url, flb_sds_alloc(ctx->auth_url),
+                             FLB_AZ_LI_MSIAUTH_URL_TEMPLATE, "&client_id=", ctx->client_id) < 0) {
+            flb_plg_error(ins, "failed to build auth URL for user-assigned managed identity");
+            flb_az_li_ctx_destroy(ctx);
+            return NULL;
+        }
     }
     else {
         /* Service principal authentication */
@@ -148,8 +156,12 @@ struct flb_az_li* flb_az_li_ctx_create(struct flb_output_instance *ins,
             flb_az_li_ctx_destroy(ctx);
             return NULL;
         }
-        flb_sds_snprintf(&ctx->auth_url, flb_sds_alloc(ctx->auth_url),
-                        FLB_AZ_LI_AUTH_URL_TMPLT, ctx->tenant_id);
+        if (flb_sds_snprintf(&ctx->auth_url, flb_sds_alloc(ctx->auth_url),
+                             FLB_AZ_LI_AUTH_URL_TMPLT, ctx->tenant_id) < 0) {
+            flb_plg_error(ins, "failed to build auth URL for service principal");
+            flb_az_li_ctx_destroy(ctx);
+            return NULL;
+        }
     }
 
     /* Allocate and set dce full url */
@@ -180,8 +192,7 @@ struct flb_az_li* flb_az_li_ctx_create(struct flb_output_instance *ins,
 
     /* Create upstream context for Log Ingsetion endpoint */
     ctx->u_dce = flb_upstream_create_url(config, ctx->dce_url,
-                                        FLB_AZ_LI_TLS_MODE, ins->tls);
-    if (!ctx->u_dce) {
+                                        FLB_AZ_LI_TLS_MODE, ins->tls); if (!ctx->u_dce) {
         flb_plg_error(ins, "upstream creation failed");
         flb_az_li_ctx_destroy(ctx);
         return NULL;
