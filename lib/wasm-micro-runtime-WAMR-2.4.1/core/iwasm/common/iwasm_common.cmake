@@ -4,6 +4,29 @@
 set (IWASM_COMMON_DIR ${CMAKE_CURRENT_LIST_DIR})
 
 include_directories (${IWASM_COMMON_DIR})
+if (MSVC AND WAMR_BUILD_PLATFORM STREQUAL "windows" AND WAMR_BUILD_TARGET MATCHES "AARCH64.*")
+  if (DEFINED ENV{VCToolsInstallDir})
+    set(CMAKE_ASM_MASM_COMPILER
+        "$ENV{VCToolsInstallDir}/bin/HostARM64/arm64/armasm64.exe"
+        CACHE FILEPATH "" FORCE)
+    set(CMAKE_ASM_MASM_COMPILE_OBJECT
+        "<CMAKE_ASM_MASM_COMPILER> /nologo -o <OBJECT> <SOURCE>"
+        CACHE STRING "" FORCE)
+    set(_WAMR_ARM64_MASM_SOURCES
+        ${IWASM_COMMON_DIR}/arch/invokeNative_armarm64.asm
+        ${IWASM_COMMON_DIR}/arch/invokeNative_armarm64_simd.asm)
+    foreach(_s IN LISTS _WAMR_ARM64_MASM_SOURCES)
+      if (EXISTS "${_s}")
+        set_source_files_properties("${_s}" PROPERTIES
+          LANGUAGE ASM_MASM
+          COMPILE_OPTIONS "/nologo"
+        )
+      endif()
+    endforeach()
+  else()
+    message(FATAL_ERROR "VCToolsInstallDir is not defined. Please run from a Developer Command Prompt or specify armasm64.exe manually.")
+  endif()
+endif()
 
 add_definitions(-DBH_MALLOC=wasm_runtime_malloc)
 add_definitions(-DBH_FREE=wasm_runtime_free)
@@ -79,9 +102,37 @@ elseif (WAMR_BUILD_TARGET MATCHES "THUMB.*")
   endif ()
 elseif (WAMR_BUILD_TARGET MATCHES "AARCH64.*")
   if (NOT WAMR_BUILD_SIMD EQUAL 1)
-    set (source_all ${c_source_all} ${IWASM_COMMON_DIR}/arch/invokeNative_aarch64.s)
+    if (WAMR_BUILD_PLATFORM STREQUAL "windows")
+      if (MSVC)
+        set (source_all ${c_source_all} ${IWASM_COMMON_DIR}/arch/invokeNative_armasm64.asm)
+        set(_WAMR_ARM64_MASM_SOURCES ${IWASM_COMMON_DIR}/arch/invokeNative_armasm64.asm)
+        set_source_files_properties(${_WAMR_ARM64_MASM_SOURCES}
+          PROPERTIES
+            LANGUAGE ASM_MASM
+            COMPILE_DEFINITIONS ""
+            INCLUDE_DIRECTORIES ""
+            COMPILE_OPTIONS "/nologo"
+        )
+      endif ()
+    else ()
+      set (source_all ${c_source_all} ${IWASM_COMMON_DIR}/arch/invokeNative_aarch64.s)
+    endif ()
   else()
-    set (source_all ${c_source_all} ${IWASM_COMMON_DIR}/arch/invokeNative_aarch64_simd.s)
+    if (WAMR_BUILD_PLATFORM STREQUAL "windows")
+      if (MSVC)
+        set (source_all ${c_source_all} ${IWASM_COMMON_DIR}/arch/invokeNative_armasm64_simd.asm)
+        set(_WAMR_ARM64_MASM_SOURCES_SIMD ${IWASM_COMMON_DIR}/arch/invokeNative_armasm64_simd.asm)
+        set_source_files_properties(${_WAMR_ARM64_MASM_SOURCES_SIMD}
+          PROPERTIES
+            LANGUAGE ASM_MASM
+            COMPILE_DEFINITIONS ""
+            INCLUDE_DIRECTORIES ""
+            COMPILE_OPTIONS "/nologo"
+        )
+      endif ()
+    else ()
+      set (source_all ${c_source_all} ${IWASM_COMMON_DIR}/arch/invokeNative_aarch64_simd.s)
+    endif ()
   endif()
 elseif (WAMR_BUILD_TARGET STREQUAL "MIPS")
   set (source_all ${c_source_all} ${IWASM_COMMON_DIR}/arch/invokeNative_mips.s)
