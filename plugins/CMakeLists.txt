@@ -363,10 +363,7 @@ REGISTER_OUT_PLUGIN("out_datadog")
 REGISTER_OUT_PLUGIN("out_es")
 REGISTER_OUT_PLUGIN("out_exit")
 REGISTER_OUT_PLUGIN("out_file")
-
-if(FLB_OUT_LOGROTATE)
-  REGISTER_OUT_PLUGIN("out_logrotate")
-endif()
+REGISTER_OUT_PLUGIN("out_logrotate")
 
 REGISTER_OUT_PLUGIN("out_forward")
 REGISTER_OUT_PLUGIN("out_http")

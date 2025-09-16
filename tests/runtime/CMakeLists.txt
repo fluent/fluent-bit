@@ -233,8 +233,6 @@ if(FLB_IN_LIB)
     # These plugins work only on Linux
   if(NOT FLB_SYSTEM_WINDOWS)
     FLB_RT_TEST(FLB_OUT_FILE              "out_file.c")
-  endif()
-  if(FLB_OUT_LOGROTATE)
     FLB_RT_TEST(FLB_OUT_LOGROTATE         "out_logrotate.c")
   endif()
   FLB_RT_TEST(FLB_OUT_S3                "out_s3.c")
