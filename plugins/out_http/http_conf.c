@@ -22,6 +22,7 @@
 #include <fluent-bit/flb_pack.h>
 #include <fluent-bit/flb_sds.h>
 #include <fluent-bit/flb_kv.h>
+#include <fluent-bit/flb_http_client.h>
 #include <fluent-bit/flb_record_accessor.h>
 
 #ifdef FLB_HAVE_SIGNV4
