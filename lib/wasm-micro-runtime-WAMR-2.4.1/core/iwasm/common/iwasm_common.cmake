@@ -6,23 +6,36 @@ set (IWASM_COMMON_DIR ${CMAKE_CURRENT_LIST_DIR})
 include_directories (${IWASM_COMMON_DIR})
 if (MSVC AND WAMR_BUILD_PLATFORM STREQUAL "windows" AND WAMR_BUILD_TARGET MATCHES "AARCH64.*")
   if (DEFINED ENV{VCToolsInstallDir})
-    set(CMAKE_ASM_MASM_COMPILER
-        "$ENV{VCToolsInstallDir}/bin/HostARM64/arm64/armasm64.exe"
-        CACHE FILEPATH "" FORCE)
-    set(CMAKE_ASM_MASM_COMPILE_OBJECT
-        "<CMAKE_ASM_MASM_COMPILER> /nologo -o <OBJECT> <SOURCE>"
-        CACHE STRING "" FORCE)
-    set(_WAMR_ARM64_MASM_SOURCES
-        ${IWASM_COMMON_DIR}/arch/invokeNative_armarm64.asm
-        ${IWASM_COMMON_DIR}/arch/invokeNative_armarm64_simd.asm)
-    foreach(_s IN LISTS _WAMR_ARM64_MASM_SOURCES)
-      if (EXISTS "${_s}")
-        set_source_files_properties("${_s}" PROPERTIES
-          LANGUAGE ASM_MASM
-          COMPILE_OPTIONS "/nologo"
-        )
+    # Detect host tool dir
+    set(_ARMASM64_CANDIDATES
+        "$ENV{VCToolsInstallDir}/bin/HostX64/ARM64/armasm64.exe"
+        "$ENV{VCToolsInstallDir}/bin/HostARM64/arm64/armasm64.exe")
+    set(_ARMASM64_EXE "")
+    foreach(_p IN LISTS _ARMASM64_CANDIDATES)
+      if (EXISTS "${_p}")
+        set(_ARMASM64_EXE "${_p}")
+        break()
       endif()
     endforeach()
+    if (_ARMASM64_EXE STREQUAL "")
+      message(FATAL_ERROR "armasm64.exe not found under VCToolsInstallDir")
+    endif()
+
+    # Wrapper without spaces to avoid quoting hell on NMake/cmd.exe
+    set(_WRAP "${CMAKE_BINARY_DIR}/armasm64_wrapper.bat")
+    file(WRITE "${_WRAP}"
+"@echo off\r\n\"${_ARMASM64_EXE}\" %*\r\n")
+
+    # Use wrapper as compiler (no spaces in path)
+    set(CMAKE_ASM_MASM_COMPILER
+        "${_WRAP}"
+        CACHE FILEPATH "" FORCE)
+
+    # Quote ONLY object and source (compiler path has no spaces now)
+    set(CMAKE_ASM_MASM_COMPILE_OBJECT
+        "<CMAKE_ASM_MASM_COMPILER> /nologo -o \"<OBJECT>\" \"<SOURCE>\""
+        CACHE STRING "" FORCE)
+
   else()
     message(FATAL_ERROR "VCToolsInstallDir is not defined. Please run from a Developer Command Prompt or specify armasm64.exe manually.")
   endif()
