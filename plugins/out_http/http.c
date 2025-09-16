@@ -529,7 +529,7 @@ err:
     return NULL;
 }
 
-static int post_all_requests(struct flb_out_http *ctx,
+static int send_all_requests(struct flb_out_http *ctx,
                              const char *data, size_t size,
                              flb_sds_t body_key,
                              flb_sds_t headers_key,
@@ -631,11 +631,11 @@ static void cb_http_flush(struct flb_event_chunk *event_chunk,
     (void) i_ins;
 
     if (ctx->body_key) {
-        ret = post_all_requests(ctx, event_chunk->data, event_chunk->size,
+        ret = send_all_requests(ctx, event_chunk->data, event_chunk->size,
                                 ctx->body_key, ctx->headers_key, event_chunk);
         if (ret < 0) {
             flb_plg_error(ctx->ins,
-                          "failed to post requests body key \"%s\"", ctx->body_key);
+                          "failed to send requests body key \"%s\"", ctx->body_key);
         }
     }
     else {
