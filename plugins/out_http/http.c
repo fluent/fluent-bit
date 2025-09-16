@@ -109,10 +109,10 @@ static void append_headers(struct flb_http_client *c,
     }
 }
 
-static int http_post(struct flb_out_http *ctx,
-                     const void *body, size_t body_len,
-                     const char *tag, int tag_len,
-                     char **headers)
+static int http_request(struct flb_out_http *ctx,
+                        const void *body, size_t body_len,
+                        const char *tag, int tag_len,
+                        char **headers)
 {
     int ret = 0;
     int out_ret = FLB_OK;
@@ -173,7 +173,7 @@ static int http_post(struct flb_out_http *ctx,
 
 
     /* Create HTTP client context */
-    c = flb_http_client(u_conn, FLB_HTTP_POST, ctx->uri,
+    c = flb_http_client(u_conn, ctx->http_method, ctx->uri,
                         payload_buf, payload_size,
                         ctx->host, ctx->port,
                         ctx->proxy, 0);
@@ -598,8 +598,8 @@ static int post_all_requests(struct flb_out_http *ctx,
         }
 
         if (body_found && headers_found) {
-            flb_plg_trace(ctx->ins, "posting record %zu", record_count++);
-            ret = http_post(ctx, body, body_size, event_chunk->tag,
+            flb_plg_trace(ctx->ins, "sending record %zu", record_count++);
+            ret = http_request(ctx, body, body_size, event_chunk->tag,
                     flb_sds_len(event_chunk->tag), headers);
         }
         else {
@@ -649,15 +649,15 @@ static void cb_http_flush(struct flb_event_chunk *event_chunk,
             (ctx->out_format == FLB_PACK_JSON_FORMAT_STREAM) ||
             (ctx->out_format == FLB_PACK_JSON_FORMAT_LINES) ||
             (ctx->out_format == FLB_HTTP_OUT_GELF)) {
-            ret = http_post(ctx, out_body, out_size,
-                            event_chunk->tag, flb_sds_len(event_chunk->tag), NULL);
+            ret = http_request(ctx, out_body, out_size,
+                               event_chunk->tag, flb_sds_len(event_chunk->tag), NULL);
             flb_sds_destroy(out_body);
         }
         else {
             /* msgpack */
-            ret = http_post(ctx,
-                            event_chunk->data, event_chunk->size,
-                            event_chunk->tag, flb_sds_len(event_chunk->tag), NULL);
+            ret = http_request(ctx,
+                               event_chunk->data, event_chunk->size,
+                               event_chunk->tag, flb_sds_len(event_chunk->tag), NULL);
         }
     }
 
@@ -758,6 +758,11 @@ static struct flb_config_map config_map[] = {
      FLB_CONFIG_MAP_STR, "uri", NULL,
      0, FLB_TRUE, offsetof(struct flb_out_http, uri),
      "Specify an optional HTTP URI for the target web server, e.g: /something"
+    },
+    {
+     FLB_CONFIG_MAP_STR, "http_method", "POST",
+     0, FLB_FALSE, 0,
+     "Specify the HTTP method to use. Supported methods are POST and PUT"
     },
 
     /* Gelf Properties */
