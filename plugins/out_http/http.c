@@ -598,7 +598,9 @@ static int send_all_requests(struct flb_out_http *ctx,
         }
 
         if (body_found && headers_found) {
-            flb_plg_trace(ctx->ins, "sending record %zu", record_count++);
+            flb_plg_trace(ctx->ins, "sending record %zu via %s",
+                          record_count++,
+                          ctx->http_method == FLB_HTTP_POST ? "POST" : "PUT");
             ret = http_request(ctx, body, body_size, event_chunk->tag,
                     flb_sds_len(event_chunk->tag), headers);
         }
@@ -635,7 +637,7 @@ static void cb_http_flush(struct flb_event_chunk *event_chunk,
                                 ctx->body_key, ctx->headers_key, event_chunk);
         if (ret < 0) {
             flb_plg_error(ctx->ins,
-                          "failed to send requests body key \"%s\"", ctx->body_key);
+                          "failed to send requests using body key \"%s\"", ctx->body_key);
         }
     }
     else {
