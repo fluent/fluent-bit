@@ -518,6 +518,7 @@ static int cb_queue_chunks(struct flb_input_instance *in,
     ssize_t                 size;
     int                     ret;
     int                     event_type;
+    struct cio_chunk        *underlying_chunk;
 
     /* Get context */
     ctx = (struct flb_sb *) data;
@@ -560,11 +561,14 @@ static int cb_queue_chunks(struct flb_input_instance *in,
                         flb_plg_error(ctx->ins, "removing corrupted chunk from the "
                                       "queue %s:%s",
                                       chunk_instance->stream->name, chunk_instance->chunk->name);
-                        cio_chunk_close(chunk_instance->chunk, FLB_FALSE);
-                        sb_remove_chunk_from_segregated_backlogs(chunk_instance->chunk, ctx);
-                        /* This function will indirecly release chunk_instance so it has to be
-                         * called last.
+                                      underlying_chunk = chunk_instance->chunk;
+
+                        /*
+                         * sb_remove_chunk_from_segregated_backlogs() releases chunk_instance,
+                         * so grab the pointer first and close the chunk afterwards.
                          */
+                        sb_remove_chunk_from_segregated_backlogs(underlying_chunk, ctx);
+                        cio_chunk_close(underlying_chunk, FLB_FALSE);
                         continue;
                     }
                     else if (ret == CIO_ERROR || ret == CIO_RETRY) {
@@ -586,9 +590,9 @@ static int cb_queue_chunks(struct flb_input_instance *in,
                                   "from the queue %s:%s",
                                   chunk_instance->stream->name,
                                   chunk_instance->chunk->name);
-                    cio_chunk_close(chunk_instance->chunk, FLB_TRUE);
-                    sb_remove_chunk_from_segregated_backlogs(chunk_instance->chunk,
-                                                             ctx);
+                    underlying_chunk = chunk_instance->chunk;
+                    sb_remove_chunk_from_segregated_backlogs(underlying_chunk, ctx);
+                    cio_chunk_close(underlying_chunk, FLB_TRUE);
                     continue;
                 }
                 event_type = ret;
@@ -599,11 +603,9 @@ static int cb_queue_chunks(struct flb_input_instance *in,
                     flb_plg_error(ctx->ins, "removing empty chunk from the "
                                   "queue %s:%s",
                                   chunk_instance->stream->name, chunk_instance->chunk->name);
-                    cio_chunk_close(chunk_instance->chunk, FLB_TRUE);
-                    sb_remove_chunk_from_segregated_backlogs(chunk_instance->chunk, ctx);
-                    /* This function will indirecly release chunk_instance so it has to be
-                     * called last.
-                     */
+                    underlying_chunk = chunk_instance->chunk;
+                    sb_remove_chunk_from_segregated_backlogs(underlying_chunk, ctx);
+                    cio_chunk_close(underlying_chunk, FLB_TRUE);
                     continue;
                 }
 
@@ -620,11 +622,9 @@ static int cb_queue_chunks(struct flb_input_instance *in,
                      * If the file cannot be mapped, just drop it. Failures are all
                      * associated with data corruption.
                      */
-                    cio_chunk_close(chunk_instance->chunk, FLB_TRUE);
-                    sb_remove_chunk_from_segregated_backlogs(chunk_instance->chunk, ctx);
-                    /* This function will indirecly release chunk_instance so it has to be
-                     * called last.
-                     */
+                    underlying_chunk = chunk_instance->chunk;
+                    sb_remove_chunk_from_segregated_backlogs(underlying_chunk, ctx);
+                    cio_chunk_close(underlying_chunk, FLB_TRUE);
                     continue;
                 }
 
