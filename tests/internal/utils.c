@@ -492,6 +492,12 @@ struct proxy_url_check proxy_url_checks[] = {
      "http", "proxy.com", "80", NULL, NULL},
     {0, "http://proxy.com:8080",
      "http", "proxy.com", "8080", NULL, NULL},
+    {0, "proxy.com:8080",
+     "http", "proxy.com", "8080", NULL, NULL},
+    {0, "foo:bar@proxy.com:8080",
+     "http", "proxy.com", "8080", "foo", "bar"},
+    {0, "proxy.com",
+     "http", "proxy.com", "80", NULL, NULL},
     /* issue #5530. Password contains @ */
     {0, "http://example_user:example_pass_w_@_char@proxy.com:8080",
      "http", "proxy.com", "8080", "example_user", "example_pass_w_@_char"},
@@ -550,8 +556,8 @@ void test_proxy_url_split() {
 
         /* Username */
         if (u->username) {
-            TEST_CHECK(port != NULL);
-            ret = strcmp(u->port, port);
+            TEST_CHECK(username != NULL);
+            ret = strcmp(u->username, username);
             TEST_CHECK(ret == 0);
             TEST_MSG("Expected username: %s", u->username);
             TEST_MSG("Produced username: %s", username);
@@ -563,8 +569,8 @@ void test_proxy_url_split() {
 
         /* Password */
         if (u->password) {
-            TEST_CHECK(port != NULL);
-            ret = strcmp(u->port, port);
+            TEST_CHECK(password != NULL);
+            ret = strcmp(u->password, password);
             TEST_CHECK(ret == 0);
             TEST_MSG("Expected password: %s", u->password);
             TEST_MSG("Produced password: %s", password);
