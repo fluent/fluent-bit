@@ -1395,92 +1395,205 @@ int flb_utils_proxy_url_split(const char *in_url, char **out_protocol,
                               char **out_username, char **out_password,
                               char **out_host, char **out_port)
 {
+    const char *at_sep;
+    const char *tmp;
+    const char *port_start;
+    const char *end;
+    const char *authority;
     char *protocol = NULL;
     char *username = NULL;
     char *password = NULL;
     char *host = NULL;
     char *port = NULL;
-    char *proto_sep;
-    char *at_sep;
-    char *tmp;
+
+    if (!in_url || *in_url == '\0') {
+        flb_error("HTTP_PROXY variable must specify a proxy host");
+        return -1;
+    }
 
     /*  Parse protocol */
-    proto_sep = strstr(in_url, "://");
-    if (!proto_sep) {
-        flb_error("HTTP_PROXY variable must be set in the form of 'http://[username:password@]host:port'");
-        return -1;
-    }
-    if (proto_sep == in_url) {
-        flb_error("HTTP_PROXY variable must be set in the form of 'http://[username:password@]host:port'");
-        return -1;
-    }
-
-    protocol = mk_string_copy_substr(in_url, 0, proto_sep - in_url);
-    if (!protocol) {
-        flb_errno();
-        return -1;
-    }
-    /* Only HTTP proxy is supported for now. */
-    if (strcmp(protocol, "http") != 0) {
-        flb_error("only HTTP proxy is supported.");
-        flb_free(protocol);
-        return -1;
-    }
-
-    /* Advance position after protocol */
-    proto_sep += 3;
-
-    /* Separate `username:password` and `host:port` */
-    at_sep = strrchr(proto_sep, '@');
-    if (at_sep) {
-        /* Parse username:password part. */
-        tmp = strchr(proto_sep, ':');
-        if (!tmp) {
-            flb_free(protocol);
+    tmp = strstr(in_url, "://");
+    if (tmp) {
+        if (tmp == in_url) {
+            flb_error("HTTP_PROXY variable must be set in the form of '[http://][username:password@]host:port'");
             return -1;
         }
-        username = mk_string_copy_substr(proto_sep, 0, tmp - proto_sep);
+
+        protocol = mk_string_copy_substr(in_url, 0, tmp - in_url);
+        if (!protocol) {
+            flb_errno();
+            return -1;
+        }
+
+        /* Only HTTP proxy is supported for now. */
+        if (strcmp(protocol, "http") != 0) {
+            flb_error("only HTTP proxy is supported.");
+            goto error;
+        }
+
+        authority = tmp + 3;
+    }
+    else {
+        protocol = flb_strdup("http");
+        if (!protocol) {
+            flb_errno();
+            return -1;
+        }
+
+        authority = in_url;
+    }
+
+    if (!authority || *authority == '\0') {
+        flb_error("HTTP_PROXY variable must include a host");
+        goto error;
+    }
+
+    /* Separate `username:password` and `host:port` */
+    at_sep = strrchr(authority, '@');
+    if (at_sep) {
+        tmp = strchr(authority, ':');
+        if (!tmp || tmp > at_sep) {
+            flb_error("invalid HTTP proxy credentials");
+            goto error;
+        }
+
+        username = mk_string_copy_substr(authority, 0, tmp - authority);
+        if (!username) {
+            flb_errno();
+            goto error;
+        }
+
         tmp += 1;
         password = mk_string_copy_substr(tmp, 0, at_sep - tmp);
+        if (!password) {
+            flb_errno();
+            goto error;
+        }
 
-        /* Parse host:port part. */
-        at_sep += 1;
-        tmp = strchr(at_sep, ':');
-        if (tmp) {
-            host = flb_copy_host(at_sep, 0, tmp - at_sep);
-            tmp += 1;
-            port = strdup(tmp);
+        authority = at_sep + 1;
+    }
+
+    if (!authority || *authority == '\0') {
+        flb_error("HTTP proxy host is missing");
+        goto error;
+    }
+
+    if (*authority == '[') {
+        end = strchr(authority, ']');
+        if (!end) {
+            flb_error("invalid HTTP proxy host");
+            goto error;
+        }
+
+        host = flb_copy_host(authority, 0, end - authority + 1);
+        if (!host) {
+            flb_error("invalid HTTP proxy host");
+            goto error;
+        }
+
+        if (*(end + 1) == ':') {
+            port_start = end + 2;
+            if (*port_start == '\0') {
+                flb_error("invalid HTTP proxy port");
+                goto error;
+            }
+
+            port = flb_strdup(port_start);
+            if (!port) {
+                flb_errno();
+                goto error;
+            }
+        }
+        else if (*(end + 1) == '\0') {
+            port = flb_strdup("80");
+            if (!port) {
+                flb_errno();
+                goto error;
+            }
         }
         else {
-            host = flb_copy_host(at_sep, 0, strlen(at_sep));
-            port = flb_strdup("80");
+            flb_error("invalid HTTP proxy host");
+            goto error;
         }
     }
     else {
-        /* Parse host:port part. */
-        tmp = strchr(proto_sep, ':');
+        tmp = strrchr(authority, ':');
         if (tmp) {
-            host = flb_copy_host(proto_sep, 0, tmp - proto_sep);
-            tmp += 1;
-            port = strdup(tmp);
+            host = flb_copy_host(authority, 0, tmp - authority);
+            if (!host) {
+                flb_error("invalid HTTP proxy host");
+                goto error;
+            }
+
+            port_start = tmp + 1;
+            if (*port_start == '\0') {
+                flb_error("invalid HTTP proxy port");
+                goto error;
+            }
+
+            port = flb_strdup(port_start);
+            if (!port) {
+                flb_errno();
+                goto error;
+            }
         }
         else {
-            host = flb_copy_host(proto_sep, 0, strlen(proto_sep));
+            host = flb_copy_host(authority, 0, strlen(authority));
+            if (!host) {
+                flb_error("invalid HTTP proxy host");
+                goto error;
+            }
+
             port = flb_strdup("80");
+            if (!port) {
+                flb_errno();
+                goto error;
+            }
         }
+    }
+
+    if (!host || *host == '\0') {
+        flb_error("HTTP proxy host is missing");
+        goto error;
     }
 
     *out_protocol = protocol;
     *out_host = host;
     *out_port = port;
-    if (username) {
+    if (out_username) {
         *out_username = username;
     }
-    if (password) {
+    else if (username) {
+        flb_free(username);
+    }
+
+    if (out_password) {
         *out_password = password;
+    }
+    else if (password) {
+        flb_free(password);
     }
 
     return 0;
+
+error:
+    if (protocol) {
+        flb_free(protocol);
+    }
+    if (username) {
+        flb_free(username);
+    }
+    if (password) {
+        flb_free(password);
+    }
+    if (host) {
+        flb_free(host);
+    }
+    if (port) {
+        flb_free(port);
+    }
+
+    return -1;
 }
 
 
