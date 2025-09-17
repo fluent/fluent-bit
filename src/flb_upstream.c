@@ -515,13 +515,6 @@ static int prepare_destroy_conn(struct flb_connection *u_conn)
     }
 
     if (u_conn->fd > 0) {
-#ifdef FLB_HAVE_TLS
-        if (u_conn->tls_session != NULL) {
-            flb_tls_session_destroy(u_conn->tls_session);
-
-            u_conn->tls_session = NULL;
-        }
-#endif
         shutdown_connection(u_conn);
 
         flb_socket_close(u_conn->fd);
@@ -571,6 +564,15 @@ static int destroy_conn(struct flb_connection *u_conn)
         u_conn->event._priority_head.prev != NULL) {
         return 0;
     }
+
+    /* Delay to destroy TLS session for safety */
+#ifdef FLB_HAVE_TLS
+        if (u_conn->tls_session != NULL) {
+            flb_tls_session_destroy(u_conn->tls_session);
+
+            u_conn->tls_session = NULL;
+        }
+#endif
 
     mk_list_del(&u_conn->_head);
 
