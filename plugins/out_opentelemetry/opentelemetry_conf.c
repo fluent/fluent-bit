@@ -167,7 +167,7 @@ static int config_add_labels(struct flb_output_instance *ins,
         k = mk_list_entry_first(mv->val.list, struct flb_slist_entry, _head);
         v = mk_list_entry_last(mv->val.list, struct flb_slist_entry, _head);
 
-        kv = flb_kv_item_create(&ctx->kv_labels, k->str, v->str);
+        kv = flb_kv_item_set(&ctx->kv_labels, k->str, v->str);
         if (!kv) {
             flb_plg_error(ins, "could not append label %s=%s\n", k->str, v->str);
             return -1;
