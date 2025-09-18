@@ -527,7 +527,7 @@ typedef uint8_t yyjson_type;
 #define YYJSON_TYPE_BOOL        ((uint8_t)3)        /* _____011 */
 /** Number type, subtype: UINT, SINT, REAL. */
 #define YYJSON_TYPE_NUM         ((uint8_t)4)        /* _____100 */
-/** String type, subtype: NONE, NOESC. */
+/** String type, subtype: NONE, NOESC, UNIERR. */
 #define YYJSON_TYPE_STR         ((uint8_t)5)        /* _____101 */
 /** Array type, no subtype. */
 #define YYJSON_TYPE_ARR         ((uint8_t)6)        /* _____110 */
@@ -550,6 +550,8 @@ typedef uint8_t yyjson_subtype;
 #define YYJSON_SUBTYPE_REAL     ((uint8_t)(2 << 3)) /* ___10___ */
 /** String that do not need to be escaped for writing (internal use). */
 #define YYJSON_SUBTYPE_NOESC    ((uint8_t)(1 << 3)) /* ___01___ */
+/** String containing invalid Unicode sequences. */
+#define YYJSON_SUBTYPE_UNIERR   ((uint8_t)(2 << 3)) /* ___10___ */
 
 /** The mask used to extract the type of a JSON value. */
 #define YYJSON_TYPE_MASK        ((uint8_t)0x07)     /* _____111 */
@@ -811,6 +813,10 @@ static const yyjson_read_flag YYJSON_READ_ALLOW_UNQUOTED_KEY        = 1 << 13;
 
 /** Replace invalid unicode code units with replacement character `U+FFFD`
     when parsing string values (non-standard).
+    Invalid UTF-8 byte sequences that are shorter than three bytes cannot be
+    expanded in-place and are left unchanged. Strings that still contain
+    invalid bytes are marked with `YYJSON_SUBTYPE_UNIERR` for the caller to
+    detect.
     This flag implicitly enables `YYJSON_READ_ALLOW_INVALID_UNICODE` and
     `YYJSON_READ_ALLOW_INVALID_SURROGATE`, so malformed input is tolerated
     and replaced without needing those flags.
@@ -5237,6 +5243,7 @@ yyjson_api_inline const char *yyjson_get_type_desc(yyjson_val *val) {
         case YYJSON_TYPE_NULL | YYJSON_SUBTYPE_NONE:  return "null";
         case YYJSON_TYPE_STR  | YYJSON_SUBTYPE_NONE:  return "string";
         case YYJSON_TYPE_STR  | YYJSON_SUBTYPE_NOESC: return "string";
+        case YYJSON_TYPE_STR  | YYJSON_SUBTYPE_UNIERR: return "string";
         case YYJSON_TYPE_ARR  | YYJSON_SUBTYPE_NONE:  return "array";
         case YYJSON_TYPE_OBJ  | YYJSON_SUBTYPE_NONE:  return "object";
         case YYJSON_TYPE_BOOL | YYJSON_SUBTYPE_TRUE:  return "true";

@@ -1469,6 +1469,7 @@ static void test_invalid_unicode_flags(void) {
     const char *str = yyjson_get_str(val);
     yy_assert(str && (u8)str[0] == 0xED && (u8)str[1] == 0xA0 &&
               (u8)str[2] == 0xBD && str[3] == '\0');
+    yy_assert(yyjson_get_subtype(val) == YYJSON_SUBTYPE_UNIERR);
     yyjson_doc_free(doc);
 
     doc = yyjson_read(inv_sur_hi, 8,
@@ -1479,6 +1480,87 @@ static void test_invalid_unicode_flags(void) {
     str = yyjson_get_str(val);
     yy_assert(str && (u8)str[0] == 0xEF && (u8)str[1] == 0xBF &&
               (u8)str[2] == 0xBD && str[3] == '\0');
+    yy_assert(yyjson_get_subtype(val) == YYJSON_SUBTYPE_UNIERR);
+    yyjson_doc_free(doc);
+
+    /* invalid UTF-8 byte */
+    char inv_utf8[4 + YYJSON_PADDING_SIZE];
+    inv_utf8[0] = '"';
+    inv_utf8[1] = (char)0x80;
+    inv_utf8[2] = '"';
+    inv_utf8[3] = '\0';
+    memset(inv_utf8 + 3, 0, YYJSON_PADDING_SIZE);
+
+    yy_assert(!yyjson_read(inv_utf8, 3, 0));
+
+    doc = yyjson_read(inv_utf8, 3, YYJSON_READ_ALLOW_INVALID_UNICODE);
+    yy_assert(doc);
+    val = yyjson_doc_get_root(doc);
+    str = yyjson_get_str(val);
+    yy_assert(str && (u8)str[0] == 0x80 && str[1] == '\0');
+    yy_assert(yyjson_get_subtype(val) == YYJSON_SUBTYPE_UNIERR);
+    yyjson_doc_free(doc);
+
+    doc = yyjson_read(inv_utf8, 3, YYJSON_READ_REPLACE_INVALID_UNICODE);
+    yy_assert(doc);
+    val = yyjson_doc_get_root(doc);
+    str = yyjson_get_str(val);
+    yy_assert(str && (u8)str[0] == 0x80 && str[1] == '\0');
+    yy_assert(yyjson_get_subtype(val) == YYJSON_SUBTYPE_UNIERR);
+    yyjson_doc_free(doc);
+
+    /* malformed \u with no digits */
+    char inv_esc1[4 + YYJSON_PADDING_SIZE];
+    memcpy(inv_esc1, "\"\\u\"", 4);
+    memset(inv_esc1 + 4, 0, YYJSON_PADDING_SIZE);
+    doc = yyjson_read(inv_esc1, 4, YYJSON_READ_REPLACE_INVALID_UNICODE);
+    yy_assert(doc);
+    val = yyjson_doc_get_root(doc);
+    str = yyjson_get_str(val);
+    yy_assert(str && str[0] == '\\' && str[1] == 'u' && str[2] == '\0');
+    yy_assert(yyjson_get_len(val) == 2);
+    yy_assert(yyjson_get_subtype(val) == YYJSON_SUBTYPE_UNIERR);
+    yyjson_doc_free(doc);
+
+    /* malformed \u with non-hex char */
+    char inv_esc2[5 + YYJSON_PADDING_SIZE];
+    memcpy(inv_esc2, "\"\\uX\"", 5);
+    memset(inv_esc2 + 5, 0, YYJSON_PADDING_SIZE);
+    doc = yyjson_read(inv_esc2, 5, YYJSON_READ_REPLACE_INVALID_UNICODE);
+    yy_assert(doc);
+    val = yyjson_doc_get_root(doc);
+    str = yyjson_get_str(val);
+    yy_assert(str && str[0] == '\\' && str[1] == 'u' && str[2] == '\0');
+    yy_assert(yyjson_get_len(val) == 2);
+    yy_assert(yyjson_get_subtype(val) == YYJSON_SUBTYPE_UNIERR);
+    yyjson_doc_free(doc);
+
+    /* malformed \u with truncated trailing hex digits */
+    char inv_esc3[8 + YYJSON_PADDING_SIZE];
+    memcpy(inv_esc3, "\"\\u123G\"", 8);
+    memset(inv_esc3 + 8, 0, YYJSON_PADDING_SIZE);
+    doc = yyjson_read(inv_esc3, 8, YYJSON_READ_REPLACE_INVALID_UNICODE);
+    yy_assert(doc);
+    val = yyjson_doc_get_root(doc);
+    str = yyjson_get_str(val);
+    yy_assert(str && str[0] == '\\' && str[1] == 'u' &&
+              str[2] == '1' && str[3] == '2' && str[4] == '3' && str[5] == '\0');
+    yy_assert(yyjson_get_len(val) == 5);
+    yy_assert(yyjson_get_subtype(val) == YYJSON_SUBTYPE_UNIERR);
+    yyjson_doc_free(doc);
+
+    /* malformed surrogate pair with incomplete low surrogate */
+    char inv_sur_pair[10 + YYJSON_PADDING_SIZE];
+    memcpy(inv_sur_pair, "\"\\uD800\\u\"", 10);
+    memset(inv_sur_pair + 10, 0, YYJSON_PADDING_SIZE);
+    doc = yyjson_read(inv_sur_pair, 10, YYJSON_READ_REPLACE_INVALID_UNICODE);
+    yy_assert(doc);
+    val = yyjson_doc_get_root(doc);
+    str = yyjson_get_str(val);
+    yy_assert(str && (u8)str[0] == 0xEF && (u8)str[1] == 0xBF &&
+              (u8)str[2] == 0xBD && str[3] == '\0');
+    yy_assert(yyjson_get_len(val) == 3);
+    yy_assert(yyjson_get_subtype(val) == YYJSON_SUBTYPE_UNIERR);
     yyjson_doc_free(doc);
 #endif
 }
