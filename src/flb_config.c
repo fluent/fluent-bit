@@ -179,7 +179,7 @@ struct flb_service_config service_configs[] = {
 
     /* Escape UNicode inside of JSON */
     {FLB_CONF_UNICODE_STR_JSON_ESCAPE,
-     FLB_CONF_TYPE_INT,
+     FLB_CONF_TYPE_BOOL,
      offsetof(struct flb_config, json_escape_unicode)},
 
 #ifdef FLB_HAVE_STREAM_PROCESSOR
