@@ -85,6 +85,7 @@ set(src
   flb_log_event_encoder_dynamic_field.c
   flb_processor.c
   flb_reload.c
+  flb_supervisor.c
   flb_msgpack_append_message.c
   flb_notification.c
   flb_lock.c
