@@ -1485,9 +1485,10 @@ if(DPKG_PROGRAM)
     ${PROJECT_SOURCE_DIR}/cpack/debian/conffiles
     )
 
+  set(LDCONFIG_SCRIPT_CMDS "")
   if(FLB_RUN_LDCONFIG)
     set(LDCONFIG_DIR ${FLB_INSTALL_LIBDIR})
-    file(WRITE ${PROJECT_BINARY_DIR}/scripts/postinst "
+    set(LDCONFIG_SCRIPT_CMDS "
 mkdir -p /etc/ld.so.conf.d
 echo \"${LDCONFIG_DIR}\" > /etc/ld.so.conf.d/libfluent-bit.conf
 ldconfig
@@ -1496,8 +1497,19 @@ ldconfig
 rm -f -- /etc/ld.so.conf.d/libfluent-bit.conf
 ldconfig
     ")
-    set(CPACK_DEBIAN_RUNTIME_PACKAGE_CONTROL_EXTRA "${PROJECT_BINARY_DIR}/scripts/postinst;${PROJECT_BINARY_DIR}/scripts/prerm")
+    list(APPEND CPACK_DEBIAN_RUNTIME_PACKAGE_CONTROL_EXTRA "${PROJECT_BINARY_DIR}/scripts/postinst;${PROJECT_BINARY_DIR}/scripts/prerm")
   endif(FLB_RUN_LDCONFIG)
+
+  file(WRITE ${PROJECT_BINARY_DIR}/scripts/postinst "#!/bin/sh
+set -e
+${LDCONFIG_SCRIPT_CMDS}
+if [ \"\$1\" = \"configure\" ]; then
+    systemctl daemon-reload >/dev/null || true
+    systemctl try-restart ${FLB_OUT_NAME}.service >/dev/null || true
+fi
+")
+
+  list(APPEND CPACK_DEBIAN_RUNTIME_PACKAGE_CONTROL_EXTRA "${PROJECT_BINARY_DIR}/scripts/postinst;${PROJECT_BINARY_DIR}/scripts/prerm")
 
 endif()
 
