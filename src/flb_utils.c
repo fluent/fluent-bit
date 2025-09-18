@@ -1096,6 +1096,65 @@ done:
     return FLB_TRUE;
 }
 
+static inline int flb_utf8_validate_char(const unsigned char *str, int max_len)
+{
+    unsigned char c = str[0];
+    int len = 0;
+    int i;
+
+    if (max_len < 1) {
+        return 0;
+    }
+
+    /* 1-byte sequence (ASCII) */
+    if (c <= 0x7F) {
+        return 1;
+    }
+    /* 2-byte sequence */
+    else if ((c & 0xE0) == 0xC0) {
+        if (c < 0xC2) return 0; /* Overlong encoding */
+        len = 2;
+    }
+    /* 3-byte sequence */
+    else if ((c & 0xF0) == 0xE0) {
+        if (max_len > 1 && c == 0xE0 && (unsigned char)str[1] < 0xA0) {
+            return 0; /* Overlong */
+        }
+        if (max_len > 1 && c == 0xED && (unsigned char)str[1] >= 0xA0) {
+            return 0; /* Surrogates */
+        }
+        len = 3;
+    }
+    /* 4-byte sequence */
+    else if ((c & 0xF8) == 0xF0) {
+        if (max_len > 1 && c == 0xF0 && (unsigned char)str[1] < 0x90) {
+            return 0; /* Overlong */
+        }
+        if (c > 0xF4) {
+            return 0; /* Outside of Unicode range */
+        }
+        if (max_len > 1 && c == 0xF4 && (unsigned char)str[1] > 0x8F) {
+            return 0; /* Outside of Unicode range */
+        }
+        len = 4;
+    }
+    else {
+        return 0; /* Invalid starting byte */
+    }
+
+    if (max_len < len) {
+        return 0; /* Truncated sequence */
+    }
+
+    for (i = 1; i < len; i++) {
+        if ((str[i] & 0xC0) != 0x80) {
+            return 0; /* Invalid continuation byte */
+        }
+    }
+
+    return len;
+}
+
 /* Safely copies raw UTF-8 strings, only escaping essential characters.
  * This version correctly implements the repeating SIMD fast path for performance.
  */
@@ -1180,7 +1239,7 @@ static int flb_utils_write_str_raw(char *buf, int *off, size_t size,
                 available--;
             }
             else { /* Multibyte UTF-8 sequence */
-                utf_len = flb_utf8_len(&str[i]);
+                utf_len = flb_utf8_validate_char((const unsigned char *)&str[i], str_len - i);
 
                 if (utf_len == 0 || i + utf_len > str_len) { /* Invalid/truncated */
                     if (available < 3) {
