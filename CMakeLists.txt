@@ -1543,9 +1543,10 @@ if(DPKG_PROGRAM)
     ${PROJECT_SOURCE_DIR}/cpack/debian/conffiles
     )
 
+  set(LDCONFIG_SCRIPT_CMDS "")
   if(FLB_RUN_LDCONFIG)
     set(LDCONFIG_DIR ${FLB_INSTALL_LIBDIR})
-    file(WRITE ${PROJECT_BINARY_DIR}/scripts/postinst "
+    set(LDCONFIG_SCRIPT_CMDS "
 mkdir -p /etc/ld.so.conf.d
 echo \"${LDCONFIG_DIR}\" > /etc/ld.so.conf.d/libfluent-bit.conf
 ldconfig
@@ -1554,9 +1555,19 @@ ldconfig
 rm -f -- /etc/ld.so.conf.d/libfluent-bit.conf
 ldconfig
     ")
-    set(CPACK_DEBIAN_RUNTIME_PACKAGE_CONTROL_EXTRA "${PROJECT_BINARY_DIR}/scripts/postinst;${PROJECT_BINARY_DIR}/scripts/prerm")
+    list(APPEND CPACK_DEBIAN_RUNTIME_PACKAGE_CONTROL_EXTRA "${PROJECT_BINARY_DIR}/scripts/postinst;${PROJECT_BINARY_DIR}/scripts/prerm")
   endif(FLB_RUN_LDCONFIG)
 
+  configure_file(
+    "${CMAKE_CURRENT_SOURCE_DIR}/cpack/debian/postinst.in"
+    "${PROJECT_BINARY_DIR}/scripts/postinst"
+  )
+  execute_process(
+    COMMAND "${CMAKE_COMMAND}" -E chmod +x
+            "${PROJECT_BINARY_DIR}/scripts/postinst"
+  )
+
+  list(APPEND CPACK_DEBIAN_RUNTIME_PACKAGE_CONTROL_EXTRA "${PROJECT_BINARY_DIR}/scripts/postinst")
 endif()
 
 # RPM Generation information

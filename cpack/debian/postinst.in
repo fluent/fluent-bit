@@ -1,0 +1,9 @@
+#!/bin/sh
+set -e
+@LDCONFIG_SCRIPT_CMDS@
+if [ "$1" = "configure" ] || [ "$1" = "abort-upgrade" ] || [ "$1" = "abort-deconfigure" ] || [ "$1" = "abort-remove" ] ; then
+    if [ -d /run/systemd/system ]; then
+        systemctl --system daemon-reload >/dev/null || true
+        systemctl try-restart @FLB_OUT_NAME@.service >/dev/null || true
+    fi
+fi
