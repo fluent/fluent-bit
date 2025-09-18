@@ -10,6 +10,7 @@ set(UNIT_TESTS_FILES
   hmac.c
   crypto.c
   hash.c
+  kv.c
   slist.c
   router.c
   network.c
