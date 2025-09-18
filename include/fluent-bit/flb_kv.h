@@ -36,6 +36,8 @@ struct flb_kv *flb_kv_item_create_len(struct mk_list *list,
                                       char *v_buf, size_t v_len);
 struct flb_kv *flb_kv_item_create(struct mk_list *list,
                                   char *k_buf, char *v_buf);
+struct flb_kv *flb_kv_item_set(struct mk_list *list,
+                               char *k_buf, char *v_buf);
 void flb_kv_item_destroy(struct flb_kv *kv);
 void flb_kv_release(struct mk_list *list);
 const char *flb_kv_get_key_value(const char *key, struct mk_list *list);
