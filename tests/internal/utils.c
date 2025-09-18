@@ -435,6 +435,73 @@ void test_write_raw_str_special_bytes()
     write_raw_str_test_cases(cases);
 }
 
+void test_write_raw_str_invalid_sequences()
+{
+    struct write_str_case cases[] = {
+        /*
+         * Case 1: Stray continuation byte (0x80)
+         */
+        {
+            "hello \x80 world", 13,
+            "hello \xEF\xBF\xBD world",
+            FLB_TRUE
+        },
+
+        /*
+         * Case 2: Incomplete multi-byte sequence
+         */
+        {
+            "a\xE6\x97""b", 4,
+            "a""\xEF\xBF\xBD""\xEF\xBF\xBD""b",
+            FLB_TRUE
+        },
+
+        /*
+         * Case 3: Overlong encoding
+         */
+        {
+            "a\xC0\xAF""b", 4,
+            "a""\xEF\xBF\xBD""\xEF\xBF\xBD""b",
+            FLB_TRUE
+        },
+
+        /*
+         * Case 4: With an invalid starting byte
+         */
+        {
+            "start-\xFF-end", 11,
+            "start-\xEF\xBF\xBD-end",
+            FLB_TRUE
+        },
+
+        /*
+         * Case 5: Mix of valid and invalid sequences
+         */
+        {
+            /* Input: "你好<stray_byte>世界" */
+            "\xE4\xBD\xA0\xE5\xA5\xBD" "\x80" "\xE4\xB8\x96\xE7\x95\x8C", 13,
+            /* Output: "你好<replacement_char>世界" */
+            "\xE4\xBD\xA0\xE5\xA5\xBD" "\xEF\xBF\xBD" "\xE4\xB8\x96\xE7\x95\x8C",
+            FLB_TRUE
+        },
+
+        /*
+         * Case 6: Sequence with invalid continuation byte
+         */
+        {
+            /* Input: "a" + 日(E6 97 A5) + ASCII "b" */
+            "a\xE6\x97""b", 4,
+            "a""\xEF\xBF\xBD""\xEF\xBF\xBD""b",
+            FLB_TRUE
+        },
+
+        /* End of cases */
+        { 0 }
+    };
+
+    write_raw_str_test_cases(cases);
+}
+
 void test_write_str_invalid_leading_byte_case_2()
 {
 
@@ -858,6 +925,7 @@ TEST_LIST = {
     { "write_str", test_write_str },
     { "write_str_special_bytes", test_write_str_special_bytes },
     { "write_raw_str_special_bytes", test_write_raw_str_special_bytes },
+    { "write_raw_str_invalid_bytes", test_write_raw_str_invalid_sequences},
     { "test_write_str_invalid_trailing_bytes", test_write_str_invalid_trailing_bytes },
     { "test_write_str_invalid_leading_byte", test_write_str_invalid_leading_byte },
     { "test_write_str_edge_cases", test_write_str_edge_cases },
