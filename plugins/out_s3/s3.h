@@ -107,6 +107,8 @@ struct flb_s3 {
     char *s3_key_format;
     char *tag_delimiters;
     char *endpoint;
+    char *server_side_encryption_aws_kms_key_id;
+    char *server_side_encryption;
     char *sts_endpoint;
     char *canned_acl;
     char *content_type;
