@@ -11,16 +11,16 @@ The [`distros`](./distros/) directory contains OCI container definitions used to
 
 | Distro        |   Version / Code Name     | Arch    | Target Option            |
 |---------------|---------------------------|---------|--------------------------|
-| AmazonLinux   |   2                       | x86_64  | amazonlinux/2            |
-| AmazonLinux   |   2                       | arm64v8 | amazonlinux/2.arm64v8    |
-| AmazonLinux   |   2023                    | x86_64  | amazonlinux/2023         |
-| AmazonLinux   |   2023                    | arm64v8 | amazonlinux/2023.arm64v8 |
 | AlmaLinux     |   8                       | x86_64  | almalinux/8              |
 | AlmaLinux     |   8                       | arm64v8 | almalinux/8.arm64v8      |
 | AlmaLinux     |   9                       | x86_64  | almalinux/9              |
 | AlmaLinux     |   9                       | arm64v8 | almalinux/9.arm64v8      |
 | AlmaLinux     |   10                      | x86_64  | almalinux/10             |
 | AlmaLinux     |   10                      | arm64v8 | almalinux/10.arm64v8     |
+| AmazonLinux   |   2                       | x86_64  | amazonlinux/2            |
+| AmazonLinux   |   2                       | arm64v8 | amazonlinux/2.arm64v8    |
+| AmazonLinux   |   2023                    | x86_64  | amazonlinux/2023         |
+| AmazonLinux   |   2023                    | arm64v8 | amazonlinux/2023.arm64v8 |
 | CentOS Stream |   9                       | x86_64  | centos/9                 |
 | CentOS Stream |   9                       | arm64v8 | centos/9.arm64v8         |
 | CentOS        |   8                       | x86_64  | centos/8                 |
@@ -47,6 +47,12 @@ The [`distros`](./distros/) directory contains OCI container definitions used to
 | Raspbian      |   12 / Bookworm           | arm32v7 | raspbian/bookworm        |
 | Raspbian      |   11 / Bullseye           | arm32v7 | raspbian/bullseye        |
 | Raspbian      |   10 / Buster             | arm32v7 | raspbian/buster          |
+| Rocky Linux   |   8                       | x86_64  | rockylinux/8             |
+| Rocky Linux   |   8                       | arm64v8 | rockylinux/8.arm64v8     |
+| Rocky Linux   |   9                       | x86_64  | rockylinux/9             |
+| Rocky Linux   |   9                       | arm64v8 | rockylinux/9.arm64v8     |
+| Rocky Linux   |   10                      | x86_64  | rockylinux/10            |
+| Rocky Linux   |   10                      | arm64v8 | rockylinux/10.arm64v8    |
 
 These container images are intended to be built from the root of this repo to build the locally checked out/updated version of the source easily for any target.
 
