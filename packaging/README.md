@@ -15,6 +15,12 @@ The [`distros`](./distros/) directory contains OCI container definitions used to
 | AmazonLinux   |   2                       | arm64v8 | amazonlinux/2.arm64v8    |
 | AmazonLinux   |   2023                    | x86_64  | amazonlinux/2023         |
 | AmazonLinux   |   2023                    | arm64v8 | amazonlinux/2023.arm64v8 |
+| AlmaLinux     |   8                       | x86_64  | almalinux/8              |
+| AlmaLinux     |   8                       | arm64v8 | almalinux/8.arm64v8      |
+| AlmaLinux     |   9                       | x86_64  | almalinux/9              |
+| AlmaLinux     |   9                       | arm64v8 | almalinux/9.arm64v8      |
+| AlmaLinux     |   10                      | x86_64  | almalinux/10             |
+| AlmaLinux     |   10                      | arm64v8 | almalinux/10.arm64v8     |
 | CentOS Stream |   9                       | x86_64  | centos/9                 |
 | CentOS Stream |   9                       | arm64v8 | centos/9.arm64v8         |
 | CentOS        |   8                       | x86_64  | centos/8                 |
