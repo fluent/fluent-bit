@@ -55,6 +55,7 @@ YUM_TARGETS=(
     "rockylinux:9"
     "rockylinux:10"
     "quay.io/centos/centos:stream9"
+    "quay.io/centos/centos:stream10"
     "amazonlinux:2"
     "amazonlinux:2023"
 )

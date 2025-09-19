@@ -41,6 +41,14 @@
           "type": "rpm"
         },
         {
+          "target": "centos/10",
+          "type": "rpm"
+        },
+        {
+          "target": "centos/10.arm64v8",
+          "type": "rpm"
+        },
+        {
           "target": "rockylinux/8",
           "type": "rpm"
         },
