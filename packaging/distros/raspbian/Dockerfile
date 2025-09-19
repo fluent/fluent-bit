@@ -6,7 +6,7 @@ ARG BASE_BUILDER
 # Lookup the name to use below but should follow the '<distro>-base' convention with slashes replaced.
 # Use buildkit to skip unused base images: DOCKER_BUILDKIT=1
 
-FROM balenalib/rpi-raspbian:buster AS raspbian-buster-base
+FROM balenalib/rpi-raspbian:bullseye AS raspbian-bullseye-base
 ENV DEBIAN_FRONTEND noninteractive
 
 # Builder image so dependencies can be latest, recommended and no need to wipe
