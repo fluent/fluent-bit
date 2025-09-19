@@ -8,6 +8,7 @@ on:
       - synchronize
     branches:
       - master
+      - 4.0
 
 # Cancel any running on push
 concurrency:
