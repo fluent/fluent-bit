@@ -253,6 +253,9 @@ jobs:
             --volume "/var/lib/dbus/machine-id:/var/lib/dbus/machine-id"
             --volume "/etc/machine-id:/etc/machine-id"
           install: |
+            dpkg --add-architecture s390x
+            dpkg --add-architecture riscv64
+
             apt-get update
             apt-get install -y gcc-12 g++-12 libyaml-dev flex bison libssl-dev libbpf-dev linux-tools-common lld
             apt-get satisfy -y cmake "cmake (<< 4.0)"
