@@ -16,7 +16,7 @@ jobs:
     timeout-minutes: 30
     steps:
     - name: Checkout Fluent Bit code
-      uses: actions/checkout@v4
+      uses: actions/checkout@v5
 
     - name: Set up Docker Buildx
       uses: docker/setup-buildx-action@v3
@@ -68,7 +68,7 @@ jobs:
         run: |
           sudo apt-get update
           sudo apt-get install -y libc-ares-dev libjemalloc-dev libluajit-5.1-dev \
-            libnghttp2-dev libsqlite3-dev libzstd-dev libmsgpack-dev
+            libnghttp2-dev libsqlite3-dev libzstd-dev libmsgpack-dev librdkafka-dev
           mkdir -p /tmp/libbacktrace/build && \
             curl -L https://github.com/ianlancetaylor/libbacktrace/archive/8602fda.tar.gz | \
             tar --strip-components=1 -xzC /tmp/libbacktrace/ && \
@@ -80,7 +80,7 @@ jobs:
           cmake-version: "${{ matrix.cmake_version }}"
 
       - name: Checkout Fluent Bit code
-        uses: actions/checkout@v4
+        uses: actions/checkout@v5
 
       - name: ${{ matrix.compiler.cc }} & ${{ matrix.compiler.cxx }} - ${{ matrix.flb_option }}
         run: |
@@ -112,10 +112,11 @@ jobs:
           echo "$ldd_result" | grep libzstd
         working-directory: build
 
-      - name: Display dependencies w/ ldd for libmsgpack
+      - name: Display dependencies w/ ldd for libmsgpack and librdkafka
         if: matrix.os.version == 'ubuntu-24.04'
         run: |
           export ldd_result=$(ldd ./bin/fluent-bit)
           echo "ldd result:"
           echo "$ldd_result" | grep libmsgpack
+          echo "$ldd_result" | grep librdkafka
         working-directory: build
