@@ -105,14 +105,6 @@
           "type": "deb"
         },
         {
-          "target": "debian/buster",
-          "type": "deb"
-        },
-        {
-          "target": "debian/buster.arm64v8",
-          "type": "deb"
-        },
-        {
           "target": "debian/bullseye",
           "type": "deb"
         },
