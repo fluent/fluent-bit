@@ -41,6 +41,14 @@
           "type": "rpm"
         },
         {
+          "target": "centos/10",
+          "type": "rpm"
+        },
+        {
+          "target": "centos/10.arm64v8",
+          "type": "rpm"
+        },
+        {
           "target": "rockylinux/8",
           "type": "rpm"
         },
@@ -57,6 +65,14 @@
           "type": "rpm"
         },
         {
+          "target": "rockylinux/10",
+          "type": "rpm"
+        },
+        {
+          "target": "rockylinux/10.arm64v8",
+          "type": "rpm"
+        },
+        {
           "target": "almalinux/8",
           "type": "rpm"
         },
@@ -70,6 +86,14 @@
         },
         {
           "target": "almalinux/9.arm64v8",
+          "type": "rpm"
+        },
+        {
+          "target": "almalinux/10",
+          "type": "rpm"
+        },
+        {
+          "target": "almalinux/10.arm64v8",
           "type": "rpm"
         },
         {
@@ -94,6 +118,14 @@
         },
         {
           "target": "debian/bullseye.arm64v8",
+          "type": "deb"
+        },
+        {
+          "target": "debian/trixie",
+          "type": "deb"
+        },
+        {
+          "target": "debian/trixie.arm64v8",
           "type": "deb"
         },
         {
