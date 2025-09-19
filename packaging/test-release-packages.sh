@@ -37,19 +37,27 @@ function check_version() {
     fi
 }
 
-APT_TARGETS=("ubuntu:22.04"
+APT_TARGETS=(
+	"ubuntu:22.04"
+	"ubuntu:24.04"
     "debian:10"
-    "debian:11")
+    "debian:11"
+	"debian:12"
+	"debian:13"
+)
 
-YUM_TARGETS=("centos:7"
+YUM_TARGETS=(
+	"centos:7"
     "almalinux:8"
     "almalinux:9"
     "almalinux:10"
     "rockylinux:8"
     "rockylinux:9"
+    "rockylinux:10"
     "quay.io/centos/centos:stream9"
     "amazonlinux:2"
-    "amazonlinux:2023")
+    "amazonlinux:2023"
+)
 
 for IMAGE in "${YUM_TARGETS[@]}"
 do
