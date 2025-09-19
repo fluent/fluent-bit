@@ -25,7 +25,8 @@
 #include <limits.h>
 #include <signal.h>
 #include <errno.h>
-#include <unistd.h>
+
+#ifndef FLB_SYSTEM_WINDOWS
 #include <fcntl.h>
 #include <sys/types.h>
 #include <sys/wait.h>
@@ -33,12 +34,14 @@
 #ifdef __linux__
 #include <sys/prctl.h>
 #endif
+#endif
 
 #include <fluent-bit/flb_info.h>
 #include <fluent-bit/flb_macros.h>
 #include <fluent-bit/flb_supervisor.h>
 #include <fluent-bit/flb_log.h>
 #include <fluent-bit/flb_mem.h>
+#include <fluent-bit/flb_compat.h>
 
 #define FLB_SUPERVISOR_DEFAULT_FORCE_TIMEOUT 10
 #define FLB_SUPERVISOR_CHILD_TITLE           "fluent-bit-child"
