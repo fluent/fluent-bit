@@ -918,6 +918,45 @@ void test_size_to_bytes()
     }
 }
 
+struct size_to_bytes_check size_to_binary_bytes_checks[] = {
+    {"922337.63", 922337},
+    {"2K",2048},
+    {"5.7263K", 5863},
+    {"5.7263KB", 5863},
+    {"5.7263KiB", 5863},
+    {"9223372036854775.23K", -1},
+    {"1M", 1048576},
+    {"1.1M", 1153433},
+    {"1.1MB", 1153433},
+    {"1.1MiB", 1153433},
+    {"3.592M", 3766484},
+    {"52.752383M", 55314882},
+    {"52.752383MB", 55314882},
+    {"52.752383MiB", 55314882},
+    {"9223372036854.42M", -1},
+    {"492.364G",528671819431},
+    {"492.364GB",528671819431},
+    {"492.364GiB",528671819431},
+    {"1.2973G", 1392965268},
+    {"9223372036.78G", -1},
+};
+
+void test_size_to_binary_bytes()
+{
+    int i;
+    int size;
+    int64_t ret;
+    struct size_to_bytes_check *u;
+
+    size = sizeof(size_to_binary_bytes_checks) / sizeof(struct size_to_bytes_check);
+    for (i = 0; i < size; i++) {
+        u = &size_to_binary_bytes_checks[i];
+
+        ret = flb_utils_size_to_binary_bytes(u->size);
+        TEST_CHECK_(ret == u->ret, "ret = %zu, u->ret = %zu", ret, u->ret);
+    }
+}
+
 TEST_LIST = {
     /* JSON maps iteration */
     { "url_split", test_url_split },
@@ -937,5 +976,6 @@ TEST_LIST = {
     { "test_flb_utils_split_quoted_errors", test_flb_utils_split_quoted_errors},
     { "test_flb_utils_get_machine_id", test_flb_utils_get_machine_id },
     { "test_size_to_bytes", test_size_to_bytes },
+    { "test_size_to_bianry_bytes", test_size_to_binary_bytes },
     { 0 }
 };
