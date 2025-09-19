@@ -100,9 +100,9 @@ jobs:
         working-directory: cfl
 
   build-debian:
-    name: Debian Buster build to confirm no issues once used downstream
+    name: Debian Bullseye build to confirm no issues once used downstream
     runs-on: ubuntu-latest
-    container: debian:buster
+    container: debian:bullseye
     steps:
       - name: Set up base image dependencies
         run: |
