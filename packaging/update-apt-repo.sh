@@ -10,7 +10,7 @@ if [[ ! -d "$BASE_PATH" ]]; then
     exit 1
 fi
 
-# "debian/bookworm" "debian/bullseye" "debian/buster" "ubuntu/xenial" "ubuntu/bionic" "ubuntu/focal" "ubuntu/jammy" "raspbian/buster" "raspbian/bullseye"
+# "debian/bookworm" "debian/bullseye" "debian/buster" "debian/trixie" "ubuntu/xenial" "ubuntu/bionic" "ubuntu/focal" "ubuntu/jammy" "raspbian/buster" "raspbian/bullseye"
 DEB_REPO=${DEB_REPO:?}
 
 # Set true to prevent signing
