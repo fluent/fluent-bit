@@ -7,10 +7,10 @@ ARG BASE_BUILDER
 # Use buildkit to skip unused base images: DOCKER_BUILDKIT=1
 
 # Multiarch support
-FROM multiarch/qemu-user-static:x86_64-aarch64 as multiarch-aarch64
+FROM multiarch/qemu-user-static:x86_64-aarch64 AS multiarch-aarch64
 
 # rockylinux/8 base image
-FROM rockylinux:8 as rockylinux-8-base
+FROM rockylinux:8 AS rockylinux-8-base
 
 # Add for the YAML development libraries
 RUN sed -i 's/enabled=0/enabled=1/g' /etc/yum.repos.d/Rocky-PowerTools.repo
@@ -25,7 +25,7 @@ RUN yum -y update && \
 
 # rockylinux/8.arm64v8 base image
 # hadolint ignore=DL3029
-FROM --platform=arm64 rockylinux:8 as rockylinux-8.arm64v8-base
+FROM --platform=arm64 rockylinux:8 AS rockylinux-8.arm64v8-base
 
 COPY --from=multiarch-aarch64 /usr/bin/qemu-aarch64-static /usr/bin/qemu-aarch64-static
 
@@ -44,7 +44,7 @@ RUN yum -y update && \
 ARG FLB_JEMALLOC_OPTIONS="--with-lg-page=16 --with-lg-quantum=3"
 ENV FLB_JEMALLOC_OPTIONS=$FLB_JEMALLOC_OPTIONS
 
-FROM rockylinux:9 as rockylinux-9-base
+FROM rockylinux:9 AS rockylinux-9-base
 
 # Add for the YAML development libraries
 RUN sed -i 's/enabled=0/enabled=1/g' /etc/yum.repos.d/rocky-devel.repo
@@ -59,7 +59,41 @@ RUN yum -y update && \
 
 # rockylinux/8.arm64v8 base image
 # hadolint ignore=DL3029
-FROM --platform=arm64 rockylinux:9 as rockylinux-9.arm64v8-base
+FROM --platform=arm64 rockylinux:9 AS rockylinux-9.arm64v8-base
+
+COPY --from=multiarch-aarch64 /usr/bin/qemu-aarch64-static /usr/bin/qemu-aarch64-static
+
+# Add for the YAML development libraries
+RUN sed -i 's/enabled=0/enabled=1/g' /etc/yum.repos.d/rocky-devel.repo
+
+# hadolint ignore=DL3033
+RUN yum -y update && \
+    yum install -y --allowerasing rpm-build curl ca-certificates gcc gcc-c++ cmake make bash \
+    wget unzip systemd-devel wget flex bison \
+    postgresql-libs postgresql-devel postgresql-server postgresql \
+    cyrus-sasl-lib openssl openssl-libs openssl-devel libyaml-devel pkgconf-pkg-config && \
+    yum clean all
+
+# Need larger page size
+ARG FLB_JEMALLOC_OPTIONS="--with-lg-page=16 --with-lg-quantum=3"
+ENV FLB_JEMALLOC_OPTIONS=$FLB_JEMALLOC_OPTIONS
+
+FROM rockylinux:10 AS rockylinux-10-base
+
+# Add for the YAML development libraries
+RUN sed -i 's/enabled=0/enabled=1/g' /etc/yum.repos.d/rocky-devel.repo
+
+# hadolint ignore=DL3033
+RUN yum -y update && \
+    yum install -y --allowerasing rpm-build curl ca-certificates gcc gcc-c++ cmake make bash \
+    wget unzip systemd-devel wget flex bison \
+    postgresql-libs postgresql-devel postgresql-server postgresql \
+    cyrus-sasl-lib openssl openssl-libs openssl-devel libyaml-devel pkgconf-pkg-config && \
+    yum clean all
+
+# rockylinux/8.arm64v8 base image
+# hadolint ignore=DL3029
+FROM --platform=arm64 rockylinux:10 AS rockylinux-10.arm64v8-base
 
 COPY --from=multiarch-aarch64 /usr/bin/qemu-aarch64-static /usr/bin/qemu-aarch64-static
 
@@ -80,7 +114,7 @@ ENV FLB_JEMALLOC_OPTIONS=$FLB_JEMALLOC_OPTIONS
 
 # Common build for all distributions now
 # hadolint ignore=DL3006
-FROM $BASE_BUILDER as builder
+FROM $BASE_BUILDER AS builder
 
 ARG FLB_NIGHTLY_BUILD
 ENV FLB_NIGHTLY_BUILD=$FLB_NIGHTLY_BUILD
