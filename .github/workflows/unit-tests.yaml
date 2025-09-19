@@ -254,7 +254,7 @@ jobs:
             --volume "/etc/machine-id:/etc/machine-id"
           install: |
             apt-get update
-            apt-get install -y gcc-12 g++-12 libyaml-dev flex bison libssl-dev libbpf-dev linux-tools-common
+            apt-get install -y gcc-12 g++-12 libyaml-dev flex bison libssl-dev libbpf-dev linux-tools-common lld
             apt-get satisfy -y cmake "cmake (<< 4.0)"
 
             update-alternatives --install /usr/bin/gcc gcc /usr/bin/gcc-12 90
@@ -262,6 +262,7 @@ jobs:
           run: |
             cd build
             export nparallel=$(( $(getconf _NPROCESSORS_ONLN) > 8 ? 8 : $(getconf _NPROCESSORS_ONLN) ))
+            export CMAKE_LINKER_OPTION="-DCMAKE_EXE_LINKER_FLAGS=-fuse-ld=lld -DCMAKE_SHARED_LINKER_FLAGS=-fuse-ld=lld
             export FLB_OPTION="-DFLB_WITHOUT_flb-it-network=1 -DFLB_WITHOUT_flb-it-fstore=1"
             export FLB_OMIT_OPTION=""
             export GLOBAL_OPTION="-DFLB_BACKTRACE=Off -DFLB_SHARED_LIB=Off -DFLB_DEBUG=On -DFLB_ALL=On -DFLB_EXAMPLES=Off"
@@ -272,7 +273,7 @@ jobs:
 
             echo "CC = $CC, CXX = $CXX, FLB_OPT = $FLB_OPT"
 
-            cmake ${FLB_OPT}  ../
+            cmake ${CMAKE_LINKER_OPTION} ${FLB_OPT}  ../
             make -j $nparallel
             ctest -j $nparallel --build-run-dir . --output-on-failure
 
