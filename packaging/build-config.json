@@ -73,6 +73,14 @@
           "type": "rpm"
         },
         {
+          "target": "almalinux/10",
+          "type": "rpm"
+        },
+        {
+          "target": "almalinux/10.arm64v8",
+          "type": "rpm"
+        },
+        {
           "target": "debian/bookworm",
           "type": "deb"
         },
