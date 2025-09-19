@@ -120,3 +120,35 @@ jobs:
           echo "$ldd_result" | grep libmsgpack
           echo "$ldd_result" | grep librdkafka
         working-directory: build
+
+  # Sanity check for compilation w/ CXX support
+  pr-compile-without-cxx:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 60
+    strategy:
+      fail-fast: false
+      matrix:
+        cmake_version:
+          - "3.31.6"
+    steps:
+      - name: Setup environment
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y bison cmake flex gcc libssl-dev libyaml-dev
+          sudo apt-get install -y libzstd-dev librdkafka-dev
+
+      - name: Install cmake
+        uses: jwlawson/actions-setup-cmake@v2
+        with:
+          cmake-version: "${{ matrix.cmake_version }}"
+
+      - name: Checkout Fluent Bit code
+        uses: actions/checkout@v5
+
+      - name: Compile w/ CXX support
+        run: |
+          export CXX=/bin/false
+          export nparallel=$(( $(getconf _NPROCESSORS_ONLN) > 8 ? 8 : $(getconf _NPROCESSORS_ONLN) ))
+          cmake -DFLB_PREFER_SYSTEM_LIB_ZSTD=ON -DFLB_PREFER_SYSTEM_LIB_KAFKA=ON ../
+          make -j $nparallel
+        working-directory: build
