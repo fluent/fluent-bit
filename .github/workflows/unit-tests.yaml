@@ -156,7 +156,7 @@ jobs:
           FLB_OPT: ${{ matrix.flb_option }}
 
   run-aarch64-unit-tests:
-    runs-on: ${{(github.repository == 'fluent/fluent-bit') && 'ubuntu-22.04-arm' || 'ubuntu-latest' }}
+    runs-on: ${{(github.repository == 'fluent/fluent-bit') && 'ubuntu-24.04-arm' || 'ubuntu-latest' }}
     permissions:
       contents: read
     needs:
@@ -183,8 +183,8 @@ jobs:
       - name: Setup environment
         run: |
           sudo apt-get update
-          sudo apt-get install -y gcc-9 g++-9 clang-12 flex bison libsystemd-dev gcovr libyaml-dev libbpf-dev linux-tools-common curl tar gzip
-          sudo ln -s /usr/bin/llvm-symbolizer-12 /usr/bin/llvm-symbolizer || true
+          sudo apt-get install -y gcc-14 g++-14 clang-14 flex bison libsystemd-dev gcovr libyaml-dev libbpf-dev linux-tools-common curl tar gzip
+          sudo ln -s /usr/bin/llvm-symbolizer-14 /usr/bin/llvm-symbolizer || true
           sudo mkdir -p "${CMAKE_HOME}"
           cmake_url="https://github.com/Kitware/CMake/releases/download/v${CMAKE_VERSION}/cmake-${CMAKE_VERSION}-linux-$(uname -m).tar.gz"
           cmake_dist="$(mktemp --suffix ".tar.gz")"
@@ -199,9 +199,9 @@ jobs:
 
       - name: Build and test with arm runners
         run: |
-            sudo update-alternatives --install /usr/bin/gcc gcc /usr/bin/gcc-9 90
-            sudo update-alternatives --install /usr/bin/g++ g++ /usr/bin/g++-9 90
-            sudo update-alternatives --install /usr/bin/clang clang /usr/bin/clang-12 90
+            sudo update-alternatives --install /usr/bin/gcc gcc /usr/bin/gcc-14 90
+            sudo update-alternatives --install /usr/bin/g++ g++ /usr/bin/g++-14 90
+            sudo update-alternatives --install /usr/bin/clang clang /usr/bin/clang-14 90
 
             export nparallel=$(( $(getconf _NPROCESSORS_ONLN) > 8 ? 8 : $(getconf _NPROCESSORS_ONLN) ))
             export FLB_OPTION="${{ matrix.config.flb_option }}"
