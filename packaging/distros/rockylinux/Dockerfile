@@ -10,7 +10,7 @@ ARG BASE_BUILDER
 FROM multiarch/qemu-user-static:x86_64-aarch64 AS multiarch-aarch64
 
 # rockylinux/8 base image
-FROM rockylinux:8 AS rockylinux-8-base
+FROM rockylinux/rockylinux:8 AS rockylinux-8-base
 
 # Add for the YAML development libraries
 RUN sed -i 's/enabled=0/enabled=1/g' /etc/yum.repos.d/Rocky-PowerTools.repo
@@ -25,7 +25,7 @@ RUN yum -y update && \
 
 # rockylinux/8.arm64v8 base image
 # hadolint ignore=DL3029
-FROM --platform=arm64 rockylinux:8 AS rockylinux-8.arm64v8-base
+FROM --platform=arm64 rockylinux/rockylinux:8 AS rockylinux-8.arm64v8-base
 
 COPY --from=multiarch-aarch64 /usr/bin/qemu-aarch64-static /usr/bin/qemu-aarch64-static
 
@@ -44,7 +44,7 @@ RUN yum -y update && \
 ARG FLB_JEMALLOC_OPTIONS="--with-lg-page=16 --with-lg-quantum=3"
 ENV FLB_JEMALLOC_OPTIONS=$FLB_JEMALLOC_OPTIONS
 
-FROM rockylinux:9 AS rockylinux-9-base
+FROM rockylinux/rockylinux:9 AS rockylinux-9-base
 
 # Add for the YAML development libraries
 RUN sed -i 's/enabled=0/enabled=1/g' /etc/yum.repos.d/rocky-devel.repo
@@ -57,9 +57,9 @@ RUN yum -y update && \
     cyrus-sasl-lib openssl openssl-libs openssl-devel libyaml-devel pkgconf-pkg-config && \
     yum clean all
 
-# rockylinux/8.arm64v8 base image
+# rockylinux/9.arm64v8 base image
 # hadolint ignore=DL3029
-FROM --platform=arm64 rockylinux:9 AS rockylinux-9.arm64v8-base
+FROM --platform=arm64 rockylinux/rockylinux:9 AS rockylinux-9.arm64v8-base
 
 COPY --from=multiarch-aarch64 /usr/bin/qemu-aarch64-static /usr/bin/qemu-aarch64-static
 
@@ -78,7 +78,7 @@ RUN yum -y update && \
 ARG FLB_JEMALLOC_OPTIONS="--with-lg-page=16 --with-lg-quantum=3"
 ENV FLB_JEMALLOC_OPTIONS=$FLB_JEMALLOC_OPTIONS
 
-FROM rockylinux:10 AS rockylinux-10-base
+FROM rockylinux/rockylinux:10 AS rockylinux-10-base
 
 # Add for the YAML development libraries
 RUN sed -i 's/enabled=0/enabled=1/g' /etc/yum.repos.d/rocky-devel.repo
@@ -91,9 +91,9 @@ RUN yum -y update && \
     cyrus-sasl-lib openssl openssl-libs openssl-devel libyaml-devel pkgconf-pkg-config && \
     yum clean all
 
-# rockylinux/8.arm64v8 base image
+# rockylinux/10.arm64v8 base image
 # hadolint ignore=DL3029
-FROM --platform=arm64 rockylinux:10 AS rockylinux-10.arm64v8-base
+FROM --platform=arm64 rockylinux/rockylinux:10 AS rockylinux-10.arm64v8-base
 
 COPY --from=multiarch-aarch64 /usr/bin/qemu-aarch64-static /usr/bin/qemu-aarch64-static
 
