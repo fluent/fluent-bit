@@ -1500,14 +1500,10 @@ ldconfig
     list(APPEND CPACK_DEBIAN_RUNTIME_PACKAGE_CONTROL_EXTRA "${PROJECT_BINARY_DIR}/scripts/postinst;${PROJECT_BINARY_DIR}/scripts/prerm")
   endif(FLB_RUN_LDCONFIG)
 
-  file(WRITE ${PROJECT_BINARY_DIR}/scripts/postinst "#!/bin/sh
-set -e
-${LDCONFIG_SCRIPT_CMDS}
-if [ \"\$1\" = \"configure\" ]; then
-    systemctl --system daemon-reload >/dev/null || true
-    systemctl try-restart ${FLB_OUT_NAME}.service >/dev/null || true
-fi
-")
+  configure_file(
+    ${CMAKE_CURRENT_SOURCE_DIR}/cpack/debian/postinst.in
+    ${PROJECT_BINARY_DIR}/scripts/postinst
+  )
 
   list(APPEND CPACK_DEBIAN_RUNTIME_PACKAGE_CONTROL_EXTRA "${PROJECT_BINARY_DIR}/scripts/postinst;${PROJECT_BINARY_DIR}/scripts/prerm")
 

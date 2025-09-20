@@ -1,0 +1,7 @@
+#!/bin/sh
+set -e
+@LDCONFIG_POSTINST_CMDS@
+if [ "$1" = "configure" ]; then
+    systemctl --system daemon-reload >/dev/null || true
+    systemctl try-restart @FLB_OUT_NAME@.service >/dev/null || true
+fi
