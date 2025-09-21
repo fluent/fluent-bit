@@ -39,5 +39,10 @@ int flb_pack_json_ext(const char *json, size_t len,
                       int *out_root_type,
                       struct flb_pack_opts *opts);
 
+int flb_pack_json_recs_ext(const char *json, size_t len,
+                           char **out_buf, size_t *out_size,
+                           int *out_root_type, int *out_records,
+                           size_t *consumed, struct flb_pack_opts *opts);
+
 #endif
 
