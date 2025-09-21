@@ -3,6 +3,7 @@
 #include <fluent-bit/flb_info.h>
 #include <fluent-bit/flb_mem.h>
 #include <fluent-bit/flb_pack.h>
+#include <fluent-bit/flb_pack_json.h>
 #include <fluent-bit/flb_error.h>
 #include <fluent-bit/flb_str.h>
 #include <monkey/mk_core.h>
@@ -60,6 +61,88 @@ void test_json_pack()
     TEST_CHECK(ret == 0);
 
     flb_free(data);
+    flb_free(out_buf);
+}
+
+void test_json_pack_ext_default_backend()
+{
+    int ret;
+    int root_type;
+    char *out_buf = NULL;
+    size_t out_size = 0;
+    const char *json = "{\"k\":\"v\"} {\"k2\":\"v2\"}";
+
+    ret = flb_pack_json_ext(json, strlen(json), &out_buf, &out_size,
+                             &root_type, NULL);
+
+    TEST_CHECK(ret == 0);
+    TEST_CHECK(out_buf != NULL);
+    TEST_CHECK(out_size > 0);
+
+    flb_free(out_buf);
+}
+
+void test_json_pack_ext_jsmn_backend()
+{
+    int ret;
+    int root_type;
+    char *out_buf = NULL;
+    size_t out_size = 0;
+    struct flb_pack_opts opts = {0};
+    const char *json = "{\"k\":\"v\"} {\"k2\":\"v2\"}";
+
+    opts.backend = FLB_PACK_JSON_BACKEND_JSMN;
+
+    ret = flb_pack_json_ext(json, strlen(json), &out_buf, &out_size,
+                             &root_type, &opts);
+
+    TEST_CHECK(ret == 0);
+    TEST_CHECK(out_buf != NULL);
+    TEST_CHECK(out_size > 0);
+
+    flb_free(out_buf);
+}
+
+void test_json_pack_recs_ext_default_backend()
+{
+    int ret;
+    int records;
+    int root_type;
+    char *out_buf = NULL;
+    size_t consumed = 0;
+    size_t out_size = 0;
+    const char *json = "{\"k\":\"v\"} {\"k2\":\"v2\"}";
+
+    ret = flb_pack_json_recs_ext(json, strlen(json), &out_buf, &out_size,
+                                  &root_type, &records, &consumed, NULL);
+
+    TEST_CHECK(ret == 0);
+    TEST_CHECK(records == 2);
+    TEST_CHECK(consumed == strlen(json));
+
+    flb_free(out_buf);
+}
+
+void test_json_pack_recs_ext_jsmn_backend()
+{
+    int ret;
+    int records;
+    int root_type;
+    char *out_buf = NULL;
+    size_t consumed = 0;
+    size_t out_size = 0;
+    struct flb_pack_opts opts = {0};
+    const char *json = "{\"k\":\"v\"} {\"k2\":\"v2\"}";
+
+    opts.backend = FLB_PACK_JSON_BACKEND_JSMN;
+
+    ret = flb_pack_json_recs_ext(json, strlen(json), &out_buf, &out_size,
+                                  &root_type, &records, &consumed, &opts);
+
+    TEST_CHECK(ret == 0);
+    TEST_CHECK(records == 2);
+    TEST_CHECK(consumed == strlen(json));
+
     flb_free(out_buf);
 }
 
@@ -1185,6 +1268,10 @@ void test_json_pack_token_count_overflow()
 TEST_LIST = {
     /* JSON maps iteration */
     { "json_pack"          , test_json_pack },
+    { "json_pack_ext_default_backend", test_json_pack_ext_default_backend },
+    { "json_pack_ext_jsmn_backend", test_json_pack_ext_jsmn_backend },
+    { "json_pack_recs_ext_default_backend", test_json_pack_recs_ext_default_backend },
+    { "json_pack_recs_ext_jsmn_backend", test_json_pack_recs_ext_jsmn_backend },
     { "json_pack_iter"     , test_json_pack_iter},
     { "json_pack_mult"     , test_json_pack_mult},
     { "json_pack_mult_iter", test_json_pack_mult_iter},
