@@ -27,7 +27,9 @@ static int flb_pack_json_ext_internal(const char *json, size_t len,
                                       struct flb_pack_opts *opts,
                                       int require_records)
 {
+    int ret;
     int backend;
+    int state_out_size = 0;
     struct flb_pack_state *state = NULL;
 
     if (!opts) {
@@ -45,12 +47,20 @@ static int flb_pack_json_ext_internal(const char *json, size_t len,
 
     if (backend == FLB_PACK_JSON_BACKEND_JSMN) {
         if (state) {
+            state_out_size = 0;
+
             /* state for incremental reads */
             if (require_records) {
                 return -1;
             }
 
-            return flb_pack_json_state(json, len, out_buf, out_size, state);
+            ret = flb_pack_json_state(json, len, out_buf,
+                                      &state_out_size, state);
+            if (ret == 0 && out_size) {
+                *out_size = (size_t) state_out_size;
+            }
+
+            return ret;
         }
 
         if (require_records) {
