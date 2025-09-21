@@ -20,10 +20,12 @@
 #include <fluent-bit.h>
 #include <fluent-bit/flb_pack_json.h>
 
-int flb_pack_json_ext(const char *json, size_t len,
-                      char **out_buf, size_t *out_size,
-                      int *out_root_type,
-                      struct flb_pack_opts *opts)
+static int flb_pack_json_ext_internal(const char *json, size_t len,
+                                      char **out_buf, size_t *out_size,
+                                      int *out_root_type, int *out_records,
+                                      size_t *consumed,
+                                      struct flb_pack_opts *opts,
+                                      int require_records)
 {
     int backend;
     struct flb_pack_state *state = NULL;
@@ -42,23 +44,54 @@ int flb_pack_json_ext(const char *json, size_t len,
     }
 
     if (backend == FLB_PACK_JSON_BACKEND_JSMN) {
-        /* jsmn */
         if (state) {
             /* state for incremental reads */
+            if (require_records) {
+                return -1;
+            }
+
             return flb_pack_json_state(json, len, out_buf, out_size, state);
         }
-        else {
-            /* jsmn (no state) */
-            return flb_pack_json(json, len, out_buf, out_size,
-                                 out_root_type, NULL);
+
+        if (require_records) {
+            return flb_pack_json_recs(json, len, out_buf, out_size,
+                                      out_root_type, out_records, consumed);
         }
+
+        return flb_pack_json(json, len, out_buf, out_size,
+                             out_root_type, NULL);
     }
     else if (backend == FLB_PACK_JSON_BACKEND_YYJSON) {
-        /* yyjson */
+        if (require_records) {
+            return flb_pack_json_recs_yyjson(json, len, out_buf, out_size,
+                                             out_root_type, out_records,
+                                             consumed);
+        }
+
         return flb_pack_json_yyjson(json, len, out_buf, out_size,
                                     out_root_type, NULL);
     }
 
     /* unknown backend */
     return -1;
+}
+
+int flb_pack_json_ext(const char *json, size_t len,
+                      char **out_buf, size_t *out_size,
+                      int *out_root_type,
+                      struct flb_pack_opts *opts)
+{
+    return flb_pack_json_ext_internal(json, len, out_buf, out_size,
+                                      out_root_type, NULL, NULL,
+                                      opts, FLB_FALSE);
+}
+
+int flb_pack_json_recs_ext(const char *json, size_t len,
+                           char **out_buf, size_t *out_size,
+                           int *out_root_type, int *out_records,
+                           size_t *consumed, struct flb_pack_opts *opts)
+{
+    return flb_pack_json_ext_internal(json, len, out_buf, out_size,
+                                      out_root_type, out_records,
+                                      consumed, opts, FLB_TRUE);
 }
