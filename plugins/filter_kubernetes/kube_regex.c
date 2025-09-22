@@ -34,8 +34,12 @@ int flb_kube_regex_init(struct flb_kube *ctx)
             ctx->regex = flb_regex_create(KUBE_TAG_TO_REGEX);
         }
     }
+    ctx->deploymentRegex = flb_regex_create(DEPLOYMENT_REGEX);
 
     if (!ctx->regex) {
+        return -1;
+    }
+    if (!ctx->deploymentRegex) {
         return -1;
     }
 
