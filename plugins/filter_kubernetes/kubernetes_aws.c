@@ -27,7 +27,7 @@
 #include "kube_conf.h"
 #include "kube_meta.h"
 #include "fluent-bit/flb_http_client.h"
-#include "fluent-bit/flb_output_plugin.h"
+#include "fluent-bit/flb_filter_plugin.h"
 #include "fluent-bit/flb_pack.h"
 #include "fluent-bit/flb_upstream_conn.h"
 /*
@@ -73,7 +73,7 @@ static int get_pod_service_file_info(struct flb_kube *ctx, char **buffer)
         if (payload_size) {
             *buffer=payload;
             packed = payload_size;
-            flb_plg_debug(ctx->ins, "pod to service map content is: %s", buffer);
+            flb_plg_debug(ctx->ins, "pod to service map content is: %s", *buffer);
         }
     }
 
@@ -198,7 +198,7 @@ int fetch_pod_service_map(struct flb_kube *ctx, char *api_server_url,
     int ret;
     struct flb_http_client *c;
     size_t b_sent;
-    struct flb_upstream_conn *u_conn;
+    struct flb_connection *u_conn;
     char *buffer = {0};
 
     flb_plg_debug(ctx->ins, "fetch pod to service map");
