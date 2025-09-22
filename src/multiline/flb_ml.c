@@ -1483,6 +1483,7 @@ int flb_ml_flush_stream_group(struct flb_ml_parser *ml_parser,
     msgpack_sbuffer_destroy(&mp_sbuf);
     flb_sds_len_set(group->buf, 0);
     group->truncated = FLB_FALSE;
+    group->mp_md_sbuf.size = 0;
 
     /* Update last flush time */
     group->last_flush = time_ms_now();
