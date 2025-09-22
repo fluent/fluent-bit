@@ -1578,11 +1578,25 @@ static struct flb_input_collector *collector_create(int type,
         coll->evl = thi->evl;
     }
     else {
-        /* We need to obtain the event loop from the TLS when
-         * creating collectors for non threaded plugins running
-         * under a threaded plugin.
+        struct mk_event_loop *tls_evl;
+
+        /*
+         * Collectors for non-threaded plugins normally run on the main
+         * engine event loop. When a private helper input such as the
+         * emitter is instantiated from within a threaded input (e.g. via
+         * an input processor), the input thread stores its own event loop
+         * in TLS.  Those helper inputs must continue to use the main
+         * engine event loop to avoid spinning the input thread.
          */
-        coll->evl = flb_engine_evl_get();
+        tls_evl = flb_engine_evl_get();
+
+        if (tls_evl != NULL && tls_evl != config->evl &&
+            !(ins->p && (ins->p->flags & FLB_INPUT_PRIVATE))) {
+            coll->evl = tls_evl;
+        }
+        else {
+            coll->evl = config->evl;
+        }
     }
 
     /*
