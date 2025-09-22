@@ -1332,7 +1332,8 @@ static int merge_pod_meta(struct flb_kube_meta *meta, struct flb_kube *ctx,
     msgpack_object api_map;
     msgpack_object ann_map;
     struct flb_kube_props props = {0};
-    struct service_attributes *tmp_service_attributes = {0};
+    struct service_attributes *tmp_service_attributes = NULL;
+    void *tmp_service_attributes_buf = NULL;
 
     /*
      * - reg_buf: is a msgpack Map containing meta captured using Regex
@@ -1478,8 +1479,9 @@ static int merge_pod_meta(struct flb_kube_meta *meta, struct flb_kube *ctx,
     if (ctx->aws_use_pod_association) {
         pod_service_found = flb_hash_table_get(ctx->aws_pod_service_hash_table,
                                  meta->podname, meta->podname_len,
-                                 &tmp_service_attributes, &tmp_service_attr_size);
-        if (pod_service_found != -1 && tmp_service_attributes != NULL) {
+                                 &tmp_service_attributes_buf, &tmp_service_attr_size);
+        if (pod_service_found != -1 && tmp_service_attributes_buf != NULL) {
+            tmp_service_attributes = (struct service_attributes *) tmp_service_attributes_buf;
             map_size += tmp_service_attributes->fields;
         }
         if (ctx->platform) {
@@ -1820,7 +1822,8 @@ static inline int extract_pod_meta(struct flb_kube *ctx,
     ssize_t n;
     int ret;
     int pod_service_found;
-    struct service_attributes *tmp_service_attributes = {0};
+    struct service_attributes *tmp_service_attributes = NULL;
+    void *tmp_service_attributes_buf = NULL;
 
     /* Reset meta context */
     memset(meta, '\0', sizeof(struct flb_kube_meta));
@@ -1843,9 +1846,10 @@ static inline int extract_pod_meta(struct flb_kube *ctx,
 
         pod_service_found = flb_hash_table_get(ctx->aws_pod_service_hash_table,
                                  meta->podname, meta->podname_len,
-                                 &tmp_service_attributes, &tmp_service_attr_size);
+                                 &tmp_service_attributes_buf, &tmp_service_attr_size);
 
-        if (pod_service_found != -1 && tmp_service_attributes != NULL) {
+        if (pod_service_found != -1 && tmp_service_attributes_buf != NULL) {
+            tmp_service_attributes = (struct service_attributes *) tmp_service_attributes_buf;
             if (tmp_service_attributes->name[0] != '\0') {
                 n += tmp_service_attributes->name_len + 1;
             }
