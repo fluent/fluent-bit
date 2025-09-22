@@ -1534,6 +1534,29 @@ static void test_buffer_limit_truncation()
     flb_config_exit(config);
 }
 
+static void test_buffer_limit_disabled()
+{
+    struct flb_config *config;
+    struct flb_ml *ml;
+
+    config = flb_config_init();
+
+    if (config->multiline_buffer_limit) {
+        flb_free(config->multiline_buffer_limit);
+        config->multiline_buffer_limit = NULL;
+    }
+
+    config->multiline_buffer_limit = flb_strdup("false");
+
+    ml = flb_ml_create(config, "limit-disabled");
+    TEST_CHECK(ml != NULL);
+
+    TEST_CHECK(ml->buffer_limit == 0);
+
+    flb_ml_destroy(ml);
+    flb_config_exit(config);
+}
+
 TEST_LIST = {
     /* Normal features tests */
     { "parser_docker",  test_parser_docker},
@@ -1546,6 +1569,7 @@ TEST_LIST = {
     { "container_mix",  test_container_mix},
     { "endswith",       test_endswith},
     { "buffer_limit_truncation", test_buffer_limit_truncation},
+    { "buffer_limit_disabled", test_buffer_limit_disabled},
 
     /* Issues reported on Github */
     { "issue_3817_1"  , test_issue_3817_1},
