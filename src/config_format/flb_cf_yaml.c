@@ -623,7 +623,7 @@ static int read_glob(struct flb_cf *conf, struct local_ctx *ctx,
 
         if (ret == 0 && (st.st_mode & S_IFMT) == S_IFREG) {
 
-            if (read_config(conf, ctx, state, buf) < 0) {
+            if (read_config(conf, ctx, state->file, buf) < 0) {
                 return -1;
             }
         }
