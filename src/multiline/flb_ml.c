@@ -31,6 +31,7 @@
 
 #include <stdarg.h>
 #include <math.h>
+#include <stdint.h>
 
 static inline int match_negate(struct flb_ml_parser *ml_parser, int matched)
 {
@@ -868,7 +869,7 @@ int flb_ml_append_event(struct flb_ml *ml, uint64_t stream_id,
 struct flb_ml *flb_ml_create(struct flb_config *ctx, char *name)
 {
     int            result;
-    size_t         limit = 0;
+    int64_t        limit = 0;
     struct flb_ml *ml;
 
     ml = flb_calloc(1, sizeof(struct flb_ml));
@@ -884,8 +885,8 @@ struct flb_ml *flb_ml_create(struct flb_config *ctx, char *name)
 
     ml->config = ctx;
     limit = flb_utils_size_to_binary_bytes(ml->config->multiline_buffer_limit);
-    if (limit > 0) {
-        ml->buffer_limit = (size_t)limit;
+    if (limit >= 0) {
+        ml->buffer_limit = (size_t) limit;
     }
     else {
         ml->buffer_limit = FLB_ML_BUFFER_LIMIT_DEFAULT;
