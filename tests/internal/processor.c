@@ -22,7 +22,12 @@
 #include <fluent-bit/flb_mem.h>
 #include <fluent-bit/flb_pack.h>
 #include <fluent-bit/flb_processor.h>
-//#include <msgpack.h>
+#include <fluent-bit/flb_engine.h>
+#include <fluent-bit/flb_scheduler.h>
+#include <fluent-bit/flb_event_loop.h>
+#include <fluent-bit/flb_bucket_queue.h>
+#include <fluent-bit/flb_storage.h>
+#include <fluent-bit/flb_input.h>
 
 #include "flb_tests_internal.h"
 
@@ -119,7 +124,69 @@ static void processor()
     flb_sds_destroy(hostname_prop_key);
 }
 
+static void processor_private_inputs_use_main_loop()
+{
+    int ret;
+    struct flb_config *config;
+    struct flb_input_instance *ins;
+    struct mk_event_loop *thread_evl;
+    struct flb_sched *thread_sched;
+    struct mk_list *head;
+    struct flb_input_collector *coll;
+
+    flb_init_env();
+
+    config = flb_config_init();
+    TEST_CHECK(config != NULL);
+
+    config->evl = mk_event_loop_create(256);
+    TEST_CHECK(config->evl != NULL);
+
+    config->evl_bktq = flb_bucket_queue_create(FLB_ENGINE_PRIORITY_COUNT);
+    TEST_CHECK(config->evl_bktq != NULL);
+
+    config->sched = flb_sched_create(config, config->evl);
+    TEST_CHECK(config->sched != NULL);
+
+    ret = flb_storage_create(config);
+    TEST_CHECK(ret == 0);
+
+    thread_evl = mk_event_loop_create(64);
+    TEST_CHECK(thread_evl != NULL);
+
+    thread_sched = flb_sched_create(config, thread_evl);
+    TEST_CHECK(thread_sched != NULL);
+
+    /* Simulate the environment of an input thread */
+    flb_engine_evl_set(thread_evl);
+    flb_sched_ctx_set(thread_sched);
+
+    ins = flb_input_new(config, "emitter", NULL, FLB_FALSE);
+    TEST_CHECK(ins != NULL);
+
+    ret = flb_input_instance_init(ins, config);
+    TEST_CHECK(ret == 0);
+
+    mk_list_foreach(head, &ins->collectors) {
+        coll = mk_list_entry(head, struct flb_input_collector, _head);
+        TEST_CHECK(coll->evl == config->evl);
+    }
+
+    flb_input_instance_exit(ins, config);
+    flb_input_instance_destroy(ins);
+
+    flb_sched_ctx_set(config->sched);
+    flb_engine_evl_set(NULL);
+
+    flb_sched_destroy(thread_sched);
+    mk_event_loop_destroy(thread_evl);
+
+    flb_storage_destroy(config);
+    flb_config_exit(config);
+}
+
 TEST_LIST = {
+    { "processor_private_inputs_use_main_loop", processor_private_inputs_use_main_loop },
     { "processor", processor },
     { 0 }
 };
