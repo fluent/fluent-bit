@@ -84,6 +84,7 @@ struct flb_tls_backend {
 
     /* Session management */
     void *(*session_create) (struct flb_tls *, int);
+    void (*session_invalidate) (void *);
     int (*session_destroy) (void *);
     const char *(*session_alpn_get) (void *);
 
@@ -144,6 +145,7 @@ int flb_tls_set_ciphers(struct flb_tls *tls, const char *ciphers);
 struct mk_list *flb_tls_get_config_map(struct flb_config *config);
 
 int flb_tls_session_destroy(struct flb_tls_session *session);
+int flb_tls_session_invalidate(struct flb_tls_session *session);
 
 int flb_tls_session_create(struct flb_tls *tls,
                            struct flb_connection *connection,
