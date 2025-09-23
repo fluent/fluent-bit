@@ -515,6 +515,11 @@ static int prepare_destroy_conn(struct flb_connection *u_conn)
     }
 
     if (u_conn->fd > 0) {
+#ifdef FLB_HAVE_TLS
+        if (u_conn->tls_session != NULL) {
+            flb_tls_session_invalidate(u_conn->tls_session);
+        }
+#endif
         shutdown_connection(u_conn);
 
         flb_socket_close(u_conn->fd);
