@@ -1,4 +1,4 @@
-if (CMT_BUILD_PROMETHEUS_DECODER)
+if (CMT_BUILD_PROMETHEUS_TEXT_DECODER)
     flex_target(cmt_decode_prometheus_lexer cmt_decode_prometheus.l
         "${FLEX_BISON_GENERATED_DIR}/cmt_decode_prometheus_lexer.c"
         DEFINES_FILE "${FLEX_BISON_GENERATED_DIR}/cmt_decode_prometheus_lexer.h"
@@ -28,7 +28,6 @@ set(src
   cmt_decode_opentelemetry.c
   cmt_encode_prometheus.c
   cmt_encode_prometheus_remote_write.c
-  cmt_decode_prometheus_remote_write.c
   cmt_encode_splunk_hec.c
   cmt_encode_cloudwatch_emf.c
   cmt_encode_text.c
@@ -37,28 +36,37 @@ set(src
   cmt_decode_msgpack.c
   cmt_decode_statsd.c
   cmt_mpack_utils.c
-  external/remote.pb-c.c
-  external/types.pb-c.c
   )
 
-if (${CMAKE_C_COMPILER_ID} STREQUAL "Clang")
-  set(PLATFORM_SPECIFIC_ATOMIC_MODULE cmt_atomic_clang.c)
-elseif (${CMAKE_C_COMPILER_ID} MATCHES "AppleClang")
-  set(PLATFORM_SPECIFIC_ATOMIC_MODULE cmt_atomic_clang.c)
-elseif (${CMAKE_C_COMPILER_ID} STREQUAL "GNU")
-  set(PLATFORM_SPECIFIC_ATOMIC_MODULE cmt_atomic_gcc.c)
-elseif (${CMAKE_C_COMPILER_ID} STREQUAL "MSVC")
+# Add Prometheus remote write decoder (always available, only needs protobuf)
+set(src ${src}
+    cmt_decode_prometheus_remote_write.c
+    # Prometheus related protobuf files
+    external/remote.pb-c.c
+    external/types.pb-c.c
+    )
+
+
+if (MSVC)
   set(PLATFORM_SPECIFIC_ATOMIC_MODULE cmt_atomic_msvc.c)
+elseif("${CMAKE_C_COMPILER_ID}" STREQUAL "Clang")
+  set(PLATFORM_SPECIFIC_ATOMIC_MODULE cmt_atomic_clang.c)
+elseif("${CMAKE_C_COMPILER_ID}" MATCHES "AppleClang")
+  set(PLATFORM_SPECIFIC_ATOMIC_MODULE cmt_atomic_clang.c)
+elseif("${CMAKE_C_COMPILER_ID}" STREQUAL "GNU")
+  set(PLATFORM_SPECIFIC_ATOMIC_MODULE cmt_atomic_gcc.c)
 else()
   set(PLATFORM_SPECIFIC_ATOMIC_MODULE cmt_atomic_generic.c)
 endif()
+
+message(STATUS "Compiler: ${CMAKE_C_COMPILER_ID}, Platform: ${CMAKE_SYSTEM_NAME}")
 
 set(src
   ${src}
   ${PLATFORM_SPECIFIC_ATOMIC_MODULE}
   )
 
-if (CMT_BUILD_PROMETHEUS_DECODER)
+if (CMT_BUILD_PROMETHEUS_TEXT_DECODER)
     set(src ${src}
         ${FLEX_cmt_decode_prometheus_lexer_OUTPUTS}
         ${BISON_cmt_decode_prometheus_parser_OUTPUTS}

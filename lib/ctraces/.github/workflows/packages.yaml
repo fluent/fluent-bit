@@ -18,15 +18,15 @@ jobs:
       matrix:
         format: [ rpm, deb ]
     steps:
-      - uses: actions/checkout@v3
+      - uses: actions/checkout@v4
         with:
             submodules: true
 
-      - uses: uraimo/run-on-arch-action@v2.2.1
+      - uses: uraimo/run-on-arch-action@v3.0.1
         name: Build the ${{matrix.format}} packages
         with:
           arch: aarch64
-          distro: ubuntu20.04
+          distro: ubuntu_latest
           run: |
             apt-get update && \
             apt-get install -y --no-install-recommends \
@@ -34,12 +34,12 @@ jobs:
             cmake \
             file \
             rpm \
-            make 
+            make
             cmake .
             echo ${{ matrix.format }} | awk '{print toupper($0)}' | xargs -I{} cpack -G {}
 
       - name: Store the master package artifacts
-        uses: actions/upload-artifact@v3
+        uses: actions/upload-artifact@v4
         with:
           name: ${{ matrix.format }}-arm64
           path: |
@@ -53,7 +53,7 @@ jobs:
         format: [ rpm, deb ]
     runs-on: [ ubuntu-latest ]
     steps:
-      - uses: actions/checkout@v3
+      - uses: actions/checkout@v4
         with:
             submodules: true
 
@@ -63,23 +63,51 @@ jobs:
           echo ${{ matrix.format }} | awk '{print toupper($0)}' | xargs -I{} cpack -G {}
 
       - name: Store the master package artifacts
-        uses: actions/upload-artifact@v3
+        uses: actions/upload-artifact@v4
         with:
           name: ${{ matrix.format }}-amd64
           path: |
             ./*.${{matrix.format}}
+
+  build-macos-packages-arm64:
+    name: build macOS Apple Silicon packages
+    strategy:
+      fail-fast: true
+      matrix:
+        config:
+          - format: productbuild
+            arch: apple
+            ext: pkg
+    runs-on: macos-14
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          submodules: true
+
+      - name: Build the ${{matrix.config.format}} packages
+        run:  |
+          cmake . -DCPACK_GENERATOR=${{ matrix.config.format }}
+          echo ${{ matrix.config.format }} | xargs -I{} cpack -G {}
+
+      - name: Store the master package artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: ${{ matrix.config.format }}-${{matrix.config.arch}}
+          path: |
+            ./*-${{matrix.config.arch}}.${{matrix.config.ext}}
 
   release:
     name: Create release and upload packages
     needs:
       - build-distro-packages-amd64
       - build-distro-packages-arm64
+      - build-macos-packages-arm64
     runs-on: ubuntu-latest
     permissions:
       contents: write
     steps:
       - name: Download all artefacts
-        uses: actions/download-artifact@v3
+        uses: actions/download-artifact@v4
         with:
           path: artifacts/
 
@@ -99,7 +127,7 @@ jobs:
             artifacts/**/*
 
       - name: Release on tag
-        uses: softprops/action-gh-release@v1
+        uses: softprops/action-gh-release@v2
         if: startsWith(github.ref, 'refs/tags/')
         with:
           generate_release_notes: true

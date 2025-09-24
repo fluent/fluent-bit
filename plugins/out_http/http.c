@@ -26,7 +26,11 @@
 #include <fluent-bit/flb_utils.h>
 #include <fluent-bit/flb_pack.h>
 #include <fluent-bit/flb_sds.h>
+
 #include <fluent-bit/flb_gzip.h>
+#include <fluent-bit/flb_snappy.h>
+#include <fluent-bit/flb_zstd.h>
+
 #include <fluent-bit/flb_record_accessor.h>
 #include <fluent-bit/flb_log_event_decoder.h>
 #include <msgpack.h>
@@ -110,7 +114,7 @@ static int http_post(struct flb_out_http *ctx,
                      const char *tag, int tag_len,
                      char **headers)
 {
-    int ret;
+    int ret = 0;
     int out_ret = FLB_OK;
     int compressed = FLB_FALSE;
     size_t b_sent;
@@ -139,17 +143,34 @@ static int http_post(struct flb_out_http *ctx,
     payload_size = body_len;
 
     /* Should we compress the payload ? */
+    ret = 0;
     if (ctx->compress_gzip == FLB_TRUE) {
         ret = flb_gzip_compress((void *) body, body_len,
                                 &payload_buf, &payload_size);
-        if (ret == -1) {
-            flb_plg_error(ctx->ins,
-                          "cannot gzip payload, disabling compression");
-        }
-        else {
+        if (ret == 0) {
             compressed = FLB_TRUE;
         }
     }
+    else if (ctx->compress_snappy == FLB_TRUE) {
+        ret = flb_snappy_compress((void *) body, body_len,
+                                  (char **) &payload_buf, &payload_size);
+        if (ret == 0) {
+            compressed = FLB_TRUE;
+        }
+    }
+    else if (ctx->compress_zstd == FLB_TRUE) {
+        ret = flb_zstd_compress((void *) body, body_len,
+                                &payload_buf, &payload_size);
+        if (ret == 0) {
+            compressed = FLB_TRUE;
+        }
+    }
+
+    if (ret == -1) {
+        flb_plg_warn(ctx->ins, "could not compress payload, sending as it is");
+        compressed = FLB_FALSE;
+    }
+
 
     /* Create HTTP client context */
     c = flb_http_client(u_conn, FLB_HTTP_POST, ctx->uri,
@@ -171,6 +192,15 @@ static int http_post(struct flb_out_http *ctx,
      * This needs to be improved through a more clean API.
      */
     c->cb_ctx = ctx->ins->callback;
+
+    flb_http_set_response_timeout(c, ctx->response_timeout);
+
+    if (ctx->read_idle_timeout > 0) {
+        flb_http_set_read_idle_timeout(c, ctx->read_idle_timeout);
+    }
+    else {
+        flb_http_set_read_idle_timeout(c, ctx->ins->net_setup.io_timeout);
+    }
 
     /* Append headers */
     if (headers) {
@@ -209,7 +239,15 @@ static int http_post(struct flb_out_http *ctx,
 
     /* Content Encoding: gzip */
     if (compressed == FLB_TRUE) {
-        flb_http_set_content_encoding_gzip(c);
+        if (ctx->compress_gzip == FLB_TRUE) {
+            flb_http_set_content_encoding_gzip(c);
+        }
+        else if (ctx->compress_snappy == FLB_TRUE) {
+            flb_http_set_content_encoding_snappy(c);
+        }
+        else if (ctx->compress_zstd == FLB_TRUE) {
+            flb_http_set_content_encoding_zstd(c);
+        }
     }
 
     /* Basic Auth headers */
@@ -398,7 +436,8 @@ static int compose_payload_gelf(struct flb_out_http *ctx,
 
 static int compose_payload(struct flb_out_http *ctx,
                            const void *in_body, size_t in_size,
-                           void **out_body, size_t *out_size)
+                           void **out_body, size_t *out_size,
+                           struct flb_config *config)
 {
     flb_sds_t encoded;
 
@@ -413,7 +452,8 @@ static int compose_payload(struct flb_out_http *ctx,
                                                   in_size,
                                                   ctx->out_format,
                                                   ctx->json_date_format,
-                                                  ctx->date_key);
+                                                  ctx->date_key,
+                                                  config->json_escape_unicode);
         if (encoded == NULL) {
             flb_plg_error(ctx->ins, "failed to convert json");
             return FLB_ERROR;
@@ -600,7 +640,7 @@ static void cb_http_flush(struct flb_event_chunk *event_chunk,
     }
     else {
         ret = compose_payload(ctx, event_chunk->data, event_chunk->size,
-                              &out_body, &out_size);
+                              &out_body, &out_size, config);
         if (ret != FLB_OK) {
             FLB_OUTPUT_RETURN(ret);
         }
@@ -650,6 +690,16 @@ static struct flb_config_map config_map[] = {
      "Specify if the response paylod should be logged or not"
     },
     {
+     FLB_CONFIG_MAP_TIME, "http.response_timeout", "60s",
+     0, FLB_TRUE, offsetof(struct flb_out_http, response_timeout),
+     "Set maximum time to wait for a server response"
+    },
+    {
+     FLB_CONFIG_MAP_TIME, "http.read_idle_timeout", "0s",
+     0, FLB_TRUE, offsetof(struct flb_out_http, read_idle_timeout),
+     "Set maximum allowed time between two consecutive reads"
+    },
+    {
      FLB_CONFIG_MAP_STR, "http_user", NULL,
      0, FLB_TRUE, offsetof(struct flb_out_http, http_user),
      "Set HTTP auth user"
@@ -697,7 +747,7 @@ static struct flb_config_map config_map[] = {
     {
      FLB_CONFIG_MAP_STR, "compress", NULL,
      0, FLB_FALSE, 0,
-     "Set payload compression mechanism. Option available is 'gzip'"
+     "Set payload compression mechanism. Option available are 'gzip', 'snappy' and 'zstd'"
     },
     {
      FLB_CONFIG_MAP_SLIST_1, "header", NULL,
@@ -763,7 +813,7 @@ static int cb_http_format_test(struct flb_config *config,
     struct flb_out_http *ctx = plugin_context;
     int ret;
 
-    ret = compose_payload(ctx, data, bytes, out_data, out_size);
+    ret = compose_payload(ctx, data, bytes, out_data, out_size, config);
     if (ret != FLB_OK) {
         flb_error("ret=%d", ret);
         return -1;

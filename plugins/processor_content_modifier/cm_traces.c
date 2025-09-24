@@ -560,6 +560,7 @@ static int traces_hash_attributes(struct content_modifier_ctx *ctx, struct ctrac
 int cm_traces_process(struct flb_processor_instance *ins,
                       struct content_modifier_ctx *ctx,
                       struct ctrace *traces_context,
+                      struct ctrace **out_traces_context,
                       const char *tag, int tag_len)
 {
     int ret = -1;
@@ -586,6 +587,8 @@ int cm_traces_process(struct flb_processor_instance *ins,
     else if (ctx->action_type == CM_ACTION_CONVERT) {
         ret = traces_convert_attributes(ctx, traces_context, ctx->key, ctx->converted_type);
     }
+
+    *out_traces_context = traces_context;
 
     if (ret != 0) {
         return FLB_PROCESSOR_FAILURE;

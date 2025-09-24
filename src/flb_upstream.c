@@ -136,6 +136,12 @@ struct flb_config_map upstream_net[] = {
      "Set the maximum number of active TCP connections that can be used per worker thread."
     },
 
+    {
+     FLB_CONFIG_MAP_BOOL, "net.proxy_env_ignore", "FALSE",
+     0, FLB_TRUE, offsetof(struct flb_net_setup, proxy_env_ignore),
+     "Ignore the environment variables HTTP_PROXY, HTTPS_PROXY and NO_PROXY when "
+    },
+
     /* EOF */
     {0}
 };
@@ -509,13 +515,6 @@ static int prepare_destroy_conn(struct flb_connection *u_conn)
     }
 
     if (u_conn->fd > 0) {
-#ifdef FLB_HAVE_TLS
-        if (u_conn->tls_session != NULL) {
-            flb_tls_session_destroy(u_conn->tls_session);
-
-            u_conn->tls_session = NULL;
-        }
-#endif
         shutdown_connection(u_conn);
 
         flb_socket_close(u_conn->fd);
@@ -529,6 +528,7 @@ static int prepare_destroy_conn(struct flb_connection *u_conn)
 
     /* Add node to destroy queue */
     mk_list_add(&u_conn->_head, &uq->destroy_queue);
+
 
     flb_upstream_decrement_total_connections_count(u);
 
@@ -555,10 +555,24 @@ static inline int prepare_destroy_conn_safe(struct flb_connection *u_conn)
 
 static int destroy_conn(struct flb_connection *u_conn)
 {
-    /* Delay the destruction of busy connections */
-    if (u_conn->busy_flag) {
+    /*
+     * Delay the destruction if the connection is still marked busy or
+     * if there are pending events referencing it (e.g. queued in the
+     * priority bucket queue).
+     */
+    if (u_conn->busy_flag ||
+        u_conn->event._priority_head.prev != NULL) {
         return 0;
     }
+
+    /* Delay to destroy TLS session for safety */
+#ifdef FLB_HAVE_TLS
+        if (u_conn->tls_session != NULL) {
+            flb_tls_session_destroy(u_conn->tls_session);
+
+            u_conn->tls_session = NULL;
+        }
+#endif
 
     mk_list_del(&u_conn->_head);
 
@@ -614,8 +628,9 @@ static struct flb_connection *create_conn(struct flb_upstream *u)
         flb_debug("[upstream] connection #%i failed to %s:%i",
                   conn->fd, u->tcp_host, u->tcp_port);
 
-        prepare_destroy_conn_safe(conn);
+        /* allow the connection to be destroyed immediately */
         conn->busy_flag = FLB_FALSE;
+        prepare_destroy_conn_safe(conn);
 
         return NULL;
     }
@@ -647,16 +662,19 @@ int flb_upstream_destroy(struct flb_upstream *u)
 
     mk_list_foreach_safe(head, tmp, &uq->av_queue) {
         u_conn = mk_list_entry(head, struct flb_connection, _head);
+        u_conn->busy_flag = FLB_FALSE;
         prepare_destroy_conn(u_conn);
     }
 
     mk_list_foreach_safe(head, tmp, &uq->busy_queue) {
         u_conn = mk_list_entry(head, struct flb_connection, _head);
+        u_conn->busy_flag = FLB_FALSE;
         prepare_destroy_conn(u_conn);
     }
 
     mk_list_foreach_safe(head, tmp, &uq->destroy_queue) {
         u_conn = mk_list_entry(head, struct flb_connection, _head);
+        u_conn->busy_flag = FLB_FALSE;
         destroy_conn(u_conn);
     }
 
@@ -664,7 +682,11 @@ int flb_upstream_destroy(struct flb_upstream *u)
     flb_free(u->proxied_host);
     flb_free(u->proxy_username);
     flb_free(u->proxy_password);
-    mk_list_del(&u->base._head);
+
+    if (mk_list_is_set(&u->base._head) == 0) {
+        mk_list_del(&u->base._head);
+    }
+    
     flb_free(u);
 
     return 0;
@@ -675,6 +697,7 @@ int flb_upstream_conn_recycle(struct flb_connection *conn, int val)
 {
     if (val == FLB_TRUE || val == FLB_FALSE) {
         conn->recycle = val;
+        return 0;
     }
 
     return -1;
@@ -704,48 +727,12 @@ struct flb_connection *flb_upstream_conn_get(struct flb_upstream *u)
               u->base.net.keepalive_idle_timeout,
               u->base.net.max_worker_connections);
 
-
-    /* If the upstream is limited by max connections, check current state */
-    if (u->base.net.max_worker_connections > 0) {
-        /*
-         * Connections are linked to one of these lists:
-         *
-         *  - av_queue  : connections ready to be used (available)
-         *  - busy_queue: connections that are busy (someone is using them)
-         *  - drop_queue: connections in the cleanup phase (to be drop)
-         *
-         * Fluent Bit don't create connections ahead of time, just on demand. When
-         * a connection is created is placed into the busy_queue, when is not longer
-         * needed one of these things happen:
-         *
-         *   - if keepalive is enabled (default), the connection is moved to the 'av_queue'.
-         *   - if keepalive is disabled, the connection is moved to 'drop_queue' then is
-         *     closed and destroyed.
-         *
-         * Based on the logic described above, to limit the number of total connections
-         * in the worker, we only need to count the number of connections linked into
-         * the 'busy_queue' list because if there are connections available 'av_queue' it
-         * won't create a one.
-         */
-
-        /* Count the number of relevant connections */
-        flb_stream_acquire_lock(&u->base, FLB_TRUE);
-        total_connections = mk_list_size(&uq->busy_queue);
-        flb_stream_release_lock(&u->base);
-
-        if (total_connections >= u->base.net.max_worker_connections) {
-            flb_debug("[upstream] max worker connections=%i reached to: %s:%i, cannot connect",
-                      u->base.net.max_worker_connections, u->tcp_host, u->tcp_port);
-            return NULL;
-        }
-    }
-
     conn = NULL;
 
     /*
-     * If we are in keepalive mode, iterate list of available connections,
-     * take a little of time to do some cleanup and assign a connection. If no
-     * entries exists, just create a new one.
+     * If we are in keepalive mode, iterate the list of available connections,
+     * take a little time to do some cleanup and assign a connection. If no
+     * entries exist, continue with the next condition.
      */
     if (u->base.net.keepalive) {
         mk_list_foreach_safe(head, tmp, &uq->av_queue) {
@@ -759,9 +746,14 @@ struct flb_connection *flb_upstream_conn_get(struct flb_upstream *u)
 
             flb_stream_release_lock(&u->base);
 
+            /* mark connection as busy so it won't be freed until released */
+            conn->busy_flag = FLB_TRUE;
+
             err = flb_socket_error(conn->fd);
 
             if (!FLB_EINPROGRESS(err) && err != 0) {
+                /* allow immediate cleanup on failure */
+                conn->busy_flag = FLB_FALSE;
                 flb_debug("[upstream] KA connection #%i is in a failed state "
                           "to: %s:%i, cleaning up",
                           conn->fd, u->tcp_host, u->tcp_port);
@@ -792,14 +784,53 @@ struct flb_connection *flb_upstream_conn_get(struct flb_upstream *u)
     }
 
     /*
-     * There are no keepalive connections available or keepalive is disabled
-     * so we need to create a new one.
+     * If no reusable connection is found, then check the total connection limit
+     * and create a new connection if allowed.
      */
+
     if (conn == NULL) {
+        /* If the upstream is limited by max connections, check current state */
+        if (u->base.net.max_worker_connections > 0) {
+            /*
+             * Connections are linked to one of these lists:
+             *
+             *  - av_queue  : connections ready to be used (available)
+             *  - busy_queue: busy connections (someone is using them)
+             *  - destroy_queue: connections in the cleanup phase (to be dropped)
+             *
+             * Fluent Bit doesn't create connections ahead of time, just on demand. When
+             * a connection is created, it's placed into the busy_queue, when it is no longer
+             * needed one of these things happens:
+             *
+             *   - if keepalive is enabled (default), the connection is moved to the 'av_queue'.
+             *   - if keepalive is disabled, the connection is moved to 'destroy_queue', then is
+             *     closed and destroyed.
+             *
+             *   * Note: If a connection is in error, it's moved to the destroy_queue despite the
+             *           keepalive setting.
+             *
+             * To enforce a limit on the number of connections, we must count all the
+             * queues since they represent open connections.
+             */
+
+            flb_stream_acquire_lock(&u->base, FLB_TRUE);
+            total_connections = mk_list_size(&uq->busy_queue) +
+                                mk_list_size(&uq->av_queue) +
+                                mk_list_size(&uq->destroy_queue);
+            flb_stream_release_lock(&u->base);
+
+            if (total_connections >= u->base.net.max_worker_connections) {
+                flb_debug("[upstream] max worker connections=%i reached to: %s:%i, cannot connect",
+                          u->base.net.max_worker_connections, u->tcp_host, u->tcp_port);
+                return NULL;
+            }
+        }
         conn = create_conn(u);
     }
 
     if (conn != NULL) {
+        /* newly created connections return in an idle state; mark busy */
+        conn->busy_flag = FLB_TRUE;
         flb_connection_reset_io_timeout(conn);
         flb_upstream_increment_busy_connections_count(u);
     }
@@ -829,6 +860,9 @@ int flb_upstream_conn_release(struct flb_connection *conn)
     struct flb_upstream *u = conn->upstream;
     struct flb_upstream_queue *uq;
 
+    /* allow pending destroy to free this connection once we're done */
+    conn->busy_flag = FLB_FALSE;
+
     flb_upstream_decrement_busy_connections_count(u);
 
     uq = flb_upstream_queue_get(u);
@@ -856,6 +890,18 @@ int flb_upstream_conn_release(struct flb_connection *conn)
          * notified if the 'available keepalive connection' gets disconnected by
          * the remote endpoint we need to add it again.
          */
+        /*
+         * Ensure the event is not registered before we add it back. In some
+         * error paths the previous handler might not have removed the event
+         * from the loop which would cause epoll_ctl(ADD) to fail with
+         * EEXIST.  Remove it here if still registered and then reset the
+         * structure state.
+         */
+        if (MK_EVENT_IS_REGISTERED((&conn->event))) {
+            mk_event_del(conn->evl, &conn->event);
+        }
+
+        MK_EVENT_NEW(&conn->event);
         conn->event.handler = cb_upstream_conn_ka_dropped;
 
         ret = mk_event_add(conn->evl,

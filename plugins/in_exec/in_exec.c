@@ -54,7 +54,7 @@ static int in_exec_collect(struct flb_input_instance *ins,
     if (ctx->oneshot == FLB_TRUE) {
         ret = flb_pipe_r(ctx->ch_manager[0], &val, sizeof(val));
         if (ret == -1) {
-            flb_errno();
+            flb_pipe_error();
             return -1;
         }
     }
@@ -256,7 +256,7 @@ static int in_exec_config_read(struct flb_exec *ctx,
         flb_plg_error(in, "unable to load configuration");
         return -1;
     }
-   
+
     /* filepath setting */
     if (ctx->cmd == NULL) {
         flb_plg_error(in, "no input 'command' was given");
@@ -418,7 +418,7 @@ static int in_exec_prerun(struct flb_input_instance *ins,
     /* Kick the oneshot execution */
     ret = flb_pipe_w(ctx->ch_manager[1], &val, sizeof(val));
     if (ret == -1) {
-        flb_errno();
+        flb_pipe_error();
         return -1;
     }
     return 0;

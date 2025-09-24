@@ -32,7 +32,13 @@ enum ra_types {
     FLB_RA_INT,
     FLB_RA_FLOAT,
     FLB_RA_STRING,
-    FLB_RA_NULL
+    FLB_RA_NULL,
+    FLB_RA_BINARY
+};
+
+enum ra_storage_type {
+    FLB_RA_COPY = 0,
+    FLB_RA_REF
 };
 
 /* condition value types */
@@ -41,15 +47,27 @@ typedef union {
     int64_t i64;
     double f64;
     flb_sds_t string;
+    flb_sds_t binary;
+    struct {
+        const char *buf;
+        size_t len;
+    } ref;
 } ra_val;
 
 /* Represent any value object */
 struct flb_ra_value {
     int type;
+    int storage; /* FLB_RA_COPY or FLB_RA_REF */
     msgpack_object o;
     ra_val val;
 };
 
+const char *flb_ra_value_buffer(struct flb_ra_value *v, size_t *len);
+
+struct flb_ra_value *flb_ra_key_to_value_ext(flb_sds_t ckey,
+                                             msgpack_object map,
+                                             struct mk_list *subkeys,
+                                             int copy);
 struct flb_ra_value *flb_ra_key_to_value(flb_sds_t ckey,
                                          msgpack_object map,
                                          struct mk_list *subkeys);

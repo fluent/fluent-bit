@@ -41,6 +41,7 @@
 #define FLB_TAIL_METRIC_F_OPENED  100  /* number of opened files  */
 #define FLB_TAIL_METRIC_F_CLOSED  101  /* number of closed files  */
 #define FLB_TAIL_METRIC_F_ROTATED 102  /* number of rotated files */
+#define FLB_TAIL_METRIC_M_TRUNCATED 103  /* number of truncated occurrences of multiline */
 #endif
 
 struct flb_tail_config {
@@ -82,10 +83,14 @@ struct flb_tail_config {
 #endif
     int refresh_interval_sec;  /* seconds to re-scan           */
     long refresh_interval_nsec;/* nanoseconds to re-scan       */
+    int read_newly_discovered_files_from_head; /* read new files from head after startup */
     int read_from_head;        /* read new files from head     */
     int rotate_wait;           /* sec to wait on rotated files */
     int watcher_interval;      /* watcher interval             */
-    int ignore_older;          /* ignore fields older than X seconds        */
+    int ignore_older;          /* ignore fields older than X seconds */
+    int ignore_active_older_files; /* ignore files that exceed the ignore
+                                    * older limit even if they are already
+                                    * being ingested */
     time_t last_pending;       /* last time a 'pending signal' was emitted' */
     struct mk_list *path_list; /* list of paths to scan (glob) */
     flb_sds_t path_key;        /* key name of file path        */
@@ -122,6 +127,12 @@ struct flb_tail_config {
     /* Parser / Format */
     struct flb_parser *parser;
 
+#ifdef FLB_HAVE_UNICODE_ENCODER
+    int preferred_input_encoding;
+#endif
+    int generic_input_encoding_type;
+    const char *generic_input_encoding_name;
+
     /* Multiline */
     int multiline;             /* multiline enabled ?  */
     int multiline_flush;       /* multiline flush/wait */
@@ -157,10 +168,13 @@ struct flb_tail_config {
     struct cmt_counter *cmt_files_opened;
     struct cmt_counter *cmt_files_closed;
     struct cmt_counter *cmt_files_rotated;
+    struct cmt_counter *cmt_multiline_truncated;
 
     /* Hash: hash tables for quick acess to registered files */
     struct flb_hash_table *static_hash;
     struct flb_hash_table *event_hash;
+
+    struct flb_hash_table *ignored_file_sizes;
 
     struct flb_config *config;
 };

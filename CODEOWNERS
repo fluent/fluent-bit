@@ -32,12 +32,12 @@
 
 # Core: AWS Auth & Utils
 # ------------
-/src/aws                 @pettitwesley
+/src/aws                 @pettitwesley @sparrc @singholt @swapneils
 
 # AWS header files
-/include/aws                   @pettitwesley
-/include/flb_aws_credentials.h @pettitwesley
-/include/flb_aws_util.h        @pettitwesley
+/include/aws                   @pettitwesley @sparrc @singholt @swapneils
+/include/flb_aws_credentials.h @pettitwesley @sparrc @singholt @swapneils
+/include/flb_aws_util.h        @pettitwesley @sparrc @singholt @swapneils
 
 # Core: Stream Processor
 # ----------------
@@ -55,42 +55,45 @@
 
 # Filter Plugins
 # --------------
-/plugins/filter_aws      @pettitwesley
-/plugins/filter_ecs      @pettitwesley
+/plugins/filter_aws      @pettitwesley @sparrc @singholt @swapneils
+/plugins/filter_ecs      @pettitwesley @sparrc @singholt @swapneils
 
 # Output Plugins
 # --------------
 /plugins/out_datadog     @nokute78 @edsiper
 /plugins/out_es          @pettitwesley @edsiper
 /plugins/out_pgsql       @sxd
-/plugins/out_stackdriver @braydonk @igorpeshansky @qingling128
+/plugins/out_stackdriver @braydonk @jefferbrecht @jeffluoo
 
 # AWS Plugins
-/plugins/out_s3               @pettitwesley
-/plugins/out_cloudwatch_logs  @pettitwesley
-/plugins/out_kinesis_firehose @pettitwesley
-/plugins/out_kinesis_streams  @pettitwesley
-/plugins/out_opensearch       @pettitwesley @edsiper
+/plugins/out_s3               @pettitwesley @sparrc @singholt @swapneils
+/plugins/out_cloudwatch_logs  @pettitwesley @sparrc @singholt @swapneils
+/plugins/out_kinesis_firehose @pettitwesley @sparrc @singholt @swapneils
+/plugins/out_kinesis_streams  @pettitwesley @sparrc @singholt @swapneils
+/plugins/out_opensearch       @pettitwesley @edsiper @sparrc @singholt @swapneils
 
 # AWS test code
-/tests/internal/aws             @pettitwesley
-/tests/internal/aws_*           @pettitwesley
-/tests/runtime/filter_ecs.c     @pettitwesley
-/tests/runtime/filter_aws.c     @pettitwesley
-/tests/runtime/out_cloudwatch.c @pettitwesley
-/tests/runtime/out_firehose.c   @pettitwesley
-/tests/runtime/out_kinesis.c    @pettitwesley
-/tests/runtime/out_opensearch.c @pettitwesley @edsiper
-/tests/runtime/out_s3.c         @pettitwesley
+/tests/internal/aws             @pettitwesley @sparrc @singholt @swapneils
+/tests/internal/aws_*           @pettitwesley @sparrc @singholt @swapneils
+/tests/runtime/filter_ecs.c     @pettitwesley @sparrc @singholt @swapneils
+/tests/runtime/filter_aws.c     @pettitwesley @sparrc @singholt @swapneils
+/tests/runtime/out_cloudwatch.c @pettitwesley @sparrc @singholt @swapneils
+/tests/runtime/out_firehose.c   @pettitwesley @sparrc @singholt @swapneils
+/tests/runtime/out_kinesis.c    @pettitwesley @sparrc @singholt @swapneils
+/tests/runtime/out_opensearch.c @pettitwesley @edsiper @sparrc @singholt @swapneils
+/tests/runtime/out_s3.c         @pettitwesley @sparrc @singholt @swapneils
 
 # Google test code
 # --------------
-/tests/runtime/out_stackdriver.c @braydonk @igorpeshansky @qingling128
-/tests/runtime/data/stackdriver  @braydonk @igorpeshansky @qingling128
+/tests/runtime/out_stackdriver.c @braydonk @jefferbrecht @jeffluoo
+/tests/runtime/data/stackdriver  @braydonk @jefferbrecht @jeffluoo
 
 # Devcontainer
 /.devcontainer                  @patrick-stephens @niedbalski @edsiper
 
-# Calytia Fleet
-/plugins/custom_calyptia/       @pwhelan
-/plugins/in_calyptia_fleet/     @pwhelan
+# Calyptia Fleet
+/include/fluent-bit/calyptia/ @pwhelan @alecholmes
+/plugins/custom_calyptia/     @pwhelan @alecholmes
+/plugins/custom_calyptia/     @pwhelan @alecholmes
+/plugins/out_calyptia/        @pwhelan @alecholmes
+/plugins/in_calyptia_fleet/   @pwhelan @alecholmes

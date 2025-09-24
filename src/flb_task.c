@@ -33,7 +33,7 @@
 
 /*
  * Every task created must have an unique ID, this function lookup the
- * lowest number available in the tasks_map.
+ * lowest number available in the task_map.
  *
  * This 'id' is used by the task interface to communicate with the engine event
  * loop about some action.
@@ -41,13 +41,19 @@
 
 static inline int map_get_task_id(struct flb_config *config)
 {
+    int result;
     int i;
-    int map_size = (sizeof(config->tasks_map) / sizeof(struct flb_task_map));
 
-    for (i = 0; i < map_size; i++) {
-        if (config->tasks_map[i].task == NULL) {
+    for (i = 0; i < config->task_map_size ; i++) {
+        if (config->task_map[i].task == NULL) {
             return i;
         }
+    }
+
+    result = flb_config_task_map_grow(config);
+
+    if (result == 0) {
+        return i;
     }
 
     return -1;
@@ -56,13 +62,13 @@ static inline int map_get_task_id(struct flb_config *config)
 static inline void map_set_task_id(int id, struct flb_task *task,
                                    struct flb_config *config)
 {
-    config->tasks_map[id].task = task;
+    config->task_map[id].task = task;
 
 }
 
 static inline void map_free_task_id(int id, struct flb_config *config)
 {
-    config->tasks_map[id].task = NULL;
+    config->task_map[id].task = NULL;
 }
 
 void flb_task_retry_destroy(struct flb_task_retry *retry)
@@ -232,7 +238,7 @@ int flb_task_retry_clean(struct flb_task *task, struct flb_output_instance *ins)
 }
 
 /* Allocate an initialize a basic Task structure */
-static struct flb_task *task_alloc(struct flb_config *config)
+struct flb_task *task_alloc(struct flb_config *config)
 {
     int task_id;
     struct flb_task *task;
@@ -250,6 +256,7 @@ static struct flb_task *task_alloc(struct flb_config *config)
         flb_free(task);
         return NULL;
     }
+
     map_set_task_id(task_id, task, config);
 
     flb_trace("[task %p] created (id=%i)", task, task_id);
@@ -437,7 +444,9 @@ struct flb_task *flb_task_create(uint64_t ref_id,
             continue;
         }
 
-        if (flb_routes_mask_get_bit(task_ic->routes_mask, o_ins->id) != 0) {
+        if (flb_routes_mask_get_bit(task_ic->routes_mask, 
+                                    o_ins->id,
+                                    o_ins->config) != 0) {
             route = flb_calloc(1, sizeof(struct flb_task_route));
             if (!route) {
                 flb_errno();
@@ -484,22 +493,30 @@ void flb_task_destroy(struct flb_task *task, int del)
     }
 
     /* Unlink and release task */
-    mk_list_del(&task->_head);
+    if (!mk_list_entry_is_orphan(&task->_head)) {
+        mk_list_del(&task->_head);
+    }
 
     /* destroy chunk */
-    flb_input_chunk_destroy(task->ic, del);
+    if (task->ic != NULL) {
+        flb_input_chunk_destroy(task->ic, del);
+    }
 
     /* Remove 'retries' */
     mk_list_foreach_safe(head, tmp, &task->retries) {
         retry = mk_list_entry(head, struct flb_task_retry, _head);
+
         flb_task_retry_destroy(retry);
     }
 
-    flb_input_chunk_set_limits(task->i_ins);
+    if (task->i_ins != NULL) {
+        flb_input_chunk_set_limits(task->i_ins);
+    }
 
-    if (task->event_chunk) {
+    if (task->event_chunk != NULL) {
         flb_event_chunk_destroy(task->event_chunk);
     }
+
     flb_free(task);
 }
 

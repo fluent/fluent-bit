@@ -1,0 +1,25 @@
+#
+# Copyright (c) 2021, RT-Thread Development Team
+#
+# SPDX-License-Identifier: Apache-2.0 WITH LLVM-exception
+#
+
+from building import *
+import re
+
+Import('rtconfig')
+
+cwd     = GetCurrentDir()
+
+src = Glob('*.c')
+
+if rtconfig.ARCH == 'arm' and re.match('^cortex-m.*', rtconfig.CPU):
+    src += ['arch/invokeNative_thumb.s']
+else:
+    src.append(f"arch/invokeNative_{rtconfig.ARCH}.s")
+
+CPPPATH = [cwd, cwd + '/../include']
+
+group = DefineGroup('iwasm_common', src, depend = [''], CPPPATH = CPPPATH)
+
+Return('group')

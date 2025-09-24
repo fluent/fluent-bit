@@ -25,6 +25,8 @@
 #include <fluent-bit/flb_parser.h>
 #include <fluent-bit/flb_error.h>
 #include <fluent-bit/flb_utils.h>
+#include <fluent-bit/aws/flb_aws_msk_iam.h>
+
 #include <mpack/mpack.h>
 #include <stddef.h>
 #include <stdio.h>
@@ -155,13 +157,32 @@ static int in_kafka_collect(struct flb_input_instance *ins,
                             struct flb_config *config, void *in_context)
 {
     int ret;
+    int append_ret;
     struct flb_in_kafka_config *ctx = in_context;
     rd_kafka_message_t *rkm;
 
     ret = FLB_EVENT_ENCODER_SUCCESS;
 
     while (ret == FLB_EVENT_ENCODER_SUCCESS) {
-        rkm = rd_kafka_consumer_poll(ctx->kafka.rk, 1);
+        /* Set the Kafka poll timeout based on execution mode:
+         *
+         * a) Running in the main event loop (non-threaded):
+         *    - Use a minimal timeout to avoid blocking other inputs.
+         *
+         * b) Running in a dedicated thread:
+         *    - Optimize for throughput by allowing Kafka's internal batching.
+         *    - Align with 'fetch.wait.max.ms' (default: 500ms) to maximize batch efficiency.
+         *    - Set timeout slightly higher than 'fetch.wait.max.ms' (e.g., 1.5x - 2x) to
+         *      ensure it does not interfere with Kafka's fetch behavior, while still
+         *      keeping the consumer responsive.
+         */
+        if (ctx->ins->flags & FLB_INPUT_THREADED) {
+            /* Threaded mode: Optimize for batch processing and efficiency */
+            rkm = rd_kafka_consumer_poll(ctx->kafka.rk, ctx->poll_timeout_ms);
+        } else {
+            /* Main event loop: Minimize delay for non-blocking execution */
+            rkm = rd_kafka_consumer_poll(ctx->kafka.rk, 1);
+        }
 
         if (!rkm) {
             break;
@@ -180,9 +201,6 @@ static int in_kafka_collect(struct flb_input_instance *ins,
 
         rd_kafka_message_destroy(rkm);
 
-        /* TO-DO: commit the record based on `ret` */
-        rd_kafka_commit(ctx->kafka.rk, NULL, 0);
-
         /* Break from the loop when reaching the limit of polling if available */
         if (ctx->polling_threshold != FLB_IN_KAFKA_UNLIMITED &&
             ctx->log_encoder->output_length > ctx->polling_threshold + 512) {
@@ -192,11 +210,24 @@ static int in_kafka_collect(struct flb_input_instance *ins,
 
     if (ret == FLB_EVENT_ENCODER_SUCCESS) {
         if (ctx->log_encoder->output_length > 0) {
-            flb_input_log_append(ins, NULL, 0,
-                                 ctx->log_encoder->output_buffer,
-                                 ctx->log_encoder->output_length);
+            append_ret = flb_input_log_append(ins, NULL, 0,
+                                              ctx->log_encoder->output_buffer,
+                                              ctx->log_encoder->output_length);
+
+            if (append_ret == 0) {
+                if (!ctx->enable_auto_commit) {
+                    rd_kafka_commit(ctx->kafka.rk, NULL, 0);
+                }
+                ret = 0;
+            }
+            else {
+                flb_plg_error(ins, "failed to append records");
+                ret = -1;
+            }
         }
-        ret = 0;
+        else {
+            ret = 0;
+        }
     }
     else {
         flb_plg_error(ins, "Error encoding record : %d", ret);
@@ -224,7 +255,7 @@ static int in_kafka_init(struct flb_input_instance *ins,
     char conf_val[16];
 
     /* Allocate space for the configuration context */
-    ctx = flb_malloc(sizeof(struct flb_in_kafka_config));
+    ctx = flb_calloc(1, sizeof(struct flb_in_kafka_config));
     if (!ctx) {
         return -1;
     }
@@ -237,9 +268,53 @@ static int in_kafka_init(struct flb_input_instance *ins,
         return -1;
     }
 
+#ifdef FLB_HAVE_AWS_MSK_IAM
+    /*
+     * When MSK IAM auth is enabled, default the required
+     * security settings so users don't need to specify them.
+     */
+    if (ctx->aws_msk_iam && ctx->aws_msk_iam_cluster_arn) {
+        conf = flb_input_get_property("rdkafka.security.protocol", ins);
+        if (!conf) {
+            flb_input_set_property(ins, "rdkafka.security.protocol", "SASL_SSL");
+        }
+
+        conf = flb_input_get_property("rdkafka.sasl.mechanism", ins);
+        if (!conf) {
+            flb_input_set_property(ins, "rdkafka.sasl.mechanism", "OAUTHBEARER");
+            ctx->sasl_mechanism = flb_sds_create("OAUTHBEARER");
+        }
+        else {
+            ctx->sasl_mechanism = flb_sds_create(conf);
+            flb_plg_info(ins, "SASL mechanism configured: %s", ctx->sasl_mechanism);
+        }
+    }
+    else {
+#endif
+
+        /* Retrieve SASL mechanism if configured */
+        conf = flb_input_get_property("rdkafka.sasl.mechanism", ins);
+        if (conf) {
+            ctx->sasl_mechanism = flb_sds_create(conf);
+            flb_plg_info(ins, "SASL mechanism configured: %s", ctx->sasl_mechanism);
+        }
+
+#ifdef FLB_HAVE_AWS_MSK_IAM
+    }
+#endif
+
     kafka_conf = flb_kafka_conf_create(&ctx->kafka, &ins->properties, 1);
     if (!kafka_conf) {
         flb_plg_error(ins, "Could not initialize kafka config object");
+        goto init_error;
+    }
+
+    /* Set enable.auto.commit based on plugin's enable_auto_commit setting */
+    res = rd_kafka_conf_set(kafka_conf, "enable.auto.commit",
+                           ctx->enable_auto_commit ? "true" : "false",
+                           errstr, sizeof(errstr));
+    if (res != RD_KAFKA_CONF_OK) {
+        flb_plg_error(ins, "Failed to set enable.auto.commit: %s", errstr);
         goto init_error;
     }
 
@@ -268,14 +343,48 @@ static int in_kafka_init(struct flb_input_instance *ins,
         ctx->polling_threshold = FLB_IN_KAFKA_UNLIMITED;
     }
 
-    ctx->kafka.rk = rd_kafka_new(RD_KAFKA_CONSUMER, kafka_conf, errstr,
-            sizeof(errstr));
+    ctx->opaque = flb_kafka_opaque_create();
+    if (!ctx->opaque) {
+        flb_plg_error(ins, "failed to create kafka opaque context");
+        goto init_error;
+    }
+    flb_kafka_opaque_set(ctx->opaque, ctx, NULL);
+    rd_kafka_conf_set_opaque(kafka_conf, ctx->opaque);
+
+#ifdef FLB_HAVE_AWS_MSK_IAM
+    if (ctx->aws_msk_iam && ctx->aws_msk_iam_cluster_arn && ctx->sasl_mechanism &&
+        strcasecmp(ctx->sasl_mechanism, "OAUTHBEARER") == 0) {
+        flb_plg_info(ins, "registering MSK IAM authentication with cluster ARN: %s",
+                     ctx->aws_msk_iam_cluster_arn);
+        ctx->msk_iam = flb_aws_msk_iam_register_oauth_cb(config,
+                                                         kafka_conf,
+                                                         ctx->aws_msk_iam_cluster_arn,
+                                                         ctx->opaque);
+        if (!ctx->msk_iam) {
+            flb_plg_error(ins, "failed to setup MSK IAM authentication");
+        }
+        else {
+            res = rd_kafka_conf_set(kafka_conf, "sasl.oauthbearer.config",
+                                    "principal=admin", errstr, sizeof(errstr));
+            if (res != RD_KAFKA_CONF_OK) {
+                flb_plg_error(ins,
+                             "failed to set sasl.oauthbearer.config: %s",
+                             errstr);
+            }
+        }
+    }
+#endif
+
+    ctx->kafka.rk = rd_kafka_new(RD_KAFKA_CONSUMER, kafka_conf, errstr, sizeof(errstr));
 
     /* Create Kafka consumer handle */
     if (!ctx->kafka.rk) {
         flb_plg_error(ins, "Failed to create new consumer: %s", errstr);
         goto init_error;
     }
+
+    /* Trigger initial token refresh for OAUTHBEARER */
+    rd_kafka_poll(ctx->kafka.rk, 0);
 
     conf = flb_input_get_property("topics", ins);
     if (!conf) {
@@ -339,12 +448,17 @@ init_error:
         rd_kafka_topic_partition_list_destroy(kafka_topics);
     }
     if (ctx->kafka.rk) {
+        rd_kafka_consumer_close(ctx->kafka.rk);
         rd_kafka_destroy(ctx->kafka.rk);
+    }
+    if (ctx->opaque) {
+        flb_kafka_opaque_destroy(ctx->opaque);
     }
     else if (kafka_conf) {
         /* conf is already destroyed when rd_kafka is initialized */
         rd_kafka_conf_destroy(kafka_conf);
     }
+    flb_sds_destroy(ctx->sasl_mechanism);
     flb_free(ctx);
 
     return -1;
@@ -374,12 +488,27 @@ static int in_kafka_exit(void *in_context, struct flb_config *config)
     }
 
     ctx = in_context;
-    rd_kafka_destroy(ctx->kafka.rk);
+    if (ctx->kafka.rk) {
+        rd_kafka_consumer_close(ctx->kafka.rk);
+        rd_kafka_destroy(ctx->kafka.rk);
+    }
     flb_free(ctx->kafka.brokers);
 
     if (ctx->log_encoder){
         flb_log_event_encoder_destroy(ctx->log_encoder);
     }
+
+#ifdef FLB_HAVE_AWS_MSK_IAM
+    if (ctx->msk_iam) {
+        flb_aws_msk_iam_destroy(ctx->msk_iam);
+    }
+#endif
+
+    if (ctx->opaque) {
+        flb_kafka_opaque_destroy(ctx->opaque);
+    }
+
+    flb_sds_destroy(ctx->sasl_mechanism);
 
     flb_free(ctx);
 
@@ -428,8 +557,35 @@ static struct flb_config_map config_map[] = {
     0, FLB_TRUE, offsetof(struct flb_in_kafka_config, buffer_max_size),
     "Set the maximum size of chunk"
    },
-   /* EOF */
-   {0}
+   {
+    FLB_CONFIG_MAP_INT, "poll_timeout_ms", "1",
+    0, FLB_TRUE, offsetof(struct flb_in_kafka_config, poll_timeout_ms),
+    "Set the timeout in milliseconds for Kafka consumer poll operations. "
+    "This option only takes effect when running in a dedicated thread (i.e., when 'threaded' is enabled). "
+    "Using a higher timeout (e.g., 1.5x - 2x 'rdkafka.fetch.wait.max.ms') "
+    "can improve efficiency by leveraging Kafka's batching mechanism."
+  },
+  {
+    FLB_CONFIG_MAP_BOOL, "enable_auto_commit", FLB_IN_KAFKA_ENABLE_AUTO_COMMIT,
+    0, FLB_TRUE, offsetof(struct flb_in_kafka_config, enable_auto_commit),
+    "Rely on kafka auto-commit and commit messages in batches"
+  },
+
+#ifdef FLB_HAVE_AWS_MSK_IAM
+  {
+   FLB_CONFIG_MAP_STR, "aws_msk_iam_cluster_arn", (char *)NULL,
+   0, FLB_TRUE, offsetof(struct flb_in_kafka_config, aws_msk_iam_cluster_arn),
+   "ARN of the MSK cluster when using AWS IAM authentication"
+  },
+  {
+    FLB_CONFIG_MAP_BOOL, "aws_msk_iam", "false",
+    0, FLB_TRUE, offsetof(struct flb_in_kafka_config, aws_msk_iam),
+    "Enable AWS MSK IAM authentication"
+  },
+#endif
+
+  /* EOF */
+  {0}
 };
 
 /* Plugin reference */

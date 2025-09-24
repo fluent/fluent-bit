@@ -33,7 +33,7 @@
 /* Default enabled metrics */
 
 #ifdef __linux__
-#define NE_DEFAULT_ENABLED_METRICS "cpu,cpufreq,meminfo,diskstats,filesystem,uname,stat,time,loadavg,vmstat,netdev,filefd,systemd,nvme,thermal_zone"
+#define NE_DEFAULT_ENABLED_METRICS "cpu,cpufreq,meminfo,diskstats,filesystem,uname,stat,time,loadavg,vmstat,netdev,sockstat,filefd,systemd,nvme,thermal_zone,hwmon"
 #elif __APPLE__
 #define NE_DEFAULT_ENABLED_METRICS "cpu,loadavg,meminfo,diskstats,uname,netdev"
 #endif
@@ -48,6 +48,7 @@
 
 struct flb_ne {
     /* configuration */
+    flb_sds_t path_rootfs;
     flb_sds_t path_procfs;
     flb_sds_t path_sysfs;
     flb_sds_t path_textfile;
@@ -140,6 +141,28 @@ struct flb_ne {
     struct cmt_gauge *darwin_noproto;
 #endif
 
+    /* sockstat_linux */
+    struct cmt_gauge *sockstat_sockets_used;
+    struct cmt_gauge *sockstat_TCP_alloc;
+    struct cmt_gauge *sockstat_TCP_inuse;
+    struct cmt_gauge *sockstat_TCP_mem;
+    struct cmt_gauge *sockstat_TCP_mem_bytes;
+    struct cmt_gauge *sockstat_TCP_orphan;
+    struct cmt_gauge *sockstat_TCP_tw;
+    struct cmt_gauge *sockstat_UDP_inuse;
+    struct cmt_gauge *sockstat_UDP_mem;
+    struct cmt_gauge *sockstat_UDP_mem_bytes;
+    struct cmt_gauge *sockstat_UDPLITE_inuse;
+    struct cmt_gauge *sockstat_RAW_inuse;
+    struct cmt_gauge *sockstat_FRAG_inuse;
+    struct cmt_gauge *sockstat_FRAG_memory;
+    struct cmt_gauge *sockstat_TCP6_inuse;
+    struct cmt_gauge *sockstat_UDP6_inuse;
+    struct cmt_gauge *sockstat_UDPLITE6_inuse;
+    struct cmt_gauge *sockstat_RAW6_inuse;
+    struct cmt_gauge *sockstat_FRAG6_inuse;
+    struct cmt_gauge *sockstat_FRAG6_memory;
+
     /* time */
     struct cmt_gauge *time;
 
@@ -211,6 +234,22 @@ struct flb_ne {
     struct cmt_gauge   *thermalzone_temp;
     struct cmt_gauge   *cooling_device_cur_state;
     struct cmt_gauge   *cooling_device_max_state;
+
+    /* hwmon */
+    struct cmt_gauge   *hwmon_temp_celsius;
+    struct cmt_gauge   *hwmon_temp_max_celsius;
+    struct cmt_gauge   *hwmon_temp_crit_celsius;
+    struct cmt_gauge   *hwmon_in_volts;
+    struct cmt_gauge   *hwmon_fan_rpm;
+    struct cmt_gauge   *hwmon_power_watts;
+    flb_sds_t           hwmon_chip_regex_include_text;
+    flb_sds_t           hwmon_chip_regex_exclude_text;
+    flb_sds_t           hwmon_sensor_regex_include_text;
+    flb_sds_t           hwmon_sensor_regex_exclude_text;
+    struct flb_regex   *hwmon_chip_regex_include;
+    struct flb_regex   *hwmon_chip_regex_exclude;
+    struct flb_regex   *hwmon_sensor_regex_include;
+    struct flb_regex   *hwmon_sensor_regex_exclude;
 };
 
 struct flb_ne_collector {

@@ -378,6 +378,15 @@ static int cb_cloudwatch_init(struct flb_output_instance *ins,
     flb_output_upstream_set(upstream, ctx->ins);
     ctx->cw_client->host = ctx->endpoint;
 
+    struct mk_list *head;
+    struct flb_filter_instance *f_ins;
+    mk_list_foreach(head, &config->filters) {
+        f_ins = mk_list_entry(head, struct flb_filter_instance, _head);
+        if (strstr(f_ins->p->name, "kubernetes")) {
+            ctx->kubernete_metadata_enabled = true;
+        }
+    }
+
     /* Export context */
     flb_output_set_context(ins, ctx);
 
@@ -446,7 +455,7 @@ static void cb_cloudwatch_flush(struct flb_event_chunk *event_chunk,
     }
 
     event_count = process_and_send(ctx, i_ins->p->name, buf, event_chunk->tag, event_chunk->data, event_chunk->size,
-                                   event_chunk->type);
+                                   event_chunk->type, config);
     if (event_count < 0) {
         flb_plg_error(ctx->ins, "Failed to send events");
         cw_flush_destroy(buf);
@@ -530,6 +539,28 @@ static int cb_cloudwatch_exit(void *data, struct flb_config *config)
     return 0;
 }
 
+void entity_destroy(entity *entity)
+{
+    if(entity->attributes) {
+        flb_free(entity->attributes->cluster_name);
+        flb_free(entity->attributes->instance_id);
+        flb_free(entity->attributes->namespace);
+        flb_free(entity->attributes->node);
+        flb_free(entity->attributes->platform_type);
+        flb_free(entity->attributes->workload);
+        flb_free(entity->attributes->name_source);
+        flb_free(entity->attributes);
+    }
+    if(entity->key_attributes) {
+        flb_free(entity->key_attributes->environment);
+        flb_free(entity->key_attributes->name);
+        flb_free(entity->key_attributes->type);
+        flb_free(entity->key_attributes->account_id);
+        flb_free(entity->key_attributes);
+    }
+    flb_free(entity);
+}
+
 void log_stream_destroy(struct log_stream *stream)
 {
     if (stream) {
@@ -538,6 +569,9 @@ void log_stream_destroy(struct log_stream *stream)
         }
         if (stream->group) {
             flb_sds_destroy(stream->group);
+        }
+        if (stream->entity) {
+            entity_destroy(stream->entity);
         }
         flb_free(stream);
     }
@@ -688,6 +722,12 @@ static struct flb_config_map config_map[] = {
      0, FLB_TRUE, offsetof(struct flb_cloudwatch, log_group_class),
      "Specify the log storage class. Valid values are STANDARD (default) and INFREQUENT_ACCESS."
     },
+
+    {
+    FLB_CONFIG_MAP_BOOL, "add_entity", "false",
+    0, FLB_TRUE, offsetof(struct flb_cloudwatch, add_entity),
+    "add entity to PutLogEvent calls"
+   },
 
     /* EOF */
     {0}

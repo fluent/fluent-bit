@@ -31,14 +31,43 @@
 #include "kube_meta.h"
 #include "kube_regex.h"
 #include "kube_property.h"
+#include "kubernetes_aws.h"
 
 #include <stdio.h>
 #include <msgpack.h>
+#include <sys/stat.h>
 
 /* Merge status used by merge_log_handler() */
 #define MERGE_NONE        0 /* merge unescaped string in temporary buffer */
 #define MERGE_PARSED      1 /* merge parsed string (log_buf)             */
 #define MERGE_MAP         2 /* merge direct binary object (v)            */
+
+struct task_args {
+    struct flb_kube *ctx;
+    char *api_server_url;
+};
+
+pthread_mutex_t metadata_mutex;
+pthread_t background_thread;
+struct task_args *task_args = {0};
+struct mk_event_loop *evl;
+
+void *update_pod_service_map(void *arg)
+{
+    flb_engine_evl_init();
+    evl = mk_event_loop_create(256);
+    if (evl == NULL) {
+        flb_plg_error(task_args->ctx->ins,
+                      "Failed to create event loop for pod service map");
+        return NULL;
+    }
+    flb_engine_evl_set(evl);
+    while (1) {
+        fetch_pod_service_map(task_args->ctx,task_args->api_server_url,&metadata_mutex);
+        flb_plg_debug(task_args->ctx->ins, "Updating pod to service map after %d seconds", task_args->ctx->aws_pod_service_map_refresh_interval);
+        sleep(task_args->ctx->aws_pod_service_map_refresh_interval);
+    }
+}
 
 static int get_stream(msgpack_object_map map)
 {
@@ -208,13 +237,34 @@ static int cb_kube_init(struct flb_filter_instance *f_ins,
      */
     flb_kube_meta_init(ctx, config);
 
+/*
+ * Init separate thread for calling pod to
+ * service map
+ */
+    pthread_mutex_init(&metadata_mutex, NULL);
+
+    if (ctx->aws_use_pod_association) {
+        task_args = flb_malloc(sizeof(struct task_args));
+        if (!task_args) {
+            flb_errno();
+            return -1;
+        }
+        task_args->ctx = ctx;
+        task_args->api_server_url = ctx->aws_pod_association_endpoint;
+        if (pthread_create(&background_thread, NULL, update_pod_service_map, NULL) != 0) {
+            flb_error("Failed to create background thread");
+            background_thread = 0;
+            flb_free(task_args);
+        }
+    }
+
     return 0;
 }
 
 static int pack_map_content(struct flb_log_event_encoder *log_encoder,
                             msgpack_object source_map,
                             const char *kube_buf, size_t kube_size,
-                            const char *namespace_kube_buf, 
+                            const char *namespace_kube_buf,
                             size_t namespace_kube_size,
                             struct flb_time *time_lookup,
                             struct flb_parser *parser,
@@ -518,10 +568,10 @@ static int pack_map_content(struct flb_log_event_encoder *log_encoder,
         ret = flb_log_event_encoder_append_body_cstring(
                 log_encoder,
                 "kubernetes_namespace");
-        
+
         off = 0;
         msgpack_unpacked_init(&result);
-        msgpack_unpack_next(&result, namespace_kube_buf, 
+        msgpack_unpack_next(&result, namespace_kube_buf,
                             namespace_kube_size, &off);
 
         if (ret == FLB_EVENT_ENCODER_SUCCESS) {
@@ -763,8 +813,20 @@ static int cb_kube_exit(void *data, struct flb_config *config)
     struct flb_kube *ctx;
 
     ctx = data;
+    
     flb_kube_conf_destroy(ctx);
+    if (background_thread) {
+        pthread_cancel(background_thread);
+        pthread_join(background_thread, NULL);
+    }
+    pthread_mutex_destroy(&metadata_mutex);
 
+    if (task_args) {
+        flb_free(task_args);
+    }
+    if (evl) {
+        mk_event_loop_destroy(evl);
+    }
     return 0;
 }
 
@@ -907,6 +969,13 @@ static struct flb_config_map config_map[] = {
      FLB_CONFIG_MAP_BOOL, "annotations", "true",
      0, FLB_TRUE, offsetof(struct flb_kube, annotations),
      "include Kubernetes annotations on every record"
+    },
+
+    /* Include Kubernetes OwnerReferences in the final record ? */
+    {
+     FLB_CONFIG_MAP_BOOL, "owner_references", "false",
+     0, FLB_TRUE, offsetof(struct flb_kube, owner_references),
+     "include Kubernetes owner references on every record"
     },
 
     /* Include Kubernetes Namespace Labels in the final record ? */
@@ -1055,10 +1124,117 @@ static struct flb_config_map config_map[] = {
     {
      FLB_CONFIG_MAP_TIME, "kube_meta_namespace_cache_ttl", "15m",
      0, FLB_TRUE, offsetof(struct flb_kube, kube_meta_namespace_cache_ttl),
-     "configurable TTL for K8s cached namespace metadata. " 
+     "configurable TTL for K8s cached namespace metadata. "
      "By default, it is set to 15m and cached entries will be evicted after 15m."
      "Setting this to 0 will disable the cache TTL and "
      "will evict entries once the cache reaches capacity."
+    },
+
+    /*
+     * Enable pod to service name association logics
+     * This can be configured with endpoint that returns a response with the corresponding
+     * podname in relation to the service name. For example, if there is a pod named "petclinic-12345"
+     * then in order to associate a service name to pod "petclinic-12345", the JSON response to the endpoint
+     * must follow the below patterns
+     * {
+     *   "petclinic-12345": {
+     *      "ServiceName":"petclinic",
+     *      "Environment":"default"
+     *   }
+     * }
+     */
+    {
+     FLB_CONFIG_MAP_BOOL, "aws_use_pod_association", "false",
+     0, FLB_TRUE, offsetof(struct flb_kube, aws_use_pod_association),
+     "use custom endpoint to get pod to service name mapping"
+    },
+    {
+     FLB_CONFIG_MAP_BOOL, "use_pod_association", "false",
+     0, FLB_TRUE, offsetof(struct flb_kube, aws_use_pod_association),
+     "use custom endpoint to get pod to service name mapping. "
+     "this config option is kept for backward compatibility for "
+     "AWS Observability users and will be deprecated in favor of "
+     "aws_use_pod_association."
+    },
+    /*
+     * The host used for pod to service name association , default is 127.0.0.1
+     * Will only check when "use_pod_association" config is set to true
+     */
+    {
+     FLB_CONFIG_MAP_STR, "aws_pod_association_host", "cloudwatch-agent.amazon-cloudwatch",
+     0, FLB_TRUE, offsetof(struct flb_kube, aws_pod_association_host),
+     "host to connect with when performing pod to service name association"
+    },
+    /*
+     * The endpoint used for pod to service name association, default is /kubernetes/pod-to-service-env-map
+     * Will only check when "use_pod_association" config is set to true
+     */
+    {
+     FLB_CONFIG_MAP_STR, "aws_pod_association_endpoint", "/kubernetes/pod-to-service-env-map",
+     0, FLB_TRUE, offsetof(struct flb_kube, aws_pod_association_endpoint),
+     "endpoint to connect with when performing pod to service name association"
+    },
+    /*
+     * The port for pod to service name association endpoint, default is 4311
+     * Will only check when "use_pod_association" config is set to true
+     */
+    {
+     FLB_CONFIG_MAP_INT, "aws_pod_association_port", "4311",
+     0, FLB_TRUE, offsetof(struct flb_kube, aws_pod_association_port),
+     "port to connect with when performing pod to service name association"
+    },
+    {
+     FLB_CONFIG_MAP_INT, "aws_pod_service_map_ttl", "0",
+     0, FLB_TRUE, offsetof(struct flb_kube, aws_pod_service_map_ttl),
+     "configurable TTL for pod to service map storage. "
+     "By default, it is set to 0 which means TTL for cache entries is disabled and "
+     "cache entries are evicted at random when capacity is reached. "
+     "In order to enable this option, you should set the number to a time interval. "
+     "For example, set this value to 60 or 60s and cache entries "
+     "which have been created more than 60s will be evicted"
+    },
+    {
+     FLB_CONFIG_MAP_INT, "aws_pod_service_map_refresh_interval", "60",
+     0, FLB_TRUE, offsetof(struct flb_kube, aws_pod_service_map_refresh_interval),
+     "Refresh interval for the pod to service map storage."
+     "By default, it is set to refresh every 60 seconds"
+    },
+    {
+     FLB_CONFIG_MAP_STR, "aws_pod_service_preload_cache_dir", NULL,
+     0, FLB_TRUE, offsetof(struct flb_kube, aws_pod_service_preload_cache_path),
+     "set directory with pod to service map files"
+    },
+    {
+     FLB_CONFIG_MAP_STR, "aws_pod_association_host_server_ca_file", "/etc/amazon-cloudwatch-observability-agent-server-cert/tls-ca.crt",
+     0, FLB_TRUE, offsetof(struct flb_kube, aws_pod_association_host_server_ca_file),
+     "TLS CA certificate path for communication with agent server"
+    },
+    {
+     FLB_CONFIG_MAP_STR, "aws_pod_association_host_client_cert_file", "/etc/amazon-cloudwatch-observability-agent-client-cert/client.crt",
+     0, FLB_TRUE, offsetof(struct flb_kube, aws_pod_association_host_client_cert_file),
+     "Client Certificate path for enabling mTLS on calls to agent server"
+    },
+    {
+     FLB_CONFIG_MAP_STR, "aws_pod_association_host_client_key_file", "/etc/amazon-cloudwatch-observability-agent-client-cert/client.key",
+     0, FLB_TRUE, offsetof(struct flb_kube, aws_pod_association_host_client_key_file),
+     "Client Certificate Key path for enabling mTLS on calls to agent server"
+    },
+    {
+     FLB_CONFIG_MAP_INT, "aws_pod_association_host_tls_debug", "0",
+     0, FLB_TRUE, offsetof(struct flb_kube, aws_pod_association_host_tls_debug),
+     "set TLS debug level: 0 (no debug), 1 (error), "
+     "2 (state change), 3 (info) and 4 (verbose)"
+    },
+    {
+     FLB_CONFIG_MAP_BOOL, "aws_pod_association_host_tls_verify", "true",
+     0, FLB_TRUE, offsetof(struct flb_kube, aws_pod_association_host_tls_verify),
+     "enable or disable verification of TLS peer certificate"
+    },
+    {
+     FLB_CONFIG_MAP_STR, "set_platform", NULL,
+     0, FLB_TRUE, offsetof(struct flb_kube, set_platform),
+     "Set the platform that kubernetes is in. Possible values are k8s and eks"
+     "This should only be used for testing purpose"
     },
     /* EOF */
     {0}

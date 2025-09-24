@@ -77,6 +77,11 @@ struct flb_tls_backend {
     /* Additional settings */
     int (*context_alpn_set) (void *, const char *);
 
+    /* TLS Protocol version */
+    int (*set_minmax_proto) (struct flb_tls *tls, const char *, const char *);
+    /* TLS Ciphers */
+    int (*set_ciphers) (struct flb_tls *tls, const char *);
+
     /* Session management */
     void *(*session_create) (struct flb_tls *, int);
     int (*session_destroy) (void *);
@@ -87,6 +92,11 @@ struct flb_tls_backend {
     int (*net_write) (struct flb_tls_session *, const void *data,
                       size_t len);
     int (*net_handshake) (struct flb_tls *, char *, void *);
+
+#if defined(FLB_SYSTEM_WINDOWS)
+    int (*set_certstore_name)(struct flb_tls *tls, const char *certstore_name);
+    int (*set_use_enterprise_store)(struct flb_tls *tls, int use_enterprise);
+#endif
 };
 
 /* Main TLS context */
@@ -96,6 +106,10 @@ struct flb_tls {
     char *vhost;                      /* Virtual hostname for SNI  */
     int mode;                         /* Client or Server          */
     int verify_hostname;              /* Verify hostname           */
+#if defined(FLB_SYSTEM_WINDOWS)
+    char *certstore_name;             /* Windows CertStore Name    */
+    int use_enterprise_store;         /* Use Enterprise store or not */
+#endif
 
     /* Bakend library for TLS */
     void *ctx;                        /* TLS context created */
@@ -117,8 +131,15 @@ int flb_tls_destroy(struct flb_tls *tls);
 int flb_tls_set_alpn(struct flb_tls *tls, const char *alpn);
 
 int flb_tls_set_verify_hostname(struct flb_tls *tls, int verify_hostname);
+#if defined(FLB_SYSTEM_WINDOWS)
+int flb_tls_set_certstore_name(struct flb_tls *tls, const char *certstore_name);
+int flb_tls_set_use_enterprise_store(struct flb_tls *tls, int use_enterprise);
+#endif
 
 int flb_tls_load_system_certificates(struct flb_tls *tls);
+int flb_tls_set_minmax_proto(struct flb_tls *tls,
+                             const char *min_version, const char *max_version);
+int flb_tls_set_ciphers(struct flb_tls *tls, const char *ciphers);
 
 struct mk_list *flb_tls_get_config_map(struct flb_config *config);
 

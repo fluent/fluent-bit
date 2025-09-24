@@ -17,6 +17,9 @@
  *  limitations under the License.
  */
 
+#include <stdint.h>
+#include <ctype.h>
+
 #include <fluent-bit/flb_info.h>
 #include <fluent-bit/flb_mem.h>
 #include <fluent-bit/flb_hash_table.h>
@@ -24,6 +27,60 @@
 #include <fluent-bit/flb_str.h>
 
 #include <cfl/cfl.h>
+
+static inline char *convert_string_to_lowercase(char  *output_buffer, char *input_buffer, size_t length)
+{
+    size_t index;
+
+    if (input_buffer == NULL) {
+        return NULL;
+    }
+
+    if (output_buffer == NULL) {
+        output_buffer = flb_calloc(1, length + 1);
+        if (output_buffer == NULL) {
+            flb_errno();
+            return NULL;
+        }
+    }
+
+    if (output_buffer != NULL) {
+        for (index = 0 ; index < length ; index++) {
+            output_buffer[index] = tolower(input_buffer[index]);
+        }
+    }
+
+    return output_buffer;
+}
+
+static inline int flb_hash_table_compute_key_hash(uint64_t *hash, char *key, size_t key_len, int case_sensitivity)
+{
+    int converted_key_allocated = FLB_FALSE;
+    char  local_caseless_key_buffer[64];
+    char *converted_key = key;
+
+    if (!case_sensitivity) {
+        if (key_len >= (sizeof(local_caseless_key_buffer) - 1)) {
+            converted_key = convert_string_to_lowercase(NULL, key, key_len);
+            converted_key_allocated = FLB_TRUE;
+        }
+        else {
+            converted_key = convert_string_to_lowercase(local_caseless_key_buffer,
+                                                        key, key_len);
+        }
+
+        if (converted_key == NULL) {
+            return -1;
+        }
+    }
+
+    *hash = cfl_hash_64bits(converted_key, key_len);
+    if (converted_key_allocated) {
+        flb_free(converted_key);
+    }
+
+    return 0;
+}
 
 static inline void flb_hash_table_entry_free(struct flb_hash_table *ht,
                                              struct flb_hash_table_entry *entry)
@@ -49,7 +106,7 @@ struct flb_hash_table *flb_hash_table_create(int evict_mode, size_t size, int ma
         return NULL;
     }
 
-    ht = flb_malloc(sizeof(struct flb_hash_table));
+    ht = flb_calloc(1, sizeof(struct flb_hash_table));
     if (!ht) {
         flb_errno();
         return NULL;
@@ -61,6 +118,7 @@ struct flb_hash_table *flb_hash_table_create(int evict_mode, size_t size, int ma
     ht->size = size;
     ht->total_count = 0;
     ht->cache_ttl = 0;
+    ht->case_sensitivity = FLB_TRUE;
     ht->table = flb_calloc(1, sizeof(struct flb_hash_table_chain) * size);
     if (!ht->table) {
         flb_errno();
@@ -97,13 +155,22 @@ int flb_hash_table_del_ptr(struct flb_hash_table *ht, const char *key, int key_l
                            void *ptr)
 {
     int id;
+    int result;
     uint64_t hash;
     struct mk_list *head;
     struct flb_hash_table_entry *entry = NULL;
     struct flb_hash_table_chain *table;
 
     /* Generate hash number */
-    hash = cfl_hash_64bits(key, key_len);
+    result = flb_hash_table_compute_key_hash(
+                        &hash,
+                        (char *) key, key_len,
+                        ht->case_sensitivity);
+
+    if (result != 0) {
+        return -1;
+    }
+
     id = (hash % ht->size);
 
     /* Link the new entry in our table at the end of the list */
@@ -145,6 +212,15 @@ void flb_hash_table_destroy(struct flb_hash_table *ht)
 
     flb_free(ht->table);
     flb_free(ht);
+}
+
+void flb_hash_table_set_case_sensitivity(struct flb_hash_table *ht, int status)
+{
+    if (status != FLB_TRUE) {
+        status = FLB_FALSE;
+    }
+
+    ht->case_sensitivity = status;
 }
 
 static void flb_hash_table_evict_random(struct flb_hash_table *ht)
@@ -197,6 +273,7 @@ static struct flb_hash_table_entry *hash_get_entry(struct flb_hash_table *ht,
                                                    const char *key, int key_len, int *out_id)
 {
     int id;
+    int result;
     uint64_t hash;
     struct mk_list *head;
     struct flb_hash_table_chain *table;
@@ -206,7 +283,19 @@ static struct flb_hash_table_entry *hash_get_entry(struct flb_hash_table *ht,
         return NULL;
     }
 
-    hash = cfl_hash_64bits(key, key_len);
+    if (out_id == NULL) {
+        return NULL;
+    }
+
+    result = flb_hash_table_compute_key_hash(
+                        &hash,
+                        (char *) key, key_len,
+                        ht->case_sensitivity);
+
+    if (result != 0) {
+        return NULL;
+    }
+
     id = (hash % ht->size);
 
     table = &ht->table[id];
@@ -218,9 +307,20 @@ static struct flb_hash_table_entry *hash_get_entry(struct flb_hash_table *ht,
         entry = mk_list_entry_first(&table->chains,
                                     struct flb_hash_table_entry, _head);
 
-        if (entry->key_len != key_len
-            || strncmp(entry->key, key, key_len) != 0) {
+        if (entry->key_len != key_len) {
             entry = NULL;
+        }
+        else {
+            if (ht->case_sensitivity) {
+                if (strncmp(entry->key, key, key_len) != 0) {
+                    entry = NULL;
+                }
+            }
+            else {
+                if (strncasecmp(entry->key, key, key_len) != 0) {
+                    entry = NULL;
+                }
+            }
         }
     }
     else {
@@ -232,8 +332,15 @@ static struct flb_hash_table_entry *hash_get_entry(struct flb_hash_table *ht,
                 continue;
             }
 
-            if (strncmp(entry->key, key, key_len) == 0) {
-                break;
+            if (ht->case_sensitivity) {
+                if (strncmp(entry->key, key, key_len) == 0) {
+                    break;
+                }
+            }
+            else {
+                if (strncasecmp(entry->key, key, key_len) == 0) {
+                    break;
+                }
             }
 
             entry = NULL;
@@ -338,9 +445,15 @@ int flb_hash_table_add(struct flb_hash_table *ht, const char *key, int key_len,
     /*
      * Below is just code to handle the creation of a new entry in the table
      */
+    ret = flb_hash_table_compute_key_hash(
+            &hash,
+            (char *) key, key_len,
+            ht->case_sensitivity);
 
-    /* Generate hash number */
-    hash = cfl_hash_64bits(key, key_len);
+    if (ret != 0) {
+        return -1;
+    }
+
     id = (hash % ht->size);
 
     /* Allocate the entry */
@@ -493,6 +606,7 @@ int flb_hash_table_del(struct flb_hash_table *ht, const char *key)
 {
     int id;
     int len;
+    int result;
     uint64_t hash;
     struct mk_list *head;
     struct flb_hash_table_entry *entry = NULL;
@@ -507,7 +621,15 @@ int flb_hash_table_del(struct flb_hash_table *ht, const char *key)
         return -1;
     }
 
-    hash = cfl_hash_64bits(key, len);
+    result = flb_hash_table_compute_key_hash(
+                &hash,
+                (char *) key, len,
+                ht->case_sensitivity);
+
+    if (result != 0) {
+        return -1;
+    }
+
     id = (hash % ht->size);
 
     table = &ht->table[id];
@@ -515,15 +637,29 @@ int flb_hash_table_del(struct flb_hash_table *ht, const char *key)
         entry = mk_list_entry_first(&table->chains,
                                     struct flb_hash_table_entry,
                                     _head);
-        if (strcmp(entry->key, key) != 0) {
-            entry = NULL;
+        if (ht->case_sensitivity) {
+            if (entry->key_len != len || strncmp(entry->key, key, len) != 0) {
+                entry = NULL;
+            }
+        }
+        else {
+            if (entry->key_len != len || strncasecmp(entry->key, key, len) != 0) {
+                entry = NULL;
+            }
         }
     }
     else {
         mk_list_foreach(head, &table->chains) {
             entry = mk_list_entry(head, struct flb_hash_table_entry, _head);
-            if (strcmp(entry->key, key) == 0) {
-                break;
+            if (ht->case_sensitivity) {
+                if (entry->key_len == len && strncmp(entry->key, key, len) == 0) {
+                    break;
+                }
+            }
+            else {
+                if (entry->key_len == len && strncasecmp(entry->key, key, len) == 0) {
+                    break;
+                }
             }
             entry = NULL;
         }
@@ -534,6 +670,5 @@ int flb_hash_table_del(struct flb_hash_table *ht, const char *key)
     }
 
     flb_hash_table_entry_free(ht, entry);
-
     return 0;
 }

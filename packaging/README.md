@@ -11,22 +11,34 @@ The [`distros`](./distros/) directory contains OCI container definitions used to
 
 | Distro        |   Version / Code Name     | Arch    | Target Option            |
 |---------------|---------------------------|---------|--------------------------|
-| AmazonLinux   |   2                       | x86_64  | amazonlinux/2            |
-| AmazonLinux   |   2                       | arm64v8 | amazonlinux/2.arm64v8    |
+| AlmaLinux     |   10                      | x86_64  | almalinux/10             |
+| AlmaLinux     |   10                      | arm64v8 | almalinux/10.arm64v8     |
+| AlmaLinux     |   9                       | x86_64  | almalinux/9              |
+| AlmaLinux     |   9                       | arm64v8 | almalinux/9.arm64v8      |
+| AlmaLinux     |   8                       | x86_64  | almalinux/8              |
+| AlmaLinux     |   8                       | arm64v8 | almalinux/8.arm64v8      |
 | AmazonLinux   |   2023                    | x86_64  | amazonlinux/2023         |
 | AmazonLinux   |   2023                    | arm64v8 | amazonlinux/2023.arm64v8 |
+| AmazonLinux   |   2                       | x86_64  | amazonlinux/2            |
+| AmazonLinux   |   2                       | arm64v8 | amazonlinux/2.arm64v8    |
+| CentOS Stream |   10                      | x86_64  | centos/10                |
+| CentOS Stream |   10                      | arm64v8 | centos/10.arm64v8        |
 | CentOS Stream |   9                       | x86_64  | centos/9                 |
 | CentOS Stream |   9                       | arm64v8 | centos/9.arm64v8         |
 | CentOS        |   8                       | x86_64  | centos/8                 |
 | CentOS        |   8                       | arm64v8 | centos/8.arm64v8         |
 | CentOS        |   7                       | x86_64  | centos/7                 |
 | CentOS        |   7                       | arm64v8 | centos/7.arm64v8         |
+| Debian        |   13                      | x86_64  | debian/trixie            |
+| Debian        |   13                      | arm64v8 | debian/trixie.arm64v8    |
 | Debian        |   12                      | x86_64  | debian/bookworm          |
 | Debian        |   12                      | arm64v8 | debian/bookworm.arm64v8  |
 | Debian        |   11                      | x86_64  | debian/bullseye          |
 | Debian        |   11                      | arm64v8 | debian/bullseye.arm64v8  |
 | Debian        |   10                      | x86_64  | debian/buster            |
 | Debian        |   10                      | arm64v8 | debian/buster.arm64v8    |
+| Ubuntu        |   24.04 / Noble Numbat    | x86_64  | ubuntu/24.04             |
+| Ubuntu        |   24.04 / Noble Numbat    | arm64v8 | ubuntu/24.04.arm64v8     |
 | Ubuntu        |   22.04 / Jammy Jellyfish | x86_64  | ubuntu/22.04             |
 | Ubuntu        |   22.04 / Jammy Jellyfish | arm64v8 | ubuntu/22.04.arm64v8     |
 | Ubuntu        |   20.04 / Focal Fossa     | x86_64  | ubuntu/20.04             |
@@ -34,8 +46,15 @@ The [`distros`](./distros/) directory contains OCI container definitions used to
 | Ubuntu        |   18.04 / Bionic Beaver   | x86_64  | ubuntu/18.04             |
 | Ubuntu        |   18.04 / Bionic Beaver   | arm64v8 | ubuntu/18.04.arm64v8     |
 | Ubuntu        |   16.04 / Xenial Xerus    | x86_64  | ubuntu/16.04             |
+| Raspbian      |   12 / Bookworm           | arm32v7 | raspbian/bookworm        |
 | Raspbian      |   11 / Bullseye           | arm32v7 | raspbian/bullseye        |
 | Raspbian      |   10 / Buster             | arm32v7 | raspbian/buster          |
+| Rocky Linux   |   10                      | x86_64  | rockylinux/10            |
+| Rocky Linux   |   10                      | arm64v8 | rockylinux/10.arm64v8    |
+| Rocky Linux   |   9                       | x86_64  | rockylinux/9             |
+| Rocky Linux   |   9                       | arm64v8 | rockylinux/9.arm64v8     |
+| Rocky Linux   |   8                       | x86_64  | rockylinux/8             |
+| Rocky Linux   |   8                       | arm64v8 | rockylinux/8.arm64v8     |
 
 These container images are intended to be built from the root of this repo to build the locally checked out/updated version of the source easily for any target.
 

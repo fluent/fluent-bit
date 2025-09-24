@@ -1,0 +1,2 @@
+wasm-apps/app[123]/*.wat
+wasm-apps/app[123]/*.wasm

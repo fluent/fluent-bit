@@ -212,6 +212,26 @@ static int unpack_opts(mpack_reader_t *reader, struct cmt_opts *opts)
     result = cmt_mpack_unpack_map(reader, callbacks, (void *) opts);
 
     if (CMT_DECODE_MSGPACK_SUCCESS == result) {
+        /* Ensure required string fields are not NULL */
+        if (NULL == opts->ns) {
+            opts->ns = cfl_sds_create("");
+            if (NULL == opts->ns) {
+                return CMT_DECODE_MSGPACK_ALLOCATION_ERROR;
+            }
+        }
+        if (NULL == opts->subsystem) {
+            opts->subsystem = cfl_sds_create("");
+            if (NULL == opts->subsystem) {
+                return CMT_DECODE_MSGPACK_ALLOCATION_ERROR;
+            }
+        }
+        if (NULL == opts->name) {
+            opts->name = cfl_sds_create("");
+            if (NULL == opts->name) {
+                return CMT_DECODE_MSGPACK_ALLOCATION_ERROR;
+            }
+        }
+
         /* Allocate enough space for the three components, the separators
          * and the terminator so we don't have to worry about possible realloc issues
          * later on.
@@ -648,7 +668,11 @@ static int unpack_metric(mpack_reader_t *reader,
 
     if (decode_context->map->type == CMT_HISTOGRAM) {
         histogram = decode_context->map->parent;
-
+        if (histogram == NULL || histogram->buckets == NULL) {
+            free(metric);
+            cmt_errno();
+            return CMT_DECODE_MSGPACK_ALLOCATION_ERROR;
+        }
         metric->hist_buckets = calloc(histogram->buckets->count + 1, sizeof(uint64_t));
 
         if (metric->hist_buckets == NULL) {

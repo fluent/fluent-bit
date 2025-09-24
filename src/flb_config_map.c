@@ -97,6 +97,7 @@ static struct mk_list *parse_string_map_to_list(struct flb_config_map *map, char
 
     if (ret == -1) {
         flb_error("[config map] error reading list of options");
+        flb_slist_destroy(list);
         flb_free(list);
         return NULL;
     }
@@ -470,8 +471,9 @@ int flb_config_map_properties_check(char *context_name,
             continue;
         }
 
-        if (strcasecmp(kv->key, "active") == 0) {
-            /* Accept 'active' property ... */
+        if (strcasecmp(kv->key, "active") == 0 ||
+            strcasecmp(kv->key, "condition") == 0) {
+            /* Accept special core properties */
             continue;
         }
 
@@ -672,6 +674,12 @@ int flb_config_map_set(struct mk_list *properties, struct mk_list *map, void *co
         kv = mk_list_entry(head, struct flb_kv, _head);
 
         if (kv->val == NULL) {
+            continue;
+        }
+
+        /* Skip special core properties */
+        if (strcasecmp(kv->key, "condition") == 0 ||
+            strcasecmp(kv->key, "active") == 0) {
             continue;
         }
 

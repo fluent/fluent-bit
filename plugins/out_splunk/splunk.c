@@ -53,6 +53,210 @@ static int cb_splunk_init(struct flb_output_instance *ins,
     return 0;
 }
 
+static msgpack_object *local_msgpack_map_lookup(
+                            msgpack_object *map_object,
+                            char *key)
+{
+    size_t              key_length;
+    size_t              index;
+    msgpack_object_map *map;
+
+    if (key == NULL) {
+        return NULL;
+    }
+
+    if (map_object == NULL) {
+        return NULL;
+    }
+
+    if (map_object->type != MSGPACK_OBJECT_MAP) {
+        return NULL;
+    }
+
+    map = &map_object->via.map;
+
+    key_length = strlen(key);
+
+    for (index = 0; index < map->size ; index++) {
+        if (map->ptr[index].key.type == MSGPACK_OBJECT_STR) {
+            if (map->ptr[index].key.via.str.size == key_length) {
+                if (strncmp(map->ptr[index].key.via.str.ptr,
+                            key,
+                            key_length) == 0) {
+                    return &map->ptr[index].val;
+                }
+            }
+        }
+    }
+
+    return NULL;
+}
+
+static int local_msgpack_map_string_lookup(
+                msgpack_object *map_object,
+                char *key,
+                char **value,
+                size_t *value_size)
+{
+    msgpack_object *value_object;
+
+    value_object = local_msgpack_map_lookup(map_object, key);
+
+    if (value_object == NULL) {
+        return -1;
+    }
+
+    if (value_object->type != MSGPACK_OBJECT_STR) {
+        return -2;
+    }
+
+    *value = (char *) value_object->via.str.ptr;
+    *value_size = value_object->via.str.size;
+
+    return 0;
+}
+
+static int local_msgpack_map_string_extract(
+                msgpack_object *map_object,
+                char *key,
+                char *output_buffer,
+                size_t output_buffer_size)
+{
+    size_t value_size;
+    int    result;
+    char  *value;
+
+    result = local_msgpack_map_string_lookup(map_object,
+                                             key,
+                                             &value,
+                                             &value_size);
+
+    if (result != 0) {
+        return -1;
+    }
+
+    if (value_size >= output_buffer_size) {
+        return -2;
+    }
+
+    strncpy(output_buffer,
+            value,
+            value_size);
+
+    output_buffer[value_size] = '\0';
+
+    return 0;
+}
+
+static inline void local_msgpack_pack_cstr(msgpack_packer *packer, char *value)
+{
+    msgpack_pack_str(packer, strlen(value));
+    msgpack_pack_str_body(packer, value, strlen(value));
+}
+
+static int pack_otel_data(struct flb_splunk *ctx,
+                          msgpack_packer *mp_pck,
+                          struct flb_mp_map_header *mh_pck,
+                          msgpack_object *group_metadata,
+                          msgpack_object *group_attributes,
+                          msgpack_object *record_attributes)
+{
+    msgpack_object          *source_map;
+    char                     schema[8];
+    int                      result;
+    int                      source_map_resource_attributes = FLB_FALSE;
+    struct flb_mp_map_header mh_tmp;
+    msgpack_object          *value;
+    size_t                   index;
+
+    result = local_msgpack_map_string_extract(group_metadata,
+                                              "schema",
+                                              schema,
+                                              sizeof(schema));
+
+    if (result != 0) {
+        return 0;
+    }
+
+    if (strcmp(schema, "otlp") != 0) {
+        return 0;
+    }
+
+    source_map  = local_msgpack_map_lookup(group_attributes, "resource");
+    if (source_map != NULL) {
+        source_map  = local_msgpack_map_lookup(source_map, "attributes");
+
+        if (source_map != NULL) {
+            source_map_resource_attributes = FLB_TRUE;
+            value = local_msgpack_map_lookup(source_map, "host.name");
+
+            if (value != NULL) {
+                flb_mp_map_header_append(mh_pck);
+                local_msgpack_pack_cstr(mp_pck, "host");
+                msgpack_pack_object(mp_pck, *value);
+            }
+        }
+    }
+
+    flb_mp_map_header_append(mh_pck);
+    local_msgpack_pack_cstr(mp_pck, "fields");
+    flb_mp_map_header_init(&mh_tmp, mp_pck);
+
+    /* check if we have resource attributes to pack */
+    if (source_map_resource_attributes == FLB_TRUE) {
+        for (index = 0; index < source_map->via.map.size ; index++) {
+            flb_mp_map_header_append(&mh_tmp);
+            msgpack_pack_object(mp_pck, source_map->via.map.ptr[index].key);
+            msgpack_pack_object(mp_pck, source_map->via.map.ptr[index].val);
+        }
+    }
+
+    source_map  = local_msgpack_map_lookup(record_attributes, "otlp");
+
+    if (source_map != NULL) {
+        value = local_msgpack_map_lookup(source_map,
+                                         "severity_number");
+
+        if (value != NULL &&
+            (value->type == MSGPACK_OBJECT_POSITIVE_INTEGER ||
+             value->type == MSGPACK_OBJECT_NEGATIVE_INTEGER)) {
+            flb_mp_map_header_append(&mh_tmp);
+
+            local_msgpack_pack_cstr(mp_pck, "otel.log.severity.number");
+
+            msgpack_pack_object(mp_pck, *value);
+        }
+
+        value = local_msgpack_map_lookup(source_map,
+                                         "severity_text");
+
+        if (value != NULL &&
+            value->type == MSGPACK_OBJECT_STR) {
+            flb_mp_map_header_append(&mh_tmp);
+            local_msgpack_pack_cstr(mp_pck, "otel.log.severity.text");
+
+            msgpack_pack_object(mp_pck, *value);
+        }
+
+        source_map  = local_msgpack_map_lookup(source_map, "attributes");
+
+        if (source_map != NULL &&
+            source_map->type == MSGPACK_OBJECT_MAP) {
+
+            for (index = 0; index < source_map->via.map.size ; index++) {
+                flb_mp_map_header_append(&mh_tmp);
+
+                msgpack_pack_object(mp_pck, source_map->via.map.ptr[index].key);
+                msgpack_pack_object(mp_pck, source_map->via.map.ptr[index].val);
+            }
+        }
+    }
+
+    flb_mp_map_header_end(&mh_tmp);
+
+    return 0;
+}
+
 static int pack_map_meta(struct flb_splunk *ctx,
                          struct flb_mp_map_header *mh,
                          msgpack_packer *mp_pck,
@@ -202,9 +406,15 @@ static int pack_map_meta(struct flb_splunk *ctx,
 }
 
 static int pack_map(struct flb_splunk *ctx, msgpack_packer *mp_pck,
-                    struct flb_time *tm, msgpack_object map,
-                    char *tag, int tag_len)
+                    struct flb_time *tm,
+                    msgpack_object *group_metadata,
+                    msgpack_object *group_attributes,
+                    msgpack_object *record_attributes,
+                    msgpack_object map,
+                    char *tag,
+                    int tag_len)
 {
+    int result;
     int i;
     double t;
     int map_size;
@@ -231,6 +441,20 @@ static int pack_map(struct flb_splunk *ctx, msgpack_packer *mp_pck,
 
         /* Pack Splunk metadata */
         pack_map_meta(ctx, &mh, mp_pck, map, tag, tag_len);
+
+        /* Pack Otel specific metadata */
+
+        result = pack_otel_data(ctx,
+                                mp_pck,
+                                &mh,
+                                group_metadata,
+                                group_attributes,
+                                record_attributes);
+
+        if (result != 0) {
+            flb_plg_error(ctx->ins, "failed to pack otel data");
+            return -1;
+        }
 
         /* Add k/v pairs under the key 'event' instead of to the top level object */
         flb_mp_map_header_append(&mh);
@@ -413,7 +637,7 @@ static flb_sds_t get_metadata_auth_header(struct flb_splunk *ctx)
 static inline int splunk_format(const void *in_buf, size_t in_bytes,
                                 char *tag, int tag_len,
                                 char **out_buf, size_t *out_size,
-                                struct flb_splunk *ctx)
+                                struct flb_splunk *ctx, struct flb_config *config)
 {
     int ret;
     char *err;
@@ -475,18 +699,34 @@ static inline int splunk_format(const void *in_buf, size_t in_bytes,
                  * record, we just warn the user and try to pack it
                  * as a normal map.
                  */
-                ret = pack_map(ctx, &mp_pck, &log_event.timestamp, map, tag, tag_len);
+                ret = pack_map(ctx,
+                               &mp_pck,
+                               &log_event.timestamp,
+                               log_event.group_metadata,
+                               log_event.group_attributes,
+                               log_event.metadata,
+                               map,
+                               tag,
+                               tag_len);
             }
         }
         else {
             /* Pack as a map */
-            ret = pack_map(ctx, &mp_pck, &log_event.timestamp, map, tag, tag_len);
+            ret = pack_map(ctx,
+                           &mp_pck,
+                           &log_event.timestamp,
+                           log_event.group_metadata,
+                           log_event.group_attributes,
+                           log_event.metadata,
+                           map,
+                           tag,
+                           tag_len);
         }
 
         /* Validate packaging */
         if (ret != 0) {
             /* Format invalid record */
-            err = flb_msgpack_to_json_str(2048, &map);
+            err = flb_msgpack_to_json_str(2048, &map, config->json_escape_unicode);
             if (err) {
                 /* Print error and continue processing other records */
                 flb_plg_warn(ctx->ins, "could not process or pack record: %s", err);
@@ -497,7 +737,8 @@ static inline int splunk_format(const void *in_buf, size_t in_bytes,
         }
 
         /* Format as JSON */
-        record = flb_msgpack_raw_to_json_sds(mp_sbuf.data, mp_sbuf.size);
+        record = flb_msgpack_raw_to_json_sds(mp_sbuf.data, mp_sbuf.size,
+                                             config->json_escape_unicode);
         if (!record) {
             flb_errno();
             msgpack_sbuffer_destroy(&mp_sbuf);
@@ -658,7 +899,8 @@ static void cb_splunk_flush(struct flb_event_chunk *event_chunk,
                             event_chunk->size,
                             (char *) event_chunk->tag,
                             flb_sds_len(event_chunk->tag),
-                            &buf_data, &buf_size, ctx);
+                            &buf_data, &buf_size, ctx,
+                            config);
     }
 
     if (ret == -1) {
@@ -722,14 +964,14 @@ static void cb_splunk_flush(struct flb_event_chunk *event_chunk,
     if (ctx->http_user && ctx->http_passwd) {
         flb_http_basic_auth(c, ctx->http_user, ctx->http_passwd);
     }
+    else if (ctx->auth_header) {
+        flb_http_add_header(c, "Authorization", 13,
+                            ctx->auth_header, flb_sds_len(ctx->auth_header));
+    }
     else if (metadata_auth_header) {
         flb_http_add_header(c, "Authorization", 13,
                             metadata_auth_header,
                             flb_sds_len(metadata_auth_header));
-    }
-    else if (ctx->auth_header) {
-        flb_http_add_header(c, "Authorization", 13,
-                            ctx->auth_header, flb_sds_len(ctx->auth_header));
     }
 
     /* Append Channel identifier header */
@@ -943,7 +1185,7 @@ static int cb_splunk_format_test(struct flb_config *config,
     struct flb_splunk *ctx = plugin_context;
 
     return splunk_format(data, bytes, (char *) tag, tag_len,
-                         (char**) out_data, out_size,ctx);
+                         (char**) out_data, out_size, ctx, config);
 }
 
 struct flb_output_plugin out_splunk_plugin = {

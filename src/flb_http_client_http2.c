@@ -19,6 +19,7 @@
 
 #define _GNU_SOURCE
 #include <string.h>
+#include <stdio.h>
 
 #include <fluent-bit/flb_info.h>
 #include <fluent-bit/flb_kv.h>
@@ -285,26 +286,23 @@ static int http2_data_chunk_recv_callback(nghttp2_session *inner_session,
             return -1;
         }
 
-        memcpy(stream->response.body, data, len);
+        cfl_sds_set_len(stream->response.body, 0);
 
-        cfl_sds_set_len(stream->response.body, len);
-
-        stream->response.body_read_offset = len;
+        stream->response.body_read_offset = 0;
     }
-    else {
-        resized_buffer = cfl_sds_cat(stream->response.body,
-                                     (const char *) data,
-                                     len);
 
-        if (resized_buffer == NULL) {
-            stream->status = HTTP_STREAM_STATUS_ERROR;
+    resized_buffer = cfl_sds_cat(stream->response.body,
+                                    (const char *) data,
+                                    len);
 
-            return -1;
-        }
+    if (resized_buffer == NULL) {
+        stream->status = HTTP_STREAM_STATUS_ERROR;
 
-        stream->response.body = resized_buffer;
-        stream->response.body_read_offset += len;
+        return -1;
     }
+
+    stream->response.body = resized_buffer;
+    stream->response.body_read_offset += len;
 
     if (stream->status == HTTP_STREAM_STATUS_RECEIVING_DATA) {
         if (stream->response.content_length >=
@@ -368,7 +366,8 @@ static ssize_t http2_data_source_read_callback(nghttp2_session *session,
     }
     else {
         if (content_length > 0) {
-            memcpy(buf, stream->request.body, content_length);
+            memcpy(buf,
+                   &stream->request.body[body_offset], content_length);
 
             stream->request.body_read_offset += content_length;
         }
@@ -387,7 +386,7 @@ static ssize_t http2_data_source_read_callback(nghttp2_session *session,
 
 int flb_http2_client_session_init(struct flb_http2_client_session *session)
 {
-    nghttp2_settings_entry     session_settings[1];
+    nghttp2_settings_entry     session_settings[3];
     nghttp2_session_callbacks *callbacks;
     int                        result;
 
@@ -422,10 +421,17 @@ int flb_http2_client_session_init(struct flb_http2_client_session *session)
     session_settings[0].settings_id = NGHTTP2_SETTINGS_MAX_CONCURRENT_STREAMS;
     session_settings[0].value = 1;
 
+    session_settings[1].settings_id = NGHTTP2_SETTINGS_MAX_FRAME_SIZE;
+    session_settings[1].value = cfl_sds_alloc(session->parent->parent->temporary_buffer);
+
+    session_settings[2].settings_id = NGHTTP2_SETTINGS_ENABLE_PUSH;
+    session_settings[2].value = 0;
+
+
     result = nghttp2_submit_settings(session->inner_session,
                                      NGHTTP2_FLAG_NONE,
                                      session_settings,
-                                     1);
+                                     3);
 
     if (result != 0) {
         return -3;
@@ -480,6 +486,7 @@ int flb_http2_request_begin(struct flb_http_request *request)
 int flb_http2_request_commit(struct flb_http_request *request)
 {
     struct flb_http_client_session  *parent_session;
+    cfl_sds_t                        sds_result;
     struct flb_http2_client_session *session;
     struct flb_http_stream          *stream;
     int                              result;
@@ -517,10 +524,10 @@ int flb_http2_request_commit(struct flb_http_request *request)
     }
 
     if (parent_session->connection->tls_session != NULL) {
-        scheme_as_text = "HTTPS";
+        scheme_as_text = "https";
     }
     else {
-        scheme_as_text = "HTTP";
+        scheme_as_text = "http";
     }
 
     switch (request->method) {
@@ -554,6 +561,22 @@ int flb_http2_request_commit(struct flb_http_request *request)
         return -1;
     }
 
+    if (request->authority == NULL) {
+        request->authority = cfl_sds_create(request->host);
+
+        if (request->authority == NULL) {
+            return -1;
+        }
+
+        sds_result = cfl_sds_printf(&request->authority,
+                                    ":%u",
+                                    request->port);
+
+        if (sds_result == NULL) {
+            return -1;
+        }
+    }
+
     header_count = request->headers->total_count + 7;
 
     headers = flb_calloc(header_count, sizeof(nghttp2_nv));
@@ -580,8 +603,8 @@ int flb_http2_request_commit(struct flb_http_request *request)
 
     headers[header_index].name = (uint8_t *) ":authority";
     headers[header_index].namelen = strlen(":authority");
-    headers[header_index].value = (uint8_t *) request->host;
-    headers[header_index].valuelen = strlen(request->host);
+    headers[header_index].value = (uint8_t *) request->authority;
+    headers[header_index].valuelen = strlen(request->authority);
 
     header_index++;
 

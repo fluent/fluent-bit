@@ -389,30 +389,6 @@ int flb_http1_request_commit(struct flb_http_request *request)
         return -4;
     }
 
-    mk_list_foreach(header_iterator, &request->headers->entries) {
-        header_entry = mk_list_entry(header_iterator,
-                                     struct flb_hash_table_entry,
-                                     _head_parent);
-
-        if (header_entry == NULL) {
-            cfl_sds_destroy(request_buffer);
-
-            return -5;
-        }
-
-        result = compose_header_line(&request_buffer,
-                                      header_entry->key,
-                                      header_entry->key_len,
-                                      header_entry->val,
-                                      header_entry->val_size);
-
-        if (result != 0) {
-            cfl_sds_destroy(request_buffer);
-
-            return -6;
-        }
-    }
-
     if (request->protocol_version == HTTP_PROTOCOL_VERSION_11) {
         if(request->host != NULL) {
             result = compose_header_line(&request_buffer,
@@ -441,7 +417,7 @@ int flb_http1_request_commit(struct flb_http_request *request)
 
     if(request->content_type != NULL) {
         result = compose_header_line(&request_buffer,
-                                     "Content-type", 0,
+                                     "Content-Type", 0,
                                      request->content_type, 0);
 
         if (result != 0) {
@@ -461,13 +437,37 @@ int flb_http1_request_commit(struct flb_http_request *request)
         content_length_string[sizeof(content_length_string) - 1] = '\0';
 
         result = compose_header_line(&request_buffer,
-                                     "Content-length", 0,
+                                     "Content-Length", 0,
                                      content_length_string, 0);
 
         if (result != 0) {
             cfl_sds_destroy(request_buffer);
 
             return -7;
+        }
+    }
+
+    mk_list_foreach(header_iterator, &request->headers->entries) {
+        header_entry = mk_list_entry(header_iterator,
+                                     struct flb_hash_table_entry,
+                                     _head_parent);
+
+        if (header_entry == NULL) {
+            cfl_sds_destroy(request_buffer);
+
+            return -5;
+        }
+
+        result = compose_header_line(&request_buffer,
+                                      header_entry->key,
+                                      header_entry->key_len,
+                                      header_entry->val,
+                                      header_entry->val_size);
+
+        if (result != 0) {
+            cfl_sds_destroy(request_buffer);
+
+            return -6;
         }
     }
 
@@ -478,6 +478,8 @@ int flb_http1_request_commit(struct flb_http_request *request)
 
         return -7;
     }
+
+    request_buffer = sds_result;
 
     if (request->body != NULL) {
         sds_result = cfl_sds_cat(request_buffer,
@@ -525,6 +527,9 @@ static int compose_request_line(cfl_sds_t *output_buffer,
     }
     else if (request->protocol_version == HTTP_PROTOCOL_VERSION_09) {
         protocol_version_string = "";
+    }
+    else {
+        return -1;
     }
 
     method_name = flb_http_get_method_string_from_id(request->method);

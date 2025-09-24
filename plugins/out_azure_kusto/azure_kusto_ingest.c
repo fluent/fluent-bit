@@ -23,11 +23,13 @@
 #include <fluent-bit/flb_random.h>
 #include <fluent-bit/flb_time.h>
 #include <fluent-bit/flb_utils.h>
+#include <fluent-bit/flb_version.h>
 
 #include <math.h>
 #include <msgpack.h>
 
 #include "azure_kusto_ingest.h"
+#include "azure_kusto_store.h"
 
 /* not really uuid but a random string in the form 00000000-0000-0000-0000-000000000000 */
 static char *generate_uuid()
@@ -92,16 +94,24 @@ static flb_sds_t azure_kusto_create_blob_uri(struct flb_azure_kusto *ctx,
     size_t blob_uri_size;
     char *blob_sas;
     size_t blob_sas_size;
+    const char *extension;
+
+    if (ctx->compression_enabled) {
+        extension = ".multijson.gz";
+    }
+    else {
+        extension = ".multijson";
+    }
 
     ret = flb_hash_table_get(u_node->ht, AZURE_KUSTO_RESOURCE_UPSTREAM_URI, 3,
-                       (void **)&blob_uri, &blob_uri_size);
+                             (void **)&blob_uri, &blob_uri_size);
     if (ret == -1) {
         flb_plg_error(ctx->ins, "error getting blob uri");
         return NULL;
     }
 
     ret = flb_hash_table_get(u_node->ht, AZURE_KUSTO_RESOURCE_UPSTREAM_SAS, 3,
-                       (void **)&blob_sas, &blob_sas_size);
+                             (void **)&blob_sas, &blob_sas_size);
     if (ret == -1) {
         flb_plg_error(ctx->ins, "error getting blob sas token");
         return NULL;
@@ -109,11 +119,11 @@ static flb_sds_t azure_kusto_create_blob_uri(struct flb_azure_kusto *ctx,
 
     /* uri will be https://<blob_host>/<container_uri>/<blob_id>.multijson?<sas_token> */
     uri = flb_sds_create_size(flb_sds_len(u_node->host) + blob_uri_size + blob_sas_size +
-                              flb_sds_len(blob_id) + 21);
+                              flb_sds_len(blob_id) + 11 + strlen(extension));
 
     if (uri) {
-        flb_sds_snprintf(&uri, flb_sds_alloc(uri), "https://%s%s/%s.multijson?%s",
-                         u_node->host, blob_uri, blob_id, blob_sas);
+        flb_sds_snprintf(&uri, flb_sds_alloc(uri), "https://%s%s/%s%s?%s",
+                         u_node->host, blob_uri, blob_id, extension ,blob_sas);
         flb_plg_debug(ctx->ins, "created blob uri %s", uri);
     }
     else {
@@ -129,13 +139,16 @@ static flb_sds_t azure_kusto_create_blob(struct flb_azure_kusto *ctx, flb_sds_t 
     int ret = -1;
     flb_sds_t uri = NULL;
     struct flb_upstream_node *u_node;
-    struct flb_connection *u_conn;
-    struct flb_http_client *c;
+    struct flb_forward_config *fc = NULL;
+    struct flb_connection *u_conn = NULL;
+    struct flb_http_client *c = NULL;
     size_t resp_size;
     time_t now;
     struct tm tm;
     char tmp[64];
     int len;
+
+    struct timespec ts;
 
     now = time(NULL);
     gmtime_r(&now, &tm);
@@ -147,12 +160,41 @@ static flb_sds_t azure_kusto_create_blob(struct flb_azure_kusto *ctx, flb_sds_t 
         return NULL;
     }
 
+    /* Get forward_config stored in node opaque data */
+    fc = flb_upstream_node_get_data(u_node);
+
+    flb_plg_debug(ctx->ins,"inside blob after upstream ha node get");
+    u_node->u->base.net.connect_timeout = ctx->ingestion_endpoint_connect_timeout;
+    if (ctx->buffering_enabled ==  FLB_TRUE){
+        u_node->u->base.flags &= ~(FLB_IO_ASYNC);
+        u_node->u->base.net.io_timeout = ctx->io_timeout;
+    }
+    flb_plg_debug(ctx->ins, "azure_kusto_create_blob -- async flag is %d", flb_stream_is_async(&ctx->u->base));
+
+    flb_plg_debug(ctx->ins,"inside blob after upstream ha node get  :: setting ingestion timeout");
+    if (!u_node->u) {
+        flb_plg_error(ctx->ins, "upstream data is null");
+        return NULL;
+    }
     u_conn = flb_upstream_conn_get(u_node->u);
 
+    flb_plg_debug(ctx->ins,"inside blob after upstream ha node get :: after getting connection");
     if (u_conn) {
+        if (pthread_mutex_lock(&ctx->blob_mutex)) {
+            flb_plg_error(ctx->ins, "error unlocking mutex");
+            goto cleanup;
+        }
+
+        flb_plg_debug(ctx->ins,"inside blob before create blob uri");
         uri = azure_kusto_create_blob_uri(ctx, u_node, blob_id);
 
+        if (pthread_mutex_unlock(&ctx->blob_mutex)) {
+            flb_plg_error(ctx->ins, "error unlocking mutex");
+            goto cleanup;
+        }
+
         if (uri) {
+            flb_plg_info(ctx->ins, "azure_kusto: before calling azure storage api :: value of set io_timeout is %d", u_conn->net->io_timeout);
             flb_plg_debug(ctx->ins, "uploading payload to blob uri: %s", uri);
             c = flb_http_client(u_conn, FLB_HTTP_PUT, uri, payload, payload_size, NULL, 0,
                                 NULL, 0);
@@ -163,6 +205,10 @@ static flb_sds_t azure_kusto_create_blob(struct flb_azure_kusto *ctx, flb_sds_t 
                 flb_http_add_header(c, "x-ms-blob-type", 14, "BlockBlob", 9);
                 flb_http_add_header(c, "x-ms-date", 9, tmp, len);
                 flb_http_add_header(c, "x-ms-version", 12, "2019-12-12", 10);
+                flb_http_add_header(c, "x-ms-client-version", 19, FLB_VERSION_STR, strlen(FLB_VERSION_STR));
+                flb_http_add_header(c, "x-ms-app", 8, "Kusto.Fluent-Bit", 16);
+                flb_http_add_header(c, "x-ms-user", 9, "Kusto.Fluent-Bit", 16);
+
 
                 ret = flb_http_do(c, &resp_size);
                 flb_plg_debug(ctx->ins,
@@ -175,16 +221,16 @@ static flb_sds_t azure_kusto_create_blob(struct flb_azure_kusto *ctx, flb_sds_t 
                         ret = -1;
 
                         if (c->resp.payload_size > 0) {
-                            flb_plg_debug(ctx->ins, "Request failed and returned: \n%s",
+                            flb_plg_error(ctx->ins, "create blob Request failed and returned: \n%s",
                                           c->resp.payload);
                         }
                         else {
-                            flb_plg_debug(ctx->ins, "Request failed");
+                            flb_plg_error(ctx->ins, "create blob Request failed");
                         }
                     }
                 }
                 else {
-                    flb_plg_error(ctx->ins, "cannot send HTTP request");
+                    flb_plg_error(ctx->ins, "create blob cannot send HTTP request");
                 }
 
                 flb_http_client_destroy(c);
@@ -210,6 +256,21 @@ static flb_sds_t azure_kusto_create_blob(struct flb_azure_kusto *ctx, flb_sds_t 
     }
 
     return uri;
+
+    cleanup:
+    if (c) {
+        flb_http_client_destroy(c);
+        c = NULL;
+    }
+    if (u_conn) {
+        flb_upstream_conn_release(u_conn);
+        u_conn = NULL;
+    }
+    if (uri) {
+        flb_sds_destroy(uri);
+        uri = NULL;
+    }
+    return NULL;
 }
 
 static flb_sds_t create_ingestion_message(struct flb_azure_kusto *ctx, flb_sds_t blob_uri,
@@ -222,24 +283,37 @@ static flb_sds_t create_ingestion_message(struct flb_azure_kusto *ctx, flb_sds_t
     size_t b64_len;
     size_t message_len;
 
+
+    if (pthread_mutex_lock(&ctx->blob_mutex)) {
+        flb_plg_error(ctx->ins, "error unlocking mutex");
+        return NULL;
+    }
+
     uuid = generate_uuid();
     if (uuid) {
         message = flb_sds_create(NULL);
 
+        flb_plg_debug(ctx->ins,"uuid :: %s",uuid);
+        flb_plg_debug(ctx->ins,"blob uri :: %s",blob_uri);
+        flb_plg_debug(ctx->ins,"payload size :: %lu",payload_size);
+        flb_plg_debug(ctx->ins,"database_name :: %s",ctx->database_name);
+        flb_plg_debug(ctx->ins,"table name :: %s",ctx->table_name);
+
         if (message) {
             message_len =
-                flb_sds_snprintf(&message, 0,
-                                 "{\"Id\": \"%s\", \"BlobPath\": \"%s\", "
-                                 "\"RawDataSize\": %lu, \"DatabaseName\": "
-                                 "\"%s\", \"TableName\": \"%s\","
-                                 "\"AdditionalProperties\": { \"format\": \"multijson\", "
-                                 "\"authorizationContext\": "
-                                 "\"%s\", \"jsonMappingReference\": \"%s\" }}%c",
-                                 uuid, blob_uri, payload_size, ctx->database_name,
-                                 ctx->table_name, ctx->resources->identity_token,
-                                 ctx->ingestion_mapping_reference == NULL
-                                     ? ""
-                                     : ctx->ingestion_mapping_reference, 0);
+                    flb_sds_snprintf(&message, 0,
+                                     "{\"Id\": \"%s\", \"BlobPath\": \"%s\", "
+                                     "\"RawDataSize\": %lu, \"DatabaseName\": "
+                                     "\"%s\", \"TableName\": \"%s\", "
+                                     "\"ClientVersionForTracing\": \"Kusto.Fluent-Bit:%s\", "
+                                     "\"ApplicationForTracing\": \"%s\", "
+                                     "\"AdditionalProperties\": { \"format\": \"multijson\", "
+                                     "\"authorizationContext\": \"%s\", "
+                                     "\"jsonMappingReference\": \"%s\" }}%c",
+                                     uuid, blob_uri, payload_size, ctx->database_name,
+                                     ctx->table_name, FLB_VERSION_STR, "Kusto.Fluent-Bit",
+                                     ctx->resources->identity_token,
+                                     ctx->ingestion_mapping_reference == NULL ? "" : ctx->ingestion_mapping_reference, 0);
 
             if (message_len != -1) {
                 flb_plg_debug(ctx->ins, "created ingestion message:\n%s", message);
@@ -247,9 +321,9 @@ static flb_sds_t create_ingestion_message(struct flb_azure_kusto *ctx, flb_sds_t
 
                 if (message_b64) {
                     ret = flb_sds_snprintf(
-                        &message, flb_sds_alloc(message),
-                        "<QueueMessage><MessageText>%s</MessageText></QueueMessage>%c",
-                        message_b64, 0);
+                            &message, flb_sds_alloc(message),
+                            "<QueueMessage><MessageText>%s</MessageText></QueueMessage>%c",
+                            message_b64, 0);
 
                     if (ret == -1) {
                         flb_plg_error(ctx->ins, "error creating ingestion queue message");
@@ -281,6 +355,12 @@ static flb_sds_t create_ingestion_message(struct flb_azure_kusto *ctx, flb_sds_t
         flb_plg_error(ctx->ins, "error generating unique ingestion UUID");
     }
 
+
+    if (pthread_mutex_unlock(&ctx->blob_mutex)) {
+        flb_plg_error(ctx->ins, "error unlocking mutex");
+        return NULL;
+    }
+
     return message;
 }
 
@@ -295,14 +375,14 @@ static flb_sds_t azure_kusto_create_queue_uri(struct flb_azure_kusto *ctx,
     size_t queue_sas_size;
 
     ret = flb_hash_table_get(u_node->ht, AZURE_KUSTO_RESOURCE_UPSTREAM_URI, 3,
-                       (void **)&queue_uri, &queue_uri_size);
+                             (void **)&queue_uri, &queue_uri_size);
     if (ret == -1) {
         flb_plg_error(ctx->ins, "error getting queue uri");
         return NULL;
     }
 
     ret = flb_hash_table_get(u_node->ht, AZURE_KUSTO_RESOURCE_UPSTREAM_SAS, 3,
-                       (void **)&queue_sas, &queue_sas_size);
+                             (void **)&queue_sas, &queue_sas_size);
     if (ret == -1) {
         flb_plg_error(ctx->ins, "error getting queue sas token");
         return NULL;
@@ -348,10 +428,25 @@ static int azure_kusto_enqueue_ingestion(struct flb_azure_kusto *ctx, flb_sds_t 
         return -1;
     }
 
+    u_node->u->base.net.connect_timeout = ctx->ingestion_endpoint_connect_timeout;
+    if (ctx->buffering_enabled ==  FLB_TRUE){
+        u_node->u->base.flags &= ~(FLB_IO_ASYNC);
+        u_node->u->base.net.io_timeout = ctx->io_timeout;
+    }
+
     u_conn = flb_upstream_conn_get(u_node->u);
 
     if (u_conn) {
+        if (pthread_mutex_lock(&ctx->blob_mutex)) {
+            flb_plg_error(ctx->ins, "error unlocking mutex");
+            return -1;
+        }
         uri = azure_kusto_create_queue_uri(ctx, u_node);
+
+        if (pthread_mutex_unlock(&ctx->blob_mutex)) {
+            flb_plg_error(ctx->ins, "error unlocking mutex");
+            return -1;
+        }
 
         if (uri) {
             payload = create_ingestion_message(ctx, blob_uri, payload_size);
@@ -366,6 +461,9 @@ static int azure_kusto_enqueue_ingestion(struct flb_azure_kusto *ctx, flb_sds_t 
                                         20);
                     flb_http_add_header(c, "x-ms-date", 9, tmp, len);
                     flb_http_add_header(c, "x-ms-version", 12, "2019-12-12", 10);
+                    flb_http_add_header(c, "x-ms-client-version", 19, FLB_VERSION_STR, strlen(FLB_VERSION_STR));
+                    flb_http_add_header(c, "x-ms-app", 8, "Kusto.Fluent-Bit", 16);
+                    flb_http_add_header(c, "x-ms-user", 9, "Kusto.Fluent-Bit", 16);
 
                     ret = flb_http_do(c, &resp_size);
                     flb_plg_debug(ctx->ins,
@@ -378,17 +476,17 @@ static int azure_kusto_enqueue_ingestion(struct flb_azure_kusto *ctx, flb_sds_t 
                             ret = -1;
 
                             if (c->resp.payload_size > 0) {
-                                flb_plg_debug(ctx->ins,
-                                              "Request failed and returned: \n%s",
+                                flb_plg_error(ctx->ins,
+                                              "kusto queue Request failed and returned: %s",
                                               c->resp.payload);
                             }
                             else {
-                                flb_plg_debug(ctx->ins, "Request failed");
+                                flb_plg_error(ctx->ins, "kusto queue Request failed");
                             }
                         }
                     }
                     else {
-                        flb_plg_error(ctx->ins, "cannot send HTTP request");
+                        flb_plg_error(ctx->ins, "kusto queue cannot send HTTP request");
                     }
 
                     flb_http_client_destroy(c);
@@ -419,60 +517,127 @@ static int azure_kusto_enqueue_ingestion(struct flb_azure_kusto *ctx, flb_sds_t 
     return ret;
 }
 
+/* Function to generate a random alphanumeric string */
+void generate_random_string(char *str, size_t length)
+{
+    const char charset[] = "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789";
+    const size_t charset_size = sizeof(charset) - 1;
+
+    /* Seed the random number generator with multiple sources of entropy */
+    unsigned int seed = (unsigned int)(time(NULL) ^ clock() ^ getpid());
+    srand(seed);
+
+    size_t i;
+    for (i = 0; i < length; ++i) {
+        size_t index = (size_t)rand() % charset_size;
+        str[i] = charset[index];
+    }
+
+    str[length] = '\0';
+}
+
 static flb_sds_t azure_kusto_create_blob_id(struct flb_azure_kusto *ctx, flb_sds_t tag,
                                             size_t tag_len)
 {
     flb_sds_t blob_id = NULL;
     struct flb_time tm;
     uint64_t ms;
-    char *b64tag;
-    size_t b64_len;
+    char *b64tag = NULL;
+    size_t b64_len = 0;
+    char *uuid = NULL;
+    char timestamp[20]; /* Buffer for timestamp */
+    char *generated_random_string = NULL;
 
+    /* Allocate memory for the random string */
+    generated_random_string = flb_malloc(ctx->blob_uri_length + 1);
     flb_time_get(&tm);
     ms = ((tm.tm.tv_sec * 1000) + (tm.tm.tv_nsec / 1000000));
 
-    b64tag = base64_encode(tag, tag_len, &b64_len);
-
-    if (b64tag) {
-        /* remove trailing '=' */
-        while (b64_len && b64tag[b64_len - 1] == '=') {
-            b64tag[b64_len - 1] = '\0';
-            b64_len--;
-        }
-
-        blob_id = flb_sds_create_size(flb_sds_len(ctx->database_name) +
-                                      flb_sds_len(ctx->table_name) + b64_len + 24);
-        if (blob_id) {
-            flb_sds_snprintf(&blob_id, flb_sds_alloc(blob_id), "flb__%s__%s__%s__%" PRIu64,
-                             ctx->database_name, ctx->table_name, b64tag, ms);
+    if (!ctx->unify_tag) {
+        b64tag = base64_encode(tag, tag_len, &b64_len);
+        if (b64tag) {
+            /* remove trailing '=' */
+            while (b64_len && b64tag[b64_len - 1] == '=') {
+                b64tag[b64_len - 1] = '\0';
+                b64_len--;
+            }
         }
         else {
-            flb_plg_error(ctx->ins, "cannot create blob id buffer");
+            flb_plg_error(ctx->ins, "error encoding tag '%s' to base64", tag);
+            return NULL;
         }
-
-        flb_free(b64tag);
     }
     else {
-        flb_plg_error(ctx->ins, "error encoding tag '%s' to base64", tag);
+        generate_random_string(generated_random_string, ctx->blob_uri_length); /* Generate the random string */
+        b64tag = generated_random_string;
+        b64_len = strlen(generated_random_string);
     }
+
+    /* Get the current timestamp */
+    time_t now = time(NULL);
+    struct tm *tm_info = gmtime(&now);
+    strftime(timestamp, sizeof(timestamp), "%Y%m%d%H%M%S", tm_info);
+
+    /* Generate a UUID */
+    uuid = generate_uuid();
+    if (!uuid) {
+        flb_plg_error(ctx->ins, "error generating UUID");
+        if (!ctx->unify_tag && b64tag) {
+            flb_free(b64tag);
+        }
+        return NULL;
+    }
+
+    blob_id = flb_sds_create_size(1024); /* Ensure the size is restricted to 1024 characters */
+    if (blob_id) {
+        flb_sds_snprintf(&blob_id, 1024, "flb__%s__%s__%s__%llu__%s__%s",
+                         ctx->database_name, ctx->table_name, b64tag, ms, timestamp, uuid);
+    }
+    else {
+        flb_plg_error(ctx->ins, "cannot create blob id buffer");
+    }
+
+    if (!ctx->unify_tag && b64tag) {
+        flb_free(b64tag);
+    }
+    flb_free(uuid);
+    flb_free(generated_random_string);
 
     return blob_id;
 }
 
 int azure_kusto_queued_ingestion(struct flb_azure_kusto *ctx, flb_sds_t tag,
-                                 size_t tag_len, flb_sds_t payload, size_t payload_size)
+                                 size_t tag_len, flb_sds_t payload, size_t payload_size, struct azure_kusto_file *upload_file )
 {
     int ret = -1;
     flb_sds_t blob_id;
     flb_sds_t blob_uri;
 
+
+    if (pthread_mutex_lock(&ctx->blob_mutex)) {
+        flb_plg_error(ctx->ins, "error unlocking mutex");
+        return -1;
+    }
+
     /* flb__<db>__<table>__<b64tag>__<timestamp> */
     blob_id = azure_kusto_create_blob_id(ctx, tag, tag_len);
+
+
+    if (pthread_mutex_unlock(&ctx->blob_mutex)) {
+        flb_plg_error(ctx->ins, "error unlocking mutex");
+        return -1;
+    }
 
     if (blob_id) {
         blob_uri = azure_kusto_create_blob(ctx, blob_id, payload, payload_size);
 
         if (blob_uri) {
+            if (ctx->buffering_enabled == FLB_TRUE && upload_file != NULL && ctx->buffer_file_delete_early == FLB_TRUE) {
+                flb_plg_debug(ctx->ins, "buffering enabled, ingest to blob successfully done and now deleting the buffer file %s", blob_id);
+                if (azure_kusto_store_file_delete(ctx, upload_file) != 0) {
+                    flb_plg_error(ctx->ins, "blob creation successful but error deleting buffer file %s", blob_id);
+                }
+            }
             ret = azure_kusto_enqueue_ingestion(ctx, blob_uri, payload_size);
 
             if (ret != 0) {

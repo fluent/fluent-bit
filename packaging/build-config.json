@@ -41,6 +41,62 @@
           "type": "rpm"
         },
         {
+          "target": "centos/10",
+          "type": "rpm"
+        },
+        {
+          "target": "centos/10.arm64v8",
+          "type": "rpm"
+        },
+        {
+          "target": "rockylinux/8",
+          "type": "rpm"
+        },
+        {
+          "target": "rockylinux/8.arm64v8",
+          "type": "rpm"
+        },
+        {
+          "target": "rockylinux/9",
+          "type": "rpm"
+        },
+        {
+          "target": "rockylinux/9.arm64v8",
+          "type": "rpm"
+        },
+        {
+          "target": "rockylinux/10",
+          "type": "rpm"
+        },
+        {
+          "target": "rockylinux/10.arm64v8",
+          "type": "rpm"
+        },
+        {
+          "target": "almalinux/8",
+          "type": "rpm"
+        },
+        {
+          "target": "almalinux/8.arm64v8",
+          "type": "rpm"
+        },
+        {
+          "target": "almalinux/9",
+          "type": "rpm"
+        },
+        {
+          "target": "almalinux/9.arm64v8",
+          "type": "rpm"
+        },
+        {
+          "target": "almalinux/10",
+          "type": "rpm"
+        },
+        {
+          "target": "almalinux/10.arm64v8",
+          "type": "rpm"
+        },
+        {
           "target": "debian/bookworm",
           "type": "deb"
         },
@@ -65,23 +121,11 @@
           "type": "deb"
         },
         {
-          "target": "ubuntu/16.04",
+          "target": "debian/trixie",
           "type": "deb"
         },
         {
-          "target": "ubuntu/18.04",
-          "type": "deb"
-        },
-        {
-          "target": "ubuntu/18.04.arm64v8",
-          "type": "deb"
-        },
-        {
-          "target": "ubuntu/20.04",
-          "type": "deb"
-        },
-        {
-          "target": "ubuntu/20.04.arm64v8",
+          "target": "debian/trixie.arm64v8",
           "type": "deb"
         },
         {
@@ -101,11 +145,7 @@
           "type": "deb"
         },
         {
-          "target": "raspbian/buster",
-          "type": "deb"
-        },
-        {
-          "target": "raspbian/bullseye",
+          "target": "raspbian/bookworm",
           "type": "deb"
         }
       ],

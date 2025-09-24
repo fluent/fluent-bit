@@ -1,0 +1,26 @@
+################################################################################
+# DESCRIPTION
+#	POST method.
+#
+# AUTHOR
+#	Eduardo Silva <eduard@monkey.io>
+#
+# DATE
+#	Oct, 2015
+###############################################################################
+
+
+INCLUDE __CONFIG
+
+CLIENT
+_REQ $HOST $PORT
+__PUT / $HTTPVER
+__Host: $HOST
+__Content-Type: text/plain
+__Content-Length: AUTO
+__Connection: close
+__
+_-someVariable=1234&daemon=monkeyd&SESSION=e1d83283d597ca88f599e34c8ef2e8c3
+_EXPECT . "HTTP/1.1 405 Method Not Allowed"
+_WAIT
+END

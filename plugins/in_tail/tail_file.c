@@ -34,6 +34,7 @@
 #include <fluent-bit/flb_regex.h>
 #include <fluent-bit/flb_hash_table.h>
 #endif
+#include <fluent-bit/flb_simd.h>
 
 #include "tail.h"
 #include "tail_file.h"
@@ -47,6 +48,8 @@
 #ifdef FLB_SYSTEM_WINDOWS
 #include "win32.h"
 #endif
+
+#include <fluent-bit/flb_unicode.h>
 
 #include <cfl/cfl.h>
 
@@ -421,6 +424,39 @@ static int ml_stream_buffer_flush(struct flb_tail_config *ctx, struct flb_tail_f
     return 0;
 }
 
+/* Skip leading '\0' quickly. Returns new data pointer and bumps processed_bytes. */
+static FLB_INLINE const char *flb_skip_leading_zeros_simd(const char *data, const char *end, size_t *processed_bytes)
+{
+#ifdef FLB_HAVE_SIMD
+    const size_t vlen = FLB_SIMD_VEC8_INST_LEN;
+
+    while ((size_t)(end - data) >= vlen) {
+        size_t i;
+        flb_vector8 v;
+        flb_vector8_load(&v, (const uint8_t *)data);
+
+        if (!flb_vector8_has(v, (uint8_t)'\0')) {
+            return data;
+        }
+
+        for (i = 0; i < vlen; i++) {
+            if (data[i] != '\0') {
+                *processed_bytes += i;
+                return data + i;
+            }
+        }
+
+        data += vlen;
+        *processed_bytes += vlen;
+    }
+#endif
+    while (data < end && *data == '\0') {
+        data++;
+        (*processed_bytes)++;
+    }
+    return data;
+}
+
 static int process_content(struct flb_tail_file *file, size_t *bytes)
 {
     size_t len;
@@ -437,9 +473,19 @@ static int process_content(struct flb_tail_file *file, size_t *bytes)
     size_t line_len;
     char *repl_line;
     size_t repl_line_len;
+    size_t original_len = 0;
     time_t now = time(NULL);
     struct flb_time out_time = {0};
     struct flb_tail_config *ctx;
+    char *decoded = NULL;
+#ifdef FLB_HAVE_UNICODE_ENCODER
+    size_t decoded_len;
+#endif
+#ifdef FLB_HAVE_METRICS
+    uint64_t ts;
+    char *name;
+#endif
+
 
     ctx = (struct flb_tail_config *) file->config;
 
@@ -450,10 +496,50 @@ static int process_content(struct flb_tail_file *file, size_t *bytes)
     /* reset last processed bytes */
     file->last_processed_bytes = 0;
 
+#ifdef FLB_HAVE_UNICODE_ENCODER
+    if (ctx->preferred_input_encoding != FLB_UNICODE_ENCODING_UNSPECIFIED) {
+        original_len = end - data;
+        decoded = NULL;
+        ret = flb_unicode_convert(ctx->preferred_input_encoding,
+                                  data, end - data, &decoded, &decoded_len);
+        if (ret == FLB_SIMDUTF_CONNECTOR_CONVERT_OK) {
+            data = decoded;
+            end  = data + decoded_len;
+        }
+        else if (ret == FLB_UNICODE_CONVERT_NOP) {
+            flb_plg_debug(ctx->ins, "nothing to convert encoding '%.*s'", end - data, data);
+            /* Skip the UTF-8 BOM */
+            if (file->buf_len >= 3 &&
+                data[0] == '\xEF' &&
+                data[1] == '\xBB' &&
+                data[2] == '\xBF') {
+                data += 3;
+                processed_bytes += 3;
+            }
+        }
+        else {
+            flb_plg_error(ctx->ins, "encoding failed '%.*s'", end - data, data);
+        }
+    }
+#endif
+    if (ctx->generic_input_encoding_type != FLB_GENERIC_UNSPECIFIED) {
+        original_len = end - data;
+        decoded = NULL;
+        ret = flb_unicode_generic_convert_to_utf8(ctx->generic_input_encoding_name,
+                                                  (unsigned char*)data, (unsigned char**)&decoded,
+                                                  end - data);
+        if (ret > 0) {
+            data = decoded;
+            end  = data + strlen(decoded);
+        }
+        else {
+            flb_plg_error(ctx->ins, "encoding failed '%.*s' with status %d", end - data, data, ret);
+        }
+    }
+
     /* Skip null characters from the head (sometimes introduced by copy-truncate log rotation) */
-    while (data < end && *data == '\0') {
-        data++;
-        processed_bytes++;
+    if (data < end) {
+        data = (char *)flb_skip_leading_zeros_simd(data, end, &processed_bytes);
     }
 
     while (data < end && (p = memchr(data, '\n', end - data))) {
@@ -515,6 +601,17 @@ static int process_content(struct flb_tail_file *file, size_t *bytes)
                                      &out_time,
                                      line,
                                      line_len);
+            if (ret == FLB_MULTILINE_TRUNCATED) {
+                flb_plg_warn(ctx->ins, "multiline message truncated due to buffer limit");
+#ifdef FLB_HAVE_METRICS
+                name = (char *) flb_input_name(ctx->ins);
+                ts = cfl_time_now();
+                cmt_counter_inc(ctx->cmt_multiline_truncated, ts, 1, (char *[]) {name});
+
+                /* Old api */
+                flb_metrics_sum(FLB_TAIL_METRIC_M_TRUNCATED, 1, ctx->ins->metrics);
+#endif
+            }
             goto go_next;
         }
         else if (ctx->docker_mode) {
@@ -600,13 +697,23 @@ static int process_content(struct flb_tail_file *file, size_t *bytes)
         processed_bytes += len + 1;
         lines++;
         file->parsed = 0;
-        file->last_processed_bytes += processed_bytes;
+        file->last_processed_bytes = processed_bytes;
     }
+
+    if (decoded) {
+        flb_free(decoded);
+        decoded = NULL;
+    }
+
     file->parsed = file->buf_len;
 
     if (lines > 0) {
         /* Append buffer content to a chunk */
-        *bytes = processed_bytes;
+        if (original_len > 0) {
+            *bytes = original_len;
+        } else {
+            *bytes = processed_bytes;
+        }
 
         if (file->sl_log_event_encoder->output_length > 0) {
             flb_input_log_append_records(ctx->ins,
@@ -623,7 +730,11 @@ static int process_content(struct flb_tail_file *file, size_t *bytes)
         *bytes = file->buf_len;
     }
     else {
-        *bytes = processed_bytes;
+        if (original_len > 0) {
+            *bytes = original_len;
+        } else {
+            *bytes = processed_bytes;
+        }
     }
 
     if (ctx->ml_ctx) {
@@ -868,13 +979,24 @@ static int set_file_position(struct flb_tail_config *ctx,
         return 0;
     }
 
-    /* tail... */
-    ret = lseek(file->fd, 0, SEEK_END);
-    if (ret == -1) {
-        flb_errno();
-        return -1;
+    if (file->offset > 0) {
+        ret = lseek(file->fd, file->offset, SEEK_SET);
+
+        if (ret == -1) {
+            flb_errno();
+            return -1;
+        }
     }
-    file->offset = ret;
+    else {
+        ret = lseek(file->fd, 0, SEEK_END);
+
+        if (ret == -1) {
+            flb_errno();
+            return -1;
+        }
+
+        file->offset = ret;
+    }
 
     if (file->decompression_context == NULL) {
         file->stream_offset = ret;
@@ -923,6 +1045,7 @@ static int ml_flush_callback(struct flb_ml_parser *parser,
 }
 
 int flb_tail_file_append(char *path, struct stat *st, int mode,
+                         ssize_t offset,
                          struct flb_tail_config *ctx)
 {
     int fd;
@@ -1011,6 +1134,10 @@ int flb_tail_file_append(char *path, struct stat *st, int mode,
     file->mult_keys = 0;
     file->mult_flush_timeout = 0;
     file->mult_skipping = FLB_FALSE;
+
+    if (offset != -1) {
+        file->offset = offset;
+    }
 
     if (strlen(path) >= 3 &&
         strcasecmp(&path[strlen(path) - 3], ".gz") == 0) {
@@ -1246,14 +1373,13 @@ void flb_tail_file_remove(struct flb_tail_file *file)
         flb_log_event_encoder_destroy(file->sl_log_event_encoder);
     }
 
-    if (file->ml_log_event_encoder != NULL) {
-        flb_log_event_encoder_destroy(file->ml_log_event_encoder);
-    }
-
     /* remove the multiline.core stream */
     if (ctx->ml_ctx && file->ml_stream_id > 0) {
-        /* destroy ml stream */
         flb_ml_stream_id_destroy_all(ctx->ml_ctx, file->ml_stream_id);
+    }
+
+    if (file->ml_log_event_encoder != NULL) {
+        flb_log_event_encoder_destroy(file->ml_log_event_encoder);
     }
 
     if (file->rotated > 0) {
@@ -1340,16 +1466,21 @@ static int adjust_counters(struct flb_tail_config *ctx, struct flb_tail_file *fi
         return FLB_TAIL_ERROR;
     }
 
-    /* Check if the file was truncated */
-    if (file->offset > st.st_size) {
+    int64_t size_delta = st.st_size - file->size;
+    if (size_delta != 0) {
+        file->size = st.st_size;
+    }
+
+    /* Check if the file was truncated by comparing current size with previous size */
+    if (size_delta < 0) {
         offset = lseek(file->fd, 0, SEEK_SET);
         if (offset == -1) {
             flb_errno();
             return FLB_TAIL_ERROR;
         }
 
-        flb_plg_debug(ctx->ins, "inode=%"PRIu64" file truncated %s",
-                      file->inode, file->name);
+        flb_plg_debug(ctx->ins, "adjust_counters: inode=%"PRIu64" file truncated %s (diff: %"PRId64" bytes)",
+                      file->inode, file->name, size_delta);
         file->offset = offset;
         file->buf_len = 0;
 
@@ -1361,8 +1492,8 @@ static int adjust_counters(struct flb_tail_config *ctx, struct flb_tail_file *fi
 #endif
     }
     else {
-        file->size = st.st_size;
-        file->pending_bytes = (st.st_size - file->offset);
+        // Avoid negative pending_bytes when fstat() has stale data and size < offset
+        file->pending_bytes = (st.st_size > file->offset) ? (st.st_size - file->offset) : 0;
     }
 
     return FLB_TAIL_OK;
@@ -1561,6 +1692,7 @@ int flb_tail_file_chunk(struct flb_tail_file *file)
 
         /* Adjust the file offset and buffer */
         file->stream_offset += processed_bytes;
+        file->last_processed_bytes = 0;
         consume_bytes(file->buf_data, processed_bytes, file->buf_len);
         file->buf_len -= processed_bytes;
         file->buf_data[file->buf_len] = '\0';
@@ -1894,7 +2026,7 @@ int flb_tail_file_rotated(struct flb_tail_file *file)
         ret = stat(tmp, &st);
         if (ret == 0 && st.st_ino != file->inode) {
             if (flb_tail_file_exists(&st, ctx) == FLB_FALSE) {
-                ret = flb_tail_file_append(tmp, &st, FLB_TAIL_STATIC, ctx);
+                ret = flb_tail_file_append(tmp, &st, FLB_TAIL_STATIC, -1, ctx);
                 if (ret == -1) {
                     flb_tail_scan(ctx->path_list, ctx);
                 }
@@ -1914,6 +2046,7 @@ static int check_purge_deleted_file(struct flb_tail_config *ctx,
                                     struct flb_tail_file *file, time_t ts)
 {
     int ret;
+    int64_t mtime;
     struct stat st;
 
     ret = fstat(file->fd, &st);
@@ -1935,6 +2068,18 @@ static int check_purge_deleted_file(struct flb_tail_config *ctx,
         /* Remove file from the monitored list */
         flb_tail_file_remove(file);
         return FLB_TRUE;
+    }
+
+    if (ctx->ignore_older > 0 && ctx->ignore_active_older_files) {
+        mtime = flb_tail_stat_mtime(&st);
+        if (mtime > 0) {
+            if ((ts - ctx->ignore_older) > mtime) {
+                flb_plg_debug(ctx->ins, "purge: monitored file (ignore older): %s",
+                              file->name);
+                flb_tail_file_remove(file);
+                return FLB_TRUE;
+            }
+        }
     }
 
     return FLB_FALSE;

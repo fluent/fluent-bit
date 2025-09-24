@@ -2,7 +2,7 @@
 
 /*  Fluent Bit
  *  ==========
- *  Copyright (C) 2015-2024 The Fluent Bit Authors
+ *  Copyright (C) 2015-2025 The Fluent Bit Authors
  *
  *  Licensed under the Apache License, Version 2.0 (the "License");
  *  you may not use this file except in compliance with the License.
@@ -29,47 +29,75 @@
 
 /* Map msgpack object into flb_ra_value representation */
 static int msgpack_object_to_ra_value(msgpack_object o,
-                                      struct flb_ra_value *result)
+                                      struct flb_ra_value *result,
+                                      int copy)
 {
     result->o = o;
 
     /* Compose result with found value */
     if (o.type == MSGPACK_OBJECT_BOOLEAN) {
         result->type = FLB_RA_BOOL;
+        result->storage = FLB_RA_COPY;
         result->val.boolean = o.via.boolean;
         return 0;
     }
     else if (o.type == MSGPACK_OBJECT_POSITIVE_INTEGER ||
              o.type == MSGPACK_OBJECT_NEGATIVE_INTEGER) {
         result->type = FLB_RA_INT;
+        result->storage = FLB_RA_COPY;
         result->val.i64 = o.via.i64;
         return 0;
     }
     else if (o.type == MSGPACK_OBJECT_FLOAT32 ||
              o.type == MSGPACK_OBJECT_FLOAT) {
         result->type = FLB_RA_FLOAT;
+        result->storage = FLB_RA_COPY;
         result->val.f64 = o.via.f64;
         return 0;
     }
     else if (o.type == MSGPACK_OBJECT_STR) {
         result->type = FLB_RA_STRING;
-        result->val.string = flb_sds_create_len((char *) o.via.str.ptr,
-                                                o.via.str.size);
-
-        /* Handle cases where flb_sds_create_len fails */
-        if (result->val.string == NULL) {
-            return -1;
+        if (copy) {
+            result->storage = FLB_RA_COPY;
+            result->val.string = flb_sds_create_len((char *) o.via.str.ptr, o.via.str.size);
+            if (result->val.string == NULL) {
+                return -1;
+            }
+        }
+        else {
+            result->storage = FLB_RA_REF;
+            result->val.ref.buf = (const char *) o.via.str.ptr;
+            result->val.ref.len = o.via.str.size;
         }
         return 0;
     }
     else if (o.type == MSGPACK_OBJECT_MAP) {
         /* return boolean 'true', just denoting the existence of the key */
         result->type = FLB_RA_BOOL;
+        result->storage = FLB_RA_COPY;
         result->val.boolean = true;
+        return 0;
+    }
+    else if (o.type == MSGPACK_OBJECT_BIN) {
+        result->type = FLB_RA_BINARY;
+        if (copy) {
+            result->storage = FLB_RA_COPY;
+            result->val.binary = flb_sds_create_len((char *) o.via.bin.ptr, o.via.bin.size);
+            if (result->val.binary == NULL) {
+                flb_errno();
+                return -1;
+            }
+        }
+        else {
+            result->storage = FLB_RA_REF;
+            result->val.ref.buf = (const char *) o.via.bin.ptr;
+            result->val.ref.len = o.via.bin.size;
+        }
         return 0;
     }
     else if (o.type == MSGPACK_OBJECT_NIL) {
         result->type = FLB_RA_NULL;
+        result->storage = FLB_RA_COPY;
         return 0;
     }
 
@@ -126,7 +154,6 @@ static int subkey_to_object(msgpack_object *map, struct mk_list *subkeys,
     int i = 0;
     int levels;
     int matched = 0;
-    msgpack_object *found = NULL;
     msgpack_object *key = NULL;
     msgpack_object *val = NULL;
     msgpack_object cur;
@@ -135,6 +162,11 @@ static int subkey_to_object(msgpack_object *map, struct mk_list *subkeys,
 
     /* Expected number of map levels in the map */
     levels = mk_list_size(subkeys);
+
+    /* Early return if no subkeys */
+    if (levels == 0) {
+        return -1;
+    }
 
     cur = *map;
 
@@ -150,25 +182,30 @@ static int subkey_to_object(msgpack_object *map, struct mk_list *subkeys,
             }
 
             /* Index limit and ensure no overflow */
-            if (entry->array_id == INT_MAX ||
-                cur.via.array.size < entry->array_id + 1) {
+            if (entry->array_id == INT_MAX || entry->array_id >= cur.via.array.size) {
                 return -1;
             }
 
             val = &cur.via.array.ptr[entry->array_id];
             cur = *val;
             key = NULL; /* fill NULL since the type is array. */
-            goto next;
+            matched++;
+
+            if (levels == matched) {
+                break;
+            }
+
+            continue;
         }
 
+        /* Handle map objects */
         if (cur.type != MSGPACK_OBJECT_MAP) {
             break;
         }
 
         i = ra_key_val_id(entry->str, cur);
         if (i == -1) {
-            found = NULL;
-            continue;
+            continue;  /* Try next entry */
         }
 
         key = &cur.via.map.ptr[i].key;
@@ -176,14 +213,10 @@ static int subkey_to_object(msgpack_object *map, struct mk_list *subkeys,
 
         /* A bit obvious, but it's better to validate data type */
         if (key->type != MSGPACK_OBJECT_STR) {
-            found = NULL;
-            continue;
+            continue;  /* Try next entry */
         }
 
-        found = key;
-        cur = cur.via.map.ptr[i].val;
-
-    next:
+        cur = *val;
         matched++;
 
         if (levels == matched) {
@@ -192,19 +225,20 @@ static int subkey_to_object(msgpack_object *map, struct mk_list *subkeys,
     }
 
     /* No matches */
-    if (!found || (matched > 0 && levels != matched)) {
+    if (matched == 0 || (matched > 0 && levels != matched)) {
         return -1;
     }
 
-    *out_key = (msgpack_object *) key;
-    *out_val = (msgpack_object *) val;
+    *out_key = key;
+    *out_val = val;
 
     return 0;
 }
 
-struct flb_ra_value *flb_ra_key_to_value(flb_sds_t ckey,
-                                         msgpack_object map,
-                                         struct mk_list *subkeys)
+struct flb_ra_value *flb_ra_key_to_value_ext(flb_sds_t ckey,
+                                             msgpack_object map,
+                                             struct mk_list *subkeys,
+                                             int copy)
 {
     int i;
     int ret;
@@ -235,7 +269,7 @@ struct flb_ra_value *flb_ra_key_to_value(flb_sds_t ckey,
 
         ret = subkey_to_object(&val, subkeys, &out_key, &out_val);
         if (ret == 0) {
-            ret = msgpack_object_to_ra_value(*out_val, result);
+            ret = msgpack_object_to_ra_value(*out_val, result, copy);
             if (ret == -1) {
                 flb_free(result);
                 return NULL;
@@ -248,7 +282,7 @@ struct flb_ra_value *flb_ra_key_to_value(flb_sds_t ckey,
         }
     }
     else {
-        ret = msgpack_object_to_ra_value(val, result);
+        ret = msgpack_object_to_ra_value(val, result, copy);
         if (ret == -1) {
             flb_error("[ra key] cannot process key value");
             flb_free(result);
@@ -257,6 +291,13 @@ struct flb_ra_value *flb_ra_key_to_value(flb_sds_t ckey,
     }
 
     return result;
+}
+
+struct flb_ra_value *flb_ra_key_to_value(flb_sds_t ckey,
+                                         msgpack_object map,
+                                         struct mk_list *subkeys)
+{
+    return flb_ra_key_to_value_ext(ckey, map, subkeys, FLB_TRUE);
 }
 
 int flb_ra_key_value_get(flb_sds_t ckey, msgpack_object map,
@@ -424,7 +465,7 @@ static int update_subkey_array(msgpack_object *obj, struct mk_list *subkeys,
     }
 
     msgpack_pack_array(mp_pck, size);
-    for (i=0; i<size; i++) {
+    for (i = 0; i < size; i++) {
         if (i != entry->array_id) {
             msgpack_pack_object(mp_pck, obj->via.array.ptr[i]);
             continue;
@@ -478,7 +519,7 @@ static int update_subkey_map(msgpack_object *obj, struct mk_list *subkeys,
     }
 
     msgpack_pack_map(mp_pck, size);
-    for (i=0; i<size; i++) {
+    for (i = 0; i < size; i++) {
         if (i != ret_id) {
             msgpack_pack_object(mp_pck, obj->via.map.ptr[i].key);
             msgpack_pack_object(mp_pck, obj->via.map.ptr[i].val);
@@ -556,7 +597,7 @@ int flb_ra_key_value_update(struct flb_ra_parser *rp, msgpack_object map,
     msgpack_pack_map(mp_pck, map_size);
     if (levels == 0) {
         /* no subkeys */
-        for (i=0; i<map_size; i++) {
+        for (i = 0; i < map_size; i++) {
             if (i != kv_id) {
                 /* pack original key/val */
                 msgpack_pack_object(mp_pck, map.via.map.ptr[i].key);
@@ -581,7 +622,7 @@ int flb_ra_key_value_update(struct flb_ra_parser *rp, msgpack_object map,
         return 0;
     }
 
-    for (i=0; i<map_size; i++) {
+    for (i = 0; i < map_size; i++) {
         msgpack_pack_object(mp_pck, map.via.map.ptr[i].key);
         if (i != kv_id) {
             msgpack_pack_object(mp_pck, map.via.map.ptr[i].val);
@@ -642,7 +683,7 @@ static int append_subkey_array(msgpack_object *obj, struct mk_list *subkeys,
     }
 
     msgpack_pack_array(mp_pck, size);
-    for (i=0; i<size; i++) {
+    for (i = 0; i < size; i++) {
         if (i != entry->array_id) {
             msgpack_pack_object(mp_pck, obj->via.array.ptr[i]);
             continue;
@@ -686,7 +727,7 @@ static int append_subkey_map(msgpack_object *obj, struct mk_list *subkeys,
     if (levels == *matched) {
         /* append val */
         msgpack_pack_map(mp_pck, size+1);
-        for (i=0; i<size; i++) {
+        for (i = 0; i < size; i++) {
             msgpack_pack_object(mp_pck, obj->via.map.ptr[i].key);
             msgpack_pack_object(mp_pck, obj->via.map.ptr[i].val);
         }
@@ -698,7 +739,6 @@ static int append_subkey_map(msgpack_object *obj, struct mk_list *subkeys,
         return 0;
     }
 
-
     ret_id = ra_key_val_id(entry->str, *obj);
     if (ret_id < 0) {
         flb_trace("%s: not found", __FUNCTION__);
@@ -706,7 +746,7 @@ static int append_subkey_map(msgpack_object *obj, struct mk_list *subkeys,
     }
 
     msgpack_pack_map(mp_pck, size);
-    for (i=0; i<size; i++) {
+    for (i = 0; i < size; i++) {
         if (i != ret_id) {
             msgpack_pack_object(mp_pck, obj->via.map.ptr[i].key);
             msgpack_pack_object(mp_pck, obj->via.map.ptr[i].val);
@@ -765,7 +805,7 @@ int flb_ra_key_value_append(struct flb_ra_parser *rp, msgpack_object map,
     if (ref_level < 0) {
         /* no subkeys */
         msgpack_pack_map(mp_pck, map_size+1);
-        for (i=0; i<map_size; i++) {
+        for (i = 0; i < map_size; i++) {
             msgpack_pack_object(mp_pck, map.via.map.ptr[i].key);
             msgpack_pack_object(mp_pck, map.via.map.ptr[i].val);
         }
@@ -782,7 +822,7 @@ int flb_ra_key_value_append(struct flb_ra_parser *rp, msgpack_object map,
     }
 
     msgpack_pack_map(mp_pck, map_size);
-    for (i=0; i<map_size; i++) {
+    for (i = 0; i < map_size; i++) {
         msgpack_pack_object(mp_pck, map.via.map.ptr[i].key);
         if (i != kv_id) {
             msgpack_pack_object(mp_pck, map.via.map.ptr[i].val);
@@ -801,8 +841,34 @@ int flb_ra_key_value_append(struct flb_ra_parser *rp, msgpack_object map,
 
 void flb_ra_key_value_destroy(struct flb_ra_value *v)
 {
-    if (v->type == FLB_RA_STRING) {
+    if (v->type == FLB_RA_STRING && v->storage == FLB_RA_COPY) {
         flb_sds_destroy(v->val.string);
     }
+    else if (v->type == FLB_RA_BINARY && v->storage == FLB_RA_COPY) {
+        flb_sds_destroy(v->val.binary);
+    }
     flb_free(v);
+}
+
+const char *flb_ra_value_buffer(struct flb_ra_value *v, size_t *len)
+{
+    if (v->storage == FLB_RA_REF) {
+        if (len) {
+            *len = v->val.ref.len;
+        }
+        return v->val.ref.buf;
+    }
+
+    if (len) {
+        if (v->type == FLB_RA_STRING) {
+            *len = flb_sds_len(v->val.string);
+        }
+        else {
+            *len = flb_sds_len(v->val.binary);
+        }
+    }
+    if (v->type == FLB_RA_STRING) {
+        return v->val.string;
+    }
+    return v->val.binary;
 }

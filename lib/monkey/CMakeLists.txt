@@ -1,5 +1,5 @@
 # Let's have fun!
-cmake_minimum_required(VERSION 3.0)
+cmake_minimum_required(VERSION 3.20)
 project(monkey C)
 set(CMAKE_MODULE_PATH ${CMAKE_MODULE_PATH} "${CMAKE_CURRENT_SOURCE_DIR}/cmake/")
 set(CMAKE_INCLUDE_DIRECTORIES_BEFORE ON)
@@ -23,7 +23,7 @@ endif()
 # Monkey Version
 set(MK_VERSION_MAJOR  1)
 set(MK_VERSION_MINOR  8)
-set(MK_VERSION_PATCH  1)
+set(MK_VERSION_PATCH  5)
 set(MK_VERSION_STR "${MK_VERSION_MAJOR}.${MK_VERSION_MINOR}.${MK_VERSION_PATCH}")
 
 # Output paths

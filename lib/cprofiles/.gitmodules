@@ -1,0 +1,7 @@
+[submodule "lib/cfl"]
+	path = lib/cfl
+	url = https://github.com/fluent/cfl
+[submodule "lib/fluent-otel-proto"]
+	path = lib/fluent-otel-proto
+	url = https://github.com/fluent/fluent-otel-proto
+

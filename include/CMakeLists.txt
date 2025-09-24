@@ -10,6 +10,12 @@ install(FILES ${headers}
     COMPONENT headers
     PERMISSIONS OWNER_READ OWNER_WRITE GROUP_READ WORLD_READ)
 
+file(GLOB headers "fluent-bit/calyptia/*.h")
+install(FILES ${headers}
+    DESTINATION ${FLB_INSTALL_INCLUDEDIR}/fluent-bit
+    COMPONENT headers
+    PERMISSIONS OWNER_READ OWNER_WRITE GROUP_READ WORLD_READ)
+
 file(GLOB headers "fluent-bit/config_format/*.h")
 install(FILES ${headers}
     DESTINATION ${FLB_INSTALL_INCLUDEDIR}/fluent-bit/config_format/
@@ -27,6 +33,22 @@ install(FILES ${headers}
     DESTINATION ${FLB_INSTALL_INCLUDEDIR}/fluent-bit/wasm/
     COMPONENT headers
     PERMISSIONS OWNER_READ OWNER_WRITE GROUP_READ WORLD_READ)
+
+# simdutf
+if(FLB_UNICODE_ENCODER)
+  file(GLOB headers "fluent-bit/simdutf/*.h")
+  install(FILES ${headers}
+    DESTINATION ${FLB_INSTALL_INCLUDEDIR}/fluent-bit/simdutf/
+    COMPONENT headers
+    PERMISSIONS OWNER_READ OWNER_WRITE GROUP_READ WORLD_READ)
+endif()
+
+# flb_conv
+file(GLOB headers "fluent-bit/unicode/*.h")
+install(FILES ${headers}
+  DESTINATION ${FLB_INSTALL_INCLUDEDIR}/fluent-bit/unicode/
+  COMPONENT headers
+  PERMISSIONS OWNER_READ OWNER_WRITE GROUP_READ WORLD_READ)
 
 install(FILES "../lib/monkey/include/monkey/mk_core.h"
     DESTINATION ${FLB_INSTALL_INCLUDEDIR}/monkey/

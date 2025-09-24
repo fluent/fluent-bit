@@ -254,7 +254,8 @@ static void cb_ws_flush(struct flb_event_chunk *event_chunk,
                                                event_chunk->size,
                                                ctx->out_format,
                                                ctx->json_date_format,
-                                               ctx->json_date_key);
+                                               ctx->json_date_key,
+                                               config->json_escape_unicode);
 
         if (!json) {
             flb_error("[out_ws] error formatting JSON payload");

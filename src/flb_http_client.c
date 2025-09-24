@@ -44,6 +44,7 @@
 #include <fluent-bit/flb_utils.h>
 #include <fluent-bit/flb_base64.h>
 #include <fluent-bit/tls/flb_tls.h>
+#include <time.h>
 #include <fluent-bit/flb_signv4_ng.h>
 
 void flb_http_client_debug(struct flb_http_client *c,
@@ -243,7 +244,7 @@ static int check_connection(struct flb_http_client *c)
     buf = flb_malloc(len + 1);
     if (!buf) {
         flb_errno();
-        return -1;
+        return FLB_HTTP_ERROR;
     }
 
     memcpy(buf, header, len);
@@ -263,6 +264,19 @@ static int check_connection(struct flb_http_client *c)
 static inline void consume_bytes(char *buf, int bytes, int length)
 {
     memmove(buf, buf + bytes, length - bytes);
+}
+
+static inline void http_client_response_reset(struct flb_http_client *c)
+{
+    c->resp.data_len = 0;
+    c->resp.status = 0;
+    c->resp.content_length = -1;
+    c->resp.chunked_encoding = FLB_FALSE;
+    c->resp.connection_close = -1;
+    c->resp.headers_end = NULL;
+    c->resp.payload = NULL;
+    c->resp.payload_size = 0;
+    c->resp.chunk_processed_end = NULL;
 }
 
 static int process_chunked_data(struct flb_http_client *c)
@@ -637,7 +651,7 @@ static int add_host_and_content_length(struct flb_http_client *c)
     return 0;
 }
 
-struct flb_http_client *flb_http_client(struct flb_connection *u_conn,
+struct flb_http_client *create_http_client(struct flb_connection *u_conn,
                                         int method, const char *uri,
                                         const char *body, size_t body_len,
                                         const char *host, int port,
@@ -749,35 +763,13 @@ struct flb_http_client *flb_http_client(struct flb_connection *u_conn,
         c->query_string = p;
     }
 
-    /* Is Upstream connection using keepalive mode ? */
-    if (flb_stream_get_flag_status(&u_conn->upstream->base, FLB_IO_TCP_KA)) {
-        c->flags |= FLB_HTTP_KA;
-    }
-
     /* Response */
     c->resp.content_length = -1;
     c->resp.connection_close = -1;
 
-    if ((flags & FLB_HTTP_10) == 0) {
-        c->flags |= FLB_HTTP_11;
-    }
-
     if (body && body_len > 0) {
         c->body_buf = body;
         c->body_len = body_len;
-    }
-
-    add_host_and_content_length(c);
-
-    /* Check proxy data */
-    if (proxy) {
-        flb_debug("[http_client] Using http_proxy: %s", proxy);
-        ret = proxy_parse(proxy, c);
-        if (ret != 0) {
-            flb_debug("[http_client] Something wrong with the http_proxy parsing");
-            flb_http_client_destroy(c);
-            return NULL;
-        }
     }
 
     /* 'Read' buffer size */
@@ -791,6 +783,77 @@ struct flb_http_client *flb_http_client(struct flb_connection *u_conn,
     c->resp.data_len  = 0;
     c->resp.data_size = FLB_HTTP_DATA_SIZE_MAX;
     c->resp.data_size_max = FLB_HTTP_DATA_SIZE_MAX;
+
+    /* Tests */
+    c->test_mode = FLB_FALSE;
+    c->test_response.callback = NULL;
+
+    return c;
+}
+
+struct flb_http_client *flb_http_dummy_client(struct flb_connection *u_conn,
+                                              int method, const char *uri,
+                                              const char *body, size_t body_len,
+                                              const char *host, int port,
+                                              const char *proxy, int flags)
+{
+    struct flb_http_client *c;
+
+    c = create_http_client(u_conn, method, uri,
+                           body, body_len,
+                           host, port,
+                           proxy, flags);
+
+    if (!c) {
+        return NULL;
+    }
+
+    return c;
+}
+
+struct flb_http_client *flb_http_client(struct flb_connection *u_conn,
+                                        int method, const char *uri,
+                                        const char *body, size_t body_len,
+                                        const char *host, int port,
+                                        const char *proxy, int flags)
+{
+    int ret;
+    struct flb_http_client *c;
+
+    c = create_http_client(u_conn, method, uri,
+                           body, body_len,
+                           host, port,
+                           proxy, flags);
+
+    if (!c) {
+        return NULL;
+    }
+
+    /* Is Upstream connection using keepalive mode ? */
+    if (flb_stream_get_flag_status(&u_conn->upstream->base, FLB_IO_TCP_KA)) {
+        c->flags |= FLB_HTTP_KA;
+    }
+
+    if ((flags & FLB_HTTP_10) == 0) {
+        c->flags |= FLB_HTTP_11;
+    }
+
+    ret = add_host_and_content_length(c);
+    if (ret != 0) {
+        flb_http_client_destroy(c);
+        return NULL;
+    }
+
+    /* Check proxy data */
+    if (proxy) {
+        flb_debug("[http_client] Using http_proxy: %s", proxy);
+        ret = proxy_parse(proxy, c);
+        if (ret != 0) {
+            flb_debug("[http_client] Something wrong with the http_proxy parsing");
+            flb_http_client_destroy(c);
+            return NULL;
+        }
+    }
 
     return c;
 }
@@ -1068,11 +1131,130 @@ int flb_http_set_content_encoding_gzip(struct flb_http_client *c)
     return ret;
 }
 
+int flb_http_set_content_encoding_zstd(struct flb_http_client *c)
+{
+    int ret;
+
+    ret = flb_http_add_header(c,
+                              FLB_HTTP_HEADER_CONTENT_ENCODING,
+                              sizeof(FLB_HTTP_HEADER_CONTENT_ENCODING) - 1,
+                              "zstd", 4);
+    return ret;
+}
+
+int flb_http_set_content_encoding_snappy(struct flb_http_client *c)
+{
+    int ret;
+
+    ret = flb_http_add_header(c,
+                              FLB_HTTP_HEADER_CONTENT_ENCODING,
+                              sizeof(FLB_HTTP_HEADER_CONTENT_ENCODING) - 1,
+                              "snappy", 6);
+    return ret;
+}
+
+int flb_http_set_read_idle_timeout(struct flb_http_client *c, int timeout)
+{
+    c->read_idle_timeout = timeout;
+    return 0;
+}
+
+int flb_http_set_response_timeout(struct flb_http_client *c, int timeout)
+{
+    c->response_timeout = timeout;
+    return 0;
+}
+
 int flb_http_set_callback_context(struct flb_http_client *c,
                                   struct flb_callback *cb_ctx)
 {
     c->cb_ctx = cb_ctx;
     return 0;
+}
+
+int flb_http_set_response_test(struct flb_http_client *c, char *test_name,
+                               const void *data, size_t len,
+                               int status,
+                               void (*resp_callback) (void *, int, void *, size_t, void *),
+                               void *resp_callback_data)
+{
+    if (!c) {
+        return -1;
+    }
+
+    /*
+     * Enabling a test, set the http_client instance in 'test' mode, so no real
+     * http request is invoked, only the desired implemented test.
+     */
+
+    /* Response test */
+    if (strcmp(test_name, "response") == 0) {
+        c->test_mode = FLB_TRUE;
+        c->test_response.rt_ctx = c;
+        c->test_response.rt_status = status;
+        c->test_response.rt_resp_callback = resp_callback;
+        c->test_response.rt_data = resp_callback_data;
+        if (data != NULL && len > 0) {
+            c->resp.payload = (char *)data;
+            c->resp.payload_size = len;
+            c->resp.status = status;
+        }
+    }
+    else {
+        return -1;
+    }
+
+    return 0;
+}
+
+static int flb_http_run_response_test(struct flb_http_client *c,
+                                      const void *data, size_t len)
+{
+    int ret = 0;
+    void *out_buf = NULL;
+    size_t out_size = 0;
+    struct flb_test_http_response  *htr;
+
+    if (!c) {
+        return -1;
+    }
+
+    htr = &c->test_response;
+
+    /* Invoke the output plugin formatter test callback */
+    ret = htr->callback(c,
+                        data, len,
+                        &out_buf, &out_size);
+
+    /* Call the runtime test callback checker */
+    if (htr->rt_resp_callback) {
+        htr->rt_resp_callback(htr->rt_ctx,
+                              ret,
+                              out_buf, out_size,
+                              htr->rt_data);
+    }
+    else {
+        flb_free(out_buf);
+    }
+
+    return 0;
+}
+
+/* Push some response into the http client */
+static int flb_http_stub_response(struct flb_http_client *c)
+{
+    int ret = 0;
+
+    if (!c) {
+        return -1;
+    }
+
+    /* If http client's test_responses is registered, run the stub. */
+    if (c->test_response.callback != NULL && c->resp.payload != NULL) {
+        ret = flb_http_run_response_test(c, c->resp.payload, c->resp.payload_size);
+    }
+
+    return ret;
 }
 
 int flb_http_add_auth_header(struct flb_http_client *c,
@@ -1261,8 +1443,12 @@ int flb_http_do_request(struct flb_http_client *c, size_t *bytes)
     /* number of sent bytes */
     *bytes = (bytes_header + bytes_body);
 
+    /* Initialize timeout tracking */
+    c->ts_start = time(NULL);
+    c->last_read_ts = c->ts_start;
+
     /* prep c->resp for incoming data */
-    c->resp.data_len = 0;
+    http_client_response_reset(c);
 
     /* at this point we've sent our request so we expect more data in response*/
     return FLB_HTTP_MORE;
@@ -1284,6 +1470,7 @@ int flb_http_get_response_data(struct flb_http_client *c, size_t bytes_consumed)
     int r_bytes;
     ssize_t available;
     size_t out_size;
+    time_t now;
 
     /* If the caller has consumed some of the payload (via bytes_consumed)
      * we consume those bytes off the payload
@@ -1327,6 +1514,21 @@ int flb_http_get_response_data(struct flb_http_client *c, size_t bytes_consumed)
             }
             available = flb_http_buffer_available(c) - 1;
         }
+        now = time(NULL);
+
+        if (c->response_timeout > 0 && (now - c->ts_start) > c->response_timeout) {
+            flb_error("[http_client] response timeout reached (elapsed=%lds, limit=%ds)",
+                      (long)(now - c->ts_start), c->response_timeout);
+            flb_upstream_conn_recycle(c->u_conn, FLB_FALSE);
+            return FLB_HTTP_ERROR;
+        }
+
+        if (c->read_idle_timeout > 0 &&  (now - c->last_read_ts) > c->read_idle_timeout) {
+            flb_error("[http_client] read idle timeout reached (idle=%lds, limit=%ds)",
+                      (long)(now - c->last_read_ts), c->read_idle_timeout);
+            flb_upstream_conn_recycle(c->u_conn, FLB_FALSE);
+            return FLB_HTTP_ERROR;
+        }
 
         r_bytes = flb_io_net_read(c->u_conn,
                                   c->resp.data + c->resp.data_len,
@@ -1341,6 +1543,10 @@ int flb_http_get_response_data(struct flb_http_client *c, size_t bytes_consumed)
         if (r_bytes >= 0) {
             c->resp.data_len += r_bytes;
             c->resp.data[c->resp.data_len] = '\0';
+
+            if (r_bytes > 0) {
+                c->last_read_ts = now;
+            }
 
             ret = process_data(c);
             if (ret == FLB_HTTP_ERROR) {
@@ -1367,6 +1573,10 @@ int flb_http_do(struct flb_http_client *c, size_t *bytes)
 {
     int ret;
 
+    if (c->test_mode == FLB_TRUE) {
+        return flb_http_stub_response(c);
+    }
+
     ret = flb_http_do_request(c, bytes);
     if (ret != 0) {
         return ret;
@@ -1374,17 +1584,25 @@ int flb_http_do(struct flb_http_client *c, size_t *bytes)
 
     /* Read the server response, we need at least 19 bytes */
     while (ret == FLB_HTTP_MORE || ret == FLB_HTTP_CHUNK_AVAILABLE) {
-        /* flb_http_do does not consume any bytes during processing
+        /*
+         * flb_http_do does not consume any bytes during processing
          * so we always pass 0 consumed_bytes because we fetch until
          * the end chunk before returning to the caller
          */
-
         ret = flb_http_get_response_data(c, 0);
+    }
+
+
+    if (ret != FLB_HTTP_OK) {
+        return ret;
     }
 
     /* Check 'Connection' response header */
     ret = check_connection(c);
-    if (ret == FLB_HTTP_OK) {
+    if (ret == FLB_HTTP_ERROR) {
+        return ret;
+    }
+    else if (ret == FLB_HTTP_OK) {
         /*
          * If the server replied that the connection will be closed
          * and our Upstream connection is in keepalive mode, we must
@@ -1398,6 +1616,9 @@ int flb_http_do(struct flb_http_client *c, size_t *bytes)
                       c->u_conn->upstream->tcp_port,
                       c->u_conn->fd);
         }
+    }
+    else if (ret == FLB_HTTP_NOT_FOUND) {
+        /* Connection header not found, continue normally */
     }
 
 #ifdef FLB_HAVE_HTTP_CLIENT_DEBUG
@@ -1510,6 +1731,12 @@ int flb_http_client_ng_init(struct flb_http_client_ng *client,
 {
     memset(client, 0, sizeof(struct flb_http_client_ng));
 
+    client->temporary_buffer = cfl_sds_create_size(HTTP_CLIENT_TEMPORARY_BUFFER_SIZE);
+
+    if (client->temporary_buffer == NULL) {
+        return -1;
+    }
+
     client->protocol_version = protocol_version;
     client->upstream_ha = upstream_ha;
     client->upstream = upstream;
@@ -1582,6 +1809,12 @@ void flb_http_client_ng_destroy(struct flb_http_client_ng *client)
     flb_lock_acquire(&client->lock,
                      FLB_LOCK_INFINITE_RETRY_LIMIT,
                      FLB_LOCK_DEFAULT_RETRY_DELAY);
+
+    if (client->temporary_buffer != NULL) {
+        cfl_sds_destroy(client->temporary_buffer);
+
+        client->temporary_buffer = NULL;
+    }
 
     cfl_list_foreach_safe(iterator,
                           iterator_backup,
@@ -1701,6 +1934,7 @@ struct flb_http_client_session *flb_http_client_session_begin(struct flb_http_cl
     int                             protocol_version;
     struct flb_upstream_node       *upstream_node;
     struct flb_connection          *connection;
+    struct flb_upstream            *upstream;
     struct flb_http_client_session *session;
     const char                     *alpn;
 
@@ -1711,10 +1945,14 @@ struct flb_http_client_session *flb_http_client_session_begin(struct flb_http_cl
             return NULL;
         }
 
+        upstream = upstream_node->u;
+
         connection = flb_upstream_conn_get(upstream_node->u);
     }
     else {
         upstream_node = NULL;
+
+        upstream = client->upstream;
 
         connection = flb_upstream_conn_get(client->upstream);
     }
@@ -1745,6 +1983,10 @@ struct flb_http_client_session *flb_http_client_session_begin(struct flb_http_cl
 
     if (protocol_version == HTTP_PROTOCOL_VERSION_AUTODETECT) {
         protocol_version = HTTP_PROTOCOL_VERSION_11;
+    }
+
+    if (protocol_version == HTTP_PROTOCOL_VERSION_20) {
+        flb_stream_disable_keepalive(&upstream->base);
     }
 
     session = flb_http_client_session_create(client, protocol_version, connection);
@@ -1932,20 +2174,20 @@ struct flb_http_response *flb_http_client_request_execute(struct flb_http_reques
 
 static int flb_http_client_session_read(struct flb_http_client_session *session)
 {
-    unsigned char input_buffer[1024 * 65];
     ssize_t result;
 
     result = flb_io_net_read(session->connection,
-                             (void *) &input_buffer,
-                             sizeof(input_buffer));
+                             (void *) session->parent->temporary_buffer,
+                             cfl_sds_avail(session->parent->temporary_buffer));
 
     if (result <= 0) {
         return -1;
     }
 
-    result = (ssize_t) flb_http_client_session_ingest(session,
-                                                      input_buffer,
-                                                      result);
+    result = (ssize_t) flb_http_client_session_ingest(
+                            session,
+                            (unsigned char *) session->parent->temporary_buffer,
+                            result);
 
     if (result < 0) {
         return -2;
@@ -2203,6 +2445,11 @@ int flb_http_request_set_authorization(struct flb_http_request *request,
 
             return -1;
         }
+    }
+    else {
+        va_end(arguments);
+
+        return -1;
     }
 
     va_end(arguments);

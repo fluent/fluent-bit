@@ -588,6 +588,7 @@ static flb_sds_t flb_signv4_ng_canonical_request(struct flb_http_request *reques
     }
     else {
         tmp = (char *) request->path;
+        len = strlen(request->path);
     }
 
     /* Do URI encoding (rfc3986) */

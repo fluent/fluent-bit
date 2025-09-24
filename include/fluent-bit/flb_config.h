@@ -38,6 +38,20 @@
 #define HEALTH_CHECK_PERIOD 60
 #define FLB_CONFIG_DEFAULT_TAG  "fluent_bit"
 
+#define FLB_CONFIG_DEFAULT_TASK_MAP_SIZE  2048
+#define FLB_CONFIG_DEFAULT_TASK_MAP_SIZE_LIMIT  16384
+#define FLB_CONFIG_DEFAULT_TASK_MAP_SIZE_GROWTH_SiZE 256
+
+/* The reason behind FLB_CONFIG_DEFAULT_TASK_MAP_SIZE_LIMIT being set to 16384
+ * is that this is largest unsigned number expressable with 14 bits which is
+ * a limit imposed by the messaging mechanism used.
+ *
+ * As for FLB_CONFIG_DEFAULT_TASK_MAP_SIZE, 2048 was chosen to retain its
+ * original value and FLB_CONFIG_DEFAULT_TASK_MAP_SIZE_GROWTH_SiZE is set
+ * to a multiple of 8 because entries in the task map are just task
+ * pointers.
+ */
+
 /* Main struct to hold the configuration of the runtime service */
 struct flb_config {
     struct mk_event ch_event;
@@ -53,9 +67,10 @@ struct flb_config {
      * shutdown when all remaining tasks are flushed
      */
     int grace;
-    int grace_count;          /* Count of grace shutdown tries  */
-    flb_pipefd_t flush_fd;    /* Timer FD associated to flush   */
-    int convert_nan_to_null;  /* convert null to nan ?          */
+    int grace_count;          /* Count of grace shutdown tries              */
+    int grace_input;          /* Shutdown grace to keep inputs ingesting    */
+    flb_pipefd_t flush_fd;    /* Timer FD associated to flush               */
+    int convert_nan_to_null;  /* Convert null to nan ?                      */
 
     int daemon;               /* Run as a daemon ?              */
     flb_pipefd_t shutdown_fd; /* Shutdown FD, 5 seconds         */
@@ -130,6 +145,7 @@ struct flb_config {
 
     /* Multiline core parser definitions */
     struct mk_list multiline_parsers;
+    char *multiline_buffer_limit; /* limit for multiline concatenated data */
 
     /* Outputs instances */
     struct mk_list outputs;             /* list of output plugins   */
@@ -229,8 +245,11 @@ struct flb_config {
     int   storage_max_chunks_up;    /* max number of chunks 'up' in memory */
     int   storage_del_bad_chunks;   /* delete irrecoverable chunks */
     char *storage_bl_mem_limit;     /* storage backlog memory limit */
+    int   storage_bl_flush_on_shutdown; /* enable/disable backlog chunks flush on shutdown */
     struct flb_storage_metrics *storage_metrics_ctx; /* storage metrics context */
     int   storage_trim_files;       /* enable/disable file trimming */
+    char *storage_type;             /* global storage type */
+    int   storage_inherit;          /* apply storage type to inputs */
 
     /* Embedded SQL Database support (SQLite3) */
 #ifdef FLB_HAVE_SQLDB
@@ -268,6 +287,18 @@ struct flb_config {
     unsigned int hot_reloaded_count;
     int shutdown_by_hot_reloading;
     int hot_reloading;
+    int hot_reload_succeeded;
+    
+    int hot_reload_watchdog_timeout_seconds;
+
+    /* Routing */
+    size_t route_mask_size;
+    size_t route_mask_slots;
+    uint64_t *route_empty_mask;
+#ifdef FLB_SYSTEM_WINDOWS
+    /* maxstdio (Windows) */
+    int win_maxstdio;
+#endif
 
     /* Co-routines */
     unsigned int coro_stack_size;
@@ -288,7 +319,10 @@ struct flb_config {
     unsigned int sched_cap;
     unsigned int sched_base;
 
-    struct flb_task_map tasks_map[2048];
+    struct flb_task_map *task_map;
+    size_t task_map_size;
+
+    int json_escape_unicode;
 
     int dry_run;
 };
@@ -302,6 +336,8 @@ int flb_config_set_property(struct flb_config *config,
                             const char *k, const char *v);
 int flb_config_set_program_name(struct flb_config *config, char *name);
 int flb_config_load_config_format(struct flb_config *config, struct flb_cf *cf);
+int flb_config_task_map_resize(struct flb_config *config, size_t new_size);
+int flb_config_task_map_grow(struct flb_config *config);
 
 int set_log_level_from_env(struct flb_config *config);
 #ifdef FLB_HAVE_STATIC_CONF
@@ -350,6 +386,10 @@ enum conf_type {
 
 #define FLB_CONF_STR_HOT_RELOAD        "Hot_Reload"
 #define FLB_CONF_STR_HOT_RELOAD_ENSURE_THREAD_SAFETY  "Hot_Reload.Ensure_Thread_Safety"
+#define FLB_CONF_STR_HOT_RELOAD_TIMEOUT "Hot_Reload.Timeout"
+
+/* Set up maxstdio (Windows) */
+#define FLB_CONF_STR_WINDOWS_MAX_STDIO "windows.maxstdio"
 
 /* DNS */
 #define FLB_CONF_DNS_MODE              "dns.mode"
@@ -363,16 +403,26 @@ enum conf_type {
 #define FLB_CONF_STORAGE_METRICS       "storage.metrics"
 #define FLB_CONF_STORAGE_CHECKSUM      "storage.checksum"
 #define FLB_CONF_STORAGE_BL_MEM_LIMIT  "storage.backlog.mem_limit"
+#define FLB_CONF_STORAGE_BL_FLUSH_ON_SHUTDOWN \
+                                       "storage.backlog.flush_on_shutdown" 
 #define FLB_CONF_STORAGE_MAX_CHUNKS_UP "storage.max_chunks_up"
 #define FLB_CONF_STORAGE_DELETE_IRRECOVERABLE_CHUNKS \
                                        "storage.delete_irrecoverable_chunks"
 #define FLB_CONF_STORAGE_TRIM_FILES    "storage.trim_files"
+#define FLB_CONF_STORAGE_TYPE          "storage.type"
+#define FLB_CONF_STORAGE_INHERIT       "storage.inherit"
 
 /* Coroutines */
 #define FLB_CONF_STR_CORO_STACK_SIZE "Coro_Stack_Size"
 
+/* Multiline */
+#define FLB_CONF_STR_MULTILINE_BUFFER_LIMIT "multiline_buffer_limit"
+
 /* Scheduler */
 #define FLB_CONF_STR_SCHED_CAP        "scheduler.cap"
 #define FLB_CONF_STR_SCHED_BASE       "scheduler.base"
+
+/* json escape */
+#define FLB_CONF_UNICODE_STR_JSON_ESCAPE "json.escape_unicode"
 
 #endif

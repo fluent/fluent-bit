@@ -111,12 +111,11 @@ struct record_check container_mix_output[] = {
   {"a1\n"},
   {"a2\n"},
   {"ddee\n"},
-  {"bbcc"},
+  {"bbccdd-out\n"},
+  {"dd-err\n"},
   {"single full"},
   {"1a. some multiline log"},
   {"1b. some multiline log"},
-  {"dd-out\n"},
-  {"dd-err\n"},
 };
 
 /* Java stacktrace detection */
@@ -392,6 +391,10 @@ static int flush_callback(struct flb_ml_parser *parser,
 
     fprintf(stdout, "%s----------- EOF -----------%s\n",
             ANSI_YELLOW, ANSI_RESET);
+
+    if (!res) {
+        return 0;
+    }
 
     /* Validate content */
     msgpack_unpacked_init(&result);
@@ -1457,6 +1460,103 @@ static void test_issue_5504()
 #endif
 }
 
+static void test_buffer_limit_truncation()
+{
+    int ret;
+    uint64_t stream_id;
+    struct flb_config *config;
+    struct flb_ml *ml;
+    struct flb_ml_parser *mlp;
+    struct flb_ml_parser_ins *mlp_i;
+    struct flb_parser *p;
+    struct flb_time tm;
+
+    /*
+     * A realistic Docker log where the content of the "log" field will be
+     * concatenated, and that concatenated buffer is what should be truncated.
+     */
+    char *line1 = "{\"log\": \"12345678901234567890\", \"stream\": \"stdout\"}";
+    char *line2 = "{\"log\": \"abcdefghijklmnopqrstuvwxyz\", \"stream\": \"stdout\"}";
+
+    config = flb_config_init();
+    /* The buffer limit is for the concatenated 'log' content, not the full JSON */
+    if (config->multiline_buffer_limit) {
+        flb_free(config->multiline_buffer_limit);
+    }
+    config->multiline_buffer_limit = flb_strdup("80");
+
+    /* This parser will trigger on any content, ensuring concatenation. */
+    ml = flb_ml_create(config, "limit-test");
+    TEST_CHECK(ml != NULL);
+
+    /* --- New params-based initializer --- */
+    struct flb_ml_parser_params params = flb_ml_parser_params_default("test-concat");
+    params.type        = FLB_ML_REGEX;
+    params.negate      = FLB_FALSE;
+    params.flush_ms    = 1000;
+    params.key_content = "log";
+    params.parser_ctx  = NULL;
+    params.parser_name = NULL;
+
+    mlp = flb_ml_parser_create_params(config, &params);
+    TEST_CHECK(mlp != NULL);
+
+    /* Define rules that will always match the test data */
+    ret = flb_ml_rule_create(mlp, "start_state", "/./", "cont", NULL);
+    TEST_CHECK(ret == 0);
+    ret = flb_ml_rule_create(mlp, "cont", "/./", "cont", NULL);
+    TEST_CHECK(ret == 0);
+
+    /* Finalize parser initialization */
+    ret = flb_ml_parser_init(mlp);
+    TEST_CHECK(ret == 0);
+
+    mlp_i = flb_ml_parser_instance_create(ml, "test-concat");
+    TEST_CHECK(mlp_i != NULL);
+
+    ret = flb_ml_stream_create(ml, "test", -1, flush_callback, NULL, &stream_id);
+    TEST_CHECK(ret == 0);
+
+    flb_time_get(&tm);
+
+    /* Append the first line. It will match the 'start_state' and start a block. */
+    ret = flb_ml_append_text(ml, stream_id, &tm, line1, strlen(line1));
+    TEST_CHECK(ret == FLB_MULTILINE_OK);
+
+    /*
+     * Append the second line. This will match the 'cont' state and concatenate.
+     * The concatenation will exceed the limit and correctly trigger truncation.
+     */
+    ret = flb_ml_append_text(ml, stream_id, &tm, line2, strlen(line2));
+    TEST_CHECK(ret == FLB_MULTILINE_TRUNCATED);
+
+    flb_ml_destroy(ml);
+    flb_config_exit(config);
+}
+
+static void test_buffer_limit_disabled()
+{
+    struct flb_config *config;
+    struct flb_ml *ml;
+
+    config = flb_config_init();
+
+    if (config->multiline_buffer_limit) {
+        flb_free(config->multiline_buffer_limit);
+        config->multiline_buffer_limit = NULL;
+    }
+
+    config->multiline_buffer_limit = flb_strdup("false");
+
+    ml = flb_ml_create(config, "limit-disabled");
+    TEST_CHECK(ml != NULL);
+
+    TEST_CHECK(ml->buffer_limit == 0);
+
+    flb_ml_destroy(ml);
+    flb_config_exit(config);
+}
+
 TEST_LIST = {
     /* Normal features tests */
     { "parser_docker",  test_parser_docker},
@@ -1468,6 +1568,8 @@ TEST_LIST = {
     { "parser_go",      test_parser_go},
     { "container_mix",  test_container_mix},
     { "endswith",       test_endswith},
+    { "buffer_limit_truncation", test_buffer_limit_truncation},
+    { "buffer_limit_disabled", test_buffer_limit_disabled},
 
     /* Issues reported on Github */
     { "issue_3817_1"  , test_issue_3817_1},

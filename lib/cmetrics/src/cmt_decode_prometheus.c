@@ -174,6 +174,7 @@ static int split_metric_name(struct cmt_decode_prometheus_context *context,
     *subsystem = strchr(*ns, '_');
     if (!(*subsystem)) {
         *name = *ns;
+        *subsystem = "";
         *ns = "";
     }
     else {
@@ -444,7 +445,7 @@ static int add_metric_histogram(struct cmt_decode_prometheus_context *context)
     size_t bucket_index;
     double *buckets = NULL;
     uint64_t *bucket_defaults = NULL;
-    double sum;
+    double sum = 0;
     uint64_t count = 0;
     double count_dbl;
     struct cfl_list *head;
@@ -1177,7 +1178,7 @@ static int parse_sample(struct cmt_decode_prometheus_context *context,
                 "sample value is too long (max %zu characters)", sizeof(sample->value1) - 1);
     }
 
-    strncpy(sample->value1, value1, len);
+    memcpy(sample->value1, value1, len);
     sample->value1[len] = 0;
 
     /* value2 */
@@ -1187,7 +1188,7 @@ static int parse_sample(struct cmt_decode_prometheus_context *context,
                 CMT_DECODE_PROMETHEUS_SAMPLE_VALUE_TOO_LONG,
                 "sample value is too long (max %zu characters)", sizeof(sample->value2) - 1);
     }
-    strncpy(sample->value2, value2, len);
+    memcpy(sample->value2, value2, len);
     sample->value2[len] = 0;
 
     return 0;

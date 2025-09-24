@@ -32,10 +32,20 @@
 
 #include <cmetrics/cmetrics.h>
 #include <fluent-bit/flb_gzip.h>
+#include <fluent-bit/flb_zstd.h>
 #include <cmetrics/cmt_encode_opentelemetry.h>
 
 #include <ctraces/ctraces.h>
 #include <ctraces/ctr_decode_msgpack.h>
+
+#include <cprofiles/cprofiles.h>
+#include <cprofiles/cprof_decode_msgpack.h>
+#include <cprofiles/cprof_encode_opentelemetry.h>
+#ifdef FLB_HAVE_SIGNV4
+#ifdef FLB_HAVE_AWS
+#include <fluent-bit/flb_signv4.h>
+#endif
+#endif
 
 extern cfl_sds_t cmt_encode_opentelemetry_create(struct cmt *cmt);
 extern void cmt_encode_opentelemetry_destroy(cfl_sds_t text);
@@ -43,6 +53,27 @@ extern void cmt_encode_opentelemetry_destroy(cfl_sds_t text);
 #include "opentelemetry.h"
 #include "opentelemetry_conf.h"
 #include "opentelemetry_utils.h"
+
+static int is_http_status_code_retrayable(int http_code)
+{
+    /*
+     * Retrayable HTTP code according to OTLP spec:
+     *
+     * https://opentelemetry.io/docs/specs/otlp/#retryable-response-codes
+     */
+    if (http_code == 429 || http_code == 502 ||
+        http_code == 503 || http_code == 504) {
+        /*
+         * a note on HTTP status 500, the document says: "All other 4xx or 5xx
+         * response status codes MUST NOT be retried." -- I personally think
+         * 500 should be retried in case a proxy fails, but let's honor the docs
+         * for now.
+         */
+        return FLB_TRUE;
+    }
+
+    return FLB_FALSE;
+}
 
 int opentelemetry_legacy_post(struct opentelemetry_context *ctx,
                               const void *body, size_t body_len,
@@ -61,6 +92,7 @@ int opentelemetry_legacy_post(struct opentelemetry_context *ctx,
     struct flb_slist_entry    *val;
     struct flb_config_map_val *mv;
     struct flb_http_client    *c;
+    flb_sds_t                 signature = NULL;
 
     compressed = FLB_FALSE;
 
@@ -84,6 +116,17 @@ int opentelemetry_legacy_post(struct opentelemetry_context *ctx,
         }
         else {
             flb_plg_error(ctx->ins, "cannot gzip payload, disabling compression");
+        }
+    }
+    else if (ctx->compress_zstd) {
+        ret = flb_zstd_compress((void *) body, body_len,
+                                &final_body, &final_body_len);
+
+        if (ret == 0) {
+            compressed = FLB_TRUE;
+        }
+        else {
+            flb_plg_error(ctx->ins, "cannot zstd payload, disabling compression");
         }
     }
     else {
@@ -146,9 +189,41 @@ int opentelemetry_legacy_post(struct opentelemetry_context *ctx,
                             val->str, flb_sds_len(val->str));
     }
 
-    if (compressed) {
-        flb_http_set_content_encoding_gzip(c);
+#ifdef FLB_HAVE_SIGNV4
+#ifdef FLB_HAVE_AWS
+    if (ctx->has_aws_auth == FLB_TRUE) {
+        flb_plg_debug(ctx->ins, "signing request with AWS SigV4");
+        signature = flb_signv4_do(c,
+                                  FLB_TRUE,
+                                  FLB_TRUE,
+                                  time(NULL),
+                                  (char *) ctx->aws_region,
+                                  (char *) ctx->aws_service,
+                                  0, NULL,
+                                  ctx->aws_provider);
+
+        if (!signature) {
+            flb_plg_error(ctx->ins, "could not sign request with sigv4");
+            out_ret = FLB_RETRY;
+            goto cleanup;
+        }
+        flb_sds_destroy(signature);
+        signature = NULL;
     }
+#endif
+#endif
+
+    if (compressed) {
+        if (ctx->compress_gzip) {
+            flb_http_set_content_encoding_gzip(c);
+        }
+        else if (ctx->compress_zstd) {
+            flb_http_set_content_encoding_zstd(c);
+        }
+    }
+
+    /* Map debug callbacks */
+    flb_http_client_debug(c, ctx->ins->callback);
 
     ret = flb_http_do(c, &b_sent);
 
@@ -179,7 +254,13 @@ int opentelemetry_legacy_post(struct opentelemetry_context *ctx,
                               ctx->host, ctx->port, c->resp.status);
             }
 
-            out_ret = FLB_RETRY;
+            /* Retryable status codes according to OTLP spec */
+            if (is_http_status_code_retrayable(c->resp.status) == FLB_TRUE) {
+                out_ret = FLB_RETRY;
+            }
+            else {
+                out_ret = FLB_ERROR;
+            }
         }
         else {
             if (ctx->log_response_payload && c->resp.payload != NULL && c->resp.payload_size > 2) {
@@ -205,6 +286,7 @@ int opentelemetry_legacy_post(struct opentelemetry_context *ctx,
         out_ret = FLB_RETRY;
     }
 
+cleanup:
     if (compressed) {
         flb_free(final_body);
     }
@@ -227,6 +309,7 @@ int opentelemetry_post(struct opentelemetry_context *ctx,
     const char               *compression_algorithm;
     uint32_t                  wire_message_length;
     size_t                    grpc_body_length;
+    cfl_sds_t                 sds_result;
     cfl_sds_t                 grpc_body;
     struct flb_http_response *response;
     struct flb_http_request  *request;
@@ -257,23 +340,47 @@ int opentelemetry_post(struct opentelemetry_context *ctx,
         return FLB_RETRY;
     }
 
-    if (request->protocol_version == HTTP_PROTOCOL_VERSION_20) {
+    if (request->protocol_version == HTTP_PROTOCOL_VERSION_20 &&
+        ctx->enable_grpc_flag) {
+
         grpc_body = cfl_sds_create_size(body_len + 5);
 
         if (grpc_body == NULL) {
+            flb_http_client_request_destroy(request, FLB_TRUE);
+
             return FLB_RETRY;
         }
 
         wire_message_length = (uint32_t) body_len;
 
-        cfl_sds_cat(grpc_body, "\x00----", 5);
+        sds_result = cfl_sds_cat(grpc_body, "\x00----", 5);
+
+        if (sds_result == NULL) {
+            flb_http_client_request_destroy(request, FLB_TRUE);
+
+            cfl_sds_destroy(grpc_body);
+
+            return FLB_RETRY;
+        }
+
+        grpc_body = sds_result;
 
         ((uint8_t *) grpc_body)[1] = (wire_message_length & 0xFF000000) >> 24;
         ((uint8_t *) grpc_body)[2] = (wire_message_length & 0x00FF0000) >> 16;
         ((uint8_t *) grpc_body)[3] = (wire_message_length & 0x0000FF00) >> 8;
         ((uint8_t *) grpc_body)[4] = (wire_message_length & 0x000000FF) >> 0;
 
-        cfl_sds_cat(grpc_body, body, body_len);
+        sds_result = cfl_sds_cat(grpc_body, body, body_len);
+
+        if (sds_result == NULL) {
+            flb_http_client_request_destroy(request, FLB_TRUE);
+
+            cfl_sds_destroy(grpc_body);
+
+            return FLB_RETRY;
+        }
+
+        grpc_body = sds_result;
 
         grpc_body_length = cfl_sds_len(grpc_body);
 
@@ -296,6 +403,9 @@ int opentelemetry_post(struct opentelemetry_context *ctx,
     else {
         if (ctx->compress_gzip == FLB_TRUE) {
             compression_algorithm = "gzip";
+        }
+        else if (ctx->compress_zstd == FLB_TRUE) {
+            compression_algorithm = "zstd";
         }
 
         result = flb_http_request_set_parameters(request,
@@ -332,11 +442,26 @@ int opentelemetry_post(struct opentelemetry_context *ctx,
                                            ctx->http_passwd);
     }
 
+#ifdef FLB_HAVE_SIGNV4
+#ifdef FLB_HAVE_AWS
+    if (ctx->has_aws_auth == FLB_TRUE) {
+        result = flb_http_request_perform_signv4_signature(request,
+                                                          ctx->aws_region,
+                                                          ctx->aws_service,
+                                                          ctx->aws_provider);
+        if (result != 0) {
+            flb_plg_error(ctx->ins, "could not sign request with sigv4");
+            flb_http_client_request_destroy(request, FLB_TRUE);
+            return FLB_RETRY;
+        }
+    }
+#endif
+#endif
+
     response = flb_http_client_request_execute(request);
-
     if (response == NULL) {
-        flb_debug("http request execution error");
-
+        flb_plg_warn(ctx->ins, "error performing HTTP request, remote host=%s:%i connection error",
+                     ctx->host, ctx->port);
         flb_http_client_request_destroy(request, FLB_TRUE);
 
         return FLB_RETRY;
@@ -357,22 +482,33 @@ int opentelemetry_post(struct opentelemetry_context *ctx,
         if (ctx->log_response_payload &&
             response->body != NULL &&
             cfl_sds_len(response->body) > 0) {
-            flb_plg_error(ctx->ins, "%s:%i, HTTP status=%i\n%s",
-                            ctx->host, ctx->port,
-                            response->status, response->body);
+            flb_plg_error(ctx->ins,
+                          "%s:%i, HTTP status=%i\n%s",
+                          ctx->host,
+                          ctx->port,
+                          response->status,
+                          response->body);
         }
         else {
-            flb_plg_error(ctx->ins, "%s:%i, HTTP status=%i",
-                            ctx->host, ctx->port, response->status);
+            flb_plg_error(ctx->ins,
+                          "%s:%i, HTTP status=%i",
+                          ctx->host,
+                          ctx->port,
+                          response->status);
         }
 
-        out_ret = FLB_RETRY;
+        if (is_http_status_code_retrayable(response->status) == FLB_TRUE) {
+            out_ret = FLB_RETRY;
+        }
+        else {
+            out_ret = FLB_ERROR;
+        }
     }
     else {
         if (ctx->log_response_payload &&
             response->body != NULL &&
             cfl_sds_len(response->body) > 0) {
-            flb_plg_info(ctx->ins, "%s:%i, HTTP status=%i\n%s",
+            flb_plg_info(ctx->ins, "%s:%i, HTTP status=%i%s",
                             ctx->host, ctx->port,
                             response->status, response->body);
         }
@@ -612,6 +748,88 @@ exit:
     return result;
 }
 
+static int process_profiles(struct flb_event_chunk *event_chunk,
+                            struct flb_output_flush *out_flush,
+                            struct flb_input_instance *ins, void *out_context,
+                            struct flb_config *config)
+{
+    int ret;
+    int result;
+    cfl_sds_t encoded_chunk;
+    flb_sds_t buf = NULL;
+    size_t off = 0;
+    struct cprof *profiles_context;
+    struct opentelemetry_context *ctx = out_context;
+
+    /* Initialize vars */
+    ctx = out_context;
+    result = FLB_OK;
+
+    buf = flb_sds_create_size(event_chunk->size);
+    if (!buf) {
+        flb_plg_error(ctx->ins, "could not allocate outgoing buffer");
+        return FLB_RETRY;
+    }
+
+    flb_plg_debug(ctx->ins, "cprofiles msgpack size: %lu",
+                  event_chunk->size);
+
+    while (cprof_decode_msgpack_create(&profiles_context,
+                                       (unsigned char *) event_chunk->data,
+                                       event_chunk->size, &off) == 0) {
+        /* Create a OpenTelemetry payload */
+        ret = cprof_encode_opentelemetry_create(&encoded_chunk, profiles_context);
+        if (ret != CPROF_ENCODE_OPENTELEMETRY_SUCCESS) {
+            flb_plg_error(ctx->ins,
+                          "Error encoding context as opentelemetry");
+            result = FLB_ERROR;
+            cprof_decode_msgpack_destroy(profiles_context);
+            goto exit;
+        }
+
+        /* concat buffer */
+        ret = flb_sds_cat_safe(&buf, encoded_chunk, flb_sds_len(encoded_chunk));
+        if (ret != 0) {
+            flb_plg_error(ctx->ins, "Error appending encoded profiles to buffer");
+            result = FLB_ERROR;
+            cprof_encode_opentelemetry_destroy(encoded_chunk);
+            cprof_decode_msgpack_destroy(profiles_context);
+            goto exit;
+        }
+
+        /* release */
+        cprof_encode_opentelemetry_destroy(encoded_chunk);
+        cprof_decode_msgpack_destroy(profiles_context);
+    }
+
+    flb_plg_debug(ctx->ins, "final payload size: %lu", flb_sds_len(buf));
+    if (buf && flb_sds_len(buf) > 0) {
+        /* Send HTTP request */
+        result = opentelemetry_post(ctx, buf, flb_sds_len(buf),
+                                    event_chunk->tag,
+                                    flb_sds_len(event_chunk->tag),
+                                    ctx->profiles_uri_sanitized,
+                                    ctx->grpc_profiles_uri);
+
+        /* Debug http_post() result statuses */
+        if (result == FLB_OK) {
+            flb_plg_debug(ctx->ins, "http_post result FLB_OK");
+        }
+        else if (result == FLB_ERROR) {
+            flb_plg_debug(ctx->ins, "http_post result FLB_ERROR");
+        }
+        else if (result == FLB_RETRY) {
+            flb_plg_debug(ctx->ins, "http_post result FLB_RETRY");
+        }
+    }
+
+exit:
+    if (buf) {
+        flb_sds_destroy(buf);
+    }
+    return result;
+}
+
 static int cb_opentelemetry_exit(void *data, struct flb_config *config)
 {
     struct opentelemetry_context *ctx;
@@ -640,6 +858,12 @@ static int cb_opentelemetry_init(struct flb_output_instance *ins,
 
     flb_output_set_context(ins, ctx);
 
+    /*
+     * This plugin instance uses the HTTP client interface, let's register
+     * it debugging callbacks.
+     */
+    flb_output_set_http_debug_callbacks(ins);
+
     return 0;
 }
 
@@ -659,6 +883,9 @@ static void cb_opentelemetry_flush(struct flb_event_chunk *event_chunk,
     else if (event_chunk->type == FLB_INPUT_TRACES){
         result = process_traces(event_chunk, out_flush, ins, out_context, config);
     }
+    else if (event_chunk->type == FLB_INPUT_PROFILES){
+        result = process_profiles(event_chunk, out_flush, ins, out_context, config);
+    }
 
     FLB_OUTPUT_RETURN(result);
 }
@@ -672,9 +899,14 @@ static struct flb_config_map config_map[] = {
      "Adds a custom label to the metrics use format: 'add_label name value'"
     },
     {
-     FLB_CONFIG_MAP_STR, "http2", "on",
+     FLB_CONFIG_MAP_STR, "http2", "off",
      0, FLB_TRUE, offsetof(struct opentelemetry_context, enable_http2),
      "Enable, disable or force HTTP/2 usage. Accepted values : on, off, force"
+    },
+    {
+     FLB_CONFIG_MAP_BOOL, "grpc", "off",
+     0, FLB_TRUE, offsetof(struct opentelemetry_context, enable_grpc_flag),
+     "Enable, disable or force gRPC usage. Accepted values : on, off, auto"
     },
     {
      FLB_CONFIG_MAP_STR, "proxy", NULL,
@@ -691,6 +923,21 @@ static struct flb_config_map config_map[] = {
      0, FLB_TRUE, offsetof(struct opentelemetry_context, http_passwd),
      "Set HTTP auth password"
     },
+#ifdef FLB_HAVE_SIGNV4
+#ifdef FLB_HAVE_AWS
+    {
+     FLB_CONFIG_MAP_BOOL, "aws_auth", "false",
+     0, FLB_TRUE, offsetof(struct opentelemetry_context, has_aws_auth),
+     "Enable AWS SigV4 authentication",
+    },
+    {
+     FLB_CONFIG_MAP_STR, "aws_service", "logs",
+     0, FLB_TRUE, offsetof(struct opentelemetry_context, aws_service),
+     "AWS destination service code, used by SigV4 authentication",
+    },
+    FLB_AWS_CREDENTIAL_BASE_CONFIG_MAP(FLB_OPENTELEMETRY_AWS_CREDENTIAL_PREFIX),
+#endif
+#endif
     {
      FLB_CONFIG_MAP_SLIST_1, "header", NULL,
      FLB_CONFIG_MAP_MULT, FLB_TRUE, offsetof(struct opentelemetry_context, headers),
@@ -715,7 +962,7 @@ static struct flb_config_map config_map[] = {
     {
      FLB_CONFIG_MAP_STR, "compress", NULL,
      0, FLB_FALSE, 0,
-     "Set payload compression mechanism. Option available is 'gzip'"
+     "Set payload compression mechanism. Options available are 'gzip' and 'zstd'."
     },
     /*
      * Logs Properties
@@ -752,15 +999,28 @@ static struct flb_config_map config_map[] = {
      "Specify an optional HTTP URI for the target OTel endpoint."
     },
     {
-     FLB_CONFIG_MAP_STR, "grpc_traces_uri", "/opentelemetry.proto.collector.trace.v1.TraceService/Export",
+     FLB_CONFIG_MAP_STR, "grpc_traces_uri",
+     "/opentelemetry.proto.collector.trace.v1.TraceService/Export",
      0, FLB_TRUE, offsetof(struct opentelemetry_context, grpc_traces_uri),
      "Specify an optional gRPC URI for the target OTel endpoint."
     },
 
     {
+     FLB_CONFIG_MAP_STR, "profiles_uri", "/v1development/profiles",
+     0, FLB_TRUE, offsetof(struct opentelemetry_context, profiles_uri),
+     "Specify an optional HTTP URI for the profiles OTel endpoint."
+    },
+    {
+     FLB_CONFIG_MAP_STR, "grpc_profiles_uri",
+     "/opentelemetry.proto.collector.profiles.v1experimental.ProfilesService/Export",
+     0, FLB_TRUE, offsetof(struct opentelemetry_context, grpc_profiles_uri),
+     "Specify an optional gRPC URI for the profiles OTel endpoint."
+    },
+
+    {
      FLB_CONFIG_MAP_BOOL, "log_response_payload", "true",
      0, FLB_TRUE, offsetof(struct opentelemetry_context, log_response_payload),
-     "Specify if the response paylod should be logged or not"
+     "Specify if the response payload should be logged or not"
     },
     {
      FLB_CONFIG_MAP_STR, "logs_metadata_key", "otlp",
@@ -850,7 +1110,7 @@ struct flb_output_plugin out_opentelemetry_plugin = {
     .cb_flush    = cb_opentelemetry_flush,
     .cb_exit     = cb_opentelemetry_exit,
     .config_map  = config_map,
-    .event_type  = FLB_OUTPUT_LOGS | FLB_OUTPUT_METRICS | FLB_OUTPUT_TRACES,
+    .event_type  = FLB_OUTPUT_LOGS | FLB_OUTPUT_METRICS | FLB_OUTPUT_TRACES | FLB_OUTPUT_PROFILES,
     .flags       = FLB_OUTPUT_NET | FLB_IO_OPT_TLS,
 
     .test_formatter.callback = opentelemetry_format_test,

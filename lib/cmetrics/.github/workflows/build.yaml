@@ -1,6 +1,5 @@
 name: Build PR(s) and master branch.
 on:
-  workflow_dispatch:
   push:
     branches:
       - master
@@ -8,6 +7,7 @@ on:
     branches:
       - master
     types: [opened, reopened, synchronize]
+
 jobs:
   build-windows:
     name: Build sources on amd64 for ${{ matrix.os }}
@@ -19,7 +19,7 @@ jobs:
     permissions:
       contents: read
     steps:
-      - uses: actions/checkout@v3
+      - uses: actions/checkout@v5
         with:
           submodules: true
 
@@ -39,28 +39,89 @@ jobs:
     name: CentOS 7 build to confirm no issues once used downstream
     runs-on: ubuntu-latest
     container: centos:7
-    permissions:
-      contents: read
+    env:
+      # workaround required for checkout@v3, https://github.com/actions/checkout/issues/1590
+      ACTIONS_ALLOW_USE_UNSECURE_NODE_VERSION: true
     steps:
       - name: Set up base image dependencies
         run: |
           sed -i -e "s/^mirrorlist=http:\/\/mirrorlist.centos.org/#mirrorlist=http:\/\/mirrorlist.centos.org/g" /etc/yum.repos.d/CentOS-Base.repo
           sed -i -e "s/^#baseurl=http:\/\/mirror.centos.org/baseurl=http:\/\/vault.centos.org/g" /etc/yum.repos.d/CentOS-Base.repo
-          yum -y update && \
-          yum install -y ca-certificates cmake gcc gcc-c++ git make wget && \
+          yum -y update
+          yum install -y ca-certificates gcc gcc-c++ git make wget
           yum install -y epel-release
-          yum install -y cmake3
+          yum install -y libcurl-devel
+
         shell: bash
 
-      - name: Clone repo with submodules (1.8.3 version of Git)
+      - name: Install CMake 3.20.0
         run: |
-          git clone --recursive https://github.com/calyptia/cmetrics.git
+          CMAKE_VERSION=3.20.0
+          wget https://github.com/Kitware/CMake/releases/download/v${CMAKE_VERSION}/cmake-${CMAKE_VERSION}-linux-x86_64.sh
+          chmod +x cmake-${CMAKE_VERSION}-linux-x86_64.sh
+          ./cmake-${CMAKE_VERSION}-linux-x86_64.sh --skip-license --prefix=/usr/local
+          ln -sf /usr/local/bin/cmake /usr/bin/cmake
+          cmake --version
+
+      - name: Clone repo without submodules (1.8.3 version of Git)
+        run: |
+          git clone https://github.com/fluent/cmetrics.git
         shell: bash
+
+      - name: Check out the branch (1.8.3 version of Git)
+        env:
+          BRANCH_NAME: ${{ github.head_ref }}
+        run: |
+          git checkout "$BRANCH_NAME"
+          git submodule update --init --recursive
+        shell: bash
+        working-directory: cmetrics
 
       - name: Run compilation
         run: |
-          cmake3 -DCMT_TESTS=on -DCMT_DEV=on .
+          cmake -DCMT_TESTS=on -DCMT_DEV=on .
           make
+        working-directory: cmetrics
+
+  build-debian:
+    name: Debian Buster build to confirm no issues once used downstream
+    runs-on: ubuntu-latest
+    container: debian:buster
+    steps:
+      - name: Set up base image dependencies
+        run: |
+          apt-get update
+          apt-get install -y build-essential wget make gcc g++ git libcurl4-openssl-dev
+
+      - name: Install CMake 3.20.0
+        run: |
+          CMAKE_VERSION=3.20.0
+          wget https://github.com/Kitware/CMake/releases/download/v${CMAKE_VERSION}/cmake-${CMAKE_VERSION}-linux-x86_64.sh
+          chmod +x cmake-${CMAKE_VERSION}-linux-x86_64.sh
+          ./cmake-${CMAKE_VERSION}-linux-x86_64.sh --skip-license --prefix=/usr/local
+
+          # Ensure the new CMake is found first
+          echo 'export PATH=/usr/local/bin:$PATH' >> ~/.bashrc
+          export PATH="/usr/local/bin:$PATH"
+
+          # Confirm CMake installation
+          /usr/local/bin/cmake --version
+
+      - name: Clone repository and submodules
+        run: |
+          git clone --recursive https://github.com/fluent/cmetrics.git
+        shell: bash
+
+      - name: Initialize submodules
+        run: |
+          git submodule update --init --recursive
+        shell: bash
+        working-directory: cmetrics
+
+      - name: Run compilation
+        run: |
+          cmake -DCMT_TESTS=on -DCMT_DEV=on .
+          make all
         shell: bash
         working-directory: cmetrics
 
@@ -75,15 +136,15 @@ jobs:
     permissions:
       contents: read
     steps:
-      - uses: actions/checkout@v3
+      - uses: actions/checkout@v5
         with:
           submodules: true
 
       - name: Build on ${{ matrix.os }} with ${{ matrix.compiler }}
-        uses: uraimo/run-on-arch-action@v2.5.0
+        uses: uraimo/run-on-arch-action@v3.0.1
         with:
           arch: aarch64
-          distro: ubuntu20.04
+          distro: ubuntu_latest
           run: |
             apt-get update && \
             apt-get install -y --no-install-recommends \
@@ -109,7 +170,7 @@ jobs:
     permissions:
       contents: read
     steps:
-      - uses: actions/checkout@v3
+      - uses: actions/checkout@v5
         with:
           submodules: true
 
@@ -138,13 +199,63 @@ jobs:
       contents: read
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v3
+      - name: Check out the repository
+        uses: actions/checkout@v5
         with:
           submodules: true
 
-      - uses: docker://lpenz/ghaction-cmake:0.19
-        with:
-          preset: ${{ matrix.preset }}
-          # dependencies_debian: ''
-          cmakeflags: '-DCMT_TESTS=On -DCMT_DEV=on .'
-          build_command: make all
+      - name: Install Dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y \
+            clang \
+            valgrind \
+            wget \
+            make \
+            gcc \
+            g++ \
+            git \
+            libcurl4-openssl-dev
+
+      - name: Install CMake 3.20.0 or higher
+        run: |
+          CMAKE_VERSION=3.20.0
+          wget https://github.com/Kitware/CMake/releases/download/v${CMAKE_VERSION}/cmake-${CMAKE_VERSION}-linux-x86_64.sh
+          chmod +x cmake-${CMAKE_VERSION}-linux-x86_64.sh
+          sudo ./cmake-${CMAKE_VERSION}-linux-x86_64.sh --skip-license --prefix=/usr/local
+          sudo ln -sf /usr/local/bin/cmake /usr/bin/cmake
+          /usr/local/bin/cmake --version
+
+      - name: Initialize Submodules
+        run: git submodule update --init --recursive
+
+      - name: Configure and Build
+        run: |
+          /usr/local/bin/cmake -DCMT_TESTS=On -DCMT_DEV=on .
+          make all
+
+  # this job provides the single required status for PRs to be merged into main.
+  # instead of updating the protected branch status in github, developers can update the needs section below
+  # to require additional status checks to protect main.
+  # the job uses the alls-green action to get around the github issue that treats a "skipped" required status check
+  # as passed. github will skip a job if an upstream needed job fails, which would defeat the purpose of this required
+  # status check.
+  test-required-checks-complete:
+    # note: this step always has to run in order to check if the dependent jobs passed. by default github skips running a job
+    # if the needed jobs upstream failed.
+    if: always()
+    needs:
+      - build-windows
+      - build-centos
+      - build-debian
+      - build-unix-arm64
+      - build-unix-amd64
+      - build-analysis-tests
+    name: Required checks complete
+    runs-on: ubuntu-latest
+    permissions: {}
+    steps:
+    - name: Decide whether the needed jobs succeeded or failed
+      uses: re-actors/alls-green@release/v1
+      with:
+        jobs: ${{ toJSON(needs) }}

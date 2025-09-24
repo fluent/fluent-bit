@@ -134,6 +134,13 @@ static int send_json_message_response(struct splunk_conn *conn, int http_status,
                        "Content-Length: %i\r\n\r\n%s",
                        len, message);
     }
+    else if (http_status == 400) {
+        flb_sds_printf(&out,
+                       "HTTP/1.1 400 Bad Request\r\n"
+                       "Content-Type: application/json\r\n"
+                       "Content-Length: %i\r\n\r\n%s",
+                       len, message);
+    }
 
     /* We should check this operations result */
     flb_io_net_write(conn->connection,
@@ -513,7 +520,7 @@ static int validate_auth_header(struct flb_splunk *ctx, struct mk_http_request *
                 continue;
             }
 
-            if (strncmp(splunk_token->header,
+            if (strncasecmp(splunk_token->header,
                         authorization,
                         splunk_token->length) == 0) {
                 flb_sds_destroy(authorization);
@@ -593,7 +600,7 @@ static int process_hec_payload(struct flb_splunk *ctx, struct splunk_conn *conn,
     }
 
     if (request->data.len <= 0 && !mk_http_parser_is_content_chunked(&session->parser)) {
-        send_response(conn, 400, "error: no payload found\n");
+        send_json_message_response(conn, 400, "{\"text\":\"No data\",\"code\":5}");
         return -2;
     }
 
@@ -650,7 +657,7 @@ static int process_hec_raw_payload(struct flb_splunk *ctx, struct splunk_conn *c
     header = &session->parser.headers[MK_HEADER_CONTENT_TYPE];
     if (header->key.data == NULL) {
         send_response(conn, 400, "error: header 'Content-Type' is not set\n");
-        return -1;
+        return -2;
     }
     else if (header->val.len != 10 ||
              strncasecmp(header->val.data, "text/plain", 10) != 0) {
@@ -659,8 +666,8 @@ static int process_hec_raw_payload(struct flb_splunk *ctx, struct splunk_conn *c
     }
 
     if (request->data.len <= 0 && !mk_http_parser_is_content_chunked(&session->parser)) {
-        send_response(conn, 400, "2 error: no payload found\n");
-        return -1;
+        send_json_message_response(conn, 400, "{\"text\":\"No data\",\"code\":5}");
+        return -2;
     }
 
     header_auth = &session->parser.headers[MK_HEADER_AUTHORIZATION];
@@ -868,6 +875,18 @@ int splunk_prot_handle(struct flb_splunk *ctx, struct splunk_conn *conn,
             strcasecmp(uri, "/services/collector/raw") == 0) {
             ret = process_hec_raw_payload(ctx, conn, tag, session, request);
 
+            if (ret == -2) {
+                /* Response already sent, skip further response */
+                flb_sds_destroy(tag);
+                mk_mem_free(uri);
+                if (out_chunked) {
+                    mk_mem_free(out_chunked);
+                }
+                request->data.data = original_data;
+                request->data.len = original_data_size;
+                return -1;
+            }
+
             if (!ret) {
                 send_json_message_response(conn, 400, "{\"text\":\"Invalid data format\",\"code\":6}");
             }
@@ -1043,10 +1062,10 @@ static int validate_auth_header_ng(struct flb_splunk *ctx, struct flb_http_reque
         mk_list_foreach_safe(head, tmp, &ctx->auth_tokens) {
             splunk_token = mk_list_entry(head, struct flb_splunk_tokens, _head);
             if (strlen(auth_header) != splunk_token->length) {
-                return SPLUNK_AUTH_UNAUTHORIZED;
+                continue;
             }
 
-            if (strncmp(splunk_token->header,
+            if (strncasecmp(splunk_token->header,
                         auth_header,
                         splunk_token->length) == 0) {
                 return SPLUNK_AUTH_SUCCESS;
@@ -1096,9 +1115,9 @@ static int process_hec_payload_ng(struct flb_http_request *request,
     }
 
     if (request->body == NULL || cfl_sds_len(request->body) <= 0) {
-        send_response_ng(response, 400, "error: no payload found\n");
+        send_json_message_response_ng(response, 400, "{\"text\":\"No data\",\"code\":5}");
 
-        return -1;
+        return -2;
     }
 
     return handle_hec_payload(ctx, type, tag, request->body, cfl_sds_len(request->body));
@@ -1132,9 +1151,9 @@ static int process_hec_raw_payload_ng(struct flb_http_request *request,
     }
 
     if (request->body == NULL || cfl_sds_len(request->body) == 0) {
-        send_response_ng(response, 400, "error: no payload found\n");
+        send_json_message_response_ng(response, 400, "{\"text\":\"No data\",\"code\":5}");
 
-        return -1;
+        return -2;
     }
 
     /* Always handle as raw type of payloads here */
@@ -1210,6 +1229,11 @@ int splunk_prot_handle_ng(struct flb_http_request *request,
     if (strcasecmp(request->path, "/services/collector/raw/1.0") == 0 ||
         strcasecmp(request->path, "/services/collector/raw") == 0) {
         ret = process_hec_raw_payload_ng(request, response, tag, context);
+        if (ret == -2) {
+            /* Response already sent, skip further response */
+            flb_sds_destroy(tag);
+            return -1;
+        }
         if (ret != 0) {
             send_json_message_response_ng(response, 400, "{\"text\":\"Invalid data format\",\"code\":6}");
             ret = -1;
@@ -1223,6 +1247,11 @@ int splunk_prot_handle_ng(struct flb_http_request *request,
              strcasecmp(request->path, "/services/collector/event") == 0 ||
              strcasecmp(request->path, "/services/collector") == 0) {
         ret = process_hec_payload_ng(request, response, tag, context);
+        if (ret == -2) {
+            /* Response already sent, skip further response */
+            flb_sds_destroy(tag);
+            return -1;
+        }
         if (ret != 0) {
             send_json_message_response_ng(response, 400, "{\"text\":\"Invalid data format\",\"code\":6}");
             ret = -1;

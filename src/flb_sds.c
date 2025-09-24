@@ -28,6 +28,7 @@
 #include <fluent-bit/flb_log.h>
 #include <fluent-bit/flb_sds.h>
 #include <fluent-bit/flb_utf8.h>
+#include <fluent-bit/flb_utils.h>
 
 #include <stdarg.h>
 #include <ctype.h>
@@ -279,13 +280,15 @@ flb_sds_t flb_sds_copy(flb_sds_t s, const char *str, int len)
     return s;
 }
 
-flb_sds_t flb_sds_cat_utf8 (flb_sds_t *sds, const char *str, int str_len)
+flb_sds_t flb_sds_cat_utf8(flb_sds_t *sds, const char *str, int str_len)
 {
     static const char int2hex[] = "0123456789abcdef";
     int i;
     int b;
     int ret;
     int hex_bytes;
+    int offset;
+    size_t size;
     uint32_t cp;
     uint32_t state = 0;
     unsigned char c;
@@ -297,6 +300,7 @@ flb_sds_t flb_sds_cat_utf8 (flb_sds_t *sds, const char *str, int str_len)
     s = *sds;
     head = FLB_SDS_HEADER(s);
 
+    /* make sure we have at least str_len extra bytes available */
     if (flb_sds_avail(s) <= str_len) {
         tmp = flb_sds_increase(s, str_len);
         if (tmp == NULL) {
@@ -306,102 +310,26 @@ flb_sds_t flb_sds_cat_utf8 (flb_sds_t *sds, const char *str, int str_len)
         head = FLB_SDS_HEADER(s);
     }
 
-    for (i = 0; i < str_len; i++) {
-        if (flb_sds_avail(s) < 8) {
-            tmp = flb_sds_increase(s, 8);
+    while (1) {
+        offset = head->len;
+        ret = flb_utils_write_str(s, &offset, flb_sds_alloc(s), str, str_len, FLB_TRUE);
+        if (ret == FLB_FALSE) {
+            /* realloc */
+            size = flb_sds_alloc(s) * 2;
+            tmp = flb_sds_increase(s, size);
             if (tmp == NULL) {
                 return NULL;
             }
             *sds = s = tmp;
             head = FLB_SDS_HEADER(s);
         }
-
-        c = (unsigned char)str[i];
-        if (c == '\\' || c == '"') {
-            s[head->len++] = '\\';
-            s[head->len++] = c;
-        }
-        else if (c >= '\b' && c <= '\r') {
-            s[head->len++] = '\\';
-            switch (c) {
-            case '\n':
-                s[head->len++] = 'n';
-                break;
-            case '\t':
-                s[head->len++] = 't';
-                break;
-            case '\b':
-                s[head->len++] = 'b';
-                break;
-            case '\f':
-                s[head->len++] = 'f';
-                break;
-            case '\r':
-                s[head->len++] = 'r';
-                break;
-            case '\v':
-                s[head->len++] = 'u';
-                s[head->len++] = '0';
-                s[head->len++] = '0';
-                s[head->len++] = '0';
-                s[head->len++] = 'b';
-                break;
-            }
-        }
-        else if (c < 32 || c == 0x7f) {
-            s[head->len++] = '\\';
-            s[head->len++] = 'u';
-            s[head->len++] = '0';
-            s[head->len++] = '0';
-            s[head->len++] = int2hex[ (unsigned char) ((c & 0xf0) >> 4)];
-            s[head->len++] = int2hex[ (unsigned char) (c & 0x0f)];
-        }
-        else if (c >= 0x80) {
-            hex_bytes = flb_utf8_len(str + i);
-            state = FLB_UTF8_ACCEPT;
-            cp = 0;
-            for (b = 0; b < hex_bytes; b++) {
-                p = (const unsigned char *) str + i + b;
-                if (p >= (unsigned char *) (str + str_len)) {
-                    break;
-                }
-                ret = flb_utf8_decode(&state, &cp, *p);
-                if (ret == 0) {
-                    break;
-                }
-            }
-
-            if (state != FLB_UTF8_ACCEPT) {
-                /* Invalid UTF-8 hex, just skip utf-8 bytes */
-                flb_warn("[pack] invalid UTF-8 bytes, skipping");
-                break;
-            }
-
-            s[head->len++] = '\\';
-            s[head->len++] = 'u';
-            if (cp > 0xFFFF) {
-                c = (unsigned char) ((cp & 0xf00000) >> 20);
-                if (c > 0) {
-                    s[head->len++] = int2hex[c];
-                }
-                c = (unsigned char) ((cp & 0x0f0000) >> 16);
-                if (c > 0) {
-                    s[head->len++] = int2hex[c];
-                }
-            }
-            s[head->len++] = int2hex[ (unsigned char) ((cp & 0xf000) >> 12)];
-            s[head->len++] = int2hex[ (unsigned char) ((cp & 0x0f00) >> 8)];
-            s[head->len++] = int2hex[ (unsigned char) ((cp & 0xf0) >> 4)];
-            s[head->len++] = int2hex[ (unsigned char) (cp & 0x0f)];
-            i += (hex_bytes - 1);
-        }
         else {
-            s[head->len++] = c;
+            break;
         }
     }
 
+    flb_sds_len_set(s, offset);
     s[head->len] = '\0';
-
     return s;
 }
 

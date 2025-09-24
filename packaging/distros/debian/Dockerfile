@@ -7,95 +7,221 @@ ARG BASE_BUILDER
 # Use buildkit to skip unused base images: DOCKER_BUILDKIT=1
 
 # Multiarch support
-FROM multiarch/qemu-user-static:x86_64-aarch64 as multiarch-aarch64
+FROM multiarch/qemu-user-static:x86_64-aarch64 AS multiarch-aarch64
 
 # debian/buster base image
-FROM debian:buster-slim as debian-buster-base
-ENV DEBIAN_FRONTEND noninteractive
+FROM debian:buster-slim AS debian-buster-base
+ENV DEBIAN_FRONTEND="noninteractive" \
+    CMAKE_HOME="/opt/cmake"
+
+ARG CMAKE_VERSION="3.31.6"
+ARG CMAKE_URL="https://github.com/Kitware/CMake/releases/download"
+
+# Patch to archive.debian.org
+# https://lists.debian.org/debian-devel-announce/2025/06/msg00001.html
+RUN sed -i s/deb.debian.org/archive.debian.org/g /etc/apt/sources.list && \
+    sed -i s/security.debian.org/archive.debian.org/g /etc/apt/sources.list
 
 # hadolint ignore=DL3008,DL3015
 RUN apt-get -qq update && \
     apt-get install -y curl ca-certificates build-essential \
-    cmake make bash sudo wget unzip dh-make \
+    make bash sudo wget unzip dh-make \
     libsystemd-dev zlib1g-dev flex bison \
     libssl1.1 libssl-dev libpq-dev postgresql-server-dev-all \
-    libsasl2-2 libsasl2-dev libyaml-dev pkg-config && \
-    apt-get install -y --reinstall lsb-base lsb-release
+    libsasl2-2 libsasl2-dev libyaml-dev libcurl4-openssl-dev pkg-config \
+    tar gzip && \
+    apt-get install -y --reinstall lsb-base lsb-release && \
+    mkdir -p "${CMAKE_HOME}" && \
+    cmake_download_url="${CMAKE_URL}/v${CMAKE_VERSION}/cmake-${CMAKE_VERSION}-linux-$(uname -m).tar.gz" && \
+    echo "Downloading CMake ${CMAKE_VERSION}: ${cmake_download_url} -> ${CMAKE_HOME}" && \
+    curl -jksSL "${cmake_download_url}" | tar -xzf - -C "${CMAKE_HOME}" --strip-components 1
+
+ENV PATH="${CMAKE_HOME}/bin:${PATH}"
 
 # debian/buster.arm64v8 base image
-FROM arm64v8/debian:buster-slim as debian-buster.arm64v8-base
-ENV DEBIAN_FRONTEND noninteractive
+FROM arm64v8/debian:buster-slim AS debian-buster.arm64v8-base
+ENV DEBIAN_FRONTEND="noninteractive" \
+    CMAKE_HOME="/opt/cmake"
 
 COPY --from=multiarch-aarch64 /usr/bin/qemu-aarch64-static /usr/bin/qemu-aarch64-static
+
+ARG CMAKE_VERSION="3.31.6"
+ARG CMAKE_URL="https://github.com/Kitware/CMake/releases/download"
+
+# Patch to archive.debian.org
+# https://lists.debian.org/debian-devel-announce/2025/06/msg00001.html
+RUN sed -i s/deb.debian.org/archive.debian.org/g /etc/apt/sources.list && \
+    sed -i s/security.debian.org/archive.debian.org/g /etc/apt/sources.list
 
 # hadolint ignore=DL3008,DL3015
 RUN apt-get -qq update && \
     apt-get install -y curl ca-certificates build-essential \
-    cmake make bash sudo wget unzip dh-make \
+    make bash sudo wget unzip dh-make \
     libsystemd-dev zlib1g-dev flex bison \
     libssl1.1 libssl-dev libpq-dev postgresql-server-dev-all \
-    libsasl2-2 libsasl2-dev libyaml-dev pkg-config && \
-    apt-get install -y --reinstall lsb-base lsb-release
+    libsasl2-2 libsasl2-dev libyaml-dev libcurl4-openssl-dev pkg-config \
+    tar gzip && \
+    apt-get install -y --reinstall lsb-base lsb-release && \
+    mkdir -p "${CMAKE_HOME}" && \
+    cmake_download_url="${CMAKE_URL}/v${CMAKE_VERSION}/cmake-${CMAKE_VERSION}-linux-$(uname -m).tar.gz" && \
+    echo "Downloading CMake ${CMAKE_VERSION}: ${cmake_download_url} -> ${CMAKE_HOME}" && \
+    curl -jksSL "${cmake_download_url}" | tar -xzf - -C "${CMAKE_HOME}" --strip-components 1
+
+ENV PATH="${CMAKE_HOME}/bin:${PATH}"
 
 # debian/bullseye base image
-FROM debian:bullseye-slim as debian-bullseye-base
-ENV DEBIAN_FRONTEND noninteractive
+FROM debian:bullseye-slim AS debian-bullseye-base
+ENV DEBIAN_FRONTEND="noninteractive" \
+    CMAKE_HOME="/opt/cmake"
+
+ARG CMAKE_VERSION="3.31.6"
+ARG CMAKE_URL="https://github.com/Kitware/CMake/releases/download"
 
 # hadolint ignore=DL3008,DL3015
 RUN apt-get -qq update && \
     apt-get install -y curl ca-certificates build-essential \
-    cmake make bash sudo wget unzip dh-make \
+    make bash sudo wget unzip dh-make \
     libsystemd-dev zlib1g-dev flex bison \
     libssl1.1 libssl-dev libpq-dev postgresql-server-dev-all \
-    libsasl2-2 libsasl2-dev libyaml-dev pkg-config && \
-    apt-get install -y --reinstall lsb-base lsb-release
+    libsasl2-2 libsasl2-dev libyaml-dev libcurl4-openssl-dev pkg-config \
+    tar gzip && \
+    apt-get install -y --reinstall lsb-base lsb-release && \
+    mkdir -p "${CMAKE_HOME}" && \
+    cmake_download_url="${CMAKE_URL}/v${CMAKE_VERSION}/cmake-${CMAKE_VERSION}-linux-$(uname -m).tar.gz" && \
+    echo "Downloading CMake ${CMAKE_VERSION}: ${cmake_download_url} -> ${CMAKE_HOME}" && \
+    curl -jksSL "${cmake_download_url}" | tar -xzf - -C "${CMAKE_HOME}" --strip-components 1
+
+ENV PATH="${CMAKE_HOME}/bin:${PATH}"
 
 # debian/bullseye.arm64v8 base image
-FROM arm64v8/debian:bullseye-slim as debian-bullseye.arm64v8-base
-ENV DEBIAN_FRONTEND noninteractive
+FROM arm64v8/debian:bullseye-slim AS debian-bullseye.arm64v8-base
+ENV DEBIAN_FRONTEND="noninteractive" \
+    CMAKE_HOME="/opt/cmake"
 
 COPY --from=multiarch-aarch64 /usr/bin/qemu-aarch64-static /usr/bin/qemu-aarch64-static
+
+ARG CMAKE_VERSION="3.31.6"
+ARG CMAKE_URL="https://github.com/Kitware/CMake/releases/download"
 
 # hadolint ignore=DL3008,DL3015
 RUN apt-get -qq update && \
     apt-get install -y curl ca-certificates build-essential \
-    cmake make bash sudo wget unzip dh-make \
+    make bash sudo wget unzip dh-make \
     libsystemd-dev zlib1g-dev flex bison \
     libssl1.1 libssl-dev libpq-dev postgresql-server-dev-all \
-    libsasl2-2 libsasl2-dev libyaml-dev pkg-config && \
-    apt-get install -y --reinstall lsb-base lsb-release
+    libsasl2-2 libsasl2-dev libyaml-dev libcurl4-openssl-dev pkg-config \
+    tar gzip && \
+    apt-get install -y --reinstall lsb-base lsb-release && \
+    mkdir -p "${CMAKE_HOME}" && \
+    cmake_download_url="${CMAKE_URL}/v${CMAKE_VERSION}/cmake-${CMAKE_VERSION}-linux-$(uname -m).tar.gz" && \
+    echo "Downloading CMake ${CMAKE_VERSION}: ${cmake_download_url} -> ${CMAKE_HOME}" && \
+    curl -jksSL "${cmake_download_url}" | tar -xzf - -C "${CMAKE_HOME}" --strip-components 1
+
+ENV PATH="${CMAKE_HOME}/bin:${PATH}"
 
 # debian/bookworm base image
-FROM debian:bookworm-slim as debian-bookworm-base
-ENV DEBIAN_FRONTEND noninteractive
+FROM debian:bookworm-slim AS debian-bookworm-base
+ENV DEBIAN_FRONTEND="noninteractive" \
+    CMAKE_HOME="/opt/cmake"
+
+ARG CMAKE_VERSION="3.31.6"
+ARG CMAKE_URL="https://github.com/Kitware/CMake/releases/download"
 
 # hadolint ignore=DL3008,DL3015
 RUN apt-get -qq update && \
     apt-get install -y curl ca-certificates build-essential \
-    cmake make bash sudo wget unzip dh-make \
+    make bash sudo wget unzip dh-make \
     libsystemd-dev zlib1g-dev flex bison \
     libssl3 libssl-dev libpq-dev postgresql-server-dev-all \
-    libsasl2-2 libsasl2-dev libyaml-dev pkg-config && \
-    apt-get install -y --reinstall lsb-base lsb-release
+    libsasl2-2 libsasl2-dev libyaml-dev libcurl4-openssl-dev pkg-config \
+    tar gzip && \
+    apt-get install -y --reinstall lsb-base lsb-release && \
+    mkdir -p "${CMAKE_HOME}" && \
+    cmake_download_url="${CMAKE_URL}/v${CMAKE_VERSION}/cmake-${CMAKE_VERSION}-linux-$(uname -m).tar.gz" && \
+    echo "Downloading CMake ${CMAKE_VERSION}: ${cmake_download_url} -> ${CMAKE_HOME}" && \
+    curl -jksSL "${cmake_download_url}" | tar -xzf - -C "${CMAKE_HOME}" --strip-components 1
+
+ENV PATH="${CMAKE_HOME}/bin:${PATH}"
 
 # debian/bookworm.arm64v8 base image
-FROM arm64v8/debian:bookworm-slim as debian-bookworm.arm64v8-base
-ENV DEBIAN_FRONTEND noninteractive
+FROM arm64v8/debian:bookworm-slim AS debian-bookworm.arm64v8-base
+ENV DEBIAN_FRONTEND="noninteractive" \
+    CMAKE_HOME="/opt/cmake"
 
 COPY --from=multiarch-aarch64 /usr/bin/qemu-aarch64-static /usr/bin/qemu-aarch64-static
 
+ARG CMAKE_VERSION="3.31.6"
+ARG CMAKE_URL="https://github.com/Kitware/CMake/releases/download"
+
 # hadolint ignore=DL3008,DL3015
 RUN apt-get -qq update && \
     apt-get install -y curl ca-certificates build-essential \
-    cmake make bash sudo wget unzip dh-make \
+    make bash sudo wget unzip dh-make \
     libsystemd-dev zlib1g-dev flex bison \
     libssl3 libssl-dev libpq-dev postgresql-server-dev-all \
-    libsasl2-2 libsasl2-dev libyaml-dev pkg-config && \
-    apt-get install -y --reinstall lsb-base lsb-release
+    libsasl2-2 libsasl2-dev libyaml-dev libcurl4-openssl-dev pkg-config \
+    tar gzip && \
+    apt-get install -y --reinstall lsb-base lsb-release && \
+    mkdir -p "${CMAKE_HOME}" && \
+    cmake_download_url="${CMAKE_URL}/v${CMAKE_VERSION}/cmake-${CMAKE_VERSION}-linux-$(uname -m).tar.gz" && \
+    echo "Downloading CMake ${CMAKE_VERSION}: ${cmake_download_url} -> ${CMAKE_HOME}" && \
+    curl -jksSL "${cmake_download_url}" | tar -xzf - -C "${CMAKE_HOME}" --strip-components 1
+
+ENV PATH="${CMAKE_HOME}/bin:${PATH}"
+
+# debian/trixie base image
+FROM debian:trixie-slim AS debian-trixie-base
+ENV DEBIAN_FRONTEND="noninteractive" \
+    CMAKE_HOME="/opt/cmake"
+
+ARG CMAKE_VERSION="3.31.6"
+ARG CMAKE_URL="https://github.com/Kitware/CMake/releases/download"
+
+# hadolint ignore=DL3008,DL3015
+RUN apt-get -qq update && \
+    apt-get install -y curl ca-certificates build-essential \
+    make bash sudo wget unzip dh-make \
+    libsystemd-dev zlib1g-dev flex bison \
+    libssl3 libssl-dev libpq-dev postgresql-server-dev-all \
+    libsasl2-2 libsasl2-dev libyaml-dev libcurl4-openssl-dev pkg-config \
+    tar gzip && \
+    apt-get install -y --reinstall lsb-base lsb-release && \
+    mkdir -p "${CMAKE_HOME}" && \
+    cmake_download_url="${CMAKE_URL}/v${CMAKE_VERSION}/cmake-${CMAKE_VERSION}-linux-$(uname -m).tar.gz" && \
+    echo "Downloading CMake ${CMAKE_VERSION}: ${cmake_download_url} -> ${CMAKE_HOME}" && \
+    curl -jksSL "${cmake_download_url}" | tar -xzf - -C "${CMAKE_HOME}" --strip-components 1
+
+ENV PATH="${CMAKE_HOME}/bin:${PATH}"
+
+# debian/trixie.arm64v8 base image
+FROM arm64v8/debian:trixie-slim AS debian-trixie.arm64v8-base
+ENV DEBIAN_FRONTEND="noninteractive" \
+    CMAKE_HOME="/opt/cmake"
+
+COPY --from=multiarch-aarch64 /usr/bin/qemu-aarch64-static /usr/bin/qemu-aarch64-static
+
+ARG CMAKE_VERSION="3.31.6"
+ARG CMAKE_URL="https://github.com/Kitware/CMake/releases/download"
+
+# hadolint ignore=DL3008,DL3015
+RUN apt-get -qq update && \
+    apt-get install -y curl ca-certificates build-essential \
+    make bash sudo wget unzip dh-make \
+    libsystemd-dev zlib1g-dev flex bison \
+    libssl3 libssl-dev libpq-dev postgresql-server-dev-all \
+    libsasl2-2 libsasl2-dev libyaml-dev libcurl4-openssl-dev pkg-config \
+    tar gzip && \
+    apt-get install -y --reinstall lsb-base lsb-release && \
+    mkdir -p "${CMAKE_HOME}" && \
+    cmake_download_url="${CMAKE_URL}/v${CMAKE_VERSION}/cmake-${CMAKE_VERSION}-linux-$(uname -m).tar.gz" && \
+    echo "Downloading CMake ${CMAKE_VERSION}: ${cmake_download_url} -> ${CMAKE_HOME}" && \
+    curl -jksSL "${cmake_download_url}" | tar -xzf - -C "${CMAKE_HOME}" --strip-components 1
+
+ENV PATH="${CMAKE_HOME}/bin:${PATH}"
 
 # Common build for all distributions now
 # hadolint ignore=DL3006
-FROM $BASE_BUILDER as builder
+FROM $BASE_BUILDER AS builder
 
 ARG FLB_NIGHTLY_BUILD
 ENV FLB_NIGHTLY_BUILD=$FLB_NIGHTLY_BUILD
@@ -109,6 +235,7 @@ WORKDIR /tmp/fluent-bit/build/
 ARG CFLAGS="-std=gnu99"
 ARG CMAKE_INSTALL_PREFIX=/opt/fluent-bit/
 ARG CMAKE_INSTALL_SYSCONFDIR=/etc/
+ARG FLB_SIMD=On
 ARG FLB_RELEASE=On
 ARG FLB_TRACE=On
 ARG FLB_SQLDB=On
@@ -121,6 +248,7 @@ ARG FLB_CHUNK_TRACE=On
 ENV CFLAGS=$CFLAGS
 RUN cmake -DCMAKE_INSTALL_PREFIX="$CMAKE_INSTALL_PREFIX" \
     -DCMAKE_INSTALL_SYSCONFDIR="$CMAKE_INSTALL_SYSCONFDIR" \
+    -DFLB_SIMD="$FLB_SIMD" \
     -DFLB_RELEASE="$FLB_RELEASE" \
     -DFLB_TRACE="$FLB_TRACE" \
     -DFLB_SQLDB="$FLB_SQLDB" \
