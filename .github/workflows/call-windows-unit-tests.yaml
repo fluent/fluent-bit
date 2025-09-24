@@ -127,7 +127,7 @@ jobs:
           key: ${{ steps.cache-unit-test-vcpkg-sources.outputs.cache-primary-key }}
           enableCrossOsArchive: false
 
-      - name: Build unit-test for Fluent Bit packages (only for x86 and x64)
+      - name: Build unit-test for Fluent Bit packages (x86, x64, and ARM64)
         run: |
           cmake -G "NMake Makefiles" `
             -D FLB_TESTS_INTERNAL=On `
@@ -170,7 +170,7 @@ jobs:
           dumpbin /dependents .\bin\fluent-bit.exe
         working-directory: build
 
-      - name: Build unit-test for Fluent Bit packages (only for x86 and x64)
+      - name: Run unit tests for Fluent Bit packages (x86, x64, and ARM64)
         run: |
             ctest --build-run-dir "$PWD" --output-on-failure
         shell: pwsh
