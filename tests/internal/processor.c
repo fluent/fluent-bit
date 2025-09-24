@@ -28,6 +28,7 @@
 #include <fluent-bit/flb_bucket_queue.h>
 #include <fluent-bit/flb_storage.h>
 #include <fluent-bit/flb_input.h>
+#include <fluent-bit/flb_compat.h>
 
 #include "flb_tests_internal.h"
 
@@ -136,6 +137,12 @@ static void processor_private_inputs_use_main_loop()
 
     flb_init_env();
 
+#ifdef _WIN32
+    WSADATA wsa;
+    int wret = WSAStartup(MAKEWORD(2,2), &wsa);
+    TEST_CHECK(wret == 0);
+#endif
+
     config = flb_config_init();
     TEST_CHECK(config != NULL);
 
@@ -183,6 +190,10 @@ static void processor_private_inputs_use_main_loop()
 
     flb_storage_destroy(config);
     flb_config_exit(config);
+
+#ifdef _WIN32
+    WSACleanup();
+#endif
 }
 
 TEST_LIST = {
