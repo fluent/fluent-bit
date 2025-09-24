@@ -70,7 +70,7 @@ jobs:
           Copy-Item -Path C:\WinFlexBison/win_bison.exe C:\WinFlexBison/bison.exe
           Copy-Item -Path C:\WinFlexBison/win_flex.exe C:\WinFlexBison/flex.exe
           echo "C:\WinFlexBison" | Out-File -FilePath $env:GITHUB_PATH -Append
-          choco install cmake --version "${{ matrix.config.cmake_version }}" --force
+          choco install cmake.portable --version "${{ matrix.config.cmake_version }}" --force
         env:
           WINFLEXBISON: https://github.com/lexxmark/winflexbison/releases/download/v2.5.22/win_flex_bison-2.5.22.zip
         shell: pwsh
