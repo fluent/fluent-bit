@@ -887,10 +887,11 @@ int splunk_prot_handle(struct flb_splunk *ctx, struct splunk_conn *conn,
                 return -1;
             }
 
-            if (!ret) {
+            if (ret < 0) {
                 send_json_message_response(conn, 400, "{\"text\":\"Invalid data format\",\"code\":6}");
+            } else {
+                send_json_message_response(conn, 200, "{\"text\":\"Success\",\"code\":0}");
             }
-            send_json_message_response(conn, 200, "{\"text\":\"Success\",\"code\":0}");
         }
         else if (strcasecmp(uri, "/services/collector/event/1.0") == 0 ||
                  strcasecmp(uri, "/services/collector/event") == 0 ||
@@ -910,10 +911,11 @@ int splunk_prot_handle(struct flb_splunk *ctx, struct splunk_conn *conn,
                 return -1;
             }
 
-            if (!ret) {
+            if (ret < 0) {
                 send_json_message_response(conn, 400, "{\"text\":\"Invalid data format\",\"code\":6}");
+            } else {
+                send_json_message_response(conn, 200, "{\"text\":\"Success\",\"code\":0}");
             }
-            send_json_message_response(conn, 200, "{\"text\":\"Success\",\"code\":0}");
         }
         else {
             send_response(conn, 400, "error: invalid HTTP endpoint\n");
