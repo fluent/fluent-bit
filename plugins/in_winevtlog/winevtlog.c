@@ -619,13 +619,13 @@ static int winevtlog_next(struct winevtlog_channel *ch, int hit_threshold)
         status = GetLastError();
         if (status == ERROR_CANCELLED) {
             if (ch->cancelled_by_us) {
-                /* Conmsume this flag and return early */
+                /* Consume this flag and return early */
                 ch->cancelled_by_us = FALSE;
                 return FLB_FALSE;
             }
             ch->reconnect_needed = TRUE;
             ch->last_error = status;
-            flb_debug("[in_winevtlog] subscription cancelled unexpectedly (err=%lu), will reconnect", status);
+            flb_warn("[in_winevtlog] subscription cancelled unexpectedly (err=%lu), will reconnect", status);
             return FLB_FALSE;
         }
         if (status != ERROR_NO_MORE_ITEMS) {
@@ -673,6 +673,7 @@ static DWORD calc_backoff_ms(struct winevtlog_channel *ch, const struct winevtlo
     LONG span = 0;
     LONG delta = 0;
     LONG with_jitter = 0;
+    DWORD jitter = 0;
     double mult = (double)cfg->multiplier_x1000 / 1000.0;
     double t = (double)cfg->base_ms;
 
@@ -681,13 +682,11 @@ static DWORD calc_backoff_ms(struct winevtlog_channel *ch, const struct winevtlo
         if (t >= (double)cfg->max_ms) { t = (double)cfg->max_ms; break; }
     }
     ms = (DWORD)((t > (double)cfg->max_ms) ? cfg->max_ms : t);
-    /* ±jitter% */
-    span = (LONG)((ms * cfg->jitter_pct) / 100);
+    /* ±jitter% (clamped 0..100) */
+    jitter = cfg->jitter_pct > 100 ? 100 : cfg->jitter_pct;
+    span = (LONG)((ms * jitter) / 100);
     delta = (LONG)(prng16(&ch->prng_state) % (2 * span + 1)) - span;
     with_jitter = (LONG)ms + delta;
-    if (with_jitter < 0) {
-        with_jitter = 0;
-    }
     return (DWORD)with_jitter;
 }
 
