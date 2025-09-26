@@ -89,12 +89,58 @@ struct winevtlog_channel *winevtlog_subscribe(const char *channel, struct winevt
     // channel : To wide char
     len = MultiByteToWideChar(CP_UTF8, 0, channel, -1, NULL, 0);
     wide_channel = flb_malloc(sizeof(WCHAR) * len);
-    MultiByteToWideChar(CP_UTF8, 0, channel, -1, wide_channel, len);
+    if (wide_channel == NULL) {
+        if (signal_event) {
+            CloseHandle(signal_event);
+        }
+        flb_free(ch->name);
+        if (ch->query) {
+            flb_free(ch->query);
+        }
+        flb_free(ch);
+        return NULL;
+    }
+    if (0 == MultiByteToWideChar(CP_UTF8, 0, channel, -1, wide_channel, len)) {
+        if (signal_event) {
+            CloseHandle(signal_event);
+        }
+        flb_free(wide_channel);
+        flb_free(ch->name);
+        if (ch->query) {
+            flb_free(ch->query);
+        }
+        flb_free(ch);
+        return NULL;
+    }
     if (query != NULL) {
     // query : To wide char
         len = MultiByteToWideChar(CP_UTF8, 0, query, -1, NULL, 0);
         wide_query = flb_malloc(sizeof(WCHAR) * len);
-        MultiByteToWideChar(CP_UTF8, 0, query, -1, wide_query, len);
+       if (wide_query == NULL) {
+            if (signal_event) {
+                CloseHandle(signal_event);
+            }
+            flb_free(wide_channel);
+            flb_free(ch->name);
+            if (ch->query) {
+                flb_free(ch->query);
+            }
+            flb_free(ch);
+            return NULL;
+        }
+        if (0 == MultiByteToWideChar(CP_UTF8, 0, query, -1, wide_query, len)) {
+            if (signal_event) {
+                CloseHandle(signal_event);
+            }
+            flb_free(wide_query);
+            flb_free(wide_channel);
+            flb_free(ch->name);
+            if (ch->query) {
+                flb_free(ch->query);
+            }
+            flb_free(ch);
+            return NULL;
+        }
         ch->query = flb_strdup(query);
     }
 
