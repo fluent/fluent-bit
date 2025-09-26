@@ -83,6 +83,7 @@ struct winevtlog_channel *winevtlog_subscribe(const char *channel, struct winevt
         return NULL;
     }
     ch->query = NULL;
+    ch->remote = NULL;
 
     signal_event = CreateEvent(NULL, TRUE, TRUE, NULL);
 
@@ -508,7 +509,7 @@ buffer_error:
     return message;
 }
 
-PWSTR get_description(EVT_HANDLE handle, LANGID langID, unsigned int *message_size)
+PWSTR get_description(EVT_HANDLE handle, LANGID langID, unsigned int *message_size, HANDLE remote)
 {
     PEVT_VARIANT values = NULL;
     DWORD buffer_size = 0;
@@ -555,7 +556,7 @@ PWSTR get_description(EVT_HANDLE handle, LANGID langID, unsigned int *message_si
         /* Metadata can be NULL because some of the events do not have an
          * associated publisher metadata. */
         metadata = EvtOpenPublisherMetadata(
-                NULL, // TODO: Remote handle
+                remote,
                 values[0].StringVal,
                 NULL,
                 MAKELCID(langID, SORT_DEFAULT),
@@ -890,7 +891,7 @@ int winevtlog_read(struct winevtlog_channel *ch, struct winevtlog_config *ctx,
         for (i = 0; i < ch->count; i++) {
             if (ctx->render_event_as_xml) {
                 system_xml = render_event(ch->events[i], EvtRenderEventXml, &system_size);
-                message = get_description(ch->events[i], LANG_NEUTRAL, &message_size);
+                message = get_description(ch->events[i], LANG_NEUTRAL, &message_size, ch->remote);
                 get_string_inserts(ch->events[i], &string_inserts, &count_inserts, &string_inserts_size);
                 if (system_xml) {
                     /* Caluculate total allocated size: system + message + string_inserts */
@@ -906,7 +907,7 @@ int winevtlog_read(struct winevtlog_channel *ch, struct winevtlog_config *ctx,
             }
             else {
                 render_system_event(ch->events[i], &rendered_system, &system_size);
-                message = get_description(ch->events[i], LANG_NEUTRAL, &message_size);
+                message = get_description(ch->events[i], LANG_NEUTRAL, &message_size, ch->remote);
                 get_string_inserts(ch->events[i], &string_inserts, &count_inserts, &string_inserts_size);
                 if (rendered_system) {
                     /* Caluculate total allocated size: system + message + string_inserts */
