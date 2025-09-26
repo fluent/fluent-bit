@@ -200,14 +200,20 @@ static int in_winevtlog_init(struct flb_input_instance *in,
     ctx->backoff.multiplier_x1000 = (DWORD)(mult * 1000.0);
 
     /* normalize base/max/jitter/retries to sane ranges */
-    if (ctx->backoff.base_ms == 0) {
+    if (ctx->backoff.base_ms <= 0) {
         ctx->backoff.base_ms = 500;
     }
-    if (ctx->backoff.max_ms  == 0) {
+    if (ctx->backoff.max_ms  <= 0) {
         ctx->backoff.max_ms  = 30000;
+    }
+    if (ctx->backoff.jitter_pct < 0) {
+        ctx->backoff.jitter_pct = 0;
     }
     if (ctx->backoff.jitter_pct == 0) {
         ctx->backoff.jitter_pct = 20;
+    }
+    if (ctx->backoff.max_retries < 0) {
+        ctx->backoff.max_retries = 0;
     }
     if (ctx->backoff.max_retries == 0) {
         ctx->backoff.max_retries = 8;
@@ -222,6 +228,9 @@ static int in_winevtlog_init(struct flb_input_instance *in,
     }
     if (ctx->backoff.jitter_pct > 100U) {  /* jitter as percentage */
         ctx->backoff.jitter_pct = 100U;
+    }
+    if ((unsigned) ctx->backoff.max_retries > 100U) { /* cap retries */
+        ctx->backoff.max_retries = 100;
     }
     /* ensure ordering */
     if (ctx->backoff.max_ms < ctx->backoff.base_ms) {
