@@ -209,14 +209,8 @@ static int in_winevtlog_init(struct flb_input_instance *in,
     if (ctx->backoff.jitter_pct < 0) {
         ctx->backoff.jitter_pct = 0;
     }
-    if (ctx->backoff.jitter_pct == 0) {
-        ctx->backoff.jitter_pct = 20;
-    }
     if (ctx->backoff.max_retries < 0) {
         ctx->backoff.max_retries = 0;
-    }
-    if (ctx->backoff.max_retries == 0) {
-        ctx->backoff.max_retries = 8;
     }
 
     /* clamp out-of-range values, protecting against negative INT written into DWORD */
