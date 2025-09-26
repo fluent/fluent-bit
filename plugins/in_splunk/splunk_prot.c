@@ -642,7 +642,7 @@ static int process_hec_payload(struct flb_splunk *ctx, struct splunk_conn *conn,
         ret = handle_hec_payload(ctx, type, tag, request->data.data, request->data.len);
     }
 
-    return 0;
+    return ret;
 }
 
 static int process_hec_raw_payload(struct flb_splunk *ctx, struct splunk_conn *conn,
