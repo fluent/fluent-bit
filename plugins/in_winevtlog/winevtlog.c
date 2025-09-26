@@ -734,6 +734,9 @@ static DWORD calc_backoff_ms(struct winevtlog_channel *ch, const struct winevtlo
     span = (LONG)((ms * jitter) / 100);
     delta = (LONG)(prng16(&ch->prng_state) % (2 * span + 1)) - span;
     with_jitter = (LONG)ms + delta;
+    if (with_jitter < 0) {
+        with_jitter = 0;
+    }
     return (DWORD)with_jitter;
 }
 
