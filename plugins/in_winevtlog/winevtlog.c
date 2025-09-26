@@ -180,12 +180,21 @@ struct winevtlog_channel *winevtlog_subscribe(const char *channel, struct winevt
     err = GetLastError();
     if (!ch->subscription) {
         flb_plg_error(ctx->ins, "cannot subscribe '%s' (%i)", channel, err);
-        flb_free(ch->name);
-        if (ch->query != NULL) {
-            flb_free(ch->query);
+        if (signal_event) {
+            CloseHandle(signal_event);
         }
         if (ch->remote) {
             EvtClose(ch->remote);
+        }
+        if (wide_channel) {
+            flb_free(wide_channel);
+        }
+        if (wide_query) {
+            flb_free(wide_query);
+        }
+        flb_free(ch->name);
+        if (ch->query != NULL) {
+            flb_free(ch->query);
         }
         flb_free(ch);
         return NULL;
