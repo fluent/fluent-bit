@@ -147,6 +147,9 @@ struct winevtlog_channel *winevtlog_subscribe(const char *channel, struct winevt
     ch->cancelled_by_us = FALSE;
     ch->reconnect_needed = FALSE;
     ch->last_error = 0;
+    ch->retry_attempts = 0;
+    ch->next_retry_deadline = 0;
+    ch->prng_state = GetTickCount64() ^ (ULONGLONG)(uintptr_t)ch;
 
     if (stored_bookmark) {
         ch->bookmark = stored_bookmark;
@@ -648,7 +651,56 @@ static int winevtlog_next(struct winevtlog_channel *ch, int hit_threshold)
     return FLB_FALSE;
 }
 
-int winevtlog_reconnect(struct winevtlog_channel *ch, struct winevtlog_config *ctx)
+static inline void backoff_defaults(struct winevtlog_backoff *dst, const struct winevtlog_backoff *src)
+{
+    dst->base_ms          = (src && src->base_ms)          ? src->base_ms          : 500;
+    dst->max_ms           = (src && src->max_ms)           ? src->max_ms           : 30000;
+    dst->multiplier_x1000 = (src && src->multiplier_x1000) ? src->multiplier_x1000 : 2000; /* x2.0 */
+    dst->jitter_pct       = (src && src->jitter_pct)       ? src->jitter_pct       : 20;
+    dst->max_retries      = (src && src->max_retries)      ? src->max_retries      : 8;
+}
+
+static inline DWORD prng16(ULONGLONG *state)
+{
+    *state = (*state * 6364136223846793005ULL + 1ULL);
+    return (DWORD)((*state >> 33) & 0xFFFF);
+}
+
+static DWORD calc_backoff_ms(struct winevtlog_channel *ch, const struct winevtlog_backoff *cfg, DWORD attempt)
+{
+    DWORD i = 0;
+    DWORD ms = 0;
+    LONG span = 0;
+    LONG delta = 0;
+    LONG with_jitter = 0;
+    double mult = (double)cfg->multiplier_x1000 / 1000.0;
+    double t = (double)cfg->base_ms;
+
+    for (i = 0; i < attempt; i++) {
+        t *= mult;
+        if (t >= (double)cfg->max_ms) { t = (double)cfg->max_ms; break; }
+    }
+    ms = (DWORD)((t > (double)cfg->max_ms) ? cfg->max_ms : t);
+    /* ±jitter% */
+    span = (LONG)((ms * cfg->jitter_pct) / 100);
+    delta = (LONG)(prng16(&ch->prng_state) % (2 * span + 1)) - span;
+    with_jitter = (LONG)ms + delta;
+    if (with_jitter < 0) {
+        with_jitter = 0;
+    }
+    return (DWORD)with_jitter;
+}
+
+void winevtlog_schedule_retry(struct winevtlog_channel *ch, struct winevtlog_config *ctx)
+{
+    struct winevtlog_backoff cfg;
+    DWORD delay = 0;
+    backoff_defaults(&cfg, ctx ? &ctx->backoff : NULL);
+    delay = calc_backoff_ms(ch, &cfg, ch->retry_attempts);
+    ch->next_retry_deadline = GetTickCount64() + (ULONGLONG)delay;
+}
+
+int winevtlog_try_reconnect(struct winevtlog_channel *ch, struct winevtlog_config *ctx)
 {
     HANDLE   new_signal = NULL;
     EVT_HANDLE new_remote = NULL;
@@ -755,12 +807,13 @@ int winevtlog_reconnect(struct winevtlog_channel *ch, struct winevtlog_config *c
     ch->subscription    = new_sub;
     ch->remote          = new_remote;
     ch->signal_event    = new_signal;
-    ch->reconnect_needed = FALSE;
-    ch->last_error       = 0;
-    ch->count            = 0;
+    ch->reconnect_needed  = FALSE;
+    ch->retry_attempts    = 0;
+    ch->next_retry_deadline = 0;
+    ch->last_error        = 0;
+    ch->count             = 0;
 
     flb_plg_debug(ctx->ins, "reconnected subscription for '%s'", ch->name);
-
     flb_free(wide_channel);
     if (wide_query) {
         flb_free(wide_query);
@@ -842,10 +895,24 @@ int winevtlog_read(struct winevtlog_channel *ch, struct winevtlog_config *ctx,
     *read = read_size;
 
     if (ch->reconnect_needed) {
-        rc = winevtlog_reconnect(ch, ctx);
-        if (rc != 0) {
-            flb_plg_error(ctx->ins, "reconnect attempt failed for '%s' (last_error=%lu)",
-                          ch->name, ch->last_error);
+        ULONGLONG now = GetTickCount64();
+        if (ch->next_retry_deadline == 0 || now >= ch->next_retry_deadline) {
+            int rc = winevtlog_try_reconnect(ch, ctx);
+            if (rc != 0) {
+                struct winevtlog_backoff eff;
+                backoff_defaults(&eff, ctx ? &ctx->backoff : NULL);
+                if (ch->retry_attempts < eff.max_retries) {
+                    ch->retry_attempts++;
+                    winevtlog_schedule_retry(ch, ctx);
+                    flb_plg_warn(ctx->ins, "reconnect attempt %lu failed for '%s' (err=%lu), next at +%lums",
+                                 (unsigned long)ch->retry_attempts, ch->name, ch->last_error,
+                                 (unsigned long)(ch->next_retry_deadline - now));
+                }
+                else {
+                    flb_plg_error(ctx->ins, "reconnect exhausted for '%s' (last err=%lu)", ch->name, ch->last_error);
+                    ch->reconnect_needed = FALSE;
+                }
+            }
         }
     }
     return 0;
