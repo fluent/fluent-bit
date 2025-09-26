@@ -144,6 +144,9 @@ struct winevtlog_channel *winevtlog_subscribe(const char *channel, struct winevt
         return NULL;
     }
     ch->signal_event = signal_event;
+    ch->cancelled_by_us = FALSE;
+    ch->reconnect_needed = FALSE;
+    ch->last_error = 0;
 
     if (stored_bookmark) {
         ch->bookmark = stored_bookmark;
@@ -184,7 +187,14 @@ struct winevtlog_channel *winevtlog_subscribe(const char *channel, struct winevt
 
 BOOL cancel_subscription(struct winevtlog_channel *ch)
 {
+    ch->cancelled_by_us = TRUE;
     return EvtCancel(ch->subscription);
+}
+
+void winevtlog_request_cancel(struct winevtlog_channel *ch)
+{
+    ch->cancelled_by_us = TRUE;
+    EvtCancel(ch->subscription);
 }
 
 static void close_handles(struct winevtlog_channel *ch)
@@ -604,10 +614,21 @@ static int winevtlog_next(struct winevtlog_channel *ch, int hit_threshold)
 
     if (!has_next) {
         status = GetLastError();
-        if (ERROR_CANCELLED == status) {
+        if (status == ERROR_CANCELLED) {
+            if (ch->cancelled_by_us) {
+                /* Conmsume this flag and return early */
+                ch->cancelled_by_us = FALSE;
+                return FLB_FALSE;
+            }
+            ch->reconnect_needed = TRUE;
+            ch->last_error = status;
+            flb_debug("[in_winevtlog] subscription cancelled unexpectedly (err=%lu), will reconnect", status);
             return FLB_FALSE;
         }
-        if (ERROR_NO_MORE_ITEMS != status) {
+        if (status != ERROR_NO_MORE_ITEMS) {
+            ch->reconnect_needed = TRUE;
+            ch->last_error = status;
+            flb_warn("[in_winevtlog] EvtNext failed (err=%lu), will reconnect", status);
             return FLB_FALSE;
         }
 
@@ -625,6 +646,126 @@ static int winevtlog_next(struct winevtlog_channel *ch, int hit_threshold)
     }
 
     return FLB_FALSE;
+}
+
+int winevtlog_reconnect(struct winevtlog_channel *ch, struct winevtlog_config *ctx)
+{
+    HANDLE   new_signal = NULL;
+    EVT_HANDLE new_remote = NULL;
+    EVT_HANDLE new_sub = NULL;
+    DWORD flags = 0;
+    DWORD err = 0;
+    PWSTR wide_channel = NULL;
+    PWSTR wide_query   = NULL;
+    DWORD len;
+
+    len = MultiByteToWideChar(CP_UTF8, 0, ch->name, -1, NULL, 0);
+    if (len == 0) {
+        return -1;
+    }
+    wide_channel = flb_malloc(sizeof(WCHAR) * len);
+    if (!wide_channel) {
+        return -1;
+    }
+    MultiByteToWideChar(CP_UTF8, 0, ch->name, -1, wide_channel, len);
+
+    if (ch->query) {
+        len = MultiByteToWideChar(CP_UTF8, 0, ch->query, -1, NULL, 0);
+        if (len == 0) {
+            flb_free(wide_channel);
+            return -1;
+        }
+        wide_query = flb_malloc(sizeof(WCHAR) * len);
+        if (!wide_query) {
+            flb_free(wide_channel);
+            return -1;
+        }
+        MultiByteToWideChar(CP_UTF8, 0, ch->query, -1, wide_query, len);
+    }
+
+    new_signal = CreateEvent(NULL, TRUE, TRUE, NULL);
+    if (!new_signal) {
+        flb_free(wide_channel);
+        if (wide_query) {
+            flb_free(wide_query);
+        }
+        return -1;
+    }
+
+    if (ch->session) {
+        new_remote = create_remote_handle(ch->session, &err);
+        if (err != ERROR_SUCCESS || !new_remote) {
+            flb_plg_error(ctx->ins, "reconnect: cannot create remote handle '%s' in %ls (err=%lu)",
+                          ch->name, ch->session->server, err);
+            CloseHandle(new_signal);
+            flb_free(wide_channel);
+            if (wide_query) {
+                flb_free(wide_query);
+            }
+            return -1;
+        }
+    }
+
+    if (ch->bookmark) {
+        flags = EvtSubscribeStartAfterBookmark;
+    }
+    else if (ctx->read_existing_events) {
+        flags = EvtSubscribeStartAtOldestRecord;
+    }
+    else {
+        flags = EvtSubscribeToFutureEvents;
+    }
+
+    new_sub = EvtSubscribe(new_remote, new_signal, wide_channel, wide_query,
+                           ch->bookmark, NULL, NULL, flags);
+    if (!new_sub) {
+        DWORD sub_err = GetLastError();
+        if (sub_err == ERROR_EVT_QUERY_RESULT_STALE) {
+            flb_plg_warn(ctx->ins, "reconnect: bookmark stale on '%s' (err=%lu), falling back to latest",
+                         ch->name, sub_err);
+            flags = ctx->read_existing_events ? EvtSubscribeStartAtOldestRecord
+                                              : EvtSubscribeToFutureEvents;
+            new_sub = EvtSubscribe(new_remote, new_signal, wide_channel, wide_query,
+                                   NULL, NULL, NULL, flags);
+        }
+    }
+
+    if (!new_sub) {
+        DWORD sub_err = GetLastError();
+        flb_plg_error(ctx->ins, "reconnect: EvtSubscribe failed on '%s' (err=%lu)", ch->name, sub_err);
+        if (new_remote) EvtClose(new_remote);
+        CloseHandle(new_signal);
+        flb_free(wide_channel);
+        if (wide_query) {
+            flb_free(wide_query);
+        }
+        return -1;
+    }
+
+    if (ch->subscription) {
+        EvtClose(ch->subscription);
+    }
+    if (ch->remote) {
+        EvtClose(ch->remote);
+    }
+    if (ch->signal_event) {
+        CloseHandle(ch->signal_event);
+    }
+
+    ch->subscription    = new_sub;
+    ch->remote          = new_remote;
+    ch->signal_event    = new_signal;
+    ch->reconnect_needed = FALSE;
+    ch->last_error       = 0;
+    ch->count            = 0;
+
+    flb_plg_debug(ctx->ins, "reconnected subscription for '%s'", ch->name);
+
+    flb_free(wide_channel);
+    if (wide_query) {
+        flb_free(wide_query);
+    }
+    return 0;
 }
 
 /*
@@ -645,6 +786,7 @@ int winevtlog_read(struct winevtlog_channel *ch, struct winevtlog_config *ctx,
     PEVT_VARIANT string_inserts = NULL;
     UINT count_inserts = 0;
     DWORD i = 0;
+    int rc = 0;
 
     while (winevtlog_next(ch, hit_threshold)) {
         for (i = 0; i < ch->count; i++) {
@@ -699,6 +841,13 @@ int winevtlog_read(struct winevtlog_channel *ch, struct winevtlog_config *ctx,
 
     *read = read_size;
 
+    if (ch->reconnect_needed) {
+        rc = winevtlog_reconnect(ch, ctx);
+        if (rc != 0) {
+            flb_plg_error(ctx->ins, "reconnect attempt failed for '%s' (last_error=%lu)",
+                          ch->name, ch->last_error);
+        }
+    }
     return 0;
 }
 

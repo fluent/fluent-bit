@@ -64,6 +64,11 @@ struct winevtlog_channel {
     int count;
     struct winevtlog_session *session;
 
+    /* reconnect */
+    BOOL   cancelled_by_us;
+    BOOL   reconnect_needed;
+    DWORD  last_error;
+
     char *name;
     char *query;
     unsigned int time_updated;
