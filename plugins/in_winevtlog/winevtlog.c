@@ -88,12 +88,12 @@ struct winevtlog_channel *winevtlog_subscribe(const char *channel, struct winevt
 
     // channel : To wide char
     len = MultiByteToWideChar(CP_UTF8, 0, channel, -1, NULL, 0);
-    wide_channel = flb_malloc(sizeof(PWSTR) * len);
+    wide_channel = flb_malloc(sizeof(WCHAR) * len);
     MultiByteToWideChar(CP_UTF8, 0, channel, -1, wide_channel, len);
     if (query != NULL) {
     // query : To wide char
         len = MultiByteToWideChar(CP_UTF8, 0, query, -1, NULL, 0);
-        wide_query = flb_malloc(sizeof(PWSTR) * len);
+        wide_query = flb_malloc(sizeof(WCHAR) * len);
         MultiByteToWideChar(CP_UTF8, 0, query, -1, wide_query, len);
         ch->query = flb_strdup(query);
     }
@@ -1013,7 +1013,7 @@ static wchar_t* convert_str(char *str)
         return NULL;
     }
 
-    buf = flb_malloc(sizeof(PWSTR) * size);
+    buf = flb_malloc(sizeof(WCHAR) * size);
     if (buf == NULL) {
         flb_errno();
         return NULL;
