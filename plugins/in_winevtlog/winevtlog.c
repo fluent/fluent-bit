@@ -707,13 +707,23 @@ static int winevtlog_next(struct winevtlog_channel *ch, int hit_threshold)
     return FLB_FALSE;
 }
 
-static inline void backoff_defaults(struct winevtlog_backoff *dst, const struct winevtlog_backoff *src)
+static const struct winevtlog_backoff WINEVTLOG_BACKOFF_DEFAULTS = {
+    500,     /* base_ms */
+    30000,   /* max_ms  */
+    2000,    /* multiplier_x1000 == x2.0 */
+    20,      /* jitter_pct */
+    8        /* max_retries */
+};
+
+static inline void backoff_effective(struct winevtlog_backoff *dst,
+                                     const struct winevtlog_backoff *src)
 {
-    dst->base_ms          = (src && src->base_ms)          ? src->base_ms          : 500;
-    dst->max_ms           = (src && src->max_ms)           ? src->max_ms           : 30000;
-    dst->multiplier_x1000 = (src && src->multiplier_x1000) ? src->multiplier_x1000 : 2000; /* x2.0 */
-    dst->jitter_pct       = (src && src->jitter_pct)       ? src->jitter_pct       : 20;
-    dst->max_retries      = (src && src->max_retries)      ? src->max_retries      : 8;
+    if (src) {
+        *dst = *src;
+    }
+    else {
+        *dst = WINEVTLOG_BACKOFF_DEFAULTS;
+    }
 }
 
 static inline DWORD prng16(ULONGLONG *state)
@@ -753,7 +763,7 @@ void winevtlog_schedule_retry(struct winevtlog_channel *ch, struct winevtlog_con
 {
     struct winevtlog_backoff cfg;
     DWORD delay = 0;
-    backoff_defaults(&cfg, ctx ? &ctx->backoff : NULL);
+    backoff_effective(&cfg, ctx ? &ctx->backoff : NULL);
     delay = calc_backoff_ms(ch, &cfg, ch->retry_attempts);
     ch->next_retry_deadline = GetTickCount64() + (ULONGLONG)delay;
 }
@@ -958,7 +968,7 @@ int winevtlog_read(struct winevtlog_channel *ch, struct winevtlog_config *ctx,
             int rc = winevtlog_try_reconnect(ch, ctx);
             if (rc != 0) {
                 struct winevtlog_backoff eff;
-                backoff_defaults(&eff, ctx ? &ctx->backoff : NULL);
+                backoff_effective(&eff, ctx ? &ctx->backoff : NULL);
                 if (ch->retry_attempts < eff.max_retries) {
                     ch->retry_attempts++;
                     winevtlog_schedule_retry(ch, ctx);
