@@ -36,6 +36,7 @@
 #include <fluent-bit/flb_http_client.h>
 #include <fluent-bit/flb_utils.h>
 #include <fluent-bit/flb_base64.h>
+#include <fluent-bit/aws/flb_aws_compress.h>
 
 #include <monkey/mk_core.h>
 #include <msgpack.h>
@@ -227,6 +228,7 @@ static int process_event(struct flb_kinesis *ctx, struct flush *buf,
     struct tm *tmp;
     size_t len;
     size_t tmp_size;
+    void *compressed_tmp_buf;
     char *out_buf;
 
     tmp_buf_ptr = buf->tmp_buf + buf->tmp_buf_offset;
@@ -340,29 +342,52 @@ static int process_event(struct flb_kinesis *ctx, struct flush *buf,
     memcpy(tmp_buf_ptr + written, "\n", 1);
     written++;
 
-    /*
-     * check if event_buf is initialized and big enough
-     * Base64 encoding will increase size by ~4/3
-     */
-    size = (written * 1.5) + 4;
-    if (buf->event_buf == NULL || buf->event_buf_size < size) {
-        flb_free(buf->event_buf);
-        buf->event_buf = flb_malloc(size);
-        buf->event_buf_size = size;
-        if (buf->event_buf == NULL) {
+    if (ctx->compression == FLB_AWS_COMPRESS_NONE) {
+        /*
+         * check if event_buf is initialized and big enough
+         * Base64 encoding will increase size by ~4/3
+         */
+        size = (written * 1.5) + 4;
+        if (buf->event_buf == NULL || buf->event_buf_size < size) {
+            flb_free(buf->event_buf);
+            buf->event_buf = flb_malloc(size);
+            buf->event_buf_size = size;
+            if (buf->event_buf == NULL) {
+                flb_errno();
+                return -1;
+            }
+        }
+
+        tmp_buf_ptr = buf->tmp_buf + buf->tmp_buf_offset;
+        ret = flb_base64_encode((unsigned char *) buf->event_buf, size, &b64_len,
+                                    (unsigned char *) tmp_buf_ptr, written);
+        if (ret != 0) {
             flb_errno();
             return -1;
         }
+        written = b64_len;
     }
-
-    tmp_buf_ptr = buf->tmp_buf + buf->tmp_buf_offset;
-    ret = flb_base64_encode((unsigned char *) buf->event_buf, size, &b64_len,
-                                (unsigned char *) tmp_buf_ptr, written);
-    if (ret != 0) {
-        flb_errno();
-        return -1;
+    else {
+        /*
+         * compress event, truncating input if needed
+         * replace event buffer with compressed buffer
+         */
+        ret = flb_aws_compression_b64_truncate_compress(ctx->compression,
+                                                       MAX_B64_EVENT_SIZE,
+                                                       tmp_buf_ptr,
+                                                       written, &compressed_tmp_buf,
+                                                       &size); /* evaluate size */
+        
+        if (ret == -1) {
+            flb_plg_error(ctx->ins, "Unable to compress record, discarding, "
+                                    "%s", ctx->stream_name);
+            return 2;
+        }
+        flb_free(buf->event_buf);
+        buf->event_buf = compressed_tmp_buf;
+        compressed_tmp_buf = NULL;
+        written = size;
     }
-    written = b64_len;
 
     tmp_buf_ptr = buf->tmp_buf + buf->tmp_buf_offset;
     if ((buf->tmp_buf_size - buf->tmp_buf_offset) < written) {
