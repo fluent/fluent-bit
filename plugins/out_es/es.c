@@ -890,11 +890,13 @@ static void cb_es_flush(struct flb_event_chunk *event_chunk,
         flb_http_basic_auth(c, ctx->cloud_user, ctx->cloud_passwd);
     }
     else if (ctx->http_api_key) {
-        header_line = flb_sds_printf(NULL, "ApiKey %s", ctx->http_api_key);
+        /* 7 for ApiKey + space */
+        header_line = flb_sds_create_size(strlen(ctx->http_api_key)+7);
         if (header_line == NULL) {
             flb_plg_error(ctx->ins, "failed to format API key auth header");
             goto retry;
         }
+        header_line = flb_sds_printf(&header_line, "ApiKey %s", ctx->http_api_key);
 
         if (flb_http_add_header(c,
                                 FLB_HTTP_HEADER_AUTH, strlen(FLB_HTTP_HEADER_AUTH),
