@@ -214,6 +214,24 @@ static int flb_input_chunk_release_space(
                                 dropped_record_count,
                                 1, (char *[]) {(char *) flb_output_name(output_plugin)});
 
+                if (old_input_chunk->event_type == FLB_INPUT_LOGS) {
+                    struct flb_router *router = output_plugin->config->router;
+
+                    cmt_counter_add(router->logs_drop_records_total,
+                                    cfl_time_now(),
+                                    dropped_record_count,
+                                    2,
+                                    (char *[]){(char *) flb_input_name(old_input_chunk->in),
+                                                (char *) flb_output_name(output_plugin)});
+
+                    cmt_counter_add(router->logs_drop_bytes_total,
+                                    cfl_time_now(),
+                                    chunk_size,
+                                    2,
+                                    (char *[]){(char *) flb_input_name(old_input_chunk->in),
+                                                (char *) flb_output_name(output_plugin)});
+                }
+
                 flb_metrics_sum(FLB_METRIC_OUT_DROPPED_RECORDS,
                                 dropped_record_count,
                                 output_plugin->metrics);
