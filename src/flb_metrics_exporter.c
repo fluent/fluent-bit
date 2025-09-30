@@ -32,6 +32,7 @@
 #include <fluent-bit/flb_pack.h>
 #include <fluent-bit/flb_http_server.h>
 #include <fluent-bit/flb_storage.h>
+#include <fluent-bit/flb_router.h>
 #include <fluent-bit/flb_metrics.h>
 #include <fluent-bit/flb_metrics_exporter.h>
 
@@ -297,6 +298,19 @@ struct cmt *flb_me_get_cmetrics(struct flb_config *ctx)
             cmt_destroy(cmt);
             return NULL;
         }
+    }
+
+    if (ctx->router && ctx->router->cmt) {
+        ret = cmt_cat(cmt, ctx->router->cmt);
+        if (ret == -1) {
+            flb_error("[metrics exporter] could not append routing metrics");
+            cmt_destroy(cmt);
+            return NULL;
+        }
+        printf("debug after appending routing metrics\n");
+        flb_sds_t t= cmt_encode_text_create(cmt);
+        printf("%s\n", t);
+        cmt_encode_text_destroy(t);
     }
 
     /* Pipeline metrics: input, filters, outputs */

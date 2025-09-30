@@ -305,6 +305,20 @@ static inline int handle_output_event(uint64_t ts,
         cmt_counter_add(ins->cmt_proc_bytes, ts, task->event_chunk->size,
                         1, (char *[]) {name});
 
+        /* router metrics */
+        if (task->event_chunk->type == FLB_INPUT_LOGS) {
+            char *in_name = (char *) flb_input_name(task->i_ins);
+            char *out_name = (char *) flb_output_name(ins);
+
+            cmt_counter_add(config->router->logs_records_total, ts,
+                            task->event_chunk->total_events,
+                            2, (char *[]){in_name, out_name});
+
+            cmt_counter_add(config->router->logs_bytes_total, ts,
+                            task->event_chunk->size,
+                            2, (char *[]){in_name, out_name});
+        }
+
         /* [OLD API] Update metrics */
 #ifdef FLB_HAVE_METRICS
         if (ins->metrics) {
@@ -348,6 +362,19 @@ static inline int handle_output_event(uint64_t ts,
             cmt_counter_add(ins->cmt_dropped_records, ts, task->records,
                             1, (char *[]) {name});
 
+            if (task->event_chunk->type == FLB_INPUT_LOGS) {
+                char *in_name = (char *) flb_input_name(task->i_ins);
+                char *out_name = (char *) flb_output_name(ins);
+
+                cmt_counter_add(config->router->logs_drop_records_total, ts,
+                                task->records,
+                                2, (char *[]){in_name, out_name});
+
+                cmt_counter_add(config->router->logs_drop_bytes_total, ts,
+                                task->event_chunk->size,
+                                2, (char *[]){in_name, out_name});
+            }
+
             cmt_gauge_set(ins->cmt_chunk_available_capacity_percent, ts,
                           calculate_chunk_capacity_percent(ins),
                           1, (char *[]) {name});
@@ -383,6 +410,19 @@ static inline int handle_output_event(uint64_t ts,
             cmt_counter_inc(ins->cmt_retries_failed, ts, 1, (char *[]) {name});
             cmt_counter_add(ins->cmt_dropped_records, ts, task->records,
                             1, (char *[]) {name});
+
+            if (task->event_chunk->type == FLB_INPUT_LOGS) {
+                char *in_name = (char *) flb_input_name(task->i_ins);
+                char *out_name = (char *) flb_output_name(ins);
+
+                cmt_counter_add(config->router->logs_drop_records_total, ts,
+                                task->records,
+                                2, (char *[]){in_name, out_name});
+
+                cmt_counter_add(config->router->logs_drop_bytes_total, ts,
+                                task->event_chunk->size,
+                                2, (char *[]){in_name, out_name});
+            }
 
             cmt_gauge_set(ins->cmt_chunk_available_capacity_percent, ts,
                           calculate_chunk_capacity_percent(ins),
@@ -460,6 +500,19 @@ static inline int handle_output_event(uint64_t ts,
         cmt_counter_inc(ins->cmt_errors, ts, 1, (char *[]) {name});
         cmt_counter_add(ins->cmt_dropped_records, ts, task->records,
                         1, (char *[]) {name});
+
+        if (task->event_chunk->type == FLB_INPUT_LOGS) {
+            char *in_name = (char *) flb_input_name(task->i_ins);
+            char *out_name = (char *) flb_output_name(ins);
+
+            cmt_counter_add(config->router->logs_drop_records_total, ts,
+                            task->records,
+                            2, (char *[]){in_name, out_name});
+
+            cmt_counter_add(config->router->logs_drop_bytes_total, ts,
+                            task->event_chunk->size,
+                            2, (char *[]){in_name, out_name});
+        }
 
         cmt_gauge_set(ins->cmt_chunk_available_capacity_percent, ts,
                       calculate_chunk_capacity_percent(ins),
