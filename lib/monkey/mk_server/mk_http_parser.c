@@ -74,8 +74,9 @@ struct row_entry mk_headers_table[] = {
     { 19, "last-modified-since" },
     {  5, "range"               },
     {  7, "referer"             },
+    { 17, "transfer-encoding"   },
     {  7, "upgrade"             },
-    { 10, "user-agent"          }
+    { 10, "user-agent"          },
 };
 
 static inline void reverse_char_lookup(char *buf, char c, int len, struct mk_http_parser *p)
@@ -224,6 +225,11 @@ static inline int header_lookup(struct mk_http_parser *p, char *buffer)
             header->val.data = buffer + p->header_val;
             header->val.len  = p->end - p->header_val;
             p->header_count++;
+
+            if (!mk_list_entry_is_orphan(&header->_head)) {
+                mk_list_del(&header->_head);
+            }
+
             mk_list_add(&header->_head, &p->header_list);
 
             if (i == MK_HEADER_HOST) {
@@ -314,6 +320,52 @@ static inline int header_lookup(struct mk_http_parser *p, char *buffer)
                     }
                 }
             }
+            else if (i == MK_HEADER_TRANSFER_ENCODING) {
+                /* Check Transfer-Encoding: chunked */
+                pos = mk_string_search_n(header->val.data,
+                                         "chunked",
+                                         MK_STR_INSENSITIVE,
+                                         header->val.len);
+                if (pos >= 0) {
+                    p->header_transfer_encoding |= MK_HTTP_PARSER_TRANSFER_ENCODING_CHUNKED;
+                }
+
+                /* Check Transfer-Encoding: gzip */
+                pos = mk_string_search_n(header->val.data,
+                                         "gzip",
+                                         MK_STR_INSENSITIVE,
+                                         header->val.len);
+                if (pos >= 0) {
+                    p->header_transfer_encoding |= MK_HTTP_PARSER_TRANSFER_ENCODING_GZIP;
+                }
+
+                /* Check Transfer-Encoding: compress */
+                pos = mk_string_search_n(header->val.data,
+                                         "compress",
+                                         MK_STR_INSENSITIVE,
+                                         header->val.len);
+                if (pos >= 0) {
+                    p->header_transfer_encoding |= MK_HTTP_PARSER_TRANSFER_ENCODING_COMPRESS;
+                }
+
+                /* Check Transfer-Encoding: deflate */
+                pos = mk_string_search_n(header->val.data,
+                                         "deflate",
+                                         MK_STR_INSENSITIVE,
+                                         header->val.len);
+                if (pos >= 0) {
+                    p->header_transfer_encoding |= MK_HTTP_PARSER_TRANSFER_ENCODING_DEFLATE;
+                }
+
+                /* Check Transfer-Encoding: identity */
+                pos = mk_string_search_n(header->val.data,
+                                         "identity",
+                                         MK_STR_INSENSITIVE,
+                                         header->val.len);
+                if (pos >= 0) {
+                    p->header_transfer_encoding |= MK_HTTP_PARSER_TRANSFER_ENCODING_IDENTITY;
+                }
+            }
             else if (i == MK_HEADER_UPGRADE) {
                     if (header_cmp(MK_UPGRADE_H2C,
                                    header->val.data, header->val.len) == 0) {
@@ -354,6 +406,290 @@ static inline int header_lookup(struct mk_http_parser *p, char *buffer)
     return -MK_CLIENT_REQUEST_ENTITY_TOO_LARGE;
 }
 
+
+/* check if the HTTP content is chunked so it contain hexa string length headers */
+int mk_http_parser_is_content_chunked(struct mk_http_parser *p)
+{
+    return p->header_transfer_encoding & MK_HTTP_PARSER_TRANSFER_ENCODING_CHUNKED;
+}
+
+size_t mk_http_parser_content_length(struct mk_http_parser *p)
+{
+    /*
+     * returns the content length of the payload. If the content-length header was
+     * set, it will return the value of the header. If the content-length header was
+     * not set and instead the transfer-encoding header was set to chunked, it will
+     * return the length of the payload withouto counting the chunked headers.
+     */
+
+    if (!mk_http_parser_is_content_chunked(p)) {
+        return p->header_content_length;
+    }
+    else {
+        return p->chunk_total_size_received;
+    }
+
+    return 0;
+}
+
+
+int cb_debug_chunk_complete(char *in, size_t in_len, char *out, size_t out_len, size_t *out_len_processed)
+{
+    (void) out;
+    (void) out_len;
+    char *buf;
+
+    /* copy the chunked content into the buffer */
+    buf = mk_mem_alloc(in_len + 1);
+    if (!buf) {
+        return -1;
+    }
+
+    memcpy(buf, in, in_len);
+    buf[in_len] = '\0';
+
+    printf("==CHUNK DETECTED CONTENT (length=%zu)==\n'%s'\n---\n", in_len, buf);
+    mk_mem_free(buf);
+
+    *out_len_processed = in_len;
+
+    return 0;
+}
+
+/*
+ * Check if the request body is complete, incomplete or if it has an error while processing
+ * the chunks for a chunked transfer encoded payload
+ */
+static int http_parser_transfer_encoding_chunked(struct mk_http_parser *p,
+                                                 char *buf_request, size_t buf_request_len,
+                                                 int (*cb_chunk_complete)(char *in, size_t in_len, char *out, size_t out_len, size_t *out_len_processed),
+                                                 char *out_buf, size_t out_buf_size, size_t *out_buf_len)
+{
+    int64_t len;
+    int64_t chunk_len;
+    int64_t pos;
+    char tmp[32];
+    char *ptr;
+    char *content_start;
+    size_t available_bytes;
+
+    p->level = REQ_LEVEL_BODY;
+
+parse_more:
+
+    /* read the payload and check if the request has finished based on the logic of transfer encoding chunked */
+    if (!p->chunk_processed_start) {
+        /*
+         * if p->chunk_processed_start is not set, it means we are parsing from the beginning. Note that
+         * p->chunk_expected_start is set, it means the content was already processed before, so we just
+         * adjust the pointer, otherwise we use the parser iterator index (p->i) for it.
+         */
+        if (p->chunk_expected_start) {
+            p->chunk_processed_start = p->chunk_expected_start;
+        }
+        else {
+            p->chunk_processed_start = buf_request + p->i;
+
+            /* Mark the very first chunk */
+            p->chunk_expected_start = p->chunk_processed_start;
+        }
+
+        len = buf_request_len - p->i;
+        if (len == 0) {
+            return MK_HTTP_PARSER_PENDING;
+        }
+
+        if (p->chunk_processed_start[0] != '\n') {
+            return MK_HTTP_PARSER_ERROR;
+        }
+
+        /* we are at the beginning of a chunk, we need to find the end */
+        p->chunk_processed_start++;
+        len--;
+
+    }
+    else {
+        len = buf_request_len - (p->chunk_processed_end - buf_request);
+    }
+
+    /* find the end of the 'chunk header' (e.g: ffae\r\n\r\n) */
+    pos = mk_string_search_n(p->chunk_processed_start, "\r\n", MK_STR_SENSITIVE, len);
+    if (pos < 0) {
+        return MK_HTTP_PARSER_PENDING;
+    }
+
+    /* length of the hex string */
+    len = (p->chunk_processed_start + pos) - p->chunk_processed_start;
+    if (((unsigned long) len > sizeof(tmp) - 1) || len == 0) {
+        return MK_HTTP_PARSER_ERROR;
+    }
+
+    /* copy the hex string to a temporary buffer */
+    memcpy(tmp, p->chunk_processed_start, len);
+    tmp[len] = '\0';
+
+    /* convert the hex string to a number */
+    errno = 0;
+    chunk_len = strtol(tmp, &ptr, 16);
+    if ((errno == ERANGE && (chunk_len == LONG_MAX || chunk_len == LONG_MIN)) ||
+        (errno != 0)) {
+        return MK_HTTP_PARSER_ERROR;
+    }
+
+    if (chunk_len < 0) {
+        return MK_HTTP_PARSER_ERROR;
+    }
+    else if (chunk_len == 0) {
+        /* we have reached the end of the request, validate the last \r\n\r\n exists */
+        len = buf_request_len - (p->chunk_processed_start - buf_request);
+
+        if (len < 5) {
+            return MK_HTTP_PARSER_PENDING;
+        }
+
+        /* all or nothing */
+        if (strncmp(p->chunk_processed_start, "0\r\n\r\n", 5) != 0) {
+            return MK_HTTP_PARSER_ERROR;
+        }
+
+        return MK_HTTP_PARSER_OK;
+    }
+    else {
+        /* set the new markers: required size and start position after the hex string length */
+        p->chunk_expected_size = chunk_len;
+
+        /* the content starts after the hex_str_length\r\n */
+        content_start = p->chunk_processed_start + pos + 2;
+
+        /* calculate the amount of available bytes 'after' content_start */
+        available_bytes = buf_request_len - (content_start - buf_request);
+
+        /* do we have all the remaining data needed in our buffer ? */
+        if (available_bytes >= p->chunk_expected_size + 2 /* \r\n */) {
+            /* we have all the data needed */
+            p->chunk_processed_end = content_start + p->chunk_expected_size;
+
+            /* check for delimiter \r\n */
+            if (p->chunk_processed_end[0] != '\r' || p->chunk_processed_end[1] != '\n') {
+                return MK_HTTP_PARSER_ERROR;
+            }
+
+            /*
+             * If the callback function has been set, invoke it: this callback might be useful for
+             * debugging and/or provide a way to copy the chunked content into a buffer
+             */
+            if (cb_chunk_complete) {
+                cb_chunk_complete(content_start, chunk_len, out_buf, out_buf_size, out_buf_len);
+            }
+
+            /* set the new start for the new chunk */
+            p->chunk_processed_start = p->chunk_processed_end + 2;
+            p->chunk_total_size_received += chunk_len;
+            goto parse_more;
+        }
+        else {
+            /* we need more data */
+            return MK_HTTP_PARSER_PENDING;
+        }
+
+    }
+    /* is our chunk complete ? */
+    return MK_HTTP_PARSER_PENDING;
+
+}
+
+/* Read the chunked content and invoke callback if it has been set */
+int mk_http_parser_read_chunked_content(struct mk_http_parser *p,
+                                        char *buf_request, size_t buf_request_len,
+                                        int (*cb_chunk_complete)(char *in, size_t in_len, char *out, size_t out_size, size_t *out_len),
+                                        char *out_buf, size_t out_buf_size, size_t *out_buf_len)
+{
+    p->chunk_processed_start = NULL;
+    p->chunk_processed_end = NULL;
+
+    return http_parser_transfer_encoding_chunked(p,
+                                                 buf_request, buf_request_len,
+                                                 cb_chunk_complete,
+                                                 out_buf, out_buf_size, out_buf_len);
+}
+
+/*
+ * Callback function used by mk_http_parser_chunked_decode to provide a new buffer with the content
+ * of the payload decoded
+ */
+static int cb_copy_chunk(char *in, size_t in_len, char *out, size_t out_size, size_t *out_len_processed)
+{
+    (void) out_size;
+
+    /* check we don't overflow the buffer */
+    if (*out_len_processed + in_len > out_size) {
+        return -1;
+    }
+
+    /* copy the chunk */
+    memcpy(out + *out_len_processed, in, in_len);
+    *out_len_processed += in_len;
+
+    return 0;
+}
+
+/*
+ * This function assumes that the output buffer size has enough space to copy the desired
+ * chunked content. We do some sanity checks but if the buffer is smaller the data will
+ * be truncated.
+ */
+int mk_http_parser_chunked_decode_buf(struct mk_http_parser *p,
+                                      char *buf_request, size_t buf_request_len,
+                                      char *out_buf, size_t out_buf_size, size_t *out_buf_len)
+{
+    int ret;
+    size_t written_bytes = 0;
+
+    ret = mk_http_parser_read_chunked_content(p,
+                                              buf_request, buf_request_len,
+                                              cb_copy_chunk,
+                                              out_buf, out_buf_size, &written_bytes);
+    if (ret == MK_HTTP_PARSER_OK) {
+        *out_buf_len = written_bytes;
+        return 0;
+    }
+
+    return -1;
+}
+
+int mk_http_parser_chunked_decode(struct mk_http_parser *p,
+                                    char *buf_request, size_t buf_request_len,
+                                    char **out_buf, size_t *out_buf_size)
+{
+    int ret;
+    char *tmp_buf;
+    size_t tmp_buf_size = 0;
+    size_t tmp_written_bytes = 0;
+
+    tmp_buf_size = mk_http_parser_content_length(p);
+    if (tmp_buf_size == 0) {
+        return -1;
+    }
+
+    tmp_buf = mk_mem_alloc(tmp_buf_size);
+    if (!tmp_buf) {
+        return -1;
+    }
+
+    ret = mk_http_parser_chunked_decode_buf(p,
+                                            buf_request, buf_request_len,
+                                            tmp_buf, tmp_buf_size, &tmp_written_bytes);
+    if (ret == -1) {
+        mk_mem_free(tmp_buf);
+        return -1;
+    }
+
+    *out_buf = tmp_buf;
+    *out_buf_size = tmp_written_bytes;
+
+    return 0;
+}
+
 /*
  * This function is invoked everytime the parser evaluate the request is
  * OK. Here we perform some extra validations mostly based on some logic
@@ -361,8 +697,11 @@ static inline int header_lookup(struct mk_http_parser *p, char *buffer)
  */
 static inline int mk_http_parser_ok(struct mk_http_request *req,
                                     struct mk_http_parser *p,
+                                    char *buf_request, size_t buf_request_len,
                                     struct mk_server *server)
 {
+    int ret;
+
     /* Validate HTTP Version */
     if (req->protocol == MK_HTTP_PROTOCOL_UNKNOWN) {
         mk_http_error(MK_SERVER_HTTP_VERSION_UNSUP, req->session, req, server);
@@ -371,10 +710,20 @@ static inline int mk_http_parser_ok(struct mk_http_request *req,
 
     /* POST checks */
     if (req->method == MK_METHOD_POST || req->method == MK_METHOD_PUT) {
-        /* validate Content-Length exists */
-        if (p->headers[MK_HEADER_CONTENT_LENGTH].type == 0) {
-            mk_http_error(MK_CLIENT_LENGTH_REQUIRED, req->session, req, server);
-            return MK_HTTP_PARSER_ERROR;
+        /* validate Content-Length exists for non-chunked requests */
+        if (mk_http_parser_is_content_chunked(p)) {
+            p->level = REQ_LEVEL_BODY;
+
+            ret = http_parser_transfer_encoding_chunked(p,
+                                                        buf_request, buf_request_len,
+                                                        NULL, NULL, 0, NULL);
+            return ret;
+        }
+        else {
+            if (p->headers[MK_HEADER_CONTENT_LENGTH].type == 0) {
+                mk_http_error(MK_CLIENT_LENGTH_REQUIRED, req->session, req, server);
+                return MK_HTTP_PARSER_ERROR;
+            }
         }
     }
 
@@ -543,7 +892,7 @@ int mk_http_parser(struct mk_http_request *req, struct mk_http_parser *p,
                 break;
             case MK_ST_BLOCK_END:
                 if (buffer[p->i] == '\n') {
-                    return mk_http_parser_ok(req, p, server);
+                    return mk_http_parser_ok(req, p, buffer, buf_len, server);
                 }
                 else {
                     return MK_HTTP_PARSER_ERROR;
@@ -613,6 +962,9 @@ int mk_http_parser(struct mk_http_request *req, struct mk_http_parser *p,
                     case 'u':
                         p->header_min = MK_HEADER_UPGRADE;
                         p->header_max = MK_HEADER_USER_AGENT;
+                        break;
+                    case 't':
+                        header_scope_eq(p, MK_HEADER_TRANSFER_ENCODING);
                         break;
                     default:
                         p->header_key = -1;
@@ -710,7 +1062,7 @@ int mk_http_parser(struct mk_http_request *req, struct mk_http_parser *p,
                     start_next();
                 }
                 else {
-                    return mk_http_parser_ok(req, p, server);
+                    return mk_http_parser_ok(req, p, buffer, buf_len, server);
                 }
             }
             else {
@@ -736,7 +1088,7 @@ int mk_http_parser(struct mk_http_request *req, struct mk_http_parser *p,
                 req->data.len  = p->body_received;
                 req->data.data = (buffer + p->start);
             }
-            return mk_http_parser_ok(req, p, server);
+            return mk_http_parser_ok(req, p, buffer, buf_len, server);
         }
     }
 

@@ -23,8 +23,6 @@
 #include <fluent-bit/flb_processor.h>
 #include <cfl/cfl.h>
 
-//#include "variant_utils.h"
-
 #include "cm.h"
 #include "cm_utils.h"
 
@@ -117,9 +115,9 @@ static int span_convert_attribute(struct ctrace_span *span,
         return FLB_FALSE;
     }
 
-    ret = cfl_variant_convert(attribute,
-                              &converted_attribute,
-                              new_type);
+    ret = cm_utils_variant_convert(attribute,
+                                   &converted_attribute,
+                                   new_type);
 
     if (ret != FLB_TRUE) {
         return FLB_FALSE;
@@ -262,107 +260,6 @@ static int context_contains_attribute(struct ctrace *traces_context,
     return FLB_FALSE;
 }
 
-static int hex_encode(unsigned char *input_buffer,
-                      size_t input_length,
-                      cfl_sds_t *output_buffer)
-{
-    const char hex[] = "0123456789abcdef";
-    cfl_sds_t  result;
-    size_t     index;
-
-    if (cfl_sds_alloc(*output_buffer) <= (input_length * 2)) {
-        result = cfl_sds_increase(*output_buffer,
-                                  (input_length * 2) -
-                                  cfl_sds_alloc(*output_buffer));
-
-        if (result == NULL) {
-            return FLB_FALSE;
-        }
-
-        *output_buffer = result;
-    }
-
-    for (index = 0; index < input_length; index++) {
-        (*output_buffer)[index * 2 + 0] = hex[(input_buffer[index] >> 4) & 0xF];
-        (*output_buffer)[index * 2 + 1] = hex[(input_buffer[index] >> 0) & 0xF];
-    }
-
-    cfl_sds_set_len(*output_buffer, input_length * 2);
-
-    (*output_buffer)[index * 2] = '\0';
-
-    return FLB_TRUE;
-}
-
-static int hash_transformer(void *context, struct cfl_variant *value)
-{
-    unsigned char       digest_buffer[32];
-    struct cfl_variant *converted_value;
-    cfl_sds_t           encoded_hash;
-    int                 result;
-
-    if (value == NULL) {
-        return FLB_FALSE;
-    }
-
-    result = cfl_variant_convert(value,
-                                 &converted_value,
-                                 CFL_VARIANT_STRING);
-
-    if (result != FLB_TRUE) {
-        return FLB_FALSE;
-    }
-
-    if (cfl_sds_len(converted_value->data.as_string) == 0) {
-        cfl_variant_destroy(converted_value);
-        return FLB_TRUE;
-    }
-
-    result = flb_hash_simple(FLB_HASH_SHA256,
-                             (unsigned char *) converted_value->data.as_string,
-                             cfl_sds_len(converted_value->data.as_string),
-                             digest_buffer,
-                             sizeof(digest_buffer));
-
-    if (result != FLB_CRYPTO_SUCCESS) {
-        cfl_variant_destroy(converted_value);
-        return FLB_FALSE;
-    }
-
-    result = hex_encode(digest_buffer,
-                        sizeof(digest_buffer),
-                        &converted_value->data.as_string);
-
-    if (result != FLB_TRUE) {
-        cfl_variant_destroy(converted_value);
-        return FLB_FALSE;
-    }
-
-    encoded_hash = cfl_sds_create(converted_value->data.as_string);
-    if (encoded_hash == NULL) {
-        cfl_variant_destroy(converted_value);
-        return FLB_FALSE;
-    }
-    cfl_variant_destroy(converted_value);
-
-
-    if (value->type == CFL_VARIANT_STRING ||
-        value->type == CFL_VARIANT_BYTES) {
-        cfl_sds_destroy(value->data.as_string);
-    }
-    else if (value->type == CFL_VARIANT_ARRAY) {
-        cfl_array_destroy(value->data.as_array);
-    }
-    else if (value->type == CFL_VARIANT_KVLIST) {
-        cfl_kvlist_destroy(value->data.as_kvlist);
-    }
-
-    value->type = CFL_VARIANT_STRING;
-    value->data.as_string = encoded_hash;
-
-    return FLB_TRUE;
-}
-
 static int traces_context_hash_attribute(struct ctrace *traces_context,
                                          char *name)
 {
@@ -374,7 +271,7 @@ static int traces_context_hash_attribute(struct ctrace *traces_context,
                               struct ctrace_span, _head_global);
 
         if (span_contains_attribute(span, name) == FLB_TRUE) {
-            if (span_transform_attribute(span, name, hash_transformer) != FLB_TRUE) {
+            if (span_transform_attribute(span, name, cm_utils_hash_transformer) != FLB_TRUE) {
                 return FLB_FALSE;
             }
         }
@@ -663,6 +560,7 @@ static int traces_hash_attributes(struct content_modifier_ctx *ctx, struct ctrac
 int cm_traces_process(struct flb_processor_instance *ins,
                       struct content_modifier_ctx *ctx,
                       struct ctrace *traces_context,
+                      struct ctrace **out_traces_context,
                       const char *tag, int tag_len)
 {
     int ret = -1;
@@ -689,6 +587,8 @@ int cm_traces_process(struct flb_processor_instance *ins,
     else if (ctx->action_type == CM_ACTION_CONVERT) {
         ret = traces_convert_attributes(ctx, traces_context, ctx->key, ctx->converted_type);
     }
+
+    *out_traces_context = traces_context;
 
     if (ret != 0) {
         return FLB_PROCESSOR_FAILURE;

@@ -26,7 +26,6 @@
 #include <fluent-bit/flb_uri.h>
 #include <fluent-bit/flb_upstream_conn.h>
 #include <fluent-bit/flb_net_dns.h>
-#include <ares.h>
 
 #define FLB_NETWORK_DEFAULT_BACKLOG_SIZE              128
 #define FLB_NETWORK_UNIX_SOCKET_PEER_ADDRESS_TEMPLATE "pid_%s"
@@ -68,6 +67,18 @@ struct flb_net_setup {
     /* maximum of times a keepalive connection can be used */
     int keepalive_max_recycle;
 
+    /* enable/disable tcp keepalive */
+    int tcp_keepalive;
+
+    /* interval between the last data packet sent and the first TCP keepalive probe */
+    int tcp_keepalive_time;
+
+    /* the interval between TCP keepalive probes */
+    int tcp_keepalive_interval;
+
+    /* number of unacknowledged probes to consider a connection dead */
+    int tcp_keepalive_probes;
+
     /* dns mode : TCP or UDP */
     char *dns_mode;
 
@@ -83,8 +94,14 @@ struct flb_net_setup {
     /* allow this port to be shared */
     int   share_port;
 
+    /* backlog size for listening sockets */
+    int   backlog;
+
     /* maximum number of allowed active TCP connections */
     int max_worker_connections;
+
+    /* If true, ignore HTTP_PROXY, NO_PROXY, etc. */
+    int proxy_env_ignore;
 };
 
 /* Defines a host service and it properties */
@@ -96,31 +113,6 @@ struct flb_net_host {
     flb_sds_t listen;      /* Listen interface       */
     struct flb_uri *uri;   /* Extra URI parameters   */
 };
-
-/* Defines an async DNS lookup context */
-struct flb_dns_lookup_context {
-    struct mk_event              response_event;                  /* c-ares socket event */
-    int                          ares_socket_registered;
-    struct ares_socket_functions ares_socket_functions;
-    int                         *udp_timeout_detected;
-    int                          ares_socket_created;
-    int                          ares_socket_type;
-    void                        *ares_channel;
-    int                         *result_code;
-    struct mk_event_loop        *event_loop;
-    struct flb_coro             *coroutine;
-    struct flb_sched_timer      *udp_timer;
-    int                          finished;
-    int                          dropped;
-    struct flb_net_dns          *dns_ctx;
-    struct addrinfo            **result;
-    /* result is a synthetized result, don't call freeaddrinfo on it */
-    struct mk_list               _head;
-};
-
-#define FLB_DNS_LOOKUP_CONTEXT_FOR_EVENT(event) \
-    ((struct flb_dns_lookup_context *) \
-        &((uint8_t *) event)[-offsetof(struct flb_dns_lookup_context, response_event)])
 
 #define FLB_DNS_LEGACY  'L'
 #define FLB_DNS_ASYNC   'A'
@@ -154,6 +146,7 @@ int flb_net_socket_blocking(flb_sockfd_t fd);
 int flb_net_socket_nonblocking(flb_sockfd_t fd);
 int flb_net_socket_rcv_buffer(flb_sockfd_t fd, int rcvbuf);
 int flb_net_socket_tcp_fastopen(flb_sockfd_t sockfd);
+int flb_net_socket_tcp_keepalive(flb_sockfd_t fd, struct flb_net_setup *net);
 
 /* Socket handling */
 flb_sockfd_t flb_net_socket_create(int family, int nonblock);
@@ -168,7 +161,8 @@ flb_sockfd_t flb_net_udp_connect(const char *host, unsigned long port,
                                  char *source_addr);
 
 int flb_net_tcp_fd_connect(flb_sockfd_t fd, const char *host, unsigned long port);
-flb_sockfd_t flb_net_server(const char *port, const char *listen_addr, int share_port);
+flb_sockfd_t flb_net_server(const char *port, const char *listen_addr,
+                            int backlog, int share_port);
 flb_sockfd_t flb_net_server_udp(const char *port, const char *listen_addr, int share_port);
 flb_sockfd_t flb_net_server_unix(const char *listen_path, int stream_mode,
                                  int backlog, int share_port);
@@ -214,5 +208,7 @@ int flb_net_socket_peer_info(flb_sockfd_t fd,
                              size_t *str_output_data_size);
 
 size_t flb_network_address_size(struct sockaddr_storage *address);
+
+uint64_t flb_net_htonll(uint64_t value);
 
 #endif

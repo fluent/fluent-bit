@@ -41,6 +41,12 @@ struct flb_config_map downstream_net[] = {
     },
 
     {
+     FLB_CONFIG_MAP_INT, "net.backlog", STR(FLB_NETWORK_DEFAULT_BACKLOG_SIZE),
+     0, FLB_TRUE, offsetof(struct flb_net_setup, backlog),
+     "Set the backlog size for listening sockets"
+    },
+
+    {
      FLB_CONFIG_MAP_TIME, "net.io_timeout", "0s",
      0, FLB_TRUE, offsetof(struct flb_net_setup, io_timeout),
      "Set maximum time a connection can stay idle"
@@ -122,7 +128,9 @@ int flb_downstream_setup(struct flb_downstream *stream,
     snprintf(port_string, sizeof(port_string), "%u", port);
 
     if (transport == FLB_TRANSPORT_TCP) {
-        stream->server_fd = flb_net_server(port_string, host, net_setup->share_port);
+        stream->server_fd = flb_net_server(port_string, host,
+                                           net_setup->backlog,
+                                           net_setup->share_port);
     }
     else if (transport == FLB_TRANSPORT_UDP) {
         stream->server_fd = flb_net_server_udp(port_string, host, net_setup->share_port);
@@ -130,13 +138,13 @@ int flb_downstream_setup(struct flb_downstream *stream,
     else if (transport == FLB_TRANSPORT_UNIX_STREAM) {
         stream->server_fd = flb_net_server_unix(host,
                                                 FLB_TRUE,
-                                                FLB_NETWORK_DEFAULT_BACKLOG_SIZE,
+                                                net_setup->backlog,
                                                 net_setup->share_port);
     }
     else if (transport == FLB_TRANSPORT_UNIX_DGRAM) {
         stream->server_fd = flb_net_server_unix(host,
                                                 FLB_FALSE,
-                                                FLB_NETWORK_DEFAULT_BACKLOG_SIZE,
+                                                net_setup->backlog,
                                                 net_setup->share_port);
     }
 
@@ -275,6 +283,18 @@ struct flb_connection *flb_downstream_conn_get(struct flb_downstream *stream)
 
     transport = stream->base.transport;
 
+    if (stream->paused) {
+        if (transport != FLB_TRANSPORT_UDP &&
+            transport != FLB_TRANSPORT_UNIX_DGRAM) {
+            connection_fd = flb_net_accept(stream->server_fd);
+            if (connection_fd >= 0) {
+                flb_socket_close(connection_fd);
+            }
+        }
+
+        return NULL;
+    }
+
     if (transport == FLB_TRANSPORT_UDP ||
         transport == FLB_TRANSPORT_UNIX_DGRAM ) {
         if (stream->dgram_connection != NULL) {
@@ -347,6 +367,20 @@ struct flb_connection *flb_downstream_conn_get(struct flb_downstream *stream)
     }
 
     return connection;
+}
+
+void flb_downstream_pause(struct flb_downstream *stream)
+{
+    if (stream) {
+        stream->paused = FLB_TRUE;
+    }
+}
+
+void flb_downstream_resume(struct flb_downstream *stream)
+{
+    if (stream) {
+        stream->paused = FLB_FALSE;
+    }
 }
 
 void flb_downstream_destroy(struct flb_downstream *stream)
@@ -435,7 +469,7 @@ int flb_downstream_conn_timeouts(struct mk_list *list)
             drop = FLB_FALSE;
 
             /* Connect timeouts */
-            if (connection->net->connect_timeout > 0 &&
+            if (connection->net->accept_timeout > 0 &&
                 connection->ts_connect_timeout > 0 &&
                 connection->ts_connect_timeout <= now) {
                 drop = FLB_TRUE;

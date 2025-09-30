@@ -63,6 +63,7 @@ struct flb_systemd_config {
     int dynamic_tag;
     int max_fields;            /* max number of fields per record */
     int max_entries;           /* max number of records per iteration */
+    size_t threshold;         /* threshold for retriveing journal */
 
 #ifdef FLB_HAVE_SQLDB
     flb_sds_t db_path;

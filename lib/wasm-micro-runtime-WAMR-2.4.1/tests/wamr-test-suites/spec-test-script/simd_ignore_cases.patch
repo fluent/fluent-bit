@@ -1,0 +1,73 @@
+diff --git a/test/core/simd/simd_lane.wast b/test/core/simd/simd_lane.wast
+index 9b66f53..48a4e6d 100644
+--- a/test/core/simd/simd_lane.wast
++++ b/test/core/simd/simd_lane.wast
+@@ -602,23 +602,23 @@
+   "(v128.const i8x16 15 14 13 12 11 10 9 8 7 6 5 4 3 2 1 0) "
+   "(v128.const i8x16 0 1 2 3 4 5 6 7 8 9 10 11 12 13 14 15)))") "invalid lane length")
+ (assert_malformed (module quote "(func (result v128) "
+-  "(i8x16.shuffle 0 1 2 3 4 5 6 7 8 9 10 11 12 13 14 15.0) "
++  "(i8x16.shuffle 0 1 2 3 4 5 6 7 8 9 10 11 12 13 14 15.0 "
+   "(v128.const i8x16 15 14 13 12 11 10 9 8 7 6 5 4 3 2 1 0) "
+   "(v128.const i8x16 0 1 2 3 4 5 6 7 8 9 10 11 12 13 14 15)))") "malformed lane index")
+ (assert_malformed (module quote "(func (result v128) "
+-  "(i8x16.shuffle 0.5 1 2 3 4 5 6 7 8 9 10 11 12 13 14 15) "
++  "(i8x16.shuffle 0.5 1 2 3 4 5 6 7 8 9 10 11 12 13 14 15 "
+   "(v128.const i8x16 15 14 13 12 11 10 9 8 7 6 5 4 3 2 1 0) "
+   "(v128.const i8x16 0 1 2 3 4 5 6 7 8 9 10 11 12 13 14 15)))") "malformed lane index")
+ (assert_malformed (module quote "(func (result v128) "
+-  "(i8x16.shuffle -inf 1 2 3 4 5 6 7 8 9 10 11 12 13 14 15) "
++  "(i8x16.shuffle -inf 1 2 3 4 5 6 7 8 9 10 11 12 13 14 15 "
+   "(v128.const i8x16 15 14 13 12 11 10 9 8 7 6 5 4 3 2 1 0) "
+   "(v128.const i8x16 0 1 2 3 4 5 6 7 8 9 10 11 12 13 14 15)))") "malformed lane index")
+ (assert_malformed (module quote "(func (result v128) "
+-  "(i8x16.shuffle 0 1 2 3 4 5 6 7 8 9 10 11 12 13 14 inf) "
++  "(i8x16.shuffle 0 1 2 3 4 5 6 7 8 9 10 11 12 13 14 inf "
+   "(v128.const i8x16 15 14 13 12 11 10 9 8 7 6 5 4 3 2 1 0) "
+   "(v128.const i8x16 0 1 2 3 4 5 6 7 8 9 10 11 12 13 14 15)))") "malformed lane index")
+ (assert_malformed (module quote "(func (result v128) "
+-  "(i8x16.shuffle nan 1 2 3 4 5 6 7 8 9 10 11 12 13 14 15) "
++  "(i8x16.shuffle nan 1 2 3 4 5 6 7 8 9 10 11 12 13 14 15 "
+   "(v128.const i8x16 15 14 13 12 11 10 9 8 7 6 5 4 3 2 1 0) "
+   "(v128.const i8x16 0 1 2 3 4 5 6 7 8 9 10 11 12 13 14 15)))") "malformed lane index")
+ 
+@@ -858,7 +858,7 @@
+ (assert_return (invoke "as-if-condition-value" (v128.const i8x16 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0)) (i32.const 0))
+ (assert_return (invoke "as-return-value-1" (v128.const i16x8 0 0 0 0 0 0 0 0) (i32.const 1)) (v128.const i16x8 1 0 0 0 0 0 0 0))
+ (assert_return (invoke "as-local_set-value" (v128.const i32x4 -1 -1 -1 -1)) (i32.const -1))
+-(assert_return (invoke "as-global_set-value-1" (v128.const f32x4 0 0 0 0)(f32.const 3.14)) (v128.const f32x4 3.14 0 0 0))
++(assert_return (invoke "as-global_set-value-1" (v128.const f32x4 0 0 0 0) (f32.const 3.14)) (v128.const f32x4 3.14 0 0 0))
+ 
+ (assert_return (invoke "as-return-value-2"
+   (v128.const i8x16 -16 -15 -14 -13 -12 -11 -10 -9 -8 -7 -6 -5 -4 -3 -2 -1)
+@@ -870,7 +870,7 @@
+   (v128.const i8x16 -16 -15 -14 -13 -12 -11 -10 -9 8 7 6 5 4 3 2 1))
+ 
+ (assert_return (invoke "as-local_set-value-1" (v128.const i64x2 -1 -1)) (i64.const -1))
+-(assert_return (invoke "as-global_set-value-3" (v128.const f64x2 0 0)(f64.const 3.14)) (v128.const f64x2 3.14 0))
++(assert_return (invoke "as-global_set-value-3" (v128.const f64x2 0 0) (f64.const 3.14)) (v128.const f64x2 3.14 0))
+ 
+ ;; Non-nat lane index
+ 
+diff --git a/test/core/simd/simd_load.wast b/test/core/simd/simd_load.wast
+index 4b2edc1..c763921 100644
+--- a/test/core/simd/simd_load.wast
++++ b/test/core/simd/simd_load.wast
+@@ -124,7 +124,7 @@
+     (i8x16.swizzle (v128.load (i32.const 0)) (v128.load offset=15 (i32.const 1)))
+   )
+ )
+-(assert_return(invoke "as-i8x16.swizzle-operand") (v128.const i8x16 115 114 113 112 111 110 109 108 107 106 105 104 103 102 101 100))
++(assert_return (invoke "as-i8x16.swizzle-operand") (v128.const i8x16 115 114 113 112 111 110 109 108 107 106 105 104 103 102 101 100))
+ 
+ (module (memory 1)
+   (data (i32.const 0) "\00\01\02\03\04\05\06\07\08\09\0a\0b\0c\0d\0e\0f\00\01\02\03")
+@@ -180,7 +180,7 @@
+ 
+ (assert_invalid
+   (module (memory 1) (func (drop (v128.load (local.get 2)))))
+-  "unknown local 2"
++  "unknown local"
+ )
+ (assert_invalid
+   (module (memory 1) (func (drop (v128.load))))

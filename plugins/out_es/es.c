@@ -29,6 +29,8 @@
 #include <fluent-bit/flb_record_accessor.h>
 #include <fluent-bit/flb_ra_key.h>
 #include <fluent-bit/flb_log_event_decoder.h>
+#include <fluent-bit/flb_log.h>
+#include <fluent-bit/flb_sds.h>
 #include <msgpack.h>
 
 #include <time.h>
@@ -557,7 +559,8 @@ static int elasticsearch_format(struct flb_config *config,
         }
 
         /* Convert msgpack to JSON */
-        out_buf = flb_msgpack_raw_to_json_sds(tmp_sbuf.data, tmp_sbuf.size);
+        out_buf = flb_msgpack_raw_to_json_sds(tmp_sbuf.data, tmp_sbuf.size,
+                                              config->json_escape_unicode);
         msgpack_sbuffer_destroy(&tmp_sbuf);
         if (!out_buf) {
             flb_log_event_decoder_destroy(&log_decoder);
@@ -624,6 +627,11 @@ static int cb_es_init(struct flb_output_instance *ins,
     ctx = flb_es_conf_create(ins, config);
     if (!ctx) {
         flb_plg_error(ins, "cannot initialize plugin");
+        return -1;
+    }
+
+    if (ctx->index == NULL && ctx->logstash_format == FLB_FALSE && ctx->generate_id == FLB_FALSE) {
+        flb_plg_error(ins, "cannot initialize plugin, index is not set and logstash_format and generate_id are both off");
         return -1;
     }
 
@@ -821,6 +829,7 @@ static void cb_es_flush(struct flb_event_chunk *event_chunk,
     struct flb_config_map_val *mv;
     struct flb_slist_entry *key = NULL;
     struct flb_slist_entry *val = NULL;
+    flb_sds_t header_line = NULL;
 
     /* Get upstream connection */
     u_conn = flb_upstream_conn_get(ctx->u);
@@ -894,6 +903,23 @@ static void cb_es_flush(struct flb_event_chunk *event_chunk,
     else if (ctx->cloud_user && ctx->cloud_passwd) {
         flb_http_basic_auth(c, ctx->cloud_user, ctx->cloud_passwd);
     }
+    else if (ctx->http_api_key) {
+        header_line = flb_sds_printf(NULL, "ApiKey %s", ctx->http_api_key);
+        if (header_line == NULL) {
+            flb_plg_error(ctx->ins, "failed to format API key auth header");
+            goto retry;
+        }
+
+        if (flb_http_add_header(c,
+                                FLB_HTTP_HEADER_AUTH, strlen(FLB_HTTP_HEADER_AUTH),
+                                header_line, flb_sds_len(header_line)) != 0) {
+            flb_plg_error(ctx->ins, "failed to add API key auth header");
+            flb_sds_destroy(header_line);
+            goto retry;
+        }
+
+        flb_sds_destroy(header_line);
+    }
 
 #ifdef FLB_HAVE_AWS
     if (ctx->has_aws_auth == FLB_TRUE) {
@@ -951,7 +977,7 @@ static void cb_es_flush(struct flb_event_chunk *event_chunk,
                     /*
                      * If trace_error is set, trace the actual
                      * response from Elasticsearch explaining the problem.
-                     * Trace_Output can be used to see the request. 
+                     * Trace_Output can be used to see the request.
                      */
                     if (pack_size < 4000) {
                         flb_plg_debug(ctx->ins, "error caused by: Input\n%.*s\n",
@@ -999,6 +1025,78 @@ static void cb_es_flush(struct flb_event_chunk *event_chunk,
     FLB_OUTPUT_RETURN(FLB_RETRY);
 }
 
+static int elasticsearch_response_test(struct flb_config *config,
+                                       void *plugin_context,
+                                       int status,
+                                       const void *data, size_t bytes,
+                                       void **out_data, size_t *out_size)
+{
+    int ret = 0;
+    struct flb_elasticsearch *ctx = plugin_context;
+    struct flb_connection *u_conn;
+    struct flb_http_client *c;
+    size_t b_sent;
+
+    /* Not retrieve upstream connection */
+    u_conn = NULL;
+
+    /* Compose HTTP Client request (dummy client) */
+    c = flb_http_dummy_client(u_conn, FLB_HTTP_POST, ctx->uri,
+                              NULL, 0, NULL, 0, NULL, 0);
+
+    flb_http_buffer_size(c, ctx->buffer_size);
+
+    /* Just stubbing the HTTP responses */
+    flb_http_set_response_test(c, "response", data, bytes, status, NULL, NULL);
+
+    ret = flb_http_do(c, &b_sent);
+    if (ret != 0) {
+        flb_plg_warn(ctx->ins, "http_do=%i URI=%s", ret, ctx->uri);
+        goto error;
+    }
+    if (ret != 0) {
+        flb_plg_warn(ctx->ins, "http_do=%i URI=%s", ret, ctx->uri);
+        goto error;
+    }
+    else {
+        /* The request was issued successfully, validate the 'error' field */
+        flb_plg_debug(ctx->ins, "HTTP Status=%i URI=%s", c->resp.status, ctx->uri);
+        if (c->resp.status != 200 && c->resp.status != 201) {
+            if (c->resp.payload_size > 0) {
+                flb_plg_error(ctx->ins, "HTTP status=%i URI=%s, response:\n%s\n",
+                              c->resp.status, ctx->uri, c->resp.payload);
+            }
+            else {
+                flb_plg_error(ctx->ins, "HTTP status=%i URI=%s",
+                              c->resp.status, ctx->uri);
+            }
+            goto error;
+        }
+
+        if (c->resp.payload_size > 0) {
+            /*
+             * Elasticsearch payload should be JSON, we convert it to msgpack
+             * and lookup the 'error' field.
+             */
+            ret = elasticsearch_error_check(ctx, c);
+        }
+        else {
+            goto error;
+        }
+    }
+
+    /* Cleanup */
+    flb_http_client_destroy(c);
+
+    return ret;
+
+error:
+    /* Cleanup */
+    flb_http_client_destroy(c);
+
+    return -2;
+}
+
 static int cb_es_exit(void *data, struct flb_config *config)
 {
     struct flb_elasticsearch *ctx = data;
@@ -1035,6 +1133,11 @@ static struct flb_config_map config_map[] = {
      FLB_CONFIG_MAP_STR, "http_passwd", "",
      0, FLB_TRUE, offsetof(struct flb_elasticsearch, http_passwd),
      "Password for user defined in HTTP_User"
+    },
+    {
+    FLB_CONFIG_MAP_STR, "http_api_key", NULL,
+    0, FLB_TRUE, offsetof(struct flb_elasticsearch, http_api_key),
+    "Base-64 encoded API key credential for Elasticsearch"
     },
 
     /* Arbitrary HTTP headers */
@@ -1233,7 +1336,6 @@ static struct flb_config_map config_map[] = {
      0, FLB_TRUE, offsetof(struct flb_elasticsearch, trace_error),
      "When enabled print the Elasticsearch exception to stderr (for diag only)"
     },
-
     /* EOF */
     {0}
 };
@@ -1253,6 +1355,7 @@ struct flb_output_plugin out_es_plugin = {
 
     /* Test */
     .test_formatter.callback = elasticsearch_format,
+    .test_response.callback = elasticsearch_response_test,
 
     /* Plugin flags */
     .flags          = FLB_OUTPUT_NET | FLB_IO_OPT_TLS,

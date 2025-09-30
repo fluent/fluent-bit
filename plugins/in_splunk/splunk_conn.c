@@ -27,14 +27,48 @@
 static void splunk_conn_request_init(struct mk_http_session *session,
                                      struct mk_http_request *request);
 
+static void splunk_conn_session_init(struct mk_http_session *session,
+                                   struct mk_server *server,
+                                   int client_fd);
+
+static int splunk_conn_buffer_realloc(struct flb_splunk *ctx,
+                                          struct splunk_conn *conn,
+                                          size_t size)
+{
+    char *tmp;
+
+    flb_plg_trace(ctx->ins, "realloc buffer %i -> %zu bytes",
+                  (int)conn->buf_size, size);
+
+    /* Perform realloc */
+    tmp = flb_realloc(conn->buf_data, size);
+    if (!tmp) {
+        flb_errno();
+        flb_plg_error(ctx->ins, "could not perform realloc for size %zu", size);
+        return -1;
+    }
+
+    /* Update buffer info */
+    conn->buf_data = tmp;
+    conn->buf_size = size;
+    /* Keep NULL termination */
+    conn->buf_data[conn->buf_len] = '\0';
+
+    /* Reset parser state */
+    mk_http_parser_init(&conn->session.parser);
+
+    flb_plg_trace(ctx->ins, "realloc completed successfully size=%zu", size);
+    return 0;
+}
+
+
 static int splunk_conn_event(void *data)
 {
+    int ret;
     int status;
     size_t size;
     ssize_t available;
     ssize_t bytes;
-    char *tmp;
-    char *request_end;
     size_t request_len;
     struct flb_connection *connection;
     struct splunk_conn *conn;
@@ -42,11 +76,8 @@ static int splunk_conn_event(void *data)
     struct flb_splunk *ctx;
 
     connection = (struct flb_connection *) data;
-
     conn = connection->user_data;
-
     ctx = conn->ctx;
-
     event = &connection->event;
 
     if (event->mask & MK_EVENT_READ) {
@@ -61,16 +92,15 @@ static int splunk_conn_event(void *data)
             }
 
             size = conn->buf_size + ctx->buffer_chunk_size;
-            tmp = flb_realloc(conn->buf_data, size);
-            if (!tmp) {
+            ret = splunk_conn_buffer_realloc(ctx, conn, size);
+            if (ret == -1) {
                 flb_errno();
+                splunk_conn_del(conn);
                 return -1;
             }
             flb_plg_trace(ctx->ins, "fd=%i buffer realloc %i -> %zu",
                           event->fd, conn->buf_size, size);
 
-            conn->buf_data = tmp;
-            conn->buf_size = size;
             available = (conn->buf_size - conn->buf_len) - 1;
         }
 
@@ -95,49 +125,50 @@ static int splunk_conn_event(void *data)
 
         if (status == MK_HTTP_PARSER_OK) {
             /* Do more logic parsing and checks for this request */
-            splunk_prot_handle(ctx, conn, &conn->session, &conn->request);
+            ret = splunk_prot_handle(ctx, conn, &conn->session, &conn->request);
+            if (ret == -1) {
+                splunk_conn_del(conn);
+                return -1;
+            }
 
-            /* Evict the processed request from the connection buffer and reinitialize
+            /*
+             * Evict the processed request from the connection buffer and reinitialize
              * the HTTP parser.
              */
 
-            request_end = NULL;
+            /* Use the last parser position as the request length */
+            request_len = mk_http_parser_request_size(&conn->session.parser,
+                                                      conn->buf_data,
+                                                      conn->buf_len);
 
-            if (NULL != conn->request.data.data) {
-                request_end = &conn->request.data.data[conn->request.data.len];
+            if (request_len == -1 || (request_len > conn->buf_len)) {
+                /* Unexpected but let's make sure things are safe */
+                conn->buf_len = 0;
+                flb_plg_debug(ctx->ins, "request length exceeds buffer length, closing connection");
+                splunk_conn_del(conn);
+                return -1;
+            }
+
+            /* If we have extra bytes in our bytes, adjust the extra bytes */
+            if (0 < (conn->buf_len - request_len)) {
+                memmove(conn->buf_data, &conn->buf_data[request_len],
+                        conn->buf_len - request_len);
+
+                conn->buf_data[conn->buf_len - request_len] = '\0';
+                conn->buf_len -= request_len;
             }
             else {
-                request_end = strstr(conn->buf_data, "\r\n\r\n");
-
-                if(NULL != request_end) {
-                    request_end = &request_end[4];
-                }
+                memset(conn->buf_data, 0, request_len);
+                conn->buf_len = 0;
             }
 
-            if (NULL != request_end) {
-                request_len = (size_t)(request_end - conn->buf_data);
-
-                if (0 < (conn->buf_len - request_len)) {
-                    memmove(conn->buf_data, &conn->buf_data[request_len],
-                            conn->buf_len - request_len);
-
-                    conn->buf_data[conn->buf_len - request_len] = '\0';
-                    conn->buf_len -= request_len;
-                }
-                else {
-                    memset(conn->buf_data, 0, request_len);
-
-                    conn->buf_len = 0;
-                }
-
-                /* Reinitialize the parser so the next request is properly
-                 * handled, the additional memset intends to wipe any left over data
-                 * from the headers parsed in the previous request.
-                 */
-                memset(&conn->session.parser, 0, sizeof(struct mk_http_parser));
-                mk_http_parser_init(&conn->session.parser);
-                splunk_conn_request_init(&conn->session, &conn->request);
-            }
+            /* Reinitialize the parser so the next request is properly
+                * handled, the additional memset intends to wipe any left over data
+                * from the headers parsed in the previous request.
+                */
+            memset(&conn->session.parser, 0, sizeof(struct mk_http_parser));
+            mk_http_parser_init(&conn->session.parser);
+            splunk_conn_request_init(&conn->session, &conn->request);
         }
         else if (status == MK_HTTP_PARSER_ERROR) {
             splunk_prot_handle_error(ctx, conn, &conn->session, &conn->request);
@@ -162,8 +193,8 @@ static int splunk_conn_event(void *data)
     }
 
     return 0;
-
 }
+
 
 static void splunk_conn_session_init(struct mk_http_session *session,
                                      struct mk_server *server,

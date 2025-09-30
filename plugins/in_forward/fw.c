@@ -140,7 +140,6 @@ static int in_fw_collect(struct flb_input_instance *ins,
 
     if (!config->is_ingestion_active) {
         flb_downstream_conn_release(connection);
-
         return -1;
     }
 
@@ -153,8 +152,8 @@ static int in_fw_collect(struct flb_input_instance *ins,
     flb_plg_trace(ins, "new TCP connection arrived FD=%i", connection->fd);
 
     conn = fw_conn_add(connection, ctx);
-
     if (!conn) {
+        flb_downstream_conn_release(connection);
         return -1;
     }
 
@@ -351,12 +350,16 @@ static int in_fw_init(struct flb_input_instance *ins,
 
     ctx->coll_fd = ret;
 
+    pthread_mutex_init(&ctx->conn_mutex, NULL);
+
     return 0;
 }
 
 static void in_fw_pause(void *data, struct flb_config *config)
 {
+    int ret;
     struct flb_in_fw_config *ctx = data;
+
     if (config->is_running == FLB_TRUE) {
         /*
          * This is the case when we are not in a shutdown phase, but
@@ -365,8 +368,20 @@ static void in_fw_pause(void *data, struct flb_config *config)
          * and wait for the ingestion to resume.
          */
         flb_input_collector_pause(ctx->coll_fd, ctx->ins);
+
+        ret = pthread_mutex_lock(&ctx->conn_mutex);
+        if (ret != 0) {
+            flb_plg_error(ctx->ins, "cannot lock collector mutex");
+            return;
+        }
+
         fw_conn_del_all(ctx);
         ctx->is_paused = FLB_TRUE;
+        ret = pthread_mutex_unlock(&ctx->conn_mutex);
+        if (ret != 0) {
+            flb_plg_error(ctx->ins, "cannot unlock collector mutex");
+            return;
+        }
     }
 
     /*
@@ -383,10 +398,24 @@ static void in_fw_pause(void *data, struct flb_config *config)
 }
 
 static void in_fw_resume(void *data, struct flb_config *config) {
+    int ret;
     struct flb_in_fw_config *ctx = data;
+
     if (config->is_running == FLB_TRUE) {
-        ctx->is_paused = FLB_FALSE;
         flb_input_collector_resume(ctx->coll_fd, ctx->ins);
+
+        ret = pthread_mutex_lock(&ctx->conn_mutex);
+        if (ret != 0) {
+            flb_plg_error(ctx->ins, "cannot lock collector mutex");
+            return;
+        }
+
+        ctx->is_paused = FLB_FALSE;
+        ret = pthread_mutex_unlock(&ctx->conn_mutex);
+        if (ret != 0) {
+            flb_plg_error(ctx->ins, "cannot unlock collector mutex");
+            return;
+        }
     }
 }
 
@@ -415,7 +444,7 @@ static struct flb_config_map config_map[] = {
    },
    {
     FLB_CONFIG_MAP_STR, "shared_key", NULL,
-    0, FLB_FALSE, 0,
+    0, FLB_TRUE, offsetof(struct flb_in_fw_config, shared_key),
     "Shared key for authentication"
    },
    {
@@ -447,6 +476,11 @@ static struct flb_config_map config_map[] = {
     FLB_CONFIG_MAP_SIZE, "buffer_max_size", FLB_IN_FW_CHUNK_MAX_SIZE,
     0, FLB_TRUE, offsetof(struct flb_in_fw_config, buffer_max_size),
     "The maximum buffer memory size used to receive a Forward message."
+   },
+   {
+    FLB_CONFIG_MAP_BOOL, "empty_shared_key", "false",
+    0, FLB_TRUE, offsetof(struct flb_in_fw_config, empty_shared_key),
+    "Set an empty shared key for authentication"
    },
    {0}
 };

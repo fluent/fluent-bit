@@ -33,8 +33,7 @@ static Opentelemetry__Proto__Metrics__V1__ScopeMetrics **
 static void destroy_scope_metric_list(
     Opentelemetry__Proto__Metrics__V1__ScopeMetrics **metric_list);
 
-struct cfl_kvlist *fetch_metadata_kvlist_key(
-    struct cfl_kvlist *kvlist, char *key)
+struct cfl_kvlist *fetch_metadata_kvlist_key(struct cfl_kvlist *kvlist, char *key)
 {
     struct cfl_variant *entry_variant;
     struct cfl_kvlist  *entry_kvlist;
@@ -1015,16 +1014,6 @@ static Opentelemetry__Proto__Metrics__V1__ResourceMetrics **
     return metric_list;
 }
 
-static void destroy_scope_metrics(
-    Opentelemetry__Proto__Metrics__V1__ScopeMetrics *metric)
-{
-    if (metric != NULL) {
-        destroy_metric_list(metric->metrics);
-
-        free(metric);
-    }
-}
-
 void destroy_instrumentation_scope(Opentelemetry__Proto__Common__V1__InstrumentationScope *scope)
 {
     if (scope->name != NULL) {
@@ -1040,6 +1029,21 @@ void destroy_instrumentation_scope(Opentelemetry__Proto__Common__V1__Instrumenta
     }
 
     free(scope);
+}
+
+static void destroy_scope_metrics(Opentelemetry__Proto__Metrics__V1__ScopeMetrics *metric)
+{
+    if (metric != NULL) {
+        if (is_string_releaseable(metric->schema_url)) {
+            cfl_sds_destroy(metric->schema_url);
+            metric->schema_url = NULL;
+        }
+        if (metric->scope != NULL) {
+            destroy_instrumentation_scope(metric->scope);
+        }
+        destroy_metric_list(metric->metrics);
+        free(metric);
+    }
 }
 
 static Opentelemetry__Proto__Common__V1__InstrumentationScope *
@@ -1065,9 +1069,7 @@ static Opentelemetry__Proto__Common__V1__InstrumentationScope *
         return NULL;
     }
 
-    scope = \
-        calloc(1, sizeof(Opentelemetry__Proto__Common__V1__InstrumentationScope));
-
+    scope = calloc(1, sizeof(Opentelemetry__Proto__Common__V1__InstrumentationScope));
     if (scope == NULL) {
         *error_detection_flag = CMT_TRUE;
 
@@ -1109,10 +1111,9 @@ static Opentelemetry__Proto__Common__V1__InstrumentationScope *
     return scope;
 }
 
-static Opentelemetry__Proto__Metrics__V1__ScopeMetrics *
-    initialize_scope_metrics(
-    struct cfl_kvlist *scope_metrics_root,
-    size_t metric_element_count)
+static Opentelemetry__Proto__Metrics__V1__ScopeMetrics *initialize_scope_metrics(
+                                    struct cfl_kvlist *scope_metrics_root,
+                                    size_t metric_element_count)
 {
     int                                              error_detection_flag;
     Opentelemetry__Proto__Metrics__V1__ScopeMetrics *scope_metrics;
@@ -1120,9 +1121,7 @@ static Opentelemetry__Proto__Metrics__V1__ScopeMetrics *
 
     metadata = fetch_metadata_kvlist_key(scope_metrics_root, "metadata");
 
-    scope_metrics = \
-        calloc(1, sizeof(Opentelemetry__Proto__Metrics__V1__ScopeMetrics));
-
+    scope_metrics = calloc(1, sizeof(Opentelemetry__Proto__Metrics__V1__ScopeMetrics));
     if (scope_metrics == NULL) {
         return NULL;
     }
@@ -1132,9 +1131,7 @@ static Opentelemetry__Proto__Metrics__V1__ScopeMetrics *
     error_detection_flag = CMT_FALSE;
 
     if (metric_element_count > 0) {
-        scope_metrics->metrics = \
-            initialize_metric_list(metric_element_count);
-
+        scope_metrics->metrics = initialize_metric_list(metric_element_count);
         if (scope_metrics->metrics == NULL) {
             error_detection_flag = CMT_TRUE;
         }
@@ -1145,12 +1142,11 @@ static Opentelemetry__Proto__Metrics__V1__ScopeMetrics *
 
     if (!error_detection_flag && metadata != NULL) {
         scope_metrics->schema_url = fetch_metadata_string_key(metadata, "schema_url", &error_detection_flag);
+
     }
 
-    if (error_detection_flag &&
-        scope_metrics != NULL) {
+    if (error_detection_flag && scope_metrics != NULL) {
         destroy_scope_metrics(scope_metrics);
-
         scope_metrics = NULL;
     }
 
@@ -1195,9 +1191,7 @@ static void destroy_scope_metric_list(
     }
 }
 
-static Opentelemetry__Proto__Metrics__V1__ScopeMetrics **
-    initialize_scope_metrics_list(
-    size_t element_count)
+static Opentelemetry__Proto__Metrics__V1__ScopeMetrics **initialize_scope_metrics_list(size_t element_count)
 {
     Opentelemetry__Proto__Metrics__V1__ScopeMetrics **metric_list;
 
@@ -1207,8 +1201,7 @@ static Opentelemetry__Proto__Metrics__V1__ScopeMetrics **
     return metric_list;
 }
 
-static void destroy_attribute(
-    Opentelemetry__Proto__Common__V1__KeyValue *attribute)
+static void destroy_attribute(Opentelemetry__Proto__Common__V1__KeyValue *attribute)
 {
     if (attribute != NULL) {
         if (attribute->value != NULL) {
@@ -1602,7 +1595,31 @@ static Opentelemetry__Proto__Metrics__V1__HistogramDataPoint *
     data_point->count = count;
     data_point->n_bucket_counts = bucket_count;
 
+
+    /*
+     * In the OpenTelemetry Metrics protobuf definition, the `sum` field in HistogramDataPoint is
+     * marked as `optional`:
+     *
+     *   https://github.com/open-telemetry/opentelemetry-proto/blob/main/opentelemetry/proto/metrics/v1/metrics.proto#L456
+     *
+     * While `optional` is supported in proto3, the `protobuf-c` project does not handle proto3
+     * optional scalar fields using `has_*` booleans like the main protobuf implementations.
+     *
+     * Instead, `protobuf-c` represents optional fields internally using a synthetic `oneof`.
+     * This means that in the generated C code, the optional `sum` field is placed inside a union,
+     * and its presence is tracked using a corresponding `_sum_case` enum field.
+     *
+     * To correctly serialize the `sum` field, both the `sum` value and its `_sum_case` must be set:
+     *
+     *     data_point->sum = some_value;
+     *     data_point->_sum_case = OPENTELEMETRY__PROTO__METRICS__V1__HISTOGRAM_DATA_POINT___SUM_SUM;
+     *
+     * Failing to set `_sum_case` will result in the `sum` field being silently omitted from the
+     * serialized output.
+     */
     data_point->sum = sum;
+    data_point->_sum_case = OPENTELEMETRY__PROTO__METRICS__V1__HISTOGRAM_DATA_POINT___SUM_SUM;
+
 
     if (bucket_count > 0) {
         data_point->bucket_counts = calloc(bucket_count, sizeof(uint64_t));
@@ -1625,7 +1642,7 @@ static Opentelemetry__Proto__Metrics__V1__HistogramDataPoint *
     data_point->n_explicit_bounds = boundary_count;
 
     if (boundary_count > 0) {
-        data_point->explicit_bounds = calloc(boundary_count, sizeof(uint64_t));
+        data_point->explicit_bounds = calloc(boundary_count, sizeof(double));
 
         if (data_point->explicit_bounds == NULL) {
             cmt_errno();
@@ -2078,10 +2095,8 @@ static void destroy_opentelemetry_context(
     }
 }
 
-static Opentelemetry__Proto__Resource__V1__Resource *
-    initialize_resource(
-    struct cfl_kvlist *resource_root,
-    int *error_detection_flag)
+static Opentelemetry__Proto__Resource__V1__Resource *initialize_resource(struct cfl_kvlist *resource_root,
+                                                                         int *error_detection_flag)
 {
     struct cfl_kvlist                            *attributes;
     struct cfl_kvlist                            *metadata;
@@ -2096,17 +2111,13 @@ static Opentelemetry__Proto__Resource__V1__Resource *
     attributes = fetch_metadata_kvlist_key(resource_root, "attributes");
     metadata = fetch_metadata_kvlist_key(resource_root, "metadata");
 
-    if (cfl_kvlist_count(attributes) == 0 &&
-        cfl_kvlist_count(metadata) == 0) {
+    if (cfl_kvlist_count(attributes) == 0 && cfl_kvlist_count(metadata) == 0) {
         return NULL;
     }
 
-    resource = \
-        calloc(1, sizeof(Opentelemetry__Proto__Resource__V1__Resource));
-
+    resource = calloc(1, sizeof(Opentelemetry__Proto__Resource__V1__Resource));
     if (resource == NULL) {
         *error_detection_flag = CMT_TRUE;
-
         return NULL;
     }
 

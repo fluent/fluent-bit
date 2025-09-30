@@ -28,14 +28,39 @@
 static void opentelemetry_conn_request_init(struct mk_http_session *session,
                                    struct mk_http_request *request);
 
+static int opentelemetry_conn_buffer_realloc(struct flb_opentelemetry *ctx,
+                                             struct http_conn *conn, size_t size)
+{
+    char *tmp;
+
+    /* Perform realloc */
+    tmp = flb_realloc(conn->buf_data, size);
+    if (!tmp) {
+        flb_errno();
+        flb_plg_error(ctx->ins, "could not perform realloc for size %zu", size);
+        return -1;
+    }
+
+    /* Update buffer info */
+    conn->buf_data = tmp;
+    conn->buf_size = size;
+
+    /* Keep NULL termination */
+    conn->buf_data[conn->buf_len] = '\0';
+
+    /* Reset parser state */
+    mk_http_parser_init(&conn->session.parser);
+
+    return 0;
+}
+
 static int opentelemetry_conn_event(void *data)
 {
+    int ret;
     int status;
     size_t size;
     ssize_t available;
     ssize_t bytes;
-    char *tmp;
-    char *request_end;
     size_t request_len;
     struct http_conn *conn;
     struct mk_event *event;
@@ -62,16 +87,16 @@ static int opentelemetry_conn_event(void *data)
             }
 
             size = conn->buf_size + ctx->buffer_chunk_size;
-            tmp = flb_realloc(conn->buf_data, size);
-            if (!tmp) {
+            ret = opentelemetry_conn_buffer_realloc(ctx, conn, size);
+            if (ret == -1) {
                 flb_errno();
+                opentelemetry_conn_del(conn);
                 return -1;
             }
+
             flb_plg_trace(ctx->ins, "fd=%i buffer realloc %i -> %zu",
                           event->fd, conn->buf_size, size);
 
-            conn->buf_data = tmp;
-            conn->buf_size = size;
             available = (conn->buf_size - conn->buf_len) - 1;
         }
 
@@ -98,47 +123,44 @@ static int opentelemetry_conn_event(void *data)
             /* Do more logic parsing and checks for this request */
             opentelemetry_prot_handle(ctx, conn, &conn->session, &conn->request);
 
-            /* Evict the processed request from the connection buffer and reinitialize
+            /*
+             * Evict the processed request from the connection buffer and reinitialize
              * the HTTP parser.
              */
 
-            request_end = NULL;
+            /* Use the last parser position as the request length */
+            request_len = mk_http_parser_request_size(&conn->session.parser,
+                                                      conn->buf_data,
+                                                      conn->buf_len);
 
-            if (NULL != conn->request.data.data) {
-                request_end = &conn->request.data.data[conn->request.data.len];
+            if (request_len == -1 || (request_len > conn->buf_len)) {
+                /* Unexpected but let's make sure things are safe */
+                conn->buf_len = 0;
+                flb_plg_debug(ctx->ins, "request length exceeds buffer length, closing connection");
+                opentelemetry_conn_del(conn);
+                return -1;
+            }
+
+            /* If we have extra bytes in our bytes, adjust the extra bytes */
+            if (0 < (conn->buf_len - request_len)) {
+                memmove(conn->buf_data, &conn->buf_data[request_len],
+                        conn->buf_len - request_len);
+
+                conn->buf_data[conn->buf_len - request_len] = '\0';
+                conn->buf_len -= request_len;
             }
             else {
-                request_end = strstr(conn->buf_data, "\r\n\r\n");
-
-                if(NULL != request_end) {
-                    request_end = &request_end[4];
-                }
+                memset(conn->buf_data, 0, request_len);
+                conn->buf_len = 0;
             }
 
-            if (NULL != request_end) {
-                request_len = (size_t)(request_end - conn->buf_data);
-
-                if (0 < (conn->buf_len - request_len)) {
-                    memmove(conn->buf_data, &conn->buf_data[request_len],
-                            conn->buf_len - request_len);
-
-                    conn->buf_data[conn->buf_len - request_len] = '\0';
-                    conn->buf_len -= request_len;
-                }
-                else {
-                    memset(conn->buf_data, 0, request_len);
-
-                    conn->buf_len = 0;
-                }
-
-                /* Reinitialize the parser so the next request is properly
-                 * handled, the additional memset intends to wipe any left over data
-                 * from the headers parsed in the previous request.
-                 */
-                memset(&conn->session.parser, 0, sizeof(struct mk_http_parser));
-                mk_http_parser_init(&conn->session.parser);
-                opentelemetry_conn_request_init(&conn->session, &conn->request);
-            }
+            /* Reinitialize the parser so the next request is properly
+                * handled, the additional memset intends to wipe any left over data
+                * from the headers parsed in the previous request.
+                */
+            memset(&conn->session.parser, 0, sizeof(struct mk_http_parser));
+            mk_http_parser_init(&conn->session.parser);
+            opentelemetry_conn_request_init(&conn->session, &conn->request);
         }
         else if (status == MK_HTTP_PARSER_ERROR) {
             opentelemetry_prot_handle_error(ctx, conn, &conn->session, &conn->request);

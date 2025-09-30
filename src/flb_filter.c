@@ -33,6 +33,47 @@
 #include <fluent-bit/flb_chunk_trace.h>
 #endif /* FLB_HAVE_CHUNK_TRACE */
 
+struct flb_config_map filter_global_properties[] = {
+    {
+        FLB_CONFIG_MAP_STR, "match", NULL,
+        0, FLB_FALSE, 0,
+        "Set a tag pattern to match the records that this filter should process. "
+        "Supports exact matches or wildcards (e.g., '*')."
+    },
+    {
+        FLB_CONFIG_MAP_STR, "match_regex", NULL,
+        0, FLB_FALSE, 0,
+        "Set a regular expression to match tags for filtering. This allows more flexible matching "
+        "compared to simple wildcards."
+    },
+    {
+        FLB_CONFIG_MAP_STR, "alias", NULL,
+        0, FLB_FALSE, 0,
+        "Sets an alias for the filter instance. This is useful when using multiple instances of the same "
+        "filter plugin. If no alias is set, the instance will be named using the plugin name and a sequence number."
+    },
+    {
+        FLB_CONFIG_MAP_STR, "log_level", "info",
+        0, FLB_FALSE, 0,
+        "Specifies the log level for this filter plugin. If not set, the plugin "
+        "will use the global log level defined in the 'service' section. If the global "
+        "log level is also not specified, it defaults to 'info'."
+    },
+    {
+        FLB_CONFIG_MAP_TIME, "log_suppress_interval", "0",
+        0, FLB_FALSE, 0,
+        "Allows suppression of repetitive log messages from the filter plugin that appear similar within a specified "
+        "time interval. Defaults to 0, meaning no suppression."
+    },
+
+    {0}
+};
+
+struct mk_list *flb_filter_get_global_config_map(struct flb_config *config)
+{
+    return flb_config_map_create(config, filter_global_properties);
+}
+
 static inline int instance_id(struct flb_config *config)
 {
     struct flb_filter_instance *entry;
@@ -93,6 +134,8 @@ void flb_filter_do(struct flb_input_chunk *ic,
     char *ntag;
     char *work_data;
     size_t work_size;
+    size_t ingested_size;
+    size_t dropped_size;
     void *out_buf;
     size_t out_size;
     struct mk_list *head;
@@ -119,6 +162,7 @@ void flb_filter_do(struct flb_input_chunk *ic,
 
     work_data = (char *) data;
     work_size = bytes;
+    ingested_size = bytes;
 
 #ifdef FLB_HAVE_METRICS
     /* timestamp */
@@ -192,6 +236,10 @@ void flb_filter_do(struct flb_input_chunk *ic,
 
                 work_data = (char *) out_buf;
                 work_size = out_size;
+                dropped_size = 0;
+                if (ingested_size > out_size) {
+                    dropped_size = ingested_size - out_size;
+                }
 
                 /* all records removed, no data to continue processing */
                 if (out_size == 0) {
@@ -207,10 +255,14 @@ void flb_filter_do(struct flb_input_chunk *ic,
                     /* cmetrics */
                     cmt_counter_add(f_ins->cmt_drop_records, ts, in_records,
                                     1, (char *[]) {name});
+                    cmt_counter_add(f_ins->cmt_drop_bytes, ts, dropped_size,
+                                    1, (char *[]) {name});
 
                     /* [OLD] Summarize all records removed */
                     flb_metrics_sum(FLB_METRIC_N_DROPPED,
                                     in_records, f_ins->metrics);
+                    flb_metrics_sum(FLB_METRIC_N_DROPPED_BYTES,
+                                    dropped_size, f_ins->metrics);
 #endif
                     break;
                 }
@@ -224,10 +276,14 @@ void flb_filter_do(struct flb_input_chunk *ic,
                         /* cmetrics */
                         cmt_counter_add(f_ins->cmt_add_records, ts, diff,
                                     1, (char *[]) {name});
+                        cmt_counter_add(f_ins->cmt_drop_bytes, ts, dropped_size,
+                                    1, (char *[]) {name});
 
                         /* [OLD] Summarize new records */
                         flb_metrics_sum(FLB_METRIC_N_ADDED,
                                         diff, f_ins->metrics);
+                        flb_metrics_sum(FLB_METRIC_N_DROPPED_BYTES,
+                                        dropped_size, f_ins->metrics);
                     }
                     else if (out_records < in_records) {
                         diff = (in_records - out_records);
@@ -235,10 +291,14 @@ void flb_filter_do(struct flb_input_chunk *ic,
                         /* cmetrics */
                         cmt_counter_add(f_ins->cmt_drop_records, ts, diff,
                                     1, (char *[]) {name});
+                        cmt_counter_add(f_ins->cmt_drop_bytes, ts, dropped_size,
+                                    1, (char *[]) {name});
 
                         /* [OLD] Summarize dropped records */
                         flb_metrics_sum(FLB_METRIC_N_DROPPED,
                                         diff, f_ins->metrics);
+                        flb_metrics_sum(FLB_METRIC_N_DROPPED_BYTES,
+                                        dropped_size, f_ins->metrics);
                     }
 #endif
 
@@ -547,6 +607,14 @@ int flb_filter_init(struct flb_config *config, struct flb_filter_instance *ins)
                                               1, (char *[]) {"name"});
     cmt_counter_set(ins->cmt_drop_records, ts, 0, 1, (char *[]) {name});
 
+    /* Register generic filter plugin metrics */
+    ins->cmt_drop_bytes = cmt_counter_create(ins->cmt,
+                                             "fluentbit", "filter",
+                                             "drop_bytes_total",
+                                             "Total number of dropped bytes.",
+                                             1, (char *[]) {"name"});
+    cmt_counter_set(ins->cmt_drop_bytes, ts, 0, 1, (char *[]) {name});
+
     /* OLD Metrics API */
 #ifdef FLB_HAVE_METRICS
 
@@ -563,6 +631,7 @@ int flb_filter_init(struct flb_config *config, struct flb_filter_instance *ins)
     flb_metrics_add(FLB_METRIC_N_ADDED, "add_records", ins->metrics);
     flb_metrics_add(FLB_METRIC_N_RECORDS, "records", ins->metrics);
     flb_metrics_add(FLB_METRIC_N_BYTES, "bytes", ins->metrics);
+    flb_metrics_add(FLB_METRIC_N_DROPPED_BYTES, "drop_bytes", ins->metrics);
 #endif
 
     /*

@@ -275,7 +275,7 @@ int flb_notification_enqueue(int plugin_type,
                         sizeof(void *));
 
     if (result == -1) {
-        flb_errno();
+        flb_pipe_error();
 
         return -1;
     }
@@ -291,7 +291,7 @@ int flb_notification_receive(flb_pipefd_t channel,
     result = flb_pipe_r(channel, notification, sizeof(struct flb_notification *));
 
     if (result <= 0) {
-        flb_errno();
+        flb_pipe_error();
         return -1;;
     }
 

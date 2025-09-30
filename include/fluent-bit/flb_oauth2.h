@@ -64,6 +64,7 @@ void flb_oauth2_payload_clear(struct flb_oauth2 *ctx);
 int flb_oauth2_payload_append(struct flb_oauth2 *ctx,
                               const char *key_str, int key_len,
                               const char *val_str, int val_len);
+char *flb_oauth2_token_get_ng(struct flb_oauth2 *ctx);
 char *flb_oauth2_token_get(struct flb_oauth2 *ctx);
 int flb_oauth2_token_expired(struct flb_oauth2 *ctx);
 

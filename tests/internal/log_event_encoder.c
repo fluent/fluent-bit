@@ -650,6 +650,110 @@ static void emit_raw_record()
     flb_log_event_encoder_destroy(&encoder);
 }
 
+/* Validate that an empty map can be used as a metadata value */
+static void metadata_with_empty_map()
+{
+    struct flb_log_event_encoder encoder;
+    msgpack_unpacked             result;
+    msgpack_object               root;
+    msgpack_object               metadata;
+    int                          ret;
+    size_t                       off = 0;
+
+    ret = flb_log_event_encoder_init(&encoder, FLB_LOG_EVENT_FORMAT_FLUENT_BIT_V2);
+    if (!TEST_CHECK(ret == FLB_EVENT_ENCODER_SUCCESS)) {
+        TEST_MSG("flb_log_event_encoder_init failed");
+        return;
+    }
+
+    ret = flb_log_event_encoder_begin_record(&encoder);
+    if (!TEST_CHECK(ret == FLB_EVENT_ENCODER_SUCCESS)) {
+        TEST_MSG("flb_log_event_encoder_begin_record failed. ret=%s",
+                 flb_log_event_encoder_get_error_description(ret));
+        flb_log_event_encoder_destroy(&encoder);
+        return;
+    }
+
+    ret = flb_log_event_encoder_set_current_timestamp(&encoder);
+    if (!TEST_CHECK(ret == FLB_EVENT_ENCODER_SUCCESS)) {
+        TEST_MSG("flb_log_event_encoder_set_current_timestamp failed. ret=%s",
+                 flb_log_event_encoder_get_error_description(ret));
+        flb_log_event_encoder_destroy(&encoder);
+        return;
+    }
+
+    /* append the metadata key */
+    ret = flb_log_event_encoder_append_metadata_values(
+                &encoder,
+                FLB_LOG_EVENT_CSTRING_VALUE("otlp"));
+    if (!TEST_CHECK(ret == FLB_EVENT_ENCODER_SUCCESS)) {
+        TEST_MSG("flb_log_event_encoder_append_metadata_values failed. ret=%s",
+                 flb_log_event_encoder_get_error_description(ret));
+        flb_log_event_encoder_destroy(&encoder);
+        return;
+    }
+
+    /* open and immediately close an empty map as the value */
+    ret = flb_log_event_encoder_begin_map(&encoder, FLB_LOG_EVENT_METADATA);
+    if (!TEST_CHECK(ret == FLB_EVENT_ENCODER_SUCCESS)) {
+        TEST_MSG("flb_log_event_encoder_begin_map for empty map failed. ret=%s",
+                 flb_log_event_encoder_get_error_description(ret));
+        flb_log_event_encoder_destroy(&encoder);
+        return;
+    }
+
+    ret = flb_log_event_encoder_commit_map(&encoder, FLB_LOG_EVENT_METADATA);
+    if (!TEST_CHECK(ret == FLB_EVENT_ENCODER_SUCCESS)) {
+        TEST_MSG("flb_log_event_encoder_commit_map for empty map failed. ret=%s",
+                 flb_log_event_encoder_get_error_description(ret));
+        flb_log_event_encoder_destroy(&encoder);
+        return;
+    }
+
+    ret = flb_log_event_encoder_commit_record(&encoder);
+    if (!TEST_CHECK(ret == FLB_EVENT_ENCODER_SUCCESS)) {
+        TEST_MSG("flb_log_event_encoder_commit_record failed. ret=%s",
+                 flb_log_event_encoder_get_error_description(ret));
+        flb_log_event_encoder_destroy(&encoder);
+        return;
+    }
+
+    msgpack_unpacked_init(&result);
+    if (msgpack_unpack_next(&result, encoder.output_buffer,
+                            encoder.output_length, &off) == MSGPACK_UNPACK_SUCCESS) {
+        root = result.data;
+
+        if (!TEST_CHECK(root.type == MSGPACK_OBJECT_ARRAY && root.via.array.size == 2)) {
+            TEST_MSG("root type error");
+        }
+        else {
+            metadata = root.via.array.ptr[0].via.array.ptr[1];
+
+            if (!TEST_CHECK(metadata.type == MSGPACK_OBJECT_MAP && metadata.via.map.size == 1)) {
+                TEST_MSG("metadata map size error");
+            }
+            else {
+                if (!TEST_CHECK(msgpack_strncmp("otlp", 4,
+                                               metadata.via.map.ptr[0].key) == 0)) {
+                    TEST_MSG("metadata key mismatch");
+                }
+
+                if (!TEST_CHECK(metadata.via.map.ptr[0].val.type == MSGPACK_OBJECT_MAP &&
+                                metadata.via.map.ptr[0].val.via.map.size == 0)) {
+                    TEST_MSG("metadata value is not empty map");
+                }
+            }
+        }
+    }
+    else {
+        TEST_MSG("msgpack unpack failed");
+    }
+
+    msgpack_unpacked_destroy(&result);
+
+    flb_log_event_encoder_destroy(&encoder);
+}
+
 /* This test case encodes a log event with a specific timestamp
  * value and then it checks the raw data to ensure that regardless
  * of the host byte order the value is encoded in network order.
@@ -739,6 +843,7 @@ TEST_LIST = {
     { "init_destroy", init_destroy},
     { "init_unsupported_format", init_unsupported_format},
     { "emit_raw_record", emit_raw_record},
+    { "metadata_with_empty_map", metadata_with_empty_map},
     { "timestamp_encoding", timestamp_encoding},
     { NULL, NULL }
 };

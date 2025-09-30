@@ -174,6 +174,7 @@ static int split_metric_name(struct cmt_decode_prometheus_context *context,
     *subsystem = strchr(*ns, '_');
     if (!(*subsystem)) {
         *name = *ns;
+        *subsystem = "";
         *ns = "";
     }
     else {
@@ -444,7 +445,7 @@ static int add_metric_histogram(struct cmt_decode_prometheus_context *context)
     size_t bucket_index;
     double *buckets = NULL;
     uint64_t *bucket_defaults = NULL;
-    double sum;
+    double sum = 0;
     uint64_t count = 0;
     double count_dbl;
     struct cfl_list *head;
@@ -456,14 +457,22 @@ static int add_metric_histogram(struct cmt_decode_prometheus_context *context)
     cfl_sds_t *labels_without_le = NULL;
     cfl_sds_t *values_without_le = NULL;
     int label_i;
-    uint64_t timestamp;
+    uint64_t timestamp = 0;
+
+    if (cfl_list_size(&context->metric.samples) < 3) {
+        return report_error(context,
+                CMT_DECODE_PROMETHEUS_SYNTAX_ERROR,
+                "not enough samples for histogram");
+    }
 
     /* bucket_count = sample count - 3:
      * - "Inf" bucket
      * - sum
      * - count */
     bucket_count = cfl_list_size(&context->metric.samples) - 3;
-    timestamp = context->opts.override_timestamp;
+    if (context->opts.override_timestamp) {
+        timestamp = context->opts.override_timestamp;
+    }
 
     bucket_defaults = calloc(bucket_count + 1, sizeof(*bucket_defaults));
     if (!bucket_defaults) {
@@ -627,6 +636,7 @@ static int add_metric_histogram(struct cmt_decode_prometheus_context *context)
         context->current.histogram = h;
     }
 
+
     if (cmt_histogram_set_default(h, timestamp, bucket_defaults, sum, count,
                 label_i,
                 label_i ? values_without_le : NULL)) {
@@ -661,7 +671,7 @@ static int add_metric_summary(struct cmt_decode_prometheus_context *context)
     size_t quantile_index;
     double *quantiles = NULL;
     double *quantile_defaults = NULL;
-    double sum;
+    double sum = 0.0;
     double count_dbl;
     size_t label_count;
     uint64_t count = 0;
@@ -673,13 +683,21 @@ static int add_metric_summary(struct cmt_decode_prometheus_context *context)
     cfl_sds_t *labels_without_quantile = NULL;
     cfl_sds_t *values_without_quantile = NULL;
     int label_i;
-    uint64_t timestamp;
+    uint64_t timestamp = 0;
+
+    if (cfl_list_size(&context->metric.samples) < 2) {
+        return report_error(context,
+                CMT_DECODE_PROMETHEUS_SYNTAX_ERROR,
+                "not enough samples for summary");
+    }
 
     /* quantile_count = sample count - 2:
      * - sum
      * - count */
     quantile_count = cfl_list_size(&context->metric.samples) - 2;
-    timestamp = context->opts.override_timestamp;
+    if (context->opts.override_timestamp) {
+        timestamp = context->opts.override_timestamp;
+    }
 
     quantile_defaults = calloc(quantile_count, sizeof(*quantile_defaults));
     if (!quantile_defaults) {
@@ -1143,17 +1161,36 @@ static int sample_start(struct cmt_decode_prometheus_context *context)
     return 0;
 }
 
-static int parse_sample(
-        struct cmt_decode_prometheus_context *context,
-        const char *value1,
-        const char *value2)
+static int parse_sample(struct cmt_decode_prometheus_context *context,
+                        const char *value1,
+                        const char *value2)
 {
+    int len;
     struct cmt_decode_prometheus_context_sample *sample;
     sample = cfl_list_entry_last(&context->metric.samples,
             struct cmt_decode_prometheus_context_sample, _head);
 
-    strcpy(sample->value1, value1);
-    strcpy(sample->value2, value2);
+    /* value1 */
+    len = strlen(value1);
+    if (len >= sizeof(sample->value1) - 1) {
+        return report_error(context,
+                CMT_DECODE_PROMETHEUS_SAMPLE_VALUE_TOO_LONG,
+                "sample value is too long (max %zu characters)", sizeof(sample->value1) - 1);
+    }
+
+    memcpy(sample->value1, value1, len);
+    sample->value1[len] = 0;
+
+    /* value2 */
+    len = strlen(value2);
+    if (len >= sizeof(sample->value2) - 1) {
+        return report_error(context,
+                CMT_DECODE_PROMETHEUS_SAMPLE_VALUE_TOO_LONG,
+                "sample value is too long (max %zu characters)", sizeof(sample->value2) - 1);
+    }
+    memcpy(sample->value2, value2, len);
+    sample->value2[len] = 0;
+
     return 0;
 }
 

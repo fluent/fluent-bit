@@ -27,5 +27,5 @@ add_flex_bison_dependency(lexer parser)
 add_dependencies(flb-ra-parser onigmo-static)
 
 if(FLB_JEMALLOC)
-  target_link_libraries(flb-ra-parser libjemalloc)
+  target_link_libraries(flb-ra-parser ${JEMALLOC_LIBRARIES})
 endif()

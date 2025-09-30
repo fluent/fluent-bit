@@ -17,7 +17,11 @@
  *  limitations under the License.
  */
 
+#include <stdio.h>
+#include <stdlib.h>
+
 #include <fluent-bit/flb_info.h>
+#include <fluent-bit/flb_str.h>
 #include <fluent-bit/flb_compat.h>
 #include <fluent-bit/tls/flb_tls.h>
 #include <fluent-bit/tls/flb_tls_info.h>
@@ -26,6 +30,12 @@
 #include <openssl/err.h>
 #include <openssl/opensslv.h>
 #include <openssl/x509v3.h>
+
+#ifdef FLB_SYSTEM_MACOS
+#include <Security/Security.h>
+#include <CoreFoundation/CoreFoundation.h>
+#include <unistd.h>
+#endif
 
 #ifdef FLB_SYSTEM_WINDOWS
     #define strtok_r(str, delimiter, context) \
@@ -46,16 +56,20 @@ struct tls_context {
     SSL_CTX *ctx;
     int mode;
     char *alpn;
+#if defined(FLB_SYSTEM_WINDOWS)
+    char *certstore_name;
+    int use_enterprise_store;
+#endif
     pthread_mutex_t mutex;
 };
 
 struct tls_session {
     SSL *ssl;
     int fd;
+    char alpn[FLB_TLS_ALPN_MAX_LENGTH];
     int continuation_flag;
     struct tls_context *parent;    /* parent struct tls_context ref */
 };
-
 
 static int tls_init(void)
 {
@@ -70,6 +84,7 @@ static int tls_init(void)
     SSL_load_error_strings();
     SSL_library_init();
 #endif
+
     return 0;
 }
 
@@ -128,13 +143,59 @@ static void tls_context_destroy(void *ctx_backend)
     struct tls_context *ctx = ctx_backend;
 
     pthread_mutex_lock(&ctx->mutex);
+
     SSL_CTX_free(ctx->ctx);
+
     if (ctx->alpn != NULL) {
         flb_free(ctx->alpn);
+
+        ctx->alpn = NULL;
     }
+
+#if defined(FLB_SYSTEM_WINDOWS)
+    if (ctx->certstore_name != NULL) {
+        flb_free(ctx->certstore_name);
+
+        ctx->certstore_name = NULL;
+    }
+#endif
+
     pthread_mutex_unlock(&ctx->mutex);
 
     flb_free(ctx);
+}
+
+static int tls_context_server_alpn_select_callback(SSL *ssl,
+                                                   const unsigned char **out,
+                                                   unsigned char *outlen,
+                                                   const unsigned char *in,
+                                                   unsigned int inlen,
+                                                   void *arg)
+{
+    int                 result;
+    struct tls_context *ctx;
+
+    ctx = (struct tls_context *) arg;
+
+    result = SSL_TLSEXT_ERR_NOACK;
+
+    if (ctx->alpn != NULL) {
+        result = SSL_select_next_proto((unsigned char **) out,
+                                       outlen,
+                                       (const unsigned char *) &ctx->alpn[1],
+                                       (unsigned int) ctx->alpn[0],
+                                       in,
+                                       inlen);
+
+        if (result == OPENSSL_NPN_NEGOTIATED) {
+            result = SSL_TLSEXT_ERR_OK;
+        }
+        else if (result == OPENSSL_NPN_NO_OVERLAP) {
+            result = SSL_TLSEXT_ERR_ALERT_FATAL;
+        }
+    }
+
+    return result;
 }
 
 int tls_context_alpn_set(void *ctx_backend, const char *alpn)
@@ -152,8 +213,8 @@ int tls_context_alpn_set(void *ctx_backend, const char *alpn)
     result = 0;
 
     if (alpn != NULL) {
-        wire_format_alpn = flb_calloc(strlen(alpn),
-                                      sizeof(char) + 1);
+        wire_format_alpn = flb_calloc(strlen(alpn) + 3,
+                                      sizeof(char));
 
         if (wire_format_alpn == NULL) {
             return -1;
@@ -199,37 +260,23 @@ int tls_context_alpn_set(void *ctx_backend, const char *alpn)
     if (result != 0) {
         result = -1;
     }
-
-    return result;
-}
-
-static int tls_context_server_alpn_select_callback(SSL *ssl,
-                                                   const unsigned char **out,
-                                                   unsigned char *outlen,
-                                                   const unsigned char *in,
-                                                   unsigned int inlen,
-                                                   void *arg)
-{
-    int                 result;
-    struct tls_context *ctx;
-
-    ctx = (struct tls_context *) arg;
-
-    result = SSL_TLSEXT_ERR_NOACK;
-
-    if (ctx->alpn != NULL) {
-        result = SSL_select_next_proto((unsigned char **) out,
-                                       outlen,
-                                       (const unsigned char *) &ctx->alpn[1],
-                                       (unsigned int) ctx->alpn[0],
-                                       in,
-                                       inlen);
-
-        if (result == OPENSSL_NPN_NEGOTIATED) {
-            result = SSL_TLSEXT_ERR_OK;
+    else {
+        if (ctx->mode == FLB_TLS_SERVER_MODE) {
+            SSL_CTX_set_alpn_select_cb(
+                ctx->ctx,
+                tls_context_server_alpn_select_callback,
+                ctx);
         }
-        else if (result == OPENSSL_NPN_NO_OVERLAP) {
-            result = SSL_TLSEXT_ERR_ALERT_FATAL;
+        else {
+            if (ctx->alpn == NULL) {
+                return -1;
+            }
+            if (SSL_CTX_set_alpn_protos(
+                ctx->ctx, 
+                (const unsigned char *) &ctx->alpn[1], 
+                (unsigned int) ctx->alpn[0]) != 0) {
+                return -1;
+            }
         }
     }
 
@@ -241,18 +288,44 @@ static int windows_load_system_certificates(struct tls_context *ctx)
 {
     int ret;
     HANDLE win_store;
+    unsigned long err;
     PCCERT_CONTEXT win_cert = NULL;
     const unsigned char *win_cert_data;
     X509_STORE *ossl_store = SSL_CTX_get_cert_store(ctx->ctx);
     X509 *ossl_cert;
+    char *certstore_name = "Root";
 
-    win_store = CertOpenSystemStoreA(0, "Root");
-    if (win_store == NULL) {
-        flb_error("[tls] Cannot open cert store: %i", GetLastError());
+    /* Check if OpenSSL certificate store is available */
+    if (!ossl_store) {
+        flb_error("[tls] failed to retrieve openssl certificate store.");
         return -1;
     }
 
-    while (win_cert = CertEnumCertificatesInStore(win_store, win_cert)) {
+    if (ctx->certstore_name) {
+        certstore_name = ctx->certstore_name;
+    }
+
+    if (ctx->use_enterprise_store) {
+        /* Open the Windows system enterprise certificate store */
+        win_store = CertOpenStore(CERT_STORE_PROV_SYSTEM,
+                                  0,
+                                  0,
+                                  CERT_SYSTEM_STORE_LOCAL_MACHINE_ENTERPRISE,
+                                  certstore_name);
+    }
+    else {
+        /* Open the Windows system certificate store */
+        win_store = CertOpenSystemStoreA(0, certstore_name);
+    }
+
+    if (win_store == NULL) {
+        flb_error("[tls] cannot open windows certificate store: %lu", GetLastError());
+        return -1;
+    }
+
+    /* Iterate over certificates in the store */
+    while ((win_cert = CertEnumCertificatesInStore(win_store, win_cert)) != NULL) {
+        /* Check if the certificate is encoded in ASN.1 DER format */
         if (win_cert->dwCertEncodingType & X509_ASN_ENCODING) {
             /*
              * Decode the certificate into X509 struct.
@@ -262,25 +335,139 @@ static int windows_load_system_certificates(struct tls_context *ctx)
              */
             win_cert_data = win_cert->pbCertEncoded;
             ossl_cert = d2i_X509(NULL, &win_cert_data, win_cert->cbCertEncoded);
+
             if (!ossl_cert) {
-                flb_debug("[tls] Cannot parse a certificate. skipping...");
+                flb_debug("[tls] cannot parse a certificate, error code: %lu, skipping...", ERR_get_error());
                 continue;
             }
 
             /* Add X509 struct to the openssl cert store */
             ret = X509_STORE_add_cert(ossl_store, ossl_cert);
             if (!ret) {
-                flb_warn("[tls] Failed to add a certificate to the store: %lu: %s",
-                         ERR_get_error(), ERR_error_string(ERR_get_error(), NULL));
+                err = ERR_get_error();
+                if (err == X509_R_CERT_ALREADY_IN_HASH_TABLE) {
+                    flb_debug("[tls] certificate already exists in the store, skipping.");
+                }
+                else {
+                    flb_warn("[tls] failed to add certificate to openssl store. error code: %lu - %s",
+                             err, ERR_error_string(err, NULL));
+                }
             }
             X509_free(ossl_cert);
         }
     }
 
-    if (!CertCloseStore(win_store, 0)) {
-        flb_error("[tls] Cannot close cert store: %i", GetLastError());
+    /* Check for errors during enumeration */
+    if (GetLastError() != CRYPT_E_NOT_FOUND) {
+        flb_error("[tls] error occurred while enumerating certificates: %lu", GetLastError());
+        CertCloseStore(win_store, 0);
         return -1;
     }
+
+    /* Close the Windows system certificate store */
+    if (!CertCloseStore(win_store, 0)) {
+        flb_error("[tls] cannot close windows certificate store: %lu", GetLastError());
+        return -1;
+    }
+
+    flb_debug("[tls] successfully loaded certificates from windows system %s store.", 
+              certstore_name);
+    return 0;
+}
+#endif
+
+#ifdef FLB_SYSTEM_MACOS
+/* macOS-specific system certificate loading */
+static int macos_load_system_certificates(struct tls_context *ctx)
+{
+    X509_STORE *store = NULL;
+    X509 *x509 = NULL;
+    SecCertificateRef cert = NULL;
+    CFArrayRef certs = NULL;
+    CFDataRef certData = NULL;
+    CFIndex i = 0;
+    const unsigned char *data = NULL;
+    char *subject = NULL;
+    char *issuer = NULL;
+    OSStatus status;
+    unsigned long err;
+    int ret = -1;
+    unsigned long loaded_cert_count = 0;
+
+    /* Retrieve system certificates from macOS Keychain */
+    status = SecTrustSettingsCopyCertificates(kSecTrustSettingsDomainSystem, &certs);
+    if (status != errSecSuccess || !certs) {
+        flb_debug("[tls] failed to load system certificates from keychain, status: %d", status);
+        return -1;
+    }
+
+    flb_debug("[tls] attempting to load certificates from system keychain of macOS");
+
+    /* Get the SSL context's certificate store */
+    store = SSL_CTX_get_cert_store(ctx->ctx);
+    if (!store) {
+        flb_debug("[tls] failed to get certificate store from SSL context");
+        CFRelease(certs);
+        return -1;
+    }
+
+    /* Load each certificate into the X509 store */
+    for (i = 0; i < CFArrayGetCount(certs); i++) {
+        cert = (SecCertificateRef) CFArrayGetValueAtIndex(certs, i);
+        if (!cert) {
+            flb_debug("[tls] invalid certificate reference at index %ld, skipping", i);
+            continue;
+        }
+
+        certData = SecCertificateCopyData(cert);
+        if (!certData) {
+            flb_debug("[tls] failed to retrieve data for certificate %ld from keychain, skipping", i);
+            continue;
+        }
+
+        /* Convert certificate data to X509 */
+        data = CFDataGetBytePtr(certData);
+        x509 = d2i_X509(NULL, &data, CFDataGetLength(certData));
+        CFRelease(certData);
+
+        if (!x509) {
+            flb_debug("[tls] failed to parse certificate %ld from keychain, skipping", i);
+            continue;
+        }
+
+        subject = X509_NAME_oneline(X509_get_subject_name(x509), NULL, 0);
+        issuer = X509_NAME_oneline(X509_get_issuer_name(x509), NULL, 0);
+        if (subject && issuer) {
+            flb_debug("[tls] certificate %ld details - subject: %s, issuer: %s", i, subject, issuer);
+        }
+
+        /* Attempt to add certificate to trusted store */
+        ret = X509_STORE_add_cert(store, x509);
+        if (ret != 1) {
+            err = ERR_get_error();
+            if (ERR_GET_REASON(err) == X509_R_CERT_ALREADY_IN_HASH_TABLE) {
+                flb_debug("[tls] certificate %ld already exists in the trusted store (duplicate)", i);
+            } else {
+                flb_debug("[tls] failed to add certificate %ld to trusted store, error code: %lu", i, err);
+            }
+            X509_free(x509);
+            continue;
+        }
+
+        loaded_cert_count++;
+        flb_debug("[tls] successfully loaded and added certificate %ld to trusted store", i);
+
+        if (subject) {
+            OPENSSL_free(subject);
+        }
+        if (issuer) {
+            OPENSSL_free(issuer);
+        }
+        X509_free(x509);
+    }
+
+    CFRelease(certs);
+    flb_debug("[tls] finished loading keychain certificates, total loaded: %lu", loaded_cert_count);
     return 0;
 }
 #endif
@@ -290,10 +477,15 @@ static int load_system_certificates(struct tls_context *ctx)
     int ret;
     const char *ca_file = FLB_DEFAULT_SEARCH_CA_BUNDLE;
 
+    (void) ret;
+    (void) ca_file;
+
     /* For Windows use specific API to read the certs store */
 #ifdef _MSC_VER
     return windows_load_system_certificates(ctx);
-#endif
+#elif defined(__APPLE__)
+    return macos_load_system_certificates(ctx);
+#else
     if (access(ca_file, R_OK) != 0) {
         ca_file = NULL;
     }
@@ -304,7 +496,35 @@ static int load_system_certificates(struct tls_context *ctx)
         ERR_print_errors_fp(stderr);
     }
     return 0;
+#endif
 }
+
+#ifdef FLB_HAVE_DEV
+/* This is not thread safe */
+static void ssl_key_logger(const SSL *ssl, const char *line)
+{
+    char *key_log_filename;
+    FILE *key_log_file;
+
+    key_log_filename = getenv("SSLKEYLOGFILE");
+
+    if (key_log_filename == NULL) {
+        return;
+    }
+
+    key_log_file = fopen(key_log_filename, "a");
+
+    if (key_log_file == NULL) {
+        return;
+    }
+
+    setvbuf(key_log_file, NULL, 0, _IOLBF);
+
+    fprintf(key_log_file, "%s\n", line);
+
+    fclose(key_log_file);
+}
+#endif
 
 static void *tls_context_create(int verify,
                                 int debug,
@@ -320,6 +540,7 @@ static void *tls_context_create(int verify,
     SSL_CTX *ssl_ctx;
     struct tls_context *ctx;
     char err_buf[256];
+    char *key_log_filename;
 
     /*
      * Init library ? based in the documentation on OpenSSL >= 1.1.0 is not longer
@@ -362,17 +583,21 @@ static void *tls_context_create(int verify,
         flb_errno();
         return NULL;
     }
+
+#ifdef FLB_HAVE_DEV
+    key_log_filename = getenv("SSLKEYLOGFILE");
+
+    if (key_log_filename != NULL) {
+        SSL_CTX_set_keylog_callback(ssl_ctx, ssl_key_logger);
+    }
+#endif
+
+
     ctx->ctx = ssl_ctx;
     ctx->mode = mode;
     ctx->alpn = NULL;
     ctx->debug_level = debug;
     pthread_mutex_init(&ctx->mutex, NULL);
-
-    if (mode == FLB_TLS_SERVER_MODE) {
-        SSL_CTX_set_alpn_select_cb(ssl_ctx,
-                                   tls_context_server_alpn_select_callback,
-                                   ctx);
-    }
 
     /* Verify peer: by default OpenSSL always verify peer */
     if (verify == FLB_FALSE) {
@@ -445,6 +670,150 @@ static void *tls_context_create(int verify,
     return NULL;
 }
 
+#if !defined(TLS1_3_VERSION)
+#  define TLS1_3_VERSION 0x0304
+#endif
+
+struct tls_proto_def {
+    char *name;
+    int ver;
+};
+
+struct tls_proto_options {
+    int ver;
+    int no_opt;
+};
+
+static int parse_proto_version(const char *proto_ver)
+{
+    int i;
+    struct tls_proto_def defs[] = {
+        { "SSLv2", SSL2_VERSION },
+        { "SSLv3", SSL3_VERSION },
+        { "TLSv1", TLS1_VERSION },
+        { "TLSv1.1", TLS1_1_VERSION },
+        { "TLSv1.2", TLS1_2_VERSION },
+#if defined(TLS1_3_VERSION)
+        { "TLSv1.3", TLS1_3_VERSION },
+#endif
+        { NULL, 0 },
+    };
+
+    if (proto_ver == NULL) {
+        return 0;
+    }
+
+    for (i = 0; i < sizeof(defs) / sizeof(struct tls_proto_def); i++) {
+        if (strncasecmp(defs[i].name, proto_ver, strlen(proto_ver)) == 0) {
+            return defs[i].ver;
+        }
+    }
+
+    return -1;
+}
+
+#if defined(TLS1_3_VERSION)
+#define DEFAULT_MAX_VERSION TLS1_3_VERSION
+#else
+#define DEFAULT_MAX_VERSION TLS1_2_VERSION
+#endif
+
+static int tls_set_minmax_proto(struct flb_tls *tls,
+                                const char *min_version,
+                                const char *max_version)
+{
+    int i;
+    unsigned long sum = 0, opts = 0;
+    int min = TLS1_1_VERSION;
+    int max = DEFAULT_MAX_VERSION;
+    int val = -1;
+    struct tls_context *ctx = tls->ctx;
+
+    struct tls_proto_options tls_options[] = {
+        { SSL2_VERSION, SSL_OP_NO_SSLv2 },
+        { SSL3_VERSION, SSL_OP_NO_SSLv3 },
+        { TLS1_VERSION, SSL_OP_NO_TLSv1 },
+        { TLS1_1_VERSION, SSL_OP_NO_TLSv1_1 },
+        { TLS1_2_VERSION, SSL_OP_NO_TLSv1_2 },
+#if defined(TLS1_3_VERSION) && defined(SSL_OP_NO_TLSv1_3)
+        { TLS1_3_VERSION, SSL_OP_NO_TLSv1_3 },
+#endif
+    };
+
+    if (!ctx) {
+        return -1;
+    }
+
+    val = parse_proto_version(min_version);
+    if (val >= 0) {
+        min = val;
+    }
+
+    val = parse_proto_version(max_version);
+    if (val >= 0) {
+        max = val;
+    }
+
+    pthread_mutex_lock(&ctx->mutex);
+
+    for (i = 0; i < sizeof(tls_options) / sizeof(struct tls_proto_options); i++) {
+        sum |= tls_options[i].no_opt;
+        if ((min && min > tls_options[i].ver) ||
+            (max && max < tls_options[i].ver)) {
+            opts |= tls_options[i].no_opt;
+        }
+    }
+    SSL_CTX_clear_options(ctx->ctx, sum);
+    SSL_CTX_set_options(ctx->ctx, opts);
+
+    pthread_mutex_unlock(&ctx->mutex);
+
+    return 0;
+}
+
+static int tls_set_ciphers(struct flb_tls *tls, const char *ciphers)
+{
+    struct tls_context *ctx = tls->ctx;
+
+    pthread_mutex_lock(&ctx->mutex);
+
+    if (!SSL_CTX_set_cipher_list(ctx->ctx, ciphers)) {
+        return -1;
+    }
+
+    pthread_mutex_unlock(&ctx->mutex);
+
+    return 0;
+}
+
+#if defined(FLB_SYSTEM_WINDOWS)
+static int tls_set_certstore_name(struct flb_tls *tls, const char *certstore_name)
+{
+    struct tls_context *ctx = tls->ctx;
+
+    pthread_mutex_lock(&ctx->mutex);
+
+    ctx->certstore_name = flb_strdup(certstore_name);
+
+    pthread_mutex_unlock(&ctx->mutex);
+
+    return 0;
+}
+
+static int tls_set_use_enterprise_store(struct flb_tls *tls, int use_enterprise)
+{
+    struct tls_context *ctx = tls->ctx;
+
+    pthread_mutex_lock(&ctx->mutex);
+
+    ctx->use_enterprise_store = !!use_enterprise;
+
+    pthread_mutex_unlock(&ctx->mutex);
+
+    return 0;
+}
+#endif
+
 static void *tls_session_create(struct flb_tls *tls,
                                 int fd)
 {
@@ -502,7 +871,7 @@ static int tls_session_destroy(void *session)
 
     pthread_mutex_lock(&ctx->mutex);
 
-    if (flb_socket_error(ptr->fd) == 0) {
+    if (ptr->fd >= 0 && flb_socket_error(ptr->fd) == 0) {
         SSL_shutdown(ptr->ssl);
     }
 
@@ -512,6 +881,63 @@ static int tls_session_destroy(void *session)
     pthread_mutex_unlock(&ctx->mutex);
 
     return 0;
+}
+
+static void tls_session_invalidate(void *session)
+{
+    struct tls_session *ptr = session;
+    struct tls_context *ctx;
+
+    if (ptr == NULL) {
+        return;
+    }
+
+    ctx = ptr->parent;
+    if (ctx == NULL) {
+        ptr->fd = -1;
+        return;
+    }
+
+    pthread_mutex_lock(&ctx->mutex);
+
+    if (ptr->fd >= 0 && flb_socket_error(ptr->fd) == 0) {
+        SSL_shutdown(ptr->ssl);
+    }
+
+    ptr->fd = -1;
+
+    pthread_mutex_unlock(&ctx->mutex);
+}
+
+static const char *tls_session_alpn_get(void *session_)
+{
+    const unsigned char    *backend_alpn_buffer;
+    unsigned int            backend_alpn_length;
+    struct tls_session     *backend_session;
+    struct flb_tls_session *session;
+
+    session = (struct flb_tls_session *) session_;
+    backend_session = (struct tls_session *) session->ptr;
+
+    if (backend_session->alpn[0] == '\0') {
+        backend_alpn_buffer = NULL;
+
+        SSL_get0_alpn_selected(backend_session->ssl,
+                               &backend_alpn_buffer,
+                               &backend_alpn_length);
+
+        if (backend_alpn_buffer != NULL) {
+            if (backend_alpn_length >= FLB_TLS_ALPN_MAX_LENGTH) {
+                backend_alpn_length = FLB_TLS_ALPN_MAX_LENGTH - 1;
+            }
+
+            strncpy(backend_session->alpn,
+                    (char *) backend_alpn_buffer,
+                    backend_alpn_length);
+        }
+    }
+
+    return backend_session->alpn;
 }
 
 static int tls_net_read(struct flb_tls_session *session,
@@ -644,6 +1070,7 @@ static int tls_net_write(struct flb_tls_session *session,
                 ERR_error_string_n(err_code, err_buf, sizeof(err_buf) - 1);
                 flb_error("[tls] error: %s", err_buf);
             }
+
             ret = -1;
         }
     }
@@ -684,6 +1111,7 @@ static int tls_net_handshake(struct flb_tls *tls,
     char err_buf[256];
     struct tls_session *session = ptr_session;
     struct tls_context *ctx;
+    const char *x509_err;
 
     ctx = session->parent;
     pthread_mutex_lock(&ctx->mutex);
@@ -691,6 +1119,18 @@ static int tls_net_handshake(struct flb_tls *tls,
     if (!session->continuation_flag) {
         if (tls->mode == FLB_TLS_CLIENT_MODE) {
             SSL_set_connect_state(session->ssl);
+
+            if (ctx->alpn != NULL) {
+                ret = SSL_set_alpn_protos(session->ssl,
+                                          (const unsigned char *) &ctx->alpn[1],
+                                          (unsigned int) ctx->alpn[0]);
+
+                if (ret != 0) {
+                    flb_error("[tls] error: alpn setup failed : %d", ret);
+                    pthread_mutex_unlock(&ctx->mutex);
+                    return -1;
+                }
+            }
         }
         else if (tls->mode == FLB_TLS_SERVER_MODE) {
             SSL_set_accept_state(session->ssl);
@@ -738,13 +1178,16 @@ static int tls_net_handshake(struct flb_tls *tls,
         if (ret != SSL_ERROR_WANT_READ &&
             ret != SSL_ERROR_WANT_WRITE) {
             ret = SSL_get_error(session->ssl, ret);
-            // The SSL_ERROR_SYSCALL with errno value of 0 indicates unexpected
-            //  EOF from the peer. This is fixed in OpenSSL 3.0.
+            /* The SSL_ERROR_SYSCALL with errno value of 0 indicates unexpected
+             *  EOF from the peer. This is fixed in OpenSSL 3.0.
+             */
+
             if (ret == 0) {
                 ssl_code = SSL_get_verify_result(session->ssl);
                 if (ssl_code != X509_V_OK) {
-                    flb_error("[tls] error: unexpected EOF with reason: %s",
-                              ERR_reason_error_string(ERR_get_error()));
+                    /* Refer to: https://x509errors.org/ */
+                    x509_err = X509_verify_cert_error_string(ssl_code);
+                    flb_error("[tls] certificate verification failed, reason: %s (X509 code: %ld)", x509_err, ssl_code);
                 }
                 else {
                     flb_error("[tls] error: unexpected EOF");
@@ -788,9 +1231,17 @@ static struct flb_tls_backend tls_openssl = {
     .context_create       = tls_context_create,
     .context_destroy      = tls_context_destroy,
     .context_alpn_set     = tls_context_alpn_set,
+    .session_alpn_get     = tls_session_alpn_get,
+    .set_minmax_proto     = tls_set_minmax_proto,
+    .set_ciphers          = tls_set_ciphers,
     .session_create       = tls_session_create,
+    .session_invalidate   = tls_session_invalidate,
     .session_destroy      = tls_session_destroy,
     .net_read             = tls_net_read,
     .net_write            = tls_net_write,
     .net_handshake        = tls_net_handshake,
+#if defined(FLB_SYSTEM_WINDOWS)
+    .set_certstore_name   = tls_set_certstore_name,
+    .set_use_enterprise_store = tls_set_use_enterprise_store,
+#endif
 };

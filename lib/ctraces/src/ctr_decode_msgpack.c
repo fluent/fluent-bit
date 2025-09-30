@@ -522,6 +522,20 @@ static int unpack_span_dropped_attributes_count(mpack_reader_t *reader, size_t i
     return ctr_mpack_consume_uint32_tag(reader, &context->span->dropped_attr_count);
 }
 
+static int unpack_span_dropped_events_count(mpack_reader_t *reader, size_t index, void *ctx)
+{
+    struct ctr_msgpack_decode_context *context = ctx;
+
+    return ctr_mpack_consume_uint32_tag(reader, &context->span->dropped_events_count);
+}
+
+static int unpack_span_dropped_links_count(mpack_reader_t *reader, size_t index, void *ctx)
+{
+    struct ctr_msgpack_decode_context *context = ctx;
+
+    return ctr_mpack_consume_uint32_tag(reader, &context->span->dropped_links_count);
+}
+
 static int unpack_span_events(mpack_reader_t *reader, size_t index, void *ctx)
 {
     return ctr_mpack_unpack_array(reader, unpack_event, ctx);
@@ -559,6 +573,13 @@ static int unpack_span_status(mpack_reader_t *reader, size_t index, void *ctx)
     return ctr_mpack_unpack_map(reader, callbacks, ctx);
 }
 
+static int unpack_span_schema_url(mpack_reader_t *reader, size_t index, void *ctx)
+{
+    struct ctr_msgpack_decode_context *context = ctx;
+
+    return ctr_mpack_consume_string_or_nil_tag(reader, &context->span->schema_url);
+}
+
 static int unpack_span(mpack_reader_t *reader, size_t index, void *ctx)
 {
     int result;
@@ -575,9 +596,12 @@ static int unpack_span(mpack_reader_t *reader, size_t index, void *ctx)
             {"end_time_unix_nano",       unpack_span_end_time_unix_nano},
             {"attributes",               unpack_span_attributes},
             {"dropped_attributes_count", unpack_span_dropped_attributes_count},
+            {"dropped_events_count",     unpack_span_dropped_events_count},
+            {"dropped_links_count",      unpack_span_dropped_links_count},
             {"events",                   unpack_span_events},
             {"links",                    unpack_span_links},
             {"status",                   unpack_span_status},
+            {"schema_url",               unpack_span_schema_url},
             {NULL,                       NULL}
         };
 

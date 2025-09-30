@@ -30,6 +30,7 @@
 struct nginx_ctx
 {
     int coll_id;                    /* collector id */
+    int scrape_interval;            /* collection interval */
     flb_sds_t status_url;
     struct flb_parser *parser;
     struct flb_input_instance *ins; /* Input plugin instace */

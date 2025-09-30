@@ -29,6 +29,8 @@
 
 #define DEFAULT_TIME_KEY_FORMAT "%Y-%m-%dT%H:%M:%S"
 
+#define FLB_KINESIS_DEFAULT_HTTPS_PORT    443
+
 /* buffers used for each flush */
 struct flush {
     /* temporary buffer for storing the serialized event messages */
@@ -92,6 +94,7 @@ struct flb_kinesis {
     int retry_requests;
     char *sts_endpoint;
     int custom_endpoint;
+    uint16_t port;
     char *profile;
 
     /* in this plugin the 'random' partition key is a uuid + fluent tag + timestamp */

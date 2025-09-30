@@ -38,6 +38,88 @@ struct url_check url_checks[] = {
     {-1, "://", NULL, NULL, NULL, NULL},
 };
 
+void test_url_split_sds()
+{
+    int i;
+    int ret;
+    int size;
+    flb_sds_t protocol;
+    flb_sds_t host;
+    flb_sds_t port;
+    flb_sds_t uri;
+    struct url_check *u;
+
+    size = sizeof(url_checks) / sizeof(struct url_check);
+    for (i = 0; i < size; i ++) {
+        u = &url_checks[i];
+
+        protocol = NULL;
+        host = NULL;
+        port = NULL;
+        uri = NULL;
+
+        ret = flb_utils_url_split_sds(u->url, &protocol, &host, &port, &uri);
+        TEST_CHECK(ret == u->ret);
+        if (ret == -1) {
+            continue;
+        }
+
+        /* protocol */
+        if (u->prot) {
+            TEST_CHECK(protocol != NULL);
+
+            ret = strcmp(u->prot, protocol);
+            TEST_CHECK(ret == 0);
+        }
+        else {
+            TEST_CHECK(protocol == NULL);
+        }
+
+        /* host */
+        if (u->host) {
+            TEST_CHECK(host != NULL);
+            ret = strcmp(u->host, host);
+            TEST_CHECK(ret == 0);
+        }
+        else {
+            TEST_CHECK(host == NULL);
+        }
+
+        /* port */
+        if (u->port) {
+            TEST_CHECK(port != NULL);
+            ret = strcmp(u->port, port);
+            TEST_CHECK(ret == 0);
+        }
+        else {
+            TEST_CHECK(port == NULL);
+        }
+
+        /* uri */
+        if (u->uri) {
+            TEST_CHECK(uri != NULL);
+            ret = strcmp(u->uri, uri);
+            TEST_CHECK(ret == 0);
+        }
+        else {
+            TEST_CHECK(uri == NULL);
+        }
+
+        if (protocol) {
+            flb_sds_destroy(protocol);
+        }
+        if (host) {
+            flb_sds_destroy(host);
+        }
+        if (port) {
+            flb_sds_destroy(port);
+        }
+        if (uri) {
+            flb_sds_destroy(uri);
+        }
+    }
+}
+
 void test_url_split()
 {
     int i;
@@ -121,13 +203,20 @@ void test_url_split()
 }
 
 /* test case loop for flb_utils_write_str */
-static void write_str_test_cases_w_buf_size(struct write_str_case *cases, int buf_size);
+static void write_str_test_cases_w_buf_size(struct write_str_case *cases, int buf_size,
+                                            int escape_unicode);
 static void write_str_test_cases(struct write_str_case *cases) {
-    write_str_test_cases_w_buf_size(cases, 100);
+    write_str_test_cases_w_buf_size(cases, 100, FLB_TRUE);
+}
+
+static void write_raw_str_test_cases(struct write_str_case *cases) {
+    write_str_test_cases_w_buf_size(cases, 100, FLB_FALSE);
 }
 
 /* test case loop for flb_utils_write_str */
-static void write_str_test_cases_w_buf_size(struct write_str_case *cases, int buf_size) {
+static void write_str_test_cases_w_buf_size(struct write_str_case *cases, int buf_size,
+                                            int escape_unicode)
+{
     char *buf = flb_calloc(buf_size + 1, sizeof(char));
     int size = buf_size + 1;
     int off;
@@ -137,7 +226,8 @@ static void write_str_test_cases_w_buf_size(struct write_str_case *cases, int bu
     while (!(tcase->input == 0 && tcase->output == 0)) {
         memset(buf, 0, size);
         off = 0;
-        ret = flb_utils_write_str(buf, &off, buf_size, tcase->input, tcase->input_len);
+        ret = flb_utils_write_str(buf, &off, buf_size, tcase->input, tcase->input_len,
+                                  escape_unicode);
 
         if(!TEST_CHECK(ret == tcase->ret)) {
             TEST_MSG("Input string: %s", tcase->input);
@@ -170,36 +260,39 @@ static void write_str_test_cases_w_buf_size(struct write_str_case *cases, int bu
 
 void test_write_str()
 {
-    char buf[10];
-    char japanese_a[4] = {0xe3, 0x81, 0x82};
-    int size = sizeof(buf);
     int off;
     int ret;
+    char buf[10] = {0};
+    int size = sizeof(buf);
+
+    /* escaped Unicode representation of あ */
+    char jp_expected_output[] = "\\u3042";
 
     off = 0;
-    ret = flb_utils_write_str(buf, &off, size, "a", 1);
+    ret = flb_utils_write_str(buf, &off, size, "a", 1, FLB_TRUE);
     TEST_CHECK(ret == FLB_TRUE);
     TEST_CHECK(memcmp(buf, "a", off) == 0);
 
     off = 0;
-    ret = flb_utils_write_str(buf, &off, size, "\n", 1);
+    ret = flb_utils_write_str(buf, &off, size, "\n", 1, FLB_TRUE);
     TEST_CHECK(ret == FLB_TRUE);
     TEST_CHECK(memcmp(buf, "\\n", off) == 0);
 
     off = 0;
-    ret = flb_utils_write_str(buf, &off, size, "\xe3\x81\x82", 3);
+    ret = flb_utils_write_str(buf, &off, size, "\xe3\x81\x82", 3, FLB_TRUE);
     TEST_CHECK(ret == FLB_TRUE);
-    TEST_CHECK(memcmp(buf, japanese_a, off) == 0);
+    TEST_CHECK(memcmp(buf, jp_expected_output, off) == 0);
 
-    // Truncated bytes
+    /* Truncated bytes: 'buf' should not be touched and off == 0 */
     off = 0;
-    ret = flb_utils_write_str(buf, &off, size, "\xe3\x81\x82\xe3", 1);
+    ret = flb_utils_write_str(buf, &off, size, "\xe3\x81\x82\xe3", 1, FLB_TRUE);
     TEST_CHECK(ret == FLB_TRUE);
-    TEST_CHECK(memcmp(buf, japanese_a, off) == 0);
+    TEST_CHECK(off == 0);
+    TEST_CHECK(memcmp(buf, jp_expected_output, off) == 0);
 
-    // Error: buffer too small
+    /* Error: buffer too small */
     off = 0;
-    ret = flb_utils_write_str(buf, &off, size, "aaaaaaaaaaa", 11);
+    ret = flb_utils_write_str(buf, &off, size, "aaaaaaaaaaa", 11, FLB_TRUE);
     TEST_CHECK(ret == FLB_FALSE);
 }
 
@@ -238,7 +331,7 @@ void test_write_str_invalid_leading_byte()
          */
         {
             "\x00\x01\xe3\x81\x82""abc", 8,  /* note that 0x01 is an invalid byte */
-            "\\u0000\\u0001""\xe3\x81\x82""abc",  /* escape hex */
+            "\\u0000\\u0001\\u3042""abc",  /* escape hex */
             FLB_TRUE
         },
         /*
@@ -252,7 +345,7 @@ void test_write_str_invalid_leading_byte()
             "\xee\x83\xb3" /* f3 fragment */ /* replace invalid unicode */
             "\xee\x82\x81" /* 81 fragment */
             "\xee\x82\x81" /* 81 fragment */
-            "\xe3\x81\x82""abc", /* valid unicode */
+            "\\u3042""abc", /* valid unicode */
             FLB_TRUE
         },
         /*
@@ -263,13 +356,150 @@ void test_write_str_invalid_leading_byte()
             "\xf3\x81\x01\xe3\x81\x82""abc", 9,  /* note that 0x01 is an invalid byte */
             "\xee\x83\xb3" /* f3 fragment */ /* replace invalid unicode */
             "\xee\x82\x81" /* 81 fragment */
-            "\\u0001""\xe3\x81\x82""abc",
+            "\\u0001""\\u3042""abc",
             FLB_TRUE
         },
         { 0 }
     };
 
     write_str_test_cases(cases);
+}
+
+void test_write_str_special_bytes()
+{
+    struct write_str_case cases[] = {
+        /*
+         * Escaped leading hex (two hex, one valid unicode)
+         */
+        {
+            "你好世界", 12,
+            "\\u4f60\\u597d\\u4e16\\u754c",
+            FLB_TRUE
+        },
+        /*
+         * Escaped leading hex (two hex, one valid unicode)
+         */
+        {
+            "你好我来自一个汉字文化影响的地方", 48,
+            "\\u4f60\\u597d\\u6211\\u6765\\u81ea\\u4e00\\u4e2a\\u6c49\\u5b57\\u6587\\u5316\\u5f71\\u54cd\\u7684\\u5730\\u65b9",
+            FLB_TRUE
+        },
+        {
+            "\xC3\xA1\x0A", 3,  /* UTF-8 encoding of á and newline */
+            "\\u00e1\\n",       /* Expected escaped output */
+            FLB_TRUE
+        },
+        { 0 }
+    };
+
+    write_str_test_cases(cases);
+}
+
+void test_write_raw_str_special_bytes()
+{
+    struct write_str_case cases[] = {
+        /*
+         * Input: "你好世界" (12 bytes)
+         * Output: "你好世界" (raw)
+         */
+        {
+            "\xE4\xBD\xA0\xE5\xA5\xBD\xE4\xB8\x96\xE7\x95\x8C", 12,
+            "\xE4\xBD\xA0\xE5\xA5\xBD\xE4\xB8\x96\xE7\x95\x8C",
+            FLB_TRUE
+        },
+        /*
+         * Input: "你好我来自一个汉字文化影响的地方" (48 bytes)
+         * Output: "你好我来自一个汉字文化影响的地方" (raw)
+         */
+        {
+            "\xE4\xBD\xA0\xE5\xA5\xBD\xE6\x88\x91\xE6\x9D\xA5\xE8\x87\xAA" \
+            "\xE4\xB8\x80\xE4\xB8\xAA\xE6\xB1\x89\xE5\xAD\x97\xE6\x96\x87" \
+            "\xE5\x8C\x96\xE5\xBD\xB1\xE5\x93\x8D\xE7\x9A\x84\xE5\x9C\xB0" \
+            "\xE6\x96\xB9",
+            48,
+            "\xE4\xBD\xA0\xE5\xA5\xBD\xE6\x88\x91\xE6\x9D\xA5\xE8\x87\xAA" \
+            "\xE4\xB8\x80\xE4\xB8\xAA\xE6\xB1\x89\xE5\xAD\x97\xE6\x96\x87" \
+            "\xE5\x8C\x96\xE5\xBD\xB1\xE5\x93\x8D\xE7\x9A\x84\xE5\x9C\xB0" \
+            "\xE6\x96\xB9",
+            FLB_TRUE
+        },
+        /* Test string with a quote */
+        {
+            "\"hello\"", 7,
+            "\\\"hello\\\"",
+            FLB_TRUE
+        },
+        { 0 }
+    };
+
+    write_raw_str_test_cases(cases);
+}
+
+void test_write_raw_str_invalid_sequences()
+{
+    struct write_str_case cases[] = {
+        /*
+         * Case 1: Stray continuation byte (0x80)
+         */
+        {
+            "hello \x80 world", 13,
+            "hello \xEF\xBF\xBD world",
+            FLB_TRUE
+        },
+
+        /*
+         * Case 2: Incomplete multi-byte sequence
+         */
+        {
+            "a\xE6\x97""b", 4,
+            "a""\xEF\xBF\xBD""\xEF\xBF\xBD""b",
+            FLB_TRUE
+        },
+
+        /*
+         * Case 3: Overlong encoding
+         */
+        {
+            "a\xC0\xAF""b", 4,
+            "a""\xEF\xBF\xBD""\xEF\xBF\xBD""b",
+            FLB_TRUE
+        },
+
+        /*
+         * Case 4: With an invalid starting byte
+         */
+        {
+            "start-\xFF-end", 11,
+            "start-\xEF\xBF\xBD-end",
+            FLB_TRUE
+        },
+
+        /*
+         * Case 5: Mix of valid and invalid sequences
+         */
+        {
+            /* Input: "你好<stray_byte>世界" */
+            "\xE4\xBD\xA0\xE5\xA5\xBD" "\x80" "\xE4\xB8\x96\xE7\x95\x8C", 13,
+            /* Output: "你好<replacement_char>世界" */
+            "\xE4\xBD\xA0\xE5\xA5\xBD" "\xEF\xBF\xBD" "\xE4\xB8\x96\xE7\x95\x8C",
+            FLB_TRUE
+        },
+
+        /*
+         * Case 6: Sequence with invalid continuation byte
+         */
+        {
+            /* Input: "a" + 日(E6 97 A5) + ASCII "b" */
+            "a\xE6\x97""b", 4,
+            "a""\xEF\xBF\xBD""\xEF\xBF\xBD""b",
+            FLB_TRUE
+        },
+
+        /* End of cases */
+        { 0 }
+    };
+
+    write_raw_str_test_cases(cases);
 }
 
 void test_write_str_invalid_leading_byte_case_2()
@@ -342,10 +572,10 @@ void test_write_str_buffer_overrun()
             FLB_FALSE
         },
         {
-            "\""
+            "a"
             "\xe3\x81\x82", 4, /* valid unicode */
-            "\\\"""\xe3\x81\x82", /* just enough space for valid unicode */
-            FLB_TRUE
+            "a", /* just enough space for valid ascii */
+            FLB_FALSE /* no space for \u3042 */
         },
         {
             "\x81"
@@ -356,7 +586,7 @@ void test_write_str_buffer_overrun()
         },
         { 0 }
     };
-    write_str_test_cases_w_buf_size(cases, 5);
+    write_str_test_cases_w_buf_size(cases, 5, FLB_TRUE);
 }
 
 struct proxy_url_check {
@@ -376,6 +606,12 @@ struct proxy_url_check proxy_url_checks[] = {
      "http", "proxy.com", "80", NULL, NULL},
     {0, "http://proxy.com:8080",
      "http", "proxy.com", "8080", NULL, NULL},
+    {0, "proxy.com:8080",
+     "http", "proxy.com", "8080", NULL, NULL},
+    {0, "foo:bar@proxy.com:8080",
+     "http", "proxy.com", "8080", "foo", "bar"},
+    {0, "proxy.com",
+     "http", "proxy.com", "80", NULL, NULL},
     /* issue #5530. Password contains @ */
     {0, "http://example_user:example_pass_w_@_char@proxy.com:8080",
      "http", "proxy.com", "8080", "example_user", "example_pass_w_@_char"},
@@ -434,8 +670,8 @@ void test_proxy_url_split() {
 
         /* Username */
         if (u->username) {
-            TEST_CHECK(port != NULL);
-            ret = strcmp(u->port, port);
+            TEST_CHECK(username != NULL);
+            ret = strcmp(u->username, username);
             TEST_CHECK(ret == 0);
             TEST_MSG("Expected username: %s", u->username);
             TEST_MSG("Produced username: %s", username);
@@ -447,8 +683,8 @@ void test_proxy_url_split() {
 
         /* Password */
         if (u->password) {
-            TEST_CHECK(port != NULL);
-            ret = strcmp(u->port, port);
+            TEST_CHECK(password != NULL);
+            ret = strcmp(u->password, password);
             TEST_CHECK(ret == 0);
             TEST_MSG("Expected password: %s", u->password);
             TEST_MSG("Produced password: %s", password);
@@ -615,7 +851,7 @@ void test_flb_utils_get_machine_id()
     size_t size2;
 
     ret = flb_utils_get_machine_id(&id, &size);
-    TEST_CHECK(ret == 0);
+    TEST_CHECK(ret == 0 || ret == 2);
     TEST_CHECK(size != 0);
     TEST_CHECK(id != NULL);
 
@@ -626,15 +862,19 @@ void test_flb_utils_get_machine_id()
     }
 
     ret = flb_utils_get_machine_id(&id2, &size2);
-    TEST_CHECK(ret == 0);
+    TEST_CHECK(ret == 0 || ret == 2);
     TEST_CHECK(size2 != 0);
     TEST_CHECK(id2 != NULL);
-    TEST_CHECK(size2 == size);
-
-    for (idx = 0; idx < size; idx++) {
-        if (!TEST_CHECK(id[idx] == id2[idx])) {
-            fprintf(stderr, "bad byte in id v2 id2: id[%d] = 0x%02x, id2[%d] = 0x%02x\n",
-                    idx, id[idx], idx, id2[idx]);
+    if (ret == 2) {
+        TEST_CHECK(size2 == size);
+    }
+    else {
+        TEST_CHECK(size2 == size);
+        for (idx = 0; idx < size; idx++) {
+            if (!TEST_CHECK(id[idx] == id2[idx])) {
+                fprintf(stderr, "bad byte in id v2 id2: id[%d] = 0x%02x, id2[%d] = 0x%02x\n",
+                        idx, id[idx], idx, id2[idx]);
+            }
         }
     }
 
@@ -662,7 +902,7 @@ struct size_to_bytes_check size_to_bytes_checks[] = {
     {"9223372036.78G", -1},
 };
 
-void test_size_to_bytes() 
+void test_size_to_bytes()
 {
     int i;
     int size;
@@ -678,10 +918,53 @@ void test_size_to_bytes()
     }
 }
 
+struct size_to_bytes_check size_to_binary_bytes_checks[] = {
+    {"922337.63", 922337},
+    {"2K",2048},
+    {"5.7263K", 5863},
+    {"5.7263KB", 5863},
+    {"5.7263KiB", 5863},
+    {"9223372036854775.23K", -1},
+    {"1M", 1048576},
+    {"1.1M", 1153433},
+    {"1.1MB", 1153433},
+    {"1.1MiB", 1153433},
+    {"3.592M", 3766484},
+    {"52.752383M", 55314882},
+    {"52.752383MB", 55314882},
+    {"52.752383MiB", 55314882},
+    {"9223372036854.42M", -1},
+    {"492.364G",528671819431},
+    {"492.364GB",528671819431},
+    {"492.364GiB",528671819431},
+    {"1.2973G", 1392965268},
+    {"9223372036.78G", -1},
+};
+
+void test_size_to_binary_bytes()
+{
+    int i;
+    int size;
+    int64_t ret;
+    struct size_to_bytes_check *u;
+
+    size = sizeof(size_to_binary_bytes_checks) / sizeof(struct size_to_bytes_check);
+    for (i = 0; i < size; i++) {
+        u = &size_to_binary_bytes_checks[i];
+
+        ret = flb_utils_size_to_binary_bytes(u->size);
+        TEST_CHECK_(ret == u->ret, "ret = %zu, u->ret = %zu", ret, u->ret);
+    }
+}
+
 TEST_LIST = {
     /* JSON maps iteration */
     { "url_split", test_url_split },
+    { "url_split_sds", test_url_split_sds },
     { "write_str", test_write_str },
+    { "write_str_special_bytes", test_write_str_special_bytes },
+    { "write_raw_str_special_bytes", test_write_raw_str_special_bytes },
+    { "write_raw_str_invalid_bytes", test_write_raw_str_invalid_sequences},
     { "test_write_str_invalid_trailing_bytes", test_write_str_invalid_trailing_bytes },
     { "test_write_str_invalid_leading_byte", test_write_str_invalid_leading_byte },
     { "test_write_str_edge_cases", test_write_str_edge_cases },
@@ -693,5 +976,6 @@ TEST_LIST = {
     { "test_flb_utils_split_quoted_errors", test_flb_utils_split_quoted_errors},
     { "test_flb_utils_get_machine_id", test_flb_utils_get_machine_id },
     { "test_size_to_bytes", test_size_to_bytes },
+    { "test_size_to_bianry_bytes", test_size_to_binary_bytes },
     { 0 }
 };

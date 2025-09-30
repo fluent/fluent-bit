@@ -612,7 +612,7 @@ static const ProtobufCFieldDescriptor opentelemetry__proto__profiles__v1developm
     offsetof(Opentelemetry__Proto__Profiles__V1development__Profile, comment),
     NULL,
     NULL,
-    PROTOBUF_C_FIELD_FLAG_PACKED,             /* flags */
+    0 | PROTOBUF_C_FIELD_FLAG_PACKED,             /* flags */
     0,NULL,NULL    /* reserved1,reserved2, etc */
   },
   {
@@ -636,7 +636,7 @@ static const ProtobufCFieldDescriptor opentelemetry__proto__profiles__v1developm
     offsetof(Opentelemetry__Proto__Profiles__V1development__Profile, location_indices),
     NULL,
     NULL,
-    PROTOBUF_C_FIELD_FLAG_PACKED,             /* flags */
+    0 | PROTOBUF_C_FIELD_FLAG_PACKED,             /* flags */
     0,NULL,NULL    /* reserved1,reserved2, etc */
   },
   {
@@ -893,7 +893,7 @@ static const ProtobufCFieldDescriptor opentelemetry__proto__profiles__v1developm
     offsetof(Opentelemetry__Proto__Profiles__V1development__Sample, location_index),
     NULL,
     NULL,
-    PROTOBUF_C_FIELD_FLAG_PACKED,             /* flags */
+    0 | PROTOBUF_C_FIELD_FLAG_PACKED,             /* flags */
     0,NULL,NULL    /* reserved1,reserved2, etc */
   },
   {
@@ -905,7 +905,7 @@ static const ProtobufCFieldDescriptor opentelemetry__proto__profiles__v1developm
     offsetof(Opentelemetry__Proto__Profiles__V1development__Sample, value),
     NULL,
     NULL,
-    PROTOBUF_C_FIELD_FLAG_PACKED,             /* flags */
+    0 | PROTOBUF_C_FIELD_FLAG_PACKED,             /* flags */
     0,NULL,NULL    /* reserved1,reserved2, etc */
   },
   {
@@ -941,7 +941,7 @@ static const ProtobufCFieldDescriptor opentelemetry__proto__profiles__v1developm
     offsetof(Opentelemetry__Proto__Profiles__V1development__Sample, attributes),
     NULL,
     NULL,
-    PROTOBUF_C_FIELD_FLAG_PACKED,             /* flags */
+    0 | PROTOBUF_C_FIELD_FLAG_PACKED,             /* flags */
     0,NULL,NULL    /* reserved1,reserved2, etc */
   },
   {
@@ -965,7 +965,7 @@ static const ProtobufCFieldDescriptor opentelemetry__proto__profiles__v1developm
     offsetof(Opentelemetry__Proto__Profiles__V1development__Sample, timestamps_unix_nano),
     NULL,
     NULL,
-    PROTOBUF_C_FIELD_FLAG_PACKED,             /* flags */
+    0 | PROTOBUF_C_FIELD_FLAG_PACKED,             /* flags */
     0,NULL,NULL    /* reserved1,reserved2, etc */
   },
 };
@@ -1197,7 +1197,7 @@ static const ProtobufCFieldDescriptor opentelemetry__proto__profiles__v1developm
     offsetof(Opentelemetry__Proto__Profiles__V1development__Mapping, attributes),
     NULL,
     NULL,
-    PROTOBUF_C_FIELD_FLAG_PACKED,             /* flags */
+    0 | PROTOBUF_C_FIELD_FLAG_PACKED,             /* flags */
     0,NULL,NULL    /* reserved1,reserved2, etc */
   },
 };
@@ -1306,7 +1306,7 @@ static const ProtobufCFieldDescriptor opentelemetry__proto__profiles__v1developm
     offsetof(Opentelemetry__Proto__Profiles__V1development__Location, attributes),
     NULL,
     NULL,
-    PROTOBUF_C_FIELD_FLAG_PACKED,             /* flags */
+    0 | PROTOBUF_C_FIELD_FLAG_PACKED,             /* flags */
     0,NULL,NULL    /* reserved1,reserved2, etc */
   },
 };

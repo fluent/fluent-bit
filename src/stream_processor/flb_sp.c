@@ -96,10 +96,19 @@ static int sp_config_file(struct flb_config *config, struct flb_sp *sp,
         return -1;
     }
 
-    /* Read all 'stream_task' sections */
+    /*
+     * Note on reading the sections
+     * ----------------------------
+     * Classic mode configuration looks for [STREAM_TASK], while the
+     * new Yaml parser expects the section names to be stream_processor.
+     *
+     * On Yaml mode, each pair of "name/exec" is set as an independent section,
+     * so the adjusted code below works for both type of files.
+     */
     mk_list_foreach(head, &cf->sections) {
         section = mk_list_entry(head, struct flb_cf_section, _head);
-        if (strcasecmp(section->name, "stream_task") != 0) {
+        if (strcasecmp(section->name, "stream_task") != 0 &&
+            strcasecmp(section->name, "stream_processor") != 0) {
             continue;
         }
 
@@ -689,10 +698,14 @@ struct flb_sp *flb_sp_create(struct flb_config *config)
     int i = 0;
     int ret;
     char buf[32];
+    char *task_name;
+    char *task_exec;
     struct mk_list *head;
     struct flb_sp *sp;
     struct flb_slist_entry *e;
     struct flb_sp_task *task;
+    struct cfl_variant *var;
+    struct flb_cf_section *section;
 
     /* Allocate context */
     sp = flb_malloc(sizeof(struct flb_sp));
@@ -711,6 +724,35 @@ struct flb_sp *flb_sp_create(struct flb_config *config)
         task = flb_sp_task_create(sp, buf, e->str);
         if (!task) {
             continue;
+        }
+    }
+
+    /* register stream processor tasks registered through Yaml config */
+    if (config->cf_main) {
+        mk_list_foreach(head, &config->cf_main->stream_processors) {
+            section = mk_list_entry(head, struct flb_cf_section, _head_section);
+
+            /* task name */
+            var = cfl_kvlist_fetch(section->properties, "name");
+            if (!var || var->type != CFL_VARIANT_STRING) {
+                flb_error("[sp] missing 'name' property in stream_processor section");
+                continue;
+            }
+            task_name = var->data.as_string;
+
+            /* task exec/query */
+            var = cfl_kvlist_fetch(section->properties, "exec");
+            if (!var || var->type != CFL_VARIANT_STRING) {
+                flb_error("[sp] missing 'exec' property in stream_processor section");
+                continue;
+            }
+            task_exec = var->data.as_string;
+
+            /* create task */
+            task = flb_sp_task_create(sp, task_name, task_exec);
+            if (!task) {
+                continue;
+            }
         }
     }
 

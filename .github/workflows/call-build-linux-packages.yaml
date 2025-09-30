@@ -54,13 +54,13 @@ jobs:
   call-build-capture-source:
     # Capture source tarball and generate checksum for it
     name: Extract any supporting metadata
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-22.04
     environment: ${{ inputs.environment }}
     permissions:
       contents: read
     steps:
       - name: Checkout code
-        uses: actions/checkout@v4
+        uses: actions/checkout@v5
         with:
           ref: ${{ inputs.ref }}
           path: source
@@ -87,7 +87,7 @@ jobs:
       # Pick up latest master version
       - name: Checkout code for action
         if: inputs.environment == 'staging'
-        uses: actions/checkout@v4
+        uses: actions/checkout@v5
         with:
           path: action-support
 
@@ -105,8 +105,7 @@ jobs:
   call-build-linux-packages:
     name: ${{ matrix.distro }} package build and stage to S3
     environment: ${{ inputs.environment }}
-    # Ensure for OSS Fluent Bit repo we enable usage of Actuated runners for ARM builds, for forks it should keep existing ubuntu-latest usage.
-    runs-on: ${{ (contains(matrix.distro, 'arm' ) && (github.repository == 'fluent/fluent-bit') && 'actuated-arm64-8cpu-16gb') || 'ubuntu-latest' }}
+    runs-on: ${{ ((contains(matrix.distro, 'arm' ) || contains(matrix.distro, 'raspbian')) && 'ubuntu-22.04-arm') || 'ubuntu-22.04' }}
     permissions:
       contents: read
     strategy:
@@ -116,19 +115,19 @@ jobs:
     continue-on-error: ${{ inputs.ignore_failing_targets || false }}
     steps:
       - name: Checkout code
-        uses: actions/checkout@v4
+        uses: actions/checkout@v5
         with:
           ref: ${{ inputs.ref }}
 
-      - name: Set up Actuated mirror
-        if: contains(matrix.distro, 'arm' ) && (github.repository == 'fluent/fluent-bit')
-        uses: self-actuated/hub-mirror@master
-
-      - name: Set up QEMU
-        uses: docker/setup-qemu-action@v3
-
       - name: Set up Docker Buildx
         uses: docker/setup-buildx-action@v3
+
+      # Raspbian requires ARMv6 emulation
+      - name: Set up QEMU
+        if: contains(matrix.distro, 'raspbian')
+        uses: docker/setup-qemu-action@v3
+        with:
+          image: tonistiigi/binfmt:qemu-v7.0.0-28 # See: https://github.com/docker/setup-qemu-action/issues/198#issuecomment-2653791775
 
       - name: Replace all special characters with dashes
         id: formatted_distro
@@ -164,7 +163,9 @@ jobs:
         # For ubuntu map to codename using the disto-info list (CSV)
         run: |
           sudo apt-get update
-          sudo apt-get install -y distro-info awscli
+          sudo apt-get install -y distro-info
+          sudo apt-get install -y awscli || sudo snap install aws-cli --classic
+
           TARGET=${DISTRO%*.arm64v8}
           if [[ "$TARGET" == "ubuntu/"* ]]; then
               UBUNTU_CODENAME=$(cut -d ',' -f 1,3 < "/usr/share/distro-info/ubuntu.csv"|grep "${TARGET##*/}"|cut -d ',' -f 2)
@@ -195,7 +196,7 @@ jobs:
       # Pick up latest master version
       - name: Checkout code for action
         if: inputs.environment == 'staging'
-        uses: actions/checkout@v4
+        uses: actions/checkout@v5
         with:
           path: action-support
 
@@ -219,17 +220,20 @@ jobs:
     environment: ${{ inputs.environment }}
     needs:
       - call-build-linux-packages
+    continue-on-error: ${{ inputs.ignore_failing_targets || false }}
     steps:
       - name: Install dependencies
         timeout-minutes: 10
         run: |
           sudo apt-get update
-          sudo apt-get install -y createrepo-c aptly awscli
+          sudo apt-get install -y createrepo-c aptly
+          sudo apt-get install -y awscli || sudo snap install aws-cli --classic
+        shell: bash
         env:
           DEBIAN_FRONTEND: noninteractive
 
       - name: Checkout code for repo metadata construction - always latest
-        uses: actions/checkout@v4
+        uses: actions/checkout@v5
 
       - name: Import GPG key for signing
         id: import_gpg

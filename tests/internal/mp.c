@@ -101,12 +101,12 @@ void test_accessor_keys_remove()
         "    {\"a\": false, "
         "     \"annotations\": { "
         "                       \"fluentbit.io/tag\": \"thetag\","
-        "                       \"extra\": false\""
+        "                       \"extra\": false"
         "}}]}";
 
     /* Convert to msgpack */
     len = strlen(json);
-    ret = flb_pack_json(json, len, &buf, &size, &type, NULL);
+    ret = flb_pack_json_yyjson(json, len, &buf, &size, &type, NULL);
     TEST_CHECK(ret == 0);
     if (ret == -1) {
         exit(EXIT_FAILURE);
@@ -173,12 +173,12 @@ void test_keys_remove_subkey_key()
         "    {\"a\": false, "
         "     \"annotations\": { "
         "                       \"fluentbit.io/tag\": \"thetag\","
-        "                       \"extra\": false\""
+        "                       \"extra\": false"
         "}}]}";
 
     /* Convert to msgpack */
     len = strlen(json);
-    ret = flb_pack_json(json, len, &buf, &size, &type, NULL);
+    ret = flb_pack_json_yyjson(json, len, &buf, &size, &type, NULL);
     TEST_CHECK(ret == 0);
     if (ret == -1) {
         exit(EXIT_FAILURE);
@@ -218,10 +218,111 @@ void test_keys_remove_subkey_key()
     off = 0;
     msgpack_unpacked_init(&result_final);
     msgpack_unpack_next(&result_final, out_buf, out_size, &off);
-    flb_msgpack_to_json(&final_json[0], sizeof(final_json), &result_final.data);
+    flb_msgpack_to_json(&final_json[0], sizeof(final_json), &result_final.data, FLB_TRUE);
 
     if (!TEST_CHECK(strstr(&final_json[0] ,"kubernetes") == NULL)) {
         TEST_MSG("kubernetes field should be removed");
+    }
+
+    msgpack_unpacked_destroy(&result_final);
+
+    flb_free(out_buf);
+    flb_mp_accessor_destroy(mpa);
+    flb_slist_destroy(&patterns);
+
+}
+
+void test_remove_sibling_subkeys()
+{
+    int len;
+    int ret;
+    int type;
+    size_t off = 0;
+    char *buf;
+    size_t size;
+    char *out_buf;
+    size_t out_size;
+    char *json;
+    char final_json[2048] = {0};
+    msgpack_unpacked result;
+    msgpack_unpacked result_final;
+    msgpack_object map;
+    struct flb_mp_accessor *mpa;
+    struct mk_list patterns;
+
+    /* Sample JSON message */
+    json =
+        "{"
+        "\"kubernetes\": {"
+            "\"pod_id\": \"id\","
+            "\"pod_name\": \"name\","
+            "\"host\": \"localhost\","
+            "\"labels\": {"
+                "\"app\": \"myapp\","
+                "\"tier\": \"backend\""
+            "}"
+        "},"
+        "\"msg\": \"kernel panic\""
+        "}";
+
+    /* Convert to msgpack */
+    len = strlen(json);
+    ret = flb_pack_json_yyjson(json, len, &buf, &size, &type, NULL);
+    TEST_CHECK(ret == 0);
+    if (ret == -1) {
+        exit(EXIT_FAILURE);
+    }
+
+    /* Unpack the content */
+    msgpack_unpacked_init(&result);
+    msgpack_unpack_next(&result, buf, size, &off);
+    map = result.data;
+
+    /* Create list of patterns */
+    flb_slist_create(&patterns);
+
+    /* sub key -> key */
+    flb_slist_add(&patterns, "$kubernetes['pod_name']");
+    flb_slist_add(&patterns, "$kubernetes['foo']");
+    flb_slist_add(&patterns, "$kubernetes['pod_id']");
+    flb_slist_add(&patterns, "$kubernetes['labels']['tier']");
+    flb_slist_add(&patterns, "$time");
+
+
+    /* Create mp accessor */
+    mpa = flb_mp_accessor_create(&patterns);
+    TEST_CHECK(mpa != NULL);
+
+    /* Remove the entry that matches the pattern(s) */
+    ret = flb_mp_accessor_keys_remove(mpa, &map, (void *) &out_buf, &out_size);
+    TEST_CHECK(ret == FLB_TRUE);
+
+    printf("\n=== ORIGINAL  ===\n");
+    flb_pack_print(buf, size);
+    flb_free(buf);
+
+    printf("=== FINAL MAP ===\n");
+    if (ret == FLB_TRUE) {
+        flb_pack_print(out_buf, out_size);
+    }
+    msgpack_unpacked_destroy(&result);
+
+    off = 0;
+    msgpack_unpacked_init(&result_final);
+    msgpack_unpack_next(&result_final, out_buf, out_size, &off);
+    flb_msgpack_to_json(&final_json[0], sizeof(final_json), &result_final.data, FLB_TRUE);
+
+    if (!TEST_CHECK(strstr(&final_json[0] ,"pod_id") == NULL)) {
+        TEST_MSG("pod_id field should be removed");
+    }
+    if (!TEST_CHECK(strstr(&final_json[0] ,"pod_name") == NULL)) {
+        TEST_MSG("pod_name field should be removed");
+    }
+    if (!TEST_CHECK(strstr(&final_json[0] ,"tier") == NULL)) {
+        TEST_MSG("tier field should be removed");
+    }
+    if (!TEST_CHECK(strstr(&final_json[0] ,"app") != NULL)) {
+        TEST_MSG("app field should not be removed");
     }
 
     msgpack_unpacked_destroy(&result_final);
@@ -261,12 +362,12 @@ void remove_subkey_keys(char *list[], int list_size, int index_start)
         "    {\"a\": false, "
         "     \"annotations\": { "
         "                       \"fluentbit.io/tag\": \"thetag\","
-        "                       \"extra\": false\""
+        "                       \"extra\": false"
         "}}]}";
 
     /* Convert to msgpack */
     len = strlen(json);
-    ret = flb_pack_json(json, len, &buf, &size, &type, NULL);
+    ret = flb_pack_json_yyjson(json, len, &buf, &size, &type, NULL);
     TEST_CHECK(ret == 0);
     if (ret == -1) {
         exit(EXIT_FAILURE);
@@ -310,7 +411,7 @@ void remove_subkey_keys(char *list[], int list_size, int index_start)
     off = 0;
     msgpack_unpacked_init(&result_final);
     msgpack_unpack_next(&result_final, out_buf, out_size, &off);
-    flb_msgpack_to_json(&final_json[0], sizeof(final_json), &result_final.data);
+    flb_msgpack_to_json(&final_json[0], sizeof(final_json), &result_final.data, FLB_TRUE);
 
     if (!TEST_CHECK(strstr(&final_json[0] ,"kubernetes") == NULL)) {
         TEST_MSG("kubernetes field should be removed");
@@ -377,12 +478,12 @@ void test_object_to_cfl_to_msgpack()
         "    {\"a\": false, "
         "     \"annotations\": { "
         "                       \"fluentbit.io/tag\": \"thetag\","
-        "                       \"extra\": false\""
+        "                       \"extra\": false"
         "}}]}";
 
     /* Convert to msgpack */
     len = strlen(json);
-    ret = flb_pack_json(json, len, &buf, &size, &type, NULL);
+    ret = flb_pack_json_yyjson(json, len, &buf, &size, &type, NULL);
     TEST_CHECK(ret == 0);
     if (ret == -1) {
         exit(EXIT_FAILURE);
@@ -418,8 +519,8 @@ void test_object_to_cfl_to_msgpack()
      * Convert buf (msgpack 1 buffer) to JSON, and compare the strings
      * generated by out_buf (msgpack 2 buffer). They must match.
      */
-    buf1 = flb_msgpack_raw_to_json_sds(buf, size);
-    buf2 = flb_msgpack_raw_to_json_sds(out_buf, out_size);
+    buf1 = flb_msgpack_raw_to_json_sds(buf, size, FLB_TRUE);
+    buf2 = flb_msgpack_raw_to_json_sds(out_buf, out_size, FLB_TRUE);
 
     ret = strcmp(buf1, buf2);
     printf("\n>> Compare JSON buf1 v/s JSON buf2 (ret=%i):\n", ret);
@@ -444,5 +545,6 @@ TEST_LIST = {
     {"accessor_keys_remove_subkey_key" , test_keys_remove_subkey_key},
     {"accessor_keys_remove_subkey_keys" , test_keys_remove_subkey_keys},
     {"object_to_cfl_to_msgpack" , test_object_to_cfl_to_msgpack},
+    {"test_remove_sibling_subkeys" , test_remove_sibling_subkeys},
     { 0 }
 };

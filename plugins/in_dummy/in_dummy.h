@@ -49,6 +49,7 @@ struct flb_dummy {
 
     int fixed_timestamp;
     int flush_on_startup;
+    int test_hang_on_exit;  /* TEST ONLY: Used for hot reload watchdog testing */
 
     char *ref_metadata_msgpack;
     size_t ref_metadata_msgpack_size;

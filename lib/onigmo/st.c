@@ -1600,7 +1600,7 @@ st_update(st_table *tab, st_data_t key,
    different for ST_CHECK and when the current element is removed
    during traversing.  */
 static inline int
-st_general_foreach(st_table *tab, int (*func)(ANYARGS), st_update_callback_func *replace, st_data_t arg,
+st_general_foreach(st_table *tab, st_foreach_callback_func *func, st_update_callback_func *replace, st_data_t arg,
 		   int check_p)
 {
     st_index_t bin;
@@ -1712,14 +1712,14 @@ st_general_foreach(st_table *tab, int (*func)(ANYARGS), st_update_callback_func 
 
 #ifdef RUBY
 int
-st_foreach_with_replace(st_table *tab, int (*func)(ANYARGS), st_update_callback_func *replace, st_data_t arg)
+st_foreach_with_replace(st_table *tab, st_foreach_callback_func *func, st_update_callback_func *replace, st_data_t arg)
 {
     return st_general_foreach(tab, func, replace, arg, TRUE);
 }
 #endif /* RUBY */
 
 int
-st_foreach(st_table *tab, int (*func)(ANYARGS), st_data_t arg)
+st_foreach(st_table *tab, st_foreach_callback_func *func, st_data_t arg)
 {
     return st_general_foreach(tab, func, NULL, arg, FALSE);
 }
@@ -1727,7 +1727,7 @@ st_foreach(st_table *tab, int (*func)(ANYARGS), st_data_t arg)
 #ifdef RUBY
 /* See comments for function st_delete_safe.  */
 int
-st_foreach_check(st_table *tab, int (*func)(ANYARGS), st_data_t arg,
+st_foreach_check(st_table *tab, st_foreach_callback_func *func, st_data_t arg,
                  st_data_t never ATTRIBUTE_UNUSED)
 {
     return st_general_foreach(tab, func, NULL, arg, TRUE);

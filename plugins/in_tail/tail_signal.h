@@ -45,7 +45,7 @@ static inline int tail_signal_manager(struct flb_tail_config *ctx)
     /* Insert a dummy event into the channel manager */
     n = flb_pipe_w(ctx->ch_manager[1], (const char *) &val, sizeof(val));
     if (n == -1) {
-        flb_errno();
+        flb_pipe_error();
         return -1;
     }
     else {
@@ -68,7 +68,7 @@ static inline int tail_signal_pending(struct flb_tail_config *ctx)
      * notification is already pending, it's safe to ignore.
      */
     if (n == -1 && !FLB_PIPE_WOULDBLOCK()) {
-        flb_errno();
+        flb_pipe_error();
         return -1;
     }
 
@@ -87,7 +87,7 @@ static inline int tail_consume_pending(struct flb_tail_config *ctx)
     do {
         ret = flb_pipe_r(ctx->ch_pending[0], (char *) &val, sizeof(val));
         if (ret <= 0 && !FLB_PIPE_WOULDBLOCK()) {
-            flb_errno();
+            flb_pipe_error();
             return -1;
         }
     } while (!FLB_PIPE_WOULDBLOCK());

@@ -1,0 +1,47 @@
+# Copyright (C) 2019 Intel Corporation.  All rights reserved.
+# SPDX-License-Identifier: Apache-2.0 WITH LLVM-exception
+
+# Always follow https://download.01.org/intel-sgx/latest/linux-latest/docs/
+
+name: "Install Intel SGX SDK"
+description: "Installs the Intel SGX SDK and necessary libraries for Ubuntu."
+author: "Intel Corporation"
+inputs:
+  os:
+    description: "Operating system to install on (ubuntu-22.04)"
+    required: true
+
+runs:
+  using: "composite"
+  steps:
+    - name: Check Runner OS
+      if: ${{ inputs.os != 'ubuntu-22.04' }}
+      shell: bash
+      run: |
+        echo "::error title=⛔ error hint::Only support ubuntu-22.04 for now"
+        exit 1
+
+    - name: Create installation directory
+      shell: bash
+      run: sudo mkdir -p /opt/intel
+
+    - name: Download and install SGX SDK on ubuntu-22.04
+      if: ${{ inputs.os == 'ubuntu-22.04' }}
+      shell: bash
+      run: |
+        sudo wget -O sgx_linux_x64_sdk.bin https://download.01.org/intel-sgx/sgx-linux/2.25/distro/ubuntu22.04-server/sgx_linux_x64_sdk_2.25.100.3.bin
+        sudo chmod +x sgx_linux_x64_sdk.bin
+        echo 'yes' | sudo ./sgx_linux_x64_sdk.bin
+      working-directory: /opt/intel
+
+    - name: Add SGX repository and install libraries
+      shell: bash
+      run: |
+        echo "deb [arch=amd64] https://download.01.org/intel-sgx/sgx_repo/ubuntu $(lsb_release -cs) main" | sudo tee /etc/apt/sources.list.d/intel-sgx.list
+        wget -qO - https://download.01.org/intel-sgx/sgx_repo/ubuntu/intel-sgx-deb.key | sudo apt-key add -
+        sudo apt update
+        sudo apt install -y libsgx-launch libsgx-urts
+
+    - name: Source SGX SDK environment
+      shell: bash
+      run: source /opt/intel/sgxsdk/environment

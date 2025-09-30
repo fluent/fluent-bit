@@ -4,6 +4,7 @@ set(UNIT_TESTS_FILES
   base64_fuzzer.c
   engine_fuzzer.c
   cmetrics_decode_fuzz.c
+  cmetrics_decode_prometheus.c
   config_fuzzer.c
   config_random_fuzzer.c
   ctrace_fuzzer.c
@@ -40,7 +41,7 @@ foreach(source_file ${UNIT_TESTS_FILES})
     )
 
   if(FLB_JEMALLOC)
-    target_link_libraries(${source_file_we} libjemalloc ${CMAKE_THREAD_LIBS_INIT})
+    target_link_libraries(${source_file_we} ${JEMALLOC_LIBRARIES} ${CMAKE_THREAD_LIBS_INIT})
   else()
     target_link_libraries(${source_file_we} ${CMAKE_THREAD_LIBS_INIT})
   endif()

@@ -7,6 +7,21 @@
 #include "data/es/json_es.h" /* JSON_ES */
 
 
+static void cb_check_http_api_key(void *ctx, int ffd,
+                                int res_ret, void *res_data,
+                                size_t res_size, void *data)
+{
+    char *api_key = data;
+
+    TEST_CHECK(api_key != NULL);
+    TEST_CHECK(strlen(api_key) > 0);
+
+    TEST_CHECK(strcmp(api_key, "my-api-key-for-elasticsearch") == 0);
+
+    flb_free(res_data);
+}
+
+
 static void cb_check_write_op_index(void *ctx, int ffd,
                                     int res_ret, void *res_data,
                                     size_t res_size, void *data)
@@ -347,6 +362,47 @@ void flb_test_write_operation_upsert()
     flb_destroy(ctx);
 }
 
+void flb_test_null_index()
+{
+    int ret;
+    int size = sizeof(JSON_ES) - 1;
+    flb_ctx_t *ctx;
+    int in_ffd;
+    int out_ffd;
+    /* Create context, flush every second (some checks omitted here) */
+    ctx = flb_create();
+    flb_service_set(ctx, "flush", "1", "grace", "1", NULL);
+
+    /* Lib input mode */
+    in_ffd = flb_input(ctx, (char *) "lib", NULL);
+    flb_input_set(ctx, in_ffd, "tag", "test", NULL);
+
+    /* Elasticsearch output */
+    out_ffd = flb_output(ctx, (char *) "es", NULL);
+    flb_output_set(ctx, out_ffd,
+                   "match", "test",
+                   NULL);
+
+    /* Override defaults of index and type */
+    flb_output_set(ctx, out_ffd,
+                   "index", "",
+                   "type", "type_test",
+                   NULL);
+
+    /* Enable test mode */
+    ret = flb_output_set_test(ctx, out_ffd, "formatter",
+                              cb_check_index_type,
+                              NULL, NULL);
+
+    /* Start */
+    ret = flb_start(ctx);
+    TEST_CHECK(ret == -1);
+
+    sleep(2);
+    flb_stop(ctx);
+    flb_destroy(ctx);
+}
+
 void flb_test_index_type()
 {
     int ret;
@@ -681,6 +737,51 @@ void flb_test_div0()
     flb_destroy(ctx);
 }
 
+void flb_test_http_api_key()
+{
+    int ret;
+    int size = sizeof(JSON_ES) - 1;
+    flb_ctx_t *ctx;
+    int in_ffd;
+    int out_ffd;
+    char *api_key = "my-api-key-for-elasticsearch";
+
+    /* Create context, flush every second (some checks omitted here) */
+    ctx = flb_create();
+    flb_service_set(ctx, "flush", "1", "grace", "1", NULL);
+
+    /* Lib input mode */
+    in_ffd = flb_input(ctx, (char *) "lib", NULL);
+    flb_input_set(ctx, in_ffd, "tag", "test", NULL);
+
+    /* Elasticsearch output */
+    out_ffd = flb_output(ctx, (char *) "es", NULL);
+    flb_output_set(ctx, out_ffd,
+                   "match", "test",
+                   NULL);
+
+    /* Configure http_api_key */
+    flb_output_set(ctx, out_ffd,
+                   "http_api_key", api_key,
+                   NULL);
+
+    /* Enable test mode */
+    ret = flb_output_set_test(ctx, out_ffd, "formatter",
+                              cb_check_http_api_key,
+                              api_key, NULL);
+
+    /* Start */
+    ret = flb_start(ctx);
+    TEST_CHECK(ret == 0);
+
+    /* Ingest data sample */
+    flb_lib_push(ctx, in_ffd, (char *) JSON_ES, size);
+
+    sleep(2);
+    flb_stop(ctx);
+    flb_destroy(ctx);
+}
+
 
 static void cb_check_long_index(void *ctx, int ffd,
                                 int res_ret, void *res_data, size_t res_size,
@@ -799,6 +900,164 @@ void flb_test_logstash_prefix_separator()
     flb_destroy(ctx);
 }
 
+static void cb_check_response_success(void *ctx, int ffd,
+                                     int res_ret, void *res_data,
+                                     size_t res_size, void *data)
+{
+    TEST_CHECK(res_ret == 1);
+}
+
+void flb_test_response_success()
+{
+    int ret;
+    char *response = "{\"took\":1,\"errors\":false,\"items\":[]}";
+    int size = 37;
+    flb_ctx_t *ctx;
+    int in_ffd;
+    int out_ffd;
+
+    /* Create context, flush every second (some checks omitted here) */
+    ctx = flb_create();
+    flb_service_set(ctx, "flush", "1", "grace", "1", NULL);
+
+    /* Lib input mode */
+    in_ffd = flb_input(ctx, (char *) "lib", NULL);
+    flb_input_set(ctx, in_ffd, "tag", "test", NULL);
+
+    /* Elasticsearch output */
+    out_ffd = flb_output(ctx, (char *) "es", NULL);
+    flb_output_set(ctx, out_ffd,
+                   "match", "test",
+                   NULL);
+
+    /* Override defaults of index and type */
+    flb_output_set(ctx, out_ffd,
+                   "write_operation", "create",
+                   NULL);
+
+    /* Enable test mode */
+    ret = flb_output_set_http_test(ctx, out_ffd, "response",
+                                   cb_check_response_success,
+                                   NULL);
+
+    /* Start */
+    ret = flb_start(ctx);
+    TEST_CHECK(ret == 0);
+
+    /* Ingest data sample */
+    ret = flb_lib_response(ctx, out_ffd, 200, response, size);
+    TEST_CHECK(ret == 0);
+
+    sleep(2);
+    flb_stop(ctx);
+    flb_destroy(ctx);
+}
+
+void flb_test_response_successes()
+{
+    int ret;
+    char *response = JSON_RESPONSE_SUCCESSES;
+    int size = JSON_RESPONSE_SUCCESSES_SIZE;
+    flb_ctx_t *ctx;
+    int in_ffd;
+    int out_ffd;
+
+    /* Create context, flush every second (some checks omitted here) */
+    ctx = flb_create();
+    flb_service_set(ctx, "flush", "1", "grace", "1", NULL);
+
+    /* Lib input mode */
+    in_ffd = flb_input(ctx, (char *) "lib", NULL);
+    flb_input_set(ctx, in_ffd, "tag", "test", NULL);
+
+    /* Elasticsearch output */
+    out_ffd = flb_output(ctx, (char *) "es", NULL);
+    flb_output_set(ctx, out_ffd,
+                   "match", "test",
+                   NULL);
+
+    /* Override defaults of index and type */
+    flb_output_set(ctx, out_ffd,
+                   "write_operation", "create",
+                   NULL);
+
+    /* Enable test mode */
+    ret = flb_output_set_http_test(ctx, out_ffd, "response",
+                                   cb_check_response_success,
+                                   NULL);
+
+    /* Start */
+    ret = flb_start(ctx);
+    TEST_CHECK(ret == 0);
+
+    /* Ingest data sample */
+    ret = flb_lib_response(ctx, out_ffd, 200, response, size);
+    TEST_CHECK(ret == 0);
+
+    sleep(2);
+    flb_stop(ctx);
+    flb_destroy(ctx);
+}
+
+static void cb_check_response_partially_success(void *ctx, int ffd,
+                                                int res_ret, void *res_data,
+                                                size_t res_size, void *data)
+{
+    int composed_ret = 0;
+    composed_ret |= (1 << 0);
+    composed_ret |= (1 << 7);
+
+    TEST_CHECK(res_ret == composed_ret);
+    /* Check whether contains a success flag or not */
+    TEST_CHECK((res_ret & (1 << 0)));
+}
+
+void flb_test_response_partially_success()
+{
+    int ret;
+    char *response = JSON_RESPONSE_PARTIALLY_SUCCESS;
+    int size = JSON_RESPONSE_PARTIALLY_SUCCESS_SIZE;
+    flb_ctx_t *ctx;
+    int in_ffd;
+    int out_ffd;
+
+    /* Create context, flush every second (some checks omitted here) */
+    ctx = flb_create();
+    flb_service_set(ctx, "flush", "1", "grace", "1", NULL);
+
+    /* Lib input mode */
+    in_ffd = flb_input(ctx, (char *) "lib", NULL);
+    flb_input_set(ctx, in_ffd, "tag", "test", NULL);
+
+    /* Elasticsearch output */
+    out_ffd = flb_output(ctx, (char *) "es", NULL);
+    flb_output_set(ctx, out_ffd,
+                   "match", "test",
+                   NULL);
+
+    /* Override defaults of index and type */
+    flb_output_set(ctx, out_ffd,
+                   "write_operation", "create",
+                   NULL);
+
+    /* Enable test mode */
+    ret = flb_output_set_http_test(ctx, out_ffd, "response",
+                                   cb_check_response_partially_success,
+                                   NULL);
+
+    /* Start */
+    ret = flb_start(ctx);
+    TEST_CHECK(ret == 0);
+
+    /* Ingest data sample */
+    ret = flb_lib_response(ctx, out_ffd, 200, response, size);
+    TEST_CHECK(ret == 0);
+
+    sleep(2);
+    flb_stop(ctx);
+    flb_destroy(ctx);
+}
+
 /* Test list */
 TEST_LIST = {
     {"long_index"            , flb_test_long_index },
@@ -813,6 +1072,10 @@ TEST_LIST = {
     {"tag_key"               , flb_test_tag_key },
     {"replace_dots"          , flb_test_replace_dots },
     {"id_key"                , flb_test_id_key },
+    {"http_api_key"          , flb_test_http_api_key },
     {"logstash_prefix_separator" , flb_test_logstash_prefix_separator },
+    {"response_success"      , flb_test_response_success },
+    {"response_successes", flb_test_response_successes },
+    {"response_partially_success" , flb_test_response_partially_success },
     {NULL, NULL}
 };

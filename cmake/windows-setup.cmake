@@ -3,6 +3,24 @@
 # Not all plugins are supported on Windows yet. This file tweaks
 # the build flags so that we can compile fluent-bit on it.
 
+set(FLB_ARCH "")
+
+if(CMAKE_SYSTEM_PROCESSOR MATCHES "^(ARM64|AARCH64|arm64)$")
+  set(FLB_ARCH "arm64")
+
+elseif(CMAKE_SIZEOF_VOID_P EQUAL 8)
+  set(FLB_ARCH "x64")
+elseif(CMAKE_SIZEOF_VOID_P EQUAL 4)
+  set(FLB_ARCH "x86")
+endif()
+
+if(NOT FLB_ARCH)
+  message(WARNING "Unknown architecture; falling back to x64 heuristics")
+  set(FLB_ARCH "x64")
+endif()
+
+message(STATUS "Detected target architecture: ${FLB_ARCH}")
+
 if(FLB_WINDOWS_DEFAULTS)
   message(STATUS "Overriding setttings with windows-setup.cmake")
   set(FLB_REGEX                 Yes)
@@ -17,7 +35,13 @@ if(FLB_WINDOWS_DEFAULTS)
   if (NOT FLB_LIBYAML_DIR)
     set(FLB_CONFIG_YAML         No)
   endif ()
-  set(FLB_WASM                  No)
+  if(FLB_ARCH STREQUAL "arm64")
+    set(FLB_WASM                 No)
+  elseif(FLB_ARCH STREQUAL "x64")
+    set(FLB_WASM                Yes)
+  elseif(FLB_ARCH STREQUAL "x86")
+    set(FLB_WASM                Yes)
+  endif()
   set(FLB_WAMRC                 No)
 
   # INPUT plugins
@@ -53,6 +77,7 @@ if(FLB_WINDOWS_DEFAULTS)
   set(FLB_IN_STORAGE_BACKLOG    Yes)
   set(FLB_IN_EMITTER            Yes)
   set(FLB_IN_PODMAN_METRICS      No)
+  set(FLB_IN_EBPF		 No)
   set(FLB_IN_ELASTICSEARCH      Yes)
   set(FLB_IN_SPLUNK             Yes)
   set(FLB_IN_PROMETHEUS_REMOTE_WRITE Yes)
@@ -106,7 +131,13 @@ if(FLB_WINDOWS_DEFAULTS)
   set(FLB_FILTER_GEOIP2         Yes)
   set(FLB_FILTER_AWS            Yes)
   set(FLB_FILTER_ECS            Yes)
-  set(FLB_FILTER_WASM           No)
+  if(FLB_ARCH STREQUAL "arm64")
+    set(FLB_FILTER_WASM          No)
+  elseif(FLB_ARCH STREQUAL "x64")
+    set(FLB_FILTER_WASM         Yes)
+  elseif(FLB_ARCH STREQUAL "x86")
+    set(FLB_FILTER_WASM         Yes)
+  endif()
 endif()
 
 # Search bison and flex executables

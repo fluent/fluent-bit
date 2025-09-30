@@ -35,8 +35,20 @@
 /* number of characters needed to 'end' a PutLogEvents payload */
 #define PUT_LOG_EVENTS_FOOTER_LEN      4
 
+/*
+ * https://docs.aws.amazon.com/applicationsignals/latest/APIReference/API_Service.html
+ * Maximum number of character limits including both the KeyAttributes key and its value
+ */
+#define KEY_ATTRIBUTES_MAX_LEN 1100
+/* Maximum number of character limits including both the Attributes key and its value */
+#define ATTRIBUTES_MAX_LEN 300
+
 /* 256KiB minus 26 bytes for the event */
 #define MAX_EVENT_LEN      262118
+
+/* Prefix used for entity fields only */
+#define AWS_ENTITY_PREFIX "aws_entity"
+#define AWS_ENTITY_PREFIX_LEN 10
 
 #include "cloudwatch_logs.h"
 
@@ -44,7 +56,8 @@ void cw_flush_destroy(struct cw_flush *buf);
 
 int process_and_send(struct flb_cloudwatch *ctx, const char *input_plugin,
                      struct cw_flush *buf, flb_sds_t tag,
-                     const char *data, size_t bytes, int event_type);
+                     const char *data, size_t bytes, int event_type,
+                     struct flb_config *config);
 int create_log_stream(struct flb_cloudwatch *ctx, struct log_stream *stream, int can_retry);
 struct log_stream *get_log_stream(struct flb_cloudwatch *ctx, flb_sds_t tag,
                                   const msgpack_object map);

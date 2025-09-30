@@ -567,6 +567,11 @@ struct flb_azure_blob *flb_azure_blob_conf_create(struct flb_output_instance *in
         return NULL;
     }
 
+    if (ctx->account_name == NULL) {
+        flb_plg_error(ctx->ins, "'account_name' has not been set");
+        return NULL;
+    }
+
     if (ctx->configuration_endpoint_url != NULL) {
         ret = flb_azure_blob_apply_remote_configuration(ctx);
 
@@ -642,6 +647,14 @@ struct flb_azure_blob *flb_azure_blob_conf_create(struct flb_output_instance *in
         }
     }
 
+    /* Check for invalid configuration: buffering enabled with appendblob */
+    if (ctx->buffering_enabled == FLB_TRUE && ctx->btype == AZURE_BLOB_APPENDBLOB) {
+        flb_plg_error(ctx->ins,
+                      "buffering is not supported with 'appendblob' blob_type. "
+                      "Please use 'blockblob' blob_type or disable buffering.");
+        return NULL;
+    }
+
     /* Compress (gzip) */
     tmp = (char *) flb_output_get_property("compress", ins);
     ctx->compress_gzip = FLB_FALSE;
@@ -703,6 +716,12 @@ struct flb_azure_blob *flb_azure_blob_conf_create(struct flb_output_instance *in
 
         ctx->u = flb_upstream_create(config, ctx->real_endpoint, port, io_flags,
                                      ins->tls);
+        if (ctx->buffering_enabled ==  FLB_TRUE){
+            flb_stream_disable_flags(&ctx->u->base, FLB_IO_ASYNC);
+            ctx->u->base.net.io_timeout = ctx->io_timeout;
+        }
+
+        flb_plg_debug(ctx->ins, "async flag is %d", flb_stream_is_async(&ctx->u->base));
         if (!ctx->u) {
             flb_plg_error(ctx->ins, "cannot create upstream for endpoint '%s'",
                           ctx->real_endpoint);

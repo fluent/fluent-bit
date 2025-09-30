@@ -26,15 +26,25 @@
 #include <ctraces/ctraces.h>
 #include <ctraces/ctr_decode_msgpack.h>
 
+/*
+ * Append a CTrace context into the pipeline. On success, this function returns 0 and -1
+ * on error.
+ *
+ * Note that the memory pointed by the CTrace context will be handled automatically inside
+ * this function if the return value is 0, otherwise if is -1, the caller is responsible
+ * to destroy the context.
+ */
+
 static int input_trace_append(struct flb_input_instance *ins,
                               size_t processor_starting_stage,
                               const char *tag, size_t tag_len,
                               struct ctrace *ctr)
 {
     int ret;
-    char *out_buf;
-    size_t out_size;
+    char *out_buf = NULL;
+    size_t out_size = 0;
     int processor_is_active;
+    struct ctrace *out_context = NULL;
 
     processor_is_active = flb_processor_is_active(ins->processor);
     if (processor_is_active) {
@@ -53,19 +63,38 @@ static int input_trace_append(struct flb_input_instance *ins,
                                 processor_starting_stage,
                                 FLB_PROCESSOR_TRACES,
                                 tag, tag_len,
-                                (char *) ctr,
-                                0, NULL, NULL);
-
+                                (char *) ctr, 0,
+                                (void **) &out_context, NULL);
         if (ret == -1) {
             return -1;
         }
+
+        if (out_context == NULL) {
+            /*
+             * nothing to do: no output context was set (out_context) that means that likely
+             * the original CTrace context is being handled by the processor itself. We don't
+             * need to destroy it.
+             */
+            return 0;
+        }
     }
 
-    /* Convert trace context to msgpack */
-    ret = ctr_encode_msgpack_create(ctr, &out_buf, &out_size);
-    if (ret != 0) {
-        flb_plg_error(ins, "could not encode traces");
-        return -1;
+    if (out_context) {
+        ret = ctr_encode_msgpack_create(out_context, &out_buf, &out_size);
+        if (out_context != ctr) {
+            ctr_destroy(out_context);
+        }
+        if (ret != 0) {
+            flb_plg_error(ins, "could not encode traces");
+            return -1;
+        }
+    }
+    else {
+        ret = ctr_encode_msgpack_create(ctr, &out_buf, &out_size);
+        if (ret != 0) {
+            flb_plg_error(ins, "could not encode traces");
+            return -1;
+        }
     }
 
     /* Append packed metrics */
@@ -73,6 +102,19 @@ static int input_trace_append(struct flb_input_instance *ins,
                                      tag, tag_len, out_buf, out_size);
 
     ctr_encode_msgpack_destroy(out_buf);
+
+    if (ret == 0) {
+        /*
+         * the CTrace context was processed properly, we need to destroy the contexts: the original
+         * and the output one
+         */
+        if (out_context != NULL && out_context != ctr) {
+            ctr_destroy(out_context);
+        }
+
+        /* destroy the original context */
+        ctr_destroy(ctr);
+    }
 
     return ret;
 }

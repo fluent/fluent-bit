@@ -621,6 +621,10 @@ static int process_payload(struct flb_in_elasticsearch *ctx, struct in_elasticse
     int gzip_compressed = FLB_FALSE;
     void *gz_data = NULL;
     size_t gz_size = -1;
+    char *out_chunked = NULL;
+    size_t out_chunked_size = 0;
+    char *payload_buf;
+    size_t payload_size;
 
     header = &session->parser.headers[MK_HEADER_CONTENT_TYPE];
     if (header->key.data == NULL) {
@@ -643,7 +647,7 @@ static int process_payload(struct flb_in_elasticsearch *ctx, struct in_elasticse
         return -1;
     }
 
-    if (request->data.len <= 0) {
+    if (request->data.len <= 0 && !mk_http_parser_is_content_chunked(&session->parser)) {
         send_response(conn, 400, "error: no payload found\n");
         return -1;
     }
@@ -664,8 +668,32 @@ static int process_payload(struct flb_in_elasticsearch *ctx, struct in_elasticse
     }
 
     if (type == HTTP_CONTENT_NDJSON || type == HTTP_CONTENT_JSON) {
+        /* Check if the data is chunked */
+        payload_buf = NULL;
+        payload_size = 0;
+
+        if (mk_http_parser_is_content_chunked(&session->parser)) {
+            ret = mk_http_parser_chunked_decode(&session->parser,
+                                                conn->buf_data,
+                                                conn->buf_len,
+                                                &out_chunked,
+                                                &out_chunked_size);
+
+            if (ret == -1) {
+                send_response(conn, 400, "error: invalid chunked data\n");
+                return -1;
+            }
+
+            payload_buf = out_chunked;
+            payload_size = out_chunked_size;
+        }
+        else {
+            payload_buf = request->data.data;
+            payload_size = request->data.len;
+        }
+
         if (gzip_compressed == FLB_TRUE) {
-            ret = flb_gzip_uncompress((void *) request->data.data, request->data.len,
+            ret = flb_gzip_uncompress((void *) payload_buf, payload_size,
                                       &gz_data, &gz_size);
             if (ret == -1) {
                 flb_error("[elasticsearch_bulk_prot] gzip uncompress is failed");
@@ -675,8 +703,13 @@ static int process_payload(struct flb_in_elasticsearch *ctx, struct in_elasticse
             flb_free(gz_data);
         }
         else {
-            parse_payload_ndjson(ctx, tag, request->data.data, request->data.len, bulk_statuses);
+            parse_payload_ndjson(ctx, tag, payload_buf, payload_size, bulk_statuses);
         }
+    }
+
+    /* release chunked data if has been set */
+    if (out_chunked) {
+        mk_mem_free(out_chunked);
     }
 
     return 0;
@@ -856,7 +889,8 @@ int in_elasticsearch_bulk_prot_handle(struct flb_in_elasticsearch *ctx,
                 mk_mem_free(uri);
                 return -1;
             }
-        } else {
+        }
+        else {
             flb_sds_destroy(tag);
             mk_mem_free(uri);
 
@@ -1082,7 +1116,7 @@ int in_elasticsearch_bulk_prot_handle_ng(struct flb_http_request *request,
     }
 
     /* HTTP/1.1 needs Host header */
-    if (request->protocol_version == HTTP_PROTOCOL_HTTP1 &&
+    if (request->protocol_version == HTTP_PROTOCOL_VERSION_11 &&
         request->host == NULL) {
 
         return -1;

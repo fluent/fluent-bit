@@ -28,7 +28,7 @@ Vagrant.configure("2") do |config|
     # Main build
     apt-get install --yes build-essential cmake dh-make git make openssl pkg-config tar
     # Dependencies
-    apt-get install --yes libssl3 libssl-dev libsasl2-dev pkg-config libsystemd-dev zlib1g-dev libpq-dev postgresql-server-dev-all flex bison libyaml-dev libpq5
+    apt-get install --yes libssl3 libssl-dev libsasl2-dev pkg-config libsystemd-dev zlib1g-dev libpq-dev postgresql-server-dev-all flex bison libyaml-dev libpq5 libbpf-dev
 
     # Debug
     apt-get install --yes gdb valgrind

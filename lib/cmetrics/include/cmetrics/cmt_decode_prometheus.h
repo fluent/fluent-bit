@@ -20,6 +20,10 @@
 #ifndef CMT_DECODE_PROMETHEUS_H
 #define CMT_DECODE_PROMETHEUS_H
 
+#include <cmetrics/cmt_info.h>
+
+#ifdef CMT_HAVE_PROMETHEUS_TEXT_DECODER
+
 #include <stdbool.h>
 
 #include <cmetrics/cmetrics.h>
@@ -33,6 +37,7 @@
 #define CMT_DECODE_PROMETHEUS_CMT_CREATE_ERROR           50
 #define CMT_DECODE_PROMETHEUS_PARSE_VALUE_FAILED         60
 #define CMT_DECODE_PROMETHEUS_PARSE_TIMESTAMP_FAILED     70
+#define CMT_DECODE_PROMETHEUS_SAMPLE_VALUE_TOO_LONG      80
 
 #define CMT_DECODE_PROMETHEUS_MAX_LABEL_COUNT 128
 
@@ -108,5 +113,7 @@ int cmt_decode_prometheus_create(
         size_t in_size,
         struct cmt_decode_prometheus_parse_opts *opts);
 void cmt_decode_prometheus_destroy(struct cmt *cmt);
+
+#endif /* CMT_HAVE_PROMETHEUS_TEXT_DECODER */
 
 #endif

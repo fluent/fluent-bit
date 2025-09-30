@@ -18,10 +18,11 @@
  */
 
 #include <fluent-bit/http_server/flb_http_server.h>
+#include <string.h>
 
 /* PRIVATE */
 
-static void dummy_mk_http_session_init(struct mk_http_session *session, 
+static void dummy_mk_http_session_init(struct mk_http_session *session,
                                        struct mk_server *server)
 {
     session->_sched_init = MK_TRUE;
@@ -55,30 +56,14 @@ static void dummy_mk_http_request_init(struct mk_http_session *session,
     memset(request, 0, sizeof(struct mk_http_request));
 
     mk_http_request_init(session, request, session->server);
-
-    request->in_headers.type        = MK_STREAM_IOV;
-    request->in_headers.dynamic     = MK_FALSE;
-    request->in_headers.cb_consumed = NULL;
-    request->in_headers.cb_finished = NULL;
-    request->in_headers.stream      = &request->stream;
-
-    mk_list_add(&request->in_headers._head, &request->stream.inputs);
-
-    request->session = session;
 }
 
 static int http1_evict_request(struct flb_http1_server_session *session)
 {
-    uintptr_t session_buffer_upper_bound;
-    uintptr_t session_buffer_lower_bound;
     size_t    session_buffer_length;
     cfl_sds_t session_buffer;
-    size_t    content_length;
     size_t    request_length;
-    uintptr_t request_end;
 
-    request_end = 0;
-    content_length = 0;
     session_buffer = session->parent->incoming_data;
 
     if (session_buffer == NULL) {
@@ -87,46 +72,28 @@ static int http1_evict_request(struct flb_http1_server_session *session)
 
     session_buffer_length = cfl_sds_len(session_buffer);
 
-    if (session->inner_request.data.data != NULL) {
-        content_length = session->inner_request.data.len;
+    request_length = mk_http_parser_request_size(&session->inner_parser,
+                                                 session_buffer,
+                                                 session_buffer_length);
 
-        request_end  = (uintptr_t) session->inner_request.data.data;
-        request_end += content_length;
+    if (request_length == -1 ||
+        request_length > session_buffer_length) {
+        cfl_sds_set_len(session_buffer, 0);
+
+        return -1;
+    }
+
+    if ((session_buffer_length - request_length) > 0) {
+        session_buffer_length -= request_length;
+
+        memmove(session_buffer,
+                &session_buffer[request_length],
+                session_buffer_length);
+
+        session_buffer[session_buffer_length] = '\0';
     }
     else {
-        request_end = (uintptr_t) strstr(session_buffer, 
-                                         "\r\n\r\n");
-
-        if(request_end != 0) {
-            request_end += 4;
-        }
-    }
-
-    if (request_end != 0) {
-        session_buffer_lower_bound = (uintptr_t) session_buffer;
-        session_buffer_upper_bound = (uintptr_t) &session_buffer[session_buffer_length];
-
-        if (request_end < session_buffer_lower_bound ||
-            request_end > session_buffer_upper_bound) {
-            return -1;
-        }
-
-        request_length = (size_t) (request_end - session_buffer_lower_bound);
-
-        if (request_length == session_buffer_length) {
-            session_buffer_length = 0;
-        }
-        else {
-            session_buffer_length -= request_length;
-
-            memmove(session_buffer, 
-                    &session_buffer[request_length],
-                    session_buffer_length);
-
-            session_buffer[session_buffer_length] = '\0';
-        }
-
-        cfl_sds_set_len(session_buffer, session_buffer_length);
+        cfl_sds_set_len(session_buffer, 0);
     }
 
     return 0;
@@ -137,6 +104,8 @@ static int http1_session_process_request(struct flb_http1_server_session *sessio
     struct mk_list         *iterator;
     struct mk_http_header  *header;
     int                     result;
+    size_t chunked_size;
+    size_t written_bytes = 0;
 
     result = flb_http_request_init(&session->stream.request);
 
@@ -148,16 +117,16 @@ static int http1_session_process_request(struct flb_http1_server_session *sessio
 
     if (session->inner_request.uri_processed.data != NULL) {
         session->stream.request.path = \
-            cfl_sds_create_len(session->inner_request.uri_processed.data, 
+            cfl_sds_create_len(session->inner_request.uri_processed.data,
                                session->inner_request.uri_processed.len);
     }
     else {
         session->stream.request.path = \
-            cfl_sds_create_len(session->inner_request.uri.data, 
+            cfl_sds_create_len(session->inner_request.uri.data,
                                session->inner_request.uri.len);
     }
 
-    if (session->stream.request.path == NULL) {    
+    if (session->stream.request.path == NULL) {
         return -1;
     }
 
@@ -201,7 +170,7 @@ static int http1_session_process_request(struct flb_http1_server_session *sessio
 
     session->stream.request.content_length = session->inner_request.content_length;
 
-    mk_list_foreach(iterator, 
+    mk_list_foreach(iterator,
                     &session->inner_parser.header_list) {
         header = mk_list_entry(iterator, struct mk_http_header, _head);
 
@@ -209,34 +178,34 @@ static int http1_session_process_request(struct flb_http1_server_session *sessio
             header->val.data != NULL && header->val.len > 0) {
 
             if (flb_http_server_strncasecmp(
-                    (const uint8_t *) header->key.data, 
-                    header->key.len, 
+                    (const uint8_t *) header->key.data,
+                    header->key.len,
                     "host", 0) == 0) {
                 session->stream.request.host = \
-                    cfl_sds_create_len((const char *) header->val.data, 
+                    cfl_sds_create_len((const char *) header->val.data,
                                        header->val.len);
-            
+
                 if (session->stream.request.host == NULL) {
                     return -1;
                 }
             }
             else if (flb_http_server_strncasecmp(
-                        (const uint8_t *) header->key.data, 
-                        header->key.len, 
+                        (const uint8_t *) header->key.data,
+                        header->key.len,
                         "content-type", 0) == 0) {
                 session->stream.request.content_type = \
-                    cfl_sds_create_len((const char *) header->val.data, 
+                    cfl_sds_create_len((const char *) header->val.data,
                                        header->val.len);
-            
+
                 if (session->stream.request.content_type == NULL) {
                     return -1;
                 }
             }
 
-            result = flb_http_request_set_header(&session->stream.request, 
-                                                 header->key.data, 
-                                                 header->key.len, 
-                                                 (void *) header->val.data, 
+            result = flb_http_request_set_header(&session->stream.request,
+                                                 header->key.data,
+                                                 header->key.len,
+                                                 (void *) header->val.data,
                                                  header->val.len);
 
             if (result != 0) {
@@ -253,9 +222,41 @@ static int http1_session_process_request(struct flb_http1_server_session *sessio
         }
     }
 
-    if (session->inner_request.data.data != NULL) {    
+    /* If the content comes in chunks (transfer-encoding: chunked) */
+    if (mk_http_parser_is_content_chunked(&session->inner_parser)) {
+        /* Get the total size of all the chunks */
+        chunked_size = mk_http_parser_content_length(&session->inner_parser);
+        if (chunked_size == 0) {
+            session->stream.status = HTTP_STREAM_STATUS_ERROR;
+            return -1;
+        }
+
+        /* allocate a buffer to get a copy of the decoded chunks */
+        session->stream.request.body = cfl_sds_create_size(chunked_size);
+        if (!session->stream.request.body) {
+            session->stream.status = HTTP_STREAM_STATUS_ERROR;
+            return -1;
+        }
+
+        /* decode the data into the new buffer */
+        result = mk_http_parser_chunked_decode_buf(&session->inner_parser,
+                                                   session->parent->incoming_data,
+                                                   cfl_sds_len(session->parent->incoming_data),
+                                                   session->stream.request.body,
+                                                   chunked_size,
+                                                   &written_bytes);
+        if (result == -1) {
+            session->stream.status = HTTP_STREAM_STATUS_ERROR;
+            cfl_sds_destroy(session->stream.request.body);
+            session->stream.request.body = NULL;
+            return -1;
+        }
+
+        cfl_sds_len_set(session->stream.request.body, written_bytes);
+    }
+    else if (session->inner_request.data.data != NULL) {
         session->stream.request.body = \
-            cfl_sds_create_len(session->inner_request.data.data, 
+            cfl_sds_create_len(session->inner_request.data.data,
                                session->inner_request.data.len);
 
         if (session->stream.request.body == NULL) {
@@ -271,7 +272,7 @@ static int http1_session_process_request(struct flb_http1_server_session *sessio
         cfl_list_del(&session->stream.request._head);
     }
 
-    cfl_list_add(&session->stream.request._head, 
+    cfl_list_add(&session->stream.request._head,
                  &session->parent->request_queue);
 
     return 0;
@@ -280,7 +281,7 @@ static int http1_session_process_request(struct flb_http1_server_session *sessio
 /* RESPONSE */
 
 struct flb_http_response *flb_http1_response_begin(
-                                struct flb_http1_server_session *session, 
+                                struct flb_http1_server_session *session,
                                 struct flb_http_stream *stream)
 {
     int result;
@@ -344,8 +345,8 @@ int flb_http1_response_commit(struct flb_http_response *response)
     }
 
     mk_list_foreach(header_iterator, &response->headers->entries) {
-        header_entry = mk_list_entry(header_iterator, 
-                                     struct flb_hash_table_entry, 
+        header_entry = mk_list_entry(header_iterator,
+                                     struct flb_hash_table_entry,
                                      _head_parent);
 
         if (header_entry == NULL) {
@@ -354,11 +355,11 @@ int flb_http1_response_commit(struct flb_http_response *response)
             return -5;
         }
 
-        sds_result = cfl_sds_printf(&response_buffer, 
-                                    "%.*s: %.*s\r\n", 
-                                    (int) header_entry->key_len, 
-                                    (const char *) header_entry->key, 
-                                    (int) header_entry->val_size, 
+        sds_result = cfl_sds_printf(&response_buffer,
+                                    "%.*s: %.*s\r\n",
+                                    (int) header_entry->key_len,
+                                    (const char *) header_entry->key,
+                                    (int) header_entry->val_size,
                                     (const char *) header_entry->val);
 
         if (sds_result == NULL) {
@@ -377,7 +378,7 @@ int flb_http1_response_commit(struct flb_http_response *response)
     }
 
     if (response->body != NULL) {
-        sds_result = cfl_sds_cat(response_buffer, 
+        sds_result = cfl_sds_cat(response_buffer,
                                  response->body,
                                  cfl_sds_len(response->body));
 
@@ -386,12 +387,12 @@ int flb_http1_response_commit(struct flb_http_response *response)
 
             return -8;
         }
-     
+
         response_buffer = sds_result;
     }
 
-    sds_result = cfl_sds_cat(session->parent->outgoing_data, 
-                             response_buffer, 
+    sds_result = cfl_sds_cat(session->parent->outgoing_data,
+                             response_buffer,
                              cfl_sds_len(response_buffer));
 
     cfl_sds_destroy(response_buffer);
@@ -406,13 +407,13 @@ int flb_http1_response_commit(struct flb_http_response *response)
 }
 
 
-int flb_http1_response_set_header(struct flb_http_response *response, 
+int flb_http1_response_set_header(struct flb_http_response *response,
                               char *name, size_t name_length,
                               char *value, size_t value_length)
 {
     int result;
 
-    result = flb_hash_table_add(response->headers, 
+    result = flb_hash_table_add(response->headers,
                                 (const char *) name, (int) name_length,
                                 (void *) value, (ssize_t) value_length);
 
@@ -423,13 +424,13 @@ int flb_http1_response_set_header(struct flb_http_response *response,
     return 0;
 }
 
-int flb_http1_response_set_status(struct flb_http_response *response, 
+int flb_http1_response_set_status(struct flb_http_response *response,
                               int status)
 {
     return 0;
 }
 
-int flb_http1_response_set_body(struct flb_http_response *response, 
+int flb_http1_response_set_body(struct flb_http_response *response,
                             unsigned char *body, size_t body_length)
 {
     return 0;
@@ -437,7 +438,7 @@ int flb_http1_response_set_body(struct flb_http_response *response,
 
 /* SESSION */
 
-int flb_http1_server_session_init(struct flb_http1_server_session *session, 
+int flb_http1_server_session_init(struct flb_http1_server_session *session,
                        struct flb_http_server_session *parent)
 {
     void *user_data;
@@ -454,6 +455,7 @@ int flb_http1_server_session_init(struct flb_http1_server_session *session,
 
     dummy_mk_http_session_init(&session->inner_session, &session->inner_server);
 
+    memset(&session->inner_request, 0, sizeof(struct mk_http_request));
     dummy_mk_http_request_init(&session->inner_session, &session->inner_request);
 
     mk_http_parser_init(&session->inner_parser);
@@ -486,15 +488,15 @@ void flb_http1_server_session_destroy(struct flb_http1_server_session *session)
 }
 
 int flb_http1_server_session_ingest(struct flb_http1_server_session *session,
-                         unsigned char *buffer, 
-                         size_t length)
+                                    unsigned char *buffer,
+                                    size_t length)
 {
     int result;
 
-    result = mk_http_parser(&session->inner_request, 
-                            &session->inner_parser, 
-                            session->parent->incoming_data, 
-                            cfl_sds_len(session->parent->incoming_data), 
+    result = mk_http_parser(&session->inner_request,
+                            &session->inner_parser,
+                            session->parent->incoming_data,
+                            cfl_sds_len(session->parent->incoming_data),
                             &session->inner_server);
 
     if (result == MK_HTTP_PARSER_OK) {
@@ -508,10 +510,19 @@ int flb_http1_server_session_ingest(struct flb_http1_server_session *session,
 
         http1_evict_request(session);
     }
+    else if (result == MK_HTTP_PARSER_PENDING) {
+        /*
+         * No significant actions are taken here until we reach MK_HTTP_PARSER_OK.
+         * The primary reason is that the caller may need to expand the buffer size
+         * when payloads exceed the current buffer's capacity. In such cases, parser
+         * pointers could end up referencing incorrect memory locations.
+         * To prevent this, we reset the parser state, which introduces a minimal
+         * performance overhead in exchange for ensuring safety.
+         */
+    }
 
     dummy_mk_http_request_init(&session->inner_session, &session->inner_request);
-
     mk_http_parser_init(&session->inner_parser);
 
-    return HTTP_SERVER_SUCCESS;   
+    return HTTP_SERVER_SUCCESS;
 }

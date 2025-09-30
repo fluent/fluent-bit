@@ -29,6 +29,10 @@
 #include <ctraces/ctraces.h>
 #include <ctraces/ctr_decode_msgpack.h>
 
+#include <cprofiles/cprofiles.h>
+#include <cprofiles/cprof_encode_text.h>
+#include <cprofiles/cprof_decode_msgpack.h>
+
 #include <msgpack.h>
 #include "stdout.h"
 
@@ -165,6 +169,45 @@ static void print_traces_text(struct flb_output_instance *ins,
     }
 }
 
+static void print_profiles_text(struct flb_output_instance *ins,
+                                const void *data, size_t bytes)
+{
+    int ret;
+    size_t off;
+    cfl_sds_t text;
+    struct cprof *profiles_context;
+
+    profiles_context = NULL;
+    off = 0;
+
+    /* Decode each profiles context */
+    while ((ret = cprof_decode_msgpack_create(&profiles_context,
+                                              (unsigned char *) data,
+                                              bytes, &off)) ==
+                                                CPROF_DECODE_MSGPACK_SUCCESS) {
+        /* convert to text representation */
+        ret = cprof_encode_text_create(&text, profiles_context);
+
+        if (ret != CPROF_ENCODE_TEXT_SUCCESS) {
+            flb_plg_debug(ins, "cprofiles text encoder returned : %d", ret);
+
+            continue;
+        }
+
+        /* destroy ctr context */
+        cprof_decode_msgpack_destroy(profiles_context);
+
+        printf("%s", text);
+        fflush(stdout);
+
+        cprof_encode_text_destroy(text);
+    }
+
+    if (ret != CPROF_DECODE_MSGPACK_SUCCESS) {
+        flb_plg_debug(ins, "cprofiles msgpack decoder returned : %d", ret);
+    }
+}
+
 static void cb_stdout_flush(struct flb_event_chunk *event_chunk,
                             struct flb_output_flush *out_flush,
                             struct flb_input_instance *i_ins,
@@ -201,13 +244,21 @@ static void cb_stdout_flush(struct flb_event_chunk *event_chunk,
         FLB_OUTPUT_RETURN(FLB_OK);
     }
 
+    if (event_chunk->type == FLB_EVENT_TYPE_PROFILES) {
+        print_profiles_text(ctx->ins, (char *)
+                            event_chunk->data,
+                            event_chunk->size);
+        FLB_OUTPUT_RETURN(FLB_OK);
+    }
+
     /* Assuming data is a log entry...*/
     if (ctx->out_format != FLB_PACK_JSON_FORMAT_NONE) {
         json = flb_pack_msgpack_to_json_format(event_chunk->data,
                                                event_chunk->size,
                                                ctx->out_format,
                                                ctx->json_date_format,
-                                               ctx->date_key);
+                                               ctx->date_key,
+                                               config->json_escape_unicode);
         write(STDOUT_FILENO, json, flb_sds_len(json));
         flb_sds_destroy(json);
 
@@ -234,6 +285,17 @@ static void cb_stdout_flush(struct flb_event_chunk *event_chunk,
 
         while (flb_log_event_decoder_next(&log_decoder,
                                            &log_event) == FLB_EVENT_DECODER_SUCCESS) {
+
+            if (log_event.group_attributes != NULL) {
+                printf("GROUP METADATA : \n\n");
+                msgpack_object_print(stdout, *log_event.group_metadata);
+                printf("\n\n");
+
+                printf("GROUP ATTRIBUTES : \n\n");
+                msgpack_object_print(stdout, *log_event.group_attributes);
+                printf("\n\n");
+            }
+
             printf("[%zd] %s: [[", cnt++, event_chunk->tag);
 
             printf("%"PRId32".%09lu, ", (int32_t) log_event.timestamp.tm.tv_sec,
@@ -305,6 +367,7 @@ struct flb_output_plugin out_stdout_plugin = {
     .cb_exit      = cb_stdout_exit,
     .flags        = 0,
     .workers      = 1,
-    .event_type   = FLB_OUTPUT_LOGS | FLB_OUTPUT_METRICS | FLB_OUTPUT_TRACES | FLB_OUTPUT_BLOBS,
+    .event_type   = FLB_OUTPUT_LOGS | FLB_OUTPUT_METRICS | FLB_OUTPUT_TRACES |
+                    FLB_OUTPUT_PROFILES | FLB_OUTPUT_BLOBS,
     .config_map   = config_map
 };

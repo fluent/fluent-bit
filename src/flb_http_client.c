@@ -37,12 +37,15 @@
 #include <fluent-bit/flb_kv.h>
 #include <fluent-bit/flb_log.h>
 #include <fluent-bit/flb_mem.h>
+#include <fluent-bit/flb_lock.h>
+#include <fluent-bit/flb_http_common.h>
 #include <fluent-bit/flb_http_client.h>
 #include <fluent-bit/flb_http_client_debug.h>
 #include <fluent-bit/flb_utils.h>
 #include <fluent-bit/flb_base64.h>
-
-
+#include <fluent-bit/tls/flb_tls.h>
+#include <time.h>
+#include <fluent-bit/flb_signv4_ng.h>
 
 void flb_http_client_debug(struct flb_http_client *c,
                            struct flb_callback *cb_ctx)
@@ -241,7 +244,7 @@ static int check_connection(struct flb_http_client *c)
     buf = flb_malloc(len + 1);
     if (!buf) {
         flb_errno();
-        return -1;
+        return FLB_HTTP_ERROR;
     }
 
     memcpy(buf, header, len);
@@ -261,6 +264,19 @@ static int check_connection(struct flb_http_client *c)
 static inline void consume_bytes(char *buf, int bytes, int length)
 {
     memmove(buf, buf + bytes, length - bytes);
+}
+
+static inline void http_client_response_reset(struct flb_http_client *c)
+{
+    c->resp.data_len = 0;
+    c->resp.status = 0;
+    c->resp.content_length = -1;
+    c->resp.chunked_encoding = FLB_FALSE;
+    c->resp.connection_close = -1;
+    c->resp.headers_end = NULL;
+    c->resp.payload = NULL;
+    c->resp.payload_size = 0;
+    c->resp.chunk_processed_end = NULL;
 }
 
 static int process_chunked_data(struct flb_http_client *c)
@@ -373,6 +389,7 @@ static int process_chunked_data(struct flb_http_client *c)
 
     /* Is this the last chunk ? */
     if ((val - 2 == 0)) {
+        /* Update payload size */
         return FLB_HTTP_OK;
     }
 
@@ -385,6 +402,7 @@ static int process_chunked_data(struct flb_http_client *c)
     if (found_full_chunk == FLB_TRUE) {
         return FLB_HTTP_CHUNK_AVAILABLE;
     }
+
     return FLB_HTTP_MORE;
 }
 
@@ -633,7 +651,7 @@ static int add_host_and_content_length(struct flb_http_client *c)
     return 0;
 }
 
-struct flb_http_client *flb_http_client(struct flb_connection *u_conn,
+struct flb_http_client *create_http_client(struct flb_connection *u_conn,
                                         int method, const char *uri,
                                         const char *body, size_t body_len,
                                         const char *host, int port,
@@ -745,35 +763,13 @@ struct flb_http_client *flb_http_client(struct flb_connection *u_conn,
         c->query_string = p;
     }
 
-    /* Is Upstream connection using keepalive mode ? */
-    if (flb_stream_get_flag_status(&u_conn->upstream->base, FLB_IO_TCP_KA)) {
-        c->flags |= FLB_HTTP_KA;
-    }
-
     /* Response */
     c->resp.content_length = -1;
     c->resp.connection_close = -1;
 
-    if ((flags & FLB_HTTP_10) == 0) {
-        c->flags |= FLB_HTTP_11;
-    }
-
     if (body && body_len > 0) {
         c->body_buf = body;
         c->body_len = body_len;
-    }
-
-    add_host_and_content_length(c);
-
-    /* Check proxy data */
-    if (proxy) {
-        flb_debug("[http_client] Using http_proxy: %s", proxy);
-        ret = proxy_parse(proxy, c);
-        if (ret != 0) {
-            flb_debug("[http_client] Something wrong with the http_proxy parsing");
-            flb_http_client_destroy(c);
-            return NULL;
-        }
     }
 
     /* 'Read' buffer size */
@@ -787,6 +783,77 @@ struct flb_http_client *flb_http_client(struct flb_connection *u_conn,
     c->resp.data_len  = 0;
     c->resp.data_size = FLB_HTTP_DATA_SIZE_MAX;
     c->resp.data_size_max = FLB_HTTP_DATA_SIZE_MAX;
+
+    /* Tests */
+    c->test_mode = FLB_FALSE;
+    c->test_response.callback = NULL;
+
+    return c;
+}
+
+struct flb_http_client *flb_http_dummy_client(struct flb_connection *u_conn,
+                                              int method, const char *uri,
+                                              const char *body, size_t body_len,
+                                              const char *host, int port,
+                                              const char *proxy, int flags)
+{
+    struct flb_http_client *c;
+
+    c = create_http_client(u_conn, method, uri,
+                           body, body_len,
+                           host, port,
+                           proxy, flags);
+
+    if (!c) {
+        return NULL;
+    }
+
+    return c;
+}
+
+struct flb_http_client *flb_http_client(struct flb_connection *u_conn,
+                                        int method, const char *uri,
+                                        const char *body, size_t body_len,
+                                        const char *host, int port,
+                                        const char *proxy, int flags)
+{
+    int ret;
+    struct flb_http_client *c;
+
+    c = create_http_client(u_conn, method, uri,
+                           body, body_len,
+                           host, port,
+                           proxy, flags);
+
+    if (!c) {
+        return NULL;
+    }
+
+    /* Is Upstream connection using keepalive mode ? */
+    if (flb_stream_get_flag_status(&u_conn->upstream->base, FLB_IO_TCP_KA)) {
+        c->flags |= FLB_HTTP_KA;
+    }
+
+    if ((flags & FLB_HTTP_10) == 0) {
+        c->flags |= FLB_HTTP_11;
+    }
+
+    ret = add_host_and_content_length(c);
+    if (ret != 0) {
+        flb_http_client_destroy(c);
+        return NULL;
+    }
+
+    /* Check proxy data */
+    if (proxy) {
+        flb_debug("[http_client] Using http_proxy: %s", proxy);
+        ret = proxy_parse(proxy, c);
+        if (ret != 0) {
+            flb_debug("[http_client] Something wrong with the http_proxy parsing");
+            flb_http_client_destroy(c);
+            return NULL;
+        }
+    }
 
     return c;
 }
@@ -1064,11 +1131,130 @@ int flb_http_set_content_encoding_gzip(struct flb_http_client *c)
     return ret;
 }
 
+int flb_http_set_content_encoding_zstd(struct flb_http_client *c)
+{
+    int ret;
+
+    ret = flb_http_add_header(c,
+                              FLB_HTTP_HEADER_CONTENT_ENCODING,
+                              sizeof(FLB_HTTP_HEADER_CONTENT_ENCODING) - 1,
+                              "zstd", 4);
+    return ret;
+}
+
+int flb_http_set_content_encoding_snappy(struct flb_http_client *c)
+{
+    int ret;
+
+    ret = flb_http_add_header(c,
+                              FLB_HTTP_HEADER_CONTENT_ENCODING,
+                              sizeof(FLB_HTTP_HEADER_CONTENT_ENCODING) - 1,
+                              "snappy", 6);
+    return ret;
+}
+
+int flb_http_set_read_idle_timeout(struct flb_http_client *c, int timeout)
+{
+    c->read_idle_timeout = timeout;
+    return 0;
+}
+
+int flb_http_set_response_timeout(struct flb_http_client *c, int timeout)
+{
+    c->response_timeout = timeout;
+    return 0;
+}
+
 int flb_http_set_callback_context(struct flb_http_client *c,
                                   struct flb_callback *cb_ctx)
 {
     c->cb_ctx = cb_ctx;
     return 0;
+}
+
+int flb_http_set_response_test(struct flb_http_client *c, char *test_name,
+                               const void *data, size_t len,
+                               int status,
+                               void (*resp_callback) (void *, int, void *, size_t, void *),
+                               void *resp_callback_data)
+{
+    if (!c) {
+        return -1;
+    }
+
+    /*
+     * Enabling a test, set the http_client instance in 'test' mode, so no real
+     * http request is invoked, only the desired implemented test.
+     */
+
+    /* Response test */
+    if (strcmp(test_name, "response") == 0) {
+        c->test_mode = FLB_TRUE;
+        c->test_response.rt_ctx = c;
+        c->test_response.rt_status = status;
+        c->test_response.rt_resp_callback = resp_callback;
+        c->test_response.rt_data = resp_callback_data;
+        if (data != NULL && len > 0) {
+            c->resp.payload = (char *)data;
+            c->resp.payload_size = len;
+            c->resp.status = status;
+        }
+    }
+    else {
+        return -1;
+    }
+
+    return 0;
+}
+
+static int flb_http_run_response_test(struct flb_http_client *c,
+                                      const void *data, size_t len)
+{
+    int ret = 0;
+    void *out_buf = NULL;
+    size_t out_size = 0;
+    struct flb_test_http_response  *htr;
+
+    if (!c) {
+        return -1;
+    }
+
+    htr = &c->test_response;
+
+    /* Invoke the output plugin formatter test callback */
+    ret = htr->callback(c,
+                        data, len,
+                        &out_buf, &out_size);
+
+    /* Call the runtime test callback checker */
+    if (htr->rt_resp_callback) {
+        htr->rt_resp_callback(htr->rt_ctx,
+                              ret,
+                              out_buf, out_size,
+                              htr->rt_data);
+    }
+    else {
+        flb_free(out_buf);
+    }
+
+    return 0;
+}
+
+/* Push some response into the http client */
+static int flb_http_stub_response(struct flb_http_client *c)
+{
+    int ret = 0;
+
+    if (!c) {
+        return -1;
+    }
+
+    /* If http client's test_responses is registered, run the stub. */
+    if (c->test_response.callback != NULL && c->resp.payload != NULL) {
+        ret = flb_http_run_response_test(c, c->resp.payload, c->resp.payload_size);
+    }
+
+    return ret;
 }
 
 int flb_http_add_auth_header(struct flb_http_client *c,
@@ -1257,8 +1443,12 @@ int flb_http_do_request(struct flb_http_client *c, size_t *bytes)
     /* number of sent bytes */
     *bytes = (bytes_header + bytes_body);
 
+    /* Initialize timeout tracking */
+    c->ts_start = time(NULL);
+    c->last_read_ts = c->ts_start;
+
     /* prep c->resp for incoming data */
-    c->resp.data_len = 0;
+    http_client_response_reset(c);
 
     /* at this point we've sent our request so we expect more data in response*/
     return FLB_HTTP_MORE;
@@ -1280,9 +1470,11 @@ int flb_http_get_response_data(struct flb_http_client *c, size_t bytes_consumed)
     int r_bytes;
     ssize_t available;
     size_t out_size;
+    time_t now;
 
-    // if the caller has consumed some of the payload (via bytes_consumed)
-    // we consume those bytes off the payload
+    /* If the caller has consumed some of the payload (via bytes_consumed)
+     * we consume those bytes off the payload
+     */
     if( bytes_consumed > 0 ) {
         if(bytes_consumed > c->resp.payload_size) {
             flb_error("[http_client] attempting to consume more bytes than "
@@ -1322,6 +1514,21 @@ int flb_http_get_response_data(struct flb_http_client *c, size_t bytes_consumed)
             }
             available = flb_http_buffer_available(c) - 1;
         }
+        now = time(NULL);
+
+        if (c->response_timeout > 0 && (now - c->ts_start) > c->response_timeout) {
+            flb_error("[http_client] response timeout reached (elapsed=%lds, limit=%ds)",
+                      (long)(now - c->ts_start), c->response_timeout);
+            flb_upstream_conn_recycle(c->u_conn, FLB_FALSE);
+            return FLB_HTTP_ERROR;
+        }
+
+        if (c->read_idle_timeout > 0 &&  (now - c->last_read_ts) > c->read_idle_timeout) {
+            flb_error("[http_client] read idle timeout reached (idle=%lds, limit=%ds)",
+                      (long)(now - c->last_read_ts), c->read_idle_timeout);
+            flb_upstream_conn_recycle(c->u_conn, FLB_FALSE);
+            return FLB_HTTP_ERROR;
+        }
 
         r_bytes = flb_io_net_read(c->u_conn,
                                   c->resp.data + c->resp.data_len,
@@ -1336,6 +1543,10 @@ int flb_http_get_response_data(struct flb_http_client *c, size_t bytes_consumed)
         if (r_bytes >= 0) {
             c->resp.data_len += r_bytes;
             c->resp.data[c->resp.data_len] = '\0';
+
+            if (r_bytes > 0) {
+                c->last_read_ts = now;
+            }
 
             ret = process_data(c);
             if (ret == FLB_HTTP_ERROR) {
@@ -1362,6 +1573,10 @@ int flb_http_do(struct flb_http_client *c, size_t *bytes)
 {
     int ret;
 
+    if (c->test_mode == FLB_TRUE) {
+        return flb_http_stub_response(c);
+    }
+
     ret = flb_http_do_request(c, bytes);
     if (ret != 0) {
         return ret;
@@ -1369,17 +1584,25 @@ int flb_http_do(struct flb_http_client *c, size_t *bytes)
 
     /* Read the server response, we need at least 19 bytes */
     while (ret == FLB_HTTP_MORE || ret == FLB_HTTP_CHUNK_AVAILABLE) {
-        /* flb_http_do does not consume any bytes during processing
+        /*
+         * flb_http_do does not consume any bytes during processing
          * so we always pass 0 consumed_bytes because we fetch until
          * the end chunk before returning to the caller
          */
-
         ret = flb_http_get_response_data(c, 0);
+    }
+
+
+    if (ret != FLB_HTTP_OK) {
+        return ret;
     }
 
     /* Check 'Connection' response header */
     ret = check_connection(c);
-    if (ret == FLB_HTTP_OK) {
+    if (ret == FLB_HTTP_ERROR) {
+        return ret;
+    }
+    else if (ret == FLB_HTTP_OK) {
         /*
          * If the server replied that the connection will be closed
          * and our Upstream connection is in keepalive mode, we must
@@ -1393,6 +1616,9 @@ int flb_http_do(struct flb_http_client *c, size_t *bytes)
                       c->u_conn->upstream->tcp_port,
                       c->u_conn->fd);
         }
+    }
+    else if (ret == FLB_HTTP_NOT_FOUND) {
+        /* Connection header not found, continue normally */
     }
 
 #ifdef FLB_HAVE_HTTP_CLIENT_DEBUG
@@ -1466,4 +1692,1020 @@ void flb_http_client_destroy(struct flb_http_client *c)
     flb_free(c->header_buf);
     flb_free((void *)c->proxy.host);
     flb_free(c);
+}
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+static int flb_http_client_session_read(struct flb_http_client_session *session);
+static int flb_http_client_session_write(struct flb_http_client_session *session);
+
+
+
+
+
+
+
+
+
+
+int flb_http_client_ng_init(struct flb_http_client_ng *client,
+                            struct flb_upstream_ha *upstream_ha,
+                            struct flb_upstream *upstream,
+                            int protocol_version,
+                            uint64_t flags)
+{
+    memset(client, 0, sizeof(struct flb_http_client_ng));
+
+    client->temporary_buffer = cfl_sds_create_size(HTTP_CLIENT_TEMPORARY_BUFFER_SIZE);
+
+    if (client->temporary_buffer == NULL) {
+        return -1;
+    }
+
+    client->protocol_version = protocol_version;
+    client->upstream_ha = upstream_ha;
+    client->upstream = upstream;
+    client->flags = flags;
+
+    cfl_list_init(&client->sessions);
+
+    if (protocol_version == HTTP_PROTOCOL_VERSION_AUTODETECT) {
+        if (upstream->base.tls_context != NULL) {
+            flb_tls_set_alpn(upstream->base.tls_context, "h2,http/1.1,http/1.0");
+        }
+    }
+    else if (protocol_version == HTTP_PROTOCOL_VERSION_20) {
+        if (upstream->base.tls_context != NULL) {
+            flb_tls_set_alpn(upstream->base.tls_context, "h2");
+        }
+    }
+    else if (protocol_version == HTTP_PROTOCOL_VERSION_11) {
+        if (upstream->base.tls_context != NULL) {
+            flb_tls_set_alpn(upstream->base.tls_context, "http/1.1,http/1.0");
+        }
+    }
+    else if (protocol_version <= HTTP_PROTOCOL_VERSION_10) {
+        if (upstream->base.tls_context != NULL) {
+            flb_tls_set_alpn(upstream->base.tls_context, "http/1.0");
+        }
+    }
+
+    flb_lock_init(&client->lock);
+
+    return 0;
+}
+
+struct flb_http_client_ng *flb_http_client_ng_create(
+                                struct flb_upstream_ha *upstream_ha,
+                                struct flb_upstream *upstream,
+                                int protocol_version,
+                                uint64_t flags)
+{
+    struct flb_http_client_ng *client;
+    int                        result;
+
+    client = flb_calloc(1, sizeof(struct flb_http_client_ng));
+
+    if (client != NULL) {
+        result = flb_http_client_ng_init(client,
+                                         upstream_ha,
+                                         upstream,
+                                         protocol_version,
+                                         flags);
+
+        client->releasable = FLB_TRUE;
+
+        if (result != 0) {
+            flb_http_client_ng_destroy(client);
+
+            client = NULL;
+        }
+    }
+
+    return client;
+}
+
+void flb_http_client_ng_destroy(struct flb_http_client_ng *client)
+{
+    struct cfl_list                *iterator_backup;
+    struct cfl_list                *iterator;
+    struct flb_http_client_session *session;
+
+    flb_lock_acquire(&client->lock,
+                     FLB_LOCK_INFINITE_RETRY_LIMIT,
+                     FLB_LOCK_DEFAULT_RETRY_DELAY);
+
+    if (client->temporary_buffer != NULL) {
+        cfl_sds_destroy(client->temporary_buffer);
+
+        client->temporary_buffer = NULL;
+    }
+
+    cfl_list_foreach_safe(iterator,
+                          iterator_backup,
+                          &client->sessions) {
+        session = cfl_list_entry(iterator,
+                                 struct flb_http_client_session,
+                                 _head);
+
+        flb_http_client_session_destroy(session);
+    }
+
+    flb_lock_release(&client->lock,
+                     FLB_LOCK_INFINITE_RETRY_LIMIT,
+                     FLB_LOCK_DEFAULT_RETRY_DELAY);
+
+    flb_lock_destroy(&client->lock);
+}
+
+int flb_http_client_session_init(struct flb_http_client_session *session,
+                                 struct flb_http_client_ng *client,
+                                 int protocol_version,
+                                 struct flb_connection  *connection)
+{
+    int result;
+
+    memset(session, 0, sizeof(struct flb_http_client_session));
+
+    session->parent = client;
+    session->protocol_version = protocol_version;
+    session->connection = connection;
+    session->stream_sequence_number = 1;
+
+    cfl_list_init(&session->streams);
+    cfl_list_init(&session->response_queue);
+
+    cfl_list_entry_init(&session->_head);
+
+    session->incoming_data = cfl_sds_create_size(1);
+
+    if (session->incoming_data == NULL) {
+        return -1;
+    }
+
+    session->outgoing_data = cfl_sds_create_size(1);
+
+    if (session->outgoing_data == NULL) {
+        return -1;
+    }
+
+    if (session->protocol_version == HTTP_PROTOCOL_VERSION_11 ||
+        session->protocol_version == HTTP_PROTOCOL_VERSION_10) {
+        session->http1.parent = session;
+
+        result = flb_http1_client_session_init(&session->http1);
+
+        if (result != 0) {
+            return result;
+        }
+    }
+    else if (session->protocol_version == HTTP_PROTOCOL_VERSION_20) {
+        session->http2.parent = session;
+
+        result = flb_http2_client_session_init(&session->http2);
+
+        if (result != 0) {
+            return result;
+        }
+    }
+    else {
+        return -1;
+    }
+
+    return 0;
+}
+
+struct flb_http_client_session *flb_http_client_session_create(struct flb_http_client_ng *client,
+                                                               int protocol_version,
+                                                               struct flb_connection  *connection)
+{
+    struct flb_http_client_session *session;
+    int                             result;
+
+    session = flb_calloc(1, sizeof(struct flb_http_client_session));
+
+    if (session != NULL) {
+        if (client != NULL) {
+            flb_lock_acquire(&client->lock,
+                            FLB_LOCK_INFINITE_RETRY_LIMIT,
+                            FLB_LOCK_DEFAULT_RETRY_DELAY);
+        }
+
+        result = flb_http_client_session_init(session,
+                                              client,
+                                              protocol_version,
+                                              connection);
+
+        if (client != NULL) {
+            flb_lock_release(&client->lock,
+                            FLB_LOCK_INFINITE_RETRY_LIMIT,
+                            FLB_LOCK_DEFAULT_RETRY_DELAY);
+        }
+
+        session->releasable = FLB_TRUE;
+
+        if (result != 0) {
+            flb_http_client_session_destroy(session);
+
+            session = NULL;
+        }
+    }
+
+    return session;
+}
+
+struct flb_http_client_session *flb_http_client_session_begin(struct flb_http_client_ng *client)
+{
+    int                             protocol_version;
+    struct flb_upstream_node       *upstream_node;
+    struct flb_connection          *connection;
+    struct flb_upstream            *upstream;
+    struct flb_http_client_session *session;
+    const char                     *alpn;
+
+    if (client->upstream_ha != NULL) {
+        upstream_node = flb_upstream_ha_node_get(client->upstream_ha);
+
+        if (upstream_node == NULL) {
+            return NULL;
+        }
+
+        upstream = upstream_node->u;
+
+        connection = flb_upstream_conn_get(upstream_node->u);
+    }
+    else {
+        upstream_node = NULL;
+
+        upstream = client->upstream;
+
+        connection = flb_upstream_conn_get(client->upstream);
+    }
+
+    if (connection == NULL) {
+        return NULL;
+    }
+
+    protocol_version = client->protocol_version;
+
+    if (protocol_version == HTTP_PROTOCOL_VERSION_AUTODETECT) {
+        if (connection->tls_session != NULL) {
+            alpn = flb_tls_session_get_alpn(connection->tls_session);
+
+            if (alpn != NULL) {
+                if (strcasecmp(alpn, "h2") == 0) {
+                    protocol_version = HTTP_PROTOCOL_VERSION_20;
+                }
+                else if (strcasecmp(alpn, "http/1.1") == 0) {
+                    protocol_version = HTTP_PROTOCOL_VERSION_11;
+                }
+                else if (strcasecmp(alpn, "http/1.0") == 0) {
+                    protocol_version = HTTP_PROTOCOL_VERSION_10;
+                }
+            }
+        }
+    }
+
+    if (protocol_version == HTTP_PROTOCOL_VERSION_AUTODETECT) {
+        protocol_version = HTTP_PROTOCOL_VERSION_11;
+    }
+
+    if (protocol_version == HTTP_PROTOCOL_VERSION_20) {
+        flb_stream_disable_keepalive(&upstream->base);
+    }
+
+    session = flb_http_client_session_create(client, protocol_version, connection);
+
+    if (session == NULL) {
+        flb_upstream_conn_release(connection);
+    }
+
+    session->upstream_node = upstream_node;
+
+    return session;
+}
+
+void flb_http_client_session_destroy(struct flb_http_client_session *session)
+{
+    struct cfl_list         *iterator_backup;
+    struct cfl_list         *iterator;
+    struct flb_http_stream  *stream;
+
+    if (session != NULL) {
+        cfl_list_foreach_safe(iterator,
+                              iterator_backup,
+                              &session->streams) {
+            stream = cfl_list_entry(iterator, struct flb_http_stream, _head);
+
+            flb_http_stream_destroy(stream);
+        }
+
+        if (session->connection != NULL) {
+            flb_upstream_conn_release(session->connection);
+        }
+
+        if (!cfl_list_entry_is_orphan(&session->_head)) {
+            cfl_list_del(&session->_head);
+        }
+
+        if (session->incoming_data != NULL) {
+            cfl_sds_destroy(session->incoming_data);
+        }
+
+        if (session->outgoing_data != NULL) {
+            cfl_sds_destroy(session->outgoing_data);
+        }
+
+        flb_http1_client_session_destroy(&session->http1);
+        flb_http2_client_session_destroy(&session->http2);
+
+        if (session->releasable) {
+            flb_free(session);
+        }
+    }
+}
+
+struct flb_http_request *flb_http_client_request_begin(struct flb_http_client_session *session)
+{
+    int                     stream_id;
+    struct flb_http_stream *stream;
+    int                     result;
+
+    stream_id = session->stream_sequence_number;
+    session->stream_sequence_number += 2;
+
+    stream = flb_http_stream_create(session,
+                                    stream_id,
+                                    HTTP_STREAM_ROLE_CLIENT,
+                                    session);
+
+    if (stream == NULL) {
+        return NULL;
+    }
+
+    stream->request.protocol_version = session->protocol_version;
+
+    if (stream->request.protocol_version == HTTP_PROTOCOL_VERSION_20) {
+        result = flb_http2_request_begin(&stream->request);
+    }
+    else if (stream->request.protocol_version == HTTP_PROTOCOL_VERSION_11 ||
+             stream->request.protocol_version == HTTP_PROTOCOL_VERSION_10) {
+        result = flb_http1_request_begin(&stream->request);
+    }
+    else {
+        result = -1;
+    }
+
+    if (result != 0) {
+        flb_http_stream_destroy(stream);
+
+        return NULL;
+    }
+
+    cfl_list_add(&stream->_head, &session->streams);
+
+    return &stream->request;
+}
+
+struct flb_http_response *flb_http_client_request_execute_step(
+                            struct flb_http_request *request)
+{
+    struct flb_http_response       *response;
+    struct flb_http_client_session *session;
+    int                             result;
+
+    session = (struct flb_http_client_session *) request->stream->parent;
+    response = &request->stream->response;
+
+    /* We allow this to enable request mocking, there is no
+     * other legitimate use for it.
+     */
+    if (session->connection == NULL) {
+        return response;
+    }
+
+    if (session->outgoing_data != NULL &&
+        cfl_sds_len(session->outgoing_data) > 0)
+    {
+        result = flb_http_client_session_write(session);
+
+        if (result != 0) {
+            return NULL;
+        }
+
+        result = flb_http_client_session_read(session);
+
+        if (result != 0) {
+            return NULL;
+        }
+    }
+
+    if (request->stream->status == HTTP_STREAM_STATUS_SENDING_HEADERS) {
+        result = flb_http_request_commit(request);
+
+        if (result != 0) {
+            return NULL;
+        }
+
+        result = flb_http_client_session_write(session);
+
+        if (result != 0) {
+            return NULL;
+        }
+
+        request->stream->status = HTTP_STREAM_STATUS_RECEIVING_HEADERS;
+    }
+    else if (request->stream->status == HTTP_STREAM_STATUS_RECEIVING_HEADERS ||
+             request->stream->status == HTTP_STREAM_STATUS_RECEIVING_DATA ) {
+        result = flb_http_client_session_read(session);
+
+        if (result != 0) {
+            return NULL;
+        }
+
+        if (session->outgoing_data != NULL &&
+            cfl_sds_len(session->outgoing_data) > 0)
+        {
+            result = flb_http_client_session_write(session);
+
+            if (result != 0) {
+                return NULL;
+            }
+        }
+    }
+
+    if (request->stream->status != HTTP_STREAM_STATUS_RECEIVING_HEADERS &&
+        request->stream->status != HTTP_STREAM_STATUS_RECEIVING_DATA &&
+        request->stream->status != HTTP_STREAM_STATUS_CLOSED &&
+        request->stream->status != HTTP_STREAM_STATUS_READY ) {
+        return NULL;
+    }
+
+    return response;
+}
+
+struct flb_http_response *flb_http_client_request_execute(struct flb_http_request *request)
+{
+    struct flb_http_response *response;
+
+    do {
+        response = flb_http_client_request_execute_step(request);
+    } while (response != NULL &&
+             request->stream->status != HTTP_STREAM_STATUS_READY &&
+             request->stream->status != HTTP_STREAM_STATUS_CLOSED);
+
+    return response;
+}
+
+static int flb_http_client_session_read(struct flb_http_client_session *session)
+{
+    ssize_t result;
+
+    result = flb_io_net_read(session->connection,
+                             (void *) session->parent->temporary_buffer,
+                             cfl_sds_avail(session->parent->temporary_buffer));
+
+    if (result <= 0) {
+        return -1;
+    }
+
+    result = (ssize_t) flb_http_client_session_ingest(
+                            session,
+                            (unsigned char *) session->parent->temporary_buffer,
+                            result);
+
+    if (result < 0) {
+        return -2;
+    }
+
+    return 0;
+}
+
+
+void flb_http_client_request_destroy(struct flb_http_request *request,
+                                     int destroy_session)
+{
+    if (destroy_session == FLB_TRUE) {
+        flb_http_client_session_destroy((struct flb_http_client_session *)
+                                         request->stream->parent);
+    }
+    else {
+        flb_http_request_destroy(request);
+    }
+}
+
+
+static int flb_http_client_session_write(struct flb_http_client_session *session)
+{
+    size_t data_length;
+    size_t data_sent;
+    int    result;
+
+    if (session == NULL) {
+        return -1;
+    }
+
+    if (session->outgoing_data == NULL) {
+        return 0;
+    }
+
+    data_length = cfl_sds_len(session->outgoing_data);
+
+    if (data_length > 0) {
+        result = flb_io_net_write(session->connection,
+                                  (void *) session->outgoing_data,
+                                  data_length,
+                                  &data_sent);
+
+        if (result == -1) {
+            return -2;
+        }
+
+
+        if (data_sent < data_length) {
+            memmove(session->outgoing_data,
+                    &session->outgoing_data[data_sent],
+                    data_length - data_sent);
+
+            cfl_sds_set_len(session->outgoing_data,
+                            data_length - data_sent);
+        }
+        else {
+            cfl_sds_set_len(session->outgoing_data, 0);
+        }
+    }
+
+    return 0;
+}
+
+int flb_http_client_session_ingest(struct flb_http_client_session *session,
+                                   unsigned char *buffer,
+                                   size_t length)
+{
+    if (session->protocol_version == HTTP_PROTOCOL_VERSION_11 ||
+        session->protocol_version == HTTP_PROTOCOL_VERSION_10) {
+        return flb_http1_client_session_ingest(&session->http1,
+                                               buffer,
+                                               length);
+    }
+    else if (session->protocol_version == HTTP_PROTOCOL_VERSION_20) {
+        return flb_http2_client_session_ingest(&session->http2,
+                                               buffer,
+                                               length);
+    }
+
+    return -20;
+}
+
+static int flb_http_encode_basic_auth_value(cfl_sds_t *output_buffer,
+                                            char *username,
+                                            char *password)
+{
+    size_t    encoded_value_length;
+    cfl_sds_t encoded_value;
+    cfl_sds_t sds_result;
+    cfl_sds_t raw_value;
+    int       result;
+
+    *output_buffer = NULL;
+
+    raw_value = cfl_sds_create_size(strlen(username) +
+                                    strlen(password) + 2);
+
+    if (raw_value == NULL) {
+        return -1;
+    }
+
+    sds_result = cfl_sds_printf(&raw_value,
+                                "%s:%s",
+                                username,
+                                password);
+
+    if (sds_result == NULL) {
+        cfl_sds_destroy(raw_value);
+
+        return -1;
+    }
+
+    encoded_value = cfl_sds_create_size(cfl_sds_len(raw_value) * 2 + 1);
+
+    if (encoded_value == NULL) {
+        cfl_sds_destroy(raw_value);
+
+        return -1;
+    }
+
+    result = flb_base64_encode((unsigned char *) encoded_value,
+                                cfl_sds_alloc(encoded_value),
+                                &encoded_value_length,
+                                (unsigned char *) raw_value,
+                                cfl_sds_len(raw_value));
+
+    if (result == 0) {
+        *output_buffer = cfl_sds_create_size(cfl_sds_len(encoded_value) + 6);
+
+        if (*output_buffer != NULL) {
+            sds_result = cfl_sds_printf(output_buffer, "Basic %s", encoded_value);
+
+            if (sds_result != NULL) {
+                *output_buffer = sds_result;
+            }
+            else {
+                result = -1;
+            }
+        }
+        else {
+            result = -1;
+        }
+    }
+    else {
+        result = -1;
+    }
+
+    cfl_sds_destroy(encoded_value);
+    cfl_sds_destroy(raw_value);
+
+    return 0;
+}
+
+static int flb_http_encode_bearer_auth_value(cfl_sds_t *output_buffer,
+                                             char *token)
+{
+    cfl_sds_t sds_result;
+
+    *output_buffer = NULL;
+
+    *output_buffer = cfl_sds_create_size(strlen(token) + 9);
+
+    if (*output_buffer == NULL) {
+        return -1;
+    }
+
+    sds_result = cfl_sds_printf(output_buffer,
+                                "Bearer %s",
+                                token);
+
+    if (sds_result == NULL) {
+        cfl_sds_destroy(*output_buffer);
+        *output_buffer = NULL;
+
+        return -1;
+    }
+
+    *output_buffer = sds_result;
+
+    return 0;
+}
+
+
+int flb_http_request_set_authorization(struct flb_http_request *request,
+                                       int type, ...)
+{
+    cfl_sds_t   header_value;
+    const char *header_name;
+    va_list     arguments;
+    char       *username;
+    char       *password;
+    int         result;
+    char       *token;
+
+    va_start(arguments, type);
+
+    if (type == HTTP_WWW_AUTHORIZATION_SCHEME_BASIC) {
+        header_name = "authorization";
+
+        username = va_arg(arguments, char *);
+        password = va_arg(arguments, char *);
+
+        result = flb_http_encode_basic_auth_value(&header_value,
+                                                  username,
+                                                  password);
+
+        if (result != 0) {
+            va_end(arguments);
+
+            return -1;
+        }
+    }
+    else if (type == HTTP_WWW_AUTHORIZATION_SCHEME_BEARER) {
+        header_name = "authorization";
+
+        token = va_arg(arguments, char *);
+
+        result = flb_http_encode_bearer_auth_value(&header_value,
+                                                   token);
+
+        if (result != 0) {
+            va_end(arguments);
+
+            return -1;
+        }
+    }
+    else if (type == HTTP_PROXY_AUTHORIZATION_SCHEME_BASIC) {
+        header_name = "proxy-authorization";
+
+        username = va_arg(arguments, char *);
+        password = va_arg(arguments, char *);
+
+        result = flb_http_encode_basic_auth_value(&header_value,
+                                                  username,
+                                                  password);
+
+        if (result != 0) {
+            va_end(arguments);
+
+            return -1;
+        }
+    }
+    else if (type == HTTP_PROXY_AUTHORIZATION_SCHEME_BEARER) {
+        header_name = "proxy-authorization";
+
+        token = va_arg(arguments, char *);
+
+        result = flb_http_encode_bearer_auth_value(&header_value,
+                                                   token);
+
+        if (result != 0) {
+            va_end(arguments);
+
+            return -1;
+        }
+    }
+    else {
+        va_end(arguments);
+
+        return -1;
+    }
+
+    va_end(arguments);
+
+    result = flb_http_request_set_header(request,
+                                         (char *) header_name, 0,
+                                         (char *) header_value, 0);
+
+    cfl_sds_destroy(header_value);
+
+    if (result != 0) {
+        result = -1;
+    }
+
+    return result;
+}
+
+
+
+
+int flb_http_request_set_parameters_internal(
+    struct flb_http_request *request,
+    va_list arguments)
+{
+    char                           *compression_algorithm;
+    struct flb_config_map_val      *config_map_list_entry;
+    int                             failure_detected;
+    size_t                          header_data_type;
+    char                           *content_type;
+    char                           *bearer_token;
+    struct flb_aws_provider        *aws_provider;
+    struct flb_slist_entry         *header_value;
+    char                          **header_array;
+    char                           *aws_service;
+    struct mk_list                 *header_list;
+    struct flb_slist_entry         *header_name;
+    char                           *aws_region;
+    size_t                          value_type;
+    char                           *user_agent;
+    struct mk_list                 *iterator;
+    size_t                          body_len;
+    char                           *username;
+    char                           *password;
+    int                             result;
+    size_t                          index;
+    size_t                          method;
+    char                           *host;
+    unsigned char                  *body;
+    char                           *uri;
+    char                           *url;
+
+    failure_detected = FLB_FALSE;
+
+    do {
+        value_type = va_arg(arguments, size_t);
+
+        if (value_type == FLB_HTTP_CLIENT_ARGUMENT_TYPE_METHOD) {
+            method = va_arg(arguments, size_t);
+
+            flb_http_request_set_method(request, (int) method);
+        }
+        else if (value_type == FLB_HTTP_CLIENT_ARGUMENT_TYPE_HOST) {
+            host = va_arg(arguments, char *);
+
+            flb_http_request_set_host(request, host);
+        }
+        else if (value_type == FLB_HTTP_CLIENT_ARGUMENT_TYPE_URL) {
+            url = va_arg(arguments, char *);
+
+            flb_http_request_set_url(request, url);
+        }
+        else if (value_type == FLB_HTTP_CLIENT_ARGUMENT_TYPE_URI) {
+            uri = va_arg(arguments, char *);
+
+            flb_http_request_set_uri(request, uri);
+        }
+        else if (value_type == FLB_HTTP_CLIENT_ARGUMENT_TYPE_USER_AGENT) {
+            user_agent = va_arg(arguments, char *);
+
+            flb_http_request_set_user_agent(request, user_agent);
+        }
+        else if (value_type == FLB_HTTP_CLIENT_ARGUMENT_TYPE_CONTENT_TYPE) {
+            content_type = va_arg(arguments, char *);
+
+            result = flb_http_request_set_content_type(request, content_type);
+
+            if (request == NULL) {
+                flb_debug("http request : error setting content type");
+
+                failure_detected = FLB_TRUE;
+            }
+        }
+        else if (value_type == FLB_HTTP_CLIENT_ARGUMENT_TYPE_BODY) {
+            body = va_arg(arguments, unsigned char *);
+            body_len = va_arg(arguments, size_t);
+            compression_algorithm = va_arg(arguments, char *);
+
+            result = flb_http_request_set_body(request,
+                                               body,
+                                               body_len,
+                                               compression_algorithm);
+
+            if (request == NULL) {
+                flb_debug("http request creation error");
+
+                failure_detected = FLB_TRUE;
+            }
+        }
+        else if (value_type == FLB_HTTP_CLIENT_ARGUMENT_TYPE_HEADERS) {
+            header_data_type = va_arg(arguments, size_t);
+
+            if (header_data_type == FLB_HTTP_CLIENT_HEADER_ARRAY) {
+                header_array = va_arg(arguments, char **);
+                if (header_array != NULL) {
+                    for (index = 0 ;
+                        header_array[index+0] != NULL &&
+                        header_array[index+1] != NULL;
+                        index += 2) {
+                        result = flb_http_request_set_header(request,
+                                                             header_array[index+0], 0,
+                                                             header_array[index+1], 0);
+
+                        if (result != 0) {
+                            flb_debug("http request header addition error");
+
+                            failure_detected = FLB_TRUE;
+
+                            break;
+                        }
+                    }
+                }
+            }
+            else if (header_data_type == FLB_HTTP_CLIENT_HEADER_CONFIG_MAP_LIST) {
+                header_list = va_arg(arguments, struct mk_list *);
+
+                flb_config_map_foreach(iterator, config_map_list_entry, header_list) {
+                    header_name = mk_list_entry_first(config_map_list_entry->val.list,
+                                                      struct flb_slist_entry,
+                                                      _head);
+
+                    header_value = mk_list_entry_last(config_map_list_entry->val.list,
+                                                      struct flb_slist_entry,
+                                                      _head);
+
+                    result = flb_http_request_set_header(request,
+                                                         header_name->str, 0,
+                                                         header_value->str, 0);
+
+                    if (result != 0) {
+                        flb_debug("http request header addition error");
+
+                        failure_detected = FLB_TRUE;
+
+                        break;
+                    }
+                }
+            }
+            else {
+                failure_detected = FLB_TRUE;
+            }
+        }
+        else if (value_type == FLB_HTTP_CLIENT_ARGUMENT_TYPE_AUTH_BASIC) {
+            username = va_arg(arguments, char *);
+            password = va_arg(arguments, char *);
+
+            flb_http_request_set_authorization(request,
+                                            HTTP_WWW_AUTHORIZATION_SCHEME_BASIC,
+                                            username,
+                                            password);
+        }
+        else if (value_type == FLB_HTTP_CLIENT_ARGUMENT_TYPE_AUTH_BEARER_TOKEN) {
+            bearer_token = va_arg(arguments, char *);
+
+            flb_http_request_set_authorization(request,
+                                            HTTP_WWW_AUTHORIZATION_SCHEME_BEARER,
+                                            bearer_token);
+        }
+        else if (value_type == FLB_HTTP_CLIENT_ARGUMENT_TYPE_AUTH_SIGNV4) {
+            aws_region = va_arg(arguments, char *);
+            aws_service = va_arg(arguments, char *);
+            aws_provider = va_arg(arguments, struct flb_aws_provider *);
+
+            result = flb_http_request_perform_signv4_signature(request,
+                                                               aws_region,
+                                                               aws_service,
+                                                               aws_provider);
+        }
+    } while (!failure_detected &&
+             value_type != FLB_HTTP_CLIENT_ARGUMENT_TYPE_TERMINATOR);
+
+    if (failure_detected) {
+        return -1;
+    }
+
+    return 0;
+}
+
+int flb_http_request_set_parameters_unsafe(
+    struct flb_http_request *request,
+    ...)
+{
+    va_list arguments;
+    int     result;
+
+    va_start(arguments, request);
+
+    result = flb_http_request_set_parameters_internal(request, arguments);
+
+    va_end(arguments);
+
+    return result;
+}
+
+struct flb_http_request *flb_http_client_request_builder_unsafe(
+    struct flb_http_client_ng *client,
+    ...)
+{
+    va_list                         arguments;
+    struct flb_http_request        *request;
+    struct flb_http_client_session *session;
+    int                             result;
+
+    session = flb_http_client_session_begin(client);
+
+    if (session == NULL) {
+        flb_debug("http session creation error");
+
+        return NULL;
+    }
+
+    request = flb_http_client_request_begin(session);
+
+    if (request == NULL) {
+        flb_debug("http request creation error");
+
+        flb_http_client_session_destroy(session);
+
+        return NULL;
+    }
+
+    flb_http_request_set_port(request, client->upstream->tcp_port);
+
+    va_start(arguments, client);
+
+    result = flb_http_request_set_parameters_internal(request, arguments);
+
+    va_end(arguments);
+
+    if (result != 0) {
+        flb_http_client_session_destroy(session);
+
+        /*
+         * The request instance is recursively disposed of
+         */
+        request = NULL;
+    }
+
+    return request;
 }

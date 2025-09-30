@@ -595,7 +595,7 @@ static inline int unpack_cfl_variant(mpack_reader_t *reader,
     if (value_type == mpack_type_str) {
         result = unpack_cfl_variant_string(reader, value);
     }
-    else if (value_type == mpack_type_str) {
+    else if (value_type == mpack_type_bool) {
         result = unpack_cfl_variant_boolean(reader, value);
     }
     else if (value_type == mpack_type_int) {
@@ -629,5 +629,10 @@ int cfl_variant_convert(struct cfl_variant *input_value,
                         int output_type);
 
 
+int cm_utils_hash_transformer(void *context, struct cfl_variant *value);
+cfl_sds_t cm_utils_variant_convert_to_json(struct cfl_variant *value);
+int cm_utils_variant_convert(struct cfl_variant *input_value,
+                             struct cfl_variant **output_value,
+                             int output_type);
 
 #endif

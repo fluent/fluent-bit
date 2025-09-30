@@ -71,6 +71,9 @@ flb_sds_t flb_cf_key_translate(struct flb_cf *cf, char *key, int len)
 
     /* copy content and check if we have underscores */
     out = flb_sds_create_size(len * 2);
+    if (out == NULL) {
+        return NULL;
+    }
     flb_sds_cat_safe(&out, key, len);
 
     for (i = 0; i < len; i++) {
@@ -119,7 +122,16 @@ struct flb_cf *flb_cf_create()
     mk_list_init(&ctx->parsers);
     mk_list_init(&ctx->multiline_parsers);
 
-    /* custom plugins */
+    /* stream processors */
+    mk_list_init(&ctx->stream_processors);
+
+    /* external plugins (*.so) */
+    mk_list_init(&ctx->plugins);
+
+    /* upstream servers */
+    mk_list_init(&ctx->upstream_servers);
+
+    /* 'custom' type plugins */
     mk_list_init(&ctx->customs);
 
     /* pipeline */
@@ -160,29 +172,38 @@ int flb_cf_set_origin_format(struct flb_cf *cf, int format)
 
 static enum section_type get_section_type(char *name, int len)
 {
-    if (strncasecmp(name, "SERVICE", len) == 0) {
+    if (strncasecmp(name, "service", len) == 0) {
         return FLB_CF_SERVICE;
     }
-    else if (strncasecmp(name, "PARSER", len) == 0) {
+    else if (strncasecmp(name, "parser", len) == 0) {
         return FLB_CF_PARSER;
     }
-    else if (strncasecmp(name, "MULTILINE_PARSER", len) == 0) {
+    else if (strncasecmp(name, "multiline_parser", len) == 0) {
         return FLB_CF_MULTILINE_PARSER;
     }
-    else if (strncasecmp(name, "CUSTOM", len) == 0 ||
-             strncasecmp(name, "CUSTOMS", len) == 0) {
+    else if (strncasecmp(name, "stream_processor", len) == 0) {
+        return FLB_CF_STREAM_PROCESSOR;
+    }
+    else if (strncasecmp(name, "plugins", len) == 0) {
+        return FLB_CF_PLUGINS;
+    }
+    else if (strncasecmp(name, "upstream_servers", len) == 0) {
+        return FLB_CF_UPSTREAM_SERVERS;
+    }
+    else if (strncasecmp(name, "custom", len) == 0 ||
+             strncasecmp(name, "customs", len) == 0) {
         return FLB_CF_CUSTOM;
     }
-    else if (strncasecmp(name, "INPUT", len) == 0 ||
-             strncasecmp(name, "INPUTS", len) == 0) {
+    else if (strncasecmp(name, "input", len) == 0 ||
+             strncasecmp(name, "inputs", len) == 0) {
         return FLB_CF_INPUT;
     }
-    else if (strncasecmp(name, "FILTER", len) == 0 ||
-             strncasecmp(name, "FILTERS", len) == 0) {
+    else if (strncasecmp(name, "filter", len) == 0 ||
+             strncasecmp(name, "filters", len) == 0) {
         return FLB_CF_FILTER;
     }
-    else if (strncasecmp(name, "OUTPUT", len) == 0 ||
-             strncasecmp(name, "OUTPUTS", len) == 0) {
+    else if (strncasecmp(name, "output", len) == 0 ||
+             strncasecmp(name, "outputs", len) == 0) {
         return FLB_CF_OUTPUT;
     }
 
@@ -634,6 +655,15 @@ struct flb_cf_section *flb_cf_section_create(struct flb_cf *cf, char *name, int 
     else if (type == FLB_CF_MULTILINE_PARSER) {
         mk_list_add(&s->_head_section, &cf->multiline_parsers);
     }
+    else if (type == FLB_CF_STREAM_PROCESSOR) {
+        mk_list_add(&s->_head_section, &cf->stream_processors);
+    }
+    else if (type == FLB_CF_PLUGINS) {
+        mk_list_add(&s->_head_section, &cf->plugins);
+    }
+    else if (type == FLB_CF_UPSTREAM_SERVERS) {
+        mk_list_add(&s->_head_section, &cf->upstream_servers);
+    }
     else if (type == FLB_CF_CUSTOM) {
         mk_list_add(&s->_head_section, &cf->customs);
     }
@@ -728,6 +758,12 @@ static char *section_type_str(int type)
         return "PARSER";
     case FLB_CF_MULTILINE_PARSER:
         return "MULTILINE_PARSER";
+    case FLB_CF_STREAM_PROCESSOR:
+        return "STREAM_PROCESSOR";
+    case FLB_CF_PLUGINS:
+        return "PLUGINS";
+    case FLB_CF_UPSTREAM_SERVERS:
+        return "UPSTREAM_SERVERS";
     case FLB_CF_CUSTOM:
         return "CUSTOM";
     case FLB_CF_INPUT:

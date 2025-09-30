@@ -1,0 +1,20 @@
+diff --git a/test/core/binary.wast b/test/core/binary.wast
+index b9fa438c..08ecee27 100644
+--- a/test/core/binary.wast
++++ b/test/core/binary.wast
+@@ -621,15 +621,6 @@
+ )
+
+ ;; Malformed memory limits flag
+-(assert_malformed
+-  (module binary
+-      "\00asm" "\01\00\00\00"
+-      "\05\03\01"                           ;; memory section with one entry
+-      "\04"                                 ;; malformed memory limits flag
+-      "\00"                                 ;; min 0
+-  )
+-  "malformed limits flags"
+-)
+ (assert_malformed
+   (module binary
+       "\00asm" "\01\00\00\00"

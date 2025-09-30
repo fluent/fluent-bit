@@ -42,11 +42,19 @@
 #include <cmetrics/cmt_decode_statsd.h>
 #include <cmetrics/cmt_filter.h>
 
+/*
+ * v1 HTTP endpoint metrics
+ * ------------------------
+ * These are functions that are not part of the CMetrics library, its' the old interface
+ * to ship internal metrics which is part of the v1 HTTP endpoint.
+ */
+
 /* Metrics IDs for general purpose (used by core and Plugins */
-#define FLB_METRIC_N_RECORDS   0
-#define FLB_METRIC_N_BYTES     1
-#define FLB_METRIC_N_DROPPED   2
-#define FLB_METRIC_N_ADDED     3
+#define FLB_METRIC_N_RECORDS       0
+#define FLB_METRIC_N_BYTES         1
+#define FLB_METRIC_N_DROPPED       2
+#define FLB_METRIC_N_ADDED         3
+#define FLB_METRIC_N_DROPPED_BYTES 4
 
 /* Genaral output plugin metrics */
 #define FLB_METRIC_OUT_OK_RECORDS      10       /* proc_records   */
@@ -84,6 +92,10 @@ int flb_metrics_dump_values(char **out_buf, size_t *out_size,
                             struct flb_metrics *me);
 int flb_metrics_destroy(struct flb_metrics *metrics);
 int flb_metrics_fluentbit_add(struct flb_config *ctx, struct cmt *cmt);
+/* ! end of v1 HTTP endpoint metrics */
+
+/* General metrics utilities */
+bool flb_metrics_is_empty(struct cmt *cmt);
 
 #endif
 #endif /* FLB_HAVE_METRICS */

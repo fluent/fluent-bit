@@ -65,7 +65,39 @@
 #define FLB_KUBE_TAG_PREFIX "kube.var.log.containers."
 #endif
 
+/*
+ * Maximum attribute length for Entity's KeyAttributes
+ * values
+ * https://docs.aws.amazon.com/applicationsignals/latest/APIReference/API_Service.html#:~:text=Maximum%20length%20of%201024.
+ */
+#define KEY_ATTRIBUTES_MAX_LEN 1024
+#define SERVICE_NAME_SOURCE_MAX_LEN 64
+
+/*
+ * Configmap used for verifying whether if FluentBit is
+ * on EKS or native Kubernetes
+ */
+#define KUBE_SYSTEM_NAMESPACE "kube-system"
+#define AWS_AUTH_CONFIG_MAP "aws-auth"
+
+/*
+ * Possible platform values for Kubernetes plugin
+ */
+#define NATIVE_KUBERNETES_PLATFORM "k8s"
+#define EKS_PLATFORM "eks"
+
 struct kube_meta;
+
+struct service_attributes {
+    char name[KEY_ATTRIBUTES_MAX_LEN];
+    int name_len;
+    char environment[KEY_ATTRIBUTES_MAX_LEN];
+    int environment_len;
+    char name_source[SERVICE_NAME_SOURCE_MAX_LEN];
+    int name_source_len;
+    int fields;
+
+};
 
 /* Filter context */
 struct flb_kube {
@@ -74,6 +106,7 @@ struct flb_kube {
     int cache_use_docker_id;
     int labels;
     int annotations;
+    int owner_references;
     int namespace_labels;
     int namespace_annotations;
     int namespace_metadata_only;
@@ -123,6 +156,7 @@ struct flb_kube {
 
     /* Regex context to parse records */
     struct flb_regex *regex;
+    struct flb_regex *deploymentRegex;
     struct flb_parser *parser;
 
     /* TLS CA certificate file */
@@ -163,6 +197,41 @@ struct flb_kube {
 
     int kube_meta_cache_ttl;
     int kube_meta_namespace_cache_ttl;
+
+    /* Configuration used for enabling pod to service name mapping*/
+    int aws_use_pod_association;
+    char *aws_pod_association_host;
+    char *aws_pod_association_endpoint;
+    int aws_pod_association_port;
+
+    /*
+     * TTL is used to check how long should the mapped entry
+     * remain in the hash table
+     */
+    struct flb_hash_table *aws_pod_service_hash_table;
+    int aws_pod_service_map_ttl;
+    int aws_pod_service_map_refresh_interval;
+    flb_sds_t aws_pod_service_preload_cache_path;
+    struct flb_upstream *aws_pod_association_upstream;
+    /*
+     * This variable holds the Kubernetes platform type
+     * Current checks for EKS or Native Kuberentes
+     */
+    char *platform;
+    /*
+     * This value is used for holding the platform config
+     * value. Platform will be overriden with this variable
+     * if it's set
+     */
+    char *set_platform;
+
+    //Agent TLS certs
+    struct flb_tls *aws_pod_association_tls;
+    char *aws_pod_association_host_server_ca_file;
+    char *aws_pod_association_host_client_cert_file;
+    char *aws_pod_association_host_client_key_file;
+    int aws_pod_association_host_tls_debug;
+    int aws_pod_association_host_tls_verify;
 
     struct flb_tls *tls;
     struct flb_tls *kubelet_tls;

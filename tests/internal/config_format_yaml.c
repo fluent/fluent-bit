@@ -1,6 +1,8 @@
 /* -*- Mode: C; tab-width: 4; indent-tabs-mode: nil; c-basic-offset: 4 -*- */
 
 #include <fluent-bit/flb_info.h>
+#include <fluent-bit/flb_input.h>
+#include <fluent-bit/flb_output.h>
 #include <fluent-bit/flb_mem.h>
 #include <fluent-bit/flb_kv.h>
 #include <fluent-bit/flb_str.h>
@@ -20,6 +22,17 @@
 #define FLB_000 FLB_TESTS_CONF_PATH "/fluent-bit.yaml"
 #define FLB_001 FLB_TESTS_CONF_PATH "/issue_7559.yaml"
 #define FLB_002 FLB_TESTS_CONF_PATH "/processors.yaml"
+
+#ifdef _WIN32
+#define FLB_003 FLB_TESTS_CONF_PATH "\\parsers_and_multiline_parsers.yaml"
+#else
+#define FLB_003 FLB_TESTS_CONF_PATH "/parsers_and_multiline_parsers.yaml"
+#endif
+
+#define FLB_004 FLB_TESTS_CONF_PATH "/stream_processor.yaml"
+#define FLB_005 FLB_TESTS_CONF_PATH "/plugins.yaml"
+#define FLB_006 FLB_TESTS_CONF_PATH "/upstream.yaml"
+
 #define FLB_000_WIN FLB_TESTS_CONF_PATH "\\fluent-bit-windows.yaml"
 #define FLB_BROKEN_PLUGIN_VARIANT FLB_TESTS_CONF_PATH "/broken_plugin_variant.yaml"
 
@@ -289,7 +302,7 @@ static void test_parser_conf()
 
     /* Total number of inputs */
     if(!TEST_CHECK(mk_list_size(&config->parsers) == cnt+1)) {
-        TEST_MSG("Section number error. Got=%d expect=%d", 
+        TEST_MSG("Section number error. Got=%d expect=%d",
             mk_list_size(&config->parsers),
             cnt+1);
     }
@@ -455,6 +468,401 @@ static void test_processors()
     flb_cf_destroy(cf);
 }
 
+static void test_parsers_and_multiline_parsers()
+{
+    int idx = 0;
+    flb_sds_t str;
+    struct mk_list *head;
+    struct mk_list *rule_head;
+    struct flb_cf *cf;
+    struct flb_cf_section *s;
+    struct flb_cf_group *g;
+    struct cfl_variant *v;
+    struct cfl_variant *tmp;
+
+    cf = flb_cf_yaml_create(NULL, FLB_003, NULL, 0);
+    TEST_CHECK(cf != NULL);
+    if (!cf) {
+        exit(EXIT_FAILURE);
+    }
+
+    /* Total number of sections */
+    TEST_CHECK(mk_list_size(&cf->sections) == 8);
+
+    /* Check number sections per list */
+    TEST_CHECK(mk_list_size(&cf->parsers) == 3);
+    TEST_CHECK(mk_list_size(&cf->multiline_parsers) == 2);
+    TEST_CHECK(mk_list_size(&cf->customs) == 0);
+    TEST_CHECK(mk_list_size(&cf->inputs) == 1);
+    TEST_CHECK(mk_list_size(&cf->filters) == 0);
+    TEST_CHECK(mk_list_size(&cf->outputs) == 1);
+    TEST_CHECK(mk_list_size(&cf->others) == 0);
+
+    /* check parsers */
+    idx = 0;
+    mk_list_foreach(head, &cf->parsers) {
+        s = mk_list_entry(head, struct flb_cf_section, _head_section);
+        switch (idx) {
+        case 0:
+            v = flb_cf_section_property_get(cf, s, "name");
+            TEST_CHECK(v->type == CFL_VARIANT_STRING);
+            TEST_CHECK(strcmp(v->data.as_string, "json-2") == 0);
+            break;
+        case 1:
+            v = flb_cf_section_property_get(cf, s, "name");
+            TEST_CHECK(v->type == CFL_VARIANT_STRING);
+            TEST_CHECK(strcmp(v->data.as_string, "json") == 0);
+            break;
+
+        case 2:
+            v = flb_cf_section_property_get(cf, s, "name");
+            TEST_CHECK(v->type == CFL_VARIANT_STRING);
+            TEST_CHECK(strcmp(v->data.as_string, "docker") == 0);
+            break;
+        }
+        idx++;
+    }
+
+    /* check multiline parsers */
+    idx = 0;
+    head = NULL;
+    mk_list_foreach(head, &cf->multiline_parsers) {
+        s = mk_list_entry(head, struct flb_cf_section, _head_section);
+        str = flb_cf_section_property_get_string(cf, s, "name");
+
+        switch (idx) {
+            case 0:
+                TEST_CHECK(strcmp(str, "exception_test-2") == 0);
+                break;
+            case 1:
+                TEST_CHECK(strcmp(str, "exception_test") == 0);
+                break;
+        };
+        flb_sds_destroy(str);
+
+        /* check rules (groups) */
+        TEST_CHECK(mk_list_size(&s->groups) == 2);
+
+        idx = 0;
+        mk_list_foreach(rule_head, &s->groups) {
+            g = mk_list_entry(rule_head, struct flb_cf_group, _head);
+            TEST_CHECK(strcmp(g->name, "rule") == 0);
+
+            if (idx == 0) {
+                /* get initial state "start_state" */
+                tmp = cfl_kvlist_fetch(g->properties, "state");
+                TEST_CHECK(tmp != NULL);
+
+                TEST_CHECK(tmp->type == CFL_VARIANT_STRING);
+                TEST_CHECK(strcmp(tmp->data.as_string, "start_state") == 0);
+            }
+            else if (idx == 1) {
+                /* get initial state "start_state" */
+                tmp = cfl_kvlist_fetch(g->properties, "state");
+                TEST_CHECK(tmp != NULL);
+
+                TEST_CHECK(tmp->type == CFL_VARIANT_STRING);
+                TEST_CHECK(strcmp(tmp->data.as_string, "cont") == 0);
+            }
+            idx++;
+        }
+    }
+
+    flb_cf_destroy(cf);
+}
+
+static void test_stream_processor()
+{
+    int idx = 0;
+    struct mk_list *head;
+    struct flb_cf *cf;
+    struct flb_cf_section *s;
+    struct cfl_variant *v;
+
+    cf = flb_cf_yaml_create(NULL, FLB_004, NULL, 0);
+    TEST_CHECK(cf != NULL);
+    if (!cf) {
+        exit(EXIT_FAILURE);
+    }
+
+    /* Total number of sections */
+    TEST_CHECK(mk_list_size(&cf->sections) == 5);
+
+    /* Check number sections per list */
+    TEST_CHECK(mk_list_size(&cf->parsers) == 0);
+    TEST_CHECK(mk_list_size(&cf->multiline_parsers) == 0);
+    TEST_CHECK(mk_list_size(&cf->customs) == 0);
+    TEST_CHECK(mk_list_size(&cf->inputs) == 1);
+    TEST_CHECK(mk_list_size(&cf->filters) == 0);
+    TEST_CHECK(mk_list_size(&cf->outputs) == 1);
+    TEST_CHECK(mk_list_size(&cf->others) == 0);
+
+    /* check others */
+    idx = 0;
+    mk_list_foreach(head, &cf->stream_processors) {
+        s = mk_list_entry(head, struct flb_cf_section, _head_section);
+
+        switch (idx) {
+            case 0:
+                v = flb_cf_section_property_get(cf, s, "name");
+                TEST_CHECK(v->type == CFL_VARIANT_STRING);
+                TEST_CHECK(strcmp(v->data.as_string, "create_results") == 0);
+
+                v = flb_cf_section_property_get(cf, s, "exec");
+                TEST_CHECK(v->type == CFL_VARIANT_STRING);
+                TEST_CHECK(strncmp(v->data.as_string, "CREATE STREAM results", 21) == 0);
+                break;
+            case 1:
+                v = flb_cf_section_property_get(cf, s, "name");
+                TEST_CHECK(v->type == CFL_VARIANT_STRING);
+                TEST_CHECK(strcmp(v->data.as_string, "select_results") == 0);
+
+                v = flb_cf_section_property_get(cf, s, "exec");
+                TEST_CHECK(v->type == CFL_VARIANT_STRING);
+                TEST_CHECK(strncmp(v->data.as_string, "SELECT * FROM", 13) == 0);
+                break;
+        };
+        idx++;
+
+        /* check groups */
+        TEST_CHECK(mk_list_size(&s->groups) == 0);
+    }
+
+    flb_cf_destroy(cf);
+}
+
+static void test_plugins()
+{
+    int idx = 0;
+    struct mk_list *head;
+    struct flb_cf *cf;
+    struct flb_cf_section *s;
+
+    struct cfl_kvpair *path;
+    struct cfl_list *path_head;
+
+    cf = flb_cf_yaml_create(NULL, FLB_005, NULL, 0);
+    TEST_CHECK(cf != NULL);
+    if (!cf) {
+        exit(EXIT_FAILURE);
+    }
+
+    /* Total number of sections */
+    TEST_CHECK(mk_list_size(&cf->sections) == 4);
+
+    /* Check number sections per list */
+    TEST_CHECK(mk_list_size(&cf->plugins) == 1);
+    TEST_CHECK(mk_list_size(&cf->parsers) == 0);
+    TEST_CHECK(mk_list_size(&cf->multiline_parsers) == 0);
+    TEST_CHECK(mk_list_size(&cf->customs) == 0);
+    TEST_CHECK(mk_list_size(&cf->inputs) == 1);
+    TEST_CHECK(mk_list_size(&cf->filters) == 0);
+    TEST_CHECK(mk_list_size(&cf->outputs) == 1);
+    TEST_CHECK(mk_list_size(&cf->others) == 0);
+
+
+    mk_list_foreach(head, &cf->plugins) {
+        s = mk_list_entry(head, struct flb_cf_section, _head_section);
+
+        idx = 0;
+        cfl_list_foreach(path_head, &s->properties->list) {
+            path = cfl_list_entry(path_head, struct cfl_kvpair, _head);
+
+            switch (idx) {
+                case 0:
+                    TEST_CHECK(strcmp(path->key, "/path/to/out_gstdout.so") == 0);
+                    break;
+                case 1:
+                    TEST_CHECK(strcmp(path->key, "/path/to/out_fluent.so") == 0);
+                    break;
+            };
+            idx++;
+        }
+    }
+
+    flb_cf_destroy(cf);
+}
+
+static void test_upstream_servers()
+{
+    int idx = 0;
+    int g_idx = 0;
+    struct mk_list *head;
+    struct mk_list *g_head;
+    struct flb_cf *cf;
+    struct flb_cf_section *s;
+    struct cfl_variant *v;
+    struct flb_cf_group *group;
+
+    cf = flb_cf_yaml_create(NULL, FLB_006, NULL, 0);
+    TEST_CHECK(cf != NULL);
+    if (!cf) {
+        exit(EXIT_FAILURE);
+    }
+
+    /* Total number of sections */
+    TEST_CHECK(mk_list_size(&cf->sections) == 4);
+
+    /* Check number sections per list */
+    TEST_CHECK(mk_list_size(&cf->upstream_servers) == 2);
+    TEST_CHECK(mk_list_size(&cf->parsers) == 0);
+    TEST_CHECK(mk_list_size(&cf->multiline_parsers) == 0);
+    TEST_CHECK(mk_list_size(&cf->customs) == 0);
+    TEST_CHECK(mk_list_size(&cf->inputs) == 1);
+    TEST_CHECK(mk_list_size(&cf->filters) == 0);
+    TEST_CHECK(mk_list_size(&cf->outputs) == 1);
+    TEST_CHECK(mk_list_size(&cf->others) == 0);
+
+    /* check upstream servers */
+    idx = 0;
+    mk_list_foreach(head, &cf->upstream_servers) {
+        s = mk_list_entry(head, struct flb_cf_section, _head_section);
+
+        switch (idx) {
+            case 0:
+                v = flb_cf_section_property_get(cf, s, "name");
+                TEST_CHECK(v->type == CFL_VARIANT_STRING);
+                TEST_CHECK(strcmp(v->data.as_string, "forward-balancing") == 0);
+
+                /* iterate node/groups */
+                TEST_CHECK(mk_list_size(&s->groups) == 3);
+
+                g_idx = 0;
+                mk_list_foreach(g_head, &s->groups) {
+                    group = mk_list_entry(g_head, struct flb_cf_group, _head);
+                    TEST_CHECK(group != NULL);
+                    TEST_CHECK(strcmp(group->name, "upstream_node") == 0);
+
+                    switch (g_idx) {
+                        case 0:
+                            v = cfl_kvlist_fetch(group->properties, "name");
+                            TEST_CHECK(v != NULL);
+                            TEST_CHECK(v->type == CFL_VARIANT_STRING);
+                            TEST_CHECK(strcmp(v->data.as_string, "node-1") == 0);
+
+                            v = cfl_kvlist_fetch(group->properties, "host");
+                            TEST_CHECK(v != NULL);
+                            TEST_CHECK(v->type == CFL_VARIANT_STRING);
+                            TEST_CHECK(strcmp(v->data.as_string, "127.0.0.1") == 0);
+
+                            v = cfl_kvlist_fetch(group->properties, "port");
+                            TEST_CHECK(v != NULL);
+                            TEST_CHECK(v->type == CFL_VARIANT_STRING);
+                            TEST_CHECK(strcmp(v->data.as_string, "43000") == 0);
+                            break;
+
+                        case 1:
+                            v = cfl_kvlist_fetch(group->properties, "name");
+                            TEST_CHECK(v != NULL);
+                            TEST_CHECK(v->type == CFL_VARIANT_STRING);
+                            TEST_CHECK(strcmp(v->data.as_string, "node-2") == 0);
+
+                            v = cfl_kvlist_fetch(group->properties, "host");
+                            TEST_CHECK(v != NULL);
+                            TEST_CHECK(v->type == CFL_VARIANT_STRING);
+                            TEST_CHECK(strcmp(v->data.as_string, "127.0.0.1") == 0);
+
+                            v = cfl_kvlist_fetch(group->properties, "port");
+                            TEST_CHECK(v != NULL);
+                            TEST_CHECK(v->type == CFL_VARIANT_STRING);
+                            TEST_CHECK(strcmp(v->data.as_string, "44000") == 0);
+                            break;
+                        case 2:
+                            v = cfl_kvlist_fetch(group->properties, "name");
+                            TEST_CHECK(v != NULL);
+
+                            TEST_CHECK(v->type == CFL_VARIANT_STRING);
+                            TEST_CHECK(strcmp(v->data.as_string, "node-3") == 0);
+                            break;
+                    };
+                    g_idx++;
+                }
+                break;
+            case 1:
+                v = flb_cf_section_property_get(cf, s, "name");
+                TEST_CHECK(v->type == CFL_VARIANT_STRING);
+                TEST_CHECK(strcmp(v->data.as_string, "forward-balancing-2") == 0);
+
+                g_idx = 0;
+                mk_list_foreach(g_head, &s->groups) {
+                    group = mk_list_entry(g_head, struct flb_cf_group, _head);
+                    TEST_CHECK(group != NULL);
+                    TEST_CHECK(strcmp(group->name, "upstream_node") == 0);
+
+                    switch (g_idx) {
+                        case 0:
+                            v = cfl_kvlist_fetch(group->properties, "name");
+                            TEST_CHECK(v != NULL);
+                            TEST_CHECK(v->type == CFL_VARIANT_STRING);
+                            TEST_CHECK(strcmp(v->data.as_string, "node-A") == 0);
+
+                            v = cfl_kvlist_fetch(group->properties, "host");
+                            TEST_CHECK(v != NULL);
+                            TEST_CHECK(v->type == CFL_VARIANT_STRING);
+                            TEST_CHECK(strcmp(v->data.as_string, "192.168.1.10") == 0);
+
+                            v = cfl_kvlist_fetch(group->properties, "port");
+                            TEST_CHECK(v != NULL);
+                            TEST_CHECK(v->type == CFL_VARIANT_STRING);
+                            TEST_CHECK(strcmp(v->data.as_string, "50000") == 0);
+
+                            break;
+                        case 1:
+                            v = cfl_kvlist_fetch(group->properties, "name");
+                            TEST_CHECK(v != NULL);
+                            TEST_CHECK(v->type == CFL_VARIANT_STRING);
+                            TEST_CHECK(strcmp(v->data.as_string, "node-B") == 0);
+
+                            v = cfl_kvlist_fetch(group->properties, "host");
+                            TEST_CHECK(v != NULL);
+                            TEST_CHECK(v->type == CFL_VARIANT_STRING);
+                            TEST_CHECK(strcmp(v->data.as_string, "192.168.1.11") == 0);
+
+                            v = cfl_kvlist_fetch(group->properties, "port");
+                            TEST_CHECK(v != NULL);
+                            TEST_CHECK(v->type == CFL_VARIANT_STRING);
+                            TEST_CHECK(strcmp(v->data.as_string, "51000") == 0);
+                            break;
+                    };
+                    g_idx++;
+                }
+
+                break;
+        };
+        idx++;
+    }
+
+    flb_cf_destroy(cf);
+}
+
+static void test_invalid_property()
+{
+    char* test_cases[] = {
+        FLB_TESTS_CONF_PATH "/invalid_input_property.yaml",
+        FLB_TESTS_CONF_PATH "/invalid_output_property.yaml",
+        NULL,
+    };
+
+    struct flb_cf *cf;
+    struct flb_config *config;
+    int ret;
+    int i;
+
+    for (i = 0; test_cases[i] != NULL; i++) {
+        cf = flb_cf_yaml_create(NULL, test_cases[i], NULL, 0);
+        TEST_ASSERT(cf != NULL);
+
+        config = flb_config_init();
+        TEST_ASSERT(config != NULL);
+
+        ret = flb_config_load_config_format(config, cf);
+        TEST_ASSERT_(ret == -1, "expected invalid property to return an error in file %s", test_cases[i]);
+
+        flb_config_exit(config);
+        flb_cf_destroy(cf);
+    }
+}
+
 TEST_LIST = {
     { "basic"    , test_basic},
     { "customs section", test_customs_section},
@@ -464,5 +872,10 @@ TEST_LIST = {
     { "parsers file conf", test_parser_conf},
     { "camel_case_key", test_camel_case_key},
     { "processors", test_processors},
+    { "parsers_and_multiline_parsers", test_parsers_and_multiline_parsers},
+    { "stream_processor", test_stream_processor},
+    { "plugins", test_plugins},
+    { "upstream_servers", test_upstream_servers},
+    { "invalid_input_property", test_invalid_property},
     { 0 }
 };

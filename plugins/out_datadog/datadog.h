@@ -59,6 +59,7 @@ struct flb_out_datadog {
     flb_sds_t api_key;
     int include_tag_key;
     flb_sds_t tag_key;
+    struct mk_list *headers;
     bool remap;
 
     /* final result */

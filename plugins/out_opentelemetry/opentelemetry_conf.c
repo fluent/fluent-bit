@@ -23,6 +23,11 @@
 #include <fluent-bit/flb_sds.h>
 #include <fluent-bit/flb_kv.h>
 #include <fluent-bit/flb_record_accessor.h>
+#ifdef FLB_HAVE_SIGNV4
+#ifdef FLB_HAVE_AWS
+#include <fluent-bit/flb_aws_credentials.h>
+#endif
+#endif
 
 #include "opentelemetry.h"
 #include "opentelemetry_conf.h"
@@ -167,7 +172,7 @@ static int config_add_labels(struct flb_output_instance *ins,
         k = mk_list_entry_first(mv->val.list, struct flb_slist_entry, _head);
         v = mk_list_entry_last(mv->val.list, struct flb_slist_entry, _head);
 
-        kv = flb_kv_item_create(&ctx->kv_labels, k->str, v->str);
+        kv = flb_kv_item_set(&ctx->kv_labels, k->str, v->str);
         if (!kv) {
             flb_plg_error(ins, "could not append label %s=%s\n", k->str, v->str);
             return -1;
@@ -184,10 +189,9 @@ static int config_add_labels(struct flb_output_instance *ins,
 */
 
 static int check_proxy(struct flb_output_instance *ins,
-                      struct opentelemetry_context *ctx,
-                      char *host, char *port,
-                      char *protocol, char *uri)
-{
+                       struct opentelemetry_context *ctx,
+                       char *host, char *port,
+                       char *protocol, char *uri){
 
     int ret;
     const char *tmp = NULL;
@@ -200,6 +204,9 @@ static int check_proxy(struct flb_output_instance *ins,
             return -1;
         }
 
+        if (ctx->proxy_host) {
+            flb_free(ctx->proxy_host);
+        }
         ctx->proxy_host = host;
         ctx->proxy_port = atoi(port);
         ctx->proxy = tmp;
@@ -215,8 +222,7 @@ static int check_proxy(struct flb_output_instance *ins,
     return 0;
 }
 
-static char *sanitize_uri(char *uri)
-{
+static char *sanitize_uri(char *uri){
     char *new_uri;
     int   uri_len;
 
@@ -254,6 +260,8 @@ struct opentelemetry_context *flb_opentelemetry_context_create(struct flb_output
     struct flb_upstream *upstream;
     struct opentelemetry_context *ctx = NULL;
     const char *tmp = NULL;
+    uint64_t http_client_flags;
+    int http_protocol_version;
 
     /* Allocate plugin context */
     ctx = flb_calloc(1, sizeof(struct opentelemetry_context));
@@ -274,11 +282,6 @@ struct opentelemetry_context *flb_opentelemetry_context_create(struct flb_output
     /* Parse 'add_label' */
     ret = config_add_labels(ins, ctx);
     if (ret == -1) {
-        return NULL;
-    }
-
-    ret = check_proxy(ins, ctx, host, port, protocol, metrics_uri);
-    if (ret == -1) {
         flb_opentelemetry_context_destroy(ctx);
         return NULL;
     }
@@ -288,6 +291,46 @@ struct opentelemetry_context *flb_opentelemetry_context_create(struct flb_output
         flb_opentelemetry_context_destroy(ctx);
         return NULL;
     }
+
+    ret = check_proxy(ins, ctx, host, port, protocol, metrics_uri);
+    if (ret == -1) {
+        flb_opentelemetry_context_destroy(ctx);
+        return NULL;
+    }
+
+    ret = check_proxy(ins, ctx, host, port, protocol, traces_uri);
+    if (ret == -1) {
+        flb_opentelemetry_context_destroy(ctx);
+        return NULL;
+    }
+
+#ifdef FLB_HAVE_SIGNV4
+#ifdef FLB_HAVE_AWS
+    if (ctx->has_aws_auth) {
+        if (!ctx->aws_service) {
+            flb_plg_error(ins, "aws_auth option requires " FLB_OPENTELEMETRY_AWS_CREDENTIAL_PREFIX "service to be set");
+            flb_opentelemetry_context_destroy(ctx);
+            return NULL;
+        }
+
+        ctx->aws_provider = flb_managed_chain_provider_create(
+            ins,
+            config,
+            FLB_OPENTELEMETRY_AWS_CREDENTIAL_PREFIX,
+            NULL,
+            flb_aws_client_generator()
+        );
+        if (!ctx->aws_provider) {
+            flb_plg_error(ins, "failed to create aws credential provider for sigv4 auth");
+            flb_opentelemetry_context_destroy(ctx);
+            return NULL;
+        }
+
+        ctx->aws_region = flb_output_get_property(FLB_OPENTELEMETRY_AWS_CREDENTIAL_PREFIX
+                                                  "region", ctx->ins);
+    }
+#endif
+#endif
 
     /* Check if SSL/TLS is enabled */
 #ifdef FLB_HAVE_TLS
@@ -332,6 +375,7 @@ struct opentelemetry_context *flb_opentelemetry_context_create(struct flb_output
     ctx->logs_uri_sanitized = sanitize_uri(ctx->logs_uri);
     ctx->traces_uri_sanitized = sanitize_uri(ctx->traces_uri);
     ctx->metrics_uri_sanitized = sanitize_uri(ctx->metrics_uri);
+    ctx->profiles_uri_sanitized = sanitize_uri(ctx->profiles_uri);
 
     if (ctx->logs_uri_sanitized == NULL) {
         flb_plg_trace(ctx->ins,
@@ -357,6 +401,16 @@ struct opentelemetry_context *flb_opentelemetry_context_create(struct flb_output
         flb_plg_trace(ctx->ins,
                       "Could not allocate memory for sanitized "
                       "metric endpoint uri");
+
+        flb_opentelemetry_context_destroy(ctx);
+
+        return NULL;
+    }
+
+    if (ctx->profiles_uri_sanitized == NULL) {
+        flb_plg_trace(ctx->ins,
+                      "Could not allocate memory for sanitized "
+                      "profiles endpoint uri");
 
         flb_opentelemetry_context_destroy(ctx);
 
@@ -392,6 +446,13 @@ struct opentelemetry_context *flb_opentelemetry_context_create(struct flb_output
     if (tmp) {
         if (strcasecmp(tmp, "gzip") == 0) {
             ctx->compress_gzip = FLB_TRUE;
+        }
+        else if (strcasecmp(tmp, "zstd") == 0) {
+            ctx->compress_zstd = FLB_TRUE;
+        }
+        else {
+            flb_plg_error(ctx->ins, "Unknown compression method %s", tmp);
+            return NULL;
         }
     }
 
@@ -478,7 +539,7 @@ struct opentelemetry_context *flb_opentelemetry_context_create(struct flb_output
         flb_plg_error(ins, "failed to create record accessor for resource attributes");
     }
 
-    ctx->ra_resource_schema_url = flb_ra_create("$schema_url", FLB_FALSE);
+    ctx->ra_resource_schema_url = flb_ra_create("$resource['schema_url']", FLB_FALSE);
     if (ctx->ra_resource_schema_url == NULL) {
         flb_plg_error(ins, "failed to create record accessor for resource schema url");
     }
@@ -496,6 +557,11 @@ struct opentelemetry_context *flb_opentelemetry_context_create(struct flb_output
     ctx->ra_scope_attr = flb_ra_create("$scope['attributes']", FLB_FALSE);
     if (ctx->ra_scope_attr == NULL) {
         flb_plg_error(ins, "failed to create record accessor for scope attributes");
+    }
+
+    ctx->ra_scope_schema_url = flb_ra_create("$scope['schema_url']", FLB_FALSE);
+    if (ctx->ra_scope_schema_url == NULL) {
+        flb_plg_error(ins, "failed to create record accessor for resource schema url");
     }
 
     /* log metadata under $otlp (set by in_opentelemetry) */
@@ -540,6 +606,59 @@ struct opentelemetry_context *flb_opentelemetry_context_create(struct flb_output
         flb_plg_error(ins, "failed to create record accessor for otlp trace flags");
     }
 
+    http_client_flags = FLB_HTTP_CLIENT_FLAG_AUTO_DEFLATE |
+                        FLB_HTTP_CLIENT_FLAG_AUTO_INFLATE;
+
+    if (ctx->u->base.net.keepalive) {
+        http_client_flags |= FLB_HTTP_CLIENT_FLAG_KEEPALIVE;
+    }
+
+    ctx->enable_http2_flag = FLB_TRUE;
+
+    /* if gRPC has been enabled, auto-enable HTTP/2 to make end-user life easier */
+    if (ctx->enable_grpc_flag && !flb_utils_bool(ctx->enable_http2)) {
+        flb_plg_info(ctx->ins, "gRPC enabled, HTTP/2 has been auto-enabled");
+        flb_sds_destroy(ctx->enable_http2);
+        ctx->enable_http2 = flb_sds_create("on");
+    }
+
+    /*
+     * 'force' aims to be used for plaintext communication when HTTP/2 is set. Note that
+     * moving forward it wont be necessary since we are now setting some special defaults
+     * in case of gRPC is enabled (which is the only case where HTTP/2 is mandatory).
+     */
+    if (strcasecmp(ctx->enable_http2, "force") == 0) {
+        http_protocol_version = HTTP_PROTOCOL_VERSION_20;
+    }
+    else if (flb_utils_bool(ctx->enable_http2)) {
+        if (!ins->use_tls) {
+            http_protocol_version = HTTP_PROTOCOL_VERSION_20;
+        }
+        else {
+            http_protocol_version = HTTP_PROTOCOL_VERSION_AUTODETECT;
+        }
+    }
+    else {
+        http_protocol_version = HTTP_PROTOCOL_VERSION_11;
+
+        ctx->enable_http2_flag = FLB_FALSE;
+    }
+
+
+    ret = flb_http_client_ng_init(&ctx->http_client,
+                                  NULL,
+                                  ctx->u,
+                                  http_protocol_version,
+                                  http_client_flags);
+
+    if (ret != 0) {
+        flb_plg_debug(ctx->ins, "http client creation error");
+
+        flb_opentelemetry_context_destroy(ctx);
+
+        ctx = NULL;
+    }
+
     return ctx;
 }
 
@@ -549,22 +668,28 @@ void flb_opentelemetry_context_destroy(struct opentelemetry_context *ctx)
         return;
     }
 
+    flb_http_client_ng_destroy(&ctx->http_client);
+
     flb_kv_release(&ctx->kv_labels);
 
     if (ctx->u) {
         flb_upstream_destroy(ctx->u);
     }
 
-    if (ctx->logs_uri_sanitized != NULL) {
+    if (ctx->logs_uri_sanitized != NULL &&  ctx->logs_uri_sanitized != ctx->logs_uri) {
         flb_free(ctx->logs_uri_sanitized);
     }
 
-    if (ctx->traces_uri_sanitized != NULL) {
+    if (ctx->traces_uri_sanitized != NULL && ctx->traces_uri_sanitized != ctx->traces_uri) {
         flb_free(ctx->traces_uri_sanitized);
     }
 
-    if (ctx->metrics_uri_sanitized != NULL) {
+    if (ctx->metrics_uri_sanitized != NULL && ctx->metrics_uri_sanitized != ctx->metrics_uri) {
         flb_free(ctx->metrics_uri_sanitized);
+    }
+
+    if (ctx->profiles_uri_sanitized != NULL && ctx->profiles_uri_sanitized != ctx->profiles_uri) {
+        flb_free(ctx->profiles_uri_sanitized);
     }
 
     /* release log_body_key_list */
@@ -634,6 +759,9 @@ void flb_opentelemetry_context_destroy(struct opentelemetry_context *ctx)
     if (ctx->ra_scope_attr) {
         flb_ra_destroy(ctx->ra_scope_attr);
     }
+    if (ctx->ra_scope_schema_url) {
+        flb_ra_destroy(ctx->ra_scope_schema_url);
+    }
 
     if (ctx->ra_log_meta_otlp_observed_ts) {
         flb_ra_destroy(ctx->ra_log_meta_otlp_observed_ts);
@@ -666,6 +794,14 @@ void flb_opentelemetry_context_destroy(struct opentelemetry_context *ctx)
     if (ctx->ra_log_meta_otlp_trace_flags) {
         flb_ra_destroy(ctx->ra_log_meta_otlp_trace_flags);
     }
+
+#ifdef FLB_HAVE_SIGNV4
+#ifdef FLB_HAVE_AWS
+    if (ctx->aws_provider) {
+        flb_aws_provider_destroy(ctx->aws_provider);
+    }
+#endif
+#endif
 
     flb_free(ctx->proxy_host);
     flb_free(ctx);

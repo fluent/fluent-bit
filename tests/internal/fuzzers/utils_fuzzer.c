@@ -62,7 +62,7 @@ int LLVMFuzzerTestOneInput(const uint8_t *data, size_t size)
     char *uri     = NULL;
     char *new_dst = NULL;
 
-    if (flb_utils_write_str_buf(null_terminated, size, &new_dst, &new_size) == 0) {
+    if (flb_utils_write_str_buf(null_terminated, size, &new_dst, &new_size, FLB_TRUE) == 0) {
         flb_free(new_dst);
     }
 

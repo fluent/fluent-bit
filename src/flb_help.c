@@ -105,6 +105,9 @@ int pack_config_map_entry(msgpack_packer *mp_pck, struct flb_config_map *m)
     else if (m->type == FLB_CONFIG_MAP_TIME) {
         pack_str(mp_pck, "time");
     }
+    else if (m->type == FLB_CONFIG_MAP_VARIANT) {
+        pack_str(mp_pck, "variant");
+    }
     else if (flb_config_map_mult_type(m->type) == FLB_CONFIG_MAP_CLIST) {
         len = flb_config_map_expected_values(m->type);
         if (len == -1) {
@@ -132,7 +135,11 @@ int pack_config_map_entry(msgpack_packer *mp_pck, struct flb_config_map *m)
     else if (m->type == FLB_CONFIG_MAP_STR_PREFIX) {
         pack_str(mp_pck, "prefixed string");
     }
-
+    else {
+        /* this is a developer fault :) */
+        fprintf(stderr, "[help] invalid config map type %i\n", m->type);
+        exit(EXIT_FAILURE);
+    }
     flb_mp_map_header_end(&mh);
     return 0;
 }
@@ -198,7 +205,6 @@ int flb_help_input(struct flb_input_instance *ins, void **out_buf, size_t *out_s
     msgpack_sbuffer mp_sbuf;
     msgpack_packer mp_pck;
     int options_size = 0;
-    struct mk_list *tls_config;
     struct flb_config_map m_input_net_listen = {
         .type =      FLB_CONFIG_MAP_STR,
         .name =      "listen",
@@ -218,7 +224,7 @@ int flb_help_input(struct flb_input_instance *ins, void **out_buf, size_t *out_s
         .desc =      "Listen Port",
     };
 
-    
+
     msgpack_sbuffer_init(&mp_sbuf);
     msgpack_packer_init(&mp_pck, &mp_sbuf, msgpack_sbuffer_write);
 
@@ -240,6 +246,18 @@ int flb_help_input(struct flb_input_instance *ins, void **out_buf, size_t *out_s
     pack_str(&mp_pck, "properties");
     flb_mp_map_header_init(&mh, &mp_pck);
 
+    /* properties['global_options'] */
+    flb_mp_map_header_append(&mh);
+    pack_str(&mp_pck, "global_options");
+
+    config_map = flb_input_get_global_config_map(ins->config);
+    msgpack_pack_array(&mp_pck, mk_list_size(config_map));
+    mk_list_foreach(head, config_map) {
+        m = mk_list_entry(head, struct flb_config_map, _head);
+        pack_config_map_entry(&mp_pck, m);
+    }
+    flb_config_map_destroy(config_map);
+
     /* properties['options']: options exposed by the plugin */
     if (ins->p->config_map) {
         flb_mp_map_header_append(&mh);
@@ -251,10 +269,6 @@ int flb_help_input(struct flb_input_instance *ins, void **out_buf, size_t *out_s
         if ((ins->flags & (FLB_INPUT_NET | FLB_INPUT_NET_SERVER)) != 0) {
             options_size += 3;
         }
-        if (ins->flags & FLB_IO_OPT_TLS) {
-            tls_config = flb_tls_get_config_map(ins->config);
-            options_size += mk_list_size(tls_config);
-        }
 
         msgpack_pack_array(&mp_pck, options_size);
 
@@ -263,14 +277,117 @@ int flb_help_input(struct flb_input_instance *ins, void **out_buf, size_t *out_s
             pack_config_map_entry(&mp_pck, &m_input_net_host);
             pack_config_map_entry(&mp_pck, &m_input_net_port);
         }
-        if (ins->flags & FLB_IO_OPT_TLS) {
-            mk_list_foreach(head, tls_config) {
-                m = mk_list_entry(head, struct flb_config_map, _head);
-                pack_config_map_entry(&mp_pck, m);
-            }
-            flb_config_map_destroy(tls_config);
-        }
 
+        mk_list_foreach(head, config_map) {
+            m = mk_list_entry(head, struct flb_config_map, _head);
+            pack_config_map_entry(&mp_pck, m);
+        }
+        flb_config_map_destroy(config_map);
+    }
+
+    if (ins->p->flags & FLB_INPUT_NET_SERVER) {
+        flb_mp_map_header_append(&mh);
+        pack_str(&mp_pck, "networking");
+
+        config_map = flb_downstream_get_config_map(ins->config);
+        msgpack_pack_array(&mp_pck, mk_list_size(config_map));
+        mk_list_foreach(head, config_map) {
+            m = mk_list_entry(head, struct flb_config_map, _head);
+            pack_config_map_entry(&mp_pck, m);
+        }
+        flb_config_map_destroy(config_map);
+    }
+    else if (ins->p->flags & FLB_INPUT_NET) {
+        flb_mp_map_header_append(&mh);
+        pack_str(&mp_pck, "networking");
+
+        config_map = flb_upstream_get_config_map(ins->config);
+        msgpack_pack_array(&mp_pck, mk_list_size(config_map));
+        mk_list_foreach(head, config_map) {
+            m = mk_list_entry(head, struct flb_config_map, _head);
+            pack_config_map_entry(&mp_pck, m);
+        }
+        flb_config_map_destroy(config_map);
+    }
+
+    if (ins->p->flags & (FLB_IO_TLS | FLB_IO_OPT_TLS)) {
+        flb_mp_map_header_append(&mh);
+        pack_str(&mp_pck, "network_tls");
+
+        config_map = flb_tls_get_config_map(ins->config);
+        msgpack_pack_array(&mp_pck, mk_list_size(config_map));
+
+        /* Adjust 'tls' default value based on plugin type" */
+        m = mk_list_entry_first(config_map, struct flb_config_map, _head);
+        if (ins->p->flags & FLB_IO_TLS) {
+            m->value.val.boolean = FLB_TRUE;
+        }
+        else if (ins->p->flags & FLB_IO_OPT_TLS) {
+            m->value.val.boolean = FLB_FALSE;
+        }
+        mk_list_foreach(head, config_map) {
+            m = mk_list_entry(head, struct flb_config_map, _head);
+            pack_config_map_entry(&mp_pck, m);
+        }
+        flb_config_map_destroy(config_map);
+    }
+
+    flb_mp_map_header_end(&mh);
+
+    *out_buf = mp_sbuf.data;
+    *out_size = mp_sbuf.size;
+
+    return 0;
+}
+
+int flb_help_processor(struct flb_processor_instance *ins, void **out_buf, size_t *out_size)
+{
+    struct mk_list *head;
+    struct mk_list *config_map;
+    struct flb_mp_map_header mh;
+    struct flb_config_map *m;
+    msgpack_sbuffer mp_sbuf;
+    msgpack_packer mp_pck;
+
+    msgpack_sbuffer_init(&mp_sbuf);
+    msgpack_packer_init(&mp_pck, &mp_sbuf, msgpack_sbuffer_write);
+
+    msgpack_pack_map(&mp_pck, 4);
+    /* plugin type */
+    pack_str(&mp_pck, "type");
+    pack_str(&mp_pck, "processor");
+
+    /* plugin name */
+    pack_str(&mp_pck, "name");
+    pack_str(&mp_pck, ins->p->name);
+
+    /* description */
+    pack_str(&mp_pck, "description");
+    pack_str(&mp_pck, ins->p->description);
+
+    /* list of properties */
+    pack_str(&mp_pck, "properties");
+    flb_mp_map_header_init(&mh, &mp_pck);
+
+    /* properties['global_options'] */
+    flb_mp_map_header_append(&mh);
+    pack_str(&mp_pck, "global_options");
+
+    config_map = flb_processor_get_global_config_map(ins->config);
+    msgpack_pack_array(&mp_pck, mk_list_size(config_map));
+    mk_list_foreach(head, config_map) {
+        m = mk_list_entry(head, struct flb_config_map, _head);
+        pack_config_map_entry(&mp_pck, m);
+    }
+    flb_config_map_destroy(config_map);
+
+    /* properties['options']: options exposed by the plugin */
+    if (ins->p->config_map) {
+        flb_mp_map_header_append(&mh);
+        pack_str(&mp_pck, "options");
+
+        config_map = flb_config_map_create(ins->config, ins->p->config_map);
+        msgpack_pack_array(&mp_pck, mk_list_size(config_map));
         mk_list_foreach(head, config_map) {
             m = mk_list_entry(head, struct flb_config_map, _head);
             pack_config_map_entry(&mp_pck, m);
@@ -315,6 +432,18 @@ int flb_help_filter(struct flb_filter_instance *ins, void **out_buf, size_t *out
     /* list of properties */
     pack_str(&mp_pck, "properties");
     flb_mp_map_header_init(&mh, &mp_pck);
+
+    /* properties['global_options'] */
+    flb_mp_map_header_append(&mh);
+    pack_str(&mp_pck, "global_options");
+
+    config_map = flb_filter_get_global_config_map(ins->config);
+    msgpack_pack_array(&mp_pck, mk_list_size(config_map));
+    mk_list_foreach(head, config_map) {
+        m = mk_list_entry(head, struct flb_config_map, _head);
+        pack_config_map_entry(&mp_pck, m);
+    }
+    flb_config_map_destroy(config_map);
 
     /* properties['options']: options exposed by the plugin */
     if (ins->p->config_map) {
@@ -384,6 +513,18 @@ int flb_help_output(struct flb_output_instance *ins, void **out_buf, size_t *out
     pack_str(&mp_pck, "properties");
     flb_mp_map_header_init(&mh, &mp_pck);
 
+    /* properties['global_options'] */
+    flb_mp_map_header_append(&mh);
+    pack_str(&mp_pck, "global_options");
+
+    config_map = flb_output_get_global_config_map(ins->config);
+    msgpack_pack_array(&mp_pck, mk_list_size(config_map));
+    mk_list_foreach(head, config_map) {
+        m = mk_list_entry(head, struct flb_config_map, _head);
+        pack_config_map_entry(&mp_pck, m);
+    }
+    flb_config_map_destroy(config_map);
+
     /* properties['options']: options exposed by the plugin */
     if (ins->p->config_map) {
         flb_mp_map_header_append(&mh);
@@ -414,7 +555,7 @@ int flb_help_output(struct flb_output_instance *ins, void **out_buf, size_t *out
             }
             flb_config_map_destroy(tls_config);
         }
-        
+
         mk_list_foreach(head, config_map) {
             m = mk_list_entry(head, struct flb_config_map, _head);
             pack_config_map_entry(&mp_pck, m);
@@ -471,6 +612,7 @@ static int build_plugin_help(struct flb_config *config, int type, char *name,
     size_t help_size = 0;
     struct flb_custom_instance *c = NULL;
     struct flb_input_instance *i = NULL;
+    struct flb_processor_instance *p = NULL;
     struct flb_filter_instance *f = NULL;
     struct flb_output_instance *o = NULL;
 
@@ -491,6 +633,15 @@ static int build_plugin_help(struct flb_config *config, int type, char *name,
         }
         flb_help_input(i, &help_buf, &help_size);
         flb_input_instance_destroy(i);
+    }
+    else if (type == FLB_HELP_PLUGIN_PROCESSOR) {
+        p = flb_processor_instance_create(config, NULL, 0, name, NULL);
+        if (!p) {
+            fprintf(stderr, "invalid processor plugin '%s'", name);
+            return -1;
+        }
+        flb_help_processor(p, &help_buf, &help_size);
+        flb_processor_instance_destroy(p);
     }
     else if (type == FLB_HELP_PLUGIN_FILTER) {
         f = flb_filter_new(config, name, 0);
@@ -542,6 +693,7 @@ flb_sds_t flb_help_build_json_schema(struct flb_config *config)
     struct mk_list *head;
     struct flb_custom_plugin *c;
     struct flb_input_plugin *i;
+    struct flb_processor_plugin *p;
     struct flb_filter_plugin *f;
     struct flb_output_plugin *o;
     msgpack_sbuffer mp_sbuf;
@@ -615,6 +767,24 @@ flb_sds_t flb_help_build_json_schema(struct flb_config *config)
     }
     flb_mp_array_header_end(&mh);
 
+    /* processors */
+    msgpack_pack_str(&mp_pck, 10);
+    msgpack_pack_str_body(&mp_pck, "processors", 10);
+    flb_mp_array_header_init(&mh, &mp_pck);
+    mk_list_foreach(head, &config->processor_plugins) {
+        p = mk_list_entry(head, struct flb_processor_plugin, _head);
+
+        ret = build_plugin_help(config, FLB_HELP_PLUGIN_PROCESSOR, p->name,
+                                &out_buf, &out_size);
+        if (ret == -1) {
+            continue;
+        }
+        flb_mp_array_header_append(&mh);
+        msgpack_sbuffer_write(&mp_sbuf, out_buf, out_size);
+        flb_free(out_buf);
+    }
+    flb_mp_array_header_end(&mh);
+
     /* filters */
     msgpack_pack_str(&mp_pck, 7);
     msgpack_pack_str_body(&mp_pck, "filters", 7);
@@ -655,7 +825,7 @@ flb_sds_t flb_help_build_json_schema(struct flb_config *config)
     }
     flb_mp_array_header_end(&mh);
 
-    json = flb_msgpack_raw_to_json_sds(mp_sbuf.data, mp_sbuf.size);
+    json = flb_msgpack_raw_to_json_sds(mp_sbuf.data, mp_sbuf.size, FLB_TRUE);
     msgpack_sbuffer_destroy(&mp_sbuf);
 
     return json;

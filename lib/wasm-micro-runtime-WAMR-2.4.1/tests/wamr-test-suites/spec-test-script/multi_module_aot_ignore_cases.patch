@@ -1,0 +1,57 @@
+diff --git a/test/core/linking.wast b/test/core/linking.wast
+index 8fbcc02..a2254b3 100644
+--- a/test/core/linking.wast
++++ b/test/core/linking.wast
+@@ -23,6 +23,8 @@
+   (import "spectest" "print_i32" (func $f (param i32)))
+   (export "print" (func $f))
+ )
++
++(; doesn't support empty files
+ (register "reexport_f" $M1)
+ (assert_unlinkable
+   (module (import "reexport_f" "print" (func (param i64))))
+@@ -32,9 +34,11 @@
+   (module (import "reexport_f" "print" (func (param i32) (result i32))))
+   "incompatible import type"
+ )
++;)
+ 
+ 
+ ;; Globals
++(; aot doesn't support to import globals
+ (module $Mg
+   (global $glob (export "glob") i32 (i32.const 42))
+   (func (export "get") (result i32) (global.get $glob))
+@@ -45,6 +49,7 @@
+   (func (export "set_mut") (param i32) (global.set $mut_glob (local.get 0)))
+ )
+ (register "Mg" $Mg)
++;)
+ 
+ (; only sharing initial values
+ (module $Ng
+@@ -83,6 +88,7 @@
+ (assert_return (invoke $Ng "Mg.get_mut") (i32.const 241))
+ ;)
+ 
++(;
+ (assert_unlinkable
+   (module (import "Mg" "mut_glob" (global i32)))
+   "incompatible import type"
+@@ -92,7 +98,6 @@
+   "incompatible import type"
+ )
+ 
+-
+ (module $Mref_ex
+   (global (export "g-const-func") funcref (ref.null func))
+   (global (export "g-var-func") (mut funcref) (ref.null func))
+@@ -127,6 +132,7 @@
+   (module (global (import "Mref_ex" "g-var-extern") (mut funcref)))
+   "incompatible import type"
+ )
++;)
+ 
+ 
+ ;; Tables

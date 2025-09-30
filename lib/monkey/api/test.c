@@ -8,7 +8,7 @@
 #include <signal.h>
 
 #define API_ADDR   "127.0.0.1"
-#define API_PORT   "8080"
+#define API_PORT   "9080"
 
 /* Main context set as global so the signal handler can use it */
 mk_ctx_t *ctx;
@@ -153,9 +153,9 @@ int main()
                  "Name", "monotop",
                  NULL);
 
-    mk_vhost_handler(ctx, vid, "/api/v1/stream_processor/task/[A-Za-z_][0-9A-Za-z_\\-]*", 
+    mk_vhost_handler(ctx, vid, "/api/v1/stream_processor/task/[A-Za-z_][0-9A-Za-z_\\-]*",
                      cb_sp_test_task_detail, NULL);
-    
+
     mk_vhost_handler(ctx, vid, "/api/v1/stream_processor/task",
                      cb_sp_test_task_main, NULL);
 

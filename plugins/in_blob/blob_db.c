@@ -2,7 +2,7 @@
 
 /*  Fluent Bit
  *  ==========
- *  Copyright (C) 2015-2024 The Fluent Bit Authors
+ *  Copyright (C) 2015-2025 The Fluent Bit Authors
  *
  *  Licensed under the Apache License, Version 2.0 (the "License");
  *  you may not use this file except in compliance with the License.
@@ -106,12 +106,32 @@ struct flb_sqldb *blob_db_open(struct blob_ctx *ctx, char *db_path)
 
 int blob_db_close(struct blob_ctx *ctx)
 {
-    /* finalize prepared statements */
-    sqlite3_finalize(ctx->stmt_get_file);
-    sqlite3_finalize(ctx->stmt_insert_file);
-    sqlite3_finalize(ctx->stmt_delete_file);
+    int ret;
 
-    return flb_sqldb_close(ctx->db);
+    if (ctx->db == NULL) {
+        return 0;
+    }
+
+    /* finalize prepared statements */
+    if (ctx->stmt_get_file != NULL) {
+        sqlite3_finalize(ctx->stmt_get_file);
+        ctx->stmt_get_file = NULL;
+    }
+
+    if (ctx->stmt_insert_file != NULL) {
+        sqlite3_finalize(ctx->stmt_insert_file);
+        ctx->stmt_insert_file = NULL;
+    }
+
+    if (ctx->stmt_delete_file != NULL) {
+        sqlite3_finalize(ctx->stmt_delete_file);
+        ctx->stmt_delete_file = NULL;
+    }
+
+    ret = flb_sqldb_close(ctx->db);
+    ctx->db = NULL;
+
+    return ret;
 }
 
 int blob_db_file_exists(struct blob_ctx *ctx, char *path, uint64_t *id)

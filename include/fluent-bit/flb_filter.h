@@ -109,6 +109,7 @@ struct flb_filter_instance {
     struct cmt_counter *cmt_bytes;        /* m: filter_bytes_total        */
     struct cmt_counter *cmt_add_records;  /* m: filter_add_records_total  */
     struct cmt_counter *cmt_drop_records; /* m: filter_drop_records_total */
+    struct cmt_counter *cmt_drop_bytes;   /* m: filter_drop_bytes_total   */
 
 #ifdef FLB_HAVE_METRICS
     struct flb_metrics *metrics;   /* metrics                  */
@@ -118,6 +119,8 @@ struct flb_filter_instance {
     /* Keep a reference to the original context this instance belongs to */
     struct flb_config *config;
 };
+
+struct mk_list *flb_filter_get_global_config_map(struct flb_config *config);
 
 static inline int flb_filter_config_map_set(struct flb_filter_instance *ins,
                                             void *context)

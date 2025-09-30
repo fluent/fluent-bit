@@ -117,7 +117,29 @@ static int cb_kinesis_init(struct flb_output_instance *ins,
     if (tmp) {
         ctx->sts_endpoint = (char *) tmp;
     }
+    /*
+     * Sets the port number for the Kinesis output plugin.
+     *
+     * This function uses the port number already set in the output instance's host structure.
+     * If the port is not set (0), the default HTTPS port is used.
+     *
+     * @param ins The output instance.
+     * @param ctx The Kinesis output plugin context.
+     */
+    flb_plg_debug(ins, "Retrieved port from ins->host.port: %d", ins->host.port);
 
+    if (ins->host.port == 0) {
+        ctx->port = FLB_KINESIS_DEFAULT_HTTPS_PORT;
+        flb_plg_debug(ins, "Port not set. Using default HTTPS port: %d", ctx->port);
+    }
+    else if (ins->host.port == (ctx->port = (uint16_t)ins->host.port)) {
+        flb_plg_debug(ins, "Setting port to: %d", ctx->port);
+    }
+    else {
+        flb_plg_error(ins, "Invalid port number: %d. Must be between %d and %d",
+                      ins->host.port, 1, UINT16_MAX);
+        goto error;
+    }
 
     tmp = flb_output_get_property("log_key", ins);
     if (tmp) {
@@ -255,14 +277,14 @@ static int cb_kinesis_init(struct flb_output_instance *ins,
     ctx->kinesis_client->region = (char *) ctx->region;
     ctx->kinesis_client->retry_requests = ctx->retry_requests;
     ctx->kinesis_client->service = "kinesis";
-    ctx->kinesis_client->port = 443;
+    ctx->kinesis_client->port = ctx->port;
     ctx->kinesis_client->flags = 0;
     ctx->kinesis_client->proxy = NULL;
     ctx->kinesis_client->static_headers = &content_type_header;
     ctx->kinesis_client->static_headers_len = 1;
 
     struct flb_upstream *upstream = flb_upstream_create(config, ctx->endpoint,
-                                                        443, FLB_IO_TLS,
+                                                        ctx->port, FLB_IO_TLS,
                                                         ctx->client_tls);
     if (!upstream) {
         flb_plg_error(ctx->ins, "Connection initialization error");
@@ -339,7 +361,8 @@ static void cb_kinesis_flush(struct flb_event_chunk *event_chunk,
 
     ret = process_and_send_to_kinesis(ctx, buf,
                                       event_chunk->data,
-                                      event_chunk->size);
+                                      event_chunk->size,
+                                      config);
     if (ret < 0) {
         flb_plg_error(ctx->ins, "Failed to send records to kinesis");
         kinesis_flush_destroy(buf);

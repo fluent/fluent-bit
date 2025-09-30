@@ -15,7 +15,8 @@ on:
       registry:
         description: The registry to push container images to.
         type: string
-        required: true
+        required: false
+        default: ghcr.io
       username:
         description: The username for the registry.
         type: string
@@ -33,6 +34,11 @@ on:
         type: string
         required: false
         default: ""
+      push:
+        description: Optionally push the images to the registry, defaults to true but for forks we cannot do this in PRs.
+        type: boolean
+        required: false
+        default: true
     secrets:
       token:
         description: The Github token or similar to authenticate with for the registry.
@@ -54,7 +60,7 @@ jobs:
       contents: read
     steps:
       - name: Checkout code
-        uses: actions/checkout@v4
+        uses: actions/checkout@v5
         with:
           ref: ${{ inputs.ref }}
 
@@ -69,28 +75,33 @@ jobs:
           replace-with: "$1"
           flags: "g"
 
-  # This is the intended approach to multi-arch image and all the other checks scanning,
-  # signing, etc only trigger from this.
-  call-build-images:
-    needs:
-      - call-build-images-meta
-    name: Multiarch container images to GHCR
-    runs-on: ubuntu-latest
-    environment: ${{ inputs.environment }}
+  # Taken from https://docs.docker.com/build/ci/github-actions/multi-platform/#distribute-build-across-multiple-runners
+  # We split this out to make it easier to restart just one of them if it fails and do all in parallel
+  call-build-single-arch-container-images:
+    # Allow us to continue to create a manifest if we want
+    continue-on-error: true
     permissions:
       contents: read
       packages: write
-    outputs:
-      production-digest: ${{ steps.build_push.outputs.digest }}
-      debug-digest: ${{ steps.debug_build_push.outputs.digest }}
+    strategy:
+      fail-fast: false
+      matrix:
+        platform:
+          - amd64
+          - arm64
+          - arm/v7
+        target:
+          - production
+          - debug
+    name: ${{ matrix.platform }}/${{ matrix.target }} container image build
+    # Use GitHub Actions ARM hosted runners
+    runs-on: ${{ (contains(matrix.platform, 'arm') && 'ubuntu-22.04-arm') || 'ubuntu-latest' }}
     steps:
-      - name: Checkout code for modern style builds
-        uses: actions/checkout@v4
+      - name: Checkout code
+        uses: actions/checkout@v5
         with:
           ref: ${{ inputs.ref }}
-
-      - name: Set up QEMU
-        uses: docker/setup-qemu-action@v3
+          token: ${{ secrets.token }}
 
       - name: Set up Docker Buildx
         uses: docker/setup-buildx-action@v3
@@ -99,9 +110,58 @@ jobs:
         uses: docker/login-action@v3
         with:
           registry: ${{ inputs.registry }}
-          username: ${{ inputs.username }}
+          username: ${{ github.actor }}
           password: ${{ secrets.token }}
 
+      - name: Build and push by digest the standard ${{ matrix.target }} image
+        id: build
+        uses: docker/build-push-action@v6
+        with:
+          # Use path context rather than Git context as we want local files
+          file: ./dockerfiles/Dockerfile
+          context: .
+          target: ${{ matrix.target }}
+          outputs: type=image,name=${{ inputs.registry }}/${{ inputs.image }},push-by-digest=true,name-canonical=true,push=${{ inputs.push }}
+          platforms: linux/${{ matrix.platform }}
+          # Must be disabled to provide legacy format images from the registry
+          provenance: false
+          # This is configured in outputs above
+          push: ${{ inputs.push }}
+          load: false
+          build-args: |
+            FLB_NIGHTLY_BUILD=${{ inputs.unstable }}
+            RELEASE_VERSION=${{ inputs.version }}
+            WAMR_BUILD_TARGET=${{ (contains(matrix.platform, 'arm/v7') && 'ARMV7') || '' }}
+
+      - name: Export ${{ matrix.target }} digest
+        run: |
+          mkdir -p /tmp/digests
+          digest="${{ steps.build.outputs.digest }}"
+          touch "/tmp/digests/${digest#sha256:}"
+        shell: bash
+
+      - name: Upload ${{ matrix.target }} digest
+        uses: actions/upload-artifact@v4
+        with:
+          name: ${{ matrix.target }}-digests-${{ (contains(matrix.platform, 'arm/v7') && 'arm-v7') || matrix.platform }}
+          path: /tmp/digests/*
+          if-no-files-found: error
+          retention-days: 1
+
+  # Take the digests and produce a multi-arch manifest from them.
+  call-build-container-image-manifests:
+    if: inputs.push
+    permissions:
+      contents: read
+      packages: write
+    name: Upload multi-arch container image manifests
+    runs-on: ubuntu-latest
+    needs:
+      - call-build-images-meta
+      - call-build-single-arch-container-images
+    outputs:
+      version: ${{ steps.meta.outputs.version }}
+    steps:
       - name: Extract metadata from Github
         id: meta
         uses: docker/metadata-action@v5
@@ -112,24 +172,49 @@ jobs:
             raw,${{ needs.call-build-images-meta.outputs.major-version }}
             raw,latest
 
-      - name: Build the production images
-        id: build_push
-        uses: docker/build-push-action@v6
+      - name: Download production digests
+        uses: actions/download-artifact@v5
         with:
-          file: ./dockerfiles/Dockerfile
-          context: .
-          tags: ${{ steps.meta.outputs.tags }}
-          labels: ${{ steps.meta.outputs.labels }}
-          platforms: linux/amd64, linux/arm64, linux/arm/v7, linux/s390x
-          target: production
-          # Must be disabled to provide legacy format images from the registry
-          provenance: false
-          push: true
-          load: false
-          build-args: |
-            FLB_NIGHTLY_BUILD=${{ inputs.unstable }}
-            RELEASE_VERSION=${{ inputs.version }}
+          pattern: production-digests-*
+          path: /tmp/production-digests
+          merge-multiple: true
 
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Log in to the Container registry
+        uses: docker/login-action@v3
+        with:
+          registry: ${{ inputs.registry }}
+          username: ${{ github.actor }}
+          password: ${{ secrets.token }}
+
+      - name: Create production manifest
+        run: |
+          docker buildx imagetools create $(jq -cr '.tags | map("-t " + .) | join(" ")' <<< "$DOCKER_METADATA_OUTPUT_JSON") \
+            $(printf '${{ inputs.registry }}/${{ inputs.image }}@sha256:%s ' *)
+        shell: bash
+        working-directory: /tmp/production-digests
+
+      - name: Inspect image
+        run: |
+          docker buildx imagetools inspect ${{ inputs.registry }}/${{ inputs.image }}:${{ steps.meta.outputs.version }}
+        shell: bash
+
+  # Take the digests and produce a multi-arch manifest from them.
+  call-build-debug-container-image-manifests:
+    if: inputs.push
+    permissions:
+      contents: read
+      packages: write
+    name: Upload debug multi-arch container image manifests
+    runs-on: ubuntu-latest
+    needs:
+      - call-build-images-meta
+      - call-build-single-arch-container-images
+    outputs:
+      version: ${{ steps.debug-meta.outputs.version }}
+    steps:
       - id: debug-meta
         uses: docker/metadata-action@v5
         with:
@@ -139,28 +224,40 @@ jobs:
             raw,${{ needs.call-build-images-meta.outputs.major-version }}-debug
             raw,latest-debug
 
-      - name: Build the debug multi-arch images
-        id: debug_build_push
-        uses: docker/build-push-action@v6
+      - name: Download debug digests
+        uses: actions/download-artifact@v5
         with:
-          file: ./dockerfiles/Dockerfile
-          context: .
-          tags: ${{ steps.debug-meta.outputs.tags }}
-          labels: ${{ steps.debug-meta.outputs.labels }}
-          platforms: linux/amd64, linux/arm64, linux/arm/v7, linux/s390x
-          # Must be disabled to provide legacy format images from the registry
-          provenance: false
-          target: debug
-          push: true
-          load: false
-          build-args: |
-            FLB_NIGHTLY_BUILD=${{ inputs.unstable }}
-            RELEASE_VERSION=${{ inputs.version }}
+          pattern: debug-digests-*
+          path: /tmp/debug-digests
+          merge-multiple: true
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Log in to the Container registry
+        uses: docker/login-action@v3
+        with:
+          registry: ${{ inputs.registry }}
+          username: ${{ github.actor }}
+          password: ${{ secrets.token }}
+
+      - name: Create debug manifest
+        run: |
+          docker buildx imagetools create $DOCKER_PUSH_EXTRA_FLAGS $(jq -cr '.tags | map("-t " + .) | join(" ")' <<< "$DOCKER_METADATA_OUTPUT_JSON") \
+            $(printf '${{ inputs.registry }}/${{ inputs.image }}@sha256:%s ' *)
+        shell: bash
+        working-directory: /tmp/debug-digests
+
+      - name: Inspect image
+        run: |
+          docker buildx imagetools inspect ${{ inputs.registry }}/${{ inputs.image }}:${{ steps.debug-meta.outputs.version }}
+        shell: bash
 
   call-build-images-generate-schema:
+    if: inputs.push
     needs:
       - call-build-images-meta
-      - call-build-images
+      - call-build-container-image-manifests
     runs-on: ubuntu-latest
     environment: ${{ inputs.environment }}
     permissions:
@@ -188,9 +285,10 @@ jobs:
           if-no-files-found: error
 
   call-build-images-scan:
+    if: inputs.push
     needs:
       - call-build-images-meta
-      - call-build-images
+      - call-build-container-image-manifests
     name: Trivy + Dockle image scan
     runs-on: ubuntu-latest
     environment: ${{ inputs.environment }}
@@ -223,9 +321,11 @@ jobs:
           exit-level: WARN
 
   call-build-images-sign:
+    if: inputs.push
     needs:
       - call-build-images-meta
-      - call-build-images
+      - call-build-container-image-manifests
+      - call-build-debug-container-image-manifests
     name: Deploy and sign multi-arch container image manifests
     permissions:
       contents: read
@@ -246,13 +346,13 @@ jobs:
         #
         # We use recursive signing on the manifest to cover all the images.
         run: |
-          cosign sign --recursive \
+          cosign sign --recursive --force \
             -a "repo=${{ github.repository }}" \
             -a "workflow=${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}" \
             -a "ref=${{ github.sha }}" \
             -a "release=${{ inputs.version }}" \
-            "${{ inputs.registry }}/${{ inputs.image }}@${{ needs.call-build-images.outputs.production-digest }}" \
-            "${{ inputs.registry }}/${{ inputs.image }}@${{ needs.call-build-images.outputs.debug-digest }}"
+            "${{ inputs.registry }}/${{ inputs.image }}@${{ needs.call-build-container-image-manifests.outputs.version }}" \
+            "${{ inputs.registry }}/${{ inputs.image }}@${{ needs.call-build-debug-container-image-manifests.outputs.version }}"
         shell: bash
         # Ensure we move on to key-based signing as well
         continue-on-error: true
@@ -265,13 +365,13 @@ jobs:
         # The key needs to cope with newlines
         run: |
           echo -e "${COSIGN_PRIVATE_KEY}" > /tmp/my_cosign.key
-          cosign sign --key /tmp/my_cosign.key --recursive \
+          cosign sign --key /tmp/my_cosign.key --recursive --force \
             -a "repo=${{ github.repository }}" \
             -a "workflow=${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}" \
             -a "ref=${{ github.sha }}" \
             -a "release=${{ inputs.version }}" \
-            "${{ inputs.registry }}/${{ inputs.image }}@${{ needs.call-build-images.outputs.production-digest }}" \
-            "${{ inputs.registry }}/${{ inputs.image }}@${{ needs.call-build-images.outputs.debug-digest }}"
+            "${{ inputs.registry }}/${{ inputs.image }}@${{ needs.call-build-container-image-manifests.outputs.version }}" \
+            "${{ inputs.registry }}/${{ inputs.image }}@${{ needs.call-build-debug-container-image-manifests.outputs.version }}"
           rm -f /tmp/my_cosign.key
         shell: bash
         continue-on-error: true
@@ -290,16 +390,19 @@ jobs:
       fail-fast: true
       matrix:
         windows-base-version:
-          - '2019'
           - '2022'
+          - '2025'
     permissions:
       contents: read
       packages: write
     steps:
       - name: Checkout repository
-        uses: actions/checkout@v4
+        uses: actions/checkout@v5
         with:
           ref: ${{ inputs.ref }}
+
+      # - name: Set up Docker Buildx
+      #   uses: docker/setup-buildx-action@v3
 
       - name: Log in to the Container registry
         uses: docker/login-action@v3
@@ -308,9 +411,23 @@ jobs:
           username: ${{ inputs.username }}
           password: ${{ secrets.token }}
 
+      - name: Pull the last release image to speed up the build with a cache
+        continue-on-error: true
+        run: |
+          VERSION=$(gh release list --json tagName,isLatest --jq '.[] | select(.isLatest)|.tagName | sub("^v"; "")')
+          echo VERSION="$VERSION"
+          docker pull ${{ inputs.registry }}/${{ inputs.image }}:windows-${{ matrix.windows-base-version }}-$VERSION
+        shell: bash
+        env:
+          GH_TOKEN: ${{ secrets.token }}
+
       - name: Build the production images
         run: |
           docker build -t ${{ inputs.registry }}/${{ inputs.image }}:windows-${{ matrix.windows-base-version }}-${{ inputs.version }} --build-arg FLB_NIGHTLY_BUILD=${{ inputs.unstable }} --build-arg WINDOWS_VERSION=ltsc${{ matrix.windows-base-version }} -f ./dockerfiles/Dockerfile.windows .
+
+      - name: Push the production images
+        if: inputs.push
+        run: |
           docker push ${{ inputs.registry }}/${{ inputs.image }}:windows-${{ matrix.windows-base-version }}-${{ inputs.version }}
 
         # We cannot use this action as it requires privileged mode
@@ -326,4 +443,4 @@ jobs:
         #   load: false
         #   build-args: |
         #     FLB_NIGHTLY_BUILD=${{ inputs.unstable }}
-        #     WINDOWS_VERSION=ltsc2019
+        #     WINDOWS_VERSION=ltsc2022

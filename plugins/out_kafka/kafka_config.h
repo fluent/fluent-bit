@@ -27,6 +27,7 @@
 #endif
 
 #include <fluent-bit/flb_kafka.h>
+#include <fluent-bit/aws/flb_aws_msk_iam.h>
 
 #define FLB_KAFKA_FMT_JSON            0
 #define FLB_KAFKA_FMT_MSGP            1
@@ -34,6 +35,7 @@
 #ifdef FLB_HAVE_AVRO_ENCODER
 #define FLB_KAFKA_FMT_AVRO            3
 #endif
+#define FLB_KAFKA_FMT_RAW             4
 #define FLB_KAFKA_TS_KEY              "@timestamp"
 #define FLB_KAFKA_QUEUE_FULL_RETRIES  "10"
 
@@ -80,6 +82,9 @@ struct flb_out_kafka {
     int message_key_field_len;
     char *message_key_field;
 
+    int raw_log_key_len;
+    char *raw_log_key;
+
     /* Gelf Keys */
     struct flb_gelf_fields gelf_fields;
 
@@ -119,6 +124,18 @@ struct flb_out_kafka {
     // flb_sds_t avro_schema_id;
     struct flb_avro_fields avro_fields;
 #endif
+
+#ifdef FLB_HAVE_AWS_MSK_IAM
+    flb_sds_t aws_msk_iam_cluster_arn;
+    struct flb_aws_msk_iam *msk_iam;
+#endif
+
+    int aws_msk_iam;
+
+    struct flb_kafka_opaque *opaque;
+
+    /* SASL mechanism configured in rdkafka.sasl.mechanism */
+    flb_sds_t sasl_mechanism;
 
 };
 

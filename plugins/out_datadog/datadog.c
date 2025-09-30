@@ -325,7 +325,8 @@ static int datadog_format(struct flb_config *config,
     }
 
     /* Convert from msgpack to JSON */
-    out_buf = flb_msgpack_raw_to_json_sds(mp_sbuf.data, mp_sbuf.size);
+    out_buf = flb_msgpack_raw_to_json_sds(mp_sbuf.data, mp_sbuf.size,
+                                          config->json_escape_unicode);
     msgpack_sbuffer_destroy(&mp_sbuf);
 
     if (!out_buf) {
@@ -368,6 +369,10 @@ static void cb_datadog_flush(struct flb_event_chunk *event_chunk,
     size_t b_sent;
     int ret = FLB_ERROR;
     int compressed = FLB_FALSE;
+    struct mk_list *head;
+    struct flb_config_map_val *mv;
+    struct flb_slist_entry *key = NULL;
+    struct flb_slist_entry *val = NULL;
 
     /* Get upstream connection */
     upstream_conn = flb_upstream_conn_get(ctx->upstream);
@@ -427,7 +432,15 @@ static void cb_datadog_flush(struct flb_event_chunk *event_chunk,
     if (compressed == FLB_TRUE) {
         flb_http_set_content_encoding_gzip(client);
     }
-    /* TODO: Append other headers if needed*/
+
+    flb_config_map_foreach(head, mv, ctx->headers) {
+        key = mk_list_entry_first(mv->val.list, struct flb_slist_entry, _head);
+        val = mk_list_entry_last(mv->val.list, struct flb_slist_entry, _head);
+
+        flb_http_add_header(client,
+                            key->str, flb_sds_len(key->str),
+                            val->str, flb_sds_len(val->str));
+    }
 
     /* finaly send the query */
     ret = flb_http_do(client, &b_sent);
@@ -492,6 +505,11 @@ static struct flb_config_map config_map[] = {
      0, FLB_FALSE, 0,
      "compresses the payload in GZIP format, "
      "Datadog supports and recommends setting this to 'gzip'."
+    },
+    {
+     FLB_CONFIG_MAP_SLIST_1, "header", NULL,
+     FLB_CONFIG_MAP_MULT, FLB_TRUE, offsetof(struct flb_out_datadog, headers),
+     "Add a HTTP header key/value pair. Multiple headers can be set"
     },
     {
      FLB_CONFIG_MAP_STR, "apikey", NULL,

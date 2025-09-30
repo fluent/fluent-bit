@@ -10,6 +10,7 @@ set(UNIT_TESTS_FILES
   hmac.c
   crypto.c
   hash.c
+  kv.c
   slist.c
   router.c
   network.c
@@ -18,6 +19,7 @@ set(UNIT_TESTS_FILES
   http_client.c
   utils.c
   gzip.c
+  zstd.c
   random.c
   config_map.c
   mp.c
@@ -41,10 +43,25 @@ set(UNIT_TESTS_FILES
   log_event_decoder.c
   log_event_encoder.c
   processor.c
+  processor_conditional.c
   uri.c
   msgpack_append_message.c
-  endianness
-  )
+  conditionals.c
+  endianness.c
+  task_map.c
+  strptime.c
+  storage_inherit.c
+  unicode.c
+  opentelemetry.c
+)
+
+# TLS helpers
+if(FLB_TLS)
+  set(UNIT_TESTS_FILES
+    ${UNIT_TESTS_FILES}
+    upstream_tls.c
+    )
+endif()
 
 # Config format
 set(UNIT_TESTS_FILES
@@ -87,6 +104,7 @@ if(FLB_RECORD_ACCESSOR)
   set(UNIT_TESTS_FILES
     ${UNIT_TESTS_FILES}
     record_accessor.c
+    cfl_record_accessor.c
     )
 endif()
 
@@ -153,6 +171,7 @@ set(UNIT_TESTS_DATA
   data/parser/regex.conf
   data/input_chunk/log/a_thousand_plus_one_bytes.log
   data/input_chunk/log/test_buffer_valid.log
+  data/opentelemetry/test_cases.json
   )
 
 set(FLB_TESTS_DATA_PATH ${CMAKE_CURRENT_SOURCE_DIR}/)
@@ -185,7 +204,7 @@ function(prepare_unit_tests TEST_PREFIX SOURCEFILES)
       add_sanitizers(${source_file_we})
 
       if(FLB_JEMALLOC)
-        target_link_libraries(${source_file_we} libjemalloc ${CMAKE_THREAD_LIBS_INIT})
+        target_link_libraries(${source_file_we} ${JEMALLOC_LIBRARIES} ${CMAKE_THREAD_LIBS_INIT})
       else()
         target_link_libraries(${source_file_we} ${CMAKE_THREAD_LIBS_INIT})
       endif()

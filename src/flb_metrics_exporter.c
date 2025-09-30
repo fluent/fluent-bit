@@ -266,9 +266,10 @@ int flb_me_destroy(struct flb_me *me)
 struct cmt *flb_me_get_cmetrics(struct flb_config *ctx)
 {
     int ret;
-    struct mk_list *head;
+    struct mk_list *head, *processor_head;
     struct flb_input_instance *i;     /* inputs */
-    struct flb_filter_instance *f;    /* filter */
+    struct flb_processor_unit *pu;    /* processors */
+    struct flb_filter_instance *f, *pf;    /* filter */
     struct flb_output_instance *o;    /* output */
     struct cmt *cmt;
 
@@ -298,6 +299,15 @@ struct cmt *flb_me_get_cmetrics(struct flb_config *ctx)
         }
     }
 
+    if (ctx->log != NULL) {
+        ret = cmt_cat(cmt, ctx->log->metrics->cmt);
+        if (ret != 0) {
+            flb_error("[metrics exporter] could not append global log metrics");
+            cmt_destroy(cmt);
+            return NULL;
+        }
+    }
+
     /* Pipeline metrics: input, filters, outputs */
     mk_list_foreach(head, &ctx->inputs) {
         i = mk_list_entry(head, struct flb_input_instance, _head);
@@ -307,6 +317,19 @@ struct cmt *flb_me_get_cmetrics(struct flb_config *ctx)
                       flb_input_name(i));
             cmt_destroy(cmt);
             return NULL;
+        }
+
+        mk_list_foreach(processor_head, &i->processor->logs) {
+            pu = mk_list_entry(processor_head, struct flb_processor_unit, _head);
+            if (pu->unit_type == FLB_PROCESSOR_UNIT_FILTER) {
+                pf = (struct flb_filter_instance *) pu->ctx;
+                ret = cmt_cat(cmt, pf->cmt);
+                if (ret == -1) {
+                    flb_error("[metrics exporter] could not append metrics from %s", flb_filter_name(pf));
+                    cmt_destroy(cmt);
+                    return NULL;
+                }
+            }
         }
     }
 
@@ -329,6 +352,19 @@ struct cmt *flb_me_get_cmetrics(struct flb_config *ctx)
                       flb_output_name(o));
             cmt_destroy(cmt);
             return NULL;
+        }
+
+        mk_list_foreach(processor_head, &o->processor->logs) {
+            pu = mk_list_entry(processor_head, struct flb_processor_unit, _head);
+            if (pu->unit_type == FLB_PROCESSOR_UNIT_FILTER) {
+                pf = (struct flb_filter_instance *) pu->ctx;
+                ret = cmt_cat(cmt, pf->cmt);
+                if (ret == -1) {
+                    flb_error("[metrics exporter] could not append metrics from %s", flb_filter_name(pf));
+                    cmt_destroy(cmt);
+                    return NULL;
+                }
+            }
         }
     }
 

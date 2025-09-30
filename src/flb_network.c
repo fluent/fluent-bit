@@ -29,6 +29,7 @@
 
 #ifdef FLB_SYSTEM_WINDOWS
 #define poll WSAPoll
+#include <winsock2.h>
 #else
 #include <sys/poll.h>
 #endif
@@ -63,6 +64,32 @@
 
 static pthread_once_t local_thread_net_dns_ctx_init = PTHREAD_ONCE_INIT;
 FLB_TLS_DEFINE(struct flb_net_dns, flb_net_dns_ctx);
+
+/* Defines an async DNS lookup context */
+struct flb_dns_lookup_context {
+    struct mk_event              response_event;                  /* c-ares socket event */
+    int                          ares_socket_registered;
+    struct ares_socket_functions ares_socket_functions;
+    int                         *udp_timeout_detected;
+    int                          ares_socket_created;
+    int                          ares_socket_type;
+    void                        *ares_channel;
+    int                         *result_code;
+    struct mk_event_loop        *event_loop;
+    struct flb_coro             *coroutine;
+    struct flb_sched_timer      *udp_timer;
+    int                          finished;
+    int                          dropped;
+    struct flb_net_dns          *dns_ctx;
+    struct addrinfo            **result;
+    /* result is a synthetized result, don't call freeaddrinfo on it */
+    struct mk_list               _head;
+};
+
+#define FLB_DNS_LOOKUP_CONTEXT_FOR_EVENT(event) \
+    ((struct flb_dns_lookup_context *) \
+        &((uint8_t *) event)[-offsetof(struct flb_dns_lookup_context, response_event)])
+
 
 /*
  * Initialize thread-local-storage, every worker thread has it owns
@@ -116,10 +143,16 @@ void flb_net_setup_init(struct flb_net_setup *net)
     net->keepalive = FLB_TRUE;
     net->keepalive_idle_timeout = 30;
     net->keepalive_max_recycle = 0;
+    net->tcp_keepalive = FLB_FALSE;
+    net->tcp_keepalive_time = -1;
+    net->tcp_keepalive_interval = -1;
+    net->tcp_keepalive_probes = -1;
     net->accept_timeout = 10;
     net->connect_timeout = 10;
     net->io_timeout = 0; /* Infinite time */
     net->source_address = NULL;
+    net->backlog = FLB_NETWORK_DEFAULT_BACKLOG_SIZE;
+    net->proxy_env_ignore = FLB_FALSE;
 }
 
 int flb_net_host_set(const char *plugin_name, struct flb_net_host *host, const char *address)
@@ -298,6 +331,54 @@ int flb_net_socket_tcp_fastopen(flb_sockfd_t fd)
     return setsockopt(fd, SOL_TCP, TCP_FASTOPEN, &qlen, sizeof(qlen));
 }
 
+
+/*
+ * Enable TCP keepalive
+ */
+int flb_net_socket_tcp_keepalive(flb_sockfd_t fd, struct flb_net_setup *net)
+{
+    int interval;
+    int enabled;
+    int probes;
+    int time;
+    int ret;
+
+    enabled = 1;
+
+    time = net->tcp_keepalive_time;
+    probes = net->tcp_keepalive_probes;
+    interval = net->tcp_keepalive_interval;
+
+    ret = setsockopt(fd, SOL_SOCKET, SO_KEEPALIVE,
+                     (const void *) &enabled, sizeof(enabled));
+
+    if (ret == 0 && time >= 0) {
+#ifdef __APPLE__
+        ret = setsockopt(fd, IPPROTO_TCP, TCP_KEEPALIVE,
+#else
+                ret = setsockopt(fd, IPPROTO_TCP, TCP_KEEPIDLE,
+#endif
+                (const void *) &time, sizeof(time));    }
+
+    if (ret == 0 && interval >= 0) {
+        ret = setsockopt(fd, IPPROTO_TCP, TCP_KEEPINTVL,
+                         (const void *) &interval, sizeof(interval));
+    }
+
+    if (ret == 0 && probes >= 0) {
+        ret = setsockopt(fd, IPPROTO_TCP, TCP_KEEPCNT,
+                         (const void *) &probes, sizeof(probes));
+    }
+
+    if (ret != 0) {
+        flb_error("[net] failed to configure TCP keepalive for connection #%i", fd);
+
+        ret = -1;
+    }
+
+    return ret;
+}
+
 flb_sockfd_t flb_net_socket_create(int family, int nonblock)
 {
     flb_sockfd_t fd;
@@ -396,6 +477,12 @@ static int net_connect_sync(int fd, const struct sockaddr *addr, socklen_t addrl
             flb_errno();
             flb_error("[net] connection #%i failed to: %s:%i",
                       fd, host, port);
+            goto exit_error;
+        }
+
+        /* check the connection status */
+        socket_errno = flb_socket_error(fd);
+        if (socket_errno != 0) {
             goto exit_error;
         }
     }
@@ -551,9 +638,9 @@ static int net_connect_async(int fd,
             }
 
             /* Connection is broken, not much to do here */
-#if ((defined(_POSIX_C_SOURCE) && _POSIX_C_SOURCE >= 200112L) ||    \
-     (defined(_XOPEN_SOURCE) || _XOPEN_SOURCE - 0L >= 600L)) &&     \
-  (!defined(_GNU_SOURCE))
+#ifdef __GLIBC__
+            str = strerror_r(error, so_error_buf, sizeof(so_error_buf));
+#else
             ret = strerror_r(error, so_error_buf, sizeof(so_error_buf));
             if (ret == 0) {
                 str = so_error_buf;
@@ -562,8 +649,6 @@ static int net_connect_async(int fd,
                 flb_errno();
                 return -1;
             }
-#else
-            str = strerror_r(error, so_error_buf, sizeof(so_error_buf));
 #endif
             flb_error("[net] TCP connection failed: %s:%i (%s)",
                       u->tcp_host, u->tcp_port, str);
@@ -590,6 +675,12 @@ static void flb_net_dns_lookup_context_drop(struct flb_dns_lookup_context *looku
 {
     if (!lookup_context->dropped) {
         lookup_context->dropped = FLB_TRUE;
+
+        if (lookup_context->ares_socket_registered) {
+            mk_event_del(lookup_context->event_loop,
+                         &lookup_context->response_event);
+            lookup_context->ares_socket_registered = FLB_FALSE;
+        }
 
         mk_list_del(&lookup_context->_head);
         mk_list_add(&lookup_context->_head, &lookup_context->dns_ctx->lookups_drop);
@@ -996,15 +1087,13 @@ static struct flb_dns_lookup_context *flb_net_dns_lookup_context_create(
         return NULL;
     }
 
-    /* c-ares options: Set the transport layer to the desired protocol and
-     *                 the number of retries to 2
-     */
+    /* c-ares options: Set the transport layer to the desired protocol */
 
     optmask = ARES_OPT_FLAGS;
-    opts.tries = 2;
 
+    opts.flags = ARES_FLAG_EDNS;
     if (dns_mode == FLB_DNS_USE_TCP) {
-        opts.flags = ARES_FLAG_USEVC;
+        opts.flags |= ARES_FLAG_USEVC;
     }
 
     *result = ares_init_options((ares_channel *) &lookup_context->ares_channel,
@@ -1553,7 +1642,8 @@ int flb_net_tcp_fd_connect(flb_sockfd_t fd, const char *host, unsigned long port
     return ret;
 }
 
-flb_sockfd_t flb_net_server(const char *port, const char *listen_addr, int share_port)
+flb_sockfd_t flb_net_server(const char *port, const char *listen_addr,
+                            int backlog, int share_port)
 {
     flb_sockfd_t fd = -1;
     int ret;
@@ -1586,7 +1676,7 @@ flb_sockfd_t flb_net_server(const char *port, const char *listen_addr, int share
         flb_net_socket_tcp_nodelay(fd);
         flb_net_socket_reset(fd);
 
-        ret = flb_net_bind(fd, rp->ai_addr, rp->ai_addrlen, 128);
+        ret = flb_net_bind(fd, rp->ai_addr, rp->ai_addrlen, backlog);
         if(ret == -1) {
             flb_warn("Cannot listen on %s port %s", listen_addr, port);
             flb_socket_close(fd);
@@ -1758,16 +1848,22 @@ int flb_net_bind_udp(flb_sockfd_t fd, const struct sockaddr *addr,
 flb_sockfd_t flb_net_accept(flb_sockfd_t server_fd)
 {
     flb_sockfd_t remote_fd;
-    struct sockaddr sock_addr;
-    socklen_t socket_size = sizeof(struct sockaddr);
+    struct sockaddr_storage sock_addr = { 0 };
+    socklen_t socket_size = sizeof(sock_addr);
 
-    // return accept(server_fd, &sock_addr, &socket_size);
+    /*
+     * sock_addr used to be a sockaddr struct, but this was too
+     * small of a structure to handle IPV6 addresses (#9053).
+     * This would cause accept() to not accept the connection (with no error),
+     * and a loop would occur continually trying to accept the connection.
+     * The sockaddr_storage can handle both IPV4 and IPV6.
+     */
 
 #ifdef FLB_HAVE_ACCEPT4
-    remote_fd = accept4(server_fd, &sock_addr, &socket_size,
+    remote_fd = accept4(server_fd, (struct sockaddr*)&sock_addr, &socket_size,
                         SOCK_NONBLOCK | SOCK_CLOEXEC);
 #else
-    remote_fd = accept(server_fd, &sock_addr, &socket_size);
+    remote_fd = accept(server_fd, (struct sockaddr*)&sock_addr, &socket_size);
     flb_net_socket_nonblocking(remote_fd);
 #endif
 
@@ -2235,4 +2331,16 @@ int flb_net_socket_peer_info(flb_sockfd_t fd,
                                        str_output_buffer,
                                        str_output_buffer_size,
                                        str_output_data_size);
+}
+
+uint64_t flb_net_htonll(uint64_t value)
+{
+#if defined(_WIN32)
+    /* use windows system provided htonll */
+    return htonll(value);
+#elif __BYTE_ORDER == __LITTLE_ENDIAN
+    return ((uint64_t) htonl(value & 0xFFFFFFFF) << 32) | htonl(value >> 32);
+#else
+    return value;
+#endif
 }

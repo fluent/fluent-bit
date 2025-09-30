@@ -39,6 +39,12 @@
 /* service endpoint */
 #define AZURE_ENDPOINT_PREFIX  ".blob.core.windows.net"
 
+/* buffering directory max size */
+#define FLB_AZURE_BLOB_BUFFER_DIR_MAX_SIZE "8G"
+#define UPLOAD_TIMER_MAX_WAIT 180000
+#define UPLOAD_TIMER_MIN_WAIT 18000
+#define MAX_FILE_SIZE         4000000000 // 4GB
+
 #define AZURE_BLOB_APPENDBLOB 0
 #define AZURE_BLOB_BLOCKBLOB  1
 
@@ -76,6 +82,32 @@ struct flb_azure_blob {
     int container_name_overriden_flag;
     int path_overriden_flag;
 
+    int buffering_enabled;
+    flb_sds_t buffer_dir;
+    int unify_tag;
+
+    size_t file_size;
+    time_t upload_timeout;
+    time_t retry_time;
+    int timer_created;
+    int timer_ms;
+    int io_timeout;
+
+    flb_sds_t azure_blob_buffer_key;
+    size_t store_dir_limit_size;
+    int buffer_file_delete_early;
+    int blob_uri_length;
+    int delete_on_max_upload_error;
+
+    int has_old_buffers;
+    int scheduler_max_retries;
+    /* track the total amount of buffered data */
+    size_t current_buffer_size;
+    char *store_dir;
+    struct flb_fstore *fs;
+    struct flb_fstore_stream *stream_active;  /* default active stream */
+    struct flb_fstore_stream *stream_upload;
+
     /*
      * Internal use
      */
@@ -108,6 +140,7 @@ struct flb_azure_blob {
     sqlite3_stmt *stmt_delete_file;
     sqlite3_stmt *stmt_abort_file;
     sqlite3_stmt *stmt_get_file;
+    sqlite3_stmt *stmt_update_file_destination;
     sqlite3_stmt *stmt_update_file_delivery_attempt_count;
     sqlite3_stmt *stmt_set_file_aborted_state;
     sqlite3_stmt *stmt_get_next_aborted_file;

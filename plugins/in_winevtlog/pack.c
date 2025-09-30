@@ -34,44 +34,77 @@
 
 static int pack_nullstr(struct winevtlog_config *ctx)
 {
-    flb_log_event_encoder_append_body_cstring(ctx->log_encoder, "");
+    return flb_log_event_encoder_append_body_cstring(ctx->log_encoder, "");
 }
 
-static int pack_wstr(struct winevtlog_config *ctx, const wchar_t *wstr)
+static int pack_str_codepage(struct winevtlog_config *ctx, const wchar_t *wstr,
+                             UINT code_page, BOOL use_ansi)
 {
-    int size;
-    char *buf;
-    UINT code_page = CP_UTF8;
-    LPCSTR defaultChar = L" ";
+    UINT cp = use_ansi ? CP_ACP : code_page;
+    DWORD flags = (cp == CP_UTF8) ? WC_ERR_INVALID_CHARS : 0;
+    int size = 0;
+    char *buf = NULL;
 
-    if (ctx->use_ansi) {
-        code_page = CP_ACP;
+    if (!wstr) {
+        return -1;
     }
 
-    /* Compute the buffer size first */
-    size = WideCharToMultiByte(code_page, 0, wstr, -1, NULL, 0, NULL, NULL);
+    size = WideCharToMultiByte(cp, flags, wstr, -1, NULL, 0, NULL, NULL);
     if (size == 0) {
         return -1;
     }
 
     buf = flb_malloc(size);
-    if (buf == NULL) {
+    if (!buf) {
         flb_errno();
+
         return -1;
     }
 
-    /* Convert UTF-16 into UTF-8 */
-    size = WideCharToMultiByte(code_page, 0, wstr, -1, buf, size, defaultChar, NULL);
-    if (size == 0) {
+    if (WideCharToMultiByte(cp, flags, wstr, -1, buf, size, NULL, NULL) == 0) {
         flb_free(buf);
         return -1;
     }
 
-    /* Pack buf except the trailing '\0' */
     flb_log_event_encoder_append_body_string(ctx->log_encoder, buf, size - 1);
-
     flb_free(buf);
     return 0;
+}
+
+static int pack_wstr(struct winevtlog_config *ctx, const wchar_t *wstr)
+{
+    return pack_str_codepage(ctx, wstr, CP_UTF8, ctx->use_ansi);
+}
+
+static int pack_astr(struct winevtlog_config *ctx, const char *astr)
+{
+    wchar_t *wbuf = NULL;
+    int wlen = 0;
+    int ret;
+
+    if (!astr) {
+        return -1;
+    }
+
+    wlen = MultiByteToWideChar(CP_ACP, MB_ERR_INVALID_CHARS, astr, -1, NULL, 0);
+    if (wlen == 0) {
+        return -1;
+    }
+
+    wbuf = flb_malloc(sizeof(wchar_t) * wlen);
+    if (!wbuf) {
+        flb_errno();
+        return -1;
+    }
+
+    if (MultiByteToWideChar(CP_ACP, MB_ERR_INVALID_CHARS, astr, -1, wbuf, wlen) == 0) {
+        flb_free(wbuf);
+        return -1;
+    }
+
+    ret = pack_wstr(ctx, wbuf);
+    flb_free(wbuf);
+    return ret;
 }
 
 static int pack_binary(struct winevtlog_config *ctx, PBYTE bin, size_t length)
@@ -110,6 +143,9 @@ static int pack_binary(struct winevtlog_config *ctx, PBYTE bin, size_t length)
 static int pack_guid(struct winevtlog_config *ctx, const GUID *guid)
 {
     LPOLESTR p = NULL;
+    if (!guid) {
+        return -1;
+    }
 
     if (FAILED(StringFromCLSID(guid, &p))) {
         return -1;
@@ -189,17 +225,19 @@ static int pack_systemtime(struct winevtlog_config *ctx, SYSTEMTIME *st)
     CHAR buf[64];
     size_t len = 0;
     _locale_t locale;
-    TIME_ZONE_INFORMATION tzi;
+    DYNAMIC_TIME_ZONE_INFORMATION dtzi;
     SYSTEMTIME st_local;
 
-    GetTimeZoneInformation(&tzi);
+    _tzset();
+
+    GetDynamicTimeZoneInformation(&dtzi);
 
     locale = _get_current_locale();
     if (locale == NULL) {
         return -1;
     }
     if (st != NULL) {
-        SystemTimeToTzSpecificLocalTime(&tzi, st, &st_local);
+        SystemTimeToTzSpecificLocalTimeEx(&dtzi, st, &st_local);
 
         struct tm tm = {st_local.wSecond,
                         st_local.wMinute,
@@ -207,7 +245,7 @@ static int pack_systemtime(struct winevtlog_config *ctx, SYSTEMTIME *st)
                         st_local.wDay,
                         st_local.wMonth-1,
                         st_local.wYear-1900,
-                        st_local.wDayOfWeek, 0, 0};
+                        st_local.wDayOfWeek, 0, -1};
         len = _strftime_l(buf, 64, FORMAT_ISO8601, &tm, locale);
         if (len == 0) {
             flb_errno();
@@ -234,6 +272,8 @@ static int pack_filetime(struct winevtlog_config *ctx, ULONGLONG filetime)
     SYSTEMTIME st;
     _locale_t locale;
 
+    _tzset();
+
     locale = _get_current_locale();
     if (locale == NULL) {
         return -1;
@@ -243,7 +283,7 @@ static int pack_filetime(struct winevtlog_config *ctx, ULONGLONG filetime)
     ft.dwLowDateTime = timestamp.LowPart;
     FileTimeToLocalFileTime(&ft, &ft_local);
     if (FileTimeToSystemTime(&ft_local, &st)) {
-        struct tm tm = {st.wSecond, st.wMinute, st.wHour, st.wDay, st.wMonth-1, st.wYear-1900, st.wDayOfWeek, 0, 0};
+        struct tm tm = {st.wSecond, st.wMinute, st.wHour, st.wDay, st.wMonth-1, st.wYear-1900, st.wDayOfWeek, 0, -1};
         len = _strftime_l(buf, 64, FORMAT_ISO8601, &tm, locale);
         if (len == 0) {
             flb_errno();
@@ -314,6 +354,8 @@ static int pack_sid(struct winevtlog_config *ctx, PSID sid, int extract_sid)
 
             _snprintf_s(formatted, result_len, _TRUNCATE, "%s\\%s", domain, account);
 
+            size = strlen(formatted);
+
             if (size > 0) {
                 flb_log_event_encoder_append_body_cstring(ctx->log_encoder, formatted);
 
@@ -379,7 +421,7 @@ static void pack_string_inserts(struct winevtlog_config *ctx, PEVT_VARIANT value
             }
             break;
         case EvtVarTypeAnsiString:
-            if (pack_wstr(ctx, values[i].AnsiStringVal)) {
+            if (pack_astr(ctx, values[i].AnsiStringVal)) {
                 pack_nullstr(ctx);
             }
             break;
@@ -633,14 +675,24 @@ void winevtlog_pack_event(PEVT_VARIANT system, WCHAR *message,
     /* ActivityID */
     ret = flb_log_event_encoder_append_body_cstring(ctx->log_encoder, "ActivityID");
 
-    if (pack_guid(ctx, system[EvtSystemActivityID].GuidVal)) {
+    if (EvtVarTypeNull != system[EvtSystemActivityID].Type) {
+        if (pack_guid(ctx, system[EvtSystemActivityID].GuidVal)) {
+            pack_nullstr(ctx);
+        }
+    }
+    else {
         pack_nullstr(ctx);
     }
 
     /* Related ActivityID */
     ret = flb_log_event_encoder_append_body_cstring(ctx->log_encoder, "RelatedActivityID");
 
-    if (pack_guid(ctx, system[EvtSystemRelatedActivityID].GuidVal)) {
+    if (EvtVarTypeNull != system[EvtSystemRelatedActivityID].Type) {
+        if (pack_guid(ctx, system[EvtSystemRelatedActivityID].GuidVal)) {
+            pack_nullstr(ctx);
+        }
+    }
+    else {
         pack_nullstr(ctx);
     }
 

@@ -587,7 +587,8 @@ static int opensearch_format(struct flb_config *config,
         }
 
         /* Convert msgpack to JSON */
-        out_buf = flb_msgpack_raw_to_json_sds(tmp_sbuf.data, tmp_sbuf.size);
+        out_buf = flb_msgpack_raw_to_json_sds(tmp_sbuf.data, tmp_sbuf.size,
+                                              config->json_escape_unicode);
         msgpack_sbuffer_destroy(&tmp_sbuf);
         if (!out_buf) {
             flb_log_event_decoder_destroy(&log_decoder);
@@ -684,6 +685,11 @@ static int cb_opensearch_init(struct flb_output_instance *ins,
     ctx = flb_os_conf_create(ins, config);
     if (!ctx) {
         flb_plg_error(ins, "cannot initialize plugin");
+        return -1;
+    }
+
+    if (ctx->index == NULL && ctx->logstash_format == FLB_FALSE && ctx->generate_id == FLB_FALSE) {
+        flb_plg_error(ins, "cannot initialize plugin, index is not set and logstash_format and generate_id are both off");
         return -1;
     }
 
@@ -881,7 +887,8 @@ static void cb_opensearch_flush(struct flb_event_chunk *event_chunk,
 
     /* Convert format */
     if (event_chunk->type == FLB_EVENT_TYPE_TRACES) {
-        pack = flb_msgpack_raw_to_json_sds(event_chunk->data, event_chunk->size);
+        pack = flb_msgpack_raw_to_json_sds(event_chunk->data, event_chunk->size,
+                                           config->json_escape_unicode);
         if (pack) {
             ret = 0;
 

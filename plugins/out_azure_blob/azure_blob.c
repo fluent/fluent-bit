@@ -30,6 +30,7 @@
 #include <fluent-bit/flb_log_event_decoder.h>
 #include <fluent-bit/flb_plugin.h>
 #include <fluent-bit/flb_notification.h>
+#include <fluent-bit/flb_scheduler.h>
 
 #include <msgpack.h>
 
@@ -40,6 +41,7 @@
 #include "azure_blob_appendblob.h"
 #include "azure_blob_blockblob.h"
 #include "azure_blob_http.h"
+#include "azure_blob_store.h"
 
 #define CREATE_BLOB  1337
 
@@ -66,7 +68,8 @@ static int azure_blob_format(struct flb_config *config,
     out_buf = flb_pack_msgpack_to_json_format(data, bytes,
                                               FLB_PACK_JSON_FORMAT_LINES,
                                               FLB_PACK_JSON_DATE_ISO8601,
-                                              ctx->date_key);
+                                              ctx->date_key,
+                                              config->json_escape_unicode);
     if (!out_buf) {
         return -1;
     }
@@ -74,6 +77,95 @@ static int azure_blob_format(struct flb_config *config,
     *out_data = out_buf;
     *out_size = flb_sds_len(out_buf);
     return 0;
+}
+
+/*
+ * Either new_data or chunk can be NULL, but not both
+ */
+static int construct_request_buffer(struct flb_azure_blob *ctx, flb_sds_t new_data,
+                                    struct azure_blob_file *upload_file,
+                                    char **out_buf, size_t *out_size)
+{
+    char *body;
+    char *tmp;
+    size_t body_size = 0;
+    char *buffered_data = NULL;
+    size_t buffer_size = 0;
+    int ret;
+
+    if (new_data == NULL && upload_file == NULL) {
+        flb_plg_error(ctx->ins, "[construct_request_buffer] Something went wrong"
+                                " both chunk and new_data are NULL");
+        return -1;
+    }
+
+    if (upload_file) {
+        ret = azure_blob_store_file_upload_read(ctx, upload_file->fsf, &buffered_data, &buffer_size);
+        if (ret < 0) {
+            flb_plg_error(ctx->ins, "Could not read locally buffered data %s",
+                          upload_file->fsf->name);
+            return -1;
+        }
+
+        /*
+         * lock the upload_file from buffer list
+         */
+        azure_blob_store_file_lock(upload_file);
+        body = buffered_data;
+        body_size = buffer_size;
+    }
+
+    flb_plg_debug(ctx->ins, "[construct_request_buffer] size of buffer file read %zu", buffer_size);
+
+    /*
+     * If new data is arriving, increase the original 'buffered_data' size
+     * to append the new one.
+     */
+    if (new_data) {
+        body_size += flb_sds_len(new_data);
+        flb_plg_debug(ctx->ins, "[construct_request_buffer] size of new_data %zu", body_size);
+
+        tmp = flb_realloc(buffered_data, body_size + 1);
+        if (!tmp) {
+            flb_errno();
+            flb_free(buffered_data);
+            if (upload_file) {
+                azure_blob_store_file_unlock(upload_file);
+            }
+            return -1;
+        }
+        body = buffered_data = tmp;
+        memcpy(body + buffer_size, new_data, flb_sds_len(new_data));
+        if (ctx->compress_gzip == FLB_FALSE){
+            body[body_size] = '\0';
+        }
+    }
+
+    flb_plg_debug(ctx->ins, "[construct_request_buffer] final increased %zu", body_size);
+
+    *out_buf = body;
+    *out_size = body_size;
+
+    return 0;
+}
+
+void generate_random_string_blob(char *str, size_t length)
+{
+    const char charset[] = "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789";
+    const size_t charset_size = sizeof(charset) - 1;
+    size_t i;
+    size_t index;
+
+    /* Seed the random number generator with multiple sources of entropy */
+    unsigned int seed = (unsigned int)(time(NULL) ^ clock() ^ getpid());
+    srand(seed);
+
+    for (i = 0; i < length; ++i) {
+        index = (size_t)rand() % charset_size;
+        str[i] = charset[index];
+    }
+
+    str[length] = '\0';
 }
 
 static int create_blob(struct flb_azure_blob *ctx, char *name)
@@ -87,6 +179,11 @@ static int create_blob(struct flb_azure_blob *ctx, char *name)
     uri = azb_uri_create_blob(ctx, name);
     if (!uri) {
         return FLB_RETRY;
+    }
+
+    if (ctx->buffering_enabled == FLB_TRUE){
+        ctx->u->base.flags &= ~(FLB_IO_ASYNC);
+        ctx->u->base.net.io_timeout = ctx->io_timeout;
     }
 
     /* Get upstream connection */
@@ -243,6 +340,13 @@ static int http_send_blob(struct flb_config *config, struct flb_azure_blob *ctx,
     struct flb_http_client *c;
     struct flb_connection *u_conn;
 
+    flb_plg_debug(ctx->ins, "generated blob uri ::: %s", uri);
+
+    if (ctx->buffering_enabled == FLB_TRUE){
+        ctx->u->base.flags &= ~(FLB_IO_ASYNC);
+        ctx->u->base.net.io_timeout = ctx->io_timeout;
+    }
+
     /* Get upstream connection */
     u_conn = flb_upstream_conn_get(ctx->u);
     if (!u_conn) {
@@ -358,9 +462,19 @@ static int send_blob(struct flb_config *config,
     flb_sds_t ref_name = NULL;
     void *payload_buf = data;
     size_t payload_size = bytes;
+    char *generated_random_string;
 
     ref_name = flb_sds_create_size(256);
     if (!ref_name) {
+        return FLB_RETRY;
+    }
+
+    /* Allocate memory for the random string dynamically */
+    generated_random_string = flb_malloc(ctx->blob_uri_length + 1);
+    if (!generated_random_string) {
+        flb_errno();
+        flb_plg_error(ctx->ins, "cannot allocate memory for random string");
+        flb_sds_destroy(ref_name);
         return FLB_RETRY;
     }
 
@@ -368,50 +482,37 @@ static int send_blob(struct flb_config *config,
         uri = azb_append_blob_uri(ctx, tag);
     }
     else if (blob_type == AZURE_BLOB_BLOCKBLOB) {
+        generate_random_string_blob(generated_random_string, ctx->blob_uri_length); /* Generate the random string */
         if (event_type == FLB_EVENT_TYPE_LOGS) {
             block_id = azb_block_blob_id_logs(&ms);
             if (!block_id) {
                 flb_plg_error(ctx->ins, "could not generate block id");
-
+                flb_free(generated_random_string);
                 cfl_sds_destroy(ref_name);
-
                 return FLB_RETRY;
             }
-            uri = azb_block_blob_uri(ctx, tag, block_id, ms);
+            uri = azb_block_blob_uri(ctx, tag, block_id, ms, generated_random_string);
             ref_name = flb_sds_printf(&ref_name, "file=%s.%" PRIu64, name, ms);
         }
         else if (event_type == FLB_EVENT_TYPE_BLOBS) {
             block_id = azb_block_blob_id_blob(ctx, name, part_id);
-            uri = azb_block_blob_uri(ctx, name, block_id, 0);
+            uri = azb_block_blob_uri(ctx, name, block_id, 0, generated_random_string);
             ref_name = flb_sds_printf(&ref_name, "file=%s:%" PRIu64, name, part_id);
         }
     }
 
     if (!uri) {
-        flb_free(block_id);
+        flb_free(generated_random_string);
+        if (block_id != NULL) {
+            flb_free(block_id);
+        }
         flb_sds_destroy(ref_name);
         return FLB_RETRY;
     }
 
-    /* Logs: Format the data (msgpack -> JSON) */
-    if (event_type == FLB_EVENT_TYPE_LOGS) {
-        ret = azure_blob_format(config, i_ins,
-                                ctx, NULL,
-                                FLB_EVENT_TYPE_LOGS,
-                                tag, tag_len,
-                                data, bytes,
-                                &payload_buf, &payload_size);
-        if (ret != 0) {
-            flb_sds_destroy(uri);
-            flb_free(block_id);
-            flb_sds_destroy(ref_name);
-            return FLB_ERROR;
-        }
-    }
-    else if (event_type == FLB_EVENT_TYPE_BLOBS) {
-        payload_buf = data;
-        payload_size = bytes;
-    }
+    /* Map buffer */
+    payload_buf = data;
+    payload_size = bytes;
 
     ret = http_send_blob(config, ctx, ref_name, uri, block_id, event_type, payload_buf, payload_size);
     flb_plg_debug(ctx->ins, "http_send_blob()=%i", ret);
@@ -419,8 +520,7 @@ static int send_blob(struct flb_config *config,
     if (ret == FLB_OK) {
         /* For Logs type, we need to commit the block right away */
         if (event_type == FLB_EVENT_TYPE_LOGS) {
-            ret = azb_block_blob_commit_block(ctx, block_id, tag, ms);
-            flb_free(block_id);
+            ret = azb_block_blob_commit_block(ctx, block_id, tag, ms, generated_random_string);
         }
     }
     else if (ret == CREATE_BLOB) {
@@ -436,7 +536,11 @@ static int send_blob(struct flb_config *config,
     }
 
     flb_sds_destroy(uri);
-    flb_free(block_id);
+    flb_free(generated_random_string);
+
+    if (block_id != NULL) {
+        flb_free(block_id);
+    }
 
     return ret;
 }
@@ -448,6 +552,11 @@ static int create_container(struct flb_azure_blob *ctx, char *name)
     flb_sds_t uri;
     struct flb_http_client *c;
     struct flb_connection *u_conn;
+
+    if (ctx->buffering_enabled == FLB_TRUE){
+        ctx->u->base.flags &= ~(FLB_IO_ASYNC);
+        ctx->u->base.net.io_timeout = ctx->io_timeout;
+    }
 
     /* Get upstream connection */
     u_conn = flb_upstream_conn_get(ctx->u);
@@ -517,7 +626,9 @@ static int create_container(struct flb_azure_blob *ctx, char *name)
 /*
  * Check that the container exists, if it doesn't and the configuration property
  * auto_create_container is enabled, it will send a request to create it. If it
- * could not be created or auto_create_container is disabled, it returns FLB_FALSE.
+ * could not be created, it returns FLB_FALSE.
+ * If auto_create_container is disabled, it will return FLB_TRUE assuming the container
+ * already exists.
  */
 static int ensure_container(struct flb_azure_blob *ctx)
 {
@@ -528,9 +639,21 @@ static int ensure_container(struct flb_azure_blob *ctx)
     struct flb_http_client *c;
     struct flb_connection *u_conn;
 
+    if (!ctx->auto_create_container) {
+        flb_plg_info(ctx->ins, "auto_create_container is disabled, assuming container '%s' already exists",
+                     ctx->container_name);
+        return FLB_TRUE;
+    }
+
     uri = azb_uri_ensure_or_create_container(ctx);
     if (!uri) {
+        flb_plg_error(ctx->ins, "cannot create container URI");
         return FLB_FALSE;
+    }
+
+    if (ctx->buffering_enabled == FLB_TRUE){
+        ctx->u->base.flags &= ~(FLB_IO_ASYNC);
+        ctx->u->base.net.io_timeout = ctx->io_timeout;
     }
 
     /* Get upstream connection */
@@ -582,8 +705,17 @@ static int ensure_container(struct flb_azure_blob *ctx)
         return ret;
     }
     else if (status == 200) {
+        flb_plg_info(ctx->ins, "container '%s' already exists", ctx->container_name);
         return FLB_TRUE;
     }
+    else if (status == 403) {
+        flb_plg_error(ctx->ins, "failed getting container '%s', access denied",
+                      ctx->container_name);
+        return FLB_FALSE;
+    }
+    
+    flb_plg_error(ctx->ins, "get container request failed, status=%i",
+                  status);
 
     return FLB_FALSE;
 }
@@ -602,6 +734,39 @@ static int cb_azure_blob_init(struct flb_output_instance *ins,
     if (!ctx) {
         return -1;
     }
+
+    if (ctx->buffering_enabled == FLB_TRUE) {
+        ctx->ins = ins;
+        ctx->retry_time = 0;
+
+        /* Initialize local storage */
+        int ret = azure_blob_store_init(ctx);
+        if (ret == -1) {
+            flb_plg_error(ctx->ins, "Failed to initialize kusto storage: %s",
+                          ctx->store_dir);
+            return -1;
+        }
+
+        /* validate 'total_file_size' */
+        if (ctx->file_size <= 0) {
+            flb_plg_error(ctx->ins, "Failed to parse upload_file_size");
+            return -1;
+        }
+        if (ctx->file_size < 1000000) {
+            flb_plg_error(ctx->ins, "upload_file_size must be at least 1MB");
+            return -1;
+        }
+        if (ctx->file_size > MAX_FILE_SIZE) {
+            flb_plg_error(ctx->ins, "Max total_file_size must be lower than %ld bytes", MAX_FILE_SIZE);
+            return -1;
+        }
+        ctx->has_old_buffers = azure_blob_store_has_data(ctx);
+        ctx->timer_created = FLB_FALSE;
+        ctx->timer_ms = (int) (ctx->upload_timeout / 6) * 1000;
+        flb_plg_info(ctx->ins, "Using upload size %lu bytes", ctx->file_size);
+    }
+
+    flb_output_set_context(ins, ctx);
 
     flb_output_set_http_debug_callbacks(ins);
     return 0;
@@ -649,6 +814,12 @@ static int process_blob_chunk(struct flb_azure_blob *ctx, struct flb_event_chunk
     struct flb_log_event_decoder log_decoder;
     struct flb_log_event         log_event;
 
+    if (ctx->db == NULL) {
+        flb_plg_error(ctx->ins, "Cannot process blob because this operation requires a database.");
+
+        return -1;
+    }
+
     ret = flb_log_event_decoder_init(&log_decoder,
                                     (char *) event_chunk->data,
                                      event_chunk->size);
@@ -668,7 +839,8 @@ static int process_blob_chunk(struct flb_azure_blob *ctx, struct flb_event_chunk
             continue;
         }
 
-        ret = azb_db_file_insert(ctx, source, file_path, file_size);
+        ret = azb_db_file_insert(ctx, source, ctx->real_endpoint, file_path, file_size);
+
         if (ret == -1) {
             flb_plg_error(ctx->ins, "cannot insert blob file into database: %s (size=%lu)",
                           file_path, file_size);
@@ -708,6 +880,7 @@ static void cb_azb_blob_file_upload(struct flb_config *config, void *out_context
     uint64_t file_delivery_attempts;
     off_t offset_start;
     off_t offset_end;
+    cfl_sds_t file_destination = NULL;
     cfl_sds_t file_path = NULL;
     cfl_sds_t part_ids = NULL;
     cfl_sds_t source = NULL;
@@ -719,6 +892,10 @@ static void cb_azb_blob_file_upload(struct flb_config *config, void *out_context
 
     if (info->active_upload) {
         flb_plg_trace(ctx->ins, "[worker: file upload] upload already in progress...");
+        flb_sched_timer_cb_coro_return();
+    }
+
+    if (ctx->db == NULL) {
         flb_sched_timer_cb_coro_return();
     }
 
@@ -876,7 +1053,8 @@ static void cb_azb_blob_file_upload(struct flb_config *config, void *out_context
                                     &offset_start, &offset_end,
                                     &part_delivery_attempts,
                                     &file_delivery_attempts,
-                                    &file_path);
+                                    &file_path,
+                                    &file_destination);
     if (ret == -1) {
         flb_plg_error(ctx->ins, "cannot get next blob file part");
         info->active_upload = FLB_FALSE;
@@ -891,6 +1069,28 @@ static void cb_azb_blob_file_upload(struct flb_config *config, void *out_context
         /* just continue, the row info was retrieved */
     }
 
+
+    if (strcmp(file_destination, ctx->real_endpoint) != 0) {
+        flb_plg_info(ctx->ins,
+                     "endpoint change detected, restarting file : %s\n%s\n%s",
+                     file_path,
+                     file_destination,
+                     ctx->real_endpoint);
+
+        info->active_upload = FLB_FALSE;
+
+        /* we need to set the aborted state flag to wait for existing uploads
+         * to finish and then wipe the slate and start again but we don't want
+         * to increment the failure count in this case.
+         */
+        azb_db_file_set_aborted_state(ctx, file_id, file_path, 1);
+
+        cfl_sds_destroy(file_path);
+        cfl_sds_destroy(file_destination);
+
+        flb_sched_timer_cb_coro_return();
+    }
+
     /* since this is the first part we want to increment the files
      * delivery attempt counter.
      */
@@ -902,20 +1102,31 @@ static void cb_azb_blob_file_upload(struct flb_config *config, void *out_context
     ret = flb_utils_read_file_offset(file_path, offset_start, offset_end, &out_buf, &out_size);
     if (ret == -1) {
         flb_plg_error(ctx->ins, "cannot read file part %s", file_path);
-        cfl_sds_destroy(file_path);
+
         info->active_upload = FLB_FALSE;
+
+        cfl_sds_destroy(file_path);
+        cfl_sds_destroy(file_destination);
+
         flb_sched_timer_cb_coro_return();
     }
 
     azb_db_file_part_delivery_attempts(ctx, file_id, part_id, ++part_delivery_attempts);
 
     flb_plg_debug(ctx->ins, "sending part file %s (id=%" PRIu64 " part_id=%" PRIu64 ")", file_path, id, part_id);
+
     ret = send_blob(config, NULL, ctx, FLB_EVENT_TYPE_BLOBS,
                     AZURE_BLOB_BLOCKBLOB, file_path, part_id, NULL, 0, out_buf, out_size);
+
     if (ret == FLB_OK) {
         ret = azb_db_file_part_uploaded(ctx, id);
+
         if (ret == -1) {
             info->active_upload = FLB_FALSE;
+
+            cfl_sds_destroy(file_path);
+            cfl_sds_destroy(file_destination);
+
             flb_sched_timer_cb_coro_return();
         }
     }
@@ -926,14 +1137,16 @@ static void cb_azb_blob_file_upload(struct flb_config *config, void *out_context
             part_delivery_attempts >= ctx->part_delivery_attempt_limit) {
             azb_db_file_set_aborted_state(ctx, file_id, file_path, 1);
         }
-        /* FIXME */
     }
+
     info->active_upload = FLB_FALSE;
 
     if (out_buf) {
         flb_free(out_buf);
     }
+
     cfl_sds_destroy(file_path);
+    cfl_sds_destroy(file_destination);
 
     flb_sched_timer_cb_coro_return();
 }
@@ -959,6 +1172,303 @@ static int azb_timer_create(struct flb_azure_blob *ctx)
     return 0;
 }
 
+/**
+ * Azure Blob Storage ingestion callback function
+ * This function handles the upload of data chunks to Azure Blob Storage with retry mechanism
+ * @param config: Fluent Bit configuration
+ * @param data: Azure Blob context data
+ */
+static void cb_azure_blob_ingest(struct flb_config *config, void *data) {
+    /* Initialize context and file handling variables */
+    struct flb_azure_blob *ctx = data;
+    struct azure_blob_file *file = NULL;
+    struct flb_fstore_file *fsf;
+    char *buffer = NULL;
+    size_t buffer_size = 0;
+    struct mk_list *tmp;
+    struct mk_list *head;
+    int ret;
+    time_t now;
+    flb_sds_t payload;
+    flb_sds_t tag_sds;
+
+    /* Retry mechanism configuration */
+    int retry_count;
+    int backoff_time;
+    const int max_backoff_time = 64;  /* Maximum backoff time in seconds */
+
+    /* Log entry point and container information */
+    flb_plg_debug(ctx->ins, "Running upload timer callback (cb_azure_blob_ingest)..");
+
+    /* Initialize jitter for retry mechanism */
+    srand(time(NULL));
+    now = time(NULL);
+
+    /* Iterate through all chunks in the active stream */
+    mk_list_foreach_safe(head, tmp, &ctx->stream_active->files) {
+        fsf = mk_list_entry(head, struct flb_fstore_file, _head);
+        file = fsf->data;
+
+        /* Debug logging for current file processing */
+        flb_plg_debug(ctx->ins, "Iterating files inside upload timer callback (cb_azure_blob_ingest).. %s",
+                      file->fsf->name);
+
+        /* Skip if chunk hasn't timed out yet */
+        if (now < (file->create_time + ctx->upload_timeout + ctx->retry_time)) {
+            continue;
+        }
+
+        /* Skip if file is already being processed */
+        flb_plg_debug(ctx->ins, "cb_azure_blob_ingest :: Before file locked check %s", file->fsf->name);
+        if (file->locked == FLB_TRUE) {
+            continue;
+        }
+
+        /* Initialize retry mechanism parameters */
+        retry_count = 0;
+        backoff_time = 2;  /* Initial backoff time in seconds */
+
+        /* Retry loop for upload attempts */
+        while (retry_count < ctx->scheduler_max_retries) {
+            /* Construct request buffer for upload */
+            flb_plg_debug(ctx->ins, "cb_azure_blob_ingest :: Before construct_request_buffer %s", file->fsf->name);
+            ret = construct_request_buffer(ctx, NULL, file, &buffer, &buffer_size);
+
+            /* Handle request buffer construction failure */
+            if (ret < 0) {
+                flb_plg_error(ctx->ins, "cb_azure_blob_ingest :: Could not construct request buffer for %s",
+                              file->fsf->name);
+                retry_count++;
+
+                /* Implement exponential backoff with jitter */
+                int jitter = rand() % backoff_time;
+                flb_plg_warn(ctx->ins, "cb_azure_blob_ingest :: failure in construct_request_buffer :: Retrying in %d seconds (attempt %d of %d) with jitter %d for file %s",
+                             backoff_time + jitter, retry_count, ctx->scheduler_max_retries, jitter, file->fsf->name);
+                sleep(backoff_time + jitter);
+                backoff_time = (backoff_time * 2 < max_backoff_time) ? backoff_time * 2 : max_backoff_time;
+                continue;
+            }
+
+            /* Create payload and tags for blob upload */
+            payload = flb_sds_create_len(buffer, buffer_size);
+            tag_sds = flb_sds_create(fsf->meta_buf);
+            flb_plg_debug(ctx->ins, "cb_azure_blob_ingest ::: tag of the file %s", tag_sds);
+
+            /* Attempt to send blob */
+            ret = send_blob(config, NULL, ctx, FLB_EVENT_TYPE_LOGS,ctx->btype , (char *) tag_sds,0, (char *) tag_sds,
+                            flb_sds_len(tag_sds), payload, flb_sds_len(payload));
+
+            /* Handle blob creation if necessary */
+            if (ret == CREATE_BLOB) {
+                ret = create_blob(ctx, tag_sds);
+                if (ret == FLB_OK) {
+                    ret = send_blob(config, NULL, ctx, FLB_EVENT_TYPE_LOGS,ctx->btype, (char *) tag_sds, 0, (char *) tag_sds,
+                                    flb_sds_len(tag_sds), payload, flb_sds_len(payload));
+                }
+            }
+
+            /* Handle blob send failure */
+            if (ret != FLB_OK) {
+                /* Clean up resources and update failure count */
+                flb_plg_error(ctx->ins, "cb_azure_blob_ingest :: Failed to ingest data to Azure Blob Storage (attempt %d of %d)",
+                              retry_count + 1, ctx->scheduler_max_retries);
+                flb_free(buffer);
+                flb_sds_destroy(payload);
+                flb_sds_destroy(tag_sds);
+
+                if (file) {
+                    azure_blob_store_file_unlock(file);
+                    file->failures += 1;
+                }
+
+                retry_count++;
+
+                /* Implement exponential backoff with jitter for retry */
+                int jitter = rand() % backoff_time;
+                flb_plg_warn(ctx->ins, "cb_azure_blob_ingest :: error sending blob :: Retrying in %d seconds (attempt %d of %d) with jitter %d for file %s",
+                             backoff_time + jitter, retry_count, ctx->scheduler_max_retries, jitter, file->fsf->name);
+                sleep(backoff_time + jitter);
+                backoff_time = (backoff_time * 2 < max_backoff_time) ? backoff_time * 2 : max_backoff_time;
+                continue;
+            }
+
+            /* Handle successful upload */
+            ret = azure_blob_store_file_delete(ctx, file);
+            if (ret == 0) {
+                flb_plg_debug(ctx->ins, "cb_azure_blob_ingest :: deleted successfully ingested file %s", fsf->name);
+            }
+            else {
+                flb_plg_error(ctx->ins, "cb_azure_blob_ingest :: failed to delete ingested file %s", fsf->name);
+                if (file) {
+                    azure_blob_store_file_unlock(file);
+                    file->failures += 1;
+                }
+            }
+
+            /* Clean up resources */
+            flb_free(buffer);
+            flb_sds_destroy(payload);
+            flb_sds_destroy(tag_sds);
+            break;
+        }
+
+        /* Ensure file is unlocked if max retries reached */
+        if (retry_count >= ctx->scheduler_max_retries) {
+            flb_plg_error(ctx->ins, "cb_azure_blob_ingest :: Max retries reached for file :: attempting to delete/marking inactive %s",
+                          file->fsf->name);
+            if (ctx->delete_on_max_upload_error){
+                azure_blob_store_file_delete(ctx, file);
+            }
+            else {
+                azure_blob_store_file_inactive(ctx, file);
+            }
+        }
+
+        flb_plg_debug(ctx->ins, "Exited upload timer callback (cb_azure_blob_ingest)..");
+    }
+}
+
+
+static int ingest_all_chunks(struct flb_azure_blob *ctx, struct flb_config *config)
+{
+    struct azure_blob_file *chunk;
+    struct mk_list *tmp;
+    struct mk_list *head;
+    struct mk_list *f_head;
+    struct flb_fstore_file *fsf;
+    struct flb_fstore_stream *fs_stream;
+    flb_sds_t payload = NULL;
+    char *buffer = NULL;
+    size_t buffer_size;
+    int ret;
+    flb_sds_t tag_sds;
+
+    mk_list_foreach(head, &ctx->fs->streams) {
+        /* skip multi upload stream */
+        fs_stream = mk_list_entry(head, struct flb_fstore_stream, _head);
+        if (fs_stream == ctx->stream_upload) {
+            continue;
+        }
+
+        mk_list_foreach_safe(f_head, tmp, &fs_stream->files) {
+            fsf = mk_list_entry(f_head, struct flb_fstore_file, _head);
+            chunk = fsf->data;
+
+            /* Locked chunks are being processed, skip */
+            if (chunk->locked == FLB_TRUE) {
+                continue;
+            }
+
+            if (chunk->failures >= ctx->scheduler_max_retries) {
+                flb_plg_warn(ctx->ins,
+                             "ingest_all_chunks :: Chunk for tag %s failed to send %i times, "
+                             "will not retry",
+                             (char *) fsf->meta_buf, ctx->scheduler_max_retries);
+                if (ctx->delete_on_max_upload_error){
+                    azure_blob_store_file_delete(ctx, chunk);
+                }
+                else {
+                    azure_blob_store_file_inactive(ctx, chunk);
+                }
+                continue;
+            }
+
+            ret = construct_request_buffer(ctx, NULL, chunk,
+                                           &buffer, &buffer_size);
+            if (ret < 0) {
+                flb_plg_error(ctx->ins,
+                              "ingest_all_chunks :: Could not construct request buffer for %s",
+                              chunk->file_path);
+                return -1;
+            }
+
+            payload = flb_sds_create_len(buffer, buffer_size);
+            tag_sds = flb_sds_create(fsf->meta_buf);
+            flb_free(buffer);
+
+            ret = send_blob(config, NULL, ctx, FLB_EVENT_TYPE_LOGS, ctx->btype, (char *)tag_sds, 0, (char *)tag_sds, flb_sds_len(tag_sds), payload, flb_sds_len(payload));
+
+            if (ret == CREATE_BLOB) {
+                ret = create_blob(ctx, tag_sds);
+                if (ret == FLB_OK) {
+                    ret = send_blob(config, NULL, ctx, FLB_EVENT_TYPE_LOGS, ctx->btype, (char *)tag_sds, 0, (char *)tag_sds, flb_sds_len(tag_sds), payload, flb_sds_len(payload));
+                }
+            }
+
+            if (ret != FLB_OK) {
+                flb_plg_error(ctx->ins, "ingest_all_chunks :: Failed to ingest data to Azure Blob Storage");
+                if (chunk){
+                    azure_blob_store_file_unlock(chunk);
+                    chunk->failures += 1;
+                }
+                flb_sds_destroy(tag_sds);
+                flb_sds_destroy(payload);
+                return -1;
+            }
+
+            flb_sds_destroy(tag_sds);
+            flb_sds_destroy(payload);
+
+            /* data was sent successfully- delete the local buffer */
+            azure_blob_store_file_cleanup(ctx, chunk);
+        }
+    }
+
+    return 0;
+}
+
+static void flush_init(void *out_context, struct flb_config *config)
+{
+    int ret;
+    struct flb_azure_blob *ctx = out_context;
+    struct flb_sched *sched;
+
+    /* clean up any old buffers found on startup */
+    if (ctx->has_old_buffers == FLB_TRUE) {
+        flb_plg_info(ctx->ins,
+                     "Sending locally buffered data from previous "
+                     "executions to azure blob; buffer=%s",
+                     ctx->fs->root_path);
+        ctx->has_old_buffers = FLB_FALSE;
+        ret = ingest_all_chunks(ctx, config);
+        if (ret < 0) {
+            ctx->has_old_buffers = FLB_TRUE;
+            flb_plg_error(ctx->ins,
+                          "Failed to send locally buffered data left over "
+                          "from previous executions; will retry. Buffer=%s",
+                          ctx->fs->root_path);
+            FLB_OUTPUT_RETURN(FLB_RETRY);
+        }
+    }
+    else {
+        flb_plg_debug(ctx->ins,
+                      "Did not find any local buffered data from previous "
+                      "executions to azure blob; buffer=%s",
+                      ctx->fs->root_path);
+    }
+
+    /*
+    * create a timer that will run periodically and check if uploads
+    * are ready for completion
+    * this is created once on the first flush
+    */
+    if (ctx->timer_created == FLB_FALSE) {
+        flb_plg_debug(ctx->ins,
+                      "Creating upload timer with frequency %ds",
+                      ctx->timer_ms / 1000);
+
+        sched = flb_sched_ctx_get();
+
+        ret = flb_sched_timer_cb_create(sched, FLB_SCHED_TIMER_CB_PERM,
+                                        ctx->timer_ms, cb_azure_blob_ingest, ctx, NULL);
+        if (ret == -1) {
+            flb_plg_error(ctx->ins, "Failed to create upload timer");
+            FLB_OUTPUT_RETURN(FLB_RETRY);
+        }
+        ctx->timer_created = FLB_TRUE;
+    }
+}
+
 static void cb_azure_blob_flush(struct flb_event_chunk *event_chunk,
                                 struct flb_output_flush *out_flush,
                                 struct flb_input_instance *i_ins,
@@ -969,39 +1479,183 @@ static void cb_azure_blob_flush(struct flb_event_chunk *event_chunk,
     struct flb_azure_blob *ctx = out_context;
     (void) i_ins;
     (void) config;
-
-    /*
-     * Azure blob requires a container. The following function validate that the container exists,
-     * otherwise it will be created. Note that that container name is specified by the user
-     * in the configuration file.
-     *
-     * https://learn.microsoft.com/en-us/azure/storage/blobs/storage-blob-container-create#about-container-naming
-     */
-    ret = ensure_container(ctx);
-    if (ret == FLB_FALSE) {
-        FLB_OUTPUT_RETURN(FLB_RETRY);
-    }
+    flb_sds_t json = NULL;
+    size_t json_size;
 
     if (event_chunk->type == FLB_EVENT_TYPE_LOGS) {
-        ret = send_blob(config, i_ins, ctx,
-                        FLB_EVENT_TYPE_LOGS,
-                        ctx->btype, /* blob type per user configuration  */
-                        (char *) event_chunk->tag,  /* use tag as 'name' */
-                        0,  /* part id */
-                        (char *) event_chunk->tag, flb_sds_len(event_chunk->tag),
-                        (char *) event_chunk->data, event_chunk->size);
+        if (ctx->buffering_enabled == FLB_TRUE) {
+            size_t tag_len;
+            struct azure_blob_file *upload_file = NULL;
+            int upload_timeout_check = FLB_FALSE;
+            int total_file_size_check = FLB_FALSE;
 
-        if (ret == CREATE_BLOB) {
-            ret = create_blob(ctx, event_chunk->tag);
-            if (ret == FLB_OK) {
-                ret = send_blob(config, i_ins, ctx,
-                                FLB_EVENT_TYPE_LOGS,
-                                ctx->btype, /* blob type per user configuration  */
-                                (char *) event_chunk->tag,  /* use tag as 'name' */
-                                0,  /* part id */
-                                (char *) event_chunk->tag,  /* use tag as 'name' */
-                                flb_sds_len(event_chunk->tag),
-                                (char *) event_chunk->data, event_chunk->size);
+            char *final_payload = NULL;
+            size_t final_payload_size = 0;
+            flb_sds_t tag_name = NULL;
+
+            flb_plg_trace(ctx->ins, "flushing bytes for event tag %s and size %zu", event_chunk->tag, event_chunk->size);
+
+            if (ctx->unify_tag == FLB_TRUE) {
+                tag_name = flb_sds_create("fluentbit-buffer-file-unify-tag.log");
+            }
+            else {
+                tag_name = event_chunk->tag;
+            }
+            tag_len = flb_sds_len(tag_name);
+
+            flush_init(ctx, config);
+            /* Reformat msgpack to JSON payload */
+            ret = azure_blob_format(config, i_ins, ctx, NULL, FLB_EVENT_TYPE_LOGS, tag_name, tag_len, event_chunk->data, event_chunk->size, (void **)&json, &json_size);
+            if (ret != 0) {
+                flb_plg_error(ctx->ins, "cannot reformat data into json");
+                goto error;
+            }
+
+            /* Get a file candidate matching the given 'tag' */
+            upload_file = azure_blob_store_file_get(ctx, tag_name, tag_len);
+
+            /* Handle upload timeout or file size limits */
+            if (upload_file != NULL) {
+                if (upload_file->failures >= ctx->scheduler_max_retries) {
+                    flb_plg_warn(ctx->ins, "File with tag %s failed to send %d times, will not retry", event_chunk->tag, ctx->scheduler_max_retries);
+                    if (ctx->delete_on_max_upload_error) {
+                        azure_blob_store_file_delete(ctx, upload_file);
+                    } else {
+                        azure_blob_store_file_inactive(ctx, upload_file);
+                    }
+                    upload_file = NULL;
+                } else if (time(NULL) > (upload_file->create_time + ctx->upload_timeout)) {
+                    upload_timeout_check = FLB_TRUE;
+                } else if (upload_file->size + json_size > ctx->file_size) {
+                    total_file_size_check = FLB_TRUE;
+                }
+            }
+
+            if (upload_file != NULL && (upload_timeout_check == FLB_TRUE || total_file_size_check == FLB_TRUE)) {
+                flb_plg_debug(ctx->ins, "uploading file %s with size %zu", upload_file->fsf->name, upload_file->size);
+
+                /* Construct the payload for upload */
+                ret = construct_request_buffer(ctx, json, upload_file, &final_payload, &final_payload_size);
+                if (ret != 0) {
+                    flb_plg_error(ctx->ins, "error constructing request buffer for %s", event_chunk->tag);
+                    flb_sds_destroy(json);
+                    upload_file->failures += 1;
+                    FLB_OUTPUT_RETURN(FLB_RETRY);
+                }
+
+                /*
+                * Azure blob requires a container. The following function validate that the container exists,
+                * otherwise it will be created. Note that that container name is specified by the user
+                * in the configuration file.
+                *
+                * https://learn.microsoft.com/en-us/azure/storage/blobs/storage-blob-container-create#about-container-naming
+                */
+                ret = ensure_container(ctx);
+                if (ret == FLB_FALSE) {
+                    FLB_OUTPUT_RETURN(FLB_RETRY);
+                }
+
+                /* Upload the file */
+                ret = send_blob(config, i_ins, ctx, FLB_EVENT_TYPE_LOGS, ctx->btype,(char *)tag_name, 0, (char *)tag_name, tag_len, final_payload, final_payload_size);
+
+                if (ret == CREATE_BLOB) {
+                    ret = create_blob(ctx, upload_file->fsf->name);
+                    if (ret == FLB_OK) {
+                        ret = send_blob(config, i_ins, ctx, FLB_EVENT_TYPE_LOGS, ctx->btype,(char *)tag_name, 0, (char *)tag_name, tag_len, final_payload, final_payload_size);
+                    }
+                }
+
+                if (ret == FLB_OK) {
+                    flb_plg_debug(ctx->ins, "uploaded file %s successfully", upload_file->fsf->name);
+                    azure_blob_store_file_delete(ctx, upload_file);
+                    goto cleanup;
+                }
+                else {
+                    flb_plg_error(ctx->ins, "error uploading file %s", upload_file->fsf->name);
+                    if (upload_file) {
+                        azure_blob_store_file_unlock(upload_file);
+                        upload_file->failures += 1;
+                    }
+                    goto error;
+                }
+            }
+            else {
+                /* Buffer current chunk */
+                ret = azure_blob_store_buffer_put(ctx, upload_file, tag_name, tag_len, json, json_size);
+                if (ret == 0) {
+                    flb_plg_debug(ctx->ins, "buffered chunk %s", event_chunk->tag);
+                    goto cleanup;
+                }
+                else {
+                    flb_plg_error(ctx->ins, "failed to buffer chunk %s", event_chunk->tag);
+                    goto error;
+                }
+            }
+
+            cleanup:
+            if (json) {
+                flb_sds_destroy(json);
+            }
+            if (tag_name && ctx->unify_tag == FLB_TRUE) {
+                flb_sds_destroy(tag_name);
+            }
+            if (final_payload) {
+                flb_free(final_payload);
+            }
+            FLB_OUTPUT_RETURN(FLB_OK);
+
+            error:
+            if (json) {
+                flb_sds_destroy(json);
+            }
+            if (tag_name && ctx->unify_tag == FLB_TRUE) {
+                flb_sds_destroy(tag_name);
+            }
+            if (final_payload) {
+                flb_free(final_payload);
+            }
+            FLB_OUTPUT_RETURN(FLB_RETRY);
+        }
+        else {
+
+            /*
+            * Azure blob requires a container. The following function validate that the container exists,
+            * otherwise it will be created. Note that that container name is specified by the user
+            * in the configuration file.
+            *
+            * https://learn.microsoft.com/en-us/azure/storage/blobs/storage-blob-container-create#about-container-naming
+            */
+            ret = ensure_container(ctx);
+            if (ret == FLB_FALSE) {
+                FLB_OUTPUT_RETURN(FLB_RETRY);
+            }
+
+            ret = azure_blob_format(config, i_ins, ctx, NULL, FLB_EVENT_TYPE_LOGS,(char *) event_chunk->tag, flb_sds_len(event_chunk->tag), (char *) event_chunk->data ,event_chunk->size, (void **)&json, &json_size);
+            if (ret != 0) {
+                flb_plg_error(ctx->ins, "cannot reformat data into json");
+                ret = FLB_RETRY;
+            }
+            /* Buffering mode is disabled, proceed with regular flow */
+            ret = send_blob(config, i_ins, ctx,
+                            FLB_EVENT_TYPE_LOGS,
+                            ctx->btype, /* blob type per user configuration  */
+                            (char *) event_chunk->tag,  /* use tag as 'name' */
+                            0,  /* part id */
+                            (char *) event_chunk->tag, flb_sds_len(event_chunk->tag),
+                            json, json_size);
+
+            if (ret == CREATE_BLOB) {
+                ret = create_blob(ctx, event_chunk->tag);
+                if (ret == FLB_OK) {
+                    ret = send_blob(config, i_ins, ctx,
+                                    FLB_EVENT_TYPE_LOGS,
+                                    ctx->btype, /* blob type per user configuration  */
+                                    (char *) event_chunk->tag,  /* use tag as 'name' */
+                                    0,  /* part id */
+                                    (char *) event_chunk->tag,  /* use tag as 'name' */
+                                    flb_sds_len(event_chunk->tag),
+                                    json, json_size);
+                }
             }
         }
     }
@@ -1016,6 +1670,10 @@ static void cb_azure_blob_flush(struct flb_event_chunk *event_chunk,
         }
     }
 
+    if (json){
+        flb_sds_destroy(json);
+    }
+
     /* FLB_RETRY, FLB_OK, FLB_ERROR */
     FLB_OUTPUT_RETURN(ret);
 }
@@ -1023,9 +1681,26 @@ static void cb_azure_blob_flush(struct flb_event_chunk *event_chunk,
 static int cb_azure_blob_exit(void *data, struct flb_config *config)
 {
     struct flb_azure_blob *ctx = data;
+    int ret = -1;
 
     if (!ctx) {
         return 0;
+    }
+
+    if (ctx->buffering_enabled == FLB_TRUE){
+        if (azure_blob_store_has_data(ctx) == FLB_TRUE) {
+            flb_plg_info(ctx->ins, "Sending all locally buffered data to Azure Blob");
+            ret = ingest_all_chunks(ctx, config);
+            if (ret < 0) {
+                flb_plg_error(ctx->ins, "Could not send all chunks on exit");
+            }
+        }
+        azure_blob_store_exit(ctx);
+    }
+
+    if (ctx->u) {
+        flb_upstream_destroy(ctx->u);
+        ctx->u = NULL;
     }
 
     flb_azure_blob_conf_destroy(ctx);
@@ -1218,6 +1893,79 @@ static struct flb_config_map config_map[] = {
      FLB_CONFIG_MAP_STR, "configuration_endpoint_bearer_token", NULL,
      0, FLB_TRUE, offsetof(struct flb_azure_blob, configuration_endpoint_bearer_token),
      "Configuration endpoint bearer token"
+    },
+
+    {
+     FLB_CONFIG_MAP_BOOL, "buffering_enabled", "false",
+     0, FLB_TRUE, offsetof(struct flb_azure_blob, buffering_enabled),
+     "Enable buffering into disk before ingesting into Azure Blob"
+    },
+
+    {
+     FLB_CONFIG_MAP_STR, "buffer_dir", "/tmp/fluent-bit/azure-blob/",
+     0, FLB_TRUE, offsetof(struct flb_azure_blob, buffer_dir),
+     "Specifies the location of directory where the buffered data will be stored"
+    },
+
+    {
+     FLB_CONFIG_MAP_TIME, "upload_timeout", "30m",
+     0, FLB_TRUE, offsetof(struct flb_azure_blob, upload_timeout),
+     "Optionally specify a timeout for uploads. "
+           "Fluent Bit will start ingesting buffer files which have been created more than x minutes and haven't reached upload_file_size limit yet"
+           "Default is 30m."
+    },
+
+    {
+     FLB_CONFIG_MAP_SIZE, "upload_file_size", "200M",
+     0, FLB_TRUE, offsetof(struct flb_azure_blob, file_size),
+     "Specifies the size of files to be uploaded in MBs. Default is 200MB"
+    },
+
+    {
+     FLB_CONFIG_MAP_STR, "azure_blob_buffer_key", "key",
+     0, FLB_TRUE, offsetof(struct flb_azure_blob, azure_blob_buffer_key),
+     "Set the azure blob buffer key which needs to be specified when using multiple instances of azure blob output plugin and buffering is enabled"
+    },
+
+    {
+     FLB_CONFIG_MAP_SIZE, "store_dir_limit_size", "8G",
+     0, FLB_TRUE, offsetof(struct flb_azure_blob, store_dir_limit_size),
+     "Set the max size of the buffer directory. Default is 8GB"
+    },
+
+    {
+     FLB_CONFIG_MAP_BOOL, "buffer_file_delete_early", "false",
+     0, FLB_TRUE, offsetof(struct flb_azure_blob, buffer_file_delete_early),
+     "Whether to delete the buffered file early after successful blob creation. Default is false"
+    },
+
+    { 
+     FLB_CONFIG_MAP_INT, "blob_uri_length", "64",
+     0, FLB_TRUE, offsetof(struct flb_azure_blob, blob_uri_length),
+     "Set the length of generated blob uri before ingesting to Azure Kusto. Default is 64"
+    },
+
+    {
+     FLB_CONFIG_MAP_BOOL, "unify_tag", "false",
+     0, FLB_TRUE, offsetof(struct flb_azure_blob, unify_tag),
+     "Whether to create a single buffer file when buffering mode is enabled. Default is false"
+    },
+
+    {
+     FLB_CONFIG_MAP_INT, "scheduler_max_retries", "3",
+     0, FLB_TRUE, offsetof(struct flb_azure_blob, scheduler_max_retries),
+     "Maximum number of retries for the scheduler send blob. Default is 3"
+    },
+
+    {
+     FLB_CONFIG_MAP_BOOL, "delete_on_max_upload_error", "false",
+     0, FLB_TRUE, offsetof(struct flb_azure_blob, delete_on_max_upload_error),
+     "Whether to delete the buffer file on maximum upload errors. Default is false"
+    },
+
+    {
+     FLB_CONFIG_MAP_TIME, "io_timeout", "60s",0, FLB_TRUE, offsetof(struct flb_azure_blob, io_timeout),
+     "HTTP IO timeout. Default is 60s"
     },
 
     /* EOF */

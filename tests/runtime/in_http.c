@@ -429,13 +429,13 @@ void flb_test_http_json_charset_header(char *response_code)
 
 void flb_test_http_successful_response_code_200()
 {
-    flb_test_http_successful_response_code("200");    
+    flb_test_http_successful_response_code("200");
     flb_test_http_json_charset_header("200");
 }
 
 void flb_test_http_successful_response_code_204()
 {
-    flb_test_http_successful_response_code("204");    
+    flb_test_http_successful_response_code("204");
     flb_test_http_json_charset_header("204");
 }
 
@@ -547,9 +547,11 @@ void flb_test_http_failure_400_bad_disk_write()
 
     flb_time_msleep(5000);
 
-    rename("/tmp/http-input-test-404-bad-write", 
+    rmdir("/tmp/http-input-test-404-bad-write.fail/http.0");
+    rmdir("/tmp/http-input-test-404-bad-write.fail");
+
+    rename("/tmp/http-input-test-404-bad-write",
            "/tmp/http-input-test-404-bad-write.fail");
-    TEST_CHECK(ret == 0);
 
     ctx->httpc = http_client_ctx_create();
     TEST_CHECK(ctx->httpc != NULL);
@@ -575,9 +577,8 @@ void flb_test_http_failure_400_bad_disk_write()
         TEST_MSG("http response code error. expect: %d, got: %d\n", 400, c->resp.status);
     }
 
-    rename("/tmp/http-input-test-404-bad-write.fail", 
+    rename("/tmp/http-input-test-404-bad-write.fail",
            "/tmp/http-input-test-404-bad-write");
-    TEST_CHECK(ret == 0);
 
     /* waiting to flush */
     flb_time_msleep(1500);
@@ -587,7 +588,7 @@ void flb_test_http_failure_400_bad_disk_write()
     test_ctx_destroy(ctx);
 }
 
-void flb_test_http_tag_key()
+void test_http_tag_key(char *input)
 {
     struct flb_lib_out_cb cb_data;
     struct test_ctx *ctx;
@@ -596,7 +597,7 @@ void flb_test_http_tag_key()
     int num;
     size_t b_sent;
 
-    char *buf = "{\"test\":\"msg\", \"tag\":\"new_tag\"}";
+    char *buf = input;
 
     clear_output_num();
 
@@ -660,12 +661,23 @@ void flb_test_http_tag_key()
     test_ctx_destroy(ctx);
 }
 
+void flb_test_http_tag_key_with_map_input()
+{
+    test_http_tag_key("{\"tag\":\"new_tag\",\"test\":\"msg\"}");
+}
+
+void flb_test_http_tag_key_with_array_input()
+{
+    test_http_tag_key("[{\"tag\":\"new_tag\",\"test\":\"msg\"}]");
+}
+
 TEST_LIST = {
     {"http", flb_test_http},
     {"successful_response_code_200", flb_test_http_successful_response_code_200},
     {"successful_response_code_204", flb_test_http_successful_response_code_204},
     {"failure_response_code_400_bad_json", flb_test_http_failure_400_bad_json},
     {"failure_response_code_400_bad_disk_write", flb_test_http_failure_400_bad_disk_write},
-    {"tag_key", flb_test_http_tag_key},
+    {"tag_key_with_map_input", flb_test_http_tag_key_with_map_input},
+    {"tag_key_with_array_input", flb_test_http_tag_key_with_array_input},
     {NULL, NULL}
 };

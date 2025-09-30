@@ -28,10 +28,13 @@
 
 #include <sys/types.h>
 #include <sys/stat.h>
+#include <string.h>
 
 #ifndef FLB_SYSTEM_WINDOWS
 #include <glob.h>
 #include <fnmatch.h>
+#else
+#define strtok_r strtok_s
 #endif
 
 #include <stdio.h>
@@ -190,6 +193,128 @@ static inline int do_glob(const char *pattern,
     return ret;
 }
 
+#define MATCHING_METHOD_PRESENCE 0
+#define MATCHING_METHOD_EXACT    1
+
+static int apply_glob_pattern(flb_sds_t pattern, char *path) {
+    int        matching_method;
+    char      *strtok_context;
+    cfl_sds_t  local_pattern;
+    char      *filename_part;
+    char      *pattern_part;
+    char      *filename;
+    int        result;
+    size_t     index;
+
+    if (pattern == NULL || pattern[0] == '\0') {
+        return FLB_FALSE;
+    }
+
+    if (path == NULL || path[0] == '\0') {
+        return FLB_FALSE;
+    }
+
+    filename = NULL;
+
+#ifdef FLB_SYSTEM_WINDOWS
+    filename = strrchr(path, '\\');
+#endif
+
+    if (filename == NULL) {
+        filename = strrchr(path, '/');
+    }
+
+    if (filename != NULL) {
+        filename = &filename[1];
+    }
+    else {
+        filename = path;
+    }
+
+    if (filename[0] == '\0') {
+        return FLB_FALSE;
+    }
+
+    local_pattern = cfl_sds_create(pattern);
+
+    if (local_pattern == NULL) {
+        return FLB_FALSE;
+    }
+
+    result = FLB_FALSE;
+
+    if (strrchr(local_pattern, '*') != NULL) {
+        index = 0;
+        pattern_part = strtok_r(local_pattern, "*", &strtok_context);
+
+        if (local_pattern[0] == '*') {
+            matching_method = MATCHING_METHOD_PRESENCE;
+        }
+        else {
+            matching_method = MATCHING_METHOD_EXACT;
+        }
+
+        filename_part = filename;
+
+
+        while (pattern_part != NULL && filename_part != NULL) {
+            if (matching_method == MATCHING_METHOD_PRESENCE) {
+                filename_part = strstr(filename_part, pattern_part);
+            }
+            else {
+                result = strncmp(filename_part, pattern_part, strlen(pattern_part));
+
+                if (result != 0) {
+                    filename_part = NULL;
+                }
+
+                matching_method = MATCHING_METHOD_PRESENCE;
+            }
+
+            if (filename_part != NULL) {
+                filename_part = &filename_part[strlen(pattern_part)];
+            }
+
+            index++;
+            pattern_part = strtok_r(NULL, "*", &strtok_context);
+        }
+
+        result = FLB_FALSE;
+
+        if (pattern_part == NULL) {
+            if (pattern[strlen(pattern) - 1] != '*') {
+                if (filename_part != NULL) {
+                    if (filename_part[0] == '\0') {
+                        result = FLB_TRUE;
+                    }
+                }
+            }
+            else {
+                if (filename_part != NULL) {
+                    result = FLB_TRUE;
+                }
+            }
+        }
+        else {
+            result = FLB_FALSE;
+        }
+    }
+    else {
+        result = strcmp(filename, local_pattern);
+
+        if (result == 0) {
+            result = FLB_TRUE;
+        }
+        else {
+            result = FLB_FALSE;
+        }
+    }
+
+    cfl_sds_destroy(local_pattern);
+
+    return result;
+}
+
 /* This function recursively searches a directory tree using
  * a glob compatible pattern that implements the fluentd style
  * recursion wildcard **.
@@ -290,11 +415,20 @@ static ssize_t recursive_file_search(struct blob_ctx *ctx,
     else if (cfl_sds_len(local_pattern) == 0) {
         recursive_search_flag = FLB_FALSE;
     }
+    else if (cfl_sds_len(local_path) == 0) {
+        recursive_search_flag = FLB_FALSE;
+    }
 
     memset(&glob_context, 0, sizeof(glob_t));
 
     /* Scan the given path */
-    result = do_glob(local_path, GLOB_TILDE | GLOB_ERR, NULL, &glob_context);
+    if (local_path[0] != '\0') {
+        result = do_glob(local_path, GLOB_TILDE | GLOB_ERR, NULL, &glob_context);
+    }
+    else {
+        result = do_glob(local_pattern, GLOB_TILDE | GLOB_ERR, NULL, &glob_context);
+    }
+
     if (result != 0) {
         switch (result) {
         case GLOB_NOSPACE:
@@ -411,23 +545,34 @@ static ssize_t recursive_file_search(struct blob_ctx *ctx,
         else if (recursive_search_flag == FLB_FALSE &&
                  (S_ISREG(fs_entry_metadata.st_mode) ||
                   S_ISLNK(fs_entry_metadata.st_mode))) {
-            result = blob_file_append(ctx,
-                                      glob_context.gl_pathv[index],
-                                      &fs_entry_metadata);
 
-            if (result == 0) {
-                flb_plg_debug(ctx->ins,
-                              "blob scan add: %s, inode %" PRIu64,
-                              glob_context.gl_pathv[index],
-                              (uint64_t) fs_entry_metadata.st_ino);
-            }
-            else {
-                flb_plg_debug(ctx->ins,
-                              "blob scan skip: %s",
-                              glob_context.gl_pathv[index]);
-            }
+            result = apply_glob_pattern(ctx->exclude_pattern,
+                                        (char *) glob_context.gl_pathv[index]);
 
-            match_count++;
+            if (result == FLB_FALSE) {
+                result = blob_file_append(ctx,
+                                        glob_context.gl_pathv[index],
+                                        &fs_entry_metadata);
+
+                if (result == 0) {
+                    flb_plg_debug(ctx->ins,
+                                "blob scan add: %s, inode %" PRIu64,
+                                glob_context.gl_pathv[index],
+                                (uint64_t) fs_entry_metadata.st_ino);
+                }
+                else {
+                    /* Result codes :
+                     *  0 - Success
+                     * -1 - Generic failure
+                     *  1 - The file was alrady present in our records
+                     */
+                    flb_plg_debug(ctx->ins,
+                                "blob scan skip: %s",
+                                glob_context.gl_pathv[index]);
+                }
+
+                match_count++;
+            }
         }
     }
 
@@ -841,6 +986,11 @@ static struct flb_config_map config_map[] = {
      FLB_CONFIG_MAP_STR, "path", NULL,
      0, FLB_TRUE, offsetof(struct blob_ctx, path),
      "Path to scan for blob/binary files"
+    },
+
+    {
+     FLB_CONFIG_MAP_STR, "exclude_pattern", NULL,
+     0, FLB_TRUE, offsetof(struct blob_ctx, exclude_pattern),
     },
 
 #ifdef FLB_HAVE_SQLDB

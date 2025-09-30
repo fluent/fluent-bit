@@ -17,6 +17,9 @@
  *  limitations under the License.
  */
 
+#include <fluent-bit/flb_input.h>
+#include <fluent-bit/flb_plugin.h>
+#include <fluent-bit/flb_processor.h>
 #include <fluent-bit/flb_filter_plugin.h>
 #include <fluent-bit/flb_utils.h>
 #include <fluent-bit/flb_time.h>
@@ -148,6 +151,36 @@ static int multiline_load_parsers(struct ml_ctx *ctx)
     return 0;
 }
 
+static int ingest_inline(struct ml_ctx *ctx,
+                         flb_sds_t out_tag,
+                         const void *buf, size_t buf_size)
+{
+    struct flb_input_instance *input_instance;
+    struct flb_processor_unit *processor_unit;
+    struct flb_processor      *processor;
+    int                        result;
+    if (ctx->ins->parent_processor != NULL) {
+        processor_unit = (struct flb_processor_unit *) \
+                            ctx->ins->parent_processor;
+        processor = (struct flb_processor *) processor_unit->parent;
+        input_instance = (struct flb_input_instance *) processor->data;
+
+        if (processor->source_plugin_type == FLB_PLUGIN_INPUT) {
+            result = flb_input_log_append_skip_processor_stages(
+                        input_instance,
+                        processor_unit->stage + 1,
+                        out_tag, flb_sds_len(out_tag),
+                        buf, buf_size);
+
+            if (result == 0) {
+                return FLB_TRUE;
+            }
+        }
+    }
+
+    return FLB_FALSE;
+}
+
 static int flush_callback(struct flb_ml_parser *parser,
                           struct flb_ml_stream *mst,
                           void *data, char *buf_data, size_t buf_size)
@@ -175,8 +208,14 @@ static int flush_callback(struct flb_ml_parser *parser,
 
         /* Emit record with original tag */
         flb_plg_trace(ctx->ins, "emitting from %s to %s", stream->input_name, stream->tag);
-        ret = in_emitter_add_record(stream->tag, flb_sds_len(stream->tag), buf_data, buf_size,
+        ret = ingest_inline(ctx, stream->tag, buf_data, buf_size);
+        if (!ret) {
+            ret = in_emitter_add_record(stream->tag, flb_sds_len(stream->tag), buf_data, buf_size,
                                     ctx->ins_emitter, ctx->i_ins);
+        }
+        else {
+            ret = 0;
+        }
 
         return ret;
     }
@@ -330,12 +369,36 @@ static int cb_ml_init(struct flb_filter_instance *ins,
                                             "fluentbit", "filter", "emit_records_total",
                                             "Total number of emitted records",
                                             1, (char *[]) {"name"});
+        if (!ctx->cmt_emitted) {
+            flb_errno();
+            flb_free(ctx);
+
+            return -1;
+        }
 
         /* OLD api */
         flb_metrics_add(FLB_MULTILINE_METRIC_EMITTED,
                         "emit_records", ctx->ins->metrics);
 #endif
     }
+        /* Register a metric to count the number of emitted records */
+        /* Truncated metrics always should be existing. */
+#ifdef FLB_HAVE_METRICS
+        ctx->cmt_truncated = cmt_counter_create(ins->cmt,
+                                                "fluentbit", "filter", "emit_truncated_total",
+                                                "Total number of truncated occurence of multiline",
+                                                1, (char *[]) {"name"});
+        if (!ctx->cmt_truncated) {
+            flb_errno();
+            flb_free(ctx);
+
+            return -1;
+        }
+
+        /* OLD api */
+        flb_metrics_add(FLB_MULTILINE_METRIC_TRUNCATED,
+                        "emit_truncated", ctx->ins->metrics);
+#endif
 
     mk_list_init(&ctx->ml_streams);
     mk_list_init(&ctx->split_message_packers);
@@ -525,11 +588,19 @@ static void partial_timer_cb(struct flb_config *config, void *data)
             packer->log_encoder.output_length > 0) {
 
             flb_plg_trace(ctx->ins, "emitting from %s to %s", packer->input_name, packer->tag);
-            ret = in_emitter_add_record(packer->tag, flb_sds_len(packer->tag),
+
+            ret = ingest_inline(ctx, packer->tag, packer->log_encoder.output_buffer,
+                            packer->log_encoder.output_length);
+            if (!ret) {
+                ret = in_emitter_add_record(packer->tag, flb_sds_len(packer->tag),
                                         packer->log_encoder.output_buffer,
                                         packer->log_encoder.output_length,
                                         ctx->ins_emitter,
                                         ctx->i_ins);
+            }
+            else {
+                ret = 0;
+            }
             if (ret < 0) {
                 /* this shouldn't happen in normal execution */
                 flb_plg_warn(ctx->ins,
@@ -733,6 +804,10 @@ static int cb_ml_filter(const void *data, size_t bytes,
     struct flb_log_event         event;
     int                          ret;
     struct ml_ctx               *ctx;
+#ifdef FLB_HAVE_METRICS
+    uint64_t ts;
+    char *name;
+#endif
 
     (void) f_ins;
     (void) config;
@@ -773,9 +848,33 @@ static int cb_ml_filter(const void *data, size_t bytes,
                FLB_EVENT_DECODER_SUCCESS) {
             ret = flb_ml_append_event(ctx->m, ctx->stream_id, &event);
 
-            if (ret != 0) {
+            if (ret == FLB_MULTILINE_TRUNCATED) {
+                flb_plg_warn(ctx->ins,
+                             "multiline message truncated due to buffer limit");
+#ifdef FLB_HAVE_METRICS
+                name = (char *) flb_filter_name(ctx->ins);
+                ts = cfl_time_now();
+                cmt_counter_inc(ctx->cmt_truncated, ts, 1, (char *[]) {name});
+
+                /* old api */
+                flb_metrics_sum(FLB_MULTILINE_METRIC_TRUNCATED, 1, ctx->ins->metrics);
+#endif
+            }
+            else if (ret != FLB_MULTILINE_OK) {
                 flb_plg_debug(ctx->ins,
                               "could not append object from tag: %s", tag);
+            }
+            else if (ret == FLB_MULTILINE_OK) {
+#ifdef FLB_HAVE_METRICS
+                name = (char *) flb_filter_name(ctx->ins);
+                ts = cfl_time_now();
+                if (ctx->cmt_emitted) {
+                    cmt_counter_inc(ctx->cmt_emitted, ts, 1, (char *[]) {name});
+                }
+
+                /* old api */
+                flb_metrics_sum(FLB_MULTILINE_METRIC_EMITTED, 1, ctx->ins->metrics);
+#endif
             }
         }
 
@@ -824,9 +923,31 @@ static int cb_ml_filter(const void *data, size_t bytes,
                FLB_EVENT_DECODER_SUCCESS) {
             ret = flb_ml_append_event(ctx->m, stream->stream_id, &event);
 
-            if (ret != 0) {
+            if (ret == FLB_MULTILINE_TRUNCATED) {
+                flb_plg_warn(ctx->ins,
+                             "multiline message truncated due to buffer limit");
+#ifdef FLB_HAVE_METRICS
+                name = (char *) flb_filter_name(ctx->ins);
+                ts = cfl_time_now();
+                cmt_counter_inc(ctx->cmt_truncated, ts, 1, (char *[]) {name});
+
+                /* old api */
+                flb_metrics_sum(FLB_MULTILINE_METRIC_TRUNCATED, 1, ctx->ins->metrics);
+#endif
+            }
+            else if (ret != FLB_MULTILINE_OK) {
                 flb_plg_debug(ctx->ins,
                               "could not append object from tag: %s", tag);
+            }
+            else if (ret == FLB_MULTILINE_OK) {
+#ifdef FLB_HAVE_METRICS
+                name = (char *) flb_filter_name(ctx->ins);
+                ts = cfl_time_now();
+                cmt_counter_inc(ctx->cmt_emitted, ts, 1, (char *[]) {name});
+
+                /* old api */
+                flb_metrics_sum(FLB_MULTILINE_METRIC_EMITTED, 1, ctx->ins->metrics);
+#endif
             }
         }
 

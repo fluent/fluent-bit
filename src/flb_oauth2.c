@@ -179,7 +179,7 @@ struct flb_oauth2 *flb_oauth2_create(struct flb_config *config,
         goto error;
     }
 
-    if (!prot || strcmp(prot, "https") != 0) {
+    if (!prot || (strcmp(prot, "https") != 0 && strcmp(prot, "http") != 0)) {
         flb_error("[oauth2] invalid endpoint protocol: %s", auth_url);
         goto error;
     }
@@ -227,8 +227,15 @@ struct flb_oauth2 *flb_oauth2_create(struct flb_config *config,
     }
 
     /* Create Upstream context */
-    ctx->u = flb_upstream_create_url(config, auth_url,
-                                     FLB_IO_TLS, ctx->tls);
+    if (strcmp(prot, "https") == 0) {
+        ctx->u = flb_upstream_create_url(config, auth_url,
+                                        FLB_IO_TLS, ctx->tls);
+    }
+    else if (strcmp(prot, "http") == 0) {
+        ctx->u = flb_upstream_create_url(config, auth_url,
+                                        FLB_IO_TCP, NULL);
+    }
+
     if (!ctx->u) {
         flb_error("[oauth2] error creating upstream context");
         goto error;
@@ -324,6 +331,118 @@ void flb_oauth2_destroy(struct flb_oauth2 *ctx)
     flb_tls_destroy(ctx->tls);
 
     flb_free(ctx);
+}
+
+char *flb_oauth2_token_get_ng(struct flb_oauth2 *ctx)
+{
+    int ret;
+    time_t now;
+    struct flb_http_client_ng http_client;
+    struct flb_http_response *response;
+    struct flb_http_request  *request;
+    uint64_t http_client_flags;
+
+    now = time(NULL);
+    if (ctx->access_token) {
+        /* validate unexpired token */
+        if (ctx->expires > now && flb_sds_len(ctx->access_token) > 0) {
+            return ctx->access_token;
+        }
+    }
+
+    http_client_flags = FLB_HTTP_CLIENT_FLAG_AUTO_DEFLATE |
+                        FLB_HTTP_CLIENT_FLAG_AUTO_INFLATE;
+
+    ret = flb_http_client_ng_init(&http_client,
+                                  NULL,
+                                  ctx->u,
+                                  HTTP_PROTOCOL_VERSION_11,
+                                  http_client_flags);
+
+    if (ret != 0) {
+        flb_debug("[oauth2] http client creation error");
+
+        return NULL;
+    }
+
+    request = flb_http_client_request_builder(
+                    &http_client,
+                    FLB_HTTP_CLIENT_ARGUMENT_METHOD(FLB_HTTP_POST),
+                    FLB_HTTP_CLIENT_ARGUMENT_HOST(ctx->host),
+                    FLB_HTTP_CLIENT_ARGUMENT_URI(ctx->uri),
+                    FLB_HTTP_CLIENT_ARGUMENT_CONTENT_TYPE(
+                        FLB_OAUTH2_HTTP_ENCODING),
+                    FLB_HTTP_CLIENT_ARGUMENT_BODY(ctx->payload,
+                                                  cfl_sds_len(ctx->payload),
+                                                  NULL));
+
+    if (request == NULL) {
+        flb_stream_enable_flags(&ctx->u->base, FLB_IO_IPV6);
+
+        request = flb_http_client_request_builder(
+                        &http_client,
+                        FLB_HTTP_CLIENT_ARGUMENT_METHOD(FLB_HTTP_POST),
+                        FLB_HTTP_CLIENT_ARGUMENT_HOST(ctx->host),
+                        FLB_HTTP_CLIENT_ARGUMENT_URI(ctx->uri),
+                        FLB_HTTP_CLIENT_ARGUMENT_CONTENT_TYPE(
+                            FLB_OAUTH2_HTTP_ENCODING),
+                        FLB_HTTP_CLIENT_ARGUMENT_BODY(ctx->payload,
+                                                    cfl_sds_len(ctx->payload),
+                                                    NULL));
+        if (request == NULL) {
+            flb_error("[oauth2] could not get an upstream connection to %s:%i",
+                      ctx->u->tcp_host, ctx->u->tcp_port);
+
+            flb_stream_disable_flags(&ctx->u->base, FLB_IO_IPV6);
+            flb_http_client_request_destroy(request, FLB_TRUE);
+            flb_http_client_ng_destroy(&http_client);
+
+            return NULL;
+        }
+    }
+
+    response = flb_http_client_request_execute(request);
+
+    if (response == NULL) {
+        flb_debug("[oauth2] http request execution error");
+
+        flb_http_client_request_destroy(request, FLB_TRUE);
+        flb_http_client_ng_destroy(&http_client);
+
+        return NULL;
+    }
+
+    flb_info("[oauth2] HTTP Status=%i", response->status);
+    if (response->body != NULL &&
+        cfl_sds_len(response->body) > 0) {
+        flb_info("[oauth2] payload:\n%s", response->body);
+    }
+
+    /* Extract token */
+    if (response->body != NULL &&
+        cfl_sds_len(response->body) > 0 &&
+        response->status == 200) {
+        ret = flb_oauth2_parse_json_response(response->body,
+                                             cfl_sds_len(response->body),
+                                             ctx);
+        if (ret == 0) {
+            flb_info("[oauth2] access token from '%s:%s' retrieved",
+                     ctx->host, ctx->port);
+
+            flb_http_client_request_destroy(request, FLB_TRUE);
+            flb_http_client_ng_destroy(&http_client);
+
+            ctx->issued = time(NULL);
+            ctx->expires = ctx->issued + ctx->expires_in;
+
+            return ctx->access_token;
+        }
+    }
+
+    flb_http_client_request_destroy(request, FLB_TRUE);
+    flb_http_client_ng_destroy(&http_client);
+
+    return NULL;
 }
 
 char *flb_oauth2_token_get(struct flb_oauth2 *ctx)

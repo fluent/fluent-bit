@@ -1161,7 +1161,8 @@ static int total_flush(struct flb_event_chunk *event_chunk,
         goto clean_up;
     }
 
-    out_buf = flb_msgpack_raw_to_json_sds(mp_sbuf.data, mp_sbuf.size);
+    out_buf = flb_msgpack_raw_to_json_sds(mp_sbuf.data, mp_sbuf.size,
+                                          config->json_escape_unicode);
     msgpack_sbuffer_destroy(&mp_sbuf);
     flb_log_event_decoder_destroy(&log_decoder);
 
@@ -1199,7 +1200,6 @@ static void cb_oci_logan_flush(struct flb_event_chunk *event_chunk,
                       ins, out_context,
                       config);
     if (ret != FLB_OK) {
-        flb_oci_logan_conf_destroy(ctx);
         FLB_OUTPUT_RETURN(ret);
     }
     flb_plg_debug(ctx->ins, "success");

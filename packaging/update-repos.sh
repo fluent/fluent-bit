@@ -9,7 +9,7 @@ SCRIPT_DIR="$( cd "$( dirname "${BASH_SOURCE[0]}" )" >/dev/null 2>&1 && pwd )"
 # Import the signing key (if signing)
 # gpg --import <private key>
 # gpg --export -a "$GPG_KEY" > /tmp/fluentbit.key
-# rpm --import /tmp/fluentbit.key 
+# rpm --import /tmp/fluentbit.key
 
 export BASE_PATH=${BASE_PATH:-$1}
 if [[ ! -d "$BASE_PATH" ]]; then
@@ -31,7 +31,19 @@ fi
 # AWS_S3_BUCKET_STAGING=fluentbit-staging
 export AWS_REGION=${AWS_REGION:-us-east-1}
 
-RPM_REPO_PATHS=("amazonlinux/2" "amazonlinux/2023" "centos/7" "centos/8" "centos/9")
+RPM_REPO_PATHS=( "amazonlinux/2" 
+				 "amazonlinux/2023" 
+				 "centos/7" 
+				 "centos/8" 
+				 "centos/9" 
+				 "centos/10" 
+				 "rockylinux/8" 
+				 "rockylinux/9" 
+				 "rockylinux/10" 
+				 "almalinux/8" 
+				 "almalinux/9" 
+				 "almalinux/10"
+				)
 
 if [[ "${AWS_SYNC:-false}" != "false" ]]; then
     aws s3 sync s3://"${AWS_S3_BUCKET_RELEASE:?}" "${BASE_PATH:?}"
@@ -50,13 +62,11 @@ done
 DEB_REPO_PATHS=( "debian/bookworm"
                  "debian/bullseye"
                  "debian/buster"
-                 "ubuntu/xenial"
-                 "ubuntu/bionic"
-                 "ubuntu/focal"
+                 "debian/trixie"
                  "ubuntu/jammy"
                  "ubuntu/noble"
-                 "raspbian/buster"
-                 "raspbian/bullseye" )
+                 "raspbian/bookworm"
+                )
 
 for DEB_REPO in "${DEB_REPO_PATHS[@]}"; do
     export DEB_REPO

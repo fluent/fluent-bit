@@ -79,12 +79,123 @@
 
 static char gmt[] = { "GMT" };
 static char utc[] = { "UTC" };
+
 /* RFC-822/RFC-2822 */
 static const char * const nast[5] = {
        "EST",    "CST",    "MST",    "PST",    "\0\0\0"
 };
 static const char * const nadt[5] = {
        "EDT",    "CDT",    "MDT",    "PDT",    "\0\0\0"
+};
+
+/* New structure for known timezone abbreviations */
+typedef struct {
+	const char *abbr;
+	int offset_sec;
+	int is_dst;
+} flb_tz_abbr_info_t;
+
+/* Comprehensive list of known timezone abbreviations */
+static const flb_tz_abbr_info_t flb_known_timezones[] = {
+    /* UTC/GMT and Zulu */
+    {"GMT", 0, 0},
+    {"UTC", 0, 0},
+    {"Z", 0, 0}, /* Zulu Time (UTC) */
+    {"UT", 0, 0},
+
+    /* North American Timezones */
+    {"EST", -5*SECSPERHOUR, 0}, /* Eastern Standard Time */
+    {"EDT", -4*SECSPERHOUR, 1}, /* Eastern Daylight Time */
+    {"CST", -6*SECSPERHOUR, 0}, /* Central Standard Time (North America) */
+    {"CDT", -5*SECSPERHOUR, 1}, /* Central Daylight Time (North America) */
+    {"MST", -7*SECSPERHOUR, 0}, /* Mountain Standard Time */
+    {"MDT", -6*SECSPERHOUR, 1}, /* Mountain Daylight Time */
+    {"PST", -8*SECSPERHOUR, 0}, /* Pacific Standard Time */
+    {"PDT", -7*SECSPERHOUR, 1}, /* Pacific Daylight Time */
+    {"AKST", -9*SECSPERHOUR, 0}, /* Alaska Standard Time */
+    {"AKDT", -8*SECSPERHOUR, 1}, /* Alaska Daylight Time */
+    {"HST", -10*SECSPERHOUR, 0}, /* Hawaii Standard Time */
+    {"HADT", -9*SECSPERHOUR, 1}, /* Hawaii-Aleutian Daylight Time (rarely used for Hawaii proper) */
+    {"AST", -4*SECSPERHOUR, 0}, /* Atlantic Standard Time (e.g., Canada, Caribbean) */
+    {"ADT", -3*SECSPERHOUR, 1}, /* Atlantic Daylight Time */
+    {"NST", (long)(-3.5*SECSPERHOUR), 0}, /* Newfoundland Standard Time */
+    {"NDT", (long)(-2.5*SECSPERHOUR), 1}, /* Newfoundland Daylight Time */
+
+    /* European Timezones */
+    {"WET",   0*SECSPERHOUR, 0}, /* Western European Time */
+    {"WEST",  1*SECSPERHOUR, 1}, /* Western European Summer Time */
+    {"CET",   1*SECSPERHOUR, 0}, /* Central European Time */
+    {"CEST",  2*SECSPERHOUR, 1}, /* Central European Summer Time */
+    {"EET",   2*SECSPERHOUR, 0}, /* Eastern European Time */
+    {"EEST",  3*SECSPERHOUR, 1}, /* Eastern European Summer Time */
+    {"MSK",   3*SECSPERHOUR, 0}, /* Moscow Standard Time */
+    /* {"MSD",   4*SECSPERHOUR, 1}, */ /* Moscow Summer Time (historical) */
+
+    /* South American Timezones */
+    {"ART", -3*SECSPERHOUR, 0}, /* Argentina Time */
+    {"BRT", -3*SECSPERHOUR, 0}, /* Brazil Time (main population areas, can vary by region/DST) */
+    {"BRST", -2*SECSPERHOUR, 1}, /* Brazil Summer Time (historical, not currently observed by all) */
+    {"CLT", -4*SECSPERHOUR, 0}, /* Chile Standard Time */
+    {"CLST", -3*SECSPERHOUR, 1}, /* Chile Summer Time */
+
+    /* Australasian / Oceanian Timezones */
+    {"AEST", 10*SECSPERHOUR, 0}, /* Australian Eastern Standard Time */
+    {"AEDT", 11*SECSPERHOUR, 1}, /* Australian Eastern Daylight Time */
+    {"ACST", (long)(9.5*SECSPERHOUR), 0}, /* Australian Central Standard Time */
+    {"ACDT", (long)(10.5*SECSPERHOUR), 1}, /* Australian Central Daylight Time */
+    {"AWST",  8*SECSPERHOUR, 0}, /* Australian Western Standard Time */
+    {"NZST", 12*SECSPERHOUR, 0}, /* New Zealand Standard Time */
+    {"NZDT", 13*SECSPERHOUR, 1}, /* New Zealand Daylight Time */
+
+    /* Asian Timezones */
+    {"JST",   9*SECSPERHOUR, 0}, /* Japan Standard Time */
+    {"KST",   9*SECSPERHOUR, 0}, /* Korea Standard Time */
+    {"SGT",   8*SECSPERHOUR, 0}, /* Singapore Time */
+    {"IST", (long)(5.5*SECSPERHOUR), 0}, /* India Standard Time */
+    {"GST",   4*SECSPERHOUR, 0}, /* Gulf Standard Time (e.g., UAE, Oman) */
+    {"ICT",   7*SECSPERHOUR, 0}, /* Indochina Time (Thailand, Vietnam, Laos, Cambodia) */
+    {"WIB",   7*SECSPERHOUR, 0}, /* Western Indonesian Time */
+    {"WITA",  8*SECSPERHOUR, 0}, /* Central Indonesian Time */
+    {"WIT",   9*SECSPERHOUR, 0}, /* Eastern Indonesian Time */
+    {"MYT",   8*SECSPERHOUR, 0}, /* Malaysia Time */
+    {"BDT",   6*SECSPERHOUR, 0}, /* Bangladesh Standard Time */
+    {"NPT", (long)(5.75*SECSPERHOUR), 0}, /* Nepal Time */
+
+    /* African Timezones */
+    {"WAT",   1*SECSPERHOUR, 0}, /* West Africa Time */
+    {"CAT",   2*SECSPERHOUR, 0}, /* Central Africa Time */
+    {"EAT",   3*SECSPERHOUR, 0}, /* East Africa Time */
+    {"SAST",  2*SECSPERHOUR, 0}, /* South Africa Standard Time */
+
+    /* Military Timezones */
+    /* These are single letters. 'J' (Juliett) is local time of the observer and not included. */
+    /* 'Z' (Zulu) is UTC, already listed. */
+    {"A",   1*SECSPERHOUR, 0}, /* Alpha Time Zone */
+    {"B",   2*SECSPERHOUR, 0}, /* Bravo Time Zone */
+    {"C",   3*SECSPERHOUR, 0}, /* Charlie Time Zone */
+    {"D",   4*SECSPERHOUR, 0}, /* Delta Time Zone */
+    {"E",   5*SECSPERHOUR, 0}, /* Echo Time Zone */
+    {"F",   6*SECSPERHOUR, 0}, /* Foxtrot Time Zone */
+    {"G",   7*SECSPERHOUR, 0}, /* Golf Time Zone */
+    {"H",   8*SECSPERHOUR, 0}, /* Hotel Time Zone */
+    {"I",   9*SECSPERHOUR, 0}, /* India Time Zone (Military, not India Standard Time) */
+    {"K",  10*SECSPERHOUR, 0}, /* Kilo Time Zone */
+    {"L",  11*SECSPERHOUR, 0}, /* Lima Time Zone */
+    {"M",  12*SECSPERHOUR, 0}, /* Mike Time Zone */
+    {"N",  -1*SECSPERHOUR, 0}, /* November Time Zone */
+    {"O",  -2*SECSPERHOUR, 0}, /* Oscar Time Zone */
+    {"P",  -3*SECSPERHOUR, 0}, /* Papa Time Zone */
+    {"Q",  -4*SECSPERHOUR, 0}, /* Quebec Time Zone */
+    {"R",  -5*SECSPERHOUR, 0}, /* Romeo Time Zone */
+    {"S",  -6*SECSPERHOUR, 0}, /* Sierra Time Zone */
+    {"T",  -7*SECSPERHOUR, 0}, /* Tango Time Zone */
+    {"U",  -8*SECSPERHOUR, 0}, /* Uniform Time Zone */
+    {"V",  -9*SECSPERHOUR, 0}, /* Victor Time Zone */
+    {"W", -10*SECSPERHOUR, 0}, /* Whiskey Time Zone */
+    {"X", -11*SECSPERHOUR, 0}, /* X-ray Time Zone */
+    {"Y", -12*SECSPERHOUR, 0}, /* Yankee Time Zone */
+
+    {NULL, 0, 0}
 };
 
 static const int mon_lengths[2][MONSPERYEAR] = {
@@ -153,6 +264,8 @@ _flb_strptime(const char *buf, const char *fmt, struct flb_tm *tm, int initializ
 		century = TM_YEAR_BASE;
 		relyear = -1;
 		fields = 0;
+		flb_tm_gmtoff(tm) = 0;
+		tm->tm.tm_isdst = -1;
 	}
 
 	bp = (const unsigned char *)buf;
@@ -404,7 +517,11 @@ literal:
 					return (NULL);
 				if (!gmtime_r((const time_t *) &i64, &tm->tm))
 					return (NULL);
-				fields = 0xffff;	 /* everything */
+				flb_tm_gmtoff(tm) = 0;
+				tm->tm.tm_isdst = 0;
+				flb_tm_zone(tm) = utc;
+				/* %s format does not handle timezone */
+				fields = 0xffff;         /* everything */
 			}
 			break;
 		case 'U':	/* The week of year, beginning on sunday. */
@@ -472,37 +589,72 @@ literal:
 			break;
 
 		case 'Z':
-			tzset();
-			if (strncmp((const char *)bp, gmt, 3) == 0) {
-				tm->tm.tm_isdst = 0;
-				flb_tm_gmtoff(tm) = 0;
-#ifdef FLB_HAVE_ZONE
-				tm->tm.tm_zone = gmt;
-#endif
-				bp += 3;
-			} else if (strncmp((const char *)bp, utc, 3) == 0) {
-				tm->tm.tm_isdst = 0;
-				flb_tm_gmtoff(tm) = 0;
-#ifdef FLB_HAVE_ZONE
-				tm->tm.tm_zone = utc;
-#endif
-				bp += 3;
-			} else {
-				ep = _find_string(bp, &i,
-						 (const char * const *)tzname,
-						  NULL, 2);
-				if (ep == NULL)
-					return (NULL);
+		{
+			const flb_tz_abbr_info_t *tz_info;
+			int found_in_known = FLB_FALSE;
+			size_t abbr_len;
 
-				tm->tm.tm_isdst = i;
-				flb_tm_gmtoff(tm) = -(timezone);
-#ifdef FLB_HAVE_ZONE
-				tm->tm.tm_zone = tzname[i];
+			for (tz_info = flb_known_timezones; tz_info->abbr != NULL; ++tz_info) {
+				abbr_len = strlen(tz_info->abbr);
+				if (strncasecmp(tz_info->abbr, (const char *)bp, abbr_len) == 0) {
+					if (!isalnum((unsigned char)bp[abbr_len])) {
+						tm->tm.tm_isdst = tz_info->is_dst;
+						flb_tm_gmtoff(tm) = tz_info->offset_sec;
+						flb_tm_zone(tm) = tz_info->abbr;
+						bp += abbr_len;
+						found_in_known = FLB_TRUE;
+						break;
+					}
+				}
+			}
+
+			if (!found_in_known) {
+				/* Fallback to original logic using system's tzname, gmt, utc */
+#if defined(_WIN32) || defined(_WIN64)
+				_tzset(); /* Windows */
+#else
+				tzset(); /* POSIX */
 #endif
-				bp = ep;
+				/* Check original gmt/utc static arrays first, as per original logic */
+				if (strncmp((const char *)bp, gmt, 3) == 0) {
+					tm->tm.tm_isdst = 0;
+					flb_tm_gmtoff(tm) = 0;
+					flb_tm_zone(tm) = gmt;
+					bp += 3;
+				} else if (strncmp((const char *)bp, utc, 3) == 0) {
+					tm->tm.tm_isdst = 0;
+					flb_tm_gmtoff(tm) = 0;
+					flb_tm_zone(tm) = utc;
+					bp += 3;
+				} else {
+					ep = _find_string(bp, &i, (const char * const *)tzname, NULL, 2);
+					if (ep == NULL)
+						return (NULL);
+
+					tm->tm.tm_isdst = i;
+					/* 'timezone' global variable. Handled by flb_timezone() macro on FreeBSD.
+					   On Windows, _tzset sets _timezone (seconds WEST of UTC).
+					   On other POSIX, tzset sets timezone (seconds WEST of UTC). */
+#if defined(_WIN32) || defined(_WIN64)
+					long win_timezone_val;
+					_get_timezone(&win_timezone_val); /* Use a more robust way to get Windows timezone offset */
+					flb_tm_gmtoff(tm) = -(win_timezone_val);
+					/* Check _daylight and i for more accurate DST offset if needed */
+					if (_daylight && i == 1) {
+						long dst_bias = 0;
+						_get_dstbias(&dst_bias); /* dst_bias is offset FROM standard, usually negative, e.g. -3600 */
+						flb_tm_gmtoff(tm) = -(win_timezone_val + dst_bias);
+					}
+
+#else
+					flb_tm_gmtoff(tm) = -(timezone);
+#endif
+					flb_tm_zone(tm) = tzname[i];
+					bp = ep;
+				}
 			}
 			continue;
-
+		}
 		case 'z':
 			/*
 			 * We recognize all ISO 8601 formats:
@@ -520,22 +672,32 @@ literal:
 			 */
 			while (isspace(*bp))
 				bp++;
-
+			neg = 0;
 			switch (*bp++) {
 			case 'G':
 				if (*bp++ != 'M')
 					return NULL;
 				/*FALLTHROUGH*/
+				if (*bp++ != 'T')
+					return NULL;
+				tm->tm.tm_isdst = 0;
+				flb_tm_gmtoff(tm) = 0;
+				flb_tm_zone(tm) = gmt; /* Original had global gmt array */
+				continue;
 			case 'U':
 				if (*bp++ != 'T')
 					return NULL;
 				/*FALLTHROUGH*/
+				if (*bp == 'C')
+					bp++; /* Allow "UTC" */
+				tm->tm.tm_isdst = 0;
+				flb_tm_gmtoff(tm) = 0;
+				flb_tm_zone(tm) = utc; /* Original had global utc array */
+				continue;
 			case 'Z':
 				tm->tm.tm_isdst = 0;
 				flb_tm_gmtoff(tm) = 0;
-#ifdef FLB_HAVE_ZONE
-				tm->tm.tm_zone = utc;
-#endif
+				flb_tm_zone(tm) = utc;
 				continue;
 			case '+':
 				neg = 0;
@@ -547,10 +709,9 @@ literal:
 				--bp;
 				ep = _find_string(bp, &i, nast, NULL, 4);
 				if (ep != NULL) {
-				flb_tm_gmtoff(tm) = (-5 - i) * SECSPERHOUR;
-#ifdef FLB_HAVE_ZONE
-					tm->tm.tm_zone = (char *)nast[i];
-#endif
+					flb_tm_gmtoff(tm) = (-5 - i) * SECSPERHOUR;
+					tm->tm.tm_isdst = 0;
+					flb_tm_zone(tm)  = (char *)nast[i];
 					bp = ep;
 					continue;
 				}
@@ -558,9 +719,7 @@ literal:
 				if (ep != NULL) {
 					tm->tm.tm_isdst = 1;
 					flb_tm_gmtoff(tm) = (-4 - i) * SECSPERHOUR;
-#ifdef FLB_HAVE_ZONE
-					tm->tm.tm_zone = (char *)nadt[i];
-#endif
+					flb_tm_zone(tm)  = (char *)nadt[i];
 					bp = ep;
 					continue;
 				}
@@ -582,9 +741,7 @@ literal:
 				offs = -offs;
 			tm->tm.tm_isdst = 0;	/* XXX */
 			flb_tm_gmtoff(tm) = offs;
-#ifdef FLB_HAVE_ZONE
-			tm->tm.tm_zone = NULL;	/* XXX */
-#endif
+			flb_tm_zone(tm) = NULL;	/* XXX */
 			continue;
 
 		/*

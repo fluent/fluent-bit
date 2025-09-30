@@ -1,4 +1,4 @@
-cmake_minimum_required(VERSION 3.0)
+cmake_minimum_required(VERSION 3.20)
 project(fluent-opentelemetry-proto C)
 
 # Include helpers
@@ -15,6 +15,9 @@ option(FLUENT_PROTO_LOGS     "Include logs.proto"            "Yes")
 option(FLUENT_PROTO_METRICS  "Inlcude metrics.proto"         "Yes")
 option(FLUENT_PROTO_PROFILES "Includes profiles proto files" "Yes")
 option(FLUENT_PROTO_EXAMPLES "Add example programs"          "Yes")
+
+# extra options
+option(FLUENT_PROTO_TOOLS    "Generate tools"                "No")
 
 if(FLUENT_PROTO_REGENERATE AND (NOT PROTOBUF_C_SOURCE_DIR OR NOT OTEL_PROTO_DIR))
 	if (NOT PROTOBUF_C_SOURCE_DIR)
@@ -114,10 +117,6 @@ if (FLUENT_PROTO_REGENERATE)
 		set(proto_file "${OTEL_PROTO_DIR}/opentelemetry/proto/profiles/v1development/profiles.proto")
 		execute_process(COMMAND ${PROTOC_BIN} ${PROTOC_ARG_OUT} ${PROTOC_ARG_PATH} ${proto_file})
 
-		message(STATUS "processing pprofextended.proto")
-		set(proto_file "${OTEL_PROTO_DIR}/opentelemetry/proto/profiles/v1development/pprofextended.proto")
-		execute_process(COMMAND ${PROTOC_BIN} ${PROTOC_ARG_OUT} ${PROTOC_ARG_PATH} ${proto_file})
-
 		include_directories(${PROJECT_BINARY_DIR}/opentelemetry/proto/profiles/v1development/)
 		FLUENT_OTEL_DEFINITION(FLUENT_OTEL_HAVE_PROFILES)
 	endif()
@@ -144,4 +143,9 @@ add_subdirectory(src)
 # build example
 if (FLUENT_PROTO_EXAMPLES)
 	add_subdirectory(examples)
+endif()
+
+# build tools
+if (FLUENT_PROTO_TOOLS)
+	add_subdirectory(tools)
 endif()

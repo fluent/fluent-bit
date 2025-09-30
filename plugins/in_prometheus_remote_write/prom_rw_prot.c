@@ -122,14 +122,16 @@ static int process_payload_metrics(struct flb_prom_remote_write *ctx,
     if (result == CMT_DECODE_PROMETHEUS_REMOTE_WRITE_SUCCESS) {
         result = flb_input_metrics_append(ctx->ins, NULL, 0, context);
 
+        cmt_decode_prometheus_remote_write_destroy(context);
         if (result != 0) {
             flb_plg_debug(ctx->ins, "could not ingest metrics : %d", result);
+            return -1;
         }
 
-        cmt_decode_prometheus_remote_write_destroy(context);
+        return 0;
     }
 
-    return 0;
+    return -1;
 }
 
 static inline int mk_http_point_header(mk_ptr_t *h,
@@ -345,6 +347,13 @@ int prom_rw_prot_handle(struct flb_prom_remote_write *ctx,
         return -1;
     }
 
+    if (request->data.data == NULL || request->data.len <= 0) {
+        flb_sds_destroy(tag);
+        mk_mem_free(uri);
+        send_response(ctx->ins, conn, 400, "error: no payload found\n");
+        return -1;
+    }
+
     original_data = request->data.data;
     original_data_size = request->data.len;
 
@@ -374,8 +383,12 @@ int prom_rw_prot_handle(struct flb_prom_remote_write *ctx,
     mk_mem_free(uri);
     flb_sds_destroy(tag);
 
-    send_response(ctx->ins, conn, ctx->successful_response_code, NULL);
+    if (ret == -1) {
+        send_response(ctx->ins, conn, 400, "error: invalid request\n");
+        return -1;
+    }
 
+    send_response(ctx->ins, conn, ctx->successful_response_code, NULL);
     return ret;
 }
 
@@ -464,15 +477,24 @@ int prom_rw_prot_handle_ng(struct flb_http_request *request,
 
     /* ToDo: Fix me */
     /* HTTP/1.1 needs Host header */
-    if (request->protocol_version == HTTP_PROTOCOL_HTTP1 &&
+    if (request->protocol_version >= HTTP_PROTOCOL_VERSION_11 &&
         request->host == NULL) {
-
         return -1;
     }
 
     if (request->method != HTTP_METHOD_POST) {
         send_response_ng(response, 400, "error: invalid HTTP method\n");
+        return -1;
+    }
 
+    /* check content-length */
+    if (request->content_length <= 0) {
+        send_response_ng(response, 400, "error: invalid content-length\n");
+        return -1;
+    }
+
+    if (request->body == NULL) {
+        send_response_ng(response, 400, "error: invalid payload\n");
         return -1;
     }
 

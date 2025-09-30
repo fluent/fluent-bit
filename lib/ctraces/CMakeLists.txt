@@ -1,4 +1,4 @@
-cmake_minimum_required(VERSION 3.0)
+cmake_minimum_required(VERSION 3.20)
 project(ctraces C)
 set(CMAKE_POSITION_INDEPENDENT_CODE ON)
 set(CMAKE_EXPORT_COMPILE_COMMANDS ON)
@@ -26,7 +26,7 @@ endif()
 
 # CTraces Version
 set(CTR_VERSION_MAJOR  0)
-set(CTR_VERSION_MINOR  5)
+set(CTR_VERSION_MINOR  6)
 set(CTR_VERSION_PATCH  6)
 set(CTR_VERSION_STR "${CTR_VERSION_MAJOR}.${CTR_VERSION_MINOR}.${CTR_VERSION_PATCH}")
 
