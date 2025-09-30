@@ -893,7 +893,7 @@ static struct flb_config_map config_map[] = {
     },
 
     {
-      FLB_CONFIG_MAP_INT, "batch_size", DEFAULT_LOG_RECORD_BATCH_SIZE,
+     FLB_CONFIG_MAP_INT, "batch_size", DEFAULT_LOG_RECORD_BATCH_SIZE,
       0, FLB_TRUE, offsetof(struct opentelemetry_context, batch_size),
       "Set the maximum number of log records to be flushed at a time"
     },
@@ -902,10 +902,17 @@ static struct flb_config_map config_map[] = {
      0, FLB_FALSE, 0,
      "Set payload compression mechanism. Options available are 'gzip' and 'zstd'."
     },
+
     /*
      * Logs Properties
      * ---------------
      */
+    {
+     FLB_CONFIG_MAP_INT, "logs_max_resources", DEFAULT_MAX_RESOURCE_EXPORT,
+     0, FLB_TRUE, offsetof(struct opentelemetry_context, max_resources),
+     "Set the maximum number of OTLP log resources per export request (0 disables the limit; default: 0)"
+    },
+
     {
      FLB_CONFIG_MAP_STR, "logs_uri", "/v1/logs",
      0, FLB_TRUE, offsetof(struct opentelemetry_context, logs_uri),
