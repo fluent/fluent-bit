@@ -43,6 +43,8 @@ RPM_REPO_PATHS=( "amazonlinux/2"
 				 "almalinux/8" 
 				 "almalinux/9" 
 				 "almalinux/10"
+				 "opensuse/leap"
+				 "sles/15.7"
 				)
 
 if [[ "${AWS_SYNC:-false}" != "false" ]]; then

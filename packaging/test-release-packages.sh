@@ -58,6 +58,8 @@ YUM_TARGETS=(
     "quay.io/centos/centos:stream10"
     "amazonlinux:2"
     "amazonlinux:2023"
+    "opensuse/leap"
+    "sles/15.7"
 )
 
 for IMAGE in "${YUM_TARGETS[@]}"
