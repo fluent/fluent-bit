@@ -1305,5 +1305,26 @@
       "log_metadata": {"otlp":{}},
       "log_body": {"plain": {"key1": "v1", "key2": 2}}
     }
+  },
+
+  "empty_trace_span_ids_skipped": {
+    "input": {
+      "resourceLogs": [{
+        "scopeLogs": [{
+          "logRecords": [{
+            "timeUnixNano": "1640995200000000000",
+            "traceId": "",
+            "spanId": "",
+            "body": {"stringValue": "test log with empty trace and span IDs"}
+          }]
+        }]
+      }]
+    },
+    "expected": {
+      "group_metadata": {"schema":"otlp","resource_id":0,"scope_id":0},
+      "group_body": {"resource":{}},
+      "log_metadata": {"otlp":{}},
+      "log_body": {"log": "test log with empty trace and span IDs"}
+    }
   }
 }
