@@ -33,6 +33,8 @@
 #include "opentelemetry_conf.h"
 #include "opentelemetry_utils.h"
 
+#define RESOURCE_LOGS_INITIAL_CAPACITY 256
+
 static int hex_to_int(char ch)
 {
     if (ch >= '0' && ch <= '9') {
@@ -948,6 +950,9 @@ int otel_process_logs(struct flb_event_chunk *event_chunk,
     int max_scopes;
     int max_resources;
     int native_otel = FLB_FALSE;
+    size_t resource_logs_capacity;
+    size_t i;
+    size_t new_capacity;
     int64_t resource_id = -1;
     int64_t scope_id = -1;
     int64_t tmp_resource_id = -1;
@@ -958,6 +963,7 @@ int otel_process_logs(struct flb_event_chunk *event_chunk,
     struct flb_record_accessor *ra_match;
     Opentelemetry__Proto__Collector__Logs__V1__ExportLogsServiceRequest export_logs;
     Opentelemetry__Proto__Logs__V1__ResourceLogs **resource_logs = NULL;
+    Opentelemetry__Proto__Logs__V1__ResourceLogs **tmp_resource_logs = NULL;
     Opentelemetry__Proto__Logs__V1__ResourceLogs *resource_log = NULL;
     Opentelemetry__Proto__Logs__V1__ScopeLogs **scope_logs = NULL;
     Opentelemetry__Proto__Logs__V1__ScopeLogs *scope_log = NULL;
@@ -978,11 +984,19 @@ int otel_process_logs(struct flb_event_chunk *event_chunk,
     opentelemetry__proto__collector__logs__v1__export_logs_service_request__init(&export_logs);
 
     /* local limits */
-    max_resources = 100; /* maximim number of resources */
+    max_resources = ctx->max_resources; /* maximum number of resources */
     max_scopes = 100;    /* maximum number of scopes per resource */
 
-    /* allocate for 100 resource logs */
-    resource_logs = flb_calloc(max_resources, sizeof(Opentelemetry__Proto__Logs__V1__ResourceLogs *));
+    if (max_resources > 0) {
+        resource_logs_capacity = max_resources;
+    }
+    else {
+        resource_logs_capacity = RESOURCE_LOGS_INITIAL_CAPACITY; /* grow dynamically when unlimited */
+    }
+
+    /* allocate storage for the configured number of resource logs */
+    resource_logs = flb_calloc(resource_logs_capacity,
+                               sizeof(Opentelemetry__Proto__Logs__V1__ResourceLogs *));
     if (!resource_logs) {
         flb_errno();
         flb_log_event_decoder_destroy(decoder);
@@ -1021,10 +1035,42 @@ int otel_process_logs(struct flb_event_chunk *event_chunk,
 
             /* if we have a new resource_id, start a new resource context */
             if (resource_id != tmp_resource_id) {
-                if (export_logs.n_resource_logs >= max_resources) {
-                    flb_plg_error(ctx->ins, "max resources limit reached");
-                    ret = FLB_ERROR;
-                    break;
+                if (max_resources > 0) {
+                    if (export_logs.n_resource_logs >= max_resources) {
+                        /* respect the configured resource batching limit */
+                        flb_plg_error(ctx->ins, "max resources limit reached");
+                        ret = FLB_ERROR;
+                        break;
+                    }
+                }
+                else if (export_logs.n_resource_logs >= resource_logs_capacity) {
+                    new_capacity = resource_logs_capacity * 2;
+                    if (new_capacity <= resource_logs_capacity) {
+                        flb_plg_error(ctx->ins, "resource logs capacity overflow");
+                        ret = FLB_ERROR;
+                        break;
+                    }
+
+                    if (new_capacity < RESOURCE_LOGS_INITIAL_CAPACITY) {
+                        new_capacity = RESOURCE_LOGS_INITIAL_CAPACITY;
+                    }
+
+                    tmp_resource_logs = flb_realloc(resource_logs,
+                                                     new_capacity * sizeof(Opentelemetry__Proto__Logs__V1__ResourceLogs *));
+                    if (!tmp_resource_logs) {
+                        flb_errno();
+                        ret = FLB_RETRY;
+                        break;
+                    }
+
+                    resource_logs = tmp_resource_logs;
+
+                    for (i = resource_logs_capacity; i < new_capacity; i++) {
+                        resource_logs[i] = NULL;
+                    }
+
+                    resource_logs_capacity = new_capacity;
+                    export_logs.resource_logs = resource_logs;
                 }
 
 start_resource:
