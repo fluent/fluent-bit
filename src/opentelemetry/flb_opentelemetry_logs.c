@@ -159,7 +159,7 @@ static int process_json_payload_log_records_entry(
         trace_id = &log_records_entry->ptr[result].val;
     }
 
-    /* trace_id must be a 32 char hex string */
+    /* trace_id must be a 32 char hex string, or empty (skip validation) */
     if (trace_id != NULL) {
         if (trace_id->type != MSGPACK_OBJECT_STR) {
             if (error_status) {
@@ -168,20 +168,25 @@ static int process_json_payload_log_records_entry(
             return -FLB_OTEL_LOGS_ERR_INVALID_TRACE_ID;
         }
 
-        if (trace_id->via.str.size != 32) {
+        /* Skip validation if trace_id is empty */
+        if (trace_id->via.str.size == 0) {
+            trace_id = NULL; /* Treat as if not present */
+        }
+        else if (trace_id->via.str.size != 32) {
             if (error_status) {
                 *error_status = FLB_OTEL_LOGS_ERR_INVALID_TRACE_ID;
             }
             return -FLB_OTEL_LOGS_ERR_INVALID_TRACE_ID;
         }
-
-        /* Validate hex format */
-        for (i = 0; i < 32; i++) {
-            if (!isxdigit(trace_id->via.str.ptr[i])) {
-                if (error_status) {
-                     *error_status = FLB_OTEL_LOGS_ERR_INVALID_TRACE_ID;
+        else {
+            /* Validate hex format */
+            for (i = 0; i < 32; i++) {
+                if (!isxdigit(trace_id->via.str.ptr[i])) {
+                    if (error_status) {
+                         *error_status = FLB_OTEL_LOGS_ERR_INVALID_TRACE_ID;
+                    }
+                    return -FLB_OTEL_LOGS_ERR_INVALID_TRACE_ID;
                 }
-                return -FLB_OTEL_LOGS_ERR_INVALID_TRACE_ID;
             }
         }
     }
@@ -192,6 +197,7 @@ static int process_json_payload_log_records_entry(
         span_id = &log_records_entry->ptr[result].val;
     }
 
+    /* span_id must be a 16 char hex string, or empty (skip validation) */
     if (span_id != NULL) {
         if (span_id->type != MSGPACK_OBJECT_STR) {
             if (error_status) {
@@ -200,20 +206,25 @@ static int process_json_payload_log_records_entry(
             return -FLB_OTEL_LOGS_ERR_INVALID_SPAN_ID;
         }
 
-        if (span_id->via.str.size != 16) {
+        /* Skip validation if span_id is empty */
+        if (span_id->via.str.size == 0) {
+            span_id = NULL; /* Treat as if not present */
+        }
+        else if (span_id->via.str.size != 16) {
             if (error_status) {
                 *error_status = FLB_OTEL_LOGS_ERR_INVALID_SPAN_ID;
             }
             return -FLB_OTEL_LOGS_ERR_INVALID_SPAN_ID;
         }
-
-        /* Validate hex format */
-        for (i = 0; i < 16; i++) {
-            if (!isxdigit(span_id->via.str.ptr[i])) {
-                if (error_status) {
-                    *error_status = FLB_OTEL_LOGS_ERR_INVALID_SPAN_ID;
+        else {
+            /* Validate hex format */
+            for (i = 0; i < 16; i++) {
+                if (!isxdigit(span_id->via.str.ptr[i])) {
+                    if (error_status) {
+                        *error_status = FLB_OTEL_LOGS_ERR_INVALID_SPAN_ID;
+                    }
+                    return -FLB_OTEL_LOGS_ERR_INVALID_SPAN_ID;
                 }
-                return -FLB_OTEL_LOGS_ERR_UNEXPECTED_TIMESTAMP_TYPE;
             }
         }
     }
