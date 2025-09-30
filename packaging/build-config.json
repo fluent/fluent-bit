@@ -97,6 +97,14 @@
           "type": "rpm"
         },
         {
+          "target": "opensuse/leap",
+          "type": "rpm"
+        },
+        {
+          "target": "sles/15.7",
+          "type": "rpm"
+        },
+        {
           "target": "debian/bookworm",
           "type": "deb"
         },
