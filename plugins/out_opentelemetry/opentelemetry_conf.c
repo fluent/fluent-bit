@@ -279,6 +279,12 @@ struct opentelemetry_context *flb_opentelemetry_context_create(struct flb_output
         return NULL;
     }
 
+    if (ctx->max_resources < 0) {
+        flb_plg_error(ins, "max_resources must be greater than or equal to zero");
+        flb_opentelemetry_context_destroy(ctx);
+        return NULL;
+    }
+
     /* Parse 'add_label' */
     ret = config_add_labels(ins, ctx);
     if (ret == -1) {
