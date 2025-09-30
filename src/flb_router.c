@@ -291,7 +291,7 @@ static int router_metrics_create(struct flb_router *router)
      */
     router->logs_records_total = cmt_counter_create(
                                                     router->cmt,
-                                                    "flb", "routing_logs", "records_total",
+                                                    "fluentbit", "routing_logs", "records_total",
                                                     "Total log records routed from input to output",
                                                     2,
                                                     (char *[]) { "input", "output" });
@@ -301,7 +301,7 @@ static int router_metrics_create(struct flb_router *router)
 
     router->logs_bytes_total = cmt_counter_create(
                                                  router->cmt,
-                                                 "flb", "routing_logs", "bytes_total",
+                                                 "fluentbit", "routing_logs", "bytes_total",
                                                  "Total bytes routed from input to output (logs)",
                                                  2,
                                                  (char *[]) { "input", "output" });
@@ -311,7 +311,7 @@ static int router_metrics_create(struct flb_router *router)
 
     router->logs_drop_records_total = cmt_counter_create(
                                                         router->cmt,
-                                                        "flb", "routing_logs", "drop_records_total",
+                                                        "fluentbit", "routing_logs", "drop_records_total",
                                                         "Total log records dropped during routing",
                                                         2,
                                                         (char *[]) { "input", "output" });
@@ -321,7 +321,7 @@ static int router_metrics_create(struct flb_router *router)
 
     router->logs_drop_bytes_total = cmt_counter_create(
                                                        router->cmt,
-                                                       "flb", "routing_logs", "drop_bytes_total",
+                                                       "fluentbit", "routing_logs", "drop_bytes_total",
                                                        "Total bytes dropped during routing (logs)",
                                                        2,
                                                        (char *[]) { "input", "output" });
