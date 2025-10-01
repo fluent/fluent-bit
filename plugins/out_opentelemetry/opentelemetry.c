@@ -914,6 +914,12 @@ static struct flb_config_map config_map[] = {
     },
 
     {
+     FLB_CONFIG_MAP_INT, "logs_max_scopes", DEFAULT_MAX_SCOPE_EXPORT,
+     0, FLB_TRUE, offsetof(struct opentelemetry_context, max_scopes),
+     "Set the maximum number of OTLP log scopes per resource (0 disables the limit; default: 0)"
+    },
+
+    {
      FLB_CONFIG_MAP_STR, "logs_uri", "/v1/logs",
      0, FLB_TRUE, offsetof(struct opentelemetry_context, logs_uri),
      "Specify an optional HTTP URI for the target OTel endpoint."
