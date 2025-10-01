@@ -22,6 +22,8 @@
 #include <fluent-bit/flb_error.h>
 #include <fluent-bit/flb_pack.h>
 
+#include <ctype.h>
+
 #include <fluent-bit/flb_gzip.h>
 #include <fluent-bit/flb_zstd.h>
 #include <fluent-bit/flb_snappy.h>
@@ -60,7 +62,11 @@ static int sds_uri_decode(flb_sds_t s)
 
     for (optr = buf, iptr = s; iptr < s + flb_sds_len(s) && optr-buf < sizeof(buf); iptr++) {
         if (*iptr == '%') {
-            if (iptr+2 > (s + flb_sds_len(s))) {
+            if (iptr + 2 >= (s + flb_sds_len(s))) {
+                return -1;
+            }
+            if (!isxdigit((unsigned char) *(iptr + 1)) ||
+                !isxdigit((unsigned char) *(iptr + 2))) {
                 return -1;
             }
             *optr++ = hex2nibble(*(iptr+1)) << 4 | hex2nibble(*(iptr+2));
@@ -219,7 +225,7 @@ static flb_sds_t tag_key(struct flb_http *ctx, msgpack_object *map)
     }
 
 
-    flb_plg_error(ctx->ins, "Could not find tag_key %s in record", ctx->tag_key);
+    flb_plg_warn(ctx->ins, "Could not find tag_key %s in record", ctx->tag_key);
     return NULL;
 }
 
@@ -423,7 +429,7 @@ static ssize_t parse_payload_urlencoded(struct flb_http *ctx, flb_sds_t tag,
     char *start;
     msgpack_packer pck;
     msgpack_sbuffer sbuf;
-
+    const char *field_name;
 
     /* initialize buffers */
     msgpack_sbuffer_init(&sbuf);
@@ -493,12 +499,13 @@ static ssize_t parse_payload_urlencoded(struct flb_http *ctx, flb_sds_t tag,
         msgpack_pack_str_body(&pck, keys[i], flb_sds_len(keys[i]));
 
         if (sds_uri_decode(vals[i]) != 0) {
-            goto decode_error;
+            field_name = keys[i] ? keys[i] : "";
+            flb_plg_warn(ctx->ins,
+                         "invalid percent-encoding for field '%s', keeping raw value",
+                         field_name);
         }
-        else {
-            msgpack_pack_str(&pck, flb_sds_len(vals[i]));
-            msgpack_pack_str_body(&pck, vals[i], flb_sds_len(vals[i]));
-        }
+        msgpack_pack_str(&pck, flb_sds_len(vals[i]));
+        msgpack_pack_str_body(&pck, vals[i], flb_sds_len(vals[i]));
     }
 
     ret = process_pack(ctx, tag, sbuf.data, sbuf.size);
