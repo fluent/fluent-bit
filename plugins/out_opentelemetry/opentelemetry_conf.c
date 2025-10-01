@@ -531,6 +531,18 @@ struct opentelemetry_context *flb_opentelemetry_context_create(struct flb_output
         flb_plg_error(ins, "failed to create ra for message severity number");
     }
 
+    ctx->ra_event_name_metadata = flb_ra_create((char*)ctx->logs_event_name_metadata_key,
+                                               FLB_FALSE);
+    if (ctx->ra_event_name_metadata == NULL) {
+        flb_plg_error(ins, "failed to create ra for metadata event name");
+    }
+
+    ctx->ra_event_name_message = flb_ra_create((char*)ctx->logs_event_name_message_key,
+                                              FLB_FALSE);
+    if (ctx->ra_event_name_message == NULL) {
+        flb_plg_error(ins, "failed to create ra for message event name");
+    }
+
     /* record accessor: group metadata */
     ctx->ra_meta_schema = flb_ra_create("$schema", FLB_FALSE);
     if (ctx->ra_meta_schema == NULL) {
@@ -618,6 +630,11 @@ struct opentelemetry_context *flb_opentelemetry_context_create(struct flb_output
     ctx->ra_log_meta_otlp_trace_flags = flb_ra_create("$otlp['trace_flags']", FLB_FALSE);
     if (ctx->ra_log_meta_otlp_trace_flags == NULL) {
         flb_plg_error(ins, "failed to create record accessor for otlp trace flags");
+    }
+
+    ctx->ra_log_meta_otlp_event_name = flb_ra_create("$otlp['event_name']", FLB_FALSE);
+    if (ctx->ra_log_meta_otlp_event_name == NULL) {
+        flb_plg_error(ins, "failed to create record accessor for otlp event name");
     }
 
     http_client_flags = FLB_HTTP_CLIENT_FLAG_AUTO_DEFLATE |
@@ -815,6 +832,18 @@ void flb_opentelemetry_context_destroy(struct opentelemetry_context *ctx)
 
     if (ctx->ra_log_meta_otlp_trace_flags) {
         flb_ra_destroy(ctx->ra_log_meta_otlp_trace_flags);
+    }
+
+    if (ctx->ra_log_meta_otlp_event_name) {
+        flb_ra_destroy(ctx->ra_log_meta_otlp_event_name);
+    }
+
+    if (ctx->ra_event_name_metadata) {
+        flb_ra_destroy(ctx->ra_event_name_metadata);
+    }
+
+    if (ctx->ra_event_name_message) {
+        flb_ra_destroy(ctx->ra_event_name_message);
     }
 
 #ifdef FLB_HAVE_SIGNV4
