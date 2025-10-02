@@ -26,7 +26,10 @@
 #include <fluent-bit/flb_log_event_decoder.h>
 #include <msgpack.h>
 
+#include <ctype.h>
+
 #include <stdio.h>
+#include <string.h>
 #include <sys/types.h>
 #include <sys/stat.h>
 #include <fcntl.h>
@@ -80,6 +83,96 @@ static char *check_delimiter(const char *str)
     }
 
     return NULL;
+}
+
+/*
+ * Convert the user-controlled tag into a safe, relative path. Each component is
+ * cleaned so only filesystem-friendly characters remain, ".." segments are
+ * collapsed into a single underscore and leading separators are dropped to
+ * guarantee the result stays within the configured base path.
+ */
+static int sanitize_tag_name(const char *tag, char *buf, size_t size)
+{
+    size_t i;
+    size_t out_len = 0;
+    size_t component_len;
+    char sanitized_char;
+    const char *p;
+    const char *component_start;
+
+    if (tag == NULL || buf == NULL || size < 2) {
+        return -1;
+    }
+
+    p = tag;
+
+    while (*p != '\0') {
+        component_len = 0;
+        component_start = NULL;
+
+        /* Skip consecutive separators so we never generate empty components */
+        while (*p == '/' || *p == '\\') {
+            p++;
+        }
+
+        if (*p == '\0') {
+            break;
+        }
+
+        component_start = p;
+
+        while (*p != '\0' && *p != '/' && *p != '\\') {
+            component_len++;
+            p++;
+        }
+
+        if (component_len == 0) {
+            continue;
+        }
+
+        if (out_len > 0) {
+            if (out_len >= size - 1) {
+                break;
+            }
+
+            buf[out_len++] = FLB_PATH_SEPARATOR[0];
+        }
+
+        if ((component_len == 1 && component_start[0] == '.') ||
+            (component_len == 2 && component_start[0] == '.' && component_start[1] == '.')) {
+            if (out_len >= size - 1) {
+                break;
+            }
+
+            buf[out_len++] = '_';
+            continue;
+        }
+
+        for (i = 0; i < component_len; i++) {
+            sanitized_char = component_start[i];
+
+            if (!isalnum((unsigned char) sanitized_char) && sanitized_char != '-' &&
+                sanitized_char != '_' && sanitized_char != '.') {
+                sanitized_char = '_';
+            }
+
+            if (out_len >= size - 1) {
+                break;
+            }
+
+            buf[out_len++] = sanitized_char;
+        }
+    }
+
+    if (out_len == 0) {
+        buf[0] = '_';
+        buf[1] = '\0';
+        return 0;
+    }
+
+    buf[out_len] = '\0';
+
+    return 0;
 }
 
 
@@ -502,7 +595,8 @@ static void cb_file_flush(struct flb_event_chunk *event_chunk,
     size_t last_off = 0;
     size_t alloc_size = 0;
     size_t total;
-    char out_file[PATH_MAX];
+    char out_file[PATH_MAX * 2];
+    char sanitized_tag[PATH_MAX];
     char *buf;
     long file_pos;
     struct flb_file_conf *ctx = out_context;
@@ -513,22 +607,33 @@ static void cb_file_flush(struct flb_event_chunk *event_chunk,
     (void) config;
 
     /* Set the right output file */
+    if (ctx->out_file == NULL) {
+        ret = sanitize_tag_name(event_chunk->tag,
+                                sanitized_tag,
+                                sizeof(sanitized_tag));
+
+        if (ret != 0) {
+            flb_plg_error(ctx->ins, "failed to sanitize tag for output file");
+            FLB_OUTPUT_RETURN(FLB_ERROR);
+        }
+    }
+
     if (ctx->out_path) {
         if (ctx->out_file) {
-            snprintf(out_file, PATH_MAX - 1, "%s" FLB_PATH_SEPARATOR "%s",
+            snprintf(out_file, sizeof(out_file) , "%s" FLB_PATH_SEPARATOR "%s",
                      ctx->out_path, ctx->out_file);
         }
         else {
-            snprintf(out_file, PATH_MAX - 1, "%s" FLB_PATH_SEPARATOR "%s",
-                     ctx->out_path, event_chunk->tag);
+            snprintf(out_file, sizeof(out_file), "%s" FLB_PATH_SEPARATOR "%s",
+                     ctx->out_path, sanitized_tag);
         }
     }
     else {
         if (ctx->out_file) {
-            snprintf(out_file, PATH_MAX - 1, "%s", ctx->out_file);
+            snprintf(out_file, PATH_MAX, "%s", ctx->out_file);
         }
         else {
-            snprintf(out_file, PATH_MAX - 1, "%s", event_chunk->tag);
+            snprintf(out_file, PATH_MAX, "%s", sanitized_tag);
         }
     }
 
