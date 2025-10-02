@@ -387,12 +387,16 @@ struct flb_reload_watchdog_ctx {
 
 static void *hot_reload_watchdog_thread(void *arg)
 {
+    int loop_sleep;
     struct flb_reload_watchdog_ctx *ctx = (struct flb_reload_watchdog_ctx *)arg;
     
     /* Set async cancellation type for (mostly) immediate response to pthread_cancel */
     pthread_setcanceltype(PTHREAD_CANCEL_ASYNCHRONOUS, NULL);
 
-    flb_time_msleep(ctx->timeout_seconds * 1000);
+    /* loop for each sleep in a busy pattern to avoid delaying flb_reload() */
+    for (loop_sleep = 0; loop_sleep < ctx->timeout_seconds*10; loop_sleep++) {
+       flb_time_msleep(100);
+    }
 
     flb_error("[hot_reload_watchdog] Hot reload timeout exceeded (%d seconds), "
                 "aborting to prevent indefinite hang", ctx->timeout_seconds);
@@ -621,7 +625,9 @@ int flb_reload(flb_ctx_t *ctx, struct flb_cf *cf_opts)
     new_config->hot_reload_succeeded = FLB_TRUE;
     
     /* Cancel the watchdog thread since reload completed successfully */
+    flb_debug("[reload] cleanup watchdog");
     flb_reload_watchdog_cleanup(watchdog_ctx);
 
+    flb_info("[reload] successful reload done.");
     return 0;
 }
