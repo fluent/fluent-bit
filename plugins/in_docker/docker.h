@@ -119,4 +119,6 @@ struct flb_docker {
 int in_docker_collect(struct flb_input_instance *i_ins,
                       struct flb_config *config, void *in_context);
 docker_info *in_docker_init_docker_info(char *id);
+char *docker_extract_name(const char *line, const char *start);
+
 #endif

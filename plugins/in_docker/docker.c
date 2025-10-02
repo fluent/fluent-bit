@@ -29,8 +29,56 @@
 #include <string.h>
 #include <stdlib.h>
 #include <stdint.h>
+#include <ctype.h>
 
 #include "docker.h"
+
+char *docker_extract_name(const char *line, const char *start)
+{
+    const char *curr;
+    const char *end;
+    size_t len;
+    char *name;
+
+    if (line == NULL || start == NULL) {
+        return NULL;
+    }
+
+    curr = start + strlen(DOCKER_NAME_ARG);
+    if (*curr != ':') {
+        curr = strchr(curr, ':');
+        if (curr == NULL) {
+            return NULL;
+        }
+    }
+
+    curr++;
+    while (*curr != '\0' && isspace((unsigned char) *curr)) {
+        curr++;
+    }
+
+    if (*curr != '"') {
+        return NULL;
+    }
+
+    curr++;
+    end = strchr(curr, '"');
+    if (end == NULL || end <= curr) {
+        return NULL;
+    }
+
+    len = end - curr;
+    name = flb_malloc(len + 1);
+    if (name == NULL) {
+        flb_errno();
+        return NULL;
+    }
+
+    memcpy(name, curr, len);
+    name[len] = '\0';
+
+    return name;
+}
 
 static int cb_docker_collect(struct flb_input_instance *i_ins,
                              struct flb_config *config, void *in_context);
