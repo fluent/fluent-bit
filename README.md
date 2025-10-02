@@ -30,7 +30,7 @@ The active development branch (`master`) is currently focused on **v4.1**.
 
 For version-specific maintenance timelines and policies, see our [MAINTENANCE.md](https://github.com/fluent/fluent-bit/blob/master/MAINTENANCE.md).
 
-To track upcoming milestones, visit the [project roadmap](https://github.com/fluent/fluent-bit/wiki/Roadmap).
+To track upcoming milestones, visit the [project roadmap](https://github.com/fluent/fluent-bit/wiki/Fluent-Bit-Roadmap).
 
 ---
 
@@ -66,7 +66,7 @@ make
 bin/fluent-bit -i cpu -o stdout -f 1
 ```
 
-More details: [Build & Install](https://docs.fluentbit.io/manual/installation/sources/build-and-install)
+More details: [Build & Install](https://docs.fluentbit.io/manual/installation/downloads/source/build-and-install)
 
 #### Requirements
 
@@ -78,10 +78,9 @@ More details: [Build & Install](https://docs.fluentbit.io/manual/installation/so
 
 ## Install Fluent Bit
 
-- [Linux packages (Debian, Ubuntu, RHEL, etc.)](https://docs.fluentbit.io/manual/installation/linux)
-- [Docker images](https://docs.fluentbit.io/manual/installation/docker)
-- [Windows binaries](https://docs.fluentbit.io/manual/installation/windows)
-- [IBM Z (s390x)](https://docs.fluentbit.io/manual/installation/linux/s390x)
+- [Linux packages (Debian, Ubuntu, RHEL, etc.)](https://docs.fluentbit.io/manual/installation/downloads/linux)
+- [Docker images](https://docs.fluentbit.io/manual/installation/downloads/docker)
+- [Windows binaries](https://docs.fluentbit.io/manual/installation/downloads/windows)
 
 ---
 
