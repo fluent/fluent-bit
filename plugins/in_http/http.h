@@ -25,6 +25,7 @@
 #include <fluent-bit/flb_input.h>
 #include <fluent-bit/flb_utils.h>
 #include <fluent-bit/flb_log_event_encoder.h>
+#include <fluent-bit/flb_record_accessor.h>
 
 #include <monkey/monkey.h>
 #include <fluent-bit/http_server/flb_http_server.h>
@@ -36,7 +37,8 @@ struct flb_http {
     int successful_response_code;
     flb_sds_t listen;
     flb_sds_t tcp_port;
-    const char *tag_key;
+    flb_sds_t tag_key;
+    struct flb_record_accessor *ra_tag_key;
 
     /* Success HTTP headers */
     struct mk_list *success_headers;
