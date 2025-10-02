@@ -135,6 +135,9 @@ static int in_splunk_init(struct flb_input_instance *ins,
         ctx->http_server.request_callback = splunk_prot_handle_ng;
 
         flb_input_downstream_set(ctx->http_server.downstream, ctx->ins);
+
+        flb_plg_info(ctx->ins, "listening on %s:%u",
+                     ins->host.listen, ins->host.port);
     }
     else {
         ctx->downstream = flb_downstream_create(FLB_TRANSPORT_TCP,
@@ -157,6 +160,8 @@ static int in_splunk_init(struct flb_input_instance *ins,
 
         flb_input_downstream_set(ctx->downstream, ctx->ins);
 
+        flb_plg_info(ctx->ins, "listening on %s:%s", ctx->listen, ctx->tcp_port);
+
         /* Collect upon data available on the standard input */
         ret = flb_input_set_collector_socket(ins,
                                             in_splunk_collect,
@@ -171,6 +176,7 @@ static int in_splunk_init(struct flb_input_instance *ins,
 
         ctx->collector_id = ret;
     }
+
 
     return 0;
 }
