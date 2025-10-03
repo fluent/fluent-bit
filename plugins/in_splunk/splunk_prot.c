@@ -22,6 +22,8 @@
 #include <fluent-bit/flb_error.h>
 #include <fluent-bit/flb_pack.h>
 #include <fluent-bit/flb_gzip.h>
+#include <fluent-bit/flb_record_accessor.h>
+#include <fluent-bit/flb_ra_key.h>
 
 #include <monkey/monkey.h>
 #include <monkey/mk_core.h>
@@ -156,67 +158,33 @@ static int send_json_message_response(struct splunk_conn *conn, int http_status,
 /* implements functionality to get tag from key in record */
 static flb_sds_t tag_key(struct flb_splunk *ctx, msgpack_object *map)
 {
-    size_t map_size = map->via.map.size;
-    msgpack_object_kv *kv;
-    msgpack_object  key;
-    msgpack_object  val;
-    char *key_str = NULL;
-    char *val_str = NULL;
-    size_t key_str_size = 0;
-    size_t val_str_size = 0;
-    int j;
-    int check = FLB_FALSE;
-    int found = FLB_FALSE;
-    flb_sds_t tag;
+    flb_sds_t tag = NULL;
+    struct flb_ra_value *ra_val;
 
-    kv = map->via.map.ptr;
-
-    for(j=0; j < map_size; j++) {
-        check = FLB_FALSE;
-        found = FLB_FALSE;
-        key = (kv+j)->key;
-        if (key.type == MSGPACK_OBJECT_BIN) {
-            key_str  = (char *) key.via.bin.ptr;
-            key_str_size = key.via.bin.size;
-            check = FLB_TRUE;
-        }
-        if (key.type == MSGPACK_OBJECT_STR) {
-            key_str  = (char *) key.via.str.ptr;
-            key_str_size = key.via.str.size;
-            check = FLB_TRUE;
-        }
-
-        if (check == FLB_TRUE) {
-            if (strncmp(ctx->tag_key, key_str, key_str_size) == 0) {
-                val = (kv+j)->val;
-                if (val.type == MSGPACK_OBJECT_BIN) {
-                    val_str  = (char *) val.via.bin.ptr;
-                    val_str_size = val.via.str.size;
-                    found = FLB_TRUE;
-                    break;
-                }
-                if (val.type == MSGPACK_OBJECT_STR) {
-                    val_str  = (char *) val.via.str.ptr;
-                    val_str_size = val.via.str.size;
-                    found = FLB_TRUE;
-                    break;
-                }
-            }
-        }
+    /* If no record accessor is configured, return NULL */
+    if (!ctx->ra_tag_key) {
+        return NULL;
     }
 
-    if (found == FLB_TRUE) {
-        tag = flb_sds_create_len(val_str, val_str_size);
-        if (!tag) {
-            flb_errno();
-            return NULL;
-        }
-        return tag;
+    /* Use record accessor to get the value */
+    ra_val = flb_ra_get_value_object(ctx->ra_tag_key, *map);
+    if (!ra_val) {
+        flb_plg_debug(ctx->ins, "Could not find tag_key %s in record", ctx->tag_key);
+        return NULL;
     }
 
+    /* Convert the value to string */
+    if (ra_val->type == FLB_RA_STRING) {
+        tag = flb_sds_create_len(ra_val->o.via.str.ptr, ra_val->o.via.str.size);
+    }
+    else {
+        flb_plg_debug(ctx->ins, "tag_key %s value is not a string", ctx->tag_key);
+    }
 
-    flb_plg_error(ctx->ins, "Could not find tag_key %s in record", ctx->tag_key);
-    return NULL;
+    /* Clean up the record accessor value */
+    flb_ra_key_value_destroy(ra_val);
+
+    return tag;
 }
 
 /*
