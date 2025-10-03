@@ -20,6 +20,7 @@
 #include <fluent-bit/flb_mem.h>
 #include <fluent-bit/flb_utils.h>
 #include <fluent-bit/flb_typecast.h>
+#include <fluent-bit/flb_pack.h>
 #include <string.h>
 #include <inttypes.h>
 #include <msgpack.h>
@@ -44,6 +45,13 @@ flb_typecast_type_t flb_typecast_str_to_type_t(char *type_str, int type_len)
     else if(!strncasecmp(type_str, "bool", type_len)) {
       return FLB_TYPECAST_TYPE_BOOL;
     }
+    else if(!strncasecmp(type_str, "json_string", type_len)) {
+      return FLB_TYPECAST_TYPE_JSON_STR;
+    }
+    else if(!strncasecmp(type_str, "map", type_len)) {
+      return FLB_TYPECAST_TYPE_MAP;
+    }
+
 
     return FLB_TYPECAST_TYPE_ERROR;
 }
@@ -63,10 +71,65 @@ const char * flb_typecast_type_t_to_str(flb_typecast_type_t type)
         return "string";
     case FLB_TYPECAST_TYPE_BOOL:
         return "bool";
+    case FLB_TYPECAST_TYPE_JSON_STR:
+        return "json_string";
+    case FLB_TYPECAST_TYPE_MAP:
+        return "map";
     default:
         return "unknown type";
     }
 
+}
+
+static int flb_typecast_to_json(msgpack_object *obj,
+                                struct flb_typecast_rule *rule,
+                                msgpack_packer *pck,
+                                struct flb_typecast_value *output)
+{
+    flb_sds_t json_str = flb_sds_create_size(4096);
+    int ret;
+
+    switch(rule->to_type) {
+    case FLB_TYPECAST_TYPE_JSON_STR:
+        ret = flb_msgpack_to_json(json_str, flb_sds_len(json_str), obj);
+        if (ret < 0) {
+            flb_error("%s: flb_msgpack_to_json failed. ret=%d", __FUNCTION__, ret);
+            flb_sds_destroy(json_str);
+            return -1;
+        }
+        output->val.str = flb_sds_create(json_str);
+        if (pck != NULL) {
+            msgpack_pack_str(pck, flb_sds_len(output->val.str));
+            msgpack_pack_str_body(pck, output->val.str, flb_sds_len(output->val.str));
+        }
+        ret = 0;
+
+        break;
+
+    default:
+        flb_error("%s: unknown type %d", __FUNCTION__, rule->to_type);
+        ret = -1;
+    }
+    flb_sds_destroy(json_str);
+
+    return ret;
+}
+
+static int flb_typecast_conv_map(msgpack_object *obj,
+                                 struct flb_typecast_rule *rule,
+                                 msgpack_packer *pck,
+                                 struct flb_typecast_value *output)
+{
+    if(obj == NULL || rule == NULL || output == NULL) {
+        return -1;
+    }
+    else if (rule->to_type != FLB_TYPECAST_TYPE_JSON_STR) {
+        flb_error("%s: type %s is not supported",__FUNCTION__,
+                  flb_typecast_type_t_to_str(rule->to_type));
+        return -1;
+    }
+
+    return flb_typecast_to_json(obj, rule, pck, output);
 }
 
 static int flb_typecast_conv_str(const char *input, int input_len,
@@ -159,6 +222,7 @@ static int flb_typecast_conv_str(const char *input, int input_len,
 
       break;
     case FLB_TYPECAST_TYPE_STR:
+    case FLB_TYPECAST_TYPE_JSON_STR:
       flb_error("%s: str to str. nothing to do.", __FUNCTION__);
       return -1;
       break;
@@ -221,6 +285,7 @@ static int flb_typecast_conv_int(int64_t input,
 
     switch(rule->to_type) {
     case FLB_TYPECAST_TYPE_STR:
+    case FLB_TYPECAST_TYPE_JSON_STR:
       i = snprintf(temp, sizeof(temp) -1, "%"PRId64, input);
       output->val.str = flb_sds_create_len(temp, i);
       if(pck != NULL) {
@@ -264,6 +329,7 @@ static int flb_typecast_conv_uint(uint64_t input,
 
     switch(rule->to_type) {
     case FLB_TYPECAST_TYPE_STR:
+    case FLB_TYPECAST_TYPE_JSON_STR:
       i = snprintf(temp, sizeof(temp) -1, "%"PRIu64, input);
       output->val.str = flb_sds_create_len(temp, i);
       if(pck != NULL) {
@@ -307,6 +373,7 @@ static int flb_typecast_conv_float(double input,
 
     switch(rule->to_type) {
     case FLB_TYPECAST_TYPE_STR:
+    case FLB_TYPECAST_TYPE_JSON_STR:
       if (input == (double)(long long int)input) {
         i = snprintf(temp, sizeof(temp)-1, "%.1f", input);
       }
@@ -406,6 +473,7 @@ static int flb_typecast_value_conv(msgpack_object input,
 
     switch(rule->from_type) {
     case FLB_TYPECAST_TYPE_STR:
+    case FLB_TYPECAST_TYPE_JSON_STR:
         if (input.type != MSGPACK_OBJECT_STR) {
             flb_error("%s: src type is not str", __FUNCTION__);
             return -1;
@@ -449,6 +517,13 @@ static int flb_typecast_value_conv(msgpack_object input,
         ret = flb_typecast_conv_float(input.via.f64, rule, pck, output);
 
         break;
+    case FLB_TYPECAST_TYPE_MAP:
+        if (input.type != MSGPACK_OBJECT_MAP) {
+            flb_error("%s: src type is not map", __FUNCTION__);
+            return -1;
+        }
+        ret = flb_typecast_conv_map(&input, rule, pck, output);
+        break;
 
     default:
       flb_error("%s: unknown type %d", __FUNCTION__, rule->from_type);
@@ -461,7 +536,7 @@ int flb_typecast_value_destroy(struct flb_typecast_value* val)
     if (val == NULL) {
         return 0;
     }
-    if (val->type == FLB_TYPECAST_TYPE_STR) {
+    if (val->type == FLB_TYPECAST_TYPE_STR || val->type == FLB_TYPECAST_TYPE_JSON_STR) {
         flb_sds_destroy(val->val.str);
     }
     flb_free(val);
@@ -517,7 +592,8 @@ int flb_typecast_pack(msgpack_object input,
 
     ret = flb_typecast_value_conv(input, rule, pck, &val);
 
-    if (ret == 0 && rule->to_type == FLB_TYPECAST_TYPE_STR) {
+    if (ret == 0 &&
+        (rule->to_type == FLB_TYPECAST_TYPE_STR || rule->to_type == FLB_TYPECAST_TYPE_JSON_STR)) {
         flb_sds_destroy(val.val.str);
     }
 
