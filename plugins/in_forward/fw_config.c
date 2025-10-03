@@ -26,6 +26,35 @@
 #include "fw_conn.h"
 #include "fw_config.h"
 
+static void fw_destory_shared_key(struct flb_in_fw_config *config)
+{
+    if (config->owns_shared_key && config->shared_key) {
+        flb_sds_destroy(config->shared_key);
+    }
+
+    config->shared_key = NULL;
+    config->owns_shared_key = FLB_FALSE;
+}
+
+static int fw_create_empty_shared_key(struct flb_in_fw_config *config,
+                                      struct flb_input_instance *i_ins)
+{
+    flb_sds_t empty_key = flb_sds_create("");
+    if (!empty_key) {
+        flb_plg_error(i_ins, "empty shared_key alloc failed");
+        return -1;
+    }
+    else {
+        if (config->owns_shared_key && config->shared_key) {
+            flb_sds_destroy(config->shared_key);
+        }
+        config->shared_key = empty_key;
+        config->owns_shared_key = FLB_TRUE;
+    }
+
+    return 0;
+}
+
 struct flb_in_fw_config *fw_config_init(struct flb_input_instance *i_ins)
 {
     char tmp[16];
@@ -87,10 +116,9 @@ struct flb_in_fw_config *fw_config_init(struct flb_input_instance *i_ins)
 
     /* Shared Key */
     if (config->empty_shared_key) {
-        if (config->shared_key) {
-            flb_sds_destroy(config->shared_key);
+        if (fw_create_empty_shared_key(config, i_ins) == -1) {
+            return NULL;
         }
-        config->shared_key = flb_sds_create("");
     }
 
     /* Self Hostname */
@@ -131,7 +159,7 @@ int fw_config_destroy(struct flb_in_fw_config *config)
         flb_free(config->tcp_port);
     }
 
-    flb_sds_destroy(config->shared_key);
+    fw_destory_shared_key(config);
     flb_sds_destroy(config->self_hostname);
 
     flb_free(config);
