@@ -333,6 +333,15 @@ static int in_fw_init(struct flb_input_instance *ins,
         return -1;
     }
 
+    /* Users-only configuration must be rejected unless a (possibly empty) shared key is enabled. */
+    if (mk_list_size(&ctx->users) > 0 &&
+        ctx->shared_key == NULL &&
+        ctx->empty_shared_key == FLB_FALSE) {
+        flb_plg_error(ctx->ins, "security.users is set but no shared_key or empty_shared_key");
+        fw_config_destroy(ctx);
+        return -1;
+    }
+
     flb_input_downstream_set(ctx->downstream, ctx->ins);
 
     flb_net_socket_nonblocking(ctx->downstream->server_fd);
