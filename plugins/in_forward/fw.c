@@ -338,6 +338,7 @@ static int in_fw_init(struct flb_input_instance *ins,
         ctx->shared_key == NULL &&
         ctx->empty_shared_key == FLB_FALSE) {
         flb_plg_error(ctx->ins, "security.users is set but no shared_key or empty_shared_key");
+        delete_users(ctx);
         fw_config_destroy(ctx);
         return -1;
     }
