@@ -122,6 +122,7 @@ struct flb_s3 {
     int compression;
     int port;
     int insecure;
+    int vhost_style_urls;
     size_t store_dir_limit_size;
 
     struct flb_blob_db blob_db;
