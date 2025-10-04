@@ -20,6 +20,7 @@
 #include <fluent-bit/flb_output_plugin.h>
 #include <fluent-bit/flb_kv.h>
 #include <fluent-bit/flb_pack.h>
+#include <fluent-bit/flb_mp.h>
 #include <fluent-bit/flb_log_event_decoder.h>
 #include <fluent-bit/flb_log_event_encoder.h>
 
@@ -27,16 +28,19 @@
 #include "vivo_http.h"
 #include "vivo_stream.h"
 
-static flb_sds_t format_logs(struct flb_event_chunk *event_chunk, struct flb_config *config)
+static flb_sds_t format_logs(struct flb_input_instance *src_ins,
+                             struct flb_event_chunk *event_chunk, struct flb_config *config)
 {
-    struct flb_log_event_decoder log_decoder;
-    struct flb_log_event log_event;
+    int len;
     int result;
-    int i;
+    char *name;
     flb_sds_t out_js;
     flb_sds_t out_buf = NULL;
     msgpack_sbuffer tmp_sbuf;
     msgpack_packer tmp_pck;
+    struct flb_log_event log_event;
+    struct flb_log_event_decoder log_decoder;
+    struct flb_mp_map_header mh;
 
     result = flb_log_event_decoder_init(&log_decoder,
                                         (char *) event_chunk->data,
@@ -56,81 +60,110 @@ static flb_sds_t format_logs(struct flb_event_chunk *event_chunk, struct flb_con
     msgpack_sbuffer_init(&tmp_sbuf);
     msgpack_packer_init(&tmp_pck, &tmp_sbuf, msgpack_sbuffer_write);
 
+    /*
+     * Here is an example of the packaging done for Logs
+     *
+     * {
+     *    "source_type": "forward",
+     *    "source_name": "forward.0",
+     *    "tag": "dummy.0",
+     *    "records": [
+     *     {
+     *        "timestamp": 1759591426808913765,
+     *        "metadata": {
+     *          "level": "info"
+     *        },
+     *        "message": "dummy"
+     *      },
+     *     {
+     *        "timestamp": 1759591426908563348,
+     *        "metadata": {
+     *          "level": "debug",
+     *          "service": "auth"
+     *        },
+     *        "message": "dummy"
+     *      }
+     *    ]
+     * }
+     */
+
+    msgpack_pack_map(&tmp_pck, 4);
+
+    /* source_type: internal type of the plugin */
+    name = src_ins->p->name;
+    len = strlen(name);
+
+    msgpack_pack_str(&tmp_pck, 11);
+    msgpack_pack_str_body(&tmp_pck, "source_type", 11);
+    msgpack_pack_str(&tmp_pck, len);
+    msgpack_pack_str_body(&tmp_pck, name, len);
+
+    /* source_name: internal name or alias set by the user */
+    name = (char *) flb_input_name(src_ins);
+    len = strlen(name);
+    msgpack_pack_str(&tmp_pck, 11);
+    msgpack_pack_str_body(&tmp_pck, "source_name", 11);
+    msgpack_pack_str(&tmp_pck, len);
+    msgpack_pack_str_body(&tmp_pck, name, len);
+
+    /* tag */
+    msgpack_pack_str(&tmp_pck, 3);
+    msgpack_pack_str_body(&tmp_pck, "tag", 3);
+    msgpack_pack_str(&tmp_pck, flb_sds_len(event_chunk->tag));
+    msgpack_pack_str_body(&tmp_pck, event_chunk->tag, flb_sds_len(event_chunk->tag));
+
+    /* records */
+    msgpack_pack_str(&tmp_pck, 7);
+    msgpack_pack_str_body(&tmp_pck, "records", 7);
+
+    flb_mp_array_header_init(&mh, &tmp_pck);
+
     while ((result = flb_log_event_decoder_next(
                         &log_decoder,
                         &log_event)) == FLB_EVENT_DECODER_SUCCESS) {
+
+        flb_mp_array_header_append(&mh);
+
         /*
-         * If the caller specified FLB_PACK_JSON_DATE_FLUENT, we format the data
-         * by using the following structure:
-         *
-         * [[TIMESTAMP, {"_tag": "...", ...MORE_METADATA}], {RECORD CONTENT}]
+         * [[TIMESTAMP, {"....": "...", ...MORE_METADATA}], {RECORD CONTENT}]
          */
         msgpack_pack_array(&tmp_pck, 2);
         msgpack_pack_array(&tmp_pck, 2);
         msgpack_pack_uint64(&tmp_pck, flb_time_to_nanosec(&log_event.timestamp));
 
-        /* add tag only */
-        msgpack_pack_map(&tmp_pck, 1 + log_event.metadata->via.map.size);
-
-        msgpack_pack_str(&tmp_pck, 4);
-        msgpack_pack_str_body(&tmp_pck, "_tag", 4);
-
-        msgpack_pack_str(&tmp_pck, flb_sds_len(event_chunk->tag));
-        msgpack_pack_str_body(&tmp_pck, event_chunk->tag, flb_sds_len(event_chunk->tag));
-
-        /* Append remaining keys/values */
-        for (i = 0;
-             i < log_event.metadata->via.map.size;
-             i++) {
-            msgpack_pack_object(&tmp_pck,
-                                log_event.metadata->via.map.ptr[i].key);
-            msgpack_pack_object(&tmp_pck,
-                                log_event.metadata->via.map.ptr[i].val);
-        }
+        /* pack metadata */
+        msgpack_pack_object(&tmp_pck, *log_event.metadata);
 
         /* pack the remaining content */
-        msgpack_pack_map(&tmp_pck, log_event.body->via.map.size);
-
-        /* Append remaining keys/values */
-        for (i = 0;
-             i < log_event.body->via.map.size;
-             i++) {
-            msgpack_pack_object(&tmp_pck,
-                                log_event.body->via.map.ptr[i].key);
-            msgpack_pack_object(&tmp_pck,
-                                log_event.body->via.map.ptr[i].val);
-        }
-
-        /* Concatenate by using break lines */
-        out_js = flb_msgpack_raw_to_json_sds(tmp_sbuf.data, tmp_sbuf.size,
-                                             config->json_escape_unicode);
-        if (!out_js) {
-            flb_sds_destroy(out_buf);
-            msgpack_sbuffer_destroy(&tmp_sbuf);
-            flb_log_event_decoder_destroy(&log_decoder);
-            return NULL;
-        }
-
-        /*
-         * One map record has been converted, now append it to the
-         * outgoing out_buf sds variable.
-         */
-        flb_sds_cat_safe(&out_buf, out_js, flb_sds_len(out_js));
-        flb_sds_cat_safe(&out_buf, "\n", 1);
-
-        flb_sds_destroy(out_js);
-        msgpack_sbuffer_clear(&tmp_sbuf);
+        msgpack_pack_object(&tmp_pck, *log_event.body);
     }
+
+    flb_mp_array_header_end(&mh);
 
     /* Release the unpacker */
     flb_log_event_decoder_destroy(&log_decoder);
 
+    /* Convert the complete msgpack structure to JSON */
+    out_js = flb_msgpack_raw_to_json_sds(tmp_sbuf.data, tmp_sbuf.size,
+                                         config->json_escape_unicode);
+
     msgpack_sbuffer_destroy(&tmp_sbuf);
 
-    return out_buf;
+    /* append a newline */
+    flb_sds_cat_safe(&out_js, "\n", 1);
+
+    if (!out_js) {
+        flb_sds_destroy(out_buf);
+        return NULL;
+    }
+
+    /* Replace out_buf with the complete JSON */
+    flb_sds_destroy(out_buf);
+    return out_js;
 }
 
 static int logs_event_chunk_append(struct vivo_exporter *ctx,
+                                   struct flb_input_instance *src_ins,
                                    struct flb_event_chunk *event_chunk,
                                    struct flb_config *config)
 {
@@ -138,8 +171,7 @@ static int logs_event_chunk_append(struct vivo_exporter *ctx,
     flb_sds_t json;
     struct vivo_stream_entry *entry;
 
-
-    json = format_logs(event_chunk, config);
+    json = format_logs(src_ins, event_chunk, config);
     if (!json) {
         flb_plg_error(ctx->ins, "cannot convert logs chunk to JSON");
         return -1;
@@ -207,6 +239,7 @@ static int cb_vivo_init(struct flb_output_instance *ins,
         return -1;
     }
     ctx->ins = ins;
+    ctx->config = config;
 
     ret = flb_output_config_map_set(ins, (void *) ctx);
     if (ret == -1) {
@@ -272,7 +305,7 @@ static void cb_vivo_flush(struct flb_event_chunk *event_chunk,
     }
 #endif
     if (event_chunk->type == FLB_EVENT_TYPE_LOGS) {
-        ret = logs_event_chunk_append(ctx, event_chunk, config);
+        ret = logs_event_chunk_append(ctx, ins, event_chunk, config);
     }
     else if (event_chunk->type == FLB_EVENT_TYPE_TRACES) {
         ret = metrics_traces_event_chunk_append(ctx, ctx->stream_traces, event_chunk, config);

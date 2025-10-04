@@ -19,6 +19,11 @@
 
 #include <fluent-bit/flb_output_plugin.h>
 #include <fluent-bit/flb_http_server.h>
+#include <fluent-bit/flb_config.h>
+#include <fluent-bit/flb_pack.h>
+#include <fluent-bit/flb_metrics_exporter.h>
+
+#include <cmetrics/cmt_encode_msgpack.h>
 
 #include "vivo.h"
 #include "vivo_http.h"
@@ -64,14 +69,8 @@ static int stream_get_uri_properties(mk_request_t *request,
     return 0;
 }
 
-static void headers_set(mk_request_t *request, struct vivo_stream *vs)
+static void headers_set_common(struct vivo_exporter *ctx, mk_request_t *request)
 {
-    struct vivo_exporter *ctx;
-
-
-    /* parent context */
-    ctx = vs->parent;
-
     /* content type */
     mk_http_header(request,
                    VIVO_CONTENT_TYPE, sizeof(VIVO_CONTENT_TYPE) - 1,
@@ -90,13 +89,25 @@ static void headers_set(mk_request_t *request, struct vivo_stream *vs)
                        sizeof("Access-Control-Allow-Headers") - 1,
                        "Origin, X-Requested-With, Content-Type, Accept",
                        sizeof("Origin, X-Requested-With, Content-Type, Accept") - 1);
+    }
+}
 
+static void headers_set(mk_request_t *request, struct vivo_stream *vs)
+{
+    struct vivo_exporter *ctx;
+
+
+    /* parent context */
+    ctx = vs->parent;
+
+    headers_set_common(ctx, request);
+
+    if (ctx->http_cors_allow_origin) {
         mk_http_header(request,
                        "Access-Control-Expose-Headers",
                        sizeof("Access-Control-Expose-Headers") - 1,
                        "vivo-stream-start-id, vivo-stream-end-id",
                        sizeof("vivo-stream-start-id, vivo-stream-end-id") - 1);
-
     }
 }
 
@@ -159,7 +170,7 @@ static void serve_content(mk_request_t *request, struct vivo_stream *vs)
     flb_sds_destroy(str_end);
 }
 
-/* HTTP endpoint: /logs */
+/* HTTP endpoint: /api/v1/logs */
 static void cb_logs(mk_request_t *request, void *data)
 {
     struct vivo_exporter *ctx;
@@ -170,7 +181,7 @@ static void cb_logs(mk_request_t *request, void *data)
     mk_http_done(request);
 }
 
-/* HTTP endpoint: /metrics */
+/* HTTP endpoint: /api/v1/metrics */
 static void cb_metrics(mk_request_t *request, void *data)
 {
     struct vivo_exporter *ctx;
@@ -181,6 +192,7 @@ static void cb_metrics(mk_request_t *request, void *data)
     mk_http_done(request);
 }
 
+/* HTTP endpoint: /api/v1/traces */
 static void cb_traces(mk_request_t *request, void *data)
 {
     struct vivo_exporter *ctx;
@@ -189,6 +201,53 @@ static void cb_traces(mk_request_t *request, void *data)
 
     serve_content(request, ctx->stream_traces);
     mk_http_done(request);
+}
+
+/* HTTP endpoint: /api/v1/internal/metrics */
+static void cb_internal_metrics(mk_request_t *request, void *data)
+{
+    int ret;
+    char *mp_buf = NULL;
+    size_t mp_size = 0;
+    flb_sds_t json = NULL;
+    struct cmt *cmt = NULL;
+    struct vivo_exporter *ctx;
+
+    ctx = (struct vivo_exporter *) data;
+
+    cmt = flb_me_get_cmetrics(ctx->config);
+    if (!cmt) {
+        mk_http_status(request, 500);
+        mk_http_done(request);
+        return;
+    }
+
+    ret = cmt_encode_msgpack_create(cmt, &mp_buf, &mp_size);
+    if (ret != 0) {
+        cmt_destroy(cmt);
+        mk_http_status(request, 500);
+        mk_http_done(request);
+        return;
+    }
+
+    json = flb_msgpack_raw_to_json_sds(mp_buf, mp_size,
+                                       ctx->config->json_escape_unicode);
+
+    cmt_encode_msgpack_destroy(mp_buf);
+    cmt_destroy(cmt);
+
+    if (!json) {
+        mk_http_status(request, 500);
+        mk_http_done(request);
+        return;
+    }
+
+    mk_http_status(request, 200);
+    headers_set_common(ctx, request);
+    mk_http_send(request, json, flb_sds_len(json), NULL);
+    mk_http_done(request);
+
+    flb_sds_destroy(json);
 }
 
 /* HTTP endpoint: / (root) */
@@ -236,9 +295,10 @@ struct vivo_http *vivo_http_server_create(struct vivo_exporter *ctx,
     ph->vid = vid;
 
     /* Set HTTP URI callbacks */
-    mk_vhost_handler(ph->ctx, vid, "/logs", cb_logs, ctx);
-    mk_vhost_handler(ph->ctx, vid, "/metrics", cb_metrics, ctx);
-    mk_vhost_handler(ph->ctx, vid, "/traces", cb_traces, ctx);
+    mk_vhost_handler(ph->ctx, vid, "/api/v1/logs", cb_logs, ctx);
+    mk_vhost_handler(ph->ctx, vid, "/api/v1/metrics", cb_metrics, ctx);
+    mk_vhost_handler(ph->ctx, vid, "/api/v1/traces", cb_traces, ctx);
+    mk_vhost_handler(ph->ctx, vid, "/api/v1/internal/metrics", cb_internal_metrics, ctx);
     mk_vhost_handler(ph->ctx, vid, "/", cb_root, NULL);
 
     return ph;
