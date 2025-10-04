@@ -26,7 +26,7 @@
 #include "fw_conn.h"
 #include "fw_config.h"
 
-static void fw_destory_shared_key(struct flb_in_fw_config *config)
+static void fw_destroy_shared_key(struct flb_in_fw_config *config)
 {
     if (config->owns_shared_key && config->shared_key) {
         flb_sds_destroy(config->shared_key);
@@ -159,7 +159,7 @@ int fw_config_destroy(struct flb_in_fw_config *config)
         flb_free(config->tcp_port);
     }
 
-    fw_destory_shared_key(config);
+    fw_destroy_shared_key(config);
     flb_sds_destroy(config->self_hostname);
 
     flb_free(config);
