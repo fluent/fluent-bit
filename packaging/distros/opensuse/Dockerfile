@@ -1,5 +1,4 @@
-# Special Dockerfile to build all targets, the only difference is
-# the packages in the base image.
+# Dockerfile to build latest opensuse leap
 # Set this to the base image to use in each case, so if we want to build for opensuse/leap
 # we would set BASE_BUILDER=opensuse-leap-base.
 ARG BASE_BUILDER
@@ -7,10 +6,10 @@ ARG BASE_BUILDER
 # Use buildkit to skip unused base images: DOCKER_BUILDKIT=1
 
 # Multiarch support
-FROM multiarch/qemu-user-static:x86_64-aarch64 as multiarch-aarch64
+FROM multiarch/qemu-user-static:x86_64-aarch64 AS multiarch-aarch64
 
 # opensuse/leap base image
-FROM opensuse/leap:15.6 as opensuse_leap
+FROM opensuse/leap AS opensuse-leap-base
 
 # hadolint ignore=DL3033
 RUN zypper up -y && \
@@ -28,9 +27,10 @@ RUN zypper up -y && \
         libyaml-devel && \
     zypper clean -a && rm -rf /var/cache/zypp/*
 
+
 # opensuse/leap.arm64v8 base image
 # hadolint ignore=DL3029
-FROM --platform=arm64 opensuse/leap:15.6 AS opensuse_leap.arm64v8
+FROM --platform=arm64 opensuse/leap:15.6 AS opensuse-leap.arm64v8-base
 
 COPY --from=multiarch-aarch64 /usr/bin/qemu-aarch64-static /usr/bin/qemu-aarch64-static
 
@@ -56,7 +56,8 @@ ENV FLB_JEMALLOC_OPTIONS=$FLB_JEMALLOC_OPTIONS
 
 # Common build for all distributions now
 # hadolint ignore=DL3006
-FROM $BASE_BUILDER as builder
+FROM $BASE_BUILDER AS builder
+#
 
 ARG FLB_NIGHTLY_BUILD
 ENV FLB_NIGHTLY_BUILD=$FLB_NIGHTLY_BUILD
