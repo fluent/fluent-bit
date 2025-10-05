@@ -31,9 +31,6 @@
 
 #define VIVO_CONTENT_TYPE       "Content-Type"
 #define VIVO_CONTENT_TYPE_JSON  "application/json"
-#define VIVO_STREAM_START_ID    "Vivo-Stream-Start-ID"
-#define VIVO_STREAM_END_ID      "Vivo-Stream-End-ID"
-
 static int stream_get_uri_properties(mk_request_t *request,
                                      int64_t *from, int64_t *to, int64_t *limit)
 {
@@ -106,21 +103,23 @@ static void headers_set(mk_request_t *request, struct vivo_stream *vs)
         mk_http_header(request,
                        "Access-Control-Expose-Headers",
                        sizeof("Access-Control-Expose-Headers") - 1,
-                       "vivo-stream-start-id, vivo-stream-end-id",
-                       sizeof("vivo-stream-start-id, vivo-stream-end-id") - 1);
+                       "vivo-stream-start-id, vivo-stream-end-id, vivo-stream-next-id",
+                       sizeof("vivo-stream-start-id, vivo-stream-end-id, vivo-stream-next-id") - 1);
     }
 }
 
-static void serve_content(mk_request_t *request, struct vivo_stream *vs)
+void vivo_http_serve_content(mk_request_t *request, struct vivo_stream *vs)
 {
     int64_t from = -1;
     int64_t to = -1;
     int64_t limit = -1;
     int64_t stream_start_id = -1;
     int64_t stream_end_id = -1;
+    int64_t stream_next_id = -1;
     flb_sds_t payload;
     flb_sds_t str_start;
     flb_sds_t str_end;
+    flb_sds_t str_next;
 
 
     if (request->query_string.len > 0) {
@@ -128,16 +127,10 @@ static void serve_content(mk_request_t *request, struct vivo_stream *vs)
     }
 
     payload = vivo_stream_get_content(vs, from, to, limit,
-                                      &stream_start_id, &stream_end_id);
+                                      &stream_start_id, &stream_end_id,
+                                      &stream_next_id);
     if (!payload) {
         mk_http_status(request, 500);
-        return;
-    }
-
-    if (flb_sds_len(payload) == 0) {
-        mk_http_status(request, 200);
-        headers_set(request, vs);
-        flb_sds_destroy(payload);
         return;
     }
 
@@ -145,6 +138,19 @@ static void serve_content(mk_request_t *request, struct vivo_stream *vs)
 
     /* set response headers */
     headers_set(request, vs);
+
+    str_next = flb_sds_create_size(32);
+    flb_sds_printf(&str_next, "%" PRId64, stream_next_id);
+
+    mk_http_header(request,
+                   VIVO_STREAM_NEXT_ID, sizeof(VIVO_STREAM_NEXT_ID) - 1,
+                   str_next, flb_sds_len(str_next));
+
+    if (flb_sds_len(payload) == 0) {
+        flb_sds_destroy(payload);
+        flb_sds_destroy(str_next);
+        return;
+    }
 
     /* stream ids served: compose buffer and set headers */
     str_start = flb_sds_create_size(32);
@@ -168,6 +174,7 @@ static void serve_content(mk_request_t *request, struct vivo_stream *vs)
     flb_sds_destroy(payload);
     flb_sds_destroy(str_start);
     flb_sds_destroy(str_end);
+    flb_sds_destroy(str_next);
 }
 
 /* HTTP endpoint: /api/v1/logs */
@@ -177,7 +184,7 @@ static void cb_logs(mk_request_t *request, void *data)
 
     ctx = (struct vivo_exporter *) data;
 
-    serve_content(request, ctx->stream_logs);
+    vivo_http_serve_content(request, ctx->stream_logs);
     mk_http_done(request);
 }
 
@@ -188,7 +195,7 @@ static void cb_metrics(mk_request_t *request, void *data)
 
     ctx = (struct vivo_exporter *) data;
 
-    serve_content(request, ctx->stream_metrics);
+    vivo_http_serve_content(request, ctx->stream_metrics);
     mk_http_done(request);
 }
 
@@ -199,7 +206,7 @@ static void cb_traces(mk_request_t *request, void *data)
 
     ctx = (struct vivo_exporter *) data;
 
-    serve_content(request, ctx->stream_traces);
+    vivo_http_serve_content(request, ctx->stream_traces);
     mk_http_done(request);
 }
 
