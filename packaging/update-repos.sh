@@ -43,7 +43,7 @@ RPM_REPO_PATHS=( "amazonlinux/2"
 				 "almalinux/8" 
 				 "almalinux/9" 
 				 "almalinux/10"
-				 "opensuse/leap"
+				 "opensuse/15.6"
 				 "sles/15.7"
 				)
 

@@ -58,7 +58,7 @@ YUM_TARGETS=(
     "quay.io/centos/centos:stream10"
     "amazonlinux:2"
     "amazonlinux:2023"
-    "opensuse/leap"
+    "opensuse/15.6"
     "sles/15.7"
 )
 

@@ -3,10 +3,10 @@ ARG BASE_BUILDER
 # Use buildkit to skip unused base images: DOCKER_BUILDKIT=1
 
 # Multiarch support
-FROM multiarch/qemu-user-static:x86_64-aarch64 as multiarch-aarch64
+FROM multiarch/qemu-user-static:x86_64-aarch64 AS multiarch-aarch64
 
 # opensuse/leap base image
-FROM registry.suse.com/bci/bci-base:15.7 as sles-15.7-base
+FROM registry.suse.com/bci/bci-base:15.7 AS sles-15.7-base
 
 # hadolint ignore=DL3033
 RUN zypper up -y && \
@@ -20,7 +20,7 @@ RUN zypper up -y && \
 
 # opensuse/leap.arm64v8 base image
 # hadolint ignore=DL3029
-FROM --platform=arm64 registry.suse.com/bci/bci-base:15.7 as sles-15.7.arm64v8-base
+FROM --platform=arm64 registry.suse.com/bci/bci-base:15.7 AS sles-15.7.arm64v8-base
 
 COPY --from=multiarch-aarch64 /usr/bin/qemu-aarch64-static /usr/bin/qemu-aarch64-static
 
@@ -40,7 +40,7 @@ ENV FLB_JEMALLOC_OPTIONS=$FLB_JEMALLOC_OPTIONS
 
 # Common build for all distributions now
 # hadolint ignore=DL3006
-FROM $BASE_BUILDER as builder
+FROM $BASE_BUILDER AS builder
 
 ARG FLB_NIGHTLY_BUILD
 ENV FLB_NIGHTLY_BUILD=$FLB_NIGHTLY_BUILD
