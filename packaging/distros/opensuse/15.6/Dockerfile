@@ -1,38 +1,6 @@
-# Dockerfile to build latest opensuse leap
-# Set this to the base image to use in each case, so if we want to build for opensuse/leap
-# we would set BASE_BUILDER=opensuse-leap-base.
-ARG BASE_BUILDER
-# Lookup the name to use below but should follow the '<distro>-base' convention with slashes replaced.
-# Use buildkit to skip unused base images: DOCKER_BUILDKIT=1
-
 # Multiarch support
-FROM multiarch/qemu-user-static:x86_64-aarch64 AS multiarch-aarch64
-
-# opensuse/leap base image
-FROM opensuse/leap AS opensuse-leap-base
-
-# hadolint ignore=DL3033
-RUN zypper up -y && \
-    zypper install -y --no-recommends \
-        rpm-build \
-        curl ca-certificates wget unzip flex bison \
-        gcc gcc-c++ \
-        cmake3-full \
-        make \
-        bash \
-        systemd-devel \
-        postgresql postgresql-devel postgresql-server \
-        cyrus-sasl cyrus-sasl-devel \
-        libopenssl3 libopenssl-3-devel \
-        libyaml-devel && \
-    zypper clean -a && rm -rf /var/cache/zypp/*
-
-
-# opensuse/leap.arm64v8 base image
-# hadolint ignore=DL3029
-FROM --platform=arm64 opensuse/leap:15.6 AS opensuse-leap.arm64v8-base
-
-COPY --from=multiarch-aarch64 /usr/bin/qemu-aarch64-static /usr/bin/qemu-aarch64-static
+# Builder/Final (per-arch) stages
+FROM opensuse/leap:15.6 AS opensuse-leap-base
 
 # hadolint ignore=DL3033
 RUN zypper up -y && \
@@ -53,11 +21,6 @@ RUN zypper up -y && \
 # Need larger page size
 ARG FLB_JEMALLOC_OPTIONS="--with-lg-page=16 --with-lg-quantum=3"
 ENV FLB_JEMALLOC_OPTIONS=$FLB_JEMALLOC_OPTIONS
-
-# Common build for all distributions now
-# hadolint ignore=DL3006
-FROM $BASE_BUILDER AS builder
-#
 
 ARG FLB_NIGHTLY_BUILD
 ENV FLB_NIGHTLY_BUILD=$FLB_NIGHTLY_BUILD
