@@ -23,10 +23,34 @@
 #include <fluent-bit/flb_mp.h>
 #include <fluent-bit/flb_log_event_decoder.h>
 #include <fluent-bit/flb_log_event_encoder.h>
+#include <string.h>
 
 #include "vivo.h"
 #include "vivo_http.h"
 #include "vivo_stream.h"
+
+static msgpack_object *find_map_value(msgpack_object *map,
+                                      const char *key, size_t key_len)
+{
+    size_t i;
+
+    if (!map || map->type != MSGPACK_OBJECT_MAP) {
+        return NULL;
+    }
+
+    for (i = 0; i < map->via.map.size; i++) {
+        if (map->via.map.ptr[i].key.type != MSGPACK_OBJECT_STR) {
+            continue;
+        }
+
+        if (map->via.map.ptr[i].key.via.str.size == key_len &&
+            strncmp(map->via.map.ptr[i].key.via.str.ptr, key, key_len) == 0) {
+            return &map->via.map.ptr[i].val;
+        }
+    }
+
+    return NULL;
+}
 
 static flb_sds_t format_logs(struct flb_input_instance *src_ins,
                              struct flb_event_chunk *event_chunk, struct flb_config *config)
@@ -38,9 +62,19 @@ static flb_sds_t format_logs(struct flb_input_instance *src_ins,
     flb_sds_t out_buf = NULL;
     msgpack_sbuffer tmp_sbuf;
     msgpack_packer tmp_pck;
+    int group_mismatch = FLB_FALSE;
+    int is_otlp = FLB_FALSE;
     struct flb_log_event log_event;
     struct flb_log_event_decoder log_decoder;
     struct flb_mp_map_header mh;
+    struct flb_mp_map_header root_map;
+    struct flb_mp_map_header otlp_map;
+    struct flb_mp_map_header group_map;
+    msgpack_object *group_metadata = NULL;
+    msgpack_object *group_attributes = NULL;
+    msgpack_object *schema_value = NULL;
+    msgpack_object *resource_value = NULL;
+    msgpack_object *scope_value = NULL;
 
     result = flb_log_event_decoder_init(&log_decoder,
                                         (char *) event_chunk->data,
@@ -87,9 +121,10 @@ static flb_sds_t format_logs(struct flb_input_instance *src_ins,
      * }
      */
 
-    msgpack_pack_map(&tmp_pck, 4);
+    flb_mp_map_header_init(&root_map, &tmp_pck);
 
     /* source_type: internal type of the plugin */
+    flb_mp_map_header_append(&root_map);
     name = src_ins->p->name;
     len = strlen(name);
 
@@ -99,6 +134,7 @@ static flb_sds_t format_logs(struct flb_input_instance *src_ins,
     msgpack_pack_str_body(&tmp_pck, name, len);
 
     /* source_name: internal name or alias set by the user */
+    flb_mp_map_header_append(&root_map);
     name = (char *) flb_input_name(src_ins);
     len = strlen(name);
     msgpack_pack_str(&tmp_pck, 11);
@@ -107,12 +143,14 @@ static flb_sds_t format_logs(struct flb_input_instance *src_ins,
     msgpack_pack_str_body(&tmp_pck, name, len);
 
     /* tag */
+    flb_mp_map_header_append(&root_map);
     msgpack_pack_str(&tmp_pck, 3);
     msgpack_pack_str_body(&tmp_pck, "tag", 3);
     msgpack_pack_str(&tmp_pck, flb_sds_len(event_chunk->tag));
     msgpack_pack_str_body(&tmp_pck, event_chunk->tag, flb_sds_len(event_chunk->tag));
 
     /* records */
+    flb_mp_map_header_append(&root_map);
     msgpack_pack_str(&tmp_pck, 7);
     msgpack_pack_str_body(&tmp_pck, "records", 7);
 
@@ -121,6 +159,24 @@ static flb_sds_t format_logs(struct flb_input_instance *src_ins,
     while ((result = flb_log_event_decoder_next(
                         &log_decoder,
                         &log_event)) == FLB_EVENT_DECODER_SUCCESS) {
+
+        if (log_event.group_metadata != NULL) {
+            if (group_metadata == NULL) {
+                group_metadata = log_event.group_metadata;
+            }
+            else if (group_metadata != log_event.group_metadata) {
+                group_mismatch = FLB_TRUE;
+            }
+        }
+
+        if (log_event.group_attributes != NULL) {
+            if (group_attributes == NULL) {
+                group_attributes = log_event.group_attributes;
+            }
+            else if (group_attributes != log_event.group_attributes) {
+                group_mismatch = FLB_TRUE;
+            }
+        }
 
         flb_mp_array_header_append(&mh);
 
@@ -139,6 +195,78 @@ static flb_sds_t format_logs(struct flb_input_instance *src_ins,
     }
 
     flb_mp_array_header_end(&mh);
+
+    if (group_mismatch == FLB_FALSE &&
+        (group_metadata != NULL || group_attributes != NULL)) {
+        if (group_metadata != NULL) {
+            schema_value = find_map_value(group_metadata, "schema", 6);
+        }
+
+        if (schema_value &&
+            schema_value->type == MSGPACK_OBJECT_STR &&
+            schema_value->via.str.size == 4 &&
+            strncmp(schema_value->via.str.ptr, "otlp", 4) == 0) {
+            is_otlp = FLB_TRUE;
+        }
+
+        if (is_otlp == FLB_TRUE) {
+            resource_value = NULL;
+            scope_value = NULL;
+
+            if (group_attributes != NULL &&
+                group_attributes->type == MSGPACK_OBJECT_MAP) {
+                resource_value = find_map_value(group_attributes, "resource", 8);
+                scope_value = find_map_value(group_attributes, "scope", 5);
+            }
+
+            flb_mp_map_header_append(&root_map);
+            msgpack_pack_str(&tmp_pck, 4);
+            msgpack_pack_str_body(&tmp_pck, "otlp", 4);
+
+            flb_mp_map_header_init(&otlp_map, &tmp_pck);
+
+            if (resource_value != NULL) {
+                flb_mp_map_header_append(&otlp_map);
+                msgpack_pack_str(&tmp_pck, 8);
+                msgpack_pack_str_body(&tmp_pck, "resource", 8);
+                msgpack_pack_object(&tmp_pck, *resource_value);
+            }
+
+            if (scope_value != NULL) {
+                flb_mp_map_header_append(&otlp_map);
+                msgpack_pack_str(&tmp_pck, 5);
+                msgpack_pack_str_body(&tmp_pck, "scope", 5);
+                msgpack_pack_object(&tmp_pck, *scope_value);
+            }
+
+            flb_mp_map_header_end(&otlp_map);
+        }
+        else {
+            flb_mp_map_header_append(&root_map);
+            msgpack_pack_str(&tmp_pck, 9);
+            msgpack_pack_str_body(&tmp_pck, "flb_group", 9);
+
+            flb_mp_map_header_init(&group_map, &tmp_pck);
+
+            if (group_metadata != NULL) {
+                flb_mp_map_header_append(&group_map);
+                msgpack_pack_str(&tmp_pck, 8);
+                msgpack_pack_str_body(&tmp_pck, "metadata", 8);
+                msgpack_pack_object(&tmp_pck, *group_metadata);
+            }
+
+            if (group_attributes != NULL) {
+                flb_mp_map_header_append(&group_map);
+                msgpack_pack_str(&tmp_pck, 4);
+                msgpack_pack_str_body(&tmp_pck, "body", 4);
+                msgpack_pack_object(&tmp_pck, *group_attributes);
+            }
+
+            flb_mp_map_header_end(&group_map);
+        }
+    }
+
+    flb_mp_map_header_end(&root_map);
 
     /* Release the unpacker */
     flb_log_event_decoder_destroy(&log_decoder);
