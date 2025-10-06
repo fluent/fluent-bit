@@ -148,27 +148,23 @@ apt-get -y update
 $INSTALL_CMD_PREFIX apt-get -y $APT_PARAMETERS install $INSTALL_PACKAGE_NAME$APT_VERSION
 SCRIPT
     ;;
-    opensuse*|sles)
-        SUSE_OS="opensuse"
-        case "${OS}" in
-          sles|suse) SUSE_OS="sles" ;;
-        esac
-        SUSE_VER="${VERSION_ID:-}"
-
+    opensuse-leap|sles)
         $SUDO sh <<SCRIPT
 rpm --import $RELEASE_KEY
 cat << EOF > /etc/zypp/repos.d/fluent-bit.repo
 [fluent-bit]
 name = Fluent Bit
-baseurl = $RELEASE_URL/$SUSE_OS/$SUSE_VER
+baseurl = $RELEASE_URL/suse/\$releasever
 gpgcheck=1
 repo_gpgcheck=1
 gpgkey=$RELEASE_KEY
 enabled=1
+type=rpm-md
+autorefresh=1
 EOF
 cat /etc/zypp/repos.d/fluent-bit.repo
-zypper --non-interactive refresh
-$INSTALL_CMD_PREFIX zypper --non-interactive $ZYPPER_PARAMETERS install $INSTALL_PACKAGE_NAME$ZYPPER_VERSION
+zypper --non-interactive --gpg-auto-import-keys refresh
+$INSTALL_CMD_PREFIX zypper --non-interactive --gpg-auto-import-keys $ZYPPER_PARAMETERS install $INSTALL_PACKAGE_NAME$ZYPPER_VERSION
 SCRIPT
     ;;
     *)
