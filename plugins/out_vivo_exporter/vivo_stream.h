@@ -54,6 +54,7 @@ struct vivo_stream_entry *vivo_stream_append(struct vivo_stream *vs, void *data,
                                              size_t size);
 flb_sds_t vivo_stream_get_content(struct vivo_stream *vs, int64_t from, int64_t to,
                                   int64_t limit,
-                                  int64_t *stream_start_id, int64_t *stream_end_id);
+                                  int64_t *stream_start_id, int64_t *stream_end_id,
+                                  int64_t *stream_next_id);
 
 #endif
