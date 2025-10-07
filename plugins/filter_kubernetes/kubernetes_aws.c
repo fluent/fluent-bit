@@ -23,6 +23,7 @@
 #include <fluent-bit/flb_jsmn.h>
 #include <fluent-bit/flb_record_accessor.h>
 #include <fluent-bit/flb_ra_key.h>
+#include <fluent-bit/flb_utils.h>
 
 #include "kube_conf.h"
 #include "kube_meta.h"
@@ -282,19 +283,106 @@ int fetch_pod_service_map(struct flb_kube *ctx, char *api_server_url,
     return 0;
 }
 
-/* Determine platform by checking aws-auth configmap */
+/* Determine platform by checking serviceaccount token issuer */
 int determine_platform(struct flb_kube *ctx)
 {
     int ret;
-    char *config_buf;
-    size_t config_size;
-
-    ret = get_api_server_configmap(ctx, KUBE_SYSTEM_NAMESPACE, AWS_AUTH_CONFIG_MAP, &config_buf, &config_size);
-    if (ret != -1) {
-        flb_free(config_buf);
-        return 1;
+    char *token_buf = NULL;
+    size_t token_size;
+    char *payload = NULL;
+    size_t payload_len;
+    char *issuer_start, *issuer_end;
+    
+    /* Read serviceaccount token */
+    ret = flb_utils_read_file(FLB_KUBE_TOKEN, &token_buf, &token_size);
+    if (ret != 0 || !token_buf) {
+        return -1;
     }
-    return -1;
+    
+    /* JWT tokens have 3 parts separated by dots: header.payload.signature */
+    char *first_dot = strchr(token_buf, '.');
+    if (!first_dot) {
+        flb_free(token_buf);
+        return -1;
+    }
+    
+    char *second_dot = strchr(first_dot + 1, '.');
+    if (!second_dot) {
+        flb_free(token_buf);
+        return -1;
+    }
+    
+    /* Extract and decode the payload (middle part) */
+    size_t payload_b64_len = second_dot - (first_dot + 1);
+    char *payload_b64 = flb_malloc(payload_b64_len + 1);
+    if (!payload_b64) {
+        flb_free(token_buf);
+        return -1;
+    }
+    
+    memcpy(payload_b64, first_dot + 1, payload_b64_len);
+    payload_b64[payload_b64_len] = '\0';
+    
+    /* Base64 decode the payload */
+    payload = flb_malloc(payload_b64_len * 3 / 4 + 4); /* Conservative size estimate */
+    if (!payload) {
+        flb_free(token_buf);
+        flb_free(payload_b64);
+        return -1;
+    }
+    
+    ret = flb_base64_decode((unsigned char *)payload, payload_b64_len * 3 / 4 + 4, 
+                           &payload_len, (unsigned char *)payload_b64, payload_b64_len);
+    
+    flb_free(token_buf);
+    flb_free(payload_b64);
+    
+    if (ret != 0) {
+        flb_free(payload);
+        return -1;
+    }
+    
+    payload[payload_len] = '\0';
+    
+    /* Look for "iss" field in the JSON payload */
+    issuer_start = strstr(payload, "\"iss\":");
+    if (!issuer_start) {
+        flb_free(payload);
+        return -1;
+    }
+    
+    /* Skip to the value part */
+    issuer_start = strchr(issuer_start, ':');
+    if (!issuer_start) {
+        flb_free(payload);
+        return -1;
+    }
+    issuer_start++;
+    
+    /* Skip whitespace and opening quote */
+    while (*issuer_start == ' ' || *issuer_start == '\t') issuer_start++;
+    if (*issuer_start != '"') {
+        flb_free(payload);
+        return -1;
+    }
+    issuer_start++;
+    
+    /* Find closing quote */
+    issuer_end = strchr(issuer_start, '"');
+    if (!issuer_end) {
+        flb_free(payload);
+        return -1;
+    }
+    
+    /* Check if issuer contains EKS OIDC URL pattern */
+    /* EKS OIDC URLs follow pattern: https://oidc.eks.{region}.amazonaws.com/id/{cluster-id} */
+    if (strstr(issuer_start, "oidc.eks.") && strstr(issuer_start, ".amazonaws.com/id/")) {
+        flb_free(payload);
+        return 1; /* EKS detected */
+    }
+    
+    flb_free(payload);
+    return -1; /* Not EKS */
 }
 
 /* Gather pods list information from Kubelet */
