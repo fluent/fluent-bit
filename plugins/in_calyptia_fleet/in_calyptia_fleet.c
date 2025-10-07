@@ -2103,6 +2103,8 @@ static int in_calyptia_fleet_collect_once(struct flb_input_instance *ins,
 
         if (ctx->initial_fd == -1) {
             flb_plg_error(ctx->ins, "could not initialize collector for fleet input plugin");
+            /* Resume main collector on retry scheduling failure */
+            flb_input_collector_resume(ctx->collect_fd, ins);
             FLB_INPUT_RETURN(-1);
         }
 
