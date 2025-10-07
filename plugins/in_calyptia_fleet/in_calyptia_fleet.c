@@ -2618,8 +2618,7 @@ static int in_calyptia_fleet_init(struct flb_input_instance *in,
                                                        config);
         if (ctx->initial_fd == -1) {
             flb_plg_error(ctx->ins, "could not initialize collector for fleet input plugin");
-            flb_upstream_destroy(ctx->u);
-            flb_free(ctx);
+            in_calyptia_fleet_destroy(ctx);
             return -1;
         }
         flb_plg_info(ctx->ins, "updating initial configuration with oneshot interval");
