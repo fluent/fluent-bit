@@ -136,8 +136,8 @@ do
         -e FLUENT_BIT_INSTALL_ZYPPER_PARAMETERS="${FLUENT_BIT_INSTALL_ZYPPER_PARAMETERS:-}" \
         $EXTRA_MOUNTS \
         "$IMAGE" \
-        sh -c "zypper --non-interactive --gpg-auto-import-keys refresh \
-               zypper --non-interactive --gpg-auto-import-keys install gpg curl; \
+        sh -c "zypper --non-interactive --gpg-auto-import-keys refresh && \
+               zypper --non-interactive --gpg-auto-import-keys install gpg curl; && \
                $INSTALL_CMD /opt/fluent-bit/bin/fluent-bit --version" | tee "$LOG_FILE"
     check_version "$LOG_FILE"
     rm -f "$LOG_FILE"
