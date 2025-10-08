@@ -164,6 +164,13 @@ struct flb_service_config service_configs[] = {
     {FLB_CONF_STORAGE_INHERIT,
      FLB_CONF_TYPE_BOOL,
      offsetof(struct flb_config, storage_inherit)},
+    /* Storage / DLQ */
+    {FLB_CONF_STORAGE_KEEP_REJECTED,
+     FLB_CONF_TYPE_BOOL,
+     offsetof(struct flb_config, storage_keep_rejected)},
+    {FLB_CONF_STORAGE_REJECTED_PATH,
+     FLB_CONF_TYPE_STR,
+     offsetof(struct flb_config, storage_rejected_path)},
 
     /* Coroutines */
     {FLB_CONF_STR_CORO_STACK_SIZE,
@@ -351,6 +358,7 @@ struct flb_config *flb_config_init()
     config->storage_type = NULL;
     config->storage_inherit = FLB_FALSE;
     config->storage_bl_flush_on_shutdown = FLB_FALSE;
+    config->storage_rejected_path = NULL;
     config->sched_cap  = FLB_SCHED_CAP;
     config->sched_base = FLB_SCHED_BASE;
     config->json_escape_unicode = FLB_TRUE;
@@ -612,6 +620,9 @@ void flb_config_exit(struct flb_config *config)
     }
     if (config->storage_bl_mem_limit) {
         flb_free(config->storage_bl_mem_limit);
+    }
+    if (config->storage_rejected_path) {
+        flb_free(config->storage_rejected_path);
     }
 
 #ifdef FLB_HAVE_STREAM_PROCESSOR
