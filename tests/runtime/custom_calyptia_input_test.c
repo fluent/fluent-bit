@@ -58,6 +58,8 @@ static struct test_context *init_test_context()
         return NULL;
     }
 
+    mk_list_init(&t_ctx->ctx->ins->net_properties);
+
     /* Initialize test values in ctx */
     t_ctx->ctx->api_key = flb_strdup("test_api_key");
     t_ctx->ctx->fleet_config_dir = flb_strdup("/test/config/dir");
