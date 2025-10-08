@@ -49,7 +49,9 @@ int flb_routes_mask_set_by_tag(flb_route_mask_element *routes_mask,
     if (!in) {
         return 0;
     }
-
+    if (in->config == NULL || in->config->router == NULL) {
+        return 0;
+    }
 
     /* Clear the bit field */
     size = flb_routes_mask_get_size(in->config->router);
@@ -161,6 +163,9 @@ int flb_routes_mask_is_empty(flb_route_mask_element *routes_mask,
 
 int flb_routes_empty_mask_create(struct flb_router *router)
 {
+    if (router == NULL) {
+        return -1;
+    }
     flb_routes_empty_mask_destroy(router);
 
     router->route_empty_mask = flb_calloc(router->route_mask_size,
@@ -175,6 +180,9 @@ int flb_routes_empty_mask_create(struct flb_router *router)
 
 void flb_routes_empty_mask_destroy(struct flb_router *router)
 {
+    if (router == NULL) {
+        return;
+    }
     if (router->route_empty_mask != NULL) {
         flb_free(router->route_empty_mask);
         router->route_empty_mask = NULL;
