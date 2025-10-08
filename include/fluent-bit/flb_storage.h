@@ -74,6 +74,8 @@ static inline char *flb_storage_get_type(int type)
     return NULL;
 }
 
+struct flb_input_instance;
+
 int flb_storage_create(struct flb_config *ctx);
 int flb_storage_input_create(struct cio_ctx *cio,
                              struct flb_input_instance *in);
