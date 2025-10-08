@@ -257,6 +257,7 @@ struct flb_config {
     /* DLQ for non-retriable output failures */
     int   storage_keep_rejected;     /* 0/1 */
     char *storage_rejected_path;     /* relative to storage_path, default "rejected" */
+    void *storage_rejected_stream;  /* NULL until first use */
 
     /* Embedded SQL Database support (SQLite3) */
 #ifdef FLB_HAVE_SQLDB
