@@ -81,8 +81,9 @@ int flb_router_match(const char *tag, int tag_len,
                      const char *match, void *match_regex);
 int flb_router_io_set(struct flb_config *config);
 void flb_router_exit(struct flb_config *config);
-#endif
 
 int flb_router_metrics_create(struct flb_config *config, struct flb_router *router);
 struct flb_router *flb_router_create(struct flb_config *config);
 void flb_router_destroy(struct flb_router *router);
+
+#endif
