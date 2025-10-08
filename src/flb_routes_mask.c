@@ -195,8 +195,7 @@ int flb_routes_mask_set_size(size_t mask_size, struct flb_router *router)
         mask_size = 1;
     }
 
-    mask_size = (mask_size / FLB_ROUTES_MASK_ELEMENT_BITS) +
-                (mask_size % FLB_ROUTES_MASK_ELEMENT_BITS);
+    mask_size = (mask_size + FLB_ROUTES_MASK_ELEMENT_BITS - 1) / FLB_ROUTES_MASK_ELEMENT_BITS;
 
     router->route_mask_size = mask_size;
     router->route_mask_slots = mask_size * FLB_ROUTES_MASK_ELEMENT_BITS;
