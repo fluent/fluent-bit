@@ -2529,6 +2529,9 @@ static int in_calyptia_fleet_init(struct flb_input_instance *in,
         return -1;
     }
 
+    /* set upstream settings from 'net.*' */
+    flb_input_upstream_set(ctx->u, ctx->ins);
+
     /* Log initial interval values */
     flb_plg_debug(ctx->ins, "initial collector interval: sec=%d nsec=%d",
                   ctx->interval_sec, ctx->interval_nsec);
