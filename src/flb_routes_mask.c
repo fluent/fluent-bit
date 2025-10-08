@@ -151,9 +151,12 @@ int flb_routes_mask_get_bit(flb_route_mask_element *routes_mask, int value,
 int flb_routes_mask_is_empty(flb_route_mask_element *routes_mask,
                              struct flb_router *router)
 {
+    if (router == NULL || router->route_empty_mask == NULL) {
+        return 0;
+    }
     return memcmp(routes_mask,
                   router->route_empty_mask,
-                  router->route_mask_size) == 0;
+                  router->route_mask_size * sizeof(flb_route_mask_element)) == 0;
 }
 
 int flb_routes_empty_mask_create(struct flb_router *router)
