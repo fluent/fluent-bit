@@ -1869,6 +1869,7 @@ flb_sds_t fleet_config_get(struct flb_in_calyptia_fleet_config *ctx)
         }
 
         fleet_config_get_properties(&buf, &c_ins->properties, ctx->fleet_config_legacy_format);
+        fleet_config_get_properties(&buf, &c_ins->net_properties, ctx->fleet_config_legacy_format);
 
         if (flb_config_prop_get("fleet_id", &c_ins->properties) == NULL) {
             if (ctx->fleet_id != NULL) {
