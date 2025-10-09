@@ -109,11 +109,12 @@ static int read_dlq_chunk_content(struct flb_config *ctx,
 static int buf_contains(const void *hay, size_t hlen,
                         const void *needle, size_t nlen)
 {
+    size_t i;
     if (nlen == 0 || hlen < nlen) return 0;
     const unsigned char *h = (const unsigned char *) hay;
     const unsigned char *n = (const unsigned char *) needle;
 
-    for (size_t i = 0; i + nlen <= hlen; i++) {
+    for (i = 0; i + nlen <= hlen; i++) {
         if (h[i] == n[0] && memcmp(h + i, n, nlen) == 0) {
             return 1;
         }
