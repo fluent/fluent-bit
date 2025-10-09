@@ -35,8 +35,7 @@ RUN mkdir -p /fluent-bit/bin /fluent-bit/etc /fluent-bit/log
 ENV DEBIAN_FRONTEND=noninteractive
 
 # hadolint ignore=DL3008
-RUN echo "deb http://deb.debian.org/debian trixie-backports main" >> /etc/apt/sources.list && \
-    apt-get update && \
+RUN apt-get update && \
     apt-get install -y --no-install-recommends \
     build-essential \
     curl \
@@ -48,7 +47,7 @@ RUN echo "deb http://deb.debian.org/debian trixie-backports main" >> /etc/apt/so
     libcurl4-openssl-dev \
     libsasl2-dev \
     pkg-config \
-    libsystemd-dev/trixie-backports \
+    libsystemd-dev \
     zlib1g-dev \
     libpq-dev \
     postgresql-server-dev-all \
@@ -127,20 +126,20 @@ COPY --from=qemu-arm64 /usr/bin/qemu-aarch64-static /usr/bin/
 # We also include some extra handling for the status files that some tooling uses for scanning, etc.
 WORKDIR /tmp
 SHELL ["/bin/bash", "-o", "pipefail", "-c"]
-RUN echo "deb http://deb.debian.org/debian trixie-backports main" >> /etc/apt/sources.list && \
-    apt-get update && \
+RUN apt-get update && \
     apt-get download \
-    libssl3 \
-    libcurl4 \
+    libssl3t64 \
+    libcurl4t64 \
     libnghttp2-14 \
+    libnghttp3-9 \
     librtmp1 \
-    libssh2-1 \
-    libpsl5 \
+    libssh2-1t64 \
+    libpsl5t64 \
     libbrotli1 \
     libsasl2-2 \
     pkg-config \
     libpq5 \
-    libsystemd0/trixie-backports \
+    libsystemd0 \
     zlib1g \
     ca-certificates \
     libatomic1 \
@@ -154,19 +153,20 @@ RUN echo "deb http://deb.debian.org/debian trixie-backports main" >> /etc/apt/so
     libk5crypto3 \
     libcom-err2 \
     libkrb5support0 \
-    libgnutls30 \
+    libgnutls30t64 \
     libkeyutils1 \
     libp11-kit0 \
     libidn2-0 \
-    libunistring2 \
+    libunistring5 \
     libtasn1-6 \
-    libnettle8 \
-    libhogweed6 \
+    libnettle8t64 \
+    libhogweed6t64 \
     libgmp10 \
     libffi8 \
     liblzma5 \
     libyaml-0-2 \
     libcap2 \
+    libldap2 \
     && \
     mkdir -p /dpkg/var/lib/dpkg/status.d/ && \
     for deb in *.deb; do \
@@ -234,25 +234,26 @@ COPY --from=qemu-arm64 /usr/bin/qemu-aarch64-static /usr/bin/
 ENV DEBIAN_FRONTEND=noninteractive
 
 # hadolint ignore=DL3008
-RUN echo "deb http://deb.debian.org/debian trixie-backports main" >> /etc/apt/sources.list && \
-    apt-get update && \
+RUN apt-get update && \
     apt-get install -y --no-install-recommends \
-    libssl3 \
-    libcurl4 \
+    libssl3t64 \
+    libcurl4t64 \
     libnghttp2-14 \
+    libnghttp3-9 \
     librtmp1 \
-    libssh2-1 \
-    libpsl5 \
+    libssh2-1t64 \
+    libpsl5t64 \
     libbrotli1 \
     libsasl2-2 \
     pkg-config \
     libpq5 \
-    libsystemd0/trixie-backports \
+    libsystemd0 \
     zlib1g \
     ca-certificates \
     libatomic1 \
     libgcrypt20 \
     libyaml-0-2 \
+    libldap2 \
     bash gdb valgrind build-essential  \
     git bash-completion vim tmux jq \
     dnsutils iputils-ping iputils-arping iputils-tracepath iputils-clockdiff \
@@ -261,7 +262,7 @@ RUN echo "deb http://deb.debian.org/debian trixie-backports main" >> /etc/apt/so
     openssl \
     htop atop strace iotop sysstat ncdu logrotate hdparm pciutils psmisc tree pv \
     make tar flex bison \
-    libssl-dev libsasl2-dev libsystemd-dev/trixie-backports zlib1g-dev libpq-dev libyaml-dev postgresql-server-dev-all \
+    libssl-dev libsasl2-dev libsystemd-dev zlib1g-dev libpq-dev libyaml-dev postgresql-server-dev-all \
     && apt-get satisfy -y cmake "cmake (<< 4.0)" \
     && apt-get clean \
     && rm -rf /var/lib/apt/lists/*
