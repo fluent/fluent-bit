@@ -35,15 +35,36 @@ struct ctrace_attributes *ctr_attributes_create()
         return NULL;
     }
 
+    attr->ref_count = 1;
+
     return attr;
 }
 
 void ctr_attributes_destroy(struct ctrace_attributes *attr)
 {
+    if (!attr) {
+        return;
+    }
+
+    if (attr->ref_count > 1) {
+        attr->ref_count--;
+        return;
+    }
+
     if (attr->kv) {
         cfl_kvlist_destroy(attr->kv);
     }
     free(attr);
+}
+
+struct ctrace_attributes *ctr_attributes_acquire(struct ctrace_attributes *attr)
+{
+    if (!attr) {
+        return NULL;
+    }
+
+    attr->ref_count++;
+    return attr;
 }
 
 int ctr_attributes_count(struct ctrace_attributes *attr)

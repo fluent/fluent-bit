@@ -27,10 +27,12 @@
 
 struct ctrace_attributes {
     struct cfl_kvlist *kv;
+    unsigned int ref_count;
 };
 
 struct ctrace_attributes *ctr_attributes_create();
 void ctr_attributes_destroy(struct ctrace_attributes *attr);
+struct ctrace_attributes *ctr_attributes_acquire(struct ctrace_attributes *attr);
 int ctr_attributes_count(struct ctrace_attributes *attr);
 int ctr_attributes_set_string(struct ctrace_attributes *attr, char *key, char *value);
 int ctr_attributes_set_bool(struct ctrace_attributes *attr, char *key, int b);
