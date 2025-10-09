@@ -19,7 +19,7 @@ ARG RELEASE_VERSION=4.2.1
 FROM multiarch/qemu-user-static:x86_64-arm AS qemu-arm32
 FROM multiarch/qemu-user-static:x86_64-aarch64 AS qemu-arm64
 
-FROM debian:bookworm-slim AS builder-base
+FROM debian:trixie-slim AS builder-base
 
 COPY --from=qemu-arm32 /usr/bin/qemu-arm-static /usr/bin/
 COPY --from=qemu-arm64 /usr/bin/qemu-aarch64-static /usr/bin/
@@ -35,7 +35,7 @@ RUN mkdir -p /fluent-bit/bin /fluent-bit/etc /fluent-bit/log
 ENV DEBIAN_FRONTEND=noninteractive
 
 # hadolint ignore=DL3008
-RUN echo "deb http://deb.debian.org/debian bookworm-backports main" >> /etc/apt/sources.list && \
+RUN echo "deb http://deb.debian.org/debian trixie-backports main" >> /etc/apt/sources.list && \
     apt-get update && \
     apt-get install -y --no-install-recommends \
     build-essential \
@@ -48,7 +48,7 @@ RUN echo "deb http://deb.debian.org/debian bookworm-backports main" >> /etc/apt/
     libcurl4-openssl-dev \
     libsasl2-dev \
     pkg-config \
-    libsystemd-dev/bookworm-backports \
+    libsystemd-dev/trixie-backports \
     zlib1g-dev \
     libpq-dev \
     postgresql-server-dev-all \
@@ -114,7 +114,7 @@ RUN /fluent-bit/bin/fluent-bit -J > /fluent-bit/etc/schema.json
 
 # Simple example of how to properly extract packages for reuse in distroless
 # Taken from: https://github.com/GoogleContainerTools/distroless/issues/863
-FROM debian:bookworm-slim AS deb-extractor
+FROM debian:trixie-slim AS deb-extractor
 COPY --from=qemu-arm32 /usr/bin/qemu-arm-static /usr/bin/
 COPY --from=qemu-arm64 /usr/bin/qemu-aarch64-static /usr/bin/
 
@@ -122,7 +122,7 @@ COPY --from=qemu-arm64 /usr/bin/qemu-aarch64-static /usr/bin/
 # We also include some extra handling for the status files that some tooling uses for scanning, etc.
 WORKDIR /tmp
 SHELL ["/bin/bash", "-o", "pipefail", "-c"]
-RUN echo "deb http://deb.debian.org/debian bookworm-backports main" >> /etc/apt/sources.list && \
+RUN echo "deb http://deb.debian.org/debian trixie-backports main" >> /etc/apt/sources.list && \
     apt-get update && \
     apt-get download \
     libssl3 \
@@ -135,7 +135,7 @@ RUN echo "deb http://deb.debian.org/debian bookworm-backports main" >> /etc/apt/
     libsasl2-2 \
     pkg-config \
     libpq5 \
-    libsystemd0/bookworm-backports \
+    libsystemd0/trixie-backports \
     zlib1g \
     ca-certificates \
     libatomic1 \
@@ -177,7 +177,7 @@ RUN find /dpkg/ -type d -empty -delete && \
 
 # We want latest at time of build
 # hadolint ignore=DL3006
-FROM gcr.io/distroless/cc-debian12 AS production
+FROM gcr.io/distroless/cc-debian13 AS production
 ARG RELEASE_VERSION
 ENV FLUENT_BIT_VERSION=${RELEASE_VERSION}
 LABEL description="Fluent Bit multi-architecture container image" \
@@ -208,7 +208,7 @@ EXPOSE 2020
 ENTRYPOINT [ "/fluent-bit/bin/fluent-bit" ]
 CMD ["/fluent-bit/bin/fluent-bit", "-c", "/fluent-bit/etc/fluent-bit.conf"]
 
-FROM debian:bookworm-slim AS debug
+FROM debian:trixie-slim AS debug
 ARG RELEASE_VERSION
 ENV FLUENT_BIT_VERSION=${RELEASE_VERSION}
 LABEL description="Fluent Bit multi-architecture debug container image" \
@@ -229,7 +229,7 @@ COPY --from=qemu-arm64 /usr/bin/qemu-aarch64-static /usr/bin/
 ENV DEBIAN_FRONTEND=noninteractive
 
 # hadolint ignore=DL3008
-RUN echo "deb http://deb.debian.org/debian bookworm-backports main" >> /etc/apt/sources.list && \
+RUN echo "deb http://deb.debian.org/debian trixie-backports main" >> /etc/apt/sources.list && \
     apt-get update && \
     apt-get install -y --no-install-recommends \
     libssl3 \
@@ -242,7 +242,7 @@ RUN echo "deb http://deb.debian.org/debian bookworm-backports main" >> /etc/apt/
     libsasl2-2 \
     pkg-config \
     libpq5 \
-    libsystemd0/bookworm-backports \
+    libsystemd0/trixie-backports \
     zlib1g \
     ca-certificates \
     libatomic1 \
@@ -256,7 +256,7 @@ RUN echo "deb http://deb.debian.org/debian bookworm-backports main" >> /etc/apt/
     openssl \
     htop atop strace iotop sysstat ncdu logrotate hdparm pciutils psmisc tree pv \
     make tar flex bison \
-    libssl-dev libsasl2-dev libsystemd-dev/bookworm-backports zlib1g-dev libpq-dev libyaml-dev postgresql-server-dev-all \
+    libssl-dev libsasl2-dev libsystemd-dev/trixie-backports zlib1g-dev libpq-dev libyaml-dev postgresql-server-dev-all \
     && apt-get satisfy -y cmake "cmake (<< 4.0)" \
     && apt-get clean \
     && rm -rf /var/lib/apt/lists/*
