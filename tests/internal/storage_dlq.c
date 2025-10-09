@@ -17,18 +17,49 @@
 
 #include "flb_tests_internal.h"
 
+#ifdef _WIN32
+#  define FLB_UNLINK _unlink
+#  define FLB_RMDIR  _rmdir
+#else
+#  define FLB_UNLINK unlink
+#  define FLB_RMDIR  rmdir
+#endif
+
 static int mkpath(const char *p) {
+#if FLB_SYSTEM_WINDOWS
+    if (_mkdir(p) == 0) {
+        return 0;
+    }
+#else
     if (mkdir(p, 0777) == 0) {
         return 0;
     }
+#endif
     if (errno == EEXIST) {
         return 0;
     }
     return -1;
 }
 
-static void tmpdir_for(char *out, size_t n, const char *name) {
+static void join_path(char *out, size_t cap, const char *a, const char *b)
+{
+#ifdef _WIN32
+    _snprintf(out, cap, "%s\\%s", a, b);
+#else
+    snprintf(out, cap, "%s/%s", a, b);
+#endif
+    out[cap - 1] = '\0';
+}
+
+static void tmpdir_for(char *out, size_t n, const char *name)
+{
+#ifdef _WIN32
+    DWORD pid = GetCurrentProcessId();
+    _snprintf(out, n, "C:\\Windows\\Temp\\flb-dlq-%s-%lu", name, (unsigned long) pid);
+#else
     snprintf(out, n, "/tmp/flb-dlq-%s-%ld", name, (long) getpid());
+#endif
+    out[n-1] = '\0';
     mkpath(out);
 }
 
@@ -90,23 +121,59 @@ static int buf_contains(const void *hay, size_t hlen,
     return 0;
 }
 
-/* find the most recent *.flb file in dir; write full path into out */
-static int find_latest_flb(const char *dir, char *out, size_t out_sz)
+#if FLB_SYSTEM_WINDOWS
+static int find_latest_flb_win32(const char *dir, char *out, size_t out_sz)
 {
+    WIN32_FIND_DATAA ffd;
+    HANDLE h = INVALID_HANDLE_VALUE;
+    char pattern[1024];
+    ULONGLONG best_ts = 0ULL;
+    char best_name[MAX_PATH] = {0};
+
+    _snprintf(pattern, sizeof(pattern), "%s\\*.flb", dir);
+    pattern[sizeof(pattern)-1] = '\0';
+
+    h = FindFirstFileA(pattern, &ffd);
+    if (h == INVALID_HANDLE_VALUE) {
+        return -1;
+    }
+
+    do {
+        if (ffd.dwFileAttributes & FILE_ATTRIBUTE_DIRECTORY) {
+            continue;
+        }
+        ULONGLONG ts = (((ULONGLONG)ffd.ftLastWriteTime.dwHighDateTime) << 32) |
+                        (ULONGLONG)ffd.ftLastWriteTime.dwLowDateTime;
+        if (ts >= best_ts) {
+            best_ts = ts;
+            strncpy(best_name, ffd.cFileName, sizeof(best_name)-1);
+            best_name[sizeof(best_name)-1] = '\0';
+        }
+    } while (FindNextFileA(h, &ffd));
+
+    FindClose(h);
+
+    if (best_name[0] == '\0') {
+        return -1;
+    }
+
+    join_path(out, out_sz, dir, best_name);
+    return 0;
+}
+#else
+static int find_latest_flb_unix(const char *dir, char *out, size_t out_sz)
+{
+    DIR *d = opendir(dir);
     struct dirent *e;
     time_t best_t = 0;
     char best_path[1024] = {0};
     struct stat st;
     char full[1024];
-    size_t len = 0;
-    DIR *d = opendir(dir);
 
-    if (!d) {
-        return -1;
-    }
+    if (!d) return -1;
 
     while ((e = readdir(d)) != NULL) {
-        len = strlen(e->d_name);
+        size_t len = strlen(e->d_name);
         if (len < 5) {
             continue;
         }
@@ -114,11 +181,11 @@ static int find_latest_flb(const char *dir, char *out, size_t out_sz)
             continue;
         }
 
-        snprintf(full, sizeof(full), "%s/%s", dir, e->d_name);
+        join_path(full, sizeof(full), dir, e->d_name);
         if (stat(full, &st) == 0) {
             if (st.st_mtime >= best_t) {
                 best_t = st.st_mtime;
-                strncpy(best_path, full, sizeof(best_path) - 1);
+                strncpy(best_path, full, sizeof(best_path)-1);
             }
         }
     }
@@ -130,6 +197,17 @@ static int find_latest_flb(const char *dir, char *out, size_t out_sz)
     strncpy(out, best_path, out_sz - 1);
     out[out_sz-1] = '\0';
     return 0;
+}
+#endif
+
+/* find the most recent *.flb file in dir; write full path into out */
+static int find_latest_flb(const char *dir, char *out, size_t out_sz)
+{
+#if FLB_SYSTEM_WINDOWS
+    return find_latest_flb_win32(dir, out, out_sz);
+#else
+    return find_latest_flb_unix(dir, out, out_sz);
+#endif
 }
 
 static void free_ctx(struct flb_config *ctx)
@@ -195,37 +273,85 @@ static void rmdir_stream_dir(const char *root, const char *stream_name)
 }
 
 /* Minimal POSIX rm -rf for the whole temp tree after CIO is gone */
-static void rm_rf_best_effort(const char *root)
+#if FLB_SYSTEM_WINDOWS
+static void rm_rf_best_effort_win32(const char *root)
 {
-    DIR *d;
+    WIN32_FIND_DATAA ffd;
+    HANDLE h = INVALID_HANDLE_VALUE;
+    char pattern[1024], p[1024];
+
+    _snprintf(pattern, sizeof(pattern), "%s\\*",
+              root ? root : "");
+    pattern[sizeof(pattern)-1] = '\0';
+
+    h = FindFirstFileA(pattern, &ffd);
+    if (h == INVALID_HANDLE_VALUE) {
+        /* try removing root itself */
+        (void) FLB_RMDIR(root);
+        return;
+    }
+
+    do {
+        const char *name = ffd.cFileName;
+        if (!strcmp(name, ".") || !strcmp(name, "..")) continue;
+
+        join_path(p, sizeof(p), root, name);
+
+        if (ffd.dwFileAttributes & FILE_ATTRIBUTE_DIRECTORY) {
+            rm_rf_best_effort_win32(p);
+        }
+        else {
+            /* clear read-only if needed */
+            if (ffd.dwFileAttributes & FILE_ATTRIBUTE_READONLY) {
+                SetFileAttributesA(p,
+                    ffd.dwFileAttributes & ~FILE_ATTRIBUTE_READONLY);
+            }
+            (void) DeleteFileA(p);
+        }
+    } while (FindNextFileA(h, &ffd));
+
+    FindClose(h);
+    (void) FLB_RMDIR(root);
+}
+#else
+static void rm_rf_best_effort_unix(const char *root)
+{
+    DIR *d = opendir(root);
     struct dirent *e;
     char p[1024];
     struct stat st;
 
-    if (!root) { return; }
-
-    d = opendir(root);
     if (!d) {
-        (void) rmdir(root);
+        (void) FLB_RMDIR(root);
         return;
     }
     while ((e = readdir(d)) != NULL) {
-        if (!strcmp(e->d_name, ".") || !strcmp(e->d_name, "..")) {
+        if (!strcmp(e->d_name, ".") || !strcmp(e->d_name, "..")) { 
             continue;
         }
-        snprintf(p, sizeof(p), "%s/%s", root, e->d_name);
+        join_path(p, sizeof(p), root, e->d_name);
         if (lstat(p, &st) != 0) {
             continue;
         }
         if (S_ISDIR(st.st_mode)) {
-            rm_rf_best_effort(p);
+            rm_rf_best_effort_unix(p);
         }
         else {
-            (void) unlink(p);
+            (void) FLB_UNLINK(p);
         }
     }
     closedir(d);
-    (void) rmdir(root);
+    (void) FLB_RMDIR(root);
+}
+#endif
+
+static void rm_rf_best_effort(const char *root)
+{
+#if FLB_SYSTEM_WINDOWS
+    rm_rf_best_effort_win32(root);
+#else
+    rm_rf_best_effort_unix(root);
+#endif
 }
 
 static void test_cleanup_with_cio(struct flb_config *ctx, const char *root)
