@@ -395,6 +395,7 @@ static int append_v1_logs_metadata_and_fields(struct opentelemetry_context *ctx,
     int severity_text_set = FLB_FALSE;
     int severity_number_set = FLB_FALSE;
     int trace_flags_set = FLB_FALSE;
+    int event_name_set = FLB_FALSE;
     size_t attr_count = 0;
     struct flb_ra_value *ra_val;
     Opentelemetry__Proto__Common__V1__KeyValue **attrs = NULL;
@@ -651,6 +652,52 @@ static int append_v1_logs_metadata_and_fields(struct opentelemetry_context *ctx,
         }
     }
 
+    /* EventName */
+    ra_val = flb_ra_get_value_object(ctx->ra_log_meta_otlp_event_name, *event->metadata);
+    if (ra_val != NULL) {
+        if (ra_val->o.type == MSGPACK_OBJECT_STR) {
+            log_record->event_name = flb_calloc(1, ra_val->o.via.str.size + 1);
+            if (log_record->event_name) {
+                strncpy(log_record->event_name, ra_val->o.via.str.ptr, ra_val->o.via.str.size);
+                event_name_set = FLB_TRUE;
+            }
+        }
+        flb_ra_key_value_destroy(ra_val);
+    }
+
+    if (!event_name_set && ctx->ra_event_name_metadata) {
+        ra_val = flb_ra_get_value_object(ctx->ra_event_name_metadata, *event->metadata);
+        if (ra_val != NULL) {
+            if (ra_val->o.type == MSGPACK_OBJECT_STR) {
+                log_record->event_name = flb_calloc(1, ra_val->o.via.str.size + 1);
+                if (log_record->event_name) {
+                    strncpy(log_record->event_name, ra_val->o.via.str.ptr, ra_val->o.via.str.size);
+                    event_name_set = FLB_TRUE;
+                }
+            }
+            flb_ra_key_value_destroy(ra_val);
+        }
+    }
+
+    if (!event_name_set && ctx->ra_event_name_message) {
+        ra_val = flb_ra_get_value_object(ctx->ra_event_name_message, *event->body);
+        if (ra_val != NULL) {
+            if (ra_val->o.type == MSGPACK_OBJECT_STR) {
+                log_record->event_name = flb_calloc(1, ra_val->o.via.str.size + 1);
+                if (log_record->event_name) {
+                    strncpy(log_record->event_name, ra_val->o.via.str.ptr, ra_val->o.via.str.size);
+                    event_name_set = FLB_TRUE;
+                }
+            }
+            flb_ra_key_value_destroy(ra_val);
+        }
+    }
+
+    if (!event_name_set) {
+        /* To prevent invalid free */
+        log_record->event_name = NULL;
+    }
+
     return 0;
 }
 
@@ -677,6 +724,9 @@ static void free_log_records(Opentelemetry__Proto__Logs__V1__LogRecord **logs, s
         }
         if (log->severity_text != NULL && log->severity_text != protobuf_c_empty_string) {
             flb_free(log->severity_text);
+        }
+        if (log->event_name != NULL && log->event_name != protobuf_c_empty_string) {
+            flb_free(log->event_name);
         }
         if (log->span_id.data != NULL) {
             flb_free(log->span_id.data);

@@ -228,6 +228,26 @@
     }
   },
 
+  "valid_log_with_event_name": {
+    "input": {
+      "resourceLogs": [{
+        "scopeLogs": [{
+          "logRecords": [{
+            "timeUnixNano": "1640995200000000000",
+            "eventName": "user.login",
+            "body": {"stringValue": "test log with event name"}
+          }]
+        }]
+      }]
+    },
+    "expected": {
+      "group_metadata": {"schema":"otlp","resource_id":0,"scope_id":0},
+      "group_body": {"resource":{}},
+      "log_metadata": {"otlp":{"event_name":"user.login"}},
+      "log_body": {"log": "test log with event name"}
+    }
+  },
+
   "valid_log_with_attributes": {
     "input": {
       "resourceLogs": [{
