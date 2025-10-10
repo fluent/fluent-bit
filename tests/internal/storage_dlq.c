@@ -513,8 +513,81 @@ static void test_dlq_disabled_no_copy(void)
     test_cleanup_with_cio(ctx, root);
 }
 
+static void test_dlq_restores_chunk_state_when_initially_down(void)
+{
+    char root[256], rejdir[256];
+    struct flb_config *ctx = NULL;
+    struct cio_chunk *src = NULL;
+    int rc;
+    const char *payload = "{\"msg\":\"state-restore-down\"}\n";
+
+    tmpdir_for(root, sizeof(root), "restore-down");
+    snprintf(rejdir, sizeof(rejdir), "%s/%s", root, "rejected");
+    mkpath(rejdir);
+
+    ctx = make_ctx_fs(root, "rejected");
+
+    /* Create the  chunk */
+    src = make_src_chunk(ctx, FLB_STORAGE_FS,
+                         "in_tail",
+                         "restore-down-0-0000000000.000000000.flb",
+                         payload);
+    TEST_CHECK(src != NULL);
+
+    if (cio_chunk_is_up(src) == CIO_TRUE) {
+        TEST_CHECK(cio_chunk_down(src) == CIO_OK);
+    }
+    TEST_CHECK(cio_chunk_is_up(src) != CIO_TRUE);
+
+    rc = flb_storage_quarantine_chunk(ctx, src,
+                                      "tag.down", 500, "out_http");
+    TEST_CHECK(rc == 0);
+
+    TEST_CHECK(cio_chunk_is_up(src) != CIO_TRUE);
+
+    cio_chunk_close(src, CIO_FALSE);
+    test_cleanup_with_cio(ctx, root);
+}
+
+static void test_dlq_preserves_chunk_state_when_initially_up(void)
+{
+    char root[256], rejdir[256];
+    struct flb_config *ctx = NULL;
+    struct cio_chunk *src = NULL;
+    int rc;
+    const char *payload = "{\"msg\":\"state-preserve-up\"}\n";
+
+    tmpdir_for(root, sizeof(root), "preserve-up");
+    snprintf(rejdir, sizeof(rejdir), "%s/%s", root, "rejected");
+    mkpath(rejdir);
+
+    ctx = make_ctx_fs(root, "rejected");
+
+    src = make_src_chunk(ctx, FLB_STORAGE_FS,
+                         "preserve_in",
+                         "preserve-up-0-0000000000.000000000.flb",
+                         payload);
+    TEST_CHECK(src != NULL);
+
+    if (cio_chunk_is_up(src) != CIO_TRUE) {
+        TEST_CHECK(cio_chunk_up_force(src) == CIO_OK);
+    }
+    TEST_CHECK(cio_chunk_is_up(src) == CIO_TRUE);
+
+    rc = flb_storage_quarantine_chunk(ctx, src,
+                                      "tag.up", 502, "out_es");
+    TEST_CHECK(rc == 0);
+
+    TEST_CHECK(cio_chunk_is_up(src) == CIO_TRUE);
+
+    cio_chunk_close(src, CIO_FALSE);
+    test_cleanup_with_cio(ctx, root);
+}
+
 TEST_LIST = {
     { "dlq_copy_from_fs_chunk",  test_dlq_copy_from_fs_chunk },
     { "dlq_disabled_no_copy",    test_dlq_disabled_no_copy },
+    { "dlq_restores_chunk_state_when_initially_down",   test_dlq_restores_chunk_state_when_initially_down },
+    { "dlq_preserves_chunk_state_when_initially_up",    test_dlq_preserves_chunk_state_when_initially_up },
     { NULL, NULL }
 };
