@@ -612,7 +612,7 @@ struct flb_plugin_proxy *flb_plugin_proxy_create(const char *dso_path, int type,
         return NULL;
     }
 
-    proxy->def = flb_malloc(sizeof(struct flb_plugin_proxy_def));
+    proxy->def = flb_calloc(1, sizeof(struct flb_plugin_proxy_def));
     if (!proxy->def) {
         flb_errno();
         dlclose(handle);
