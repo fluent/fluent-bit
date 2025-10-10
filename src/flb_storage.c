@@ -832,6 +832,17 @@ static struct cio_stream *get_or_create_rejected_stream(struct flb_config *ctx)
 #endif
 }
 
+static inline int flb_storage_chunk_restore_state(struct cio_chunk *src, int was_up, int ret_val)
+{
+    if (!was_up) {
+        if (cio_chunk_down(src) != CIO_OK) {
+            flb_debug("[storage] failed to bring chunk back down");
+        }
+    }
+
+    return ret_val;
+}
+
 int flb_storage_quarantine_chunk(struct flb_config *ctx,
                                  struct cio_chunk *src,
                                  const char *tag,
@@ -876,7 +887,7 @@ int flb_storage_quarantine_chunk(struct flb_config *ctx,
 
     if (cio_chunk_get_content_copy(src, &buf, &size) != CIO_OK || size == 0) {
         flb_warn("[storage] cannot read content for DLQ copy (size=%zu)", size);
-        return -1;
+        return flb_storage_chunk_restore_state(src, was_up, -1);
     }
 
     /* Create + write the DLQ copy */
@@ -884,14 +895,14 @@ int flb_storage_quarantine_chunk(struct flb_config *ctx,
     if (!dst) {
         flb_warn("[storage] DLQ open failed (err=%d)", err);
         flb_free(buf);
-        return -1;
+        return flb_storage_chunk_restore_state(src, was_up, -1);
     }
     if (cio_chunk_write(dst, buf, size) != CIO_OK ||
         cio_chunk_sync(dst) != CIO_OK) {
         flb_warn("[storage] DLQ write/sync failed");
         cio_chunk_close(dst, CIO_TRUE);
         flb_free(buf);
-        return -1;
+        return flb_storage_chunk_restore_state(src, was_up, -1);
     }
 
     cio_chunk_close(dst, CIO_FALSE);
@@ -899,14 +910,7 @@ int flb_storage_quarantine_chunk(struct flb_config *ctx,
 
     flb_info("[storage] quarantined rejected chunk into DLQ stream (bytes=%zu)", size);
 
-    /* Restore original state if we brought the chunk up */
-    if (!was_up) {
-        if (cio_chunk_down(src) != CIO_OK) {
-            flb_debug("[storage] failed to bring chunk back down after DLQ copy");
-        }
-    }
-
-    return 0;
+    return flb_storage_chunk_restore_state(src, was_up, 0);
 #else
     FLB_UNUSED(ctx);
     FLB_UNUSED(src);
