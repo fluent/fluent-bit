@@ -9,28 +9,47 @@ ARG BASE_BUILDER
 FROM multiarch/qemu-user-static:x86_64-aarch64 AS multiarch-aarch64
 
 # opensuse/leap base image
+# hadolint ignore=DL3006
 FROM opensuse/leap AS opensuse-leap-base
 
-# hadolint ignore=DL3033
+# hadolint ignore=DL3037,DL3033
 RUN zypper up -y && \
     zypper install -y --no-recommends \
         rpm-build \
         curl ca-certificates wget unzip flex bison \
         gcc gcc-c++ \
-        cmake3-full \
+        cmake-full \
         make \
         bash \
         systemd-devel \
         postgresql postgresql-devel postgresql-server \
         cyrus-sasl cyrus-sasl-devel \
-        libopenssl3 libopenssl-3-devel \
+        libopenssl3 libopenssl-devel \
         libyaml-devel && \
     zypper clean -a && rm -rf /var/cache/zypp/*
 
+# opensuse/leap base image
+FROM opensuse/leap:15.6 AS opensuse-15.6-base 
+
+# hadolint ignore=DL3037,DL3033
+RUN zypper up -y && \
+    zypper install -y --no-recommends \
+        rpm-build \
+        curl ca-certificates wget unzip flex bison \
+        gcc gcc-c++ \
+        cmake-full \
+        make \
+        bash \
+        systemd-devel \
+        postgresql postgresql-devel postgresql-server \
+        cyrus-sasl cyrus-sasl-devel \
+        libopenssl3 libopenssl-devel \
+        libyaml-devel && \
+    zypper clean -a && rm -rf /var/cache/zypp/*
 
 # opensuse/leap.arm64v8 base image
-# hadolint ignore=DL3029
-FROM --platform=arm64 opensuse/leap:15.6 AS opensuse-leap.arm64v8-base
+# hadolint ignore=DL3037,DL3029
+FROM --platform=arm64 opensuse/leap:15.6 AS opensuse-15.6.arm64v8-base
 
 COPY --from=multiarch-aarch64 /usr/bin/qemu-aarch64-static /usr/bin/qemu-aarch64-static
 
@@ -40,13 +59,13 @@ RUN zypper up -y && \
         rpm-build \
         curl ca-certificates wget unzip flex bison \
         gcc gcc-c++ \
-        cmake3-full \
+        cmake-full \
         make \
         bash \
         systemd-devel \
         postgresql postgresql-devel postgresql-server \
         cyrus-sasl cyrus-sasl-devel \
-        libopenssl3 libopenssl-3-devel \
+        libopenssl3 libopenssl-devel \
         libyaml-devel && \
     zypper clean -a && rm -rf /var/cache/zypp/*
 
