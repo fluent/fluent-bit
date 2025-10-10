@@ -43,7 +43,7 @@ RPM_REPO_PATHS=( "amazonlinux/2"
 				 "almalinux/8" 
 				 "almalinux/9" 
 				 "almalinux/10"
-				 "opensuse/15.6"
+				 "opensuse/leap/15.6"
 				 "sles/15.7"
 				)
 
@@ -58,7 +58,14 @@ for RPM_REPO in "${RPM_REPO_PATHS[@]}"; do
         aws s3 sync s3://"${AWS_S3_BUCKET_STAGING:?}/$RPM_REPO" "${BASE_PATH:?}/$RPM_REPO"
     fi
 
-    /bin/bash -eux "$SCRIPT_DIR/update-yum-repo.sh"
+    case "$RPM_REPO" in
+        "opensuse/"* | "sles/"*)
+            /bin/bash -eux "$SCRIPT_DIR/update-zypper-repo.sh"
+            ;;
+        *)
+            /bin/bash -eux "$SCRIPT_DIR/update-yum-repo.sh"
+            ;;
+    esac
 done
 
 DEB_REPO_PATHS=( "debian/bookworm"

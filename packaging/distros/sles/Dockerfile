@@ -5,10 +5,10 @@ ARG BASE_BUILDER
 # Multiarch support
 FROM multiarch/qemu-user-static:x86_64-aarch64 AS multiarch-aarch64
 
-# opensuse/leap base image
+# sles base image
 FROM registry.suse.com/bci/bci-base:15.7 AS sles-15.7-base
 
-# hadolint ignore=DL3033
+# hadolint ignore=DL3037,DL3033
 RUN zypper up -y && \
     zypper install -y --no-recommends \
         rpm-build curl ca-certificates gcc gcc-c++ cmake-full make bash \
@@ -16,22 +16,23 @@ RUN zypper up -y && \
         postgresql-server postgresql-devel cyrus-sasl-devel \
         libopenssl-devel libyaml-devel && \
     rm -rf /var/log/{lastlog,tallylog,zypper.log,zypp/history,YaST2} && \
+    rm -rf /var/log/lastlog /var/log/tallylog /var/log/zypper.log /var/log/zypp/history /var/log/YaST2 && \
     zypper clean -a
 
-# opensuse/leap.arm64v8 base image
+# sles base image is the same name for all architectures
 # hadolint ignore=DL3029
 FROM --platform=arm64 registry.suse.com/bci/bci-base:15.7 AS sles-15.7.arm64v8-base
 
 COPY --from=multiarch-aarch64 /usr/bin/qemu-aarch64-static /usr/bin/qemu-aarch64-static
 
-# hadolint ignore=DL3033
+# hadolint ignore=DL3037,DL3033
 RUN zypper up -y && \
     zypper install -y --no-recommends \
         rpm-build curl ca-certificates gcc gcc-c++ cmake-full make bash \
         wget unzip systemd-devel flex bison \
         postgresql-server postgresql-devel cyrus-sasl-devel \
         libopenssl-devel libyaml-devel && \
-    rm -rf /var/log/{lastlog,tallylog,zypper.log,zypp/history,YaST2} && \
+    rm -rf /var/log/lastlog /var/log/tallylog /var/log/zypper.log /var/log/zypp/history /var/log/YaST2 && \
     zypper clean -a
 
 # Need larger page size
