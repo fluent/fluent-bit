@@ -374,6 +374,7 @@ struct flb_output_instance {
 # if defined(FLB_SYSTEM_WINDOWS)
     char *tls_win_certstore_name;            /* CertStore Name (Windows) */
     int tls_win_use_enterprise_certstore;    /* Use enterprise CertStore */
+    char *tls_win_thumbprints;               /* CertStore Thumbprints (Windows) */
 # endif
 #endif
 
