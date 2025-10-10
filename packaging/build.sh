@@ -59,7 +59,16 @@ MAIN_IMAGE="flb-$FLB_DISTRO"
 IMAGE_CONTEXT_DIR="$SCRIPT_DIR/distros/$FLB_DISTRO"
 if [[ ! -d "$SCRIPT_DIR/distros/$FLB_DISTRO" ]]; then
     IMAGE_CONTEXT_DIR="$SCRIPT_DIR/distros/${FLB_DISTRO%%/*}"
-    FLB_ARG="$FLB_ARG --build-arg BASE_BUILDER=${FLB_DISTRO%%/*}-${FLB_DISTRO##*/}-base --target builder"
+
+    # Extract distro and version parts
+    DISTRO_NAME=${FLB_DISTRO%%/*} # e.g., opensuse
+    DISTRO_VERSION=${FLB_DISTRO##*/} # e.g., leap:15.6
+    
+    # Replace invalid characters in the version part for a valid stage name
+    CLEANED_DISTRO_VERSION=${DISTRO_VERSION/:/-}
+    
+    # Construct the BASE_BUILDER argument using the cleaned names
+    FLB_ARG="$FLB_ARG --build-arg BASE_BUILDER=${DISTRO_NAME}-${CLEANED_DISTRO_VERSION}-base --target builder"
 fi
 
 if [[ ! -f "$IMAGE_CONTEXT_DIR/Dockerfile" ]]; then
