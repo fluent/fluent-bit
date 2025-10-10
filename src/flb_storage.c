@@ -777,6 +777,24 @@ void flb_storage_chunk_count(struct flb_config *ctx, int *mem_chunks, int *fs_ch
     *fs_chunks = storage_st.chunks_fs;
 }
 
+/* Replace '/', '\\' and ':' with '_' to make filename components safe */
+static inline void sanitize_name_component(const char *in, char *out, size_t out_sz)
+{
+    size_t i;
+
+    if (out_sz == 0) {
+        return;
+    }
+
+    if (!in) {
+        in = "no-tag";
+    }
+
+    for (i = 0; i < out_sz - 1 && in[i] != '\0'; i++) {
+        out[i] = (in[i] == '/' || in[i] == '\\' || in[i] == ':') ? '_' : in[i];
+    }
+    out[i] = '\0';
+}
 
 static struct cio_stream *get_or_create_rejected_stream(struct flb_config *ctx)
 {
@@ -823,10 +841,13 @@ int flb_storage_quarantine_chunk(struct flb_config *ctx,
 #ifdef CIO_HAVE_BACKEND_FILESYSTEM
     struct cio_stream *dlq;
     void   *buf = NULL;
+    int     was_up = 0;
     size_t  size = 0;
     int     err = 0;
     char    name[256];
     struct cio_chunk *dst;
+    char safe_tag[128];
+    char safe_out[64];
 
     if (!ctx || !src) {
         return -1;
@@ -836,25 +857,27 @@ int flb_storage_quarantine_chunk(struct flb_config *ctx,
         return -1;
     }
 
-    if (cio_chunk_is_up(src) != CIO_TRUE) {
+    /* Remember original state and bring the chunk up if needed */
+    was_up = (cio_chunk_is_up(src) == CIO_TRUE);
+    if (!was_up) {
         if (cio_chunk_up_force(src) != CIO_OK) {
             flb_warn("[storage] cannot bring chunk up to copy into DLQ");
             return -1;
         }
     }
 
+    sanitize_name_component(tag, safe_tag, sizeof(safe_tag));
+    sanitize_name_component(out_name ? out_name : "out", safe_out, sizeof(safe_out));
+
+    /* Compose a simple, unique-ish file name with sanitized pieces */
+    snprintf(name, sizeof(name),
+             "%s_%d_%s_%p.flb",
+             safe_tag, status_code, safe_out, (void *) src);
+
     if (cio_chunk_get_content_copy(src, &buf, &size) != CIO_OK || size == 0) {
         flb_warn("[storage] cannot read content for DLQ copy (size=%zu)", size);
         return -1;
     }
-
-    /* Compose a simple, unique-ish file name */
-    snprintf(name, sizeof(name),
-             "%s_%d_%s_%p.flb",
-             tag ? tag : "no-tag",
-             status_code,
-             out_name ? out_name : "out",
-             (void *) src);
 
     /* Create + write the DLQ copy */
     dst = cio_chunk_open(ctx->cio, dlq, name, CIO_OPEN, size, &err);
@@ -875,6 +898,13 @@ int flb_storage_quarantine_chunk(struct flb_config *ctx,
     flb_free(buf);
 
     flb_info("[storage] quarantined rejected chunk into DLQ stream (bytes=%zu)", size);
+
+    /* Restore original state if we brought the chunk up */
+    if (!was_up) {
+        if (cio_chunk_down(src) != CIO_OK) {
+            flb_debug("[storage] failed to bring chunk back down after DLQ copy");
+        }
+    }
 
     return 0;
 #else
