@@ -40,6 +40,7 @@ struct flb_plugin_proxy_def {
     int flags;
     char *name;               /* plugin short name                           */
     char *description;        /* plugin description                          */
+    int event_type;           /* event type (logs/metrics/traces)            */
 };
 
 /* Proxy context */

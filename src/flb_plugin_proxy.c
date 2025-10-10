@@ -362,6 +362,14 @@ static int flb_proxy_register_output(struct flb_plugin_proxy *proxy,
     out->flags = def->flags;
     out->name  = flb_strdup(def->name);
 
+    /* If event_type is unset (0) then default to logs (this is the current behavior) */
+    if (def->event_type == 0) {
+        out->event_type = FLB_OUTPUT_LOGS;
+    }
+    else {
+        out->event_type = def->event_type;
+    }
+
     out->description = def->description;
     mk_list_add(&out->_head, &config->out_plugins);
 
@@ -396,6 +404,7 @@ static int flb_proxy_register_input(struct flb_plugin_proxy *proxy,
     in->flags = def->flags | FLB_INPUT_THREADED;
     in->name  = flb_strdup(def->name);
     in->description = def->description;
+
     mk_list_add(&in->_head, &config->in_plugins);
 
     /*
