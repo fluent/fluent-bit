@@ -97,11 +97,11 @@
           "type": "rpm"
         },
         {
-          "target": "opensuse/15.6",
+          "target": "opensuse/leap:15.6",
           "type": "rpm"
         },
         {
-          "target": "opensuse/15.6.arm64v8",
+          "target": "opensuse/leap:15.6.arm64v8",
           "type": "rpm"
         },
         {

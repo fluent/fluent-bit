@@ -5,7 +5,7 @@ ARG BASE_BUILDER
 # Multiarch support
 FROM multiarch/qemu-user-static:x86_64-aarch64 AS multiarch-aarch64
 
-# opensuse/leap base image
+# sles base image
 FROM registry.suse.com/bci/bci-base:15.7 AS sles-15.7-base
 
 # hadolint ignore=DL3033
@@ -18,7 +18,7 @@ RUN zypper up -y && \
     rm -rf /var/log/{lastlog,tallylog,zypper.log,zypp/history,YaST2} && \
     zypper clean -a
 
-# opensuse/leap.arm64v8 base image
+# sles base image is the same name for all architectures
 # hadolint ignore=DL3029
 FROM --platform=arm64 registry.suse.com/bci/bci-base:15.7 AS sles-15.7.arm64v8-base
 

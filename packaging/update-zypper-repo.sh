@@ -3,7 +3,7 @@ set -eux
 
 # Used to update a SUSE repository, e.g. during a staging build or release process
 
-# SUSE/openSUSE version and arch, e.g. "opensuse/leap/15.6" or "sles/15-sp5"
+# SUSE/openSUSE version and arch, e.g. "opensuse/leap/15.6" or "sles/15.7"
 RPM_REPO=${RPM_REPO:?}
 
 # Where the base of all the repos is
@@ -16,14 +16,21 @@ fi
 # Set true to prevent signing
 DISABLE_SIGNING=${DISABLE_SIGNING:-false}
 if [[ "$DISABLE_SIGNING" != "true" ]]; then
-    echo "INFO: RPM signing configuration"
-    rpm --showrc | grep gpg
-    rpm -q gpg-pubkey --qf '%{name}-%{version}-%{release} --> %{summary}\n'
+    if [[ -z "${GPG_KEY:-}" ]]; then
+        echo "ERROR: GPG_KEY is required when signing is enabled (set DISABLE_SIGNING=true to skip)."
+        exit 1
+    fi
+    echo "INFO: RPM signing configuration (best-effort)"
+    rpm --showrc | grep -i gpg || true
+    rpm -q gpg-pubkey --qf '%{name}-%{version}-%{release} --> %{summary}\n' || true
 fi
 
 # createrepo is available on SUSE
 CREATE_REPO_CMD="createrepo"
-CREATE_REPO_ARGS=${CREATE_REPO_ARGS:--dvp}
+# Default combined short options; allow space-separated overrides via env
+CREATE_REPO_ARGS=${CREATE_REPO_ARGS:--d -v -p}
+# shellcheck disable=SC2206 # intentional word splitting into array
+CREATE_REPO_ARGS_ARR=(${CREATE_REPO_ARGS})
 
 # Check for createrepo
 if ! command -v createrepo &> /dev/null; then
@@ -45,7 +52,7 @@ if [[ "$DISABLE_SIGNING" != "true" ]]; then
 fi
 
 # Create full metadata for all RPMs in the directory
-"$CREATE_REPO_CMD" "$CREATE_REPO_ARGS" "$REPO_DIR"
+"$CREATE_REPO_CMD" "${CREATE_REPO_ARGS_ARR[@]}" "$REPO_DIR"
 
 # Set up repo info in SUSE format
 if [[ -n "${AWS_S3_BUCKET:-}" ]]; then
