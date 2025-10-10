@@ -314,6 +314,13 @@ int flb_tls_set_use_enterprise_store(struct flb_tls *tls, int use_enterprise)
 
     return 0;
 }
+
+int flb_tls_set_client_thumbprints(struct flb_tls *tls, const char *thumbprints) {
+    if (tls && tls->api->set_client_thumbprints) {
+        return tls->api->set_client_thumbprints(tls, thumbprints);
+    }
+    return -1;
+}
 #endif
 
 int flb_tls_net_read(struct flb_tls_session *session, void *buf, size_t len)
