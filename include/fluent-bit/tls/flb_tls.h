@@ -97,6 +97,7 @@ struct flb_tls_backend {
 #if defined(FLB_SYSTEM_WINDOWS)
     int (*set_certstore_name)(struct flb_tls *tls, const char *certstore_name);
     int (*set_use_enterprise_store)(struct flb_tls *tls, int use_enterprise);
+    int (*set_client_thumbprints)(struct flb_tls *tls, const char *thumbprints);
 #endif
 };
 
@@ -135,6 +136,7 @@ int flb_tls_set_verify_hostname(struct flb_tls *tls, int verify_hostname);
 #if defined(FLB_SYSTEM_WINDOWS)
 int flb_tls_set_certstore_name(struct flb_tls *tls, const char *certstore_name);
 int flb_tls_set_use_enterprise_store(struct flb_tls *tls, int use_enterprise);
+int flb_tls_set_client_thumbprints(struct flb_tls *tls, const char *thumbprints);
 #endif
 
 int flb_tls_load_system_certificates(struct flb_tls *tls);
