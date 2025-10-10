@@ -53,6 +53,7 @@ set(UNIT_TESTS_FILES
   storage_inherit.c
   unicode.c
   opentelemetry.c
+  storage_dlq.c
 )
 
 # TLS helpers
