@@ -383,21 +383,28 @@ static int flb_reload_reinstantiate_external_plugins(struct flb_config *src, str
 struct flb_reload_watchdog_ctx {
     pthread_t tid;
     int timeout_seconds;
+    volatile int should_stop;
 };
 
 static void *hot_reload_watchdog_thread(void *arg)
 {
-    int loop_sleep;
+    int elapsed_ms = 0;
+    int timeout_ms;
     struct flb_reload_watchdog_ctx *ctx = (struct flb_reload_watchdog_ctx *)arg;
-    
-    /* Set async cancellation type for (mostly) immediate response to pthread_cancel */
-    pthread_setcanceltype(PTHREAD_CANCEL_ASYNCHRONOUS, NULL);
 
-    /* loop for each sleep in a busy pattern to avoid delaying flb_reload() */
-    for (loop_sleep = 0; loop_sleep < ctx->timeout_seconds*10; loop_sleep++) {
-       flb_time_msleep(100);
+    timeout_ms = ctx->timeout_seconds * 1000;
+
+    /* Check should_stop flag every 100ms while tracking elapsed time */
+    while (elapsed_ms < timeout_ms) {
+        if (ctx->should_stop) {
+            /* Clean shutdown requested */
+            return NULL;
+        }
+        flb_time_msleep(100);
+        elapsed_ms += 100;
     }
 
+    /* Only abort if we timed out, not if cleanly signaled to stop */
     flb_error("[hot_reload_watchdog] Hot reload timeout exceeded (%d seconds), "
                 "aborting to prevent indefinite hang", ctx->timeout_seconds);
     abort();
@@ -419,6 +426,7 @@ static struct flb_reload_watchdog_ctx *flb_reload_watchdog_start(struct flb_conf
         return NULL;
     }
     watchdog_ctx->timeout_seconds = config->hot_reload_watchdog_timeout_seconds;
+    watchdog_ctx->should_stop = 0;
 
     ret = pthread_create(&watchdog_ctx->tid, NULL, hot_reload_watchdog_thread, watchdog_ctx);
     if (ret != 0) {
@@ -426,7 +434,7 @@ static struct flb_reload_watchdog_ctx *flb_reload_watchdog_start(struct flb_conf
         flb_free(watchdog_ctx);
         return NULL;
     }
-    
+
     flb_debug("[reload] Hot reload watchdog thread started");
     return watchdog_ctx;
 }
@@ -437,9 +445,12 @@ static void flb_reload_watchdog_cleanup(struct flb_reload_watchdog_ctx *watchdog
         return;
     }
 
-    pthread_cancel(watchdog_ctx->tid);
+    /* Signal thread to stop cooperatively */
+    watchdog_ctx->should_stop = 1;
+
+    /* Wait for graceful thread exit */
     pthread_join(watchdog_ctx->tid, NULL);
-    flb_debug("[reload] Hot reload watchdog thread cancelled");
+    flb_debug("[reload] Hot reload watchdog thread stopped");
 
     flb_free(watchdog_ctx);
 }
