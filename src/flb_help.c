@@ -710,10 +710,11 @@ flb_sds_t flb_help_build_json_schema(struct flb_config *config)
      * - fluent-bit
      * - customs
      * - inputs
+     * - processors
      * - filters
      * - outputs
      */
-    msgpack_pack_map(&mp_pck, 5);
+    msgpack_pack_map(&mp_pck, 6);
 
     /* Fluent Bit */
     msgpack_pack_str(&mp_pck, 10);
