@@ -271,7 +271,7 @@ struct flb_aws_client *flb_aws_client_create()
     client->http_cb_ctx = flb_callback_create("aws client");  // FIXME: what name?
     if (!client->http_cb_ctx) {
         flb_errno();
-        flb_callback_destroy(client->http_cb_ctx);
+        flb_free(client);
         return NULL;
     }
     return client;
