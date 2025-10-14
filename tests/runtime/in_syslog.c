@@ -158,6 +158,7 @@ static struct test_ctx *test_ctx_create(struct flb_lib_out_cb *data)
     o_ffd = flb_output(ctx->flb, (char *) "lib", (void *) data);
     ctx->o_ffd = o_ffd;
     ret = flb_output_set(ctx->flb, ctx->o_ffd,
+                         "match", "*",
                          "format", "json",
                          NULL);
     TEST_CHECK(ret == 0);
@@ -1002,6 +1003,94 @@ void flb_test_syslog_rfc3164()
     test_ctx_destroy(ctx);
 }
 
+static int null_byte_message_complete = 0;
+
+/* Callback to validate null byte handling */
+static int cb_validate_null_bytes(void *record, size_t size, void *data)
+{
+    int num = get_output_num();
+    char *result = (char*)record;
+
+    set_output_num(num + 1);
+
+    /* Check if this is the message with null byte (ID124) */
+    if (strstr(result, "ID124")) {
+        /* Verify the message contains both parts (before and after null byte) */
+        if (strstr(result, "test message") && strstr(result, "byte")) {
+            null_byte_message_complete = 1;
+        }
+    }
+
+    flb_free(record);
+    return 0;
+}
+
+/* Test for issue #2741: null bytes in syslog messages should not cause message fragmentation */
+void flb_test_syslog_null_bytes()
+{
+    struct flb_lib_out_cb cb_data;
+    struct test_ctx *ctx;
+    flb_sockfd_t fd;
+    int ret;
+    int num;
+    ssize_t w_size;
+    char msg_with_null[100];
+
+    clear_output_num();
+    null_byte_message_complete = 0;
+
+    cb_data.cb = cb_validate_null_bytes;
+    cb_data.data = NULL;
+
+    ctx = test_ctx_create(&cb_data);
+    if (!TEST_CHECK(ctx != NULL)) {
+        TEST_MSG("test_ctx_create failed");
+        exit(EXIT_FAILURE);
+    }
+
+    ret = flb_input_set(ctx->flb, ctx->i_ffd,
+                        "mode", "tcp",
+                        "port", "5141",
+                        "parser", PARSER_NAME_RFC5424,
+                         NULL);
+    TEST_CHECK(ret == 0);
+
+    ret = flb_start(ctx->flb);
+    TEST_CHECK(ret == 0);
+
+    fd = connect_tcp(NULL, 5141);
+    if (!TEST_CHECK(fd >= 0)) {
+        test_ctx_destroy(ctx);
+        exit(EXIT_FAILURE);
+    }
+
+    /* Send normal message */
+    char *normal_msg = "<34>1 2023-01-01T12:00:00.003Z hostname.example.com testapp - ID123 - normal message\n";
+    w_size = send(fd, normal_msg, strlen(normal_msg), 0);
+    TEST_CHECK(w_size == strlen(normal_msg));
+
+    /* Send message with embedded null byte */
+    strcpy(msg_with_null, "<34>1 2023-01-01T12:00:00.003Z hostname.example.com testapp - ID124 - test message with null");
+    msg_with_null[82] = '\0';  /* Embedded null byte */
+    strcpy(msg_with_null + 83, " byte");
+    msg_with_null[88] = '\n';  /* Message delimiter */
+
+    w_size = send(fd, msg_with_null, 89, 0);
+    TEST_CHECK(w_size == 89);
+
+    /* Wait for processing */
+    flb_time_msleep(1500);
+
+    num = get_output_num();
+
+    /* Validate: should get exactly 2 messages and null byte message should be complete */
+    TEST_CHECK(num == 2);
+    TEST_CHECK(null_byte_message_complete == 1);
+
+    flb_socket_close(fd);
+    test_ctx_destroy(ctx);
+}
+
 TEST_LIST = {
     {"syslog_tcp", flb_test_syslog_tcp},
     {"syslog_udp", flb_test_syslog_udp},
@@ -1014,6 +1103,7 @@ TEST_LIST = {
     {"syslog_unix_perm", flb_test_syslog_unix_perm},
 #endif
     {"syslog_rfc3164", flb_test_syslog_rfc3164},
+    {"syslog_null_bytes", flb_test_syslog_null_bytes},
 #ifdef FLB_HAVE_UNIX_SOCKET
     {"syslog_tcp_unix", flb_test_syslog_tcp_unix},
 #ifndef FLB_SYSTEM_MACOS
