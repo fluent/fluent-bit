@@ -53,7 +53,7 @@ ZYPPER_VERSION=''
 if [ -n "${RELEASE_VERSION}" ]; then
     APT_VERSION="=$RELEASE_VERSION"
     YUM_VERSION="-$RELEASE_VERSION"
-    ZYPPER_VERSION="-$RELEASE_VERSION"
+    ZYPPER_VERSION="=$RELEASE_VERSION"
 fi
 
 # Now set up repos and install dependent on OS, version, etc.
@@ -149,7 +149,7 @@ $INSTALL_CMD_PREFIX apt-get -y $APT_PARAMETERS install $INSTALL_PACKAGE_NAME$APT
 SCRIPT
     ;;
     opensuse-leap)
-        # Leap has a VERSION_ID like "15.6"
+        # Leap requires VERSION_ID whereas SLES uses $releasever
         $SUDO sh <<SCRIPT
 rpm --import $RELEASE_KEY
 cat << EOF > /etc/zypp/repos.d/fluent-bit.repo
