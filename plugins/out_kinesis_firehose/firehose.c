@@ -32,6 +32,7 @@
 #include <fluent-bit/flb_aws_util.h>
 #include <fluent-bit/flb_mem.h>
 #include <fluent-bit/flb_http_client.h>
+#include <fluent-bit/flb_http_client_debug.h>
 #include <fluent-bit/flb_utils.h>
 
 #include <fluent-bit/aws/flb_aws_compress.h>
@@ -43,8 +44,6 @@
 
 #include "firehose.h"
 #include "firehose_api.h"
-
-int flb_http_client_debug_setup(struct flb_callback *cb_ctx, struct mk_list *props);
 
 static struct flb_aws_header content_type_header = {
     .key = "Content-Type",
