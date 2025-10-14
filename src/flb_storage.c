@@ -414,19 +414,35 @@ static int sort_chunk_cmp(const void *a_arg, const void *b_arg)
 {
     struct cio_chunk *chunk_a = *(struct cio_chunk **) a_arg;
     struct cio_chunk *chunk_b = *(struct cio_chunk **) b_arg;
-    const char *p;
+    const char *pa, *pb;
+    int ra = 0;
+    int rb = 0;
     struct timespec tm_a = {0}, tm_b = {0};
 
     /* Scan Chunk A */
-    p = strchr(chunk_a->name, '-');
-    if (!p || parse_stamp(p + 1, &tm_a.tv_sec, &tm_a.tv_nsec) != 0) {
-        return -1;
+    pa = strrchr(chunk_a->name, '-');
+    if (pa && parse_stamp(pa + 1, &tm_a.tv_sec, &tm_a.tv_nsec) == 0) {
+        ra = -1;
     }
 
     /* Scan Chunk B */
-    p = strchr(chunk_b->name, '-');
-    if (!p || parse_stamp(p + 1, &tm_b.tv_sec, &tm_b.tv_nsec) != 0) {
-        return -1;
+    pb = strrchr(chunk_b->name, '-');
+    if (pb && parse_stamp(pb + 1, &tm_b.tv_sec, &tm_b.tv_nsec) == 0) {
+        rb = -1;
+    }
+
+    /* Ensure strict ordering in presence of invalid names */
+    if (ra != 0 || rb != 0) {
+        /* valid < invalid */
+        if (ra == 0 && rb != 0) {
+            return -1;
+        }
+        /* invalid > valid */
+        if (ra != 0 && rb == 0) {
+            return 1;
+        }
+        /* both invalid: deterministic fallback */
+        return strcmp(chunk_a->name, chunk_b->name);
     }
 
     /* Compare */
