@@ -24,6 +24,8 @@
 #include <chunkio/chunkio.h>
 #include <chunkio/cio_stats.h>
 
+#include <inttypes.h>
+
 /* Storage type */
 #define FLB_STORAGE_FS      CIO_STORE_FS    /* 0 */
 #define FLB_STORAGE_MEM     CIO_STORE_MEM   /* 1 */
