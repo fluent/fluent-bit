@@ -104,7 +104,7 @@ struct flb_aws_client {
     int debug_only;
 
     /* Callbacks context */
-    struct flb_callback *callback;
+    struct flb_callback *http_cb_ctx;
 };
 
 /* frees dynamic_headers */
