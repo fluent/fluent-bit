@@ -792,11 +792,10 @@ static int send_pong(struct flb_input_instance *in,
     if (bytes == -1) {
         flb_plg_error(in, "cannot send PONG");
 
-        result = -1;
-    }
-    else if (userauth == FLB_FALSE)  {
-        flb_plg_error(in, "cannot send PONG");
-
+        /*
+         * The 'userauth == FLB_FALSE' case is not an error; it's a successful
+         * transmission of a failure notification. We only fail if the write fails.
+         */
         result = -1;
     }
     else {
@@ -1203,35 +1202,45 @@ int fw_prot_secure_forward_handshake_start(struct flb_input_instance *ins,
 int fw_prot_secure_forward_handshake(struct flb_input_instance *ins,
                                      struct fw_conn *conn)
 {
-    int ret;
     char *shared_key_salt = NULL;
     int userauth = FLB_TRUE;
     flb_sds_t reason = NULL;
+    int ping_ret;
+    int pong_ret;
 
     reason = flb_sds_create_size(32);
     flb_plg_debug(ins, "protocol: checking PING");
-    ret = check_ping(ins, conn, &shared_key_salt);
-    if (ret == -1) {
+    ping_ret = check_ping(ins, conn, &shared_key_salt);
+    if (ping_ret == -1) {
         flb_plg_error(ins, "handshake error checking PING");
 
         goto error;
     }
-    else if (ret == -2) {
+    else if (ping_ret == -2) {
         flb_plg_warn(ins, "user authentication is failed");
         userauth = FLB_FALSE;
         reason = flb_sds_cat(reason, "username/password mismatch", 26);
     }
 
     flb_plg_debug(ins, "protocol: sending PONG");
-    ret = send_pong(ins, conn, shared_key_salt, userauth, reason);
-    if (ret == -1) {
-        flb_plg_error(ins, "handshake error sending PONG");
+    pong_ret = send_pong(ins, conn, shared_key_salt, userauth, reason);
+    if (pong_ret == -1) {
+        flb_plg_error(ins, "handshake error: could not send PONG to client");
 
         goto error;
     }
 
     flb_sds_destroy(shared_key_salt);
     flb_sds_destroy(reason);
+
+    /*
+     * If the initial authentication check failed (either shared_key or user),
+     * we have successfully notified the client with a PONG failure message,
+     * so we must now terminate the handshake by returning an error.
+     */
+    if (ping_ret < 0) {
+        return -1;
+    }
 
     return 0;
 
