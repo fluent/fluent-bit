@@ -149,13 +149,12 @@ $INSTALL_CMD_PREFIX apt-get -y $APT_PARAMETERS install $INSTALL_PACKAGE_NAME$APT
 SCRIPT
     ;;
     opensuse-leap)
-        # Leap requires VERSION_ID whereas SLES uses $releasever
         $SUDO sh <<SCRIPT
 rpm --import $RELEASE_KEY
 cat << EOF > /etc/zypp/repos.d/fluent-bit.repo
 [fluent-bit]
 name = Fluent Bit
-baseurl = $RELEASE_URL/opensuse/leap/$VERSION_ID
+baseurl = $RELEASE_URL/opensuse/leap/\$releaserver
 gpgcheck=1
 repo_gpgcheck=1
 gpgkey=$RELEASE_KEY
