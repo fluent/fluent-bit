@@ -291,7 +291,12 @@ int determine_platform(struct flb_kube *ctx)
     size_t token_size;
     char *payload = NULL;
     size_t payload_len;
-    char *issuer_start, *issuer_end;
+    char *issuer_start, 
+    char *issuer_end;
+    char *first_dot, 
+    char *second_dot;
+    size_t payload_b64_len;
+    char *payload_b64;
     
     /* Read serviceaccount token */
     ret = flb_utils_read_file(FLB_KUBE_TOKEN, &token_buf, &token_size);
@@ -300,21 +305,21 @@ int determine_platform(struct flb_kube *ctx)
     }
     
     /* JWT tokens have 3 parts separated by dots: header.payload.signature */
-    char *first_dot = strchr(token_buf, '.');
+    first_dot = strchr(token_buf, '.');
     if (!first_dot) {
         flb_free(token_buf);
         return -1;
     }
     
-    char *second_dot = strchr(first_dot + 1, '.');
+    second_dot = strchr(first_dot + 1, '.');`
     if (!second_dot) {
         flb_free(token_buf);
         return -1;
     }
     
     /* Extract and decode the payload (middle part) */
-    size_t payload_b64_len = second_dot - (first_dot + 1);
-    char *payload_b64 = flb_malloc(payload_b64_len + 1);
+    payload_b64_len = second_dot - (first_dot + 1);
+    payload_b64 = flb_malloc(payload_b64_len + 1);
     if (!payload_b64) {
         flb_free(token_buf);
         return -1;
