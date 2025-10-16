@@ -1,6 +1,6 @@
 name: fluent-bit
 base: core18
-version: '4.0.13'
+version: '4.0.14'
 summary: High performance logs and stream processor
 description: |
   Fluent Bit is a high performance log processor and stream processor for Linux.
