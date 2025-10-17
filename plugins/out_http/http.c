@@ -178,6 +178,18 @@ static int http_post(struct flb_out_http *ctx,
                         ctx->host, ctx->port,
                         ctx->proxy, 0);
 
+    if (c == NULL) {
+        flb_plg_error(ctx->ins, "[http_client] failed to create HTTP client");
+        if (payload_buf != body) {
+            flb_free(payload_buf);
+        }
+
+        if (u_conn) {
+            flb_upstream_conn_release(u_conn);
+        }
+
+        return FLB_RETRY;
+    }
 
     if (c->proxy.host) {
         flb_plg_debug(ctx->ins, "[http_client] proxy host: %s port: %i",
