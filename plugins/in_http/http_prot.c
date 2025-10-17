@@ -89,6 +89,36 @@ static int sds_uri_decode(flb_sds_t s)
     return 0;
 }
 
+cfl_sds_t get_health_message()
+{
+    char time_str[128];
+    cfl_sds_t msg = NULL;
+    struct tm tm_time;
+    struct flb_time tm;
+
+    flb_time_get(&tm);
+    gmtime_r(&tm.tm.tv_sec, &tm_time);
+
+    snprintf(time_str, sizeof(time_str) - 1, "%04d-%02d-%02dT%02d:%02d:%02d.%09ldZ",
+             tm_time.tm_year + 1900, tm_time.tm_mon + 1, tm_time.tm_mday,
+             tm_time.tm_hour, tm_time.tm_min, tm_time.tm_sec, tm.tm.tv_nsec);
+
+    msg = cfl_sds_create_size(256);
+    if (!msg) {
+        return NULL;
+    }
+
+    cfl_sds_printf(&msg,
+                  "{\n"
+                  "  \"status\": \"ok\",\n"
+                  "  \"message\": \"I can only show you the door. You're the one that has to walk through it.\",\n"
+                  "  \"timestamp\": \"%s\"\n"
+                  "}\n",
+                  time_str);
+
+    return msg;
+}
+
 static int send_response(struct http_conn *conn, int http_status, char *message)
 {
     struct flb_http *context;
@@ -120,13 +150,25 @@ static int send_response(struct http_conn *conn, int http_status, char *message)
                        context->success_headers_str);
     }
     else if (http_status == 200) {
-        flb_sds_printf(&out,
-                       "HTTP/1.1 200 OK\r\n"
-                       "Server: Fluent Bit v%s\r\n"
-                       "%s"
-                       "Content-Length: 0\r\n\r\n",
-                       FLB_VERSION_STR,
-                       context->success_headers_str);
+        if (len > 0) {
+            flb_sds_printf(&out,
+                "HTTP/1.1 200 OK\r\n"
+                "Server: Fluent Bit v%s\r\n"
+                "%s"
+                "Content-Length: %i\r\n\r\n%s",
+                FLB_VERSION_STR,
+                context->success_headers_str,
+                len, message);
+        }
+        else {
+            flb_sds_printf(&out,
+                        "HTTP/1.1 200 OK\r\n"
+                        "Server: Fluent Bit v%s\r\n"
+                        "%s"
+                        "Content-Length: 0\r\n\r\n",
+                        FLB_VERSION_STR,
+                        context->success_headers_str);
+            }
     }
     else if (http_status == 204) {
         flb_sds_printf(&out,
@@ -735,7 +777,7 @@ static int http_prot_uncompress(struct flb_http *ctx,
     return 0;
 }
 
-static int process_payload(struct flb_http *ctx, struct http_conn *conn,
+static int  process_payload(struct flb_http *ctx, struct http_conn *conn,
                            flb_sds_t tag,
                            struct mk_http_session *session,
                            struct mk_http_request *request)
@@ -868,6 +910,7 @@ int http_prot_handle(struct flb_http *ctx, struct http_conn *conn,
     int len;
     char *uri;
     char *qs;
+    flb_sds_t health;
     off_t diff;
     flb_sds_t tag;
     struct mk_http_header *header;
@@ -915,8 +958,6 @@ int http_prot_handle(struct flb_http *ctx, struct http_conn *conn,
         sanitize_tag(tag);
     }
 
-    mk_mem_free(uri);
-
     /* Check if we have a Host header: Hostname ; port */
     mk_http_point_header(&request->host, &session->parser, MK_HEADER_HOST);
 
@@ -927,6 +968,7 @@ int http_prot_handle(struct flb_http *ctx, struct http_conn *conn,
     /* HTTP/1.1 needs Host header */
     if (!request->host.data && request->protocol == MK_HTTP_PROTOCOL_11) {
         flb_sds_destroy(tag);
+        mk_mem_free(uri);
         return -1;
     }
 
@@ -941,6 +983,15 @@ int http_prot_handle(struct flb_http *ctx, struct http_conn *conn,
     }
     else {
         request->_content_length.data = NULL;
+    }
+
+    if (request->method == MK_METHOD_GET && strcmp(uri, "/health") == 0) {
+        flb_sds_destroy(tag);
+        mk_mem_free(uri);
+        health = get_health_message();
+        ret = send_response(conn, 200, health);
+        flb_sds_destroy(health);
+        return ret;
     }
 
     if (request->method != MK_METHOD_POST) {
@@ -1231,7 +1282,9 @@ int http_prot_handle_ng(struct flb_http_request *request,
     int                             ret;
     int                             len;
     flb_sds_t                       tag;
+    flb_sds_t                       health;
     struct flb_http                *ctx;
+
 
     ctx = (struct flb_http *) response->stream->user_data;
     if (request->path[0] != '/') {
@@ -1269,6 +1322,13 @@ int http_prot_handle_ng(struct flb_http_request *request,
         return -1;
     }
 
+    if (request->method == HTTP_METHOD_GET && strcmp(request->path, "/health") == 0) {
+        flb_sds_destroy(tag);
+        health = get_health_message();
+        send_response_ng(response, 200, health);
+        flb_sds_destroy(health);
+        return 0;
+    }
     if (request->method != HTTP_METHOD_POST) {
         send_response_ng(response, 400, "error: invalid HTTP method\n");
         flb_sds_destroy(tag);
