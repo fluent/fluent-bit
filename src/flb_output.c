@@ -98,6 +98,11 @@ struct flb_config_map output_global_properties[] = {
         0, FLB_FALSE, 0,
         "Sets whether using enterprise certstore or not on an output (Windows)"
     },
+    {
+        FLB_CONFIG_MAP_STR, "tls.windows.client_thumbprints", NULL,
+        0, FLB_FALSE, 0,
+        "Comma-separated list of certificate thumbprints (SHA1/SHA256) to trust from the Windows store (Windows)"
+    },
 
     {0}
 };
@@ -192,6 +197,9 @@ static void flb_output_free_properties(struct flb_output_instance *ins)
 # if defined(FLB_SYSTEM_WINDOWS)
     if (ins->tls_win_certstore_name) {
         flb_sds_destroy(ins->tls_win_certstore_name);
+    }
+    if (ins->tls_win_thumbprints) {
+        flb_sds_destroy(ins->tls_win_thumbprints);
     }
 # endif
 #endif
@@ -774,6 +782,7 @@ struct flb_output_instance *flb_output_new(struct flb_config *config,
 # if defined(FLB_SYSTEM_WINDOWS)
     instance->tls_win_certstore_name = NULL;
     instance->tls_win_use_enterprise_certstore = FLB_FALSE;
+    instance->tls_win_thumbprints = NULL;
 # endif
 #endif
 
@@ -1006,6 +1015,9 @@ int flb_output_set_property(struct flb_output_instance *ins,
     else if (prop_key_check("tls.windows.use_enterprise_store", k, len) == 0 && tmp) {
         ins->tls_win_use_enterprise_certstore = flb_utils_bool(tmp);
         flb_sds_destroy(tmp);
+    }
+    else if (prop_key_check("tls.windows.client_thumbprints", k, len) == 0 && tmp) {
+        flb_utils_set_plugin_string_property("tls.windows.client_thumbprints", &ins->tls_win_thumbprints, tmp);
     }
 #  endif
 #endif
@@ -1415,6 +1427,16 @@ int flb_output_init_all(struct flb_config *config)
                 ret = flb_tls_set_use_enterprise_store(ins->tls, ins->tls_win_use_enterprise_certstore);
                 if (ret == -1) {
                     flb_error("[input %s] error set up to use enterprise certstore in TLS context",
+                              ins->name);
+
+                    return -1;
+                }
+            }
+
+            if (ins->tls_win_thumbprints) {
+                ret = flb_tls_set_client_thumbprints(ins->tls, ins->tls_win_thumbprints);
+                if (ret == -1) {
+                    flb_error("[input %s] error set up to use thumbprints of certificates in TLS context",
                               ins->name);
 
                     return -1;
