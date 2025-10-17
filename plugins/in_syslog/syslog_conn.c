@@ -178,6 +178,8 @@ struct syslog_conn *syslog_conn_add(struct flb_connection *connection,
     conn->ins     = ctx->ins;
     conn->buf_len = 0;
     conn->buf_parsed = 0;
+    conn->frame_expected_len = 0;
+    conn->frame_have_len = 0;
 
     /* Allocate read buffer */
     conn->buf_data = flb_malloc(ctx->buffer_chunk_size);
