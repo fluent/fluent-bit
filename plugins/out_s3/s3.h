@@ -105,6 +105,7 @@ struct flb_s3 {
     char *bucket;
     char *region;
     char *s3_key_format;
+    char *time_offset;
     char *tag_delimiters;
     char *endpoint;
     char *sts_endpoint;
@@ -113,7 +114,7 @@ struct flb_s3 {
     char *storage_class;
     char *log_key;
     char *external_id;
-    char *profile;
+    char *profile;   
     int free_endpoint;
     int retry_requests;
     int use_put_object;
