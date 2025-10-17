@@ -33,6 +33,10 @@
 /* 32KB chunk size */
 #define FLB_SYSLOG_CHUNK   "32768"
 
+/* TCP framing */
+#define FLB_SYSLOG_FRAME_NEWLINE        0
+#define FLB_SYSLOG_FRAME_OCTET_COUNTING 1
+
 struct syslog_conn;
 
 /* Context / Config*/
@@ -66,6 +70,10 @@ struct flb_syslog {
     struct flb_parser *parser;
     flb_sds_t raw_message_key;
     flb_sds_t source_address_key;
+
+    /* TCP framing */
+    flb_sds_t frame_str;
+    int frame_type;
 
     int dgram_mode_flag;
     int collector_id;

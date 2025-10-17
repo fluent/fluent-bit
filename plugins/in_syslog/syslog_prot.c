@@ -218,21 +218,55 @@ int syslog_prot_process(struct syslog_conn *conn)
 
     flb_log_event_encoder_reset(ctx->log_encoder);
 
-    /* Always parse while some remaining bytes exists */
+    /* Always parse while some remaining bytes exist */
     while (eof < end) {
-        /* Lookup the ending byte */
-        eof = p = conn->buf_data + conn->buf_parsed;
-        while (*eof != '\n' && *eof != '\0' && eof < end) {
-            eof++;
+        if (ctx->frame_type == FLB_SYSLOG_FRAME_NEWLINE) {
+            /* newline framing (current behavior) */
+            eof = p = conn->buf_data + conn->buf_parsed;
+            while (*eof != '\n' && *eof != '\0' && eof < end) {
+                eof++;
+            }
+            /* Incomplete message */
+            if (eof == end || (*eof != '\n' && *eof != '\0')) {
+                break;
+            }
+            len = (eof - p);
         }
+        else {
+            /* RFC 6587 octet-counting framing: <len> SP <msg> */
+            p = conn->buf_data + conn->buf_parsed;
 
-        /* Incomplete message */
-        if (eof == end || (*eof != '\n' && *eof != '\0')) {
-            break;
+            if (!conn->frame_have_len) {
+                char *sp = p;
+                size_t n = 0;
+                while (sp < end && *sp >= '0' && *sp <= '9') {
+                    if (n > SIZE_MAX / 10) {
+                        n = SIZE_MAX;
+                        break;
+                    }
+                    n = n * 10 + (size_t)(*sp - '0');
+                    sp++;
+                }
+                if (sp == end) {
+                    break;
+                }
+                if (*sp != ' ') {
+                    flb_plg_warn(ctx->ins, "invalid octet-counting length");
+                    return -1;
+                }
+                conn->buf_parsed += (sp - p) + 1;
+                conn->frame_expected_len = n;
+                conn->frame_have_len = 1;
+                p = conn->buf_data + conn->buf_parsed;
+                end = conn->buf_data + conn->buf_len;
+            }
+            if ((size_t)(end - p) < conn->frame_expected_len) {
+                break;
+            }
+            len = (int)conn->frame_expected_len;
         }
 
         /* No data ? */
-        len = (eof - p);
         if (len == 0) {
             consume_bytes(conn->buf_data, 1, conn->buf_len);
             conn->buf_len--;
@@ -266,7 +300,18 @@ int syslog_prot_process(struct syslog_conn *conn)
             flb_plg_debug(ctx->ins, "unparsed log message: %.*s", len, p);
         }
 
-        conn->buf_parsed += len + 1;
+        if (ctx->frame_type == FLB_SYSLOG_FRAME_NEWLINE) {
+            conn->buf_parsed += len + 1;
+        }
+        else {
+            conn->buf_parsed += len;
+            conn->frame_expected_len = 0;
+            conn->frame_have_len = 0;
+            if (conn->buf_parsed < conn->buf_len &&
+                conn->buf_data[conn->buf_parsed] == '\n') {
+                conn->buf_parsed += 1;
+            }
+        }
         end = conn->buf_data + conn->buf_len;
         eof = conn->buf_data + conn->buf_parsed;
     }
