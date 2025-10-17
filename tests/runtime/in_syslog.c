@@ -305,6 +305,61 @@ static int init_udp(char *in_host, int in_port, struct sockaddr_in *addr)
     return fd;
 }
 
+/* Copy src into dst, stripping a single trailing '\n' if present; return len */
+static size_t rstrip_nl_copy(char *dst, size_t dstsz, const char *src)
+{
+    size_t n = strlen(src);
+    if (n > 0 && src[n - 1] == '\n') {
+        n -= 1;
+    }
+    if (n + 1 > dstsz) {
+        n = dstsz - 1;
+    }
+    memcpy(dst, src, n);
+    dst[n] = '\0';
+    return n;
+}
+
+/* Build one octet-counted frame into 'out' as: "<len> " + msg [+ '\n' if add_lf] */
+/* Returns total bytes written (excluding terminal '\0' in 'out') */
+static size_t build_octet_frame(char *out, size_t outsz,
+                                const char *msg, int add_lf)
+{
+    char tmp[2048];
+    size_t mlen = rstrip_nl_copy(tmp, sizeof(tmp), msg);
+    char hdr[64];
+    int  hlen = snprintf(hdr, sizeof(hdr), "%zu ", mlen);
+    size_t need = (size_t)hlen + mlen + (add_lf ? 1 : 0);
+
+    if (need + 1 > outsz) {
+        /* truncate conservatively if buffer too small (shouldn't happen in tests) */
+        need = outsz - 1;
+        add_lf = 0;
+        if ((size_t)hlen > need) {
+            hlen = (int)need;
+        }
+    }
+
+    memcpy(out, hdr, (size_t)hlen);
+    memcpy(out + hlen, tmp, mlen);
+    if (add_lf) {
+        out[hlen + mlen] = '\n';
+    }
+    out[need] = '\0';
+    return need;
+}
+
+/* Build two consecutive octet-counted frames into one buffer */
+static size_t build_two_frames(char *out, size_t outsz,
+                               const char *msg1, const char *msg2,
+                               int add_lf_for_each)
+{
+    size_t off = 0;
+    off += build_octet_frame(out + off, outsz - off, msg1, add_lf_for_each);
+    off += build_octet_frame(out + off, outsz - off, msg2, add_lf_for_each);
+    return off;
+}
+
 void flb_test_syslog_tcp()
 {
     struct flb_lib_out_cb cb_data;
@@ -1002,6 +1057,269 @@ void flb_test_syslog_rfc3164()
     test_ctx_destroy(ctx);
 }
 
+void flb_test_syslog_tcp_octet_counting()
+{
+    struct flb_lib_out_cb cb_data;
+    struct test_ctx *ctx;
+    flb_sockfd_t fd;
+    int ret;
+    int num;
+    ssize_t w_size;
+
+    struct str_list expected = {
+        .size  = sizeof(RFC5424_EXPECTED_STRS_1)/sizeof(char*),
+        .lists = &RFC5424_EXPECTED_STRS_1[0],
+    };
+
+    char frame[4096];
+    size_t fsize = build_octet_frame(frame, sizeof(frame), RFC5424_EXAMPLE_1, /*add_lf=*/0);
+
+    clear_output_num();
+    cb_data.cb   = cb_check_json_str_list;
+    cb_data.data = &expected;
+
+    ctx = test_ctx_create(&cb_data);
+    if (!TEST_CHECK(ctx != NULL)) {
+        TEST_MSG("test_ctx_create failed");
+        exit(EXIT_FAILURE);
+    }
+
+    ret = flb_input_set(ctx->flb, ctx->i_ffd,
+                        "mode", "tcp",
+                        "frame", "octet_counting",
+                        "parser", PARSER_NAME_RFC5424,
+                        NULL);
+    TEST_CHECK(ret == 0);
+
+    ret = flb_start(ctx->flb);
+    TEST_CHECK(ret == 0);
+
+    fd = connect_tcp(NULL, -1);
+    if (!TEST_CHECK(fd >= 0)) {
+        test_ctx_destroy(ctx);
+        exit(EXIT_FAILURE);
+    }
+
+    w_size = send(fd, frame, fsize, 0);
+    if (!TEST_CHECK(w_size == (ssize_t)fsize)) {
+        TEST_MSG("failed to send, errno=%d", errno);
+        flb_socket_close(fd);
+        test_ctx_destroy(ctx);
+        exit(EXIT_FAILURE);
+    }
+
+    flb_time_msleep(500);
+    num = get_output_num();
+    if (!TEST_CHECK(num > 0)) {
+        TEST_MSG("no outputs (octet_counting single)");
+    }
+
+    flb_socket_close(fd);
+    test_ctx_destroy(ctx);
+}
+
+/* -------- TCP + RFC6587 octet-counting: frame with trailing LF -------- */
+void flb_test_syslog_tcp_octet_counting_lf()
+{
+    struct flb_lib_out_cb cb_data;
+    struct test_ctx *ctx;
+    flb_sockfd_t fd;
+    int ret;
+    int num;
+    ssize_t w_size;
+
+    struct str_list expected = {
+        .size  = sizeof(RFC5424_EXPECTED_STRS_1)/sizeof(char*),
+        .lists = &RFC5424_EXPECTED_STRS_1[0],
+    };
+
+    char frame[4096];
+    size_t fsize = build_octet_frame(frame, sizeof(frame), RFC5424_EXAMPLE_1, /*add_lf=*/1);
+
+    clear_output_num();
+    cb_data.cb   = cb_check_json_str_list;
+    cb_data.data = &expected;
+
+    ctx = test_ctx_create(&cb_data);
+    if (!TEST_CHECK(ctx != NULL)) {
+        TEST_MSG("test_ctx_create failed");
+        exit(EXIT_FAILURE);
+    }
+
+    ret = flb_input_set(ctx->flb, ctx->i_ffd,
+                        "mode", "tcp",
+                        "frame", "octet_counting",
+                        "parser", PARSER_NAME_RFC5424,
+                        NULL);
+    TEST_CHECK(ret == 0);
+
+    ret = flb_start(ctx->flb);
+    TEST_CHECK(ret == 0);
+
+    fd = connect_tcp(NULL, -1);
+    if (!TEST_CHECK(fd >= 0)) {
+        test_ctx_destroy(ctx);
+        exit(EXIT_FAILURE);
+    }
+
+    w_size = send(fd, frame, fsize, 0);
+    if (!TEST_CHECK(w_size == (ssize_t)fsize)) {
+        TEST_MSG("failed to send, errno=%d", errno);
+        flb_socket_close(fd);
+        test_ctx_destroy(ctx);
+        exit(EXIT_FAILURE);
+    }
+
+    flb_time_msleep(500);
+    num = get_output_num();
+    if (!TEST_CHECK(num > 0)) {
+        TEST_MSG("no outputs (octet_counting + LF)");
+    }
+
+    flb_socket_close(fd);
+    test_ctx_destroy(ctx);
+}
+
+/* -------- TCP + RFC6587 octet-counting: fragmented send (header then body) -------- */
+void flb_test_syslog_tcp_octet_counting_fragmented()
+{
+    struct flb_lib_out_cb cb_data;
+    struct test_ctx *ctx;
+    flb_sockfd_t fd;
+    int ret;
+    int num;
+    ssize_t w_size;
+
+    struct str_list expected = {
+        .size  = sizeof(RFC5424_EXPECTED_STRS_1)/sizeof(char*),
+        .lists = &RFC5424_EXPECTED_STRS_1[0],
+    };
+
+    char msg[2048];
+    size_t mlen = rstrip_nl_copy(msg, sizeof(msg), RFC5424_EXAMPLE_1);
+    char hdr[64];
+    int   hlen = snprintf(hdr, sizeof(hdr), "%zu ", mlen);
+
+    clear_output_num();
+    cb_data.cb   = cb_check_json_str_list;
+    cb_data.data = &expected;
+
+    ctx = test_ctx_create(&cb_data);
+    if (!TEST_CHECK(ctx != NULL)) {
+        TEST_MSG("test_ctx_create failed");
+        exit(EXIT_FAILURE);
+    }
+
+    ret = flb_input_set(ctx->flb, ctx->i_ffd,
+                        "mode", "tcp",
+                        "frame", "octet_counting",
+                        "parser", PARSER_NAME_RFC5424,
+                        NULL);
+    TEST_CHECK(ret == 0);
+
+    ret = flb_start(ctx->flb);
+    TEST_CHECK(ret == 0);
+
+    fd = connect_tcp(NULL, -1);
+    if (!TEST_CHECK(fd >= 0)) {
+        test_ctx_destroy(ctx);
+        exit(EXIT_FAILURE);
+    }
+
+    /* Send header only first */
+    w_size = send(fd, hdr, (size_t)hlen, 0);
+    if (!TEST_CHECK(w_size == hlen)) {
+        TEST_MSG("failed to send header, errno=%d", errno);
+        flb_socket_close(fd);
+        test_ctx_destroy(ctx);
+        exit(EXIT_FAILURE);
+    }
+    /* Give the input a moment to hit 'need more bytes' path */
+    flb_time_msleep(50);
+
+    /* Now send body */
+    w_size = send(fd, msg, mlen, 0);
+    if (!TEST_CHECK(w_size == (ssize_t)mlen)) {
+        TEST_MSG("failed to send body, errno=%d", errno);
+        flb_socket_close(fd);
+        test_ctx_destroy(ctx);
+        exit(EXIT_FAILURE);
+    }
+
+    flb_time_msleep(500);
+    num = get_output_num();
+    if (!TEST_CHECK(num > 0)) {
+        TEST_MSG("no outputs (octet_counting fragmented)");
+    }
+
+    flb_socket_close(fd);
+    test_ctx_destroy(ctx);
+}
+
+/* -------- TCP + RFC6587 octet-counting: two frames back-to-back -------- */
+void flb_test_syslog_tcp_octet_counting_multi()
+{
+    struct flb_lib_out_cb cb_data;
+    struct test_ctx *ctx;
+    flb_sockfd_t fd;
+    int ret;
+    int num;
+    ssize_t w_size;
+
+    struct str_list expected = {
+        .size  = sizeof(RFC5424_EXPECTED_STRS_1)/sizeof(char*),
+        .lists = &RFC5424_EXPECTED_STRS_1[0],
+    };
+
+    char frames[8192];
+    size_t fsize = build_two_frames(frames, sizeof(frames),
+                                    RFC5424_EXAMPLE_1, RFC5424_EXAMPLE_1,
+                                    /*add_lf_for_each=*/0);
+
+    clear_output_num();
+    cb_data.cb   = cb_check_json_str_list;
+    cb_data.data = &expected;
+
+    ctx = test_ctx_create(&cb_data);
+    if (!TEST_CHECK(ctx != NULL)) {
+        TEST_MSG("test_ctx_create failed");
+        exit(EXIT_FAILURE);
+    }
+
+    ret = flb_input_set(ctx->flb, ctx->i_ffd,
+                        "mode", "tcp",
+                        "frame", "octet_counting",
+                        "parser", PARSER_NAME_RFC5424,
+                        NULL);
+    TEST_CHECK(ret == 0);
+
+    ret = flb_start(ctx->flb);
+    TEST_CHECK(ret == 0);
+
+    fd = connect_tcp(NULL, -1);
+    if (!TEST_CHECK(fd >= 0)) {
+        test_ctx_destroy(ctx);
+        exit(EXIT_FAILURE);
+    }
+
+    w_size = send(fd, frames, fsize, 0);
+    if (!TEST_CHECK(w_size == (ssize_t)fsize)) {
+        TEST_MSG("failed to send frames, errno=%d", errno);
+        flb_socket_close(fd);
+        test_ctx_destroy(ctx);
+        exit(EXIT_FAILURE);
+    }
+
+    flb_time_msleep(500);
+    num = get_output_num();
+    if (!TEST_CHECK(num >= 2)) {
+        TEST_MSG("expected at least 2 outputs (octet_counting multi), got %d", num);
+    }
+
+    flb_socket_close(fd);
+    test_ctx_destroy(ctx);
+}
+
 TEST_LIST = {
     {"syslog_tcp", flb_test_syslog_tcp},
     {"syslog_udp", flb_test_syslog_udp},
@@ -1020,6 +1338,9 @@ TEST_LIST = {
     {"syslog_udp_unix", flb_test_syslog_udp_unix},
 #endif
 #endif
+    {"syslog_tcp_octet_counting", flb_test_syslog_tcp_octet_counting},
+    {"syslog_tcp_octet_counting_lf", flb_test_syslog_tcp_octet_counting_lf},
+    {"syslog_tcp_octet_counting_fragmented", flb_test_syslog_tcp_octet_counting_fragmented},
+    {"syslog_tcp_octet_counting_multi", flb_test_syslog_tcp_octet_counting_multi},
     {NULL, NULL}
 };
-
