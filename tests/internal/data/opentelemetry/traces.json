@@ -1,0 +1,342 @@
+{
+  "resourceSpans_missing": {
+    "input": {},
+    "expected_error": {
+      "code": "FLB_OTEL_TRACES_ERR_RESOURCE_SPANS_MISSING"
+    }
+  },
+  "resourceSpans_wrong_type": {
+    "input": {"resourceSpans": {}},
+    "expected_error": {
+      "code": "FLB_OTEL_TRACES_ERR_UNEXPECTED_RESOURCE_SPANS_TYPE"
+    }
+  },
+  "resourceSpans_entry_wrong_type": {
+    "input": {"resourceSpans": [1]},
+    "expected_error": {
+      "code": "FLB_OTEL_TRACES_ERR_UNEXPECTED_RESOURCE_SPANS_ENTRY_TYPE"
+    }
+  },
+  "root_wrong_type": {
+    "input": [],
+    "expected_error": {
+      "code": "FLB_OTEL_TRACES_ERR_UNEXPECTED_ROOT_OBJECT_TYPE"
+    }
+  },
+  "scopeSpans_missing": {
+    "input": {"resourceSpans": [{}]},
+    "expected_error": {
+      "code": "FLB_OTEL_TRACES_ERR_SCOPE_SPANS_MISSING"
+    }
+  },
+  "scopeSpans_wrong_type": {
+    "input": {"resourceSpans": [{"scopeSpans": {}}]},
+    "expected_error": {
+      "code": "FLB_OTEL_TRACES_ERR_UNEXPECTED_SCOPE_SPANS_TYPE"
+    }
+  },
+  "scopeSpans_entry_wrong_type": {
+    "input": {"resourceSpans": [{"scopeSpans": [1]}]},
+    "expected_error": {
+      "code": "FLB_OTEL_TRACES_ERR_UNEXPECTED_SCOPE_SPANS_ENTRY_TYPE"
+    }
+  },
+  "spans_missing": {
+    "input": {"resourceSpans": [{"scopeSpans": [{}]}]},
+    "expected_error": {
+      "code": "FLB_OTEL_TRACES_ERR_SPANS_MISSING"
+    }
+  },
+  "spans_wrong_type": {
+    "input": {"resourceSpans": [{"scopeSpans": [{"spans": {}}]}]},
+    "expected_error": {
+      "code": "FLB_OTEL_TRACES_ERR_UNEXPECTED_SPANS_TYPE"
+    }
+  },
+  "span_entry_wrong_type": {
+    "input": {"resourceSpans": [{"scopeSpans": [{"spans": [1]}]}]},
+    "expected_error": {
+      "code": "FLB_OTEL_TRACES_ERR_UNEXPECTED_SPAN_ENTRY_TYPE"
+    }
+  },
+  "span_name_missing": {
+    "input": {"resourceSpans": [{"scopeSpans": [{"spans": [{}]}]}]},
+    "expected_error": {
+      "code": "FLB_OTEL_TRACES_ERR_SPAN_NAME_MISSING"
+    }
+  },
+  "invalid_trace_id": {
+    "input": {
+      "resourceSpans": [
+        {
+          "scopeSpans": [
+            {
+              "spans": [
+                {
+                  "name": "span",
+                  "traceId": "1234",
+                  "spanId": "0000000000000001"
+                }
+              ]
+            }
+          ]
+        }
+      ]
+    },
+    "expected_error": {
+      "code": "FLB_OTEL_TRACES_ERR_INVALID_TRACE_ID"
+    }
+  },
+  "invalid_span_id": {
+    "input": {
+      "resourceSpans": [
+        {
+          "scopeSpans": [
+            {
+              "spans": [
+                {
+                  "name": "span",
+                  "traceId": "00000000000000000000000000000001",
+                  "spanId": "1234"
+                }
+              ]
+            }
+          ]
+        }
+      ]
+    },
+    "expected_error": {
+      "code": "FLB_OTEL_TRACES_ERR_INVALID_SPAN_ID"
+    }
+  },
+  "invalid_parent_span_id": {
+    "input": {
+      "resourceSpans": [
+        {
+          "scopeSpans": [
+            {
+              "spans": [
+                {
+                  "name": "span",
+                  "traceId": "00000000000000000000000000000001",
+                  "spanId": "0000000000000001",
+                  "parentSpanId": "1234"
+                }
+              ]
+            }
+          ]
+        }
+      ]
+    },
+    "expected_error": {
+      "code": "FLB_OTEL_TRACES_ERR_INVALID_PARENT_SPAN_ID"
+    }
+  },
+  "event_missing_name": {
+    "input": {
+      "resourceSpans": [
+        {
+          "scopeSpans": [
+            {
+              "spans": [
+                {
+                  "name": "span",
+                  "traceId": "00000000000000000000000000000001",
+                  "spanId": "0000000000000001",
+                  "events": [
+                    {}
+                  ]
+                }
+              ]
+            }
+          ]
+        }
+      ]
+    },
+    "expected_error": {
+      "code": "FLB_OTEL_TRACES_ERR_INVALID_EVENT_ENTRY"
+    }
+  },
+  "event_invalid_timestamp": {
+    "input": {
+      "resourceSpans": [
+        {
+          "scopeSpans": [
+            {
+              "spans": [
+                {
+                  "name": "span",
+                  "traceId": "00000000000000000000000000000001",
+                  "spanId": "0000000000000001",
+                  "events": [
+                    {
+                      "name": "event",
+                      "timeUnixNano": "1234567890123456789012345678901234567890123456789012345678901234567890"
+                    }
+                  ]
+                }
+              ]
+            }
+          ]
+        }
+      ]
+    },
+    "expected_error": {
+      "code": "FLB_OTEL_TRACES_ERR_INVALID_EVENT_TIMESTAMP"
+    }
+  },
+  "link_entry_wrong_type": {
+    "input": {
+      "resourceSpans": [
+        {
+          "scopeSpans": [
+            {
+              "spans": [
+                {
+                  "name": "span",
+                  "traceId": "00000000000000000000000000000001",
+                  "spanId": "0000000000000001",
+                  "links": [1]
+                }
+              ]
+            }
+          ]
+        }
+      ]
+    },
+    "expected_error": {
+      "code": "FLB_OTEL_TRACES_ERR_INVALID_LINK_ENTRY"
+    }
+  },
+  "link_missing_trace_id": {
+    "input": {
+      "resourceSpans": [
+        {
+          "scopeSpans": [
+            {
+              "spans": [
+                {
+                  "name": "span",
+                  "traceId": "00000000000000000000000000000001",
+                  "spanId": "0000000000000001",
+                  "links": [
+                    {}
+                  ]
+                }
+              ]
+            }
+          ]
+        }
+      ]
+    },
+    "expected_error": {
+      "code": "FLB_OTEL_TRACES_ERR_INVALID_LINK_TRACE_ID"
+    }
+  },
+  "link_invalid_span_id": {
+    "input": {
+      "resourceSpans": [
+        {
+          "scopeSpans": [
+            {
+              "spans": [
+                {
+                  "name": "span",
+                  "traceId": "00000000000000000000000000000001",
+                  "spanId": "0000000000000001",
+                  "links": [
+                    {
+                      "traceId": "00000000000000000000000000000001",
+                      "spanId": "1234"
+                    }
+                  ]
+                }
+              ]
+            }
+          ]
+        }
+      ]
+    },
+    "expected_error": {
+      "code": "FLB_OTEL_TRACES_ERR_INVALID_LINK_SPAN_ID"
+    }
+  },
+  "status_invalid_code": {
+    "input": {
+      "resourceSpans": [
+        {
+          "scopeSpans": [
+            {
+              "spans": [
+                {
+                  "name": "span",
+                  "traceId": "00000000000000000000000000000001",
+                  "spanId": "0000000000000001",
+                  "status": {
+                    "code": "NOT_A_STATUS"
+                  }
+                }
+              ]
+            }
+          ]
+        }
+      ]
+    },
+    "expected_error": {
+      "code": "FLB_OTEL_TRACES_ERR_STATUS_FAILURE"
+    }
+  },
+  "valid_minimal": {
+    "input": {
+      "resourceSpans": [
+        {
+          "scopeSpans": [
+            {
+              "spans": [
+                {
+                  "name": "span",
+                  "traceId": "00000000000000000000000000000001",
+                  "spanId": "0000000000000001"
+                }
+              ]
+            }
+          ]
+        }
+      ]
+    }
+  },
+  "valid_with_event_and_link": {
+    "input": {
+      "resourceSpans": [
+        {
+          "scopeSpans": [
+            {
+              "spans": [
+                {
+                  "name": "span",
+                  "traceId": "00000000000000000000000000000001",
+                  "spanId": "0000000000000001",
+                  "events": [
+                    {
+                      "name": "event",
+                      "timeUnixNano": "1234"
+                    }
+                  ],
+                  "links": [
+                    {
+                      "traceId": "00000000000000000000000000000001",
+                      "spanId": "0000000000000001"
+                    }
+                  ],
+                  "status": {
+                    "code": "OK"
+                  }
+                }
+              ]
+            }
+          ]
+        }
+      ]
+    }
+  }
+}
