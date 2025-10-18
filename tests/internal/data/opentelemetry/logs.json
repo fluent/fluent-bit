@@ -592,6 +592,108 @@
     }
   },
 
+  "trace_id_invalid_hex_character": {
+    "input": {
+      "resourceLogs": [{
+        "scopeLogs": [{
+          "logRecords": [{
+            "timeUnixNano": "1640995200000000000",
+            "traceId": "0000000000000000000000000000000G",
+            "body": {"stringValue": "test log with invalid hex character in trace_id"}
+          }]
+        }]
+      }]
+    },
+    "expected_error": {
+      "code": "FLB_OTEL_LOGS_ERR_INVALID_TRACE_ID"
+    }
+  },
+
+  "span_id_invalid_hex_character": {
+    "input": {
+      "resourceLogs": [{
+        "scopeLogs": [{
+          "logRecords": [{
+            "timeUnixNano": "1640995200000000000",
+            "spanId": "000000000000000G",
+            "body": {"stringValue": "test log with invalid hex character in span_id"}
+          }]
+        }]
+      }]
+    },
+    "expected_error": {
+      "code": "FLB_OTEL_LOGS_ERR_INVALID_SPAN_ID"
+    }
+  },
+
+  "trace_id_odd_length": {
+    "input": {
+      "resourceLogs": [{
+        "scopeLogs": [{
+          "logRecords": [{
+            "timeUnixNano": "1640995200000000000",
+            "traceId": "0000000000000000000000000000001",
+            "body": {"stringValue": "test log with odd length trace_id"}
+          }]
+        }]
+      }]
+    },
+    "expected_error": {
+      "code": "FLB_OTEL_LOGS_ERR_INVALID_TRACE_ID"
+    }
+  },
+
+  "span_id_odd_length": {
+    "input": {
+      "resourceLogs": [{
+        "scopeLogs": [{
+          "logRecords": [{
+            "timeUnixNano": "1640995200000000000",
+            "spanId": "000000000000001",
+            "body": {"stringValue": "test log with odd length span_id"}
+          }]
+        }]
+      }]
+    },
+    "expected_error": {
+      "code": "FLB_OTEL_LOGS_ERR_INVALID_SPAN_ID"
+    }
+  },
+
+  "trace_id_mixed_valid_invalid_hex": {
+    "input": {
+      "resourceLogs": [{
+        "scopeLogs": [{
+          "logRecords": [{
+            "timeUnixNano": "1640995200000000000",
+            "traceId": "0000000000000000000000000000000Z",
+            "body": {"stringValue": "test log with mixed valid/invalid hex in trace_id"}
+          }]
+        }]
+      }]
+    },
+    "expected_error": {
+      "code": "FLB_OTEL_LOGS_ERR_INVALID_TRACE_ID"
+    }
+  },
+
+  "span_id_mixed_valid_invalid_hex": {
+    "input": {
+      "resourceLogs": [{
+        "scopeLogs": [{
+          "logRecords": [{
+            "timeUnixNano": "1640995200000000000",
+            "spanId": "00000000000000Z",
+            "body": {"stringValue": "test log with mixed valid/invalid hex in span_id"}
+          }]
+        }]
+      }]
+    },
+    "expected_error": {
+      "code": "FLB_OTEL_LOGS_ERR_INVALID_SPAN_ID"
+    }
+  },
+
   "base64_encoded_trace_span": {
     "input": {
       "resourceLogs": [{
