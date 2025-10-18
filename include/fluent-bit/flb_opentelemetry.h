@@ -124,6 +124,9 @@ int flb_opentelemetry_logs_json_to_msgpack(struct flb_log_event_encoder *encoder
                                            const char *logs_body_key,
                                            int *error_status);
 
+struct ctrace *flb_opentelemetry_json_traces_to_ctrace(const char *body, size_t len,
+                                                       int *error_status);
+
 /* OpenTelemetry utils */
 int flb_otel_utils_find_map_entry_by_key(msgpack_object_map *map,
                                          char *key,
