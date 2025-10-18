@@ -107,6 +107,19 @@ struct flb_syslog *syslog_conf_create(struct flb_input_instance *ins,
         ctx->mode = FLB_SYSLOG_UNIX_UDP;
     }
 
+    /* TCP Frame type (only applies to stream modes; default newline) */
+    ctx->frame_type = FLB_SYSLOG_FRAME_NEWLINE;
+    if (ctx->frame_str != NULL) {
+        if (strcasecmp(ctx->frame_str, "octet_counting") == 0 ||
+            strcasecmp(ctx->frame_str, "octet") == 0) {
+            ctx->frame_type = FLB_SYSLOG_FRAME_OCTET_COUNTING;
+        }
+        else if (strcasecmp(ctx->frame_str, "newline") != 0) {
+            flb_plg_warn(ins, "[in_syslog] unknown frame '%s', using 'newline'",
+                         ctx->frame_str);
+        }
+    }
+
     /* Check if TCP mode was requested */
     if (ctx->mode == FLB_SYSLOG_TCP || ctx->mode == FLB_SYSLOG_UDP) {
         /* Listen interface (if not set, defaults to 0.0.0.0:5140) */
