@@ -256,6 +256,21 @@ int flb_router_io_set(struct flb_config *config)
         }
     }
 
+    /* Apply new router configuration if available */
+    printf("[DEBUG] checking if input_routes is empty\n");
+    if (!cfl_list_is_empty(&config->input_routes)) {
+        printf("[DEBUG] new router configuration found, applying...\n");
+        flb_debug("[router] new router configuration found, applying...");
+        if (flb_router_apply_config(config) == -1) {
+            printf("[DEBUG] failed to apply new router configuration\n");
+            flb_error("[router] failed to apply new router configuration");
+            return -1;
+        }
+        printf("[DEBUG] router configuration applied successfully\n");
+    } else {
+        printf("[DEBUG] input_routes is empty\n");
+    }
+
     return 0;
 }
 

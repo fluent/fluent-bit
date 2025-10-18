@@ -1,0 +1,12 @@
+vendor=0x1002
+gpu_busy_percent=75
+mem_info_vram_used=2147483648
+mem_info_vram_total=8589934592
+pp_dpm_sclk=0:300Mhz *1500Mhz 2:1900Mhz
+pp_dpm_mclk=0:300Mhz *1800Mhz 2:2000Mhz
+pp_dpm_socclk=0:800Mhz *1000Mhz 2:1200Mhz
+hwmon/hwmon0/name=amdgpu
+hwmon/hwmon0/power1_average=45000000
+hwmon/hwmon0/temp1_input=55000
+hwmon/hwmon0/fan1_input=1500
+hwmon/hwmon0/pwm1=128

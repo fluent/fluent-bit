@@ -797,10 +797,16 @@ static struct flb_cf *service_configure(struct flb_cf *cf,
         flb_service_conf_path_set(config, file);
     }
 
+    printf("[DEBUG] calling flb_config_load_config_format\n");
+    flb_debug("[main] calling flb_config_load_config_format");
     ret = flb_config_load_config_format(config, cf);
     if (ret != 0) {
+        printf("[DEBUG] flb_config_load_config_format failed\n");
+        flb_debug("[main] flb_config_load_config_format failed");
         return NULL;
     }
+    printf("[DEBUG] flb_config_load_config_format completed successfully\n");
+    flb_debug("[main] flb_config_load_config_format completed successfully");
 
     config->cf_main = cf;
     return cf;

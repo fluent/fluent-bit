@@ -325,6 +325,44 @@ key_error:
     return NULL;
 }
 
+struct cfl_variant *flb_cf_section_property_add_variant(struct flb_cf *cf,
+                                                        struct cfl_kvlist *kv_list,
+                                                        char *k_buf, size_t k_len,
+                                                        struct cfl_variant *variant)
+{
+    int rc;
+    flb_sds_t key;
+
+    if (variant == NULL) {
+        return NULL;
+    }
+
+    if (k_len == 0) {
+        k_len = strlen(k_buf);
+    }
+
+    key = flb_cf_key_translate(cf, k_buf, k_len);
+    if (key == NULL) {
+        return NULL;
+    }
+
+    rc = flb_sds_trim(key);
+    if (rc == -1) {
+        flb_cf_error_set(cf, FLB_CF_ERROR_KV_INVALID_KEY);
+        flb_sds_destroy(key);
+        return NULL;
+    }
+
+    rc = cfl_kvlist_insert(kv_list, key, variant);
+    if (rc < 0) {
+        flb_sds_destroy(key);
+        return NULL;
+    }
+
+    flb_sds_destroy(key);
+    return variant;
+}
+
 struct cfl_array *flb_cf_section_property_add_list(struct flb_cf *cf,
                                                    struct cfl_kvlist *kv_list,
                                                    char *k_buf, size_t k_len)
