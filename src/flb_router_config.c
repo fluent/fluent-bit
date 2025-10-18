@@ -917,6 +917,22 @@ static int parse_input_section(struct flb_cf_section *section,
         return -1;
     }
 
+    routes_var = cfl_kvlist_fetch(kvlist, "routes");
+    if (!routes_var) {
+        /* No router configuration for this input section */
+        return 0;
+    }
+
+    if (routes_var->type != CFL_VARIANT_KVLIST) {
+        return -1;
+    }
+
+    routes_kvlist = routes_var->data.as_kvlist;
+    if (cfl_list_is_empty(&routes_kvlist->list) == 1) {
+        /* routes field present but empty, nothing to configure */
+        return 0;
+    }
+
     name_var = cfl_kvlist_fetch(kvlist, "name");
     if (!name_var || name_var->type != CFL_VARIANT_STRING) {
         return -1;
@@ -945,16 +961,6 @@ static int parse_input_section(struct flb_cf_section *section,
         }
     }
 
-    routes_var = cfl_kvlist_fetch(kvlist, "routes");
-    if (!routes_var || routes_var->type != CFL_VARIANT_KVLIST) {
-        goto error;
-    }
-
-    routes_kvlist = routes_var->data.as_kvlist;
-    if (cfl_list_is_empty(&routes_kvlist->list) == 1) {
-        goto error;
-    }
-
     cfl_list_foreach(head, &routes_kvlist->list) {
         pair = cfl_list_entry(head, struct cfl_kvpair, _head);
         if (!pair || !pair->key) {
@@ -978,15 +984,19 @@ static int parse_input_section(struct flb_cf_section *section,
     }
 
     if (cfl_list_is_empty(&input->routes) == 1) {
-        goto error;
+        goto skip;
     }
 
     cfl_list_add(&input->_head, input_routes);
-    return 0;
+    return 1;
 
 error:
     input_routes_destroy(input);
     return -1;
+
+skip:
+    input_routes_destroy(input);
+    return 0;
 }
 
 int flb_router_config_parse(struct flb_cf *cf,
@@ -995,6 +1005,8 @@ int flb_router_config_parse(struct flb_cf *cf,
 {
     struct mk_list *head;
     struct flb_cf_section *section;
+    int routes_found = FLB_FALSE;
+    int ret;
 
     if (!cf || !input_routes) {
         return -1;
@@ -1004,17 +1016,24 @@ int flb_router_config_parse(struct flb_cf *cf,
 
     mk_list_foreach(head, &cf->inputs) {
         section = mk_list_entry(head, struct flb_cf_section, _head_section);
-        if (parse_input_section(section, input_routes, config) != 0) {
+        ret = parse_input_section(section, input_routes, config);
+        if (ret == -1) {
             flb_router_routes_destroy(input_routes);
             cfl_list_init(input_routes);
             return -1;
         }
+        else if (ret == 1) {
+            routes_found = FLB_TRUE;
+        }
     }
 
     if (cfl_list_is_empty(input_routes) == 1) {
-        flb_router_routes_destroy(input_routes);
-        cfl_list_init(input_routes);
-        return -1;
+        if (routes_found == FLB_TRUE) {
+            flb_router_routes_destroy(input_routes);
+            cfl_list_init(input_routes);
+            return -1;
+        }
+        return 0;
     }
 
     return 0;
