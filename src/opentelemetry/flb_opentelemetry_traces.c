@@ -17,11 +17,6 @@
  *  limitations under the License.
  */
 
-#include <ctype.h>
-#include <stdlib.h>
-#include <string.h>
-#include <strings.h>
-
 #include <fluent-bit/flb_info.h>
 #include <fluent-bit/flb_log.h>
 #include <fluent-bit/flb_mem.h>
@@ -224,13 +219,17 @@ static struct ctrace_attributes *convert_attributes(msgpack_object *attributes,
 
 static int process_resource_attributes(struct ctrace *ctr,
                                        struct ctrace_resource_span *resource_span,
-                                       msgpack_object *attributes)
+                                       msgpack_object *attributes,
+                                       int *error_status)
 {
     struct ctrace_resource *resource;
     struct ctrace_attributes *attr;
 
     attr = convert_attributes(attributes, "trace resource");
     if (!attr) {
+        if (error_status) {
+            *error_status = FLB_OTEL_TRACES_ERR_INVALID_ATTRIBUTES;
+        }
         return -1;
     }
 
@@ -245,7 +244,8 @@ static int process_scope_attributes(struct ctrace *ctr,
                                     msgpack_object *name,
                                     msgpack_object *version,
                                     msgpack_object *attributes,
-                                    msgpack_object *dropped_attributes_count)
+                                    msgpack_object *dropped_attributes_count,
+                                    int *error_status)
 {
     int dropped = 0;
     cfl_sds_t name_str = NULL;
@@ -256,6 +256,9 @@ static int process_scope_attributes(struct ctrace *ctr,
     if (attributes) {
         attr = convert_attributes(attributes, "trace scope");
         if (!attr) {
+            if (error_status) {
+                *error_status = FLB_OTEL_TRACES_ERR_INVALID_ATTRIBUTES;
+            }
             return -1;
         }
     }
@@ -282,6 +285,9 @@ static int process_scope_attributes(struct ctrace *ctr,
         if (attr) {
             ctr_attributes_destroy(attr);
         }
+        if (error_status) {
+            *error_status = FLB_OTEL_TRACES_ERR_GENERIC_ERROR;
+        }
         return -1;
     }
 
@@ -298,7 +304,8 @@ static int process_scope_attributes(struct ctrace *ctr,
 
 static int process_events(struct ctrace *ctr,
                           struct ctrace_span *span,
-                          msgpack_object *events)
+                          msgpack_object *events,
+                          int *error_status)
 {
     int i;
     int ret;
@@ -315,7 +322,9 @@ static int process_events(struct ctrace *ctr,
     for (i = 0; i < events->via.array.size; i++) {
         event = events->via.array.ptr[i];
         if (event.type != MSGPACK_OBJECT_MAP) {
-            flb_error("unexpected event type");
+            if (error_status) {
+                *error_status = FLB_OTEL_TRACES_ERR_INVALID_EVENT_ENTRY;
+            }
             return -1;
         }
 
@@ -328,12 +337,17 @@ static int process_events(struct ctrace *ctr,
             name = &event.via.map.ptr[ret].val;
             name_str = cfl_sds_create_len(name->via.str.ptr, name->via.str.size);
             if (name_str == NULL) {
+                if (error_status) {
+                    *error_status = FLB_OTEL_TRACES_ERR_INVALID_EVENT_ENTRY;
+                }
                 return -1;
             }
         }
 
         if (!name_str) {
-            flb_warn("span event name is missing");
+            if (error_status) {
+                *error_status = FLB_OTEL_TRACES_ERR_INVALID_EVENT_ENTRY;
+            }
             return -1;
         }
 
@@ -347,9 +361,11 @@ static int process_events(struct ctrace *ctr,
                 memcpy(tmp, event.via.map.ptr[ret].val.via.str.ptr, len);
                 tmp[len] = '\0';
 
-                flb_error("invalid timeUnixNano: '%s'", tmp);
                 if (name_str) {
                     cfl_sds_destroy(name_str);
+                }
+                if (error_status) {
+                    *error_status = FLB_OTEL_TRACES_ERR_INVALID_EVENT_TIMESTAMP;
                 }
                 return -1;
             }
@@ -363,6 +379,9 @@ static int process_events(struct ctrace *ctr,
         ctr_event = ctr_span_event_add_ts(span, name_str, ts);
         cfl_sds_destroy(name_str);
         if (ctr_event == NULL) {
+            if (error_status) {
+                *error_status = FLB_OTEL_TRACES_ERR_INVALID_EVENT_ENTRY;
+            }
             return -1;
         }
 
@@ -388,7 +407,8 @@ static int process_events(struct ctrace *ctr,
 
 static int process_links(struct ctrace *ctr,
                          struct ctrace_span *span,
-                         msgpack_object *links)
+                         msgpack_object *links,
+                         int *error_status)
 {
     int i;
     int ret;
@@ -411,7 +431,9 @@ static int process_links(struct ctrace *ctr,
     for (i = 0; i < links->via.array.size; i++) {
         link = links->via.array.ptr[i];
         if (link.type != MSGPACK_OBJECT_MAP) {
-            flb_error("unexpected link type");
+            if (error_status) {
+                *error_status = FLB_OTEL_TRACES_ERR_INVALID_LINK_ENTRY;
+            }
             return -1;
         }
 
@@ -436,7 +458,9 @@ static int process_links(struct ctrace *ctr,
                 memcpy(tmp, trace_id->via.str.ptr, len);
                 tmp[len] = '\0';
 
-                flb_error("invalid event traceId: '%s'", tmp);
+                if (error_status) {
+                    *error_status = FLB_OTEL_TRACES_ERR_INVALID_LINK_TRACE_ID;
+                }
                 return -1;
             }
 
@@ -446,7 +470,9 @@ static int process_links(struct ctrace *ctr,
         }
 
         if (!trace_id) {
-            flb_error("link traceId is missing");
+            if (error_status) {
+                *error_status = FLB_OTEL_TRACES_ERR_INVALID_LINK_TRACE_ID;
+            }
             return -1;
         }
 
@@ -463,7 +489,9 @@ static int process_links(struct ctrace *ctr,
                 }
                 memcpy(tmp, span_id->via.str.ptr, len);
                 tmp[len] = '\0';
-                flb_error("invalid spanId: '%s'", tmp);
+                if (error_status) {
+                    *error_status = FLB_OTEL_TRACES_ERR_INVALID_LINK_SPAN_ID;
+                }
                 return -1;
             }
 
@@ -474,7 +502,9 @@ static int process_links(struct ctrace *ctr,
         }
 
         if (!span_id) {
-            flb_error("link spanId is missing");
+            if (error_status) {
+                *error_status = FLB_OTEL_TRACES_ERR_INVALID_LINK_SPAN_ID;
+            }
             return -1;
         }
 
@@ -511,6 +541,9 @@ static int process_links(struct ctrace *ctr,
             if (ctr_attr) {
                 ctr_attributes_destroy(ctr_attr);
             }
+            if (error_status) {
+                *error_status = FLB_OTEL_TRACES_ERR_INVALID_LINK_ENTRY;
+            }
             return -1;
         }
 
@@ -540,7 +573,8 @@ static int process_links(struct ctrace *ctr,
 
 static int process_span_status(struct ctrace *ctr,
                                struct ctrace_span *span,
-                               msgpack_object *status)
+                               msgpack_object *status,
+                               int *error_status)
 {
     int ret;
     int code = 0;
@@ -548,7 +582,7 @@ static int process_span_status(struct ctrace *ctr,
     char *message = NULL;
 
     if (status->type != MSGPACK_OBJECT_MAP) {
-        flb_error("unexpected status type");
+        flb_error("unexpected type for status");
         return -1;
     }
 
@@ -571,14 +605,18 @@ static int process_span_status(struct ctrace *ctr,
             code = CTRACE_SPAN_STATUS_CODE_ERROR;
         }
         else {
-            flb_error("status code value is invalid: %s", tmp);
             cfl_sds_destroy(tmp);
+            if (error_status) {
+                *error_status = FLB_OTEL_TRACES_ERR_STATUS_FAILURE;
+            }
             return -1;
         }
         cfl_sds_destroy(tmp);
     }
     else {
-        flb_error("status code is missing");
+        if (error_status) {
+            *error_status = FLB_OTEL_TRACES_ERR_STATUS_FAILURE;
+        }
         return -1;
     }
 
@@ -599,7 +637,8 @@ static int process_span_status(struct ctrace *ctr,
 
 static int process_spans(struct ctrace *ctr,
                          struct ctrace_scope_span *scope_span,
-                         msgpack_object *spans)
+                         msgpack_object *spans,
+                         int *error_status)
 {
     int i;
     int ret;
@@ -616,7 +655,9 @@ static int process_spans(struct ctrace *ctr,
     for (i = 0; i < spans->via.array.size; i++) {
         span = spans->via.array.ptr[i];
         if (span.type != MSGPACK_OBJECT_MAP) {
-            flb_error("unexpected span type");
+            if (error_status) {
+                *error_status = FLB_OTEL_TRACES_ERR_UNEXPECTED_SPAN_ENTRY_TYPE;
+            }
             return -1;
         }
 
@@ -630,7 +671,9 @@ static int process_spans(struct ctrace *ctr,
         }
 
         if (!val_str) {
-            flb_error("span name is missing");
+            if (error_status) {
+                *error_status = FLB_OTEL_TRACES_ERR_SPAN_NAME_MISSING;
+            }
             return -1;
         }
 
@@ -639,6 +682,9 @@ static int process_spans(struct ctrace *ctr,
         cfl_sds_destroy(val_str);
 
         if (ctr_span == NULL) {
+            if (error_status) {
+                *error_status = FLB_OTEL_TRACES_ERR_GENERIC_ERROR;
+            }
             return -1;
         }
 
@@ -654,7 +700,9 @@ static int process_spans(struct ctrace *ctr,
                 memcpy(tmp, span.via.map.ptr[ret].val.via.str.ptr, len);
                 tmp[len] = '\0';
 
-                flb_error("invalid traceId: '%s'", tmp);
+                if (error_status) {
+                    *error_status = FLB_OTEL_TRACES_ERR_INVALID_TRACE_ID;
+                }
                 return -1;
             }
 
@@ -677,7 +725,9 @@ static int process_spans(struct ctrace *ctr,
                 }
                 memcpy(tmp, span.via.map.ptr[ret].val.via.str.ptr, len);
                 tmp[len] = '\0';
-                flb_error("invalid spanId: '%s'", tmp);
+                if (error_status) {
+                    *error_status = FLB_OTEL_TRACES_ERR_INVALID_SPAN_ID;
+                }
                 return -1;
             }
 
@@ -718,7 +768,9 @@ static int process_spans(struct ctrace *ctr,
                 }
                 memcpy(tmp, span.via.map.ptr[ret].val.via.str.ptr, len);
                 tmp[len] = '\0';
-                flb_error("invalid parentSpanId: '%s'", tmp);
+                if (error_status) {
+                    *error_status = FLB_OTEL_TRACES_ERR_INVALID_PARENT_SPAN_ID;
+                }
                 return -1;
             }
 
@@ -779,7 +831,10 @@ static int process_spans(struct ctrace *ctr,
         /* events */
         ret = flb_otel_utils_find_map_entry_by_key(&span.via.map, "events", 0, FLB_TRUE);
         if (ret >= 0 && span.via.map.ptr[ret].val.type == MSGPACK_OBJECT_ARRAY) {
-            ret = process_events(ctr, ctr_span, &span.via.map.ptr[ret].val);
+            ret = process_events(ctr, ctr_span, &span.via.map.ptr[ret].val, error_status);
+            if (ret == -1) {
+                return -1;
+            }
         }
 
         /* dropped_events_count */
@@ -797,7 +852,10 @@ static int process_spans(struct ctrace *ctr,
         /* links */
         ret = flb_otel_utils_find_map_entry_by_key(&span.via.map, "links", 0, FLB_TRUE);
         if (ret >= 0 && span.via.map.ptr[ret].val.type == MSGPACK_OBJECT_ARRAY) {
-            ret = process_links(ctr, ctr_span, &span.via.map.ptr[ret].val);
+            ret = process_links(ctr, ctr_span, &span.via.map.ptr[ret].val, error_status);
+            if (ret == -1) {
+                return -1;
+            }
         }
 
         /* schema_url */
@@ -813,7 +871,10 @@ static int process_spans(struct ctrace *ctr,
         /* status */
         ret = flb_otel_utils_find_map_entry_by_key(&span.via.map, "status", 0, FLB_TRUE);
         if (ret >= 0 && span.via.map.ptr[ret].val.type == MSGPACK_OBJECT_MAP) {
-            process_span_status(ctr, ctr_span, &span.via.map.ptr[ret].val);
+            ret = process_span_status(ctr, ctr_span, &span.via.map.ptr[ret].val, error_status);
+            if (ret == -1) {
+                return -1;
+            }
         }
     }
 
@@ -822,7 +883,8 @@ static int process_spans(struct ctrace *ctr,
 
 static int process_scope_span(struct ctrace *ctr,
                               struct ctrace_resource_span *resource_span,
-                              msgpack_object *scope_spans)
+                              msgpack_object *scope_spans,
+                              int *error_status)
 {
     int ret;
     msgpack_object scope;
@@ -841,12 +903,18 @@ static int process_scope_span(struct ctrace *ctr,
         scope = scope_spans->via.map.ptr[ret].val;
         if (scope.type != MSGPACK_OBJECT_MAP) {
             flb_error("unexpected scope type in scope span");
+            if (error_status) {
+                *error_status = FLB_OTEL_TRACES_ERR_UNEXPECTED_SCOPE_SPANS_ENTRY_TYPE;
+            }
             return -1;
         }
 
         /* create the scope_span */
         scope_span = ctr_scope_span_create(resource_span);
         if (scope_span == NULL) {
+            if (error_status) {
+                *error_status = FLB_OTEL_TRACES_ERR_GENERIC_ERROR;
+            }
             return -1;
         }
 
@@ -880,15 +948,23 @@ static int process_scope_span(struct ctrace *ctr,
 
         ret = process_scope_attributes(ctr,
                                        scope_span,
-                                       name, version, attr, dropped_attr);
+                                       name, version, attr, dropped_attr,
+                                       error_status);
         if (ret == -1) {
             flb_warn("failed to process scope attributes");
+            if (error_status && *error_status == 0) {
+                *error_status = FLB_OTEL_TRACES_ERR_INVALID_ATTRIBUTES;
+            }
+            return -1;
         }
     }
     else {
         /* If scope is not defined we still need the scope span container */
         scope_span = ctr_scope_span_create(resource_span);
         if (scope_span == NULL) {
+            if (error_status) {
+                *error_status = FLB_OTEL_TRACES_ERR_GENERIC_ERROR;
+            }
             return -1;
         }
     }
@@ -910,23 +986,34 @@ static int process_scope_span(struct ctrace *ctr,
     /* spans */
     spans = NULL;
     ret = flb_otel_utils_find_map_entry_by_key(&scope_spans->via.map, "spans", 0, FLB_TRUE);
-    if (ret >= 0 && scope_spans->via.map.ptr[ret].val.type == MSGPACK_OBJECT_ARRAY) {
-        spans = &scope_spans->via.map.ptr[ret].val;
+    if (ret < 0) {
+        if (error_status) {
+            *error_status = FLB_OTEL_TRACES_ERR_SPANS_MISSING;
+        }
+        return -1;
     }
 
-    if (spans) {
-        ret = process_spans(ctr, scope_span, spans);
-        if (ret == -1) {
-            flb_error("failed to process spans");
-            return -1;
+    if (scope_spans->via.map.ptr[ret].val.type == MSGPACK_OBJECT_ARRAY) {
+        spans = &scope_spans->via.map.ptr[ret].val;
+    }
+    else {
+        if (error_status) {
+            *error_status = FLB_OTEL_TRACES_ERR_UNEXPECTED_SPANS_TYPE;
         }
+        return -1;
+    }
+
+    ret = process_spans(ctr, scope_span, spans, error_status);
+    if (ret == -1) {
+        return -1;
     }
 
     return 0;
 }
 
 static int process_resource_span(struct ctrace *ctr,
-                                 msgpack_object *resource_span)
+                                 msgpack_object *resource_span,
+                                 int *error_status)
 {
     int ret;
     msgpack_object resource;
@@ -938,13 +1025,18 @@ static int process_resource_span(struct ctrace *ctr,
     struct ctrace_resource_span *ctr_resource_span;
 
     if (resource_span->type != MSGPACK_OBJECT_MAP) {
-        flb_error("unexpected resource span type");
+        if (error_status) {
+            *error_status = FLB_OTEL_TRACES_ERR_UNEXPECTED_RESOURCE_SPANS_ENTRY_TYPE;
+        }
         return -1;
     }
 
     /* create a resource span */
     ctr_resource_span = ctr_resource_span_create(ctr);
     if (ctr_resource_span == NULL) {
+        if (error_status) {
+            *error_status = FLB_OTEL_TRACES_ERR_GENERIC_ERROR;
+        }
         return -1;
     }
 
@@ -958,9 +1050,12 @@ static int process_resource_span(struct ctrace *ctr,
         ret = flb_otel_utils_find_map_entry_by_key(&resource.via.map, "attributes", 0, FLB_TRUE);
         if (ret >= 0 && resource.via.map.ptr[ret].val.type == MSGPACK_OBJECT_ARRAY) {
             attr = &resource.via.map.ptr[ret].val;
-            ret = process_resource_attributes(ctr, ctr_resource_span, attr);
+            ret = process_resource_attributes(ctr, ctr_resource_span, attr, error_status);
             if (ret == -1) {
-                flb_warn("failed to process resource attributes");
+                if (error_status && *error_status == 0) {
+                    *error_status = FLB_OTEL_TRACES_ERR_INVALID_ATTRIBUTES;
+                }
+                return -1;
             }
         }
 
@@ -999,44 +1094,69 @@ static int process_resource_span(struct ctrace *ctr,
     /* scopeSpans */
     scope_spans = NULL;
     ret = flb_otel_utils_find_map_entry_by_key(&resource_span->via.map, "scopeSpans", 0, FLB_TRUE);
-    if (ret >= 0 && resource_span->via.map.ptr[ret].val.type == MSGPACK_OBJECT_ARRAY) {
-        scope_spans = &resource_span->via.map.ptr[ret].val;
+    if (ret < 0) {
+        if (error_status) {
+            *error_status = FLB_OTEL_TRACES_ERR_SCOPE_SPANS_MISSING;
+        }
+        return -1;
     }
 
-    if (scope_spans) {
-        scope_spans_array = &scope_spans->via.array;
-        for (ret = 0; ret < scope_spans_array->size; ret++) {
-            if (process_scope_span(ctr,
-                                   ctr_resource_span,
-                                   &scope_spans_array->ptr[ret]) == -1) {
-                flb_error("failed to process scope span");
-                return -1;
+    if (resource_span->via.map.ptr[ret].val.type == MSGPACK_OBJECT_ARRAY) {
+        scope_spans = &resource_span->via.map.ptr[ret].val;
+    }
+    else {
+        if (error_status) {
+            *error_status = FLB_OTEL_TRACES_ERR_UNEXPECTED_SCOPE_SPANS_TYPE;
+        }
+        return -1;
+    }
+
+    scope_spans_array = &scope_spans->via.array;
+    for (ret = 0; ret < scope_spans_array->size; ret++) {
+        if (scope_spans_array->ptr[ret].type != MSGPACK_OBJECT_MAP) {
+            if (error_status) {
+                *error_status = FLB_OTEL_TRACES_ERR_UNEXPECTED_SCOPE_SPANS_ENTRY_TYPE;
             }
+            return -1;
+        }
+
+        if (process_scope_span(ctr,
+                               ctr_resource_span,
+                               &scope_spans_array->ptr[ret],
+                               error_status) == -1) {
+            return -1;
         }
     }
 
     return 0;
 }
 
-static struct ctrace *process_root_msgpack(msgpack_object *obj)
+static struct ctrace *process_root_msgpack(msgpack_object *obj,
+                                           int *error_status)
 {
     int ret;
     msgpack_object *resource_spans;
     struct ctrace *ctr;
 
     if (obj->type != MSGPACK_OBJECT_MAP) {
-        flb_error("unexpected root object type for traces");
+        if (error_status) {
+            *error_status = FLB_OTEL_TRACES_ERR_UNEXPECTED_ROOT_OBJECT_TYPE;
+        }
         return NULL;
     }
 
     ret = flb_otel_utils_find_map_entry_by_key(&obj->via.map, "resourceSpans", 0, FLB_TRUE);
     if (ret < 0) {
-        flb_error("resourceSpans entry is missing");
+        if (error_status) {
+            *error_status = FLB_OTEL_TRACES_ERR_RESOURCE_SPANS_MISSING;
+        }
         return NULL;
     }
 
     if (obj->via.map.ptr[ret].val.type != MSGPACK_OBJECT_ARRAY) {
-        flb_error("resourceSpans entry is invalid");
+        if (error_status) {
+            *error_status = FLB_OTEL_TRACES_ERR_UNEXPECTED_RESOURCE_SPANS_TYPE;
+        }
         return NULL;
     }
 
@@ -1045,13 +1165,16 @@ static struct ctrace *process_root_msgpack(msgpack_object *obj)
 
     ctr = ctr_create(NULL);
     if (!ctr) {
+        if (error_status) {
+            *error_status = FLB_OTEL_TRACES_ERR_GENERIC_ERROR;
+        }
         return NULL;
     }
 
     for (ret = 0; ret < resource_spans->via.array.size; ret++) {
-        if (process_resource_span(ctr,  &resource_spans->via.array.ptr[ret]) == -1) {
-            flb_warn("failed to process resource span");
-
+        if (process_resource_span(ctr,
+                                  &resource_spans->via.array.ptr[ret],
+                                  error_status) == -1) {
             ctr_destroy(ctr);
             return NULL;
         }
@@ -1071,11 +1194,17 @@ struct ctrace *flb_opentelemetry_json_traces_to_ctrace(const char *body, size_t 
     msgpack_unpacked unpacked_root;
     struct ctrace   *ctr;
 
+    if (error_status) {
+        *error_status = 0;
+    }
+
     result = flb_pack_json(body, len, &msgpack_body, &msgpack_body_length,
                            &root_type, NULL);
 
     if (result != 0) {
-        flb_error("invalid JSON trace: msgpack conversion error");
+        if (error_status) {
+            *error_status = FLB_OTEL_TRACES_ERR_INVALID_JSON;
+        }
         return NULL;
     }
 
@@ -1089,14 +1218,21 @@ struct ctrace *flb_opentelemetry_json_traces_to_ctrace(const char *body, size_t 
     if (result != MSGPACK_UNPACK_SUCCESS) {
         msgpack_unpacked_destroy(&unpacked_root);
         flb_free(msgpack_body);
+        if (error_status) {
+            *error_status = FLB_OTEL_TRACES_ERR_UNEXPECTED_ROOT_OBJECT_TYPE;
+        }
         return NULL;
     }
 
     /* iterate msgpack and compose a CTraces context */
-    ctr = process_root_msgpack(&unpacked_root.data);
+    ctr = process_root_msgpack(&unpacked_root.data, error_status);
 
     msgpack_unpacked_destroy(&unpacked_root);
     flb_free(msgpack_body);
+
+    if (!ctr && error_status && *error_status == 0) {
+        *error_status = FLB_OTEL_TRACES_ERR_GENERIC_ERROR;
+    }
 
     return ctr;
 }
