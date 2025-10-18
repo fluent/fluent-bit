@@ -114,6 +114,7 @@ endif()
 set(src
   ${src}
   opentelemetry/flb_opentelemetry_logs.c
+  opentelemetry/flb_opentelemetry_traces.c
   opentelemetry/flb_opentelemetry_utils.c
 )
 
