@@ -54,6 +54,8 @@ set(src
   flb_upstream_ha.c
   flb_upstream_node.c
   flb_router.c
+  flb_router_condition.c
+  flb_router_config.c
   flb_worker.c
   flb_coro.c
   flb_time.c
