@@ -1,0 +1,38 @@
+---
+pipeline:
+  inputs:
+    - name: opentelemetry
+      processors:
+        - name: parser
+          parser: json
+      routes:
+        logs:
+          - name: error_logs
+            condition:
+              rules:
+                - field: "$level"
+                  op: eq
+                  value: "error"
+            to:
+              outputs:
+                - name: loki
+                  fallback: s3_backup
+          - name: default
+            condition:
+              default: true
+            to:
+              outputs:
+                - name: elasticsearch
+        metrics:
+          - name: metrics_above_threshold
+            condition:
+              rules:
+                - field: "$metric.name"
+                  op: regex
+                  value: "^cpu_"
+                - field: "$metric.value"
+                  op: gt
+                  value: 0.9
+            to:
+              outputs:
+                - name: prometheus_remote
