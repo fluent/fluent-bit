@@ -408,6 +408,44 @@ void test_hex_to_id()
     TEST_CHECK(memcmp(out, expect, sizeof(expect)) == 0);
 }
 
+void test_hex_to_id_error_cases()
+{
+    unsigned char out[16];
+    int ret;
+
+    /* Test zero length string */
+    ret = flb_otel_utils_hex_to_id("", 0, out, 16);
+    TEST_CHECK(ret == 0); /* Zero length should succeed (empty output) */
+
+    /* Test odd length string */
+    ret = flb_otel_utils_hex_to_id("123", 3, out, 16);
+    TEST_CHECK(ret == -1); /* Odd length should fail */
+
+    /* Test invalid hex character */
+    ret = flb_otel_utils_hex_to_id("0000000000000000000000000000000G", 32, out, 16);
+    TEST_CHECK(ret == -1); /* Invalid hex character should fail */
+
+    /* Test mixed valid/invalid hex */
+    ret = flb_otel_utils_hex_to_id("0000000000000000000000000000000Z", 32, out, 16);
+    TEST_CHECK(ret == -1); /* Invalid hex character should fail */
+
+    /* Test valid hex with wrong output size */
+    ret = flb_otel_utils_hex_to_id("00000000000000000000000000000001", 32, out, 8);
+    TEST_CHECK(ret == 0); /* Should succeed even with larger output buffer */
+
+    /* Test valid hex with correct size */
+    ret = flb_otel_utils_hex_to_id("0000000000000001", 16, out, 8);
+    TEST_CHECK(ret == 0); /* Should succeed */
+
+    /* Test valid hex with uppercase */
+    ret = flb_otel_utils_hex_to_id("0000000000000000000000000000000A", 32, out, 16);
+    TEST_CHECK(ret == 0); /* Should succeed with uppercase hex */
+
+    /* Test valid hex with lowercase */
+    ret = flb_otel_utils_hex_to_id("0000000000000000000000000000000a", 32, out, 16);
+    TEST_CHECK(ret == 0); /* Should succeed with lowercase hex */
+}
+
 void test_convert_string_number_to_u64()
 {
     uint64_t val;
@@ -499,7 +537,7 @@ void test_json_payload_get_wrapped_value()
     msgpack_unpacked_destroy(&up);
 }
 
-#define OTEL_TEST_CASES_PATH      FLB_TESTS_DATA_PATH "/data/opentelemetry/test_cases.json"
+#define OTEL_TEST_CASES_PATH      FLB_TESTS_DATA_PATH "/data/opentelemetry/logs.json"
 #define OTEL_TRACES_TEST_CASES_PATH FLB_TESTS_DATA_PATH "/data/opentelemetry/traces.json"
 
 void test_opentelemetry_cases()
@@ -904,7 +942,6 @@ void test_trace_span_binary_sizes()
     struct flb_record_accessor *ra_span_id;
     struct flb_ra_value *val_trace_id;
     struct flb_ra_value *val_span_id;
-    size_t len;
 
     /* Test input with trace_id and span_id */
     input_json = "{\"resourceLogs\":[{\"scopeLogs\":[{\"logRecords\":[{\"timeUnixNano\":\"1640995200000000000\",\"traceId\":\"5B8EFFF798038103D269B633813FC60C\",\"spanId\":\"EEE19B7EC3C1B174\",\"body\":{\"stringValue\":\"test\"}}]}]}]}";
@@ -979,6 +1016,7 @@ void test_trace_span_binary_sizes()
 /* Test list */
 TEST_LIST = {
     { "hex_to_id", test_hex_to_id },
+    { "hex_to_id_error_cases", test_hex_to_id_error_cases },
     { "convert_string_number_to_u64", test_convert_string_number_to_u64 },
     { "find_map_entry_by_key", test_find_map_entry_by_key },
     { "json_payload_get_wrapped_value", test_json_payload_get_wrapped_value },
