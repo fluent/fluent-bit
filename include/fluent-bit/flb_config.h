@@ -27,6 +27,7 @@
 #include <fluent-bit/flb_log.h>
 #include <fluent-bit/flb_sds.h>
 #include <fluent-bit/flb_task_map.h>
+#include <cfl/cfl.h>
 
 #include <monkey/mk_core.h>
 
@@ -325,6 +326,9 @@ struct flb_config {
     int json_escape_unicode;
 
     int dry_run;
+
+    /* New Router Configuration */
+    struct cfl_list input_routes;
 };
 
 #define FLB_CONFIG_LOG_LEVEL(c) (c->log->level)
