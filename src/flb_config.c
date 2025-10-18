@@ -44,6 +44,7 @@
 #include <fluent-bit/flb_config_format.h>
 #include <fluent-bit/multiline/flb_ml.h>
 #include <fluent-bit/flb_bucket_queue.h>
+#include <fluent-bit/flb_router.h>
 
 const char *FLB_CONF_ENV_LOGLEVEL = "FLB_LOG_LEVEL";
 
@@ -367,6 +368,7 @@ struct flb_config *flb_config_init()
     mk_list_init(&config->filters);
     mk_list_init(&config->outputs);
     mk_list_init(&config->proxies);
+    cfl_list_init(&config->input_routes);
     mk_list_init(&config->workers);
     mk_list_init(&config->upstreams);
     mk_list_init(&config->downstreams);
@@ -613,6 +615,9 @@ void flb_config_exit(struct flb_config *config)
     flb_config_task_map_resize(config, 0);
     flb_routes_empty_mask_destroy(config);
 
+    /* Clean up router input routes */
+    flb_router_routes_destroy(&config->input_routes);
+
     flb_free(config);
 }
 
@@ -856,6 +861,9 @@ static int configure_plugins_type(struct flb_config *config, struct flb_cf *cf, 
             if (strcasecmp(kv->key, "name") == 0) {
                 continue;
             }
+            if (strcasecmp(kv->key, "routes") == 0) {
+                continue;
+            }
 
             /* set ret to -1 to ensure that we treat any unhandled plugin or
              * value types as errors.
@@ -960,6 +968,7 @@ error:
 int flb_config_load_config_format(struct flb_config *config, struct flb_cf *cf)
 {
     int ret;
+    flb_debug("[config] starting configuration loading");
     struct flb_kv *kv;
     struct mk_list *head;
     struct cfl_kvpair *ckv;
@@ -1058,6 +1067,13 @@ int flb_config_load_config_format(struct flb_config *config, struct flb_cf *cf)
     }
     ret = configure_plugins_type(config, cf, FLB_CF_OUTPUT);
     if (ret == -1) {
+        return -1;
+    }
+
+    /* Parse new router configuration */
+    ret = flb_router_config_parse(cf, &config->input_routes, config);
+    if (ret == -1) {
+        flb_debug("[router] router configuration parsing failed");
         return -1;
     }
 
