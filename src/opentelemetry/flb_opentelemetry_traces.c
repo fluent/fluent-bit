@@ -465,8 +465,13 @@ static int process_links(struct ctrace *ctr,
             }
 
             /* decode the hex string (16 bytes) */
-            flb_otel_utils_hex_to_id((char *) trace_id->via.str.ptr, trace_id->via.str.size,
-                                     (unsigned char *) trace_id_bin, 16);
+            if (flb_otel_utils_hex_to_id((char *) trace_id->via.str.ptr, trace_id->via.str.size,
+                                         (unsigned char *) trace_id_bin, 16) != 0) {
+                if (error_status) {
+                    *error_status = FLB_OTEL_TRACES_ERR_INVALID_LINK_TRACE_ID;
+                }
+                return -1;
+            }
         }
 
         if (!trace_id) {
@@ -497,8 +502,13 @@ static int process_links(struct ctrace *ctr,
 
             /* decode the hex string (8 bytes) */
             memset(tmp, '\0', sizeof(tmp));
-            flb_otel_utils_hex_to_id((char *) span_id->via.str.ptr, span_id->via.str.size,
-                                     (unsigned char *) span_id_bin, 8);
+            if (flb_otel_utils_hex_to_id((char *) span_id->via.str.ptr, span_id->via.str.size,
+                                         (unsigned char *) span_id_bin, 8) != 0) {
+                if (error_status) {
+                    *error_status = FLB_OTEL_TRACES_ERR_INVALID_LINK_SPAN_ID;
+                }
+                return -1;
+            }
         }
 
         if (!span_id) {
@@ -708,9 +718,14 @@ static int process_spans(struct ctrace *ctr,
 
             /* decode the hex string (16 bytes) */
             memset(tmp, '\0', sizeof(tmp));
-            flb_otel_utils_hex_to_id((char *) span.via.map.ptr[ret].val.via.str.ptr,
-                                     span.via.map.ptr[ret].val.via.str.size,
-                                     (unsigned char *) tmp, 16);
+            if (flb_otel_utils_hex_to_id((char *) span.via.map.ptr[ret].val.via.str.ptr,
+                                         span.via.map.ptr[ret].val.via.str.size,
+                                         (unsigned char *) tmp, 16) != 0) {
+                if (error_status) {
+                    *error_status = FLB_OTEL_TRACES_ERR_INVALID_TRACE_ID;
+                }
+                return -1;
+            }
             ctr_span_set_trace_id(ctr_span, tmp, 16);
         }
 
@@ -733,9 +748,14 @@ static int process_spans(struct ctrace *ctr,
 
             /* decode the hex string (8 bytes) */
             memset(tmp, '\0', sizeof(tmp));
-            flb_otel_utils_hex_to_id((char *) span.via.map.ptr[ret].val.via.str.ptr,
-                                     span.via.map.ptr[ret].val.via.str.size,
-                                     (unsigned char *) tmp, 8);
+            if (flb_otel_utils_hex_to_id((char *) span.via.map.ptr[ret].val.via.str.ptr,
+                                         span.via.map.ptr[ret].val.via.str.size,
+                                         (unsigned char *) tmp, 8) != 0) {
+                if (error_status) {
+                    *error_status = FLB_OTEL_TRACES_ERR_INVALID_SPAN_ID;
+                }
+                return -1;
+            }
             ctr_span_set_span_id(ctr_span, tmp, 8);
         }
 
@@ -776,9 +796,14 @@ static int process_spans(struct ctrace *ctr,
 
             /* decode the hex string (8 bytes) */
             memset(tmp, '\0', sizeof(tmp));
-            flb_otel_utils_hex_to_id((char *) span.via.map.ptr[ret].val.via.str.ptr,
-                                     span.via.map.ptr[ret].val.via.str.size,
-                                     (unsigned char *) tmp, 8);
+            if (flb_otel_utils_hex_to_id((char *) span.via.map.ptr[ret].val.via.str.ptr,
+                                         span.via.map.ptr[ret].val.via.str.size,
+                                         (unsigned char *) tmp, 8) != 0) {
+                if (error_status) {
+                    *error_status = FLB_OTEL_TRACES_ERR_INVALID_PARENT_SPAN_ID;
+                }
+                return -1;
+            }
             ctr_span_set_parent_span_id(ctr_span, tmp, 8);
         }
 
