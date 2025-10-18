@@ -6,6 +6,7 @@
 #include <fluent-bit/flb_config.h>
 #include <fluent-bit/flb_router.h>
 #include <fluent-bit/flb_sds.h>
+#include <fluent-bit/flb_event.h>
 #include <fluent-bit/config_format/flb_cf.h>
 
 #include <cfl/cfl.h>
@@ -788,7 +789,9 @@ void test_router_apply_config_missing_output()
     cfl_list_add(&route_output._head, &route.outputs);
 
     TEST_CHECK(flb_router_apply_config(&config) == 0);
-    TEST_CHECK(cfl_list_is_empty(&input.routes_direct));
+
+    /* note mk_list_is_empty return 0 if is empty */
+    TEST_CHECK(!mk_list_is_empty(&input.routes_direct));
 
     flb_router_exit(&config);
 
@@ -799,6 +802,54 @@ void test_router_apply_config_missing_output()
     flb_sds_destroy(route_output.name);
 }
 
+void test_router_route_default_precedence()
+{
+    struct cfl_list routes;
+    struct flb_cf *cf;
+    struct flb_input_routes *input_routes;
+    struct flb_route *route;
+    struct flb_route_output *output;
+    struct flb_event_chunk chunk;
+    int ret;
+    int match;
+
+    cf = flb_cf_yaml_create(NULL, (char *) FLB_ROUTER_TEST_FILE("precedence.yaml"), NULL, 0);
+    TEST_CHECK(cf != NULL);
+    if (!cf) {
+        return;
+    }
+
+    cfl_list_init(&routes);
+
+    ret = flb_router_config_parse(cf, &routes, NULL);
+    TEST_CHECK(ret == 0);
+    if (ret != 0) {
+        flb_cf_destroy(cf);
+        return;
+    }
+
+    input_routes = cfl_list_entry(routes.next, struct flb_input_routes, _head);
+    TEST_CHECK(strcmp(input_routes->input_name, "lib") == 0);
+
+    route = cfl_list_entry(input_routes->routes.next, struct flb_route, _head);
+    TEST_CHECK(route->condition != NULL);
+    TEST_CHECK(route->condition->is_default == FLB_TRUE);
+
+    memset(&chunk, 0, sizeof(chunk));
+    chunk.type = FLB_EVENT_TYPE_LOGS;
+
+    TEST_CHECK(flb_route_condition_eval(&chunk, route) == FLB_TRUE);
+
+    output = cfl_list_entry(route->outputs.next, struct flb_route_output, _head);
+    TEST_CHECK(strcmp(output->name, "lib_route") == 0);
+
+    match = flb_router_match("lib.input", strlen("lib.input"), "does-not-match", NULL);
+    TEST_CHECK(match == FLB_FALSE);
+
+    flb_router_routes_destroy(&routes);
+    flb_cf_destroy(cf);
+}
+
 TEST_LIST = {
     { "parse_basic", test_router_config_parse_basic },
     { "duplicate_route", test_router_config_duplicate_route },
@@ -807,5 +858,6 @@ TEST_LIST = {
     { "parse_metrics_file", test_router_config_parse_file_metrics },
     { "apply_config_success", test_router_apply_config_success },
     { "apply_config_missing_output", test_router_apply_config_missing_output },
+    { "route_default_precedence", test_router_route_default_precedence },
     { 0 }
 };
