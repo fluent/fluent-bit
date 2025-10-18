@@ -1,0 +1,27 @@
+---
+pipeline:
+  inputs:
+    - name: telemetry
+      routes:
+        "logs,traces":
+          - name: service_checkout
+            condition:
+              rules:
+                - field: "$resource['service.name']"
+                  op: eq
+                  value: "checkout"
+                - field: "$span.duration_ms"
+                  op: gt
+                  value: 2000
+            to:
+              outputs:
+                - name: tempo
+        logs:
+          - name: catch_all
+            condition:
+              default: true
+            to:
+              outputs:
+                - name: loki
+                - name: s3_archive
+                  fallback: glacier

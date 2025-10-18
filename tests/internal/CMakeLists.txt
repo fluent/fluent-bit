@@ -13,6 +13,7 @@ set(UNIT_TESTS_FILES
   kv.c
   slist.c
   router.c
+  router_config.c
   network.c
   unit_sizes.c
   hashtable.c
