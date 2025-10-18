@@ -286,6 +286,392 @@
       "code": "FLB_OTEL_TRACES_ERR_STATUS_FAILURE"
     }
   },
+  "trace_id_zero_length": {
+    "input": {
+      "resourceSpans": [
+        {
+          "scopeSpans": [
+            {
+              "spans": [
+                {
+                  "name": "span",
+                  "traceId": "",
+                  "spanId": "0000000000000001"
+                }
+              ]
+            }
+          ]
+        }
+      ]
+    },
+    "expected_error": {
+      "code": "FLB_OTEL_TRACES_ERR_INVALID_TRACE_ID"
+    }
+  },
+  "span_id_zero_length": {
+    "input": {
+      "resourceSpans": [
+        {
+          "scopeSpans": [
+            {
+              "spans": [
+                {
+                  "name": "span",
+                  "traceId": "00000000000000000000000000000001",
+                  "spanId": ""
+                }
+              ]
+            }
+          ]
+        }
+      ]
+    },
+    "expected_error": {
+      "code": "FLB_OTEL_TRACES_ERR_INVALID_SPAN_ID"
+    }
+  },
+  "parent_span_id_zero_length_valid": {
+    "input": {
+      "resourceSpans": [
+        {
+          "scopeSpans": [
+            {
+              "spans": [
+                {
+                  "name": "span",
+                  "traceId": "00000000000000000000000000000001",
+                  "spanId": "0000000000000001",
+                  "parentSpanId": ""
+                }
+              ]
+            }
+          ]
+        }
+      ]
+    }
+  },
+  "trace_id_invalid_hex": {
+    "input": {
+      "resourceSpans": [
+        {
+          "scopeSpans": [
+            {
+              "spans": [
+                {
+                  "name": "span",
+                  "traceId": "0000000000000000000000000000000G",
+                  "spanId": "0000000000000001"
+                }
+              ]
+            }
+          ]
+        }
+      ]
+    },
+    "expected_error": {
+      "code": "FLB_OTEL_TRACES_ERR_INVALID_TRACE_ID"
+    }
+  },
+  "span_id_invalid_hex": {
+    "input": {
+      "resourceSpans": [
+        {
+          "scopeSpans": [
+            {
+              "spans": [
+                {
+                  "name": "span",
+                  "traceId": "00000000000000000000000000000001",
+                  "spanId": "000000000000000G"
+                }
+              ]
+            }
+          ]
+        }
+      ]
+    },
+    "expected_error": {
+      "code": "FLB_OTEL_TRACES_ERR_INVALID_SPAN_ID"
+    }
+  },
+  "parent_span_id_invalid_hex": {
+    "input": {
+      "resourceSpans": [
+        {
+          "scopeSpans": [
+            {
+              "spans": [
+                {
+                  "name": "span",
+                  "traceId": "00000000000000000000000000000001",
+                  "spanId": "0000000000000001",
+                  "parentSpanId": "000000000000000G"
+                }
+              ]
+            }
+          ]
+        }
+      ]
+    },
+    "expected_error": {
+      "code": "FLB_OTEL_TRACES_ERR_INVALID_PARENT_SPAN_ID"
+    }
+  },
+  "trace_id_odd_length": {
+    "input": {
+      "resourceSpans": [
+        {
+          "scopeSpans": [
+            {
+              "spans": [
+                {
+                  "name": "span",
+                  "traceId": "0000000000000000000000000000001",
+                  "spanId": "0000000000000001"
+                }
+              ]
+            }
+          ]
+        }
+      ]
+    },
+    "expected_error": {
+      "code": "FLB_OTEL_TRACES_ERR_INVALID_TRACE_ID"
+    }
+  },
+  "span_id_odd_length": {
+    "input": {
+      "resourceSpans": [
+        {
+          "scopeSpans": [
+            {
+              "spans": [
+                {
+                  "name": "span",
+                  "traceId": "00000000000000000000000000000001",
+                  "spanId": "000000000000001"
+                }
+              ]
+            }
+          ]
+        }
+      ]
+    },
+    "expected_error": {
+      "code": "FLB_OTEL_TRACES_ERR_INVALID_SPAN_ID"
+    }
+  },
+  "parent_span_id_odd_length": {
+    "input": {
+      "resourceSpans": [
+        {
+          "scopeSpans": [
+            {
+              "spans": [
+                {
+                  "name": "span",
+                  "traceId": "00000000000000000000000000000001",
+                  "spanId": "0000000000000001",
+                  "parentSpanId": "000000000000001"
+                }
+              ]
+            }
+          ]
+        }
+      ]
+    },
+    "expected_error": {
+      "code": "FLB_OTEL_TRACES_ERR_INVALID_PARENT_SPAN_ID"
+    }
+  },
+  "link_trace_id_zero_length": {
+    "input": {
+      "resourceSpans": [
+        {
+          "scopeSpans": [
+            {
+              "spans": [
+                {
+                  "name": "span",
+                  "traceId": "00000000000000000000000000000001",
+                  "spanId": "0000000000000001",
+                  "links": [
+                    {
+                      "traceId": "",
+                      "spanId": "0000000000000001"
+                    }
+                  ]
+                }
+              ]
+            }
+          ]
+        }
+      ]
+    },
+    "expected_error": {
+      "code": "FLB_OTEL_TRACES_ERR_INVALID_LINK_TRACE_ID"
+    }
+  },
+  "link_span_id_zero_length": {
+    "input": {
+      "resourceSpans": [
+        {
+          "scopeSpans": [
+            {
+              "spans": [
+                {
+                  "name": "span",
+                  "traceId": "00000000000000000000000000000001",
+                  "spanId": "0000000000000001",
+                  "links": [
+                    {
+                      "traceId": "00000000000000000000000000000001",
+                      "spanId": ""
+                    }
+                  ]
+                }
+              ]
+            }
+          ]
+        }
+      ]
+    },
+    "expected_error": {
+      "code": "FLB_OTEL_TRACES_ERR_INVALID_LINK_SPAN_ID"
+    }
+  },
+  "link_trace_id_invalid_hex": {
+    "input": {
+      "resourceSpans": [
+        {
+          "scopeSpans": [
+            {
+              "spans": [
+                {
+                  "name": "span",
+                  "traceId": "00000000000000000000000000000001",
+                  "spanId": "0000000000000001",
+                  "links": [
+                    {
+                      "traceId": "0000000000000000000000000000000G",
+                      "spanId": "0000000000000001"
+                    }
+                  ]
+                }
+              ]
+            }
+          ]
+        }
+      ]
+    },
+    "expected_error": {
+      "code": "FLB_OTEL_TRACES_ERR_INVALID_LINK_TRACE_ID"
+    }
+  },
+  "link_span_id_invalid_hex": {
+    "input": {
+      "resourceSpans": [
+        {
+          "scopeSpans": [
+            {
+              "spans": [
+                {
+                  "name": "span",
+                  "traceId": "00000000000000000000000000000001",
+                  "spanId": "0000000000000001",
+                  "links": [
+                    {
+                      "traceId": "00000000000000000000000000000001",
+                      "spanId": "000000000000000G"
+                    }
+                  ]
+                }
+              ]
+            }
+          ]
+        }
+      ]
+    },
+    "expected_error": {
+      "code": "FLB_OTEL_TRACES_ERR_INVALID_LINK_SPAN_ID"
+    }
+  },
+  "link_trace_id_odd_length": {
+    "input": {
+      "resourceSpans": [
+        {
+          "scopeSpans": [
+            {
+              "spans": [
+                {
+                  "name": "span",
+                  "traceId": "00000000000000000000000000000001",
+                  "spanId": "0000000000000001",
+                  "links": [
+                    {
+                      "traceId": "0000000000000000000000000000001",
+                      "spanId": "0000000000000001"
+                    }
+                  ]
+                }
+              ]
+            }
+          ]
+        }
+      ]
+    },
+    "expected_error": {
+      "code": "FLB_OTEL_TRACES_ERR_INVALID_LINK_TRACE_ID"
+    }
+  },
+  "link_span_id_odd_length": {
+    "input": {
+      "resourceSpans": [
+        {
+          "scopeSpans": [
+            {
+              "spans": [
+                {
+                  "name": "span",
+                  "traceId": "00000000000000000000000000000001",
+                  "spanId": "0000000000000001",
+                  "links": [
+                    {
+                      "traceId": "00000000000000000000000000000001",
+                      "spanId": "000000000000001"
+                    }
+                  ]
+                }
+              ]
+            }
+          ]
+        }
+      ]
+    },
+    "expected_error": {
+      "code": "FLB_OTEL_TRACES_ERR_INVALID_LINK_SPAN_ID"
+    }
+  },
+  "valid_with_parent_span_id": {
+    "input": {
+      "resourceSpans": [
+        {
+          "scopeSpans": [
+            {
+              "spans": [
+                {
+                  "name": "child_span",
+                  "traceId": "00000000000000000000000000000001",
+                  "spanId": "0000000000000002",
+                  "parentSpanId": "0000000000000001"
+                }
+              ]
+            }
+          ]
+        }
+      ]
+    }
+  },
   "valid_minimal": {
     "input": {
       "resourceSpans": [
