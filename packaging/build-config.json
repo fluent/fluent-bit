@@ -97,6 +97,22 @@
           "type": "rpm"
         },
         {
+          "target": "opensuse/15.6",
+          "type": "rpm"
+        },
+        {
+          "target": "opensuse/15.6.arm64v8",
+          "type": "rpm"
+        },
+        {
+          "target": "sles/15.7",
+          "type": "rpm"
+        },
+        {
+          "target": "sles/15.7.arm64v8",
+          "type": "rpm"
+        },
+        {
           "target": "debian/bookworm",
           "type": "deb"
         },
