@@ -1,0 +1,15 @@
+---
+pipeline:
+  inputs:
+    - name: lib
+      routes:
+        logs:
+          - name: default_route
+            condition:
+              default: true
+            to:
+              outputs:
+                - name: lib_route
+  outputs:
+    - name: lib_route
+      type: lib
