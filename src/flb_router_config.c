@@ -1132,23 +1132,23 @@ static int output_supports_signals(struct flb_output_instance *out, uint32_t sig
         return FLB_FALSE;
     }
 
-    if (signals == 0 || signals == FLB_ROUTER_SIGNAL_ANY) {
+    /* Handle ANY signal - if ANY is present in the bitmask, allow all signals */
+    if (signals == 0 || (signals & FLB_ROUTER_SIGNAL_ANY)) {
         return FLB_TRUE;
     }
 
-    if ((signals & FLB_ROUTER_SIGNAL_LOGS) && (out->event_type & FLB_OUTPUT_LOGS)) {
-        return FLB_TRUE;
+    /* Require support for all requested signal bits */
+    if ((signals & FLB_ROUTER_SIGNAL_LOGS) && !(out->event_type & FLB_OUTPUT_LOGS)) {
+        return FLB_FALSE;
+    }
+    if ((signals & FLB_ROUTER_SIGNAL_METRICS) && !(out->event_type & FLB_OUTPUT_METRICS)) {
+        return FLB_FALSE;
+    }
+    if ((signals & FLB_ROUTER_SIGNAL_TRACES) && !(out->event_type & FLB_OUTPUT_TRACES)) {
+        return FLB_FALSE;
     }
 
-    if ((signals & FLB_ROUTER_SIGNAL_METRICS) && (out->event_type & FLB_OUTPUT_METRICS)) {
-        return FLB_TRUE;
-    }
-
-    if ((signals & FLB_ROUTER_SIGNAL_TRACES) && (out->event_type & FLB_OUTPUT_TRACES)) {
-        return FLB_TRUE;
-    }
-
-    return FLB_FALSE;
+    return FLB_TRUE;
 }
 
 int flb_router_apply_config(struct flb_config *config)
