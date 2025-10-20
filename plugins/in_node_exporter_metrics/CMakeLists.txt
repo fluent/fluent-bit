@@ -7,6 +7,7 @@ set(src
   ne_stat.c
   ne_vmstat.c
   ne_netdev.c
+  ne_netstat.c
   ne_sockstat.c
   ne_time.c
   ne_loadavg.c
