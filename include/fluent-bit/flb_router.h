@@ -26,11 +26,13 @@
 #include <fluent-bit/flb_event.h>
 #include <fluent-bit/flb_sds.h>
 #include <fluent-bit/flb_config.h>
+#include <fluent-bit/flb_conditionals.h>
 #include <cfl/cfl.h>
 #include <monkey/mk_core.h>
 
 struct flb_router_path {
     struct flb_output_instance *ins;
+    struct flb_route *route;
     struct mk_list _head;
 };
 
@@ -74,12 +76,17 @@ struct flb_route_condition_rule {
     flb_sds_t field;
     flb_sds_t op;
     flb_sds_t value;
+    flb_sds_t *values;
+    size_t values_count;
     struct cfl_list _head;
 };
 
 struct flb_route_condition {
     struct cfl_list rules;
     int is_default;
+    enum flb_condition_operator op;
+    struct flb_condition *compiled;
+    int compiled_status;
 };
 
 struct flb_route_output {
@@ -136,6 +143,8 @@ int flb_condition_eval_metrics(struct flb_event_chunk *chunk,
                                struct flb_route *route);
 int flb_condition_eval_traces(struct flb_event_chunk *chunk,
                               struct flb_route *route);
+int flb_router_path_should_route(struct flb_event_chunk *chunk,
+                                 struct flb_router_path *path);
 
 struct flb_cf;
 
