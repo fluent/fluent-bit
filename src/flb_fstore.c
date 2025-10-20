@@ -215,12 +215,33 @@ struct flb_fstore_file *flb_fstore_file_get(struct flb_fstore *fs,
  * Set a file to inactive mode. Inactive means just to remove the reference
  * from the list.
  */
+static int chunk_is_linked_to_stream(struct flb_fstore_file *fsf)
+{
+    struct mk_list *head;
+    struct cio_chunk *chunk;
+
+    if (fsf == NULL || fsf->chunk == NULL || fsf->stream == NULL) {
+        return FLB_FALSE;
+    }
+
+    mk_list_foreach(head, &fsf->stream->chunks) {
+        chunk = mk_list_entry(head, struct cio_chunk, _head);
+
+        if (chunk == fsf->chunk) {
+            return FLB_TRUE;
+        }
+    }
+
+    return FLB_FALSE;
+}
+
 int flb_fstore_file_inactive(struct flb_fstore *fs,
                              struct flb_fstore_file *fsf)
 {
     /* close the Chunk I/O reference, but don't delete the real file */
-    if (fsf->chunk) {
+    if (chunk_is_linked_to_stream(fsf) == FLB_TRUE) {
         cio_chunk_close(fsf->chunk, CIO_FALSE);
+        fsf->chunk = NULL;
     }
 
     /* release */
@@ -239,7 +260,10 @@ int flb_fstore_file_delete(struct flb_fstore *fs,
                            struct flb_fstore_file *fsf)
 {
     /* close the Chunk I/O reference, but don't delete it the real file */
-    cio_chunk_close(fsf->chunk, CIO_TRUE);
+    if (chunk_is_linked_to_stream(fsf) == FLB_TRUE) {
+        cio_chunk_close(fsf->chunk, CIO_TRUE);
+        fsf->chunk = NULL;
+    }
 
     /* release */
     mk_list_del(&fsf->_head);
@@ -415,6 +439,7 @@ static int map_chunks(struct flb_fstore *ctx, struct flb_fstore_stream *fs_strea
             return -1;
         }
 
+        fsf->stream = stream;
         fsf->chunk = chunk;
 
         /* load metadata */
