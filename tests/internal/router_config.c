@@ -6,7 +6,9 @@
 #include <fluent-bit/flb_config.h>
 #include <fluent-bit/flb_router.h>
 #include <fluent-bit/flb_sds.h>
+#include <fluent-bit/flb_log_event_encoder.h>
 #include <fluent-bit/flb_event.h>
+#include <fluent-bit/flb_mem.h>
 #include <fluent-bit/config_format/flb_cf.h>
 
 #include <cfl/cfl.h>
@@ -26,6 +28,105 @@
 #endif
 
 static struct cfl_variant *clone_variant(struct cfl_variant *var);
+
+static int build_log_chunk(const char *level,
+                           struct flb_log_event_encoder *encoder,
+                           struct flb_event_chunk *chunk)
+{
+    int ret;
+
+    if (!level || !encoder || !chunk) {
+        return -1;
+    }
+
+    ret = flb_log_event_encoder_init(encoder, FLB_LOG_EVENT_FORMAT_DEFAULT);
+    TEST_CHECK(ret == FLB_EVENT_ENCODER_SUCCESS);
+    if (ret != FLB_EVENT_ENCODER_SUCCESS) {
+        return -1;
+    }
+
+    ret = flb_log_event_encoder_begin_record(encoder);
+    TEST_CHECK(ret == FLB_EVENT_ENCODER_SUCCESS);
+    if (ret != FLB_EVENT_ENCODER_SUCCESS) {
+        flb_log_event_encoder_destroy(encoder);
+        return -1;
+    }
+
+    ret = flb_log_event_encoder_set_current_timestamp(encoder);
+    TEST_CHECK(ret == FLB_EVENT_ENCODER_SUCCESS);
+    if (ret != FLB_EVENT_ENCODER_SUCCESS) {
+        flb_log_event_encoder_destroy(encoder);
+        return -1;
+    }
+
+    ret = flb_log_event_encoder_append_body_values(
+        encoder,
+        FLB_LOG_EVENT_STRING_VALUE("level", 5),
+        FLB_LOG_EVENT_CSTRING_VALUE(level));
+    TEST_CHECK(ret == FLB_EVENT_ENCODER_SUCCESS);
+    if (ret != FLB_EVENT_ENCODER_SUCCESS) {
+        flb_log_event_encoder_destroy(encoder);
+        return -1;
+    }
+
+    ret = flb_log_event_encoder_commit_record(encoder);
+    TEST_CHECK(ret == FLB_EVENT_ENCODER_SUCCESS);
+    if (ret != FLB_EVENT_ENCODER_SUCCESS) {
+        flb_log_event_encoder_destroy(encoder);
+        return -1;
+    }
+
+    memset(chunk, 0, sizeof(*chunk));
+    chunk->type = FLB_EVENT_TYPE_LOGS;
+    chunk->data = encoder->output_buffer;
+    chunk->size = encoder->output_length;
+    chunk->total_events = 1;
+
+    return 0;
+}
+
+static void free_route_condition(struct flb_route_condition *condition)
+{
+    struct cfl_list *tmp;
+    struct cfl_list *head;
+    struct flb_route_condition_rule *rule;
+    size_t idx;
+
+    if (!condition) {
+        return;
+    }
+
+    if (condition->compiled) {
+        flb_condition_destroy(condition->compiled);
+    }
+
+    cfl_list_foreach_safe(head, tmp, &condition->rules) {
+        rule = cfl_list_entry(head, struct flb_route_condition_rule, _head);
+        cfl_list_del(&rule->_head);
+
+        if (rule->field) {
+            flb_sds_destroy(rule->field);
+        }
+        if (rule->op) {
+            flb_sds_destroy(rule->op);
+        }
+        if (rule->value) {
+            flb_sds_destroy(rule->value);
+        }
+        if (rule->values) {
+            for (idx = 0; idx < rule->values_count; idx++) {
+                if (rule->values[idx]) {
+                    flb_sds_destroy(rule->values[idx]);
+                }
+            }
+            flb_free(rule->values);
+        }
+
+        flb_free(rule);
+    }
+
+    flb_free(condition);
+}
 
 static struct cfl_array *clone_array(struct cfl_array *array)
 {
@@ -850,6 +951,257 @@ void test_router_route_default_precedence()
     flb_cf_destroy(cf);
 }
 
+static void test_router_condition_eval_logs_match()
+{
+    struct flb_route route;
+    struct flb_route_condition *condition;
+    struct flb_route_condition_rule *rule;
+    struct flb_log_event_encoder encoder;
+    struct flb_event_chunk chunk;
+    int ret;
+
+    memset(&route, 0, sizeof(route));
+    cfl_list_init(&route.outputs);
+    cfl_list_init(&route.processors);
+
+    condition = flb_calloc(1, sizeof(struct flb_route_condition));
+    TEST_CHECK(condition != NULL);
+    if (!condition) {
+        return;
+    }
+
+    cfl_list_init(&condition->rules);
+    condition->op = FLB_COND_OP_AND;
+    condition->compiled_status = 0;
+    condition->compiled = NULL;
+    condition->is_default = FLB_FALSE;
+
+    rule = flb_calloc(1, sizeof(struct flb_route_condition_rule));
+    TEST_CHECK(rule != NULL);
+    if (!rule) {
+        free_route_condition(condition);
+        return;
+    }
+
+    cfl_list_init(&rule->_head);
+    rule->field = flb_sds_create("$level");
+    rule->op = flb_sds_create("eq");
+    rule->value = flb_sds_create("error");
+    TEST_CHECK(rule->field != NULL && rule->op != NULL && rule->value != NULL);
+    if (!rule->field || !rule->op || !rule->value) {
+        if (rule->field) {
+            flb_sds_destroy(rule->field);
+        }
+        if (rule->op) {
+            flb_sds_destroy(rule->op);
+        }
+        if (rule->value) {
+            flb_sds_destroy(rule->value);
+        }
+        flb_free(rule);
+        free_route_condition(condition);
+        return;
+    }
+
+    cfl_list_add(&rule->_head, &condition->rules);
+
+    route.condition = condition;
+    route.signals = FLB_ROUTER_SIGNAL_LOGS;
+
+    ret = build_log_chunk("error", &encoder, &chunk);
+    TEST_CHECK(ret == 0);
+    if (ret == 0) {
+        TEST_CHECK(flb_condition_eval_logs(&chunk, &route) == FLB_TRUE);
+    }
+    flb_log_event_encoder_destroy(&encoder);
+
+    ret = build_log_chunk("info", &encoder, &chunk);
+    TEST_CHECK(ret == 0);
+    if (ret == 0) {
+        TEST_CHECK(flb_condition_eval_logs(&chunk, &route) == FLB_FALSE);
+    }
+    flb_log_event_encoder_destroy(&encoder);
+
+    free_route_condition(condition);
+}
+
+static void test_router_condition_eval_logs_in_operator()
+{
+    struct flb_route route;
+    struct flb_route_condition *condition;
+    struct flb_route_condition_rule *rule;
+    struct flb_log_event_encoder encoder;
+    struct flb_event_chunk chunk;
+    int ret;
+
+    memset(&route, 0, sizeof(route));
+    cfl_list_init(&route.outputs);
+    cfl_list_init(&route.processors);
+
+    condition = flb_calloc(1, sizeof(struct flb_route_condition));
+    TEST_CHECK(condition != NULL);
+    if (!condition) {
+        return;
+    }
+
+    cfl_list_init(&condition->rules);
+    condition->op = FLB_COND_OP_AND;
+    condition->compiled_status = 0;
+    condition->compiled = NULL;
+    condition->is_default = FLB_FALSE;
+
+    rule = flb_calloc(1, sizeof(struct flb_route_condition_rule));
+    TEST_CHECK(rule != NULL);
+    if (!rule) {
+        free_route_condition(condition);
+        return;
+    }
+
+    cfl_list_init(&rule->_head);
+    rule->field = flb_sds_create("$level");
+    rule->op = flb_sds_create("in");
+    TEST_CHECK(rule->field != NULL && rule->op != NULL);
+    if (!rule->field || !rule->op) {
+        if (rule->field) {
+            flb_sds_destroy(rule->field);
+        }
+        if (rule->op) {
+            flb_sds_destroy(rule->op);
+        }
+        flb_free(rule);
+        free_route_condition(condition);
+        return;
+    }
+
+    rule->values_count = 2;
+    rule->values = flb_calloc(rule->values_count, sizeof(flb_sds_t));
+    TEST_CHECK(rule->values != NULL);
+    if (!rule->values) {
+        free_route_condition(condition);
+        flb_sds_destroy(rule->field);
+        flb_sds_destroy(rule->op);
+        flb_free(rule);
+        return;
+    }
+
+    rule->values[0] = flb_sds_create("error");
+    rule->values[1] = flb_sds_create("fatal");
+    TEST_CHECK(rule->values[0] != NULL && rule->values[1] != NULL);
+    if (!rule->values[0] || !rule->values[1]) {
+        if (rule->values[0]) {
+            flb_sds_destroy(rule->values[0]);
+        }
+        if (rule->values[1]) {
+            flb_sds_destroy(rule->values[1]);
+        }
+        flb_free(rule->values);
+        flb_sds_destroy(rule->field);
+        flb_sds_destroy(rule->op);
+        flb_free(rule);
+        free_route_condition(condition);
+        return;
+    }
+
+    cfl_list_add(&rule->_head, &condition->rules);
+
+    route.condition = condition;
+    route.signals = FLB_ROUTER_SIGNAL_LOGS;
+
+    ret = build_log_chunk("fatal", &encoder, &chunk);
+    TEST_CHECK(ret == 0);
+    if (ret == 0) {
+        TEST_CHECK(flb_condition_eval_logs(&chunk, &route) == FLB_TRUE);
+    }
+    flb_log_event_encoder_destroy(&encoder);
+
+    ret = build_log_chunk("debug", &encoder, &chunk);
+    TEST_CHECK(ret == 0);
+    if (ret == 0) {
+        TEST_CHECK(flb_condition_eval_logs(&chunk, &route) == FLB_FALSE);
+    }
+    flb_log_event_encoder_destroy(&encoder);
+
+    free_route_condition(condition);
+}
+
+static void test_router_path_should_route_condition()
+{
+    struct flb_router_path path;
+    struct flb_route route;
+    struct flb_route_condition *condition;
+    struct flb_route_condition_rule *rule;
+    struct flb_log_event_encoder encoder;
+    struct flb_event_chunk chunk;
+    int ret;
+
+    memset(&route, 0, sizeof(route));
+    cfl_list_init(&route.outputs);
+    cfl_list_init(&route.processors);
+
+    condition = flb_calloc(1, sizeof(struct flb_route_condition));
+    TEST_CHECK(condition != NULL);
+    if (!condition) {
+        return;
+    }
+
+    cfl_list_init(&condition->rules);
+    condition->op = FLB_COND_OP_AND;
+    condition->compiled_status = 0;
+    condition->compiled = NULL;
+    condition->is_default = FLB_FALSE;
+
+    rule = flb_calloc(1, sizeof(struct flb_route_condition_rule));
+    TEST_CHECK(rule != NULL);
+    if (!rule) {
+        free_route_condition(condition);
+        return;
+    }
+
+    cfl_list_init(&rule->_head);
+    rule->field = flb_sds_create("$level");
+    rule->op = flb_sds_create("eq");
+    rule->value = flb_sds_create("error");
+    TEST_CHECK(rule->field != NULL && rule->op != NULL && rule->value != NULL);
+    if (!rule->field || !rule->op || !rule->value) {
+        if (rule->field) {
+            flb_sds_destroy(rule->field);
+        }
+        if (rule->op) {
+            flb_sds_destroy(rule->op);
+        }
+        if (rule->value) {
+            flb_sds_destroy(rule->value);
+        }
+        flb_free(rule);
+        free_route_condition(condition);
+        return;
+    }
+
+    cfl_list_add(&rule->_head, &condition->rules);
+
+    route.condition = condition;
+    route.signals = FLB_ROUTER_SIGNAL_LOGS;
+
+    memset(&path, 0, sizeof(path));
+    path.route = &route;
+
+    ret = build_log_chunk("error", &encoder, &chunk);
+    TEST_CHECK(ret == 0);
+    if (ret == 0) {
+        TEST_CHECK(flb_router_path_should_route(&chunk, &path) == FLB_TRUE);
+    }
+    flb_log_event_encoder_destroy(&encoder);
+
+    ret = build_log_chunk("info", &encoder, &chunk);
+    TEST_CHECK(ret == 0);
+    if (ret == 0) {
+        TEST_CHECK(flb_router_path_should_route(&chunk, &path) == FLB_FALSE);
+    }
+    flb_log_event_encoder_destroy(&encoder);
+
+    free_route_condition(condition);
+}
+
 TEST_LIST = {
     { "parse_basic", test_router_config_parse_basic },
     { "duplicate_route", test_router_config_duplicate_route },
@@ -859,5 +1211,8 @@ TEST_LIST = {
     { "apply_config_success", test_router_apply_config_success },
     { "apply_config_missing_output", test_router_apply_config_missing_output },
     { "route_default_precedence", test_router_route_default_precedence },
+    { "condition_eval_logs_match", test_router_condition_eval_logs_match },
+    { "condition_eval_logs_in_operator", test_router_condition_eval_logs_in_operator },
+    { "path_should_route_condition", test_router_path_should_route_condition },
     { 0 }
 };
