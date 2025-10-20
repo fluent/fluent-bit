@@ -29,6 +29,7 @@
 #include <fluent-bit/flb_mem.h>
 #include <fluent-bit/flb_router.h>
 #include <fluent-bit/flb_sds.h>
+#include <fluent-bit/flb_conditionals.h>
 #include <fluent-bit/config_format/flb_cf.h>
 
 #include <cfl/cfl_array.h>
@@ -276,8 +277,22 @@ static void route_condition_destroy(struct flb_route_condition *condition)
         if (rule->value) {
             flb_sds_destroy(rule->value);
         }
+        if (rule->values) {
+            size_t idx;
+
+            for (idx = 0; idx < rule->values_count; idx++) {
+                if (rule->values[idx]) {
+                    flb_sds_destroy(rule->values[idx]);
+                }
+            }
+            flb_free(rule->values);
+        }
 
         flb_free(rule);
+    }
+
+    if (condition->compiled) {
+        flb_condition_destroy(condition->compiled);
     }
 
     flb_free(condition);
@@ -530,6 +545,8 @@ static struct flb_route_condition_rule *parse_condition_rule(struct cfl_variant 
         return NULL;
     }
     cfl_list_init(&rule->_head);
+    rule->values = NULL;
+    rule->values_count = 0;
 
     rule->field = copy_from_cfl_sds(field_var->data.as_string);
     if (!rule->field) {
@@ -544,9 +561,56 @@ static struct flb_route_condition_rule *parse_condition_rule(struct cfl_variant 
         return NULL;
     }
 
-    if (value_var) {
+    if (!value_var) {
+        flb_sds_destroy(rule->op);
+        flb_sds_destroy(rule->field);
+        flb_free(rule);
+        return NULL;
+    }
+
+    if (value_var->type == CFL_VARIANT_ARRAY) {
+        struct cfl_array *array;
+        struct cfl_variant *entry;
+        size_t idx;
+
+        array = value_var->data.as_array;
+        if (!array || cfl_array_size(array) == 0) {
+            flb_sds_destroy(rule->op);
+            flb_sds_destroy(rule->field);
+            flb_free(rule);
+            return NULL;
+        }
+
+        rule->values = flb_calloc(cfl_array_size(array), sizeof(flb_sds_t));
+        if (!rule->values) {
+            flb_errno();
+            flb_sds_destroy(rule->op);
+            flb_sds_destroy(rule->field);
+            flb_free(rule);
+            return NULL;
+        }
+
+        for (idx = 0; idx < cfl_array_size(array); idx++) {
+            entry = cfl_array_fetch_by_index(array, idx);
+            rule->values[idx] = variant_to_sds(entry);
+            if (!rule->values[idx]) {
+                size_t j;
+
+                for (j = 0; j < idx; j++) {
+                    flb_sds_destroy(rule->values[j]);
+                }
+                flb_free(rule->values);
+                flb_sds_destroy(rule->op);
+                flb_sds_destroy(rule->field);
+                flb_free(rule);
+                return NULL;
+            }
+        }
+        rule->values_count = cfl_array_size(array);
+    }
+    else {
         rule->value = variant_to_sds(value_var);
-        if (!rule->value && strcmp(rule->op, "exists") != 0) {
+        if (!rule->value) {
             flb_sds_destroy(rule->op);
             flb_sds_destroy(rule->field);
             flb_free(rule);
@@ -563,6 +627,7 @@ static struct flb_route_condition *parse_condition(struct cfl_variant *variant,
     struct flb_route_condition *condition;
     struct cfl_variant *rules_var;
     struct cfl_variant *default_var;
+    struct cfl_variant *op_var;
     struct cfl_array *rules_array;
     struct cfl_variant *entry;
     struct flb_route_condition_rule *rule;
@@ -579,9 +644,31 @@ static struct flb_route_condition *parse_condition(struct cfl_variant *variant,
         return NULL;
     }
     cfl_list_init(&condition->rules);
+    condition->op = FLB_COND_OP_AND;
+    condition->compiled = NULL;
+    condition->compiled_status = 0;
 
     rules_var = cfl_kvlist_fetch(variant->data.as_kvlist, "rules");
     default_var = cfl_kvlist_fetch(variant->data.as_kvlist, "default");
+    op_var = cfl_kvlist_fetch(variant->data.as_kvlist, "op");
+
+    if (op_var) {
+        if (op_var->type != CFL_VARIANT_STRING) {
+            route_condition_destroy(condition);
+            return NULL;
+        }
+
+        if (strcasecmp(op_var->data.as_string, "and") == 0) {
+            condition->op = FLB_COND_OP_AND;
+        }
+        else if (strcasecmp(op_var->data.as_string, "or") == 0) {
+            condition->op = FLB_COND_OP_OR;
+        }
+        else {
+            route_condition_destroy(condition);
+            return NULL;
+        }
+    }
 
     if (default_var) {
         if (variant_to_bool(default_var, &val) != 0) {
@@ -1220,6 +1307,11 @@ int flb_router_apply_config(struct flb_config *config)
                 }
 
                 if (flb_router_connect_direct(input_ins, output_ins) == 0) {
+                    struct flb_router_path *path;
+
+                    path = mk_list_entry_last(&input_ins->routes_direct,
+                                              struct flb_router_path, _head);
+                    path->route = route;
                     created++;
                     flb_debug("[router] connected input '%s' route '%s' to output '%s'",
                               flb_input_name(input_ins),
