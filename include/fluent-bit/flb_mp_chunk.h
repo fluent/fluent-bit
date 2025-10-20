@@ -36,6 +36,10 @@ struct flb_mp_chunk_record {
     struct flb_log_event event;
     struct cfl_object *cobj_metadata;
     struct cfl_object *cobj_record;
+    struct cfl_object *cobj_group_metadata;
+    struct cfl_object *cobj_group_attributes;
+    int owns_group_metadata;
+    int owns_group_attributes;
     struct cfl_list _head;
 };
 
@@ -46,6 +50,9 @@ struct flb_mp_chunk_cobj {
 
     struct flb_mp_chunk_record *record_pos;
     struct cfl_list records;
+
+    struct cfl_object *active_group_metadata;
+    struct cfl_object *active_group_attributes;
 
     /* Condition for filtering records during processing */
     struct flb_condition *condition;
