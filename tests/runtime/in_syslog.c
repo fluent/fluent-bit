@@ -326,10 +326,14 @@ static size_t build_octet_frame(char *out, size_t outsz,
                                 const char *msg, int add_lf)
 {
     char tmp[2048];
-    size_t mlen = rstrip_nl_copy(tmp, sizeof(tmp), msg);
+    size_t mlen = 0;
     char hdr[64];
-    int  hlen = snprintf(hdr, sizeof(hdr), "%zu ", mlen);
-    size_t need = (size_t)hlen + mlen + (add_lf ? 1 : 0);
+    int  hlen = 0;
+    size_t need = 0;
+
+    mlen = rstrip_nl_copy(tmp, sizeof(tmp), msg);
+    hlen = snprintf(hdr, sizeof(hdr), "%zu ", mlen);
+    need = (size_t)hlen + mlen + (add_lf ? 1 : 0);
 
     if (need + 1 > outsz) {
         /* truncate conservatively if buffer too small (shouldn't happen in tests) */
@@ -340,7 +344,7 @@ static size_t build_octet_frame(char *out, size_t outsz,
         }
     }
 
-    memcpy(out, hdr, (size_t)hlen);
+    memcpy(out, hdr, hlen);
     memcpy(out + hlen, tmp, mlen);
     if (add_lf) {
         out[hlen + mlen] = '\n';
@@ -1072,8 +1076,9 @@ void flb_test_syslog_tcp_octet_counting()
     };
 
     char frame[4096];
-    size_t fsize = build_octet_frame(frame, sizeof(frame), RFC5424_EXAMPLE_1, /*add_lf=*/0);
+    size_t fsize = 0;
 
+    fsize = build_octet_frame(frame, sizeof(frame), RFC5424_EXAMPLE_1, /*add_lf=*/0);
     clear_output_num();
     cb_data.cb   = cb_check_json_str_list;
     cb_data.data = &expected;
@@ -1134,8 +1139,9 @@ void flb_test_syslog_tcp_octet_counting_lf()
     };
 
     char frame[4096];
-    size_t fsize = build_octet_frame(frame, sizeof(frame), RFC5424_EXAMPLE_1, /*add_lf=*/1);
+    size_t fsize = 0;
 
+    fsize = build_octet_frame(frame, sizeof(frame), RFC5424_EXAMPLE_1, /*add_lf=*/1);
     clear_output_num();
     cb_data.cb   = cb_check_json_str_list;
     cb_data.data = &expected;
@@ -1196,9 +1202,12 @@ void flb_test_syslog_tcp_octet_counting_fragmented()
     };
 
     char msg[2048];
-    size_t mlen = rstrip_nl_copy(msg, sizeof(msg), RFC5424_EXAMPLE_1);
+    size_t mlen = 0;
     char hdr[64];
-    int   hlen = snprintf(hdr, sizeof(hdr), "%zu ", mlen);
+    int  hlen = 0;
+
+    mlen = rstrip_nl_copy(msg, sizeof(msg), RFC5424_EXAMPLE_1);
+    hlen = snprintf(hdr, sizeof(hdr), "%zu ", mlen);
 
     clear_output_num();
     cb_data.cb   = cb_check_json_str_list;
@@ -1272,9 +1281,11 @@ void flb_test_syslog_tcp_octet_counting_multi()
     };
 
     char frames[8192];
-    size_t fsize = build_two_frames(frames, sizeof(frames),
-                                    RFC5424_EXAMPLE_1, RFC5424_EXAMPLE_1,
-                                    /*add_lf_for_each=*/0);
+    size_t fsize = 0;
+
+    fsize = build_two_frames(frames, sizeof(frames),
+                             RFC5424_EXAMPLE_1, RFC5424_EXAMPLE_1,
+                             /*add_lf_for_each=*/0);
 
     clear_output_num();
     cb_data.cb   = cb_check_json_str_list;
