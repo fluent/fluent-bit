@@ -30,6 +30,7 @@
 
 #include <sys/types.h>
 #include <sys/stat.h>
+#include <errno.h>
 
 #ifdef FLB_SYSTEM_WINDOWS
 /* Not yet implemented! */
@@ -78,7 +79,57 @@ void cb_all()
     flb_fstore_destroy(fs);
 }
 
+void cb_delete_after_external_close()
+{
+    int ret;
+    struct stat st_data;
+    struct flb_fstore *fs;
+    struct flb_fstore_stream *st;
+    struct flb_fstore_file *fsf;
+    struct cio_chunk *chunk;
+
+    cio_utils_recursive_delete(FSF_STORE_PATH);
+
+    fs = flb_fstore_create(FSF_STORE_PATH, FLB_FSTORE_FS);
+    TEST_CHECK(fs != NULL);
+    if (!fs) {
+        return;
+    }
+
+    st = flb_fstore_stream_create(fs, "abc");
+    TEST_CHECK(st != NULL);
+    if (!st) {
+        flb_fstore_destroy(fs);
+        return;
+    }
+
+    fsf = flb_fstore_file_create(fs, st, "example.txt", 100);
+    TEST_CHECK(fsf != NULL);
+    if (!fsf) {
+        flb_fstore_destroy(fs);
+        return;
+    }
+
+    chunk = fsf->chunk;
+    TEST_CHECK(chunk != NULL);
+    if (!chunk) {
+        flb_fstore_destroy(fs);
+        return;
+    }
+
+    cio_chunk_close(chunk, CIO_TRUE);
+
+    ret = stat(FSF_STORE_PATH "/abc/example.txt", &st_data);
+    TEST_CHECK(ret == -1 && errno == ENOENT);
+
+    ret = flb_fstore_file_delete(fs, fsf);
+    TEST_CHECK(ret == 0);
+
+    flb_fstore_destroy(fs);
+}
+
 TEST_LIST = {
     { "all" , cb_all},
+    { "delete_after_external_close", cb_delete_after_external_close},
     { NULL }
 };
