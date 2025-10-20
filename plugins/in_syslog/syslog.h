@@ -72,7 +72,7 @@ struct flb_syslog {
     flb_sds_t source_address_key;
 
     /* TCP framing */
-    flb_sds_t frame_str;
+    flb_sds_t format_str;
     int frame_type;
 
     int dgram_mode_flag;
