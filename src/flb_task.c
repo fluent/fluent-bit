@@ -360,6 +360,7 @@ struct flb_task *flb_task_create(uint64_t ref_id,
 {
     int count = 0;
     int total_events = 0;
+    int direct_count = 0;
     struct flb_task *task;
     struct flb_event_chunk *evc;
     struct flb_task_route *route;
@@ -415,11 +416,18 @@ struct flb_task *flb_task_create(uint64_t ref_id,
 
     /* Direct connects betweek input <> outputs (API based) */
     if (mk_list_size(&i_ins->routes_direct) > 0) {
+        direct_count = 0;
+
         mk_list_foreach(i_head, &i_ins->routes_direct) {
             route_path = mk_list_entry(i_head, struct flb_router_path, _head);
+
+            if (flb_router_path_should_route(task->event_chunk, route_path) == FLB_FALSE) {
+                continue;
+            }
+
             o_ins = route_path->ins;
 
-            route = flb_malloc(sizeof(struct flb_task_route));
+            route = flb_calloc(1, sizeof(struct flb_task_route));
             if (!route) {
                 flb_errno();
                 task->event_chunk->data = NULL;
@@ -427,10 +435,22 @@ struct flb_task *flb_task_create(uint64_t ref_id,
                 return NULL;
             }
 
+            route->status = FLB_TASK_ROUTE_INACTIVE;
             route->out = o_ins;
             mk_list_add(&route->_head, &task->routes);
+            direct_count++;
         }
-        flb_debug("[task] created direct task=%p id=%i OK", task, task->id);
+
+        if (direct_count == 0) {
+            flb_debug("[task] dropping direct task=%p id=%i without matching routes",
+                      task, task->id);
+            task->event_chunk->data = NULL;
+            flb_task_destroy(task, FLB_TRUE);
+            return NULL;
+        }
+
+        flb_debug("[task] created direct task=%p id=%i with %i route(s)",
+                  task, task->id, direct_count);
         return task;
     }
 
@@ -444,7 +464,7 @@ struct flb_task *flb_task_create(uint64_t ref_id,
             continue;
         }
 
-        if (flb_routes_mask_get_bit(task_ic->routes_mask, 
+        if (flb_routes_mask_get_bit(task_ic->routes_mask,
                                     o_ins->id,
                                     o_ins->config) != 0) {
             route = flb_calloc(1, sizeof(struct flb_task_route));
