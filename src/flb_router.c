@@ -155,6 +155,7 @@ int flb_router_connect(struct flb_input_instance *in,
     }
 
     p->ins = out;
+    p->route = NULL;
     mk_list_add(&p->_head, &in->routes);
 
     return 0;
@@ -172,6 +173,7 @@ int flb_router_connect_direct(struct flb_input_instance *in,
     }
 
     p->ins = out;
+    p->route = NULL;
     mk_list_add(&p->_head, &in->routes_direct);
 
     return 0;
