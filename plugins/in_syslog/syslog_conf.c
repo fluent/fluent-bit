@@ -109,14 +109,14 @@ struct flb_syslog *syslog_conf_create(struct flb_input_instance *ins,
 
     /* TCP Frame type (only applies to stream modes; default newline) */
     ctx->frame_type = FLB_SYSLOG_FRAME_NEWLINE;
-    if (ctx->frame_str != NULL) {
-        if (strcasecmp(ctx->frame_str, "octet_counting") == 0 ||
-            strcasecmp(ctx->frame_str, "octet") == 0) {
+    if (ctx->format_str != NULL) {
+        if (strcasecmp(ctx->format_str, "octet_counting") == 0 ||
+            strcasecmp(ctx->format_str, "octet") == 0) {
             ctx->frame_type = FLB_SYSLOG_FRAME_OCTET_COUNTING;
         }
-        else if (strcasecmp(ctx->frame_str, "newline") != 0) {
+        else if (strcasecmp(ctx->format_str, "newline") != 0) {
             flb_plg_warn(ins, "[in_syslog] unknown frame '%s', using 'newline'",
-                         ctx->frame_str);
+                         ctx->format_str);
         }
     }
 

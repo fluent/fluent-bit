@@ -1091,7 +1091,7 @@ void flb_test_syslog_tcp_octet_counting()
 
     ret = flb_input_set(ctx->flb, ctx->i_ffd,
                         "mode", "tcp",
-                        "frame", "octet_counting",
+                        "format", "octet_counting",
                         "parser", PARSER_NAME_RFC5424,
                         NULL);
     TEST_CHECK(ret == 0);
@@ -1154,7 +1154,7 @@ void flb_test_syslog_tcp_octet_counting_lf()
 
     ret = flb_input_set(ctx->flb, ctx->i_ffd,
                         "mode", "tcp",
-                        "frame", "octet_counting",
+                        "format", "octet_counting",
                         "parser", PARSER_NAME_RFC5424,
                         NULL);
     TEST_CHECK(ret == 0);
@@ -1221,7 +1221,7 @@ void flb_test_syslog_tcp_octet_counting_fragmented()
 
     ret = flb_input_set(ctx->flb, ctx->i_ffd,
                         "mode", "tcp",
-                        "frame", "octet_counting",
+                        "format", "octet_counting",
                         "parser", PARSER_NAME_RFC5424,
                         NULL);
     TEST_CHECK(ret == 0);
@@ -1299,7 +1299,7 @@ void flb_test_syslog_tcp_octet_counting_multi()
 
     ret = flb_input_set(ctx->flb, ctx->i_ffd,
                         "mode", "tcp",
-                        "frame", "octet_counting",
+                        "format", "octet_counting",
                         "parser", PARSER_NAME_RFC5424,
                         NULL);
     TEST_CHECK(ret == 0);
