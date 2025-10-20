@@ -23,7 +23,6 @@
 
 #include <fluent-bit/flb_event.h>
 #include <fluent-bit/flb_sds.h>
-
 struct flb_event_chunk *flb_event_chunk_create(int type,
                                                int total_events,
                                                char *tag_buf, int tag_len,

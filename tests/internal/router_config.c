@@ -939,7 +939,7 @@ void test_router_route_default_precedence()
     memset(&chunk, 0, sizeof(chunk));
     chunk.type = FLB_EVENT_TYPE_LOGS;
 
-    TEST_CHECK(flb_route_condition_eval(&chunk, route) == FLB_TRUE);
+    TEST_CHECK(flb_route_condition_eval(&chunk, NULL, route) == FLB_TRUE);
 
     output = cfl_list_entry(route->outputs.next, struct flb_route_output, _head);
     TEST_CHECK(strcmp(output->name, "lib_route") == 0);
@@ -958,6 +958,7 @@ static void test_router_condition_eval_logs_match()
     struct flb_route_condition_rule *rule;
     struct flb_log_event_encoder encoder;
     struct flb_event_chunk chunk;
+    struct flb_router_chunk_context context;
     int ret;
 
     memset(&route, 0, sizeof(route));
@@ -1008,20 +1009,25 @@ static void test_router_condition_eval_logs_match()
     route.condition = condition;
     route.signals = FLB_ROUTER_SIGNAL_LOGS;
 
+    flb_router_chunk_context_init(&context);
+
     ret = build_log_chunk("error", &encoder, &chunk);
     TEST_CHECK(ret == 0);
     if (ret == 0) {
-        TEST_CHECK(flb_condition_eval_logs(&chunk, &route) == FLB_TRUE);
+        TEST_CHECK(flb_condition_eval_logs(&chunk, &context, &route) == FLB_TRUE);
     }
+    flb_router_chunk_context_reset(&context);
     flb_log_event_encoder_destroy(&encoder);
 
     ret = build_log_chunk("info", &encoder, &chunk);
     TEST_CHECK(ret == 0);
     if (ret == 0) {
-        TEST_CHECK(flb_condition_eval_logs(&chunk, &route) == FLB_FALSE);
+        TEST_CHECK(flb_condition_eval_logs(&chunk, &context, &route) == FLB_FALSE);
     }
+    flb_router_chunk_context_reset(&context);
     flb_log_event_encoder_destroy(&encoder);
 
+    flb_router_chunk_context_destroy(&context);
     free_route_condition(condition);
 }
 
@@ -1032,6 +1038,7 @@ static void test_router_condition_eval_logs_in_operator()
     struct flb_route_condition_rule *rule;
     struct flb_log_event_encoder encoder;
     struct flb_event_chunk chunk;
+    struct flb_router_chunk_context context;
     int ret;
 
     memset(&route, 0, sizeof(route));
@@ -1107,20 +1114,25 @@ static void test_router_condition_eval_logs_in_operator()
     route.condition = condition;
     route.signals = FLB_ROUTER_SIGNAL_LOGS;
 
+    flb_router_chunk_context_init(&context);
+
     ret = build_log_chunk("fatal", &encoder, &chunk);
     TEST_CHECK(ret == 0);
     if (ret == 0) {
-        TEST_CHECK(flb_condition_eval_logs(&chunk, &route) == FLB_TRUE);
+        TEST_CHECK(flb_condition_eval_logs(&chunk, &context, &route) == FLB_TRUE);
     }
+    flb_router_chunk_context_reset(&context);
     flb_log_event_encoder_destroy(&encoder);
 
     ret = build_log_chunk("debug", &encoder, &chunk);
     TEST_CHECK(ret == 0);
     if (ret == 0) {
-        TEST_CHECK(flb_condition_eval_logs(&chunk, &route) == FLB_FALSE);
+        TEST_CHECK(flb_condition_eval_logs(&chunk, &context, &route) == FLB_FALSE);
     }
+    flb_router_chunk_context_reset(&context);
     flb_log_event_encoder_destroy(&encoder);
 
+    flb_router_chunk_context_destroy(&context);
     free_route_condition(condition);
 }
 
@@ -1132,6 +1144,7 @@ static void test_router_path_should_route_condition()
     struct flb_route_condition_rule *rule;
     struct flb_log_event_encoder encoder;
     struct flb_event_chunk chunk;
+    struct flb_router_chunk_context context;
     int ret;
 
     memset(&route, 0, sizeof(route));
@@ -1185,20 +1198,25 @@ static void test_router_path_should_route_condition()
     memset(&path, 0, sizeof(path));
     path.route = &route;
 
+    flb_router_chunk_context_init(&context);
+
     ret = build_log_chunk("error", &encoder, &chunk);
     TEST_CHECK(ret == 0);
     if (ret == 0) {
-        TEST_CHECK(flb_router_path_should_route(&chunk, &path) == FLB_TRUE);
+        TEST_CHECK(flb_router_path_should_route(&chunk, &context, &path) == FLB_TRUE);
     }
+    flb_router_chunk_context_reset(&context);
     flb_log_event_encoder_destroy(&encoder);
 
     ret = build_log_chunk("info", &encoder, &chunk);
     TEST_CHECK(ret == 0);
     if (ret == 0) {
-        TEST_CHECK(flb_router_path_should_route(&chunk, &path) == FLB_FALSE);
+        TEST_CHECK(flb_router_path_should_route(&chunk, &context, &path) == FLB_FALSE);
     }
+    flb_router_chunk_context_reset(&context);
     flb_log_event_encoder_destroy(&encoder);
 
+    flb_router_chunk_context_destroy(&context);
     free_route_condition(condition);
 }
 
