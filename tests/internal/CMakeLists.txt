@@ -24,6 +24,7 @@ set(UNIT_TESTS_FILES
   random.c
   config_map.c
   mp.c
+  mp_chunk_cobj.c
   input_chunk.c
   flb_time.c
   file.c
