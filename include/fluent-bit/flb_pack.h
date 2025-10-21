@@ -2,7 +2,7 @@
 
 /*  Fluent Bit
  *  ==========
- *  Copyright (C) 2015-2024 The Fluent Bit Authors
+ *  Copyright (C) 2015-2025 The Fluent Bit Authors
  *
  *  Licensed under the Apache License, Version 2.0 (the "License");
  *  you may not use this file except in compliance with the License.
@@ -27,6 +27,7 @@
 #include <fluent-bit/flb_config.h>
 
 #include <msgpack.h>
+#include <yyjson.h>
 
 /* JSON types */
 #define FLB_PACK_JSON_UNDEFINED     JSMN_UNDEFINED
@@ -80,6 +81,11 @@ int flb_pack_json(const char *js, size_t len, char **buffer, size_t *size,
                   int *root_type, size_t *consumed);
 int flb_pack_json_recs(const char *js, size_t len, char **buffer, size_t *size,
                        int *root_type, int *out_records, size_t *consumed);
+int flb_pack_json_yyjson(const char *js, size_t len, char **buffer, size_t *size,
+                         int *root_type, size_t *consumed);
+int flb_pack_json_recs_yyjson(const char *js, size_t len, char **buffer,
+                              size_t *size, int *root_type, int *out_records,
+                              size_t *consumed);
 
 int flb_pack_state_init(struct flb_pack_state *s);
 void flb_pack_state_reset(struct flb_pack_state *s);
@@ -91,15 +97,17 @@ int flb_pack_json_valid(const char *json, size_t len);
 
 flb_sds_t flb_pack_msgpack_to_json_format(const char *data, uint64_t bytes,
                                           int json_format, int date_format,
-                                          flb_sds_t date_key);
+                                          flb_sds_t date_key, int escape_unicode);
 int flb_pack_to_json_format_type(const char *str);
 int flb_pack_to_json_date_type(const char *str);
 
 void flb_pack_print(const char *data, size_t bytes);
 int flb_msgpack_to_json(char *json_str, size_t str_len,
-                        const msgpack_object *obj);
-char* flb_msgpack_to_json_str(size_t size, const msgpack_object *obj);
-flb_sds_t flb_msgpack_raw_to_json_sds(const void *in_buf, size_t in_size);
+                        const msgpack_object *obj,
+                        int escape_unicode);
+char* flb_msgpack_to_json_str(size_t size, const msgpack_object *obj,
+                              int escape_unicode);
+flb_sds_t flb_msgpack_raw_to_json_sds(const void *in_buf, size_t in_size, int escape_unicode);
 
 int flb_pack_time_now(msgpack_packer *pck);
 int flb_msgpack_expand_map(char *map_data, size_t map_size,

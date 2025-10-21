@@ -390,30 +390,60 @@ struct flb_storage_metrics *flb_storage_metrics_create(struct flb_config *ctx)
     return sm;
 }
 
+static int parse_stamp(const char *p, time_t *sec, long *nsec)
+{
+    uint64_t s = 0, ns = 0;
+
+    if (!p || !sec || !nsec) {
+        return -1;
+    }
+    /* expected: "1234567890.123456789.flb" format */
+    if (sscanf(p, "%" SCNu64 ".%" SCNu64 ".flb", &s, &ns) != 2) {
+        return -1;
+    }
+    if (ns >= 1000000000ULL) {
+        return -1;
+    }
+
+    *sec  = (time_t)s;
+    *nsec = (long)ns;
+    return 0;
+}
+
 static int sort_chunk_cmp(const void *a_arg, const void *b_arg)
 {
-    char *p;
     struct cio_chunk *chunk_a = *(struct cio_chunk **) a_arg;
     struct cio_chunk *chunk_b = *(struct cio_chunk **) b_arg;
-    struct timespec tm_a;
-    struct timespec tm_b;
+    const char *pa, *pb;
+    int ra = 0;
+    int rb = 0;
+    struct timespec tm_a = {0}, tm_b = {0};
 
     /* Scan Chunk A */
-    p = strchr(chunk_a->name, '-');
-    if (!p) {
-        return -1;
+    pa = strrchr(chunk_a->name, '-');
+    if (pa && parse_stamp(pa + 1, &tm_a.tv_sec, &tm_a.tv_nsec) == 0) {
+        ra = -1;
     }
-    p++;
-
-    sscanf(p, "%lu.%lu.flb", &tm_a.tv_sec, &tm_a.tv_nsec);
 
     /* Scan Chunk B */
-    p = strchr(chunk_b->name, '-');
-    if (!p) {
-        return -1;
+    pb = strrchr(chunk_b->name, '-');
+    if (pb && parse_stamp(pb + 1, &tm_b.tv_sec, &tm_b.tv_nsec) == 0) {
+        rb = -1;
     }
-    p++;
-    sscanf(p, "%lu.%lu.flb", &tm_b.tv_sec, &tm_b.tv_nsec);
+
+    /* Ensure strict ordering in presence of invalid names */
+    if (ra != 0 || rb != 0) {
+        /* valid < invalid */
+        if (ra == 0 && rb != 0) {
+            return -1;
+        }
+        /* invalid > valid */
+        if (ra != 0 && rb == 0) {
+            return 1;
+        }
+        /* both invalid: deterministic fallback */
+        return strcmp(chunk_a->name, chunk_b->name);
+    }
 
     /* Compare */
     if (tm_a.tv_sec != tm_b.tv_sec) {

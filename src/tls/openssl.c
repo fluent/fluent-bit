@@ -198,21 +198,6 @@ static int tls_context_server_alpn_select_callback(SSL *ssl,
     return result;
 }
 
-static int tls_context_client_alpn_select_callback(SSL *ssl,
-                                                   unsigned char **out,
-                                                   unsigned char *outlen,
-                                                   const unsigned char *in,
-                                                   unsigned int inlen,
-                                                   void *arg)
-{
-    return tls_context_server_alpn_select_callback(ssl,
-                                                   (const unsigned char **) out,
-                                                   outlen,
-                                                   in,
-                                                   inlen,
-                                                   arg);
-}
-
 int tls_context_alpn_set(void *ctx_backend, const char *alpn)
 {
     size_t              wire_format_alpn_index;
@@ -283,10 +268,15 @@ int tls_context_alpn_set(void *ctx_backend, const char *alpn)
                 ctx);
         }
         else {
-            SSL_CTX_set_next_proto_select_cb(
-                ctx->ctx,
-                tls_context_client_alpn_select_callback,
-                ctx);
+            if (ctx->alpn == NULL) {
+                return -1;
+            }
+            if (SSL_CTX_set_alpn_protos(
+                ctx->ctx, 
+                (const unsigned char *) &ctx->alpn[1], 
+                (unsigned int) ctx->alpn[0]) != 0) {
+                return -1;
+            }
         }
     }
 
@@ -881,7 +871,7 @@ static int tls_session_destroy(void *session)
 
     pthread_mutex_lock(&ctx->mutex);
 
-    if (flb_socket_error(ptr->fd) == 0) {
+    if (ptr->fd >= 0 && flb_socket_error(ptr->fd) == 0) {
         SSL_shutdown(ptr->ssl);
     }
 
@@ -891,6 +881,32 @@ static int tls_session_destroy(void *session)
     pthread_mutex_unlock(&ctx->mutex);
 
     return 0;
+}
+
+static void tls_session_invalidate(void *session)
+{
+    struct tls_session *ptr = session;
+    struct tls_context *ctx;
+
+    if (ptr == NULL) {
+        return;
+    }
+
+    ctx = ptr->parent;
+    if (ctx == NULL) {
+        ptr->fd = -1;
+        return;
+    }
+
+    pthread_mutex_lock(&ctx->mutex);
+
+    if (ptr->fd >= 0 && flb_socket_error(ptr->fd) == 0) {
+        SSL_shutdown(ptr->ssl);
+    }
+
+    ptr->fd = -1;
+
+    pthread_mutex_unlock(&ctx->mutex);
 }
 
 static const char *tls_session_alpn_get(void *session_)
@@ -1219,6 +1235,7 @@ static struct flb_tls_backend tls_openssl = {
     .set_minmax_proto     = tls_set_minmax_proto,
     .set_ciphers          = tls_set_ciphers,
     .session_create       = tls_session_create,
+    .session_invalidate   = tls_session_invalidate,
     .session_destroy      = tls_session_destroy,
     .net_read             = tls_net_read,
     .net_write            = tls_net_write,

@@ -97,6 +97,7 @@ static struct mk_list *parse_string_map_to_list(struct flb_config_map *map, char
 
     if (ret == -1) {
         flb_error("[config map] error reading list of options");
+        flb_slist_destroy(list);
         flb_free(list);
         return NULL;
     }

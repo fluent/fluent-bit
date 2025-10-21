@@ -150,7 +150,8 @@ cfl_sds_t cm_utils_variant_convert_to_json(struct cfl_variant *value)
 
     mpack_writer_destroy(&writer);
 
-    json_result = flb_msgpack_raw_to_json_sds(data, size);
+    /* Using JSON escape here to keep backward compatibility */
+    json_result = flb_msgpack_raw_to_json_sds(data, size, FLB_TRUE);
     MPACK_FREE(data);
 
     return json_result;

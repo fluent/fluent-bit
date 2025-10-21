@@ -260,6 +260,7 @@ int tcp_conn_event(void *data)
     struct tcp_conn *conn;
     struct flb_connection *connection;
     struct flb_in_tcp_config *ctx;
+    int ret = 0;
 
     connection = (struct flb_connection *) data;
 
@@ -269,6 +270,8 @@ int tcp_conn_event(void *data)
 
     event = &connection->event;
 
+    conn->busy = FLB_TRUE;
+
     if (event->mask & MK_EVENT_READ) {
         available = (conn->buf_size - conn->buf_len) - 1;
         if (available < 1) {
@@ -276,6 +279,7 @@ int tcp_conn_event(void *data)
                 flb_plg_warn(ctx->ins,
                              "fd=%i incoming data exceeds 'Buffer_Size' (%zu KB)",
                              event->fd, (ctx->buffer_size / 1024));
+                conn->busy = FLB_FALSE;
                 tcp_conn_del(conn);
                 return -1;
             }
@@ -283,6 +287,7 @@ int tcp_conn_event(void *data)
             size = conn->buf_size + ctx->chunk_size;
             tmp = flb_realloc(conn->buf_data, size);
             if (!tmp) {
+                conn->busy = FLB_FALSE;
                 flb_errno();
                 return -1;
             }
@@ -301,6 +306,7 @@ int tcp_conn_event(void *data)
 
         if (bytes <= 0) {
             flb_plg_trace(ctx->ins, "fd=%i closed connection", event->fd);
+            conn->busy = FLB_FALSE;
             tcp_conn_del(conn);
             return -1;
         }
@@ -325,23 +331,27 @@ int tcp_conn_event(void *data)
             ret_payload = parse_payload_json(conn);
             if (ret_payload == 0) {
                 /* Incomplete JSON message, we need more data */
-                return -1;
+                ret = -1;
+                goto cleanup;
             }
             else if (ret_payload == -1) {
                 flb_pack_state_reset(&conn->pack_state);
                 flb_pack_state_init(&conn->pack_state);
                 conn->pack_state.multiple = FLB_TRUE;
-                return -1;
+                ret = -1;
+                goto cleanup;
             }
         }
         else if (ctx->format == FLB_TCP_FMT_NONE) {
             ret_payload = parse_payload_none(conn);
             if (ret_payload == 0) {
-                return -1;
+                ret = -1;
+                goto cleanup;
             }
             else if (ret_payload == -1) {
                 conn->buf_len = 0;
-                return -1;
+                ret = -1;
+                goto cleanup;
             }
         }
 
@@ -357,16 +367,27 @@ int tcp_conn_event(void *data)
             conn->pack_state.buf_len = 0;
         }
 
-        return bytes;
+        ret = bytes;
+        goto cleanup;
     }
 
     if (event->mask & MK_EVENT_CLOSE) {
         flb_plg_trace(ctx->ins, "fd=%i hangup", event->fd);
+        conn->busy = FLB_FALSE;
         tcp_conn_del(conn);
         return -1;
     }
 
-    return 0;
+    ret = 0;
+
+cleanup:
+    conn->busy = FLB_FALSE;
+    if (conn->pending_close) {
+        tcp_conn_del(conn);
+        return -1;
+    }
+
+    return ret;
 }
 
 /* Create a new mqtt request instance */
@@ -431,6 +452,9 @@ struct tcp_conn *tcp_conn_add(struct flb_connection *connection,
     }
 
     mk_list_add(&conn->_head, &ctx->connections);
+
+    conn->busy = FLB_FALSE;
+    conn->pending_close = FLB_FALSE;
 
     return conn;
 }

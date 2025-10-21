@@ -152,7 +152,8 @@ static int end_put_payload(struct flb_firehose *ctx, struct flush *buf,
  * which means a send must occur
  */
 static int process_event(struct flb_firehose *ctx, struct flush *buf,
-                         const msgpack_object *obj, struct flb_time *tms)
+                         const msgpack_object *obj, struct flb_time *tms,
+                         struct flb_config *config)
 {
     size_t written = 0;
     int ret;
@@ -170,8 +171,8 @@ static int process_event(struct flb_firehose *ctx, struct flush *buf,
 
     tmp_buf_ptr = buf->tmp_buf + buf->tmp_buf_offset;
     ret = flb_msgpack_to_json(tmp_buf_ptr,
-                                  buf->tmp_buf_size - buf->tmp_buf_offset,
-                                  obj);
+                              buf->tmp_buf_size - buf->tmp_buf_offset,
+                              obj, config->json_escape_unicode);
     if (ret <= 0) {
         /*
          * negative value means failure to write to buffer,
@@ -431,7 +432,8 @@ static int send_log_events(struct flb_firehose *ctx, struct flush *buf) {
  * Processes the msgpack object, sends the current batch if needed
  */
 static int add_event(struct flb_firehose *ctx, struct flush *buf,
-                     const msgpack_object *obj, struct flb_time *tms)
+                     const msgpack_object *obj, struct flb_time *tms,
+                     struct flb_config *config)
 {
     int ret;
     struct firehose_event *event;
@@ -445,7 +447,7 @@ static int add_event(struct flb_firehose *ctx, struct flush *buf,
 
 retry_add_event:
     retry_add = FLB_FALSE;
-    ret = process_event(ctx, buf, obj, tms);
+    ret = process_event(ctx, buf, obj, tms, config);
     if (ret < 0) {
         return -1;
     }
@@ -510,7 +512,8 @@ send:
  * return value is the number of events processed (number sent is stored in buf)
  */
 int process_and_send_records(struct flb_firehose *ctx, struct flush *buf,
-                             const char *data, size_t bytes)
+                             const char *data, size_t bytes,
+                             struct flb_config *config)
 {
     // size_t off = 0;
     int i = 0;
@@ -573,7 +576,7 @@ int process_and_send_records(struct flb_firehose *ctx, struct flush *buf,
                     if (strncmp(ctx->log_key, key_str, key_str_size) == 0) {
                         found = FLB_TRUE;
                         val = (kv+j)->val;
-                        ret = add_event(ctx, buf, &val, &log_event.timestamp);
+                        ret = add_event(ctx, buf, &val, &log_event.timestamp, config);
                         if (ret < 0 ) {
                             goto error;
                         }
@@ -591,7 +594,7 @@ int process_and_send_records(struct flb_firehose *ctx, struct flush *buf,
             continue;
         }
 
-        ret = add_event(ctx, buf, &map, &log_event.timestamp);
+        ret = add_event(ctx, buf, &map, &log_event.timestamp, config);
         if (ret < 0 ) {
             goto error;
         }

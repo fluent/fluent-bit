@@ -90,50 +90,33 @@ static int get_chunk_event_type(struct flb_input_instance *ins, msgpack_object o
     return type;
 }
 
-static int is_gzip_compressed(msgpack_object options)
+static int get_compression_type(msgpack_object options)
 {
     int i;
-    msgpack_object k;
-    msgpack_object v;
+    msgpack_object k, v;
 
     if (options.type != MSGPACK_OBJECT_MAP) {
         return -1;
     }
 
-
     for (i = 0; i < options.via.map.size; i++) {
         k = options.via.map.ptr[i].key;
         v = options.via.map.ptr[i].val;
 
-        if (k.type != MSGPACK_OBJECT_STR) {
-            return -1;
-        }
-
-        if (k.via.str.size != 10) {
-            continue;
-        }
-
-        if (strncmp(k.via.str.ptr, "compressed", 10) == 0) {
-            if (v.type != MSGPACK_OBJECT_STR) {
-                return -1;
+        if (k.type == MSGPACK_OBJECT_STR && k.via.str.size == 10 &&
+            strncmp(k.via.str.ptr, "compressed", 10) == 0) {
+            if (v.type == MSGPACK_OBJECT_STR) {
+                if (v.via.str.size == 4 && strncmp(v.via.str.ptr, "gzip", 4) == 0) {
+                    return FLB_COMPRESSION_ALGORITHM_GZIP;
+                }
+                if (v.via.str.size == 4 && strncmp(v.via.str.ptr, "zstd", 4) == 0) {
+                    return FLB_COMPRESSION_ALGORITHM_ZSTD;
+                }
             }
-
-            if (v.via.str.size != 4) {
-                return -1;
-            }
-
-            if (strncmp(v.via.str.ptr, "gzip", 4) == 0) {
-                return FLB_TRUE;
-            }
-            else if (strncmp(v.via.str.ptr, "text", 4) == 0) {
-                return FLB_FALSE;
-            }
-
-            return -1;
         }
     }
 
-    return FLB_FALSE;
+    return FLB_COMPRESSION_ALGORITHM_NONE;
 }
 
 static inline void print_msgpack_error_code(struct flb_input_instance *in,
@@ -792,11 +775,10 @@ static int send_pong(struct flb_input_instance *in,
     if (bytes == -1) {
         flb_plg_error(in, "cannot send PONG");
 
-        result = -1;
-    }
-    else if (userauth == FLB_FALSE)  {
-        flb_plg_error(in, "cannot send PONG");
-
+        /*
+         * The 'userauth == FLB_FALSE' case is not an error; it's a successful
+         * transmission of a failure notification. We only fail if the write fails.
+         */
         result = -1;
     }
     else {
@@ -1203,35 +1185,45 @@ int fw_prot_secure_forward_handshake_start(struct flb_input_instance *ins,
 int fw_prot_secure_forward_handshake(struct flb_input_instance *ins,
                                      struct fw_conn *conn)
 {
-    int ret;
     char *shared_key_salt = NULL;
     int userauth = FLB_TRUE;
     flb_sds_t reason = NULL;
+    int ping_ret;
+    int pong_ret;
 
     reason = flb_sds_create_size(32);
     flb_plg_debug(ins, "protocol: checking PING");
-    ret = check_ping(ins, conn, &shared_key_salt);
-    if (ret == -1) {
+    ping_ret = check_ping(ins, conn, &shared_key_salt);
+    if (ping_ret == -1) {
         flb_plg_error(ins, "handshake error checking PING");
 
         goto error;
     }
-    else if (ret == -2) {
+    else if (ping_ret == -2) {
         flb_plg_warn(ins, "user authentication is failed");
         userauth = FLB_FALSE;
         reason = flb_sds_cat(reason, "username/password mismatch", 26);
     }
 
     flb_plg_debug(ins, "protocol: sending PONG");
-    ret = send_pong(ins, conn, shared_key_salt, userauth, reason);
-    if (ret == -1) {
-        flb_plg_error(ins, "handshake error sending PONG");
+    pong_ret = send_pong(ins, conn, shared_key_salt, userauth, reason);
+    if (pong_ret == -1) {
+        flb_plg_error(ins, "handshake error: could not send PONG to client");
 
         goto error;
     }
 
     flb_sds_destroy(shared_key_salt);
     flb_sds_destroy(reason);
+
+    /*
+     * If the initial authentication check failed (either shared_key or user),
+     * we have successfully notified the client with a PONG failure message,
+     * so we must now terminate the handshake by returning an error.
+     */
+    if (ping_ret < 0) {
+        return -1;
+    }
 
     return 0;
 
@@ -1244,6 +1236,18 @@ error:
     }
 
     return -1;
+}
+
+static int sniff_magic(const uint8_t *p, size_t n) {
+    if (n >= 2 && p[0]==0x1f && p[1]==0x8b) {
+        return FLB_COMPRESSION_ALGORITHM_GZIP;
+    }
+    if (n >= 4 && p[0]==0x28 && p[1]==0xb5 &&
+                  p[2]==0x2f && p[3]==0xfd) {
+        return FLB_COMPRESSION_ALGORITHM_ZSTD;
+    }
+
+    return FLB_COMPRESSION_ALGORITHM_NONE;
 }
 
 int fw_prot_process(struct flb_input_instance *ins, struct fw_conn *conn)
@@ -1259,8 +1263,6 @@ int fw_prot_process(struct flb_input_instance *ins, struct fw_conn *conn)
     flb_sds_t out_tag = NULL;
     size_t bytes;
     size_t recv_len;
-    size_t gz_size;
-    void *gz_data;
     msgpack_object tag;
     msgpack_object entry;
     msgpack_object map;
@@ -1524,93 +1526,124 @@ int fw_prot_process(struct flb_input_instance *ins, struct fw_conn *conn)
                 }
 
                 if (data) {
-                    ret = is_gzip_compressed(root.via.array.ptr[2]);
-                    if (ret == -1) {
-                        flb_plg_error(ctx->ins, "invalid 'compressed' option");
-                        msgpack_unpacked_destroy(&result);
-                        msgpack_unpacker_free(unp);
-                        flb_sds_destroy(out_tag);
-                        return -1;
-                    }
-
-                    if (ret == FLB_TRUE) {
-                        size_t remaining = len;
-
-                        while (remaining > 0) {
-                            ret = flb_gzip_uncompress_multi((void *) (data + (len - remaining)), remaining,
-                                    &gz_data, &gz_size, &remaining);
-
-                            if (ret == -1) {
-                                flb_plg_error(ctx->ins, "gzip uncompress failure");
-                                msgpack_unpacked_destroy(&result);
-                                msgpack_unpacker_free(unp);
-                                flb_sds_destroy(out_tag);
-                                return -1;
-                            }
-
-                            event_type = FLB_EVENT_TYPE_LOGS;
-                            if (contain_options) {
-                                ret = get_chunk_event_type(ins, root.via.array.ptr[2]);
-                                if (ret == -1) {
-                                    msgpack_unpacked_destroy(&result);
-                                    msgpack_unpacker_free(unp);
-                                    flb_sds_destroy(out_tag);
-                                    flb_free(gz_data);
-                                    return -1;
-                                }
-                                event_type = ret;
-                            }
-
-                            ret = append_log(ins, conn,
-                                    event_type,
-                                    out_tag, gz_data, gz_size);
-                            if (ret == -1) {
-                                msgpack_unpacked_destroy(&result);
-                                msgpack_unpacker_free(unp);
-                                flb_sds_destroy(out_tag);
-                                flb_free(gz_data);
-                                return -1;
-                            }
-                            flb_free(gz_data);
-                        }
-                    }
-                    else {
-                        event_type = FLB_EVENT_TYPE_LOGS;
-                        if (contain_options) {
-                            ret = get_chunk_event_type(ins, root.via.array.ptr[2]);
-                            if (ret == -1) {
-                                msgpack_unpacked_destroy(&result);
-                                msgpack_unpacker_free(unp);
-                                flb_sds_destroy(out_tag);
-                                return -1;
-                            }
-                            event_type = ret;
-                        }
-
-                        ret = append_log(ins, conn,
-                                         event_type,
-                                         out_tag, data, len);
+                    /* Get event type early for use in both compressed/uncompressed paths */
+                    event_type = FLB_EVENT_TYPE_LOGS;
+                    if (contain_options) {
+                        ret = get_chunk_event_type(ins, root.via.array.ptr[2]);
                         if (ret == -1) {
+                            flb_plg_error(ctx->ins, "invalid chunk event type");
                             msgpack_unpacked_destroy(&result);
-                            msgpack_unpacker_free(unp);
                             flb_sds_destroy(out_tag);
+                            msgpack_unpacker_free(unp);
                             return -1;
                         }
+                        event_type = ret;
                     }
 
-                    /* Handle ACK response */
-                    if (chunk_id != -1) {
-                        chunk = root.via.array.ptr[2].via.map.ptr[chunk_id].val;
-                        send_ack(ctx->ins, conn, chunk);
+                    /* Initialize decompressor on first compressed chunk */
+                    if (conn->d_ctx == NULL && contain_options) {
+                        int opt_type = contain_options ? get_compression_type(root.via.array.ptr[2]) : FLB_COMPRESSION_ALGORITHM_NONE;
+                        int sniff = sniff_magic((const uint8_t *)data, len);
+                        int type = opt_type;
+
+                        if (sniff != FLB_COMPRESSION_ALGORITHM_NONE &&
+                            opt_type != FLB_COMPRESSION_ALGORITHM_NONE &&
+                            sniff != opt_type) {
+                            flb_plg_warn(ctx->ins, "compressed=%s but magic says %s; using magic",
+                                         opt_type == FLB_COMPRESSION_ALGORITHM_ZSTD ? "zstd" : "gzip",
+                                         sniff    == FLB_COMPRESSION_ALGORITHM_ZSTD ? "zstd" : "gzip");
+                            type = sniff;
+                        }
+                        else if (opt_type == FLB_COMPRESSION_ALGORITHM_NONE) {
+                            type = sniff;
+                        }
+                        if (type > 0) {
+                            conn->compression_type = type;
+                            conn->d_ctx = flb_decompression_context_create(
+                                                conn->compression_type,
+                                                FLB_DECOMPRESSION_BUFFER_SIZE);
+                            if (!conn->d_ctx) {
+                                flb_plg_error(ctx->ins, "failed to create decompression context");
+
+                                goto cleanup_msgpack;
+                            }
+                        }
                     }
+
+                    if (conn->compression_type != FLB_COMPRESSION_ALGORITHM_NONE) {
+                        char *decomp_buf = NULL;
+                        uint8_t *append_ptr;
+                        size_t available_space;
+                        size_t decomp_len;
+                        int decomp_ret;
+                        size_t required_size;
+
+                        available_space = flb_decompression_context_get_available_space(conn->d_ctx);
+                        if (len > available_space) {
+                            required_size = conn->d_ctx->input_buffer_length + len;
+                            if (flb_decompression_context_resize_buffer(conn->d_ctx, required_size) != 0) {
+                                flb_plg_error(ctx->ins, "cannot resize decompression buffer");
+
+                                goto cleanup_decompress;
+                            }
+                        }
+                        append_ptr = flb_decompression_context_get_append_buffer(conn->d_ctx);
+                        memcpy(append_ptr, data, len);
+                        conn->d_ctx->input_buffer_length += len;
+
+                        decomp_buf = flb_malloc(ctx->buffer_chunk_size);
+                        if (!decomp_buf) {
+                            flb_errno();
+
+                            goto cleanup_decompress;
+                        }
+
+                        do {
+                            decomp_len = ctx->buffer_chunk_size;
+                            decomp_ret = flb_decompress(conn->d_ctx, decomp_buf, &decomp_len);
+
+                            if (decomp_ret == FLB_DECOMPRESSOR_FAILURE) {
+                                if (decomp_len > 0) {
+                                    flb_plg_error(ctx->ins, "decompression failed, data may be corrupt");
+                                    flb_free(decomp_buf);
+
+                                    goto cleanup_decompress;
+                                }
+                                break;
+                            }
+
+                            if (decomp_len > 0) {
+                                if (append_log(ins, conn, event_type, out_tag, decomp_buf, decomp_len) == -1) {
+                                    flb_free(decomp_buf);
+
+                                    goto cleanup_decompress;
+                                }
+                            }
+                        } while (decomp_len > 0);
+
+                        flb_free(decomp_buf);
+
+                        flb_decompression_context_destroy(conn->d_ctx);
+                        conn->d_ctx = NULL;
+                        conn->compression_type = FLB_COMPRESSION_ALGORITHM_NONE;
+                    }
+                    else {
+                        if (append_log(ins, conn, event_type, out_tag, data, len) == -1) {
+                            goto cleanup_msgpack;
+                        }
+                    }
+                }
+
+                /* Handle ACK response (common to all paths) */
+                if (chunk_id != -1) {
+                    chunk = root.via.array.ptr[2].via.map.ptr[chunk_id].val;
+                    send_ack(ctx->ins, conn, chunk);
                 }
             }
             else {
                 flb_plg_warn(ctx->ins, "invalid data format, type=%i",
                              entry.type);
-                msgpack_unpacked_destroy(&result);
-                msgpack_unpacker_free(unp);
-                return -1;
+                goto cleanup_msgpack;
             }
 
             ret = msgpack_unpacker_next(unp, &result);
@@ -1637,4 +1670,16 @@ int fw_prot_process(struct flb_input_instance *ins, struct fw_conn *conn)
     };
 
     return 0;
+
+cleanup_decompress:
+    flb_decompression_context_destroy(conn->d_ctx);
+    conn->d_ctx = NULL;
+    conn->compression_type = FLB_COMPRESSION_ALGORITHM_NONE;
+    /* FALLTHRU */
+cleanup_msgpack:
+    msgpack_unpacked_destroy(&result);
+    msgpack_unpacker_free(unp);
+    flb_sds_destroy(out_tag);
+
+    return -1;
 }

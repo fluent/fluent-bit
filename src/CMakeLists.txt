@@ -16,6 +16,7 @@ set(src
   flb_hash_table.c
   flb_help.c
   flb_pack.c
+  flb_pack_json.c
   flb_pack_gelf.c
   flb_sds.c
   flb_sds_list.c
@@ -53,6 +54,8 @@ set(src
   flb_upstream_ha.c
   flb_upstream_node.c
   flb_router.c
+  flb_router_condition.c
+  flb_router_config.c
   flb_worker.c
   flb_coro.c
   flb_time.c
@@ -85,6 +88,7 @@ set(src
   flb_log_event_encoder_dynamic_field.c
   flb_processor.c
   flb_reload.c
+  flb_supervisor.c
   flb_msgpack_append_message.c
   flb_notification.c
   flb_lock.c
@@ -112,6 +116,7 @@ endif()
 set(src
   ${src}
   opentelemetry/flb_opentelemetry_logs.c
+  opentelemetry/flb_opentelemetry_traces.c
   opentelemetry/flb_opentelemetry_utils.c
 )
 
@@ -397,6 +402,7 @@ set(FLB_DEPS
   ctraces-static
   mk_core
   jsmn
+  yyjson
   ${MSGPACK_LIBRARIES}
   mpack-static
   chunkio-static

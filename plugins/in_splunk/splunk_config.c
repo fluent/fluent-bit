@@ -229,11 +229,25 @@ struct flb_splunk *splunk_config_create(struct flb_input_instance *ins)
         }
     }
 
+    /* Create record accessor for tag_key if specified */
+    if (ctx->tag_key) {
+        ctx->ra_tag_key = flb_ra_create(ctx->tag_key, FLB_TRUE);
+        if (!ctx->ra_tag_key) {
+            flb_plg_error(ctx->ins, "invalid record accessor pattern for tag_key: %s", ctx->tag_key);
+            splunk_config_destroy(ctx);
+            return NULL;
+        }
+    }
+
     return ctx;
 }
 
 int splunk_config_destroy(struct flb_splunk *ctx)
 {
+    if (ctx->ra_tag_key) {
+        flb_ra_destroy(ctx->ra_tag_key);
+    }
+
     /* release all connections */
     splunk_conn_release_all(ctx);
 

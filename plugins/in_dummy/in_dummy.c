@@ -30,6 +30,7 @@
 #include <fluent-bit/flb_time.h>
 #include <fluent-bit/flb_pack.h>
 #include <fluent-bit/flb_log_event.h>
+#include <fluent-bit/flb_utils.h>
 
 #include "in_dummy.h"
 
@@ -332,6 +333,7 @@ static int in_dummy_init(struct flb_input_instance *in,
     ctx->ins = in;
     ctx->samples = 0;
     ctx->samples_count = 0;
+    ctx->test_hang_on_exit = FLB_FALSE;
 
     /* Initialize head config */
     ret = configure(ctx, in, &tm);
@@ -390,6 +392,13 @@ static int in_dummy_exit(void *data, struct flb_config *config)
 {
     (void) *config;
     struct flb_dummy *ctx = data;
+
+    /* Test-only hang used by watchdog tests */
+    if (ctx->test_hang_on_exit) {
+        flb_plg_debug(ctx->ins, "TEST: Simulating hang for hot reload watchdog test");
+        /* 1000 seconds */
+        flb_time_msleep(1000 * 1000);
+    }
 
     config_destroy(ctx);
 
@@ -452,6 +461,11 @@ static struct flb_config_map config_map[] = {
     FLB_CONFIG_MAP_BOOL, "flush_on_startup", "false",
     0, FLB_TRUE, offsetof(struct flb_dummy, flush_on_startup),
     "generate the first event on startup"
+   },
+   {
+    FLB_CONFIG_MAP_BOOL, "test_hang_on_exit", "false",
+    0, FLB_TRUE, offsetof(struct flb_dummy, test_hang_on_exit),
+    "TEST ONLY: simulate hang during exit to test hot reload watchdog"
    },
    {0}
 };

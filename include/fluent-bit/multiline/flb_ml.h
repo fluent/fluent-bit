@@ -52,6 +52,15 @@
 /* Default multiline buffer size: 4Kb */
 #define FLB_ML_BUF_SIZE         1024*4
 
+/* Default limit for concatenated multiline messages: 2MB */
+#define FLB_ML_BUFFER_LIMIT_DEFAULT_STR "2MB"
+#define FLB_ML_BUFFER_LIMIT_DEFAULT     (1024 * 1024 * 2)
+
+/* Return codes */
+#define FLB_MULTILINE_OK         0
+#define FLB_MULTILINE_PROCESSED  1 /* Reserved */
+#define FLB_MULTILINE_TRUNCATED  2
+
 /* Maximum number of groups per stream */
 #define FLB_ML_MAX_GROUPS       6
 
@@ -106,6 +115,10 @@ struct flb_ml_stream_group {
     msgpack_sbuffer mp_sbuf;    /* temporary msgpack buffer              */
     msgpack_packer mp_pck;      /* temporary msgpack packer              */
     struct flb_time mp_time;    /* multiline time parsed from first line */
+    int truncated;              /* was the buffer truncated?         */
+
+    /* parent stream reference */
+    struct flb_ml_stream *stream;
 
     struct mk_list _head;
 };
@@ -275,6 +288,9 @@ struct flb_ml {
     struct flb_log_event_encoder log_event_encoder;
     struct flb_log_event_decoder log_event_decoder;
     struct flb_config *config;             /* Fluent Bit context */
+
+    /* Limit for concatenated multiline messages */
+    size_t buffer_limit;
 };
 
 struct flb_ml *flb_ml_create(struct flb_config *ctx, char *name);

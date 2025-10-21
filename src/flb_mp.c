@@ -1054,6 +1054,10 @@ struct flb_mp_chunk_record *flb_mp_chunk_record_create(struct flb_mp_chunk_cobj 
         return NULL;
     }
     record->modified = FLB_FALSE;
+    record->cobj_group_metadata = NULL;
+    record->cobj_group_attributes = NULL;
+    record->owns_group_metadata = FLB_FALSE;
+    record->owns_group_attributes = FLB_FALSE;
 
     return record;
 }
@@ -1076,6 +1080,8 @@ struct flb_mp_chunk_cobj *flb_mp_chunk_cobj_create(struct flb_log_event_encoder 
     chunk_cobj->log_encoder = log_encoder;
     chunk_cobj->log_decoder = log_decoder;
     chunk_cobj->condition   = NULL;
+    chunk_cobj->active_group_metadata = NULL;
+    chunk_cobj->active_group_attributes = NULL;
 
     return chunk_cobj;
 }
@@ -1100,6 +1106,7 @@ static int generate_empty_msgpack_map(char **out_buf, size_t *out_size)
 int flb_mp_chunk_cobj_encode(struct flb_mp_chunk_cobj *chunk_cobj, char **out_buf, size_t *out_size)
 {
     int ret;
+    int record_type;
     char *mp_buf;
     size_t mp_size;
     struct cfl_list *head;
@@ -1123,6 +1130,21 @@ int flb_mp_chunk_cobj_encode(struct flb_mp_chunk_cobj *chunk_cobj, char **out_bu
             return -1;
         }
 
+        /* Determine record type from timestamp */
+        if (record->event.timestamp.tm.tv_sec >= 0) {
+            record_type = FLB_LOG_EVENT_NORMAL;
+        }
+        else if (record->event.timestamp.tm.tv_sec == FLB_LOG_EVENT_GROUP_START) {
+            record_type = FLB_LOG_EVENT_GROUP_START;
+        }
+        else if (record->event.timestamp.tm.tv_sec == FLB_LOG_EVENT_GROUP_END) {
+            record_type = FLB_LOG_EVENT_GROUP_END;
+        }
+        else {
+            record_type = FLB_LOG_EVENT_NORMAL;
+        }
+
+
         if (record->cobj_metadata) {
             ret = flb_mp_cfl_to_msgpack(record->cobj_metadata, &mp_buf, &mp_size);
             if (ret == -1) {
@@ -1143,7 +1165,14 @@ int flb_mp_chunk_cobj_encode(struct flb_mp_chunk_cobj *chunk_cobj, char **out_bu
         }
         flb_free(mp_buf);
 
-        if (record->cobj_record) {
+        /* For group start records, use group attributes as body if available */
+        if (record_type == FLB_LOG_EVENT_GROUP_START && record->cobj_group_attributes) {
+            ret = flb_mp_cfl_to_msgpack(record->cobj_group_attributes, &mp_buf, &mp_size);
+            if (ret == -1) {
+                return -1;
+            }
+        }
+        else if (record->cobj_record) {
             ret = flb_mp_cfl_to_msgpack(record->cobj_record, &mp_buf, &mp_size);
             if (ret == -1) {
                 return -1;
@@ -1195,6 +1224,14 @@ int flb_mp_chunk_cobj_destroy(struct flb_mp_chunk_cobj *chunk_cobj)
         if (record->cobj_record) {
             cfl_object_destroy(record->cobj_record);
         }
+        if (record->owns_group_metadata && record->cobj_group_metadata &&
+            record->cobj_group_metadata != record->cobj_metadata) {
+            cfl_object_destroy(record->cobj_group_metadata);
+        }
+        if (record->owns_group_attributes && record->cobj_group_attributes &&
+            record->cobj_group_attributes != record->cobj_record) {
+            cfl_object_destroy(record->cobj_group_attributes);
+        }
         cfl_list_del(&record->_head);
         flb_free(record);
     }
@@ -1208,6 +1245,7 @@ int flb_mp_chunk_cobj_record_next(struct flb_mp_chunk_cobj *chunk_cobj,
 {
     int ret = FLB_MP_CHUNK_RECORD_EOF;
     size_t bytes;
+    int record_type = FLB_LOG_EVENT_NORMAL;
     struct flb_mp_chunk_record *record = NULL;
     struct flb_condition *condition = NULL;
 
@@ -1244,6 +1282,82 @@ int flb_mp_chunk_cobj_record_next(struct flb_mp_chunk_cobj *chunk_cobj,
             cfl_object_destroy(record->cobj_metadata);
             flb_free(record);
             return -1;
+        }
+
+        ret = flb_log_event_decoder_get_record_type(&record->event, &record_type);
+        if (ret != FLB_EVENT_DECODER_SUCCESS) {
+            cfl_object_destroy(record->cobj_record);
+            cfl_object_destroy(record->cobj_metadata);
+            flb_free(record);
+            return FLB_MP_CHUNK_RECORD_ERROR;
+        }
+
+        record->owns_group_metadata = FLB_FALSE;
+        record->owns_group_attributes = FLB_FALSE;
+
+        if (record_type == FLB_LOG_EVENT_GROUP_START) {
+            if (record->cobj_metadata) {
+                record->cobj_group_metadata = record->cobj_metadata;
+                record->owns_group_metadata = FLB_TRUE;
+            }
+            if (record->cobj_record) {
+                record->cobj_group_attributes = record->cobj_record;
+                record->owns_group_attributes = FLB_TRUE;
+            }
+
+            chunk_cobj->active_group_metadata = record->cobj_group_metadata;
+            chunk_cobj->active_group_attributes = record->cobj_group_attributes;
+        }
+        else if (record_type == FLB_LOG_EVENT_GROUP_END) {
+            record->cobj_group_metadata = chunk_cobj->active_group_metadata;
+            record->cobj_group_attributes = chunk_cobj->active_group_attributes;
+
+            chunk_cobj->active_group_metadata = NULL;
+            chunk_cobj->active_group_attributes = NULL;
+        }
+        else {
+            record->cobj_group_metadata = chunk_cobj->active_group_metadata;
+            record->cobj_group_attributes = chunk_cobj->active_group_attributes;
+        }
+
+        if (!record->cobj_group_metadata &&
+            record->event.group_metadata &&
+            (record->event.group_metadata->type == MSGPACK_OBJECT_MAP ||
+             record->event.group_metadata->type == MSGPACK_OBJECT_ARRAY)) {
+            record->cobj_group_metadata = flb_mp_object_to_cfl(record->event.group_metadata);
+            if (!record->cobj_group_metadata) {
+                if (record->owns_group_attributes && record->cobj_group_attributes) {
+                    cfl_object_destroy(record->cobj_group_attributes);
+                }
+                cfl_object_destroy(record->cobj_record);
+                cfl_object_destroy(record->cobj_metadata);
+                flb_free(record);
+                return FLB_MP_CHUNK_RECORD_ERROR;
+            }
+            record->owns_group_metadata = FLB_TRUE;
+            if (!chunk_cobj->active_group_metadata) {
+                chunk_cobj->active_group_metadata = record->cobj_group_metadata;
+            }
+        }
+
+        if (!record->cobj_group_attributes &&
+            record->event.group_attributes &&
+            (record->event.group_attributes->type == MSGPACK_OBJECT_MAP ||
+             record->event.group_attributes->type == MSGPACK_OBJECT_ARRAY)) {
+            record->cobj_group_attributes = flb_mp_object_to_cfl(record->event.group_attributes);
+            if (!record->cobj_group_attributes) {
+                if (record->owns_group_metadata && record->cobj_group_metadata) {
+                    cfl_object_destroy(record->cobj_group_metadata);
+                }
+                cfl_object_destroy(record->cobj_record);
+                cfl_object_destroy(record->cobj_metadata);
+                flb_free(record);
+                return FLB_MP_CHUNK_RECORD_ERROR;
+            }
+            record->owns_group_attributes = FLB_TRUE;
+            if (!chunk_cobj->active_group_attributes) {
+                chunk_cobj->active_group_attributes = record->cobj_group_attributes;
+            }
         }
 
         cfl_list_add(&record->_head, &chunk_cobj->records);
@@ -1339,11 +1453,28 @@ int flb_mp_chunk_cobj_record_destroy(struct flb_mp_chunk_cobj *chunk_cobj,
         }
     }
 
+    if (chunk_cobj && record->owns_group_metadata &&
+        chunk_cobj->active_group_metadata == record->cobj_group_metadata) {
+        chunk_cobj->active_group_metadata = NULL;
+    }
+    if (chunk_cobj && record->owns_group_attributes &&
+        chunk_cobj->active_group_attributes == record->cobj_group_attributes) {
+        chunk_cobj->active_group_attributes = NULL;
+    }
+
     if (record->cobj_metadata) {
         cfl_object_destroy(record->cobj_metadata);
     }
     if (record->cobj_record) {
         cfl_object_destroy(record->cobj_record);
+    }
+    if (record->owns_group_metadata && record->cobj_group_metadata &&
+        record->cobj_group_metadata != record->cobj_metadata) {
+        cfl_object_destroy(record->cobj_group_metadata);
+    }
+    if (record->owns_group_attributes && record->cobj_group_attributes &&
+        record->cobj_group_attributes != record->cobj_record) {
+        cfl_object_destroy(record->cobj_group_attributes);
     }
 
     cfl_list_del(&record->_head);

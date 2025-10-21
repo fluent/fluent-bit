@@ -1,0 +1,18 @@
+{
+    // single-line comment
+    /* multi-line comment */
+    "key": "value",
+    unquoted_key: "value",
+    'single quote key': 'single quoted text',
+    line_breaks: "Line\
+Line",
+    hexadecimal: 0xABCD1234,
+    leading_decimal_point: .123,
+    trailing_decimal_point: 123.,
+    positive_sign: +123,
+    inf: Infinity,
+    nan: NaN,
+    trailing_comma: [1,2,3,],
+    extended_escape: "\a\e\v\'\?\0\x12\Z\😀",
+    extended_whitespace: ""
+}

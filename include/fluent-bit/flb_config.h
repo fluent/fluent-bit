@@ -27,6 +27,7 @@
 #include <fluent-bit/flb_log.h>
 #include <fluent-bit/flb_sds.h>
 #include <fluent-bit/flb_task_map.h>
+#include <cfl/cfl.h>
 
 #include <monkey/mk_core.h>
 
@@ -145,6 +146,7 @@ struct flb_config {
 
     /* Multiline core parser definitions */
     struct mk_list multiline_parsers;
+    char *multiline_buffer_limit; /* limit for multiline concatenated data */
 
     /* Outputs instances */
     struct mk_list outputs;             /* list of output plugins   */
@@ -286,6 +288,9 @@ struct flb_config {
     unsigned int hot_reloaded_count;
     int shutdown_by_hot_reloading;
     int hot_reloading;
+    int hot_reload_succeeded;
+    
+    int hot_reload_watchdog_timeout_seconds;
 
     /* Routing */
     size_t route_mask_size;
@@ -318,7 +323,12 @@ struct flb_config {
     struct flb_task_map *task_map;
     size_t task_map_size;
 
+    int json_escape_unicode;
+
     int dry_run;
+
+    /* New Router Configuration */
+    struct cfl_list input_routes;
 };
 
 #define FLB_CONFIG_LOG_LEVEL(c) (c->log->level)
@@ -380,6 +390,7 @@ enum conf_type {
 
 #define FLB_CONF_STR_HOT_RELOAD        "Hot_Reload"
 #define FLB_CONF_STR_HOT_RELOAD_ENSURE_THREAD_SAFETY  "Hot_Reload.Ensure_Thread_Safety"
+#define FLB_CONF_STR_HOT_RELOAD_TIMEOUT "Hot_Reload.Timeout"
 
 /* Set up maxstdio (Windows) */
 #define FLB_CONF_STR_WINDOWS_MAX_STDIO "windows.maxstdio"
@@ -408,8 +419,14 @@ enum conf_type {
 /* Coroutines */
 #define FLB_CONF_STR_CORO_STACK_SIZE "Coro_Stack_Size"
 
+/* Multiline */
+#define FLB_CONF_STR_MULTILINE_BUFFER_LIMIT "multiline_buffer_limit"
+
 /* Scheduler */
 #define FLB_CONF_STR_SCHED_CAP        "scheduler.cap"
 #define FLB_CONF_STR_SCHED_BASE       "scheduler.base"
+
+/* json escape */
+#define FLB_CONF_UNICODE_STR_JSON_ESCAPE "json.escape_unicode"
 
 #endif

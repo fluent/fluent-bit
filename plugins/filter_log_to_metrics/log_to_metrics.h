@@ -70,6 +70,7 @@ struct log_to_metrics_ctx {
     struct cmt_gauge *g;
     struct cmt_histogram *h;
     struct cmt_histogram_buckets *histogram_buckets;
+    struct flb_record_accessor *value_ra;
 
     /* config options */
     int mode;
