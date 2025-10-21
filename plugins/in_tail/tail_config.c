@@ -170,7 +170,7 @@ struct flb_tail_config *flb_tail_config_create(struct flb_input_instance *ins,
             if (sec == 0 && nsec == 0) {
                 flb_plg_error(ctx->ins, "invalid 'refresh_interval' config "
                               "value (%s)", tmp);
-                flb_free(ctx);
+                flb_tail_config_destroy(ctx);
                 return NULL;
             }
 
@@ -192,7 +192,7 @@ struct flb_tail_config *flb_tail_config_create(struct flb_input_instance *ins,
     /* Config: seconds interval to monitor file after rotation */
     if (ctx->rotate_wait <= 0) {
         flb_plg_error(ctx->ins, "invalid 'rotate_wait' config value");
-        flb_free(ctx);
+        flb_tail_config_destroy(ctx);
         return NULL;
     }
 
@@ -215,7 +215,7 @@ struct flb_tail_config *flb_tail_config_create(struct flb_input_instance *ins,
         }
         else {
             flb_plg_error(ctx->ins, "invalid encoding 'unicode.encoding' value");
-            flb_free(ctx);
+            flb_tail_config_destroy(ctx);
             return NULL;
         }
     }
@@ -230,7 +230,7 @@ struct flb_tail_config *flb_tail_config_create(struct flb_input_instance *ins,
         }
         else {
             flb_plg_error(ctx->ins, "invalid encoding 'generic.encoding' value %s", tmp);
-            flb_free(ctx);
+            flb_tail_config_destroy(ctx);
             return NULL;
         }
     }
@@ -267,7 +267,7 @@ struct flb_tail_config *flb_tail_config_create(struct flb_input_instance *ins,
     /* Validate buffer limit */
     if (ctx->buf_chunk_size > ctx->buf_max_size) {
         flb_plg_error(ctx->ins, "buffer_max_size must be >= buffer_chunk");
-        flb_free(ctx);
+        flb_tail_config_destroy(ctx);
         return NULL;
     }
 
