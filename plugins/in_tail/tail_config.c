@@ -235,6 +235,15 @@ struct flb_tail_config *flb_tail_config_create(struct flb_input_instance *ins,
         }
     }
 
+#ifdef FLB_HAVE_UNICODE_ENCODER
+    if (ctx->preferred_input_encoding != FLB_UNICODE_ENCODING_UNSPECIFIED &&
+        ctx->generic_input_encoding_type != FLB_GENERIC_UNSPECIFIED) {
+        flb_plg_error(ctx->ins,
+                      "'unicode.encoding' and 'generic.encoding' cannot be specified at the same time");
+        flb_tail_config_destroy(ctx);
+        return NULL;
+    }
+#endif
 #ifdef FLB_HAVE_PARSER
     /* Config: multi-line support */
     if (ctx->multiline == FLB_TRUE) {
