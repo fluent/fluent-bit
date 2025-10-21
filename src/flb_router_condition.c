@@ -282,6 +282,15 @@ int flb_router_path_should_route(struct flb_event_chunk *chunk,
     return flb_route_condition_eval(chunk, context, path->route);
 }
 
+struct flb_condition *flb_router_route_get_condition(struct flb_route *route)
+{
+    if (!route || !route->condition) {
+        return NULL;
+    }
+
+    return route_condition_get_compiled(route->condition);
+}
+
 static int parse_rule_operator(const flb_sds_t op_str,
                                enum flb_rule_operator *out)
 {
