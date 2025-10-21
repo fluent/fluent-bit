@@ -485,6 +485,13 @@ struct flb_tail_config *flb_tail_config_create(struct flb_input_instance *ins,
                                "multiline_truncated_total",
                                "Total number of truncated occurences for multilines",
                                1, (char *[]) {"name"});
+    ctx->cmt_long_line_truncated = \
+            cmt_counter_create(ins->cmt,
+                               "fluentbit", "input",
+                               "long_line_truncated_total",
+                               "Total number of truncated occurences for long lines",
+                               1, (char *[]) {"name"});
+
     /* OLD metrics */
     flb_metrics_add(FLB_TAIL_METRIC_F_OPENED,
                     "files_opened", ctx->ins->metrics);
@@ -494,6 +501,8 @@ struct flb_tail_config *flb_tail_config_create(struct flb_input_instance *ins,
                     "files_rotated", ctx->ins->metrics);
     flb_metrics_add(FLB_TAIL_METRIC_M_TRUNCATED,
                     "multiline_truncated", ctx->ins->metrics);
+    flb_metrics_add(FLB_TAIL_METRIC_L_TRUNCATED,
+                    "long_line_truncated", ctx->ins->metrics);
 #endif
 
     return ctx;
