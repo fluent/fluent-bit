@@ -554,7 +554,8 @@ static int process_content(struct flb_tail_file *file, size_t *bytes)
                                                   end - data);
         if (ret > 0) {
             data = decoded;
-            end  = data + strlen(decoded);
+            /* Generic encoding conversion returns decoded length precisely with ret. */
+            end  = data + (size_t) ret;
         }
         else {
             flb_plg_error(ctx->ins, "encoding failed '%.*s' with status %d", end - data, data, ret);
