@@ -867,6 +867,7 @@ static int parse_route(struct cfl_variant *variant,
     cfl_list_init(&route->outputs);
     cfl_list_init(&route->processors);
     route->signals = signals;
+    route->per_record_routing = FLB_FALSE;  // Default to false
 
     route->name = copy_from_cfl_sds(name_var->data.as_string);
     if (!route->name) {
@@ -888,6 +889,16 @@ static int parse_route(struct cfl_variant *variant,
             flb_sds_destroy(route->name);
             flb_free(route);
             return -1;
+        }
+    }
+
+    // Parse per_record_routing option
+    struct cfl_variant *per_record_var = cfl_kvlist_fetch(kvlist, "per_record_routing");
+    if (per_record_var) {
+        int val;
+        if (variant_to_bool(per_record_var, &val) == 0) {
+            route->per_record_routing = val;
+            flb_info("[router] route '%s' per_record_routing=%d", route->name, val);
         }
     }
 
