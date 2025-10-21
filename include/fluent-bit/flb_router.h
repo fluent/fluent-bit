@@ -167,6 +167,8 @@ int flb_router_path_should_route(struct flb_event_chunk *chunk,
                                  struct flb_router_chunk_context *context,
                                  struct flb_router_path *path);
 
+struct flb_condition *flb_router_route_get_condition(struct flb_route *route);
+
 struct flb_cf;
 
 int flb_router_config_parse(struct flb_cf *cf,
