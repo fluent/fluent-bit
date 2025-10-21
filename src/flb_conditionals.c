@@ -363,6 +363,8 @@ int flb_condition_evaluate(struct flb_condition *cond,
     struct flb_condition_rule *rule;
     struct cfl_variant *record_variant;
     int result;
+    int any_rule_evaluated = FLB_FALSE;
+    int any_rule_matched = FLB_FALSE;
 
     if (!cond || !record) {
         flb_trace("[condition] NULL condition or record, returning TRUE");
@@ -382,9 +384,16 @@ int flb_condition_evaluate(struct flb_condition *cond,
 
         /* Get the variant for this rule's context */
         record_variant = get_record_variant(record, rule->context);
+        any_rule_evaluated = FLB_TRUE;
         if (!record_variant) {
             flb_trace("[condition] no record variant found for context %d", rule->context);
-            continue;
+            if (cond->op == FLB_COND_OP_AND) {
+                flb_trace("[condition] AND condition missing field, returning FALSE");
+                return FLB_FALSE;
+            }
+            else {
+                continue;
+            }
         }
 
         flb_trace("[condition] evaluating rule against record");
@@ -399,8 +408,22 @@ int flb_condition_evaluate(struct flb_condition *cond,
             flb_trace("[condition] OR condition with TRUE result, short-circuiting");
             return FLB_TRUE;
         }
+
+        if (result == FLB_TRUE) {
+            any_rule_matched = FLB_TRUE;
+        }
     }
 
-    flb_trace("[condition] final evaluation result: %d", (cond->op == FLB_COND_OP_AND) ? FLB_TRUE : FLB_FALSE);
-    return (cond->op == FLB_COND_OP_AND) ? FLB_TRUE : FLB_FALSE;
+    if (cond->op == FLB_COND_OP_OR) {
+        flb_trace("[condition] final evaluation result: %d", any_rule_matched);
+        return any_rule_matched;
+    }
+
+    if (any_rule_evaluated == FLB_FALSE) {
+        flb_trace("[condition] no rules evaluated, defaulting to FALSE for AND condition");
+        return FLB_FALSE;
+    }
+
+    flb_trace("[condition] final evaluation result: TRUE");
+    return FLB_TRUE;
 }

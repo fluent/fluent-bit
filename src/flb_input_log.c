@@ -21,10 +21,12 @@
 #include <fluent-bit/flb_info.h>
 #include <fluent-bit/flb_input.h>
 #include <fluent-bit/flb_input_chunk.h>
+#include <fluent-bit/flb_hash_table.h>
 #include <fluent-bit/flb_input_log.h>
 #include <fluent-bit/flb_input_plugin.h>
 #include <fluent-bit/flb_processor.h>
 #include <fluent-bit/flb_router.h>
+#include <fluent-bit/flb_routes_mask.h>
 #include <fluent-bit/flb_conditionals.h>
 #include <fluent-bit/flb_log_event_encoder.h>
 #include <fluent-bit/flb_log_event_decoder.h>
@@ -127,6 +129,83 @@ static int append_output_to_payload_tag(struct flb_route_payload *payload,
         }
     }
 
+    return 0;
+}
+
+static int route_payload_apply_outputs(struct flb_input_instance *ins,
+                                       struct flb_route_payload *payload)
+{
+    int ret;
+    size_t out_size = 0;
+    struct flb_input_chunk *chunk = NULL;
+    struct mk_list *head;
+    struct flb_router_path *route_path;
+    int routes_found = 0;
+
+    if (!ins || !payload || !payload->tag || !payload->route) {
+        flb_info("[router] route_payload_apply_outputs: invalid parameters");
+        return -1;
+    }
+
+    flb_info("[router] route_payload_apply_outputs: processing route '%s' with tag '%s'",
+             payload->route->name, payload->tag);
+
+    if (!ins->ht_log_chunks || !ins->config) {
+        flb_info("[router] route_payload_apply_outputs: missing ht_log_chunks or config");
+        return -1;
+    }
+
+    ret = flb_hash_table_get(ins->ht_log_chunks,
+                             payload->tag,
+                             flb_sds_len(payload->tag),
+                             (void **) &chunk,
+                             &out_size);
+    if (ret == -1 || !chunk || !chunk->routes_mask) {
+        flb_info("[router] route_payload_apply_outputs: failed to get chunk or routes_mask");
+        return -1;
+    }
+
+    flb_info("[router] route_payload_apply_outputs: found chunk, clearing routes_mask");
+    memset(chunk->routes_mask, 0,
+           sizeof(flb_route_mask_element) * ins->config->route_mask_size);
+
+    flb_info("[router] route_payload_apply_outputs: scanning %zu direct routes",
+             mk_list_size(&ins->routes_direct));
+
+    mk_list_foreach(head, &ins->routes_direct) {
+        route_path = mk_list_entry(head, struct flb_router_path, _head);
+
+        flb_info("[router] route_payload_apply_outputs: checking route_path->route=%p, payload->route=%p, route_path->ins=%p",
+                 route_path->route, payload->route, route_path->ins);
+
+        if (route_path->route != payload->route || !route_path->ins) {
+            flb_info("[router] route_payload_apply_outputs: skipping route_path (route mismatch or no ins)");
+            continue;
+        }
+
+        flb_info("[router] route_payload_apply_outputs: setting bit for output id=%d, name='%s'",
+                 route_path->ins->id, route_path->ins->name);
+
+        flb_routes_mask_set_bit(chunk->routes_mask,
+                                route_path->ins->id,
+                                ins->config);
+        routes_found++;
+    }
+
+    flb_info("[router] route_payload_apply_outputs: found %d matching routes", routes_found);
+
+    // Print the routes mask for debugging
+    flb_info("[router] route_payload_apply_outputs: routes_mask contents:");
+    for (int i = 0; i < ins->config->route_mask_size; i++) {
+        flb_info("[router] routes_mask[%d] = 0x%08x", i, chunk->routes_mask[i]);
+    }
+
+    if (flb_routes_mask_is_empty(chunk->routes_mask, ins->config) == FLB_TRUE) {
+        flb_info("[router] route_payload_apply_outputs: routes_mask is empty, returning -1");
+        return -1;
+    }
+
+    flb_info("[router] route_payload_apply_outputs: success");
     return 0;
 }
 
@@ -266,10 +345,19 @@ static int build_payload_for_route(struct flb_route_payload *payload,
         return -1;
     }
 
+    flb_info("[router] build_payload_for_route called for route '%s' with %zu records",
+             payload->route->name, record_count);
+
+    flb_info("[router] route condition: %p, per_record_routing: %d",
+             payload->route->condition, payload->route->per_record_routing);
+
     compiled = flb_router_route_get_condition(payload->route);
     if (!compiled) {
+        flb_info("[router] no compiled condition found for route '%s'", payload->route->name);
         return 0;
     }
+
+    flb_info("[router] compiled condition found for route '%s'", payload->route->name);
 
     encoder = flb_log_event_encoder_create(FLB_LOG_EVENT_FORMAT_DEFAULT);
     if (!encoder) {
@@ -459,16 +547,26 @@ static int split_and_append_route_payloads(struct flb_input_instance *ins,
 
     mk_list_init(&payloads);
 
+    flb_info("[router] scanning %zu direct routes", mk_list_size(&ins->routes_direct));
     mk_list_foreach(head, &ins->routes_direct) {
         route_path = mk_list_entry(head, struct flb_router_path, _head);
 
+        flb_info("[router] checking route_path: route=%p, condition=%p, per_record_routing=%d",
+                 route_path->route,
+                 route_path->route ? route_path->route->condition : NULL,
+                 route_path->route ? route_path->route->per_record_routing : -1);
+
         if (!route_path->route ||
             (!route_path->route->condition && !route_path->route->per_record_routing)) {
+            flb_info("[router] skipping route_path (no route, condition, or per_record_routing)");
             continue;
         }
 
+        flb_info("[router] processing route '%s'", route_path->route->name);
+
         payload = route_payload_find(&payloads, route_path->route);
         if (!payload) {
+            flb_info("[router] creating new payload for route '%s'", route_path->route->name);
             payload = flb_calloc(1, sizeof(struct flb_route_payload));
             if (!payload) {
                 flb_errno();
@@ -477,7 +575,9 @@ static int split_and_append_route_payloads(struct flb_input_instance *ins,
             }
 
             payload->route = route_path->route;
-            payload->is_default = route_path->route->condition->is_default;
+            payload->is_default = route_path->route->condition ? route_path->route->condition->is_default : 0;
+            flb_info("[router] payload created: route='%s', is_default=%d",
+                     payload->route->name, payload->is_default);
             mk_list_add(&payload->_head, &payloads);
         }
 
@@ -487,11 +587,14 @@ static int split_and_append_route_payloads(struct flb_input_instance *ins,
         }
     }
 
-    if (mk_list_is_empty(&payloads)) {
+    flb_info("[router] created %zu payloads", mk_list_size(&payloads));
+    if (mk_list_size(&payloads) == 0) {
+        flb_info("[router] no payloads created, returning 0");
         return 0;
     }
 
     handled = FLB_TRUE;
+    flb_info("[router] payloads created, proceeding with processing");
 
     if (!base_tag) {
         if (ins->tag && ins->tag_len > 0) {
@@ -563,17 +666,24 @@ static int split_and_append_route_payloads(struct flb_input_instance *ins,
             cfl_list_entry(head, struct flb_mp_chunk_record, _head);
     }
 
+    flb_info("[router] processing %zu payloads", mk_list_size(&payloads));
     mk_list_foreach(head, &payloads) {
         payload = mk_list_entry(head, struct flb_route_payload, _head);
 
+        flb_info("[router] processing payload for route '%s', is_default=%d, total_records=%zu",
+                 payload->route->name, payload->is_default, payload->total_records);
+
         if (payload->is_default) {
+            flb_info("[router] skipping default route '%s'", payload->route->name);
             continue;
         }
 
+        flb_info("[router] calling build_payload_for_route for route '%s'", payload->route->name);
         ret = build_payload_for_route(payload,
                                        records_array,
                                        record_count,
                                        matched_non_default);
+        flb_info("[router] build_payload_for_route returned %d for route '%s'", ret, payload->route->name);
         if (ret != 0) {
             flb_free(records_array);
             flb_free(matched_non_default);
@@ -628,6 +738,13 @@ static int split_and_append_route_payloads(struct flb_input_instance *ins,
                                          payload->data,
                                          payload->size);
         if (ret != 0) {
+            flb_router_chunk_context_destroy(&context);
+            route_payload_list_destroy(&payloads);
+            flb_event_chunk_destroy(chunk);
+            return -1;
+        }
+
+        if (route_payload_apply_outputs(ins, payload) != 0) {
             flb_router_chunk_context_destroy(&context);
             route_payload_list_destroy(&payloads);
             flb_event_chunk_destroy(chunk);
