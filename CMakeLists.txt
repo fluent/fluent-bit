@@ -158,6 +158,7 @@ option(FLB_SMALL               "Optimise for small size"       No)
 set(FLB_SECURITY "ReleaseOnly" CACHE STRING "Build with security optimizations")
 set_property(CACHE FLB_SECURITY PROPERTY STRINGS "On;Off;ReleaseOnly")
 option(FLB_COVERAGE            "Build with code-coverage"      No)
+option(FLB_COMPILER_STRICT_POINTER_TYPES "Build with -Werror=incompatible-pointer-types" No)
 option(FLB_JEMALLOC            "Build with Jemalloc support"   No)
 option(FLB_REGEX               "Build with Regex support"     Yes)
 option(FLB_UTF8_ENCODER        "Build with UTF8 encoding support" Yes)
@@ -448,6 +449,17 @@ if(FLB_COVERAGE)
     set(CMAKE_CXX_FLAGS "${CMAKE_C_FLAGS} -g -O0 --coverage -fprofile-arcs -ftest-coverage")
   endif()
   set(CMAKE_BUILD_TYPE "Debug")
+endif()
+
+if(FLB_COMPILER_STRICT_POINTER_TYPES)
+  if(CMAKE_C_COMPILER_ID MATCHES "GNU|Clang|AppleClang")
+    add_compile_options(-Werror=incompatible-pointer-types)
+  endif()
+  # Currently, AppleClang has more struct rules when using -Werror=incompatible-pointer-types.
+  # We still permit to discarding const qualifiers warnings.
+  if(CMAKE_C_COMPILER_ID MATCHES "AppleClang")
+    add_compile_options(-Wno-incompatible-pointer-types-discards-qualifiers)
+  endif()
 endif()
 
 # Enable Debug symbols if specified
