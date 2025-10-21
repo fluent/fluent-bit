@@ -367,9 +367,18 @@ static int build_payload_for_route(struct flb_route_payload *payload,
     matched = 0;
 
     for (i = 0; i < record_count; i++) {
-        if (flb_condition_evaluate(compiled, records[i]) != FLB_TRUE) {
+        int condition_result = flb_condition_evaluate(compiled, records[i]);
+        flb_info("[router] route '%s' record %zu: condition_result=%d",
+                 payload->route->name, i, condition_result);
+
+        if (condition_result != FLB_TRUE) {
+            flb_info("[router] route '%s' record %zu: condition failed, skipping",
+                     payload->route->name, i);
             continue;
         }
+
+        flb_info("[router] route '%s' record %zu: condition matched, adding to payload",
+                 payload->route->name, i);
 
         ret = encode_chunk_record(encoder, records[i]);
         if (ret != 0) {
@@ -426,14 +435,21 @@ static int build_payload_for_default_route(struct flb_route_payload *payload,
     matched = 0;
 
     for (i = 0; i < record_count; i++) {
+        flb_info("[router] default route record %zu: matched_non_default[%zu]=%d",
+                 i, i, matched_non_default[i]);
+
         if (matched_non_default[i]) {
+            flb_info("[router] default route record %zu: already matched, skipping", i);
             continue;
         }
 
         if (compiled &&
             flb_condition_evaluate(compiled, records[i]) != FLB_TRUE) {
+            flb_info("[router] default route record %zu: condition failed, skipping", i);
             continue;
         }
+
+        flb_info("[router] default route record %zu: adding to default payload", i);
 
         ret = encode_chunk_record(encoder, records[i]);
         if (ret != 0) {
@@ -576,14 +592,18 @@ static int split_and_append_route_payloads(struct flb_input_instance *ins,
 
             payload->route = route_path->route;
             payload->is_default = route_path->route->condition ? route_path->route->condition->is_default : 0;
-            flb_info("[router] payload created: route='%s', is_default=%d",
-                     payload->route->name, payload->is_default);
-            mk_list_add(&payload->_head, &payloads);
-        }
 
-        if (append_output_to_payload_tag(payload, route_path->ins) != 0) {
-            route_payload_list_destroy(&payloads);
-            return -1;
+            /* Use the route name as the tag */
+            payload->tag = flb_sds_create(route_path->route->name);
+            if (!payload->tag) {
+                flb_free(payload);
+                route_payload_list_destroy(&payloads);
+                return -1;
+            }
+
+            flb_info("[router] payload created: route='%s', is_default=%d, tag='%s'",
+                     payload->route->name, payload->is_default, payload->tag);
+            mk_list_add(&payload->_head, &payloads);
         }
     }
 
