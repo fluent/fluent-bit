@@ -53,6 +53,7 @@ jobs:
           - "-DFLB_SIMD=On"
           - "-DFLB_SIMD=Off"
           - "-DFLB_ARROW=On"
+          - "-DFLB_COMPILER_STRICT_POINTER_TYPES=On"
         cmake_version:
           - "3.31.6"
         compiler:
@@ -68,6 +69,10 @@ jobs:
               cc: clang
               cxx: clang++
           - flb_option: "-DFLB_ARROW=On"
+            compiler:
+              cc: clang
+              cxx: clang++
+          - flb_option: "-DFLB_COMPILER_STRICT_POINTER_TYPES=On"
             compiler:
               cc: clang
               cxx: clang++
