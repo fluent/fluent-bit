@@ -268,7 +268,7 @@ struct flb_aws_client *flb_aws_client_create()
     client->client_vtable = &client_vtable;
     client->retry_requests = FLB_FALSE;
     client->debug_only = FLB_FALSE;
-    client->http_cb_ctx = flb_callback_create("aws client");  // FIXME: what name?
+    client->http_cb_ctx = flb_callback_create("aws client");
     if (!client->http_cb_ctx) {
         flb_errno();
         flb_free(client);
