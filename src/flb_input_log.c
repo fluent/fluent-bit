@@ -17,6 +17,7 @@
  *  limitations under the License.
  */
 
+#include "fluent-bit/flb_pack.h"
 #include <fluent-bit/flb_info.h>
 #include <fluent-bit/flb_input.h>
 #include <fluent-bit/flb_input_chunk.h>
@@ -404,7 +405,8 @@ static int input_has_conditional_routes(struct flb_input_instance *ins)
     mk_list_foreach(head, &ins->routes_direct) {
         route_path = mk_list_entry(head, struct flb_router_path, _head);
 
-        if (route_path->route && route_path->route->condition) {
+        if (route_path->route &&
+            (route_path->route->condition || route_path->route->per_record_routing)) {
             return FLB_TRUE;
         }
     }
@@ -443,17 +445,25 @@ static int split_and_append_route_payloads(struct flb_input_instance *ins,
         return 0;
     }
 
-    if (mk_list_is_empty(&ins->routes_direct) ||
-        input_has_conditional_routes(ins) == FLB_FALSE) {
+    if (mk_list_size(&ins->routes_direct) == 0) {
+        flb_info("[router] no direct routes found");
         return 0;
     }
+
+    if (input_has_conditional_routes(ins) == FLB_FALSE) {
+        flb_info("[router] no conditional routes found");
+        return 0;
+    }
+
+    flb_info("[router] conditional routing triggered for %zu routes", mk_list_size(&ins->routes_direct));
 
     mk_list_init(&payloads);
 
     mk_list_foreach(head, &ins->routes_direct) {
         route_path = mk_list_entry(head, struct flb_router_path, _head);
 
-        if (!route_path->route || !route_path->route->condition) {
+        if (!route_path->route ||
+            (!route_path->route->condition && !route_path->route->per_record_routing)) {
             continue;
         }
 
@@ -742,6 +752,16 @@ int flb_input_log_append_records(struct flb_input_instance *ins,
                                  const void *buf, size_t buf_size)
 {
     int ret;
+    char tag_copy[128];
+
+    strncpy(tag_copy, tag, sizeof(tag_copy));
+    tag_copy[sizeof(tag_copy) - 1] = '\0';
+
+    printf("--------------------------------\n");
+    printf("appending records: tag: %s, tag_len: %zu, records: %zu\n", tag_copy, tag_len, records);
+    flb_pack_print(buf, buf_size);
+    printf("--------------------------------\n");
+    printf("\n");
 
     ret = input_log_append(ins, 0, records, tag, tag_len, buf, buf_size);
     return ret;

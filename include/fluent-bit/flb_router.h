@@ -121,6 +121,7 @@ struct flb_route {
     flb_sds_t name;
     uint32_t signals;
     struct flb_route_condition *condition;
+    int per_record_routing;
     struct cfl_list outputs;
     struct cfl_list processors;
     struct cfl_list _head;
