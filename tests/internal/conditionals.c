@@ -876,6 +876,22 @@ void test_condition_missing_values()
     flb_condition_destroy(cond);
     destroy_test_record(record_data);
 
+    /* Test metadata rule when metadata is absent */
+    record_data = create_test_record("message", "test log entry");
+    TEST_CHECK(record_data != NULL);
+
+    cond = flb_condition_create(FLB_COND_OP_AND);
+    TEST_CHECK(cond != NULL);
+
+    TEST_CHECK(flb_condition_add_rule(cond, "$stream", FLB_RULE_OP_EQ,
+                                    "production", 0, RECORD_CONTEXT_METADATA) == FLB_TRUE);
+
+    result = flb_condition_evaluate(cond, &record_data->chunk);
+    TEST_CHECK(result == FLB_FALSE);  /* Missing metadata should return false */
+
+    flb_condition_destroy(cond);
+    destroy_test_record(record_data);
+
     /* Test NOT_IN operator with present field not in array */
     record_data = create_test_record("level", "info");
     TEST_CHECK(record_data != NULL);
