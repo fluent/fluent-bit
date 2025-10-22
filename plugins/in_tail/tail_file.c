@@ -467,8 +467,10 @@ static size_t utf8_safe_truncate_pos(const char *s, size_t len, size_t max)
         return cut;
     }
 
-    /* backtrack over continuation bytes 10xxxxxx */
-    while (cut > 0 && ((unsigned char)s[cut] & 0xC0) == 0x80) {
+   /* backtrack over continuation bytes 10xxxxxx
+    * NOTE: check the last INCLUDED byte => s[cut-1], not s[cut].
+    */
+    while (cut > 0 && ((unsigned char)s[cut - 1] & 0xC0) == 0x80) {
         cut--;
     }
 
@@ -575,7 +577,11 @@ static int process_content(struct flb_tail_file *file, size_t *bytes)
         }
 
         nl = memchr(data, '\n', window);
-        if (nl == NULL && dec_len > ctx->buf_max_size) {
+        if (nl == NULL && dec_len >= (ctx->buf_max_size - 1)) {
+            if (file->skip_next == FLB_TRUE) {
+                bytes_override = (original_len > 0) ? original_len : file->buf_len;
+                goto truncation_end;
+            }
             cut = utf8_safe_truncate_pos(data, dec_len, ctx->buf_max_size);
 
             if (cut > 0) {
@@ -584,6 +590,7 @@ static int process_content(struct flb_tail_file *file, size_t *bytes)
                 }
 
                 flb_tail_file_pack_line(NULL, data, cut, file, processed_bytes);
+                file->skip_next = FLB_TRUE;
 
     #ifdef FLB_HAVE_METRICS
                 cmt_counter_inc(ctx->cmt_long_line_truncated,
@@ -1568,12 +1575,13 @@ int flb_tail_file_chunk(struct flb_tail_file *file)
     size_t                  file_buffer_capacity;
     size_t                  stream_data_length;
     ssize_t                 raw_data_length;
-    size_t                  processed_bytes;
+    size_t                  processed_bytes = 0;
     uint8_t                *read_buffer;
     size_t                  read_size;
     size_t                  size;
     char                   *tmp;
     int                     ret;
+    int                     lines;
     struct flb_tail_config *ctx;
 
     /* Check if we the engine issued a pause */
@@ -1591,6 +1599,29 @@ int flb_tail_file_chunk(struct flb_tail_file *file)
          * If there is no more room for more data, try to increase the
          * buffer under the limit of buffer_max_size.
          */
+        if (ctx->truncate_long_lines == FLB_TRUE) {
+            lines = process_content(file, &processed_bytes);
+            if (lines < 0) {
+                flb_plg_debug(ctx->ins, "inode=%"PRIu64" file=%s process content ERROR",
+                              file->inode, file->name);
+                return FLB_TAIL_ERROR;
+            }
+
+            if (lines > 0) {
+                file->stream_offset += processed_bytes;
+                file->last_processed_bytes = 0;
+                consume_bytes(file->buf_data, processed_bytes, file->buf_len);
+                file->buf_len -= processed_bytes;
+                file->buf_data[file->buf_len] = '\0';
+
+#ifdef FLB_HAVE_SQLDB
+                if (file->config->db) {
+                    flb_tail_db_file_offset(file, file->config);
+                }
+#endif
+                return adjust_counters(ctx, file);
+            }
+        }
         if (file->buf_size >= ctx->buf_max_size) {
             if (ctx->skip_long_lines == FLB_FALSE) {
                 flb_plg_error(ctx->ins, "file=%s requires a larger buffer size, "
