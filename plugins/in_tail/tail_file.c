@@ -502,6 +502,8 @@ static int process_content(struct flb_tail_file *file, size_t *bytes)
     size_t decoded_len;
 #endif
     size_t cut = 0;
+    size_t eff_max = 0;
+    size_t cur_cap = 0;
     size_t dec_len = 0;
     size_t window = 0;
     int truncation_happened = FLB_FALSE;
@@ -570,6 +572,31 @@ static int process_content(struct flb_tail_file *file, size_t *bytes)
     }
 
     if (ctx->truncate_long_lines == FLB_TRUE) {
+        /* Determine the effective truncation threshold (eff_max) */
+        /* Use the smaller of buf_max_size or the current buf_size */
+        if (ctx->buf_max_size > 0) {
+            eff_max = ctx->buf_max_size - 1;
+        }
+        else {
+            eff_max = 0;
+        }
+        if (file->buf_size > 0) {
+            cur_cap = file->buf_size - 1;
+        }
+        else {
+            cur_cap = 0;
+        }
+        if (cur_cap > 0 && (eff_max == 0 || cur_cap < eff_max)) {
+            eff_max = cur_cap;
+        }
+
+        /* Set the search window for memchr. Add 1 because memchr is (ptr, char, size) */
+        if (eff_max > 0) {
+            window = eff_max + 1;
+        }
+        else {
+            window = 0;
+        }
         dec_len = (size_t)(end - data);
         window = ctx->buf_max_size + 1;
         if (window > dec_len) {
@@ -577,12 +604,12 @@ static int process_content(struct flb_tail_file *file, size_t *bytes)
         }
 
         nl = memchr(data, '\n', window);
-        if (nl == NULL && dec_len >= (ctx->buf_max_size - 1)) {
+        if (nl == NULL && eff_max > 0 && dec_len >= eff_max) {
             if (file->skip_next == FLB_TRUE) {
                 bytes_override = (original_len > 0) ? original_len : file->buf_len;
                 goto truncation_end;
             }
-            cut = utf8_safe_truncate_pos(data, dec_len, ctx->buf_max_size);
+            cut = utf8_safe_truncate_pos(data, dec_len, eff_max);
 
             if (cut > 0) {
                 if (ctx->multiline == FLB_TRUE) {
@@ -597,7 +624,12 @@ static int process_content(struct flb_tail_file *file, size_t *bytes)
                                 cfl_time_now(), 1,
                                 (char*[]){ (char*) flb_input_name(ctx->ins) });
     #endif
-                bytes_override = (original_len > 0) ? original_len : file->buf_len;
+                if (original_len > 0) {
+                    bytes_override = original_len;
+                }
+                else {
+                    bytes_override = file->buf_len;
+                }
                 truncation_happened = FLB_TRUE;
 
                 lines++;
