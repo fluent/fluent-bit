@@ -623,6 +623,8 @@ static int process_content(struct flb_tail_file *file, size_t *bytes)
                 cmt_counter_inc(ctx->cmt_long_line_truncated,
                                 cfl_time_now(), 1,
                                 (char*[]){ (char*) flb_input_name(ctx->ins) });
+                /* Old api */
+                flb_metrics_sum(FLB_TAIL_METRIC_L_TRUNCATED, 1, ctx->ins->metrics);
     #endif
                 if (original_len > 0) {
                     bytes_override = original_len;
