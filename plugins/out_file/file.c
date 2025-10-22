@@ -63,6 +63,7 @@ struct flb_file_conf {
     int format;
     int csv_column_names;
     int mkdir;
+    int line_append;
     struct flb_output_instance *ins;
 };
 
@@ -197,6 +198,7 @@ static int cb_file_init(struct flb_output_instance *ins,
     ctx->delimiter = NULL;
     ctx->label_delimiter = NULL;
     ctx->template = NULL;
+    ctx->line_append = FLB_FALSE;
 
     ret = flb_output_config_map_set(ins, (void *) ctx);
     if (ret == -1) {
@@ -416,7 +418,9 @@ static int template_output(FILE *fp, struct flb_time *tm, msgpack_object *obj,
     if (inbrace) {
         fputs(inbrace, fp);
     }
-    fputs(NEWLINE, fp);
+    if (ctx->line_append == FLB_FALSE){
+         fputs(NEWLINE, fp);
+    }
     return 0;
 }
 
@@ -836,6 +840,12 @@ static struct flb_config_map config_map[] = {
      FLB_CONFIG_MAP_BOOL, "mkdir", "false",
      0, FLB_TRUE, offsetof(struct flb_file_conf, mkdir),
      "Recursively create output directory if it does not exist. Permissions set to 0755"
+    },
+
+    {
+     FLB_CONFIG_MAP_BOOL, "line_append", "false",
+     0, FLB_TRUE, offsetof(struct flb_file_conf, line_append),
+     "Append data to the existing line rather than start a new line. Default value is false, use embedded new line characters '\n' to create new lines if true otherwise all output will be on a single line."
     },
 
     /* EOF */
