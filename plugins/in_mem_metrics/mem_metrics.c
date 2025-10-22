@@ -109,6 +109,7 @@ static inline int is_chosen_exec(struct mem_metrics *ctx, const char *proc_path)
     return FLB_FALSE;
 }
 
+/* we only match against the actual command, not any of the arguments */
 static inline int is_chosen_cmd(struct mem_metrics *ctx, const char *proc_path)
 {
     char real_path[2048] = {0};
@@ -130,7 +131,7 @@ static inline int is_chosen_cmd(struct mem_metrics *ctx, const char *proc_path)
 
     rc = read(fd, cmdline, sizeof(cmdline)-1);
     close(fd);
-    if (rc == -1) {
+    if (rc <= -1) {
         return FLB_FALSE;
     }
 
