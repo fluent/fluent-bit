@@ -991,6 +991,236 @@ void flb_test_in_tail_skip_long_lines()
     unlink(path);
 }
 
+static int write_long_ascii_line(int fd, size_t total_bytes)
+{
+    const char *chunk = "0123456789abcdef0123456789abcdef"; /* 32 bytes */
+    size_t chunk_len = strlen(chunk);
+    size_t written = 0;
+    ssize_t ret;
+    size_t rest = 0;
+
+    while (written + chunk_len <= total_bytes) {
+        ret = write(fd, chunk, chunk_len);
+        if (ret < 0) {
+            flb_errno();
+            return -1;
+        }
+        written += (size_t) ret;
+    }
+    if (written < total_bytes) {
+        rest = total_bytes - written;
+        ret = write(fd, chunk, rest);
+        if (ret < 0) {
+            flb_errno();
+            return -1;
+        }
+        written += (size_t) ret;
+    }
+    if (write(fd, "\n", 1) != 1) {
+        flb_errno();
+        return -1;
+    }
+    return 0;
+}
+
+static int write_long_utf8_line(int fd, size_t total_bytes)
+{
+    const char *u8_aa = "あ";
+    size_t u8_len = strlen(u8_aa); /* 3 */
+    size_t written = 0;
+    ssize_t ret;
+    const char *ascii = "XYZ";
+    size_t rest = 0;
+
+    while (written + u8_len <= total_bytes) {
+        ret = write(fd, u8_aa, u8_len);
+        if (ret < 0) {
+            flb_errno();
+            return -1;
+        }
+        written += (size_t) ret;
+    }
+
+    if (written < total_bytes) {
+        rest = total_bytes - written;
+        if (rest > strlen(ascii)) {
+            rest = strlen(ascii);
+        }
+        ret = write(fd, ascii, rest);
+        if (ret < 0) {
+            flb_errno();
+            return -1;
+        }
+        written += (size_t) ret;
+    }
+    if (write(fd, "\n", 1) != 1) {
+        flb_errno();
+        return -1;
+    }
+    return 0;
+}
+
+void flb_test_in_tail_truncate_long_lines()
+{
+    int64_t ret;
+    flb_ctx_t    *ctx = NULL;
+    int in_ffd, out_ffd;
+    char path[PATH_MAX];
+    struct tail_test_result result = {0};
+    int fd;
+
+    const char *target = "truncate_long_lines_basic";
+    int nExpected = 3;              /* before + truncated long line + after */
+    int nExpectedNotMatched = 0;    /* unused */
+    int nExpectedLines = 0;         /* unused */
+
+    struct flb_lib_out_cb cb;
+    int unused = 0;
+    int num = 0;
+
+    cb.cb   = cb_count_msgpack;
+    cb.data = &unused;
+
+    clear_output_num();
+
+    ctx = flb_create();
+    TEST_CHECK_(ctx != NULL, "flb_create failed");
+
+    TEST_CHECK_(flb_service_set(ctx, "Log_Level", "error", NULL) == 0,
+                "setting service options");
+
+    in_ffd = flb_input(ctx, "tail", NULL);
+    TEST_CHECK(in_ffd >= 0);
+    TEST_CHECK(flb_input_set(ctx, in_ffd, "tag", "test", NULL) == 0);
+
+    snprintf(path, sizeof(path) - 1, DPATH "/log/%s.log", target);
+    fd = creat(path, S_IRWXU | S_IRGRP);
+    TEST_CHECK(fd >= 0);
+
+    write(fd, "before_long_line\n", strlen("before_long_line\n"));
+
+    TEST_CHECK(write_long_ascii_line(fd, 10 * 1024) == 0);
+
+    write(fd, "after_long_line\n", strlen("after_long_line\n"));
+    close(fd);
+
+    TEST_CHECK_(access(path, R_OK) == 0, "accessing log file: %s", path);
+
+    TEST_CHECK(flb_input_set(ctx, in_ffd,
+                             "path", path,
+                             "read_from_head", "true",
+                             "truncate_long_lines", "on",
+                             "skip_long_lines", "off",
+                             "Buffer_Chunk_Size", "1k",
+                             "Buffer_Max_Size",   "4k",
+                             NULL) == 0);
+
+    out_ffd = flb_output(ctx, "lib", &cb);
+    TEST_CHECK(out_ffd >= 0);
+    TEST_CHECK(flb_output_set(ctx, out_ffd,
+                              "match", "test",
+                              NULL) == 0);
+
+    TEST_CHECK(flb_service_set(ctx, "Flush", "0.5",
+                                    "Grace", "1",
+                                    NULL) == 0);
+
+    ret = flb_start(ctx);
+    TEST_CHECK_(ret == 0, "starting engine");
+
+    wait_num_with_timeout(5000, &num);
+
+    num = get_output_num();
+    TEST_CHECK(num == nExpected);
+    TEST_MSG("output count (truncate basic): got=%d expected=%d", num, nExpected);
+
+    ret = flb_stop(ctx);
+    TEST_CHECK_(ret == 0, "stopping engine");
+
+    if (ctx) {
+        flb_destroy(ctx);
+    }
+
+    unlink(path);
+}
+
+void flb_test_in_tail_truncate_long_lines_utf8()
+{
+    int64_t ret;
+    flb_ctx_t    *ctx = NULL;
+    int in_ffd, out_ffd;
+    char path[PATH_MAX];
+    int fd;
+
+    const char *target = "truncate_long_lines_utf8";
+    int nExpected = 1;
+
+    struct flb_lib_out_cb cb;
+    int unused = 0;
+    int num = 0;
+
+    cb.cb   = cb_count_msgpack;
+    cb.data = &unused;
+
+    clear_output_num();
+
+    ctx = flb_create();
+    TEST_CHECK_(ctx != NULL, "flb_create failed");
+
+    TEST_CHECK_(flb_service_set(ctx, "Log_Level", "error", NULL) == 0,
+                "setting service options");
+
+    in_ffd = flb_input(ctx, "tail", NULL);
+    TEST_CHECK(in_ffd >= 0);
+    TEST_CHECK(flb_input_set(ctx, in_ffd, "tag", "test", NULL) == 0);
+
+    snprintf(path, sizeof(path) - 1, DPATH "/log/%s.log", target);
+    fd = creat(path, S_IRWXU | S_IRGRP);
+    TEST_CHECK(fd >= 0);
+
+    TEST_CHECK(write_long_utf8_line(fd, 10 * 1024) == 0);
+    close(fd);
+
+    TEST_CHECK_(access(path, R_OK) == 0, "accessing log file: %s", path);
+
+    TEST_CHECK(flb_input_set(ctx, in_ffd,
+                             "path", path,
+                             "read_from_head", "true",
+                             "truncate_long_lines", "on",
+                             "skip_long_lines", "off",
+                             "Buffer_Chunk_Size", "1k",
+                             "Buffer_Max_Size",   "4k",
+                             NULL) == 0);
+
+    out_ffd = flb_output(ctx, "lib", &cb);
+    TEST_CHECK(out_ffd >= 0);
+    TEST_CHECK(flb_output_set(ctx, out_ffd,
+                              "match", "test",
+                              NULL) == 0);
+
+    TEST_CHECK(flb_service_set(ctx, "Flush", "0.5",
+                                    "Grace", "1",
+                                    NULL) == 0);
+
+    ret = flb_start(ctx);
+    TEST_CHECK_(ret == 0, "starting engine");
+
+    wait_num_with_timeout(5000, &num);
+
+    num = get_output_num();
+    TEST_CHECK(num == nExpected);
+    TEST_MSG("output count (truncate utf8): got=%d expected=%d", num, nExpected);
+
+    ret = flb_stop(ctx);
+    TEST_CHECK_(ret == 0, "stopping engine");
+
+    if (ctx) {
+        flb_destroy(ctx);
+    }
+
+    unlink(path);
+}
+
 /*
  * test case for https://github.com/fluent/fluent-bit/issues/3943
  *
@@ -2426,6 +2656,8 @@ TEST_LIST = {
     {"issue_3943", flb_test_in_tail_issue_3943},
     /* Properties */
     {"skip_long_lines", flb_test_in_tail_skip_long_lines},
+    {"truncate_long_lines",          flb_test_in_tail_truncate_long_lines},
+    {"truncate_long_lines_utf8",     flb_test_in_tail_truncate_long_lines_utf8},
     {"path_comma", flb_test_path_comma},
     {"path_key", flb_test_path_key},
     {"exclude_path", flb_test_exclude_path},
