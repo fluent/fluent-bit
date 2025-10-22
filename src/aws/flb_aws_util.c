@@ -268,6 +268,12 @@ struct flb_aws_client *flb_aws_client_create()
     client->client_vtable = &client_vtable;
     client->retry_requests = FLB_FALSE;
     client->debug_only = FLB_FALSE;
+    client->http_cb_ctx = flb_callback_create("aws client");
+    if (!client->http_cb_ctx) {
+        flb_errno();
+        flb_free(client);
+        return NULL;
+    }
     return client;
 }
 
@@ -291,6 +297,7 @@ void flb_aws_client_destroy(struct flb_aws_client *aws_client)
         if (aws_client->extra_user_agent) {
             flb_sds_destroy(aws_client->extra_user_agent);
         }
+        flb_callback_destroy(aws_client->http_cb_ctx);
         flb_free(aws_client);
     }
 }
@@ -385,6 +392,8 @@ struct flb_http_client *request_do(struct flb_aws_client *aws_client,
         }
         goto error;
     }
+
+    c->cb_ctx = aws_client->http_cb_ctx;
 
     /* Increase the maximum HTTP response buffer size to fit large responses from AWS services */
     ret = flb_http_buffer_size(c, FLB_MAX_AWS_RESP_BUFFER_SIZE);
