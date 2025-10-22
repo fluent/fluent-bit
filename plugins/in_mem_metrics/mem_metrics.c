@@ -83,14 +83,21 @@ static inline int is_chosen_exec(struct mem_metrics *ctx, const char *proc_path)
     char exe_path[2048] = {0};
     struct mk_list *head = NULL;
     struct flb_slist_entry *cur;
-
+    ssize_t len;
 
     if (is_empty_choice(ctx->chosen_exec)) {
         return FLB_FALSE;
     }
 
     snprintf(real_path, sizeof(real_path) - 1, "%s/exe", proc_path);
-    readlink(real_path, exe_path, sizeof(exe_path)-1);
+
+    len = readlink(real_path, exe_path, sizeof(exe_path)-1);
+
+    if (len < 0) {
+        return FLB_FALSE;
+    }
+
+    exe_path[len] = '\0';
 
     mk_list_foreach(head, ctx->chosen_exec) {
         cur = mk_list_entry(head, struct flb_slist_entry, _head);
