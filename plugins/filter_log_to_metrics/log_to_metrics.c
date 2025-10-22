@@ -922,13 +922,7 @@ static int cb_log_to_metrics_filter(const void *data, size_t bytes,
                         break;
                     }
                     // If value_field is set, increment counter by value
-                    ra = flb_ra_create(ctx->value_field, FLB_TRUE);
-                    if (!ra) {
-                        flb_plg_error(ctx->ins, "invalid record accessor key, aborting");
-                        break;
-                    }
-
-                    rval = flb_ra_get_value_object(ra, map);
+                    rval = flb_ra_get_value_object(ctx->value_ra, map);
 
                     if (!rval) {
                         flb_warn("given value field is empty or not existent");
@@ -946,18 +940,13 @@ static int cb_log_to_metrics_filter(const void *data, size_t bytes,
                     else {
                         flb_plg_error(f_ins,
                                     "cannot convert given value to metric");
+                        flb_ra_key_value_destroy(rval);
                         break;
                     }
                     ret = cmt_counter_add(ctx->c, ts, counter_value,
                                         label_count, label_values);
-                    if (rval) {
-                        flb_ra_key_value_destroy(rval);
-                        rval = NULL;
-                    }
-                    if (ra) {
-                        flb_ra_destroy(ra);
-                        ra = NULL;
-                    }
+                    flb_ra_key_value_destroy(rval);
+                    rval = NULL;
                     break;
 
                 case FLB_LOG_TO_METRICS_GAUGE:
