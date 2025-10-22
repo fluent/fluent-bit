@@ -967,7 +967,7 @@ jobs:
         with:
           repository: fluent/fluent-bit-docs
           token: ${{ secrets.GH_PA_TOKEN }}
-          ref: 4.0
+          ref: '4.0'
 
       - name: Release 4.1 and latest
         if: startsWith(inputs.version, '4.1')
@@ -1071,7 +1071,7 @@ jobs:
         if: startsWith(inputs.version, '4.0')
         uses: actions/checkout@v5
         with:
-          ref: 4.0
+          ref: '4.0'
 
       - name: Release 4.1
         if: startsWith(inputs.version, '4.1')
