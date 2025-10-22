@@ -239,6 +239,7 @@ static void mmtx_parse_proc(struct mem_metrics *ctx, uint64_t ts, const char *pr
     int rc;
     struct flb_split_entry *cur = NULL;
     char *sep;
+    uint64_t kbval;
     uint64_t val;
     int fd;
     char *pid;
@@ -280,7 +281,10 @@ static void mmtx_parse_proc(struct mem_metrics *ctx, uint64_t ts, const char *pr
         if (sep == NULL) {
             continue;
         }
-        val = strtoul(sep+1, NULL, 10);
+
+        /* values exported by kernel are in kB */
+        kbval = strtoul(sep+1, NULL, 10);
+        val = kbval * 1024ULL;
 
         if (strncasecmp(cur->value, "Rss:", sep - cur->value) == 0) {
             cmt_gauge_set(ctx->rss, ts, val, 1, (char *[]){ pid });
