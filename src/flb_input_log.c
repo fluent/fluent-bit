@@ -17,12 +17,771 @@
  *  limitations under the License.
  */
 
+#include "fluent-bit/flb_pack.h"
 #include <fluent-bit/flb_info.h>
 #include <fluent-bit/flb_input.h>
 #include <fluent-bit/flb_input_chunk.h>
+#include <fluent-bit/flb_hash_table.h>
 #include <fluent-bit/flb_input_log.h>
 #include <fluent-bit/flb_input_plugin.h>
 #include <fluent-bit/flb_processor.h>
+#include <fluent-bit/flb_router.h>
+#include <fluent-bit/flb_routes_mask.h>
+#include <fluent-bit/flb_conditionals.h>
+#include <fluent-bit/flb_log_event_encoder.h>
+#include <fluent-bit/flb_log_event_decoder.h>
+#include <fluent-bit/flb_mp_chunk.h>
+#include <fluent-bit/flb_mp.h>
+#include <fluent-bit/flb_event.h>
+#include <fluent-bit/flb_sds.h>
+#include <fluent-bit/flb_mem.h>
+
+#include <stdint.h>
+#include <string.h>
+
+struct flb_route_payload {
+    struct flb_route *route;
+    int is_default;
+    flb_sds_t tag;
+    char *data;
+    size_t size;
+    size_t total_records;
+    struct mk_list _head;
+};
+
+static void route_payload_destroy(struct flb_route_payload *payload)
+{
+    if (!payload) {
+        return;
+    }
+
+    if (!mk_list_entry_is_orphan(&payload->_head)) {
+        mk_list_del(&payload->_head);
+    }
+
+    if (payload->tag) {
+        flb_sds_destroy(payload->tag);
+    }
+
+    if (payload->data) {
+        flb_free(payload->data);
+    }
+
+    flb_free(payload);
+}
+
+static struct flb_route_payload *route_payload_find(struct mk_list *payloads,
+                                                    struct flb_route *route)
+{
+    struct mk_list *head;
+    struct flb_route_payload *payload;
+
+    if (!payloads || !route) {
+        return NULL;
+    }
+
+    mk_list_foreach(head, payloads) {
+        payload = mk_list_entry(head, struct flb_route_payload, _head);
+
+        if (payload->route == route) {
+            return payload;
+        }
+    }
+
+    return NULL;
+}
+
+static int append_output_to_payload_tag(struct flb_route_payload *payload,
+                                        struct flb_output_instance *out)
+{
+    const char *identifier;
+
+    if (!payload || !out) {
+        return -1;
+    }
+
+    if (out->alias) {
+        identifier = out->alias;
+    }
+    else {
+        identifier = flb_output_name(out);
+    }
+
+    if (!identifier) {
+        return -1;
+    }
+
+    if (!payload->tag) {
+        payload->tag = flb_sds_create(identifier);
+        if (!payload->tag) {
+            return -1;
+        }
+    }
+    else {
+        payload->tag = flb_sds_cat(payload->tag, ",", 1);
+        if (!payload->tag) {
+            return -1;
+        }
+
+        payload->tag = flb_sds_cat(payload->tag, identifier, strlen(identifier));
+        if (!payload->tag) {
+            return -1;
+        }
+    }
+
+    return 0;
+}
+
+static int route_payload_apply_outputs(struct flb_input_instance *ins,
+                                       struct flb_route_payload *payload)
+{
+    int ret;
+    size_t out_size = 0;
+    struct flb_input_chunk *chunk = NULL;
+    struct mk_list *head;
+    struct flb_router_path *route_path;
+    int routes_found = 0;
+
+    if (!ins || !payload || !payload->tag || !payload->route) {
+        flb_info("[router] route_payload_apply_outputs: invalid parameters");
+        return -1;
+    }
+
+    flb_info("[router] route_payload_apply_outputs: processing route '%s' with tag '%s'",
+             payload->route->name, payload->tag);
+
+    if (!ins->ht_log_chunks || !ins->config) {
+        flb_info("[router] route_payload_apply_outputs: missing ht_log_chunks or config");
+        return -1;
+    }
+
+    ret = flb_hash_table_get(ins->ht_log_chunks,
+                             payload->tag,
+                             flb_sds_len(payload->tag),
+                             (void **) &chunk,
+                             &out_size);
+    if (ret == -1 || !chunk || !chunk->routes_mask) {
+        flb_info("[router] route_payload_apply_outputs: failed to get chunk or routes_mask");
+        return -1;
+    }
+
+    flb_info("[router] route_payload_apply_outputs: found chunk, clearing routes_mask");
+    memset(chunk->routes_mask, 0,
+           sizeof(flb_route_mask_element) * ins->config->route_mask_size);
+
+    flb_info("[router] route_payload_apply_outputs: scanning %zu direct routes",
+             mk_list_size(&ins->routes_direct));
+
+    mk_list_foreach(head, &ins->routes_direct) {
+        route_path = mk_list_entry(head, struct flb_router_path, _head);
+
+        flb_info("[router] route_payload_apply_outputs: checking route_path->route=%p, payload->route=%p, route_path->ins=%p",
+                 route_path->route, payload->route, route_path->ins);
+
+        if (route_path->route != payload->route || !route_path->ins) {
+            flb_info("[router] route_payload_apply_outputs: skipping route_path (route mismatch or no ins)");
+            continue;
+        }
+
+        flb_info("[router] route_payload_apply_outputs: setting bit for output id=%d, name='%s'",
+                 route_path->ins->id, route_path->ins->name);
+
+        flb_routes_mask_set_bit(chunk->routes_mask,
+                                route_path->ins->id,
+                                ins->config);
+        routes_found++;
+    }
+
+    flb_info("[router] route_payload_apply_outputs: found %d matching routes", routes_found);
+
+    // Print the routes mask for debugging
+    flb_info("[router] route_payload_apply_outputs: routes_mask contents:");
+    for (int i = 0; i < ins->config->route_mask_size; i++) {
+        flb_info("[router] routes_mask[%d] = 0x%08x", i, chunk->routes_mask[i]);
+    }
+
+    if (flb_routes_mask_is_empty(chunk->routes_mask, ins->config) == FLB_TRUE) {
+        flb_info("[router] route_payload_apply_outputs: routes_mask is empty, returning -1");
+        return -1;
+    }
+
+    flb_info("[router] route_payload_apply_outputs: success");
+    return 0;
+}
+
+static int encode_empty_map(char **out_buf, size_t *out_size)
+{
+    char *buf;
+
+    if (!out_buf || !out_size) {
+        return -1;
+    }
+
+    buf = flb_malloc(1);
+    if (!buf) {
+        flb_errno();
+        return -1;
+    }
+
+    buf[0] = 0x80;
+
+    *out_buf = buf;
+    *out_size = 1;
+
+    return 0;
+}
+
+static int encode_cfl_object_or_empty(struct cfl_object *obj,
+                                      char **out_buf,
+                                      size_t *out_size)
+{
+    if (!out_buf || !out_size) {
+        return -1;
+    }
+
+    if (obj) {
+        return flb_mp_cfl_to_msgpack(obj, out_buf, out_size);
+    }
+
+    return encode_empty_map(out_buf, out_size);
+}
+
+static int encode_chunk_record(struct flb_log_event_encoder *encoder,
+                               struct flb_mp_chunk_record *record)
+{
+    int ret;
+    int record_type;
+    char *mp_buf = NULL;
+    size_t mp_size = 0;
+
+    if (!encoder || !record) {
+        return -1;
+    }
+
+    ret = flb_log_event_encoder_begin_record(encoder);
+    if (ret != FLB_EVENT_ENCODER_SUCCESS) {
+        return -1;
+    }
+
+    ret = flb_log_event_encoder_set_timestamp(encoder, &record->event.timestamp);
+    if (ret != FLB_EVENT_ENCODER_SUCCESS) {
+        return -1;
+    }
+
+    if (record->event.timestamp.tm.tv_sec >= 0) {
+        record_type = FLB_LOG_EVENT_NORMAL;
+    }
+    else if (record->event.timestamp.tm.tv_sec == FLB_LOG_EVENT_GROUP_START) {
+        record_type = FLB_LOG_EVENT_GROUP_START;
+    }
+    else if (record->event.timestamp.tm.tv_sec == FLB_LOG_EVENT_GROUP_END) {
+        record_type = FLB_LOG_EVENT_GROUP_END;
+    }
+    else {
+        record_type = FLB_LOG_EVENT_NORMAL;
+    }
+
+    ret = encode_cfl_object_or_empty(record->cobj_metadata, &mp_buf, &mp_size);
+    if (ret != 0) {
+        return -1;
+    }
+
+    ret = flb_log_event_encoder_set_metadata_from_raw_msgpack(encoder,
+                                                               mp_buf,
+                                                               mp_size);
+    flb_free(mp_buf);
+    if (ret != FLB_EVENT_ENCODER_SUCCESS) {
+        return -1;
+    }
+
+    mp_buf = NULL;
+    mp_size = 0;
+
+    if (record_type == FLB_LOG_EVENT_GROUP_START &&
+        record->cobj_group_attributes) {
+        ret = flb_mp_cfl_to_msgpack(record->cobj_group_attributes,
+                                    &mp_buf,
+                                    &mp_size);
+    }
+    else if (record->cobj_record) {
+        ret = flb_mp_cfl_to_msgpack(record->cobj_record, &mp_buf, &mp_size);
+    }
+    else {
+        ret = encode_empty_map(&mp_buf, &mp_size);
+    }
+
+    if (ret != 0) {
+        return -1;
+    }
+
+    ret = flb_log_event_encoder_set_body_from_raw_msgpack(encoder,
+                                                           mp_buf,
+                                                           mp_size);
+    flb_free(mp_buf);
+    if (ret != FLB_EVENT_ENCODER_SUCCESS) {
+        return -1;
+    }
+
+    ret = flb_log_event_encoder_commit_record(encoder);
+    if (ret != FLB_EVENT_ENCODER_SUCCESS) {
+        return -1;
+    }
+
+    return 0;
+}
+
+static int build_payload_for_route(struct flb_route_payload *payload,
+                                   struct flb_mp_chunk_record **records,
+                                   size_t record_count,
+                                   uint8_t *matched_non_default)
+{
+    size_t i;
+    int matched;
+    int ret;
+    struct flb_condition *compiled;
+    struct flb_log_event_encoder *encoder;
+
+    if (!payload || !records || record_count == 0 || !matched_non_default) {
+        return -1;
+    }
+
+    flb_info("[router] build_payload_for_route called for route '%s' with %zu records",
+             payload->route->name, record_count);
+
+    flb_info("[router] route condition: %p, per_record_routing: %d",
+             payload->route->condition, payload->route->per_record_routing);
+
+    compiled = flb_router_route_get_condition(payload->route);
+    if (!compiled) {
+        flb_info("[router] no compiled condition found for route '%s'", payload->route->name);
+        return 0;
+    }
+
+    flb_info("[router] compiled condition found for route '%s'", payload->route->name);
+
+    encoder = flb_log_event_encoder_create(FLB_LOG_EVENT_FORMAT_DEFAULT);
+    if (!encoder) {
+        return -1;
+    }
+
+    matched = 0;
+
+    for (i = 0; i < record_count; i++) {
+        int condition_result = flb_condition_evaluate(compiled, records[i]);
+        flb_info("[router] route '%s' record %zu: condition_result=%d",
+                 payload->route->name, i, condition_result);
+
+        if (condition_result != FLB_TRUE) {
+            flb_info("[router] route '%s' record %zu: condition failed, skipping",
+                     payload->route->name, i);
+            continue;
+        }
+
+        flb_info("[router] route '%s' record %zu: condition matched, adding to payload",
+                 payload->route->name, i);
+
+        ret = encode_chunk_record(encoder, records[i]);
+        if (ret != 0) {
+            flb_log_event_encoder_destroy(encoder);
+            return -1;
+        }
+
+        matched_non_default[i] = 1;
+        matched++;
+    }
+
+    if (matched == 0) {
+        flb_log_event_encoder_destroy(encoder);
+        return 0;
+    }
+
+    payload->data = flb_malloc(encoder->output_length);
+    if (!payload->data) {
+        flb_log_event_encoder_destroy(encoder);
+        flb_errno();
+        return -1;
+    }
+
+    memcpy(payload->data, encoder->output_buffer, encoder->output_length);
+    payload->size = encoder->output_length;
+    payload->total_records = matched;
+
+    flb_log_event_encoder_destroy(encoder);
+
+    return 0;
+}
+
+static int build_payload_for_default_route(struct flb_route_payload *payload,
+                                           struct flb_mp_chunk_record **records,
+                                           size_t record_count,
+                                           uint8_t *matched_non_default)
+{
+    size_t i;
+    int matched;
+    int ret;
+    struct flb_condition *compiled;
+    struct flb_log_event_encoder *encoder;
+
+    if (!payload || !records || !matched_non_default) {
+        return -1;
+    }
+
+    encoder = flb_log_event_encoder_create(FLB_LOG_EVENT_FORMAT_DEFAULT);
+    if (!encoder) {
+        return -1;
+    }
+
+    compiled = flb_router_route_get_condition(payload->route);
+    matched = 0;
+
+    for (i = 0; i < record_count; i++) {
+        flb_info("[router] default route record %zu: matched_non_default[%zu]=%d",
+                 i, i, matched_non_default[i]);
+
+        if (matched_non_default[i]) {
+            flb_info("[router] default route record %zu: already matched, skipping", i);
+            continue;
+        }
+
+        if (compiled &&
+            flb_condition_evaluate(compiled, records[i]) != FLB_TRUE) {
+            flb_info("[router] default route record %zu: condition failed, skipping", i);
+            continue;
+        }
+
+        flb_info("[router] default route record %zu: adding to default payload", i);
+
+        ret = encode_chunk_record(encoder, records[i]);
+        if (ret != 0) {
+            flb_log_event_encoder_destroy(encoder);
+            return -1;
+        }
+
+        matched++;
+    }
+
+    if (matched == 0) {
+        flb_log_event_encoder_destroy(encoder);
+        return 0;
+    }
+
+    payload->data = flb_malloc(encoder->output_length);
+    if (!payload->data) {
+        flb_log_event_encoder_destroy(encoder);
+        flb_errno();
+        return -1;
+    }
+
+    memcpy(payload->data, encoder->output_buffer, encoder->output_length);
+    payload->size = encoder->output_length;
+    payload->total_records = matched;
+
+    flb_log_event_encoder_destroy(encoder);
+
+    return 0;
+}
+
+static void route_payload_list_destroy(struct mk_list *payloads)
+{
+    struct mk_list *head;
+    struct mk_list *tmp;
+    struct flb_route_payload *payload;
+
+    if (!payloads) {
+        return;
+    }
+
+    mk_list_foreach_safe(head, tmp, payloads) {
+        payload = mk_list_entry(head, struct flb_route_payload, _head);
+        route_payload_destroy(payload);
+    }
+}
+
+static int input_has_conditional_routes(struct flb_input_instance *ins)
+{
+    struct mk_list *head;
+    struct flb_router_path *route_path;
+
+    if (!ins) {
+        return FLB_FALSE;
+    }
+
+    mk_list_foreach(head, &ins->routes_direct) {
+        route_path = mk_list_entry(head, struct flb_router_path, _head);
+
+        if (route_path->route &&
+            (route_path->route->condition || route_path->route->per_record_routing)) {
+            return FLB_TRUE;
+        }
+    }
+
+    return FLB_FALSE;
+}
+
+static int split_and_append_route_payloads(struct flb_input_instance *ins,
+                                           size_t records,
+                                           const char *tag,
+                                           size_t tag_len,
+                                           const void *buf,
+                                           size_t buf_size)
+{
+    int ret;
+    int appended;
+    int handled;
+    int context_initialized = FLB_FALSE;
+    struct mk_list payloads;
+    struct mk_list *head;
+    struct mk_list *tmp;
+    struct flb_router_path *route_path;
+    struct flb_route_payload *payload;
+    struct flb_router_chunk_context context;
+    struct flb_event_chunk *chunk;
+    struct flb_mp_chunk_record **records_array = NULL;
+    uint8_t *matched_non_default = NULL;
+    size_t record_count;
+    size_t index;
+    const char *base_tag = tag;
+    size_t base_tag_len = tag_len;
+
+    handled = FLB_FALSE;
+
+    if (!ins || !buf || buf_size == 0) {
+        return 0;
+    }
+
+    if (mk_list_size(&ins->routes_direct) == 0) {
+        flb_info("[router] no direct routes found");
+        return 0;
+    }
+
+    if (input_has_conditional_routes(ins) == FLB_FALSE) {
+        flb_info("[router] no conditional routes found");
+        return 0;
+    }
+
+    flb_info("[router] conditional routing triggered for %zu routes", mk_list_size(&ins->routes_direct));
+
+    mk_list_init(&payloads);
+
+    flb_info("[router] scanning %zu direct routes", mk_list_size(&ins->routes_direct));
+    mk_list_foreach(head, &ins->routes_direct) {
+        route_path = mk_list_entry(head, struct flb_router_path, _head);
+
+        flb_info("[router] checking route_path: route=%p, condition=%p, per_record_routing=%d",
+                 route_path->route,
+                 route_path->route ? route_path->route->condition : NULL,
+                 route_path->route ? route_path->route->per_record_routing : -1);
+
+        if (!route_path->route ||
+            (!route_path->route->condition && !route_path->route->per_record_routing)) {
+            flb_info("[router] skipping route_path (no route, condition, or per_record_routing)");
+            continue;
+        }
+
+        flb_info("[router] processing route '%s'", route_path->route->name);
+
+        payload = route_payload_find(&payloads, route_path->route);
+        if (!payload) {
+            flb_info("[router] creating new payload for route '%s'", route_path->route->name);
+            payload = flb_calloc(1, sizeof(struct flb_route_payload));
+            if (!payload) {
+                flb_errno();
+                route_payload_list_destroy(&payloads);
+                return -1;
+            }
+
+            payload->route = route_path->route;
+            payload->is_default = route_path->route->condition ? route_path->route->condition->is_default : 0;
+
+            /* Use the route name as the tag */
+            payload->tag = flb_sds_create(route_path->route->name);
+            if (!payload->tag) {
+                flb_free(payload);
+                route_payload_list_destroy(&payloads);
+                return -1;
+            }
+
+            flb_info("[router] payload created: route='%s', is_default=%d, tag='%s'",
+                     payload->route->name, payload->is_default, payload->tag);
+            mk_list_add(&payload->_head, &payloads);
+        }
+    }
+
+    flb_info("[router] created %zu payloads", mk_list_size(&payloads));
+    if (mk_list_size(&payloads) == 0) {
+        flb_info("[router] no payloads created, returning 0");
+        return 0;
+    }
+
+    handled = FLB_TRUE;
+    flb_info("[router] payloads created, proceeding with processing");
+
+    if (!base_tag) {
+        if (ins->tag && ins->tag_len > 0) {
+            base_tag = ins->tag;
+            base_tag_len = ins->tag_len;
+        }
+        else {
+            base_tag = ins->name;
+            base_tag_len = strlen(ins->name);
+        }
+    }
+
+    chunk = flb_event_chunk_create(FLB_EVENT_TYPE_LOGS,
+                                   records,
+                                   (char *) base_tag,
+                                   base_tag_len,
+                                   (char *) buf,
+                                   buf_size);
+    if (!chunk) {
+        route_payload_list_destroy(&payloads);
+        return -1;
+    }
+
+    if (flb_router_chunk_context_init(&context) != 0) {
+        route_payload_list_destroy(&payloads);
+        flb_event_chunk_destroy(chunk);
+        return -1;
+    }
+    context_initialized = FLB_TRUE;
+
+    ret = flb_router_chunk_context_prepare_logs(&context, chunk);
+    if (ret != 0 || !context.chunk_cobj) {
+        if (context_initialized) {
+            flb_router_chunk_context_destroy(&context);
+        }
+        route_payload_list_destroy(&payloads);
+        flb_event_chunk_destroy(chunk);
+        return -1;
+    }
+
+    record_count = cfl_list_size(&context.chunk_cobj->records);
+    if (record_count == 0) {
+        flb_router_chunk_context_destroy(&context);
+        route_payload_list_destroy(&payloads);
+        flb_event_chunk_destroy(chunk);
+        return handled ? 1 : 0;
+    }
+
+    records_array = flb_calloc(record_count,
+                               sizeof(struct flb_mp_chunk_record *));
+    matched_non_default = flb_calloc(record_count, sizeof(uint8_t));
+    if (!records_array || !matched_non_default) {
+        flb_errno();
+        if (records_array) {
+            flb_free(records_array);
+        }
+        if (matched_non_default) {
+            flb_free(matched_non_default);
+        }
+        flb_router_chunk_context_destroy(&context);
+        route_payload_list_destroy(&payloads);
+        flb_event_chunk_destroy(chunk);
+        return -1;
+    }
+
+    index = 0;
+    cfl_list_foreach(head, &context.chunk_cobj->records) {
+        records_array[index++] =
+            cfl_list_entry(head, struct flb_mp_chunk_record, _head);
+    }
+
+    flb_info("[router] processing %zu payloads", mk_list_size(&payloads));
+    mk_list_foreach(head, &payloads) {
+        payload = mk_list_entry(head, struct flb_route_payload, _head);
+
+        flb_info("[router] processing payload for route '%s', is_default=%d, total_records=%zu",
+                 payload->route->name, payload->is_default, payload->total_records);
+
+        if (payload->is_default) {
+            flb_info("[router] skipping default route '%s'", payload->route->name);
+            continue;
+        }
+
+        flb_info("[router] calling build_payload_for_route for route '%s'", payload->route->name);
+        ret = build_payload_for_route(payload,
+                                       records_array,
+                                       record_count,
+                                       matched_non_default);
+        flb_info("[router] build_payload_for_route returned %d for route '%s'", ret, payload->route->name);
+        if (ret != 0) {
+            flb_free(records_array);
+            flb_free(matched_non_default);
+            flb_router_chunk_context_destroy(&context);
+            route_payload_list_destroy(&payloads);
+            flb_event_chunk_destroy(chunk);
+            return -1;
+        }
+    }
+
+    mk_list_foreach(head, &payloads) {
+        payload = mk_list_entry(head, struct flb_route_payload, _head);
+
+        if (!payload->is_default) {
+            continue;
+        }
+
+        ret = build_payload_for_default_route(payload,
+                                              records_array,
+                                              record_count,
+                                              matched_non_default);
+        if (ret != 0) {
+            flb_free(records_array);
+            flb_free(matched_non_default);
+            flb_router_chunk_context_destroy(&context);
+            route_payload_list_destroy(&payloads);
+            flb_event_chunk_destroy(chunk);
+            return -1;
+        }
+    }
+
+    flb_free(records_array);
+    flb_free(matched_non_default);
+
+    mk_list_foreach_safe(head, tmp, &payloads) {
+        payload = mk_list_entry(head, struct flb_route_payload, _head);
+
+        if (payload->total_records <= 0 || !payload->data) {
+            route_payload_destroy(payload);
+        }
+    }
+
+    appended = 0;
+    mk_list_foreach(head, &payloads) {
+        payload = mk_list_entry(head, struct flb_route_payload, _head);
+
+        ret = flb_input_chunk_append_raw(ins,
+                                         FLB_INPUT_LOGS,
+                                         payload->total_records,
+                                         payload->tag,
+                                         flb_sds_len(payload->tag),
+                                         payload->data,
+                                         payload->size);
+        if (ret != 0) {
+            flb_router_chunk_context_destroy(&context);
+            route_payload_list_destroy(&payloads);
+            flb_event_chunk_destroy(chunk);
+            return -1;
+        }
+
+        if (route_payload_apply_outputs(ins, payload) != 0) {
+            flb_router_chunk_context_destroy(&context);
+            route_payload_list_destroy(&payloads);
+            flb_event_chunk_destroy(chunk);
+            return -1;
+        }
+
+        appended++;
+    }
+
+    if (context_initialized) {
+        flb_router_chunk_context_destroy(&context);
+    }
+    route_payload_list_destroy(&payloads);
+    flb_event_chunk_destroy(chunk);
+
+    return handled ? (appended > 0 ? appended : 1) : 0;
+}
 
 static int input_log_append(struct flb_input_instance *ins,
                             size_t processor_starting_stage,
@@ -68,9 +827,24 @@ static int input_log_append(struct flb_input_instance *ins,
         }
     }
 
+    ret = split_and_append_route_payloads(ins, records, tag, tag_len,
+                                          out_buf, out_size);
+    if (ret < 0) {
+        if (processor_is_active && buf != out_buf) {
+            flb_free(out_buf);
+        }
+        return -1;
+    }
+
+    if (ret > 0) {
+        if (processor_is_active && buf != out_buf) {
+            flb_free(out_buf);
+        }
+        return 0;
+    }
+
     ret = flb_input_chunk_append_raw(ins, FLB_INPUT_LOGS, records,
                                      tag, tag_len, out_buf, out_size);
-
 
     if (processor_is_active && buf != out_buf) {
         flb_free(out_buf);
@@ -115,6 +889,16 @@ int flb_input_log_append_records(struct flb_input_instance *ins,
                                  const void *buf, size_t buf_size)
 {
     int ret;
+    char tag_copy[128];
+
+    strncpy(tag_copy, tag, sizeof(tag_copy));
+    tag_copy[sizeof(tag_copy) - 1] = '\0';
+
+    printf("--------------------------------\n");
+    printf("appending records: tag: %s, tag_len: %zu, records: %zu\n", tag_copy, tag_len, records);
+    flb_pack_print(buf, buf_size);
+    printf("--------------------------------\n");
+    printf("\n");
 
     ret = input_log_append(ins, 0, records, tag, tag_len, buf, buf_size);
     return ret;
