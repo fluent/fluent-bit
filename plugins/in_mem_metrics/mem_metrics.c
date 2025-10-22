@@ -464,6 +464,7 @@ static int cb_mem_metrics_init(struct flb_input_instance *ins,
 
     ret = flb_input_config_map_set(ins, (void *) ctx);
     if (ret == -1) {
+        flb_free(ctx);
         return -1;
     }
     ctx->ins = ins;
