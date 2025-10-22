@@ -174,6 +174,11 @@ struct cfl_variant *flb_cf_section_property_add(struct flb_cf *cf,
                                               char *k_buf, size_t k_len,
                                               char *v_buf, size_t v_len);
 
+struct cfl_variant *flb_cf_section_property_add_variant(struct flb_cf *cf,
+                                                        struct cfl_kvlist *kv_list,
+                                                        char *k_buf, size_t k_len,
+                                                        struct cfl_variant *variant);
+
 struct cfl_array *flb_cf_section_property_add_list(struct flb_cf *cf,
                                                    struct cfl_kvlist *kv_list,
                                                    char *k_buf, size_t k_len);

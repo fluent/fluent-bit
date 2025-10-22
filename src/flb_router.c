@@ -256,6 +256,15 @@ int flb_router_io_set(struct flb_config *config)
         }
     }
 
+    /* Apply new router configuration if available */
+    if (!cfl_list_is_empty(&config->input_routes)) {
+        flb_debug("[router] new router configuration found, applying...");
+        if (flb_router_apply_config(config) == -1) {
+            flb_error("[router] failed to apply new router configuration");
+            return -1;
+        }
+    }
+
     return 0;
 }
 
