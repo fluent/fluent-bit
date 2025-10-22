@@ -31,6 +31,9 @@
 #include <sys/stat.h>
 #include <fcntl.h>
 #include <glob.h>
+#include <unistd.h>
+#include <errno.h>
+#include <strings.h>
 
 #define DEFAULT_INTERVAL_SEC  "5"
 #define DEFAULT_INTERVAL_NSEC "0"
