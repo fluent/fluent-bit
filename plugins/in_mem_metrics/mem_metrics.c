@@ -472,6 +472,10 @@ static int cb_mem_metrics_init(struct flb_input_instance *ins,
     flb_input_set_context(ins, ctx);
 
     ctx->cmt = cmt_create();
+    if (ctx->cmt == NULL) {
+        flb_free(ctx);
+        return -1;
+    }
 
     MEM_METRICS_GAUGE_INIT(rss, "RSS");
     MEM_METRICS_GAUGE_INIT_TYPED(pss, "PSS");
