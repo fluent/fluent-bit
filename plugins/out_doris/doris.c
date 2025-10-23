@@ -144,7 +144,6 @@ static int http_put(struct flb_out_doris *ctx,
     /* Append headers */
     flb_http_add_header(c, "format", 6, "json", 4);
     flb_http_add_header(c, "Expect", 6, "100-continue", 12);
-    flb_http_add_header(c, "strip_outer_array", 17, "true", 4);
     flb_http_add_header(c, "User-Agent", 10, "Fluent-Bit", 10);
     
     if (ctx->add_label) {
@@ -286,7 +285,7 @@ static int compose_payload(struct flb_out_doris *ctx,
 
     encoded = flb_pack_msgpack_to_json_format(in_body,
                                               in_size,
-                                              FLB_PACK_JSON_FORMAT_JSON,
+                                              ctx->out_format,
                                               FLB_PACK_JSON_DATE_EPOCH,
                                               ctx->date_key);
     if (encoded == NULL) {
@@ -388,6 +387,12 @@ static struct flb_config_map config_map[] = {
      FLB_CONFIG_MAP_STR, "label_prefix", "fluentbit",
      0, FLB_TRUE, offsetof(struct flb_out_doris, label_prefix),
      "Set label prefix"
+    },
+    // format
+    {
+     FLB_CONFIG_MAP_STR, "format", "json",
+     0, FLB_TRUE, offsetof(struct flb_out_doris, format),
+     "Set desired payload format: json, json_stream, json_lines"
     },
     // time_key
     {

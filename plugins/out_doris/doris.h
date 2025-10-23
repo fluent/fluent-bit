@@ -45,6 +45,10 @@ struct flb_out_doris {
     flb_sds_t time_key;
     flb_sds_t date_key;        /* internal use */
 
+    /* Output format */
+    int out_format;
+    flb_sds_t format;
+
     /* doris stream load headers */
     struct mk_list *headers;
 
