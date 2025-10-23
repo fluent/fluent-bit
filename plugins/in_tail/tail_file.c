@@ -503,7 +503,6 @@ static int process_content(struct flb_tail_file *file, size_t *bytes)
 #endif
     size_t cut = 0;
     size_t eff_max = 0;
-    size_t cur_cap = 0;
     size_t dec_len = 0;
     size_t window = 0;
     int truncation_happened = FLB_FALSE;
@@ -572,30 +571,12 @@ static int process_content(struct flb_tail_file *file, size_t *bytes)
     }
 
     if (ctx->truncate_long_lines == FLB_TRUE) {
-        /* Determine the effective truncation threshold (eff_max) */
-        /* Use the smaller of buf_max_size or the current buf_size */
+        /* Use buf_max_size as the truncation threshold */
         if (ctx->buf_max_size > 0) {
             eff_max = ctx->buf_max_size - 1;
         }
         else {
             eff_max = 0;
-        }
-        if (file->buf_size > 0) {
-            cur_cap = file->buf_size - 1;
-        }
-        else {
-            cur_cap = 0;
-        }
-        if (cur_cap > 0 && (eff_max == 0 || cur_cap < eff_max)) {
-            eff_max = cur_cap;
-        }
-
-        /* Set the search window for memchr. Add 1 because memchr is (ptr, char, size) */
-        if (eff_max > 0) {
-            window = eff_max + 1;
-        }
-        else {
-            window = 0;
         }
         dec_len = (size_t)(end - data);
         window = ctx->buf_max_size + 1;
