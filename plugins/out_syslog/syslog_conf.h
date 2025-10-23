@@ -23,6 +23,7 @@
 #include <fluent-bit/flb_config.h>
 #include <fluent-bit/flb_output.h>
 #include <fluent-bit/flb_pipe.h>
+#include <monkey/mk_core.h>
 
 
 #define FLB_SYSLOG_UDP 0

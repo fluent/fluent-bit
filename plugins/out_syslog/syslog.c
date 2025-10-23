@@ -555,15 +555,15 @@ static void extract_value_from_ra_result(struct flb_ra_value *rval, char** val,
         *val_len = rval->o.via.boolean ? 4 : 5;
     }
     else if (rval->o.type == MSGPACK_OBJECT_POSITIVE_INTEGER) {
-        *val_len = snprintf(*val, val_size - 1,
+        *val_len = snprintf(*val, val_size,
                             "%" PRIu64, rval->o.via.u64);
     }
     else if (rval->o.type == MSGPACK_OBJECT_NEGATIVE_INTEGER) {
-        *val_len = snprintf(*val, val_size - 1,
+        *val_len = snprintf(*val, val_size,
                             "%" PRId64, rval->o.via.i64);
     }
     else if (rval->o.type == MSGPACK_OBJECT_FLOAT) {
-        *val_len = snprintf(*val, val_size - 1,
+        *val_len = snprintf(*val, val_size,
                             "%f", rval->o.via.f64);
     }
     else if (rval->o.type == MSGPACK_OBJECT_STR) {

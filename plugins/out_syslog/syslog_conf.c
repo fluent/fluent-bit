@@ -65,16 +65,6 @@ static int is_valid_facility(struct flb_output_instance *ins, int val, int forma
     return 0;
 }
 
-static inline void safe_sds_cat(flb_sds_t *buf, const char *str, int len)
-{
-    flb_sds_t tmp;
-
-    tmp = flb_sds_cat(*buf, str, len);
-    if (tmp) {
-        *buf = tmp;
-    }
-}
-
 static inline void syslog_normalize_cat(struct flb_ra_parser *rp, flb_sds_t *name)
 {
     int sub;
@@ -87,12 +77,12 @@ static inline void syslog_normalize_cat(struct flb_ra_parser *rp, flb_sds_t *nam
     /* Iterate record accessor keys */
     key = rp->key;
     if (rp->type == FLB_RA_PARSER_STRING) {
-        safe_sds_cat(name, key->name, flb_sds_len(key->name));
+        flb_sds_cat_safe(name, key->name, flb_sds_len(key->name));
     }
     else if (rp->type == FLB_RA_PARSER_KEYMAP) {
-        safe_sds_cat(name, key->name, flb_sds_len(key->name));
+        flb_sds_cat_safe(name, key->name, flb_sds_len(key->name));
         if (mk_list_size(key->subkeys) > 0) {
-            safe_sds_cat(name, ".", 1);
+            flb_sds_cat_safe(name, ".", 1);
         }
 
         sub = 0;
@@ -100,15 +90,15 @@ static inline void syslog_normalize_cat(struct flb_ra_parser *rp, flb_sds_t *nam
             entry = mk_list_entry(s_head, struct flb_ra_subentry, _head);
 
             if (sub > 0) {
-                safe_sds_cat(name, ".", 1);
+                flb_sds_cat_safe(name, ".", 1);
             }
             if (entry->type == FLB_RA_PARSER_STRING) {
-                safe_sds_cat(name, entry->str, flb_sds_len(entry->str));
+                flb_sds_cat_safe(name, entry->str, flb_sds_len(entry->str));
             }
             else if (entry->type == FLB_RA_PARSER_ARRAY_ID) {
                 len = snprintf(tmp, sizeof(tmp) -1, "%d",
                                entry->array_id);
-                safe_sds_cat(name, tmp, len);
+                flb_sds_cat_safe(name, tmp, len);
             }
             sub++;
         }
@@ -130,7 +120,7 @@ static flb_sds_t syslog_normalize_ra_key_name(struct flb_record_accessor *ra)
     mk_list_foreach(head, &ra->list) {
         rp = mk_list_entry(head, struct flb_ra_parser, _head);
         if (c > 0) {
-            flb_sds_cat(name, ".", 1);
+            flb_sds_cat_safe(&name, ".", 1);
         }
         syslog_normalize_cat(rp, &name);
         c++;
@@ -164,8 +154,7 @@ struct flb_syslog *flb_syslog_config_create(struct flb_output_instance *ins,
     ret = flb_output_config_map_set(ins, (void *) ctx);
     if (ret == -1) {
         flb_plg_error(ctx->ins, "configuration error");
-        flb_syslog_config_destroy(ctx);
-        return NULL;
+        goto error;
     }
 
     /* Set context */
@@ -185,8 +174,7 @@ struct flb_syslog *flb_syslog_config_create(struct flb_output_instance *ins,
         }
         else {
             flb_plg_error(ctx->ins, "unknown syslog mode %s", tmp);
-            flb_syslog_config_destroy(ctx);
-            return NULL;
+            goto error;
         }
     }
 
@@ -201,8 +189,7 @@ struct flb_syslog *flb_syslog_config_create(struct flb_output_instance *ins,
         }
         else {
             flb_plg_error(ctx->ins, "unknown syslog format %s", tmp);
-            flb_syslog_config_destroy(ctx);
-            return NULL;
+            goto error;
         }
     }
 
@@ -213,14 +200,12 @@ struct flb_syslog *flb_syslog_config_create(struct flb_output_instance *ins,
     /* validate preset values */
     ret = is_valid_severity(ctx->ins, ctx->severity_preset, ctx->parsed_format);
     if (ret != 0) {
-        flb_syslog_config_destroy(ctx);
-        return NULL;
+        goto error;
     }
 
     ret = is_valid_facility(ctx->ins, ctx->facility_preset, ctx->parsed_format);
     if (ret != 0) {
-        flb_syslog_config_destroy(ctx);
-        return NULL;
+        goto error;
     }
 
 
@@ -238,7 +223,7 @@ struct flb_syslog *flb_syslog_config_create(struct flb_output_instance *ins,
         ctx->ra_severity_key = flb_ra_create(ctx->severity_key, FLB_FALSE);
         if (ctx->ra_severity_key == NULL) {
             flb_plg_error(ins, "could not create record accessor for Severity Key");
-            return NULL;
+            goto error;
         }
     }
 
@@ -246,7 +231,7 @@ struct flb_syslog *flb_syslog_config_create(struct flb_output_instance *ins,
         ctx->ra_facility_key = flb_ra_create(ctx->facility_key, FLB_FALSE);
         if (ctx->ra_facility_key == NULL) {
             flb_plg_error(ins, "could not create record accessor for Facility Key");
-            return NULL;
+            goto error;
         }
     }
 
@@ -254,7 +239,7 @@ struct flb_syslog *flb_syslog_config_create(struct flb_output_instance *ins,
         ctx->ra_hostname_key = flb_ra_create(ctx->hostname_key, FLB_FALSE);
         if (ctx->ra_hostname_key == NULL) {
             flb_plg_error(ins, "could not create record accessor for Hostname Key");
-            return NULL;
+            goto error;
         }
     }
 
@@ -262,7 +247,7 @@ struct flb_syslog *flb_syslog_config_create(struct flb_output_instance *ins,
         ctx->ra_appname_key = flb_ra_create(ctx->appname_key, FLB_FALSE);
         if (ctx->ra_appname_key == NULL) {
             flb_plg_error(ins, "could not create record accessor for Appname Key");
-            return NULL;
+            goto error;
         }
     }
 
@@ -270,7 +255,7 @@ struct flb_syslog *flb_syslog_config_create(struct flb_output_instance *ins,
         ctx->ra_procid_key = flb_ra_create(ctx->procid_key, FLB_FALSE);
         if (ctx->ra_procid_key == NULL) {
             flb_plg_error(ins, "could not create record accessor for Procid Key");
-            return NULL;
+            goto error;
         }
     }
 
@@ -278,7 +263,7 @@ struct flb_syslog *flb_syslog_config_create(struct flb_output_instance *ins,
         ctx->ra_msgid_key = flb_ra_create(ctx->msgid_key, FLB_FALSE);
         if (ctx->ra_msgid_key == NULL) {
             flb_plg_error(ins, "could not create record accessor for Msgid Key");
-            return NULL;
+            goto error;
         }
     }
 
@@ -286,7 +271,7 @@ struct flb_syslog *flb_syslog_config_create(struct flb_output_instance *ins,
         ctx->ra_message_key = flb_ra_create(ctx->message_key, FLB_FALSE);
         if (ctx->ra_message_key == NULL) {
             flb_plg_error(ins, "could not create record accessor for Message Key");
-            return NULL;
+            goto error;
         }
     }
 
@@ -295,28 +280,40 @@ struct flb_syslog *flb_syslog_config_create(struct flb_output_instance *ins,
         ctx->ra_sd_keys = flb_malloc(sizeof(struct mk_list));
         if (!ctx->ra_sd_keys) {
             flb_errno();
-            return NULL;
+            goto error;
         }
         mk_list_init(ctx->ra_sd_keys);
         flb_config_map_foreach(head, mv, ctx->sd_keys) {
             sk_key_ra = flb_malloc(sizeof(struct flb_syslog_sd_key));
             if (!sk_key_ra) {
                 flb_errno();
-                return NULL;
+                goto error;
             }
             sk_key_ra->ra_sd_key = flb_ra_create(mv->val.str, FLB_FALSE);
             if (sk_key_ra->ra_sd_key == NULL) {
                 flb_plg_error(ins, "could not create record accessor for SD Key %s",
                     mv->val.str);
-                return NULL;
+                flb_free(sk_key_ra);
+                goto error;
             }
             sk_key_ra->key_normalized = syslog_normalize_ra_key_name(
                 sk_key_ra->ra_sd_key);
+            if (sk_key_ra->key_normalized == NULL) {
+                flb_plg_error(ins, "could not normalize name for SD Key %s",
+                    mv->val.str);
+                flb_ra_destroy(sk_key_ra->ra_sd_key);
+                flb_free(sk_key_ra);
+                goto error;
+            }
             mk_list_add(&sk_key_ra->_head, ctx->ra_sd_keys);
         }
     }
 
     return ctx;
+
+error:
+    flb_syslog_config_destroy(ctx);
+    return NULL;
 }
 
 void flb_syslog_config_destroy(struct flb_syslog *ctx)
@@ -324,6 +321,10 @@ void flb_syslog_config_destroy(struct flb_syslog *ctx)
     struct mk_list *head;
     struct mk_list *tmp;
     struct flb_syslog_sd_key *sd_key_item;
+
+    if (!ctx) {
+        return;
+    }
 
     if (ctx->ra_severity_key) {
         flb_ra_destroy(ctx->ra_severity_key);
@@ -379,10 +380,6 @@ void flb_syslog_config_destroy(struct flb_syslog *ctx)
     if (ctx->ra_message_key) {
         flb_ra_destroy(ctx->ra_message_key);
         ctx->ra_message_key = NULL;
-    }
-
-    if (!ctx) {
-        return;
     }
 
     flb_free(ctx);
