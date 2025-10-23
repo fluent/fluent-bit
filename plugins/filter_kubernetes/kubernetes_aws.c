@@ -291,12 +291,14 @@ int determine_platform(struct flb_kube *ctx)
     size_t token_size;
     char *payload = NULL;
     size_t payload_len;
-    char *issuer_start, 
+    char *issuer_start; 
     char *issuer_end;
-    char *first_dot, 
+    char *first_dot; 
     char *second_dot;
     size_t payload_b64_len;
     char *payload_b64;
+    size_t issuer_len;
+    char *issuer_value;
     
     /* Read serviceaccount token */
     ret = flb_utils_read_file(FLB_KUBE_TOKEN, &token_buf, &token_size);
@@ -311,7 +313,7 @@ int determine_platform(struct flb_kube *ctx)
         return -1;
     }
     
-    second_dot = strchr(first_dot + 1, '.');`
+    second_dot = strchr(first_dot + 1, '.');
     if (!second_dot) {
         flb_free(token_buf);
         return -1;
@@ -381,7 +383,17 @@ int determine_platform(struct flb_kube *ctx)
     
     /* Check if issuer contains EKS OIDC URL pattern */
     /* EKS OIDC URLs follow pattern: https://oidc.eks.{region}.amazonaws.com/id/{cluster-id} */
-    if (strstr(issuer_start, "oidc.eks.") && strstr(issuer_start, ".amazonaws.com/id/")) {
+    issuer_len = issuer_end - issuer_start;
+    issuer_value = flb_strndup(issuer_start, issuer_len);
+    if (!issuer_value) {
+        flb_free(payload);
+        return -1;
+    }
+
+    int is_eks = (strstr(issuer_value, "oidc.eks.") && strstr(issuer_value, ".amazonaws.com/id/"));
+    flb_free(issuer_value);
+
+    if (is_eks) {
         flb_free(payload);
         return 1; /* EKS detected */
     }
