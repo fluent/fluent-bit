@@ -604,7 +604,8 @@ static int process_content(struct flb_tail_file *file, size_t *bytes)
         }
 
         nl = memchr(data, '\n', window);
-        if (nl == NULL && eff_max > 0 && dec_len >= eff_max) {
+        if (file->buf_size >= ctx->buf_max_size &&
+            nl == NULL && eff_max > 0 && dec_len >= eff_max) {
             if (file->skip_next == FLB_TRUE) {
                 bytes_override = (original_len > 0) ? original_len : file->buf_len;
                 goto truncation_end;
