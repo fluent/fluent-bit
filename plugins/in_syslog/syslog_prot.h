@@ -22,6 +22,8 @@
 
 #include <fluent-bit/flb_info.h>
 
+#include <stdint.h>
+
 #include "syslog.h"
 
 #define FLB_MAP_EXPAND_SUCCESS   0
