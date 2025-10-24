@@ -56,7 +56,7 @@ struct flb_influxdb {
     char *seq_name;
     int seq_len;
 
-    /* prefix */
+    /* prefix to be removed from the tag */
     char *prefix;
     int prefix_len;
 

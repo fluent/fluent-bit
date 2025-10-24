@@ -126,6 +126,10 @@ static int influxdb_format(struct flb_config *config,
             ctx->seq++;
         }
 
+        /* Find the overlap betwen the tag and a given prefix (to be removed):
+        If the prefix matches the tag for exactly the length of the prefix and
+        the tag is longer than the prefix, we have a valid match. */
+        prefix_offset = 0;
         prefix_match = strncmp(tag, ctx->prefix, ctx->prefix_len);
         if (prefix_match == 0) {
             if (tag_len > ctx->prefix_len) {
@@ -133,6 +137,7 @@ static int influxdb_format(struct flb_config *config,
             }
         }
 
+        /* Read the tag offset by the length of the prefix to remove it. */
         ret = influxdb_bulk_append_header(bulk_head,
                                           tag + prefix_offset,
                                           tag_len - prefix_offset,
@@ -379,7 +384,7 @@ static int cb_influxdb_init(struct flb_output_instance *ins, struct flb_config *
     }
     ctx->seq_len = strlen(ctx->seq_name);
 
-    /* prefix */
+    /* prefix to be removed from the tag */
     tmp = flb_output_get_property("strip_prefix", ins);
     if (!tmp) {
         ctx->prefix = flb_strdup("");
