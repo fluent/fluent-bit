@@ -19,7 +19,7 @@ plugs:
 
 apps:
   service:
-    command: usr/local/bin/fluent-bit -c $SNAP/usr/local/etc/fluent-bit/fluent-bit.conf
+    command: usr/bin/fluent-bit -c $SNAP/usr/etc/fluent-bit/fluent-bit.conf
     daemon: simple
     plugs:
       - network
@@ -27,7 +27,7 @@ apps:
       - read-config
 
   fluent-bit:
-    command: usr/local/bin/fluent-bit
+    command: usr/bin/fluent-bit
     plugs:
       - network
       - network-bind
@@ -57,6 +57,7 @@ parts:
         - libyaml-dev
         - postgresql-server-dev-all
     cmake-parameters:
+        - -DCMAKE_INSTALL_PREFIX=/usr
         - -DFLB_DEBUG=On
         - -DFLB_OUT_KAFKA=On
         - -DFLB_JEMALLOC=On
