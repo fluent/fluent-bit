@@ -228,8 +228,6 @@ LABEL org.opencontainers.image.title="Fluent Bit" `
 # Copy only the built artifacts from builder stage
 COPY --from=builder /fluent-bit /fluent-bit
 
-RUN setx /M PATH "%PATH%;C:\fluent-bit\bin"
-
 # Install Google Root CA certificate to allow communication with Google Cloud services.
 RUN powershell -Command `
     $ErrorActionPreference = 'Stop'; `
@@ -239,6 +237,8 @@ RUN powershell -Command `
     Invoke-WebRequest -Uri $GoogleRootCA -OutFile $CertFile; `
     Import-Certificate -FilePath $CertFile -CertStoreLocation Cert:\LocalMachine\Root\; `
     Remove-Item -Path $CertFile -Force;
+
+RUN setx /M PATH "%PATH%;C:\fluent-bit\bin"
 
 ENTRYPOINT [ "fluent-bit.exe" ]
 # Hadolint gets confused by Windows it seems
