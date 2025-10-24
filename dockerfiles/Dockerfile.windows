@@ -42,12 +42,12 @@ RUN $msvs_build_tools_dist_name=\"vs_buildtools.exe\"; `
     Invoke-WebRequest -OutFile \"${msvs_build_tools_channel}\" \"${msvs_build_tools_channel_url}\"; `
     Write-Host \"Installing Visual Studio Build Tools into ${env:MSVS_HOME}...\"; `
     Start-Process \"${msvs_build_tools_dist}\" `
-      -ArgumentList '--quiet ', '--wait ', '--norestart ', '--nocache', `
-      \"--installPath ${env:MSVS_HOME}\", `
-      \"--channelUri ${msvs_build_tools_channel}\", `
-      \"--installChannelUri ${msvs_build_tools_channel}\", `
-      '--add Microsoft.VisualStudio.Workload.VCTools', `
-      '--includeRecommended'  -NoNewWindow -Wait; `
+    -ArgumentList '--quiet ', '--wait ', '--norestart ', '--nocache', `
+    \"--installPath ${env:MSVS_HOME}\", `
+    \"--channelUri ${msvs_build_tools_channel}\", `
+    \"--installChannelUri ${msvs_build_tools_channel}\", `
+    '--add Microsoft.VisualStudio.Workload.VCTools', `
+    '--includeRecommended'  -NoNewWindow -Wait; `
     Remove-Item -Force \"${msvs_build_tools_dist}\"; `
     Remove-Item -Path \"${msvs_build_tools_channel}\" -Force;
 
@@ -56,13 +56,13 @@ ARG CMAKE_VERSION="3.31.6"
 ARG CMAKE_URL="https://github.com/Kitware/CMake/releases/download"
 
 RUN if ([System.Version] \"${env:CMAKE_VERSION}\" -ge [System.Version] \"3.20.0\") { `
-      $cmake_dist_base_name=\"cmake-${env:CMAKE_VERSION}-windows-x86_64\" `
+    $cmake_dist_base_name=\"cmake-${env:CMAKE_VERSION}-windows-x86_64\" `
     } else { `
-      if ([System.Version] \"${env:CMAKE_VERSION}\" -ge [System.Version] \"3.6.0\") { `
-        $cmake_dist_base_name=\"cmake-${env:CMAKE_VERSION}-win64-x64\" `
-      } else { `
-        $cmake_dist_base_name=\"cmake-${env:CMAKE_VERSION}-win32-x86\" `
-      } `
+    if ([System.Version] \"${env:CMAKE_VERSION}\" -ge [System.Version] \"3.6.0\") { `
+    $cmake_dist_base_name=\"cmake-${env:CMAKE_VERSION}-win64-x64\" `
+    } else { `
+    $cmake_dist_base_name=\"cmake-${env:CMAKE_VERSION}-win32-x86\" `
+    } `
     }; `
     $cmake_dist_name=\"${cmake_dist_base_name}.zip\"; `
     $cmake_dist=\"${env:TMP}\${cmake_dist_name}\"; `
@@ -176,15 +176,15 @@ ARG BUILD_PARALLEL=1
 SHELL ["cmd", "/S", "/C"]
 RUN call "%MSVS_HOME%\VC\Auxiliary\Build\vcvars64.bat" && `
     cmake -G "NMake Makefiles" `
-      -DOPENSSL_ROOT_DIR='C:\dev\vcpkg\packages\openssl_x64-windows-static' `
-      -DFLB_LIBYAML_DIR='C:\dev\vcpkg\packages\libyaml_x64-windows-static' `
-      -DFLB_SIMD=On `
-      -DCMAKE_BUILD_TYPE=Release `
-      -DFLB_SHARED_LIB=Off `
-      -DFLB_EXAMPLES=Off `
-      -DFLB_DEBUG=Off `
-      -DFLB_RELEASE=On `
-      ..\ && `
+    -DOPENSSL_ROOT_DIR='C:\dev\vcpkg\packages\openssl_x64-windows-static' `
+    -DFLB_LIBYAML_DIR='C:\dev\vcpkg\packages\libyaml_x64-windows-static' `
+    -DFLB_SIMD=On `
+    -DCMAKE_BUILD_TYPE=Release `
+    -DFLB_SHARED_LIB=Off `
+    -DFLB_EXAMPLES=Off `
+    -DFLB_DEBUG=Off `
+    -DFLB_RELEASE=On `
+    ..\ && `
     cmake --build . --config Release -j "%BUILD_PARALLEL%"
 
 SHELL ["powershell", "-Command", "$ErrorActionPreference = 'Stop'; $ProgressPreference = 'SilentlyContinue';"]
@@ -229,6 +229,16 @@ LABEL org.opencontainers.image.title="Fluent Bit" `
 COPY --from=builder /fluent-bit /fluent-bit
 
 RUN setx /M PATH "%PATH%;C:\fluent-bit\bin"
+
+# Install Google Root CA certificate to allow communication with Google Cloud services.
+RUN powershell -Command `
+    $ErrorActionPreference = 'Stop'; `
+    $ProgressPreference = 'SilentlyContinue'; `
+    $GoogleRootCA = 'https://pki.goog/r1.crt'; `
+    $CertFile = 'C:\r1.crt'; `
+    Invoke-WebRequest -Uri $GoogleRootCA -OutFile $CertFile; `
+    Import-Certificate -FilePath $CertFile -CertStoreLocation Cert:\LocalMachine\Root\; `
+    Remove-Item -Path $CertFile -Force;
 
 ENTRYPOINT [ "fluent-bit.exe" ]
 # Hadolint gets confused by Windows it seems
