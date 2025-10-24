@@ -23,6 +23,8 @@
 #include <fluent-bit/flb_output_plugin.h>
 #include <fluent-bit/flb_ring_buffer.h>
 
+struct flb_config;
+
 #define VIVO_RING_BUFFER_SIZE 10
 
 /* Plugin context */
@@ -40,6 +42,7 @@ struct vivo_exporter {
 
     /* instance context */
     struct flb_output_instance *ins;
+    struct flb_config *config;
 };
 
 #endif

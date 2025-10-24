@@ -136,7 +136,8 @@ void vivo_stream_destroy(struct vivo_stream *vs)
 
 flb_sds_t vivo_stream_get_content(struct vivo_stream *vs, int64_t from, int64_t to,
                                   int64_t limit,
-                                  int64_t *stream_start_id, int64_t *stream_end_id)
+                                  int64_t *stream_start_id, int64_t *stream_end_id,
+                                  int64_t *stream_next_id)
 {
     int64_t count = 0;
     flb_sds_t buf;
@@ -151,6 +152,18 @@ flb_sds_t vivo_stream_get_content(struct vivo_stream *vs, int64_t from, int64_t 
 
     stream_lock(vs);
 
+    if (stream_start_id) {
+        *stream_start_id = -1;
+    }
+
+    if (stream_end_id) {
+        *stream_end_id = -1;
+    }
+
+    if (stream_next_id) {
+        *stream_next_id = vs->entries_added;
+    }
+
     mk_list_foreach(head, &vs->entries) {
         e = mk_list_entry(head, struct vivo_stream_entry, _head);
 
@@ -162,13 +175,15 @@ flb_sds_t vivo_stream_get_content(struct vivo_stream *vs, int64_t from, int64_t 
             break;
         }
 
-        if (count == 0) {
+        if (count == 0 && stream_start_id) {
             *stream_start_id = e->id;
         }
 
         flb_sds_cat_safe(&buf, e->data, flb_sds_len(e->data));
 
-        *stream_end_id = e->id;
+        if (stream_end_id) {
+            *stream_end_id = e->id;
+        }
         count++;
 
         if (limit > 0 && count >= limit) {
