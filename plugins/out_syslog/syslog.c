@@ -669,7 +669,7 @@ static int msgpack_to_syslog(struct flb_syslog *ctx, msgpack_object *o,
         if (rval) {
             val = temp;
             extract_value_from_ra_result(rval, &val, sizeof(temp) - 1, &val_len);
-            if (!msg->hostname) {
+            if (!msg->hostname && val != NULL) {
                 msg->hostname = flb_sds_create_len(val, val_len);
             }
             flb_ra_key_value_destroy(rval);
@@ -681,7 +681,7 @@ static int msgpack_to_syslog(struct flb_syslog *ctx, msgpack_object *o,
         if (rval) {
             val = temp;
             extract_value_from_ra_result(rval, &val, sizeof(temp) - 1, &val_len);
-            if (!msg->appname) {
+            if (!msg->appname && val != NULL) {
                 msg->appname = flb_sds_create_len(val, val_len);
             }
             flb_ra_key_value_destroy(rval);
@@ -693,7 +693,7 @@ static int msgpack_to_syslog(struct flb_syslog *ctx, msgpack_object *o,
         if (rval) {
             val = temp;
             extract_value_from_ra_result(rval, &val, sizeof(temp) - 1, &val_len);
-            if (!msg->procid) {
+            if (!msg->procid && val != NULL) {
                 msg->procid = flb_sds_create_len(val, val_len);
             }
             flb_ra_key_value_destroy(rval);
@@ -705,7 +705,7 @@ static int msgpack_to_syslog(struct flb_syslog *ctx, msgpack_object *o,
         if (rval) {
             val = temp;
             extract_value_from_ra_result(rval, &val, sizeof(temp) - 1, &val_len);
-            if (!msg->msgid) {
+            if (!msg->msgid && val != NULL) {
                 msg->msgid = flb_sds_create_len(val, val_len);
             }
             flb_ra_key_value_destroy(rval);
@@ -717,7 +717,7 @@ static int msgpack_to_syslog(struct flb_syslog *ctx, msgpack_object *o,
         if (rval) {
             val = temp;
             extract_value_from_ra_result(rval, &val, sizeof(temp) - 1, &val_len);
-            if (!msg->message) {
+            if (!msg->message && val != NULL) {
                 msg->message = flb_sds_create_len(val, val_len);
             }
             flb_ra_key_value_destroy(rval);
