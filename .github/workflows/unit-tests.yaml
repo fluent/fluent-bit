@@ -54,6 +54,8 @@ jobs:
           - "-DFLB_SANITIZE_THREAD=On"
           - "-DFLB_SIMD=On"
           - "-DFLB_SIMD=Off"
+          - "-DFLB_SQLDB=On"
+          - "-DFLB_SQLDB=Off"
           - "-DFLB_ARROW=On"
           - "-DFLB_COMPILER_STRICT_POINTER_TYPES=On"
         cmake_version:
