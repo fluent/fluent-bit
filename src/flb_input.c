@@ -1133,6 +1133,17 @@ int flb_input_instance_init(struct flb_input_instance *ins,
                            "Number of input bytes.",
                            1, (char *[]) {"name"});
     cmt_counter_set(ins->cmt_bytes, ts, 0, 1, (char *[]) {name});
+    struct cmt_histogram_buckets *input_record_buckets = \
+        cmt_histogram_buckets_create_size((double[]){ 100, 1024, 2048, 4096,
+                                                      100 * 1024, 1024 * 1024, 4 * 1024 * 1024,
+                                                      10 * 1024 * 1024}, 8);
+    /* fluentbit_input_record_sizes */
+    ins->cmt_record_sizes = \
+        cmt_histogram_create(ins->cmt,
+                             "fluentbit", "input", "record_sizes",
+                             "Histogram of the size of input records",
+                             input_record_buckets,
+                             1, (char *[]) {"name"});
 
     /* fluentbit_input_records_total */
     ins->cmt_records = \

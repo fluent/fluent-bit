@@ -51,6 +51,7 @@
 #include <fluent-bit/flb_pthread.h>
 
 #include <cmetrics/cmetrics.h>
+#include <cmetrics/cmt_histogram.h>
 #include <monkey/mk_core.h>
 #include <msgpack.h>
 #include <inttypes.h>
@@ -394,9 +395,10 @@ struct flb_input_instance {
      *
      * All metrics available for an input plugin instance.
      */
-    struct cmt *cmt;                     /* parent context              */
-    struct cmt_counter *cmt_bytes;       /* metric: input_bytes_total   */
-    struct cmt_counter *cmt_records;     /* metric: input_records_total */
+    struct cmt *cmt;                        /* parent context              */
+    struct cmt_counter *cmt_bytes;          /* metric: input_bytes_total   */
+    struct cmt_histogram *cmt_record_sizes; /* metric: input_record_sizes  */
+    struct cmt_counter *cmt_records;        /* metric: input_records_total */
 
     /* is the input instance overlimit ?: 1 or 0 */
     struct cmt_gauge   *cmt_storage_overlimit;
