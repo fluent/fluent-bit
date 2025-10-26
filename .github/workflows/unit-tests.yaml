@@ -53,6 +53,8 @@ jobs:
           - "-DFLB_SANITIZE_THREAD=On"
           - "-DFLB_SIMD=On"
           - "-DFLB_SIMD=Off"
+          - "-DFLB_SQLDB=On"
+          - "-DFLB_SQLDB=Off"
           - "-DFLB_ARROW=On"
         cmake_version:
           - "3.31.6"
