@@ -1207,15 +1207,15 @@ static struct flb_output_instance *find_output_instance(struct flb_config *confi
 static int input_has_direct_route(struct flb_input_instance *in,
                                   struct flb_output_instance *out)
 {
-    struct mk_list *head;
+    struct cfl_list *head;
     struct flb_router_path *path;
 
     if (!in || !out) {
         return FLB_FALSE;
     }
 
-    mk_list_foreach(head, &in->routes_direct) {
-        path = mk_list_entry(head, struct flb_router_path, _head);
+    cfl_list_foreach(head, &in->routes_direct) {
+        path = cfl_list_entry(head, struct flb_router_path, _head);
         if (path->ins == out) {
             return FLB_TRUE;
         }
@@ -1251,6 +1251,7 @@ static int output_supports_signals(struct flb_output_instance *out, uint32_t sig
 
 int flb_router_apply_config(struct flb_config *config)
 {
+    int created = 0;
     struct cfl_list *input_head;
     struct cfl_list *route_head;
     struct cfl_list *output_head;
@@ -1260,14 +1261,11 @@ int flb_router_apply_config(struct flb_config *config)
     struct flb_input_instance *input_ins;
     struct flb_output_instance *output_ins;
     struct flb_output_instance *fallback_ins;
-    int created;
+    struct flb_router_path *path;
 
     if (!config) {
         return 0;
     }
-
-    flb_debug("[router] applying router configuration");
-    created = 0;
 
     cfl_list_foreach(input_head, &config->input_routes) {
         input_routes = cfl_list_entry(input_head, struct flb_input_routes, _head);
@@ -1318,10 +1316,7 @@ int flb_router_apply_config(struct flb_config *config)
                 }
 
                 if (flb_router_connect_direct(input_ins, output_ins) == 0) {
-                    struct flb_router_path *path;
-
-                    path = mk_list_entry_last(&input_ins->routes_direct,
-                                              struct flb_router_path, _head);
+                    path = cfl_list_entry_last(&input_ins->routes_direct, struct flb_router_path, _head);
                     path->route = route;
                     created++;
                     flb_debug("[router] connected input '%s' route '%s' to output '%s'",
