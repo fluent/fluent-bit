@@ -52,6 +52,8 @@
 
 #include <cmetrics/cmetrics.h>
 #include <monkey/mk_core.h>
+#include <cfl/cfl.h>
+
 #include <msgpack.h>
 #include <inttypes.h>
 
@@ -336,7 +338,7 @@ struct flb_input_instance {
     struct mk_list _head;                /* link to config->inputs     */
 
     struct cfl_list routes_direct;        /* direct routes set by API   */
-    struct mk_list  routes;               /* flb_router_path's list     */
+    struct cfl_list routes;               /* flb_router_path's list     */
     struct mk_list  properties;           /* properties / configuration */
     struct mk_list  collectors;           /* collectors                 */
 
