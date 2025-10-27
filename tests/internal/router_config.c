@@ -774,8 +774,8 @@ static void setup_test_instances(struct flb_config *config,
 
     memset(input, 0, sizeof(struct flb_input_instance));
     mk_list_init(&input->_head);
-    mk_list_init(&input->routes_direct);
-    mk_list_init(&input->routes);
+    cfl_list_init(&input->routes_direct);
+    cfl_list_init(&input->routes);
     mk_list_init(&input->tasks);
     mk_list_init(&input->chunks);
     mk_list_init(&input->collectors);
@@ -843,9 +843,9 @@ void test_router_apply_config_success()
     cfl_list_add(&route_output._head, &route.outputs);
 
     TEST_CHECK(flb_router_apply_config(&config) == 0);
-    TEST_CHECK(mk_list_size(&input.routes_direct) == 1);
+    TEST_CHECK(cfl_list_size(&input.routes_direct) == 1);
 
-    path = mk_list_entry(input.routes_direct.next, struct flb_router_path, _head);
+    path = cfl_list_entry(input.routes_direct.next, struct flb_router_path, _head);
     TEST_CHECK(path->ins == &output);
 
     flb_router_exit(&config);
@@ -891,8 +891,8 @@ void test_router_apply_config_missing_output()
 
     TEST_CHECK(flb_router_apply_config(&config) == 0);
 
-    /* note mk_list_is_empty return 0 if is empty */
-    TEST_CHECK(!mk_list_is_empty(&input.routes_direct));
+    /* When output is missing, no routes should be created */
+    TEST_CHECK(cfl_list_is_empty(&input.routes_direct));
 
     flb_router_exit(&config);
 
