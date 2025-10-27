@@ -167,7 +167,7 @@ int flb_sosreport(struct flb_config *config)
 {
     char tmp[32];
     struct mk_list *head;
-    struct mk_list *head_r;
+    struct cfl_list *head_r;
     struct flb_input_plugin *in;
     struct flb_filter_plugin *filter;
     struct flb_output_plugin *out;
@@ -266,10 +266,10 @@ int flb_sosreport(struct flb_config *config)
         print_properties(&ins_in->properties);
 
         /* Fixed Routes */
-        if (mk_list_is_empty(&ins_in->routes) != 0) {
+        if (!cfl_list_is_empty(&ins_in->routes)) {
             printf("    Routes\t\t");
-            mk_list_foreach(head_r, &ins_in->routes) {
-                route = mk_list_entry(head_r, struct flb_router_path, _head);
+            cfl_list_foreach(head_r, &ins_in->routes) {
+                route = cfl_list_entry(head_r, struct flb_router_path, _head);
                 printf("%s ", route->ins->name);
             }
             printf("\n");
