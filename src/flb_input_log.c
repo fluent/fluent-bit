@@ -115,7 +115,14 @@ static int route_payload_apply_outputs(struct flb_input_instance *ins,
                              (void **) &chunk,
                              &out_size);
     if (ret == -1 || !chunk || !chunk->routes_mask) {
-        return -1;
+        /* For threaded inputs, chunk may not exist yet - this is expected */
+        if (flb_input_is_threaded(ins)) {
+            /* In threaded mode, routing will be handled when chunk is materialized */
+            flb_plg_debug(ins, "chunk not yet materialized for threaded input, "
+                               "routing will be handled asynchronously");
+            return 0;  /* Success - don't treat as error */
+        }
+        return -1;  /* Error for non-threaded inputs */
     }
 
     memset(chunk->routes_mask, 0, sizeof(flb_route_mask_element) * ins->config->route_mask_size);
