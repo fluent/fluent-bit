@@ -141,7 +141,7 @@ jobs:
         shell: bash
 
       - name: Upload ${{ matrix.target }} digest
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v5
         with:
           name: ${{ matrix.target }}-digests-${{ (contains(matrix.platform, 'arm/v7') && 'arm-v7') || matrix.platform }}
           path: /tmp/digests/*
@@ -278,7 +278,7 @@ jobs:
         shell: bash
 
       - name: Upload the schema
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v5
         with:
           path: ./fluent-bit-schema*.json
           name: fluent-bit-schema-${{ inputs.version }}
