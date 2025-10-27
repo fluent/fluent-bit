@@ -367,7 +367,7 @@ struct flb_task *flb_task_create(uint64_t ref_id,
     struct flb_router_path *route_path;
     struct flb_output_instance *o_ins;
     struct flb_input_chunk *task_ic;
-    struct mk_list *i_head;
+    struct cfl_list *i_head;
     struct mk_list *o_head;
     struct flb_router_chunk_context router_context;
     int router_context_initialized = FLB_FALSE;
@@ -426,11 +426,11 @@ struct flb_task *flb_task_create(uint64_t ref_id,
 #endif
 
     /* Direct connects betweek input <> outputs (API based) */
-    if (mk_list_size(&i_ins->routes_direct) > 0) {
+    if (cfl_list_size(&i_ins->routes_direct) > 0) {
         direct_count = 0;
 
-        mk_list_foreach(i_head, &i_ins->routes_direct) {
-            route_path = mk_list_entry(i_head, struct flb_router_path, _head);
+        cfl_list_foreach(i_head, &i_ins->routes_direct) {
+            route_path = cfl_list_entry(i_head, struct flb_router_path, _head);
 
             if (flb_router_path_should_route(task->event_chunk,
                                              &router_context,
