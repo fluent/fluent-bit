@@ -756,13 +756,11 @@ static int input_log_append(struct flb_input_instance *ins,
         return -1;
     }
 
-    if (ret > 0) {
-        if (processor_is_active && buf != out_buf) {
-            flb_free(out_buf);
-        }
-        return 0;
-    }
-
+    /*
+     * Always call flb_input_chunk_append_raw to ensure non-conditional routes
+     * receive data even when conditional routes exist. The conditional routing
+     * should be additive, not exclusive.
+     */
     ret = flb_input_chunk_append_raw(ins, FLB_INPUT_LOGS, records,
                                      tag, tag_len, out_buf, out_size);
 
