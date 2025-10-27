@@ -254,26 +254,34 @@ char *flb_wasm_call_function_format_json(struct flb_wasm *fw, const char *functi
     const char *exception;
     uint8_t *func_result;
     wasm_function_inst_t func = NULL;
-    /* We should pass the length that is null terminator included into
-     * WASM runtime. This is why we add +1 for tag_len and record_len.
-     */
-    fw->tag_buffer = wasm_runtime_module_dup_data(fw->module_inst, tag_data, tag_len+1);
-    fw->record_buffer = wasm_runtime_module_dup_data(fw->module_inst, record_data, record_len+1);
-    uint32_t func_args[6] = {fw->tag_buffer, tag_len,
-                             t.tm.tv_sec, t.tm.tv_nsec,
-                             fw->record_buffer, record_len};
-    size_t args_size = sizeof(func_args) / sizeof(uint32_t);
+    uint32_t func_args[6] = {0};
+    size_t args_size = 0;
+    char *host_copy = NULL;
 
     if (!(func = wasm_runtime_lookup_function(fw->module_inst, function_name))) {
         flb_error("The %s wasm function is not found.", function_name);
         return NULL;
     }
 
+    /* We should pass the length that is null terminator included into
+     * WASM runtime. This is why we add +1 for tag_len and record_len.
+     */
+    fw->tag_buffer = wasm_runtime_module_dup_data(fw->module_inst, tag_data, tag_len+1);
+    fw->record_buffer = wasm_runtime_module_dup_data(fw->module_inst, record_data, record_len+1);
+
+    func_args[0] = fw->tag_buffer;
+    func_args[1] = tag_len;
+    func_args[2] = t.tm.tv_sec;
+    func_args[3] = t.tm.tv_nsec;
+    func_args[4] = fw->record_buffer;
+    func_args[5] = record_len;
+    args_size = sizeof(func_args) / sizeof(uint32_t);
+
     if (!wasm_runtime_call_wasm(fw->exec_env, func, args_size, func_args)) {
         exception = wasm_runtime_get_exception(fw->module_inst);
         flb_error("Got exception running wasm code: %s", exception);
         wasm_runtime_clear_exception(fw->module_inst);
-        return NULL;
+        goto cleanup_fail;
     }
 
     // The return value is stored in the first element of the function argument array.
@@ -281,15 +289,35 @@ char *flb_wasm_call_function_format_json(struct flb_wasm *fw, const char *functi
     // WAMR allows us to map WASM pointers to native pointers.
     if (!wasm_runtime_validate_app_str_addr(fw->module_inst, func_args[0])) {
         flb_warn("[wasm] returned value is invalid");
-        return NULL;
+        goto cleanup_fail;
     }
     func_result = wasm_runtime_addr_app_to_native(fw->module_inst, func_args[0]);
 
     if (func_result == NULL) {
-        return NULL;
+        goto cleanup_fail;
     }
 
-    return (char *)flb_strdup(func_result);
+    host_copy = (char *) flb_strdup(func_result);
+
+    if (fw->tag_buffer) {
+        wasm_runtime_module_free(fw->module_inst, fw->tag_buffer);
+        fw->tag_buffer = 0;
+    }
+    if (fw->record_buffer) {
+        wasm_runtime_module_free(fw->module_inst, fw->record_buffer);
+        fw->record_buffer = 0;
+    }
+    return host_copy;
+cleanup_fail:
+    if (fw->tag_buffer) {
+        wasm_runtime_module_free(fw->module_inst, fw->tag_buffer);
+        fw->tag_buffer = 0;
+    }
+    if (fw->record_buffer) {
+        wasm_runtime_module_free(fw->module_inst, fw->record_buffer);
+        fw->record_buffer = 0;
+    }
+    return NULL;
 }
 
 /*
@@ -335,26 +363,35 @@ char *flb_wasm_call_function_format_msgpack(struct flb_wasm *fw, const char *fun
     const char *exception;
     uint8_t *func_result;
     wasm_function_inst_t func = NULL;
-    /* We should pass the length that is null terminator included into
-     * WASM runtime. This is why we add +1 for tag_len and record_len.
-     */
-    fw->tag_buffer = wasm_runtime_module_dup_data(fw->module_inst, tag_data, tag_len+1);
-    fw->record_buffer = wasm_runtime_module_dup_data(fw->module_inst, records, records_len);
-    uint32_t func_args[6] = {fw->tag_buffer, tag_len,
-                             t.tm.tv_sec, t.tm.tv_nsec,
-                             fw->record_buffer, records_len};
-    size_t args_size = sizeof(func_args) / sizeof(uint32_t);
+    uint32_t func_args[6] = {0};
+    size_t args_size = 0;
+    char *host_copy = NULL;
 
     if (!(func = wasm_runtime_lookup_function(fw->module_inst, function_name))) {
         flb_error("The %s wasm function is not found.", function_name);
         return NULL;
     }
 
+    /* Tag is a C string: duplicate it with +1 to include the null terminator.
+     * Records is binary data: pass its length as-is (do not add +1).
+     * The WASM function treats `records` as binary rather than a string.
+     */
+    fw->tag_buffer = wasm_runtime_module_dup_data(fw->module_inst, tag_data, tag_len+1);
+    fw->record_buffer = wasm_runtime_module_dup_data(fw->module_inst, records, records_len);
+
+    func_args[0] = (uint32_t) fw->tag_buffer;
+    func_args[1] = (uint32_t) tag_len;
+    func_args[2] = (uint32_t) t.tm.tv_sec;
+    func_args[3] = (uint32_t) t.tm.tv_nsec;
+    func_args[4] = (uint32_t) fw->record_buffer;
+    func_args[5] = (uint32_t) records_len;
+    args_size = sizeof(func_args) / sizeof(func_args[0]);
+
     if (!wasm_runtime_call_wasm(fw->exec_env, func, args_size, func_args)) {
         exception = wasm_runtime_get_exception(fw->module_inst);
         flb_error("Got exception running wasm code: %s", exception);
         wasm_runtime_clear_exception(fw->module_inst);
-        return NULL;
+        goto cleanup_fail;
     }
 
     // The return value is stored in the first element of the function argument array.
@@ -362,15 +399,33 @@ char *flb_wasm_call_function_format_msgpack(struct flb_wasm *fw, const char *fun
     // WAMR allows us to map WASM pointers to native pointers.
     if (!wasm_runtime_validate_app_str_addr(fw->module_inst, func_args[0])) {
         flb_warn("[wasm] returned value is invalid");
-        return NULL;
+        goto cleanup_fail;
     }
     func_result = wasm_runtime_addr_app_to_native(fw->module_inst, func_args[0]);
-
     if (func_result == NULL) {
-        return NULL;
+        goto cleanup_fail;
     }
 
-    return (char *)flb_strdup(func_result);
+    host_copy = (char *) flb_strdup(func_result);
+    if (fw->tag_buffer) {
+        wasm_runtime_module_free(fw->module_inst, fw->tag_buffer);
+        fw->tag_buffer = 0;
+    }
+    if (fw->record_buffer) {
+        wasm_runtime_module_free(fw->module_inst, fw->record_buffer);
+        fw->record_buffer = 0;
+    }
+    return host_copy;
+cleanup_fail:
+    if (fw->tag_buffer) {
+        wasm_runtime_module_free(fw->module_inst, fw->tag_buffer);
+        fw->tag_buffer = 0;
+    }
+    if (fw->record_buffer) {
+        wasm_runtime_module_free(fw->module_inst, fw->record_buffer);
+        fw->record_buffer = 0;
+    }
+    return NULL;
 }
 
 int flb_wasm_call_wasi_main(struct flb_wasm *fw)
