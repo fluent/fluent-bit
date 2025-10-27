@@ -68,4 +68,4 @@ parts:
 
 layout:
   /etc/fluent-bit:
-    bind: $SNAP/etc/fluent-bit
+    bind: $SNAP/usr/etc/fluent-bit
