@@ -1468,35 +1468,9 @@ static void cb_azure_kusto_flush(struct flb_event_chunk *event_chunk,
 
         /* Check if streaming ingestion is enabled */
         if (ctx->streaming_ingestion_enabled == FLB_TRUE) {
-            flb_plg_debug(ctx->ins, "[FLUSH_STREAMING] Streaming ingestion mode enabled for tag: %s", event_chunk->tag);
-
-            /* 
-             * Kusto streaming ingestion has 2 limits:
-             * 1. Uncompressed data: 4MB limit
-             * 2. Compressed data: 1MB limit
-             * We need to check both limits
-             */
-            
-            /* Check uncompressed data limit (4MB) */
-            if (json_size > 4194304) { /* 4MB = 4 * 1024 * 1024 */
-                flb_plg_error(ctx->ins, "[FLUSH_STREAMING] ERROR: Uncompressed payload size %zu bytes exceeds 4MB limit for streaming ingestion", json_size);
-                ret = FLB_ERROR;
-                goto error;
-            }
-            
-            /* Check compressed data limit (1MB) if compression is enabled */
-            if (ctx->compression_enabled == FLB_TRUE && final_payload_size > 1048576) { /* 1MB = 1024 * 1024 */
-                flb_plg_error(ctx->ins, "[FLUSH_STREAMING] ERROR: Compressed payload size %zu bytes exceeds 1MB limit for streaming ingestion (uncompressed: %zu bytes)", final_payload_size, json_size);
-                ret = FLB_ERROR;
-                goto error;
-            }
-            
-            flb_plg_debug(ctx->ins, "[FLUSH_STREAMING] Payload size checks passed - uncompressed: %zu bytes, compressed: %zu bytes", 
-                         json_size, final_payload_size);
-
             /* 
              * Perform streaming ingestion to Kusto.
-             * Note: azure_kusto_streaming_ingestion may automatically fall back to queued ingestion
+             * Note: kusto streaming ingestion may automatically fall back to queued ingestion
              * if the payload size exceeds limits (checked internally). Resources are already loaded above.
              */
             flb_plg_debug(ctx->ins, "[FLUSH_STREAMING] Initiating streaming ingestion to Kusto");

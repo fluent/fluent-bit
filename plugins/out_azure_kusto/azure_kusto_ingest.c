@@ -532,7 +532,7 @@ int azure_kusto_streaming_ingestion(struct flb_azure_kusto *ctx, flb_sds_t tag,
     int len;
     size_t size_limit;
 
-    flb_plg_info(ctx->ins, "[STREAMING_INGESTION] Starting for tag: %.*s, payload: %zu bytes, db: %s, table: %s, compression: %s",
+    flb_plg_debug(ctx->ins, "[STREAMING_INGESTION] Starting for tag: %.*s, payload: %zu bytes, db: %s, table: %s, compression: %s",
                  (int)tag_len, tag, payload_size, ctx->database_name, ctx->table_name, ctx->compression_enabled ? "enabled" : "disabled");
 
     /* 
@@ -552,7 +552,7 @@ int azure_kusto_streaming_ingestion(struct flb_azure_kusto *ctx, flb_sds_t tag,
         /* Fallback to queued ingestion */
         ret = azure_kusto_queued_ingestion(ctx, tag, tag_len, payload, payload_size, NULL);
         if (ret == 0) {
-            flb_plg_info(ctx->ins, "[STREAMING_INGESTION] Successfully fell back to queued ingestion");
+            flb_plg_info(ctx->ins, "[STREAMING_INGESTION] Fallback to queued ingestion and succeeded");
         } else {
             flb_plg_error(ctx->ins, "[STREAMING_INGESTION] Fallback to queued ingestion failed");
         }
