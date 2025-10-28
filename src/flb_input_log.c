@@ -19,11 +19,13 @@
 
 #include "fluent-bit/flb_pack.h"
 #include <fluent-bit/flb_info.h>
+#include <fluent-bit/flb_log.h>
 #include <fluent-bit/flb_input.h>
 #include <fluent-bit/flb_input_chunk.h>
 #include <fluent-bit/flb_hash_table.h>
 #include <fluent-bit/flb_input_log.h>
 #include <fluent-bit/flb_input_plugin.h>
+#include <fluent-bit/flb_output.h>
 #include <fluent-bit/flb_processor.h>
 #include <fluent-bit/flb_router.h>
 #include <fluent-bit/flb_routes_mask.h>
@@ -35,6 +37,8 @@
 #include <fluent-bit/flb_event.h>
 #include <fluent-bit/flb_sds.h>
 #include <fluent-bit/flb_mem.h>
+
+#include <chunkio/chunkio.h>
 
 #include <stdint.h>
 #include <string.h>
@@ -97,6 +101,7 @@ static int route_payload_apply_outputs(struct flb_input_instance *ins,
     int ret;
     int routes_found = 0;
     size_t out_size = 0;
+    ssize_t chunk_size;
     struct cfl_list *head;
     struct flb_input_chunk *chunk = NULL;
     struct flb_router_path *route_path;
@@ -115,14 +120,7 @@ static int route_payload_apply_outputs(struct flb_input_instance *ins,
                              (void **) &chunk,
                              &out_size);
     if (ret == -1 || !chunk || !chunk->routes_mask) {
-        /* For threaded inputs, chunk may not exist yet - this is expected */
-        if (flb_input_is_threaded(ins)) {
-            /* In threaded mode, routing will be handled when chunk is materialized */
-            flb_plg_debug(ins, "chunk not yet materialized for threaded input, "
-                               "routing will be handled asynchronously");
-            return 0;  /* Success - don't treat as error */
-        }
-        return -1;  /* Error for non-threaded inputs */
+        return -1;
     }
 
     memset(chunk->routes_mask, 0, sizeof(flb_route_mask_element) * ins->config->route_mask_size);
@@ -139,6 +137,14 @@ static int route_payload_apply_outputs(struct flb_input_instance *ins,
 
     if (flb_routes_mask_is_empty(chunk->routes_mask, ins->config) == FLB_TRUE) {
         return -1;
+    }
+
+    if (chunk->fs_counted == FLB_FALSE) {
+        chunk_size = flb_input_chunk_get_real_size(chunk);
+        if (chunk_size > 0) {
+            flb_input_chunk_update_output_instances(chunk,
+                                                    (size_t) chunk_size);
+        }
     }
 
     return 0;
@@ -432,6 +438,65 @@ static void route_payload_list_destroy(struct cfl_list *payloads)
     }
 }
 
+static void input_chunk_remove_conditional_routes(struct flb_input_instance *ins,
+                                                  struct flb_input_chunk *chunk)
+{
+    ssize_t chunk_size;
+    size_t chunk_size_sz;
+    struct cfl_list *head;
+    struct flb_router_path *route_path;
+
+    if (!ins || !chunk || !chunk->routes_mask || !ins->config) {
+        return;
+    }
+
+    chunk_size = -1;
+    cfl_list_foreach(head, &ins->routes_direct) {
+        route_path = cfl_list_entry(head, struct flb_router_path, _head);
+
+        if (!route_path->route || !route_path->ins) {
+            continue;
+        }
+
+        if (!route_path->route->condition &&
+            !route_path->route->per_record_routing) {
+            continue;
+        }
+
+        if (flb_routes_mask_get_bit(chunk->routes_mask,
+                                    route_path->ins->id,
+                                    ins->config) == 0) {
+            continue;
+        }
+
+        flb_routes_mask_clear_bit(chunk->routes_mask,
+                                  route_path->ins->id,
+                                  ins->config);
+
+        if (route_path->ins->total_limit_size == -1 ||
+            chunk->fs_counted == FLB_FALSE) {
+            continue;
+        }
+
+        if (chunk_size == -1) {
+            chunk_size = flb_input_chunk_get_real_size(chunk);
+            if (chunk_size <= 0) {
+                chunk_size = 0;
+            }
+        }
+
+        if (chunk_size > 0) {
+            chunk_size_sz = (size_t) chunk_size;
+            if (route_path->ins->fs_chunks_size > chunk_size_sz) {
+                route_path->ins->fs_chunks_size -= chunk_size_sz;
+            }
+            else {
+                route_path->ins->fs_chunks_size = 0;
+            }
+        }
+    }
+}
+
 static int input_has_conditional_routes(struct flb_input_instance *ins)
 {
     struct cfl_list *head;
@@ -493,6 +558,13 @@ static int split_and_append_route_payloads(struct flb_input_instance *ins,
         return 0;
     }
 
+    /* Conditional routing not supported for threaded inputs */
+    if (flb_input_is_threaded(ins)) {
+        flb_plg_warn(ins, "conditional routing not supported for threaded inputs, "
+                          "falling back to normal routing");
+        return 0;
+    }
+
     cfl_list_init(&payloads);
     cfl_list_foreach(head, &ins->routes_direct) {
         route_path = cfl_list_entry(head, struct flb_router_path, _head);
@@ -538,6 +610,9 @@ static int split_and_append_route_payloads(struct flb_input_instance *ins,
             base_tag = ins->name;
             base_tag_len = strlen(ins->name);
         }
+    }
+    else if (base_tag_len == 0) {
+        base_tag_len = strlen(base_tag);
     }
 
     chunk = flb_event_chunk_create(FLB_EVENT_TYPE_LOGS,
@@ -717,9 +792,15 @@ static int input_log_append(struct flb_input_instance *ins,
                             const void *buf, size_t buf_size)
 {
     int ret;
+    int conditional_result;
+    int conditional_handled = FLB_FALSE;
     int processor_is_active;
     void *out_buf = (void *) buf;
+    size_t dummy = 0;
     size_t out_size = buf_size;
+    const char *base_tag = tag;
+    size_t base_tag_len = tag_len;
+    struct flb_input_chunk *chunk = NULL;
 
     processor_is_active = flb_processor_is_active(ins->processor);
     if (processor_is_active) {
@@ -754,13 +835,31 @@ static int input_log_append(struct flb_input_instance *ins,
         }
     }
 
-    ret = split_and_append_route_payloads(ins, records, tag, tag_len,
-                                          out_buf, out_size);
-    if (ret < 0) {
+    if (!base_tag) {
+        if (ins->tag && ins->tag_len > 0) {
+            base_tag = ins->tag;
+            base_tag_len = ins->tag_len;
+        }
+        else {
+            base_tag = ins->name;
+            base_tag_len = strlen(ins->name);
+        }
+    }
+    else if (base_tag_len == 0) {
+        base_tag_len = strlen(base_tag);
+    }
+
+    conditional_result = split_and_append_route_payloads(ins, records, tag, tag_len,
+                                                         out_buf, out_size);
+    if (conditional_result < 0) {
         if (processor_is_active && buf != out_buf) {
             flb_free(out_buf);
         }
         return -1;
+    }
+
+    if (conditional_result > 0) {
+        conditional_handled = FLB_TRUE;
     }
 
     /*
@@ -770,6 +869,19 @@ static int input_log_append(struct flb_input_instance *ins,
      */
     ret = flb_input_chunk_append_raw(ins, FLB_INPUT_LOGS, records,
                                      tag, tag_len, out_buf, out_size);
+
+    if (ret == 0 && conditional_handled == FLB_TRUE && base_tag) {
+        chunk = NULL;
+        dummy = 0;
+
+        if (flb_hash_table_get(ins->ht_log_chunks,
+                               base_tag,
+                               base_tag_len,
+                               (void **) &chunk,
+                               &dummy) >= 0 && chunk) {
+            input_chunk_remove_conditional_routes(ins, chunk);
+        }
+    }
 
     if (processor_is_active && buf != out_buf) {
         flb_free(out_buf);
