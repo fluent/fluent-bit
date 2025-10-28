@@ -39,6 +39,11 @@
 #define HTTP_CONTENT_JSON       0
 #define HTTP_CONTENT_URLENCODED 1
 
+static int http_header_lookup(int version, void *ptr, char *key,
+                              char **val, size_t *val_len);
+static int process_pack_ng(struct flb_http *ctx, flb_sds_t tag,
+                           char *buf, size_t size, void *request);
+
 static inline char hex2nibble(char c)
 {
     if ((c >= 0x30) && (c <= '9')) {
@@ -223,6 +228,95 @@ static flb_sds_t tag_key(struct flb_http *ctx, msgpack_object *map)
     return tag;
 }
 
+/* Extract the client IP address from the X-Forwarded-For header */
+static flb_sds_t get_remote_addr(void *request, int version)
+{
+    int ret;
+    char *ptr = NULL;
+    size_t len = 0;
+    flb_sds_t remote_addr;
+
+    ret = http_header_lookup(version,
+                             request,
+                             "X-Forwarded-For",
+                             &ptr, &len);
+
+    if (ret != 0) {
+        return NULL;
+    }
+
+    remote_addr = flb_sds_create_len(ptr, len);
+    if (!remote_addr) {
+        return NULL;
+    }
+
+    ptr = strchr(remote_addr, ',');
+    if (ptr) {
+        *ptr = '\0';
+        flb_sds_len_set(remote_addr, ptr - remote_addr);
+    }
+
+    /* need to trim spaces due to mk_http_header */
+    if (flb_sds_trim(remote_addr) <= 0) {
+         flb_sds_destroy(remote_addr);
+         return NULL;
+    }
+
+    return remote_addr;
+}
+
+static int append_remote_addr(
+    msgpack_object *obj,
+    msgpack_unpacked *unpck,
+    msgpack_sbuffer *sbuf,
+    struct flb_http *ctx,
+    char *remote_addr)
+{
+    msgpack_object *key;
+    msgpack_packer pck;
+    size_t off = 0;
+    size_t key_len;
+    int i;
+
+    /* check if remote_addr_key already exists */
+    key_len = strlen(ctx->remote_addr_key);
+    for (i = 0; i < obj->via.map.size; i++) {
+        key = &obj->via.map.ptr[i].key;
+        if (key->type == MSGPACK_OBJECT_STR &&
+            key->via.str.size == key_len &&
+            memcmp(key->via.str.ptr, ctx->remote_addr_key, key_len) == 0) {
+            flb_plg_warn(ctx->ins, "remote_addr_key already present in record, skipping injection");
+            return -1;
+        }
+    }
+
+    msgpack_sbuffer_clear(sbuf);
+    msgpack_packer_init(&pck, sbuf, msgpack_sbuffer_write);
+
+    /* create new map with +1 size */
+    msgpack_pack_map(&pck, obj->via.map.size + 1);
+
+    /* copy existing map entries */
+    for (i = 0; i < obj->via.map.size; i++) {
+        msgpack_pack_object(&pck, obj->via.map.ptr[i].key);
+        msgpack_pack_object(&pck, obj->via.map.ptr[i].val);
+    }
+
+    /* append REMOTE_ADDR entry */
+    msgpack_pack_str(&pck, key_len);
+    msgpack_pack_str_body(&pck, ctx->remote_addr_key, key_len);
+    msgpack_pack_str(&pck, strlen(remote_addr));
+    msgpack_pack_str_body(&pck, remote_addr, strlen(remote_addr));
+
+    /* unpack the new record */
+    if (msgpack_unpack_next(unpck, sbuf->data, sbuf->size, &off) != MSGPACK_UNPACK_SUCCESS) {
+        flb_plg_debug(ctx->ins, "error repacking record with remote_addr");
+        return -1;
+    }
+
+    return 0;
+}
+
 static int process_pack_record(struct flb_http *ctx, struct flb_time *tm,
                                flb_sds_t tag,
                                msgpack_object *record)
@@ -273,7 +367,7 @@ static int process_pack_record(struct flb_http *ctx, struct flb_time *tm,
     return 0;
 }
 
-int process_pack(struct flb_http *ctx, flb_sds_t tag, char *buf, size_t size)
+int process_pack(struct flb_http *ctx, flb_sds_t tag, char *buf, size_t size, void *request)
 {
     int ret;
     size_t off = 0;
@@ -283,17 +377,41 @@ int process_pack(struct flb_http *ctx, flb_sds_t tag, char *buf, size_t size)
     msgpack_object *obj;
     msgpack_object record;
     flb_sds_t tag_from_record = NULL;
+    
+    flb_sds_t remote_addr = NULL;
+    msgpack_unpacked appended_result;
+    msgpack_sbuffer appended_sbuf;
+    int appended_initialized = 0;
 
     flb_time_get(&tm);
 
+    if (ctx->add_remote_addr == FLB_TRUE && ctx->remote_addr_key != NULL) {
+        remote_addr = get_remote_addr(request, HTTP_PROTOCOL_VERSION_11);
+    }
+
     msgpack_unpacked_init(&result);
     while (msgpack_unpack_next(&result, buf, size, &off) == MSGPACK_UNPACK_SUCCESS) {
-        obj = &result.data;
-
         if (result.data.type == MSGPACK_OBJECT_MAP) {
+            obj = &result.data;
+            if (remote_addr != NULL && flb_sds_len(remote_addr) > 0) {
+                if (!appended_initialized) {
+                    /* doing this only once, since it can be cleared and reused */
+                    msgpack_sbuffer_init(&appended_sbuf);
+                    appended_initialized = 1;
+                }
+                else if (appended_result.zone != NULL) {
+                    msgpack_unpacked_destroy(&appended_result);
+                }
+
+                /* if we fail to append, we just continue with the original object */
+                msgpack_unpacked_init(&appended_result);
+                if (append_remote_addr(obj, &appended_result, &appended_sbuf, ctx, remote_addr) == 0) {
+                    obj = &appended_result.data;
+                }
+            }
+
             tag_from_record = NULL;
             if (ctx->tag_key) {
-                obj = &result.data;
                 tag_from_record = tag_key(ctx, obj);
             }
 
@@ -315,8 +433,26 @@ int process_pack(struct flb_http *ctx, flb_sds_t tag, char *buf, size_t size)
             flb_log_event_encoder_reset(&ctx->log_encoder);
         }
         else if (result.data.type == MSGPACK_OBJECT_ARRAY) {
+            obj = &result.data;
             for (i = 0; i < obj->via.array.size; i++) {
                 record = obj->via.array.ptr[i];
+                if (record.type == MSGPACK_OBJECT_MAP &&
+                    remote_addr != NULL && flb_sds_len(remote_addr) > 0) {
+                    if (!appended_initialized) {
+                        /* doing this only once, since it can be cleared and reused */
+                        msgpack_sbuffer_init(&appended_sbuf);
+                        appended_initialized = 1;
+                    }
+                    else if (appended_result.zone != NULL) {
+                        msgpack_unpacked_destroy(&appended_result);
+                    }
+
+                    /* if we fail to append, we just continue with the original object */
+                    msgpack_unpacked_init(&appended_result);
+                    if (append_remote_addr(&record, &appended_result, &appended_sbuf, ctx, remote_addr) == 0) {
+                        record = appended_result.data;
+                    }
+                }
 
                 tag_from_record = NULL;
                 if (ctx->tag_key) {
@@ -355,22 +491,41 @@ int process_pack(struct flb_http *ctx, flb_sds_t tag, char *buf, size_t size)
                          result.data.type);
 
             msgpack_unpacked_destroy(&result);
+            if (remote_addr != NULL) {
+                flb_sds_destroy(remote_addr);
+            }
+
             return -1;
         }
     }
 
     msgpack_unpacked_destroy(&result);
+    if (appended_initialized) {
+        msgpack_unpacked_destroy(&appended_result);
+        msgpack_sbuffer_destroy(&appended_sbuf);
+    }
+
+    if (remote_addr != NULL) {
+        flb_sds_destroy(remote_addr);
+    }
 
     return 0;
 
 log_event_error:
     msgpack_unpacked_destroy(&result);
+    if (appended_initialized) {
+        msgpack_unpacked_destroy(&appended_result);
+        msgpack_sbuffer_destroy(&appended_sbuf);
+    }
+    if (remote_addr != NULL) {
+        flb_sds_destroy(remote_addr);
+    }
     flb_plg_error(ctx->ins, "Error encoding record : %d", ret);
     return ret;
 }
 
 static ssize_t parse_payload_json(struct flb_http *ctx, flb_sds_t tag,
-                                  char *payload, size_t size)
+                                  char *payload, size_t size, void *request)
 {
     int ret;
     int out_size;
@@ -400,14 +555,14 @@ static ssize_t parse_payload_json(struct flb_http *ctx, flb_sds_t tag,
     }
 
     /* Process the packaged JSON and return the last byte used */
-    ret = process_pack(ctx, tag, pack, out_size);
+    ret = process_pack(ctx, tag, pack, out_size, request);
     flb_free(pack);
 
     return ret;
 }
 
 static ssize_t parse_payload_urlencoded(struct flb_http *ctx, flb_sds_t tag,
-                                        char *payload, size_t size)
+                                        char *payload, size_t size, void *request)
 {
     int i;
     int idx = 0;
@@ -502,7 +657,12 @@ static ssize_t parse_payload_urlencoded(struct flb_http *ctx, flb_sds_t tag,
         msgpack_pack_str_body(&pck, vals[i], flb_sds_len(vals[i]));
     }
 
-    ret = process_pack(ctx, tag, sbuf.data, sbuf.size);
+    if (ctx->enable_http2) {
+        ret = process_pack_ng(ctx, tag, sbuf.data, sbuf.size, request);
+    }
+    else {
+        ret = process_pack(ctx, tag, sbuf.data, sbuf.size, request);
+    }
 
 decode_error:
     for (idx = 0; idx < mk_list_size(kvs); idx++) {
@@ -522,7 +682,6 @@ split_error:
     msgpack_sbuffer_destroy(&sbuf);
     return ret;
 }
-
 
 /*
  * We use two backends for HTTP parsing and it depends on the version of the
@@ -590,7 +749,6 @@ static int http_header_lookup(int version, void *ptr, char *key,
 
     return -1;
 }
-
 
 static \
 int uncompress_zlib(struct flb_http *ctx,
@@ -821,10 +979,10 @@ static int process_payload(struct flb_http *ctx, struct http_conn *conn,
     }
 
     if (type == HTTP_CONTENT_JSON) {
-        ret = parse_payload_json(ctx, tag, request->data.data, request->data.len);
+        ret = parse_payload_json(ctx, tag, request->data.data, request->data.len, request);
     }
     else if (type == HTTP_CONTENT_URLENCODED) {
-        ret = parse_payload_urlencoded(ctx, tag, request->data.data, request->data.len);
+        ret = parse_payload_urlencoded(ctx, tag, request->data.data, request->data.len, request);
     }
 
     if (uncompressed_data != NULL) {
@@ -1070,7 +1228,7 @@ static int send_response_ng(struct flb_http_response *response,
     return 0;
 }
 
-static int process_pack_ng(struct flb_http *ctx, flb_sds_t tag, char *buf, size_t size)
+static int process_pack_ng(struct flb_http *ctx, flb_sds_t tag, char *buf, size_t size, void *request)
 {
     int ret;
     size_t off = 0;
@@ -1081,13 +1239,39 @@ static int process_pack_ng(struct flb_http *ctx, flb_sds_t tag, char *buf, size_
     msgpack_object record;
     flb_sds_t tag_from_record = NULL;
 
+    flb_sds_t remote_addr = NULL;
+    msgpack_unpacked appended_result;
+    msgpack_sbuffer appended_sbuf;
+    int appended_initialized = 0;
+
     flb_time_get(&tm);
+
+    if (ctx->add_remote_addr == FLB_TRUE && ctx->remote_addr_key != NULL) {
+        remote_addr = get_remote_addr(request, HTTP_PROTOCOL_VERSION_20);
+    }
 
     msgpack_unpacked_init(&result);
     while (msgpack_unpack_next(&result, buf, size, &off) == MSGPACK_UNPACK_SUCCESS) {
         if (result.data.type == MSGPACK_OBJECT_MAP) {
-            tag_from_record = NULL;
             obj = &result.data;
+            if (remote_addr != NULL && flb_sds_len(remote_addr) > 0) {
+                if (!appended_initialized) {
+                    /* doing this only once, since it can be cleared and reused */
+                    msgpack_sbuffer_init(&appended_sbuf);
+                    appended_initialized = 1;
+                }
+                else if (appended_result.zone != NULL) {
+                        msgpack_unpacked_destroy(&appended_result);
+                }
+
+                /* if we fail to append, we just continue with the original object */
+                msgpack_unpacked_init(&appended_result);
+                if (append_remote_addr(obj, &appended_result, &appended_sbuf, ctx, remote_addr) == 0) {
+                    obj = &appended_result.data;
+                }
+            }
+
+            tag_from_record = NULL;
 
             if (ctx->tag_key) {
                 tag_from_record = tag_key(ctx, obj);
@@ -1115,6 +1299,23 @@ static int process_pack_ng(struct flb_http *ctx, flb_sds_t tag, char *buf, size_
             for (i = 0; i < obj->via.array.size; i++)
             {
                 record = obj->via.array.ptr[i];
+                if (record.type == MSGPACK_OBJECT_MAP &&
+                    remote_addr != NULL && flb_sds_len(remote_addr) > 0) {
+                    if (!appended_initialized) {
+                        /* doing this only once, since it can be cleared and reused */
+                        msgpack_sbuffer_init(&appended_sbuf);
+                        appended_initialized = 1;
+                    }
+                    else if (appended_result.zone != NULL) {
+                        msgpack_unpacked_destroy(&appended_result);
+                    }
+
+                    /* if we fail to append, we just continue with the original object */
+                    msgpack_unpacked_init(&appended_result);
+                    if (append_remote_addr(&record, &appended_result, &appended_sbuf, ctx, remote_addr) == 0) {
+                        record = appended_result.data;
+                    }
+                }
 
                 tag_from_record = NULL;
                 if (ctx->tag_key) {
@@ -1153,17 +1354,36 @@ static int process_pack_ng(struct flb_http *ctx, flb_sds_t tag, char *buf, size_
                          result.data.type);
 
             msgpack_unpacked_destroy(&result);
+            if (remote_addr != NULL) {
+                flb_sds_destroy(remote_addr);
+            }
 
             return -1;
         }
     }
 
     msgpack_unpacked_destroy(&result);
+    if (appended_initialized) {
+        msgpack_unpacked_destroy(&appended_result);
+        msgpack_sbuffer_destroy(&appended_sbuf);
+    }
+    if (remote_addr != NULL) {
+        flb_sds_destroy(remote_addr);
+    }
+
     return 0;
 
 log_event_error:
     flb_plg_error(ctx->ins, "Error encoding record : %d", ret);
     msgpack_unpacked_destroy(&result);
+    if (appended_initialized) {
+        msgpack_unpacked_destroy(&appended_result);
+        msgpack_sbuffer_destroy(&appended_sbuf);
+    }
+    if (remote_addr != NULL) {
+        flb_sds_destroy(remote_addr);
+    }
+
     return -1;
 }
 
@@ -1204,7 +1424,7 @@ static ssize_t parse_payload_json_ng(flb_sds_t tag,
     }
 
     /* Process the packaged JSON and return the last byte used */
-    ret = process_pack_ng(ctx, tag, pack, out_size);
+    ret = process_pack_ng(ctx, tag, pack, out_size, request);
     flb_free(pack);
 
     return ret;
@@ -1249,7 +1469,7 @@ static int process_payload_ng(flb_sds_t tag,
         ctx = (struct flb_http *) request->stream->user_data;
         payload = (char *) request->body;
         if (payload) {
-            return parse_payload_urlencoded(ctx, tag, payload, cfl_sds_len(payload));
+            return parse_payload_urlencoded(ctx, tag, payload, cfl_sds_len(payload), request);
         }
     }
 
