@@ -227,6 +227,18 @@ static struct flb_config_map config_map[] = {
     },
 
     {
+     FLB_CONFIG_MAP_BOOL, "add_remote_addr", "false",
+     0, FLB_TRUE, offsetof(struct flb_http, add_remote_addr),
+     "Adds REMOTE_ADDR field to the record. The value of REMOTE_ADDR is the client's address."
+    },
+
+    {
+     FLB_CONFIG_MAP_STR, "remote_addr_key", REMOTE_ADDR_KEY,
+     0, FLB_TRUE, offsetof(struct flb_http, remote_addr_key),
+     "Key name for the remote address field added to the record."
+    },
+
+    {
      FLB_CONFIG_MAP_SIZE, "buffer_max_size", HTTP_BUFFER_MAX_SIZE,
      0, FLB_TRUE, offsetof(struct flb_http, buffer_max_size),
      "Set the maximum buffer size to store incoming data."
