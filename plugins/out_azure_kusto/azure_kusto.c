@@ -1453,12 +1453,25 @@ static void cb_azure_kusto_flush(struct flb_event_chunk *event_chunk,
         }
         flb_plg_trace(ctx->ins, "payload size after compression %zu", final_payload_size);
 
+        /* 
+         * Load ingestion resources regardless of streaming mode.
+         * This is required because streaming ingestion may fall back to queued ingestion
+         * when payload size exceeds limits, and queued ingestion requires these resources.
+         */
+        ret = azure_kusto_load_ingestion_resources(ctx, config);
+        flb_plg_trace(ctx->ins, "load_ingestion_resources: ret=%d", ret);
+        if (ret != 0) {
+            flb_plg_error(ctx->ins, "cannot load ingestion resources");
+            ret = FLB_RETRY;
+            goto error;
+        }
+
         /* Check if streaming ingestion is enabled */
         if (ctx->streaming_ingestion_enabled == FLB_TRUE) {
             flb_plg_debug(ctx->ins, "[FLUSH_STREAMING] Streaming ingestion mode enabled for tag: %s", event_chunk->tag);
 
             /* 
-             * Azure Kusto streaming ingestion has TWO limits:
+             * Kusto streaming ingestion has 2 limits:
              * 1. Uncompressed data: 4MB limit
              * 2. Compressed data: 1MB limit
              * We need to check both limits
@@ -1481,7 +1494,11 @@ static void cb_azure_kusto_flush(struct flb_event_chunk *event_chunk,
             flb_plg_debug(ctx->ins, "[FLUSH_STREAMING] Payload size checks passed - uncompressed: %zu bytes, compressed: %zu bytes", 
                          json_size, final_payload_size);
 
-            /* Perform streaming ingestion to Kusto */
+            /* 
+             * Perform streaming ingestion to Kusto.
+             * Note: azure_kusto_streaming_ingestion may automatically fall back to queued ingestion
+             * if the payload size exceeds limits (checked internally). Resources are already loaded above.
+             */
             flb_plg_debug(ctx->ins, "[FLUSH_STREAMING] Initiating streaming ingestion to Kusto");
             ret = azure_kusto_streaming_ingestion(ctx, event_chunk->tag, tag_len, final_payload, final_payload_size);
 
@@ -1494,14 +1511,6 @@ static void cb_azure_kusto_flush(struct flb_event_chunk *event_chunk,
             }
         } else {
             flb_plg_debug(ctx->ins, "[FLUSH_QUEUED] Using queued ingestion mode (streaming ingestion disabled)");
-            /* Load or refresh ingestion resources for queued ingestion */
-            ret = azure_kusto_load_ingestion_resources(ctx, config);
-            flb_plg_trace(ctx->ins, "load_ingestion_resources: ret=%d", ret);
-            if (ret != 0) {
-                flb_plg_error(ctx->ins, "cannot load ingestion resources");
-                ret = FLB_RETRY;
-                goto error;
-            }
 
             /* Perform queued ingestion to Kusto */
             ret = azure_kusto_queued_ingestion(ctx, event_chunk->tag, tag_len, final_payload, final_payload_size, NULL);
