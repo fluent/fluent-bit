@@ -101,6 +101,7 @@ static int route_payload_apply_outputs(struct flb_input_instance *ins,
     int ret;
     int routes_found = 0;
     size_t out_size = 0;
+    size_t chunk_size_sz = 0;
     ssize_t chunk_size;
     struct cfl_list *head;
     struct flb_input_chunk *chunk = NULL;
@@ -121,6 +122,52 @@ static int route_payload_apply_outputs(struct flb_input_instance *ins,
                              &out_size);
     if (ret == -1 || !chunk || !chunk->routes_mask) {
         return -1;
+    }
+
+    if (chunk->fs_counted == FLB_TRUE) {
+        chunk_size = flb_input_chunk_get_real_size(chunk);
+        if (chunk_size > 0) {
+            chunk_size_sz = (size_t) chunk_size;
+        }
+        else {
+            chunk_size = 0;
+        }
+    }
+    else {
+        chunk_size = 0;
+    }
+
+    if (chunk_size_sz > 0) {
+        cfl_list_foreach(head, &ins->routes_direct) {
+            route_path = cfl_list_entry(head, struct flb_router_path, _head);
+
+            if (!route_path->ins) {
+                continue;
+            }
+
+            if (flb_routes_mask_get_bit(chunk->routes_mask,
+                                        route_path->ins->id,
+                                        ins->config) == 0) {
+                continue;
+            }
+
+            if (route_path->route == payload->route) {
+                continue;
+            }
+
+            if (route_path->ins->total_limit_size != -1) {
+                if (route_path->ins->fs_chunks_size > chunk_size_sz) {
+                    route_path->ins->fs_chunks_size -= chunk_size_sz;
+                }
+                else {
+                    route_path->ins->fs_chunks_size = 0;
+                }
+            }
+
+            flb_routes_mask_clear_bit(chunk->routes_mask,
+                                      route_path->ins->id,
+                                      ins->config);
+        }
     }
 
     memset(chunk->routes_mask, 0, sizeof(flb_route_mask_element) * ins->config->route_mask_size);
