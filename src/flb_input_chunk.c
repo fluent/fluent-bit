@@ -96,7 +96,6 @@ static int flb_input_chunk_drop_task_route(
                 struct flb_output_instance *o_ins,
                 ssize_t *dropped_record_count);
 
-static ssize_t flb_input_chunk_get_real_size(struct flb_input_chunk *ic);
 
 static ssize_t get_input_chunk_record_count(struct flb_input_chunk *input_chunk)
 {
@@ -283,7 +282,7 @@ ssize_t flb_input_chunk_get_size(struct flb_input_chunk *ic)
  * is used to track the size of chunks in filesystem so we need to call
  * cio_chunk_get_real_size to return the original size in the file system
  */
-static ssize_t flb_input_chunk_get_real_size(struct flb_input_chunk *ic)
+ssize_t flb_input_chunk_get_real_size(struct flb_input_chunk *ic)
 {
     ssize_t meta_size;
     ssize_t size;

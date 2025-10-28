@@ -113,6 +113,7 @@ int flb_input_chunk_get_tag(struct flb_input_chunk *ic,
 void flb_input_chunk_ring_buffer_cleanup(struct flb_input_instance *ins);
 void flb_input_chunk_ring_buffer_collector(struct flb_config *ctx, void *data);
 ssize_t flb_input_chunk_get_size(struct flb_input_chunk *ic);
+ssize_t flb_input_chunk_get_real_size(struct flb_input_chunk *ic);
 size_t flb_input_chunk_set_limits(struct flb_input_instance *in);
 size_t flb_input_chunk_total_size(struct flb_input_instance *in);
 struct flb_input_chunk *flb_input_chunk_map(struct flb_input_instance *in,
