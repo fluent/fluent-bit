@@ -518,7 +518,8 @@ static int azure_kusto_enqueue_ingestion(struct flb_azure_kusto *ctx, flb_sds_t 
 }
 
 int azure_kusto_streaming_ingestion(struct flb_azure_kusto *ctx, flb_sds_t tag,
-                                    size_t tag_len, flb_sds_t payload, size_t payload_size)
+                                    size_t tag_len, flb_sds_t payload, size_t payload_size,
+                                    size_t uncompressed_size)
 {
     int ret = -1;
     struct flb_connection *u_conn;
@@ -530,29 +531,24 @@ int azure_kusto_streaming_ingestion(struct flb_azure_kusto *ctx, flb_sds_t tag,
     struct tm tm;
     char tmp[64];
     int len;
-    size_t size_limit;
 
-    flb_plg_debug(ctx->ins, "[STREAMING_INGESTION] Starting for tag: %.*s, payload: %zu bytes, db: %s, table: %s, compression: %s",
-                 (int)tag_len, tag, payload_size, ctx->database_name, ctx->table_name, ctx->compression_enabled ? "enabled" : "disabled");
+    flb_plg_info(ctx->ins, "[STREAMING_INGESTION] Starting for tag: %.*s, uncompressed: %zu bytes, payload: %zu bytes, db: %s, table: %s, compression: %s",
+                 (int)tag_len, tag, uncompressed_size, payload_size, ctx->database_name, ctx->table_name, ctx->compression_enabled ? "enabled" : "disabled");
 
     /* 
-     * Size validation (matching ManagedStreamingIngestClient behavior)
-     * Check payload size against limits before attempting streaming ingestion
+     * Size validation per Azure Kusto documentation:
+     * https://learn.microsoft.com/en-us/azure/data-explorer/ingest-data-streaming
+     * "Data size limit: The data size limit for a streaming ingestion request is 4 MB."
+     * This limit applies to the uncompressed data size.
      */
-    if (ctx->compression_enabled) {
-        size_limit = KUSTO_STREAMING_MAX_COMPRESSED_SIZE;
-    } else {
-        size_limit = KUSTO_STREAMING_MAX_UNCOMPRESSED_SIZE;
-    }
-
-    if (payload_size > size_limit) {
-        flb_plg_warn(ctx->ins, "[STREAMING_INGESTION] Payload size %zu bytes exceeds %s limit of %zu bytes - falling back to queued ingestion",
-                     payload_size, ctx->compression_enabled ? "compressed" : "uncompressed", size_limit);
+    if (uncompressed_size > KUSTO_STREAMING_MAX_UNCOMPRESSED_SIZE) {
+        flb_plg_warn(ctx->ins, "[STREAMING_INGESTION] Uncompressed data size %zu bytes exceeds 4MB limit - falling back to queued ingestion",
+                     uncompressed_size);
         
         /* Fallback to queued ingestion */
         ret = azure_kusto_queued_ingestion(ctx, tag, tag_len, payload, payload_size, NULL);
         if (ret == 0) {
-            flb_plg_info(ctx->ins, "[STREAMING_INGESTION] Fallback to queued ingestion and succeeded");
+            flb_plg_info(ctx->ins, "[STREAMING_INGESTION] Successfully fell back to queued ingestion");
         } else {
             flb_plg_error(ctx->ins, "[STREAMING_INGESTION] Fallback to queued ingestion failed");
         }

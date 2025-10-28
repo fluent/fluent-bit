@@ -1471,10 +1471,10 @@ static void cb_azure_kusto_flush(struct flb_event_chunk *event_chunk,
             /* 
              * Perform streaming ingestion to Kusto.
              * Note: kusto streaming ingestion may automatically fall back to queued ingestion
-             * if the payload size exceeds limits (checked internally). Resources are already loaded above.
+             * if the payload size exceeds limits ie uncompressed payload size > 4MB.
              */
             flb_plg_debug(ctx->ins, "[FLUSH_STREAMING] Initiating streaming ingestion to Kusto");
-            ret = azure_kusto_streaming_ingestion(ctx, event_chunk->tag, tag_len, final_payload, final_payload_size);
+            ret = azure_kusto_streaming_ingestion(ctx, event_chunk->tag, tag_len, final_payload, final_payload_size, json_size);
 
             if (ret != 0) {
                 flb_plg_error(ctx->ins, "[FLUSH_STREAMING] ERROR: Streaming ingestion failed, will retry");
