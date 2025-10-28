@@ -23,7 +23,14 @@
 #include "azure_kusto.h"
 #include "azure_kusto_store.h"
 
+/* Kusto Streaming Ingestion Limits (matching ManagedStreamingIngestClient behavior) */
+#define KUSTO_STREAMING_MAX_UNCOMPRESSED_SIZE (4 * 1024 * 1024)  /* 4 MB */
+#define KUSTO_STREAMING_MAX_COMPRESSED_SIZE   (1 * 1024 * 1024)  /* 1 MB */
+
 int azure_kusto_queued_ingestion(struct flb_azure_kusto *ctx, flb_sds_t tag,
                                  size_t tag_len, flb_sds_t payload, size_t payload_size, struct azure_kusto_file *upload_file);
+
+int azure_kusto_streaming_ingestion(struct flb_azure_kusto *ctx, flb_sds_t tag,
+                                    size_t tag_len, flb_sds_t payload, size_t payload_size);
 
 #endif

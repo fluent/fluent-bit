@@ -517,6 +517,155 @@ static int azure_kusto_enqueue_ingestion(struct flb_azure_kusto *ctx, flb_sds_t 
     return ret;
 }
 
+int azure_kusto_streaming_ingestion(struct flb_azure_kusto *ctx, flb_sds_t tag,
+                                    size_t tag_len, flb_sds_t payload, size_t payload_size)
+{
+    int ret = -1;
+    struct flb_connection *u_conn;
+    struct flb_http_client *c;
+    flb_sds_t uri = NULL;
+    flb_sds_t token = NULL;
+    size_t resp_size;
+    time_t now;
+    struct tm tm;
+    char tmp[64];
+    int len;
+    size_t size_limit;
+
+    flb_plg_info(ctx->ins, "[STREAMING_INGESTION] Starting for tag: %.*s, payload: %zu bytes, db: %s, table: %s, compression: %s",
+                 (int)tag_len, tag, payload_size, ctx->database_name, ctx->table_name, ctx->compression_enabled ? "enabled" : "disabled");
+
+    /* 
+     * Size validation (matching ManagedStreamingIngestClient behavior)
+     * Check payload size against limits before attempting streaming ingestion
+     */
+    if (ctx->compression_enabled) {
+        size_limit = KUSTO_STREAMING_MAX_COMPRESSED_SIZE;
+    } else {
+        size_limit = KUSTO_STREAMING_MAX_UNCOMPRESSED_SIZE;
+    }
+
+    if (payload_size > size_limit) {
+        flb_plg_warn(ctx->ins, "[STREAMING_INGESTION] Payload size %zu bytes exceeds %s limit of %zu bytes - falling back to queued ingestion",
+                     payload_size, ctx->compression_enabled ? "compressed" : "uncompressed", size_limit);
+        
+        /* Fallback to queued ingestion */
+        ret = azure_kusto_queued_ingestion(ctx, tag, tag_len, payload, payload_size, NULL);
+        if (ret == 0) {
+            flb_plg_info(ctx->ins, "[STREAMING_INGESTION] Successfully fell back to queued ingestion");
+        } else {
+            flb_plg_error(ctx->ins, "[STREAMING_INGESTION] Fallback to queued ingestion failed");
+        }
+        return ret;
+    }
+
+    now = time(NULL);
+    gmtime_r(&now, &tm);
+    len = strftime(tmp, sizeof(tmp) - 1, "%a, %d %b %Y %H:%M:%S GMT", &tm);
+
+    /* Get upstream connection to the main Kusto cluster endpoint (for streaming ingestion) */
+    if (!ctx->u_cluster) {
+        flb_plg_error(ctx->ins, "[STREAMING_INGESTION] ERROR: cluster upstream not available - streaming ingestion requires cluster endpoint");
+        return -1;
+    }
+
+    u_conn = flb_upstream_conn_get(ctx->u_cluster);
+    if (!u_conn) {
+        flb_plg_error(ctx->ins, "[STREAMING_INGESTION] ERROR: failed to get cluster upstream connection");
+        return -1;
+    }
+
+    /* Get authentication token */
+    token = get_azure_kusto_token(ctx);
+    if (!token) {
+        flb_plg_error(ctx->ins, "[STREAMING_INGESTION] ERROR: failed to retrieve OAuth2 token");
+        flb_upstream_conn_release(u_conn);
+        return -1;
+    }
+
+    /* Build the streaming ingestion URI */
+    uri = flb_sds_create_size(256);
+    if (!uri) {
+        flb_plg_error(ctx->ins, "[STREAMING_INGESTION] ERROR: failed to create URI buffer");
+        flb_sds_destroy(token);
+        flb_upstream_conn_release(u_conn);
+        return -1;
+    }
+
+    /* Create the streaming ingestion URI */
+    if (ctx->ingestion_mapping_reference) {
+        flb_sds_snprintf(&uri, flb_sds_alloc(uri),
+                         "/v1/rest/ingest/%s/%s?streamFormat=MultiJSON&mappingName=%s",
+                         ctx->database_name, ctx->table_name, ctx->ingestion_mapping_reference);
+    } else {
+        flb_sds_snprintf(&uri, flb_sds_alloc(uri),
+                         "/v1/rest/ingest/%s/%s?streamFormat=MultiJSON",
+                         ctx->database_name, ctx->table_name);
+        flb_plg_debug(ctx->ins, "[STREAMING_INGESTION] No ingestion mapping specified");
+    }
+
+    /* Create HTTP client for streaming ingestion */
+    c = flb_http_client(u_conn, FLB_HTTP_POST, uri, payload, payload_size,
+                        NULL, 0, NULL, 0);
+
+    if (c) {
+        /* Add required headers for streaming ingestion */
+        flb_http_add_header(c, "User-Agent", 10, "Fluent-Bit", 10);
+        flb_http_add_header(c, "Accept", 6, "application/json", 16);
+        flb_http_add_header(c, "Authorization", 13, token, flb_sds_len(token));
+        flb_http_add_header(c, "x-ms-date", 9, tmp, len);
+        flb_http_add_header(c, "x-ms-client-version", 19, FLB_VERSION_STR, strlen(FLB_VERSION_STR));
+        flb_http_add_header(c, "x-ms-app", 8, "Kusto.Fluent-Bit", 16);
+        flb_http_add_header(c, "x-ms-user", 9, "Kusto.Fluent-Bit", 16);
+
+        /* Set Content-Type based on whether compression is enabled */
+        if (ctx->compression_enabled) {
+            flb_http_add_header(c, "Content-Type", 12, "application/json", 16);
+            flb_http_add_header(c, "Content-Encoding", 16, "gzip", 4);
+        } else {
+            flb_http_add_header(c, "Content-Type", 12, "application/json; charset=utf-8", 31);
+        }
+
+        /* Send the HTTP request */
+        ret = flb_http_do(c, &resp_size);
+
+        flb_plg_info(ctx->ins, "[STREAMING_INGESTION] HTTP request completed - http_do result: %d, HTTP Status: %i, Response size: %zu", ret, c->resp.status, resp_size);
+
+        if (ret == 0) {
+            /* Check for successful HTTP status codes */
+            if (c->resp.status == 200 || c->resp.status == 204) {
+                ret = 0;
+            } else {
+                ret = -1;
+                flb_plg_error(ctx->ins, "[STREAMING_INGESTION] ERROR: HTTP request failed with status: %i", c->resp.status);
+
+                if (c->resp.payload_size > 0) {
+                    flb_plg_error(ctx->ins, "[STREAMING_INGESTION] Error response body (size: %zu): %.*s",
+                                c->resp.payload_size, (int)c->resp.payload_size, c->resp.payload);
+                }
+            }
+        } else {
+            flb_plg_error(ctx->ins, "[STREAMING_INGESTION] ERROR: HTTP request failed at transport level (ret=%d)", ret);
+        }
+
+        flb_http_client_destroy(c);
+    } else {
+        flb_plg_error(ctx->ins, "[STREAMING_INGESTION] ERROR: failed to create HTTP client context");
+    }
+
+    /* Cleanup */
+    if (uri) {
+        flb_sds_destroy(uri);
+    }
+    if (token) {
+        flb_sds_destroy(token);
+    }
+    flb_upstream_conn_release(u_conn);
+
+    return ret;
+}
+
+
 /* Function to generate a random alphanumeric string */
 void generate_random_string(char *str, size_t length)
 {
