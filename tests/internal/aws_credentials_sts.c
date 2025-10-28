@@ -212,6 +212,9 @@ struct flb_http_client *request_eks_test1(struct flb_aws_client *aws_client,
     mk_list_init(&c->headers);
     payload = build_eks_response_with_ttl_calloc(3600, &payload_len);
     TEST_CHECK(payload != NULL);
+    if (!payload) {
+        return NULL;
+    }
 
     http_test_attach_owned_payload(c, payload, payload_len);
 
@@ -246,6 +249,9 @@ struct flb_http_client *request_eks_flb_sts_session_name(struct flb_aws_client
     mk_list_init(&c->headers);
     payload = build_eks_response_with_ttl_calloc(3600, &payload_len);
     TEST_CHECK(payload != NULL);
+    if (!payload) {
+        return NULL;
+    }
 
     http_test_attach_owned_payload(c, payload, payload_len);
 
@@ -305,6 +311,9 @@ struct flb_http_client *request_sts_test1(struct flb_aws_client *aws_client,
     mk_list_init(&c->headers);
     payload = build_sts_response_with_ttl_calloc(3600, &payload_len);
     TEST_CHECK(payload != NULL);
+    if (!payload) {
+        return NULL;
+    }
 
     http_test_attach_owned_payload(c, payload, payload_len);
 
@@ -469,6 +478,9 @@ static void test_process_sts_response()
     }
     payload = build_eks_response_with_ttl_calloc(3600, &payload_len);
     TEST_CHECK(payload != NULL);
+    if (!payload) {
+        return;
+    }
 
     creds = flb_parse_sts_resp(payload, &expiration);
 
