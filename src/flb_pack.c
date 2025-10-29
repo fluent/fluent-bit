@@ -1494,7 +1494,7 @@ char *flb_msgpack_to_json_str(size_t size, const msgpack_object *obj, int escape
         }
         else if (ret == 0) {
             /* nothing to pack */
-            flb_warn("failed to convert msgpack to json");
+            flb_warn("unexpected result from flb_msgpack_to_json: 0");
             flb_free(buf);
             return NULL;
         }
