@@ -1481,6 +1481,7 @@ char *flb_msgpack_to_json_str(size_t size, const msgpack_object *obj, int escape
         if (ret < 0) {
             /* buffer is small. retry.*/
             size *= 2;
+            flb_info("failed to convert msgpack to json, retrying with new size=%zu", size);
             tmp = flb_realloc(buf, size);
             if (tmp) {
                 buf = tmp;
