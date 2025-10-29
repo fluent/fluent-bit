@@ -1478,7 +1478,7 @@ char *flb_msgpack_to_json_str(size_t size, const msgpack_object *obj, int escape
 
     while (1) {
         ret = flb_msgpack_to_json(buf, size, obj, escape_unicode);
-        if (ret <= 0) {
+        if (ret < 0) {
             /* buffer is small. retry.*/
             size *= 2;
             tmp = flb_realloc(buf, size);
@@ -1490,6 +1490,12 @@ char *flb_msgpack_to_json_str(size_t size, const msgpack_object *obj, int escape
                 flb_errno();
                 return NULL;
             }
+        }
+        else if (ret == 0) {
+            /* nothing to pack */
+            flb_warn("failed to convert msgpack to json");
+            flb_free(buf);
+            return NULL;
         }
         else {
             break;
