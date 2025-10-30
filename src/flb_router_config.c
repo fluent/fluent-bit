@@ -898,7 +898,6 @@ static int parse_route(struct cfl_variant *variant,
         int val;
         if (variant_to_bool(per_record_var, &val) == 0) {
             route->per_record_routing = val;
-            flb_info("[router] route '%s' per_record_routing=%d", route->name, val);
         }
     }
 
