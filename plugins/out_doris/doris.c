@@ -389,12 +389,6 @@ static struct flb_config_map config_map[] = {
      0, FLB_TRUE, offsetof(struct flb_out_doris, label_prefix),
      "Set label prefix"
     },
-    // format
-    {
-     FLB_CONFIG_MAP_STR, "format", "json_lines",
-     0, FLB_TRUE, offsetof(struct flb_out_doris, format),
-     "Set desired payload format: json, json_stream, json_lines"
-    },
     // time_key
     {
      FLB_CONFIG_MAP_STR, "time_key", "date",

@@ -150,16 +150,6 @@ struct flb_out_doris *flb_doris_conf_create(struct flb_output_instance *ins,
 
     /* Output format */
     ctx->out_format = FLB_PACK_JSON_FORMAT_LINES;
-    if (ctx->format) {
-        ret = flb_pack_to_json_format_type(ctx->format);
-        if (ret == -1) {
-            flb_plg_error(ctx->ins, "unrecognized 'format' option. "
-                            "Using 'json_lines'");
-        }
-        else {
-            ctx->out_format = ret;
-        }
-    }
 
     /* Date key */
     ctx->date_key = ctx->time_key;

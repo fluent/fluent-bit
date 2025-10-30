@@ -47,7 +47,6 @@ struct flb_out_doris {
 
     /* Output format */
     int out_format;
-    flb_sds_t format;
 
     /* doris stream load headers */
     struct mk_list *headers;
