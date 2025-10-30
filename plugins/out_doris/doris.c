@@ -317,7 +317,7 @@ static void cb_doris_flush(struct flb_event_chunk *event_chunk,
     size_t out_size;
     (void) i_ins;
 
-    char label[256] = {0};
+    char label[1024] = {0};
     int len = 0;
 
     ret = compose_payload(ctx, event_chunk->data, event_chunk->size,
@@ -331,7 +331,8 @@ static void cb_doris_flush(struct flb_event_chunk *event_chunk,
     }
 
     if (ctx->add_label) {
-        len = snprintf(label, sizeof(label) - 1, "%s_%lu_", ctx->label_prefix, cfl_time_now() / 1000000000L);
+        // `label_prefix`_`db`_`table`_`timestamp`_`uuid`
+        len = snprintf(label, sizeof(label) - 1, "%s_%s_%s_%lu_", ctx->label_prefix, ctx->database, ctx->table, cfl_time_now() / 1000000000L);
         flb_utils_uuid_v4_gen(label + len);
         len += 36;
     }
