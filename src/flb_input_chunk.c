@@ -68,6 +68,7 @@ extern ssize_t sb_get_releasable_output_queue_space(struct flb_output_instance *
 extern int sb_release_output_queue_space(struct flb_output_instance *output_plugin,
                                          ssize_t                    *required_space);
 
+extern void sb_unlink_chunk_if_present(struct flb_config *config, struct cio_chunk *ch);
 
 #else
 
@@ -79,6 +80,11 @@ ssize_t sb_get_releasable_output_queue_space(struct flb_output_instance *output_
 
 int sb_release_output_queue_space(struct flb_output_instance *output_plugin,
                                   ssize_t                    *required_space)
+{
+    return 0;
+}
+
+void sb_unlink_chunk_if_present(struct flb_config *config, struct cio_chunk *ch)
 {
     return 0;
 }
@@ -1050,6 +1056,7 @@ int flb_input_chunk_destroy_corrupted(struct flb_input_chunk *ic,
     }
 #endif /* FLB_HAVE_CHUNK_TRACE */
 
+    sb_unlink_chunk_if_present(ic->in->config, ic->chunk);
     cio_chunk_close(ic->chunk, del);
     mk_list_del(&ic->_head);
 
@@ -1155,6 +1162,7 @@ int flb_input_chunk_destroy(struct flb_input_chunk *ic, int del)
     }
 #endif /* FLB_HAVE_CHUNK_TRACE */
 
+    sb_unlink_chunk_if_present(ic->in->config, ic->chunk);
     cio_chunk_close(ic->chunk, del);
     mk_list_del(&ic->_head);
 
