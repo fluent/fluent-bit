@@ -440,17 +440,6 @@ struct flb_task *flb_task_create(uint64_t ref_id,
 
             o_ins = route_path->ins;
 
-            if (task_ic->routes_mask &&
-                flb_routes_mask_get_bit(task_ic->routes_mask,
-                                        o_ins->id,
-                                        o_ins->config) == 0) {
-                flb_debug("[task] skipping direct route for task=%p id=%i output=%s",
-                          task,
-                          task->id,
-                          flb_output_name(o_ins));
-                continue;
-            }
-
             route = flb_calloc(1, sizeof(struct flb_task_route));
             if (!route) {
                 flb_errno();
