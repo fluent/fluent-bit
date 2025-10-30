@@ -144,7 +144,7 @@ int flb_routes_mask_is_empty(flb_route_mask_element *routes_mask,
 {
     return memcmp(routes_mask,
                   config->route_empty_mask,
-                  config->route_mask_size) == 0;
+                  config->route_mask_size * sizeof(flb_route_mask_element)) == 0;
 }
 
 int flb_routes_empty_mask_create(struct flb_config *config)
