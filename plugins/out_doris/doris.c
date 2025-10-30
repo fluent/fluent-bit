@@ -176,18 +176,18 @@ static int http_put(struct flb_out_doris *ctx,
                           c->resp.status, c->resp.payload);
         }
 
-        if (c->resp.status == 307) { // redict
+        if (c->resp.status == 307) { // redirect
             // example: Location: http://admin:admin@127.0.0.1:8040/api/d_fb/t_fb/_stream_load?
             char* location = strstr(c->resp.data, "Location:");
             char* start = strstr(location, "@") + 1;
             char* mid = strstr(start, ":");
             char* end = strstr(mid, "/api");
-            char redict_host[1024] = {0};
-            memcpy(redict_host, start, mid - start);
-            char redict_port[10] = {0};
-            memcpy(redict_port, mid + 1, end - (mid + 1));
+            char redirect_host[1024] = {0};
+            memcpy(redirect_host, start, mid - start);
+            char redirect_port[10] = {0};
+            memcpy(redirect_port, mid + 1, end - (mid + 1));
             
-            out_ret = http_put(ctx, redict_host, atoi(redict_port), 
+            out_ret = http_put(ctx, redirect_host, atoi(redirect_port), 
                                body, body_len, tag, tag_len, label, label_len);
         }
         else if (c->resp.status == 200 && c->resp.payload_size > 0) {
@@ -331,7 +331,7 @@ static void cb_doris_flush(struct flb_event_chunk *event_chunk,
     }
 
     if (ctx->add_label) {
-        // `label_prefix`_`db`_`table`_`timestamp`_`uuid`
+        /* {label_prefix}_{db}_{table}_{timestamp}_{uuid} */
         len = snprintf(label, sizeof(label) - 1, "%s_%s_%s_%lu_", ctx->label_prefix, ctx->database, ctx->table, cfl_time_now() / 1000000000L);
         flb_utils_uuid_v4_gen(label + len);
         len += 36;
