@@ -324,8 +324,9 @@ static int build_payload_for_route(struct flb_route_payload *payload,
                                    uint8_t *matched_non_default)
 {
     size_t i;
-    int matched;
     int ret;
+    int condition_result;
+    int matched;
     struct flb_condition *compiled;
     struct flb_log_event_encoder *encoder;
 
@@ -333,19 +334,11 @@ static int build_payload_for_route(struct flb_route_payload *payload,
         return -1;
     }
 
-    flb_info("[router] build_payload_for_route called for route '%s' with %zu records",
-             payload->route->name, record_count);
-
-    flb_info("[router] route condition: %p, per_record_routing: %d",
-             payload->route->condition, payload->route->per_record_routing);
 
     compiled = flb_router_route_get_condition(payload->route);
     if (!compiled) {
-        flb_info("[router] no compiled condition found for route '%s'", payload->route->name);
         return 0;
     }
-
-    flb_info("[router] compiled condition found for route '%s'", payload->route->name);
 
     encoder = flb_log_event_encoder_create(FLB_LOG_EVENT_FORMAT_DEFAULT);
     if (!encoder) {
@@ -355,18 +348,10 @@ static int build_payload_for_route(struct flb_route_payload *payload,
     matched = 0;
 
     for (i = 0; i < record_count; i++) {
-        int condition_result = flb_condition_evaluate(compiled, records[i]);
-        flb_info("[router] route '%s' record %zu: condition_result=%d",
-                 payload->route->name, i, condition_result);
-
+        condition_result = flb_condition_evaluate(compiled, records[i]);
         if (condition_result != FLB_TRUE) {
-            flb_info("[router] route '%s' record %zu: condition failed, skipping",
-                     payload->route->name, i);
             continue;
         }
-
-        flb_info("[router] route '%s' record %zu: condition matched, adding to payload",
-                 payload->route->name, i);
 
         ret = encode_chunk_record(encoder, records[i]);
         if (ret != 0) {
@@ -423,21 +408,14 @@ static int build_payload_for_default_route(struct flb_route_payload *payload,
     matched = 0;
 
     for (i = 0; i < record_count; i++) {
-        flb_info("[router] default route record %zu: matched_non_default[%zu]=%d",
-                 i, i, matched_non_default[i]);
-
         if (matched_non_default[i]) {
-            flb_info("[router] default route record %zu: already matched, skipping", i);
             continue;
         }
 
         if (compiled &&
             flb_condition_evaluate(compiled, records[i]) != FLB_TRUE) {
-            flb_info("[router] default route record %zu: condition failed, skipping", i);
             continue;
         }
-
-        flb_info("[router] default route record %zu: adding to default payload", i);
 
         ret = encode_chunk_record(encoder, records[i]);
         if (ret != 0) {
