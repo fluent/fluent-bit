@@ -329,6 +329,46 @@ static int sb_append_chunk_to_segregated_backlogs(struct cio_chunk  *target_chun
     return 0;
 }
 
+void sb_unlink_chunk_if_present(struct flb_config *config, struct cio_chunk *ch)
+{
+    struct mk_list      *b_it, *b_tmp;
+    struct mk_list      *c_it, *c_tmp;
+    struct sb_out_queue *backlog;
+    struct sb_out_chunk *node;
+    struct flb_sb       *context;
+
+    context = sb_get_context(config);
+
+    if (context == NULL) {
+        return;
+    }
+
+    if (ch == NULL) {
+        return;
+    }
+
+    mk_list_foreach_safe(b_it, b_tmp, &context->backlogs) {
+        backlog = mk_list_entry(b_it, struct sb_out_queue, _head);
+
+        mk_list_foreach_safe(c_it, c_tmp, &backlog->chunks) {
+            node = mk_list_entry(c_it, struct sb_out_chunk, _head);
+
+            if (node->chunk == ch) {
+                mk_list_del(&node->_head);
+
+                if (backlog->ins->fs_backlog_chunks_size >= node->size) {
+                    backlog->ins->fs_backlog_chunks_size -= node->size;
+                }
+                else {
+                    backlog->ins->fs_backlog_chunks_size = 0;
+                }
+
+                sb_destroy_chunk(node);
+            }
+        }
+    }
+}
+
 int sb_segregate_chunks(struct flb_config *config)
 {
     int                ret;
