@@ -470,7 +470,8 @@ static uint64_t monotonic_now_ns(void)
     LARGE_INTEGER cnt, freq;
     uint64_t q = 0;
     uint64_t f = 0;
-    uint64_t us = 0;
+    uint64_t rem = 0;
+    uint64_t sec = 0;
 
     if (s_freq.QuadPart == 0) {
         QueryPerformanceFrequency(&s_freq);
@@ -483,8 +484,10 @@ static uint64_t monotonic_now_ns(void)
     q = (uint64_t)cnt.QuadPart;
     f = (uint64_t)freq.QuadPart;
     /* Use MulDiv-like scaling to reduce precision loss */
-    us = (q * 1000000ULL) / f;
-    return us * 1000ULL;
+    /* Use 128-bit intermediate or chunk the calculation to avoid overflow */
+    sec = q / f;
+    rem = q % f;
+    return (sec * 1000000000ULL) + ((rem * 1000000000ULL) / f);
 }
 
 #else
