@@ -463,6 +463,67 @@ static inline const char *flb_log_message_type_str(int type)
     }
 }
 
+#ifdef WIN32
+static uint64_t monotonic_now_ns(void)
+{
+    static LARGE_INTEGER s_freq = {0};
+    LARGE_INTEGER cnt, freq;
+    uint64_t q = 0;
+    uint64_t f = 0;
+    uint64_t us = 0;
+
+    if (s_freq.QuadPart == 0) {
+        QueryPerformanceFrequency(&s_freq);
+    }
+    freq = s_freq;
+    QueryPerformanceCounter(&cnt);
+
+    /* integer math: ns = cnt * 1e9 / freq */
+    /* avoid 128-bit: split to microseconds first if you prefer */
+    q = (uint64_t)cnt.QuadPart;
+    f = (uint64_t)freq.QuadPart;
+    /* Use MulDiv-like scaling to reduce precision loss */
+    us = (q * 1000000ULL) / f;
+    return us * 1000ULL;
+}
+
+#else
+static uint64_t monotonic_now_ns(void)
+{
+    struct timespec ts;
+    clock_gettime(CLOCK_MONOTONIC, &ts);
+    return (uint64_t)ts.tv_sec * 1000000000ULL + ts.tv_nsec;
+}
+#endif
+
+static void flb_log_metrics_heartbeat(struct flb_log *log, uint64_t wall_now_ns)
+{
+    uint64_t now_mono = 0;
+    int log_message_type;
+    char *message_type_str;
+
+    if (!log || !log->metrics || !log->metrics->logs_total_counter) {
+        return;
+    }
+
+    now_mono = monotonic_now_ns();
+    if (now_mono < log->next_hb_ns) {
+        return;
+    }
+
+    for (log_message_type = FLB_LOG_ERROR; log_message_type <= FLB_LOG_TRACE; log_message_type++) {
+        message_type_str = flb_log_message_type_str(log_message_type);
+        if (!message_type_str) {
+            break;
+        }
+        cmt_counter_add(log->metrics->logs_total_counter,
+                        wall_now_ns,
+                        0, 1, (char*[]){message_type_str});
+    }
+
+    log->next_hb_ns = now_mono + log->hb_interval_ns;
+}
+
 int flb_log_set_file(struct flb_config *config, char *out)
 {
     struct flb_log *log = config->log;
@@ -577,6 +638,8 @@ struct flb_log *flb_log_create(struct flb_config *config, int type,
     log->out   = out;
     log->evl   = evl;
     log->tid   = 0;
+    log->hb_interval_ns = 60ULL * 1000000000ULL;
+    log->next_hb_ns     = 0;
 
     ret = flb_pipe_create(log->ch_mng);
     if (ret == -1) {
@@ -826,6 +889,7 @@ void flb_log_print(int type, const char *file, int line, const char *fmt, ...)
             }
 
             ts = cfl_time_now();
+            flb_log_metrics_heartbeat(config->log, ts);
             ret = cmt_counter_inc(config->log->metrics->logs_total_counter,
                                   ts,
                                   1, (char *[]) {msg_type_str});

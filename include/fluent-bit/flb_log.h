@@ -72,6 +72,8 @@ struct flb_log {
     uint16_t level;            /* level                    */
     char *out;                 /* FLB_LOG_FILE or FLB_LOG_SOCKET */
     pthread_t tid;             /* thread ID   */
+    uint64_t next_hb_ns;       /* next heartbeat (nano sec) */
+    uint64_t hb_interval_ns;   /* heartbeat interval (nano sec) */
     struct flb_worker *worker; /* non-real worker reference */
     struct mk_event_loop *evl;
     struct flb_log_metrics *metrics;
