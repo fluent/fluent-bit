@@ -32,50 +32,6 @@
 #define WEB_TOKEN_FILE FLB_TESTS_DATA_PATH "/data/aws_credentials/\
 web_identity_token_file.txt"
 
-#define STS_RESPONSE_EKS  "<AssumeRoleWithWebIdentityResponse \
-xmlns=\"https://sts.amazonaws.com/doc/2011-06-15/\">\n\
-  <AssumeRoleWithWebIdentityResult>\n\
-    <SubjectFromWebIdentityToken>amzn1.account.AF6RHO7KZU5XRVQJGXK6HB56KR2A\n\
-</SubjectFromWebIdentityToken>\n\
-    <Audience>client.5498841531868486423.1548@apps.example.com</Audience>\n\
-    <AssumedRoleUser>\n\
-      <Arn>arn:aws:sts::123456789012:assumed-role/WebIdentityRole/app1</Arn>\n\
-      <AssumedRoleId>AROACLKWSDQRAOEXAMPLE:app1</AssumedRoleId>\n\
-    </AssumedRoleUser>\n\
-    <Credentials>\n\
-      <SessionToken>eks_token</SessionToken>\n\
-      <SecretAccessKey>eks_skid</SecretAccessKey>\n\
-      <Expiration>2025-10-24T23:00:23Z</Expiration>\n\
-      <AccessKeyId>eks_akid</AccessKeyId>\n\
-    </Credentials>\n\
-    <Provider>www.amazon.com</Provider>\n\
-  </AssumeRoleWithWebIdentityResult>\n\
-  <ResponseMetadata>\n\
-    <RequestId>ad4156e9-bce1-11e2-82e6-6b6efEXAMPLE</RequestId>\n\
-  </ResponseMetadata>\n\
-</AssumeRoleWithWebIdentityResponse>"
-
-#define STS_RESPONSE_ASSUME_ROLE "<AssumeRoleResponse \
-xmlns=\"https://sts.amazonaws.com/doc/\n\
-2011-06-15/\">\n\
-  <AssumeRoleResult>\n\
-    <AssumedRoleUser>\n\
-      <Arn>arn:aws:sts::123456789012:assumed-role/demo/TestAR</Arn>\n\
-      <AssumedRoleId>ARO123EXAMPLE123:TestAR</AssumedRoleId>\n\
-    </AssumedRoleUser>\n\
-    <Credentials>\n\
-      <AccessKeyId>sts_akid</AccessKeyId>\n\
-      <SecretAccessKey>sts_skid</SecretAccessKey>\n\
-      <SessionToken>sts_token</SessionToken>\n\
-      <Expiration>2025-11-09T13:34:41Z</Expiration>\n\
-    </Credentials>\n\
-    <PackedPolicySize>6</PackedPolicySize>\n\
-  </AssumeRoleResult>\n\
-  <ResponseMetadata>\n\
-    <RequestId>c6104cbe-af31-11e0-8154-cbc7ccf896c7</RequestId>\n\
-  </ResponseMetadata>\n\
-</AssumeRoleResponse>"
-
 /*
  * Unexpected/invalid STS response. The goal of this is not to test anything
  * that might happen in production, but rather to test the error handling
@@ -95,6 +51,119 @@ response would have</SecretAccessKey>"
  * made in each test
  */
 int g_request_count;
+
+static char *build_eks_response_with_ttl_calloc(time_t ttl_secs, size_t *out_len)
+{
+    time_t exp = time(NULL) + ttl_secs;
+    struct tm gm;
+    char expbuf[32];
+    const char *tmpl;
+    size_t need = 0;
+    char *buf = 0;
+
+    gmtime_r(&exp, &gm);
+    strftime(expbuf, sizeof(expbuf), "%Y-%m-%dT%H:%M:%SZ", &gm);
+
+    tmpl =
+        "<AssumeRoleWithWebIdentityResponse xmlns=\"https://sts.amazonaws.com/doc/2011-06-15/\">\n"
+        "  <AssumeRoleWithWebIdentityResult>\n"
+        "    <SubjectFromWebIdentityToken>amzn1.account.AF6RHO7KZU5XRVQJGXK6HB56KR2A\n"
+        "</SubjectFromWebIdentityToken>\n"
+        "    <Audience>client.5498841531868486423.1548@apps.example.com</Audience>\n"
+        "    <AssumedRoleUser>\n"
+        "      <Arn>arn:aws:sts::123456789012:assumed-role/WebIdentityRole/app1</Arn>\n"
+        "      <AssumedRoleId>AROACLKWSDQRAOEXAMPLE:app1</AssumedRoleId>\n"
+        "    </AssumedRoleUser>\n"
+        "    <Credentials>\n"
+        "      <SessionToken>eks_token</SessionToken>\n"
+        "      <SecretAccessKey>eks_skid</SecretAccessKey>\n"
+        "      <Expiration>%s</Expiration>\n"
+        "      <AccessKeyId>eks_akid</AccessKeyId>\n"
+        "    </Credentials>\n"
+        "    <Provider>www.amazon.com</Provider>\n"
+        "  </AssumeRoleWithWebIdentityResult>\n"
+        "  <ResponseMetadata>\n"
+        "    <RequestId>ad4156e9-bce1-11e2-82e6-6b6efEXAMPLE</RequestId>\n"
+        "  </ResponseMetadata>\n"
+        "</AssumeRoleWithWebIdentityResponse>";
+
+    need = (size_t)snprintf(NULL, 0, tmpl, expbuf) + 1;
+    buf = flb_calloc(1, need);
+    if (!buf) {
+        flb_errno();
+        return NULL;
+    }
+    snprintf(buf, need, tmpl, expbuf);
+    if (out_len) {
+        *out_len = need - 1;
+    }
+    return buf;
+}
+
+static char *build_sts_response_with_ttl_calloc(time_t ttl_secs, size_t *out_len)
+{
+    time_t exp = time(NULL) + ttl_secs;
+    struct tm gm;
+    char expbuf[32];
+    const char *tmpl;
+    size_t need = 0;
+    char *buf = 0;
+
+    gmtime_r(&exp, &gm);
+    strftime(expbuf, sizeof(expbuf), "%Y-%m-%dT%H:%M:%SZ", &gm);
+
+    tmpl =
+        "<AssumeRoleResponse \
+        xmlns=\"https://sts.amazonaws.com/doc/\n\
+        2011-06-15/\">\n\
+          <AssumeRoleResult>\n\
+            <AssumedRoleUser>\n\
+              <Arn>arn:aws:sts::123456789012:assumed-role/demo/TestAR</Arn>\n\
+              <AssumedRoleId>ARO123EXAMPLE123:TestAR</AssumedRoleId>\n\
+            </AssumedRoleUser>\n\
+            <Credentials>\n\
+              <AccessKeyId>sts_akid</AccessKeyId>\n\
+              <SecretAccessKey>sts_skid</SecretAccessKey>\n\
+              <SessionToken>sts_token</SessionToken>\n\
+              <Expiration>%s</Expiration>\n\
+            </Credentials>\n\
+            <PackedPolicySize>6</PackedPolicySize>\n\
+          </AssumeRoleResult>\n\
+          <ResponseMetadata>\n\
+            <RequestId>c6104cbe-af31-11e0-8154-cbc7ccf896c7</RequestId>\n\
+          </ResponseMetadata>\n\
+        </AssumeRoleResponse>";
+
+    need = (size_t)snprintf(NULL, 0, tmpl, expbuf) + 1;
+    buf = flb_calloc(1, need);
+    if (!buf) {
+        flb_errno();
+        return NULL;
+    }
+    snprintf(buf, need, tmpl, expbuf);
+    if (out_len) {
+        *out_len = need - 1;
+    }
+    return buf;
+}
+
+static void http_test_attach_owned_payload(struct flb_http_client *c,
+                                           char *buf, size_t len)
+{
+    c->resp.status = 200;
+    c->resp.data = buf;
+    c->resp.data_len = len;
+    c->resp.data_size = len + 1;
+    c->resp.data_size_max = c->resp.data_size;
+
+    c->resp.headers_end = c->resp.data;
+    c->resp.payload = buf;
+    c->resp.payload_size = len;
+
+    c->resp.content_length = -1;
+    c->resp.chunked_encoding = FLB_FALSE;
+    c->resp.connection_close = -1;
+}
 
 /* Each test case has its own request function */
 
@@ -124,6 +193,8 @@ struct flb_http_client *request_eks_test1(struct flb_aws_client *aws_client,
                                           int method, const char *uri)
 {
     struct flb_http_client *c;
+    char *payload = NULL;
+    size_t payload_len = 0;
 
     TEST_CHECK(method == FLB_HTTP_GET);
     TEST_CHECK(strstr(uri, "Action=AssumeRoleWithWebIdentity") != NULL);
@@ -139,10 +210,13 @@ struct flb_http_client *request_eks_test1(struct flb_aws_client *aws_client,
         return NULL;
     }
     mk_list_init(&c->headers);
+    payload = build_eks_response_with_ttl_calloc(3600, &payload_len);
+    TEST_CHECK(payload != NULL);
+    if (!payload) {
+        return NULL;
+    }
 
-    c->resp.status = 200;
-    c->resp.payload = STS_RESPONSE_EKS;
-    c->resp.payload_size = strlen(STS_RESPONSE_EKS);
+    http_test_attach_owned_payload(c, payload, payload_len);
 
     return c;
 }
@@ -153,6 +227,8 @@ struct flb_http_client *request_eks_flb_sts_session_name(struct flb_aws_client
                                                          const char *uri)
 {
     struct flb_http_client *c;
+    char *payload = NULL;
+    size_t payload_len = 0;
 
     TEST_CHECK(method == FLB_HTTP_GET);
     TEST_CHECK(strstr(uri, "Action=AssumeRoleWithWebIdentity") != NULL);
@@ -171,10 +247,13 @@ struct flb_http_client *request_eks_flb_sts_session_name(struct flb_aws_client
         return NULL;
     }
     mk_list_init(&c->headers);
+    payload = build_eks_response_with_ttl_calloc(3600, &payload_len);
+    TEST_CHECK(payload != NULL);
+    if (!payload) {
+        return NULL;
+    }
 
-    c->resp.status = 200;
-    c->resp.payload = STS_RESPONSE_EKS;
-    c->resp.payload_size = strlen(STS_RESPONSE_EKS);
+    http_test_attach_owned_payload(c, payload, payload_len);
 
     return c;
 }
@@ -213,6 +292,8 @@ struct flb_http_client *request_sts_test1(struct flb_aws_client *aws_client,
                                           int method, const char *uri)
 {
     struct flb_http_client *c;
+    char *payload = NULL;
+    size_t payload_len = 0;
 
     TEST_CHECK(method == FLB_HTTP_GET);
     TEST_CHECK(strstr(uri, "Action=AssumeRole") != NULL);
@@ -228,10 +309,13 @@ struct flb_http_client *request_sts_test1(struct flb_aws_client *aws_client,
         return NULL;
     }
     mk_list_init(&c->headers);
+    payload = build_sts_response_with_ttl_calloc(3600, &payload_len);
+    TEST_CHECK(payload != NULL);
+    if (!payload) {
+        return NULL;
+    }
 
-    c->resp.status = 200;
-    c->resp.payload = STS_RESPONSE_ASSUME_ROLE;
-    c->resp.payload_size = strlen(STS_RESPONSE_ASSUME_ROLE);
+    http_test_attach_owned_payload(c, payload, payload_len);
 
     return c;
 }
@@ -384,19 +468,28 @@ static void test_process_sts_response()
     struct flb_aws_credentials *creds;
     struct flb_config *config;
     time_t expiration;
+    char *payload = NULL;
+    size_t payload_len = 0;
 
     config = flb_config_init();
 
     if (config == NULL) {
         return;
     }
-    creds = flb_parse_sts_resp(STS_RESPONSE_EKS, &expiration);
+    payload = build_eks_response_with_ttl_calloc(3600, &payload_len);
+    TEST_CHECK(payload != NULL);
+    if (!payload) {
+        return;
+    }
+
+    creds = flb_parse_sts_resp(payload, &expiration);
 
     TEST_CHECK(strcmp(EKS_ACCESS_KEY, creds->access_key_id) == 0);
     TEST_CHECK(strcmp(EKS_SECRET_KEY, creds->secret_access_key) == 0);
     TEST_CHECK(strcmp(EKS_TOKEN, creds->session_token) == 0);
 
     flb_aws_credentials_destroy(creds);
+    flb_free(payload);
     flb_config_exit(config);
 }
 
