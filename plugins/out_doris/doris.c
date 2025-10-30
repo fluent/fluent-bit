@@ -143,6 +143,7 @@ static int http_put(struct flb_out_doris *ctx,
 
     /* Append headers */
     flb_http_add_header(c, "format", 6, "json", 4);
+    flb_http_add_header(c, "read_json_by_line", 17, "true", 4);
     flb_http_add_header(c, "Expect", 6, "100-continue", 12);
     flb_http_add_header(c, "User-Agent", 10, "Fluent-Bit", 10);
     
@@ -390,7 +391,7 @@ static struct flb_config_map config_map[] = {
     },
     // format
     {
-     FLB_CONFIG_MAP_STR, "format", "json",
+     FLB_CONFIG_MAP_STR, "format", "json_lines",
      0, FLB_TRUE, offsetof(struct flb_out_doris, format),
      "Set desired payload format: json, json_stream, json_lines"
     },
