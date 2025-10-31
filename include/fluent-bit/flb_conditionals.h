@@ -28,10 +28,20 @@
 #include <monkey/mk_core.h>
 #include <fluent-bit/flb_mp_chunk.h>
 
+struct flb_condition_rule;
+
+typedef struct cfl_variant *(*flb_condition_get_variant_fn)(struct flb_condition_rule *rule,
+                                                            void *ctx);
+
 /* Context types enum */
 enum record_context_type {
-    RECORD_CONTEXT_BODY    = 0,
-    RECORD_CONTEXT_METADATA    = 1
+    RECORD_CONTEXT_BODY = 0,
+    RECORD_CONTEXT_METADATA = 1,
+    RECORD_CONTEXT_GROUP_METADATA,
+    RECORD_CONTEXT_GROUP_ATTRIBUTES,
+    RECORD_CONTEXT_OTEL_RESOURCE_ATTRIBUTES,
+    RECORD_CONTEXT_OTEL_SCOPE_ATTRIBUTES,
+    RECORD_CONTEXT_OTEL_SCOPE_METADATA
 };
 
 struct flb_condition;
@@ -88,6 +98,9 @@ int flb_condition_add_rule(struct flb_condition *cond,
 void flb_condition_destroy(struct flb_condition *cond);
 
 /* Evaluation function */
+int flb_condition_evaluate_ex(struct flb_condition *cond,
+                             void *ctx,
+                             flb_condition_get_variant_fn get_variant);
 int flb_condition_evaluate(struct flb_condition *cond,
                           struct flb_mp_chunk_record *record);
 
