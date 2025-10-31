@@ -515,6 +515,64 @@ static int parse_processors(struct cfl_variant *variant,
     return 0;
 }
 
+static int parse_condition_rule_context(const char *value,
+                                        enum record_context_type *out_context)
+{
+    if (!out_context) {
+        return -1;
+    }
+
+    if (!value) {
+        *out_context = RECORD_CONTEXT_BODY;
+        return 0;
+    }
+
+    if (strcasecmp(value, "metadata") == 0 ||
+        strcasecmp(value, "record_metadata") == 0 ||
+        strcasecmp(value, "attributes") == 0) {
+        *out_context = RECORD_CONTEXT_METADATA;
+        return 0;
+    }
+
+    if (strcasecmp(value, "body") == 0 ||
+        strcasecmp(value, "record") == 0 ||
+        strcasecmp(value, "message") == 0 ||
+        strcasecmp(value, "record_body") == 0) {
+        *out_context = RECORD_CONTEXT_BODY;
+        return 0;
+    }
+
+    if (strcasecmp(value, "group_metadata") == 0) {
+        *out_context = RECORD_CONTEXT_GROUP_METADATA;
+        return 0;
+    }
+
+    if (strcasecmp(value, "group_attributes") == 0 ||
+        strcasecmp(value, "group_body") == 0) {
+        *out_context = RECORD_CONTEXT_GROUP_ATTRIBUTES;
+        return 0;
+    }
+
+    if (strcasecmp(value, "otel_resource_attributes") == 0) {
+        *out_context = RECORD_CONTEXT_OTEL_RESOURCE_ATTRIBUTES;
+        return 0;
+    }
+
+    if (strcasecmp(value, "otel_scope_attributes") == 0) {
+        *out_context = RECORD_CONTEXT_OTEL_SCOPE_ATTRIBUTES;
+        return 0;
+    }
+
+    if (strcasecmp(value, "otel_scope_name") == 0 ||
+        strcasecmp(value, "otel_scope_version") == 0 ||
+        strcasecmp(value, "otel_scope_metadata") == 0) {
+        *out_context = RECORD_CONTEXT_OTEL_SCOPE_METADATA;
+        return 0;
+    }
+
+    return -1;
+}
+
 static struct flb_route_condition_rule *parse_condition_rule(struct cfl_variant *variant)
 {
     struct flb_route_condition_rule *rule;
@@ -522,6 +580,7 @@ static struct flb_route_condition_rule *parse_condition_rule(struct cfl_variant 
     struct cfl_variant *field_var;
     struct cfl_variant *op_var;
     struct cfl_variant *value_var;
+    struct cfl_variant *context_var;
 
     if (!variant || variant->type != CFL_VARIANT_KVLIST) {
         return NULL;
@@ -547,6 +606,7 @@ static struct flb_route_condition_rule *parse_condition_rule(struct cfl_variant 
     cfl_list_init(&rule->_head);
     rule->values = NULL;
     rule->values_count = 0;
+    rule->context = RECORD_CONTEXT_BODY;
 
     rule->field = copy_from_cfl_sds(field_var->data.as_string);
     if (!rule->field) {
@@ -611,6 +671,32 @@ static struct flb_route_condition_rule *parse_condition_rule(struct cfl_variant 
     else {
         rule->value = variant_to_sds(value_var);
         if (!rule->value) {
+            flb_sds_destroy(rule->op);
+            flb_sds_destroy(rule->field);
+            flb_free(rule);
+            return NULL;
+        }
+    }
+
+    context_var = cfl_kvlist_fetch(kvlist, "context");
+    if (context_var) {
+        if (context_var->type != CFL_VARIANT_STRING ||
+            parse_condition_rule_context(context_var->data.as_string, &rule->context) != 0) {
+            size_t j;
+
+            if (rule->values) {
+                for (j = 0; j < rule->values_count; j++) {
+                    if (rule->values[j]) {
+                        flb_sds_destroy(rule->values[j]);
+                    }
+                }
+                flb_free(rule->values);
+            }
+
+            if (rule->value) {
+                flb_sds_destroy(rule->value);
+            }
+
             flb_sds_destroy(rule->op);
             flb_sds_destroy(rule->field);
             flb_free(rule);
