@@ -33,6 +33,7 @@
 struct flb_mp_chunk_cobj;
 struct flb_log_event_encoder;
 struct flb_log_event_decoder;
+struct flb_mp_chunk_record;
 
 struct flb_router_chunk_context {
     struct flb_mp_chunk_cobj *chunk_cobj;
@@ -103,6 +104,7 @@ struct flb_route_condition {
 struct flb_route_output {
     flb_sds_t name;
     flb_sds_t fallback;
+    struct flb_output_instance *ins;
     struct cfl_list _head;
 };
 
@@ -156,6 +158,8 @@ int flb_router_chunk_context_prepare_logs(struct flb_router_chunk_context *conte
 int flb_route_condition_eval(struct flb_event_chunk *chunk,
                              struct flb_router_chunk_context *context,
                              struct flb_route *route);
+int flb_router_condition_evaluate_record(struct flb_route *route,
+                                         struct flb_mp_chunk_record *record);
 int flb_condition_eval_logs(struct flb_event_chunk *chunk,
                             struct flb_router_chunk_context *context,
                             struct flb_route *route);

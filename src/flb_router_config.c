@@ -1396,6 +1396,8 @@ int flb_router_apply_config(struct flb_config *config)
                     continue;
                 }
 
+                route_output->ins = output_ins;
+
                 if (input_has_direct_route(input_ins, output_ins)) {
                     continue;
                 }
