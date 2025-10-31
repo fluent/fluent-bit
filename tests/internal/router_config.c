@@ -1598,6 +1598,7 @@ static void test_router_condition_eval_logs_otel_contexts()
         TEST_CHECK(flb_condition_eval_logs(&chunk, &context, &route) == FLB_TRUE);
     }
     flb_router_chunk_context_reset(&context);
+    msgpack_sbuffer_destroy(&encoder.buffer);
     flb_log_event_encoder_destroy(&encoder);
 
     ret = build_log_chunk_with_otel("api", "demo", "1.0.0",
@@ -1608,6 +1609,7 @@ static void test_router_condition_eval_logs_otel_contexts()
         TEST_CHECK(flb_condition_eval_logs(&chunk, &context, &route) == FLB_FALSE);
     }
     flb_router_chunk_context_reset(&context);
+    msgpack_sbuffer_destroy(&encoder.buffer);
     flb_log_event_encoder_destroy(&encoder);
 
     free_route_condition(condition);
@@ -1673,6 +1675,7 @@ static void test_router_condition_eval_logs_otel_contexts()
         TEST_CHECK(flb_condition_eval_logs(&chunk, &context, &route) == FLB_TRUE);
     }
     flb_router_chunk_context_reset(&context);
+    msgpack_sbuffer_destroy(&encoder.buffer);
     flb_log_event_encoder_destroy(&encoder);
 
     ret = build_log_chunk_with_otel("backend", "other", "1.0.0",
@@ -1683,6 +1686,7 @@ static void test_router_condition_eval_logs_otel_contexts()
         TEST_CHECK(flb_condition_eval_logs(&chunk, &context, &route) == FLB_FALSE);
     }
     flb_router_chunk_context_reset(&context);
+    msgpack_sbuffer_destroy(&encoder.buffer);
     flb_log_event_encoder_destroy(&encoder);
 
     free_route_condition(condition);
@@ -1748,6 +1752,7 @@ static void test_router_condition_eval_logs_otel_contexts()
         TEST_CHECK(flb_condition_eval_logs(&chunk, &context, &route) == FLB_TRUE);
     }
     flb_router_chunk_context_reset(&context);
+    msgpack_sbuffer_destroy(&encoder.buffer);
     flb_log_event_encoder_destroy(&encoder);
 
     ret = build_log_chunk_with_otel("backend", "demo", "1.0.0",
@@ -1758,6 +1763,7 @@ static void test_router_condition_eval_logs_otel_contexts()
         TEST_CHECK(flb_condition_eval_logs(&chunk, &context, &route) == FLB_FALSE);
     }
     flb_router_chunk_context_reset(&context);
+    msgpack_sbuffer_destroy(&encoder.buffer);
     flb_log_event_encoder_destroy(&encoder);
 
     free_route_condition(condition);
