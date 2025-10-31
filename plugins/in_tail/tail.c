@@ -719,6 +719,14 @@ static struct flb_config_map config_map[] = {
      0, FLB_TRUE, offsetof(struct flb_tail_config, skip_empty_lines),
      "Allows to skip empty lines."
     },
+    {
+     FLB_CONFIG_MAP_BOOL, "skip_permission_errors", "false",
+     0, FLB_TRUE, offsetof(struct flb_tail_config, skip_permission_errors),
+     "Skip directories with permission errors instead of failing. When enabled, "
+     "the plugin will continue processing accessible directories even if some directories "
+     "cannot be read due to permission issues. When disabled (default), any permission error will "
+     "cause the plugin to fail entirely."
+    },
 #ifdef __linux__
     {
      FLB_CONFIG_MAP_BOOL, "file_cache_advise", "true",
