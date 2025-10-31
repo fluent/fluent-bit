@@ -88,6 +88,7 @@ struct flb_route_condition_rule {
     flb_sds_t value;
     flb_sds_t *values;
     size_t values_count;
+    enum record_context_type context;
     struct cfl_list _head;
 };
 
