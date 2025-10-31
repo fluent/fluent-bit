@@ -487,7 +487,8 @@ static int build_payload_for_default_route(struct flb_input_instance *ins,
                                            size_t record_count,
                                            uint8_t *matched_non_default)
 {
-    size_t i;
+    int i;
+    int j;
     int matched;
     int ret;
     int condition_result;
@@ -599,7 +600,7 @@ static int build_payload_for_default_route(struct flb_input_instance *ins,
                         flb_log_event_encoder_destroy(encoder);
                         return -1;
                     }
-                    for (size_t j = i + 1; j < record_count; j++) {
+                    for (j = i + 1; j < record_count; j++) {
                         if (flb_log_event_decoder_get_record_type(&records[j]->event, &record_type) == 0 &&
                             record_type == FLB_LOG_EVENT_GROUP_END &&
                             records[j]->cobj_group_metadata == group_start_record->cobj_group_metadata) {
