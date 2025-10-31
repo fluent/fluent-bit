@@ -50,17 +50,25 @@ static inline struct cfl_variant *get_body_variant(struct flb_mp_chunk_record *r
 }
 
 static struct cfl_variant *get_otel_container_variant(struct flb_mp_chunk_record *record,
-                                                      const char *key)
+                                                      const char *key,
+                                                      int use_group_attributes)
 {
-    struct cfl_variant *body;
+    struct cfl_variant *source;
     struct cfl_variant *container;
 
-    body = get_body_variant(record);
-    if (!body || body->type != CFL_VARIANT_KVLIST) {
+    /* For OTLP, resource/scope attributes are in group_attributes, not body */
+    if (use_group_attributes && record->cobj_group_attributes && record->cobj_group_attributes->variant) {
+        source = record->cobj_group_attributes->variant;
+    }
+    else {
+        source = get_body_variant(record);
+    }
+
+    if (!source || source->type != CFL_VARIANT_KVLIST) {
         return NULL;
     }
 
-    container = cfl_kvlist_fetch(body->data.as_kvlist, key);
+    container = cfl_kvlist_fetch(source->data.as_kvlist, key);
     if (!container || container->type != CFL_VARIANT_KVLIST) {
         return NULL;
     }
@@ -84,7 +92,8 @@ static struct cfl_variant *get_otel_attributes_variant(struct flb_mp_chunk_recor
         return NULL;
     }
 
-    container = get_otel_container_variant(record, container_key);
+    /* For OTLP resource/scope attributes, look in group_attributes first */
+    container = get_otel_container_variant(record, container_key, 1);
     if (!container) {
         return NULL;
     }
@@ -101,7 +110,8 @@ static struct cfl_variant *get_otel_scope_metadata_variant(struct flb_mp_chunk_r
 {
     struct cfl_variant *scope;
 
-    scope = get_otel_container_variant(record, "scope");
+    /* For OTLP scope metadata, also check group_attributes first */
+    scope = get_otel_container_variant(record, "scope", 1);
     if (!scope || scope->type != CFL_VARIANT_KVLIST) {
         return NULL;
     }
@@ -398,6 +408,31 @@ struct flb_condition *flb_router_route_get_condition(struct flb_route *route)
     }
 
     return route_condition_get_compiled(route->condition);
+}
+
+int flb_router_condition_evaluate_record(struct flb_route *route,
+                                         struct flb_mp_chunk_record *record)
+{
+    struct flb_condition *compiled;
+
+    if (!route || !record) {
+        return FLB_FALSE;
+    }
+
+    if (!route->condition) {
+        return FLB_TRUE;
+    }
+
+    compiled = flb_router_route_get_condition(route);
+    if (!compiled) {
+        if (route->condition->is_default) {
+            return FLB_TRUE;
+        }
+
+        return FLB_FALSE;
+    }
+
+    return flb_condition_evaluate_ex(compiled, record, route_logs_get_variant);
 }
 
 static int parse_rule_operator(const flb_sds_t op_str,
