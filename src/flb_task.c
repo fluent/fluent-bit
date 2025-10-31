@@ -440,6 +440,15 @@ struct flb_task *flb_task_create(uint64_t ref_id,
 
             o_ins = route_path->ins;
 
+            /* For conditional routing, also check the route mask */
+            if (task_ic->routes_mask) {
+                if (flb_routes_mask_get_bit(task_ic->routes_mask,
+                                            o_ins->id,
+                                            o_ins->config) == 0) {
+                    continue;
+                }
+            }
+
             route = flb_calloc(1, sizeof(struct flb_task_route));
             if (!route) {
                 flb_errno();
