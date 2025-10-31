@@ -216,19 +216,19 @@ static int http_put(struct flb_out_doris *ctx,
                     break;
                 }
 
-                if (msg_key.via.str.size == 6 && strncmp(msg_key.via.str.ptr, "Status", 6) == 0) {
+                if (msg_key.via.str.size == 6 && strncasecmp(msg_key.via.str.ptr, "Status", 6) == 0) {
                     msg_val = root.via.map.ptr[i].val;
                     if (msg_val.type != MSGPACK_OBJECT_STR) {
                         out_ret = FLB_RETRY;
                         break;
                     }
 
-                    if (msg_val.via.str.size == 7 && strncmp(msg_val.via.str.ptr, "Success", 7) == 0) {
+                    if (msg_val.via.str.size == 7 && strncasecmp(msg_val.via.str.ptr, "Success", 7) == 0) {
                         out_ret = FLB_OK;
                         break;
                     }
                     
-                    if (msg_val.via.str.size == 15 && strncmp(msg_val.via.str.ptr, "Publish Timeout", 15) == 0) {
+                    if (msg_val.via.str.size == 15 && strncasecmp(msg_val.via.str.ptr, "Publish Timeout", 15) == 0) {
                         out_ret = FLB_OK;
                         break;
                     }
