@@ -391,40 +391,63 @@ static int build_payload_for_route(struct flb_input_instance *ins,
         return 0;
     }
 
-    /* Second pass: find GROUP_START record */
+    /* Second pass: encode records in order, preserving group structure */
     for (i = 0; i < record_count; i++) {
-        if (flb_log_event_decoder_get_record_type(&records[i]->event, &record_type) == 0 &&
-            record_type == FLB_LOG_EVENT_GROUP_START) {
+        if (flb_log_event_decoder_get_record_type(&records[i]->event, &record_type) != 0) {
+            continue;
+        }
+
+        if (record_type == FLB_LOG_EVENT_GROUP_START) {
             group_start_record = records[i];
-            break;
+            group_end = NULL;
+            continue;
         }
-    }
-
-    if (group_start_record != NULL) {
-        ret = encode_chunk_record(encoder, group_start_record);
-        if (ret != 0) {
-            flb_free(matched_by_route);
-            flb_log_event_encoder_destroy(encoder);
-            return -1;
-        }
-    }
-
-    /* Encode matching records */
-    for (i = 0; i < record_count; i++) {
-        if (flb_log_event_decoder_get_record_type(&records[i]->event, &record_type) == 0 &&
-            record_type == FLB_LOG_EVENT_NORMAL) {
-            if (matched_by_route[i]) {
-                ret = encode_chunk_record(encoder, records[i]);
+        else if (record_type == FLB_LOG_EVENT_GROUP_END) {
+            if (group_end != NULL &&
+                group_start_record != NULL &&
+                records[i]->cobj_group_metadata == group_start_record->cobj_group_metadata) {
+                ret = encode_chunk_record(encoder, group_end);
                 if (ret != 0) {
                     flb_free(matched_by_route);
                     flb_log_event_encoder_destroy(encoder);
                     return -1;
                 }
+                group_end = NULL;
+            }
+            group_start_record = NULL;
+            continue;
+        }
+        else if (record_type == FLB_LOG_EVENT_NORMAL && matched_by_route[i]) {
+            if (group_start_record != NULL &&
+                records[i]->cobj_group_metadata == group_start_record->cobj_group_metadata) {
+                if (group_end == NULL) {
+                    ret = encode_chunk_record(encoder, group_start_record);
+                    if (ret != 0) {
+                        flb_free(matched_by_route);
+                        flb_log_event_encoder_destroy(encoder);
+                        return -1;
+                    }
+                    for (size_t j = i + 1; j < record_count; j++) {
+                        if (flb_log_event_decoder_get_record_type(&records[j]->event, &record_type) == 0 &&
+                            record_type == FLB_LOG_EVENT_GROUP_END &&
+                            records[j]->cobj_group_metadata == group_start_record->cobj_group_metadata) {
+                            group_end = records[j];
+                            break;
+                        }
+                    }
+                }
+            }
+
+            ret = encode_chunk_record(encoder, records[i]);
+            if (ret != 0) {
+                flb_free(matched_by_route);
+                flb_log_event_encoder_destroy(encoder);
+                return -1;
             }
         }
     }
 
-    if (group_end != NULL && group_start_record != NULL) {
+    if (group_end != NULL) {
         ret = encode_chunk_record(encoder, group_end);
         if (ret != 0) {
             flb_free(matched_by_route);
@@ -515,15 +538,6 @@ static int build_payload_for_default_route(struct flb_input_instance *ins,
         return 0;
     }
 
-    /* Second pass: find GROUP_START record */
-    for (i = 0; i < record_count; i++) {
-        if (flb_log_event_decoder_get_record_type(&records[i]->event, &record_type) == 0 &&
-            record_type == FLB_LOG_EVENT_GROUP_START) {
-            group_start_record = records[i];
-            break;
-        }
-    }
-
     matched_by_default = flb_calloc(record_count, sizeof(int));
     if (!matched_by_default) {
         flb_errno();
@@ -549,31 +563,63 @@ static int build_payload_for_default_route(struct flb_input_instance *ins,
         }
     }
 
-    if (group_start_record != NULL) {
-        ret = encode_chunk_record(encoder, group_start_record);
-        if (ret != 0) {
-            flb_free(matched_by_default);
-            flb_log_event_encoder_destroy(encoder);
-            return -1;
-        }
-    }
-
-    /* Encode matching records */
+    /* Second pass: encode records in order, preserving group structure */
     for (i = 0; i < record_count; i++) {
-        if (flb_log_event_decoder_get_record_type(&records[i]->event, &record_type) == 0 &&
-            record_type == FLB_LOG_EVENT_NORMAL) {
-            if (matched_by_default[i]) {
-                ret = encode_chunk_record(encoder, records[i]);
+        if (flb_log_event_decoder_get_record_type(&records[i]->event, &record_type) != 0) {
+            continue;
+        }
+
+        if (record_type == FLB_LOG_EVENT_GROUP_START) {
+            group_start_record = records[i];
+            group_end = NULL;
+            continue;
+        }
+        else if (record_type == FLB_LOG_EVENT_GROUP_END) {
+            if (group_end != NULL &&
+                group_start_record != NULL &&
+                records[i]->cobj_group_metadata == group_start_record->cobj_group_metadata) {
+                ret = encode_chunk_record(encoder, group_end);
                 if (ret != 0) {
                     flb_free(matched_by_default);
                     flb_log_event_encoder_destroy(encoder);
                     return -1;
                 }
+                group_end = NULL;
+            }
+            group_start_record = NULL;
+            continue;
+        }
+        else if (record_type == FLB_LOG_EVENT_NORMAL && matched_by_default[i]) {
+            if (group_start_record != NULL &&
+                records[i]->cobj_group_metadata == group_start_record->cobj_group_metadata) {
+                if (group_end == NULL) {
+                    ret = encode_chunk_record(encoder, group_start_record);
+                    if (ret != 0) {
+                        flb_free(matched_by_default);
+                        flb_log_event_encoder_destroy(encoder);
+                        return -1;
+                    }
+                    for (size_t j = i + 1; j < record_count; j++) {
+                        if (flb_log_event_decoder_get_record_type(&records[j]->event, &record_type) == 0 &&
+                            record_type == FLB_LOG_EVENT_GROUP_END &&
+                            records[j]->cobj_group_metadata == group_start_record->cobj_group_metadata) {
+                            group_end = records[j];
+                            break;
+                        }
+                    }
+                }
+            }
+
+            ret = encode_chunk_record(encoder, records[i]);
+            if (ret != 0) {
+                flb_free(matched_by_default);
+                flb_log_event_encoder_destroy(encoder);
+                return -1;
             }
         }
     }
 
-    if (group_end != NULL && group_start_record != NULL) {
+    if (group_end != NULL) {
         ret = encode_chunk_record(encoder, group_end);
         if (ret != 0) {
             flb_free(matched_by_default);
