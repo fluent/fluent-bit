@@ -150,11 +150,6 @@ void flb_log_event_decoder_destroy(struct flb_log_event_decoder *context)
 
     if (context != NULL) {
         if (context->initialized) {
-            if (context->unpacked_group_record.zone ==
-                context->unpacked_event.zone) {
-                msgpack_unpacked_init(&context->unpacked_event);
-            }
-
             msgpack_unpacked_destroy(&context->unpacked_group_record);
             msgpack_unpacked_destroy(&context->unpacked_empty_map);
             msgpack_unpacked_destroy(&context->unpacked_event);
@@ -331,11 +326,6 @@ int flb_log_event_decoder_next(struct flb_log_event_decoder *context,
         return context->last_result;
     }
 
-    if (context->unpacked_group_record.zone ==
-        context->unpacked_event.zone) {
-        msgpack_unpacked_init(&context->unpacked_event);
-    }
-
     previous_offset = context->offset;
     result = msgpack_unpack_next(&context->unpacked_event,
                                  context->buffer,
@@ -378,12 +368,38 @@ int flb_log_event_decoder_next(struct flb_log_event_decoder *context,
             msgpack_unpacked_destroy(&context->unpacked_group_record);
 
             if (record_type == FLB_LOG_EVENT_GROUP_START) {
-                memcpy(&context->unpacked_group_record,
-                       &context->unpacked_event,
-                       sizeof(msgpack_unpacked));
+                /*
+                 * Transfer zone ownership from unpacked_event to unpacked_group_record
+                 * instead of using memcpy. This prevents double-free issues when
+                 * both structures would otherwise reference the same zone.
+                 */
+                context->unpacked_group_record.zone = msgpack_unpacked_release_zone(&context->unpacked_event);
+                context->unpacked_group_record.data = context->unpacked_event.data;
 
-                context->current_group_metadata = event->metadata;
-                context->current_group_attributes = event->body;
+                /*
+                 * Extract pointers from the transferred data structure to ensure they
+                 * remain valid. The pointers must come from unpacked_group_record.data
+                 * since that's where the zone (and the data) now reside.
+                 */
+                if (context->unpacked_group_record.data.type == MSGPACK_OBJECT_ARRAY &&
+                    context->unpacked_group_record.data.via.array.size == 2) {
+                    msgpack_object *header = &context->unpacked_group_record.data.via.array.ptr[0];
+                    msgpack_object *root_body = &context->unpacked_group_record.data.via.array.ptr[1];
+
+                    if (header->type == MSGPACK_OBJECT_ARRAY &&
+                        header->via.array.size == 2) {
+                        context->current_group_metadata = &header->via.array.ptr[1];
+                    }
+                    else {
+                        context->current_group_metadata = context->empty_map;
+                    }
+                    context->current_group_attributes = root_body;
+                }
+                else {
+                    /* Fallback to using event pointers if structure is unexpected */
+                    context->current_group_metadata = event->metadata;
+                    context->current_group_attributes = event->body;
+                }
             }
             else {
                 context->current_group_metadata = NULL;
@@ -392,7 +408,6 @@ int flb_log_event_decoder_next(struct flb_log_event_decoder *context,
 
             if (context->read_groups != FLB_TRUE) {
                 memset(event, 0, sizeof(struct flb_log_event));
-
                 return flb_log_event_decoder_next(context, event);
             }
         }
