@@ -24,11 +24,120 @@
 #include <fluent-bit/flb_log_event_encoder.h>
 #include <fluent-bit/flb_log_event_decoder.h>
 #include <fluent-bit/flb_mp_chunk.h>
+#include <cfl/cfl_kvlist.h>
 
 #define FLB_ROUTE_CONDITION_COMPILED_SUCCESS  1
 #define FLB_ROUTE_CONDITION_COMPILED_FAILURE -1
 
 static struct flb_condition *route_condition_get_compiled(struct flb_route_condition *condition);
+
+static inline struct cfl_variant *get_object_variant(struct cfl_object *object)
+{
+    if (!object) {
+        return NULL;
+    }
+
+    return object->variant;
+}
+
+static inline struct cfl_variant *get_body_variant(struct flb_mp_chunk_record *record)
+{
+    if (!record || !record->cobj_record) {
+        return NULL;
+    }
+
+    return record->cobj_record->variant;
+}
+
+static struct cfl_variant *get_otel_container_variant(struct flb_mp_chunk_record *record,
+                                                      const char *key)
+{
+    struct cfl_variant *body;
+    struct cfl_variant *container;
+
+    body = get_body_variant(record);
+    if (!body || body->type != CFL_VARIANT_KVLIST) {
+        return NULL;
+    }
+
+    container = cfl_kvlist_fetch(body->data.as_kvlist, key);
+    if (!container || container->type != CFL_VARIANT_KVLIST) {
+        return NULL;
+    }
+
+    return container;
+}
+
+static struct cfl_variant *get_otel_attributes_variant(struct flb_mp_chunk_record *record,
+                                                       enum record_context_type context_type)
+{
+    struct cfl_variant *container;
+    const char *container_key = NULL;
+
+    if (context_type == RECORD_CONTEXT_OTEL_RESOURCE_ATTRIBUTES) {
+        container_key = "resource";
+    }
+    else if (context_type == RECORD_CONTEXT_OTEL_SCOPE_ATTRIBUTES) {
+        container_key = "scope";
+    }
+    else {
+        return NULL;
+    }
+
+    container = get_otel_container_variant(record, container_key);
+    if (!container) {
+        return NULL;
+    }
+
+    container = cfl_kvlist_fetch(container->data.as_kvlist, "attributes");
+    if (!container || container->type != CFL_VARIANT_KVLIST) {
+        return NULL;
+    }
+
+    return container;
+}
+
+static struct cfl_variant *get_otel_scope_metadata_variant(struct flb_mp_chunk_record *record)
+{
+    struct cfl_variant *scope;
+
+    scope = get_otel_container_variant(record, "scope");
+    if (!scope || scope->type != CFL_VARIANT_KVLIST) {
+        return NULL;
+    }
+
+    return scope;
+}
+
+static struct cfl_variant *route_logs_get_variant(struct flb_condition_rule *rule,
+                                                  void *ctx)
+{
+    struct flb_mp_chunk_record *record = (struct flb_mp_chunk_record *) ctx;
+
+    if (!rule || !record) {
+        return NULL;
+    }
+
+    switch (rule->context) {
+    case RECORD_CONTEXT_METADATA:
+        return get_object_variant(record->cobj_metadata);
+    case RECORD_CONTEXT_BODY:
+        return get_body_variant(record);
+    case RECORD_CONTEXT_GROUP_METADATA:
+        return get_object_variant(record->cobj_group_metadata);
+    case RECORD_CONTEXT_GROUP_ATTRIBUTES:
+        return get_object_variant(record->cobj_group_attributes);
+    case RECORD_CONTEXT_OTEL_RESOURCE_ATTRIBUTES:
+    case RECORD_CONTEXT_OTEL_SCOPE_ATTRIBUTES:
+        return get_otel_attributes_variant(record, rule->context);
+    case RECORD_CONTEXT_OTEL_SCOPE_METADATA:
+        return get_otel_scope_metadata_variant(record);
+    default:
+        break;
+    }
+
+    return NULL;
+}
 
 int flb_router_chunk_context_init(struct flb_router_chunk_context *context)
 {
@@ -185,7 +294,7 @@ int flb_condition_eval_logs(struct flb_event_chunk *chunk,
     cfl_list_foreach(head, &context->chunk_cobj->records) {
         record = cfl_list_entry(head, struct flb_mp_chunk_record, _head);
 
-        if (flb_condition_evaluate(compiled, record) == FLB_TRUE) {
+        if (flb_condition_evaluate_ex(compiled, record, route_logs_get_variant) == FLB_TRUE) {
             result = FLB_TRUE;
             break;
         }
@@ -391,7 +500,7 @@ static struct flb_condition *route_condition_compile(struct flb_route_condition 
                 return NULL;
             }
             ret = flb_condition_add_rule(compiled, rule->field, op,
-                                         rule->value, 1, RECORD_CONTEXT_BODY);
+                                         rule->value, 1, rule->context);
             break;
         case FLB_RULE_OP_GT:
         case FLB_RULE_OP_LT:
@@ -406,7 +515,7 @@ static struct flb_condition *route_condition_compile(struct flb_route_condition 
                 return NULL;
             }
             ret = flb_condition_add_rule(compiled, rule->field, op,
-                                         &numeric_value, 1, RECORD_CONTEXT_BODY);
+                                         &numeric_value, 1, rule->context);
             break;
         case FLB_RULE_OP_IN:
         case FLB_RULE_OP_NOT_IN:
@@ -417,7 +526,7 @@ static struct flb_condition *route_condition_compile(struct flb_route_condition 
             ret = flb_condition_add_rule(compiled, rule->field, op,
                                          rule->values,
                                          (int) rule->values_count,
-                                         RECORD_CONTEXT_BODY);
+                                         rule->context);
             break;
         default:
             flb_condition_destroy(compiled);
