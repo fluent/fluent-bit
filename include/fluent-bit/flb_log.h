@@ -35,7 +35,11 @@
 #include <stdarg.h>
 
 /* FIXME: this extern should be auto-populated from flb_thread_storage.h */
-extern FLB_TLS_DEFINE(struct flb_log, flb_log_ctx)
+#ifndef FLB_HAVE_C_TLS
+FLB_TLS_DECLARE(struct flb_log, flb_log_ctx);
+#else
+extern FLB_TLS_DEFINE(struct flb_log, flb_log_ctx);
+#endif
 
 /* Message types */
 #define FLB_LOG_OFF     0
