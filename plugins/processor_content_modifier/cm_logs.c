@@ -316,6 +316,12 @@ int cm_logs_process(struct flb_processor_instance *ins,
             continue;
         }
 
+        if (record_type == FLB_LOG_EVENT_GROUP_START &&
+            (ctx->context_type == CM_CONTEXT_LOG_METADATA ||
+             ctx->context_type == CM_CONTEXT_LOG_BODY)) {
+            continue;
+        }
+
         /* retrieve the target cfl object */
         if (ctx->context_type == CM_CONTEXT_LOG_METADATA) {
             obj = record->cobj_metadata;
