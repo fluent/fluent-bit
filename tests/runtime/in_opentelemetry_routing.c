@@ -57,17 +57,39 @@ struct test_ctx {
 
 #define TEST_OUTPUT_DIR "otlp_routing_test_output"
 
-/* Construct path to config file in source directory */
+/* Construct absolute path to config file */
 static char *get_config_path(const char *config_file)
 {
     char path[PATH_MAX];
     char *resolved;
     char *real_resolved;
     char cwd[PATH_MAX];
+    size_t cwd_len;
+    size_t config_file_len;
+    int ret;
 
-    /* Try FLB_TESTS_DATA_PATH first (tests/runtime directory) */
+    /* Try FLB_TESTS_DATA_PATH/data/routing/ first */
+    snprintf(path, sizeof(path), "%s/data/routing/%s", FLB_TESTS_DATA_PATH, config_file);
+    if (access(path, R_OK) == 0) {
+        real_resolved = realpath(path, NULL);
+        if (real_resolved) {
+            resolved = flb_strdup(real_resolved);
+            free(real_resolved);
+            return resolved;
+        }
+        resolved = flb_strdup(path);
+        return resolved;
+    }
+
+    /* Try FLB_TESTS_DATA_PATH (tests/runtime directory) */
     snprintf(path, sizeof(path), "%s/%s", FLB_TESTS_DATA_PATH, config_file);
     if (access(path, R_OK) == 0) {
+        real_resolved = realpath(path, NULL);
+        if (real_resolved) {
+            resolved = flb_strdup(real_resolved);
+            free(real_resolved);
+            return resolved;
+        }
         resolved = flb_strdup(path);
         return resolved;
     }
@@ -87,10 +109,22 @@ static char *get_config_path(const char *config_file)
 
     /* Try current working directory */
     if (getcwd(cwd, sizeof(cwd)) != NULL) {
-        snprintf(path, sizeof(path), "%s/%s", cwd, config_file);
-        if (access(path, R_OK) == 0) {
-            resolved = flb_strdup(path);
-            return resolved;
+        cwd_len = strlen(cwd);
+        config_file_len = strlen(config_file);
+        if (cwd_len + 1 + config_file_len < sizeof(path)) {
+            ret = snprintf(path, sizeof(path), "%s/%s", cwd, config_file);
+            if (ret > 0 && (size_t)ret < sizeof(path)) {
+                if (access(path, R_OK) == 0) {
+                    real_resolved = realpath(path, NULL);
+                    if (real_resolved) {
+                        resolved = flb_strdup(real_resolved);
+                        free(real_resolved);
+                        return resolved;
+                    }
+                    resolved = flb_strdup(path);
+                    return resolved;
+                }
+            }
         }
     }
 
@@ -158,6 +192,8 @@ static struct test_ctx *test_ctx_create(const char *config_file)
     char *config_path;
     int ret;
     char cwd[PATH_MAX];
+    size_t cwd_len;
+    size_t test_dir_len;
 
     ctx = flb_calloc(1, sizeof(struct test_ctx));
     if (!TEST_CHECK(ctx != NULL)) {
@@ -169,7 +205,17 @@ static struct test_ctx *test_ctx_create(const char *config_file)
 
     /* Create output directory */
     if (getcwd(cwd, sizeof(cwd)) != NULL) {
-        snprintf(ctx->output_dir, sizeof(ctx->output_dir), "%s/%s", cwd, TEST_OUTPUT_DIR);
+        cwd_len = strlen(cwd);
+        test_dir_len = strlen(TEST_OUTPUT_DIR);
+        if (cwd_len + 1 + test_dir_len < sizeof(ctx->output_dir)) {
+            ret = snprintf(ctx->output_dir, sizeof(ctx->output_dir), "%s/%s", cwd, TEST_OUTPUT_DIR);
+            if (ret < 0 || (size_t)ret >= sizeof(ctx->output_dir)) {
+                snprintf(ctx->output_dir, sizeof(ctx->output_dir), "./%s", TEST_OUTPUT_DIR);
+            }
+        }
+        else {
+            snprintf(ctx->output_dir, sizeof(ctx->output_dir), "./%s", TEST_OUTPUT_DIR);
+        }
     }
     else {
         snprintf(ctx->output_dir, sizeof(ctx->output_dir), "./%s", TEST_OUTPUT_DIR);
@@ -270,10 +316,19 @@ static void cleanup_output_files(struct test_ctx *ctx, struct route_expectation 
 {
     int i;
     char filepath[PATH_MAX];
+    size_t dir_len;
+    size_t file_len;
+    int ret;
 
     for (i = 0; i < count; i++) {
-        snprintf(filepath, sizeof(filepath), "%s/%s", ctx->output_dir, expectations[i].output_file);
-        unlink(filepath);
+        dir_len = strlen(ctx->output_dir);
+        file_len = strlen(expectations[i].output_file);
+        if (dir_len + 1 + file_len < sizeof(filepath)) {
+            ret = snprintf(filepath, sizeof(filepath), "%s/%s", ctx->output_dir, expectations[i].output_file);
+            if (ret > 0 && (size_t)ret < sizeof(filepath)) {
+                unlink(filepath);
+            }
+        }
     }
 }
 
@@ -284,16 +339,36 @@ static int verify_expectations(struct route_expectation *expectations, int count
     int all_passed = 1;
     char filepath[PATH_MAX];
     int actual_count;
+    struct route_expectation *exp;
+    size_t dir_len;
+    size_t file_len;
+    int ret;
 
     for (i = 0; i < count; i++) {
-        struct route_expectation *exp = &expectations[i];
+        exp = &expectations[i];
 
-        snprintf(filepath, sizeof(filepath), "%s/%s", ctx->output_dir, exp->output_file);
-        actual_count = count_records_in_file(filepath);
+        dir_len = strlen(ctx->output_dir);
+        file_len = strlen(exp->output_file);
+        if (dir_len + 1 + file_len < sizeof(filepath)) {
+            ret = snprintf(filepath, sizeof(filepath), "%s/%s", ctx->output_dir, exp->output_file);
+            if (ret > 0 && (size_t)ret < sizeof(filepath)) {
+                actual_count = count_records_in_file(filepath);
+            }
+            else {
+                flb_error("[test] Route '%s': output file path too long", exp->route_name);
+                actual_count = -1;
+            }
+        }
+        else {
+            flb_error("[test] Route '%s': output file path too long", exp->route_name);
+            actual_count = -1;
+        }
 
         if (actual_count < 0) {
-            flb_error("[test] Route '%s': failed to read output file: %s",
-                      exp->route_name, filepath);
+            if (dir_len + 1 + file_len < sizeof(filepath)) {
+                flb_error("[test] Route '%s': failed to read output file: %s",
+                          exp->route_name, filepath);
+            }
             all_passed = 0;
         }
         else if (actual_count != exp->expected_count) {
