@@ -32,6 +32,7 @@ struct flb_out_doris {
     char *host;
     int port;
     char uri[256];
+    char *endpoint_type;
 
     char *user;
     char *password;

@@ -98,6 +98,9 @@ struct flb_out_doris *flb_doris_conf_create(struct flb_output_instance *ins,
     flb_output_net_default("127.0.0.1", 8030, ins);
 
     /* Validate */ 
+    if (!ctx->endpoint_type || (strcasecmp(ctx->endpoint_type, "fe") != 0 && strcasecmp(ctx->endpoint_type, "be") != 0)) {
+        flb_plg_error(ins, "endpoint_type is invalid");
+    }
     if (!ctx->user) {
         flb_plg_error(ins, "user is not set");
     }

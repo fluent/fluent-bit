@@ -172,6 +172,7 @@ void flb_test_json()
 
     ret = flb_output_set(ctx->flb, ctx->o_ffd,
                          "match", "*",
+                         "endpoint_type", "fe",
                          "user", "admin",
                          "database", "d_fb",
                          "table", "t_fb",
@@ -229,6 +230,7 @@ void flb_test_time_key()
 
     ret = flb_output_set(ctx->flb, ctx->o_ffd,
                          "match", "*",
+                         "endpoint_type", "fe",
                          "user", "admin",
                          "database", "d_fb",
                          "table", "t_fb",

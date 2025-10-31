@@ -81,8 +81,11 @@ static int http_put(struct flb_out_doris *ctx,
                     const char *host, int port,
                     const void *body, size_t body_len,
                     const char *tag, int tag_len,
-                    const char *label, int label_len)
+                    const char *label, int label_len,
+                    const char *endpoint_type)
 {
+    flb_plg_debug(ctx->ins, "send to %s", endpoint_type);
+
     int ret;
     int out_ret = FLB_OK;
     size_t b_sent;
@@ -144,7 +147,9 @@ static int http_put(struct flb_out_doris *ctx,
     /* Append headers */
     flb_http_add_header(c, "format", 6, "json", 4);
     flb_http_add_header(c, "read_json_by_line", 17, "true", 4);
-    flb_http_add_header(c, "Expect", 6, "100-continue", 12);
+    if (strcasecmp(endpoint_type, "fe") == 0) {
+        flb_http_add_header(c, "Expect", 6, "100-continue", 12);
+    }
     flb_http_add_header(c, "User-Agent", 10, "Fluent-Bit", 10);
     
     if (ctx->add_label) {
@@ -188,7 +193,7 @@ static int http_put(struct flb_out_doris *ctx,
             memcpy(redirect_port, mid + 1, end - (mid + 1));
             
             out_ret = http_put(ctx, redirect_host, atoi(redirect_port), 
-                               body, body_len, tag, tag_len, label, label_len);
+                               body, body_len, tag, tag_len, label, label_len, "be");
         }
         else if (c->resp.status == 200 && c->resp.payload_size > 0) {
             ret = flb_pack_json(c->resp.payload, c->resp.payload_size,
@@ -338,7 +343,7 @@ static void cb_doris_flush(struct flb_event_chunk *event_chunk,
     }
 
     ret = http_put(ctx, ctx->host, ctx->port, out_body, out_size,
-                   event_chunk->tag, flb_sds_len(event_chunk->tag), label, len);
+                   event_chunk->tag, flb_sds_len(event_chunk->tag), label, len, ctx->endpoint_type);
     flb_sds_destroy(out_body);
 
     if (ret == FLB_OK && ctx->log_progress_interval > 0) {
@@ -360,6 +365,12 @@ static int cb_doris_exit(void *data, struct flb_config *config)
 
 /* Configuration properties map */
 static struct flb_config_map config_map[] = {
+    // endpoint_type
+    {
+     FLB_CONFIG_MAP_STR, "endpoint_type", NULL,
+     0, FLB_TRUE, offsetof(struct flb_out_doris, endpoint_type),
+     "Set endpoint type: 'fe' (frontend) or 'be' (backend)"
+    },
     // user
     {
      FLB_CONFIG_MAP_STR, "user", NULL,
