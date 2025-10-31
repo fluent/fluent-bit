@@ -200,7 +200,11 @@ struct flb_sched_timer_coro_cb_params {
     struct flb_coro *coro;
 };
 
+#ifndef FLB_HAVE_C_TLS
+FLB_TLS_DECLARE(struct flb_sched_timer_coro_cb_params, sched_timer_coro_cb_params);
+#else
 extern FLB_TLS_DEFINE(struct flb_sched_timer_coro_cb_params, sched_timer_coro_cb_params);
+#endif
 
 
 struct flb_timer_cb_coro_params {

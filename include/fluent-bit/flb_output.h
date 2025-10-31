@@ -592,7 +592,11 @@ struct flb_out_flush_params {
     struct flb_coro *coro;                      /* coroutine context     */
 };
 
+#ifndef FLB_HAVE_C_TLS
+FLB_TLS_DECLARE(struct flb_out_flush_params, out_flush_params);
+#else
 extern FLB_TLS_DEFINE(struct flb_out_flush_params, out_flush_params);
+#endif
 
 #define FLB_OUTPUT_RETURN(x)                                            \
     flb_output_return_do(x);                                            \
