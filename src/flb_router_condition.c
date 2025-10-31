@@ -265,6 +265,10 @@ int flb_router_path_should_route(struct flb_event_chunk *chunk,
         return FLB_FALSE;
     }
 
+    if (!path->route) {
+        return FLB_TRUE;
+    }
+
     if (chunk && chunk->type == FLB_EVENT_TYPE_LOGS) {
         if (!context) {
             return FLB_FALSE;
@@ -273,10 +277,6 @@ int flb_router_path_should_route(struct flb_event_chunk *chunk,
         if (flb_router_chunk_context_prepare_logs(context, chunk) != 0) {
             return FLB_FALSE;
         }
-    }
-
-    if (!path->route) {
-        return FLB_TRUE;
     }
 
     return flb_route_condition_eval(chunk, context, path->route);
