@@ -20,6 +20,7 @@
 
 #include <fluent-bit/flb_lib.h>
 #include <fluent-bit/flb_mem.h>
+#include <fluent-bit/flb_compat.h>
 #include <fluent-bit/flb_pipe.h>
 #include <fluent-bit/flb_engine.h>
 #include <fluent-bit/flb_input.h>
@@ -39,7 +40,6 @@
 #include <signal.h>
 #include <stdarg.h>
 #include <sys/stat.h>
-#include <unistd.h>
 #include <errno.h>
 #include <stdlib.h>
 
