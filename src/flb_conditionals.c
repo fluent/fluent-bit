@@ -440,8 +440,12 @@ int flb_condition_evaluate_ex(struct flb_condition *cond,
 int flb_condition_evaluate(struct flb_condition *cond,
                            struct flb_mp_chunk_record *record)
 {
-    if (!cond || !record) {
+    if (!cond) {
         return FLB_TRUE;
+    }
+
+    if (!record) {
+        return FLB_FALSE;
     }
 
     return flb_condition_evaluate_ex(cond, record, default_get_record_variant);
