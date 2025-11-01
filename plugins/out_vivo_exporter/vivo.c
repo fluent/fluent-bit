@@ -277,10 +277,14 @@ static flb_sds_t format_logs(struct flb_input_instance *src_ins,
 
     msgpack_sbuffer_destroy(&tmp_sbuf);
 
-    /* append a newline */
-    flb_sds_cat_safe(&out_js, "\n", 1);
-
     if (!out_js) {
+        flb_sds_destroy(out_buf);
+        return NULL;
+    }
+
+    /* append a newline */
+    if (flb_sds_cat_safe(&out_js, "\n", 1) < 0) {
+        flb_sds_destroy(out_js);
         flb_sds_destroy(out_buf);
         return NULL;
     }
