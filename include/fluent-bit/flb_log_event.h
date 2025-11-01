@@ -33,6 +33,17 @@
 #define FLB_LOG_EVENT_FORMAT_FLUENT_BIT_V1  FLB_LOG_EVENT_FORMAT_FORWARD
 #define FLB_LOG_EVENT_FORMAT_FLUENT_BIT_V2  4
 
+/*
+ * Log event type identification via timestamp value:
+ * - Non-negative timestamps (>= 0): Normal log records with actual timestamps
+ * - -1 (FLB_LOG_EVENT_GROUP_START): Group marker indicating start of a log group
+ * - -2 (FLB_LOG_EVENT_GROUP_END): Group marker indicating end of a log group
+ * - Other negative values: Invalid/corrupted data (will be skipped by decoder)
+ *
+ * NOTE: Negative timestamps are RESERVED for group markers. Only -1 and -2 are valid.
+ * Any other negative timestamp is considered invalid and will be skipped during decoding.
+ * Encoders must respect this contract and only use -1/-2 for group markers.
+ */
 #define FLB_LOG_EVENT_NORMAL              (int32_t)  0
 #define FLB_LOG_EVENT_GROUP_START         (int32_t) -1
 #define FLB_LOG_EVENT_GROUP_END           (int32_t) -2
