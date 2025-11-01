@@ -407,6 +407,11 @@ int flb_log_event_decoder_next(struct flb_log_event_decoder *context,
             }
 
             if (context->read_groups != FLB_TRUE) {
+                /*
+                 * Skip group markers by recursively calling to get next record.
+                 * msgpack_unpack_next will properly destroy and reinitialize
+                 * unpacked_event, so no explicit cleanup needed here.
+                 */
                 memset(event, 0, sizeof(struct flb_log_event));
                 return flb_log_event_decoder_next(context, event);
             }
