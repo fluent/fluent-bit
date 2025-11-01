@@ -33,6 +33,9 @@
 			]
 		}
 	},
+	"mounts": [
+		"source=/etc/machine-id,target=/etc/machine-id,type=bind,consistency=cached"
+	],
 
 	"remoteUser": "fluent-bit"
 }
