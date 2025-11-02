@@ -25,6 +25,9 @@
 #define FLB_AWS_IMDS_PORT 80
 #define FLB_AWS_IMDS_TIMEOUT 1  /* 1 second */
 
+/* Environment variable for custom IMDS endpoint */
+#define AWS_EC2_METADATA_SERVICE_ENDPOINT_ENV "AWS_EC2_METADATA_SERVICE_ENDPOINT"
+
 #define FLB_AWS_IMDS_VERSION_EVALUATE 0
 #define FLB_AWS_IMDS_VERSION_1 1
 #define FLB_AWS_IMDS_VERSION_2 2
