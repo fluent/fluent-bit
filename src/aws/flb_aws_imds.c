@@ -242,7 +242,6 @@ static int get_imds_version(struct flb_aws_imds *ctx)
 {
     int ret;
     struct flb_aws_client *client = ctx->ec2_imds_client;
-    struct flb_aws_header invalid_token_header;
     struct flb_http_client *c = NULL;
 
     if (ctx->imds_version != FLB_AWS_IMDS_VERSION_EVALUATE) {
@@ -251,65 +250,37 @@ static int get_imds_version(struct flb_aws_imds *ctx)
 
     /*
      * Evaluate version
-     * To evaluate wether IMDSv2 is available, send an invalid token
-     * in IMDS request. If response status is 'Unauthorized', then IMDSv2
-     * is available.
+     * Try to get an IMDSv2 token first. If that fails, fall back to IMDSv1.
+     * This approach is more compatible with custom IMDS implementations like IAM Roles Anywhere.
      */
-    invalid_token_header = imds_v2_token_token_header_template;
-    invalid_token_header.val = "INVALID";
-    invalid_token_header.val_len = 7;
-    c = client->client_vtable->request(client, FLB_HTTP_GET, FLB_AWS_IMDS_ROOT, NULL, 0,
-                                       &invalid_token_header, 1);
-
+    ctx->imds_version = FLB_AWS_IMDS_VERSION_2;
+    ret = refresh_imds_v2_token(ctx);
+    if (ret == 0) {
+        /* Successfully got IMDSv2 token */
+        flb_info("[imds] using IMDSv2");
+        return FLB_AWS_IMDS_VERSION_2;
+    }
+    
+    /* IMDSv2 token request failed, try IMDSv1 */
+    flb_debug("[imds] IMDSv2 token request failed, testing IMDSv1");
+    ctx->imds_version = FLB_AWS_IMDS_VERSION_EVALUATE;
+    c = client->client_vtable->request(client, FLB_HTTP_GET, FLB_AWS_IMDS_ROOT,
+                                       NULL, 0, NULL, 0);
+    
     if (!c) {
         flb_debug("[imds] imds endpoint unavailable");
         return FLB_AWS_IMDS_VERSION_EVALUATE;
     }
-
-    /* Unauthorized response means that IMDS version 2 is in use */
-    if (c->resp.status == 401) {
-        ctx->imds_version = FLB_AWS_IMDS_VERSION_2;
-        ret = refresh_imds_v2_token(ctx);
-        if (ret == -1) {
-            /*
-             * Token cannot be refreshed, test IMDSv1
-             * If IMDSv1 cannot be used, response will be status 401
-             */
-            flb_http_client_destroy(c);
-            ctx->imds_version = FLB_AWS_IMDS_VERSION_EVALUATE;
-            c = client->client_vtable->request(client, FLB_HTTP_GET, FLB_AWS_IMDS_ROOT,
-                                               NULL, 0, NULL, 0);
-            if (!c) {
-                flb_debug("[imds] imds v1 attempt, endpoint unavailable");
-                return FLB_AWS_IMDS_VERSION_EVALUATE;
-            }
-
-            if (c->resp.status == 200) {
-                flb_info("[imds] to use IMDSv2, set --http-put-response-hop-limit to 2");
-            }
-            else {
-                /* IMDSv1 unavailable. IMDSv2 beyond network hop count */
-                flb_warn("[imds] failed to retrieve IMDSv2 token and IMDSv1 unavailable. "
-                        "This is likely due to instance-metadata-options "
-                        "--http-put-response-hop-limit being set to 1 and --http-tokens "
-                        "set to required. "
-                        "To use IMDSv2, please set --http-put-response-hop-limit to 2 as "
-                        "described https://docs.aws.amazon.com/AWSEC2/latest/UserGuide/"
-                        "configuring-instance-metadata-options.html");
-            }
-        }
-    }
-
-    /*
-     * Success means that IMDS version 1 is in use
-     */
+    
     if (c->resp.status == 200) {
-        flb_warn("[imds] falling back on IMDSv1");
+        flb_info("[imds] falling back to IMDSv1");
         ctx->imds_version = FLB_AWS_IMDS_VERSION_1;
+        flb_http_client_destroy(c);
+        return FLB_AWS_IMDS_VERSION_1;
     }
-
+    
     flb_http_client_destroy(c);
-    return ctx->imds_version;
+    return FLB_AWS_IMDS_VERSION_EVALUATE;
 }
 
 /*
