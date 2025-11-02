@@ -62,22 +62,25 @@ end
 function rate_limit_by_size(tag, timestamp, record)
     local t = os.time()
     local current_time = get_current_time(t)
+    local counter_key = record["kubernetes"][group_key]
+
     if current_time ~= time then
         time = current_time
         counter = {} -- reset the counter
     end
 
-    if counter[group_key] == -1 then
+    if counter[counter_key] == -1 then
         return -1, 0, 0 -- Log group already rate limited. Hence drop it.
     else
-        if counter[group_key] == nil then
-            counter[group_key] = #record[rate_limit_field]
+        if counter[counter_key] == nil then
+            counter[counter_key] = #record[rate_limit_field]
         else
-            counter[group_key] = counter[group_key] + #record[rate_limit_field]
+            counter[counter_key] = counter[counter_key] + #record[rate_limit_field]
         end
-        if counter[group_key] > group_bucket_limit_bytes then
-            counter[group_key] = -1 -- value of -1 indicates that this group has been rate limited
-            return -1, 0, 0 -- drop the log     
+        if counter[counter_key] > group_bucket_limit_bytes then
+            counter[counter_key] = -1 -- value of -1 indicates that this group has been rate limited
+            print("Log group " .. group_key .. ": " .. counter_key .. " has been rate limited. Skipping log collection for " .. group_bucket_period_s .. " seconds")
+            return -1, 0, 0 -- drop the log
         end
         return 0, 0, 0
     end
