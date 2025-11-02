@@ -80,17 +80,9 @@ struct flb_aws_imds *flb_aws_imds_create(const struct flb_aws_imds_config *imds_
         flb_aws_imds_destroy(ctx);
         return NULL;
     }
-    if (0 != strncmp(ec2_imds_client->upstream->tcp_host, FLB_AWS_IMDS_HOST,
-                     FLB_AWS_IMDS_HOST_LEN)) {
-        flb_debug("[imds] ec2_imds_client tcp host must be set to %s", FLB_AWS_IMDS_HOST);
-        flb_aws_imds_destroy(ctx);
-        return NULL;
-    }
-    if (ec2_imds_client->upstream->tcp_port != FLB_AWS_IMDS_PORT) {
-        flb_debug("[imds] ec2_imds_client tcp port must be set to %i", FLB_AWS_IMDS_PORT);
-        flb_aws_imds_destroy(ctx);
-        return NULL;
-    }
+    
+    /* Allow custom IMDS endpoints via AWS_EC2_METADATA_SERVICE_ENDPOINT */
+    /* The hardcoded host/port checks have been removed to support custom endpoints */
 
     /* Connect client */
     ctx->ec2_imds_client = ec2_imds_client;
