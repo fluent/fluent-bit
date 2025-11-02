@@ -264,12 +264,14 @@ struct flb_aws_provider *flb_ec2_provider_create(struct flb_config *config,
     /* Check for custom IMDS endpoint */
     use_host = FLB_AWS_IMDS_HOST;
     use_port = FLB_AWS_IMDS_PORT;
+    int use_custom_endpoint = FLB_FALSE;
     
     endpoint = getenv(AWS_EC2_METADATA_SERVICE_ENDPOINT_ENV);
     if (endpoint && strlen(endpoint) > 0) {
         ret = flb_utils_url_split_sds(endpoint, &protocol, &host, &port_str, &path);
         if (ret >= 0 && host) {
             use_host = host;
+            use_custom_endpoint = FLB_TRUE;
             if (port_str) {
                 use_port = atoi(port_str);
                 if (use_port <= 0 || use_port > 65535) {
@@ -296,9 +298,20 @@ struct flb_aws_provider *flb_ec2_provider_create(struct flb_config *config,
         return NULL;
     }
 
-    /* IMDSv2 token request will timeout if hops = 1 and running within container */
-    upstream->base.net.connect_timeout = FLB_AWS_IMDS_TIMEOUT;
-    upstream->base.net.io_timeout = FLB_AWS_IMDS_TIMEOUT;
+    /* 
+     * Set timeout based on endpoint type:
+     * - Standard AWS IMDS: 1 second (fast local endpoint)
+     * - Custom IMDS endpoints (e.g., IAM Roles Anywhere): 10 seconds (certificate auth takes longer)
+     */
+    if (use_custom_endpoint) {
+        upstream->base.net.connect_timeout = FLB_AWS_IMDS_TIMEOUT_CUSTOM;
+        upstream->base.net.io_timeout = FLB_AWS_IMDS_TIMEOUT_CUSTOM;
+        flb_info("[aws_credentials] Using extended timeout (%d seconds) for custom IMDS endpoint", 
+                 FLB_AWS_IMDS_TIMEOUT_CUSTOM);
+    } else {
+        upstream->base.net.connect_timeout = FLB_AWS_IMDS_TIMEOUT;
+        upstream->base.net.io_timeout = FLB_AWS_IMDS_TIMEOUT;
+    }
     upstream->base.net.keepalive = FLB_FALSE; /* On timeout, the connection is broken */
 
     implementation->client = generator->create();
