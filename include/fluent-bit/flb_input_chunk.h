@@ -24,6 +24,9 @@
 #include <fluent-bit/flb_sds.h>
 #include <fluent-bit/flb_config.h>
 #include <fluent-bit/flb_routes_mask.h>
+#include <stdint.h>
+
+struct cio_chunk;
 
 #include <monkey/mk_core.h>
 #include <msgpack.h>
@@ -41,6 +44,17 @@
 
 /* Number of bytes reserved for Metadata Header on Chunks */
 #define FLB_INPUT_CHUNK_META_HEADER   4
+
+/* Chunk metadata flags */
+#define FLB_CHUNK_FLAG_DIRECT_ROUTES        (1 << 0)
+#define FLB_CHUNK_FLAG_DIRECT_ROUTE_LABELS  (1 << 1)
+#define FLB_CHUNK_FLAG_DIRECT_ROUTE_WIDE_IDS (1 << 2)
+
+struct flb_chunk_direct_route {
+    uint32_t id;
+    uint16_t label_length;
+    const char *label;
+};
 
 /* Chunks magic bytes (starting from Fluent Bit v1.8.10) */
 #define FLB_INPUT_CHUNK_MAGIC_BYTE_0  (unsigned char) 0xF1
@@ -109,6 +123,18 @@ int flb_input_chunk_get_event_type(struct flb_input_chunk *ic);
 
 int flb_input_chunk_get_tag(struct flb_input_chunk *ic,
                             const char **tag_buf, int *tag_len);
+
+int flb_input_chunk_write_header_v2(struct cio_chunk *chunk,
+                                    int event_type,
+                                    char *tag, int tag_len,
+                                    const struct flb_chunk_direct_route *routes,
+                                    int route_count);
+int flb_input_chunk_has_direct_routes(struct flb_input_chunk *ic);
+int flb_input_chunk_get_direct_routes(struct flb_input_chunk *ic,
+                                      struct flb_chunk_direct_route **routes,
+                                      int *route_count);
+void flb_input_chunk_destroy_direct_routes(struct flb_chunk_direct_route *routes,
+                                           int route_count);
 
 void flb_input_chunk_ring_buffer_cleanup(struct flb_input_instance *ins);
 void flb_input_chunk_ring_buffer_collector(struct flb_config *ctx, void *data);
