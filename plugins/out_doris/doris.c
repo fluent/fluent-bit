@@ -303,7 +303,8 @@ parse_done:
 
 static int compose_payload(struct flb_out_doris *ctx,
                            const void *in_body, size_t in_size,
-                           void **out_body, size_t *out_size)
+                           void **out_body, size_t *out_size,
+                           struct flb_config *config)
 {
     flb_sds_t encoded;
 
@@ -314,7 +315,8 @@ static int compose_payload(struct flb_out_doris *ctx,
                                               in_size,
                                               ctx->out_format,
                                               FLB_PACK_JSON_DATE_EPOCH,
-                                              ctx->date_key);
+                                              ctx->date_key,
+                                              config->json_escape_unicode);
     if (encoded == NULL) {
         flb_plg_error(ctx->ins, "failed to convert json");
         return FLB_ERROR;
@@ -347,7 +349,7 @@ static void cb_doris_flush(struct flb_event_chunk *event_chunk,
     int len = 0;
 
     ret = compose_payload(ctx, event_chunk->data, event_chunk->size,
-                          &out_body, &out_size);
+                          &out_body, &out_size, config);
 
     if (ret != FLB_OK) {
         if (ret == FLB_ERROR && ctx->log_progress_interval > 0) {
@@ -463,7 +465,7 @@ static int cb_doris_format_test(struct flb_config *config,
     struct flb_out_doris *ctx = plugin_context;
     int ret;
 
-    ret = compose_payload(ctx, data, bytes, out_data, out_size);
+    ret = compose_payload(ctx, data, bytes, out_data, out_size, config);
     if (ret != FLB_OK) {
         flb_error("ret=%d", ret);
         return -1;
