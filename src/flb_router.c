@@ -155,7 +155,8 @@ int flb_router_connect(struct flb_input_instance *in,
     }
 
     p->ins = out;
-    mk_list_add(&p->_head, &in->routes);
+    p->route = NULL;
+    cfl_list_add(&p->_head, &in->routes);
 
     return 0;
 }
@@ -172,7 +173,8 @@ int flb_router_connect_direct(struct flb_input_instance *in,
     }
 
     p->ins = out;
-    mk_list_add(&p->_head, &in->routes_direct);
+    p->route = NULL;
+    cfl_list_add(&p->_head, &in->routes_direct);
 
     return 0;
 }
@@ -256,15 +258,24 @@ int flb_router_io_set(struct flb_config *config)
         }
     }
 
+    /* Apply new router configuration if available */
+    if (!cfl_list_is_empty(&config->input_routes)) {
+        flb_debug("[router] new router configuration found, applying...");
+        if (flb_router_apply_config(config) == -1) {
+            flb_error("[router] failed to apply new router configuration");
+            return -1;
+        }
+    }
+
     return 0;
 }
 
 void flb_router_exit(struct flb_config *config)
 {
     struct mk_list *tmp;
-    struct mk_list *r_tmp;
+    struct cfl_list *r_tmp;
     struct mk_list *head;
-    struct mk_list *r_head;
+    struct cfl_list *r_head;
     struct flb_input_instance *in;
     struct flb_router_path *r;
 
@@ -273,16 +284,16 @@ void flb_router_exit(struct flb_config *config)
         in = mk_list_entry(head, struct flb_input_instance, _head);
 
         /* Iterate instance routes */
-        mk_list_foreach_safe(r_head, r_tmp, &in->routes) {
-            r = mk_list_entry(r_head, struct flb_router_path, _head);
-            mk_list_del(&r->_head);
+        cfl_list_foreach_safe(r_head, r_tmp, &in->routes) {
+            r = cfl_list_entry(r_head, struct flb_router_path, _head);
+            cfl_list_del(&r->_head);
             flb_free(r);
         }
 
         /* Iterate instance routes direct */
-        mk_list_foreach_safe(r_head, r_tmp, &in->routes_direct) {
-            r = mk_list_entry(r_head, struct flb_router_path, _head);
-            mk_list_del(&r->_head);
+        cfl_list_foreach_safe(r_head, r_tmp, &in->routes_direct) {
+            r = cfl_list_entry(r_head, struct flb_router_path, _head);
+            cfl_list_del(&r->_head);
             flb_free(r);
         }
     }

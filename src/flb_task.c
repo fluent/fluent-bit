@@ -360,14 +360,17 @@ struct flb_task *flb_task_create(uint64_t ref_id,
 {
     int count = 0;
     int total_events = 0;
+    int direct_count = 0;
     struct flb_task *task;
     struct flb_event_chunk *evc;
     struct flb_task_route *route;
     struct flb_router_path *route_path;
     struct flb_output_instance *o_ins;
     struct flb_input_chunk *task_ic;
-    struct mk_list *i_head;
+    struct cfl_list *i_head;
     struct mk_list *o_head;
+    struct flb_router_chunk_context router_context;
+    int router_context_initialized = FLB_FALSE;
 
     /* No error status */
     *err = FLB_FALSE;
@@ -392,6 +395,15 @@ struct flb_task *flb_task_create(uint64_t ref_id,
         return NULL;
     }
 
+    if (flb_router_chunk_context_init(&router_context) != 0) {
+        flb_error("[task] failed to initialize router chunk context");
+        flb_event_chunk_destroy(evc);
+        flb_free(task);
+        *err = FLB_TRUE;
+        return NULL;
+    }
+    router_context_initialized = FLB_TRUE;
+
 #ifdef FLB_HAVE_CHUNK_TRACE
     if (ic->trace) {
         flb_debug("add trace to task");
@@ -414,23 +426,65 @@ struct flb_task *flb_task_create(uint64_t ref_id,
 #endif
 
     /* Direct connects betweek input <> outputs (API based) */
-    if (mk_list_size(&i_ins->routes_direct) > 0) {
-        mk_list_foreach(i_head, &i_ins->routes_direct) {
-            route_path = mk_list_entry(i_head, struct flb_router_path, _head);
+    if (cfl_list_size(&i_ins->routes_direct) > 0) {
+        direct_count = 0;
+
+        cfl_list_foreach(i_head, &i_ins->routes_direct) {
+            route_path = cfl_list_entry(i_head, struct flb_router_path, _head);
+
+            if (flb_router_path_should_route(task->event_chunk,
+                                             &router_context,
+                                             route_path) == FLB_FALSE) {
+                continue;
+            }
+
             o_ins = route_path->ins;
 
-            route = flb_malloc(sizeof(struct flb_task_route));
+            /* For conditional routing, also check the route mask */
+            if (task_ic->routes_mask) {
+                if (flb_routes_mask_get_bit(task_ic->routes_mask,
+                                            o_ins->id,
+                                            o_ins->config) == 0) {
+                    continue;
+                }
+            }
+
+            route = flb_calloc(1, sizeof(struct flb_task_route));
             if (!route) {
                 flb_errno();
+                if (router_context_initialized) {
+                    flb_router_chunk_context_destroy(&router_context);
+                    router_context_initialized = FLB_FALSE;
+                }
                 task->event_chunk->data = NULL;
                 flb_task_destroy(task, FLB_TRUE);
                 return NULL;
             }
 
+            route->status = FLB_TASK_ROUTE_INACTIVE;
             route->out = o_ins;
             mk_list_add(&route->_head, &task->routes);
+            direct_count++;
         }
-        flb_debug("[task] created direct task=%p id=%i OK", task, task->id);
+
+        if (direct_count == 0) {
+            flb_debug("[task] dropping direct task=%p id=%i without matching routes",
+                      task, task->id);
+            if (router_context_initialized) {
+                flb_router_chunk_context_destroy(&router_context);
+                router_context_initialized = FLB_FALSE;
+            }
+            task->event_chunk->data = NULL;
+            flb_task_destroy(task, FLB_TRUE);
+            return NULL;
+        }
+
+        flb_debug("[task] created direct task=%p id=%i with %i route(s)",
+                  task, task->id, direct_count);
+        if (router_context_initialized) {
+            flb_router_chunk_context_destroy(&router_context);
+            router_context_initialized = FLB_FALSE;
+        }
         return task;
     }
 
@@ -444,7 +498,7 @@ struct flb_task *flb_task_create(uint64_t ref_id,
             continue;
         }
 
-        if (flb_routes_mask_get_bit(task_ic->routes_mask, 
+        if (flb_routes_mask_get_bit(task_ic->routes_mask,
                                     o_ins->id,
                                     o_ins->config) != 0) {
             route = flb_calloc(1, sizeof(struct flb_task_route));
@@ -464,11 +518,19 @@ struct flb_task *flb_task_create(uint64_t ref_id,
     if (count == 0) {
         flb_debug("[task] created task=%p id=%i without routes, dropping.",
                   task, task->id);
+        if (router_context_initialized) {
+            flb_router_chunk_context_destroy(&router_context);
+            router_context_initialized = FLB_FALSE;
+        }
         task->event_chunk->data = NULL;
         flb_task_destroy(task, FLB_TRUE);
         return NULL;
     }
 
+    if (router_context_initialized) {
+        flb_router_chunk_context_destroy(&router_context);
+        router_context_initialized = FLB_FALSE;
+    }
     flb_debug("[task] created task=%p id=%i OK", task, task->id);
     return task;
 }

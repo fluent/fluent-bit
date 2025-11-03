@@ -25,15 +25,16 @@
 #include <fluent-bit/flb_mp.h>
 #include <fluent-bit/flb_conditionals.h>
 
-/* Function to get the record variant based on context */
-static inline struct cfl_variant *get_record_variant(struct flb_mp_chunk_record *record,
-                                                    enum record_context_type context_type)
+static struct cfl_variant *default_get_record_variant(struct flb_condition_rule *rule,
+                                                      void *ctx)
 {
-    if (!record) {
+    struct flb_mp_chunk_record *record = (struct flb_mp_chunk_record *) ctx;
+
+    if (!record || !rule) {
         return NULL;
     }
 
-    switch (context_type) {
+    switch (rule->context) {
     case RECORD_CONTEXT_METADATA:
         if (record->cobj_metadata) {
             return record->cobj_metadata->variant;
@@ -44,6 +45,9 @@ static inline struct cfl_variant *get_record_variant(struct flb_mp_chunk_record 
         if (record->cobj_record) {
             return record->cobj_record->variant;
         }
+        break;
+
+    default:
         break;
     }
 
@@ -356,17 +360,25 @@ static int evaluate_rule(struct flb_condition_rule *rule,
     return result;
 }
 
-int flb_condition_evaluate(struct flb_condition *cond,
-                           struct flb_mp_chunk_record *record)
+int flb_condition_evaluate_ex(struct flb_condition *cond,
+                              void *ctx,
+                              flb_condition_get_variant_fn get_variant)
 {
     struct mk_list *head;
     struct flb_condition_rule *rule;
     struct cfl_variant *record_variant;
     int result;
+    int any_rule_evaluated = FLB_FALSE;
+    int any_rule_matched = FLB_FALSE;
 
-    if (!cond || !record) {
-        flb_trace("[condition] NULL condition or record, returning TRUE");
+    if (!cond) {
+        flb_trace("[condition] NULL condition, returning TRUE");
         return FLB_TRUE;
+    }
+
+    if (!get_variant) {
+        flb_trace("[condition] missing variant provider, returning FALSE");
+        return FLB_FALSE;
     }
 
     flb_trace("[condition] evaluating condition with %d rules", mk_list_size(&cond->rules));
@@ -380,11 +392,17 @@ int flb_condition_evaluate(struct flb_condition *cond,
         rule = mk_list_entry(head, struct flb_condition_rule, _head);
         flb_trace("[condition] processing rule with op=%d", rule->op);
 
-        /* Get the variant for this rule's context */
-        record_variant = get_record_variant(record, rule->context);
+        record_variant = get_variant(rule, ctx);
+        any_rule_evaluated = FLB_TRUE;
         if (!record_variant) {
             flb_trace("[condition] no record variant found for context %d", rule->context);
-            continue;
+            if (cond->op == FLB_COND_OP_AND) {
+                flb_trace("[condition] AND condition missing field, returning FALSE");
+                return FLB_FALSE;
+            }
+            else {
+                continue;
+            }
         }
 
         flb_trace("[condition] evaluating rule against record");
@@ -399,8 +417,36 @@ int flb_condition_evaluate(struct flb_condition *cond,
             flb_trace("[condition] OR condition with TRUE result, short-circuiting");
             return FLB_TRUE;
         }
+
+        if (result == FLB_TRUE) {
+            any_rule_matched = FLB_TRUE;
+        }
     }
 
-    flb_trace("[condition] final evaluation result: %d", (cond->op == FLB_COND_OP_AND) ? FLB_TRUE : FLB_FALSE);
-    return (cond->op == FLB_COND_OP_AND) ? FLB_TRUE : FLB_FALSE;
+    if (cond->op == FLB_COND_OP_OR) {
+        flb_trace("[condition] final evaluation result: %d", any_rule_matched);
+        return any_rule_matched;
+    }
+
+    if (any_rule_evaluated == FLB_FALSE) {
+        flb_trace("[condition] no rules evaluated, defaulting to FALSE for AND condition");
+        return FLB_FALSE;
+    }
+
+    flb_trace("[condition] final evaluation result: TRUE");
+    return FLB_TRUE;
+}
+
+int flb_condition_evaluate(struct flb_condition *cond,
+                           struct flb_mp_chunk_record *record)
+{
+    if (!cond) {
+        return FLB_TRUE;
+    }
+
+    if (!record) {
+        return FLB_FALSE;
+    }
+
+    return flb_condition_evaluate_ex(cond, record, default_get_record_variant);
 }

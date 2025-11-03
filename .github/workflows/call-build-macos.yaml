@@ -106,7 +106,7 @@ jobs:
         working-directory: build
 
       - name: Upload build packages
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v5
         with:
           name: macos-packages on ${{ matrix.config.runner }}
           path: |
@@ -139,7 +139,7 @@ jobs:
 
       - name: Download all artefacts
         continue-on-error: true
-        uses: actions/download-artifact@v5
+        uses: actions/download-artifact@v6
         with:
           name: macos-packages on ${{ matrix.config.os }}
           path: artifacts/

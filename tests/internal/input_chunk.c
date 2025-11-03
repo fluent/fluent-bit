@@ -309,42 +309,6 @@ void flb_test_input_chunk_dropping_chunks()
     flb_destroy(ctx);
 }
 
-/*
- * When chunk is set to DOWN from memory, data_size is set to 0 and
- * cio_chunk_get_content_size(1) returns the data_size. fs_chunks_size
- * is used to track the size of chunks in filesystem so we need to call
- * cio_chunk_get_real_size to return the original size in the file system
- */
-static ssize_t flb_input_chunk_get_real_size(struct flb_input_chunk *ic)
-{
-    ssize_t meta_size;
-    ssize_t size;
-
-    size = cio_chunk_get_real_size(ic->chunk);
-
-    if (size != 0) {
-        return size;
-    }
-
-    // Real size is not synced to chunk yet
-    size = flb_input_chunk_get_size(ic);
-    if (size == 0) {
-        flb_debug("[input chunk] no data in the chunk %s",
-                  flb_input_chunk_get_name(ic));
-        return -1;
-    }
-
-    meta_size = cio_meta_size(ic->chunk);
-    size += meta_size
-        /* See https://github.com/edsiper/chunkio#file-layout for more details */
-         + 2    /* HEADER BYTES */
-         + 4    /* CRC32 */
-         + 16   /* PADDING */
-         + 2;   /* METADATA LENGTH BYTES */
-
-    return size;
-}
-
 static int gen_buf(msgpack_sbuffer *mp_sbuf, char *buf, size_t buf_size)
 {
     msgpack_unpacked result;

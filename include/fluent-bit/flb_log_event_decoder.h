@@ -62,6 +62,7 @@ struct flb_log_event_decoder {
     size_t            length;
     int               last_result;
     int               read_groups;
+    unsigned int      recursion_depth;  /* Safety guard for recursion limit */
 };
 
 void flb_log_event_decoder_reset(struct flb_log_event_decoder *context,
