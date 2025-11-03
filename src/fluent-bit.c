@@ -1438,14 +1438,16 @@ static int flb_main_run(int argc, char **argv)
 
     if (config->dry_run == FLB_TRUE) {
         ret = flb_reload_property_check_all(config);
-        if (ret != 0) {
-            exit(EXIT_FAILURE);
-        }
 
-        fprintf(stderr, "configuration test is successful\n");
+        /* At this point config test is done, so clean up after ourselves */
         flb_init_env();
         flb_cf_destroy(cf_opts);
         flb_destroy(ctx);
+
+        if (ret != 0) {
+            exit(EXIT_FAILURE);
+        }
+        fprintf(stderr, "configuration test is successful\n");
         exit(EXIT_SUCCESS);
     }
 
