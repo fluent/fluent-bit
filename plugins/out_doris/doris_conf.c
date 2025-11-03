@@ -75,6 +75,7 @@ struct flb_out_doris *flb_doris_conf_create(struct flb_output_instance *ins,
     int io_flags = 0;
     const char *tmp;
     struct flb_upstream *upstream;
+    struct flb_hash_table *u_pool;
     struct flb_out_doris *ctx = NULL;
     struct flb_doris_progress_reporter *reporter = NULL;
 
@@ -177,6 +178,20 @@ struct flb_out_doris *flb_doris_conf_create(struct flb_output_instance *ins,
     /* Set instance flags into upstream */
     flb_output_upstream_set(ctx->u, ins);
 
+    /* doris be connection pool */
+    u_pool = flb_hash_table_create(FLB_HASH_TABLE_EVICT_NONE, 16, -1);
+    if (!u_pool) {
+        flb_doris_conf_destroy(ctx);
+        return NULL;
+    }
+    ctx->u_pool = u_pool;
+    if (pthread_mutex_init(&ctx->mutex, NULL) == 0) {
+        ctx->mutex_initialized = 1;
+    } else {
+        flb_doris_conf_destroy(ctx);
+        return NULL;
+    }
+
     /* create and start the progress reporter */
     if (ctx->log_progress_interval > 0) {
         reporter = flb_calloc(1, sizeof(struct flb_doris_progress_reporter));
@@ -207,14 +222,37 @@ void flb_doris_conf_destroy(struct flb_out_doris *ctx)
         return;
     }
 
-    if (ctx->u) {
-        flb_upstream_destroy(ctx->u);
-    }
-
     if (ctx->reporter) {
         ctx->reporter->running = 0;
         pthread_join(ctx->reporter_thread, NULL);
         flb_free(ctx->reporter);
+    }
+
+    if (ctx->u) {
+        flb_upstream_destroy(ctx->u);
+    }
+
+    if (ctx->u_pool) {
+        int i;
+        struct mk_list *tmp;
+        struct mk_list *head;
+        struct flb_hash_table_entry *entry;
+        struct flb_hash_table_chain *table;
+
+        for (i = 0; i < ctx->u_pool->size; i++) {
+            table = &ctx->u_pool->table[i];
+            mk_list_foreach_safe(head, tmp, &table->chains) {
+                entry = mk_list_entry(head, struct flb_hash_table_entry, _head);
+                flb_upstream_destroy((struct flb_upstream*) entry->val);
+                entry->val = NULL;
+            }
+        }
+
+        flb_hash_table_destroy(ctx->u_pool);
+    }
+
+    if (ctx->mutex_initialized) {
+        pthread_mutex_destroy(&ctx->mutex);
     }
 
     flb_free(ctx);

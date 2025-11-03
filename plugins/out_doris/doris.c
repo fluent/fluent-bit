@@ -113,17 +113,36 @@ static int http_put(struct flb_out_doris *ctx,
     msgpack_object msg_key;
     msgpack_object msg_val;
 
+    char address[1024] = {0};
+    int len = 0;
+
     /* Get upstream context and connection */
-    if (strcmp(host, ctx->host) == 0 && port == ctx->port) {
+    if (strcmp(host, ctx->host) == 0 && port == ctx->port) { // address in config
         u = ctx->u;
     }
-    else {
-        // TODO cache
-        u = flb_upstream_create(ctx->u->base.config,
-                                host,
-                                port,
-                                ctx->u->base.flags,
-                                ctx->u->base.tls_context);
+    else { // redirected address
+        len = snprintf(address, sizeof(address), "%s:%i", host, port);
+        u = flb_hash_table_get_ptr(ctx->u_pool, address, len);
+        if (!u) { // first check
+            pthread_mutex_lock(&ctx->mutex); // lock
+            u = flb_hash_table_get_ptr(ctx->u_pool, address, len);
+            if (!u) { // second check
+                u = flb_upstream_create(ctx->u->base.config,
+                                        host,
+                                        port,
+                                        ctx->u->base.flags,
+                                        ctx->u->base.tls_context);
+                if (u) {
+                    flb_hash_table_add(ctx->u_pool, address, len, u, 0);
+                }
+            }
+            pthread_mutex_unlock(&ctx->mutex); // unlock
+            if (!u) {
+                flb_plg_error(ctx->ins, "no doris be connections available to %s:%i",
+                              host, port);
+                return FLB_RETRY;
+            }
+        }
     }
     u_conn = flb_upstream_conn_get(u);
     if (!u_conn) {
@@ -276,11 +295,6 @@ static int http_put(struct flb_out_doris *ctx,
     /* Release the TCP connection */
     flb_upstream_conn_release(u_conn);
 
-    /* Release flb_upstream */
-    if (u != ctx->u) {
-        flb_upstream_destroy(u);
-    }
-
     return out_ret;
 }
 
@@ -341,7 +355,7 @@ static void cb_doris_flush(struct flb_event_chunk *event_chunk,
 
     if (ctx->add_label) {
         /* {label_prefix}_{db}_{table}_{timestamp}_{uuid} */
-        len = snprintf(label, sizeof(label) - 1, "%s_%s_%s_%lu_", ctx->label_prefix, ctx->database, ctx->table, cfl_time_now() / 1000000000L);
+        len = snprintf(label, sizeof(label), "%s_%s_%s_%lu_", ctx->label_prefix, ctx->database, ctx->table, cfl_time_now() / 1000000000L);
         flb_utils_uuid_v4_gen(label + len);
         len += 36;
     }
