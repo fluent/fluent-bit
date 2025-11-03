@@ -29,7 +29,7 @@ struct mk_list;
 struct flb_hash_table;
 
 struct flb_doris_progress_reporter {
-    volatile int running;
+    int running;
     size_t total_bytes;
     size_t total_rows;
     size_t failed_rows;

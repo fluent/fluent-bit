@@ -49,9 +49,9 @@
 static inline void sync_fetch_and_add(size_t *dest, size_t value) {
 #ifdef FLB_SYSTEM_WINDOWS
     #ifdef _WIN64
-        InterlockedAdd64((LONG64*)dest, (LONG64)value);
+        InterlockedAdd64((LONG64 *) dest, (LONG64) value);
     #else
-        InterlockedAdd((LONG*)dest, (LONG)value);
+        InterlockedAdd((LONG *) dest, (LONG) value);
     #endif
 #else
     __sync_fetch_and_add(dest, value);

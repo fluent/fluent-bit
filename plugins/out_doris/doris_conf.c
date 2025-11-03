@@ -27,6 +27,26 @@
 #include "doris.h"
 #include "doris_conf.h"
 
+#ifdef FLB_SYSTEM_WINDOWS
+#include <winnt.h>
+#endif
+
+static inline void atomic_store(volatile int *dest, int val) {
+#ifdef FLB_SYSTEM_WINDOWS
+    InterlockedExchange((LONG volatile *) dest, (LONG) val);
+#else
+    __atomic_store_n(dest, val, __ATOMIC_RELEASE);
+#endif
+}
+
+static inline int atomic_load(volatile int *dest) {
+#ifdef FLB_SYSTEM_WINDOWS
+    return (int) InterlockedCompareExchange((LONG volatile *) dest, 0, 0);
+#else
+    return __atomic_load_n(dest, __ATOMIC_ACQUIRE);
+#endif
+}
+
 void *report(void *c) {
     struct flb_out_doris *ctx = (struct flb_out_doris *) c;
     
@@ -40,7 +60,7 @@ void *report(void *c) {
 
     flb_plg_info(ctx->ins, "Start progress reporter with interval %d", ctx->log_progress_interval);
     
-    while (ctx->reporter->running && ctx->log_progress_interval > 0) {
+    while (atomic_load(&ctx->reporter->running) && ctx->log_progress_interval > 0) {
         flb_time_msleep(ctx->log_progress_interval * 1000);
 
         cur_time = cfl_time_now() / 1000000000L;
@@ -200,7 +220,7 @@ struct flb_out_doris *flb_doris_conf_create(struct flb_output_instance *ins,
             flb_doris_conf_destroy(ctx);
             return NULL;
         }
-        reporter->running = 1;
+        atomic_store(&reporter->running, 1);
         reporter->total_bytes = 0;
         reporter->total_rows = 0;
         reporter->failed_rows = 0;
@@ -223,7 +243,7 @@ void flb_doris_conf_destroy(struct flb_out_doris *ctx)
     }
 
     if (ctx->reporter) {
-        ctx->reporter->running = 0;
+        atomic_store(&ctx->reporter->running, 0);
         pthread_join(ctx->reporter_thread, NULL);
         flb_free(ctx->reporter);
     }
