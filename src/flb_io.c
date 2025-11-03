@@ -144,6 +144,10 @@ int flb_io_net_connect(struct flb_connection *connection,
                       connection->upstream->tcp_host,
                       connection->upstream->tcp_port);
 
+            flb_connection_notify_error(connection, connection->upstream->tcp_host,
+                                        connection->upstream->tcp_port, -1,
+                                        "Couldn't connect to client proxy");
+
             flb_socket_close(fd);
             connection->fd = -1;
             connection->event.fd = -1;
@@ -162,6 +166,10 @@ int flb_io_net_connect(struct flb_connection *connection,
 
         if (ret == -1) {
             flb_socket_close(fd);
+
+            flb_connection_notify_error(connection, connection->upstream->tcp_host,
+                                        connection->upstream->tcp_port, -1,
+                                        "Error in keep-alive");
             connection->fd = -1;
             connection->event.fd = -1;
             return -1;
