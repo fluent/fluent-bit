@@ -22,14 +22,14 @@
 
 #include <fluent-bit/flb_pthread.h>
 #include <fluent-bit/flb_sds.h>
-#include <stdatomic.h>
 
 struct flb_upstream;
 struct flb_output_instance;
 struct mk_list;
+struct flb_hash_table;
 
 struct flb_doris_progress_reporter {
-    atomic_int running;
+    volatile int running;
     size_t total_bytes;
     size_t total_rows;
     size_t failed_rows;
