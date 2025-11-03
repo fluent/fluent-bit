@@ -176,6 +176,7 @@ void flb_test_json()
                          "user", "admin",
                          "database", "d_fb",
                          "table", "t_fb",
+                         "log_progress_interval", "2",
                          NULL);
     TEST_CHECK(ret == 0);
 
@@ -235,6 +236,7 @@ void flb_test_time_key()
                          "database", "d_fb",
                          "table", "t_fb",
                          "time_key", "timestamp",
+                         "log_progress_interval", "2",
                          NULL);
     TEST_CHECK(ret == 0);
 
