@@ -224,12 +224,14 @@ static int http_put(struct flb_out_doris *ctx,
 
             if (ret == -1) {
                 out_ret = FLB_RETRY;
+                goto parse_done;
             }
             
             msgpack_unpacked_init(&result);
             ret = msgpack_unpack_next(&result, out_buf, out_size, &off);
             if (ret != MSGPACK_UNPACK_SUCCESS) {
                 out_ret = FLB_RETRY;
+                goto free_buf;
             }
 
             root = result.data;
@@ -265,9 +267,10 @@ static int http_put(struct flb_out_doris *ctx,
                     break;
                 }
             }
-        
+free_buf:
             flb_free(out_buf);
             msgpack_unpacked_destroy(&result);
+parse_done:
         }
         else {
             out_ret = FLB_RETRY;

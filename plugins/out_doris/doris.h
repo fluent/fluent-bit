@@ -22,6 +22,10 @@
 
 #include <fluent-bit/flb_pthread.h>
 
+struct flb_upstream;
+struct flb_output_instance;
+struct mk_list;
+
 struct flb_doris_progress_reporter {
     volatile int running;
     size_t total_bytes;
