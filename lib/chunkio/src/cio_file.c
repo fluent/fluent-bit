@@ -324,7 +324,10 @@ static int munmap_file(struct cio_ctx *ctx, struct cio_chunk *ch)
     }
 
     /* Unmap file */
-    cio_file_native_unmap(cf);
+    ret = cio_file_native_unmap(cf);
+    if (ret != CIO_OK) {
+        return -1;
+    }
 
     cf->data_size = 0;
     cf->alloc_size = 0;
@@ -343,6 +346,7 @@ static int mmap_file(struct cio_ctx *ctx, struct cio_chunk *ch, size_t size)
 {
     ssize_t          content_size;
     size_t           fs_size;
+    size_t           requested_map_size;
     int              ret;
     struct cio_file *cf;
 
@@ -413,12 +417,28 @@ static int mmap_file(struct cio_ctx *ctx, struct cio_chunk *ch, size_t size)
     cf->alloc_size = size;
 
     /* Map the file */
+    requested_map_size = cf->alloc_size;
     ret = cio_file_native_map(cf, cf->alloc_size);
 
     if (ret != CIO_OK) {
         cio_log_error(ctx, "cannot mmap/read chunk '%s'", cf->path);
 
         return CIO_ERROR;
+    }
+
+    if ((cf->flags & CIO_OPEN_RD) && requested_map_size != cf->alloc_size) {
+        if (cf->map_truncated_warned == CIO_FALSE) {
+            cio_log_warn(ctx,
+                         "[cio file] truncated read-only map from %zu to %zu bytes: %s/%s",
+                         requested_map_size,
+                         cf->alloc_size,
+                         ch->st->name,
+                         ch->name);
+            cf->map_truncated_warned = CIO_TRUE;
+        }
+    }
+    else {
+        cf->map_truncated_warned = CIO_FALSE;
     }
 
     /* check content data size */
@@ -664,6 +684,9 @@ struct cio_file *cio_file_open(struct cio_ctx *ctx,
     cf->crc_cur = cio_crc32_init();
     cf->path = path;
     cf->map = NULL;
+    cf->ctx = ctx;
+    cf->auto_remap_warned = CIO_FALSE;
+    cf->map_truncated_warned = CIO_FALSE;
     ch->backend = cf;
 
 #ifdef _WIN32
@@ -801,9 +824,9 @@ static int _cio_file_up(struct cio_chunk *ch, int enforced)
         return CIO_ERROR;
     }
 
-    if (cf->fd > 0) {
+    if (cio_file_native_is_open(cf)) {
         cio_log_error(ch->ctx, "[cio file] file descriptor already exists: "
-                      "[fd=%i] %s:%s", cf->fd, ch->st->name, ch->name);
+                      "%s:%s", ch->st->name, ch->name);
         return CIO_ERROR;
     }
 
@@ -908,7 +931,11 @@ int cio_file_down(struct cio_chunk *ch)
     }
 
     /* unmap memory */
-    munmap_file(ch->ctx, ch);
+    ret = munmap_file(ch->ctx, ch);
+
+    if (ret != 0) {
+        return -1;
+    }
 
     /* Allocated map size is zero */
     cf->alloc_size = 0;
@@ -921,7 +948,12 @@ int cio_file_down(struct cio_chunk *ch)
     }
 
     /* Close file descriptor */
-    cio_file_native_close(cf);
+    ret = cio_file_native_close(cf);
+
+    if (ret != CIO_OK) {
+        cio_errno();
+        return -1;
+    }
 
     return 0;
 }
@@ -1047,7 +1079,6 @@ int cio_file_write_metadata(struct cio_chunk *ch, char *buf, size_t size)
     char *cur_content_data;
     char *new_content_data;
     size_t new_size;
-    size_t content_av;
     size_t meta_av;
     struct cio_file *cf;
 
@@ -1082,13 +1113,11 @@ int cio_file_write_metadata(struct cio_chunk *ch, char *buf, size_t size)
      * where we need to increase the memory map size, move the content area
      * bytes to a different position and write the metadata.
      *
-     * Calculate the available space in the content area.
+     * Check if resize is needed before calculating content_av to avoid
+     * unsigned underflow. We need: header + new_metadata + content_data <= alloc_size
      */
-    content_av = cf->alloc_size - cf->data_size;
-
-    /* If there is no enough space, increase the file size and it memory map */
-    if (content_av < size) {
-        new_size = (size - meta_av) + cf->data_size + CIO_FILE_HEADER_MIN;
+    if (cf->alloc_size < CIO_FILE_HEADER_MIN + size + cf->data_size) {
+        new_size = CIO_FILE_HEADER_MIN + size + cf->data_size;
 
         ret = cio_file_resize(cf, new_size);
 
@@ -1106,7 +1135,7 @@ int cio_file_write_metadata(struct cio_chunk *ch, char *buf, size_t size)
     /* set new position for the content data */
     cur_content_data = cio_file_st_get_content(cf->map);
     new_content_data = meta + size;
-    memmove(new_content_data, cur_content_data, size);
+    memmove(new_content_data, cur_content_data, cf->data_size);
 
     /* copy new metadata */
     memcpy(meta, buf, size);
@@ -1135,6 +1164,12 @@ int cio_file_sync(struct cio_chunk *ch)
     }
 
     if (cf->flags & CIO_OPEN_RD) {
+        return 0;
+    }
+
+    /* If chunk is down (unmapped), there's nothing to sync */
+    /* You can only write to a chunk when it's up, so if it's down, no pending changes exist */
+    if (!cio_file_native_is_mapped(cf)) {
         return 0;
     }
 

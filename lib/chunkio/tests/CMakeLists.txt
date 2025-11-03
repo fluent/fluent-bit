@@ -9,6 +9,15 @@ if(CIO_BACKEND_FILESYSTEM)
   set(UNIT_TESTS_FILES
     ${UNIT_TESTS_FILES}
     fs.c
+    metadata_update.c
+    )
+endif()
+
+# Windows-specific inconsistency tests
+if(WIN32 AND CIO_BACKEND_FILESYSTEM)
+  set(UNIT_TESTS_FILES
+    ${UNIT_TESTS_FILES}
+    fs_windows.c
     )
 endif()
 
@@ -35,7 +44,7 @@ foreach(source_file ${UNIT_TESTS_FILES})
   add_test(${source_file_we} ${CMAKE_RUNTIME_OUTPUT_DIRECTORY}/${source_file_we})
 endforeach()
 
-# Perf tests for dev purposes: note these tests are not registered, they need to 
+# Perf tests for dev purposes: note these tests are not registered, they need to
 # be executed manually
 set(UNIT_PERF_TESTS
   fs_perf.c
