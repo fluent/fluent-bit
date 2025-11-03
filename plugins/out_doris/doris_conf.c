@@ -28,10 +28,10 @@
 #include "doris_conf.h"
 
 #ifdef FLB_SYSTEM_WINDOWS
-#include <winnt.h>
+#include <windows.h>
 #endif
 
-static inline void atomic_store(volatile int *dest, int val) {
+static inline void atomic_store(int *dest, int val) {
 #ifdef FLB_SYSTEM_WINDOWS
     InterlockedExchange((LONG volatile *) dest, (LONG) val);
 #else
@@ -39,7 +39,7 @@ static inline void atomic_store(volatile int *dest, int val) {
 #endif
 }
 
-static inline int atomic_load(volatile int *dest) {
+static inline int atomic_load(int *dest) {
 #ifdef FLB_SYSTEM_WINDOWS
     return (int) InterlockedCompareExchange((LONG volatile *) dest, 0, 0);
 #else
@@ -166,7 +166,7 @@ struct flb_out_doris *flb_doris_conf_create(struct flb_output_instance *ins,
     }
 
     /* url: /api/{database}/{table}/_stream_load */
-    snprintf(ctx->uri, sizeof(ctx->uri) - 1, "/api/%s/%s/_stream_load", ctx->database, ctx->table);
+    snprintf(ctx->uri, sizeof(ctx->uri), "/api/%s/%s/_stream_load", ctx->database, ctx->table);
 
     /* label prefix */
     ctx->add_label = 1;
