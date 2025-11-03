@@ -38,12 +38,10 @@ void *report(void *c) {
     size_t cur_time, cur_bytes, cur_rows, total_time, total_speed_mbps, total_speed_rps;
     size_t inc_bytes, inc_rows, inc_time, inc_speed_mbps, inc_speed_rps;
 
-    pthread_detach(pthread_self());
-
     flb_plg_info(ctx->ins, "Start progress reporter with interval %d", ctx->log_progress_interval);
     
-    while (ctx->log_progress_interval > 0) {
-        sleep(ctx->log_progress_interval);
+    while (ctx->reporter->running && ctx->log_progress_interval > 0) {
+        flb_time_msleep(ctx->log_progress_interval * 1000);
 
         cur_time = cfl_time_now() / 1000000000L;
         cur_bytes =  ctx->reporter->total_bytes;
@@ -100,15 +98,23 @@ struct flb_out_doris *flb_doris_conf_create(struct flb_output_instance *ins,
     /* Validate */ 
     if (!ctx->endpoint_type || (strcasecmp(ctx->endpoint_type, "fe") != 0 && strcasecmp(ctx->endpoint_type, "be") != 0)) {
         flb_plg_error(ins, "endpoint_type is invalid");
+        flb_free(ctx);
+        return NULL;
     }
     if (!ctx->user) {
         flb_plg_error(ins, "user is not set");
+        flb_free(ctx);
+        return NULL;
     }
     if (!ctx->database) {
         flb_plg_error(ins, "database is not set");
+        flb_free(ctx);
+        return NULL;
     }
     if (!ctx->table) {
         flb_plg_error(ins, "table is not set");
+        flb_free(ctx);
+        return NULL;
     }
 
     /* Check if SSL/TLS is enabled */
@@ -179,12 +185,13 @@ struct flb_out_doris *flb_doris_conf_create(struct flb_output_instance *ins,
             flb_doris_conf_destroy(ctx);
             return NULL;
         }
+        reporter->running = 1;
         reporter->total_bytes = 0;
         reporter->total_rows = 0;
         reporter->failed_rows = 0;
         ctx->reporter = reporter;
 
-        if(pthread_create(&ctx->reporter_thread, NULL, report, (void *) ctx)) {
+        if (pthread_create(&ctx->reporter_thread, NULL, report, (void *) ctx)) {
             flb_plg_error(ins, "failed to create progress reporter");
             flb_doris_conf_destroy(ctx);
             return NULL;
@@ -205,7 +212,8 @@ void flb_doris_conf_destroy(struct flb_out_doris *ctx)
     }
 
     if (ctx->reporter) {
-        pthread_cancel(ctx->reporter_thread);
+        ctx->reporter->running = 0;
+        pthread_join(ctx->reporter_thread, NULL);
         flb_free(ctx->reporter);
     }
 

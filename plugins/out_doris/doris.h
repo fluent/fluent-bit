@@ -23,6 +23,7 @@
 #include <fluent-bit/flb_pthread.h>
 
 struct flb_doris_progress_reporter {
+    volatile int running;
     size_t total_bytes;
     size_t total_rows;
     size_t failed_rows;
