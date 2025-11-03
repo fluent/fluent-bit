@@ -181,4 +181,7 @@ void flb_connection_unset_connection_timeout(struct flb_connection *connection);
 void flb_connection_reset_io_timeout(struct flb_connection *connection);
 void flb_connection_unset_io_timeout(struct flb_connection *connection);
 
+void flb_connection_notify_error(const struct flb_connection* conn,
+    const char* dest, int port, int error_code, const char* error_msg);
+
 #endif
