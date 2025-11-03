@@ -21,6 +21,7 @@
 #define FLB_OUT_DORIS_H
 
 #include <fluent-bit/flb_pthread.h>
+#include <fluent-bit/flb_sds.h>
 
 struct flb_upstream;
 struct flb_output_instance;
