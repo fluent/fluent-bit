@@ -102,9 +102,15 @@ static int route_payload_apply_outputs(struct flb_input_instance *ins,
     size_t out_size = 0;
     size_t chunk_size_sz = 0;
     ssize_t chunk_size;
+    int direct_count;
+    int direct_index;
+    int write_ret;
     struct cfl_list *head;
     struct flb_input_chunk *chunk = NULL;
     struct flb_router_path *route_path;
+    struct flb_chunk_direct_route *direct_routes;
+    size_t label_length;
+    const char *label_source;
 
     if (!ins || !payload || !payload->tag || !payload->route) {
         return -1;
@@ -196,6 +202,89 @@ static int route_payload_apply_outputs(struct flb_input_instance *ins,
             flb_input_chunk_update_output_instances(chunk,
                                                     (size_t) chunk_size);
         }
+    }
+
+    direct_routes = NULL;
+    direct_count = 0;
+    direct_index = 0;
+    write_ret = 0;
+    label_length = 0;
+    label_source = NULL;
+
+    cfl_list_foreach(head, &ins->routes_direct) {
+        route_path = cfl_list_entry(head, struct flb_router_path, _head);
+        if (!route_path->ins) {
+            continue;
+        }
+
+        if (flb_routes_mask_get_bit(chunk->routes_mask,
+                                    route_path->ins->id,
+                                    ins->config) == 0) {
+            continue;
+        }
+
+        direct_count++;
+    }
+
+    if (direct_count > 0) {
+        direct_routes = flb_calloc((size_t) direct_count,
+                                   sizeof(struct flb_chunk_direct_route));
+        if (!direct_routes) {
+            flb_errno();
+            direct_count = 0;
+        }
+    }
+
+    if (direct_routes && direct_count > 0) {
+        direct_index = 0;
+        cfl_list_foreach(head, &ins->routes_direct) {
+            route_path = cfl_list_entry(head, struct flb_router_path, _head);
+            if (!route_path->ins) {
+                continue;
+            }
+
+            if (flb_routes_mask_get_bit(chunk->routes_mask,
+                                        route_path->ins->id,
+                                        ins->config) == 0) {
+                continue;
+            }
+
+            if (direct_index < direct_count) {
+                label_source = route_path->ins->alias;
+                label_length = 0;
+                if (!label_source || label_source[0] == '\0') {
+                    label_source = route_path->ins->name;
+                }
+                if (label_source) {
+                    label_length = strlen(label_source);
+                    if (label_length > UINT16_MAX) {
+                        label_length = UINT16_MAX;
+                    }
+                }
+                direct_routes[direct_index].id = (uint32_t) route_path->ins->id;
+                direct_routes[direct_index].label = label_source;
+                direct_routes[direct_index].label_length = (uint16_t) label_length;
+                direct_index++;
+            }
+        }
+
+        if (direct_index == direct_count) {
+            write_ret = flb_input_chunk_write_header_v2(chunk->chunk,
+                                                        chunk->event_type,
+                                                        payload->tag,
+                                                        flb_sds_len(payload->tag),
+                                                        direct_routes,
+                                                        direct_count);
+            if (write_ret != 0) {
+                flb_plg_warn(ins,
+                             "failed to persist direct routes for chunk %s",
+                             flb_input_chunk_get_name(chunk));
+            }
+        }
+    }
+
+    if (direct_routes) {
+        flb_free(direct_routes);
     }
 
     return 0;
