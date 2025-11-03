@@ -38,13 +38,13 @@ int cio_file_native_unmap(struct cio_file *cf)
         return CIO_ERROR;
     }
 
-    if (!cio_file_native_is_open(cf)) {
-        return CIO_OK;
-    }
-
+    /* Check if already unmapped first */
     if (!cio_file_native_is_mapped(cf)) {
         return CIO_OK;
     }
+
+    /* On Windows, we can unmap even if file handle is closed */
+    /* The mapping handle maintains the reference */
 
     result = UnmapViewOfFile(cf->map);
 
@@ -54,11 +54,18 @@ int cio_file_native_unmap(struct cio_file *cf)
         return CIO_ERROR;
     }
 
-    CloseHandle(cf->backing_mapping);
+    result = CloseHandle(cf->backing_mapping);
+
+    if (result == 0) {
+        cio_file_native_report_os_error();
+
+        return CIO_ERROR;
+    }
 
     cf->backing_mapping = INVALID_HANDLE_VALUE;
     cf->alloc_size = 0;
     cf->map = NULL;
+    cf->map_truncated_warned = CIO_FALSE;
 
     return CIO_OK;
 }
@@ -67,6 +74,9 @@ int cio_file_native_map(struct cio_file *cf, size_t map_size)
 {
     DWORD desired_protection;
     DWORD desired_access;
+    size_t file_size;
+    size_t actual_map_size;
+    int ret;
 
     if (cf == NULL) {
         return CIO_ERROR;
@@ -92,9 +102,40 @@ int cio_file_native_map(struct cio_file *cf, size_t map_size)
         return CIO_ERROR;
     }
 
+    /* Get current file size to ensure we don't map beyond it for read-only files */
+    ret = cio_file_native_get_size(cf, &file_size);
+    if (ret != CIO_OK) {
+        return CIO_ERROR;
+    }
+
+    /* For read-only files, we cannot map beyond the file size */
+    /* For read-write files, if map_size > file_size, we should resize first */
+    if (cf->flags & CIO_OPEN_RD) {
+        if (map_size > file_size) {
+            actual_map_size = file_size;
+        }
+        else {
+            actual_map_size = map_size;
+        }
+    }
+    else {
+        /* For RW files, if map_size > file_size, resize the file first */
+        if (map_size > file_size) {
+            ret = cio_file_native_resize(cf, map_size);
+            if (ret != CIO_OK) {
+                return CIO_ERROR;
+            }
+        }
+        actual_map_size = map_size;
+    }
+
+    /* CreateFileMappingA requires size as two DWORDs (high and low) */
+    /* Use actual_map_size to ensure consistency */
     cf->backing_mapping = CreateFileMappingA(cf->backing_file, NULL,
                                              desired_protection,
-                                             0, 0, NULL);
+                                             (DWORD)(actual_map_size >> 32),
+                                             (DWORD)(actual_map_size & 0xFFFFFFFFUL),
+                                             NULL);
 
     if (cf->backing_mapping == NULL) {
         cio_file_native_report_os_error();
@@ -102,7 +143,7 @@ int cio_file_native_map(struct cio_file *cf, size_t map_size)
         return CIO_ERROR;
     }
 
-    cf->map = MapViewOfFile(cf->backing_mapping, desired_access, 0, 0, map_size);
+    cf->map = MapViewOfFile(cf->backing_mapping, desired_access, 0, 0, actual_map_size);
 
     if (cf->map == NULL) {
         cio_file_native_report_os_error();
@@ -114,7 +155,7 @@ int cio_file_native_map(struct cio_file *cf, size_t map_size)
         return CIO_ERROR;
     }
 
-    cf->alloc_size = map_size;
+    cf->alloc_size = actual_map_size;
 
     return CIO_OK;
 }
@@ -474,6 +515,38 @@ int cio_file_native_delete(struct cio_file *cf)
 {
     int result;
 
+    if (cf == NULL) {
+        return CIO_ERROR;
+    }
+
+    if (cio_file_native_is_mapped(cf)) {
+        if (cf->ctx != NULL) {
+            cio_log_warn(cf->ctx,
+                         "[cio file] auto-unmapping chunk prior to delete: %s",
+                         cf->path);
+        }
+
+        result = cio_file_native_unmap(cf);
+
+        if (result != CIO_OK) {
+            return result;
+        }
+    }
+
+    if (cio_file_native_is_open(cf)) {
+        if (cf->ctx != NULL) {
+            cio_log_warn(cf->ctx,
+                         "[cio file] closing handle prior to delete: %s",
+                         cf->path);
+        }
+
+        result = cio_file_native_close(cf);
+
+        if (result != CIO_OK) {
+            return result;
+        }
+    }
+
     result = DeleteFileA(cf->path);
 
     if (result == 0) {
@@ -488,6 +561,10 @@ int cio_file_native_delete(struct cio_file *cf)
 int cio_file_native_sync(struct cio_file *cf, int sync_mode)
 {
     int result;
+
+    if (!cio_file_native_is_mapped(cf)) {
+        return CIO_ERROR;
+    }
 
     result = FlushViewOfFile(cf->map, cf->alloc_size);
 
