@@ -3,6 +3,7 @@
 #include <fluent-bit/flb_connection.h>
 #include <fluent-bit/flb_upstream.h>
 #include <fluent-bit/flb_downstream.h>
+#include <fluent-bit/flb_network_verifier.h>
 
 int flb_connection_setup(struct flb_connection *connection,
                          flb_sockfd_t socket,
@@ -254,4 +255,20 @@ void flb_connection_unset_io_timeout(struct flb_connection *connection)
     assert(connection != NULL);
 
     connection->ts_io_timeout = -1;
+}
+
+void flb_connection_notify_error(const struct flb_connection* conn,
+    const char* dest, int port, int error_code, const char* error_msg)
+{
+    struct flb_network_verifier_instance* conn_verifier = NULL;
+
+    if (conn && conn->stream) {
+        conn_verifier = conn->stream->verifier_ins;
+    }
+
+    if (conn_verifier && conn_verifier->plugin && 
+        conn_verifier->plugin->cb_connection_failure) {
+        conn_verifier->plugin->cb_connection_failure(conn_verifier, dest, port, 
+                                                     error_code, error_msg);
+    }
 }
