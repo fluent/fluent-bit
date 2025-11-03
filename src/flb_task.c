@@ -19,6 +19,7 @@
 
 #include <stdio.h>
 #include <stdlib.h>
+#include <stdint.h>
 
 #include <fluent-bit/flb_info.h>
 #include <fluent-bit/flb_config.h>
@@ -30,6 +31,7 @@
 #include <fluent-bit/flb_mem.h>
 #include <fluent-bit/flb_str.h>
 #include <fluent-bit/flb_scheduler.h>
+#include <string.h>
 
 /*
  * Every task created must have an unique ID, this function lookup the
@@ -69,6 +71,68 @@ static inline void map_set_task_id(int id, struct flb_task *task,
 static inline void map_free_task_id(int id, struct flb_config *config)
 {
     config->task_map[id].task = NULL;
+}
+
+static struct flb_output_instance *task_find_output_reference(struct flb_config *config,
+                                                              const struct flb_chunk_direct_route *route)
+{
+    int alias_length;
+    int label_length;
+    int name_length;
+    const char *label;
+    uint32_t stored_id;
+    struct mk_list *head;
+    struct flb_output_instance *o_ins;
+
+    alias_length = 0;
+    label_length = 0;
+    name_length = 0;
+    label = NULL;
+    stored_id = 0;
+
+    if (!config || !route) {
+        return NULL;
+    }
+
+    label = route->label;
+    stored_id = route->id;
+    if (label != NULL) {
+        label_length = route->label_length;
+        if (label_length == 0) {
+            label_length = (int) strlen(label);
+        }
+    }
+
+    if (label != NULL && label_length > 0) {
+        mk_list_foreach(head, &config->outputs) {
+            o_ins = mk_list_entry(head, struct flb_output_instance, _head);
+            if (o_ins->alias != NULL) {
+                alias_length = (int) strlen(o_ins->alias);
+                if (alias_length == label_length &&
+                    strncmp(o_ins->alias, label, (size_t) label_length) == 0) {
+                    return o_ins;
+                }
+            }
+        }
+
+        mk_list_foreach(head, &config->outputs) {
+            o_ins = mk_list_entry(head, struct flb_output_instance, _head);
+            name_length = (int) strlen(o_ins->name);
+            if (name_length == label_length &&
+                strncmp(o_ins->name, label, (size_t) label_length) == 0) {
+                return o_ins;
+            }
+        }
+    }
+
+    mk_list_foreach(head, &config->outputs) {
+        o_ins = mk_list_entry(head, struct flb_output_instance, _head);
+        if ((uint32_t) o_ins->id == stored_id) {
+            return o_ins;
+        }
+    }
+
+    return NULL;
 }
 
 void flb_task_retry_destroy(struct flb_task_retry *retry)
@@ -361,16 +425,27 @@ struct flb_task *flb_task_create(uint64_t ref_id,
     int count = 0;
     int total_events = 0;
     int direct_count = 0;
+    int stored_routes_result = 0;
+    int stored_routes_used = FLB_FALSE;
+    int stored_routes_valid = FLB_TRUE;
+    int stored_routes_alloc_failed = FLB_FALSE;
+    int direct_output_count = 0;
+    int direct_output_index = 0;
+    uint32_t missing_output_id = 0;
+    uint16_t missing_output_label_length = 0;
+    const char *missing_output_label;
     struct flb_task *task;
     struct flb_event_chunk *evc;
     struct flb_task_route *route;
     struct flb_router_path *route_path;
     struct flb_output_instance *o_ins;
+    struct flb_output_instance *stored_output;
     struct flb_input_chunk *task_ic;
     struct cfl_list *i_head;
     struct mk_list *o_head;
     struct flb_router_chunk_context router_context;
     int router_context_initialized = FLB_FALSE;
+    struct flb_chunk_direct_route *direct_routes;
 
     /* No error status */
     *err = FLB_FALSE;
@@ -426,6 +501,109 @@ struct flb_task *flb_task_create(uint64_t ref_id,
 #endif
 
     /* Direct connects betweek input <> outputs (API based) */
+    direct_routes = NULL;
+    missing_output_label = NULL;
+    missing_output_label_length = 0;
+    if (flb_input_chunk_has_direct_routes(task_ic) == FLB_TRUE) {
+        stored_routes_result = flb_input_chunk_get_direct_routes(task_ic,
+                                                                 &direct_routes,
+                                                                 &direct_output_count);
+        if (stored_routes_result == 0 && direct_output_count > 0) {
+            stored_routes_valid = FLB_TRUE;
+            missing_output_id = 0;
+            for (direct_output_index = 0;
+                 direct_output_index < direct_output_count;
+                 direct_output_index++) {
+                stored_output = task_find_output_reference(config,
+                                                           &direct_routes[direct_output_index]);
+                if (!stored_output) {
+                    stored_routes_valid = FLB_FALSE;
+                    missing_output_id = direct_routes[direct_output_index].id;
+                    missing_output_label = direct_routes[direct_output_index].label;
+                    missing_output_label_length = direct_routes[direct_output_index].label_length;
+                    break;
+                }
+            }
+
+            if (stored_routes_valid == FLB_TRUE) {
+                direct_count = 0;
+                stored_routes_alloc_failed = FLB_FALSE;
+                for (direct_output_index = 0;
+                     direct_output_index < direct_output_count;
+                     direct_output_index++) {
+                    stored_output = task_find_output_reference(config,
+                                                               &direct_routes[direct_output_index]);
+                    if (!stored_output) {
+                        continue;
+                    }
+
+                    route = flb_calloc(1, sizeof(struct flb_task_route));
+                    if (!route) {
+                        flb_errno();
+                        stored_routes_alloc_failed = FLB_TRUE;
+                        break;
+                    }
+
+                    route->status = FLB_TASK_ROUTE_INACTIVE;
+                    route->out = stored_output;
+                    mk_list_add(&route->_head, &task->routes);
+                    direct_count++;
+                }
+
+                if (stored_routes_alloc_failed == FLB_TRUE) {
+                    if (router_context_initialized) {
+                        flb_router_chunk_context_destroy(&router_context);
+                        router_context_initialized = FLB_FALSE;
+                    }
+                    if (direct_routes) {
+                        flb_input_chunk_destroy_direct_routes(direct_routes,
+                                                              direct_output_count);
+                    }
+                    task->event_chunk->data = NULL;
+                    flb_task_destroy(task, FLB_TRUE);
+                    return NULL;
+                }
+
+                if (direct_count > 0) {
+                    stored_routes_used = FLB_TRUE;
+                }
+            }
+            else {
+                flb_warn("[task] input=%s/%s stored direct route id=%u label=%.*s not found for chunk %s, falling back to configured routes",
+                         i_ins->p->name,
+                         flb_input_name(i_ins),
+                         (unsigned int) missing_output_id,
+                         (int) missing_output_label_length,
+                         missing_output_label ? missing_output_label : "",
+                         flb_input_chunk_get_name(task_ic));
+            }
+        }
+        else if (stored_routes_result == -2) {
+            flb_warn("[task] input=%s/%s invalid stored direct routing metadata for chunk %s, falling back to configured routes",
+                     i_ins->p->name,
+                     flb_input_name(i_ins),
+                     flb_input_chunk_get_name(task_ic));
+        }
+    }
+
+    if (stored_routes_used == FLB_TRUE) {
+        if (direct_routes) {
+            flb_input_chunk_destroy_direct_routes(direct_routes, direct_output_count);
+        }
+        flb_debug("[task] restored direct task=%p id=%i with %i route(s)",
+                  task, task->id, direct_count);
+        if (router_context_initialized) {
+            flb_router_chunk_context_destroy(&router_context);
+            router_context_initialized = FLB_FALSE;
+        }
+        return task;
+    }
+
+    if (direct_routes) {
+        flb_input_chunk_destroy_direct_routes(direct_routes, direct_output_count);
+        direct_routes = NULL;
+    }
+
     if (cfl_list_size(&i_ins->routes_direct) > 0) {
         direct_count = 0;
 
