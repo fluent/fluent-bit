@@ -28,6 +28,8 @@
 #include <fluent-bit/flb_config.h>
 #include <fluent-bit/flb_conditionals.h>
 #include <cfl/cfl.h>
+#include <cmetrics/cmetrics.h>
+#include <cmetrics/cmt_counter.h>
 #include <monkey/mk_core.h>
 
 struct flb_mp_chunk_cobj;
@@ -45,6 +47,22 @@ struct flb_router_path {
     struct flb_output_instance *ins;
     struct flb_route *route;
     struct cfl_list _head;
+};
+
+struct flb_router {
+    /* Routing masks */
+    size_t route_mask_size;
+    size_t route_mask_slots;
+    uint64_t *route_empty_mask;
+
+    /* metrics context */
+    struct cmt *cmt;
+
+    /* logs routing metrics */
+    struct cmt_counter *logs_records_total;
+    struct cmt_counter *logs_bytes_total;
+    struct cmt_counter *logs_drop_records_total;
+    struct cmt_counter *logs_drop_bytes_total;
 };
 
 static inline int flb_router_match_type(int in_event_type,
@@ -182,6 +200,10 @@ int flb_router_config_parse(struct flb_cf *cf,
                             struct flb_config *config);
 void flb_router_routes_destroy(struct cfl_list *input_routes);
 int flb_router_apply_config(struct flb_config *config);
+
+int flb_router_metrics_create(struct flb_config *config, struct flb_router *router);
+struct flb_router *flb_router_create(struct flb_config *config);
+void flb_router_destroy(struct flb_router *router);
 
 #endif
 
