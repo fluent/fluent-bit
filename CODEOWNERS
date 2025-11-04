@@ -9,7 +9,7 @@
 
 # Global Owners
 # -------------
-*                        @edsiper @leonardo-albertovich @fujimotos @koleini
+*                        @edsiper @leonardo-albertovich @cosmo0920
 
 # Build System & Portability
 # --------------------------
@@ -27,17 +27,17 @@
 
 # Core: Signv4
 # ------------
-/src/flb_signv4.c        @pettitwesley
+/src/flb_signv4.c        @fluent/aws-fluent-bit-maintainers
 /src/flb_lib.c           @edsiper @niedbalski
 
 # Core: AWS Auth & Utils
 # ------------
-/src/aws                 @pettitwesley @sparrc @singholt @swapneils
+/src/aws                 @fluent/aws-fluent-bit-maintainers
 
 # AWS header files
-/include/aws                   @pettitwesley @sparrc @singholt @swapneils
-/include/flb_aws_credentials.h @pettitwesley @sparrc @singholt @swapneils
-/include/flb_aws_util.h        @pettitwesley @sparrc @singholt @swapneils
+/include/aws                   @fluent/aws-fluent-bit-maintainers
+/include/flb_aws_credentials.h @fluent/aws-fluent-bit-maintainers
+/include/flb_aws_util.h        @fluent/aws-fluent-bit-maintainers
 
 # Core: Stream Processor
 # ----------------
@@ -55,8 +55,8 @@
 
 # Filter Plugins
 # --------------
-/plugins/filter_aws      @pettitwesley @sparrc @singholt @swapneils
-/plugins/filter_ecs      @pettitwesley @sparrc @singholt @swapneils
+/plugins/filter_aws      @fluent/aws-fluent-bit-maintainers
+/plugins/filter_ecs      @fluent/aws-fluent-bit-maintainers
 
 # Output Plugins
 # --------------
@@ -66,22 +66,22 @@
 /plugins/out_stackdriver @braydonk @jefferbrecht @jeffluoo
 
 # AWS Plugins
-/plugins/out_s3               @pettitwesley @sparrc @singholt @swapneils
-/plugins/out_cloudwatch_logs  @pettitwesley @sparrc @singholt @swapneils
-/plugins/out_kinesis_firehose @pettitwesley @sparrc @singholt @swapneils
-/plugins/out_kinesis_streams  @pettitwesley @sparrc @singholt @swapneils
-/plugins/out_opensearch       @pettitwesley @edsiper @sparrc @singholt @swapneils
+/plugins/out_s3               @fluent/aws-fluent-bit-maintainers
+/plugins/out_cloudwatch_logs  @fluent/aws-fluent-bit-maintainers
+/plugins/out_kinesis_firehose @fluent/aws-fluent-bit-maintainers
+/plugins/out_kinesis_streams  @fluent/aws-fluent-bit-maintainers
+/plugins/out_opensearch       @fluent/aws-fluent-bit-maintainers
 
 # AWS test code
-/tests/internal/aws             @pettitwesley @sparrc @singholt @swapneils
-/tests/internal/aws_*           @pettitwesley @sparrc @singholt @swapneils
-/tests/runtime/filter_ecs.c     @pettitwesley @sparrc @singholt @swapneils
-/tests/runtime/filter_aws.c     @pettitwesley @sparrc @singholt @swapneils
-/tests/runtime/out_cloudwatch.c @pettitwesley @sparrc @singholt @swapneils
-/tests/runtime/out_firehose.c   @pettitwesley @sparrc @singholt @swapneils
-/tests/runtime/out_kinesis.c    @pettitwesley @sparrc @singholt @swapneils
-/tests/runtime/out_opensearch.c @pettitwesley @edsiper @sparrc @singholt @swapneils
-/tests/runtime/out_s3.c         @pettitwesley @sparrc @singholt @swapneils
+/tests/internal/aws             @fluent/aws-fluent-bit-maintainers
+/tests/internal/aws_*           @fluent/aws-fluent-bit-maintainers
+/tests/runtime/filter_ecs.c     @fluent/aws-fluent-bit-maintainers
+/tests/runtime/filter_aws.c     @fluent/aws-fluent-bit-maintainers
+/tests/runtime/out_cloudwatch.c @fluent/aws-fluent-bit-maintainers
+/tests/runtime/out_firehose.c   @fluent/aws-fluent-bit-maintainers
+/tests/runtime/out_kinesis.c    @fluent/aws-fluent-bit-maintainers
+/tests/runtime/out_opensearch.c @fluent/aws-fluent-bit-maintainers
+/tests/runtime/out_s3.c         @fluent/aws-fluent-bit-maintainers
 
 # Google test code
 # --------------
