@@ -31,6 +31,8 @@
 
 #include <monkey/mk_core.h>
 
+struct flb_router;
+
 #define FLB_CONFIG_FLUSH_SECS   1
 #define FLB_CONFIG_HTTP_LISTEN  "0.0.0.0"
 #define FLB_CONFIG_HTTP_PORT    "2020"
@@ -293,9 +295,7 @@ struct flb_config {
     int hot_reload_watchdog_timeout_seconds;
 
     /* Routing */
-    size_t route_mask_size;
-    size_t route_mask_slots;
-    uint64_t *route_empty_mask;
+    struct flb_router *router;
 #ifdef FLB_SYSTEM_WINDOWS
     /* maxstdio (Windows) */
     int win_maxstdio;
