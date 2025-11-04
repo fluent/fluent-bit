@@ -7,6 +7,7 @@
 #include <fluent-bit/flb_output.h>
 #include <fluent-bit/flb_output_plugin.h>
 #include <fluent-bit/flb_routes_mask.h>
+#include <fluent-bit/flb_router.h>
 #include <fluent-bit/flb_env.h>
 #include <fluent-bit/flb_hash_table.h>
 #include <fluent-bit/flb_kv.h>
@@ -65,8 +66,18 @@ static int init_test_config(struct flb_config *config,
         return -1;
     }
 
-    ret = flb_routes_mask_set_size(64, config);
+    /* Create router context */
+    config->router = flb_router_create(config);
+    if (config->router == NULL) {
+        flb_env_destroy(config->env);
+        config->env = NULL;
+        return -1;
+    }
+
+    ret = flb_routes_mask_set_size(64, config->router);
     if (ret != 0) {
+        flb_router_destroy(config->router);
+        config->router = NULL;
         flb_env_destroy(config->env);
         config->env = NULL;
         return -1;
@@ -241,7 +252,10 @@ static void cleanup_test_routing_scenario(struct flb_input_chunk *ic,
             in->net_config_map = NULL;
         }
 
-        flb_routes_empty_mask_destroy(config);
+        if (config->router) {
+            flb_router_destroy(config->router);
+            config->router = NULL;
+        }
         if (config->env) {
             flb_env_destroy(config->env);
             config->env = NULL;
@@ -601,13 +615,13 @@ static void test_chunk_restore_alias_plugin_match_multiple()
 
     TEST_CHECK(flb_routes_mask_get_bit(ic->routes_mask,
                                        stdout_one.id,
-                                       &config) == 1);
+                                       config.router) == 1);
     TEST_CHECK(flb_routes_mask_get_bit(ic->routes_mask,
                                        stdout_two.id,
-                                       &config) == 1);
+                                       config.router) == 1);
     TEST_CHECK(flb_routes_mask_get_bit(ic->routes_mask,
                                        http_out.id,
-                                       &config) == 0);
+                                       config.router) == 0);
 
 cleanup:
     cleanup_test_routing_scenario(ic, &stdout_one, &stdout_two, &http_out,
@@ -762,13 +776,13 @@ static void test_chunk_restore_alias_plugin_null_matches_all()
 
     TEST_CHECK(flb_routes_mask_get_bit(ic->routes_mask,
                                        stdout_one.id,
-                                       &config) == 1);
+                                       config.router) == 1);
     TEST_CHECK(flb_routes_mask_get_bit(ic->routes_mask,
                                        stdout_two.id,
-                                       &config) == 1);
+                                       config.router) == 1);
     TEST_CHECK(flb_routes_mask_get_bit(ic->routes_mask,
                                        http_out.id,
-                                       &config) == 1);
+                                       config.router) == 1);
 
 cleanup:
     cleanup_test_routing_scenario(ic, &stdout_one, &stdout_two, &http_out,
