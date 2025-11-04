@@ -192,11 +192,14 @@ struct flb_sched_timer_coro {
     struct cfl_list _head;
 };
 
+#define FLB_SCHED_TLS_MAGIC 0x53544350u
+
 /* parameter for timer callback running under a co-routine */
 struct flb_sched_timer_coro_cb_params {
     struct flb_sched_timer_coro *stc;
     struct flb_config *config;
     void *data;
+    int   magic;
     struct flb_coro *coro;
 };
 
@@ -259,6 +262,7 @@ static FLB_INLINE void sched_timer_cb_params_set(struct flb_sched_timer_coro *st
     params->config = config;
     params->data = data;
     params->coro = coro;
+    params->magic = FLB_SCHED_TLS_MAGIC;
 
     FLB_TLS_SET(sched_timer_coro_cb_params, params);
     co_switch(coro->callee);
