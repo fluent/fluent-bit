@@ -105,12 +105,15 @@ static int route_payload_apply_outputs(struct flb_input_instance *ins,
     int direct_count;
     int direct_index;
     int write_ret;
+    int label_is_alias;
     struct cfl_list *head;
     struct flb_input_chunk *chunk = NULL;
     struct flb_router_path *route_path;
     struct flb_chunk_direct_route *direct_routes;
     size_t label_length;
+    size_t plugin_length;
     const char *label_source;
+    const char *plugin_name;
 
     if (!ins || !payload || !payload->tag || !payload->route) {
         return -1;
@@ -210,6 +213,8 @@ static int route_payload_apply_outputs(struct flb_input_instance *ins,
     write_ret = 0;
     label_length = 0;
     label_source = NULL;
+    plugin_length = 0;
+    plugin_name = NULL;
 
     cfl_list_foreach(head, &ins->routes_direct) {
         route_path = cfl_list_entry(head, struct flb_router_path, _head);
@@ -252,8 +257,14 @@ static int route_payload_apply_outputs(struct flb_input_instance *ins,
             if (direct_index < direct_count) {
                 label_source = route_path->ins->alias;
                 label_length = 0;
+                plugin_name = NULL;
+                plugin_length = 0;
+                label_is_alias = FLB_FALSE;
                 if (!label_source || label_source[0] == '\0') {
                     label_source = route_path->ins->name;
+                }
+                else {
+                    label_is_alias = FLB_TRUE;
                 }
                 if (label_source) {
                     label_length = strlen(label_source);
@@ -261,9 +272,24 @@ static int route_payload_apply_outputs(struct flb_input_instance *ins,
                         label_length = UINT16_MAX;
                     }
                 }
+                if (route_path->ins->p && route_path->ins->p->name) {
+                    plugin_name = route_path->ins->p->name;
+                    plugin_length = strlen(plugin_name);
+                    if (plugin_length > UINT16_MAX) {
+                        plugin_length = UINT16_MAX;
+                    }
+                }
+                else {
+                    plugin_name = NULL;
+                    plugin_length = 0;
+                }
+
                 direct_routes[direct_index].id = (uint32_t) route_path->ins->id;
                 direct_routes[direct_index].label = label_source;
                 direct_routes[direct_index].label_length = (uint16_t) label_length;
+                direct_routes[direct_index].label_is_alias = (uint8_t) label_is_alias;
+                direct_routes[direct_index].plugin_name = plugin_name;
+                direct_routes[direct_index].plugin_name_length = (uint16_t) plugin_length;
                 direct_index++;
             }
         }
