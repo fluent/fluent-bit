@@ -304,7 +304,14 @@ struct flb_config *flb_config_init()
     }
 
     /* Routing */
-    flb_routes_mask_set_size(1, config);
+    config->router = flb_router_create(config);
+    if (!config->router) {
+        flb_error("[config] could not create router");
+        flb_cf_destroy(cf);
+        flb_free(config);
+        return NULL;
+    }
+    flb_routes_mask_set_size(1, config->router);
 
     config->cio          = NULL;
     config->storage_path = NULL;
@@ -613,7 +620,8 @@ void flb_config_exit(struct flb_config *config)
 
     /* release task map */
     flb_config_task_map_resize(config, 0);
-    flb_routes_empty_mask_destroy(config);
+
+    flb_router_destroy(config->router);
 
     /* Clean up router input routes */
     flb_router_routes_destroy(&config->input_routes);
