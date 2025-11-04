@@ -49,11 +49,20 @@ struct cio_chunk;
 #define FLB_CHUNK_FLAG_DIRECT_ROUTES        (1 << 0)
 #define FLB_CHUNK_FLAG_DIRECT_ROUTE_LABELS  (1 << 1)
 #define FLB_CHUNK_FLAG_DIRECT_ROUTE_WIDE_IDS (1 << 2)
+#define FLB_CHUNK_FLAG_DIRECT_ROUTE_PLUGIN_IDS (1 << 3)
+
+#define FLB_CHUNK_DIRECT_ROUTE_LABEL_ALIAS_FLAG 0x8000
+#define FLB_CHUNK_DIRECT_ROUTE_LABEL_LENGTH_MASK 0x7FFF
+
+struct flb_output_instance;
 
 struct flb_chunk_direct_route {
     uint32_t id;
     uint16_t label_length;
     const char *label;
+    uint8_t label_is_alias;
+    uint16_t plugin_name_length;
+    const char *plugin_name;
 };
 
 /* Chunks magic bytes (starting from Fluent Bit v1.8.10) */
@@ -129,6 +138,8 @@ int flb_input_chunk_write_header_v2(struct cio_chunk *chunk,
                                     char *tag, int tag_len,
                                     const struct flb_chunk_direct_route *routes,
                                     int route_count);
+int flb_chunk_route_plugin_matches(struct flb_output_instance *o_ins,
+                                   const struct flb_chunk_direct_route *route);
 int flb_input_chunk_has_direct_routes(struct flb_input_chunk *ic);
 int flb_input_chunk_get_direct_routes(struct flb_input_chunk *ic,
                                       struct flb_chunk_direct_route **routes,

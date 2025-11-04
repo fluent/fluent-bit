@@ -170,6 +170,47 @@ static int input_chunk_metadata_view(struct flb_input_chunk *ic,
     return 0;
 }
 
+#define ROUTE_PLUGIN_NAME_LEN(route) \
+    ((route)->plugin_name_length > 0 ? (int) (route)->plugin_name_length : \
+     (route)->plugin_name != NULL ? (int) strlen((route)->plugin_name) : 0)
+
+int flb_chunk_route_plugin_matches(struct flb_output_instance *o_ins,
+                                   const struct flb_chunk_direct_route *route)
+{
+    int stored_length;
+    int candidate_length;
+
+    if (!route) {
+        return FLB_FALSE;
+    }
+
+    if (!route->plugin_name || route->plugin_name[0] == '\0') {
+        return FLB_TRUE;
+    }
+
+    if (!o_ins || !o_ins->p || !o_ins->p->name) {
+        return FLB_FALSE;
+    }
+
+    stored_length = ROUTE_PLUGIN_NAME_LEN(route);
+    if (stored_length <= 0) {
+        return FLB_FALSE;
+    }
+
+    candidate_length = (int) strlen(o_ins->p->name);
+    if (candidate_length != stored_length) {
+        return FLB_FALSE;
+    }
+
+    if (strncmp(o_ins->p->name, route->plugin_name, (size_t) stored_length) != 0) {
+        return FLB_FALSE;
+    }
+
+    return FLB_TRUE;
+}
+
+#undef ROUTE_PLUGIN_NAME_LEN
+
 #ifdef FLB_HAVE_IN_STORAGE_BACKLOG
 
 extern ssize_t sb_get_releasable_output_queue_space(struct flb_output_instance *output_plugin,
@@ -712,9 +753,13 @@ int flb_input_chunk_place_new_chunk(struct flb_input_chunk *ic, size_t chunk_siz
                                      i_ins->config);
 }
 
-static struct flb_output_instance *input_chunk_find_output_reference(struct flb_config *config,
-                                                                    const struct flb_chunk_direct_route *route)
+static int input_chunk_collect_output_references(struct flb_config *config,
+                                                 const struct flb_chunk_direct_route *route,
+                                                 struct flb_output_instance ***out_matches,
+                                                 size_t *out_count)
 {
+    size_t index;
+    size_t count;
     int alias_length;
     int label_length;
     int name_length;
@@ -722,10 +767,14 @@ static struct flb_output_instance *input_chunk_find_output_reference(struct flb_
     uint32_t stored_id;
     struct mk_list *head;
     struct flb_output_instance *o_ins;
+    struct flb_output_instance **matches;
 
-    if (!config || !route) {
-        return NULL;
+    if (!config || !route || !out_matches || !out_count) {
+        return -1;
     }
+
+    *out_matches = NULL;
+    *out_count = 0;
 
     label = route->label;
     label_length = 0;
@@ -737,14 +786,16 @@ static struct flb_output_instance *input_chunk_find_output_reference(struct flb_
         }
     }
 
+    count = 0;
     if (label != NULL && label_length > 0) {
         mk_list_foreach(head, &config->outputs) {
             o_ins = mk_list_entry(head, struct flb_output_instance, _head);
             if (o_ins->alias != NULL) {
                 alias_length = (int) strlen(o_ins->alias);
                 if (alias_length == label_length &&
-                    strncmp(o_ins->alias, label, (size_t) label_length) == 0) {
-                    return o_ins;
+                    strncmp(o_ins->alias, label, (size_t) label_length) == 0 &&
+                    flb_chunk_route_plugin_matches(o_ins, route) == FLB_TRUE) {
+                    count++;
                 }
             }
         }
@@ -753,20 +804,88 @@ static struct flb_output_instance *input_chunk_find_output_reference(struct flb_
             o_ins = mk_list_entry(head, struct flb_output_instance, _head);
             name_length = (int) strlen(o_ins->name);
             if (name_length == label_length &&
-                strncmp(o_ins->name, label, (size_t) label_length) == 0) {
-                return o_ins;
+                strncmp(o_ins->name, label, (size_t) label_length) == 0 &&
+                flb_chunk_route_plugin_matches(o_ins, route) == FLB_TRUE) {
+                if (o_ins->alias != NULL) {
+                    alias_length = (int) strlen(o_ins->alias);
+                    if (alias_length == label_length &&
+                        strncmp(o_ins->alias, label, (size_t) label_length) == 0) {
+                        continue;
+                    }
+                }
+                count++;
+            }
+        }
+
+        if (count == 0) {
+            return 0;
+        }
+    }
+    else {
+        mk_list_foreach(head, &config->outputs) {
+            o_ins = mk_list_entry(head, struct flb_output_instance, _head);
+            if ((uint32_t) o_ins->id == stored_id &&
+                flb_chunk_route_plugin_matches(o_ins, route) == FLB_TRUE) {
+                count++;
+            }
+        }
+
+        if (count == 0) {
+            return 0;
+        }
+    }
+
+    matches = flb_calloc(count, sizeof(struct flb_output_instance *));
+    if (!matches) {
+        flb_errno();
+        return -1;
+    }
+
+    index = 0;
+    if (label != NULL && label_length > 0) {
+        mk_list_foreach(head, &config->outputs) {
+            o_ins = mk_list_entry(head, struct flb_output_instance, _head);
+            if (o_ins->alias != NULL) {
+                alias_length = (int) strlen(o_ins->alias);
+                if (alias_length == label_length &&
+                    strncmp(o_ins->alias, label, (size_t) label_length) == 0 &&
+                    flb_chunk_route_plugin_matches(o_ins, route) == FLB_TRUE) {
+                    matches[index++] = o_ins;
+                }
+            }
+        }
+
+        mk_list_foreach(head, &config->outputs) {
+            o_ins = mk_list_entry(head, struct flb_output_instance, _head);
+            name_length = (int) strlen(o_ins->name);
+            if (name_length == label_length &&
+                strncmp(o_ins->name, label, (size_t) label_length) == 0 &&
+                flb_chunk_route_plugin_matches(o_ins, route) == FLB_TRUE) {
+                if (o_ins->alias != NULL) {
+                    alias_length = (int) strlen(o_ins->alias);
+                    if (alias_length == label_length &&
+                        strncmp(o_ins->alias, label, (size_t) label_length) == 0) {
+                        continue;
+                    }
+                }
+                matches[index++] = o_ins;
+            }
+        }
+    }
+    else {
+        mk_list_foreach(head, &config->outputs) {
+            o_ins = mk_list_entry(head, struct flb_output_instance, _head);
+            if ((uint32_t) o_ins->id == stored_id &&
+                flb_chunk_route_plugin_matches(o_ins, route) == FLB_TRUE) {
+                matches[index++] = o_ins;
             }
         }
     }
 
-    mk_list_foreach(head, &config->outputs) {
-        o_ins = mk_list_entry(head, struct flb_output_instance, _head);
-        if ((uint32_t) o_ins->id == stored_id) {
-            return o_ins;
-        }
-    }
+    *out_matches = matches;
+    *out_count = index;
 
-    return NULL;
+    return 0;
 }
 
 /* Create an input chunk using a Chunk I/O */
@@ -774,7 +893,7 @@ struct flb_input_chunk *flb_input_chunk_map(struct flb_input_instance *in,
                                             int event_type,
                                             void *chunk)
 {
-    int records = 0;
+    int records;
     int tag_len;
     int has_routes;
     int ret;
@@ -793,8 +912,12 @@ struct flb_input_chunk *flb_input_chunk_map(struct flb_input_instance *in,
     size_t offset;
     ssize_t bytes;
     const char *tag_buf;
-    struct flb_output_instance *direct_output;
+    struct flb_output_instance **direct_matches;
+    size_t direct_match_count;
+    size_t direct_match_index;
     struct flb_input_chunk *ic;
+
+    records = 0;
 
     /* Create context for the input instance */
     ic = flb_calloc(1, sizeof(struct flb_input_chunk));
@@ -965,14 +1088,34 @@ struct flb_input_chunk *flb_input_chunk_map(struct flb_input_instance *in,
         direct_missing = FLB_FALSE;
         missing_id = 0;
         for (direct_index = 0; direct_index < direct_count; direct_index++) {
-            direct_output = input_chunk_find_output_reference(in->config,
-                                                              &direct_routes[direct_index]);
-            if (!direct_output) {
+            direct_matches = NULL;
+            direct_match_count = 0;
+            ret = input_chunk_collect_output_references(in->config,
+                                                        &direct_routes[direct_index],
+                                                        &direct_matches,
+                                                        &direct_match_count);
+            if (ret == -1) {
+                flb_plg_error(in,
+                              "failed collecting restored routes for chunk %s",
+                              flb_input_chunk_get_name(ic));
+            }
+
+            if (ret != 0 || direct_match_count == 0) {
                 direct_missing = FLB_TRUE;
                 missing_id = direct_routes[direct_index].id;
                 missing_label = direct_routes[direct_index].label;
                 missing_label_length = direct_routes[direct_index].label_length;
+                if (missing_label_length == 0 && missing_label != NULL) {
+                    missing_label_length = (uint16_t) strlen(missing_label);
+                }
+                if (direct_matches != NULL) {
+                    flb_free(direct_matches);
+                }
                 break;
+            }
+
+            if (direct_matches != NULL) {
+                flb_free(direct_matches);
             }
         }
 
@@ -981,15 +1124,29 @@ struct flb_input_chunk *flb_input_chunk_map(struct flb_input_instance *in,
                    sizeof(flb_route_mask_element) * in->config->route_mask_size);
             has_routes = 0;
             for (direct_index = 0; direct_index < direct_count; direct_index++) {
-                direct_output = input_chunk_find_output_reference(in->config,
-                                                                  &direct_routes[direct_index]);
-                if (!direct_output) {
+                direct_matches = NULL;
+                direct_match_count = 0;
+                ret = input_chunk_collect_output_references(in->config,
+                                                            &direct_routes[direct_index],
+                                                            &direct_matches,
+                                                            &direct_match_count);
+                if (ret != 0 || direct_match_count == 0 || direct_matches == NULL) {
+                    if (direct_matches != NULL) {
+                        flb_free(direct_matches);
+                    }
                     continue;
                 }
-                flb_routes_mask_set_bit(ic->routes_mask,
-                                        direct_output->id,
-                                        in->config);
-                has_routes++;
+
+                for (direct_match_index = 0;
+                     direct_match_index < direct_match_count;
+                     direct_match_index++) {
+                    flb_routes_mask_set_bit(ic->routes_mask,
+                                            direct_matches[direct_match_index]->id,
+                                            in->config);
+                    has_routes++;
+                }
+
+                flb_free(direct_matches);
             }
             direct_loaded = FLB_TRUE;
         }
@@ -1125,6 +1282,7 @@ int flb_input_chunk_write_header_v2(struct cio_chunk *chunk,
                                     int route_count)
 {
     int has_labels;
+    int has_plugins;
     int wide_ids;
     int index;
     int max_tag_len;
@@ -1133,18 +1291,25 @@ int flb_input_chunk_write_header_v2(struct cio_chunk *chunk,
     int ret;
     int id_offset;
     int label_offset;
+    int plugin_lengths_offset;
+    int plugin_data_offset;
     int id_bytes;
     uint16_t label_length;
+    uint16_t plugin_length;
     uint16_t routing_length;
     uint16_t stored_count;
     uint16_t *resolved_lengths;
+    uint16_t *resolved_plugin_lengths;
+    uint16_t stored_label_length;
     size_t labels_total;
+    size_t plugins_total;
     size_t routing_payload_bytes;
     size_t computed_length;
     uint8_t flags;
     char *meta;
 
     has_labels = FLB_FALSE;
+    has_plugins = FLB_FALSE;
     wide_ids = FLB_FALSE;
     index = 0;
     max_tag_len = 0;
@@ -1153,12 +1318,17 @@ int flb_input_chunk_write_header_v2(struct cio_chunk *chunk,
     ret = 0;
     id_offset = 0;
     label_offset = 0;
+    plugin_lengths_offset = 0;
+    plugin_data_offset = 0;
     id_bytes = (int) sizeof(uint16_t);
     label_length = 0;
+    plugin_length = 0;
     routing_length = 0;
     stored_count = 0;
     resolved_lengths = NULL;
+    resolved_plugin_lengths = NULL;
     labels_total = 0;
+    plugins_total = 0;
     routing_payload_bytes = 0;
     computed_length = 0;
     flags = 0;
@@ -1178,11 +1348,19 @@ int flb_input_chunk_write_header_v2(struct cio_chunk *chunk,
         return -1;
     }
 
+    resolved_plugin_lengths = flb_calloc((size_t) route_count, sizeof(uint16_t));
+    if (!resolved_plugin_lengths) {
+        flb_errno();
+        flb_free(resolved_lengths);
+        return -1;
+    }
+
     for (index = 0; index < route_count; index++) {
         if (routes[index].id > UINT16_MAX) {
             wide_ids = FLB_TRUE;
         }
         label_length = routes[index].label_length;
+        plugin_length = routes[index].plugin_name_length;
         if (routes[index].label != NULL) {
             if (label_length == 0) {
                 computed_length = strlen(routes[index].label);
@@ -1195,6 +1373,11 @@ int flb_input_chunk_write_header_v2(struct cio_chunk *chunk,
                 label_length = UINT16_MAX;
             }
 
+            if (routes[index].label_is_alias != 0 &&
+                label_length > FLB_CHUNK_DIRECT_ROUTE_LABEL_LENGTH_MASK) {
+                label_length = FLB_CHUNK_DIRECT_ROUTE_LABEL_LENGTH_MASK;
+            }
+
             if (label_length > 0) {
                 has_labels = FLB_TRUE;
             }
@@ -1205,6 +1388,29 @@ int flb_input_chunk_write_header_v2(struct cio_chunk *chunk,
 
         resolved_lengths[index] = label_length;
         labels_total += (size_t) label_length;
+
+        if (routes[index].plugin_name != NULL) {
+            if (plugin_length == 0) {
+                computed_length = strlen(routes[index].plugin_name);
+                if (computed_length > UINT16_MAX) {
+                    computed_length = UINT16_MAX;
+                }
+                plugin_length = (uint16_t) computed_length;
+            }
+            else if (plugin_length > UINT16_MAX) {
+                plugin_length = UINT16_MAX;
+            }
+
+            if (plugin_length > 0) {
+                has_plugins = FLB_TRUE;
+            }
+        }
+        else {
+            plugin_length = 0;
+        }
+
+        resolved_plugin_lengths[index] = plugin_length;
+        plugins_total += (size_t) plugin_length;
     }
 
     if (wide_ids == FLB_TRUE) {
@@ -1220,9 +1426,14 @@ int flb_input_chunk_write_header_v2(struct cio_chunk *chunk,
         routing_payload_bytes += ((size_t) route_count * sizeof(uint16_t)) +
                                  labels_total;
     }
+    if (has_plugins == FLB_TRUE) {
+        routing_payload_bytes += ((size_t) route_count * sizeof(uint16_t)) +
+                                 plugins_total;
+    }
 
     if (routing_payload_bytes > UINT16_MAX) {
         flb_free(resolved_lengths);
+        flb_free(resolved_plugin_lengths);
         return -1;
     }
 
@@ -1240,6 +1451,7 @@ int flb_input_chunk_write_header_v2(struct cio_chunk *chunk,
     if (!meta) {
         flb_errno();
         flb_free(resolved_lengths);
+        flb_free(resolved_plugin_lengths);
         return -1;
     }
 
@@ -1265,6 +1477,9 @@ int flb_input_chunk_write_header_v2(struct cio_chunk *chunk,
     }
     if (wide_ids == FLB_TRUE) {
         flags |= FLB_CHUNK_FLAG_DIRECT_ROUTE_WIDE_IDS;
+    }
+    if (has_plugins == FLB_TRUE) {
+        flags |= FLB_CHUNK_FLAG_DIRECT_ROUTE_PLUGIN_IDS;
     }
     meta[3] = (char) flags;
 
@@ -1294,12 +1509,19 @@ int flb_input_chunk_write_header_v2(struct cio_chunk *chunk,
         id_offset += id_bytes;
     }
 
+    label_offset = offset + 4 + (route_count * id_bytes);
+
     if (has_labels == FLB_TRUE) {
-        label_offset = offset + 4 + (route_count * id_bytes);
         for (index = 0; index < route_count; index++) {
-            label_length = resolved_lengths[index];
-            meta[label_offset] = (uint8_t) (label_length >> 8);
-            meta[label_offset + 1] = (uint8_t) (label_length & 0xFF);
+            stored_label_length = resolved_lengths[index];
+            if (routes[index].label_is_alias != 0 && stored_label_length > 0) {
+                if (stored_label_length > FLB_CHUNK_DIRECT_ROUTE_LABEL_LENGTH_MASK) {
+                    stored_label_length = FLB_CHUNK_DIRECT_ROUTE_LABEL_LENGTH_MASK;
+                }
+                stored_label_length |= FLB_CHUNK_DIRECT_ROUTE_LABEL_ALIAS_FLAG;
+            }
+            meta[label_offset] = (uint8_t) (stored_label_length >> 8);
+            meta[label_offset + 1] = (uint8_t) (stored_label_length & 0xFF);
             label_offset += sizeof(uint16_t);
         }
 
@@ -1312,15 +1534,39 @@ int flb_input_chunk_write_header_v2(struct cio_chunk *chunk,
         }
     }
 
+    plugin_lengths_offset = label_offset;
+
+    if (has_plugins == FLB_TRUE) {
+        for (index = 0; index < route_count; index++) {
+            plugin_length = resolved_plugin_lengths[index];
+            meta[plugin_lengths_offset] = (uint8_t) (plugin_length >> 8);
+            meta[plugin_lengths_offset + 1] = (uint8_t) (plugin_length & 0xFF);
+            plugin_lengths_offset += sizeof(uint16_t);
+        }
+
+        plugin_data_offset = plugin_lengths_offset;
+        for (index = 0; index < route_count; index++) {
+            plugin_length = resolved_plugin_lengths[index];
+            if (plugin_length > 0 && routes[index].plugin_name != NULL) {
+                memcpy(meta + plugin_data_offset,
+                       routes[index].plugin_name,
+                       plugin_length);
+            }
+            plugin_data_offset += plugin_length;
+        }
+    }
+
     ret = cio_meta_write(chunk, (char *) meta, meta_size);
     if (ret == -1) {
         flb_error("[input chunk] could not write metadata");
         flb_free(resolved_lengths);
+        flb_free(resolved_plugin_lengths);
         flb_free(meta);
         return -1;
     }
 
     flb_free(resolved_lengths);
+    flb_free(resolved_plugin_lengths);
     flb_free(meta);
 
     return 0;
@@ -1357,32 +1603,44 @@ int flb_input_chunk_get_direct_routes(struct flb_input_chunk *ic,
 {
     int index;
     int labels_present;
+    int plugins_present;
     int wide_ids;
     int ret;
     int id_offset;
     int lengths_offset;
     int label_data_offset;
+    int plugin_lengths_offset;
+    int plugin_data_offset;
     int id_bytes;
     size_t remaining;
+    size_t plugin_remaining;
     uint16_t routing_length;
     uint16_t stored_count;
     uint16_t *label_lengths;
+    uint8_t *label_alias_flags;
+    uint16_t *plugin_lengths;
     struct flb_chunk_direct_route *result;
     struct flb_input_chunk_meta_view view;
     uint32_t read_id;
 
     index = 0;
     labels_present = FLB_FALSE;
+    plugins_present = FLB_FALSE;
     wide_ids = FLB_FALSE;
     ret = 0;
     id_offset = 0;
     lengths_offset = 0;
     label_data_offset = 0;
+    plugin_lengths_offset = 0;
+    plugin_data_offset = 0;
     id_bytes = (int) sizeof(uint16_t);
     remaining = 0;
+    plugin_remaining = 0;
     routing_length = 0;
     stored_count = 0;
     label_lengths = NULL;
+    label_alias_flags = NULL;
+    plugin_lengths = NULL;
     result = NULL;
     read_id = 0;
 
@@ -1428,14 +1686,7 @@ int flb_input_chunk_get_direct_routes(struct flb_input_chunk *ic,
     }
 
     labels_present = ((view.flags & FLB_CHUNK_FLAG_DIRECT_ROUTE_LABELS) != 0);
-
-    if (labels_present == FLB_TRUE) {
-        if ((size_t) routing_length < (sizeof(uint16_t) +
-                                       ((size_t) stored_count * (size_t) id_bytes) +
-                                       ((size_t) stored_count * sizeof(uint16_t)))) {
-            return -2;
-        }
-    }
+    plugins_present = ((view.flags & FLB_CHUNK_FLAG_DIRECT_ROUTE_PLUGIN_IDS) != 0);
 
     result = flb_calloc((size_t) stored_count, sizeof(struct flb_chunk_direct_route));
     if (!result) {
@@ -1458,8 +1709,18 @@ int flb_input_chunk_get_direct_routes(struct flb_input_chunk *ic,
         result[index].id = read_id;
         result[index].label = NULL;
         result[index].label_length = 0;
+        result[index].plugin_name = NULL;
+        result[index].plugin_name_length = 0;
         id_offset += id_bytes;
     }
+
+    lengths_offset = sizeof(uint16_t) + (stored_count * id_bytes);
+    if ((size_t) lengths_offset > routing_length) {
+        flb_input_chunk_destroy_direct_routes(result, stored_count);
+        return -2;
+    }
+
+    label_data_offset = lengths_offset;
 
     if (labels_present == FLB_TRUE) {
         label_lengths = flb_calloc((size_t) stored_count, sizeof(uint16_t));
@@ -1469,31 +1730,69 @@ int flb_input_chunk_get_direct_routes(struct flb_input_chunk *ic,
             return -1;
         }
 
-        lengths_offset = sizeof(uint16_t) + (stored_count * id_bytes);
-        for (index = 0; index < stored_count; index++) {
-            label_lengths[index] = (uint16_t) (((unsigned char) view.routing_data[lengths_offset] << 8) |
-                                               (unsigned char) view.routing_data[lengths_offset + 1]);
-            lengths_offset += sizeof(uint16_t);
+        label_alias_flags = flb_calloc((size_t) stored_count, sizeof(uint8_t));
+        if (!label_alias_flags) {
+            flb_errno();
+            flb_free(label_lengths);
+            flb_input_chunk_destroy_direct_routes(result, stored_count);
+            return -1;
         }
 
-        label_data_offset = sizeof(uint16_t) +
-                            (stored_count * id_bytes) +
-                            (stored_count * (int) sizeof(uint16_t));
+        for (index = 0; index < stored_count; index++) {
+            if ((size_t) (label_data_offset + (int) sizeof(uint16_t)) > routing_length) {
+                flb_free(label_alias_flags);
+                flb_free(label_lengths);
+                flb_input_chunk_destroy_direct_routes(result, stored_count);
+                return -2;
+            }
+            label_lengths[index] = (uint16_t) (((unsigned char) view.routing_data[label_data_offset] << 8) |
+                                               (unsigned char) view.routing_data[label_data_offset + 1]);
+            if (plugins_present == FLB_TRUE) {
+                if ((label_lengths[index] & FLB_CHUNK_DIRECT_ROUTE_LABEL_ALIAS_FLAG) != 0) {
+                    label_alias_flags[index] = FLB_TRUE;
+                    label_lengths[index] &= FLB_CHUNK_DIRECT_ROUTE_LABEL_LENGTH_MASK;
+                }
+                else {
+                    label_alias_flags[index] = FLB_FALSE;
+                }
+            }
+            else {
+                /* Even when plugins_present is FALSE, the alias flag may still be encoded */
+                if ((label_lengths[index] & FLB_CHUNK_DIRECT_ROUTE_LABEL_ALIAS_FLAG) != 0) {
+                    label_alias_flags[index] = FLB_TRUE;
+                    label_lengths[index] &= FLB_CHUNK_DIRECT_ROUTE_LABEL_LENGTH_MASK;
+                }
+                else {
+                    label_alias_flags[index] = FLB_TRUE;
+                }
+            }
+            label_data_offset += sizeof(uint16_t);
+        }
+
         if ((size_t) label_data_offset > routing_length) {
+            flb_free(label_alias_flags);
             flb_free(label_lengths);
             flb_input_chunk_destroy_direct_routes(result, stored_count);
             return -2;
         }
+
         remaining = routing_length - (size_t) label_data_offset;
 
         for (index = 0; index < stored_count; index++) {
             if (label_lengths[index] == 0) {
                 result[index].label = NULL;
                 result[index].label_length = 0;
+                if (label_alias_flags) {
+                    result[index].label_is_alias = label_alias_flags[index];
+                }
+                else if (plugins_present == FLB_FALSE) {
+                    result[index].label_is_alias = FLB_TRUE;
+                }
                 continue;
             }
 
             if (label_lengths[index] > remaining) {
+                flb_free(label_alias_flags);
                 flb_free(label_lengths);
                 flb_input_chunk_destroy_direct_routes(result, stored_count);
                 return -2;
@@ -1502,6 +1801,7 @@ int flb_input_chunk_get_direct_routes(struct flb_input_chunk *ic,
             result[index].label = flb_malloc((size_t) label_lengths[index] + 1);
             if (!result[index].label) {
                 flb_errno();
+                flb_free(label_alias_flags);
                 flb_free(label_lengths);
                 flb_input_chunk_destroy_direct_routes(result, stored_count);
                 return -1;
@@ -1512,11 +1812,90 @@ int flb_input_chunk_get_direct_routes(struct flb_input_chunk *ic,
                    label_lengths[index]);
             ((char *) result[index].label)[label_lengths[index]] = '\0';
             result[index].label_length = label_lengths[index];
+            if (label_alias_flags) {
+                result[index].label_is_alias = label_alias_flags[index];
+            }
+            else if (plugins_present == FLB_FALSE) {
+                result[index].label_is_alias = FLB_TRUE;
+            }
             label_data_offset += label_lengths[index];
             remaining -= label_lengths[index];
         }
 
+        flb_free(label_alias_flags);
         flb_free(label_lengths);
+    }
+    else {
+        remaining = routing_length - (size_t) label_data_offset;
+    }
+
+    plugin_lengths_offset = label_data_offset;
+
+    if (plugins_present == FLB_TRUE) {
+        plugin_lengths = flb_calloc((size_t) stored_count, sizeof(uint16_t));
+        if (!plugin_lengths) {
+            flb_errno();
+            flb_input_chunk_destroy_direct_routes(result, stored_count);
+            return -1;
+        }
+
+        for (index = 0; index < stored_count; index++) {
+            if ((size_t) (plugin_lengths_offset + (int) sizeof(uint16_t)) > routing_length) {
+                flb_free(plugin_lengths);
+                flb_input_chunk_destroy_direct_routes(result, stored_count);
+                return -2;
+            }
+            plugin_lengths[index] = (uint16_t) (((unsigned char) view.routing_data[plugin_lengths_offset] << 8) |
+                                                 (unsigned char) view.routing_data[plugin_lengths_offset + 1]);
+            plugin_lengths_offset += sizeof(uint16_t);
+        }
+
+        plugin_data_offset = plugin_lengths_offset;
+        if ((size_t) plugin_data_offset > routing_length) {
+            flb_free(plugin_lengths);
+            flb_input_chunk_destroy_direct_routes(result, stored_count);
+            return -2;
+        }
+
+        plugin_remaining = routing_length - (size_t) plugin_data_offset;
+
+        for (index = 0; index < stored_count; index++) {
+            if (plugin_lengths[index] == 0) {
+                result[index].plugin_name = NULL;
+                result[index].plugin_name_length = 0;
+                continue;
+            }
+
+            if (plugin_lengths[index] > plugin_remaining) {
+                flb_free(plugin_lengths);
+                flb_input_chunk_destroy_direct_routes(result, stored_count);
+                return -2;
+            }
+
+            result[index].plugin_name = flb_malloc((size_t) plugin_lengths[index] + 1);
+            if (!result[index].plugin_name) {
+                flb_errno();
+                flb_free(plugin_lengths);
+                flb_input_chunk_destroy_direct_routes(result, stored_count);
+                return -1;
+            }
+
+            memcpy((char *) result[index].plugin_name,
+                   view.routing_data + plugin_data_offset,
+                   plugin_lengths[index]);
+            ((char *) result[index].plugin_name)[plugin_lengths[index]] = '\0';
+            result[index].plugin_name_length = plugin_lengths[index];
+            plugin_data_offset += plugin_lengths[index];
+            plugin_remaining -= plugin_lengths[index];
+        }
+
+        flb_free(plugin_lengths);
+    }
+    else {
+        for (index = 0; index < stored_count; index++) {
+            result[index].plugin_name = NULL;
+            result[index].plugin_name_length = 0;
+        }
     }
 
     *routes = result;
@@ -1539,6 +1918,9 @@ void flb_input_chunk_destroy_direct_routes(struct flb_chunk_direct_route *routes
     for (index = 0; index < route_count; index++) {
         if (routes[index].label != NULL && routes[index].label_length > 0) {
             flb_free((void *) routes[index].label);
+        }
+        if (routes[index].plugin_name != NULL) {
+            flb_free((void *) routes[index].plugin_name);
         }
     }
 
