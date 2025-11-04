@@ -296,6 +296,7 @@ static int flb_input_chunk_release_space(
 {
     struct mk_list         *input_chunk_iterator_tmp;
     struct mk_list         *input_chunk_iterator;
+    struct flb_router      *router;
     ssize_t                 dropped_record_count;
     int                     chunk_destroy_flag;
     struct flb_input_chunk *old_input_chunk;
@@ -366,7 +367,7 @@ static int flb_input_chunk_release_space(
 
                 if (input_plugin->config && input_plugin->config->router &&
                     old_input_chunk->event_type == FLB_INPUT_LOGS) {
-                    struct flb_router *router = input_plugin->config->router;
+                    router = input_plugin->config->router;
 
                     cmt_counter_add(router->logs_drop_records_total,
                                     cfl_time_now(),
@@ -486,7 +487,6 @@ int flb_input_chunk_write(void *data, const char *buf, size_t len)
 {
     int ret;
     struct flb_input_chunk *ic;
-    size_t mask_size;
 
     ic = (struct flb_input_chunk *) data;
 
