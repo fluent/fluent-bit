@@ -102,6 +102,7 @@ static int route_payload_apply_outputs(struct flb_input_instance *ins,
     size_t out_size = 0;
     size_t chunk_size_sz = 0;
     ssize_t chunk_size;
+    size_t size;
     int direct_count;
     int direct_index;
     int write_ret;
@@ -155,7 +156,7 @@ static int route_payload_apply_outputs(struct flb_input_instance *ins,
 
             if (flb_routes_mask_get_bit(chunk->routes_mask,
                                         route_path->ins->id,
-                                        ins->config) == 0) {
+                                        ins->config->router) == 0) {
                 continue;
             }
 
@@ -174,11 +175,12 @@ static int route_payload_apply_outputs(struct flb_input_instance *ins,
 
             flb_routes_mask_clear_bit(chunk->routes_mask,
                                       route_path->ins->id,
-                                      ins->config);
+                                      ins->config->router);
         }
     }
 
-    memset(chunk->routes_mask, 0, sizeof(flb_route_mask_element) * ins->config->route_mask_size);
+    size = flb_routes_mask_get_size(ins->config->router);
+    memset(chunk->routes_mask, 0, sizeof(flb_route_mask_element) * size);
 
     cfl_list_foreach(head, &ins->routes_direct) {
         route_path = cfl_list_entry(head, struct flb_router_path, _head);
@@ -192,10 +194,10 @@ static int route_payload_apply_outputs(struct flb_input_instance *ins,
 
         flb_routes_mask_set_bit(chunk->routes_mask,
                                 route_path->ins->id,
-                                ins->config);
+                                ins->config->router);
     }
 
-    if (flb_routes_mask_is_empty(chunk->routes_mask, ins->config) == FLB_TRUE) {
+    if (flb_routes_mask_is_empty(chunk->routes_mask, ins->config->router) == FLB_TRUE) {
         return -1;
     }
 
@@ -224,7 +226,7 @@ static int route_payload_apply_outputs(struct flb_input_instance *ins,
 
         if (flb_routes_mask_get_bit(chunk->routes_mask,
                                     route_path->ins->id,
-                                    ins->config) == 0) {
+                                    ins->config->router) == 0) {
             continue;
         }
 
@@ -250,7 +252,7 @@ static int route_payload_apply_outputs(struct flb_input_instance *ins,
 
             if (flb_routes_mask_get_bit(chunk->routes_mask,
                                         route_path->ins->id,
-                                        ins->config) == 0) {
+                                        ins->config->router) == 0) {
                 continue;
             }
 
@@ -813,13 +815,13 @@ static void input_chunk_remove_conditional_routes(struct flb_input_instance *ins
 
         if (flb_routes_mask_get_bit(chunk->routes_mask,
                                     route_path->ins->id,
-                                    ins->config) == 0) {
+                                    ins->config->router) == 0) {
             continue;
         }
 
         flb_routes_mask_clear_bit(chunk->routes_mask,
                                   route_path->ins->id,
-                                  ins->config);
+                                  ins->config->router);
 
         if (route_path->ins->total_limit_size == -1 ||
             chunk->fs_counted == FLB_FALSE) {
