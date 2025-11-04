@@ -109,8 +109,8 @@ RUN $win_flex_bison_dist_base_name=\"win_flex_bison-${env:WIN_FLEX_BISON_VERSION
     Write-Host \"${env:PATH}\"; `
     [Environment]::SetEnvironmentVariable(\"PATH\", \"${env:PATH}\", [EnvironmentVariableTarget]::Machine);
 
-# https://github.com/microsoft/vcpkg/blob/2024.05.24/scripts/bootstrap.ps1
-ENV VCPKG_VERSION=2024.05.24 `
+# https://github.com/microsoft/vcpkg/blob/2025.10.17/scripts/bootstrap.ps1
+ENV VCPKG_VERSION=2025.10.17 `
     VCPKG_DOWNLOAD_URL="https://github.com/microsoft/vcpkg/archive/refs/tags" `
     VCPKG_DISABLE_METRICS="ON" `
     VCPKG_ROOT=/dev/vcpkg
