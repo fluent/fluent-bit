@@ -68,11 +68,6 @@ struct flb_out_doris {
     /* Upstream connection to the backend server */
     struct flb_upstream *u;
 
-    /* doris be connection pool, key: string* be_address, value: flb_upstream* u */
-    struct flb_hash_table *u_pool;
-    pthread_mutex_t mutex;
-    int mutex_initialized;
-
     /* Plugin instance */
     struct flb_output_instance *ins;
 };

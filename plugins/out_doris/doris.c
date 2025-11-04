@@ -58,11 +58,16 @@ static inline void sync_fetch_and_add(size_t *dest, size_t value) {
 #endif
 }
 
+/* doris be connection pool, key: be_address, value: flb_upstream with single thread mode */
+FLB_TLS_DEFINE(struct flb_hash_table, doris_be_pool);
+
 static int cb_doris_init(struct flb_output_instance *ins,
                          struct flb_config *config, void *data)
 {
     struct flb_out_doris *ctx = NULL;
     (void) data;
+
+    FLB_TLS_INIT(be_pool);
 
     ctx = flb_doris_conf_create(ins, config);
     if (!ctx) {
@@ -77,6 +82,56 @@ static int cb_doris_init(struct flb_output_instance *ins,
      * it debugging callbacks.
      */
     flb_output_set_http_debug_callbacks(ins);
+
+    return 0;
+}
+
+static int cb_doris_worker_init(void *data, struct flb_config *config)
+{
+    struct flb_hash_table *be_pool;
+    struct flb_out_doris *ctx = data;
+
+    flb_plg_info(ctx->ins, "worker initializing");
+
+    be_pool = FLB_TLS_GET(doris_be_pool);
+    if (!be_pool) {
+        be_pool = flb_hash_table_create(FLB_HASH_TABLE_EVICT_NONE, 16, -1);
+        if (!be_pool) {
+            flb_errno();
+            return -1;
+        }
+        FLB_TLS_SET(doris_be_pool, be_pool);
+    }
+
+    return 0;
+}
+
+static int cb_doris_worker_exit(void *data, struct flb_config *config)
+{
+    struct flb_hash_table *be_pool;
+    struct flb_out_doris *ctx = data;
+
+    int i;
+    struct mk_list *tmp;
+    struct mk_list *head;
+    struct flb_hash_table_entry *entry;
+    struct flb_hash_table_chain *table;
+
+    flb_plg_info(ctx->ins, "worker exiting");
+
+    be_pool = FLB_TLS_GET(doris_be_pool);
+    if (be_pool) {
+        for (i = 0; i < be_pool->size; i++) {
+            table = &be_pool->table[i];
+            mk_list_foreach_safe(head, tmp, &table->chains) {
+                entry = mk_list_entry(head, struct flb_hash_table_entry, _head);
+                flb_upstream_destroy((struct flb_upstream*) entry->val);
+                entry->val = NULL;
+            }
+        }
+        flb_hash_table_destroy(be_pool);
+        FLB_TLS_SET(doris_be_pool, NULL);
+    }
 
     return 0;
 }
@@ -102,6 +157,7 @@ static int http_put(struct flb_out_doris *ctx,
     struct flb_config_map_val *mv;
     struct flb_slist_entry *key = NULL;
     struct flb_slist_entry *val = NULL;
+    struct flb_hash_table *be_pool;
 
     int i;
     int root_type;
@@ -116,28 +172,24 @@ static int http_put(struct flb_out_doris *ctx,
     char address[1024] = {0};
     int len = 0;
 
+    be_pool = FLB_TLS_GET(doris_be_pool);
+
     /* Get upstream context and connection */
     if (strcmp(host, ctx->host) == 0 && port == ctx->port) { // address in config
         u = ctx->u;
     }
     else { // redirected address
         len = snprintf(address, sizeof(address), "%s:%i", host, port);
-        u = flb_hash_table_get_ptr(ctx->u_pool, address, len);
-        if (!u) { // first check
-            pthread_mutex_lock(&ctx->mutex); // lock
-            u = flb_hash_table_get_ptr(ctx->u_pool, address, len);
-            if (!u) { // second check
-                u = flb_upstream_create(ctx->u->base.config,
-                                        host,
-                                        port,
-                                        ctx->u->base.flags,
-                                        ctx->u->base.tls_context);
-                if (u) {
-                    flb_hash_table_add(ctx->u_pool, address, len, u, 0);
-                }
-            }
-            pthread_mutex_unlock(&ctx->mutex); // unlock
-            if (!u) {
+        u = flb_hash_table_get_ptr(be_pool, address, len);
+        if (!u) {
+            u = flb_upstream_create(ctx->u->base.config,
+                                    host,
+                                    port,
+                                    ctx->u->base.flags,
+                                    ctx->u->base.tls_context);
+            if (u) {
+                flb_hash_table_add(be_pool, address, len, u, 0);
+            } else {
                 flb_plg_error(ctx->ins, "no doris be connections available to %s:%i",
                               host, port);
                 return FLB_RETRY;
@@ -270,7 +322,7 @@ static int http_put(struct flb_out_doris *ctx,
 free_buf:
             flb_free(out_buf);
             msgpack_unpacked_destroy(&result);
-parse_done:
+parse_done:;
         }
         else {
             out_ret = FLB_RETRY;
@@ -475,13 +527,15 @@ static int cb_doris_format_test(struct flb_config *config,
 
 /* Plugin reference */
 struct flb_output_plugin out_doris_plugin = {
-    .name        = "doris",
-    .description = "Doris Output",
-    .cb_init     = cb_doris_init,
-    .cb_pre_run  = NULL,
-    .cb_flush    = cb_doris_flush,
-    .cb_exit     = cb_doris_exit,
-    .config_map  = config_map,
+    .name           = "doris",
+    .description    = "Doris Output",
+    .cb_init        = cb_doris_init,
+    .cb_pre_run     = NULL,
+    .cb_flush       = cb_doris_flush,
+    .cb_exit        = cb_doris_exit,
+    .cb_worker_init = cb_doris_worker_init,
+    .cb_worker_exit = cb_doris_worker_exit,
+    .config_map     = config_map,
 
     /* for testing */
     .test_formatter.callback = cb_doris_format_test,
