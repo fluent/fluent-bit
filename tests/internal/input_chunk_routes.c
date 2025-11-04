@@ -14,6 +14,7 @@
 #include <chunkio/chunkio.h>
 #include <chunkio/cio_utils.h>
 #include <string.h>
+#include <cmetrics/cmetrics.h>
 
 #include "flb_tests_internal.h"
 
@@ -474,6 +475,10 @@ static void test_chunk_restore_alias_plugin_match_multiple()
     }
     config_ready = FLB_TRUE;
 
+#ifdef FLB_HAVE_METRICS
+    cmt_initialize();
+#endif
+
     ret = flb_input_instance_init(&in, &config);
     TEST_CHECK(ret == 0);
     if (ret != 0) {
@@ -704,6 +709,10 @@ static void test_chunk_restore_alias_plugin_null_matches_all()
         goto cleanup;
     }
     config_ready = FLB_TRUE;
+
+#ifdef FLB_HAVE_METRICS
+    cmt_initialize();
+#endif
 
     ret = flb_input_instance_init(&in, &config);
     TEST_CHECK(ret == 0);
