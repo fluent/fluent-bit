@@ -353,17 +353,10 @@ static int router_metrics_create(struct flb_router *router)
     return 0;
 }
 
-int flb_router_metrics_create(struct flb_config *config, struct flb_router *router)
-{
-    (void) config;
-
-    return router_metrics_create(router);
-}
-
 struct flb_router *flb_router_create(struct flb_config *config)
 {
+    int ret;
     struct flb_router *router;
-
     (void) config;
 
     router = flb_calloc(1, sizeof(struct flb_router));
@@ -378,7 +371,9 @@ struct flb_router *flb_router_create(struct flb_config *config)
         return NULL;
     }
 
-    if (router_metrics_create(router) != 0) {
+    ret = router_metrics_create(router);
+    if (ret != 0) {
+        flb_error("[router] failed to create metrics");
         flb_router_destroy(router);
         return NULL;
     }
