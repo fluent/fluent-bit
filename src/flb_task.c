@@ -734,7 +734,7 @@ struct flb_task *flb_task_create(uint64_t ref_id,
             if (task_ic->routes_mask) {
                 if (flb_routes_mask_get_bit(task_ic->routes_mask,
                                             o_ins->id,
-                                            o_ins->config) == 0) {
+                                            o_ins->config->router) == 0) {
                     continue;
                 }
             }
@@ -790,7 +790,7 @@ struct flb_task *flb_task_create(uint64_t ref_id,
 
         if (flb_routes_mask_get_bit(task_ic->routes_mask,
                                     o_ins->id,
-                                    o_ins->config) != 0) {
+                                    o_ins->config->router) != 0) {
             route = flb_calloc(1, sizeof(struct flb_task_route));
             if (!route) {
                 flb_errno();
