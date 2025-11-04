@@ -38,6 +38,7 @@
 #include <fluent-bit/flb_utils.h>
 #include <fluent-bit/flb_config.h>
 #include <fluent-bit/flb_engine.h>
+#include <fluent-bit/flb_event.h>
 #include <fluent-bit/flb_engine_dispatch.h>
 #include <fluent-bit/flb_network.h>
 #include <fluent-bit/flb_task.h>
@@ -243,7 +244,8 @@ static inline int handle_output_event(uint64_t ts,
     uint32_t type;
     uint32_t key;
     double latency_seconds;
-    char *name;
+    char *in_name;
+    char *out_name;
     struct flb_task *task;
     struct flb_task_retry *retry;
     struct flb_output_instance *ins;
@@ -289,7 +291,8 @@ static inline int handle_output_event(uint64_t ts,
     if (flb_output_is_threaded(ins) == FLB_FALSE) {
         flb_output_flush_finished(config, out_id);
     }
-    name = (char *) flb_output_name(ins);
+    in_name = (char *) flb_input_name(task->i_ins);
+    out_name = (char *) flb_output_name(ins);
 
     /* If we are in synchronous mode, flush the next waiting task */
     if (ins->flags & FLB_OUTPUT_SYNCHRONOUS) {
@@ -302,16 +305,26 @@ static inline int handle_output_event(uint64_t ts,
     if (ret == FLB_OK) {
         /* cmetrics */
         cmt_counter_add(ins->cmt_proc_records, ts, task->event_chunk->total_events,
-                        1, (char *[]) {name});
+                        1, (char *[]) {out_name});
 
         cmt_counter_add(ins->cmt_proc_bytes, ts, task->event_chunk->size,
-                        1, (char *[]) {name});
+                        1, (char *[]) {out_name});
+
+        if (config->router && task->event_chunk->type == FLB_EVENT_TYPE_LOGS) {
+            cmt_counter_add(config->router->logs_records_total, ts,
+                            task->event_chunk->total_events,
+                            2, (char *[]) {in_name, out_name});
+
+            cmt_counter_add(config->router->logs_bytes_total, ts,
+                            task->event_chunk->size,
+                            2, (char *[]) {in_name, out_name});
+        }
 
         /* latency histogram */
         if (ins->cmt_latency) {
             latency_seconds = flb_time_now() - ((struct flb_input_chunk *) task->ic)->create_time;
             cmt_histogram_observe(ins->cmt_latency, ts, latency_seconds, 2,
-                                  (char *[]) {(char *) flb_input_name(task->i_ins), name});
+                                  (char *[]) {in_name, out_name});
         }
 
         /* [OLD API] Update metrics */
@@ -346,7 +359,7 @@ static inline int handle_output_event(uint64_t ts,
 
         cmt_gauge_set(ins->cmt_chunk_available_capacity_percent, ts,
                       calculate_chunk_capacity_percent(ins),
-                      1, (char *[]) {name});
+                      1, (char *[]) {out_name});
 
         flb_task_retry_clean(task, ins);
         flb_task_users_dec(task, FLB_TRUE);
@@ -355,11 +368,22 @@ static inline int handle_output_event(uint64_t ts,
         if (ins->retry_limit == FLB_OUT_RETRY_NONE) {
             /* cmetrics: output_dropped_records_total */
             cmt_counter_add(ins->cmt_dropped_records, ts, task->records,
-                            1, (char *[]) {name});
+                            1, (char *[]) {out_name});
+
+            if (config->router && task->event_chunk &&
+                task->event_chunk->type == FLB_EVENT_TYPE_LOGS) {
+                cmt_counter_add(config->router->logs_drop_records_total, ts,
+                                task->records,
+                                2, (char *[]) {in_name, out_name});
+
+                cmt_counter_add(config->router->logs_drop_bytes_total, ts,
+                                task->event_chunk->size,
+                                2, (char *[]) {in_name, out_name});
+            }
 
             cmt_gauge_set(ins->cmt_chunk_available_capacity_percent, ts,
                           calculate_chunk_capacity_percent(ins),
-                          1, (char *[]) {name});
+                          1, (char *[]) {out_name});
 
             /* OLD metrics API */
 #ifdef FLB_HAVE_METRICS
@@ -389,13 +413,24 @@ static inline int handle_output_event(uint64_t ts,
              */
 
             /* cmetrics */
-            cmt_counter_inc(ins->cmt_retries_failed, ts, 1, (char *[]) {name});
+            cmt_counter_inc(ins->cmt_retries_failed, ts, 1, (char *[]) {out_name});
             cmt_counter_add(ins->cmt_dropped_records, ts, task->records,
-                            1, (char *[]) {name});
+                            1, (char *[]) {out_name});
+
+            if (config->router && task->event_chunk &&
+                task->event_chunk->type == FLB_EVENT_TYPE_LOGS) {
+                cmt_counter_add(config->router->logs_drop_records_total, ts,
+                                task->records,
+                                2, (char *[]) {in_name, out_name});
+
+                cmt_counter_add(config->router->logs_drop_bytes_total, ts,
+                                task->event_chunk->size,
+                                2, (char *[]) {in_name, out_name});
+            }
 
             cmt_gauge_set(ins->cmt_chunk_available_capacity_percent, ts,
                           calculate_chunk_capacity_percent(ins),
-                          1, (char *[]) {name});
+                          1, (char *[]) {out_name});
 
             /* OLD metrics API */
 #ifdef FLB_HAVE_METRICS
@@ -449,13 +484,13 @@ static inline int handle_output_event(uint64_t ts,
                      flb_output_name(ins), out_id);
 
             /* cmetrics */
-            cmt_counter_inc(ins->cmt_retries, ts, 1, (char *[]) {name});
+            cmt_counter_inc(ins->cmt_retries, ts, 1, (char *[]) {out_name});
             cmt_counter_add(ins->cmt_retried_records, ts, task->records,
-                            1, (char *[]) {name});
+                            1, (char *[]) {out_name});
 
             cmt_gauge_set(ins->cmt_chunk_available_capacity_percent, ts,
                           calculate_chunk_capacity_percent(ins),
-                          1, (char *[]) {name});
+                          1, (char *[]) {out_name});
 
             /* OLD metrics API: update the metrics since a new retry is coming */
 #ifdef FLB_HAVE_METRICS
@@ -466,13 +501,24 @@ static inline int handle_output_event(uint64_t ts,
     }
     else if (ret == FLB_ERROR) {
         /* cmetrics */
-        cmt_counter_inc(ins->cmt_errors, ts, 1, (char *[]) {name});
+        cmt_counter_inc(ins->cmt_errors, ts, 1, (char *[]) {out_name});
         cmt_counter_add(ins->cmt_dropped_records, ts, task->records,
-                        1, (char *[]) {name});
+                        1, (char *[]) {out_name});
+
+        if (config->router && task->event_chunk &&
+            task->event_chunk->type == FLB_EVENT_TYPE_LOGS) {
+            cmt_counter_add(config->router->logs_drop_records_total, ts,
+                            task->records,
+                            2, (char *[]) {in_name, out_name});
+
+            cmt_counter_add(config->router->logs_drop_bytes_total, ts,
+                            task->event_chunk->size,
+                            2, (char *[]) {in_name, out_name});
+        }
 
         cmt_gauge_set(ins->cmt_chunk_available_capacity_percent, ts,
                       calculate_chunk_capacity_percent(ins),
-                      1, (char *[]) {name});
+                      1, (char *[]) {out_name});
 
         /* OLD API */
 #ifdef FLB_HAVE_METRICS
@@ -811,14 +857,7 @@ int flb_engine_start(struct flb_config *config)
     config->notification_channels_initialized = FLB_TRUE;
     config->notification_event.type = FLB_ENGINE_EV_NOTIFICATION;
 
-    ret = flb_routes_mask_set_size(mk_list_size(&config->outputs), config);
-
-    if (ret != 0) {
-        flb_error("[engine] routing mask dimensioning failed");
-        return -1;
-    }
-
-    ret = flb_routes_mask_set_size(mk_list_size(&config->outputs), config);
+    ret = flb_routes_mask_set_size(mk_list_size(&config->outputs), config->router);
 
     if (ret != 0) {
         flb_error("[engine] routing mask dimensioning failed");
