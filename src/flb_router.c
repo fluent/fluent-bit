@@ -25,6 +25,7 @@
 #include <fluent-bit/flb_output.h>
 #include <fluent-bit/flb_config.h>
 #include <fluent-bit/flb_router.h>
+#include <fluent-bit/flb_routes_mask.h>
 
 #ifdef FLB_HAVE_REGEX
 #include <onigmo.h>
@@ -297,4 +298,105 @@ void flb_router_exit(struct flb_config *config)
             flb_free(r);
         }
     }
+}
+
+static int router_metrics_create(struct flb_router *router)
+{
+    if (!router || !router->cmt) {
+        return -1;
+    }
+
+    router->logs_records_total = cmt_counter_create(router->cmt,
+                                                    "fluentbit",
+                                                    "routing_logs",
+                                                    "records_total",
+                                                    "Total log records routed from input to output",
+                                                    2,
+                                                    (char *[]) {"input", "output"});
+    if (!router->logs_records_total) {
+        return -1;
+    }
+
+    router->logs_bytes_total = cmt_counter_create(router->cmt,
+                                                  "fluentbit",
+                                                  "routing_logs",
+                                                  "bytes_total",
+                                                  "Total bytes routed from input to output (logs)",
+                                                  2,
+                                                  (char *[]) {"input", "output"});
+    if (!router->logs_bytes_total) {
+        return -1;
+    }
+
+    router->logs_drop_records_total = cmt_counter_create(router->cmt,
+                                                         "fluentbit",
+                                                         "routing_logs",
+                                                         "drop_records_total",
+                                                         "Total log records dropped during routing",
+                                                         2,
+                                                         (char *[]) {"input", "output"});
+    if (!router->logs_drop_records_total) {
+        return -1;
+    }
+
+    router->logs_drop_bytes_total = cmt_counter_create(router->cmt,
+                                                       "fluentbit",
+                                                       "routing_logs",
+                                                       "drop_bytes_total",
+                                                       "Total bytes dropped during routing (logs)",
+                                                       2,
+                                                       (char *[]) {"input", "output"});
+    if (!router->logs_drop_bytes_total) {
+        return -1;
+    }
+
+    return 0;
+}
+
+int flb_router_metrics_create(struct flb_config *config, struct flb_router *router)
+{
+    (void) config;
+
+    return router_metrics_create(router);
+}
+
+struct flb_router *flb_router_create(struct flb_config *config)
+{
+    struct flb_router *router;
+
+    (void) config;
+
+    router = flb_calloc(1, sizeof(struct flb_router));
+    if (!router) {
+        flb_errno();
+        return NULL;
+    }
+
+    router->cmt = cmt_create();
+    if (!router->cmt) {
+        flb_free(router);
+        return NULL;
+    }
+
+    if (router_metrics_create(router) != 0) {
+        flb_router_destroy(router);
+        return NULL;
+    }
+
+    return router;
+}
+
+void flb_router_destroy(struct flb_router *router)
+{
+    if (!router) {
+        return;
+    }
+
+    flb_routes_empty_mask_destroy(router);
+
+    if (router->cmt) {
+        cmt_destroy(router->cmt);
+    }
+
+    flb_free(router);
 }
