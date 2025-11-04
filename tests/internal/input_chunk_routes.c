@@ -171,6 +171,94 @@ static void cleanup_test_output(struct flb_output_instance *out)
     }
 }
 
+static void cleanup_test_routing_scenario(struct flb_input_chunk *ic,
+                                          struct flb_output_instance *stdout_one,
+                                          struct flb_output_instance *stdout_two,
+                                          struct flb_output_instance *http_out,
+                                          struct flb_input_instance *in,
+                                          struct flb_config *config,
+                                          struct cio_chunk *chunk,
+                                          struct cio_ctx *ctx,
+                                          int config_ready,
+                                          const char *stream_path)
+{
+    if (ic) {
+        flb_input_chunk_destroy(ic, FLB_TRUE);
+    }
+
+    cleanup_test_output(stdout_one);
+    cleanup_test_output(stdout_two);
+    cleanup_test_output(http_out);
+
+    if (config_ready == FLB_TRUE) {
+        flb_input_instance_exit(in, config);
+
+        /* Manual cleanup for stack-allocated instance */
+        /* Remove from list first (before destroying hash tables) */
+        mk_list_del(&in->_head);
+
+        /* Destroy hash tables */
+        if (in->ht_log_chunks) {
+            flb_hash_table_destroy(in->ht_log_chunks);
+            in->ht_log_chunks = NULL;
+        }
+        if (in->ht_metric_chunks) {
+            flb_hash_table_destroy(in->ht_metric_chunks);
+            in->ht_metric_chunks = NULL;
+        }
+        if (in->ht_trace_chunks) {
+            flb_hash_table_destroy(in->ht_trace_chunks);
+            in->ht_trace_chunks = NULL;
+        }
+        if (in->ht_profile_chunks) {
+            flb_hash_table_destroy(in->ht_profile_chunks);
+            in->ht_profile_chunks = NULL;
+        }
+
+        /* Release properties */
+        flb_kv_release(&in->properties);
+        flb_kv_release(&in->net_properties);
+
+        /* Destroy metrics (created by flb_input_instance_init) */
+#ifdef FLB_HAVE_METRICS
+        if (in->cmt) {
+            cmt_destroy(in->cmt);
+            in->cmt = NULL;
+        }
+        if (in->metrics) {
+            flb_metrics_destroy(in->metrics);
+            in->metrics = NULL;
+        }
+#endif
+
+        /* Destroy config map if created */
+        if (in->tls_config_map) {
+            flb_config_map_destroy(in->tls_config_map);
+            in->tls_config_map = NULL;
+        }
+        if (in->net_config_map) {
+            flb_config_map_destroy(in->net_config_map);
+            in->net_config_map = NULL;
+        }
+
+        flb_routes_empty_mask_destroy(config);
+        if (config->env) {
+            flb_env_destroy(config->env);
+            config->env = NULL;
+        }
+    }
+
+    if (chunk) {
+        cio_chunk_close(chunk, CIO_TRUE);
+    }
+
+    if (ctx) {
+        cio_destroy(ctx);
+    }
+
+    cio_utils_recursive_delete(stream_path);
+}
+
 static int write_legacy_chunk_metadata(struct cio_chunk *chunk,
                                        int event_type,
                                        const char *tag,
@@ -522,83 +610,9 @@ static void test_chunk_restore_alias_plugin_match_multiple()
                                        &config) == 0);
 
 cleanup:
-    if (ic) {
-        flb_input_chunk_destroy(ic, FLB_TRUE);
-        ic = NULL;
-    }
-
-    cleanup_test_output(&stdout_one);
-    cleanup_test_output(&stdout_two);
-    cleanup_test_output(&http_out);
-
-    if (config_ready == FLB_TRUE) {
-        flb_input_instance_exit(&in, &config);
-
-        /* Manual cleanup for stack-allocated instance */
-        /* Remove from list first (before destroying hash tables) */
-        mk_list_del(&in._head);
-
-        /* Destroy hash tables */
-        if (in.ht_log_chunks) {
-            flb_hash_table_destroy(in.ht_log_chunks);
-            in.ht_log_chunks = NULL;
-        }
-        if (in.ht_metric_chunks) {
-            flb_hash_table_destroy(in.ht_metric_chunks);
-            in.ht_metric_chunks = NULL;
-        }
-        if (in.ht_trace_chunks) {
-            flb_hash_table_destroy(in.ht_trace_chunks);
-            in.ht_trace_chunks = NULL;
-        }
-        if (in.ht_profile_chunks) {
-            flb_hash_table_destroy(in.ht_profile_chunks);
-            in.ht_profile_chunks = NULL;
-        }
-
-        /* Release properties */
-        flb_kv_release(&in.properties);
-        flb_kv_release(&in.net_properties);
-
-        /* Destroy metrics (created by flb_input_instance_init) */
-#ifdef FLB_HAVE_METRICS
-        if (in.cmt) {
-            cmt_destroy(in.cmt);
-            in.cmt = NULL;
-        }
-        if (in.metrics) {
-            flb_metrics_destroy(in.metrics);
-            in.metrics = NULL;
-        }
-#endif
-
-        /* Destroy config map if created */
-        if (in.tls_config_map) {
-            flb_config_map_destroy(in.tls_config_map);
-            in.tls_config_map = NULL;
-        }
-        if (in.net_config_map) {
-            flb_config_map_destroy(in.net_config_map);
-            in.net_config_map = NULL;
-        }
-
-        flb_routes_empty_mask_destroy(&config);
-        if (config.env) {
-            flb_env_destroy(config.env);
-            config.env = NULL;
-        }
-    }
-
-    if (chunk) {
-        cio_chunk_close(chunk, CIO_TRUE);
-        chunk = NULL;
-    }
-
-    if (ctx) {
-        cio_destroy(ctx);
-    }
-
-    cio_utils_recursive_delete(TEST_STREAM_PATH_MATCH);
+    cleanup_test_routing_scenario(ic, &stdout_one, &stdout_two, &http_out,
+                                  &in, &config, chunk, ctx, config_ready,
+                                  TEST_STREAM_PATH_MATCH);
 }
 
 static void test_chunk_restore_alias_plugin_null_matches_all()
@@ -757,83 +771,9 @@ static void test_chunk_restore_alias_plugin_null_matches_all()
                                        &config) == 1);
 
 cleanup:
-    if (ic) {
-        flb_input_chunk_destroy(ic, FLB_TRUE);
-        ic = NULL;
-    }
-
-    cleanup_test_output(&stdout_one);
-    cleanup_test_output(&stdout_two);
-    cleanup_test_output(&http_out);
-
-    if (config_ready == FLB_TRUE) {
-        flb_input_instance_exit(&in, &config);
-
-        /* Manual cleanup for stack-allocated instance */
-        /* Remove from list first (before destroying hash tables) */
-        mk_list_del(&in._head);
-
-        /* Destroy hash tables */
-        if (in.ht_log_chunks) {
-            flb_hash_table_destroy(in.ht_log_chunks);
-            in.ht_log_chunks = NULL;
-        }
-        if (in.ht_metric_chunks) {
-            flb_hash_table_destroy(in.ht_metric_chunks);
-            in.ht_metric_chunks = NULL;
-        }
-        if (in.ht_trace_chunks) {
-            flb_hash_table_destroy(in.ht_trace_chunks);
-            in.ht_trace_chunks = NULL;
-        }
-        if (in.ht_profile_chunks) {
-            flb_hash_table_destroy(in.ht_profile_chunks);
-            in.ht_profile_chunks = NULL;
-        }
-
-        /* Release properties */
-        flb_kv_release(&in.properties);
-        flb_kv_release(&in.net_properties);
-
-        /* Destroy metrics (created by flb_input_instance_init) */
-#ifdef FLB_HAVE_METRICS
-        if (in.cmt) {
-            cmt_destroy(in.cmt);
-            in.cmt = NULL;
-        }
-        if (in.metrics) {
-            flb_metrics_destroy(in.metrics);
-            in.metrics = NULL;
-        }
-#endif
-
-        /* Destroy config map if created */
-        if (in.tls_config_map) {
-            flb_config_map_destroy(in.tls_config_map);
-            in.tls_config_map = NULL;
-        }
-        if (in.net_config_map) {
-            flb_config_map_destroy(in.net_config_map);
-            in.net_config_map = NULL;
-        }
-
-        flb_routes_empty_mask_destroy(&config);
-        if (config.env) {
-            flb_env_destroy(config.env);
-            config.env = NULL;
-        }
-    }
-
-    if (chunk) {
-        cio_chunk_close(chunk, CIO_TRUE);
-        chunk = NULL;
-    }
-
-    if (ctx) {
-        cio_destroy(ctx);
-    }
-
-    cio_utils_recursive_delete(TEST_STREAM_PATH_NULL);
+    cleanup_test_routing_scenario(ic, &stdout_one, &stdout_two, &http_out,
+                                  &in, &config, chunk, ctx, config_ready,
+                                  TEST_STREAM_PATH_NULL);
 }
 
 TEST_LIST = {
