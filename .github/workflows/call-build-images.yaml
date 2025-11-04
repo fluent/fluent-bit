@@ -395,6 +395,8 @@ jobs:
     permissions:
       contents: read
       packages: write
+    env:
+      IMAGE: ${{ inputs.registry }}/${{ inputs.image }}:windows-${{ matrix.windows-base-version }}-${{ inputs.version }}
     steps:
       - name: Checkout repository
         uses: actions/checkout@v5
@@ -423,12 +425,19 @@ jobs:
 
       - name: Build the production images
         run: |
-          docker build -t ${{ inputs.registry }}/${{ inputs.image }}:windows-${{ matrix.windows-base-version }}-${{ inputs.version }} --build-arg FLB_NIGHTLY_BUILD=${{ inputs.unstable }} --build-arg WINDOWS_VERSION=ltsc${{ matrix.windows-base-version }} -f ./dockerfiles/Dockerfile.windows .
+          docker build -t $IMAGE --build-arg FLB_NIGHTLY_BUILD=${{ inputs.unstable }} --build-arg WINDOWS_VERSION=ltsc${{ matrix.windows-base-version }} -f ./dockerfiles/Dockerfile.windows .
+        shell: bash
+
+      - name: Sanity check of the production images
+        run: |
+          docker run --rm -t $IMAGE --help
+        shell: bash
 
       - name: Push the production images
         if: inputs.push
         run: |
-          docker push ${{ inputs.registry }}/${{ inputs.image }}:windows-${{ matrix.windows-base-version }}-${{ inputs.version }}
+          docker push $IMAGE
+        shell: bash
 
         # We cannot use this action as it requires privileged mode
         # uses: docker/build-push-action@v6
