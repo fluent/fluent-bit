@@ -1228,7 +1228,7 @@ int flb_engine_shutdown(struct flb_config *config)
 
     /* scheduler */
     sched_params = (struct flb_sched_timer_coro_cb_params *) FLB_TLS_GET(sched_timer_coro_cb_params);
-    if (sched_params != NULL) {
+    if (sched_params && sched_params->magic == FLB_SCHED_TLS_MAGIC) {
         flb_free(sched_params);
         FLB_TLS_SET(sched_timer_coro_cb_params, NULL);
     }
