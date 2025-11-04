@@ -1,3 +1,7 @@
+/* -*- Mode: C; tab-width: 4; indent-tabs-mode: nil; c-basic-offset: 4 -*- */
+
+#include "flb_tests_internal.h"
+
 #include <fluent-bit/flb_config.h>
 #include <fluent-bit/flb_input.h>
 #include <fluent-bit/flb_input_chunk.h>
@@ -5,6 +9,14 @@
 #include <fluent-bit/flb_log.h>
 #include <fluent-bit/flb_mem.h>
 #include <fluent-bit/flb_output.h>
+
+/* Dummy workaround: undefine input plugin macros to avoid redefinition warnings */
+#undef flb_plg_error
+#undef flb_plg_warn
+#undef flb_plg_info
+#undef flb_plg_debug
+#undef flb_plg_trace
+
 #include <fluent-bit/flb_output_plugin.h>
 #include <fluent-bit/flb_routes_mask.h>
 #include <fluent-bit/flb_router.h>
@@ -17,7 +29,6 @@
 #include <string.h>
 #include <cmetrics/cmetrics.h>
 
-#include "flb_tests_internal.h"
 
 #define TEST_STREAM_PATH "/tmp/flb-chunk-direct-test"
 #define TEST_STREAM_PATH_MATCH "/tmp/flb-chunk-direct-test-match"
