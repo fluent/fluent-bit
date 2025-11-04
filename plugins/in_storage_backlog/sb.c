@@ -281,12 +281,14 @@ static int sb_append_chunk_to_segregated_backlogs(struct cio_chunk  *target_chun
     int                     tag_len;
     const char *            tag_buf;
     int                     result;
+    size_t                  slots;
 
     memset(&dummy_input_chunk, 0, sizeof(struct flb_input_chunk));
 
+    slots = flb_routes_mask_get_slots(context->ins->config->router);
     memset(context->dummy_routes_mask,
            0,
-           context->ins->config->route_mask_slots * sizeof(flb_route_mask_element));
+           slots * sizeof(flb_route_mask_element));
 
     dummy_input_chunk.in    = context->ins;
     dummy_input_chunk.chunk = target_chunk;
@@ -317,7 +319,7 @@ static int sb_append_chunk_to_segregated_backlogs(struct cio_chunk  *target_chun
         backlog = mk_list_entry(head, struct sb_out_queue, _head);
         if (flb_routes_mask_get_bit(dummy_input_chunk.routes_mask,
                                     backlog->ins->id,
-                                    backlog->ins->config)) {
+                                    backlog->ins->config->router)) {
             result = sb_append_chunk_to_segregated_backlog(target_chunk, stream,
                                                            chunk_size, backlog);
             if (result) {
@@ -656,6 +658,7 @@ static int cb_sb_init(struct flb_input_instance *in,
     int ret;
     char mem[32];
     struct flb_sb *ctx;
+    size_t slots;
 
     ctx = flb_calloc(1, sizeof(struct flb_sb));
 
@@ -664,7 +667,8 @@ static int cb_sb_init(struct flb_input_instance *in,
         return -1;
     }
 
-    ctx->dummy_routes_mask = flb_calloc(in->config->route_mask_slots,
+    slots = flb_routes_mask_get_slots(config->router);
+    ctx->dummy_routes_mask = flb_calloc(slots,
                                         sizeof(flb_route_mask_element));
 
     if (ctx->dummy_routes_mask == NULL) {
