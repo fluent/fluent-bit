@@ -516,7 +516,14 @@ static int mkpath(struct flb_output_instance *ins, const char *dir)
 /* Function to check if file size exceeds max size in MB */
 static int should_rotate_file(struct flb_logrotate_conf *ctx)
 {
-    return ctx->current_file_size >= ctx->max_size;
+    if (ctx->current_file_size >= ctx->max_size) {
+        flb_plg_info(ctx->ins, "going to rotate file: current size=%zu max size=%zu", ctx->current_file_size, ctx->max_size);
+        return 1;
+    }
+    else {
+        flb_plg_debug(ctx->ins, "file should not be rotated: current size=%zu max size=%zu", ctx->current_file_size, ctx->max_size);
+        return 0;
+    }
 }
 
 /* Function to update file size counter using current file position */
@@ -725,7 +732,7 @@ static int rotate_file(struct flb_logrotate_conf *ctx, const char *filename)
     /* If gzip is enabled, compress the rotated file */
     if (ctx->gzip == FLB_TRUE) {
         snprintf(gzip_filename, PATH_MAX - 1, "%s.gz", rotated_filename);
-        
+        flb_plg_debug(ctx->ins, "compressing file: %s to %s", rotated_filename, gzip_filename);
         ret = gzip_compress_file(rotated_filename, gzip_filename, ctx->ins);
         if (ret == 0) {
             /* Remove the uncompressed file */
@@ -737,7 +744,7 @@ static int rotate_file(struct flb_logrotate_conf *ctx, const char *filename)
             return -1;
         }
     } else {
-        flb_plg_debug(ctx->ins, "rotated file: %s", rotated_filename);
+        flb_plg_debug(ctx->ins, "rotated file: %s (no compression)", rotated_filename);
     }
 
     return 0;
@@ -753,7 +760,7 @@ static int cleanup_old_files(struct flb_logrotate_conf *ctx, const char *directo
     char **files = NULL;
     int file_count = 0;
     int max_files = ctx->max_files;
-    int i;
+    int i, j;
 
     /* Create pattern to match rotated files */
     snprintf(pattern, PATH_MAX - 1, "%s.", base_filename);
@@ -797,7 +804,7 @@ static int cleanup_old_files(struct flb_logrotate_conf *ctx, const char *directo
 
     /* Sort files by modification time (oldest first) */
     for (i = 0; i < file_count - 1; i++) {
-        for (int j = i + 1; j < file_count; j++) {
+        for (j = i + 1; j < file_count; j++) {
             struct stat st1, st2;
             if (stat(files[i], &st1) == 0 && stat(files[j], &st2) == 0) {
                 if (st1.st_mtime > st2.st_mtime) {
