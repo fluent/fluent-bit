@@ -315,7 +315,7 @@ void test_conditional_routing_per_record()
 
     /* Cleanup */
     flb_router_exit(&config);
-    cleanup_conditional_routing_instances(&input, &output1, &output2, &output3,
+    cleanup_conditional_routing_instances(&config, &input, &output1, &output2, &output3,
                                           &input_routes, &route1, &route2, &route3,
                                           &route_output1, &route_output2, &route_output3);
 }
@@ -374,7 +374,7 @@ void test_conditional_routing_default_route()
 
     /* Cleanup */
     flb_router_exit(&config);
-    cleanup_conditional_routing_instances(&input, &output1, &output2, &output3,
+    cleanup_conditional_routing_instances(&config, &input, &output1, &output2, &output3,
                                           &input_routes, &route1, &route2, &route3,
                                           &route_output1, &route_output2, &route_output3);
 }
@@ -414,17 +414,17 @@ void test_conditional_routing_route_mask()
 
         if (strcmp(record->level, "info") == 0) {
             /* Create a test chunk */
-            chunk = flb_input_chunk_create(&input, "test_tag", 8, NULL, 0);
+            chunk = flb_input_chunk_create(&input, FLB_INPUT_LOGS, "test_tag", 8);
             TEST_CHECK(chunk != NULL);
             if (chunk) {
                 /* Set route mask for info output only */
                 routes_mask = chunk->routes_mask;
-                flb_routes_mask_set_bit(routes_mask, output1.id, &config);
+                flb_routes_mask_set_bit(routes_mask, output1.id, config.router);
 
                 /* Verify route mask is set correctly */
-                TEST_CHECK(flb_routes_mask_get_bit(routes_mask, output1.id, &config) == 1);
-                TEST_CHECK(flb_routes_mask_get_bit(routes_mask, output2.id, &config) == 0);
-                TEST_CHECK(flb_routes_mask_get_bit(routes_mask, output3.id, &config) == 0);
+                TEST_CHECK(flb_routes_mask_get_bit(routes_mask, output1.id, config.router) == 1);
+                TEST_CHECK(flb_routes_mask_get_bit(routes_mask, output2.id, config.router) == 0);
+                TEST_CHECK(flb_routes_mask_get_bit(routes_mask, output3.id, config.router) == 0);
 
                 flb_input_chunk_destroy(chunk);
             }
@@ -433,7 +433,7 @@ void test_conditional_routing_route_mask()
 
     /* Cleanup */
     flb_router_exit(&config);
-    cleanup_conditional_routing_instances(&input, &output1, &output2, &output3,
+    cleanup_conditional_routing_instances(&config, &input, &output1, &output2, &output3,
                                           &input_routes, &route1, &route2, &route3,
                                           &route_output1, &route_output2, &route_output3);
 }
@@ -503,7 +503,7 @@ void test_conditional_routing_no_duplicates()
 
     /* Cleanup */
     flb_router_exit(&config);
-    cleanup_conditional_routing_instances(&input, &output1, &output2, &output3,
+    cleanup_conditional_routing_instances(&config, &input, &output1, &output2, &output3,
                                           &input_routes, &route1, &route2, &route3,
                                           &route_output1, &route_output2, &route_output3);
 }
@@ -814,6 +814,12 @@ static void setup_conditional_routing_instances(struct flb_config *config,
     mk_list_init(&config->outputs);
     cfl_list_init(&config->input_routes);
 
+    config->router = flb_router_create(config);
+    TEST_CHECK(config->router != NULL);
+    if (config->router) {
+        flb_routes_mask_set_size(1, config->router);
+    }
+
     memset(input, 0, sizeof(struct flb_input_instance));
     mk_list_init(&input->_head);
     cfl_list_init(&input->routes_direct);
@@ -947,7 +953,8 @@ static int test_record_routing(struct flb_input_instance *input,
     return found;
 }
 
-static void cleanup_conditional_routing_instances(struct flb_input_instance *input,
+static void cleanup_conditional_routing_instances(struct flb_config *config,
+                                                 struct flb_input_instance *input,
                                                  struct flb_output_instance *output1,
                                                  struct flb_output_instance *output2,
                                                  struct flb_output_instance *output3,
@@ -970,6 +977,11 @@ static void cleanup_conditional_routing_instances(struct flb_input_instance *inp
     flb_sds_destroy(route_output1->name);
     flb_sds_destroy(route_output2->name);
     flb_sds_destroy(route_output3->name);
+
+    if (config && config->router) {
+        flb_router_destroy(config->router);
+        config->router = NULL;
+    }
 }
 
 TEST_LIST = {
