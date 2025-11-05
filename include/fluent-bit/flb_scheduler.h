@@ -199,7 +199,7 @@ struct flb_sched_timer_coro_cb_params {
     struct flb_sched_timer_coro *stc;
     struct flb_config *config;
     void *data;
-    int   magic;
+    uint32_t magic;
     struct flb_coro *coro;
 };
 
