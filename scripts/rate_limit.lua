@@ -62,7 +62,22 @@ end
 function rate_limit_by_size(tag, timestamp, record)
     local t = os.time()
     local current_time = get_current_time(t)
-    local counter_key = record["kubernetes"][group_key]
+
+    local kubernetes = record["kubernetes"]
+    if kubernetes == nil then
+        return 0, 0, 0
+    end
+
+    local counter_key = kubernetes[group_key]
+    if counter_key == nil then
+        return 0, 0, 0
+    end
+
+    local payload = record[rate_limit_field]
+    if type(payload) ~= "string" then
+        return 0, 0, 0
+    end
+    local payload_size = #payload
 
     if current_time ~= time then
         time = current_time
@@ -73,9 +88,9 @@ function rate_limit_by_size(tag, timestamp, record)
         return -1, 0, 0 -- Log group already rate limited. Hence drop it.
     else
         if counter[counter_key] == nil then
-            counter[counter_key] = #record[rate_limit_field]
+            counter[counter_key] = payload_size
         else
-            counter[counter_key] = counter[counter_key] + #record[rate_limit_field]
+            counter[counter_key] = counter[counter_key] + payload_size
         end
         if counter[counter_key] > group_bucket_limit_bytes then
             counter[counter_key] = -1 -- value of -1 indicates that this group has been rate limited
