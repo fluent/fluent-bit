@@ -307,11 +307,33 @@ struct flb_config *flb_config_init()
     config->router = flb_router_create(config);
     if (!config->router) {
         flb_error("[config] could not create router");
+        if (config->kernel) {
+            flb_kernel_destroy(config->kernel);
+        }
+#ifdef FLB_HAVE_HTTP_SERVER
+        if (config->http_listen) {
+            flb_free(config->http_listen);
+        }
+
+        if (config->http_port) {
+            flb_free(config->http_port);
+        }
+#endif
         flb_cf_destroy(cf);
         flb_free(config);
         return NULL;
     }
-    flb_routes_mask_set_size(1, config->router);
+    ret = flb_routes_mask_set_size(1, config->router);
+    if (ret != 0) {
+        flb_error("[config] routing mask dimensioning failed");
+        flb_router_destroy(config->router);
+        if (config->kernel) {
+            flb_kernel_destroy(config->kernel);
+        }
+        flb_cf_destroy(cf);
+        flb_free(config);
+        return NULL;
+    }
 
     config->cio          = NULL;
     config->storage_path = NULL;
