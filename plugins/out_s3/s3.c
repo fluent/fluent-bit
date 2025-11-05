@@ -205,9 +205,6 @@ int create_headers(struct flb_s3 *ctx, char *body_md5,
     if (ctx->storage_class != NULL) {
         headers_len++;
     }
-    if (ctx->object_tagging != NULL) {
-        headers_len++;
-    }
     if (ctx->object_tags_encoded != NULL) {
         headers_len++;
     }
@@ -250,12 +247,6 @@ int create_headers(struct flb_s3 *ctx, char *body_md5,
         s3_headers[n] = content_md5_header;
         s3_headers[n].val = body_md5;
         s3_headers[n].val_len = strlen(body_md5);
-        n++;
-    }
-    if (ctx->object_tagging != NULL) {
-        s3_headers[n] = object_tagging;
-        s3_headers[n].val = ctx->object_tagging;
-        s3_headers[n].val_len = strlen(ctx->object_tagging);
         n++;
     }
     if (ctx->object_tags_encoded != NULL) {
@@ -937,11 +928,6 @@ static int cb_s3_init(struct flb_output_instance *ins,
         ctx->storage_class = (char *) tmp;
     }
 
-    tmp = flb_output_get_property("object_tagging", ins);
-    if (tmp) {
-        ctx->object_tagging = (char *) tmp;
-    }
-
     ctx->object_tags_encoded = NULL;
     if ((ctx->object_tags != NULL) && (0 < mk_list_size(ctx->object_tags))) {
         flb_sds_t tags_sds = construct_object_tagging(ctx->ins, ctx->object_tags);
@@ -1171,6 +1157,7 @@ static int cb_s3_init(struct flb_output_instance *ins,
 
     return 0;
 }
+
 
 /* worker initialization, used for our internal timers */
 static int cb_s3_worker_init(void *data, struct flb_config *config)
@@ -4301,12 +4288,6 @@ static struct flb_config_map config_map[] = {
      FLB_CONFIG_MAP_STR, "authorization_endpoint_bearer_token", NULL,
      0, FLB_TRUE, offsetof(struct flb_s3, authorization_endpoint_bearer_token),
      "Authorization endpoint bearer token"
-    },
-
-    {
-     FLB_CONFIG_MAP_STR, "object_tagging", NULL,
-     0, FLB_TRUE, offsetof(struct flb_s3, object_tagging),
-     "Specify a list of tags to apply to the S3 object, url-query encoded: `key1=value1&key2=value2`"
     },
 
     {

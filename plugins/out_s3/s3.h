@@ -115,7 +115,6 @@ struct flb_s3 {
     char *log_key;
     char *external_id;
     char *profile;
-    char *object_tagging;
     struct mk_list *object_tags;
     flb_sds_t object_tags_encoded;
     int free_endpoint;
