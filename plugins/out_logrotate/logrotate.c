@@ -353,13 +353,14 @@ static int template_output(FILE *fp, struct flb_time *tm, msgpack_object *obj,
     return 0;
 }
 
-static int plain_output(FILE *fp, msgpack_object *obj, size_t alloc_size)
+static int plain_output(FILE *fp, msgpack_object *obj, size_t alloc_size, int escape_unicode)
 {
     char *buf;
 
-    buf = flb_msgpack_to_json_str(alloc_size, obj);
+    buf = flb_msgpack_to_json_str(alloc_size, obj, escape_unicode);
     if (buf) {
-        fprintf(fp, "%s" NEWLINE, buf);
+        fprintf(fp, "%s" NEWLINE,
+                buf);
         flb_free(buf);
     }
     return 0;
@@ -750,6 +751,62 @@ static int rotate_file(struct flb_logrotate_conf *ctx, const char *filename)
     return 0;
 }
 
+/* Function to validate if a filename matches the rotation pattern format
+ * Valid formats:
+ *   - base_filename.YYYYMMDD_HHMMSS (15 chars after pattern)
+ *   - base_filename.YYYYMMDD_HHMMSS.gz (18 chars after pattern)
+ */
+static int is_valid_rotation_filename(const char *filename, const char *pattern)
+{
+    size_t pattern_len = strlen(pattern);
+    size_t filename_len = strlen(filename);
+    const char *suffix;
+    size_t suffix_len;
+    int i;
+
+    /* Check that filename starts with pattern */
+    if (strncmp(filename, pattern, pattern_len) != 0) {
+        return 0;
+    }
+
+    /* Get the suffix after the pattern */
+    suffix = filename + pattern_len;
+    suffix_len = filename_len - pattern_len;
+
+    /* Must be exactly 15 or 18 characters */
+    if (suffix_len != 15 && suffix_len != 18) {
+        return 0;
+    }
+
+    /* For 18 characters, must end with .gz */
+    if (suffix_len == 18) {
+        if (strcmp(suffix + 15, ".gz") != 0) {
+            return 0;
+        }
+    }
+
+    /* Validate timestamp format: YYYYMMDD_HHMMSS
+     * - 8 digits (YYYYMMDD)
+     * - underscore at position 8
+     * - 6 digits (HHMMSS)
+     */
+    for (i = 0; i < 8; i++) {
+        if (suffix[i] < '0' || suffix[i] > '9') {
+            return 0;
+        }
+    }
+    if (suffix[8] != '_') {
+        return 0;
+    }
+    for (i = 9; i < 15; i++) {
+        if (suffix[i] < '0' || suffix[i] > '9') {
+            return 0;
+        }
+    }
+
+    return 1;
+}
+
 /* Function to clean up old rotated files */
 static int cleanup_old_files(struct flb_logrotate_conf *ctx, const char *directory, const char *base_filename)
 {
@@ -772,7 +829,7 @@ static int cleanup_old_files(struct flb_logrotate_conf *ctx, const char *directo
 
     /* Count matching files */
     while ((entry = readdir(dir)) != NULL) {
-        if (strncmp(entry->d_name, pattern, strlen(pattern)) == 0) {
+        if (is_valid_rotation_filename(entry->d_name, pattern)) {
             file_count++;
         }
     }
@@ -793,7 +850,7 @@ static int cleanup_old_files(struct flb_logrotate_conf *ctx, const char *directo
     rewinddir(dir);
     i = 0;
     while ((entry = readdir(dir)) != NULL && i < file_count) {
-        if (strncmp(entry->d_name, pattern, strlen(pattern)) == 0) {
+        if (is_valid_rotation_filename(entry->d_name, pattern)) {
             snprintf(full_path, PATH_MAX - 1, "%s" FLB_PATH_SEPARATOR "%s", 
                     directory, entry->d_name);
             files[i] = flb_strdup(full_path);
@@ -853,6 +910,7 @@ static void cb_logrotate_flush(struct flb_event_chunk *event_chunk,
     char out_file[PATH_MAX];
     char *buf;
     long file_pos;
+    bool have_directory;
 
     char *out_file_copy;
     char directory[PATH_MAX];
@@ -885,6 +943,8 @@ static void cb_logrotate_flush(struct flb_event_chunk *event_chunk,
 
     /* Check if file needs rotation based on current size counter */
     if (should_rotate_file(ctx)) {
+        have_directory = false;
+        directory[0] = '\0';
         /* Extract directory and base filename for cleanup */
         out_file_copy = flb_strdup(out_file);
         if (out_file_copy) {
@@ -897,6 +957,7 @@ static void cb_logrotate_flush(struct flb_event_chunk *event_chunk,
             directory[PATH_MAX - 1] = '\0';
 #endif
             flb_free(out_file_copy);
+            have_directory = true;
         }
 
         /* Get base filename for cleanup */
@@ -913,7 +974,9 @@ static void cb_logrotate_flush(struct flb_event_chunk *event_chunk,
             /* Reset file size counter after rotation */
             ctx->current_file_size = 0;
             /* Clean up old rotated files */
-            cleanup_old_files(ctx, directory, base_filename);
+            if (have_directory) {
+                cleanup_old_files(ctx, directory, base_filename);
+            }
         }
     }
 
@@ -1008,7 +1071,8 @@ static void cb_logrotate_flush(struct flb_event_chunk *event_chunk,
 
         switch (ctx->format){
         case FLB_OUT_LOGROTATE_FMT_JSON:
-            buf = flb_msgpack_to_json_str(alloc_size, log_event.body);
+            buf = flb_msgpack_to_json_str(alloc_size, log_event.body,
+                                          config->json_escape_unicode);
             if (buf) {
                 fprintf(fp, "%s: [%"PRIu64".%09lu, %s]" NEWLINE,
                         event_chunk->tag,
