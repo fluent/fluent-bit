@@ -40,6 +40,10 @@
 #include <msgpack.h>
 
 #include "s3.h"
+#include "fluent-bit/flb_output.h"
+#include "fluent-bit/flb_sds.h"
+#include "fluent-bit/flb_uri.h"
+#include "mk_core/mk_list.h"
 #include "s3_store.h"
 
 #define DEFAULT_S3_PORT 443
@@ -204,6 +208,9 @@ int create_headers(struct flb_s3 *ctx, char *body_md5,
     if (ctx->object_tagging != NULL) {
         headers_len++;
     }
+    if (ctx->object_tags_encoded != NULL) {
+        headers_len++;
+    }
     if (headers_len == 0) {
         *num_headers = headers_len;
         *headers = s3_headers;
@@ -251,6 +258,13 @@ int create_headers(struct flb_s3 *ctx, char *body_md5,
         s3_headers[n].val_len = strlen(ctx->object_tagging);
         n++;
     }
+    if (ctx->object_tags_encoded != NULL) {
+        s3_headers[n] = object_tagging;
+        s3_headers[n].val = ctx->object_tags_encoded;
+        s3_headers[n].val_len = flb_sds_len(ctx->object_tags_encoded);
+        n++;
+    }
+
     if (ctx->storage_class != NULL) {
         s3_headers[n] = storage_class_header;
         s3_headers[n].val = ctx->storage_class;
@@ -599,7 +613,58 @@ static void s3_context_destroy(struct flb_s3 *ctx)
         remove_from_queue(upload_contents);
     }
 
+    if (ctx->object_tags_encoded) {
+        flb_sds_destroy(ctx->object_tags_encoded);
+        ctx->object_tags_encoded = NULL;
+    }
+
     flb_free(ctx);
+}
+
+static flb_sds_t construct_object_tagging(struct flb_output_instance *ctx, struct mk_list *object_tags) {
+    flb_sds_t url_sds = NULL;
+    struct mk_list *head;
+    struct flb_config_map_val *mv;
+
+    flb_sds_t key_sds = NULL;
+    flb_sds_t val_sds = NULL;
+
+    flb_config_map_foreach(head, mv, object_tags) {
+        struct flb_slist_entry *key;
+        key = mk_list_entry_first(mv->val.list, struct flb_slist_entry, _head);
+        key_sds = flb_uri_encode(key->str, flb_sds_len(key->str));
+        if (key_sds == NULL) {
+            goto error;
+        }
+
+        struct flb_slist_entry *val;
+        val = mk_list_entry_last(mv->val.list, struct flb_slist_entry, _head);
+        if (key == val) {
+            flb_plg_warn(ctx, "`s3_object_tag %s` without value is treated as %s=%s",
+                         key->str, key->str, key->str);
+        }
+
+        val_sds = flb_uri_encode(val->str, flb_sds_len(val->str));
+        if (val_sds == NULL) goto error;
+
+        if (url_sds == NULL) {
+            url_sds = flb_sds_create_size(256);
+        } else {
+            if (NULL == flb_sds_printf(&url_sds, "&"))
+                goto error;
+        }
+        if (NULL == flb_sds_printf(&url_sds, "%s=%s", key_sds, val_sds))
+            goto error;
+        flb_sds_destroy(key_sds); key_sds = NULL;
+        flb_sds_destroy(val_sds); val_sds = NULL;
+    }
+    return url_sds;
+
+error:
+    if (key_sds != NULL) flb_sds_destroy(key_sds);
+    if (val_sds != NULL) flb_sds_destroy(val_sds);
+    if (url_sds != NULL) flb_sds_destroy(url_sds);
+    return NULL;
 }
 
 static int cb_s3_init(struct flb_output_instance *ins,
@@ -875,6 +940,16 @@ static int cb_s3_init(struct flb_output_instance *ins,
     tmp = flb_output_get_property("object_tagging", ins);
     if (tmp) {
         ctx->object_tagging = (char *) tmp;
+    }
+
+    ctx->object_tags_encoded = NULL;
+    if ((ctx->object_tags != NULL) && (0 < mk_list_size(ctx->object_tags))) {
+        flb_sds_t tags_sds = construct_object_tagging(ctx->ins, ctx->object_tags);
+        if (tags_sds == NULL) {
+            flb_plg_error(ctx->ins, "cannot construct_object_tagging");
+            return -1;
+        }
+        ctx->object_tags_encoded = tags_sds;
     }
 
     if (ctx->insecure == FLB_FALSE) {
@@ -4232,6 +4307,12 @@ static struct flb_config_map config_map[] = {
      FLB_CONFIG_MAP_STR, "object_tagging", NULL,
      0, FLB_TRUE, offsetof(struct flb_s3, object_tagging),
      "Specify a list of tags to apply to the S3 object, url-query encoded: `key1=value1&key2=value2`"
+    },
+
+    {
+     FLB_CONFIG_MAP_SLIST_1, "s3_object_tag", NULL,
+     FLB_CONFIG_MAP_MULT, FLB_TRUE, offsetof(struct flb_s3, object_tags),
+     "key-value pairs to tag the S3 object: `s3_object_tag key1 value1; s3_object_tag key2 value2; ...`"
     },
 
     /* EOF */

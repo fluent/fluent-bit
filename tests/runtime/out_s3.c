@@ -35,7 +35,8 @@ void flb_test_s3_multipart_success(void)
     flb_output_set(ctx, out_ffd,"match", "*", NULL);
     flb_output_set(ctx, out_ffd,"region", "us-west-2", NULL);
     flb_output_set(ctx, out_ffd,"bucket", "fluent", NULL);
-    flb_output_set(ctx, out_ffd,"object_tagging", "key1=value1&key2=value2", NULL);
+    flb_output_set(ctx, out_ffd,"s3_object_tag", "key1", "value1", NULL);
+    flb_output_set(ctx, out_ffd,"s3_object_tag", "key2", "value2", NULL);
     flb_output_set(ctx, out_ffd,"Retry_Limit", "1", NULL);
 
     ret = flb_start(ctx);
@@ -72,7 +73,6 @@ void flb_test_s3_putobject_success(void)
     flb_output_set(ctx, out_ffd,"bucket", "fluent", NULL);
     flb_output_set(ctx, out_ffd,"use_put_object", "true", NULL);
     flb_output_set(ctx, out_ffd,"total_file_size", "5M", NULL);
-    flb_output_set(ctx, out_ffd,"object_tagging", "key1=value1&key2=value2", NULL);
     flb_output_set(ctx, out_ffd,"Retry_Limit", "1", NULL);
 
     ret = flb_start(ctx);
@@ -217,6 +217,7 @@ void flb_test_s3_complete_upload_error(void)
     flb_output_set(ctx, out_ffd,"match", "*", NULL);
     flb_output_set(ctx, out_ffd,"region", "us-west-2", NULL);
     flb_output_set(ctx, out_ffd,"bucket", "fluent", NULL);
+    flb_output_set(ctx, out_ffd,"s3_object_tag", "key", "value with spaces", NULL);
     flb_output_set(ctx, out_ffd,"Retry_Limit", "1", NULL);
 
     ret = flb_start(ctx);

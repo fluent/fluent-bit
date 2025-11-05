@@ -20,6 +20,7 @@
 #ifndef FLB_OUT_S3
 #define FLB_OUT_S3
 
+#include "mk_core/mk_list.h"
 #include <fluent-bit/flb_output_plugin.h>
 #include <fluent-bit/flb_sds.h>
 #include <fluent-bit/flb_info.h>
@@ -115,6 +116,8 @@ struct flb_s3 {
     char *external_id;
     char *profile;
     char *object_tagging;
+    struct mk_list *object_tags;
+    flb_sds_t object_tags_encoded;
     int free_endpoint;
     int retry_requests;
     int use_put_object;
