@@ -67,7 +67,7 @@ static int cb_doris_init(struct flb_output_instance *ins,
     struct flb_out_doris *ctx = NULL;
     (void) data;
 
-    FLB_TLS_INIT(be_pool);
+    FLB_TLS_INIT(doris_be_pool);
 
     ctx = flb_doris_conf_create(ins, config);
     if (!ctx) {
