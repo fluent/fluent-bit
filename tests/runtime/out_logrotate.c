@@ -38,7 +38,7 @@ static int recursive_delete_directory(const char *dir_path)
 {
     DIR *dir;
     struct dirent *entry;
-    struct stat statbuf;
+    struct stat statbuf;     
     char path[PATH_MAX];
     int ret = 0;
 
@@ -337,7 +337,8 @@ void flb_test_logrotate_max_files_cleanup(void)
         }
         sleep(1); /* Wait for flush */
         file_count = count_files_in_directory(TEST_LOGPATH, TEST_LOGFILE);
-        TEST_CHECK(file_count <= 4);
+        TEST_ASSERT(file_count >= 0);
+        TEST_CHECK(file_count <= 4); 
     }
 
     flb_stop(ctx);
@@ -345,7 +346,8 @@ void flb_test_logrotate_max_files_cleanup(void)
 
     /* Check that only Max_Files + 1 files exist (current + rotated) */
     file_count = count_files_in_directory(TEST_LOGPATH, TEST_LOGFILE);
-    TEST_CHECK(file_count <= 4);  /* Current file + 2 rotated files */
+    TEST_ASSERT(file_count >= 0);
+    TEST_CHECK(file_count <= 4);  /* Current file + 3 rotated files (max_files=3) */
 
     /* Clean up directory and all contents */
     recursive_delete_directory(TEST_LOGPATH);
