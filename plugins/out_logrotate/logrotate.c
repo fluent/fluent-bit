@@ -26,6 +26,7 @@
 #include <fluent-bit/flb_log_event_decoder.h>
 #include <fluent-bit/flb_gzip.h>
 #include <fluent-bit/flb_str.h>
+#include <fluent-bit/flb_hash_table.h>
 #include <msgpack.h>
 
 #include <stdio.h>
@@ -79,7 +80,7 @@ struct flb_logrotate_conf {
     size_t max_size;      /* Max file size */
     int max_files;     /* Maximum number of rotated files to keep */
     int gzip;          /* Whether to gzip rotated files */
-    size_t current_file_size; /* Current file size in bytes */
+    struct flb_hash_table *file_sizes; /* Hash table to store file size per filename */
     struct flb_output_instance *ins;
 };
 
@@ -123,10 +124,20 @@ static int cb_logrotate_init(struct flb_output_instance *ins,
     ctx->delimiter = NULL;
     ctx->label_delimiter = NULL;
     ctx->template = NULL;
-    ctx->current_file_size = 0; /* Initialize file size counter */
+    
+    /* Initialize hash table to store file sizes per filename */
+    ctx->file_sizes = flb_hash_table_create(FLB_HASH_TABLE_EVICT_NONE, 64, 0);
+    if (!ctx->file_sizes) {
+        flb_errno();
+        flb_free(ctx);
+        return -1;
+    }
 
     ret = flb_output_config_map_set(ins, (void *) ctx);
     if (ret == -1) {
+        if (ctx->file_sizes) {
+            flb_hash_table_destroy(ctx->file_sizes);
+        }
         flb_free(ctx);
         return -1;
     }
@@ -162,6 +173,9 @@ static int cb_logrotate_init(struct flb_output_instance *ins,
         }
         else {
             flb_plg_error(ctx->ins, "unknown format %s. abort.", tmp);
+            if (ctx->file_sizes) {
+                flb_hash_table_destroy(ctx->file_sizes);
+            }
             flb_free(ctx);
             return -1;
         }
@@ -514,25 +528,50 @@ static int mkpath(struct flb_output_instance *ins, const char *dir)
 #endif
 }
 
-/* Function to check if file size exceeds max size in MB */
-static int should_rotate_file(struct flb_logrotate_conf *ctx)
+/* Function to check if file size exceeds max size for a specific file */
+static int should_rotate_file(struct flb_logrotate_conf *ctx, const char *filename)
 {
-    if (ctx->current_file_size >= ctx->max_size) {
-        flb_plg_info(ctx->ins, "going to rotate file: current size=%zu max size=%zu", ctx->current_file_size, ctx->max_size);
+    size_t file_size = 0;
+    void *out_buf;
+    size_t out_size;
+    int ret;
+
+    /* Get file size from hash table */
+    ret = flb_hash_table_get(ctx->file_sizes, filename, strlen(filename),
+                             &out_buf, &out_size);
+    if (ret == 0 && out_size == sizeof(size_t)) {
+        file_size = *(size_t *)out_buf;
+    }
+
+    if (file_size >= ctx->max_size) {
+        flb_plg_info(ctx->ins, "going to rotate file %s: current size=%zu max size=%zu",
+                     filename, file_size, ctx->max_size);
         return 1;
     }
     else {
-        flb_plg_debug(ctx->ins, "file should not be rotated: current size=%zu max size=%zu", ctx->current_file_size, ctx->max_size);
+        flb_plg_debug(ctx->ins, "file %s should not be rotated: current size=%zu max size=%zu",
+                     filename, file_size, ctx->max_size);
         return 0;
     }
 }
 
-/* Function to update file size counter using current file position */
-static void update_file_size_counter(struct flb_logrotate_conf *ctx, FILE *fp)
+/* Function to update file size counter for a specific file */
+static void update_file_size_counter(struct flb_logrotate_conf *ctx,
+                                     const char *filename, FILE *fp)
 {
     struct stat st;
+    size_t file_size;
+    int ret;
+
     if (fstat(fileno(fp), &st) == 0 && st.st_size >= 0) {
-        ctx->current_file_size = (size_t) st.st_size;
+        file_size = (size_t) st.st_size;
+        
+        /* Store or update file size in hash table */
+        ret = flb_hash_table_add(ctx->file_sizes, filename, strlen(filename),
+                                  &file_size, sizeof(size_t));
+        if (ret == -1) {
+            flb_plg_warn(ctx->ins, "failed to update file size for %s", filename);
+        }
     }
 }
 
@@ -711,11 +750,21 @@ static int rotate_file(struct flb_logrotate_conf *ctx, const char *filename)
     char timestamp[32];
     char rotated_filename[PATH_MAX];
     char gzip_filename[PATH_MAX];
+    size_t file_size = 0;
+    void *out_buf;
+    size_t out_size;
     int ret = 0;
+
+    /* Get file size from hash table for logging */
+    ret = flb_hash_table_get(ctx->file_sizes, filename, strlen(filename),
+                             &out_buf, &out_size);
+    if (ret == 0 && out_size == sizeof(size_t)) {
+        file_size = *(size_t *)out_buf;
+    }
 
     /* Log rotation event */
     flb_plg_info(ctx->ins, "rotating file: %s (current size: %zu bytes)", 
-                  filename, ctx->current_file_size);
+                  filename, file_size);
 
     /* Generate timestamp */
     generate_timestamp(timestamp, sizeof(timestamp));
@@ -942,7 +991,7 @@ static void cb_logrotate_flush(struct flb_event_chunk *event_chunk,
     }
 
     /* Check if file needs rotation based on current size counter */
-    if (should_rotate_file(ctx)) {
+    if (should_rotate_file(ctx, out_file)) {
         have_directory = false;
         directory[0] = '\0';
         /* Extract directory and base filename for cleanup */
@@ -971,8 +1020,8 @@ static void cb_logrotate_flush(struct flb_event_chunk *event_chunk,
 
         /* Rotate the file */
         if (rotate_file(ctx, out_file) == 0) {
-            /* Reset file size counter after rotation */
-            ctx->current_file_size = 0;
+            /* Remove file size entry from hash table after rotation */
+            flb_hash_table_del(ctx->file_sizes, out_file);
             /* Clean up old rotated files */
             if (have_directory) {
                 cleanup_old_files(ctx, directory, base_filename);
@@ -1004,8 +1053,15 @@ static void cb_logrotate_flush(struct flb_event_chunk *event_chunk,
     }
     
     /* Initialize file size counter if this is a new file */
-    if (ctx->current_file_size == 0) {
-        update_file_size_counter(ctx, fp);
+    {
+        void *out_buf;
+        size_t out_size;
+        int ret = flb_hash_table_get(ctx->file_sizes, out_file, strlen(out_file),
+                                     &out_buf, &out_size);
+        if (ret != 0) {
+            /* File not in hash table, initialize it */
+            update_file_size_counter(ctx, out_file, fp);
+        }
     }
 
     /*
@@ -1018,6 +1074,8 @@ static void cb_logrotate_flush(struct flb_event_chunk *event_chunk,
     if (event_chunk->type == FLB_INPUT_METRICS) {
         print_metrics_text(ctx->ins, fp,
                            event_chunk->data, event_chunk->size);
+        /* Update file size counter */
+        update_file_size_counter(ctx, out_file, fp);
         fclose(fp);
         FLB_OUTPUT_RETURN(FLB_OK);
     }
@@ -1042,7 +1100,7 @@ static void cb_logrotate_flush(struct flb_event_chunk *event_chunk,
         } while (total < event_chunk->size);
 
         /* Update file size counter */
-        update_file_size_counter(ctx, fp);
+        update_file_size_counter(ctx, out_file, fp);
         fclose(fp);
         FLB_OUTPUT_RETURN(FLB_OK);
     }
@@ -1104,7 +1162,7 @@ static void cb_logrotate_flush(struct flb_event_chunk *event_chunk,
                         log_event.body, ctx);
             break;
         case FLB_OUT_LOGROTATE_FMT_PLAIN:
-            plain_output(fp, log_event.body, alloc_size);
+            plain_output(fp, log_event.body, alloc_size, config->json_escape_unicode);
             break;
         case FLB_OUT_LOGROTATE_FMT_TEMPLATE:
             template_output(fp,
@@ -1117,7 +1175,7 @@ static void cb_logrotate_flush(struct flb_event_chunk *event_chunk,
     flb_log_event_decoder_destroy(&log_decoder);
     
     /* Update file size counter */
-    update_file_size_counter(ctx, fp);
+    update_file_size_counter(ctx, out_file, fp);
     fclose(fp);
 
     FLB_OUTPUT_RETURN(FLB_OK);
@@ -1129,6 +1187,11 @@ static int cb_logrotate_exit(void *data, struct flb_config *config)
 
     if (!ctx) {
         return 0;
+    }
+
+    /* Destroy hash table */
+    if (ctx->file_sizes) {
+        flb_hash_table_destroy(ctx->file_sizes);
     }
 
     flb_free(ctx);
