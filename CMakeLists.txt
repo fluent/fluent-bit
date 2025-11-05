@@ -599,14 +599,32 @@ add_subdirectory(${FLB_PATH_LIB_MINIZ} EXCLUDE_FROM_ALL)
 
 # Zstd (zstd)
 if(FLB_PREFER_SYSTEM_LIB_ZSTD)
-  find_package(PkgConfig)
-  pkg_check_modules(LIBZSTD libzstd>=1.4.8)
+  find_package(ZSTD 1.4.8 QUIET)
+  if(ZSTD_FOUND)
+    set(LIBZSTD_FOUND TRUE)
+    set(LIBZSTD_LIBRARIES ZSTD::ZSTD)
+  else()
+    find_package(PkgConfig)
+    pkg_check_modules(LIBZSTD libzstd>=1.4.8)
+    if(LIBZSTD_FOUND)
+      include_directories(${LIBZSTD_INCLUDE_DIRS})
+      link_directories(${LIBZSTD_LIBRARY_DIRS})
+      add_library(ZSTD::ZSTD INTERFACE IMPORTED)
+      set_property(TARGET ZSTD::ZSTD PROPERTY
+        INTERFACE_LINK_LIBRARIES "${LIBZSTD_LIBRARIES}")
+      set(LIBZSTD_LIBRARIES ZSTD::ZSTD)
+    endif()
+  endif()
 endif()
-if(LIBZSTD_FOUND)
-  include_directories(${LIBZSTD_INCLUDE_DIRS})
-  link_directories(${LIBZSTD_LIBRARY_DIRS})
-else()
+
+if(NOT LIBZSTD_FOUND)
   include(cmake/zstd.cmake)
+
+  if(NOT MSVC)
+    target_compile_options(libzstd_static PRIVATE -fvisibility=hidden)
+  endif()
+
+  set(LIBZSTD_LIBRARIES libzstd_static)
 endif()
 
 # ring buffer library
