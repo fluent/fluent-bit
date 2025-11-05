@@ -710,10 +710,11 @@ flb_sds_t flb_help_build_json_schema(struct flb_config *config)
      * - fluent-bit
      * - customs
      * - inputs
+     * - processors
      * - filters
      * - outputs
      */
-    msgpack_pack_map(&mp_pck, 5);
+    msgpack_pack_map(&mp_pck, 6);
 
     /* Fluent Bit */
     msgpack_pack_str(&mp_pck, 10);
@@ -825,7 +826,7 @@ flb_sds_t flb_help_build_json_schema(struct flb_config *config)
     }
     flb_mp_array_header_end(&mh);
 
-    json = flb_msgpack_raw_to_json_sds(mp_sbuf.data, mp_sbuf.size);
+    json = flb_msgpack_raw_to_json_sds(mp_sbuf.data, mp_sbuf.size, FLB_TRUE);
     msgpack_sbuffer_destroy(&mp_sbuf);
 
     return json;

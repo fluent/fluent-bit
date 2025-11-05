@@ -142,7 +142,18 @@ struct fw_conn *fw_conn_add(struct flb_connection *connection, struct flb_in_fw_
     }
 
     conn->handshake_status = FW_HANDSHAKE_ESTABLISHED;
-    if (ctx->shared_key != NULL) {
+    /*
+     * Always force the secure-forward handshake when:
+     *  - a shared key is configured, or
+     *  - empty_shared_key is enabled (empty string shared key), or
+     *  - user authentication is configured (users > 0).
+     *
+     * This closes the gap where "users-only" previously skipped authentication entirely.
+     */
+    conn->handshake_status = FW_HANDSHAKE_ESTABLISHED; /* default */
+    if (ctx->shared_key != NULL ||
+        ctx->empty_shared_key == FLB_TRUE ||
+        mk_list_size(&ctx->users) > 0) {
         conn->handshake_status = FW_HANDSHAKE_HELO;
         helo = flb_calloc(1, sizeof(struct flb_in_fw_helo));
         if (!helo) {
@@ -189,6 +200,9 @@ struct fw_conn *fw_conn_add(struct flb_connection *connection, struct flb_in_fw_
     conn->buf_size = ctx->buffer_chunk_size;
     conn->in       = ctx->ins;
 
+    conn->compression_type = FLB_COMPRESSION_ALGORITHM_NONE;
+    conn->d_ctx = NULL;
+
     /* Register instance into the event loop */
     ret = mk_event_add(flb_engine_evl_get(),
                        connection->fd,
@@ -218,6 +232,11 @@ int fw_conn_del(struct fw_conn *conn)
 
     /* Release resources */
     mk_list_del(&conn->_head);
+
+    /* Release decompression context if it exists */
+    if (conn->d_ctx) {
+        flb_decompression_context_destroy(conn->d_ctx);
+    }
 
     if (conn->helo != NULL) {
         if (conn->helo->nonce != NULL) {

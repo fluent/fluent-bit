@@ -193,6 +193,15 @@ static int http_post(struct flb_out_http *ctx,
      */
     c->cb_ctx = ctx->ins->callback;
 
+    flb_http_set_response_timeout(c, ctx->response_timeout);
+
+    if (ctx->read_idle_timeout > 0) {
+        flb_http_set_read_idle_timeout(c, ctx->read_idle_timeout);
+    }
+    else {
+        flb_http_set_read_idle_timeout(c, ctx->ins->net_setup.io_timeout);
+    }
+
     /* Append headers */
     if (headers) {
         append_headers(c, headers);
@@ -427,7 +436,8 @@ static int compose_payload_gelf(struct flb_out_http *ctx,
 
 static int compose_payload(struct flb_out_http *ctx,
                            const void *in_body, size_t in_size,
-                           void **out_body, size_t *out_size)
+                           void **out_body, size_t *out_size,
+                           struct flb_config *config)
 {
     flb_sds_t encoded;
 
@@ -442,7 +452,8 @@ static int compose_payload(struct flb_out_http *ctx,
                                                   in_size,
                                                   ctx->out_format,
                                                   ctx->json_date_format,
-                                                  ctx->date_key);
+                                                  ctx->date_key,
+                                                  config->json_escape_unicode);
         if (encoded == NULL) {
             flb_plg_error(ctx->ins, "failed to convert json");
             return FLB_ERROR;
@@ -629,7 +640,7 @@ static void cb_http_flush(struct flb_event_chunk *event_chunk,
     }
     else {
         ret = compose_payload(ctx, event_chunk->data, event_chunk->size,
-                              &out_body, &out_size);
+                              &out_body, &out_size, config);
         if (ret != FLB_OK) {
             FLB_OUTPUT_RETURN(ret);
         }
@@ -677,6 +688,16 @@ static struct flb_config_map config_map[] = {
      FLB_CONFIG_MAP_BOOL, "log_response_payload", "true",
      0, FLB_TRUE, offsetof(struct flb_out_http, log_response_payload),
      "Specify if the response paylod should be logged or not"
+    },
+    {
+     FLB_CONFIG_MAP_TIME, "http.response_timeout", "60s",
+     0, FLB_TRUE, offsetof(struct flb_out_http, response_timeout),
+     "Set maximum time to wait for a server response"
+    },
+    {
+     FLB_CONFIG_MAP_TIME, "http.read_idle_timeout", "0s",
+     0, FLB_TRUE, offsetof(struct flb_out_http, read_idle_timeout),
+     "Set maximum allowed time between two consecutive reads"
     },
     {
      FLB_CONFIG_MAP_STR, "http_user", NULL,
@@ -792,7 +813,7 @@ static int cb_http_format_test(struct flb_config *config,
     struct flb_out_http *ctx = plugin_context;
     int ret;
 
-    ret = compose_payload(ctx, data, bytes, out_data, out_size);
+    ret = compose_payload(ctx, data, bytes, out_data, out_size, config);
     if (ret != FLB_OK) {
         flb_error("ret=%d", ret);
         return -1;

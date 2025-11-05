@@ -41,6 +41,11 @@
 #include <cprofiles/cprofiles.h>
 #include <cprofiles/cprof_decode_msgpack.h>
 #include <cprofiles/cprof_encode_opentelemetry.h>
+#ifdef FLB_HAVE_SIGNV4
+#ifdef FLB_HAVE_AWS
+#include <fluent-bit/flb_signv4.h>
+#endif
+#endif
 
 extern cfl_sds_t cmt_encode_opentelemetry_create(struct cmt *cmt);
 extern void cmt_encode_opentelemetry_destroy(cfl_sds_t text);
@@ -87,6 +92,7 @@ int opentelemetry_legacy_post(struct opentelemetry_context *ctx,
     struct flb_slist_entry    *val;
     struct flb_config_map_val *mv;
     struct flb_http_client    *c;
+    flb_sds_t                 signature = NULL;
 
     compressed = FLB_FALSE;
 
@@ -183,6 +189,30 @@ int opentelemetry_legacy_post(struct opentelemetry_context *ctx,
                             val->str, flb_sds_len(val->str));
     }
 
+#ifdef FLB_HAVE_SIGNV4
+#ifdef FLB_HAVE_AWS
+    if (ctx->has_aws_auth == FLB_TRUE) {
+        flb_plg_debug(ctx->ins, "signing request with AWS SigV4");
+        signature = flb_signv4_do(c,
+                                  FLB_TRUE,
+                                  FLB_TRUE,
+                                  time(NULL),
+                                  (char *) ctx->aws_region,
+                                  (char *) ctx->aws_service,
+                                  0, NULL,
+                                  ctx->aws_provider);
+
+        if (!signature) {
+            flb_plg_error(ctx->ins, "could not sign request with sigv4");
+            out_ret = FLB_RETRY;
+            goto cleanup;
+        }
+        flb_sds_destroy(signature);
+        signature = NULL;
+    }
+#endif
+#endif
+
     if (compressed) {
         if (ctx->compress_gzip) {
             flb_http_set_content_encoding_gzip(c);
@@ -256,6 +286,7 @@ int opentelemetry_legacy_post(struct opentelemetry_context *ctx,
         out_ret = FLB_RETRY;
     }
 
+cleanup:
     if (compressed) {
         flb_free(final_body);
     }
@@ -410,6 +441,22 @@ int opentelemetry_post(struct opentelemetry_context *ctx,
                                            ctx->http_user,
                                            ctx->http_passwd);
     }
+
+#ifdef FLB_HAVE_SIGNV4
+#ifdef FLB_HAVE_AWS
+    if (ctx->has_aws_auth == FLB_TRUE) {
+        result = flb_http_request_perform_signv4_signature(request,
+                                                          ctx->aws_region,
+                                                          ctx->aws_service,
+                                                          ctx->aws_provider);
+        if (result != 0) {
+            flb_plg_error(ctx->ins, "could not sign request with sigv4");
+            flb_http_client_request_destroy(request, FLB_TRUE);
+            return FLB_RETRY;
+        }
+    }
+#endif
+#endif
 
     response = flb_http_client_request_execute(request);
     if (response == NULL) {
@@ -876,6 +923,21 @@ static struct flb_config_map config_map[] = {
      0, FLB_TRUE, offsetof(struct opentelemetry_context, http_passwd),
      "Set HTTP auth password"
     },
+#ifdef FLB_HAVE_SIGNV4
+#ifdef FLB_HAVE_AWS
+    {
+     FLB_CONFIG_MAP_BOOL, "aws_auth", "false",
+     0, FLB_TRUE, offsetof(struct opentelemetry_context, has_aws_auth),
+     "Enable AWS SigV4 authentication",
+    },
+    {
+     FLB_CONFIG_MAP_STR, "aws_service", "logs",
+     0, FLB_TRUE, offsetof(struct opentelemetry_context, aws_service),
+     "AWS destination service code, used by SigV4 authentication",
+    },
+    FLB_AWS_CREDENTIAL_BASE_CONFIG_MAP(FLB_OPENTELEMETRY_AWS_CREDENTIAL_PREFIX),
+#endif
+#endif
     {
      FLB_CONFIG_MAP_SLIST_1, "header", NULL,
      FLB_CONFIG_MAP_MULT, FLB_TRUE, offsetof(struct opentelemetry_context, headers),
@@ -893,7 +955,7 @@ static struct flb_config_map config_map[] = {
     },
 
     {
-      FLB_CONFIG_MAP_INT, "batch_size", DEFAULT_LOG_RECORD_BATCH_SIZE,
+     FLB_CONFIG_MAP_INT, "batch_size", DEFAULT_LOG_RECORD_BATCH_SIZE,
       0, FLB_TRUE, offsetof(struct opentelemetry_context, batch_size),
       "Set the maximum number of log records to be flushed at a time"
     },
@@ -902,10 +964,23 @@ static struct flb_config_map config_map[] = {
      0, FLB_FALSE, 0,
      "Set payload compression mechanism. Options available are 'gzip' and 'zstd'."
     },
+
     /*
      * Logs Properties
      * ---------------
      */
+    {
+     FLB_CONFIG_MAP_INT, "logs_max_resources", DEFAULT_MAX_RESOURCE_EXPORT,
+     0, FLB_TRUE, offsetof(struct opentelemetry_context, max_resources),
+     "Set the maximum number of OTLP log resources per export request (0 disables the limit; default: 0)"
+    },
+
+    {
+     FLB_CONFIG_MAP_INT, "logs_max_scopes", DEFAULT_MAX_SCOPE_EXPORT,
+     0, FLB_TRUE, offsetof(struct opentelemetry_context, max_scopes),
+     "Set the maximum number of OTLP log scopes per resource (0 disables the limit; default: 0)"
+    },
+
     {
      FLB_CONFIG_MAP_STR, "logs_uri", "/v1/logs",
      0, FLB_TRUE, offsetof(struct opentelemetry_context, logs_uri),

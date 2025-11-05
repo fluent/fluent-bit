@@ -15,15 +15,20 @@ jobs:
       max-parallel: 48
       fail-fast: false
       matrix:
-        os: [windows-latest, windows-2019]
+        os: [windows-2025, windows-2022]
     steps:
       - uses: actions/checkout@v2
-      - name: Build on ${{ matrix.os }} with vs-2019
+      - name: Set up with Developer Command Prompt for Microsoft Visual C++
+        uses: ilammy/msvc-dev-cmd@v1
+        with:
+          arch: amd64
+      - name: Build on ${{ matrix.os }} with MSVC
         run: |
-          .\scripts\win_build.bat
+          cmake -G "NMake Makefiles" -DCIO_TESTS=On .
+          cmake --build .
       - name: Run unit tests.
         run: |
-          ctest --rerun-failed --output-on-failure -C Debug --test-dir .
+          ctest . --rerun-failed --output-on-failure --test-dir .
   build-unix:
     name: Build sources on amd64 for ${{ matrix.os }} - ${{ matrix.compiler }}
     runs-on: ${{ matrix.os }}

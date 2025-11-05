@@ -284,7 +284,8 @@ int produce_message(struct flb_time *tm, msgpack_object *map,
     }
 
     if (ctx->format == FLB_KAFKA_FMT_JSON) {
-        s = flb_msgpack_raw_to_json_sds(mp_sbuf.data, mp_sbuf.size);
+        s = flb_msgpack_raw_to_json_sds(mp_sbuf.data, mp_sbuf.size,
+                                        config->json_escape_unicode);
         if (!s) {
             flb_plg_error(ctx->ins, "error encoding to JSON");
             msgpack_sbuffer_destroy(&mp_sbuf);

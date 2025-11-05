@@ -20,9 +20,113 @@
 #include <fluent-bit/flb_info.h>
 #include <fluent-bit/flb_log.h>
 #include <fluent-bit/multiline/flb_ml.h>
+#include <fluent-bit/multiline/flb_ml_parser.h>
 #include <fluent-bit/multiline/flb_ml_rule.h>
 #include <fluent-bit/multiline/flb_ml_mode.h>
 #include <fluent-bit/multiline/flb_ml_group.h>
+
+#include <stddef.h>
+#include <string.h>
+
+/* ---------------- params + defaults ---------------- */
+struct flb_ml_parser_params flb_ml_parser_params_default(const char *name)
+{
+    struct flb_ml_parser_params p;
+    memset(&p, 0, sizeof(p));
+
+    p.size      = sizeof(p);
+    p.name      = (char *) name;
+    p.type      = FLB_ML_REGEX;          /* sane default */
+    p.negate    = 0;
+    p.flush_ms  = FLB_ML_FLUSH_TIMEOUT;  /* header constant */
+    /* other pointers remain NULL by default */
+    return p;
+}
+
+/* New canonical creator that mirrors old behavior using params */
+struct flb_ml_parser *flb_ml_parser_create_params(struct flb_config *ctx,
+                                                  const struct flb_ml_parser_params *p)
+{
+    struct flb_ml_parser *ml_parser;
+    size_t min = offsetof(struct flb_ml_parser_params, flags) + sizeof(uint32_t);
+
+    if (!ctx || !p || p->size < min || !p->name) {
+        return NULL;
+    }
+
+    ml_parser = flb_calloc(1, sizeof(struct flb_ml_parser));
+    if (!ml_parser) {
+        flb_errno();
+        return NULL;
+    }
+
+    /* prepare rules list */
+    mk_list_init(&ml_parser->_head);
+    mk_list_init(&ml_parser->regex_rules);
+
+    /* name/type */
+    ml_parser->name = flb_sds_create(p->name);
+    if (!ml_parser->name) {
+        flb_ml_parser_destroy(ml_parser);
+        return NULL;
+    }
+    ml_parser->type = p->type;
+
+    /* ENDSWITH/EQ optimization string */
+    if (p->match_str) {
+        ml_parser->match_str = flb_sds_create(p->match_str);
+        if (!ml_parser->match_str) {
+            flb_ml_parser_destroy(ml_parser);
+            return NULL;
+        }
+    }
+
+    /* sub-parser (immediate / delayed) */
+    ml_parser->parser = p->parser_ctx;
+    if (p->parser_name) {
+        ml_parser->parser_name = flb_sds_create(p->parser_name);
+        if (!ml_parser->parser_name) {
+            flb_ml_parser_destroy(ml_parser);
+            return NULL;
+        }
+    }
+
+    /* basic props */
+    ml_parser->negate   = p->negate;
+    ml_parser->flush_ms = (p->flush_ms > 0) ? p->flush_ms : FLB_ML_FLUSH_TIMEOUT;
+
+
+    /* optional keys */
+    if (p->key_content) {
+        ml_parser->key_content = flb_sds_create(p->key_content);
+        if (!ml_parser->key_content) {
+            flb_ml_parser_destroy(ml_parser);
+            return NULL;
+        }
+    }
+    if (p->key_group) {
+        ml_parser->key_group = flb_sds_create(p->key_group);
+        if (!ml_parser->key_group) {
+            flb_ml_parser_destroy(ml_parser);
+            return NULL;
+        }
+    }
+    if (p->key_pattern) {
+        ml_parser->key_pattern = flb_sds_create(p->key_pattern);
+        if (!ml_parser->key_pattern) {
+            flb_ml_parser_destroy(ml_parser);
+            return NULL;
+        }
+    }
+
+    /* keep back-pointer to config for later rule init */
+    ml_parser->config = ctx;
+
+    /* link into registry after all initialization succeeds */
+    mk_list_add(&ml_parser->_head, &ctx->multiline_parsers);
+
+    return ml_parser;
+}
 
 int flb_ml_parser_init(struct flb_ml_parser *ml_parser)
 {
@@ -92,6 +196,7 @@ error:
     return ret;
 }
 
+/* Legacy positional-args API -> thin wrapper to params */
 struct flb_ml_parser *flb_ml_parser_create(struct flb_config *ctx,
                                            char *name,
                                            int type, char *match_str, int negate,
@@ -102,62 +207,20 @@ struct flb_ml_parser *flb_ml_parser_create(struct flb_config *ctx,
                                            struct flb_parser *parser_ctx,
                                            char *parser_name)
 {
-    struct flb_ml_parser *ml_parser;
+    struct flb_ml_parser_params p = flb_ml_parser_params_default(name);
 
-    ml_parser = flb_calloc(1, sizeof(struct flb_ml_parser));
-    if (!ml_parser) {
-        flb_errno();
-        return NULL;
-    }
-    ml_parser->name = flb_sds_create(name);
-    ml_parser->type = type;
+    /* override with legacy parameters */
+    p.type        = type;
+    p.match_str   = match_str;
+    p.negate      = negate;
+    p.flush_ms    = flush_ms;
+    p.key_content = key_content;
+    p.key_group   = key_group;
+    p.key_pattern = key_pattern;
+    p.parser_ctx  = parser_ctx;
+    p.parser_name = parser_name;
 
-    if (match_str) {
-        ml_parser->match_str = flb_sds_create(match_str);
-        if (!ml_parser->match_str) {
-            if (ml_parser->name) {
-                flb_sds_destroy(ml_parser->name);
-            }
-            flb_free(ml_parser);
-            return NULL;
-        }
-    }
-
-    ml_parser->parser = parser_ctx;
-
-    if (parser_name) {
-        ml_parser->parser_name = flb_sds_create(parser_name);
-    }
-    ml_parser->negate = negate;
-    ml_parser->flush_ms = flush_ms;
-    mk_list_init(&ml_parser->regex_rules);
-    mk_list_add(&ml_parser->_head, &ctx->multiline_parsers);
-
-    if (key_content) {
-        ml_parser->key_content = flb_sds_create(key_content);
-        if (!ml_parser->key_content) {
-            flb_ml_parser_destroy(ml_parser);
-            return NULL;
-        }
-    }
-
-    if (key_group) {
-        ml_parser->key_group = flb_sds_create(key_group);
-        if (!ml_parser->key_group) {
-            flb_ml_parser_destroy(ml_parser);
-            return NULL;
-        }
-    }
-
-    if (key_pattern) {
-        ml_parser->key_pattern = flb_sds_create(key_pattern);
-        if (!ml_parser->key_pattern) {
-            flb_ml_parser_destroy(ml_parser);
-            return NULL;
-        }
-    }
-
-    return ml_parser;
+    return flb_ml_parser_create_params(ctx, &p);
 }
 
 struct flb_ml_parser *flb_ml_parser_get(struct flb_config *ctx, char *name)

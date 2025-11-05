@@ -21,6 +21,7 @@
 #include <fluent-bit/flb_sds.h>
 #include <fluent-bit/flb_pack.h>
 #include <fluent-bit/flb_log_event_encoder.h>
+#include <fluent-bit/flb_time.h>
 #include <fluent-bit/flb_opentelemetry.h>
 #include <ctype.h>
 
@@ -73,13 +74,9 @@ static int process_json_payload_log_records_entry(
         result = flb_otel_utils_find_map_entry_by_key(log_records_entry, "observedTimeUnixNano", 0, FLB_TRUE);
     }
 
-    /* we need a timestamp... */
+    /* fallback to current time if both timestamp fields are missing */
     if (result == -1) {
-        if (error_status) {
-            *error_status = FLB_OTEL_LOGS_ERR_MISSING_TIMESTAMP;
-        }
-        return -FLB_OTEL_LOGS_ERR_MISSING_TIMESTAMP;
-
+        flb_time_get(&timestamp);
     }
     else {
         timestamp_object = &log_records_entry->ptr[result].val;
@@ -162,7 +159,7 @@ static int process_json_payload_log_records_entry(
         trace_id = &log_records_entry->ptr[result].val;
     }
 
-    /* trace_id must be a 32 char hex string */
+    /* trace_id must be a 32 char hex string, or empty (skip validation) */
     if (trace_id != NULL) {
         if (trace_id->type != MSGPACK_OBJECT_STR) {
             if (error_status) {
@@ -171,20 +168,25 @@ static int process_json_payload_log_records_entry(
             return -FLB_OTEL_LOGS_ERR_INVALID_TRACE_ID;
         }
 
-        if (trace_id->via.str.size != 32) {
+        /* Skip validation if trace_id is empty */
+        if (trace_id->via.str.size == 0) {
+            trace_id = NULL; /* Treat as if not present */
+        }
+        else if (trace_id->via.str.size != 32) {
             if (error_status) {
                 *error_status = FLB_OTEL_LOGS_ERR_INVALID_TRACE_ID;
             }
             return -FLB_OTEL_LOGS_ERR_INVALID_TRACE_ID;
         }
-
-        /* Validate hex format */
-        for (i = 0; i < 32; i++) {
-            if (!isxdigit(trace_id->via.str.ptr[i])) {
-                if (error_status) {
-                     *error_status = FLB_OTEL_LOGS_ERR_INVALID_TRACE_ID;
+        else {
+            /* Validate hex format */
+            for (i = 0; i < 32; i++) {
+                if (!isxdigit(trace_id->via.str.ptr[i])) {
+                    if (error_status) {
+                         *error_status = FLB_OTEL_LOGS_ERR_INVALID_TRACE_ID;
+                    }
+                    return -FLB_OTEL_LOGS_ERR_INVALID_TRACE_ID;
                 }
-                return -FLB_OTEL_LOGS_ERR_INVALID_TRACE_ID;
             }
         }
     }
@@ -195,6 +197,7 @@ static int process_json_payload_log_records_entry(
         span_id = &log_records_entry->ptr[result].val;
     }
 
+    /* span_id must be a 16 char hex string, or empty (skip validation) */
     if (span_id != NULL) {
         if (span_id->type != MSGPACK_OBJECT_STR) {
             if (error_status) {
@@ -203,20 +206,25 @@ static int process_json_payload_log_records_entry(
             return -FLB_OTEL_LOGS_ERR_INVALID_SPAN_ID;
         }
 
-        if (span_id->via.str.size != 16) {
+        /* Skip validation if span_id is empty */
+        if (span_id->via.str.size == 0) {
+            span_id = NULL; /* Treat as if not present */
+        }
+        else if (span_id->via.str.size != 16) {
             if (error_status) {
                 *error_status = FLB_OTEL_LOGS_ERR_INVALID_SPAN_ID;
             }
             return -FLB_OTEL_LOGS_ERR_INVALID_SPAN_ID;
         }
-
-        /* Validate hex format */
-        for (i = 0; i < 16; i++) {
-            if (!isxdigit(span_id->via.str.ptr[i])) {
-                if (error_status) {
-                    *error_status = FLB_OTEL_LOGS_ERR_INVALID_SPAN_ID;
+        else {
+            /* Validate hex format */
+            for (i = 0; i < 16; i++) {
+                if (!isxdigit(span_id->via.str.ptr[i])) {
+                    if (error_status) {
+                        *error_status = FLB_OTEL_LOGS_ERR_INVALID_SPAN_ID;
+                    }
+                    return -FLB_OTEL_LOGS_ERR_INVALID_SPAN_ID;
                 }
-                return -FLB_OTEL_LOGS_ERR_UNEXPECTED_TIMESTAMP_TYPE;
             }
         }
     }
@@ -293,18 +301,28 @@ static int process_json_payload_log_records_entry(
         result = flb_otel_utils_json_payload_append_converted_kvlist(encoder, FLB_LOG_EVENT_METADATA, metadata_object);
     }
 
-    if (trace_id != NULL) {
-        flb_otel_utils_hex_to_id(trace_id->via.str.ptr, trace_id->via.str.size, tmp_id, 32);
+    if (trace_id != NULL && trace_id->type == MSGPACK_OBJECT_STR && trace_id->via.str.size == 32) {
+        if (flb_otel_utils_hex_to_id(trace_id->via.str.ptr, trace_id->via.str.size, tmp_id, 16) != 0) {
+            if (error_status) {
+                *error_status = FLB_OTEL_LOGS_ERR_INVALID_TRACE_ID;
+            }
+            return -FLB_OTEL_LOGS_ERR_INVALID_TRACE_ID;
+        }
         flb_log_event_encoder_append_metadata_values(encoder,
                                                         FLB_LOG_EVENT_STRING_VALUE("trace_id", 8),
-                                                        FLB_LOG_EVENT_BINARY_VALUE(tmp_id, 32));
+                                                        FLB_LOG_EVENT_BINARY_VALUE(tmp_id, 16));
     }
 
-    if (span_id != NULL) {
-        flb_otel_utils_hex_to_id(span_id->via.str.ptr, span_id->via.str.size, tmp_id, 16);
+    if (span_id != NULL && span_id->type == MSGPACK_OBJECT_STR && span_id->via.str.size == 16) {
+        if (flb_otel_utils_hex_to_id(span_id->via.str.ptr, span_id->via.str.size, tmp_id, 8) != 0) {
+            if (error_status) {
+                *error_status = FLB_OTEL_LOGS_ERR_INVALID_SPAN_ID;
+            }
+            return -FLB_OTEL_LOGS_ERR_INVALID_SPAN_ID;
+        }
         flb_log_event_encoder_append_metadata_values(encoder,
                                                         FLB_LOG_EVENT_STRING_VALUE("span_id", 7),
-                                                        FLB_LOG_EVENT_BINARY_VALUE(tmp_id, 16));
+                                                        FLB_LOG_EVENT_BINARY_VALUE(tmp_id, 8));
     }
 
     result = flb_log_event_encoder_commit_map(encoder, FLB_LOG_EVENT_METADATA);

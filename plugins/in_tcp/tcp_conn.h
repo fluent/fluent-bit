@@ -50,6 +50,9 @@ struct tcp_conn {
     struct flb_pack_state pack_state; /* Internal JSON parser              */
     struct flb_connection *connection;
 
+    int busy;                         /* Connection is being processed     */
+    int pending_close;                /* Defer closing until processing ends */
+
     struct mk_list _head;
 };
 

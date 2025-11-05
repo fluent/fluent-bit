@@ -31,7 +31,19 @@ fi
 # AWS_S3_BUCKET_STAGING=fluentbit-staging
 export AWS_REGION=${AWS_REGION:-us-east-1}
 
-RPM_REPO_PATHS=("amazonlinux/2" "amazonlinux/2023" "centos/7" "centos/8" "centos/9" "rockylinux/8" "rockylinux/9" "almalinux/8" "almalinux/9" )
+RPM_REPO_PATHS=( "amazonlinux/2" 
+				 "amazonlinux/2023" 
+				 "centos/7" 
+				 "centos/8" 
+				 "centos/9" 
+				 "centos/10" 
+				 "rockylinux/8" 
+				 "rockylinux/9" 
+				 "rockylinux/10" 
+				 "almalinux/8" 
+				 "almalinux/9" 
+				 "almalinux/10"
+				)
 
 if [[ "${AWS_SYNC:-false}" != "false" ]]; then
     aws s3 sync s3://"${AWS_S3_BUCKET_RELEASE:?}" "${BASE_PATH:?}"
@@ -50,6 +62,7 @@ done
 DEB_REPO_PATHS=( "debian/bookworm"
                  "debian/bullseye"
                  "debian/buster"
+                 "debian/trixie"
                  "ubuntu/jammy"
                  "ubuntu/noble"
                  "raspbian/bookworm"

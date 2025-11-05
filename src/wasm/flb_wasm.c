@@ -264,7 +264,7 @@ char *flb_wasm_call_function_format_json(struct flb_wasm *fw, const char *functi
                              fw->record_buffer, record_len};
     size_t args_size = sizeof(func_args) / sizeof(uint32_t);
 
-    if (!(func = wasm_runtime_lookup_function(fw->module_inst, function_name, NULL))) {
+    if (!(func = wasm_runtime_lookup_function(fw->module_inst, function_name))) {
         flb_error("The %s wasm function is not found.", function_name);
         return NULL;
     }
@@ -345,7 +345,7 @@ char *flb_wasm_call_function_format_msgpack(struct flb_wasm *fw, const char *fun
                              fw->record_buffer, records_len};
     size_t args_size = sizeof(func_args) / sizeof(uint32_t);
 
-    if (!(func = wasm_runtime_lookup_function(fw->module_inst, function_name, NULL))) {
+    if (!(func = wasm_runtime_lookup_function(fw->module_inst, function_name))) {
         flb_error("The %s wasm function is not found.", function_name);
         return NULL;
     }

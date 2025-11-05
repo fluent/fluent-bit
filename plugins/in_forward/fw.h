@@ -60,7 +60,8 @@ struct flb_in_fw_config {
     flb_sds_t unix_perm_str;        /* Permission (config map)     */
 
     /* secure forward */
-    flb_sds_t shared_key;        /* shared key                   */
+    flb_sds_t shared_key;         /* shared key      */
+    int owns_shared_key;          /* own flag of shared key */
     flb_sds_t self_hostname;     /* hostname used in certificate  */
     struct mk_list users;        /* username and password pairs  */
     int empty_shared_key;        /* use an empty string as shared key */

@@ -3,6 +3,7 @@
 #include <fluent-bit/flb_info.h>
 #include <fluent-bit/flb_mem.h>
 #include <fluent-bit/flb_pack.h>
+#include <fluent-bit/flb_pack_json.h>
 #include <fluent-bit/flb_error.h>
 #include <fluent-bit/flb_str.h>
 #include <monkey/mk_core.h>
@@ -60,6 +61,88 @@ void test_json_pack()
     TEST_CHECK(ret == 0);
 
     flb_free(data);
+    flb_free(out_buf);
+}
+
+void test_json_pack_ext_default_backend()
+{
+    int ret;
+    int root_type;
+    char *out_buf = NULL;
+    size_t out_size = 0;
+    const char *json = "{\"k\":\"v\"} {\"k2\":\"v2\"}";
+
+    ret = flb_pack_json_ext(json, strlen(json), &out_buf, &out_size,
+                             &root_type, NULL);
+
+    TEST_CHECK(ret == 0);
+    TEST_CHECK(out_buf != NULL);
+    TEST_CHECK(out_size > 0);
+
+    flb_free(out_buf);
+}
+
+void test_json_pack_ext_jsmn_backend()
+{
+    int ret;
+    int root_type;
+    char *out_buf = NULL;
+    size_t out_size = 0;
+    struct flb_pack_opts opts = {0};
+    const char *json = "{\"k\":\"v\"} {\"k2\":\"v2\"}";
+
+    opts.backend = FLB_PACK_JSON_BACKEND_JSMN;
+
+    ret = flb_pack_json_ext(json, strlen(json), &out_buf, &out_size,
+                             &root_type, &opts);
+
+    TEST_CHECK(ret == 0);
+    TEST_CHECK(out_buf != NULL);
+    TEST_CHECK(out_size > 0);
+
+    flb_free(out_buf);
+}
+
+void test_json_pack_recs_ext_default_backend()
+{
+    int ret;
+    int records;
+    int root_type;
+    char *out_buf = NULL;
+    size_t consumed = 0;
+    size_t out_size = 0;
+    const char *json = "{\"k\":\"v\"} {\"k2\":\"v2\"}";
+
+    ret = flb_pack_json_recs_ext(json, strlen(json), &out_buf, &out_size,
+                                  &root_type, &records, &consumed, NULL);
+
+    TEST_CHECK(ret == 0);
+    TEST_CHECK(records == 2);
+    TEST_CHECK(consumed == strlen(json));
+
+    flb_free(out_buf);
+}
+
+void test_json_pack_recs_ext_jsmn_backend()
+{
+    int ret;
+    int records;
+    int root_type;
+    char *out_buf = NULL;
+    size_t consumed = 0;
+    size_t out_size = 0;
+    struct flb_pack_opts opts = {0};
+    const char *json = "{\"k\":\"v\"} {\"k2\":\"v2\"}";
+
+    opts.backend = FLB_PACK_JSON_BACKEND_JSMN;
+
+    ret = flb_pack_json_recs_ext(json, strlen(json), &out_buf, &out_size,
+                                  &root_type, &records, &consumed, &opts);
+
+    TEST_CHECK(ret == 0);
+    TEST_CHECK(records == 2);
+    TEST_CHECK(consumed == strlen(json));
+
     flb_free(out_buf);
 }
 
@@ -283,7 +366,7 @@ void test_json_dup_keys()
     out_json = flb_pack_msgpack_to_json_format(out_buf, out_size,
                                                FLB_PACK_JSON_FORMAT_LINES,
                                                FLB_PACK_JSON_DATE_EPOCH,
-                                               d);
+                                               d, FLB_TRUE);
     TEST_CHECK(out_json != NULL);
 
     TEST_CHECK(strncmp(out_json, data_out, flb_sds_len(out_json)) == 0);
@@ -294,6 +377,7 @@ void test_json_dup_keys()
     flb_free(data_out);
 }
 
+/* https://github.com/fluent/fluent-bit/issues/342 */
 void test_json_pack_bug342()
 {
     int i = 0;
@@ -496,7 +580,7 @@ void test_utf8_to_json()
 
         json_size = strlen(file_json);
 
-        out_buf = flb_msgpack_raw_to_json_sds(file_msgp, msgp_size);
+        out_buf = flb_msgpack_raw_to_json_sds(file_msgp, msgp_size, FLB_TRUE);
         TEST_CHECK(out_buf != NULL);
         out_size = flb_sds_len(out_buf);
 
@@ -717,7 +801,7 @@ void test_json_pack_bug1278()
         msgpack_pack_str_body(&mp_pck, p_in, len);
 
         /* Pack raw string as JSON */
-        json = flb_msgpack_raw_to_json_sds(mp_sbuf.data, mp_sbuf.size);
+        json = flb_msgpack_raw_to_json_sds(mp_sbuf.data, mp_sbuf.size, FLB_TRUE);
 
         /* Compare expected JSON output */
         ret = strcmp(p_out, json);
@@ -798,7 +882,7 @@ void test_json_pack_nan()
     msgpack_sbuffer_destroy(&mp_sbuf);
 
     // convert msgpack to json
-    ret = flb_msgpack_to_json(&json_str[0], sizeof(json_str), &obj);
+    ret = flb_msgpack_to_json(&json_str[0], sizeof(json_str), &obj, FLB_TRUE);
     TEST_CHECK(ret >= 0);
 
     p = strstr(&json_str[0], "nan");
@@ -809,7 +893,7 @@ void test_json_pack_nan()
     // convert. nan -> null
     memset(&json_str[0], 0, sizeof(json_str));
     flb_pack_init(&config);
-    ret = flb_msgpack_to_json(&json_str[0], sizeof(json_str), &obj);
+    ret = flb_msgpack_to_json(&json_str[0], sizeof(json_str), &obj, FLB_TRUE);
     TEST_CHECK(ret >= 0);
 
     p = strstr(&json_str[0], "null");
@@ -989,7 +1073,7 @@ void test_json_pack_empty_array()
 
     /* unpack just to validate the msgpack buffer */
     msgpack_unpacked result;
-    msgpack_object obj;
+
     size_t off = 0;
     msgpack_unpacked_init(&result);
     off = 0;
@@ -1024,7 +1108,7 @@ void test_json_date(char* expect, int date_format)
 
     ret = flb_pack_msgpack_to_json_format((const char*)&input_msgpack[0], sizeof(input_msgpack),
                                           FLB_PACK_JSON_FORMAT_JSON, date_format,
-                                          json_key);
+                                          json_key, FLB_TRUE);
     if (!TEST_CHECK(ret != NULL)) {
         TEST_MSG("flb_pack_msgpack_to_json_format failed");
         flb_sds_destroy(json_key);
@@ -1103,7 +1187,7 @@ void test_json_pack_large_uint64()
     };
 
     for (i = 0; i < sizeof(test_cases) / sizeof(test_cases[0]); i++) {
-        p_in = test_cases[i].json_str;
+        p_in = (char *) test_cases[i].json_str;
         len_in = strlen(p_in);
         expected = test_cases[i].expected_val;
 
@@ -1137,9 +1221,57 @@ void test_json_pack_large_uint64()
     }
 }
 
+void test_json_pack_token_count_overflow()
+{
+    int i;
+    flb_sds_t json = NULL;
+    struct flb_pack_state state;
+    int ret;
+
+    flb_pack_state_init(&state);
+
+    /* Create a JSON array big enough to trigger realloc in flb_json_tokenise */
+    json = flb_sds_create("[");
+    for (i = 0; i < 300; i++) {
+        if (i > 0) {
+            flb_sds_cat_safe(&json, ",", 1);
+        }
+        json = flb_sds_printf(&json, "%d", i);
+    }
+    flb_sds_cat_safe(&json, "]", 1);
+
+    if (!TEST_CHECK(json != NULL)) {
+        TEST_MSG("Failed to allocate JSON string");
+        exit(1);
+    }
+
+    /* First parse: forces realloc at least once (because by default we have space for 256 tokens) */
+    ret = flb_json_tokenise(json, flb_sds_len(json), &state);
+    TEST_CHECK(ret == 0);
+    printf("\nFirst parse: tokens_count=%d\n", state.tokens_count);
+
+    /* Second parse with the same JSON and same state — should be ~301, but will be doubled if bug exists */
+    ret = flb_json_tokenise(json, flb_sds_len(json), &state);
+    TEST_CHECK(ret == 0);
+    printf("Second parse: tokens_count=%d (BUG if > ~301)\n", state.tokens_count);
+
+    TEST_CHECK(state.tokens_count == 301);
+    if (state.tokens_count != 301) {
+        TEST_MSG("tokens_count=%d (BUG if > ~301)\n", state.tokens_count);
+        exit(1);
+    }
+
+    flb_sds_destroy(json);
+    flb_pack_state_reset(&state);
+}
+
 TEST_LIST = {
     /* JSON maps iteration */
     { "json_pack"          , test_json_pack },
+    { "json_pack_ext_default_backend", test_json_pack_ext_default_backend },
+    { "json_pack_ext_jsmn_backend", test_json_pack_ext_jsmn_backend },
+    { "json_pack_recs_ext_default_backend", test_json_pack_recs_ext_default_backend },
+    { "json_pack_recs_ext_jsmn_backend", test_json_pack_recs_ext_jsmn_backend },
     { "json_pack_iter"     , test_json_pack_iter},
     { "json_pack_mult"     , test_json_pack_mult},
     { "json_pack_mult_iter", test_json_pack_mult_iter},
@@ -1161,7 +1293,7 @@ TEST_LIST = {
     /* Mixed bytes, check JSON encoding */
     { "utf8_to_json", test_utf8_to_json},
     { "json_pack_surrogate_pairs", test_json_pack_surrogate_pairs},
-    { "json_pack_surrogate_pairs_with_replacement",
-      test_json_pack_surrogate_pairs_with_replacement},
+    { "json_pack_surrogate_pairs_with_replacement", test_json_pack_surrogate_pairs_with_replacement},
+    { "json_pack_token_count_overflow", test_json_pack_token_count_overflow},
     { 0 }
 };

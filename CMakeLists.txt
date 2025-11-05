@@ -7,7 +7,7 @@ set(CMAKE_POLICY_DEFAULT_CMP0069 NEW)
 
 # Fluent Bit Version
 set(FLB_VERSION_MAJOR  4)
-set(FLB_VERSION_MINOR  1)
+set(FLB_VERSION_MINOR  2)
 set(FLB_VERSION_PATCH  0)
 set(FLB_VERSION_STR "${FLB_VERSION_MAJOR}.${FLB_VERSION_MINOR}.${FLB_VERSION_PATCH}")
 
@@ -132,12 +132,14 @@ include(CheckLanguage)
 check_language(CXX)
 
 # Enable CXX features if CXX is available
-if(CMAKE_CXX_COMPILER)
-  message(STATUS "CXX compiler found, enable simdutf.")
-  set(FLB_USE_SIMDUTF Yes)
-else()
-  message(STATUS "CXX compiler not found, disable simdutf.")
-  set(FLB_USE_SIMDUTF No)
+if (NOT DEFINED FLB_USE_SIMDUTF)
+  if(CMAKE_CXX_COMPILER)
+    message(STATUS "CXX compiler found, enable simdutf.")
+    set(FLB_USE_SIMDUTF Yes)
+  else()
+    message(STATUS "CXX compiler not found, disable simdutf.")
+    set(FLB_USE_SIMDUTF No)
+  endif()
 endif()
 
 # Output paths
@@ -211,6 +213,9 @@ option(FLB_CUSTOM_CALYPTIA     "Enable Calyptia Support"      Yes)
 
 # Config formats
 option(FLB_CONFIG_YAML         "Enable YAML config format"    Yes)
+
+option(FLB_BENCHMARKS          "Enable benchmarks"             No)
+
 
 # List of plugins available and defaults for each option
 include(cmake/plugins_options.cmake)
@@ -317,6 +322,7 @@ if(FLB_DEV)
   set(FLB_HTTP_SERVER       On)
   set(FLB_HTTP_CLIENT_DEBUG On)
   set(FLB_TESTS_INTERNAL    On)
+  set(FLB_BENCHMARKS        On)
 endif()
 
 if(FLB_TRACE)
@@ -427,6 +433,14 @@ if(FLB_SMALL)
     set(strip_flag  "")
   endif()
   set(CMAKE_C_FLAGS "${CMAKE_C_FLAGS} -Os -g0 ${strip_flag} -fno-stack-protector -fomit-frame-pointer -DNDEBUG -U_FORTIFY_SOURCE")
+endif()
+
+# simdutf
+if(FLB_UNICODE_ENCODER)
+  if (NOT FLB_USE_SIMDUTF)
+    message(STATUS "FLB_USE_SIMDUTF is disabled. Disabling FLB_UNICODE_ENCODER support.")
+    set(FLB_UNICODE_ENCODER OFF)
+  endif()
 endif()
 
 if(FLB_COVERAGE)
@@ -579,6 +593,9 @@ endif()
 # ring buffer library
 add_subdirectory(${FLB_PATH_LIB_RING_BUFFER} EXCLUDE_FROM_ALL)
 
+# yyson
+add_subdirectory(${FLB_PATH_LIB_YYJSON} EXCLUDE_FROM_ALL)
+
 # Avro
 if(FLB_AVRO_ENCODER)
   # jansson
@@ -598,7 +615,10 @@ if(FLB_UTF8_ENCODER)
 endif()
 
 # simdutf
-if(FLB_UNICODE_ENCODER)
+if(FLB_UNICODE_ENCODER AND FLB_USE_SIMDUTF)
+  if (NOT FLB_USE_SIMDUTF)
+    message(FATAL_ERROR "FLB_UNICODE_ENCODER requires FLB_USE_SIMDUTF")
+  endif()
   enable_language(CXX)
   set (CMAKE_CXX_STANDARD 11)
   add_subdirectory(${FLB_PATH_LIB_SIMDUTF} EXCLUDE_FROM_ALL)
@@ -1055,6 +1075,10 @@ else()
   FLB_DEFINITION_VAL(FLB_MSGPACK_TO_JSON_REALLOC_BUFFER_SIZE ${FLB_MSGPACK_TO_JSON_REALLOC_BUFFER_SIZE})
 endif()
 
+if (FLB_BENCHMARKS)
+  add_subdirectory(benchmarks)
+endif()
+
 # Build tools/xxd-c
 add_subdirectory(tools/xxd-c)
 
@@ -1231,6 +1255,14 @@ if(FLB_ARROW AND ARROW_GLIB_FOUND)
   FLB_DEFINITION(FLB_HAVE_ARROW)
 else()
   set(FLB_ARROW OFF)
+endif()
+
+# Additional prerequisites for Apache Parquet
+pkg_check_modules(ARROW_GLIB_PARQUET QUIET parquet-glib)
+if(FLB_ARROW AND ARROW_GLIB_PARQUET_FOUND)
+  FLB_DEFINITION(FLB_HAVE_ARROW_PARQUET)
+else()
+  message(STATUS "Arrow GLib Parquet not found. Disabling parquet compression")
 endif()
 
 # EBPF Support

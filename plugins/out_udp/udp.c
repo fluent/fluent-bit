@@ -127,7 +127,8 @@ static int deliver_chunks_raw(struct flb_out_udp *ctx,
 
 static int deliver_chunks_json(struct flb_out_udp *ctx,
                                const char *tag, int tag_len,
-                               const void *in_data, size_t in_size)
+                               const void *in_data, size_t in_size,
+                               struct flb_config *config)
 {
     int ret;
     size_t off = 0;
@@ -158,7 +159,8 @@ static int deliver_chunks_json(struct flb_out_udp *ctx,
                                                off - previous_offset,
                                                ctx->out_format,
                                                ctx->json_date_format,
-                                               ctx->date_key);
+                                               ctx->date_key,
+                                               config->json_escape_unicode);
         if (!json) {
             flb_plg_error(ctx->ins, "error formatting JSON payload");
 
@@ -291,7 +293,8 @@ static void cb_udp_flush(struct flb_event_chunk *event_chunk,
                                   event_chunk->tag,
                                   flb_sds_len(event_chunk->tag),
                                   event_chunk->data,
-                                  event_chunk->size);
+                                  event_chunk->size,
+                                  config);
     }
 
     return FLB_OUTPUT_RETURN(ret);

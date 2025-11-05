@@ -20,7 +20,6 @@
 #include <fluent-bit/flb_info.h>
 #include <fluent-bit/flb_mem.h>
 #include <fluent-bit/flb_str.h>
-#include <fluent-bit/flb_sds.h>
 #include <fluent-bit/flb_input.h>
 #include <fluent-bit/flb_input_chunk.h>
 #include <fluent-bit/flb_output.h>
@@ -34,13 +33,33 @@
 #include <string.h>
 
 /* wildcard support */
-/* tag and match should be null terminated. */
+/* match should be null terminated; tag length is provided explicitly. */
 static inline int router_match(const char *tag, int tag_len,
                                const char *match,
                                void *match_r)
 {
     int ret = FLB_FALSE;
-    char *pos = NULL;
+    const char *tag_end;
+    const char *tag_cursor;
+    size_t remaining;
+    static const char empty_tag[] = "";
+
+    if (tag_len < 0) {
+        return FLB_FALSE;
+    }
+
+    if (!tag) {
+        if (tag_len == 0) {
+            tag = empty_tag;
+        }
+        else {
+            return FLB_FALSE;
+        }
+    }
+
+    tag_end = tag + tag_len;
+    tag_cursor = tag;
+    remaining = (size_t) tag_len;
 
 #ifdef FLB_HAVE_REGEX
     struct flb_regex *match_regex = match_r;
@@ -59,7 +78,11 @@ static inline int router_match(const char *tag, int tag_len,
     (void) match_r;
 #endif
 
-    while (match) {
+    if (!match) {
+        return ret;
+    }
+
+    while (*match) {
         if (*match == '*') {
             while (*++match == '*'){
                 /* skip successive '*' */
@@ -70,58 +93,53 @@ static inline int router_match(const char *tag, int tag_len,
                 break;
             }
 
-            while ((pos = strchr(tag, (int) *match))) {
+            const char *search = tag_cursor;
+
+            while (search < tag_end) {
+                size_t span = (size_t) (tag_end - search);
+                const char *pos;
+
+                pos = memchr(search, (unsigned char) *match, span);
+                if (!pos) {
+                    break;
+                }
+
 #ifndef FLB_HAVE_REGEX
-                if (router_match(pos, tag_len, match, NULL)) {
+                if (router_match(pos, (int) (tag_end - pos), match, NULL)) {
 #else
                 /* We don't need to pass the regex recursively,
                  * we matched in order above
                  */
-                if (router_match(pos, tag_len, match, NULL)) {
+                if (router_match(pos, (int) (tag_end - pos), match, NULL)) {
 #endif
                     ret = 1;
-                    break;
+                    goto done;
                 }
-                tag = pos+1;
+                search = pos + 1;
             }
             break;
         }
-        else if (*tag != *match) {
+        else if (remaining == 0 || *tag_cursor != *match) {
             /* mismatch! */
             break;
         }
-        else if (*tag == '\0') {
-            /* end of tag. so matched! */
-            ret = 1;
-            break;
-        }
-        tag++;
+        tag_cursor++;
+        remaining--;
         match++;
     }
 
+    if (*match == '\0' && remaining == 0) {
+        ret = 1;
+    }
+
+done:
     return ret;
 }
 
 int flb_router_match(const char *tag, int tag_len, const char *match,
                      void *match_regex)
 {
-    int ret;
-    flb_sds_t t;
-
-    if (tag[tag_len] != '\0') {
-        t = flb_sds_create_len(tag, tag_len);
-        if (!t) {
-            return FLB_FALSE;
-        }
-
-        ret = router_match(t, tag_len, match, match_regex);
-        flb_sds_destroy(t);
-    }
-    else {
-        ret = router_match(tag, tag_len, match, match_regex);
-    }
-
-    return ret;
+    return router_match(tag, tag_len, match, match_regex);
 }
 
 /* Associate and input and output instances due to a previous match */
@@ -137,7 +155,8 @@ int flb_router_connect(struct flb_input_instance *in,
     }
 
     p->ins = out;
-    mk_list_add(&p->_head, &in->routes);
+    p->route = NULL;
+    cfl_list_add(&p->_head, &in->routes);
 
     return 0;
 }
@@ -154,7 +173,8 @@ int flb_router_connect_direct(struct flb_input_instance *in,
     }
 
     p->ins = out;
-    mk_list_add(&p->_head, &in->routes_direct);
+    p->route = NULL;
+    cfl_list_add(&p->_head, &in->routes_direct);
 
     return 0;
 }
@@ -238,15 +258,24 @@ int flb_router_io_set(struct flb_config *config)
         }
     }
 
+    /* Apply new router configuration if available */
+    if (!cfl_list_is_empty(&config->input_routes)) {
+        flb_debug("[router] new router configuration found, applying...");
+        if (flb_router_apply_config(config) == -1) {
+            flb_error("[router] failed to apply new router configuration");
+            return -1;
+        }
+    }
+
     return 0;
 }
 
 void flb_router_exit(struct flb_config *config)
 {
     struct mk_list *tmp;
-    struct mk_list *r_tmp;
+    struct cfl_list *r_tmp;
     struct mk_list *head;
-    struct mk_list *r_head;
+    struct cfl_list *r_head;
     struct flb_input_instance *in;
     struct flb_router_path *r;
 
@@ -255,16 +284,16 @@ void flb_router_exit(struct flb_config *config)
         in = mk_list_entry(head, struct flb_input_instance, _head);
 
         /* Iterate instance routes */
-        mk_list_foreach_safe(r_head, r_tmp, &in->routes) {
-            r = mk_list_entry(r_head, struct flb_router_path, _head);
-            mk_list_del(&r->_head);
+        cfl_list_foreach_safe(r_head, r_tmp, &in->routes) {
+            r = cfl_list_entry(r_head, struct flb_router_path, _head);
+            cfl_list_del(&r->_head);
             flb_free(r);
         }
 
         /* Iterate instance routes direct */
-        mk_list_foreach_safe(r_head, r_tmp, &in->routes_direct) {
-            r = mk_list_entry(r_head, struct flb_router_path, _head);
-            mk_list_del(&r->_head);
+        cfl_list_foreach_safe(r_head, r_tmp, &in->routes_direct) {
+            r = cfl_list_entry(r_head, struct flb_router_path, _head);
+            cfl_list_del(&r->_head);
             flb_free(r);
         }
     }

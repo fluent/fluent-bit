@@ -22,6 +22,8 @@
 #include <fluent-bit/flb_error.h>
 #include <fluent-bit/flb_pack.h>
 #include <fluent-bit/flb_gzip.h>
+#include <fluent-bit/flb_record_accessor.h>
+#include <fluent-bit/flb_ra_key.h>
 
 #include <monkey/monkey.h>
 #include <monkey/mk_core.h>
@@ -134,6 +136,13 @@ static int send_json_message_response(struct splunk_conn *conn, int http_status,
                        "Content-Length: %i\r\n\r\n%s",
                        len, message);
     }
+    else if (http_status == 400) {
+        flb_sds_printf(&out,
+                       "HTTP/1.1 400 Bad Request\r\n"
+                       "Content-Type: application/json\r\n"
+                       "Content-Length: %i\r\n\r\n%s",
+                       len, message);
+    }
 
     /* We should check this operations result */
     flb_io_net_write(conn->connection,
@@ -149,67 +158,33 @@ static int send_json_message_response(struct splunk_conn *conn, int http_status,
 /* implements functionality to get tag from key in record */
 static flb_sds_t tag_key(struct flb_splunk *ctx, msgpack_object *map)
 {
-    size_t map_size = map->via.map.size;
-    msgpack_object_kv *kv;
-    msgpack_object  key;
-    msgpack_object  val;
-    char *key_str = NULL;
-    char *val_str = NULL;
-    size_t key_str_size = 0;
-    size_t val_str_size = 0;
-    int j;
-    int check = FLB_FALSE;
-    int found = FLB_FALSE;
-    flb_sds_t tag;
+    flb_sds_t tag = NULL;
+    struct flb_ra_value *ra_val;
 
-    kv = map->via.map.ptr;
-
-    for(j=0; j < map_size; j++) {
-        check = FLB_FALSE;
-        found = FLB_FALSE;
-        key = (kv+j)->key;
-        if (key.type == MSGPACK_OBJECT_BIN) {
-            key_str  = (char *) key.via.bin.ptr;
-            key_str_size = key.via.bin.size;
-            check = FLB_TRUE;
-        }
-        if (key.type == MSGPACK_OBJECT_STR) {
-            key_str  = (char *) key.via.str.ptr;
-            key_str_size = key.via.str.size;
-            check = FLB_TRUE;
-        }
-
-        if (check == FLB_TRUE) {
-            if (strncmp(ctx->tag_key, key_str, key_str_size) == 0) {
-                val = (kv+j)->val;
-                if (val.type == MSGPACK_OBJECT_BIN) {
-                    val_str  = (char *) val.via.bin.ptr;
-                    val_str_size = val.via.str.size;
-                    found = FLB_TRUE;
-                    break;
-                }
-                if (val.type == MSGPACK_OBJECT_STR) {
-                    val_str  = (char *) val.via.str.ptr;
-                    val_str_size = val.via.str.size;
-                    found = FLB_TRUE;
-                    break;
-                }
-            }
-        }
+    /* If no record accessor is configured, return NULL */
+    if (!ctx->ra_tag_key) {
+        return NULL;
     }
 
-    if (found == FLB_TRUE) {
-        tag = flb_sds_create_len(val_str, val_str_size);
-        if (!tag) {
-            flb_errno();
-            return NULL;
-        }
-        return tag;
+    /* Use record accessor to get the value */
+    ra_val = flb_ra_get_value_object(ctx->ra_tag_key, *map);
+    if (!ra_val) {
+        flb_plg_debug(ctx->ins, "Could not find tag_key %s in record", ctx->tag_key);
+        return NULL;
     }
 
+    /* Convert the value to string */
+    if (ra_val->type == FLB_RA_STRING) {
+        tag = flb_sds_create_len(ra_val->o.via.str.ptr, ra_val->o.via.str.size);
+    }
+    else {
+        flb_plg_debug(ctx->ins, "tag_key %s value is not a string", ctx->tag_key);
+    }
 
-    flb_plg_error(ctx->ins, "Could not find tag_key %s in record", ctx->tag_key);
-    return NULL;
+    /* Clean up the record accessor value */
+    flb_ra_key_value_destroy(ra_val);
+
+    return tag;
 }
 
 /*
@@ -593,7 +568,7 @@ static int process_hec_payload(struct flb_splunk *ctx, struct splunk_conn *conn,
     }
 
     if (request->data.len <= 0 && !mk_http_parser_is_content_chunked(&session->parser)) {
-        send_response(conn, 400, "error: no payload found\n");
+        send_json_message_response(conn, 400, "{\"text\":\"No data\",\"code\":5}");
         return -2;
     }
 
@@ -635,7 +610,7 @@ static int process_hec_payload(struct flb_splunk *ctx, struct splunk_conn *conn,
         ret = handle_hec_payload(ctx, type, tag, request->data.data, request->data.len);
     }
 
-    return 0;
+    return ret;
 }
 
 static int process_hec_raw_payload(struct flb_splunk *ctx, struct splunk_conn *conn,
@@ -650,7 +625,7 @@ static int process_hec_raw_payload(struct flb_splunk *ctx, struct splunk_conn *c
     header = &session->parser.headers[MK_HEADER_CONTENT_TYPE];
     if (header->key.data == NULL) {
         send_response(conn, 400, "error: header 'Content-Type' is not set\n");
-        return -1;
+        return -2;
     }
     else if (header->val.len != 10 ||
              strncasecmp(header->val.data, "text/plain", 10) != 0) {
@@ -659,8 +634,8 @@ static int process_hec_raw_payload(struct flb_splunk *ctx, struct splunk_conn *c
     }
 
     if (request->data.len <= 0 && !mk_http_parser_is_content_chunked(&session->parser)) {
-        send_response(conn, 400, "2 error: no payload found\n");
-        return -1;
+        send_json_message_response(conn, 400, "{\"text\":\"No data\",\"code\":5}");
+        return -2;
     }
 
     header_auth = &session->parser.headers[MK_HEADER_AUTHORIZATION];
@@ -868,10 +843,24 @@ int splunk_prot_handle(struct flb_splunk *ctx, struct splunk_conn *conn,
             strcasecmp(uri, "/services/collector/raw") == 0) {
             ret = process_hec_raw_payload(ctx, conn, tag, session, request);
 
-            if (!ret) {
+            if (ret == -2) {
+                /* Response already sent, skip further response */
+                flb_sds_destroy(tag);
+                mk_mem_free(uri);
+                if (out_chunked) {
+                    mk_mem_free(out_chunked);
+                }
+                request->data.data = original_data;
+                request->data.len = original_data_size;
+                return -1;
+            }
+
+            if (ret < 0) {
                 send_json_message_response(conn, 400, "{\"text\":\"Invalid data format\",\"code\":6}");
             }
-            send_json_message_response(conn, 200, "{\"text\":\"Success\",\"code\":0}");
+            else {
+                send_json_message_response(conn, 200, "{\"text\":\"Success\",\"code\":0}");
+            }
         }
         else if (strcasecmp(uri, "/services/collector/event/1.0") == 0 ||
                  strcasecmp(uri, "/services/collector/event") == 0 ||
@@ -891,10 +880,12 @@ int splunk_prot_handle(struct flb_splunk *ctx, struct splunk_conn *conn,
                 return -1;
             }
 
-            if (!ret) {
+            if (ret < 0) {
                 send_json_message_response(conn, 400, "{\"text\":\"Invalid data format\",\"code\":6}");
             }
-            send_json_message_response(conn, 200, "{\"text\":\"Success\",\"code\":0}");
+            else {
+                send_json_message_response(conn, 200, "{\"text\":\"Success\",\"code\":0}");
+            }
         }
         else {
             send_response(conn, 400, "error: invalid HTTP endpoint\n");
@@ -1096,9 +1087,9 @@ static int process_hec_payload_ng(struct flb_http_request *request,
     }
 
     if (request->body == NULL || cfl_sds_len(request->body) <= 0) {
-        send_response_ng(response, 400, "error: no payload found\n");
+        send_json_message_response_ng(response, 400, "{\"text\":\"No data\",\"code\":5}");
 
-        return -1;
+        return -2;
     }
 
     return handle_hec_payload(ctx, type, tag, request->body, cfl_sds_len(request->body));
@@ -1132,9 +1123,9 @@ static int process_hec_raw_payload_ng(struct flb_http_request *request,
     }
 
     if (request->body == NULL || cfl_sds_len(request->body) == 0) {
-        send_response_ng(response, 400, "error: no payload found\n");
+        send_json_message_response_ng(response, 400, "{\"text\":\"No data\",\"code\":5}");
 
-        return -1;
+        return -2;
     }
 
     /* Always handle as raw type of payloads here */
@@ -1210,6 +1201,11 @@ int splunk_prot_handle_ng(struct flb_http_request *request,
     if (strcasecmp(request->path, "/services/collector/raw/1.0") == 0 ||
         strcasecmp(request->path, "/services/collector/raw") == 0) {
         ret = process_hec_raw_payload_ng(request, response, tag, context);
+        if (ret == -2) {
+            /* Response already sent, skip further response */
+            flb_sds_destroy(tag);
+            return -1;
+        }
         if (ret != 0) {
             send_json_message_response_ng(response, 400, "{\"text\":\"Invalid data format\",\"code\":6}");
             ret = -1;
@@ -1223,6 +1219,11 @@ int splunk_prot_handle_ng(struct flb_http_request *request,
              strcasecmp(request->path, "/services/collector/event") == 0 ||
              strcasecmp(request->path, "/services/collector") == 0) {
         ret = process_hec_payload_ng(request, response, tag, context);
+        if (ret == -2) {
+            /* Response already sent, skip further response */
+            flb_sds_destroy(tag);
+            return -1;
+        }
         if (ret != 0) {
             send_json_message_response_ng(response, 400, "{\"text\":\"Invalid data format\",\"code\":6}");
             ret = -1;

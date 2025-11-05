@@ -75,9 +75,7 @@ struct flb_http *http_config_create(struct flb_input_instance *ins)
 
     if (ret != FLB_EVENT_ENCODER_SUCCESS) {
         flb_plg_error(ctx->ins, "error initializing event encoder : %d", ret);
-
         http_config_destroy(ctx);
-
         return NULL;
     }
 
@@ -85,8 +83,17 @@ struct flb_http *http_config_create(struct flb_input_instance *ins)
 
     if (ctx->success_headers_str == NULL) {
         http_config_destroy(ctx);
-
         return NULL;
+    }
+
+    /* Create record accessor for tag_key if specified */
+    if (ctx->tag_key) {
+        ctx->ra_tag_key = flb_ra_create(ctx->tag_key, FLB_TRUE);
+        if (!ctx->ra_tag_key) {
+            flb_plg_error(ctx->ins, "invalid record accessor pattern for tag_key: %s", ctx->tag_key);
+            http_config_destroy(ctx);
+            return NULL;
+        }
     }
 
     flb_config_map_foreach(header_iterator, header_pair, ctx->success_headers) {
@@ -132,6 +139,10 @@ struct flb_http *http_config_create(struct flb_input_instance *ins)
 
 int http_config_destroy(struct flb_http *ctx)
 {
+    if (ctx->ra_tag_key) {
+        flb_ra_destroy(ctx->ra_tag_key);
+    }
+
     /* release all connections */
     http_conn_release_all(ctx);
 

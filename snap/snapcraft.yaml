@@ -1,13 +1,13 @@
 name: fluent-bit
-base: core18
-version: '4.1.0'
+base: core20
+version: '4.2.0'
 summary: High performance logs and stream processor
 description: |
   Fluent Bit is a high performance log processor and stream processor for Linux.
   It provides a flexible pluggable architecture to collect, enrich and deliver
   logs or metrics to multiple databases or cloud providers.
 license: 'Apache-2.0'
-icon: ./fluent-bit.svg
+icon: gui/fluent-bit.svg
 confinement: 'strict'
 grade: 'stable'
 
@@ -19,14 +19,15 @@ plugs:
 
 apps:
   service:
-    command: fluent-bit -c $SNAP/etc/fluent-bit/fluent-bit.conf
+    command: usr/bin/fluent-bit -c $SNAP/usr/etc/fluent-bit/fluent-bit.conf
     daemon: simple
     plugs:
       - network
       - network-bind
       - read-config
+
   fluent-bit:
-    command: fluent-bit
+    command: usr/bin/fluent-bit
     plugs:
       - network
       - network-bind
@@ -35,6 +36,8 @@ parts:
   fluent-bit:
     source: https://github.com/fluent/fluent-bit
     source-type: git
+    build-snaps:
+      - cmake/latest/stable
     plugin: cmake
     stage-packages:
         - libsasl2-2
@@ -51,15 +54,18 @@ parts:
         - valgrind
         - libssl-dev
         - libpq5
+        - libyaml-dev
         - postgresql-server-dev-all
-    configflags:
+    cmake-parameters:
+        - -DCMAKE_INSTALL_PREFIX=/usr
         - -DFLB_DEBUG=On
         - -DFLB_OUT_KAFKA=On
         - -DFLB_JEMALLOC=On
         - -DFLB_EXAMPLES=OFF
         - -DFLB_SHARED_LIB=Off
         - -DFLB_OUT_PGSQL=On
+    build-attributes: [keep-execstack]
 
 layout:
   /etc/fluent-bit:
-    bind: $SNAP/etc/fluent-bit
+    bind: $SNAP/usr/etc/fluent-bit

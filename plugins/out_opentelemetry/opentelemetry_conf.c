@@ -23,6 +23,11 @@
 #include <fluent-bit/flb_sds.h>
 #include <fluent-bit/flb_kv.h>
 #include <fluent-bit/flb_record_accessor.h>
+#ifdef FLB_HAVE_SIGNV4
+#ifdef FLB_HAVE_AWS
+#include <fluent-bit/flb_aws_credentials.h>
+#endif
+#endif
 
 #include "opentelemetry.h"
 #include "opentelemetry_conf.h"
@@ -167,7 +172,7 @@ static int config_add_labels(struct flb_output_instance *ins,
         k = mk_list_entry_first(mv->val.list, struct flb_slist_entry, _head);
         v = mk_list_entry_last(mv->val.list, struct flb_slist_entry, _head);
 
-        kv = flb_kv_item_create(&ctx->kv_labels, k->str, v->str);
+        kv = flb_kv_item_set(&ctx->kv_labels, k->str, v->str);
         if (!kv) {
             flb_plg_error(ins, "could not append label %s=%s\n", k->str, v->str);
             return -1;
@@ -257,6 +262,8 @@ struct opentelemetry_context *flb_opentelemetry_context_create(struct flb_output
     const char *tmp = NULL;
     uint64_t http_client_flags;
     int http_protocol_version;
+    int http2_config_value;
+    int http2_effective_value;
 
     /* Allocate plugin context */
     ctx = flb_calloc(1, sizeof(struct opentelemetry_context));
@@ -271,6 +278,18 @@ struct opentelemetry_context *flb_opentelemetry_context_create(struct flb_output
     ret = flb_output_config_map_set(ins, (void *) ctx);
     if (ret == -1) {
         flb_free(ctx);
+        return NULL;
+    }
+
+    if (ctx->max_resources < 0) {
+        flb_plg_error(ins, "max_resources must be greater than or equal to zero");
+        flb_opentelemetry_context_destroy(ctx);
+        return NULL;
+    }
+
+    if (ctx->max_scopes < 0) {
+        flb_plg_error(ins, "max_scopes must be greater than or equal to zero");
+        flb_opentelemetry_context_destroy(ctx);
         return NULL;
     }
 
@@ -298,6 +317,34 @@ struct opentelemetry_context *flb_opentelemetry_context_create(struct flb_output
         flb_opentelemetry_context_destroy(ctx);
         return NULL;
     }
+
+#ifdef FLB_HAVE_SIGNV4
+#ifdef FLB_HAVE_AWS
+    if (ctx->has_aws_auth) {
+        if (!ctx->aws_service) {
+            flb_plg_error(ins, "aws_auth option requires " FLB_OPENTELEMETRY_AWS_CREDENTIAL_PREFIX "service to be set");
+            flb_opentelemetry_context_destroy(ctx);
+            return NULL;
+        }
+
+        ctx->aws_provider = flb_managed_chain_provider_create(
+            ins,
+            config,
+            FLB_OPENTELEMETRY_AWS_CREDENTIAL_PREFIX,
+            NULL,
+            flb_aws_client_generator()
+        );
+        if (!ctx->aws_provider) {
+            flb_plg_error(ins, "failed to create aws credential provider for sigv4 auth");
+            flb_opentelemetry_context_destroy(ctx);
+            return NULL;
+        }
+
+        ctx->aws_region = flb_output_get_property(FLB_OPENTELEMETRY_AWS_CREDENTIAL_PREFIX
+                                                  "region", ctx->ins);
+    }
+#endif
+#endif
 
     /* Check if SSL/TLS is enabled */
 #ifdef FLB_HAVE_TLS
@@ -582,11 +629,19 @@ struct opentelemetry_context *flb_opentelemetry_context_create(struct flb_output
 
     ctx->enable_http2_flag = FLB_TRUE;
 
+    if (ctx->enable_http2) {
+        http2_config_value = flb_utils_bool(ctx->enable_http2);
+    }
+    else {
+        http2_config_value = FLB_FALSE;
+    }
+
+    http2_effective_value = http2_config_value;
+
     /* if gRPC has been enabled, auto-enable HTTP/2 to make end-user life easier */
-    if (ctx->enable_grpc_flag && !flb_utils_bool(ctx->enable_http2)) {
+    if (ctx->enable_grpc_flag && http2_config_value == FLB_FALSE) {
         flb_plg_info(ctx->ins, "gRPC enabled, HTTP/2 has been auto-enabled");
-        flb_sds_destroy(ctx->enable_http2);
-        ctx->enable_http2 = flb_sds_create("on");
+        http2_effective_value = FLB_TRUE;
     }
 
     /*
@@ -594,10 +649,10 @@ struct opentelemetry_context *flb_opentelemetry_context_create(struct flb_output
      * moving forward it wont be necessary since we are now setting some special defaults
      * in case of gRPC is enabled (which is the only case where HTTP/2 is mandatory).
      */
-    if (strcasecmp(ctx->enable_http2, "force") == 0) {
+    if (ctx->enable_http2 && strcasecmp(ctx->enable_http2, "force") == 0) {
         http_protocol_version = HTTP_PROTOCOL_VERSION_20;
     }
-    else if (flb_utils_bool(ctx->enable_http2)) {
+    else if (http2_effective_value == FLB_TRUE) {
         if (!ins->use_tls) {
             http_protocol_version = HTTP_PROTOCOL_VERSION_20;
         }
@@ -761,6 +816,14 @@ void flb_opentelemetry_context_destroy(struct opentelemetry_context *ctx)
     if (ctx->ra_log_meta_otlp_trace_flags) {
         flb_ra_destroy(ctx->ra_log_meta_otlp_trace_flags);
     }
+
+#ifdef FLB_HAVE_SIGNV4
+#ifdef FLB_HAVE_AWS
+    if (ctx->aws_provider) {
+        flb_aws_provider_destroy(ctx->aws_provider);
+    }
+#endif
+#endif
 
     flb_free(ctx->proxy_host);
     flb_free(ctx);

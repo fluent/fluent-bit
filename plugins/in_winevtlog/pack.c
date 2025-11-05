@@ -37,41 +37,74 @@ static int pack_nullstr(struct winevtlog_config *ctx)
     return flb_log_event_encoder_append_body_cstring(ctx->log_encoder, "");
 }
 
-static int pack_wstr(struct winevtlog_config *ctx, const wchar_t *wstr)
+static int pack_str_codepage(struct winevtlog_config *ctx, const wchar_t *wstr,
+                             UINT code_page, BOOL use_ansi)
 {
-    int size;
-    char *buf;
-    UINT code_page = CP_UTF8;
-    LPCSTR defaultChar = L" ";
+    UINT cp = use_ansi ? CP_ACP : code_page;
+    DWORD flags = (cp == CP_UTF8) ? WC_ERR_INVALID_CHARS : 0;
+    int size = 0;
+    char *buf = NULL;
 
-    if (ctx->use_ansi) {
-        code_page = CP_ACP;
+    if (!wstr) {
+        return -1;
     }
 
-    /* Compute the buffer size first */
-    size = WideCharToMultiByte(code_page, 0, wstr, -1, NULL, 0, NULL, NULL);
+    size = WideCharToMultiByte(cp, flags, wstr, -1, NULL, 0, NULL, NULL);
     if (size == 0) {
         return -1;
     }
 
     buf = flb_malloc(size);
-    if (buf == NULL) {
+    if (!buf) {
         flb_errno();
+
         return -1;
     }
 
-    /* Convert UTF-16 into UTF-8 */
-    size = WideCharToMultiByte(code_page, 0, wstr, -1, buf, size, defaultChar, NULL);
-    if (size == 0) {
+    if (WideCharToMultiByte(cp, flags, wstr, -1, buf, size, NULL, NULL) == 0) {
         flb_free(buf);
         return -1;
     }
 
-    /* Pack buf except the trailing '\0' */
     flb_log_event_encoder_append_body_string(ctx->log_encoder, buf, size - 1);
-
     flb_free(buf);
     return 0;
+}
+
+static int pack_wstr(struct winevtlog_config *ctx, const wchar_t *wstr)
+{
+    return pack_str_codepage(ctx, wstr, CP_UTF8, ctx->use_ansi);
+}
+
+static int pack_astr(struct winevtlog_config *ctx, const char *astr)
+{
+    wchar_t *wbuf = NULL;
+    int wlen = 0;
+    int ret;
+
+    if (!astr) {
+        return -1;
+    }
+
+    wlen = MultiByteToWideChar(CP_ACP, MB_ERR_INVALID_CHARS, astr, -1, NULL, 0);
+    if (wlen == 0) {
+        return -1;
+    }
+
+    wbuf = flb_malloc(sizeof(wchar_t) * wlen);
+    if (!wbuf) {
+        flb_errno();
+        return -1;
+    }
+
+    if (MultiByteToWideChar(CP_ACP, MB_ERR_INVALID_CHARS, astr, -1, wbuf, wlen) == 0) {
+        flb_free(wbuf);
+        return -1;
+    }
+
+    ret = pack_wstr(ctx, wbuf);
+    flb_free(wbuf);
+    return ret;
 }
 
 static int pack_binary(struct winevtlog_config *ctx, PBYTE bin, size_t length)
@@ -110,6 +143,9 @@ static int pack_binary(struct winevtlog_config *ctx, PBYTE bin, size_t length)
 static int pack_guid(struct winevtlog_config *ctx, const GUID *guid)
 {
     LPOLESTR p = NULL;
+    if (!guid) {
+        return -1;
+    }
 
     if (FAILED(StringFromCLSID(guid, &p))) {
         return -1;
@@ -385,7 +421,7 @@ static void pack_string_inserts(struct winevtlog_config *ctx, PEVT_VARIANT value
             }
             break;
         case EvtVarTypeAnsiString:
-            if (pack_wstr(ctx, values[i].AnsiStringVal)) {
+            if (pack_astr(ctx, values[i].AnsiStringVal)) {
                 pack_nullstr(ctx);
             }
             break;
@@ -639,14 +675,24 @@ void winevtlog_pack_event(PEVT_VARIANT system, WCHAR *message,
     /* ActivityID */
     ret = flb_log_event_encoder_append_body_cstring(ctx->log_encoder, "ActivityID");
 
-    if (pack_guid(ctx, system[EvtSystemActivityID].GuidVal)) {
+    if (EvtVarTypeNull != system[EvtSystemActivityID].Type) {
+        if (pack_guid(ctx, system[EvtSystemActivityID].GuidVal)) {
+            pack_nullstr(ctx);
+        }
+    }
+    else {
         pack_nullstr(ctx);
     }
 
     /* Related ActivityID */
     ret = flb_log_event_encoder_append_body_cstring(ctx->log_encoder, "RelatedActivityID");
 
-    if (pack_guid(ctx, system[EvtSystemRelatedActivityID].GuidVal)) {
+    if (EvtVarTypeNull != system[EvtSystemRelatedActivityID].Type) {
+        if (pack_guid(ctx, system[EvtSystemRelatedActivityID].GuidVal)) {
+            pack_nullstr(ctx);
+        }
+    }
+    else {
         pack_nullstr(ctx);
     }
 

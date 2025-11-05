@@ -44,6 +44,7 @@
 #include <fluent-bit/flb_utils.h>
 #include <fluent-bit/flb_base64.h>
 #include <fluent-bit/tls/flb_tls.h>
+#include <time.h>
 #include <fluent-bit/flb_signv4_ng.h>
 
 void flb_http_client_debug(struct flb_http_client *c,
@@ -243,7 +244,7 @@ static int check_connection(struct flb_http_client *c)
     buf = flb_malloc(len + 1);
     if (!buf) {
         flb_errno();
-        return -1;
+        return FLB_HTTP_ERROR;
     }
 
     memcpy(buf, header, len);
@@ -263,6 +264,19 @@ static int check_connection(struct flb_http_client *c)
 static inline void consume_bytes(char *buf, int bytes, int length)
 {
     memmove(buf, buf + bytes, length - bytes);
+}
+
+static inline void http_client_response_reset(struct flb_http_client *c)
+{
+    c->resp.data_len = 0;
+    c->resp.status = 0;
+    c->resp.content_length = -1;
+    c->resp.chunked_encoding = FLB_FALSE;
+    c->resp.connection_close = -1;
+    c->resp.headers_end = NULL;
+    c->resp.payload = NULL;
+    c->resp.payload_size = 0;
+    c->resp.chunk_processed_end = NULL;
 }
 
 static int process_chunked_data(struct flb_http_client *c)
@@ -1139,6 +1153,18 @@ int flb_http_set_content_encoding_snappy(struct flb_http_client *c)
     return ret;
 }
 
+int flb_http_set_read_idle_timeout(struct flb_http_client *c, int timeout)
+{
+    c->read_idle_timeout = timeout;
+    return 0;
+}
+
+int flb_http_set_response_timeout(struct flb_http_client *c, int timeout)
+{
+    c->response_timeout = timeout;
+    return 0;
+}
+
 int flb_http_set_callback_context(struct flb_http_client *c,
                                   struct flb_callback *cb_ctx)
 {
@@ -1417,8 +1443,12 @@ int flb_http_do_request(struct flb_http_client *c, size_t *bytes)
     /* number of sent bytes */
     *bytes = (bytes_header + bytes_body);
 
+    /* Initialize timeout tracking */
+    c->ts_start = time(NULL);
+    c->last_read_ts = c->ts_start;
+
     /* prep c->resp for incoming data */
-    c->resp.data_len = 0;
+    http_client_response_reset(c);
 
     /* at this point we've sent our request so we expect more data in response*/
     return FLB_HTTP_MORE;
@@ -1440,6 +1470,7 @@ int flb_http_get_response_data(struct flb_http_client *c, size_t bytes_consumed)
     int r_bytes;
     ssize_t available;
     size_t out_size;
+    time_t now;
 
     /* If the caller has consumed some of the payload (via bytes_consumed)
      * we consume those bytes off the payload
@@ -1483,6 +1514,21 @@ int flb_http_get_response_data(struct flb_http_client *c, size_t bytes_consumed)
             }
             available = flb_http_buffer_available(c) - 1;
         }
+        now = time(NULL);
+
+        if (c->response_timeout > 0 && (now - c->ts_start) > c->response_timeout) {
+            flb_error("[http_client] response timeout reached (elapsed=%lds, limit=%ds)",
+                      (long)(now - c->ts_start), c->response_timeout);
+            flb_upstream_conn_recycle(c->u_conn, FLB_FALSE);
+            return FLB_HTTP_ERROR;
+        }
+
+        if (c->read_idle_timeout > 0 &&  (now - c->last_read_ts) > c->read_idle_timeout) {
+            flb_error("[http_client] read idle timeout reached (idle=%lds, limit=%ds)",
+                      (long)(now - c->last_read_ts), c->read_idle_timeout);
+            flb_upstream_conn_recycle(c->u_conn, FLB_FALSE);
+            return FLB_HTTP_ERROR;
+        }
 
         r_bytes = flb_io_net_read(c->u_conn,
                                   c->resp.data + c->resp.data_len,
@@ -1497,6 +1543,10 @@ int flb_http_get_response_data(struct flb_http_client *c, size_t bytes_consumed)
         if (r_bytes >= 0) {
             c->resp.data_len += r_bytes;
             c->resp.data[c->resp.data_len] = '\0';
+
+            if (r_bytes > 0) {
+                c->last_read_ts = now;
+            }
 
             ret = process_data(c);
             if (ret == FLB_HTTP_ERROR) {
@@ -1534,17 +1584,25 @@ int flb_http_do(struct flb_http_client *c, size_t *bytes)
 
     /* Read the server response, we need at least 19 bytes */
     while (ret == FLB_HTTP_MORE || ret == FLB_HTTP_CHUNK_AVAILABLE) {
-        /* flb_http_do does not consume any bytes during processing
+        /*
+         * flb_http_do does not consume any bytes during processing
          * so we always pass 0 consumed_bytes because we fetch until
          * the end chunk before returning to the caller
          */
-
         ret = flb_http_get_response_data(c, 0);
+    }
+
+
+    if (ret != FLB_HTTP_OK) {
+        return ret;
     }
 
     /* Check 'Connection' response header */
     ret = check_connection(c);
-    if (ret == FLB_HTTP_OK) {
+    if (ret == FLB_HTTP_ERROR) {
+        return ret;
+    }
+    else if (ret == FLB_HTTP_OK) {
         /*
          * If the server replied that the connection will be closed
          * and our Upstream connection is in keepalive mode, we must
@@ -1558,6 +1616,9 @@ int flb_http_do(struct flb_http_client *c, size_t *bytes)
                       c->u_conn->upstream->tcp_port,
                       c->u_conn->fd);
         }
+    }
+    else if (ret == FLB_HTTP_NOT_FOUND) {
+        /* Connection header not found, continue normally */
     }
 
 #ifdef FLB_HAVE_HTTP_CLIENT_DEBUG

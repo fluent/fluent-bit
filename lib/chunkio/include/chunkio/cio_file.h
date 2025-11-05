@@ -40,6 +40,7 @@ struct cio_file {
     size_t realloc_size;      /* chunk size to increase alloc */
     char *path;               /* root path + stream   */
     char *map;                /* map of data          */
+    struct cio_ctx *ctx;      /* owning context */
 #ifdef _WIN32
     HANDLE backing_file;
     HANDLE backing_mapping;
@@ -49,6 +50,8 @@ struct cio_file {
     char *st_content;
     crc_t crc_cur;            /* crc: current value calculated */
     int crc_reset;            /* crc: must recalculate from the beginning ? */
+    int auto_remap_warned;    /* has sync auto-remap warning been emitted? */
+    int map_truncated_warned; /* has RO truncation warning been emitted? */
 };
 
 size_t cio_file_real_size(struct cio_file *cf);

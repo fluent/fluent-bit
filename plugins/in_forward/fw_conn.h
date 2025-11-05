@@ -20,6 +20,8 @@
 #ifndef FLB_IN_FW_CONN_H
 #define FLB_IN_FW_CONN_H
 
+#include <fluent-bit/flb_compression.h>
+
 #define FLB_IN_FW_CHUNK_SIZE      "1024000" /* 1MB */
 #define FLB_IN_FW_CHUNK_MAX_SIZE  "6144000" /* =FLB_IN_FW_CHUNK_SIZE * 6.  6MB */
 #define FLB_IN_FW_NONCE_SIZE      16
@@ -47,6 +49,10 @@ struct fw_conn {
     int  buf_len;                    /* Data length                       */
     int  buf_size;                   /* Buffer size                       */
     size_t rest;                     /* Unpacking offset                  */
+
+    /* Decompression context */
+    int compression_type;            /* e.g., FLB_COMPRESSION_ALGORITHM_GZIP */
+    struct flb_decompression_context *d_ctx; /* Stateful decompressor context */
 
     struct flb_in_fw_helo *helo;     /* secure forward HELO phase */
 

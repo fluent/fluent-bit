@@ -216,7 +216,7 @@ static int setup_users(struct flb_in_fw_config *ctx,
 
         /* Get first value (user's name) */
         sentry = mk_list_entry_first(split, struct flb_split_entry, _head);
-        tmp = flb_sds_create_len(sentry->value, sentry->len + 1);
+        tmp = flb_sds_create_len(sentry->value, sentry->len);
         if (tmp == NULL) {
             delete_users(ctx);
             flb_free(user);
@@ -230,13 +230,14 @@ static int setup_users(struct flb_in_fw_config *ctx,
         tmp = flb_sds_create_len(sentry->value, sentry->len);
         if (tmp == NULL) {
             delete_users(ctx);
+            flb_sds_destroy(user->name);
             flb_free(user);
             flb_utils_split_free(split);
             return -1;
         }
         user->password = tmp;
 
-        /* Release split */
+        /* Release split - only after both allocations succeed */
         flb_utils_split_free(split);
 
         /* Link to parent list */
@@ -330,6 +331,16 @@ static int in_fw_init(struct flb_input_instance *ins,
     ret = setup_users(ctx, ins);
     if (ret == -1) {
         flb_free(ctx);
+        return -1;
+    }
+
+    /* Users-only configuration must be rejected unless a (possibly empty) shared key is enabled. */
+    if (mk_list_size(&ctx->users) > 0 &&
+        ctx->shared_key == NULL &&
+        ctx->empty_shared_key == FLB_FALSE) {
+        flb_plg_error(ctx->ins, "security.users is set but no shared_key or empty_shared_key");
+        delete_users(ctx);
+        fw_config_destroy(ctx);
         return -1;
     }
 

@@ -29,6 +29,8 @@
 #include <fluent-bit/flb_record_accessor.h>
 #include <fluent-bit/flb_ra_key.h>
 #include <fluent-bit/flb_log_event_decoder.h>
+#include <fluent-bit/flb_log.h>
+#include <fluent-bit/flb_sds.h>
 #include <msgpack.h>
 
 #include <time.h>
@@ -557,7 +559,8 @@ static int elasticsearch_format(struct flb_config *config,
         }
 
         /* Convert msgpack to JSON */
-        out_buf = flb_msgpack_raw_to_json_sds(tmp_sbuf.data, tmp_sbuf.size);
+        out_buf = flb_msgpack_raw_to_json_sds(tmp_sbuf.data, tmp_sbuf.size,
+                                              config->json_escape_unicode);
         msgpack_sbuffer_destroy(&tmp_sbuf);
         if (!out_buf) {
             flb_log_event_decoder_destroy(&log_decoder);
@@ -822,6 +825,7 @@ static void cb_es_flush(struct flb_event_chunk *event_chunk,
     struct flb_http_client *c;
     flb_sds_t signature = NULL;
     int compressed = FLB_FALSE;
+    flb_sds_t header_line = NULL;
 
     /* Get upstream connection */
     u_conn = flb_upstream_conn_get(ctx->u);
@@ -884,6 +888,25 @@ static void cb_es_flush(struct flb_event_chunk *event_chunk,
     }
     else if (ctx->cloud_user && ctx->cloud_passwd) {
         flb_http_basic_auth(c, ctx->cloud_user, ctx->cloud_passwd);
+    }
+    else if (ctx->http_api_key) {
+        /* 7 for ApiKey + space */
+        header_line = flb_sds_create_size(strlen(ctx->http_api_key)+7);
+        if (header_line == NULL) {
+            flb_plg_error(ctx->ins, "failed to format API key auth header");
+            goto retry;
+        }
+        header_line = flb_sds_printf(&header_line, "ApiKey %s", ctx->http_api_key);
+
+        if (flb_http_add_header(c,
+                                FLB_HTTP_HEADER_AUTH, strlen(FLB_HTTP_HEADER_AUTH),
+                                header_line, flb_sds_len(header_line)) != 0) {
+            flb_plg_error(ctx->ins, "failed to add API key auth header");
+            flb_sds_destroy(header_line);
+            goto retry;
+        }
+
+        flb_sds_destroy(header_line);
     }
 
 #ifdef FLB_HAVE_AWS
@@ -1099,6 +1122,11 @@ static struct flb_config_map config_map[] = {
      0, FLB_TRUE, offsetof(struct flb_elasticsearch, http_passwd),
      "Password for user defined in HTTP_User"
     },
+    {
+    FLB_CONFIG_MAP_STR, "http_api_key", NULL,
+    0, FLB_TRUE, offsetof(struct flb_elasticsearch, http_api_key),
+    "Base-64 encoded API key credential for Elasticsearch"
+    },
 
     /* HTTP Compression */
     {
@@ -1288,7 +1316,6 @@ static struct flb_config_map config_map[] = {
      0, FLB_TRUE, offsetof(struct flb_elasticsearch, trace_error),
      "When enabled print the Elasticsearch exception to stderr (for diag only)"
     },
-
     /* EOF */
     {0}
 };

@@ -45,7 +45,7 @@
 typedef __m128i flb_vector8;
 typedef __m128i flb_vector32;
 
-#elif defined(__aarch64__) && defined(__ARM_NEON)
+#elif defined(__aarch64__) || defined(_M_ARM64) || defined(_M_ARM64EC)
 /*
  * We use the Neon instructions if the compiler provides access to them (as
  * indicated by __ARM_NEON) and we are on aarch64.  While Neon support is
@@ -54,10 +54,36 @@ typedef __m128i flb_vector32;
  * could not realistically use it there without a run-time check, which seems
  * not worth the trouble for now.
  */
-#include <arm_neon.h>
-#define FLB_SIMD_NEON
-typedef uint8x16_t flb_vector8;
-typedef uint32x4_t flb_vector32;
+/* portable include detection: avoid __has_include on old GCC (CentOS 7) */
+/* Prefer feature macro if present. The latter branch is mainly for MSVC C++ compiler. */
+#if defined(__ARM_NEON) || defined(__ARM_NEON__)
+  #include <arm_neon.h>
+  #define FLB_SIMD_NEON
+#else
+  /* Use __has_include only if the preprocessor supports it */
+  #if defined(__has_include)
+    #if __has_include(<arm_neon.h>)
+      #include <arm_neon.h>
+      #define FLB_SIMD_NEON
+    #elif __has_include(<arm64_neon.h>)
+      #include <arm64_neon.h>
+      #define FLB_SIMD_NEON
+    #endif
+  #endif
+  /* Fallback for old GCC on aarch64 where arm_neon.h normally exists */
+  #ifndef FLB_SIMD_NEON
+    #include <arm_neon.h>
+    #define FLB_SIMD_NEON
+  #endif
+#endif
+
+#if defined(FLB_SIMD_NEON)
+  typedef uint8x16_t  flb_vector8;
+  typedef uint32x4_t  flb_vector32;
+#else
+  #define FLB_SIMD_NONE
+  typedef uint64_t flb_vector8;
+#endif
 
 #elif defined(__riscv) && (__riscv_v_intrinsic >= 11000)
 /*

@@ -51,7 +51,8 @@ static int cb_azure_init(struct flb_output_instance *ins,
 static int azure_format(const void *in_buf, size_t in_bytes,
                         flb_sds_t tag, flb_sds_t *tag_val_out,
                         char **out_buf, size_t *out_size,
-                        struct flb_azure *ctx)
+                        struct flb_azure *ctx,
+                        struct flb_config *config)
 {
     int i;
     int array_size = 0;
@@ -160,7 +161,8 @@ static int azure_format(const void *in_buf, size_t in_bytes,
         msgpack_sbuffer_destroy(&tmp_sbuf);
     }
 
-    record = flb_msgpack_raw_to_json_sds(mp_sbuf.data, mp_sbuf.size);
+    record = flb_msgpack_raw_to_json_sds(mp_sbuf.data, mp_sbuf.size,
+                                         config->json_escape_unicode);
     if (!record) {
         flb_errno();
 
@@ -317,7 +319,8 @@ static void cb_azure_flush(struct flb_event_chunk *event_chunk,
 
     /* Convert binary logs into a JSON payload */
     ret = azure_format(event_chunk->data, event_chunk->size,
-                      event_chunk->tag, &final_log_type, &buf_data, &buf_size, ctx);
+                       event_chunk->tag, &final_log_type, &buf_data, &buf_size, ctx,
+                       config);
     /* If cannot get matching record using log_type_prefix, use log_type directly */
     if (!final_log_type) {
         final_log_type = ctx->log_type;

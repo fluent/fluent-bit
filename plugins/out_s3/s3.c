@@ -84,12 +84,31 @@ static void remove_from_queue(struct upload_queue *entry);
 
 static int blob_initialize_authorization_endpoint_upstream(struct flb_s3 *context);
 
-static struct flb_aws_header content_encoding_header = {
-    .key = "Content-Encoding",
-    .key_len = 16,
-    .val = "gzip",
-    .val_len = 4,
-};
+static struct flb_aws_header *get_content_encoding_header(int compression_type)
+{
+    static struct flb_aws_header gzip_header = {
+        .key = "Content-Encoding",
+        .key_len = 16,
+        .val = "gzip",
+        .val_len = 4,
+    };
+    
+    static struct flb_aws_header zstd_header = {
+        .key = "Content-Encoding",
+        .key_len = 16,
+        .val = "zstd",
+        .val_len = 4,
+    };
+    
+    switch (compression_type) {
+        case FLB_AWS_COMPRESS_GZIP:
+            return &gzip_header;
+        case FLB_AWS_COMPRESS_ZSTD:
+            return &zstd_header;
+        default:
+            return NULL;
+    }
+}
 
 static struct flb_aws_header content_type_header = {
     .key = "Content-Type",
@@ -158,11 +177,12 @@ int create_headers(struct flb_s3 *ctx, char *body_md5,
     int n = 0;
     int headers_len = 0;
     struct flb_aws_header *s3_headers = NULL;
+    struct flb_aws_header *encoding_header = NULL;
 
     if (ctx->content_type != NULL) {
         headers_len++;
     }
-    if (ctx->compression == FLB_AWS_COMPRESS_GZIP) {
+    if (ctx->compression == FLB_AWS_COMPRESS_GZIP || ctx->compression == FLB_AWS_COMPRESS_ZSTD) {
         headers_len++;
     }
     if (ctx->canned_acl != NULL) {
@@ -192,8 +212,15 @@ int create_headers(struct flb_s3 *ctx, char *body_md5,
         s3_headers[n].val_len = strlen(ctx->content_type);
         n++;
     }
-    if (ctx->compression == FLB_AWS_COMPRESS_GZIP) {
-        s3_headers[n] = content_encoding_header;
+    if (ctx->compression == FLB_AWS_COMPRESS_GZIP || ctx->compression == FLB_AWS_COMPRESS_ZSTD) {
+        encoding_header = get_content_encoding_header(ctx->compression);
+
+        if (encoding_header == NULL) {
+            flb_errno();
+            flb_free(s3_headers);
+            return -1;
+        }
+        s3_headers[n] = *encoding_header;
         n++;
     }
     if (ctx->canned_acl != NULL) {
@@ -703,9 +730,11 @@ static int cb_s3_init(struct flb_output_instance *ins,
             flb_plg_error(ctx->ins, "unknown compression: %s", tmp);
             return -1;
         }
-        if (ctx->use_put_object == FLB_FALSE && ctx->compression == FLB_AWS_COMPRESS_ARROW) {
+        if (ctx->use_put_object == FLB_FALSE &&
+            (ret == FLB_AWS_COMPRESS_ARROW ||
+             ret == FLB_AWS_COMPRESS_PARQUET)) {
             flb_plg_error(ctx->ins,
-                          "use_put_object must be enabled when Apache Arrow is enabled");
+                          "use_put_object must be enabled when Apache Arrow or Parquet is enabled");
             return -1;
         }
         ctx->compression = ret;
@@ -730,7 +759,7 @@ static int cb_s3_init(struct flb_output_instance *ins,
             flb_plg_error(ctx->ins, "upload_chunk_size must be at least 5,242,880 bytes");
             return -1;
         }
-        if (ctx->compression == FLB_AWS_COMPRESS_GZIP) {
+        if (ctx->compression != FLB_AWS_COMPRESS_NONE) {
             if(ctx->upload_chunk_size > MAX_CHUNKED_UPLOAD_COMPRESS_SIZE) {
                 flb_plg_error(ctx->ins, "upload_chunk_size in compressed multipart upload cannot exceed 5GB");
                 return -1;
@@ -1125,13 +1154,18 @@ static int upload_data(struct flb_s3 *ctx, struct s3_file *chunk,
         file_first_log_time = chunk->first_log_time;
     }
 
-    if (ctx->compression == FLB_AWS_COMPRESS_GZIP) {
+    if (ctx->compression != FLB_AWS_COMPRESS_NONE) {
         /* Map payload */
         ret = flb_aws_compression_compress(ctx->compression, body, body_size, &payload_buf, &payload_size);
         if (ret == -1) {
             flb_plg_error(ctx->ins, "Failed to compress data");
+            if (chunk != NULL) {
+                s3_store_file_unlock(chunk);
+                chunk->failures += 1;
+            }
             return FLB_RETRY;
-        } else {
+        }
+        else {
             preCompress_size = body_size;
             body = (void *) payload_buf;
             body_size = payload_size;
@@ -1168,7 +1202,7 @@ static int upload_data(struct flb_s3 *ctx, struct s3_file *chunk,
             goto multipart;
         }
         else {
-            if (ctx->use_put_object == FLB_FALSE && ctx->compression == FLB_AWS_COMPRESS_GZIP) {
+            if ((ctx->use_put_object == FLB_FALSE && (ctx->compression == FLB_AWS_COMPRESS_GZIP || ctx->compression == FLB_AWS_COMPRESS_ZSTD))) {
                 flb_plg_info(ctx->ins, "Pre-compression upload_chunk_size= %zu, After compression, chunk is only %zu bytes, "
                                        "the chunk was too small, using PutObject to upload", preCompress_size, body_size);
             }
@@ -1190,7 +1224,7 @@ put_object:
      * remove chunk from buffer list
      */
     ret = s3_put_object(ctx, tag, file_first_log_time, body, body_size);
-    if (ctx->compression == FLB_AWS_COMPRESS_GZIP) {
+    if (ctx->compression != FLB_AWS_COMPRESS_NONE) {
         flb_free(payload_buf);
     }
     if (ret < 0) {
@@ -1217,7 +1251,7 @@ multipart:
             if (chunk) {
                 s3_store_file_unlock(chunk);
             }
-            if (ctx->compression == FLB_AWS_COMPRESS_GZIP) {
+            if (ctx->compression != FLB_AWS_COMPRESS_NONE) {
                 flb_free(payload_buf);
             }
             return FLB_RETRY;
@@ -1231,7 +1265,7 @@ multipart:
             if (chunk) {
                 s3_store_file_unlock(chunk);
             }
-            if (ctx->compression == FLB_AWS_COMPRESS_GZIP) {
+            if (ctx->compression != FLB_AWS_COMPRESS_NONE) {
                 flb_free(payload_buf);
             }
             return FLB_RETRY;
@@ -1241,7 +1275,7 @@ multipart:
 
     ret = upload_part(ctx, m_upload, body, body_size, NULL);
     if (ret < 0) {
-        if (ctx->compression == FLB_AWS_COMPRESS_GZIP) {
+        if (ctx->compression != FLB_AWS_COMPRESS_NONE) {
             flb_free(payload_buf);
         }
         m_upload->upload_errors += 1;
@@ -1258,7 +1292,7 @@ multipart:
         s3_store_file_delete(ctx, chunk);
         chunk = NULL;
     }
-    if (ctx->compression == FLB_AWS_COMPRESS_GZIP) {
+    if (ctx->compression != FLB_AWS_COMPRESS_NONE) {
         flb_free(payload_buf);
     }
     if (m_upload->bytes >= ctx->file_size) {
@@ -3313,7 +3347,7 @@ static void cb_s3_upload(struct flb_config *config, void *data)
 }
 
 static flb_sds_t flb_pack_msgpack_extract_log_key(void *out_context, const char *data,
-                                                  uint64_t bytes)
+                                                  uint64_t bytes, struct flb_config *config)
 {
     int i;
     int records = 0;
@@ -3420,7 +3454,8 @@ static flb_sds_t flb_pack_msgpack_extract_log_key(void *out_context, const char 
                     }
                     else {
                         ret = flb_msgpack_to_json(val_buf + val_offset,
-                                                  msgpack_size - val_offset, &val);
+                                                  msgpack_size - val_offset, &val,
+                                                  config->json_escape_unicode);
                         if (ret < 0) {
                             break;
                         }
@@ -3720,14 +3755,16 @@ static void cb_s3_flush(struct flb_event_chunk *event_chunk,
     if (ctx->log_key) {
         chunk = flb_pack_msgpack_extract_log_key(ctx,
                                                  event_chunk->data,
-                                                 event_chunk->size);
+                                                 event_chunk->size,
+                                                 config);
     }
     else {
         chunk = flb_pack_msgpack_to_json_format(event_chunk->data,
                                                 event_chunk->size,
                                                 FLB_PACK_JSON_FORMAT_LINES,
                                                 ctx->json_date_format,
-                                                ctx->date_key);
+                                                ctx->date_key,
+                                                config->json_escape_unicode);
     }
     if (chunk == NULL) {
         flb_plg_error(ctx->ins, "Could not marshal msgpack to output string");
@@ -3991,10 +4028,11 @@ static struct flb_config_map config_map[] = {
     {
      FLB_CONFIG_MAP_STR, "compression", NULL,
      0, FLB_FALSE, 0,
-    "Compression type for S3 objects. 'gzip' and 'arrow' are the supported values. "
-    "'arrow' is only an available if Apache Arrow was enabled at compile time. "
+    "Compression type for S3 objects. 'gzip', 'arrow', 'parquet' and 'zstd' are the supported values. "
+    "'arrow' and 'parquet' are only available if Apache Arrow was enabled at compile time. "
     "Defaults to no compression. "
     "If 'gzip' is selected, the Content-Encoding HTTP Header will be set to 'gzip'."
+    "If 'zstd' is selected, the Content-Encoding HTTP Header will be set to 'zstd'."
     },
     {
      FLB_CONFIG_MAP_STR, "content_type", NULL,

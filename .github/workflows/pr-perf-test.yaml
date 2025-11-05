@@ -32,7 +32,7 @@ jobs:
     permissions:
       pull-requests: write
     steps:
-      - uses: actions/download-artifact@v4
+      - uses: actions/download-artifact@v6
 
       - name: Upload plots to CML
         run: |
@@ -59,7 +59,7 @@ jobs:
         shell: bash
         working-directory: output
 
-      - uses: actions/github-script@v7
+      - uses: actions/github-script@v8
         if: github.event_name == 'pull_request'
         env:
           REPORT: "Plots\n${{ steps.report.outputs.report }}"

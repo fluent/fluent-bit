@@ -10,8 +10,10 @@ set(UNIT_TESTS_FILES
   hmac.c
   crypto.c
   hash.c
+  kv.c
   slist.c
   router.c
+  router_config.c
   network.c
   unit_sizes.c
   hashtable.c
@@ -22,7 +24,9 @@ set(UNIT_TESTS_FILES
   random.c
   config_map.c
   mp.c
+  mp_chunk_cobj.c
   input_chunk.c
+  input_chunk_routes.c
   flb_time.c
   file.c
   csv.c
@@ -53,6 +57,14 @@ set(UNIT_TESTS_FILES
   unicode.c
   opentelemetry.c
 )
+
+# TLS helpers
+if(FLB_TLS)
+  set(UNIT_TESTS_FILES
+    ${UNIT_TESTS_FILES}
+    upstream_tls.c
+    )
+endif()
 
 # Config format
 set(UNIT_TESTS_FILES
@@ -162,7 +174,7 @@ set(UNIT_TESTS_DATA
   data/parser/regex.conf
   data/input_chunk/log/a_thousand_plus_one_bytes.log
   data/input_chunk/log/test_buffer_valid.log
-  data/opentelemetry/test_cases.json
+  data/opentelemetry/logs.json
   )
 
 set(FLB_TESTS_DATA_PATH ${CMAKE_CURRENT_SOURCE_DIR}/)

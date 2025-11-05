@@ -60,7 +60,7 @@ jobs:
       contents: read
     steps:
       - name: Checkout code
-        uses: actions/checkout@v4
+        uses: actions/checkout@v5
         with:
           ref: ${{ inputs.ref }}
           path: source
@@ -78,7 +78,7 @@ jobs:
           SOURCE_FILENAME_PREFIX: source-${{ inputs.version }}
 
       - name: Upload the source artifacts
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v5
         with:
           name: source-${{ inputs.version }}
           path: source-packages/*
@@ -87,7 +87,7 @@ jobs:
       # Pick up latest master version
       - name: Checkout code for action
         if: inputs.environment == 'staging'
-        uses: actions/checkout@v4
+        uses: actions/checkout@v5
         with:
           path: action-support
 
@@ -115,7 +115,7 @@ jobs:
     continue-on-error: ${{ inputs.ignore_failing_targets || false }}
     steps:
       - name: Checkout code
-        uses: actions/checkout@v4
+        uses: actions/checkout@v5
         with:
           ref: ${{ inputs.ref }}
 
@@ -150,7 +150,7 @@ jobs:
         working-directory: packaging
 
       - name: Upload the ${{ steps.formatted_distro.outputs.replaced }} artifacts
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v5
         with:
           name: packages-${{ inputs.version }}-${{ steps.formatted_distro.outputs.replaced }}
           path: packaging/packages/
@@ -163,7 +163,9 @@ jobs:
         # For ubuntu map to codename using the disto-info list (CSV)
         run: |
           sudo apt-get update
-          sudo apt-get install -y distro-info awscli
+          sudo apt-get install -y distro-info
+          sudo apt-get install -y awscli || sudo snap install aws-cli --classic
+
           TARGET=${DISTRO%*.arm64v8}
           if [[ "$TARGET" == "ubuntu/"* ]]; then
               UBUNTU_CODENAME=$(cut -d ',' -f 1,3 < "/usr/share/distro-info/ubuntu.csv"|grep "${TARGET##*/}"|cut -d ',' -f 2)
@@ -194,7 +196,7 @@ jobs:
       # Pick up latest master version
       - name: Checkout code for action
         if: inputs.environment == 'staging'
-        uses: actions/checkout@v4
+        uses: actions/checkout@v5
         with:
           path: action-support
 
@@ -224,12 +226,14 @@ jobs:
         timeout-minutes: 10
         run: |
           sudo apt-get update
-          sudo apt-get install -y createrepo-c aptly awscli
+          sudo apt-get install -y createrepo-c aptly
+          sudo apt-get install -y awscli || sudo snap install aws-cli --classic
+        shell: bash
         env:
           DEBIAN_FRONTEND: noninteractive
 
       - name: Checkout code for repo metadata construction - always latest
-        uses: actions/checkout@v4
+        uses: actions/checkout@v5
 
       - name: Import GPG key for signing
         id: import_gpg

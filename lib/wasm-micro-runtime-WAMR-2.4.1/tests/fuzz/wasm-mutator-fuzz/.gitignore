@@ -1,0 +1,3 @@
+build/
+workspace/build_*
+error_restart_build_*
