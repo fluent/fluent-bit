@@ -364,7 +364,6 @@ REGISTER_OUT_PLUGIN("out_es")
 REGISTER_OUT_PLUGIN("out_exit")
 REGISTER_OUT_PLUGIN("out_file")
 REGISTER_OUT_PLUGIN("out_logrotate")
-
 REGISTER_OUT_PLUGIN("out_forward")
 REGISTER_OUT_PLUGIN("out_http")
 REGISTER_OUT_PLUGIN("out_influxdb")
