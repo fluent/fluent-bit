@@ -1112,7 +1112,11 @@ static int cb_s3_worker_exit(void *data, struct flb_config *config)
     struct worker_info *info;
     struct flb_s3 *ctx = data;
 
-    flb_plg_info(ctx->ins, "initializing worker");
+    if (!ctx) {
+        return 0;
+    }
+
+    flb_plg_info(ctx->ins, "terminating worker");
 
     info = FLB_TLS_GET(s3_worker_info);
     if (info != NULL) {
