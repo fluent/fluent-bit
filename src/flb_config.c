@@ -330,6 +330,15 @@ struct flb_config *flb_config_init()
         if (config->kernel) {
             flb_kernel_destroy(config->kernel);
         }
+#ifdef FLB_HAVE_HTTP_SERVER
+        if (config->http_listen) {
+            flb_free(config->http_listen);
+        }
+
+        if (config->http_port) {
+            flb_free(config->http_port);
+        }
+#endif
         flb_cf_destroy(cf);
         flb_free(config);
         return NULL;
