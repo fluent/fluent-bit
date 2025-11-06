@@ -268,22 +268,24 @@ static int load_csv(struct lookup_ctx *ctx)
     char *line;
     size_t line_length;
     
-    fp = fopen(ctx->file, "r");
+    fp = fopen(ctx->data_source, "r");
     if (!fp) {
-        flb_plg_error(ctx->ins, "cannot open CSV file '%s': %s", ctx->file, strerror(errno));
+        flb_plg_error(ctx->ins, "cannot open data source '%s': %s", ctx->data_source, strerror(errno));
         return -1;
     }
     /* Initialize value list if not already */
     mk_list_init(&ctx->val_list);
     
-    /* Skip header using dynamic line reading */
-    header_line = read_line_dynamic(fp, NULL);
-    if (!header_line) {
-        flb_plg_error(ctx->ins, "empty CSV file: %s", ctx->file);
-        fclose(fp);
-        return -1;
+    /* Conditionally skip header row based on configuration */
+    if (ctx->skip_header_row) {
+        header_line = read_line_dynamic(fp, NULL);
+        if (!header_line) {
+            flb_plg_error(ctx->ins, "empty data source: %s", ctx->data_source);
+            fclose(fp);
+            return -1;
+        }
+        flb_free(header_line);  /* Free the header line as we don't need it */
     }
-    flb_free(header_line);  /* Free the header line as we don't need it */
     
     while ((line = read_line_dynamic(fp, &line_length)) != NULL) {
         char *p;
@@ -617,8 +619,8 @@ static int cb_lookup_init(struct flb_filter_instance *ins,
      * Validate required configuration options. All three must be set for
      * the filter to operate.
      */
-    if (!ctx->file || !ctx->lookup_key || !ctx->result_key) {
-        flb_plg_error(ins, "missing required config: file, lookup_key, result_key");
+    if (!ctx->data_source || !ctx->lookup_key || !ctx->result_key) {
+        flb_plg_error(ins, "missing required config: data_source, lookup_key, result_key");
         goto error;
     }
 
@@ -627,11 +629,11 @@ static int cb_lookup_init(struct flb_filter_instance *ins,
 
     /* Check file existence and readability */
 #ifdef _WIN32
-    if (_access(ctx->file, 04) != 0) {  /* 04 = R_OK on Windows */
+    if (_access(ctx->data_source, 04) != 0) {  /* 04 = R_OK on Windows */
 #else
-    if (access(ctx->file, R_OK) != 0) {
+    if (access(ctx->data_source, R_OK) != 0) {
 #endif
-        flb_plg_error(ins, "CSV file '%s' does not exist or is not readable: %s", ctx->file, strerror(errno));
+        flb_plg_error(ins, "data source '%s' does not exist or is not readable: %s", ctx->data_source, strerror(errno));
         goto error;
     }
 
@@ -657,7 +659,7 @@ static int cb_lookup_init(struct flb_filter_instance *ins,
     if (ret < 0) {
         goto error;
     }
-    flb_plg_info(ins, "Loaded %d entries from CSV file '%s'", ret, ctx->file);
+    flb_plg_info(ins, "Loaded %d entries from data source '%s'", ret, ctx->data_source);
     flb_plg_info(ins, "Lookup filter initialized: lookup_key='%s', result_key='%s', ignore_case=%s", 
                  ctx->lookup_key, ctx->result_key, ctx->ignore_case ? "true" : "false");
 
@@ -1073,10 +1075,11 @@ static int cb_lookup_exit(void *data, struct flb_config *config)
 }
 
 static struct flb_config_map config_map[] = {
-    { FLB_CONFIG_MAP_STR, "file", NULL, 0, FLB_TRUE, offsetof(struct lookup_ctx, file), "CSV file to lookup values from." },
+    { FLB_CONFIG_MAP_STR, "data_source", NULL, 0, FLB_TRUE, offsetof(struct lookup_ctx, data_source), "Data source for lookup values (file path to CSV)." },
     { FLB_CONFIG_MAP_STR, "lookup_key", NULL, 0, FLB_TRUE, offsetof(struct lookup_ctx, lookup_key), "Name of the key to lookup in input record." },
     { FLB_CONFIG_MAP_STR, "result_key", NULL, 0, FLB_TRUE, offsetof(struct lookup_ctx, result_key), "Name of the key to add to output record if found." },
     { FLB_CONFIG_MAP_BOOL, "ignore_case", "false", 0, FLB_TRUE, offsetof(struct lookup_ctx, ignore_case), "Ignore case when matching lookup values (default: false)." },
+    { FLB_CONFIG_MAP_BOOL, "skip_header_row", "false", 0, FLB_TRUE, offsetof(struct lookup_ctx, skip_header_row), "Skip first row of CSV file as header (default: false)." },
     {0}
 };
 
