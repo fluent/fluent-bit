@@ -34,13 +34,14 @@ enum flb_lookup_metrics {
 
 struct lookup_ctx {
     struct flb_filter_instance *ins;
-    char *file;
+    char *data_source;
     char *lookup_key;
     char *result_key;
     size_t result_key_len;  /* Precomputed length of result_key for hot path optimization */
     struct flb_hash_table *ht;
     struct flb_record_accessor *ra_lookup_key;
     int ignore_case;
+    int skip_header_row;
     struct mk_list val_list;
     
 #ifdef FLB_HAVE_METRICS

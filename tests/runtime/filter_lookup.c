@@ -233,9 +233,10 @@ void flb_test_lookup_basic(void)
 
     ret = flb_filter_set(ctx->flb, ctx->f_ffd,
                          "Match", "*",
-                         "file", TMP_CSV_PATH,
+                         "data_source", TMP_CSV_PATH,
                          "lookup_key", "user_id",
                          "result_key", "user_name",
+                         "skip_header_row", "true",
                          NULL);
     TEST_CHECK(ret == 0);
 
@@ -282,10 +283,11 @@ void flb_test_lookup_ignore_case(void)
 
     ret = flb_filter_set(ctx->flb, ctx->f_ffd,
                          "Match", "*",
-                         "file", TMP_CSV_PATH,
+                         "data_source", TMP_CSV_PATH,
                          "lookup_key", "user_id",
                          "result_key", "user_name",
                          "ignore_case", "true",
+                         "skip_header_row", "true",
                          NULL);
     TEST_CHECK(ret == 0);
 
@@ -332,9 +334,10 @@ void flb_test_lookup_csv_quotes(void)
 
     ret = flb_filter_set(ctx->flb, ctx->f_ffd,
                          "Match", "*",
-                         "file", TMP_CSV_PATH,
+                         "data_source", TMP_CSV_PATH,
                          "lookup_key", "lookup_field",
                          "result_key", "result_field",
+                         "skip_header_row", "true",
                          NULL);
     TEST_CHECK(ret == 0);
 
@@ -381,9 +384,10 @@ void flb_test_lookup_numeric_values(void)
 
     ret = flb_filter_set(ctx->flb, ctx->f_ffd,
                          "Match", "*",
-                         "file", TMP_CSV_PATH,
+                         "data_source", TMP_CSV_PATH,
                          "lookup_key", "numeric_field",
                          "result_key", "description",
+                         "skip_header_row", "true",
                          NULL);
     TEST_CHECK(ret == 0);
 
@@ -436,9 +440,10 @@ void flb_test_lookup_large_numbers(void)
 
     ret = flb_filter_set(ctx->flb, ctx->f_ffd,
                          "Match", "*",
-                         "file", TMP_CSV_PATH,
+                         "data_source", TMP_CSV_PATH,
                          "lookup_key", "big_number",
                          "result_key", "number_desc",
+                         "skip_header_row", "true",
                          NULL);
     TEST_CHECK(ret == 0);
 
@@ -485,9 +490,10 @@ void flb_test_lookup_boolean_values(void)
 
     ret = flb_filter_set(ctx->flb, ctx->f_ffd,
                          "Match", "*",
-                         "file", TMP_CSV_PATH,
+                         "data_source", TMP_CSV_PATH,
                          "lookup_key", "bool_field",
                          "result_key", "bool_desc",
+                         "skip_header_row", "true",
                          NULL);
     TEST_CHECK(ret == 0);
 
@@ -539,9 +545,10 @@ void flb_test_lookup_no_match(void)
 
     ret = flb_filter_set(ctx->flb, ctx->f_ffd,
                          "Match", "*",
-                         "file", TMP_CSV_PATH,
+                         "data_source", TMP_CSV_PATH,
                          "lookup_key", "user_id",
                          "result_key", "user_name",
+                         "skip_header_row", "true",
                          NULL);
     TEST_CHECK(ret == 0);
 
@@ -601,9 +608,10 @@ void flb_test_lookup_long_csv_lines(void)
 
     ret = flb_filter_set(ctx->flb, ctx->f_ffd,
                          "Match", "*",
-                         "file", TMP_CSV_PATH,
+                         "data_source", TMP_CSV_PATH,
                          "lookup_key", "key_field",
                          "result_key", "value_field",
+                         "skip_header_row", "true",
                          NULL);
     TEST_CHECK(ret == 0);
 
@@ -650,9 +658,10 @@ void flb_test_lookup_whitespace_trim(void)
 
     ret = flb_filter_set(ctx->flb, ctx->f_ffd,
                          "Match", "*",
-                         "file", TMP_CSV_PATH,
+                         "data_source", TMP_CSV_PATH,
                          "lookup_key", "lookup_field",
                          "result_key", "result_field",
+                         "skip_header_row", "true",
                          NULL);
     TEST_CHECK(ret == 0);
 
@@ -767,9 +776,10 @@ void flb_test_lookup_nested_keys(void)
 
     ret = flb_filter_set(ctx->flb, ctx->f_ffd,
                          "Match", "*",
-                         "file", TMP_CSV_PATH,
+                         "data_source", TMP_CSV_PATH,
                          "lookup_key", "$user['profile']['id']",
                          "result_key", "user_name",
+                         "skip_header_row", "true",
                          NULL);
     TEST_CHECK(ret == 0);
 
@@ -824,9 +834,10 @@ void flb_test_lookup_large_csv(void)
 
     ret = flb_filter_set(ctx->flb, ctx->f_ffd,
                          "Match", "*",
-                         "file", TMP_CSV_PATH,
+                         "data_source", TMP_CSV_PATH,
                          "lookup_key", "user_id",
                          "result_key", "user_name",
+                         "skip_header_row", "true",
                          NULL);
     TEST_CHECK(ret == 0);
 
@@ -874,9 +885,10 @@ void flb_test_lookup_nested_array_keys(void)
 
     ret = flb_filter_set(ctx->flb, ctx->f_ffd,
                          "Match", "*",
-                         "file", TMP_CSV_PATH,
+                         "data_source", TMP_CSV_PATH,
                          "lookup_key", "$users[0]['id']",
                          "result_key", "user_desc",
+                         "skip_header_row", "true",
                          NULL);
     TEST_CHECK(ret == 0);
 
@@ -956,9 +968,10 @@ void flb_test_lookup_metrics_matched(void)
 
     ret = flb_filter_set(ctx->flb, ctx->f_ffd,
                          "Match", "*",
-                         "file", TMP_CSV_PATH,
+                         "data_source", TMP_CSV_PATH,
                          "lookup_key", "user_id",
                          "result_key", "user_name",
+                         "skip_header_row", "true",
                          NULL);
     TEST_CHECK(ret == 0);
 
@@ -1032,9 +1045,10 @@ void flb_test_lookup_metrics_processed(void)
 
     ret = flb_filter_set(ctx->flb, ctx->f_ffd,
                          "Match", "*",
-                         "file", TMP_CSV_PATH,
+                         "data_source", TMP_CSV_PATH,
                          "lookup_key", "test_key",
                          "result_key", "test_result",
+                         "skip_header_row", "true",
                          NULL);
     TEST_CHECK(ret == 0);
 
@@ -1095,6 +1109,145 @@ void flb_test_lookup_metrics_processed(void)
 }
 #endif
 
+/* Test skip_header_row configuration option */
+void flb_test_lookup_skip_header_row(void)
+{
+    int ret;
+    int bytes;
+    struct test_ctx *ctx;
+    struct flb_lib_out_cb cb_data;
+    
+    /* Test 1: skip_header_row = true (skip first row) */
+    char *csv_with_header = 
+        "key,value\n"
+        "test_key,Correct Value\n"
+        "another_key,Another Value\n";
+    char *input1 = "[0, {\"lookup_field\": \"test_key\"}]";
+
+    cb_data.cb = cb_check_result_json;
+    cb_data.data = "\"result_field\":\"Correct Value\"";
+
+    ctx = test_ctx_create(&cb_data);
+    if (!TEST_CHECK(ctx != NULL)) {
+        TEST_MSG("test_ctx_create failed");
+        exit(EXIT_FAILURE);
+    }
+
+    ret = create_csv_file(csv_with_header);
+    TEST_CHECK(ret == 0);
+
+    ret = flb_filter_set(ctx->flb, ctx->f_ffd,
+                         "Match", "*",
+                         "data_source", TMP_CSV_PATH,
+                         "lookup_key", "lookup_field",
+                         "result_key", "result_field",
+                         "skip_header_row", "true",
+                         NULL);
+    TEST_CHECK(ret == 0);
+
+    ret = flb_output_set(ctx->flb, ctx->o_ffd,
+                         "format", "json",
+                         NULL);
+    TEST_CHECK(ret == 0);
+
+    ret = flb_start(ctx->flb);
+    TEST_CHECK(ret == 0);
+
+    bytes = flb_lib_push(ctx->flb, ctx->i_ffd, input1, strlen(input1));
+    TEST_CHECK(bytes == strlen(input1));
+    
+    flb_time_msleep(1500);
+
+    delete_csv_file();
+    test_ctx_destroy(ctx);
+
+    /* Test 2: skip_header_row = false (process all rows, including first) */
+    char *csv_no_header = 
+        "first_key,First Value\n"
+        "second_key,Second Value\n";
+    char *input2 = "[0, {\"lookup_field\": \"first_key\"}]";
+
+    cb_data.cb = cb_check_result_json;
+    cb_data.data = "\"result_field\":\"First Value\"";
+
+    ctx = test_ctx_create(&cb_data);
+    if (!TEST_CHECK(ctx != NULL)) {
+        TEST_MSG("test_ctx_create failed");
+        exit(EXIT_FAILURE);
+    }
+
+    ret = create_csv_file(csv_no_header);
+    TEST_CHECK(ret == 0);
+
+    ret = flb_filter_set(ctx->flb, ctx->f_ffd,
+                         "Match", "*",
+                         "data_source", TMP_CSV_PATH,
+                         "lookup_key", "lookup_field",
+                         "result_key", "result_field",
+                         "skip_header_row", "false",
+                         NULL);
+    TEST_CHECK(ret == 0);
+
+    ret = flb_output_set(ctx->flb, ctx->o_ffd,
+                         "format", "json",
+                         NULL);
+    TEST_CHECK(ret == 0);
+
+    ret = flb_start(ctx->flb);
+    TEST_CHECK(ret == 0);
+
+    bytes = flb_lib_push(ctx->flb, ctx->i_ffd, input2, strlen(input2));
+    TEST_CHECK(bytes == strlen(input2));
+    
+    flb_time_msleep(1500);
+
+    delete_csv_file();
+    test_ctx_destroy(ctx);
+
+    /* Test 3: Default behavior (skip_header_row not specified, should default to false) */
+    char *csv_default = 
+        "default_key,Default Value\n"
+        "other_key,Other Value\n";
+    char *input3 = "[0, {\"lookup_field\": \"default_key\"}]";
+
+    cb_data.cb = cb_check_result_json;
+    cb_data.data = "\"result_field\":\"Default Value\"";
+
+    ctx = test_ctx_create(&cb_data);
+    if (!TEST_CHECK(ctx != NULL)) {
+        TEST_MSG("test_ctx_create failed");
+        exit(EXIT_FAILURE);
+    }
+
+    ret = create_csv_file(csv_default);
+    TEST_CHECK(ret == 0);
+
+    ret = flb_filter_set(ctx->flb, ctx->f_ffd,
+                         "Match", "*",
+                         "data_source", TMP_CSV_PATH,
+                         "lookup_key", "lookup_field",
+                         "result_key", "result_field",
+                         /* skip_header_row not specified - should default to false */
+                         NULL);
+    TEST_CHECK(ret == 0);
+
+    ret = flb_output_set(ctx->flb, ctx->o_ffd,
+                         "format", "json",
+                         NULL);
+    TEST_CHECK(ret == 0);
+
+    ret = flb_start(ctx->flb);
+    TEST_CHECK(ret == 0);
+
+    bytes = flb_lib_push(ctx->flb, ctx->i_ffd, input3, strlen(input3));
+    TEST_CHECK(bytes == strlen(input3));
+    
+    flb_time_msleep(1500);
+
+    delete_csv_file();
+    test_ctx_destroy(ctx);
+}
+
 TEST_LIST = {
     {"basic_lookup", flb_test_lookup_basic},
     {"ignore_case", flb_test_lookup_ignore_case},
@@ -1109,6 +1262,7 @@ TEST_LIST = {
     {"nested_keys", flb_test_lookup_nested_keys},
     {"large_csv", flb_test_lookup_large_csv},
     {"nested_array_keys", flb_test_lookup_nested_array_keys},
+    {"skip_header_row", flb_test_lookup_skip_header_row},
 #ifdef FLB_HAVE_METRICS
     {"metrics_matched", flb_test_lookup_metrics_matched},
     {"metrics_processed", flb_test_lookup_metrics_processed},
