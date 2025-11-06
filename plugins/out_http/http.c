@@ -112,7 +112,7 @@ static void append_headers(struct flb_http_client *c,
 static int http_post(struct flb_out_http *ctx,
                      const void *body, size_t body_len,
                      const char *tag, int tag_len,
-                     char **headers)
+                     char **headers, flb_sds_t in_uri)
 {
     int ret = 0;
     int out_ret = FLB_OK;
@@ -128,6 +128,14 @@ static int http_post(struct flb_out_http *ctx,
     struct flb_slist_entry *key = NULL;
     struct flb_slist_entry *val = NULL;
     flb_sds_t signature = NULL;
+    flb_sds_t uri;
+
+    if (in_uri != NULL) {
+        uri = in_uri;
+    }
+    else {
+        uri = ctx->uri;
+    }
 
     /* Get upstream context and connection */
     u = ctx->u;
@@ -173,11 +181,10 @@ static int http_post(struct flb_out_http *ctx,
 
 
     /* Create HTTP client context */
-    c = flb_http_client(u_conn, FLB_HTTP_POST, ctx->uri,
-                        payload_buf, payload_size,
-                        ctx->host, ctx->port,
-                        ctx->proxy, 0);
-
+    c = flb_http_client(u_conn, FLB_HTTP_POST, uri,
+                            payload_buf, payload_size,
+                            ctx->host, ctx->port,
+                            ctx->proxy, 0);
 
     if (c->proxy.host) {
         flb_plg_debug(ctx->ins, "[http_client] proxy host: %s port: %i",
@@ -533,7 +540,8 @@ static int post_all_requests(struct flb_out_http *ctx,
                              const char *data, size_t size,
                              flb_sds_t body_key,
                              flb_sds_t headers_key,
-                             struct flb_event_chunk *event_chunk)
+                             struct flb_event_chunk *event_chunk,
+                             flb_sds_t uri)
 {
     msgpack_object map;
     msgpack_object *k;
@@ -600,7 +608,7 @@ static int post_all_requests(struct flb_out_http *ctx,
         if (body_found && headers_found) {
             flb_plg_trace(ctx->ins, "posting record %zu", record_count++);
             ret = http_post(ctx, body, body_size, event_chunk->tag,
-                    flb_sds_len(event_chunk->tag), headers);
+                            flb_sds_len(event_chunk->tag), headers, uri);
         }
         else {
             flb_plg_warn(ctx->ins,
@@ -618,6 +626,34 @@ static int post_all_requests(struct flb_out_http *ctx,
     return ret;
 }
 
+static flb_sds_t compose_uri(struct flb_out_http *ctx, const void *in_body, size_t in_size,
+                             const char *tag, int tag_len)
+{
+    size_t off = 0;
+    flb_sds_t ret;
+    msgpack_object map;
+    msgpack_object root;
+    msgpack_unpacked result;
+
+    msgpack_unpacked_init(&result);
+    while(msgpack_unpack_next(&result, in_body, in_size, &off) == MSGPACK_UNPACK_SUCCESS) {
+        root = result.data;
+        if (root.type != MSGPACK_OBJECT_ARRAY) {
+            continue;
+        }
+        if (root.via.array.size != 2) {
+            continue;
+        }
+
+        map = root.via.array.ptr[1];
+        ret = flb_ra_translate(ctx->uri_ra, (char *)tag, tag_len, map, NULL);
+        msgpack_unpacked_destroy(&result);
+        return ret;
+    }
+    msgpack_unpacked_destroy(&result);
+    return NULL;
+}
+
 static void cb_http_flush(struct flb_event_chunk *event_chunk,
                           struct flb_output_flush *out_flush,
                           struct flb_input_instance *i_ins,
@@ -626,13 +662,22 @@ static void cb_http_flush(struct flb_event_chunk *event_chunk,
 {
     int ret = FLB_ERROR;
     struct flb_out_http *ctx = out_context;
+    flb_sds_t uri = NULL;
     void *out_body;
     size_t out_size;
     (void) i_ins;
 
+    if (ctx->uri_ra_static == FLB_FALSE) {
+        uri = compose_uri(ctx, event_chunk->data, event_chunk->size,
+                          event_chunk->tag, flb_sds_len(event_chunk->tag));
+        if (uri == NULL) {
+            flb_plg_debug(ctx->ins, "compose_uri failed");
+        }
+    }
+
     if (ctx->body_key) {
         ret = post_all_requests(ctx, event_chunk->data, event_chunk->size,
-                                ctx->body_key, ctx->headers_key, event_chunk);
+                                ctx->body_key, ctx->headers_key, event_chunk, uri);
         if (ret < 0) {
             flb_plg_error(ctx->ins,
                           "failed to post requests body key \"%s\"", ctx->body_key);
@@ -650,15 +695,19 @@ static void cb_http_flush(struct flb_event_chunk *event_chunk,
             (ctx->out_format == FLB_PACK_JSON_FORMAT_LINES) ||
             (ctx->out_format == FLB_HTTP_OUT_GELF)) {
             ret = http_post(ctx, out_body, out_size,
-                            event_chunk->tag, flb_sds_len(event_chunk->tag), NULL);
+                            event_chunk->tag, flb_sds_len(event_chunk->tag), NULL, uri);
             flb_sds_destroy(out_body);
         }
         else {
             /* msgpack */
             ret = http_post(ctx,
                             event_chunk->data, event_chunk->size,
-                            event_chunk->tag, flb_sds_len(event_chunk->tag), NULL);
+                            event_chunk->tag, flb_sds_len(event_chunk->tag), NULL, uri);
         }
+    }
+
+    if (uri != NULL) {
+        flb_sds_destroy(uri);
     }
 
     FLB_OUTPUT_RETURN(ret);
