@@ -999,9 +999,15 @@ static int cb_lookup_filter(const void *data, size_t bytes,
                     INCREMENT_SKIPPED_METRIC(ctx, ins);
                     flb_log_event_encoder_rollback_record(&log_encoder);
                     emit_original_record(&log_encoder, &log_event, ins, ctx, rec_num);
-                    continue;
+                    goto next_record;
                 }
             }
+        }
+
+        next_record:
+        /* Check if we exited the for-loop due to error */
+        if (ret != FLB_EVENT_ENCODER_SUCCESS) {
+            continue;
         }
 
         /* Add result_key */
