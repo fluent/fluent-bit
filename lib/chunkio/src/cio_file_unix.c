@@ -66,6 +66,7 @@ int cio_file_native_unmap(struct cio_file *cf)
 
     cf->alloc_size = 0;
     cf->map = NULL;
+    cf->map_truncated_warned = CIO_FALSE;
 
     return CIO_OK;
 }

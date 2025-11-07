@@ -1,0 +1,203 @@
+{
+    "resourceLogs": [
+        {
+            "resource": {
+                "attributes": [
+                    {
+                        "key": "service_name",
+                        "value": {
+                            "stringValue": "service-a"
+                        }
+                    },
+                    {
+                        "key": "service_version",
+                        "value": {
+                            "stringValue": "1.0.0"
+                        }
+                    },
+                    {
+                        "key": "environment",
+                        "value": {
+                            "stringValue": "production"
+                        }
+                    }
+                ],
+                "droppedAttributesCount": 0
+            },
+            "scopeLogs": [
+                {
+                    "scope": {
+                        "name": "scope-a",
+                        "version": "v1.0",
+                        "attributes": [
+                            {
+                                "key": "component",
+                                "value": {
+                                    "stringValue": "backend"
+                                }
+                            }
+                        ],
+                        "droppedAttributesCount": 0
+                    },
+                    "logRecords": [
+                        {
+                            "timeUnixNano": "1640995200000000000",
+                            "body": {
+                                "stringValue": "record from service-a scope-a"
+                            },
+                            "attributes": [
+                                {
+                                    "key": "level",
+                                    "value": {
+                                        "stringValue": "info"
+                                    }
+                                }
+                            ]
+                        },
+                        {
+                            "timeUnixNano": "1640995201000000000",
+                            "body": {
+                                "stringValue": "error record from service-a"
+                            },
+                            "attributes": [
+                                {
+                                    "key": "level",
+                                    "value": {
+                                        "stringValue": "error"
+                                    }
+                                }
+                            ]
+                        }
+                    ]
+                }
+            ]
+        },
+        {
+            "resource": {
+                "attributes": [
+                    {
+                        "key": "service_name",
+                        "value": {
+                            "stringValue": "service-b"
+                        }
+                    },
+                    {
+                        "key": "service_version",
+                        "value": {
+                            "stringValue": "2.0.0"
+                        }
+                    },
+                    {
+                        "key": "environment",
+                        "value": {
+                            "stringValue": "staging"
+                        }
+                    }
+                ],
+                "droppedAttributesCount": 0
+            },
+            "scopeLogs": [
+                {
+                    "scope": {
+                        "name": "scope-b",
+                        "version": "v2.0",
+                        "attributes": [
+                            {
+                                "key": "component",
+                                "value": {
+                                    "stringValue": "frontend"
+                                }
+                            }
+                        ],
+                        "droppedAttributesCount": 0
+                    },
+                    "logRecords": [
+                        {
+                            "timeUnixNano": "1640995202000000000",
+                            "body": {
+                                "stringValue": "record from service-b scope-b"
+                            },
+                            "attributes": [
+                                {
+                                    "key": "level",
+                                    "value": {
+                                        "stringValue": "debug"
+                                    }
+                                }
+                            ]
+                        }
+                    ]
+                },
+                {
+                    "scope": {
+                        "name": "scope-c",
+                        "version": "v1.5",
+                        "attributes": [
+                            {
+                                "key": "component",
+                                "value": {
+                                    "stringValue": "database"
+                                }
+                            }
+                        ],
+                        "droppedAttributesCount": 0
+                    },
+                    "logRecords": [
+                        {
+                            "timeUnixNano": "1640995203000000000",
+                            "body": {
+                                "stringValue": "query log from service-b"
+                            },
+                            "attributes": [
+                                {
+                                    "key": "operation",
+                                    "value": {
+                                        "stringValue": "SELECT"
+                                    }
+                                }
+                            ]
+                        }
+                    ]
+                }
+            ]
+        },
+        {
+            "resource": {
+                "attributes": [
+                    {
+                        "key": "service_name",
+                        "value": {
+                            "stringValue": "service-c"
+                        }
+                    },
+                    {
+                        "key": "service_version",
+                        "value": {
+                            "stringValue": "3.0.0"
+                        }
+                    }
+                ],
+                "droppedAttributesCount": 0
+            },
+            "scopeLogs": [
+                {
+                    "scope": {
+                        "name": "scope-d",
+                        "version": "v3.0",
+                        "attributes": [],
+                        "droppedAttributesCount": 0
+                    },
+                    "logRecords": [
+                        {
+                            "timeUnixNano": "1640995204000000000",
+                            "body": {
+                                "stringValue": "unmatched record should go to default"
+                            }
+                        }
+                    ]
+                }
+            ]
+        }
+    ]
+}
+

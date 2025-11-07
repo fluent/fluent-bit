@@ -285,8 +285,10 @@ static int in_emitter_start_ring_buffer(struct flb_input_instance *in, struct fl
         return -1;
     }
 
-    return flb_input_set_collector_time(in, in_emitter_ingest_ring_buffer,
-                                       1, 0, in->config);
+    ctx->coll_fd = flb_input_set_collector_time(in,
+                                                in_emitter_ingest_ring_buffer,
+                                                1, 0, in->config);
+    return (ctx->coll_fd < 0) ? -1 : 0;
 }
 
 /* Initialize plugin */
@@ -316,15 +318,9 @@ static int cb_emitter_init(struct flb_input_instance *in,
         return -1;
     }
 
-    if (scheduler != config->sched &&
-        scheduler != NULL &&
-        ctx->ring_buffer_size == 0) {
-
+    if (in->is_threaded == FLB_TRUE && ctx->ring_buffer_size == 0) {
         ctx->ring_buffer_size = DEFAULT_EMITTER_RING_BUFFER_FLUSH_FREQUENCY;
-
-        flb_plg_debug(in,
-                      "threaded emitter instances require ring_buffer_size"
-                      " being set, using default value of %u",
+        flb_plg_debug(in, "threaded: enable emitter ring buffer (size=%u)",
                       ctx->ring_buffer_size);
     }
 

@@ -25,6 +25,12 @@
 
 #include "vivo.h"
 
+#define VIVO_STREAM_START_ID    "Vivo-Stream-Start-ID"
+#define VIVO_STREAM_END_ID      "Vivo-Stream-End-ID"
+#define VIVO_STREAM_NEXT_ID     "Vivo-Stream-Next-ID"
+
+struct vivo_stream;
+
 /* HTTP response payload received through a Message Queue */
 struct vivo_http_buf {
     int users;
@@ -52,5 +58,7 @@ int vivo_http_server_stop(struct vivo_http *ph);
 
 int vivo_http_server_mq_push_metrics(struct vivo_http *ph,
                                      void *data, size_t size);
+
+void vivo_http_serve_content(mk_request_t *request, struct vivo_stream *vs);
 
 #endif

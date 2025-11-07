@@ -244,7 +244,11 @@ static struct flb_config_map config_map[] = {
      0, FLB_TRUE, offsetof(struct flb_syslog, source_address_key),
      "Key where the source address will be injected"
     },
-
+    {
+     FLB_CONFIG_MAP_STR, "format", (char *) NULL,
+     0, FLB_TRUE, offsetof(struct flb_syslog, format_str),
+     "Format of TCP framing: newline (default) or octet_counting (RFC 6587)"
+    },
 
     /* EOF */
     {0}

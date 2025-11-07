@@ -22,6 +22,7 @@
 
 #include <fluent-bit/flb_parser.h>
 #include <fluent-bit/flb_pack.h>
+#include <fluent-bit/flb_pack_json.h>
 #include <fluent-bit/flb_mem.h>
 #include <fluent-bit/flb_parser_decoder.h>
 
@@ -56,12 +57,15 @@ int flb_parser_json_do(struct flb_parser *parser,
     struct flb_tm tm = {0};
     struct flb_time *t;
     size_t consumed;
+    struct flb_pack_opts pack_opts = {0};
 
     consumed = 0;
 
     /* Convert incoming in_buf JSON message to message pack format */
-    ret = flb_pack_json_recs(in_buf, in_size, &mp_buf, &mp_size, &root_type,
-                             &records, &consumed);
+    pack_opts.backend = FLB_PACK_JSON_BACKEND_YYJSON;
+    ret = flb_pack_json_recs_ext(in_buf, in_size, &mp_buf, &mp_size,
+                                 &root_type, &records, &consumed,
+                                 &pack_opts);
     if (ret != 0) {
         return -1;
     }

@@ -213,36 +213,6 @@ static char *get_config_file(struct flb_docker *ctx, char *id)
     return path;
 }
 
-static char *extract_name(char *line, char *start)
-{
-    int skip = 9;
-    int len = 0;
-    char *name;
-    char buff[256];
-    char *curr;
-
-    if (start != NULL) {
-        curr = start + skip;
-        while (*curr != '"') {
-            buff[len++] = *curr;
-            curr++;
-        }
-
-        if (len > 0) {
-            name = (char *) flb_calloc(len + 1, sizeof(char));
-            if (!name) {
-                flb_errno();
-                return NULL;
-            }
-            memcpy(name, buff, len);
-
-            return name;
-        }
-    }
-
-    return NULL;
-}
-
 static char *get_container_name(struct flb_docker *ctx, char *id)
 {
     char *container_name = NULL;
@@ -266,7 +236,7 @@ static char *get_container_name(struct flb_docker *ctx, char *id)
     while ((line = read_line(f))) {
         char *index = strstr(line, DOCKER_NAME_ARG);
         if (index != NULL) {
-            container_name = extract_name(line, index);
+            container_name = docker_extract_name(line, index);
             flb_free(line);
             break;
         }

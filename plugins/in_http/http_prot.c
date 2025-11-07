@@ -22,9 +22,13 @@
 #include <fluent-bit/flb_error.h>
 #include <fluent-bit/flb_pack.h>
 
+#include <ctype.h>
+
 #include <fluent-bit/flb_gzip.h>
 #include <fluent-bit/flb_zstd.h>
 #include <fluent-bit/flb_snappy.h>
+#include <fluent-bit/flb_record_accessor.h>
+#include <fluent-bit/flb_ra_key.h>
 
 #include <monkey/monkey.h>
 #include <monkey/mk_core.h>
@@ -40,8 +44,8 @@ static inline char hex2nibble(char c)
     if ((c >= 0x30) && (c <= '9')) {
         return c - 0x30;
     }
-    // 0x30-0x39 are digits, 0x41-0x46 A-F,
-    // so there is a gap at 0x40
+
+    /* 0x30-0x39 are digits, 0x41-0x46 A-F, so there is a gap at 0x40 */
     if ((c >= 'A') && (c <= 'F')) {
         return (c - 'A') + 10;
     }
@@ -60,7 +64,11 @@ static int sds_uri_decode(flb_sds_t s)
 
     for (optr = buf, iptr = s; iptr < s + flb_sds_len(s) && optr-buf < sizeof(buf); iptr++) {
         if (*iptr == '%') {
-            if (iptr+2 > (s + flb_sds_len(s))) {
+            if (iptr + 2 >= (s + flb_sds_len(s))) {
+                return -1;
+            }
+            if (!isxdigit((unsigned char) *(iptr + 1)) ||
+                !isxdigit((unsigned char) *(iptr + 2))) {
                 return -1;
             }
             *optr++ = hex2nibble(*(iptr+1)) << 4 | hex2nibble(*(iptr+2));
@@ -157,70 +165,54 @@ static int send_response(struct http_conn *conn, int http_status, char *message)
     return 0;
 }
 
+static void sanitize_tag(flb_sds_t tag)
+{
+    size_t i;
+
+    if (!tag) {
+        return;
+    }
+
+    for (i = 0; i < flb_sds_len(tag); i++) {
+        if (!isalnum(tag[i]) && tag[i] != '_' && tag[i] != '.') {
+            tag[i] = '_';
+        }
+    }
+}
+
 /* implements functionality to get tag from key in record */
 static flb_sds_t tag_key(struct flb_http *ctx, msgpack_object *map)
 {
-    size_t map_size = map->via.map.size;
-    msgpack_object_kv *kv;
-    msgpack_object  key;
-    msgpack_object  val;
-    char *key_str = NULL;
-    char *val_str = NULL;
-    size_t key_str_size = 0;
-    size_t val_str_size = 0;
-    int j;
-    int check = FLB_FALSE;
-    int found = FLB_FALSE;
-    flb_sds_t tag;
+    struct flb_ra_value *ra_val;
+    flb_sds_t tag = NULL;
 
-    kv = map->via.map.ptr;
-
-    for(j=0; j < map_size; j++) {
-        check = FLB_FALSE;
-        found = FLB_FALSE;
-        key = (kv+j)->key;
-        if (key.type == MSGPACK_OBJECT_BIN) {
-            key_str  = (char *) key.via.bin.ptr;
-            key_str_size = key.via.bin.size;
-            check = FLB_TRUE;
-        }
-        if (key.type == MSGPACK_OBJECT_STR) {
-            key_str  = (char *) key.via.str.ptr;
-            key_str_size = key.via.str.size;
-            check = FLB_TRUE;
-        }
-
-        if (check == FLB_TRUE) {
-            if (strncmp(ctx->tag_key, key_str, key_str_size) == 0) {
-                val = (kv+j)->val;
-                if (val.type == MSGPACK_OBJECT_BIN) {
-                    val_str  = (char *) val.via.bin.ptr;
-                    val_str_size = val.via.bin.size;
-                    found = FLB_TRUE;
-                    break;
-                }
-                if (val.type == MSGPACK_OBJECT_STR) {
-                    val_str  = (char *) val.via.str.ptr;
-                    val_str_size = val.via.str.size;
-                    found = FLB_TRUE;
-                    break;
-                }
-            }
-        }
+    /* If no record accessor is configured, return NULL */
+    if (!ctx->ra_tag_key) {
+        return NULL;
     }
 
-    if (found == FLB_TRUE) {
-        tag = flb_sds_create_len(val_str, val_str_size);
-        if (!tag) {
-            flb_errno();
-            return NULL;
-        }
-        return tag;
+    /* Use record accessor to get the value */
+    ra_val = flb_ra_get_value_object(ctx->ra_tag_key, *map);
+    if (!ra_val) {
+        flb_plg_debug(ctx->ins, "Could not find tag_key %s in record", ctx->tag_key);
+        return NULL;
     }
 
+    /* Convert the value to string */
+    if (ra_val->type == FLB_RA_STRING) {
+        tag = flb_sds_create_len(ra_val->o.via.str.ptr, ra_val->o.via.str.size);
+        if (tag) {
+            sanitize_tag(tag);
+        }
+    }
+    else {
+        flb_plg_debug(ctx->ins, "tag_key %s value is not a string", ctx->tag_key);
+    }
 
-    flb_plg_error(ctx->ins, "Could not find tag_key %s in record", ctx->tag_key);
-    return NULL;
+    /* Clean up the record accessor value */
+    flb_ra_key_value_destroy(ra_val);
+
+    return tag;
 }
 
 static int process_pack_record(struct flb_http *ctx, struct flb_time *tm,
@@ -423,7 +415,7 @@ static ssize_t parse_payload_urlencoded(struct flb_http *ctx, flb_sds_t tag,
     char *start;
     msgpack_packer pck;
     msgpack_sbuffer sbuf;
-
+    const char *field_name;
 
     /* initialize buffers */
     msgpack_sbuffer_init(&sbuf);
@@ -493,12 +485,13 @@ static ssize_t parse_payload_urlencoded(struct flb_http *ctx, flb_sds_t tag,
         msgpack_pack_str_body(&pck, keys[i], flb_sds_len(keys[i]));
 
         if (sds_uri_decode(vals[i]) != 0) {
-            goto decode_error;
+            field_name = keys[i] ? keys[i] : "";
+            flb_plg_warn(ctx->ins,
+                         "invalid percent-encoding for field '%s', keeping raw value",
+                         field_name);
         }
-        else {
-            msgpack_pack_str(&pck, flb_sds_len(vals[i]));
-            msgpack_pack_str_body(&pck, vals[i], flb_sds_len(vals[i]));
-        }
+        msgpack_pack_str(&pck, flb_sds_len(vals[i]));
+        msgpack_pack_str_body(&pck, vals[i], flb_sds_len(vals[i]));
     }
 
     ret = process_pack(ctx, tag, sbuf.data, sbuf.size);
@@ -871,7 +864,6 @@ int http_prot_handle(struct flb_http *ctx, struct http_conn *conn,
                      struct mk_http_session *session,
                      struct mk_http_request *request)
 {
-    int i;
     int ret;
     int len;
     char *uri;
@@ -920,12 +912,7 @@ int http_prot_handle(struct flb_http *ctx, struct http_conn *conn,
         /* New tag skipping the URI '/' */
         flb_sds_cat_safe(&tag, uri + 1, len - 1);
 
-        /* Sanitize, only allow alphanum chars */
-        for (i = 0; i < flb_sds_len(tag); i++) {
-            if (!isalnum(tag[i]) && tag[i] != '_' && tag[i] != '.') {
-                tag[i] = '_';
-            }
-        }
+        sanitize_tag(tag);
     }
 
     mk_mem_free(uri);

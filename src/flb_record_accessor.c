@@ -553,7 +553,7 @@ static flb_sds_t ra_translate_keymap(struct flb_ra_parser *rp, flb_sds_t buf,
         /* Check if is a map or a real bool */
         if (v->o.type == MSGPACK_OBJECT_MAP) {
             /* Convert msgpack map to JSON string */
-            js = flb_msgpack_to_json_str(1024, &v->o);
+            js = flb_msgpack_to_json_str(1024, &v->o, FLB_TRUE);
             if (js) {
                 len = strlen(js);
                 flb_sds_cat_safe(&buf, js, len);

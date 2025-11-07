@@ -79,6 +79,10 @@ static int log_to_metrics_destroy(struct log_to_metrics_ctx *ctx)
 
     delete_rules(ctx);
 
+    if (ctx->value_ra != NULL) {
+        flb_ra_destroy(ctx->value_ra);
+    }
+
     if (ctx->label_accessors != NULL) {
         for (i = 0; i < MAX_LABEL_COUNT; i++) {
             flb_free(ctx->label_accessors[i]);
@@ -648,6 +652,13 @@ static int cb_log_to_metrics_init(struct flb_filter_instance *f_ins,
         }
         snprintf(value_field, sizeof(value_field) - 1, "%s",
                     ctx->value_field);
+
+        ctx->value_ra = flb_ra_create(ctx->value_field, FLB_TRUE);
+        if (ctx->value_ra == NULL) {
+            flb_plg_error(f_ins, "invalid record accessor key for value_field");
+            log_to_metrics_destroy(ctx);
+            return -1;
+        }
     }
 
 
@@ -906,13 +917,7 @@ static int cb_log_to_metrics_filter(const void *data, size_t bytes,
                     break;
 
                 case FLB_LOG_TO_METRICS_GAUGE:
-                    ra = flb_ra_create(ctx->value_field, FLB_TRUE);
-                    if (!ra) {
-                        flb_plg_error(ctx->ins, "invalid record accessor key, aborting");
-                        break;
-                    }
-
-                    rval = flb_ra_get_value_object(ra, map);
+                    rval = flb_ra_get_value_object(ctx->value_ra, map);
 
                     if (!rval) {
                         flb_warn("given value field is empty or not existent");
@@ -930,29 +935,19 @@ static int cb_log_to_metrics_filter(const void *data, size_t bytes,
                     else {
                         flb_plg_error(f_ins,
                                     "cannot convert given value to metric");
+                        flb_ra_key_value_destroy(rval);
+                        rval = NULL;
                         break;
                     }
 
                     ret = cmt_gauge_set(ctx->g, ts, gauge_value,
                                     label_count, label_values);
-                    if (rval) {
-                        flb_ra_key_value_destroy(rval);
-                        rval = NULL;
-                    }
-                    if (ra) {
-                        flb_ra_destroy(ra);
-                        ra = NULL;
-                    }
+                    flb_ra_key_value_destroy(rval);
+                    rval = NULL;
                     break;
 
                 case FLB_LOG_TO_METRICS_HISTOGRAM:
-                    ra = flb_ra_create(ctx->value_field, FLB_TRUE);
-                    if (!ra) {
-                        flb_error("invalid record accessor key, aborting");
-                        break;
-                    }
-
-                    rval = flb_ra_get_value_object(ra, map);
+                    rval = flb_ra_get_value_object(ctx->value_ra, map);
 
                     if (!rval) {
                         flb_warn("given value field is empty or not existent");
@@ -970,19 +965,15 @@ static int cb_log_to_metrics_filter(const void *data, size_t bytes,
                     else {
                         flb_plg_error(f_ins,
                                     "cannot convert given value to metric");
+                        flb_ra_key_value_destroy(rval);
+                        rval = NULL;
                         break;
                     }
 
                     ret = cmt_histogram_observe(ctx->h, ts, histogram_value,
                                     label_count, label_values);
-                    if (rval) {
-                        flb_ra_key_value_destroy(rval);
-                        rval = NULL;
-                    }
-                    if (ra) {
-                        flb_ra_destroy(ra);
-                        ra = NULL;
-                    }
+                    flb_ra_key_value_destroy(rval);
+                    rval = NULL;
                     break;
                 default:
                     flb_plg_error(f_ins, "unsupported mode");

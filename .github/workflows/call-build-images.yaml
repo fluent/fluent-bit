@@ -141,7 +141,7 @@ jobs:
         shell: bash
 
       - name: Upload ${{ matrix.target }} digest
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v5
         with:
           name: ${{ matrix.target }}-digests-${{ (contains(matrix.platform, 'arm/v7') && 'arm-v7') || matrix.platform }}
           path: /tmp/digests/*
@@ -173,7 +173,7 @@ jobs:
             raw,latest
 
       - name: Download production digests
-        uses: actions/download-artifact@v5
+        uses: actions/download-artifact@v6
         with:
           pattern: production-digests-*
           path: /tmp/production-digests
@@ -225,7 +225,7 @@ jobs:
             raw,latest-debug
 
       - name: Download debug digests
-        uses: actions/download-artifact@v5
+        uses: actions/download-artifact@v6
         with:
           pattern: debug-digests-*
           path: /tmp/debug-digests
@@ -278,7 +278,7 @@ jobs:
         shell: bash
 
       - name: Upload the schema
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v5
         with:
           path: ./fluent-bit-schema*.json
           name: fluent-bit-schema-${{ inputs.version }}
@@ -395,6 +395,8 @@ jobs:
     permissions:
       contents: read
       packages: write
+    env:
+      IMAGE: ${{ inputs.registry }}/${{ inputs.image }}:windows-${{ matrix.windows-base-version }}-${{ inputs.version }}
     steps:
       - name: Checkout repository
         uses: actions/checkout@v5
@@ -423,12 +425,19 @@ jobs:
 
       - name: Build the production images
         run: |
-          docker build -t ${{ inputs.registry }}/${{ inputs.image }}:windows-${{ matrix.windows-base-version }}-${{ inputs.version }} --build-arg FLB_NIGHTLY_BUILD=${{ inputs.unstable }} --build-arg WINDOWS_VERSION=ltsc${{ matrix.windows-base-version }} -f ./dockerfiles/Dockerfile.windows .
+          docker build -t $IMAGE --build-arg FLB_NIGHTLY_BUILD=${{ inputs.unstable }} --build-arg WINDOWS_VERSION=ltsc${{ matrix.windows-base-version }} -f ./dockerfiles/Dockerfile.windows .
+        shell: bash
+
+      - name: Sanity check of the production images
+        run: |
+          docker run --rm -t $IMAGE --help
+        shell: bash
 
       - name: Push the production images
         if: inputs.push
         run: |
-          docker push ${{ inputs.registry }}/${{ inputs.image }}:windows-${{ matrix.windows-base-version }}-${{ inputs.version }}
+          docker push $IMAGE
+        shell: bash
 
         # We cannot use this action as it requires privileged mode
         # uses: docker/build-push-action@v6

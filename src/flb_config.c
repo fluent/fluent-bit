@@ -44,6 +44,7 @@
 #include <fluent-bit/flb_config_format.h>
 #include <fluent-bit/multiline/flb_ml.h>
 #include <fluent-bit/flb_bucket_queue.h>
+#include <fluent-bit/flb_router.h>
 
 const char *FLB_CONF_ENV_LOGLEVEL = "FLB_LOG_LEVEL";
 
@@ -145,8 +146,8 @@ struct flb_service_config service_configs[] = {
     {FLB_CONF_STORAGE_BL_MEM_LIMIT,
      FLB_CONF_TYPE_STR,
      offsetof(struct flb_config, storage_bl_mem_limit)},
-    {FLB_CONF_STORAGE_BL_FLUSH_ON_SHUTDOWN,                  
-     FLB_CONF_TYPE_BOOL,                                       
+    {FLB_CONF_STORAGE_BL_FLUSH_ON_SHUTDOWN,
+     FLB_CONF_TYPE_BOOL,
      offsetof(struct flb_config, storage_bl_flush_on_shutdown)},
     {FLB_CONF_STORAGE_MAX_CHUNKS_UP,
      FLB_CONF_TYPE_INT,
@@ -169,6 +170,10 @@ struct flb_service_config service_configs[] = {
      FLB_CONF_TYPE_INT,
      offsetof(struct flb_config, coro_stack_size)},
 
+    {FLB_CONF_STR_MULTILINE_BUFFER_LIMIT,
+     FLB_CONF_TYPE_STR,
+     offsetof(struct flb_config, multiline_buffer_limit)},
+
     /* Scheduler */
     {FLB_CONF_STR_SCHED_CAP,
      FLB_CONF_TYPE_INT,
@@ -176,6 +181,11 @@ struct flb_service_config service_configs[] = {
     {FLB_CONF_STR_SCHED_BASE,
      FLB_CONF_TYPE_INT,
      offsetof(struct flb_config, sched_base)},
+
+    /* Escape UNicode inside of JSON */
+    {FLB_CONF_UNICODE_STR_JSON_ESCAPE,
+     FLB_CONF_TYPE_BOOL,
+     offsetof(struct flb_config, json_escape_unicode)},
 
 #ifdef FLB_HAVE_STREAM_PROCESSOR
     {FLB_CONF_STR_STREAMS_FILE,
@@ -204,6 +214,10 @@ struct flb_service_config service_configs[] = {
     {FLB_CONF_STR_HOT_RELOAD_ENSURE_THREAD_SAFETY,
      FLB_CONF_TYPE_BOOL,
      offsetof(struct flb_config, ensure_thread_safety_on_hot_reloading)},
+
+    {FLB_CONF_STR_HOT_RELOAD_TIMEOUT,
+     FLB_CONF_TYPE_INT,
+     offsetof(struct flb_config, hot_reload_watchdog_timeout_seconds)},
 
     {NULL, FLB_CONF_TYPE_OTHER, 0} /* end of array */
 };
@@ -290,7 +304,45 @@ struct flb_config *flb_config_init()
     }
 
     /* Routing */
-    flb_routes_mask_set_size(1, config);
+    config->router = flb_router_create(config);
+    if (!config->router) {
+        flb_error("[config] could not create router");
+        if (config->kernel) {
+            flb_kernel_destroy(config->kernel);
+        }
+#ifdef FLB_HAVE_HTTP_SERVER
+        if (config->http_listen) {
+            flb_free(config->http_listen);
+        }
+
+        if (config->http_port) {
+            flb_free(config->http_port);
+        }
+#endif
+        flb_cf_destroy(cf);
+        flb_free(config);
+        return NULL;
+    }
+    ret = flb_routes_mask_set_size(1, config->router);
+    if (ret != 0) {
+        flb_error("[config] routing mask dimensioning failed");
+        flb_router_destroy(config->router);
+        if (config->kernel) {
+            flb_kernel_destroy(config->kernel);
+        }
+#ifdef FLB_HAVE_HTTP_SERVER
+        if (config->http_listen) {
+            flb_free(config->http_listen);
+        }
+
+        if (config->http_port) {
+            flb_free(config->http_port);
+        }
+#endif
+        flb_cf_destroy(cf);
+        flb_free(config);
+        return NULL;
+    }
 
     config->cio          = NULL;
     config->storage_path = NULL;
@@ -301,12 +353,15 @@ struct flb_config *flb_config_init()
     config->storage_bl_flush_on_shutdown = FLB_FALSE;
     config->sched_cap  = FLB_SCHED_CAP;
     config->sched_base = FLB_SCHED_BASE;
+    config->json_escape_unicode = FLB_TRUE;
 
     /* reload */
     config->ensure_thread_safety_on_hot_reloading = FLB_TRUE;
     config->hot_reloaded_count = 0;
     config->shutdown_by_hot_reloading = FLB_FALSE;
     config->hot_reloading = FLB_FALSE;
+    config->hot_reload_succeeded = FLB_FALSE;
+    config->hot_reload_watchdog_timeout_seconds = 0;
 
 #ifdef FLB_SYSTEM_WINDOWS
     config->win_maxstdio = 512;
@@ -351,6 +406,7 @@ struct flb_config *flb_config_init()
     mk_list_init(&config->filters);
     mk_list_init(&config->outputs);
     mk_list_init(&config->proxies);
+    cfl_list_init(&config->input_routes);
     mk_list_init(&config->workers);
     mk_list_init(&config->upstreams);
     mk_list_init(&config->downstreams);
@@ -361,6 +417,12 @@ struct flb_config *flb_config_init()
      * on we use flb_config_exit to cleanup the config, which requires
      * the config->multiline_parsers list to be initialized. */
     mk_list_init(&config->multiline_parsers);
+    config->multiline_buffer_limit = flb_strdup(FLB_ML_BUFFER_LIMIT_DEFAULT_STR);
+    if (config->multiline_buffer_limit == NULL) {
+        flb_errno();
+        flb_config_exit(config);
+        return NULL;
+    }
 
     /* Task map */
     ret = flb_config_task_map_resize(config, FLB_CONFIG_DEFAULT_TASK_MAP_SIZE);
@@ -465,6 +527,12 @@ void flb_config_exit(struct flb_config *config)
         if (config->ch_notif[0] != config->ch_notif[1]) {
             mk_event_closesocket(config->ch_notif[1]);
         }
+    }
+
+    /* free heap-owned multiline_buffer_limit if set */
+    if (config->multiline_buffer_limit) {
+        flb_free(config->multiline_buffer_limit);
+        config->multiline_buffer_limit = NULL;
     }
 
     if (config->env) {
@@ -583,7 +651,11 @@ void flb_config_exit(struct flb_config *config)
 
     /* release task map */
     flb_config_task_map_resize(config, 0);
-    flb_routes_empty_mask_destroy(config);
+
+    flb_router_destroy(config->router);
+
+    /* Clean up router input routes */
+    flb_router_routes_destroy(&config->input_routes);
 
     flb_free(config);
 }
@@ -828,6 +900,9 @@ static int configure_plugins_type(struct flb_config *config, struct flb_cf *cf, 
             if (strcasecmp(kv->key, "name") == 0) {
                 continue;
             }
+            if (strcasecmp(kv->key, "routes") == 0) {
+                continue;
+            }
 
             /* set ret to -1 to ensure that we treat any unhandled plugin or
              * value types as errors.
@@ -932,6 +1007,7 @@ error:
 int flb_config_load_config_format(struct flb_config *config, struct flb_cf *cf)
 {
     int ret;
+    flb_debug("[config] starting configuration loading");
     struct flb_kv *kv;
     struct mk_list *head;
     struct cfl_kvpair *ckv;
@@ -1030,6 +1106,13 @@ int flb_config_load_config_format(struct flb_config *config, struct flb_cf *cf)
     }
     ret = configure_plugins_type(config, cf, FLB_CF_OUTPUT);
     if (ret == -1) {
+        return -1;
+    }
+
+    /* Parse new router configuration */
+    ret = flb_router_config_parse(cf, &config->input_routes, config);
+    if (ret == -1) {
+        flb_debug("[router] router configuration parsing failed");
         return -1;
     }
 

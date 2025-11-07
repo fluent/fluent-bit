@@ -374,6 +374,7 @@ struct flb_output_instance {
 # if defined(FLB_SYSTEM_WINDOWS)
     char *tls_win_certstore_name;            /* CertStore Name (Windows) */
     int tls_win_use_enterprise_certstore;    /* Use enterprise CertStore */
+    char *tls_win_thumbprints;               /* CertStore Thumbprints (Windows) */
 # endif
 #endif
 
@@ -592,7 +593,11 @@ struct flb_out_flush_params {
     struct flb_coro *coro;                      /* coroutine context     */
 };
 
+#ifndef FLB_HAVE_C_TLS
+FLB_TLS_DECLARE(struct flb_out_flush_params, out_flush_params);
+#else
 extern FLB_TLS_DEFINE(struct flb_out_flush_params, out_flush_params);
+#endif
 
 #define FLB_OUTPUT_RETURN(x)                                            \
     flb_output_return_do(x);                                            \

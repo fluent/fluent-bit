@@ -7,7 +7,7 @@ set(CMAKE_POLICY_DEFAULT_CMP0069 NEW)
 
 # Fluent Bit Version
 set(FLB_VERSION_MAJOR  4)
-set(FLB_VERSION_MINOR  1)
+set(FLB_VERSION_MINOR  2)
 set(FLB_VERSION_PATCH  0)
 set(FLB_VERSION_STR "${FLB_VERSION_MAJOR}.${FLB_VERSION_MINOR}.${FLB_VERSION_PATCH}")
 
@@ -158,6 +158,7 @@ option(FLB_SMALL               "Optimise for small size"       No)
 set(FLB_SECURITY "ReleaseOnly" CACHE STRING "Build with security optimizations")
 set_property(CACHE FLB_SECURITY PROPERTY STRINGS "On;Off;ReleaseOnly")
 option(FLB_COVERAGE            "Build with code-coverage"      No)
+option(FLB_COMPILER_STRICT_POINTER_TYPES "Build with -Werror=incompatible-pointer-types" No)
 option(FLB_JEMALLOC            "Build with Jemalloc support"   No)
 option(FLB_REGEX               "Build with Regex support"     Yes)
 option(FLB_UTF8_ENCODER        "Build with UTF8 encoding support" Yes)
@@ -213,6 +214,9 @@ option(FLB_CUSTOM_CALYPTIA     "Enable Calyptia Support"      Yes)
 
 # Config formats
 option(FLB_CONFIG_YAML         "Enable YAML config format"    Yes)
+
+option(FLB_BENCHMARKS          "Enable benchmarks"             No)
+
 
 # List of plugins available and defaults for each option
 include(cmake/plugins_options.cmake)
@@ -318,6 +322,7 @@ if(FLB_DEV)
   set(FLB_HTTP_SERVER       On)
   set(FLB_HTTP_CLIENT_DEBUG On)
   set(FLB_TESTS_INTERNAL    On)
+  set(FLB_BENCHMARKS        On)
 endif()
 
 if(FLB_TRACE)
@@ -444,6 +449,17 @@ if(FLB_COVERAGE)
     set(CMAKE_CXX_FLAGS "${CMAKE_C_FLAGS} -g -O0 --coverage -fprofile-arcs -ftest-coverage")
   endif()
   set(CMAKE_BUILD_TYPE "Debug")
+endif()
+
+if(FLB_COMPILER_STRICT_POINTER_TYPES)
+  if(CMAKE_C_COMPILER_ID MATCHES "GNU|Clang|AppleClang")
+    add_compile_options(-Werror=incompatible-pointer-types)
+  endif()
+  # Currently, AppleClang has more struct rules when using -Werror=incompatible-pointer-types.
+  # We still permit to discarding const qualifiers warnings.
+  if(CMAKE_C_COMPILER_ID MATCHES "AppleClang")
+    add_compile_options(-Wno-incompatible-pointer-types-discards-qualifiers)
+  endif()
 endif()
 
 # Enable Debug symbols if specified
@@ -587,6 +603,9 @@ endif()
 
 # ring buffer library
 add_subdirectory(${FLB_PATH_LIB_RING_BUFFER} EXCLUDE_FROM_ALL)
+
+# yyson
+add_subdirectory(${FLB_PATH_LIB_YYJSON} EXCLUDE_FROM_ALL)
 
 # Avro
 if(FLB_AVRO_ENCODER)
@@ -1065,6 +1084,10 @@ if (NOT DEFINED FLB_MSGPACK_TO_JSON_REALLOC_BUFFER_SIZE)
   FLB_DEFINITION_VAL(FLB_MSGPACK_TO_JSON_REALLOC_BUFFER_SIZE 0.10)
 else()
   FLB_DEFINITION_VAL(FLB_MSGPACK_TO_JSON_REALLOC_BUFFER_SIZE ${FLB_MSGPACK_TO_JSON_REALLOC_BUFFER_SIZE})
+endif()
+
+if (FLB_BENCHMARKS)
+  add_subdirectory(benchmarks)
 endif()
 
 # Build tools/xxd-c

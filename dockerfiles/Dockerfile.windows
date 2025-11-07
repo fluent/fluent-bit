@@ -23,7 +23,7 @@ RUN Remove-Item -Path $env:TEMP\* -Recurse -Force -ErrorAction SilentlyContinue;
     Remove-Item -Path C:\Windows\Temp\* -Recurse -Force -ErrorAction SilentlyContinue; `
     New-Item -ItemType Directory -Path $env:TEMP -Force -ErrorAction SilentlyContinue;
 
-# Install Visual Studio Build Tools 2019 (MSVS_VERSION=16) / 2022 (MSVS_VERSION=17, requires WINDOWS_VERSION=ltsc2022)
+# Install Visual Studio Build Tools 2019 (MSVS_VERSION=16) / 2022 (MSVS_VERSION=17)
 WORKDIR /local
 ARG MSVS_VERSION="17"
 ENV MSVS_BUILD_TOOLS_VERSION="$MSVS_VERSION" `
@@ -109,8 +109,8 @@ RUN $win_flex_bison_dist_base_name=\"win_flex_bison-${env:WIN_FLEX_BISON_VERSION
     Write-Host \"${env:PATH}\"; `
     [Environment]::SetEnvironmentVariable(\"PATH\", \"${env:PATH}\", [EnvironmentVariableTarget]::Machine);
 
-# https://github.com/microsoft/vcpkg/blob/2024.05.24/scripts/bootstrap.ps1
-ENV VCPKG_VERSION=2024.05.24 `
+# https://github.com/microsoft/vcpkg/blob/2025.10.17/scripts/bootstrap.ps1
+ENV VCPKG_VERSION=2025.10.17 `
     VCPKG_DOWNLOAD_URL="https://github.com/microsoft/vcpkg/archive/refs/tags" `
     VCPKG_DISABLE_METRICS="ON" `
     VCPKG_ROOT=/dev/vcpkg
@@ -159,12 +159,6 @@ RUN Remove-Item -Path C:\dev\vcpkg\downloads -Recurse -Force -ErrorAction Silent
     Remove-Item -Path C:\dev\vcpkg\buildtrees -Recurse -Force -ErrorAction SilentlyContinue; `
     Remove-Item -Path $env:TEMP\* -Recurse -Force -ErrorAction SilentlyContinue; `
     Remove-Item -Path C:\Windows\Temp\* -Recurse -Force -ErrorAction SilentlyContinue;
-
-# Copy required runtime libraries
-WORKDIR /fluent-bit/bin
-RUN Copy-Item -Path C:\Windows\System32\msvcp140.dll -Destination /fluent-bit/bin/; `
-    Copy-Item -Path C:\Windows\System32\vccorlib140.dll -Destination /fluent-bit/bin/; `
-    Copy-Item -Path C:\Windows\System32\vcruntime140.dll -Destination /fluent-bit/bin/;
 
 FROM builder-base AS builder
 

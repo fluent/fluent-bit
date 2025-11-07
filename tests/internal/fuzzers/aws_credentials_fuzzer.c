@@ -18,6 +18,7 @@
  */
 
 #include <stdint.h>
+#include <string.h>
 #include <fluent-bit.h>
 #include <fluent-bit/flb_sds.h>
 #include <fluent-bit/flb_aws_credentials.h>
@@ -57,7 +58,7 @@ void fuzz_sts(const uint8_t *data, size_t size) {
         flb_sds_t s1 = flb_sts_uri(action, role_arn, session_name,
                                    external_id, identity_token);
         if (s1 != NULL) {
-            flb_sds_destroy(s1);                
+            flb_sds_destroy(s1);
         }
 
         flb_free(action);
@@ -76,13 +77,17 @@ void fuzz_sts(const uint8_t *data, size_t size) {
 void fuzz_http(const uint8_t *data, size_t size) {
     time_t expiration;
     struct flb_aws_credentials *creds = NULL;
+    size_t response_len;
 
-    char *response = get_null_terminated(250, &data, &size);
-    creds = flb_parse_http_credentials(response, 250, &expiration);
-    if (creds != NULL) {
-        flb_aws_credentials_destroy(creds);
+    response_len = (size > 250) ? 250 : size;
+    char *response = get_null_terminated(response_len, &data, &size);
+    if (response != NULL) {
+        creds = flb_parse_http_credentials(response, strlen(response), &expiration);
+        if (creds != NULL) {
+            flb_aws_credentials_destroy(creds);
+        }
+        flb_free(response);
     }
-    flb_free(response);
 }
 
 

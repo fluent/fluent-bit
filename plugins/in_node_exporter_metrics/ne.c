@@ -39,6 +39,7 @@
 #include "ne_loadavg.h"
 #include "ne_vmstat.h"
 #include "ne_netdev.h"
+#include "ne_netstat.h"
 #include "ne_sockstat.h"
 #include "ne_textfile.h"
 #include "ne_systemd.h"
@@ -194,6 +195,7 @@ static int in_ne_init(struct flb_input_instance *in,
     mk_list_add(&loadavg_collector._head, &ctx->collectors);
     mk_list_add(&vmstat_collector._head, &ctx->collectors);
     mk_list_add(&netdev_collector._head, &ctx->collectors);
+    mk_list_add(&netstat_collector._head, &ctx->collectors);
     mk_list_add(&sockstat_collector._head, &ctx->collectors);
     mk_list_add(&filefd_collector._head, &ctx->collectors);
     mk_list_add(&textfile_collector._head, &ctx->collectors);
@@ -387,6 +389,12 @@ static struct flb_config_map config_map[] = {
      FLB_CONFIG_MAP_TIME, "collector.netdev.scrape_interval", "0",
      0, FLB_FALSE, 0,
      "scrape interval to collect netdev metrics from the node."
+    },
+
+    {
+     FLB_CONFIG_MAP_TIME, "collector.netstat.scrape_interval", "0",
+     0, FLB_FALSE, 0,
+     "scrape interval to collect netstat metrics from the node."
     },
 
     {

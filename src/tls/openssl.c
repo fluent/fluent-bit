@@ -40,6 +40,11 @@
 #ifdef FLB_SYSTEM_WINDOWS
     #define strtok_r(str, delimiter, context) \
             strtok_s(str, delimiter, context)
+    #include <wincrypt.h>
+    #ifndef CERT_FIND_SHA256_HASH
+        /* Older SDKs may not define this */
+        #define CERT_FIND_SHA256_HASH  0x0001000d
+    #endif
 #endif
 
 /*
@@ -59,6 +64,8 @@ struct tls_context {
 #if defined(FLB_SYSTEM_WINDOWS)
     char *certstore_name;
     int use_enterprise_store;
+    CRYPT_HASH_BLOB *allowed_thumbprints;
+    size_t allowed_thumbprints_count;
 #endif
     pthread_mutex_t mutex;
 };
@@ -158,6 +165,17 @@ static void tls_context_destroy(void *ctx_backend)
 
         ctx->certstore_name = NULL;
     }
+    if (ctx->allowed_thumbprints) {
+        /* We allocated each blob->pbData; free them too */
+        for (size_t i = 0; i < ctx->allowed_thumbprints_count; i++) {
+            if (ctx->allowed_thumbprints[i].pbData) {
+                flb_free(ctx->allowed_thumbprints[i].pbData);
+            }
+        }
+        flb_free(ctx->allowed_thumbprints);
+        ctx->allowed_thumbprints = NULL;
+        ctx->allowed_thumbprints_count = 0;
+    }
 #endif
 
     pthread_mutex_unlock(&ctx->mutex);
@@ -196,21 +214,6 @@ static int tls_context_server_alpn_select_callback(SSL *ssl,
     }
 
     return result;
-}
-
-static int tls_context_client_alpn_select_callback(SSL *ssl,
-                                                   unsigned char **out,
-                                                   unsigned char *outlen,
-                                                   const unsigned char *in,
-                                                   unsigned int inlen,
-                                                   void *arg)
-{
-    return tls_context_server_alpn_select_callback(ssl,
-                                                   (const unsigned char **) out,
-                                                   outlen,
-                                                   in,
-                                                   inlen,
-                                                   arg);
 }
 
 int tls_context_alpn_set(void *ctx_backend, const char *alpn)
@@ -283,10 +286,15 @@ int tls_context_alpn_set(void *ctx_backend, const char *alpn)
                 ctx);
         }
         else {
-            SSL_CTX_set_next_proto_select_cb(
-                ctx->ctx,
-                tls_context_client_alpn_select_callback,
-                ctx);
+            if (ctx->alpn == NULL) {
+                return -1;
+            }
+            if (SSL_CTX_set_alpn_protos(
+                ctx->ctx, 
+                (const unsigned char *) &ctx->alpn[1], 
+                (unsigned int) ctx->alpn[0]) != 0) {
+                return -1;
+            }
         }
     }
 
@@ -331,6 +339,62 @@ static int windows_load_system_certificates(struct tls_context *ctx)
     if (win_store == NULL) {
         flb_error("[tls] cannot open windows certificate store: %lu", GetLastError());
         return -1;
+    }
+
+    if (ctx->allowed_thumbprints_count > 0) {
+        size_t loaded = 0;
+        DWORD find_type = 0;
+        size_t i;
+
+        for (i = 0; i < ctx->allowed_thumbprints_count; i++) {
+            find_type = (ctx->allowed_thumbprints[i].cbData == 20)
+                         ? CERT_FIND_SHA1_HASH
+                         : CERT_FIND_SHA256_HASH;
+
+            win_cert = NULL;
+            while ((win_cert = CertFindCertificateInStore(win_store,
+                                                          X509_ASN_ENCODING,
+                                                          0,
+                                                          find_type,
+                                                          &ctx->allowed_thumbprints[i],
+                                                          win_cert)) != NULL) {
+
+                win_cert_data = win_cert->pbCertEncoded;
+                ossl_cert = d2i_X509(NULL, &win_cert_data, win_cert->cbCertEncoded);
+                if (!ossl_cert) {
+                    flb_debug("[tls] parse failed for matched certificate (thumbprint idx %zu)", i);
+                    continue;
+                }
+
+                ret = X509_STORE_add_cert(ossl_store, ossl_cert);
+                if (ret != 1) {
+                    unsigned long err = ERR_get_error();
+                    if (ERR_GET_REASON(err) == X509_R_CERT_ALREADY_IN_HASH_TABLE) {
+                        flb_debug("[tls] certificate already present (thumbprint idx %zu).", i);
+                    }
+                    else {
+                        flb_warn("[tls] add_cert failed: %s", ERR_error_string(err, NULL));
+                    }
+                }
+                else {
+                    loaded++;
+                }
+                X509_free(ossl_cert);
+            }
+        }
+
+        if (!CertCloseStore(win_store, 0)) {
+            flb_error("[tls] cannot close windows certificate store: %lu", GetLastError());
+            return -1;
+        }
+
+        if (loaded == 0) {
+            flb_warn("[tls] no certificates loaded by thumbprint from '%s'.", certstore_name);
+        }
+        else {
+            flb_debug("[tls] loaded %zu certificate(s) by thumbprint from '%s'.", loaded, certstore_name);
+        }
+        return 0;
     }
 
     /* Iterate over certificates in the store */
@@ -607,6 +671,12 @@ static void *tls_context_create(int verify,
     ctx->mode = mode;
     ctx->alpn = NULL;
     ctx->debug_level = debug;
+#if defined(FLB_SYSTEM_WINDOWS)
+    ctx->certstore_name = NULL;
+    ctx->use_enterprise_store = 0;
+    ctx->allowed_thumbprints = NULL;
+    ctx->allowed_thumbprints_count = 0;
+#endif
     pthread_mutex_init(&ctx->mutex, NULL);
 
     /* Verify peer: by default OpenSSL always verify peer */
@@ -822,6 +892,152 @@ static int tls_set_use_enterprise_store(struct flb_tls *tls, int use_enterprise)
 
     return 0;
 }
+
+static int hex_nibble(int c) {
+    if      (c >= '0' && c <= '9') {
+        return c - '0';
+    }
+    else if (c >= 'a' && c <= 'f') {
+        return c - 'a' + 10;
+    }
+    else if (c >= 'A' && c <= 'F') {
+        return c - 'A' + 10;
+    }
+    return -1;
+}
+
+static char *compact_hex(const char *s) {
+    size_t n = 0;
+    size_t i;
+    char *out = flb_calloc(1, strlen(s) + 1);
+
+    if (!out) {
+        return NULL;
+    }
+
+    for (i = 0; s[i]; i++) {
+        int c = s[i];
+        if ((c >= '0' && c <= '9') ||
+            (c >= 'a' && c <= 'f') ||
+            (c >= 'A' && c <= 'F')) {
+            out[n++] = (char)c;
+        }
+    }
+    out[n] = '\0';
+    return out;
+}
+
+static unsigned char *hex_to_bytes(const char *hex, size_t *out_len) {
+    unsigned char *buf = NULL;
+    size_t i;
+    size_t len = strlen(hex);
+    if (len % 2 != 0) {
+        return NULL;
+    }
+
+    buf = flb_calloc(1, len / 2);
+    if (!buf) {
+        return NULL;
+    }
+
+    for (i = 0; i < len; i += 2) {
+        int hi = hex_nibble(hex[i]);
+        int lo = hex_nibble(hex[i+1]);
+        if (hi < 0 || lo < 0) {
+            flb_free(buf);
+            return NULL;
+        }
+        buf[i/2] = (unsigned char)((hi << 4) | lo);
+    }
+    *out_len = len / 2;
+    return buf;
+}
+
+static int windows_set_allowed_thumbprints(struct tls_context *ctx, const char *thumbprints) 
+{
+    char *token_ctx = NULL, *tok = NULL;
+    size_t cap = 4, count = 0;
+    char *hex = NULL;
+    struct cfl_list *kvs;
+    struct cfl_list *head;
+    struct cfl_split_entry *cur;
+    CRYPT_HASH_BLOB *arr;
+    size_t bytes_len = 0;
+    unsigned char *bytes = NULL;
+
+    if (!thumbprints || !*thumbprints) {
+        return 0;
+    }
+
+    arr = flb_calloc(cap, sizeof(*arr));
+    if (!arr) {
+        return -1;
+    }
+
+    kvs = cfl_utils_split(thumbprints, ',', -1);
+    cfl_list_foreach(head, kvs) {
+        cur = cfl_list_entry(head, struct cfl_split_entry, _head);
+        tok = cur->value;
+        hex = compact_hex(tok);
+        if (hex && *hex) {
+            bytes = hex_to_bytes(hex, &bytes_len);
+            if (bytes && (bytes_len == 20 || bytes_len == 32)) {
+                if (count == cap) {
+                    cap *= 2;
+                    CRYPT_HASH_BLOB *tmp = flb_realloc(arr, cap * sizeof(*arr));
+                    if (!tmp) {
+                        flb_free(bytes);
+                        break;
+                    }
+                    arr = tmp;
+                }
+                arr[count].cbData = (DWORD)bytes_len;
+                arr[count].pbData = bytes;
+                count++;
+            }
+            else {
+                flb_warn("[tls] ignoring thumbprint '%s' (length must be 40 or 64 hex chars after stripping).", tok);
+                if (bytes) {
+                    flb_free(bytes);
+                }
+            }
+        }
+        if (hex) {
+            flb_free(hex);
+        }
+    }
+    cfl_utils_split_free(kvs);
+
+    if (count == 0) {
+        if (arr) {
+            flb_free(arr);
+        }
+        flb_warn("[tls] no valid thumbprints parsed.");
+        return -1;
+    }
+
+    ctx->allowed_thumbprints = arr;
+    ctx->allowed_thumbprints_count = count;
+    flb_debug("[tls] parsed %zu allowed thumbprint(s).", count);
+
+    return 0;
+}
+
+static int tls_set_client_thumbprints(struct flb_tls *tls, const char *thumbprints) {
+    struct tls_context *ctx = tls->ctx;
+    int rc = 0;
+
+    pthread_mutex_lock(&ctx->mutex);
+
+    if (ctx->allowed_thumbprints || ctx->allowed_thumbprints_count) {
+        pthread_mutex_unlock(&ctx->mutex);
+        return -1;
+    }
+    rc = windows_set_allowed_thumbprints(ctx, thumbprints);
+    pthread_mutex_unlock(&ctx->mutex);
+    return rc;
+}
+
 #endif
 
 static void *tls_session_create(struct flb_tls *tls,
@@ -881,7 +1097,7 @@ static int tls_session_destroy(void *session)
 
     pthread_mutex_lock(&ctx->mutex);
 
-    if (flb_socket_error(ptr->fd) == 0) {
+    if (ptr->fd >= 0 && flb_socket_error(ptr->fd) == 0) {
         SSL_shutdown(ptr->ssl);
     }
 
@@ -891,6 +1107,32 @@ static int tls_session_destroy(void *session)
     pthread_mutex_unlock(&ctx->mutex);
 
     return 0;
+}
+
+static void tls_session_invalidate(void *session)
+{
+    struct tls_session *ptr = session;
+    struct tls_context *ctx;
+
+    if (ptr == NULL) {
+        return;
+    }
+
+    ctx = ptr->parent;
+    if (ctx == NULL) {
+        ptr->fd = -1;
+        return;
+    }
+
+    pthread_mutex_lock(&ctx->mutex);
+
+    if (ptr->fd >= 0 && flb_socket_error(ptr->fd) == 0) {
+        SSL_shutdown(ptr->ssl);
+    }
+
+    ptr->fd = -1;
+
+    pthread_mutex_unlock(&ctx->mutex);
 }
 
 static const char *tls_session_alpn_get(void *session_)
@@ -1219,6 +1461,7 @@ static struct flb_tls_backend tls_openssl = {
     .set_minmax_proto     = tls_set_minmax_proto,
     .set_ciphers          = tls_set_ciphers,
     .session_create       = tls_session_create,
+    .session_invalidate   = tls_session_invalidate,
     .session_destroy      = tls_session_destroy,
     .net_read             = tls_net_read,
     .net_write            = tls_net_write,
@@ -1226,5 +1469,6 @@ static struct flb_tls_backend tls_openssl = {
 #if defined(FLB_SYSTEM_WINDOWS)
     .set_certstore_name   = tls_set_certstore_name,
     .set_use_enterprise_store = tls_set_use_enterprise_store,
+    .set_client_thumbprints   = tls_set_client_thumbprints,
 #endif
 };

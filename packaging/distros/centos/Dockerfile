@@ -225,6 +225,69 @@ ENV FLB_KAFKA=$FLB_KAFKA
 ARG FLB_JEMALLOC_OPTIONS="--with-lg-page=16 --with-lg-quantum=3"
 ENV FLB_JEMALLOC_OPTIONS=$FLB_JEMALLOC_OPTIONS
 
+FROM quay.io/centos/centos:stream10 AS centos-10-base
+
+ENV CMAKE_HOME="/opt/cmake"
+ARG CMAKE_VERSION="3.31.6"
+ARG CMAKE_URL="https://github.com/Kitware/CMake/releases/download"
+
+# Add for the YAML development libraries
+# hadolint ignore=DL3033,DL3041
+RUN dnf -y install 'dnf-command(config-manager)' && dnf -y config-manager --set-enabled crb && \
+    dnf -y install rpm-build ca-certificates gcc gcc-c++ make bash \
+    wget unzip systemd-devel wget flex bison \
+    postgresql-libs postgresql-devel postgresql-server postgresql \
+    cyrus-sasl-lib cyrus-sasl-devel openssl openssl-libs openssl-devel libcurl-devel pkgconf-pkg-config \
+    libyaml-devel zlib-devel \
+    tar gzip && \
+    dnf clean all && \
+    mkdir -p "${CMAKE_HOME}" && \
+    cmake_download_url="${CMAKE_URL}/v${CMAKE_VERSION}/cmake-${CMAKE_VERSION}-linux-$(uname -m).tar.gz" && \
+    echo "Downloading CMake ${CMAKE_VERSION}: ${cmake_download_url} -> ${CMAKE_HOME}" && \
+    curl -jksSL "${cmake_download_url}" | tar -xzf - -C "${CMAKE_HOME}" --strip-components 1
+
+ENV PATH="${CMAKE_HOME}/bin:${PATH}"
+
+ARG FLB_OUT_PGSQL=On
+ENV FLB_OUT_PGSQL=$FLB_OUT_PGSQL
+
+# hadolint ignore=DL3029
+FROM --platform=arm64 quay.io/centos/centos:stream10 AS centos-10.arm64v8-base
+
+COPY --from=multiarch-aarch64 /usr/bin/qemu-aarch64-static /usr/bin/qemu-aarch64-static
+
+ENV CMAKE_HOME="/opt/cmake"
+ARG CMAKE_VERSION="3.31.6"
+ARG CMAKE_URL="https://github.com/Kitware/CMake/releases/download"
+
+# Add for the YAML development libraries
+# hadolint ignore=DL3033,DL3041
+RUN dnf -y install 'dnf-command(config-manager)' && dnf -y config-manager --set-enabled crb && \
+    dnf -y install rpm-build ca-certificates gcc gcc-c++ make bash \
+    wget unzip systemd-devel wget flex bison \
+    postgresql-libs postgresql-devel postgresql-server postgresql \
+    cyrus-sasl-lib cyrus-sasl-devel openssl openssl-libs openssl-devel libcurl-devel pkgconf-pkg-config \
+    libyaml-devel zlib-devel \
+    tar gzip && \
+    dnf clean all && \
+    mkdir -p "${CMAKE_HOME}" && \
+    cmake_download_url="${CMAKE_URL}/v${CMAKE_VERSION}/cmake-${CMAKE_VERSION}-linux-$(uname -m).tar.gz" && \
+    echo "Downloading CMake ${CMAKE_VERSION}: ${cmake_download_url} -> ${CMAKE_HOME}" && \
+    curl -jksSL "${cmake_download_url}" | tar -xzf - -C "${CMAKE_HOME}" --strip-components 1
+
+ENV PATH="${CMAKE_HOME}/bin:${PATH}"
+
+ARG FLB_OUT_PGSQL=On
+ENV FLB_OUT_PGSQL=$FLB_OUT_PGSQL
+ARG FLB_UNICODE_ENCODER=On
+ENV FLB_UNICODE_ENCODER=$FLB_UNICODE_ENCODER
+ARG FLB_KAFKA=On
+ENV FLB_KAFKA=$FLB_KAFKA
+
+# Need larger page size
+ARG FLB_JEMALLOC_OPTIONS="--with-lg-page=16 --with-lg-quantum=3"
+ENV FLB_JEMALLOC_OPTIONS=$FLB_JEMALLOC_OPTIONS
+
 # Common build for all distributions now
 # hadolint ignore=DL3006
 FROM $BASE_BUILDER AS builder

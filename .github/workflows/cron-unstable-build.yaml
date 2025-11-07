@@ -173,7 +173,7 @@ jobs:
 
       - name: Download all artefacts
         continue-on-error: true
-        uses: actions/download-artifact@v5
+        uses: actions/download-artifact@v6
         with:
           path: artifacts/
 

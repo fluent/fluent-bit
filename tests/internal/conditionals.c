@@ -364,7 +364,7 @@ void test_condition_equals()
     cond = flb_condition_create(FLB_COND_OP_AND);
     TEST_CHECK(cond != NULL);
 
-    TEST_CHECK(flb_condition_add_rule(cond, "$level", FLB_RULE_OP_EQ, 
+    TEST_CHECK(flb_condition_add_rule(cond, "$level", FLB_RULE_OP_EQ,
                                     "error", 0, RECORD_CONTEXT_BODY) == FLB_TRUE);
 
     result = flb_condition_evaluate(cond, &record_data->chunk);
@@ -445,7 +445,7 @@ void test_condition_not_equals()
     cond = flb_condition_create(FLB_COND_OP_AND);
     TEST_CHECK(cond != NULL);
 
-    TEST_CHECK(flb_condition_add_rule(cond, "$level", FLB_RULE_OP_NEQ, 
+    TEST_CHECK(flb_condition_add_rule(cond, "$level", FLB_RULE_OP_NEQ,
                                     "error", 0, RECORD_CONTEXT_BODY) == FLB_TRUE);
 
     result = flb_condition_evaluate(cond, &record_data->chunk);
@@ -734,7 +734,7 @@ void test_condition_invalid_expressions()
     result = flb_condition_evaluate(NULL, &record_data->chunk);
     TEST_CHECK(result == FLB_TRUE);
 
-    /* Test NULL record */
+    /* Test NULL record with AND condition */
     cond = flb_condition_create(FLB_COND_OP_AND);
     TEST_CHECK(cond != NULL);
 
@@ -742,7 +742,30 @@ void test_condition_invalid_expressions()
                                     "error", 0, RECORD_CONTEXT_BODY) == FLB_TRUE);
 
     result = flb_condition_evaluate(cond, NULL);
-    TEST_CHECK(result == FLB_TRUE);
+    TEST_CHECK(result == FLB_FALSE);  /* NULL record should fail condition */
+
+    flb_condition_destroy(cond);
+
+    /* Test NULL record with OR condition */
+    cond = flb_condition_create(FLB_COND_OP_OR);
+    TEST_CHECK(cond != NULL);
+
+    TEST_CHECK(flb_condition_add_rule(cond, "$level", FLB_RULE_OP_EQ,
+                                    "error", 0, RECORD_CONTEXT_BODY) == FLB_TRUE);
+    TEST_CHECK(flb_condition_add_rule(cond, "$level", FLB_RULE_OP_EQ,
+                                    "warn", 0, RECORD_CONTEXT_BODY) == FLB_TRUE);
+
+    result = flb_condition_evaluate(cond, NULL);
+    TEST_CHECK(result == FLB_FALSE);  /* NULL record should fail condition */
+
+    flb_condition_destroy(cond);
+
+    /* Test NULL record with empty condition */
+    cond = flb_condition_create(FLB_COND_OP_AND);
+    TEST_CHECK(cond != NULL);
+
+    result = flb_condition_evaluate(cond, NULL);
+    TEST_CHECK(result == FLB_FALSE);  /* NULL record should fail even with empty condition */
 
     flb_condition_destroy(cond);
 
@@ -872,6 +895,22 @@ void test_condition_missing_values()
 
     result = flb_condition_evaluate(cond, &record_data->chunk);
     TEST_CHECK(result == FLB_FALSE);  /* Missing field should return false */
+
+    flb_condition_destroy(cond);
+    destroy_test_record(record_data);
+
+    /* Test metadata rule when metadata is absent */
+    record_data = create_test_record("message", "test log entry");
+    TEST_CHECK(record_data != NULL);
+
+    cond = flb_condition_create(FLB_COND_OP_AND);
+    TEST_CHECK(cond != NULL);
+
+    TEST_CHECK(flb_condition_add_rule(cond, "$stream", FLB_RULE_OP_EQ,
+                                    "production", 0, RECORD_CONTEXT_METADATA) == FLB_TRUE);
+
+    result = flb_condition_evaluate(cond, &record_data->chunk);
+    TEST_CHECK(result == FLB_FALSE);  /* Missing metadata should return false */
 
     flb_condition_destroy(cond);
     destroy_test_record(record_data);
