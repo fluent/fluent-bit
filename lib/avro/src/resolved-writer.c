@@ -419,7 +419,7 @@ do {								\
  * the writer is not.  Checks each branch of the reader union schema,
  * looking for the first branch that is compatible with the writer
  * schema.  The @ref check_func argument should be a function that can
- * check the compatiblity of each branch schema.
+ * check the compatibility of each branch schema.
  */
 
 #define check_reader_union(saved, wschema, rschema, check_func)		\

@@ -360,7 +360,7 @@ int write_nested_array_file ( int64_t buf_len,
 }
 
 
-/* Top level function to impelement a test for the JIRA issue
+/* Top level function to implement a test for the JIRA issue
  * AVRO-1034. See detailed documentation at the top of this file.
  */
 int main(void)
