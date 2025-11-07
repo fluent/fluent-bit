@@ -83,7 +83,7 @@
         </SetProperty>
 
         <Property Id="CreateFluentBitWinSvc" Value=" "/>
-        <CustomAction Id="SetCreateFluentBitWinSvcCommand" Property="CreateFluentBitWinSvc" Value="&quot;sc.exe&quot; create @FLB_OUT_NAME@ binpath= &quot;\&quot;[INSTALL_ROOT]bin\@FLB_OUT_NAME@.exe\&quot; -c \&quot;[INSTALL_ROOT]conf\@FLB_OUT_NAME@.conf\&quot;&quot; start= delayed-auto" Execute="immediate" />
+        <CustomAction Id="SetCreateFluentBitWinSvcCommand" Property="CreateFluentBitWinSvc" Value="&quot;sc.exe&quot; create @FLB_OUT_NAME@ binpath= &quot;\&quot;[INSTALL_ROOT]bin\@FLB_OUT_NAME@.exe\&quot; -c \&quot;[INSTALL_ROOT]conf\@FLB_OUT_NAME@.conf\&quot; --workdir \&quot;[INSTALL_ROOT]conf\&quot;&quot; start= delayed-auto" Execute="immediate" />
         <CustomAction Id="CreateFluentBitWinSvc" BinaryKey="WixCA" DllEntry="CAQuietExec" Execute="deferred" Return="ignore" Impersonate="no" />
 
         <Property Id="LaunchFluentBitWinSvc" Value=" "/>
