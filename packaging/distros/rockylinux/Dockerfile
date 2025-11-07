@@ -20,7 +20,7 @@ RUN yum -y update && \
     yum install -y rpm-build curl ca-certificates gcc gcc-c++ cmake make bash \
     wget unzip systemd-devel wget flex bison \
     postgresql-libs postgresql-devel postgresql-server postgresql \
-    cyrus-sasl-lib openssl openssl-libs openssl-devel libyaml-devel pkgconf-pkg-config && \
+    cyrus-sasl-lib cyrus-sasl-devel openssl openssl-libs openssl-devel libyaml-devel pkgconf-pkg-config && \
     yum clean all
 
 # rockylinux/8.arm64v8 base image
@@ -37,7 +37,7 @@ RUN yum -y update && \
     yum install -y rpm-build curl ca-certificates gcc gcc-c++ cmake make bash \
     wget unzip systemd-devel wget flex bison \
     postgresql-libs postgresql-devel postgresql-server postgresql \
-    cyrus-sasl-lib openssl openssl-libs openssl-devel libyaml-devel pkgconf-pkg-config && \
+    cyrus-sasl-lib cyrus-sasl-devel openssl openssl-libs openssl-devel libyaml-devel pkgconf-pkg-config && \
     yum clean all
 
 # Need larger page size
@@ -54,7 +54,7 @@ RUN yum -y update && \
     yum install -y --allowerasing rpm-build curl ca-certificates gcc gcc-c++ cmake make bash \
     wget unzip systemd-devel wget flex bison \
     postgresql-libs postgresql-devel postgresql-server postgresql \
-    cyrus-sasl-lib openssl openssl-libs openssl-devel libyaml-devel pkgconf-pkg-config && \
+    cyrus-sasl-lib cyrus-sasl-devel openssl openssl-libs openssl-devel libyaml-devel pkgconf-pkg-config && \
     yum clean all
 
 # rockylinux/9.arm64v8 base image
@@ -71,7 +71,7 @@ RUN yum -y update && \
     yum install -y --allowerasing rpm-build curl ca-certificates gcc gcc-c++ cmake make bash \
     wget unzip systemd-devel wget flex bison \
     postgresql-libs postgresql-devel postgresql-server postgresql \
-    cyrus-sasl-lib openssl openssl-libs openssl-devel libyaml-devel pkgconf-pkg-config && \
+    cyrus-sasl-lib cyrus-sasl-devel openssl openssl-libs openssl-devel libyaml-devel pkgconf-pkg-config && \
     yum clean all
 
 # Need larger page size
@@ -88,7 +88,7 @@ RUN yum -y update && \
     yum install -y --allowerasing rpm-build curl ca-certificates gcc gcc-c++ cmake make bash \
     wget unzip systemd-devel wget flex bison \
     postgresql-libs postgresql-devel postgresql-server postgresql \
-    cyrus-sasl-lib openssl openssl-libs openssl-devel libyaml-devel pkgconf-pkg-config && \
+    cyrus-sasl-lib cyrus-sasl-devel openssl openssl-libs openssl-devel libyaml-devel pkgconf-pkg-config && \
     yum clean all
 
 # rockylinux/10.arm64v8 base image
@@ -105,7 +105,7 @@ RUN yum -y update && \
     yum install -y --allowerasing rpm-build curl ca-certificates gcc gcc-c++ cmake make bash \
     wget unzip systemd-devel wget flex bison \
     postgresql-libs postgresql-devel postgresql-server postgresql \
-    cyrus-sasl-lib openssl openssl-libs openssl-devel libyaml-devel pkgconf-pkg-config && \
+    cyrus-sasl-lib cyrus-sasl-devel openssl openssl-libs openssl-devel libyaml-devel pkgconf-pkg-config && \
     yum clean all
 
 # Need larger page size
