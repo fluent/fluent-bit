@@ -20,7 +20,6 @@
 #ifndef FLB_OUT_S3
 #define FLB_OUT_S3
 
-#include "mk_core/mk_list.h"
 #include <fluent-bit/flb_output_plugin.h>
 #include <fluent-bit/flb_sds.h>
 #include <fluent-bit/flb_info.h>

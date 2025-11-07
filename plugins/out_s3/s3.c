@@ -34,16 +34,15 @@
 #include <fluent-bit/flb_base64.h>
 #include <fluent-bit/flb_log_event_decoder.h>
 #include <fluent-bit/flb_input_blob.h>
+#include <fluent-bit/flb_output.h>
+#include <fluent-bit/flb_sds.h>
+#include <fluent-bit/flb_uri.h>
 #include <stdlib.h>
 #include <sys/stat.h>
 
 #include <msgpack.h>
 
 #include "s3.h"
-#include "fluent-bit/flb_output.h"
-#include "fluent-bit/flb_sds.h"
-#include "fluent-bit/flb_uri.h"
-#include "mk_core/mk_list.h"
 #include "s3_store.h"
 
 #define DEFAULT_S3_PORT 443
@@ -636,25 +635,39 @@ static flb_sds_t construct_object_tagging(struct flb_output_instance *ctx, struc
         }
 
         val_sds = flb_uri_encode(val->str, flb_sds_len(val->str));
-        if (val_sds == NULL) goto error;
+        if (val_sds == NULL) {
+            goto error;
+        }
 
         if (url_sds == NULL) {
             url_sds = flb_sds_create_size(256);
-        } else {
-            if (NULL == flb_sds_printf(&url_sds, "&"))
+            if (url_sds == NULL) {
                 goto error;
+            }
         }
-        if (NULL == flb_sds_printf(&url_sds, "%s=%s", key_sds, val_sds))
+        else {
+            if (NULL == flb_sds_printf(&url_sds, "&")) {
+                goto error;
+            }
+        }
+        if (NULL == flb_sds_printf(&url_sds, "%s=%s", key_sds, val_sds)) {
             goto error;
+        }
         flb_sds_destroy(key_sds); key_sds = NULL;
         flb_sds_destroy(val_sds); val_sds = NULL;
     }
     return url_sds;
 
 error:
-    if (key_sds != NULL) flb_sds_destroy(key_sds);
-    if (val_sds != NULL) flb_sds_destroy(val_sds);
-    if (url_sds != NULL) flb_sds_destroy(url_sds);
+    if (key_sds != NULL) {
+        flb_sds_destroy(key_sds);
+    }
+    if (val_sds != NULL) {
+        flb_sds_destroy(val_sds);
+    }
+    if (url_sds != NULL) {
+        flb_sds_destroy(url_sds);
+    }
     return NULL;
 }
 
