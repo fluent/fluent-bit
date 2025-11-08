@@ -131,6 +131,7 @@ struct flb_out_arvancloud_cloudlogs *flb_arvancloud_conf_create(
     }
     ctx->uri = flb_sds_create("/logging/v1/entries/write");
     if (!ctx->uri) {
+        flb_errno();
         flb_arvancloud_conf_destroy(ctx);
         return NULL;
     }
