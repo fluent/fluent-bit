@@ -136,7 +136,7 @@ SCRIPT
         $SUDO sh <<SCRIPT
 export DEBIAN_FRONTEND=noninteractive
 mkdir -p /usr/share/keyrings/
-curl $RELEASE_KEY | gpg --dearmor > /usr/share/keyrings/fluentbit-keyring.gpg
+curl -L $RELEASE_KEY | gpg --dearmor > /usr/share/keyrings/fluentbit-keyring.gpg
 cat > /etc/apt/sources.list.d/fluent-bit.list <<EOF
 deb [signed-by=/usr/share/keyrings/fluentbit-keyring.gpg] $RELEASE_URL/${OS}/${CODENAME} ${CODENAME} main
 EOF
