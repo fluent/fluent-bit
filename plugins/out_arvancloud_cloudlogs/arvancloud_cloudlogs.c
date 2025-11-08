@@ -417,14 +417,12 @@ static void cb_arvancloud_flush(struct flb_event_chunk *event_chunk,
                   (const char *) final_payload);
 
     if (ctx->proxy) {
-        /* When using a proxy, pass the target host and proxy information */
         c = flb_http_client(u_conn, FLB_HTTP_POST, ctx->uri,
                             final_payload, final_payload_size,
                             ctx->host, ctx->port,
-                            ctx->proxy_host, ctx->proxy_port);
+                            ctx->proxy, 0);
     }
     else {
-        /* Direct connection - use host/port from u_conn */
         c = flb_http_client(u_conn, FLB_HTTP_POST, ctx->uri,
                             final_payload, final_payload_size,
                             NULL, 0,
