@@ -1332,6 +1332,14 @@ if (FLB_IN_EBPF)
 
 endif()
 
+# AMQP
+# ==========
+find_package(rabbitmq-c)
+if(FLB_IN_AMQP AND (NOT rabbitmq-c_FOUND))
+  message(STATUS "rabbitmq-c is not found. Disabling AMQP support.")
+  FLB_OPTION(FLB_IN_AMQP OFF)
+endif()
+
 # Pthread Local Storage
 # =====================
 # By default we expect the compiler already support thread local storage
