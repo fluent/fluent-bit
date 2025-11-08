@@ -416,10 +416,20 @@ static void cb_arvancloud_flush(struct flb_event_chunk *event_chunk,
                   (int) final_payload_size,
                   (const char *) final_payload);
 
-    c = flb_http_client(u_conn, FLB_HTTP_POST, ctx->uri,
-                        final_payload, final_payload_size,
-                        NULL, 0,     // host=NULL, port=0 -> use from u_conn
-                        NULL, 0);    // proxy=NULL
+    if (ctx->proxy) {
+        /* When using a proxy, pass the target host and proxy information */
+        c = flb_http_client(u_conn, FLB_HTTP_POST, ctx->uri,
+                            final_payload, final_payload_size,
+                            ctx->host, ctx->port,
+                            ctx->proxy_host, ctx->proxy_port);
+    }
+    else {
+        /* Direct connection - use host/port from u_conn */
+        c = flb_http_client(u_conn, FLB_HTTP_POST, ctx->uri,
+                            final_payload, final_payload_size,
+                            NULL, 0,
+                            NULL, 0);
+    }
     if (!c) {
         if (final_payload != payload_buf) {
             flb_free(final_payload);
