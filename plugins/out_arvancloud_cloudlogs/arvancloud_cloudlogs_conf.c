@@ -52,7 +52,7 @@ struct flb_out_arvancloud_cloudlogs *flb_arvancloud_conf_create(
 
     if (flb_output_config_map_set(ins, (void *) ctx) == -1) {
         flb_plg_error(ins, "flb_output_config_map_set failed");
-        flb_free(ctx);
+        flb_arvancloud_conf_destroy(ctx);
         return NULL;
     }
 
