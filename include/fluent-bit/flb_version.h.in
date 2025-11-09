@@ -83,8 +83,9 @@ static inline void flb_version_banner()
 #endif
     fprintf(stderr, "* %sCopyright (C) 2015-2025 The Fluent Bit Authors%s\n",
             copyright_color, reset_color);
-    fprintf(stderr, "* Fluent Bit is a CNCF sub-project under the "
-            "umbrella of Fluentd\n");
+    fprintf(stderr, "* Fluent Bit is a CNCF graduated project under the "
+            "Fluent organization\n");
+
     fprintf(stderr, "* https://fluentbit.io\n\n");
 
 #ifdef FLB_MOTD_H
