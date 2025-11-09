@@ -31,6 +31,10 @@
 #include <fluent-bit/flb_mem.h>
 #include <fluent-bit/flb_str.h>
 #include <fluent-bit/flb_scheduler.h>
+#include <fluent-bit/flb_time.h>
+#ifdef FLB_HAVE_METRICS
+#include <fluent-bit/flb_metrics.h>
+#endif
 #include <string.h>
 
 /*
@@ -72,6 +76,60 @@ static inline void map_free_task_id(int id, struct flb_config *config)
 {
     config->task_map[id].task = NULL;
 }
+
+#ifdef FLB_HAVE_METRICS
+static void record_unmatched_route_drop_metrics(struct flb_input_instance *ins,
+                                                struct flb_input_chunk *ic,
+                                                size_t chunk_size)
+{
+    struct flb_router *router;
+    uint64_t now;
+    double dropped_bytes;
+    char *labels[2];
+
+    if (!ins || !ic || !ins->config) {
+        return;
+    }
+
+    if (ic->event_type != FLB_INPUT_LOGS || ic->total_records <= 0) {
+        return;
+    }
+
+    router = ins->config->router;
+    if (!router) {
+        return;
+    }
+
+    now = cfl_time_now();
+    labels[0] = (char *) flb_input_name(ins);
+    labels[1] = "unmatched";
+
+    dropped_bytes = (double) chunk_size;
+    if (dropped_bytes <= 0) {
+        ssize_t real_size;
+
+        real_size = flb_input_chunk_get_real_size(ic);
+        if (real_size > 0) {
+            dropped_bytes = (double) real_size;
+        }
+        else {
+            dropped_bytes = 0;
+        }
+    }
+
+    cmt_counter_add(router->logs_drop_records_total,
+                    now,
+                    (double) ic->total_records,
+                    2,
+                    labels);
+
+    cmt_counter_add(router->logs_drop_bytes_total,
+                    now,
+                    dropped_bytes,
+                    2,
+                    labels);
+}
+#endif
 
 static int task_collect_output_references(struct flb_config *config,
                                           const struct flb_chunk_direct_route *route,
@@ -806,6 +864,9 @@ struct flb_task *flb_task_create(uint64_t ref_id,
 
     /* no destinations ?, useless task. */
     if (count == 0) {
+#ifdef FLB_HAVE_METRICS
+        record_unmatched_route_drop_metrics(i_ins, task_ic, size);
+#endif
         flb_debug("[task] created task=%p id=%i without routes, dropping.",
                   task, task->id);
         if (router_context_initialized) {
