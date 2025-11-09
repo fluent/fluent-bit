@@ -22,6 +22,7 @@
 #include <fluent-bit/flb_pack.h>
 #include <fluent-bit/flb_sds.h>
 #include <fluent-bit/flb_kv.h>
+#include <fluent-bit/flb_http_client.h>
 #include <fluent-bit/flb_record_accessor.h>
 
 #ifdef FLB_HAVE_SIGNV4
@@ -267,6 +268,23 @@ struct flb_out_http *flb_http_conf_create(struct flb_output_instance *ins,
         }
         else {
             flb_plg_error(ctx->ins, "invalid compress option '%s'", tmp);
+            flb_free(ctx);
+            return NULL;
+        }
+    }
+
+    /* HTTP method */
+    ctx->http_method = FLB_HTTP_POST;
+    tmp = flb_output_get_property("http_method", ins);
+    if (tmp) {
+        if (strcasecmp(tmp, "POST") == 0) {
+            ctx->http_method = FLB_HTTP_POST;
+        }
+        else if (strcasecmp(tmp, "PUT") == 0) {
+            ctx->http_method = FLB_HTTP_PUT;
+        }
+        else {
+            flb_plg_error(ctx->ins, "invalid http_method option '%s'. Supported methods are POST and PUT", tmp);
             flb_free(ctx);
             return NULL;
         }
