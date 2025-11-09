@@ -883,6 +883,8 @@ static void setup_conditional_routes(struct flb_input_routes *input_routes,
     cfl_list_init(&input_routes->_head);
     cfl_list_init(&input_routes->routes);
     input_routes->input_name = flb_sds_create("tail");
+    input_routes->plugin_name = flb_sds_create("tail");
+    input_routes->has_alias = FLB_FALSE;
 
     /* Route 1: info_logs */
     memset(route1, 0, sizeof(struct flb_route));
@@ -971,6 +973,7 @@ static void cleanup_conditional_routing_instances(struct flb_config *config,
     flb_sds_destroy(output2->alias);
     flb_sds_destroy(output3->alias);
     flb_sds_destroy(input_routes->input_name);
+    flb_sds_destroy(input_routes->plugin_name);
     flb_sds_destroy(route1->name);
     flb_sds_destroy(route2->name);
     flb_sds_destroy(route3->name);
