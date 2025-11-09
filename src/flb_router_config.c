@@ -388,6 +388,10 @@ static void input_routes_destroy(struct flb_input_routes *input)
         flb_sds_destroy(input->input_name);
     }
 
+    if (input->plugin_name) {
+        flb_sds_destroy(input->plugin_name);
+    }
+
     flb_free(input);
 }
 
@@ -1080,6 +1084,8 @@ static int parse_input_section(struct flb_cf_section *section,
                                struct cfl_list *input_routes,
                                struct flb_config *config)
 {
+    uint32_t mask;
+    size_t before_count;
     struct flb_input_routes *input;
     struct cfl_kvlist *kvlist;
     struct cfl_variant *name_var;
@@ -1088,8 +1094,7 @@ static int parse_input_section(struct flb_cf_section *section,
     struct cfl_kvlist *routes_kvlist;
     struct cfl_list *head;
     struct cfl_kvpair *pair;
-    uint32_t mask;
-    size_t before_count;
+    struct cfl_variant *alias_var;
 
     if (!section || !input_routes) {
         return -1;
@@ -1130,10 +1135,26 @@ static int parse_input_section(struct flb_cf_section *section,
     cfl_list_init(&input->_head);
     cfl_list_init(&input->processors);
     cfl_list_init(&input->routes);
+    input->has_alias = FLB_FALSE;
+    input->instance = NULL;
 
-    input->input_name = copy_from_cfl_sds(name_var->data.as_string);
-    if (!input->input_name) {
+    input->plugin_name = copy_from_cfl_sds(name_var->data.as_string);
+    if (!input->plugin_name) {
         flb_free(input);
+        return -1;
+    }
+
+    alias_var = cfl_kvlist_fetch(kvlist, "alias");
+    if (alias_var && alias_var->type == CFL_VARIANT_STRING &&
+        cfl_sds_len(alias_var->data.as_string) > 0) {
+        input->input_name = copy_from_cfl_sds(alias_var->data.as_string);
+        input->has_alias = FLB_TRUE;
+    }
+    else {
+        input->input_name = copy_from_cfl_sds(name_var->data.as_string);
+    }
+    if (!input->input_name) {
+        input_routes_destroy(input);
         return -1;
     }
 
@@ -1223,33 +1244,110 @@ int flb_router_config_parse(struct flb_cf *cf,
 }
 
 /* Apply parsed router configuration to actual input/output instances */
-static struct flb_input_instance *find_input_instance(struct flb_config *config,
-                                                     flb_sds_t name)
+static int input_instance_already_selected(struct flb_config *config,
+                                           struct flb_input_routes *current,
+                                           struct flb_input_instance *candidate)
 {
-    struct mk_list *head;
-    struct flb_input_instance *ins;
+    struct cfl_list *head;
+    struct flb_input_routes *routes;
 
-    if (!config || !name) {
-        return NULL;
+    if (!config || !candidate) {
+        return FLB_FALSE;
     }
 
-    mk_list_foreach(head, &config->inputs) {
-        ins = mk_list_entry(head, struct flb_input_instance, _head);
+    cfl_list_foreach(head, &config->input_routes) {
+        routes = cfl_list_entry(head, struct flb_input_routes, _head);
 
-        if (!ins->p) {
+        if (routes == current) {
             continue;
         }
 
-        if (ins->alias && strcmp(ins->alias, name) == 0) {
-            return ins;
+        if (routes->instance == candidate) {
+            return FLB_TRUE;
         }
+    }
 
-        if (strcmp(ins->name, name) == 0) {
-            return ins;
+    return FLB_FALSE;
+}
+
+static struct flb_input_instance *find_input_instance(struct flb_config *config,
+                                                     struct flb_input_routes *routes)
+{
+    struct mk_list *head;
+    struct flb_input_instance *ins;
+    size_t key_len;
+
+    if (!config || !routes) {
+        return NULL;
+    }
+
+    if (routes->instance) {
+        return routes->instance;
+    }
+
+    if (routes->has_alias && routes->input_name) {
+        mk_list_foreach(head, &config->inputs) {
+            ins = mk_list_entry(head, struct flb_input_instance, _head);
+
+            if (!ins->p || !ins->alias) {
+                continue;
+            }
+
+            if (strcmp(ins->alias, routes->input_name) == 0 &&
+                input_instance_already_selected(config, routes, ins) == FLB_FALSE) {
+                routes->instance = ins;
+                return ins;
+            }
         }
+    }
 
-        if (ins->p->name && strcmp(ins->p->name, name) == 0) {
-            return ins;
+    if (routes->input_name) {
+        mk_list_foreach(head, &config->inputs) {
+            ins = mk_list_entry(head, struct flb_input_instance, _head);
+
+            if (!ins->p) {
+                continue;
+            }
+
+            if (strcmp(ins->name, routes->input_name) == 0 &&
+                input_instance_already_selected(config, routes, ins) == FLB_FALSE) {
+                routes->instance = ins;
+                return ins;
+            }
+        }
+    }
+
+    if (routes->plugin_name) {
+        mk_list_foreach(head, &config->inputs) {
+            ins = mk_list_entry(head, struct flb_input_instance, _head);
+
+            if (!ins->p || !ins->p->name) {
+                continue;
+            }
+
+            if (strcmp(ins->p->name, routes->plugin_name) == 0 &&
+                input_instance_already_selected(config, routes, ins) == FLB_FALSE) {
+                routes->instance = ins;
+                return ins;
+            }
+        }
+    }
+
+    if (routes->input_name) {
+        key_len = flb_sds_len(routes->input_name);
+
+        mk_list_foreach(head, &config->inputs) {
+            ins = mk_list_entry(head, struct flb_input_instance, _head);
+
+            if (!ins->p || key_len == 0) {
+                continue;
+            }
+
+            if (strncmp(ins->name, routes->input_name, key_len) == 0 &&
+                input_instance_already_selected(config, routes, ins) == FLB_FALSE) {
+                routes->instance = ins;
+                return ins;
+            }
         }
     }
 
@@ -1355,7 +1453,7 @@ int flb_router_apply_config(struct flb_config *config)
     cfl_list_foreach(input_head, &config->input_routes) {
         input_routes = cfl_list_entry(input_head, struct flb_input_routes, _head);
 
-        input_ins = find_input_instance(config, input_routes->input_name);
+        input_ins = find_input_instance(config, input_routes);
         if (!input_ins) {
             flb_warn("[router] could not find input instance '%s' for routes",
                      input_routes->input_name ? input_routes->input_name : "(null)");
