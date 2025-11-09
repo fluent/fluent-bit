@@ -150,6 +150,9 @@ struct flb_route {
 
 struct flb_input_routes {
     flb_sds_t input_name;
+    flb_sds_t plugin_name;
+    int has_alias;
+    struct flb_input_instance *instance;
     struct cfl_list processors;
     struct cfl_list routes;
     struct cfl_list _head;
