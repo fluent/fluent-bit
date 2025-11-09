@@ -30,7 +30,7 @@ On Fluent Bit container, it will print to stdout something like this:
 ```shell
 Fluent Bit v1.9.8
 * Copyright (C) 2015-2022 The Fluent Bit Authors
-* Fluent Bit is a CNCF sub-project under the umbrella of Fluentd
+* Fluent Bit is a CNCF graduated project under the Fluent organization
 * https://fluentbit.io
 
 [2022/09/16 10:03:48] [ info] [fluent bit] version=1.9.8, commit=97a5e9dcf3, pid=1
@@ -58,7 +58,7 @@ Feel free to contact us through the following community channels:
 
 ## Fluent Bit & Fluentd
 
-[Fluent Bit](https://fluentbit.io/) is a [CNCF](https://cncf.io/) sub-project under the umbrella of [Fluentd](https://www.fluentd.org/).
+[Fluent Bit](https://fluentbit.io/) is a [CNCF](https://cncf.io/) graduated project under the [Fluent organization](https://www.fluentd.org/).
 
 ## License
 
@@ -66,6 +66,6 @@ This program is under the terms of the [Apache License v2.0](http://www.apache.o
 
 ## Authors
 
-[Fluent Bit](https://fluentbit.io/) is a [CNCF](https://cncf.io/) sub-project under the umbrella of [Fluentd](https://www.fluentd.org/).
+[Fluent Bit](https://fluentbit.io/) is a [CNCF](https://cncf.io/) graduated project under the [Fluent organization](https://www.fluentd.org/).
 
 Made with love by [many contributors](https://github.com/fluent/fluent-bit/graphs/contributors) :).
