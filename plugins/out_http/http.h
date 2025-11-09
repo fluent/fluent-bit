@@ -67,6 +67,9 @@ struct flb_out_http {
     char *host;
     int port;
 
+    /* HTTP method */
+    int http_method;
+
     /* GELF fields */
     struct flb_gelf_fields gelf_fields;
 
