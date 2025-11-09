@@ -25,6 +25,12 @@
 #include <fluent-bit/flb_log_event_decoder.h>
 #include <fluent-bit/flb_log_event_encoder.h>
 
+#define FW_INSTANCE_STATE_RUNNING           0
+#define FW_INSTANCE_STATE_ACCEPTING_CLIENT  1
+#define FW_INSTANCE_STATE_PROCESSING_PACKET 2
+#define FW_INSTANCE_STATE_PAUSED            3
+
+
 enum {
     FW_HANDSHAKE_HELO        = 1,
     FW_HANDSHAKE_PINGPONG    = 2,
@@ -76,6 +82,8 @@ struct flb_in_fw_config {
 
     pthread_mutex_t conn_mutex;
 
+    int state;
+    
     /* Plugin is paused */
     int is_paused;
 };
