@@ -37,6 +37,7 @@
 #include <fluent-bit/flb_event.h>
 #include <fluent-bit/flb_sds.h>
 #include <fluent-bit/flb_mem.h>
+#include <fluent-bit/flb_time.h>
 
 #include <chunkio/chunkio.h>
 
@@ -443,7 +444,8 @@ static int build_payload_for_route(struct flb_input_instance *ins,
                                    struct flb_route_payload *payload,
                                    struct flb_mp_chunk_record **records,
                                    size_t record_count,
-                                   uint8_t *matched_non_default)
+                                   uint8_t *matched_non_default,
+                                   uint8_t *matched_any_route)
 {
     int i;
     int j;
@@ -456,7 +458,8 @@ static int build_payload_for_route(struct flb_input_instance *ins,
     struct flb_mp_chunk_record *group_start_record = NULL;
     uint8_t *matched_by_route = NULL;
 
-    if (!payload || !records || record_count == 0 || !matched_non_default) {
+    if (!payload || !records || record_count == 0 || !matched_non_default ||
+        !matched_any_route) {
         return -1;
     }
 
@@ -499,6 +502,7 @@ static int build_payload_for_route(struct flb_input_instance *ins,
 
         matched_by_route[i] = 1;
         matched_non_default[i] = 1;
+        matched_any_route[i] = 1;
         matched++;
     }
 
@@ -603,7 +607,8 @@ static int build_payload_for_default_route(struct flb_input_instance *ins,
                                            struct flb_route_payload *payload,
                                            struct flb_mp_chunk_record **records,
                                            size_t record_count,
-                                           uint8_t *matched_non_default)
+                                           uint8_t *matched_non_default,
+                                           uint8_t *matched_any_route)
 {
     int i;
     int j;
@@ -616,7 +621,7 @@ static int build_payload_for_default_route(struct flb_input_instance *ins,
     struct flb_mp_chunk_record *group_start_record = NULL;
     int *matched_by_default = NULL;
 
-    if (!payload || !records || !matched_non_default) {
+    if (!payload || !records || !matched_non_default || !matched_any_route) {
         return -1;
     }
 
@@ -673,10 +678,12 @@ static int build_payload_for_default_route(struct flb_input_instance *ins,
                     condition_result = flb_router_condition_evaluate_record(payload->route, records[i]);
                     if (condition_result == FLB_TRUE) {
                         matched_by_default[i] = 1;
+                        matched_any_route[i] = 1;
                     }
                 }
                 else {
                     matched_by_default[i] = 1;
+                    matched_any_route[i] = 1;
                 }
             }
         }
@@ -766,6 +773,108 @@ static int build_payload_for_default_route(struct flb_input_instance *ins,
     /* Copy the buffer data - msgpack_sbuffer uses flat memory, no zones */
     memcpy(payload->data, encoder->buffer.data, payload->size);
     payload->total_records = matched;
+
+    flb_log_event_encoder_destroy(encoder);
+
+    return 0;
+}
+
+static int calculate_unmatched_route_metrics(struct flb_mp_chunk_record **records,
+                                             size_t record_count,
+                                             uint8_t *matched_any_route,
+                                             size_t *dropped_records,
+                                             size_t *dropped_bytes)
+{
+    size_t i;
+    size_t j;
+    int32_t record_type;
+    int32_t inner_type;
+    int ret;
+    struct flb_log_event_encoder *encoder;
+    struct flb_mp_chunk_record *group_end = NULL;
+    struct flb_mp_chunk_record *group_start_record = NULL;
+
+    if (!records || record_count == 0 || !matched_any_route ||
+        !dropped_records || !dropped_bytes) {
+        return -1;
+    }
+
+    encoder = flb_log_event_encoder_create(FLB_LOG_EVENT_FORMAT_DEFAULT);
+    if (!encoder) {
+        return -1;
+    }
+
+    *dropped_records = 0;
+    *dropped_bytes = 0;
+
+    for (i = 0; i < record_count; i++) {
+        if (flb_log_event_decoder_get_record_type(&records[i]->event, &record_type) != 0) {
+            continue;
+        }
+
+        if (record_type == FLB_LOG_EVENT_GROUP_START) {
+            group_start_record = records[i];
+            group_end = NULL;
+            continue;
+        }
+        else if (record_type == FLB_LOG_EVENT_GROUP_END) {
+            if (group_end != NULL &&
+                group_start_record != NULL &&
+                records[i]->cobj_group_metadata == group_start_record->cobj_group_metadata) {
+                ret = encode_chunk_record(encoder, group_end);
+                if (ret != 0) {
+                    flb_log_event_encoder_destroy(encoder);
+                    return -1;
+                }
+                group_end = NULL;
+            }
+            group_start_record = NULL;
+            continue;
+        }
+        else if (record_type != FLB_LOG_EVENT_NORMAL) {
+            continue;
+        }
+
+        if (!matched_any_route[i]) {
+            if (group_start_record != NULL &&
+                records[i]->cobj_group_metadata == group_start_record->cobj_group_metadata) {
+                if (group_end == NULL) {
+                    ret = encode_chunk_record(encoder, group_start_record);
+                    if (ret != 0) {
+                        flb_log_event_encoder_destroy(encoder);
+                        return -1;
+                    }
+
+                    for (j = i + 1; j < record_count; j++) {
+                        if (flb_log_event_decoder_get_record_type(&records[j]->event, &inner_type) == 0 &&
+                            inner_type == FLB_LOG_EVENT_GROUP_END &&
+                            records[j]->cobj_group_metadata == group_start_record->cobj_group_metadata) {
+                            group_end = records[j];
+                            break;
+                        }
+                    }
+                }
+            }
+
+            ret = encode_chunk_record(encoder, records[i]);
+            if (ret != 0) {
+                flb_log_event_encoder_destroy(encoder);
+                return -1;
+            }
+
+            (*dropped_records)++;
+        }
+    }
+
+    if (group_end != NULL) {
+        ret = encode_chunk_record(encoder, group_end);
+        if (ret != 0) {
+            flb_log_event_encoder_destroy(encoder);
+            return -1;
+        }
+    }
+
+    *dropped_bytes = encoder->buffer.size;
 
     flb_log_event_encoder_destroy(encoder);
 
@@ -879,6 +988,7 @@ static int split_and_append_route_payloads(struct flb_input_instance *ins,
     int context_initialized = FLB_FALSE;
     size_t out_size = 0;
     uint8_t *matched_non_default = NULL;
+    uint8_t *matched_any_route = NULL;
     struct cfl_list payloads;
     struct cfl_list *head;
     struct cfl_list *tmp;
@@ -1025,6 +1135,17 @@ static int split_and_append_route_payloads(struct flb_input_instance *ins,
         return -1;
     }
 
+    matched_any_route = flb_calloc(record_count, sizeof(uint8_t));
+    if (!matched_any_route) {
+        flb_errno();
+        flb_free(matched_non_default);
+        flb_free(records_array);
+        flb_router_chunk_context_destroy(&context);
+        route_payload_list_destroy(&payloads);
+        flb_event_chunk_destroy(chunk);
+        return -1;
+    }
+
     index = 0;
     cfl_list_foreach(head, &context.chunk_cobj->records) {
         records_array[index++] = cfl_list_entry(head, struct flb_mp_chunk_record, _head);
@@ -1040,10 +1161,12 @@ static int split_and_append_route_payloads(struct flb_input_instance *ins,
                                        payload,
                                        records_array,
                                        record_count,
-                                       matched_non_default);
+                                       matched_non_default,
+                                       matched_any_route);
         if (ret != 0) {
             flb_free(records_array);
             flb_free(matched_non_default);
+            flb_free(matched_any_route);
             flb_router_chunk_context_destroy(&context);
             route_payload_list_destroy(&payloads);
             flb_event_chunk_destroy(chunk);
@@ -1061,10 +1184,12 @@ static int split_and_append_route_payloads(struct flb_input_instance *ins,
                                               payload,
                                               records_array,
                                               record_count,
-                                              matched_non_default);
+                                              matched_non_default,
+                                              matched_any_route);
         if (ret != 0) {
             flb_free(records_array);
             flb_free(matched_non_default);
+            flb_free(matched_any_route);
             flb_router_chunk_context_destroy(&context);
             route_payload_list_destroy(&payloads);
             flb_event_chunk_destroy(chunk);
@@ -1072,8 +1197,41 @@ static int split_and_append_route_payloads(struct flb_input_instance *ins,
         }
     }
 
+    {
+        size_t dropped_records = 0;
+        size_t dropped_bytes = 0;
+        struct flb_router *router = NULL;
+        char *input_label = NULL;
+        char *output_label = "unmatched";
+        uint64_t now;
+
+        ret = calculate_unmatched_route_metrics(records_array,
+                                                record_count,
+                                                matched_any_route,
+                                                &dropped_records,
+                                                &dropped_bytes);
+        if (ret == 0 && dropped_records > 0 && ins->config && ins->config->router) {
+            router = ins->config->router;
+            input_label = (char *) flb_input_name(ins);
+            now = cfl_time_now();
+
+            cmt_counter_add(router->logs_drop_records_total,
+                            now,
+                            (double) dropped_records,
+                            2,
+                            (char *[]){input_label, output_label});
+
+            cmt_counter_add(router->logs_drop_bytes_total,
+                            now,
+                            (double) dropped_bytes,
+                            2,
+                            (char *[]){input_label, output_label});
+        }
+    }
+
     flb_free(records_array);
     flb_free(matched_non_default);
+    flb_free(matched_any_route);
 
     cfl_list_foreach_safe(head, tmp, &payloads) {
         payload = cfl_list_entry(head, struct flb_route_payload, _head);
