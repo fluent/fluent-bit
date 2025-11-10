@@ -74,11 +74,10 @@
 #define SERVICE_NAME_SOURCE_MAX_LEN 64
 
 /*
- * Configmap used for verifying whether if FluentBit is
- * on EKS or native Kubernetes
+ * Namespace and token path used for verifying whether FluentBit is
+ * on EKS or native Kubernetes by inspecting serviceaccount token issuer
  */
 #define KUBE_SYSTEM_NAMESPACE "kube-system"
-#define AWS_AUTH_CONFIG_MAP "aws-auth"
 
 /*
  * Possible platform values for Kubernetes plugin
