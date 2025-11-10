@@ -2,6 +2,7 @@
 
 #include <fluent-bit.h>
 #include <fluent-bit/flb_sds.h>
+#include <fluent-bit/flb_engine.h>
 #include "flb_tests_runtime.h"
 #include <sys/stat.h>
 #include <sys/types.h>
@@ -147,7 +148,7 @@ static int wait_for_file_pattern(const char *dir_path, const char *prefix, const
             closedir(dir);
         }
         if (!found) {
-            sleep(1);
+            flb_time_msleep(1000); 
         }
     }
     return found ? 0 : -1;
@@ -195,21 +196,26 @@ void flb_test_logrotate_basic_rotation(void)
     ret = flb_start(ctx);
     TEST_CHECK(ret == 0);
 
-    /* Write enough data to for rotation to happen (JSON_SMALL is >4KB) */
+    /* Write enough data to fill the file (JSON_SMALL is ~4KB, 4 events = ~16KB) */
     for (i = 0; i < 4; i++) {
         bytes = flb_lib_push(ctx, in_ffd, p, strlen(p));
         TEST_CHECK(bytes == strlen(p));
-    }
+    }   
 
     /* Wait for file to be created */
     ret = wait_for_file(logfile, 10*1024, TEST_TIMEOUT);
     TEST_CHECK(ret == 0);
 
-    /* Write additional data to trigger rotation */
+    /* Wait a bit more to ensure flush completes and file size is updated */
+    flb_time_msleep(1500);
+
+    /* Write additional data to trigger rotation (4 more events = ~16KB more) */
     for (i = 0; i < 4; i++) {
         bytes = flb_lib_push(ctx, in_ffd, p, strlen(p));
         TEST_CHECK(bytes == strlen(p));
     }
+    
+    flb_time_msleep(1500); /* waiting flush */
     
     flb_stop(ctx);
     flb_destroy(ctx);
@@ -280,6 +286,8 @@ void flb_test_logrotate_gzip_compression(void)
         TEST_CHECK(bytes == strlen(p));
     }
 
+    flb_time_msleep(1500); /* waiting flush */
+
     flb_stop(ctx);
     flb_destroy(ctx);
 
@@ -335,11 +343,15 @@ void flb_test_logrotate_max_files_cleanup(void)
             bytes = flb_lib_push(ctx, in_ffd, p, strlen(p));
             TEST_CHECK(bytes == strlen(p));
         }
-        sleep(1); /* Wait for flush */
+
+        flb_time_msleep(1500); /* waiting flush */
+        
         file_count = count_files_in_directory(TEST_LOGPATH, TEST_LOGFILE);
         TEST_ASSERT(file_count >= 0);
         TEST_CHECK(file_count <= 4); 
     }
+
+    flb_time_msleep(1500); /* waiting flush */
 
     flb_stop(ctx);
     flb_destroy(ctx);
