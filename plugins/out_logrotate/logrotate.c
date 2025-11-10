@@ -443,6 +443,7 @@ static int mkpath(struct flb_output_instance *ins, const char *dir)
 #ifdef FLB_SYSTEM_WINDOWS
     if (strncpy_s(parent_path, MAX_PATH, dir, _TRUNCATE) != 0) {
         flb_plg_error(ins, "path is too long: %s", dir);
+        errno = ENAMETOOLONG;
         return -1;
     }
 
@@ -535,12 +536,20 @@ static int should_rotate_file(struct flb_logrotate_conf *ctx, const char *filena
     void *out_buf;
     size_t out_size;
     int ret;
+    struct stat st;
 
     /* Get file size from hash table */
     ret = flb_hash_table_get(ctx->file_sizes, filename, strlen(filename),
                              &out_buf, &out_size);
     if (ret == 0 && out_size == sizeof(size_t)) {
         file_size = *(size_t *)out_buf;
+    }
+    else {
+        /* If not in hash table, check actual file size as fallback */
+        if (stat(filename, &st) == 0 && st.st_size >= 0) {
+            file_size = (size_t) st.st_size;
+            flb_plg_debug(ctx->ins, "file size not in hash table, using stat: %zu", file_size);
+        }
     }
 
     if (file_size >= ctx->max_size) {
@@ -566,6 +575,8 @@ static void update_file_size_counter(struct flb_logrotate_conf *ctx,
     if (fstat(fileno(fp), &st) == 0 && st.st_size >= 0) {
         file_size = (size_t) st.st_size;
         
+        /* Delete existing entry if it exists to ensure we can update the value */
+        flb_hash_table_del(ctx->file_sizes, filename);
         /* Store or update file size in hash table */
         ret = flb_hash_table_add(ctx->file_sizes, filename, strlen(filename),
                                   &file_size, sizeof(size_t));
@@ -1113,6 +1124,9 @@ static void cb_logrotate_flush(struct flb_event_chunk *event_chunk,
         flb_plg_error(ctx->ins,
                       "Log event decoder initialization error : %d", ret);
 
+        /* Update file size counter before closing to ensure internal counters
+         * remain in sync, especially if the file already contained data */
+        update_file_size_counter(ctx, out_file, fp);
         fclose(fp);
         FLB_OUTPUT_RETURN(FLB_ERROR);
     }
@@ -1139,6 +1153,7 @@ static void cb_logrotate_flush(struct flb_event_chunk *event_chunk,
                 flb_free(buf);
             }
             else {
+                update_file_size_counter(ctx, out_file, fp);
                 flb_log_event_decoder_destroy(&log_decoder);
                 fclose(fp);
                 FLB_OUTPUT_RETURN(FLB_RETRY);
