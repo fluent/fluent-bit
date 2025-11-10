@@ -81,19 +81,19 @@ static int get_pod_service_file_info(struct flb_kube *ctx, char **buffer)
     return packed;
 }
 
-static void extract_service_attribute(msgpack_object *attr_map, const char *key_name, 
+static void extract_service_attribute(msgpack_object *attr_map, const char *key_name,
                                       char *dest, int max_len, int *dest_len, int *fields)
 {
     struct flb_record_accessor *ra;
     struct flb_ra_value *val;
     const char *str_val;
     size_t str_len;
-    
+
     ra = flb_ra_create((char *)key_name, FLB_FALSE);
     if (!ra) {
         return;
     }
-    
+
     val = flb_ra_get_value_object(ra, *attr_map);
     if (val && val->type == FLB_RA_STRING) {
         str_val = flb_ra_value_buffer(val, &str_len);
@@ -149,7 +149,7 @@ static void parse_pod_service_map(struct flb_kube *ctx, char *api_buf,
     for (i = 0; i < api_map.via.map.size; i++) {
         k = api_map.via.map.ptr[i].key;
         v = api_map.via.map.ptr[i].val;
-        
+
         if (k.type != MSGPACK_OBJECT_STR || v.type != MSGPACK_OBJECT_MAP) {
             flb_plg_error(ctx->ins, "key and values are not string and map");
             continue;
@@ -169,7 +169,7 @@ static void parse_pod_service_map(struct flb_kube *ctx, char *api_buf,
                                   KEY_ATTRIBUTES_MAX_LEN, &attrs->name_len, &attrs->fields);
         extract_service_attribute(&v, "$Environment", attrs->environment,
                            	      KEY_ATTRIBUTES_MAX_LEN, &attrs->environment_len, &attrs->fields);
-        extract_service_attribute(&v, "$ServiceNameSource", attrs->name_source, 
+        extract_service_attribute(&v, "$ServiceNameSource", attrs->name_source,
                                   SERVICE_NAME_SOURCE_MAX_LEN, &attrs->name_source_len, &attrs->fields);
         if (attrs->name[0] != '\0' || attrs->environment[0] != '\0') {
             pthread_mutex_lock(mutex);
@@ -177,7 +177,7 @@ static void parse_pod_service_map(struct flb_kube *ctx, char *api_buf,
                                attrs, sizeof(struct service_attributes));
             pthread_mutex_unlock(mutex);
         }
-        
+
         flb_free(attrs);
         flb_free(pod_name);
     }
@@ -287,13 +287,14 @@ int fetch_pod_service_map(struct flb_kube *ctx, char *api_server_url,
 int determine_platform(struct flb_kube *ctx)
 {
     int ret;
+    size_t i;
     char *token_buf = NULL;
     size_t token_size;
     char *payload = NULL;
     size_t payload_len;
-    char *issuer_start; 
+    char *issuer_start;
     char *issuer_end;
-    char *first_dot; 
+    char *first_dot;
     char *second_dot;
     size_t payload_b64_len;
     size_t padded_len;
@@ -301,44 +302,44 @@ int determine_platform(struct flb_kube *ctx)
     size_t issuer_len;
     char *issuer_value;
     int is_eks;
-    
+
     /* Read serviceaccount token */
     ret = flb_utils_read_file(FLB_KUBE_TOKEN, &token_buf, &token_size);
     if (ret != 0 || !token_buf) {
         return -1;
     }
-    
+
     /* JWT tokens have 3 parts separated by dots: header.payload.signature */
     first_dot = strchr(token_buf, '.');
     if (!first_dot) {
         flb_free(token_buf);
         return -1;
     }
-    
+
     second_dot = strchr(first_dot + 1, '.');
     if (!second_dot) {
         flb_free(token_buf);
         return -1;
     }
-    
+
     /* Extract and decode the payload (middle part) */
     payload_b64_len = second_dot - (first_dot + 1);
-    
+
     /* Calculate padded length */
     padded_len = payload_b64_len;
     while (padded_len % 4 != 0) padded_len++;
-    
+
     payload_b64 = flb_malloc(padded_len + 1);
     if (!payload_b64) {
         flb_errno();
         flb_free(token_buf);
         return -1;
     }
-    
+
     memcpy(payload_b64, first_dot + 1, payload_b64_len);
-    
+
     /* Convert base64url to base64 and add padding */
-    for (size_t i = 0; i < payload_b64_len; i++) {
+    for (i = 0; i < payload_b64_len; i++) {
         if (payload_b64[i] == '-') {
             payload_b64[i] = '+';
         }
@@ -350,7 +351,7 @@ int determine_platform(struct flb_kube *ctx)
         payload_b64[payload_b64_len++] = '=';
     }
     payload_b64[padded_len] = '\0';
-    
+
     /* Base64 decode the payload */
     payload = flb_malloc(payload_b64_len * 3 / 4 + 4); /* Conservative size estimate */
     if (!payload) {
@@ -359,27 +360,27 @@ int determine_platform(struct flb_kube *ctx)
         flb_free(payload_b64);
         return -1;
     }
-    
-    ret = flb_base64_decode((unsigned char *)payload, padded_len * 3 / 4 + 4, 
+
+    ret = flb_base64_decode((unsigned char *)payload, padded_len * 3 / 4 + 4,
                            &payload_len, (unsigned char *)payload_b64, padded_len);
-    
+
     flb_free(token_buf);
     flb_free(payload_b64);
-    
+
     if (ret != 0) {
         flb_free(payload);
         return -1;
     }
-    
+
     payload[payload_len] = '\0';
-    
+
     /* Look for "iss" field in the JSON payload */
     issuer_start = strstr(payload, "\"iss\":");
     if (!issuer_start) {
         flb_free(payload);
         return -1;
     }
-    
+
     /* Skip to the value part */
     issuer_start = strchr(issuer_start, ':');
     if (!issuer_start) {
@@ -387,7 +388,7 @@ int determine_platform(struct flb_kube *ctx)
         return -1;
     }
     issuer_start++;
-    
+
     /* Skip whitespace and opening quote */
     while (*issuer_start == ' ' || *issuer_start == '\t') issuer_start++;
     if (*issuer_start != '"') {
@@ -395,14 +396,14 @@ int determine_platform(struct flb_kube *ctx)
         return -1;
     }
     issuer_start++;
-    
+
     /* Find closing quote */
     issuer_end = strchr(issuer_start, '"');
     if (!issuer_end) {
         flb_free(payload);
         return -1;
     }
-    
+
     /* Check if issuer contains EKS OIDC URL pattern */
     /* EKS OIDC URLs follow pattern: https://oidc.eks.{region}.amazonaws.com/id/{cluster-id} */
     issuer_len = issuer_end - issuer_start;
@@ -419,7 +420,7 @@ int determine_platform(struct flb_kube *ctx)
         flb_free(payload);
         return 1; /* EKS detected */
     }
-    
+
     flb_free(payload);
     return -1; /* Not EKS */
 }
