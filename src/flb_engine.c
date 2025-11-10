@@ -245,7 +245,10 @@ static void handle_dlq_if_available(struct flb_config *config,
     struct flb_input_chunk *ic;
     struct cio_chunk *cio_ch;
 
-    if (!config || !config->storage_keep_rejected || !task || !task->ic || !ins) {
+    if (!config ||
+        !config->storage_keep_rejected ||
+        !config->storage_path ||
+        !task || !task->ic || !ins) {
         return;
     }
 
