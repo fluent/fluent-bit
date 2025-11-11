@@ -842,9 +842,20 @@ jobs:
           tag_name: v${{ inputs.version }}
           make_latest: false
 
-      - name: Release 4.1 and latest
+      - name: Release 4.1 - not latest
         uses: softprops/action-gh-release@v2
         if: startsWith(inputs.version, '4.1')
+        with:
+          body: "https://fluentbit.io/announcements/v${{ inputs.version }}/"
+          draft: false
+          generate_release_notes: true
+          name: "Fluent Bit ${{ inputs.version }}"
+          tag_name: v${{ inputs.version }}
+          make_latest: true
+
+      - name: Release 4.2 and latest
+        uses: softprops/action-gh-release@v2
+        if: startsWith(inputs.version, '4.2')
         with:
           body: "https://fluentbit.io/announcements/v${{ inputs.version }}/"
           draft: false
@@ -969,8 +980,15 @@ jobs:
           token: ${{ secrets.GH_PA_TOKEN }}
           ref: '4.0'
 
-      - name: Release 4.1 and latest
+      - name: Release 4.1 - not latest
         if: startsWith(inputs.version, '4.1')
+        uses: actions/checkout@v5
+        with:
+          repository: fluent/fluent-bit-docs
+          token: ${{ secrets.GH_PA_TOKEN }}
+
+      - name: Release 4.2 and latest
+        if: startsWith(inputs.version, '4.2')
         uses: actions/checkout@v5
         with:
           repository: fluent/fluent-bit-docs
@@ -1075,6 +1093,12 @@ jobs:
 
       - name: Release 4.1
         if: startsWith(inputs.version, '4.1')
+        uses: actions/checkout@v5
+        with:
+          ref: 4.1
+
+      - name: Release 4.2
+        if: startsWith(inputs.version, '4.2')
         uses: actions/checkout@v5
         with:
           ref: master
