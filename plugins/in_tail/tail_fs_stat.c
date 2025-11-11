@@ -161,28 +161,33 @@ static int tail_fs_check(struct flb_input_instance *ins,
             file->pending_bytes = 0;
         }
 
-
-        /* Discover the current file name for the open file descriptor */
-        name = flb_tail_file_name(file);
-        if (!name) {
-            flb_plg_debug(ctx->ins, "could not resolve %s, removing", file->name);
-            flb_tail_file_remove(file);
-            continue;
-        }
-
         /*
-         * Check if file still exists. This method requires explicity that the
-         * user is using an absolute path, otherwise we will be rotating the
-         * wrong file.
-         *
-         * flb_tail_target_file_name_cmp is a deeper compare than
-         * flb_tail_file_name_cmp. If applicable, it compares to the underlying
-         * real_name of the file.
+         * Rotation detection only works when keep_file_handle is enabled,
+         * as it requires an open file descriptor to query the OS.
          */
-        if (flb_tail_file_is_rotated(ctx, file) == FLB_TRUE) {
-            flb_tail_file_rotated(file);
+        if (ctx->keep_file_handle == FLB_TRUE) {
+            /* Discover the current file name for the open file descriptor */
+            name = flb_tail_file_name(file);
+            if (!name) {
+                flb_plg_debug(ctx->ins, "could not resolve %s, removing", file->name);
+                flb_tail_file_remove(file);
+                continue;
+            }
+
+            /*
+             * Check if file still exists. This method requires explicity that the
+             * user is using an absolute path, otherwise we will be rotating the
+             * wrong file.
+             *
+             * flb_tail_target_file_name_cmp is a deeper compare than
+             * flb_tail_file_name_cmp. If applicable, it compares to the underlying
+             * real_name of the file.
+             */
+            if (flb_tail_file_is_rotated(ctx, file) == FLB_TRUE) {
+                flb_tail_file_rotated(file);
+            }
+            flb_free(name);
         }
-        flb_free(name);
 
     }
 

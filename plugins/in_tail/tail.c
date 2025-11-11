@@ -324,7 +324,7 @@ static int in_tail_watcher_callback(struct flb_input_instance *ins,
 
     mk_list_foreach_safe(head, tmp, &ctx->files_event) {
         file = mk_list_entry(head, struct flb_tail_file, _head);
-        if (file->is_link == FLB_TRUE) {
+        if (file->is_link == FLB_TRUE && ctx->keep_file_handle == FLB_TRUE) {
             ret = flb_tail_file_is_rotated(ctx, file);
             if (ret == FLB_FALSE) {
                 continue;
