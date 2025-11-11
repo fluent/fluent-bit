@@ -53,10 +53,18 @@ int flb_es_conf_set_cloud_credentials(const char *cloud_auth,
         entry = mk_list_entry(head, struct flb_split_entry, _head);
         if (items == 1) {
             ec->cloud_user = flb_strdup(entry->value);
+            if (ec->cloud_user == NULL) {
+                flb_utils_split_free(toks);
+                return -1;
+            }
             ec->own_cloud_user = FLB_TRUE;
         }
         if (items == 2) {
             ec->cloud_passwd = flb_strdup(entry->value);
+            if (ec->cloud_passwd == NULL) {
+                flb_utils_split_free(toks);
+                return -1;
+            }
             ec->own_cloud_passwd = FLB_TRUE;
         }
     }
