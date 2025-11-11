@@ -1293,6 +1293,11 @@ int flb_tail_file_append(char *path, struct stat *st, int mode,
         goto error;
     }
 
+    /* Avoid leaking the temporary name; flb_tail_file_name_dup() will set it again */
+    flb_free(file->name);
+    file->name = NULL;
+    file->name_len = 0;
+
     /*
      * Duplicate string into 'file' structure, the called function
      * take cares to resolve real-name of the file in case we are
@@ -2069,14 +2074,13 @@ int flb_tail_file_to_event(struct flb_tail_file *file)
 }
 
 /*
- * Given an open file descriptor, return the filename. This function is a
- * bit slow and it aims to be used only when a file is rotated.
+ * Internal implementation: Given an open file descriptor, return the filename.
+ * This function is a bit slow and it aims to be used only when a file is rotated.
  * 
  * This is used to detect the new file path after an open handle has been
- * rotated/moved. Requires an open file descriptor and should only be called
- * when keep_file_handle is enabled.
+ * rotated/moved. Requires an open file descriptor.
  */
-char *flb_tail_file_name(struct flb_tail_file *file)
+static char *flb_tail_file_name_internal(struct flb_tail_file *file)
 {
     int ret;
     char *buf;
@@ -2169,6 +2173,41 @@ char *flb_tail_file_name(struct flb_tail_file *file)
     return buf;
 }
 
+/*
+ * Public wrapper: Get the file name from a file descriptor.
+ * This function handles opening/closing the file handle as needed.
+ * If the handle is closed, opens it temporarily and closes it after getting the name.
+ *
+ * Note: When keep_file_handle is false, this function still needs to work for
+ * resolving symlinks during file initialization, but it should NOT be used for
+ * log rotation detection (which requires persistent open handles).
+ */
+char *flb_tail_file_name(struct flb_tail_file *file)
+{
+    int ret;
+    int fd_was_opened = FLB_FALSE;
+    char *result;
+
+    /* If handle is closed, open it temporarily */
+    if (file->fd == -1) {
+        ret = flb_tail_file_ensure_open_handle(file);
+        if (ret != 0) {
+            return NULL;
+        }
+        fd_was_opened = FLB_TRUE;
+    }
+
+    /* Call the internal implementation */
+    result = flb_tail_file_name_internal(file);
+
+    /* Close handle if we opened it in this function */
+    if (fd_was_opened) {
+        flb_tail_file_close_handle(file);
+    }
+
+    return result;
+}
+
 int flb_tail_file_name_dup(char *path, struct flb_tail_file *file)
 {
     file->name = flb_strdup(path);
@@ -2203,15 +2242,6 @@ int flb_tail_file_rotated(struct flb_tail_file *file)
     char *tmp;
     struct stat st;
     struct flb_tail_config *ctx = file->config;
-
-    /*
-     * This function should only be called when keep_file_handle is enabled,
-     * as it requires an open file descriptor for rotation detection.
-     */
-    if (ctx->keep_file_handle == FLB_FALSE) {
-        flb_plg_error(ctx->ins, "flb_tail_file_rotated() called with keep_file_handle=false");
-        return -1;
-    }
 
     /* Get the new file name */
     name = flb_tail_file_name(file);
