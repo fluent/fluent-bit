@@ -228,6 +228,51 @@ void flb_test_s3_complete_upload_error(void)
     unsetenv("TEST_COMPLETE_MULTIPART_UPLOAD_ERROR");
 }
 
+void flb_test_s3_vhost_urls(void)
+{
+    int ret;
+    flb_ctx_t *ctx;
+    int in_ffd;
+    int out_ffd;
+
+    char *bucket;
+    char *region;
+
+    bucket = getenv("FLB_OUT_S3_TEST_BUCKET");
+    if (bucket == NULL) {
+        return;
+    }
+
+    region = getenv("FLB_OUT_S3_TEST_REGION");
+    if (region == NULL) {
+        return;
+    }
+
+    ctx = flb_create();
+
+    in_ffd = flb_input(ctx, (char *) "lib", NULL);
+    TEST_CHECK(in_ffd >= 0);
+    flb_input_set(ctx,in_ffd, "tag", "test", NULL);
+
+    out_ffd = flb_output(ctx, (char *) "s3", NULL);
+    TEST_CHECK(out_ffd >= 0);
+
+    flb_output_set(ctx, out_ffd,"match", "*", NULL);
+    flb_output_set(ctx, out_ffd,"region", region, NULL);
+    flb_output_set(ctx, out_ffd,"bucket", bucket, NULL);
+    flb_output_set(ctx, out_ffd,"Retry_Limit", "1", NULL);
+    flb_output_set(ctx, out_ffd,"vhost_style_urls", "true", NULL);
+    flb_output_set(ctx, out_ffd,"use_put_object", "true", NULL);
+
+    ret = flb_start(ctx);
+    TEST_CHECK(ret == 0);
+
+    flb_lib_push(ctx, in_ffd, (char *) JSON_TD , (int) sizeof(JSON_TD) - 1);
+
+    sleep(2);
+    flb_stop(ctx);
+    flb_destroy(ctx);
+}
 
 /* Test list */
 TEST_LIST = {
@@ -237,5 +282,6 @@ TEST_LIST = {
     {"create_upload_error", flb_test_s3_create_upload_error },
     {"upload_part_error", flb_test_s3_upload_part_error },
     {"complete_upload_error", flb_test_s3_complete_upload_error },
+    {"vhost_style_urls_success", flb_test_s3_vhost_urls},
     {NULL, NULL}
 };
