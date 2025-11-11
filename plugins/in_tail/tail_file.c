@@ -2076,7 +2076,7 @@ int flb_tail_file_to_event(struct flb_tail_file *file)
  * rotated/moved. Requires an open file descriptor and should only be called
  * when keep_file_handle is enabled.
  */
-static char *flb_tail_file_name(struct flb_tail_file *file)
+char *flb_tail_file_name(struct flb_tail_file *file)
 {
     int ret;
     char *buf;
