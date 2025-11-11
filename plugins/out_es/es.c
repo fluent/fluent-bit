@@ -836,15 +836,15 @@ static void cb_es_flush(struct flb_event_chunk *event_chunk,
 {
     int ret;
     size_t pack_size;
-    char *pack;
-    void *out_buf;
+    char *pack = NULL;
+    void *out_buf = NULL;
     size_t out_size;
     size_t b_sent;
     struct flb_elasticsearch *ctx = out_context;
     struct flb_elasticsearch_config *ec;
     struct flb_connection *u_conn;
     struct flb_upstream_node *node;
-    struct flb_http_client *c;
+    struct flb_http_client *c = NULL;
     flb_sds_t signature = NULL;
     int compressed = FLB_FALSE;
     flb_sds_t header_line = NULL;
@@ -912,6 +912,11 @@ static void cb_es_flush(struct flb_event_chunk *event_chunk,
     /* Compose HTTP Client request */
     c = flb_http_client(u_conn, FLB_HTTP_POST, ec->uri,
                         pack, pack_size, NULL, 0, NULL, 0);
+    if (!c) {
+        flb_plg_error(ctx->ins, "failed to create HTTP client");
+        ret = FLB_ERROR;
+        goto cleanup_and_return;
+    }
 
     flb_http_buffer_size(c, ec->buffer_size);
 
@@ -1029,29 +1034,24 @@ static void cb_es_flush(struct flb_event_chunk *event_chunk,
         }
     }
 
+    ret = FLB_OK;
+
+ cleanup_and_return:
     /* Cleanup */
-    flb_http_client_destroy(c);
+    if (c) {
+        flb_http_client_destroy(c);
+    }
     flb_free(pack);
     flb_upstream_conn_release(u_conn);
     if (signature) {
         flb_sds_destroy(signature);
     }
-    FLB_OUTPUT_RETURN(FLB_OK);
+    FLB_OUTPUT_RETURN(ret);
 
     /* Issue a retry */
  retry:
-    flb_http_client_destroy(c);
-    flb_free(pack);
-
-    if (out_buf != pack) {
-        flb_free(out_buf);
-    }
-
-    flb_upstream_conn_release(u_conn);
-    if (signature) {
-        flb_sds_destroy(signature);
-    }
-    FLB_OUTPUT_RETURN(FLB_RETRY);
+    ret = FLB_RETRY;
+    goto cleanup_and_return;
 }
 
 static int elasticsearch_response_test(struct flb_config *config,
@@ -1080,6 +1080,10 @@ static int elasticsearch_response_test(struct flb_config *config,
     /* Compose HTTP Client request (dummy client) */
     c = flb_http_dummy_client(u_conn, FLB_HTTP_POST, ec->uri,
                               NULL, 0, NULL, 0, NULL, 0);
+    if (!c) {
+        flb_plg_error(ctx->ins, "failed to create dummy HTTP client");
+        return -2;
+    }
 
     flb_http_buffer_size(c, ec->buffer_size);
 
