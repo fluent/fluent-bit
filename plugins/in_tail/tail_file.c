@@ -58,6 +58,65 @@ static inline void consume_bytes(char *buf, int bytes, int length)
     memmove(buf, buf + bytes, length - bytes);
 }
 
+/* Ensure file handle is open (opens if closed). Returns 0 on success, FLB_TAIL_ERROR on failure. */
+int flb_tail_file_ensure_open_handle(struct flb_tail_file *file)
+{
+    int fd;
+    
+    /* If already open, nothing to do */
+    if (file->fd != -1) {
+        return 0;
+    }
+
+    fd = open(file->name, O_RDONLY);
+    if (fd == -1) {
+        flb_errno();
+        flb_plg_error(file->config->ins, "cannot open %s", file->name);
+        return FLB_TAIL_ERROR;
+    }
+
+    /* Seek to the current offset */
+    if (file->offset > 0) {
+        int64_t ret = lseek(fd, file->offset, SEEK_SET);
+        if (ret == -1) {
+            flb_errno();
+            close(fd);
+            return FLB_TAIL_ERROR;
+        }
+    }
+
+    file->fd = fd;
+    return 0;
+}
+
+/* Get file status using stat() if handle is closed, fstat() if open. Returns 0 on success, -1 on error. */
+int flb_tail_file_stat(struct flb_tail_file *file, struct stat *st)
+{
+    if (file->fd == -1) {
+        return stat(file->name, st);
+    }
+    else {
+        return fstat(file->fd, st);
+    }
+}
+
+/* Close file handle unconditionally */
+void flb_tail_file_close_handle(struct flb_tail_file *file)
+{
+    if (file->fd != -1) {
+        close(file->fd);
+        file->fd = -1;
+    }
+}
+
+/* Close file handle during tail if it's open and keep_file_handle is false */
+void flb_tail_file_close_handle_during_tail(struct flb_tail_file *file)
+{
+    if (file->config->keep_file_handle == FLB_FALSE && file->fd != -1) {
+        flb_tail_file_close_handle(file);
+    }
+}
+
 static uint64_t stat_get_st_dev(struct stat *st)
 {
 #ifdef FLB_SYSTEM_WINDOWS
@@ -1159,22 +1218,15 @@ int flb_tail_file_append(char *path, struct stat *st, int mode,
     }
     #endif
 
-    fd = open(path, O_RDONLY);
-    if (fd == -1) {
-        flb_errno();
-        flb_plg_error(ctx->ins, "cannot open %s", path);
-        return -1;
-    }
-
     file = flb_calloc(1, sizeof(struct flb_tail_file));
     if (!file) {
         flb_errno();
-        goto error;
+        return -1;
     }
 
     /* Initialize */
     file->watch_fd  = -1;
-    file->fd        = fd;
+    file->fd        = -1;  /* Will be opened below */
 
     /* On non-windows environments check if the original path is a link */
     ret = lstat(path, &lst);
@@ -1222,15 +1274,23 @@ int flb_tail_file_append(char *path, struct stat *st, int mode,
         file->offset = offset;
     }
 
-    if (strlen(path) >= 3 &&
-        strcasecmp(&path[strlen(path) - 3], ".gz") == 0) {
-        file->decompression_context =
-            flb_decompression_context_create(FLB_COMPRESSION_ALGORITHM_GZIP,
-                                             ctx->buf_max_size);
+    /*
+     * Set file->name early so flb_tail_file_ensure_open_handle() can use it.
+     * We need to set it before opening the handle.
+     */
+    file->name = flb_strdup(path);
+    if (!file->name) {
+        flb_errno();
+        goto error;
+    }
+    file->name_len = strlen(file->name);
 
-        if (file->decompression_context == NULL) {
-            goto error;
-        }
+    /* Open file handle first - flb_tail_file_name_dup() needs it open */
+    ret = flb_tail_file_ensure_open_handle(file);
+    if (ret != 0) {
+        flb_free(file->name);
+        file->name = NULL;
+        goto error;
     }
 
     /*
@@ -1248,6 +1308,17 @@ int flb_tail_file_append(char *path, struct stat *st, int mode,
     if (!file->name) {
         flb_errno();
         goto error;
+    }
+
+    if (strlen(path) >= 3 &&
+        strcasecmp(&path[strlen(path) - 3], ".gz") == 0) {
+        file->decompression_context =
+            flb_decompression_context_create(FLB_COMPRESSION_ALGORITHM_GZIP,
+                                             ctx->buf_max_size);
+
+        if (file->decompression_context == NULL) {
+            goto error;
+        }
     }
 
     /* We keep a copy of the initial filename in orig_name. This is required
@@ -1390,6 +1461,12 @@ int flb_tail_file_append(char *path, struct stat *st, int mode,
     /* Remaining bytes to read */
     file->pending_bytes = file->size - file->offset;
 
+    /* Close file handle if keep_file_handle is false */
+    if (ctx->keep_file_handle == FLB_FALSE) {
+        flb_plg_debug(ctx->ins, "tail_append: file will be read without keeping file handle opened %s", file->name);
+        flb_tail_file_close_handle_during_tail(file);
+    }
+
 #ifdef FLB_HAVE_METRICS
     name = (char *) flb_input_name(ctx->ins);
     ts = cfl_time_now();
@@ -1424,6 +1501,9 @@ int flb_tail_file_append(char *path, struct stat *st, int mode,
 
 error:
     if (file) {
+        if (file->fd != -1) {
+            close(file->fd);
+        }
         if (file->buf_data) {
             flb_free(file->buf_data);
         }
@@ -1432,7 +1512,6 @@ error:
         }
         flb_free(file);
     }
-    close(fd);
 
     return -1;
 }
@@ -1485,9 +1564,8 @@ void flb_tail_file_remove(struct flb_tail_file *file)
     mk_list_del(&file->_head);
     flb_tail_fs_remove(ctx, file);
 
-    /* avoid deleting file with -1 fd */
     if (file->fd != -1) {
-        close(file->fd);
+        flb_tail_file_close_handle(file);
     }
     if (file->tag_buf) {
         flb_free(file->tag_buf);
@@ -1543,7 +1621,7 @@ static int adjust_counters(struct flb_tail_config *ctx, struct flb_tail_file *fi
     int64_t offset;
     struct stat st;
 
-    ret = fstat(file->fd, &st);
+    ret = flb_tail_file_stat(file, &st);
     if (ret == -1) {
         flb_errno();
         return FLB_TAIL_ERROR;
@@ -1556,15 +1634,22 @@ static int adjust_counters(struct flb_tail_config *ctx, struct flb_tail_file *fi
 
     /* Check if the file was truncated by comparing current size with previous size */
     if (size_delta < 0) {
-        offset = lseek(file->fd, 0, SEEK_SET);
-        if (offset == -1) {
-            flb_errno();
-            return FLB_TAIL_ERROR;
+        /* If keeping handle open, it's already open but at wrong offset - seek to beginning */
+        if (ctx->keep_file_handle == FLB_TRUE) {
+            offset = lseek(file->fd, 0, SEEK_SET);
+            if (offset == -1) {
+                flb_errno();
+                return FLB_TAIL_ERROR;
+            }
+            file->offset = offset;
+        }
+        else {
+            /* If not keeping handle open, just update offset - handle will be opened/seeks correctly later */
+            file->offset = 0;
         }
 
         flb_plg_debug(ctx->ins, "adjust_counters: inode=%"PRIu64" file truncated %s (diff: %"PRId64" bytes)",
                       file->inode, file->name, size_delta);
-        file->offset = offset;
         file->buf_len = 0;
 
         /* Update offset in the database file */
@@ -1605,6 +1690,12 @@ int flb_tail_file_chunk(struct flb_tail_file *file)
         return FLB_TAIL_BUSY;
     }
 
+    /* Open file handle if it's closed */
+    ret = flb_tail_file_ensure_open_handle(file);
+    if (ret != 0) {
+        return ret;
+    }
+
     file_buffer_capacity = (file->buf_size - file->buf_len) - 1;
     stream_data_length = 0;
 
@@ -1640,6 +1731,7 @@ int flb_tail_file_chunk(struct flb_tail_file *file)
             if (ctx->skip_long_lines == FLB_FALSE) {
                 flb_plg_error(ctx->ins, "file=%s requires a larger buffer size, "
                           "lines are too long. Skipping file.", file->name);
+                flb_tail_file_close_handle_during_tail(file);
                 return FLB_TAIL_ERROR;
             }
 
@@ -1673,6 +1765,7 @@ int flb_tail_file_chunk(struct flb_tail_file *file)
                 flb_errno();
                 flb_plg_error(ctx->ins, "cannot increase buffer size for %s, "
                           "skipping file.", file->name);
+                flb_tail_file_close_handle_during_tail(file);
                 return FLB_TAIL_ERROR;
             }
         }
@@ -1722,7 +1815,7 @@ int flb_tail_file_chunk(struct flb_tail_file *file)
                     flb_plg_error(ctx->ins,
                                   "decompression buffer resize failed for %s.",
                                   file->name);
-
+                    flb_tail_file_close_handle_during_tail(file);
                     return FLB_TAIL_ERROR;
                 }
 
@@ -1761,7 +1854,7 @@ int flb_tail_file_chunk(struct flb_tail_file *file)
                     flb_plg_error(ctx->ins,
                                   "decompression failed for %s.",
                                   file->name);
-
+                    flb_tail_file_close_handle_during_tail(file);
                     return FLB_TAIL_ERROR;
                 }
 
@@ -1794,6 +1887,7 @@ int flb_tail_file_chunk(struct flb_tail_file *file)
         if (ret < 0) {
             flb_plg_debug(ctx->ins, "inode=%"PRIu64" file=%s process content ERROR",
                           file->inode, file->name);
+            flb_tail_file_close_handle_during_tail(file);
             return FLB_TAIL_ERROR;
         }
 
@@ -1813,12 +1907,19 @@ int flb_tail_file_chunk(struct flb_tail_file *file)
         /* adjust file counters, returns FLB_TAIL_OK or FLB_TAIL_ERROR */
         ret = adjust_counters(ctx, file);
 
+        /* Close file handle if keep_file_handle is false */
+        flb_tail_file_close_handle_during_tail(file);
+
         /* Data was consumed but likely some bytes still remain */
         return ret;
     }
     else if (raw_data_length == 0) {
         /* We reached the end of file, let's wait for some incoming data */
         ret = adjust_counters(ctx, file);
+
+        /* Close file handle if keep_file_handle is false */
+        flb_tail_file_close_handle_during_tail(file);
+
         if (ret == FLB_TAIL_OK) {
             return FLB_TAIL_WAIT;
         }
@@ -1830,8 +1931,15 @@ int flb_tail_file_chunk(struct flb_tail_file *file)
         /* error */
         flb_errno();
         flb_plg_error(ctx->ins, "error reading %s", file->name);
+
+        /* Close file handle if keep_file_handle is false */
+        flb_tail_file_close_handle_during_tail(file);
+
         return FLB_TAIL_ERROR;
     }
+
+    /* Close file handle if keep_file_handle is false */
+    flb_tail_file_close_handle_during_tail(file);
 
     return FLB_TAIL_ERROR;
 }
@@ -1918,7 +2026,7 @@ int flb_tail_file_to_event(struct flb_tail_file *file)
     struct flb_tail_config *ctx = file->config;
 
     /* Check if the file promoted have pending bytes */
-    ret = fstat(file->fd, &st);
+    ret = flb_tail_file_stat(file, &st);
     if (ret != 0) {
         flb_errno();
         return -1;
@@ -1961,8 +2069,11 @@ int flb_tail_file_to_event(struct flb_tail_file *file)
 /*
  * Given an open file descriptor, return the filename. This function is a
  * bit slow and it aims to be used only when a file is rotated.
+ * 
+ * Requires an open file descriptor. This is the internal implementation.
+ * Use flb_tail_file_name() instead, which handles opening/closing automatically.
  */
-char *flb_tail_file_name(struct flb_tail_file *file)
+static char *flb_tail_file_name_handle(struct flb_tail_file *file)
 {
     int ret;
     char *buf;
@@ -2053,6 +2164,37 @@ char *flb_tail_file_name(struct flb_tail_file *file)
     free(file_entries);
 #endif
     return buf;
+}
+
+/*
+ * Wrapper that handles opening/closing the file handle as needed.
+ * If the handle is closed and keep_file_handle=false, opens it temporarily
+ * and closes it before returning.
+ */
+char *flb_tail_file_name(struct flb_tail_file *file)
+{
+    int ret;
+    int fd_was_opened = FLB_FALSE;
+    char *result;
+
+    /* If handle is closed and keep_file_handle=false, open it temporarily */
+    if (file->fd == -1 && file->config->keep_file_handle == FLB_FALSE) {
+        ret = flb_tail_file_ensure_open_handle(file);
+        if (ret != 0) {
+            return NULL;
+        }
+        fd_was_opened = FLB_TRUE;
+    }
+
+    /* Call the internal implementation */
+    result = flb_tail_file_name_handle(file);
+
+    /* Close handle if we opened it in this function */
+    if (fd_was_opened) {
+        flb_tail_file_close_handle(file);
+    }
+
+    return result;
 }
 
 int flb_tail_file_name_dup(char *path, struct flb_tail_file *file)
@@ -2156,9 +2298,9 @@ static int check_purge_deleted_file(struct flb_tail_config *ctx,
     int64_t mtime;
     struct stat st;
 
-    ret = fstat(file->fd, &st);
+    ret = flb_tail_file_stat(file, &st);
     if (ret == -1) {
-        flb_plg_debug(ctx->ins, "error stat(2) %s, removing", file->name);
+        flb_plg_debug(ctx->ins, "purge: error stat(2) %s, removing", file->name);
         flb_tail_file_remove(file);
         return FLB_TRUE;
     }
@@ -2210,7 +2352,7 @@ int flb_tail_file_purge(struct flb_input_instance *ins,
     mk_list_foreach_safe(head, tmp, &ctx->files_rotated) {
         file = mk_list_entry(head, struct flb_tail_file, _rotate_head);
         if ((file->rotated + ctx->rotate_wait) <= now) {
-            ret = fstat(file->fd, &st);
+            ret = flb_tail_file_stat(file, &st);
             if (ret == 0) {
                 flb_plg_debug(ctx->ins,
                               "inode=%"PRIu64" purge rotated file %s " \

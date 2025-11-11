@@ -106,6 +106,8 @@ struct flb_tail_config *flb_tail_config_create(struct flb_input_instance *ins,
     ctx->ins = ins;
     ctx->ignore_older = 0;
     ctx->skip_long_lines = FLB_FALSE;
+    ctx->keep_file_handle = FLB_TRUE;  /* default: keep file handle open */
+    ctx->fstat_interval_nsec = 250000000; /* default: 250ms */
 #ifdef FLB_HAVE_SQLDB
     ctx->db_sync = 1;  /* sqlite sync 'normal' */
 #endif
@@ -183,6 +185,36 @@ struct flb_tail_config *flb_tail_config_create(struct flb_input_instance *ins,
         else {
             flb_plg_error(ctx->ins,
                           "invalid 'refresh_interval' config value (%s)",
+                      tmp);
+            flb_tail_config_destroy(ctx);
+            return NULL;
+        }
+    }
+
+    /* Config: fstat mode event polling interval */
+    tmp = flb_input_get_property("fstat_interval", ins);
+    if (tmp) {
+        ret = flb_utils_time_split(tmp, &sec, &nsec);
+        if (ret == 0) {
+            /* Convert to total nanoseconds */
+            ctx->fstat_interval_nsec = (long)sec * 1000000000L + (long)nsec;
+
+            if (ctx->fstat_interval_nsec == 0) {
+                flb_plg_error(ctx->ins, "invalid 'fstat_interval' config "
+                              "value (%s)", tmp);
+                flb_tail_config_destroy(ctx);
+                return NULL;
+            }
+
+            if (ctx->fstat_interval_nsec <= 1000000) {
+                flb_plg_warn(ctx->ins, "very low fstat_interval "
+                             "(%lu nanoseconds) might cause high CPU usage",
+                             ctx->fstat_interval_nsec);
+            }
+        }
+        else {
+            flb_plg_error(ctx->ins,
+                          "invalid 'fstat_interval' config value (%s)",
                       tmp);
             flb_tail_config_destroy(ctx);
             return NULL;
