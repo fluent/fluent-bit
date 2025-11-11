@@ -1048,6 +1048,9 @@ static void cb_es_flush(struct flb_event_chunk *event_chunk,
     }
 
     flb_upstream_conn_release(u_conn);
+    if (signature) {
+        flb_sds_destroy(signature);
+    }
     FLB_OUTPUT_RETURN(FLB_RETRY);
 }
 
