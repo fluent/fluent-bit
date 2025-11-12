@@ -48,6 +48,8 @@ struct flb_stream {
     struct flb_net_setup net;
 
     struct mk_list       _head;
+
+    struct flb_network_verifier_instance* verifier_ins;
 };
 
 static inline int flb_stream_is_shutting_down(struct flb_stream *stream)

@@ -25,6 +25,7 @@
 #include <fluent-bit/flb_input.h>
 #include <fluent-bit/flb_output.h>
 #include <fluent-bit/flb_filter.h>
+#include <fluent-bit/flb_network_verifier.h>
 #include <fluent-bit/flb_config.h>
 #include <fluent-bit/flb_log.h>
 
@@ -34,6 +35,7 @@ extern struct flb_output_plugin *flb_zig_native_output_plugin_init(void *);
 @FLB_OUT_PLUGINS_DECL@
 @FLB_FILTER_PLUGINS_DECL@
 @FLB_PROCESSOR_PLUGINS_DECL@
+@FLB_NETWORK_VERIFIER_PLUGINS_DECL@
 
 int flb_plugins_register(struct flb_config *config)
 {
@@ -42,12 +44,14 @@ int flb_plugins_register(struct flb_config *config)
     struct flb_output_plugin *out;
     struct flb_filter_plugin *filter;
     struct flb_processor_plugin *processor;
+    struct flb_network_verifier_plugin *network_verifier;
 
 @FLB_CUSTOM_PLUGINS_ADD@
 @FLB_IN_PLUGINS_ADD@
 @FLB_OUT_PLUGINS_ADD@
 @FLB_FILTER_PLUGINS_ADD@
 @FLB_PROCESSOR_PLUGINS_ADD@
+@FLB_NETWORK_VERIFIER_PLUGINS_ADD@
 
     return 0;
 }
@@ -61,6 +65,7 @@ void flb_plugins_unregister(struct flb_config *config)
     struct flb_output_plugin *out;
     struct flb_filter_plugin *filter;
     struct flb_processor_plugin *processor;
+    struct flb_network_verifier_plugin *network_verifier;
 
     mk_list_foreach_safe(head, tmp, &config->custom_plugins) {
         custom = mk_list_entry(head, struct flb_custom_plugin, _head);
@@ -99,6 +104,12 @@ void flb_plugins_unregister(struct flb_config *config)
         processor = mk_list_entry(head, struct flb_processor_plugin, _head);
         mk_list_del(&processor->_head);
         flb_free(processor);
+    }
+
+    mk_list_foreach_safe(head, tmp, &config->network_verifier_plugins) {
+        network_verifier = mk_list_entry(head, struct flb_network_verifier_plugin, _head);
+        mk_list_del(&network_verifier->_head);
+        flb_free(network_verifier);
     }
 }
 

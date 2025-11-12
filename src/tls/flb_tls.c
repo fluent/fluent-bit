@@ -98,6 +98,12 @@ struct flb_config_map tls_configmap[] = {
      "Specify TLS ciphers up to TLSv1.2"
     },
 
+    {
+     FLB_CONFIG_MAP_STR, "network_verifier", NULL,
+     0, FLB_FALSE, 0,
+     "Plugin alias to use for custom TLS / Network verification."
+    },
+
     /* EOF */
     {0}
 };
@@ -188,7 +194,8 @@ struct flb_tls *flb_tls_create(int mode,
                                const char *ca_file,
                                const char *crt_file,
                                const char *key_file,
-                               const char *key_passwd)
+                               const char *key_passwd,
+                               const struct flb_network_verifier_instance *conn_ins)
 {
     void *backend;
     struct flb_tls *tls;
@@ -199,7 +206,8 @@ struct flb_tls *flb_tls_create(int mode,
 
     backend = tls_context_create(verify, debug, mode,
                                  vhost, ca_path, ca_file,
-                                 crt_file, key_file, key_passwd);
+                                 crt_file, key_file, key_passwd,
+                                 conn_ins);
     if (!backend) {
         flb_error("[tls] could not create TLS backend");
         return NULL;
