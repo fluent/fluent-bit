@@ -299,7 +299,7 @@ const struct flb_network_verifier_instance *find_network_verifier_instance(
 
     mk_list_foreach(head, &config->network_verifiers) {
         verifier = mk_list_entry(head, struct flb_network_verifier_instance, _head);
-        if (strcmp(verifier->alias, alias) == 0) {
+        if (verifier->alias != NULL && strcmp(verifier->alias, alias) == 0) {
             return verifier;
         }
     }
