@@ -785,6 +785,7 @@ struct flb_output_instance *flb_output_new(struct flb_config *config,
     instance->tls_win_thumbprints = NULL;
 # endif
 #endif
+    instance->network_verifier      = NULL;
 
     if (plugin->flags & FLB_OUTPUT_NET) {
         ret = flb_net_host_set(plugin->name, &instance->host, output);
@@ -1021,6 +1022,9 @@ int flb_output_set_property(struct flb_output_instance *ins,
     }
 #  endif
 #endif
+    else if (prop_key_check("network_verifier", k, len) == 0 && tmp) {
+        flb_utils_set_plugin_string_property("network_verifier", &ins->network_verifier, tmp);
+    }
     else if (prop_key_check("storage.total_limit_size", k, len) == 0 && tmp) {
         if (strcasecmp(tmp, "off") == 0 ||
             flb_utils_bool(tmp) == FLB_FALSE) {
@@ -1373,6 +1377,13 @@ int flb_output_init_all(struct flb_config *config)
                         "retried_records", ins->metrics);
         }
 #endif
+        ins->verifier_ins = find_network_verifier_instance(config, 
+                                                              ins->network_verifier);
+        if (!ins->verifier_ins && ins->network_verifier) {
+            flb_error("[output %s] network_verifier '%s' not found", ins->name,
+                ins->network_verifier);
+            return -1;
+        }
 
 #ifdef FLB_HAVE_TLS
         if (ins->use_tls == FLB_TRUE) {
@@ -1384,7 +1395,8 @@ int flb_output_init_all(struct flb_config *config)
                                       ins->tls_ca_file,
                                       ins->tls_crt_file,
                                       ins->tls_key_file,
-                                      ins->tls_key_passwd);
+                                      ins->tls_key_passwd,
+                                      ins->verifier_ins);
             if (!ins->tls) {
                 flb_error("[output %s] error initializing TLS context",
                           ins->name);
@@ -1635,6 +1647,8 @@ int flb_output_upstream_set(struct flb_upstream *u, struct flb_output_instance *
 
     /* Set networking options 'net.*' received through instance properties */
     memcpy(&u->base.net, &ins->net_setup, sizeof(struct flb_net_setup));
+
+    u->base.verifier_ins = ins->verifier_ins;
 
     /*
      * If the Upstream was created using a proxy from the environment but the

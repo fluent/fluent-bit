@@ -382,7 +382,8 @@ struct flb_elasticsearch *flb_es_conf_create(struct flb_output_instance *ins,
                                           ins->tls_ca_file,
                                           ins->tls_crt_file,
                                           ins->tls_key_file,
-                                          ins->tls_key_passwd);
+                                          ins->tls_key_passwd,
+                                          ins->verifier_ins);
             if (!ctx->aws_tls) {
                 flb_errno();
                 flb_es_conf_destroy(ctx);
@@ -443,7 +444,8 @@ struct flb_elasticsearch *flb_es_conf_create(struct flb_output_instance *ins,
                                                   ins->tls_ca_file,
                                                   ins->tls_crt_file,
                                                   ins->tls_key_file,
-                                                  ins->tls_key_passwd);
+                                                  ins->tls_key_passwd,
+                                                  ins->verifier_ins);
                 if (!ctx->aws_sts_tls) {
                     flb_errno();
                     flb_es_conf_destroy(ctx);

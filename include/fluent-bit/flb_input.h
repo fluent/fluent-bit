@@ -458,6 +458,10 @@ struct flb_input_instance {
     char *tls_max_version;               /* Maximum protocol version of TLS */
     char *tls_ciphers;                   /* TLS ciphers */
 
+
+    char *network_verifier;           /* Network Verifier alias */
+    struct flb_network_verifier_instance* verifier_ins;
+
     struct mk_list *tls_config_map;
 
 #ifdef FLB_HAVE_TLS
