@@ -78,6 +78,7 @@ void flb_test_snmp_records_message_get(struct callback_records *records)
                                     &off) == MSGPACK_UNPACK_SUCCESS) {
             flb_time_pop_from_msgpack(&ftm, &result, &obj);
             TEST_CHECK(obj->type == MSGPACK_OBJECT_MAP);
+            TEST_CHECK(obj->via.map.size >= 1);
             TEST_CHECK(strncmp("iso.3.6.1.2.1.1.3.0",
                                obj->via.map.ptr[0].key.via.str.ptr,
                                obj->via.map.ptr[0].key.via.str.size) == 0);
@@ -155,6 +156,10 @@ void do_test_records(char *response,
     setenv("TEST_SNMP_RESPONSE", response, 1);
 
     records = flb_calloc(1, sizeof(struct callback_records));
+    if (!records) {
+        flb_error("[test] Failed to allocate callback_records");
+        return;
+    }
     records->num_records = 0;
     records->records = NULL;
 

@@ -13,7 +13,7 @@ if (HOMEBREW EQUAL 0 AND EXISTS "${HOMEBREW_PREFIX}")
 endif()
 
 if(FLB_MACOS_DEFAULTS)
-  message(STATUS "Overriding setttings with macos-setup.cmake")
+  message(STATUS "Overriding settings with macos-setup.cmake")
   
   # INPUT plugins
   # =============
