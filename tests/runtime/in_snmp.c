@@ -1,7 +1,25 @@
 /* -*- Mode: C; tab-width: 4; indent-tabs-mode: nil; c-basic-offset: 4 -*- */
 
+/*  Fluent Bit
+ *  ==========
+ *  Copyright (C) 2015-2024 The Fluent Bit Authors
+ *
+ *  Licensed under the Apache License, Version 2.0 (the "License");
+ *  you may not use this file except in compliance with the License.
+ *  You may obtain a copy of the License at
+ *
+ *      http://www.apache.org/licenses/LICENSE-2.0
+ *
+ *  Unless required by applicable law or agreed to in writing, software
+ *  distributed under the License is distributed on an "AS IS" BASIS,
+ *  WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+ *  See the License for the specific language governing permissions and
+ *  limitations under the License.
+ */
+
 #include <fluent-bit.h>
 #include <fluent-bit/flb_time.h>
+#include <sys/types.h>
 #include "flb_tests_runtime.h"
 
 struct callback_record {
@@ -23,14 +41,18 @@ int callback_add_record(void* data, size_t size, void* cb_data)
         if (ctx->records == NULL) {
             ctx->records = (struct callback_record *)
                            flb_calloc(1, sizeof(struct callback_record));
-        } else {
+        }
+        else {
             ctx->records = (struct callback_record *)
                            flb_realloc(ctx->records,
-                                       (ctx->num_records+1)*sizeof(struct callback_record));
+                                       (ctx->num_records + 1) *
+                                       sizeof(struct callback_record));
         }
-        if (ctx->records ==  NULL) {
+
+        if (ctx->records == NULL) {
             return -1;
         }
+
         ctx->records[ctx->num_records].size = size;
         ctx->records[ctx->num_records].data = data;
         ctx->num_records++;
@@ -47,12 +69,13 @@ void flb_test_snmp_records_message_get(struct callback_records *records)
     struct flb_time ftm;
 
     TEST_CHECK(records->num_records > 0);
+
     for (i = 0; i < records->num_records; i++) {
         off = 0;
         msgpack_unpacked_init(&result);
-
         while (msgpack_unpack_next(&result, records->records[i].data,
-                                   records->records[i].size, &off) == MSGPACK_UNPACK_SUCCESS) {
+                                    records->records[i].size,
+                                    &off) == MSGPACK_UNPACK_SUCCESS) {
             flb_time_pop_from_msgpack(&ftm, &result, &obj);
             TEST_CHECK(obj->type == MSGPACK_OBJECT_MAP);
             TEST_CHECK(strncmp("iso.3.6.1.2.1.1.3.0",
@@ -75,40 +98,38 @@ void flb_test_snmp_records_message_walk(struct callback_records *records)
     struct flb_time ftm;
     msgpack_object key;
     msgpack_object val;
-    
     char expected_keys[2][26] = {
         "iso.3.6.1.2.1.31.1.1.1.1.1",
         "iso.3.6.1.2.1.31.1.1.1.1.2"
     };
-
     char expected_vals[2][7] = {
         "\"Fa0/0\"",
         "\"Fa0/1\""
     };
 
     TEST_CHECK(records->num_records > 0);
+
     for (i = 0; i < records->num_records; i++) {
         off = 0;
-
         msgpack_unpacked_init(&result);
         while (msgpack_unpack_next(&result, records->records[i].data,
-                                   records->records[i].size, &off) == MSGPACK_UNPACK_SUCCESS) {
+                                    records->records[i].size,
+                                    &off) == MSGPACK_UNPACK_SUCCESS) {
             flb_time_pop_from_msgpack(&ftm, &result, &obj);
             TEST_CHECK(obj->type == MSGPACK_OBJECT_MAP);
             {
                 size_t count = obj->via.map.size;
+                size_t limit;
+
                 TEST_CHECK(count >= 2);
-                size_t limit = count < 2 ? count : 2;
+                limit = count < 2 ? count : 2;
                 for (j = 0; j < limit; j++) {
                     key = obj->via.map.ptr[j].key;
                     val = obj->via.map.ptr[j].val;
-
-                    TEST_CHECK(strncmp(expected_keys[j],
-                                key.via.str.ptr,
-                                26) == 0);
-                    TEST_CHECK(strncmp(expected_vals[j],
-                                val.via.str.ptr,
-                               7) == 0);
+                    TEST_CHECK(strncmp(expected_keys[j], key.via.str.ptr,
+                                       26) == 0);
+                    TEST_CHECK(strncmp(expected_vals[j], val.via.str.ptr,
+                                       7) == 0);
                 }
             }
         }
@@ -116,10 +137,10 @@ void flb_test_snmp_records_message_walk(struct callback_records *records)
     }
 }
 
-
-void do_test_records(char *response, void (*records_cb)(struct callback_records *), ...)
+void do_test_records(char *response,
+                     void (*records_cb)(struct callback_records *), ...)
 {
-    flb_ctx_t    *ctx    = NULL;
+    flb_ctx_t *ctx = NULL;
     int in_ffd;
     int out_ffd;
     va_list va;
@@ -128,7 +149,7 @@ void do_test_records(char *response, void (*records_cb)(struct callback_records 
     int i;
     struct flb_lib_out_cb cb;
     struct callback_records *records;
-    
+
     /* mocks calls- signals that we are in test mode */
     setenv("FLB_SNMP_PLUGIN_UNDER_TEST", "true", 1);
     setenv("TEST_SNMP_RESPONSE", response, 1);
@@ -136,7 +157,8 @@ void do_test_records(char *response, void (*records_cb)(struct callback_records 
     records = flb_calloc(1, sizeof(struct callback_records));
     records->num_records = 0;
     records->records = NULL;
-    cb.cb   = callback_add_record;
+
+    cb.cb = callback_add_record;
     cb.data = (void *)records;
 
     /* initialize */
@@ -171,9 +193,9 @@ void do_test_records(char *response, void (*records_cb)(struct callback_records 
     for (i = 0; i < records->num_records; i++) {
         flb_lib_free(records->records[i].data);
     }
+
     flb_free(records->records);
     flb_free(records);
-
     flb_destroy(ctx);
 }
 
@@ -185,6 +207,6 @@ void flb_test_snmp()
 
 /* Test list */
 TEST_LIST = {
-    {"snmp",  flb_test_snmp},
+    {"snmp", flb_test_snmp},
     {NULL, NULL}
 };

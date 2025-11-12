@@ -16,6 +16,7 @@
  *  See the License for the specific language governing permissions and
  *  limitations under the License.
  */
+
 #include <fluent-bit/flb_input.h>
 #include <fluent-bit/flb_error.h>
 #include <fluent-bit/flb_time.h>
