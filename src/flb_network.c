@@ -1520,7 +1520,7 @@ flb_sockfd_t flb_net_tcp_connect(const char *host, unsigned long port,
             flb_debug("[net] socket #%i could not connect to %s:%s",
                       fd, address, _port);
 
-            flb_connection_notify_error(u_conn, address, port, ret,
+            flb_connection_notify_error(u_conn, address, port, -1,
                                         "Couldn't connect to end point");
 
             if (u_conn) {
