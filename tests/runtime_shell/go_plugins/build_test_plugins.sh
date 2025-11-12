@@ -45,7 +45,9 @@ install_go_if_needed() {
     tar -xzf "$GO_TARBALL"
 
     if [ -w "/usr/local" ]; then
-        sudo rm -rf /usr/local/go
+        if [ -d /usr/local/go ]; then
+            sudo rm -rf /usr/local/go
+        fi
         sudo mv go /usr/local/go
         export PATH="/usr/local/go/bin:$PATH"
     else
