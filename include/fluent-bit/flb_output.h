@@ -151,8 +151,23 @@ struct flb_test_out_formatter {
      */
     void *rt_data;
 
-    /* optional context for flush callback */
+    /* optional context for "flush context callback" */
     void *flush_ctx;
+
+    /*
+     * Callback
+     * =========
+     * Optional "flush context callback": it references the function that extracts
+     * optional flush context for "formatter callback".
+     */
+    void *(*flush_ctx_callback) (/* Fluent Bit context */
+                                 struct flb_config *,
+                                 /* plugin that ingested the records */
+                                 struct flb_input_instance *,
+                                 /* plugin instance context */
+                                 void *plugin_context,
+                                 /* context for "flush context callback" */
+                                 void *flush_ctx);
 
     /*
      * Callback
