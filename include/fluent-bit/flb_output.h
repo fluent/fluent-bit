@@ -48,6 +48,7 @@
 #include <fluent-bit/flb_upstream_ha.h>
 #include <fluent-bit/flb_event.h>
 #include <fluent-bit/flb_processor.h>
+#include <fluent-bit/flb_network_verifier.h>
 
 #include <cfl/cfl.h>
 #include <cmetrics/cmetrics.h>

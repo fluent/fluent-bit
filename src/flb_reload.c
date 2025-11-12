@@ -268,7 +268,7 @@ int flb_reload_property_check_all(struct flb_config *config)
         return -1;
     }
 
-    /* Check properties of tls verifier plugins */
+    /* Check properties of network verifier plugins */
     ret = flb_network_verifier_property_check_all(config);
     if (ret == -1) {
         flb_error("[reload] check properties for network verifier plugins has failed");
