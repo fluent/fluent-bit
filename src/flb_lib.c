@@ -140,6 +140,83 @@ void flb_init_env()
     cmt_initialize();
 }
 
+int flb_create_event_loop(flb_ctx_t *ctx)
+{
+    int ret;
+    struct flb_config *config;
+
+    if (ctx == NULL)
+        return FLB_LIB_ERROR;
+
+    config = ctx->config;
+
+    /* Create the event loop to receive notifications */
+    ctx->event_loop = mk_event_loop_create(256);
+    if (!ctx->event_loop)
+        return FLB_LIB_ERROR;
+
+    config->ch_evl = ctx->event_loop;
+
+    /* Prepare the notification channels */
+    ctx->event_channel = flb_calloc(1, sizeof(struct mk_event));
+    if (!ctx->event_channel) {
+        perror("calloc");
+        goto error_1;
+    }
+
+    MK_EVENT_ZERO(ctx->event_channel);
+
+    ret = mk_event_channel_create(config->ch_evl,
+                                  &config->ch_notif[0],
+                                  &config->ch_notif[1],
+                                  ctx->event_channel);
+    if (ret != 0) {
+        flb_error("[lib] could not create notification channels");
+        goto error_2;
+    }
+
+    return 0;
+
+error_2:
+    flb_free(ctx->event_channel);
+    ctx->event_channel = NULL;
+error_1:
+    mk_event_loop_destroy(ctx->event_loop);
+    ctx->event_loop = NULL;
+    return FLB_LIB_ERROR;
+}
+
+int flb_destroy_event_loop(flb_ctx_t *ctx)
+{
+    int ret;
+    struct flb_config *config;
+
+    if (ctx == NULL || ctx->config == NULL)
+        return 0;
+
+    config = ctx->config;
+    if (ctx->event_channel != NULL) {
+        ret = mk_event_channel_destroy(config->ch_evl,
+                                       config->ch_notif[0],
+                                       config->ch_notif[1],
+                                       ctx->event_channel);
+        if (ret != 0) {
+            /* make sure to close file descriptors */
+            close(config->ch_notif[0]);
+            close(config->ch_notif[1]);
+        }
+        flb_free(ctx->event_channel);
+        ctx->event_channel = NULL;
+    }
+
+    if (ctx->event_loop != NULL) {
+        mk_event_loop_destroy(ctx->event_loop);
+        ctx->event_loop = NULL;
+    }
+
+    return 0;
+}
+
 flb_ctx_t *flb_create()
 {
     int ret;
@@ -184,34 +261,10 @@ flb_ctx_t *flb_create()
         return NULL;
     }
 
-    /* Create the event loop to receive notifications */
-    ctx->event_loop = mk_event_loop_create(256);
-    if (!ctx->event_loop) {
-        flb_config_exit(ctx->config);
-        flb_free(ctx);
-        return NULL;
-    }
-    config->ch_evl = ctx->event_loop;
-
-    /* Prepare the notification channels */
-    ctx->event_channel = flb_calloc(1, sizeof(struct mk_event));
-    if (!ctx->event_channel) {
-        perror("calloc");
-        flb_config_exit(ctx->config);
-        flb_free(ctx);
-        return NULL;
-    }
-
-    MK_EVENT_ZERO(ctx->event_channel);
-
-    ret = mk_event_channel_create(config->ch_evl,
-                                  &config->ch_notif[0],
-                                  &config->ch_notif[1],
-                                  ctx->event_channel);
+    ret = flb_create_event_loop(ctx);
     if (ret != 0) {
-        flb_error("[lib] could not create notification channels");
-        flb_stop(ctx);
-        flb_destroy(ctx);
+        flb_config_exit(ctx->config);
+        flb_free(ctx);
         return NULL;
     }
 
