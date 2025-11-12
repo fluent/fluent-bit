@@ -15,6 +15,7 @@ set(UNIT_TESTS_SH
   in_syslog_uds_stream_plaintext_expect.sh
   processor_conditional.sh
   processor_invalid.sh
+  proxy_logs_expect.sh
   )
 
 # Prepare list of unit tests
@@ -27,6 +28,7 @@ foreach(script ${UNIT_TESTS_SH})
     "FLB_ROOT=${PROJECT_SOURCE_DIR};\
 FLB_RUNTIME_SHELL_PATH=${CMAKE_CURRENT_SOURCE_DIR};\
 FLB_RUNTIME_SHELL_CONF=${CMAKE_CURRENT_SOURCE_DIR}/conf;\
-FLB_BIN=${CMAKE_BINARY_DIR}/bin/fluent-bit"
+FLB_BIN=${CMAKE_BINARY_DIR}/bin/fluent-bit;\
+FLB_BUILD=${CMAKE_BINARY_DIR}"
     )
 endforeach()
