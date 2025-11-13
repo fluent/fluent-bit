@@ -43,8 +43,8 @@
 /* Maximum number of character limits including both the Attributes key and its value */
 #define ATTRIBUTES_MAX_LEN 300
 
-/* 256KiB minus 26 bytes for the event */
-#define MAX_EVENT_LEN      262118
+/* 1MiB minus 26 bytes for the event */
+#define MAX_EVENT_LEN      1048550
 
 /* Prefix used for entity fields only */
 #define AWS_ENTITY_PREFIX "aws_entity"
