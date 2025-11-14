@@ -15,7 +15,6 @@ RUN zypper up -y && \
         wget unzip systemd-devel flex bison \
         postgresql-server postgresql-devel cyrus-sasl-devel \
         libopenssl-devel libyaml-devel && \
-    rm -rf /var/log/{lastlog,tallylog,zypper.log,zypp/history,YaST2} && \
     rm -rf /var/log/lastlog /var/log/tallylog /var/log/zypper.log /var/log/zypp/history /var/log/YaST2 && \
     zypper clean -a
 
