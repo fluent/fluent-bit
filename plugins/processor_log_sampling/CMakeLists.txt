@@ -1,0 +1,1 @@
+FLB_PLUGIN(processor_log_sampling "log_sampling.c" "")
