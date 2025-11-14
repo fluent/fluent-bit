@@ -53,7 +53,7 @@ FROM --platform=arm64 opensuse/leap:15.6 AS opensuse-15.6.arm64v8-base
 
 COPY --from=multiarch-aarch64 /usr/bin/qemu-aarch64-static /usr/bin/qemu-aarch64-static
 
-# hadolint ignore=DL3033
+# hadolint ignore=DL3033,DL3037
 RUN zypper up -y && \
     zypper install -y --no-recommends \
         rpm-build \
