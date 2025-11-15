@@ -150,6 +150,7 @@ static int glob(const char *path,
                 return result;
             }
         }
+        context->gl_pathc = entries;
     }
 
     return result;
