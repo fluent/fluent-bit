@@ -851,7 +851,7 @@ jobs:
           generate_release_notes: true
           name: "Fluent Bit ${{ inputs.version }}"
           tag_name: v${{ inputs.version }}
-          make_latest: true
+          make_latest: false
 
       - name: Release 4.2 and latest
         uses: softprops/action-gh-release@v2
