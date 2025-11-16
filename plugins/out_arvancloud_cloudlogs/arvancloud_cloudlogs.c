@@ -27,16 +27,16 @@
 #include <fluent-bit/flb_record_accessor.h>
 #include <fluent-bit/flb_time.h>
 #include <fluent-bit/flb_strptime.h>
-#include <fluent-bit/flb_parser.h>
 #include <time.h>
 #include <stdio.h>
+#include <string.h>
 #include <fluent-bit/flb_log_event_decoder.h>
 
 #include "arvancloud_cloudlogs.h"
 
 /*
- * Format timestamp to RFC3339 string with microseconds
- * Returns the length of the formatted string
+ * Format timestamp to RFC3339 string with microseconds in UTC.
+ * Returns the length of the formatted string.
  */
 static size_t format_timestamp_rfc3339(char *buffer, size_t buffer_size,
                                         time_t seconds, long nsec)
@@ -53,75 +53,58 @@ static size_t format_timestamp_rfc3339(char *buffer, size_t buffer_size,
 }
 
 /*
- * Parse timestamp string using flb_strptime format or auto-detect ISO8601
- * Returns 0 on success, -1 on failure
- * Extracts fractional seconds separately if present
+ * Parse timestamp string using a user-provided flb_strptime format.
+ *
+ * - Returns 0 on success, -1 on failure.
+ * - Extracts fractional seconds (if any) into nanoseconds.
+ * - Does NOT attempt any auto-detection: the format must match the input.
  */
 static int parse_timestamp_string(const char *timestamp_str,
-                                   const char *format,
-                                   struct flb_tm *tm_out,
-                                   long *nsec_out)
+                                  const char *format,
+                                  struct flb_tm *tm_out,
+                                  long *nsec_out)
 {
     char *result;
     const char *frac_ptr;
     long frac_value;
     int digit_count;
 
-    frac_value = 0;
-    digit_count = 0;
-
     if (!timestamp_str || !tm_out || !nsec_out) {
         return -1;
     }
+
+    if (!format || format[0] == '\0') {
+        return -1;
+    }
+
+    frac_value = 0;
+    digit_count = 0;
 
     memset(tm_out, 0, sizeof(struct flb_tm));
     tm_out->tm.tm_isdst = -1;
     flb_tm_gmtoff(tm_out) = 0;
     *nsec_out = 0;
 
-    /* Use flb_strptime with provided format or try auto-detection */
-    if (format && format[0] != '\0') {
-        /* User-provided format */
-        result = flb_strptime(timestamp_str, format, tm_out);
-        if (!result) {
-            return -1;
-        }
-    }
-    else {
-        /* Auto-detect ISO8601 format - try common patterns */
-        /* First try with timezone: 2025-09-29T12:33:20+03:30 */
-        result = flb_strptime(timestamp_str, "%Y-%m-%dT%H:%M:%S%z", tm_out);
-        
-        if (!result) {
-            /* Try UTC format: 2025-09-29T12:33:20Z */
-            result = flb_strptime(timestamp_str, "%Y-%m-%dT%H:%M:%SZ", tm_out);
-        }
-        
-        if (!result) {
-            /* Try without timezone: 2025-09-29T12:33:20 */
-            result = flb_strptime(timestamp_str, "%Y-%m-%dT%H:%M:%S", tm_out);
-        }
-        
-        if (!result) {
-            return -1;
-        }
+    /* Parse according to the user-provided format */
+    result = flb_strptime(timestamp_str, format, tm_out);
+    if (!result) {
+        return -1;
     }
 
     /* Extract fractional seconds if present (flb_strptime doesn't handle them) */
     frac_ptr = strchr(timestamp_str, '.');
     if (frac_ptr) {
         frac_ptr++; /* Skip the dot */
-        
-        /* Count digits and parse fractional part */
+
+        /* Count digits and parse fractional part (up to nanoseconds) */
         while (*frac_ptr >= '0' && *frac_ptr <= '9' && digit_count < 9) {
             frac_value = frac_value * 10 + (*frac_ptr - '0');
             digit_count++;
             frac_ptr++;
         }
-        
-        /* Convert to nanoseconds based on precision */
+
         if (digit_count > 0) {
-            /* Scale up to nanoseconds */
+            /* Scale to nanoseconds */
             while (digit_count < 9) {
                 frac_value *= 10;
                 digit_count++;
@@ -181,18 +164,8 @@ static int arvancloud_format(struct flb_config *config,
     msgpack_sbuffer_init(&mp_sbuf);
     msgpack_packer_init(&mp_pck, &mp_sbuf, msgpack_sbuffer_write);
 
-    /* Build request object: { allowPartialProcess: bool, logs: [ ... ] } */
-    msgpack_pack_map(&mp_pck, 2);
-
-    /* allowPartialProcess */
-    msgpack_pack_str(&mp_pck, 19);
-    msgpack_pack_str_body(&mp_pck, "allowPartialProcess", 19);
-    if (ctx->allow_partial_process) {
-        msgpack_pack_true(&mp_pck);
-    }
-    else {
-        msgpack_pack_false(&mp_pck);
-    }
+    /* Build request object: { logs: [ ... ] } */
+    msgpack_pack_map(&mp_pck, 1);
 
     /* logs */
     msgpack_pack_str(&mp_pck, 4);
@@ -246,54 +219,73 @@ static int arvancloud_format(struct flb_config *config,
         /* timestamp: Try to extract from record if timestamp_key is configured */
         if (ctx->timestamp_key && ctx->ra_timestamp_key) {
             flb_sds_t timestamp_value;
-            struct flb_tm parsed_tm;
-            long parsed_nsec;
-            time_t parsed_time;
             int parse_success;
-            const char *fmt;
-            long gmtoff_value;
-            time_t time_before_adjustment;
 
-            parsed_nsec = 0;
-            parse_success = 0;
-            
+            parse_success = FLB_FALSE;
+
             /* Try to extract timestamp from record */
             timestamp_value = flb_ra_translate(ctx->ra_timestamp_key,
                                                tag, tag_len,
                                                *log_event.body, NULL);
-            
+
             if (timestamp_value && !flb_sds_is_empty(timestamp_value)) {
-                /* Try to parse the extracted timestamp */
-                fmt = ctx->timestamp_format ? ctx->timestamp_format : NULL;
-                
-                if (parse_timestamp_string(timestamp_value, fmt,
-                                          &parsed_tm, &parsed_nsec) == 0) {
-                    /*
-                     * Successfully parsed, use the extracted timestamp
-                     * Convert flb_tm to time_t, accounting for timezone offset
-                     * IMPORTANT: Read gmtoff BEFORE calling timegm() as timegm() may modify the struct
-                     */
-                    gmtoff_value = flb_tm_gmtoff(&parsed_tm);
-                    time_before_adjustment = timegm(&parsed_tm.tm);
-                    parsed_time = time_before_adjustment - gmtoff_value;
-              
-                    s = format_timestamp_rfc3339(time_formatted,
-                                                 sizeof(time_formatted),
-                                                 parsed_time, parsed_nsec);
-                    parse_success = 1;
-                } else {
-                    /* Parse failed, log warning and fall back to event timestamp */
-                    flb_plg_warn(ctx->ins, 
-                                "Failed to parse timestamp from field '%s': %s, "
-                                "falling back to event timestamp",
-                                ctx->timestamp_key, timestamp_value);
+                /*
+                 * If user provided timestamp_format, parse and normalize
+                 * into the CloudLogs canonical UTC RFC3339 format.
+                 */
+                if (ctx->timestamp_format && ctx->timestamp_format[0] != '\0') {
+                    struct flb_tm parsed_tm;
+                    long parsed_nsec;
+                    time_t parsed_time;
+                    long gmtoff_value;
+                    time_t time_before_adjustment;
+
+                    parsed_nsec = 0;
+
+                    if (parse_timestamp_string(timestamp_value,
+                                              ctx->timestamp_format,
+                                              &parsed_tm, &parsed_nsec) == 0) {
+                        /*
+                         * Convert flb_tm to time_t, accounting for timezone offset.
+                         * IMPORTANT: read gmtoff BEFORE calling timegm() as
+                         * timegm() may modify the struct.
+                         */
+                        gmtoff_value = flb_tm_gmtoff(&parsed_tm);
+                        time_before_adjustment = timegm(&parsed_tm.tm);
+                        parsed_time = time_before_adjustment - gmtoff_value;
+
+                        s = format_timestamp_rfc3339(time_formatted,
+                                                     sizeof(time_formatted),
+                                                     parsed_time, parsed_nsec);
+                        parse_success = FLB_TRUE;
+                    }
+                    else {
+                        flb_plg_warn(ctx->ins,
+                                     "Failed to parse timestamp from field '%s': %s, "
+                                     "falling back to event timestamp",
+                                     ctx->timestamp_key, timestamp_value);
+                    }
                 }
-                
+                else {
+                    /*
+                     * No timestamp_format configured: assume the value is already
+                     * in a format accepted by CloudLogs and forward it as-is.
+                     */
+                    s = flb_sds_len(timestamp_value);
+                    if (s >= sizeof(time_formatted)) {
+                        s = sizeof(time_formatted) - 1;
+                    }
+
+                    memcpy(time_formatted, timestamp_value, s);
+                    time_formatted[s] = '\0';
+                    parse_success = FLB_TRUE;
+                }
+
                 flb_sds_destroy(timestamp_value);
             }
-            
-            /* If parsing failed or extraction failed, use event timestamp */
+
             if (!parse_success) {
+                /* Extraction or parsing failed, use event timestamp */
                 s = format_timestamp_rfc3339(time_formatted,
                                              sizeof(time_formatted),
                                              t.tm.tv_sec, t.tm.tv_nsec);
@@ -584,12 +576,6 @@ static struct flb_config_map config_map[] = {
         FLB_CONFIG_MAP_BOOL, "gzip", "false",
         0, FLB_TRUE, offsetof(struct flb_out_arvancloud_cloudlogs, compress_gzip),
         "Enable gzip compression"
-    },
-    {
-        FLB_CONFIG_MAP_BOOL, "allow_partial_process", "false",
-        0, FLB_TRUE,
-        offsetof(struct flb_out_arvancloud_cloudlogs, allow_partial_process),
-        "Allow server partial processing"
     },
     {
         FLB_CONFIG_MAP_BOOL, "include_tag_key", "false",
