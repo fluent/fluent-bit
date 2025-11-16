@@ -3,6 +3,7 @@
 #include <fluent-bit.h>
 #include <fluent-bit/flb_sds.h>
 #include <fluent-bit/flb_engine.h>
+#include <fluent-bit/flb_time.h>
 #include "flb_tests_runtime.h"
 #include <sys/stat.h>
 #include <sys/types.h>
