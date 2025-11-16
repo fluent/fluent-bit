@@ -1,0 +1,3 @@
+2021/03/09 17:32:15 cbauth: key: fts/remoteClients registered for tls config updates
+2021-03-09T17:32:15.303+00:00 [INFO] main: /opt/couchbase/bin/cbft started (v0.6.0/5.5.0)
+2021-03-09T17:32:15.304+00:00 [INFO] main: file descriptor limit current: 1048576 max: 1048576

@@ -1,0 +1,1 @@
+100.100.93.64 - redacted-user [26/Jan/2020:19:05:42 +0000] "POST /api/open/v1/redact/redacted HTTP/1.1" 200 34152 "-" "Go-http-client/1.1" 308 7.234 [redacted-http] [] 101.86.32.129:8080 34152 7.232 200 342434ed44ad21c7622b3c4590ec280e
