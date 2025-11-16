@@ -41,7 +41,6 @@ struct flb_out_arvancloud_cloudlogs {
     /* Config */
     flb_sds_t api_key;
     int compress_gzip;
-    int allow_partial_process;
     int include_tag_key;
     flb_sds_t tag_key;
     flb_sds_t log_type;
