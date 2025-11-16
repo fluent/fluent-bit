@@ -34,9 +34,6 @@ struct flb_out_arvancloud_cloudlogs {
     int port;
     flb_sds_t uri;
     flb_sds_t scheme;
-    flb_sds_t proxy;
-    char *proxy_host;
-    int proxy_port;
 
     /* Config */
     flb_sds_t api_key;

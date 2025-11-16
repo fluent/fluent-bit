@@ -31,17 +31,8 @@ struct flb_out_arvancloud_cloudlogs *flb_arvancloud_conf_create(
     int io_flags;
     struct flb_upstream *upstream;
     struct flb_out_arvancloud_cloudlogs *ctx;
-    const char *tmp;
-    char *protocol;
-    char *host;
-    char *port;
-    char *uri;
 
     io_flags = 0;
-    protocol = NULL;
-    host = NULL;
-    port = NULL;
-    uri = NULL;
 
     ctx = flb_calloc(1, sizeof(struct flb_out_arvancloud_cloudlogs));
     if (!ctx) {
@@ -56,26 +47,6 @@ struct flb_out_arvancloud_cloudlogs *flb_arvancloud_conf_create(
         return NULL;
     }
 
-    tmp = flb_output_get_property("proxy", ins);
-    if (tmp) {
-        ctx->proxy = flb_sds_create(tmp);
-        if (!ctx->proxy) {
-            flb_errno();
-            flb_arvancloud_conf_destroy(ctx);
-            return NULL;
-        }
-        if (flb_utils_url_split(tmp, &protocol, &host, &port, &uri)
-            == -1) {
-            flb_plg_error(ins, "could not parse proxy: '%s'", tmp);
-            flb_arvancloud_conf_destroy(ctx);
-            return NULL;
-        }
-        ctx->proxy_host = host;
-        ctx->proxy_port = atoi(port);
-        flb_free(protocol);
-        flb_free(port);
-        flb_free(uri);
-    }
 
     /* Force HTTPS */
     io_flags = FLB_IO_TLS;
@@ -136,14 +107,8 @@ struct flb_out_arvancloud_cloudlogs *flb_arvancloud_conf_create(
         return NULL;
     }
 
-    if (ctx->proxy) {
-        upstream = flb_upstream_create(config, ctx->proxy_host,
-                                       ctx->proxy_port, io_flags, ins->tls);
-    }
-    else {
-        upstream = flb_upstream_create(config, ctx->host, ctx->port,
-                                       io_flags, ins->tls);
-    }
+    upstream = flb_upstream_create(config, ctx->host, ctx->port,
+                                   io_flags, ins->tls);
     if (!upstream) {
         flb_plg_error(ins, "cannot create upstream context");
         flb_arvancloud_conf_destroy(ctx);
@@ -160,12 +125,6 @@ int flb_arvancloud_conf_destroy(struct flb_out_arvancloud_cloudlogs *ctx)
 {
     if (!ctx) {
         return -1;
-    }
-    if (ctx->proxy) {
-        flb_sds_destroy(ctx->proxy);
-    }
-    if (ctx->proxy_host) {
-        flb_free(ctx->proxy_host);
     }
     if (ctx->scheme) {
         flb_sds_destroy(ctx->scheme);
