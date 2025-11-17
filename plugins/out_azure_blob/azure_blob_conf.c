@@ -20,6 +20,7 @@
 #include <fluent-bit/flb_output_plugin.h>
 #include <fluent-bit/flb_base64.h>
 #include <fluent-bit/flb_pack.h>
+#include <fluent-bit/flb_record_accessor.h>
 
 #include "azure_blob.h"
 #include "azure_blob_conf.h"
@@ -760,6 +761,13 @@ struct flb_azure_blob *flb_azure_blob_conf_create(struct flb_output_instance *in
         if (ctx->path[flb_sds_len(ctx->path) - 1] == '/') {
             ctx->path[flb_sds_len(ctx->path) - 1] = '\0';
         }
+
+        /* Initialize path record accessor for tag expansion */
+        ctx->path_accessor = flb_ra_create(ctx->path, FLB_TRUE);
+        if (!ctx->path_accessor) {
+            flb_plg_error(ctx->ins, "cannot create path record accessor");
+            return NULL;
+        }
     }
 
     /* database file for blob signal handling */
@@ -804,6 +812,10 @@ void flb_azure_blob_conf_destroy(struct flb_azure_blob *ctx)
     if (ctx->path_overriden_flag == FLB_TRUE) {
         flb_sds_destroy(ctx->path);
         ctx->path = NULL;
+    }
+    if (ctx->path_accessor) {
+        flb_ra_destroy(ctx->path_accessor);
+        ctx->path_accessor = NULL;
     }
 
     if (ctx->decoded_sk) {
