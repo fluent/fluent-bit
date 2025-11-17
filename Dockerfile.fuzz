@@ -1,0 +1,89 @@
+# Dockerfile for AFL++ fuzzing of Fluent Bit JSON fuzzer
+FROM aflplusplus/aflplusplus:latest AS builder
+
+# Install build dependencies
+RUN apt-get update && apt-get install -y --no-install-recommends \
+    cmake \
+    make \
+    libssl-dev \
+    libcurl4-openssl-dev \
+    libsasl2-dev \
+    pkg-config \
+    libsystemd-dev \
+    zlib1g-dev \
+    libpq-dev \
+    postgresql-server-dev-all \
+    flex \
+    bison \
+    libyaml-dev \
+    && apt-get clean \
+    && rm -rf /var/lib/apt/lists/*
+
+# Set up working directory
+WORKDIR /src/fluent-bit
+
+# Copy source code
+COPY . .
+
+# Create build directory
+WORKDIR /src/fluent-bit/build
+
+# Configure with AFL++ instrumentation and fuzzing enabled
+# Use AFL++ compilers for instrumentation
+RUN cmake \
+    -DCMAKE_C_COMPILER=afl-clang-fast \
+    -DCMAKE_CXX_COMPILER=afl-clang-fast++ \
+    -DCMAKE_BUILD_TYPE=Debug \
+    -DFLB_TESTS_INTERNAL_FUZZ=On \
+    -DFLB_TESTS_INTERNAL=On \
+    -DFLB_SHARED_LIB=Off \
+    -DFLB_EXAMPLES=Off \
+    -DFLB_TLS=On \
+    -DFLB_JEMALLOC=Off \
+    ..
+
+# Build the fuzzers
+RUN make -j$(nproc) flb-it-fuzz-flb_json_fuzzer
+
+# Create runtime stage
+FROM aflplusplus/aflplusplus:latest
+
+# Install runtime dependencies
+RUN apt-get update && apt-get install -y --no-install-recommends \
+    libssl3 \
+    libcurl4 \
+    libsasl2-2 \
+    libsystemd0 \
+    zlib1g \
+    libpq5 \
+    libyaml-0-2 \
+    && apt-get clean \
+    && rm -rf /var/lib/apt/lists/*
+
+# Create fuzzing directories
+RUN mkdir -p /fuzz/input /fuzz/output /fuzz/findings
+
+# Copy the fuzzer binary
+COPY --from=builder /src/fluent-bit/build/bin/flb-it-fuzz-flb_json_fuzzer /fuzz/
+
+# Create initial seed corpus
+# JSON fuzzer expects JSON input, so create some basic JSON samples
+RUN echo '{"key":"value"}' > /fuzz/input/seed1.json && \
+    echo '{"nested":{"key":"value"},"array":[1,2,3]}' > /fuzz/input/seed2.json && \
+    echo '{"bool":true,"null":null,"number":123}' > /fuzz/input/seed3.json && \
+    echo '[]' > /fuzz/input/seed4.json && \
+    echo '{}' > /fuzz/input/seed5.json
+
+# Copy entrypoint script
+COPY docker-fuzz-entrypoint.sh /fuzz/entrypoint.sh
+RUN chmod +x /fuzz/entrypoint.sh
+
+# Set working directory
+WORKDIR /fuzz
+
+# Set AFL++ environment variables
+ENV AFL_SKIP_CPUFREQ=1
+ENV AFL_I_DONT_CARE_ABOUT_MISSING_CRASHES=1
+
+# Use the entrypoint script
+ENTRYPOINT ["/fuzz/entrypoint.sh"]
