@@ -27,6 +27,7 @@
 #include <fluent-bit/flb_gzip.h>
 #include <fluent-bit/flb_str.h>
 #include <fluent-bit/flb_info.h>
+#include <fluent-bit/flb_lock.h>
 #include <msgpack.h>
 
 #include <stdio.h>
@@ -71,6 +72,7 @@
 struct logrotate_file_size {
     flb_sds_t filename;
     size_t size;
+    flb_lock_t lock;  /* Mutex to protect file operations */
     struct mk_list _head;
 };
 
@@ -588,6 +590,15 @@ static int update_file_size(struct flb_logrotate_conf *ctx, const char *filename
 
     entry->filename = filename_copy;
     entry->size = size;
+    
+    /* Initialize mutex for this file entry */
+    if (flb_lock_init(&entry->lock) != 0) {
+        flb_plg_error(ctx->ins, "failed to initialize mutex for file %s", filename);
+        flb_sds_destroy(filename_copy);
+        flb_free(entry);
+        return -1;
+    }
+    
     mk_list_add(&entry->_head, &ctx->file_sizes);
 
     return 0;
@@ -601,6 +612,8 @@ static void remove_file_size(struct flb_logrotate_conf *ctx, const char *filenam
     entry = find_file_size_entry(ctx, filename);
     if (entry != NULL) {
         mk_list_del(&entry->_head);
+        /* Destroy mutex before freeing entry */
+        flb_lock_destroy(&entry->lock);
         if (entry->filename) {
             flb_sds_destroy(entry->filename);
         }
@@ -612,20 +625,47 @@ static void remove_file_size(struct flb_logrotate_conf *ctx, const char *filenam
 static int should_rotate_file(struct flb_logrotate_conf *ctx, const char *filename)
 {
     size_t file_size;
+    struct logrotate_file_size *entry;
+    int ret = 0;
 
-    /* Get file size from list or stat fallback */
-    file_size = get_file_size(ctx, filename);
+    /* Get file size entry and acquire lock */
+    entry = find_file_size_entry(ctx, filename);
+    if (entry == NULL) {
+        /* Entry doesn't exist yet, check using stat */
+        struct stat st;
+        if (stat(filename, &st) == 0 && st.st_size >= 0) {
+            file_size = (size_t) st.st_size;
+        } else {
+            return 0; /* File doesn't exist or can't stat */
+        }
+    } else {
+        /* Acquire lock before checking size */
+        if (flb_lock_acquire(&entry->lock, FLB_LOCK_DEFAULT_RETRY_LIMIT, 
+                             FLB_LOCK_DEFAULT_RETRY_DELAY) != 0) {
+            flb_plg_warn(ctx->ins, "failed to acquire lock for file %s", filename);
+            return 0;
+        }
+        file_size = entry->size;
+    }
 
     if (file_size >= ctx->max_size) {
         flb_plg_info(ctx->ins, "going to rotate file %s: current size=%zu max size=%zu",
                      filename, file_size, ctx->max_size);
-        return 1;
+        ret = 1;
     }
     else {
         flb_plg_debug(ctx->ins, "file %s should not be rotated: current size=%zu max size=%zu",
                      filename, file_size, ctx->max_size);
-        return 0;
+        ret = 0;
     }
+
+    /* Release lock if we acquired it */
+    if (entry != NULL) {
+        flb_lock_release(&entry->lock, FLB_LOCK_DEFAULT_RETRY_LIMIT, 
+                        FLB_LOCK_DEFAULT_RETRY_DELAY);
+    }
+
+    return ret;
 }
 
 /* Function to update file size counter for a specific file */
@@ -634,16 +674,42 @@ static void update_file_size_counter(struct flb_logrotate_conf *ctx,
 {
     struct stat st;
     size_t file_size;
+    struct logrotate_file_size *entry;
     int ret;
 
     if (fstat(fileno(fp), &st) == 0 && st.st_size >= 0) {
         file_size = (size_t) st.st_size;
         
-        /* Update or create file size entry in list */
-        ret = update_file_size(ctx, filename, file_size);
-        if (ret == -1) {
-            flb_plg_warn(ctx->ins, "failed to update file size for %s", filename);
+        /* Find or create file size entry */
+        entry = find_file_size_entry(ctx, filename);
+        if (entry == NULL) {
+            /* Entry doesn't exist, create it */
+            ret = update_file_size(ctx, filename, file_size);
+            if (ret == -1) {
+                flb_plg_warn(ctx->ins, "failed to create file size entry for %s", filename);
+                return;
+            }
+            /* Find the entry we just created */
+            entry = find_file_size_entry(ctx, filename);
+            if (entry == NULL) {
+                flb_plg_warn(ctx->ins, "failed to find file size entry for %s after creation", filename);
+                return;
+            }
         }
+        
+        /* Acquire lock before updating size */
+        if (flb_lock_acquire(&entry->lock, FLB_LOCK_DEFAULT_RETRY_LIMIT, 
+                             FLB_LOCK_DEFAULT_RETRY_DELAY) != 0) {
+            flb_plg_warn(ctx->ins, "failed to acquire lock for file %s", filename);
+            return;
+        }
+        
+        /* Update size atomically */
+        entry->size = file_size;
+        
+        /* Release lock */
+        flb_lock_release(&entry->lock, FLB_LOCK_DEFAULT_RETRY_LIMIT, 
+                        FLB_LOCK_DEFAULT_RETRY_DELAY);
     }
 }
 
@@ -825,11 +891,19 @@ static int rotate_file(struct flb_logrotate_conf *ctx, const char *filename)
     size_t file_size = 0;
     struct logrotate_file_size *entry;
     int ret = 0;
+    int lock_acquired = 0;
 
-    /* Get file size from list for logging */
+    /* Get file size entry and acquire lock */
     entry = find_file_size_entry(ctx, filename);
     if (entry != NULL) {
         file_size = entry->size;
+        /* Acquire lock before rotation operations */
+        if (flb_lock_acquire(&entry->lock, FLB_LOCK_DEFAULT_RETRY_LIMIT, 
+                             FLB_LOCK_DEFAULT_RETRY_DELAY) != 0) {
+            flb_plg_error(ctx->ins, "failed to acquire lock for file %s", filename);
+            return -1;
+        }
+        lock_acquired = 1;
     }
 
     /* Log rotation event */
@@ -846,7 +920,8 @@ static int rotate_file(struct flb_logrotate_conf *ctx, const char *filename)
     if (rename(filename, rotated_filename) != 0) {
         flb_plg_error(ctx->ins, "failed to rename file from %s to %s", 
                      filename, rotated_filename);
-        return -1;
+        ret = -1;
+        goto cleanup;
     }
 
     /* If gzip is enabled, compress the rotated file */
@@ -861,13 +936,21 @@ static int rotate_file(struct flb_logrotate_conf *ctx, const char *filename)
         } else {
             /* Remove the failed gzip file */
             unlink(gzip_filename);
-            return -1;
+            ret = -1;
+            goto cleanup;
         }
     } else {
         flb_plg_debug(ctx->ins, "rotated file: %s (no compression)", rotated_filename);
     }
 
-    return 0;
+cleanup:
+    /* Release lock if we acquired it */
+    if (lock_acquired && entry != NULL) {
+        flb_lock_release(&entry->lock, FLB_LOCK_DEFAULT_RETRY_LIMIT, 
+                        FLB_LOCK_DEFAULT_RETRY_DELAY);
+    }
+
+    return ret;
 }
 
 /* Function to validate if a filename matches the rotation pattern format
@@ -1037,6 +1120,8 @@ static void cb_logrotate_flush(struct flb_event_chunk *event_chunk,
     struct flb_logrotate_conf *ctx = out_context;
     struct flb_log_event_decoder log_decoder;
     struct flb_log_event log_event;
+    struct logrotate_file_size *entry = NULL;
+    int lock_acquired = 0;
 
     (void) config;
 
@@ -1060,8 +1145,39 @@ static void cb_logrotate_flush(struct flb_event_chunk *event_chunk,
         }
     }
 
+    /* Find or create file size entry and acquire lock */
+    entry = find_file_size_entry(ctx, out_file);
+    if (entry == NULL) {
+        /* Entry doesn't exist yet, create it with initial size 0 */
+        if (update_file_size(ctx, out_file, 0) == 0) {
+            entry = find_file_size_entry(ctx, out_file);
+        }
+    }
+    
+    if (entry != NULL) {
+        /* Acquire lock before any file operations */
+        if (flb_lock_acquire(&entry->lock, FLB_LOCK_DEFAULT_RETRY_LIMIT, 
+                             FLB_LOCK_DEFAULT_RETRY_DELAY) != 0) {
+            flb_plg_error(ctx->ins, "failed to acquire lock for file %s", out_file);
+            FLB_OUTPUT_RETURN(FLB_ERROR);
+        }
+        lock_acquired = 1;
+    }
+
     /* Check if file needs rotation based on current size counter */
-    if (should_rotate_file(ctx, out_file)) {
+    /* We hold the lock, so check size directly */
+    size_t file_size = 0;
+    if (entry != NULL) {
+        file_size = entry->size;
+    } else {
+        /* Entry doesn't exist, check using stat */
+        struct stat st;
+        if (stat(out_file, &st) == 0 && st.st_size >= 0) {
+            file_size = (size_t) st.st_size;
+        }
+    }
+    
+    if (file_size >= ctx->max_size) {
         have_directory = false;
         directory[0] = '\0';
         /* Extract directory and base filename for cleanup */
@@ -1088,14 +1204,41 @@ static void cb_logrotate_flush(struct flb_event_chunk *event_chunk,
         }
         base_filename[PATH_MAX - 1] = '\0';
 
+        /* Rotate the file (we already hold the lock, so rotate_file will skip lock acquisition) */
+        /* But rotate_file will try to acquire lock - we need to release it first, or modify rotate_file */
+        /* For now, release lock, rotate, then re-acquire */
+        if (lock_acquired && entry != NULL) {
+            flb_lock_release(&entry->lock, FLB_LOCK_DEFAULT_RETRY_LIMIT, 
+                            FLB_LOCK_DEFAULT_RETRY_DELAY);
+            lock_acquired = 0;
+        }
+        
         /* Rotate the file */
         if (rotate_file(ctx, out_file) == 0) {
             /* Remove file size entry from list after rotation */
             remove_file_size(ctx, out_file);
+            entry = NULL; /* Entry was removed */
             /* Clean up old rotated files */
             if (have_directory) {
                 cleanup_old_files(ctx, directory, base_filename);
             }
+        }
+        
+        /* Re-acquire lock after rotation */
+        entry = find_file_size_entry(ctx, out_file);
+        if (entry == NULL) {
+            /* Create new entry after rotation */
+            if (update_file_size(ctx, out_file, 0) == 0) {
+                entry = find_file_size_entry(ctx, out_file);
+            }
+        }
+        if (entry != NULL) {
+            if (flb_lock_acquire(&entry->lock, FLB_LOCK_DEFAULT_RETRY_LIMIT, 
+                                 FLB_LOCK_DEFAULT_RETRY_DELAY) != 0) {
+                flb_plg_error(ctx->ins, "failed to re-acquire lock for file %s", out_file);
+                FLB_OUTPUT_RETURN(FLB_ERROR);
+            }
+            lock_acquired = 1;
         }
     }
 
@@ -1119,15 +1262,27 @@ static void cb_logrotate_flush(struct flb_event_chunk *event_chunk,
     if (fp == NULL) {
         flb_errno();
         flb_plg_error(ctx->ins, "error opening: %s", out_file);
+        /* Release lock before returning */
+        if (lock_acquired && entry != NULL) {
+            flb_lock_release(&entry->lock, FLB_LOCK_DEFAULT_RETRY_LIMIT, 
+                            FLB_LOCK_DEFAULT_RETRY_DELAY);
+        }
         FLB_OUTPUT_RETURN(FLB_ERROR);
     }
     
     /* Initialize file size counter if this is a new file */
-    {
-        struct logrotate_file_size *entry = find_file_size_entry(ctx, out_file);
-        if (entry == NULL) {
-            /* File not in list, initialize it */
-            update_file_size_counter(ctx, out_file, fp);
+    /* Note: entry is already set and lock is already acquired above */
+    if (entry == NULL) {
+        /* File not in list, initialize it */
+        update_file_size_counter(ctx, out_file, fp);
+        /* Re-find entry after initialization */
+        entry = find_file_size_entry(ctx, out_file);
+        if (entry != NULL && !lock_acquired) {
+            /* Acquire lock if we didn't have it before */
+            if (flb_lock_acquire(&entry->lock, FLB_LOCK_DEFAULT_RETRY_LIMIT, 
+                                 FLB_LOCK_DEFAULT_RETRY_DELAY) == 0) {
+                lock_acquired = 1;
+            }
         }
     }
 
@@ -1141,9 +1296,21 @@ static void cb_logrotate_flush(struct flb_event_chunk *event_chunk,
     if (event_chunk->type == FLB_INPUT_METRICS) {
         print_metrics_text(ctx->ins, fp,
                            event_chunk->data, event_chunk->size);
-        /* Update file size counter */
-        update_file_size_counter(ctx, out_file, fp);
+        /* Update file size counter - we already hold the lock */
+        if (lock_acquired && entry != NULL) {
+            struct stat st;
+            if (fstat(fileno(fp), &st) == 0 && st.st_size >= 0) {
+                entry->size = (size_t) st.st_size;
+            }
+        } else {
+            update_file_size_counter(ctx, out_file, fp);
+        }
         fclose(fp);
+        /* Release lock before returning */
+        if (lock_acquired && entry != NULL) {
+            flb_lock_release(&entry->lock, FLB_LOCK_DEFAULT_RETRY_LIMIT, 
+                            FLB_LOCK_DEFAULT_RETRY_DELAY);
+        }
         FLB_OUTPUT_RETURN(FLB_OK);
     }
 
@@ -1161,14 +1328,31 @@ static void cb_logrotate_flush(struct flb_event_chunk *event_chunk,
             if (ret < 0) {
                 flb_errno();
                 fclose(fp);
+                /* Release lock before returning */
+                if (lock_acquired && entry != NULL) {
+                    flb_lock_release(&entry->lock, FLB_LOCK_DEFAULT_RETRY_LIMIT, 
+                                    FLB_LOCK_DEFAULT_RETRY_DELAY);
+                }
                 FLB_OUTPUT_RETURN(FLB_RETRY);
             }
             total += ret;
         } while (total < event_chunk->size);
 
-        /* Update file size counter */
-        update_file_size_counter(ctx, out_file, fp);
+        /* Update file size counter - we already hold the lock */
+        if (lock_acquired && entry != NULL) {
+            struct stat st;
+            if (fstat(fileno(fp), &st) == 0 && st.st_size >= 0) {
+                entry->size = (size_t) st.st_size;
+            }
+        } else {
+            update_file_size_counter(ctx, out_file, fp);
+        }
         fclose(fp);
+        /* Release lock before returning */
+        if (lock_acquired && entry != NULL) {
+            flb_lock_release(&entry->lock, FLB_LOCK_DEFAULT_RETRY_LIMIT, 
+                            FLB_LOCK_DEFAULT_RETRY_DELAY);
+        }
         FLB_OUTPUT_RETURN(FLB_OK);
     }
 
@@ -1180,10 +1364,21 @@ static void cb_logrotate_flush(struct flb_event_chunk *event_chunk,
         flb_plg_error(ctx->ins,
                       "Log event decoder initialization error : %d", ret);
 
-        /* Update file size counter before closing to ensure internal counters
-         * remain in sync, especially if the file already contained data */
-        update_file_size_counter(ctx, out_file, fp);
+        /* Update file size counter before closing - we already hold the lock */
+        if (lock_acquired && entry != NULL) {
+            struct stat st;
+            if (fstat(fileno(fp), &st) == 0 && st.st_size >= 0) {
+                entry->size = (size_t) st.st_size;
+            }
+        } else {
+            update_file_size_counter(ctx, out_file, fp);
+        }
         fclose(fp);
+        /* Release lock before returning */
+        if (lock_acquired && entry != NULL) {
+            flb_lock_release(&entry->lock, FLB_LOCK_DEFAULT_RETRY_LIMIT, 
+                            FLB_LOCK_DEFAULT_RETRY_DELAY);
+        }
         FLB_OUTPUT_RETURN(FLB_ERROR);
     }
 
@@ -1209,9 +1404,22 @@ static void cb_logrotate_flush(struct flb_event_chunk *event_chunk,
                 flb_free(buf);
             }
             else {
-                update_file_size_counter(ctx, out_file, fp);
+                /* Update file size counter - we already hold the lock */
+                if (lock_acquired && entry != NULL) {
+                    struct stat st;
+                    if (fstat(fileno(fp), &st) == 0 && st.st_size >= 0) {
+                        entry->size = (size_t) st.st_size;
+                    }
+                } else {
+                    update_file_size_counter(ctx, out_file, fp);
+                }
                 flb_log_event_decoder_destroy(&log_decoder);
                 fclose(fp);
+                /* Release lock before returning */
+                if (lock_acquired && entry != NULL) {
+                    flb_lock_release(&entry->lock, FLB_LOCK_DEFAULT_RETRY_LIMIT, 
+                                    FLB_LOCK_DEFAULT_RETRY_DELAY);
+                }
                 FLB_OUTPUT_RETURN(FLB_RETRY);
             }
             break;
@@ -1245,9 +1453,22 @@ static void cb_logrotate_flush(struct flb_event_chunk *event_chunk,
 
     flb_log_event_decoder_destroy(&log_decoder);
     
-    /* Update file size counter */
-    update_file_size_counter(ctx, out_file, fp);
+    /* Update file size counter - we already hold the lock */
+    if (lock_acquired && entry != NULL) {
+        struct stat st;
+        if (fstat(fileno(fp), &st) == 0 && st.st_size >= 0) {
+            entry->size = (size_t) st.st_size;
+        }
+    } else {
+        update_file_size_counter(ctx, out_file, fp);
+    }
     fclose(fp);
+
+    /* Release lock before returning */
+    if (lock_acquired && entry != NULL) {
+        flb_lock_release(&entry->lock, FLB_LOCK_DEFAULT_RETRY_LIMIT, 
+                        FLB_LOCK_DEFAULT_RETRY_DELAY);
+    }
 
     FLB_OUTPUT_RETURN(FLB_OK);
 }
@@ -1267,6 +1488,8 @@ static int cb_logrotate_exit(void *data, struct flb_config *config)
     mk_list_foreach_safe(head, tmp, &ctx->file_sizes) {
         entry = mk_list_entry(head, struct logrotate_file_size, _head);
         mk_list_del(&entry->_head);
+        /* Destroy mutex before freeing entry */
+        flb_lock_destroy(&entry->lock);
         if (entry->filename) {
             flb_sds_destroy(entry->filename);
         }
