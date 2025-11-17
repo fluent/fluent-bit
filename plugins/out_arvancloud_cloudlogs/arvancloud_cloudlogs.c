@@ -280,7 +280,9 @@ static int arvancloud_format(struct flb_config *config,
                     time_formatted[s] = '\0';
                     parse_success = FLB_TRUE;
                 }
+            }
 
+            if (timestamp_value) {
                 flb_sds_destroy(timestamp_value);
             }
 
