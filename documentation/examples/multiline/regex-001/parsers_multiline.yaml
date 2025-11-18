@@ -1,7 +1,8 @@
-[MULTILINE_PARSER]
-    name          multiline-regex-test
-    type          regex
-    # Regex rules for multiline parsing
+multiline_parsers:
+  - name: multiline-regex-test
+    type: regex
+    flush_timeout: 1000
+    #regex: rules for multiline parsing
     # ---------------------------------
     #
     # configuration hints:
@@ -11,5 +12,11 @@
     #
     # rules   |   state name   | regex pattern                   | next state name
     # --------|----------------|--------------------------------------------------
-    rule         "start_state"   "/(Dec \d+ \d+\:\d+\:\d+)(.*)/"  "cont"
-    rule         "cont"          "/^\s+at.*/"                     "cont"
+    rules:
+      - state: start_state
+        regex: '/(Dec \d+ \d+\:\d+\:\d+)(.*)/'
+        next_state: cont
+
+      - state: cont
+        regex: /^\s+at.*/
+        next_state: cont
