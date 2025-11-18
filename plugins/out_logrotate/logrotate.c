@@ -34,17 +34,18 @@
 #include <sys/types.h>
 #include <sys/stat.h>
 #include <fcntl.h>
+#ifndef FLB_SYSTEM_WINDOWS
 #include <dirent.h>
+#include <libgen.h>     /* dirname */
+#endif
 #include <string.h>
 #include <time.h>
 #include <miniz/miniz.h>
 #include <limits.h>     /* PATH_MAX */
 #include <inttypes.h>   /* PRIu64 */
-#ifndef FLB_SYSTEM_WINDOWS
-#include <libgen.h>     /* dirname */
-#endif
 
 #ifdef FLB_SYSTEM_WINDOWS
+#include <windows.h>
 #include <Shlobj.h>
 #include <Shlwapi.h>
 #endif
@@ -1012,10 +1013,9 @@ static int is_valid_rotation_filename(const char *filename, const char *pattern)
 /* Function to clean up old rotated files */
 static int cleanup_old_files(struct flb_logrotate_conf *ctx, const char *directory, const char *base_filename)
 {
-    DIR *dir;
-    struct dirent *entry;
     char pattern[PATH_MAX];
     char full_path[PATH_MAX];
+    char search_path[PATH_MAX];
     char **files = NULL;
     int file_count = 0;
     int max_files = ctx->max_files;
@@ -1023,6 +1023,76 @@ static int cleanup_old_files(struct flb_logrotate_conf *ctx, const char *directo
 
     /* Create pattern to match rotated files */
     snprintf(pattern, PATH_MAX - 1, "%s.", base_filename);
+
+#ifdef FLB_SYSTEM_WINDOWS
+    HANDLE hFind;
+    WIN32_FIND_DATA findData;
+    
+    /* Create search path: directory\* */
+    snprintf(search_path, PATH_MAX - 1, "%s" FLB_PATH_SEPARATOR "*", directory);
+    
+    hFind = FindFirstFileA(search_path, &findData);
+    if (hFind == INVALID_HANDLE_VALUE) {
+        return 0; /* Directory doesn't exist or can't be opened */
+    }
+
+    /* Count matching files */
+    do {
+        /* Skip . and .. */
+        if (strcmp(findData.cFileName, ".") == 0 || strcmp(findData.cFileName, "..") == 0) {
+            continue;
+        }
+        /* Skip directories */
+        if (findData.dwFileAttributes & FILE_ATTRIBUTE_DIRECTORY) {
+            continue;
+        }
+        if (is_valid_rotation_filename(findData.cFileName, pattern)) {
+            file_count++;
+        }
+    } while (FindNextFileA(hFind, &findData) != 0);
+
+    if (file_count <= max_files) {
+        FindClose(hFind);
+        return 0;
+    }
+
+    /* Allocate array for file names */
+    files = flb_calloc(file_count, sizeof(char *));
+    if (!files) {
+        FindClose(hFind);
+        return -1;
+    }
+
+    /* Collect file names - restart search */
+    FindClose(hFind);
+    hFind = FindFirstFileA(search_path, &findData);
+    if (hFind == INVALID_HANDLE_VALUE) {
+        flb_free(files);
+        return -1;
+    }
+
+    i = 0;
+    do {
+        /* Skip . and .. */
+        if (strcmp(findData.cFileName, ".") == 0 || strcmp(findData.cFileName, "..") == 0) {
+            continue;
+        }
+        /* Skip directories */
+        if (findData.dwFileAttributes & FILE_ATTRIBUTE_DIRECTORY) {
+            continue;
+        }
+        if (is_valid_rotation_filename(findData.cFileName, pattern) && i < file_count) {
+            snprintf(full_path, PATH_MAX - 1, "%s" FLB_PATH_SEPARATOR "%s", 
+                    directory, findData.cFileName);
+            files[i] = flb_strdup(full_path);
+            i++;
+        }
+    } while (FindNextFileA(hFind, &findData) != 0 && i < file_count);
+    
+    FindClose(hFind);
+#else
+    DIR *dir;
+    struct dirent *entry;
 
     dir = opendir(directory);
     if (!dir) {
@@ -1060,6 +1130,7 @@ static int cleanup_old_files(struct flb_logrotate_conf *ctx, const char *directo
         }
     }
     closedir(dir);
+#endif
 
     /* Sort files by modification time (oldest first) */
     for (i = 0; i < file_count - 1; i++) {
