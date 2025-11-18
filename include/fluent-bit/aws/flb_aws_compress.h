@@ -37,7 +37,7 @@ int flb_aws_compression_get_type(const char *compression_keyword);
 
 /*
  * Compress in_data and write result to newly allocated out_data buf
- * Client is responsable for freeing out_data.
+ * Client is responsible for freeing out_data.
  *
  * Returns -1 on error
  * Returns 0 on success
@@ -50,7 +50,7 @@ int flb_aws_compression_compress(int compression_type, void *in_data, size_t in_
  * If b64 output data is larger than max_out_len, the input is truncated with a
  * [Truncated...] suffix appended to the end, and recompressed. The result is written to a
  * newly allocated out_data buf.
- * Client is responsable for freeing out_data.
+ * Client is responsible for freeing out_data.
  *
  * out_len and max_out_len do not count the null character as a part of out_data's length,
  * though the null character may be included at the end of out_data.
