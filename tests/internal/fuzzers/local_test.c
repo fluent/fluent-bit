@@ -48,6 +48,12 @@ int main(int argc, char **argv)
         exit(EXIT_FAILURE);
     }
 
+#ifdef FLB_HAVE_TESTS_OSSFUZZ
+    /* Ensure the fuzzing allocator globals are initialized before flb_malloc(). */
+    flb_malloc_p = 0;
+    flb_malloc_mod = 25000;
+#endif
+
     /* Validate the file */
     ret = stat(argv[1], &st);
     if (ret == -1) {

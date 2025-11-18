@@ -1,7 +1,9 @@
-# Dockerfile for AFL++ fuzzing of Fluent Bit JSON fuzzer
-FROM aflplusplus/aflplusplus:latest AS builder
+FROM aflplusplus/aflplusplus:v4.34c
 
-# Install build dependencies
+# Provide default fuzzing engine flags expected by the OSS-Fuzz build logic
+ENV LIB_FUZZING_ENGINE="-fsanitize=fuzzer"
+
+# Install build and runtime dependencies in a single stage
 RUN apt-get update && apt-get install -y --no-install-recommends \
     cmake \
     make \
@@ -16,40 +18,6 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     flex \
     bison \
     libyaml-dev \
-    && apt-get clean \
-    && rm -rf /var/lib/apt/lists/*
-
-# Set up working directory
-WORKDIR /src/fluent-bit
-
-# Copy source code
-COPY . .
-
-# Create build directory
-WORKDIR /src/fluent-bit/build
-
-# Configure with AFL++ instrumentation and fuzzing enabled
-# Use AFL++ compilers for instrumentation
-RUN cmake \
-    -DCMAKE_C_COMPILER=afl-clang-fast \
-    -DCMAKE_CXX_COMPILER=afl-clang-fast++ \
-    -DCMAKE_BUILD_TYPE=Debug \
-    -DFLB_TESTS_INTERNAL_FUZZ=On \
-    -DFLB_TESTS_INTERNAL=On \
-    -DFLB_SHARED_LIB=Off \
-    -DFLB_EXAMPLES=Off \
-    -DFLB_TLS=On \
-    -DFLB_JEMALLOC=Off \
-    ..
-
-# Build the fuzzers
-RUN make -j$(nproc) flb-it-fuzz-flb_json_fuzzer
-
-# Create runtime stage
-FROM aflplusplus/aflplusplus:latest
-
-# Install runtime dependencies
-RUN apt-get update && apt-get install -y --no-install-recommends \
     libssl3 \
     libcurl4 \
     libsasl2-2 \
@@ -60,11 +28,31 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     && apt-get clean \
     && rm -rf /var/lib/apt/lists/*
 
-# Create fuzzing directories
-RUN mkdir -p /fuzz/input /fuzz/output /fuzz/findings
+# Set up working directory for building
+WORKDIR /src/fluent-bit
 
-# Copy the fuzzer binary
-COPY --from=builder /src/fluent-bit/build/bin/flb-it-fuzz-flb_json_fuzzer /fuzz/
+# Copy source code
+COPY . .
+
+# Configure and build with AFL++ instrumentation
+WORKDIR /src/fluent-bit/build
+RUN cmake \
+    -DCMAKE_C_COMPILER=afl-clang-fast \
+    -DCMAKE_CXX_COMPILER=afl-clang-fast++ \
+    -DCMAKE_BUILD_TYPE=Debug \
+    -DFLB_TESTS_INTERNAL_FUZZ=On \
+    -DFLB_TESTS_INTERNAL=On \
+    -DFLB_TESTS_OSSFUZZ=On \
+    -DFLB_SHARED_LIB=Off \
+    -DFLB_EXAMPLES=Off \
+    -DFLB_TLS=On \
+    -DFLB_JEMALLOC=Off \
+    .. && \
+    make -j$(nproc) flb-it-fuzz-flb_json_fuzzer
+
+# Prepare fuzzing workspace and artifacts
+RUN mkdir -p /fuzz/input /fuzz/output /fuzz/findings && \
+    cp /src/fluent-bit/build/bin/flb-it-fuzz-flb_json_fuzzer /fuzz/
 
 # Create initial seed corpus
 # JSON fuzzer expects JSON input, so create some basic JSON samples
