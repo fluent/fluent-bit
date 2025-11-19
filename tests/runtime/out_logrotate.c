@@ -737,7 +737,8 @@ void flb_test_logrotate_delimiter(void)
     if (content) {
         /* Should contain tab characters */
         int has_tab = 0;
-        for (size_t j = 0; j < content_size; j++) {
+        int j;
+        for (j = 0; j < content_size; j++) {
             if (content[j] == '\t') {
                 has_tab = 1;
                 break;
@@ -983,8 +984,12 @@ void flb_test_logrotate_multithreaded(void)
         pthread_join(threads[i], NULL);
     }
 
-    /* Wait for flush to complete */
-    flb_time_msleep(2000);
+    /* Wait for flush to complete - allow multiple flush cycles */
+    flb_time_msleep(3000);
+
+    /* Wait for file to exist and have content before stopping */
+    ret = wait_for_file(logfile, 1000, TEST_TIMEOUT);
+    TEST_CHECK(ret == 0);
 
     flb_stop(ctx);
     flb_destroy(ctx);
@@ -1164,7 +1169,7 @@ void flb_test_logrotate_gzip_compression(void)
         TEST_CHECK(bytes == strlen(p));
     }
 
-    flb_time_msleep(1500); /* waiting flush */
+    flb_time_msleep(2000); /* waiting flush and rotation/compression */
 
     flb_stop(ctx);
     flb_destroy(ctx);
