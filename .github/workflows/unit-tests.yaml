@@ -74,6 +74,23 @@ jobs:
     permissions:
       contents: read
     steps:
+      - name: Free disk space
+        run: |
+          echo "::group::Disk usage before cleanup"
+          df -h
+          echo "::endgroup::"
+
+          sudo rm -rf /usr/share/dotnet || true
+          sudo rm -rf /usr/local/lib/android || true
+          sudo rm -rf /opt/ghc || true
+          sudo rm -rf /usr/lib/jvm || true
+
+          sudo apt-get clean || true
+
+          echo "::group::Disk usage after cleanup"
+          df -h
+          echo "::endgroup::"
+
       - name: Setup environment
         run: |
           sudo apt-get update
