@@ -92,7 +92,8 @@ static int recursive_delete_directory(const char *dir_path)
     /* Iterate through directory entries */
     while ((entry = readdir(dir)) != NULL) {
         /* Skip . and .. */
-        if (strcmp(entry->d_name, ".") == 0 || strcmp(entry->d_name, "..") == 0) {
+        if (strcmp(entry->d_name, ".") == 0 ||
+            strcmp(entry->d_name, "..") == 0) {
             continue;
         }
 
@@ -109,7 +110,8 @@ static int recursive_delete_directory(const char *dir_path)
             if (recursive_delete_directory(path) != 0) {
                 ret = -1;
             }
-        } else {
+        }
+        else {
             /* Delete file */
             if (unlink(path) != 0) {
                 ret = -1;
@@ -149,8 +151,12 @@ static int count_files_in_directory(const char *dir_path, const char *prefix)
     return count;
 }
 
-/* Helper function: Wait for a file matching the pattern "prefix*gz" to appear in dir_path */
-static int wait_for_file_pattern(const char *dir_path, const char *prefix, const char *suffix, int time_limit)
+/*
+ * Helper function: Wait for a file matching the pattern "prefix*gz" to appear
+ * in dir_path
+ */
+static int wait_for_file_pattern(const char *dir_path, const char *prefix,
+                                  const char *suffix, int time_limit)
 {
     int elapsed_time, found = 0;
     DIR *dir;
@@ -164,7 +170,8 @@ static int wait_for_file_pattern(const char *dir_path, const char *prefix, const
             while ((entry = readdir(dir)) != NULL) {
                 if (strncmp(entry->d_name, prefix, prefix_len) == 0 &&
                     strlen(entry->d_name) > prefix_len + suffix_len &&
-                    strcmp(entry->d_name + strlen(entry->d_name) - suffix_len, suffix) == 0) {
+                    strcmp(entry->d_name + strlen(entry->d_name) - suffix_len,
+                           suffix) == 0) {
                     found = 1;
                     break;
                 }
@@ -234,7 +241,8 @@ void flb_test_logrotate_format_csv(void)
     snprintf(logfile, sizeof(logfile), "%s/%s", TEST_LOGPATH, "test_csv.log");
     
     ctx = flb_create();
-    TEST_ASSERT(flb_service_set(ctx, "Flush", "1", "Grace", "1", "Log_Level", "error", NULL) == 0);
+    TEST_ASSERT(flb_service_set(ctx, "Flush", "1", "Grace", "1",
+                                 "Log_Level", "error", NULL) == 0);
 
     in_ffd = flb_input(ctx, (char *) "lib", NULL);
     TEST_CHECK(in_ffd >= 0);
@@ -298,7 +306,8 @@ void flb_test_logrotate_format_ltsv(void)
     snprintf(logfile, sizeof(logfile), "%s/%s", TEST_LOGPATH, "test_ltsv.log");
     
     ctx = flb_create();
-    TEST_ASSERT(flb_service_set(ctx, "Flush", "1", "Grace", "1", "Log_Level", "error", NULL) == 0);
+    TEST_ASSERT(flb_service_set(ctx, "Flush", "1", "Grace", "1",
+                                 "Log_Level", "error", NULL) == 0);
 
     in_ffd = flb_input(ctx, (char *) "lib", NULL);
     TEST_CHECK(in_ffd >= 0);
@@ -362,7 +371,8 @@ void flb_test_logrotate_format_plain(void)
     snprintf(logfile, sizeof(logfile), "%s/%s", TEST_LOGPATH, "test_plain.log");
     
     ctx = flb_create();
-    TEST_ASSERT(flb_service_set(ctx, "Flush", "1", "Grace", "1", "Log_Level", "error", NULL) == 0);
+    TEST_ASSERT(flb_service_set(ctx, "Flush", "1", "Grace", "1",
+                                 "Log_Level", "error", NULL) == 0);
 
     in_ffd = flb_input(ctx, (char *) "lib", NULL);
     TEST_CHECK(in_ffd >= 0);
@@ -426,7 +436,8 @@ void flb_test_logrotate_format_msgpack(void)
     snprintf(logfile, sizeof(logfile), "%s/%s", TEST_LOGPATH, "test_msgpack.log");
     
     ctx = flb_create();
-    TEST_ASSERT(flb_service_set(ctx, "Flush", "1", "Grace", "1", "Log_Level", "error", NULL) == 0);
+    TEST_ASSERT(flb_service_set(ctx, "Flush", "1", "Grace", "1",
+                                 "Log_Level", "error", NULL) == 0);
 
     in_ffd = flb_input(ctx, (char *) "lib", NULL);
     TEST_CHECK(in_ffd >= 0);
@@ -466,8 +477,10 @@ void flb_test_logrotate_format_msgpack(void)
             size_t read_bytes = fread(first_bytes, 1, 10, fp);
             fclose(fp);
             if (read_bytes > 0) {
-                /* Msgpack typically starts with array markers (0x91, 0x92, etc.) or map markers */
-                /* Just verify it's not plain text JSON */
+                /*
+                 * Msgpack typically starts with array markers (0x91, 0x92, etc.)
+                 * or map markers. Just verify it's not plain text JSON.
+                 */
                 TEST_CHECK(first_bytes[0] != '{' && first_bytes[0] != '[');
             }
         }
@@ -483,7 +496,8 @@ void flb_test_logrotate_format_template(void)
     int ret;
     int bytes;
     /* Use JSON with specific fields for template testing */
-    const char *json_template = "[1448403340, {\"message\": \"test log entry\", \"level\": \"info\"}]";
+    const char *json_template =
+        "[1448403340, {\"message\": \"test log entry\", \"level\": \"info\"}]";
     flb_ctx_t *ctx;
     int in_ffd;
     int out_ffd;
@@ -497,7 +511,8 @@ void flb_test_logrotate_format_template(void)
     snprintf(logfile, sizeof(logfile), "%s/%s", TEST_LOGPATH, "test_template.log");
     
     ctx = flb_create();
-    TEST_ASSERT(flb_service_set(ctx, "Flush", "1", "Grace", "1", "Log_Level", "error", NULL) == 0);
+    TEST_ASSERT(flb_service_set(ctx, "Flush", "1", "Grace", "1",
+                                 "Log_Level", "error", NULL) == 0);
 
     in_ffd = flb_input(ctx, (char *) "lib", NULL);
     TEST_CHECK(in_ffd >= 0);
@@ -569,7 +584,8 @@ void flb_test_logrotate_path(void)
     #pragma GCC diagnostic pop
     
     ctx = flb_create();
-    TEST_ASSERT(flb_service_set(ctx, "Flush", "1", "Grace", "1", "Log_Level", "error", NULL) == 0);
+    TEST_ASSERT(flb_service_set(ctx, "Flush", "1", "Grace", "1",
+                                 "Log_Level", "error", NULL) == 0);
 
     in_ffd = flb_input(ctx, (char *) "lib", NULL);
     TEST_CHECK(in_ffd >= 0);
@@ -636,7 +652,8 @@ void flb_test_logrotate_mkdir(void)
     recursive_delete_directory(TEST_LOGPATH);
     
     ctx = flb_create();
-    TEST_ASSERT(flb_service_set(ctx, "Flush", "1", "Grace", "1", "Log_Level", "error", NULL) == 0);
+    TEST_ASSERT(flb_service_set(ctx, "Flush", "1", "Grace", "1",
+                                 "Log_Level", "error", NULL) == 0);
 
     in_ffd = flb_input(ctx, (char *) "lib", NULL);
     TEST_CHECK(in_ffd >= 0);
@@ -700,7 +717,8 @@ void flb_test_logrotate_delimiter(void)
     snprintf(logfile, sizeof(logfile), "%s/%s", TEST_LOGPATH, "test_delimiter.log");
     
     ctx = flb_create();
-    TEST_ASSERT(flb_service_set(ctx, "Flush", "1", "Grace", "1", "Log_Level", "error", NULL) == 0);
+    TEST_ASSERT(flb_service_set(ctx, "Flush", "1", "Grace", "1",
+                                 "Log_Level", "error", NULL) == 0);
 
     in_ffd = flb_input(ctx, (char *) "lib", NULL);
     TEST_CHECK(in_ffd >= 0);
@@ -771,7 +789,8 @@ void flb_test_logrotate_label_delimiter(void)
     snprintf(logfile, sizeof(logfile), "%s/%s", TEST_LOGPATH, "test_label_delimiter.log");
     
     ctx = flb_create();
-    TEST_ASSERT(flb_service_set(ctx, "Flush", "1", "Grace", "1", "Log_Level", "error", NULL) == 0);
+    TEST_ASSERT(flb_service_set(ctx, "Flush", "1", "Grace", "1",
+                                 "Log_Level", "error", NULL) == 0);
 
     in_ffd = flb_input(ctx, (char *) "lib", NULL);
     TEST_CHECK(in_ffd >= 0);
@@ -837,7 +856,8 @@ void flb_test_logrotate_csv_column_names(void)
     snprintf(logfile, sizeof(logfile), "%s/%s", TEST_LOGPATH, "test_csv_columns.log");
     
     ctx = flb_create();
-    TEST_ASSERT(flb_service_set(ctx, "Flush", "1", "Grace", "1", "Log_Level", "error", NULL) == 0);
+    TEST_ASSERT(flb_service_set(ctx, "Flush", "1", "Grace", "1",
+                                 "Log_Level", "error", NULL) == 0);
 
     in_ffd = flb_input(ctx, (char *) "lib", NULL);
     TEST_CHECK(in_ffd >= 0);
@@ -942,7 +962,8 @@ void flb_test_logrotate_multithreaded(void)
     snprintf(logfile, sizeof(logfile), "%s/%s", TEST_LOGPATH, "test_multithreaded.log");
     
     ctx = flb_create();
-    TEST_ASSERT(flb_service_set(ctx, "Flush", "0.5", "Grace", "2", "Log_Level", "error", NULL) == 0);
+    TEST_ASSERT(flb_service_set(ctx, "Flush", "0.5", "Grace", "2",
+                                 "Log_Level", "error", NULL) == 0);
 
     in_ffd = flb_input(ctx, (char *) "lib", NULL);
     TEST_CHECK(in_ffd >= 0);
@@ -1060,7 +1081,8 @@ void flb_test_logrotate_basic_rotation(void)
     snprintf(logfile, sizeof(logfile), "%s/%s", TEST_LOGPATH, TEST_LOGFILE);
     
     ctx = flb_create();
-    TEST_ASSERT(flb_service_set(ctx, "Flush", "1", "Grace", "1", "Log_Level", "error", NULL) == 0);
+    TEST_ASSERT(flb_service_set(ctx, "Flush", "1", "Grace", "1",
+                                 "Log_Level", "error", NULL) == 0);
 
     in_ffd = flb_input(ctx, (char *) "lib", NULL);
     TEST_CHECK(in_ffd >= 0);
@@ -1134,7 +1156,8 @@ void flb_test_logrotate_gzip_compression(void)
     snprintf(logfile, sizeof(logfile), "%s/%s", TEST_LOGPATH, TEST_LOGFILE);
     
     ctx = flb_create();
-    TEST_ASSERT(flb_service_set(ctx, "Flush", "1", "Grace", "1", "Log_Level", "error", NULL) == 0);
+    TEST_ASSERT(flb_service_set(ctx, "Flush", "1", "Grace", "1",
+                                 "Log_Level", "error", NULL) == 0);
 
     in_ffd = flb_input(ctx, (char *) "lib", NULL);
     TEST_CHECK(in_ffd >= 0);
@@ -1175,7 +1198,8 @@ void flb_test_logrotate_gzip_compression(void)
     flb_destroy(ctx);
 
     /* Check that a gzipped rotated file exists: "flb_test_logrotate.log.*.gz" */
-    ret = wait_for_file_pattern(TEST_LOGPATH, "flb_test_logrotate.log.", ".gz", TEST_TIMEOUT);
+    ret = wait_for_file_pattern(TEST_LOGPATH, "flb_test_logrotate.log.",
+                                 ".gz", TEST_TIMEOUT);
     TEST_CHECK(ret == 0);
 
     /* Clean up directory and all contents */
@@ -1200,7 +1224,8 @@ void flb_test_logrotate_max_files_cleanup(void)
     snprintf(logfile, sizeof(logfile), "%s/%s", TEST_LOGPATH, TEST_LOGFILE);
     
     ctx = flb_create();
-    TEST_ASSERT(flb_service_set(ctx, "Flush", "1", "Grace", "1", "Log_Level", "error", NULL) == 0);
+    TEST_ASSERT(flb_service_set(ctx, "Flush", "1", "Grace", "1",
+                                 "Log_Level", "error", NULL) == 0);
 
     in_ffd = flb_input(ctx, (char *) "lib", NULL);
     TEST_CHECK(in_ffd >= 0);
