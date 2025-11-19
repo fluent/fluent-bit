@@ -21,6 +21,8 @@
 #include <fluent-bit/flb_input_plugin.h>
 #include <fluent-bit/flb_config.h>
 #include <fluent-bit/flb_time.h>
+#include <fluent-bit/flb_parser.h>
+#include <fluent-bit/flb_log_event_decoder.h>
 
 #include "systemd_config.h"
 #include "systemd_db.h"
@@ -68,6 +70,59 @@ static int tag_compose(const char *tag, const char *unit_name,
     *out_size = buf_s;
 
     return 0;
+}
+
+static int flb_systemd_repack_map(struct flb_log_event_encoder *encoder,
+                               char *data,
+                               size_t data_size)
+{
+    msgpack_unpacked source_map;
+    size_t           offset;
+    int              result;
+    size_t           index;
+    msgpack_object   value;
+    msgpack_object   key;
+
+    result = FLB_EVENT_ENCODER_SUCCESS;
+
+    if (data_size > 0) {
+        msgpack_unpacked_init(&source_map);
+
+        offset = 0;
+        result = msgpack_unpack_next(&source_map,
+                                     data,
+                                     data_size,
+                                     &offset);
+
+        if (result == MSGPACK_UNPACK_SUCCESS) {
+            result = FLB_EVENT_ENCODER_SUCCESS;
+        }
+        else {
+            result = FLB_EVENT_DECODER_ERROR_DESERIALIZATION_FAILURE;
+        }
+
+        for (index = 0;
+             index < source_map.data.via.map.size &&
+             result == FLB_EVENT_ENCODER_SUCCESS;
+             index++) {
+            key   = source_map.data.via.map.ptr[index].key;
+            value = source_map.data.via.map.ptr[index].val;
+
+            result = flb_log_event_encoder_append_body_msgpack_object(
+                        encoder,
+                        &key);
+
+            if (result == FLB_EVENT_ENCODER_SUCCESS) {
+                result = flb_log_event_encoder_append_body_msgpack_object(
+                            encoder,
+                            &value);
+            }
+        }
+
+        msgpack_unpacked_destroy(&source_map);
+    }
+
+    return result;
 }
 
 static int append_enumerate_data(struct flb_systemd_config *ctx, struct cfl_kvlist *kvlist)
@@ -129,7 +184,10 @@ static int systemd_enumerate_data_store(struct flb_config *config,
                                         struct flb_input_instance *ins,
                                         void *plugin_context,
                                         void *format_context,
-                                        const void *data, size_t data_size)
+                                        const void *data, size_t data_size,
+                                        struct flb_parser *parser,
+                                        void **pbuf, size_t *plength,
+                                        struct flb_time *tm)
 {
     int i;
     int len;
@@ -155,6 +213,24 @@ static int systemd_enumerate_data_store(struct flb_config *config,
 
     len = (sep - key);
     key_len = len;
+
+    /* Skip FLUENT_BIT_PARSER field */
+    if (strncmp(key, "FLUENT_BIT_PARSER", key_len) == 0) {
+        return 0;
+    }
+
+    /* If this is the message and parser is specified, apply the parser */
+    if (parser && strncmp(key, "MESSAGE", key_len) == 0) {
+        val = sep + 1;
+        len = length - (sep - key) - 1;
+        int ret_parser = flb_parser_do(parser, val, len, pbuf, plength, tm);
+        if (ret_parser != -1) {
+            /* Return special code to indicate parsed content should be added */
+            return -3;
+        }
+        /* If parser failed, continue with unparsed message */
+    }
+
     list_key = flb_sds_create_len(key, key_len);
 
     if (!list_key) {
@@ -261,6 +337,8 @@ static int in_systemd_collect(struct flb_input_instance *ins,
     long nsec;
     uint64_t usec;
     size_t length;
+    size_t plength;
+    char *name;
     const char *key;
 #ifdef FLB_HAVE_SQLDB
     char *cursor = NULL;
@@ -273,6 +351,8 @@ static int in_systemd_collect(struct flb_input_instance *ins,
     const void *data;
     struct flb_systemd_config *ctx = in_context;
     struct flb_time tm;
+    struct flb_parser *parser;
+    void *pbuf = NULL;
     struct cfl_kvlist *kvlist = NULL;
 
     /* Restricted by mem_buf_limit */
@@ -317,6 +397,9 @@ static int in_systemd_collect(struct flb_input_instance *ins,
          * dynamic tags).
          */
         sd_journal_restart_data(ctx->j);
+
+        /* Reset dynamic parser */
+        parser = NULL;
         /* If the tag is composed dynamically, gather the Systemd Unit name */
         if (ctx->dynamic_tag) {
             ret = sd_journal_get_data(ctx->j, "_SYSTEMD_UNIT", &data, &length);
@@ -335,6 +418,17 @@ static int in_systemd_collect(struct flb_input_instance *ins,
         else {
             tag = ctx->ins->tag;
             tag_len = ctx->ins->tag_len;
+        }
+
+        /* Find the parser, if specified */
+        ret = sd_journal_get_data(ctx->j, "FLUENT_BIT_PARSER", &data, &length);
+        if (ret == 0) {
+             name = flb_strndup((const char *)(data+18), length-18);
+             parser = flb_parser_get(name, config);
+             if (!parser) {
+                 flb_plg_error(ctx->ins, "no such parser: '%s'", name);
+             }
+             free(name);
         }
 
         if (last_tag_len == 0) {
@@ -412,9 +506,20 @@ static int in_systemd_collect(struct flb_input_instance *ins,
 
             ret = systemd_enumerate_data_store(config, ctx->ins,
                                                (void *)ctx, (void *)kvlist,
-                                               key, length);
+                                               key, length, parser, &pbuf, &plength, &tm);
             if (ret == -2) {
                 skip_entries++;
+                continue;
+            }
+            else if (ret == -3) {
+                /* Parsed content - add it to kvlist as msgpack */
+                ret = flb_systemd_repack_map(ctx->log_encoder, pbuf, plength);
+                flb_free(pbuf);
+                pbuf = NULL;
+                if (ret != FLB_EVENT_ENCODER_SUCCESS) {
+                    continue;
+                }
+                entries++;
                 continue;
             }
             else if (ret == -1) {
