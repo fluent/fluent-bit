@@ -2053,19 +2053,19 @@ int write_uuid_to_file(char* filename, char* uuid)
     }
 
     /* write uuid to file */
-    fd = flb_open(filename, O_CREAT | O_WRONLY | O_TRUNC, 0666);
+    fd = open(filename, O_CREAT | O_WRONLY | O_TRUNC, 0666);
     if (fd == -1) {
         return FLB_FALSE;
     }
 
     uuid_len = strlen(uuid);
 
-    if (flb_write(fd, uuid, uuid_len) != uuid_len) {
-        flb_close(fd);
+    if (write(fd, uuid, uuid_len) != uuid_len) {
+        close(fd);
         return FLB_FALSE;
     }
 
-    flb_close(fd);
+    close(fd);
     return FLB_TRUE;
 }
 
@@ -2076,7 +2076,7 @@ int flb_utils_get_machine_id(char **out_id, size_t *out_size)
     size_t bytes;
     char *uuid;
     int fallback = FLB_FALSE;
-    char *fallback_id_file = "machine-id";           /*should reside in current working directory*/
+    char *fallback_id_file = "/tmp/flb-machine-id";           /*should reside in current working directory*/
 
 #ifdef __linux__
     char *dbus_var = "/var/lib/dbus/machine-id";
@@ -2114,7 +2114,7 @@ int flb_utils_get_machine_id(char **out_id, size_t *out_size)
 
     if (access(fallback_id_file, F_OK) == 0){
         ret = machine_id_read_and_sanitize(fallback_id_file, &id, &bytes);
-        if(ret == 0){
+        if (ret == 0){
             if (bytes == 0) {
                 /* guid is somewhat corrupted */
                 fallback = FLB_TRUE;
@@ -2232,7 +2232,7 @@ fallback:
     if (ret == 0) {
 
         ret = write_uuid_to_file(fallback_id_file, uuid);
-        if (ret != 0){
+        if (ret == FLB_FALSE){
             /*
              * writing failed, next uuid generation will be random again
              * log a warning message and return
