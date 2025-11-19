@@ -2043,7 +2043,7 @@ static int machine_id_read_and_sanitize(char *path,
     return 0;
 }
 
-int write_uuid_to_file(char* filename, char* uuid) 
+static int write_uuid_to_file(const char* filename, char* uuid)
 {
     int fd;
     size_t uuid_len;
@@ -2053,7 +2053,7 @@ int write_uuid_to_file(char* filename, char* uuid)
     }
 
     /* write uuid to file */
-    fd = open(filename, O_CREAT | O_WRONLY | O_TRUNC, 0666);
+    fd = open(filename, O_CREAT | O_WRONLY | O_TRUNC, 0600);
     if (fd == -1) {
         return FLB_FALSE;
     }
