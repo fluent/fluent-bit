@@ -764,13 +764,14 @@ static void write_gzip_footer(FILE *fp, mz_ulong crc, size_t original_size)
 /* Function to compress a file using streaming gzip (memory-safe for large files) */
 static int gzip_compress_file(const char *input_filename, const char *output_filename, struct flb_output_instance *ins)
 {
-    FILE *src_fp, *dst_fp;
-    char *input_buffer, *output_buffer;
+    FILE *src_fp = NULL, *dst_fp = NULL;
+    char *input_buffer = NULL, *output_buffer = NULL;
     size_t bytes_read, output_buffer_size;
     size_t total_input_size = 0;
     mz_ulong crc = MZ_CRC32_INIT;
     z_stream strm;
     int ret = 0, flush, status;
+    int deflate_initialized = 0;
 
     /* Open source file */
     src_fp = fopen(input_filename, "rb");
@@ -814,6 +815,7 @@ static int gzip_compress_file(const char *input_filename, const char *output_fil
         ret = -1;
         goto cleanup;
     }
+    deflate_initialized = 1;
 
     /* Process file in chunks (ensure Z_FINISH is always issued) */
     do {
@@ -872,13 +874,28 @@ static int gzip_compress_file(const char *input_filename, const char *output_fil
     }
 
 deflate_cleanup:
-    deflateEnd(&strm);
+    if (deflate_initialized) {
+        deflateEnd(&strm);
+        deflate_initialized = 0;
+    }
 
 cleanup:
-    if (input_buffer) flb_free(input_buffer);
-    if (output_buffer) flb_free(output_buffer);
-    fclose(src_fp);
-    fclose(dst_fp);
+    if (input_buffer) {
+        flb_free(input_buffer);
+        input_buffer = NULL;
+    }
+    if (output_buffer) {
+        flb_free(output_buffer);
+        output_buffer = NULL;
+    }
+    if (src_fp) {
+        fclose(src_fp);
+        src_fp = NULL;
+    }
+    if (dst_fp) {
+        fclose(dst_fp);
+        dst_fp = NULL;
+    }
 
     return ret;
 }
