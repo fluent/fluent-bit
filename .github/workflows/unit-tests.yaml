@@ -108,9 +108,9 @@ jobs:
         with:
           cmake-version: "${{ matrix.cmake_version }}"
 
-      - uses: actions/checkout@v5
+      - uses: actions/checkout@v6
 
-      - uses: actions/checkout@v5
+      - uses: actions/checkout@v6
         with:
           repository: calyptia/fluent-bit-ci
           path: ci
@@ -161,8 +161,8 @@ jobs:
         with:
           cmake-version: "${{ matrix.cmake_version }}"
 
-      - uses: actions/checkout@v5
-      - uses: actions/checkout@v5
+      - uses: actions/checkout@v6
+      - uses: actions/checkout@v6
         with:
           repository: calyptia/fluent-bit-ci
           path: ci
@@ -201,7 +201,7 @@ jobs:
 
     steps:
       - name: Checkout Fluent Bit code
-        uses: actions/checkout@v5
+        uses: actions/checkout@v6
 
       - name: Setup environment
         run: |
@@ -263,7 +263,7 @@ jobs:
           - riscv64
     steps:
       - name: Checkout Fluent Bit code
-        uses: actions/checkout@v5
+        uses: actions/checkout@v6
 
       - name: Prepare and build with QEMU ${{ matrix.arch }}
         uses: uraimo/run-on-arch-action@v3
