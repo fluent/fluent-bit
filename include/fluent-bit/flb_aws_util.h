@@ -102,6 +102,11 @@ struct flb_aws_client {
 
     /* Send all log messages as debug; used in AWS Cred Providers on init */
     int debug_only;
+
+#ifdef FLB_HAVE_HTTP_CLIENT_DEBUG
+    /* Callbacks context */
+    struct flb_callback *http_cb_ctx;
+#endif
 };
 
 /* frees dynamic_headers */
