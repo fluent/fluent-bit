@@ -31,18 +31,23 @@
 #include "azure_blob_uri.h"
 #include "azure_blob_http.h"
 
-flb_sds_t azb_block_blob_blocklist_uri(struct flb_azure_blob *ctx, char *name)
+flb_sds_t azb_block_blob_blocklist_uri(struct flb_azure_blob *ctx,
+                                      const char *path_prefix,
+                                      char *name)
 {
     flb_sds_t uri;
+    const char *effective_path;
 
     uri = azb_uri_container(ctx);
     if (!uri) {
         return NULL;
     }
 
-    if (ctx->path) {
+    effective_path = (path_prefix && path_prefix[0] != '\0') ? path_prefix : ctx->path;
+
+    if (effective_path && effective_path[0] != '\0') {
         flb_sds_printf(&uri, "/%s/%s?comp=blocklist",
-                       ctx->path, name);
+                       effective_path, name);
     }
     else {
         flb_sds_printf(&uri, "/%s?comp=blocklist", name);
@@ -55,13 +60,18 @@ flb_sds_t azb_block_blob_blocklist_uri(struct flb_azure_blob *ctx, char *name)
     return uri;
 }
 
-flb_sds_t azb_block_blob_uri(struct flb_azure_blob *ctx, char *name,
-                             char *blockid, uint64_t ms, char *random_str)
+flb_sds_t azb_block_blob_uri(struct flb_azure_blob *ctx,
+                             const char *path_prefix,
+                             char *name,
+                             char *blockid,
+                             uint64_t ms,
+                             char *random_str)
 {
     int len;
     flb_sds_t uri;
     char *ext;
     char *encoded_blockid;
+    const char *effective_path;
 
     len = strlen(blockid);
     encoded_blockid = azb_uri_encode(blockid, len);
@@ -82,14 +92,16 @@ flb_sds_t azb_block_blob_uri(struct flb_azure_blob *ctx, char *name,
         ext = "";
     }
 
-    if (ctx->path) {
+    effective_path = (path_prefix && path_prefix[0] != '\0') ? path_prefix : ctx->path;
+
+    if (effective_path && effective_path[0] != '\0') {
         if (ms > 0) {
             flb_sds_printf(&uri, "/%s/%s.%s.%" PRIu64 "%s?blockid=%s&comp=block",
-                    ctx->path, name, random_str, ms, ext, encoded_blockid);
+                    effective_path, name, random_str, ms, ext, encoded_blockid);
         }
         else {
             flb_sds_printf(&uri, "/%s/%s.%s%s?blockid=%s&comp=block",
-                    ctx->path, name, random_str, ext, encoded_blockid);
+                    effective_path, name, random_str, ext, encoded_blockid);
         }
     }
     else {
@@ -112,10 +124,14 @@ flb_sds_t azb_block_blob_uri(struct flb_azure_blob *ctx, char *name,
 }
 
 flb_sds_t azb_block_blob_uri_commit(struct flb_azure_blob *ctx,
-                                    char *tag, uint64_t ms, char *str)
+                                    const char *path_prefix,
+                                    char *tag,
+                                    uint64_t ms,
+                                    char *str)
 {
     char *ext;
     flb_sds_t uri;
+    const char *effective_path;
 
     uri = azb_uri_container(ctx);
     if (!uri) {
@@ -129,9 +145,13 @@ flb_sds_t azb_block_blob_uri_commit(struct flb_azure_blob *ctx,
         ext = "";
     }
 
-    if (ctx->path) {
-        flb_sds_printf(&uri, "/%s/%s.%s.%" PRIu64 "%s?comp=blocklist", ctx->path, tag, str,
-                ms, ext);
+    effective_path = (path_prefix && path_prefix[0] != '\0') ? path_prefix : ctx->path;
+
+    if (effective_path && effective_path[0] != '\0') {
+        flb_sds_printf(&uri,
+                       "/%s/%s.%s.%" PRIu64 "%s?comp=blocklist",
+                       effective_path, tag, str,
+                       ms, ext);
     }
     else {
         flb_sds_printf(&uri, "/%s.%s.%" PRIu64 "%s?comp=blocklist", tag, str, ms, ext);
@@ -331,14 +351,19 @@ int azb_block_blob_put_block_list(struct flb_azure_blob *ctx, flb_sds_t uri, flb
 }
 
 /* Commit a single block */
-int azb_block_blob_commit_block(struct flb_azure_blob *ctx, char *blockid, char *tag, uint64_t ms, char *str)
+int azb_block_blob_commit_block(struct flb_azure_blob *ctx,
+                                const char *path_prefix,
+                                char *blockid,
+                                char *tag,
+                                uint64_t ms,
+                                char *str)
 {
     int ret;
     flb_sds_t uri = NULL;
     flb_sds_t payload;
 
     /* Compose commit URI */
-    uri = azb_block_blob_uri_commit(ctx, tag, ms, str);
+    uri = azb_block_blob_uri_commit(ctx, path_prefix, tag, ms, str);
     if (!uri) {
         return FLB_ERROR;
     }
@@ -419,7 +444,7 @@ int azb_block_blob_commit_file_parts(struct flb_azure_blob *ctx, uint64_t file_i
     cfl_sds_cat_safe(&payload, "</BlockList>", 12);
     flb_utils_split_free(list);
 
-    uri = azb_block_blob_blocklist_uri(ctx, path);
+    uri = azb_block_blob_blocklist_uri(ctx, NULL, path);
     if (!uri) {
         flb_sds_destroy(payload);
         return -1;
