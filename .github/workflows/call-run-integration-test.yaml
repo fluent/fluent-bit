@@ -46,7 +46,7 @@ jobs:
       gke-cluster-region: ${{ steps.gke-cluster-region.outputs.stdout }}
       gke-cluster-zone: ${{ steps.gke-cluster-zone.outputs.stdout }}
     steps:
-      - uses: actions/checkout@v5
+      - uses: actions/checkout@v6
         with:
           ref: ${{ inputs.ref }}
           repository: fluent/fluent-bit-ci
@@ -175,7 +175,7 @@ jobs:
       - name: Test image exists and cache locally
         run: docker pull ${{ inputs.image_name }}:${{ inputs.image_tag }}
 
-      - uses: actions/checkout@v5
+      - uses: actions/checkout@v6
         with:
           ref: ${{ inputs.ref }}
           repository: fluent/fluent-bit-ci
@@ -234,7 +234,7 @@ jobs:
     env:
       USE_GKE_GCLOUD_AUTH_PLUGIN: true
     steps:
-      - uses: actions/checkout@v5
+      - uses: actions/checkout@v6
         with:
           ref: ${{ inputs.ref }}
           repository: fluent/fluent-bit-ci

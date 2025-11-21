@@ -21,7 +21,7 @@ jobs:
         # We do not push and this allows simpler workflow running for forks too
       steps:
         - name: Checkout code
-          uses: actions/checkout@v5
+          uses: actions/checkout@v6
 
         - name: Set up Docker Buildx
           uses: docker/setup-buildx-action@v3
@@ -72,7 +72,7 @@ jobs:
         contents: read
       steps:
       - name: Checkout code
-        uses: actions/checkout@v5
+        uses: actions/checkout@v6
 
       - name: Build the classic test image
         # We only want to confirm it builds with classic mode, nothing else
@@ -96,7 +96,7 @@ jobs:
         contents: read
       steps:
         - name: Checkout repository
-          uses: actions/checkout@v5
+          uses: actions/checkout@v6
 
         - name: Extract metadata from Github
           id: meta
