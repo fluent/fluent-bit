@@ -1367,12 +1367,12 @@ static int put_all_chunks(struct flb_s3 *ctx)
                 continue;
             }
 
-            if (chunk->failures >= MAX_UPLOAD_ERRORS) {
+            if (chunk->failures >= ctx->ins->retry_limit) {
                 flb_plg_warn(ctx->ins,
                              "Chunk for tag %s failed to send %i times, "
                              "will not retry",
-                             (char *) fsf->meta_buf, MAX_UPLOAD_ERRORS);
-                flb_fstore_file_inactive(ctx->fs, fsf);
+                             (char *) fsf->meta_buf, ctx->ins->retry_limit);
+                flb_fstore_file_delete(ctx->fs, fsf);
                 continue;
             }
 
@@ -1650,13 +1650,17 @@ static struct multipart_upload *get_upload(struct flb_s3 *ctx,
     struct mk_list *tmp;
     struct mk_list *head;
 
+    if (mk_list_is_empty(&ctx->uploads)) {
+        return NULL;
+    }
+
     mk_list_foreach_safe(head, tmp, &ctx->uploads) {
         tmp_upload = mk_list_entry(head, struct multipart_upload, _head);
 
         if (tmp_upload->upload_state == MULTIPART_UPLOAD_STATE_COMPLETE_IN_PROGRESS) {
             continue;
         }
-        if (tmp_upload->upload_errors >= MAX_UPLOAD_ERRORS) {
+        if (tmp_upload->upload_errors >= ctx->ins->retry_limit) {
             tmp_upload->upload_state = MULTIPART_UPLOAD_STATE_COMPLETE_IN_PROGRESS;
             flb_plg_error(ctx->ins, "Upload for %s has reached max upload errors",
                           tmp_upload->s3_key);
@@ -1902,10 +1906,10 @@ static void s3_upload_queue(struct flb_config *config, void *out_context)
 
             /* If retry limit was reached, discard file and remove file from queue */
             upload_contents->retry_counter++;
-            if (upload_contents->retry_counter >= MAX_UPLOAD_ERRORS) {
+            if (upload_contents->retry_counter >= ctx->ins->retry_limit) {
                 flb_plg_warn(ctx->ins, "Chunk file failed to send %d times, will not "
                              "retry", upload_contents->retry_counter);
-                s3_store_file_inactive(ctx, upload_contents->upload_file);
+                s3_store_file_delete(ctx, upload_contents->upload_file);
                 multipart_upload_destroy(upload_contents->m_upload_file);
                 remove_from_queue(upload_contents);
                 continue;
@@ -3311,7 +3315,7 @@ static void cb_s3_upload(struct flb_config *config, void *data)
         m_upload = mk_list_entry(head, struct multipart_upload, _head);
         complete = FLB_FALSE;
 
-        if (m_upload->complete_errors >= MAX_UPLOAD_ERRORS) {
+        if (m_upload->complete_errors >= ctx->ins->retry_limit) {
             flb_plg_error(ctx->ins,
                           "Upload for %s has reached max completion errors, "
                           "plugin will give up", m_upload->s3_key);
@@ -3823,11 +3827,11 @@ static void cb_s3_flush(struct flb_event_chunk *event_chunk,
                         m_upload_file, file_first_log_time);
     }
 
-    /* Discard upload_file if it has failed to upload MAX_UPLOAD_ERRORS times */
-    if (upload_file != NULL && upload_file->failures >= MAX_UPLOAD_ERRORS) {
+    /* Discard upload_file if it has failed to upload ctx->ins->retry_limit times */
+    if (upload_file != NULL && upload_file->failures >= ctx->ins->retry_limit) {
         flb_plg_warn(ctx->ins, "File with tag %s failed to send %d times, will not "
-                     "retry", event_chunk->tag, MAX_UPLOAD_ERRORS);
-        s3_store_file_inactive(ctx, upload_file);
+                     "retry", event_chunk->tag, ctx->ins->retry_limit);
+        s3_store_file_delete(ctx, upload_file);
         upload_file = NULL;
     }
 
@@ -3933,7 +3937,7 @@ static int cb_s3_exit(void *data, struct flb_config *config)
                 continue;
             }
 
-            if (m_upload->bytes > 0) {
+            if (m_upload->bytes > 0 && m_upload->complete_errors < ctx->ins->retry_limit) {
                 m_upload->upload_state = MULTIPART_UPLOAD_STATE_COMPLETE_IN_PROGRESS;
                 mk_list_del(&m_upload->_head);
                 ret = complete_multipart_upload(ctx, m_upload, NULL);
@@ -3941,6 +3945,7 @@ static int cb_s3_exit(void *data, struct flb_config *config)
                     multipart_upload_destroy(m_upload);
                 }
                 else {
+                    m_upload->complete_errors += 1;
                     mk_list_add(&m_upload->_head, &ctx->uploads);
                     flb_plg_error(ctx->ins, "Could not complete upload %s",
                                   m_upload->s3_key);

@@ -46,18 +46,6 @@
 /* Allowed max file size 1 GB for publishing to S3 */
 #define MAX_FILE_SIZE_PUT_OBJECT        1000000000
 
-#define DEFAULT_UPLOAD_TIMEOUT 3600
-
-/*
- * If we see repeated errors on an upload/chunk, we will discard it
- * This saves us from scenarios where something goes wrong and an upload can
- * not proceed (may be some other process completed it or deleted the upload)
- * instead of erroring out forever, we eventually discard the upload.
- *
- * The same is done for chunks, just to be safe, even though realistically
- * I can't think of a reason why a chunk could become unsendable.
- */
-#define MAX_UPLOAD_ERRORS 5
 
 struct upload_queue {
     struct s3_file *upload_file;
@@ -96,8 +84,9 @@ struct multipart_upload {
 
     struct mk_list _head;
 
-    /* see note for MAX_UPLOAD_ERRORS */
+    /* counter for chunk upload errors */
     int upload_errors;
+    /* counter for multipart upload completion errors */
     int complete_errors;
 };
 
