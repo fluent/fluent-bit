@@ -20,6 +20,7 @@
 #include <fluent-bit/flb_info.h>
 #include <fluent-bit/flb_sds.h>
 #include <fluent-bit/flb_http_client.h>
+#include <fluent-bit/flb_http_client_debug.h>
 #include <fluent-bit/flb_signv4.h>
 #include <fluent-bit/flb_aws_util.h>
 #include <fluent-bit/flb_aws_credentials.h>
@@ -268,6 +269,14 @@ struct flb_aws_client *flb_aws_client_create()
     client->client_vtable = &client_vtable;
     client->retry_requests = FLB_FALSE;
     client->debug_only = FLB_FALSE;
+#ifdef FLB_HAVE_HTTP_CLIENT_DEBUG
+    client->http_cb_ctx = flb_callback_create("aws client");
+    if (!client->http_cb_ctx) {
+        flb_errno();
+        flb_free(client);
+        return NULL;
+    }
+#endif
     return client;
 }
 
@@ -291,6 +300,11 @@ void flb_aws_client_destroy(struct flb_aws_client *aws_client)
         if (aws_client->extra_user_agent) {
             flb_sds_destroy(aws_client->extra_user_agent);
         }
+#ifdef FLB_HAVE_HTTP_CLIENT_DEBUG
+        if (aws_client->http_cb_ctx) {
+            flb_callback_destroy(aws_client->http_cb_ctx);
+        }
+#endif
         flb_free(aws_client);
     }
 }
@@ -385,6 +399,10 @@ struct flb_http_client *request_do(struct flb_aws_client *aws_client,
         }
         goto error;
     }
+
+#ifdef FLB_HAVE_HTTP_CLIENT_DEBUG
+    flb_http_client_debug_enable(c, aws_client->http_cb_ctx);
+#endif
 
     /* Increase the maximum HTTP response buffer size to fit large responses from AWS services */
     ret = flb_http_buffer_size(c, FLB_MAX_AWS_RESP_BUFFER_SIZE);
