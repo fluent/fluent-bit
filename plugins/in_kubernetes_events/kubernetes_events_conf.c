@@ -128,6 +128,13 @@ static int network_init(struct k8s_events *ctx, struct flb_config *config)
         return -1;
     }
 
+    if (flb_input_upstream_set(ctx->upstream, ctx->ins) != 0) {
+        flb_plg_error(ctx->ins, "network upstream setup failed");
+        flb_upstream_destroy(ctx->upstream);
+        ctx->upstream = NULL;
+        return -1;
+    }
+
     return 0;
 }
 
