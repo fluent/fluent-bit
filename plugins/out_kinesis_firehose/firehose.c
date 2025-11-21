@@ -32,6 +32,7 @@
 #include <fluent-bit/flb_aws_util.h>
 #include <fluent-bit/flb_mem.h>
 #include <fluent-bit/flb_http_client.h>
+#include <fluent-bit/flb_http_client_debug.h>
 #include <fluent-bit/flb_utils.h>
 
 #include <fluent-bit/aws/flb_aws_compress.h>
@@ -288,6 +289,12 @@ static int cb_firehose_init(struct flb_output_instance *ins,
     ctx->firehose_client->proxy = NULL;
     ctx->firehose_client->static_headers = &content_type_header;
     ctx->firehose_client->static_headers_len = 1;
+#ifdef FLB_HAVE_HTTP_CLIENT_DEBUG
+    if (flb_http_client_debug_setup(ctx->firehose_client->http_cb_ctx, &ins->properties) < 0) {
+        flb_plg_error(ctx->ins, "AWS HTTP client debug initialization error");
+        goto error;
+    }
+#endif
 
     struct flb_upstream *upstream = flb_upstream_create(config, ctx->endpoint,
                                                         ctx->port, FLB_IO_TLS,
