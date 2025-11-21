@@ -15,8 +15,11 @@ set(UNIT_TESTS_SH
   in_syslog_uds_stream_plaintext_expect.sh
   processor_conditional.sh
   processor_invalid.sh
-  proxy_logs_expect.sh
   )
+
+if (CMAKE_SYSTEM_NAME STREQUAL "Linux")
+  list(APPEND UNIT_TESTS_SH proxy_logs_expect.sh)
+endif()
 
 # Prepare list of unit tests
 foreach(script ${UNIT_TESTS_SH})
