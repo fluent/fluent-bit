@@ -41,6 +41,8 @@
  * including the ones that succeeded. This is not ideal.
  */
 #define DEFAULT_LOG_RECORD_BATCH_SIZE "1000"
+#define DEFAULT_MAX_RESOURCE_EXPORT   "0"    /* no resource limits */
+#define DEFAULT_MAX_SCOPE_EXPORT      "0"    /* no scope limits */
 
 struct opentelemetry_body_key {
     flb_sds_t key;
@@ -138,6 +140,12 @@ struct opentelemetry_context {
 
     /* Number of logs to flush at a time */
     int batch_size;
+
+    /* Maximum number of resources per OTLP export */
+    int max_resources;
+
+    /* Maximum number of scopes per OTLP resource */
+    int max_scopes;
 
     /* Log the response payload */
     int log_response_payload;

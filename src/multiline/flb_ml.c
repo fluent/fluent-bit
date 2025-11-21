@@ -606,12 +606,14 @@ static int ml_append_try_parser(struct flb_ml_parser_ins *parser,
                                              tm, buf, size, map,
                                              &out_buf, &out_size, &release,
                                              &out_time);
-        /*
-         * Do not return -1 here. If the sub-parser fails, we should
-         * still attempt to process the raw text with multiline rules.
-         * The 'ret' variable is not used beyond this point, so we can
-         * safely ignore a failure here and let the multiline rules decide.
-         */
+        if (ret < 0) {
+            /*
+             * The underlying parser could not consume the line. Propagate the
+             * failure so the caller can try the next multiline parser in the
+             * chain (if any) instead of buffering the raw text here.
+             */
+            return -1;
+        }
         break;
     case FLB_ML_TYPE_MAP:
         ret = ml_append_try_parser_type_map(parser, stream_id, &type,

@@ -766,3 +766,16 @@ int flb_tls_session_destroy(struct flb_tls_session *session)
 
     return 0;
 }
+
+int flb_tls_session_invalidate(struct flb_tls_session *session)
+{
+    if (session == NULL || session->tls == NULL) {
+        return -1;
+    }
+
+    if (session->ptr != NULL && session->tls->api->session_invalidate != NULL) {
+        session->tls->api->session_invalidate(session->ptr);
+    }
+
+    return 0;
+}

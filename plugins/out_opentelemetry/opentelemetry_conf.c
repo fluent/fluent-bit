@@ -262,6 +262,8 @@ struct opentelemetry_context *flb_opentelemetry_context_create(struct flb_output
     const char *tmp = NULL;
     uint64_t http_client_flags;
     int http_protocol_version;
+    int http2_config_value;
+    int http2_effective_value;
 
     /* Allocate plugin context */
     ctx = flb_calloc(1, sizeof(struct opentelemetry_context));
@@ -276,6 +278,18 @@ struct opentelemetry_context *flb_opentelemetry_context_create(struct flb_output
     ret = flb_output_config_map_set(ins, (void *) ctx);
     if (ret == -1) {
         flb_free(ctx);
+        return NULL;
+    }
+
+    if (ctx->max_resources < 0) {
+        flb_plg_error(ins, "max_resources must be greater than or equal to zero");
+        flb_opentelemetry_context_destroy(ctx);
+        return NULL;
+    }
+
+    if (ctx->max_scopes < 0) {
+        flb_plg_error(ins, "max_scopes must be greater than or equal to zero");
+        flb_opentelemetry_context_destroy(ctx);
         return NULL;
     }
 
@@ -615,11 +629,19 @@ struct opentelemetry_context *flb_opentelemetry_context_create(struct flb_output
 
     ctx->enable_http2_flag = FLB_TRUE;
 
+    if (ctx->enable_http2) {
+        http2_config_value = flb_utils_bool(ctx->enable_http2);
+    }
+    else {
+        http2_config_value = FLB_FALSE;
+    }
+
+    http2_effective_value = http2_config_value;
+
     /* if gRPC has been enabled, auto-enable HTTP/2 to make end-user life easier */
-    if (ctx->enable_grpc_flag && !flb_utils_bool(ctx->enable_http2)) {
+    if (ctx->enable_grpc_flag && http2_config_value == FLB_FALSE) {
         flb_plg_info(ctx->ins, "gRPC enabled, HTTP/2 has been auto-enabled");
-        flb_sds_destroy(ctx->enable_http2);
-        ctx->enable_http2 = flb_sds_create("on");
+        http2_effective_value = FLB_TRUE;
     }
 
     /*
@@ -627,10 +649,10 @@ struct opentelemetry_context *flb_opentelemetry_context_create(struct flb_output
      * moving forward it wont be necessary since we are now setting some special defaults
      * in case of gRPC is enabled (which is the only case where HTTP/2 is mandatory).
      */
-    if (strcasecmp(ctx->enable_http2, "force") == 0) {
+    if (ctx->enable_http2 && strcasecmp(ctx->enable_http2, "force") == 0) {
         http_protocol_version = HTTP_PROTOCOL_VERSION_20;
     }
-    else if (flb_utils_bool(ctx->enable_http2)) {
+    else if (http2_effective_value == FLB_TRUE) {
         if (!ins->use_tls) {
             http_protocol_version = HTTP_PROTOCOL_VERSION_20;
         }

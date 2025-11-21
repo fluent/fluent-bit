@@ -27,6 +27,15 @@
 
 struct winevtlog_session;
 
+/* reconnect backoff */
+struct winevtlog_backoff {
+    DWORD base_ms;
+    DWORD max_ms;
+    DWORD multiplier_x1000;
+    DWORD jitter_pct;
+    DWORD max_retries;
+};
+
 struct winevtlog_config {
     unsigned int interval_sec;
     unsigned int interval_nsec;
@@ -48,6 +57,8 @@ struct winevtlog_config {
     flb_pipefd_t coll_fd;
     struct flb_input_instance *ins;
     struct flb_log_event_encoder *log_encoder;
+    struct winevtlog_backoff backoff;
+    flb_sds_t backoff_multiplier_str;
 };
 
 /* Some channels has very heavy contents for 10 events at same time.
@@ -63,6 +74,14 @@ struct winevtlog_channel {
     EVT_HANDLE events[SUBSCRIBE_ARRAY_SIZE];
     int count;
     struct winevtlog_session *session;
+
+    /* reconnect */
+    BOOL   cancelled_by_us;
+    BOOL   reconnect_needed;
+    DWORD  last_error;
+    DWORD  retry_attempts;
+    ULONGLONG next_retry_deadline;
+    ULONGLONG prng_state;
 
     char *name;
     char *query;
@@ -123,6 +142,11 @@ void winevtlog_pack_event(PEVT_VARIANT system, WCHAR *message,
  */
 int winevtlog_sqlite_load(struct winevtlog_channel *ch, struct winevtlog_config *ctx, struct flb_sqldb *db);
 int winevtlog_sqlite_save(struct winevtlog_channel *ch, struct winevtlog_config *ctx, struct flb_sqldb *db);
+
+/* Non blocking reconnection utilities */
+int   winevtlog_try_reconnect(struct winevtlog_channel *ch, struct winevtlog_config *ctx);
+void  winevtlog_schedule_retry(struct winevtlog_channel *ch, struct winevtlog_config *ctx);
+void  winevtlog_request_cancel(struct winevtlog_channel *ch);
 
 /*
  * SQL templates

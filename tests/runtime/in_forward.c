@@ -790,6 +790,260 @@ void flb_test_forward_zstd()
     test_ctx_destroy(ctx);
 }
 
+static int cb_count_only(void *record, size_t size, void *data)
+{
+    int n = get_output_num();
+    set_output_num(n + 1);
+    flb_free(record);
+    return 0;
+}
+
+void flb_test_threaded_forward_issue_10946()
+{
+    struct flb_lib_out_cb cb = {0};
+    flb_ctx_t *ctx;
+    int in_ffd, out_ffd, ret;
+    int out_count;
+    flb_sockfd_t fd;
+    char *buf;
+    size_t size;
+    int root_type;
+    struct flb_processor *proc;
+    struct flb_processor_unit *pu;
+    struct cfl_variant v_key = {
+        .type = CFL_VARIANT_STRING,
+        .data.as_string = "log"
+    };
+    struct cfl_variant v_mode = {
+        .type = CFL_VARIANT_STRING,
+        .data.as_string = "partial_message"
+    };
+    char *json = "[\"logs\",1234567890,{\"log\":\"hello\"}]";
+
+    clear_output_num();
+
+    cb.cb   = cb_count_only;
+    cb.data = &out_count;
+
+    /* Service */
+    ctx = flb_create();
+    TEST_CHECK(ctx != NULL);
+    flb_service_set(ctx,
+                    "Flush", "0.200000000",
+                    "Grace", "1",
+                    "Log_Level", "error",
+                    NULL);
+
+    in_ffd = flb_input(ctx, (char *) "forward", NULL);
+    TEST_CHECK(in_ffd >= 0);
+    ret = flb_input_set(ctx, in_ffd,
+                        "tag", "logs",
+                        "threaded", "true",
+                        NULL);
+    TEST_CHECK(ret == 0);
+
+    /* Attach a logs-processor: multiline (minimal settings).
+     * This mirrors the YAML:
+     *   processors.logs:
+     *     - name: multiline
+     *       multiline.key_content: log
+     *       mode: partial_message
+     */
+    proc = flb_processor_create(ctx->config, "ut", NULL, 0);
+    TEST_CHECK(proc != NULL);
+
+    pu = flb_processor_unit_create(proc, FLB_PROCESSOR_LOGS, "multiline");
+    TEST_CHECK(pu != NULL);
+
+    ret = flb_processor_unit_set_property(pu, "multiline.key_content", &v_key);
+    TEST_CHECK(ret == 0);
+
+    ret = flb_processor_unit_set_property(pu, "mode", &v_mode);
+    TEST_CHECK(ret == 0);
+
+    ret = flb_input_set_processor(ctx, in_ffd, proc);
+    TEST_CHECK(ret == 0);
+
+    /* Output: lib -> count arrivals of tag 'logs' (after processors) */
+    out_ffd = flb_output(ctx, (char *) "lib", (void *) &cb);
+    TEST_CHECK(out_ffd >= 0);
+    ret = flb_output_set(ctx, out_ffd,
+                         "match", "logs",
+                         "format", "json",
+                         NULL);
+    TEST_CHECK(ret == 0);
+
+    /* Start engine */
+    ret = flb_start(ctx);
+    TEST_CHECK(ret == 0);
+
+    /* Send a single Forward frame to 'logs' */
+    fd = connect_tcp(NULL, -1);
+    TEST_CHECK(fd >= 0);
+
+    /* ["logs", 1234567890, {"log":"hello"}] */
+    ret = flb_pack_json(json, strlen(json), &buf, &size, &root_type, NULL);
+    TEST_CHECK(ret == 0);
+    TEST_CHECK(send(fd, buf, size, 0) == (ssize_t) size);
+    flb_free(buf);
+
+    /* Give it a moment to flush */
+    flb_time_msleep(1500);
+
+    /* With the fix, at least one record must arrive */
+    out_count = get_output_num();
+    TEST_CHECK(out_count > 0);
+    if (!TEST_CHECK(out_count > 0)) {
+        TEST_MSG("no outputs with threaded+multiline; emitter RB/collector likely missing");
+    }
+
+    /* Cleanup */
+    flb_socket_close(fd);
+    flb_stop(ctx);
+    flb_destroy(ctx);
+}
+
+static flb_ctx_t *fw_make_ctx_with_forward(int *in_ffd_out, int *out_ffd_out)
+{
+    struct flb_lib_out_cb cb = {0};
+    flb_ctx_t *ctx;
+    int in_ffd, out_ffd, ret;
+
+    ctx = flb_create();
+    TEST_CHECK(ctx != NULL);
+    if (!ctx) { return NULL; }
+
+    flb_service_set(ctx,
+                    "Flush", "0.200000000",
+                    "Grace", "1",
+                    "Log_Level", "error",
+                    NULL);
+
+    /* forward input */
+    in_ffd = flb_input(ctx, (char *) "forward", NULL);
+    TEST_CHECK(in_ffd >= 0);
+    if (in_ffd < 0) { flb_destroy(ctx); return NULL; }
+
+    /* lib output: count only (no payload check) */
+    cb.cb   = cb_count_only;
+    cb.data = NULL;
+    out_ffd = flb_output(ctx, (char *) "lib", (void *) &cb);
+    TEST_CHECK(out_ffd >= 0);
+    if (out_ffd < 0) {
+        flb_destroy(ctx);
+        return NULL;
+    }
+    ret = flb_output_set(ctx, out_ffd,
+                         "match", "*",
+                         "format", "json",
+                         NULL);
+    TEST_CHECK(ret == 0);
+
+    if (in_ffd_out)  *in_ffd_out  = in_ffd;
+    if (out_ffd_out) *out_ffd_out = out_ffd;
+    return ctx;
+}
+
+/* 1) users-only => must fail to start (fail-close) */
+void flb_test_fw_auth_users_only_fail_start()
+{
+    flb_ctx_t *ctx;
+    int in_ffd, out_ffd, ret;
+
+    ctx = fw_make_ctx_with_forward(&in_ffd, &out_ffd);
+    TEST_CHECK(ctx != NULL);
+    if (!ctx) {
+        return;
+    }
+
+    ret = flb_input_set(ctx, in_ffd,
+                        "tag", "test",
+                        "security.users", "alice s3cr3t",
+                        NULL);
+    TEST_CHECK(ret == 0);
+
+    ret = flb_start(ctx);
+    TEST_CHECK(ret != 0);
+    if (ret == 0) {
+        TEST_MSG("users-only config unexpectedly started; fail-close not enforced");
+        flb_stop(ctx);
+    }
+    flb_destroy(ctx);
+}
+
+/* 2) empty_shared_key + users => start OK */
+void flb_test_fw_auth_empty_shared_key_plus_users_start_ok()
+{
+    flb_ctx_t *ctx;
+    int in_ffd, out_ffd, ret;
+
+    ctx = fw_make_ctx_with_forward(&in_ffd, &out_ffd);
+    TEST_CHECK(ctx != NULL);
+    if (!ctx) { return; }
+
+    ret = flb_input_set(ctx, in_ffd,
+                        "tag", "test",
+                        "empty_shared_key", "true",
+                        "security.users", "alice s3cr3t",
+                        NULL);
+    TEST_CHECK(ret == 0);
+
+    ret = flb_start(ctx);
+    TEST_CHECK(ret == 0);
+    if (ret == 0) {
+        flb_stop(ctx);
+    }
+    flb_destroy(ctx);
+}
+
+/* 3) shared_key only => start OK (backward compatible) */
+void flb_test_fw_auth_shared_key_only_start_ok()
+{
+    flb_ctx_t *ctx;
+    int in_ffd, out_ffd, ret;
+
+    ctx = fw_make_ctx_with_forward(&in_ffd, &out_ffd);
+    TEST_CHECK(ctx != NULL);
+    if (!ctx) { return; }
+
+    ret = flb_input_set(ctx, in_ffd,
+                        "tag", "test",
+                        "shared_key", "k",
+                        NULL);
+    TEST_CHECK(ret == 0);
+
+    ret = flb_start(ctx);
+    TEST_CHECK(ret == 0);
+    if (ret == 0) {
+        flb_stop(ctx);
+    }
+    flb_destroy(ctx);
+}
+
+/* 4) shared_key + users => start OK (both checks) */
+void flb_test_fw_auth_shared_key_plus_users_start_ok()
+{
+    flb_ctx_t *ctx;
+    int in_ffd, out_ffd, ret;
+
+    ctx = fw_make_ctx_with_forward(&in_ffd, &out_ffd);
+    TEST_CHECK(ctx != NULL);
+    if (!ctx) { return; }
+
+    ret = flb_input_set(ctx, in_ffd,
+                        "tag", "test",
+                        "shared_key", "k",
+                        "security.users", "alice s3cr3t",
+                        NULL);
+    TEST_CHECK(ret == 0);
+
+    ret = flb_start(ctx);
+    TEST_CHECK(ret == 0);
+    if (ret == 0) {
+        flb_stop(ctx);
+    }
+    flb_destroy(ctx);
+}
 
 TEST_LIST = {
     {"forward", flb_test_forward},
@@ -801,5 +1055,10 @@ TEST_LIST = {
 #endif
     {"forward_gzip", flb_test_forward_gzip},
     {"forward_zstd", flb_test_forward_zstd},
+    {"issue_10946", flb_test_threaded_forward_issue_10946},
+    {"fw_auth_users_only_fail_start", flb_test_fw_auth_users_only_fail_start},
+    {"fw_auth_empty_shared_key_plus_users_start_ok", flb_test_fw_auth_empty_shared_key_plus_users_start_ok},
+    {"fw_auth_shared_key_only_start_ok", flb_test_fw_auth_shared_key_only_start_ok},
+    {"fw_auth_shared_key_plus_users_start_ok", flb_test_fw_auth_shared_key_plus_users_start_ok},
     {NULL, NULL}
 };

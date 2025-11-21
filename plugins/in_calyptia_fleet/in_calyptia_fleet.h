@@ -25,6 +25,10 @@
 
 #define FLEET_HEADERS_CONFIG_VERSION "Fleet-Config-Version"
 
+#define FLEET_INITIAL_MAX_TRIES 1
+#define FLEET_INITIAL_RETRY_INTERVAL_SECONDS     10
+#define FLEET_INITIAL_RETRY_INTERVAL_NANOSECONDS 0
+
 struct flb_in_calyptia_fleet_config {
     /* Time interval check */
     int interval_sec;
@@ -63,6 +67,10 @@ struct flb_in_calyptia_fleet_config {
     struct flb_upstream *u;
 
     int collect_fd;
+
+    /* track the initial configuration update */
+    int initial_fd;
+    int initial_retries;
 };
 
 struct reload_ctx {

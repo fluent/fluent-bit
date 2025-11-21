@@ -33,6 +33,9 @@
 #include "opentelemetry_conf.h"
 #include "opentelemetry_utils.h"
 
+#define RESOURCE_LOGS_INITIAL_CAPACITY 256
+#define SCOPE_LOGS_INITIAL_CAPACITY    100
+
 static int hex_to_int(char ch)
 {
     if (ch >= '0' && ch <= '9') {
@@ -945,9 +948,15 @@ int otel_process_logs(struct flb_event_chunk *event_chunk,
     int ret;
     int record_type;
     int log_record_count;
-    int max_scopes;
+    int max_scopes_limit;
     int max_resources;
     int native_otel = FLB_FALSE;
+    size_t resource_logs_capacity;
+    size_t i;
+    size_t new_capacity;
+    size_t resource_index = 0;
+    size_t scope_capacity = 0;
+    size_t new_scope_capacity = 0;
     int64_t resource_id = -1;
     int64_t scope_id = -1;
     int64_t tmp_resource_id = -1;
@@ -958,11 +967,15 @@ int otel_process_logs(struct flb_event_chunk *event_chunk,
     struct flb_record_accessor *ra_match;
     Opentelemetry__Proto__Collector__Logs__V1__ExportLogsServiceRequest export_logs;
     Opentelemetry__Proto__Logs__V1__ResourceLogs **resource_logs = NULL;
+    Opentelemetry__Proto__Logs__V1__ResourceLogs **tmp_resource_logs = NULL;
     Opentelemetry__Proto__Logs__V1__ResourceLogs *resource_log = NULL;
     Opentelemetry__Proto__Logs__V1__ScopeLogs **scope_logs = NULL;
+    Opentelemetry__Proto__Logs__V1__ScopeLogs **tmp_scope_logs = NULL;
     Opentelemetry__Proto__Logs__V1__ScopeLogs *scope_log = NULL;
     Opentelemetry__Proto__Logs__V1__LogRecord **log_records = NULL;
     Opentelemetry__Proto__Logs__V1__LogRecord  *log_record = NULL;
+    size_t *resource_scope_capacities = NULL;
+    size_t *tmp_scope_capacities = NULL;
 
     ctx = (struct opentelemetry_context *) out_context;
 
@@ -978,13 +991,28 @@ int otel_process_logs(struct flb_event_chunk *event_chunk,
     opentelemetry__proto__collector__logs__v1__export_logs_service_request__init(&export_logs);
 
     /* local limits */
-    max_resources = 100; /* maximim number of resources */
-    max_scopes = 100;    /* maximum number of scopes per resource */
+    max_resources = ctx->max_resources; /* maximum number of resources */
+    max_scopes_limit = ctx->max_scopes;    /* maximum number of scopes per resource */
 
-    /* allocate for 100 resource logs */
-    resource_logs = flb_calloc(max_resources, sizeof(Opentelemetry__Proto__Logs__V1__ResourceLogs *));
+    if (max_resources > 0) {
+        resource_logs_capacity = max_resources;
+    }
+    else {
+        resource_logs_capacity = RESOURCE_LOGS_INITIAL_CAPACITY; /* grow dynamically when unlimited */
+    }
+
+    /* allocate storage for the configured number of resource logs */
+    resource_logs = flb_calloc(resource_logs_capacity,
+                               sizeof(Opentelemetry__Proto__Logs__V1__ResourceLogs *));
     if (!resource_logs) {
         flb_errno();
+        flb_log_event_decoder_destroy(decoder);
+        return -1;
+    }
+    resource_scope_capacities = flb_calloc(resource_logs_capacity, sizeof(size_t));
+    if (!resource_scope_capacities) {
+        flb_errno();
+        flb_free(resource_logs);
         flb_log_event_decoder_destroy(decoder);
         return -1;
     }
@@ -1021,10 +1049,52 @@ int otel_process_logs(struct flb_event_chunk *event_chunk,
 
             /* if we have a new resource_id, start a new resource context */
             if (resource_id != tmp_resource_id) {
-                if (export_logs.n_resource_logs >= max_resources) {
-                    flb_plg_error(ctx->ins, "max resources limit reached");
-                    ret = FLB_ERROR;
-                    break;
+                if (max_resources > 0) {
+                    if (export_logs.n_resource_logs >= max_resources) {
+                        /* respect the configured resource batching limit */
+                        flb_plg_error(ctx->ins, "max resources limit reached");
+                        ret = FLB_ERROR;
+                        break;
+                    }
+                }
+                else if (export_logs.n_resource_logs >= resource_logs_capacity) {
+                    new_capacity = resource_logs_capacity * 2;
+                    if (new_capacity <= resource_logs_capacity) {
+                        flb_plg_error(ctx->ins, "resource logs capacity overflow");
+                        ret = FLB_ERROR;
+                        break;
+                    }
+
+                    if (new_capacity < RESOURCE_LOGS_INITIAL_CAPACITY) {
+                        new_capacity = RESOURCE_LOGS_INITIAL_CAPACITY;
+                    }
+
+                    tmp_resource_logs = flb_realloc(resource_logs,
+                                                     new_capacity * sizeof(Opentelemetry__Proto__Logs__V1__ResourceLogs *));
+                    if (!tmp_resource_logs) {
+                        flb_errno();
+                        ret = FLB_RETRY;
+                        break;
+                    }
+                    resource_logs = tmp_resource_logs;
+                    export_logs.resource_logs = resource_logs;
+
+                    tmp_scope_capacities = flb_realloc(resource_scope_capacities,
+                                                       new_capacity * sizeof(size_t));
+                    if (!tmp_scope_capacities) {
+                        flb_errno();
+                        ret = FLB_RETRY;
+                        break;
+                    }
+
+                    resource_scope_capacities = tmp_scope_capacities;
+
+                    for (i = resource_logs_capacity; i < new_capacity; i++) {
+                        resource_logs[i] = NULL;
+                        resource_scope_capacities[i] = 0;
+                    }
+
+                    resource_logs_capacity = new_capacity;
                 }
 
 start_resource:
@@ -1044,6 +1114,8 @@ start_resource:
                 resource_logs[export_logs.n_resource_logs] = resource_log;
                 export_logs.n_resource_logs++;
 
+                resource_index = export_logs.n_resource_logs - 1;
+
                 resource_log->resource = flb_calloc(1, sizeof(Opentelemetry__Proto__Resource__V1__Resource));
                 if (!resource_log->resource) {
                     flb_errno();
@@ -1061,7 +1133,17 @@ start_resource:
 
                 /* prepare the scopes */
                 if (!resource_log->scope_logs) {
-                    scope_logs = flb_calloc(100, sizeof(Opentelemetry__Proto__Logs__V1__ScopeLogs *));
+                    if (max_scopes_limit > 0) {
+                        scope_capacity = (size_t) max_scopes_limit;
+                    }
+                    else {
+                        scope_capacity = resource_scope_capacities[resource_index];
+                        if (scope_capacity == 0) {
+                            scope_capacity = SCOPE_LOGS_INITIAL_CAPACITY;
+                        }
+                    }
+
+                    scope_logs = flb_calloc(scope_capacity, sizeof(Opentelemetry__Proto__Logs__V1__ScopeLogs *));
                     if (!scope_logs) {
                         flb_errno();
                         ret = FLB_RETRY;
@@ -1070,6 +1152,7 @@ start_resource:
 
                     resource_log->scope_logs = scope_logs;
                     resource_log->n_scope_logs = 0;
+                    resource_scope_capacities[resource_index] = scope_capacity;
                 }
 
                 /* update the current resource_id and reset scope_id */
@@ -1078,11 +1161,46 @@ start_resource:
             }
 
             if (scope_id != tmp_scope_id) {
+                resource_index = export_logs.n_resource_logs - 1;
+
                 /* check limits */
-                if (resource_log->n_scope_logs >= max_scopes) {
-                    flb_plg_error(ctx->ins, "max scopes limit reached");
-                    ret = FLB_ERROR;
-                    break;
+                if (max_scopes_limit > 0) {
+                    if (resource_log->n_scope_logs >= max_scopes_limit) {
+                        flb_plg_error(ctx->ins, "max scopes limit reached");
+                        ret = FLB_ERROR;
+                        break;
+                    }
+                }
+                else {
+                    if (resource_log->n_scope_logs >= resource_scope_capacities[resource_index]) {
+                        new_scope_capacity = resource_scope_capacities[resource_index] * 2;
+
+                        if (new_scope_capacity <= resource_scope_capacities[resource_index]) {
+                            flb_plg_error(ctx->ins, "scope logs capacity overflow");
+                            ret = FLB_ERROR;
+                            break;
+                        }
+
+                        if (new_scope_capacity < SCOPE_LOGS_INITIAL_CAPACITY) {
+                            new_scope_capacity = SCOPE_LOGS_INITIAL_CAPACITY;
+                        }
+
+                        tmp_scope_logs = flb_realloc(resource_log->scope_logs,
+                                                     new_scope_capacity * sizeof(Opentelemetry__Proto__Logs__V1__ScopeLogs *));
+                        if (!tmp_scope_logs) {
+                            flb_errno();
+                            ret = FLB_RETRY;
+                            break;
+                        }
+
+                        for (i = resource_scope_capacities[resource_index];
+                             i < new_scope_capacity; i++) {
+                            tmp_scope_logs[i] = NULL;
+                        }
+
+                        resource_log->scope_logs = tmp_scope_logs;
+                        resource_scope_capacities[resource_index] = new_scope_capacity;
+                    }
                 }
 
                 /* process the scope */
@@ -1109,7 +1227,8 @@ start_resource:
                     flb_errno();
                     flb_free(scope_log->scope);
                     flb_free(scope_log);
-                    return -2;
+                    ret = FLB_RETRY;
+                    break;
                 }
                 log_record_count = 0;
 
@@ -1228,5 +1347,7 @@ start_resource:
 
     /* release all protobuf resources */
     free_resource_logs(export_logs.resource_logs, export_logs.n_resource_logs);
+    flb_free(resource_scope_capacities);
+
     return ret;
 }
