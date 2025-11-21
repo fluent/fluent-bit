@@ -330,6 +330,7 @@ void flb_test_tcp_with_tls()
                          NULL,
                          TLS_CERTIFICATE_FILENAME,
                          TLS_PRIVATE_KEY_FILENAME,
+                         NULL,
                          NULL);
 
     TEST_CHECK(tls != NULL);

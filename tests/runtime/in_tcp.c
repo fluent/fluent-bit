@@ -373,6 +373,7 @@ void flb_test_tcp_with_tls()
                          NULL,
                          NULL,
                          NULL,
+                         NULL,
                          NULL);
 
     TEST_CHECK(tls != NULL);
