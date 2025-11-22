@@ -59,6 +59,7 @@ struct flb_azure_blob {
     flb_sds_t account_name;
     flb_sds_t container_name;
     flb_sds_t blob_type;
+    flb_sds_t log_key;
     flb_sds_t shared_key;
     flb_sds_t endpoint;
     flb_sds_t path;

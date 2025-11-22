@@ -801,6 +801,10 @@ void flb_azure_blob_conf_destroy(struct flb_azure_blob *ctx)
         flb_sds_destroy(ctx->container_name);
         ctx->container_name = NULL;
     }
+    if (ctx->log_key) {
+        flb_sds_destroy(ctx->log_key);
+        ctx->log_key = NULL;
+    }
     if (ctx->path_overriden_flag == FLB_TRUE) {
         flb_sds_destroy(ctx->path);
         ctx->path = NULL;
