@@ -658,6 +658,11 @@ if(FLB_BINARY)
   endif()
 
   install(FILES
+    "${PROJECT_SOURCE_DIR}/conf/parsers.yaml"
+    COMPONENT binary
+    DESTINATION ${FLB_INSTALL_CONFDIR})
+
+  install(FILES
     "${PROJECT_SOURCE_DIR}/conf/parsers.conf"
     COMPONENT binary
     DESTINATION ${FLB_INSTALL_CONFDIR})

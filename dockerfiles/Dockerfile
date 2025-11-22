@@ -106,6 +106,12 @@ COPY conf/fluent-bit.conf \
     conf/parsers_extra.conf \
     conf/parsers_openstack.conf \
     conf/parsers_cinder.conf \
+    conf/parsers.yaml \
+    conf/parsers_ambassador.yaml \
+    conf/parsers_java.yaml \
+    conf/parsers_extra.yaml \
+    conf/parsers_openstack.yaml \
+    conf/parsers_cinder.yaml \
     conf/plugins.conf \
     /fluent-bit/etc/
 
