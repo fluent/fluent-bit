@@ -92,7 +92,7 @@ jobs:
             cmake_version: "3.31.6"
           - name: "Windows 64bit (Arm64)"
             arch: amd64_arm64
-            cmake_additional_opt: "-DCMAKE_SYSTEM_NAME=Windows -DCMAKE_SYSTEM_VERSION=10.0 -DCMAKE_SYSTEM_PROCESSOR=ARM64"
+            cmake_additional_opt: "-DCMAKE_SYSTEM_NAME=Windows -DCMAKE_SYSTEM_VERSION=10.0 -DCMAKE_SYSTEM_PROCESSOR=ARM64 -DWAMR_BUILD_TARGET=AARCH64"
             vcpkg_triplet: arm64-windows-static
             cmake_version: "3.31.6"
     permissions:
