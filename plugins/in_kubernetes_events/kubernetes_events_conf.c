@@ -89,7 +89,7 @@ static int flb_kubernetes_event_db_close(struct flb_sqldb *db)
 
 #endif
 
-static int network_init(struct k8s_events *ctx, struct flb_config *config)
+static int network_init(struct k8s_events *ctx, struct flb_config *config, struct flb_net_setup *net_setup)
 {
     int io_type = FLB_IO_TCP;
 
@@ -127,6 +127,9 @@ static int network_init(struct k8s_events *ctx, struct flb_config *config)
         flb_plg_error(ctx->ins, "network initialization failed");
         return -1;
     }
+
+    /* Set network options */
+    memcpy(&ctx->upstream->base.net, net_setup, sizeof(struct flb_net_setup));
 
     return 0;
 }
@@ -218,7 +221,7 @@ struct k8s_events *k8s_events_conf_create(struct flb_input_instance *ins)
     flb_plg_info(ctx->ins, "API server: %s", ctx->kube_url);
 
     /* network setup */
-    ret = network_init(ctx, ins->config);
+    ret = network_init(ctx, ins->config, &ins->net_setup);
     if (ret == -1) {
         k8s_events_conf_destroy(ctx);
         return NULL;
