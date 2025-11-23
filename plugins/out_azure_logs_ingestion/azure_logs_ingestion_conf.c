@@ -54,18 +54,8 @@ struct flb_az_li* flb_az_li_ctx_create(struct flb_output_instance *ins,
     }
 
     /* Auth method validation and setup */
-    if (!ctx->auth_type_str || strlen(ctx->auth_type_str) == 0) {
+    if (!ctx->auth_type_str || strlen(ctx->auth_type_str) == 0 || strcasecmp(ctx->auth_type_str, "service_principal") == 0) {
         /* Default to service_principal if auth_type_str is NULL or empty */
-        ctx->auth_type = FLB_AZ_LI_AUTH_SERVICE_PRINCIPAL;
-
-        /* Verify required parameters for Service Principal auth */
-        if (!ctx->tenant_id || !ctx->client_id || !ctx->client_secret) {
-            flb_plg_error(ins, "When using service_principal auth, tenant_id, client_id, and client_secret are required");
-            flb_az_li_ctx_destroy(ctx);
-            return NULL;
-        }
-    }
-    else if (strcasecmp(ctx->auth_type_str, "service_principal") == 0) {
         ctx->auth_type = FLB_AZ_LI_AUTH_SERVICE_PRINCIPAL;
 
         /* Verify required parameters for Service Principal auth */
