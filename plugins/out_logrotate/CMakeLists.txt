@@ -1,4 +1,8 @@
 set(src
   logrotate.c)
 
-FLB_PLUGIN(out_logrotate "${src}" "")
+if(MSVC)
+  FLB_PLUGIN(out_logrotate "${src}" "Shlwapi")
+else()
+  FLB_PLUGIN(out_logrotate "${src}" "")
+endif()
