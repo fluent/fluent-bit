@@ -143,6 +143,12 @@ static int cb_logrotate_init(struct flb_output_instance *ins,
         return -1;
     }
 
+    if (ctx->max_files <= 0) {
+        flb_plg_error(ctx->ins, "invalid max_files=%d; must be >= 1", ctx->max_files);
+        flb_free(ctx);
+        return -1;
+    }
+
     /* Optional, file format */
     tmp = flb_output_get_property("Format", ins);
     if (tmp) {
@@ -199,6 +205,12 @@ static int cb_logrotate_init(struct flb_output_instance *ins,
                   ctx->max_size, ctx->max_files,
                   ctx->gzip == FLB_TRUE ? "true" : "false",
                   ctx->out_path ? ctx->out_path : "not set");
+
+    if (ctx->max_files <= 0) {
+        flb_plg_error(ctx->ins, "invalid max_files=%d; must be >= 1", ctx->max_files);
+        flb_free(ctx);
+        return -1;
+    }
 
     return 0;
 }
@@ -511,6 +523,11 @@ static int mkpath(struct flb_output_instance *ins, const char *dir)
     }
     flb_plg_debug(ins, "creating directory %s", dup_dir);
     ret = mkdir(dup_dir, 0755);
+    if (ret == -1 && errno == EEXIST) {
+        if (stat(dup_dir, &st) == 0 && S_ISDIR(st.st_mode)) {
+            ret = 0;
+        }
+    }
     flb_free(dup_dir);
     return ret;
 #else
@@ -524,7 +541,13 @@ static int mkpath(struct flb_output_instance *ins, const char *dir)
         return ret;
     }
     flb_plg_debug(ins, "creating directory %s", dir);
-    return mkdir(dir, 0755);
+    ret = mkdir(dir, 0755);
+    if (ret == -1 && errno == EEXIST) {
+        if (stat(dir, &st) == 0 && S_ISDIR(st.st_mode)) {
+            ret = 0;
+        }
+    }
+    return ret;
 #endif
 }
 
@@ -875,6 +898,13 @@ static int rotate_file(struct flb_logrotate_conf *ctx, const char *filename)
             return -1;
         }
         lock_acquired = 1;
+
+        /* Check if rotation is still needed (race condition check) */
+        if (file_size < ctx->max_size) {
+            flb_lock_release(&entry->lock, FLB_LOCK_DEFAULT_RETRY_LIMIT,
+                             FLB_LOCK_DEFAULT_RETRY_DELAY);
+            return 0;
+        }
     }
 
     /* Log rotation event */

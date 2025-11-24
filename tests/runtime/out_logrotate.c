@@ -23,6 +23,7 @@
 void flb_test_logrotate_basic_rotation(void);
 void flb_test_logrotate_gzip_compression(void);
 void flb_test_logrotate_max_files_cleanup(void);
+void flb_test_logrotate_max_files_validation(void);
 void flb_test_logrotate_format_csv(void);
 void flb_test_logrotate_format_ltsv(void);
 void flb_test_logrotate_format_plain(void);
@@ -40,6 +41,8 @@ TEST_LIST = {
     {"basic_rotation",        flb_test_logrotate_basic_rotation},
     {"gzip_compression",      flb_test_logrotate_gzip_compression},
     {"max_files_cleanup",     flb_test_logrotate_max_files_cleanup},
+    {"max_files_validation",  flb_test_logrotate_max_files_validation},
+
     {"format_csv",            flb_test_logrotate_format_csv},
     {"format_ltsv",           flb_test_logrotate_format_ltsv},
     {"format_plain",          flb_test_logrotate_format_plain},
@@ -1270,5 +1273,56 @@ void flb_test_logrotate_max_files_cleanup(void)
     TEST_CHECK(file_count <= 4);  /* Current file + 3 rotated files (max_files=3) */
 
     /* Clean up directory and all contents */
+    recursive_delete_directory(TEST_LOGPATH);
+}
+
+void flb_test_logrotate_max_files_validation(void)
+{
+    flb_ctx_t *ctx;
+    int out_ffd;
+    char logfile[512];
+
+    /* Clean up any existing directory and contents */
+    recursive_delete_directory(TEST_LOGPATH);
+    mkdir(TEST_LOGPATH, 0755);
+    snprintf(logfile, sizeof(logfile), "%s/%s", TEST_LOGPATH, TEST_LOGFILE);
+
+    ctx = flb_create();
+    TEST_ASSERT(flb_service_set(ctx, "Flush", "1", "Grace", "1",
+                                 "Log_Level", "error", NULL) == 0);
+
+    /* Test with max_files = 0 */
+    out_ffd = flb_output(ctx, (char *) "logrotate", NULL);
+    TEST_CHECK(out_ffd >= 0);
+    TEST_ASSERT(flb_output_set(ctx, out_ffd,
+        "match", "test",
+        "file", logfile,
+        "max_files", "0",
+        NULL) == 0);
+
+    /* Start should fail */
+    TEST_CHECK(flb_start(ctx) == -1);
+    
+    flb_destroy(ctx);
+
+    /* Test with max_files = -1 */
+    ctx = flb_create();
+    TEST_ASSERT(flb_service_set(ctx, "Flush", "1", "Grace", "1",
+                                 "Log_Level", "error", NULL) == 0);
+
+    out_ffd = flb_output(ctx, (char *) "logrotate", NULL);
+    TEST_CHECK(out_ffd >= 0);
+    TEST_ASSERT(flb_output_set(ctx, out_ffd,
+        "match", "test",
+        "file", logfile,
+        "max_files", "-1",
+        NULL) == 0);
+
+    /* Start should fail */
+    TEST_CHECK(flb_start(ctx) == -1);
+
+    flb_destroy(ctx);
+    
+    /* Clean up directory */
     recursive_delete_directory(TEST_LOGPATH);
 }
