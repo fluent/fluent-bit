@@ -1138,6 +1138,11 @@ static int cleanup_old_files(struct flb_logrotate_conf *ctx,
     for (j = i + 1; j < file_count; j++) {
       struct stat st1;
       struct stat st2;
+
+      if (!files[i] || !files[j]) {
+        continue;
+      }
+
       if (stat(files[i], &st1) == 0 && stat(files[j], &st2) == 0) {
         if (st1.st_mtime > st2.st_mtime) {
           char *temp = files[i];
@@ -1156,15 +1161,19 @@ static int cleanup_old_files(struct flb_logrotate_conf *ctx,
         file_count - max_files, max_files);
   }
   for (i = 0; i < file_count - max_files; i++) {
-    if (unlink(files[i]) == 0) {
-      flb_plg_debug(ctx->ins, "removed old rotated file: %s", files[i]);
+    if (files[i]) {
+      if (unlink(files[i]) == 0) {
+        flb_plg_debug(ctx->ins, "removed old rotated file: %s", files[i]);
+      }
+      flb_free(files[i]);
     }
-    flb_free(files[i]);
   }
 
   /* Free remaining file names */
   for (i = file_count - max_files; i < file_count; i++) {
-    flb_free(files[i]);
+    if (files[i]) {
+      flb_free(files[i]);
+    }
   }
 
   flb_free(files);
