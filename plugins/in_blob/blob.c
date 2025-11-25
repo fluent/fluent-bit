@@ -991,12 +991,14 @@ static struct flb_config_map config_map[] = {
     {
      FLB_CONFIG_MAP_STR, "exclude_pattern", NULL,
      0, FLB_TRUE, offsetof(struct blob_ctx, exclude_pattern),
+     "Glob pattern to exclude files from being processed"
     },
 
 #ifdef FLB_HAVE_SQLDB
     {
      FLB_CONFIG_MAP_STR, "database_file", NULL,
      0, FLB_TRUE, offsetof(struct blob_ctx, database_file),
+     "SQLite database file path to track processed files"
     },
 #endif
 
@@ -1009,31 +1011,37 @@ static struct flb_config_map config_map[] = {
     {
      FLB_CONFIG_MAP_STR, "upload_success_action", NULL,
      0, FLB_TRUE, offsetof(struct blob_ctx, upload_success_action_str),
+     "Action to perform after successful upload: \"delete\", \"emit_log\", or \"add_suffix\""
     },
 
     {
      FLB_CONFIG_MAP_STR, "upload_success_suffix", NULL,
      0, FLB_TRUE, offsetof(struct blob_ctx, upload_success_suffix),
+     "Suffix to append to filename when upload_success_action is \"add_suffix\""
     },
 
     {
      FLB_CONFIG_MAP_STR, "upload_success_message", NULL,
      0, FLB_TRUE, offsetof(struct blob_ctx, upload_success_message),
+     "Message to emit as log when upload_success_action is \"emit_log\""
     },
 
     {
      FLB_CONFIG_MAP_STR, "upload_failure_action", NULL,
      0, FLB_TRUE, offsetof(struct blob_ctx, upload_failure_action_str),
+     "Action to perform after failed upload: \"delete\", \"emit_log\", or \"add_suffix\""
     },
 
     {
      FLB_CONFIG_MAP_STR, "upload_failure_suffix", NULL,
      0, FLB_TRUE, offsetof(struct blob_ctx, upload_failure_suffix),
+     "Suffix to append to filename when upload_failure_action is \"add_suffix\""
     },
 
     {
      FLB_CONFIG_MAP_STR, "upload_failure_message", NULL,
      0, FLB_TRUE, offsetof(struct blob_ctx, upload_failure_message),
+     "Message to emit as log when upload_failure_action is \"emit_log\""
     },
 
     /* EOF */
