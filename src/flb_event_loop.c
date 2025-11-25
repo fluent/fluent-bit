@@ -42,7 +42,7 @@ int flb_event_loop_create(flb_ctx_t *ctx)
     /* Prepare the notification channels */
     ctx->event_channel = flb_calloc(1, sizeof(struct mk_event));
     if (!ctx->event_channel) {
-        perror("calloc");
+        flb_error("[lib] could not allocate event channel");
         goto error_1;
     }
 
