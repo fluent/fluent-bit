@@ -317,9 +317,9 @@ int tls_context_alpn_set(void *ctx_backend, const char *alpn)
  * If no known prefix is found, *store_name_out is left as-is and *location_flags
  * is not modified (so legacy behavior is preserved).
  */
-static void windows_resolve_certstore_location(const char *configured_name,
-                                               DWORD *location_flags,
-                                               const char **store_name_out)
+static int windows_resolve_certstore_location(const char *configured_name,
+                                              DWORD *location_flags,
+                                              const char **store_name_out)
 {
     const char *name;
     const char *sep;
@@ -327,9 +327,10 @@ static void windows_resolve_certstore_location(const char *configured_name,
     char prefix_buf[32];
     size_t i;
     size_t len = 0;
+    char c;
 
     if (!configured_name || !*configured_name) {
-        return;
+        return FLB_FALSE;
     }
 
     name = configured_name;
@@ -353,7 +354,8 @@ static void windows_resolve_certstore_location(const char *configured_name,
          * -> keep legacy behavior (location_flags unchanged).
          */
         *store_name_out = name;
-        return;
+
+        return FLB_FALSE;
     }
 
     /* Copy and lowercase prefix into buffer */
@@ -363,7 +365,7 @@ static void windows_resolve_certstore_location(const char *configured_name,
     }
 
     for (i = 0; i < prefix_len; i++) {
-        char c = (char) name[i];
+        c = (char) name[i];
 
         if (c >= 'A' && c <= 'Z') {
             c = (char) (c - 'A' + 'a');
@@ -373,27 +375,29 @@ static void windows_resolve_certstore_location(const char *configured_name,
     prefix_buf[prefix_len] = '\0';
 
     /* Default: keep *location_flags as-is */
-    if (strncasecmp(prefix_buf, "currentuser", 11) == 0 ||
-        strncasecmp(prefix_buf, "hkcu", 4) == 0) {
+    if (strcmp(prefix_buf, "currentuser") == 0 ||
+        strcmp(prefix_buf, "hkcu") == 0) {
         *location_flags = CERT_SYSTEM_STORE_CURRENT_USER;
     }
-    else if (strncasecmp(prefix_buf, "localmachine", 12) == 0 ||
-             strncasecmp(prefix_buf, "hklm", 4) == 0) {
+    else if (strcmp(prefix_buf, "localmachine") == 0 ||
+             strcmp(prefix_buf, "hklm") == 0) {
         *location_flags = CERT_SYSTEM_STORE_LOCAL_MACHINE;
     }
-    else if (strncasecmp(prefix_buf, "localmachineenterprise", 22) == 0 ||
-             strncasecmp(prefix_buf, "hklme", 5) == 0) {
+    else if (strcmp(prefix_buf, "localmachineenterprise") == 0 ||
+             strcmp(prefix_buf, "hklme") == 0) {
         *location_flags = CERT_SYSTEM_STORE_LOCAL_MACHINE_ENTERPRISE;
     }
     else {
         /* Unknown prefix -> treat entire string as store name */
         *store_name_out = configured_name;
 
-        return;
+        return FLB_FALSE;
     }
 
     /* Store name part after the separator "\" or "/" */
     *store_name_out = sep + 1;
+
+    return FLB_TRUE;
 }
 
 static int windows_load_system_certificates(struct tls_context *ctx)
@@ -408,6 +412,7 @@ static int windows_load_system_certificates(struct tls_context *ctx)
     char *configured_name = "Root";
     const char *store_name = "Root";
     DWORD store_location = CERT_SYSTEM_STORE_CURRENT_USER;
+    int has_location_prefix = FLB_FALSE;
 
     /* Check if OpenSSL certificate store is available */
     if (!ossl_store) {
@@ -421,15 +426,15 @@ static int windows_load_system_certificates(struct tls_context *ctx)
     }
 
     /* First, resolve explicit prefix if present */
-    windows_resolve_certstore_location(configured_name,
-                                       &store_location,
-                                       &store_name);
+    has_location_prefix = windows_resolve_certstore_location(configured_name,
+                                                             &store_location,
+                                                             &store_name);
 
     /* Backward compatibility:
      * If no prefix was given (store_name == configured_name) and
      * use_enterprise_store is set, override location accordingly.
      */
-    if (store_name == configured_name && ctx->use_enterprise_store) {
+    if (has_location_prefix == FLB_FALSE && ctx->use_enterprise_store) {
         store_location = CERT_SYSTEM_STORE_LOCAL_MACHINE_ENTERPRISE;
     }
 
