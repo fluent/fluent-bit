@@ -1417,12 +1417,12 @@ static int flb_main_run(int argc, char **argv)
     if (config->daemon == FLB_TRUE) {
 #if defined(__FreeBSD__) || defined(__NetBSD__) || \
     defined(__OpenBSD__) || defined(__DragonFly__)
-        flb_destroy_event_loop(ctx);
+        flb_event_loop_destroy(ctx);
 #endif
         flb_utils_set_daemon(config);
 #if defined(__FreeBSD__) || defined(__NetBSD__) || \
     defined(__OpenBSD__) || defined(__DragonFly__)
-        if (flb_create_event_loop(ctx) != 0) {
+        if (flb_event_loop_create(ctx) != 0) {
             flb_error("[daemon] failed to recreate event loop after daemonizing");
             flb_utils_error(FLB_ERR_EVENT_LOOP_CREATE);
         }
