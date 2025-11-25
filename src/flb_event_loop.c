@@ -27,7 +27,7 @@ int flb_event_loop_create(flb_ctx_t *ctx)
     int ret;
     struct flb_config *config;
 
-    if (ctx == NULL)
+    if (ctx == NULL || ctx->config == NULL)
         return FLB_LIB_ERROR;
 
     config = ctx->config;
@@ -94,6 +94,7 @@ int flb_event_loop_destroy(flb_ctx_t *ctx)
     if (ctx->event_loop != NULL) {
         mk_event_loop_destroy(ctx->event_loop);
         ctx->event_loop = NULL;
+        config->ch_evl = NULL;
     }
 
     return 0;
