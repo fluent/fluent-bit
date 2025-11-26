@@ -409,6 +409,7 @@ static int ingest_all_chunks(struct flb_azure_kusto *ctx, struct flb_config *con
     struct azure_kusto_file *chunk;
     struct mk_list *tmp;
     struct mk_list *head;
+    struct mk_list *f_tmp;
     struct mk_list *f_head;
     struct flb_fstore_file *fsf;
     struct flb_fstore_stream *fs_stream;
@@ -427,7 +428,7 @@ static int ingest_all_chunks(struct flb_azure_kusto *ctx, struct flb_config *con
             continue;
         }
 
-        mk_list_foreach_safe(f_head, tmp, &fs_stream->files) {
+        mk_list_foreach_safe(f_head, f_tmp, &fs_stream->files) {
             fsf = mk_list_entry(f_head, struct flb_fstore_file, _head);
             chunk = fsf->data;
 
