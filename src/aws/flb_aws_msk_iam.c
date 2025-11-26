@@ -38,18 +38,13 @@
 #include <string.h>
 #include <time.h>
 
-/* Lightweight config with credential caching to prevent principal changes */
+/* Lightweight config - provider manages credential caching and refresh internally */
 struct flb_aws_msk_iam {
     struct flb_config *flb_config;
     flb_sds_t region;
     flb_sds_t cluster_arn;
     struct flb_tls *cred_tls;              /* TLS instance for AWS credentials (STS) */
     struct flb_aws_provider *provider;     /* AWS credentials provider (created once, reused) */
-    
-    /* Credential caching to maintain consistent principal during re-authentication */
-    struct flb_aws_credentials *cached_creds;  /* Cached AWS credentials */
-    time_t creds_expiration;                   /* Credential expiration time */
-    pthread_mutex_t creds_lock;                /* Thread-safe access to cached credentials */
 };
 
 /* Utility functions - same as before */
@@ -170,150 +165,8 @@ static char *extract_region(const char *arn)
     return out;
 }
 
-/*
- * Duplicate AWS credentials structure
- * Returns NULL on failure
- */
-static struct flb_aws_credentials* duplicate_credentials(struct flb_aws_credentials *src)
-{
-    struct flb_aws_credentials *dst;
-
-    if (!src) {
-        return NULL;
-    }
-
-    dst = flb_calloc(1, sizeof(struct flb_aws_credentials));
-    if (!dst) {
-        return NULL;
-    }
-
-    if (src->access_key_id) {
-        dst->access_key_id = flb_sds_create(src->access_key_id);
-        if (!dst->access_key_id) {
-            flb_free(dst);
-            return NULL;
-        }
-    }
-
-    if (src->secret_access_key) {
-        dst->secret_access_key = flb_sds_create(src->secret_access_key);
-        if (!dst->secret_access_key) {
-            if (dst->access_key_id) {
-                flb_sds_destroy(dst->access_key_id);
-            }
-            flb_free(dst);
-            return NULL;
-        }
-    }
-
-    if (src->session_token) {
-        dst->session_token = flb_sds_create(src->session_token);
-        if (!dst->session_token) {
-            if (dst->access_key_id) {
-                flb_sds_destroy(dst->access_key_id);
-            }
-            if (dst->secret_access_key) {
-                flb_sds_destroy(dst->secret_access_key);
-            }
-            flb_free(dst);
-            return NULL;
-        }
-    }
-
-    return dst;
-}
-
-/*
- * Get cached credentials or refresh if expired
- * This function ensures the same AWS temporary credentials (with the same session ID)
- * are reused across multiple token refreshes, preventing "principal change" errors.
- * 
- * Returns a COPY of credentials that the caller must destroy.
- * Returns NULL on failure.
- */
-static struct flb_aws_credentials* get_cached_or_refresh_credentials(
-    struct flb_aws_msk_iam *config, time_t *expiration)
-{
-    time_t now;
-    struct flb_aws_credentials *creds = NULL;
-    struct flb_aws_credentials *creds_copy = NULL;
-    int needs_refresh = FLB_FALSE;
-
-    now = time(NULL);
-
-    pthread_mutex_lock(&config->creds_lock);
-
-    /* Check if cached credentials are still valid */
-    if (config->cached_creds && 
-        config->creds_expiration > now + FLB_AWS_REFRESH_WINDOW) {
-        /* Credentials are still valid, return a copy */
-        creds_copy = duplicate_credentials(config->cached_creds);
-        if (expiration) {
-            *expiration = config->creds_expiration;
-        }
-        pthread_mutex_unlock(&config->creds_lock);
-        
-        if (creds_copy) {
-            flb_info("[aws_msk_iam] reusing cached AWS credentials (valid until %ld, %ld seconds remaining)",
-                     config->creds_expiration, config->creds_expiration - now);
-        }
-        return creds_copy;
-    }
-
-    needs_refresh = FLB_TRUE;
-    pthread_mutex_unlock(&config->creds_lock);
-
-    /* Credentials expired or don't exist, need to refresh */
-    if (needs_refresh) {
-        flb_info("[aws_msk_iam] AWS credentials expired or not cached, fetching new credentials");
-
-        /* Get new credentials using the long-lived provider */
-        creds = config->provider->provider_vtable->get_credentials(config->provider);
-        if (!creds) {
-            flb_error("[aws_msk_iam] failed to get AWS credentials from provider");
-            return NULL;
-        }
-
-        /* Update cache with new credentials */
-        pthread_mutex_lock(&config->creds_lock);
-        
-        if (config->cached_creds) {
-            flb_aws_credentials_destroy(config->cached_creds);
-            config->cached_creds = NULL;
-        }
-
-        config->cached_creds = duplicate_credentials(creds);
-        if (!config->cached_creds) {
-            pthread_mutex_unlock(&config->creds_lock);
-            flb_error("[aws_msk_iam] failed to cache credentials");
-            flb_aws_credentials_destroy(creds);
-            return NULL;
-        }
-
-        /* 
-         * Set expiration time. AWS temporary credentials typically last 1 hour.
-         * We use a conservative estimate if we can't determine the exact expiration.
-         */
-        config->creds_expiration = now + 3600; /* Default: 1 hour */
-        
-        if (expiration) {
-            *expiration = config->creds_expiration;
-        }
-
-        pthread_mutex_unlock(&config->creds_lock);
-
-        flb_info("[aws_msk_iam] successfully cached new AWS credentials (valid until %ld, %ld seconds remaining)",
-                 config->creds_expiration, config->creds_expiration - now);
-
-        /* Return the credentials (caller owns them) */
-        return creds;
-    }
-
-    return NULL;
-}
-
-/* Payload generator using cached credentials to maintain consistent principal */
-static flb_sds_t build_msk_iam_payload_with_creds(struct flb_aws_msk_iam *config,
+/* Payload generator - builds MSK IAM authentication payload */
+static flb_sds_t build_msk_iam_payload(struct flb_aws_msk_iam *config,
                                                    const char *host,
                                                    struct flb_aws_credentials *creds)
 {
@@ -785,18 +638,18 @@ static void oauthbearer_token_refresh_cb(rd_kafka_t *rk,
     flb_info("[aws_msk_iam] requesting MSK IAM payload for region: %s, host: %s", config->region, host);
 
     /* 
-     * CRITICAL FIX: Use cached credentials to maintain consistent principal
-     * This prevents "Cannot change principals during re-authentication" errors
+     * Get credentials from provider. The provider handles caching and expiration internally.
+     * The provider automatically manages credential refresh when needed.
      */
-    creds = get_cached_or_refresh_credentials(config, NULL);
+    creds = config->provider->provider_vtable->get_credentials(config->provider);
     if (!creds) {
-        flb_error("[aws_msk_iam] failed to get AWS credentials (cached or refreshed)");
+        flb_error("[aws_msk_iam] failed to get AWS credentials from provider");
         rd_kafka_oauthbearer_set_token_failure(rk, "credential retrieval failed");
         return;
     }
 
-    /* Generate payload using cached credentials */
-    payload = build_msk_iam_payload_with_creds(config, host, creds);
+    /* Generate payload using credentials from provider */
+    payload = build_msk_iam_payload(config, host, creds);
     if (!payload) {
         flb_error("[aws_msk_iam] failed to generate MSK IAM payload");
         flb_aws_credentials_destroy(creds);
@@ -908,22 +761,6 @@ struct flb_aws_msk_iam *flb_aws_msk_iam_register_oauth_cb(struct flb_config *con
 
     flb_info("[aws_msk_iam] TLS instance created for AWS credentials");
 
-    /* Initialize credential caching fields */
-    ctx->cached_creds = NULL;
-    ctx->creds_expiration = 0;
-    
-    /* Initialize mutex for thread-safe credential access */
-    if (pthread_mutex_init(&ctx->creds_lock, NULL) != 0) {
-        flb_error("[aws_msk_iam] failed to initialize credentials mutex");
-        flb_tls_destroy(ctx->cred_tls);
-        flb_sds_destroy(ctx->region);
-        flb_sds_destroy(ctx->cluster_arn);
-        flb_free(ctx);
-        return NULL;
-    }
-
-    flb_info("[aws_msk_iam] Credential cache initialized with mutex protection");
-
     /* Create AWS provider once - will be reused for credential refresh */
     ctx->provider = flb_standard_chain_provider_create(config,
                                                        ctx->cred_tls,
@@ -934,7 +771,6 @@ struct flb_aws_msk_iam *flb_aws_msk_iam_register_oauth_cb(struct flb_config *con
                                                        NULL); /* profile */
     if (!ctx->provider) {
         flb_error("[aws_msk_iam] failed to create AWS credentials provider");
-        pthread_mutex_destroy(&ctx->creds_lock);
         flb_tls_destroy(ctx->cred_tls);
         flb_sds_destroy(ctx->region);
         flb_sds_destroy(ctx->cluster_arn);
@@ -946,7 +782,6 @@ struct flb_aws_msk_iam *flb_aws_msk_iam_register_oauth_cb(struct flb_config *con
     if (ctx->provider->provider_vtable->init(ctx->provider) != 0) {
         flb_error("[aws_msk_iam] failed to initialize AWS credentials provider");
         flb_aws_provider_destroy(ctx->provider);
-        pthread_mutex_destroy(&ctx->creds_lock);
         flb_tls_destroy(ctx->cred_tls);
         flb_sds_destroy(ctx->region);
         flb_sds_destroy(ctx->cluster_arn);
@@ -966,7 +801,7 @@ struct flb_aws_msk_iam *flb_aws_msk_iam_register_oauth_cb(struct flb_config *con
     return ctx;
 }
 
-/* Destroy MSK IAM config - includes cached credentials cleanup */
+/* Destroy MSK IAM config */
 void flb_aws_msk_iam_destroy(struct flb_aws_msk_iam *ctx)
 {
     if (!ctx) {
@@ -975,19 +810,10 @@ void flb_aws_msk_iam_destroy(struct flb_aws_msk_iam *ctx)
 
     flb_info("[aws_msk_iam] destroying MSK IAM config");
 
-    /* Clean up cached credentials */
-    if (ctx->cached_creds) {
-        flb_aws_credentials_destroy(ctx->cached_creds);
-        ctx->cached_creds = NULL;
-    }
-
-    /* Destroy AWS provider */
+    /* Destroy AWS provider (provider manages its own credential caching) */
     if (ctx->provider) {
         flb_aws_provider_destroy(ctx->provider);
     }
-
-    /* Destroy mutex */
-    pthread_mutex_destroy(&ctx->creds_lock);
 
     /* Clean up TLS instance */
     if (ctx->cred_tls) {
@@ -1003,5 +829,5 @@ void flb_aws_msk_iam_destroy(struct flb_aws_msk_iam *ctx)
     }
     flb_free(ctx);
     
-    flb_info("[aws_msk_iam] MSK IAM config destroyed, cached credentials and provider cleared");
+    flb_info("[aws_msk_iam] MSK IAM config destroyed");
 }
