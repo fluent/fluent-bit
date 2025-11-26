@@ -451,6 +451,15 @@ set(FLB_DEPS
   )
 endif()
 
+
+# Ripser
+if(FLB_RIPSER)
+set(FLB_DEPS
+  ${FLB_DEPS}
+  flb-ripser
+  )
+endif()
+
 # AWS specific
 if(FLB_AWS)
   set(FLB_DEPS
