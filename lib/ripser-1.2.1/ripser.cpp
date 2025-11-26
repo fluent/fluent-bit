@@ -5,6 +5,7 @@
  MIT License
 
  Copyright (c) 2015–2021 Ulrich Bauer
+ Modifications Copyright (c) 2025 The Fluent Bit Authors
 
  Permission is hereby granted, free of charge, to any person obtaining a copy
  of this software and associated documentation files (the "Software"), to deal
@@ -396,6 +397,21 @@ index_t get_max(index_t top, const index_t bottom, const Predicate pred) {
 	return top;
 }
 
+/* Added for flexible retrieving of results. */
+struct interval_recorder {
+    using callback_t = void(*)(int dim, value_t birth, value_t death, void *user_data);
+
+    callback_t cb = nullptr;
+    void *user_data = nullptr;
+
+    void emit(int dim, value_t birth, value_t death) const {
+        if (cb) {
+            cb(dim, birth, death, user_data);
+        }
+    }
+};
+/* Adding end */
+
 template <typename DistanceMatrix> class ripser {
 	const DistanceMatrix dist;
 	const index_t n, dim_max;
@@ -406,6 +422,7 @@ template <typename DistanceMatrix> class ripser {
 	const std::vector<coefficient_t> multiplicative_inverse;
 	mutable std::vector<diameter_entry_t> cofacet_entries;
 	mutable std::vector<index_t> vertices;
+	interval_recorder recorder_;
 
 	struct entry_hash {
 		std::size_t operator()(const entry_t& e) const { return hash<index_t>()(::get_index(e)); }
@@ -421,11 +438,12 @@ template <typename DistanceMatrix> class ripser {
 
 public:
 	ripser(DistanceMatrix&& _dist, index_t _dim_max, value_t _threshold, float _ratio,
-	       coefficient_t _modulus)
+	       coefficient_t _modulus, interval_recorder recorder = {})
 	    : dist(std::move(_dist)), n(dist.size()),
 	      dim_max(std::min(_dim_max, index_t(dist.size() - 2))), threshold(_threshold),
 	      ratio(_ratio), modulus(_modulus), binomial_coeff(n, dim_max + 2),
-	      multiplicative_inverse(multiplicative_inverse_vector(_modulus)) {}
+	      multiplicative_inverse(multiplicative_inverse_vector(_modulus)),
+	      recorder_(recorder) {}
 
 	index_t get_max_vertex(const index_t idx, const index_t k, const index_t n) const {
 		return get_max(n, k - 1, [&](index_t w) -> bool { return (binomial_coeff(w, k) <= idx); });
@@ -619,10 +637,15 @@ public:
 			index_t u = dset.find(vertices_of_edge[0]), v = dset.find(vertices_of_edge[1]);
 
 			if (u != v) {
+				value_t birth = 0.0f;
+				value_t death = get_diameter(e);
+
+				if (death != 0) {
 #ifdef PRINT_PERSISTENCE_PAIRS
-				if (get_diameter(e) != 0)
-					std::cout << " [0," << get_diameter(e) << ")" << std::endl;
+					std::cout << " [" << birth << "," << death << ")" << std::endl;
 #endif
+					recorder_.emit(/*dim=*/0, birth, death);
+				}
 				dset.link(u, v);
 			} else if (get_index(get_zero_apparent_cofacet(e, 1)) == -1)
 				columns_to_reduce.push_back(e);
@@ -633,6 +656,11 @@ public:
 		for (index_t i = 0; i < n; ++i)
 			if (dset.find(i) == i) std::cout << " [0, )" << std::endl;
 #endif
+		for (index_t i = 0; i < n; ++i) {
+			if (dset.find(i) == i) {
+				recorder_.emit(/*dim=*/0, /*birth=*/0.0f, /*death=*/-1.0f);
+			}
+		}
 	}
 
 	template <typename Column> diameter_entry_t pop_pivot(Column& column) {
@@ -774,15 +802,16 @@ public:
 
 						pivot = get_pivot(working_coboundary);
 					} else {
-#ifdef PRINT_PERSISTENCE_PAIRS
 						value_t death = get_diameter(pivot);
 						if (death > diameter * ratio) {
+#ifdef PRINT_PERSISTENCE_PAIRS
 #ifdef INDICATE_PROGRESS
 							std::cerr << clear_line << std::flush;
 #endif
 							std::cout << " [" << diameter << "," << death << ")" << std::endl;
-						}
 #endif
+							recorder_.emit(/*dim=*/dim, diameter, death);
+						}
 						pivot_column_index.insert({get_entry(pivot), index_column_to_reduce});
 
 						while (true) {
@@ -800,6 +829,7 @@ public:
 #endif
 					std::cout << " [" << diameter << ", )" << std::endl;
 #endif
+					recorder_.emit(/*dim=*/dim, diameter, /*death=*/-1.0f);
 					break;
 				}
 			}
