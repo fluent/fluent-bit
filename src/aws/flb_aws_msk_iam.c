@@ -663,11 +663,15 @@ static void oauthbearer_token_refresh_cb(rd_kafka_t *rk,
     err = rd_kafka_oauthbearer_set_token(rk,
                                         payload,
                                         md_lifetime_ms,
-                                        creds ? creds->access_key_id : "unknown",
+                                        creds->access_key_id,
                                         NULL,
                                         0,
                                         errstr,
                                         sizeof(errstr));
+
+    /* Destroy credentials immediately after use (standard pattern) */
+    flb_aws_credentials_destroy(creds);
+    creds = NULL;
 
     if (err != RD_KAFKA_RESP_ERR_NO_ERROR) {
         flb_error("[aws_msk_iam] failed to set OAuth bearer token: %s", errstr);
@@ -677,10 +681,7 @@ static void oauthbearer_token_refresh_cb(rd_kafka_t *rk,
         flb_info("[aws_msk_iam] OAuth bearer token successfully set");
     }
 
-    /* Clean up - credentials and payload */
-    if (creds) {
-        flb_aws_credentials_destroy(creds);
-    }
+    /* Clean up - payload only (creds already destroyed) */
     if (payload) {
         flb_sds_destroy(payload);
     }
