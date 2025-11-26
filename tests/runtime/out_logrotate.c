@@ -1,7 +1,6 @@
 /* -*- Mode: C; tab-width: 4; indent-tabs-mode: nil; c-basic-offset: 4 -*- */
 
 #include "flb_tests_runtime.h"
-#include <dirent.h>
 #include <fluent-bit.h>
 #include <fluent-bit/flb_engine.h>
 #include <fluent-bit/flb_sds.h>
@@ -12,7 +11,12 @@
 #include <sys/stat.h>
 #include <sys/types.h>
 #include <time.h>
+#ifndef FLB_SYSTEM_WINDOWS
+#include <dirent.h>
 #include <unistd.h>
+#else
+#include <windows.h>
+#endif
 
 /* Test data */
 #include "data/common/json_invalid.h" /* JSON_INVALID */
@@ -64,6 +68,63 @@ TEST_LIST = {{"basic_rotation", flb_test_logrotate_basic_rotation},
 
 /* Helper function to recursively delete directory and all its contents */
 static int recursive_delete_directory(const char *dir_path) {
+#ifdef FLB_SYSTEM_WINDOWS
+  WIN32_FIND_DATAA ffd;
+  HANDLE hFind = INVALID_HANDLE_VALUE;
+  char search_path[PATH_MAX];
+  char file_path[PATH_MAX];
+  int ret = 0;
+
+  if (dir_path == NULL) {
+    return -1;
+  }
+
+  /* Create search path: dir_path\* */
+  snprintf(search_path, sizeof(search_path), "%s\\*", dir_path);
+  search_path[sizeof(search_path) - 1] = '\0';
+
+  hFind = FindFirstFileA(search_path, &ffd);
+  if (hFind == INVALID_HANDLE_VALUE) {
+    /* Directory doesn't exist or can't be opened, consider it success */
+    return 0;
+  }
+
+  do {
+    /* Skip . and .. */
+    if (strcmp(ffd.cFileName, ".") == 0 || strcmp(ffd.cFileName, "..") == 0) {
+      continue;
+    }
+
+    /* Build full path */
+    snprintf(file_path, sizeof(file_path), "%s\\%s", dir_path, ffd.cFileName);
+    file_path[sizeof(file_path) - 1] = '\0';
+
+    /* Recursively delete subdirectories */
+    if (ffd.dwFileAttributes & FILE_ATTRIBUTE_DIRECTORY) {
+      if (recursive_delete_directory(file_path) != 0) {
+        ret = -1;
+      }
+    } else {
+      /* Delete file - clear read-only if needed */
+      if (ffd.dwFileAttributes & FILE_ATTRIBUTE_READONLY) {
+        SetFileAttributesA(file_path,
+                           ffd.dwFileAttributes & ~FILE_ATTRIBUTE_READONLY);
+      }
+      if (DeleteFileA(file_path) == 0) {
+        ret = -1;
+      }
+    }
+  } while (FindNextFileA(hFind, &ffd) != 0);
+
+  FindClose(hFind);
+
+  /* Remove the directory itself */
+  if (RemoveDirectoryA(dir_path) == 0) {
+    ret = -1;
+  }
+
+  return ret;
+#else
   DIR *dir;
   struct dirent *entry;
   struct stat statbuf;
@@ -128,6 +189,7 @@ static int recursive_delete_directory(const char *dir_path) {
   }
 
   return ret;
+#endif
 }
 
 /* Helper function to count files in directory */
