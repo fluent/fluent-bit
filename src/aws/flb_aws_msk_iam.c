@@ -779,7 +779,8 @@ struct flb_aws_msk_iam *flb_aws_msk_iam_register_oauth_cb(struct flb_config *con
         return NULL;
     }
 
-    /* Initialize provider */
+    /* Initialize provider in sync mode (required before event loop is available) */
+    ctx->provider->provider_vtable->sync(ctx->provider);
     if (ctx->provider->provider_vtable->init(ctx->provider) != 0) {
         flb_error("[aws_msk_iam] failed to initialize AWS credentials provider");
         flb_aws_provider_destroy(ctx->provider);
@@ -789,6 +790,8 @@ struct flb_aws_msk_iam *flb_aws_msk_iam_register_oauth_cb(struct flb_config *con
         flb_free(ctx);
         return NULL;
     }
+    /* Switch back to async mode */
+    ctx->provider->provider_vtable->async(ctx->provider);
 
     flb_info("[aws_msk_iam] AWS credentials provider created and initialized successfully");
 
