@@ -1,5 +1,5 @@
 add_library(flb-ripser STATIC
-    ripser.cpp          # upstream
+    ripser.cpp          # upstream + patched version
     # ripser_wrapper.cpp
 )
 
