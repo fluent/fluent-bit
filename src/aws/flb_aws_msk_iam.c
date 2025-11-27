@@ -648,7 +648,10 @@ static void oauthbearer_token_refresh_cb(rd_kafka_t *rk,
      * If OAuth callbacks are spaced far apart, the passive refresh may not trigger
      * before credentials expire, causing authentication failures.
      */
-    config->provider->provider_vtable->refresh(config->provider);
+    int rc = config->provider->provider_vtable->refresh(config->provider);
+    if (rc < 0) {
+        flb_warn("[aws_msk_iam] AWS provider refresh() failed (rc=%d), continuing to get_credentials()", rc);
+    }
 
     /* Get credentials from provider */
     creds = config->provider->provider_vtable->get_credentials(config->provider);
@@ -829,7 +832,7 @@ void flb_aws_msk_iam_destroy(struct flb_aws_msk_iam *ctx)
         flb_aws_provider_destroy(ctx->provider);
     }
 
-    /* Clean up TLS instance */
+    /* Clean up TLS instance - caller owns TLS lifecycle with flb_standard_chain_provider_create */
     if (ctx->cred_tls) {
         flb_tls_destroy(ctx->cred_tls);
     }
