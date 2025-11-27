@@ -175,6 +175,9 @@ int refresh_fn_sts(struct flb_aws_provider *provider) {
     struct flb_aws_provider_sts *implementation = provider->implementation;
 
     flb_debug("[aws_credentials] Refresh called on the STS provider");
+    
+    /* Force credential refresh by marking as expired */
+    implementation->next_refresh = 0;
 
     if (try_lock_provider(provider)) {
         ret = sts_assume_role_request(implementation->sts_client,
@@ -480,6 +483,10 @@ int refresh_fn_eks(struct flb_aws_provider *provider) {
     struct flb_aws_provider_eks *implementation = provider->implementation;
 
     flb_debug("[aws_credentials] Refresh called on the EKS provider");
+    
+    /* Force credential refresh by marking as expired */
+    implementation->next_refresh = 0;
+    
     if (try_lock_provider(provider)) {
         ret = assume_with_web_identity(implementation);
         unlock_provider(provider);
