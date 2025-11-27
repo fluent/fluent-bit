@@ -152,12 +152,26 @@ error:
     return NULL;
 }
 
+/**
+ * Trigger an immediate credentials refresh for an HTTP provider.
+ *
+ * If the provider can be locked, forces an immediate refresh and performs a
+ * credential fetch using the provider's HTTP implementation; the lock is
+ * released after the fetch completes. If the provider lock cannot be
+ * acquired, no refresh is attempted.
+ *
+ * @param provider AWS provider that contains the HTTP implementation to refresh.
+ * @returns `0` on successful credential retrieval and update, `-1` on failure or if the provider lock could not be acquired.
+ */
 int refresh_fn_http(struct flb_aws_provider *provider) {
     struct flb_aws_provider_http *implementation = provider->implementation;
     int ret = -1;
     flb_debug("[aws_credentials] Refresh called on the http provider");
 
     if (try_lock_provider(provider)) {
+        /* Set to 1 (epoch start) to trigger immediate refresh via time check */
+        implementation->next_refresh = 1;
+        
         ret = http_credentials_request(implementation);
         unlock_provider(provider);
     }
