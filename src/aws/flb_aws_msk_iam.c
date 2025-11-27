@@ -216,17 +216,17 @@ static flb_sds_t build_msk_iam_payload(struct flb_aws_msk_iam *config,
         return NULL;
     }
 
-    flb_info("[aws_msk_iam] build_msk_iam_payload_with_creds: generating payload for host: %s, region: %s",
-             host, config->region);
+    flb_debug("[aws_msk_iam] build_msk_iam_payload: generating payload for host: %s, region: %s",
+              host, config->region);
 
     /* Validate credentials */
     if (!creds) {
-        flb_error("[aws_msk_iam] build_msk_iam_payload_with_creds: credentials are NULL");
+        flb_error("[aws_msk_iam] build_msk_iam_payload: credentials are NULL");
         return NULL;
     }
 
     if (!creds->access_key_id || !creds->secret_access_key) {
-        flb_error("[aws_msk_iam] build_msk_iam_payload_with_creds: incomplete credentials");
+        flb_error("[aws_msk_iam] build_msk_iam_payload: incomplete credentials");
         return NULL;
     }
 
@@ -635,12 +635,19 @@ static void oauthbearer_token_refresh_cb(rd_kafka_t *rk,
         flb_debug("[aws_msk_iam] using MSK generic endpoint: %s", host);
     }
 
-    flb_info("[aws_msk_iam] requesting MSK IAM payload for region: %s, host: %s", config->region, host);
+    flb_debug("[aws_msk_iam] requesting MSK IAM payload for region: %s, host: %s", config->region, host);
 
     /* 
-     * Get credentials from provider. The provider handles caching and expiration internally.
-     * The provider automatically manages credential refresh when needed.
+     * Refresh credentials before generating OAuth token.
+     * This is necessary because provider's passive refresh only triggers when
+     * get_credentials is called and detects expiration. However, OAuth tokens
+     * are refreshed every ~15 minutes while IAM credentials expire after ~1 hour.
+     * If OAuth callbacks are spaced far apart, the passive refresh may not trigger
+     * before credentials expire, causing authentication failures.
      */
+    config->provider->provider_vtable->refresh(config->provider);
+
+    /* Get credentials from provider */
     creds = config->provider->provider_vtable->get_credentials(config->provider);
     if (!creds) {
         flb_error("[aws_msk_iam] failed to get AWS credentials from provider");
