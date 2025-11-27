@@ -176,10 +176,15 @@ int refresh_fn_sts(struct flb_aws_provider *provider) {
 
     flb_debug("[aws_credentials] Refresh called on the STS provider");
     
-    /* Force credential refresh by marking as expired */
-    implementation->next_refresh = 0;
-
     if (try_lock_provider(provider)) {
+        /* Force credential refresh by clearing cache and setting expired time */
+        if (implementation->creds) {
+            flb_aws_credentials_destroy(implementation->creds);
+            implementation->creds = NULL;
+        }
+        /* Set to 1 (epoch start) to trigger immediate refresh via time check */
+        implementation->next_refresh = 1;
+        
         ret = sts_assume_role_request(implementation->sts_client,
                                       &implementation->creds, implementation->uri,
                                       &implementation->next_refresh);
@@ -484,10 +489,15 @@ int refresh_fn_eks(struct flb_aws_provider *provider) {
 
     flb_debug("[aws_credentials] Refresh called on the EKS provider");
     
-    /* Force credential refresh by marking as expired */
-    implementation->next_refresh = 0;
-    
     if (try_lock_provider(provider)) {
+        /* Force credential refresh by clearing cache and setting expired time */
+        if (implementation->creds) {
+            flb_aws_credentials_destroy(implementation->creds);
+            implementation->creds = NULL;
+        }
+        /* Set to 1 (epoch start) to trigger immediate refresh via time check */
+        implementation->next_refresh = 1;
+        
         ret = assume_with_web_identity(implementation);
         unlock_provider(provider);
     }
