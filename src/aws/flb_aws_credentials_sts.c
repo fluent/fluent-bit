@@ -177,11 +177,6 @@ int refresh_fn_sts(struct flb_aws_provider *provider) {
     flb_debug("[aws_credentials] Refresh called on the STS provider");
     
     if (try_lock_provider(provider)) {
-        /* Force credential refresh by clearing cache and setting expired time */
-        if (implementation->creds) {
-            flb_aws_credentials_destroy(implementation->creds);
-            implementation->creds = NULL;
-        }
         /* Set to 1 (epoch start) to trigger immediate refresh via time check */
         implementation->next_refresh = 1;
         
@@ -490,11 +485,6 @@ int refresh_fn_eks(struct flb_aws_provider *provider) {
     flb_debug("[aws_credentials] Refresh called on the EKS provider");
     
     if (try_lock_provider(provider)) {
-        /* Force credential refresh by clearing cache and setting expired time */
-        if (implementation->creds) {
-            flb_aws_credentials_destroy(implementation->creds);
-            implementation->creds = NULL;
-        }
         /* Set to 1 (epoch start) to trigger immediate refresh via time check */
         implementation->next_refresh = 1;
         
