@@ -570,6 +570,9 @@ error:
     if (session_token_enc) {
         flb_sds_destroy(session_token_enc);
     }
+    if (empty_payload_hex) {
+        flb_sds_destroy(empty_payload_hex);
+    }
 
     return NULL;
 }
