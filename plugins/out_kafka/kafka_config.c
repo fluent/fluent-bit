@@ -259,14 +259,15 @@ struct flb_out_kafka *flb_out_kafka_create(struct flb_output_instance *ins,
         rd_kafka_error_t *error;
         error = rd_kafka_sasl_background_callbacks_enable(ctx->kafka.rk);
         if (error) {
-            flb_plg_error(ctx->ins, "failed to enable SASL background callbacks: %s",
+            flb_plg_warn(ctx->ins, "failed to enable SASL background callbacks: %s. "
+                         "OAuth tokens may not refresh on idle connections.",
                          rd_kafka_error_string(error));
             rd_kafka_error_destroy(error);
-            flb_out_kafka_destroy(ctx);
-            return NULL;
         }
-        flb_plg_info(ctx->ins, "MSK IAM: SASL background callbacks enabled, "
-                     "OAuth tokens will be refreshed automatically in background thread");
+        else {
+            flb_plg_info(ctx->ins, "MSK IAM: SASL background callbacks enabled, "
+                         "OAuth tokens will be refreshed automatically in background thread");
+        }
     }
 #endif
 
