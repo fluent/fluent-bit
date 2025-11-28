@@ -67,6 +67,9 @@ struct flb_out_kafka *flb_out_kafka_create(struct flb_output_instance *ins,
 #ifdef FLB_HAVE_AWS_MSK_IAM
         /* Check if using aws_msk_iam as SASL mechanism */
         if (strcasecmp(tmp, "aws_msk_iam") == 0) {
+            /* Mark that user explicitly requested AWS MSK IAM */
+            ctx->aws_msk_iam = FLB_TRUE;
+            
             /* Set SASL mechanism to OAUTHBEARER for librdkafka */
             flb_output_set_property(ins, "rdkafka.sasl.mechanism", "OAUTHBEARER");
             flb_sds_destroy(ctx->sasl_mechanism);
@@ -203,19 +206,25 @@ struct flb_out_kafka *flb_out_kafka_create(struct flb_output_instance *ins,
     flb_kafka_opaque_set(ctx->opaque, ctx, &ctx->kafka);
     rd_kafka_conf_set_opaque(ctx->conf, ctx->opaque);
 
-#ifdef FLB_HAVE_AWS_MSK_IAM
+    /*
+     * Enable SASL queue for all OAUTHBEARER configurations.
+     * This allows librdkafka to handle OAuth token refresh in a background thread,
+     * which is essential for idle connections where rd_kafka_poll() is not called.
+     * This benefits all OAUTHBEARER methods: AWS IAM, OIDC, custom OAuth, etc.
+     */
     if (ctx->sasl_mechanism && strcasecmp(ctx->sasl_mechanism, "OAUTHBEARER") == 0) {
+        rd_kafka_conf_enable_sasl_queue(ctx->conf, 1);
+        flb_plg_debug(ins, "SASL queue enabled for OAUTHBEARER mechanism");
+    }
+
+#ifdef FLB_HAVE_AWS_MSK_IAM
+    /* Only register MSK IAM if user explicitly requested it via rdkafka.sasl.mechanism=aws_msk_iam */
+    if (ctx->aws_msk_iam && ctx->sasl_mechanism && 
+        strcasecmp(ctx->sasl_mechanism, "OAUTHBEARER") == 0) {
         /* Check if brokers are configured for MSK IAM */
         tmp = flb_output_get_property("brokers", ins);
         if (tmp && (strstr(tmp, ".kafka.") || strstr(tmp, ".kafka-serverless.")) && 
             strstr(tmp, ".amazonaws.com")) {
-
-            /*
-             * Enable SASL queue for background callbacks BEFORE registering OAuth callback.
-             * This allows librdkafka to handle OAuth token refresh in a background thread,
-             * which is essential for idle connections where rd_kafka_poll() is not called.
-             */
-            rd_kafka_conf_enable_sasl_queue(ctx->conf, 1);
 
             /* Register MSK IAM OAuth callback - extract region from broker address */
             flb_plg_info(ins, "registering AWS MSK IAM authentication (region auto-extracted from broker)");
@@ -248,12 +257,12 @@ struct flb_out_kafka *flb_out_kafka_create(struct flb_output_instance *ins,
         return NULL;
     }
 
-#ifdef FLB_HAVE_AWS_MSK_IAM
     /*
-     * Enable SASL background callbacks for MSK IAM to ensure OAuth tokens
-     * are refreshed automatically even on idle connections.
+     * Enable SASL background callbacks for all OAUTHBEARER configurations.
+     * This ensures OAuth tokens are refreshed automatically even on idle connections.
+     * This benefits all OAUTHBEARER methods: AWS IAM, OIDC, custom OAuth, etc.
      */
-    if (ctx->msk_iam) {
+    if (ctx->sasl_mechanism && strcasecmp(ctx->sasl_mechanism, "OAUTHBEARER") == 0) {
         rd_kafka_error_t *error;
         error = rd_kafka_sasl_background_callbacks_enable(ctx->kafka.rk);
         if (error) {
@@ -263,11 +272,10 @@ struct flb_out_kafka *flb_out_kafka_create(struct flb_output_instance *ins,
             rd_kafka_error_destroy(error);
         }
         else {
-            flb_plg_info(ctx->ins, "MSK IAM: SASL background callbacks enabled, "
+            flb_plg_info(ctx->ins, "OAUTHBEARER: SASL background callbacks enabled, "
                          "OAuth tokens will be refreshed automatically in background thread");
         }
     }
-#endif
 
 #ifdef FLB_HAVE_AVRO_ENCODER
     /* Config AVRO */
