@@ -237,7 +237,7 @@ static struct flb_config_map config_map[] = {
     {
      FLB_CONFIG_MAP_BOOL, "http2", "true",
      0, FLB_TRUE, offsetof(struct flb_in_elasticsearch, enable_http2),
-     NULL
+     "Enable HTTP/2 support"
     },
 
     {
