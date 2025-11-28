@@ -177,9 +177,6 @@ int refresh_fn_sts(struct flb_aws_provider *provider) {
     flb_debug("[aws_credentials] Refresh called on the STS provider");
     
     if (try_lock_provider(provider)) {
-        /* Set to 1 (epoch start) to trigger immediate refresh via time check */
-        implementation->next_refresh = 1;
-        
         ret = sts_assume_role_request(implementation->sts_client,
                                       &implementation->creds, implementation->uri,
                                       &implementation->next_refresh);
@@ -485,9 +482,6 @@ int refresh_fn_eks(struct flb_aws_provider *provider) {
     flb_debug("[aws_credentials] Refresh called on the EKS provider");
     
     if (try_lock_provider(provider)) {
-        /* Set to 1 (epoch start) to trigger immediate refresh via time check */
-        implementation->next_refresh = 1;
-        
         ret = assume_with_web_identity(implementation);
         unlock_provider(provider);
     }
