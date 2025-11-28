@@ -594,8 +594,7 @@ static void oauthbearer_token_refresh_cb(rd_kafka_t *rk,
         rd_kafka_oauthbearer_set_token_failure(rk, errstr);
     }
     else {
-        flb_info("[aws_msk_iam] OAuth bearer token successfully set with %d second lifetime",
-                 MSK_IAM_TOKEN_LIFETIME_SECONDS);
+        flb_info("[aws_msk_iam] OAuth bearer token refreshed");
     }
 
     if (payload) {
@@ -673,8 +672,9 @@ struct flb_aws_msk_iam *flb_aws_msk_iam_register_oauth_cb(struct flb_config *con
     flb_free(first_broker);
     first_broker = NULL;
     
-    flb_info("[aws_msk_iam] extracted region '%s' from broker address%s", 
-             region_str, ctx->is_serverless ? " (Serverless)" : "");
+    flb_info("[aws_msk_iam] detected %s MSK cluster, region: %s", 
+             ctx->is_serverless ? "Serverless" : "Standard",
+             region_str);
 
     /* Create TLS instance */
     ctx->cred_tls = flb_tls_create(FLB_TLS_CLIENT_MODE,
