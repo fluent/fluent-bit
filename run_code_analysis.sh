@@ -11,7 +11,7 @@ CONTAINER_RUNTIME=${CONTAINER_RUNTIME:-docker}
 
 # From the Dockerfile
 FLB_CMAKE_OPTIONS=${FLB_CMAKE_OPTIONS:--DFLB_BACKTRACE=Off -DFLB_SHARED_LIB=Off -DFLB_DEBUG=On -DFLB_ALL=On -DFLB_EXAMPLES=Off -DFLB_TESTS_INTERNAL=On -DFLB_TESTS_RUNTIME=On}
-ADDITIONAL_DEPS=${ADDITIONAL_DEPS:-libssl-dev libsasl2-dev pkg-config libsystemd-dev zlib1g-dev libpq-dev postgresql-server-dev-all flex bison libyaml-dev netcat}
+ADDITIONAL_DEPS=${ADDITIONAL_DEPS:-libssl-dev libsasl2-dev pkg-config libsystemd-dev zlib1g-dev libpq-dev postgresql-server-dev-all flex bison libsnmp-dev libyaml-dev netcat}
 
 # From the Unit Tests script
 SKIP_TESTS=${SKIP_TESTS:-flb-rt-out_elasticsearch flb-it-network flb-it-fstore flb-rt-out_elasticsearch flb-rt-out_td flb-rt-out_forward flb-rt-in_disk flb-rt-in_proc}

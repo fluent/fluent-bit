@@ -49,6 +49,7 @@ DEFINE_OPTION(FLB_IN_PROMETHEUS_SCRAPE        "Enable Prometheus Scrape input pl
 DEFINE_OPTION(FLB_IN_PROMETHEUS_TEXTFILE      "Enable Prometheus textfile input plugin"      ON)
 DEFINE_OPTION(FLB_IN_RANDOM                   "Enable random input plugin"                   ON)
 DEFINE_OPTION(FLB_IN_SERIAL                   "Enable Serial input plugin"                   ON)
+DEFINE_OPTION(FLB_IN_SNMP                     "Enable SNMP input plugin"                     ON)
 DEFINE_OPTION(FLB_IN_SPLUNK                   "Enable Splunk HTTP HEC input plugin"          ON)
 DEFINE_OPTION(FLB_IN_STATSD                   "Enable StatsD input plugin"                   ON)
 DEFINE_OPTION(FLB_IN_STDIN                    "Enable Standard input plugin"                 ON)
