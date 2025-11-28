@@ -613,7 +613,7 @@ struct flb_aws_msk_iam *flb_aws_msk_iam_register_oauth_cb(struct flb_config *con
     }
     
     kafka_ctx = (struct flb_kafka *) opaque->msk_iam_ctx;
-    if (!kafka_ctx->brokers || flb_sds_len(kafka_ctx->brokers) == 0) {
+    if (!kafka_ctx->brokers || strlen(kafka_ctx->brokers) == 0) {
         flb_error("[aws_msk_iam] brokers configuration is required for region extraction");
         flb_free(ctx);
         return NULL;
