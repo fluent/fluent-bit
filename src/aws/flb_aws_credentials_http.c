@@ -158,9 +158,6 @@ int refresh_fn_http(struct flb_aws_provider *provider) {
     flb_debug("[aws_credentials] Refresh called on the http provider");
 
     if (try_lock_provider(provider)) {
-        /* Set to 1 (epoch start) to trigger immediate refresh via time check */
-        implementation->next_refresh = 1;
-        
         ret = http_credentials_request(implementation);
         unlock_provider(provider);
     }
