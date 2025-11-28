@@ -233,15 +233,16 @@ struct flb_out_kafka *flb_out_kafka_create(struct flb_output_instance *ins,
                                                              ctx->opaque);
             if (!ctx->msk_iam) {
                 flb_plg_error(ctx->ins, "failed to setup MSK IAM authentication OAuth callback");
+                flb_out_kafka_destroy(ctx);
+                return NULL;
             }
-            else {
-                res = rd_kafka_conf_set(ctx->conf, "sasl.oauthbearer.config",
-                                        "principal=admin", errstr, sizeof(errstr));
-                if (res != RD_KAFKA_CONF_OK) {
-                    flb_plg_error(ctx->ins,
-                                 "failed to set sasl.oauthbearer.config: %s",
-                                 errstr);
-                }
+            
+            res = rd_kafka_conf_set(ctx->conf, "sasl.oauthbearer.config",
+                                    "principal=admin", errstr, sizeof(errstr));
+            if (res != RD_KAFKA_CONF_OK) {
+                flb_plg_error(ctx->ins,
+                             "failed to set sasl.oauthbearer.config: %s",
+                             errstr);
             }
         }
     }
@@ -250,6 +251,9 @@ struct flb_out_kafka *flb_out_kafka_create(struct flb_output_instance *ins,
     /* Kafka Producer */
     ctx->kafka.rk = rd_kafka_new(RD_KAFKA_PRODUCER, ctx->conf,
                                  errstr, sizeof(errstr));
+    /* rd_kafka_new takes ownership of conf regardless of success/failure */
+    ctx->conf = NULL;
+    
     if (!ctx->kafka.rk) {
         flb_plg_error(ctx->ins, "failed to create producer: %s",
                       errstr);
@@ -334,7 +338,12 @@ int flb_out_kafka_destroy(struct flb_out_kafka *ctx)
     flb_kafka_topic_destroy_all(ctx);
 
     if (ctx->kafka.rk) {
+        /* rd_kafka_destroy also destroys the conf that was passed to rd_kafka_new */
         rd_kafka_destroy(ctx->kafka.rk);
+    }
+    else if (ctx->conf) {
+        /* If rd_kafka was never created, we need to destroy conf manually */
+        rd_kafka_conf_destroy(ctx->conf);
     }
 
     if (ctx->opaque) {

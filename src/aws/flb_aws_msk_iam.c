@@ -175,7 +175,7 @@ static flb_sds_t extract_region_from_broker(const char *broker)
     }
     
     len = end - start;
-    if (len == 0 || len > 64) {  /* Sanity check on region length (relaxed to 64 chars) */
+    if (len == 0 || len > 32) {  /* Sanity check on region length (AWS regions are typically <= 20 chars) */
         return NULL;
     }
     
@@ -597,25 +597,19 @@ struct flb_aws_msk_iam *flb_aws_msk_iam_register_oauth_cb(struct flb_config *con
     char *first_broker = NULL;
     char *comma;
 
-    ctx = flb_calloc(1, sizeof(struct flb_aws_msk_iam));
-    if (!ctx) {
-        flb_errno();
-        return NULL;
-    }
-
-    ctx->flb_config = config;
-
-    /* Extract region from broker address */
+    /*
+     * Extract region from broker address before allocating context.
+     * The caller must set opaque->msk_iam_ctx to point to struct flb_kafka
+     * before calling this function, which we use to extract the broker address.
+     */
     if (!opaque || !opaque->msk_iam_ctx) {
         flb_error("[aws_msk_iam] unable to access kafka context for broker-based region extraction");
-        flb_free(ctx);
         return NULL;
     }
     
     kafka_ctx = (struct flb_kafka *) opaque->msk_iam_ctx;
     if (!kafka_ctx->brokers || strlen(kafka_ctx->brokers) == 0) {
         flb_error("[aws_msk_iam] brokers configuration is required for region extraction");
-        flb_free(ctx);
         return NULL;
     }
     
@@ -623,7 +617,6 @@ struct flb_aws_msk_iam *flb_aws_msk_iam_register_oauth_cb(struct flb_config *con
     first_broker = flb_strdup(kafka_ctx->brokers);
     if (!first_broker) {
         flb_error("[aws_msk_iam] failed to allocate memory for broker parsing");
-        flb_free(ctx);
         return NULL;
     }
     
@@ -632,10 +625,31 @@ struct flb_aws_msk_iam *flb_aws_msk_iam_register_oauth_cb(struct flb_config *con
         *comma = '\0';  /* Terminate at first comma */
     }
     
-    /* Detect if this is MSK Serverless by checking broker address
-     * Serverless broker contains .kafka-serverless. in the hostname
-     * Standard broker contains .kafka. (but not .kafka-serverless.)
-     */
+    /* Extract region from broker address */
+    region_str = extract_region_from_broker(first_broker);
+    if (!region_str || flb_sds_len(region_str) == 0) {
+        flb_error("[aws_msk_iam] failed to extract region from broker address: %s", 
+                 kafka_ctx->brokers);
+        flb_free(first_broker);
+        if (region_str) {
+            flb_sds_destroy(region_str);
+        }
+        return NULL;
+    }
+    
+    /* Detect if this is MSK Serverless by checking broker address */
+    ctx = flb_calloc(1, sizeof(struct flb_aws_msk_iam));
+    if (!ctx) {
+        flb_errno();
+        flb_free(first_broker);
+        flb_sds_destroy(region_str);
+        return NULL;
+    }
+
+    ctx->flb_config = config;
+    ctx->region = region_str;
+    
+    /* Detect cluster type (Standard vs Serverless) */
     if (strstr(first_broker, ".kafka-serverless.")) {
         ctx->is_serverless = 1;
         flb_info("[aws_msk_iam] detected MSK Serverless cluster");
@@ -644,34 +658,16 @@ struct flb_aws_msk_iam *flb_aws_msk_iam_register_oauth_cb(struct flb_config *con
         ctx->is_serverless = 0;
     }
     
-    /* Extract region from broker address */
-    region_str = extract_region_from_broker(first_broker);
     flb_free(first_broker);
-    
-    if (!region_str || flb_sds_len(region_str) == 0) {
-        flb_error("[aws_msk_iam] failed to extract region from broker address: %s", 
-                 kafka_ctx->brokers);
-        flb_free(ctx);
-        if (region_str) {
-            flb_sds_destroy(region_str);
-        }
-        return NULL;
-    }
+    first_broker = NULL;
     
     flb_info("[aws_msk_iam] extracted region '%s' from broker address%s", 
              region_str, ctx->is_serverless ? " (Serverless)" : "");
 
-    ctx->region = region_str;
-
-    if (!ctx->region) {
-        flb_free(ctx);
-        return NULL;
-    }
-
     /* Create TLS instance */
     ctx->cred_tls = flb_tls_create(FLB_TLS_CLIENT_MODE,
                                     FLB_TRUE,
-                                    FLB_LOG_DEBUG,
+                                    0,  /* TLS debug off by default */
                                     NULL, NULL, NULL, NULL, NULL, NULL);
     if (!ctx->cred_tls) {
         flb_error("[aws_msk_iam] failed to create TLS instance");
@@ -707,10 +703,16 @@ struct flb_aws_msk_iam *flb_aws_msk_iam_register_oauth_cb(struct flb_config *con
     }
     ctx->provider->provider_vtable->async(ctx->provider);
 
-    /* Register callback */
-    rd_kafka_conf_set_oauthbearer_token_refresh_cb(kconf, oauthbearer_token_refresh_cb);
+    /*
+     * CRITICAL: Set the correct context type in opaque BEFORE registering the callback.
+     * This eliminates the race condition where the callback could be triggered with
+     * the wrong context type during the initialization window.
+     */
     flb_kafka_opaque_set(opaque, NULL, ctx);
     rd_kafka_conf_set_opaque(kconf, opaque);
+    
+    /* Now safe to register callback - opaque->msk_iam_ctx is already the correct type */
+    rd_kafka_conf_set_oauthbearer_token_refresh_cb(kconf, oauthbearer_token_refresh_cb);
 
     return ctx;
 }
