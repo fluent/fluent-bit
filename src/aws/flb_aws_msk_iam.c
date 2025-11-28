@@ -606,13 +606,13 @@ struct flb_aws_msk_iam *flb_aws_msk_iam_register_oauth_cb(struct flb_config *con
     ctx->flb_config = config;
 
     /* Extract region from broker address */
-    if (!opaque || !opaque->kafka_ctx) {
+    if (!opaque || !opaque->ptr) {
         flb_error("[aws_msk_iam] unable to access kafka context for broker-based region extraction");
         flb_free(ctx);
         return NULL;
     }
     
-    kafka_ctx = opaque->kafka_ctx;
+    kafka_ctx = (struct flb_kafka *) opaque->ptr;
     if (!kafka_ctx->brokers || flb_sds_len(kafka_ctx->brokers) == 0) {
         flb_error("[aws_msk_iam] brokers configuration is required for region extraction");
         flb_free(ctx);
