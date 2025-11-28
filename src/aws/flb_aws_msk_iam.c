@@ -555,7 +555,7 @@ static void oauthbearer_token_refresh_cb(rd_kafka_t *rk,
      * valid when the callback is eventually triggered, allowing successful token regeneration.
      */
     now = time(NULL);
-    md_lifetime_ms = (now + MSK_IAM_TOKEN_LIFETIME_SECONDS) * 1000;
+    md_lifetime_ms = ((int64_t)now + MSK_IAM_TOKEN_LIFETIME_SECONDS) * 1000;
 
     err = rd_kafka_oauthbearer_set_token(rk,
                                         payload,
