@@ -277,6 +277,9 @@ static int in_kafka_init(struct flb_input_instance *ins,
 #ifdef FLB_HAVE_AWS_MSK_IAM
         /* Check if using aws_msk_iam as SASL mechanism */
         if (strcasecmp(conf, "aws_msk_iam") == 0) {
+            /* Mark that user explicitly requested AWS MSK IAM */
+            ctx->aws_msk_iam = FLB_TRUE;
+            
             /* Set SASL mechanism to OAUTHBEARER for librdkafka */
             flb_input_set_property(ins, "rdkafka.sasl.mechanism", "OAUTHBEARER");
             flb_sds_destroy(ctx->sasl_mechanism);
@@ -341,8 +344,21 @@ static int in_kafka_init(struct flb_input_instance *ins,
     flb_kafka_opaque_set(ctx->opaque, ctx, &ctx->kafka);
     rd_kafka_conf_set_opaque(kafka_conf, ctx->opaque);
 
-#ifdef FLB_HAVE_AWS_MSK_IAM
+    /*
+     * Enable SASL queue for all OAUTHBEARER configurations.
+     * This allows librdkafka to handle OAuth token refresh in a background thread,
+     * which is essential for idle connections or when poll intervals are large.
+     * This benefits all OAUTHBEARER methods: AWS IAM, OIDC, custom OAuth, etc.
+     */
     if (ctx->sasl_mechanism && strcasecmp(ctx->sasl_mechanism, "OAUTHBEARER") == 0) {
+        rd_kafka_conf_enable_sasl_queue(kafka_conf, 1);
+        flb_plg_debug(ins, "SASL queue enabled for OAUTHBEARER mechanism");
+    }
+
+#ifdef FLB_HAVE_AWS_MSK_IAM
+    /* Only register MSK IAM if user explicitly requested it via rdkafka.sasl.mechanism=aws_msk_iam */
+    if (ctx->aws_msk_iam && ctx->sasl_mechanism && 
+        strcasecmp(ctx->sasl_mechanism, "OAUTHBEARER") == 0) {
         /* Check if brokers are configured for MSK IAM */
         conf = flb_input_get_property("brokers", ins);
         if (conf && (strstr(conf, ".kafka.") || strstr(conf, ".kafka-serverless.")) && 
@@ -376,6 +392,28 @@ static int in_kafka_init(struct flb_input_instance *ins,
     if (!ctx->kafka.rk) {
         flb_plg_error(ins, "Failed to create new consumer: %s", errstr);
         goto init_error;
+    }
+
+    /*
+     * Enable SASL background callbacks for all OAUTHBEARER configurations.
+     * This ensures OAuth tokens are refreshed automatically even when:
+     * - Poll intervals are large
+     * - Topics have no messages
+     * - Collector is paused
+     * This benefits all OAUTHBEARER methods: AWS IAM, OIDC, custom OAuth, etc.
+     */
+    if (ctx->sasl_mechanism && strcasecmp(ctx->sasl_mechanism, "OAUTHBEARER") == 0) {
+        rd_kafka_error_t *error;
+        error = rd_kafka_sasl_background_callbacks_enable(ctx->kafka.rk);
+        if (error) {
+            flb_plg_warn(ins, "failed to enable SASL background callbacks: %s. "
+                         "OAuth tokens may not refresh during idle periods.",
+                         rd_kafka_error_string(error));
+            rd_kafka_error_destroy(error);
+        }
+        else {
+            flb_plg_info(ins, "OAUTHBEARER: SASL background callbacks enabled");
+        }
     }
 
     /* Trigger initial token refresh for OAUTHBEARER */

@@ -56,6 +56,7 @@ struct flb_in_kafka_config {
 
 #ifdef FLB_HAVE_AWS_MSK_IAM
     struct flb_aws_msk_iam *msk_iam;
+    int aws_msk_iam;  /* Flag to indicate user explicitly requested AWS MSK IAM */
 #endif
 
     /* SASL mechanism configured in rdkafka.sasl.mechanism */
