@@ -372,6 +372,7 @@ static int in_kafka_init(struct flb_input_instance *ins,
             
             if (!ctx->msk_iam) {
                 flb_plg_error(ins, "failed to setup MSK IAM authentication OAuth callback");
+                goto init_error;
             }
             else {
                 res = rd_kafka_conf_set(kafka_conf, "sasl.oauthbearer.config",
@@ -387,6 +388,8 @@ static int in_kafka_init(struct flb_input_instance *ins,
 #endif
 
     ctx->kafka.rk = rd_kafka_new(RD_KAFKA_CONSUMER, kafka_conf, errstr, sizeof(errstr));
+    /* rd_kafka_new takes ownership of kafka_conf regardless of success/failure */
+    kafka_conf = NULL;
 
     /* Create Kafka consumer handle */
     if (!ctx->kafka.rk) {
@@ -482,14 +485,15 @@ init_error:
     }
     if (ctx->kafka.rk) {
         rd_kafka_consumer_close(ctx->kafka.rk);
+        /* rd_kafka_destroy also destroys the conf that was passed to rd_kafka_new */
         rd_kafka_destroy(ctx->kafka.rk);
+    }
+    else if (kafka_conf) {
+        /* If rd_kafka was never created, we need to destroy conf manually */
+        rd_kafka_conf_destroy(kafka_conf);
     }
     if (ctx->opaque) {
         flb_kafka_opaque_destroy(ctx->opaque);
-    }
-    else if (kafka_conf) {
-        /* conf is already destroyed when rd_kafka is initialized */
-        rd_kafka_conf_destroy(kafka_conf);
     }
     flb_sds_destroy(ctx->sasl_mechanism);
     flb_free(ctx);
