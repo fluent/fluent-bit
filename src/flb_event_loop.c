@@ -20,7 +20,7 @@
 #include <fluent-bit/flb_lib.h>
 #include <fluent-bit/flb_mem.h>
 
-#include <unistd.h>
+#include <monkey/mk_core.h>
 
 int flb_event_loop_create(flb_ctx_t *ctx)
 {
@@ -86,8 +86,8 @@ int flb_event_loop_destroy(flb_ctx_t *ctx)
                                        ctx->event_channel);
         if (ret != 0) {
             /* make sure to close file descriptors */
-            close(config->ch_notif[0]);
-            close(config->ch_notif[1]);
+            mk_event_closesocket(config->ch_notif[0]);
+            mk_event_closesocket(config->ch_notif[1]);
         }
         flb_free(ctx->event_channel);
         ctx->event_channel = NULL;
