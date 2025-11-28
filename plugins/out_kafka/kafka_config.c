@@ -243,6 +243,28 @@ struct flb_out_kafka *flb_out_kafka_create(struct flb_output_instance *ins,
         return NULL;
     }
 
+#ifdef FLB_HAVE_AWS_MSK_IAM
+    /*
+     * Enable SASL background callbacks for MSK IAM to ensure OAuth tokens
+     * are refreshed automatically even on idle connections.
+     * This eliminates the need for the application to call rd_kafka_poll()
+     * regularly for token refresh to occur.
+     */
+    if (ctx->msk_iam) {
+        rd_kafka_error_t *error;
+        error = rd_kafka_sasl_background_callbacks_enable(ctx->kafka.rk);
+        if (error) {
+            flb_plg_warn(ctx->ins, "failed to enable SASL background callbacks: %s",
+                         rd_kafka_error_string(error));
+            rd_kafka_error_destroy(error);
+        }
+        else {
+            flb_plg_info(ctx->ins, "MSK IAM: SASL background callbacks enabled, "
+                         "OAuth tokens will be refreshed automatically in background thread");
+        }
+    }
+#endif
+
 #ifdef FLB_HAVE_AVRO_ENCODER
     /* Config AVRO */
     tmp = flb_output_get_property("schema_str", ins);

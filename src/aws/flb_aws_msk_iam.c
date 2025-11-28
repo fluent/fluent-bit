@@ -39,12 +39,10 @@
 #include <time.h>
 
 /*
- * Fixed token lifetime of 3 minutes.
- * This short lifetime ensures that idle Kafka connections (e.g., low-traffic inputs)
- * will quickly detect token expiration when new data arrives and trigger a refresh callback,
- * preventing "Access denied" errors from using expired tokens on idle connections.
+ * OAuth token lifetime of 5 minutes (industry standard).
+ * Matches AWS Go SDK and Kafka Connect implementations.
  */
-#define MSK_IAM_TOKEN_LIFETIME_SECONDS 180
+#define MSK_IAM_TOKEN_LIFETIME_SECONDS 300
 
 struct flb_aws_msk_iam {
     struct flb_config *flb_config;
@@ -547,12 +545,10 @@ static void oauthbearer_token_refresh_cb(rd_kafka_t *rk,
     }
 
     /*
-     * Set OAuth token with fixed 3-minute lifetime.
-     * librdkafka will trigger a refresh callback before the token expires.
-     * For idle connections, the refresh may be delayed until new data arrives,
-     * at which point librdkafka detects the expired token and triggers the callback.
-     * The short 3-minute lifetime ensures credentials (typically 60 minutes) are still
-     * valid when the callback is eventually triggered, allowing successful token regeneration.
+     * Set OAuth token with fixed 5-minute lifetime (AWS industry standard).
+     * librdkafka's background thread will automatically trigger a refresh callback
+     * at 80% of the token's lifetime (4 minutes) to ensure the token never expires,
+     * even on completely idle connections.
      */
     now = time(NULL);
     md_lifetime_ms = ((int64_t)now + MSK_IAM_TOKEN_LIFETIME_SECONDS) * 1000;
