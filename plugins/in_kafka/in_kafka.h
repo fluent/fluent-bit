@@ -55,12 +55,10 @@ struct flb_in_kafka_config {
     struct flb_kafka_opaque *opaque;
 
 #ifdef FLB_HAVE_AWS_MSK_IAM
-    flb_sds_t aws_msk_iam_cluster_arn;
     struct flb_aws_msk_iam *msk_iam;
 #endif
 
     /* SASL mechanism configured in rdkafka.sasl.mechanism */
-    int aws_msk_iam;
     flb_sds_t sasl_mechanism;
 };
 
