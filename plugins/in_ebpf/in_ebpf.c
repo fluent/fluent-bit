@@ -234,7 +234,7 @@ static struct flb_config_map config_map[] = {
     {
      FLB_CONFIG_MAP_STR, "ringbuf_map_name", FLB_IN_EBPF_DEFAULT_RINGBUF_MAP_NAME,
      0, FLB_TRUE, offsetof(struct flb_in_ebpf_context, ringbuf_map_name),
-     "Set the name of the BPF ring buffer map to read events from"
+     "Set the name of the eBPF ring buffer map to read events from"
     },
     {
      FLB_CONFIG_MAP_INT, "poll_ms", FLB_IN_EBPF_DEFAULT_POLL_MS,
