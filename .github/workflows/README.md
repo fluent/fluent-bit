@@ -174,8 +174,8 @@ Containers can be promoted manually too, ensure to include all architectures and
 
 Once releases are published we need to provide PRs for the following documentation updates:
 
-1. Windows checksums: <https://docs.fluentbit.io/manual/installation/windows#installation-packages>
-2. Container versions: <https://docs.fluentbit.io/manual/installation/docker#tags-and-versions>
+1. Windows checksums: <https://docs.fluentbit.io/manual/installation/downloads/windows#installation-packages>
+2. Container versions: <https://docs.fluentbit.io/manual/installation/downloads/docker#tags-and-versions>
 
 <https://github.com/fluent/fluent-bit-docs> is the repo for updates to docs.
 
