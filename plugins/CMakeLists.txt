@@ -349,6 +349,9 @@ REGISTER_PROCESSOR_PLUGIN("processor_metrics_selector")
 REGISTER_PROCESSOR_PLUGIN("processor_opentelemetry_envelope")
 REGISTER_PROCESSOR_PLUGIN("processor_sampling")
 REGISTER_PROCESSOR_PLUGIN("processor_sql")
+if (FLB_RIPSER)
+  REGISTER_PROCESSOR_PLUGIN("processor_tda")
+endif()
 
 # OUTPUTS
 # =======
