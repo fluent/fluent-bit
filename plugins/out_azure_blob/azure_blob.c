@@ -31,8 +31,10 @@
 #include <fluent-bit/flb_plugin.h>
 #include <fluent-bit/flb_notification.h>
 #include <fluent-bit/flb_scheduler.h>
+#include <fluent-bit/flb_record_accessor.h>
 
 #include <msgpack.h>
+#include <string.h>
 
 #include "azure_blob.h"
 #include "azure_blob_db.h"
@@ -44,6 +46,7 @@
 #include "azure_blob_store.h"
 
 #define CREATE_BLOB  1337
+#define AZB_UUID_PLACEHOLDER "$UUID"
 
 /* thread_local_storage for workers */
 
@@ -52,6 +55,8 @@ struct worker_info {
 };
 
 FLB_TLS_DEFINE(struct worker_info, worker_info);
+
+static int create_blob(struct flb_azure_blob *ctx, const char *path_prefix, char *name);
 
 static int azure_blob_format(struct flb_config *config,
                              struct flb_input_instance *ins,
@@ -149,6 +154,10 @@ static int construct_request_buffer(struct flb_azure_blob *ctx, flb_sds_t new_da
     return 0;
 }
 
+/**
+ * Populate the provided buffer with pseudo-random alphanumeric characters.
+ * The buffer must have room for `length + 1` bytes to include the terminator.
+ */
 void generate_random_string_blob(char *str, size_t length)
 {
     const char charset[] = "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789";
@@ -168,7 +177,430 @@ void generate_random_string_blob(char *str, size_t length)
     str[length] = '\0';
 }
 
-static int create_blob(struct flb_azure_blob *ctx, char *name)
+/**
+ * Replace all "$UUID" placeholders in the path with the same random suffix.
+ * Returns a newly allocated SDS string and frees the original `path` value.
+ */
+static flb_sds_t azb_replace_uuid(flb_sds_t path)
+{
+    char random_buf[9] = {0};
+    const size_t token_len = strlen(AZB_UUID_PLACEHOLDER);
+    size_t occurrences = 0;
+    size_t path_len;
+    size_t result_len;
+    char *cursor;
+    char *match;
+    char *dst;
+    flb_sds_t result;
+
+    if (!path) {
+        return NULL;
+    }
+
+    cursor = path;
+    while ((match = strstr(cursor, AZB_UUID_PLACEHOLDER)) != NULL) {
+        occurrences++;
+        cursor = match + token_len;
+    }
+
+    if (occurrences == 0) {
+        return path;
+    }
+
+    generate_random_string_blob(random_buf, 8);
+
+    path_len = flb_sds_len(path);
+    result_len = path_len + occurrences * (8 - token_len);
+
+    result = flb_sds_create_size(result_len + 1);
+    if (!result) {
+        flb_errno();
+        flb_sds_destroy(path);
+        return NULL;
+    }
+
+    dst = result;
+    cursor = path;
+    while ((match = strstr(cursor, AZB_UUID_PLACEHOLDER)) != NULL) {
+        size_t segment_len;
+
+        segment_len = (size_t)(match - cursor);
+        if (segment_len > 0) {
+            memcpy(dst, cursor, segment_len);
+            dst += segment_len;
+        }
+
+        memcpy(dst, random_buf, 8);
+        dst += 8;
+
+        cursor = match + token_len;
+    }
+
+    if (cursor < path + path_len) {
+        size_t tail_len;
+
+        tail_len = (size_t)((path + path_len) - cursor);
+        if (tail_len > 0) {
+            memcpy(dst, cursor, tail_len);
+            dst += tail_len;
+        }
+    }
+
+    *dst = '\0';
+    flb_sds_len_set(result, result_len);
+
+    flb_sds_destroy(path);
+    return result;
+}
+
+/**
+ * Replace the first occurrence of `token` with `replacement` in the SDS input.
+ * The original string is destroyed and a new SDS instance is returned.
+ */
+static flb_sds_t azb_simple_replace(flb_sds_t input,
+                                    const char *token,
+                                    const char *replacement)
+{
+    char *pos;
+    size_t token_len;
+    size_t replace_len;
+    size_t prefix_len;
+    size_t suffix_len;
+    flb_sds_t result;
+
+    if (!input || !token) {
+        return input;
+    }
+
+    pos = strstr(input, token);
+    if (!pos) {
+        return input;
+    }
+
+    token_len = strlen(token);
+    replace_len = strlen(replacement);
+    prefix_len = (size_t)(pos - input);
+    suffix_len = flb_sds_len(input) - prefix_len - token_len;
+
+    result = flb_sds_create_size(prefix_len + replace_len + suffix_len + 1);
+    if (!result) {
+        flb_errno();
+        flb_sds_destroy(input);
+        return NULL;
+    }
+
+    if (prefix_len > 0) {
+        memcpy(result, input, prefix_len);
+    }
+    if (replace_len > 0) {
+        memcpy(result + prefix_len, replacement, replace_len);
+    }
+    if (suffix_len > 0) {
+        memcpy(result + prefix_len + replace_len, pos + token_len, suffix_len);
+    }
+    result[prefix_len + replace_len + suffix_len] = '\0';
+    flb_sds_len_set(result, prefix_len + replace_len + suffix_len);
+
+    flb_sds_destroy(input);
+    return result;
+}
+
+/**
+ * Expand millisecond and nanosecond custom tokens within the blob path.
+ */
+static flb_sds_t azb_apply_time_tokens(flb_sds_t path, const struct flb_time *timestamp)
+{
+    char ms_buf[4];
+    char ns_buf[10];
+    flb_sds_t tmp;
+
+    if (!path || !timestamp) {
+        return path;
+    }
+
+    snprintf(ms_buf, sizeof(ms_buf), "%03lu",
+             (unsigned long)(timestamp->tm.tv_nsec / 1000000));
+    snprintf(ns_buf, sizeof(ns_buf), "%09lu",
+             (unsigned long)timestamp->tm.tv_nsec);
+
+    /* Replace %3N with milliseconds */
+    tmp = azb_simple_replace(path, "%3N", ms_buf);
+    if (!tmp) {
+        return NULL;
+    }
+    path = tmp;
+
+    /* Replace %9N with nanoseconds */
+    tmp = azb_simple_replace(path, "%9N", ns_buf);
+    if (!tmp) {
+        return NULL;
+    }
+    path = tmp;
+
+    /* Replace %L with nanoseconds */
+    tmp = azb_simple_replace(path, "%L", ns_buf);
+    if (!tmp) {
+        return NULL;
+    }
+
+    return tmp;
+}
+
+/**
+ * Apply `strftime` formatting using the provided event timestamp.
+ */
+static flb_sds_t azb_apply_strftime(flb_sds_t path, const struct flb_time *timestamp)
+{
+    struct flb_time now;
+    const struct flb_time *ref;
+    struct tm tm_utc;
+    time_t seconds;
+    size_t path_len;
+    size_t empty_threshold;
+    size_t buf_size;
+    size_t out_len;
+    char *buf;
+    char *tmp_buf;
+    flb_sds_t result;
+
+    if (!path) {
+        return NULL;
+    }
+
+    if (timestamp) {
+        ref = timestamp;
+    }
+    else {
+        flb_time_get(&now);
+        ref = &now;
+    }
+
+    seconds = ref->tm.tv_sec;
+    if (!gmtime_r(&seconds, &tm_utc)) {
+        flb_sds_destroy(path);
+        return NULL;
+    }
+
+    path_len = flb_sds_len(path);
+    empty_threshold = path_len > 0 ? path_len * 2 : 2;
+    buf_size = path_len + 64;
+    buf = flb_malloc(buf_size + 1);
+    if (!buf) {
+        flb_errno();
+        flb_sds_destroy(path);
+        return NULL;
+    }
+
+    buf[0] = '\0';
+
+    while (1) {
+        out_len = strftime(buf, buf_size + 1, path, &tm_utc);
+        if (out_len > 0) {
+            break;
+        }
+
+        if (buf_size > empty_threshold) {
+            break;
+        }
+
+        if (buf_size > 4096) {
+            break;
+        }
+
+        buf_size *= 2;
+        tmp_buf = flb_realloc(buf, buf_size + 1);
+        if (!tmp_buf) {
+            flb_errno();
+            flb_free(buf);
+            flb_sds_destroy(path);
+            return NULL;
+        }
+        buf = tmp_buf;
+    }
+
+    result = flb_sds_create_len(buf, out_len);
+    if (!result) {
+        flb_errno();
+        flb_free(buf);
+        flb_sds_destroy(path);
+        return NULL;
+    }
+
+    flb_free(buf);
+    flb_sds_destroy(path);
+
+    return result;
+}
+
+/**
+ * Remove leading and trailing slashes to avoid double separators in URIs.
+ */
+static void azb_trim_slashes(flb_sds_t path)
+{
+    size_t len;
+    size_t start = 0;
+    char *buf;
+
+    if (!path) {
+        return;
+    }
+
+    buf = path;
+    len = flb_sds_len(path);
+
+    while (start < len && buf[start] == '/') {
+        start++;
+    }
+
+    if (start > 0) {
+        memmove(buf, buf + start, len - start + 1);
+        len -= start;
+        flb_sds_len_set(path, len);
+    }
+
+    while (len > 0 && buf[len - 1] == '/') {
+        len--;
+    }
+    buf[len] = '\0';
+    flb_sds_len_set(path, len);
+}
+
+/**
+ * Build the final blob path by applying record accessors and time templating.
+ */
+int azb_resolve_path(struct flb_azure_blob *ctx,
+                     const char *tag,
+                     int tag_len,
+                     const struct flb_time *timestamp,
+                     flb_sds_t *out_path)
+{
+    flb_sds_t path;
+    struct flb_time now;
+    msgpack_sbuffer sbuf;
+    msgpack_packer pk;
+    msgpack_unpacked result;
+    msgpack_object root;
+    struct flb_record_accessor *temp_ra;
+    flb_sds_t expanded;
+
+    if (!out_path) {
+        return -1;
+    }
+
+    *out_path = NULL;
+
+    if (!ctx->path_templating_enabled) {
+        return 0;
+    }
+
+    if (!timestamp) {
+        flb_time_get(&now);
+        timestamp = &now;
+    }
+
+    /* Start with the original path template */
+    path = flb_sds_create_len(ctx->path, flb_sds_len(ctx->path));
+    if (!path) {
+        flb_errno();
+        return -1;
+    }
+
+    /* Apply UUID replacement before record accessor step.
+     * Unknown $ tokens get stripped otherwise.
+     */
+    path = azb_replace_uuid(path);
+    if (!path) {
+        return -1;
+    }
+
+    /* Apply time tokens (%3N, %9N, %L) */
+    path = azb_apply_time_tokens(path, timestamp);
+    if (!path) {
+        return -1;
+    }
+
+    /* Apply strftime */
+    path = azb_apply_strftime(path, timestamp);
+    if (!path) {
+        return -1;
+    }
+
+    /* Now use record accessor to expand $TAG and $TAG[n] */
+    /* Create empty msgpack map for record accessor */
+    msgpack_sbuffer_init(&sbuf);
+    msgpack_packer_init(&pk, &sbuf, msgpack_sbuffer_write);
+    msgpack_pack_map(&pk, 0);
+
+    /* Unpack to get msgpack_object */
+    msgpack_unpacked_init(&result);
+    if (msgpack_unpack_next(&result,
+                            sbuf.data,
+                            sbuf.size,
+                            NULL) != MSGPACK_UNPACK_SUCCESS) {
+        msgpack_sbuffer_destroy(&sbuf);
+        msgpack_unpacked_destroy(&result);
+        flb_sds_destroy(path);
+        return -1;
+    }
+    root = result.data;
+
+    /* Create a temporary record accessor for the partially-processed path */
+    temp_ra = flb_ra_create(path, FLB_TRUE);
+    if (!temp_ra) {
+        msgpack_unpacked_destroy(&result);
+        msgpack_sbuffer_destroy(&sbuf);
+        flb_sds_destroy(path);
+        return -1;
+    }
+
+    /* Use record accessor to expand $TAG and $TAG[n] */
+    expanded = flb_ra_translate(temp_ra, (char *)tag, tag_len, root, NULL);
+
+    flb_ra_destroy(temp_ra);
+    msgpack_unpacked_destroy(&result);
+    msgpack_sbuffer_destroy(&sbuf);
+    flb_sds_destroy(path);
+
+    if (!expanded) {
+        return -1;
+    }
+
+    azb_trim_slashes(expanded);
+
+    if (flb_sds_len(expanded) == 0) {
+        flb_sds_destroy(expanded);
+        return 0;
+    }
+
+    *out_path = expanded;
+    return 0;
+}
+
+static int azb_create_blob_with_tag(struct flb_azure_blob *ctx,
+                                    const char *tag,
+                                    int tag_len,
+                                    const char *blob_name)
+{
+    flb_sds_t prefix = NULL;
+    int ret;
+
+    if (azb_resolve_path(ctx, tag, tag_len, NULL, &prefix) != 0) {
+        if (prefix) {
+            flb_sds_destroy(prefix);
+        }
+        return FLB_RETRY;
+    }
+
+    ret = create_blob(ctx, prefix, (char *) blob_name);
+
+    if (prefix) {
+        flb_sds_destroy(prefix);
+    }
+
+    return ret;
+}
+
+static int create_blob(struct flb_azure_blob *ctx, const char *path_prefix, char *name)
 {
     int ret;
     size_t b_sent;
@@ -176,7 +608,7 @@ static int create_blob(struct flb_azure_blob *ctx, char *name)
     struct flb_http_client *c;
     struct flb_connection *u_conn;
 
-    uri = azb_uri_create_blob(ctx, name);
+    uri = azb_uri_create_blob(ctx, path_prefix, name);
     if (!uri) {
         return FLB_RETRY;
     }
@@ -256,7 +688,7 @@ static int delete_blob(struct flb_azure_blob *ctx, char *name)
     struct flb_http_client *c;
     struct flb_connection *u_conn;
 
-    uri = azb_uri_create_blob(ctx, name);
+    uri = azb_uri_create_blob(ctx, NULL, name);
     if (!uri) {
         return FLB_RETRY;
     }
@@ -460,12 +892,23 @@ static int send_blob(struct flb_config *config,
     flb_sds_t uri = NULL;
     flb_sds_t block_id = NULL;
     flb_sds_t ref_name = NULL;
+    flb_sds_t path_prefix = NULL;
     void *payload_buf = data;
     size_t payload_size = bytes;
     char *generated_random_string;
+    struct flb_time now;
+
+    flb_time_get(&now);
+
+    if (azb_resolve_path(ctx, tag, tag_len, &now, &path_prefix) != 0) {
+        return FLB_RETRY;
+    }
 
     ref_name = flb_sds_create_size(256);
     if (!ref_name) {
+        if (path_prefix) {
+            flb_sds_destroy(path_prefix);
+        }
         return FLB_RETRY;
     }
 
@@ -475,11 +918,14 @@ static int send_blob(struct flb_config *config,
         flb_errno();
         flb_plg_error(ctx->ins, "cannot allocate memory for random string");
         flb_sds_destroy(ref_name);
+        if (path_prefix) {
+            flb_sds_destroy(path_prefix);
+        }
         return FLB_RETRY;
     }
 
     if (blob_type == AZURE_BLOB_APPENDBLOB) {
-        uri = azb_append_blob_uri(ctx, tag);
+        uri = azb_append_blob_uri(ctx, path_prefix, tag);
     }
     else if (blob_type == AZURE_BLOB_BLOCKBLOB) {
         generate_random_string_blob(generated_random_string, ctx->blob_uri_length); /* Generate the random string */
@@ -488,15 +934,20 @@ static int send_blob(struct flb_config *config,
             if (!block_id) {
                 flb_plg_error(ctx->ins, "could not generate block id");
                 flb_free(generated_random_string);
-                cfl_sds_destroy(ref_name);
+                flb_sds_destroy(ref_name);
+                if (path_prefix) {
+                    flb_sds_destroy(path_prefix);
+                }
                 return FLB_RETRY;
             }
-            uri = azb_block_blob_uri(ctx, tag, block_id, ms, generated_random_string);
+            uri = azb_block_blob_uri(ctx, path_prefix, tag,
+                                     block_id, ms, generated_random_string);
             ref_name = flb_sds_printf(&ref_name, "file=%s.%" PRIu64, name, ms);
         }
         else if (event_type == FLB_EVENT_TYPE_BLOBS) {
             block_id = azb_block_blob_id_blob(ctx, name, part_id);
-            uri = azb_block_blob_uri(ctx, name, block_id, 0, generated_random_string);
+            uri = azb_block_blob_uri(ctx, path_prefix, name,
+                                     block_id, 0, generated_random_string);
             ref_name = flb_sds_printf(&ref_name, "file=%s:%" PRIu64, name, part_id);
         }
     }
@@ -507,6 +958,9 @@ static int send_blob(struct flb_config *config,
             flb_free(block_id);
         }
         flb_sds_destroy(ref_name);
+        if (path_prefix) {
+            flb_sds_destroy(path_prefix);
+        }
         return FLB_RETRY;
     }
 
@@ -520,11 +974,12 @@ static int send_blob(struct flb_config *config,
     if (ret == FLB_OK) {
         /* For Logs type, we need to commit the block right away */
         if (event_type == FLB_EVENT_TYPE_LOGS) {
-            ret = azb_block_blob_commit_block(ctx, block_id, tag, ms, generated_random_string);
+            ret = azb_block_blob_commit_block(ctx, path_prefix, block_id,
+                                              tag, ms, generated_random_string);
         }
     }
     else if (ret == CREATE_BLOB) {
-        ret = create_blob(ctx, name);
+        ret = create_blob(ctx, path_prefix, name);
         if (ret == FLB_OK) {
             ret = http_send_blob(config, ctx, ref_name, uri, block_id, event_type, payload_buf, payload_size);
         }
@@ -540,6 +995,10 @@ static int send_blob(struct flb_config *config,
 
     if (block_id != NULL) {
         flb_free(block_id);
+    }
+
+    if (path_prefix) {
+        flb_sds_destroy(path_prefix);
     }
 
     return ret;
@@ -1260,7 +1719,9 @@ static void cb_azure_blob_ingest(struct flb_config *config, void *data) {
 
             /* Handle blob creation if necessary */
             if (ret == CREATE_BLOB) {
-                ret = create_blob(ctx, tag_sds);
+                ret = azb_create_blob_with_tag(ctx, tag_sds,
+                                               (int) flb_sds_len(tag_sds),
+                                               tag_sds);
                 if (ret == FLB_OK) {
                     ret = send_blob(config, NULL, ctx, FLB_EVENT_TYPE_LOGS,ctx->btype, (char *) tag_sds, 0, (char *) tag_sds,
                                     flb_sds_len(tag_sds), payload, flb_sds_len(payload));
@@ -1389,7 +1850,9 @@ static int ingest_all_chunks(struct flb_azure_blob *ctx, struct flb_config *conf
             ret = send_blob(config, NULL, ctx, FLB_EVENT_TYPE_LOGS, ctx->btype, (char *)tag_sds, 0, (char *)tag_sds, flb_sds_len(tag_sds), payload, flb_sds_len(payload));
 
             if (ret == CREATE_BLOB) {
-                ret = create_blob(ctx, tag_sds);
+                ret = azb_create_blob_with_tag(ctx, tag_sds,
+                                               (int) flb_sds_len(tag_sds),
+                                               tag_sds);
                 if (ret == FLB_OK) {
                     ret = send_blob(config, NULL, ctx, FLB_EVENT_TYPE_LOGS, ctx->btype, (char *)tag_sds, 0, (char *)tag_sds, flb_sds_len(tag_sds), payload, flb_sds_len(payload));
                 }
@@ -1559,7 +2022,7 @@ static void cb_azure_blob_flush(struct flb_event_chunk *event_chunk,
                 ret = send_blob(config, i_ins, ctx, FLB_EVENT_TYPE_LOGS, ctx->btype,(char *)tag_name, 0, (char *)tag_name, tag_len, final_payload, final_payload_size);
 
                 if (ret == CREATE_BLOB) {
-                    ret = create_blob(ctx, upload_file->fsf->name);
+                    ret = azb_create_blob_with_tag(ctx, tag_name, tag_len, tag_name);
                     if (ret == FLB_OK) {
                         ret = send_blob(config, i_ins, ctx, FLB_EVENT_TYPE_LOGS, ctx->btype,(char *)tag_name, 0, (char *)tag_name, tag_len, final_payload, final_payload_size);
                     }
@@ -1645,7 +2108,9 @@ static void cb_azure_blob_flush(struct flb_event_chunk *event_chunk,
                             json, json_size);
 
             if (ret == CREATE_BLOB) {
-                ret = create_blob(ctx, event_chunk->tag);
+                ret = azb_create_blob_with_tag(ctx, event_chunk->tag,
+                                               (int) flb_sds_len(event_chunk->tag),
+                                               event_chunk->tag);
                 if (ret == FLB_OK) {
                     ret = send_blob(config, i_ins, ctx,
                                     FLB_EVENT_TYPE_LOGS,

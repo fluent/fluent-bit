@@ -23,6 +23,8 @@
 #include <fluent-bit/flb_output_plugin.h>
 #include "azure_blob.h"
 
-flb_sds_t azb_append_blob_uri(struct flb_azure_blob *ctx, char *tag);
+flb_sds_t azb_append_blob_uri(struct flb_azure_blob *ctx,
+							  const char *path_prefix,
+							  char *tag);
 
 #endif
