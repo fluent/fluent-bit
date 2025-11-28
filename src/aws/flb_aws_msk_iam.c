@@ -47,7 +47,7 @@
 struct flb_aws_msk_iam {
     struct flb_config *flb_config;
     flb_sds_t region;
-    flb_sds_t cluster_arn;
+    int is_serverless;  /* Flag to indicate if this is MSK Serverless */
     struct flb_tls *cred_tls;
     struct flb_aws_provider *provider;
 };
@@ -132,40 +132,58 @@ static int hmac_sha256_sign(unsigned char out[32],
     return 0;
 }
 
-static char *extract_region(const char *arn)
+/* Extract region from MSK broker address
+ * MSK Standard format: b-1.example.c1.kafka.<Region>.amazonaws.com:port
+ * MSK Serverless format: boot-<ClusterUniqueID>.c<x>.kafka-serverless.<Region>.amazonaws.com:port
+ */
+static flb_sds_t extract_region_from_broker(const char *broker)
 {
     const char *p;
-    const char *r;
+    const char *start;
+    const char *end;
     size_t len;
-    char *out;
-
-    /* arn:partition:service:region:... */
-    p = strchr(arn, ':');
+    flb_sds_t out;
+    
+    if (!broker || strlen(broker) == 0) {
+        return NULL;
+    }
+    
+    /* Find .amazonaws.com */
+    p = strstr(broker, ".amazonaws.com");
     if (!p) {
         return NULL;
     }
-    p = strchr(p + 1, ':');
-    if (!p) {
+    
+    /* Region is between the last dot before .amazonaws.com and .amazonaws.com
+     * Example: ...kafka.us-east-1.amazonaws.com
+     *          or ...kafka-serverless.us-east-1.amazonaws.com
+     */
+    end = p;  /* Points to .amazonaws.com */
+    
+    /* Find the start of region by going backwards to find the previous dot */
+    start = end - 1;
+    while (start > broker && *start != '.') {
+        start--;
+    }
+    
+    if (*start == '.') {
+        start++;  /* Skip the dot */
+    }
+    
+    if (start >= end) {
         return NULL;
     }
-    p = strchr(p + 1, ':');
-    if (!p) {
+    
+    len = end - start;
+    if (len == 0 || len > 64) {  /* Sanity check on region length (relaxed to 64 chars) */
         return NULL;
     }
-
-    r = p + 1;
-    p = strchr(r, ':');
-    if (!p) {
-        return NULL;
-    }
-    len = p - r;
-    out = flb_malloc(len + 1);
+    
+    out = flb_sds_create_len(start, len);
     if (!out) {
         return NULL;
     }
-    memcpy(out, r, len);
-    out[len] = '\0';
-
+    
     return out;
 }
 
@@ -480,9 +498,6 @@ static void oauthbearer_token_refresh_cb(rd_kafka_t *rk,
     char errstr[512];
     time_t now;
     int64_t md_lifetime_ms;
-    const char *s3_suffix = "-s3";
-    size_t arn_len;
-    size_t suffix_len;
     struct flb_aws_msk_iam *config;
     struct flb_aws_credentials *creds = NULL;
     struct flb_kafka_opaque *kafka_opaque;
@@ -503,16 +518,9 @@ static void oauthbearer_token_refresh_cb(rd_kafka_t *rk,
         return;
     }
 
-    /* Determine MSK endpoint */
-    if (config->cluster_arn) {
-        arn_len = strlen(config->cluster_arn);
-        suffix_len = strlen(s3_suffix);
-        if (arn_len >= suffix_len && strcmp(config->cluster_arn + arn_len - suffix_len, s3_suffix) == 0) {
-            snprintf(host, sizeof(host), "kafka-serverless.%s.amazonaws.com", config->region);
-        }
-        else {
-            snprintf(host, sizeof(host), "kafka.%s.amazonaws.com", config->region);
-        }
+    /* Determine MSK endpoint based on cluster type */
+    if (config->is_serverless) {
+        snprintf(host, sizeof(host), "kafka-serverless.%s.amazonaws.com", config->region);
     }
     else {
         snprintf(host, sizeof(host), "kafka.%s.amazonaws.com", config->region);
@@ -581,16 +589,13 @@ static void oauthbearer_token_refresh_cb(rd_kafka_t *rk,
 /* Register OAuth callback */
 struct flb_aws_msk_iam *flb_aws_msk_iam_register_oauth_cb(struct flb_config *config,
                                                           rd_kafka_conf_t *kconf,
-                                                          const char *cluster_arn,
                                                           struct flb_kafka_opaque *opaque)
 {
     struct flb_aws_msk_iam *ctx;
-    char *region_str;
-
-    if (!cluster_arn) {
-        flb_error("[aws_msk_iam] cluster ARN is required");
-        return NULL;
-    }
+    flb_sds_t region_str = NULL;
+    struct flb_kafka *kafka_ctx;
+    char *first_broker = NULL;
+    char *comma;
 
     ctx = flb_calloc(1, sizeof(struct flb_aws_msk_iam));
     if (!ctx) {
@@ -600,27 +605,65 @@ struct flb_aws_msk_iam *flb_aws_msk_iam_register_oauth_cb(struct flb_config *con
 
     ctx->flb_config = config;
 
-    ctx->cluster_arn = flb_sds_create(cluster_arn);
-    if (!ctx->cluster_arn) {
+    /* Extract region from broker address */
+    if (!opaque || !opaque->kafka_ctx) {
+        flb_error("[aws_msk_iam] unable to access kafka context for broker-based region extraction");
         flb_free(ctx);
         return NULL;
     }
-
-    /* Extract region */
-    region_str = extract_region(cluster_arn);
-    if (!region_str || strlen(region_str) == 0) {
-        flb_error("[aws_msk_iam] failed to extract region from ARN");
-        flb_sds_destroy(ctx->cluster_arn);
+    
+    kafka_ctx = opaque->kafka_ctx;
+    if (!kafka_ctx->brokers || flb_sds_len(kafka_ctx->brokers) == 0) {
+        flb_error("[aws_msk_iam] brokers configuration is required for region extraction");
         flb_free(ctx);
-        if (region_str) flb_free(region_str);
         return NULL;
     }
+    
+    /* Extract first broker from comma-separated list */
+    first_broker = flb_strdup(kafka_ctx->brokers);
+    if (!first_broker) {
+        flb_error("[aws_msk_iam] failed to allocate memory for broker parsing");
+        flb_free(ctx);
+        return NULL;
+    }
+    
+    comma = strchr(first_broker, ',');
+    if (comma) {
+        *comma = '\0';  /* Terminate at first comma */
+    }
+    
+    /* Detect if this is MSK Serverless by checking broker address
+     * Serverless broker contains .kafka-serverless. in the hostname
+     * Standard broker contains .kafka. (but not .kafka-serverless.)
+     */
+    if (strstr(first_broker, ".kafka-serverless.")) {
+        ctx->is_serverless = 1;
+        flb_info("[aws_msk_iam] detected MSK Serverless cluster");
+    }
+    else {
+        ctx->is_serverless = 0;
+    }
+    
+    /* Extract region from broker address */
+    region_str = extract_region_from_broker(first_broker);
+    flb_free(first_broker);
+    
+    if (!region_str || flb_sds_len(region_str) == 0) {
+        flb_error("[aws_msk_iam] failed to extract region from broker address: %s", 
+                 kafka_ctx->brokers);
+        flb_free(ctx);
+        if (region_str) {
+            flb_sds_destroy(region_str);
+        }
+        return NULL;
+    }
+    
+    flb_info("[aws_msk_iam] extracted region '%s' from broker address%s", 
+             region_str, ctx->is_serverless ? " (Serverless)" : "");
 
-    ctx->region = flb_sds_create(region_str);
-    flb_free(region_str);
+    ctx->region = region_str;
 
     if (!ctx->region) {
-        flb_sds_destroy(ctx->cluster_arn);
         flb_free(ctx);
         return NULL;
     }
@@ -633,7 +676,6 @@ struct flb_aws_msk_iam *flb_aws_msk_iam_register_oauth_cb(struct flb_config *con
     if (!ctx->cred_tls) {
         flb_error("[aws_msk_iam] failed to create TLS instance");
         flb_sds_destroy(ctx->region);
-        flb_sds_destroy(ctx->cluster_arn);
         flb_free(ctx);
         return NULL;
     }
@@ -649,7 +691,6 @@ struct flb_aws_msk_iam *flb_aws_msk_iam_register_oauth_cb(struct flb_config *con
         flb_error("[aws_msk_iam] failed to create AWS credentials provider");
         flb_tls_destroy(ctx->cred_tls);
         flb_sds_destroy(ctx->region);
-        flb_sds_destroy(ctx->cluster_arn);
         flb_free(ctx);
         return NULL;
     }
@@ -661,7 +702,6 @@ struct flb_aws_msk_iam *flb_aws_msk_iam_register_oauth_cb(struct flb_config *con
         flb_aws_provider_destroy(ctx->provider);
         flb_tls_destroy(ctx->cred_tls);
         flb_sds_destroy(ctx->region);
-        flb_sds_destroy(ctx->cluster_arn);
         flb_free(ctx);
         return NULL;
     }
@@ -692,9 +732,6 @@ void flb_aws_msk_iam_destroy(struct flb_aws_msk_iam *ctx)
     
     if (ctx->region) {
         flb_sds_destroy(ctx->region);
-    }
-    if (ctx->cluster_arn) {
-        flb_sds_destroy(ctx->cluster_arn);
     }
     flb_free(ctx);
 }
