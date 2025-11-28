@@ -22,6 +22,10 @@
 #include <string.h>
 #include <time.h>
 #include <ctype.h>
+#ifdef FLB_HAVE_FORK
+#include <fcntl.h>
+#include <unistd.h>
+#endif
 
 #include <sys/types.h>
 #include <sys/stat.h>
@@ -177,6 +181,7 @@ void flb_utils_warn_c(const char *msg)
 /* Run current process in background mode */
 int flb_utils_set_daemon(struct flb_config *config)
 {
+    int fd;
     pid_t pid;
 
     if ((pid = fork()) < 0){
@@ -202,8 +207,15 @@ int flb_utils_set_daemon(struct flb_config *config)
     /* Our last STDOUT messages */
     flb_info("switching to background mode (PID=%ld)", (long) getpid());
 
-    fclose(stderr);
-    fclose(stdout);
+    /* Redirect stdin, stdout, stderr to `/dev/null`. */
+    fd = open("/dev/null", O_RDWR);
+    if (fd != -1) {
+        dup2(fd, STDIN_FILENO);
+        dup2(fd, STDOUT_FILENO);
+        dup2(fd, STDERR_FILENO);
+        if (fd > 2)
+            close(fd);
+    }
 
     return 0;
 }
