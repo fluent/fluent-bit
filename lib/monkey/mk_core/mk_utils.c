@@ -28,6 +28,9 @@
 #include <sys/types.h>
 #include <sys/stat.h>
 #include <fcntl.h>
+#ifndef _WIN32
+#include <unistd.h>
+#endif
 #include <mk_core/mk_utils.h>
 
 #include <mk_core/mk_unistd.h>
@@ -293,6 +296,7 @@ int mk_utils_worker_spawn(void (*func) (void *), void *arg, pthread_t *tid)
 /* Run current process in background mode (daemon, evil Monkey >:) */
 int mk_utils_set_daemon()
 {
+    int fd;
     pid_t pid;
 
     if ((pid = fork()) < 0) {
@@ -318,8 +322,15 @@ int mk_utils_set_daemon()
     /* Our last STDOUT messages */
     mk_info("Background mode ON");
 
-    fclose(stderr);
-    fclose(stdout);
+    /* Redirect stdin, stdout, stderr to `/dev/null`. */
+    fd = open("/dev/null", O_RDWR);
+    if (fd != -1) {
+        dup2(fd, STDIN_FILENO);
+        dup2(fd, STDOUT_FILENO);
+        dup2(fd, STDERR_FILENO);
+        if (fd > 2)
+            close(fd);
+    }
 
     return 0;
 }
