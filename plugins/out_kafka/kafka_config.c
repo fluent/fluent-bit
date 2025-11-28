@@ -227,12 +227,12 @@ struct flb_out_kafka *flb_out_kafka_create(struct flb_output_instance *ins,
             strstr(tmp, ".amazonaws.com")) {
 
             /* Register MSK IAM OAuth callback - extract region from broker address */
-            flb_plg_info(ins, "registering AWS MSK IAM authentication (region auto-extracted from broker)");
+            flb_plg_info(ins, "registering AWS MSK IAM authentication OAuth callback");
             ctx->msk_iam = flb_aws_msk_iam_register_oauth_cb(config,
                                                              ctx->conf,
                                                              ctx->opaque);
             if (!ctx->msk_iam) {
-                flb_plg_error(ctx->ins, "failed to setup MSK IAM authentication");
+                flb_plg_error(ctx->ins, "failed to setup MSK IAM authentication OAuth callback");
             }
             else {
                 res = rd_kafka_conf_set(ctx->conf, "sasl.oauthbearer.config",
@@ -272,8 +272,7 @@ struct flb_out_kafka *flb_out_kafka_create(struct flb_output_instance *ins,
             rd_kafka_error_destroy(error);
         }
         else {
-            flb_plg_info(ctx->ins, "OAUTHBEARER: SASL background callbacks enabled, "
-                         "OAuth tokens will be refreshed automatically in background thread");
+            flb_plg_info(ctx->ins, "OAUTHBEARER: SASL background callbacks enabled");
         }
     }
 

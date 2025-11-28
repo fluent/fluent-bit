@@ -365,13 +365,13 @@ static int in_kafka_init(struct flb_input_instance *ins,
             strstr(conf, ".amazonaws.com")) {
             
             /* Register MSK IAM OAuth callback - extract region from broker address */
-            flb_plg_info(ins, "registering AWS MSK IAM authentication (region auto-extracted from broker)");
+            flb_plg_info(ins, "registering AWS MSK IAM authentication OAuth callback");
             ctx->msk_iam = flb_aws_msk_iam_register_oauth_cb(config,
                                                              kafka_conf,
                                                              ctx->opaque);
             
             if (!ctx->msk_iam) {
-                flb_plg_error(ins, "failed to setup MSK IAM authentication");
+                flb_plg_error(ins, "failed to setup MSK IAM authentication OAuth callback");
             }
             else {
                 res = rd_kafka_conf_set(kafka_conf, "sasl.oauthbearer.config",
