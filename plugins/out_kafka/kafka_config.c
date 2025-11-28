@@ -214,6 +214,13 @@ struct flb_out_kafka *flb_out_kafka_create(struct flb_output_instance *ins,
     if (ctx->aws_msk_iam && ctx->aws_msk_iam_cluster_arn && ctx->sasl_mechanism &&
         strcasecmp(ctx->sasl_mechanism, "OAUTHBEARER") == 0) {
 
+        /*
+         * Enable SASL queue for background callbacks BEFORE registering OAuth callback.
+         * This allows librdkafka to handle OAuth token refresh in a background thread,
+         * which is essential for idle connections where rd_kafka_poll() is not called.
+         */
+        rd_kafka_conf_enable_sasl_queue(ctx->conf, 1);
+
         ctx->msk_iam = flb_aws_msk_iam_register_oauth_cb(config,
                                                          ctx->conf,
                                                          ctx->aws_msk_iam_cluster_arn,
@@ -247,21 +254,19 @@ struct flb_out_kafka *flb_out_kafka_create(struct flb_output_instance *ins,
     /*
      * Enable SASL background callbacks for MSK IAM to ensure OAuth tokens
      * are refreshed automatically even on idle connections.
-     * This eliminates the need for the application to call rd_kafka_poll()
-     * regularly for token refresh to occur.
      */
     if (ctx->msk_iam) {
         rd_kafka_error_t *error;
         error = rd_kafka_sasl_background_callbacks_enable(ctx->kafka.rk);
         if (error) {
-            flb_plg_warn(ctx->ins, "failed to enable SASL background callbacks: %s",
+            flb_plg_error(ctx->ins, "failed to enable SASL background callbacks: %s",
                          rd_kafka_error_string(error));
             rd_kafka_error_destroy(error);
+            flb_out_kafka_destroy(ctx);
+            return NULL;
         }
-        else {
-            flb_plg_info(ctx->ins, "MSK IAM: SASL background callbacks enabled, "
-                         "OAuth tokens will be refreshed automatically in background thread");
-        }
+        flb_plg_info(ctx->ins, "MSK IAM: SASL background callbacks enabled, "
+                     "OAuth tokens will be refreshed automatically in background thread");
     }
 #endif
 
