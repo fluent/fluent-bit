@@ -23,6 +23,7 @@
 #include <time.h>
 #include <ctype.h>
 #ifdef FLB_HAVE_FORK
+#include <fcntl.h>
 #include <unistd.h>
 #endif
 
