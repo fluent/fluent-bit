@@ -341,7 +341,7 @@ static int in_kafka_init(struct flb_input_instance *ins,
         flb_plg_error(ins, "failed to create kafka opaque context");
         goto init_error;
     }
-    flb_kafka_opaque_set(ctx->opaque, ctx, &ctx->kafka);
+    flb_kafka_opaque_set(ctx->opaque, ctx, NULL);
     rd_kafka_conf_set_opaque(kafka_conf, ctx->opaque);
 
     /*
@@ -360,15 +360,16 @@ static int in_kafka_init(struct flb_input_instance *ins,
     if (ctx->aws_msk_iam && ctx->sasl_mechanism && 
         strcasecmp(ctx->sasl_mechanism, "OAUTHBEARER") == 0) {
         /* Check if brokers are configured for MSK IAM */
-        conf = flb_input_get_property("brokers", ins);
-        if (conf && (strstr(conf, ".kafka.") || strstr(conf, ".kafka-serverless.")) && 
-            strstr(conf, ".amazonaws.com")) {
+        if (ctx->kafka.brokers && 
+            (strstr(ctx->kafka.brokers, ".kafka.") || strstr(ctx->kafka.brokers, ".kafka-serverless.")) && 
+            strstr(ctx->kafka.brokers, ".amazonaws.com")) {
             
-            /* Register MSK IAM OAuth callback - extract region from broker address */
+            /* Register MSK IAM OAuth callback - pass brokers string directly */
             flb_plg_info(ins, "registering AWS MSK IAM authentication OAuth callback");
             ctx->msk_iam = flb_aws_msk_iam_register_oauth_cb(config,
                                                              kafka_conf,
-                                                             ctx->opaque);
+                                                             ctx->opaque,
+                                                             ctx->kafka.brokers);
             
             if (!ctx->msk_iam) {
                 flb_plg_error(ins, "failed to setup MSK IAM authentication OAuth callback");
@@ -388,14 +389,17 @@ static int in_kafka_init(struct flb_input_instance *ins,
 #endif
 
     ctx->kafka.rk = rd_kafka_new(RD_KAFKA_CONSUMER, kafka_conf, errstr, sizeof(errstr));
-    /* rd_kafka_new takes ownership of kafka_conf regardless of success/failure */
-    kafka_conf = NULL;
 
     /* Create Kafka consumer handle */
     if (!ctx->kafka.rk) {
         flb_plg_error(ins, "Failed to create new consumer: %s", errstr);
+        /* rd_kafka_new() did NOT take ownership on failure; kafka_conf is
+         * still valid and will be destroyed by init_error cleanup path. */
         goto init_error;
     }
+
+    /* rd_kafka_new() takes ownership of kafka_conf on success */
+    kafka_conf = NULL;
 
     /*
      * Enable SASL background callbacks for all OAUTHBEARER configurations.
@@ -495,6 +499,13 @@ init_error:
     if (ctx->opaque) {
         flb_kafka_opaque_destroy(ctx->opaque);
     }
+
+#ifdef FLB_HAVE_AWS_MSK_IAM
+    if (ctx->msk_iam) {
+        flb_aws_msk_iam_destroy(ctx->msk_iam);
+    }
+#endif
+
     flb_sds_destroy(ctx->sasl_mechanism);
     flb_free(ctx);
 

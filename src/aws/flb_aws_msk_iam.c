@@ -37,6 +37,7 @@
 #include <stdlib.h>
 #include <string.h>
 #include <time.h>
+#include <pthread.h>
 
 /*
  * OAuth token lifetime of 5 minutes (industry standard).
@@ -50,6 +51,7 @@ struct flb_aws_msk_iam {
     int is_serverless;  /* Flag to indicate if this is MSK Serverless */
     struct flb_tls *cred_tls;
     struct flb_aws_provider *provider;
+    pthread_mutex_t lock;  /* Protects credential provider access from concurrent threads */
 };
 
 static int to_encode(char c)
@@ -528,8 +530,19 @@ static void oauthbearer_token_refresh_cb(rd_kafka_t *rk,
 
     flb_debug("[aws_msk_iam] OAuth token refresh callback triggered");
 
+    /*
+     * CRITICAL CONCURRENCY FIX:
+     * Lock the credential provider to prevent race conditions.
+     * The librdkafka refresh callback executes in its internal thread context,
+     * while Fluent Bit may access the same provider from other threads.
+     * Without synchronization, concurrent refresh/get_credentials calls can
+     * corrupt provider state and cause authentication failures.
+     */
+    pthread_mutex_lock(&config->lock);
+
     /* Refresh credentials */
     if (config->provider->provider_vtable->refresh(config->provider) < 0) {
+        pthread_mutex_unlock(&config->lock);
         flb_warn("[aws_msk_iam] credential refresh failed, will retry on next callback");
         rd_kafka_oauthbearer_set_token_failure(rk, "credential refresh failed");
         return;
@@ -538,10 +551,14 @@ static void oauthbearer_token_refresh_cb(rd_kafka_t *rk,
     /* Get credentials */
     creds = config->provider->provider_vtable->get_credentials(config->provider);
     if (!creds) {
+        pthread_mutex_unlock(&config->lock);
         flb_error("[aws_msk_iam] failed to get AWS credentials from provider");
         rd_kafka_oauthbearer_set_token_failure(rk, "credential retrieval failed");
         return;
     }
+
+    /* Unlock immediately after getting credentials - no need to hold lock during payload generation */
+    pthread_mutex_unlock(&config->lock);
 
     /* Generate payload */
     payload = build_msk_iam_payload(config, host, creds);
@@ -589,32 +606,27 @@ static void oauthbearer_token_refresh_cb(rd_kafka_t *rk,
 /* Register OAuth callback */
 struct flb_aws_msk_iam *flb_aws_msk_iam_register_oauth_cb(struct flb_config *config,
                                                           rd_kafka_conf_t *kconf,
-                                                          struct flb_kafka_opaque *opaque)
+                                                          struct flb_kafka_opaque *opaque,
+                                                          const char *brokers)
 {
     struct flb_aws_msk_iam *ctx;
     flb_sds_t region_str = NULL;
-    struct flb_kafka *kafka_ctx;
     char *first_broker = NULL;
     char *comma;
 
-    /*
-     * Extract region from broker address before allocating context.
-     * The caller must set opaque->msk_iam_ctx to point to struct flb_kafka
-     * before calling this function, which we use to extract the broker address.
-     */
-    if (!opaque || !opaque->msk_iam_ctx) {
-        flb_error("[aws_msk_iam] unable to access kafka context for broker-based region extraction");
+    /* Validate inputs */
+    if (!opaque) {
+        flb_error("[aws_msk_iam] opaque context is required");
         return NULL;
     }
-    
-    kafka_ctx = (struct flb_kafka *) opaque->msk_iam_ctx;
-    if (!kafka_ctx->brokers || strlen(kafka_ctx->brokers) == 0) {
+
+    if (!brokers || strlen(brokers) == 0) {
         flb_error("[aws_msk_iam] brokers configuration is required for region extraction");
         return NULL;
     }
     
     /* Extract first broker from comma-separated list */
-    first_broker = flb_strdup(kafka_ctx->brokers);
+    first_broker = flb_strdup(brokers);
     if (!first_broker) {
         flb_error("[aws_msk_iam] failed to allocate memory for broker parsing");
         return NULL;
@@ -629,7 +641,7 @@ struct flb_aws_msk_iam *flb_aws_msk_iam_register_oauth_cb(struct flb_config *con
     region_str = extract_region_from_broker(first_broker);
     if (!region_str || flb_sds_len(region_str) == 0) {
         flb_error("[aws_msk_iam] failed to extract region from broker address: %s", 
-                 kafka_ctx->brokers);
+                 brokers);
         flb_free(first_broker);
         if (region_str) {
             flb_sds_destroy(region_str);
@@ -703,15 +715,24 @@ struct flb_aws_msk_iam *flb_aws_msk_iam_register_oauth_cb(struct flb_config *con
     }
     ctx->provider->provider_vtable->async(ctx->provider);
 
+    /* Initialize mutex to protect credential provider access from concurrent threads */
+    if (pthread_mutex_init(&ctx->lock, NULL) != 0) {
+        flb_error("[aws_msk_iam] failed to initialize credential provider mutex");
+        flb_aws_provider_destroy(ctx->provider);
+        flb_tls_destroy(ctx->cred_tls);
+        flb_sds_destroy(ctx->region);
+        flb_free(ctx);
+        return NULL;
+    }
+
     /*
-     * CRITICAL: Set the correct context type in opaque BEFORE registering the callback.
-     * This eliminates the race condition where the callback could be triggered with
-     * the wrong context type during the initialization window.
+     * Set MSK IAM context in opaque - now opaque->msk_iam_ctx only holds
+     * struct flb_aws_msk_iam * throughout its lifetime, eliminating type confusion.
      */
     flb_kafka_opaque_set(opaque, NULL, ctx);
     rd_kafka_conf_set_opaque(kconf, opaque);
     
-    /* Now safe to register callback - opaque->msk_iam_ctx is already the correct type */
+    /* Register OAuth token refresh callback */
     rd_kafka_conf_set_oauthbearer_token_refresh_cb(kconf, oauthbearer_token_refresh_cb);
 
     return ctx;
@@ -735,5 +756,9 @@ void flb_aws_msk_iam_destroy(struct flb_aws_msk_iam *ctx)
     if (ctx->region) {
         flb_sds_destroy(ctx->region);
     }
+
+    /* Destroy the credential provider mutex */
+    pthread_mutex_destroy(&ctx->lock);
+    
     flb_free(ctx);
 }

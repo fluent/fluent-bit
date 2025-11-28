@@ -203,7 +203,7 @@ struct flb_out_kafka *flb_out_kafka_create(struct flb_output_instance *ins,
     }
 
     /* store the plugin context so callbacks can log properly */
-    flb_kafka_opaque_set(ctx->opaque, ctx, &ctx->kafka);
+    flb_kafka_opaque_set(ctx->opaque, ctx, NULL);
     rd_kafka_conf_set_opaque(ctx->conf, ctx->opaque);
 
     /*
@@ -222,15 +222,16 @@ struct flb_out_kafka *flb_out_kafka_create(struct flb_output_instance *ins,
     if (ctx->aws_msk_iam && ctx->sasl_mechanism && 
         strcasecmp(ctx->sasl_mechanism, "OAUTHBEARER") == 0) {
         /* Check if brokers are configured for MSK IAM */
-        tmp = flb_output_get_property("brokers", ins);
-        if (tmp && (strstr(tmp, ".kafka.") || strstr(tmp, ".kafka-serverless.")) && 
-            strstr(tmp, ".amazonaws.com")) {
+        if (ctx->kafka.brokers && 
+            (strstr(ctx->kafka.brokers, ".kafka.") || strstr(ctx->kafka.brokers, ".kafka-serverless.")) && 
+            strstr(ctx->kafka.brokers, ".amazonaws.com")) {
 
-            /* Register MSK IAM OAuth callback - extract region from broker address */
+            /* Register MSK IAM OAuth callback - pass brokers string directly */
             flb_plg_info(ins, "registering AWS MSK IAM authentication OAuth callback");
             ctx->msk_iam = flb_aws_msk_iam_register_oauth_cb(config,
                                                              ctx->conf,
-                                                             ctx->opaque);
+                                                             ctx->opaque,
+                                                             ctx->kafka.brokers);
             if (!ctx->msk_iam) {
                 flb_plg_error(ctx->ins, "failed to setup MSK IAM authentication OAuth callback");
                 flb_out_kafka_destroy(ctx);
@@ -251,15 +252,18 @@ struct flb_out_kafka *flb_out_kafka_create(struct flb_output_instance *ins,
     /* Kafka Producer */
     ctx->kafka.rk = rd_kafka_new(RD_KAFKA_PRODUCER, ctx->conf,
                                  errstr, sizeof(errstr));
-    /* rd_kafka_new takes ownership of conf regardless of success/failure */
-    ctx->conf = NULL;
     
     if (!ctx->kafka.rk) {
         flb_plg_error(ctx->ins, "failed to create producer: %s",
                       errstr);
+        /* rd_kafka_new() did NOT take ownership on failure; ctx->conf is
+         * still valid and will be destroyed by flb_out_kafka_destroy(). */
         flb_out_kafka_destroy(ctx);
         return NULL;
     }
+
+    /* rd_kafka_new() takes ownership of ctx->conf on success */
+    ctx->conf = NULL;
 
     /*
      * Enable SASL background callbacks for all OAUTHBEARER configurations.
