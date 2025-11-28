@@ -231,11 +231,22 @@ static int in_ebpf_exit(void *in_context, struct flb_config *config) {
 }
 
 static struct flb_config_map config_map[] = {
-    {FLB_CONFIG_MAP_STR, "ringbuf_map_name", FLB_IN_EBPF_DEFAULT_RINGBUF_MAP_NAME, 0, FLB_TRUE,
-     offsetof(struct flb_in_ebpf_context, ringbuf_map_name)},
-    {FLB_CONFIG_MAP_INT, "poll_ms", FLB_IN_EBPF_DEFAULT_POLL_MS, 0, FLB_TRUE,
-     offsetof(struct flb_in_ebpf_context, poll_ms)},
-    {FLB_CONFIG_MAP_STR, "Trace", NULL, FLB_CONFIG_MAP_MULT, FLB_FALSE, 0},
+    {
+     FLB_CONFIG_MAP_STR, "ringbuf_map_name", FLB_IN_EBPF_DEFAULT_RINGBUF_MAP_NAME,
+     0, FLB_TRUE, offsetof(struct flb_in_ebpf_context, ringbuf_map_name),
+     "Set the name of the eBPF ring buffer map to read events from"
+    },
+    {
+     FLB_CONFIG_MAP_INT, "poll_ms", FLB_IN_EBPF_DEFAULT_POLL_MS,
+     0, FLB_TRUE, offsetof(struct flb_in_ebpf_context, poll_ms),
+     "Set the polling interval in milliseconds for collecting events"
+    },
+    {
+     FLB_CONFIG_MAP_STR, "Trace", NULL,
+     FLB_CONFIG_MAP_MULT, FLB_FALSE, 0,
+     "Set the eBPF trace to enable (for example, bind, malloc, signal). Can be set multiple times"
+    },
+    /* EOF */
     {0}
 };
 
