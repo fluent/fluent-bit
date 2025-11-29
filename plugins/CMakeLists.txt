@@ -345,6 +345,7 @@ REGISTER_IN_PLUGIN("in_random")
 # ==========
 REGISTER_PROCESSOR_PLUGIN("processor_content_modifier")
 REGISTER_PROCESSOR_PLUGIN("processor_labels")
+REGISTER_PROCESSOR_PLUGIN("processor_log_sampling")
 REGISTER_PROCESSOR_PLUGIN("processor_metrics_selector")
 REGISTER_PROCESSOR_PLUGIN("processor_opentelemetry_envelope")
 REGISTER_PROCESSOR_PLUGIN("processor_sampling")
