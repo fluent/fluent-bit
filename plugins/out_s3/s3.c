@@ -25,6 +25,7 @@
 #include <fluent-bit/flb_config_map.h>
 #include <fluent-bit/flb_aws_util.h>
 #include <fluent-bit/aws/flb_aws_compress.h>
+#include <fluent-bit/aws/flb_aws_sse.h>
 #include <fluent-bit/flb_hash.h>
 #include <fluent-bit/flb_crypto.h>
 #include <fluent-bit/flb_signv4.h>
@@ -138,6 +139,13 @@ static struct flb_aws_header storage_class_header = {
     .val_len = 0,
 };
 
+static struct flb_aws_header server_side_encryption_header = {
+    .key = "x-amz-server-side-encryption",
+    .key_len = 28,
+    .val = "",
+    .val_len = 0,
+};
+
 static char *mock_error_response(char *error_env_var)
 {
     char *err_val = NULL;
@@ -191,6 +199,9 @@ int create_headers(struct flb_s3 *ctx, char *body_md5,
     if (body_md5 != NULL && strlen(body_md5) && multipart_upload == FLB_FALSE) {
         headers_len++;
     }
+    if (strlen(ctx->sse)) {
+        headers_len++;
+    }
     if (ctx->storage_class != NULL) {
         headers_len++;
     }
@@ -233,6 +244,12 @@ int create_headers(struct flb_s3 *ctx, char *body_md5,
         s3_headers[n] = content_md5_header;
         s3_headers[n].val = body_md5;
         s3_headers[n].val_len = strlen(body_md5);
+        n++;
+    }
+    if (strlen(ctx->sse)) {
+        s3_headers[n] = server_side_encryption_header;
+        s3_headers[n].val = ctx->sse;
+        s3_headers[n].val_len = strlen(ctx->sse);
         n++;
     }
     if (ctx->storage_class != NULL) {
@@ -843,6 +860,16 @@ static int cb_s3_init(struct flb_output_instance *ins,
             flb_plg_error(ctx->ins,  "Could not construct S3 endpoint");
             return -1;
         }
+    }
+
+    tmp = flb_output_get_property("server_side_encryption", ins);
+    if (tmp) {
+        ret = flb_aws_sse_get_type(tmp);
+        if (ret == -1) {
+            flb_plg_error(ctx->ins, "unknown server-side encryption type: %s", tmp);
+            return -1;
+        }
+        ctx->sse = tmp;
     }
 
     tmp = flb_output_get_property("sts_endpoint", ins);
@@ -4054,7 +4081,12 @@ static struct flb_config_map config_map[] = {
     "A standard MIME type for the S3 object; this will be set "
     "as the Content-Type HTTP header."
     },
-
+    {
+     FLB_CONFIG_MAP_STR, "server_side_encryption", NULL,
+     0, FLB_FALSE, 0,
+    "Optional serve-side encryption type to use"
+    "Defaults to no encryption header. "
+    },
     {
      FLB_CONFIG_MAP_STR, "store_dir", "/tmp/fluent-bit/s3",
      0, FLB_TRUE, offsetof(struct flb_s3, store_dir),

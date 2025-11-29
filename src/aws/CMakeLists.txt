@@ -15,6 +15,7 @@ set(src
   "flb_aws_imds.c"
   "flb_aws_credentials_http.c"
   "flb_aws_credentials_profile.c"
+  "flb_aws_sse.c"
   )
 
 message(STATUS "=== AWS Credentials ===")
