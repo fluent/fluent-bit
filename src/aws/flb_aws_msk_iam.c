@@ -135,14 +135,17 @@ static int hmac_sha256_sign(unsigned char out[32],
 }
 
 /* Extract region from MSK broker address
- * MSK Standard format: b-1.example.c1.kafka.<Region>.amazonaws.com:port
- * MSK Serverless format: boot-<ClusterUniqueID>.c<x>.kafka-serverless.<Region>.amazonaws.com:port
+ * Supported formats:
+ * - MSK Standard: b-1.example.c1.kafka.<Region>.amazonaws.com:port
+ * - MSK Serverless: boot-<ClusterUniqueID>.c<x>.kafka-serverless.<Region>.amazonaws.com:port
+ * - VPC Endpoint: vpce-<ID>.kafka.<Region>.vpce.amazonaws.com:port
  */
 static flb_sds_t extract_region_from_broker(const char *broker)
 {
     const char *p;
     const char *start;
     const char *end;
+    const char *port_pos;
     size_t len;
     flb_sds_t out;
     
@@ -150,17 +153,34 @@ static flb_sds_t extract_region_from_broker(const char *broker)
         return NULL;
     }
     
+    /* Remove port if present (e.g., :9098) */
+    port_pos = strchr(broker, ':');
+    if (port_pos) {
+        len = port_pos - broker;
+    } else {
+        len = strlen(broker);
+    }
+    
     /* Find .amazonaws.com */
     p = strstr(broker, ".amazonaws.com");
-    if (!p) {
+    if (!p || p >= broker + len) {
         return NULL;
     }
     
     /* Region is between the last dot before .amazonaws.com and .amazonaws.com
-     * Example: ...kafka.us-east-1.amazonaws.com
-     *          or ...kafka-serverless.us-east-1.amazonaws.com
+     * Handle VPC endpoints (vpce-xxx.kafka.region.vpce.amazonaws.com)
+     * Example formats:
+     *   Standard: ...kafka.us-east-1.amazonaws.com
+     *   Serverless: ...kafka-serverless.us-east-1.amazonaws.com
+     *   VPC Endpoint: ...kafka.us-east-1.vpce.amazonaws.com
      */
     end = p;  /* Points to .amazonaws.com */
+    
+    /* Check for VPC endpoint format: .vpce.amazonaws.com */
+    if (p >= broker + 5 && strncmp(p - 5, ".vpce", 5) == 0) {
+        /* For VPC endpoints, region ends at .vpce */
+        end = p - 5;
+    }
     
     /* Find the start of region by going backwards to find the previous dot */
     start = end - 1;
@@ -177,7 +197,9 @@ static flb_sds_t extract_region_from_broker(const char *broker)
     }
     
     len = end - start;
-    if (len == 0 || len > 32) {  /* Sanity check on region length (AWS regions are typically <= 20 chars) */
+    
+    /* Sanity check on region length (AWS regions are typically 9-20 chars) */
+    if (len == 0 || len > 32) {
         return NULL;
     }
     
