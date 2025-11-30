@@ -26,6 +26,7 @@
 #include <unistd.h>
 #include "flb_tests_runtime.h"
 
+#define FLB_TEST_MAX_WAIT 60
 
 struct callback_record {
     void *data;
@@ -101,9 +102,12 @@ void do_test_records_trace(void (*records_cb)(struct callback_records *))
     /* Start test */
     TEST_CHECK(flb_start(ctx) == 0);
 
-    /* 4 sec passed. It must have flushed */
-    sleep(5);
-    
+    /* Wait at most FLB_TEST_MAX_WAIT seconds for the dummy input, and trace callback */
+    for(i = 0; records->num_records == 0 && i < FLB_TEST_MAX_WAIT; i++ ) {
+        sleep(1);
+    }
+    flb_info("[test] collected records, waited %d seconds", i);
+
     records_cb(records);
     
     flb_stop(ctx);
