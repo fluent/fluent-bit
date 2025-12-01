@@ -169,6 +169,13 @@ if(FLB_LUAJIT)
     )
 endif()
 
+if(FLB_RIPSER)
+  set(UNIT_TESTS_FILES
+    ${UNIT_TESTS_FILES}
+    ripser.c
+    )
+endif()
+
 set(UNIT_TESTS_DATA
   data/tls/certificate.pem
   data/tls/private_key.pem
