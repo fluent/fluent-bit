@@ -268,6 +268,11 @@ static int package_content(struct flb_ml_stream *mst,
         if (ret == FLB_MULTILINE_TRUNCATED) {
             truncated = FLB_TRUE;
         }
+
+        if (stream_group->mp_sbuf.size == 0) {
+            flb_ml_register_context(stream_group, tm, full_map);
+        }
+
         processed = FLB_TRUE;
     }
     else if (type == FLB_ML_ENDSWITH) {
