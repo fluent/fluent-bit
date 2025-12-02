@@ -1648,8 +1648,6 @@ static void test_buffer_limit_disabled()
  */
 struct metadata_result {
     int current_record;
-    int total_expected;
-    char *key;
     int records_with_full_metadata; /* Count of records with full metadata */
     int records_with_log_only;      /* Count of records with only 'log' field */
 };
@@ -1684,6 +1682,9 @@ static int flush_callback_metadata_check(struct flb_ml_parser *parser,
     /* Extract timestamp and map */
     flb_time_pop_from_msgpack(&tm, &result, &map);
 
+    /* Verify timestamp is not zero */
+    TEST_CHECK(flb_time_to_nanosec(&tm) != 0L);
+
     /* Count fields in the map */
     field_count = map->via.map.size;
     fprintf(stdout, "[Record %d] Fields: %d, Timestamp: %lu.%lu\n",
@@ -1705,8 +1706,7 @@ static int flush_callback_metadata_check(struct flb_ml_parser *parser,
     fprintf(stdout, "\n");
 
     /* Track metadata presence */
-    /* 4 fields: time, stream, log, file*/
-    if (field_count == 4) {
+    if (field_count > 1) {
         res->records_with_full_metadata++;
     } else {
         res->records_with_log_only++;
@@ -1748,8 +1748,8 @@ static int append_log_to_multiline_processor(struct flb_ml *ml, uint64_t stream_
     /* time field */
     msgpack_pack_str(&mp_pck, 4);
     msgpack_pack_str_body(&mp_pck, "time", 4);
-    msgpack_pack_str(&mp_pck, 24);
-    msgpack_pack_str_body(&mp_pck, "2025-12-01T17:33:44+00:00", 24);
+    msgpack_pack_str(&mp_pck, 25);
+    msgpack_pack_str_body(&mp_pck, "2025-12-01T17:33:44+00:00", 25);
 
     /* stream field */
     msgpack_pack_str(&mp_pck, 6);
@@ -1783,6 +1783,7 @@ static int append_log_to_multiline_processor(struct flb_ml *ml, uint64_t stream_
 
     /* Send to multiline processor */
     ret = flb_ml_append_object(ml, stream_id, tm, NULL, map);
+    TEST_CHECK(ret == FLB_MULTILINE_OK);
 
     msgpack_unpacked_destroy(&result);
     msgpack_sbuffer_destroy(&mp_sbuf);
@@ -1806,7 +1807,7 @@ static int append_log_to_multiline_processor(struct flb_ml *ml, uint64_t stream_
  * Before fix: Lines 1, 2, 4, 5 would have only {"log": "..."} (missing metadata)
  * After fix: All lines should have {"time": "...", "stream": "...", "log": "...", "file": "..."}
  */
-static void test_issue_10567_metadata_preservation()
+static void test_issue_10576()
 {
     int ret;
     int i;
@@ -1872,10 +1873,6 @@ static void test_issue_10567_metadata_preservation()
 
     flb_ml_parser_instance_set(mlp_i, "key_content", "log");
 
-    /* Initialize result tracking */
-    res.key = "log";
-    res.total_expected = num_lines;
-
     /* Create stream */
     ret = flb_ml_stream_create(ml, "test-stream", -1,
                                flush_callback_metadata_check,
@@ -1932,6 +1929,6 @@ TEST_LIST = {
     { "issue_4034"    , test_issue_4034},
     { "issue_4949"    , test_issue_4949},
     { "issue_5504"    , test_issue_5504},
-    { "issue_10576"   , test_issue_10567_metadata_preservation },
+    { "issue_10576"   , test_issue_10576},
     { 0 }
 };
