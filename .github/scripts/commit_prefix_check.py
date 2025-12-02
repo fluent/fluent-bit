@@ -152,16 +152,70 @@ def validate_commit(commit):
 
 
 # ------------------------------------------------
+# Get PR commits only (excludes merge commits and base branch commits)
+# ------------------------------------------------
+def get_pr_commits():
+    """
+    For PRs, get only commits that are part of the PR (not in base branch).
+    Excludes merge commits.
+    """
+    event_name = os.environ.get("GITHUB_EVENT_NAME", "")
+    base_ref = os.environ.get("GITHUB_BASE_REF", "")
+
+    if event_name != "pull_request":
+        return [repo.head.commit]
+
+    # Try to get the base branch reference
+    base_branch_ref = None
+    if base_ref:
+        # Try origin/base_ref first (most common in CI)
+        try:
+            base_branch_ref = f"origin/{base_ref}"
+            repo.refs[base_branch_ref]  # Test if it exists
+        except (KeyError, IndexError):
+            # Try just base_ref if origin/ doesn't exist
+            try:
+                base_branch_ref = base_ref
+                repo.refs[base_branch_ref]  # Test if it exists
+            except (KeyError, IndexError):
+                base_branch_ref = None
+
+    # If we have a base branch, get commits between base and HEAD
+    if base_branch_ref:
+        try:
+            base_commit = repo.refs[base_branch_ref].commit
+            merge_base_list = repo.merge_base(repo.head.commit, base_commit)
+            if merge_base_list:
+                merge_base_sha = merge_base_list[0].hexsha
+                # Get all commits from merge_base to HEAD, excluding merge_base itself
+                pr_commits = list(repo.iter_commits(f"{merge_base_sha}..HEAD"))
+                # Filter out merge commits (they start with "Merge")
+                pr_commits = [c for c in pr_commits if not c.message.strip().startswith("Merge")]
+                if pr_commits:
+                    return pr_commits
+        except Exception as e:
+            # If merge-base fails, log and fall through to fallback
+            print(f"⚠️  Could not determine merge base: {e}", file=sys.stderr)
+
+    # Fallback: if we can't determine base, check HEAD (but skip if it's a merge)
+    head_commit = repo.head.commit
+    if head_commit.message.strip().startswith("Merge"):
+        # If HEAD is a merge commit, skip it
+        print("⚠️  HEAD is a merge commit and base branch not available. Skipping validation.", file=sys.stderr)
+        return []
+
+    return [head_commit]
+
+
+# ------------------------------------------------
 # MAIN
 # ------------------------------------------------
 def main():
-    head = repo.head.commit
-    event_name = os.environ.get("GITHUB_EVENT_NAME", "")
+    commits = get_pr_commits()
 
-    if event_name == "pull_request":
-        commits = list(repo.iter_commits("HEAD", max_count=20))
-    else:
-        commits = [head]
+    if not commits:
+        print("ℹ️  No commits to validate.")
+        sys.exit(0)
 
     errors = []
     for commit in commits:
