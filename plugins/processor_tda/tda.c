@@ -19,10 +19,6 @@
 
 #include <fluent-bit/flb_processor_plugin.h>
 #include <fluent-bit/flb_hash_table.h>
-#include <fluent-bit/ripser/flb_ripser_wrapper.h>
-#include <cmetrics/cmetrics.h>
-#include <cmetrics/cmt_map.h>
-#include <cfl/cfl_sds.h>
 
 /* lwrb header */
 #include <lwrb/lwrb.h>
@@ -31,53 +27,7 @@
 #include <string.h>
 #include <stdlib.h>
 
-struct tda_window;
-struct tda_proc_ctx;
-
-/* time-series samples (aggregated metrics snapshot) */
-struct tda_sample {
-    uint64_t ts;
-    double   values[];
-};
-
-struct tda_group {
-    cfl_sds_t ns;
-    cfl_sds_t subsystem;
-    int       index;   /* 0 .. feature_dim-1 */
-};
-
-struct tda_window {
-    lwrb_t  rb;
-    uint8_t *buf;
-    size_t  sample_size;  /* sizeof(uint64_t) + feature_dim * sizeof(double) */
-    int     feature_dim;
-};
-
-/* processor context */
-struct tda_proc_ctx {
-    struct tda_window *window;
-    int window_size;   /* max number of samples in window */
-    int min_points;    /* minimum samples before running ripser */
-
-    int feature_dim;               /* # of (ns,subsystem) groups */
-    struct flb_hash_table *groups; /* key="ns.subsystem" -> struct tda_group* */
-    struct tda_group      **group_list; /* for safe free() */
-
-    /* delay embedding parameters */
-    int embed_dim;    /* m: number of delays (1 = no embedding) */
-    int embed_delay;  /* tau: delay in samples */
-
-    /* exposed betti-number gauges (created lazily) */
-    struct cmt_gauge *g_betti0;
-    struct cmt_gauge *g_betti1;
-    struct cmt_gauge *g_betti2;
-
-    /* for counter → rate conversion */
-    double   *last_vec;  /* last raw snapshot for each feature_dim */
-    uint64_t  last_ts;   /* last snapshot timestamp (nanoseconds)   */
-
-    struct flb_processor_instance *ins;
-};
+#include "tda.h"
 
 /* Choose a distance threshold from a dense (n x n) distance matrix.
  * We collect all off-diagonal distances (i > j), sort them, and
