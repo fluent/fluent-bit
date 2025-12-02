@@ -60,6 +60,7 @@ struct tda_proc_ctx {
     /* delay embedding parameters */
     int embed_dim;    /* m: number of delays (1 = no embedding) */
     int embed_delay;  /* tau: delay in samples */
+    double threshold;
 
     /* exposed betti-number gauges (created lazily) */
     struct cmt_gauge *g_betti0;

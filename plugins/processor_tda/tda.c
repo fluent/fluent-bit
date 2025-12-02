@@ -52,7 +52,8 @@ static int cmp_float_asc(const void *a, const void *b)
     }
 }
 
-static float tda_choose_threshold_from_dist(const float *dist,
+static float tda_choose_threshold_from_dist(struct tda_proc_ctx *ctx,
+                                            const float *dist,
                                             size_t n,
                                             double quantile)
 {
@@ -64,16 +65,27 @@ static float tda_choose_threshold_from_dist(const float *dist,
     size_t k = 0;
     float thr = 0.0f;
     double pos;
+    double q;
 
     if (!dist || n < 2) {
         return 0.0f;
     }
 
-    if (quantile <= 0.0) {
-        quantile = 0.0;
+    /* if user specified threshold as quantile (0 < q < 1),
+     * override the default quantile argument.
+     */
+    if (ctx && ctx->threshold > 0.0 && ctx->threshold < 1.0) {
+        q = ctx->threshold;
     }
-    else if (quantile >= 1.0) {
-        quantile = 1.0;
+    else {
+        q = quantile;
+    }
+
+    if (q <= 0.0) {
+        q = 0.0;
+    }
+    else if (q >= 1.0) {
+        q = 1.0;
     }
 
     /* number of unique off-diagonal distances */
@@ -107,7 +119,7 @@ static float tda_choose_threshold_from_dist(const float *dist,
         idx = 0;
     }
     else {
-        pos = quantile * (double) (k - 1);
+        pos = q * (double) (k - 1);
         if (pos < 0.0) {
             pos = 0.0;
         }
@@ -120,7 +132,7 @@ static float tda_choose_threshold_from_dist(const float *dist,
     thr = vals[idx];
 
     flb_debug("[tda] chosen distance threshold=%.6f (quantile=%.2f, m=%zu)",
-              thr, quantile, k);
+              thr, q, k);
 
     flb_free(vals);
 
@@ -914,11 +926,10 @@ static void tda_window_run_ripser(struct tda_window *w,
     /* --- choose a scale for TDA ---
      * Use the number of embedded points n_embed to determine the threshold.
      */
-    threshold = tda_choose_threshold_from_dist(dist, n_embed, q);
+    threshold = tda_choose_threshold_from_dist(ctx, dist, n_embed, q);
     if (threshold <= 0.0f) {
         threshold = 0.0f;
     }
-    threshold = 0.0f;
 
     memset(&betti, 0, sizeof(betti));
 
@@ -926,7 +937,7 @@ static void tda_window_run_ripser(struct tda_window *w,
 
     for (qi = 0; qi < nq; qi++) {
         qc = q_candidates[qi];
-        thr = tda_choose_threshold_from_dist(dist, n_embed, qc);
+        thr = tda_choose_threshold_from_dist(ctx, dist, n_embed, qc);
 
         if (thr < 0.0f) {
             thr = 0.0f;
@@ -950,13 +961,28 @@ static void tda_window_run_ripser(struct tda_window *w,
             best_b1 = tmp.betti[1];
             best_b0 = tmp.betti[0];
             best_b2 = (tmp.num_dims > 2) ? tmp.betti[2] : 0;
-            best_q_for_b1 = q;
+
+            /* if user forced ctx->threshold as quantile, report that,
+             * otherwise report the candidate quantile qc.
+             */
+            if (ctx && ctx->threshold > 0.0 && ctx->threshold < 1.0) {
+                best_q_for_b1 = ctx->threshold;
+            }
+            else {
+                best_q_for_b1 = qc;
+            }
         }
         /* If all H1 are zero, fall back to H0. */
         else if (best_b1 == 0 && tmp.betti[0] > best_b0) {
             best_b0 = tmp.betti[0];
             best_b2 = (tmp.num_dims > 2) ? tmp.betti[2] : 0;
-            best_q_for_b1 = q;
+
+            if (ctx && ctx->threshold > 0.0 && ctx->threshold < 1.0) {
+                best_q_for_b1 = ctx->threshold;
+            }
+            else {
+                best_q_for_b1 = qc;
+            }
         }
     }
 
@@ -1176,6 +1202,12 @@ static struct flb_config_map config_map[] = {
         FLB_CONFIG_MAP_INT, "embed_delay", "1",
         0, FLB_TRUE, offsetof(struct tda_proc_ctx, embed_delay),
         "Delay embedding lag tau in samples. This means that 1 delaying sample."
+    },
+    {
+        FLB_CONFIG_MAP_DOUBLE, "threshold", "0",
+        0, FLB_TRUE, offsetof(struct tda_proc_ctx, threshold),
+        "Distance scale selector. 0 = auto multi-quantile scan; "
+        "(0,1) = use as quantile to pick the distance threshold."
     },
     /* EOF */
     {0}
