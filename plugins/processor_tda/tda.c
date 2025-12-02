@@ -29,6 +29,7 @@
 
 #include <math.h>
 #include <string.h>
+#include <stdlib.h>
 
 struct tda_window;
 struct tda_proc_ctx;
@@ -62,11 +63,119 @@ struct tda_proc_ctx {
     struct flb_hash_table *groups; /* key="ns.subsystem" -> struct tda_group* */
     struct tda_group      **group_list; /* for safe free() */
 
+    /* delay embedding parameters */
+    int embed_dim;    /* m: number of delays (1 = no embedding) */
+    int embed_delay;  /* tau: delay in samples */
+
     /* exposed betti-number gauges (created lazily) */
     struct cmt_gauge *g_betti0;
     struct cmt_gauge *g_betti1;
     struct cmt_gauge *g_betti2;
+
+    /* for counter → rate conversion */
+    double   *last_vec;  /* last raw snapshot for each feature_dim */
+    uint64_t  last_ts;   /* last snapshot timestamp (nanoseconds)   */
+
+    struct flb_processor_instance *ins;
 };
+
+/* Choose a distance threshold from a dense (n x n) distance matrix.
+ * We collect all off-diagonal distances (i > j), sort them, and
+ * return the given quantile (e.g. q=0.5 → median).
+ *
+ * If anything goes wrong, we return 0.0f and let the wrapper fall
+ * back to "automatic" (enclosing radius) mode.
+ */
+static int cmp_float_asc(const void *a, const void *b)
+{
+    const float fa = *(const float *) a;
+    const float fb = *(const float *) b;
+
+    if (fa < fb) {
+        return -1;
+    }
+    else if (fa > fb) {
+        return 1;
+    }
+    else {
+        return 0;
+    }
+}
+
+static float tda_choose_threshold_from_dist(const float *dist,
+                                            size_t n,
+                                            double quantile)
+{
+    size_t m;
+    float *vals;
+    size_t idx;
+    size_t i;
+    size_t j;
+    size_t k = 0;
+    float thr = 0.0f;
+    double pos;
+
+    if (!dist || n < 2) {
+        return 0.0f;
+    }
+
+    if (quantile <= 0.0) {
+        quantile = 0.0;
+    }
+    else if (quantile >= 1.0) {
+        quantile = 1.0;
+    }
+
+    /* number of unique off-diagonal distances */
+    m = n * (n - 1) / 2;
+    if (m == 0) {
+        return 0.0f;
+    }
+
+    vals = (float *) flb_malloc(sizeof(float) * m);
+    if (!vals) {
+        flb_errno();
+        return 0.0f;
+    }
+
+    /* collect i > j entries */
+    for (i = 0; i < n; i++) {
+        for (j = 0; j < i; j++) {
+            vals[k++] = dist[i * n + j];
+        }
+    }
+
+    if (k == 0) {
+        flb_free(vals);
+        return 0.0f;
+    }
+
+    qsort(vals, k, sizeof(float), cmp_float_asc);
+
+    /* pick quantile index (e.g. 0.5 → median) */
+    if (k == 1) {
+        idx = 0;
+    }
+    else {
+        pos = quantile * (double) (k - 1);
+        if (pos < 0.0) {
+            pos = 0.0;
+        }
+        if (pos > (double) (k - 1)) {
+            pos = (double) (k - 1);
+        }
+        idx = (size_t) pos;
+    }
+
+    thr = vals[idx];
+
+    flb_debug("[tda] chosen distance threshold=%.6f (quantile=%.2f, m=%zu)",
+              thr, quantile, k);
+
+    flb_free(vals);
+
+    return thr;
+}
 
 struct tda_window *tda_window_create(size_t capacity, int feature_dim)
 {
@@ -102,6 +211,177 @@ struct tda_window *tda_window_create(size_t capacity, int feature_dim)
 }
 
 /* ---------------------------------------------------------------------- */
+/* small helpers                                                          */
+/* ---------------------------------------------------------------------- */
+
+static inline int tda_append_group_to_list(struct tda_group ***plist,
+                                           int *plist_cap,
+                                           int *pnext_index,
+                                           struct tda_group *g)
+{
+    int next_index;
+    int list_cap;
+    struct tda_group **list;
+    int new_cap;
+
+    if (!plist || !plist_cap || !pnext_index || !g) {
+        return -1;
+    }
+
+    list       = *plist;
+    list_cap   = *plist_cap;
+    next_index = *pnext_index;
+
+    if (next_index >= list_cap) {
+        new_cap = (list_cap == 0) ? 16 : list_cap * 2;
+
+        list = flb_realloc(list,
+                           sizeof(struct tda_group *) * (size_t) new_cap);
+        if (!list) {
+            flb_errno();
+            return -1;
+        }
+
+        *plist     = list;
+        *plist_cap = new_cap;
+    }
+
+    list       = *plist;
+    next_index = *pnext_index;
+
+    list[next_index] = g;
+    *pnext_index     = next_index + 1;
+
+    return 0;
+}
+
+static inline int tda_register_map_group(struct flb_hash_table *ht,
+                                         struct tda_group ***plist,
+                                         int *plist_cap,
+                                         int *pnext_index,
+                                         struct cmt_map *map)
+{
+    const char *ns;
+    const char *sub;
+    char key[256];
+    int  len;
+    void *out;
+    struct tda_group *g;
+    int idx;
+
+    if (!ht || !plist || !plist_cap || !pnext_index || !map || !map->opts) {
+        return -1;
+    }
+
+    ns  = map->opts->ns        ? map->opts->ns        : "";
+    sub = map->opts->subsystem ? map->opts->subsystem : "";
+
+    len = snprintf(key, sizeof(key), "%s.%s", ns, sub);
+    if (len < 0 || (size_t) len >= sizeof(key)) {
+        return 0;
+    }
+
+    out = flb_hash_table_get_ptr(ht, key, len);
+    if (out) {
+        return 0;
+    }
+
+    g = flb_calloc(1, sizeof(*g));
+    if (!g) {
+        flb_errno();
+        return -1;
+    }
+
+    g->ns        = cfl_sds_create(ns);
+    g->subsystem = cfl_sds_create(sub);
+
+    if (!g->ns || !g->subsystem) {
+        if (g->ns) {
+            cfl_sds_destroy(g->ns);
+        }
+        if (g->subsystem) {
+            cfl_sds_destroy(g->subsystem);
+        }
+        flb_free(g);
+        flb_errno();
+        return -1;
+    }
+
+    g->index = *pnext_index;
+    if (tda_append_group_to_list(plist, plist_cap, pnext_index, g) != 0) {
+        cfl_sds_destroy(g->ns);
+        cfl_sds_destroy(g->subsystem);
+        flb_free(g);
+        return -1;
+    }
+
+    if (flb_hash_table_add(ht, key, len, g, 0) < 0) {
+        idx = g->index;
+
+        if (*pnext_index > 0 && *pnext_index - 1 == idx) {
+            (*pnext_index)--;
+        }
+
+        cfl_sds_destroy(g->ns);
+        cfl_sds_destroy(g->subsystem);
+        flb_free(g);
+        flb_errno();
+        return -1;
+    }
+
+    return 0;
+}
+
+static inline void tda_accumulate_map_metrics(struct tda_proc_ctx *ctx,
+                                              struct cmt_map *map,
+                                              double *out_vec)
+{
+    const char *ns;
+    const char *sub;
+    char key[256];
+    int  len;
+    void *out;
+    struct tda_group *g;
+    int idx;
+    struct cfl_list *metric_head;
+    struct cmt_metric *metric;
+
+    if (!ctx || !ctx->groups || !map || !map->opts || !out_vec) {
+        return;
+    }
+
+    ns  = map->opts->ns        ? map->opts->ns        : "";
+    sub = map->opts->subsystem ? map->opts->subsystem : "";
+
+    len = snprintf(key, sizeof(key), "%s.%s", ns, sub);
+    if (len < 0 || (size_t) len >= sizeof(key)) {
+        return;
+    }
+
+    out = flb_hash_table_get_ptr(ctx->groups, key, len);
+    if (!out) {
+        return;
+    }
+
+    g = (struct tda_group *) out;
+    idx = g->index;
+
+    if (idx < 0 || idx >= ctx->feature_dim) {
+        return;
+    }
+
+    if (map->metric_static_set) {
+        metric = &map->metric;
+        out_vec[idx] += cmt_metric_get_value(metric);
+    }
+
+    cfl_list_foreach(metric_head, &map->metrics) {
+        metric = cfl_list_entry(metric_head, struct cmt_metric, _head);
+        out_vec[idx] += cmt_metric_get_value(metric);
+    }
+}
+
+/* ---------------------------------------------------------------------- */
 /* group building: allocate dimensions each of (ns,subsystem)             */
 /* ---------------------------------------------------------------------- */
 
@@ -118,6 +398,7 @@ static int tda_build_groups(struct tda_proc_ctx *ctx, struct cmt *cmt)
     int next_index = 0;
     int i;
     int ret = -1;
+    struct tda_group *g;
 
     if (!ctx || !cmt) {
         return -1;
@@ -129,104 +410,68 @@ static int tda_build_groups(struct tda_proc_ctx *ctx, struct cmt *cmt)
         return -1;
     }
 
-    /* helper: append new group pointer into list */
-#define APPEND_GROUP_TO_LIST(_g)                                             \
-    do {                                                                     \
-        if (next_index >= list_cap) {                                        \
-            int new_cap = (list_cap == 0) ? 16 : list_cap * 2;               \
-            struct tda_group **tmp = flb_realloc(list,                       \
-                sizeof(struct tda_group *) * (size_t) new_cap);              \
-            if (!tmp) {                                                      \
-                flb_errno();                                                 \
-                goto error;                                                  \
-            }                                                                \
-            list = tmp;                                                      \
-            list_cap = new_cap;                                              \
-        }                                                                    \
-        list[next_index] = (_g);                                             \
-    } while (0)
-
-    /* helper macro: register (ns,subsystem) from a map */
-#define REGISTER_MAP_GROUP(_map)                                                     \
-    do {                                                                             \
-        const char *ns  = (_map)->opts->ns        ? (_map)->opts->ns        : "";    \
-        const char *sub = (_map)->opts->subsystem ? (_map)->opts->subsystem : "";    \
-        char key[256];                                                               \
-        int  len;                                                                    \
-        void *out;                                                                   \
-                                                                                    \
-        len = snprintf(key, sizeof(key), "%s.%s", ns, sub);                          \
-        if (len < 0 || (size_t) len >= sizeof(key)) {                                \
-            break;                                                                   \
-        }                                                                            \
-                                                                                    \
-        out = flb_hash_table_get_ptr(ht, key, len);                                  \
-        if (!out) {                                                                  \
-            struct tda_group *g = flb_calloc(1, sizeof(*g));                         \
-            if (!g) {                                                                \
-                flb_errno();                                                         \
-                goto error;                                                          \
-            }                                                                        \
-            g->ns        = cfl_sds_create(ns);                                       \
-            g->subsystem = cfl_sds_create(sub);                                      \
-            g->index     = next_index;                                              \
-                                                                                    \
-            if (!g->ns || !g->subsystem) {                                           \
-                if (g->ns)        cfl_sds_destroy(g->ns);                            \
-                if (g->subsystem) cfl_sds_destroy(g->subsystem);                     \
-                flb_free(g);                                                         \
-                goto error;                                                          \
-            }                                                                        \
-                                                                                    \
-            /* hash table: store pointer as value (val_size=0 -> refering pointer ) */    \
-            if (flb_hash_table_add(ht, key, len, g, 0) < 0) {                        \
-                cfl_sds_destroy(g->ns);                                              \
-                cfl_sds_destroy(g->subsystem);                                       \
-                flb_free(g);                                                         \
-                goto error;                                                          \
-            }                                                                        \
-                                                                                    \
-            APPEND_GROUP_TO_LIST(g);                                                 \
-            next_index++;                                                            \
-        }                                                                            \
-    } while (0)
-
     /* counters */
     cfl_list_foreach(head, &cmt->counters) {
         counter = cfl_list_entry(head, struct cmt_counter, _head);
         map = counter->map;
-        REGISTER_MAP_GROUP(map);
+
+        if (tda_register_map_group(ht,
+                                   &list,
+                                   &list_cap,
+                                   &next_index,
+                                   map) != 0) {
+            goto error;
+        }
     }
 
     /* gauges */
     cfl_list_foreach(head, &cmt->gauges) {
         gauge = cfl_list_entry(head, struct cmt_gauge, _head);
         map = gauge->map;
-        REGISTER_MAP_GROUP(map);
+
+        if (tda_register_map_group(ht,
+                                   &list,
+                                   &list_cap,
+                                   &next_index,
+                                   map) != 0) {
+            goto error;
+        }
     }
 
     /* untyped */
     cfl_list_foreach(head, &cmt->untypeds) {
         untyped = cfl_list_entry(head, struct cmt_untyped, _head);
         map = untyped->map;
-        REGISTER_MAP_GROUP(map);
-    }
 
-#undef REGISTER_MAP_GROUP
-#undef APPEND_GROUP_TO_LIST
+        if (tda_register_map_group(ht,
+                                   &list,
+                                   &list_cap,
+                                   &next_index,
+                                   map) != 0) {
+            goto error;
+        }
+    }
 
     ctx->groups      = ht;
     ctx->group_list  = list;
     ctx->feature_dim = next_index;
 
-    flb_info("[tda] built TDA groups: feature_dim=%d", ctx->feature_dim);
+    /* allocate last_vec for rate calculation */
+    ctx->last_vec = flb_calloc(ctx->feature_dim, sizeof(double));
+    if (!ctx->last_vec) {
+        flb_errno();
+        goto error;
+    }
+    ctx->last_ts = 0;
+
+    flb_plg_info(ctx->ins, "built TDA groups: feature_dim=%d", ctx->feature_dim);
 
     return 0;
 
 error:
     if (list) {
         for (i = 0; i < next_index; i++) {
-            struct tda_group *g = list[i];
+            g = list[i];
             if (!g) {
                 continue;
             }
@@ -242,6 +487,10 @@ error:
     }
     if (ht) {
         flb_hash_table_destroy(ht);
+    }
+    if (ctx->last_vec) {
+        flb_free(ctx->last_vec);
+        ctx->last_vec = NULL;
     }
     return ret;
 }
@@ -260,17 +509,23 @@ void tda_window_destroy(struct tda_window *w)
 
 static int tda_build_vector_from_cmt(struct tda_proc_ctx *ctx,
                                      struct cmt *cmt,
-                                     double *out_vec)
+                                     double *out_vec,
+                                     uint64_t ts)
 {
     struct cfl_list *head;
-    struct cfl_list *metric_head;
     struct cmt_counter *counter;
     struct cmt_gauge *gauge;
     struct cmt_untyped *untyped;
-    struct cmt_metric *metric;
     struct cmt_map *map;
 
     int i;
+    double dt_sec;
+    double raw_now;
+    double raw_prev;
+    double diff;
+    double rate;
+    double mag;
+    double norm;
 
     /* zero-initialize vector */
     for (i = 0; i < ctx->feature_dim; i++) {
@@ -281,59 +536,74 @@ static int tda_build_vector_from_cmt(struct tda_proc_ctx *ctx,
         return -1;
     }
 
-#define ACCUMULATE_MAP_METRICS(_map)                                              \
-    do {                                                                          \
-        const char *ns  = (_map)->opts->ns        ? (_map)->opts->ns        : ""; \
-        const char *sub = (_map)->opts->subsystem ? (_map)->opts->subsystem : ""; \
-        char key[256];                                                            \
-        int  len;                                                                 \
-        void *out;                                                                \
-                                                                                  \
-        len = snprintf(key, sizeof(key), "%s.%s", ns, sub);                       \
-        if (len < 0 || (size_t) len >= sizeof(key)) {                             \
-            break;                                                                \
-        }                                                                         \
-                                                                                  \
-        out = flb_hash_table_get_ptr(ctx->groups, key, len);                      \
-        if (out) {                                                                \
-            struct tda_group *g = (struct tda_group *) out;                       \
-            int idx = g->index;                                                   \
-            if (idx >= 0 && idx < ctx->feature_dim) {                             \
-                if ((_map)->metric_static_set) {                                  \
-                    metric = &(_map)->metric;                                     \
-                    out_vec[idx] += cmt_metric_get_value(metric);                 \
-                }                                                                 \
-                cfl_list_foreach(metric_head, &(_map)->metrics) {                 \
-                    metric = cfl_list_entry(metric_head,                          \
-                                            struct cmt_metric, _head);            \
-                    out_vec[idx] += cmt_metric_get_value(metric);                 \
-                }                                                                 \
-            }                                                                     \
-        }                                                                         \
-    } while (0)
-
     /* counters */
     cfl_list_foreach(head, &cmt->counters) {
         counter = cfl_list_entry(head, struct cmt_counter, _head);
         map = counter->map;
-        ACCUMULATE_MAP_METRICS(map);
+        tda_accumulate_map_metrics(ctx, map, out_vec);
     }
 
     /* gauges */
     cfl_list_foreach(head, &cmt->gauges) {
         gauge = cfl_list_entry(head, struct cmt_gauge, _head);
         map = gauge->map;
-        ACCUMULATE_MAP_METRICS(map);
+        tda_accumulate_map_metrics(ctx, map, out_vec);
     }
 
     /* untyped */
     cfl_list_foreach(head, &cmt->untypeds) {
         untyped = cfl_list_entry(head, struct cmt_untyped, _head);
         map = untyped->map;
-        ACCUMULATE_MAP_METRICS(map);
+        tda_accumulate_map_metrics(ctx, map, out_vec);
     }
 
-#undef ACCUMULATE_MAP_METRICS
+    /* At this point, out_vec contains the aggregated value for each (ns, subsystem).
+     *
+     * Next, we use the difference from the previous snapshot and dt to compute:
+     *   rate = diff / dt
+     * and then apply log1p for a light normalization.
+     */
+
+    if (!ctx->last_vec || ctx->feature_dim <= 0) {
+        return -1;
+    }
+
+    if (ctx->last_ts == 0) {
+        /* First call: we cannot compute rates yet, so we return 0
+         * and store the current values in last_vec.
+         */
+        for (i = 0; i < ctx->feature_dim; i++) {
+            ctx->last_vec[i] = out_vec[i];
+            out_vec[i]       = 0.0;
+        }
+        ctx->last_ts = ts;
+        return 0;
+    }
+
+    if (ts > ctx->last_ts) {
+        dt_sec = (double) (ts - ctx->last_ts) / 1e9; /* cfl_time_now() returns ns */
+    }
+    else {
+        /* safeguard in case time goes backwards */
+        dt_sec = 1.0;
+    }
+
+    if (dt_sec <= 0.0) {
+        dt_sec = 1.0;
+    }
+
+    for (i = 0; i < ctx->feature_dim; i++) {
+        raw_now  = out_vec[i];
+        raw_prev = ctx->last_vec[i];
+        diff     = raw_now - raw_prev;
+        rate     = diff / dt_sec;
+        mag      = fabs(rate);
+        norm     = log1p(mag);     /* squash into [0, +∞) */
+
+        out_vec[i]       = (rate >= 0.0) ? norm : -norm;
+        ctx->last_vec[i] = raw_now;       /* store raw value for next time */
+    }
+    ctx->last_ts = ts;
 
     return 0;
 }
@@ -367,7 +637,7 @@ void tda_window_ingest(struct tda_window *w,
     s->ts = ts;
 
     vec = s->values;
-    if (tda_build_vector_from_cmt(ctx, cmt, vec) != 0) {
+    if (tda_build_vector_from_cmt(ctx, cmt, vec, ts) != 0) {
         flb_free(buf);
         return;
     }
@@ -529,44 +799,113 @@ static void tda_window_run_ripser(struct tda_window *w,
                                   struct tda_proc_ctx *ctx,
                                   struct cmt *cmt)
 {
-    size_t n;
+    size_t n_raw;
     size_t mat_size;
     float *dist;
     uint8_t *raw_samples;
     flb_ripser_betti betti;
-    int ret;
-    size_t i;
-    size_t j;
-    size_t k;
     uint64_t ts;
+    float threshold;
+
+    size_t i, j, k;
+    size_t lag;
+    size_t m;
+    size_t tau;
+    size_t min_required;
+    size_t n_embed;
+
+    double q;
+
+    double accum;
+    size_t base_i;
+    size_t base_j;
+    size_t idx_i;
+    size_t idx_j;
+
+    uint8_t *si;
+    uint8_t *sj;
+
+    struct tda_sample *s_i = NULL;
+    struct tda_sample *s_j = NULL;
+
+    double *xi;
+    double *xj;
+
+    double diff;
+    float d;
+
+    /* --- search for H1 structures across multiple scales --- */
+    static const double q_candidates[] = {
+        0.10, 0.20, 0.30, 0.40, 0.50,
+        0.60, 0.70, 0.80, 0.90
+    };
+
+    int nq;
+
+    int best_b0 = 0;
+    int best_b1 = 0;
+    int best_b2 = 0;
+    double best_q_for_b1 = 0.0;
+
+    int qi;
+    double qc;
+    float thr;
+    flb_ripser_betti tmp;
+    int ret_local;
 
     if (!w || !ctx || !cmt) {
         return;
     }
 
-    n = tda_window_length(w);
-    if (n < 2) {
+    n_raw = tda_window_length(w);
+    if (n_raw < 2) {
         return;
     }
 
     if (ensure_betti_gauges(ctx, cmt) != 0) {
-        flb_warn("[tda] failed to create betti gauges");
+        flb_plg_warn(ctx->ins, "failed to create betti gauges");
         return;
     }
 
-    raw_samples = flb_calloc(1, n * w->sample_size);
+    raw_samples = flb_calloc(1, n_raw * w->sample_size);
     if (!raw_samples) {
         flb_errno();
         return;
     }
 
-    n = tda_window_snapshot(w, raw_samples, n);
-    if (n < 2) {
+    /* snapshot of the latest n_raw samples into raw_samples */
+    n_raw = tda_window_snapshot(w, raw_samples, n_raw);
+    if (n_raw < 2) {
         flb_free(raw_samples);
         return;
     }
 
-    mat_size = n * n;
+    /* --- delay embedding settings --- */
+    m   = (ctx->embed_dim   > 0) ? (size_t) ctx->embed_dim   : 1;
+    tau = (ctx->embed_delay > 0) ? (size_t) ctx->embed_delay : 1;
+
+    /* When m == 1, disable delay embedding to match the original behavior. */
+    if (m == 1) {
+        tau = 1;
+    }
+
+    /* Minimum number of samples required for the embedding:
+     * index: t, t - tau, ..., t - (m-1)tau → t >= (m-1)tau
+     * number of valid t = n_raw - (m - 1)tau
+     */
+    min_required = (m - 1) * tau + 1;
+    if (n_raw < min_required) {
+        /* Not enough samples to construct the delay embedding yet. */
+        flb_free(raw_samples);
+        return;
+    }
+
+    n_embed = n_raw - (m - 1) * tau;
+
+    flb_plg_debug(ctx->ins, "n_raw=%zu, embed_dim=%d, embed_delay=%d, n_embed=%zu",
+                  n_raw, ctx->embed_dim, ctx->embed_delay, n_embed);
+
+    mat_size = n_embed * n_embed;
     dist = flb_calloc(mat_size, sizeof(float));
     if (!dist) {
         flb_errno();
@@ -574,47 +913,115 @@ static void tda_window_run_ripser(struct tda_window *w,
         return;
     }
 
-    /* many dimensional Euclid distance */
-    for (i = 0; i < n; i++) {
-        uint8_t *si = raw_samples + i * w->sample_size;
-        struct tda_sample *s_i = (struct tda_sample *) si;
-        double *xi = s_i->values;
-
-        dist[i * n + i] = 0.0f;
+    /* Build the distance matrix as an (n × m)-dimensional Euclidean distance.
+     *
+     * Embedded point p (0..n_embed-1) corresponds to the actual sample indices:
+     *   base_p = p + (m - 1) * tau;
+     *   for lag l: index = base_p - l * tau;
+     */
+    for (i = 0; i < n_embed; i++) {
+        dist[i * n_embed + i] = 0.0f;
 
         for (j = 0; j < i; j++) {
-            uint8_t *sj = raw_samples + j * w->sample_size;
-            struct tda_sample *s_j = (struct tda_sample *) sj;
-            double *xj = s_j->values;
+            accum = 0.0;
 
-            double accum = 0.0;
+            base_i = i + (m - 1) * tau;
+            base_j = j + (m - 1) * tau;
 
-            for (k = 0; k < (size_t) ctx->feature_dim; k++) {
-                double diff = xi[k] - xj[k];
-                accum += diff * diff;
+            for (lag = 0; lag < m; lag++) {
+                idx_i = base_i - lag * tau;
+                idx_j = base_j - lag * tau;
+
+                si = raw_samples + idx_i * w->sample_size;
+                sj = raw_samples + idx_j * w->sample_size;
+
+                s_i = (struct tda_sample *) si;
+                s_j = (struct tda_sample *) sj;
+
+                xi = s_i->values;
+                xj = s_j->values;
+
+                /* feature_dim (≈ 8 collapsed metrics) × m (lags) */
+                for (k = 0; k < (size_t) ctx->feature_dim; k++) {
+                    diff = xi[k] - xj[k];
+                    accum += diff * diff;
+                }
             }
 
-            float d = (float) sqrt(accum);
-            dist[i * n + j] = d;
-            dist[j * n + i] = d;
+            d = (float) sqrt(accum);
+            dist[i * n_embed + j] = d;
+            dist[j * n_embed + i] = d;
         }
     }
 
-    /* ★ ここでゼロ初期化してからラッパに渡す */
+    if (m == 1) {
+        q = 0.5;      /* No delay embedding: use something like the median. */
+    }
+    else {
+        q = 0.2;      /* With delay embedding: look at a smaller scale. */
+    }
+
+    /* --- choose a scale for TDA ---
+     * Use the number of embedded points n_embed to determine the threshold.
+     */
+    threshold = tda_choose_threshold_from_dist(dist, n_embed, q);
+    if (threshold <= 0.0f) {
+        threshold = 0.0f;
+    }
+    threshold = 0.0f;
+
     memset(&betti, 0, sizeof(betti));
 
-    /* H_0, H_1, H_2; threshold <= 0 means "auto threshold" inside wrapper */
-    ret = flb_ripser_compute_betti_from_dense_distance(dist,
-                                                       n,
-                                                       2 /* max_dim */,
-                                                       0.0f /* threshold */,
-                                                       &betti);
-    if (ret != 0) {
-        flb_warn("[tda_metrics] ripser computation failed (ret=%d)", ret);
-        flb_free(dist);
-        flb_free(raw_samples);
-        return;
+    nq = sizeof(q_candidates) / sizeof(q_candidates[0]);
+
+    for (qi = 0; qi < nq; qi++) {
+        qc = q_candidates[qi];
+        thr = tda_choose_threshold_from_dist(dist, n_embed, qc);
+
+        if (thr < 0.0f) {
+            thr = 0.0f;
+        }
+
+        memset(&tmp, 0, sizeof(tmp));
+
+        ret_local = flb_ripser_compute_betti_from_dense_distance(dist,
+                                                                 n_embed,
+                                                                 2 /* max_dim */,
+                                                                 thr,
+                                                                 &tmp);
+        if (ret_local != 0) {
+            continue;
+        }
+
+        /* Prefer H1 (loops) as the primary signal.
+         * If needed, H0/H2 can be used as additional indicators.
+         */
+        if (tmp.num_dims > 1 && tmp.betti[1] > best_b1) {
+            best_b1 = tmp.betti[1];
+            best_b0 = tmp.betti[0];
+            best_b2 = (tmp.num_dims > 2) ? tmp.betti[2] : 0;
+            best_q_for_b1 = q;
+        }
+        /* If all H1 are zero, fall back to H0. */
+        else if (best_b1 == 0 && tmp.betti[0] > best_b0) {
+            best_b0 = tmp.betti[0];
+            best_b2 = (tmp.num_dims > 2) ? tmp.betti[2] : 0;
+            best_q_for_b1 = q;
+        }
     }
+
+    /* After the loop, copy the "most plausible" values into betti. */
+    betti.num_dims = 2;
+    betti.betti[0] = best_b0;
+    betti.betti[1] = best_b1;
+    betti.betti[2] = best_b2;
+
+    flb_plg_debug(ctx->ins, "betti dims=%d, b0=%d, b1=%d, b2=%d (best_q=%.2f)",
+                  betti.num_dims,
+                  betti.betti[0],
+                  betti.betti[1],
+                  betti.betti[2],
+                  best_q_for_b1);
 
     ts = cfl_time_now();
 
@@ -639,6 +1046,7 @@ static void tda_window_run_ripser(struct tda_window *w,
     flb_free(dist);
     flb_free(raw_samples);
 }
+
 
 /* ---------------------------------------------------------------------- */
 /* processor plugin glue                                                  */
@@ -667,6 +1075,13 @@ static int tda_proc_init(struct flb_processor_instance *ins,
     ctx->groups      = NULL;
     ctx->group_list  = NULL;
     ctx->window      = NULL;
+    ctx->last_vec    = NULL;
+    ctx->last_ts     = 0;
+    ctx->ins         = ins;
+
+    /* delay embedding: 3 points embedding, 1 sampling delay is default. */
+    ctx->embed_dim   = 3;  /* m = 3 → x_t, x_{t-1}, x_{t-2} */
+    ctx->embed_delay = 1;  /* tau = 1 sample */
 
     ins->context = ctx;
 
@@ -676,6 +1091,7 @@ static int tda_proc_init(struct flb_processor_instance *ins,
 static void tda_free_groups(struct tda_proc_ctx *ctx)
 {
     int i;
+    struct tda_group *g = NULL;
 
     if (!ctx) {
         return;
@@ -683,7 +1099,7 @@ static void tda_free_groups(struct tda_proc_ctx *ctx)
 
     if (ctx->group_list) {
         for (i = 0; i < ctx->feature_dim; i++) {
-            struct tda_group *g = ctx->group_list[i];
+            g = ctx->group_list[i];
             if (!g) {
                 continue;
             }
@@ -724,6 +1140,10 @@ static int tda_proc_exit(struct flb_processor_instance *ins, void *data)
 
     tda_free_groups(ctx);
 
+    if (ctx->last_vec) {
+        flb_free(ctx->last_vec);
+    }
+
     flb_free(ctx);
 
     return FLB_PROCESSOR_SUCCESS;
@@ -757,14 +1177,14 @@ static int tda_proc_process_metrics(struct flb_processor_instance *ins,
     /* initial: construct groups and window */
     if (ctx->groups == NULL) {
         if (tda_build_groups(ctx, metrics_context) != 0) {
-            flb_warn("[tda] failed to build TDA groups");
+            flb_plg_warn(ins, "[tda] failed to build TDA groups");
             *out_context = metrics_context;
             return FLB_PROCESSOR_SUCCESS;
         }
 
         ctx->window = tda_window_create(ctx->window_size, ctx->feature_dim);
         if (!ctx->window) {
-            flb_warn("[tda] failed to create TDA window");
+            flb_plg_warn(ins, "[tda] failed to create TDA window");
             *out_context = metrics_context;
             return FLB_PROCESSOR_SUCCESS;
         }
