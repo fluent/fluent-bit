@@ -54,6 +54,46 @@ Expected one of: router:
 Commit prefix validation failed.
 ```
 
+## Running Unit Tests
+
+The commit linter has comprehensive unit tests. To run them:
+
+### Prerequisites
+
+Install the test dependencies:
+
+```bash
+pip install pytest gitpython
+```
+
+### Running Tests
+
+From the repository root directory, run:
+
+```bash
+# Run all tests
+pytest .github/scripts/tests/test_commit_lint.py -v
+
+# Run a specific test
+pytest .github/scripts/tests/test_commit_lint.py::test_valid_commit_single_prefix -v
+
+# Run with more detailed output
+pytest .github/scripts/tests/test_commit_lint.py -v -s
+```
+
+Alternatively, you can run from the scripts directory:
+
+```bash
+cd .github/scripts
+pytest tests/test_commit_lint.py -v
+```
+
+The test suite covers:
+- Prefix inference from file paths
+- Bad squash detection
+- Commit validation (success and error cases)
+- Edge cases and boundary conditions
+
 ## Testing Specific Commits
 
 To test a specific commit, you can temporarily checkout that commit:
