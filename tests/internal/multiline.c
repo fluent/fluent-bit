@@ -1643,6 +1643,275 @@ static void test_buffer_limit_disabled()
     flb_config_exit(config);
 }
 
+/*
+ * Helper struct to track flush results with metadata
+ */
+struct metadata_result {
+    int current_record;
+    int total_expected;
+    char *key;
+    int records_with_full_metadata; /* Count of records with full metadata */
+    int records_with_log_only;      /* Count of records with only 'log' field */
+};
+
+/*
+ * Callback that verifies metadata preservation
+ *
+ * Before the fix: continuation lines would have only 1 field (log)
+ * After the fix: all lines should have multiple fields (time, stream, log, file, etc.)
+ */
+static int flush_callback_metadata_check(struct flb_ml_parser *parser,
+                                       struct flb_ml_stream *mst,
+                                       void *data, char *buf_data, size_t buf_size)
+{
+    int ret;
+    int field_count;
+    size_t off = 0;
+    msgpack_unpacked result;
+    msgpack_object *map;
+    msgpack_object key;
+    struct flb_time tm;
+    struct metadata_result *res = data;
+
+    /* Unpack the record */
+    msgpack_unpacked_init(&result);
+    ret = msgpack_unpack_next(&result, buf_data, buf_size, &off);
+    if (ret != MSGPACK_UNPACK_SUCCESS) {
+        msgpack_unpacked_destroy(&result);
+        return -1;
+    }
+
+    /* Extract timestamp and map */
+    flb_time_pop_from_msgpack(&tm, &result, &map);
+
+    /* Count fields in the map */
+    field_count = map->via.map.size;
+    fprintf(stdout, "[Record %d] Fields: %d, Timestamp: %lu.%lu\n",
+            res->current_record, field_count,
+            (unsigned long)tm.tm.tv_sec, (unsigned long)tm.tm.tv_nsec);
+
+
+    /* Print field names */
+    fprintf(stdout, "  Field names: ");
+    for (int i = 0; i < field_count; i++) {
+        key = map->via.map.ptr[i].key;
+        if (key.type == MSGPACK_OBJECT_STR) {
+            fprintf(stdout, "%.*s", (int)key.via.str.size, key.via.str.ptr);
+            if (i < field_count - 1) {
+                fprintf(stdout, ", ");
+            }
+        }
+    }
+    fprintf(stdout, "\n");
+
+    /* Track metadata presence */
+    /* 4 fields: time, stream, log, file*/
+    if (field_count == 4) {
+        res->records_with_full_metadata++;
+    } else {
+        res->records_with_log_only++;
+        fprintf(stdout, "  WARNING: Record has only 'log' field (missing metadata)\n");
+    }
+
+    res->current_record++;
+    msgpack_unpacked_destroy(&result);
+
+    return 0;
+}
+
+static int append_log_to_multiline_processor(struct flb_ml *ml, uint64_t stream_id,
+                                  struct flb_time *tm, const char *log_content,
+                                  const char *stream_name, const char *file_path)
+{
+    int ret;
+    int log_len;
+    size_t off = 0;
+    msgpack_sbuffer mp_sbuf;
+    msgpack_packer mp_pck;
+    msgpack_unpacked result;
+    msgpack_object root;
+    msgpack_object *map;
+
+    log_len = strlen(log_content);
+
+    /* initialize buffers */
+    msgpack_sbuffer_init(&mp_sbuf);
+    msgpack_packer_init(&mp_pck, &mp_sbuf, msgpack_sbuffer_write);
+
+    /* Array: [timestamp, map] */
+    msgpack_pack_array(&mp_pck, 2);
+    flb_time_append_to_msgpack(tm, &mp_pck, 0);
+
+    /* Map with 4 fields: time (string), stream, log, file */
+    msgpack_pack_map(&mp_pck, 4);
+
+    /* time field */
+    msgpack_pack_str(&mp_pck, 4);
+    msgpack_pack_str_body(&mp_pck, "time", 4);
+    msgpack_pack_str(&mp_pck, 24);
+    msgpack_pack_str_body(&mp_pck, "2025-12-01T17:33:44+00:00", 24);
+
+    /* stream field */
+    msgpack_pack_str(&mp_pck, 6);
+    msgpack_pack_str_body(&mp_pck, "stream", 6);
+    msgpack_pack_str(&mp_pck, strlen(stream_name));
+    msgpack_pack_str_body(&mp_pck, stream_name, strlen(stream_name));
+
+    /* log field */
+    msgpack_pack_str(&mp_pck, 3);
+    msgpack_pack_str_body(&mp_pck, "log", 3);
+    msgpack_pack_str(&mp_pck, log_len);
+    msgpack_pack_str_body(&mp_pck, log_content, log_len);
+
+    /* file field */
+    msgpack_pack_str(&mp_pck, 4);
+    msgpack_pack_str_body(&mp_pck, "file", 4);
+    msgpack_pack_str(&mp_pck, strlen(file_path));
+    msgpack_pack_str_body(&mp_pck, file_path, strlen(file_path));
+
+    /* Unpack and lookup the content map */
+    msgpack_unpacked_init(&result);
+    ret = msgpack_unpack_next(&result, mp_sbuf.data, mp_sbuf.size, &off);
+    if (ret != MSGPACK_UNPACK_SUCCESS) {
+        msgpack_unpacked_destroy(&result);
+        msgpack_sbuffer_destroy(&mp_sbuf);
+        return -1;
+    }
+
+    root = result.data;
+    map = &root.via.array.ptr[1];
+
+    /* Send to multiline processor */
+    ret = flb_ml_append_object(ml, stream_id, tm, NULL, map);
+
+    msgpack_unpacked_destroy(&result);
+    msgpack_sbuffer_destroy(&mp_sbuf);
+
+    return ret;
+}
+
+
+/*
+ * Test issue 10576: Metadata preservation when lines are flushed
+ * ---------------------
+ *  - https://github.com/fluent/fluent-bit/issues/10576
+ *
+ * Input pattern just as an example:
+ *   - Line 1: "non-iso timestamp Likely to fail" (matches continuation)
+ *   - Line 2: "Likely to fail" (matches continuation)
+ *   - Line 3: "[iso timestamp] should be ok" (matches start_state)
+ *   - Line 4: "non-iso timestamp Likely to fail" (matches continuation)
+ *   - Line 5: "non-iso timestamp Likely to fail" (matches continuation)
+ *
+ * Before fix: Lines 1, 2, 4, 5 would have only {"log": "..."} (missing metadata)
+ * After fix: All lines should have {"time": "...", "stream": "...", "log": "...", "file": "..."}
+ */
+static void test_issue_10567_metadata_preservation()
+{
+    int ret;
+    int i;
+    uint64_t stream_id;
+    struct flb_config *config;
+    struct flb_time tm;
+    struct flb_ml *ml;
+    struct flb_ml_parser *mlp;
+    struct flb_ml_parser_ins *mlp_i;
+    struct metadata_result res = {0};
+
+    /* Test input - mix of start_state and continuation lines */
+    const char *test_lines[] = {
+        "Mon Dec  1 17:33:44 UTC 2025 Likely to fail",  /* continuation (no [timestamp]) */
+        "Mon Dec  1 17:33:49 UTC 2025 Likely to fail",  /* continuation */
+        "[2025-12-01T17:33:54.551Z] should be ok",      /* start_state */
+        "Mon Dec  1 17:33:59 UTC 2025 Likely to fail",  /* continuation */
+        "Mon Dec  1 17:34:04 UTC 2025 Likely to fail",  /* continuation */
+        "[2025-12-01T17:34:09.555Z] should be ok",      /* start_state */
+    };
+
+    int num_lines = sizeof(test_lines) / sizeof(test_lines[0]);
+
+    /* Initialize */
+    config = flb_config_init();
+    TEST_CHECK(config != NULL);
+
+    /* Create custom multiline parser */
+    mlp = flb_ml_parser_create(config,
+                               "parser_10576",  /* name      */
+                               FLB_ML_REGEX,    /* type      */
+                               NULL,            /* match_str */
+                               FLB_FALSE,       /* negate */
+                               1000,            /* flush_ms */
+                               "log",           /* key_content */
+                               NULL,            /* key_group */
+                               NULL,            /* key_pattern */
+                               NULL,            /* parser */
+                               NULL);           /* parser_name */
+    TEST_CHECK(mlp != NULL);
+
+    /* start_state - matches [YYYY-MM-DDTHH:MM:SS.sssZ] format */
+    ret = flb_ml_rule_create(mlp, "start_state",
+                             "/^\\[\\d{4}-\\d{2}-\\d{2}T\\d{2}:\\d{2}:\\d{2}\\.\\d{3}Z\\]/",
+                             "cont", NULL);
+    TEST_CHECK(ret == 0);
+
+    /* cont - matches lines NOT starting with [timestamp] */
+    ret = flb_ml_rule_create(mlp, "cont",
+                             "/^(?!\\[\\d{4}-\\d{2}-\\d{2}T\\d{2}:\\d{2}:\\d{2}\\.\\d{3}Z\\])/",
+                             "cont", NULL);
+    TEST_CHECK(ret == 0);
+
+    ret = flb_ml_parser_init(mlp);
+    TEST_CHECK(ret == 0);
+
+    /* Create ML context */
+    ml = flb_ml_create(config, "test-metadata");
+    TEST_CHECK(ml != NULL);
+
+    mlp_i = flb_ml_parser_instance_create(ml, "parser_10576");
+    TEST_CHECK(mlp_i != NULL);
+
+    flb_ml_parser_instance_set(mlp_i, "key_content", "log");
+
+    /* Initialize result tracking */
+    res.key = "log";
+    res.total_expected = num_lines;
+
+    /* Create stream */
+    ret = flb_ml_stream_create(ml, "test-stream", -1,
+                               flush_callback_metadata_check,
+                               (void *)&res, &stream_id);
+    TEST_CHECK(ret == 0);
+
+    /* Send each line and flush immediately after */
+    for (i = 0; i < num_lines; i++) {
+        flb_time_get(&tm);
+
+        fprintf(stdout, "Input[%d]: %s\n", i, test_lines[i]);
+
+        ret = append_log_to_multiline_processor(ml, stream_id, &tm, test_lines[i],
+                                     "stdout", "/var/log/test.log");
+        TEST_CHECK(ret == 0);
+
+        /* Note: Flush after each line to simulate slow log arrival */
+        flb_ml_flush_pending_now(ml);
+    }
+
+    /* Final flush to ensure nothing is left */
+    flb_ml_flush_pending_now(ml);
+
+    /*
+     * After the fix, ALL records should have full metadata.
+     */
+    TEST_CHECK(res.records_with_log_only == 0);
+    TEST_CHECK(res.records_with_full_metadata == res.current_record);
+    TEST_CHECK(res.current_record == num_lines);
+
+    /* Cleanup */
+    flb_ml_destroy(ml);
+    flb_config_exit(config);
+}
+
+
 TEST_LIST = {
     /* Normal features tests */
     { "parser_docker",  test_parser_docker},
@@ -1663,5 +1932,6 @@ TEST_LIST = {
     { "issue_4034"    , test_issue_4034},
     { "issue_4949"    , test_issue_4949},
     { "issue_5504"    , test_issue_5504},
+    { "issue_10576"   , test_issue_10567_metadata_preservation },
     { 0 }
 };
