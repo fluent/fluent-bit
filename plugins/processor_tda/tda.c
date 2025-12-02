@@ -19,10 +19,10 @@
 
 #include <fluent-bit/flb_processor_plugin.h>
 #include <fluent-bit/flb_hash_table.h>
+#include <fluent-bit/ripser/flb_ripser_wrapper.h>
 #include <cmetrics/cmetrics.h>
 #include <cmetrics/cmt_map.h>
 #include <cfl/cfl_sds.h>
-#include <fluent-bit/ripser/flb_ripser_wrapper.h>
 
 /* lwrb header */
 #include <lwrb/lwrb.h>
@@ -1057,6 +1057,7 @@ static int tda_proc_init(struct flb_processor_instance *ins,
                          int source_plugin_type,
                          struct flb_config *config)
 {
+    int ret = -1;
     struct tda_proc_ctx *ctx;
 
     (void) source_plugin_instance;
@@ -1069,8 +1070,6 @@ static int tda_proc_init(struct flb_processor_instance *ins,
         return FLB_PROCESSOR_FAILURE;
     }
 
-    ctx->window_size = 60;
-    ctx->min_points  = 10;
     ctx->feature_dim = 0;
     ctx->groups      = NULL;
     ctx->group_list  = NULL;
@@ -1079,9 +1078,13 @@ static int tda_proc_init(struct flb_processor_instance *ins,
     ctx->last_ts     = 0;
     ctx->ins         = ins;
 
-    /* delay embedding: 3 points embedding, 1 sampling delay is default. */
-    ctx->embed_dim   = 3;  /* m = 3 → x_t, x_{t-1}, x_{t-2} */
-    ctx->embed_delay = 1;  /* tau = 1 sample */
+    /* load configuration from config_map (override defaults if present) */
+    ret = flb_processor_instance_config_map_set(ins, (void *) ctx);
+    if (ret == -1) {
+        flb_plg_error(ins, "unable to load configuration");
+        flb_free(ctx);
+        return FLB_PROCESSOR_FAILURE;
+    }
 
     ins->context = ctx;
 
@@ -1203,6 +1206,28 @@ static int tda_proc_process_metrics(struct flb_processor_instance *ins,
 
 
 static struct flb_config_map config_map[] = {
+    {
+        FLB_CONFIG_MAP_INT, "window_size", "60",
+        0, FLB_TRUE, offsetof(struct tda_proc_ctx, window_size),
+        "Number of samples to keep in the TDA sliding window"
+    },
+    {
+        FLB_CONFIG_MAP_INT, "min_points", "10",
+        0, FLB_TRUE, offsetof(struct tda_proc_ctx, min_points),
+        "Minimum number of samples required before running Ripser"
+    },
+    {
+        FLB_CONFIG_MAP_INT, "embed_dim", "3",
+        0, FLB_TRUE, offsetof(struct tda_proc_ctx, embed_dim),
+        "Delay embedding dimension m (m=1 disables delay embedding)."
+        "For example, m = 3 → x_t, x_{t-1}, x_{t-2}."
+    },
+    {
+        FLB_CONFIG_MAP_INT, "embed_delay", "1",
+        0, FLB_TRUE, offsetof(struct tda_proc_ctx, embed_delay),
+        "Delay embedding lag tau in samples. This means that 1 delaying sample."
+    },
+    /* EOF */
     {0}
 };
 
