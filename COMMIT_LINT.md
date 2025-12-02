@@ -30,7 +30,10 @@ python .github/scripts/commit_prefix_check.py
 ### Behavior
 
 - **Default**: Validates the HEAD commit only
-- **Pull Request mode**: If the `GITHUB_EVENT_NAME` environment variable is set to `pull_request`, it validates the last 20 commits
+- **Pull Request mode**: If the `GITHUB_EVENT_NAME` environment variable is set to `pull_request`, it validates only commits that are part of the PR:
+  - Commits that exist in the PR branch but not in the base branch
+  - Merge commits are automatically excluded
+  - Requires `GITHUB_BASE_REF` environment variable to be set (automatically set in CI)
 - **Exit codes**:
   - `0` if validation passes
   - `1` if validation fails
