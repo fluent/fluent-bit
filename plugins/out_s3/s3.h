@@ -218,6 +218,10 @@ void multipart_upload_destroy(struct multipart_upload *m_upload);
 struct flb_http_client *mock_s3_call(char *error_env_var, char *api);
 int s3_plugin_under_test();
 
+int s3_parse_presigned_url(struct flb_s3 *ctx, const char *url,
+                           flb_sds_t *out_host, flb_sds_t *out_uri,
+                           int *out_port);
+
 int get_md5_base64(char *buf, size_t buf_size, char *md5_str, size_t md5_str_size);
 
 int create_headers(struct flb_s3 *ctx, char *body_md5,
