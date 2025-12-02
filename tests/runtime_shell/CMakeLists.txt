@@ -17,6 +17,10 @@ set(UNIT_TESTS_SH
   processor_invalid.sh
   )
 
+if (CMAKE_SYSTEM_NAME STREQUAL "Linux")
+  list(APPEND UNIT_TESTS_SH proxy_logs_expect.sh)
+endif()
+
 # Prepare list of unit tests
 foreach(script ${UNIT_TESTS_SH})
   add_test(NAME ${script}
@@ -27,6 +31,7 @@ foreach(script ${UNIT_TESTS_SH})
     "FLB_ROOT=${PROJECT_SOURCE_DIR};\
 FLB_RUNTIME_SHELL_PATH=${CMAKE_CURRENT_SOURCE_DIR};\
 FLB_RUNTIME_SHELL_CONF=${CMAKE_CURRENT_SOURCE_DIR}/conf;\
-FLB_BIN=${CMAKE_BINARY_DIR}/bin/fluent-bit"
+FLB_BIN=${CMAKE_BINARY_DIR}/bin/fluent-bit;\
+FLB_BUILD=${CMAKE_BINARY_DIR}"
     )
 endforeach()
