@@ -281,6 +281,14 @@ static int otel_pack_v1_metadata(struct flb_opentelemetry *ctx,
         }
     }
 
+    if (log_record->event_name != NULL && strlen(log_record->event_name) > 0) {
+        flb_mp_map_header_append(&mh);
+        msgpack_pack_str(mp_pck, 10);
+        msgpack_pack_str_body(mp_pck, "event_name", 10);
+        msgpack_pack_str(mp_pck, strlen(log_record->event_name));
+        msgpack_pack_str_body(mp_pck, log_record->event_name, strlen(log_record->event_name));
+    }
+
     flb_mp_map_header_append(&mh);
     msgpack_pack_str(mp_pck, 11);
     msgpack_pack_str_body(mp_pck, "trace_flags", 11);
