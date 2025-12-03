@@ -14,8 +14,7 @@
 
 void test_ripser_betti_circle()
 {
-    /* Number of points sampled on the circle */
-    const size_t n = 16;
+#define SIZE_N 16 /* Number of points sampled on the circle */
 
     /* Maximum homology dimension (0, 1, 2) */
     const int max_dim = 2;
@@ -24,10 +23,10 @@ void test_ripser_betti_circle()
     const float threshold = 2.0f;
 
     /* Point cloud (n x 2) */
-    double pts[n][2];
+    double pts[SIZE_N][2];
 
     /* Full dense distance matrix (n x n) */
-    const size_t m = n * n;
+    const size_t m = SIZE_N * SIZE_N;
     float *dist = NULL;
 
     int ret;
@@ -38,8 +37,8 @@ void test_ripser_betti_circle()
     double dy;
 
     /* Generate points uniformly on the unit circle */
-    for (i = 0; i < n; i++) {
-        theta = 2.0 * M_PI * (double) i / (double) n;
+    for (i = 0; i < SIZE_N; i++) {
+        theta = 2.0 * M_PI * (double) i / (double) SIZE_N;
         pts[i][0] = cos(theta);
         pts[i][1] = sin(theta);
     }
@@ -52,15 +51,15 @@ void test_ripser_betti_circle()
     }
 
     /* Fill dense distance matrix: dist[i*n + j] = d(i,j) */
-    for (i = 0; i < n; i++) {
-        for (j = 0; j < n; j++) {
+    for (i = 0; i < SIZE_N; i++) {
+        for (j = 0; j < SIZE_N; j++) {
             if (i == j) {
-                dist[i * n + j] = 0.0f;
+                dist[i * SIZE_N + j] = 0.0f;
             }
             else {
                 dx = pts[i][0] - pts[j][0];
                 dy = pts[i][1] - pts[j][1];
-                dist[i * n + j] = (float) sqrt(dx * dx + dy * dy);
+                dist[i * SIZE_N + j] = (float) sqrt(dx * dx + dy * dy);
             }
         }
     }
@@ -69,7 +68,7 @@ void test_ripser_betti_circle()
 
     /* Run ripser on the dense distance matrix */
     ret = flb_ripser_compute_betti_from_dense_distance(dist,
-                                                       n,
+                                                       SIZE_N,
                                                        max_dim,
                                                        threshold,
                                                        &b);
@@ -106,6 +105,7 @@ void test_ripser_betti_circle()
     TEST_CHECK(b.betti[2] >= 0);
 
     free(dist);
+#undef SIZE_N
 }
 
 TEST_LIST = {
