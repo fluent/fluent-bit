@@ -12,6 +12,14 @@ if (HOMEBREW EQUAL 0 AND EXISTS "${HOMEBREW_PREFIX}")
   include(cmake/homebrew.cmake)
 endif()
 
+if(FLB_MACOS_DEFAULTS)
+  message(STATUS "Overriding settings with macos-setup.cmake")
+  
+  # INPUT plugins
+  # =============
+  set(FLB_IN_SNMP                No)
+endif()
+
 # Create rootcert on macOS
 set(MACOS_ROOT_CERT ${CMAKE_CURRENT_BINARY_DIR}/certs/rootcert.pem)
 execute_process(
