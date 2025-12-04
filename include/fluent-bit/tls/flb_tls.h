@@ -76,6 +76,7 @@ struct flb_tls_backend {
 
     /* Additional settings */
     int (*context_alpn_set) (void *, const char *);
+    int (*context_set_verify_client) (void *, int);
 
     /* TLS Protocol version */
     int (*set_minmax_proto) (struct flb_tls *tls, const char *, const char *);
@@ -104,6 +105,7 @@ struct flb_tls_backend {
 /* Main TLS context */
 struct flb_tls {
     int verify;                       /* FLB_TRUE | FLB_FALSE      */
+    int verify_client;                /* Verify client certificate */
     int debug;                        /* Debug level               */
     char *vhost;                      /* Virtual hostname for SNI  */
     int mode;                         /* Client or Server          */
@@ -131,6 +133,7 @@ struct flb_tls *flb_tls_create(int mode,
 int flb_tls_destroy(struct flb_tls *tls);
 
 int flb_tls_set_alpn(struct flb_tls *tls, const char *alpn);
+int flb_tls_set_verify_client(struct flb_tls *tls, int verify_client);
 
 int flb_tls_set_verify_hostname(struct flb_tls *tls, int verify_hostname);
 #if defined(FLB_SYSTEM_WINDOWS)
