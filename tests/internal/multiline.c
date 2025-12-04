@@ -1751,7 +1751,7 @@ static int flush_callback_metadata_check(struct flb_ml_parser *parser,
 }
 
 /*
- * Helper funciton to append log with custom stream/file metadata
+ * Helper function to append log with custom stream/file metadata
  */
 static int append_log_with_metadata(struct flb_ml *ml, uint64_t stream_id,
                                     struct flb_time *tm, const char *log_content,
