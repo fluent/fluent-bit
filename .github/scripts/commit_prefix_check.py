@@ -25,30 +25,64 @@ SIGNED_OFF_RE = re.compile(r"Signed-off-by:", re.IGNORECASE)
 
 
 # ------------------------------------------------
-# Identify expected prefix dynamically from file paths
+# Identify expected prefixes dynamically from file paths
 # ------------------------------------------------
 def infer_prefix_from_paths(paths):
+    """
+    Returns:
+      - prefixes: a set of allowed prefixes (including build:)
+      - build_optional: True when commit subject does not need to be build:
+        (i.e., when any real component — lib/tests/plugins/src — is touched)
+    """
     prefixes = set()
+    component_prefixes = set()
+    build_seen = False
 
-    for p in paths:
+    for raw in paths:
+        # Normalize path separators (Windows compatibility)
+        p = raw.replace(os.sep, "/")
+        basename = os.path.basename(p)
+
+        # ----- Any CMakeLists.txt → build: candidate -----
+        if basename == "CMakeLists.txt":
+            build_seen = True
+
+        # ----- lib/ → lib: -----
+        if p.startswith("lib/"):
+            component_prefixes.add("lib:")
+
+        # ----- tests/ → tests: -----
+        if p.startswith("tests/"):
+            component_prefixes.add("tests:")
+
+        # ----- plugins/<name>/ → <name>: -----
         if p.startswith("plugins/"):
             parts = p.split("/")
-            prefix = parts[1]
-            prefixes.add(f"{prefix}:")
-            continue
+            if len(parts) > 1:
+                component_prefixes.add(f"{parts[1]}:")
 
+        # ----- src/ → flb_xxx.* → xxx: OR src/<dir>/ → <dir>: -----
         if p.startswith("src/"):
             filename = os.path.basename(p)
             if filename.startswith("flb_"):
                 core = filename[4:].split(".")[0]
-                prefixes.add(f"{core}:")
-                continue
+                component_prefixes.add(f"{core}:")
+            else:
+                parts = p.split("/")
+                if len(parts) > 1:
+                    component_prefixes.add(f"{parts[1]}:")
 
-            directory = p.split("/")[1]
-            prefixes.add(f"{directory}:")
-            continue
+    # prefixes = component prefixes + build: if needed
+    prefixes |= component_prefixes
+    if build_seen:
+        prefixes.add("build:")
 
-    return prefixes
+    # build_optional:
+    # True if ANY real component (lib/tests/plugins/src) was modified.
+    # False only when modifying build system files alone.
+    build_optional = len(component_prefixes) > 0
+
+    return prefixes, build_optional
 
 
 # ------------------------------------------------
@@ -84,27 +118,27 @@ def detect_bad_squash(body):
 
 
 # ------------------------------------------------
-# Validate commit per test expectations
+# Validate commit based on expected behavior and test rules
 # ------------------------------------------------
 def validate_commit(commit):
     msg = commit.message.strip()
     first_line, *rest = msg.split("\n")
     body = "\n".join(rest)
 
-    # Subject must have prefix
+    # Subject must start with a prefix
     subject_prefix_match = PREFIX_RE.match(first_line)
     if not subject_prefix_match:
         return False, f"Missing prefix in commit subject: '{first_line}'"
 
     subject_prefix = subject_prefix_match.group()
 
-    # detect_bad_squash must run but
-    # validate_commit IGNORE bad-squash reason if it was "multiple sign-offs"
+    # Run squash detection (but ignore multi-signoff errors)
     bad_squash, reason = detect_bad_squash(body)
 
     # If bad squash was caused by prefix lines in body → FAIL
     # If list of prefix lines in body → FAIL
     if bad_squash:
+        # Prefix-like lines are always fatal
         if "subject-like prefix" in reason:
             return False, f"Bad squash detected: {reason}"
 
@@ -113,7 +147,7 @@ def validate_commit(commit):
         # validate_commit ignores multi signoff warnings.
         pass
 
-    # Subject length
+    # Subject length check
     if len(first_line) > 80:
         return False, f"Commit subject too long (>80 chars): '{first_line}'"
 
@@ -122,30 +156,35 @@ def validate_commit(commit):
     if signoff_count == 0:
         return False, "Missing Signed-off-by line"
 
-    # Determine expected prefix
+    # Determine expected prefixes + build option flag
     files = commit.stats.files.keys()
-    expected = infer_prefix_from_paths(files)
+    expected, build_optional = infer_prefix_from_paths(files)
 
-    # Docs/CI changes
+    # When no prefix can be inferred (docs/tools), allow anything
     if len(expected) == 0:
         return True, ""
 
-    # *** TEST EXPECTATION ***
-    # For mixed components, DO NOT return custom message.
-    # Instead: same error shape as wrong-prefix case.
-    if len(expected) > 1:
-        # Always fail when multiple components are touched (even if prefix matches one)
+    expected_lower = {p.lower() for p in expected}
+    subj_lower = subject_prefix.lower()
+
+    # Subject prefix must be one of the expected ones
+    if subj_lower not in expected_lower:
+        expected_list = sorted(expected)
+        expected_str = ", ".join(expected_list)
         return False, (
             f"Subject prefix '{subject_prefix}' does not match files changed.\n"
-            f"Expected one of: {', '.join(sorted(expected))}"
+            f"Expected one of: {expected_str}"
         )
 
-    # Normal prefix mismatch (case-insensitive comparison)
-    only_expected = next(iter(expected))
-    if subject_prefix.lower() != only_expected.lower():
+
+        return False, f"Commit subject too long (>80 chars): '{first_line}'"
+
+    # If build is NOT optional and build: exists among expected,
+    # then subject MUST be build:
+    if not build_optional and "build:" in expected_lower and subj_lower != "build:":
         return False, (
             f"Subject prefix '{subject_prefix}' does not match files changed.\n"
-            f"Expected one of: {only_expected}"
+            f"Expected one of: build:"
         )
 
     return True, ""
