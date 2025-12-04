@@ -204,38 +204,38 @@ static struct flb_config_map config_map[] = {
     {
      FLB_CONFIG_MAP_BOOL, "http2", "true",
      0, FLB_TRUE, offsetof(struct flb_http, enable_http2),
-     NULL
+     "Enable HTTP/2 support."
     },
 
     {
      FLB_CONFIG_MAP_SIZE, "buffer_max_size", HTTP_BUFFER_MAX_SIZE,
      0, FLB_TRUE, offsetof(struct flb_http, buffer_max_size),
-     ""
+     "Set the maximum buffer size to store incoming data."
     },
 
     {
      FLB_CONFIG_MAP_SIZE, "buffer_chunk_size", HTTP_BUFFER_CHUNK_SIZE,
      0, FLB_TRUE, offsetof(struct flb_http, buffer_chunk_size),
-     ""
+     "Set the initial buffer size to store incoming data."
     },
 
     {
      FLB_CONFIG_MAP_SLIST_1, "success_header", NULL,
      FLB_CONFIG_MAP_MULT, FLB_TRUE, offsetof(struct flb_http, success_headers),
-     "Add an HTTP header key/value pair on success. Multiple headers can be set"
+     "Add an HTTP header key/value pair on success. Multiple headers can be set."
     },
 
     {
      FLB_CONFIG_MAP_STR, "tag_key", NULL,
      0, FLB_TRUE, offsetof(struct flb_http, tag_key),
-     ""
+     "Specify a key name for extracting the tag from incoming request data."
     },
+
     {
      FLB_CONFIG_MAP_INT, "successful_response_code", "201",
      0, FLB_TRUE, offsetof(struct flb_http, successful_response_code),
      "Set successful response code. 200, 201 and 204 are supported."
     },
-
 
     /* EOF */
     {0}
