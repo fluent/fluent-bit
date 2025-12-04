@@ -153,7 +153,7 @@ int ne_utils_file_read_lines(const char *mount, const char *path, struct mk_list
     int len;
     int ret;
     FILE *f;
-    char line[512];
+    char line[2048];
     char real_path[2048];
 
     mk_list_init(list);
