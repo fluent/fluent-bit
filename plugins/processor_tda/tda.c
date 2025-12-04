@@ -1214,8 +1214,8 @@ static struct flb_config_map config_map[] = {
 };
 
 struct flb_processor_plugin processor_tda_plugin = {
-    .name               = "tda_metrics",
-    .description        = "TDA (persistent homology) metrics processor",
+    .name               = "tda",
+    .description        = "TDA (persistent homology) processor",
     .cb_init            = tda_proc_init,
     .cb_process_logs    = NULL,
     .cb_process_metrics = tda_proc_process_metrics,
