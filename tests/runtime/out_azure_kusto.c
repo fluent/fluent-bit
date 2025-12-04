@@ -1,5 +1,9 @@
 /* -*- Mode: C; tab-width: 4; indent-tabs-mode: nil; c-basic-offset: 4 -*- */
 
+#ifndef _XOPEN_SOURCE
+#define _XOPEN_SOURCE 700
+#endif
+
 /*  Fluent Bit
  *  ==========
  *  Copyright (C) 2019-2022 The Fluent Bit Authors
@@ -255,7 +259,12 @@ void flb_test_azure_kusto_buffering_backlog(void)
 
     /* Ensure a clean buffer directory before starting */
     flb_kusto_rm_rf(buffer_dir);
-    mkdir(buffer_dir, 0700);
+    ret = mkdir(buffer_dir, 0700);
+    if (ret != 0) {
+        perror("mkdir(buffer_dir)");
+        TEST_CHECK(ret == 0);
+        return;
+    }
 
     /* First run: enable buffering and write data to disk */
     ctx = flb_create();
