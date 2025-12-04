@@ -1737,7 +1737,8 @@ static int flush_callback_metadata_check(struct flb_ml_parser *parser,
     /* Track metadata */
     if (has_stream && has_file) {
         res->records_with_full_metadata++;
-    } else {
+    }
+    else {
         res->records_missing_metadata++;
         fprintf(stdout, "  WARNING: Record %d missing metadata (stream=%d, file=%d)\n",
                 res->current_record, has_stream, has_file);
@@ -2056,7 +2057,8 @@ static void test_issue_truncation_10576()
     if (strcmp(res.record_streams[1], "stderr") == 0 &&
         strcmp(res.record_files[1], "/var/log/app2.log") == 0) {
         fprintf(stdout, "\nPASS: Second record has its own metadata!\n");
-    } else {
+    }
+    else {
         fprintf(stdout, "\nFAIL: Second record inherited metadata from first group!\n");
     }
 
