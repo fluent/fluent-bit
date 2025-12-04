@@ -1,0 +1,310 @@
+---
+# Parseable Fluent Bit DaemonSet for Kubernetes
+# Implements Datadog-like autodiscovery using pod annotations
+#
+# Usage: Add annotations to your pods:
+#   parseable/dataset: "my-app-logs"
+#   parseable/env: "production"
+#   parseable/service: "my-app"
+#   parseable/version: "v1.0.0"
+
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: parseable-logging
+  labels:
+    app.kubernetes.io/name: parseable-logging
+
+---
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: fluent-bit
+  namespace: parseable-logging
+
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRole
+metadata:
+  name: fluent-bit
+rules:
+  - apiGroups: [""]
+    resources:
+      - namespaces
+      - pods
+      - nodes
+      - nodes/proxy
+    verbs: ["get", "list", "watch"]
+
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRoleBinding
+metadata:
+  name: fluent-bit
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: ClusterRole
+  name: fluent-bit
+subjects:
+  - kind: ServiceAccount
+    name: fluent-bit
+    namespace: parseable-logging
+
+---
+apiVersion: v1
+kind: Secret
+metadata:
+  name: parseable-credentials
+  namespace: parseable-logging
+type: Opaque
+stringData:
+  # Base64 encoded "admin:admin" - change in production!
+  auth-header: "Basic YWRtaW46YWRtaW4="
+
+---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: fluent-bit-config
+  namespace: parseable-logging
+data:
+  fluent-bit.conf: |
+    [SERVICE]
+        Flush        5
+        Daemon       Off
+        Log_Level    info
+        Parsers_File parsers.conf
+        HTTP_Server  On
+        HTTP_Listen  0.0.0.0
+        HTTP_Port    2020
+        Health_Check On
+
+    # Tail input for container logs
+    [INPUT]
+        Name              tail
+        Tag               kube.*
+        Path              /var/log/containers/*.log
+        Parser            cri
+        DB                /var/log/flb_kube.db
+        Mem_Buf_Limit     50MB
+        Skip_Long_Lines   On
+        Refresh_Interval  10
+
+    # OpenTelemetry input for traces and metrics
+    [INPUT]
+        Name              opentelemetry
+        Tag               otel
+        Listen            0.0.0.0
+        Port              4317
+        buffer_max_size   50MB
+
+    # Kubernetes metadata enrichment
+    [FILTER]
+        Name                kubernetes
+        Match               kube.*
+        Kube_URL            https://kubernetes.default.svc:443
+        Kube_CA_File        /var/run/secrets/kubernetes.io/serviceaccount/ca.crt
+        Kube_Token_File     /var/run/secrets/kubernetes.io/serviceaccount/token
+        Kube_Tag_Prefix     kube.var.log.containers.
+        Merge_Log           On
+        Merge_Log_Key       log_processed
+        K8S-Logging.Parser  On
+        K8S-Logging.Exclude On
+        Labels              On
+        Annotations         On
+        Buffer_Size         0
+
+    # NOTE: Lua filter removed - K8s metadata enrichment and dynamic stream
+    # routing are now handled directly in the Parseable output plugin C code.
+    # Enable with: dynamic_stream On, enrich_kubernetes On
+
+    # Output to Parseable with dynamic stream and K8s enrichment
+    [OUTPUT]
+        Name              parseable
+        Match             kube.*
+        Host              ${PARSEABLE_HOST}
+        Port              ${PARSEABLE_PORT}
+        TLS               Off
+        Stream            default-logs
+        log_source        kubernetes
+        auth_header       ${PARSEABLE_AUTH}
+        compress          gzip
+        dynamic_stream    On
+        enrich_kubernetes On
+        Retry_Limit       3
+
+    # OTEL logs output
+    [OUTPUT]
+        Name          parseable
+        Match         *_logs
+        Host          ${PARSEABLE_HOST}
+        Port          ${PARSEABLE_PORT}
+        TLS           Off
+        Stream        otel-logs
+        data_type     logs
+        log_source    otel-logs
+        auth_header   ${PARSEABLE_AUTH}
+        compress      gzip
+
+    # OTEL traces output
+    [OUTPUT]
+        Name          parseable
+        Match         *_traces
+        Host          ${PARSEABLE_HOST}
+        Port          ${PARSEABLE_PORT}
+        TLS           Off
+        Stream        otel-traces
+        data_type     otel-trace
+        log_source    otel-traces
+        auth_header   ${PARSEABLE_AUTH}
+        compress      gzip
+
+    # OTEL metrics output
+    [OUTPUT]
+        Name          parseable
+        Match         *_metrics
+        Host          ${PARSEABLE_HOST}
+        Port          ${PARSEABLE_PORT}
+        TLS           Off
+        Stream        otel-metrics
+        data_type     otel-metric
+        log_source    otel-metrics
+        auth_header   ${PARSEABLE_AUTH}
+        compress      gzip
+
+  parsers.conf: |
+    [PARSER]
+        Name        docker
+        Format      json
+        Time_Key    time
+        Time_Format %Y-%m-%dT%H:%M:%S.%L
+        Time_Keep   On
+
+    [PARSER]
+        Name        cri
+        Format      regex
+        Regex       ^(?<time>[^ ]+) (?<stream>stdout|stderr) (?<logtag>[^ ]*) (?<log>.*)$
+        Time_Key    time
+        Time_Format %Y-%m-%dT%H:%M:%S.%L%z
+
+    [PARSER]
+        Name        json
+        Format      json
+        Time_Key    time
+        Time_Format %Y-%m-%dT%H:%M:%S.%L
+
+# NOTE: Lua scripts ConfigMap removed - K8s metadata enrichment is now
+# handled directly in the Parseable output plugin C code.
+
+---
+apiVersion: apps/v1
+kind: DaemonSet
+metadata:
+  name: fluent-bit
+  namespace: parseable-logging
+  labels:
+    app.kubernetes.io/name: fluent-bit
+    app.kubernetes.io/component: logging
+spec:
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: fluent-bit
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/name: fluent-bit
+      annotations:
+        # Exclude Fluent Bit's own logs from collection
+        parseable/exclude: "true"
+    spec:
+      serviceAccountName: fluent-bit
+      tolerations:
+        - key: node-role.kubernetes.io/master
+          operator: Exists
+          effect: NoSchedule
+        - key: node-role.kubernetes.io/control-plane
+          operator: Exists
+          effect: NoSchedule
+      containers:
+        - name: fluent-bit
+          image: fluent/fluent-bit:latest  # Replace with your custom image
+          imagePullPolicy: Always
+          ports:
+            - containerPort: 2020
+              name: http
+              protocol: TCP
+            - containerPort: 4317
+              name: otlp-grpc
+              protocol: TCP
+          env:
+            - name: PARSEABLE_HOST
+              value: "parseable.parseable.svc.cluster.local"
+            - name: PARSEABLE_PORT
+              value: "8000"
+            - name: PARSEABLE_AUTH
+              valueFrom:
+                secretKeyRef:
+                  name: parseable-credentials
+                  key: auth-header
+            - name: NODE_NAME
+              valueFrom:
+                fieldRef:
+                  fieldPath: spec.nodeName
+          volumeMounts:
+            - name: varlog
+              mountPath: /var/log
+            - name: varlibdockercontainers
+              mountPath: /var/lib/docker/containers
+              readOnly: true
+            - name: fluent-bit-config
+              mountPath: /fluent-bit/etc/
+          resources:
+            limits:
+              memory: 512Mi
+              cpu: 500m
+            requests:
+              memory: 128Mi
+              cpu: 100m
+          livenessProbe:
+            httpGet:
+              path: /
+              port: http
+            initialDelaySeconds: 10
+            periodSeconds: 10
+          readinessProbe:
+            httpGet:
+              path: /api/v1/health
+              port: http
+            initialDelaySeconds: 10
+            periodSeconds: 10
+      volumes:
+        - name: varlog
+          hostPath:
+            path: /var/log
+        - name: varlibdockercontainers
+          hostPath:
+            path: /var/lib/docker/containers
+        - name: fluent-bit-config
+          configMap:
+            name: fluent-bit-config
+
+---
+# Service for OTLP ingestion
+apiVersion: v1
+kind: Service
+metadata:
+  name: fluent-bit
+  namespace: parseable-logging
+spec:
+  type: ClusterIP
+  ports:
+    - port: 4317
+      targetPort: otlp-grpc
+      protocol: TCP
+      name: otlp-grpc
+    - port: 2020
+      targetPort: http
+      protocol: TCP
+      name: http
+  selector:
+    app.kubernetes.io/name: fluent-bit

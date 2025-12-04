@@ -102,6 +102,9 @@ struct flb_out_parseable {
     /* Dynamic stream routing (for Kubernetes autodiscovery) */
     int dynamic_stream;     /* Enable dynamic stream from record metadata */
     
+    /* Kubernetes metadata enrichment */
+    int enrich_kubernetes;  /* Enable K8s metadata enrichment (adds k8s_*, env, service, version) */
+    
     /* Metrics */
     struct cmt_counter *cmt_requests_total;
     struct cmt_counter *cmt_errors_total;

@@ -1,0 +1,241 @@
+---
+# Fluent Bit deployment for Kind cluster with Parseable autodiscovery
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: parseable-logging
+
+---
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: fluent-bit
+  namespace: parseable-logging
+
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRole
+metadata:
+  name: fluent-bit
+rules:
+  - apiGroups: [""]
+    resources: [namespaces, pods, nodes, nodes/proxy]
+    verbs: [get, list, watch]
+
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRoleBinding
+metadata:
+  name: fluent-bit
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: ClusterRole
+  name: fluent-bit
+subjects:
+  - kind: ServiceAccount
+    name: fluent-bit
+    namespace: parseable-logging
+
+---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: fluent-bit-config
+  namespace: parseable-logging
+data:
+  fluent-bit.conf: |
+    [SERVICE]
+        Flush        5
+        Daemon       Off
+        Log_Level    debug
+        Parsers_File parsers.conf
+        HTTP_Server  On
+        HTTP_Listen  0.0.0.0
+        HTTP_Port    2020
+        Health_Check On
+
+    # Tail container logs
+    [INPUT]
+        Name              tail
+        Tag               kube.*
+        Path              /var/log/containers/*.log
+        Parser            cri
+        DB                /var/log/flb_kube.db
+        Mem_Buf_Limit     50MB
+        Skip_Long_Lines   On
+        Refresh_Interval  5
+        Read_from_Head    On
+
+    # OpenTelemetry gRPC input
+    [INPUT]
+        Name              opentelemetry
+        Tag               otel
+        Listen            0.0.0.0
+        Port              4317
+        buffer_max_size   50MB
+
+    # Kubernetes filter - enrich with pod metadata
+    [FILTER]
+        Name                kubernetes
+        Match               kube.*
+        Kube_URL            https://kubernetes.default.svc:443
+        Kube_CA_File        /var/run/secrets/kubernetes.io/serviceaccount/ca.crt
+        Kube_Token_File     /var/run/secrets/kubernetes.io/serviceaccount/token
+        Kube_Tag_Prefix     kube.var.log.containers.
+        Merge_Log           On
+        K8S-Logging.Parser  On
+        K8S-Logging.Exclude On
+        Labels              On
+        Annotations         On
+
+    # NOTE: Lua filter removed - K8s metadata enrichment and dynamic stream
+    # routing are now handled directly in the Parseable output plugin C code.
+    # Enable with: dynamic_stream On, enrich_kubernetes On
+    #
+    # The plugin will:
+    # 1. Check kubernetes.annotations["parseable/dataset"] for stream name
+    # 2. Derive from kubernetes.labels["app"] + "-logs"
+    # 3. Fall back to kubernetes.namespace_name + "-logs"
+    # 4. Add k8s_namespace, k8s_pod, k8s_container, k8s_node fields
+    # 5. Add environment, service, version from annotations/labels
+
+    # Output OTEL logs
+    [OUTPUT]
+        Name          parseable
+        Match         *_logs
+        Host          10.63.82.10
+        Port          8010
+        TLS           Off
+        Stream        grpc-logs
+        data_type     logs
+        log_source    otel-logs
+        auth_header   Basic YWRtaW46YWRtaW4=
+        compress      gzip
+
+    # Output OTEL metrics
+    [OUTPUT]
+        Name          parseable
+        Match         *_metrics
+        Host          10.63.82.10
+        Port          8010
+        TLS           Off
+        Stream        grpc-metrics
+        data_type     otel-metric
+        log_source    otel-metrics
+        auth_header   Basic YWRtaW46YWRtaW4=
+        compress      gzip
+
+    # Output OTEL traces
+    [OUTPUT]
+        Name          parseable
+        Match         *_traces
+        Host          10.63.82.10
+        Port          8010
+        TLS           Off
+        Stream        grpc-traces
+        data_type     otel-trace
+        log_source    otel-traces
+        auth_header   Basic YWRtaW46YWRtaW4=
+        compress      gzip
+
+    # Output K8s logs with dynamic stream routing and K8s enrichment
+    [OUTPUT]
+        Name              parseable
+        Match             kube.*
+        Host              10.63.82.10
+        Port              8010
+        TLS               Off
+        Stream            k8s-default
+        log_source        kubernetes
+        auth_header       Basic YWRtaW46YWRtaW4=
+        compress          gzip
+        dynamic_stream    On
+        enrich_kubernetes On
+
+  parsers.conf: |
+    [PARSER]
+        Name        docker
+        Format      json
+        Time_Key    time
+        Time_Format %Y-%m-%dT%H:%M:%S.%L
+        Time_Keep   On
+
+    [PARSER]
+        Name        cri
+        Format      regex
+        Regex       ^(?<time>[^ ]+) (?<stream>stdout|stderr) (?<logtag>[^ ]*) (?<log>.*)$
+        Time_Key    time
+        Time_Format %Y-%m-%dT%H:%M:%S.%L%z
+        Time_Keep   On
+
+    [PARSER]
+        Name        json
+        Format      json
+        Time_Key    time
+        Time_Format %Y-%m-%dT%H:%M:%S.%L
+
+# NOTE: Lua scripts ConfigMap removed - K8s metadata enrichment is now
+# handled directly in the Parseable output plugin C code.
+
+---
+apiVersion: apps/v1
+kind: DaemonSet
+metadata:
+  name: fluent-bit
+  namespace: parseable-logging
+spec:
+  selector:
+    matchLabels:
+      app: fluent-bit
+  template:
+    metadata:
+      labels:
+        app: fluent-bit
+      annotations:
+        parseable/exclude: "true"
+    spec:
+      serviceAccountName: fluent-bit
+      hostNetwork: true
+      dnsPolicy: ClusterFirstWithHostNet
+      tolerations:
+        - operator: Exists
+      containers:
+        - name: fluent-bit
+          image: fluent-bit-local:latest
+          imagePullPolicy: Never
+          ports:
+            - containerPort: 2020
+              name: http
+            - containerPort: 4317
+              name: otlp
+          volumeMounts:
+            - name: varlog
+              mountPath: /var/log
+            - name: varlibcontainers
+              mountPath: /var/lib/containerd/io.containerd.grpc.v1.cri/containers
+              readOnly: true
+            - name: config
+              mountPath: /fluent-bit/etc/fluent-bit.conf
+              subPath: fluent-bit.conf
+            - name: config
+              mountPath: /fluent-bit/etc/parsers.conf
+              subPath: parsers.conf
+            # Lua scripts no longer needed - dynamic stream handled in C
+          resources:
+            limits:
+              memory: 256Mi
+              cpu: 200m
+            requests:
+              memory: 64Mi
+              cpu: 50m
+      volumes:
+        - name: varlog
+          hostPath:
+            path: /var/log
+        - name: varlibcontainers
+          hostPath:
+            path: /var/lib/containerd/io.containerd.grpc.v1.cri/containers
+        - name: config
+          configMap:
+            name: fluent-bit-config
+        # Lua scripts volume removed - dynamic stream handled in C

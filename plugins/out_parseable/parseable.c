@@ -102,16 +102,16 @@ static flb_sds_t get_str_value(msgpack_object *obj)
 }
 
 /*
- * Extract dynamic stream name from Kubernetes metadata.
+ * Extract dynamic dataset name from Kubernetes metadata.
  * Priority:
- *   1. kubernetes.annotations["parseable.io/stream"]
+ *   1. kubernetes.annotations["parseable/dataset"]
  *   2. kubernetes.labels["app"] + "-logs"
  *   3. kubernetes.labels["app.kubernetes.io/name"] + "-logs"
  *   4. kubernetes.namespace_name + "-logs"
- *   5. "_parseable_stream" field (legacy/Lua-set)
- *   6. NULL (use configured stream)
+ *   5. "_parseable_dataset" field (legacy/Lua-set)
+ *   6. NULL (use configured dataset)
  *
- * Also checks kubernetes.annotations["parseable.io/exclude"] to drop records.
+ * Also checks kubernetes.annotations["parseable/exclude"] to drop records.
  * Returns a newly allocated flb_sds_t or NULL if not found.
  * Sets *exclude to 1 if record should be excluded.
  */
@@ -146,12 +146,12 @@ static flb_sds_t extract_dynamic_stream(struct flb_out_parseable *ctx,
             continue;
         }
         
-        /* 1. Check for legacy _parseable_stream field first */
-        val = find_map_str_value(&map, "_parseable_stream", 17);
+        /* 1. Check for legacy _parseable_dataset field first */
+        val = find_map_str_value(&map, "_parseable_dataset", 18);
         if (val) {
             stream = get_str_value(val);
             if (stream) {
-                flb_plg_info(ctx->ins, "Using _parseable_stream: %s", stream);
+                flb_plg_info(ctx->ins, "Using _parseable_dataset: %s", stream);
                 msgpack_unpacked_destroy(&result);
                 return stream;
             }
@@ -164,26 +164,26 @@ static flb_sds_t extract_dynamic_stream(struct flb_out_parseable *ctx,
             break;
         }
         
-        /* 3. Check annotations for parseable.io/exclude */
+        /* 3. Check annotations for parseable/exclude */
         annotations = find_map_str_value(kubernetes, "annotations", 11);
         if (annotations && annotations->type == MSGPACK_OBJECT_MAP) {
-            val = find_map_str_value(annotations, "parseable.io/exclude", 20);
+            val = find_map_str_value(annotations, "parseable/exclude", 17);
             if (val && val->type == MSGPACK_OBJECT_STR) {
                 if (val->via.str.size == 4 && 
                     strncmp(val->via.str.ptr, "true", 4) == 0) {
-                    flb_plg_debug(ctx->ins, "Record excluded via parseable.io/exclude annotation");
+                    flb_plg_debug(ctx->ins, "Record excluded via parseable/exclude annotation");
                     *exclude = 1;
                     msgpack_unpacked_destroy(&result);
                     return NULL;
                 }
             }
             
-            /* 4. Check annotations for parseable.io/stream */
-            val = find_map_str_value(annotations, "parseable.io/stream", 19);
+            /* 4. Check annotations for parseable/dataset */
+            val = find_map_str_value(annotations, "parseable/dataset", 17);
             if (val) {
                 stream = get_str_value(val);
                 if (stream) {
-                    flb_plg_info(ctx->ins, "Using annotation parseable.io/stream: %s", stream);
+                    flb_plg_info(ctx->ins, "Using annotation parseable/dataset: %s", stream);
                     msgpack_unpacked_destroy(&result);
                     return stream;
                 }
@@ -267,6 +267,289 @@ static flb_sds_t extract_stream_from_tag(struct flb_out_parseable *ctx,
     return NULL;
 }
 
+/*
+ * Structure to hold extracted Kubernetes metadata for enrichment.
+ */
+struct k8s_metadata {
+    flb_sds_t namespace_name;
+    flb_sds_t pod_name;
+    flb_sds_t container_name;
+    flb_sds_t host;
+    flb_sds_t env;
+    flb_sds_t service;
+    flb_sds_t version;
+};
+
+/*
+ * Initialize k8s_metadata structure.
+ */
+static void k8s_metadata_init(struct k8s_metadata *meta)
+{
+    meta->namespace_name = NULL;
+    meta->pod_name = NULL;
+    meta->container_name = NULL;
+    meta->host = NULL;
+    meta->env = NULL;
+    meta->service = NULL;
+    meta->version = NULL;
+}
+
+/*
+ * Destroy k8s_metadata structure and free all strings.
+ */
+static void k8s_metadata_destroy(struct k8s_metadata *meta)
+{
+    if (meta->namespace_name) flb_sds_destroy(meta->namespace_name);
+    if (meta->pod_name) flb_sds_destroy(meta->pod_name);
+    if (meta->container_name) flb_sds_destroy(meta->container_name);
+    if (meta->host) flb_sds_destroy(meta->host);
+    if (meta->env) flb_sds_destroy(meta->env);
+    if (meta->service) flb_sds_destroy(meta->service);
+    if (meta->version) flb_sds_destroy(meta->version);
+}
+
+/*
+ * Extract Kubernetes metadata from a record for enrichment.
+ * Extracts: namespace_name, pod_name, container_name, host
+ * Also extracts unified service tags from annotations/labels:
+ *   - parseable/env or labels[environment/env]
+ *   - parseable/service or labels[app/app.kubernetes.io/name]
+ *   - parseable/version or labels[version/app.kubernetes.io/version]
+ */
+static int extract_k8s_metadata(msgpack_object *map, struct k8s_metadata *meta)
+{
+    msgpack_object *kubernetes;
+    msgpack_object *annotations;
+    msgpack_object *labels;
+    msgpack_object *val;
+    
+    k8s_metadata_init(meta);
+    
+    /* Find kubernetes object */
+    kubernetes = find_map_str_value(map, "kubernetes", 10);
+    if (!kubernetes || kubernetes->type != MSGPACK_OBJECT_MAP) {
+        return -1;
+    }
+    
+    /* Extract basic K8s fields */
+    val = find_map_str_value(kubernetes, "namespace_name", 14);
+    if (val) meta->namespace_name = get_str_value(val);
+    
+    val = find_map_str_value(kubernetes, "pod_name", 8);
+    if (val) meta->pod_name = get_str_value(val);
+    
+    val = find_map_str_value(kubernetes, "container_name", 14);
+    if (val) meta->container_name = get_str_value(val);
+    
+    val = find_map_str_value(kubernetes, "host", 4);
+    if (val) meta->host = get_str_value(val);
+    
+    /* Get annotations and labels */
+    annotations = find_map_str_value(kubernetes, "annotations", 11);
+    labels = find_map_str_value(kubernetes, "labels", 6);
+    
+    /* Extract env: parseable/env annotation or environment/env label */
+    if (annotations && annotations->type == MSGPACK_OBJECT_MAP) {
+        val = find_map_str_value(annotations, "parseable/env", 13);
+        if (val) meta->env = get_str_value(val);
+    }
+    if (!meta->env && labels && labels->type == MSGPACK_OBJECT_MAP) {
+        val = find_map_str_value(labels, "environment", 11);
+        if (val) meta->env = get_str_value(val);
+        if (!meta->env) {
+            val = find_map_str_value(labels, "env", 3);
+            if (val) meta->env = get_str_value(val);
+        }
+    }
+    
+    /* Extract service: parseable/service annotation or app label */
+    if (annotations && annotations->type == MSGPACK_OBJECT_MAP) {
+        val = find_map_str_value(annotations, "parseable/service", 17);
+        if (val) meta->service = get_str_value(val);
+    }
+    if (!meta->service && labels && labels->type == MSGPACK_OBJECT_MAP) {
+        val = find_map_str_value(labels, "app", 3);
+        if (val) meta->service = get_str_value(val);
+        if (!meta->service) {
+            val = find_map_str_value(labels, "app.kubernetes.io/name", 22);
+            if (val) meta->service = get_str_value(val);
+        }
+    }
+    
+    /* Extract version: parseable/version annotation or version label */
+    if (annotations && annotations->type == MSGPACK_OBJECT_MAP) {
+        val = find_map_str_value(annotations, "parseable/version", 17);
+        if (val) meta->version = get_str_value(val);
+    }
+    if (!meta->version && labels && labels->type == MSGPACK_OBJECT_MAP) {
+        val = find_map_str_value(labels, "version", 7);
+        if (val) meta->version = get_str_value(val);
+        if (!meta->version) {
+            val = find_map_str_value(labels, "app.kubernetes.io/version", 25);
+            if (val) meta->version = get_str_value(val);
+        }
+    }
+    
+    return 0;
+}
+
+/*
+ * Pack a msgpack map with additional K8s enrichment fields.
+ * This creates a new msgpack buffer with the original fields plus:
+ *   - k8s_namespace, k8s_pod, k8s_container, k8s_node
+ *   - environment, service, version (if available)
+ */
+static int enrich_record_with_k8s(struct flb_out_parseable *ctx,
+                                   msgpack_object *timestamp,
+                                   msgpack_object *map,
+                                   struct k8s_metadata *meta,
+                                   msgpack_sbuffer *sbuf,
+                                   msgpack_packer *pk)
+{
+    int i;
+    int extra_fields = 0;
+    
+    /* Count extra fields to add */
+    if (meta->namespace_name) extra_fields++;
+    if (meta->pod_name) extra_fields++;
+    if (meta->container_name) extra_fields++;
+    if (meta->host) extra_fields++;
+    if (meta->env) extra_fields++;
+    if (meta->service) extra_fields++;
+    if (meta->version) extra_fields++;
+    
+    /* Pack array: [timestamp, map] */
+    msgpack_pack_array(pk, 2);
+    
+    /* Pack timestamp */
+    if (timestamp->type == MSGPACK_OBJECT_EXT) {
+        msgpack_pack_ext(pk, timestamp->via.ext.size, timestamp->via.ext.type);
+        msgpack_pack_ext_body(pk, timestamp->via.ext.ptr, timestamp->via.ext.size);
+    } else {
+        msgpack_pack_object(pk, *timestamp);
+    }
+    
+    /* Pack map with extra fields */
+    msgpack_pack_map(pk, map->via.map.size + extra_fields);
+    
+    /* Copy original fields */
+    for (i = 0; i < map->via.map.size; i++) {
+        msgpack_pack_object(pk, map->via.map.ptr[i].key);
+        msgpack_pack_object(pk, map->via.map.ptr[i].val);
+    }
+    
+    /* Add K8s context fields */
+    if (meta->namespace_name) {
+        msgpack_pack_str(pk, 13);
+        msgpack_pack_str_body(pk, "k8s_namespace", 13);
+        msgpack_pack_str(pk, flb_sds_len(meta->namespace_name));
+        msgpack_pack_str_body(pk, meta->namespace_name, flb_sds_len(meta->namespace_name));
+    }
+    if (meta->pod_name) {
+        msgpack_pack_str(pk, 7);
+        msgpack_pack_str_body(pk, "k8s_pod", 7);
+        msgpack_pack_str(pk, flb_sds_len(meta->pod_name));
+        msgpack_pack_str_body(pk, meta->pod_name, flb_sds_len(meta->pod_name));
+    }
+    if (meta->container_name) {
+        msgpack_pack_str(pk, 13);
+        msgpack_pack_str_body(pk, "k8s_container", 13);
+        msgpack_pack_str(pk, flb_sds_len(meta->container_name));
+        msgpack_pack_str_body(pk, meta->container_name, flb_sds_len(meta->container_name));
+    }
+    if (meta->host) {
+        msgpack_pack_str(pk, 8);
+        msgpack_pack_str_body(pk, "k8s_node", 8);
+        msgpack_pack_str(pk, flb_sds_len(meta->host));
+        msgpack_pack_str_body(pk, meta->host, flb_sds_len(meta->host));
+    }
+    
+    /* Add unified service tags */
+    if (meta->env) {
+        msgpack_pack_str(pk, 11);
+        msgpack_pack_str_body(pk, "environment", 11);
+        msgpack_pack_str(pk, flb_sds_len(meta->env));
+        msgpack_pack_str_body(pk, meta->env, flb_sds_len(meta->env));
+    }
+    if (meta->service) {
+        msgpack_pack_str(pk, 7);
+        msgpack_pack_str_body(pk, "service", 7);
+        msgpack_pack_str(pk, flb_sds_len(meta->service));
+        msgpack_pack_str_body(pk, meta->service, flb_sds_len(meta->service));
+    }
+    if (meta->version) {
+        msgpack_pack_str(pk, 7);
+        msgpack_pack_str_body(pk, "version", 7);
+        msgpack_pack_str(pk, flb_sds_len(meta->version));
+        msgpack_pack_str_body(pk, meta->version, flb_sds_len(meta->version));
+    }
+    
+    return 0;
+}
+
+/*
+ * Enrich all records in a msgpack buffer with Kubernetes metadata.
+ * Returns a new msgpack buffer with enriched records.
+ */
+static int enrich_records_k8s(struct flb_out_parseable *ctx,
+                               const void *data, size_t bytes,
+                               void **out_data, size_t *out_bytes)
+{
+    size_t off = 0;
+    msgpack_unpacked result;
+    msgpack_object root;
+    msgpack_sbuffer sbuf;
+    msgpack_packer pk;
+    struct k8s_metadata meta;
+    int enriched = 0;
+    
+    msgpack_sbuffer_init(&sbuf);
+    msgpack_packer_init(&pk, &sbuf, msgpack_sbuffer_write);
+    msgpack_unpacked_init(&result);
+    
+    while (msgpack_unpack_next(&result, data, bytes, &off) == MSGPACK_UNPACK_SUCCESS) {
+        root = result.data;
+        
+        /* Each record is an array: [timestamp, map] */
+        if (root.type != MSGPACK_OBJECT_ARRAY || root.via.array.size < 2) {
+            /* Pass through as-is */
+            msgpack_pack_object(&pk, root);
+            continue;
+        }
+        
+        msgpack_object *timestamp = &root.via.array.ptr[0];
+        msgpack_object *map = &root.via.array.ptr[1];
+        
+        if (map->type != MSGPACK_OBJECT_MAP) {
+            msgpack_pack_object(&pk, root);
+            continue;
+        }
+        
+        /* Try to extract K8s metadata */
+        if (extract_k8s_metadata(map, &meta) == 0) {
+            /* Enrich the record */
+            enrich_record_with_k8s(ctx, timestamp, map, &meta, &sbuf, &pk);
+            k8s_metadata_destroy(&meta);
+            enriched++;
+        } else {
+            /* No K8s metadata, pass through as-is */
+            msgpack_pack_object(&pk, root);
+        }
+    }
+    
+    msgpack_unpacked_destroy(&result);
+    
+    if (enriched > 0) {
+        flb_plg_debug(ctx->ins, "Enriched %d records with K8s metadata", enriched);
+    }
+    
+    /* Return the new buffer */
+    *out_data = sbuf.data;
+    *out_bytes = sbuf.size;
+    
+    return 0;
+}
+
 /* Configuration properties map */
 static struct flb_config_map config_map[] = {
     {
@@ -327,7 +610,12 @@ static struct flb_config_map config_map[] = {
     {
      FLB_CONFIG_MAP_BOOL, "dynamic_stream", "false",
      0, FLB_TRUE, offsetof(struct flb_out_parseable, dynamic_stream),
-     "Enable dynamic stream routing from record metadata (_parseable_stream field)"
+     "Enable dynamic stream routing from record metadata (_parseable_dataset field)"
+    },
+    {
+     FLB_CONFIG_MAP_BOOL, "enrich_kubernetes", "false",
+     0, FLB_TRUE, offsetof(struct flb_out_parseable, enrich_kubernetes),
+     "Enable Kubernetes metadata enrichment (adds k8s_namespace, k8s_pod, k8s_container, k8s_node, environment, service, version)"
     },
     
     /* EOF */
@@ -1416,6 +1704,12 @@ static int parseable_format_json(struct flb_out_parseable *ctx,
                                   void **out_buf, size_t *out_size,
                                   struct flb_config *config)
 {
+    void *enriched_data = NULL;
+    size_t enriched_bytes = 0;
+    const void *data_to_use = data;
+    size_t bytes_to_use = bytes;
+    int need_free_enriched = 0;
+    
     /* Check if we should use OTEL JSON format */
     if (ctx->log_source && 
         (strstr(ctx->log_source, "otel") != NULL || strstr(ctx->log_source, "OTEL") != NULL)) {
@@ -1424,11 +1718,29 @@ static int parseable_format_json(struct flb_out_parseable *ctx,
         return parseable_format_json_to_otel(ctx, data, bytes, out_buf, out_size, config);
     }
     
+    /* Enrich records with K8s metadata if enabled */
+    if (ctx->enrich_kubernetes) {
+        if (enrich_records_k8s(ctx, data, bytes, &enriched_data, &enriched_bytes) == 0 
+            && enriched_data != NULL) {
+            data_to_use = enriched_data;
+            bytes_to_use = enriched_bytes;
+            need_free_enriched = 1;
+            flb_plg_debug(ctx->ins, "K8s enrichment applied: %zu -> %zu bytes", 
+                          bytes, enriched_bytes);
+        }
+    }
+    
     /* Use standard JSON format */
-    flb_sds_t json_buf = flb_pack_msgpack_to_json_format(data, (uint64_t)bytes,
+    flb_sds_t json_buf = flb_pack_msgpack_to_json_format(data_to_use, (uint64_t)bytes_to_use,
                                                           FLB_PACK_JSON_FORMAT_JSON,
                                                           FLB_PACK_JSON_DATE_DOUBLE,
                                                           NULL, FLB_FALSE);
+    
+    /* Free enriched buffer if allocated */
+    if (need_free_enriched && enriched_data) {
+        flb_free(enriched_data);
+    }
+    
     if (!json_buf) {
         return -1;
     }
@@ -1689,9 +2001,9 @@ static void cb_parseable_flush(struct flb_event_chunk *event_chunk,
             dynamic_stream = extract_dynamic_stream(ctx, event_chunk->data, 
                                                      event_chunk->size, &exclude_record);
             
-            /* Check if record should be excluded (parseable.io/exclude annotation) */
+            /* Check if record should be excluded (parseable/exclude annotation) */
             if (exclude_record) {
-                flb_plg_debug(ctx->ins, "Dropping record due to parseable.io/exclude annotation");
+                flb_plg_debug(ctx->ins, "Dropping record due to parseable/exclude annotation");
                 FLB_OUTPUT_RETURN(FLB_OK);
             }
         }

@@ -1,0 +1,33 @@
+FROM debian:bookworm-slim
+
+# Install runtime dependencies
+RUN apt-get update && apt-get install -y --no-install-recommends \
+    libssl3 \
+    libsasl2-2 \
+    libsystemd0 \
+    zlib1g \
+    libpq5 \
+    libzstd1 \
+    libyaml-0-2 \
+    ca-certificates \
+    && rm -rf /var/lib/apt/lists/*
+
+# Create directories
+RUN mkdir -p /fluent-bit/bin /fluent-bit/etc /fluent-bit/scripts
+
+# Copy the locally built fluent-bit binary
+COPY build/bin/fluent-bit /fluent-bit/bin/
+
+# Copy default configs
+COPY conf/fluent-bit.conf /fluent-bit/etc/
+COPY conf/parsers.conf /fluent-bit/etc/
+
+# Set permissions
+RUN chmod +x /fluent-bit/bin/fluent-bit
+
+# Expose ports
+EXPOSE 2020 4317 4318
+
+# Set entrypoint
+ENTRYPOINT ["/fluent-bit/bin/fluent-bit"]
+CMD ["-c", "/fluent-bit/etc/fluent-bit.conf"]

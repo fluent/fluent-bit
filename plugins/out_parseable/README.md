@@ -18,6 +18,8 @@ This output plugin sends log data to [Parseable](https://www.parseable.com/), a 
 | `batch_size` | Maximum batch size in bytes | `5242880` (5MB) | No |
 | `retry_limit` | Maximum number of retries (`-1` = unlimited, `0` = no retries) | `-1` | No |
 | `header` | Add custom HTTP header (can be specified multiple times) | - | No |
+| `dynamic_stream` | Enable dynamic stream routing from K8s annotations | `false` | No |
+| `enrich_kubernetes` | Enable K8s metadata enrichment (adds k8s_*, env, service, version) | `false` | No |
 | `tls` | Enable TLS/SSL | `Off` | No |
 | `tls.verify` | Verify TLS certificate | `On` | No |
 
@@ -252,31 +254,63 @@ header  X-Application my-app
 
 ## Kubernetes Autodiscovery
 
-The Parseable plugin supports Datadog-like autodiscovery for Kubernetes. This allows you to add annotations to your pods to automatically route logs to different Parseable streams.
+The Parseable plugin supports Datadog-like autodiscovery for Kubernetes. This allows you to add annotations to your pods to automatically route logs to different Parseable streams and enrich records with K8s metadata.
 
-### Enable Dynamic Stream Routing
+### Enable Dynamic Stream Routing and K8s Enrichment
 
 ```ini
 [OUTPUT]
-    Name           parseable
-    Match          parseable.*
-    Host           parseable.example.com
-    Port           8000
-    dynamic_stream On
-    log_source     kubernetes
-    auth_header    Basic YWRtaW46cGFzc3dvcmQ=
+    Name              parseable
+    Match             kube.*
+    Host              parseable.example.com
+    Port              8000
+    Stream            default-logs
+    dynamic_stream    On
+    enrich_kubernetes On
+    log_source        kubernetes
+    auth_header       Basic YWRtaW46cGFzc3dvcmQ=
 ```
+
+### Configuration Options
+
+| Option | Description |
+|--------|-------------|
+| `dynamic_stream On` | Enables automatic stream routing based on K8s annotations/labels |
+| `enrich_kubernetes On` | Adds K8s context fields and unified service tags to records |
+
+### Dynamic Stream Resolution Priority
+
+When `dynamic_stream` is enabled, the stream name is resolved in this order:
+1. `kubernetes.annotations["parseable/dataset"]`
+2. `kubernetes.labels["app"]` + `-logs`
+3. `kubernetes.labels["app.kubernetes.io/name"]` + `-logs`
+4. `kubernetes.namespace_name` + `-logs`
+5. Configured `Stream` value (fallback)
+
+### K8s Enrichment Fields
+
+When `enrich_kubernetes` is enabled, the following fields are added to each record:
+
+**K8s Context:**
+- `k8s_namespace` - Kubernetes namespace
+- `k8s_pod` - Pod name
+- `k8s_container` - Container name
+- `k8s_node` - Node hostname
+
+**Unified Service Tags** (from annotations or labels):
+- `environment` - From `parseable/env` annotation or `environment`/`env` label
+- `service` - From `parseable/service` annotation or `app`/`app.kubernetes.io/name` label
+- `version` - From `parseable/version` annotation or `version`/`app.kubernetes.io/version` label
 
 ### Supported Pod Annotations
 
 | Annotation | Description | Example |
 |------------|-------------|---------|
-| `parseable.io/stream` | Target Parseable stream name | `parseable.io/stream: "my-app-logs"` |
-| `parseable.io/log-source` | Log source type | `parseable.io/log-source: "otel-logs"` |
-| `parseable.io/exclude` | Exclude logs from this pod | `parseable.io/exclude: "true"` |
-| `parseable.io/env` | Environment tag | `parseable.io/env: "production"` |
-| `parseable.io/service` | Service name tag | `parseable.io/service: "api-gateway"` |
-| `parseable.io/version` | Version tag | `parseable.io/version: "v1.2.3"` |
+| `parseable/dataset` | Target Parseable dataset name | `parseable/dataset: "my-app-logs"` |
+| `parseable/exclude` | Exclude logs from this pod | `parseable/exclude: "true"` |
+| `parseable/env` | Environment tag | `parseable/env: "production"` |
+| `parseable/service` | Service name tag | `parseable/service: "api-gateway"` |
+| `parseable/version` | Version tag | `parseable/version: "v1.2.3"` |
 
 ### Example Pod with Annotations
 
@@ -286,10 +320,10 @@ kind: Pod
 metadata:
   name: my-application
   annotations:
-    parseable.io/stream: "my-app-logs"
-    parseable.io/env: "production"
-    parseable.io/service: "my-app"
-    parseable.io/version: "v1.0.0"
+    parseable/dataset: "my-app-logs"
+    parseable/env: "production"
+    parseable/service: "my-app"
+    parseable/version: "v1.0.0"
 spec:
   containers:
   - name: app
@@ -300,6 +334,7 @@ spec:
 
 See the `k8s/` directory for complete DaemonSet configuration and example deployments:
 
-- `k8s/parseable-fluent-bit-daemonset.yaml` - Full DaemonSet with Lua filter for annotation processing
+- `k8s/parseable-fluent-bit-daemonset.yaml` - Full DaemonSet with K8s autodiscovery
 - `k8s/example-app-with-annotations.yaml` - Example applications with various annotation patterns
-- `scripts/parseable_routing.lua` - Lua filter script for processing annotations
+
+**Note:** The Lua filter is no longer required. K8s metadata enrichment and dynamic stream routing are now handled directly in the C plugin code.
