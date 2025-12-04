@@ -167,6 +167,31 @@ def validate_commit(commit):
     expected_lower = {p.lower() for p in expected}
     subj_lower = subject_prefix.lower()
 
+    # ------------------------------------------------
+    # Multiple-component detection
+    # ------------------------------------------------
+    # Treat pure build-related prefixes ("build:", "CMakeLists.txt:") as non-components.
+    # Additionally, allow lib: to act as an umbrella for lib subcomponents
+    # (e.g., ripser:, ripser_wrapper:) when subject prefix is lib:.
+    non_build_prefixes = {
+        p
+        for p in expected_lower
+        if p not in ("build:", "cmakelists.txt:")
+    }
+
+    # Prefixes that are allowed to cover multiple subcomponents
+    umbrella_prefixes = {"lib:"}
+
+    # If more than one non-build prefix is inferred AND the subject is not an umbrella
+    # prefix, require split commits.
+    if len(non_build_prefixes) > 1 and subj_lower not in umbrella_prefixes:
+        expected_list = sorted(expected)
+        expected_str = ", ".join(expected_list)
+        return False, (
+            f"Subject prefix '{subject_prefix}' does not match files changed.\n"
+            f"Expected one of: {expected_str}"
+        )
+
     # Subject prefix must be one of the expected ones
     if subj_lower not in expected_lower:
         expected_list = sorted(expected)
@@ -176,8 +201,6 @@ def validate_commit(commit):
             f"Expected one of: {expected_str}"
         )
 
-
-        return False, f"Commit subject too long (>80 chars): '{first_line}'"
 
     # If build is NOT optional and build: exists among expected,
     # then subject MUST be build:
