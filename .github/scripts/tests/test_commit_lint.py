@@ -34,39 +34,37 @@ def test_infer_prefix_plugin():
     When a file is in plugins/<name>/, the prefix should be <name>:.
     This is the most common case for Fluent Bit commits modifying plugins.
     """
-    assert infer_prefix_from_paths(["plugins/out_s3/s3.c"]) == {"out_s3:"}
+    prefixes, build_optional = infer_prefix_from_paths(["plugins/out_s3/s3.c"])
+    assert prefixes == {"out_s3:"}
+    assert build_optional is True
 
 def test_infer_prefix_core_file():
     """
     Test that core source files with flb_ prefix correctly infer the component name.
-
-    Files like src/flb_router.c should produce prefix "router:" by stripping
-    the "flb_" prefix and file extension. This handles core library components.
     """
-    assert infer_prefix_from_paths(["src/flb_router.c"]) == {"router:"}
+    prefixes, build_optional = infer_prefix_from_paths(["src/flb_router.c"])
+    assert prefixes == {"router:"}
+    assert build_optional is True
 
 def test_infer_prefix_new_core_file():
     """
     Test that core files with longer names and numbers are handled correctly.
-
-    Ensures the prefix inference works for files like flb_super_router2.c,
-    extracting "super_router2:" correctly. This validates the regex handles
-    underscores and numbers in component names.
     """
-    assert infer_prefix_from_paths(["src/flb_super_router2.c"]) == {"super_router2:"}
+    prefixes, build_optional = infer_prefix_from_paths(["src/flb_super_router2.c"])
+    assert prefixes == {"super_router2:"}
+    assert build_optional is True
 
 def test_infer_multiple_prefixes():
     """
     Test that multiple files from different components produce multiple prefixes.
-
-    When a commit touches files from different components (e.g., a plugin and
-    a core file), the inference should return all relevant prefixes. This helps
-    detect commits that mix multiple subsystems, which should be split.
     """
-    assert infer_prefix_from_paths([
+    prefixes, build_optional = infer_prefix_from_paths([
         "plugins/in_tail/tail.c",
         "src/flb_router.c"
-    ]) == {"in_tail:", "router:"}
+    ])
+    assert prefixes == {"in_tail:", "router:"}
+    # At least one real component touched → build is optional
+    assert build_optional is True
 
 
 # -----------------------------------------------------------
@@ -251,12 +249,8 @@ def test_error_bad_squash_detected():
 
 def test_error_multiple_prefixes_inferred_from_files():
     """
-    Test that commits touching multiple components are rejected.
-
-    When a commit modifies files from different components (e.g., both a plugin
-    and core code), it should be split into separate commits. This keeps
-    commits focused and makes reviews easier. The error message should list
-    all expected prefixes.
+    Commits touching multiple non-build components are rejected and must be
+    split into separate commits, even if the subject matches one component.
     """
     commit = make_commit(
         "in_tail: update handler\n\nSigned-off-by: User",
@@ -264,7 +258,8 @@ def test_error_multiple_prefixes_inferred_from_files():
     )
     ok, msg = validate_commit(commit)
     assert ok is False
-    assert "Expected one of:" in msg
+    assert "does not match files changed" in msg
+
 
 
 # -----------------------------------------------------------
@@ -295,77 +290,66 @@ def test_docs_or_ci_changes_allowed():
 def test_infer_prefix_empty_file_list():
     """
     Test that an empty file list returns an empty prefix set.
-
-    Edge case: when no files are provided, the function should return
-    an empty set rather than raising an error. This handles degenerate cases.
     """
-    assert infer_prefix_from_paths([]) == set()
+    prefixes, build_optional = infer_prefix_from_paths([])
+    assert prefixes == set()
+    # No components, no CMakeLists → build not optional
+    assert build_optional is False
 
 def test_infer_prefix_src_subdirectory():
     """
     Test prefix inference for files in src/ subdirectories.
-
-    Files in src/ subdirectories (like src/stream_processor/stream.c) that
-    don't have the flb_ prefix should use the subdirectory name as the prefix.
-    This handles organized core code that's not in the root src/ directory.
     """
-    assert infer_prefix_from_paths(["src/stream_processor/stream.c"]) == {"stream_processor:"}
+    prefixes, build_optional = infer_prefix_from_paths(["src/stream_processor/stream.c"])
+    assert prefixes == {"stream_processor:"}
+    assert build_optional is True
 
 def test_infer_prefix_unknown_paths():
     """
     Test that files outside plugins/ and src/ don't generate prefixes.
-
-    Files in unknown locations (not plugins/ or src/) should not generate
-    any prefix. This allows commits with only documentation, CI, or other
-    non-code files to use generic prefixes.
     """
-    assert infer_prefix_from_paths(["random/file.c"]) == set()
+    prefixes, build_optional = infer_prefix_from_paths(["random/file.c"])
+    assert prefixes == set()
+    assert build_optional is False
 
 def test_infer_prefix_multiple_same_plugin():
     """
     Test that multiple files from the same plugin yield a single prefix.
-
-    When a commit modifies multiple files within the same plugin directory
-    (e.g., .c, .h, and config files), they should all produce the same prefix.
-    This ensures commits modifying a plugin's internal structure are valid.
     """
-    assert infer_prefix_from_paths([
+    prefixes, build_optional = infer_prefix_from_paths([
         "plugins/out_s3/s3.c",
         "plugins/out_s3/s3.h",
         "plugins/out_s3/config.c"
-    ]) == {"out_s3:"}
+    ])
+    assert prefixes == {"out_s3:"}
+    assert build_optional is True
 
 def test_infer_prefix_plugin_with_underscores():
     """
     Test that plugin names with underscores are handled correctly.
-
-    Plugin names can contain underscores (e.g., out_http). The prefix inference
-    should preserve these underscores in the generated prefix.
     """
-    assert infer_prefix_from_paths(["plugins/out_http/http.c"]) == {"out_http:"}
+    prefixes, build_optional = infer_prefix_from_paths(["plugins/out_http/http.c"])
+    assert prefixes == {"out_http:"}
+    assert build_optional is True
 
 def test_infer_prefix_core_file_with_numbers():
     """
     Test that core file names with numbers are handled correctly.
-
-    Core files like flb_http2.c should produce "http2:" (not "http2.c:").
-    This validates that numbers in component names are preserved correctly.
     """
-    assert infer_prefix_from_paths(["src/flb_http2.c"]) == {"http2:"}
+    prefixes, build_optional = infer_prefix_from_paths(["src/flb_http2.c"])
+    assert prefixes == {"http2:"}
+    assert build_optional is True
 
 def test_infer_prefix_mixed_known_unknown():
     """
     Test prefix inference with a mix of known and unknown file paths.
-
-    When a commit contains both files that generate prefixes (plugins/, src/)
-    and files that don't (docs/, random files), only the known paths should
-    contribute to the prefix set. Unknown paths are ignored.
     """
-    result = infer_prefix_from_paths([
+    prefixes, build_optional = infer_prefix_from_paths([
         "plugins/in_tail/tail.c",
         "random/file.txt"
     ])
-    assert result == {"in_tail:"}
+    assert prefixes == {"in_tail:"}
+    assert build_optional is True
 
 
 # -----------------------------------------------------------
@@ -620,12 +604,12 @@ def test_valid_config_file_changes():
 
 def test_error_multiple_prefixes_one_matches():
     """
-    Test that commits touching multiple components fail even if prefix matches one.
+    When a commit touches multiple different components (e.g., a plugin and a
+    core subsystem), the linter requires the commit to be split, even if the
+    subject prefix matches one of those components.
 
-    When a commit modifies files from different components, it should be rejected
-    even if the commit prefix matches one of the components. The error message
-    should list all expected prefixes to help the developer split the commit.
-    This enforces the principle of one logical change per commit.
+    In this case, both 'in_tail:' and 'router:' are valid inferred prefixes,
+    so the linter must reject the commit and report all expected prefixes.
     """
     commit = make_commit(
         "in_tail: update\n\nSigned-off-by: User",
