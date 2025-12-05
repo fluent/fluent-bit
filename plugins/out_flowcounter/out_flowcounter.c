@@ -216,6 +216,9 @@ static void out_fcount_flush(struct flb_event_chunk *event_chunk,
     while ((ret = flb_log_event_decoder_next(
                     &log_decoder,
                     &log_event)) == FLB_EVENT_DECODER_SUCCESS) {
+        /* bytes consumed in the event stream so far */
+        off = log_decoder.offset;
+
         if (ctx->event_based) {
             flb_time_copy(&tm, &log_event.timestamp);
         }
