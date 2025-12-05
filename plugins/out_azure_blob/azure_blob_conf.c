@@ -20,6 +20,7 @@
 #include <fluent-bit/flb_output_plugin.h>
 #include <fluent-bit/flb_base64.h>
 #include <fluent-bit/flb_pack.h>
+#include <fluent-bit/flb_compression.h>
 
 #include "azure_blob.h"
 #include "azure_blob_conf.h"
@@ -655,12 +656,19 @@ struct flb_azure_blob *flb_azure_blob_conf_create(struct flb_output_instance *in
         return NULL;
     }
 
-    /* Compress (gzip) */
+    /* Compress payload over the wire */
     tmp = (char *) flb_output_get_property("compress", ins);
-    ctx->compress_gzip = FLB_FALSE;
+    ctx->compression = FLB_COMPRESSION_ALGORITHM_NONE;
     if (tmp) {
         if (strcasecmp(tmp, "gzip") == 0) {
-            ctx->compress_gzip = FLB_TRUE;
+            ctx->compression = FLB_COMPRESSION_ALGORITHM_GZIP;
+        }
+        else if (strcasecmp(tmp, "zstd") == 0) {
+            ctx->compression = FLB_COMPRESSION_ALGORITHM_ZSTD;
+        }
+        else {
+            flb_plg_error(ctx->ins, "invalid compress value '%s' (supported: gzip, zstd)", tmp);
+            return NULL;
         }
     }
 

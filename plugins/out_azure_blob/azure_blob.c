@@ -24,6 +24,8 @@
 #include <fluent-bit/flb_pack.h>
 #include <fluent-bit/flb_config_map.h>
 #include <fluent-bit/flb_gzip.h>
+#include <fluent-bit/flb_compression.h>
+#include <fluent-bit/flb_zstd.h>
 #include <fluent-bit/flb_base64.h>
 #include <fluent-bit/flb_sqldb.h>
 #include <fluent-bit/flb_input_blob.h>
@@ -136,7 +138,7 @@ static int construct_request_buffer(struct flb_azure_blob *ctx, flb_sds_t new_da
         }
         body = buffered_data = tmp;
         memcpy(body + buffer_size, new_data, flb_sds_len(new_data));
-        if (ctx->compress_gzip == FLB_FALSE){
+        if (ctx->compression == FLB_COMPRESSION_ALGORITHM_NONE) {
             body[body_size] = '\0';
         }
     }
@@ -147,6 +149,38 @@ static int construct_request_buffer(struct flb_azure_blob *ctx, flb_sds_t new_da
     *out_size = body_size;
 
     return 0;
+}
+
+/*
+ * Compress a payload using the configured algorithm. Returns 0 on success and
+ * negative on failure so callers can gracefully fall back to sending the raw
+ * payload.
+ */
+static int azure_blob_compress_payload(int algorithm,
+                                       void *in_data, size_t in_len,
+                                       void **out_data, size_t *out_len)
+{
+    if (algorithm == FLB_COMPRESSION_ALGORITHM_GZIP) {
+        return flb_gzip_compress(in_data, in_len, out_data, out_len);
+    }
+    else if (algorithm == FLB_COMPRESSION_ALGORITHM_ZSTD) {
+        return flb_zstd_compress(in_data, in_len, out_data, out_len);
+    }
+
+    return -1;
+}
+
+/* Map a compression algorithm to its human-friendly label for logs. */
+static const char *azure_blob_compression_name(int algorithm)
+{
+    if (algorithm == FLB_COMPRESSION_ALGORITHM_GZIP) {
+        return "gzip";
+    }
+    else if (algorithm == FLB_COMPRESSION_ALGORITHM_ZSTD) {
+        return "zstd";
+    }
+
+    return "unknown";
 }
 
 void generate_random_string_blob(char *str, size_t length)
@@ -332,8 +366,12 @@ static int http_send_blob(struct flb_config *config, struct flb_azure_blob *ctx,
 {
     int ret;
     int compressed = FLB_FALSE;
-    int content_encoding = FLB_FALSE;
-    int content_type = FLB_FALSE;
+    int content_encoding = AZURE_BLOB_CE_NONE;
+    int content_type = AZURE_BLOB_CT_NONE;
+    int compression_algorithm = FLB_COMPRESSION_ALGORITHM_NONE;
+    int network_compression_algorithm = ctx->compression;
+    int network_compression_applied = FLB_FALSE;
+    int blob_compression_applied = FLB_FALSE;
     size_t b_sent;
     void *payload_buf;
     size_t payload_size;
@@ -358,27 +396,62 @@ static int http_send_blob(struct flb_config *config, struct flb_azure_blob *ctx,
     payload_buf = data;
     payload_size = bytes;
 
+    /* Determine compression algorithm */
+    if (network_compression_algorithm != FLB_COMPRESSION_ALGORITHM_NONE) {
+        compression_algorithm = network_compression_algorithm;
+    }
+
+    if (ctx->compress_blob == FLB_TRUE) {
+        if (compression_algorithm == FLB_COMPRESSION_ALGORITHM_NONE) {
+            compression_algorithm = FLB_COMPRESSION_ALGORITHM_GZIP;
+        }
+    }
+
     /* Handle compression requests */
-    if (ctx->compress_gzip == FLB_TRUE || ctx->compress_blob == FLB_TRUE) {
-        ret = flb_gzip_compress((void *) data, bytes, &payload_buf, &payload_size);
+    if (compression_algorithm != FLB_COMPRESSION_ALGORITHM_NONE) {
+        ret = azure_blob_compress_payload(compression_algorithm,
+                                          (void *) data, bytes,
+                                          &payload_buf, &payload_size);
         if (ret == 0) {
             compressed = FLB_TRUE;
+            if (network_compression_algorithm != FLB_COMPRESSION_ALGORITHM_NONE) {
+                network_compression_applied = FLB_TRUE;
+            }
+            if (ctx->compress_blob == FLB_TRUE) {
+                blob_compression_applied = FLB_TRUE;
+            }
         }
         else {
+            const char *alg_name;
+
+            alg_name = azure_blob_compression_name(compression_algorithm);
             flb_plg_warn(ctx->ins,
-                        "cannot gzip payload, disabling compression");
+                        "cannot %s payload, disabling compression",
+                        alg_name);
             payload_buf = data;
             payload_size = bytes;
+            compression_algorithm = FLB_COMPRESSION_ALGORITHM_NONE;
         }
     }
 
     /* set http header flags */
-    if (ctx->compress_blob == FLB_TRUE) {
+    if (blob_compression_applied == FLB_TRUE) {
         content_encoding = AZURE_BLOB_CE_NONE;
-        content_type = AZURE_BLOB_CT_GZIP;
+
+        if (compression_algorithm == FLB_COMPRESSION_ALGORITHM_ZSTD) {
+            content_type = AZURE_BLOB_CT_ZSTD;
+        }
+        else {
+            content_type = AZURE_BLOB_CT_GZIP;
+        }
     }
-    else if (compressed == FLB_TRUE) {
-        content_encoding = AZURE_BLOB_CE_GZIP;
+    else if (network_compression_applied == FLB_TRUE) {
+        if (network_compression_algorithm == FLB_COMPRESSION_ALGORITHM_GZIP) {
+            content_encoding = AZURE_BLOB_CE_GZIP;
+        }
+        else if (network_compression_algorithm == FLB_COMPRESSION_ALGORITHM_ZSTD) {
+            content_encoding = AZURE_BLOB_CE_ZSTD;
+        }
         content_type = AZURE_BLOB_CT_JSON;
     }
 
@@ -1783,14 +1856,15 @@ static struct flb_config_map config_map[] = {
     {
      FLB_CONFIG_MAP_STR, "compress", NULL,
      0, FLB_FALSE, 0,
-     "Set payload compression in network transfer. Option available is 'gzip'"
+        "Set payload compression in network transfer. Options: 'gzip', 'zstd'"
     },
 
     {
      FLB_CONFIG_MAP_BOOL, "compress_blob", "false",
      0, FLB_TRUE, offsetof(struct flb_azure_blob, compress_blob),
-     "Enable block blob GZIP compression in the final blob file. This option is "
-     "not compatible with 'appendblob' block type"
+        "Enable block blob compression in the final blob file (defaults to gzip, "
+        "uses the 'compress' codec when set). This option is not compatible with "
+        "'appendblob' block type"
     },
 
     {

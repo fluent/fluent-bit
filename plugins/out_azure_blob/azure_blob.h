@@ -30,11 +30,13 @@
 #define AZURE_BLOB_CT_NONE     0
 #define AZURE_BLOB_CT_JSON     1 /* application/json */
 #define AZURE_BLOB_CT_GZIP     2 /* application/gzip */
+#define AZURE_BLOB_CT_ZSTD     3 /* application/zstd */
 
 /* Content-Encoding */
 #define AZURE_BLOB_CE          "Content-Encoding"
 #define AZURE_BLOB_CE_NONE     0
 #define AZURE_BLOB_CE_GZIP     1 /* gzip */
+#define AZURE_BLOB_CE_ZSTD     2 /* zstd */
 
 /* service endpoint */
 #define AZURE_ENDPOINT_PREFIX  ".blob.core.windows.net"
@@ -54,7 +56,7 @@
 struct flb_azure_blob {
     int auto_create_container;
     int emulator_mode;
-    int compress_gzip;
+    int compression;
     int compress_blob;
     flb_sds_t account_name;
     flb_sds_t container_name;
