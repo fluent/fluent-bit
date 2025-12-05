@@ -32,6 +32,7 @@
 
 #define HTTP_BUFFER_MAX_SIZE    "4M"
 #define HTTP_BUFFER_CHUNK_SIZE  "512K"
+#define REMOTE_ADDR_KEY         "REMOTE_ADDR"
 
 struct flb_http {
     int successful_response_code;
@@ -46,6 +47,9 @@ struct flb_http {
     struct flb_log_event_encoder log_encoder;
 
     struct flb_input_instance *ins;
+
+    int add_remote_addr;
+    const char *remote_addr_key;
 
     /* New gen HTTP server */
     int enable_http2;
