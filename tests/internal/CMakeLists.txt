@@ -59,6 +59,13 @@ set(UNIT_TESTS_FILES
   storage_dlq.c
 )
 
+if(FLB_OUT_AZURE_BLOB)
+  set(UNIT_TESTS_FILES
+    ${UNIT_TESTS_FILES}
+    azure_blob_path.c
+    )
+endif()
+
 # TLS helpers
 if(FLB_TLS)
   set(UNIT_TESTS_FILES
@@ -215,6 +222,10 @@ function(prepare_unit_tests TEST_PREFIX SOURCEFILES)
 
       if(FLB_AWS)
         target_link_libraries(${source_file_we} flb-aws)
+      endif()
+
+      if(FLB_OUT_AZURE_BLOB AND "${source_file_we}" STREQUAL "flb-it-azure_blob_path")
+        target_link_libraries(${source_file_we} flb-plugin-out_azure_blob)
       endif()
 
       if(FLB_STREAM_PROCESSOR)
