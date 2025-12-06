@@ -36,6 +36,49 @@ struct url_check url_checks[] = {
     {0, "https://fluentbit.io:1234/", "https", "fluentbit.io", "1234", "/"},
     {0, "https://fluentbit.io:1234/v", "https", "fluentbit.io", "1234", "/v"},
     {-1, "://", NULL, NULL, NULL, NULL},
+    // IPv6 tests
+    {0, "https://[::1]/something", "https", "::1", "443", "/something"},
+    {0, "http://[::1]/something", "http", "::1", "80", "/something"},
+    {0, "https://[::1]", "https", "::1", "443", "/"},
+    {0, "https://[::1]:1234/something", "https", "::1", "1234", "/something"},
+    {0, "http://[::1]:1234", "http", "::1", "1234", "/"},
+    {0, "http://[::1]:1234/", "http", "::1", "1234", "/"},
+    {0, "http://[::1]:1234/v", "http", "::1", "1234", "/v"},
+    {0, "https://[2001:db8::1]", "https", "2001:db8::1", "443", "/"},
+    {0, "https://[2001:db8::1]:1234/something", "https", "2001:db8::1", "1234", "/something"},
+    {0, "http://[2001:0db8:0000:0000:0000:0000:0000:0001]:1234/something", "http", "2001:0db8:0000:0000:0000:0000:0000:0001", "1234", "/something"},
+    {0, "https://[::192.9.5.5]:1234/v", "https", "::192.9.5.5", "1234", "/v"},
+    {0, "https://[::1]/path?query=[value]", "https", "::1", "443", "/path?query=[value]"},
+    /* Query string with brackets (no path) */
+    {0, "https://example.com?query=[1]", "https", "example.com", "443", "/?query=[1]"},
+    {0, "http://example.com?query=[value]&other=[2]", "http", "example.com", "80", "/?query=[value]&other=[2]"},
+    {0, "https://[::1]?query=[value]", "https", "::1", "443", "/?query=[value]"},
+    {0, "https://[2001:db8::1]:8080?query=[1]", "https", "2001:db8::1", "8080", "/?query=[1]"},
+    /* Fragment with brackets */
+    {0, "https://example.com#fragment=[1]", "https", "example.com", "443", "/#fragment=[1]"},
+    {0, "https://[::1]#fragment=[value]", "https", "::1", "443", "/#fragment=[value]"},
+    /* Query and fragment with brackets */
+    {0, "https://example.com?query=[1]#fragment=[2]", "https", "example.com", "443", "/?query=[1]#fragment=[2]"},
+    /* Port with query/fragment (non-IPv6) */
+    {0, "https://example.com:8080?query=[1]", "https", "example.com", "8080", "/?query=[1]"},
+    {0, "http://example.com:9000#fragment=[1]", "http", "example.com", "9000", "/#fragment=[1]"},
+    /* Empty query/fragment */
+    {0, "https://example.com?", "https", "example.com", "443", "/?"},
+    {0, "https://example.com#", "https", "example.com", "443", "/#"},
+    {0, "https://[::1]?", "https", "::1", "443", "/?"},
+    /* IPv6 edge cases - malformed brackets */
+    {-1, "http://[::1:8080/path", NULL, NULL, NULL, NULL},  /* missing closing bracket */
+    {-1, "http://::1]:8080/path", NULL, NULL, NULL, NULL},  /* missing opening bracket in host */
+    {-1, "http://[]:8080/path", NULL, NULL, NULL, NULL},    /* empty brackets */
+    {-1, "http://host]name.com/path", NULL, NULL, NULL, NULL},  /* closing bracket in hostname without opening */
+    {-1, "http://host]name.com?query=1", NULL, NULL, NULL, NULL},  /* closing bracket in hostname without opening (query) */
+    /* Colons in query/fragment should not be treated as port separators */
+    {0, "https://example.com?q=a:b", "https", "example.com", "443", "/?q=a:b"},
+    {0, "https://example.com/path?time=12:30:45", "https", "example.com", "443", "/path?time=12:30:45"},
+    {0, "http://example.com#section:subsection", "http", "example.com", "80", "/#section:subsection"},
+    {0, "https://example.com?q=a:b#frag:ment", "https", "example.com", "443", "/?q=a:b#frag:ment"},
+    {0, "https://[::1]?time=12:30", "https", "::1", "443", "/?time=12:30"},
+    {0, "http://example.com:8080?q=a:b:c", "http", "example.com", "8080", "/?q=a:b:c"}
 };
 
 void test_url_split_sds()
