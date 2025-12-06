@@ -302,6 +302,104 @@ int tls_context_alpn_set(void *ctx_backend, const char *alpn)
 }
 
 #ifdef _MSC_VER
+/* Parse certstore_name prefix like
+ *
+ *   "My"                        -> no prefix, leave location untouched
+ *   "CurrentUser\\My"           -> CERT_SYSTEM_STORE_CURRENT_USER, "My"
+ *   "HKCU\\My"                  -> CERT_SYSTEM_STORE_CURRENT_USER, "My"
+ *   "LocalMachine\\My"          -> CERT_SYSTEM_STORE_LOCAL_MACHINE, "My"
+ *   "HKLM\\My"                  -> CERT_SYSTEM_STORE_LOCAL_MACHINE, "My"
+ *   "LocalMachineEnterprise\\My"-> CERT_SYSTEM_STORE_LOCAL_MACHINE_ENTERPRISE, "My"
+ *   "HKLME\\My"                 -> CERT_SYSTEM_STORE_LOCAL_MACHINE_ENTERPRISE, "My"
+ *
+ * Also accepts '/' as separator.
+ *
+ * If no known prefix is found, *store_name_out is left as-is and *location_flags
+ * is not modified (so legacy behavior is preserved).
+ */
+static int windows_resolve_certstore_location(const char *configured_name,
+                                              DWORD *location_flags,
+                                              const char **store_name_out)
+{
+    const char *name;
+    const char *sep;
+    size_t prefix_len;
+    char prefix_buf[32];
+    size_t i;
+    size_t len = 0;
+    char c;
+
+    if (!configured_name || !*configured_name) {
+        return FLB_FALSE;
+    }
+
+    name = configured_name;
+    len = strlen(name);
+
+    /* Optional "Cert:\" prefix (PowerShell style) */
+    if (len >= 6 &&
+        strncasecmp(name, "cert:", 5) == 0 &&
+        (name[5] == '\\' || name[5] == '/')) {
+        name += 6;
+    }
+
+    /* Find first '\' or '/' separator */
+    sep = name;
+    while (*sep != '\0' && *sep != '\\' && *sep != '/') {
+        sep++;
+    }
+
+    if (*sep == '\0') {
+        /* No prefix, only store name (e.g. "My" or "Root")
+         * -> keep legacy behavior (location_flags unchanged).
+         */
+        *store_name_out = name;
+
+        return FLB_FALSE;
+    }
+
+    /* Copy and lowercase prefix into buffer */
+    prefix_len = (size_t)(sep - name);
+    if (prefix_len >= sizeof(prefix_buf)) {
+        prefix_len = sizeof(prefix_buf) - 1;
+    }
+
+    for (i = 0; i < prefix_len; i++) {
+        c = (char) name[i];
+
+        if (c >= 'A' && c <= 'Z') {
+            c = (char) (c - 'A' + 'a');
+        }
+        prefix_buf[i] = c;
+    }
+    prefix_buf[prefix_len] = '\0';
+
+    /* Default: keep *location_flags as-is */
+    if (strcmp(prefix_buf, "currentuser") == 0 ||
+        strcmp(prefix_buf, "hkcu") == 0) {
+        *location_flags = CERT_SYSTEM_STORE_CURRENT_USER;
+    }
+    else if (strcmp(prefix_buf, "localmachine") == 0 ||
+             strcmp(prefix_buf, "hklm") == 0) {
+        *location_flags = CERT_SYSTEM_STORE_LOCAL_MACHINE;
+    }
+    else if (strcmp(prefix_buf, "localmachineenterprise") == 0 ||
+             strcmp(prefix_buf, "hklme") == 0) {
+        *location_flags = CERT_SYSTEM_STORE_LOCAL_MACHINE_ENTERPRISE;
+    }
+    else {
+        /* Unknown prefix -> treat entire string as store name */
+        *store_name_out = configured_name;
+
+        return FLB_FALSE;
+    }
+
+    /* Store name part after the separator "\" or "/" */
+    *store_name_out = sep + 1;
+
+    return FLB_TRUE;
+}
+
 static int windows_load_system_certificates(struct tls_context *ctx)
 {
     int ret;
@@ -311,7 +409,10 @@ static int windows_load_system_certificates(struct tls_context *ctx)
     const unsigned char *win_cert_data;
     X509_STORE *ossl_store = SSL_CTX_get_cert_store(ctx->ctx);
     X509 *ossl_cert;
-    char *certstore_name = "Root";
+    char *configured_name = "Root";
+    const char *store_name = "Root";
+    DWORD store_location = CERT_SYSTEM_STORE_CURRENT_USER;
+    int has_location_prefix = FLB_FALSE;
 
     /* Check if OpenSSL certificate store is available */
     if (!ossl_store) {
@@ -320,20 +421,36 @@ static int windows_load_system_certificates(struct tls_context *ctx)
     }
 
     if (ctx->certstore_name) {
-        certstore_name = ctx->certstore_name;
+        configured_name = ctx->certstore_name;
+        store_name = ctx->certstore_name;
     }
 
-    if (ctx->use_enterprise_store) {
-        /* Open the Windows system enterprise certificate store */
+    /* First, resolve explicit prefix if present */
+    has_location_prefix = windows_resolve_certstore_location(configured_name,
+                                                             &store_location,
+                                                             &store_name);
+
+    /* Backward compatibility:
+     * If no prefix was given (store_name == configured_name) and
+     * use_enterprise_store is set, override location accordingly.
+     */
+    if (has_location_prefix == FLB_FALSE && ctx->use_enterprise_store) {
+        store_location = CERT_SYSTEM_STORE_LOCAL_MACHINE_ENTERPRISE;
+    }
+
+    /* Open the Windows certificate store for the resolved location */
+    if (store_location == CERT_SYSTEM_STORE_CURRENT_USER) {
+        /* Keep using CertOpenSystemStoreA for current user to avoid
+         * changing existing behavior.
+         */
+        win_store = CertOpenSystemStoreA(0, store_name);
+    }
+    else {
         win_store = CertOpenStore(CERT_STORE_PROV_SYSTEM,
                                   0,
                                   0,
-                                  CERT_SYSTEM_STORE_LOCAL_MACHINE_ENTERPRISE,
-                                  certstore_name);
-    }
-    else {
-        /* Open the Windows system certificate store */
-        win_store = CertOpenSystemStoreA(0, certstore_name);
+                                  store_location,
+                                  store_name);
     }
 
     if (win_store == NULL) {
@@ -389,10 +506,10 @@ static int windows_load_system_certificates(struct tls_context *ctx)
         }
 
         if (loaded == 0) {
-            flb_warn("[tls] no certificates loaded by thumbprint from '%s'.", certstore_name);
+            flb_warn("[tls] no certificates loaded by thumbprint from '%s'.", configured_name);
         }
         else {
-            flb_debug("[tls] loaded %zu certificate(s) by thumbprint from '%s'.", loaded, certstore_name);
+            flb_debug("[tls] loaded %zu certificate(s) by thumbprint from '%s'.", loaded, configured_name);
         }
         return 0;
     }
@@ -445,7 +562,7 @@ static int windows_load_system_certificates(struct tls_context *ctx)
     }
 
     flb_debug("[tls] successfully loaded certificates from windows system %s store.", 
-              certstore_name);
+              configured_name);
     return 0;
 }
 #endif
