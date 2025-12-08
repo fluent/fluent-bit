@@ -681,6 +681,9 @@ static size_t tda_window_snapshot(struct tda_window *w,
         return 0;
     }
 
+    /* Note: lwrb doesn't support peek, so we read and restore.
+     * In the unlikely event write-back fails, data is lost.
+     */
     /* read out all data ... */
     r = lwrb_read(&w->rb, tmp, full_bytes);
     if (r != full_bytes) {
