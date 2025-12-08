@@ -236,6 +236,11 @@ static struct flb_config_map config_map[] = {
      "Set successful response code. 200, 201 and 204 are supported."
     },
 
+    {
+     FLB_CONFIG_MAP_BOOL, "health_check", "false",
+     0, FLB_TRUE, offsetof(struct flb_http, enable_health_endpoint),
+     "Enable health check endpoint accessible via GET /health"
+    },
 
     /* EOF */
     {0}

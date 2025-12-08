@@ -671,6 +671,124 @@ void flb_test_http_tag_key_with_array_input()
     test_http_tag_key("[{\"tag\":\"new_tag\",\"test\":\"msg\"}]");
 }
 
+void flb_test_http_health_endpoint()
+{
+    struct flb_lib_out_cb cb_data;
+    struct test_ctx *ctx;
+    struct flb_http_client *c;
+    int ret;
+    size_t b_sent;
+
+    clear_output_num();
+
+    cb_data.cb = cb_check_result_json;
+    cb_data.data = "dummy";
+
+    ctx = test_ctx_create(&cb_data);
+    if (!TEST_CHECK(ctx != NULL)) {
+        TEST_MSG("test_ctx_create failed");
+        exit(EXIT_FAILURE);
+    }
+
+    ret = flb_input_set(ctx->flb, ctx->i_ffd,
+                        "health_check", "true",
+                        NULL);
+    TEST_CHECK(ret == 0);
+
+    ret = flb_output_set(ctx->flb, ctx->o_ffd,
+                         "match", "*",
+                         "format", "json",
+                         NULL);
+    TEST_CHECK(ret == 0);
+
+    /* Start the engine */
+    ret = flb_start(ctx->flb);
+    if (!TEST_CHECK(ret == 0)) {
+        TEST_MSG("flb_start failed with ret=%d", ret);
+        return;
+    }
+
+    ctx->httpc = http_client_ctx_create();
+    if (!TEST_CHECK(ctx->httpc != NULL)) {
+        TEST_MSG("http_client_ctx_create failed");
+        return;
+    }
+
+    /* Test GET /health endpoint */
+    c = flb_http_client(ctx->httpc->u_conn, FLB_HTTP_GET, "/health", NULL, 0,
+                        "127.0.0.1", 9880, NULL, 0);
+    if (!TEST_CHECK(c != NULL)) {
+        TEST_MSG("flb_http_client failed");
+        return;
+    }
+
+    ret = flb_http_do(c, &b_sent);
+    TEST_CHECK(ret == 0);
+    TEST_CHECK(c->resp.status == 200);
+
+    /* Check response contains expected JSON fields */
+    TEST_CHECK(c->resp.payload != NULL && c->resp.payload_size > 0);
+    TEST_CHECK(strstr(c->resp.payload, "\"status\": \"ok\"") != NULL);
+    TEST_CHECK(strstr(c->resp.payload, "\"version\":") != NULL);
+    TEST_CHECK(strstr(c->resp.payload, "\"git_hash\":") != NULL);
+    TEST_CHECK(strstr(c->resp.payload, "\"timestamp\":") != NULL);
+
+    flb_http_client_destroy(c);
+    flb_upstream_conn_release(ctx->httpc->u_conn);
+    test_ctx_destroy(ctx);
+}
+
+void flb_test_http_health_endpoint_disabled()
+{
+    struct flb_lib_out_cb cb_data;
+    struct test_ctx *ctx;
+    struct flb_http_client *c;
+    int ret;
+    size_t b_sent;
+
+    clear_output_num();
+
+    cb_data.cb = cb_check_result_json;
+    cb_data.data = "dummy";
+
+    ctx = test_ctx_create(&cb_data);
+    if (!TEST_CHECK(ctx != NULL)) {
+        TEST_MSG("test_ctx_create failed");
+        exit(EXIT_FAILURE);
+    }
+
+    ret = flb_input_set(ctx->flb, ctx->i_ffd,
+                        "health_check", "false",
+                        NULL);
+    TEST_CHECK(ret == 0);
+
+    ret = flb_output_set(ctx->flb, ctx->o_ffd,
+                         "match", "*",
+                         "format", "json",
+                         NULL);
+    TEST_CHECK(ret == 0);
+
+    /* Start the engine */
+    ret = flb_start(ctx->flb);
+    TEST_CHECK(ret == 0);
+
+    ctx->httpc = http_client_ctx_create();
+    TEST_CHECK(ctx->httpc != NULL);
+
+    /* Test GET /health endpoint - should return 400 for invalid method */
+    c = flb_http_client(ctx->httpc->u_conn, FLB_HTTP_GET, "/health", NULL, 0,
+                        "127.0.0.1", 9880, NULL, 0);
+    TEST_CHECK(c != NULL);
+
+    ret = flb_http_do(c, &b_sent);
+    TEST_CHECK(ret == 0);
+    TEST_CHECK(c->resp.status == 400);
+
+    flb_http_client_destroy(c);
+    flb_upstream_conn_release(ctx->httpc->u_conn);
+    test_ctx_destroy(ctx);
+}
+
 TEST_LIST = {
     {"http", flb_test_http},
     {"successful_response_code_200", flb_test_http_successful_response_code_200},
@@ -679,5 +797,7 @@ TEST_LIST = {
     {"failure_response_code_400_bad_disk_write", flb_test_http_failure_400_bad_disk_write},
     {"tag_key_with_map_input", flb_test_http_tag_key_with_map_input},
     {"tag_key_with_array_input", flb_test_http_tag_key_with_array_input},
+    {"health_endpoint", flb_test_http_health_endpoint},
+    {"health_endpoint_disabled", flb_test_http_health_endpoint_disabled},
     {NULL, NULL}
 };
