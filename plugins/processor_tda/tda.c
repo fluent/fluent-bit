@@ -987,7 +987,7 @@ static void tda_window_run_ripser(struct tda_window *w,
     }
 
     /* After the loop, copy the "most plausible" values into betti. */
-    betti.num_dims = 2;
+    betti.num_dims = 3;  /* we track b0, b1, b2 */
     betti.betti[0] = best_b0;
     betti.betti[1] = best_b1;
     betti.betti[2] = best_b2;
