@@ -45,7 +45,7 @@ endif()
 
 # ripser
 if(FLB_RIPSER)
-  file(GLOB headers "fluent-bit/sipser/*.h")
+  file(GLOB headers "fluent-bit/ripser/*.h")
   install(FILES ${headers}
     DESTINATION ${FLB_INSTALL_INCLUDEDIR}/fluent-bit/ripser/
     COMPONENT headers
