@@ -422,6 +422,10 @@ static int tda_build_groups(struct tda_proc_ctx *ctx, struct cmt *cmt)
     ctx->last_vec = flb_calloc(ctx->feature_dim, sizeof(double));
     if (!ctx->last_vec) {
         flb_errno();
+        /* Clean up what we just assigned */
+        ctx->groups = NULL;
+        ctx->group_list = NULL;
+        ctx->feature_dim = 0;
         goto error;
     }
     ctx->last_ts = 0;
