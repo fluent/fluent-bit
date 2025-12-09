@@ -130,6 +130,7 @@ int refresh_fn_ec2(struct flb_aws_provider *provider) {
     int ret = -1;
 
     flb_debug("[aws_credentials] Refresh called on the EC2 IMDS provider");
+    
     if (try_lock_provider(provider)) {
         ret = get_creds_ec2(implementation);
         unlock_provider(provider);
