@@ -48,7 +48,6 @@
 struct flb_aws_msk_iam {
     struct flb_config *flb_config;
     flb_sds_t region;
-    int is_serverless;  /* Flag to indicate if this is MSK Serverless */
     struct flb_tls *cred_tls;
     struct flb_aws_provider *provider;
     pthread_mutex_t lock;  /* Protects credential provider access from concurrent threads */
@@ -177,23 +176,15 @@ static flb_sds_t extract_region_from_broker(const char *broker)
     end = p;  /* Points to .amazonaws.com */
     
     /* Check for VPC endpoint format: .vpce.amazonaws.com */
-    if (p >= broker + 5 && strncmp(p - 5, ".vpce", 5) == 0) {
+    if (p - broker >= 5 && strncmp(p - 5, ".vpce", 5) == 0) {
         /* For VPC endpoints, region ends at .vpce */
         end = p - 5;
     }
     
     /* Find the start of region by going backwards to find the previous dot */
-    start = end - 1;
-    while (start > broker && *start != '.') {
+    start = end;
+    while (start > broker && *(start - 1) != '.') {
         start--;
-    }
-    
-    if (*start == '.') {
-        start++;  /* Skip the dot */
-    }
-    
-    if (start >= end) {
-        return NULL;
     }
     
     len = end - start;
@@ -218,7 +209,6 @@ static flb_sds_t build_msk_iam_payload(struct flb_aws_msk_iam *config,
 {
     flb_sds_t payload = NULL;
     int encode_result;
-    char *p;
     size_t len;
     size_t url_len;
     size_t encoded_len;
@@ -399,7 +389,7 @@ static flb_sds_t build_msk_iam_payload(struct flb_aws_msk_iam *config,
     flb_sds_destroy(key);
     key = NULL;
 
-    len = strlen(config->region);
+    len = flb_sds_len(config->region);
     if (hmac_sha256_sign(key_region, key_date, 32, (unsigned char *) config->region, len) != 0) {
         goto error;
     }
@@ -459,18 +449,15 @@ static flb_sds_t build_msk_iam_payload(struct flb_aws_msk_iam *config,
     flb_sds_len_set(payload, actual_encoded_len);
 
     /* Convert to Base64 URL encoding and remove padding */
-    p = payload;
-    while (*p) {
-        if (*p == '+') {
-            *p = '-';
-        }
-        else if (*p == '/') {
-            *p = '_';
-        }
-        p++;
-    }
-
     final_len = flb_sds_len(payload);
+    for (size_t i = 0; i < final_len; i++) {
+        if (payload[i] == '+') {
+            payload[i] = '-';
+        }
+        else if (payload[i] == '/') {
+            payload[i] = '_';
+        }
+    }
     while (final_len > 0 && payload[final_len-1] == '=') {
         final_len--;
     }
@@ -542,15 +529,15 @@ static void oauthbearer_token_refresh_cb(rd_kafka_t *rk,
         return;
     }
 
-    /* Determine MSK endpoint based on cluster type */
-    if (config->is_serverless) {
-        snprintf(host, sizeof(host), "kafka-serverless.%s.amazonaws.com", config->region);
-    }
-    else {
-        snprintf(host, sizeof(host), "kafka.%s.amazonaws.com", config->region);
-    }
+    /*
+     * Construct service-level hostname for signing (kafka.{region}.amazonaws.com).
+     * This approach solves the multi-broker authentication issue since librdkafka's
+     * OAuth callback doesn't provide per-broker context. Using a consistent service
+     * hostname works for all brokers and supports PrivateLink/Custom DNS scenarios.
+     */
+    snprintf(host, sizeof(host), "kafka.%s.amazonaws.com", config->region);
 
-    flb_debug("[aws_msk_iam] OAuth token refresh callback triggered");
+    flb_debug("[aws_msk_iam] OAuth token refresh callback triggered for host: %s", host);
 
     /*
      * CRITICAL CONCURRENCY FIX:
@@ -560,11 +547,17 @@ static void oauthbearer_token_refresh_cb(rd_kafka_t *rk,
      * Without synchronization, concurrent refresh/get_credentials calls can
      * corrupt provider state and cause authentication failures.
      */
-    pthread_mutex_lock(&config->lock);
+    if (pthread_mutex_lock(&config->lock) != 0) {
+        flb_error("[aws_msk_iam] failed to acquire credential provider lock");
+        rd_kafka_oauthbearer_set_token_failure(rk, "internal locking error");
+        return;
+    }
 
     /* Refresh credentials */
     if (config->provider->provider_vtable->refresh(config->provider) < 0) {
-        pthread_mutex_unlock(&config->lock);
+        if (pthread_mutex_unlock(&config->lock) != 0) {
+            flb_error("[aws_msk_iam] failed to release credential provider lock");
+        }
         flb_warn("[aws_msk_iam] credential refresh failed, will retry on next callback");
         rd_kafka_oauthbearer_set_token_failure(rk, "credential refresh failed");
         return;
@@ -573,21 +566,28 @@ static void oauthbearer_token_refresh_cb(rd_kafka_t *rk,
     /* Get credentials */
     creds = config->provider->provider_vtable->get_credentials(config->provider);
     if (!creds) {
-        pthread_mutex_unlock(&config->lock);
+        if (pthread_mutex_unlock(&config->lock) != 0) {
+            flb_error("[aws_msk_iam] failed to release credential provider lock");
+        }
         flb_error("[aws_msk_iam] failed to get AWS credentials from provider");
         rd_kafka_oauthbearer_set_token_failure(rk, "credential retrieval failed");
         return;
     }
 
     /* Unlock immediately after getting credentials - no need to hold lock during payload generation */
-    pthread_mutex_unlock(&config->lock);
+    if (pthread_mutex_unlock(&config->lock) != 0) {
+        flb_error("[aws_msk_iam] failed to release credential provider lock");
+    }
 
     /* Generate payload */
     payload = build_msk_iam_payload(config, host, creds);
     if (!payload) {
-        flb_error("[aws_msk_iam] failed to generate MSK IAM payload");
+        flb_error("[aws_msk_iam] failed to generate authentication token. "
+                  "Possible causes: 1) Invalid AWS credentials, "
+                  "2) Missing IAM permissions for kafka-cluster:Connect, "
+                  "3) Incorrect region configuration (%s)", config->region);
         flb_aws_credentials_destroy(creds);
-        rd_kafka_oauthbearer_set_token_failure(rk, "payload generation failed");
+        rd_kafka_oauthbearer_set_token_failure(rk, "authentication token generation failed");
         return;
     }
 
@@ -616,7 +616,7 @@ static void oauthbearer_token_refresh_cb(rd_kafka_t *rk,
         rd_kafka_oauthbearer_set_token_failure(rk, errstr);
     }
     else {
-        flb_info("[aws_msk_iam] OAuth bearer token refreshed");
+        flb_debug("[aws_msk_iam] OAuth bearer token refreshed successfully");
     }
 
     if (payload) {
@@ -628,7 +628,8 @@ static void oauthbearer_token_refresh_cb(rd_kafka_t *rk,
 struct flb_aws_msk_iam *flb_aws_msk_iam_register_oauth_cb(struct flb_config *config,
                                                           rd_kafka_conf_t *kconf,
                                                           struct flb_kafka_opaque *opaque,
-                                                          const char *brokers)
+                                                          const char *brokers,
+                                                          const char *region)
 {
     struct flb_aws_msk_iam *ctx;
     flb_sds_t region_str = NULL;
@@ -641,12 +642,13 @@ struct flb_aws_msk_iam *flb_aws_msk_iam_register_oauth_cb(struct flb_config *con
         return NULL;
     }
 
+    /* Validate brokers configuration is provided */
     if (!brokers || strlen(brokers) == 0) {
-        flb_error("[aws_msk_iam] brokers configuration is required for region extraction");
+        flb_error("[aws_msk_iam] brokers configuration is required");
         return NULL;
     }
     
-    /* Extract first broker from comma-separated list */
+    /* Extract first broker from comma-separated list for region detection only */
     first_broker = flb_strdup(brokers);
     if (!first_broker) {
         flb_error("[aws_msk_iam] failed to allocate memory for broker parsing");
@@ -658,23 +660,42 @@ struct flb_aws_msk_iam *flb_aws_msk_iam_register_oauth_cb(struct flb_config *con
         *comma = '\0';  /* Terminate at first comma */
     }
     
-    /* Extract region from broker address */
-    region_str = extract_region_from_broker(first_broker);
-    if (!region_str || flb_sds_len(region_str) == 0) {
-        flb_error("[aws_msk_iam] failed to extract region from broker address: %s", 
-                 brokers);
-        flb_free(first_broker);
-        if (region_str) {
-            flb_sds_destroy(region_str);
+    /* Determine region: use provided region or extract from brokers */
+    if (region && strlen(region) > 0) {
+        /* User provided explicit region */
+        region_str = flb_sds_create(region);
+        if (!region_str) {
+            flb_error("[aws_msk_iam] failed to allocate region string");
+            flb_free(first_broker);
+            return NULL;
         }
-        return NULL;
+        flb_info("[aws_msk_iam] using user-configured region: %s", region_str);
+    }
+    else {
+        /* Attempt to auto-detect region from broker hostname */
+        region_str = extract_region_from_broker(first_broker);
+        if (!region_str || flb_sds_len(region_str) == 0) {
+            flb_error("[aws_msk_iam] failed to auto-detect region from broker address: %s. "
+                     "Please set the 'aws_region' configuration parameter explicitly.", 
+                     brokers);
+            flb_free(first_broker);
+            if (region_str) {
+                flb_sds_destroy(region_str);
+            }
+            return NULL;
+        }
+        
+        flb_info("[aws_msk_iam] auto-detected region from broker hostname: %s", region_str);
     }
     
-    /* Detect if this is MSK Serverless by checking broker address */
+    /* Done with first_broker string */
+    flb_free(first_broker);
+    first_broker = NULL;
+    
+    /* Create MSK IAM context */
     ctx = flb_calloc(1, sizeof(struct flb_aws_msk_iam));
     if (!ctx) {
         flb_errno();
-        flb_free(first_broker);
         flb_sds_destroy(region_str);
         return NULL;
     }
@@ -682,21 +703,7 @@ struct flb_aws_msk_iam *flb_aws_msk_iam_register_oauth_cb(struct flb_config *con
     ctx->flb_config = config;
     ctx->region = region_str;
     
-    /* Detect cluster type (Standard vs Serverless) */
-    if (strstr(first_broker, ".kafka-serverless.")) {
-        ctx->is_serverless = 1;
-        flb_info("[aws_msk_iam] detected MSK Serverless cluster");
-    }
-    else {
-        ctx->is_serverless = 0;
-    }
-    
-    flb_free(first_broker);
-    first_broker = NULL;
-    
-    flb_info("[aws_msk_iam] detected %s MSK cluster, region: %s", 
-             ctx->is_serverless ? "Serverless" : "Standard",
-             region_str);
+    flb_info("[aws_msk_iam] initialized MSK IAM authentication for region: %s", region_str);
 
     /* Create TLS instance */
     ctx->cred_tls = flb_tls_create(FLB_TLS_CLIENT_MODE,
