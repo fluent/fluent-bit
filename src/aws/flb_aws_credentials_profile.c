@@ -663,8 +663,7 @@ static int get_shared_credentials(char* credentials_path,
 
     if (flb_read_file(credentials_path, &buf, &size) < 0) {
         if (errno == ENOENT) {
-            AWS_CREDS_ERROR_OR_DEBUG(debug_only, "Shared credentials file %s does not exist",
-                                     credentials_path);
+            AWS_CREDS_DEBUG("Shared credentials file %s does not exist", credentials_path);
         } else {
             flb_errno();
             AWS_CREDS_ERROR_OR_DEBUG(debug_only, "Could not read shared credentials file %s",
