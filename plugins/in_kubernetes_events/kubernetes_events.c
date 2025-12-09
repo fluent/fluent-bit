@@ -796,9 +796,6 @@ static int process_http_chunk(struct k8s_events* ctx, struct flb_http_client *c,
         if (ret == 0) {
             /* Successfully parsed JSON */
             flb_plg_debug(ctx->ins, "successfully parsed JSON event (%zu bytes)", token_size);
-            if (!working_buffer) {
-                *bytes_consumed += token_size + 1;
-            }
             ret = process_watched_event(ctx, buf_data, buf_size);
             flb_free(buf_data);
             buf_data = NULL;
@@ -847,12 +844,12 @@ static int process_http_chunk(struct k8s_events* ctx, struct flb_http_client *c,
     }
     
     /* 
-     * Mark bytes consumed from the current HTTP chunk.
-     * If we used working_buffer, all original payload bytes are consumed.
+     * At this point we've either parsed all complete lines and/or buffered
+     * any remaining tail into ctx->chunk_buffer, so we no longer need any
+     * bytes from this HTTP payload. Tell the HTTP client that the whole
+     * payload has been consumed to avoid duplicates.
      */
-    if (working_buffer) {
-        *bytes_consumed = c->resp.payload_size;
-    }
+    *bytes_consumed = c->resp.payload_size;
 
     if (working_buffer) {
         flb_sds_destroy(working_buffer);
