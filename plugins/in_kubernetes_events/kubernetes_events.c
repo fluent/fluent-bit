@@ -756,6 +756,9 @@ static int process_http_chunk(struct k8s_events* ctx, struct flb_http_client *c,
      * so we need to buffer incomplete data until we find a complete JSON line.
      */
     if (ctx->chunk_buffer != NULL) {
+        size_t buffer_len = flb_sds_len(ctx->chunk_buffer);
+        flb_plg_debug(ctx->ins, "prepending %zu bytes from chunk_buffer to %zu new bytes", 
+                      buffer_len, c->resp.payload_size);
         working_buffer = flb_sds_cat(ctx->chunk_buffer, c->resp.payload, c->resp.payload_size);
         if (!working_buffer) {
             flb_plg_error(ctx->ins, "failed to concatenate chunk buffer");
@@ -771,6 +774,7 @@ static int process_http_chunk(struct k8s_events* ctx, struct flb_http_client *c,
         token_start = working_buffer;
     }
     else {
+        flb_plg_debug(ctx->ins, "processing %zu bytes from new chunk", c->resp.payload_size);
         token_start = c->resp.payload;
     }
 
@@ -789,37 +793,32 @@ static int process_http_chunk(struct k8s_events* ctx, struct flb_http_client *c,
         }
 
         ret = flb_pack_json(token_start, token_size, &buf_data, &buf_size, &root_type, &consumed);
-        if (ret == -1) {
-            flb_plg_debug(ctx->ins, "could not process payload, incomplete or bad formed JSON");
-        }
-        else {
-            /* 
-             * For non-buffered data, track consumed bytes.
-             * For buffered data, we'll mark everything consumed after the loop.
-             */
+        if (ret == 0) {
+            /* Successfully parsed JSON */
+            flb_plg_debug(ctx->ins, "successfully parsed JSON event (%zu bytes)", token_size);
             if (!working_buffer) {
                 *bytes_consumed += token_size + 1;
             }
             ret = process_watched_event(ctx, buf_data, buf_size);
+            flb_free(buf_data);
+            buf_data = NULL;
+            
+            token_start = token_end + 1;
+            search_start = token_start;
+            token_end = strpbrk(search_start, JSON_ARRAY_DELIM);
         }
-
-        flb_free(buf_data);
-        buf_data = NULL;
-        
-        token_start = token_end + 1;
-        search_start = token_start;
-        token_end = strpbrk(search_start, JSON_ARRAY_DELIM);
+        else {
+            /* JSON parse failed - this line is incomplete, don't advance */
+            flb_plg_debug(ctx->ins, "JSON parse failed for %zu bytes at offset %ld - will buffer", 
+                         token_size, token_start - (working_buffer ? working_buffer : c->resp.payload));
+            break;
+        }
     }
     
     /* 
-     * Always consume all bytes from the current chunk since we've examined them all.
-     * Even if we buffer the data, we've still "consumed" it from the HTTP payload.
-     */
-    *bytes_consumed = c->resp.payload_size;
-
-    /* 
-     * If there's remaining data without a newline delimiter, it means the JSON
-     * object is incomplete (split across chunk boundaries). Buffer it for next chunk.
+     * Calculate remaining unparsed data.
+     * If we broke out of the loop due to parse failure or no newline found,
+     * buffer the remaining data for the next chunk.
      */
     if (working_buffer) {
         remaining = flb_sds_len(working_buffer) - (token_start - working_buffer);
@@ -828,15 +827,31 @@ static int process_http_chunk(struct k8s_events* ctx, struct flb_http_client *c,
         remaining = c->resp.payload_size - (token_start - c->resp.payload);
     }
 
-    if (remaining > 0 && ret == 0) {
+    if (remaining > 0) {
+        /* We have unparsed data - buffer it for next chunk */
+        flb_plg_debug(ctx->ins, "buffering %zu bytes of incomplete JSON data for next chunk", remaining);
         ctx->chunk_buffer = flb_sds_create_len(token_start, remaining);
         if (!ctx->chunk_buffer) {
             flb_plg_error(ctx->ins, "failed to create chunk buffer");
-            ret = -1;
+            if (working_buffer) {
+                flb_sds_destroy(working_buffer);
+            }
+            if (buf_data) {
+                flb_free(buf_data);
+            }
+            return -1;
         }
-        else {
-            flb_plg_trace(ctx->ins, "buffering %zu bytes of incomplete JSON data", remaining);
-        }
+    }
+    else {
+        flb_plg_debug(ctx->ins, "all data processed, no buffering needed");
+    }
+    
+    /* 
+     * Mark bytes consumed from the current HTTP chunk.
+     * If we used working_buffer, all original payload bytes are consumed.
+     */
+    if (working_buffer) {
+        *bytes_consumed = c->resp.payload_size;
     }
 
     if (working_buffer) {
