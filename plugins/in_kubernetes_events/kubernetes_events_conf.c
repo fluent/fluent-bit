@@ -158,6 +158,9 @@ struct k8s_events *k8s_events_conf_create(struct flb_input_instance *ins)
     pthread_mutexattr_init(&attr);
     pthread_mutex_init(&ctx->lock, &attr);
 
+    /* Initialize buffer for incomplete chunk data */
+    ctx->chunk_buffer = NULL;
+
     /* Load the config map */
     ret = flb_input_config_map_set(ins, (void *) ctx);
     if (ret == -1) {
@@ -326,6 +329,10 @@ void k8s_events_conf_destroy(struct k8s_events *ctx)
 
     if (ctx->ra_resource_version) {
         flb_ra_destroy(ctx->ra_resource_version);
+    }
+
+    if (ctx->chunk_buffer) {
+        flb_sds_destroy(ctx->chunk_buffer);
     }
 
     if(ctx->streaming_client) {
