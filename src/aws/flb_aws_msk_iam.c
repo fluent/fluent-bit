@@ -177,7 +177,7 @@ static flb_sds_t extract_region_from_broker(const char *broker)
     end = p;  /* Points to .amazonaws.com */
     
     /* Check for VPC endpoint format: .vpce.amazonaws.com */
-    if (p >= broker + 5 && strncmp(p - 5, ".vpce", 5) == 0) {
+    if (p - broker >= 5 && strncmp(p - 5, ".vpce", 5) == 0) {
         /* For VPC endpoints, region ends at .vpce */
         end = p - 5;
     }
