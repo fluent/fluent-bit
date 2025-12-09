@@ -272,6 +272,11 @@ static int in_kafka_init(struct flb_input_instance *ins,
     conf = flb_input_get_property("rdkafka.sasl.mechanism", ins);
     if (conf) {
         ctx->sasl_mechanism = flb_sds_create(conf);
+        if (!ctx->sasl_mechanism) {
+            flb_plg_error(ins, "failed to allocate SASL mechanism string");
+            flb_free(ctx);
+            return -1;
+        }
         flb_plg_info(ins, "SASL mechanism configured: %s", ctx->sasl_mechanism);
         
 #ifdef FLB_HAVE_AWS_MSK_IAM
@@ -284,6 +289,11 @@ static int in_kafka_init(struct flb_input_instance *ins,
             flb_input_set_property(ins, "rdkafka.sasl.mechanism", "OAUTHBEARER");
             flb_sds_destroy(ctx->sasl_mechanism);
             ctx->sasl_mechanism = flb_sds_create("OAUTHBEARER");
+            if (!ctx->sasl_mechanism) {
+                flb_plg_error(ins, "failed to allocate SASL mechanism string");
+                flb_free(ctx);
+                return -1;
+            }
             
             /* Ensure security protocol is set */
             conf = flb_input_get_property("rdkafka.security.protocol", ins);
