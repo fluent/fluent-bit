@@ -2,7 +2,7 @@
 
 /*  Fluent Bit
  *  ==========
- *  Copyright (C) 2015-2026 The Fluent Bit Authors
+ *  Copyright (C) 2015-2024 The Fluent Bit Authors
  *
  *  Licensed under the Apache License, Version 2.0 (the "License");
  *  you may not use this file except in compliance with the License.
@@ -49,7 +49,6 @@ struct flb_out_kafka *flb_out_kafka_create(struct flb_output_instance *ins,
     }
     ctx->ins = ins;
     ctx->blocked = FLB_FALSE;
-    mk_list_init(&ctx->topics);
 
     ret = flb_output_config_map_set(ins, (void*) ctx);
     if (ret == -1) {
@@ -59,37 +58,47 @@ struct flb_out_kafka *flb_out_kafka_create(struct flb_output_instance *ins,
         return NULL;
     }
 
-#ifdef FLB_HAVE_AWS_MSK_IAM
-    /*
-     * When MSK IAM auth is enabled, default the required
-     * security settings so users don't need to specify them.
-     */
-    if (ctx->aws_msk_iam && ctx->aws_msk_iam_cluster_arn) {
-        tmp = flb_output_get_property("rdkafka.security.protocol", ins);
-        if (!tmp) {
-            flb_output_set_property(ins, "rdkafka.security.protocol", "SASL_SSL");
+    /* Retrieve SASL mechanism if configured */
+    tmp = flb_output_get_property("rdkafka.sasl.mechanism", ins);
+    if (tmp) {
+        ctx->sasl_mechanism = flb_sds_create(tmp);
+        if (!ctx->sasl_mechanism) {
+            flb_plg_error(ins, "failed to allocate SASL mechanism string");
+            flb_free(ctx);
+            return NULL;
         }
-
-        tmp = flb_output_get_property("rdkafka.sasl.mechanism", ins);
-        if (!tmp) {
+        flb_plg_info(ins, "SASL mechanism configured: %s", ctx->sasl_mechanism);
+        
+#ifdef FLB_HAVE_AWS_MSK_IAM
+        /* Check if using aws_msk_iam as SASL mechanism */
+        if (strcasecmp(tmp, "aws_msk_iam") == 0) {
+            flb_sds new_sasl;
+            
+            /* Mark that user explicitly requested AWS MSK IAM */
+            ctx->aws_msk_iam = FLB_TRUE;
+            
+            /* Set SASL mechanism to OAUTHBEARER for librdkafka */
+            new_sasl = flb_sds_create("OAUTHBEARER");
+            if (!new_sasl) {
+                flb_plg_error(ins, "failed to allocate memory for SASL mechanism");
+                flb_free(ctx);
+                return NULL;
+            }
+            
             flb_output_set_property(ins, "rdkafka.sasl.mechanism", "OAUTHBEARER");
-            ctx->sasl_mechanism = flb_sds_create("OAUTHBEARER");
+            flb_sds_destroy(ctx->sasl_mechanism);
+            ctx->sasl_mechanism = new_sasl;
+            
+            /* Ensure security protocol is set */
+            tmp = flb_output_get_property("rdkafka.security.protocol", ins);
+            if (!tmp) {
+                flb_output_set_property(ins, "rdkafka.security.protocol", "SASL_SSL");
+            }
+            
+            flb_plg_info(ins, "AWS MSK IAM authentication enabled via rdkafka.sasl.mechanism");
         }
-        else {
-            ctx->sasl_mechanism = flb_sds_create(tmp);
-        }
-    }
-    else {
 #endif
-        /* Retrieve SASL mechanism if configured */
-        tmp = flb_output_get_property("rdkafka.sasl.mechanism", ins);
-        if (tmp) {
-            ctx->sasl_mechanism = flb_sds_create(tmp);
-        }
-
-#ifdef FLB_HAVE_AWS_MSK_IAM
     }
-#endif
 
     /* rdkafka config context */
     ctx->conf = flb_kafka_conf_create(&ctx->kafka, &ins->properties, 0);
@@ -211,18 +220,35 @@ struct flb_out_kafka *flb_out_kafka_create(struct flb_output_instance *ins,
     flb_kafka_opaque_set(ctx->opaque, ctx, NULL);
     rd_kafka_conf_set_opaque(ctx->conf, ctx->opaque);
 
-#ifdef FLB_HAVE_AWS_MSK_IAM
-    if (ctx->aws_msk_iam && ctx->aws_msk_iam_cluster_arn && ctx->sasl_mechanism &&
-        strcasecmp(ctx->sasl_mechanism, "OAUTHBEARER") == 0) {
+    /*
+     * Enable SASL queue for all OAUTHBEARER configurations.
+     * This allows librdkafka to handle OAuth token refresh in a background thread,
+     * which is essential for idle connections where rd_kafka_poll() is not called.
+     * This benefits all OAUTHBEARER methods: AWS IAM, OIDC, custom OAuth, etc.
+     */
+    if (ctx->sasl_mechanism && strcasecmp(ctx->sasl_mechanism, "OAUTHBEARER") == 0) {
+        rd_kafka_conf_enable_sasl_queue(ctx->conf, 1);
+        flb_plg_debug(ins, "SASL queue enabled for OAUTHBEARER mechanism");
+    }
 
-        ctx->msk_iam = flb_aws_msk_iam_register_oauth_cb(config,
-                                                         ctx->conf,
-                                                         ctx->aws_msk_iam_cluster_arn,
-                                                         ctx->opaque);
-        if (!ctx->msk_iam) {
-            flb_plg_error(ctx->ins, "failed to setup MSK IAM authentication");
-        }
-        else {
+#ifdef FLB_HAVE_AWS_MSK_IAM
+    /* Only register MSK IAM if user explicitly requested it via rdkafka.sasl.mechanism=aws_msk_iam */
+    if (ctx->aws_msk_iam && ctx->sasl_mechanism && 
+        strcasecmp(ctx->sasl_mechanism, "OAUTHBEARER") == 0) {
+        /* Register MSK IAM OAuth callback */
+        if (ctx->kafka.brokers) {
+            flb_plg_info(ins, "registering AWS MSK IAM authentication OAuth callback");
+            ctx->msk_iam = flb_aws_msk_iam_register_oauth_cb(config,
+                                                             ctx->conf,
+                                                             ctx->opaque,
+                                                             ctx->kafka.brokers,
+                                                             ctx->aws_region);
+            if (!ctx->msk_iam) {
+                flb_plg_error(ctx->ins, "failed to setup MSK IAM authentication OAuth callback");
+                flb_out_kafka_destroy(ctx);
+                return NULL;
+            }
+            
             res = rd_kafka_conf_set(ctx->conf, "sasl.oauthbearer.config",
                                     "principal=admin", errstr, sizeof(errstr));
             if (res != RD_KAFKA_CONF_OK) {
@@ -231,22 +257,48 @@ struct flb_out_kafka *flb_out_kafka_create(struct flb_output_instance *ins,
                              errstr);
             }
         }
+        else {
+            flb_plg_error(ctx->ins, "brokers configuration is required for MSK IAM authentication");
+            flb_out_kafka_destroy(ctx);
+            return NULL;
+        }
     }
 #endif
 
     /* Kafka Producer */
     ctx->kafka.rk = rd_kafka_new(RD_KAFKA_PRODUCER, ctx->conf,
                                  errstr, sizeof(errstr));
+    
     if (!ctx->kafka.rk) {
         flb_plg_error(ctx->ins, "failed to create producer: %s",
                       errstr);
-        rd_kafka_conf_destroy(ctx->conf);
-        ctx->conf = NULL;
+        /* rd_kafka_new() did NOT take ownership on failure; ctx->conf is
+         * still valid and will be destroyed by flb_out_kafka_destroy(). */
         flb_out_kafka_destroy(ctx);
         return NULL;
     }
-    /* rd_kafka_new() succeeded, conf ownership transferred to rk */
+
+    /* rd_kafka_new() takes ownership of ctx->conf on success */
     ctx->conf = NULL;
+
+    /*
+     * Enable SASL background callbacks for all OAUTHBEARER configurations.
+     * This ensures OAuth tokens are refreshed automatically even on idle connections.
+     * This benefits all OAUTHBEARER methods: AWS IAM, OIDC, custom OAuth, etc.
+     */
+    if (ctx->sasl_mechanism && strcasecmp(ctx->sasl_mechanism, "OAUTHBEARER") == 0) {
+        rd_kafka_error_t *error;
+        error = rd_kafka_sasl_background_callbacks_enable(ctx->kafka.rk);
+        if (error) {
+            flb_plg_warn(ctx->ins, "failed to enable SASL background callbacks: %s. "
+                         "OAuth tokens may not refresh on idle connections.",
+                         rd_kafka_error_string(error));
+            rd_kafka_error_destroy(error);
+        }
+        else {
+            flb_plg_info(ctx->ins, "OAUTHBEARER: SASL background callbacks enabled");
+        }
+    }
 
 #ifdef FLB_HAVE_AVRO_ENCODER
     /* Config AVRO */
@@ -261,6 +313,7 @@ struct flb_out_kafka *flb_out_kafka_create(struct flb_output_instance *ins,
 #endif
 
     /* Config: Topic */
+    mk_list_init(&ctx->topics);
     tmp = flb_output_get_property("topics", ins);
     if (!tmp) {
         flb_kafka_topic_create(FLB_KAFKA_TOPIC, ctx);
@@ -305,10 +358,11 @@ int flb_out_kafka_destroy(struct flb_out_kafka *ctx)
     flb_kafka_topic_destroy_all(ctx);
 
     if (ctx->kafka.rk) {
+        /* rd_kafka_destroy also destroys the conf that was passed to rd_kafka_new */
         rd_kafka_destroy(ctx->kafka.rk);
     }
-
-    if (ctx->conf) {
+    else if (ctx->conf) {
+        /* If rd_kafka was never created, we need to destroy conf manually */
         rd_kafka_conf_destroy(ctx->conf);
     }
 
