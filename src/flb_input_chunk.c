@@ -398,7 +398,7 @@ static int flb_input_chunk_release_space(
                  * we need to destroy the task as well.
                  */
                 if (old_input_chunk->task->users == 0) {
-                    flb_debug("[task] drop task_id %d with no active route from input plugin %s",
+                    flb_info("[task] drop task_id %d with no active route from input plugin %s",
                               old_input_chunk->task->id, new_input_chunk->in->name);
                     flb_task_destroy(old_input_chunk->task, FLB_TRUE);
 
@@ -406,7 +406,7 @@ static int flb_input_chunk_release_space(
                 }
             }
             else {
-                flb_debug("[input chunk] drop chunk %s with no output route from input plugin %s",
+                flb_info("[input chunk] drop chunk %s with no output route from input plugin %s",
                           flb_input_chunk_get_name(old_input_chunk), new_input_chunk->in->name);
 
                 flb_input_chunk_destroy(old_input_chunk, FLB_TRUE);
