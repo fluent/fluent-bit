@@ -23,7 +23,7 @@ RUN sed -i -e "s/^mirrorlist=http:\/\/mirrorlist.centos.org/#mirrorlist=http:\/\
     yum install -y rpm-build curl ca-certificates gcc gcc-c++ make bash \
     wget unzip systemd-devel wget flex bison \
     cyrus-sasl-lib cyrus-sasl-devel openssl openssl-libs openssl-devel libcurl-devel pkgconf-pkg-config \
-    postgresql-libs postgresql-devel postgresql-server postgresql libyaml-devel \
+    postgresql-libs postgresql-devel postgresql-server postgresql libyaml-devel libsnmp-devel \
     tar gzip && \
     yum install -y epel-release && \
     yum install -y cmake3 && \
@@ -58,7 +58,7 @@ RUN sed -i -e "s/^mirrorlist=http:\/\/mirrorlist.centos.org/#mirrorlist=http:\/\
     yum install -y rpm-build curl ca-certificates gcc gcc-c++ make bash \
     wget unzip systemd-devel wget flex bison \
     cyrus-sasl-lib cyrus-sasl-devel openssl openssl-libs openssl-devel libcurl-devel pkgconf-pkg-config \
-    postgresql-libs postgresql-devel postgresql-server postgresql libyaml-devel \
+    postgresql-libs postgresql-devel postgresql-server postgresql libyaml-devel libsnmp-devel \
     tar gzip && \
     yum install -y epel-release && \
     yum install -y cmake3 && \
@@ -102,7 +102,7 @@ RUN yum -y update && \
     wget unzip systemd-devel wget flex bison \
     postgresql-libs postgresql-devel postgresql-server postgresql \
     cyrus-sasl-lib cyrus-sasl-devel openssl openssl-libs openssl-devel libcurl-devel pkgconf-pkg-config \
-    libyaml-devel zlib-devel \
+    libyaml-devel libsnmp-devel zlib-devel \
     tar gzip && \
     yum clean all && \
     mkdir -p "${CMAKE_HOME}" && \
@@ -141,7 +141,7 @@ RUN yum -y update && \
     wget unzip systemd-devel wget flex bison \
     postgresql-libs postgresql-devel postgresql-server postgresql \
     cyrus-sasl-lib cyrus-sasl-devel openssl openssl-libs openssl-devel libcurl-devel pkgconf-pkg-config \
-    libyaml-devel zlib-devel \
+    libyaml-devel libsnmp-devel zlib-devel \
     tar gzip && \
     yum clean all && \
     mkdir -p "${CMAKE_HOME}" && \
@@ -175,7 +175,7 @@ RUN dnf -y install 'dnf-command(config-manager)' && dnf -y config-manager --set-
     wget unzip systemd-devel wget flex bison \
     postgresql-libs postgresql-devel postgresql-server postgresql \
     cyrus-sasl-lib cyrus-sasl-devel openssl openssl-libs openssl-devel libcurl-devel pkgconf-pkg-config \
-    libyaml-devel zlib-devel \
+    libyaml-devel libsnmp-devel zlib-devel \
     tar gzip && \
     dnf clean all && \
     mkdir -p "${CMAKE_HOME}" && \
@@ -204,7 +204,7 @@ RUN dnf -y install 'dnf-command(config-manager)' && dnf -y config-manager --set-
     wget unzip systemd-devel wget flex bison \
     postgresql-libs postgresql-devel postgresql-server postgresql \
     cyrus-sasl-lib cyrus-sasl-devel openssl openssl-libs openssl-devel libcurl-devel pkgconf-pkg-config \
-    libyaml-devel zlib-devel \
+    libyaml-devel libsnmp-devel zlib-devel \
     tar gzip && \
     dnf clean all && \
     mkdir -p "${CMAKE_HOME}" && \
@@ -238,7 +238,7 @@ RUN dnf -y install 'dnf-command(config-manager)' && dnf -y config-manager --set-
     wget unzip systemd-devel wget flex bison \
     postgresql-libs postgresql-devel postgresql-server postgresql \
     cyrus-sasl-lib cyrus-sasl-devel openssl openssl-libs openssl-devel libcurl-devel pkgconf-pkg-config \
-    libyaml-devel zlib-devel \
+    libyaml-devel libsnmp-devel zlib-devel \
     tar gzip && \
     dnf clean all && \
     mkdir -p "${CMAKE_HOME}" && \
@@ -267,7 +267,7 @@ RUN dnf -y install 'dnf-command(config-manager)' && dnf -y config-manager --set-
     wget unzip systemd-devel wget flex bison \
     postgresql-libs postgresql-devel postgresql-server postgresql \
     cyrus-sasl-lib cyrus-sasl-devel openssl openssl-libs openssl-devel libcurl-devel pkgconf-pkg-config \
-    libyaml-devel zlib-devel \
+    libyaml-devel libsnmp-devel zlib-devel \
     tar gzip && \
     dnf clean all && \
     mkdir -p "${CMAKE_HOME}" && \
