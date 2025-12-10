@@ -369,17 +369,14 @@ static int in_kafka_init(struct flb_input_instance *ins,
     /* Only register MSK IAM if user explicitly requested it via rdkafka.sasl.mechanism=aws_msk_iam */
     if (ctx->aws_msk_iam && ctx->sasl_mechanism && 
         strcasecmp(ctx->sasl_mechanism, "OAUTHBEARER") == 0) {
-        /* Check if brokers are configured for MSK IAM */
-        if (ctx->kafka.brokers && 
-            (strstr(ctx->kafka.brokers, ".kafka.") || strstr(ctx->kafka.brokers, ".kafka-serverless.")) && 
-            strstr(ctx->kafka.brokers, ".amazonaws.com")) {
-            
-            /* Register MSK IAM OAuth callback - pass brokers string directly */
+        /* Register MSK IAM OAuth callback */
+        if (ctx->kafka.brokers) {
             flb_plg_info(ins, "registering AWS MSK IAM authentication OAuth callback");
             ctx->msk_iam = flb_aws_msk_iam_register_oauth_cb(config,
                                                              kafka_conf,
                                                              ctx->opaque,
-                                                             ctx->kafka.brokers);
+                                                             ctx->kafka.brokers,
+                                                             ctx->aws_region);
             
             if (!ctx->msk_iam) {
                 flb_plg_error(ins, "failed to setup MSK IAM authentication OAuth callback");
@@ -394,6 +391,10 @@ static int in_kafka_init(struct flb_input_instance *ins,
                                  errstr);
                 }
             }
+        }
+        else {
+            flb_plg_error(ins, "brokers configuration is required for MSK IAM authentication");
+            goto init_error;
         }
     }
 #endif
@@ -610,6 +611,15 @@ static struct flb_config_map config_map[] = {
     0,  FLB_FALSE, 0,
     "Set the librdkafka options"
    },
+#ifdef FLB_HAVE_AWS_MSK_IAM
+   {
+    FLB_CONFIG_MAP_STR, "aws_region", (char *)NULL,
+    0, FLB_TRUE, offsetof(struct flb_in_kafka_config, aws_region),
+    "AWS region for MSK IAM authentication. If not set, region will be "
+    "auto-detected from broker hostname (only works for standard MSK endpoints). "
+    "Required when using custom DNS names (e.g., PrivateLink) with MSK IAM."
+   },
+#endif
    {
     FLB_CONFIG_MAP_SIZE, "buffer_max_size", FLB_IN_KAFKA_BUFFER_MAX_SIZE,
     0, FLB_TRUE, offsetof(struct flb_in_kafka_config, buffer_max_size),
