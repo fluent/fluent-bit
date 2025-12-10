@@ -670,6 +670,15 @@ static struct flb_config_map config_map[] = {
     0,  FLB_FALSE, 0,
     "Set the kafka group_id."
    },
+#ifdef FLB_HAVE_AWS_MSK_IAM
+   {
+    FLB_CONFIG_MAP_STR, "aws_region", (char *)NULL,
+    0, FLB_TRUE, offsetof(struct flb_out_kafka, aws_region),
+    "AWS region for MSK IAM authentication. If not set, region will be "
+    "auto-detected from broker hostname (only works for standard MSK endpoints). "
+    "Required when using custom DNS names (e.g., PrivateLink) with MSK IAM."
+   },
+#endif
    {
     FLB_CONFIG_MAP_STR, "raw_log_key", NULL,
     0, FLB_TRUE, offsetof(struct flb_out_kafka, raw_log_key),

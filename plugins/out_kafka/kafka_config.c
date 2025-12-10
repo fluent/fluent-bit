@@ -221,17 +221,14 @@ struct flb_out_kafka *flb_out_kafka_create(struct flb_output_instance *ins,
     /* Only register MSK IAM if user explicitly requested it via rdkafka.sasl.mechanism=aws_msk_iam */
     if (ctx->aws_msk_iam && ctx->sasl_mechanism && 
         strcasecmp(ctx->sasl_mechanism, "OAUTHBEARER") == 0) {
-        /* Check if brokers are configured for MSK IAM */
-        if (ctx->kafka.brokers && 
-            (strstr(ctx->kafka.brokers, ".kafka.") || strstr(ctx->kafka.brokers, ".kafka-serverless.")) && 
-            strstr(ctx->kafka.brokers, ".amazonaws.com")) {
-
-            /* Register MSK IAM OAuth callback - pass brokers string directly */
+        /* Register MSK IAM OAuth callback */
+        if (ctx->kafka.brokers) {
             flb_plg_info(ins, "registering AWS MSK IAM authentication OAuth callback");
             ctx->msk_iam = flb_aws_msk_iam_register_oauth_cb(config,
                                                              ctx->conf,
                                                              ctx->opaque,
-                                                             ctx->kafka.brokers);
+                                                             ctx->kafka.brokers,
+                                                             ctx->aws_region);
             if (!ctx->msk_iam) {
                 flb_plg_error(ctx->ins, "failed to setup MSK IAM authentication OAuth callback");
                 flb_out_kafka_destroy(ctx);
@@ -245,6 +242,11 @@ struct flb_out_kafka *flb_out_kafka_create(struct flb_output_instance *ins,
                              "failed to set sasl.oauthbearer.config: %s",
                              errstr);
             }
+        }
+        else {
+            flb_plg_error(ctx->ins, "brokers configuration is required for MSK IAM authentication");
+            flb_out_kafka_destroy(ctx);
+            return NULL;
         }
     }
 #endif
