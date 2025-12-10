@@ -25,6 +25,7 @@
 
 #include "azure_logs_ingestion.h"
 #include "azure_logs_ingestion_conf.h"
+#include "azure_logs_ingestion_msiauth.h"
 
 struct flb_az_li* flb_az_li_ctx_create(struct flb_output_instance *ins,
                                         struct flb_config *config)
@@ -41,11 +42,9 @@ struct flb_az_li* flb_az_li_ctx_create(struct flb_output_instance *ins,
         return NULL;
     }
 
-    /* Set the conext in output_instance so that we can retrieve it later */
+    /* Set the context in output_instance so that we can retrieve it later */
     ctx->ins = ins;
     ctx->config = config;
-    /* Set context */
-    flb_output_set_context(ins, ctx);
 
     /* Load config map */
     ret = flb_output_config_map_set(ins, (void *) ctx);
@@ -54,21 +53,35 @@ struct flb_az_li* flb_az_li_ctx_create(struct flb_output_instance *ins,
         return NULL;
     }
 
-    /* config: 'client_id' */
-    if (!ctx->client_id) {
-        flb_plg_error(ins, "property 'client_id' is not defined");
-        flb_az_li_ctx_destroy(ctx);
-        return NULL;
+    /* Auth method validation and setup */
+    if (!ctx->auth_type_str || strlen(ctx->auth_type_str) == 0 || strcasecmp(ctx->auth_type_str, "service_principal") == 0) {
+        /* Default to service_principal if auth_type_str is NULL or empty */
+        ctx->auth_type = FLB_AZ_LI_AUTH_SERVICE_PRINCIPAL;
+
+        /* Verify required parameters for Service Principal auth */
+        if (!ctx->tenant_id || !ctx->client_id || !ctx->client_secret) {
+            flb_plg_error(ins, "When using service_principal auth, tenant_id, client_id, and client_secret are required");
+            flb_az_li_ctx_destroy(ctx);
+            return NULL;
+        }
     }
-    /* config: 'tenant_id' */
-    if (!ctx->tenant_id) {
-        flb_plg_error(ins, "property 'tenant_id' is not defined");
-        flb_az_li_ctx_destroy(ctx);
-        return NULL;
+    else if (strcasecmp(ctx->auth_type_str, "managed_identity") == 0) {
+        /* Check if client_id indicates system-assigned or user-assigned managed identity */
+        if (!ctx->client_id) {
+            flb_plg_error(ins, "When using managed_identity auth, client_id must be set to 'system' for system-assigned or the managed identity client ID");
+            flb_az_li_ctx_destroy(ctx);
+            return NULL;
+        }
+
+        if (strcasecmp(ctx->client_id, "system") == 0) {
+            ctx->auth_type = FLB_AZ_LI_AUTH_MANAGED_IDENTITY_SYSTEM;
+        } else {
+            ctx->auth_type = FLB_AZ_LI_AUTH_MANAGED_IDENTITY_USER;
+        }
     }
-    /* config: 'client_secret' */
-    if (!ctx->client_secret) {
-        flb_plg_error(ins, "property 'client_secret' is not defined");
+    else {
+        flb_plg_error(ins, "Invalid auth_type '%s'. Valid options are: 'service_principal' or 'managed_identity'",
+                     ctx->auth_type_str);
         flb_az_li_ctx_destroy(ctx);
         return NULL;
     }
@@ -91,16 +104,55 @@ struct flb_az_li* flb_az_li_ctx_create(struct flb_output_instance *ins,
         return NULL;
     }
 
-    /* Allocate and set auth url */
-    ctx->auth_url = flb_sds_create_size(sizeof(FLB_AZ_LI_AUTH_URL_TMPLT) - 1 +
-                                        flb_sds_len(ctx->tenant_id));
-    if (!ctx->auth_url) {
-        flb_errno();
-        flb_az_li_ctx_destroy(ctx);
-        return NULL;
+    /* Allocate and set auth url based on authentication method */
+    if (ctx->auth_type == FLB_AZ_LI_AUTH_MANAGED_IDENTITY_SYSTEM) {
+        /* System-assigned managed identity */
+        ctx->auth_url = flb_sds_create_size(sizeof(FLB_AZ_LI_MSIAUTH_URL_TEMPLATE) - 1);
+        if (!ctx->auth_url) {
+            flb_errno();
+            flb_az_li_ctx_destroy(ctx);
+            return NULL;
+        }
+        if (flb_sds_snprintf(&ctx->auth_url, flb_sds_alloc(ctx->auth_url),
+                             FLB_AZ_LI_MSIAUTH_URL_TEMPLATE, "", "") < 0) {
+            flb_plg_error(ins, "failed to build auth URL for system-assigned managed identity");
+            flb_az_li_ctx_destroy(ctx);
+            return NULL;
+        }
     }
-    flb_sds_snprintf(&ctx->auth_url, flb_sds_alloc(ctx->auth_url),
-                    FLB_AZ_LI_AUTH_URL_TMPLT, ctx->tenant_id);
+    else if (ctx->auth_type == FLB_AZ_LI_AUTH_MANAGED_IDENTITY_USER) {
+        /* User-assigned managed identity */
+        ctx->auth_url = flb_sds_create_size(sizeof(FLB_AZ_LI_MSIAUTH_URL_TEMPLATE) - 1 +
+                                           sizeof("&client_id=") - 1 +
+                                           flb_sds_len(ctx->client_id));
+        if (!ctx->auth_url) {
+            flb_errno();
+            flb_az_li_ctx_destroy(ctx);
+            return NULL;
+        }
+        if (flb_sds_snprintf(&ctx->auth_url, flb_sds_alloc(ctx->auth_url),
+                             FLB_AZ_LI_MSIAUTH_URL_TEMPLATE, "&client_id=", ctx->client_id) < 0) {
+            flb_plg_error(ins, "failed to build auth URL for user-assigned managed identity");
+            flb_az_li_ctx_destroy(ctx);
+            return NULL;
+        }
+    }
+    else {
+        /* Service principal authentication */
+        ctx->auth_url = flb_sds_create_size(sizeof(FLB_AZ_LI_AUTH_URL_TMPLT) - 1 +
+                                            flb_sds_len(ctx->tenant_id));
+        if (!ctx->auth_url) {
+            flb_errno();
+            flb_az_li_ctx_destroy(ctx);
+            return NULL;
+        }
+        if (flb_sds_snprintf(&ctx->auth_url, flb_sds_alloc(ctx->auth_url),
+                             FLB_AZ_LI_AUTH_URL_TMPLT, ctx->tenant_id) < 0) {
+            flb_plg_error(ins, "failed to build auth URL for service principal");
+            flb_az_li_ctx_destroy(ctx);
+            return NULL;
+        }
+    }
 
     /* Allocate and set dce full url */
     ctx->dce_u_url = flb_sds_create_size(sizeof(FLB_AZ_LI_DCE_URL_TMPLT) - 1 +
@@ -130,8 +182,7 @@ struct flb_az_li* flb_az_li_ctx_create(struct flb_output_instance *ins,
 
     /* Create upstream context for Log Ingsetion endpoint */
     ctx->u_dce = flb_upstream_create_url(config, ctx->dce_url,
-                                        FLB_AZ_LI_TLS_MODE, ins->tls);
-    if (!ctx->u_dce) {
+                                        FLB_AZ_LI_TLS_MODE, ins->tls); if (!ctx->u_dce) {
         flb_plg_error(ins, "upstream creation failed");
         flb_az_li_ctx_destroy(ctx);
         return NULL;
@@ -140,6 +191,9 @@ struct flb_az_li* flb_az_li_ctx_create(struct flb_output_instance *ins,
 
     flb_plg_info(ins, "dce_url='%s', dcr='%s', table='%s', stream='Custom-%s'",
                 ctx->dce_url, ctx->dcr_id, ctx->table_name, ctx->table_name);
+
+    /* Set context only after all validation and initialization is complete */
+    flb_output_set_context(ins, ctx);
 
     return ctx;
 }
