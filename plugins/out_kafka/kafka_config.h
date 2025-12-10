@@ -128,6 +128,7 @@ struct flb_out_kafka {
 #ifdef FLB_HAVE_AWS_MSK_IAM
     struct flb_aws_msk_iam *msk_iam;
     int aws_msk_iam;  /* Flag to indicate user explicitly requested AWS MSK IAM */
+    char *aws_region;  /* AWS region for MSK IAM (optional, auto-detected if not set) */
 #endif
 
     struct flb_kafka_opaque *opaque;
