@@ -25,6 +25,51 @@
 
 #include "azure_blob_db.h"
 
+#include <string.h>
+
+static int ensure_path_prefix_column(struct flb_azure_blob *ctx, struct flb_sqldb *db)
+{
+    int ret;
+    int found = FLB_FALSE;
+    const char *sql = "PRAGMA table_info(out_azure_blob_files);";
+    sqlite3_stmt *stmt = NULL;
+
+    ret = sqlite3_prepare_v2(db->handler, sql, -1, &stmt, NULL);
+    if (ret != SQLITE_OK) {
+        flb_plg_error(ctx->ins, "cannot inspect azure blob files schema");
+        if (stmt != NULL) {
+            sqlite3_finalize(stmt);
+        }
+        return -1;
+    }
+
+    while ((ret = sqlite3_step(stmt)) == SQLITE_ROW) {
+        const unsigned char *name = sqlite3_column_text(stmt, 1);
+
+        if (name && strcmp((const char *) name, "path_prefix") == 0) {
+            found = FLB_TRUE;
+            break;
+        }
+    }
+
+    sqlite3_finalize(stmt);
+
+    if (found == FLB_TRUE) {
+        return 0;
+    }
+
+    ret = sqlite3_exec(db->handler,
+                       "ALTER TABLE out_azure_blob_files ADD COLUMN path_prefix TEXT;",
+                       NULL, NULL, NULL);
+    if (ret != SQLITE_OK) {
+        flb_plg_error(ctx->ins, "cannot add path_prefix column: %s",
+                      sqlite3_errmsg(db->handler));
+        return -1;
+    }
+
+    return 0;
+}
+
 static int prepare_stmts(struct flb_sqldb *db, struct flb_azure_blob *ctx)
 {
     int ret;
@@ -239,6 +284,12 @@ struct flb_sqldb *azb_db_open(struct flb_azure_blob *ctx, char *db_path)
         return NULL;
     }
 
+    ret = ensure_path_prefix_column(ctx, db);
+    if (ret != 0) {
+        flb_sqldb_close(db);
+        return NULL;
+    }
+
     ret = prepare_stmts(db, ctx);
     if (ret == -1) {
         flb_sqldb_close(db);
@@ -315,6 +366,7 @@ int64_t azb_db_file_insert(struct flb_azure_blob *ctx,
                            char *source,
                            char *destination,
                            char *path,
+                           char *path_prefix,
                            size_t size)
 {
     int ret;
@@ -332,6 +384,13 @@ int64_t azb_db_file_insert(struct flb_azure_blob *ctx,
     sqlite3_bind_text(ctx->stmt_insert_file, 3, path, -1, 0);
     sqlite3_bind_int64(ctx->stmt_insert_file, 4, size);
     sqlite3_bind_int64(ctx->stmt_insert_file, 5, created);
+
+    if (path_prefix) {
+        sqlite3_bind_text(ctx->stmt_insert_file, 6, path_prefix, -1, 0);
+    }
+    else {
+        sqlite3_bind_null(ctx->stmt_insert_file, 6);
+    }
 
     /* Run the insert */
     ret = sqlite3_step(ctx->stmt_insert_file);
@@ -486,7 +545,8 @@ int azb_db_file_delivery_attempts(struct flb_azure_blob *ctx,
 
 int azb_db_file_get_next_stale(struct flb_azure_blob *ctx,
                                uint64_t *id,
-                               cfl_sds_t *path)
+                               cfl_sds_t *path,
+                               cfl_sds_t *path_prefix)
 {
     int ret;
     char *tmp_path;
@@ -507,11 +567,24 @@ int azb_db_file_get_next_stale(struct flb_azure_blob *ctx,
         /* id: column 0 */
         *id = sqlite3_column_int64(ctx->stmt_get_next_stale_file, 0);
         tmp_path = (char *) sqlite3_column_text(ctx->stmt_get_next_stale_file, 1);
+        char *tmp_prefix = (char *) sqlite3_column_text(ctx->stmt_get_next_stale_file, 2);
 
         *path = cfl_sds_create(tmp_path);
 
         if (*path == NULL) {
             exists = -1;
+        }
+
+        if (exists == FLB_TRUE && tmp_prefix) {
+            *path_prefix = cfl_sds_create(tmp_prefix);
+            if (*path_prefix == NULL) {
+                exists = -1;
+                cfl_sds_destroy(*path);
+                *path = NULL;
+            }
+        }
+        else {
+            *path_prefix = NULL;
         }
     }
     else if (ret == SQLITE_DONE) {
@@ -529,6 +602,7 @@ int azb_db_file_get_next_stale(struct flb_azure_blob *ctx,
     if (exists == -1) {
         *id = 0;
         *path = NULL;
+        *path_prefix = NULL;
     }
 
     return exists;
@@ -538,7 +612,8 @@ int azb_db_file_get_next_aborted(struct flb_azure_blob *ctx,
                                  uint64_t *id,
                                  uint64_t *delivery_attempts,
                                  cfl_sds_t *path,
-                                 cfl_sds_t *source)
+                                 cfl_sds_t *source,
+                                 cfl_sds_t *path_prefix)
 {
     int ret;
     char *tmp_source;
@@ -557,6 +632,7 @@ int azb_db_file_get_next_aborted(struct flb_azure_blob *ctx,
         *delivery_attempts = sqlite3_column_int64(ctx->stmt_get_next_aborted_file, 1);
         tmp_source = (char *) sqlite3_column_text(ctx->stmt_get_next_aborted_file, 2);
         tmp_path = (char *) sqlite3_column_text(ctx->stmt_get_next_aborted_file, 3);
+        char *tmp_prefix = (char *) sqlite3_column_text(ctx->stmt_get_next_aborted_file, 4);
 
         *path = cfl_sds_create(tmp_path);
 
@@ -568,6 +644,17 @@ int azb_db_file_get_next_aborted(struct flb_azure_blob *ctx,
             if (*source == NULL) {
                 cfl_sds_destroy(*path);
                 exists = -1;
+            }
+            else if (tmp_prefix) {
+                *path_prefix = cfl_sds_create(tmp_prefix);
+                if (*path_prefix == NULL) {
+                    cfl_sds_destroy(*path);
+                    cfl_sds_destroy(*source);
+                    exists = -1;
+                }
+            }
+            else {
+                *path_prefix = NULL;
             }
         }
     }
@@ -587,6 +674,7 @@ int azb_db_file_get_next_aborted(struct flb_azure_blob *ctx,
         *id = 0;
         *delivery_attempts = 0;
         *path = NULL;
+        *path_prefix = NULL;
         *source = NULL;
     }
 
@@ -731,19 +819,24 @@ int azb_db_file_part_get_next(struct flb_azure_blob *ctx,
                               uint64_t *part_delivery_attempts,
                               uint64_t *file_delivery_attempts,
                               cfl_sds_t *file_path,
-                              cfl_sds_t *destination)
+                              cfl_sds_t *destination,
+                              cfl_sds_t *path_prefix)
 {
     int ret;
     char *tmp = NULL;
     char *tmp_destination = NULL;
+    char *tmp_prefix = NULL;
     cfl_sds_t path;
     cfl_sds_t local_destination;
+    cfl_sds_t local_prefix = NULL;
 
     if (azb_db_lock(ctx) != 0) {
         return -1;
     }
 
     *file_path = NULL;
+    *destination = NULL;
+    *path_prefix = NULL;
 
     /* Run the query */
     ret = sqlite3_step(ctx->stmt_get_next_file_part);
@@ -757,6 +850,7 @@ int azb_db_file_part_get_next(struct flb_azure_blob *ctx,
         tmp = (char *) sqlite3_column_text(ctx->stmt_get_next_file_part, 6);
         *file_delivery_attempts = sqlite3_column_int64(ctx->stmt_get_next_file_part, 7);
         tmp_destination = (char *) sqlite3_column_text(ctx->stmt_get_next_file_part, 9);
+        tmp_prefix = (char *) sqlite3_column_text(ctx->stmt_get_next_file_part, 10);
     }
     else if (ret == SQLITE_DONE) {
         /* no records */
@@ -774,17 +868,27 @@ int azb_db_file_part_get_next(struct flb_azure_blob *ctx,
 
     path = cfl_sds_create(tmp);
     local_destination = cfl_sds_create(tmp_destination);
+    if (tmp_prefix) {
+        local_prefix = cfl_sds_create(tmp_prefix);
+    }
+    else {
+        local_prefix = NULL;
+    }
 
     sqlite3_clear_bindings(ctx->stmt_get_next_file_part);
     sqlite3_reset(ctx->stmt_get_next_file_part);
 
-    if (path == NULL || local_destination == NULL) {
+    if (path == NULL || local_destination == NULL || (tmp_prefix && local_prefix == NULL)) {
         if (path != NULL) {
             cfl_sds_destroy(path);
         }
 
         if (local_destination != NULL) {
             cfl_sds_destroy(local_destination);
+        }
+
+        if (local_prefix != NULL) {
+            cfl_sds_destroy(local_prefix);
         }
 
         azb_db_unlock(ctx);
@@ -796,12 +900,16 @@ int azb_db_file_part_get_next(struct flb_azure_blob *ctx,
     if (ret == -1) {
         cfl_sds_destroy(path);
         cfl_sds_destroy(local_destination);
+        if (local_prefix != NULL) {
+            cfl_sds_destroy(local_prefix);
+        }
         azb_db_unlock(ctx);
         return -1;
     }
 
     *file_path = path;
     *destination = local_destination;
+    *path_prefix = local_prefix;
 
     azb_db_unlock(ctx);
 
@@ -869,7 +977,8 @@ int azb_db_file_part_delivery_attempts(struct flb_azure_blob *ctx,
 }
 
 int azb_db_file_oldest_ready(struct flb_azure_blob *ctx,
-                             uint64_t *file_id, cfl_sds_t *path, cfl_sds_t *part_ids, cfl_sds_t *source)
+                             uint64_t *file_id, cfl_sds_t *path, cfl_sds_t *part_ids, cfl_sds_t *source,
+                             cfl_sds_t *path_prefix)
 {
     int ret;
     char *tmp = NULL;
@@ -906,7 +1015,7 @@ int azb_db_file_oldest_ready(struct flb_azure_blob *ctx,
         /* source */
         tmp = (char *) sqlite3_column_text(ctx->stmt_get_oldest_file_with_parts, 3);
         *source = cfl_sds_create(tmp);
-        if (!*part_ids) {
+        if (!*source) {
             cfl_sds_destroy(*part_ids);
             cfl_sds_destroy(*path);
             sqlite3_clear_bindings(ctx->stmt_get_oldest_file_with_parts);
@@ -914,16 +1023,42 @@ int azb_db_file_oldest_ready(struct flb_azure_blob *ctx,
             azb_db_unlock(ctx);
             return -1;
         }
+
+        /* path prefix */
+        tmp = (char *) sqlite3_column_text(ctx->stmt_get_oldest_file_with_parts, 4);
+        if (tmp) {
+            *path_prefix = cfl_sds_create(tmp);
+            if (!*path_prefix) {
+                cfl_sds_destroy(*source);
+                cfl_sds_destroy(*part_ids);
+                cfl_sds_destroy(*path);
+                sqlite3_clear_bindings(ctx->stmt_get_oldest_file_with_parts);
+                sqlite3_reset(ctx->stmt_get_oldest_file_with_parts);
+                azb_db_unlock(ctx);
+                return -1;
+            }
+        }
+        else {
+            *path_prefix = NULL;
+        }
     }
     else if (ret == SQLITE_DONE) {
         /* no records */
         sqlite3_clear_bindings(ctx->stmt_get_oldest_file_with_parts);
         sqlite3_reset(ctx->stmt_get_oldest_file_with_parts);
         azb_db_unlock(ctx);
+        *path = NULL;
+        *part_ids = NULL;
+        *source = NULL;
+        *path_prefix = NULL;
         return 0;
     }
     else {
         azb_db_unlock(ctx);
+        *path = NULL;
+        *part_ids = NULL;
+        *source = NULL;
+        *path_prefix = NULL;
         return -1;
     }
 
