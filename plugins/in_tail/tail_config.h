@@ -107,6 +107,9 @@ struct flb_tail_config {
     int progress_check_interval;      /* watcher interval             */
     int progress_check_interval_nsec; /* watcher interval             */
 
+    int read_interval_sec;      /* seconds to re-read file, only used by fs_stat */
+    int read_interval_nsec;     /* nanoseconds to re-read file, only used by fs_stat */
+
 #ifdef FLB_HAVE_INOTIFY
     int   inotify_watcher;     /* enable/disable inotify monitor */
 #endif

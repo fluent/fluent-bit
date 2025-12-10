@@ -190,9 +190,11 @@ int flb_tail_fs_stat_init(struct flb_input_instance *in,
 
     flb_plg_debug(ctx->ins, "flb_tail_fs_stat_init() initializing stat tail input");
 
-    /* Set a manual timer to collect events every 0.250 seconds */
+    /* Set a manual timer to collect events managed by 'read_interval' property */
     ret = flb_input_set_collector_time(in, tail_fs_event,
-                                       0, 250000000, config);
+                                       ctx->read_interval_sec,
+                                       ctx->read_interval_nsec,
+                                       config);
     if (ret < 0) {
         return -1;
     }
