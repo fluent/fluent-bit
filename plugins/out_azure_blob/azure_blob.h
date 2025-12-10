@@ -24,6 +24,7 @@
 #include <fluent-bit/flb_upstream.h>
 #include <fluent-bit/flb_sds.h>
 #include <fluent-bit/flb_sqldb.h>
+#include <fluent-bit/flb_time.h>
 
 /* Content-Type */
 #define AZURE_BLOB_CT          "Content-Type"
@@ -62,6 +63,7 @@ struct flb_azure_blob {
     flb_sds_t shared_key;
     flb_sds_t endpoint;
     flb_sds_t path;
+    int path_templating_enabled;
     flb_sds_t date_key;
     flb_sds_t auth_type;
     flb_sds_t sas_token;
@@ -165,5 +167,11 @@ struct flb_azure_blob {
     struct flb_output_instance *ins;
     struct flb_config *config;
 };
+
+int azb_resolve_path(struct flb_azure_blob *ctx,
+                     const char *tag,
+                     int tag_len,
+                     const struct flb_time *timestamp,
+                     flb_sds_t *out_path);
 
 #endif
