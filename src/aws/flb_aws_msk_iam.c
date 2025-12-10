@@ -48,7 +48,7 @@
 struct flb_aws_msk_iam {
     struct flb_config *flb_config;
     flb_sds_t region;
-    int is_serverless;  /* Flag to indicate if this is MSK Serverless */
+    flb_sds_t broker_host;  /* First broker hostname for signing (without port) */
     struct flb_tls *cred_tls;
     struct flb_aws_provider *provider;
     pthread_mutex_t lock;  /* Protects credential provider access from concurrent threads */
@@ -542,15 +542,21 @@ static void oauthbearer_token_refresh_cb(rd_kafka_t *rk,
         return;
     }
 
-    /* Determine MSK endpoint based on cluster type */
-    if (config->is_serverless) {
-        snprintf(host, sizeof(host), "kafka-serverless.%s.amazonaws.com", config->region);
-    }
-    else {
-        snprintf(host, sizeof(host), "kafka.%s.amazonaws.com", config->region);
+    if (!config->broker_host || flb_sds_len(config->broker_host) == 0) {
+        flb_error("[aws_msk_iam] broker hostname is not set");
+        rd_kafka_oauthbearer_set_token_failure(rk, "broker hostname not set");
+        return;
     }
 
-    flb_debug("[aws_msk_iam] OAuth token refresh callback triggered");
+    /*
+     * Use the actual broker hostname for signing.
+     * This ensures the signature Host header matches the TLS SNI/actual connection host,
+     * which is required for proper SigV4 verification.
+     * This approach is consistent with official AWS MSK IAM signers (Java, Python, Node.js).
+     */
+    snprintf(host, sizeof(host), "%s", config->broker_host);
+
+    flb_debug("[aws_msk_iam] OAuth token refresh callback triggered for host: %s", host);
 
     /*
      * CRITICAL CONCURRENCY FIX:
@@ -628,7 +634,8 @@ static void oauthbearer_token_refresh_cb(rd_kafka_t *rk,
 struct flb_aws_msk_iam *flb_aws_msk_iam_register_oauth_cb(struct flb_config *config,
                                                           rd_kafka_conf_t *kconf,
                                                           struct flb_kafka_opaque *opaque,
-                                                          const char *brokers)
+                                                          const char *brokers,
+                                                          const char *region)
 {
     struct flb_aws_msk_iam *ctx;
     flb_sds_t region_str = NULL;
@@ -641,8 +648,9 @@ struct flb_aws_msk_iam *flb_aws_msk_iam_register_oauth_cb(struct flb_config *con
         return NULL;
     }
 
+    /* Validate brokers configuration is provided */
     if (!brokers || strlen(brokers) == 0) {
-        flb_error("[aws_msk_iam] brokers configuration is required for region extraction");
+        flb_error("[aws_msk_iam] brokers configuration is required");
         return NULL;
     }
     
@@ -658,45 +666,73 @@ struct flb_aws_msk_iam *flb_aws_msk_iam_register_oauth_cb(struct flb_config *con
         *comma = '\0';  /* Terminate at first comma */
     }
     
-    /* Extract region from broker address */
-    region_str = extract_region_from_broker(first_broker);
-    if (!region_str || flb_sds_len(region_str) == 0) {
-        flb_error("[aws_msk_iam] failed to extract region from broker address: %s", 
-                 brokers);
+    /* Extract hostname from first broker (remove port if present) */
+    char *port_pos = strchr(first_broker, ':');
+    flb_sds_t broker_host;
+    if (port_pos) {
+        /* Create hostname without port */
+        broker_host = flb_sds_create_len(first_broker, port_pos - first_broker);
+    }
+    else {
+        /* No port, use as-is */
+        broker_host = flb_sds_create(first_broker);
+    }
+    
+    if (!broker_host) {
+        flb_error("[aws_msk_iam] failed to extract broker hostname");
         flb_free(first_broker);
-        if (region_str) {
-            flb_sds_destroy(region_str);
-        }
         return NULL;
     }
     
-    /* Detect if this is MSK Serverless by checking broker address */
+    /* Determine region: use provided region or extract from brokers */
+    if (region && strlen(region) > 0) {
+        /* User provided explicit region */
+        region_str = flb_sds_create(region);
+        if (!region_str) {
+            flb_error("[aws_msk_iam] failed to allocate region string");
+            flb_sds_destroy(broker_host);
+            flb_free(first_broker);
+            return NULL;
+        }
+        flb_info("[aws_msk_iam] using user-configured region: %s", region_str);
+    }
+    else {
+        /* Attempt to auto-detect region from broker hostname */
+        region_str = extract_region_from_broker(first_broker);
+        if (!region_str || flb_sds_len(region_str) == 0) {
+            flb_error("[aws_msk_iam] failed to auto-detect region from broker address: %s. "
+                     "Please set the 'aws_region' configuration parameter explicitly.", 
+                     brokers);
+            flb_sds_destroy(broker_host);
+            flb_free(first_broker);
+            if (region_str) {
+                flb_sds_destroy(region_str);
+            }
+            return NULL;
+        }
+        
+        flb_info("[aws_msk_iam] auto-detected region from broker hostname: %s", region_str);
+    }
+    
+    /* Done with first_broker string */
+    flb_free(first_broker);
+    first_broker = NULL;
+    
+    /* Create MSK IAM context */
     ctx = flb_calloc(1, sizeof(struct flb_aws_msk_iam));
     if (!ctx) {
         flb_errno();
-        flb_free(first_broker);
         flb_sds_destroy(region_str);
+        flb_sds_destroy(broker_host);
         return NULL;
     }
 
     ctx->flb_config = config;
     ctx->region = region_str;
+    ctx->broker_host = broker_host;
     
-    /* Detect cluster type (Standard vs Serverless) */
-    if (strstr(first_broker, ".kafka-serverless.")) {
-        ctx->is_serverless = 1;
-        flb_info("[aws_msk_iam] detected MSK Serverless cluster");
-    }
-    else {
-        ctx->is_serverless = 0;
-    }
-    
-    flb_free(first_broker);
-    first_broker = NULL;
-    
-    flb_info("[aws_msk_iam] detected %s MSK cluster, region: %s", 
-             ctx->is_serverless ? "Serverless" : "Standard",
-             region_str);
+    flb_info("[aws_msk_iam] initialized MSK IAM authentication for broker: %s, region: %s", 
+             broker_host, region_str);
 
     /* Create TLS instance */
     ctx->cred_tls = flb_tls_create(FLB_TLS_CLIENT_MODE,
@@ -705,6 +741,7 @@ struct flb_aws_msk_iam *flb_aws_msk_iam_register_oauth_cb(struct flb_config *con
                                     NULL, NULL, NULL, NULL, NULL, NULL);
     if (!ctx->cred_tls) {
         flb_error("[aws_msk_iam] failed to create TLS instance");
+        flb_sds_destroy(ctx->broker_host);
         flb_sds_destroy(ctx->region);
         flb_free(ctx);
         return NULL;
@@ -720,6 +757,7 @@ struct flb_aws_msk_iam *flb_aws_msk_iam_register_oauth_cb(struct flb_config *con
     if (!ctx->provider) {
         flb_error("[aws_msk_iam] failed to create AWS credentials provider");
         flb_tls_destroy(ctx->cred_tls);
+        flb_sds_destroy(ctx->broker_host);
         flb_sds_destroy(ctx->region);
         flb_free(ctx);
         return NULL;
@@ -731,6 +769,7 @@ struct flb_aws_msk_iam *flb_aws_msk_iam_register_oauth_cb(struct flb_config *con
         flb_error("[aws_msk_iam] failed to initialize AWS credentials provider");
         flb_aws_provider_destroy(ctx->provider);
         flb_tls_destroy(ctx->cred_tls);
+        flb_sds_destroy(ctx->broker_host);
         flb_sds_destroy(ctx->region);
         flb_free(ctx);
         return NULL;
@@ -742,6 +781,7 @@ struct flb_aws_msk_iam *flb_aws_msk_iam_register_oauth_cb(struct flb_config *con
         flb_error("[aws_msk_iam] failed to initialize credential provider mutex");
         flb_aws_provider_destroy(ctx->provider);
         flb_tls_destroy(ctx->cred_tls);
+        flb_sds_destroy(ctx->broker_host);
         flb_sds_destroy(ctx->region);
         flb_free(ctx);
         return NULL;
@@ -777,6 +817,10 @@ void flb_aws_msk_iam_destroy(struct flb_aws_msk_iam *ctx)
     
     if (ctx->region) {
         flb_sds_destroy(ctx->region);
+    }
+
+    if (ctx->broker_host) {
+        flb_sds_destroy(ctx->broker_host);
     }
 
     /* Destroy the credential provider mutex */
