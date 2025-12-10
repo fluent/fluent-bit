@@ -117,6 +117,7 @@ DEFINE_OPTION(FLB_OUT_DATADOG                 "Enable DataDog output plugin"    
 DEFINE_OPTION(FLB_OUT_ES                      "Enable Elasticsearch output plugin"           ON)
 DEFINE_OPTION(FLB_OUT_EXIT                    "Enable Exit output plugin"                    ON)
 DEFINE_OPTION(FLB_OUT_FILE                    "Enable file output plugin"                    ON)
+DEFINE_OPTION(FLB_OUT_LOGROTATE               "Enable logrotate output plugin"               ON)
 DEFINE_OPTION(FLB_OUT_FLOWCOUNTER             "Enable flowcount output plugin"               ON)
 DEFINE_OPTION(FLB_OUT_FORWARD                 "Enable Forward output plugin"                 ON)
 DEFINE_OPTION(FLB_OUT_GELF                    "Enable GELF output plugin"                    ON)
