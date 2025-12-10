@@ -28,12 +28,6 @@
 
 struct flb_aws_msk_iam;
 
-struct flb_msk_iam_cb {
-    void *plugin_ctx;
-    struct flb_aws_msk_iam *iam;
-    char *broker_host;  /* Store the actual broker hostname */
-};
-
 /*
  * Register the oauthbearer refresh callback for MSK IAM authentication.
  * Parameters:

@@ -48,7 +48,6 @@
 struct flb_aws_msk_iam {
     struct flb_config *flb_config;
     flb_sds_t region;
-    flb_sds_t broker_host;  /* First broker hostname for signing (without port) */
     struct flb_tls *cred_tls;
     struct flb_aws_provider *provider;
     pthread_mutex_t lock;  /* Protects credential provider access from concurrent threads */
@@ -399,7 +398,7 @@ static flb_sds_t build_msk_iam_payload(struct flb_aws_msk_iam *config,
     flb_sds_destroy(key);
     key = NULL;
 
-    len = strlen(config->region);
+    len = flb_sds_len(config->region);
     if (hmac_sha256_sign(key_region, key_date, 32, (unsigned char *) config->region, len) != 0) {
         goto error;
     }
@@ -542,19 +541,13 @@ static void oauthbearer_token_refresh_cb(rd_kafka_t *rk,
         return;
     }
 
-    if (!config->broker_host || flb_sds_len(config->broker_host) == 0) {
-        flb_error("[aws_msk_iam] broker hostname is not set");
-        rd_kafka_oauthbearer_set_token_failure(rk, "broker hostname not set");
-        return;
-    }
-
     /*
-     * Use the actual broker hostname for signing.
-     * This ensures the signature Host header matches the TLS SNI/actual connection host,
-     * which is required for proper SigV4 verification.
-     * This approach is consistent with official AWS MSK IAM signers (Java, Python, Node.js).
+     * Construct service-level hostname for signing (kafka.{region}.amazonaws.com).
+     * This approach solves the multi-broker authentication issue since librdkafka's
+     * OAuth callback doesn't provide per-broker context. Using a consistent service
+     * hostname works for all brokers and supports PrivateLink/Custom DNS scenarios.
      */
-    snprintf(host, sizeof(host), "%s", config->broker_host);
+    snprintf(host, sizeof(host), "kafka.%s.amazonaws.com", config->region);
 
     flb_debug("[aws_msk_iam] OAuth token refresh callback triggered for host: %s", host);
 
@@ -654,7 +647,7 @@ struct flb_aws_msk_iam *flb_aws_msk_iam_register_oauth_cb(struct flb_config *con
         return NULL;
     }
     
-    /* Extract first broker from comma-separated list */
+    /* Extract first broker from comma-separated list for region detection only */
     first_broker = flb_strdup(brokers);
     if (!first_broker) {
         flb_error("[aws_msk_iam] failed to allocate memory for broker parsing");
@@ -666,31 +659,12 @@ struct flb_aws_msk_iam *flb_aws_msk_iam_register_oauth_cb(struct flb_config *con
         *comma = '\0';  /* Terminate at first comma */
     }
     
-    /* Extract hostname from first broker (remove port if present) */
-    char *port_pos = strchr(first_broker, ':');
-    flb_sds_t broker_host;
-    if (port_pos) {
-        /* Create hostname without port */
-        broker_host = flb_sds_create_len(first_broker, port_pos - first_broker);
-    }
-    else {
-        /* No port, use as-is */
-        broker_host = flb_sds_create(first_broker);
-    }
-    
-    if (!broker_host) {
-        flb_error("[aws_msk_iam] failed to extract broker hostname");
-        flb_free(first_broker);
-        return NULL;
-    }
-    
     /* Determine region: use provided region or extract from brokers */
     if (region && strlen(region) > 0) {
         /* User provided explicit region */
         region_str = flb_sds_create(region);
         if (!region_str) {
             flb_error("[aws_msk_iam] failed to allocate region string");
-            flb_sds_destroy(broker_host);
             flb_free(first_broker);
             return NULL;
         }
@@ -703,7 +677,6 @@ struct flb_aws_msk_iam *flb_aws_msk_iam_register_oauth_cb(struct flb_config *con
             flb_error("[aws_msk_iam] failed to auto-detect region from broker address: %s. "
                      "Please set the 'aws_region' configuration parameter explicitly.", 
                      brokers);
-            flb_sds_destroy(broker_host);
             flb_free(first_broker);
             if (region_str) {
                 flb_sds_destroy(region_str);
@@ -723,16 +696,13 @@ struct flb_aws_msk_iam *flb_aws_msk_iam_register_oauth_cb(struct flb_config *con
     if (!ctx) {
         flb_errno();
         flb_sds_destroy(region_str);
-        flb_sds_destroy(broker_host);
         return NULL;
     }
 
     ctx->flb_config = config;
     ctx->region = region_str;
-    ctx->broker_host = broker_host;
     
-    flb_info("[aws_msk_iam] initialized MSK IAM authentication for broker: %s, region: %s", 
-             broker_host, region_str);
+    flb_info("[aws_msk_iam] initialized MSK IAM authentication for region: %s", region_str);
 
     /* Create TLS instance */
     ctx->cred_tls = flb_tls_create(FLB_TLS_CLIENT_MODE,
@@ -741,7 +711,6 @@ struct flb_aws_msk_iam *flb_aws_msk_iam_register_oauth_cb(struct flb_config *con
                                     NULL, NULL, NULL, NULL, NULL, NULL);
     if (!ctx->cred_tls) {
         flb_error("[aws_msk_iam] failed to create TLS instance");
-        flb_sds_destroy(ctx->broker_host);
         flb_sds_destroy(ctx->region);
         flb_free(ctx);
         return NULL;
@@ -757,7 +726,6 @@ struct flb_aws_msk_iam *flb_aws_msk_iam_register_oauth_cb(struct flb_config *con
     if (!ctx->provider) {
         flb_error("[aws_msk_iam] failed to create AWS credentials provider");
         flb_tls_destroy(ctx->cred_tls);
-        flb_sds_destroy(ctx->broker_host);
         flb_sds_destroy(ctx->region);
         flb_free(ctx);
         return NULL;
@@ -769,7 +737,6 @@ struct flb_aws_msk_iam *flb_aws_msk_iam_register_oauth_cb(struct flb_config *con
         flb_error("[aws_msk_iam] failed to initialize AWS credentials provider");
         flb_aws_provider_destroy(ctx->provider);
         flb_tls_destroy(ctx->cred_tls);
-        flb_sds_destroy(ctx->broker_host);
         flb_sds_destroy(ctx->region);
         flb_free(ctx);
         return NULL;
@@ -781,7 +748,6 @@ struct flb_aws_msk_iam *flb_aws_msk_iam_register_oauth_cb(struct flb_config *con
         flb_error("[aws_msk_iam] failed to initialize credential provider mutex");
         flb_aws_provider_destroy(ctx->provider);
         flb_tls_destroy(ctx->cred_tls);
-        flb_sds_destroy(ctx->broker_host);
         flb_sds_destroy(ctx->region);
         flb_free(ctx);
         return NULL;
@@ -817,10 +783,6 @@ void flb_aws_msk_iam_destroy(struct flb_aws_msk_iam *ctx)
     
     if (ctx->region) {
         flb_sds_destroy(ctx->region);
-    }
-
-    if (ctx->broker_host) {
-        flb_sds_destroy(ctx->broker_host);
     }
 
     /* Destroy the credential provider mutex */
