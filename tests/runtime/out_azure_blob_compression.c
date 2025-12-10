@@ -133,7 +133,7 @@ static void test_block_blob_extension_zstd()
     ctx.compress_blob = FLB_TRUE;
     ctx.compression = FLB_COMPRESSION_ALGORITHM_ZSTD;
 
-    uri = azb_block_blob_uri(&ctx, "file", "block", 123, "rand");
+    uri = azb_block_blob_uri(&ctx, NULL, "file", "block", 123, "rand");
     TEST_CHECK(uri != NULL);
     TEST_CHECK(strstr(uri, ".zst?blockid=") != NULL);
 
@@ -157,7 +157,7 @@ static void test_block_blob_extension_gzip_default()
     /* When no explicit algorithm is configured, gzip remains the
      * fallback to preserve legacy behavior. */
 
-    uri = azb_block_blob_uri(&ctx, "file", "block", 123, "rand");
+    uri = azb_block_blob_uri(&ctx, NULL, "file", "block", 123, "rand");
     TEST_CHECK(uri != NULL);
     TEST_CHECK(strstr(uri, ".gz?blockid=") != NULL);
 
@@ -178,7 +178,7 @@ static void test_block_blob_extension_disabled()
     ctx.compress_blob = FLB_FALSE;
     ctx.compression = FLB_COMPRESSION_ALGORITHM_ZSTD;
 
-    uri = azb_block_blob_uri(&ctx, "file", "block", 123, "rand");
+    uri = azb_block_blob_uri(&ctx, NULL, "file", "block", 123, "rand");
     TEST_CHECK(uri != NULL);
     TEST_CHECK(strstr(uri, ".gz?blockid=") == NULL);
     TEST_CHECK(strstr(uri, ".zst?blockid=") == NULL);
