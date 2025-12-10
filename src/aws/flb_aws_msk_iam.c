@@ -182,17 +182,9 @@ static flb_sds_t extract_region_from_broker(const char *broker)
     }
     
     /* Find the start of region by going backwards to find the previous dot */
-    start = end - 1;
-    while (start > broker && *start != '.') {
+    start = end;
+    while (start > broker && *(start - 1) != '.') {
         start--;
-    }
-    
-    if (*start == '.') {
-        start++;  /* Skip the dot */
-    }
-    
-    if (start >= end) {
-        return NULL;
     }
     
     len = end - start;
@@ -217,7 +209,6 @@ static flb_sds_t build_msk_iam_payload(struct flb_aws_msk_iam *config,
 {
     flb_sds_t payload = NULL;
     int encode_result;
-    char *p;
     size_t len;
     size_t url_len;
     size_t encoded_len;
@@ -458,18 +449,15 @@ static flb_sds_t build_msk_iam_payload(struct flb_aws_msk_iam *config,
     flb_sds_len_set(payload, actual_encoded_len);
 
     /* Convert to Base64 URL encoding and remove padding */
-    p = payload;
-    while (*p) {
-        if (*p == '+') {
-            *p = '-';
-        }
-        else if (*p == '/') {
-            *p = '_';
-        }
-        p++;
-    }
-
     final_len = flb_sds_len(payload);
+    for (size_t i = 0; i < final_len; i++) {
+        if (payload[i] == '+') {
+            payload[i] = '-';
+        }
+        else if (payload[i] == '/') {
+            payload[i] = '_';
+        }
+    }
     while (final_len > 0 && payload[final_len-1] == '=') {
         final_len--;
     }
