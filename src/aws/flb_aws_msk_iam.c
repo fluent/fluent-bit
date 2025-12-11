@@ -572,9 +572,12 @@ static void oauthbearer_token_refresh_cb(rd_kafka_t *rk,
     /* Generate payload */
     payload = build_msk_iam_payload(config, host, creds);
     if (!payload) {
-        flb_error("[aws_msk_iam] failed to generate MSK IAM payload");
+        flb_error("[aws_msk_iam] failed to generate authentication token. "
+                  "Possible causes: 1) Invalid AWS credentials, "
+                  "2) Missing IAM permissions for kafka-cluster:Connect, "
+                  "3) Incorrect region configuration (%s)", config->region);
         flb_aws_credentials_destroy(creds);
-        rd_kafka_oauthbearer_set_token_failure(rk, "payload generation failed");
+        rd_kafka_oauthbearer_set_token_failure(rk, "authentication token generation failed");
         return;
     }
 
@@ -603,7 +606,7 @@ static void oauthbearer_token_refresh_cb(rd_kafka_t *rk,
         rd_kafka_oauthbearer_set_token_failure(rk, errstr);
     }
     else {
-        flb_info("[aws_msk_iam] OAuth bearer token refreshed");
+        flb_debug("[aws_msk_iam] OAuth bearer token refreshed successfully");
     }
 
     if (payload) {
