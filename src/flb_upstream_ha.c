@@ -153,6 +153,7 @@ static struct flb_upstream_node *create_node(int id,
     char *tls_crt_file = NULL;
     char *tls_key_file = NULL;
     char *tls_key_passwd = NULL;
+    char *network_verifier = NULL;
     flb_sds_t translated_value;
     struct cfl_list *head;
     struct cfl_kvpair *entry;
@@ -161,7 +162,7 @@ static struct flb_upstream_node *create_node(int id,
                                 "tls", "tls.vhost", "tls.verify", "tls.debug",
                                 "tls.ca_path", "tls.ca_file", "tls.crt_file",
                                 "tls.key_file", "tls.key_passwd",
-                                "tls.verify_hostname", NULL};
+                                "tls.verify_hostname", "network_verifier", NULL};
 
     struct flb_upstream_node *node;
 
@@ -235,6 +236,8 @@ static struct flb_upstream_node *create_node(int id,
     /* tls.key_file */
     tls_key_passwd = flb_cf_section_property_get_string(cf, s, "tls.key_passwd");
 
+    network_verifier = flb_cf_section_property_get_string(cf, s, "network_verifier");
+
     translate_environment_variables((flb_sds_t *) &name, config, FLB_TRUE);
     translate_environment_variables((flb_sds_t *) &host, config, FLB_TRUE);
     translate_environment_variables((flb_sds_t *) &port, config, FLB_TRUE);
@@ -244,6 +247,7 @@ static struct flb_upstream_node *create_node(int id,
     translate_environment_variables((flb_sds_t *) &tls_crt_file, config, FLB_TRUE);
     translate_environment_variables((flb_sds_t *) &tls_key_file, config, FLB_TRUE);
     translate_environment_variables((flb_sds_t *) &tls_key_passwd, config, FLB_TRUE);
+    translate_environment_variables((flb_sds_t *) &network_verifier, config, FLB_TRUE);
 
     /*
      * Create hash table to store unknown key/values that might be used
@@ -322,7 +326,7 @@ static struct flb_upstream_node *create_node(int id,
                                     tls_verify_hostname,
                                     tls_debug, tls_vhost, tls_ca_path, tls_ca_file,
                                     tls_crt_file, tls_key_file,
-                                    tls_key_passwd, ht, config);
+									tls_key_passwd, network_verifier, ht, config);
 
     /* Teardown for created flb_sds_t stuffs by flb_cf_section_property_get_string(). */
     if (tls_vhost != NULL) {
@@ -349,6 +353,9 @@ static struct flb_upstream_node *create_node(int id,
         flb_sds_destroy(tls_key_passwd);
     }
 
+    if (network_verifier != NULL) {
+        flb_sds_destroy(network_verifier);
+    }
     return node;
 }
 
