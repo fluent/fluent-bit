@@ -547,11 +547,17 @@ static void oauthbearer_token_refresh_cb(rd_kafka_t *rk,
      * Without synchronization, concurrent refresh/get_credentials calls can
      * corrupt provider state and cause authentication failures.
      */
-    pthread_mutex_lock(&config->lock);
+    if (pthread_mutex_lock(&config->lock) != 0) {
+        flb_error("[aws_msk_iam] failed to acquire credential provider lock");
+        rd_kafka_oauthbearer_set_token_failure(rk, "internal locking error");
+        return;
+    }
 
     /* Refresh credentials */
     if (config->provider->provider_vtable->refresh(config->provider) < 0) {
-        pthread_mutex_unlock(&config->lock);
+        if (pthread_mutex_unlock(&config->lock) != 0) {
+            flb_error("[aws_msk_iam] failed to release credential provider lock");
+        }
         flb_warn("[aws_msk_iam] credential refresh failed, will retry on next callback");
         rd_kafka_oauthbearer_set_token_failure(rk, "credential refresh failed");
         return;
@@ -560,14 +566,18 @@ static void oauthbearer_token_refresh_cb(rd_kafka_t *rk,
     /* Get credentials */
     creds = config->provider->provider_vtable->get_credentials(config->provider);
     if (!creds) {
-        pthread_mutex_unlock(&config->lock);
+        if (pthread_mutex_unlock(&config->lock) != 0) {
+            flb_error("[aws_msk_iam] failed to release credential provider lock");
+        }
         flb_error("[aws_msk_iam] failed to get AWS credentials from provider");
         rd_kafka_oauthbearer_set_token_failure(rk, "credential retrieval failed");
         return;
     }
 
     /* Unlock immediately after getting credentials - no need to hold lock during payload generation */
-    pthread_mutex_unlock(&config->lock);
+    if (pthread_mutex_unlock(&config->lock) != 0) {
+        flb_error("[aws_msk_iam] failed to release credential provider lock");
+    }
 
     /* Generate payload */
     payload = build_msk_iam_payload(config, host, creds);
