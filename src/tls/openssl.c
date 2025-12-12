@@ -801,7 +801,11 @@ static void *tls_context_create(int verify,
         SSL_CTX_set_verify(ssl_ctx, SSL_VERIFY_NONE, NULL);
     }
     else {
-        SSL_CTX_set_verify(ssl_ctx, SSL_VERIFY_PEER, NULL);
+        int verify_flags = SSL_VERIFY_PEER;
+        if (mode == FLB_TLS_SERVER_MODE) {
+            verify_flags |= SSL_VERIFY_FAIL_IF_NO_PEER_CERT;
+        }
+        SSL_CTX_set_verify(ssl_ctx, verify_flags, NULL);
     }
 
     /* ca_path | ca_file */
