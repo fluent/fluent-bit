@@ -363,6 +363,7 @@ int flb_tail_db_file_delete(struct flb_tail_file *file,
     }
 
     flb_plg_debug(ctx->ins, "db: file deleted from database: %s", file->name);
+    file->db_id = FLB_TAIL_DB_ID_NONE;
     return 0;
 }
 

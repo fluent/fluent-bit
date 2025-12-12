@@ -267,6 +267,37 @@ static ssize_t write_msg(struct test_tail_ctx *ctx, char *msg, size_t msg_len)
     return w_byte;
 }
 
+/*
+ * Write raw data to file with optional newline.
+ * If msg is NULL, only writes a newline (useful for completing incomplete lines).
+ * If add_newline is FLB_FALSE, data remains in tail buffer as incomplete line.
+ */
+static ssize_t write_raw(struct test_tail_ctx *ctx, char *msg, size_t msg_len,
+                         int add_newline)
+{
+    int i;
+    ssize_t w_byte = 0;
+
+    for (i = 0; i < ctx->fd_num; i++) {
+        if (msg != NULL && msg_len > 0) {
+            w_byte = write(ctx->fds[i], msg, msg_len);
+            if (!TEST_CHECK(w_byte == msg_len)) {
+                TEST_MSG("write failed ret=%ld", w_byte);
+                return -1;
+            }
+        }
+        if (add_newline) {
+            w_byte = write(ctx->fds[i], NEW_LINE, strlen(NEW_LINE));
+            if (!TEST_CHECK(w_byte == strlen(NEW_LINE))) {
+                TEST_MSG("write newline failed ret=%ld", w_byte);
+                return -1;
+            }
+        }
+        fsync(ctx->fds[i]);
+    }
+    return w_byte;
+}
+
 
 #define DPATH            FLB_TESTS_DATA_PATH "/data/tail"
 #define MAX_LINES        32
@@ -2649,6 +2680,185 @@ void flb_test_db_compare_filename()
     test_tail_ctx_destroy(ctx);
     unlink(db);
 }
+
+/*
+ * Test: flb_test_db_offset_rewind_on_shutdown
+ *
+ * This test verifies that unprocessed buffered data is not lost on shutdown.
+ * When Fluent Bit shuts down with data still in the buffer, the offset should
+ * be rewound so that the data is re-read on restart.
+ *
+ * Scenario:
+ * 1. Start Fluent Bit with DB enabled
+ * 2. Write initial data and wait for it to be processed
+ * 3. Write additional data and immediately stop (before flush)
+ * 4. Restart Fluent Bit
+ * 5. Verify that the data written before shutdown is re-read
+ */
+void flb_test_db_offset_rewind_on_shutdown()
+{
+    struct flb_lib_out_cb cb_data;
+    struct test_tail_ctx *ctx;
+    char *file[] = {"test_offset_rewind.log"};
+    char *db = "test_offset_rewind.db";
+    char *msg_init = "initial message";
+    char *msg_before_shutdown = "message before shutdown";
+    int i;
+    int ret;
+    int num;
+    int unused;
+
+    unlink(file[0]);
+    unlink(db);
+
+    clear_output_num();
+
+    cb_data.cb = cb_count_msgpack;
+    cb_data.data = &unused;
+
+    /* First run: write initial data */
+    ctx = test_tail_ctx_create(&cb_data, &file[0], sizeof(file)/sizeof(char *), FLB_TRUE);
+    if (!TEST_CHECK(ctx != NULL)) {
+        TEST_MSG("test_ctx_create failed");
+        exit(EXIT_FAILURE);
+    }
+
+    /* Set debug log level to see offset rewind messages */
+    flb_service_set(ctx->flb, "Log_Level", "debug", NULL);
+
+    ret = flb_input_set(ctx->flb, ctx->i_ffd,
+                        "path", file[0],
+                        "read_from_head", "true",
+                        "db", db,
+                        "db.sync", "full",
+                        NULL);
+    TEST_CHECK(ret == 0);
+
+    ret = flb_output_set(ctx->flb, ctx->o_ffd,
+                         NULL);
+    TEST_CHECK(ret == 0);
+
+    /* Start the engine */
+    ret = flb_start(ctx->flb);
+    TEST_CHECK(ret == 0);
+
+    /* Write initial message */
+    ret = write_msg(ctx, msg_init, strlen(msg_init));
+    if (!TEST_CHECK(ret > 0)) {
+        test_tail_ctx_destroy(ctx);
+        unlink(file[0]);
+        unlink(db);
+        exit(EXIT_FAILURE);
+    }
+
+    /* Wait for data to be processed */
+    flb_time_msleep(500);
+
+    num = get_output_num();
+    if (!TEST_CHECK(num == 1)) {
+        TEST_MSG("initial message not received. expect=1 got=%d", num);
+    }
+
+    /*
+     * Write message WITHOUT newline - this will remain in the tail buffer
+     * as an incomplete line, which is the scenario we want to test.
+     * The tail plugin processes complete lines (ending with \n), so
+     * data without newline stays in buf_len until more data arrives.
+     */
+    ret = write_raw(ctx, msg_before_shutdown, strlen(msg_before_shutdown), FLB_FALSE);
+    if (!TEST_CHECK(ret > 0)) {
+        test_tail_ctx_destroy(ctx);
+        unlink(file[0]);
+        unlink(db);
+        exit(EXIT_FAILURE);
+    }
+
+    /*
+     * Wait for tail to READ the file into buffer, but not long enough
+     * for guaranteed FLUSH to output. The tail plugin needs time to
+     * detect file changes and read data into its internal buffer.
+     */
+    flb_time_msleep(500);
+
+    /* Close file descriptors before stopping */
+    if (ctx->fds != NULL) {
+        for (i = 0; i < ctx->fd_num; i++) {
+            close(ctx->fds[i]);
+        }
+        flb_free(ctx->fds);
+        ctx->fds = NULL;
+    }
+
+    /* Stop immediately - simulating abrupt shutdown */
+    flb_stop(ctx->flb);
+    flb_destroy(ctx->flb);
+    flb_free(ctx);
+
+    /* Second run: restart and verify data is re-read */
+    clear_output_num();
+    num = get_output_num();
+    if (!TEST_CHECK(num == 0)) {
+        TEST_MSG("initial message not received. expect=0 got=%d", num);
+    }
+
+    cb_data.cb = cb_count_msgpack;
+    cb_data.data = &unused;
+
+    ctx = test_tail_ctx_create(&cb_data, &file[0], sizeof(file)/sizeof(char *), FLB_FALSE);
+    if (!TEST_CHECK(ctx != NULL)) {
+        TEST_MSG("test_ctx_create failed on restart");
+        unlink(file[0]);
+        unlink(db);
+        exit(EXIT_FAILURE);
+    }
+
+    /* Set debug log level to see offset rewind messages */
+    flb_service_set(ctx->flb, "Log_Level", "debug", NULL);
+
+    ret = flb_input_set(ctx->flb, ctx->i_ffd,
+                        "path", file[0],
+                        "read_from_head", "true",
+                        "db", db,
+                        "db.sync", "full",
+                        NULL);
+    TEST_CHECK(ret == 0);
+
+    ret = flb_output_set(ctx->flb, ctx->o_ffd,
+                         NULL);
+    TEST_CHECK(ret == 0);
+
+    /* Restart the engine */
+    ret = flb_start(ctx->flb);
+    TEST_CHECK(ret == 0);
+
+    /*
+     * Write a newline to complete the incomplete line from before shutdown.
+     * This simulates the scenario where more data arrives after restart,
+     * completing the previously incomplete line.
+     */
+    ret = write_raw(ctx, NULL, 0, FLB_TRUE);
+    if (!TEST_CHECK(ret > 0)) {
+        TEST_MSG("write newline failed");
+    }
+
+    /* Wait for data to be processed */
+    flb_time_msleep(500);
+
+    num = get_output_num();
+    /*
+     * After restart, we expect to receive the message that was written
+     * before shutdown. If the offset rewind fix works correctly,
+     * msg_before_shutdown should be re-read.
+     * We expect at least 1 message (msg_before_shutdown).
+     */
+    if (!TEST_CHECK(num == 1)) {
+        TEST_MSG("data loss detected after restart. expect==1 got=%d", num);
+    }
+
+    test_tail_ctx_destroy(ctx);
+    unlink(file[0]);
+    unlink(db);
+}
 #endif /* FLB_HAVE_SQLDB */
 
 /* Test list */
@@ -2680,6 +2890,7 @@ TEST_LIST = {
     {"db", flb_test_db},
     {"db_delete_stale_file", flb_test_db_delete_stale_file},
     {"db_compare_filename", flb_test_db_compare_filename},
+    {"db_offset_rewind_on_shutdown", flb_test_db_offset_rewind_on_shutdown},
 #endif
 
 #ifdef FLB_HAVE_UNICODE_ENCODER
