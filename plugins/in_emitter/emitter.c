@@ -298,6 +298,7 @@ static int cb_emitter_init(struct flb_input_instance *in,
 {
     struct flb_sched *scheduler;
     struct flb_emitter *ctx;
+    char *pause_prop = NULL;
     int ret;
 
     scheduler = flb_sched_ctx_get();
@@ -330,16 +331,13 @@ static int cb_emitter_init(struct flb_input_instance *in,
      * filesystem storage is in use so the configured storage.max_chunks_up
      * limit is honored.
      */
-    if (in->storage_type == FLB_STORAGE_FS &&
-        in->storage_pause_on_chunks_overlimit == FLB_FALSE) {
-        in->storage_pause_on_chunks_overlimit = FLB_TRUE;
-        flb_plg_debug(in, "enable pause on storage chunks overlimit for emitter");
-    }
-    else if (in->storage_type != FLB_STORAGE_FS &&
-             in->storage_pause_on_chunks_overlimit == FLB_TRUE) {
-        flb_plg_debug(in,
-                      "storage.pause_on_chunks_overlimit reset: storage.type is not filesystem");
-        in->storage_pause_on_chunks_overlimit = FLB_FALSE;
+    pause_prop = flb_input_get_property("storage.pause_on_chunks_overlimit", in);
+    if (pause_prop == NULL) {
+        if (in->storage_type == FLB_STORAGE_FS &&
+            in->storage_pause_on_chunks_overlimit == FLB_FALSE) {
+            in->storage_pause_on_chunks_overlimit = FLB_TRUE;
+            flb_plg_debug(in, "enable pause on storage chunks overlimit for emitter");
+        }
     }
 
     if (in->is_threaded == FLB_TRUE && ctx->ring_buffer_size == 0) {
