@@ -94,7 +94,7 @@ jobs:
 
       - name: Restore cached packages of vcpkg
         id: cache-unit-test-vcpkg-sources
-        uses: actions/cache/restore@v4
+        uses: actions/cache/restore@v5
         with:
           path: |
             C:\vcpkg\installed
@@ -120,7 +120,7 @@ jobs:
 
       - name: Save packages of vcpkg
         id: save-vcpkg-sources
-        uses: actions/cache/save@v4
+        uses: actions/cache/save@v5
         with:
           path: |
             C:\vcpkg\installed
