@@ -20,6 +20,7 @@
 #include <fluent-bit/flb_output_plugin.h>
 #include <fluent-bit/flb_base64.h>
 #include <fluent-bit/flb_pack.h>
+#include <fluent-bit/flb_record_accessor.h>
 
 #include "azure_blob.h"
 #include "azure_blob_conf.h"
@@ -582,6 +583,21 @@ struct flb_azure_blob *flb_azure_blob_conf_create(struct flb_output_instance *in
         }
     }
 
+    /* Sanitize path and mark templating enabled after remote overrides */
+    if (ctx->path) {
+        size_t path_len;
+
+        path_len = flb_sds_len(ctx->path);
+        if (path_len > 0 && ctx->path[path_len - 1] == '/') {
+            ctx->path[path_len - 1] = '\0';
+            path_len--;
+        }
+
+        if (path_len > 0) {
+            ctx->path_templating_enabled = FLB_TRUE;
+        }
+    }
+
     if (!ctx->container_name) {
         flb_plg_error(ctx->ins, "'container_name' has not been set");
         return NULL;
@@ -755,13 +771,6 @@ struct flb_azure_blob *flb_azure_blob_conf_create(struct flb_output_instance *in
         flb_sds_printf(&ctx->shared_key_prefix, "SharedKey %s:", ctx->account_name);
     }
 
-    /* Sanitize path: remove any ending slash */
-    if (ctx->path) {
-        if (ctx->path[flb_sds_len(ctx->path) - 1] == '/') {
-            ctx->path[flb_sds_len(ctx->path) - 1] = '\0';
-        }
-    }
-
     /* database file for blob signal handling */
     if (ctx->database_file) {
         ctx->db = azb_db_open(ctx, ctx->database_file);
@@ -805,6 +814,7 @@ void flb_azure_blob_conf_destroy(struct flb_azure_blob *ctx)
         flb_sds_destroy(ctx->path);
         ctx->path = NULL;
     }
+    ctx->path_templating_enabled = FLB_FALSE;
 
     if (ctx->decoded_sk) {
         flb_free(ctx->decoded_sk);
