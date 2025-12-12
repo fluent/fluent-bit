@@ -92,14 +92,14 @@ static struct flb_aws_header *get_content_encoding_header(int compression_type)
         .val = "gzip",
         .val_len = 4,
     };
-    
+
     static struct flb_aws_header zstd_header = {
         .key = "Content-Encoding",
         .key_len = 16,
         .val = "zstd",
         .val_len = 4,
     };
-    
+
     switch (compression_type) {
         case FLB_AWS_COMPRESS_GZIP:
             return &gzip_header;
@@ -134,6 +134,20 @@ static struct flb_aws_header content_md5_header = {
 static struct flb_aws_header storage_class_header = {
     .key = "x-amz-storage-class",
     .key_len = 19,
+    .val = "",
+    .val_len = 0,
+};
+
+static struct flb_aws_header sse_header = {
+    .key = "x-amz-server-side-encryption",
+    .key_len = 28,
+    .val = "",
+    .val_len = 0,
+};
+
+static struct flb_aws_header sse_kms_id_header = {
+    .key = "x-amz-server-side-encryption-aws-kms-key-id",
+    .key_len = 43,
     .val = "",
     .val_len = 0,
 };
@@ -194,6 +208,12 @@ int create_headers(struct flb_s3 *ctx, char *body_md5,
     if (ctx->storage_class != NULL) {
         headers_len++;
     }
+    if (ctx->server_side_encryption != NULL && strlen(ctx->server_side_encryption) > 0) {
+        headers_len++;
+    }
+    if (ctx->server_side_encryption_aws_kms_key_id != NULL && strlen(ctx->server_side_encryption_aws_kms_key_id) > 0) {
+        headers_len++;
+    }
     if (headers_len == 0) {
         *num_headers = headers_len;
         *headers = s3_headers;
@@ -233,6 +253,18 @@ int create_headers(struct flb_s3 *ctx, char *body_md5,
         s3_headers[n] = content_md5_header;
         s3_headers[n].val = body_md5;
         s3_headers[n].val_len = strlen(body_md5);
+        n++;
+    }
+    if (ctx->server_side_encryption_aws_kms_key_id && strlen(ctx->server_side_encryption_aws_kms_key_id) > 0) {
+        s3_headers[n] = sse_kms_id_header;
+        s3_headers[n].val = ctx->server_side_encryption_aws_kms_key_id;
+        s3_headers[n].val_len = strlen(ctx->server_side_encryption_aws_kms_key_id);
+        n++;
+    }
+    if (ctx->server_side_encryption && strlen(ctx->server_side_encryption) > 0) {
+        s3_headers[n] = sse_header;
+        s3_headers[n].val = ctx->server_side_encryption;
+        s3_headers[n].val_len = strlen(ctx->server_side_encryption);
         n++;
     }
     if (ctx->storage_class != NULL) {
@@ -841,6 +873,39 @@ static int cb_s3_init(struct flb_output_instance *ins,
         ctx->free_endpoint = FLB_TRUE;
         if (!ctx->endpoint) {
             flb_plg_error(ctx->ins,  "Could not construct S3 endpoint");
+            return -1;
+        }
+    }
+
+    tmp = flb_output_get_property("server-side-encryption-aws-kms-key-id", ins);
+    if (tmp) {
+        ctx->server_side_encryption_aws_kms_key_id = (char *) tmp;
+    }
+
+    tmp = flb_output_get_property("server-side-encryption", ins);
+    if (tmp) {
+        ctx->server_side_encryption = (char *) tmp;
+    }
+
+    /* Validate sse values */
+    if (ctx->server_side_encryption != NULL) {
+        if (strcmp(ctx->server_side_encryption, "AES256") != 0 &&
+            strcmp(ctx->server_side_encryption, "aws:kms") != 0 &&
+            strcmp(ctx->server_side_encryption, "aws:kms:dsse") != 0) {
+            flb_plg_error(ctx->ins, "Invalid sse value '%s'. Valid values: AES256, aws:kms, aws:kms:dsse", ctx->server_side_encryption);
+            return -1;
+        }
+    }
+
+    /* Validate server-side-encryption-aws-kms-key-id requires aws:kms or aws:kms:dsse */
+    if (ctx->server_side_encryption_aws_kms_key_id != NULL) {
+        if (ctx->server_side_encryption == NULL) {
+            flb_plg_error(ctx->ins, "server-side-encryption-aws-kms-key-id requires server-side-encryption to be 'aws:kms' or 'aws:kms:dsse'");
+            return -1;
+        }
+        if (strcmp(ctx->server_side_encryption, "aws:kms") != 0 &&
+            strcmp(ctx->server_side_encryption, "aws:kms:dsse") != 0) {
+            flb_plg_error(ctx->ins, "server-side-encryption-aws-kms-key-id requires server-side-encryption to be 'aws:kms' or 'aws:kms:dsse', got '%s'", ctx->server_side_encryption);
             return -1;
         }
     }
@@ -4102,6 +4167,20 @@ static struct flb_config_map config_map[] = {
      "Instead, it enables an immediate retry with no delay for networking "
      "errors, which may help improve throughput when there are transient/random "
      "networking issues."
+    },
+    
+    {
+     FLB_CONFIG_MAP_STR, "server-side-encryption", NULL,
+     0, FLB_TRUE, offsetof(struct flb_s3, server_side_encryption),
+     "Server-side encryption type for S3 objects. Valid values: AES256, aws:kms, aws:kms:dsse. "
+     "When not specified, S3 applies the bucket's default encryption settings or SSE-S3 if no default is configured."
+    },
+    {
+     FLB_CONFIG_MAP_STR, "server-side-encryption-aws-kms-key-id", NULL,
+     0, FLB_TRUE, offsetof(struct flb_s3, server_side_encryption_aws_kms_key_id),
+     "KMS Key identifier for SSE-KMS encryption. Optional when server-side-encryption is 'aws:kms' or 'aws:kms:dsse'. "
+     "If not specified, S3 uses the AWS managed key (aws/s3). "
+     "Provide this to use a customer managed key."
     },
 
     {
