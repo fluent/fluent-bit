@@ -184,34 +184,10 @@ flb_ctx_t *flb_create()
         return NULL;
     }
 
-    /* Create the event loop to receive notifications */
-    ctx->event_loop = mk_event_loop_create(256);
-    if (!ctx->event_loop) {
-        flb_config_exit(ctx->config);
-        flb_free(ctx);
-        return NULL;
-    }
-    config->ch_evl = ctx->event_loop;
-
-    /* Prepare the notification channels */
-    ctx->event_channel = flb_calloc(1, sizeof(struct mk_event));
-    if (!ctx->event_channel) {
-        perror("calloc");
-        flb_config_exit(ctx->config);
-        flb_free(ctx);
-        return NULL;
-    }
-
-    MK_EVENT_ZERO(ctx->event_channel);
-
-    ret = mk_event_channel_create(config->ch_evl,
-                                  &config->ch_notif[0],
-                                  &config->ch_notif[1],
-                                  ctx->event_channel);
+    ret = flb_event_loop_create(ctx);
     if (ret != 0) {
-        flb_error("[lib] could not create notification channels");
-        flb_stop(ctx);
-        flb_destroy(ctx);
+        flb_config_exit(ctx->config);
+        flb_free(ctx);
         return NULL;
     }
 
