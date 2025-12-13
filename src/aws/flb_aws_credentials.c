@@ -37,6 +37,8 @@
 #define AWS_SESSION_TOKEN              "AWS_SESSION_TOKEN"
 
 #define EKS_POD_EXECUTION_ROLE         "EKS_POD_EXECUTION_ROLE"
+#define AWS_ROLE_ARN                   "AWS_ROLE_ARN"
+#define AWS_WEB_IDENTITY_TOKEN_FILE    "AWS_WEB_IDENTITY_TOKEN_FILE"
 
 /* declarations */
 static struct flb_aws_provider *standard_chain_create(struct flb_config
@@ -406,7 +408,7 @@ struct flb_aws_provider *flb_managed_chain_provider_create(struct flb_output_ins
                                                       (char *) sts_endpoint,
                                                       NULL,
                                                       flb_aws_client_generator(),
-                                                      profile);
+                                                      (char *) profile);
     if (!aws_provider) {
         flb_plg_error(ins, "Failed to create AWS Credential Provider");
         goto error;
@@ -529,12 +531,14 @@ static struct flb_aws_provider *standard_chain_create(struct flb_config
                                                       int eks_irsa,
                                                       char *profile)
 {
+    int irsa_env_present = FLB_FALSE;
     struct flb_aws_provider *sub_provider;
     struct flb_aws_provider *provider;
     struct flb_aws_provider_chain *implementation;
+    char *role_arn_env = NULL;
+    char *token_file_env = NULL;
 
     provider = flb_calloc(1, sizeof(struct flb_aws_provider));
-
     if (!provider) {
         flb_errno();
         return NULL;
@@ -575,12 +579,30 @@ static struct flb_aws_provider *standard_chain_create(struct flb_config
                   "standard chain");
     }
 
+    role_arn_env = getenv(AWS_ROLE_ARN);
+    token_file_env = getenv(AWS_WEB_IDENTITY_TOKEN_FILE);
+
+    /* Check if IRSA environment variables are set */
+    if (role_arn_env && strlen(role_arn_env) > 0 && token_file_env && strlen(token_file_env) > 0) {
+        irsa_env_present = FLB_TRUE;
+    }
+
     if (eks_irsa == FLB_TRUE) {
         sub_provider = flb_eks_provider_create(config, tls, region, sts_endpoint, proxy, generator);
         if (sub_provider) {
             /* EKS provider can fail if we are not running in k8s */;
             mk_list_add(&sub_provider->_head, &implementation->sub_providers);
             flb_debug("[aws_credentials] Initialized EKS Provider in standard chain");
+        }
+        else if (irsa_env_present) {
+            flb_error("[aws_credentials] IRSA environment variables are set but the EKS provider could not be initialized");
+            flb_aws_provider_destroy(provider);
+            return NULL;
+        }
+
+        if (irsa_env_present) {
+            flb_debug("[aws_credentials] IRSA environment detected; skipping ECS and EC2 providers");
+            return provider;
         }
     }
 
