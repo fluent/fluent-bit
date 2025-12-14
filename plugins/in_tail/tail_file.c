@@ -1274,7 +1274,7 @@ int flb_tail_file_append(char *path, struct stat *st, int mode,
     file->dmode_lastline = flb_sds_create_size(ctx->docker_mode == FLB_TRUE ? 20000 : 0);
     file->dmode_firstline = false;
 #ifdef FLB_HAVE_SQLDB
-    file->db_id     = 0;
+    file->db_id     = FLB_TAIL_DB_ID_NONE;
 #endif
     file->skip_next = FLB_FALSE;
     file->skip_warn = FLB_FALSE;
@@ -1447,6 +1447,38 @@ void flb_tail_file_remove(struct flb_tail_file *file)
 
     flb_plg_debug(ctx->ins, "inode=%"PRIu64" removing file name %s",
                   file->inode, file->name);
+
+    if (file->buf_len > 0) {
+        if (file->decompression_context == NULL) {
+            /*
+             * If there is data in the buffer, it means it was not processed.
+             * We must rewind the offset to ensure this data is re-read on restart.
+             */
+            off_t old_offset = file->offset;
+
+            if (file->offset > file->buf_len) {
+                file->offset -= file->buf_len;
+            } else {
+                file->offset = 0;
+            }
+
+            flb_plg_debug(ctx->ins, "inode=%"PRIu64" rewind offset for %s: "
+                          "old=%"PRId64" new=%"PRId64" (buf_len=%lu)",
+                          file->inode, file->name, old_offset, file->offset,
+                          (unsigned long)file->buf_len);
+
+#ifdef FLB_HAVE_SQLDB
+            if (ctx->db && file->db_id > FLB_TAIL_DB_ID_NONE) {
+                flb_tail_db_file_offset(file, ctx);
+            }
+#endif
+        }
+        else {
+            flb_plg_warn(ctx->ins, "inode=%"PRIu64" cannot rewind compressed file %s; "
+                         "%lu decompressed bytes in buffer may be lost on restart",
+                         file->inode, file->name, (unsigned long)file->buf_len);
+        }
+    }
 
     if (file->decompression_context != NULL) {
         flb_decompression_context_destroy(file->decompression_context);
