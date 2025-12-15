@@ -80,7 +80,7 @@ jobs:
 
       # In case we need to analyse the uploaded files for some reason.
       - name: Detain results for debug if needed
-        uses: actions/upload-artifact@v5
+        uses: actions/upload-artifact@v6
         with:
           name: trivy-results-${{ matrix.local_tag }}.sarif
           path: trivy-results-${{ matrix.local_tag }}.sarif
