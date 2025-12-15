@@ -131,6 +131,17 @@ jobs:
     # Sign and set up metadata for it all
     # Upload to release bucket
 
+    - name: Clean up disk space
+      run: |
+        # Clean up package manager caches
+        sudo apt-get clean
+        sudo rm -rf /var/lib/apt/lists/*
+        # Clean up any temporary files
+        sudo rm -rf /tmp/* /var/tmp/*
+        # Show available disk space
+        df -h
+      shell: bash
+
     - name: Sync packages from buckets on S3
       run: |
         mkdir -p "packaging/releases/$DISTRO"
@@ -214,6 +225,17 @@ jobs:
       with:
         gpg_private_key: ${{ secrets.GPG_PRIVATE_KEY }}
         passphrase: ${{ secrets.GPG_PRIVATE_KEY_PASSPHRASE }}
+
+    - name: Clean up disk space
+      run: |
+        # Clean up package manager caches
+        sudo apt-get clean
+        sudo rm -rf /var/lib/apt/lists/*
+        # Clean up any temporary files
+        sudo rm -rf /tmp/* /var/tmp/*
+        # Show available disk space
+        df -h
+      shell: bash
 
     - name: Sync packages from buckets on S3
       run: |
@@ -336,6 +358,17 @@ jobs:
     steps:
     - name: Checkout code
       uses: actions/checkout@v6
+
+    - name: Clean up disk space
+      run: |
+        # Clean up package manager caches
+        sudo apt-get clean
+        sudo rm -rf /var/lib/apt/lists/*
+        # Clean up any temporary files
+        sudo rm -rf /tmp/* /var/tmp/*
+        # Show available disk space
+        df -h
+      shell: bash
 
     - name: Sync packages from buckets on S3
       run: |
