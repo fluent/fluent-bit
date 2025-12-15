@@ -184,7 +184,7 @@ jobs:
       - name: Upload build packages
         # Skip upload if we skipped build.
         if: ${{ matrix.config.arch != 'amd64_arm64' || needs.call-build-windows-get-meta.outputs.armSupported == 'true' }}
-        uses: actions/upload-artifact@v5
+        uses: actions/upload-artifact@v6
         with:
           name: windows-packages-${{ matrix.config.arch }}
           path: |
