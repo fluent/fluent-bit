@@ -173,6 +173,8 @@ static int cb_pgsql_init(struct flb_output_instance *ins,
 
     ret = pgsql_start_connections(ctx);
     if (ret) {
+        flb_plg_error(ctx->ins, "failed to start PostgreSQL connections");
+        pgsql_conf_destroy(ctx);
         return -1;
     }
 
