@@ -23,6 +23,7 @@
 #include <fluent-bit/flb_utils.h>
 #include <fluent-bit/flb_pack.h>
 #include <fluent-bit/flb_input_plugin.h>
+#include <stdlib.h>
 #include <msgpack.h>
 #include <sddl.h>
 #include <locale.h>
@@ -265,12 +266,18 @@ static int pack_systemtime(struct winevtlog_config *ctx, SYSTEMTIME *st)
 
 static int pack_filetime(struct winevtlog_config *ctx, ULONGLONG filetime)
 {
-    LARGE_INTEGER timestamp;
+    FILETIME ft;
+    SYSTEMTIME st_utc;
+    SYSTEMTIME st_local;
+    DYNAMIC_TIME_ZONE_INFORMATION dtzi;
     CHAR buf[64];
-    size_t len = 0;
-    FILETIME ft, ft_local;
-    SYSTEMTIME st;
+    size_t len;
+    LONG bias_minutes;
+    int offset_hours;
+    int offset_minutes;
+    char offset_sign;
     _locale_t locale;
+    DWORD tz_id;
 
     _tzset();
 
@@ -278,26 +285,65 @@ static int pack_filetime(struct winevtlog_config *ctx, ULONGLONG filetime)
     if (locale == NULL) {
         return -1;
     }
-    timestamp.QuadPart = filetime;
-    ft.dwHighDateTime = timestamp.HighPart;
-    ft.dwLowDateTime = timestamp.LowPart;
-    FileTimeToLocalFileTime(&ft, &ft_local);
-    if (FileTimeToSystemTime(&ft_local, &st)) {
-        struct tm tm = {st.wSecond, st.wMinute, st.wHour, st.wDay, st.wMonth-1, st.wYear-1900, st.wDayOfWeek, 0, -1};
-        len = _strftime_l(buf, 64, FORMAT_ISO8601, &tm, locale);
-        if (len == 0) {
-            flb_errno();
-            _free_locale(locale);
-            return -1;
-        }
-        _free_locale(locale);
 
-        flb_log_event_encoder_append_body_string(ctx->log_encoder, buf, len);
-    }
-    else {
+    ft.dwHighDateTime = (DWORD)(filetime >> 32);
+    ft.dwLowDateTime  = (DWORD)(filetime & 0xFFFFFFFF);
+
+    if (!FileTimeToSystemTime(&ft, &st_utc)) {
+        _free_locale(locale);
         return -1;
     }
 
+    tz_id = GetDynamicTimeZoneInformation(&dtzi);
+
+    if (!SystemTimeToTzSpecificLocalTimeEx(&dtzi, &st_utc, &st_local)) {
+        _free_locale(locale);
+        return -1;
+    }
+
+    /* Determine bias (minutes) */
+    bias_minutes = dtzi.Bias;
+
+    if (tz_id == TIME_ZONE_ID_DAYLIGHT) {
+        bias_minutes += dtzi.DaylightBias;
+    }
+    else if (tz_id == TIME_ZONE_ID_STANDARD) {
+        bias_minutes += dtzi.StandardBias;
+    }
+
+    /* Windows bias: minutes to add to local to get UTC
+       ISO8601 offset: inverse sign */
+    if (bias_minutes > 0) {
+        offset_sign = '-';
+    }
+    else {
+        offset_sign = '+';
+        bias_minutes = -bias_minutes;
+    }
+
+    offset_hours   = bias_minutes / 60;
+    offset_minutes = bias_minutes % 60;
+
+    len = _snprintf_s(buf, sizeof(buf), _TRUNCATE,
+                      "%04d-%02d-%02d %02d:%02d:%02d %c%02d%02d",
+                      st_local.wYear,
+                      st_local.wMonth,
+                      st_local.wDay,
+                      st_local.wHour,
+                      st_local.wMinute,
+                      st_local.wSecond,
+                      offset_sign,
+                      offset_hours,
+                      offset_minutes);
+
+    if (len <= 0) {
+        _free_locale(locale);
+        return -1;
+    }
+
+    _free_locale(locale);
+
+    flb_log_event_encoder_append_body_string(ctx->log_encoder, buf, len);
     return 0;
 }
 
