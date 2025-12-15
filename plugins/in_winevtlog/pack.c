@@ -276,28 +276,20 @@ static int pack_filetime(struct winevtlog_config *ctx, ULONGLONG filetime)
     int offset_hours;
     int offset_minutes;
     char offset_sign;
-    _locale_t locale;
     DWORD tz_id;
 
     _tzset();
-
-    locale = _get_current_locale();
-    if (locale == NULL) {
-        return -1;
-    }
 
     ft.dwHighDateTime = (DWORD)(filetime >> 32);
     ft.dwLowDateTime  = (DWORD)(filetime & 0xFFFFFFFF);
 
     if (!FileTimeToSystemTime(&ft, &st_utc)) {
-        _free_locale(locale);
         return -1;
     }
 
     tz_id = GetDynamicTimeZoneInformation(&dtzi);
 
     if (!SystemTimeToTzSpecificLocalTimeEx(&dtzi, &st_utc, &st_local)) {
-        _free_locale(locale);
         return -1;
     }
 
@@ -337,11 +329,8 @@ static int pack_filetime(struct winevtlog_config *ctx, ULONGLONG filetime)
                       offset_minutes);
 
     if (len <= 0) {
-        _free_locale(locale);
         return -1;
     }
-
-    _free_locale(locale);
 
     flb_log_event_encoder_append_body_string(ctx->log_encoder, buf, len);
     return 0;
