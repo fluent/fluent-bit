@@ -20,7 +20,7 @@ RUN zypper up -y && \
 
 # sles base image is the same name for all architectures
 # hadolint ignore=DL3029
-FROM --platform=arm64 registry.suse.com/bci/bci-base:15.7 AS sles-15.7.arm64v8-base
+FROM --platform=linux/arm64 registry.suse.com/bci/bci-base:15.7 AS sles-15.7.arm64v8-base
 
 COPY --from=multiarch-aarch64 /usr/bin/qemu-aarch64-static /usr/bin/qemu-aarch64-static
 
