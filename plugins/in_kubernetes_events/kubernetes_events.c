@@ -1085,6 +1085,18 @@ static struct flb_config_map config_map[] = {
      0, FLB_FALSE, 0,
      "set a database sync method. values: extra, full, normal and off."
     },
+    {
+     FLB_CONFIG_MAP_BOOL, "db.locking", "false",
+     0, FLB_TRUE, offsetof(struct k8s_events, db_locking),
+     "set exclusive locking mode, increase performance but don't allow "
+     "external connections to the database file."
+    },
+    {
+     FLB_CONFIG_MAP_STR, "db.journal_mode", "WAL",
+     0, FLB_TRUE, offsetof(struct k8s_events, db_journal_mode),
+     "set the journal mode for the database. values: DELETE, TRUNCATE, "
+     "PERSIST, MEMORY, WAL, OFF."
+    },
 #endif
 
     /* EOF */
