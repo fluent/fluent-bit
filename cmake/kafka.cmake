@@ -28,8 +28,19 @@ else()
   endif()
 endif()
 
-# OAuth Bearer is built into librdkafka when SASL is available
-set(FLB_SASL_OAUTHBEARER_ENABLED ${FLB_SASL_ENABLED})
+# OAuth Bearer support:
+# - Windows: Built-in SASL, only needs SSL (no Cyrus SASL required)
+# - Linux/macOS: Needs both SSL and Cyrus SASL
+if(WIN32)
+  if(WITH_SSL)
+    set(FLB_SASL_OAUTHBEARER_ENABLED ON)
+  else()
+    set(FLB_SASL_OAUTHBEARER_ENABLED OFF)
+  endif()
+else()
+  # Non-Windows platforms: require Cyrus SASL
+  set(FLB_SASL_OAUTHBEARER_ENABLED ${FLB_SASL_ENABLED})
+endif()
 
 # MSK IAM requires OAuth Bearer support
 set(FLB_KAFKA_MSK_IAM_ENABLED ${FLB_SASL_OAUTHBEARER_ENABLED})
