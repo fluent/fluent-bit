@@ -24,7 +24,7 @@ RUN zypper up -y && \
         systemd-devel \
         postgresql postgresql-devel postgresql-server \
         cyrus-sasl cyrus-sasl-devel \
-        libopenssl3 libopenssl-devel \
+        libopenssl3 libopenssl-3-devel \
         libyaml-devel && \
     zypper clean -a && rm -rf /var/cache/zypp/*
 
@@ -43,13 +43,13 @@ RUN zypper up -y && \
         systemd-devel \
         postgresql postgresql-devel postgresql-server \
         cyrus-sasl cyrus-sasl-devel \
-        libopenssl3 libopenssl-devel \
+        libopenssl3 libopenssl-3-devel \
         libyaml-devel && \
     zypper clean -a && rm -rf /var/cache/zypp/*
 
 # opensuse/leap.arm64v8 base image
 # hadolint ignore=DL3037,DL3029
-FROM --platform=arm64 opensuse/leap:15.6 AS opensuse-15.6.arm64v8-base
+FROM --platform=linux/arm64 opensuse/leap:15.6 AS opensuse-15.6.arm64v8-base
 
 COPY --from=multiarch-aarch64 /usr/bin/qemu-aarch64-static /usr/bin/qemu-aarch64-static
 
@@ -65,7 +65,7 @@ RUN zypper up -y && \
         systemd-devel \
         postgresql postgresql-devel postgresql-server \
         cyrus-sasl cyrus-sasl-devel \
-        libopenssl3 libopenssl-devel \
+        libopenssl3 libopenssl-3-devel \
         libyaml-devel && \
     zypper clean -a && rm -rf /var/cache/zypp/*
 
