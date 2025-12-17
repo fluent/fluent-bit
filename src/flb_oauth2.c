@@ -154,6 +154,7 @@ static int oauth2_clone_config(struct flb_oauth2_config *dst,
         dst->token_url = flb_sds_create(src->token_url);
         if (!dst->token_url) {
             flb_errno();
+            flb_oauth2_config_destroy(dst);
             return -1;
         }
     }
@@ -162,6 +163,7 @@ static int oauth2_clone_config(struct flb_oauth2_config *dst,
         dst->client_id = flb_sds_create(src->client_id);
         if (!dst->client_id) {
             flb_errno();
+            flb_oauth2_config_destroy(dst);
             return -1;
         }
     }
@@ -170,6 +172,7 @@ static int oauth2_clone_config(struct flb_oauth2_config *dst,
         dst->client_secret = flb_sds_create(src->client_secret);
         if (!dst->client_secret) {
             flb_errno();
+            flb_oauth2_config_destroy(dst);
             return -1;
         }
     }
@@ -178,6 +181,7 @@ static int oauth2_clone_config(struct flb_oauth2_config *dst,
         dst->scope = flb_sds_create(src->scope);
         if (!dst->scope) {
             flb_errno();
+            flb_oauth2_config_destroy(dst);
             return -1;
         }
     }
@@ -186,6 +190,7 @@ static int oauth2_clone_config(struct flb_oauth2_config *dst,
         dst->audience = flb_sds_create(src->audience);
         if (!dst->audience) {
             flb_errno();
+            flb_oauth2_config_destroy(dst);
             return -1;
         }
     }
