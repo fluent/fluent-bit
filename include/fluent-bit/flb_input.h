@@ -471,6 +471,9 @@ struct flb_input_instance {
     struct mk_list *net_config_map;
     struct mk_list net_properties;
 
+    struct mk_list *oauth2_jwt_config_map;
+    struct mk_list oauth2_jwt_properties;
+
     flb_pipefd_t notification_channel;
 
     /* Keep a reference to the original context this instance belongs to */
