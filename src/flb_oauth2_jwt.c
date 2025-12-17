@@ -976,15 +976,31 @@ static int oauth2_jwks_fetch_keys(struct flb_oauth2_jwt_ctx *ctx)
         return -1;
     }
 
-    if (!host || !port_str || !uri) {
+    if (!host || !uri) {
         flb_error("[oauth2_jwt] invalid JWKS URL components");
         goto cleanup;
     }
 
-    port = atoi(port_str);
-    if (port <= 0) {
-        flb_error("[oauth2_jwt] invalid port in JWKS URL");
-        goto cleanup;
+    /* Determine port: use explicit port if provided, otherwise use protocol defaults */
+    if (port_str && port_str[0] != '\0') {
+        port = atoi(port_str);
+        if (port <= 0) {
+            flb_error("[oauth2_jwt] invalid port in JWKS URL");
+            goto cleanup;
+        }
+    }
+    else {
+        /* No explicit port: use default based on protocol */
+        if (protocol && strcasecmp(protocol, "https") == 0) {
+            port = 443;
+        }
+        else if (protocol && strcasecmp(protocol, "http") == 0) {
+            port = 80;
+        }
+        else {
+            flb_error("[oauth2_jwt] unsupported protocol in JWKS URL: %s", protocol ? protocol : "(null)");
+            goto cleanup;
+        }
     }
 
     if (protocol && strcasecmp(protocol, "https") == 0) {
