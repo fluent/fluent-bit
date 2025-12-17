@@ -24,6 +24,7 @@
 #include <fluent-bit/flb_kv.h>
 #include <fluent-bit/flb_http_client.h>
 #include <fluent-bit/flb_record_accessor.h>
+#include <fluent-bit/flb_oauth2.h>
 
 #ifdef FLB_HAVE_SIGNV4
 #ifdef FLB_HAVE_AWS
@@ -55,11 +56,37 @@ struct flb_out_http *flb_http_conf_create(struct flb_output_instance *ins,
         return NULL;
     }
     ctx->ins = ins;
+    ctx->oauth2_config.enabled = FLB_FALSE;
+    ctx->oauth2_config.auth_method = FLB_OAUTH2_AUTH_METHOD_BASIC;
+    ctx->oauth2_config.refresh_skew = FLB_OAUTH2_DEFAULT_SKEW_SECS;
+    ctx->oauth2_ctx = NULL;
+    ctx->oauth2_auth_method = NULL;
 
     ret = flb_output_config_map_set(ins, (void *) ctx);
     if (ret == -1) {
         flb_free(ctx);
         return NULL;
+    }
+
+    /* Apply OAuth2 config map properties if any */
+    if (ins->oauth2_config_map && mk_list_size(&ins->oauth2_properties) > 0) {
+        ret = flb_config_map_set(&ins->oauth2_properties, ins->oauth2_config_map,
+                                 &ctx->oauth2_config);
+        if (ret == -1) {
+            flb_free(ctx);
+            return NULL;
+        }
+
+        /* Handle oauth2.auth_method separately since it's stored in a different field */
+        tmp = flb_kv_get_key_value("oauth2.auth_method", &ins->oauth2_properties);
+        if (tmp) {
+            ctx->oauth2_auth_method = flb_sds_create(tmp);
+            if (!ctx->oauth2_auth_method) {
+                flb_errno();
+                flb_free(ctx);
+                return NULL;
+            }
+        }
     }
 
     if (ctx->headers_key && !ctx->body_key) {
@@ -295,6 +322,62 @@ struct flb_out_http *flb_http_conf_create(struct flb_output_instance *ins,
     ctx->host = ins->host.name;
     ctx->port = ins->host.port;
 
+    if (ctx->oauth2_config.connect_timeout <= 0 &&
+        ins->net_setup.connect_timeout > 0) {
+        ctx->oauth2_config.connect_timeout = ins->net_setup.connect_timeout;
+    }
+
+    if (ctx->oauth2_config.timeout <= 0 && ctx->response_timeout > 0) {
+        ctx->oauth2_config.timeout = ctx->response_timeout;
+    }
+
+    if (ctx->oauth2_config.enabled == FLB_TRUE) {
+        tmp = ctx->oauth2_auth_method ? ctx->oauth2_auth_method :
+              flb_output_get_property("oauth2.auth_method", ins);
+
+        if (tmp) {
+            if (strcasecmp(tmp, "basic") == 0) {
+                ctx->oauth2_config.auth_method = FLB_OAUTH2_AUTH_METHOD_BASIC;
+            }
+            else if (strcasecmp(tmp, "post") == 0) {
+                ctx->oauth2_config.auth_method = FLB_OAUTH2_AUTH_METHOD_POST;
+            }
+            else {
+                flb_plg_error(ctx->ins, "invalid oauth2.auth_method '%s'", tmp);
+                flb_http_conf_destroy(ctx);
+                return NULL;
+            }
+        }
+
+        if (!ctx->oauth2_config.token_url ||
+            !ctx->oauth2_config.client_id ||
+            !ctx->oauth2_config.client_secret) {
+            flb_plg_error(ctx->ins, "oauth2 requires token_url, client_id and client_secret");
+            flb_http_conf_destroy(ctx);
+            return NULL;
+        }
+
+        ctx->oauth2_ctx = flb_oauth2_create_from_config(config, &ctx->oauth2_config);
+        if (!ctx->oauth2_ctx) {
+            flb_plg_error(ctx->ins, "failed to initialize oauth2 context");
+            flb_http_conf_destroy(ctx);
+            return NULL;
+        }
+
+        /* Clear the oauth2_config strings since they're now owned by the OAuth2 context
+         * (cloned) and the original strings are owned by the config map. This prevents
+         * double-free when destroying.
+         */
+        ctx->oauth2_config.token_url = NULL;
+        ctx->oauth2_config.client_id = NULL;
+        ctx->oauth2_config.client_secret = NULL;
+        ctx->oauth2_config.scope = NULL;
+        ctx->oauth2_config.audience = NULL;
+
+        /* oauth2_auth_method is also owned by the config map, clear it to prevent double-free */
+        ctx->oauth2_auth_method = NULL;
+    }
+
     /* Set instance flags into upstream */
     flb_output_upstream_set(ctx->u, ins);
 
@@ -323,6 +406,24 @@ void flb_http_conf_destroy(struct flb_out_http *ctx)
     }
 #endif
 #endif
+
+    if (ctx->oauth2_ctx) {
+        flb_oauth2_destroy(ctx->oauth2_ctx);
+        /* OAuth2 context owns cloned copies of the config strings, so we don't
+         * need to destroy ctx->oauth2_config here. The original strings in
+         * ctx->oauth2_config are owned by the config map and will be freed by
+         * flb_config_map_destroy. We set them to NULL after creating the context
+         * to prevent double-free.
+         */
+    }
+    else {
+        /* Only destroy oauth2_config if OAuth2 context wasn't created,
+         * meaning the strings weren't cloned. But in this case, they're still
+         * owned by the config map, so we shouldn't free them either.
+         */
+    }
+
+    /* oauth2_auth_method is owned by the config map, don't free it here */
 
     flb_free(ctx->proxy_host);
     flb_free(ctx->uri);
