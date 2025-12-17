@@ -42,6 +42,7 @@
 #include <fluent-bit/flb_scheduler.h>
 #include <fluent-bit/flb_ring_buffer.h>
 #include <fluent-bit/flb_processor.h>
+#include <fluent-bit/flb_oauth2_jwt.h>
 
 /* input plugin macro helpers */
 #include <fluent-bit/flb_input_plugin.h>
@@ -365,6 +366,7 @@ struct flb_input_instance *flb_input_new(struct flb_config *config,
         /* Initialize properties list */
         flb_kv_init(&instance->properties);
         flb_kv_init(&instance->net_properties);
+        flb_kv_init(&instance->oauth2_jwt_properties);
 
         /* Plugin use networking */
         if (plugin->flags & (FLB_INPUT_NET | FLB_INPUT_NET_SERVER)) {
@@ -636,6 +638,16 @@ int flb_input_set_property(struct flb_input_instance *ins,
         }
         kv->val = tmp;
     }
+    else if (strncasecmp("oauth2", k, 6) == 0 && tmp) {
+        kv = flb_kv_item_create(&ins->oauth2_jwt_properties, (char *) k, NULL);
+        if (!kv) {
+            if (tmp) {
+                flb_sds_destroy(tmp);
+            }
+            return -1;
+        }
+        kv->val = tmp;
+    }
 
 #ifdef FLB_HAVE_TLS
     else if (prop_key_check("tls", k, len) == 0 && tmp) {
@@ -878,6 +890,7 @@ void flb_input_instance_destroy(struct flb_input_instance *ins)
     /* release properties */
     flb_kv_release(&ins->properties);
     flb_kv_release(&ins->net_properties);
+    flb_kv_release(&ins->oauth2_jwt_properties);
 
 
 #ifdef FLB_HAVE_CHUNK_TRACE
@@ -906,6 +919,10 @@ void flb_input_instance_destroy(struct flb_input_instance *ins)
 
     if (ins->net_config_map) {
         flb_config_map_destroy(ins->net_config_map);
+    }
+
+    if (ins->oauth2_jwt_config_map) {
+        flb_config_map_destroy(ins->oauth2_jwt_config_map);
     }
 
     /* hash table for chunks */
@@ -1076,6 +1093,38 @@ int flb_input_plugin_property_check(struct flb_input_instance *ins,
         /* Validate incoming properties against config map */
         ret = flb_config_map_properties_check(ins->p->name,
                                               &ins->properties, ins->config_map);
+        if (ret == -1) {
+            if (config->program_name) {
+                flb_helper("try the command: %s -i %s -h\n",
+                           config->program_name, ins->p->name);
+            }
+            return -1;
+        }
+    }
+
+    return 0;
+}
+
+int flb_input_oauth2_jwt_property_check(struct flb_input_instance *ins,
+                                         struct flb_config *config)
+{
+    int ret = 0;
+
+    /* Get OAuth2 JWT configmap */
+    ins->oauth2_jwt_config_map = flb_oauth2_jwt_get_config_map(config);
+    if (!ins->oauth2_jwt_config_map) {
+        flb_input_instance_destroy(ins);
+        return -1;
+    }
+
+    /*
+     * Validate 'oauth2*' properties: if the plugin uses OAuth2 JWT,
+     * it might receive OAuth2 JWT settings.
+     */
+    if (mk_list_size(&ins->oauth2_jwt_properties) > 0) {
+        ret = flb_config_map_properties_check(ins->p->name,
+                                              &ins->oauth2_jwt_properties,
+                                              ins->oauth2_jwt_config_map);
         if (ret == -1) {
             if (config->program_name) {
                 flb_helper("try the command: %s -i %s -h\n",
@@ -1279,6 +1328,16 @@ int flb_input_instance_init(struct flb_input_instance *ins,
      */
     if (flb_input_plugin_property_check(ins, config) == -1) {
         return -1;
+    }
+
+    /*
+     * Validate 'oauth2*' properties: if the plugin uses OAuth2 JWT,
+     * it might receive OAuth2 JWT settings.
+     */
+    if (mk_list_size(&ins->oauth2_jwt_properties) > 0) {
+        if (flb_input_oauth2_jwt_property_check(ins, config) == -1) {
+            return -1;
+        }
     }
 
 #ifdef FLB_HAVE_TLS
