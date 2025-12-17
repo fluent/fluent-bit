@@ -302,7 +302,7 @@ static int http_request(struct flb_out_http *ctx,
 #endif
 #endif
 
-    ret = flb_http_do(c, &b_sent);
+    ret = flb_http_do_with_oauth2(c, &b_sent, ctx->oauth2_ctx);
     if (ret == 0) {
         /*
          * Only allow the following HTTP status:
@@ -722,6 +722,56 @@ static struct flb_config_map config_map[] = {
      FLB_CONFIG_MAP_STR, "http_passwd", "",
      0, FLB_TRUE, offsetof(struct flb_out_http, http_passwd),
      "Set HTTP auth password"
+    },
+    {
+     FLB_CONFIG_MAP_BOOL, "oauth2.enable", "false",
+     0, FLB_TRUE, offsetof(struct flb_out_http, oauth2_config.enabled),
+     "Enable OAuth2 client credentials for outgoing requests"
+    },
+    {
+     FLB_CONFIG_MAP_STR, "oauth2.token_url", NULL,
+     0, FLB_TRUE, offsetof(struct flb_out_http, oauth2_config.token_url),
+     "OAuth2 token endpoint URL"
+    },
+    {
+     FLB_CONFIG_MAP_STR, "oauth2.client_id", NULL,
+     0, FLB_TRUE, offsetof(struct flb_out_http, oauth2_config.client_id),
+     "OAuth2 client_id"
+    },
+    {
+     FLB_CONFIG_MAP_STR, "oauth2.client_secret", NULL,
+     0, FLB_TRUE, offsetof(struct flb_out_http, oauth2_config.client_secret),
+     "OAuth2 client_secret"
+    },
+    {
+     FLB_CONFIG_MAP_STR, "oauth2.scope", NULL,
+     0, FLB_TRUE, offsetof(struct flb_out_http, oauth2_config.scope),
+     "Optional OAuth2 scope"
+    },
+    {
+     FLB_CONFIG_MAP_STR, "oauth2.audience", NULL,
+     0, FLB_TRUE, offsetof(struct flb_out_http, oauth2_config.audience),
+     "Optional OAuth2 audience parameter"
+    },
+    {
+     FLB_CONFIG_MAP_STR, "oauth2.auth_method", "basic",
+     0, FLB_TRUE, offsetof(struct flb_out_http, oauth2_auth_method),
+     "OAuth2 client authentication method: basic or post"
+    },
+    {
+     FLB_CONFIG_MAP_INT, "oauth2.refresh_skew_seconds", "60",
+     0, FLB_TRUE, offsetof(struct flb_out_http, oauth2_config.refresh_skew),
+     "Seconds before expiry to refresh the access token"
+    },
+    {
+     FLB_CONFIG_MAP_TIME, "oauth2.timeout", "0s",
+     0, FLB_TRUE, offsetof(struct flb_out_http, oauth2_config.timeout),
+     "Timeout for OAuth2 token requests (defaults to response_timeout when unset)"
+    },
+    {
+     FLB_CONFIG_MAP_TIME, "oauth2.connect_timeout", "0s",
+     0, FLB_TRUE, offsetof(struct flb_out_http, oauth2_config.connect_timeout),
+     "Connect timeout for OAuth2 token requests"
     },
 #ifdef FLB_HAVE_SIGNV4
 #ifdef FLB_HAVE_AWS
