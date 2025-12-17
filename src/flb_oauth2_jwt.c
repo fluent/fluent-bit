@@ -570,7 +570,11 @@ static int oauth2_jwt_parse_payload(const char *json, size_t json_len,
                                                       v->via.str.size);
             }
             else if (v->type == MSGPACK_OBJECT_ARRAY && v->via.array.size > 0) {
-                /* Take first element of array */
+                /*
+                 * Store first element of array for backward compatibility and existence check.
+                 * Note: During validation, all elements in the array are checked against
+                 * allowed_audience (see oauth2_jwt_check_audience() in flb_oauth2_jwt_validate()).
+                 */
                 first = &v->via.array.ptr[0];
                 if (first->type == MSGPACK_OBJECT_STR) {
                     if (claims->audience) {
@@ -1105,6 +1109,100 @@ cleanup:
     return (jwks_json != NULL) ? 0 : -1;
 }
 
+static int oauth2_jwt_check_audience(const char *json, size_t json_len,
+                                     const char *allowed_audience)
+{
+    int ret;
+    int root_type;
+    char *mp_buf = NULL;
+    size_t mp_size;
+    size_t off = 0;
+    msgpack_unpacked result;
+    msgpack_object map;
+    msgpack_object *k;
+    msgpack_object *v;
+    size_t i;
+    size_t j;
+    size_t map_size;
+    size_t key_len;
+    const char *key_str;
+    int found_match = 0;
+
+    if (!json || json_len == 0 || !allowed_audience) {
+        return 0;
+    }
+
+    /* Convert JSON to msgpack */
+    ret = flb_pack_json_yyjson(json, json_len, &mp_buf, &mp_size,
+                               &root_type, NULL);
+    if (ret != 0 || root_type != JSMN_OBJECT) {
+        if (mp_buf) {
+            flb_free(mp_buf);
+        }
+        return 0;
+    }
+
+    /* Unpack msgpack */
+    msgpack_unpacked_init(&result);
+    if (msgpack_unpack_next(&result, mp_buf, mp_size, &off) != MSGPACK_UNPACK_SUCCESS) {
+        flb_free(mp_buf);
+        msgpack_unpacked_destroy(&result);
+        return 0;
+    }
+
+    map = result.data;
+    if (map.type != MSGPACK_OBJECT_MAP) {
+        flb_free(mp_buf);
+        msgpack_unpacked_destroy(&result);
+        return 0;
+    }
+
+    /* Find and check the 'aud' claim */
+    map_size = map.via.map.size;
+    for (i = 0; i < map_size; i++) {
+        k = &map.via.map.ptr[i].key;
+        v = &map.via.map.ptr[i].val;
+
+        if (k->type != MSGPACK_OBJECT_STR) {
+            continue;
+        }
+
+        key_len = k->via.str.size;
+        key_str = (const char *)k->via.str.ptr;
+
+        if (key_len == 3 && strncmp(key_str, "aud", 3) == 0) {
+            if (v->type == MSGPACK_OBJECT_STR) {
+                /* Single string audience */
+                if (v->via.str.size == strlen(allowed_audience) &&
+                    strncmp((const char *)v->via.str.ptr, allowed_audience,
+                            v->via.str.size) == 0) {
+                    found_match = 1;
+                }
+            }
+            else if (v->type == MSGPACK_OBJECT_ARRAY) {
+                /* Array of audiences - check if any element matches */
+                for (j = 0; j < v->via.array.size; j++) {
+                    msgpack_object *elem = &v->via.array.ptr[j];
+                    if (elem->type == MSGPACK_OBJECT_STR) {
+                        if (elem->via.str.size == strlen(allowed_audience) &&
+                            strncmp((const char *)elem->via.str.ptr, allowed_audience,
+                                    elem->via.str.size) == 0) {
+                            found_match = 1;
+                            break;
+                        }
+                    }
+                }
+            }
+            break;
+        }
+    }
+
+    flb_free(mp_buf);
+    msgpack_unpacked_destroy(&result);
+
+    return found_match;
+}
+
 static void oauth2_jwt_free_cfg(struct flb_oauth2_jwt_cfg *cfg)
 {
     /* Note: cfg->issuer, cfg->jwks_url, and cfg->allowed_audience are pointers
@@ -1310,9 +1408,14 @@ int flb_oauth2_jwt_validate(struct flb_oauth2_jwt_ctx *ctx,
 
     /* Check audience */
     if (ctx->cfg.allowed_audience) {
-        if (!jwt.claims.audience || strcmp(ctx->cfg.allowed_audience, jwt.claims.audience) != 0) {
-            flb_debug("[oauth2_jwt] Audience mismatch: expected='%s', actual='%s'",
-                     ctx->cfg.allowed_audience, jwt.claims.audience ? jwt.claims.audience : "(null)");
+        /* Check audience by re-parsing the payload to handle both string and array formats.
+         * Per JWT spec (RFC 7519), when aud is an array, the token is valid if ANY element
+         * in the array matches the expected audience. */
+        if (!oauth2_jwt_check_audience(jwt.payload_json,
+                                       flb_sds_len(jwt.payload_json),
+                                       ctx->cfg.allowed_audience)) {
+            flb_debug("[oauth2_jwt] Audience mismatch: expected='%s' not found in token audiences",
+                     ctx->cfg.allowed_audience);
             status = FLB_OAUTH2_JWT_ERR_INVALID_ARGUMENT;
             goto jwt_end;
         }
