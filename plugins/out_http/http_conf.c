@@ -80,12 +80,8 @@ struct flb_out_http *flb_http_conf_create(struct flb_output_instance *ins,
         /* Handle oauth2.auth_method separately since it's stored in a different field */
         tmp = flb_kv_get_key_value("oauth2.auth_method", &ins->oauth2_properties);
         if (tmp) {
-            ctx->oauth2_auth_method = flb_sds_create(tmp);
-            if (!ctx->oauth2_auth_method) {
-                flb_errno();
-                flb_free(ctx);
-                return NULL;
-            }
+            /* Store pointer directly - config map owns this string and will free it */
+            ctx->oauth2_auth_method = (flb_sds_t) tmp;
         }
     }
 
@@ -363,22 +359,6 @@ struct flb_out_http *flb_http_conf_create(struct flb_output_instance *ins,
             flb_http_conf_destroy(ctx);
             return NULL;
         }
-
-        /* Clear the oauth2_config strings since they're now owned by the OAuth2 context
-         * (cloned) and the original strings are owned by the config map. This prevents
-         * double-free when destroying.
-         */
-        ctx->oauth2_config.token_url = NULL;
-        ctx->oauth2_config.client_id = NULL;
-        ctx->oauth2_config.client_secret = NULL;
-        ctx->oauth2_config.scope = NULL;
-        ctx->oauth2_config.audience = NULL;
-
-        /* oauth2_auth_method was allocated with flb_sds_create, free it before clearing */
-        if (ctx->oauth2_auth_method) {
-            flb_sds_destroy(ctx->oauth2_auth_method);
-            ctx->oauth2_auth_method = NULL;
-        }
     }
 
     /* Set instance flags into upstream */
@@ -424,12 +404,6 @@ void flb_http_conf_destroy(struct flb_out_http *ctx)
          * meaning the strings weren't cloned. But in this case, they're still
          * owned by the config map, so we shouldn't free them either.
          */
-    }
-
-    /* oauth2_auth_method was allocated with flb_sds_create, free it if present */
-    if (ctx->oauth2_auth_method) {
-        flb_sds_destroy(ctx->oauth2_auth_method);
-        ctx->oauth2_auth_method = NULL;
     }
 
     flb_free(ctx->proxy_host);
