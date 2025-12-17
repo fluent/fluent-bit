@@ -123,6 +123,8 @@ static int flb_crypto_build_rsa_public_key_from_components(unsigned char *modulu
 {
     BIGNUM *n = NULL;
     BIGNUM *e = NULL;
+    BIGNUM *n_dup = NULL;
+    BIGNUM *e_dup = NULL;
     RSA *rsa = NULL;
     int ret = FLB_CRYPTO_BACKEND_ERROR;
 
@@ -166,9 +168,25 @@ static int flb_crypto_build_rsa_public_key_from_components(unsigned char *modulu
         goto cleanup;
     }
 
-    if (RSA_set0_key(rsa, BN_dup(n), BN_dup(e), NULL) != 1) {
+    n_dup = BN_dup(n);
+    if (!n_dup) {
         goto cleanup;
     }
+
+    e_dup = BN_dup(e);
+    if (!e_dup) {
+        BN_free(n_dup);
+        n_dup = NULL;
+        goto cleanup;
+    }
+
+    if (RSA_set0_key(rsa, n_dup, e_dup, NULL) != 1) {
+        BN_free(n_dup);
+        BN_free(e_dup);
+        n_dup = e_dup = NULL;
+        goto cleanup;
+    }
+    n_dup = e_dup = NULL; /* ownership transferred to RSA */
 
     *pkey = EVP_PKEY_new();
     if (!*pkey) {
@@ -189,6 +207,12 @@ static int flb_crypto_build_rsa_public_key_from_components(unsigned char *modulu
 cleanup:
     if (rsa) {
         RSA_free(rsa);
+    }
+    if (n_dup) {
+        BN_free(n_dup);
+    }
+    if (e_dup) {
+        BN_free(e_dup);
     }
     if (n) {
         BN_free(n);
