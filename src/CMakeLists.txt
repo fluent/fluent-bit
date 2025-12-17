@@ -161,6 +161,7 @@ if(FLB_TLS)
     ${src}
     "tls/flb_tls.c"
     "flb_oauth2.c"
+    "flb_oauth2_jwt.c"
     )
 
   # Make sure our output targets links to the TLS library
