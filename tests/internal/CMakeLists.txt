@@ -18,6 +18,8 @@ set(UNIT_TESTS_FILES
   unit_sizes.c
   hashtable.c
   http_client.c
+  oauth2_jwt.c
+  oauth2.c
   utils.c
   gzip.c
   zstd.c
