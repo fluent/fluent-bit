@@ -434,6 +434,9 @@ struct flb_output_instance {
     struct mk_list *net_config_map;
     struct mk_list net_properties;
 
+    struct mk_list *oauth2_config_map;
+    struct mk_list oauth2_properties;
+
     struct mk_list *tls_config_map;
 
     struct mk_list _head;                /* link to config->inputs       */
@@ -1322,6 +1325,10 @@ static inline int flb_output_config_map_set(struct flb_output_instance *ins,
         }
     }
 
+    /* OAuth2 properties are validated but not automatically applied here.
+     * Plugins should call flb_config_map_set() with &ctx->oauth2_config
+     * in their init callback after calling flb_output_config_map_set(). */
+
     return 0;
 }
 
@@ -1358,6 +1365,8 @@ void flb_output_set_context(struct flb_output_instance *ins, void *context);
 int flb_output_instance_destroy(struct flb_output_instance *ins);
 int flb_output_net_property_check(struct flb_output_instance *ins,
                                   struct flb_config *config);
+int flb_output_oauth2_property_check(struct flb_output_instance *ins,
+                                      struct flb_config *config);
 int flb_output_plugin_property_check(struct flb_output_instance *ins,
                                      struct flb_config *config);
 int flb_output_init_all(struct flb_config *config);
