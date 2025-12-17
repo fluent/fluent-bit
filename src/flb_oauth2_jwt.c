@@ -658,7 +658,7 @@ int flb_oauth2_jwt_parse(const char *token, size_t token_len,
         return FLB_OAUTH2_JWT_ERR_SEGMENT_COUNT;
     }
 
-    jwt->signing_input = flb_sds_create_len(token, parts_len[0] + parts_len[1] + 1);
+    jwt->signing_input = flb_sds_create_size(parts_len[0] + 1 + parts_len[1] + 1);
     if (!jwt->signing_input) {
         return FLB_OAUTH2_JWT_ERR_INVALID_ARGUMENT;
     }
@@ -667,6 +667,7 @@ int flb_oauth2_jwt_parse(const char *token, size_t token_len,
     jwt->signing_input[parts_len[0]] = '.';
     memcpy(jwt->signing_input + parts_len[0] + 1, parts[1], parts_len[1]);
     jwt->signing_input[parts_len[0] + parts_len[1] + 1] = '\0';
+    flb_sds_len_set(jwt->signing_input, parts_len[0] + 1 + parts_len[1]);
 
     ret = oauth2_jwt_base64url_decode(parts[0], parts_len[0], &decoded, &decoded_len,
                                       FLB_OAUTH2_JWT_ERR_BASE64_HEADER);
