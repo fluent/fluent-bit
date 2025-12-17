@@ -1174,7 +1174,6 @@ int flb_output_oauth2_property_check(struct flb_output_instance *ins,
     /* Get OAuth2 configmap */
     ins->oauth2_config_map = flb_oauth2_get_config_map(config);
     if (!ins->oauth2_config_map) {
-        flb_output_instance_destroy(ins);
         return -1;
     }
 
