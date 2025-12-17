@@ -27,6 +27,7 @@
 #include <fluent-bit/flb_env.h>
 #include <fluent-bit/flb_coro.h>
 #include <fluent-bit/flb_output.h>
+#include <fluent-bit/flb_oauth2.h>
 #include <fluent-bit/flb_kv.h>
 #include <fluent-bit/flb_io.h>
 #include <fluent-bit/flb_uri.h>
@@ -165,6 +166,7 @@ static void flb_output_free_properties(struct flb_output_instance *ins)
 
     flb_kv_release(&ins->properties);
     flb_kv_release(&ins->net_properties);
+    flb_kv_release(&ins->oauth2_properties);
 
 #ifdef FLB_HAVE_TLS
     if (ins->tls_vhost) {
@@ -510,6 +512,10 @@ int flb_output_instance_destroy(struct flb_output_instance *ins)
         flb_config_map_destroy(ins->net_config_map);
     }
 
+    if (ins->oauth2_config_map) {
+        flb_config_map_destroy(ins->oauth2_config_map);
+    }
+
     if (ins->ch_events[0] > 0) {
         mk_event_closesocket(ins->ch_events[0]);
     }
@@ -810,6 +816,7 @@ struct flb_output_instance *flb_output_new(struct flb_config *config,
 
     flb_kv_init(&instance->properties);
     flb_kv_init(&instance->net_properties);
+    flb_kv_init(&instance->oauth2_properties);
     mk_list_init(&instance->upstreams);
     mk_list_init(&instance->flush_list);
     mk_list_init(&instance->flush_list_destroy);
@@ -931,6 +938,16 @@ int flb_output_set_property(struct flb_output_instance *ins,
     }
     else if (strncasecmp("net.", k, 4) == 0 && tmp) {
         kv = flb_kv_item_create(&ins->net_properties, (char *) k, NULL);
+        if (!kv) {
+            if (tmp) {
+                flb_sds_destroy(tmp);
+            }
+            return -1;
+        }
+        kv->val = tmp;
+    }
+    else if (strncasecmp("oauth2", k, 6) == 0 && tmp) {
+        kv = flb_kv_item_create(&ins->oauth2_properties, (char *) k, NULL);
         if (!kv) {
             if (tmp) {
                 flb_sds_destroy(tmp);
@@ -1137,6 +1154,38 @@ int flb_output_net_property_check(struct flb_output_instance *ins,
         ret = flb_config_map_properties_check(ins->p->name,
                                               &ins->net_properties,
                                               ins->net_config_map);
+        if (ret == -1) {
+            if (config->program_name) {
+                flb_helper("try the command: %s -o %s -h\n",
+                           config->program_name, ins->p->name);
+            }
+            return -1;
+        }
+    }
+
+    return 0;
+}
+
+int flb_output_oauth2_property_check(struct flb_output_instance *ins,
+                                      struct flb_config *config)
+{
+    int ret = 0;
+
+    /* Get OAuth2 configmap */
+    ins->oauth2_config_map = flb_oauth2_get_config_map(config);
+    if (!ins->oauth2_config_map) {
+        flb_output_instance_destroy(ins);
+        return -1;
+    }
+
+    /*
+     * Validate 'oauth2*' properties: if the plugin uses OAuth2,
+     * it might receive OAuth2 settings.
+     */
+    if (mk_list_size(&ins->oauth2_properties) > 0) {
+        ret = flb_config_map_properties_check(ins->p->name,
+                                              &ins->oauth2_properties,
+                                              ins->oauth2_config_map);
         if (ret == -1) {
             if (config->program_name) {
                 flb_helper("try the command: %s -o %s -h\n",
@@ -1502,6 +1551,14 @@ int flb_output_init_all(struct flb_config *config)
         if (flb_output_net_property_check(ins, config) == -1) {
             flb_output_instance_destroy(ins);
             return -1;
+        }
+
+        /* Check OAuth2 properties if any */
+        if (mk_list_size(&ins->oauth2_properties) > 0) {
+            if (flb_output_oauth2_property_check(ins, config) == -1) {
+                flb_output_instance_destroy(ins);
+                return -1;
+            }
         }
 
         /* Initialize plugin through it 'init callback' */
