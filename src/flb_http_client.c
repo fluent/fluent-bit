@@ -44,6 +44,7 @@
 #include <fluent-bit/flb_log.h>
 #include <fluent-bit/flb_mem.h>
 #include <fluent-bit/flb_lock.h>
+#include <fluent-bit/flb_oauth2.h>
 #include <fluent-bit/flb_http_common.h>
 #include <fluent-bit/flb_http_client.h>
 #include <fluent-bit/flb_http_client_debug.h>
@@ -802,6 +803,7 @@ struct flb_http_client *create_http_client(struct flb_connection *u_conn,
     c->header_buf  = buf;
     c->header_size = FLB_HTTP_BUF_SIZE;
     c->header_len  = ret;
+    c->base_header_len = ret;
     c->flags       = flags;
     c->allow_dup_headers = FLB_TRUE;
     mk_list_init(&c->headers);
@@ -1042,6 +1044,25 @@ int flb_http_add_header(struct flb_http_client *c,
     }
 
     return 0;
+}
+
+int flb_http_remove_header(struct flb_http_client *c,
+                          const char *key, size_t key_len)
+{
+    int removed = 0;
+    struct flb_kv *kv;
+    struct mk_list *tmp;
+    struct mk_list *head;
+
+    mk_list_foreach_safe(head, tmp, &c->headers) {
+        kv = mk_list_entry(head, struct flb_kv, _head);
+        if (flb_sds_casecmp(kv->key, key, key_len) == 0) {
+            flb_kv_item_destroy(kv);
+            removed++;
+        }
+    }
+
+    return removed;
 }
 
 /*
@@ -1433,6 +1454,8 @@ int flb_http_do_request(struct flb_http_client *c, size_t *bytes)
     size_t bytes_body = 0;
     char *tmp;
 
+    c->header_len = c->base_header_len;
+
     /* Try to add keep alive header */
     flb_http_set_keepalive(c);
 
@@ -1679,6 +1702,64 @@ int flb_http_do(struct flb_http_client *c, size_t *bytes)
 #endif
 
     return 0;
+}
+
+int flb_http_do_with_oauth2(struct flb_http_client *c, size_t *bytes,
+                            struct flb_oauth2 *oauth2)
+{
+    int ret;
+    flb_sds_t token = NULL;
+
+    if (!oauth2 || oauth2->cfg.enabled == FLB_FALSE) {
+        return flb_http_do(c, bytes);
+    }
+
+    flb_http_allow_duplicated_headers(c, FLB_FALSE);
+
+    ret = flb_oauth2_get_access_token(oauth2, &token, FLB_FALSE);
+    if (ret != 0 || token == NULL) {
+        return -1;
+    }
+
+    flb_http_remove_header(c, FLB_HTTP_HEADER_AUTH, strlen(FLB_HTTP_HEADER_AUTH));
+    ret = flb_http_bearer_auth(c, token);
+    if (ret != 0) {
+        return ret;
+    }
+
+    ret = flb_http_do(c, bytes);
+    if (ret != 0) {
+        return ret;
+    }
+
+    if (c->resp.status == 401) {
+        flb_info("[http_client] 401 received; refreshing OAuth2 token and retrying once");
+        flb_oauth2_invalidate_token(oauth2);
+
+        /* If connection was closed, get a new one */
+        if (c->resp.connection_close == FLB_TRUE && c->u_conn) {
+            flb_upstream_conn_release(c->u_conn);
+            c->u_conn = flb_upstream_conn_get(c->u_conn->upstream);
+            if (!c->u_conn) {
+                return -1;
+            }
+        }
+
+        ret = flb_oauth2_get_access_token(oauth2, &token, FLB_TRUE);
+        if (ret != 0 || token == NULL) {
+            return -1;
+        }
+
+        flb_http_remove_header(c, FLB_HTTP_HEADER_AUTH, strlen(FLB_HTTP_HEADER_AUTH));
+        ret = flb_http_bearer_auth(c, token);
+        if (ret != 0) {
+            return ret;
+        }
+
+        ret = flb_http_do(c, bytes);
+    }
+
+    return ret;
 }
 
 /*
