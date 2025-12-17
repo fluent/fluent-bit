@@ -34,15 +34,15 @@ char *flb_azure_msiauth_token_get(struct flb_oauth2 *ctx)
      time_t now;
      struct flb_connection *u_conn;
      struct flb_http_client *c;
- 
+
      now = time(NULL);
      if (ctx->access_token) {
          /* validate unexpired token */
-         if (ctx->expires > now && flb_sds_len(ctx->access_token) > 0) {
+         if (ctx->expires_at > now && flb_sds_len(ctx->access_token) > 0) {
              return ctx->access_token;
          }
      }
- 
+
      /* Get Token and store it in the context */
      u_conn = flb_upstream_conn_get(ctx->u);
      if (!u_conn) {
@@ -50,7 +50,7 @@ char *flb_azure_msiauth_token_get(struct flb_oauth2 *ctx)
                    ctx->u->tcp_host, ctx->u->tcp_port);
          return NULL;
      }
- 
+
      /* Create HTTP client context */
      c = flb_http_client(u_conn, FLB_HTTP_GET, ctx->uri,
                          NULL, 0,
@@ -61,10 +61,10 @@ char *flb_azure_msiauth_token_get(struct flb_oauth2 *ctx)
          flb_upstream_conn_release(u_conn);
          return NULL;
      }
- 
+
      /* Append HTTP Header */
      flb_http_add_header(c, "Metadata", 8, "true", 4);
- 
+
      /* Issue request */
      ret = flb_http_do(c, &b_sent);
      if (ret != 0) {
@@ -81,7 +81,7 @@ char *flb_azure_msiauth_token_get(struct flb_oauth2 *ctx)
              }
          }
      }
- 
+
      /* Extract token */
      if (c->resp.payload_size > 0 && c->resp.status == 200) {
          ret = flb_oauth2_parse_json_response(c->resp.payload,
@@ -91,15 +91,14 @@ char *flb_azure_msiauth_token_get(struct flb_oauth2 *ctx)
                       ctx->host, ctx->port);
              flb_http_client_destroy(c);
              flb_upstream_conn_release(u_conn);
-             ctx->issued = time(NULL);
-             ctx->expires = ctx->issued + ctx->expires_in;
+             ctx->expires_at = time(NULL) + ctx->expires_in;
              return ctx->access_token;
          }
      }
- 
+
      flb_http_client_destroy(c);
      flb_upstream_conn_release(u_conn);
- 
+
      return NULL;
  }
 
@@ -258,8 +257,7 @@ int flb_azure_workload_identity_token_get(struct flb_oauth2 *ctx, const char *to
             flb_upstream_conn_release(u_conn);
             flb_sds_destroy(federated_token);
             /* body already destroyed */
-            ctx->issued = time(NULL);
-            ctx->expires = ctx->issued + ctx->expires_in;
+            ctx->expires_at = time(NULL) + ctx->expires_in;
             return 0;
         }
     }
