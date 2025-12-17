@@ -153,6 +153,14 @@ static int send_response(struct http_conn *conn, int http_status, char *message)
                        FLB_VERSION_STR,
                        len, message);
     }
+    else if (http_status == 401) {
+        flb_sds_printf(&out,
+                       "HTTP/1.1 401 Unauthorized\r\n"
+                       "Server: Fluent Bit v%s\r\n"
+                       "Content-Length: %i\r\n\r\n%s",
+                       FLB_VERSION_STR,
+                       len, message ? message : "");
+    }
 
     /* We should check this operations result */
     flb_io_net_write(conn->connection,
@@ -866,6 +874,7 @@ int http_prot_handle(struct flb_http *ctx, struct http_conn *conn,
 {
     int ret;
     int len;
+    int auth_status;
     char *uri;
     char *qs;
     off_t diff;
@@ -919,6 +928,26 @@ int http_prot_handle(struct flb_http *ctx, struct http_conn *conn,
 
     /* Check if we have a Host header: Hostname ; port */
     mk_http_point_header(&request->host, &session->parser, MK_HEADER_HOST);
+
+    if (ctx->oauth2_ctx) {
+        header = &session->parser.headers[MK_HEADER_AUTHORIZATION];
+        if (header->type == MK_HEADER_AUTHORIZATION) {
+            auth_status = flb_oauth2_jwt_validate(ctx->oauth2_ctx,
+                                                  header->val.data,
+                                                  header->val.len);
+        }
+        else {
+            auth_status = FLB_OAUTH2_JWT_ERR_MISSING_AUTH_HEADER;
+        }
+
+        if (auth_status != FLB_OAUTH2_JWT_OK) {
+            flb_plg_error(ctx->ins, "OAuth2 validation failed: %s (rejecting request with 401)",
+                         flb_oauth2_jwt_status_message(auth_status));
+            flb_sds_destroy(tag);
+            send_response(conn, 401, NULL);
+            return -1;
+        }
+    }
 
     /* Header: Connection */
     mk_http_point_header(&request->connection, &session->parser,
@@ -1001,6 +1030,9 @@ static int send_response_ng(struct flb_http_response *response,
     }
     else if (http_status == 400) {
         flb_http_response_set_message(response, "Bad Request");
+    }
+    else if (http_status == 401) {
+        flb_http_response_set_message(response, "Unauthorized");
     }
     else if (http_status == 413) {
         flb_http_response_set_message(response, "Payload Too Large");
@@ -1231,9 +1263,13 @@ int http_prot_handle_ng(struct flb_http_request *request,
     int                             ret;
     int                             len;
     flb_sds_t                       tag;
+    const char                     *auth_header;
+    size_t                          auth_len;
     struct flb_http                *ctx;
 
     ctx = (struct flb_http *) response->stream->user_data;
+    auth_header = NULL;
+    auth_len = 0;
     if (request->path[0] != '/') {
         send_response_ng(response, 400, "error: invalid request\n");
         return -1;
@@ -1267,6 +1303,22 @@ int http_prot_handle_ng(struct flb_http_request *request,
         flb_sds_destroy(tag);
 
         return -1;
+    }
+
+    if (ctx->oauth2_ctx) {
+        auth_header = flb_http_request_get_header(request, "authorization");
+        if (auth_header != NULL) {
+            auth_len = strlen(auth_header);
+        }
+
+        ret = flb_oauth2_jwt_validate(ctx->oauth2_ctx, auth_header, auth_len);
+        if (ret != FLB_OAUTH2_JWT_OK) {
+            flb_plg_error(ctx->ins, "OAuth2 validation failed: %s (rejecting request with 401)",
+                         flb_oauth2_jwt_status_message(ret));
+            flb_sds_destroy(tag);
+            send_response_ng(response, 401, NULL);
+            return -1;
+        }
     }
 
     if (request->method != HTTP_METHOD_POST) {

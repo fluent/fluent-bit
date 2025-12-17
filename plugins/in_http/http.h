@@ -26,6 +26,7 @@
 #include <fluent-bit/flb_utils.h>
 #include <fluent-bit/flb_log_event_encoder.h>
 #include <fluent-bit/flb_record_accessor.h>
+#include <fluent-bit/flb_oauth2_jwt.h>
 
 #include <monkey/monkey.h>
 #include <fluent-bit/http_server/flb_http_server.h>
@@ -50,6 +51,9 @@ struct flb_http {
     /* New gen HTTP server */
     int enable_http2;
     struct flb_http_server http_server;
+
+    struct flb_oauth2_jwt_cfg oauth2_cfg;
+    struct flb_oauth2_jwt_ctx *oauth2_ctx;
 
     /* Legacy HTTP server */
     struct flb_downstream *downstream; /* Client manager */
