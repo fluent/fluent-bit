@@ -34,7 +34,7 @@
 /* Config map for OAuth2 configuration */
 struct flb_config_map oauth2_config_map[] = {
     {
-     FLB_CONFIG_MAP_BOOL, "oauth2", "false",
+     FLB_CONFIG_MAP_BOOL, "oauth2.enable", "false",
      0, FLB_TRUE, offsetof(struct flb_oauth2_config, enabled),
      "Enable OAuth2 client credentials for outgoing requests"
     },
