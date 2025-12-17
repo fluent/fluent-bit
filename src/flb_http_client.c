@@ -1709,6 +1709,7 @@ int flb_http_do_with_oauth2(struct flb_http_client *c, size_t *bytes,
 {
     int ret;
     flb_sds_t token = NULL;
+    struct flb_upstream *u;
 
     if (!oauth2 || oauth2->cfg.enabled == FLB_FALSE) {
         return flb_http_do(c, bytes);
@@ -1738,8 +1739,9 @@ int flb_http_do_with_oauth2(struct flb_http_client *c, size_t *bytes,
 
         /* If connection was closed, get a new one */
         if (c->resp.connection_close == FLB_TRUE && c->u_conn) {
+            u = c->u_conn->upstream;
             flb_upstream_conn_release(c->u_conn);
-            c->u_conn = flb_upstream_conn_get(c->u_conn->upstream);
+            c->u_conn = flb_upstream_conn_get(u);
             if (!c->u_conn) {
                 return -1;
             }
