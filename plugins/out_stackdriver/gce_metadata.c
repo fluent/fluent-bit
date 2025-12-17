@@ -133,7 +133,7 @@ int gce_metadata_read_token(struct flb_stackdriver *ctx)
         flb_plg_error(ctx->ins, "unable to parse token body");
         return -1;
     }
-    ctx->o->expires = time(NULL) + ctx->o->expires_in;
+    ctx->o->expires_at = time(NULL) + ctx->o->expires_in;
     return 0;
 }
 
