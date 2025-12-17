@@ -374,8 +374,11 @@ struct flb_out_http *flb_http_conf_create(struct flb_output_instance *ins,
         ctx->oauth2_config.scope = NULL;
         ctx->oauth2_config.audience = NULL;
 
-        /* oauth2_auth_method is also owned by the config map, clear it to prevent double-free */
-        ctx->oauth2_auth_method = NULL;
+        /* oauth2_auth_method was allocated with flb_sds_create, free it before clearing */
+        if (ctx->oauth2_auth_method) {
+            flb_sds_destroy(ctx->oauth2_auth_method);
+            ctx->oauth2_auth_method = NULL;
+        }
     }
 
     /* Set instance flags into upstream */
@@ -423,7 +426,11 @@ void flb_http_conf_destroy(struct flb_out_http *ctx)
          */
     }
 
-    /* oauth2_auth_method is owned by the config map, don't free it here */
+    /* oauth2_auth_method was allocated with flb_sds_create, free it if present */
+    if (ctx->oauth2_auth_method) {
+        flb_sds_destroy(ctx->oauth2_auth_method);
+        ctx->oauth2_auth_method = NULL;
+    }
 
     flb_free(ctx->proxy_host);
     flb_free(ctx->uri);
