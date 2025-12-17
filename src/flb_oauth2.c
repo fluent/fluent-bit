@@ -737,6 +737,7 @@ int flb_oauth2_payload_append(struct flb_oauth2 *ctx,
                               const char *key_str, int key_len,
                               const char *val_str, int val_len)
 {
+    int ret;
     int size;
     flb_sds_t tmp;
 
@@ -761,12 +762,26 @@ int flb_oauth2_payload_append(struct flb_oauth2 *ctx,
     }
 
     if (flb_sds_len(ctx->payload) > 0) {
-        flb_sds_cat(ctx->payload, "&", 1);
+        ret = flb_sds_cat_safe(&ctx->payload, "&", 1);
+        if (ret != 0) {
+            return -1;
+        }
     }
 
-    flb_sds_cat(ctx->payload, key_str, key_len);
-    flb_sds_cat(ctx->payload, "=", 1);
-    flb_sds_cat(ctx->payload, val_str, val_len);
+    ret = flb_sds_cat_safe(&ctx->payload, key_str, key_len);
+    if (ret != 0) {
+        return -1;
+    }
+
+    ret = flb_sds_cat_safe(&ctx->payload, "=", 1);
+    if (ret != 0) {
+        return -1;
+    }
+
+    ret = flb_sds_cat_safe(&ctx->payload, val_str, val_len);
+    if (ret != 0) {
+        return -1;
+    }
 
     ctx->payload_manual = FLB_TRUE;
     return 0;
