@@ -314,8 +314,7 @@ int flb_crypto_transform(struct flb_crypto *context,
 
     if (operation != FLB_CRYPTO_OPERATION_SIGN    &&
         operation != FLB_CRYPTO_OPERATION_ENCRYPT &&
-        operation != FLB_CRYPTO_OPERATION_DECRYPT &&
-        operation != FLB_CRYPTO_OPERATION_VERIFY) {
+        operation != FLB_CRYPTO_OPERATION_DECRYPT) {
         return FLB_CRYPTO_INVALID_ARGUMENT;
     }
 
@@ -328,9 +327,6 @@ int flb_crypto_transform(struct flb_crypto *context,
         }
         else if (operation == FLB_CRYPTO_OPERATION_DECRYPT) {
             result = EVP_PKEY_decrypt_init(context->backend_context);
-        }
-        else if (operation == FLB_CRYPTO_OPERATION_VERIFY) {
-            result = EVP_PKEY_verify_init(context->backend_context);
         }
 
         if (result == 1) {
@@ -375,13 +371,6 @@ int flb_crypto_transform(struct flb_crypto *context,
         result = EVP_PKEY_decrypt(context->backend_context,
                                   output_buffer, output_length,
                                   input_buffer, input_length);
-    }
-    else if(operation == FLB_CRYPTO_OPERATION_VERIFY) {
-        /* For verify, input_buffer is the signature, input_length is signature length */
-        /* output_buffer is the data to verify, output_length is data length */
-        result = EVP_PKEY_verify(context->backend_context,
-                                  input_buffer, input_length,
-                                  output_buffer, *output_length);
     }
 
     if (result != 1) {
