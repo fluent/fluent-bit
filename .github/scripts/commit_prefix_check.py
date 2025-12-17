@@ -213,14 +213,19 @@ def validate_commit(commit):
     umbrella_prefixes = {"lib:"}
 
     # If more than one non-build prefix is inferred AND the subject is not an umbrella
-    # prefix, require split commits.
+    # prefix, check if the subject prefix is in the expected list. If it is, allow it
+    # (because the corresponding file exists). Only reject if it's not in the expected list
+    # or if it's an umbrella prefix that doesn't match.
     if len(non_build_prefixes) > 1 and subj_lower not in umbrella_prefixes:
-        expected_list = sorted(expected)
-        expected_str = ", ".join(expected_list)
-        return False, (
-            f"Subject prefix '{subject_prefix}' does not match files changed.\n"
-            f"Expected one of: {expected_str}"
-        )
+        # If subject prefix is in expected list, it's valid (the corresponding file exists)
+        if subj_lower not in expected_lower:
+            expected_list = sorted(expected)
+            expected_str = ", ".join(expected_list)
+            return False, (
+                f"Subject prefix '{subject_prefix}' does not match files changed.\n"
+                f"Expected one of: {expected_str}"
+            )
+        # Subject prefix is in expected list, so it's valid - no need to check further
 
     # Subject prefix must be one of the expected ones
     if subj_lower not in expected_lower:
