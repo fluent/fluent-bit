@@ -20,6 +20,9 @@
 #ifndef FLB_OUT_HTTP_H
 #define FLB_OUT_HTTP_H
 
+#include <fluent-bit/flb_oauth2.h>
+#include <fluent-bit/flb_sds.h>
+
 #define FLB_HTTP_OUT_MSGPACK        FLB_PACK_JSON_FORMAT_NONE
 #define FLB_HTTP_OUT_GELF           20
 
@@ -111,6 +114,11 @@ struct flb_out_http {
 
     /* Plugin instance */
     struct flb_output_instance *ins;
+
+    /* OAuth2 */
+    struct flb_oauth2_config oauth2_config;
+    struct flb_oauth2 *oauth2_ctx;
+    flb_sds_t oauth2_auth_method;
 };
 
 #endif
