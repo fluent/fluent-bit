@@ -222,71 +222,6 @@ void flb_oauth2_jwt_destroy(struct flb_oauth2_jwt *jwt)
     }
 }
 
-static int oauth2_jwt_token_strcmp(const char *json, jsmntok_t *tok, const char *cmp)
-{
-    int len = (tok->end - tok->start);
-
-    if (len != (int) strlen(cmp)) {
-        return -1;
-    }
-
-    return strncmp(json + tok->start, cmp, len);
-}
-
-static int oauth2_jwt_parse_json_tokens(const char *json,
-                                        size_t json_len,
-                                        jsmntok_t **tokens_out,
-                                        int *tokens_size_out,
-                                        int invalid_error)
-{
-    int ret;
-    jsmn_parser parser;
-    int tokens_size = 32;
-    jsmntok_t *tokens = NULL;
-    int max_iterations = 20; /* Prevent infinite loop */
-    int iteration = 0;
-
-    while (iteration < max_iterations) {
-        flb_free(tokens);
-        tokens = flb_calloc(1, sizeof(jsmntok_t) * tokens_size);
-        if (!tokens) {
-            flb_errno();
-            return FLB_OAUTH2_JWT_ERR_INVALID_ARGUMENT;
-        }
-
-        /* Reinitialize parser for each attempt */
-        jsmn_init(&parser);
-        ret = jsmn_parse(&parser, json, json_len, tokens, tokens_size);
-
-        if (ret != JSMN_ERROR_NOMEM) {
-            break;
-        }
-
-        /* Double the token size for next iteration */
-        tokens_size *= 2;
-        iteration++;
-    }
-
-    if (iteration >= max_iterations) {
-        flb_free(tokens);
-        return invalid_error;
-    }
-
-    if (ret == JSMN_ERROR_INVAL || ret == JSMN_ERROR_PART) {
-        flb_free(tokens);
-        return invalid_error;
-    }
-
-    if (ret < 1 || tokens[0].type != JSMN_OBJECT) {
-        flb_free(tokens);
-        return invalid_error;
-    }
-
-    *tokens_out = tokens;
-    *tokens_size_out = ret;
-    return FLB_OAUTH2_JWT_OK;
-}
-
 static int oauth2_jwt_base64url_decode(const char *segment,
                                        size_t segment_len,
                                        unsigned char **decoded,
@@ -397,11 +332,6 @@ static int oauth2_jwt_base64url_decode(const char *segment,
 
     (*decoded)[*decoded_len] = '\0';
     return FLB_OAUTH2_JWT_OK;
-}
-
-static flb_sds_t oauth2_jwt_token_to_sds(const char *json, jsmntok_t *tok)
-{
-    return flb_sds_create_len(json + tok->start, tok->end - tok->start);
 }
 
 static int oauth2_jwt_parse_header(const char *json, size_t json_len,
@@ -729,74 +659,97 @@ int flb_oauth2_jwt_parse(const char *token, size_t token_len,
     return FLB_OAUTH2_JWT_OK;
 }
 
-static int oauth2_jwks_parse_key(const char *json, jsmntok_t *tokens, int tokens_size, int key_obj_idx,
+static int oauth2_jwks_parse_key(msgpack_object *key_obj,
                                  struct flb_oauth2_jwks_key **key_out)
 {
-    int i;
     flb_sds_t kid = NULL;
     flb_sds_t n = NULL;
     flb_sds_t e = NULL;
+    msgpack_object *k;
+    msgpack_object *v;
+    size_t i;
+    size_t map_size;
+    size_t key_len;
+    const char *key_str;
     struct flb_oauth2_jwks_key *key = NULL;
-    jsmntok_t *key_obj;
 
-    if (!json || !tokens || key_obj_idx < 0 || key_obj_idx >= tokens_size || !key_out) {
+    if (!key_obj || !key_out) {
         return -1;
     }
 
-    key_obj = &tokens[key_obj_idx];
-    if (key_obj->type != JSMN_OBJECT) {
+    if (key_obj->type != MSGPACK_OBJECT_MAP) {
         return -1;
     }
 
-    /* Find kty, kid, n, e in the key object */
-    /* JSMN stores objects as: [object_token, key1, value1, key2, value2, ...] */
-    for (i = key_obj_idx + 1; i < tokens_size && i < key_obj_idx + 1 + (key_obj->size * 2); i += 2) {
-        jsmntok_t *tok = &tokens[i];
-        jsmntok_t *val;
+    /* Extract kty, kid, n, e from the key object */
+    map_size = key_obj->via.map.size;
+    for (i = 0; i < map_size; i++) {
+        k = &key_obj->via.map.ptr[i].key;
+        v = &key_obj->via.map.ptr[i].val;
 
-        if (i + 1 >= tokens_size) {
-            break;
-        }
-
-        val = &tokens[i + 1];
-
-        if (tok->type != JSMN_STRING) {
+        if (k->type != MSGPACK_OBJECT_STR) {
             continue;
         }
 
-        if (oauth2_jwt_token_strcmp(json, tok, "kty") == 0) {
-            flb_sds_t kty = oauth2_jwt_token_to_sds(json, val);
-            if (kty && strcmp(kty, "RSA") != 0) {
-                flb_sds_destroy(kty);
-                if (kid) flb_sds_destroy(kid);
-                if (n) flb_sds_destroy(n);
-                if (e) flb_sds_destroy(e);
-                return -1; /* Not an RSA key */
+        key_len = k->via.str.size;
+        key_str = (const char *) k->via.str.ptr;
+
+        if (key_len == 3 && strncmp(key_str, "kty", 3) == 0) {
+            if (v->type == MSGPACK_OBJECT_STR) {
+                if (v->via.str.size == 3 &&
+                    strncmp((const char *) v->via.str.ptr, "RSA", 3) == 0) {
+                    /* Valid RSA key type */
+                }
+                else {
+                    /* Not an RSA key */
+                    if (kid) {
+                        flb_sds_destroy(kid);
+                    }
+                    if (n) {
+                        flb_sds_destroy(n);
+                    }
+                    if (e) {
+                        flb_sds_destroy(e);
+                    }
+                    return -1;
+                }
             }
-            if (kty) {
-                flb_sds_destroy(kty);
+        }
+        else if (key_len == 3 && strncmp(key_str, "kid", 3) == 0) {
+            if (v->type == MSGPACK_OBJECT_STR) {
+                kid = flb_sds_create_len((const char *) v->via.str.ptr,
+                                         v->via.str.size);
             }
         }
-        else if (oauth2_jwt_token_strcmp(json, tok, "kid") == 0) {
-            kid = oauth2_jwt_token_to_sds(json, val);
+        else if (key_len == 1 && strncmp(key_str, "n", 1) == 0) {
+            if (v->type == MSGPACK_OBJECT_STR) {
+                n = flb_sds_create_len((const char *) v->via.str.ptr, v->via.str.size);
+            }
         }
-        else if (oauth2_jwt_token_strcmp(json, tok, "n") == 0) {
-            n = oauth2_jwt_token_to_sds(json, val);
+        else if (key_len == 1 && strncmp(key_str, "e", 1) == 0) {
+            if (v->type == MSGPACK_OBJECT_STR) {
+                e = flb_sds_create_len((const char *) v->via.str.ptr, v->via.str.size);
+            }
         }
-        else if (oauth2_jwt_token_strcmp(json, tok, "e") == 0) {
-            e = oauth2_jwt_token_to_sds(json, val);
-        }
+        /* Ignore other fields (e.g. x5c array) - msgpack handles nested structures automatically */
     }
 
     if (!kid || !n || !e) {
-        if (kid) flb_sds_destroy(kid);
-        if (n) flb_sds_destroy(n);
-        if (e) flb_sds_destroy(e);
+        if (kid) {
+            flb_sds_destroy(kid);
+        }
+        if (n) {
+            flb_sds_destroy(n);
+        }
+        if (e) {
+            flb_sds_destroy(e);
+        }
         return -1;
     }
 
     key = flb_calloc(1, sizeof(struct flb_oauth2_jwks_key));
     if (!key) {
+        flb_errno();
         flb_sds_destroy(kid);
         flb_sds_destroy(n);
         flb_sds_destroy(e);
@@ -815,67 +768,79 @@ static int oauth2_jwks_parse_key(const char *json, jsmntok_t *tokens, int tokens
 static int oauth2_jwks_parse_json(flb_sds_t jwks_json, struct flb_oauth2_jwks_cache *cache)
 {
     int ret;
-    int tokens_size;
-    jsmntok_t *tokens = NULL;
-    int i;
+    int root_type;
+    char *mp_buf = NULL;
+    size_t mp_size;
+    size_t off = 0;
+    msgpack_unpacked result;
+    msgpack_object root;
+    msgpack_object *k;
+    msgpack_object *v;
+    msgpack_object *key_obj;
+    size_t i;
+    size_t j;
+    size_t map_size;
+    size_t array_size;
+    size_t key_len;
+    const char *key_str;
     int keys_found = 0;
+    struct flb_oauth2_jwks_key *jwks_key;
 
-    ret = oauth2_jwt_parse_json_tokens(jwks_json, flb_sds_len(jwks_json),
-                                       &tokens, &tokens_size,
-                                       FLB_OAUTH2_JWT_ERR_INVALID_ARGUMENT);
-    if (ret != FLB_OAUTH2_JWT_OK) {
-        flb_error("[oauth2_jwt] failed to parse JWKS JSON tokens");
+    /* Convert JSON to msgpack */
+    ret = flb_pack_json_yyjson(jwks_json, flb_sds_len(jwks_json),
+                                &mp_buf, &mp_size,
+                                &root_type, NULL);
+    if (ret != 0 || root_type != JSMN_OBJECT) {
+        if (mp_buf) {
+            flb_free(mp_buf);
+        }
+        flb_error("[oauth2_jwt] failed to parse JWKS JSON");
         return -1;
     }
 
+    /* Unpack msgpack */
+    msgpack_unpacked_init(&result);
+    if (msgpack_unpack_next(&result, mp_buf, mp_size, &off) != MSGPACK_UNPACK_SUCCESS) {
+        flb_free(mp_buf);
+        msgpack_unpacked_destroy(&result);
+        flb_error("[oauth2_jwt] failed to unpack JWKS msgpack");
+        return -1;
+    }
+
+    root = result.data;
+    if (root.type != MSGPACK_OBJECT_MAP) {
+        flb_free(mp_buf);
+        msgpack_unpacked_destroy(&result);
+        flb_error("[oauth2_jwt] JWKS root is not an object");
+        return -1;
+    }
 
     /* Find "keys" array in the JWKS */
-    for (i = 1; i < tokens_size; i++) {
-        jsmntok_t *key = &tokens[i];
-        jsmntok_t *val;
+    map_size = root.via.map.size;
+    for (i = 0; i < map_size; i++) {
+        k = &root.via.map.ptr[i].key;
+        v = &root.via.map.ptr[i].val;
 
-        if (key->type != JSMN_STRING) {
+        if (k->type != MSGPACK_OBJECT_STR) {
             continue;
         }
 
-        i++;
-        if (i >= tokens_size) {
-            break;
-        }
+        key_len = k->via.str.size;
+        key_str = (const char *) k->via.str.ptr;
 
-        val = &tokens[i];
-
-        if (oauth2_jwt_token_strcmp(jwks_json, key, "keys") == 0 &&
-            val->type == JSMN_ARRAY) {
-            int j;
-            int keys_count = val->size;
-            int key_idx = i + 1;
-            int key_obj_end;
-            jsmntok_t *key_obj;
-            struct flb_oauth2_jwks_key *jwks_key;
-
+        if (key_len == 4 && strncmp(key_str, "keys", 4) == 0 &&
+            v->type == MSGPACK_OBJECT_ARRAY) {
             /* Parse each key in the array */
-            for (j = 0; j < keys_count && key_idx < tokens_size; j++) {
-                key_obj = &tokens[key_idx];
+            array_size = v->via.array.size;
+            for (j = 0; j < array_size; j++) {
+                key_obj = &v->via.array.ptr[j];
                 jwks_key = NULL;
 
-                if (key_obj->type != JSMN_OBJECT) {
-                    break;
+                if (key_obj->type != MSGPACK_OBJECT_MAP) {
+                    continue;
                 }
 
-                /* For JSMN, an object with size N has N key-value pairs
-                 * Each pair occupies 2 tokens (key + value)
-                 * So total tokens = 1 (object) + N*2 (pairs)
-                 * Since JWKS keys have simple string values (no nested objects),
-                 * we can use this simple calculation */
-                key_obj_end = key_idx + 1 + (key_obj->size * 2);
-
-                /* Ensure we don't go beyond tokens_size */
-                if (key_obj_end > tokens_size) {
-                    key_obj_end = tokens_size;
-                }
-
-                ret = oauth2_jwks_parse_key(jwks_json, tokens, tokens_size, key_idx, &jwks_key);
+                ret = oauth2_jwks_parse_key(key_obj, &jwks_key);
                 if (ret == 0 && jwks_key) {
                     /* Store key in cache using kid as hash key */
                     flb_hash_table_add(cache->entries, jwks_key->kid,
@@ -883,15 +848,13 @@ static int oauth2_jwks_parse_json(flb_sds_t jwks_json, struct flb_oauth2_jwks_ca
                                       jwks_key, 0);
                     keys_found++;
                 }
-
-                /* Move to next key object */
-                key_idx = key_obj_end;
             }
             break;
         }
     }
 
-    flb_free(tokens);
+    flb_free(mp_buf);
+    msgpack_unpacked_destroy(&result);
 
     if (keys_found == 0) {
         flb_error("[oauth2_jwt] No valid keys found in JWKS");
@@ -973,7 +936,6 @@ static int oauth2_jwks_fetch_keys(struct flb_oauth2_jwt_ctx *ctx)
     if (!ctx || !ctx->cfg.jwks_url || !ctx->config) {
         return -1;
     }
-
 
     ret = flb_utils_url_split(ctx->cfg.jwks_url, &protocol, &host, &port_str, &uri);
     if (ret != 0) {
@@ -1506,4 +1468,5 @@ struct mk_list *flb_oauth2_jwt_get_config_map(struct flb_config *config)
 
     return config_map;
 }
+
 
