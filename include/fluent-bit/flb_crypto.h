@@ -54,48 +54,73 @@ int flb_crypto_transform(struct flb_crypto *context,
                          unsigned char *output_buffer,
                          size_t *output_length);
 
-int flb_crypto_sign(struct flb_crypto *context, 
-                    unsigned char *input_buffer, 
+int flb_crypto_sign(struct flb_crypto *context,
+                    unsigned char *input_buffer,
                     size_t input_length,
-                    unsigned char *output_buffer, 
+                    unsigned char *output_buffer,
                     size_t *output_length);
 
-int flb_crypto_encrypt(struct flb_crypto *context, 
-                       unsigned char *input_buffer, 
+int flb_crypto_encrypt(struct flb_crypto *context,
+                       unsigned char *input_buffer,
                        size_t input_length,
-                       unsigned char *output_buffer, 
+                       unsigned char *output_buffer,
                        size_t *output_length);
 
-int flb_crypto_decrypt(struct flb_crypto *context, 
-                       unsigned char *input_buffer, 
+int flb_crypto_decrypt(struct flb_crypto *context,
+                       unsigned char *input_buffer,
                        size_t input_length,
-                       unsigned char *output_buffer, 
+                       unsigned char *output_buffer,
                        size_t *output_length);
 
-int flb_crypto_sign_simple(int key_type,    
+int flb_crypto_sign_simple(int key_type,
                            int padding_type,
                            int digest_algorithm,
                            unsigned char *key,
-                           size_t key_length, 
-                           unsigned char *input_buffer, 
+                           size_t key_length,
+                           unsigned char *input_buffer,
                            size_t input_length,
-                           unsigned char *output_buffer, 
+                           unsigned char *output_buffer,
                            size_t *output_length);
 
 int flb_crypto_encrypt_simple(int padding_type,
                               unsigned char *key,
-                              size_t key_length, 
-                              unsigned char *input_buffer, 
+                              size_t key_length,
+                              unsigned char *input_buffer,
                               size_t input_length,
-                              unsigned char *output_buffer, 
+                              unsigned char *output_buffer,
                               size_t *output_length);
 
 int flb_crypto_decrypt_simple(int padding_type,
                               unsigned char *key,
-                              size_t key_length, 
-                              unsigned char *input_buffer, 
+                              size_t key_length,
+                              unsigned char *input_buffer,
                               size_t input_length,
-                              unsigned char *output_buffer, 
+                              unsigned char *output_buffer,
                               size_t *output_length);
+
+int flb_crypto_init_from_rsa_components(struct flb_crypto *context,
+                                        int padding_type,
+                                        int digest_algorithm,
+                                        unsigned char *modulus_bytes,
+                                        size_t modulus_len,
+                                        unsigned char *exponent_bytes,
+                                        size_t exponent_len);
+
+int flb_crypto_verify(struct flb_crypto *context,
+                      unsigned char *data,
+                      size_t data_length,
+                      unsigned char *signature,
+                      size_t signature_length);
+
+int flb_crypto_verify_simple(int padding_type,
+                             int digest_algorithm,
+                             unsigned char *modulus_bytes,
+                             size_t modulus_len,
+                             unsigned char *exponent_bytes,
+                             size_t exponent_len,
+                             unsigned char *data,
+                             size_t data_length,
+                             unsigned char *signature,
+                             size_t signature_length);
 
 #endif
