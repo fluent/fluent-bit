@@ -920,6 +920,7 @@ cleanup:
 static int oauth2_jwks_fetch_keys(struct flb_oauth2_jwt_ctx *ctx)
 {
     int ret;
+    int ret_code = -1;
     int port;
     size_t b_sent;
     char *protocol = NULL;
@@ -1038,6 +1039,7 @@ static int oauth2_jwks_fetch_keys(struct flb_oauth2_jwt_ctx *ctx)
     }
     else {
         ctx->jwks_cache.last_refresh = time(NULL);
+        ret_code = 0;
     }
 
 cleanup:
@@ -1069,7 +1071,7 @@ cleanup:
         flb_free(uri);
     }
 
-    return (jwks_json != NULL) ? 0 : -1;
+    return ret_code;
 }
 
 static int oauth2_jwt_check_audience(const char *json, size_t json_len,
