@@ -1236,6 +1236,11 @@ struct flb_oauth2_jwt_ctx *flb_oauth2_jwt_context_create(struct flb_config *conf
     if (cfg != NULL) {
         memcpy(&ctx->cfg, cfg, sizeof(struct flb_oauth2_jwt_cfg));
     }
+    else {
+        /* Initialize with defaults when cfg is NULL */
+        memset(&ctx->cfg, 0, sizeof(struct flb_oauth2_jwt_cfg));
+        ctx->cfg.jwks_refresh_interval = 300; /* Default from config map */
+    }
 
     if (oauth2_jwks_cache_init(&ctx->jwks_cache,
                                ctx->cfg.jwks_refresh_interval) != 0) {
