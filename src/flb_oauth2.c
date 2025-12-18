@@ -129,6 +129,12 @@ static void oauth2_apply_defaults(struct flb_oauth2_config *cfg)
     cfg->refresh_skew = FLB_OAUTH2_DEFAULT_SKEW_SECS;
     cfg->timeout = 0;
     cfg->connect_timeout = 0;
+    /* Initialize all pointer fields to NULL to avoid using uninitialized values */
+    cfg->token_url = NULL;
+    cfg->client_id = NULL;
+    cfg->client_secret = NULL;
+    cfg->scope = NULL;
+    cfg->audience = NULL;
 }
 
 static int oauth2_clone_config(struct flb_oauth2_config *dst,
