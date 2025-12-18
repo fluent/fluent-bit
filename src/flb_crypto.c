@@ -19,8 +19,20 @@
 #include <openssl/bio.h>
 #include <openssl/bn.h>
 #include <openssl/rsa.h>
+#include <openssl/evp.h>
 #include <openssl/opensslv.h>
 #include <string.h>
+
+/*
+ * OpenSSL version compatibility macros
+ *
+ * EVP_MD_CTX_new/free were introduced in OpenSSL 1.1.0
+ * For OpenSSL 1.0.2, use EVP_MD_CTX_create/destroy
+ */
+#if OPENSSL_VERSION_NUMBER < 0x10100000L
+#define EVP_MD_CTX_new() EVP_MD_CTX_create()
+#define EVP_MD_CTX_free(ctx) EVP_MD_CTX_destroy(ctx)
+#endif
 
 static int flb_crypto_get_rsa_padding_type_by_id(int padding_type_id)
 {
@@ -601,7 +613,20 @@ int flb_crypto_verify(struct flb_crypto *context,
         return FLB_CRYPTO_BACKEND_ERROR;
     }
 
+#if OPENSSL_VERSION_NUMBER >= 0x10100000L
+    /* OpenSSL 1.1.0+: Use the convenient EVP_DigestVerify() function */
     result = EVP_DigestVerify(md_ctx, signature, signature_length, data, data_length);
+#else
+    /* OpenSSL 1.0.2: Use Init/Update/Final pattern */
+    if (EVP_DigestVerifyUpdate(md_ctx, data, data_length) <= 0) {
+        if (context) {
+            context->last_error = ERR_get_error();
+        }
+        EVP_MD_CTX_free(md_ctx);
+        return FLB_CRYPTO_BACKEND_ERROR;
+    }
+    result = EVP_DigestVerifyFinal(md_ctx, signature, signature_length);
+#endif
     EVP_MD_CTX_free(md_ctx);
 
     if (result == 1) {
