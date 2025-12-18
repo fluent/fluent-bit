@@ -124,6 +124,45 @@ static void oauth2_jwks_key_destroy(struct flb_oauth2_jwks_key *key)
     flb_free(key);
 }
 
+static void oauth2_jwks_cache_clear(struct flb_oauth2_jwks_cache *cache)
+{
+    int i;
+    struct mk_list *head;
+    struct mk_list *tmp;
+    struct flb_hash_table_entry *entry;
+    struct flb_hash_table_chain *table;
+    int refresh_interval;
+
+    if (!cache || !cache->entries) {
+        return;
+    }
+
+    /* Save refresh interval before destroying */
+    refresh_interval = cache->refresh_interval;
+
+    /* Iterate through all hash table chains and destroy keys */
+    for (i = 0; i < cache->entries->size; i++) {
+        table = &cache->entries->table[i];
+        mk_list_foreach_safe(head, tmp, &table->chains) {
+            entry = mk_list_entry(head, struct flb_hash_table_entry, _head);
+            if (entry->val) {
+                oauth2_jwks_key_destroy((struct flb_oauth2_jwks_key *)entry->val);
+                entry->val = NULL; /* Prevent double-free */
+            }
+        }
+    }
+
+    /* Destroy and recreate the hash table to clear all entries */
+    flb_hash_table_destroy(cache->entries);
+    cache->entries = flb_hash_table_create(FLB_HASH_TABLE_EVICT_NONE, 64, 0);
+    if (!cache->entries) {
+        flb_error("[oauth2_jwt] failed to recreate JWKS cache after clear");
+    }
+
+    /* Restore refresh interval */
+    cache->refresh_interval = refresh_interval;
+}
+
 static void oauth2_jwks_cache_destroy(struct flb_oauth2_jwks_cache *cache)
 {
     int i;
@@ -1029,6 +1068,9 @@ static int oauth2_jwks_fetch_keys(struct flb_oauth2_jwt_ctx *ctx)
         flb_error("[oauth2_jwt] failed to create JWKS JSON buffer");
         goto cleanup;
     }
+
+    /* Clear existing cache entries before refreshing to ensure revoked/rotated keys are removed */
+    oauth2_jwks_cache_clear(&ctx->jwks_cache);
 
     /* Parse JWKS JSON and store keys in cache */
     ret = oauth2_jwks_parse_json(jwks_json, &ctx->jwks_cache);
